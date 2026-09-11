@@ -39,9 +39,9 @@ class ContractClassificationTest {
 
     @Autowired
     public ContractClassificationTest(
-        TestRestTemplate testRestTemplate,
-        ExampleJpaRepository exampleJpaRepository,
-        DatabaseCleanUp databaseCleanUp
+            TestRestTemplate testRestTemplate,
+            ExampleJpaRepository exampleJpaRepository,
+            DatabaseCleanUp databaseCleanUp
     ) {
         this.testRestTemplate = testRestTemplate;
         this.exampleJpaRepository = exampleJpaRepository;
@@ -63,52 +63,59 @@ class ContractClassificationTest {
     void returnsSuccessContract_whenIdExists() {
         // arrange
         ExampleModel saved = exampleJpaRepository.save(new ExampleModel("예시 제목", "예시 설명"));
+        String url = ENDPOINT_EXAMPLE + saved.getId();
 
         // act
-        ResponseEntity<ApiResponse<Object>> response = get(ENDPOINT_EXAMPLE + saved.getId());
+        ResponseEntity<ApiResponse<Object>> response = get(url);
 
         // assert
         ApiResponse<Object> body = response.getBody();
         assertAll(
-            () -> assertThat(response.getStatusCode().is2xxSuccessful()).isTrue(),
-            () -> assertThat(body).isNotNull(),
-            () -> assertThat(body.meta().result()).isEqualTo(ApiResponse.Metadata.Result.SUCCESS),
-            () -> assertThat(body.meta().errorCode()).isNull(),
-            () -> assertThat(body.data()).isNotNull()
+                () -> assertThat(response.getStatusCode().is2xxSuccessful()).isTrue(),
+                () -> assertThat(body).isNotNull(),
+                () -> assertThat(body.meta().result()).isEqualTo(ApiResponse.Metadata.Result.SUCCESS),
+                () -> assertThat(body.meta().errorCode()).isNull(),
+                () -> assertThat(body.data()).isNotNull()
         );
     }
 
     @DisplayName("숫자가 아닌 ID 로 요청하면, 400 과 FAIL meta 를 반환하고 data 는 비어 있다.")
     @Test
     void returnsBadRequestContract_whenIdIsNotNumeric() {
+        // arrange
+        String url = ENDPOINT_EXAMPLE + "abc";
+
         // act
-        ResponseEntity<ApiResponse<Object>> response = get(ENDPOINT_EXAMPLE + "abc");
+        ResponseEntity<ApiResponse<Object>> response = get(url);
 
         // assert
         ApiResponse<Object> body = response.getBody();
         assertAll(
-            () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST),
-            () -> assertThat(body).isNotNull(),
-            () -> assertThat(body.meta().result()).isEqualTo(ApiResponse.Metadata.Result.FAIL),
-            () -> assertThat(body.meta().errorCode()).isNotNull(),
-            () -> assertThat(body.data()).isNull()
+                () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST),
+                () -> assertThat(body).isNotNull(),
+                () -> assertThat(body.meta().result()).isEqualTo(ApiResponse.Metadata.Result.FAIL),
+                () -> assertThat(body.meta().errorCode()).isNotNull(),
+                () -> assertThat(body.data()).isNull()
         );
     }
 
     @DisplayName("존재하지 않는 숫자 ID 로 요청하면, 404 와 FAIL meta 를 반환하고 data 는 비어 있다.")
     @Test
     void returnsNotFoundContract_whenIdDoesNotExist() {
+        // arrange
+        String url = ENDPOINT_EXAMPLE + "-1";
+
         // act
-        ResponseEntity<ApiResponse<Object>> response = get(ENDPOINT_EXAMPLE + "-1");
+        ResponseEntity<ApiResponse<Object>> response = get(url);
 
         // assert
         ApiResponse<Object> body = response.getBody();
         assertAll(
-            () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND),
-            () -> assertThat(body).isNotNull(),
-            () -> assertThat(body.meta().result()).isEqualTo(ApiResponse.Metadata.Result.FAIL),
-            () -> assertThat(body.meta().errorCode()).isNotNull(),
-            () -> assertThat(body.data()).isNull()
+                () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND),
+                () -> assertThat(body).isNotNull(),
+                () -> assertThat(body.meta().result()).isEqualTo(ApiResponse.Metadata.Result.FAIL),
+                () -> assertThat(body.meta().errorCode()).isNotNull(),
+                () -> assertThat(body.data()).isNull()
         );
     }
 
@@ -121,11 +128,11 @@ class ContractClassificationTest {
         // assert
         ApiResponse<Object> body = response.getBody();
         assertAll(
-            () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND),
-            () -> assertThat(body).isNotNull(),
-            () -> assertThat(body.meta().result()).isEqualTo(ApiResponse.Metadata.Result.FAIL),
-            () -> assertThat(body.meta().errorCode()).isNotNull(),
-            () -> assertThat(body.data()).isNull()
+                () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND),
+                () -> assertThat(body).isNotNull(),
+                () -> assertThat(body.meta().result()).isEqualTo(ApiResponse.Metadata.Result.FAIL),
+                () -> assertThat(body.meta().errorCode()).isNotNull(),
+                () -> assertThat(body.data()).isNull()
         );
     }
 }
