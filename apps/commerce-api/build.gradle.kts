@@ -1,3 +1,14 @@
+plugins {
+    checkstyle
+}
+
+checkstyle {
+    toolVersion = "10.26.1"
+    configFile = rootProject.file("config/checkstyle/checkstyle.xml")
+    isIgnoreFailures = false
+    maxWarnings = 0
+}
+
 dependencies {
     // add-ons
     implementation(project(":modules:jpa"))
