@@ -1,0 +1,122 @@
+package com.loopers.domain.point;
+
+import com.loopers.domain.common.Money;
+import com.loopers.support.error.CoreException;
+import com.loopers.support.error.ErrorType;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+
+import java.time.Period;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
+
+class PointWalletPolicyTest {
+
+    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
+    private static final Period VALIDITY = Period.ofYears(5);
+    private static final ZonedDateTime NOW = ZonedDateTime.of(2026, 6, 1, 0, 0, 0, 0, SEOUL);
+
+    private final PointWalletPolicy policy = new PointWalletPolicy();
+
+    /** 기준 시각(NOW)에 아직 유효한 그룹. */
+    private static PointGroup usableGroup(long amount) {
+        return PointGroup.charge(1L, Money.of(amount), ZonedDateTime.of(2026, 1, 1, 0, 0, 0, 0, SEOUL), VALIDITY);
+    }
+
+    /** 기준 시각(NOW)에 이미 만료된 그룹. 2020-01-01 충전 → 2025-01-01 만료. */
+    private static PointGroup expiredGroup(long amount) {
+        return PointGroup.charge(1L, Money.of(amount), ZonedDateTime.of(2020, 1, 1, 0, 0, 0, 0, SEOUL), VALIDITY);
+    }
+
+    @DisplayName("잔액을 계산할 때, ")
+    @Nested
+    class Balance {
+
+        @DisplayName("W-1 · PNT-01 그룹이 없으면 잔액은 0원이다.")
+        @Test
+        void isZeroWithoutGroups() {
+            // act
+            Money balance = policy.balanceOf(List.of(), NOW);
+
+            // assert
+            assertThat(balance).isEqualTo(Money.of(0));
+        }
+
+        @DisplayName("W-2 · PNT-01 남은 3,000원 그룹과 남은 5,000원 그룹이 있으면 잔액은 8,000원이다.")
+        @Test
+        void sumsRemainingOfGroups() {
+            // act
+            Money balance = policy.balanceOf(List.of(usableGroup(3_000), usableGroup(5_000)), NOW);
+
+            // assert
+            assertThat(balance).isEqualTo(Money.of(8_000));
+        }
+
+        @DisplayName("W-3 · PNT-07 만료된 그룹(4,000원)은 빼고, 유효한 그룹(5,000원)만 더해 잔액은 5,000원이다.")
+        @Test
+        void excludesExpiredGroups() {
+            // act
+            Money balance = policy.balanceOf(List.of(expiredGroup(4_000), usableGroup(5_000)), NOW);
+
+            // assert
+            assertThat(balance).isEqualTo(Money.of(5_000));
+        }
+    }
+
+    @DisplayName("충전할 수 있는지 확인할 때, ")
+    @Nested
+    class Chargeable {
+
+        @DisplayName("W-8 · PNT-03 남은 금액이 (Long 최댓값 - 1)원인 그룹이 있으면 2원 충전은 거절한다.")
+        @Test
+        void rejectsChargeOverflowingBalance() {
+            // arrange
+            List<PointGroup> groups = List.of(usableGroup(Long.MAX_VALUE - 1));
+
+            // act & assert
+            assertThatThrownBy(() -> policy.checkChargeable(groups, Money.of(2), NOW))
+                .isInstanceOf(CoreException.class)
+                .extracting("errorType").isEqualTo(ErrorType.CONFLICT);
+        }
+    }
+
+    @DisplayName("포인트로 결제할 때, ")
+    @Nested
+    class Pay {
+
+        @DisplayName("W-4 · PNT-04 남은 10,000원 그룹에서 7,000원을 결제하면 남은 금액은 3,000원이고, 사용 내역은 그 그룹의 7,000원이다.")
+        @Test
+        void paysFromSingleGroup() {
+            // arrange
+            PointGroup groupA = usableGroup(10_000);
+
+            // act
+            List<PointUsage> usages = policy.pay(List.of(groupA), Money.of(7_000), NOW);
+
+            // assert
+            assertThat(groupA.getRemaining()).isEqualTo(Money.of(3_000));
+            assertThat(usages)
+                .extracting(PointUsage::group, PointUsage::amount)
+                .containsExactly(tuple(groupA, Money.of(7_000)));
+        }
+
+        @DisplayName("W-9 · P-21 0원 결제는 거절하고, 남은 금액은 그대로다.")
+        @Test
+        void rejectsZeroPayment() {
+            // arrange
+            PointGroup groupA = usableGroup(10_000);
+
+            // act & assert
+            assertThatThrownBy(() -> policy.pay(List.of(groupA), Money.of(0), NOW))
+                .isInstanceOf(CoreException.class)
+                .extracting("errorType").isEqualTo(ErrorType.BAD_REQUEST);
+            assertThat(groupA.getRemaining()).isEqualTo(Money.of(10_000));
+        }
+    }
+}
