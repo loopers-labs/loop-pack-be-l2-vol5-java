@@ -91,6 +91,13 @@ public class ProductModel extends BaseEntity {
         return getDeletedAt() == null;
     }
 
+    /**
+     * 주문에 복사할 상품명·판매 단가. 주문 생성과 확정 재검증이 같은 값을 쓴다 (AI 리뷰 2-3).
+     */
+    public ProductSnapshot snapshot() {
+        return new ProductSnapshot(getId(), name, price);
+    }
+
     private static String validName(String name) {
         if (name == null || name.isBlank()) {
             throw new CoreException(ErrorType.BAD_REQUEST, "상품 이름은 비어 있을 수 없습니다.");

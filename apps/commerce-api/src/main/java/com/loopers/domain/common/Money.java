@@ -33,6 +33,14 @@ public record Money(long amount) implements Comparable<Money> {
         return new Money(amount - other.amount);
     }
 
+    public Money times(int count) {
+        try {
+            return new Money(Math.multiplyExact(amount, count));
+        } catch (ArithmeticException e) {
+            throw new IllegalArgumentException("금액 곱이 표현 범위를 넘습니다.", e);
+        }
+    }
+
     public boolean isGreaterThan(Money other) {
         return amount > other.amount;
     }
