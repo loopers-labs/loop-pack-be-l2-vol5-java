@@ -2,7 +2,9 @@ package com.loopers.interfaces.api.admin.brand;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.domain.brand.BrandModel;
+import com.loopers.domain.product.ProductModel;
 import com.loopers.infrastructure.brand.BrandJpaRepository;
+import com.loopers.infrastructure.product.ProductJpaRepository;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -20,6 +22,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -41,6 +44,9 @@ class BrandAdminV1ApiE2ETest {
 
     @Autowired
     private BrandJpaRepository brandJpaRepository;
+
+    @Autowired
+    private ProductJpaRepository productJpaRepository;
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
@@ -225,6 +231,46 @@ class BrandAdminV1ApiE2ETest {
                     .content(json(Map.of("name", "리복"))))
                 .andExpect(status().isNotFound());
             assertThat(brandJpaRepository.findById(deleted.getId()).orElseThrow().getName()).isEqualTo("아디다스");
+        }
+    }
+
+    @DisplayName("DELETE /api-admin/v1/brands/{brandId}")
+    @Nested
+    class Delete {
+
+        @DisplayName("BRD-02 재고 0인 살아 있는 상품이 연결돼 있으면 409이고, 브랜드는 삭제되지 않는다.")
+        @Test
+        void rejectsDelete_whenActiveProductRemains() throws Exception {
+            // arrange
+            BrandModel brand = brandJpaRepository.save(new BrandModel("나이키", null));
+            productJpaRepository.save(new ProductModel(brand.getId(), "품절 상품", 1_000, 0));
+
+            // act
+            mockMvc.perform(delete(ENDPOINT + "/" + brand.getId()).with(ADMIN).with(csrf()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.meta.errorCode").value("Conflict"));
+
+            // assert
+            assertThat(brandJpaRepository.findById(brand.getId()).orElseThrow().getDeletedAt()).isNull();
+        }
+
+        @DisplayName("BRD-02 연결된 상품이 모두 삭제됐으면 브랜드를 삭제하고, 이후 조회는 404다.")
+        @Test
+        void deletesBrand_whenAllProductsDeleted() throws Exception {
+            // arrange
+            BrandModel brand = brandJpaRepository.save(new BrandModel("나이키", null));
+            ProductModel product = new ProductModel(brand.getId(), "단종 상품", 1_000, 3);
+            product.delete();
+            productJpaRepository.save(product);
+
+            // act
+            mockMvc.perform(delete(ENDPOINT + "/" + brand.getId()).with(ADMIN).with(csrf()))
+                .andExpect(status().isOk());
+
+            // assert
+            assertThat(brandJpaRepository.findById(brand.getId()).orElseThrow().getDeletedAt()).isNotNull();
+            mockMvc.perform(get(ENDPOINT + "/" + brand.getId()).with(ADMIN))
+                .andExpect(status().isNotFound());
         }
     }
 }

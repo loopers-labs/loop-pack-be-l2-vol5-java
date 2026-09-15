@@ -2,6 +2,7 @@ package com.loopers.application.brand;
 
 import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.brand.BrandRepository;
+import com.loopers.domain.product.ProductRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class BrandFacade {
 
     private final BrandRepository brandRepository;
+    private final ProductRepository productRepository;
 
     @Transactional
     public BrandInfo create(String name, String description) {
@@ -37,6 +39,19 @@ public class BrandFacade {
         BrandModel brand = getActiveBrand(brandId);
         brand.update(name, description);
         return BrandInfo.from(brand);
+    }
+
+    /**
+     * BRD-02: 삭제되지 않은 상품(재고 0 포함)이 남은 브랜드는 삭제할 수 없다.
+     * 연결 상품 확인은 상품 저장소가 답하고, 삭제 행동은 브랜드가 한다.
+     */
+    @Transactional
+    public void delete(Long brandId) {
+        BrandModel brand = getActiveBrand(brandId);
+        if (productRepository.existsActiveByBrandId(brandId)) {
+            throw new CoreException(ErrorType.CONFLICT, "삭제되지 않은 상품이 있는 브랜드는 삭제할 수 없습니다.");
+        }
+        brand.delete();
     }
 
     private BrandModel getActiveBrand(Long brandId) {

@@ -19,4 +19,7 @@ public interface BrandAdminV1ApiSpec {
 
     @Operation(summary = "브랜드 수정")
     ApiResponse<BrandAdminV1Dto.BrandResponse> updateBrand(Long brandId, BrandAdminV1Dto.UpdateRequest request);
+
+    @Operation(summary = "브랜드 삭제", description = "삭제되지 않은 상품(재고 0 포함)이 연결된 브랜드는 삭제할 수 없습니다.")
+    ApiResponse<Object> deleteBrand(Long brandId);
 }

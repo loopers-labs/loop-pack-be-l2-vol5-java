@@ -6,6 +6,7 @@ import com.loopers.interfaces.api.PageQuery;
 import com.loopers.interfaces.api.PageResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Sort;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -53,5 +54,12 @@ public class BrandAdminV1Controller implements BrandAdminV1ApiSpec {
         return ApiResponse.success(
             BrandAdminV1Dto.BrandResponse.from(brandFacade.update(brandId, request.name(), request.description()))
         );
+    }
+
+    @DeleteMapping("/{brandId}")
+    @Override
+    public ApiResponse<Object> deleteBrand(@PathVariable Long brandId) {
+        brandFacade.delete(brandId);
+        return ApiResponse.success();
     }
 }

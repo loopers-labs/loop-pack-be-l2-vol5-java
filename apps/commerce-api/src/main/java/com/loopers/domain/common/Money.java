@@ -4,7 +4,7 @@ package com.loopers.domain.common;
  * 원 단위 정수 금액. 음수를 만들 수 없고, 연산은 새 값을 반환한다.
  * 값의 유효성만 책임지므로 오류는 IllegalArgumentException으로 알린다 — 의미 해석은 사용하는 도메인이 한다 (ADR-12).
  */
-public record Money(long amount) {
+public record Money(long amount) implements Comparable<Money> {
 
     public static final Money ZERO = new Money(0);
 
@@ -39,5 +39,13 @@ public record Money(long amount) {
 
     public boolean isZero() {
         return amount == 0;
+    }
+
+    /**
+     * 금액 크기 순서. QueryDSL이 Money 필드를 정렬 가능한 경로로 만들려면 Comparable이어야 한다 (상품 price_asc).
+     */
+    @Override
+    public int compareTo(Money other) {
+        return Long.compare(amount, other.amount);
     }
 }

@@ -7,6 +7,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 @RequiredArgsConstructor
@@ -28,5 +30,10 @@ public class BrandRepositoryImpl implements BrandRepository {
     @Override
     public Page<BrandModel> findActive(Pageable pageable) {
         return brandJpaRepository.findAllByDeletedAtIsNull(pageable);
+    }
+
+    @Override
+    public List<BrandModel> findAllByIds(Collection<Long> ids) {
+        return brandJpaRepository.findAllById(ids);
     }
 }
