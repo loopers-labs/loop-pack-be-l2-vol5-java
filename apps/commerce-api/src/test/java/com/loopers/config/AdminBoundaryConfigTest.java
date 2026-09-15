@@ -44,16 +44,15 @@ class AdminBoundaryConfigTest {
     @Nested
     class AdminApi {
 
-        @DisplayName("ROLE_ADMIN 사용자는 Security에서 거절되지 않는다.")
+        @DisplayName("ROLE_ADMIN 사용자는 관리자 브랜드 목록을 200으로 받는다.")
         @Test
-        void doesNotForbid_whenUserHasAdminRole() throws Exception {
+        void allows_whenUserHasAdminRole() throws Exception {
             // act
             int status = mockMvc.perform(get(ADMIN_ENDPOINT).with(user("admin").roles("ADMIN")))
                 .andReturn().getResponse().getStatus();
 
             // assert
-            // 아직 브랜드 컨트롤러가 없어 403이 아닌 것만 확인한다. 브랜드 기능을 구현하면 200이 된다.
-            assertThat(status).isNotEqualTo(403);
+            assertThat(status).isEqualTo(200);
         }
 
         @DisplayName("ROLE_USER 사용자는 403으로 거절된다.")
