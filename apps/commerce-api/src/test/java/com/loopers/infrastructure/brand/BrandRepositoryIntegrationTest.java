@@ -44,6 +44,24 @@ class BrandRepositoryIntegrationTest {
         assertThat(found.get().getCreatedAt()).isNotNull();
     }
 
+    /**
+     * 11장 JPA 구현 메모: BaseEntity.id가 0L로 초기화돼 Spring Data가 새 엔티티로 보지 않고 merge한다.
+     * 그래서 저장 후에는 반드시 반환값을 써야 한다는 가정을 고정해 둔다.
+     */
+    @DisplayName("저장하면 반환된 엔티티에 id가 채워지고, 인자로 넘긴 객체의 id는 0으로 남는다.")
+    @Test
+    void saveReturnsEntityWithGeneratedId() {
+        // arrange
+        BrandModel argument = new BrandModel("나이키", null);
+
+        // act
+        BrandModel saved = brandRepository.save(argument);
+
+        // assert
+        assertThat(saved.getId()).isPositive();
+        assertThat(argument.getId()).isZero();
+    }
+
     @DisplayName("BRD-03 삭제된 브랜드는 상세 조회와 목록에서 제외된다.")
     @Test
     void excludesDeletedBrands() {

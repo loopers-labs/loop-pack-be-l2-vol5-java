@@ -46,14 +46,14 @@ public class ProductAdminFacade {
     public ProductAdminInfo update(Long productId, String name, long price) {
         ProductModel product = getActiveProduct(productId);
         product.update(name, price);
-        return ProductAdminInfo.from(product);
+        return ProductAdminInfo.from(productRepository.save(product));
     }
 
     @Transactional
     public ProductAdminInfo changeStock(Long productId, int stock) {
         ProductModel product = getActiveProduct(productId);
         product.changeStock(stock);
-        return ProductAdminInfo.from(product);
+        return ProductAdminInfo.from(productRepository.save(product));
     }
 
     @Transactional

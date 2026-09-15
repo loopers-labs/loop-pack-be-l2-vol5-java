@@ -109,6 +109,19 @@ class ProductV1ApiE2ETest {
                 .andExpect(jsonPath("$.data.content[1].id").value(lessLiked.getId()));
         }
 
+        @DisplayName("존재하지 않는 brandId로 거르면 빈 목록이다 (7-1).")
+        @Test
+        void returnsEmpty_whenBrandMissing() throws Exception {
+            // arrange
+            product(brandJpaRepository.save(new BrandModel("나이키", null)), "에어맥스", 1_000);
+
+            // act & assert
+            mockMvc.perform(get(ENDPOINT).param("brandId", "999"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content.length()").value(0))
+                .andExpect(jsonPath("$.data.totalElements").value(0));
+        }
+
         @DisplayName("알 수 없는 sort이거나 size가 0이면 400이다.")
         @Test
         void rejectsInvalidQuery() throws Exception {

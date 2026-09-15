@@ -193,7 +193,11 @@ class BrandAdminV1ApiE2ETest {
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(json(Map.of("name", "나이키 코리아", "description", "변경된 설명"))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.name").value("나이키 코리아"));
+                .andExpect(jsonPath("$.data.name").value("나이키 코리아"))
+                .andExpect(result -> {
+                    var data = objectMapper.readTree(result.getResponse().getContentAsString()).path("data");
+                    assertThat(data.path("updatedAt").asText()).isNotEqualTo(data.path("createdAt").asText());
+                });
 
             // assert
             BrandModel reloaded = brandJpaRepository.findById(brand.getId()).orElseThrow();

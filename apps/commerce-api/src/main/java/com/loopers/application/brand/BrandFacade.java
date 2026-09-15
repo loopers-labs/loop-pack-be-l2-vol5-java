@@ -38,7 +38,7 @@ public class BrandFacade {
     public BrandInfo update(Long brandId, String name, String description) {
         BrandModel brand = getActiveBrand(brandId);
         brand.update(name, description);
-        return BrandInfo.from(brand);
+        return BrandInfo.from(brandRepository.save(brand));
     }
 
     /**

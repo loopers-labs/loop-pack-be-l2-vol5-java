@@ -15,6 +15,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import java.util.HashMap;
@@ -59,6 +60,10 @@ class ProductAdminV1ApiE2ETest {
 
     private String json(Object body) throws Exception {
         return objectMapper.writeValueAsString(body);
+    }
+
+    private String jsonField(MvcResult result, String field) throws Exception {
+        return objectMapper.readTree(result.getResponse().getContentAsString()).path("data").path(field).asText();
     }
 
     private BrandModel brand() {
@@ -139,6 +144,71 @@ class ProductAdminV1ApiE2ETest {
             // assert
             assertThat(productJpaRepository.count()).isZero();
         }
+
+        @DisplayName("PRD-01 price나 brandId가 빠지면 400이고, 저장되지 않는다.")
+        @Test
+        void rejectsMissingPriceOrBrand() throws Exception {
+            // arrange
+            BrandModel brand = brand();
+
+            // act
+            mockMvc.perform(post(ENDPOINT).with(ADMIN).with(csrf())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(json(createBody(brand.getId(), null, 5))))
+                .andExpect(status().isBadRequest());
+            mockMvc.perform(post(ENDPOINT).with(ADMIN).with(csrf())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(json(createBody(null, 1_000, 5))))
+                .andExpect(status().isBadRequest());
+
+            // assert
+            assertThat(productJpaRepository.count()).isZero();
+        }
+
+        @DisplayName("PRD-01 가격·재고에 실수(1.9, 2.7)나 문자열 숫자(\"1000\")를 보내면 정수로 바꾸지 않고 400이며, 저장되지 않는다.")
+        @Test
+        void rejectsNonIntegerNumbers() throws Exception {
+            // arrange
+            BrandModel brand = brand();
+
+            // act
+            mockMvc.perform(post(ENDPOINT).with(ADMIN).with(csrf())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(json(createBody(brand.getId(), 1.9, 5))))
+                .andExpect(status().isBadRequest());
+            mockMvc.perform(post(ENDPOINT).with(ADMIN).with(csrf())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(json(createBody(brand.getId(), 1_000, 2.7))))
+                .andExpect(status().isBadRequest());
+            mockMvc.perform(post(ENDPOINT).with(ADMIN).with(csrf())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(json(createBody(brand.getId(), "1000", 5))))
+                .andExpect(status().isBadRequest());
+
+            // assert
+            assertThat(productJpaRepository.count()).isZero();
+        }
+    }
+
+    @DisplayName("GET /api-admin/v1/products")
+    @Nested
+    class GetList {
+
+        @DisplayName("brandId로 거르면 그 브랜드의 삭제되지 않은 상품만 돌려준다.")
+        @Test
+        void filtersByBrand() throws Exception {
+            // arrange
+            BrandModel nike = brand();
+            BrandModel adidas = brandJpaRepository.save(new BrandModel("아디다스", null));
+            ProductModel nikeProduct = product(nike, 5);
+            product(adidas, 5);
+
+            // act & assert
+            mockMvc.perform(get(ENDPOINT).param("brandId", String.valueOf(nike.getId())).with(ADMIN))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].id").value(nikeProduct.getId()));
+        }
     }
 
     @DisplayName("PUT /api-admin/v1/products/{productId}")
@@ -158,7 +228,8 @@ class ProductAdminV1ApiE2ETest {
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(json(Map.of("name", "에어포스", "price", 2_000, "brandId", otherBrand.getId()))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.brandId").value(brand.getId()));
+                .andExpect(jsonPath("$.data.brandId").value(brand.getId()))
+                .andExpect(result -> assertThat(jsonField(result, "updatedAt")).isNotEqualTo(jsonField(result, "createdAt")));
 
             // assert
             ProductModel reloaded = productJpaRepository.findById(product.getId()).orElseThrow();
@@ -233,7 +304,9 @@ class ProductAdminV1ApiE2ETest {
 
             // act
             mockMvc.perform(delete(ENDPOINT + "/" + product.getId()).with(ADMIN).with(csrf()))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.meta.result").value("SUCCESS"))
+                .andExpect(jsonPath("$.data").doesNotExist());
 
             // assert
             mockMvc.perform(get(ENDPOINT + "/" + product.getId()).with(ADMIN))

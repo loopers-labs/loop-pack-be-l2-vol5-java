@@ -17,9 +17,12 @@ public class ProductRepositoryImpl implements ProductRepository {
 
     private final ProductJpaRepository productJpaRepository;
 
+    /**
+     * 즉시 flush해 @PrePersist·@PreUpdate(생성·수정 시각)가 응답을 만들기 전에 반영되게 한다.
+     */
     @Override
     public ProductModel save(ProductModel product) {
-        return productJpaRepository.save(product);
+        return productJpaRepository.saveAndFlush(product);
     }
 
     @Override
