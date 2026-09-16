@@ -14,7 +14,7 @@ class ProductModelTest {
     @Test
     void deductsStock_whenQuantityIsAvailable() {
         // arrange
-        ProductModel product = new ProductModel("상품", 10_000L, 5);
+        ProductModel product = new ProductModel(1L, "상품", 10_000L, 5);
 
         // act
         product.deductStock(2);
@@ -27,7 +27,7 @@ class ProductModelTest {
     @Test
     void rejectsDeduction_whenQuantityExceedsStock() {
         // arrange
-        ProductModel product = new ProductModel("상품", 10_000L, 5);
+        ProductModel product = new ProductModel(1L, "상품", 10_000L, 5);
 
         // act & assert
         assertThatThrownBy(() -> product.deductStock(6))
@@ -40,7 +40,7 @@ class ProductModelTest {
     @Test
     void rejectsDeduction_whenQuantityIsNotPositive() {
         // arrange
-        ProductModel product = new ProductModel("상품", 10_000L, 5);
+        ProductModel product = new ProductModel(1L, "상품", 10_000L, 5);
 
         // act & assert
         assertThatThrownBy(() -> product.deductStock(0))
