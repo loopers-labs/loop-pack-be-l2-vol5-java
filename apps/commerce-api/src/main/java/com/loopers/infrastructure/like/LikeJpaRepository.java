@@ -7,7 +7,6 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.ZonedDateTime;
-import java.util.List;
 
 public interface LikeJpaRepository extends JpaRepository<LikeModel, Long> {
 
@@ -30,6 +29,4 @@ public interface LikeJpaRepository extends JpaRepository<LikeModel, Long> {
     @Modifying
     @Query("DELETE FROM LikeModel l WHERE l.userId = :userId AND l.productId = :productId")
     int deleteByUserIdAndProductId(@Param("userId") Long userId, @Param("productId") Long productId);
-
-    List<LikeModel> findAllByUserIdOrderByIdDesc(Long userId);
 }
