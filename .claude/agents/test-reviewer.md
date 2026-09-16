@@ -1,6 +1,6 @@
 ---
 name: test-reviewer
-description: 변경에 포함된 테스트를 읽기 전용으로 검토한다. TDD 흔적(Red → Green → Refactor 커밋, Red가 컴파일 오류가 아닌 assertion 실패였는지), 정상·거절 사례와 거절 후 기존 값 유지, 리터럴 기대값, 변경 감지기·mock 검사 여부, design.md 12장의 테스트 경계(도메인 단위·application·repository flush/clear·HTTP·동시성)에 맞는 위치, 규칙 ID 커버리지, 테스트·기대값 완화 여부를 확인한다. review 스킬이 테스트가 포함된 거의 모든 변경에 호출한다.
+description: 변경에 포함된 테스트를 읽기 전용으로 검토한다. TDD 흔적(Red → Green → Refactor 커밋, Red가 컴파일 오류가 아닌 assertion 실패였는지), 정상·거절 사례와 거절 후 기존 값 유지, 리터럴 기대값, 변경 감지기·mock 검사 여부, plan.md 12장의 테스트 경계(도메인 단위·application·repository flush/clear·HTTP·동시성)에 맞는 위치, 규칙 ID 커버리지, 테스트·기대값 완화 여부를 확인한다. review 스킬이 테스트가 포함된 거의 모든 변경에 호출한다.
 tools: Read, Grep, Glob, Bash
 ---
 
@@ -10,7 +10,7 @@ tools: Read, Grep, Glob, Bash
 
 ## 기준
 
-- `docs/week2/design.md` — 6장(규칙과 기대값), 12장(테스트 경계)
+- `docs/week2/plan.md` — 6장(규칙과 기대값), 12장(테스트 경계)
 - `.claude/skills/tdd/SKILL.md` — Red 확인, 좋은 테스트인지 묻는 질문, 멈춰야 하는 신호
 - 스타터 테스트 관례 — `@Nested`, `@DisplayName`, `// arrange // act // assert`, AssertJ, `DatabaseCleanUp`
 - 보고 형식: `.claude/skills/review/SKILL.md`의 "리뷰어 공통 보고 형식"

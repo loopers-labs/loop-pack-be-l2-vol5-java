@@ -10,7 +10,7 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * 요청 본문의 정수 필드에 실수(1.9)나 문자열 숫자("1000")가 오면 정수로 바꾸지 않고 읽기 실패(400)로 만든다.
- * 금액·재고·수량은 형식이 틀리면 값을 추측하지 않고 거절한다 (PRD-01, PNT-02, design.md 13-2).
+ * 금액·재고·수량은 형식이 틀리면 값을 추측하지 않고 거절한다 (PRD-01, PNT-02, plan.md 13-2).
  * 공용 supports/jackson 설정 뒤에 적용되며, commerce-api에만 영향을 준다.
  */
 @Configuration

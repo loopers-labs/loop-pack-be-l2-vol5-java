@@ -10,7 +10,7 @@ tools: Read, Grep, Glob, Bash
 
 ## 기준
 
-- `docs/week2/design.md` — 4장(ER), 11장(JPA 구현 메모), 6-4·6-5·6-6 규칙, ADR-03·04·09·13
+- `docs/week2/plan.md` — 4장(ER), 11장(JPA 구현 메모), 6-4·6-5·6-6 규칙, ADR-03·04·09·13
 - `modules/jpa/src/main/java/com/loopers/domain/BaseEntity.java`, `modules/jpa/src/testFixtures/.../DatabaseCleanUp.java`, `modules/jpa/src/main/resources/jpa.yml` (`open-in-view: false`, 로컬·테스트 `ddl-auto: create`)
 - 보고 형식: `.claude/skills/review/SKILL.md`의 "리뷰어 공통 보고 형식"
 
@@ -31,7 +31,7 @@ tools: Read, Grep, Glob, Bash
 
 ## 원칙
 
-- 근거(design.md 절·ADR·스타터 코드)를 붙일 수 없는 지적은 "확인 필요"로 둔다.
+- 근거(plan.md 절·ADR·스타터 코드)를 붙일 수 없는 지적은 "확인 필요"로 둔다.
 - 성능 지적은 이번 요구 범위(단일 서버, 과제 데이터 규모)에서 실제로 문제가 되는 것만 Important 이상으로 올린다.
 
 ## 자체 점검

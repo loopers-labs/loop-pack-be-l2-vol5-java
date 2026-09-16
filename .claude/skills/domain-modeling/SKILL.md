@@ -5,7 +5,7 @@ description: 새 기능의 도메인을 설계하거나, 규칙을 Entity·VO·�
 
 # Domain Modeling — 누가 답하고, 누가 누구를 아는가
 
-> 기준: 발제 「설계를 코드로 옮기는 객체지향과 AI 협업」, 참고 자료 「도메인 모델링 예시 (영화 예매)」, jarip-server `ddd-bounded-context`의 애그리거트 규칙, wshobson/agents `architecture-patterns`의 DDD 전술 패턴 정의. 결과는 `docs/week2/design.md` 3~5장과 ADR에 적는다.
+> 기준: 발제 「설계를 코드로 옮기는 객체지향과 AI 협업」, 참고 자료 「도메인 모델링 예시 (영화 예매)」, jarip-server `ddd-bounded-context`의 애그리거트 규칙, wshobson/agents `architecture-patterns`의 DDD 전술 패턴 정의. 결과는 `docs/week2/plan.md` 3~5장과 ADR에 적는다.
 
 ## 1. 요구사항을 질문으로 바꾼다
 
@@ -56,7 +56,7 @@ description: 새 기능의 도메인을 설계하거나, 규칙을 Entity·VO·�
 
 ## 6. 결정을 남긴다
 
-- 대안이 둘 이상이면 ADR 형식(상황 / 선택 / 버린 대안과 비용 / 재검토 조건)으로 `design.md`에 적는다.
+- 대안이 둘 이상이면 ADR 형식(상황 / 선택 / 버린 대안과 비용 / 재검토 조건)으로 `plan.md`에 적는다.
 - 책임 배치와 대안의 비용은 **학습자가 결정한다.** 선택지와 비용을 제시하고 멈춘다 (🤔).
 - JPA 엔티티를 도메인 모델로 쓴다(분리하지 않는다). 분리가 필요해 보이면 먼저 묻는다.
 

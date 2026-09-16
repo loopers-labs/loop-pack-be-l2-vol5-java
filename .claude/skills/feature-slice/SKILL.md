@@ -9,7 +9,7 @@ description: 과제의 기능 하나(관리자 브랜드 CRUD, 상품 목록 조
 
 ## 1. 제안 — 구현 전, 학습자 확인 필요
 
-`docs/week2/design.md`에서 이 기능의 규칙 ID·API 계약·ADR을 찾아 아래 형식으로 제안한다.
+`docs/week2/plan.md`에서 이 기능의 규칙 ID·API 계약·ADR을 찾아 아래 형식으로 제안한다.
 
 ```text
 이번 기능: (예: 상품 좋아요 등록·취소)
@@ -33,10 +33,10 @@ description: 과제의 기능 하나(관리자 브랜드 CRUD, 상품 목록 조
 ## 2. 구현
 
 - 도메인 규칙은 `tdd` 스킬로 구현한다.
-- application·infrastructure·interfaces도 테스트와 함께 쓴다. 경계와 방식은 `design.md` 12장을 따른다.
+- application·infrastructure·interfaces도 테스트와 함께 쓴다. 경계와 방식은 `plan.md` 12장을 따른다.
 - 스타터 관례를 따른다: `*Model`, `*Facade`/`*Info`, `*V1Controller`/`*V1Dto`/`*V1ApiSpec`, `*Repository`/`*RepositoryImpl`/`*JpaRepository`, `CoreException(ErrorType)`, `ApiResponse`.
 - 구현 중 설계와 다른 판단이 필요하면 **코드로 먼저 정하지 않고** 멈춰서 묻는다.
-- JPA 함정은 `design.md` 11장을 확인한다 (`@Table(name)`, `save()` 반환값, 전역 삭제 필터 금지 등).
+- JPA 함정은 `plan.md` 11장을 확인한다 (`@Table(name)`, `save()` 반환값, 전역 삭제 필터 금지 등).
 
 ## 3. 검증과 보고
 
@@ -45,6 +45,6 @@ description: 과제의 기능 하나(관리자 브랜드 CRUD, 상품 목록 조
 
 ## 4. 마무리
 
-- 판단이 바뀌었으면 `design.md` 본문·결정 표기·변경 이력을 함께 고친다.
+- 판단이 바뀌었으면 `plan.md` 본문·결정 표기·변경 이력을 함께 고친다.
 - 커밋 메시지를 제안하고 학습자 확인 후 커밋한다 (`type: 한국어 요약`, AI 도구 표기 없음).
 - 다음 기능으로 넘어가기 전에, 이번 기능이 채운 과제 체크리스트 항목을 한 줄로 알린다.

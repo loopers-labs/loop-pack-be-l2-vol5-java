@@ -61,7 +61,7 @@ description: 기능 하나를 구현한 뒤 커밋·PR 전에 변경(diff)을 �
 - (구체적으로, 파일:라인)
 
 ### 문제
-- [Critical|Important|Minor] `파일:라인` — 무엇이 문제인가 / 왜 중요한가 (가능하면 실패하는 입력 예) / 고칠 방향 / 근거 (design.md 절·규칙 ID·ADR)
+- [Critical|Important|Minor] `파일:라인` — 무엇이 문제인가 / 왜 중요한가 (가능하면 실패하는 입력 예) / 고칠 방향 / 근거 (plan.md 절·규칙 ID·ADR)
   - Critical: 잘못된 결과, 데이터 손상, 설계 계약 위반, 검사·테스트 완화
   - Important: 책임 배치, 빠진 테스트, 오류 처리
   - Minor: 이름, 중복, 문서
