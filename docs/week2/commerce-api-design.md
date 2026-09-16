@@ -122,6 +122,57 @@ sequenceDiagram
 
 ## 3. 도메인 관계와 업무 규칙
 
+```mermaid
+classDiagram
+    direction LR
+
+    class Brand {
+        삭제상태
+    }
+    class Product {
+        이름
+        가격
+        삭제상태
+        재고설정()
+        재고차감()
+    }
+    class StockQuantity {
+        수량: 0 이상
+    }
+    class User
+    class Like
+    class Point {
+        충전()
+        차감()
+    }
+    class PointBalance {
+        잔액: 0 이상
+    }
+    class Order {
+        상태: DRAFT | CONFIRMED
+        결제액
+        결제결과
+        확정()
+    }
+    class OrderItem {
+        수량: 양수
+        단가
+        합계
+    }
+
+    Product "N" --> "1" Brand
+    Like "N" --> "1" User
+    Like "N" --> "1" Product
+
+    Product "1" *-- "1" StockQuantity
+    Point "1" --> "1" User
+    Point "1" *-- "1" PointBalance
+
+    Order "N" --> "1" User
+    Order "1" *-- "N" OrderItem
+    OrderItem "N" --> "1" Product
+```
+
 ### 3.1 Brand–Product
 
 - [관계] Brand 1 : N Product
@@ -248,3 +299,37 @@ sequenceDiagram
 - [설계 결정] Point의 잔액은 PointBalance VO로 관리한다.
 - [이유] 잔액도 독립된 식별자·생명주기 없이 값과 0 이상·표현 범위 규칙이 중요하고, 충전과 주문 확정이라는 서로 다른 경로로 변경되기 때문에, 값 규칙을 PointBalance라는 VO에서 관리한다.
 - [결과] Point는 PointBalance가 검증한 새 잔액만 반영한다. 따라서 0 이상과 표현 범위 검증을 우회할 수 없고, 충전이 거절되면 기존 잔액이 유지된다.
+
+## 4. 구조와 의존
+
+```mermaid
+flowchart LR
+    interfaces --> application --> domain
+    infrastructure --> domain
+```
+
+### 4.1 계층의 역할
+
+#### interfaces
+
+- HTTP 요청과 API 요청 DTO를 검증하고 Application 유스케이스를 호출한다.
+- Application 결과를 응답 DTO로 변환해 `ApiResponse`로 반환한다.
+- Application 계층에만 의존하고, Domain·Infrastructure 계층은 직접 호출하지 않는다.
+
+#### application
+
+- 유스케이스 단위로 요청자를 식별하고 도메인 객체·서비스를 오케스트레이션한다.
+- HTTP와 영속성 구현에 의존하지 않고 Domain 계층에만 의존한다.
+- 유스케이스 요청·결과 모델을 통해 HTTP DTO와 Domain 모델을 분리한다.
+
+#### domain
+
+- Entity, VO, 도메인 서비스와 비즈니스 규칙·불변식을 관리한다.
+- 필요한 조회·저장 기능을 Repository 인터페이스로 정의한다.
+- interfaces, application, infrastructure 계층에 의존하지 않는다.
+
+#### infrastructure
+
+- Domain의 Repository 인터페이스를 JPA·DB 기술로 구현한다.
+- DB, Redis, Kafka 등 외부 기술과의 연결을 책임진다.
+- Domain에 의존해 Repository 계약을 구현하고, 상위 계층에는 의존하지 않는다.
