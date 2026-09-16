@@ -132,6 +132,7 @@ classDiagram
     class Product {
         이름
         가격
+        생성일시
         삭제상태
         재고설정()
         재고차감()
@@ -178,6 +179,8 @@ classDiagram
 - [관계] Brand 1 : N Product
 - [도메인 규칙] 상품 등록 시 (존재하고) 삭제되지 않은 Brand가 필요하다.
 - [도메인 규칙] Product 수정 시 기존 Brand는 변경하지 않는다.
+- [불변식] Product 이름은 공백만으로 구성될 수 없고, 1자 이상 20자 이하여야 한다.
+- [불변식] Product 가격은 0원 이상 100,000,000원 이하여야 한다.
 - [불변식] 삭제되지 않은 Product가 하나라도 있으면 Brand 삭제를 거절한다. 재고가 0개인 Product도 포함한다.
 
 #### 삭제 전략에 대한 설계 판단
@@ -193,6 +196,7 @@ classDiagram
 - [이유] 주문 내역은 구매 시점의 품목 정보를 그대로 보여줘야 하는데, 물리 삭제하면 이 참조가 깨진다. 삭제된 Product에 남은 좋아요를 취소할 수 있어야 한다는 요구도 삭제 기록이 남아야 만족한다.
 - [결과] 삭제 상태를 보존하므로, 고객 조회와 새 주문에서는 삭제된 Brand와 Product를 제외한다. 수정·재고 변경은 삭제되지 않은 대상에만 허용한다.
   - 기존 Order는 삭제된 Product의 참조와 저장된 정보를 유지한다.
+  - 관리자 목록·상세 조회는 삭제된 대상도 반환하고 삭제 상태를 제공한다. 목록은 `status`로 삭제 상태를 필터링한다.
 
 ### 3.2 User–Like–Product
 
@@ -333,3 +337,75 @@ flowchart LR
 - Domain의 Repository 인터페이스를 JPA·DB 기술로 구현한다.
 - DB, Redis, Kafka 등 외부 기술과의 연결을 책임진다.
 - Domain에 의존해 Repository 계약을 구현하고, 상위 계층에는 의존하지 않는다.
+
+## 5. API 계약
+
+### 5.1 관리자 API
+
+공통 Prefix: `/api-admin/v1`
+
+#### 브랜드
+
+| 기능 | Method | Path | 입력      | 성공                | 대표 오류                                    |
+|---|---|---|---------|-------------------|------------------------------------------|
+| 브랜드 목록 조회 | `GET` | `/brands` | Query: `status` (`ACTIVE`, `DELETED`, `ALL`; 기본 `ALL`) | `200 OK`<br/>삭제 상태를 포함한 브랜드 목록 | `400 Bad Request`<br/>잘못된 `status` 입력 |
+| 브랜드 등록 | `POST` | `/brands` | Body: 브랜드 정보 | `201 Created`<br/>생성된 브랜드 정보 | `400 Bad Request`<br/>브랜드 정보 검증 실패       |
+| 브랜드 상세 조회 | `GET` | `/brands/{brandId}` | Path: `brandId` | `200 OK`<br/>삭제 상태를 포함한 브랜드 상세 정보 | `404 Not Found`<br/>없는 Brand             |
+| 브랜드 수정 | `PUT` | `/brands/{brandId}` | Path: `brandId`<br/>Body: 브랜드 정보 | `200 OK`<br/>수정된 브랜드 정보 | `400 Bad Request`<br/>브랜드 정보 검증 실패 |
+| 브랜드 삭제 | `DELETE` | `/brands/{brandId}` | Path: `brandId` | `200 OK`<br/>삭제 완료 | `409 Conflict`<br/>삭제되지 않은 연결 Product 존재 |
+
+#### 상품·재고
+
+| 기능 | Method | Path | 입력 | 성공 | 대표 오류 |
+|---|---|---|---|---|---|
+| 상품 목록 조회 | `GET` | `/products` | Query: `status` (`ACTIVE`, `DELETED`, `ALL`; 기본 `ALL`) | `200 OK`<br/>삭제 상태를 포함한 상품 목록 | `400 Bad Request`<br/>잘못된 `status` 입력 |
+| 상품 등록 | `POST` | `/products` | Body: `brandId`, 이름(공백만 불가, 1~20자), 가격(0~100,000,000원) | `201 Created`<br/>재고 0으로 생성된 상품 정보 | `400 Bad Request`<br/>상품 이름·가격 검증 실패 |
+| 상품 상세 조회 | `GET` | `/products/{productId}` | Path: `productId` | `200 OK`<br/>상품·브랜드·재고·삭제 상태 정보 | `404 Not Found`<br/>없는 Product |
+| 상품 수정 | `PUT` | `/products/{productId}` | Path: `productId`<br/>Body: 이름(공백만 불가, 1~20자), 가격(0~100,000,000원) | `200 OK`<br/>수정된 상품 정보 | `400 Bad Request`<br/>상품 이름·가격 검증 실패 |
+| 상품 삭제 | `DELETE` | `/products/{productId}` | Path: `productId` | `200 OK`<br/>삭제 완료 | `404 Not Found`<br/>없는 Product |
+| 상품 재고 변경 | `PUT` | `/products/{productId}/stock` | Path: `productId`<br/>Body: 최종 재고 수량 | `200 OK`<br/>변경된 재고 수량 | `400 Bad Request`<br/>0 미만 재고 수량 |
+
+#### 주문
+
+| 기능 | Method | Path | 입력 | 성공 | 대표 오류 |
+|---|---|---|---|---|---|
+| 주문 목록 조회 | `GET` | `/orders` | - | `200 OK`<br/>구매자·품목·상태·금액·결제 결과를 포함한 주문 목록 | 기능별 대표 오류 없음 |
+| 주문 상세 조회 | `GET` | `/orders/{orderId}` | Path: `orderId` | `200 OK`<br/>구매자·품목·상태·금액·결제 결과 | `404 Not Found`<br/>없는 Order |
+
+### 5.2 고객 API
+
+공통 Prefix: `/api/v1`  
+사용자 식별: Header `X-USER-ID`
+
+#### 브랜드·상품
+
+| 기능 | Method | Path | 입력 | 성공 | 대표 오류 |
+|---|---|---|---|---|---|
+| 브랜드 상세 조회 | `GET` | `/brands/{brandId}` | Path: `brandId` | `200 OK`<br/>브랜드 상세 정보 | `404 Not Found`<br/>없거나 삭제된 Brand |
+| 상품 목록 조회 | `GET` | `/products` | Query: `brandId`(선택), 페이지, `sort`(`latest`·`price_asc`·`likes_desc`) | `200 OK`<br/>삭제되지 않은 상품의 브랜드 정보·좋아요 수를 포함한 목록 | `400 Bad Request`<br/>Query 입력 오류 |
+| 상품 상세 조회 | `GET` | `/products/{productId}` | Path: `productId` | `200 OK`<br/>브랜드 정보·좋아요 수를 포함한 상품 상세 정보 | `404 Not Found`<br/>없거나 삭제된 Product |
+
+#### 상품 목록 정렬 기준
+
+- `latest`: Product의 `createdAt` 내림차순, `productId` 내림차순
+- `price_asc`: Product의 가격 오름차순, `productId` 오름차순
+- `likes_desc`: Like 관계 수 내림차순, `productId` 내림차순
+
+#### 좋아요
+
+| 기능 | Method | Path | 입력 | 성공 | 대표 오류 |
+|---|---|---|---|---|---|
+| 좋아요 등록 | `POST` | `/products/{productId}/likes` | Path: `productId` | `200 OK`<br/>좋아요 상태 보장 | `404 Not Found`<br/>없거나 삭제된 Product |
+| 좋아요 취소 | `DELETE` | `/products/{productId}/likes` | Path: `productId` | `200 OK`<br/>좋아요 취소 상태 보장 | 기능별 대표 오류 없음 |
+| 내 좋아요 목록 조회 | `GET` | `/users/{userId}/likes` | Path: `userId` (`X-USER-ID`와 일치) | `200 OK`<br/>삭제된 Product를 제외한 내 좋아요 상품 목록 | `404 Not Found`<br/>조회할 수 없는 User |
+
+#### 포인트·주문
+
+| 기능 | Method | Path | 입력 | 성공 | 대표 오류 |
+|---|---|---|---|---|---|
+| 포인트 충전 | `POST` | `/points/charge` | Body: `amount` | `200 OK`<br/>충전 후 잔액 | `400 Bad Request`<br/>누락·잘못된 타입·양의 정수가 아닌 `amount` |
+| 내 포인트 잔액 조회 | `GET` | `/points` | - | `200 OK`<br/>저장된 포인트 잔액 | 기능별 대표 오류 없음 |
+| 주문 생성 | `POST` | `/orders` | Body: 주문 품목 | `201 Created`<br/>중복 품목을 합산해 품목·수량·단가·합계를 저장한 `DRAFT` Order<br/>재고·포인트 미차감 | `400 Bad Request`<br/>주문 품목 또는 수량 입력 오류 |
+| 주문 확정 | `POST` | `/orders/{orderId}/confirm` | Path: `orderId` | `200 OK`<br/>재고·포인트 차감, 결제 정보 저장 후 `CONFIRMED` Order | `409 Conflict`<br/>DRAFT가 아닌 Order, 재고 부족 또는 잔액 부족 |
+| 내 주문 목록 조회 | `GET` | `/orders` | - | `200 OK`<br/>내 주문의 품목·수량·금액·상태·결제액 목록 | 기능별 대표 오류 없음 |
+| 내 주문 상세 조회 | `GET` | `/orders/{orderId}` | Path: `orderId` | `200 OK`<br/>내 주문의 품목·수량·금액·상태·결제액 | `404 Not Found`<br/>조회할 수 없는 Order |
