@@ -61,6 +61,15 @@ public class ProductService {
     }
 
     @Transactional
+    public ProductModel deductStock(Long id, int quantity) {
+        ProductModel product = productRepository.findActiveById(id)
+            .orElseThrow(() -> new CoreException(ErrorType.BAD_REQUEST,
+                "[id = " + id + "] 삭제되었거나 존재하지 않는 상품은 주문할 수 없습니다."));
+        product.deductStock(quantity);
+        return productRepository.save(product);
+    }
+
+    @Transactional
     public ProductModel changeStock(Long id, int quantity) {
         ProductModel product = getActiveProduct(id);
         product.changeStock(quantity);

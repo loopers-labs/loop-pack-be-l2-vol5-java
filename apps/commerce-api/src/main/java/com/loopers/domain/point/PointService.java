@@ -18,6 +18,14 @@ public class PointService {
         return pointRepository.save(point);
     }
 
+    @Transactional
+    public PointModel use(Long userId, Long amount) {
+        PointModel point = pointRepository.findByUserId(userId)
+            .orElseGet(() -> new PointModel(userId));
+        point.use(amount);
+        return pointRepository.save(point);
+    }
+
     @Transactional(readOnly = true)
     public long getBalance(Long userId) {
         return pointRepository.findByUserId(userId)
