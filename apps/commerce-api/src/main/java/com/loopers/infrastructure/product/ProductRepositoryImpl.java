@@ -8,6 +8,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.Optional;
 
 @RequiredArgsConstructor
@@ -33,6 +34,11 @@ public class ProductRepositoryImpl implements ProductRepository {
             case PRICE_ASC -> productJpaRepository.findActiveOrderByPriceAsc(brandId, pageable);
             case LIKES_DESC -> productJpaRepository.findActiveOrderByLikesDesc(brandId, pageable);
         };
+    }
+
+    @Override
+    public List<ProductModel> findAllActiveByIds(List<Long> ids) {
+        return productJpaRepository.findByIdInAndDeletedAtIsNull(ids);
     }
 
     @Override

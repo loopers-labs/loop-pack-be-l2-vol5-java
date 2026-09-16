@@ -8,6 +8,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @RequiredArgsConstructor
 @Component
 public class ProductService {
@@ -29,6 +31,11 @@ public class ProductService {
     @Transactional(readOnly = true)
     public Page<ProductModel> getActiveProducts(Long brandId, ProductSortType sortType, int page, int size) {
         return productRepository.findActiveProducts(brandId, sortType, PageRequest.of(page, size));
+    }
+
+    @Transactional(readOnly = true)
+    public List<ProductModel> getActiveProductsByIds(List<Long> ids) {
+        return productRepository.findAllActiveByIds(ids);
     }
 
     @Transactional(readOnly = true)

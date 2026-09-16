@@ -1,11 +1,13 @@
 package com.loopers.infrastructure.like;
 
+import com.loopers.domain.like.LikeModel;
 import com.loopers.domain.like.LikeRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @RequiredArgsConstructor
@@ -29,5 +31,25 @@ public class LikeRepositoryImpl implements LikeRepository {
                 LikeJpaRepository.LikeCountProjection::getProductId,
                 LikeJpaRepository.LikeCountProjection::getLikeCount
             ));
+    }
+
+    @Override
+    public Optional<LikeModel> findByUserIdAndProductId(Long userId, Long productId) {
+        return likeJpaRepository.findByUserIdAndProductId(userId, productId);
+    }
+
+    @Override
+    public List<LikeModel> findAllByUserId(Long userId) {
+        return likeJpaRepository.findAllByUserId(userId);
+    }
+
+    @Override
+    public LikeModel save(LikeModel like) {
+        return likeJpaRepository.save(like);
+    }
+
+    @Override
+    public void delete(LikeModel like) {
+        likeJpaRepository.delete(like);
     }
 }

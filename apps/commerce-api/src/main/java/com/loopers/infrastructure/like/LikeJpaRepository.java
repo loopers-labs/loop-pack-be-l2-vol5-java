@@ -6,10 +6,15 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface LikeJpaRepository extends JpaRepository<LikeModel, Long> {
 
     long countByProductId(Long productId);
+
+    Optional<LikeModel> findByUserIdAndProductId(Long userId, Long productId);
+
+    List<LikeModel> findAllByUserId(Long userId);
 
     @Query("""
         select l.productId as productId, count(l.id) as likeCount

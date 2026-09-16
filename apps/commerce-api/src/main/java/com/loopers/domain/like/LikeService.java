@@ -22,4 +22,22 @@ public class LikeService {
     public Map<Long, Long> countByProducts(List<Long> productIds) {
         return likeRepository.countByProductIds(productIds);
     }
+
+    @Transactional(readOnly = true)
+    public List<LikeModel> getUserLikes(Long userId) {
+        return likeRepository.findAllByUserId(userId);
+    }
+
+    @Transactional
+    public void like(Long userId, Long productId) {
+        if (likeRepository.findByUserIdAndProductId(userId, productId).isEmpty()) {
+            likeRepository.save(new LikeModel(userId, productId));
+        }
+    }
+
+    @Transactional
+    public void unlike(Long userId, Long productId) {
+        likeRepository.findByUserIdAndProductId(userId, productId)
+            .ifPresent(likeRepository::delete);
+    }
 }
