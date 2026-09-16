@@ -10,6 +10,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.Comment;
 
 import java.time.ZonedDateTime;
 
@@ -32,22 +33,28 @@ public class PointHistory {
     private Long id;
 
     @Column(name = "user_id", nullable = false)
+    @Comment("사용자 식별자")
     private Long userId;
 
     @Column(name = "group_id", nullable = false)
+    @Comment("대상 포인트 그룹 식별자 (ADR-04)")
     private Long groupId;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "type", nullable = false)
+    @Comment("이력 종류 — 충전·사용·만료 (ADR-04)")
     private PointHistoryType type;
 
     @Column(name = "amount", nullable = false)
+    @Comment("변동 금액. 충전 +, 사용·만료 − (ADR-04)")
     private long amount;
 
     @Column(name = "order_id")
+    @Comment("사용 이력의 주문 식별자. 충전·만료는 없음 (PNT-05)")
     private Long orderId;
 
     @Column(name = "occurred_at", nullable = false)
+    @Comment("발생 시각")
     private ZonedDateTime occurredAt;
 
     protected PointHistory() {}

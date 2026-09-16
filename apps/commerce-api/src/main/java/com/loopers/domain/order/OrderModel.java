@@ -16,6 +16,7 @@ import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.Comment;
 
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
@@ -34,10 +35,12 @@ import java.util.Map;
 public class OrderModel extends BaseEntity {
 
     @Column(name = "user_id", nullable = false)
+    @Comment("주문자 식별자 (ADR-01)")
     private Long userId;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
+    @Comment("주문 상태 — DRAFT·CONFIRMED (ORD-02)")
     private OrderStatus status;
 
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
@@ -46,17 +49,21 @@ public class OrderModel extends BaseEntity {
 
     @Convert(converter = MoneyConverter.class)
     @Column(name = "total_amount", nullable = false)
+    @Comment("품목 금액 합계 (ORD-01)")
     private Money totalAmount;
 
     @Convert(converter = MoneyConverter.class)
     @Column(name = "paid_amount")
+    @Comment("결제 금액. 확정 시 합계로 고정, DRAFT는 없음 (ORD-05)")
     private Money paidAmount;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "payment_method")
+    @Comment("결제 수단 — 확정 시 POINT, DRAFT는 없음 (ORD-05)")
     private PaymentMethod paymentMethod;
 
     @Column(name = "confirmed_at")
+    @Comment("확정 시각. DRAFT는 없음 (ORD-02)")
     private ZonedDateTime confirmedAt;
 
     protected OrderModel() {}

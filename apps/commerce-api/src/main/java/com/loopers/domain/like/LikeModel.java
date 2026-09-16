@@ -8,6 +8,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import org.hibernate.annotations.Comment;
 
 import java.time.ZonedDateTime;
 
@@ -28,12 +29,15 @@ public class LikeModel {
     private Long id;
 
     @Column(name = "user_id", nullable = false)
+    @Comment("좋아요한 사용자 식별자 (LIK-01)")
     private Long userId;
 
     @Column(name = "product_id", nullable = false)
+    @Comment("좋아요 대상 상품 식별자. user_id와 쌍으로 unique (LIK-01)")
     private Long productId;
 
     @Column(name = "created_at", nullable = false)
+    @Comment("좋아요 등록 시각. 멱등 INSERT가 채운다 (ADR-13)")
     private ZonedDateTime createdAt;
 
     protected LikeModel() {}

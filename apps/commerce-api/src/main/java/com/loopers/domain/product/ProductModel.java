@@ -10,6 +10,7 @@ import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.Comment;
 
 @Entity
 @Table(
@@ -23,16 +24,20 @@ public class ProductModel extends BaseEntity {
     private static final long PRICE_MAX = 100_000_000;
 
     @Column(name = "brand_id", nullable = false)
+    @Comment("브랜드 식별자 (ADR-01)")
     private Long brandId;
 
     @Column(name = "name", nullable = false, length = NAME_MAX_LENGTH)
+    @Comment("상품 이름, 1–100자 (PRD-01)")
     private String name;
 
     @Convert(converter = MoneyConverter.class)
     @Column(name = "price", nullable = false)
+    @Comment("판매 단가, 1–1억 원 (PRD-01)")
     private Money price;
 
     @Column(name = "stock", nullable = false)
+    @Comment("재고 수량, 0 이상 (PRD-01)")
     private int stock;
 
     protected ProductModel() {}

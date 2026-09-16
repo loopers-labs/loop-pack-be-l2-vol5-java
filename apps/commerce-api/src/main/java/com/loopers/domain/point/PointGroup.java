@@ -12,6 +12,7 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.Comment;
 
 import java.time.Period;
 import java.time.ZonedDateTime;
@@ -31,24 +32,30 @@ import java.time.ZonedDateTime;
 public class PointGroup extends BaseEntity {
 
     @Column(name = "user_id", nullable = false)
+    @Comment("소유 사용자 식별자")
     private Long userId;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "type", nullable = false)
+    @Comment("그룹을 만든 경로 — CHARGE (P-13)")
     private PointGroupType type;
 
     @Convert(converter = MoneyConverter.class)
     @Column(name = "amount", nullable = false)
+    @Comment("충전 금액 (PNT-02)")
     private Money amount;
 
     @Convert(converter = MoneyConverter.class)
     @Column(name = "remaining", nullable = false)
+    @Comment("남은 금액 (PNT-06)")
     private Money remaining;
 
     @Column(name = "charged_at", nullable = false)
+    @Comment("충전 시각 (PNT-02)")
     private ZonedDateTime chargedAt;
 
     @Column(name = "expires_at", nullable = false)
+    @Comment("만료 시각 = 충전 시각 + 유효기간. 정각부터 사용 불가 (P-13·P-20)")
     private ZonedDateTime expiresAt;
 
     protected PointGroup() {}
