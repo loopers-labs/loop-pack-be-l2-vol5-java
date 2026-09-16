@@ -3,6 +3,8 @@ package com.loopers.domain.order;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +31,17 @@ public class OrderService {
     @Transactional(readOnly = true)
     public List<OrderModel> getMyOrders(Long userId) {
         return orderRepository.findAllByUserId(userId);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<OrderModel> getOrdersForAdmin(int page, int size) {
+        return orderRepository.findAll(PageRequest.of(page, size));
+    }
+
+    @Transactional(readOnly = true)
+    public OrderModel getOrderForAdmin(Long orderId) {
+        return orderRepository.findById(orderId)
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[id = " + orderId + "] 주문을 찾을 수 없습니다."));
     }
 
     @Transactional

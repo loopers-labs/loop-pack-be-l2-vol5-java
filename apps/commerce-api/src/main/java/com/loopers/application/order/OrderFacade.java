@@ -81,4 +81,16 @@ public class OrderFacade {
         userService.getUser(userId);
         return orderService.getMyOrders(userId).stream().map(OrderInfo::from).toList();
     }
+
+    public OrderListAdminInfo getOrdersForAdmin(int page, int size) {
+        var orders = orderService.getOrdersForAdmin(page, size);
+        return new OrderListAdminInfo(
+            orders.getContent().stream().map(OrderAdminInfo::from).toList(),
+            page, size, orders.getTotalElements()
+        );
+    }
+
+    public OrderAdminInfo getOrderForAdmin(Long orderId) {
+        return OrderAdminInfo.from(orderService.getOrderForAdmin(orderId));
+    }
 }
