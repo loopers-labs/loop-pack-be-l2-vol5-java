@@ -35,4 +35,20 @@ class ProductModelTest {
             .extracting("errorType").isEqualTo(ErrorType.BAD_REQUEST);
         assertThat(product.getStock()).isEqualTo(5);
     }
+
+    @DisplayName("차감 수량이 0 이하이면, 거절하고 재고를 유지한다.")
+    @Test
+    void rejectsDeduction_whenQuantityIsNotPositive() {
+        // arrange
+        ProductModel product = new ProductModel("상품", 10_000L, 5);
+
+        // act & assert
+        assertThatThrownBy(() -> product.deductStock(0))
+            .isInstanceOf(CoreException.class)
+            .extracting("errorType").isEqualTo(ErrorType.BAD_REQUEST);
+        assertThatThrownBy(() -> product.deductStock(-1))
+            .isInstanceOf(CoreException.class)
+            .extracting("errorType").isEqualTo(ErrorType.BAD_REQUEST);
+        assertThat(product.getStock()).isEqualTo(5);
+    }
 }

@@ -28,6 +28,9 @@ public class ProductModel {
     }
 
     public void deductStock(int quantity) {
+        if (quantity <= 0) {
+            throw new CoreException(ErrorType.BAD_REQUEST, "차감 수량은 양수여야 합니다. (요청: " + quantity + ")");
+        }
         if (quantity > stock) {
             throw new CoreException(
                 ErrorType.BAD_REQUEST,
