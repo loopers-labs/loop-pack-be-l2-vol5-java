@@ -1,4 +1,4 @@
-package com.loopers.interfaces.api;
+package com.loopers.interfaces.api.support;
 
 import org.springframework.data.domain.Page;
 

@@ -1,10 +1,12 @@
 package com.loopers.interfaces.api.admin.product;
 
 import com.loopers.application.product.ProductAdminFacade;
+import com.loopers.application.product.ProductAdminInfo;
 import com.loopers.interfaces.api.ApiResponse;
-import com.loopers.interfaces.api.PageQuery;
-import com.loopers.interfaces.api.PageResponse;
+import com.loopers.interfaces.api.support.PageQuery;
+import com.loopers.interfaces.api.support.PageResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -32,7 +34,7 @@ public class ProductAdminV1Controller implements ProductAdminV1ApiSpec {
         @RequestParam(required = false) Integer page,
         @RequestParam(required = false) Integer size
     ) {
-        var pageable = PageQuery.of(page, size).toPageable(Sort.by(Sort.Direction.DESC, "id"));
+        Pageable pageable = PageQuery.of(page, size).toPageable(Sort.by(Sort.Direction.DESC, "id"));
         return ApiResponse.success(
             PageResponse.from(productAdminFacade.getProducts(brandId, pageable), ProductAdminV1Dto.ProductResponse::from)
         );
@@ -41,7 +43,7 @@ public class ProductAdminV1Controller implements ProductAdminV1ApiSpec {
     @PostMapping
     @Override
     public ApiResponse<ProductAdminV1Dto.ProductResponse> createProduct(@RequestBody ProductAdminV1Dto.CreateRequest request) {
-        var info = productAdminFacade.create(
+        ProductAdminInfo info = productAdminFacade.create(
             required(request.brandId(), "brandId"),
             request.name(),
             required(request.price(), "price"),
@@ -62,7 +64,7 @@ public class ProductAdminV1Controller implements ProductAdminV1ApiSpec {
         @PathVariable Long productId,
         @RequestBody ProductAdminV1Dto.UpdateRequest request
     ) {
-        var info = productAdminFacade.update(productId, request.name(), required(request.price(), "price"));
+        ProductAdminInfo info = productAdminFacade.update(productId, request.name(), required(request.price(), "price"));
         return ApiResponse.success(ProductAdminV1Dto.ProductResponse.from(info));
     }
 
@@ -79,7 +81,7 @@ public class ProductAdminV1Controller implements ProductAdminV1ApiSpec {
         @PathVariable Long productId,
         @RequestBody ProductAdminV1Dto.StockRequest request
     ) {
-        var info = productAdminFacade.changeStock(productId, required(request.stock(), "stock"));
+        ProductAdminInfo info = productAdminFacade.changeStock(productId, required(request.stock(), "stock"));
         return ApiResponse.success(ProductAdminV1Dto.ProductResponse.from(info));
     }
 }

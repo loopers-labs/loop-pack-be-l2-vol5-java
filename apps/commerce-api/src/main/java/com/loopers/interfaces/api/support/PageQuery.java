@@ -1,4 +1,4 @@
-package com.loopers.interfaces.api;
+package com.loopers.interfaces.api.support;
 
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;

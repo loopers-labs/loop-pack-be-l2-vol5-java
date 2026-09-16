@@ -1,10 +1,12 @@
 package com.loopers.interfaces.api.product;
 
 import com.loopers.application.product.ProductFacade;
+import com.loopers.domain.product.ProductSort;
 import com.loopers.interfaces.api.ApiResponse;
-import com.loopers.interfaces.api.PageQuery;
-import com.loopers.interfaces.api.PageResponse;
+import com.loopers.interfaces.api.support.PageQuery;
+import com.loopers.interfaces.api.support.PageResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,8 +29,8 @@ public class ProductV1Controller implements ProductV1ApiSpec {
         @RequestParam(required = false) Integer page,
         @RequestParam(required = false) Integer size
     ) {
-        var productSort = ProductV1Dto.parseSort(sort);
-        var pageable = PageQuery.of(page, size).toPageable(Sort.unsorted());
+        ProductSort productSort = ProductV1Dto.parseSort(sort);
+        Pageable pageable = PageQuery.of(page, size).toPageable(Sort.unsorted());
         return ApiResponse.success(
             PageResponse.from(productFacade.getProducts(brandId, productSort, pageable), ProductV1Dto.ProductResponse::from)
         );

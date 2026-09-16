@@ -2,10 +2,11 @@ package com.loopers.interfaces.api.order;
 
 import com.loopers.application.order.OrderFacade;
 import com.loopers.interfaces.api.ApiResponse;
-import com.loopers.interfaces.api.LoginUser;
-import com.loopers.interfaces.api.PageQuery;
-import com.loopers.interfaces.api.PageResponse;
+import com.loopers.interfaces.api.support.LoginUser;
+import com.loopers.interfaces.api.support.PageQuery;
+import com.loopers.interfaces.api.support.PageResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -35,7 +36,7 @@ public class OrderV1Controller implements OrderV1ApiSpec {
         @RequestParam(required = false) Integer page,
         @RequestParam(required = false) Integer size
     ) {
-        var pageable = PageQuery.of(page, size).toPageable(Sort.by(Sort.Direction.DESC, "id"));
+        Pageable pageable = PageQuery.of(page, size).toPageable(Sort.by(Sort.Direction.DESC, "id"));
         return ApiResponse.success(
             PageResponse.from(orderFacade.getMyOrders(loginUser.id(), pageable), OrderV1Dto.OrderSummaryResponse::from)
         );

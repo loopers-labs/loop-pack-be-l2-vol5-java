@@ -1,4 +1,4 @@
-package com.loopers.interfaces.api;
+package com.loopers.interfaces.api.support;
 
 import com.loopers.application.user.UserFacade;
 import com.loopers.domain.user.UserRepository;

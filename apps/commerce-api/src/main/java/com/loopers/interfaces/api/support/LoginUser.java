@@ -1,4 +1,4 @@
-package com.loopers.interfaces.api;
+package com.loopers.interfaces.api.support;
 
 /**
  * X-USER-ID로 식별된 요청자 (USR-01).

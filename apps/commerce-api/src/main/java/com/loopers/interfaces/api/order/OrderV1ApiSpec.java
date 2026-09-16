@@ -1,8 +1,8 @@
 package com.loopers.interfaces.api.order;
 
 import com.loopers.interfaces.api.ApiResponse;
-import com.loopers.interfaces.api.LoginUser;
-import com.loopers.interfaces.api.PageResponse;
+import com.loopers.interfaces.api.support.LoginUser;
+import com.loopers.interfaces.api.support.PageResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;

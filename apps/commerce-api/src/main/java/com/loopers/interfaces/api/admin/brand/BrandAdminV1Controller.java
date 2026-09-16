@@ -2,9 +2,10 @@ package com.loopers.interfaces.api.admin.brand;
 
 import com.loopers.application.brand.BrandFacade;
 import com.loopers.interfaces.api.ApiResponse;
-import com.loopers.interfaces.api.PageQuery;
-import com.loopers.interfaces.api.PageResponse;
+import com.loopers.interfaces.api.support.PageQuery;
+import com.loopers.interfaces.api.support.PageResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,7 +30,7 @@ public class BrandAdminV1Controller implements BrandAdminV1ApiSpec {
         @RequestParam(required = false) Integer page,
         @RequestParam(required = false) Integer size
     ) {
-        var pageable = PageQuery.of(page, size).toPageable(Sort.by(Sort.Direction.DESC, "id"));
+        Pageable pageable = PageQuery.of(page, size).toPageable(Sort.by(Sort.Direction.DESC, "id"));
         return ApiResponse.success(PageResponse.from(brandFacade.getBrands(pageable), BrandAdminV1Dto.BrandResponse::from));
     }
 
