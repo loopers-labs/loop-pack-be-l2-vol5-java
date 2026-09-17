@@ -10,9 +10,9 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @Order(-1)
-@RestControllerAdvice(basePackages = {"com.loopers.interfaces.api.brand", "com.loopers.interfaces.api.product", "com.loopers.interfaces.api.point"})
+@RestControllerAdvice(basePackages = {"com.loopers.interfaces.api.brand", "com.loopers.interfaces.api.product", "com.loopers.interfaces.api.point", "com.loopers.interfaces.api.order"})
 public class CommerceExceptionAdvice {
-    @ExceptionHandler({BrandNotFoundException.class, ProductNotFoundException.class})
+    @ExceptionHandler({BrandNotFoundException.class, ProductNotFoundException.class, com.loopers.application.order.OrderNotFoundException.class})
     public ResponseEntity<ApiResponse<Object>> notFound(RuntimeException exception) {
         return ResponseEntity.status(404).body(ApiResponse.fail("Not Found", exception.getMessage()));
     }
