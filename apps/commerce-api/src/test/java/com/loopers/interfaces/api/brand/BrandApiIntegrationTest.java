@@ -25,6 +25,8 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -47,6 +49,52 @@ class BrandApiIntegrationTest {
     @AfterEach
     void clearDatabase() {
         cleanUp.truncateAllTables();
+    }
+
+    @Test
+    @DisplayName("재고 0 상품이 연결된 브랜드는 삭제할 수 없고 상품 삭제 후에는 브랜드를 논리 삭제한다")
+    void managesProductsAndBrandDeletion() throws Exception {
+        long brandId = service.create("브랜드").id().value();
+        var created = mvc.perform(post("/api-admin/v1/products").with(user("admin").roles("ADMIN")).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"brandId\":" + brandId + ",\"name\":\"상품\",\"price\":100,\"stock\":0}"))
+            .andExpect(status().isCreated()).andReturn();
+        long productId = mapper.readTree(created.getResponse().getContentAsString()).path("data").path("id").asLong();
+        mvc.perform(delete("/api-admin/v1/brands/{id}", brandId).with(user("admin").roles("ADMIN")).with(csrf()))
+            .andExpect(status().isConflict());
+        mvc.perform(put("/api-admin/v1/products/{id}/stock", productId).with(user("admin").roles("ADMIN")).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"stock\":5}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.stock").value(5));
+        mvc.perform(delete("/api-admin/v1/products/{id}", productId).with(user("admin").roles("ADMIN")).with(csrf()))
+            .andExpect(status().isOk());
+        mvc.perform(put("/api-admin/v1/products/{id}/stock", productId).with(user("admin").roles("ADMIN")).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"stock\":2}"))
+            .andExpect(status().isConflict());
+        mvc.perform(delete("/api-admin/v1/brands/{id}", brandId).with(user("admin").roles("ADMIN")).with(csrf()))
+            .andExpect(status().isOk());
+        mvc.perform(get("/api-admin/v1/brands/{id}", brandId).with(user("admin").roles("ADMIN")))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.deleted").value(true));
+        mvc.perform(get("/api/v1/brands/{id}", brandId).header("X-USER-ID", "1")).andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("관리자 상품 수정은 브랜드를 유지하고 목록과 상세에 반영된다")
+    void updatesProductAndLists() throws Exception {
+        long brandId = service.create("브랜드").id().value();
+        var created = mvc.perform(post("/api-admin/v1/products").with(user("admin").roles("ADMIN")).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"brandId\":" + brandId + ",\"name\":\"상품\",\"price\":0,\"stock\":0}"))
+            .andExpect(status().isCreated()).andReturn();
+        long id = mapper.readTree(created.getResponse().getContentAsString()).path("data").path("id").asLong();
+        mvc.perform(put("/api-admin/v1/products/{id}", id).with(user("admin").roles("ADMIN")).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"수정\",\"price\":500}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.brandId").value(brandId));
+        mvc.perform(get("/api-admin/v1/products").with(user("admin").roles("ADMIN")))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data[0].name").value("수정"));
+        mvc.perform(get("/api-admin/v1/products/{id}", id).with(user("customer").roles("USER")))
+            .andExpect(status().isForbidden());
+        mvc.perform(get("/api-admin/v1/products").param("size", "101").with(user("admin").roles("ADMIN")))
+            .andExpect(status().isBadRequest());
     }
 
     @Test

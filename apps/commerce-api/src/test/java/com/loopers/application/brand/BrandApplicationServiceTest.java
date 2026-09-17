@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class BrandApplicationServiceTest {
     private final FakeBrandRepository repository = new FakeBrandRepository();
-    private final BrandApplicationService service = new BrandApplicationService(repository);
+    private final BrandApplicationService service = new BrandApplicationService(repository, org.mockito.Mockito.mock(com.loopers.application.product.port.ProductRepository.class));
 
     @Test
     @DisplayName("브랜드 생성 시 저장소가 부여한 ID와 저장된 이름을 반환한다")
@@ -70,6 +70,20 @@ class BrandApplicationServiceTest {
         private final Map<BrandId, Brand> brands = new HashMap<>();
         private long sequence;
         private int saveCalls;
+
+        @Override
+        public java.util.List<Brand> findPage(int page, int size) {
+            return brands.values().stream().sorted(java.util.Comparator.comparingLong((Brand b) -> b.getId().value()).reversed())
+                .skip((long) page * size).limit(size).toList();
+        }
+
+        @Override
+        public java.util.List<Brand> findAllByIds(java.util.Collection<BrandId> ids) {
+            return ids.stream().map(brands::get).filter(java.util.Objects::nonNull).toList();
+        }
+
+        @Override
+        public Optional<Brand> findByIdForUpdate(BrandId id) { return findById(id); }
 
         @Override
         public Brand save(Brand brand) {

@@ -35,13 +35,13 @@ public final class Product {
 
     private static void validateName(String name) {
         if (name == null || name.isBlank() || name.length() > 100) {
-            throw new IllegalArgumentException("상품 이름은 공백이 아닌 1~100자여야 합니다.");
+            throw new com.loopers.domain.common.InvalidValueException("상품 이름은 공백이 아닌 1~100자여야 합니다.");
         }
     }
 
     private void requireActive() {
         if (deleted) {
-            throw new IllegalStateException("삭제된 상품은 변경할 수 없습니다.");
+            throw new com.loopers.domain.common.RuleViolationException("삭제된 상품은 변경할 수 없습니다.");
         }
     }
 

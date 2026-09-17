@@ -6,6 +6,7 @@ import com.loopers.domain.brand.BrandId;
 import java.util.Optional;
 
 public interface ProductRepository {
+    java.util.List<Product> findPage(int page, int size);
     Product save(Product product);
     Optional<Product> findById(ProductId id);
     Optional<Product> findByIdForUpdate(ProductId id);

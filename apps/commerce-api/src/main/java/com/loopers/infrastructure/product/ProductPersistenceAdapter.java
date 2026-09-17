@@ -41,6 +41,12 @@ public class ProductPersistenceAdapter implements ProductRepository {
     @Override
     public boolean existsActiveByBrandId(BrandId id) { return repository.existsByBrandIdAndDeletedFalse(id.value()); }
 
+    @Override
+    public java.util.List<Product> findPage(int page, int size) {
+        return repository.findAll(org.springframework.data.domain.PageRequest.of(page, size,
+            org.springframework.data.domain.Sort.by("id").descending())).stream().map(this::toDomain).toList();
+    }
+
     private Product toDomain(ProductJpaEntity entity) {
         return Product.restore(new ProductId(entity.getId()), new BrandId(entity.getBrandId()), entity.getName(),
             new Money(entity.getPrice()), new Stock(entity.getStock()), entity.isDeleted());

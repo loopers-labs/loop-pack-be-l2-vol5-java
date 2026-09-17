@@ -22,9 +22,14 @@ public class ProductApplicationService {
         this.brands = brands;
     }
 
+    @Transactional(readOnly = true)
+    public java.util.List<ProductResult> list(int page, int size) {
+        return products.findPage(page, size).stream().map(ProductResult::from).toList();
+    }
+
     public ProductResult create(long brandId, String name, long price, int stock) {
         BrandId id = new BrandId(brandId);
-        brands.findById(id).filter(brand -> !brand.isDeleted()).orElseThrow(BrandNotFoundException::new);
+        brands.findByIdForUpdate(id).filter(brand -> !brand.isDeleted()).orElseThrow(BrandNotFoundException::new);
         return ProductResult.from(products.save(Product.create(id, name, new Money(price), new Stock(stock))));
     }
 

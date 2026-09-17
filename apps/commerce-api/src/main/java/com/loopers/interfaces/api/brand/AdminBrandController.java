@@ -29,6 +29,32 @@ public class AdminBrandController {
         return ApiResponse.success(new CreatedResponse(result.id().value()));
     }
 
+    @org.springframework.web.bind.annotation.GetMapping
+    public ApiResponse<java.util.List<com.loopers.application.brand.AdminBrandResult>> list(
+        @org.springframework.web.bind.annotation.RequestParam(defaultValue = "0") int page,
+        @org.springframework.web.bind.annotation.RequestParam(defaultValue = "20") int size) {
+        com.loopers.interfaces.api.RequestValues.page(page, size);
+        return ApiResponse.success(service.list(page, size));
+    }
+
+    @org.springframework.web.bind.annotation.GetMapping("/{id}")
+    public ApiResponse<com.loopers.application.brand.AdminBrandResult> get(
+        @org.springframework.web.bind.annotation.PathVariable long id) {
+        return ApiResponse.success(service.getAdminBrand(id));
+    }
+
+    @org.springframework.web.bind.annotation.PutMapping("/{id}")
+    public ApiResponse<BrandResult> change(@org.springframework.web.bind.annotation.PathVariable long id,
+        @RequestBody CreateRequest request) {
+        return ApiResponse.success(service.change(id, request.validatedName()));
+    }
+
+    @org.springframework.web.bind.annotation.DeleteMapping("/{id}")
+    public ApiResponse<Object> delete(@org.springframework.web.bind.annotation.PathVariable long id) {
+        service.delete(id);
+        return ApiResponse.success();
+    }
+
     public record CreateRequest(JsonNode name) {
         String validatedName() {
             if (name == null || !name.isTextual() || name.textValue().isBlank()
