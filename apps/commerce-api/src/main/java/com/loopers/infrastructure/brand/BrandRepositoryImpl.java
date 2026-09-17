@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.Optional;
+import java.util.List;
 
 @RequiredArgsConstructor
 @Component
@@ -26,6 +27,21 @@ public class BrandRepositoryImpl implements BrandRepository {
     @Override
     public Optional<Brand> findById(Long brandId) {
         return brandJpaRepository.findById(brandId);
+    }
+
+    @Override
+    public List<Brand> findAll() {
+        return brandJpaRepository.findAll();
+    }
+
+    @Override
+    public List<Brand> findAllActive() {
+        return brandJpaRepository.findAllByDeletedAtIsNull();
+    }
+
+    @Override
+    public List<Brand> findAllDeleted() {
+        return brandJpaRepository.findAllByDeletedAtIsNotNull();
     }
 
     @Override

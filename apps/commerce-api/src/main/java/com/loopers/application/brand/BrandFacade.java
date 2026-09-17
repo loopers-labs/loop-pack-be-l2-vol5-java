@@ -9,6 +9,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @RequiredArgsConstructor
 @Component
 public class BrandFacade {
@@ -20,6 +22,16 @@ public class BrandFacade {
     public BrandInfo getDetail(Long brandId) {
         Brand brand = findBrandById(brandId);
         return BrandInfo.from(brand);
+    }
+
+    @Transactional(readOnly = true)
+    public List<BrandInfo> getList(BrandListStatus status) {
+        List<Brand> brands = switch (status) {
+            case ACTIVE -> brandRepository.findAllActive();
+            case DELETED -> brandRepository.findAllDeleted();
+            case ALL -> brandRepository.findAll();
+        };
+        return brands.stream().map(BrandInfo::from).toList();
     }
 
     @Transactional

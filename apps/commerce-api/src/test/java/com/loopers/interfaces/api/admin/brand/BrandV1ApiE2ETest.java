@@ -19,6 +19,8 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
@@ -367,6 +369,74 @@ class BrandV1ApiE2ETest {
 
             // assert
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        }
+    }
+
+    @DisplayName("GET /api-admin/v1/brands")
+    @Nested
+    class GetList {
+        @DisplayName("status를 지정하지 않으면, 활성·삭제 Brand를 모두 200 응답으로 반환한다.")
+        @Test
+        void returnsAllBrands_whenStatusIsOmitted() {
+            // arrange
+            Brand activeBrand = brandJpaRepository.save(Brand.create("Nike"));
+            Brand deletedBrand = brandJpaRepository.save(Brand.create("Adidas"));
+            deletedBrand.delete();
+            brandJpaRepository.save(deletedBrand);
+
+            // act
+            ParameterizedTypeReference<ApiResponse<List<BrandV1Dto.BrandResponse>>> responseType = new ParameterizedTypeReference<>() {};
+            ResponseEntity<ApiResponse<List<BrandV1Dto.BrandResponse>>> response = testRestTemplate.exchange(
+                ENDPOINT_BRANDS,
+                HttpMethod.GET,
+                null,
+                responseType
+            );
+
+            // assert
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody().data()).extracting(BrandV1Dto.BrandResponse::id)
+                .containsExactlyInAnyOrder(activeBrand.getId(), deletedBrand.getId());
+        }
+
+        @DisplayName("status=ACTIVE이면 삭제되지 않은 Brand만 200 응답으로 반환한다.")
+        @Test
+        void returnsActiveBrands_whenStatusIsActive() {
+            // arrange
+            Brand activeBrand = brandJpaRepository.save(Brand.create("Nike"));
+            Brand deletedBrand = brandJpaRepository.save(Brand.create("Adidas"));
+            deletedBrand.delete();
+            brandJpaRepository.save(deletedBrand);
+
+            // act
+            ParameterizedTypeReference<ApiResponse<List<BrandV1Dto.BrandResponse>>> responseType = new ParameterizedTypeReference<>() {};
+            ResponseEntity<ApiResponse<List<BrandV1Dto.BrandResponse>>> response = testRestTemplate.exchange(
+                ENDPOINT_BRANDS + "?status=ACTIVE",
+                HttpMethod.GET,
+                null,
+                responseType
+            );
+
+            // assert
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody().data()).extracting(BrandV1Dto.BrandResponse::id)
+                .containsExactly(activeBrand.getId());
+        }
+
+        @DisplayName("status가 잘못되면, 400 응답을 반환한다.")
+        @Test
+        void returnsBadRequest_whenStatusIsInvalid() {
+            // act
+            ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
+            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+                ENDPOINT_BRANDS + "?status=INVALID",
+                HttpMethod.GET,
+                null,
+                responseType
+            );
+
+            // assert
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         }
     }
 }

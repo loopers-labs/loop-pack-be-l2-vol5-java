@@ -4,6 +4,12 @@ import com.loopers.application.brand.BrandInfo;
 
 public class BrandV1Dto {
 
+    public enum Status {
+        ACTIVE,
+        DELETED,
+        ALL
+    }
+
     public record CreateRequest(String name) {}
 
     public record UpdateRequest(String name) {}

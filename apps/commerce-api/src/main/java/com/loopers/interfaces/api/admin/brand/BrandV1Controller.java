@@ -2,6 +2,7 @@ package com.loopers.interfaces.api.admin.brand;
 
 import com.loopers.application.brand.BrandFacade;
 import com.loopers.application.brand.BrandInfo;
+import com.loopers.application.brand.BrandListStatus;
 import com.loopers.interfaces.api.ApiResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -14,6 +15,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestParam;
+
+import java.util.List;
 
 @RequiredArgsConstructor
 @RestController
@@ -21,6 +25,18 @@ import org.springframework.web.bind.annotation.RestController;
 public class BrandV1Controller implements BrandV1ApiSpec {
 
     private final BrandFacade brandFacade;
+
+    @GetMapping
+    @Override
+    public ApiResponse<List<BrandV1Dto.BrandResponse>> getList(
+        @RequestParam(defaultValue = "ALL") BrandV1Dto.Status status
+    ) {
+        List<BrandInfo> infos = brandFacade.getList(BrandListStatus.valueOf(status.name()));
+        List<BrandV1Dto.BrandResponse> responses = infos.stream()
+            .map(BrandV1Dto.BrandResponse::from)
+            .toList();
+        return ApiResponse.success(responses);
+    }
 
     @GetMapping("/{brandId}")
     @Override

@@ -16,6 +16,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -246,6 +248,59 @@ class BrandFacadeIntegrationTest {
 
             // assert
             assertThat(result.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
+        }
+    }
+
+    @DisplayName("Brand 목록을 조회할 때,")
+    @Nested
+    class GetList {
+        @DisplayName("ALL이면 활성·삭제 Brand를 모두 반환한다.")
+        @Test
+        void returnsAllBrands_whenStatusIsAll() {
+            // arrange
+            Brand activeBrand = brandJpaRepository.save(Brand.create("Nike"));
+            Brand deletedBrand = brandJpaRepository.save(Brand.create("Adidas"));
+            deletedBrand.delete();
+            brandJpaRepository.save(deletedBrand);
+
+            // act
+            List<BrandInfo> result = brandFacade.getList(BrandListStatus.ALL);
+
+            // assert
+            assertThat(result).extracting(BrandInfo::id)
+                .containsExactlyInAnyOrder(activeBrand.getId(), deletedBrand.getId());
+        }
+
+        @DisplayName("ACTIVE이면 삭제되지 않은 Brand만 반환한다.")
+        @Test
+        void returnsActiveBrands_whenStatusIsActive() {
+            // arrange
+            Brand activeBrand = brandJpaRepository.save(Brand.create("Nike"));
+            Brand deletedBrand = brandJpaRepository.save(Brand.create("Adidas"));
+            deletedBrand.delete();
+            brandJpaRepository.save(deletedBrand);
+
+            // act
+            List<BrandInfo> result = brandFacade.getList(BrandListStatus.ACTIVE);
+
+            // assert
+            assertThat(result).extracting(BrandInfo::id).containsExactly(activeBrand.getId());
+        }
+
+        @DisplayName("DELETED이면 삭제된 Brand만 반환한다.")
+        @Test
+        void returnsDeletedBrands_whenStatusIsDeleted() {
+            // arrange
+            Brand activeBrand = brandJpaRepository.save(Brand.create("Nike"));
+            Brand deletedBrand = brandJpaRepository.save(Brand.create("Adidas"));
+            deletedBrand.delete();
+            brandJpaRepository.save(deletedBrand);
+
+            // act
+            List<BrandInfo> result = brandFacade.getList(BrandListStatus.DELETED);
+
+            // assert
+            assertThat(result).extracting(BrandInfo::id).containsExactly(deletedBrand.getId());
         }
     }
 }
