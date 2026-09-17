@@ -4,11 +4,14 @@ import com.loopers.domain.like.Like;
 import com.loopers.domain.like.LikeRepository;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
+import com.loopers.application.product.CustomerProductInfo;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 
 @RequiredArgsConstructor
 @Component
@@ -42,6 +45,17 @@ public class LikeFacade {
     @Transactional(readOnly = true)
     public long countByProductId(Long productId) {
         return likeRepository.countByProductId(productId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<CustomerProductInfo> getMyLikes(Long userId) {
+        return likeRepository.findAllByUserId(userId).stream()
+            .map(Like::getProductId)
+            .map(productRepository::findById)
+            .flatMap(java.util.Optional::stream)
+            .filter(product -> product.getDeletedAt() == null)
+            .map(product -> CustomerProductInfo.from(product, likeRepository.countByProductId(product.getId())))
+            .toList();
     }
 
     private Product findProduct(Long productId) {

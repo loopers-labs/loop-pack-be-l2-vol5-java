@@ -9,4 +9,10 @@ public class LikeV1Dto {
             return new LikeResponse(info.userId(), info.productId(), info.liked());
         }
     }
+
+    public record MyLikeProductResponse(Long productId, Long brandId, String brandName, String name, long price, long likeCount) {
+        public static MyLikeProductResponse from(com.loopers.application.product.CustomerProductInfo info) {
+            return new MyLikeProductResponse(info.id(), info.brandId(), info.brandName(), info.name(), info.price(), info.likeCount());
+        }
+    }
 }
