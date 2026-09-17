@@ -19,6 +19,8 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
@@ -424,6 +426,76 @@ class ProductV1ApiE2ETest {
 
             // assert
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        }
+    }
+
+    @DisplayName("GET /api-admin/v1/products")
+    @Nested
+    class GetList {
+        @DisplayName("status를 지정하지 않으면, 활성·삭제 Product를 모두 200 응답으로 반환한다.")
+        @Test
+        void returnsAllProducts_whenStatusIsOmitted() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Product activeProduct = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            Product deletedProduct = productJpaRepository.save(Product.create(brand, "Air Force", 120_000L));
+            deletedProduct.delete();
+            productJpaRepository.save(deletedProduct);
+
+            // act
+            ParameterizedTypeReference<ApiResponse<List<ProductV1Dto.ProductResponse>>> responseType = new ParameterizedTypeReference<>() {};
+            ResponseEntity<ApiResponse<List<ProductV1Dto.ProductResponse>>> response = testRestTemplate.exchange(
+                ENDPOINT_PRODUCTS,
+                HttpMethod.GET,
+                null,
+                responseType
+            );
+
+            // assert
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody().data()).extracting(ProductV1Dto.ProductResponse::id)
+                .containsExactlyInAnyOrder(activeProduct.getId(), deletedProduct.getId());
+        }
+
+        @DisplayName("status=ACTIVE이면 삭제되지 않은 Product만 200 응답으로 반환한다.")
+        @Test
+        void returnsActiveProducts_whenStatusIsActive() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Product activeProduct = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            Product deletedProduct = productJpaRepository.save(Product.create(brand, "Air Force", 120_000L));
+            deletedProduct.delete();
+            productJpaRepository.save(deletedProduct);
+
+            // act
+            ParameterizedTypeReference<ApiResponse<List<ProductV1Dto.ProductResponse>>> responseType = new ParameterizedTypeReference<>() {};
+            ResponseEntity<ApiResponse<List<ProductV1Dto.ProductResponse>>> response = testRestTemplate.exchange(
+                ENDPOINT_PRODUCTS + "?status=ACTIVE",
+                HttpMethod.GET,
+                null,
+                responseType
+            );
+
+            // assert
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody().data()).extracting(ProductV1Dto.ProductResponse::id)
+                .containsExactly(activeProduct.getId());
+        }
+
+        @DisplayName("status가 잘못되면, 400 응답을 반환한다.")
+        @Test
+        void returnsBadRequest_whenStatusIsInvalid() {
+            // act
+            ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
+            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+                ENDPOINT_PRODUCTS + "?status=INVALID",
+                HttpMethod.GET,
+                null,
+                responseType
+            );
+
+            // assert
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         }
     }
 }

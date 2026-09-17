@@ -10,6 +10,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @RequiredArgsConstructor
 @Component
 public class ProductFacade {
@@ -22,6 +24,16 @@ public class ProductFacade {
         Product product = productRepository.findById(productId)
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "상품을 찾을 수 없습니다."));
         return ProductInfo.from(product);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ProductInfo> getList(ProductListStatus status) {
+        List<Product> products = switch (status) {
+            case ACTIVE -> productRepository.findAllActive();
+            case DELETED -> productRepository.findAllDeleted();
+            case ALL -> productRepository.findAll();
+        };
+        return products.stream().map(ProductInfo::from).toList();
     }
 
     @Transactional

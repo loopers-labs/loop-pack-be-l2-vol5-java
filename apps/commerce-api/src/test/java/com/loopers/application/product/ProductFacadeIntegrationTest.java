@@ -16,6 +16,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -317,6 +319,62 @@ class ProductFacadeIntegrationTest {
 
             // assert
             assertThat(result.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
+        }
+    }
+
+    @DisplayName("Product 목록을 조회할 때,")
+    @Nested
+    class GetList {
+        @DisplayName("ALL이면 활성·삭제 Product를 모두 반환한다.")
+        @Test
+        void returnsAllProducts_whenStatusIsAll() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Product activeProduct = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            Product deletedProduct = productJpaRepository.save(Product.create(brand, "Air Force", 120_000L));
+            deletedProduct.delete();
+            productJpaRepository.save(deletedProduct);
+
+            // act
+            List<ProductInfo> result = productFacade.getList(ProductListStatus.ALL);
+
+            // assert
+            assertThat(result).extracting(ProductInfo::id)
+                .containsExactlyInAnyOrder(activeProduct.getId(), deletedProduct.getId());
+        }
+
+        @DisplayName("ACTIVE이면 삭제되지 않은 Product만 반환한다.")
+        @Test
+        void returnsActiveProducts_whenStatusIsActive() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Product activeProduct = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            Product deletedProduct = productJpaRepository.save(Product.create(brand, "Air Force", 120_000L));
+            deletedProduct.delete();
+            productJpaRepository.save(deletedProduct);
+
+            // act
+            List<ProductInfo> result = productFacade.getList(ProductListStatus.ACTIVE);
+
+            // assert
+            assertThat(result).extracting(ProductInfo::id).containsExactly(activeProduct.getId());
+        }
+
+        @DisplayName("DELETED이면 삭제된 Product만 반환한다.")
+        @Test
+        void returnsDeletedProducts_whenStatusIsDeleted() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Product activeProduct = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            Product deletedProduct = productJpaRepository.save(Product.create(brand, "Air Force", 120_000L));
+            deletedProduct.delete();
+            productJpaRepository.save(deletedProduct);
+
+            // act
+            List<ProductInfo> result = productFacade.getList(ProductListStatus.DELETED);
+
+            // assert
+            assertThat(result).extracting(ProductInfo::id).containsExactly(deletedProduct.getId());
         }
     }
 }

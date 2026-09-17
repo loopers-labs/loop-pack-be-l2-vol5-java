@@ -2,7 +2,11 @@ package com.loopers.interfaces.api.admin.product;
 
 import com.loopers.interfaces.api.ApiResponse;
 
+import java.util.List;
+
 public interface ProductV1ApiSpec {
+
+    ApiResponse<List<ProductV1Dto.ProductResponse>> getList(ProductV1Dto.Status status);
 
     ApiResponse<ProductV1Dto.ProductResponse> getDetail(Long productId);
 

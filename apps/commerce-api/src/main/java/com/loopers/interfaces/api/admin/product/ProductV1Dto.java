@@ -4,6 +4,12 @@ import com.loopers.application.product.ProductInfo;
 
 public class ProductV1Dto {
 
+    public enum Status {
+        ACTIVE,
+        DELETED,
+        ALL
+    }
+
     public record CreateRequest(Long brandId, String name, long price) {}
 
     public record UpdateRequest(String name, long price) {}
