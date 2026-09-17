@@ -29,7 +29,8 @@ public class OrderConfirmPolicy {
             if (product == null || !product.isSellable()) {
                 throw new CoreException(ErrorType.CONFLICT, "[productId = " + item.getProductId() + "] 더 이상 판매하지 않는 상품입니다.");
             }
-            if (!product.getPrice().equals(item.getUnitPrice())) {
+            // 생성 때 복사한 값과 같은 출처(snapshot의 판매 단가)로 비교한다 (ADR-06). 판매 단가의 정의가 바뀌어도 한 곳만 고친다.
+            if (!product.snapshot().price().equals(item.getUnitPrice())) {
                 throw new CoreException(ErrorType.CONFLICT, "[productId = " + item.getProductId() + "] 주문 후 가격이 바뀌었습니다. 주문을 다시 만들어 주세요.");
             }
             if (!product.hasStock(item.getQuantity())) {
