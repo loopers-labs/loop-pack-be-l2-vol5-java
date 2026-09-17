@@ -8,6 +8,7 @@ import com.loopers.infrastructure.order.OrderJpaRepository;
 import com.loopers.infrastructure.point.PointHistoryJpaRepository;
 import com.loopers.infrastructure.product.ProductJpaRepository;
 import com.loopers.infrastructure.user.UserJpaRepository;
+import com.jayway.jsonpath.JsonPath;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -79,13 +80,20 @@ class OrderV1ApiE2ETest {
         return "{\"productId\": " + product.getId() + ", \"quantity\": " + quantity + "}";
     }
 
+    private void charge(UserModel owner, long amount) throws Exception {
+        mockMvc.perform(post("/api/v1/points/charge").header(USER_HEADER, owner.getId())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"amount\": " + amount + "}"))
+            .andExpect(status().isOk());
+    }
+
     private Long createOrder(UserModel owner) throws Exception {
         String response = mockMvc.perform(post(ENDPOINT).header(USER_HEADER, owner.getId())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(createBody(item(airMax, 1))))
             .andExpect(status().isOk())
             .andReturn().getResponse().getContentAsString();
-        return Long.valueOf(response.replaceAll(".*\"data\":\\{\"id\":(\\d+).*", "$1"));
+        return JsonPath.parse(response).read("$.data.id", Long.class);
     }
 
     @DisplayName("POST /api/v1/orders")
@@ -214,6 +222,101 @@ class OrderV1ApiE2ETest {
                 .andExpect(status().isNotFound());
             mockMvc.perform(get(ENDPOINT + "/999").header(USER_HEADER, user.getId()))
                 .andExpect(status().isNotFound());
+        }
+    }
+
+    @DisplayName("POST /api/v1/orders/{orderId}/confirm")
+    @Nested
+    class Confirm {
+
+        @DisplayName("ORD-05 잔액 10,000원으로 1,000원 주문을 확정하면 200이고, CONFIRMED·결제액·결제 수단·확정 시각을 돌려준다.")
+        @Test
+        void confirmsDraftOrder() throws Exception {
+            // arrange
+            charge(user, 10_000);
+            Long orderId = createOrder(user);
+
+            // act & assert
+            mockMvc.perform(post(ENDPOINT + "/" + orderId + "/confirm").header(USER_HEADER, user.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(orderId))
+                .andExpect(jsonPath("$.data.status").value("CONFIRMED"))
+                .andExpect(jsonPath("$.data.totalAmount").value(1_000))
+                .andExpect(jsonPath("$.data.paidAmount").value(1_000))
+                .andExpect(jsonPath("$.data.paymentMethod").value("POINT"))
+                .andExpect(jsonPath("$.data.confirmedAt").exists());
+        }
+
+        @DisplayName("USR-01 X-USER-ID가 없으면 401이고, 주문은 DRAFT 그대로다.")
+        @Test
+        void rejectsUnidentifiedRequest() throws Exception {
+            // arrange
+            charge(user, 10_000);
+            Long orderId = createOrder(user);
+
+            // act & assert
+            mockMvc.perform(post(ENDPOINT + "/" + orderId + "/confirm"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.meta.errorCode").value("Unauthorized"));
+            mockMvc.perform(get(ENDPOINT + "/" + orderId).header(USER_HEADER, user.getId()))
+                .andExpect(jsonPath("$.data.status").value("DRAFT"));
+        }
+
+        @DisplayName("ORD-02 남의 주문·없는 주문·남의 확정된 주문을 확정하면 모두 404다 (상태를 드러내지 않는다).")
+        @Test
+        void hidesOthersOrder() throws Exception {
+            // arrange
+            UserModel other = userJpaRepository.save(new UserModel("다른 고객"));
+            charge(user, 10_000);
+            charge(other, 10_000);
+            Long othersOrder = createOrder(other);
+            Long othersConfirmedOrder = createOrder(other);
+            mockMvc.perform(post(ENDPOINT + "/" + othersConfirmedOrder + "/confirm").header(USER_HEADER, other.getId()))
+                .andExpect(status().isOk());
+
+            // act & assert
+            mockMvc.perform(post(ENDPOINT + "/" + othersOrder + "/confirm").header(USER_HEADER, user.getId()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.meta.errorCode").value("Not Found"));
+            mockMvc.perform(post(ENDPOINT + "/999/confirm").header(USER_HEADER, user.getId()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.meta.errorCode").value("Not Found"));
+            mockMvc.perform(post(ENDPOINT + "/" + othersConfirmedOrder + "/confirm").header(USER_HEADER, user.getId()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.meta.errorCode").value("Not Found"));
+        }
+
+        @DisplayName("ORD-04 잔액이 0원이면 409이고, 다시 조회해도 주문은 DRAFT·잔액은 0원·재고는 그대로다.")
+        @Test
+        void rejectsWhenBalanceIsShortAndKeepsState() throws Exception {
+            // arrange
+            Long orderId = createOrder(user);
+
+            // act & assert
+            mockMvc.perform(post(ENDPOINT + "/" + orderId + "/confirm").header(USER_HEADER, user.getId()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.meta.errorCode").value("Conflict"));
+            mockMvc.perform(get(ENDPOINT + "/" + orderId).header(USER_HEADER, user.getId()))
+                .andExpect(jsonPath("$.data.status").value("DRAFT"))
+                .andExpect(jsonPath("$.data.paidAmount").doesNotExist());
+            mockMvc.perform(get("/api/v1/points").header(USER_HEADER, user.getId()))
+                .andExpect(jsonPath("$.data.balance").value(0));
+            assertThat(productJpaRepository.findById(airMax.getId()).orElseThrow().getStock()).isEqualTo(10);
+        }
+
+        @DisplayName("ORD-02·P-17 이미 확정한 주문을 다시 확정하면 409다.")
+        @Test
+        void rejectsConfirmingTwice() throws Exception {
+            // arrange
+            charge(user, 10_000);
+            Long orderId = createOrder(user);
+            mockMvc.perform(post(ENDPOINT + "/" + orderId + "/confirm").header(USER_HEADER, user.getId()))
+                .andExpect(status().isOk());
+
+            // act & assert
+            mockMvc.perform(post(ENDPOINT + "/" + orderId + "/confirm").header(USER_HEADER, user.getId()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.meta.errorCode").value("Conflict"));
         }
     }
 }

@@ -29,6 +29,12 @@ public class OrderV1Controller implements OrderV1ApiSpec {
         return ApiResponse.success(OrderV1Dto.OrderResponse.from(orderFacade.create(loginUser.id(), request.toLines())));
     }
 
+    @PostMapping("/{orderId}/confirm")
+    @Override
+    public ApiResponse<OrderV1Dto.OrderResponse> confirmOrder(LoginUser loginUser, @PathVariable Long orderId) {
+        return ApiResponse.success(OrderV1Dto.OrderResponse.from(orderFacade.confirm(loginUser.id(), orderId)));
+    }
+
     @GetMapping
     @Override
     public ApiResponse<PageResponse<OrderV1Dto.OrderSummaryResponse>> getMyOrders(
