@@ -180,8 +180,8 @@ classDiagram
 - [관계] Brand 1 : N Product
 - [도메인 규칙] 상품 등록 시 (존재하고) 삭제되지 않은 Brand가 필요하다.
 - [도메인 규칙] Product 수정 시 기존 Brand는 변경하지 않는다.
-- [불변식] Product 이름은 공백만으로 구성될 수 없고, 1자 이상 20자 이하여야 한다.
-- [불변식] Product 가격은 0원 이상 100,000,000원 이하여야 한다.
+- [불변식] Product 이름은 공백만으로 구성될 수 없고, 1자 이상 100자 이하여야 한다.
+- [불변식] Product 가격은 1원 이상 100,000,000원 이하여야 한다.
 - [불변식] 삭제되지 않은 Product가 하나라도 있으면 Brand 삭제를 거절한다. 재고가 0개인 Product도 포함한다.
 
 ##### 삭제 전략에 대한 설계 판단
@@ -376,9 +376,9 @@ sequenceDiagram
 | 기능 | Method | Path | 입력 | 성공 | 대표 오류 |
 |---|---|---|---|---|---|
 | 상품 목록 조회 | `GET` | `/products` | Query: `status` (`ACTIVE`, `DELETED`, `ALL`; 기본 `ALL`) | `200 OK`<br/>삭제 상태를 포함한 상품 목록 | `400 Bad Request`<br/>잘못된 `status` 입력 |
-| 상품 등록 | `POST` | `/products` | Body: `brandId`, 이름(공백만 불가, 1~20자), 가격(0~100,000,000원) | `201 Created`<br/>재고 0으로 생성된 상품 정보 | `400 Bad Request`<br/>상품 이름·가격 검증 실패 |
+| 상품 등록 | `POST` | `/products` | Body: `brandId`, 이름(공백만 불가, 1~100자), 가격(1~100,000,000원) | `201 Created`<br/>재고 0으로 생성된 상품 정보 | `400 Bad Request`<br/>상품 이름·가격 검증 실패 |
 | 상품 상세 조회 | `GET` | `/products/{productId}` | Path: `productId` | `200 OK`<br/>상품·브랜드·재고·삭제 상태 정보 | `404 Not Found`<br/>없는 Product |
-| 상품 수정 | `PUT` | `/products/{productId}` | Path: `productId`<br/>Body: 이름(공백만 불가, 1~20자), 가격(0~100,000,000원) | `200 OK`<br/>수정된 상품 정보 | `400 Bad Request`<br/>상품 이름·가격 검증 실패 |
+| 상품 수정 | `PUT` | `/products/{productId}` | Path: `productId`<br/>Body: 이름(공백만 불가, 1~100자), 가격(1~100,000,000원) | `200 OK`<br/>수정된 상품 정보 | `400 Bad Request`<br/>상품 이름·가격 검증 실패 |
 | 상품 삭제 | `DELETE` | `/products/{productId}` | Path: `productId` | `200 OK`<br/>삭제 완료 | `404 Not Found`<br/>없는 Product |
 | 상품 재고 변경 | `PUT` | `/products/{productId}/stock` | Path: `productId`<br/>Body: 최종 재고 수량 | `200 OK`<br/>변경된 재고 수량 | `400 Bad Request`<br/>0 미만 재고 수량 |
 
