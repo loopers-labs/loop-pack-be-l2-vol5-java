@@ -118,4 +118,43 @@ class ProductTest {
             );
         }
     }
+
+    @DisplayName("Product 정보를 수정할 때,")
+    @Nested
+    class Update {
+        @DisplayName("유효한 이름과 가격이면 상품 정보를 변경한다.")
+        @Test
+        void changesDetails_whenNameAndPriceAreValid() {
+            // arrange
+            Product product = Product.create(Brand.create("Nike"), "Air Max", 100_000L);
+
+            // act
+            product.updateDetails("Air Force", 120_000L);
+
+            // assert
+            assertAll(
+                () -> assertThat(product.getName()).isEqualTo("Air Force"),
+                () -> assertThat(product.getPrice()).isEqualTo(120_000L)
+            );
+        }
+
+        @DisplayName("이름 또는 가격이 유효하지 않으면 BAD_REQUEST 예외가 발생하고 기존 정보를 유지한다.")
+        @Test
+        void keepsDetails_whenNameOrPriceIsInvalid() {
+            // arrange
+            Product product = Product.create(Brand.create("Nike"), "Air Max", 100_000L);
+
+            // act
+            CoreException result = assertThrows(CoreException.class, () -> {
+                product.updateDetails(" ", 120_000L);
+            });
+
+            // assert
+            assertAll(
+                () -> assertThat(result.getErrorType()).isEqualTo(ErrorType.BAD_REQUEST),
+                () -> assertThat(product.getName()).isEqualTo("Air Max"),
+                () -> assertThat(product.getPrice()).isEqualTo(100_000L)
+            );
+        }
+    }
 }

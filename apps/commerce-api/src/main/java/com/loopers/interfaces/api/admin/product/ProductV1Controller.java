@@ -36,6 +36,16 @@ public class ProductV1Controller implements ProductV1ApiSpec {
         return ApiResponse.success(ProductV1Dto.ProductResponse.from(info));
     }
 
+    @PutMapping("/{productId}")
+    @Override
+    public ApiResponse<ProductV1Dto.ProductResponse> update(
+        @PathVariable Long productId,
+        @RequestBody ProductV1Dto.UpdateRequest request
+    ) {
+        ProductInfo info = productFacade.update(productId, request.name(), request.price());
+        return ApiResponse.success(ProductV1Dto.ProductResponse.from(info));
+    }
+
     @PutMapping("/{productId}/stock")
     @Override
     public ApiResponse<ProductV1Dto.StockResponse> changeStock(

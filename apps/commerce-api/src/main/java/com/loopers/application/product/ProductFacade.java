@@ -42,6 +42,15 @@ public class ProductFacade {
         return ProductInfo.from(savedProduct);
     }
 
+    @Transactional
+    public ProductInfo update(Long productId, String name, long price) {
+        Product product = findActiveProductById(productId);
+        product.updateDetails(name, price);
+
+        Product savedProduct = productRepository.save(product);
+        return ProductInfo.from(savedProduct);
+    }
+
     private Brand findActiveBrandById(Long brandId) {
         if (brandId == null) {
             throw new CoreException(ErrorType.BAD_REQUEST, "브랜드 ID는 필수입니다.");

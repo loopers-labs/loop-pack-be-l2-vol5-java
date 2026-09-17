@@ -219,4 +219,51 @@ class ProductFacadeIntegrationTest {
             assertThat(result.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
         }
     }
+
+    @DisplayName("Product를 수정할 때,")
+    @Nested
+    class Update {
+        @DisplayName("삭제되지 않은 Product면, 이름과 가격을 변경하고 Brand는 유지한다.")
+        @Test
+        void updatesProduct_whenProductIsNotDeleted() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+
+            // act
+            ProductInfo result = productFacade.update(product.getId(), "Air Force", 120_000L);
+
+            // assert
+            productJpaRepository.flush();
+            entityManager.clear();
+            Product savedProduct = productJpaRepository.findById(product.getId()).orElseThrow();
+            assertAll(
+                () -> assertThat(result.name()).isEqualTo("Air Force"),
+                () -> assertThat(result.price()).isEqualTo(120_000L),
+                () -> assertThat(savedProduct.getBrand().getId()).isEqualTo(brand.getId()),
+                () -> assertThat(savedProduct.getName()).isEqualTo("Air Force"),
+                () -> assertThat(savedProduct.getPrice()).isEqualTo(120_000L)
+            );
+        }
+
+        @DisplayName("삭제된 Product면, NOT_FOUND 예외가 발생한다.")
+        @Test
+        void throwsException_whenProductIsDeleted() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            product.delete();
+            productJpaRepository.save(product);
+            productJpaRepository.flush();
+            entityManager.clear();
+
+            // act
+            CoreException result = assertThrows(CoreException.class, () -> {
+                productFacade.update(product.getId(), "Air Force", 120_000L);
+            });
+
+            // assert
+            assertThat(result.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
+        }
+    }
 }

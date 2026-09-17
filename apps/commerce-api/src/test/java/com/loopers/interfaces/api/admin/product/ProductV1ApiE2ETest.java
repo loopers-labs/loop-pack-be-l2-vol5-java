@@ -295,4 +295,91 @@ class ProductV1ApiE2ETest {
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         }
     }
+
+    @DisplayName("PUT /api-admin/v1/products/{productId}")
+    @Nested
+    class Update {
+        @DisplayName("유효한 이름과 가격이면, 200 응답과 수정된 Product 정보를 반환한다.")
+        @Test
+        void returnsUpdatedProduct_whenDetailsAreValid() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            HttpEntity<ProductV1Dto.UpdateRequest> request = new HttpEntity<>(
+                new ProductV1Dto.UpdateRequest("Air Force", 120_000L)
+            );
+
+            // act
+            ParameterizedTypeReference<ApiResponse<ProductV1Dto.ProductResponse>> responseType = new ParameterizedTypeReference<>() {};
+            ResponseEntity<ApiResponse<ProductV1Dto.ProductResponse>> response = testRestTemplate.exchange(
+                ENDPOINT_PRODUCTS + "/" + product.getId(),
+                HttpMethod.PUT,
+                request,
+                responseType
+            );
+
+            // assert
+            Product savedProduct = productJpaRepository.findById(product.getId()).orElseThrow();
+            assertAll(
+                () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK),
+                () -> assertThat(response.getBody().data().name()).isEqualTo("Air Force"),
+                () -> assertThat(response.getBody().data().price()).isEqualTo(120_000L),
+                () -> assertThat(savedProduct.getBrand().getId()).isEqualTo(brand.getId())
+            );
+        }
+
+        @DisplayName("이름이 공백만으로 구성되면, 400 응답과 기존 정보를 유지한다.")
+        @Test
+        void keepsDetails_whenNameIsBlank() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            HttpEntity<ProductV1Dto.UpdateRequest> request = new HttpEntity<>(
+                new ProductV1Dto.UpdateRequest(" ", 120_000L)
+            );
+
+            // act
+            ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
+            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+                ENDPOINT_PRODUCTS + "/" + product.getId(),
+                HttpMethod.PUT,
+                request,
+                responseType
+            );
+
+            // assert
+            Product savedProduct = productJpaRepository.findById(product.getId()).orElseThrow();
+            assertAll(
+                () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST),
+                () -> assertThat(savedProduct.getName()).isEqualTo("Air Max"),
+                () -> assertThat(savedProduct.getPrice()).isEqualTo(100_000L)
+            );
+        }
+
+        @DisplayName("삭제된 Product면, 404 응답을 반환한다.")
+        @Test
+        void returnsNotFound_whenProductIsDeleted() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            product.delete();
+            productJpaRepository.save(product);
+            productJpaRepository.flush();
+            HttpEntity<ProductV1Dto.UpdateRequest> request = new HttpEntity<>(
+                new ProductV1Dto.UpdateRequest("Air Force", 120_000L)
+            );
+
+            // act
+            ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
+            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+                ENDPOINT_PRODUCTS + "/" + product.getId(),
+                HttpMethod.PUT,
+                request,
+                responseType
+            );
+
+            // assert
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        }
+    }
 }

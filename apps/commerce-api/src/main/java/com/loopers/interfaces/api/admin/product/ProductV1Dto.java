@@ -6,6 +6,8 @@ public class ProductV1Dto {
 
     public record CreateRequest(Long brandId, String name, long price) {}
 
+    public record UpdateRequest(String name, long price) {}
+
     public record StockUpdateRequest(long quantity) {}
 
     public record ProductResponse(

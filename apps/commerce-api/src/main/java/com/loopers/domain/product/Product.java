@@ -65,6 +65,13 @@ public class Product extends BaseEntity {
         this.stock = new StockQuantity(quantity);
     }
 
+    public void updateDetails(String name, long price) {
+        String validatedName = validateName(name);
+        long validatedPrice = validatePrice(price);
+        this.name = validatedName;
+        this.price = validatedPrice;
+    }
+
     private static String validateName(String name) {
         if (name == null || name.isBlank()) {
             throw new CoreException(ErrorType.BAD_REQUEST, "상품 이름은 비어있을 수 없습니다.");
