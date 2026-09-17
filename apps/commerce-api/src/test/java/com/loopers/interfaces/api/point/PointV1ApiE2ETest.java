@@ -51,7 +51,7 @@ class PointV1ApiE2ETest {
         @Test
         void returnsSavedBalance_whenUserIdIsProvided() {
             // arrange
-            Point point = pointJpaRepository.save(new Point(1L, new PointBalance(300L)));
+            Point point = pointJpaRepository.save(Point.create(1L, new PointBalance(300L)));
             HttpEntity<Void> request = new HttpEntity<>(headers(point.getUserId()));
 
             // act
@@ -78,7 +78,7 @@ class PointV1ApiE2ETest {
         @Test
         void returnsChargedBalance_whenValidRequestIsProvided() {
             // arrange
-            Point point = pointJpaRepository.save(new Point(1L));
+            Point point = pointJpaRepository.save(Point.create(1L));
             HttpEntity<PointV1Dto.ChargeRequest> request = new HttpEntity<>(
                 new PointV1Dto.ChargeRequest(200L),
                 headers(point.getUserId())
@@ -106,7 +106,7 @@ class PointV1ApiE2ETest {
         @Test
         void keepsBalance_whenAmountIsMissing() {
             // arrange
-            Point point = pointJpaRepository.save(new Point(1L));
+            Point point = pointJpaRepository.save(Point.create(1L));
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(Map.of(), headers(point.getUserId()));
 
             // act
@@ -130,7 +130,7 @@ class PointV1ApiE2ETest {
         @Test
         void keepsBalance_whenAmountIsZero() {
             // arrange
-            Point point = pointJpaRepository.save(new Point(1L));
+            Point point = pointJpaRepository.save(Point.create(1L));
             HttpEntity<PointV1Dto.ChargeRequest> request = new HttpEntity<>(
                 new PointV1Dto.ChargeRequest(0L),
                 headers(point.getUserId())
@@ -157,7 +157,7 @@ class PointV1ApiE2ETest {
         @Test
         void keepsBalance_whenAmountHasInvalidType() {
             // arrange
-            Point point = pointJpaRepository.save(new Point(1L));
+            Point point = pointJpaRepository.save(Point.create(1L));
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(
                 Map.of("amount", "invalid"),
                 headers(point.getUserId())

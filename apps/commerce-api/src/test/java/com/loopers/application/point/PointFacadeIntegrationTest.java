@@ -46,7 +46,7 @@ class PointFacadeIntegrationTest {
         @Test
         void chargesPoint_whenPointExistsForUser() {
             // arrange
-            Point point = pointJpaRepository.save(new Point(1L));
+            Point point = pointJpaRepository.save(Point.create(1L));
 
             // act
             PointInfo result = pointFacade.charge(point.getUserId(), 200L);
@@ -65,7 +65,7 @@ class PointFacadeIntegrationTest {
         @Test
         void keepsBalance_whenChargeAmountIsZero() {
             // arrange
-            Point point = pointJpaRepository.save(new Point(1L));
+            Point point = pointJpaRepository.save(Point.create(1L));
 
             // act
             CoreException result = assertThrows(CoreException.class, () -> {
@@ -90,7 +90,7 @@ class PointFacadeIntegrationTest {
         @Test
         void returnsSavedBalance_whenPointExistsForUser() {
             // arrange
-            Point point = pointJpaRepository.save(new Point(1L, new PointBalance(300L)));
+            Point point = pointJpaRepository.save(Point.create(1L, new PointBalance(300L)));
 
             // act
             PointInfo result = pointFacade.getBalance(point.getUserId());

@@ -17,13 +17,17 @@ public class Point extends BaseEntity {
 
     protected Point() {}
 
-    public Point(Long userId) {
-        this(userId, new PointBalance(0L));
-    }
-
-    public Point(Long userId, PointBalance balance) {
+    private Point(Long userId, PointBalance balance) {
         this.userId = userId;
         this.balance = balance;
+    }
+
+    public static Point create(Long userId) {
+        return new Point(userId, new PointBalance(0L));
+    }
+
+    public static Point create(Long userId, PointBalance balance) {
+        return new Point(userId, balance);
     }
 
     public Long getUserId() {
