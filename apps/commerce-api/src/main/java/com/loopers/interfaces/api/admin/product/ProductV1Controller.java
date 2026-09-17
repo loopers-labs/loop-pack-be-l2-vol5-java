@@ -6,6 +6,8 @@ import com.loopers.interfaces.api.ApiResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -24,5 +26,15 @@ public class ProductV1Controller implements ProductV1ApiSpec {
     public ApiResponse<ProductV1Dto.ProductResponse> register(@RequestBody ProductV1Dto.CreateRequest request) {
         ProductInfo info = productFacade.register(request.brandId(), request.name(), request.price());
         return ApiResponse.success(ProductV1Dto.ProductResponse.from(info));
+    }
+
+    @PutMapping("/{productId}/stock")
+    @Override
+    public ApiResponse<ProductV1Dto.StockResponse> changeStock(
+        @PathVariable Long productId,
+        @RequestBody ProductV1Dto.StockUpdateRequest request
+    ) {
+        ProductInfo info = productFacade.changeStock(productId, request.quantity());
+        return ApiResponse.success(ProductV1Dto.StockResponse.from(info));
     }
 }

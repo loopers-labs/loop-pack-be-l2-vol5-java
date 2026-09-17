@@ -82,4 +82,40 @@ class ProductTest {
             assertThat(result.getErrorType()).isEqualTo(ErrorType.BAD_REQUEST);
         }
     }
+
+    @DisplayName("Product 재고를 변경할 때,")
+    @Nested
+    class ChangeStock {
+        @DisplayName("0 이상인 최종 수량이면 재고를 변경한다.")
+        @Test
+        void changesStock_whenFinalQuantityIsZeroOrMore() {
+            // arrange
+            Product product = Product.create(Brand.create("Nike"), "Air Max", 100_000L);
+
+            // act
+            product.changeStockTo(5L);
+
+            // assert
+            assertThat(product.getStock().amount()).isEqualTo(5L);
+        }
+
+        @DisplayName("음수인 최종 수량이면 BAD_REQUEST 예외가 발생하고 기존 재고를 유지한다.")
+        @Test
+        void keepsStock_whenFinalQuantityIsNegative() {
+            // arrange
+            Product product = Product.create(Brand.create("Nike"), "Air Max", 100_000L);
+            product.changeStockTo(5L);
+
+            // act
+            CoreException result = assertThrows(CoreException.class, () -> {
+                product.changeStockTo(-1L);
+            });
+
+            // assert
+            assertAll(
+                () -> assertThat(result.getErrorType()).isEqualTo(ErrorType.BAD_REQUEST),
+                () -> assertThat(product.getStock().amount()).isEqualTo(5L)
+            );
+        }
+    }
 }

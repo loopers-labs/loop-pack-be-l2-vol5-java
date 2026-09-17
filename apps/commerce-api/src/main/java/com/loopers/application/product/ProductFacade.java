@@ -26,6 +26,15 @@ public class ProductFacade {
         return ProductInfo.from(savedProduct);
     }
 
+    @Transactional
+    public ProductInfo changeStock(Long productId, long quantity) {
+        Product product = findActiveProductById(productId);
+        product.changeStockTo(quantity);
+
+        Product savedProduct = productRepository.save(product);
+        return ProductInfo.from(savedProduct);
+    }
+
     private Brand findActiveBrandById(Long brandId) {
         if (brandId == null) {
             throw new CoreException(ErrorType.BAD_REQUEST, "브랜드 ID는 필수입니다.");
@@ -37,5 +46,14 @@ public class ProductFacade {
             throw new CoreException(ErrorType.NOT_FOUND, "브랜드를 찾을 수 없습니다.");
         }
         return brand;
+    }
+
+    private Product findActiveProductById(Long productId) {
+        Product product = productRepository.findById(productId)
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "상품을 찾을 수 없습니다."));
+        if (product.getDeletedAt() != null) {
+            throw new CoreException(ErrorType.NOT_FOUND, "상품을 찾을 수 없습니다.");
+        }
+        return product;
     }
 }

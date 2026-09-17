@@ -130,4 +130,92 @@ class ProductV1ApiE2ETest {
             );
         }
     }
+
+    @DisplayName("PUT /api-admin/v1/products/{productId}/stock")
+    @Nested
+    class ChangeStock {
+        @DisplayName("0 이상인 최종 수량이면, 200 응답과 변경된 재고를 반환한다.")
+        @Test
+        void returnsUpdatedStock_whenQuantityIsZeroOrMore() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            HttpEntity<ProductV1Dto.StockUpdateRequest> request = new HttpEntity<>(
+                new ProductV1Dto.StockUpdateRequest(5L)
+            );
+
+            // act
+            ParameterizedTypeReference<ApiResponse<ProductV1Dto.StockResponse>> responseType = new ParameterizedTypeReference<>() {};
+            ResponseEntity<ApiResponse<ProductV1Dto.StockResponse>> response = testRestTemplate.exchange(
+                ENDPOINT_PRODUCTS + "/" + product.getId() + "/stock",
+                HttpMethod.PUT,
+                request,
+                responseType
+            );
+
+            // assert
+            Product savedProduct = productJpaRepository.findById(product.getId()).orElseThrow();
+            assertAll(
+                () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK),
+                () -> assertThat(response.getBody().data().productId()).isEqualTo(product.getId()),
+                () -> assertThat(response.getBody().data().stock()).isEqualTo(5L),
+                () -> assertThat(savedProduct.getStock().amount()).isEqualTo(5L)
+            );
+        }
+
+        @DisplayName("음수인 최종 수량이면, 400 응답과 기존 재고를 유지한다.")
+        @Test
+        void keepsStock_whenQuantityIsNegative() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            product.changeStockTo(5L);
+            productJpaRepository.save(product);
+            HttpEntity<ProductV1Dto.StockUpdateRequest> request = new HttpEntity<>(
+                new ProductV1Dto.StockUpdateRequest(-1L)
+            );
+
+            // act
+            ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
+            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+                ENDPOINT_PRODUCTS + "/" + product.getId() + "/stock",
+                HttpMethod.PUT,
+                request,
+                responseType
+            );
+
+            // assert
+            Product savedProduct = productJpaRepository.findById(product.getId()).orElseThrow();
+            assertAll(
+                () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST),
+                () -> assertThat(savedProduct.getStock().amount()).isEqualTo(5L)
+            );
+        }
+
+        @DisplayName("삭제된 Product면, 404 응답을 반환한다.")
+        @Test
+        void returnsNotFound_whenProductIsDeleted() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            product.delete();
+            productJpaRepository.save(product);
+            productJpaRepository.flush();
+            HttpEntity<ProductV1Dto.StockUpdateRequest> request = new HttpEntity<>(
+                new ProductV1Dto.StockUpdateRequest(5L)
+            );
+
+            // act
+            ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
+            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+                ENDPOINT_PRODUCTS + "/" + product.getId() + "/stock",
+                HttpMethod.PUT,
+                request,
+                responseType
+            );
+
+            // assert
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        }
+    }
 }

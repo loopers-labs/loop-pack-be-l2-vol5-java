@@ -6,6 +6,8 @@ public class ProductV1Dto {
 
     public record CreateRequest(Long brandId, String name, long price) {}
 
+    public record StockUpdateRequest(long quantity) {}
+
     public record ProductResponse(
         Long id,
         Long brandId,
@@ -23,6 +25,12 @@ public class ProductV1Dto {
                 info.stock(),
                 info.deleted()
             );
+        }
+    }
+
+    public record StockResponse(Long productId, long stock) {
+        public static StockResponse from(ProductInfo info) {
+            return new StockResponse(info.id(), info.stock());
         }
     }
 }

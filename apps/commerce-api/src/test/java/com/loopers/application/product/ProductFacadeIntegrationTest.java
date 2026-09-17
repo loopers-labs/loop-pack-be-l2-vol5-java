@@ -106,4 +106,60 @@ class ProductFacadeIntegrationTest {
             );
         }
     }
+
+    @DisplayName("Product 재고를 변경할 때,")
+    @Nested
+    class ChangeStock {
+        @DisplayName("삭제되지 않은 Product면, 최종 재고 수량을 저장하고 반환한다.")
+        @Test
+        void changesStock_whenProductIsNotDeleted() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+
+            // act
+            ProductInfo result = productFacade.changeStock(product.getId(), 5L);
+
+            // assert
+            productJpaRepository.flush();
+            entityManager.clear();
+            Product savedProduct = productJpaRepository.findById(product.getId()).orElseThrow();
+            assertAll(
+                () -> assertThat(result.stock()).isEqualTo(5L),
+                () -> assertThat(savedProduct.getStock().amount()).isEqualTo(5L)
+            );
+        }
+
+        @DisplayName("없는 Product면, NOT_FOUND 예외가 발생한다.")
+        @Test
+        void throwsException_whenProductDoesNotExist() {
+            // act
+            CoreException result = assertThrows(CoreException.class, () -> {
+                productFacade.changeStock(1L, 5L);
+            });
+
+            // assert
+            assertThat(result.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
+        }
+
+        @DisplayName("삭제된 Product면, NOT_FOUND 예외가 발생한다.")
+        @Test
+        void throwsException_whenProductIsDeleted() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            product.delete();
+            productJpaRepository.save(product);
+            productJpaRepository.flush();
+            entityManager.clear();
+
+            // act
+            CoreException result = assertThrows(CoreException.class, () -> {
+                productFacade.changeStock(product.getId(), 5L);
+            });
+
+            // assert
+            assertThat(result.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
+        }
+    }
 }

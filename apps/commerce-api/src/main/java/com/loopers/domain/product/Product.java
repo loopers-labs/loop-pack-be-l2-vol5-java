@@ -61,6 +61,10 @@ public class Product extends BaseEntity {
         return stock;
     }
 
+    public void changeStockTo(long quantity) {
+        this.stock = new StockQuantity(quantity);
+    }
+
     private static String validateName(String name) {
         if (name == null || name.isBlank()) {
             throw new CoreException(ErrorType.BAD_REQUEST, "상품 이름은 비어있을 수 없습니다.");
