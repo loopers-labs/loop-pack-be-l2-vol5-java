@@ -22,8 +22,12 @@ public class Brand extends BaseEntity {
 
     protected Brand() {}
 
-    public Brand(String name) {
+    private Brand(String name) {
         this.name = validateName(name);
+    }
+
+    public static Brand create(String name) {
+        return new Brand(name);
     }
 
     public String getName() {

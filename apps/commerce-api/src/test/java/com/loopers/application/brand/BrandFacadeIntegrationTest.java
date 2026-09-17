@@ -61,7 +61,7 @@ class BrandFacadeIntegrationTest {
         @Test
         void throwsException_whenNameMatchesDeletedBrand() {
             // arrange
-            Brand deletedBrand = brandJpaRepository.save(new Brand("Nike"));
+            Brand deletedBrand = brandJpaRepository.save(Brand.create("Nike"));
             deletedBrand.delete();
             brandJpaRepository.save(deletedBrand);
             brandJpaRepository.flush();
@@ -74,6 +74,60 @@ class BrandFacadeIntegrationTest {
 
             // assert
             assertThat(result.getErrorType()).isEqualTo(ErrorType.CONFLICT);
+        }
+    }
+
+    @DisplayName("Brand 상세를 조회할 때,")
+    @Nested
+    class GetDetail {
+        @DisplayName("삭제되지 않은 Brand가 있으면, Brand 정보를 반환한다.")
+        @Test
+        void returnsBrandInfo_whenBrandExists() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+
+            // act
+            BrandInfo result = brandFacade.getDetail(brand.getId());
+
+            // assert
+            assertAll(
+                () -> assertThat(result.id()).isEqualTo(brand.getId()),
+                () -> assertThat(result.name()).isEqualTo("Nike"),
+                () -> assertThat(result.deleted()).isFalse()
+            );
+        }
+
+        @DisplayName("삭제된 Brand가 있으면, 삭제 상태를 포함한 Brand 정보를 반환한다.")
+        @Test
+        void returnsDeletedBrandInfo_whenBrandIsDeleted() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            brand.delete();
+            brandJpaRepository.save(brand);
+            brandJpaRepository.flush();
+            entityManager.clear();
+
+            // act
+            BrandInfo result = brandFacade.getDetail(brand.getId());
+
+            // assert
+            assertAll(
+                () -> assertThat(result.id()).isEqualTo(brand.getId()),
+                () -> assertThat(result.name()).isEqualTo("Nike"),
+                () -> assertThat(result.deleted()).isTrue()
+            );
+        }
+
+        @DisplayName("없는 Brand ID면, NOT_FOUND 예외가 발생한다.")
+        @Test
+        void throwsException_whenBrandDoesNotExist() {
+            // act
+            CoreException result = assertThrows(CoreException.class, () -> {
+                brandFacade.getDetail(1L);
+            });
+
+            // assert
+            assertThat(result.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
         }
     }
 }

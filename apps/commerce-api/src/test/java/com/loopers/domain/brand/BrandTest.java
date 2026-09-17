@@ -18,7 +18,7 @@ class BrandTest {
         @Test
         void createsBrand_whenNameIsValid() {
             // act
-            Brand brand = new Brand("Nike Korea");
+            Brand brand = Brand.create("Nike Korea");
 
             // assert
             assertThat(brand.getName()).isEqualTo("Nike Korea");
@@ -29,7 +29,7 @@ class BrandTest {
         void throwsException_whenNameIsBlank() {
             // act
             CoreException result = assertThrows(CoreException.class, () -> {
-                new Brand(" ");
+                Brand.create(" ");
             });
 
             // assert
@@ -41,7 +41,7 @@ class BrandTest {
         void throwsException_whenNameExceedsMaximumLength() {
             // act
             CoreException result = assertThrows(CoreException.class, () -> {
-                new Brand("a".repeat(101));
+                Brand.create("a".repeat(101));
             });
 
             // assert
@@ -56,7 +56,7 @@ class BrandTest {
         @Test
         void changesName_whenNameIsValid() {
             // arrange
-            Brand brand = new Brand("Nike");
+            Brand brand = Brand.create("Nike");
 
             // act
             brand.rename("Nike Korea");

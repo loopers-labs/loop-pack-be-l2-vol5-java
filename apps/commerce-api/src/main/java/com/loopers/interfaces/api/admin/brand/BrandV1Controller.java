@@ -5,6 +5,8 @@ import com.loopers.application.brand.BrandInfo;
 import com.loopers.interfaces.api.ApiResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -17,6 +19,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class BrandV1Controller implements BrandV1ApiSpec {
 
     private final BrandFacade brandFacade;
+
+    @GetMapping("/{brandId}")
+    @Override
+    public ApiResponse<BrandV1Dto.BrandResponse> getDetail(@PathVariable Long brandId) {
+        BrandInfo info = brandFacade.getDetail(brandId);
+        return ApiResponse.success(BrandV1Dto.BrandResponse.from(info));
+    }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)

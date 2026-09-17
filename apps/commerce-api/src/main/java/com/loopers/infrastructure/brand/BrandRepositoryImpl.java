@@ -5,6 +5,8 @@ import com.loopers.domain.brand.BrandRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.util.Optional;
+
 @RequiredArgsConstructor
 @Component
 public class BrandRepositoryImpl implements BrandRepository {
@@ -14,6 +16,11 @@ public class BrandRepositoryImpl implements BrandRepository {
     @Override
     public boolean existsByName(String name) {
         return brandJpaRepository.existsByName(name);
+    }
+
+    @Override
+    public Optional<Brand> findById(Long brandId) {
+        return brandJpaRepository.findById(brandId);
     }
 
     @Override
