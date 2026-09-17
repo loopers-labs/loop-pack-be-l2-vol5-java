@@ -128,6 +128,7 @@ classDiagram
     direction LR
 
     class Brand {
+        이름
         삭제상태
     }
     class Product {
@@ -178,6 +179,8 @@ classDiagram
 #### 2.1.1 Brand–Product
 
 - [관계] Brand 1 : N Product
+- [불변식] Brand 이름은 공백만으로 구성될 수 없고, 1자 이상 100자 이하여야 한다.
+- [불변식] 삭제 여부와 관계없이 Brand 이름은 유일해야 한다.
 - [도메인 규칙] 상품 등록 시 (존재하고) 삭제되지 않은 Brand가 필요하다.
 - [도메인 규칙] Product 수정 시 기존 Brand는 변경하지 않는다.
 - [불변식] Product 이름은 공백만으로 구성될 수 없고, 1자 이상 100자 이하여야 한다.
@@ -366,9 +369,9 @@ sequenceDiagram
 | 기능 | Method | Path | 입력      | 성공                | 대표 오류                                    |
 |---|---|---|---------|-------------------|------------------------------------------|
 | 브랜드 목록 조회 | `GET` | `/brands` | Query: `status` (`ACTIVE`, `DELETED`, `ALL`; 기본 `ALL`) | `200 OK`<br/>삭제 상태를 포함한 브랜드 목록 | `400 Bad Request`<br/>잘못된 `status` 입력 |
-| 브랜드 등록 | `POST` | `/brands` | Body: 브랜드 정보 | `201 Created`<br/>생성된 브랜드 정보 | `400 Bad Request`<br/>브랜드 정보 검증 실패       |
+| 브랜드 등록 | `POST` | `/brands` | Body: `name`(공백만 불가, 1~100자) | `201 Created`<br/>생성된 브랜드 정보 | `400 Bad Request`<br/>이름 검증 실패<br/>`409 Conflict`<br/>이미 등록된 이름 |
 | 브랜드 상세 조회 | `GET` | `/brands/{brandId}` | Path: `brandId` | `200 OK`<br/>삭제 상태를 포함한 브랜드 상세 정보 | `404 Not Found`<br/>없는 Brand             |
-| 브랜드 수정 | `PUT` | `/brands/{brandId}` | Path: `brandId`<br/>Body: 브랜드 정보 | `200 OK`<br/>수정된 브랜드 정보 | `400 Bad Request`<br/>브랜드 정보 검증 실패 |
+| 브랜드 수정 | `PUT` | `/brands/{brandId}` | Path: `brandId`<br/>Body: `name`(공백만 불가, 1~100자) | `200 OK`<br/>수정된 브랜드 정보 | `400 Bad Request`<br/>이름 검증 실패<br/>`409 Conflict`<br/>이미 등록된 이름 |
 | 브랜드 삭제 | `DELETE` | `/brands/{brandId}` | Path: `brandId` | `200 OK`<br/>삭제 완료 | `409 Conflict`<br/>삭제되지 않은 연결 Product 존재 |
 
 ##### 상품·재고
