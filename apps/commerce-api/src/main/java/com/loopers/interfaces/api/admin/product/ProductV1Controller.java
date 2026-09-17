@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -19,6 +20,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProductV1Controller implements ProductV1ApiSpec {
 
     private final ProductFacade productFacade;
+
+    @GetMapping("/{productId}")
+    @Override
+    public ApiResponse<ProductV1Dto.ProductResponse> getDetail(@PathVariable Long productId) {
+        ProductInfo info = productFacade.getDetail(productId);
+        return ApiResponse.success(ProductV1Dto.ProductResponse.from(info));
+    }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)

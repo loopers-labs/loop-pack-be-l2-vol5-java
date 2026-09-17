@@ -17,6 +17,13 @@ public class ProductFacade {
     private final BrandRepository brandRepository;
     private final ProductRepository productRepository;
 
+    @Transactional(readOnly = true)
+    public ProductInfo getDetail(Long productId) {
+        Product product = productRepository.findById(productId)
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "상품을 찾을 수 없습니다."));
+        return ProductInfo.from(product);
+    }
+
     @Transactional
     public ProductInfo register(Long brandId, String name, long price) {
         Brand brand = findActiveBrandById(brandId);

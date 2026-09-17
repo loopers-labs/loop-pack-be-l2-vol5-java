@@ -162,4 +162,61 @@ class ProductFacadeIntegrationTest {
             assertThat(result.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
         }
     }
+
+    @DisplayName("Product 상세를 조회할 때,")
+    @Nested
+    class GetDetail {
+        @DisplayName("Product가 있으면, 상품·브랜드·재고 정보를 반환한다.")
+        @Test
+        void returnsProductInfo_whenProductExists() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            product.changeStockTo(5L);
+            productJpaRepository.save(product);
+
+            // act
+            ProductInfo result = productFacade.getDetail(product.getId());
+
+            // assert
+            assertAll(
+                () -> assertThat(result.id()).isEqualTo(product.getId()),
+                () -> assertThat(result.brandId()).isEqualTo(brand.getId()),
+                () -> assertThat(result.name()).isEqualTo("Air Max"),
+                () -> assertThat(result.price()).isEqualTo(100_000L),
+                () -> assertThat(result.stock()).isEqualTo(5L),
+                () -> assertThat(result.deleted()).isFalse()
+            );
+        }
+
+        @DisplayName("삭제된 Product가 있으면, 삭제 상태를 포함한 상품 정보를 반환한다.")
+        @Test
+        void returnsDeletedProductInfo_whenProductIsDeleted() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            product.delete();
+            productJpaRepository.save(product);
+            productJpaRepository.flush();
+            entityManager.clear();
+
+            // act
+            ProductInfo result = productFacade.getDetail(product.getId());
+
+            // assert
+            assertThat(result.deleted()).isTrue();
+        }
+
+        @DisplayName("없는 Product ID면, NOT_FOUND 예외가 발생한다.")
+        @Test
+        void throwsException_whenProductDoesNotExist() {
+            // act
+            CoreException result = assertThrows(CoreException.class, () -> {
+                productFacade.getDetail(1L);
+            });
+
+            // assert
+            assertThat(result.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
+        }
+    }
 }
