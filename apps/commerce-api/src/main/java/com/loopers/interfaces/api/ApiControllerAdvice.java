@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -120,7 +121,21 @@ public class ApiControllerAdvice {
     }
 
     private ResponseEntity<ApiResponse<?>> failureResponse(ErrorType errorType, String errorMessage) {
-        return ResponseEntity.status(errorType.getStatus())
+        return ResponseEntity.status(toHttpStatus(errorType))
             .body(ApiResponse.fail(errorType.getCode(), errorMessage != null ? errorMessage : errorType.getMessage()));
+    }
+
+    /**
+     * 오류 종류 → HTTP 상태 대응표 (ADR-12).
+     * default 없이 모든 종류를 나열해, 새 종류를 추가하고 상태를 정하지 않으면 컴파일이 실패하게 한다.
+     */
+    private HttpStatus toHttpStatus(ErrorType errorType) {
+        return switch (errorType) {
+            case INTERNAL_ERROR -> HttpStatus.INTERNAL_SERVER_ERROR;
+            case BAD_REQUEST -> HttpStatus.BAD_REQUEST;
+            case UNAUTHORIZED -> HttpStatus.UNAUTHORIZED;
+            case NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case CONFLICT -> HttpStatus.CONFLICT;
+        };
     }
 }
