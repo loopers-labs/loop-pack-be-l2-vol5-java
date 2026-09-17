@@ -59,6 +59,31 @@ class OrderApiIntegrationTest {
     }
 
     @Test
+    @DisplayName("서로 다른 주문이 마지막 재고를 동시에 확정하면 하나만 성공한다")
+    void preventsOversellingAcrossOrders() throws Exception {
+        products.setStock(first, 1);
+        points.charge(1, 10000);
+        points.charge(2, 10000);
+        var a = orders.create(1, List.of(new OrderApplicationService.ItemRequest(first, 1)));
+        var b = orders.create(2, List.of(new OrderApplicationService.ItemRequest(first, 1)));
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            var latch = new java.util.concurrent.CountDownLatch(1);
+            var taskA = pool.submit(() -> { latch.await(); return attemptConfirm(1, a.id()); });
+            var taskB = pool.submit(() -> { latch.await(); return attemptConfirm(2, b.id()); });
+            latch.countDown();
+            assertThat(List.of(taskA.get(20, TimeUnit.SECONDS), taskB.get(20, TimeUnit.SECONDS)))
+                .containsExactlyInAnyOrder(true, false);
+        }
+        assertThat(products.getAdminProduct(first).stock()).isZero();
+        assertThat(points.balance(1) + points.balance(2)).isEqualTo(18000);
+    }
+
+    private boolean attemptConfirm(long userId, long orderId) {
+        try { orders.confirm(userId, orderId); return true; }
+        catch (RuleViolationException e) { return false; }
+    }
+
+    @Test
     @DisplayName("충전 API에서 여러 품목 주문 확정과 내 주문·잔액 및 관리자 조회까지 연결된다")
     void completesHttpFlow() throws Exception {
         mvc.perform(post("/api/v1/points/charge").header("X-USER-ID", "1").contentType(MediaType.APPLICATION_JSON)

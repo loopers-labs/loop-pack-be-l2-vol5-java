@@ -32,8 +32,8 @@ public class OrderApplicationService {
         if (requested == null || requested.isEmpty() || requested.size() > 100) {
             throw new InvalidValueException("주문 품목은 1~100개여야 합니다.");
         }
-        var items = requested.stream().map(i -> {
-            Product product = products.findById(new ProductId(i.productId()))
+        var items = requested.stream().sorted(java.util.Comparator.comparingLong(ItemRequest::productId)).map(i -> {
+            Product product = products.findByIdForUpdate(new ProductId(i.productId()))
                 .filter(p -> !p.isDeleted()).orElseThrow(ProductNotFoundException::new);
             return new OrderItem(product.getId(), new Quantity(i.quantity()), product.getPrice());
         }).toList();

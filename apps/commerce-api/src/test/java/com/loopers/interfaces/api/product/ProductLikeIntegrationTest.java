@@ -42,6 +42,19 @@ class ProductLikeIntegrationTest {
     void clean() { cleanup.truncateAllTables(); }
 
     @Test
+    @DisplayName("동시 중복 좋아요 등록에서도 관계는 하나만 저장된다")
+    void keepsUniqueRelationConcurrently() throws Exception {
+        long id = products.create(brandId, "상품", 100, 1).id();
+        try (var pool = java.util.concurrent.Executors.newFixedThreadPool(4)) {
+            var futures = new java.util.ArrayList<java.util.concurrent.Future<?>>();
+            for (int i = 0; i < 8; i++) { futures.add(pool.submit(() -> likes.register(1, id))); }
+            for (var future : futures) { future.get(20, java.util.concurrent.TimeUnit.SECONDS); }
+        }
+        mvc.perform(get("/api/v1/products/{id}", id).header("X-USER-ID", "1"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.likeCount").value(1));
+    }
+
+    @Test
     @DisplayName("중복 좋아요는 한 관계이며 삭제 상품은 내 목록에서 제외되지만 취소할 수 있다")
     void registersAndCancels() throws Exception {
         long id = products.create(brandId, "상품", 100, 3).id();
