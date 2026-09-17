@@ -34,6 +34,11 @@ class PointWalletPolicyTest {
         return PointGroup.charge(1L, Money.of(amount), ZonedDateTime.of(2020, 1, 1, 0, 0, 0, 0, SEOUL), VALIDITY);
     }
 
+    /** 기준 시각(NOW)에 유효한 그룹. 충전 연도로 만료 시각을 정한다. 2025년 충전 → 2030-01-01 만료. */
+    private static PointGroup groupChargedAt(long amount, int chargedYear) {
+        return PointGroup.charge(1L, Money.of(amount), ZonedDateTime.of(chargedYear, 1, 1, 0, 0, 0, 0, SEOUL), VALIDITY);
+    }
+
     @DisplayName("잔액을 계산할 때, ")
     @Nested
     class Balance {
@@ -104,6 +109,24 @@ class PointWalletPolicyTest {
             assertThat(usages)
                 .extracting(PointUsage::group, PointUsage::amount)
                 .containsExactly(tuple(groupA, Money.of(7_000)));
+        }
+
+        @DisplayName("W-6 · PNT-05 만료가 늦은 A(10,000원), 이른 B(5,000원) 순서로 넣고 12,000원을 결제하면 B부터 차감한다.")
+        @Test
+        void paysFromEarliestExpiringGroupFirst() {
+            // arrange: 넣는 순서(A → B)와 만료 순서(B → A)를 일부러 반대로 둔다
+            PointGroup groupA = groupChargedAt(10_000, 2025);  // 2030-01-01 만료
+            PointGroup groupB = groupChargedAt(5_000, 2024);   // 2029-01-01 만료
+
+            // act
+            List<PointUsage> usages = policy.pay(List.of(groupA, groupB), Money.of(12_000), NOW);
+
+            // assert
+            assertThat(groupB.getRemaining()).isEqualTo(Money.of(0));
+            assertThat(groupA.getRemaining()).isEqualTo(Money.of(3_000));
+            assertThat(usages)
+                .extracting(PointUsage::group, PointUsage::amount)
+                .containsExactly(tuple(groupB, Money.of(5_000)), tuple(groupA, Money.of(7_000)));
         }
 
         @DisplayName("W-9 · P-21 0원 결제는 거절하고, 남은 금액은 그대로다.")
