@@ -124,6 +124,22 @@ class PointWalletPolicyTest {
             assertThat(groupA.getRemaining()).isEqualTo(Money.of(3_000));
         }
 
+        @DisplayName("W-5b · PNT-04 남은 7,000원 그룹에서 7,000원을 결제하면 성공하고, 남은 금액은 0원이다.")
+        @Test
+        void paysEntireBalance() {
+            // arrange
+            PointGroup groupA = usableGroup(7_000);
+
+            // act
+            List<PointUsage> usages = policy.pay(List.of(groupA), Money.of(7_000), NOW);
+
+            // assert
+            assertThat(groupA.getRemaining()).isEqualTo(Money.of(0));
+            assertThat(usages)
+                .extracting(PointUsage::group, PointUsage::amount)
+                .containsExactly(tuple(groupA, Money.of(7_000)));
+        }
+
         @DisplayName("W-6 · PNT-05 만료가 늦은 A(10,000원), 이른 B(5,000원) 순서로 넣고 12,000원을 결제하면 B부터 차감한다.")
         @Test
         void paysFromEarliestExpiringGroupFirst() {
@@ -184,6 +200,23 @@ class PointWalletPolicyTest {
                 .isInstanceOf(CoreException.class)
                 .extracting("errorType").isEqualTo(ErrorType.BAD_REQUEST);
             assertThat(groupA.getRemaining()).isEqualTo(Money.of(10_000));
+        }
+
+        @DisplayName("W-10 · P-21 남은 금액이 0원인 A와 유효한 B(5,000원)에서 1,000원을 결제하면 A에는 0원 사용 내역을 남기지 않는다.")
+        @Test
+        void skipsEmptyGroupWithoutZeroUsage() {
+            // arrange: A는 만료가 더 빨라 정렬하면 앞에 오고, 남은 금액을 모두 쓴 상태다
+            PointGroup groupA = groupChargedAt(3_000, 2024);
+            groupA.use(Money.of(3_000), NOW);
+            PointGroup groupB = usableGroup(5_000);
+
+            // act
+            List<PointUsage> usages = policy.pay(List.of(groupA, groupB), Money.of(1_000), NOW);
+
+            // assert
+            assertThat(usages)
+                .extracting(PointUsage::group, PointUsage::amount)
+                .containsExactly(tuple(groupB, Money.of(1_000)));
         }
     }
 }
