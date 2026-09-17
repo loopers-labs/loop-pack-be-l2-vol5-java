@@ -25,6 +25,15 @@ public class BrandFacade {
     }
 
     @Transactional(readOnly = true)
+    public BrandInfo getCustomerDetail(Long brandId) {
+        Brand brand = findBrandById(brandId);
+        if (brand.getDeletedAt() != null) {
+            throw new CoreException(ErrorType.NOT_FOUND, "브랜드를 찾을 수 없습니다.");
+        }
+        return BrandInfo.from(brand);
+    }
+
+    @Transactional(readOnly = true)
     public List<BrandInfo> getList(BrandListStatus status) {
         List<Brand> brands = switch (status) {
             case ACTIVE -> brandRepository.findAllActive();

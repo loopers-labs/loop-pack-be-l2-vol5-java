@@ -303,4 +303,44 @@ class BrandFacadeIntegrationTest {
             assertThat(result).extracting(BrandInfo::id).containsExactly(deletedBrand.getId());
         }
     }
+
+    @DisplayName("고객이 Brand 상세를 조회할 때,")
+    @Nested
+    class GetCustomerDetail {
+        @DisplayName("삭제되지 않은 Brand가 있으면, Brand 정보를 반환한다.")
+        @Test
+        void returnsBrandInfo_whenBrandIsActive() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+
+            // act
+            BrandInfo result = brandFacade.getCustomerDetail(brand.getId());
+
+            // assert
+            assertAll(
+                () -> assertThat(result.id()).isEqualTo(brand.getId()),
+                () -> assertThat(result.name()).isEqualTo("Nike"),
+                () -> assertThat(result.deleted()).isFalse()
+            );
+        }
+
+        @DisplayName("삭제된 Brand면, NOT_FOUND 예외가 발생한다.")
+        @Test
+        void throwsException_whenBrandIsDeleted() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            brand.delete();
+            brandJpaRepository.save(brand);
+            brandJpaRepository.flush();
+            entityManager.clear();
+
+            // act
+            CoreException result = assertThrows(CoreException.class, () -> {
+                brandFacade.getCustomerDetail(brand.getId());
+            });
+
+            // assert
+            assertThat(result.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
+        }
+    }
 }
