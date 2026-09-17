@@ -2,6 +2,7 @@ package com.loopers.application.product;
 
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
+import com.loopers.domain.like.LikeRepository;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.support.error.CoreException;
@@ -17,6 +18,7 @@ import java.util.List;
 public class ProductFacade {
 
     private final BrandRepository brandRepository;
+    private final LikeRepository likeRepository;
     private final ProductRepository productRepository;
 
     @Transactional(readOnly = true)
@@ -24,6 +26,13 @@ public class ProductFacade {
         Product product = productRepository.findById(productId)
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "상품을 찾을 수 없습니다."));
         return ProductInfo.from(product);
+    }
+
+    @Transactional(readOnly = true)
+    public CustomerProductInfo getCustomerDetail(Long productId) {
+        Product product = findActiveProductById(productId);
+        long likeCount = likeRepository.countByProductId(productId);
+        return CustomerProductInfo.from(product, likeCount);
     }
 
     @Transactional(readOnly = true)
