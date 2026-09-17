@@ -92,7 +92,7 @@ class ProductModelTest {
             assertThat(product.getBrandId()).isEqualTo(1L);
         }
 
-        @DisplayName("PRD-01 유효하지 않은 가격이면 거절하고, 이름·가격은 그대로다.")
+        @DisplayName("PRD-03 수정할 가격이 유효하지 않으면(0원) 거절하고, 이름·가격은 그대로다.")
         @Test
         void rejectsInvalidUpdateAndKeepsValues() {
             // arrange
@@ -100,6 +100,20 @@ class ProductModelTest {
 
             // act & assert
             assertThatThrownBy(() -> product.update("에어포스", 0))
+                .isInstanceOf(CoreException.class)
+                .extracting("errorType").isEqualTo(ErrorType.BAD_REQUEST);
+            assertThat(product.getName()).isEqualTo("에어맥스");
+            assertThat(product.getPrice()).isEqualTo(Money.of(100_000));
+        }
+
+        @DisplayName("PRD-03 수정할 이름이 유효하지 않으면(빈 이름) 거절하고, 이름·가격은 그대로다.")
+        @Test
+        void rejectsInvalidNameUpdateAndKeepsValues() {
+            // arrange
+            ProductModel product = product(5);
+
+            // act & assert
+            assertThatThrownBy(() -> product.update("", 2_000))
                 .isInstanceOf(CoreException.class)
                 .extracting("errorType").isEqualTo(ErrorType.BAD_REQUEST);
             assertThat(product.getName()).isEqualTo("에어맥스");

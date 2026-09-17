@@ -30,7 +30,7 @@ public class LikeRepositoryImpl implements LikeRepository {
     }
 
     /**
-     * 최근에 누른 것부터 돌려준다. 좋아요는 수정되지 않으므로 id 역순이 곧 누른 시각 역순이다 (LIK-03).
+     * 최근에 누른 것부터 돌려준다. 좋아요는 수정되지 않으므로 id 역순이 곧 누른 시각 역순이다 (LIK-05).
      */
     @Override
     public List<LikeModel> findAllByUserIdNewestFirst(Long userId) {
