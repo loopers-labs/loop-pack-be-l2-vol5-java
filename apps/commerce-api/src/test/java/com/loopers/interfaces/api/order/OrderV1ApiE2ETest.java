@@ -304,6 +304,29 @@ class OrderV1ApiE2ETest {
             assertThat(productJpaRepository.findById(airMax.getId()).orElseThrow().getStock()).isEqualTo(10);
         }
 
+        @DisplayName("ORD-01·ORD-03 같은 상품 품목(6개 + 5개)은 11개로 합산되고, 확정할 때 합산 수량으로 재고(10개)를 확인해 409이며 재고는 그대로다.")
+        @Test
+        void checksStockWithMergedQuantity() throws Exception {
+            // arrange
+            charge(user, 20_000);
+            String created = mockMvc.perform(post(ENDPOINT).header(USER_HEADER, user.getId())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(createBody(item(airMax, 6) + "," + item(airMax, 5))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()").value(1))
+                .andExpect(jsonPath("$.data.items[0].quantity").value(11))
+                .andReturn().getResponse().getContentAsString();
+            Long orderId = JsonPath.parse(created).read("$.data.id", Long.class);
+
+            // act & assert
+            mockMvc.perform(post(ENDPOINT + "/" + orderId + "/confirm").header(USER_HEADER, user.getId()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.meta.errorCode").value("Conflict"));
+            assertThat(productJpaRepository.findById(airMax.getId()).orElseThrow().getStock()).isEqualTo(10);
+            mockMvc.perform(get(ENDPOINT + "/" + orderId).header(USER_HEADER, user.getId()))
+                .andExpect(jsonPath("$.data.status").value("DRAFT"));
+        }
+
         @DisplayName("ORD-02·P-17 이미 확정한 주문을 다시 확정하면 409다.")
         @Test
         void rejectsConfirmingTwice() throws Exception {

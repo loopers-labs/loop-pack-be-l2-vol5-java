@@ -290,6 +290,24 @@ class ProductAdminV1ApiE2ETest {
             // assert
             assertThat(productJpaRepository.findById(product.getId()).orElseThrow().getStock()).isEqualTo(5);
         }
+
+        @DisplayName("PRD-06 삭제된 상품의 재고는 바꿀 수 없어 404이고, 저장된 재고는 그대로다.")
+        @Test
+        void returnsNotFound_whenDeleted() throws Exception {
+            // arrange
+            ProductModel product = product(brand(), 5);
+            product.delete();
+            productJpaRepository.save(product);
+
+            // act
+            mockMvc.perform(put(ENDPOINT + "/" + product.getId() + "/stock").with(ADMIN).with(csrf())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(json(Map.of("stock", 0))))
+                .andExpect(status().isNotFound());
+
+            // assert
+            assertThat(productJpaRepository.findById(product.getId()).orElseThrow().getStock()).isEqualTo(5);
+        }
     }
 
     @DisplayName("DELETE /api-admin/v1/products/{productId}")
@@ -328,6 +346,34 @@ class ProductAdminV1ApiE2ETest {
 
             // assert
             assertThat(productJpaRepository.findById(product.getId()).orElseThrow().getDeletedAt()).isNull();
+        }
+    }
+
+    @DisplayName("관리자 변경이 고객 조회에 반영될 때, ")
+    @Nested
+    class ReflectedToCustomer {
+
+        @DisplayName("PRD-03·PRD-06 관리자가 가격을 바꾸면 고객 상품 상세에 바뀐 가격이 보이고, 관리자가 삭제하면 고객 상세는 404다.")
+        @Test
+        void customerSeesAdminChanges() throws Exception {
+            // arrange
+            ProductModel product = product(brand(), 5);
+
+            // act & assert: 관리자 가격 수정 → 고객 상세
+            mockMvc.perform(put(ENDPOINT + "/" + product.getId()).with(ADMIN).with(csrf())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(json(Map.of("name", "에어맥스", "price", 120_000))))
+                .andExpect(status().isOk());
+            mockMvc.perform(get("/api/v1/products/" + product.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.price").value(120_000))
+                .andExpect(jsonPath("$.data.stock").doesNotExist());
+
+            // act & assert: 관리자 삭제 → 고객 상세
+            mockMvc.perform(delete(ENDPOINT + "/" + product.getId()).with(ADMIN).with(csrf()))
+                .andExpect(status().isOk());
+            mockMvc.perform(get("/api/v1/products/" + product.getId()))
+                .andExpect(status().isNotFound());
         }
     }
 }

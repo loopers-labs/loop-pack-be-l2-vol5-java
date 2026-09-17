@@ -112,6 +112,19 @@ class BrandAdminV1ApiE2ETest {
             // assert
             assertThat(brandJpaRepository.count()).isZero();
         }
+
+        @DisplayName("식별 없는 요청은 유효한 CSRF 입력이 있어도 403이고, 저장되지 않는다.")
+        @Test
+        void forbidsUnidentified() throws Exception {
+            // act
+            mockMvc.perform(post(ENDPOINT).with(csrf())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(json(Map.of("name", "나이키"))))
+                .andExpect(status().isForbidden());
+
+            // assert
+            assertThat(brandJpaRepository.count()).isZero();
+        }
     }
 
     @DisplayName("GET /api-admin/v1/brands")
