@@ -103,6 +103,36 @@ class PointWalletPolicyTest {
         }
     }
 
+    @DisplayName("결제할 수 있는지 확인할 때, ")
+    @Nested
+    class Payable {
+
+        @DisplayName("PNT-04 남은 3,000원 그룹에서 7,000원을 낼 수 있는지 물으면 409이고, 남은 금액은 그대로다.")
+        @Test
+        void rejectsWhenBalanceIsShort() {
+            // arrange
+            PointGroup groupA = usableGroup(3_000);
+
+            // act & assert
+            assertThatThrownBy(() -> policy.checkPayable(List.of(groupA), Money.of(7_000), NOW))
+                .isInstanceOf(CoreException.class)
+                .extracting("errorType").isEqualTo(ErrorType.CONFLICT);
+            assertThat(groupA.getRemaining()).isEqualTo(Money.of(3_000));
+        }
+
+        @DisplayName("PNT-04 남은 7,000원 그룹에서 7,000원을 낼 수 있는지 물으면 통과하고, 확인만 하므로 남은 금액은 7,000원 그대로다.")
+        @Test
+        void passesWithoutChangingGroups() {
+            // arrange
+            PointGroup groupA = usableGroup(7_000);
+
+            // act & assert
+            assertThatCode(() -> policy.checkPayable(List.of(groupA), Money.of(7_000), NOW))
+                .doesNotThrowAnyException();
+            assertThat(groupA.getRemaining()).isEqualTo(Money.of(7_000));
+        }
+    }
+
     @DisplayName("포인트로 결제할 때, ")
     @Nested
     class Pay {

@@ -39,19 +39,27 @@ public class PointWalletPolicy {
     }
 
     /**
-     * 포인트로 결제하고, 어느 그룹에서 얼마를 썼는지 돌려준다.
-     * PNT-04: 잔액이 결제액보다 적으면 어떤 그룹도 바꾸지 않고 거절한다.
-     * PNT-05: 만료 시각이 빠른 그룹부터, 그룹마다 쓸 수 있는 만큼 차감한다.
-     * PNT-07: 만료된 그룹은 건너뛴다.
-     * P-21: 남은 금액이 0원인 그룹에는 0원 사용 내역을 남기지 않는다.
+     * 결제할 수 있는지만 확인하고 아무것도 바꾸지 않는다. 주문 확정은 재고를 바꾸기 전에 이것을 먼저 묻는다 (8장).
+     * P-21: 0원 결제는 400. PNT-04·PNT-07: 만료되지 않은 그룹의 잔액이 결제액보다 적으면 409.
      */
-    public List<PointUsage> pay(List<PointGroup> groups, Money amount, ZonedDateTime now) {
+    public void checkPayable(List<PointGroup> groups, Money amount, ZonedDateTime now) {
         if (amount.isZero()) {
             throw new CoreException(ErrorType.BAD_REQUEST, "결제 금액은 0보다 커야 합니다.");
         }
         if (amount.isGreaterThan(balanceOf(groups, now))) {
             throw new CoreException(ErrorType.CONFLICT, "포인트 잔액이 부족합니다.");
         }
+    }
+
+    /**
+     * 포인트로 결제하고, 어느 그룹에서 얼마를 썼는지 돌려준다.
+     * 결제할 수 없으면 어떤 그룹도 바꾸지 않고 거절한다 (checkPayable).
+     * PNT-05: 만료 시각이 빠른 그룹부터, 그룹마다 쓸 수 있는 만큼 차감한다.
+     * PNT-07: 만료된 그룹은 건너뛴다.
+     * P-21: 남은 금액이 0원인 그룹에는 0원 사용 내역을 남기지 않는다.
+     */
+    public List<PointUsage> pay(List<PointGroup> groups, Money amount, ZonedDateTime now) {
+        checkPayable(groups, amount, now);
         List<PointGroup> usableByExpiry = groups.stream()
             .filter(group -> group.isUsableAt(now))
             .sorted(Comparator.comparing(PointGroup::getExpiresAt))

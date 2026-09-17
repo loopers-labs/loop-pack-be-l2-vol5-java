@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
@@ -109,6 +110,31 @@ class OrderModelTest {
                 .extracting("errorType").isEqualTo(ErrorType.CONFLICT);
             assertThat(order.getConfirmedAt()).isEqualTo(NOW);
             assertThat(order.isDraft()).isFalse();
+        }
+
+        @DisplayName("ORD-02 DRAFT 주문은 확정할 수 있는 상태이고, 확인만 해서는 상태가 바뀌지 않는다.")
+        @Test
+        void checkConfirmableKeepsDraft() {
+            // arrange
+            OrderModel order = draftOrder(7L);
+
+            // act & assert
+            assertThatCode(order::checkConfirmable).doesNotThrowAnyException();
+            assertThat(order.isDraft()).isTrue();
+            assertThat(order.getPaidAmount()).isNull();
+        }
+
+        @DisplayName("ORD-02·P-17 이미 CONFIRMED인 주문은 확정할 수 있는 상태가 아니다.")
+        @Test
+        void checkConfirmableRejectsConfirmed() {
+            // arrange
+            OrderModel order = draftOrder(7L);
+            order.confirm(NOW);
+
+            // act & assert
+            assertThatThrownBy(order::checkConfirmable)
+                .isInstanceOf(CoreException.class)
+                .extracting("errorType").isEqualTo(ErrorType.CONFLICT);
         }
     }
 }

@@ -101,12 +101,19 @@ public class OrderModel extends BaseEntity {
     }
 
     /**
-     * ORD-02·ORD-05: DRAFT만 확정한다. 결제액을 자기 합계로 고정하고 CONFIRMED로 바꾼다.
+     * ORD-02·P-17: 확정할 수 있는 상태인지만 확인한다. 확정 흐름은 상품·잔액보다 이것을 먼저 묻는다 (8장).
      */
-    public void confirm(ZonedDateTime now) {
+    public void checkConfirmable() {
         if (!isDraft()) {
             throw new CoreException(ErrorType.CONFLICT, "이미 확정된 주문입니다.");
         }
+    }
+
+    /**
+     * ORD-02·ORD-05: DRAFT만 확정한다. 결제액을 자기 합계로 고정하고 CONFIRMED로 바꾼다.
+     */
+    public void confirm(ZonedDateTime now) {
+        checkConfirmable();
         this.status = OrderStatus.CONFIRMED;
         this.paidAmount = totalAmount;
         this.paymentMethod = PaymentMethod.POINT;
