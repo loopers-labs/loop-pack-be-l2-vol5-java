@@ -13,6 +13,7 @@ import java.time.ZonedDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
@@ -88,6 +89,17 @@ class PointWalletPolicyTest {
             assertThatThrownBy(() -> policy.checkChargeable(groups, Money.of(2), NOW))
                 .isInstanceOf(CoreException.class)
                 .extracting("errorType").isEqualTo(ErrorType.CONFLICT);
+        }
+
+        @DisplayName("W-8 · PNT-03 남은 금액이 (Long 최댓값 - 1)원인 그룹이 있어도 1원 충전은 가능하다.")
+        @Test
+        void allowsChargeUpToMaxBalance() {
+            // arrange
+            List<PointGroup> groups = List.of(usableGroup(Long.MAX_VALUE - 1));
+
+            // act & assert
+            assertThatCode(() -> policy.checkChargeable(groups, Money.of(1), NOW))
+                .doesNotThrowAnyException();
         }
     }
 
