@@ -10,11 +10,16 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @Order(-1)
-@RestControllerAdvice(basePackages = {"com.loopers.interfaces.api.brand", "com.loopers.interfaces.api.product"})
+@RestControllerAdvice(basePackages = {"com.loopers.interfaces.api.brand", "com.loopers.interfaces.api.product", "com.loopers.interfaces.api.point"})
 public class CommerceExceptionAdvice {
     @ExceptionHandler({BrandNotFoundException.class, ProductNotFoundException.class})
     public ResponseEntity<ApiResponse<Object>> notFound(RuntimeException exception) {
         return ResponseEntity.status(404).body(ApiResponse.fail("Not Found", exception.getMessage()));
+    }
+
+    @ExceptionHandler(ArithmeticException.class)
+    public ResponseEntity<ApiResponse<Object>> overflow(ArithmeticException exception) {
+        return ResponseEntity.badRequest().body(ApiResponse.fail("Bad Request", "금액 표현 범위를 초과했습니다."));
     }
 
     @ExceptionHandler(InvalidValueException.class)
