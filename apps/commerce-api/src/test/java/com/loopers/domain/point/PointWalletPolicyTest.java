@@ -111,6 +111,19 @@ class PointWalletPolicyTest {
                 .containsExactly(tuple(groupA, Money.of(7_000)));
         }
 
+        @DisplayName("W-5 · PNT-04 남은 3,000원 그룹에서 7,000원을 결제하면 거절하고, 남은 금액은 3,000원 그대로다.")
+        @Test
+        void rejectsPaymentOverBalance() {
+            // arrange
+            PointGroup groupA = usableGroup(3_000);
+
+            // act & assert
+            assertThatThrownBy(() -> policy.pay(List.of(groupA), Money.of(7_000), NOW))
+                .isInstanceOf(CoreException.class)
+                .extracting("errorType").isEqualTo(ErrorType.CONFLICT);
+            assertThat(groupA.getRemaining()).isEqualTo(Money.of(3_000));
+        }
+
         @DisplayName("W-6 · PNT-05 만료가 늦은 A(10,000원), 이른 B(5,000원) 순서로 넣고 12,000원을 결제하면 B부터 차감한다.")
         @Test
         void paysFromEarliestExpiringGroupFirst() {
