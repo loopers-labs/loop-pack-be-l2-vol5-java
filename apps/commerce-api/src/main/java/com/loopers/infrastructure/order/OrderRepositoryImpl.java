@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.Optional;
+import java.util.List;
 
 @RequiredArgsConstructor
 @Component
@@ -17,4 +18,10 @@ public class OrderRepositoryImpl implements OrderRepository {
 
     @Override
     public Optional<Order> findById(Long orderId) { return orderJpaRepository.findById(orderId); }
+
+    @Override
+    public List<Order> findAllByUserId(Long userId) { return orderJpaRepository.findAllByUserId(userId); }
+
+    @Override
+    public List<Order> findAll() { return orderJpaRepository.findAll(); }
 }

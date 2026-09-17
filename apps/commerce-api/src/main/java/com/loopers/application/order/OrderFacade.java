@@ -48,6 +48,30 @@ public class OrderFacade {
         return OrderInfo.from(orderRepository.save(order));
     }
 
+    @Transactional(readOnly = true)
+    public List<OrderInfo> getMyOrders(Long userId) {
+        return orderRepository.findAllByUserId(userId).stream().map(OrderInfo::from).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public OrderInfo getMyOrder(Long userId, Long orderId) {
+        Order order = orderRepository.findById(orderId)
+            .filter(found -> found.getUserId().equals(userId))
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "주문을 찾을 수 없습니다."));
+        return OrderInfo.from(order);
+    }
+
+    @Transactional(readOnly = true)
+    public List<OrderInfo> getAllOrders() {
+        return orderRepository.findAll().stream().map(OrderInfo::from).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public OrderInfo getOrder(Long orderId) {
+        return orderRepository.findById(orderId).map(OrderInfo::from)
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "주문을 찾을 수 없습니다."));
+    }
+
     private OrderItem toOrderItem(OrderRequestItem item) {
         Product product = productRepository.findById(item.productId())
             .filter(found -> found.getDeletedAt() == null)
