@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -39,15 +40,18 @@ public class PointWalletPolicy {
 
     /**
      * 포인트로 결제하고, 어느 그룹에서 얼마를 썼는지 돌려준다.
-     * 넣은 순서대로 그룹마다 쓸 수 있는 만큼 차감한다. (사용 순서·잔액 부족 판단은 다음 사이클: W-6·W-5)
+     * PNT-05: 만료 시각이 빠른 그룹부터, 그룹마다 쓸 수 있는 만큼 차감한다. (잔액 부족 판단은 다음 사이클: W-5)
      */
     public List<PointUsage> pay(List<PointGroup> groups, Money amount, ZonedDateTime now) {
         if (amount.isZero()) {
             throw new CoreException(ErrorType.BAD_REQUEST, "결제 금액은 0보다 커야 합니다.");
         }
+        List<PointGroup> byExpiry = groups.stream()
+            .sorted(Comparator.comparing(PointGroup::getExpiresAt))
+            .toList();
         List<PointUsage> usages = new ArrayList<>();
         Money left = amount;
-        for (PointGroup group : groups) {
+        for (PointGroup group : byExpiry) {
             if (left.isZero()) {
                 break;
             }
