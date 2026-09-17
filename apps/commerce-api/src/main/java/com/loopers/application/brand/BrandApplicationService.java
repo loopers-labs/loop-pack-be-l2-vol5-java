@@ -3,8 +3,10 @@ package com.loopers.application.brand;
 import com.loopers.application.brand.port.BrandRepository;
 import com.loopers.domain.brand.BrandId;
 import com.loopers.domain.brand.Brand;
+import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Service
 public class BrandApplicationService {
     private final BrandRepository brandRepository;
 
