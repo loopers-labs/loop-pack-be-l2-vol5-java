@@ -233,7 +233,15 @@ Brand·Product·Like·Point·Order는 각각 애그리거트 루트다. 내부 �
 
 - 고객은 `X-USER-ID`로 식별하며 자신의 좋아요·포인트·주문만 다룬다.
 - `/api-admin/**`는 ADMIN만 허용하고 일반·미식별 요청은 403으로 거절한다.
-- 신규 API의 상세 DTO·상태 코드·오류 응답 형식은 미정이다.
+- 아래 구현 확정 절을 제외한 신규 API의 상세 DTO·상태 코드·오류 응답 형식은 미정이다.
+
+### 구현 확정: 브랜드 생성·상세
+
+- 관리자 생성은 `POST /api-admin/v1/brands`, 입력은 `{"name":"브랜드"}`이며 설명은 받지 않는다. 이름은 공백이 아닌 1~100자 문자열이다. 성공은 201과 `data.id`, 잘못된 입력은 400이다.
+- 고객 상세는 `GET /api/v1/brands/{brandId}`, 성공은 200과 `data.id`, `data.name`이다. 없거나 삭제된 브랜드는 404다.
+- 고객은 `X-USER-ID`로 식별한다. 누락·없는 사용자는 401, 숫자로 해석할 수 없는 ID는 400이다. 실습 사용자 테이블에는 테스트 fixture로 사용자를 준비하며 회원가입 API는 추가하지 않는다.
+- Controller 응답은 기존 ApiResponse를 사용한다. 오류 코드는 기존 ErrorType의 HTTP reason phrase를 따른다. 관리자 일반·미식별 요청의 403은 과제 Security 설정의 sendError를 사용하며 ApiResponse 본문을 보장하지 않는다.
+- BrandApiIntegrationTest에서 실제 DB·MockMvc로 생성→상세, 입력 오류, 고객 식별, 관리자 접근, 없는·삭제된 대상을 검증한다.
 
 ### 고객: 브랜드·상품·좋아요
 
