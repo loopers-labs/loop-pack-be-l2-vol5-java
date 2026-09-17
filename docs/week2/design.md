@@ -7,6 +7,72 @@
 
 ---
 
+## 0. 버드뷰
+
+본문에 들어가기 전에 전체를 한 장으로 본다. 상세와 근거는 각 장에 있고, 여기는 지도만 둔다.
+
+### 0-1. 도메인 지도
+
+바운디드 컨텍스트 4개와 의존 방향. 실선은 조회, 굵은 선은 상태 변경. 표는 2-3, 컨텍스트 정의는 2-1.
+
+```mermaid
+flowchart LR
+    U["BC-01 사용자<br/>사용자 · 관리자"]
+    C["BC-02 카탈로그<br/>브랜드 · 상품 · 재고 · 좋아요"]
+    P["BC-03 포인트<br/>잔액 · 충전 · 환불"]
+    O["BC-04 주문<br/>주문 · 주문 품목 · 결제"]
+
+    U -->|존재 · 관리자 여부| C
+    U -->|존재 · 관리자 여부| P
+    U -->|존재 · 관리자 여부| O
+    C -->|존재 · 삭제 여부 · 현재 가격| O
+    C ==>|재고 차감| O
+    P ==>|잔액 차감| O
+```
+
+순환 없음. BC-04 주문이 유일한 하류 종점이고, 재고·잔액을 바꾸는 쓰기 의존은 주문 확정(FR-ORDER-02) 한 곳에서만 일어난다.
+
+### 0-2. 계층 지도
+
+각 층에 놓인 것과 의존 방향. 패키지는 `com.loopers.{interfaces,application,domain,infrastructure}`. 실선은 호출·의존, 점선은 구현(의존성 역전). domain은 아무것도 의존하지 않고, infrastructure가 domain의 Repository 인터페이스를 구현하며 domain 쪽으로 의존한다(ArchUnit `ArchitectureTest`).
+
+```mermaid
+flowchart TB
+    subgraph IF["interfaces — HTTP 경계"]
+        direction LR
+        CU["/api/v1/**<br/>@RequesterId 리졸버가 X-USER-ID 파싱"]
+        AD["/api-admin/v1/**<br/>AdminAuthenticationFilter → ROLE_ADMIN"]
+    end
+    subgraph AP["application — 유스케이스 조립"]
+        direction LR
+        F1[BrandFacade] ~~~ F2[ProductFacade] ~~~ F3[ProductLikeFacade] ~~~ F4[PointFacade] ~~~ F5[OrderFacade]
+    end
+    subgraph DO["domain — 규칙 · 불변식"]
+        direction LR
+        D1["user<br/>UserModel · UserService"] ~~~ D2["catalog<br/>Brand · Product · ProductLike"] ~~~ D3["point<br/>PointModel · PointService"] ~~~ D4["order<br/>Order · OrderItem · BuyerOrders"]
+    end
+    subgraph IN["infrastructure — 저장"]
+        R["*RepositoryImpl → *JpaRepository → MySQL"]
+    end
+
+    IF --> AP --> DO
+    IN -.->|"*Repository 구현"| DO
+```
+
+- 관리자 판정은 두 번 일어난다. 필터가 HTTP 경계에서 막고, Facade가 `UserService.getAdmin`으로 다시 확인한다(DR-25).
+- Facade는 BC 경계를 넘는 조립을 맡고, 도메인 서비스는 자기 BC 안의 규칙만 가진다. BC 간 호출 허용 표는 5-6.
+- 요청은 interfaces → application → domain 순으로 내려가고, 저장이 필요하면 domain의 Repository 인터페이스를 통해 infrastructure 구현체가 실행된다. 도메인은 JPA를 모른다.
+
+### 0-3. 범위
+
+| 구분 | 내용 |
+|---|---|
+| 이번 주차에 다루는 것 | 고객 API 13개(브랜드·상품 조회, 좋아요, 포인트 충전·조회·환불, 주문 생성·확정·조회) + 관리자 API(브랜드·상품·재고·포인트·주문). 목록은 4-2 |
+| 다루지 않는 것 | 배송, 주문 취소·수정, 쿠폰·할인, 외부 결제, 가입·로그인·인증, 관리자 권한 관리, 브랜드 필터·키워드 검색, 동시성 하의 불변식 유지. 근거는 요구사항 정의서 1-3 |
+| 설계에서만 고려한 것 | 포인트 이력, 충전금 단위·유효기간 (요구사항 정의서 1-3, 부록 A) |
+
+---
+
 ## 1. 시스템 (Level 1)
 
 ### 1-1. 제약 입력
