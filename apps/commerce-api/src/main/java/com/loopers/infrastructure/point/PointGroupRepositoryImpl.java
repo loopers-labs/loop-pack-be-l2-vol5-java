@@ -8,6 +8,7 @@ import com.querydsl.jpa.impl.JPAQueryFactory;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.time.ZonedDateTime;
 import java.util.List;
 
 @RequiredArgsConstructor
@@ -33,6 +34,18 @@ public class PointGroupRepositoryImpl implements PointGroupRepository {
         return queryFactory.selectFrom(POINT_GROUP)
             .where(POINT_GROUP.userId.eq(userId), POINT_GROUP.remaining.gt(Money.ZERO))
             .orderBy(POINT_GROUP.expiresAt.asc(), POINT_GROUP.id.asc())
+            .fetch();
+    }
+
+    /**
+     * point_groups(expires_at) 인덱스로 대상을 찾는다. 처리한 그룹은 남은 금액이 0이 되어 다음 조회에서 빠진다.
+     */
+    @Override
+    public List<PointGroup> findExpirable(ZonedDateTime now, int limit) {
+        return queryFactory.selectFrom(POINT_GROUP)
+            .where(POINT_GROUP.expiresAt.loe(now), POINT_GROUP.remaining.gt(Money.ZERO))
+            .orderBy(POINT_GROUP.id.asc())
+            .limit(limit)
             .fetch();
     }
 }
