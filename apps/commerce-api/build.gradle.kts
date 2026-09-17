@@ -1,4 +1,17 @@
+plugins {
+    checkstyle
+}
+
+checkstyle {
+    toolVersion = "10.26.1"
+    configFile = rootProject.file("config/checkstyle/checkstyle.xml")
+    isIgnoreFailures = false
+    maxWarnings = 0
+}
+
 dependencies {
+    testImplementation("com.tngtech.archunit:archunit:1.5.0")
+
     // add-ons
     implementation(project(":modules:jpa"))
     implementation(project(":modules:redis"))
