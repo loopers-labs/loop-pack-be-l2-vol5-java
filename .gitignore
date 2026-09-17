@@ -46,4 +46,4 @@ out/
 .DS_Store
 
 ### 개인 노트 (git 미관리) ###
-docs/notes/
+docs/note/

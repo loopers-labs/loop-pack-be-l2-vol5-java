@@ -35,6 +35,10 @@ spring:
     activate:
       on-profile: local, test
 
+# 로컬 실습 서버는 외부 네트워크에 노출하지 않는다(실습 과제 4절)
+server:
+  address: 127.0.0.1
+
 ---
 spring:
   config:

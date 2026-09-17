@@ -94,7 +94,7 @@ Root
 
 각 `apps` 모듈은 도메인별로 다음 4개 레이어를 따릅니다 (`apps/commerce-api/src/main/java/com/loopers/{layer}/{domain}` 참고):
 
-1. **`interfaces.api`** — Controller. API 스펙은 `{Domain}V1ApiSpec` 인터페이스(Swagger 어노테이션 등 문서화 목적)와 이를 구현하는 `{Domain}V1Controller`로 분리합니다. 요청/응답 DTO는 `{Domain}V1Dto`에 정적 record로 모아둡니다. 컨트롤러는 요청을 받아 `application` 레이어의 Facade만 호출하고, 응답은 공통 `ApiResponse<T>`(`interfaces.api.ApiResponse`)로 감쌉니다.
+1. **`interfaces.api`** — Controller. API 스펙은 `{Domain}ApiSpec` 인터페이스(Swagger 어노테이션 등 문서화 목적)와 이를 구현하는 `{Domain}Controller`로 분리합니다. 요청/응답 DTO는 `{Domain}Dto`에 정적 record로 모아둡니다. 클래스 이름에는 API 버전(`V1`)을 붙이지 않고, 버전은 경로(`/api/v1/...`)로만 표현합니다. starter 예시(`ExampleV1Controller` 등)만 예외로 `V1`이 붙어 있습니다. 컨트롤러는 요청을 받아 `application` 레이어의 Facade만 호출하고, 응답은 공통 `ApiResponse<T>`(`interfaces.api.ApiResponse`)로 감쌉니다.
 2. **`application`** — Facade + Info. `{Domain}Facade`는 하나 이상의 `domain.Service`를 조합(오케스트레이션)하고, 도메인 모델을 `interfaces` 레이어에 노출할 `{Domain}Info`(record)로 변환합니다. 여러 도메인을 넘나드는 유스케이스 조합은 이 레이어의 책임입니다.
 3. **`domain`** — Model(JPA Entity), Service, Repository(인터페이스). 비즈니스 규칙(유효성 검증 등)은 Model 생성자/메소드 내부에서 `CoreException`을 던지는 방식으로 캡슐화합니다. Repository는 `domain` 레이어에 인터페이스로만 정의하고, 트랜잭션 경계는 `Service`에서 `@Transactional`로 관리합니다.
 4. **`infrastructure`** — `domain.Repository` 인터페이스의 실제 구현체(`{Domain}RepositoryImpl`)와 Spring Data JPA 인터페이스(`{Domain}JpaRepository`)가 위치합니다. `RepositoryImpl`은 `JpaRepository`에 위임하는 어댑터 역할만 합니다.
@@ -102,6 +102,20 @@ Root
 공통 지원 코드는 `support.error`에 있습니다: `CoreException`(비즈니스 예외, `ErrorType` 보유) + `ErrorType`(HTTP status/code/message enum) 조합을 사용하고, `interfaces.api.ApiControllerAdvice`(`@RestControllerAdvice`)에서 이를 포함한 각종 예외를 `ApiResponse.fail(...)`로 일괄 변환합니다. 새로운 에러 케이스를 추가할 때는 `ErrorType`에 항목을 추가하고 `CoreException`으로 던지는 기존 패턴을 따르세요.
 
 `BaseEntity`(`modules:jpa`)는 모든 JPA Entity가 상속하는 `@MappedSuperclass`로, `id`/`createdAt`/`updatedAt`/`deletedAt`과 멱등한 `delete()`/`restore()`를 제공하며 `guard()`를 오버라이드해 `@PrePersist`/`@PreUpdate` 시점 검증을 넣을 수 있습니다. 재사용성을 위해 이 외의 컬럼/동작은 추가하지 않는 것이 원칙입니다.
+
+## AI 작업 규칙
+
+- 합의한 계약·기대값·패키지 의존을 따른다. 미정 정책은 먼저 질문한다.
+- 이번 기능에서 변경할 책임·파일·관련 테스트를 먼저 제안한다.
+- 작은 기능을 구현하고 diff와 관련 테스트·lint·ArchUnit 결과를 확인한다.
+- 검사를 통과시키기 위한 테스트·기대값·규칙 삭제나 완화는 하지 않는다.
+- 정책·검사 기준 변경이나 범위 밖 개편은 이유와 영향을 설명하고 확인을 받는다.
+
+## 개발 규칙 검사
+
+- **Checkstyle**: `apps/commerce-api`에 적용. 규칙은 `config/checkstyle/checkstyle.xml`(`AvoidStarImport`, `UnusedImports`)이며 경고 0개를 요구한다. `check` task에 연결되어 있다.
+- **ArchUnit**: `apps/commerce-api/src/test/java/com/loopers/architecture/ArchitectureTest.java`가 계층 의존 방향을 검사한다 — `domain`은 `interfaces`·`application`·`infrastructure`에, `application`은 `interfaces`·`infrastructure`에, `interfaces`는 `infrastructure`에 의존하지 않는다.
+- 최종 검사: `./gradlew :apps:commerce-api:check` (Checkstyle + 전체 테스트)
 
 ## 테스트 컨벤션
 
