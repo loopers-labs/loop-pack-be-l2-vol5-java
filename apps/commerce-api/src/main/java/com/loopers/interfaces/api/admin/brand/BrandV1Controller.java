@@ -6,6 +6,7 @@ import com.loopers.interfaces.api.ApiResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -36,6 +37,13 @@ public class BrandV1Controller implements BrandV1ApiSpec {
     ) {
         BrandInfo info = brandFacade.update(brandId, request.name());
         return ApiResponse.success(BrandV1Dto.BrandResponse.from(info));
+    }
+
+    @DeleteMapping("/{brandId}")
+    @Override
+    public ApiResponse<Object> delete(@PathVariable Long brandId) {
+        brandFacade.delete(brandId);
+        return ApiResponse.success();
     }
 
     @PostMapping

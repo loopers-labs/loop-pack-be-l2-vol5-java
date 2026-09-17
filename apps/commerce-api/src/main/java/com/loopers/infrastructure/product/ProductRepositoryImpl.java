@@ -19,6 +19,11 @@ public class ProductRepositoryImpl implements ProductRepository {
     }
 
     @Override
+    public boolean existsActiveByBrandId(Long brandId) {
+        return productJpaRepository.existsByBrand_IdAndDeletedAtIsNull(brandId);
+    }
+
+    @Override
     public Product save(Product product) {
         return productJpaRepository.save(product);
     }

@@ -2,6 +2,8 @@ package com.loopers.application.brand;
 
 import com.loopers.domain.brand.Brand;
 import com.loopers.infrastructure.brand.BrandJpaRepository;
+import com.loopers.domain.product.Product;
+import com.loopers.infrastructure.product.ProductJpaRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import com.loopers.utils.DatabaseCleanUp;
@@ -26,6 +28,9 @@ class BrandFacadeIntegrationTest {
 
     @Autowired
     private BrandJpaRepository brandJpaRepository;
+
+    @Autowired
+    private ProductJpaRepository productJpaRepository;
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
@@ -190,6 +195,57 @@ class BrandFacadeIntegrationTest {
 
             // assert
             assertThat(result.getErrorType()).isEqualTo(ErrorType.CONFLICT);
+        }
+    }
+
+    @DisplayName("Brand를 삭제할 때,")
+    @Nested
+    class Delete {
+        @DisplayName("연결된 활성 Product가 없으면, 논리 삭제한다.")
+        @Test
+        void deletesBrand_whenNoActiveProductExists() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+
+            // act
+            brandFacade.delete(brand.getId());
+
+            // assert
+            brandJpaRepository.flush();
+            entityManager.clear();
+            Brand deletedBrand = brandJpaRepository.findById(brand.getId()).orElseThrow();
+            assertThat(deletedBrand.getDeletedAt()).isNotNull();
+        }
+
+        @DisplayName("재고가 0인 Product라도 연결되어 있으면, CONFLICT 예외가 발생한다.")
+        @Test
+        void throwsException_whenActiveProductExists() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+
+            // act
+            CoreException result = assertThrows(CoreException.class, () -> {
+                brandFacade.delete(brand.getId());
+            });
+
+            // assert
+            assertAll(
+                () -> assertThat(result.getErrorType()).isEqualTo(ErrorType.CONFLICT),
+                () -> assertThat(brand.getDeletedAt()).isNull()
+            );
+        }
+
+        @DisplayName("없는 Brand ID면, NOT_FOUND 예외가 발생한다.")
+        @Test
+        void throwsException_whenBrandDoesNotExist() {
+            // act
+            CoreException result = assertThrows(CoreException.class, () -> {
+                brandFacade.delete(1L);
+            });
+
+            // assert
+            assertThat(result.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
         }
     }
 }

@@ -2,6 +2,8 @@ package com.loopers.interfaces.api.admin.brand;
 
 import com.loopers.domain.brand.Brand;
 import com.loopers.infrastructure.brand.BrandJpaRepository;
+import com.loopers.domain.product.Product;
+import com.loopers.infrastructure.product.ProductJpaRepository;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
@@ -30,6 +32,9 @@ class BrandV1ApiE2ETest {
 
     @Autowired
     private BrandJpaRepository brandJpaRepository;
+
+    @Autowired
+    private ProductJpaRepository productJpaRepository;
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
@@ -295,6 +300,73 @@ class BrandV1ApiE2ETest {
 
             // assert
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        }
+    }
+
+    @DisplayName("DELETE /api-admin/v1/brands/{brandId}")
+    @Nested
+    class Delete {
+        @DisplayName("연결된 활성 Product가 없으면, 200 응답과 논리 삭제 결과를 반환한다.")
+        @Test
+        void deletesBrand_whenNoActiveProductExists() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+
+            // act
+            ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
+            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+                ENDPOINT_BRANDS + "/" + brand.getId(),
+                HttpMethod.DELETE,
+                null,
+                responseType
+            );
+
+            // assert
+            Brand deletedBrand = brandJpaRepository.findById(brand.getId()).orElseThrow();
+            assertAll(
+                () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK),
+                () -> assertThat(deletedBrand.getDeletedAt()).isNotNull()
+            );
+        }
+
+        @DisplayName("활성 Product가 연결되어 있으면, 409 응답과 Brand 미삭제를 반환한다.")
+        @Test
+        void keepsBrand_whenActiveProductExists() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+
+            // act
+            ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
+            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+                ENDPOINT_BRANDS + "/" + brand.getId(),
+                HttpMethod.DELETE,
+                null,
+                responseType
+            );
+
+            // assert
+            Brand savedBrand = brandJpaRepository.findById(brand.getId()).orElseThrow();
+            assertAll(
+                () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT),
+                () -> assertThat(savedBrand.getDeletedAt()).isNull()
+            );
+        }
+
+        @DisplayName("없는 Brand ID면, 404 응답을 반환한다.")
+        @Test
+        void returnsNotFound_whenBrandDoesNotExist() {
+            // act
+            ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
+            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+                ENDPOINT_BRANDS + "/1",
+                HttpMethod.DELETE,
+                null,
+                responseType
+            );
+
+            // assert
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         }
     }
 }

@@ -13,6 +13,9 @@ public interface BrandV1ApiSpec {
     @Operation(summary = "브랜드 수정", description = "브랜드 이름을 수정합니다.")
     ApiResponse<BrandV1Dto.BrandResponse> update(Long brandId, BrandV1Dto.UpdateRequest request);
 
+    @Operation(summary = "브랜드 삭제", description = "브랜드를 논리 삭제합니다.")
+    ApiResponse<Object> delete(Long brandId);
+
     @Operation(summary = "브랜드 등록", description = "브랜드를 등록합니다.")
     ApiResponse<BrandV1Dto.BrandResponse> register(BrandV1Dto.CreateRequest request);
 }

@@ -1,6 +1,7 @@
 package com.loopers.application.brand;
 
 import com.loopers.domain.brand.Brand;
+import com.loopers.domain.brand.BrandDeletionPolicy;
 import com.loopers.domain.brand.BrandRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
@@ -13,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class BrandFacade {
 
     private final BrandRepository brandRepository;
+    private final BrandDeletionPolicy brandDeletionPolicy;
 
     @Transactional(readOnly = true)
     public BrandInfo getDetail(Long brandId) {
@@ -46,6 +48,11 @@ public class BrandFacade {
 
         Brand savedBrand = brandRepository.save(brand);
         return BrandInfo.from(savedBrand);
+    }
+
+    @Transactional
+    public void delete(Long brandId) {
+        brandDeletionPolicy.delete(brandId);
     }
 
     private Brand findBrandById(Long brandId) {
