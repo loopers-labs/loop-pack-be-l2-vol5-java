@@ -94,7 +94,7 @@ class ContractClassificationTest {
             () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST),
             () -> assertThat(body).isNotNull(),
             () -> assertThat(body.meta().result()).isEqualTo(ApiResponse.Metadata.Result.FAIL),
-            () -> assertThat(body.meta().errorCode()).isEqualTo(HttpStatus.BAD_REQUEST.getReasonPhrase()),
+            () -> assertThat(body.meta().errorCode()).isEqualTo("BAD_REQUEST"),
             () -> assertThat(body.meta().message()).contains("exampleId").contains("abc"),
             () -> assertThat(body.data()).isNull()
         );
@@ -115,7 +115,7 @@ class ContractClassificationTest {
             () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND),
             () -> assertThat(body).isNotNull(),
             () -> assertThat(body.meta().result()).isEqualTo(ApiResponse.Metadata.Result.FAIL),
-            () -> assertThat(body.meta().errorCode()).isEqualTo(HttpStatus.NOT_FOUND.getReasonPhrase()),
+            () -> assertThat(body.meta().errorCode()).isEqualTo("NOT_FOUND"),
             () -> assertThat(body.meta().message()).contains("[id = " + missingId + "]"),
             () -> assertThat(body.data()).isNull()
         );
@@ -133,7 +133,7 @@ class ContractClassificationTest {
             () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND),
             () -> assertThat(body).isNotNull(),
             () -> assertThat(body.meta().result()).isEqualTo(ApiResponse.Metadata.Result.FAIL),
-            () -> assertThat(body.meta().errorCode()).isEqualTo(HttpStatus.NOT_FOUND.getReasonPhrase()),
+            () -> assertThat(body.meta().errorCode()).isEqualTo("NOT_FOUND"),
             () -> assertThat(body.meta().message()).isEqualTo("존재하지 않는 요청입니다."),
             () -> assertThat(body.data()).isNull()
         );

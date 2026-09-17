@@ -2,7 +2,7 @@
 
 입력: 요구사항 정의서 (5장 정합성 검사 통과 상태)
 작성 기준: 「설계 문서 작성 가이드」
-진행 상태: **1~5장·부록 작성 완료.** 요구사항 정의서에 설계 피드백 반영 완료(requirements.md). 5-8 완료 조건은 코드 작성 후 검사한다.
+진행 상태: **1~5장·부록 작성 완료. 코드 구현 완료, 5-8 완료 조건 검사 완료.** 요구사항 정의서에 설계 피드백 반영 완료(requirements.md). 구현 중 확정한 판단은 DR-23~28.
 사전 확정: 모든 테이블의 식별자는 Long 자동 증가, 공통 컬럼 `created_at`·`updated_at`·`deleted_at` (DR-01, DR-16)
 
 ---
@@ -1028,7 +1028,7 @@ Facade public 메서드 ↔ FR (28:28)
 
 전부 기본 규칙이다. 4-4의 ER-01~22 모두 상태 변화 "없음"이므로 예외 규칙(실패 상태 저장)에 해당하는 FR이 없다.
 
-- 도메인 예외 하나(`CoreException`)에 `ErrorType`을 실어 던진다. `ErrorType`은 4-4의 코드 22개를 값으로 가지며 각 값이 HTTP 상태를 안다. 4-4에 없는 값을 추가하지 않는다.
+- 도메인 예외 하나(`CoreException`)에 `ErrorType`을 실어 던진다. `ErrorType`은 4-4의 코드 22개를 값으로 가지며 각 값이 HTTP 상태를 안다. 4-4에 없는 값을 추가하지 않는다. (구현: 기존 범용 값 `INTERNAL_ERROR`·`NOT_FOUND`·`CONFLICT`는 example 모듈과 500 처리용으로 남긴다. code 문자열은 enum 이름. DR-23)
 - 요청자 식별 실패(ER-01)·관리자 아님(ER-02)은 `UserService`가 던진다. 나머지 참조 실패(ER-03·04·05)는 해당 BC의 Service, INV·ST 위반(ER-10·11·15·16·18)은 Model, 검증(ER-07·08·09·12·13·14·17·19·20·21)은 Model 생성자 또는 값 객체. ER-22와 500은 `ApiControllerAdvice` 기본 처리.
 
 ### 5-5. 트랜잭션
@@ -1060,26 +1060,26 @@ Facade public 메서드 ↔ FR (28:28)
 | FR 성공 경로 (Facade 통합) | 28 | `FR-XX` |
 | FR 실패 케이스 (결과 상태까지) | 요구사항 2절 실패 케이스 행 전부 + 공통 2(`USER_NOT_FOUND`, `NOT_ADMIN`) | `FR-XX` + 실패 케이스 이름 |
 | 거부 INV (Model/Service 단위) | 15 (INV-01~15. INV-10은 Facade 통합으로) | `INV-XX` |
-| ST 금지 전이 | 3: ST-01 DELETED→ACTIVE, ST-02 DELETED→ACTIVE, ST-03 CONFIRMED→DRAFT / CONFIRMED→CONFIRMED | `ST-XX` |
+| ST 금지 전이 | 3: ST-01 DELETED→ACTIVE, ST-02 DELETED→ACTIVE, ST-03 CONFIRMED→DRAFT / CONFIRMED→CONFIRMED (구현: ST-03만. ST-01/02는 DR-26) | `ST-XX` |
 | LK | 0 | — |
 | ER (ApiSpec 수준, HTTP·코드) | 22 | `ER-XX` |
 
 ### 5-8. 완료 조건
 
-코드 작성 후 검사한다. 문서 시점에는 전부 미확인.
+코드 작성 후 검사한 결과. 검사 수단은 각 항목 끝에 적었다.
 
-- [ ] `domain.<A>` → `domain.<B>` import 없음
-- [ ] `application.<A>` → `domain.<B>.Repository` import 없음
-- [ ] `interfaces` → `domain`·`infrastructure` import 없음
-- [ ] Facade public 메서드 28개 ↔ FR 28개, 주석에 FR-ID
-- [ ] EP 28개 ↔ ApiSpec 메서드 28개
-- [ ] 거부(AG 내) INV 14개가 Model/Service 안에서 검증됨
-- [ ] 전이 메서드 3개만 존재, setter 없음
-- [ ] `ApiControllerAdvice`가 ER-01~22 매핑, 매핑 없는 예외 밖으로 안 나감
-- [ ] 5-4 DR 대상 FR 없음 (해당 없음)
-- [ ] 5-6 표 = 코드의 BC 간 호출
-- [ ] Repository 6개 (AG 루트 단위)
-- [ ] 5-7 대상 전부 테스트 있음
+- [x] `domain.<A>` → `domain.<B>` import 없음 — `ArchitectureTest.domainDoesNotDependOnOtherBoundedContextDomain`
+- [x] `application.<A>` → `domain.<B>.Repository` import 없음 — `ArchitectureTest.applicationDoesNotDependOnOtherBoundedContextRepository`
+- [x] `interfaces` → `domain`·`infrastructure` import 없음 — `ArchitectureTest.interfacesDoNotDependOnDomain`, `respectsLayerDependencies`
+- [x] Facade public 메서드 28개 ↔ FR 28개, 주석에 FR-ID — `BrandFacade` 6, `ProductFacade` 8, `ProductLikeFacade` 3, `PointFacade` 5, `OrderFacade` 6
+- [x] EP 28개 ↔ ApiSpec 메서드 28개 — `BrandV1` 1, `ProductV1` 2, `ProductLikeV1` 3, `PointV1` 3, `OrderV1` 4, `BrandAdminV1` 5, `ProductAdminV1` 6, `PointAdminV1` 2, `OrderAdminV1` 2. 각 메서드 주석에 EP-ID
+- [x] 거부(AG 내) INV 14개가 Model/Service 안에서 검증됨 — INV-01·02 `PointModel` / INV-03·11·13 `ProductModel` / INV-14 `BrandModel` / INV-06·07·08·09·12 `OrderModel` / INV-15 `UserService` / INV-04·05 `ProductLikeService` + 고유 제약. INV-10 은 `BrandFacade.deleteBrand`·`ProductFacade.createProduct` 트랜잭션 (DR-04)
+- [x] 전이 메서드 3개만 존재, setter 없음 — `BrandModel.delete()`, `ProductModel.delete()`(둘 다 `BaseEntity` 상속), `OrderModel.confirm()`. `ensureDraft()` 는 전이가 아니라 사전 조건 검사. 단 `BaseEntity.restore()` 는 공유 모듈에 남아 있다 (DR-26)
+- [x] `ApiControllerAdvice` 가 ER-01~22 매핑, 매핑 없는 예외 밖으로 안 나감 — `CoreException` → `ErrorType` 22개 + 범용, 형식 오류는 파라미터·필드 이름 매핑 (DR-24), `Throwable` → 500
+- [x] 5-4 DR 대상 FR 없음 (해당 없음)
+- [x] 5-6 표 = 코드의 BC 간 호출 — 모든 Facade → `UserService.getUser/getAdmin`; `PointFacade.chargeByAdmin/deductByAdmin` → `UserService.getUser(target)`; `OrderFacade.createOrder` → `ProductService.getActiveProducts`; `OrderFacade.confirmOrder` → `ProductService.getActiveProducts`, `ProductService.deductStock`, `PointService.deduct`. 표 밖 호출 없음
+- [x] Repository 6개 (AG 루트 단위) — `User, Brand, Product, ProductLike, Point, Order`. `OrderItemRepository` 없음
+- [x] 5-7 대상 전부 테스트 있음 — 258개 통과. FR 성공/실패: `*FacadeIntegrationTest` 6개. INV: `*ModelTest` 4개 + `UserServiceIntegrationTest`(INV-15) + `ProductLikeFacadeIntegrationTest`(INV-04·05). ST: ST-03 `OrderModelTest`, ST-01/02 는 DR-26 으로 미작성. ER: `*ApiE2ETest` 3개
 
 ---
 
@@ -1112,6 +1112,12 @@ Facade public 메서드 ↔ FR (28:28)
 | DR-20 | 4 | CON-01, ASM-23, EP-06, EP-27, EP-28 | EP-27·28 경로를 ASM-23의 `/api-admin/v1/users/{userId}/points/{charge|deduct}`에서 `/api-admin/v1/points/{charge|deduct}` + 바디 `userId`로 바꾼다. EP-06 `/users/{userId}/likes`는 원문 경로(CON-01)라 그대로 둔다 | ASM-23 경로 유지 (EP-06과 같은 모양) | 리소스 `points`는 BC-03 소유 개념이고 깊이 1단계라 4-2 규칙을 만족한다. ASM-23이 "설계에서 바꿔도 된다"고 열어뒀다. EP-06은 CON이 이기므로 남는 이탈은 하나뿐 | 원문이 관리자 포인트 경로를 정하면 그것을 따른다 | ASM-23의 경로를 위와 같이 고치고 `(설계 피드백 DR-20)` 표시 |
 | DR-21 | 4 | 4-3-0, EP-04, EP-05, EP-18, EP-23 | 공통 응답 형태를 4-3-0에 한 번 정의하고 EP 블록에서 이름으로 참조한다. FR 출력이 없는 명령(좋아요 등록·취소, 브랜드·상품 삭제)은 200 + `data` null | EP마다 응답 표 반복 / 삭제·좋아요 응답에 대상 요약 반환 | 같은 형태를 28번 반복하면 불일치가 생긴다. 출력 없는 FR에 필드를 만들면 "근거 못 쓰는 필드" | 클라이언트가 좋아요 후 좋아요 수를 바로 필요로 하면 EP-04 응답에 `likeCount`를 추가하고 FR-LIKE-01 출력에 반영한다 | 없음 |
 | DR-22 | 4 | OQ-04, FR-PRODUCT-01, FR-PRODUCT-02, ProductSummary | 고객 상품 응답에 재고를 넣지 않는다. 재고 부족은 확정 시 `INSUFFICIENT_STOCK`으로만 알린다 | `stock` 또는 `soldOut` 필드 추가 | 요구사항 FR-PRODUCT-01/02 출력에 재고가 없다. 설계가 임의로 넣을 수 없다 | 요구사항 출력에 재고가 추가되면 `ProductSummary`에 필드를 넣는다 | 없음 |
+| DR-23 | 5 | 4-1, ER-01~22, week1 `ContractClassificationTest` | `ErrorType.code` 를 HTTP reason phrase(`"Not Found"`)에서 enum 이름(`NOT_FOUND`, `USER_NOT_FOUND`)으로 바꾼다. 범용 4개(`INTERNAL_ERROR`, `BAD_REQUEST`, `NOT_FOUND`, `CONFLICT`)는 example 모듈과 ER-22·500 처리용으로 남긴다 | (a) 범용 4개만 reason phrase 유지, 새 21개만 enum 이름 (b) 5-4 문자 그대로 22개만 | (a)는 ER-22 `BAD_REQUEST` 의 code 가 `"Bad Request"` 가 되어 4-4 표와 어긋난다. (b)는 example 모듈이 깨진다. week1 계약 테스트·`docs/week1` 표의 기대값을 함께 고쳤다(승인) | 없음 | 없음 |
+| DR-24 | 5 | DR-01, EP-27, ER-22, 4-4 메모 | 요청 형식 오류의 코드 매핑: **경로** ID 형식 오류는 파라미터 이름으로 해당 `*_NOT_FOUND`(`brandId`·`productId`·`orderId`·`userId`), `page`·`size` 는 `INVALID_PAGE`. **바디** 필드 타입 오류는 필드 이름으로 `amount`→`INVALID_AMOUNT`, `quantity`→`INVALID_QUANTITY`, `stock`→`INVALID_STOCK`, `price`→`INVALID_PRODUCT_PRICE`, 바디 ID(`userId`·`brandId`·`productId`)와 그 밖은 ER-22 | 바디 ID 형식 오류도 `*_NOT_FOUND` (DR-01 문자 그대로) | DR-01 은 "경로·바디 ID" 라 했고 EP-27 은 "바디 `userId` 는 ER-22" 라 해 서로 어긋났다. 바디는 Jackson 파싱 실패라 필드 하나만 골라 도메인 실패로 바꾸기 어렵고, 요구사항이 이름을 준 값(`amount` 등)만 그 이름으로 낸다. 숫자 범위 초과는 원인 사슬에서 경로를 가진 `JsonMappingException` 을 찾아 같은 규칙을 적용한다. example 의 `/examples/abc` 는 매핑 표에 없어 기존 400 유지 | 바디 ID 를 도메인 실패로 내야 하는 클라이언트 요구가 생기면 Dto 를 문자열로 받아 Facade 앞에서 변환한다 | 없음 |
+| DR-25 | 5 | CON-03, ASM-26, ER-01, ER-02, 5-4 | `/api-admin/**` 는 Spring Security 체인이 HTTP 경계다. `AdminAuthenticationFilter` 가 `X-USER-ID` 로 사용자를 조회해 관리자면 `ROLE_ADMIN` 인증을 세우고, 실패는 `ApiResponse` 봉투로 404 `USER_NOT_FOUND` / 403 `NOT_ADMIN` 을 쓴다. CSRF 는 끄고 세션은 STATELESS. Facade 는 5-6 대로 `UserService.getAdmin` 을 다시 부른다(이중 조회). 고객 API 는 체인 없이 `@RequesterId` 리졸버가 헤더를 파싱한다 | (a) 체인 제거, Facade 에서만 판정 (b) 필터만 판정하고 Facade 호출 생략 | 이전 커밋의 체인은 인증을 세우는 곳이 없어 모든 관리자 요청이 봉투 없는 403 이었고 CSRF 로 쓰기가 막혔다. (a)는 경계를 잃고, (b)는 웹 계층 없이(Facade 통합 테스트) 규칙이 안 지켜진다. 이중 조회는 PK 조회 한 번이라 비용이 작다 | 인증(자격 증명)이 범위에 들어오면 필터를 인증 방식에 맞게 바꾸고 DR-18 의 401 재분류와 함께 본다 | 없음 |
+| DR-26 | 5 | 5-3, 5-7, ST-01, ST-02 | `modules/jpa` 의 `BaseEntity.restore()` 는 그대로 둔다. `BrandModel`·`ProductModel` 에서 오버라이드해 막지 않으며, ST-01/02 DELETED→ACTIVE 금지 전이 테스트는 작성하지 않는다 | 두 Model 에서 `restore()` 를 오버라이드해 예외 | 공유 모듈은 손대지 않고, 선언만 있고 부르는 FR 이 없다. 5-3 "3-2 에 없는 전이 메서드를 만들지 않는다" 는 이 프로젝트가 만든 메서드에 대한 규칙으로 읽는다(승인) | 복구 FR 이 들어오거나 호출이 발견되면 오버라이드로 막고 ST 테스트를 추가한다 | 없음 |
+| DR-27 | 5 | ER-09, ER-13, ER-20, ER-21, `supports/jackson` | Jackson 기본값 `ACCEPT_FLOAT_AS_INT` 를 유지한다. `amount: 1.5` 는 `1` 로 들어오며 "정수 아님" 으로 거절되지 않는다 | `JacksonConfig` 에서 비활성화 | 공유 모듈이라 다른 앱에도 영향이 간다. 정수 필드에 소수를 보내는 클라이언트는 상정하지 않는다(승인) | 정수 강제가 필요해지면 `supports/jackson` 에서 끄고 ER-09/13/20/21 테스트에 소수 케이스를 추가한다 | 없음 |
+| DR-28 | 5 | 4-1 페이징, 4-3-0 Page, ER-08 | 페이징 검증(`INVALID_PAGE`)과 결과 형태는 BC 밖 공통 값 객체 `support.paging.PageQuery`·`PageResult` 에 둔다. `page`·`size` 의 타입 오류는 DR-24 매핑으로 같은 코드 | 각 BC Service 에서 검증 | 6개 EP 가 같은 규칙을 쓴다. `support` 는 `error` 처럼 모든 계층이 참조하는 공통 패키지다 | 커서 페이징(DR-19 되돌릴 조건)이 오면 여기서만 바꾼다 | 없음 |
 
 ### A-2. 열린 질문
 
@@ -1152,7 +1158,7 @@ Facade public 메서드 ↔ FR (28:28)
 | FR-ADMIN-PRODUCT-06 | BC-02 | AG-03 | TB-03 | EP-24 | ER-01, ER-02, ER-04, ER-21 | `FR-ADMIN-PRODUCT-06`, `_PRODUCT_NOT_FOUND` ×2, `_INVALID_STOCK`, `INV-03` |
 | FR-ADMIN-ORDER-01 | BC-04 | 없음 | 없음 | EP-25 | ER-01, ER-02, ER-08 | `FR-ADMIN-ORDER-01` (+ 구매자 묶음), `_INVALID_PAGE` |
 | FR-ADMIN-ORDER-02 | BC-04 | 없음 | 없음 | EP-26 | ER-01, ER-02, ER-05 | `FR-ADMIN-ORDER-02`, `_ORDER_NOT_FOUND` |
-| FR-ADMIN-POINT-01 | BC-03 | AG-05 | TB-05 | EP-27 | ER-01, ER-02, ER-09, ER-10 | `FR-ADMIN-POINT-01`, `_USER_NOT_FOUND`, `_INVALID_AMOUNT`, `_BALANCE_LIMIT_EXCEEDED` |
-| FR-ADMIN-POINT-02 | BC-03 | AG-05 | TB-05 | EP-28 | ER-01, ER-02, ER-09, ER-11 | `FR-ADMIN-POINT-02`, `_USER_NOT_FOUND`, `_INVALID_AMOUNT`, `_INSUFFICIENT_POINT` |
+| FR-ADMIN-POINT-01 | BC-03 | AG-05 | TB-05 | EP-27 | ER-01, ER-02, ER-09, ER-10 (+ ER-22 `userId` 누락·타입 오류) | `FR-ADMIN-POINT-01`, `_USER_NOT_FOUND`, `_BAD_REQUEST`, `_INVALID_AMOUNT`, `_BALANCE_LIMIT_EXCEEDED` |
+| FR-ADMIN-POINT-02 | BC-03 | AG-05 | TB-05 | EP-28 | ER-01, ER-02, ER-09, ER-11 (+ ER-22 `userId` 누락·타입 오류) | `FR-ADMIN-POINT-02`, `_USER_NOT_FOUND`, `_BAD_REQUEST`, `_INVALID_AMOUNT`, `_INSUFFICIENT_POINT` |
 
 공통 실패(`USER_NOT_FOUND`, `NOT_ADMIN`)는 ER 칸에 전부 적었고 테스트는 Facade마다 하나씩(중복 생략). `INV-15`는 `UserService.getAdmin` 단위 테스트. 빈 칸 없음.
