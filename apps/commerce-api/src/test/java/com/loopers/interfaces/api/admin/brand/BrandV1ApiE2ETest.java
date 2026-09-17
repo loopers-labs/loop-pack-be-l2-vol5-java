@@ -189,4 +189,112 @@ class BrandV1ApiE2ETest {
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         }
     }
+
+    @DisplayName("PUT /api-admin/v1/brands/{brandId}")
+    @Nested
+    class Update {
+        @DisplayName("삭제되지 않은 Brand면, 200 응답과 수정된 Brand 정보를 반환한다.")
+        @Test
+        void returnsUpdatedBrand_whenBrandIsNotDeleted() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            HttpEntity<BrandV1Dto.UpdateRequest> request = new HttpEntity<>(
+                new BrandV1Dto.UpdateRequest("Adidas")
+            );
+
+            // act
+            ParameterizedTypeReference<ApiResponse<BrandV1Dto.BrandResponse>> responseType = new ParameterizedTypeReference<>() {};
+            ResponseEntity<ApiResponse<BrandV1Dto.BrandResponse>> response = testRestTemplate.exchange(
+                ENDPOINT_BRANDS + "/" + brand.getId(),
+                HttpMethod.PUT,
+                request,
+                responseType
+            );
+
+            // assert
+            Brand savedBrand = brandJpaRepository.findById(brand.getId()).orElseThrow();
+            assertAll(
+                () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK),
+                () -> assertThat(response.getBody().data().name()).isEqualTo("Adidas"),
+                () -> assertThat(savedBrand.getName()).isEqualTo("Adidas")
+            );
+        }
+
+        @DisplayName("이름이 공백만으로 구성되면, 400 응답을 반환하고 기존 이름을 유지한다.")
+        @Test
+        void keepsName_whenNameIsBlank() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            HttpEntity<BrandV1Dto.UpdateRequest> request = new HttpEntity<>(
+                new BrandV1Dto.UpdateRequest(" ")
+            );
+
+            // act
+            ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
+            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+                ENDPOINT_BRANDS + "/" + brand.getId(),
+                HttpMethod.PUT,
+                request,
+                responseType
+            );
+
+            // assert
+            Brand savedBrand = brandJpaRepository.findById(brand.getId()).orElseThrow();
+            assertAll(
+                () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST),
+                () -> assertThat(savedBrand.getName()).isEqualTo("Nike")
+            );
+        }
+
+        @DisplayName("삭제된 Brand면, 404 응답을 반환한다.")
+        @Test
+        void returnsNotFound_whenBrandIsDeleted() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            brand.delete();
+            brandJpaRepository.save(brand);
+            brandJpaRepository.flush();
+            HttpEntity<BrandV1Dto.UpdateRequest> request = new HttpEntity<>(
+                new BrandV1Dto.UpdateRequest("Adidas")
+            );
+
+            // act
+            ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
+            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+                ENDPOINT_BRANDS + "/" + brand.getId(),
+                HttpMethod.PUT,
+                request,
+                responseType
+            );
+
+            // assert
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        }
+
+        @DisplayName("삭제된 Brand와 같은 이름이면, 409 응답을 반환한다.")
+        @Test
+        void returnsConflict_whenNameMatchesDeletedBrand() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Brand deletedBrand = brandJpaRepository.save(Brand.create("Adidas"));
+            deletedBrand.delete();
+            brandJpaRepository.save(deletedBrand);
+            brandJpaRepository.flush();
+            HttpEntity<BrandV1Dto.UpdateRequest> request = new HttpEntity<>(
+                new BrandV1Dto.UpdateRequest("Adidas")
+            );
+
+            // act
+            ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
+            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+                ENDPOINT_BRANDS + "/" + brand.getId(),
+                HttpMethod.PUT,
+                request,
+                responseType
+            );
+
+            // assert
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        }
+    }
 }

@@ -6,6 +6,8 @@ public class BrandV1Dto {
 
     public record CreateRequest(String name) {}
 
+    public record UpdateRequest(String name) {}
+
     public record BrandResponse(
         Long id,
         String name,

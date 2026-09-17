@@ -38,7 +38,7 @@ public class Brand extends BaseEntity {
         this.name = validateName(name);
     }
 
-    private String validateName(String name) {
+    public static String validateName(String name) {
         if (name == null || name.isBlank()) {
             throw new CoreException(ErrorType.BAD_REQUEST, "브랜드 이름은 비어있을 수 없습니다.");
         }

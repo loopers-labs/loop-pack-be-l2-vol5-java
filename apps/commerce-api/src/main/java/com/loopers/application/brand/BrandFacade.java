@@ -16,9 +16,25 @@ public class BrandFacade {
 
     @Transactional(readOnly = true)
     public BrandInfo getDetail(Long brandId) {
-        Brand brand = brandRepository.findById(brandId)
-            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "브랜드를 찾을 수 없습니다."));
+        Brand brand = findBrandById(brandId);
         return BrandInfo.from(brand);
+    }
+
+    @Transactional
+    public BrandInfo update(Long brandId, String name) {
+        Brand brand = findBrandById(brandId);
+        if (brand.getDeletedAt() != null) {
+            throw new CoreException(ErrorType.NOT_FOUND, "브랜드를 찾을 수 없습니다.");
+        }
+
+        String validName = Brand.validateName(name);
+        if (brandRepository.existsByNameAndIdNot(validName, brandId)) {
+            throw new CoreException(ErrorType.CONFLICT, "이미 등록된 브랜드 이름입니다.");
+        }
+
+        brand.rename(validName);
+        Brand savedBrand = brandRepository.save(brand);
+        return BrandInfo.from(savedBrand);
     }
 
     @Transactional
@@ -30,5 +46,10 @@ public class BrandFacade {
 
         Brand savedBrand = brandRepository.save(brand);
         return BrandInfo.from(savedBrand);
+    }
+
+    private Brand findBrandById(Long brandId) {
+        return brandRepository.findById(brandId)
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "브랜드를 찾을 수 없습니다."));
     }
 }

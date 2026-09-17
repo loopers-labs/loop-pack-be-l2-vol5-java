@@ -371,7 +371,7 @@ sequenceDiagram
 | 브랜드 목록 조회 | `GET` | `/brands` | Query: `status` (`ACTIVE`, `DELETED`, `ALL`; 기본 `ALL`) | `200 OK`<br/>삭제 상태를 포함한 브랜드 목록 | `400 Bad Request`<br/>잘못된 `status` 입력 |
 | 브랜드 등록 | `POST` | `/brands` | Body: `name`(공백만 불가, 1~100자) | `201 Created`<br/>생성된 브랜드 정보 | `400 Bad Request`<br/>이름 검증 실패<br/>`409 Conflict`<br/>이미 등록된 이름 |
 | 브랜드 상세 조회 | `GET` | `/brands/{brandId}` | Path: `brandId` | `200 OK`<br/>삭제 상태를 포함한 브랜드 상세 정보 | `404 Not Found`<br/>없는 Brand             |
-| 브랜드 수정 | `PUT` | `/brands/{brandId}` | Path: `brandId`<br/>Body: `name`(공백만 불가, 1~100자) | `200 OK`<br/>수정된 브랜드 정보 | `400 Bad Request`<br/>이름 검증 실패<br/>`409 Conflict`<br/>이미 등록된 이름 |
+| 브랜드 수정 | `PUT` | `/brands/{brandId}` | Path: `brandId`<br/>Body: `name`(공백만 불가, 1~100자) | `200 OK`<br/>수정된 브랜드 정보 | `400 Bad Request`<br/>이름 검증 실패<br/>`404 Not Found`<br/>없거나 삭제된 Brand<br/>`409 Conflict`<br/>이미 등록된 이름 |
 | 브랜드 삭제 | `DELETE` | `/brands/{brandId}` | Path: `brandId` | `200 OK`<br/>삭제 완료 | `409 Conflict`<br/>삭제되지 않은 연결 Product 존재 |
 
 ##### 상품·재고

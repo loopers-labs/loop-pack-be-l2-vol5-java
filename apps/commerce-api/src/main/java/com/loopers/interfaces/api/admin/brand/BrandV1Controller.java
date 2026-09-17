@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -24,6 +25,16 @@ public class BrandV1Controller implements BrandV1ApiSpec {
     @Override
     public ApiResponse<BrandV1Dto.BrandResponse> getDetail(@PathVariable Long brandId) {
         BrandInfo info = brandFacade.getDetail(brandId);
+        return ApiResponse.success(BrandV1Dto.BrandResponse.from(info));
+    }
+
+    @PutMapping("/{brandId}")
+    @Override
+    public ApiResponse<BrandV1Dto.BrandResponse> update(
+        @PathVariable Long brandId,
+        @RequestBody BrandV1Dto.UpdateRequest request
+    ) {
+        BrandInfo info = brandFacade.update(brandId, request.name());
         return ApiResponse.success(BrandV1Dto.BrandResponse.from(info));
     }
 

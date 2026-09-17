@@ -130,4 +130,66 @@ class BrandFacadeIntegrationTest {
             assertThat(result.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
         }
     }
+
+    @DisplayName("Brand를 수정할 때,")
+    @Nested
+    class Update {
+        @DisplayName("삭제되지 않은 Brand면, 이름을 변경하고 수정 결과를 반환한다.")
+        @Test
+        void updatesBrand_whenBrandIsNotDeleted() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+
+            // act
+            BrandInfo result = brandFacade.update(brand.getId(), "Adidas");
+
+            // assert
+            brandJpaRepository.flush();
+            entityManager.clear();
+            Brand savedBrand = brandJpaRepository.findById(brand.getId()).orElseThrow();
+            assertAll(
+                () -> assertThat(result.name()).isEqualTo("Adidas"),
+                () -> assertThat(savedBrand.getName()).isEqualTo("Adidas")
+            );
+        }
+
+        @DisplayName("삭제된 Brand면, NOT_FOUND 예외가 발생한다.")
+        @Test
+        void throwsException_whenBrandIsDeleted() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            brand.delete();
+            brandJpaRepository.save(brand);
+            brandJpaRepository.flush();
+            entityManager.clear();
+
+            // act
+            CoreException result = assertThrows(CoreException.class, () -> {
+                brandFacade.update(brand.getId(), "Adidas");
+            });
+
+            // assert
+            assertThat(result.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
+        }
+
+        @DisplayName("삭제된 Brand와 같은 이름이면, CONFLICT 예외가 발생한다.")
+        @Test
+        void throwsException_whenNameMatchesDeletedBrand() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Brand deletedBrand = brandJpaRepository.save(Brand.create("Adidas"));
+            deletedBrand.delete();
+            brandJpaRepository.save(deletedBrand);
+            brandJpaRepository.flush();
+            entityManager.clear();
+
+            // act
+            CoreException result = assertThrows(CoreException.class, () -> {
+                brandFacade.update(brand.getId(), "Adidas");
+            });
+
+            // assert
+            assertThat(result.getErrorType()).isEqualTo(ErrorType.CONFLICT);
+        }
+    }
 }

@@ -19,6 +19,11 @@ public class BrandRepositoryImpl implements BrandRepository {
     }
 
     @Override
+    public boolean existsByNameAndIdNot(String name, Long brandId) {
+        return brandJpaRepository.existsByNameAndIdNot(name, brandId);
+    }
+
+    @Override
     public Optional<Brand> findById(Long brandId) {
         return brandJpaRepository.findById(brandId);
     }

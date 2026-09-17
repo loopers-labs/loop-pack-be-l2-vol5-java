@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class BrandTest {
@@ -63,6 +64,24 @@ class BrandTest {
 
             // assert
             assertThat(brand.getName()).isEqualTo("Nike Korea");
+        }
+
+        @DisplayName("이름이 공백만으로 구성되면, BAD_REQUEST 예외가 발생하고 기존 이름을 유지한다.")
+        @Test
+        void keepsName_whenNameIsBlank() {
+            // arrange
+            Brand brand = Brand.create("Nike");
+
+            // act
+            CoreException result = assertThrows(CoreException.class, () -> {
+                brand.rename(" ");
+            });
+
+            // assert
+            assertAll(
+                () -> assertThat(result.getErrorType()).isEqualTo(ErrorType.BAD_REQUEST),
+                () -> assertThat(brand.getName()).isEqualTo("Nike")
+            );
         }
     }
 }
