@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Comparator;
 
 @RequiredArgsConstructor
 @Component
@@ -33,6 +34,40 @@ public class ProductFacade {
         Product product = findActiveProductById(productId);
         long likeCount = likeRepository.countByProductId(productId);
         return CustomerProductInfo.from(product, likeCount);
+    }
+
+    @Transactional(readOnly = true)
+    public List<CustomerProductInfo> getCustomerList(Long brandId, int page, int size, String sort) {
+        if (page < 0 || size < 1 || size > 100) {
+            throw new CoreException(ErrorType.BAD_REQUEST, "페이지 입력이 올바르지 않습니다.");
+        }
+        Comparator<Product> comparator = customerComparator(sort);
+        List<Product> products = productRepository.findAllActive().stream()
+            .filter(product -> brandId == null || product.getBrand().getId().equals(brandId))
+            .sorted(comparator)
+            .toList();
+        int from = Math.min(page * size, products.size());
+        int to = Math.min(from + size, products.size());
+        return products.subList(from, to).stream()
+            .map(product -> CustomerProductInfo.from(product, likeRepository.countByProductId(product.getId())))
+            .toList();
+    }
+
+    private Comparator<Product> customerComparator(String sort) {
+        if (sort == null || sort.isBlank() || "latest".equals(sort)) {
+            return Comparator.comparing(Product::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder()))
+                .thenComparing(Product::getId, Comparator.reverseOrder());
+        }
+        if ("price_asc".equals(sort)) {
+            return Comparator.comparingLong(Product::getPrice)
+                .thenComparing(Product::getId);
+        }
+        if ("likes_desc".equals(sort)) {
+            return Comparator.comparingLong((Product product) -> likeRepository.countByProductId(product.getId()))
+                .reversed()
+                .thenComparing(Product::getId, Comparator.reverseOrder());
+        }
+        throw new CoreException(ErrorType.BAD_REQUEST, "정렬 입력이 올바르지 않습니다.");
     }
 
     @Transactional(readOnly = true)

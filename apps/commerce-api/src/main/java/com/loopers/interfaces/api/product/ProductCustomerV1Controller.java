@@ -7,7 +7,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 @RequiredArgsConstructor
 @RestController
@@ -15,6 +18,18 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProductCustomerV1Controller implements ProductCustomerV1ApiSpec {
 
     private final ProductFacade productFacade;
+
+    @GetMapping
+    public ApiResponse<List<ProductCustomerV1Dto.ProductResponse>> getList(
+        @RequestParam(required = false) Long brandId,
+        @RequestParam(defaultValue = "0") int page,
+        @RequestParam(defaultValue = "20") int size,
+        @RequestParam(defaultValue = "latest") String sort
+    ) {
+        return ApiResponse.success(productFacade.getCustomerList(brandId, page, size, sort).stream()
+            .map(ProductCustomerV1Dto.ProductResponse::from)
+            .toList());
+    }
 
     @GetMapping("/{productId}")
     @Override
