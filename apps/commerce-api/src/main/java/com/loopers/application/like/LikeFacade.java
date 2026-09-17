@@ -1,0 +1,51 @@
+package com.loopers.application.like;
+
+import com.loopers.domain.like.Like;
+import com.loopers.domain.like.LikeRepository;
+import com.loopers.domain.product.Product;
+import com.loopers.domain.product.ProductRepository;
+import com.loopers.support.error.CoreException;
+import com.loopers.support.error.ErrorType;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+
+@RequiredArgsConstructor
+@Component
+public class LikeFacade {
+
+    private final LikeRepository likeRepository;
+    private final ProductRepository productRepository;
+
+    @Transactional
+    public LikeInfo add(Long userId, Long productId) {
+        Product product = findProduct(productId);
+        if (product.getDeletedAt() != null) {
+            throw new CoreException(ErrorType.NOT_FOUND, "상품을 찾을 수 없습니다.");
+        }
+
+        return likeRepository.findByUserIdAndProductId(userId, productId)
+            .map(LikeInfo::from)
+            .orElseGet(() -> LikeInfo.from(likeRepository.save(Like.create(userId, productId))));
+    }
+
+    @Transactional
+    public LikeInfo cancel(Long userId, Long productId) {
+        return likeRepository.findByUserIdAndProductId(userId, productId)
+            .map(like -> {
+                likeRepository.delete(like);
+                return LikeInfo.unliked(userId, productId);
+            })
+            .orElseGet(() -> LikeInfo.unliked(userId, productId));
+    }
+
+    @Transactional(readOnly = true)
+    public long countByProductId(Long productId) {
+        return likeRepository.countByProductId(productId);
+    }
+
+    private Product findProduct(Long productId) {
+        return productRepository.findById(productId)
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "상품을 찾을 수 없습니다."));
+    }
+}
