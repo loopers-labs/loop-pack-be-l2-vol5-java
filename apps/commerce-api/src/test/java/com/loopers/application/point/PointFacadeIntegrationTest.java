@@ -2,7 +2,9 @@ package com.loopers.application.point;
 
 import com.loopers.domain.point.Point;
 import com.loopers.domain.point.PointBalance;
+import com.loopers.domain.user.User;
 import com.loopers.infrastructure.point.PointJpaRepository;
+import com.loopers.infrastructure.user.UserJpaRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import com.loopers.utils.DatabaseCleanUp;
@@ -29,6 +31,9 @@ class PointFacadeIntegrationTest {
     private PointJpaRepository pointJpaRepository;
 
     @Autowired
+    private UserJpaRepository userJpaRepository;
+
+    @Autowired
     private DatabaseCleanUp databaseCleanUp;
 
     @PersistenceContext
@@ -46,7 +51,8 @@ class PointFacadeIntegrationTest {
         @Test
         void chargesPoint_whenPointExistsForUser() {
             // arrange
-            Point point = pointJpaRepository.save(Point.create(1L));
+            User user = saveUser();
+            Point point = pointJpaRepository.save(Point.create(user.getId()));
 
             // act
             PointInfo result = pointFacade.charge(point.getUserId(), 200L);
@@ -65,7 +71,8 @@ class PointFacadeIntegrationTest {
         @Test
         void keepsBalance_whenChargeAmountIsZero() {
             // arrange
-            Point point = pointJpaRepository.save(Point.create(1L));
+            User user = saveUser();
+            Point point = pointJpaRepository.save(Point.create(user.getId()));
 
             // act
             CoreException result = assertThrows(CoreException.class, () -> {
@@ -90,7 +97,8 @@ class PointFacadeIntegrationTest {
         @Test
         void returnsSavedBalance_whenPointExistsForUser() {
             // arrange
-            Point point = pointJpaRepository.save(Point.create(1L, new PointBalance(300L)));
+            User user = saveUser();
+            Point point = pointJpaRepository.save(Point.create(user.getId(), new PointBalance(300L)));
 
             // act
             PointInfo result = pointFacade.getBalance(point.getUserId());
@@ -98,5 +106,9 @@ class PointFacadeIntegrationTest {
             // assert
             assertThat(result.balance()).isEqualTo(300L);
         }
+    }
+
+    private User saveUser() {
+        return userJpaRepository.save(User.create());
     }
 }

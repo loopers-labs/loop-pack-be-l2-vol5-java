@@ -3,9 +3,11 @@ package com.loopers.interfaces.api.like;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.like.Like;
 import com.loopers.domain.product.Product;
+import com.loopers.domain.user.User;
 import com.loopers.infrastructure.brand.BrandJpaRepository;
 import com.loopers.infrastructure.like.LikeJpaRepository;
 import com.loopers.infrastructure.product.ProductJpaRepository;
+import com.loopers.infrastructure.user.UserJpaRepository;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
@@ -40,6 +42,9 @@ class MyLikeV1ApiE2ETest {
     private LikeJpaRepository likeRepository;
 
     @Autowired
+    private UserJpaRepository userRepository;
+
+    @Autowired
     private DatabaseCleanUp databaseCleanUp;
 
     @AfterEach
@@ -49,14 +54,15 @@ class MyLikeV1ApiE2ETest {
 
     @Test
     void returnsMyActiveLikedProducts() {
+        User user = userRepository.save(User.create());
         Brand brand = brandRepository.save(Brand.create("Nike"));
         Product product = productRepository.save(Product.create(brand, "Air Max", 100_000L));
-        likeRepository.save(Like.create(1L, product.getId()));
+        likeRepository.save(Like.create(user.getId(), product.getId()));
         HttpHeaders headers = new HttpHeaders();
-        headers.set("X-USER-ID", "1");
+        headers.set("X-USER-ID", user.getId().toString());
 
         ResponseEntity<ApiResponse<List<LikeV1Dto.MyLikeProductResponse>>> response = testRestTemplate.exchange(
-            "/api/v1/users/1/likes",
+            "/api/v1/users/" + user.getId() + "/likes",
             HttpMethod.GET,
             new HttpEntity<>(headers),
             new ParameterizedTypeReference<>() {}

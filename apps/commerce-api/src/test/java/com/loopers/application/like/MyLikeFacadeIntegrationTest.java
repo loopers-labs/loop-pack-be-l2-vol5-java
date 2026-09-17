@@ -3,10 +3,12 @@ package com.loopers.application.like;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.like.Like;
 import com.loopers.domain.product.Product;
+import com.loopers.domain.user.User;
 import com.loopers.application.product.CustomerProductInfo;
 import com.loopers.infrastructure.brand.BrandJpaRepository;
 import com.loopers.infrastructure.like.LikeJpaRepository;
 import com.loopers.infrastructure.product.ProductJpaRepository;
+import com.loopers.infrastructure.user.UserJpaRepository;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -35,6 +37,9 @@ class MyLikeFacadeIntegrationTest {
     private LikeJpaRepository likeRepository;
 
     @Autowired
+    private UserJpaRepository userRepository;
+
+    @Autowired
     private DatabaseCleanUp databaseCleanUp;
 
     @AfterEach
@@ -44,15 +49,16 @@ class MyLikeFacadeIntegrationTest {
 
     @Test
     void returnsOnlyActiveProductsLikedByUser() {
+        User user = userRepository.save(User.create());
         Brand brand = brandRepository.save(Brand.create("Nike"));
         Product active = productRepository.save(Product.create(brand, "Air Max", 100_000L));
         Product deleted = productRepository.save(Product.create(brand, "Pegasus", 90_000L));
         deleted.delete();
         productRepository.save(deleted);
-        likeRepository.save(Like.create(1L, active.getId()));
-        likeRepository.save(Like.create(1L, deleted.getId()));
+        likeRepository.save(Like.create(user.getId(), active.getId()));
+        likeRepository.save(Like.create(user.getId(), deleted.getId()));
 
-        List<CustomerProductInfo> result = likeFacade.getMyLikes(1L);
+        List<CustomerProductInfo> result = likeFacade.getMyLikes(user.getId());
 
         assertThat(result).extracting(CustomerProductInfo::id).containsExactly(active.getId());
     }

@@ -4,6 +4,7 @@ import com.loopers.domain.like.Like;
 import com.loopers.domain.like.LikeRepository;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
+import com.loopers.application.user.UserValidator;
 import com.loopers.application.product.CustomerProductInfo;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
@@ -19,9 +20,11 @@ public class LikeFacade {
 
     private final LikeRepository likeRepository;
     private final ProductRepository productRepository;
+    private final UserValidator userValidator;
 
     @Transactional
     public LikeInfo add(Long userId, Long productId) {
+        userValidator.validateExists(userId);
         Product product = findProduct(productId);
         if (product.getDeletedAt() != null) {
             throw new CoreException(ErrorType.NOT_FOUND, "상품을 찾을 수 없습니다.");
@@ -34,6 +37,7 @@ public class LikeFacade {
 
     @Transactional
     public LikeInfo cancel(Long userId, Long productId) {
+        userValidator.validateExists(userId);
         return likeRepository.findByUserIdAndProductId(userId, productId)
             .map(like -> {
                 likeRepository.delete(like);
@@ -49,6 +53,7 @@ public class LikeFacade {
 
     @Transactional(readOnly = true)
     public List<CustomerProductInfo> getMyLikes(Long userId) {
+        userValidator.validateExists(userId);
         return likeRepository.findAllByUserId(userId).stream()
             .map(Like::getProductId)
             .map(productRepository::findById)

@@ -205,6 +205,7 @@ classDiagram
 #### 2.1.2 User–Like–Product
 
 - [관계] User 1 : N Like N : 1 Product
+- [실습용 사용자] User는 fixture로 저장하며, 고객별 API는 `X-USER-ID`로 존재하는 User를 식별한다. User CRUD는 이번 범위에 포함하지 않는다.
 - [도메인 규칙] 삭제된 Product에는 좋아요를 할 수 없다.
 - [도메인 규칙] User는 삭제된 Product에 남아 있는 자신의 좋아요를 취소할 수 있다.
 - [불변식] User는 하나의 Product에 Like를 여러 번 할 수 없다.

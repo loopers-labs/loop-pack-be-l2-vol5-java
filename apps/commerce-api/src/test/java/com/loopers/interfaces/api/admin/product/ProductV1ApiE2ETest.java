@@ -1,36 +1,46 @@
 package com.loopers.interfaces.api.admin.product;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.product.Product;
 import com.loopers.infrastructure.brand.BrandJpaRepository;
 import com.loopers.infrastructure.product.ProductJpaRepository;
 import com.loopers.interfaces.api.ApiResponse;
+import com.loopers.interfaces.api.admin.AdminMockMvcClient;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest
+@AutoConfigureMockMvc
 class ProductV1ApiE2ETest {
 
     private static final String ENDPOINT_PRODUCTS = "/api-admin/v1/products";
 
     @Autowired
-    private TestRestTemplate testRestTemplate;
+    private MockMvc mockMvc;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    private AdminMockMvcClient adminClient;
 
     @Autowired
     private BrandJpaRepository brandJpaRepository;
@@ -40,6 +50,11 @@ class ProductV1ApiE2ETest {
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
+
+    @BeforeEach
+    void setUp() {
+        adminClient = new AdminMockMvcClient(mockMvc, objectMapper);
+    }
 
     @AfterEach
     void tearDown() {
@@ -60,7 +75,7 @@ class ProductV1ApiE2ETest {
 
             // act
             ParameterizedTypeReference<ApiResponse<ProductV1Dto.ProductResponse>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<ProductV1Dto.ProductResponse>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<ProductV1Dto.ProductResponse>> response = adminClient.exchange(
                 ENDPOINT_PRODUCTS,
                 HttpMethod.POST,
                 request,
@@ -90,7 +105,7 @@ class ProductV1ApiE2ETest {
 
             // act
             ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<Object>> response = adminClient.exchange(
                 ENDPOINT_PRODUCTS,
                 HttpMethod.POST,
                 request,
@@ -118,7 +133,7 @@ class ProductV1ApiE2ETest {
 
             // act
             ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<Object>> response = adminClient.exchange(
                 ENDPOINT_PRODUCTS,
                 HttpMethod.POST,
                 request,
@@ -148,7 +163,7 @@ class ProductV1ApiE2ETest {
 
             // act
             ParameterizedTypeReference<ApiResponse<ProductV1Dto.StockResponse>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<ProductV1Dto.StockResponse>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<ProductV1Dto.StockResponse>> response = adminClient.exchange(
                 ENDPOINT_PRODUCTS + "/" + product.getId() + "/stock",
                 HttpMethod.PUT,
                 request,
@@ -179,7 +194,7 @@ class ProductV1ApiE2ETest {
 
             // act
             ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<Object>> response = adminClient.exchange(
                 ENDPOINT_PRODUCTS + "/" + product.getId() + "/stock",
                 HttpMethod.PUT,
                 request,
@@ -209,7 +224,7 @@ class ProductV1ApiE2ETest {
 
             // act
             ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<Object>> response = adminClient.exchange(
                 ENDPOINT_PRODUCTS + "/" + product.getId() + "/stock",
                 HttpMethod.PUT,
                 request,
@@ -235,7 +250,7 @@ class ProductV1ApiE2ETest {
 
             // act
             ParameterizedTypeReference<ApiResponse<ProductV1Dto.ProductResponse>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<ProductV1Dto.ProductResponse>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<ProductV1Dto.ProductResponse>> response = adminClient.exchange(
                 ENDPOINT_PRODUCTS + "/" + product.getId(),
                 HttpMethod.GET,
                 null,
@@ -267,7 +282,7 @@ class ProductV1ApiE2ETest {
 
             // act
             ParameterizedTypeReference<ApiResponse<ProductV1Dto.ProductResponse>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<ProductV1Dto.ProductResponse>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<ProductV1Dto.ProductResponse>> response = adminClient.exchange(
                 ENDPOINT_PRODUCTS + "/" + product.getId(),
                 HttpMethod.GET,
                 request,
@@ -286,7 +301,7 @@ class ProductV1ApiE2ETest {
         void returnsNotFound_whenProductDoesNotExist() {
             // act
             ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<Object>> response = adminClient.exchange(
                 ENDPOINT_PRODUCTS + "/1",
                 HttpMethod.GET,
                 null,
@@ -313,7 +328,7 @@ class ProductV1ApiE2ETest {
 
             // act
             ParameterizedTypeReference<ApiResponse<ProductV1Dto.ProductResponse>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<ProductV1Dto.ProductResponse>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<ProductV1Dto.ProductResponse>> response = adminClient.exchange(
                 ENDPOINT_PRODUCTS + "/" + product.getId(),
                 HttpMethod.PUT,
                 request,
@@ -342,7 +357,7 @@ class ProductV1ApiE2ETest {
 
             // act
             ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<Object>> response = adminClient.exchange(
                 ENDPOINT_PRODUCTS + "/" + product.getId(),
                 HttpMethod.PUT,
                 request,
@@ -373,7 +388,7 @@ class ProductV1ApiE2ETest {
 
             // act
             ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<Object>> response = adminClient.exchange(
                 ENDPOINT_PRODUCTS + "/" + product.getId(),
                 HttpMethod.PUT,
                 request,
@@ -397,7 +412,7 @@ class ProductV1ApiE2ETest {
 
             // act
             ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<Object>> response = adminClient.exchange(
                 ENDPOINT_PRODUCTS + "/" + product.getId(),
                 HttpMethod.DELETE,
                 null,
@@ -417,7 +432,7 @@ class ProductV1ApiE2ETest {
         void returnsNotFound_whenProductDoesNotExist() {
             // act
             ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<Object>> response = adminClient.exchange(
                 ENDPOINT_PRODUCTS + "/1",
                 HttpMethod.DELETE,
                 null,
@@ -444,7 +459,7 @@ class ProductV1ApiE2ETest {
 
             // act
             ParameterizedTypeReference<ApiResponse<List<ProductV1Dto.ProductResponse>>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<List<ProductV1Dto.ProductResponse>>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<List<ProductV1Dto.ProductResponse>>> response = adminClient.exchange(
                 ENDPOINT_PRODUCTS,
                 HttpMethod.GET,
                 null,
@@ -469,7 +484,7 @@ class ProductV1ApiE2ETest {
 
             // act
             ParameterizedTypeReference<ApiResponse<List<ProductV1Dto.ProductResponse>>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<List<ProductV1Dto.ProductResponse>>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<List<ProductV1Dto.ProductResponse>>> response = adminClient.exchange(
                 ENDPOINT_PRODUCTS + "?status=ACTIVE",
                 HttpMethod.GET,
                 null,
@@ -487,7 +502,7 @@ class ProductV1ApiE2ETest {
         void returnsBadRequest_whenStatusIsInvalid() {
             // act
             ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<Object>> response = adminClient.exchange(
                 ENDPOINT_PRODUCTS + "?status=INVALID",
                 HttpMethod.GET,
                 null,

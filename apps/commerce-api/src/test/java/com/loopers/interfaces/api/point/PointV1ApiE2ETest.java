@@ -2,7 +2,9 @@ package com.loopers.interfaces.api.point;
 
 import com.loopers.domain.point.Point;
 import com.loopers.domain.point.PointBalance;
+import com.loopers.domain.user.User;
 import com.loopers.infrastructure.point.PointJpaRepository;
+import com.loopers.infrastructure.user.UserJpaRepository;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
@@ -37,6 +39,9 @@ class PointV1ApiE2ETest {
     private PointJpaRepository pointJpaRepository;
 
     @Autowired
+    private UserJpaRepository userJpaRepository;
+
+    @Autowired
     private DatabaseCleanUp databaseCleanUp;
 
     @AfterEach
@@ -51,7 +56,8 @@ class PointV1ApiE2ETest {
         @Test
         void returnsSavedBalance_whenUserIdIsProvided() {
             // arrange
-            Point point = pointJpaRepository.save(Point.create(1L, new PointBalance(300L)));
+            User user = saveUser();
+            Point point = pointJpaRepository.save(Point.create(user.getId(), new PointBalance(300L)));
             HttpEntity<Void> request = new HttpEntity<>(headers(point.getUserId()));
 
             // act
@@ -78,7 +84,8 @@ class PointV1ApiE2ETest {
         @Test
         void returnsChargedBalance_whenValidRequestIsProvided() {
             // arrange
-            Point point = pointJpaRepository.save(Point.create(1L));
+            User user = saveUser();
+            Point point = pointJpaRepository.save(Point.create(user.getId()));
             HttpEntity<PointV1Dto.ChargeRequest> request = new HttpEntity<>(
                 new PointV1Dto.ChargeRequest(200L),
                 headers(point.getUserId())
@@ -106,7 +113,8 @@ class PointV1ApiE2ETest {
         @Test
         void keepsBalance_whenAmountIsMissing() {
             // arrange
-            Point point = pointJpaRepository.save(Point.create(1L));
+            User user = saveUser();
+            Point point = pointJpaRepository.save(Point.create(user.getId()));
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(Map.of(), headers(point.getUserId()));
 
             // act
@@ -130,7 +138,8 @@ class PointV1ApiE2ETest {
         @Test
         void keepsBalance_whenAmountIsZero() {
             // arrange
-            Point point = pointJpaRepository.save(Point.create(1L));
+            User user = saveUser();
+            Point point = pointJpaRepository.save(Point.create(user.getId()));
             HttpEntity<PointV1Dto.ChargeRequest> request = new HttpEntity<>(
                 new PointV1Dto.ChargeRequest(0L),
                 headers(point.getUserId())
@@ -157,7 +166,8 @@ class PointV1ApiE2ETest {
         @Test
         void keepsBalance_whenAmountHasInvalidType() {
             // arrange
-            Point point = pointJpaRepository.save(Point.create(1L));
+            User user = saveUser();
+            Point point = pointJpaRepository.save(Point.create(user.getId()));
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(
                 Map.of("amount", "invalid"),
                 headers(point.getUserId())
@@ -185,5 +195,9 @@ class PointV1ApiE2ETest {
         HttpHeaders headers = new HttpHeaders();
         headers.set("X-USER-ID", userId.toString());
         return headers;
+    }
+
+    private User saveUser() {
+        return userJpaRepository.save(User.create());
     }
 }

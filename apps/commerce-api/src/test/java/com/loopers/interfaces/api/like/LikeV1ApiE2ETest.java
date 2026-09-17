@@ -2,12 +2,15 @@ package com.loopers.interfaces.api.like;
 
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.product.Product;
+import com.loopers.domain.user.User;
 import com.loopers.infrastructure.brand.BrandJpaRepository;
 import com.loopers.infrastructure.like.LikeJpaRepository;
 import com.loopers.infrastructure.product.ProductJpaRepository;
+import com.loopers.infrastructure.user.UserJpaRepository;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -42,7 +45,17 @@ class LikeV1ApiE2ETest {
     private LikeJpaRepository likeJpaRepository;
 
     @Autowired
+    private UserJpaRepository userJpaRepository;
+
+    @Autowired
     private DatabaseCleanUp databaseCleanUp;
+
+    private User user;
+
+    @BeforeEach
+    void setUp() {
+        user = userJpaRepository.save(User.create());
+    }
 
     @AfterEach
     void tearDown() {
@@ -52,6 +65,44 @@ class LikeV1ApiE2ETest {
     @DisplayName("POST /api/v1/products/{productId}/likes")
     @Nested
     class Add {
+        @DisplayName("요청자 식별값이 없으면, 400 응답을 반환하고 Like를 저장하지 않는다.")
+        @Test
+        void returnsBadRequest_whenUserIdIsMissing() {
+            // arrange
+            Product product = saveProduct();
+
+            // act
+            ResponseEntity<ApiResponse<LikeV1Dto.LikeResponse>> response = exchange(
+                product.getId(), HttpMethod.POST, new HttpEntity<>((Void) null)
+            );
+
+            // assert
+            assertAll(
+                () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST),
+                () -> assertThat(likeJpaRepository.count()).isZero()
+            );
+        }
+
+        @DisplayName("없는 User면, 404 응답을 반환하고 Like를 저장하지 않는다.")
+        @Test
+        void returnsNotFound_whenUserDoesNotExist() {
+            // arrange
+            Product product = saveProduct();
+            HttpHeaders headers = new HttpHeaders();
+            headers.add("X-USER-ID", "999");
+
+            // act
+            ResponseEntity<ApiResponse<LikeV1Dto.LikeResponse>> response = exchange(
+                product.getId(), HttpMethod.POST, new HttpEntity<>(headers)
+            );
+
+            // assert
+            assertAll(
+                () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND),
+                () -> assertThat(likeJpaRepository.count()).isZero()
+            );
+        }
+
         @DisplayName("활성 Product면, 200 응답과 좋아요 상태를 반환한다.")
         @Test
         void returnsLiked_whenProductIsActive() {
@@ -105,7 +156,7 @@ class LikeV1ApiE2ETest {
 
     private HttpHeaders headers() {
         HttpHeaders headers = new HttpHeaders();
-        headers.add("X-USER-ID", "1");
+        headers.add("X-USER-ID", user.getId().toString());
         return headers;
     }
 

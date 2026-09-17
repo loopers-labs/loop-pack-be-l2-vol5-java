@@ -5,14 +5,18 @@ import com.loopers.infrastructure.brand.BrandJpaRepository;
 import com.loopers.domain.product.Product;
 import com.loopers.infrastructure.product.ProductJpaRepository;
 import com.loopers.interfaces.api.ApiResponse;
+import com.loopers.interfaces.api.admin.AdminMockMvcClient;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.test.web.servlet.MockMvc;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
@@ -24,13 +28,19 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest
+@AutoConfigureMockMvc
 class BrandV1ApiE2ETest {
 
     private static final String ENDPOINT_BRANDS = "/api-admin/v1/brands";
 
     @Autowired
-    private TestRestTemplate testRestTemplate;
+    private MockMvc mockMvc;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    private AdminMockMvcClient adminClient;
 
     @Autowired
     private BrandJpaRepository brandJpaRepository;
@@ -40,6 +50,11 @@ class BrandV1ApiE2ETest {
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
+
+    @BeforeEach
+    void setUp() {
+        adminClient = new AdminMockMvcClient(mockMvc, objectMapper);
+    }
 
     @AfterEach
     void tearDown() {
@@ -59,7 +74,7 @@ class BrandV1ApiE2ETest {
 
             // act
             ParameterizedTypeReference<ApiResponse<BrandV1Dto.BrandResponse>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<BrandV1Dto.BrandResponse>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<BrandV1Dto.BrandResponse>> response = adminClient.exchange(
                 ENDPOINT_BRANDS,
                 HttpMethod.POST,
                 request,
@@ -85,7 +100,7 @@ class BrandV1ApiE2ETest {
 
             // act
             ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<Object>> response = adminClient.exchange(
                 ENDPOINT_BRANDS,
                 HttpMethod.POST,
                 request,
@@ -113,7 +128,7 @@ class BrandV1ApiE2ETest {
 
             // act
             ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<Object>> response = adminClient.exchange(
                 ENDPOINT_BRANDS,
                 HttpMethod.POST,
                 request,
@@ -139,7 +154,7 @@ class BrandV1ApiE2ETest {
 
             // act
             ParameterizedTypeReference<ApiResponse<BrandV1Dto.BrandResponse>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<BrandV1Dto.BrandResponse>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<BrandV1Dto.BrandResponse>> response = adminClient.exchange(
                 ENDPOINT_BRANDS + "/" + brand.getId(),
                 HttpMethod.GET,
                 null,
@@ -166,7 +181,7 @@ class BrandV1ApiE2ETest {
 
             // act
             ParameterizedTypeReference<ApiResponse<BrandV1Dto.BrandResponse>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<BrandV1Dto.BrandResponse>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<BrandV1Dto.BrandResponse>> response = adminClient.exchange(
                 ENDPOINT_BRANDS + "/" + brand.getId(),
                 HttpMethod.GET,
                 null,
@@ -185,7 +200,7 @@ class BrandV1ApiE2ETest {
         void returnsNotFound_whenBrandDoesNotExist() {
             // act
             ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<Object>> response = adminClient.exchange(
                 ENDPOINT_BRANDS + "/1",
                 HttpMethod.GET,
                 null,
@@ -211,7 +226,7 @@ class BrandV1ApiE2ETest {
 
             // act
             ParameterizedTypeReference<ApiResponse<BrandV1Dto.BrandResponse>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<BrandV1Dto.BrandResponse>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<BrandV1Dto.BrandResponse>> response = adminClient.exchange(
                 ENDPOINT_BRANDS + "/" + brand.getId(),
                 HttpMethod.PUT,
                 request,
@@ -238,7 +253,7 @@ class BrandV1ApiE2ETest {
 
             // act
             ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<Object>> response = adminClient.exchange(
                 ENDPOINT_BRANDS + "/" + brand.getId(),
                 HttpMethod.PUT,
                 request,
@@ -267,7 +282,7 @@ class BrandV1ApiE2ETest {
 
             // act
             ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<Object>> response = adminClient.exchange(
                 ENDPOINT_BRANDS + "/" + brand.getId(),
                 HttpMethod.PUT,
                 request,
@@ -293,7 +308,7 @@ class BrandV1ApiE2ETest {
 
             // act
             ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<Object>> response = adminClient.exchange(
                 ENDPOINT_BRANDS + "/" + brand.getId(),
                 HttpMethod.PUT,
                 request,
@@ -316,7 +331,7 @@ class BrandV1ApiE2ETest {
 
             // act
             ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<Object>> response = adminClient.exchange(
                 ENDPOINT_BRANDS + "/" + brand.getId(),
                 HttpMethod.DELETE,
                 null,
@@ -340,7 +355,7 @@ class BrandV1ApiE2ETest {
 
             // act
             ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<Object>> response = adminClient.exchange(
                 ENDPOINT_BRANDS + "/" + brand.getId(),
                 HttpMethod.DELETE,
                 null,
@@ -360,7 +375,7 @@ class BrandV1ApiE2ETest {
         void returnsNotFound_whenBrandDoesNotExist() {
             // act
             ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<Object>> response = adminClient.exchange(
                 ENDPOINT_BRANDS + "/1",
                 HttpMethod.DELETE,
                 null,
@@ -386,7 +401,7 @@ class BrandV1ApiE2ETest {
 
             // act
             ParameterizedTypeReference<ApiResponse<List<BrandV1Dto.BrandResponse>>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<List<BrandV1Dto.BrandResponse>>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<List<BrandV1Dto.BrandResponse>>> response = adminClient.exchange(
                 ENDPOINT_BRANDS,
                 HttpMethod.GET,
                 null,
@@ -410,7 +425,7 @@ class BrandV1ApiE2ETest {
 
             // act
             ParameterizedTypeReference<ApiResponse<List<BrandV1Dto.BrandResponse>>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<List<BrandV1Dto.BrandResponse>>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<List<BrandV1Dto.BrandResponse>>> response = adminClient.exchange(
                 ENDPOINT_BRANDS + "?status=ACTIVE",
                 HttpMethod.GET,
                 null,
@@ -428,7 +443,7 @@ class BrandV1ApiE2ETest {
         void returnsBadRequest_whenStatusIsInvalid() {
             // act
             ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
-            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+            ResponseEntity<ApiResponse<Object>> response = adminClient.exchange(
                 ENDPOINT_BRANDS + "?status=INVALID",
                 HttpMethod.GET,
                 null,

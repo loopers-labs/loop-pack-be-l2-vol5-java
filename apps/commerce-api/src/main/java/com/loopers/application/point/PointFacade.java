@@ -2,6 +2,7 @@ package com.loopers.application.point;
 
 import com.loopers.domain.point.Point;
 import com.loopers.domain.point.PointRepository;
+import com.loopers.application.user.UserValidator;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
@@ -13,15 +14,18 @@ import org.springframework.transaction.annotation.Transactional;
 public class PointFacade {
 
     private final PointRepository pointRepository;
+    private final UserValidator userValidator;
 
     @Transactional(readOnly = true)
     public PointInfo getBalance(Long userId) {
+        userValidator.validateExists(userId);
         Point point = findPointByUserId(userId);
         return PointInfo.from(point);
     }
 
     @Transactional
     public PointInfo charge(Long userId, long amount) {
+        userValidator.validateExists(userId);
         Point point = findPointByUserId(userId);
 
         point.charge(amount);
