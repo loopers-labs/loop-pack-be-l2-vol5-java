@@ -135,7 +135,7 @@ Brand·Product·Like·Point·Order의 도메인과 Entity·VO 역할은 유지�
 | domain.point | Point |
 | domain.order | Order, OrderItem, Quantity |
 
-여러 도메인이 사용하는 Money의 패키지 소속은 미정이며, `domain.common` 도입은 아직 확정하지 않는다.
+공유 금액 VO는 `domain.common.Money`에 둔다. long의 0 이상 범위를 사용하고 연산 범위 초과를 거절한다.
 
 ### 애그리거트 사이의 관계
 
@@ -298,3 +298,7 @@ Brand·Product·Like·Point·Order는 각각 애그리거트 루트다. 내부 �
 신규·수정 커머스 테스트는 한글 `@DisplayName`을 사용한다. domain의 모든 경계값을 HTTP에서 반복하지 않는다. 기존 Example은 수정 대상에서 제외한다.
 
 주문 생성 후 가격 변경, 재확정, 중복 품목·좋아요 처리, 0원 결제, 페이지·입력 범위, 관리자 삭제 데이터 조회·반복 삭제, 사용자·Point 초기화, 상세 HTTP 계약과 동시성 전략은 미정이다. 이 설계의 승인을 해당 정책의 승인으로 취급하지 않는다.
+
+### 연속 구현의 임시 정책
+
+사용자 승인에 따라 미정 정책은 필요한 최소 단위로 선택하고 구현·테스트와 함께 기록한다. 상품은 이름 1~100자(공백만 입력 거절), 설명 없음, 가격은 0 이상 long, 재고는 0 이상 int로 정한다. 브랜드·상품 반복 삭제는 성공으로 처리한다.

@@ -54,7 +54,7 @@
 독립 애그리거트 루트는 `Brand`, `Product`, `Point`, `Like`, `Order`다. 기존 도메인과 Entity·VO의 역할은 유지한다.
 
 - Entity·VO는 `domain.brand`, `domain.product`, `domain.like`, `domain.point`, `domain.order` 중 소속 도메인에 함께 둔다. 별도의 공통 `entity`·`vo` 패키지로 분리하지 않는다. BrandId는 brand, ProductId·Stock은 product, OrderItem·Quantity는 order에 둔다.
-- 여러 도메인이 사용하는 Money의 패키지 소속은 미정이다. `domain.common` 도입을 확정된 구조로 취급하지 않는다.
+- 공유 금액 VO는 `domain.common.Money`에 둔다. long의 0 이상 범위를 사용하고 연산 범위 초과를 거절한다.
 
 | 루트 | 정체성·내부 구성 |
 | --- | --- |
