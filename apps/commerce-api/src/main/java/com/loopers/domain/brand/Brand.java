@@ -21,6 +21,13 @@ public final class Brand {
         return new Brand(null, name, false);
     }
 
+    public static Brand restore(BrandId id, String name, boolean deleted) {
+        if (id == null) {
+            throw new IllegalArgumentException("복원할 브랜드 ID는 필수입니다.");
+        }
+        return new Brand(id, name, deleted);
+    }
+
     public BrandId getId() {
         return id;
     }

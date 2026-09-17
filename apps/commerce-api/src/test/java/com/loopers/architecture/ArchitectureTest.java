@@ -9,7 +9,6 @@ import org.junit.jupiter.api.Test;
 import static com.tngtech.archunit.base.DescribedPredicate.describe;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class ArchitectureTest {
     private static final JavaClasses CLASSES = new ClassFileImporter()
@@ -34,7 +33,6 @@ class ArchitectureTest {
     void applicationUsesPorts() {
         var application = CLASSES.that(resideInAPackage("..application.."))
             .that(describe("Example 제외", type -> !isLegacyExample(type.getPackageName())));
-        assumeTrue(!application.isEmpty(), "신규 application 구현 없음: 기존 Example은 합의된 제외 대상");
 
         noClasses().should().dependOnClassesThat()
             .resideInAnyPackage("..interfaces..", "..infrastructure..")

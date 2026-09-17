@@ -9,6 +9,23 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class BrandTest {
+    @ParameterizedTest(name = "삭제 상태={0}")
+    @ValueSource(booleans = {false, true})
+    @DisplayName("저장된 브랜드를 복원하면 ID와 이름과 삭제 상태를 유지한다")
+    void restoresStoredState(boolean deleted) {
+        Brand brand = Brand.restore(new BrandId(7L), "저장된 브랜드", deleted);
+        assertThat(brand.getId()).isEqualTo(new BrandId(7L));
+        assertThat(brand.getName()).isEqualTo("저장된 브랜드");
+        assertThat(brand.isDeleted()).isEqualTo(deleted);
+    }
+
+    @Test
+    @DisplayName("저장된 ID 없이 브랜드 복원을 요청하면 거절한다")
+    void rejectsRestoreWithoutId() {
+        assertThatThrownBy(() -> Brand.restore(null, "브랜드", false))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
     @Test
     @DisplayName("이름으로 생성한 브랜드는 저장 전 ID가 없고 삭제되지 않은 상태다")
     void createsBrand() {
