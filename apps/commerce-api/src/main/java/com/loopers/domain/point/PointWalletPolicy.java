@@ -40,11 +40,15 @@ public class PointWalletPolicy {
 
     /**
      * 포인트로 결제하고, 어느 그룹에서 얼마를 썼는지 돌려준다.
-     * PNT-05: 만료 시각이 빠른 그룹부터, 그룹마다 쓸 수 있는 만큼 차감한다. (잔액 부족 판단은 다음 사이클: W-5)
+     * PNT-04: 잔액이 결제액보다 적으면 어떤 그룹도 바꾸지 않고 거절한다.
+     * PNT-05: 만료 시각이 빠른 그룹부터, 그룹마다 쓸 수 있는 만큼 차감한다.
      */
     public List<PointUsage> pay(List<PointGroup> groups, Money amount, ZonedDateTime now) {
         if (amount.isZero()) {
             throw new CoreException(ErrorType.BAD_REQUEST, "결제 금액은 0보다 커야 합니다.");
+        }
+        if (amount.isGreaterThan(balanceOf(groups, now))) {
+            throw new CoreException(ErrorType.CONFLICT, "포인트 잔액이 부족합니다.");
         }
         List<PointGroup> byExpiry = groups.stream()
             .sorted(Comparator.comparing(PointGroup::getExpiresAt))
