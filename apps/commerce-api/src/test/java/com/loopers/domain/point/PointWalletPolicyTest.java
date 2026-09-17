@@ -142,6 +142,24 @@ class PointWalletPolicyTest {
                 .containsExactly(tuple(groupB, Money.of(5_000)), tuple(groupA, Money.of(7_000)));
         }
 
+        @DisplayName("W-7b · PNT-07 만료된 A(4,000원)와 유효한 B(5,000원)에서 1,000원을 결제하면 A는 건너뛰고 B에서 차감한다.")
+        @Test
+        void skipsExpiredGroupAndPaysFromUsableGroup() {
+            // arrange: 만료된 A가 만료 시각이 가장 빨라 정렬하면 맨 앞에 온다
+            PointGroup groupA = expiredGroup(4_000);
+            PointGroup groupB = usableGroup(5_000);
+
+            // act
+            List<PointUsage> usages = policy.pay(List.of(groupA, groupB), Money.of(1_000), NOW);
+
+            // assert
+            assertThat(groupB.getRemaining()).isEqualTo(Money.of(4_000));
+            assertThat(groupA.getRemaining()).isEqualTo(Money.of(4_000));
+            assertThat(usages)
+                .extracting(PointUsage::group, PointUsage::amount)
+                .containsExactly(tuple(groupB, Money.of(1_000)));
+        }
+
         @DisplayName("W-9 · P-21 0원 결제는 거절하고, 남은 금액은 그대로다.")
         @Test
         void rejectsZeroPayment() {
