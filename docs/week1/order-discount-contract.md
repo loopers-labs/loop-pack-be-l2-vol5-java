@@ -89,9 +89,9 @@ UC-01: 주문에 쿠폰 적용
 | 입력 | status | `meta.result` | `meta.errorCode` | `meta.message` | `data` |
 | --- | --- | --- | --- | --- | --- |
 | `GET /api/v1/examples/{테스트에서 저장한 ID}` | 200 | `SUCCESS` | `null` | `null` | 있음 |
-| `GET /api/v1/examples/abc` | 400 | `FAIL` | `Bad Request` | `파라미터 exampleId 값 abc 잘못됨` | `null` |
-| `GET /api/v1/examples/999999` | 404 | `FAIL` | `Not Found` | `[id = 999999] 예시를 찾을 수 없습니다.` | `null` |
-| `GET /api/v1/not-mapped` | 404 | `FAIL` | `Not Found` | `존재하지 않는 요청입니다.` | `null` |
+| `GET /api/v1/examples/abc` | 400 | `FAIL` | `BAD_REQUEST` | `파라미터 exampleId 값 abc 잘못됨` | `null` |
+| `GET /api/v1/examples/999999` | 404 | `FAIL` | `NOT_FOUND` | `[id = 999999] 예시를 찾을 수 없습니다.` | `null` |
+| `GET /api/v1/not-mapped` | 404 | `FAIL` | `NOT_FOUND` | `존재하지 않는 요청입니다.` | `null` |
 
 ## 8. 인터페이스
 
@@ -140,7 +140,7 @@ Content-Type: application/json
 | 주문 확정됨 | 주문 상태가 `PLACED` | 409 | `ORDER_ALREADY_CONFIRMED` | 없음 (적용 불가) | UC-01 시작 조건 |
 | 이미 쿠폰 적용됨 | 주문에 다른 쿠폰이 적용되어 있음 | 409 | `COUPON_ALREADY_APPLIED` | 없음 (Q-05에 따라 바뀔 수 있음) | INV-002 |
 | 쿠폰 사용 불가 | 쿠폰 없음 · 미보유 · 만료 · 이미 사용 | 422 | `COUPON_UNUSABLE` | 다른 쿠폰 선택 | Q-03에 따라 행이 나뉠 수 있음 |
-| 처리기 없음 | 매핑되지 않은 경로 | 404 | 현재 `Not Found` | 경로 수정 | 관찰 4행 |
+| 처리기 없음 | 매핑되지 않은 경로 | 404 | 현재 `NOT_FOUND` | 경로 수정 | 관찰 4행 |
 
 ### 현재 동작과 다른 점
 
