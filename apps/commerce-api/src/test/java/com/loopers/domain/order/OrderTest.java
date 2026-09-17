@@ -37,4 +37,15 @@ class OrderTest {
             .extracting(OrderItem::getQuantity).isEqualTo(5);
         assertThat(order.getTotalAmount()).isEqualTo(500L);
     }
+
+    @Test
+    void savesPaymentAmountAndResultWhenConfirmed() {
+        Order order = Order.create(1L, List.of(new OrderItem(10L, "Air Max", 100L, 2)));
+
+        order.confirm(200L);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(order.getPaymentAmount()).isEqualTo(200L);
+        assertThat(order.getPaymentResult()).isEqualTo(PaymentResult.SUCCESS);
+    }
 }

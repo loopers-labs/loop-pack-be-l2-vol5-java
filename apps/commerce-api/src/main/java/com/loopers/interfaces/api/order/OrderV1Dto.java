@@ -7,9 +7,25 @@ import java.util.List;
 
 public class OrderV1Dto {
     public record CreateRequest(List<OrderRequestItem> items) {}
-    public record OrderResponse(Long id, Long userId, String status, long totalAmount, List<OrderItemResponse> items) {
+    public record OrderResponse(
+        Long id,
+        Long userId,
+        String status,
+        long totalAmount,
+        Long paymentAmount,
+        String paymentResult,
+        List<OrderItemResponse> items
+    ) {
         public static OrderResponse from(OrderInfo info) {
-            return new OrderResponse(info.id(), info.userId(), info.status(), info.totalAmount(), info.items().stream().map(OrderItemResponse::from).toList());
+            return new OrderResponse(
+                info.id(),
+                info.userId(),
+                info.status(),
+                info.totalAmount(),
+                info.paymentAmount(),
+                info.paymentResult(),
+                info.items().stream().map(OrderItemResponse::from).toList()
+            );
         }
     }
 

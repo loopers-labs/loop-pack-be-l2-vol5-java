@@ -75,6 +75,8 @@ class OrderV1ApiE2ETest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody().data().status()).isEqualTo("CONFIRMED");
+        assertThat(response.getBody().data().paymentAmount()).isEqualTo(200L);
+        assertThat(response.getBody().data().paymentResult()).isEqualTo("SUCCESS");
         assertThat(points.findByUserId(1L).orElseThrow().getBalance().amount()).isZero();
         assertThat(products.findById(product.getId()).orElseThrow().getStock().amount()).isZero();
     }

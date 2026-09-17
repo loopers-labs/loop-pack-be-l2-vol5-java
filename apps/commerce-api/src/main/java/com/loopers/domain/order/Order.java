@@ -24,6 +24,11 @@ public class Order extends BaseEntity {
 
     private long totalAmount;
 
+    private Long paymentAmount;
+
+    @Enumerated(EnumType.STRING)
+    private PaymentResult paymentResult;
+
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
     @JoinColumn(name = "order_id", nullable = false)
     private List<OrderItem> items = new ArrayList<>();
@@ -51,14 +56,22 @@ public class Order extends BaseEntity {
     public Long getUserId() { return userId; }
     public OrderStatus getStatus() { return status; }
     public long getTotalAmount() { return totalAmount; }
+    public Long getPaymentAmount() { return paymentAmount; }
+    public PaymentResult getPaymentResult() { return paymentResult; }
     public List<OrderItem> getItems() { return Collections.unmodifiableList(items); }
 
-    public void confirm() {
+    public void validateDraft() {
         if (status != OrderStatus.DRAFT) {
             throw new com.loopers.support.error.CoreException(
                 com.loopers.support.error.ErrorType.CONFLICT, "DRAFT 주문만 확정할 수 있습니다."
             );
         }
+    }
+
+    public void confirm(long paymentAmount) {
+        validateDraft();
         status = OrderStatus.CONFIRMED;
+        this.paymentAmount = paymentAmount;
+        this.paymentResult = PaymentResult.SUCCESS;
     }
 }

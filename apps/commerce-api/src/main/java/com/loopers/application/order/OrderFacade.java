@@ -36,6 +36,7 @@ public class OrderFacade {
         Order order = orderRepository.findById(orderId)
             .filter(found -> found.getUserId().equals(userId))
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "주문을 찾을 수 없습니다."));
+        order.validateDraft();
         Point point = pointRepository.findByUserId(userId)
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "사용자의 포인트를 찾을 수 없습니다."));
         order.getItems().forEach(item -> productRepository.findById(item.getProductId())
@@ -43,7 +44,7 @@ public class OrderFacade {
             .orElseThrow(() -> new CoreException(ErrorType.CONFLICT, "주문 상품을 확정할 수 없습니다."))
             .decreaseStock(item.getQuantity()));
         point.pay(order.getTotalAmount());
-        order.confirm();
+        order.confirm(order.getTotalAmount());
         pointRepository.save(point);
         return OrderInfo.from(orderRepository.save(order));
     }
