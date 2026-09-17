@@ -535,8 +535,8 @@ sequenceDiagram
   - Domain은 업무 오류 의미만 표현하고 HTTP 표현을 알 필요가 없다.
   - 도메인 오류 타입·코드와 HTTP 변환 규칙을 추가로 관리해야 한다.
 
-- [설계 결정] Domain은 DomainException과 도메인 오류 코드로 오류를 표현하고, interfaces가 HTTP 오류 응답으로 변환한다.
-- [이유] 오류의 업무 의미는 Domain이 책임지고, HTTP 상태와 ApiResponse 형식은 interfaces가 책임져야 한다.
-  - 새 도메인 오류가 생겨도 Domain이 HTTP 표현에 의존하지 않는다.
-- [결과] Point·Brand·Product·Like·Order는 CoreException 대신 DomainException을 사용한다.
-  - ApiControllerAdvice는 도메인 오류 코드에 맞는 HTTP 상태와 ApiResponse를 만든다.
+- [설계 결정] 현재는 Domain 오류를 기존 `CoreException`과 `ErrorType`으로 표현하고, `ApiControllerAdvice`가 `ApiResponse` 오류 응답으로 변환한다.
+- [이유] starter에 이미 오류 코드·HTTP 상태·공통 응답 변환이 갖춰져 있어, 이번 기본 기능에서 별도 `DomainException` 체계를 도입하면 모든 도메인과 예외 처리의 변경 범위가 커진다.
+  - 현재 계약의 `400`·`404`·`409` 응답을 일관되게 유지하는 비용이 더 작다.
+- [결과] Point·Brand·Product·Like·Order는 `CoreException`과 `ErrorType`을 사용한다.
+  - 도메인 오류와 HTTP 표현을 더 엄격히 분리해야 하는 요구가 생기면, `DomainException`과 오류 코드 매핑으로 전환한다.

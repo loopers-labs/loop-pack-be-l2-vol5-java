@@ -23,6 +23,8 @@ import org.springframework.http.ResponseEntity;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.List;
+
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class OrderV1ApiE2ETest {
     @Autowired TestRestTemplate rest;
@@ -79,5 +81,61 @@ class OrderV1ApiE2ETest {
         assertThat(response.getBody().data().paymentResult()).isEqualTo("SUCCESS");
         assertThat(points.findByUserId(1L).orElseThrow().getBalance().amount()).isZero();
         assertThat(products.findById(product.getId()).orElseThrow().getStock().amount()).isZero();
+    }
+
+    @Test
+    void returnsOnlyOrdersOwnedByRequester() {
+        Order ownOrder = orders.save(Order.create(1L, List.of(new com.loopers.domain.order.OrderItem(1L, "Air Max", 100L, 1))));
+        orders.save(Order.create(2L, List.of(new com.loopers.domain.order.OrderItem(2L, "Pegasus", 100L, 1))));
+
+        ResponseEntity<ApiResponse<List<OrderV1Dto.OrderResponse>>> response = rest.exchange(
+            "/api/v1/orders", org.springframework.http.HttpMethod.GET,
+            new HttpEntity<>(headers("1")), new ParameterizedTypeReference<>() {}
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().data()).extracting(OrderV1Dto.OrderResponse::id).containsExactly(ownOrder.getId());
+    }
+
+    @Test
+    void rejectsOtherUsersOrderDetail() {
+        Order order = orders.save(Order.create(2L, List.of(new com.loopers.domain.order.OrderItem(1L, "Air Max", 100L, 1))));
+
+        ResponseEntity<ApiResponse<Object>> response = rest.exchange(
+            "/api/v1/orders/" + order.getId(), org.springframework.http.HttpMethod.GET,
+            new HttpEntity<>(headers("1")), new ParameterizedTypeReference<>() {}
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void returnsAllOrdersForAdminWithPaymentResult() {
+        Order draft = orders.save(Order.create(1L, List.of(new com.loopers.domain.order.OrderItem(1L, "Air Max", 100L, 1))));
+        Order confirmed = Order.create(2L, List.of(new com.loopers.domain.order.OrderItem(2L, "Pegasus", 200L, 1)));
+        confirmed.confirm(200L);
+        confirmed = orders.save(confirmed);
+
+        ResponseEntity<ApiResponse<List<OrderV1Dto.OrderResponse>>> listResponse = rest.exchange(
+            "/api-admin/v1/orders", org.springframework.http.HttpMethod.GET,
+            null, new ParameterizedTypeReference<>() {}
+        );
+        ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> detailResponse = rest.exchange(
+            "/api-admin/v1/orders/" + confirmed.getId(), org.springframework.http.HttpMethod.GET,
+            null, new ParameterizedTypeReference<>() {}
+        );
+
+        assertThat(listResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(listResponse.getBody().data()).extracting(OrderV1Dto.OrderResponse::id)
+            .containsExactlyInAnyOrder(draft.getId(), confirmed.getId());
+        assertThat(detailResponse.getBody().data().userId()).isEqualTo(2L);
+        assertThat(detailResponse.getBody().data().paymentAmount()).isEqualTo(200L);
+        assertThat(detailResponse.getBody().data().paymentResult()).isEqualTo("SUCCESS");
+    }
+
+    private HttpHeaders headers(String userId) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-USER-ID", userId);
+        return headers;
     }
 }
