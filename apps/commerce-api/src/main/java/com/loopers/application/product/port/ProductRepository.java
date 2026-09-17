@@ -7,6 +7,8 @@ import java.util.Optional;
 
 public interface ProductRepository {
     java.util.List<Product> findPage(int page, int size);
+    java.util.List<Product> search(Long brandId, int page, int size, String sort);
+    java.util.List<Product> findAllByIds(java.util.Collection<ProductId> ids);
     Product save(Product product);
     Optional<Product> findById(ProductId id);
     Optional<Product> findByIdForUpdate(ProductId id);

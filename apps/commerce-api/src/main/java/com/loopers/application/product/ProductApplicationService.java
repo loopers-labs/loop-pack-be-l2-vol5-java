@@ -17,7 +17,10 @@ public class ProductApplicationService {
     private final ProductRepository products;
     private final BrandRepository brands;
 
-    public ProductApplicationService(ProductRepository products, BrandRepository brands) {
+    private final com.loopers.application.like.port.LikeRepository likes;
+    public ProductApplicationService(ProductRepository products, BrandRepository brands,
+        com.loopers.application.like.port.LikeRepository likes) {
+        this.likes = likes;
         this.products = products;
         this.brands = brands;
     }
@@ -54,6 +57,33 @@ public class ProductApplicationService {
         Product product = locked(id);
         product.delete();
         products.save(product);
+    }
+
+    @Transactional(readOnly = true)
+    public CustomerProductResult getProduct(long id) {
+        Product product = products.findById(new ProductId(id)).filter(p -> !p.isDeleted()).orElseThrow(ProductNotFoundException::new);
+        return compose(java.util.List.of(product)).get(0);
+    }
+
+    @Transactional(readOnly = true)
+    public java.util.List<CustomerProductResult> search(Long brandId, int page, int size, String sort) {
+        return compose(products.search(brandId, page, size, sort));
+    }
+
+    @Transactional(readOnly = true)
+    public java.util.List<CustomerProductResult> myLikes(long requester, long userId, int page, int size) {
+        if (requester != userId) { throw new com.loopers.domain.common.RuleViolationException("다른 사용자의 좋아요는 조회할 수 없습니다."); }
+        var ids = likes.findActiveProductIds(userId, page, size);
+        return compose(products.findAllByIds(ids).stream().filter(p -> !p.isDeleted())
+            .sorted(java.util.Comparator.comparingLong((Product p) -> p.getId().value()).reversed()).toList());
+    }
+
+    private java.util.List<CustomerProductResult> compose(java.util.List<Product> found) {
+        var names = brands.findAllByIds(found.stream().map(Product::getBrandId).distinct().toList()).stream()
+            .collect(java.util.stream.Collectors.toMap(b -> b.getId(), b -> b.getName()));
+        var counts = likes.countByProductIds(found.stream().map(Product::getId).toList());
+        return found.stream().map(p -> new CustomerProductResult(p.getId().value(), p.getName(), p.getPrice().value(),
+            p.getStock().value(), p.getBrandId().value(), names.get(p.getBrandId()), counts.getOrDefault(p.getId(), 0L))).toList();
     }
 
     private Product locked(long id) {

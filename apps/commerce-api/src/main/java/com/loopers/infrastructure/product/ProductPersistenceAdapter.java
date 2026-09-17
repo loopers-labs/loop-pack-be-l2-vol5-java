@@ -15,7 +15,11 @@ import java.util.Optional;
 public class ProductPersistenceAdapter implements ProductRepository {
     private final ProductJpaRepository repository;
 
-    public ProductPersistenceAdapter(ProductJpaRepository repository) { this.repository = repository; }
+    private final jakarta.persistence.EntityManager entityManager;
+    public ProductPersistenceAdapter(ProductJpaRepository repository, jakarta.persistence.EntityManager entityManager) {
+        this.repository = repository;
+        this.entityManager = entityManager;
+    }
 
     @Override
     @Transactional
@@ -45,6 +49,28 @@ public class ProductPersistenceAdapter implements ProductRepository {
     public java.util.List<Product> findPage(int page, int size) {
         return repository.findAll(org.springframework.data.domain.PageRequest.of(page, size,
             org.springframework.data.domain.Sort.by("id").descending())).stream().map(this::toDomain).toList();
+    }
+
+    @Override
+    public java.util.List<Product> findAllByIds(java.util.Collection<ProductId> ids) {
+        return repository.findAllById(ids.stream().map(ProductId::value).toList()).stream().map(this::toDomain).toList();
+    }
+
+    @Override
+    public java.util.List<Product> search(Long brandId, int page, int size, String sort) {
+        String order = switch (sort) {
+            case "latest" -> "p.created_at desc, p.id desc";
+            case "price_asc" -> "p.price asc, p.id desc";
+            case "likes_desc" -> "(select count(*) from product_likes l where l.product_id=p.id) desc, p.id desc";
+            default -> throw new IllegalArgumentException("지원하지 않는 정렬입니다.");
+        };
+        String sql = "select p.* from products p where p.deleted=false"
+            + (brandId == null ? "" : " and p.brand_id=:brand") + " order by " + order + " limit :size offset :offset";
+        var query = entityManager.createNativeQuery(sql, ProductJpaEntity.class)
+            .setParameter("size", size).setParameter("offset", (long) page * size);
+        if (brandId != null) { query.setParameter("brand", brandId); }
+        java.util.List<?> rows = query.getResultList();
+        return rows.stream().map(row -> toDomain((ProductJpaEntity) row)).toList();
     }
 
     private Product toDomain(ProductJpaEntity entity) {
