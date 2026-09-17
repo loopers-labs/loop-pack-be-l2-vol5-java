@@ -266,4 +266,57 @@ class ProductFacadeIntegrationTest {
             assertThat(result.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
         }
     }
+
+    @DisplayName("Product를 삭제할 때,")
+    @Nested
+    class Delete {
+        @DisplayName("Product가 있으면, 논리 삭제 상태로 저장한다.")
+        @Test
+        void deletesProduct_whenProductExists() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+
+            // act
+            productFacade.delete(product.getId());
+
+            // assert
+            productJpaRepository.flush();
+            entityManager.clear();
+            Product deletedProduct = productJpaRepository.findById(product.getId()).orElseThrow();
+            assertThat(deletedProduct.getDeletedAt()).isNotNull();
+        }
+
+        @DisplayName("없는 Product ID면, NOT_FOUND 예외가 발생한다.")
+        @Test
+        void throwsException_whenProductDoesNotExist() {
+            // act
+            CoreException result = assertThrows(CoreException.class, () -> {
+                productFacade.delete(1L);
+            });
+
+            // assert
+            assertThat(result.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
+        }
+
+        @DisplayName("이미 삭제된 Product면, NOT_FOUND 예외가 발생한다.")
+        @Test
+        void throwsException_whenProductIsDeleted() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            product.delete();
+            productJpaRepository.save(product);
+            productJpaRepository.flush();
+            entityManager.clear();
+
+            // act
+            CoreException result = assertThrows(CoreException.class, () -> {
+                productFacade.delete(product.getId());
+            });
+
+            // assert
+            assertThat(result.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
+        }
+    }
 }

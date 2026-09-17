@@ -382,4 +382,48 @@ class ProductV1ApiE2ETest {
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         }
     }
+
+    @DisplayName("DELETE /api-admin/v1/products/{productId}")
+    @Nested
+    class Delete {
+        @DisplayName("Product가 있으면, 200 응답을 반환하고 논리 삭제한다.")
+        @Test
+        void deletesProduct_whenProductExists() {
+            // arrange
+            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+
+            // act
+            ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
+            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+                ENDPOINT_PRODUCTS + "/" + product.getId(),
+                HttpMethod.DELETE,
+                null,
+                responseType
+            );
+
+            // assert
+            Product deletedProduct = productJpaRepository.findById(product.getId()).orElseThrow();
+            assertAll(
+                () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK),
+                () -> assertThat(deletedProduct.getDeletedAt()).isNotNull()
+            );
+        }
+
+        @DisplayName("없는 Product ID면, 404 응답을 반환한다.")
+        @Test
+        void returnsNotFound_whenProductDoesNotExist() {
+            // act
+            ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
+            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+                ENDPOINT_PRODUCTS + "/1",
+                HttpMethod.DELETE,
+                null,
+                responseType
+            );
+
+            // assert
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        }
+    }
 }

@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -54,5 +55,12 @@ public class ProductV1Controller implements ProductV1ApiSpec {
     ) {
         ProductInfo info = productFacade.changeStock(productId, request.quantity());
         return ApiResponse.success(ProductV1Dto.StockResponse.from(info));
+    }
+
+    @DeleteMapping("/{productId}")
+    @Override
+    public ApiResponse<Object> delete(@PathVariable Long productId) {
+        productFacade.delete(productId);
+        return ApiResponse.success();
     }
 }

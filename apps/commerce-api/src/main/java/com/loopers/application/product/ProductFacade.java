@@ -51,6 +51,13 @@ public class ProductFacade {
         return ProductInfo.from(savedProduct);
     }
 
+    @Transactional
+    public void delete(Long productId) {
+        Product product = findActiveProductById(productId);
+        product.delete();
+        productRepository.save(product);
+    }
+
     private Brand findActiveBrandById(Long brandId) {
         if (brandId == null) {
             throw new CoreException(ErrorType.BAD_REQUEST, "브랜드 ID는 필수입니다.");
