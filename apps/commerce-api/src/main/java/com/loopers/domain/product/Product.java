@@ -65,6 +65,10 @@ public class Product extends BaseEntity {
         this.stock = new StockQuantity(quantity);
     }
 
+    public void decreaseStock(int quantity) {
+        this.stock = stock.decrease(quantity);
+    }
+
     public void updateDetails(String name, long price) {
         String validatedName = validateName(name);
         long validatedPrice = validatePrice(price);

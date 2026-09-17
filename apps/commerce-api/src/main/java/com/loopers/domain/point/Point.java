@@ -41,4 +41,8 @@ public class Point extends BaseEntity {
     public void charge(long amount) {
         balance = balance.add(amount);
     }
+
+    public void pay(long amount) {
+        balance = balance.subtract(amount);
+    }
 }

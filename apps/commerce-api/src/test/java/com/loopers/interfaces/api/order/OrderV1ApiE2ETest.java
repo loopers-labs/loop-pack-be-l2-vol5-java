@@ -6,6 +6,8 @@ import com.loopers.domain.product.Product;
 import com.loopers.infrastructure.brand.BrandJpaRepository;
 import com.loopers.infrastructure.order.OrderJpaRepository;
 import com.loopers.infrastructure.product.ProductJpaRepository;
+import com.loopers.infrastructure.point.PointJpaRepository;
+import com.loopers.domain.point.Point;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
@@ -27,6 +29,7 @@ class OrderV1ApiE2ETest {
     @Autowired BrandJpaRepository brands;
     @Autowired ProductJpaRepository products;
     @Autowired OrderJpaRepository orders;
+    @Autowired PointJpaRepository points;
     @Autowired DatabaseCleanUp cleanup;
 
     @AfterEach void tearDown() { cleanup.truncateAllTables(); }
@@ -50,6 +53,29 @@ class OrderV1ApiE2ETest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(saved.getStatus().name()).isEqualTo("DRAFT");
         assertThat(saved.getTotalAmount()).isEqualTo(200L);
+        assertThat(products.findById(product.getId()).orElseThrow().getStock().amount()).isZero();
+    }
+
+    @Test
+    void confirmsDraftOrderAndChargesPointAndStock() {
+        Brand brand = brands.save(Brand.create("Nike"));
+        Product product = products.save(Product.create(brand, "Air Max", 100L));
+        product.changeStockTo(2L);
+        products.save(product);
+        points.save(Point.create(1L, new com.loopers.domain.point.PointBalance(200L)));
+        Order order = orders.save(Order.create(1L, java.util.List.of(
+            new com.loopers.domain.order.OrderItem(product.getId(), product.getName(), product.getPrice(), 2))));
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-USER-ID", "1");
+
+        ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> response = rest.exchange(
+            "/api/v1/orders/" + order.getId() + "/confirm", org.springframework.http.HttpMethod.POST,
+            new HttpEntity<>(headers), new ParameterizedTypeReference<>() {}
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().data().status()).isEqualTo("CONFIRMED");
+        assertThat(points.findByUserId(1L).orElseThrow().getBalance().amount()).isZero();
         assertThat(products.findById(product.getId()).orElseThrow().getStock().amount()).isZero();
     }
 }

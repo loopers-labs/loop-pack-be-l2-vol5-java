@@ -22,6 +22,13 @@ public record PointBalance(long amount) {
         return new PointBalance(amount + chargeAmount);
     }
 
+    public PointBalance subtract(long paymentAmount) {
+        if (paymentAmount <= 0 || paymentAmount > amount) {
+            throw new CoreException(ErrorType.CONFLICT, "포인트 잔액이 부족합니다.");
+        }
+        return new PointBalance(amount - paymentAmount);
+    }
+
     private boolean exceedsMaximumBalance(long chargeAmount) {
         return amount > Long.MAX_VALUE - chargeAmount;
     }

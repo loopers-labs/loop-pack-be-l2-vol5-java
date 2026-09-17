@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.http.HttpStatus;
@@ -29,5 +30,16 @@ public class OrderV1Controller {
             throw new CoreException(ErrorType.BAD_REQUEST, "요청자 식별값이 필요합니다.");
         }
         return ApiResponse.success(OrderV1Dto.OrderResponse.from(orderFacade.create(userId, request.items())));
+    }
+
+    @PostMapping("/{orderId}/confirm")
+    public ApiResponse<OrderV1Dto.OrderResponse> confirm(
+        @RequestHeader(value = "X-USER-ID", required = false) Long userId,
+        @PathVariable Long orderId
+    ) {
+        if (userId == null) {
+            throw new CoreException(ErrorType.BAD_REQUEST, "요청자 식별값이 필요합니다.");
+        }
+        return ApiResponse.success(OrderV1Dto.OrderResponse.from(orderFacade.confirm(userId, orderId)));
     }
 }

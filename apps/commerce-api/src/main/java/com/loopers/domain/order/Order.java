@@ -6,6 +6,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.OneToMany;
+import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
 
 import java.util.ArrayList;
@@ -24,6 +25,7 @@ public class Order extends BaseEntity {
     private long totalAmount;
 
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
+    @JoinColumn(name = "order_id", nullable = false)
     private List<OrderItem> items = new ArrayList<>();
 
     protected Order() {}
@@ -50,4 +52,13 @@ public class Order extends BaseEntity {
     public OrderStatus getStatus() { return status; }
     public long getTotalAmount() { return totalAmount; }
     public List<OrderItem> getItems() { return Collections.unmodifiableList(items); }
+
+    public void confirm() {
+        if (status != OrderStatus.DRAFT) {
+            throw new com.loopers.support.error.CoreException(
+                com.loopers.support.error.ErrorType.CONFLICT, "DRAFT 주문만 확정할 수 있습니다."
+            );
+        }
+        status = OrderStatus.CONFIRMED;
+    }
 }
