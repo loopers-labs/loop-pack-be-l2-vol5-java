@@ -1,6 +1,7 @@
 package com.loopers.infrastructure.like;
 
 import com.loopers.domain.BaseEntity;
+import com.loopers.domain.like.ProductLike;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
@@ -13,8 +14,8 @@ public class ProductLikeJpaEntity extends BaseEntity {
     @Column(nullable = false) private long productId;
     protected ProductLikeJpaEntity() {}
 
-    public ProductLikeJpaEntity(long userId, long productId) {
-        this.userId = userId;
-        this.productId = productId;
+    public ProductLikeJpaEntity(ProductLike like) {
+        userId = like.userId();
+        productId = like.productId();
     }
 }

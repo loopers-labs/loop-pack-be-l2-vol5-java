@@ -2,12 +2,16 @@ package com.loopers.application.like;
 
 import com.loopers.application.user.IdentifyUser;
 import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 import com.loopers.domain.like.ProductLikeRepository;
 import com.loopers.domain.like.ProductLike;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import com.loopers.domain.product.ProductRepository;
 
+@Component
+@Transactional
 @RequiredArgsConstructor
 public class CreateLikeFacade {
     private final IdentifyUser identifyUser;

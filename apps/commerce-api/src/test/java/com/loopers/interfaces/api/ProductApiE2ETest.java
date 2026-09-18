@@ -4,8 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
-import com.loopers.infrastructure.like.ProductLikeJpaEntity;
-import java.util.List;
+import com.loopers.domain.like.ProductLike;
+import com.loopers.domain.like.ProductLikeRepository;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.infrastructure.user.UserJpaEntity;
@@ -41,6 +41,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class ProductApiE2ETest {
+    @Autowired
+    private ProductLikeRepository likes;
+
     @Autowired
     private BrandRepository brands;
 
@@ -263,13 +266,10 @@ class ProductApiE2ETest {
         newerCheap = products.save(newerCheap);
         transactions.executeWithoutResult(status -> entityManager.persist(new UserJpaEntity(1L)));
         transactions.executeWithoutResult(status -> entityManager.persist(new UserJpaEntity(2L)));
-        var relations = List.of(
-            new ProductLikeJpaEntity(1, expensive.getId()),
-            new ProductLikeJpaEntity(2, expensive.getId()),
-            new ProductLikeJpaEntity(1, cheap.getId()),
-            new ProductLikeJpaEntity(1, newerCheap.getId())
-        );
-        transactions.executeWithoutResult(status -> relations.forEach(entityManager::persist));
+        likes.save(new ProductLike(1, expensive.getId()));
+        likes.save(new ProductLike(2, expensive.getId()));
+        likes.save(new ProductLike(1, cheap.getId()));
+        likes.save(new ProductLike(1, newerCheap.getId()));
 
         // act
         var response = rest.getForEntity("/api/v1/products?sort=likes_desc", JsonNode.class);
