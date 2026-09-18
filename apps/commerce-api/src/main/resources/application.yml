@@ -1,4 +1,5 @@
 server:
+  address: 127.0.0.1
   shutdown: graceful
   tomcat:
     threads:
@@ -28,6 +29,11 @@ springdoc:
   use-fqn: true
   swagger-ui:
     path: /swagger-ui.html
+
+datasource:
+  mysql-jpa:
+    main:
+      connection-init-sql: SET SESSION innodb_lock_wait_timeout=3
 
 ---
 spring:
