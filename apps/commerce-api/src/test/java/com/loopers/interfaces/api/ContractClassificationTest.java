@@ -46,7 +46,7 @@ class ContractClassificationTest {
 
     @AfterEach
     void tearDown() {
-        databaseCleanUp.truncateAllTables();
+        databaseCleanUp.deleteAllEntities();
     }
 
     @DisplayName("GET /api/v1/examples/{id}")
