@@ -18,7 +18,8 @@ public enum ErrorType {
     BRAND_HAS_ACTIVE_PRODUCTS("BRAND_HAS_ACTIVE_PRODUCTS", "삭제되지 않은 상품이 있어 브랜드를 삭제할 수 없습니다."),
     PRODUCT_NOT_FOUND("PRODUCT_NOT_FOUND", "상품을 찾을 수 없습니다."),
     INSUFFICIENT_STOCK("INSUFFICIENT_STOCK", "상품 재고가 부족합니다."),
-    ACCESS_DENIED("ACCESS_DENIED", "접근 권한이 없습니다.");
+    ACCESS_DENIED("ACCESS_DENIED", "접근 권한이 없습니다."),
+    ORDER_AMOUNT_OVERFLOW("ORDER_AMOUNT_OVERFLOW", "주문 금액이 허용 범위를 초과했습니다.");
 
     private final String code;
     private final String message;
