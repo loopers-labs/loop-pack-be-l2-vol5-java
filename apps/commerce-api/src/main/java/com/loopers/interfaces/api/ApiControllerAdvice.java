@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 import com.loopers.support.error.CoreException;
-import com.loopers.support.error.ErrorType;
+import com.loopers.support.error.ErrorCode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -26,7 +26,7 @@ public class ApiControllerAdvice {
     @ExceptionHandler
     public ResponseEntity<ApiResponse<?>> handle(CoreException e) {
         log.warn("CoreException : {}", e.getCustomMessage() != null ? e.getCustomMessage() : e.getMessage(), e);
-        return failureResponse(e.getErrorType(), e.getCustomMessage());
+        return failureResponse(e.getErrorCode(), e.getCustomMessage());
     }
 
     @ExceptionHandler
@@ -35,7 +35,7 @@ public class ApiControllerAdvice {
         String type = e.getRequiredType() != null ? e.getRequiredType().getSimpleName() : "unknown";
         String value = e.getValue() != null ? e.getValue().toString() : "null";
         String message = String.format("요청 파라미터 '%s' (타입: %s)의 값 '%s'이(가) 잘못되었습니다.", name, type, value);
-        return failureResponse(ErrorType.BAD_REQUEST, message);
+        return failureResponse(ErrorCode.INVALID_REQUEST, message);
     }
 
     @ExceptionHandler
@@ -43,7 +43,7 @@ public class ApiControllerAdvice {
         String name = e.getParameterName();
         String type = e.getParameterType();
         String message = String.format("필수 요청 파라미터 '%s' (타입: %s)가 누락되었습니다.", name, type);
-        return failureResponse(ErrorType.BAD_REQUEST, message);
+        return failureResponse(ErrorCode.INVALID_REQUEST, message);
     }
 
     @ExceptionHandler
@@ -88,7 +88,7 @@ public class ApiControllerAdvice {
             errorMessage = "요청 본문을 처리하는 중 오류가 발생했습니다. JSON 메세지 규격을 확인해주세요.";
         }
 
-        return failureResponse(ErrorType.BAD_REQUEST, errorMessage);
+        return failureResponse(ErrorCode.INVALID_REQUEST, errorMessage);
     }
 
     @ExceptionHandler
@@ -96,21 +96,21 @@ public class ApiControllerAdvice {
         String missingParams = extractMissingParameter(e.getReason() != null ? e.getReason() : "");
         if (!missingParams.isEmpty()) {
             String message = String.format("필수 요청 값 '%s'가 누락되었습니다.", missingParams);
-            return failureResponse(ErrorType.BAD_REQUEST, message);
+            return failureResponse(ErrorCode.INVALID_REQUEST, message);
         } else {
-            return failureResponse(ErrorType.BAD_REQUEST, null);
+            return failureResponse(ErrorCode.INVALID_REQUEST, null);
         }
     }
 
     @ExceptionHandler
     public ResponseEntity<ApiResponse<?>> handleNotFound(NoResourceFoundException e) {
-        return failureResponse(ErrorType.NOT_FOUND, null);
+        return failureResponse(ErrorCode.NOT_FOUND, null);
     }
 
     @ExceptionHandler
     public ResponseEntity<ApiResponse<?>> handle(Throwable e) {
         log.error("Exception : {}", e.getMessage(), e);
-        return failureResponse(ErrorType.INTERNAL_ERROR, null);
+        return failureResponse(ErrorCode.INTERNAL_ERROR, null);
     }
 
     private String extractMissingParameter(String message) {
@@ -119,8 +119,8 @@ public class ApiControllerAdvice {
         return matcher.find() ? matcher.group(1) : "";
     }
 
-    private ResponseEntity<ApiResponse<?>> failureResponse(ErrorType errorType, String errorMessage) {
-        return ResponseEntity.status(errorType.getStatus())
-            .body(ApiResponse.fail(errorType.getCode(), errorMessage != null ? errorMessage : errorType.getMessage()));
+    private ResponseEntity<ApiResponse<?>> failureResponse(ErrorCode errorCode, String errorMessage) {
+        return ResponseEntity.status(ErrorStatus.of(errorCode))
+            .body(ApiResponse.fail(errorCode.name(), errorMessage != null ? errorMessage : errorCode.getMessage()));
     }
 }

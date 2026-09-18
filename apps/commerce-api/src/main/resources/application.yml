@@ -1,4 +1,5 @@
 server:
+  address: 127.0.0.1 # 로컬 실습 전용. 외부에서 접속하지 못하게 한다.
   shutdown: graceful
   tomcat:
     threads:
