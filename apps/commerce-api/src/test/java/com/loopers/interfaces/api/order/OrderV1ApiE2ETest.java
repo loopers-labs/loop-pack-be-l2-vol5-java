@@ -102,6 +102,50 @@ class OrderV1ApiE2ETest {
     }
 
     @Test
+    void rejectsConfirmAndRollsBackWhenBalanceIsInsufficient() {
+        User user = saveUser();
+        Brand brand = brands.save(Brand.create("Nike"));
+        Product product = products.save(Product.create(brand, "Air Max", 100L));
+        product.changeStockTo(2L);
+        products.save(product);
+        points.save(Point.create(user.getId(), new com.loopers.domain.point.PointBalance(100L)));
+        Order order = orders.save(Order.create(user.getId(), List.of(
+            new com.loopers.domain.order.OrderItem(product.getId(), product.getName(), product.getPrice(), 2))));
+
+        ResponseEntity<ApiResponse<Object>> response = rest.exchange(
+            "/api/v1/orders/" + order.getId() + "/confirm", org.springframework.http.HttpMethod.POST,
+            new HttpEntity<>(headers(user.getId().toString())), new ParameterizedTypeReference<>() {}
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(orders.findById(order.getId()).orElseThrow().getStatus().name()).isEqualTo("DRAFT");
+        assertThat(products.findById(product.getId()).orElseThrow().getStock().amount()).isEqualTo(2L);
+        assertThat(points.findByUserId(user.getId()).orElseThrow().getBalance().amount()).isEqualTo(100L);
+    }
+
+    @Test
+    void rejectsConfirmAndPreservesStateWhenStockIsInsufficient() {
+        User user = saveUser();
+        Brand brand = brands.save(Brand.create("Nike"));
+        Product product = products.save(Product.create(brand, "Air Max", 100L));
+        product.changeStockTo(1L);
+        products.save(product);
+        points.save(Point.create(user.getId(), new com.loopers.domain.point.PointBalance(200L)));
+        Order order = orders.save(Order.create(user.getId(), List.of(
+            new com.loopers.domain.order.OrderItem(product.getId(), product.getName(), product.getPrice(), 2))));
+
+        ResponseEntity<ApiResponse<Object>> response = rest.exchange(
+            "/api/v1/orders/" + order.getId() + "/confirm", org.springframework.http.HttpMethod.POST,
+            new HttpEntity<>(headers(user.getId().toString())), new ParameterizedTypeReference<>() {}
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(orders.findById(order.getId()).orElseThrow().getStatus().name()).isEqualTo("DRAFT");
+        assertThat(products.findById(product.getId()).orElseThrow().getStock().amount()).isEqualTo(1L);
+        assertThat(points.findByUserId(user.getId()).orElseThrow().getBalance().amount()).isEqualTo(200L);
+    }
+
+    @Test
     void completesChargeOrderAndInquiryFlow() {
         User user = saveUser();
         points.save(Point.create(user.getId()));
