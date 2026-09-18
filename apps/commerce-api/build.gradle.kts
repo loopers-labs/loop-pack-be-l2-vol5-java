@@ -9,6 +9,10 @@ checkstyle {
     maxWarnings = 0
 }
 
+tasks.named("check") {
+    dependsOn(":modules:jpa:check")
+}
+
 dependencies {
     // add-ons
     implementation(project(":modules:jpa"))

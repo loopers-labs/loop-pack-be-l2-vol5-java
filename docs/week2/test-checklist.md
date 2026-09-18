@@ -70,7 +70,7 @@
 ## 개발 규칙
 
 - [x] 핵심 규칙의 Red → Green → Refactor를 확인한다
-- [x] 관련 테스트와 Checkstyle·ArchUnit을 통과한다
+- [x] 관련 테스트와 Checkstyle(commerce-api main·test, modules:jpa main·testFixtures)·ArchUnit을 통과한다. `:apps:commerce-api:check`에 JPA 모듈 검사도 연결한다
 - [x] 도메인과 영속성 엔티티를 분리한다
 - [x] 오류 클래스의 HTTP 의존을 제거하고 HTTP 상태 변환은 웹 계층에서 처리한다
 
