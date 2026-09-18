@@ -3,8 +3,7 @@ package com.loopers.interfaces.api;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.loopers.domain.example.ExampleModel;
-import com.loopers.infrastructure.example.ExampleJpaRepository;
+import com.loopers.application.brand.BrandFacade;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -22,25 +21,25 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class ContractClassificationTest {
 
-    private static final String ENDPOINT_EXAMPLE = "/api/v1/examples/";
+    private static final String ENDPOINT_BRAND = "/api/v1/brands/";
     private static final String ENDPOINT_UNMAPPED = "/api/v1/this-endpoint-does-not-exist";
 
     private final TestRestTemplate testRestTemplate;
-    private final ExampleJpaRepository exampleJpaRepository;
     private final DatabaseCleanUp databaseCleanUp;
     private final ObjectMapper objectMapper;
+    private final BrandFacade brandFacade;
 
     @Autowired
     public ContractClassificationTest(
         TestRestTemplate testRestTemplate,
-        ExampleJpaRepository exampleJpaRepository,
         DatabaseCleanUp databaseCleanUp,
-        ObjectMapper objectMapper
+        ObjectMapper objectMapper,
+        BrandFacade brandFacade
     ) {
         this.testRestTemplate = testRestTemplate;
-        this.exampleJpaRepository = exampleJpaRepository;
         this.databaseCleanUp = databaseCleanUp;
         this.objectMapper = objectMapper;
+        this.brandFacade = brandFacade;
     }
 
     @AfterEach
@@ -48,7 +47,6 @@ class ContractClassificationTest {
         databaseCleanUp.truncateAllTables();
     }
 
-    /** 응답 body 가 envelope 이 아닐 수도 있으므로, 없는 필드는 null / false 로 관찰한다. */
     private record Observation(int status, String result, String errorCode, boolean hasData) {}
 
     private Observation observe(String url) {
@@ -83,9 +81,9 @@ class ContractClassificationTest {
     @DisplayName("존재하는 숫자 ID: 200 / SUCCESS / errorCode 없음 / data 있음")
     @Test
     void observesSuccessEnvelope_whenExistingNumericId() {
-        ExampleModel saved = exampleJpaRepository.save(new ExampleModel("예시 제목", "예시 설명"));
+        Long brandId = brandFacade.register("무신사", "패션 플랫폼").getId();
 
-        Observation observed = observe(ENDPOINT_EXAMPLE + saved.getId());
+        Observation observed = observe(ENDPOINT_BRAND + brandId);
 
         assertAll(
             () -> assertThat(observed.status()).isEqualTo(200),
@@ -98,7 +96,7 @@ class ContractClassificationTest {
     @DisplayName("숫자가 아닌 ID 'abc': 400 / FAIL / errorCode 'Bad Request' / data 없음")
     @Test
     void observesBadRequestEnvelope_whenIdIsNotNumeric() {
-        Observation observed = observe(ENDPOINT_EXAMPLE + "abc");
+        Observation observed = observe(ENDPOINT_BRAND + "abc");
 
         assertAll(
             () -> assertThat(observed.status()).isEqualTo(400),
@@ -108,15 +106,15 @@ class ContractClassificationTest {
         );
     }
 
-    @DisplayName("존재하지 않는 숫자 ID: 404 / FAIL / errorCode 'Not Found' / data 없음")
+    @DisplayName("존재하지 않는 숫자 ID: 404 / FAIL / errorCode 'BRAND_NOT_FOUND' / data 없음 — 봉투는 같고 업무 의미가 실린다")
     @Test
     void observesNotFoundEnvelope_whenNumericIdIsUnknown() {
-        Observation observed = observe(ENDPOINT_EXAMPLE + Long.MAX_VALUE);
+        Observation observed = observe(ENDPOINT_BRAND + Long.MAX_VALUE);
 
         assertAll(
             () -> assertThat(observed.status()).isEqualTo(404),
             () -> assertThat(observed.result()).isEqualTo("FAIL"),
-            () -> assertThat(observed.errorCode()).isEqualTo("Not Found"),
+            () -> assertThat(observed.errorCode()).isEqualTo("BRAND_NOT_FOUND"),
             () -> assertThat(observed.hasData()).isFalse()
         );
     }
