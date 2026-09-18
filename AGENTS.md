@@ -16,8 +16,28 @@
 | --- | --- |
 | [전체 설계](docs/week2/commerce-erd-draft.md) | 확정 업무 규칙, 버드뷰, 계층 의존, ERD·도메인 책임, 세 대표 흐름 |
 | [API 계약](docs/week2/commerce-api-contract.md) | 공통 입력·응답, 고객·관리자 API, 필터·페이지·정렬, 오류 계약 |
-| [정책 선택과 설계 검토](docs/week2/commerce-policy-decisions.md) | 미정 정책과 설계 대안·선택 이유 |
+| [정책 선택과 설계 검토](docs/week2/commerce-policy-decisions.md) | 확정 정책·남은 제안과 설계 대안·선택 이유 |
 | [TDD 계획](docs/week2/commerce-tdd-plan.md) | 테스트 기대값, Red·Green·Refactor, 구현 순서와 검증 기록 방법 |
+| [전체 완료 체크리스트](docs/week2/commerce-completion-checklist.md) | 25개 API·API-01~24·동시성·운영 DDL의 완료 증거 추적 |
+| [재고 TDD 실행 기록](docs/week2/commerce-tdd-stock-log.md) | 실제 구현 범위, Red·Green·Refactor 결과와 재검증 이력 |
+| [사용자 식별 TDD 실행 기록](docs/week2/commerce-tdd-user-identity-log.md) | 식별·권한 공통 기능의 구현 결과와 fixture·HTTP 연결의 남은 범위 |
+| [브랜드 이름 TDD 실행 기록](docs/week2/commerce-tdd-brand-name-log.md) | 이름 정리·필수값·코드 포인트 길이 규칙의 구현과 검증 결과 |
+| [브랜드 모델 TDD 실행 기록](docs/week2/commerce-tdd-brand-log.md) | 생성·이름 변경·삭제 상태·상품 존재에 따른 삭제 조건과 후속 구현 범위 |
+| [브랜드 영속성 TDD 실행 기록](docs/week2/commerce-tdd-brand-persistence-log.md) | 실제 MySQL 저장·조회, Unicode 경계·롤백·감사 시각과 남은 유스케이스 범위 |
+| [브랜드 조회 TDD 실행 기록](docs/week2/commerce-tdd-brand-query-log.md) | 고객 상세 조회 application의 정상·없음·삭제 처리와 DB 상태 보존 |
+| [브랜드 등록 TDD 실행 기록](docs/week2/commerce-tdd-brand-registration-log.md) | 관리자 신규 등록 application의 권한 우선·이름 검증·실제 저장 |
+| [관리자 브랜드 조회 TDD 실행 기록](docs/week2/commerce-tdd-admin-brand-query-log.md) | 관리자 상세 application의 삭제 행 포함·권한 우선·상태 보존 |
+| [브랜드 HTTP TDD 실행 기록](docs/week2/commerce-tdd-brand-http-log.md) | C01 공개 조회·응답·오류·입력 경계와 기존 API 회귀 |
+| [주문 수량 TDD 실행 기록](docs/week2/commerce-tdd-order-quantity-log.md) | 같은 상품의 수량 합산·정수 경계·불변 결과와 후속 주문 연결 |
+| [스키마 적용 안내](docs/week2/commerce-schema-operations.md) | 현재 제공하는 수동 SQL의 적용 방법·범위·실행 설정 |
+| [브랜드 스키마 TDD 실행 기록](docs/week2/commerce-tdd-brand-schema-log.md) | 자동 생성 없이 실제 SQL·JPA 매핑·문자셋·시각·DB 제약 검증 |
+| [관리자 브랜드 HTTP TDD 실행 기록](docs/week2/commerce-tdd-admin-brand-http-log.md) | 관리자 CRUD·권한 우선·공통 오류 처리와 브랜드 변경 경합 |
+| [상품 TDD 실행 기록](docs/week2/commerce-tdd-product-log.md) | 상품 JPA·관리자 변경·공개 조회·좋아요 집계·정렬·페이지·입력 경계 |
+| [포인트·좋아요 TDD 실행 기록](docs/week2/commerce-tdd-point-like-log.md) | 사용자 DB 초기화·충전·현재 관계·본인 목록·동시 중복과 롤백 |
+| [주문 TDD 실행 기록](docs/week2/commerce-tdd-order-log.md) | 생성 스냅샷·본인/관리자 조회·확정·재요청·동시성·실제 SQL 후 롤백 |
+| [전체 스키마 TDD 실행 기록](docs/week2/commerce-tdd-schema-log.md) | 수동 SQL 6개 적용·JPA validate·FK·유일/수치 제약·전체 관계 저장 |
+| [관리자 Security 보완 기록](docs/week2/commerce-admin-security-log.md) | 과제 지원 설정·MockMvc 역할·CSRF·고객 fixture 분리와 기존 관리자 회귀 |
+| [전체 모듈 Checkstyle 보완 기록](docs/week2/commerce-checkstyle-scope-log.md) | Java main/test/testFixtures 검사 연결과 규칙 위반 수정·검증 |
 
 기능 작업 시 전체 설계와 해당 기능의 API 계약·정책 선택·TDD 기대값을 함께 확인한다. 제안이나 미정 정책은 문서 분리만으로 확정되지 않는다.
 
