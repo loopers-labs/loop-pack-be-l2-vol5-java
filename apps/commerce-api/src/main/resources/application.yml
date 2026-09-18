@@ -1,4 +1,5 @@
 server:
+  address: 127.0.0.1 # 로컬 실습용: 외부 네트워크에 노출하지 않음
   shutdown: graceful
   tomcat:
     threads:

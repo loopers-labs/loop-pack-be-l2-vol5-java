@@ -66,7 +66,7 @@ class ExampleServiceIntegrationTest {
             });
 
             // assert
-            assertThat(exception.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
+            assertThat(exception.getErrorCode()).isEqualTo(ErrorType.NOT_FOUND);
         }
     }
 }

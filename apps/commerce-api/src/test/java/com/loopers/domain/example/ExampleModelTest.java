@@ -44,7 +44,7 @@ class ExampleModelTest {
             });
 
             // assert
-            assertThat(result.getErrorType()).isEqualTo(ErrorType.BAD_REQUEST);
+            assertThat(result.getErrorCode()).isEqualTo(ErrorType.BAD_REQUEST);
         }
 
         @DisplayName("설명이 비어있으면, BAD_REQUEST 예외가 발생한다.")
@@ -59,7 +59,7 @@ class ExampleModelTest {
             });
 
             // assert
-            assertThat(result.getErrorType()).isEqualTo(ErrorType.BAD_REQUEST);
+            assertThat(result.getErrorCode()).isEqualTo(ErrorType.BAD_REQUEST);
         }
     }
 }

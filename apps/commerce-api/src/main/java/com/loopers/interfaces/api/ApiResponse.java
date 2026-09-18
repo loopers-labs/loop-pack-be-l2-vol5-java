@@ -24,9 +24,13 @@ public record ApiResponse<T>(Metadata meta, T data) {
     }
 
     public static ApiResponse<Object> fail(String errorCode, String errorMessage) {
+        return fail(errorCode, errorMessage, null);
+    }
+
+    public static ApiResponse<Object> fail(String errorCode, String errorMessage, Object data) {
         return new ApiResponse<>(
             Metadata.fail(errorCode, errorMessage),
-            null
+            data
         );
     }
 }

@@ -68,7 +68,7 @@ class ContractClassificationTest {
         );
     }
 
-    @DisplayName("숫자가 아닌 ID는 문법 오류로 구분되어, 400과 Bad Request를 돌려준다.")
+    @DisplayName("숫자가 아닌 ID는 문법 오류로 구분되어, 400과 BAD_REQUEST를 돌려준다.")
     @Test
     void returnsBadRequest_whenIdIsNotNumeric() {
         // act
@@ -79,14 +79,14 @@ class ContractClassificationTest {
         assertAll(
             () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST),
             () -> assertThat(response.getBody().meta().result()).isEqualTo(ApiResponse.Metadata.Result.FAIL),
-            () -> assertThat(response.getBody().meta().errorCode()).isEqualTo("Bad Request"),
+            () -> assertThat(response.getBody().meta().errorCode()).isEqualTo("BAD_REQUEST"),
             // 요청자가 고칠 대상을 알 수 있도록 잘못된 값이 메시지에 드러남
             () -> assertThat(response.getBody().meta().message()).contains("abc"),
             () -> assertThat(response.getBody().data()).isNull()
         );
     }
 
-    @DisplayName("존재하지 않는 숫자 ID 는 대상 없음으로 구분되어, 404 와 Not Found 를 돌려준다.")
+    @DisplayName("존재하지 않는 숫자 ID 는 대상 없음으로 구분되어, 404 와 NOT_FOUND 를 돌려준다.")
     @Test
     void returnsNotFound_whenNumericIdDoesNotExist() {
         // arrange
@@ -100,14 +100,14 @@ class ContractClassificationTest {
         assertAll(
             () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND),
             () -> assertThat(response.getBody().meta().result()).isEqualTo(ApiResponse.Metadata.Result.FAIL),
-            () -> assertThat(response.getBody().meta().errorCode()).isEqualTo("Not Found"),
+            () -> assertThat(response.getBody().meta().errorCode()).isEqualTo("NOT_FOUND"),
             // 도메인이 붙인 메시지라, 아래 미매핑 경로의 기본 메시지와 구분되는 유일한 필드임
             () -> assertThat(response.getBody().meta().message()).contains(String.valueOf(notExistingId)),
             () -> assertThat(response.getBody().data()).isNull()
         );
     }
 
-    @DisplayName("매핑되지 않은 경로는 요청 처리기 없음으로 구분되지만, 대상 없음과 같은 404 와 Not Found 를 돌려준다.")
+    @DisplayName("매핑되지 않은 경로는 요청 처리기 없음으로 구분되지만, 대상 없음과 같은 404 와 NOT_FOUND 를 돌려준다.")
     @Test
     void returnsNotFound_whenPathIsNotMapped() {
         // act
@@ -118,7 +118,7 @@ class ContractClassificationTest {
         assertAll(
             () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND),
             () -> assertThat(response.getBody().meta().result()).isEqualTo(ApiResponse.Metadata.Result.FAIL),
-            () -> assertThat(response.getBody().meta().errorCode()).isEqualTo("Not Found"),
+            () -> assertThat(response.getBody().meta().errorCode()).isEqualTo("NOT_FOUND"),
             // 도메인 메시지가 아닌 기본 메시지로만 갈리므로, 기계가 읽는 필드로는 두 실패가 구분되지 않음
             () -> assertThat(response.getBody().meta().message()).isEqualTo("존재하지 않는 요청입니다."),
             () -> assertThat(response.getBody().data()).isNull()
