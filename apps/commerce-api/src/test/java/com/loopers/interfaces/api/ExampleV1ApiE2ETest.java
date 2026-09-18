@@ -45,7 +45,7 @@ class ExampleV1ApiE2ETest {
 
     @AfterEach
     void tearDown() {
-        databaseCleanUp.truncateAllTables();
+        databaseCleanUp.deleteAllEntities();
     }
 
     @DisplayName("GET /api/v1/examples/{id}")

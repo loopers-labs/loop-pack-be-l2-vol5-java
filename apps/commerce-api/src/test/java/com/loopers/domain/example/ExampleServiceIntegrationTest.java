@@ -28,7 +28,7 @@ class ExampleServiceIntegrationTest {
 
     @AfterEach
     void tearDown() {
-        databaseCleanUp.truncateAllTables();
+        databaseCleanUp.deleteAllEntities();
     }
 
     @DisplayName("예시를 조회할 때,")

@@ -1,6 +1,14 @@
 plugins {
     `java-library`
     `java-test-fixtures`
+    checkstyle
+}
+
+checkstyle {
+    toolVersion = "10.26.1"
+    configFile = rootProject.file("config/checkstyle/checkstyle.xml")
+    isIgnoreFailures = false
+    maxWarnings = 0
 }
 
 dependencies {
