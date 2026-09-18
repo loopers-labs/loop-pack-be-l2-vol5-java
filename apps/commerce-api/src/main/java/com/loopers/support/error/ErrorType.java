@@ -15,7 +15,9 @@ public enum ErrorType {
     INSUFFICIENT_POINTS("INSUFFICIENT_POINTS", "포인트 잔액이 부족합니다."),
     USER_NOT_FOUND("USER_NOT_FOUND", "사용자를 찾을 수 없습니다."),
     BRAND_NOT_FOUND("BRAND_NOT_FOUND", "브랜드를 찾을 수 없습니다."),
-    BRAND_HAS_ACTIVE_PRODUCTS("BRAND_HAS_ACTIVE_PRODUCTS", "삭제되지 않은 상품이 있어 브랜드를 삭제할 수 없습니다.");
+    BRAND_HAS_ACTIVE_PRODUCTS("BRAND_HAS_ACTIVE_PRODUCTS", "삭제되지 않은 상품이 있어 브랜드를 삭제할 수 없습니다."),
+    PRODUCT_NOT_FOUND("PRODUCT_NOT_FOUND", "상품을 찾을 수 없습니다."),
+    INSUFFICIENT_STOCK("INSUFFICIENT_STOCK", "상품 재고가 부족합니다.");
 
     private final String code;
     private final String message;
