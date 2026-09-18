@@ -1,4 +1,6 @@
 import org.gradle.api.Project.DEFAULT_VERSION
+import org.gradle.api.plugins.quality.Checkstyle
+import org.gradle.api.plugins.quality.CheckstyleExtension
 import org.springframework.boot.gradle.tasks.bundling.BootJar
 
 /** --- configuration functions --- */
@@ -38,6 +40,16 @@ subprojects {
     apply(plugin = "org.springframework.boot")
     apply(plugin = "io.spring.dependency-management")
     apply(plugin = "jacoco")
+
+    if (childProjects.isEmpty()) {
+        apply(plugin = "checkstyle")
+        extensions.configure<CheckstyleExtension> {
+            toolVersion = "10.26.1"
+            configFile = rootProject.file("config/checkstyle/checkstyle.xml")
+            isIgnoreFailures = false
+            maxWarnings = 0
+        }
+    }
 
     dependencyManagement {
         imports {
@@ -103,6 +115,13 @@ subprojects {
             )
         }
     }
+}
+
+// API의 check 한 번으로 모든 Java 모듈과 testFixtures까지 같은 규칙으로 검사한다.
+project(":apps:commerce-api").tasks.named("check") {
+    dependsOn(rootProject.subprojects
+        .filter { it.childProjects.isEmpty() && it.path != ":apps:commerce-api" }
+        .map { it.tasks.withType<Checkstyle>() })
 }
 
 // module-container 는 task 를 실행하지 않도록 한다.
