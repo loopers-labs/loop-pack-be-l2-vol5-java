@@ -30,6 +30,11 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
 
+datasource:
+  mysql-jpa:
+    main:
+      connection-init-sql: SET SESSION innodb_lock_wait_timeout=3
+
 ---
 spring:
   config:
