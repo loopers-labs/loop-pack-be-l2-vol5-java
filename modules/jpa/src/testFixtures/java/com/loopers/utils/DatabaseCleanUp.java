@@ -1,5 +1,6 @@
 package com.loopers.utils;
 
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
@@ -8,6 +9,7 @@ import org.springframework.beans.factory.InitializingBean;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -22,9 +24,17 @@ public class DatabaseCleanUp implements InitializingBean {
     @Override
     public void afterPropertiesSet() {
         entityManager.getMetamodel().getEntities().stream()
-            .filter(entity -> entity.getJavaType().getAnnotation(Entity.class) != null)
-            .map(entity -> entity.getJavaType().getAnnotation(Table.class).name())
-            .forEach(tableNames::add);
+            .map(entity -> entity.getJavaType())
+            .filter(type -> type.getAnnotation(Entity.class) != null)
+            .forEach(type -> {
+                tableNames.add(type.getAnnotation(Table.class).name());
+                for (Field field : type.getDeclaredFields()) {
+                    CollectionTable collectionTable = field.getAnnotation(CollectionTable.class);
+                    if (collectionTable != null) {
+                        tableNames.add(collectionTable.name());
+                    }
+                }
+            });
     }
 
     @Transactional
