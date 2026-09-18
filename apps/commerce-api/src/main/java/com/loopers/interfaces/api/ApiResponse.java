@@ -1,6 +1,7 @@
 package com.loopers.interfaces.api;
 
 public record ApiResponse<T>(Metadata meta, T data) {
+
     public record Metadata(Result result, String errorCode, String message) {
         public enum Result {
             SUCCESS, FAIL

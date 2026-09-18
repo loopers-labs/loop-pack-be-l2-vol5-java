@@ -1,0 +1,98 @@
+### 상품
+# 고객 목록과 관리자 목록은 정렬 값이 다르다 — 쓸 수 있는 값이 다르면 타입이 다르다.
+#   고객   ProductSort      : LATEST · PRICE_ASC · LIKES_DESC
+#   관리자 AdminProductSort : LATEST · PRICE_ASC · PRICE_DESC · STOCK_ASC
+# 관리자에 LIKES_DESC 가 없는 것이 의도다 — 좋아요 조인이 없어 GROUP BY 가 돌지 않는다.
+
+### [고객] 상품 목록 — 최신순
+GET {{commerce-api}}/api/v1/products?sort=LATEST&page=0&size=20
+X-USER-ID: {{user-id}}
+Accept: application/json
+
+### [고객] 상품 목록 — 브랜드로 좁히기
+GET {{commerce-api}}/api/v1/products?brandId=1&sort=PRICE_ASC&page=0&size=20
+X-USER-ID: {{user-id}}
+
+### [고객] 상품 목록 — 좋아요순
+# 이 정렬만 집계 조인이 붙는다. 데이터가 커지면 여기부터 느려진다(설계 6장).
+GET {{commerce-api}}/api/v1/products?sort=LIKES_DESC&page=0&size=20
+X-USER-ID: {{user-id}}
+
+### [고객] 상품 상세 — 재고 숫자가 아니라 품절 여부만 내려간다 (Q-2)
+GET {{commerce-api}}/api/v1/products/1
+X-USER-ID: {{user-id}}
+
+### [관리자] 상품 등록 → 201
+POST {{commerce-api}}/api-admin/v1/products
+Authorization: Basic {{admin-user}} {{admin-password}}
+Content-Type: application/json
+
+{
+  "brandId": 1,
+  "name": "반팔 티셔츠",
+  "price": 19900
+}
+
+> {% client.global.set("product-id", response.body.data.id); %}
+
+### [관리자] 상품 목록 — 재고 적은 순. 보충이 급한 것부터
+GET {{commerce-api}}/api-admin/v1/products?sort=STOCK_ASC&page=0&size=20
+Authorization: Basic {{admin-user}} {{admin-password}}
+
+### [관리자] 상품 상세 — 여기서는 재고 숫자가 보인다
+GET {{commerce-api}}/api-admin/v1/products/{{product-id}}
+Authorization: Basic {{admin-user}} {{admin-password}}
+
+### [관리자] 상품 수정 — 브랜드는 바꿀 수 없다 (Product.brandId 는 final)
+PUT {{commerce-api}}/api-admin/v1/products/{{product-id}}
+Authorization: Basic {{admin-user}} {{admin-password}}
+Content-Type: application/json
+
+{
+  "name": "반팔 티셔츠 (2026)",
+  "price": 22900
+}
+
+### [관리자] 재고 지정 — 증감이 아니라 최종 수량이다 (PRODUCT-021)
+# 그래서 여러 번 보내도 결과가 같다. 응답이 끊겨도 그냥 다시 보내면 된다.
+PUT {{commerce-api}}/api-admin/v1/products/{{product-id}}/stock
+Authorization: Basic {{admin-user}} {{admin-password}}
+Content-Type: application/json
+
+{
+  "quantity": 100
+}
+
+### [관리자] 상품 삭제 → 204
+DELETE {{commerce-api}}/api-admin/v1/products/{{product-id}}
+Authorization: Basic {{admin-user}} {{admin-password}}
+
+### ── 실패 확인 ──────────────────────────────────────────
+
+### 가격 0 → 400. 도메인이 아니라 역직렬화에서 걸린다 (Price)
+# 이 규칙이 도메인에만 있던 동안 같은 요청이 500 이었다. docs/week2/writing.md
+POST {{commerce-api}}/api-admin/v1/products
+Authorization: Basic {{admin-user}} {{admin-password}}
+Content-Type: application/json
+
+{
+  "brandId": 1,
+  "name": "공짜 티셔츠",
+  "price": 0
+}
+
+### 없는 브랜드에 등록 → 400 (InvalidReference). 404 가 아니다 —
+# 없는 것은 요청한 자원이 아니라 요청이 가리킨 값이다
+POST {{commerce-api}}/api-admin/v1/products
+Authorization: Basic {{admin-user}} {{admin-password}}
+Content-Type: application/json
+
+{
+  "brandId": 999999,
+  "name": "주인 없는 상품",
+  "price": 10000
+}
+
+### 페이지 크기 초과 → 400 (PageSize 는 1~100)
+GET {{commerce-api}}/api/v1/products?size=1000
+X-USER-ID: {{user-id}}

@@ -1,0 +1,6 @@
+#!/bin/sh
+# 전체 테스트 (~20초, testcontainers 가 Docker 를 요구함).
+# 건너뛰기: git push --no-verify
+set -e
+
+exec ./gradlew test --console=plain
