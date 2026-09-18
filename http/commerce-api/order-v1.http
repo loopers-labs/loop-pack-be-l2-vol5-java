@@ -1,0 +1,89 @@
+### 주문
+# 접수(DRAFT)와 확정(CONFIRMED)이 나뉘어 있다.
+# 접수는 값을 베껴 적기만 하고, 재고와 포인트는 확정에서 한 트랜잭션으로 움직인다.
+# 확정 시 잠금 순서가 고정돼 있다: 주문 → 상품(productId 오름차순) → 재고 → 포인트.
+
+### [고객] 주문 접수 → 201, 상태 DRAFT
+# 같은 상품을 두 줄로 보내면 한 줄로 합쳐진다 (ORDER-004)
+POST {{commerce-api}}/api/v1/orders
+X-USER-ID: {{user-id}}
+Content-Type: application/json
+
+{
+  "lines": [
+    { "productId": 1, "quantity": 2 },
+    { "productId": 2, "quantity": 1 }
+  ]
+}
+
+> {% client.global.set("order-id", response.body.data.id); %}
+
+### [고객] 주문 확정 — 재고 차감과 포인트 사용이 여기서 함께 일어난다
+# 재고가 모자라면 409, 포인트가 모자라도 409. 둘 중 하나라도 실패하면 아무것도 움직이지 않는다.
+POST {{commerce-api}}/api/v1/orders/{{order-id}}/confirm
+X-USER-ID: {{user-id}}
+
+### [고객] 한 번 더 확정 → 409 (이미 DRAFT 가 아니다, ORDER-018)
+POST {{commerce-api}}/api/v1/orders/{{order-id}}/confirm
+X-USER-ID: {{user-id}}
+
+### [고객] 내 주문 목록
+GET {{commerce-api}}/api/v1/orders
+X-USER-ID: {{user-id}}
+
+### [고객] 내 주문 상세
+GET {{commerce-api}}/api/v1/orders/{{order-id}}
+X-USER-ID: {{user-id}}
+
+### [고객] 남의 주문 → 404. 403 이 아니다 — 존재를 숨긴다 (ORDER-011)
+GET {{commerce-api}}/api/v1/orders/{{order-id}}
+X-USER-ID: {{other-user-id}}
+
+### [관리자] 주문 목록 — 전체
+GET {{commerce-api}}/api-admin/v1/orders?page=0&size=20
+Authorization: Basic {{admin-user}} {{admin-password}}
+
+### [관리자] 주문 목록 — 구매자별
+GET {{commerce-api}}/api-admin/v1/orders?userId={{user-id}}&page=0&size=20
+Authorization: Basic {{admin-user}} {{admin-password}}
+
+### [관리자] 주문 목록 — 상태별 (DRAFT · CONFIRMED)
+GET {{commerce-api}}/api-admin/v1/orders?status=CONFIRMED&page=0&size=20
+Authorization: Basic {{admin-user}} {{admin-password}}
+
+### [관리자] 주문 상세
+GET {{commerce-api}}/api-admin/v1/orders/{{order-id}}
+Authorization: Basic {{admin-user}} {{admin-password}}
+
+### ── 실패 확인 ──────────────────────────────────────────
+
+### 수량 0 → 400. 도메인이 아니라 역직렬화에서 걸린다 (OrderQuantity)
+POST {{commerce-api}}/api/v1/orders
+X-USER-ID: {{user-id}}
+Content-Type: application/json
+
+{
+  "lines": [
+    { "productId": 1, "quantity": 0 }
+  ]
+}
+
+### 빈 주문 → 400
+POST {{commerce-api}}/api/v1/orders
+X-USER-ID: {{user-id}}
+Content-Type: application/json
+
+{
+  "lines": []
+}
+
+### 없는 상품 → 400 (InvalidReference)
+POST {{commerce-api}}/api/v1/orders
+X-USER-ID: {{user-id}}
+Content-Type: application/json
+
+{
+  "lines": [
+    { "productId": 999999, "quantity": 1 }
+  ]
+}

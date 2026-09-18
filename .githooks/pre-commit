@@ -1,0 +1,13 @@
+#!/bin/sh
+# 포맷 자동수정 + 린트 + ArchUnit (~5초). 전체 테스트는 pre-push 에서.
+# 활성화: git config core.hooksPath .githooks / 건너뛰기: git commit --no-verify
+set -e
+
+staged=$(git diff --cached --name-only --diff-filter=ACM | grep '\.java$') || exit 0
+
+./gradlew spotlessApply checkstyleMain checkstyleTest \
+    :apps:commerce-api:test --tests '*ArchitectureTest*' \
+    --quiet --console=plain
+
+# spotless 가 고친 결과를 다시 stage. 같은 파일의 unstaged 변경도 같이 올라간다.
+echo "$staged" | xargs git add --
