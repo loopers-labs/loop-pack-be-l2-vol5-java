@@ -1,3 +1,14 @@
+plugins {
+    checkstyle
+}
+
+checkstyle {
+    toolVersion = "10.26.1"
+    configFile = rootProject.file("config/checkstyle/checkstyle.xml")
+    isIgnoreFailures = false
+    maxWarnings = 0
+}
+
 dependencies {
     // add-ons
     implementation(project(":modules:jpa"))
@@ -15,6 +26,11 @@ dependencies {
     annotationProcessor("com.querydsl:querydsl-apt::jakarta")
     annotationProcessor("jakarta.persistence:jakarta.persistence-api")
     annotationProcessor("jakarta.annotation:jakarta.annotation-api")
+
+    // assignment: admin access and architecture checks
+    implementation("org.springframework.boot:spring-boot-starter-security")
+    testImplementation("org.springframework.security:spring-security-test")
+    testImplementation("com.tngtech.archunit:archunit:1.5.0")
 
     // test-fixtures
     testImplementation(testFixtures(project(":modules:jpa")))
