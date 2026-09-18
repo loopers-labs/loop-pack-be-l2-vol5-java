@@ -1,6 +1,7 @@
 package com.loopers.infrastructure.product;
 
 import com.loopers.domain.BaseEntity;
+import com.loopers.domain.product.Product;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
@@ -14,10 +15,17 @@ public class ProductJpaEntity extends BaseEntity {
     @Column(nullable = false) private int stock;
     protected ProductJpaEntity() {}
 
-    public ProductJpaEntity(long brandId, String name, long price, int stock) {
-        this.brandId = brandId;
-        this.name = name;
-        this.price = price;
-        this.stock = stock;
+    public ProductJpaEntity(Product product) {
+        brandId = product.getBrandId();
+        update(product);
+    }
+    public void update(Product product) {
+        name = product.getName();
+        price = product.getPrice();
+        stock = product.getStock();
+        if (product.isDeleted()) { delete(); }
+    }
+    public Product toDomain() {
+        return Product.restore(getId(), brandId, name, price, stock, getDeletedAt() != null);
     }
 }

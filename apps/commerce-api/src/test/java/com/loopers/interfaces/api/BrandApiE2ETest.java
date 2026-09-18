@@ -4,8 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
-import com.loopers.infrastructure.product.ProductJpaEntity;
-import org.springframework.transaction.support.TransactionTemplate;
+import com.loopers.domain.product.Product;
+import com.loopers.domain.product.ProductRepository;
 import com.loopers.interfaces.api.brand.BrandDto;
 import com.loopers.utils.DatabaseCleanUp;
 import jakarta.persistence.EntityManager;
@@ -39,7 +39,7 @@ class BrandApiE2ETest {
     private BrandRepository brands;
 
     @Autowired
-    private TransactionTemplate transactions;
+    private ProductRepository products;
 
     @Autowired
     private TestRestTemplate rest;
@@ -219,8 +219,9 @@ class BrandApiE2ETest {
     void activeProductBlocksDeletion() throws Exception {
         // arrange
         Brand brand = brands.save(Brand.create("브랜드"));
-        ProductJpaEntity product = new ProductJpaEntity(brand.getId(), "product", 2_000, 0);
-        transactions.executeWithoutResult(status -> entityManager.persist(product));
+        Product product = Product.create(brand.getId(), "product", 2_000);
+        product.setStock(0);
+        product = products.save(product);
         var request = delete(ADMIN_BRANDS + "/" + brand.getId())
             .with(user("admin").roles("ADMIN")).with(csrf());
 
@@ -238,9 +239,11 @@ class BrandApiE2ETest {
     void deletedProductDoesNotBlockDeletion() throws Exception {
         // arrange
         Brand brand = brands.save(Brand.create("브랜드"));
-        ProductJpaEntity product = new ProductJpaEntity(brand.getId(), "product", 2_000, 0);
+        Product product = Product.create(brand.getId(), "product", 2_000);
+        product.setStock(0);
+        product = products.save(product);
         product.delete();
-        transactions.executeWithoutResult(status -> entityManager.persist(product));
+        products.save(product);
         var request = delete(ADMIN_BRANDS + "/" + brand.getId())
             .with(user("admin").roles("ADMIN")).with(csrf());
 
