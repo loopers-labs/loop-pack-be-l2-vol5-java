@@ -6,6 +6,7 @@ import com.loopers.interfaces.api.PageResponse;
 import com.loopers.interfaces.api.auth.RequesterId;
 import com.loopers.support.paging.PageQuery;
 import lombok.RequiredArgsConstructor;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -24,10 +25,9 @@ public class ProductV1Controller implements ProductV1ApiSpec {
     public ApiResponse<PageResponse<ProductV1Dto.ProductResponse>> listProducts(
         @RequesterId Long requesterId,
         @RequestParam(value = "sort", required = false) String sort,
-        @RequestParam(value = "page", required = false) Integer page,
-        @RequestParam(value = "size", required = false) Integer size
+        @ParameterObject PageQuery pageQuery
     ) {
-        var result = productFacade.listProducts(requesterId, sort, PageQuery.of(page, size));
+        var result = productFacade.listProducts(requesterId, sort, pageQuery);
         return ApiResponse.success(PageResponse.from(result, ProductV1Dto.ProductResponse::from));
     }
 

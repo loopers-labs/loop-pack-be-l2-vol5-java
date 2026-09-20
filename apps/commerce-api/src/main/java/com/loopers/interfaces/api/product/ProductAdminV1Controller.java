@@ -6,6 +6,7 @@ import com.loopers.interfaces.api.PageResponse;
 import com.loopers.interfaces.api.auth.RequesterId;
 import com.loopers.support.paging.PageQuery;
 import lombok.RequiredArgsConstructor;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -14,7 +15,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -29,10 +29,9 @@ public class ProductAdminV1Controller implements ProductAdminV1ApiSpec {
     @Override
     public ApiResponse<PageResponse<ProductAdminV1Dto.ProductAdminResponse>> listProducts(
         @RequesterId Long requesterId,
-        @RequestParam(value = "page", required = false) Integer page,
-        @RequestParam(value = "size", required = false) Integer size
+        @ParameterObject PageQuery pageQuery
     ) {
-        var result = productFacade.listProductsForAdmin(requesterId, PageQuery.of(page, size));
+        var result = productFacade.listProductsForAdmin(requesterId, pageQuery);
         return ApiResponse.success(PageResponse.from(result, ProductAdminV1Dto.ProductAdminResponse::from));
     }
 

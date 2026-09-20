@@ -2,6 +2,7 @@ package com.loopers.interfaces.api.product;
 
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.PageResponse;
+import com.loopers.support.paging.PageQuery;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
@@ -10,7 +11,7 @@ public interface ProductAdminV1ApiSpec {
 
     /** EP-19 GET /api-admin/v1/products — FR-ADMIN-PRODUCT-01 */
     @Operation(summary = "상품 목록", description = "삭제 포함 전체 상품을 최신순 페이지로 반환한다.")
-    ApiResponse<PageResponse<ProductAdminV1Dto.ProductAdminResponse>> listProducts(Long requesterId, Integer page, Integer size);
+    ApiResponse<PageResponse<ProductAdminV1Dto.ProductAdminResponse>> listProducts(Long requesterId, PageQuery pageQuery);
 
     /** EP-20 POST /api-admin/v1/products — FR-ADMIN-PRODUCT-02 */
     @Operation(summary = "상품 생성")

@@ -6,11 +6,11 @@ import com.loopers.interfaces.api.PageResponse;
 import com.loopers.interfaces.api.auth.RequesterId;
 import com.loopers.support.paging.PageQuery;
 import lombok.RequiredArgsConstructor;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RequiredArgsConstructor
@@ -44,10 +44,9 @@ public class ProductLikeV1Controller implements ProductLikeV1ApiSpec {
     public ApiResponse<PageResponse<ProductLikeV1Dto.LikeResponse>> listMyLikes(
         @RequesterId Long requesterId,
         @PathVariable("userId") Long userId,
-        @RequestParam(value = "page", required = false) Integer page,
-        @RequestParam(value = "size", required = false) Integer size
+        @ParameterObject PageQuery pageQuery
     ) {
-        var result = productLikeFacade.listMyLikes(requesterId, userId, PageQuery.of(page, size));
+        var result = productLikeFacade.listMyLikes(requesterId, userId, pageQuery);
         return ApiResponse.success(PageResponse.from(result, ProductLikeV1Dto.LikeResponse::from));
     }
 }

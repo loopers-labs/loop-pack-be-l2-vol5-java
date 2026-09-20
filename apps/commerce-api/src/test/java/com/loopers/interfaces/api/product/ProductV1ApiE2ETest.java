@@ -78,10 +78,11 @@ class ProductV1ApiE2ETest {
             api.get("/api/v1/products?sort=latest&sort=price_asc", user.getId()).assertError(HttpStatus.BAD_REQUEST, "INVALID_SORT");
         }
 
-        @DisplayName("[ER-08 INVALID_PAGE] 음수·0 크기·타입 오류 모두 400.")
+        @DisplayName("[ER-08 INVALID_PAGE] 음수·상한 초과·0 크기·타입 오류 모두 400.")
         @Test
         void invalidPage() {
             api.get("/api/v1/products?page=-1", user.getId()).assertError(HttpStatus.BAD_REQUEST, "INVALID_PAGE");
+            api.get("/api/v1/products?page=101", user.getId()).assertError(HttpStatus.BAD_REQUEST, "INVALID_PAGE");
             api.get("/api/v1/products?size=0", user.getId()).assertError(HttpStatus.BAD_REQUEST, "INVALID_PAGE");
             api.get("/api/v1/products?page=abc", user.getId()).assertError(HttpStatus.BAD_REQUEST, "INVALID_PAGE");
         }

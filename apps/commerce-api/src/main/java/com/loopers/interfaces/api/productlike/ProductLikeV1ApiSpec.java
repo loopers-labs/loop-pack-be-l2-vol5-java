@@ -2,6 +2,7 @@ package com.loopers.interfaces.api.productlike;
 
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.PageResponse;
+import com.loopers.support.paging.PageQuery;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
@@ -18,5 +19,5 @@ public interface ProductLikeV1ApiSpec {
 
     /** EP-06 GET /api/v1/users/{userId}/likes — FR-LIKE-03 */
     @Operation(summary = "내 좋아요 목록", description = "요청자의 좋아요 중 상품이 삭제되지 않은 것만 등록 최신순으로 반환한다.")
-    ApiResponse<PageResponse<ProductLikeV1Dto.LikeResponse>> listMyLikes(Long requesterId, Long userId, Integer page, Integer size);
+    ApiResponse<PageResponse<ProductLikeV1Dto.LikeResponse>> listMyLikes(Long requesterId, Long userId, PageQuery pageQuery);
 }

@@ -2,6 +2,7 @@ package com.loopers.interfaces.api.brand;
 
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.PageResponse;
+import com.loopers.support.paging.PageQuery;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
@@ -10,7 +11,7 @@ public interface BrandAdminV1ApiSpec {
 
     /** EP-14 GET /api-admin/v1/brands — FR-ADMIN-BRAND-01 */
     @Operation(summary = "브랜드 목록", description = "삭제 포함 전체 브랜드를 최신순 페이지로 반환한다.")
-    ApiResponse<PageResponse<BrandAdminV1Dto.BrandAdminResponse>> listBrands(Long requesterId, Integer page, Integer size);
+    ApiResponse<PageResponse<BrandAdminV1Dto.BrandAdminResponse>> listBrands(Long requesterId, PageQuery pageQuery);
 
     /** EP-15 POST /api-admin/v1/brands — FR-ADMIN-BRAND-02 */
     @Operation(summary = "브랜드 생성")

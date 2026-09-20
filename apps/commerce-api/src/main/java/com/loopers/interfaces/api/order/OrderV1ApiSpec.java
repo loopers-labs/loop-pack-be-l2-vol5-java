@@ -2,6 +2,7 @@ package com.loopers.interfaces.api.order;
 
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.PageResponse;
+import com.loopers.support.paging.PageQuery;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
@@ -18,7 +19,7 @@ public interface OrderV1ApiSpec {
 
     /** EP-12 GET /api/v1/orders — FR-ORDER-03 */
     @Operation(summary = "내 주문 목록", description = "요청자의 주문 전부를 최신순 페이지로 반환한다.")
-    ApiResponse<PageResponse<OrderV1Dto.OrderResponse>> listMyOrders(Long requesterId, Integer page, Integer size);
+    ApiResponse<PageResponse<OrderV1Dto.OrderResponse>> listMyOrders(Long requesterId, PageQuery pageQuery);
 
     /** EP-13 GET /api/v1/orders/{orderId} — FR-ORDER-04 */
     @Operation(summary = "내 주문 상세")
