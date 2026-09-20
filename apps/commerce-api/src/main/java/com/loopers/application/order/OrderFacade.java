@@ -1,7 +1,7 @@
 package com.loopers.application.order;
 
-import com.loopers.domain.catalog.ProductModel;
-import com.loopers.domain.catalog.ProductService;
+import com.loopers.domain.product.ProductModel;
+import com.loopers.domain.product.ProductService;
 import com.loopers.domain.order.OrderItemModel;
 import com.loopers.domain.order.OrderModel;
 import com.loopers.domain.order.OrderService;

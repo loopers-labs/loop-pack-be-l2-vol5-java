@@ -1,8 +1,8 @@
 package com.loopers.interfaces.api.order;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.loopers.domain.catalog.BrandModel;
-import com.loopers.domain.catalog.ProductModel;
+import com.loopers.domain.brand.BrandModel;
+import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.order.OrderModel;
 import com.loopers.domain.user.UserModel;
 import com.loopers.support.ApiTestClient;

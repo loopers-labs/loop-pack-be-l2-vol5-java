@@ -1,9 +1,9 @@
 package com.loopers.application.order;
 
-import com.loopers.application.catalog.ProductFacade;
+import com.loopers.application.product.ProductFacade;
 import com.loopers.application.point.PointFacade;
-import com.loopers.domain.catalog.BrandModel;
-import com.loopers.domain.catalog.ProductModel;
+import com.loopers.domain.brand.BrandModel;
+import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.order.OrderModel;
 import com.loopers.domain.order.OrderStatus;
 import com.loopers.domain.user.UserModel;

@@ -34,7 +34,7 @@ flowchart LR
 
 ### 0-2. 계층 지도
 
-각 층에 놓인 것과 의존 방향. 패키지는 `com.loopers.{interfaces,application,domain,infrastructure}`. 실선은 호출·의존, 점선은 구현(의존성 역전). domain은 아무것도 의존하지 않고, infrastructure가 domain의 Repository 인터페이스를 구현하며 domain 쪽으로 의존한다(ArchUnit `ArchitectureTest`).
+각 층에 놓인 것과 의존 방향. 패키지는 `com.loopers.{interfaces,application,domain,infrastructure}.<ag>`, `<ag>`는 AG 단위(5-0). BC는 패키지가 아니라 문서와 `ArchitectureTest`의 BC→AG 매핑으로만 존재한다(DR-29). 실선은 호출·의존, 점선은 구현(의존성 역전). domain은 아무것도 의존하지 않고, infrastructure가 domain의 Repository 인터페이스를 구현하며 domain 쪽으로 의존한다(ArchUnit `ArchitectureTest`).
 
 ```mermaid
 flowchart TB
@@ -49,7 +49,7 @@ flowchart TB
     end
     subgraph DO["domain — 규칙 · 불변식"]
         direction LR
-        D1["user<br/>UserModel · UserService"] ~~~ D2["catalog<br/>Brand · Product · ProductLike"] ~~~ D3["point<br/>PointModel · PointService"] ~~~ D4["order<br/>Order · OrderItem · BuyerOrders"]
+        D1["user<br/>UserModel · UserService"] ~~~ D2["brand<br/>BrandModel · BrandService"] ~~~ D2b["product<br/>ProductModel · ProductService"] ~~~ D2c["productlike<br/>ProductLikeModel · ProductLikeService"] ~~~ D3["point<br/>PointModel · PointService"] ~~~ D4["order<br/>Order · OrderItem · BuyerOrders"]
     end
     subgraph IN["infrastructure — 저장"]
         R["*RepositoryImpl → *JpaRepository → MySQL"]
@@ -60,7 +60,7 @@ flowchart TB
 ```
 
 - 관리자 판정은 두 번 일어난다. 필터가 HTTP 경계에서 막고, Facade가 `UserService.getAdmin`으로 다시 확인한다(DR-25).
-- Facade는 BC 경계를 넘는 조립을 맡고, 도메인 서비스는 자기 BC 안의 규칙만 가진다. BC 간 호출 허용 표는 5-6.
+- Facade는 BC 경계를 넘는 조립을 맡고, 도메인 서비스는 자기 BC 안의 규칙만 가진다(같은 BC의 다른 AG Service·Repository는 부를 수 있다). BC 간 호출 허용 표는 5-6, AG 간 의존 규칙은 5-1~5-3.
 - 요청은 interfaces → application → domain 순으로 내려가고, 저장이 필요하면 domain의 Repository 인터페이스를 통해 infrastructure 구현체가 실행된다. 도메인은 JPA를 모른다.
 
 ### 0-3. 범위
@@ -307,7 +307,7 @@ BC-01 사용자는 모든 FR의 공통 사전 조건(요청자 식별·관리자
 - [x] 요구사항 2절 FR 28개가 전부 2-4에 있고 진입 BC가 하나다
 - [x] 즉시 다중 AG FR(FR-ORDER-02)에 근거가 있다 (DR-08)
 - [x] 참여 BC 3개 이상 FR(FR-ORDER-02)이 OQ-01에 있다
-- [x] 금지어 없음 (영문 식별자 user/catalog/point/order는 BC 식별자로 허용)
+- [x] 금지어 없음 (영문 식별자 user/catalog/point/order는 BC 식별자, brand/product/productlike는 AG 패키지 식별자로 허용)
 
 체크 안 된 항목 하나(INV-10)는 DR-04와 OQ-02로 처리하고 넘어간다 (동시성을 이번 범위에서 다루지 않기로 결정).
 
@@ -1056,16 +1056,18 @@ FR 28개 ↔ EP 28개, 1:1.
 
 가이드 5-1~5-5, 5-7의 규칙을 그대로 따른다. 이 장에 쓰는 것은 이 프로젝트에 적용한 이름(5-0), 5-4·5-5의 적용 결과, 5-6 BC 간 호출 표다. 클래스 다이어그램은 없다.
 
-### 5-0. BC별 패키지와 클래스 (이름만)
+### 5-0. AG별 패키지와 클래스 (이름만)
 
-패키지 `com.loopers.{interfaces.api, application, domain, infrastructure}.<bc>`. `<bc>`는 2-1의 영문 식별자.
+패키지 `com.loopers.{interfaces.api, application, domain, infrastructure}.<ag>`. `<ag>`는 2-2의 AG 루트를 소문자로 붙인 식별자이고 계층마다 같은 이름을 쓴다. BC는 패키지가 아니다 — 아래 표의 BC 열과 `ArchitectureTest.AGGREGATES_BY_BC` 매핑이 BC 소속의 유일한 기록이다(DR-29).
 
-| BC | `<bc>` | domain (Model / Service / Repository) | application (Facade) | interfaces.api |
-|---|---|---|---|---|
-| BC-01 사용자 | `user` | `UserModel` / `UserService` / `UserRepository` | 없음 (EP를 갖지 않는다. 다른 BC의 Facade가 `UserService`를 부른다) | 없음 |
-| BC-02 카탈로그 | `catalog` | `BrandModel`, `ProductModel`, `ProductLikeModel` / `BrandService`, `ProductService`, `ProductLikeService` / `BrandRepository`, `ProductRepository`, `ProductLikeRepository` | `BrandFacade`, `ProductFacade`, `ProductLikeFacade` | `BrandV1*`, `ProductV1*`, `ProductLikeV1*`, `BrandAdminV1*`, `ProductAdminV1*` |
-| BC-03 포인트 | `point` | `PointModel` / `PointService` / `PointRepository` | `PointFacade` | `PointV1*`, `PointAdminV1*` |
-| BC-04 주문 | `order` | `OrderModel` (루트), `OrderItemModel` (포함, AG-06) / `OrderService` / `OrderRepository` | `OrderFacade` | `OrderV1*`, `OrderAdminV1*` |
+| BC | AG | `<ag>` | domain (Model / Service / Repository) | application (Facade) | interfaces.api |
+|---|---|---|---|---|---|
+| BC-01 사용자 | AG-01 | `user` | `UserModel` / `UserService` / `UserRepository` | 없음 (EP를 갖지 않는다. 다른 BC의 Facade가 `UserService`를 부른다) | 없음 |
+| BC-02 카탈로그 | AG-02 | `brand` | `BrandModel` / `BrandService` / `BrandRepository` | `BrandFacade` | `BrandV1*`, `BrandAdminV1*` |
+| BC-02 카탈로그 | AG-03 | `product` | `ProductModel`, `ProductSort` / `ProductService` / `ProductRepository` | `ProductFacade` | `ProductV1*`, `ProductAdminV1*` |
+| BC-02 카탈로그 | AG-04 | `productlike` | `ProductLikeModel` / `ProductLikeService` / `ProductLikeRepository` | `ProductLikeFacade` | `ProductLikeV1*` |
+| BC-03 포인트 | AG-05 | `point` | `PointModel` / `PointService` / `PointRepository` | `PointFacade` | `PointV1*`, `PointAdminV1*` |
+| BC-04 주문 | AG-06 | `order` | `OrderModel` (루트), `OrderItemModel` (포함) / `OrderService` / `OrderRepository` | `OrderFacade` | `OrderV1*`, `OrderAdminV1*` |
 
 `*` = `ApiSpec`, `Controller`, `Dto`. Repository는 AG 루트 단위(6개)만 있다. `OrderItemRepository`는 만들지 않는다 (5-3).
 
@@ -1083,7 +1085,12 @@ Facade public 메서드 ↔ FR (28:28)
 
 가이드와 동일. 이 프로젝트에서 특히 지키는 것:
 
-- `domain.order`는 `domain.catalog`·`domain.point`·`domain.user`를 import하지 않는다. `OrderItemModel`은 `productId`(Long)만 든다. 단가는 Facade가 `ProductService`에서 받은 값을 꺼내 `OrderModel.create(...)`에 넘긴다.
+- BC 간: `domain.<A>`는 다른 BC에 속한 `domain.<B>`를 import하지 않는다. `domain.order`는 `domain.brand`·`domain.product`·`domain.productlike`·`domain.point`·`domain.user`를 모른다. `OrderItemModel`은 `productId`(Long)만 든다. 단가는 Facade가 `ProductService`에서 받은 값을 꺼내 `OrderModel.create(...)`에 넘긴다.
+- AG 간 (같은 BC 안, DR-29):
+  - Model은 다른 AG를 모른다. 다른 AG의 Model을 필드로 들지 않고 메서드 파라미터로도 받지 않는다. 참조가 필요하면 Long ID만 든다 (`ProductModel.brandId`, `ProductLikeModel.productId`).
+  - 도메인 Service는 같은 BC에 속한 다른 AG의 Repository나 Service를 사용해도 된다. 여러 AG에 걸친 규칙을 검증하기 위해서다. 현재 코드에는 쓰는 곳이 없다 — INV-10은 DR-04대로 Facade가 두 Service를 부르고, INV-04·05는 `ProductLikeService` 안에서 ID로만 끝난다.
+  - Repository 인터페이스(domain)는 시그니처에 다른 AG의 Model을 넣지 않는다. 조인한 결과가 필요하면 자기 패키지에 읽기용 record를 두고 그것을 반환한다.
+  - Repository 구현체(infrastructure)는 조회 쿼리를 짤 때 같은 BC의 다른 Q클래스를 조인해도 된다. 결과는 자기 AG의 Model 또는 프로젝션으로 반환한다 (`ProductLikeRepositoryImpl.findPageByUserIdWithActiveProduct`가 `QProductModel`을 필터 조인). 다른 BC의 domain은 import하지 않는다.
 - `OrderItemModel`을 만드는 코드는 `OrderModel` 안에만 있다. 같은 상품 합산(ASM-11, INV-08)과 합계 계산(INV-06)도 거기서.
 - 거부(AG 내) INV-의 위치: INV-01·02 `PointModel` / INV-03·11·13 `ProductModel` / INV-14 `BrandModel` / INV-06·07·08·09·12 `OrderModel` / INV-15 `UserModel` / INV-04·05 `ProductLikeService`(DR-05, 여러 Model에 걸친 같은 BC 규칙).
 - INV-10(거부·FR 트랜잭션, DR-04)은 어느 Model도 직접 검증하지 않는다. `BrandFacade.deleteBrand`가 `ProductService.existsActiveByBrand`를, `ProductFacade.createProduct`가 `BrandService.getActive`를 같은 트랜잭션에서 부른다.
@@ -1115,7 +1122,7 @@ Facade public 메서드 ↔ FR (28:28)
 | `OrderFacade.confirmOrder` | FR-ORDER-02 | `ProductService.deductStock(productId, quantity)` (품목마다) | **변경** (DR-08) | BC-02 → BC-04 |
 | `OrderFacade.confirmOrder` | FR-ORDER-02 | `PointService.deduct(userId, totalAmount)` | **변경** (DR-08) | BC-03 → BC-04 |
 
-같은 BC 안의 Facade → Service 호출(`BrandFacade` → `ProductService`, `ProductFacade` → `BrandService`·`ProductLikeService` 등)은 BC 간이 아니므로 이 표에 없다. 2-3의 "표현 범위" 행은 상수 공유라 호출이 없다.
+같은 BC 안의 AG 간 호출(`BrandFacade` → `ProductService`, `ProductFacade` → `BrandService`·`ProductLikeService` 등)은 BC 간이 아니므로 이 표에 없다. 허용 범위는 5-1~5-3의 AG 간 규칙. 2-3의 "표현 범위" 행은 상수 공유라 호출이 없다.
 
 ### 5-7. 테스트
 
@@ -1134,8 +1141,11 @@ Facade public 메서드 ↔ FR (28:28)
 
 코드 작성 후 검사한 결과. 검사 수단은 각 항목 끝에 적었다.
 
-- [x] `domain.<A>` → `domain.<B>` import 없음 — `ArchitectureTest.domainDoesNotDependOnOtherBoundedContextDomain`
-- [x] `application.<A>` → `domain.<B>.Repository` import 없음 — `ArchitectureTest.applicationDoesNotDependOnOtherBoundedContextRepository`
+- [x] BC 간: `domain.<A>` → 다른 BC의 `domain.<B>` import 없음 — `ArchitectureTest.domainDoesNotDependOnOtherBoundedContextDomain`
+- [x] BC 간: `application.<A>` → 다른 BC의 `domain.<B>.Repository` import 없음 — `ArchitectureTest.applicationDoesNotDependOnOtherBoundedContextRepository`
+- [x] BC 간: `infrastructure.<A>` → 다른 BC의 `domain.<B>` import 없음 — `ArchitectureTest.infrastructureDoesNotDependOnOtherBoundedContextDomain`
+- [x] AG 간: `*Model` → 다른 AG의 `domain` import 없음 (같은 BC 포함) — `ArchitectureTest.modelDoesNotDependOnOtherAggregate`
+- [x] AG 간: `*Repository` 인터페이스 → 다른 AG의 `*Model` 의존 없음 (시그니처 포함) — `ArchitectureTest.repositoryDoesNotExposeOtherAggregateModel`
 - [x] `interfaces` → `domain`·`infrastructure` import 없음 — `ArchitectureTest.interfacesDoNotDependOnDomain`, `respectsLayerDependencies`
 - [x] Facade public 메서드 28개 ↔ FR 28개, 주석에 FR-ID — `BrandFacade` 6, `ProductFacade` 8, `ProductLikeFacade` 3, `PointFacade` 5, `OrderFacade` 6
 - [x] EP 28개 ↔ ApiSpec 메서드 28개 — `BrandV1` 1, `ProductV1` 2, `ProductLikeV1` 3, `PointV1` 3, `OrderV1` 4, `BrandAdminV1` 5, `ProductAdminV1` 6, `PointAdminV1` 2, `OrderAdminV1` 2. 각 메서드 주석에 EP-ID
@@ -1145,7 +1155,7 @@ Facade public 메서드 ↔ FR (28:28)
 - [x] 5-4 DR 대상 FR 없음 (해당 없음)
 - [x] 5-6 표 = 코드의 BC 간 호출 — 모든 Facade → `UserService.getUser/getAdmin`; `PointFacade.chargeByAdmin/deductByAdmin` → `UserService.getUser(target)`; `OrderFacade.createOrder` → `ProductService.getActiveProducts`; `OrderFacade.confirmOrder` → `ProductService.getActiveProducts`, `ProductService.deductStock`, `PointService.deduct`. 표 밖 호출 없음
 - [x] Repository 6개 (AG 루트 단위) — `User, Brand, Product, ProductLike, Point, Order`. `OrderItemRepository` 없음
-- [x] 5-7 대상 전부 테스트 있음 — 258개 통과. FR 성공/실패: `*FacadeIntegrationTest` 6개. INV: `*ModelTest` 4개 + `UserServiceIntegrationTest`(INV-15) + `ProductLikeFacadeIntegrationTest`(INV-04·05). ST: ST-03 `OrderModelTest`, ST-01/02 는 DR-26 으로 미작성. ER: `*ApiE2ETest` 3개
+- [x] 5-7 대상 전부 테스트 있음 — 263개 통과. FR 성공/실패: `*FacadeIntegrationTest` 6개. INV: `*ModelTest` 4개 + `UserServiceIntegrationTest`(INV-15) + `ProductLikeFacadeIntegrationTest`(INV-04·05). ST: ST-03 `OrderModelTest`, ST-01/02 는 DR-26 으로 미작성. ER: `*ApiE2ETest` 5개(`Brand`·`Product`·`ProductLike`·`Point`·`Order`) + 공통 ER-01·02 `RequesterV1ApiE2ETest`
 
 ---
 
@@ -1184,6 +1194,7 @@ Facade public 메서드 ↔ FR (28:28)
 | DR-26 | 5 | 5-3, 5-7, ST-01, ST-02 | `modules/jpa` 의 `BaseEntity.restore()` 는 그대로 둔다. `BrandModel`·`ProductModel` 에서 오버라이드해 막지 않으며, ST-01/02 DELETED→ACTIVE 금지 전이 테스트는 작성하지 않는다 | 두 Model 에서 `restore()` 를 오버라이드해 예외 | 공유 모듈은 손대지 않고, 선언만 있고 부르는 FR 이 없다. 5-3 "3-2 에 없는 전이 메서드를 만들지 않는다" 는 이 프로젝트가 만든 메서드에 대한 규칙으로 읽는다(승인) | 복구 FR 이 들어오거나 호출이 발견되면 오버라이드로 막고 ST 테스트를 추가한다 | 없음 |
 | DR-27 | 5 | ER-09, ER-13, ER-20, ER-21, `supports/jackson` | Jackson 기본값 `ACCEPT_FLOAT_AS_INT` 를 유지한다. `amount: 1.5` 는 `1` 로 들어오며 "정수 아님" 으로 거절되지 않는다 | `JacksonConfig` 에서 비활성화 | 공유 모듈이라 다른 앱에도 영향이 간다. 정수 필드에 소수를 보내는 클라이언트는 상정하지 않는다(승인) | 정수 강제가 필요해지면 `supports/jackson` 에서 끄고 ER-09/13/20/21 테스트에 소수 케이스를 추가한다 | 없음 |
 | DR-28 | 5 | 4-1 페이징, 4-3-0 Page, ER-08 | 페이징 검증(`INVALID_PAGE`)과 결과 형태는 BC 밖 공통 값 객체 `support.paging.PageQuery`·`PageResult` 에 둔다. `page`·`size` 의 타입 오류는 DR-24 매핑으로 같은 코드 | 각 BC Service 에서 검증 | 6개 EP 가 같은 규칙을 쓴다. `support` 는 `error` 처럼 모든 계층이 참조하는 공통 패키지다 | 커서 페이징(DR-19 되돌릴 조건)이 오면 여기서만 바꾼다 | 없음 |
+| DR-29 | 5 | 5-0, 5-1~5-3, 5-8, 2-1, 2-2 | 패키지를 BC가 아니라 AG 단위로 나눈다(`brand`·`product`·`productlike`·`user`·`point`·`order`). BC는 문서(5-0 표)와 `ArchitectureTest.AGGREGATES_BY_BC` 매핑으로만 존재하고, BC 간 import 금지 규칙은 그 매핑으로 계속 검사한다. 같은 BC 안 AG 간 규칙은 5-1~5-3: Model·Repository 시그니처는 다른 AG를 모르고(ID만), Service·RepositoryImpl은 같은 BC의 다른 AG를 써도 된다 | (a) BC 단위 패키지 `catalog` 아래 Brand·Product·ProductLike를 접두사로 나열(이전 구조) (b) `catalog.brand`처럼 BC/AG 2단 패키지 | (a)는 카탈로그 패키지 하나에 AG 3개의 Model·Service·Repository 9개가 섞여 AG 경계가 이름 접두사로만 보였다. (b)는 BC 하나짜리 패키지(`user.user`)가 생기고 ArchUnit 패턴도 2단이 된다. AG 단위로 펴면 패키지 = AG 루트가 되고 BC 규칙은 매핑 한 곳에서 관리된다 | AG가 늘어 BC 안에서 묶어 볼 필요가 커지면 (b)로 옮긴다. 그때도 `AGGREGATES_BY_BC` 만 고치면 규칙은 유지된다 | 없음 |
 
 ### A-2. 열린 질문
 

@@ -1,11 +1,11 @@
 package com.loopers.support.fixture;
 
-import com.loopers.domain.catalog.BrandModel;
-import com.loopers.domain.catalog.BrandRepository;
-import com.loopers.domain.catalog.ProductLikeModel;
-import com.loopers.domain.catalog.ProductLikeRepository;
-import com.loopers.domain.catalog.ProductModel;
-import com.loopers.domain.catalog.ProductRepository;
+import com.loopers.domain.brand.BrandModel;
+import com.loopers.domain.brand.BrandRepository;
+import com.loopers.domain.productlike.ProductLikeModel;
+import com.loopers.domain.productlike.ProductLikeRepository;
+import com.loopers.domain.product.ProductModel;
+import com.loopers.domain.product.ProductRepository;
 import com.loopers.domain.point.PointModel;
 import com.loopers.domain.point.PointRepository;
 import com.loopers.domain.order.OrderModel;
