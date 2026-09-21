@@ -37,6 +37,7 @@
 | 관리자 주문 상세 | 주문 상세 + `buyerId` | A-13 |
 | 관리자 주문 요약 | 주문 요약 + `buyerId` | A-12 |
 
+- 고객 상품과 관리자 상품은 브랜드 정보와 좋아요 수(`likeCount`)를 포함한다. (R-CATALOG-03, R-LIKE-05)
 - 고객 상품은 재고 수량 대신 품절 여부(`soldOut`)를 보여 주고, 관리자 상품은 좋아요 수 대신 재고와 삭제 여부를 보여 준다. (R-ACCESS-06, P-CATALOG-01, P-ADMIN-07, P-ADMIN-09)
 - `status`는 `DRAFT` 또는 `CONFIRMED`이다. `DRAFT` 주문의 `payment`와 `paymentAmount`는 `null`이다. (R-ORDER-03, R-ORDER-12, P-ORDER-06)
 - 주문 품목의 `productName`과 `unitPrice`는 주문을 생성할 때의 값이며, 상품이 수정되거나 삭제되어도 바뀌지 않는다. (P-ORDER-03, P-ORDER-07)

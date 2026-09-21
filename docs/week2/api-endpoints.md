@@ -8,12 +8,13 @@
 
 ### 요청자 식별
 
-| 대상 | 식별 | 실패하면 |
-| --- | --- | --- |
-| [고객 API](#고객-api) (C-01 ~ C-12) | `X-USER-ID` 요청 헤더 | `401 USER_NOT_IDENTIFIED`. 헤더가 없거나, 숫자가 아니거나, 없는 사용자이면 같은 결과로 거절한다. (R-ACCESS-05, P-ACCESS-01) |
-| `/api-admin/v1/**` | `ADMIN` 역할 | `403`. 관리자 접근 필터가 거절하며 컨트롤러에 닿지 않는다. 응답 본문은 [API 응답 스키마](./api-response-schema.md)의 공통 응답 형식이 아니다. (R-ACCESS-04) |
 
-- 고객 요청의 식별은 과제가 요구한 고객 API에만 적용한다. 같은 `/api/v1` 아래에 있는 기존 starter의 Example API(`/api/v1/examples/**`)는 식별하지 않는다.
+| 대상                              | 식별                | 실패하면                                                                                                             |
+| ------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------- |
+| [고객 API](#고객-api) (C-01 ~ C-12) | `X-USER-ID` 요청 헤더 | `401 USER_NOT_IDENTIFIED`. 헤더가 없거나, 숫자가 아니거나, 없는 사용자이면 같은 결과로 거절한다. (R-ACCESS-05, P-ACCESS-01)                   |
+| `/api-admin/v1/**`              | `ADMIN` 역할        | `403`. 관리자 접근 필터가 거절하며 컨트롤러에 닿지 않는다. 응답 본문은 [API 응답 스키마](./api-response-schema.md)의 공통 응답 형식이 아니다. (R-ACCESS-04) |
+
+
 - 고객은 자신의 좋아요·포인트·주문만 다룬다. 다른 고객의 것을 요청하면 없는 대상으로 알린다. (R-ACCESS-03, P-ACCESS-02)
 - 관리자의 변경은 이후 고객 조회에 반영된다. (R-ADMIN-09)
 
@@ -22,19 +23,21 @@
 응답 형식, 응답 필드, 오류 코드는 [API 응답 스키마](./api-response-schema.md)를 따른다. 아래 각 API의 `성공` 칸에 적힌 응답 이름(고객 상품, 주문 상세 등)과 `대표 오류` 칸의 오류 코드도 그 문서를 가리킨다.
 
 - 새 대상을 만드는 요청(A-02, A-07, C-09, 처음 등록하는 C-04)의 성공은 `201 Created`, 나머지 성공은 `200 OK`이다.
-- 실패한 요청은 저장된 상태를 바꾸지 않는다.
+- 실패한 요청은 저장된 상태를 바꾸지 않는다. (R-ORDER-10, R-POINT-08)
 
 ### 목록
 
 목록을 돌려주는 요청은 모두 같은 페이지 규칙을 쓴다. 상품 목록의 정책(P-CATALOG-05, P-CATALOG-06, P-CATALOG-07)을 다른 목록에도 똑같이 적용한다.
 
-| 항목 | 규칙 |
-| --- | --- |
-| `page` | 0부터 시작한다. 기본값은 0이다. 음수이면 `400 INVALID_REQUEST` |
-| `size` | 1~100이다. 기본값은 20이다. 범위를 벗어나면 `400 INVALID_REQUEST` |
-| 마지막 페이지를 넘는 `page` | 빈 목록을 돌려준다. |
-| 응답 | [API 응답 스키마](./api-response-schema.md)의 목록 응답을 따른다. |
-| 순서 | 요청마다 적는다. 순서 기준이 같으면 식별자 오름차순으로 정한다. |
+
+| 항목                 | 규칙                                                  |
+| ------------------ | --------------------------------------------------- |
+| `page`             | 0부터 시작한다. 기본값은 0이다. 음수이면 `400 INVALID_REQUEST`      |
+| `size`             | 1~100이다. 기본값은 20이다. 범위를 벗어나면 `400 INVALID_REQUEST`  |
+| 마지막 페이지를 넘는 `page` | 빈 목록을 돌려준다.                                         |
+| 응답                 | [API 응답 스키마](./api-response-schema.md)의 목록 응답을 따른다. |
+| 순서                 | 요청마다 적는다. 순서 기준이 같으면 식별자 오름차순으로 정한다.                |
+
 
 ## 고객 API
 
@@ -42,127 +45,115 @@
 
 ### C-01. 브랜드 상세
 
-| 항목 | 계약 |
-| --- | --- |
-| 요청 | `GET /api/v1/brands/{brandId}` |
-| 입력 | path `brandId` |
-| 성공 | `200`, 고객 브랜드 |
-| 대표 오류 | `404 BRAND_NOT_FOUND`: 없거나 삭제된 브랜드 |
-| 근거 | R-CATALOG-01, R-CATALOG-07, R-ADMIN-12 |
+| 항목 | 계약 | 근거 |
+| --- | --- | --- |
+| 요청 | `GET /api/v1/brands/{brandId}` | R-CATALOG-01 |
+| 입력 | path `brandId` | R-CATALOG-01 |
+| 성공 | `200`, 고객 브랜드 | R-CATALOG-01 |
+| 대표 오류 | `404 BRAND_NOT_FOUND`: 없거나 삭제된 브랜드 | R-CATALOG-07, R-ADMIN-12 |
 
 ### C-02. 상품 목록
 
-| 항목 | 계약 |
-| --- | --- |
-| 요청 | `GET /api/v1/products` |
-| 입력 | query `brandId`(선택), `sort`(`latest`·`price_asc`·`likes_desc`, 기본 `latest`), `page`, `size` |
-| 성공 | `200`, 고객 상품 목록. 삭제되지 않은 상품만 담는다. |
-| 순서 | `latest`는 등록 최신순, `price_asc`는 가격 오름차순, `likes_desc`는 좋아요 수 내림차순. 같으면 상품 식별자 오름차순 |
-| 대표 오류 | `400 INVALID_REQUEST`: 지원하지 않는 `sort`, 잘못된 `page`·`size` |
-| 규칙 | 없거나 삭제된 `brandId`로 거르면 빈 목록을 돌려준다. |
-| 근거 | R-CATALOG-02, R-CATALOG-03, R-LIKE-05, R-CATALOG-04, R-CATALOG-05, R-CATALOG-06, R-CATALOG-08, R-ADMIN-12, P-CATALOG-02, P-CATALOG-03, P-CATALOG-04, P-CATALOG-06, P-CATALOG-08 |
+| 항목 | 계약 | 근거 |
+| --- | --- | --- |
+| 요청 | `GET /api/v1/products` | R-CATALOG-02 |
+| 입력 | query `brandId`(선택), `sort`(`latest`·`price_asc`·`likes_desc`, 기본 `latest`), `page`, `size` | R-CATALOG-04, R-CATALOG-05, P-CATALOG-03 |
+| 성공 | `200`, 고객 상품 목록. 삭제되지 않은 상품만 담는다. | R-CATALOG-02, R-ADMIN-12 |
+| 순서 | `latest`는 등록 최신순, `price_asc`는 가격 오름차순, `likes_desc`는 좋아요 수 내림차순. 같으면 상품 식별자 오름차순 | R-CATALOG-05, R-CATALOG-06, P-CATALOG-02, P-CATALOG-04 |
+| 대표 오류 | `400 INVALID_REQUEST`: 지원하지 않는 `sort`, 잘못된 `page`·`size` | R-CATALOG-08, P-CATALOG-06 |
+| 규칙 | 없거나 삭제된 `brandId`로 거르면 빈 목록을 돌려준다. | P-CATALOG-08 |
 
 ### C-03. 상품 상세
 
-| 항목 | 계약 |
-| --- | --- |
-| 요청 | `GET /api/v1/products/{productId}` |
-| 입력 | path `productId` |
-| 성공 | `200`, 고객 상품 |
-| 대표 오류 | `404 PRODUCT_NOT_FOUND`: 없거나 삭제된 상품 |
-| 근거 | R-CATALOG-02, R-CATALOG-03, R-CATALOG-07, R-LIKE-05, R-ADMIN-12 |
+| 항목 | 계약 | 근거 |
+| --- | --- | --- |
+| 요청 | `GET /api/v1/products/{productId}` | R-CATALOG-02 |
+| 입력 | path `productId` | R-CATALOG-02 |
+| 성공 | `200`, 고객 상품 | R-CATALOG-02 |
+| 대표 오류 | `404 PRODUCT_NOT_FOUND`: 없거나 삭제된 상품 | R-CATALOG-07, R-ADMIN-12 |
 
 ### C-04. 좋아요 등록
 
-| 항목 | 계약 |
-| --- | --- |
-| 요청 | `POST /api/v1/products/{productId}/likes` |
-| 입력 | path `productId` |
-| 성공 | `201`, `data` 없음. 이미 좋아요한 상품이면 새로 만들지 않고 `200`이며, 좋아요 수는 그대로다. |
-| 대표 오류 | `404 PRODUCT_NOT_FOUND`: 없거나 삭제된 상품 |
-| 근거 | R-LIKE-01, R-LIKE-02, R-LIKE-06, R-LIKE-07, P-LIKE-01, P-LIKE-02 |
+| 항목 | 계약 | 근거 |
+| --- | --- | --- |
+| 요청 | `POST /api/v1/products/{productId}/likes` | R-LIKE-01 |
+| 입력 | path `productId` | R-LIKE-01 |
+| 성공 | `201`, `data` 없음. 이미 좋아요한 상품이면 새로 만들지 않고 `200`이며, 좋아요 수는 그대로다. | R-LIKE-01, R-LIKE-02, R-LIKE-06, P-LIKE-01 |
+| 대표 오류 | `404 PRODUCT_NOT_FOUND`: 없거나 삭제된 상품 | R-LIKE-07, P-LIKE-02 |
 
 ### C-05. 좋아요 취소
 
-| 항목 | 계약 |
-| --- | --- |
-| 요청 | `DELETE /api/v1/products/{productId}/likes` |
-| 입력 | path `productId` |
-| 성공 | `200`, `data` 없음. 좋아요가 없어도 `200`이다. 상품이 삭제되었어도 자신의 좋아요를 취소한다. |
-| 대표 오류 | 공통 오류 외에는 없다. |
-| 근거 | R-LIKE-01, R-LIKE-04, R-LIKE-06, R-LIKE-08, P-LIKE-01 |
+| 항목 | 계약 | 근거 |
+| --- | --- | --- |
+| 요청 | `DELETE /api/v1/products/{productId}/likes` | R-LIKE-01 |
+| 입력 | path `productId` | R-LIKE-01 |
+| 성공 | `200`, `data` 없음. 좋아요가 없어도 `200`이다. 상품이 삭제되었어도 자신의 좋아요를 취소한다. | R-LIKE-01, R-LIKE-04, R-LIKE-06, R-LIKE-08, P-LIKE-01 |
+| 대표 오류 | 공통 오류 외에는 없다. | — |
 
 ### C-06. 내 좋아요 목록
 
-| 항목 | 계약 |
-| --- | --- |
-| 요청 | `GET /api/v1/users/{userId}/likes` |
-| 입력 | path `userId`, query `page`, `size` |
-| 성공 | `200`, 고객 상품 목록. 삭제된 상품은 담지 않는다. |
-| 순서 | 좋아요한 시점 최신순 |
-| 대표 오류 | `404 USER_NOT_FOUND`: `userId`가 요청자가 아님 |
-| 근거 | R-LIKE-03, R-LIKE-04, R-LIKE-07, P-ACCESS-02 |
+| 항목 | 계약 | 근거 |
+| --- | --- | --- |
+| 요청 | `GET /api/v1/users/{userId}/likes` | R-LIKE-03 |
+| 입력 | path `userId`, query `page`, `size` | R-LIKE-03 |
+| 성공 | `200`, 고객 상품 목록. 삭제된 상품은 담지 않는다. | R-LIKE-03, R-LIKE-07 |
+| 순서 | 좋아요한 시점 최신순 | **근거 없음** |
+| 대표 오류 | `404 USER_NOT_FOUND`: `userId`가 요청자가 아님 | R-LIKE-04, P-ACCESS-02 |
 
 ### C-07. 포인트 충전
 
-| 항목 | 계약 |
-| --- | --- |
-| 요청 | `POST /api/v1/points/charge` |
-| 입력 | body `{ "amount": 10000 }`. `amount`는 양의 정수 |
-| 성공 | `200`, `data`는 `{ "balance": 충전 후 잔액 }` |
-| 대표 오류 | `400 INVALID_REQUEST`: `amount` 누락, 정수가 아님, 표현 범위 초과 · `400 INVALID_CHARGE_AMOUNT`: 0 이하 · `409 POINT_BALANCE_LIMIT_EXCEEDED`: 충전 후 잔액이 표현 범위를 넘음. 어느 경우든 잔액은 그대로다. |
-| 근거 | R-POINT-01, R-POINT-03, R-POINT-04, R-POINT-06, R-POINT-07, R-POINT-08 |
+| 항목 | 계약 | 근거 |
+| --- | --- | --- |
+| 요청 | `POST /api/v1/points/charge` | R-POINT-01 |
+| 입력 | body `{ "amount": 10000 }`. `amount`는 양의 정수 | R-POINT-01, R-POINT-04 |
+| 성공 | `200`, `data`는 `{ "balance": 충전 후 잔액 }` | R-POINT-03, R-POINT-06 |
+| 대표 오류 | `400 INVALID_REQUEST`: `amount` 누락, 정수가 아님, 표현 범위 초과 · `400 INVALID_CHARGE_AMOUNT`: 0 이하 · `409 POINT_BALANCE_LIMIT_EXCEEDED`: 충전 후 잔액이 표현 범위를 넘음. 어느 경우든 잔액은 그대로다. | R-POINT-04, R-POINT-07, R-POINT-08 |
 
 ### C-08. 내 잔액 조회
 
-| 항목 | 계약 |
-| --- | --- |
-| 요청 | `GET /api/v1/points` |
-| 입력 | 없음 |
-| 성공 | `200`, `data`는 `{ "balance": 저장된 잔액 }`. 충전한 적이 없으면 0이다. |
-| 대표 오류 | 공통 오류 외에는 없다. |
-| 근거 | R-POINT-02, R-POINT-05, P-POINT-01 |
+| 항목 | 계약 | 근거 |
+| --- | --- | --- |
+| 요청 | `GET /api/v1/points` | R-POINT-02 |
+| 입력 | 없음 | R-POINT-02 |
+| 성공 | `200`, `data`는 `{ "balance": 저장된 잔액 }`. 충전한 적이 없으면 0이다. | R-POINT-02, R-POINT-05, P-POINT-01 |
+| 대표 오류 | 공통 오류 외에는 없다. | — |
 
 ### C-09. 주문 생성
 
-| 항목 | 계약 |
-| --- | --- |
-| 요청 | `POST /api/v1/orders` |
-| 입력 | body `{ "items": [ { "productId": 1, "quantity": 2 } ] }` |
-| 성공 | `201`, 주문 상세. `status`는 `DRAFT`, `payment`는 `null`이다. 재고와 잔액은 그대로다. |
-| 대표 오류 | `400 INVALID_REQUEST`: `items`나 `quantity` 누락, 정수가 아님 · `400 EMPTY_ORDER_ITEMS`: `items`가 비었음 · `400 INVALID_ORDER_QUANTITY`: `quantity`가 0 이하 · `404 PRODUCT_NOT_FOUND`: 없거나 삭제된 상품 |
-| 근거 | R-ORDER-01, R-ORDER-02, R-ORDER-03, R-ORDER-04, R-ORDER-05, R-ORDER-06, R-ORDER-15, P-ORDER-01, P-ORDER-02, P-ORDER-03, P-ORDER-07 |
+| 항목 | 계약 | 근거 |
+| --- | --- | --- |
+| 요청 | `POST /api/v1/orders` | R-ORDER-01 |
+| 입력 | body `{ "items": [ { "productId": 1, "quantity": 2 } ] }` | R-ORDER-01, R-ORDER-06 |
+| 성공 | `201`, 주문 상세. `status`는 `DRAFT`, `payment`는 `null`이다. 재고와 잔액은 그대로다. | R-ORDER-03, R-ORDER-04 |
+| 대표 오류 | `400 INVALID_REQUEST`: `items`나 `quantity` 누락, 정수가 아님 · `400 EMPTY_ORDER_ITEMS`: `items`가 비었음 · `400 INVALID_ORDER_QUANTITY`: `quantity`가 0 이하 · `404 PRODUCT_NOT_FOUND`: 없거나 삭제된 상품 | R-ORDER-05, R-ORDER-06, P-ORDER-01 |
 
 ### C-10. 주문 확정
 
-| 항목 | 계약 |
-| --- | --- |
-| 요청 | `POST /api/v1/orders/{orderId}/confirm` |
-| 입력 | path `orderId` |
-| 성공 | `200`, 주문 상세. `status`는 `CONFIRMED`이고 `payment`에 결제액과 결제 시점이 있다. 각 상품의 재고와 고객의 잔액이 차감된다. |
-| 대표 오류 | `404 ORDER_NOT_FOUND`: 없거나 다른 고객의 주문 · `409 ORDER_ALREADY_CONFIRMED` · `409 PRODUCT_NOT_AVAILABLE`: 삭제된 상품이 있음 · `409 INSUFFICIENT_STOCK` · `409 INSUFFICIENT_POINT` |
-| 근거 | R-ACCESS-03, R-ORDER-07, R-ORDER-08, R-ORDER-09, R-ORDER-10, R-ORDER-11, R-ORDER-12, P-ACCESS-02, P-ORDER-04, P-ORDER-06 |
+| 항목 | 계약 | 근거 |
+| --- | --- | --- |
+| 요청 | `POST /api/v1/orders/{orderId}/confirm` | R-ORDER-11 |
+| 입력 | path `orderId` | R-ORDER-11 |
+| 성공 | `200`, 주문 상세. `status`는 `CONFIRMED`이고 `payment`에 결제액과 결제 시점이 있다. 각 상품의 재고와 고객의 잔액이 차감된다. | R-ORDER-11, R-ORDER-12, P-ORDER-06 |
+| 대표 오류 | `404 ORDER_NOT_FOUND`: 없거나 다른 고객의 주문 · `409 ORDER_ALREADY_CONFIRMED` · `409 PRODUCT_NOT_AVAILABLE`: 삭제된 상품이 있음 · `409 INSUFFICIENT_STOCK` · `409 INSUFFICIENT_POINT` | R-ACCESS-03, R-ORDER-07, R-ORDER-08, R-ORDER-09, P-ACCESS-02, P-ORDER-04 |
 
 ### C-11. 내 주문 목록
 
-| 항목 | 계약 |
-| --- | --- |
-| 요청 | `GET /api/v1/orders` |
-| 입력 | query `page`, `size` |
-| 성공 | `200`, 요청자의 주문 요약 목록 |
-| 순서 | 주문 생성 최신순 |
-| 대표 오류 | 공통 오류 외에는 없다. |
-| 근거 | R-ORDER-13, R-ORDER-14, P-ORDER-08, P-ORDER-09 |
+| 항목 | 계약 | 근거 |
+| --- | --- | --- |
+| 요청 | `GET /api/v1/orders` | R-ORDER-13 |
+| 입력 | query `page`, `size` | R-ORDER-13, P-ORDER-09 |
+| 성공 | `200`, 요청자의 주문 요약 목록 | R-ORDER-13, R-ORDER-14, P-ORDER-08 |
+| 순서 | 주문 생성 최신순 | P-ORDER-09 |
+| 대표 오류 | 공통 오류 외에는 없다. | — |
 
 ### C-12. 내 주문 상세
 
-| 항목 | 계약 |
-| --- | --- |
-| 요청 | `GET /api/v1/orders/{orderId}` |
-| 입력 | path `orderId` |
-| 성공 | `200`, 주문 상세. 삭제된 상품의 품목도 저장된 값으로 보여 준다. |
-| 대표 오류 | `404 ORDER_NOT_FOUND`: 없거나 다른 고객의 주문 |
-| 근거 | R-ORDER-13, R-ORDER-14, P-ACCESS-02, P-ORDER-07, P-ORDER-08 |
+| 항목 | 계약 | 근거 |
+| --- | --- | --- |
+| 요청 | `GET /api/v1/orders/{orderId}` | R-ORDER-13 |
+| 입력 | path `orderId` | R-ORDER-13 |
+| 성공 | `200`, 주문 상세. 삭제된 상품의 품목도 저장된 값으로 보여 준다. | R-ORDER-13, R-ORDER-14, P-ORDER-07, P-ORDER-08 |
+| 대표 오류 | `404 ORDER_NOT_FOUND`: 없거나 다른 고객의 주문 | R-ACCESS-03, P-ACCESS-02 |
 
 ## 관리자 API
 
@@ -172,136 +163,126 @@
 
 ### A-01. 브랜드 목록
 
-| 항목 | 계약 |
-| --- | --- |
-| 요청 | `GET /api-admin/v1/brands` |
-| 입력 | query `page`, `size` |
-| 성공 | `200`, 관리자 브랜드 목록. 삭제된 브랜드도 담는다. |
-| 순서 | 등록 최신순 |
-| 근거 | R-ADMIN-01, P-ADMIN-07, P-ADMIN-08 |
+| 항목 | 계약 | 근거 |
+| --- | --- | --- |
+| 요청 | `GET /api-admin/v1/brands` | R-ADMIN-01 |
+| 입력 | query `page`, `size` | R-ADMIN-01, P-ADMIN-08 |
+| 성공 | `200`, 관리자 브랜드 목록. 삭제된 브랜드도 담는다. | R-ADMIN-01, P-ADMIN-07 |
+| 순서 | 등록 최신순 | P-ADMIN-08 |
 
 ### A-02. 브랜드 생성
 
-| 항목 | 계약 |
-| --- | --- |
-| 요청 | `POST /api-admin/v1/brands` |
-| 입력 | body `{ "name": "브랜드" }` |
-| 성공 | `201`, 관리자 브랜드 |
-| 대표 오류 | `400 INVALID_REQUEST`: `name` 누락 · `400 INVALID_BRAND_NAME`: 비었음, 공백만 있음, 앞뒤 공백을 뺀 길이가 50자 초과 · `409 DUPLICATE_BRAND_NAME` |
-| 근거 | R-ADMIN-01, R-ADMIN-15, P-ADMIN-01 |
+| 항목 | 계약 | 근거 |
+| --- | --- | --- |
+| 요청 | `POST /api-admin/v1/brands` | R-ADMIN-01 |
+| 입력 | body `{ "name": "브랜드" }` | R-ADMIN-01, R-ADMIN-15 |
+| 성공 | `201`, 관리자 브랜드 | R-ADMIN-01 |
+| 대표 오류 | `400 INVALID_REQUEST`: `name` 누락 · `400 INVALID_BRAND_NAME`: 비었음, 공백만 있음, 앞뒤 공백을 뺀 길이가 50자 초과 · `409 DUPLICATE_BRAND_NAME` | R-ADMIN-15, P-ADMIN-01 |
 
 ### A-03. 브랜드 상세
 
-| 항목 | 계약 |
-| --- | --- |
-| 요청 | `GET /api-admin/v1/brands/{brandId}` |
-| 입력 | path `brandId` |
-| 성공 | `200`, 관리자 브랜드. 삭제된 브랜드도 돌려준다. |
-| 대표 오류 | `404 BRAND_NOT_FOUND`: 존재한 적이 없는 브랜드 |
-| 근거 | R-ADMIN-01, P-ADMIN-07 |
+| 항목 | 계약 | 근거 |
+| --- | --- | --- |
+| 요청 | `GET /api-admin/v1/brands/{brandId}` | R-ADMIN-01 |
+| 입력 | path `brandId` | R-ADMIN-01 |
+| 성공 | `200`, 관리자 브랜드. 삭제된 브랜드도 돌려준다. | R-ADMIN-01, P-ADMIN-07 |
+| 대표 오류 | `404 BRAND_NOT_FOUND`: 존재한 적이 없는 브랜드 | R-ADMIN-01 |
 
 ### A-04. 브랜드 수정
 
-| 항목 | 계약 |
-| --- | --- |
-| 요청 | `PUT /api-admin/v1/brands/{brandId}` |
-| 입력 | path `brandId`, body `{ "name": "새 이름" }` |
-| 성공 | `200`, 관리자 브랜드 |
-| 대표 오류 | `400 INVALID_REQUEST`: `name` 누락 · `400 INVALID_BRAND_NAME`: 이름 규칙 위반 · `404 BRAND_NOT_FOUND`: 없거나 삭제된 브랜드 · `409 DUPLICATE_BRAND_NAME`: 자신을 뺀 삭제되지 않은 브랜드와 이름이 같음 |
-| 근거 | R-ADMIN-01, R-ADMIN-13, R-ADMIN-15, P-ADMIN-01 |
+| 항목 | 계약 | 근거 |
+| --- | --- | --- |
+| 요청 | `PUT /api-admin/v1/brands/{brandId}` | R-ADMIN-01 |
+| 입력 | path `brandId`, body `{ "name": "새 이름" }` | R-ADMIN-01, R-ADMIN-15 |
+| 성공 | `200`, 관리자 브랜드 | R-ADMIN-01 |
+| 대표 오류 | `400 INVALID_REQUEST`: `name` 누락 · `400 INVALID_BRAND_NAME`: 이름 규칙 위반 · `404 BRAND_NOT_FOUND`: 없거나 삭제된 브랜드 · `409 DUPLICATE_BRAND_NAME`: 자신을 뺀 삭제되지 않은 브랜드와 이름이 같음 | R-ADMIN-13, R-ADMIN-15, P-ADMIN-01 |
 
 ### A-05. 브랜드 삭제
 
-| 항목 | 계약 |
-| --- | --- |
-| 요청 | `DELETE /api-admin/v1/brands/{brandId}` |
-| 입력 | path `brandId` |
-| 성공 | `200`, `data` 없음. 삭제 여부만 바뀌고, 상품이 가리키던 브랜드 참조는 남는다. |
-| 대표 오류 | `404 BRAND_NOT_FOUND`: 없거나 이미 삭제된 브랜드 · `409 BRAND_HAS_PRODUCTS`: 삭제되지 않은 상품이 연결됨(재고 0인 상품 포함) |
-| 근거 | R-ADMIN-01, R-ADMIN-02, R-ADMIN-03, R-ADMIN-14, P-ADMIN-06, [ADR-001](./decisions.md) |
+| 항목 | 계약 | 근거 |
+| --- | --- | --- |
+| 요청 | `DELETE /api-admin/v1/brands/{brandId}` | R-ADMIN-01 |
+| 입력 | path `brandId` | R-ADMIN-01 |
+| 성공 | `200`, `data` 없음. 삭제 여부만 바뀌고, 상품이 가리키던 브랜드 참조는 남는다. | R-ADMIN-14, [ADR-001](./decisions.md#adr-001-브랜드상품은-논리-삭제한다) |
+| 대표 오류 | `404 BRAND_NOT_FOUND`: 없거나 이미 삭제된 브랜드 · `409 BRAND_HAS_PRODUCTS`: 삭제되지 않은 상품이 연결됨(재고 0인 상품 포함) | R-ADMIN-02, R-ADMIN-03, P-ADMIN-06 |
 
 ### A-06. 상품 목록
 
-| 항목 | 계약 |
-| --- | --- |
-| 요청 | `GET /api-admin/v1/products` |
-| 입력 | query `brandId`(선택), `page`, `size` |
-| 성공 | `200`, 관리자 상품 목록. 삭제된 상품도 담는다. |
-| 순서 | 등록 최신순 |
-| 근거 | R-ADMIN-04, P-ADMIN-07, P-ADMIN-08 |
+| 항목 | 계약 | 근거 |
+| --- | --- | --- |
+| 요청 | `GET /api-admin/v1/products` | R-ADMIN-04 |
+| 입력 | query `brandId`(선택), `page`, `size` | R-ADMIN-04, P-ADMIN-08 |
+| 성공 | `200`, 관리자 상품 목록. 삭제된 상품도 담는다. | R-ADMIN-04, P-ADMIN-07 |
+| 순서 | 등록 최신순 | P-ADMIN-08 |
 
 ### A-07. 상품 생성
 
-| 항목 | 계약 |
-| --- | --- |
-| 요청 | `POST /api-admin/v1/products` |
-| 입력 | body `{ "brandId": 1, "name": "상품", "price": 3000 }` |
-| 성공 | `201`, 관리자 상품. `stock`은 0이다. |
-| 대표 오류 | `400 INVALID_REQUEST`: 필드 누락, 타입이 틀림 · `400 INVALID_PRODUCT_NAME`: 이름이 비었음·공백만 있음·앞뒤 공백을 뺀 길이가 100자 초과 · `400 INVALID_PRODUCT_PRICE`: 가격이 1원~1,000,000,000원 밖 · `404 BRAND_NOT_FOUND`: 없거나 삭제된 브랜드 · `409 DUPLICATE_PRODUCT_NAME` |
-| 근거 | R-ADMIN-04, R-ADMIN-05, R-ADMIN-06, P-ADMIN-02, P-ADMIN-03, P-ADMIN-05 |
+| 항목 | 계약 | 근거 |
+| --- | --- | --- |
+| 요청 | `POST /api-admin/v1/products` | R-ADMIN-04 |
+| 입력 | body `{ "brandId": 1, "name": "상품", "price": 3000 }` | R-ADMIN-04, R-ADMIN-05, R-ADMIN-06 |
+| 성공 | `201`, 관리자 상품. `stock`은 0이다. | R-ADMIN-04, P-ADMIN-05 |
+| 대표 오류 | `400 INVALID_REQUEST`: 필드 누락, 타입이 틀림 · `400 INVALID_PRODUCT_NAME`: 이름이 비었음·공백만 있음·앞뒤 공백을 뺀 길이가 100자 초과 · `400 INVALID_PRODUCT_PRICE`: 가격이 1원~1,000,000,000원 밖 · `404 BRAND_NOT_FOUND`: 없거나 삭제된 브랜드 · `409 DUPLICATE_PRODUCT_NAME` | R-ADMIN-05, R-ADMIN-06, P-ADMIN-02, P-ADMIN-03 |
 
 ### A-08. 상품 상세
 
-| 항목 | 계약 |
-| --- | --- |
-| 요청 | `GET /api-admin/v1/products/{productId}` |
-| 입력 | path `productId` |
-| 성공 | `200`, 관리자 상품. 삭제된 상품도 돌려준다. |
-| 대표 오류 | `404 PRODUCT_NOT_FOUND`: 존재한 적이 없는 상품 |
-| 근거 | R-ADMIN-04, P-ADMIN-07, P-ADMIN-09 |
+| 항목 | 계약 | 근거 |
+| --- | --- | --- |
+| 요청 | `GET /api-admin/v1/products/{productId}` | R-ADMIN-04 |
+| 입력 | path `productId` | R-ADMIN-04 |
+| 성공 | `200`, 관리자 상품. 삭제된 상품도 돌려준다. | R-ADMIN-04, P-ADMIN-07, P-ADMIN-09 |
+| 대표 오류 | `404 PRODUCT_NOT_FOUND`: 존재한 적이 없는 상품 | R-ADMIN-04 |
 
 ### A-09. 상품 수정
 
-| 항목 | 계약 |
-| --- | --- |
-| 요청 | `PUT /api-admin/v1/products/{productId}` |
-| 입력 | path `productId`, body `{ "name": "새 이름", "price": 3500, "brandId": 1 }`. `brandId`는 선택이며, 보내면 현재 브랜드와 같아야 한다. |
-| 성공 | `200`, 관리자 상품. 재고는 바뀌지 않는다. |
-| 대표 오류 | `400 INVALID_REQUEST`: 필드 누락, 타입이 틀림 · `400 INVALID_PRODUCT_NAME` · `400 INVALID_PRODUCT_PRICE` · `404 PRODUCT_NOT_FOUND`: 없거나 삭제된 상품 · `409 DUPLICATE_PRODUCT_NAME` · `409 BRAND_CHANGE_NOT_ALLOWED`: `brandId`가 현재 브랜드와 다름. 어느 경우든 상품은 그대로다. |
-| 근거 | R-ADMIN-04, R-ADMIN-06, R-ADMIN-07, R-ADMIN-13, P-ADMIN-02, P-ADMIN-03, P-ADMIN-04, P-ADMIN-05 |
+| 항목 | 계약 | 근거 |
+| --- | --- | --- |
+| 요청 | `PUT /api-admin/v1/products/{productId}` | R-ADMIN-04 |
+| 입력 | path `productId`, body `{ "name": "새 이름", "price": 3500, "brandId": 1 }`. `brandId`는 선택이며, 보내면 현재 브랜드와 같아야 한다. | R-ADMIN-06, R-ADMIN-07, P-ADMIN-04 |
+| 성공 | `200`, 관리자 상품. 재고는 바뀌지 않는다. | R-ADMIN-04, P-ADMIN-05 |
+| 대표 오류 | `400 INVALID_REQUEST`: 필드 누락, 타입이 틀림 · `400 INVALID_PRODUCT_NAME` · `400 INVALID_PRODUCT_PRICE` · `404 PRODUCT_NOT_FOUND`: 없거나 삭제된 상품 · `409 DUPLICATE_PRODUCT_NAME` · `409 BRAND_CHANGE_NOT_ALLOWED`: `brandId`가 현재 브랜드와 다름. 어느 경우든 상품은 그대로다. | R-ADMIN-06, R-ADMIN-13, P-ADMIN-02, P-ADMIN-03, P-ADMIN-04 |
 
 ### A-10. 상품 삭제
 
-| 항목 | 계약 |
-| --- | --- |
-| 요청 | `DELETE /api-admin/v1/products/{productId}` |
-| 입력 | path `productId` |
-| 성공 | `200`, `data` 없음. 삭제 여부만 바뀌고, 이 상품을 가리키는 좋아요와 주문 품목은 남는다. |
-| 대표 오류 | `404 PRODUCT_NOT_FOUND`: 없거나 이미 삭제된 상품 |
-| 근거 | R-ADMIN-04, R-ADMIN-14, R-LIKE-08, P-ADMIN-06, [ADR-001](./decisions.md) |
+| 항목 | 계약 | 근거 |
+| --- | --- | --- |
+| 요청 | `DELETE /api-admin/v1/products/{productId}` | R-ADMIN-04 |
+| 입력 | path `productId` | R-ADMIN-04 |
+| 성공 | `200`, `data` 없음. 삭제 여부만 바뀌고, 이 상품을 가리키는 좋아요와 주문 품목은 남는다. | R-ADMIN-14, R-LIKE-08, [ADR-001](./decisions.md#adr-001-브랜드상품은-논리-삭제한다) |
+| 대표 오류 | `404 PRODUCT_NOT_FOUND`: 없거나 이미 삭제된 상품 | P-ADMIN-06 |
 
 ### A-11. 상품 재고 변경
 
-| 항목 | 계약 |
-| --- | --- |
-| 요청 | `PUT /api-admin/v1/products/{productId}/stock` |
-| 입력 | path `productId`, body `{ "quantity": 10 }`. `quantity`는 0 이상인 최종 수량 |
-| 성공 | `200`, 관리자 상품 |
-| 대표 오류 | `400 INVALID_REQUEST`: `quantity` 누락, 정수가 아님 · `400 INVALID_STOCK_QUANTITY`: 음수 · `404 PRODUCT_NOT_FOUND`: 없거나 삭제된 상품 |
-| 근거 | R-ADMIN-08, R-ADMIN-13 |
+| 항목 | 계약 | 근거 |
+| --- | --- | --- |
+| 요청 | `PUT /api-admin/v1/products/{productId}/stock` | R-ADMIN-08 |
+| 입력 | path `productId`, body `{ "quantity": 10 }`. `quantity`는 0 이상인 최종 수량 | R-ADMIN-08, P-ADMIN-05 |
+| 성공 | `200`, 관리자 상품 | R-ADMIN-08 |
+| 대표 오류 | `400 INVALID_REQUEST`: `quantity` 누락, 정수가 아님 · `400 INVALID_STOCK_QUANTITY`: 음수 · `404 PRODUCT_NOT_FOUND`: 없거나 삭제된 상품 | R-ADMIN-08, R-ADMIN-13 |
 
 ### A-12. 주문 목록
 
-| 항목 | 계약 |
-| --- | --- |
-| 요청 | `GET /api-admin/v1/orders` |
-| 입력 | query `buyerId`(선택), `page`, `size` |
-| 성공 | `200`, 관리자 주문 요약 목록. `buyerId`가 있으면 그 구매자의 주문만 담는다. |
-| 순서 | 주문 생성 최신순 |
-| 근거 | R-ADMIN-10, R-ADMIN-11, P-ADMIN-10, P-ORDER-08, P-ORDER-09 |
+| 항목 | 계약 | 근거 |
+| --- | --- | --- |
+| 요청 | `GET /api-admin/v1/orders` | R-ADMIN-10 |
+| 입력 | query `buyerId`(선택), `page`, `size` | R-ADMIN-10, P-ADMIN-10, P-ORDER-09 |
+| 성공 | `200`, 관리자 주문 요약 목록. `buyerId`가 있으면 그 구매자의 주문만 담는다. | R-ADMIN-10, R-ADMIN-11, P-ADMIN-10, P-ORDER-08 |
+| 순서 | 주문 생성 최신순 | P-ORDER-09 |
 
 ### A-13. 주문 상세
 
-| 항목 | 계약 |
-| --- | --- |
-| 요청 | `GET /api-admin/v1/orders/{orderId}` |
-| 입력 | path `orderId` |
-| 성공 | `200`, 관리자 주문 상세 |
-| 대표 오류 | `404 ORDER_NOT_FOUND` |
-| 근거 | R-ADMIN-10, R-ADMIN-11, P-ORDER-07 |
+| 항목 | 계약 | 근거 |
+| --- | --- | --- |
+| 요청 | `GET /api-admin/v1/orders/{orderId}` | R-ADMIN-10 |
+| 입력 | path `orderId` | R-ADMIN-10 |
+| 성공 | `200`, 관리자 주문 상세 | R-ADMIN-10, R-ADMIN-11, P-ORDER-07 |
+| 대표 오류 | `404 ORDER_NOT_FOUND` | R-ADMIN-10 |
 
 ## 제공하지 않는 기능
 
-| 기능 | 이유 | 근거 |
-| --- | --- | --- |
+
+| 기능                   | 이유                                          | 근거         |
+| -------------------- | ------------------------------------------- | ---------- |
 | `DRAFT` 주문의 품목 수량 변경 | 도메인 모델과 정책에는 있지만, 과제가 요구한 API에 없어 제공하지 않는다. | P-ORDER-05 |
+
+
