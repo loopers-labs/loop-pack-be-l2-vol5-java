@@ -65,7 +65,7 @@ class LikeUseCaseIntegrationTest {
 
     @DisplayName("[INV-24] 한 고객은 한 상품에 좋아요를 하나만 갖는다.")
     @Nested class IdempotentRequests {
-        @DisplayName("[의사결정표] 같은 상품을 두 번 등록해도 관계 수는 1이다.")
+        @DisplayName("[상태 전이] 같은 상품을 두 번 등록해도 관계 수는 1이다.")
         @Test void ignoresRepeatedRegistration() {
             Scenario scenario = scenario();
             useCase.register(scenario.user().getId(), scenario.product().getId());
@@ -73,7 +73,7 @@ class LikeUseCaseIntegrationTest {
             assertThat(countLikes(scenario.product().getId())).isEqualTo(1L);
         }
 
-        @DisplayName("[의사결정표] 관계가 없는 취소는 성공하고 관계 수 0을 유지한다.")
+        @DisplayName("[상태 전이] 관계가 없는 취소는 성공하고 관계 수 0을 유지한다.")
         @Test void ignoresMissingLikeOnCancel() {
             Scenario scenario = scenario();
             useCase.register(scenario.user().getId(), scenario.product().getId());
@@ -111,14 +111,14 @@ class LikeUseCaseIntegrationTest {
 
     @DisplayName("[INV-23] 새로 등록하는 좋아요의 상품은 삭제되지 않은 상태다.")
     @Nested class RegisterOnActiveProductOnly {
-        @DisplayName("[의사결정표] 삭제되지 않은 상품에는 좋아요를 등록해 좋아요 수가 1이 된다.")
+        @DisplayName("[동등 클래스 분할] 삭제되지 않은 상품에는 좋아요를 등록해 좋아요 수가 1이 된다.")
         @Test void registers_whenProductIsActive() {
             Scenario scenario = scenario();
             useCase.register(scenario.user().getId(), scenario.product().getId());
             assertThat(useCase.count(scenario.product().getId())).isEqualTo(1L);
         }
 
-        @DisplayName("[의사결정표] 삭제된 상품에 등록하면 없는 상품으로 거절하고, 좋아요 수는 0이다.")
+        @DisplayName("[동등 클래스 분할] 삭제된 상품에 등록하면 없는 상품으로 거절하고, 좋아요 수는 0이다.")
         @Test void throwsProductNotFound_whenProductIsDeleted() {
             Scenario scenario = scenario();
             scenario.product().delete();

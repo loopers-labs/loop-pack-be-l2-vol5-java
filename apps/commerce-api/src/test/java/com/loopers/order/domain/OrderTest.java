@@ -60,7 +60,7 @@ class OrderTest {
     @Nested
     class OneItemPerProduct {
 
-        @DisplayName("[의사결정표] 같은 상품의 수량 2와 3을 품목 하나의 수량 5로 합친다.")
+        @DisplayName("[동등 클래스 분할] 같은 상품의 수량 2와 3을 품목 하나의 수량 5로 합친다.")
         @Test
         void mergesQuantity_whenProductIsDuplicated() {
             // act
@@ -77,7 +77,7 @@ class OrderTest {
             );
         }
 
-        @DisplayName("[의사결정표] 다른 상품은 각각 유지하고 같은 상품만 합산한다.")
+        @DisplayName("[동등 클래스 분할] 다른 상품은 각각 유지하고 같은 상품만 합산한다.")
         @Test
         void keepsOneItemPerProduct() {
             // act
@@ -146,7 +146,7 @@ class OrderTest {
     @Nested
     class OwnedByBuyer {
 
-        @DisplayName("[의사결정표] 구매자는 자신의 주문으로 확인되고 다른 고객은 아니다.")
+        @DisplayName("[동등 클래스 분할] 구매자는 자신의 주문으로 확인되고 다른 고객은 아니다.")
         @Test
         void identifiesOwner() {
             // arrange
@@ -159,7 +159,7 @@ class OrderTest {
             );
         }
 
-        @DisplayName("[의사결정표] 다른 고객이 품목 수량을 바꾸면 없는 주문으로 거절하고, 수량은 그대로다.")
+        @DisplayName("[동등 클래스 분할] 다른 고객이 품목 수량을 바꾸면 없는 주문으로 거절하고, 수량은 그대로다.")
         @Test
         void throwsOrderNotFound_whenRequesterIsNotOwner() {
             // arrange

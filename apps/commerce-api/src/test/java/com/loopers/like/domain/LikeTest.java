@@ -29,7 +29,7 @@ class LikeTest {
             );
         }
 
-        @DisplayName("[의사결정표] 소유자가 취소하면 취소된 상태가 된다.")
+        @DisplayName("[동등 클래스 분할] 소유자가 취소하면 취소된 상태가 된다.")
         @Test
         void cancels_whenRequesterOwnsLike() {
             // arrange
@@ -42,7 +42,7 @@ class LikeTest {
             assertThat(like.isCanceled()).isTrue();
         }
 
-        @DisplayName("[의사결정표] 다른 고객이 취소하면 없는 좋아요로 거절하고, 취소되지 않은 상태 그대로다.")
+        @DisplayName("[동등 클래스 분할] 다른 고객이 취소하면 없는 좋아요로 거절하고, 취소되지 않은 상태 그대로다.")
         @Test
         void throwsLikeNotFound_whenRequesterDoesNotOwnLike() {
             // arrange
@@ -58,7 +58,7 @@ class LikeTest {
             );
         }
 
-        @DisplayName("[의사결정표] 다른 고객이 되살리면 없는 좋아요로 거절하고, 취소된 상태 그대로다.")
+        @DisplayName("[동등 클래스 분할] 다른 고객이 되살리면 없는 좋아요로 거절하고, 취소된 상태 그대로다.")
         @Test
         void throwsLikeNotFound_whenRequesterDoesNotOwnCanceledLike() {
             // arrange

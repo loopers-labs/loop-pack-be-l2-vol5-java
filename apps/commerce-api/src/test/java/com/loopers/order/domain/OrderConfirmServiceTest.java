@@ -102,7 +102,7 @@ class OrderConfirmServiceTest {
     @Nested
     class OwnedByBuyer {
 
-        @DisplayName("[의사결정표] 다른 고객이 확정하면 없는 주문으로 거절하고, 아무것도 바뀌지 않는다.")
+        @DisplayName("[동등 클래스 분할] 다른 고객이 확정하면 없는 주문으로 거절하고, 아무것도 바뀌지 않는다.")
         @Test
         void throwsOrderNotFound_andKeepsAllState() {
             // arrange

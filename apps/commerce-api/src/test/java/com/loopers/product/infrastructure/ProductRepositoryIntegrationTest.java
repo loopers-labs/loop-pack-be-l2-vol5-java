@@ -152,7 +152,7 @@ class ProductRepositoryIntegrationTest {
     @Nested
     class SortTiesByIdAscending {
 
-        @DisplayName("[의사결정표] 가격이 같으면 상품 식별자가 작은 상품부터 조회한다.")
+        @DisplayName("[경계값 분석] 가격이 같으면 상품 식별자가 작은 상품부터 조회한다.")
         @Test
         void sortsSamePriceByIdAscending() {
             Product smallerId = productRepository.save(new Product(1L, "First", 1_000L));

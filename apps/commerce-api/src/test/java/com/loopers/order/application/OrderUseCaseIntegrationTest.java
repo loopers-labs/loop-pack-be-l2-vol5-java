@@ -165,7 +165,7 @@ class OrderUseCaseIntegrationTest {
 
     @DisplayName("[P-ADMIN-10] 모든 주문을 구매자와 함께 보여 주고 구매자 필터도 제공한다.")
     @Nested class OptionalBuyerFilter {
-        @DisplayName("[의사결정표] 구매자 조건이 없으면 두 구매자의 주문을 모두 조회한다.")
+        @DisplayName("[동등 클래스 분할] 구매자 조건이 없으면 두 구매자의 주문을 모두 조회한다.")
         @Test void findsAllAdminOrdersWithoutBuyerFilter() {
             Order first = persist(orderOf(1L, 10L));
             Order second = persist(orderOf(2L, 20L));

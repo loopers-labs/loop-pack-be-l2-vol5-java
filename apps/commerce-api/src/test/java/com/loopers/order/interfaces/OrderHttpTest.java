@@ -713,7 +713,7 @@ class OrderHttpTest {
     @Nested
     class BuyerFilter {
 
-        @DisplayName("[의사결정표] buyerId 없이 조회하면 두 구매자의 주문을 모두 담는다.")
+        @DisplayName("[동등 클래스 분할] buyerId 없이 조회하면 두 구매자의 주문을 모두 담는다.")
         @Test
         void listsAllBuyersWithoutFilter() throws Exception {
             // arrange
@@ -732,7 +732,7 @@ class OrderHttpTest {
             );
         }
 
-        @DisplayName("[의사결정표] buyerId로 거르면 그 구매자의 주문만 담는다.")
+        @DisplayName("[동등 클래스 분할] buyerId로 거르면 그 구매자의 주문만 담는다.")
         @Test
         void filtersByBuyer() throws Exception {
             // arrange
