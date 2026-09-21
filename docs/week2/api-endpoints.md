@@ -1,6 +1,8 @@
 # commerce-api API 엔드포인트
 
-과제가 요구한 기본 API의 method, path, 입력, 성공, 대표 오류와 주요 규칙의 기대값이다. 근거는 [요구사항 문서](./requirements.md)의 요구사항 ID와 정책 ID를 가리키고, 요청이 지나는 계층은 [대표 흐름](./representative-flows.md)을 따른다.
+과제가 요구한 기본 API의 method, path, 입력, 성공, 대표 오류다. 근거는 [요구사항 문서](./requirements.md)의 요구사항 ID와 정책 ID를 가리키고, 요청이 지나는 계층은 [대표 흐름](./representative-flows.md)을 따른다.
+
+이 문서는 **계약만 갖는다.** 입력 형식, 상태 코드, 오류 코드 매핑, 조회 결과의 모양이 계약이다. 각 API가 지키는 도메인 규칙은 [`domain-rules.yaml`](./domain-rules.yaml)에 있고, 여기에는 규칙 문장을 적지 않는다.
 
 ## 공통 규칙
 
@@ -129,7 +131,6 @@
 | 입력 | body `{ "items": [ { "productId": 1, "quantity": 2 } ] }` |
 | 성공 | `201`, 주문 상세. `status`는 `DRAFT`, `payment`는 `null`이다. 재고와 잔액은 그대로다. |
 | 대표 오류 | `400 INVALID_REQUEST`: `items`나 `quantity` 누락, 정수가 아님 · `400 EMPTY_ORDER_ITEMS`: `items`가 비었음 · `400 INVALID_ORDER_QUANTITY`: `quantity`가 0 이하 · `404 PRODUCT_NOT_FOUND`: 없거나 삭제된 상품 |
-| 규칙 | 같은 `productId`가 여러 번 오면 수량을 합산해 품목 하나로 만든다. 단가와 상품 이름은 지금 값으로 기록하고, 합계는 품목 금액의 합이다. |
 | 근거 | R-ORDER-01, R-ORDER-02, R-ORDER-03, R-ORDER-04, R-ORDER-05, R-ORDER-06, R-ORDER-15, P-ORDER-01, P-ORDER-02, P-ORDER-03, P-ORDER-07 |
 
 ### C-10. 주문 확정
@@ -140,7 +141,6 @@
 | 입력 | path `orderId` |
 | 성공 | `200`, 주문 상세. `status`는 `CONFIRMED`이고 `payment`에 결제액과 결제 시점이 있다. 각 상품의 재고와 고객의 잔액이 차감된다. |
 | 대표 오류 | `404 ORDER_NOT_FOUND`: 없거나 다른 고객의 주문 · `409 ORDER_ALREADY_CONFIRMED` · `409 PRODUCT_NOT_AVAILABLE`: 삭제된 상품이 있음 · `409 INSUFFICIENT_STOCK` · `409 INSUFFICIENT_POINT` |
-| 규칙 | 하나라도 통과하지 못하면 주문 상태, 재고, 잔액을 모두 그대로 둔다. |
 | 근거 | R-ACCESS-03, R-ORDER-07, R-ORDER-08, R-ORDER-09, R-ORDER-10, R-ORDER-11, R-ORDER-12, P-ACCESS-02, P-ORDER-04, P-ORDER-06 |
 
 ### C-11. 내 주문 목록
@@ -169,8 +169,6 @@
 관리자가 브랜드·상품·재고를 관리하고 구매자들의 주문을 조회하는 API다. (R-ACCESS-02)
 
 관리자 조회는 삭제된 브랜드와 상품도 삭제 여부와 함께 보여 준다. 삭제된 대상은 수정, 재고 변경, 다시 삭제의 대상이 아니며 없는 대상으로 알린다. (P-ADMIN-06, P-ADMIN-07, R-ADMIN-13)
-
-브랜드·상품 이름은 앞뒤 공백을 빼고 저장한다. 길이와 중복은 뺀 이름으로 판단하고, 중복은 대소문자를 구분해 비교한다. (P-ADMIN-01, P-ADMIN-02)
 
 ### A-01. 브랜드 목록
 
@@ -307,30 +305,3 @@
 | 기능 | 이유 | 근거 |
 | --- | --- | --- |
 | `DRAFT` 주문의 품목 수량 변경 | 도메인 모델과 정책에는 있지만, 과제가 요구한 API에 없어 제공하지 않는다. | P-ORDER-05 |
-
-## 주요 규칙의 기대값
-
-| 규칙 | 조건 | 기대값 | 근거 |
-| --- | --- | --- | --- |
-| 재고 차감 | 재고 5에서 6개 차감 | 거절. 재고 5 그대로 | R-ORDER-08, R-ORDER-10 |
-| 재고 차감 | 재고 5에서 2개 차감 | 재고 3 | R-ORDER-11 |
-| 재고 설정 | 최종 수량 0 | 성공. 재고 0 | R-ADMIN-08 |
-| 재고 설정 | 최종 수량 -1 | `400 INVALID_STOCK_QUANTITY`. 재고 그대로 | R-ADMIN-08 |
-| 충전 | 잔액 0에서 10,000원 충전 | 잔액 10,000 | R-POINT-06 |
-| 충전 | 0원 또는 음수 충전 | `400 INVALID_CHARGE_AMOUNT`. 잔액 그대로 | R-POINT-04, R-POINT-08 |
-| 잔액 | 한 번도 충전하지 않음 | 잔액 0 | R-POINT-05, P-POINT-01 |
-| 주문 확정 | 잔액 10,000, 합계 7,000 | `CONFIRMED`, 결제액 7,000, 잔액 3,000 | R-ORDER-11, R-ORDER-12 |
-| 주문 확정 | 잔액 5,000, 합계 7,000 | `409 INSUFFICIENT_POINT`. 주문 `DRAFT`, 재고와 잔액 그대로 | R-ORDER-09, R-ORDER-10 |
-| 주문 확정 | 이미 `CONFIRMED`인 주문 | `409 ORDER_ALREADY_CONFIRMED`. 결제액과 잔액 그대로 | P-ORDER-04 |
-| 주문 생성 | 상품 A 2개와 상품 A 3개 | 품목 A 5개 하나. 확정할 때 재고 5 이상이어야 한다 | R-ORDER-15, P-ORDER-02 |
-| 주문 생성 | 품목 0개 | `400 EMPTY_ORDER_ITEMS` | P-ORDER-01 |
-| 주문 생성 | 수량 0 | `400 INVALID_ORDER_QUANTITY` | R-ORDER-06 |
-| 주문 조회 | 주문 뒤 상품 가격이 3,000원에서 3,500원으로 바뀜 | 품목 단가는 3,000 그대로 | P-ORDER-03, P-ORDER-07 |
-| 좋아요 | 같은 상품에 두 번 등록 | 처음은 `201`, 두 번째는 `200`. 좋아요 수 1 | R-LIKE-02, P-LIKE-01 |
-| 좋아요 | 좋아요한 상품이 삭제됨 | 내 목록에서 빠지고, 취소는 `200` | R-LIKE-07, R-LIKE-08 |
-| 브랜드 삭제 | 재고 0인 상품만 연결됨 | `409 BRAND_HAS_PRODUCTS` | R-ADMIN-02, R-ADMIN-03 |
-| 상품 생성 | 가격 0원 | `400 INVALID_PRODUCT_PRICE` | P-ADMIN-03 |
-| 상품 생성 | 같은 브랜드에 삭제되지 않은 같은 이름의 상품이 있음 | `409 DUPLICATE_PRODUCT_NAME` | P-ADMIN-02 |
-| 상품 생성 | 같은 브랜드에 삭제된 같은 이름의 상품만 있음 | 성공 | P-ADMIN-02 |
-| 관리자 요청 | `ADMIN` 역할이 없음 | `403`. 상태 그대로 | R-ACCESS-04 |
-| 고객 요청 | `X-USER-ID`가 없거나 없는 사용자 | `401 USER_NOT_IDENTIFIED` | R-ACCESS-05, P-ACCESS-01 |
