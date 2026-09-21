@@ -49,11 +49,6 @@ public class LikeRepositoryAdapter implements LikeRepository {
 
     @Override
     public long countByProductId(Long productId) {
-        return jpaRepository.countByProductId(productId);
-    }
-
-    @Override
-    public void delete(Like like) {
-        jpaRepository.delete(like);
+        return jpaRepository.countByProductIdAndDeletedAtIsNull(productId);
     }
 }

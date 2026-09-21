@@ -36,7 +36,21 @@ public class Like extends BaseEntity {
         return productId;
     }
 
+    public boolean isCanceled() {
+        return getDeletedAt() != null;
+    }
+
     public void cancel(Long requesterId) {
+        requireOwner(requesterId);
+        delete();
+    }
+
+    public void reregister(Long requesterId) {
+        requireOwner(requesterId);
+        restore();
+    }
+
+    private void requireOwner(Long requesterId) {
         if (!userId.equals(requesterId)) {
             throw new CoreException(ErrorCode.LIKE_NOT_FOUND);
         }

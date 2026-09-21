@@ -13,12 +13,13 @@ interface LikeJpaRepository extends JpaRepository<Like, Long> {
 
     Optional<Like> findByUserIdAndProductId(Long userId, Long productId);
 
-    long countByProductId(Long productId);
+    long countByProductIdAndDeletedAtIsNull(Long productId);
 
     @Query("""
         select l from Like l, Product p
         where l.productId = p.id
           and l.userId = :userId
+          and l.deletedAt is null
           and p.deletedAt is null
         order by l.createdAt desc, l.id asc
         """)
@@ -31,6 +32,7 @@ interface LikeJpaRepository extends JpaRepository<Like, Long> {
         select count(l) from Like l, Product p
         where l.productId = p.id
           and l.userId = :userId
+          and l.deletedAt is null
           and p.deletedAt is null
         """)
     long countActiveProductLikesByUserId(@Param("userId") Long userId);

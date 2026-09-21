@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 @SpringBootTest
 @Import(MySqlTestContainersConfig.class)
@@ -79,6 +80,32 @@ class LikeUseCaseIntegrationTest {
         }
     }
 
+    @DisplayName("[R-LIKE-06] 취소한 좋아요는 관계로 남고 좋아요 수에서만 빠진다.")
+    @Nested class SoftCancel {
+        @DisplayName("[상태 전이] 취소하면 관계 행은 1로 남고 좋아요 수는 0이다.")
+        @Test void keepsRelationRowAfterCancel() {
+            Scenario scenario = scenario();
+            useCase.register(scenario.user().getId(), scenario.product().getId());
+            useCase.cancel(scenario.user().getId(), scenario.product().getId());
+            assertAll(
+                () -> assertThat(countRows(scenario.product().getId())).isEqualTo(1L),
+                () -> assertThat(useCase.count(scenario.product().getId())).isZero()
+            );
+        }
+
+        @DisplayName("[상태 전이] 취소한 좋아요를 다시 등록하면 관계 행은 하나이고 좋아요 수는 1이다.")
+        @Test void reregistersCanceledLike() {
+            Scenario scenario = scenario();
+            useCase.register(scenario.user().getId(), scenario.product().getId());
+            useCase.cancel(scenario.user().getId(), scenario.product().getId());
+            useCase.register(scenario.user().getId(), scenario.product().getId());
+            assertAll(
+                () -> assertThat(countRows(scenario.product().getId())).isEqualTo(1L),
+                () -> assertThat(useCase.count(scenario.product().getId())).isEqualTo(1L)
+            );
+        }
+    }
+
     @DisplayName("[R-LIKE-03] 고객은 자신의 좋아요 상품 목록을 조회할 수 있다.")
     @Nested class FindMine {
         @DisplayName("[동등 클래스 분할] 자신의 좋아요 관계에 연결된 상품을 조회한다.")
@@ -99,6 +126,13 @@ class LikeUseCaseIntegrationTest {
     }
 
     private long countLikes(Long productId) {
+        return entityManager.createQuery(
+            "select count(l) from Like l where l.productId = :productId and l.deletedAt is null",
+            Long.class)
+            .setParameter("productId", productId).getSingleResult();
+    }
+
+    private long countRows(Long productId) {
         return entityManager.createQuery(
             "select count(l) from Like l where l.productId = :productId", Long.class)
             .setParameter("productId", productId).getSingleResult();

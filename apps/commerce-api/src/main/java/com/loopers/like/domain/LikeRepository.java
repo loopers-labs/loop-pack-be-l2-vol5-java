@@ -14,6 +14,4 @@ public interface LikeRepository {
     long countAllByUserId(Long userId);
 
     long countByProductId(Long productId);
-
-    void delete(Like like);
 }
