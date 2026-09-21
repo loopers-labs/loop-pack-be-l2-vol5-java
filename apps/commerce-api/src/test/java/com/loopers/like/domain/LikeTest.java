@@ -8,47 +8,71 @@ import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class LikeTest {
 
-    @DisplayName("[R-LIKE-01] 좋아요는 어떤 고객이 어떤 상품을 좋아요했는지 기록한다.")
+    @DisplayName("[INV-25] 좋아요는 등록한 고객의 것이다.")
     @Nested
-    class CreateLike {
+    class OwnedByRegisteringUser {
 
-        @DisplayName("[동등 클래스 분할] 고객과 상품 식별자를 저장한다.")
+        @DisplayName("[동등 클래스 분할] 좋아요는 등록한 고객과 상품을 기억한다.")
         @Test
         void storesUserAndProduct() {
+            // act
             Like like = new Like(1L, 2L);
 
+            // assert
             assertAll(
                 () -> assertThat(like.getUserId()).isEqualTo(1L),
                 () -> assertThat(like.getProductId()).isEqualTo(2L)
             );
         }
-    }
 
-    @DisplayName("[R-LIKE-04] 고객은 자신의 좋아요 관계만 취소할 수 있다.")
-    @Nested
-    class CancelOwnedLike {
-
-        @DisplayName("[의사결정표] 소유자가 취소하면 허용한다.")
+        @DisplayName("[의사결정표] 소유자가 취소하면 취소된 상태가 된다.")
         @Test
-        void allowsCancel_whenRequesterOwnsLike() {
+        void cancels_whenRequesterOwnsLike() {
+            // arrange
             Like like = new Like(1L, 2L);
 
-            assertDoesNotThrow(() -> like.cancel(1L));
+            // act
+            like.cancel(1L);
+
+            // assert
+            assertThat(like.isCanceled()).isTrue();
         }
 
-        @DisplayName("[의사결정표] 다른 고객이 취소하면 없는 좋아요로 거절한다.")
+        @DisplayName("[의사결정표] 다른 고객이 취소하면 없는 좋아요로 거절하고, 취소되지 않은 상태 그대로다.")
         @Test
         void throwsLikeNotFound_whenRequesterDoesNotOwnLike() {
+            // arrange
             Like like = new Like(1L, 2L);
 
+            // act
             CoreException result = assertThrows(CoreException.class, () -> like.cancel(3L));
 
-            assertThat(result.getErrorCode()).isEqualTo(ErrorCode.LIKE_NOT_FOUND);
+            // assert
+            assertAll(
+                () -> assertThat(result.getErrorCode()).isEqualTo(ErrorCode.LIKE_NOT_FOUND),
+                () -> assertThat(like.isCanceled()).isFalse()
+            );
+        }
+
+        @DisplayName("[의사결정표] 다른 고객이 되살리면 없는 좋아요로 거절하고, 취소된 상태 그대로다.")
+        @Test
+        void throwsLikeNotFound_whenRequesterDoesNotOwnCanceledLike() {
+            // arrange
+            Like like = new Like(1L, 2L);
+            like.cancel(1L);
+
+            // act
+            CoreException result = assertThrows(CoreException.class, () -> like.reregister(3L));
+
+            // assert
+            assertAll(
+                () -> assertThat(result.getErrorCode()).isEqualTo(ErrorCode.LIKE_NOT_FOUND),
+                () -> assertThat(like.isCanceled()).isTrue()
+            );
         }
     }
 }

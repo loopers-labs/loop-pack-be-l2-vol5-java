@@ -32,7 +32,7 @@ class OrderUseCaseIntegrationTest {
     @Autowired private OrderRepository orderRepository;
     @Autowired private EntityManager entityManager;
 
-    @DisplayName("[R-ORDER-04] 주문 생성만으로 재고와 포인트를 차감하지 않는다.")
+    @DisplayName("[INV-32] 주문 생성은 재고와 잔액을 바꾸지 않는다.")
     @Nested class CreateWithoutDeduction {
         @DisplayName("[상태 전이] 재고 5와 잔액 10000에서 주문 생성 후 저장 값을 유지한다.")
         @Test void keepsStockAndPointOnCreate() {
@@ -51,7 +51,7 @@ class OrderUseCaseIntegrationTest {
         }
     }
 
-    @DisplayName("[R-ORDER-05] 존재하지 않거나 삭제된 상품은 주문에 사용할 수 없다.")
+    @DisplayName("[INV-33] 주문에 쓰인 상품은 주문 생성 시점과 확정 시점 모두 존재하며 삭제되지 않은 상태다.")
     @Nested class RejectUnavailableProduct {
         @DisplayName("[동등 클래스 분할] 존재하지 않는 상품이면 PRODUCT_NOT_FOUND이고 주문은 저장되지 않는다.")
         @Test void rejectsUnknownProduct() {
@@ -75,7 +75,7 @@ class OrderUseCaseIntegrationTest {
         }
     }
 
-    @DisplayName("[R-ORDER-10] 재고나 포인트가 부족하면 주문 확정을 거절한다.")
+    @DisplayName("[INV-35] 거절된 확정은 주문 상태·재고·잔액을 바꾸지 않는다.")
     @Nested class KeepAllStateOnRejectedConfirmation {
         @DisplayName("[경계값 분석] 재고가 한 개 부족하면 오류이고 세 저장 값을 유지한다.")
         @Test void keepsPersistentStateOnInsufficientStock() {
@@ -112,7 +112,7 @@ class OrderUseCaseIntegrationTest {
         }
     }
 
-    @DisplayName("[R-ORDER-11] 주문 확정에 성공하면 상품 재고와 고객 포인트를 차감한다.")
+    @DisplayName("[INV-36] 확정에 성공하면 재고는 품목 수량만큼, 잔액은 주문 합계만큼 줄어든다.")
     @Nested class PersistConfirmation {
         @DisplayName("[상태 전이] 재고 5와 잔액 10000에서 4000원 주문 확정 후 3과 6000이 저장된다.")
         @Test void savesOrderProductAndBuyerTogether() {

@@ -18,7 +18,7 @@ import static org.mockito.Mockito.when;
 
 class BrandDeletionValidatorTest {
 
-    @DisplayName("[R-ADMIN-02] 삭제되지 않은 상품이 연결된 브랜드는 삭제할 수 없다.")
+    @DisplayName("[INV-03] 삭제된 브랜드에 속한 상품은 모두 삭제된 상태다.")
     @Nested
     class RejectDeletionWithActiveProduct {
 
@@ -51,13 +51,8 @@ class BrandDeletionValidatorTest {
 
             assertDoesNotThrow(() -> validator.validateDeletable(brand));
         }
-    }
 
-    @DisplayName("[R-ADMIN-03] 재고가 0인 상품도 브랜드 삭제를 막는 연결 상품에 포함된다.")
-    @Nested
-    class ZeroStockStillBlocksDeletion {
-
-        @DisplayName("[경계값 분석] 재고 0인 활성 상품이 연결되어 있으면 거절한다.")
+        @DisplayName("[동등 클래스 분할] 재고가 0이어도 삭제되지 않은 상품이면 거절한다.")
         @Test
         void throwsBrandHasProducts_whenZeroStockProductExists() {
             Brand brand = new Brand("브랜드");

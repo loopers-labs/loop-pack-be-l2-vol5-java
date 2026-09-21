@@ -16,7 +16,7 @@ import static org.mockito.Mockito.when;
 
 class ProductNameValidatorTest {
 
-    @DisplayName("[P-ADMIN-02] 같은 브랜드의 삭제되지 않은 상품끼리는 이름이 달라야 한다.")
+    @DisplayName("[INV-07] 같은 브랜드의 삭제되지 않은 상품끼리 이름이 같지 않다. 대소문자가 다르면 다른 이름이다.")
     @Nested
     class ValidateProductNameDuplication {
 

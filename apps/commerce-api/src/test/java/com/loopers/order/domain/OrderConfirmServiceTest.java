@@ -7,6 +7,7 @@ import com.loopers.user.domain.User;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.ZonedDateTime;
 import java.util.List;
@@ -19,225 +20,259 @@ class OrderConfirmServiceTest {
 
     private static final ZonedDateTime PAID_AT =
         ZonedDateTime.parse("2026-09-17T12:00:00+09:00");
+    private static final Long BUYER_ID = 1L;
+    private static final Long OTHER_USER_ID = 2L;
 
-    @DisplayName("[R-ORDER-11] 확정에 성공하면 상품 재고와 고객 포인트를 함께 차감한다.")
+    /** 상품 A 2개(2,000원) + 상품 B 1개(3,000원) */
+    private static final long TOTAL_AMOUNT = 7_000L;
+
+    @DisplayName("[INV-36] 확정에 성공하면 재고는 품목 수량만큼, 잔액은 주문 합계만큼 줄어든다.")
     @Nested
-    class ConfirmSuccessfully {
+    class DecreaseStockAndBalance {
 
-        @DisplayName("[상태 전이] 재고 5와 잔액 10000에서 2개·4000원 주문을 확정한다.")
+        @DisplayName("[상태 전이] 재고 5·4와 잔액 10000에서 확정하면 재고 3·3, 잔액 3000이 된다.")
         @Test
-        void decreasesStockAndPoint_andConfirmsOrder() {
-            Scenario scenario = scenario(5, 10_000L);
+        void decreasesEveryProductStock_andBalance() {
+            // arrange
+            Scenario scenario = scenario(5, 4, 10_000L);
 
-            scenario.service().confirm(
-                1L,
-                scenario.order(),
-                List.of(scenario.product()),
-                scenario.buyer(),
-                PAID_AT
-            );
+            // act
+            scenario.confirm(BUYER_ID, PAID_AT);
 
+            // assert
             assertAll(
-                () -> assertStockQuantity(scenario.product(), 3),
-                () -> assertPointBalance(scenario.buyer(), 6_000L),
-                () -> assertThat(scenario.order().getStatus()).isEqualTo(OrderStatus.CONFIRMED)
+                () -> assertStockQuantity(scenario.productA(), 3),
+                () -> assertStockQuantity(scenario.productB(), 3),
+                () -> assertPointBalance(scenario.buyer(), 3_000L)
             );
         }
     }
 
-    @DisplayName("[R-ORDER-12] 확정에 성공하면 결제 결과와 CONFIRMED 상태를 남긴다.")
+    @DisplayName("[INV-44] 확정에 성공한 주문의 상태는 CONFIRMED다.")
     @Nested
-    class SavePaymentResult {
+    class ConfirmedStatus {
 
-        @DisplayName("[상태 전이] 주문 합계와 결제 시점을 결제 결과로 남긴다.")
+        @DisplayName("[상태 전이] DRAFT 주문을 확정하면 상태가 CONFIRMED가 된다.")
         @Test
-        void savesPaymentResult() {
-            Scenario scenario = scenario(5, 10_000L);
+        void becomesConfirmed() {
+            // arrange
+            Scenario scenario = scenario(5, 4, 10_000L);
 
-            scenario.service().confirm(
-                1L,
-                scenario.order(),
-                List.of(scenario.product()),
-                scenario.buyer(),
-                PAID_AT
-            );
+            // act
+            scenario.confirm(BUYER_ID, PAID_AT);
 
-            assertAll(
-                () -> assertThat(scenario.order().getStatus()).isEqualTo(OrderStatus.CONFIRMED),
-                () -> assertPaymentResult(scenario.order(), 4_000L, PAID_AT)
-            );
+            // assert
+            assertThat(scenario.order().getStatus()).isEqualTo(OrderStatus.CONFIRMED);
         }
     }
 
-    @DisplayName("[R-ACCESS-03] 고객은 자신의 주문만 확정할 수 있다.")
+    @DisplayName("[INV-43] 결제액은 확정 시점의 주문 합계다.")
     @Nested
-    class RejectOtherUsersOrder {
+    class PaidAmountIsOrderTotal {
 
-        @DisplayName("[의사결정표] 다른 고객의 주문이면 없는 주문으로 거절하고 모두 유지한다.")
+        @DisplayName("[동등 클래스 분할] 합계 7000원인 주문의 결제액은 7000원이다.")
+        @Test
+        void savesOrderTotalAsPaidAmount() {
+            // arrange
+            Scenario scenario = scenario(5, 4, 10_000L);
+
+            // act
+            scenario.confirm(BUYER_ID, PAID_AT);
+
+            // assert
+            assertPaymentResult(scenario.order(), TOTAL_AMOUNT, PAID_AT);
+        }
+
+        @DisplayName("[상태 전이] 확정 전에 품목 수량을 바꾸면 바뀐 합계가 결제액이 된다.")
+        @Test
+        void savesChangedTotalAsPaidAmount() {
+            // arrange
+            Scenario scenario = scenario(5, 4, 10_000L);
+            scenario.order().changeItemQuantity(BUYER_ID, scenario.productA().getId(), 1);
+
+            // act
+            scenario.confirm(BUYER_ID, PAID_AT);
+
+            // assert
+            assertPaymentResult(scenario.order(), 5_000L, PAID_AT);
+        }
+    }
+
+    @DisplayName("[INV-31] 주문은 구매자의 것이다.")
+    @Nested
+    class OwnedByBuyer {
+
+        @DisplayName("[의사결정표] 다른 고객이 확정하면 없는 주문으로 거절하고, 아무것도 바뀌지 않는다.")
         @Test
         void throwsOrderNotFound_andKeepsAllState() {
-            Scenario scenario = scenario(5, 10_000L);
+            // arrange
+            Scenario scenario = scenario(5, 4, 10_000L);
 
-            CoreException result = assertThrows(CoreException.class, () -> scenario.service().confirm(
-                2L,
-                scenario.order(),
-                List.of(scenario.product()),
-                scenario.buyer(),
-                PAID_AT
-            ));
+            // act
+            CoreException result = assertThrows(
+                CoreException.class, () -> scenario.confirm(OTHER_USER_ID, PAID_AT));
 
-            assertRejectedState(scenario, result, ErrorCode.ORDER_NOT_FOUND, 5, 10_000L);
+            // assert
+            assertRejectedState(scenario, result, ErrorCode.ORDER_NOT_FOUND, 5, 4, 10_000L);
         }
     }
 
-    @DisplayName("[P-ORDER-04] 이미 확정된 주문은 다시 확정할 수 없다.")
+    @DisplayName("[INV-33] 주문에 쓰인 상품은 주문 생성 시점과 확정 시점 모두 존재하며 삭제되지 않은 상태다.")
     @Nested
-    class RejectConfirmedOrder {
+    class ProductsAvailableAtConfirmation {
 
-        @DisplayName("[상태 전이] 이미 확정된 주문이면 거절하고 재고와 포인트를 유지한다.")
+        @DisplayName("[의사결정표] 상품 하나가 삭제됐으면 판매 불가로 거절하고, 아무것도 바뀌지 않는다.")
         @Test
-        void throwsOrderAlreadyConfirmed_andKeepsStockAndPoint() {
-            Scenario scenario = scenario(5, 10_000L);
-            scenario.order().confirm(4_000L, PAID_AT);
+        void throwsProductNotAvailable_whenProductIsDeleted() {
+            // arrange
+            Scenario scenario = scenario(5, 4, 10_000L);
+            scenario.productB().delete();
 
-            CoreException result = assertThrows(CoreException.class, () -> scenario.service().confirm(
-                1L,
-                scenario.order(),
-                List.of(scenario.product()),
-                scenario.buyer(),
-                PAID_AT.plusMinutes(1)
-            ));
+            // act
+            CoreException result = assertThrows(
+                CoreException.class, () -> scenario.confirm(BUYER_ID, PAID_AT));
 
-            assertAll(
-                () -> assertThat(result.getErrorCode()).isEqualTo(ErrorCode.ORDER_ALREADY_CONFIRMED),
-                () -> assertStockQuantity(scenario.product(), 5),
-                () -> assertPointBalance(scenario.buyer(), 10_000L)
-            );
+            // assert
+            assertRejectedState(
+                scenario, result, ErrorCode.PRODUCT_NOT_AVAILABLE, 5, 4, 10_000L);
+        }
+
+        @DisplayName("[의사결정표] 상품 하나가 없으면 판매 불가로 거절하고, 아무것도 바뀌지 않는다.")
+        @Test
+        void throwsProductNotAvailable_whenProductIsMissing() {
+            // arrange
+            Scenario scenario = scenario(5, 4, 10_000L);
+
+            // act
+            CoreException result = assertThrows(CoreException.class, () -> scenario.service()
+                .confirm(
+                    BUYER_ID,
+                    scenario.order(),
+                    List.of(scenario.productA()),
+                    scenario.buyer(),
+                    PAID_AT
+                ));
+
+            // assert
+            assertRejectedState(
+                scenario, result, ErrorCode.PRODUCT_NOT_AVAILABLE, 5, 4, 10_000L);
         }
     }
 
-    @DisplayName("[R-ORDER-07] 삭제된 상품이 포함된 주문은 확정할 수 없다.")
-    @Nested
-    class RejectDeletedProduct {
-
-        @DisplayName("[의사결정표] 상품이 삭제됐으면 판매 불가로 거절하고 모두 유지한다.")
-        @Test
-        void throwsProductNotAvailable_andKeepsAllState() {
-            Scenario scenario = scenario(5, 10_000L);
-            scenario.product().delete();
-
-            CoreException result = assertThrows(CoreException.class, () -> scenario.service().confirm(
-                1L,
-                scenario.order(),
-                List.of(scenario.product()),
-                scenario.buyer(),
-                PAID_AT
-            ));
-
-            assertRejectedState(scenario, result, ErrorCode.PRODUCT_NOT_AVAILABLE, 5, 10_000L);
-        }
-    }
-
-    @DisplayName("[R-ORDER-08] 각 상품의 재고가 주문 수량 이상이어야 한다.")
-    @Nested
-    class RequireEnoughStock {
-
-        @DisplayName("[경계값 분석] 재고가 주문 수량보다 1 적으면 재고 부족으로 거절한다.")
-        @Test
-        void throwsInsufficientStock_whenStockIsOneLessThanQuantity() {
-            Scenario scenario = scenario(1, 10_000L);
-
-            CoreException result = assertThrows(CoreException.class, () -> scenario.service().confirm(
-                1L,
-                scenario.order(),
-                List.of(scenario.product()),
-                scenario.buyer(),
-                PAID_AT
-            ));
-
-            assertRejectedState(scenario, result, ErrorCode.INSUFFICIENT_STOCK, 1, 10_000L);
-        }
-    }
-
-    @DisplayName("[R-ORDER-09] 고객의 포인트 잔액이 주문 금액 이상이어야 한다.")
-    @Nested
-    class RequireEnoughPoint {
-
-        @DisplayName("[경계값 분석] 잔액이 주문 금액보다 1 적으면 포인트 부족으로 거절한다.")
-        @Test
-        void throwsInsufficientPoint_whenPointIsOneLessThanTotal() {
-            Scenario scenario = scenario(5, 3_999L);
-
-            CoreException result = assertThrows(CoreException.class, () -> scenario.service().confirm(
-                1L,
-                scenario.order(),
-                List.of(scenario.product()),
-                scenario.buyer(),
-                PAID_AT
-            ));
-
-            assertRejectedState(scenario, result, ErrorCode.INSUFFICIENT_POINT, 5, 3_999L);
-        }
-    }
-
-    @DisplayName("[R-ORDER-10] 재고나 포인트가 부족하면 아무 상태도 바꾸지 않는다.")
+    @DisplayName("[INV-35] 거절된 확정은 주문 상태·재고·잔액을 바꾸지 않는다.")
     @Nested
     class KeepAllStateOnRejection {
 
-        @DisplayName("[의사결정표] 재고 부족과 포인트 부족 각각에서 주문·재고·포인트를 유지한다.")
+        @DisplayName("[경계값 분석] 뒤쪽 상품의 재고가 1 모자라면 거절하고, 앞쪽 상품의 재고도 그대로다.")
         @Test
-        void keepsAllState_whenStockOrPointIsInsufficient() {
-            Scenario insufficientStock = scenario(1, 10_000L);
-            Scenario insufficientPoint = scenario(5, 3_999L);
+        void keepsEarlierProductStock_whenLaterProductLacksStock() {
+            // arrange
+            Scenario scenario = scenario(5, 0, 10_000L);
 
-            assertThrows(CoreException.class, () -> insufficientStock.service().confirm(
-                1L,
-                insufficientStock.order(),
-                List.of(insufficientStock.product()),
-                insufficientStock.buyer(),
-                PAID_AT
-            ));
-            assertThrows(CoreException.class, () -> insufficientPoint.service().confirm(
-                1L,
-                insufficientPoint.order(),
-                List.of(insufficientPoint.product()),
-                insufficientPoint.buyer(),
-                PAID_AT
-            ));
+            // act
+            CoreException result = assertThrows(
+                CoreException.class, () -> scenario.confirm(BUYER_ID, PAID_AT));
 
+            // assert
+            assertRejectedState(scenario, result, ErrorCode.INSUFFICIENT_STOCK, 5, 0, 10_000L);
+        }
+
+        @DisplayName("[경계값 분석] 앞쪽 상품의 재고가 1 모자라면 거절하고, 뒤쪽 상품의 재고도 그대로다.")
+        @Test
+        void keepsLaterProductStock_whenEarlierProductLacksStock() {
+            // arrange
+            Scenario scenario = scenario(1, 4, 10_000L);
+
+            // act
+            CoreException result = assertThrows(
+                CoreException.class, () -> scenario.confirm(BUYER_ID, PAID_AT));
+
+            // assert
+            assertRejectedState(scenario, result, ErrorCode.INSUFFICIENT_STOCK, 1, 4, 10_000L);
+        }
+
+        @DisplayName("[경계값 분석] 잔액이 합계보다 1 적으면 거절하고, 재고도 그대로다.")
+        @Test
+        void keepsStock_whenBalanceIsOneLessThanTotal() {
+            // arrange
+            Scenario scenario = scenario(5, 4, TOTAL_AMOUNT - 1);
+
+            // act
+            CoreException result = assertThrows(
+                CoreException.class, () -> scenario.confirm(BUYER_ID, PAID_AT));
+
+            // assert
+            assertRejectedState(
+                scenario, result, ErrorCode.INSUFFICIENT_POINT, 5, 4, TOTAL_AMOUNT - 1);
+        }
+    }
+
+    @DisplayName("[INV-37] 확정된 주문의 결제 결과는 바뀌지 않는다.")
+    @Nested
+    class ImmutablePaymentResult {
+
+        @DisplayName("[상태 전이] 재확정을 거절하고, 결제 결과·재고·잔액은 첫 확정 뒤 그대로다.")
+        @Test
+        void throwsOrderAlreadyConfirmed_andKeepsPaymentResult() {
+            // arrange
+            Scenario scenario = scenario(5, 4, 10_000L);
+            scenario.confirm(BUYER_ID, PAID_AT);
+
+            // act
+            CoreException result = assertThrows(
+                CoreException.class, () -> scenario.confirm(BUYER_ID, PAID_AT.plusMinutes(1)));
+
+            // assert
             assertAll(
-                () -> assertThat(insufficientStock.order().getStatus()).isEqualTo(OrderStatus.DRAFT),
-                () -> assertStockQuantity(insufficientStock.product(), 1),
-                () -> assertPointBalance(insufficientStock.buyer(), 10_000L),
-                () -> assertThat(insufficientPoint.order().getStatus()).isEqualTo(OrderStatus.DRAFT),
-                () -> assertStockQuantity(insufficientPoint.product(), 5),
-                () -> assertPointBalance(insufficientPoint.buyer(), 3_999L)
+                () -> assertThat(result.getErrorCode())
+                    .isEqualTo(ErrorCode.ORDER_ALREADY_CONFIRMED),
+                () -> assertThat(scenario.order().getStatus()).isEqualTo(OrderStatus.CONFIRMED),
+                () -> assertPaymentResult(scenario.order(), TOTAL_AMOUNT, PAID_AT),
+                () -> assertStockQuantity(scenario.productA(), 3),
+                () -> assertStockQuantity(scenario.productB(), 3),
+                () -> assertPointBalance(scenario.buyer(), 3_000L)
             );
         }
     }
 
-    private static Scenario scenario(int stock, long point) {
-        Product product = new Product(1L, "상품", 2_000L);
-        product.changeStock(stock);
+    private static Scenario scenario(int stockA, int stockB, long balance) {
+        Product productA = product(10L, "상품 A", 2_000L, stockA);
+        Product productB = product(20L, "상품 B", 3_000L, stockB);
         User buyer = new User();
-        buyer.charge(point);
-        Order order = new Order(1L, List.of(OrderItem.of(product, 2)));
-        return new Scenario(new OrderConfirmService(), product, buyer, order);
+        buyer.charge(balance);
+        Order order = new Order(BUYER_ID, List.of(
+            OrderItem.of(productA, 2),
+            OrderItem.of(productB, 1)
+        ));
+        return new Scenario(new OrderConfirmService(), productA, productB, buyer, order);
+    }
+
+    /**
+     * 식별자는 JPA 가 저장할 때만 채워지므로, 상품 둘을 서로 다른 품목으로 만들려면 여기서 넣어야 한다.
+     * 같은 식별자면 한 품목으로 합쳐져(INV-28) 상품 하나짜리 주문이 된다.
+     */
+    private static Product product(Long id, String name, long price, int stock) {
+        Product product = new Product(1L, name, price);
+        ReflectionTestUtils.setField(product, "id", id);
+        product.changeStock(stock);
+        return product;
     }
 
     private static void assertRejectedState(
         Scenario scenario,
         CoreException exception,
         ErrorCode expectedError,
-        int expectedStock,
-        long expectedPoint
+        int expectedStockA,
+        int expectedStockB,
+        long expectedBalance
     ) {
         assertAll(
             () -> assertThat(exception.getErrorCode()).isEqualTo(expectedError),
             () -> assertThat(scenario.order().getStatus()).isEqualTo(OrderStatus.DRAFT),
             () -> assertThat(scenario.order().getPaymentResult()).isNull(),
-            () -> assertStockQuantity(scenario.product(), expectedStock),
-            () -> assertPointBalance(scenario.buyer(), expectedPoint)
+            () -> assertStockQuantity(scenario.productA(), expectedStockA),
+            () -> assertStockQuantity(scenario.productB(), expectedStockB),
+            () -> assertPointBalance(scenario.buyer(), expectedBalance)
         );
     }
 
@@ -270,9 +305,13 @@ class OrderConfirmServiceTest {
 
     private record Scenario(
         OrderConfirmService service,
-        Product product,
+        Product productA,
+        Product productB,
         User buyer,
         Order order
     ) {
+        void confirm(Long requesterId, ZonedDateTime paidAt) {
+            service.confirm(requesterId, order, List.of(productA, productB), buyer, paidAt);
+        }
     }
 }

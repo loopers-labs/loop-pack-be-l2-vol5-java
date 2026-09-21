@@ -12,50 +12,90 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class UserTest {
 
-    @DisplayName("[P-POINT-01] 한 번도 충전하지 않은 고객의 잔액은 0이다.")
+    @DisplayName("[INV-22] 새 고객의 잔액은 0이다.")
     @Nested
-    class InitialPoint {
+    class InitialBalance {
 
-        @DisplayName("[경계값 분석] 새 고객의 포인트 잔액은 0이다.")
+        @DisplayName("[경계값 분석] 한 번도 충전하지 않은 고객의 잔액은 0이다.")
         @Test
         void startsWithZeroPoint() {
+            // act
             User user = new User();
 
+            // assert
             assertPointBalance(user, 0L);
         }
     }
 
-    @DisplayName("[R-POINT-08] 유효하지 않은 충전 요청은 거절하고 기존 잔액을 유지한다.")
+    @DisplayName("[INV-21] 거절된 충전은 잔액을 바꾸지 않는다.")
     @Nested
-    class RejectInvalidCharge {
+    class KeepBalanceOnRejectedCharge {
 
-        @DisplayName("[경계값 분석] 0을 충전하면 거절하고 기존 잔액을 유지한다.")
+        @DisplayName("[경계값 분석] 0을 충전하면 충전액 오류로 거절하고, 잔액은 그대로다.")
         @Test
-        void throwsInvalidChargeAmount_andKeepsPoint() {
+        void throwsInvalidChargeAmount_andKeepsBalance() {
+            // arrange
             User user = new User();
             user.charge(1_000L);
 
+            // act
             CoreException result = assertThrows(CoreException.class, () -> user.charge(0L));
 
+            // assert
             assertAll(
                 () -> assertThat(result.getErrorCode()).isEqualTo(ErrorCode.INVALID_CHARGE_AMOUNT),
                 () -> assertPointBalance(user, 1_000L)
             );
         }
+
+        @DisplayName("[경계값 분석] 최대 잔액에 1을 충전하면 한도 초과로 거절하고, 잔액은 그대로다.")
+        @Test
+        void throwsPointBalanceLimitExceeded_andKeepsBalance() {
+            // arrange
+            User user = new User();
+            user.charge(Long.MAX_VALUE);
+
+            // act
+            CoreException result = assertThrows(CoreException.class, () -> user.charge(1L));
+
+            // assert
+            assertAll(
+                () -> assertThat(result.getErrorCode())
+                    .isEqualTo(ErrorCode.POINT_BALANCE_LIMIT_EXCEEDED),
+                () -> assertPointBalance(user, Long.MAX_VALUE)
+            );
+        }
     }
 
-    @DisplayName("[R-ORDER-10] 포인트가 부족하면 결제를 거절하고 잔액을 유지한다.")
+    @DisplayName("[INV-20] 결제액은 현재 잔액 이하다.")
     @Nested
-    class RejectPaymentWithInsufficientPoint {
+    class PayWithinBalance {
 
-        @DisplayName("[경계값 분석] 잔액보다 1 큰 금액을 결제하면 거절하고 잔액을 유지한다.")
+        @DisplayName("[경계값 분석] 잔액과 같은 금액을 결제하면 잔액이 0이 된다.")
         @Test
-        void throwsInsufficientPoint_andKeepsPoint() {
+        void pays_whenAmountEqualsBalance() {
+            // arrange
             User user = new User();
             user.charge(1_000L);
 
+            // act
+            user.pay(1_000L);
+
+            // assert
+            assertPointBalance(user, 0L);
+        }
+
+        @DisplayName("[경계값 분석] 잔액보다 1 큰 금액을 결제하면 잔액 부족으로 거절하고, 잔액은 그대로다.")
+        @Test
+        void throwsInsufficientPoint_andKeepsBalance() {
+            // arrange
+            User user = new User();
+            user.charge(1_000L);
+
+            // act
             CoreException result = assertThrows(CoreException.class, () -> user.pay(1_001L));
 
+            // assert
             assertAll(
                 () -> assertThat(result.getErrorCode()).isEqualTo(ErrorCode.INSUFFICIENT_POINT),
                 () -> assertPointBalance(user, 1_000L)

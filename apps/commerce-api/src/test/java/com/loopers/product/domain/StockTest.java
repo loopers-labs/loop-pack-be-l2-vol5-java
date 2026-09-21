@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class StockTest {
 
-    @DisplayName("[R-ADMIN-08] 관리자는 상품의 최종 재고 수량을 0 이상으로 설정할 수 있다.")
+    @DisplayName("[INV-14] 재고 수량은 0 이상이다.")
     @Nested
     class NonNegativeQuantity {
 
@@ -41,7 +41,7 @@ class StockTest {
         }
     }
 
-    @DisplayName("[R-ORDER-08] 주문을 확정하려면 각 상품의 재고가 주문 수량 이상이어야 한다.")
+    @DisplayName("[INV-15] 차감 수량은 현재 재고 이하다.")
     @Nested
     class DecreaseWithinStock {
 
@@ -58,11 +58,22 @@ class StockTest {
             // assert
             assertThat(result.quantity()).isEqualTo(expected);
         }
-    }
 
-    @DisplayName("[R-ORDER-10] 재고나 포인트가 부족하면 주문 확정을 거절한다.")
-    @Nested
-    class RejectInsufficientStock {
+        @DisplayName("[동등 클래스 분할] 재고 5에서 2를 차감하면 3인 새 재고가 되고, 차감 전 재고는 5 그대로다.")
+        @Test
+        void returnsDecreasedStock_andKeepsOriginal() {
+            // arrange
+            Stock stock = new Stock(5);
+
+            // act
+            Stock result = stock.decrease(2);
+
+            // assert
+            assertAll(
+                () -> assertThat(result.quantity()).isEqualTo(3),
+                () -> assertThat(stock.quantity()).isEqualTo(5)
+            );
+        }
 
         @DisplayName("[경계값 분석] 재고 5에서 6을 차감하면 재고 부족으로 거절하고, 재고는 5 그대로다.")
         @Test
@@ -80,7 +91,7 @@ class StockTest {
             );
         }
 
-        @DisplayName("[오류 추측] 재고 0에서 1을 차감하면 재고 부족으로 거절하고, 재고는 0 그대로다.")
+        @DisplayName("[경계값 분석] 재고 0에서 1을 차감하면 재고 부족으로 거절하고, 재고는 0 그대로다.")
         @Test
         void throwsInsufficientStock_whenStockIsZero() {
             // arrange
@@ -92,28 +103,7 @@ class StockTest {
             // assert
             assertAll(
                 () -> assertThat(result.getErrorCode()).isEqualTo(ErrorCode.INSUFFICIENT_STOCK),
-                () -> assertThat(stock.quantity()).isEqualTo(0)
-            );
-        }
-    }
-
-    @DisplayName("[R-ORDER-11] 주문 확정에 성공하면 상품 재고와 고객 포인트를 차감한다.")
-    @Nested
-    class Decrease {
-
-        @DisplayName("[동등 클래스 분할] 재고 5에서 2를 차감하면 3인 재고가 되고, 차감 전 재고는 5 그대로다.")
-        @Test
-        void returnsDecreasedStock_andKeepsOriginal() {
-            // arrange
-            Stock stock = new Stock(5);
-
-            // act
-            Stock result = stock.decrease(2);
-
-            // assert
-            assertAll(
-                () -> assertThat(result.quantity()).isEqualTo(3),
-                () -> assertThat(stock.quantity()).isEqualTo(5)
+                () -> assertThat(stock.quantity()).isZero()
             );
         }
     }
