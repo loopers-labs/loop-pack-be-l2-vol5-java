@@ -28,8 +28,8 @@ requirements:
   R-LIKE-02:    [INV-24]
   R-LIKE-03:    []
   R-LIKE-04:    [INV-25]
-  R-LIKE-05:    []
-  R-LIKE-06:    []
+  R-LIKE-05:    [INV-45]
+  R-LIKE-06:    [INV-45]
   R-LIKE-07:    [INV-23]
   R-LIKE-08:    [INV-26]
 
@@ -50,10 +50,10 @@ requirements:
   R-ORDER-06:   [INV-39]
   R-ORDER-07:   [INV-33]
   R-ORDER-08:   [INV-15]
-  R-ORDER-09:   [INV-16, INV-20, INV-44]
+  R-ORDER-09:   [INV-16, INV-20, INV-43]
   R-ORDER-10:   [INV-35]
-  R-ORDER-11:   [INV-36, INV-44]
-  R-ORDER-12:   [INV-34, INV-43, INV-44, INV-45]
+  R-ORDER-11:   [INV-36, INV-43]
+  R-ORDER-12:   [INV-34, INV-42, INV-43, INV-44]
   R-ORDER-13:   []
   R-ORDER-14:   []
   R-ORDER-15:   [INV-28]
@@ -69,7 +69,7 @@ requirements:
   R-ADMIN-09:   []
   R-ADMIN-10:   []
   R-ADMIN-11:   []
-  R-ADMIN-12:   []
+  R-ADMIN-12:   [INV-33]
   R-ADMIN-13:   [INV-04, INV-11]
   R-ADMIN-14:   [INV-26, INV-41]
   R-ADMIN-15:   [INV-01]
@@ -88,11 +88,11 @@ requirements:
   P-LIKE-02:    []
   P-ORDER-01:   [INV-27]
   P-ORDER-02:   [INV-28]
-  P-ORDER-03:   [INV-42]
+  P-ORDER-03:   [INV-40]
   P-ORDER-04:   [INV-37]
   P-ORDER-05:   [INV-38]
-  P-ORDER-06:   [INV-43]
-  P-ORDER-07:   [INV-40, INV-41]
+  P-ORDER-06:   [INV-42]
+  P-ORDER-07:   [INV-40]
   P-ORDER-08:   []
   P-ORDER-09:   []
   P-ORDER-10:   [INV-29]
@@ -109,6 +109,9 @@ requirements:
   P-ADMIN-10:   []
 
 rules:
+  User:
+    INV-22: 새 고객의 잔액은 0이다.
+
   Brand:
     INV-01: 브랜드 이름은 앞뒤 공백을 뺀 1자 이상 50자 이하다.
     INV-02: 삭제되지 않은 브랜드끼리 이름이 같지 않다. 대소문자가 다르면 다른 이름이다.
@@ -136,14 +139,14 @@ rules:
     INV-18: 충전 뒤 잔액은 기존 잔액과 충전액의 합이다.
     INV-19: 충전 뒤 잔액은 시스템이 표현할 수 있는 범위 안이다.
     INV-20: 결제액은 현재 잔액 이하다.
-    INV-21: 거절된 충전 뒤 잔액은 요청 전과 같다.
-    INV-22: 새 고객의 잔액은 0이다.
+    INV-21: 거절된 충전은 잔액을 바꾸지 않는다.
 
   Like:
     INV-23: 새로 등록하는 좋아요의 상품은 삭제되지 않은 상태다.
     INV-24: 한 고객은 한 상품에 좋아요를 하나만 갖는다.
     INV-25: 좋아요는 등록한 고객의 것이다.
     INV-26: 상품이 삭제되어도 기존 좋아요는 남는다.
+    INV-45: 상품의 좋아요 수는 그 상품의 좋아요 관계 개수와 같다.
 
   Order:
     INV-27: 주문에는 품목이 하나 이상 있다.
@@ -151,23 +154,20 @@ rules:
     INV-29: 주문 합계는 품목 금액의 합이다.
     INV-30: 새 주문의 상태는 DRAFT다.
     INV-31: 주문은 구매자의 것이다.
-    INV-32: 주문을 생성한 뒤 재고와 잔액은 생성 전과 같다.
+    INV-32: 주문 생성은 재고와 잔액을 바꾸지 않는다.
     INV-33: 주문에 쓰인 상품은 주문 생성 시점과 확정 시점 모두 존재하며 삭제되지 않은 상태다.
     INV-34: 확정된 주문은 결제 결과를 갖는다. DRAFT 주문은 갖지 않는다.
-    INV-35: 거절된 확정 뒤 주문 상태·재고·잔액은 확정 전과 같다.
+    INV-35: 거절된 확정은 주문 상태·재고·잔액을 바꾸지 않는다.
     INV-36: 확정에 성공하면 재고는 품목 수량만큼, 잔액은 주문 합계만큼 줄어든다.
-    INV-37: 확정된 주문은 한 번만 확정된 상태다.
+    INV-37: 확정된 주문의 결제 결과는 바뀌지 않는다.
     INV-38: 품목 수량이 바뀌는 주문의 상태는 DRAFT다.
+    INV-43: 결제액은 확정 시점의 주문 합계다.
+    INV-44: 확정에 성공한 주문의 상태는 CONFIRMED다.
 
   OrderItem:
     INV-39: 품목 수량은 양수다.
     INV-40: 품목은 주문을 생성한 시점의 상품 이름과 단가를 갖는다.
-    INV-41: 상품이 바뀌거나 삭제되어도 품목의 값은 그대로다.
-    INV-42: 품목 수량이 바뀌어도 단가는 그대로다.
+    INV-41: 상품이 삭제되어도 그 상품의 주문 품목은 남는다.
 
   PaymentResult:
-    INV-43: 결제 결과는 결제액과 결제 시점을 갖는다.
-    INV-44: 결제액은 확정 시점의 주문 합계다.
-
-  OrderStatus:
-    INV-45: 주문 상태는 DRAFT에서 CONFIRMED로만 바뀐다.
+    INV-42: 결제 결과는 결제액과 결제 시점을 갖는다.

@@ -15,5 +15,7 @@
 | 주문 품목 | 주문에 포함된 상품·수량·단가. 상품을 삭제해도 함께 삭제되지 않는다                                                       | `OrderItem`                       | R-ORDER-02, R-ADMIN-14                            |
 | 결제 결과 | 확정에 성공한 주문이 남기는 결제액과 결과                                                                      | `PaymentResult`                   | R-ORDER-12, R-ORDER-14                            |
 | 주문 상태 | 결제 전(`DRAFT`)과 결제 완료(`CONFIRMED`)                                                            | `OrderStatus`                     | R-ORDER-03, R-ORDER-12                            |
+| `DRAFT`     | 결제 전 주문 상태. 재고와 포인트가 아직 차감되지 않았고 결제 결과가 없다                                       | `OrderStatus.DRAFT`     | R-ORDER-03, R-ORDER-04                            |
+| `CONFIRMED` | 결제 완료 주문 상태. 재고와 포인트가 차감되었고 결제 결과를 갖는다                                              | `OrderStatus.CONFIRMED` | R-ORDER-11, R-ORDER-12                            |
 
 
