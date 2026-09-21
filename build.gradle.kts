@@ -111,6 +111,9 @@ subprojects {
             )
         }
     }
+
+    // 커버리지 리포트를 check 에 연결한다. 임계값은 걸지 않고 탐색용으로만 쓴다.
+    tasks.named("check") { dependsOn(tasks.withType<JacocoReport>()) }
 }
 
 // module-container 는 task 를 실행하지 않도록 한다.
