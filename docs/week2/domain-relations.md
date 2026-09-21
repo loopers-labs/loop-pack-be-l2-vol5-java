@@ -118,51 +118,47 @@ Like는 고객과 상품 사이에 따로 존재하는 관계라서 Entity로 �
 
 ## 도메인 서비스
 
-**한 애그리거트 안에서 답할 수 없는 판단**을 맡는다. 판단에 다른 애그리거트나 저장된 관계가 필요해서 어느 루트에도 넣을 수 없는 것들이다.
+**도메인 규칙인데 한 애그리거트 안에서 답할 수 없는 것**을 맡는다. 판단에 다른 애그리거트나 같은 종류의 다른 인스턴스 전부가 필요해서 어느 루트에도 넣을 수 없다.
 
 ```mermaid
 classDiagram
     direction LR
 
-    class BrandNameValidator {
+    class OrderConfirmService {
         <<Domain Service>>
-        이름이 중복되지 않는지 본다(이름)
+        확정한다(요청자, 주문, 상품들, 구매자, 결제 시점)
     }
     class BrandDeletionValidator {
         <<Domain Service>>
         삭제할 수 있는지 본다(브랜드)
     }
+    class BrandNameValidator {
+        <<Domain Service>>
+        이름이 중복인지 본다(이름, 제외할 브랜드)
+    }
     class ProductNameValidator {
         <<Domain Service>>
-        이름이 중복되지 않는지 본다(브랜드, 이름)
-    }
-    class LikeDuplicationChecker {
-        <<Domain Service>>
-        이미 눌렀는지 본다(고객, 상품)
-    }
-    class OrderConfirmService {
-        <<Domain Service>>
-        확정한다(요청자, 주문, 상품들, 구매자, 결제 시점)
+        이름이 중복인지 본다(브랜드, 이름, 제외할 상품)
     }
 
-    BrandNameValidator ..> Brand
-    BrandDeletionValidator ..> Brand
-    BrandDeletionValidator ..> Product
-    ProductNameValidator ..> Product
-    LikeDuplicationChecker ..> Like
     OrderConfirmService ..> Order
     OrderConfirmService ..> Product
     OrderConfirmService ..> User
+    BrandDeletionValidator ..> Brand
+    BrandDeletionValidator ..> Product
+    BrandNameValidator ..> Brand
+    ProductNameValidator ..> Product
 ```
 
 
-| 도메인 서비스 | 왜 애그리거트 안에 둘 수 없는가 |
+| 도메인 서비스 | 애그리거트 안에 둘 수 없는 이유 |
 | --- | --- |
-| BrandNameValidator | 다른 Brand 전부를 봐야 중복인지 안다 |
-| BrandDeletionValidator | 그 브랜드에 연결된 Product를 봐야 삭제 가능한지 안다 |
-| ProductNameValidator | 같은 브랜드의 다른 Product를 봐야 중복인지 안다 |
-| LikeDuplicationChecker | 저장된 Like 관계를 봐야 중복인지 안다 |
-| OrderConfirmService | 주문·상품·사용자 세 애그리거트를 함께 바꿔야 확정이 끝난다 |
+| `OrderConfirmService` | 주문·상품·사용자 세 애그리거트의 상태를 함께 바꿔야 확정이 끝난다 |
+| `BrandDeletionValidator` | `Brand`가 자기 `Product`를 모르므로 `Brand.delete()`가 스스로 답할 수 없다 |
+| `BrandNameValidator` | 한 `Brand`는 다른 `Brand` 전부를 볼 수 없다 |
+| `ProductNameValidator` | 한 `Product`는 같은 브랜드의 다른 `Product`를 볼 수 없다 |
 
+
+상태를 바꾸는 것은 `OrderConfirmService` 하나뿐이지만, 나머지 셋도 도메인 서비스다. 기준은 상태 변경이 아니라 **규칙이 어느 객체에도 속하지 않는 것**이다.
 
 확정은 **검사를 모두 마친 뒤에 상태를 바꾼다.** 한 상품이라도 재고가 모자라거나 잔액이 모자라면 어느 것도 바뀌지 않는다.
