@@ -1,0 +1,172 @@
+# commerce-api 도메인 규칙
+#
+# 요구사항에서 파생된 불변식이다. 그룹 키는 용어집(glossary.md)의 코드 이름에서 온다.
+# 규칙 문장은 "언제 보아도 참인 상태"로 적는다. 금지 서술("~할 수 없다")로 적지 않는다.
+#
+# requirements  요구사항 ID → 거기서 파생된 규칙 ID
+#               빈 배열은 도메인 규칙을 낳지 않는 요구사항이다 (조회 계약·접근 경계·응답 계약)
+# rules         규칙을 지키는 개념 → 규칙 ID → 문장
+
+requirements:
+  R-ACCESS-01:  []
+  R-ACCESS-02:  []
+  R-ACCESS-03:  [INV-25, INV-31]
+  R-ACCESS-04:  []
+  R-ACCESS-05:  []
+  R-ACCESS-06:  []
+
+  R-CATALOG-01: []
+  R-CATALOG-02: []
+  R-CATALOG-03: []
+  R-CATALOG-04: []
+  R-CATALOG-05: []
+  R-CATALOG-06: []
+  R-CATALOG-07: []
+  R-CATALOG-08: []
+
+  R-LIKE-01:    [INV-23, INV-25]
+  R-LIKE-02:    [INV-24]
+  R-LIKE-03:    []
+  R-LIKE-04:    [INV-25]
+  R-LIKE-05:    []
+  R-LIKE-06:    []
+  R-LIKE-07:    [INV-23]
+  R-LIKE-08:    [INV-26]
+
+  R-POINT-01:   [INV-18]
+  R-POINT-02:   []
+  R-POINT-03:   []
+  R-POINT-04:   [INV-17]
+  R-POINT-05:   [INV-16]
+  R-POINT-06:   [INV-18]
+  R-POINT-07:   [INV-19]
+  R-POINT-08:   [INV-21]
+
+  R-ORDER-01:   [INV-27]
+  R-ORDER-02:   [INV-29, INV-40]
+  R-ORDER-03:   [INV-30]
+  R-ORDER-04:   [INV-32]
+  R-ORDER-05:   [INV-33]
+  R-ORDER-06:   [INV-39]
+  R-ORDER-07:   [INV-33]
+  R-ORDER-08:   [INV-15]
+  R-ORDER-09:   [INV-20]
+  R-ORDER-10:   [INV-35]
+  R-ORDER-11:   [INV-36]
+  R-ORDER-12:   [INV-34, INV-43, INV-44, INV-45]
+  R-ORDER-13:   []
+  R-ORDER-14:   []
+  R-ORDER-15:   [INV-28]
+
+  R-ADMIN-01:   [INV-01]
+  R-ADMIN-02:   [INV-03]
+  R-ADMIN-03:   [INV-03]
+  R-ADMIN-04:   [INV-06, INV-08]
+  R-ADMIN-05:   [INV-09]
+  R-ADMIN-06:   [INV-06, INV-08]
+  R-ADMIN-07:   [INV-10]
+  R-ADMIN-08:   [INV-14]
+  R-ADMIN-09:   []
+  R-ADMIN-10:   []
+  R-ADMIN-11:   []
+  R-ADMIN-12:   []
+  R-ADMIN-13:   [INV-04, INV-11]
+  R-ADMIN-14:   [INV-26, INV-41]
+  R-ADMIN-15:   [INV-01]
+
+  P-ACCESS-01:  []
+  P-ACCESS-02:  []
+  P-CATALOG-01: []
+  P-CATALOG-02: []
+  P-CATALOG-03: []
+  P-CATALOG-04: []
+  P-CATALOG-05: []
+  P-CATALOG-06: []
+  P-CATALOG-07: []
+  P-CATALOG-08: []
+  P-LIKE-01:    [INV-24]
+  P-LIKE-02:    []
+  P-ORDER-01:   [INV-27]
+  P-ORDER-02:   [INV-28]
+  P-ORDER-03:   [INV-42]
+  P-ORDER-04:   [INV-37]
+  P-ORDER-05:   [INV-38]
+  P-ORDER-06:   [INV-43]
+  P-ORDER-07:   [INV-40, INV-41]
+  P-ORDER-08:   []
+  P-ORDER-09:   []
+  P-POINT-01:   [INV-22]
+  P-ADMIN-01:   [INV-01, INV-02]
+  P-ADMIN-02:   [INV-06, INV-07]
+  P-ADMIN-03:   [INV-08]
+  P-ADMIN-04:   [INV-10]
+  P-ADMIN-05:   [INV-13]
+  P-ADMIN-06:   [INV-05, INV-12]
+  P-ADMIN-07:   []
+  P-ADMIN-08:   []
+  P-ADMIN-09:   []
+  P-ADMIN-10:   []
+
+rules:
+  Brand:
+    INV-01: 브랜드 이름은 앞뒤 공백을 뺀 1자 이상 50자 이하다.
+    INV-02: 삭제되지 않은 브랜드끼리 이름이 같지 않다. 대소문자가 다르면 다른 이름이다.
+    INV-03: 삭제된 브랜드에는 삭제되지 않은 상품이 연결되어 있지 않다. 재고가 0인 상품도 연결 상품이다.
+    INV-04: 삭제된 브랜드의 이름은 바뀌지 않는다.
+    INV-05: 삭제된 브랜드는 삭제 시점을 그대로 유지한다.
+
+  Product:
+    INV-06: 상품 이름은 앞뒤 공백을 뺀 1자 이상 100자 이하다.
+    INV-07: 같은 브랜드의 삭제되지 않은 상품끼리 이름이 같지 않다. 대소문자가 다르면 다른 이름이다.
+    INV-08: 상품 가격은 1원 이상 1,000,000,000원 이하다.
+    INV-09: 상품은 존재하며 삭제되지 않은 브랜드에 속한다.
+    INV-10: 상품의 소속 브랜드는 만든 뒤에 바뀌지 않는다.
+    INV-11: 삭제된 상품의 이름·가격·재고는 바뀌지 않는다.
+    INV-12: 삭제된 상품은 삭제 시점을 그대로 유지한다.
+    INV-13: 새로 만든 상품의 재고는 0이다.
+
+  Stock:
+    INV-14: 재고 수량은 0 이상이다.
+    INV-15: 차감 수량은 현재 재고 이하다.
+
+  Point:
+    INV-16: 포인트 잔액은 0 이상이다.
+    INV-17: 충전액은 양의 정수다.
+    INV-18: 충전 뒤 잔액은 기존 잔액과 충전액의 합이다.
+    INV-19: 충전 뒤 잔액은 시스템이 표현할 수 있는 범위 안이다.
+    INV-20: 결제액은 현재 잔액 이하다.
+    INV-21: 거절된 충전 뒤 잔액은 요청 전과 같다.
+    INV-22: 새 고객의 잔액은 0이다.
+
+  Like:
+    INV-23: 새로 등록하는 좋아요의 상품은 삭제되지 않은 상태다.
+    INV-24: 한 고객은 한 상품에 좋아요를 하나만 갖는다.
+    INV-25: 좋아요는 등록한 고객의 것이다.
+    INV-26: 상품이 삭제되어도 기존 좋아요는 남는다.
+
+  Order:
+    INV-27: 주문에는 품목이 하나 이상 있다.
+    INV-28: 한 주문에 상품마다 품목이 하나다. 같은 상품이 여러 번 들어오면 수량이 합산된다.
+    INV-29: 주문 합계는 품목 금액의 합이다.
+    INV-30: 새 주문의 상태는 DRAFT다.
+    INV-31: 주문은 구매자의 것이다.
+    INV-32: 주문을 생성한 뒤 재고와 잔액은 생성 전과 같다.
+    INV-33: 주문에 쓰인 상품은 주문 생성 시점과 확정 시점 모두 존재하며 삭제되지 않은 상태다.
+    INV-34: 확정된 주문은 결제 결과를 갖는다. DRAFT 주문은 갖지 않는다.
+    INV-35: 거절된 확정 뒤 주문 상태·재고·잔액은 확정 전과 같다.
+    INV-36: 확정에 성공하면 재고는 품목 수량만큼, 잔액은 주문 합계만큼 줄어든다.
+    INV-37: 확정된 주문은 한 번만 확정된 상태다.
+    INV-38: 품목 수량이 바뀌는 주문의 상태는 DRAFT다.
+
+  OrderItem:
+    INV-39: 품목 수량은 양수다.
+    INV-40: 품목은 주문을 생성한 시점의 상품 이름과 단가를 갖는다.
+    INV-41: 상품이 바뀌거나 삭제되어도 품목의 값은 그대로다.
+    INV-42: 품목 수량이 바뀌어도 단가는 그대로다.
+
+  PaymentResult:
+    INV-43: 결제 결과는 결제액과 결제 시점을 갖는다.
+    INV-44: 결제액은 확정 시점의 주문 합계다.
+
+  OrderStatus:
+    INV-45: 주문 상태는 DRAFT에서 CONFIRMED로만 바뀐다.
