@@ -171,7 +171,7 @@ application ──▶ domain Repository(port) ◀── infrastructure JPA adapt
 ## ADR-007. 주문을 조회할 때 품목을 함께 로딩한다
 
 - 상태: 결정 (2026-09-18)
-- 근거: `R-ORDER-02`, `R-ORDER-14`, [주문 애그리거트](./domain-relations.md#애그리거트와-불변식), ADR-006
+- 근거: `R-ORDER-02`, `R-ORDER-14`, [주문 애그리거트](./domain-relations.md#애그리거트와-책임), ADR-006
 
 **상황**: 주문 상세 응답은 품목을 포함하고 요약 응답도 `itemCount`를 계산하기 위해 품목 컬렉션에 접근한다. `spring.jpa.open-in-view`는 `false`이고 application이 반환한 `Order`를 interfaces에서 응답으로 바꾸므로, 트랜잭션이 끝난 뒤 지연 로딩된 품목에 접근하면 `LazyInitializationException`이 발생한다. 실제 HTTP 테스트에서 주문 조회가 이 이유로 실패했다.
 
