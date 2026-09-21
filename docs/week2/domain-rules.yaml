@@ -44,24 +44,24 @@ requirements:
 
   R-ORDER-01:   [INV-27]
   R-ORDER-02:   [INV-29, INV-40]
-  R-ORDER-03:   [INV-30]
+  R-ORDER-03:   [INV-30, INV-34]
   R-ORDER-04:   [INV-32]
   R-ORDER-05:   [INV-33]
   R-ORDER-06:   [INV-39]
   R-ORDER-07:   [INV-33]
   R-ORDER-08:   [INV-15]
-  R-ORDER-09:   [INV-20]
+  R-ORDER-09:   [INV-16, INV-20, INV-44]
   R-ORDER-10:   [INV-35]
-  R-ORDER-11:   [INV-36]
+  R-ORDER-11:   [INV-36, INV-44]
   R-ORDER-12:   [INV-34, INV-43, INV-44, INV-45]
   R-ORDER-13:   []
   R-ORDER-14:   []
   R-ORDER-15:   [INV-28]
 
-  R-ADMIN-01:   [INV-01]
+  R-ADMIN-01:   []
   R-ADMIN-02:   [INV-03]
   R-ADMIN-03:   [INV-03]
-  R-ADMIN-04:   [INV-06, INV-08]
+  R-ADMIN-04:   []
   R-ADMIN-05:   [INV-09]
   R-ADMIN-06:   [INV-06, INV-08]
   R-ADMIN-07:   [INV-10]
@@ -95,6 +95,7 @@ requirements:
   P-ORDER-07:   [INV-40, INV-41]
   P-ORDER-08:   []
   P-ORDER-09:   []
+  P-ORDER-10:   [INV-29]
   P-POINT-01:   [INV-22]
   P-ADMIN-01:   [INV-01, INV-02]
   P-ADMIN-02:   [INV-06, INV-07]
@@ -111,9 +112,9 @@ rules:
   Brand:
     INV-01: 브랜드 이름은 앞뒤 공백을 뺀 1자 이상 50자 이하다.
     INV-02: 삭제되지 않은 브랜드끼리 이름이 같지 않다. 대소문자가 다르면 다른 이름이다.
-    INV-03: 삭제된 브랜드에는 삭제되지 않은 상품이 연결되어 있지 않다. 재고가 0인 상품도 연결 상품이다.
+    INV-03: 삭제된 브랜드에 속한 상품은 모두 삭제된 상태다.
     INV-04: 삭제된 브랜드의 이름은 바뀌지 않는다.
-    INV-05: 삭제된 브랜드는 삭제 시점을 그대로 유지한다.
+    INV-05: 이미 삭제된 브랜드는 다시 삭제되지 않는다.
 
   Product:
     INV-06: 상품 이름은 앞뒤 공백을 뺀 1자 이상 100자 이하다.
@@ -122,7 +123,7 @@ rules:
     INV-09: 상품은 존재하며 삭제되지 않은 브랜드에 속한다.
     INV-10: 상품의 소속 브랜드는 만든 뒤에 바뀌지 않는다.
     INV-11: 삭제된 상품의 이름·가격·재고는 바뀌지 않는다.
-    INV-12: 삭제된 상품은 삭제 시점을 그대로 유지한다.
+    INV-12: 이미 삭제된 상품은 다시 삭제되지 않는다.
     INV-13: 새로 만든 상품의 재고는 0이다.
 
   Stock:
