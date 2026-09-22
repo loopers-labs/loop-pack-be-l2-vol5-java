@@ -139,6 +139,29 @@ class ContractClassificationTest {
         );
     }
 
+    @DisplayName("연결된 URL에 허용하지 않는 method를 요청하면 METHOD_NOT_ALLOWED로 분류한다.")
+    @Test
+    void classifiesUnsupportedMethodAsMethodNotAllowed() {
+        // arrange
+        Brand brand = fixture.brand(BRAND_NAME);
+
+        // act
+        ResponseEntity<ApiResponse<BrandV1Dto.CustomerBrandResponse>> response = exchange(
+            BRANDS_ENDPOINT + brand.getId(),
+            HttpMethod.POST
+        );
+        ApiResponse<BrandV1Dto.CustomerBrandResponse> body = response.getBody();
+
+        // assert
+        assertFailureContract(
+            response,
+            body,
+            HttpStatus.METHOD_NOT_ALLOWED,
+            "METHOD_NOT_ALLOWED",
+            "허용하지 않는 요청 방식입니다."
+        );
+    }
+
     @DisplayName("미존재 자원과 미매핑 URL은 모두 404지만 서로 다른 오류 코드로 분류한다.")
     @Test
     void distinguishesMissingResourceFromUnmappedUrl() {
@@ -188,11 +211,18 @@ class ContractClassificationTest {
     }
 
     private ResponseEntity<ApiResponse<BrandV1Dto.CustomerBrandResponse>> get(String endpoint) {
+        return exchange(endpoint, HttpMethod.GET);
+    }
+
+    private ResponseEntity<ApiResponse<BrandV1Dto.CustomerBrandResponse>> exchange(
+        String endpoint,
+        HttpMethod method
+    ) {
         ParameterizedTypeReference<ApiResponse<BrandV1Dto.CustomerBrandResponse>> responseType =
             new ParameterizedTypeReference<>() {};
         return testRestTemplate.exchange(
             endpoint,
-            HttpMethod.GET,
+            method,
             new HttpEntity<>(null, requesterHeaders()),
             responseType
         );

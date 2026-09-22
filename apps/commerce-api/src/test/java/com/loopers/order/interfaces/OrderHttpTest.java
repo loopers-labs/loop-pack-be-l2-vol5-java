@@ -423,6 +423,51 @@ class OrderHttpTest {
         }
     }
 
+    @DisplayName("[R-ORDER-07~09] 확정할 수 없는 주문은 상태·재고·잔액을 바꾸지 않고 거절한다.")
+    @Nested
+    class RejectInvalidConfirmation {
+
+        @DisplayName("[상태 전이] 주문 뒤 상품이 삭제되면 409 PRODUCT_NOT_AVAILABLE이고 주문·재고·잔액은 그대로다.")
+        @Test
+        void rejectsDeletedProduct() throws Exception {
+            User me = fixture.userWithPoint(10_000L);
+            Product product = fixture.product(fixture.brand("Nike"), "Air", 2_000L, 5);
+            Order order = fixture.draftOrder(me, fixture.item(product, 2));
+            fixture.update(Product.class, product.getId(), Product::delete);
+
+            mockMvc.perform(confirm(me, order.getId()))
+                .andExpect(failure(HttpStatus.CONFLICT, "PRODUCT_NOT_AVAILABLE"));
+
+            assertConfirmationStateUnchanged(me, order, product, 5, 10_000L);
+        }
+
+        @DisplayName("[경계값 분석] 주문 수량보다 재고가 1개 부족하면 409 INSUFFICIENT_STOCK이고 주문·재고·잔액은 그대로다.")
+        @Test
+        void rejectsInsufficientStock() throws Exception {
+            User me = fixture.userWithPoint(10_000L);
+            Product product = fixture.product(fixture.brand("Nike"), "Air", 2_000L, 1);
+            Order order = fixture.draftOrder(me, fixture.item(product, 2));
+
+            mockMvc.perform(confirm(me, order.getId()))
+                .andExpect(failure(HttpStatus.CONFLICT, "INSUFFICIENT_STOCK"));
+
+            assertConfirmationStateUnchanged(me, order, product, 1, 10_000L);
+        }
+
+        @DisplayName("[경계값 분석] 결제액보다 잔액이 1 적으면 409 INSUFFICIENT_POINT이고 주문·재고·잔액은 그대로다.")
+        @Test
+        void rejectsInsufficientPoint() throws Exception {
+            User me = fixture.userWithPoint(3_999L);
+            Product product = fixture.product(fixture.brand("Nike"), "Air", 2_000L, 5);
+            Order order = fixture.draftOrder(me, fixture.item(product, 2));
+
+            mockMvc.perform(confirm(me, order.getId()))
+                .andExpect(failure(HttpStatus.CONFLICT, "INSUFFICIENT_POINT"));
+
+            assertConfirmationStateUnchanged(me, order, product, 5, 3_999L);
+        }
+    }
+
     @DisplayName("[P-ORDER-07] 주문 품목의 상품 정보는 주문 당시의 값으로 보여 주고, 상품이 삭제되어도 저장된 값으로 보여 준다.")
     @Nested
     class SnapshotItemValues {
@@ -810,6 +855,22 @@ class OrderHttpTest {
             .andExpect(jsonPath("$.data.stock").exists())
             .andReturn();
         return data(result).path("stock").asInt();
+    }
+
+    private void assertConfirmationStateUnchanged(
+        User customer,
+        Order order,
+        Product product,
+        int stock,
+        long balance
+    ) throws Exception {
+        mockMvc.perform(get(ORDER, order.getId()).with(customer(customer)))
+            .andExpect(success(HttpStatus.OK))
+            .andExpect(jsonPath("$.data.status").value("DRAFT"));
+        assertAll(
+            () -> assertThat(stockOf(product)).isEqualTo(stock),
+            () -> assertThat(balanceOf(customer)).isEqualTo(balance)
+        );
     }
 
     private static void assertConfirmedDetail(JsonNode detail, Catalog catalog) {

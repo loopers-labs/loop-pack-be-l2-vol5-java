@@ -39,4 +39,7 @@ dependencies {
 
     // admin HTTP test
     testImplementation("org.springframework.security:spring-security-test")
+
+    // OpenAPI contract test
+    testImplementation("com.atlassian.oai:swagger-request-validator-mockmvc:${project.properties["openApiRequestValidatorVersion"]}")
 }

@@ -14,7 +14,7 @@
 | 구조와 의존     | [아키텍처](#아키텍처)                                                                                |
 | 도메인 관계     | [상세 관계도](./domain-relations.md)                                                              |
 | 대표 흐름      | [포인트 충전 → 주문 확정](#대표-흐름), [전체 흐름 시퀀스](./representative-flows.md)                             |
-| 기본 API 계약  | [API 계약 요약](#api-계약-요약), [API 엔드포인트](./api-endpoints.md), [API 응답 스키마](./api-response-schema.md) |
+| 기본 API 계약  | [API 계약 요약](#api-계약-요약), [API 계약](./api-contract.md) |
 | 설계 의사결정 내역 | [의사결정 기록](./ADR.md)                                                                          |
 
 
@@ -138,4 +138,4 @@ sequenceDiagram
 
 ## API 계약 요약
 
-- 전체 method·path·입력·성공·대표 오류는 [API 엔드포인트](./api-endpoints.md), 응답 필드와 오류 분류는 [API 응답 스키마](./api-response-schema.md)를 따른다.
+- 전체 method·path·입력·성공·응답 필드·오류 분류는 [API 계약](./api-contract.md)을 따른다.

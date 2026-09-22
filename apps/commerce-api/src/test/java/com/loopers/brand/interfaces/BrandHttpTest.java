@@ -193,6 +193,36 @@ class BrandHttpTest {
                 .andExpect(jsonPath("$.data.totalElements").value(0));
         }
 
+        @DisplayName("[경계값 분석] 공백뿐인 이름으로 생성하면 400 INVALID_BRAND_NAME이고 브랜드가 생기지 않는다.")
+        @Test
+        void rejectsInvalidBrandName() throws Exception {
+            mockMvc.perform(post(ADMIN_BRANDS)
+                    .with(admin()).with(csrf())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"name\":\"   \"}"))
+                .andExpect(failure(HttpStatus.BAD_REQUEST, "INVALID_BRAND_NAME"));
+
+            mockMvc.perform(get(ADMIN_BRANDS).with(admin()))
+                .andExpect(success(HttpStatus.OK))
+                .andExpect(jsonPath("$.data.totalElements").value(0));
+        }
+
+        @DisplayName("[동등 클래스 분할] 사용 중인 이름으로 생성하면 409 DUPLICATE_BRAND_NAME이고 기존 브랜드만 남는다.")
+        @Test
+        void rejectsDuplicateBrandName() throws Exception {
+            fixture.brand("Nike");
+
+            mockMvc.perform(post(ADMIN_BRANDS)
+                    .with(admin()).with(csrf())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"name\":\"Nike\"}"))
+                .andExpect(failure(HttpStatus.CONFLICT, "DUPLICATE_BRAND_NAME"));
+
+            mockMvc.perform(get(ADMIN_BRANDS).with(admin()))
+                .andExpect(success(HttpStatus.OK))
+                .andExpect(jsonPath("$.data.totalElements").value(1));
+        }
+
         @DisplayName("[동등 클래스 분할] 브랜드 목록을 조회하면 200이고 등록한 브랜드를 모두 담는다.")
         @Test
         void listsBrands() throws Exception {
@@ -294,6 +324,20 @@ class BrandHttpTest {
         void rejectsMissingBrandDeletion() throws Exception {
             mockMvc.perform(delete(ADMIN_BRAND, MISSING_ID).with(admin()).with(csrf()))
                 .andExpect(failure(HttpStatus.NOT_FOUND, "BRAND_NOT_FOUND"));
+        }
+
+        @DisplayName("[의사결정표] 판매 중인 상품이 연결된 브랜드를 삭제하면 409 BRAND_HAS_PRODUCTS이고 브랜드는 유지된다.")
+        @Test
+        void rejectsDeletingBrandWithProducts() throws Exception {
+            Brand brand = fixture.brand("Nike");
+            fixture.product(brand, "Air", 3_000L, 0);
+
+            mockMvc.perform(delete(ADMIN_BRAND, brand.getId()).with(admin()).with(csrf()))
+                .andExpect(failure(HttpStatus.CONFLICT, "BRAND_HAS_PRODUCTS"));
+
+            mockMvc.perform(get(ADMIN_BRAND, brand.getId()).with(admin()))
+                .andExpect(success(HttpStatus.OK))
+                .andExpect(jsonPath("$.data.deleted").value(false));
         }
     }
 

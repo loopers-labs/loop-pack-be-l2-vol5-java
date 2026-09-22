@@ -512,6 +512,21 @@ class ProductHttpTest {
                 .andExpect(jsonPath("$.data.totalElements").value(0));
         }
 
+        @DisplayName("[동등 클래스 분할] 같은 브랜드에서 사용 중인 이름으로 생성하면 409 DUPLICATE_PRODUCT_NAME이고 기존 상품만 남는다.")
+        @Test
+        void rejectsDuplicateProductName() throws Exception {
+            Brand brand = fixture.brand("Nike");
+            fixture.product(brand, "Air", 3_000L, 5);
+
+            mockMvc.perform(createProduct(
+                    "{\"brandId\":%d,\"name\":\"Air\",\"price\":4000}".formatted(brand.getId())))
+                .andExpect(failure(HttpStatus.CONFLICT, "DUPLICATE_PRODUCT_NAME"));
+
+            mockMvc.perform(get(ADMIN_PRODUCTS).with(admin()))
+                .andExpect(success(HttpStatus.OK))
+                .andExpect(jsonPath("$.data.totalElements").value(1));
+        }
+
         @DisplayName("[동등 클래스 분할] 상품 목록을 조회하면 200이고 등록한 상품을 모두 담는다.")
         @Test
         void listsProducts() throws Exception {
