@@ -1,6 +1,6 @@
 # commerce-api 대표 흐름
 
-과제가 제시한 세 흐름을 요청자부터 DB까지 계층을 따라 그린 것이다. 흐름마다 기대값과 대표 오류를 함께 적는다. 근거는 [요구사항 문서](./requirements.md)의 요구사항 ID와 정책 ID를 가리키고, 계층의 역할은 [설계 문서](./commerce-api-design.md)의 아키텍처를, 도메인 객체는 [도메인 관계](./domain-relations.md)를 따른다.
+과제가 제시한 세 흐름을 API 경계와 도메인 상태 변화를 따라 그린 것이다. 구현 클래스나 저장 방식의 호출 순서를 표현하지 않는다. 흐름마다 기대값과 대표 오류를 함께 적으며, [요구사항](./requirements.md), [API 계약](./api-contract.md), [도메인 규칙](./domain-rules.yaml), [도메인 관계](./domain-relations.md)를 근거로 삼는다.
 
 
 
@@ -23,57 +23,27 @@ sequenceDiagram
     autonumber
     actor A as 관리자
     actor C as 고객
-    participant F as 관리자 접근 필터
-    participant IF as interfaces
-    participant AP as application
-    participant DM as domain
-    participant IN as infrastructure
-    participant DB
+    participant API as Commerce API
+    participant P as Product
 
-    A->>F: PUT /api-admin/v1/products/{productId} (이름, 가격 3,500)
-    F->>F: ADMIN 역할 확인 (R-ACCESS-04)
-    F->>IF: 통과
-    IF->>AP: 상품 수정 요청
-    AP->>IN: 상품 찾기
-    IN->>DB: 조회
-    AP->>DM: Product에 이름과 가격 수정 요청
-    DM-->>AP: 삭제된 상품이거나 값이 범위를 벗어나면 거절 (R-ADMIN-06, R-ADMIN-13)
-    AP->>IN: 저장
-    IN->>DB: 반영
-    AP-->>IF: 수정된 상품
-    IF-->>A: 성공, 가격 3,500
+    A->>API: 상품 가격을 3,500원으로 수정
+    API->>P: 이름·가격 변경
+    API-->>A: 200, 변경된 상품
 
-    C->>IF: GET /api/v1/products/{productId} (X-USER-ID)
-    IF->>AP: 상품 상세 조회
-    AP->>IN: 삭제되지 않은 상품과 브랜드, 좋아요 수 찾기
-    IN->>DB: 조회
-    AP-->>IF: 상품 정보
-    IF-->>C: 가격 3,500 (R-ADMIN-09)
+    C->>API: 상품 상세 조회
+    API-->>C: 200, 가격 3,500 (R-ADMIN-09)
 
-    A->>F: DELETE /api-admin/v1/products/{productId}
-    F->>IF: 통과
-    IF->>AP: 상품 삭제 요청
-    AP->>IN: 상품 찾기
-    AP->>DM: Product에 삭제 요청
-    DM-->>AP: 이미 삭제된 상품이면 거절 (P-ADMIN-06)
-    AP->>IN: 저장
-    IN->>DB: 삭제 여부만 반영, 기록은 남김 (R-ADMIN-14)
-    IF-->>A: 성공
+    A->>API: 상품 삭제
+    API->>P: 삭제
+    API-->>A: 200 (R-ADMIN-14)
 
-    C->>IF: GET /api/v1/products/{productId} (X-USER-ID)
-    IF->>AP: 상품 상세 조회
-    AP->>IN: 삭제되지 않은 상품 찾기
-    IN-->>AP: 없음
-    AP-->>IF: 없는 대상
-    IF-->>C: 없는 대상 오류 (R-CATALOG-07, R-ADMIN-12)
+    C->>API: 삭제된 상품 상세 조회
+    API-->>C: 404 PRODUCT_NOT_FOUND (R-ADMIN-12)
 
-    A->>F: GET /api-admin/v1/products/{productId}
-    F->>IF: 통과
-    IF->>AP: 관리자 상품 상세 조회
-    AP->>IN: 삭제 여부와 관계없이 상품 찾기
-    IF-->>A: 상품 P, 삭제됨 (P-ADMIN-07)
+    A->>API: 삭제된 상품 상세 조회
+    API-->>A: 200, 상품 P, deleted=true (P-ADMIN-07)
 
-    Note over A,F: 대표 오류: ADMIN 역할이 없거나 식별되지 않은 요청은 필터가 403으로 거절하고 interfaces에 닿지 않는다 (R-ACCESS-04)
+    Note over A,P: 권한·입력·상품 상태 오류는 위 표와 API 계약을 따른다.
 ```
 
 ## 2. 좋아요 등록·취소
@@ -94,56 +64,28 @@ sequenceDiagram
 sequenceDiagram
     autonumber
     actor C as 고객
-    participant IF as interfaces
-    participant AP as application
-    participant DM as domain
-    participant IN as infrastructure
-    participant DB
+    participant API as Commerce API
+    participant D as Product / Like
 
-    C->>IF: POST /api/v1/products/{productId}/likes (X-USER-ID)
-    IF->>AP: 좋아요 등록 요청 (고객, 상품)
-    AP->>IN: 고객과 상품 찾기
-    IN->>DB: 조회
-    AP->>DM: Product에 삭제 여부 확인
-    DM-->>AP: 삭제되었으면 없는 대상으로 거절 (R-LIKE-07, P-LIKE-02)
-    AP->>DM: 좋아요 중복 여부에 이미 있는지 확인
-    DM-->>AP: 없음
-    AP->>DM: Like 생성
-    AP->>IN: 저장
-    IN->>DB: 반영
-    IF-->>C: 성공
+    C->>API: 좋아요 등록
+    API->>D: 좋아요 관계 생성
+    API-->>C: 201, 좋아요 수 0→1
 
-    C->>IF: 같은 등록을 한 번 더
-    IF->>AP: 좋아요 등록 요청
-    AP->>DM: 좋아요 중복 여부에 이미 있는지 확인
-    DM-->>AP: 있음 (R-LIKE-02)
-    AP-->>IF: 새로 만들지 않고 성공 (P-LIKE-01)
-    IF-->>C: 성공
+    C->>API: 같은 좋아요 다시 등록
+    API->>D: 기존 관계 유지
+    API-->>C: 200, 좋아요 수 1 (P-LIKE-01)
 
-    C->>IF: GET /api/v1/products/{productId} (X-USER-ID)
-    IF->>AP: 상품 상세 조회
-    AP->>IN: 상품과 브랜드 찾기, 좋아요 관계 세기
-    IN->>DB: 조회
-    IF-->>C: 좋아요 수 1 (R-LIKE-05, R-LIKE-06)
+    C->>API: 상품 상세 조회
+    API-->>C: 200, likeCount=1 (R-LIKE-06)
 
-    C->>IF: DELETE /api/v1/products/{productId}/likes (X-USER-ID)
-    IF->>AP: 좋아요 취소 요청 (고객, 상품)
-    AP->>IN: 고객과 상품으로 Like 찾기
-    IN-->>AP: Like
-    AP->>DM: Like에 취소 요청 (고객)
-    DM-->>AP: 본인의 좋아요가 아니면 거절 (R-LIKE-04)
-    AP->>IN: 없애기
-    IN->>DB: 반영
-    IF-->>C: 성공, 좋아요 수 0
+    C->>API: 좋아요 취소
+    API->>D: 좋아요 관계 취소
+    API-->>C: 200, 좋아요 수 1→0
 
-    C->>IF: 같은 취소를 한 번 더
-    IF->>AP: 좋아요 취소 요청
-    AP->>IN: 고객과 상품으로 Like 찾기
-    IN-->>AP: 없음
-    AP-->>IF: 성공 (P-LIKE-01)
-    IF-->>C: 성공
+    C->>API: 같은 좋아요 다시 취소
+    API-->>C: 200, 좋아요 수 0 (P-LIKE-01)
 
-    Note over C,DB: 상품이 삭제된 뒤에도 남아 있는 자신의 좋아요는 취소할 수 있다 (R-LIKE-08)
+    Note over C,D: 삭제된 상품에는 등록할 수 없지만 기존 좋아요는 취소할 수 있다.
 ```
 
 ## 3. 포인트 충전 → 주문 확정
@@ -164,61 +106,27 @@ sequenceDiagram
 sequenceDiagram
     autonumber
     actor C as 고객
-    participant IF as interfaces
-    participant AP as application
-    participant DM as domain
-    participant IN as infrastructure
-    participant DB
+    participant API as Commerce API
+    participant D as Point / Product / Order
 
-    C->>IF: POST /api/v1/points/charge (X-USER-ID, amount 10,000)
-    IF->>IF: 식별 정보와 입력 형식 확인 (R-ACCESS-05, R-POINT-04)
-    IF->>AP: 충전 요청 (고객, 10,000)
-    AP->>IN: 고객 찾기
-    IN->>DB: 조회
-    AP->>DM: User에 충전 요청
-    DM-->>AP: 잔액 10,000 (R-POINT-06)
-    AP->>IN: 저장
-    IN->>DB: 반영
-    IF-->>C: 성공, 잔액 10,000
+    C->>API: 포인트 10,000 충전
+    API->>D: 잔액 0→10,000
+    API-->>C: 200, balance=10,000
 
-    C->>IF: POST /api/v1/orders (X-USER-ID, A 2개, B 1개)
-    IF->>AP: 주문 생성 요청
-    AP->>IN: 상품 A, B 찾기
-    IN->>DB: 조회
-    AP->>DM: 각 Product에 삭제 여부와 지금 이름·가격 확인
-    AP->>DM: Order 생성 요청 (A 2개 2,000원, B 1개 3,000원)
-    DM-->>AP: DRAFT 주문, 합계 7,000 (R-ORDER-02, R-ORDER-03)
-    AP->>IN: 저장
-    IN->>DB: 반영
-    IF-->>C: 성공, DRAFT, 합계 7,000. 재고와 잔액은 그대로 (R-ORDER-04)
+    C->>API: 상품 A 2개, B 1개 주문 생성
+    API->>D: 합계 7,000의 DRAFT 주문 생성
+    API-->>C: 201, 재고와 잔액은 그대로
 
-    C->>IF: POST /api/v1/orders/{orderId}/confirm (X-USER-ID)
-    IF->>AP: 주문 확정 요청 (고객, 주문)
-    AP->>IN: 주문, 상품 A·B, 구매자 찾기
-    IN->>DB: 조회
-    AP->>DM: 도메인 서비스 주문 확정에 확정 요청
-    alt 모두 통과
-        DM->>DM: 재고 A 5→3, B 3→2 차감. 잔액 10,000→3,000 결제. CONFIRMED, 결제액 7,000
-        DM-->>AP: 확정된 주문
-        AP->>IN: 바뀐 주문, 상품 A·B, 고객을 한 번에 저장
-        IN->>DB: 한 트랜잭션으로 반영
-        AP-->>IF: 확정 결과
-        IF-->>C: 성공, CONFIRMED, 결제액 7,000 (R-ORDER-11, R-ORDER-12)
-    else 잔액이 주문 금액보다 적음
-        DM-->>AP: 아무것도 바꾸지 않고 거절 (R-ORDER-09, R-ORDER-10)
-        AP-->>IF: 잔액 부족
-        IF-->>C: 잔액 부족 오류. 재고, 잔액, 주문 상태 그대로
+    C->>API: 주문 확정
+    API->>D: 상품·재고·잔액 조건 확인
+    alt 확정 성공
+        D->>D: 재고와 잔액 차감, 주문 CONFIRMED
+        API-->>C: 200, 결제액 7,000
+    else 확정 거절
+        D->>D: 주문·재고·잔액 유지
+        API-->>C: 404 또는 409 오류
     end
 
-    C->>IF: GET /api/v1/points (X-USER-ID)
-    IF->>AP: 잔액 조회
-    AP->>IN: 고객 찾기
-    IN->>DB: 조회
-    IF-->>C: 잔액 3,000 (R-POINT-02)
-
-    C->>IF: GET /api/v1/orders/{orderId} (X-USER-ID)
-    IF->>AP: 주문 상세 조회
-    AP->>IN: 고객의 주문 찾기
-    IN->>DB: 조회
-    IF-->>C: CONFIRMED, 품목 A 2개·B 1개, 결제액 7,000 (R-ORDER-14)
+    C->>API: 잔액과 주문 상세 조회
+    API-->>C: 잔액 3,000, CONFIRMED 주문
 ```

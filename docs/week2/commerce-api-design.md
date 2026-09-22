@@ -90,51 +90,9 @@ interfaces ──▶ application ──▶ domain ◀── infrastructure
 | 대표 오류  | 재고나 포인트가 부족하면 확정을 거절하고 주문·재고·포인트를 모두 기존 상태로 유지한다.                                           |
 
 
-### 구현 시퀀스
+### 계약·도메인 시퀀스
 
-아래 시퀀스는 실제 구현의 주문 확정 호출과 트랜잭션 경계를 요약한다. 모든 고객 요청은 Controller에 도달하기 전에 `RequesterArgumentResolver`가 `X-USER-ID`로 사용자를 식별한다.
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor C as 고객
-    participant API as PointV1Controller / OrderV1Controller
-    participant UC as PointUseCase / OrderUseCase
-    participant RP as Repository
-    participant CS as OrderConfirmService
-    participant D as Order / Product / User
-    participant DB as MySQL
-
-    Note over C,DB: 충전 API로 잔액 10,000원, 주문 생성 API로 합계 7,000원의 DRAFT 주문 준비
-    C->>API: POST /api/v1/orders/{orderId}/confirm
-    API->>UC: OrderUseCase.confirm(userId, orderId)
-    UC->>RP: OrderRepository.findById(orderId)
-    RP->>DB: 주문과 품목 조회
-    UC->>D: 주문 소유권 확인
-    UC->>RP: User와 품목별 Product 조회
-    RP->>DB: 구매자와 상품 조회
-    UC->>CS: confirm(userId, order, products, buyer, paidAt)
-    CS->>D: DRAFT·상품·재고·포인트 검증
-    alt 검증 성공
-        CS->>D: Product 재고 차감·User 결제·Order 확정
-        UC->>RP: Product·User·Order 저장
-        RP->>DB: 한 트랜잭션으로 반영
-        UC-->>API: 확정된 주문
-        API-->>C: CONFIRMED, 결제액 7,000
-    else 재고 또는 포인트 부족
-        CS-->>API: 오류
-        API-->>C: 확정 거절
-        Note over UC,DB: 주문·재고·포인트를 기존 상태로 유지
-    end
-
-    C->>API: GET /api/v1/points, GET /api/v1/orders/{orderId}
-    API->>UC: getBalance(), findMine()
-    UC->>RP: User와 Order 조회
-    RP->>DB: 저장 결과 조회
-    API-->>C: 잔액 3,000, CONFIRMED 주문
-```
-
-전체 시퀀스는 [전체 흐름 시퀀스](./representative-flows.md)에, 이 대표 흐름의 실제 HTTP 연결 검증은 [ChargeOrderFlowHttpTest](../../apps/commerce-api/src/test/java/com/loopers/interfaces/api/ChargeOrderFlowHttpTest.java)에 정리했다.
+세 대표 흐름의 상세 시퀀스는 [전체 흐름 시퀀스](./representative-flows.md)에 정리한다. 이 시퀀스는 [요구사항](./requirements.md), [API 계약](./api-contract.md), [도메인 규칙](./domain-rules.yaml), [도메인 관계](./domain-relations.md)를 기준으로 API 경계와 도메인 상태 변화를 표현한다. 구현 클래스나 저장 방식의 호출 순서는 다루지 않는다.
 
 ## API 계약 요약
 
