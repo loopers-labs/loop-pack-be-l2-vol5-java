@@ -857,6 +857,7 @@ components:
           enum:
             - INVALID_REQUEST
             - INVALID_STOCK_QUANTITY
+            - INVALID_POINT_BALANCE
             - INVALID_PRODUCT_NAME
             - INVALID_PRODUCT_PRICE
             - INVALID_BRAND_NAME
@@ -868,6 +869,7 @@ components:
             - PRODUCT_NOT_FOUND
             - ORDER_NOT_FOUND
             - USER_NOT_FOUND
+            - LIKE_NOT_FOUND
             - NOT_FOUND
             - METHOD_NOT_ALLOWED
             - DUPLICATE_BRAND_NAME

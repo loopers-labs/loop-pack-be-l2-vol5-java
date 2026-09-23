@@ -28,6 +28,16 @@ class PointTest {
             // assert
             assertThat(result.balance()).isEqualTo(balance);
         }
+
+        @DisplayName("[경계값 분석] 잔액 -1로 포인트를 만들면 포인트 잔액 오류로 거절한다.")
+        @Test
+        void throwsInvalidPointBalance_whenBalanceIsNegative() {
+            // act
+            CoreException result = assertThrows(CoreException.class, () -> new Point(-1L));
+
+            // assert
+            assertThat(result.getErrorCode()).isEqualTo(ErrorCode.INVALID_POINT_BALANCE);
+        }
     }
 
     @DisplayName("[INV-17] 충전액은 양의 정수다.")

@@ -14,6 +14,7 @@ public final class ErrorStatus {
         return switch (errorCode) {
             case INVALID_REQUEST,
                  INVALID_STOCK_QUANTITY,
+                 INVALID_POINT_BALANCE,
                  INVALID_PRODUCT_NAME,
                  INVALID_PRODUCT_PRICE,
                  INVALID_BRAND_NAME,

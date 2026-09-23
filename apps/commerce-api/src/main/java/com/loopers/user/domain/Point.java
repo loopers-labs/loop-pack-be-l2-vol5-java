@@ -13,6 +13,9 @@ public class Point {
     }
 
     public Point(long balance) {
+        if (balance < 0) {
+            throw new CoreException(ErrorCode.INVALID_POINT_BALANCE);
+        }
         this.balance = balance;
     }
 

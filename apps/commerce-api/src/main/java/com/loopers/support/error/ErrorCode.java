@@ -15,6 +15,7 @@ public enum ErrorCode {
 
     /** 값 규칙 */
     INVALID_STOCK_QUANTITY("재고 수량은 0 이상이어야 합니다."),
+    INVALID_POINT_BALANCE("포인트 잔액은 0 이상이어야 합니다."),
     INVALID_PRODUCT_NAME("상품 이름은 공백이 아닌 1~100자여야 합니다."),
     INVALID_PRODUCT_PRICE("상품 가격은 1원 이상 1,000,000,000원 이하여야 합니다."),
     INVALID_BRAND_NAME("브랜드 이름은 공백이 아닌 1~50자여야 합니다."),

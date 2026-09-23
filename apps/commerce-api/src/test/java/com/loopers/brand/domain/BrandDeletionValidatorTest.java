@@ -52,6 +52,17 @@ class BrandDeletionValidatorTest {
             assertDoesNotThrow(() -> validator.validateDeletable(brand));
         }
 
+        @DisplayName("[의사결정표] 연결된 상품이 없으면 허용한다.")
+        @Test
+        void allowsDeletion_whenNoProductExists() {
+            Brand brand = new Brand("브랜드");
+            ProductRepository repository = mock(ProductRepository.class);
+            when(repository.findAllByBrandId(brand.getId())).thenReturn(List.of());
+            BrandDeletionValidator validator = new BrandDeletionValidator(repository);
+
+            assertDoesNotThrow(() -> validator.validateDeletable(brand));
+        }
+
         @DisplayName("[동등 클래스 분할] 재고가 0이어도 삭제되지 않은 상품이면 거절한다.")
         @Test
         void throwsBrandHasProducts_whenZeroStockProductExists() {
