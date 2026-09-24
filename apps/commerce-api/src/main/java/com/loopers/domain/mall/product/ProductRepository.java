@@ -7,4 +7,7 @@ public interface ProductRepository {
     Product save(Product product);
 
     Optional<Product> findById(long productId);
+
+    // 비관적 쓰기 잠금으로 조회
+    Optional<Product> findByIdForUpdate(long productId);
 }

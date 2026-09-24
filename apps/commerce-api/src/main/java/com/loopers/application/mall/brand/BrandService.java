@@ -13,7 +13,6 @@ import org.springframework.transaction.annotation.Transactional;
 // 브랜드 생성·수정·삭제 유스케이스 구현
 public class BrandService implements CreateBrandUseCase, UpdateBrandUseCase, DeleteBrandUseCase {
     private final BrandRepository brandRepository;
-    private final ActiveProductChecker activeProductChecker;
 
     // 브랜드 생성
     @Override
@@ -31,15 +30,12 @@ public class BrandService implements CreateBrandUseCase, UpdateBrandUseCase, Del
         return BrandResult.from(brandRepository.save(brand));
     }
 
-    // 활성 상품 없을 때만 브랜드 삭제
+    // 브랜드와 연결된 미삭제 상품 전체를 함께 삭제
     @Override
     @Transactional
     public void execute(BrandCommand.Delete command) {
-        Brand brand = findBrand(command.brandId());
-        brand.ensureActive();
-        if (activeProductChecker.existsByBrandId(command.brandId())) {
-            throw new ApplicationException(ApplicationErrorCode.BRAND_HAS_ACTIVE_PRODUCTS);
-        }
+        Brand brand = brandRepository.findForDeletion(command.brandId())
+            .orElseThrow(() -> new ApplicationException(ApplicationErrorCode.BRAND_NOT_FOUND));
         brand.delete();
         brandRepository.save(brand);
     }

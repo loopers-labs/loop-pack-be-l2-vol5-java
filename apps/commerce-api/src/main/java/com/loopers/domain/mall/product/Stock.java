@@ -19,14 +19,19 @@ public record Stock(int value) {
         return new Stock(value);
     }
 
-    // 수량만큼 재고 차감
-    public Stock decrease(int quantity) {
+    // 차감 가능 여부만 검증하고 값은 바꾸지 않음
+    public void ensureCanDecrease(int quantity) {
         if (quantity <= 0) {
             throw new DomainException(DomainErrorCode.INVALID_QUANTITY);
         }
         if (quantity > value) {
             throw new DomainException(DomainErrorCode.INSUFFICIENT_STOCK);
         }
+    }
+
+    // 수량만큼 재고 차감
+    public Stock decrease(int quantity) {
+        ensureCanDecrease(quantity);
         return new Stock(value - quantity);
     }
 

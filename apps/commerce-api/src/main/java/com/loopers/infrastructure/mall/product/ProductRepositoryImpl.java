@@ -30,4 +30,10 @@ public class ProductRepositoryImpl implements ProductRepository {
     public Optional<Product> findById(long productId) {
         return productJpaRepository.findById(productId).map(mapper::toDomain);
     }
+
+    // 비관적 쓰기 잠금으로 조회
+    @Override
+    public Optional<Product> findByIdForUpdate(long productId) {
+        return productJpaRepository.findByIdForUpdate(productId).map(mapper::toDomain);
+    }
 }

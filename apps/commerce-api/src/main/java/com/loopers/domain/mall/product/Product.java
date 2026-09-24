@@ -61,6 +61,12 @@ public final class Product {
         stock = stock.set(value);
     }
 
+    // 차감 가능 여부만 검증하고 재고는 바꾸지 않음
+    public void ensureCanDecreaseStock(int quantity) {
+        ensureActive();
+        stock.ensureCanDecrease(quantity);
+    }
+
     // 재고 차감
     public void decreaseStock(int quantity) {
         ensureActive();

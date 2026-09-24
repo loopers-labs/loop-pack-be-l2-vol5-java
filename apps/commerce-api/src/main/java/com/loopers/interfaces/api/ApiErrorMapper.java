@@ -24,7 +24,6 @@ public class ApiErrorMapper {
     public ErrorType map(ApplicationErrorCode errorCode) {
         return switch (errorCode) {
             case USER_NOT_FOUND, BRAND_NOT_FOUND, PRODUCT_NOT_FOUND, ORDER_NOT_FOUND -> ErrorType.NOT_FOUND;
-            case BRAND_HAS_ACTIVE_PRODUCTS -> ErrorType.CONFLICT;
         };
     }
 }

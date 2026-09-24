@@ -59,7 +59,7 @@ public class ProductService implements CreateProductUseCase, UpdateProductUseCas
     }
 
     private Product findProduct(long productId) {
-        return productRepository.findById(productId)
+        return productRepository.findByIdForUpdate(productId)
             .orElseThrow(() -> new ApplicationException(ApplicationErrorCode.PRODUCT_NOT_FOUND));
     }
 

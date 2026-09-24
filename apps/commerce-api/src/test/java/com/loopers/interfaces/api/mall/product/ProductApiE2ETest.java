@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
 import com.loopers.application.common.PageResult;
+import com.loopers.application.mall.brand.BrandCommand;
+import com.loopers.application.mall.brand.DeleteBrandUseCase;
 import com.loopers.application.mall.product.AdminProduct;
 import com.loopers.application.mall.product.ProductDetail;
 import com.loopers.application.mall.product.ProductSummary;
@@ -29,6 +31,8 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 class ProductApiE2ETest {
     @Autowired
     private TestRestTemplate restTemplate;
+    @Autowired
+    private DeleteBrandUseCase deleteBrandUseCase;
     @Autowired
     private JdbcClient jdbcClient;
     @Autowired
@@ -107,6 +111,23 @@ class ProductApiE2ETest {
                 () -> assertThat(getProduct(expensive.productId()).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND),
                 () -> assertThat(missingBrand.getBody().data().items()).isEmpty(),
                 () -> assertThat(missingBrand.getBody().data().totalElements()).isZero()
+            );
+        }
+
+        @DisplayName("브랜드 일괄 삭제 후 목록에서 제외되고 상세는 404를 반환한다")
+        @Test
+        void excludesFromListAndDetail_afterBrandBulkDelete() {
+            long brandId = createBrand();
+            AdminProduct product = createProduct(brandId, "상품", 1_000L, 5);
+
+            deleteBrandUseCase.execute(new BrandCommand.Delete(brandId));
+
+            ResponseEntity<ApiResponse<PageResult<ProductSummary>>> list = getProducts("latest");
+            ResponseEntity<ApiResponse<ProductDetail>> detail = getProduct(product.productId());
+
+            assertAll(
+                () -> assertThat(list.getBody().data().items()).isEmpty(),
+                () -> assertThat(detail.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND)
             );
         }
 

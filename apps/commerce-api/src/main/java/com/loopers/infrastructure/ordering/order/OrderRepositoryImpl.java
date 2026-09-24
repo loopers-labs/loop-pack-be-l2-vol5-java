@@ -31,4 +31,10 @@ public class OrderRepositoryImpl implements OrderRepository {
     public Optional<Order> findById(long orderId) {
         return orderJpaRepository.findById(orderId).map(mapper::toDomain);
     }
+
+    // 비관적 쓰기 잠금으로 조회
+    @Override
+    public Optional<Order> findByIdForUpdate(long orderId) {
+        return orderJpaRepository.findByIdForUpdate(orderId).map(mapper::toDomain);
+    }
 }

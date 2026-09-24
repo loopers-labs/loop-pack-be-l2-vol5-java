@@ -7,4 +7,7 @@ public interface OrderRepository {
     Order save(Order order);
 
     Optional<Order> findById(long orderId);
+
+    // 비관적 쓰기 잠금으로 조회
+    Optional<Order> findByIdForUpdate(long orderId);
 }

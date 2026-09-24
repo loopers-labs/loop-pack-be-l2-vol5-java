@@ -3,7 +3,7 @@ package com.loopers.infrastructure.shopping.user;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.loopers.application.shopping.user.UserQueryDao;
-import com.loopers.domain.pay.point.PointRepository;
+import com.loopers.domain.pay.wallet.WalletRepository;
 import com.loopers.domain.shopping.user.User;
 import com.loopers.domain.shopping.user.UserRepository;
 import com.loopers.utils.DatabaseCleanUp;
@@ -27,7 +27,7 @@ class LocalUserFixtureInitializerIntegrationTest {
     private UserQueryDao userQueryDao;
 
     @Autowired
-    private PointRepository pointRepository;
+    private WalletRepository walletRepository;
 
     @Autowired
     private JdbcClient jdbcClient;
@@ -53,7 +53,7 @@ class LocalUserFixtureInitializerIntegrationTest {
             userRepository.save(User.create(1L));
             userRepository.save(User.create(3L));
             LocalUserFixtureInitializer initializer =
-                new LocalUserFixtureInitializer(userRepository, userQueryDao, pointRepository);
+                new LocalUserFixtureInitializer(userRepository, userQueryDao, walletRepository);
             TransactionTemplate transaction = new TransactionTemplate(transactionManager);
 
             // act
@@ -63,8 +63,8 @@ class LocalUserFixtureInitializerIntegrationTest {
             // assert
             List<Long> ids = jdbcClient.sql("SELECT id FROM users ORDER BY id").query(Long.class).list();
             assertThat(ids).containsExactly(1L, 2L, 3L);
-            List<Long> pointUserIds = jdbcClient.sql("SELECT user_id FROM points ORDER BY user_id").query(Long.class).list();
-            assertThat(pointUserIds).containsExactly(1L, 2L);
+            List<Long> walletUserIds = jdbcClient.sql("SELECT user_id FROM wallets ORDER BY user_id").query(Long.class).list();
+            assertThat(walletUserIds).containsExactly(1L, 2L);
         }
     }
 }

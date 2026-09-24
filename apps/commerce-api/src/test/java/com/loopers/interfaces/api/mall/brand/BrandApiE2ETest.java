@@ -21,6 +21,8 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class BrandApiE2ETest {
@@ -88,16 +90,11 @@ class BrandApiE2ETest {
             );
         }
 
-        @DisplayName("활성 상품이 연결된 브랜드 삭제는 409이고 상태를 유지한다")
+        @DisplayName("활성 상품이 연결된 브랜드를 삭제하면 브랜드와 연결 상품이 함께 삭제된다")
         @Test
-        void rejectsDelete_whenActiveProductExists() {
+        void deletesCascade_whenActiveProductExists() {
             long brandId = createBrand();
-            jdbcClient.sql("""
-                    INSERT INTO products (brand_id, name, description, price, stock, deleted, created_at, updated_at)
-                    VALUES (:brandId, '상품', NULL, 1000, 0, false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                    """)
-                .param("brandId", brandId)
-                .update();
+            long productId = insertProduct(brandId, false);
 
             ResponseEntity<ApiResponse<Object>> response = restTemplate.exchange(
                 "/api-admin/v1/brands/" + brandId,
@@ -107,10 +104,77 @@ class BrandApiE2ETest {
             );
 
             assertAll(
-                () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT),
+                () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK),
                 () -> assertThat(jdbcClient.sql("SELECT deleted FROM brands WHERE id = :id")
-                    .param("id", brandId).query(Boolean.class).single()).isFalse()
+                    .param("id", brandId).query(Boolean.class).single()).isTrue(),
+                () -> assertThat(jdbcClient.sql("SELECT deleted FROM products WHERE id = :id")
+                    .param("id", productId).query(Boolean.class).single()).isTrue()
             );
+        }
+
+        @DisplayName("미삭제 상품과 이미 삭제된 상품이 혼재하면 미삭제 상품만 삭제 상태로 전환된다")
+        @Test
+        void deletesOnlyUndeletedProducts_whenMixedWithAlreadyDeletedProduct() {
+            long brandId = createBrand();
+            long activeProductId = insertProduct(brandId, false);
+            long alreadyDeletedProductId = insertProduct(brandId, true);
+
+            ResponseEntity<ApiResponse<Object>> response = restTemplate.exchange(
+                "/api-admin/v1/brands/" + brandId,
+                HttpMethod.DELETE,
+                HttpEntity.EMPTY,
+                new ParameterizedTypeReference<>() {}
+            );
+
+            assertAll(
+                () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK),
+                () -> assertThat(jdbcClient.sql("SELECT deleted FROM products WHERE id = :id")
+                    .param("id", activeProductId).query(Boolean.class).single()).isTrue(),
+                () -> assertThat(jdbcClient.sql("SELECT deleted FROM products WHERE id = :id")
+                    .param("id", alreadyDeletedProductId).query(Boolean.class).single()).isTrue()
+            );
+        }
+
+        @DisplayName("존재하지 않는 브랜드 삭제는 404다")
+        @Test
+        void returnsNotFound_whenBrandDoesNotExist() {
+            ResponseEntity<ApiResponse<Object>> response = restTemplate.exchange(
+                "/api-admin/v1/brands/999999",
+                HttpMethod.DELETE,
+                HttpEntity.EMPTY,
+                new ParameterizedTypeReference<>() {}
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        }
+
+        @DisplayName("이미 삭제된 브랜드를 다시 삭제하면 404이고 상태를 유지한다")
+        @Test
+        void returnsNotFound_whenBrandAlreadyDeleted() {
+            long brandId = createBrand();
+            restTemplate.exchange("/api-admin/v1/brands/" + brandId, HttpMethod.DELETE,
+                HttpEntity.EMPTY, new ParameterizedTypeReference<ApiResponse<Object>>() {});
+
+            ResponseEntity<ApiResponse<Object>> response = restTemplate.exchange(
+                "/api-admin/v1/brands/" + brandId,
+                HttpMethod.DELETE,
+                HttpEntity.EMPTY,
+                new ParameterizedTypeReference<>() {}
+            );
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        }
+
+        private long insertProduct(long brandId, boolean deleted) {
+            KeyHolder keyHolder = new GeneratedKeyHolder();
+            jdbcClient.sql("""
+                    INSERT INTO products (brand_id, name, description, price, stock, deleted, created_at, updated_at)
+                    VALUES (:brandId, '상품', NULL, 1000, 0, :deleted, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    """)
+                .param("brandId", brandId)
+                .param("deleted", deleted)
+                .update(keyHolder);
+            return keyHolder.getKey().longValue();
         }
 
         private long createBrand() {

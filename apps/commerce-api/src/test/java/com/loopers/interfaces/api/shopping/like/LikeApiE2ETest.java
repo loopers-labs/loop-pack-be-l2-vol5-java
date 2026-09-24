@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
 import com.loopers.application.common.PageResult;
+import com.loopers.application.mall.brand.BrandCommand;
+import com.loopers.application.mall.brand.DeleteBrandUseCase;
 import com.loopers.application.shopping.like.LikeItem;
 import com.loopers.domain.mall.brand.Brand;
 import com.loopers.domain.mall.brand.BrandRepository;
@@ -32,6 +34,8 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 class LikeApiE2ETest {
     @Autowired
     private TestRestTemplate restTemplate;
+    @Autowired
+    private DeleteBrandUseCase deleteBrandUseCase;
     @Autowired
     private UserRepository userRepository;
     @Autowired
@@ -154,6 +158,23 @@ class LikeApiE2ETest {
             ResponseEntity<ApiResponse<Object>> response = cancel(product.getId(), String.valueOf(user.getId()));
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        }
+
+        @DisplayName("브랜드 일괄 삭제로 상품이 삭제되어도 기존 좋아요 취소는 그대로 동작한다")
+        @Test
+        void cancelsLike_whenProductWasDeletedViaBrandBulkDelete() {
+            User user = userRepository.save(User.create(1L));
+            Brand brand = brandRepository.save(Brand.create("브랜드", null));
+            Product product = productRepository.save(Product.create(brand.getId(), "상품", null, 1_000L, 5));
+            register(product.getId(), String.valueOf(user.getId()));
+
+            deleteBrandUseCase.execute(new BrandCommand.Delete(brand.getId()));
+            ResponseEntity<ApiResponse<Object>> response = cancel(product.getId(), String.valueOf(user.getId()));
+
+            assertAll(
+                () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK),
+                () -> assertThat(countLikes(user.getId(), product.getId())).isZero()
+            );
         }
     }
 

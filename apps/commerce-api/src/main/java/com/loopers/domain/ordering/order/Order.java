@@ -50,11 +50,16 @@ public final class Order {
         return new Order(id, userId, status, items, computedTotal, createdAt);
     }
 
-    // DRAFT를 CONFIRMED로 전환
-    public void confirm() {
+    // 확정 가능 여부만 검증하고 상태는 바꾸지 않음
+    public void ensureCanConfirm() {
         if (status == OrderStatus.CONFIRMED) {
             throw new DomainException(DomainErrorCode.ORDER_ALREADY_CONFIRMED);
         }
+    }
+
+    // DRAFT를 CONFIRMED로 전환
+    public void confirm() {
+        ensureCanConfirm();
         status = OrderStatus.CONFIRMED;
     }
 
