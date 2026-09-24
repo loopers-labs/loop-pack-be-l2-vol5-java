@@ -9,6 +9,17 @@ checkstyle {
     maxWarnings = 0
 }
 
+// DomainRulesTest 가 읽는 문서다. 입력으로 걸지 않으면 문서만 고쳤을 때
+// test 가 UP-TO-DATE 로 건너뛰어 어긋남이 드러나지 않는다.
+tasks.test {
+    inputs.files(
+        rootProject.file("docs/week2/domain-rules.yaml"),
+        rootProject.file("docs/week2/requirements.md"),
+    )
+        .withPropertyName("domainRuleDocuments")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+}
+
 dependencies {
     // add-ons
     implementation(project(":modules:jpa"))
