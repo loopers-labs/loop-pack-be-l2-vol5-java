@@ -15,11 +15,17 @@ public class PointRepositoryImpl implements PointRepository {
 
     @Override
     public Optional<Point> findByUserId(Long userId) {
-        return pointJpaRepository.findByUserId(userId);
+        return pointJpaRepository.findByUserId(userId).map(PointJpaMapper::toDomain);
     }
 
     @Override
     public Point save(Point point) {
-        return pointJpaRepository.save(point);
+        PointJpaEntity entity = pointJpaRepository.findByUserId(point.getUserId())
+            .map(found -> {
+                PointJpaMapper.update(point, found);
+                return found;
+            })
+            .orElseGet(() -> PointJpaMapper.toNewEntity(point));
+        return PointJpaMapper.toDomain(pointJpaRepository.save(entity));
     }
 }

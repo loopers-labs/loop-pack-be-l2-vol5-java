@@ -2,12 +2,12 @@ package com.loopers.interfaces.api.like;
 
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.like.Like;
+import com.loopers.domain.like.LikeRepository;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.user.User;
-import com.loopers.infrastructure.brand.BrandJpaRepository;
-import com.loopers.infrastructure.like.LikeJpaRepository;
-import com.loopers.infrastructure.product.ProductJpaRepository;
-import com.loopers.infrastructure.user.UserJpaRepository;
+import com.loopers.domain.brand.BrandRepository;
+import com.loopers.domain.product.ProductRepository;
+import com.loopers.domain.user.UserRepository;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
@@ -33,16 +33,16 @@ class MyLikeV1ApiE2ETest {
     private TestRestTemplate testRestTemplate;
 
     @Autowired
-    private BrandJpaRepository brandRepository;
+    private BrandRepository brandRepository;
 
     @Autowired
-    private ProductJpaRepository productRepository;
+    private ProductRepository productRepository;
 
     @Autowired
-    private LikeJpaRepository likeRepository;
+    private LikeRepository likeRepository;
 
     @Autowired
-    private UserJpaRepository userRepository;
+    private UserRepository userRepository;
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
@@ -56,7 +56,7 @@ class MyLikeV1ApiE2ETest {
     void returnsMyActiveLikedProducts() {
         User user = userRepository.save(User.create());
         Brand brand = brandRepository.save(Brand.create("Nike"));
-        Product product = productRepository.save(Product.create(brand, "Air Max", 100_000L));
+        Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
         likeRepository.save(Like.create(user.getId(), product.getId()));
         HttpHeaders headers = new HttpHeaders();
         headers.set("X-USER-ID", user.getId().toString());

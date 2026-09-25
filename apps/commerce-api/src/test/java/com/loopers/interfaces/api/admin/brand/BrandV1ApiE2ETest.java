@@ -1,9 +1,9 @@
 package com.loopers.interfaces.api.admin.brand;
 
 import com.loopers.domain.brand.Brand;
-import com.loopers.infrastructure.brand.BrandJpaRepository;
+import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.product.Product;
-import com.loopers.infrastructure.product.ProductJpaRepository;
+import com.loopers.domain.product.ProductRepository;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.admin.AdminMockMvcClient;
 import com.loopers.utils.DatabaseCleanUp;
@@ -43,10 +43,10 @@ class BrandV1ApiE2ETest {
     private AdminMockMvcClient adminClient;
 
     @Autowired
-    private BrandJpaRepository brandJpaRepository;
+    private BrandRepository brandRepository;
 
     @Autowired
-    private ProductJpaRepository productJpaRepository;
+    private ProductRepository productRepository;
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
@@ -82,7 +82,10 @@ class BrandV1ApiE2ETest {
             );
 
             // assert
-            Brand savedBrand = brandJpaRepository.findByName("Nike").orElseThrow();
+            Brand savedBrand = brandRepository.findAll().stream()
+                .filter(brand -> brand.getName().equals("Nike"))
+                .findFirst()
+                .orElseThrow();
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED),
                 () -> assertThat(response.getBody().data().id()).isEqualTo(savedBrand.getId()),
@@ -110,7 +113,7 @@ class BrandV1ApiE2ETest {
             // assert
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST),
-                () -> assertThat(brandJpaRepository.count()).isZero()
+                () -> assertThat(brandRepository.findAll()).isEmpty()
             );
         }
 
@@ -118,10 +121,9 @@ class BrandV1ApiE2ETest {
         @Test
         void returnsConflict_whenNameMatchesDeletedBrand() {
             // arrange
-            Brand deletedBrand = brandJpaRepository.save(Brand.create("Nike"));
+            Brand deletedBrand = brandRepository.save(Brand.create("Nike"));
             deletedBrand.delete();
-            brandJpaRepository.save(deletedBrand);
-            brandJpaRepository.flush();
+            brandRepository.save(deletedBrand);
             HttpEntity<BrandV1Dto.CreateRequest> request = new HttpEntity<>(
                 new BrandV1Dto.CreateRequest("Nike")
             );
@@ -138,7 +140,7 @@ class BrandV1ApiE2ETest {
             // assert
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT),
-                () -> assertThat(brandJpaRepository.count()).isEqualTo(1L)
+                () -> assertThat(brandRepository.findAll()).hasSize(1)
             );
         }
     }
@@ -150,7 +152,7 @@ class BrandV1ApiE2ETest {
         @Test
         void returnsBrandInfo_whenBrandExists() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
 
             // act
             ParameterizedTypeReference<ApiResponse<BrandV1Dto.BrandResponse>> responseType = new ParameterizedTypeReference<>() {};
@@ -174,10 +176,9 @@ class BrandV1ApiE2ETest {
         @Test
         void returnsDeletedBrandInfo_whenBrandIsDeleted() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
             brand.delete();
-            brandJpaRepository.save(brand);
-            brandJpaRepository.flush();
+            brandRepository.save(brand);
 
             // act
             ParameterizedTypeReference<ApiResponse<BrandV1Dto.BrandResponse>> responseType = new ParameterizedTypeReference<>() {};
@@ -219,7 +220,7 @@ class BrandV1ApiE2ETest {
         @Test
         void returnsUpdatedBrand_whenBrandIsNotDeleted() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
             HttpEntity<BrandV1Dto.UpdateRequest> request = new HttpEntity<>(
                 new BrandV1Dto.UpdateRequest("Adidas")
             );
@@ -234,7 +235,7 @@ class BrandV1ApiE2ETest {
             );
 
             // assert
-            Brand savedBrand = brandJpaRepository.findById(brand.getId()).orElseThrow();
+            Brand savedBrand = brandRepository.findById(brand.getId()).orElseThrow();
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK),
                 () -> assertThat(response.getBody().data().name()).isEqualTo("Adidas"),
@@ -246,7 +247,7 @@ class BrandV1ApiE2ETest {
         @Test
         void keepsName_whenNameIsBlank() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
             HttpEntity<BrandV1Dto.UpdateRequest> request = new HttpEntity<>(
                 new BrandV1Dto.UpdateRequest(" ")
             );
@@ -261,7 +262,7 @@ class BrandV1ApiE2ETest {
             );
 
             // assert
-            Brand savedBrand = brandJpaRepository.findById(brand.getId()).orElseThrow();
+            Brand savedBrand = brandRepository.findById(brand.getId()).orElseThrow();
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST),
                 () -> assertThat(savedBrand.getName()).isEqualTo("Nike")
@@ -272,10 +273,9 @@ class BrandV1ApiE2ETest {
         @Test
         void returnsNotFound_whenBrandIsDeleted() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
             brand.delete();
-            brandJpaRepository.save(brand);
-            brandJpaRepository.flush();
+            brandRepository.save(brand);
             HttpEntity<BrandV1Dto.UpdateRequest> request = new HttpEntity<>(
                 new BrandV1Dto.UpdateRequest("Adidas")
             );
@@ -297,11 +297,10 @@ class BrandV1ApiE2ETest {
         @Test
         void returnsConflict_whenNameMatchesDeletedBrand() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
-            Brand deletedBrand = brandJpaRepository.save(Brand.create("Adidas"));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
+            Brand deletedBrand = brandRepository.save(Brand.create("Adidas"));
             deletedBrand.delete();
-            brandJpaRepository.save(deletedBrand);
-            brandJpaRepository.flush();
+            brandRepository.save(deletedBrand);
             HttpEntity<BrandV1Dto.UpdateRequest> request = new HttpEntity<>(
                 new BrandV1Dto.UpdateRequest("Adidas")
             );
@@ -327,7 +326,7 @@ class BrandV1ApiE2ETest {
         @Test
         void deletesBrand_whenNoActiveProductExists() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
 
             // act
             ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
@@ -339,7 +338,7 @@ class BrandV1ApiE2ETest {
             );
 
             // assert
-            Brand deletedBrand = brandJpaRepository.findById(brand.getId()).orElseThrow();
+            Brand deletedBrand = brandRepository.findById(brand.getId()).orElseThrow();
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK),
                 () -> assertThat(deletedBrand.getDeletedAt()).isNotNull()
@@ -350,8 +349,8 @@ class BrandV1ApiE2ETest {
         @Test
         void keepsBrand_whenActiveProductExists() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
-            productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
+            productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
 
             // act
             ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
@@ -363,7 +362,7 @@ class BrandV1ApiE2ETest {
             );
 
             // assert
-            Brand savedBrand = brandJpaRepository.findById(brand.getId()).orElseThrow();
+            Brand savedBrand = brandRepository.findById(brand.getId()).orElseThrow();
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT),
                 () -> assertThat(savedBrand.getDeletedAt()).isNull()
@@ -394,10 +393,10 @@ class BrandV1ApiE2ETest {
         @Test
         void returnsAllBrands_whenStatusIsOmitted() {
             // arrange
-            Brand activeBrand = brandJpaRepository.save(Brand.create("Nike"));
-            Brand deletedBrand = brandJpaRepository.save(Brand.create("Adidas"));
+            Brand activeBrand = brandRepository.save(Brand.create("Nike"));
+            Brand deletedBrand = brandRepository.save(Brand.create("Adidas"));
             deletedBrand.delete();
-            brandJpaRepository.save(deletedBrand);
+            brandRepository.save(deletedBrand);
 
             // act
             ParameterizedTypeReference<ApiResponse<List<BrandV1Dto.BrandResponse>>> responseType = new ParameterizedTypeReference<>() {};
@@ -418,10 +417,10 @@ class BrandV1ApiE2ETest {
         @Test
         void returnsActiveBrands_whenStatusIsActive() {
             // arrange
-            Brand activeBrand = brandJpaRepository.save(Brand.create("Nike"));
-            Brand deletedBrand = brandJpaRepository.save(Brand.create("Adidas"));
+            Brand activeBrand = brandRepository.save(Brand.create("Nike"));
+            Brand deletedBrand = brandRepository.save(Brand.create("Adidas"));
             deletedBrand.delete();
-            brandJpaRepository.save(deletedBrand);
+            brandRepository.save(deletedBrand);
 
             // act
             ParameterizedTypeReference<ApiResponse<List<BrandV1Dto.BrandResponse>>> responseType = new ParameterizedTypeReference<>() {};

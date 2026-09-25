@@ -1,7 +1,7 @@
 package com.loopers.interfaces.api.brand;
 
 import com.loopers.domain.brand.Brand;
-import com.loopers.infrastructure.brand.BrandJpaRepository;
+import com.loopers.domain.brand.BrandRepository;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
@@ -27,7 +27,7 @@ class BrandV1ApiE2ETest {
     private TestRestTemplate testRestTemplate;
 
     @Autowired
-    private BrandJpaRepository brandJpaRepository;
+    private BrandRepository brandRepository;
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
@@ -44,7 +44,7 @@ class BrandV1ApiE2ETest {
         @Test
         void returnsBrandInfo_whenBrandIsActive() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
 
             // act
             ParameterizedTypeReference<ApiResponse<BrandV1Dto.BrandResponse>> responseType = new ParameterizedTypeReference<>() {};
@@ -64,10 +64,9 @@ class BrandV1ApiE2ETest {
         @Test
         void returnsNotFound_whenBrandIsDeleted() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
             brand.delete();
-            brandJpaRepository.save(brand);
-            brandJpaRepository.flush();
+            brandRepository.save(brand);
 
             // act
             ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};

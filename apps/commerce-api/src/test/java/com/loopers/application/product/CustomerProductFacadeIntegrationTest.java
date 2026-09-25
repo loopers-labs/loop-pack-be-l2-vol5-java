@@ -1,10 +1,11 @@
 package com.loopers.application.product;
 
 import com.loopers.domain.brand.Brand;
+import com.loopers.domain.like.Like;
+import com.loopers.domain.like.LikeRepository;
 import com.loopers.domain.product.Product;
-import com.loopers.infrastructure.brand.BrandJpaRepository;
-import com.loopers.infrastructure.like.LikeJpaRepository;
-import com.loopers.infrastructure.product.ProductJpaRepository;
+import com.loopers.domain.brand.BrandRepository;
+import com.loopers.domain.product.ProductRepository;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -23,13 +24,13 @@ class CustomerProductFacadeIntegrationTest {
     private ProductFacade productFacade;
 
     @Autowired
-    private BrandJpaRepository brandRepository;
+    private BrandRepository brandRepository;
 
     @Autowired
-    private ProductJpaRepository productRepository;
+    private ProductRepository productRepository;
 
     @Autowired
-    private LikeJpaRepository likeRepository;
+    private LikeRepository likeRepository;
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
@@ -42,9 +43,9 @@ class CustomerProductFacadeIntegrationTest {
     @Test
     void returnsCustomerProductDetailWithBrandAndLikeCount() {
         Brand brand = brandRepository.save(Brand.create("Nike"));
-        Product product = productRepository.save(Product.create(brand, "Air Max", 100_000L));
-        likeRepository.save(com.loopers.domain.like.Like.create(1L, product.getId()));
-        likeRepository.save(com.loopers.domain.like.Like.create(2L, product.getId()));
+        Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
+        likeRepository.save(Like.create(1L, product.getId()));
+        likeRepository.save(Like.create(2L, product.getId()));
 
         CustomerProductInfo info = productFacade.getCustomerDetail(product.getId());
 
@@ -58,9 +59,9 @@ class CustomerProductFacadeIntegrationTest {
     @Test
     void rejectsDeletedProduct() {
         Brand brand = brandRepository.save(Brand.create("Nike"));
-        Product product = productRepository.save(Product.create(brand, "Air Max", 100_000L));
+        Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
         product.delete();
-        productRepository.saveAndFlush(product);
+        productRepository.save(product);
 
         assertThatThrownBy(() -> productFacade.getCustomerDetail(product.getId()))
             .hasMessageContaining("상품을 찾을 수 없습니다.");

@@ -1,17 +1,16 @@
 package com.loopers.infrastructure.like;
 
-import com.loopers.domain.like.Like;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
 
 import java.util.Optional;
 
-public interface LikeJpaRepository extends JpaRepository<Like, Long> {
+public interface LikeJpaRepository extends JpaRepository<LikeJpaEntity, Long> {
 
-    Optional<Like> findByUserIdAndProductId(Long userId, Long productId);
+    Optional<LikeJpaEntity> findByUserIdAndProductId(Long userId, Long productId);
 
-    List<Like> findAllByUserId(Long userId);
+    List<LikeJpaEntity> findAllByUserId(Long userId);
 
     long countByProductId(Long productId);
 }

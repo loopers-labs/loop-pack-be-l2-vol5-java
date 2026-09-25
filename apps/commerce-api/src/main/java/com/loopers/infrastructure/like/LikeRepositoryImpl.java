@@ -16,12 +16,12 @@ public class LikeRepositoryImpl implements LikeRepository {
 
     @Override
     public Optional<Like> findByUserIdAndProductId(Long userId, Long productId) {
-        return likeJpaRepository.findByUserIdAndProductId(userId, productId);
+        return likeJpaRepository.findByUserIdAndProductId(userId, productId).map(LikeJpaMapper::toDomain);
     }
 
     @Override
     public List<Like> findAllByUserId(Long userId) {
-        return likeJpaRepository.findAllByUserId(userId);
+        return likeJpaRepository.findAllByUserId(userId).stream().map(LikeJpaMapper::toDomain).toList();
     }
 
     @Override
@@ -31,11 +31,14 @@ public class LikeRepositoryImpl implements LikeRepository {
 
     @Override
     public Like save(Like like) {
-        return likeJpaRepository.save(like);
+        LikeJpaEntity entity = likeJpaRepository.findByUserIdAndProductId(like.getUserId(), like.getProductId())
+            .orElseGet(() -> LikeJpaMapper.toNewEntity(like));
+        return LikeJpaMapper.toDomain(likeJpaRepository.save(entity));
     }
 
     @Override
     public void delete(Like like) {
-        likeJpaRepository.delete(like);
+        likeJpaRepository.findByUserIdAndProductId(like.getUserId(), like.getProductId())
+            .ifPresent(likeJpaRepository::delete);
     }
 }

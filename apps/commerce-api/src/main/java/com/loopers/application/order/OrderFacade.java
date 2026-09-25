@@ -43,10 +43,13 @@ public class OrderFacade {
         order.validateDraft();
         Point point = pointRepository.findByUserId(userId)
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "사용자의 포인트를 찾을 수 없습니다."));
-        order.getItems().forEach(item -> productRepository.findById(item.getProductId())
-            .filter(product -> product.getDeletedAt() == null)
-            .orElseThrow(() -> new CoreException(ErrorType.CONFLICT, "주문 상품을 확정할 수 없습니다."))
-            .decreaseStock(item.getQuantity()));
+        order.getItems().forEach(item -> {
+            Product product = productRepository.findById(item.getProductId())
+                .filter(found -> found.getDeletedAt() == null)
+                .orElseThrow(() -> new CoreException(ErrorType.CONFLICT, "주문 상품을 확정할 수 없습니다."));
+            product.decreaseStock(item.getQuantity());
+            productRepository.save(product);
+        });
         point.pay(order.getTotalAmount());
         order.confirm(order.getTotalAmount());
         pointRepository.save(point);
@@ -83,7 +86,7 @@ public class OrderFacade {
         Product product = productRepository.findById(item.productId())
             .filter(found -> found.getDeletedAt() == null)
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "상품을 찾을 수 없습니다."));
-        return new OrderItem(product.getId(), product.getName(), product.getPrice(), item.quantity());
+        return OrderItem.create(product.getId(), product.getName(), product.getPrice(), item.quantity());
     }
 
     public record OrderRequestItem(Long productId, int quantity) {}

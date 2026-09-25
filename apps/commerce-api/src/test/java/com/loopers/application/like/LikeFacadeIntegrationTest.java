@@ -2,11 +2,11 @@ package com.loopers.application.like;
 
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.product.Product;
+import com.loopers.domain.like.LikeRepository;
+import com.loopers.domain.user.UserRepository;
 import com.loopers.domain.user.User;
-import com.loopers.infrastructure.brand.BrandJpaRepository;
-import com.loopers.infrastructure.like.LikeJpaRepository;
-import com.loopers.infrastructure.product.ProductJpaRepository;
-import com.loopers.infrastructure.user.UserJpaRepository;
+import com.loopers.domain.brand.BrandRepository;
+import com.loopers.domain.product.ProductRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import com.loopers.utils.DatabaseCleanUp;
@@ -29,16 +29,16 @@ class LikeFacadeIntegrationTest {
     private LikeFacade likeFacade;
 
     @Autowired
-    private BrandJpaRepository brandJpaRepository;
+    private BrandRepository brandRepository;
 
     @Autowired
-    private ProductJpaRepository productJpaRepository;
+    private ProductRepository productRepository;
 
     @Autowired
-    private LikeJpaRepository likeJpaRepository;
+    private LikeRepository likeRepository;
 
     @Autowired
-    private UserJpaRepository userJpaRepository;
+    private UserRepository userRepository;
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
@@ -47,7 +47,7 @@ class LikeFacadeIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        user = userJpaRepository.save(User.create());
+        user = userRepository.save(User.create());
     }
 
     @AfterEach
@@ -72,7 +72,7 @@ class LikeFacadeIntegrationTest {
             // assert
             assertAll(
                 () -> assertThat(result.getErrorType()).isEqualTo(ErrorType.NOT_FOUND),
-                () -> assertThat(likeJpaRepository.count()).isZero()
+                () -> assertThat(likeRepository.countByProductId(product.getId())).isZero()
             );
         }
 
@@ -90,7 +90,7 @@ class LikeFacadeIntegrationTest {
             assertAll(
                 () -> assertThat(first.liked()).isTrue(),
                 () -> assertThat(second.liked()).isTrue(),
-                () -> assertThat(likeJpaRepository.count()).isEqualTo(1L),
+                () -> assertThat(likeRepository.countByProductId(product.getId())).isEqualTo(1L),
                 () -> assertThat(likeFacade.countByProductId(product.getId())).isEqualTo(1L)
             );
         }
@@ -101,8 +101,7 @@ class LikeFacadeIntegrationTest {
             // arrange
             Product product = saveProduct();
             product.delete();
-            productJpaRepository.save(product);
-            productJpaRepository.flush();
+            productRepository.save(product);
 
             // act
             CoreException result = assertThrows(CoreException.class, () -> {
@@ -124,8 +123,7 @@ class LikeFacadeIntegrationTest {
             Product product = saveProduct();
             likeFacade.add(user.getId(), product.getId());
             product.delete();
-            productJpaRepository.save(product);
-            productJpaRepository.flush();
+            productRepository.save(product);
 
             // act
             LikeInfo result = likeFacade.cancel(user.getId(), product.getId());
@@ -133,13 +131,13 @@ class LikeFacadeIntegrationTest {
             // assert
             assertAll(
                 () -> assertThat(result.liked()).isFalse(),
-                () -> assertThat(likeJpaRepository.count()).isZero()
+                () -> assertThat(likeRepository.countByProductId(product.getId())).isZero()
             );
         }
     }
 
     private Product saveProduct() {
-        Brand brand = brandJpaRepository.save(Brand.create("Nike"));
-        return productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+        Brand brand = brandRepository.save(Brand.create("Nike"));
+        return productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
     }
 }

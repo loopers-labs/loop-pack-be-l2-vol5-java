@@ -27,4 +27,29 @@ class ArchitectureTest {
                    .should().dependOnClassesThat().resideInAPackage("..infrastructure..")
                    .check(classes);
     }
+
+    @Test
+    void commerceDomainsDoNotDependOnJpa() {
+        var classes = new ClassFileImporter()
+                .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
+                .importPackages(
+                        "com.loopers.domain.brand",
+                        "com.loopers.domain.product",
+                        "com.loopers.domain.like",
+                        "com.loopers.domain.point",
+                        "com.loopers.domain.order",
+                        "com.loopers.domain.user");
+
+        noClasses().that().resideInAnyPackage(
+                            "..domain.brand..", "..domain.product..", "..domain.like..",
+                            "..domain.point..", "..domain.order..", "..domain.user..")
+                   .should().dependOnClassesThat().resideInAPackage("jakarta.persistence..")
+                   .check(classes);
+
+        noClasses().that().resideInAnyPackage(
+                            "..domain.brand..", "..domain.product..", "..domain.like..",
+                            "..domain.point..", "..domain.order..", "..domain.user..")
+                   .should().dependOnClassesThat().haveFullyQualifiedName("com.loopers.domain.BaseEntity")
+                   .check(classes);
+    }
 }

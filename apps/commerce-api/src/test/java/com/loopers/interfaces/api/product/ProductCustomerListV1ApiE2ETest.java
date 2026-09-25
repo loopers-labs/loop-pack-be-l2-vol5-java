@@ -2,10 +2,10 @@ package com.loopers.interfaces.api.product;
 
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.like.Like;
+import com.loopers.domain.like.LikeRepository;
 import com.loopers.domain.product.Product;
-import com.loopers.infrastructure.brand.BrandJpaRepository;
-import com.loopers.infrastructure.like.LikeJpaRepository;
-import com.loopers.infrastructure.product.ProductJpaRepository;
+import com.loopers.domain.brand.BrandRepository;
+import com.loopers.domain.product.ProductRepository;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
@@ -32,13 +32,13 @@ class ProductCustomerListV1ApiE2ETest {
     private TestRestTemplate testRestTemplate;
 
     @Autowired
-    private BrandJpaRepository brandRepository;
+    private BrandRepository brandRepository;
 
     @Autowired
-    private ProductJpaRepository productRepository;
+    private ProductRepository productRepository;
 
     @Autowired
-    private LikeJpaRepository likeRepository;
+    private LikeRepository likeRepository;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -55,9 +55,9 @@ class ProductCustomerListV1ApiE2ETest {
     void filtersByBrandAndSortsByPrice() {
         Brand nike = brandRepository.save(Brand.create("Nike"));
         Brand adidas = brandRepository.save(Brand.create("Adidas"));
-        Product expensive = productRepository.save(Product.create(nike, "Expensive", 20_000L));
-        Product cheap = productRepository.save(Product.create(nike, "Cheap", 10_000L));
-        productRepository.save(Product.create(adidas, "Other", 1_000L));
+        Product expensive = productRepository.save(Product.create(nike.getId(), "Expensive", 20_000L));
+        Product cheap = productRepository.save(Product.create(nike.getId(), "Cheap", 10_000L));
+        productRepository.save(Product.create(adidas.getId(), "Other", 1_000L));
 
         ResponseEntity<ApiResponse<List<ProductCustomerV1Dto.ProductResponse>>> response = testRestTemplate.exchange(
             "/api/v1/products?brandId=" + nike.getId() + "&sort=price_asc",
@@ -84,10 +84,20 @@ class ProductCustomerListV1ApiE2ETest {
     }
 
     @Test
+    void returnsEmptyListWhenPageOffsetExceedsIntegerRange() {
+        ResponseEntity<ApiResponse<List<ProductCustomerV1Dto.ProductResponse>>> response = getProducts(
+            "?page=2147483647&size=100"
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().data()).isEmpty();
+    }
+
+    @Test
     void sortsSamePriceByProductIdAscending() {
         Brand brand = brandRepository.save(Brand.create("Nike"));
-        Product first = productRepository.save(Product.create(brand, "First", 10_000L));
-        Product second = productRepository.save(Product.create(brand, "Second", 10_000L));
+        Product first = productRepository.save(Product.create(brand.getId(), "First", 10_000L));
+        Product second = productRepository.save(Product.create(brand.getId(), "Second", 10_000L));
 
         ResponseEntity<ApiResponse<List<ProductCustomerV1Dto.ProductResponse>>> response = getProducts("?sort=price_asc");
 
@@ -98,9 +108,9 @@ class ProductCustomerListV1ApiE2ETest {
     @Test
     void sortsByLikeCountThenProductIdDescending() {
         Brand brand = brandRepository.save(Brand.create("Nike"));
-        Product mostLiked = productRepository.save(Product.create(brand, "Most", 10_000L));
-        Product olderTie = productRepository.save(Product.create(brand, "Older", 10_000L));
-        Product newerTie = productRepository.save(Product.create(brand, "Newer", 10_000L));
+        Product mostLiked = productRepository.save(Product.create(brand.getId(), "Most", 10_000L));
+        Product olderTie = productRepository.save(Product.create(brand.getId(), "Older", 10_000L));
+        Product newerTie = productRepository.save(Product.create(brand.getId(), "Newer", 10_000L));
         likeRepository.save(Like.create(1L, mostLiked.getId()));
         likeRepository.save(Like.create(2L, mostLiked.getId()));
         likeRepository.save(Like.create(1L, olderTie.getId()));
@@ -115,8 +125,8 @@ class ProductCustomerListV1ApiE2ETest {
     @Test
     void sortsLatestProductFirst() {
         Brand brand = brandRepository.save(Brand.create("Nike"));
-        Product older = productRepository.save(Product.create(brand, "Older", 10_000L));
-        Product newer = productRepository.save(Product.create(brand, "Newer", 10_000L));
+        Product older = productRepository.save(Product.create(brand.getId(), "Older", 10_000L));
+        Product newer = productRepository.save(Product.create(brand.getId(), "Newer", 10_000L));
 
         ResponseEntity<ApiResponse<List<ProductCustomerV1Dto.ProductResponse>>> response = getProducts("?sort=latest");
 
@@ -127,8 +137,8 @@ class ProductCustomerListV1ApiE2ETest {
     @Test
     void sortsSameCreatedAtByProductIdDescending() {
         Brand brand = brandRepository.save(Brand.create("Nike"));
-        Product olderId = productRepository.save(Product.create(brand, "Older", 10_000L));
-        Product newerId = productRepository.save(Product.create(brand, "Newer", 10_000L));
+        Product olderId = productRepository.save(Product.create(brand.getId(), "Older", 10_000L));
+        Product newerId = productRepository.save(Product.create(brand.getId(), "Newer", 10_000L));
         Timestamp sameCreatedAt = Timestamp.from(Instant.parse("2026-01-01T00:00:00Z"));
         jdbcTemplate.update(
             "UPDATE products SET created_at = ? WHERE id IN (?, ?)",

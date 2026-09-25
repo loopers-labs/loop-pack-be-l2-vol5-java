@@ -5,8 +5,8 @@ import com.loopers.domain.brand.BrandRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import java.util.Optional;
 import java.util.List;
+import java.util.Optional;
 
 @RequiredArgsConstructor
 @Component
@@ -26,26 +26,48 @@ public class BrandRepositoryImpl implements BrandRepository {
 
     @Override
     public Optional<Brand> findById(Long brandId) {
-        return brandJpaRepository.findById(brandId);
+        return brandJpaRepository.findById(brandId).map(BrandJpaMapper::toDomain);
+    }
+
+    @Override
+    public Optional<Brand> findActiveById(Long brandId) {
+        return brandJpaRepository.findByIdAndDeletedAtIsNull(brandId).map(BrandJpaMapper::toDomain);
     }
 
     @Override
     public List<Brand> findAll() {
-        return brandJpaRepository.findAll();
+        return map(brandJpaRepository.findAll());
     }
 
     @Override
     public List<Brand> findAllActive() {
-        return brandJpaRepository.findAllByDeletedAtIsNull();
+        return map(brandJpaRepository.findAllByDeletedAtIsNull());
     }
 
     @Override
     public List<Brand> findAllDeleted() {
-        return brandJpaRepository.findAllByDeletedAtIsNotNull();
+        return map(brandJpaRepository.findAllByDeletedAtIsNotNull());
+    }
+
+    @Override
+    public List<Brand> findAllByIds(List<Long> brandIds) {
+        return map(brandJpaRepository.findAllById(brandIds));
     }
 
     @Override
     public Brand save(Brand brand) {
-        return brandJpaRepository.save(brand);
+        BrandJpaEntity entity = brand.getId() == null
+            ? BrandJpaMapper.toNewEntity(brand)
+            : brandJpaRepository.findById(brand.getId()).orElseThrow(
+                () -> new IllegalArgumentException("Brand does not exist: " + brand.getId())
+            );
+        if (brand.getId() != null) {
+            BrandJpaMapper.update(brand, entity);
+        }
+        return BrandJpaMapper.toDomain(brandJpaRepository.save(entity));
+    }
+
+    private List<Brand> map(List<BrandJpaEntity> entities) {
+        return entities.stream().map(BrandJpaMapper::toDomain).toList();
     }
 }

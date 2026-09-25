@@ -1,9 +1,9 @@
 package com.loopers.application.brand;
 
 import com.loopers.domain.brand.Brand;
-import com.loopers.infrastructure.brand.BrandJpaRepository;
+import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.product.Product;
-import com.loopers.infrastructure.product.ProductJpaRepository;
+import com.loopers.domain.product.ProductRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import com.loopers.utils.DatabaseCleanUp;
@@ -29,10 +29,10 @@ class BrandFacadeIntegrationTest {
     private BrandFacade brandFacade;
 
     @Autowired
-    private BrandJpaRepository brandJpaRepository;
+    private BrandRepository brandRepository;
 
     @Autowired
-    private ProductJpaRepository productJpaRepository;
+    private ProductRepository productRepository;
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
@@ -55,9 +55,8 @@ class BrandFacadeIntegrationTest {
             BrandInfo result = brandFacade.register("Nike");
 
             // assert
-            brandJpaRepository.flush();
             entityManager.clear();
-            Brand savedBrand = brandJpaRepository.findById(result.id()).orElseThrow();
+            Brand savedBrand = brandRepository.findById(result.id()).orElseThrow();
             assertAll(
                 () -> assertThat(result.name()).isEqualTo("Nike"),
                 () -> assertThat(savedBrand.getName()).isEqualTo("Nike")
@@ -68,10 +67,9 @@ class BrandFacadeIntegrationTest {
         @Test
         void throwsException_whenNameMatchesDeletedBrand() {
             // arrange
-            Brand deletedBrand = brandJpaRepository.save(Brand.create("Nike"));
+            Brand deletedBrand = brandRepository.save(Brand.create("Nike"));
             deletedBrand.delete();
-            brandJpaRepository.save(deletedBrand);
-            brandJpaRepository.flush();
+            brandRepository.save(deletedBrand);
             entityManager.clear();
 
             // act
@@ -91,7 +89,7 @@ class BrandFacadeIntegrationTest {
         @Test
         void returnsBrandInfo_whenBrandExists() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
 
             // act
             BrandInfo result = brandFacade.getDetail(brand.getId());
@@ -108,10 +106,9 @@ class BrandFacadeIntegrationTest {
         @Test
         void returnsDeletedBrandInfo_whenBrandIsDeleted() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
             brand.delete();
-            brandJpaRepository.save(brand);
-            brandJpaRepository.flush();
+            brandRepository.save(brand);
             entityManager.clear();
 
             // act
@@ -145,15 +142,14 @@ class BrandFacadeIntegrationTest {
         @Test
         void updatesBrand_whenBrandIsNotDeleted() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
 
             // act
             BrandInfo result = brandFacade.update(brand.getId(), "Adidas");
 
             // assert
-            brandJpaRepository.flush();
             entityManager.clear();
-            Brand savedBrand = brandJpaRepository.findById(brand.getId()).orElseThrow();
+            Brand savedBrand = brandRepository.findById(brand.getId()).orElseThrow();
             assertAll(
                 () -> assertThat(result.name()).isEqualTo("Adidas"),
                 () -> assertThat(savedBrand.getName()).isEqualTo("Adidas")
@@ -164,10 +160,9 @@ class BrandFacadeIntegrationTest {
         @Test
         void throwsException_whenBrandIsDeleted() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
             brand.delete();
-            brandJpaRepository.save(brand);
-            brandJpaRepository.flush();
+            brandRepository.save(brand);
             entityManager.clear();
 
             // act
@@ -183,11 +178,10 @@ class BrandFacadeIntegrationTest {
         @Test
         void throwsException_whenNameMatchesDeletedBrand() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
-            Brand deletedBrand = brandJpaRepository.save(Brand.create("Adidas"));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
+            Brand deletedBrand = brandRepository.save(Brand.create("Adidas"));
             deletedBrand.delete();
-            brandJpaRepository.save(deletedBrand);
-            brandJpaRepository.flush();
+            brandRepository.save(deletedBrand);
             entityManager.clear();
 
             // act
@@ -207,24 +201,37 @@ class BrandFacadeIntegrationTest {
         @Test
         void deletesBrand_whenNoActiveProductExists() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
 
             // act
             brandFacade.delete(brand.getId());
 
             // assert
-            brandJpaRepository.flush();
             entityManager.clear();
-            Brand deletedBrand = brandJpaRepository.findById(brand.getId()).orElseThrow();
+            Brand deletedBrand = brandRepository.findById(brand.getId()).orElseThrow();
             assertThat(deletedBrand.getDeletedAt()).isNotNull();
+        }
+
+        @DisplayName("연결된 Product가 모두 삭제되었으면, Brand를 논리 삭제한다.")
+        @Test
+        void deletesBrand_whenOnlyDeletedProductsExist() {
+            Brand brand = brandRepository.save(Brand.create("Nike"));
+            Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
+            product.delete();
+            productRepository.save(product);
+
+            brandFacade.delete(brand.getId());
+
+            entityManager.clear();
+            assertThat(brandRepository.findById(brand.getId()).orElseThrow().getDeletedAt()).isNotNull();
         }
 
         @DisplayName("재고가 0인 Product라도 연결되어 있으면, CONFLICT 예외가 발생한다.")
         @Test
         void throwsException_whenActiveProductExists() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
-            productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
+            productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
 
             // act
             CoreException result = assertThrows(CoreException.class, () -> {
@@ -258,10 +265,10 @@ class BrandFacadeIntegrationTest {
         @Test
         void returnsAllBrands_whenStatusIsAll() {
             // arrange
-            Brand activeBrand = brandJpaRepository.save(Brand.create("Nike"));
-            Brand deletedBrand = brandJpaRepository.save(Brand.create("Adidas"));
+            Brand activeBrand = brandRepository.save(Brand.create("Nike"));
+            Brand deletedBrand = brandRepository.save(Brand.create("Adidas"));
             deletedBrand.delete();
-            brandJpaRepository.save(deletedBrand);
+            brandRepository.save(deletedBrand);
 
             // act
             List<BrandInfo> result = brandFacade.getList(BrandListStatus.ALL);
@@ -275,10 +282,10 @@ class BrandFacadeIntegrationTest {
         @Test
         void returnsActiveBrands_whenStatusIsActive() {
             // arrange
-            Brand activeBrand = brandJpaRepository.save(Brand.create("Nike"));
-            Brand deletedBrand = brandJpaRepository.save(Brand.create("Adidas"));
+            Brand activeBrand = brandRepository.save(Brand.create("Nike"));
+            Brand deletedBrand = brandRepository.save(Brand.create("Adidas"));
             deletedBrand.delete();
-            brandJpaRepository.save(deletedBrand);
+            brandRepository.save(deletedBrand);
 
             // act
             List<BrandInfo> result = brandFacade.getList(BrandListStatus.ACTIVE);
@@ -291,10 +298,10 @@ class BrandFacadeIntegrationTest {
         @Test
         void returnsDeletedBrands_whenStatusIsDeleted() {
             // arrange
-            Brand activeBrand = brandJpaRepository.save(Brand.create("Nike"));
-            Brand deletedBrand = brandJpaRepository.save(Brand.create("Adidas"));
+            Brand activeBrand = brandRepository.save(Brand.create("Nike"));
+            Brand deletedBrand = brandRepository.save(Brand.create("Adidas"));
             deletedBrand.delete();
-            brandJpaRepository.save(deletedBrand);
+            brandRepository.save(deletedBrand);
 
             // act
             List<BrandInfo> result = brandFacade.getList(BrandListStatus.DELETED);
@@ -311,7 +318,7 @@ class BrandFacadeIntegrationTest {
         @Test
         void returnsBrandInfo_whenBrandIsActive() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
 
             // act
             BrandInfo result = brandFacade.getCustomerDetail(brand.getId());
@@ -328,10 +335,9 @@ class BrandFacadeIntegrationTest {
         @Test
         void throwsException_whenBrandIsDeleted() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
             brand.delete();
-            brandJpaRepository.save(brand);
-            brandJpaRepository.flush();
+            brandRepository.save(brand);
             entityManager.clear();
 
             // act

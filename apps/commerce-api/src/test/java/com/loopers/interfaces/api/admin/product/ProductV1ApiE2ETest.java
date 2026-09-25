@@ -3,8 +3,8 @@ package com.loopers.interfaces.api.admin.product;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.product.Product;
-import com.loopers.infrastructure.brand.BrandJpaRepository;
-import com.loopers.infrastructure.product.ProductJpaRepository;
+import com.loopers.domain.brand.BrandRepository;
+import com.loopers.domain.product.ProductRepository;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.admin.AdminMockMvcClient;
 import com.loopers.utils.DatabaseCleanUp;
@@ -43,10 +43,10 @@ class ProductV1ApiE2ETest {
     private AdminMockMvcClient adminClient;
 
     @Autowired
-    private BrandJpaRepository brandJpaRepository;
+    private BrandRepository brandRepository;
 
     @Autowired
-    private ProductJpaRepository productJpaRepository;
+    private ProductRepository productRepository;
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
@@ -68,7 +68,7 @@ class ProductV1ApiE2ETest {
         @Test
         void returnsCreatedProduct_whenBrandIsNotDeleted() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
             HttpEntity<ProductV1Dto.CreateRequest> request = new HttpEntity<>(
                 new ProductV1Dto.CreateRequest(brand.getId(), "Air Max", 100_000L)
             );
@@ -83,7 +83,7 @@ class ProductV1ApiE2ETest {
             );
 
             // assert
-            Product savedProduct = productJpaRepository.findById(response.getBody().data().id()).orElseThrow();
+            Product savedProduct = productRepository.findById(response.getBody().data().id()).orElseThrow();
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED),
                 () -> assertThat(response.getBody().data().brandId()).isEqualTo(brand.getId()),
@@ -98,7 +98,7 @@ class ProductV1ApiE2ETest {
         @Test
         void returnsBadRequest_whenNameIsBlank() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
             HttpEntity<ProductV1Dto.CreateRequest> request = new HttpEntity<>(
                 new ProductV1Dto.CreateRequest(brand.getId(), " ", 100_000L)
             );
@@ -115,7 +115,7 @@ class ProductV1ApiE2ETest {
             // assert
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST),
-                () -> assertThat(productJpaRepository.count()).isZero()
+                () -> assertThat(productRepository.findAll()).isEmpty()
             );
         }
 
@@ -123,10 +123,9 @@ class ProductV1ApiE2ETest {
         @Test
         void returnsNotFound_whenBrandIsDeleted() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
             brand.delete();
-            brandJpaRepository.save(brand);
-            brandJpaRepository.flush();
+            brandRepository.save(brand);
             HttpEntity<ProductV1Dto.CreateRequest> request = new HttpEntity<>(
                 new ProductV1Dto.CreateRequest(brand.getId(), "Air Max", 100_000L)
             );
@@ -143,7 +142,7 @@ class ProductV1ApiE2ETest {
             // assert
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND),
-                () -> assertThat(productJpaRepository.count()).isZero()
+                () -> assertThat(productRepository.findAll()).isEmpty()
             );
         }
     }
@@ -155,8 +154,8 @@ class ProductV1ApiE2ETest {
         @Test
         void returnsUpdatedStock_whenQuantityIsZeroOrMore() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
-            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
+            Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
             HttpEntity<ProductV1Dto.StockUpdateRequest> request = new HttpEntity<>(
                 new ProductV1Dto.StockUpdateRequest(5L)
             );
@@ -171,7 +170,7 @@ class ProductV1ApiE2ETest {
             );
 
             // assert
-            Product savedProduct = productJpaRepository.findById(product.getId()).orElseThrow();
+            Product savedProduct = productRepository.findById(product.getId()).orElseThrow();
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK),
                 () -> assertThat(response.getBody().data().productId()).isEqualTo(product.getId()),
@@ -184,10 +183,10 @@ class ProductV1ApiE2ETest {
         @Test
         void keepsStock_whenQuantityIsNegative() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
-            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
+            Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
             product.changeStockTo(5L);
-            productJpaRepository.save(product);
+            productRepository.save(product);
             HttpEntity<ProductV1Dto.StockUpdateRequest> request = new HttpEntity<>(
                 new ProductV1Dto.StockUpdateRequest(-1L)
             );
@@ -202,7 +201,7 @@ class ProductV1ApiE2ETest {
             );
 
             // assert
-            Product savedProduct = productJpaRepository.findById(product.getId()).orElseThrow();
+            Product savedProduct = productRepository.findById(product.getId()).orElseThrow();
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST),
                 () -> assertThat(savedProduct.getStock().amount()).isEqualTo(5L)
@@ -213,11 +212,10 @@ class ProductV1ApiE2ETest {
         @Test
         void returnsNotFound_whenProductIsDeleted() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
-            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
+            Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
             product.delete();
-            productJpaRepository.save(product);
-            productJpaRepository.flush();
+            productRepository.save(product);
             HttpEntity<ProductV1Dto.StockUpdateRequest> request = new HttpEntity<>(
                 new ProductV1Dto.StockUpdateRequest(5L)
             );
@@ -243,10 +241,10 @@ class ProductV1ApiE2ETest {
         @Test
         void returnsProductInfo_whenProductExists() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
-            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
+            Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
             product.changeStockTo(5L);
-            productJpaRepository.save(product);
+            productRepository.save(product);
 
             // act
             ParameterizedTypeReference<ApiResponse<ProductV1Dto.ProductResponse>> responseType = new ParameterizedTypeReference<>() {};
@@ -273,11 +271,10 @@ class ProductV1ApiE2ETest {
         @Test
         void returnsDeletedProductInfo_whenProductIsDeleted() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
-            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
+            Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
             product.delete();
-            productJpaRepository.save(product);
-            productJpaRepository.flush();
+            productRepository.save(product);
             HttpEntity<Void> request = new HttpEntity<>(null);
 
             // act
@@ -320,8 +317,8 @@ class ProductV1ApiE2ETest {
         @Test
         void returnsUpdatedProduct_whenDetailsAreValid() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
-            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
+            Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
             HttpEntity<ProductV1Dto.UpdateRequest> request = new HttpEntity<>(
                 new ProductV1Dto.UpdateRequest("Air Force", 120_000L)
             );
@@ -336,12 +333,12 @@ class ProductV1ApiE2ETest {
             );
 
             // assert
-            Product savedProduct = productJpaRepository.findById(product.getId()).orElseThrow();
+            Product savedProduct = productRepository.findById(product.getId()).orElseThrow();
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK),
                 () -> assertThat(response.getBody().data().name()).isEqualTo("Air Force"),
                 () -> assertThat(response.getBody().data().price()).isEqualTo(120_000L),
-                () -> assertThat(savedProduct.getBrand().getId()).isEqualTo(brand.getId())
+                () -> assertThat(savedProduct.getBrandId()).isEqualTo(brand.getId())
             );
         }
 
@@ -349,8 +346,8 @@ class ProductV1ApiE2ETest {
         @Test
         void keepsDetails_whenNameIsBlank() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
-            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
+            Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
             HttpEntity<ProductV1Dto.UpdateRequest> request = new HttpEntity<>(
                 new ProductV1Dto.UpdateRequest(" ", 120_000L)
             );
@@ -365,7 +362,7 @@ class ProductV1ApiE2ETest {
             );
 
             // assert
-            Product savedProduct = productJpaRepository.findById(product.getId()).orElseThrow();
+            Product savedProduct = productRepository.findById(product.getId()).orElseThrow();
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST),
                 () -> assertThat(savedProduct.getName()).isEqualTo("Air Max"),
@@ -377,11 +374,10 @@ class ProductV1ApiE2ETest {
         @Test
         void returnsNotFound_whenProductIsDeleted() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
-            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
+            Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
             product.delete();
-            productJpaRepository.save(product);
-            productJpaRepository.flush();
+            productRepository.save(product);
             HttpEntity<ProductV1Dto.UpdateRequest> request = new HttpEntity<>(
                 new ProductV1Dto.UpdateRequest("Air Force", 120_000L)
             );
@@ -407,8 +403,8 @@ class ProductV1ApiE2ETest {
         @Test
         void deletesProduct_whenProductExists() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
-            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
+            Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
 
             // act
             ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
@@ -420,7 +416,7 @@ class ProductV1ApiE2ETest {
             );
 
             // assert
-            Product deletedProduct = productJpaRepository.findById(product.getId()).orElseThrow();
+            Product deletedProduct = productRepository.findById(product.getId()).orElseThrow();
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK),
                 () -> assertThat(deletedProduct.getDeletedAt()).isNotNull()
@@ -451,11 +447,11 @@ class ProductV1ApiE2ETest {
         @Test
         void returnsAllProducts_whenStatusIsOmitted() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
-            Product activeProduct = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
-            Product deletedProduct = productJpaRepository.save(Product.create(brand, "Air Force", 120_000L));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
+            Product activeProduct = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
+            Product deletedProduct = productRepository.save(Product.create(brand.getId(), "Air Force", 120_000L));
             deletedProduct.delete();
-            productJpaRepository.save(deletedProduct);
+            productRepository.save(deletedProduct);
 
             // act
             ParameterizedTypeReference<ApiResponse<List<ProductV1Dto.ProductResponse>>> responseType = new ParameterizedTypeReference<>() {};
@@ -476,11 +472,11 @@ class ProductV1ApiE2ETest {
         @Test
         void returnsActiveProducts_whenStatusIsActive() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
-            Product activeProduct = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
-            Product deletedProduct = productJpaRepository.save(Product.create(brand, "Air Force", 120_000L));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
+            Product activeProduct = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
+            Product deletedProduct = productRepository.save(Product.create(brand.getId(), "Air Force", 120_000L));
             deletedProduct.delete();
-            productJpaRepository.save(deletedProduct);
+            productRepository.save(deletedProduct);
 
             // act
             ParameterizedTypeReference<ApiResponse<List<ProductV1Dto.ProductResponse>>> responseType = new ParameterizedTypeReference<>() {};

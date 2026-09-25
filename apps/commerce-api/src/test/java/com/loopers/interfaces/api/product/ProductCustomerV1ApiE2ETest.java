@@ -2,10 +2,10 @@ package com.loopers.interfaces.api.product;
 
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.like.Like;
+import com.loopers.domain.like.LikeRepository;
 import com.loopers.domain.product.Product;
-import com.loopers.infrastructure.brand.BrandJpaRepository;
-import com.loopers.infrastructure.like.LikeJpaRepository;
-import com.loopers.infrastructure.product.ProductJpaRepository;
+import com.loopers.domain.brand.BrandRepository;
+import com.loopers.domain.product.ProductRepository;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
@@ -26,13 +26,13 @@ class ProductCustomerV1ApiE2ETest {
     private TestRestTemplate testRestTemplate;
 
     @Autowired
-    private BrandJpaRepository brandRepository;
+    private BrandRepository brandRepository;
 
     @Autowired
-    private ProductJpaRepository productRepository;
+    private ProductRepository productRepository;
 
     @Autowired
-    private LikeJpaRepository likeRepository;
+    private LikeRepository likeRepository;
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
@@ -45,7 +45,7 @@ class ProductCustomerV1ApiE2ETest {
     @Test
     void returnsCustomerProductDetail() {
         Brand brand = brandRepository.save(Brand.create("Nike"));
-        Product product = productRepository.save(Product.create(brand, "Air Max", 100_000L));
+        Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
         likeRepository.save(Like.create(1L, product.getId()));
 
         ParameterizedTypeReference<ApiResponse<ProductCustomerV1Dto.ProductResponse>> responseType =
@@ -65,9 +65,9 @@ class ProductCustomerV1ApiE2ETest {
     @Test
     void returnsNotFoundForDeletedProduct() {
         Brand brand = brandRepository.save(Brand.create("Nike"));
-        Product product = productRepository.save(Product.create(brand, "Air Max", 100_000L));
+        Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
         product.delete();
-        productRepository.saveAndFlush(product);
+        productRepository.save(product);
 
         ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
             "/api/v1/products/" + product.getId(),

@@ -9,6 +9,7 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import lombok.Getter;
 import java.time.ZonedDateTime;
+import java.util.Objects;
 
 /**
  * 생성/수정/삭제 정보를 자동으로 관리해준다.
@@ -57,8 +58,15 @@ public abstract class BaseEntity {
      * delete 연산은 멱등하게 동작할 수 있도록 한다. (삭제된 엔티티를 다시 삭제해도 동일한 결과가 나오도록)
      */
     public void delete() {
+        delete(ZonedDateTime.now());
+    }
+
+    /**
+     * 이미 결정된 도메인 삭제 시각을 영속성 모델에도 동일하게 반영한다.
+     */
+    public void delete(ZonedDateTime deletedAt) {
         if (this.deletedAt == null) {
-            this.deletedAt = ZonedDateTime.now();
+            this.deletedAt = Objects.requireNonNull(deletedAt, "deletedAt");
         }
     }
 

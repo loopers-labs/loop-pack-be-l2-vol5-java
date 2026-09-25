@@ -2,11 +2,11 @@ package com.loopers.interfaces.api.like;
 
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.product.Product;
+import com.loopers.domain.like.LikeRepository;
 import com.loopers.domain.user.User;
-import com.loopers.infrastructure.brand.BrandJpaRepository;
-import com.loopers.infrastructure.like.LikeJpaRepository;
-import com.loopers.infrastructure.product.ProductJpaRepository;
-import com.loopers.infrastructure.user.UserJpaRepository;
+import com.loopers.domain.brand.BrandRepository;
+import com.loopers.domain.product.ProductRepository;
+import com.loopers.domain.user.UserRepository;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
@@ -36,16 +36,16 @@ class LikeV1ApiE2ETest {
     private TestRestTemplate testRestTemplate;
 
     @Autowired
-    private BrandJpaRepository brandJpaRepository;
+    private BrandRepository brandRepository;
 
     @Autowired
-    private ProductJpaRepository productJpaRepository;
+    private ProductRepository productRepository;
 
     @Autowired
-    private LikeJpaRepository likeJpaRepository;
+    private LikeRepository likeRepository;
 
     @Autowired
-    private UserJpaRepository userJpaRepository;
+    private UserRepository userRepository;
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
@@ -54,7 +54,7 @@ class LikeV1ApiE2ETest {
 
     @BeforeEach
     void setUp() {
-        user = userJpaRepository.save(User.create());
+        user = userRepository.save(User.create());
     }
 
     @AfterEach
@@ -79,7 +79,7 @@ class LikeV1ApiE2ETest {
             // assert
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST),
-                () -> assertThat(likeJpaRepository.count()).isZero()
+                () -> assertThat(likeRepository.findAllByUserId(user.getId())).isEmpty()
             );
         }
 
@@ -99,7 +99,7 @@ class LikeV1ApiE2ETest {
             // assert
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND),
-                () -> assertThat(likeJpaRepository.count()).isZero()
+                () -> assertThat(likeRepository.findAllByUserId(user.getId())).isEmpty()
             );
         }
 
@@ -119,7 +119,7 @@ class LikeV1ApiE2ETest {
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK),
                 () -> assertThat(response.getBody().data().liked()).isTrue(),
-                () -> assertThat(likeJpaRepository.count()).isEqualTo(1L)
+                () -> assertThat(likeRepository.findAllByUserId(user.getId())).hasSize(1)
             );
         }
     }
@@ -144,14 +144,14 @@ class LikeV1ApiE2ETest {
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK),
                 () -> assertThat(response.getBody().data().liked()).isFalse(),
-                () -> assertThat(likeJpaRepository.count()).isZero()
+                () -> assertThat(likeRepository.findAllByUserId(user.getId())).isEmpty()
             );
         }
     }
 
     private Product saveProduct() {
-        Brand brand = brandJpaRepository.save(Brand.create("Nike"));
-        return productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+        Brand brand = brandRepository.save(Brand.create("Nike"));
+        return productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
     }
 
     private HttpHeaders headers() {

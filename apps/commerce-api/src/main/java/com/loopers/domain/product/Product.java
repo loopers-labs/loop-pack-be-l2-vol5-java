@@ -1,52 +1,64 @@
 package com.loopers.domain.product;
 
-import com.loopers.domain.BaseEntity;
-import com.loopers.domain.brand.Brand;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
-import jakarta.persistence.Table;
 
-@Entity
-@Table(name = "products")
-public class Product extends BaseEntity {
+import java.time.ZonedDateTime;
+
+public class Product {
 
     private static final int MAX_NAME_LENGTH = 100;
     private static final long MIN_PRICE = 1L;
     private static final long MAX_PRICE = 100_000_000L;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "brand_id", nullable = false, updatable = false)
-    private Brand brand;
-
-    @Column(name = "name", nullable = false, length = MAX_NAME_LENGTH)
+    private final Long id;
+    private final Long brandId;
+    private final ZonedDateTime createdAt;
     private String name;
-
-    @Column(name = "price", nullable = false)
     private long price;
-
-    @Column(name = "stock", nullable = false)
     private StockQuantity stock;
+    private ZonedDateTime deletedAt;
 
-    protected Product() {}
-
-    private Product(Brand brand, String name, long price) {
-        this.brand = brand;
+    private Product(
+        Long id,
+        Long brandId,
+        String name,
+        long price,
+        StockQuantity stock,
+        ZonedDateTime createdAt,
+        ZonedDateTime deletedAt
+    ) {
+        this.id = id;
+        this.brandId = brandId;
         this.name = validateName(name);
         this.price = validatePrice(price);
-        this.stock = new StockQuantity(0L);
+        this.stock = stock;
+        this.createdAt = createdAt;
+        this.deletedAt = deletedAt;
     }
 
-    public static Product create(Brand brand, String name, long price) {
-        return new Product(brand, name, price);
+    public static Product create(Long brandId, String name, long price) {
+        return new Product(null, brandId, name, price, new StockQuantity(0L), null, null);
     }
 
-    public Brand getBrand() {
-        return brand;
+    public static Product reconstitute(
+        Long id,
+        Long brandId,
+        String name,
+        long price,
+        long stock,
+        ZonedDateTime createdAt,
+        ZonedDateTime deletedAt
+    ) {
+        return new Product(id, brandId, name, price, new StockQuantity(stock), createdAt, deletedAt);
+    }
+
+    public Long getId() {
+        return id;
+    }
+
+    public Long getBrandId() {
+        return brandId;
     }
 
     public String getName() {
@@ -59,6 +71,14 @@ public class Product extends BaseEntity {
 
     public StockQuantity getStock() {
         return stock;
+    }
+
+    public ZonedDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public ZonedDateTime getDeletedAt() {
+        return deletedAt;
     }
 
     public void changeStockTo(long quantity) {
@@ -74,6 +94,12 @@ public class Product extends BaseEntity {
         long validatedPrice = validatePrice(price);
         this.name = validatedName;
         this.price = validatedPrice;
+    }
+
+    public void delete() {
+        if (deletedAt == null) {
+            deletedAt = ZonedDateTime.now();
+        }
     }
 
     private static String validateName(String name) {

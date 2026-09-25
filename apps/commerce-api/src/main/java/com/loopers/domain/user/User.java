@@ -1,16 +1,22 @@
 package com.loopers.domain.user;
 
-import com.loopers.domain.BaseEntity;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Table;
+public class User {
 
-@Entity
-@Table(name = "users")
-public class User extends BaseEntity {
+    private final Long id;
 
-    protected User() {}
+    private User(Long id) {
+        this.id = id;
+    }
 
     public static User create() {
-        return new User();
+        return new User(null);
+    }
+
+    public static User reconstitute(Long id) {
+        return new User(id);
+    }
+
+    public Long getId() {
+        return id;
     }
 }

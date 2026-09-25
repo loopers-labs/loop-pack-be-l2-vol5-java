@@ -1,41 +1,58 @@
 package com.loopers.domain.brand;
 
-import com.loopers.domain.BaseEntity;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
 
-@Entity
-@Table(
-    name = "brands",
-    uniqueConstraints = @UniqueConstraint(name = "uk_brand_name", columnNames = "name")
-)
-public class Brand extends BaseEntity {
+import java.time.ZonedDateTime;
+
+public class Brand {
 
     private static final int MAX_NAME_LENGTH = 100;
 
-    @Column(name = "name", nullable = false, length = MAX_NAME_LENGTH)
+    private final Long id;
+    private final ZonedDateTime createdAt;
     private String name;
+    private ZonedDateTime deletedAt;
 
-    protected Brand() {}
-
-    private Brand(String name) {
+    private Brand(Long id, String name, ZonedDateTime createdAt, ZonedDateTime deletedAt) {
+        this.id = id;
         this.name = validateName(name);
+        this.createdAt = createdAt;
+        this.deletedAt = deletedAt;
     }
 
     public static Brand create(String name) {
-        return new Brand(name);
+        return new Brand(null, name, null, null);
+    }
+
+    public static Brand reconstitute(Long id, String name, ZonedDateTime createdAt, ZonedDateTime deletedAt) {
+        return new Brand(id, name, createdAt, deletedAt);
+    }
+
+    public Long getId() {
+        return id;
     }
 
     public String getName() {
         return name;
     }
 
+    public ZonedDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public ZonedDateTime getDeletedAt() {
+        return deletedAt;
+    }
+
     public void rename(String name) {
         this.name = validateName(name);
+    }
+
+    public void delete() {
+        if (deletedAt == null) {
+            deletedAt = ZonedDateTime.now();
+        }
     }
 
     public static String validateName(String name) {

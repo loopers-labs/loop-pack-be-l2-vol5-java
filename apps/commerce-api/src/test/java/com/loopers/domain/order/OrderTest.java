@@ -12,7 +12,7 @@ class OrderTest {
     @Test
     void createsDraftAndCalculatesTotal() {
         Order order = Order.create(1L, List.of(
-            new OrderItem(10L, "Air Max", 100L, 2)
+            OrderItem.create(10L, "Air Max", 100L, 2)
         ));
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.DRAFT);
@@ -22,15 +22,15 @@ class OrderTest {
 
     @Test
     void rejectsNonPositiveQuantity() {
-        assertThatThrownBy(() -> new OrderItem(10L, "Air Max", 100L, 0))
+        assertThatThrownBy(() -> OrderItem.create(10L, "Air Max", 100L, 0))
             .hasMessageContaining("수량");
     }
 
     @Test
     void mergesDuplicateProductItems() {
         Order order = Order.create(1L, List.of(
-            new OrderItem(10L, "Air Max", 100L, 2),
-            new OrderItem(10L, "Air Max", 100L, 3)
+            OrderItem.create(10L, "Air Max", 100L, 2),
+            OrderItem.create(10L, "Air Max", 100L, 3)
         ));
 
         assertThat(order.getItems()).singleElement()
@@ -40,7 +40,7 @@ class OrderTest {
 
     @Test
     void savesPaymentAmountAndResultWhenConfirmed() {
-        Order order = Order.create(1L, List.of(new OrderItem(10L, "Air Max", 100L, 2)));
+        Order order = Order.create(1L, List.of(OrderItem.create(10L, "Air Max", 100L, 2)));
 
         order.confirm(200L);
 

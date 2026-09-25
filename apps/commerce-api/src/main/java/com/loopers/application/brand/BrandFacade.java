@@ -3,6 +3,7 @@ package com.loopers.application.brand;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandDeletionPolicy;
 import com.loopers.domain.brand.BrandRepository;
+import com.loopers.domain.product.ProductRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
@@ -16,7 +17,8 @@ import java.util.List;
 public class BrandFacade {
 
     private final BrandRepository brandRepository;
-    private final BrandDeletionPolicy brandDeletionPolicy;
+    private final ProductRepository productRepository;
+    private final BrandDeletionPolicy brandDeletionPolicy = new BrandDeletionPolicy();
 
     @Transactional(readOnly = true)
     public BrandInfo getDetail(Long brandId) {
@@ -26,11 +28,7 @@ public class BrandFacade {
 
     @Transactional(readOnly = true)
     public BrandInfo getCustomerDetail(Long brandId) {
-        Brand brand = findBrandById(brandId);
-        if (brand.getDeletedAt() != null) {
-            throw new CoreException(ErrorType.NOT_FOUND, "브랜드를 찾을 수 없습니다.");
-        }
-        return BrandInfo.from(brand);
+        return BrandInfo.from(findActiveBrandById(brandId));
     }
 
     @Transactional(readOnly = true)
@@ -45,10 +43,7 @@ public class BrandFacade {
 
     @Transactional
     public BrandInfo update(Long brandId, String name) {
-        Brand brand = findBrandById(brandId);
-        if (brand.getDeletedAt() != null) {
-            throw new CoreException(ErrorType.NOT_FOUND, "브랜드를 찾을 수 없습니다.");
-        }
+        Brand brand = findActiveBrandById(brandId);
 
         String validName = Brand.validateName(name);
         if (brandRepository.existsByNameAndIdNot(validName, brandId)) {
@@ -73,11 +68,18 @@ public class BrandFacade {
 
     @Transactional
     public void delete(Long brandId) {
-        brandDeletionPolicy.delete(brandId);
+        Brand brand = findActiveBrandById(brandId);
+        brandDeletionPolicy.delete(brand, productRepository.existsActiveByBrandId(brandId));
+        brandRepository.save(brand);
     }
 
     private Brand findBrandById(Long brandId) {
         return brandRepository.findById(brandId)
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "브랜드를 찾을 수 없습니다."));
+    }
+
+    private Brand findActiveBrandById(Long brandId) {
+        return brandRepository.findActiveById(brandId)
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "브랜드를 찾을 수 없습니다."));
     }
 }

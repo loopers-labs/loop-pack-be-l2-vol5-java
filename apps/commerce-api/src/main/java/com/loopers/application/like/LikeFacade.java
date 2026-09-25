@@ -2,6 +2,8 @@ package com.loopers.application.like;
 
 import com.loopers.domain.like.Like;
 import com.loopers.domain.like.LikeRepository;
+import com.loopers.domain.brand.Brand;
+import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.application.user.UserValidator;
@@ -13,6 +15,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @RequiredArgsConstructor
 @Component
@@ -20,6 +25,7 @@ public class LikeFacade {
 
     private final LikeRepository likeRepository;
     private final ProductRepository productRepository;
+    private final BrandRepository brandRepository;
     private final UserValidator userValidator;
 
     @Transactional
@@ -54,12 +60,21 @@ public class LikeFacade {
     @Transactional(readOnly = true)
     public List<CustomerProductInfo> getMyLikes(Long userId) {
         userValidator.validateExists(userId);
-        return likeRepository.findAllByUserId(userId).stream()
+        List<Product> products = likeRepository.findAllByUserId(userId).stream()
             .map(Like::getProductId)
             .map(productRepository::findById)
             .flatMap(java.util.Optional::stream)
             .filter(product -> product.getDeletedAt() == null)
-            .map(product -> CustomerProductInfo.from(product, likeRepository.countByProductId(product.getId())))
+            .toList();
+        List<Long> brandIds = products.stream().map(Product::getBrandId).distinct().toList();
+        Map<Long, Brand> brandsById = brandRepository.findAllByIds(brandIds).stream()
+            .collect(Collectors.toMap(Brand::getId, Function.identity()));
+        return products.stream()
+            .map(product -> CustomerProductInfo.from(
+                product,
+                brandsById.get(product.getBrandId()),
+                likeRepository.countByProductId(product.getId())
+            ))
             .toList();
     }
 

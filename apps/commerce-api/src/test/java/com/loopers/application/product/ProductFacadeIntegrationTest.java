@@ -2,8 +2,8 @@ package com.loopers.application.product;
 
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.product.Product;
-import com.loopers.infrastructure.brand.BrandJpaRepository;
-import com.loopers.infrastructure.product.ProductJpaRepository;
+import com.loopers.domain.brand.BrandRepository;
+import com.loopers.domain.product.ProductRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import com.loopers.utils.DatabaseCleanUp;
@@ -29,10 +29,10 @@ class ProductFacadeIntegrationTest {
     private ProductFacade productFacade;
 
     @Autowired
-    private BrandJpaRepository brandJpaRepository;
+    private BrandRepository brandRepository;
 
     @Autowired
-    private ProductJpaRepository productJpaRepository;
+    private ProductRepository productRepository;
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
@@ -52,21 +52,20 @@ class ProductFacadeIntegrationTest {
         @Test
         void registersProduct_whenBrandIsNotDeleted() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
 
             // act
             ProductInfo result = productFacade.register(brand.getId(), "Air Max", 100_000L);
 
             // assert
-            productJpaRepository.flush();
             entityManager.clear();
-            Product savedProduct = productJpaRepository.findById(result.id()).orElseThrow();
+            Product savedProduct = productRepository.findById(result.id()).orElseThrow();
             assertAll(
                 () -> assertThat(result.brandId()).isEqualTo(brand.getId()),
                 () -> assertThat(result.name()).isEqualTo("Air Max"),
                 () -> assertThat(result.price()).isEqualTo(100_000L),
                 () -> assertThat(result.stock()).isZero(),
-                () -> assertThat(savedProduct.getBrand().getId()).isEqualTo(brand.getId()),
+                () -> assertThat(savedProduct.getBrandId()).isEqualTo(brand.getId()),
                 () -> assertThat(savedProduct.getStock().amount()).isZero()
             );
         }
@@ -82,7 +81,7 @@ class ProductFacadeIntegrationTest {
             // assert
             assertAll(
                 () -> assertThat(result.getErrorType()).isEqualTo(ErrorType.NOT_FOUND),
-                () -> assertThat(productJpaRepository.count()).isZero()
+                () -> assertThat(productRepository.findAll()).isEmpty()
             );
         }
 
@@ -90,10 +89,9 @@ class ProductFacadeIntegrationTest {
         @Test
         void throwsException_whenBrandIsDeleted() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
             brand.delete();
-            brandJpaRepository.save(brand);
-            brandJpaRepository.flush();
+            brandRepository.save(brand);
             entityManager.clear();
 
             // act
@@ -104,7 +102,7 @@ class ProductFacadeIntegrationTest {
             // assert
             assertAll(
                 () -> assertThat(result.getErrorType()).isEqualTo(ErrorType.NOT_FOUND),
-                () -> assertThat(productJpaRepository.count()).isZero()
+                () -> assertThat(productRepository.findAll()).isEmpty()
             );
         }
     }
@@ -116,16 +114,15 @@ class ProductFacadeIntegrationTest {
         @Test
         void changesStock_whenProductIsNotDeleted() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
-            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
+            Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
 
             // act
             ProductInfo result = productFacade.changeStock(product.getId(), 5L);
 
             // assert
-            productJpaRepository.flush();
             entityManager.clear();
-            Product savedProduct = productJpaRepository.findById(product.getId()).orElseThrow();
+            Product savedProduct = productRepository.findById(product.getId()).orElseThrow();
             assertAll(
                 () -> assertThat(result.stock()).isEqualTo(5L),
                 () -> assertThat(savedProduct.getStock().amount()).isEqualTo(5L)
@@ -148,11 +145,10 @@ class ProductFacadeIntegrationTest {
         @Test
         void throwsException_whenProductIsDeleted() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
-            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
+            Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
             product.delete();
-            productJpaRepository.save(product);
-            productJpaRepository.flush();
+            productRepository.save(product);
             entityManager.clear();
 
             // act
@@ -172,10 +168,10 @@ class ProductFacadeIntegrationTest {
         @Test
         void returnsProductInfo_whenProductExists() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
-            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
+            Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
             product.changeStockTo(5L);
-            productJpaRepository.save(product);
+            productRepository.save(product);
 
             // act
             ProductInfo result = productFacade.getDetail(product.getId());
@@ -195,11 +191,10 @@ class ProductFacadeIntegrationTest {
         @Test
         void returnsDeletedProductInfo_whenProductIsDeleted() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
-            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
+            Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
             product.delete();
-            productJpaRepository.save(product);
-            productJpaRepository.flush();
+            productRepository.save(product);
             entityManager.clear();
 
             // act
@@ -229,20 +224,19 @@ class ProductFacadeIntegrationTest {
         @Test
         void updatesProduct_whenProductIsNotDeleted() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
-            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
+            Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
 
             // act
             ProductInfo result = productFacade.update(product.getId(), "Air Force", 120_000L);
 
             // assert
-            productJpaRepository.flush();
             entityManager.clear();
-            Product savedProduct = productJpaRepository.findById(product.getId()).orElseThrow();
+            Product savedProduct = productRepository.findById(product.getId()).orElseThrow();
             assertAll(
                 () -> assertThat(result.name()).isEqualTo("Air Force"),
                 () -> assertThat(result.price()).isEqualTo(120_000L),
-                () -> assertThat(savedProduct.getBrand().getId()).isEqualTo(brand.getId()),
+                () -> assertThat(savedProduct.getBrandId()).isEqualTo(brand.getId()),
                 () -> assertThat(savedProduct.getName()).isEqualTo("Air Force"),
                 () -> assertThat(savedProduct.getPrice()).isEqualTo(120_000L)
             );
@@ -252,11 +246,10 @@ class ProductFacadeIntegrationTest {
         @Test
         void throwsException_whenProductIsDeleted() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
-            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
+            Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
             product.delete();
-            productJpaRepository.save(product);
-            productJpaRepository.flush();
+            productRepository.save(product);
             entityManager.clear();
 
             // act
@@ -276,16 +269,15 @@ class ProductFacadeIntegrationTest {
         @Test
         void deletesProduct_whenProductExists() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
-            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
+            Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
 
             // act
             productFacade.delete(product.getId());
 
             // assert
-            productJpaRepository.flush();
             entityManager.clear();
-            Product deletedProduct = productJpaRepository.findById(product.getId()).orElseThrow();
+            Product deletedProduct = productRepository.findById(product.getId()).orElseThrow();
             assertThat(deletedProduct.getDeletedAt()).isNotNull();
         }
 
@@ -305,11 +297,10 @@ class ProductFacadeIntegrationTest {
         @Test
         void throwsException_whenProductIsDeleted() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
-            Product product = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
+            Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
             product.delete();
-            productJpaRepository.save(product);
-            productJpaRepository.flush();
+            productRepository.save(product);
             entityManager.clear();
 
             // act
@@ -329,11 +320,11 @@ class ProductFacadeIntegrationTest {
         @Test
         void returnsAllProducts_whenStatusIsAll() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
-            Product activeProduct = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
-            Product deletedProduct = productJpaRepository.save(Product.create(brand, "Air Force", 120_000L));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
+            Product activeProduct = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
+            Product deletedProduct = productRepository.save(Product.create(brand.getId(), "Air Force", 120_000L));
             deletedProduct.delete();
-            productJpaRepository.save(deletedProduct);
+            productRepository.save(deletedProduct);
 
             // act
             List<ProductInfo> result = productFacade.getList(ProductListStatus.ALL);
@@ -347,11 +338,11 @@ class ProductFacadeIntegrationTest {
         @Test
         void returnsActiveProducts_whenStatusIsActive() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
-            Product activeProduct = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
-            Product deletedProduct = productJpaRepository.save(Product.create(brand, "Air Force", 120_000L));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
+            Product activeProduct = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
+            Product deletedProduct = productRepository.save(Product.create(brand.getId(), "Air Force", 120_000L));
             deletedProduct.delete();
-            productJpaRepository.save(deletedProduct);
+            productRepository.save(deletedProduct);
 
             // act
             List<ProductInfo> result = productFacade.getList(ProductListStatus.ACTIVE);
@@ -364,11 +355,11 @@ class ProductFacadeIntegrationTest {
         @Test
         void returnsDeletedProducts_whenStatusIsDeleted() {
             // arrange
-            Brand brand = brandJpaRepository.save(Brand.create("Nike"));
-            Product activeProduct = productJpaRepository.save(Product.create(brand, "Air Max", 100_000L));
-            Product deletedProduct = productJpaRepository.save(Product.create(brand, "Air Force", 120_000L));
+            Brand brand = brandRepository.save(Brand.create("Nike"));
+            Product activeProduct = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
+            Product deletedProduct = productRepository.save(Product.create(brand.getId(), "Air Force", 120_000L));
             deletedProduct.delete();
-            productJpaRepository.save(deletedProduct);
+            productRepository.save(deletedProduct);
 
             // act
             List<ProductInfo> result = productFacade.getList(ProductListStatus.DELETED);

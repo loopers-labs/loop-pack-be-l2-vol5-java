@@ -1,6 +1,5 @@
 package com.loopers.domain.product;
 
-import com.loopers.domain.brand.Brand;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import org.junit.jupiter.api.DisplayName;
@@ -20,14 +19,12 @@ class ProductTest {
         @Test
         void createsProductWithZeroStock_whenNameAndPriceAreValid() {
             // arrange
-            Brand brand = Brand.create("Nike");
-
             // act
-            Product product = Product.create(brand, "Air Max", 100_000L);
+            Product product = Product.create(42L, "Air Max", 100_000L);
 
             // assert
             assertAll(
-                () -> assertThat(product.getBrand()).isEqualTo(brand),
+                () -> assertThat(product.getBrandId()).isEqualTo(42L),
                 () -> assertThat(product.getName()).isEqualTo("Air Max"),
                 () -> assertThat(product.getPrice()).isEqualTo(100_000L),
                 () -> assertThat(product.getStock().amount()).isZero()
@@ -39,7 +36,7 @@ class ProductTest {
         void throwsException_whenNameIsBlank() {
             // act
             CoreException result = assertThrows(CoreException.class, () -> {
-                Product.create(Brand.create("Nike"), " ", 100_000L);
+                Product.create(42L, " ", 100_000L);
             });
 
             // assert
@@ -51,7 +48,7 @@ class ProductTest {
         void throwsException_whenNameExceedsMaximumLength() {
             // act
             CoreException result = assertThrows(CoreException.class, () -> {
-                Product.create(Brand.create("Nike"), "a".repeat(101), 100_000L);
+                Product.create(42L, "a".repeat(101), 100_000L);
             });
 
             // assert
@@ -63,7 +60,7 @@ class ProductTest {
         void throwsException_whenPriceIsLessThanMinimum() {
             // act
             CoreException result = assertThrows(CoreException.class, () -> {
-                Product.create(Brand.create("Nike"), "Air Max", 0L);
+                Product.create(42L, "Air Max", 0L);
             });
 
             // assert
@@ -75,7 +72,7 @@ class ProductTest {
         void throwsException_whenPriceExceedsMaximum() {
             // act
             CoreException result = assertThrows(CoreException.class, () -> {
-                Product.create(Brand.create("Nike"), "Air Max", 100_000_001L);
+                Product.create(42L, "Air Max", 100_000_001L);
             });
 
             // assert
@@ -90,7 +87,7 @@ class ProductTest {
         @Test
         void changesStock_whenFinalQuantityIsZeroOrMore() {
             // arrange
-            Product product = Product.create(Brand.create("Nike"), "Air Max", 100_000L);
+            Product product = Product.create(42L, "Air Max", 100_000L);
 
             // act
             product.changeStockTo(5L);
@@ -103,7 +100,7 @@ class ProductTest {
         @Test
         void keepsStock_whenFinalQuantityIsNegative() {
             // arrange
-            Product product = Product.create(Brand.create("Nike"), "Air Max", 100_000L);
+            Product product = Product.create(42L, "Air Max", 100_000L);
             product.changeStockTo(5L);
 
             // act
@@ -126,7 +123,7 @@ class ProductTest {
         @Test
         void changesDetails_whenNameAndPriceAreValid() {
             // arrange
-            Product product = Product.create(Brand.create("Nike"), "Air Max", 100_000L);
+            Product product = Product.create(42L, "Air Max", 100_000L);
 
             // act
             product.updateDetails("Air Force", 120_000L);
@@ -142,7 +139,7 @@ class ProductTest {
         @Test
         void keepsDetails_whenNameOrPriceIsInvalid() {
             // arrange
-            Product product = Product.create(Brand.create("Nike"), "Air Max", 100_000L);
+            Product product = Product.create(42L, "Air Max", 100_000L);
 
             // act
             CoreException result = assertThrows(CoreException.class, () -> {

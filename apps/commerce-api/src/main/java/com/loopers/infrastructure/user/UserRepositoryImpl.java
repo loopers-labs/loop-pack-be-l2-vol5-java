@@ -18,6 +18,11 @@ public class UserRepositoryImpl implements UserRepository {
 
     @Override
     public User save(User user) {
-        return userJpaRepository.save(user);
+        UserJpaEntity entity = user.getId() == null
+            ? UserJpaMapper.toNewEntity()
+            : userJpaRepository.findById(user.getId()).orElseThrow(
+                () -> new IllegalArgumentException("User does not exist: " + user.getId())
+            );
+        return UserJpaMapper.toDomain(userJpaRepository.save(entity));
     }
 }

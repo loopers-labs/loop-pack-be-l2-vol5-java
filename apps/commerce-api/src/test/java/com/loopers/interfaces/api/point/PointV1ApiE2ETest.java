@@ -2,9 +2,9 @@ package com.loopers.interfaces.api.point;
 
 import com.loopers.domain.point.Point;
 import com.loopers.domain.point.PointBalance;
+import com.loopers.domain.point.PointRepository;
 import com.loopers.domain.user.User;
-import com.loopers.infrastructure.point.PointJpaRepository;
-import com.loopers.infrastructure.user.UserJpaRepository;
+import com.loopers.domain.user.UserRepository;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
@@ -36,10 +36,10 @@ class PointV1ApiE2ETest {
     private TestRestTemplate testRestTemplate;
 
     @Autowired
-    private PointJpaRepository pointJpaRepository;
+    private PointRepository pointRepository;
 
     @Autowired
-    private UserJpaRepository userJpaRepository;
+    private UserRepository userRepository;
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
@@ -57,7 +57,7 @@ class PointV1ApiE2ETest {
         void returnsSavedBalance_whenUserIdIsProvided() {
             // arrange
             User user = saveUser();
-            Point point = pointJpaRepository.save(Point.create(user.getId(), new PointBalance(300L)));
+            Point point = pointRepository.save(Point.create(user.getId(), new PointBalance(300L)));
             HttpEntity<Void> request = new HttpEntity<>(headers(point.getUserId()));
 
             // act
@@ -85,7 +85,7 @@ class PointV1ApiE2ETest {
         void returnsChargedBalance_whenValidRequestIsProvided() {
             // arrange
             User user = saveUser();
-            Point point = pointJpaRepository.save(Point.create(user.getId()));
+            Point point = pointRepository.save(Point.create(user.getId()));
             HttpEntity<PointV1Dto.ChargeRequest> request = new HttpEntity<>(
                 new PointV1Dto.ChargeRequest(200L),
                 headers(point.getUserId())
@@ -101,7 +101,7 @@ class PointV1ApiE2ETest {
             );
 
             // assert
-            Point savedPoint = pointJpaRepository.findByUserId(point.getUserId()).orElseThrow();
+            Point savedPoint = pointRepository.findByUserId(point.getUserId()).orElseThrow();
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK),
                 () -> assertThat(response.getBody().data().balance()).isEqualTo(200L),
@@ -114,7 +114,7 @@ class PointV1ApiE2ETest {
         void keepsBalance_whenAmountIsMissing() {
             // arrange
             User user = saveUser();
-            Point point = pointJpaRepository.save(Point.create(user.getId()));
+            Point point = pointRepository.save(Point.create(user.getId()));
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(Map.of(), headers(point.getUserId()));
 
             // act
@@ -127,7 +127,7 @@ class PointV1ApiE2ETest {
             );
 
             // assert
-            Point savedPoint = pointJpaRepository.findByUserId(point.getUserId()).orElseThrow();
+            Point savedPoint = pointRepository.findByUserId(point.getUserId()).orElseThrow();
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST),
                 () -> assertThat(savedPoint.getBalance().amount()).isZero()
@@ -139,7 +139,7 @@ class PointV1ApiE2ETest {
         void keepsBalance_whenAmountIsZero() {
             // arrange
             User user = saveUser();
-            Point point = pointJpaRepository.save(Point.create(user.getId()));
+            Point point = pointRepository.save(Point.create(user.getId()));
             HttpEntity<PointV1Dto.ChargeRequest> request = new HttpEntity<>(
                 new PointV1Dto.ChargeRequest(0L),
                 headers(point.getUserId())
@@ -155,7 +155,7 @@ class PointV1ApiE2ETest {
             );
 
             // assert
-            Point savedPoint = pointJpaRepository.findByUserId(point.getUserId()).orElseThrow();
+            Point savedPoint = pointRepository.findByUserId(point.getUserId()).orElseThrow();
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST),
                 () -> assertThat(savedPoint.getBalance().amount()).isZero()
@@ -167,7 +167,7 @@ class PointV1ApiE2ETest {
         void keepsBalance_whenAmountHasInvalidType() {
             // arrange
             User user = saveUser();
-            Point point = pointJpaRepository.save(Point.create(user.getId()));
+            Point point = pointRepository.save(Point.create(user.getId()));
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(
                 Map.of("amount", "invalid"),
                 headers(point.getUserId())
@@ -183,7 +183,7 @@ class PointV1ApiE2ETest {
             );
 
             // assert
-            Point savedPoint = pointJpaRepository.findByUserId(point.getUserId()).orElseThrow();
+            Point savedPoint = pointRepository.findByUserId(point.getUserId()).orElseThrow();
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST),
                 () -> assertThat(savedPoint.getBalance().amount()).isZero()
@@ -198,6 +198,6 @@ class PointV1ApiE2ETest {
     }
 
     private User saveUser() {
-        return userJpaRepository.save(User.create());
+        return userRepository.save(User.create());
     }
 }

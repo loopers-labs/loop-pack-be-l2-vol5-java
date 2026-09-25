@@ -13,6 +13,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Comparator;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @RequiredArgsConstructor
 @Component
@@ -32,8 +35,9 @@ public class ProductFacade {
     @Transactional(readOnly = true)
     public CustomerProductInfo getCustomerDetail(Long productId) {
         Product product = findActiveProductById(productId);
+        Brand brand = findActiveBrandById(product.getBrandId());
         long likeCount = likeRepository.countByProductId(productId);
-        return CustomerProductInfo.from(product, likeCount);
+        return CustomerProductInfo.from(product, brand, likeCount);
     }
 
     @Transactional(readOnly = true)
@@ -43,13 +47,22 @@ public class ProductFacade {
         }
         Comparator<Product> comparator = customerComparator(sort);
         List<Product> products = productRepository.findAllActive().stream()
-            .filter(product -> brandId == null || product.getBrand().getId().equals(brandId))
+            .filter(product -> brandId == null || product.getBrandId().equals(brandId))
             .sorted(comparator)
             .toList();
-        int from = Math.min(page * size, products.size());
-        int to = Math.min(from + size, products.size());
-        return products.subList(from, to).stream()
-            .map(product -> CustomerProductInfo.from(product, likeRepository.countByProductId(product.getId())))
+        long offset = (long) page * size;
+        int from = (int) Math.min(offset, products.size());
+        int to = (int) Math.min(offset + size, products.size());
+        List<Product> pageProducts = products.subList(from, to);
+        List<Long> brandIds = pageProducts.stream().map(Product::getBrandId).distinct().toList();
+        Map<Long, Brand> brandsById = brandRepository.findAllByIds(brandIds).stream()
+            .collect(Collectors.toMap(Brand::getId, Function.identity()));
+        return pageProducts.stream()
+            .map(product -> CustomerProductInfo.from(
+                product,
+                brandsById.get(product.getBrandId()),
+                likeRepository.countByProductId(product.getId())
+            ))
             .toList();
     }
 
@@ -83,7 +96,7 @@ public class ProductFacade {
     @Transactional
     public ProductInfo register(Long brandId, String name, long price) {
         Brand brand = findActiveBrandById(brandId);
-        Product product = Product.create(brand, name, price);
+        Product product = Product.create(brand.getId(), name, price);
 
         Product savedProduct = productRepository.save(product);
         return ProductInfo.from(savedProduct);
@@ -119,12 +132,8 @@ public class ProductFacade {
             throw new CoreException(ErrorType.BAD_REQUEST, "브랜드 ID는 필수입니다.");
         }
 
-        Brand brand = brandRepository.findById(brandId)
+        return brandRepository.findActiveById(brandId)
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "브랜드를 찾을 수 없습니다."));
-        if (brand.getDeletedAt() != null) {
-            throw new CoreException(ErrorType.NOT_FOUND, "브랜드를 찾을 수 없습니다.");
-        }
-        return brand;
     }
 
     private Product findActiveProductById(Long productId) {

@@ -1,21 +1,10 @@
 package com.loopers.domain.point;
 
-import com.loopers.domain.BaseEntity;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Table;
+public class Point {
 
-@Entity
-@Table(name = "points")
-public class Point extends BaseEntity {
-
-    @Column(name = "user_id", nullable = false, unique = true, updatable = false)
     private Long userId;
 
-    @Column(name = "balance", nullable = false)
     private PointBalance balance;
-
-    protected Point() {}
 
     private Point(Long userId, PointBalance balance) {
         this.userId = userId;

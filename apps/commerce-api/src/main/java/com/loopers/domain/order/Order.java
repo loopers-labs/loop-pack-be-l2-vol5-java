@@ -1,48 +1,45 @@
 package com.loopers.domain.order;
 
-import com.loopers.domain.BaseEntity;
-import jakarta.persistence.CascadeType;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.OneToMany;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.Table;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-@Entity
-@Table(name = "orders")
-public class Order extends BaseEntity {
+public class Order {
+
+    private final Long id;
 
     private Long userId;
 
-    @Enumerated(EnumType.STRING)
     private OrderStatus status;
 
     private long totalAmount;
 
     private Long paymentAmount;
 
-    @Enumerated(EnumType.STRING)
     private PaymentResult paymentResult;
 
-    @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
-    @JoinColumn(name = "order_id", nullable = false)
     private List<OrderItem> items = new ArrayList<>();
 
-    protected Order() {}
-
-    private Order(Long userId, List<OrderItem> items) {
+    private Order(Long id, Long userId, OrderStatus status, long totalAmount, Long paymentAmount,
+                  PaymentResult paymentResult, List<OrderItem> items) {
+        this.id = id;
         this.userId = userId;
-        this.status = OrderStatus.DRAFT;
-        items.forEach(this::addItem);
+        this.status = status;
+        this.totalAmount = totalAmount;
+        this.paymentAmount = paymentAmount;
+        this.paymentResult = paymentResult;
+        this.items = new ArrayList<>(items);
     }
 
     public static Order create(Long userId, List<OrderItem> items) {
-        return new Order(userId, items);
+        Order order = new Order(null, userId, OrderStatus.DRAFT, 0L, null, null, List.of());
+        items.forEach(order::addItem);
+        return order;
+    }
+
+    public static Order reconstitute(Long id, Long userId, OrderStatus status, long totalAmount,
+                                     Long paymentAmount, PaymentResult paymentResult, List<OrderItem> items) {
+        return new Order(id, userId, status, totalAmount, paymentAmount, paymentResult, items);
     }
 
     private void addItem(OrderItem item) {
@@ -53,6 +50,7 @@ public class Order extends BaseEntity {
         totalAmount = items.stream().mapToLong(OrderItem::getAmount).sum();
     }
 
+    public Long getId() { return id; }
     public Long getUserId() { return userId; }
     public OrderStatus getStatus() { return status; }
     public long getTotalAmount() { return totalAmount; }

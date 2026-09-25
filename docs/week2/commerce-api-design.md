@@ -52,6 +52,7 @@ flowchart LR
 ##### infrastructure
 
 - Domain의 Repository 인터페이스를 JPA·DB 기술로 구현한다.
+- Commerce의 Brand·Product·Like·Point·Order·User 도메인 모델과 JPA 엔티티를 분리한다. 각 Repository 구현체의 매퍼가 두 모델을 변환하고, Product 도메인은 브랜드 ID만 보유한다. `OrderItem`의 DB 식별자는 Infrastructure에 둔다.
 - DB, Redis, Kafka 등 외부 기술과의 연결을 책임진다.
 - Domain에 의존해 Repository 계약을 구현하고, 상위 계층에는 의존하지 않는다.
 
@@ -163,7 +164,7 @@ classDiagram
         합계
     }
 
-    Product "N" --> "1" Brand
+    Product "N" ..> "1" Brand : brandId
     Like "N" --> "1" User
     Like "N" --> "1" Product
 
@@ -183,6 +184,7 @@ classDiagram
 - [불변식] 삭제 여부와 관계없이 Brand 이름은 유일해야 한다.
 - [도메인 규칙] 상품 등록 시 (존재하고) 삭제되지 않은 Brand가 필요하다.
 - [도메인 규칙] Product 수정 시 기존 Brand는 변경하지 않는다.
+- [도메인 표현] Product는 Brand 객체가 아니라 `brandId`로 관계를 참조한다. DB 외래 키와 JPA 연관관계는 Infrastructure의 `ProductJpaEntity`가 관리하고, Repository 구현체가 도메인 객체와 JPA 엔티티를 변환한다.
 - [불변식] Product 이름은 공백만으로 구성될 수 없고, 1자 이상 100자 이하여야 한다.
 - [불변식] Product 가격은 1원 이상 100,000,000원 이하여야 한다.
 - [불변식] 삭제되지 않은 Product가 하나라도 있으면 Brand 삭제를 거절한다. 재고가 0개인 Product도 포함한다.
@@ -477,17 +479,16 @@ sequenceDiagram
 - [대안 1] Brand가 Product 컬렉션을 관리한다.
   - 객체만 보면 Brand 삭제 조건을 확인할 수 있다.
   - Brand 삭제 시 많은 Product를 읽을 수 있고, Brand와 Product가 강하게 결합된다.
-- [대안 2] Domain의 BrandDeletionPolicy가 삭제되지 않은 Product 존재 여부를 조회한 뒤 Brand 삭제를 요청한다.
+- [대안 2] Application이 삭제되지 않은 Product 존재 여부를 조회하고, Domain의 BrandDeletionPolicy가 그 결과로 삭제 가능 여부를 판단한다.
   - Brand와 Product의 경계를 유지할 수 있다.
   - 삭제 유스케이스가 조회·검증 협력을 추가로 책임져야 한다.
 
-- [설계 결정] Domain의 BrandDeletionPolicy가 삭제되지 않은 Product 존재 여부를 확인하고, 삭제 가능한 Brand의 삭제를 수행한다.
-  - Application은 Brand 조회·트랜잭션·저장 흐름을 관리한다.
+- [설계 결정] Application은 Brand 조회·Product 존재 여부 조회·트랜잭션·저장을 관리하고, Domain의 BrandDeletionPolicy는 전달받은 결과로 Brand 삭제를 판단·수행한다.
 - [이유] 삭제되지 않은 Product가 있으면 Brand를 삭제할 수 없다는 것은 Brand와 Product를 함께 보는 도메인 규칙이다.
   - Application에 검증을 두면 다른 삭제 경로에서 빠뜨릴 수 있다.
-  - BrandDeletionPolicy에 모으면 Product 컬렉션을 모두 읽지 않고도 규칙을 일관되게 지킬 수 있다.
-- [결과] BrandDeletionPolicy는 ProductRepository의 삭제되지 않은 Product 존재 여부 조회를 사용한다.
-  - Brand 삭제 기능은 모두 이 Policy를 거쳐야 하며, Application은 조건 검증을 직접 중복하지 않는다.
+  - BrandDeletionPolicy에 판단을 모으면 Product 컬렉션을 모두 읽지 않고도 규칙을 일관되게 지킬 수 있다.
+- [결과] Application이 ProductRepository의 삭제되지 않은 Product 존재 여부 조회를 호출해 결과를 Policy에 전달한다.
+  - Brand 삭제 기능은 모두 이 Policy를 거쳐야 하며, Application은 조건 판단을 직접 중복하지 않는다.
 
 ### 3.3 Like 관계 책임에 대한 설계 판단
 
@@ -541,3 +542,17 @@ sequenceDiagram
   - 현재 계약의 `400`·`404`·`409` 응답을 일관되게 유지하는 비용이 더 작다.
 - [결과] Point·Brand·Product·Like·Order는 `CoreException`과 `ErrorType`을 사용한다.
   - 도메인 오류와 HTTP 표현을 더 엄격히 분리해야 하는 요구가 생기면, `DomainException`과 오류 코드 매핑으로 전환한다.
+
+### 3.6 Commerce 도메인 모델과 JPA 매핑 분리
+
+- [문제] Commerce의 `Brand`·`Product`·`Like`·`Point`·`Order`·`OrderItem`·`User`가 JPA 어노테이션 또는 공통 JPA `BaseEntity`에 직접 의존했다. Product는 Brand JPA 관계를 도메인 객체 참조로 보유했다.
+- [대안 1] 도메인 객체에 JPA 매핑을 계속 둔다.
+  - 엔티티와 저장 모델이 하나라 코드와 매핑이 적다.
+  - 영속성 기술과 객체 관계가 도메인 규칙·모델에 함께 묶인다.
+- [대안 2] 순수 도메인 객체와 Infrastructure JPA 엔티티를 분리하고 Repository 구현체에서 변환한다.
+  - 도메인은 ID·상태·규칙에 집중하고, JPA 연관관계와 테이블 표현은 Infrastructure에 한정된다.
+  - 매퍼가 추가되고 도메인 객체가 JPA 관리 대상이 아니므로 변경 후 명시적으로 저장해야 한다.
+
+- [설계 결정] Commerce의 도메인 모델을 JPA 어노테이션과 공통 JPA `BaseEntity`에서 분리한다. Product는 `brandId`를 보유하고, Infrastructure의 `ProductJpaEntity`가 `BrandJpaEntity`와 외래 키 연관관계를 가진다. 주문 품목의 DB 식별자는 `OrderItemJpaEntity`가 소유한다.
+- [이유] 업무 규칙을 JPA 프록시·영속성 컨텍스트의 생명주기와 독립적으로 다루고, 도메인 객체가 영속성 API 없이도 동작하도록 한다. Order는 주문 품목을 Aggregate 내부 모델로 유지하면서 저장 관계를 JPA 엔티티에 한정한다.
+- [결과] Brand·Product·Like·Point·Order·User Repository 구현체의 매퍼가 도메인 객체와 저장 엔티티를 변환한다. 주문 확정처럼 객체를 변경하는 Application 흐름은 저장소에 변경 객체를 명시적으로 저장한다. 기존 Commerce 테이블과 컬럼·제약은 유지한다. Example starter 모델은 이번 분리 범위에 포함하지 않는다.

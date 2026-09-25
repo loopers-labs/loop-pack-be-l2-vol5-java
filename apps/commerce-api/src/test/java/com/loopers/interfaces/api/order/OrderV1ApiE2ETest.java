@@ -3,14 +3,15 @@ package com.loopers.interfaces.api.order;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.order.Order;
+import com.loopers.domain.order.OrderItem;
+import com.loopers.domain.order.OrderRepository;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.user.User;
-import com.loopers.infrastructure.brand.BrandJpaRepository;
-import com.loopers.infrastructure.order.OrderJpaRepository;
-import com.loopers.infrastructure.product.ProductJpaRepository;
-import com.loopers.infrastructure.point.PointJpaRepository;
-import com.loopers.infrastructure.user.UserJpaRepository;
+import com.loopers.domain.user.UserRepository;
+import com.loopers.domain.brand.BrandRepository;
+import com.loopers.domain.product.ProductRepository;
 import com.loopers.domain.point.Point;
+import com.loopers.domain.point.PointRepository;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.admin.AdminMockMvcClient;
 import com.loopers.interfaces.api.point.PointV1Dto;
@@ -37,11 +38,11 @@ import java.util.List;
 @AutoConfigureMockMvc
 class OrderV1ApiE2ETest {
     @Autowired TestRestTemplate rest;
-    @Autowired BrandJpaRepository brands;
-    @Autowired ProductJpaRepository products;
-    @Autowired OrderJpaRepository orders;
-    @Autowired PointJpaRepository points;
-    @Autowired UserJpaRepository users;
+    @Autowired BrandRepository brands;
+    @Autowired ProductRepository products;
+    @Autowired OrderRepository orders;
+    @Autowired PointRepository points;
+    @Autowired UserRepository users;
     @Autowired DatabaseCleanUp cleanup;
     @Autowired MockMvc mockMvc;
     @Autowired ObjectMapper objectMapper;
@@ -56,7 +57,7 @@ class OrderV1ApiE2ETest {
     void createsDraftOrderWithoutChangingStock() {
         User user = saveUser();
         Brand brand = brands.save(Brand.create("Nike"));
-        Product product = products.save(Product.create(brand, "Air Max", 100L));
+        Product product = products.save(Product.create(brand.getId(), "Air Max", 100L));
         HttpHeaders headers = new HttpHeaders();
         headers.set("X-USER-ID", user.getId().toString());
         OrderV1Dto.CreateRequest request = new OrderV1Dto.CreateRequest(
@@ -79,12 +80,12 @@ class OrderV1ApiE2ETest {
     void confirmsDraftOrderAndChargesPointAndStock() {
         User user = saveUser();
         Brand brand = brands.save(Brand.create("Nike"));
-        Product product = products.save(Product.create(brand, "Air Max", 100L));
+        Product product = products.save(Product.create(brand.getId(), "Air Max", 100L));
         product.changeStockTo(2L);
         products.save(product);
         points.save(Point.create(user.getId(), new com.loopers.domain.point.PointBalance(200L)));
         Order order = orders.save(Order.create(user.getId(), java.util.List.of(
-            new com.loopers.domain.order.OrderItem(product.getId(), product.getName(), product.getPrice(), 2))));
+            OrderItem.create(product.getId(), product.getName(), product.getPrice(), 2))));
         HttpHeaders headers = new HttpHeaders();
         headers.set("X-USER-ID", user.getId().toString());
 
@@ -105,12 +106,12 @@ class OrderV1ApiE2ETest {
     void rejectsConfirmAndRollsBackWhenBalanceIsInsufficient() {
         User user = saveUser();
         Brand brand = brands.save(Brand.create("Nike"));
-        Product product = products.save(Product.create(brand, "Air Max", 100L));
+        Product product = products.save(Product.create(brand.getId(), "Air Max", 100L));
         product.changeStockTo(2L);
         products.save(product);
         points.save(Point.create(user.getId(), new com.loopers.domain.point.PointBalance(100L)));
         Order order = orders.save(Order.create(user.getId(), List.of(
-            new com.loopers.domain.order.OrderItem(product.getId(), product.getName(), product.getPrice(), 2))));
+            OrderItem.create(product.getId(), product.getName(), product.getPrice(), 2))));
 
         ResponseEntity<ApiResponse<Object>> response = rest.exchange(
             "/api/v1/orders/" + order.getId() + "/confirm", org.springframework.http.HttpMethod.POST,
@@ -127,12 +128,12 @@ class OrderV1ApiE2ETest {
     void rejectsConfirmAndPreservesStateWhenStockIsInsufficient() {
         User user = saveUser();
         Brand brand = brands.save(Brand.create("Nike"));
-        Product product = products.save(Product.create(brand, "Air Max", 100L));
+        Product product = products.save(Product.create(brand.getId(), "Air Max", 100L));
         product.changeStockTo(1L);
         products.save(product);
         points.save(Point.create(user.getId(), new com.loopers.domain.point.PointBalance(200L)));
         Order order = orders.save(Order.create(user.getId(), List.of(
-            new com.loopers.domain.order.OrderItem(product.getId(), product.getName(), product.getPrice(), 2))));
+            OrderItem.create(product.getId(), product.getName(), product.getPrice(), 2))));
 
         ResponseEntity<ApiResponse<Object>> response = rest.exchange(
             "/api/v1/orders/" + order.getId() + "/confirm", org.springframework.http.HttpMethod.POST,
@@ -150,8 +151,8 @@ class OrderV1ApiE2ETest {
         User user = saveUser();
         points.save(Point.create(user.getId()));
         Brand brand = brands.save(Brand.create("Nike"));
-        Product airMax = products.save(Product.create(brand, "Air Max", 2_000L));
-        Product pegasus = products.save(Product.create(brand, "Pegasus", 1_000L));
+        Product airMax = products.save(Product.create(brand.getId(), "Air Max", 2_000L));
+        Product pegasus = products.save(Product.create(brand.getId(), "Pegasus", 1_000L));
         airMax.changeStockTo(2L);
         pegasus.changeStockTo(3L);
         products.save(airMax);
@@ -200,8 +201,8 @@ class OrderV1ApiE2ETest {
     void returnsOnlyOrdersOwnedByRequester() {
         User requester = saveUser();
         User otherUser = saveUser();
-        Order ownOrder = orders.save(Order.create(requester.getId(), List.of(new com.loopers.domain.order.OrderItem(1L, "Air Max", 100L, 1))));
-        orders.save(Order.create(otherUser.getId(), List.of(new com.loopers.domain.order.OrderItem(2L, "Pegasus", 100L, 1))));
+        Order ownOrder = orders.save(Order.create(requester.getId(), List.of(OrderItem.create(1L, "Air Max", 100L, 1))));
+        orders.save(Order.create(otherUser.getId(), List.of(OrderItem.create(2L, "Pegasus", 100L, 1))));
 
         ResponseEntity<ApiResponse<List<OrderV1Dto.OrderResponse>>> response = rest.exchange(
             "/api/v1/orders", org.springframework.http.HttpMethod.GET,
@@ -216,7 +217,7 @@ class OrderV1ApiE2ETest {
     void rejectsOtherUsersOrderDetail() {
         User requester = saveUser();
         User orderOwner = saveUser();
-        Order order = orders.save(Order.create(orderOwner.getId(), List.of(new com.loopers.domain.order.OrderItem(1L, "Air Max", 100L, 1))));
+        Order order = orders.save(Order.create(orderOwner.getId(), List.of(OrderItem.create(1L, "Air Max", 100L, 1))));
 
         ResponseEntity<ApiResponse<Object>> response = rest.exchange(
             "/api/v1/orders/" + order.getId(), org.springframework.http.HttpMethod.GET,
@@ -230,8 +231,8 @@ class OrderV1ApiE2ETest {
     void returnsAllOrdersForAdminWithPaymentResult() {
         User draftOrderUser = saveUser();
         User confirmedOrderUser = saveUser();
-        Order draft = orders.save(Order.create(draftOrderUser.getId(), List.of(new com.loopers.domain.order.OrderItem(1L, "Air Max", 100L, 1))));
-        Order confirmed = Order.create(confirmedOrderUser.getId(), List.of(new com.loopers.domain.order.OrderItem(2L, "Pegasus", 200L, 1)));
+        Order draft = orders.save(Order.create(draftOrderUser.getId(), List.of(OrderItem.create(1L, "Air Max", 100L, 1))));
+        Order confirmed = Order.create(confirmedOrderUser.getId(), List.of(OrderItem.create(2L, "Pegasus", 200L, 1)));
         confirmed.confirm(200L);
         confirmed = orders.save(confirmed);
 

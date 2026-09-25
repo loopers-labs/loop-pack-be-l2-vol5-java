@@ -11,11 +11,15 @@ public interface BrandRepository {
 
     Optional<Brand> findById(Long brandId);
 
+    Optional<Brand> findActiveById(Long brandId);
+
     List<Brand> findAll();
 
     List<Brand> findAllActive();
 
     List<Brand> findAllDeleted();
+
+    List<Brand> findAllByIds(List<Long> brandIds);
 
     Brand save(Brand brand);
 }
