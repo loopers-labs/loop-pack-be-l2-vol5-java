@@ -51,7 +51,9 @@ classDiagram
         <<Entity>>
         고객
         상품
+        취소 여부
         취소한다(요청자)
+        재등록한다(요청자)
     }
     class Order {
         <<Entity>>
