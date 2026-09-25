@@ -33,7 +33,7 @@ public class OrderItem {
     public int getQuantity() { return quantity; }
     public long getAmount() { return unitPrice * quantity; }
 
-    public void addQuantity(int additionalQuantity) {
+    void addQuantity(int additionalQuantity) {
         if (additionalQuantity <= 0) {
             throw new CoreException(ErrorType.BAD_REQUEST, "주문 수량은 양수여야 합니다.");
         }
