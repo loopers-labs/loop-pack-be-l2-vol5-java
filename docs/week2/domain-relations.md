@@ -20,6 +20,8 @@ classDiagram
     class Point {
         <<VO>>
         잔액
+        충전한다(충전액)
+        결제한다(결제액)
     }
     class Brand {
         <<Entity>>
@@ -43,6 +45,7 @@ classDiagram
     class Stock {
         <<VO>>
         수량
+        차감한다(수량)
     }
     class Like {
         <<Entity>>
@@ -66,6 +69,8 @@ classDiagram
         상품 이름
         수량
         단가
+        금액을 구한다()
+        수량을 바꾼다(수량)
     }
     class PaymentResult {
         <<VO>>
