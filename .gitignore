@@ -36,5 +36,8 @@ out/
 ### VS Code ###
 .vscode/
 
+# Local DDD/OOP study guide
+/docs/ddd-oop-guide.html
+
 ### Kotlin ###
 .kotlin
