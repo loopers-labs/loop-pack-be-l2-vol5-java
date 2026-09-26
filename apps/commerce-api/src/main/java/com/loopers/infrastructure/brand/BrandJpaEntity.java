@@ -6,9 +6,11 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
+@Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(
     name = "brands",
@@ -25,10 +27,6 @@ public class BrandJpaEntity extends BaseEntity {
 
     public static BrandJpaEntity create(String name) {
         return new BrandJpaEntity(name);
-    }
-
-    public String getName() {
-        return name;
     }
 
     public void rename(String name) {

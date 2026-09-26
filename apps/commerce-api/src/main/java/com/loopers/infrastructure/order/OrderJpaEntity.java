@@ -11,12 +11,14 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.util.ArrayList;
 import java.util.List;
 
 @Entity
+@Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(name = "orders")
 public class OrderJpaEntity extends BaseEntity {
@@ -33,6 +35,7 @@ public class OrderJpaEntity extends BaseEntity {
     @Enumerated(EnumType.STRING)
     private PaymentResult paymentResult;
 
+    @Getter(AccessLevel.NONE)
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
     @JoinColumn(name = "order_id", nullable = false)
     private List<OrderItemJpaEntity> items = new ArrayList<>();
@@ -50,26 +53,6 @@ public class OrderJpaEntity extends BaseEntity {
     public static OrderJpaEntity create(Long userId, OrderStatus status, long totalAmount, Long paymentAmount,
                                         PaymentResult paymentResult, List<OrderItemJpaEntity> items) {
         return new OrderJpaEntity(userId, status, totalAmount, paymentAmount, paymentResult, items);
-    }
-
-    public Long getUserId() {
-        return userId;
-    }
-
-    public OrderStatus getStatus() {
-        return status;
-    }
-
-    public long getTotalAmount() {
-        return totalAmount;
-    }
-
-    public Long getPaymentAmount() {
-        return paymentAmount;
-    }
-
-    public PaymentResult getPaymentResult() {
-        return paymentResult;
     }
 
     public List<OrderItemJpaEntity> getItems() {

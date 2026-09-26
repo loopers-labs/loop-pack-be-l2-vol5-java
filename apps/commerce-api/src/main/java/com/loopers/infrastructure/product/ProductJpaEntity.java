@@ -9,9 +9,11 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
+@Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(name = "products")
 public class ProductJpaEntity extends BaseEntity {
@@ -38,22 +40,6 @@ public class ProductJpaEntity extends BaseEntity {
 
     public static ProductJpaEntity create(BrandJpaEntity brand, String name, long price, long stock) {
         return new ProductJpaEntity(brand, name, price, stock);
-    }
-
-    public BrandJpaEntity getBrand() {
-        return brand;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public long getPrice() {
-        return price;
-    }
-
-    public long getStock() {
-        return stock;
     }
 
     public void updateDetails(String name, long price) {

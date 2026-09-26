@@ -5,9 +5,11 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
+@Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(name = "points")
 public class PointJpaEntity extends BaseEntity {
@@ -25,14 +27,6 @@ public class PointJpaEntity extends BaseEntity {
 
     public static PointJpaEntity create(Long userId, long balance) {
         return new PointJpaEntity(userId, balance);
-    }
-
-    public Long getUserId() {
-        return userId;
-    }
-
-    public long getBalance() {
-        return balance;
     }
 
     public void changeBalance(long balance) {

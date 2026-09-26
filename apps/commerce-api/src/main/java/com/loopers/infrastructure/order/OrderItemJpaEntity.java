@@ -7,9 +7,11 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
+@Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(name = "order_items")
 public class OrderItemJpaEntity {
@@ -39,21 +41,5 @@ public class OrderItemJpaEntity {
 
     public static OrderItemJpaEntity create(Long productId, String productName, long unitPrice, int quantity) {
         return new OrderItemJpaEntity(productId, productName, unitPrice, quantity);
-    }
-
-    public Long getProductId() {
-        return productId;
-    }
-
-    public String getProductName() {
-        return productName;
-    }
-
-    public long getUnitPrice() {
-        return unitPrice;
-    }
-
-    public int getQuantity() {
-        return quantity;
     }
 }

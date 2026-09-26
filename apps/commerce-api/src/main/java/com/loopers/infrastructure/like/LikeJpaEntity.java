@@ -6,9 +6,11 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
+@Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(
     name = "likes",
@@ -32,13 +34,5 @@ public class LikeJpaEntity extends BaseEntity {
 
     public static LikeJpaEntity create(Long userId, Long productId) {
         return new LikeJpaEntity(userId, productId);
-    }
-
-    public Long getUserId() {
-        return userId;
-    }
-
-    public Long getProductId() {
-        return productId;
     }
 }
