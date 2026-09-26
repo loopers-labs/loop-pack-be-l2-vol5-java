@@ -1,0 +1,1434 @@
+openapi: 3.0.3
+info:
+  title: Commerce API
+  version: v1
+  description: 브랜드, 상품, 좋아요, 포인트, 주문을 위한 HTTP API 계약
+servers:
+  - url: http://localhost:8080
+tags:
+  - name: Customer Brand
+  - name: Customer Product
+  - name: Like
+  - name: Point
+  - name: Customer Order
+  - name: Admin Brand
+  - name: Admin Product
+  - name: Admin Order
+paths:
+  /api/v1/brands/{brandId}:
+    get:
+      tags: [Customer Brand]
+      operationId: C01GetBrand
+      summary: 브랜드 상세 조회
+      security:
+        - userId: []
+      parameters:
+        - $ref: '#/components/parameters/BrandId'
+      responses:
+        '200':
+          description: 브랜드 상세
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerBrandEnvelope'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/UserNotIdentified'
+        '404':
+          description: BRAND_NOT_FOUND - 브랜드가 없거나 삭제됨
+          x-error-codes: [BRAND_NOT_FOUND]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/products:
+    get:
+      tags: [Customer Product]
+      operationId: C02GetProducts
+      summary: 상품 목록 조회
+      security:
+        - userId: []
+      parameters:
+        - $ref: '#/components/parameters/OptionalBrandId'
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [latest, price_asc, likes_desc]
+            default: latest
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: 삭제되지 않은 상품 목록
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerProductPageEnvelope'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/UserNotIdentified'
+
+  /api/v1/products/{productId}:
+    get:
+      tags: [Customer Product]
+      operationId: C03GetProduct
+      summary: 상품 상세 조회
+      security:
+        - userId: []
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      responses:
+        '200':
+          description: 상품 상세
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerProductEnvelope'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/UserNotIdentified'
+        '404':
+          description: PRODUCT_NOT_FOUND - 상품이 없거나 삭제됨
+          x-error-codes: [PRODUCT_NOT_FOUND]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/products/{productId}/likes:
+    post:
+      tags: [Like]
+      operationId: C04RegisterLike
+      summary: 좋아요 등록
+      security:
+        - userId: []
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      responses:
+        '201':
+          description: 좋아요를 처음 등록함
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+        '200':
+          description: 이미 등록된 좋아요이므로 상태를 유지함
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/UserNotIdentified'
+        '404':
+          description: PRODUCT_NOT_FOUND - 상품이 없거나 삭제됨
+          x-error-codes: [PRODUCT_NOT_FOUND]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    delete:
+      tags: [Like]
+      operationId: C05CancelLike
+      summary: 좋아요 취소
+      security:
+        - userId: []
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      responses:
+        '200':
+          description: 좋아요가 없어도 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/UserNotIdentified'
+
+  /api/v1/users/{userId}/likes:
+    get:
+      tags: [Like]
+      operationId: C06GetMyLikes
+      summary: 내 좋아요 목록 조회
+      security:
+        - userId: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: 삭제된 상품을 제외한 좋아요 상품 목록
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerProductPageEnvelope'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/UserNotIdentified'
+        '404':
+          description: USER_NOT_FOUND - 경로 사용자가 요청자와 다름
+          x-error-codes: [USER_NOT_FOUND]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/points/charge:
+    post:
+      tags: [Point]
+      operationId: C07ChargePoint
+      summary: 포인트 충전
+      security:
+        - userId: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChargeRequest'
+      responses:
+        '200':
+          description: 충전 후 잔액
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceEnvelope'
+        '400':
+          description: INVALID_REQUEST 또는 INVALID_CHARGE_AMOUNT
+          x-error-codes: [INVALID_REQUEST, INVALID_CHARGE_AMOUNT]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          $ref: '#/components/responses/UserNotIdentified'
+        '409':
+          description: POINT_BALANCE_LIMIT_EXCEEDED - 충전 후 잔액이 int64 범위를 넘음
+          x-error-codes: [POINT_BALANCE_LIMIT_EXCEEDED]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/points:
+    get:
+      tags: [Point]
+      operationId: C08GetBalance
+      summary: 내 포인트 잔액 조회
+      security:
+        - userId: []
+      responses:
+        '200':
+          description: 현재 잔액
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceEnvelope'
+        '401':
+          $ref: '#/components/responses/UserNotIdentified'
+
+  /api/v1/orders:
+    post:
+      tags: [Customer Order]
+      operationId: C09CreateOrder
+      summary: 주문 생성
+      security:
+        - userId: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderRequest'
+      responses:
+        '201':
+          description: DRAFT 상태의 주문 상세
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDetailEnvelope'
+        '400':
+          description: INVALID_REQUEST, EMPTY_ORDER_ITEMS 또는 INVALID_ORDER_QUANTITY
+          x-error-codes: [INVALID_REQUEST, EMPTY_ORDER_ITEMS, INVALID_ORDER_QUANTITY]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          $ref: '#/components/responses/UserNotIdentified'
+        '404':
+          description: PRODUCT_NOT_FOUND - 상품이 없거나 삭제됨
+          x-error-codes: [PRODUCT_NOT_FOUND]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    get:
+      tags: [Customer Order]
+      operationId: C11GetMyOrders
+      summary: 내 주문 목록 조회
+      security:
+        - userId: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: 주문 생성 최신순의 주문 요약 목록
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderSummaryPageEnvelope'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/UserNotIdentified'
+
+  /api/v1/orders/{orderId}/confirm:
+    post:
+      tags: [Customer Order]
+      operationId: C10ConfirmOrder
+      summary: 주문 확정
+      security:
+        - userId: []
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      responses:
+        '200':
+          description: CONFIRMED 상태의 주문 상세
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDetailEnvelope'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/UserNotIdentified'
+        '404':
+          description: ORDER_NOT_FOUND - 주문이 없거나 다른 고객의 주문
+          x-error-codes: [ORDER_NOT_FOUND]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          description: ORDER_ALREADY_CONFIRMED, PRODUCT_NOT_AVAILABLE, INSUFFICIENT_STOCK 또는 INSUFFICIENT_POINT
+          x-error-codes: [ORDER_ALREADY_CONFIRMED, PRODUCT_NOT_AVAILABLE, INSUFFICIENT_STOCK, INSUFFICIENT_POINT]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/orders/{orderId}:
+    get:
+      tags: [Customer Order]
+      operationId: C12GetMyOrder
+      summary: 내 주문 상세 조회
+      security:
+        - userId: []
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      responses:
+        '200':
+          description: 주문 상세
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDetailEnvelope'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/UserNotIdentified'
+        '404':
+          description: ORDER_NOT_FOUND - 주문이 없거나 다른 고객의 주문
+          x-error-codes: [ORDER_NOT_FOUND]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api-admin/v1/brands:
+    get:
+      tags: [Admin Brand]
+      operationId: A01GetBrands
+      summary: 관리자 브랜드 목록 조회
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: 삭제된 브랜드를 포함한 목록
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminBrandPageEnvelope'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+    post:
+      tags: [Admin Brand]
+      operationId: A02CreateBrand
+      summary: 브랜드 생성
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BrandRequest'
+      responses:
+        '201':
+          description: 생성된 브랜드
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminBrandEnvelope'
+        '400':
+          description: INVALID_REQUEST 또는 INVALID_BRAND_NAME
+          x-error-codes: [INVALID_REQUEST, INVALID_BRAND_NAME]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '409':
+          description: DUPLICATE_BRAND_NAME
+          x-error-codes: [DUPLICATE_BRAND_NAME]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api-admin/v1/brands/{brandId}:
+    get:
+      tags: [Admin Brand]
+      operationId: A03GetBrand
+      summary: 관리자 브랜드 상세 조회
+      parameters:
+        - $ref: '#/components/parameters/BrandId'
+      responses:
+        '200':
+          description: 삭제된 브랜드를 포함한 상세
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminBrandEnvelope'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          description: BRAND_NOT_FOUND - 존재한 적이 없는 브랜드
+          x-error-codes: [BRAND_NOT_FOUND]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    put:
+      tags: [Admin Brand]
+      operationId: A04UpdateBrand
+      summary: 브랜드 수정
+      parameters:
+        - $ref: '#/components/parameters/BrandId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BrandRequest'
+      responses:
+        '200':
+          description: 수정된 브랜드
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminBrandEnvelope'
+        '400':
+          description: INVALID_REQUEST 또는 INVALID_BRAND_NAME
+          x-error-codes: [INVALID_REQUEST, INVALID_BRAND_NAME]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          description: BRAND_NOT_FOUND - 브랜드가 없거나 삭제됨
+          x-error-codes: [BRAND_NOT_FOUND]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          description: DUPLICATE_BRAND_NAME
+          x-error-codes: [DUPLICATE_BRAND_NAME]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    delete:
+      tags: [Admin Brand]
+      operationId: A05DeleteBrand
+      summary: 브랜드 삭제
+      parameters:
+        - $ref: '#/components/parameters/BrandId'
+      responses:
+        '200':
+          description: 삭제 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          description: BRAND_NOT_FOUND - 브랜드가 없거나 이미 삭제됨
+          x-error-codes: [BRAND_NOT_FOUND]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          description: BRAND_HAS_PRODUCTS
+          x-error-codes: [BRAND_HAS_PRODUCTS]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api-admin/v1/products:
+    get:
+      tags: [Admin Product]
+      operationId: A06GetProducts
+      summary: 관리자 상품 목록 조회
+      parameters:
+        - $ref: '#/components/parameters/OptionalBrandId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: 삭제된 상품을 포함한 목록
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProductPageEnvelope'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+    post:
+      tags: [Admin Product]
+      operationId: A07CreateProduct
+      summary: 상품 생성
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProductRequest'
+      responses:
+        '201':
+          description: 재고가 0인 새 상품
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProductEnvelope'
+        '400':
+          description: INVALID_REQUEST, INVALID_PRODUCT_NAME 또는 INVALID_PRODUCT_PRICE
+          x-error-codes: [INVALID_REQUEST, INVALID_PRODUCT_NAME, INVALID_PRODUCT_PRICE]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          description: BRAND_NOT_FOUND - 브랜드가 없거나 삭제됨
+          x-error-codes: [BRAND_NOT_FOUND]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          description: DUPLICATE_PRODUCT_NAME
+          x-error-codes: [DUPLICATE_PRODUCT_NAME]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api-admin/v1/products/{productId}:
+    get:
+      tags: [Admin Product]
+      operationId: A08GetProduct
+      summary: 관리자 상품 상세 조회
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      responses:
+        '200':
+          description: 삭제된 상품을 포함한 상세
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProductEnvelope'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          description: PRODUCT_NOT_FOUND - 존재한 적이 없는 상품
+          x-error-codes: [PRODUCT_NOT_FOUND]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    put:
+      tags: [Admin Product]
+      operationId: A09UpdateProduct
+      summary: 상품 수정
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProductRequest'
+      responses:
+        '200':
+          description: 수정된 상품
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProductEnvelope'
+        '400':
+          description: INVALID_REQUEST, INVALID_PRODUCT_NAME 또는 INVALID_PRODUCT_PRICE
+          x-error-codes: [INVALID_REQUEST, INVALID_PRODUCT_NAME, INVALID_PRODUCT_PRICE]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          description: PRODUCT_NOT_FOUND - 상품이 없거나 삭제됨
+          x-error-codes: [PRODUCT_NOT_FOUND]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          description: DUPLICATE_PRODUCT_NAME 또는 BRAND_CHANGE_NOT_ALLOWED
+          x-error-codes: [DUPLICATE_PRODUCT_NAME, BRAND_CHANGE_NOT_ALLOWED]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    delete:
+      tags: [Admin Product]
+      operationId: A10DeleteProduct
+      summary: 상품 삭제
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      responses:
+        '200':
+          description: 삭제 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          description: PRODUCT_NOT_FOUND - 상품이 없거나 이미 삭제됨
+          x-error-codes: [PRODUCT_NOT_FOUND]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api-admin/v1/products/{productId}/stock:
+    put:
+      tags: [Admin Product]
+      operationId: A11ChangeStock
+      summary: 상품 재고 변경
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockRequest'
+      responses:
+        '200':
+          description: 재고가 변경된 상품
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProductEnvelope'
+        '400':
+          description: INVALID_REQUEST 또는 INVALID_STOCK_QUANTITY
+          x-error-codes: [INVALID_REQUEST, INVALID_STOCK_QUANTITY]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          description: PRODUCT_NOT_FOUND - 상품이 없거나 삭제됨
+          x-error-codes: [PRODUCT_NOT_FOUND]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api-admin/v1/orders:
+    get:
+      tags: [Admin Order]
+      operationId: A12GetOrders
+      summary: 관리자 주문 목록 조회
+      parameters:
+        - name: buyerId
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: 주문 생성 최신순의 주문 요약 목록
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOrderSummaryPageEnvelope'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+
+  /api-admin/v1/orders/{orderId}:
+    get:
+      tags: [Admin Order]
+      operationId: A13GetOrder
+      summary: 관리자 주문 상세 조회
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      responses:
+        '200':
+          description: 구매자 식별자를 포함한 주문 상세
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOrderDetailEnvelope'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          description: ORDER_NOT_FOUND
+          x-error-codes: [ORDER_NOT_FOUND]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+components:
+  securitySchemes:
+    userId:
+      type: apiKey
+      in: header
+      name: X-USER-ID
+      description: 요청자를 식별하는 사용자 ID
+
+  parameters:
+    BrandId:
+      name: brandId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    OptionalBrandId:
+      name: brandId
+      in: query
+      required: false
+      schema:
+        type: integer
+        format: int64
+    ProductId:
+      name: productId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        format: int32
+        minimum: 0
+        default: 0
+    Size:
+      name: size
+      in: query
+      required: false
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+        maximum: 100
+        default: 20
+
+  responses:
+    InvalidRequest:
+      description: INVALID_REQUEST - 요청 형식이 올바르지 않음
+      x-error-codes: [INVALID_REQUEST]
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    UserNotIdentified:
+      description: USER_NOT_IDENTIFIED - 요청자를 식별할 수 없음
+      x-error-codes: [USER_NOT_IDENTIFIED]
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    AdminForbidden:
+      description: ADMIN 역할이 없어 접근이 거절됨. 공통 응답 형식을 사용하지 않는다.
+
+  schemas:
+    SuccessMetadata:
+      type: object
+      required: [result]
+      properties:
+        result:
+          type: string
+          enum: [SUCCESS]
+      example:
+        result: SUCCESS
+    ErrorMetadata:
+      type: object
+      required: [result, errorCode, message]
+      properties:
+        result:
+          type: string
+          enum: [FAIL]
+        errorCode:
+          type: string
+          description: api-contract.md의 오류 코드
+          enum:
+            - INVALID_REQUEST
+            - INVALID_STOCK_QUANTITY
+            - INVALID_POINT_BALANCE
+            - INVALID_PRODUCT_NAME
+            - INVALID_PRODUCT_PRICE
+            - INVALID_BRAND_NAME
+            - INVALID_CHARGE_AMOUNT
+            - INVALID_ORDER_QUANTITY
+            - EMPTY_ORDER_ITEMS
+            - USER_NOT_IDENTIFIED
+            - BRAND_NOT_FOUND
+            - PRODUCT_NOT_FOUND
+            - ORDER_NOT_FOUND
+            - USER_NOT_FOUND
+            - LIKE_NOT_FOUND
+            - NOT_FOUND
+            - METHOD_NOT_ALLOWED
+            - DUPLICATE_BRAND_NAME
+            - DUPLICATE_PRODUCT_NAME
+            - BRAND_HAS_PRODUCTS
+            - ORDER_ALREADY_CONFIRMED
+            - BRAND_CHANGE_NOT_ALLOWED
+            - PRODUCT_NOT_AVAILABLE
+            - INSUFFICIENT_STOCK
+            - INSUFFICIENT_POINT
+            - POINT_BALANCE_LIMIT_EXCEEDED
+            - INTERNAL_ERROR
+        message:
+          type: string
+      example:
+        result: FAIL
+        errorCode: PRODUCT_NOT_FOUND
+        message: 상품을 찾을 수 없습니다.
+    SuccessEnvelope:
+      type: object
+      required: [meta]
+      properties:
+        meta:
+          $ref: '#/components/schemas/SuccessMetadata'
+    ErrorEnvelope:
+      type: object
+      required: [meta]
+      properties:
+        meta:
+          $ref: '#/components/schemas/ErrorMetadata'
+
+    BrandRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: 앞뒤 공백을 제외한 브랜드 이름
+      example:
+        name: Nike
+    CreateProductRequest:
+      type: object
+      required: [brandId, name, price]
+      properties:
+        brandId:
+          type: integer
+          format: int64
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: 앞뒤 공백을 제외한 상품 이름
+        price:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 1000000000
+      example:
+        brandId: 1
+        name: 운동화
+        price: 3000
+    UpdateProductRequest:
+      type: object
+      required: [name, price]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: 앞뒤 공백을 제외한 상품 이름
+        price:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 1000000000
+        brandId:
+          type: integer
+          format: int64
+          description: 보내는 경우 현재 브랜드 ID와 같아야 한다.
+      example:
+        name: 새 운동화
+        price: 3500
+        brandId: 1
+    StockRequest:
+      type: object
+      required: [quantity]
+      properties:
+        quantity:
+          type: integer
+          format: int32
+          minimum: 0
+          description: 변경 후 최종 재고 수량
+      example:
+        quantity: 10
+    ChargeRequest:
+      type: object
+      required: [amount]
+      properties:
+        amount:
+          type: integer
+          format: int64
+          minimum: 1
+      example:
+        amount: 10000
+    CreateOrderRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/OrderItemRequest'
+    OrderItemRequest:
+      type: object
+      required: [productId, quantity]
+      properties:
+        productId:
+          type: integer
+          format: int64
+        quantity:
+          type: integer
+          format: int32
+          minimum: 1
+      example:
+        productId: 10
+        quantity: 2
+
+    CustomerBrand:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+      example:
+        id: 1
+        name: Nike
+    AdminBrand:
+      type: object
+      required: [id, name, deleted]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        deleted:
+          type: boolean
+      example:
+        id: 1
+        name: Nike
+        deleted: false
+    ProductBrand:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+    CustomerProduct:
+      type: object
+      required: [id, name, price, brand, likeCount, soldOut]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        price:
+          type: integer
+          format: int64
+        brand:
+          $ref: '#/components/schemas/ProductBrand'
+        likeCount:
+          type: integer
+          format: int64
+          minimum: 0
+        soldOut:
+          type: boolean
+      example:
+        id: 10
+        name: 운동화
+        price: 3000
+        brand:
+          id: 1
+          name: Nike
+        likeCount: 3
+        soldOut: false
+    AdminProduct:
+      type: object
+      required: [id, name, price, brand, stock, deleted]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        price:
+          type: integer
+          format: int64
+        brand:
+          $ref: '#/components/schemas/ProductBrand'
+        stock:
+          type: integer
+          format: int32
+          minimum: 0
+        deleted:
+          type: boolean
+      example:
+        id: 10
+        name: 운동화
+        price: 3000
+        brand:
+          id: 1
+          name: Nike
+        stock: 10
+        deleted: false
+    Balance:
+      type: object
+      required: [balance]
+      properties:
+        balance:
+          type: integer
+          format: int64
+          minimum: 0
+      example:
+        balance: 10000
+    OrderStatus:
+      type: string
+      enum: [DRAFT, CONFIRMED]
+    OrderItem:
+      type: object
+      required: [productId, productName, quantity, unitPrice, amount]
+      properties:
+        productId:
+          type: integer
+          format: int64
+        productName:
+          type: string
+          description: 주문 생성 시점의 상품 이름
+        quantity:
+          type: integer
+          format: int32
+          minimum: 1
+        unitPrice:
+          type: integer
+          format: int64
+          minimum: 1
+          description: 주문 생성 시점의 상품 가격
+        amount:
+          type: integer
+          format: int64
+          minimum: 1
+    Payment:
+      type: object
+      required: [amount, paidAt]
+      properties:
+        amount:
+          type: integer
+          format: int64
+          minimum: 1
+        paidAt:
+          type: string
+          format: date-time
+    OrderDetail:
+      type: object
+      required: [id, status, items, totalAmount]
+      properties:
+        id:
+          type: integer
+          format: int64
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/OrderItem'
+        totalAmount:
+          type: integer
+          format: int64
+          minimum: 1
+        payment:
+          $ref: '#/components/schemas/Payment'
+    OrderSummary:
+      type: object
+      required: [id, status, itemCount, totalAmount]
+      properties:
+        id:
+          type: integer
+          format: int64
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        itemCount:
+          type: integer
+          format: int32
+          minimum: 1
+        totalAmount:
+          type: integer
+          format: int64
+          minimum: 1
+        paymentAmount:
+          type: integer
+          format: int64
+          minimum: 1
+    AdminOrderDetail:
+      type: object
+      required: [id, buyerId, status, items, totalAmount]
+      properties:
+        id:
+          type: integer
+          format: int64
+        buyerId:
+          type: integer
+          format: int64
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/OrderItem'
+        totalAmount:
+          type: integer
+          format: int64
+          minimum: 1
+        payment:
+          $ref: '#/components/schemas/Payment'
+    AdminOrderSummary:
+      type: object
+      required: [id, buyerId, status, itemCount, totalAmount]
+      properties:
+        id:
+          type: integer
+          format: int64
+        buyerId:
+          type: integer
+          format: int64
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        itemCount:
+          type: integer
+          format: int32
+          minimum: 1
+        totalAmount:
+          type: integer
+          format: int64
+          minimum: 1
+        paymentAmount:
+          type: integer
+          format: int64
+          minimum: 1
+
+    CustomerProductPage:
+      type: object
+      required: [content, page, size, totalElements]
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerProduct'
+        page:
+          type: integer
+          format: int32
+          minimum: 0
+        size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 100
+        totalElements:
+          type: integer
+          format: int64
+          minimum: 0
+    AdminBrandPage:
+      type: object
+      required: [content, page, size, totalElements]
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminBrand'
+        page:
+          type: integer
+          format: int32
+          minimum: 0
+        size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 100
+        totalElements:
+          type: integer
+          format: int64
+          minimum: 0
+    AdminProductPage:
+      type: object
+      required: [content, page, size, totalElements]
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminProduct'
+        page:
+          type: integer
+          format: int32
+          minimum: 0
+        size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 100
+        totalElements:
+          type: integer
+          format: int64
+          minimum: 0
+    OrderSummaryPage:
+      type: object
+      required: [content, page, size, totalElements]
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderSummary'
+        page:
+          type: integer
+          format: int32
+          minimum: 0
+        size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 100
+        totalElements:
+          type: integer
+          format: int64
+          minimum: 0
+    AdminOrderSummaryPage:
+      type: object
+      required: [content, page, size, totalElements]
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminOrderSummary'
+        page:
+          type: integer
+          format: int32
+          minimum: 0
+        size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 100
+        totalElements:
+          type: integer
+          format: int64
+          minimum: 0
+
+    CustomerBrandEnvelope:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: '#/components/schemas/SuccessMetadata'
+        data:
+          $ref: '#/components/schemas/CustomerBrand'
+    AdminBrandEnvelope:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: '#/components/schemas/SuccessMetadata'
+        data:
+          $ref: '#/components/schemas/AdminBrand'
+    CustomerProductEnvelope:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: '#/components/schemas/SuccessMetadata'
+        data:
+          $ref: '#/components/schemas/CustomerProduct'
+    AdminProductEnvelope:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: '#/components/schemas/SuccessMetadata'
+        data:
+          $ref: '#/components/schemas/AdminProduct'
+    BalanceEnvelope:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: '#/components/schemas/SuccessMetadata'
+        data:
+          $ref: '#/components/schemas/Balance'
+    OrderDetailEnvelope:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: '#/components/schemas/SuccessMetadata'
+        data:
+          $ref: '#/components/schemas/OrderDetail'
+    AdminOrderDetailEnvelope:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: '#/components/schemas/SuccessMetadata'
+        data:
+          $ref: '#/components/schemas/AdminOrderDetail'
+    CustomerProductPageEnvelope:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: '#/components/schemas/SuccessMetadata'
+        data:
+          $ref: '#/components/schemas/CustomerProductPage'
+    AdminBrandPageEnvelope:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: '#/components/schemas/SuccessMetadata'
+        data:
+          $ref: '#/components/schemas/AdminBrandPage'
+    AdminProductPageEnvelope:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: '#/components/schemas/SuccessMetadata'
+        data:
+          $ref: '#/components/schemas/AdminProductPage'
+    OrderSummaryPageEnvelope:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: '#/components/schemas/SuccessMetadata'
+        data:
+          $ref: '#/components/schemas/OrderSummaryPage'
+    AdminOrderSummaryPageEnvelope:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: '#/components/schemas/SuccessMetadata'
+        data:
+          $ref: '#/components/schemas/AdminOrderSummaryPage'

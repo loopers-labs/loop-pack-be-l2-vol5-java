@@ -38,6 +38,14 @@ subprojects {
     apply(plugin = "org.springframework.boot")
     apply(plugin = "io.spring.dependency-management")
     apply(plugin = "jacoco")
+    apply(plugin = "checkstyle")
+
+    configure<CheckstyleExtension> {
+        toolVersion = "10.26.1"
+        configFile = rootProject.file("config/checkstyle/checkstyle.xml")
+        isIgnoreFailures = false
+        maxWarnings = 0
+    }
 
     dependencyManagement {
         imports {
@@ -91,7 +99,7 @@ subprojects {
         reports {
             xml.required = true
             csv.required = false
-            html.required = false
+            html.required = true
         }
         afterEvaluate {
             classDirectories.setFrom(
@@ -103,6 +111,9 @@ subprojects {
             )
         }
     }
+
+    // 커버리지 리포트를 check 에 연결한다. 임계값은 걸지 않고 탐색용으로만 쓴다.
+    tasks.named("check") { dependsOn(tasks.withType<JacocoReport>()) }
 }
 
 // module-container 는 task 를 실행하지 않도록 한다.

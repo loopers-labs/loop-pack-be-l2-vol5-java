@@ -38,3 +38,10 @@ out/
 
 ### Kotlin ###
 .kotlin
+
+### Local agent skills ###
+/.agents/skills/
+/.claude/skills
+
+### Local test planning ###
+/docs/week2/test-plan.md

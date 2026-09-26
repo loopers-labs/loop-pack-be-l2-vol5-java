@@ -1,10 +1,13 @@
 package com.loopers.interfaces.api;
 
-import com.loopers.domain.example.ExampleModel;
-import com.loopers.infrastructure.example.ExampleJpaRepository;
-import com.loopers.interfaces.api.example.ExampleV1Dto;
+import com.loopers.brand.domain.Brand;
+import com.loopers.brand.interfaces.BrandV1Dto;
+import com.loopers.support.fixture.CommerceFixture;
+import com.loopers.user.domain.User;
 import com.loopers.utils.DatabaseCleanUp;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,9 +15,11 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
@@ -22,25 +27,37 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class ContractClassificationTest {
 
-    private static final String EXAMPLES_ENDPOINT = "/api/v1/examples/";
+    private static final String BRANDS_ENDPOINT = "/api/v1/brands/";
     private static final String UNMAPPED_ENDPOINT = "/api/v1/unmapped";
-    private static final String EXAMPLE_NAME = "예시 제목";
-    private static final String EXAMPLE_DESCRIPTION = "예시 설명";
+    private static final String BRAND_NAME = "Nike";
+    private static final String USER_HEADER = "X-USER-ID";
     private static final long MISSING_ID = -1L;
 
     private final TestRestTemplate testRestTemplate;
-    private final ExampleJpaRepository exampleJpaRepository;
     private final DatabaseCleanUp databaseCleanUp;
+    private final EntityManager entityManager;
+    private final PlatformTransactionManager transactionManager;
+
+    private CommerceFixture fixture;
+    private User requester;
 
     @Autowired
     ContractClassificationTest(
         TestRestTemplate testRestTemplate,
-        ExampleJpaRepository exampleJpaRepository,
-        DatabaseCleanUp databaseCleanUp
+        DatabaseCleanUp databaseCleanUp,
+        EntityManager entityManager,
+        PlatformTransactionManager transactionManager
     ) {
         this.testRestTemplate = testRestTemplate;
-        this.exampleJpaRepository = exampleJpaRepository;
         this.databaseCleanUp = databaseCleanUp;
+        this.entityManager = entityManager;
+        this.transactionManager = transactionManager;
+    }
+
+    @BeforeEach
+    void setUp() {
+        fixture = new CommerceFixture(entityManager, transactionManager);
+        requester = fixture.user();
     }
 
     @AfterEach
@@ -52,11 +69,11 @@ class ContractClassificationTest {
     @Test
     void classifiesExistingNumericIdAsSuccess() {
         // arrange
-        ExampleModel example = exampleJpaRepository.save(new ExampleModel(EXAMPLE_NAME, EXAMPLE_DESCRIPTION));
+        Brand brand = fixture.brand(BRAND_NAME);
 
         // act
-        ResponseEntity<ApiResponse<ExampleV1Dto.ExampleResponse>> response = get(EXAMPLES_ENDPOINT + example.getId());
-        ApiResponse<ExampleV1Dto.ExampleResponse> body = response.getBody();
+        ResponseEntity<ApiResponse<BrandV1Dto.CustomerBrandResponse>> response = get(BRANDS_ENDPOINT + brand.getId());
+        ApiResponse<BrandV1Dto.CustomerBrandResponse> body = response.getBody();
 
         // assert
         assertAll(
@@ -66,9 +83,8 @@ class ContractClassificationTest {
             () -> assertThat(body.meta().errorCode()).isNull(),
             () -> assertThat(body.meta().message()).isNull(),
             () -> assertThat(body.data()).isNotNull(),
-            () -> assertThat(body.data().id()).isEqualTo(example.getId()),
-            () -> assertThat(body.data().name()).isEqualTo(EXAMPLE_NAME),
-            () -> assertThat(body.data().description()).isEqualTo(EXAMPLE_DESCRIPTION)
+            () -> assertThat(body.data().id()).isEqualTo(brand.getId()),
+            () -> assertThat(body.data().name()).isEqualTo(BRAND_NAME)
         );
     }
 
@@ -76,16 +92,16 @@ class ContractClassificationTest {
     @Test
     void classifiesNonNumericIdAsBadRequest() {
         // act
-        ResponseEntity<ApiResponse<ExampleV1Dto.ExampleResponse>> response = get(EXAMPLES_ENDPOINT + "abc");
-        ApiResponse<ExampleV1Dto.ExampleResponse> body = response.getBody();
+        ResponseEntity<ApiResponse<BrandV1Dto.CustomerBrandResponse>> response = get(BRANDS_ENDPOINT + "abc");
+        ApiResponse<BrandV1Dto.CustomerBrandResponse> body = response.getBody();
 
         // assert
         assertFailureContract(
             response,
             body,
             HttpStatus.BAD_REQUEST,
-            "Bad Request",
-            "요청 파라미터 'exampleId' (타입: Long)의 값 'abc'이(가) 잘못되었습니다."
+            "INVALID_REQUEST",
+            "요청 파라미터 'brandId' (타입: Long)의 값 'abc'이(가) 잘못되었습니다."
         );
     }
 
@@ -93,16 +109,16 @@ class ContractClassificationTest {
     @Test
     void classifiesMissingNumericIdAsNotFound() {
         // act
-        ResponseEntity<ApiResponse<ExampleV1Dto.ExampleResponse>> response = get(EXAMPLES_ENDPOINT + MISSING_ID);
-        ApiResponse<ExampleV1Dto.ExampleResponse> body = response.getBody();
+        ResponseEntity<ApiResponse<BrandV1Dto.CustomerBrandResponse>> response = get(BRANDS_ENDPOINT + MISSING_ID);
+        ApiResponse<BrandV1Dto.CustomerBrandResponse> body = response.getBody();
 
         // assert
         assertFailureContract(
             response,
             body,
             HttpStatus.NOT_FOUND,
-            "Not Found",
-            "[id = -1] 예시를 찾을 수 없습니다."
+            "BRAND_NOT_FOUND",
+            "브랜드를 찾을 수 없습니다."
         );
     }
 
@@ -110,33 +126,57 @@ class ContractClassificationTest {
     @Test
     void classifiesUnmappedUrlAsNotFound() {
         // act
-        ResponseEntity<ApiResponse<ExampleV1Dto.ExampleResponse>> response = get(UNMAPPED_ENDPOINT);
-        ApiResponse<ExampleV1Dto.ExampleResponse> body = response.getBody();
+        ResponseEntity<ApiResponse<BrandV1Dto.CustomerBrandResponse>> response = get(UNMAPPED_ENDPOINT);
+        ApiResponse<BrandV1Dto.CustomerBrandResponse> body = response.getBody();
 
         // assert
         assertFailureContract(
             response,
             body,
             HttpStatus.NOT_FOUND,
-            "Not Found",
-            "존재하지 않는 요청입니다."
+            "NOT_FOUND",
+            "요청한 경로를 찾을 수 없습니다."
         );
     }
 
-    @DisplayName("미존재와 미매핑은 message 를 제외한 모든 응답 항목이 같다.")
+    @DisplayName("연결된 URL에 허용하지 않는 method를 요청하면 METHOD_NOT_ALLOWED로 분류한다.")
     @Test
-    void missingResourceAndUnmappedUrlDifferOnlyByMessage() {
+    void classifiesUnsupportedMethodAsMethodNotAllowed() {
+        // arrange
+        Brand brand = fixture.brand(BRAND_NAME);
+
         // act
-        ResponseEntity<ApiResponse<ExampleV1Dto.ExampleResponse>> missing = get(EXAMPLES_ENDPOINT + MISSING_ID);
-        ResponseEntity<ApiResponse<ExampleV1Dto.ExampleResponse>> unmapped = get(UNMAPPED_ENDPOINT);
-        ApiResponse<ExampleV1Dto.ExampleResponse> missingBody = missing.getBody();
-        ApiResponse<ExampleV1Dto.ExampleResponse> unmappedBody = unmapped.getBody();
+        ResponseEntity<ApiResponse<BrandV1Dto.CustomerBrandResponse>> response = exchange(
+            BRANDS_ENDPOINT + brand.getId(),
+            HttpMethod.POST
+        );
+        ApiResponse<BrandV1Dto.CustomerBrandResponse> body = response.getBody();
+
+        // assert
+        assertFailureContract(
+            response,
+            body,
+            HttpStatus.METHOD_NOT_ALLOWED,
+            "METHOD_NOT_ALLOWED",
+            "허용하지 않는 요청 방식입니다."
+        );
+    }
+
+    @DisplayName("미존재 자원과 미매핑 URL은 모두 404지만 서로 다른 오류 코드로 분류한다.")
+    @Test
+    void distinguishesMissingResourceFromUnmappedUrl() {
+        // act
+        ResponseEntity<ApiResponse<BrandV1Dto.CustomerBrandResponse>> missing = get(BRANDS_ENDPOINT + MISSING_ID);
+        ResponseEntity<ApiResponse<BrandV1Dto.CustomerBrandResponse>> unmapped = get(UNMAPPED_ENDPOINT);
+        ApiResponse<BrandV1Dto.CustomerBrandResponse> missingBody = missing.getBody();
+        ApiResponse<BrandV1Dto.CustomerBrandResponse> unmappedBody = unmapped.getBody();
 
         // assert
         assertAll(
             () -> assertThat(missing.getStatusCode()).isEqualTo(unmapped.getStatusCode()),
             () -> assertThat(missingBody.meta().result()).isEqualTo(unmappedBody.meta().result()),
-            () -> assertThat(missingBody.meta().errorCode()).isEqualTo(unmappedBody.meta().errorCode()),
+            () -> assertThat(missingBody.meta().errorCode()).isEqualTo("BRAND_NOT_FOUND"),
+            () -> assertThat(unmappedBody.meta().errorCode()).isEqualTo("NOT_FOUND"),
             () -> assertThat(missingBody.data()).isNull(),
             () -> assertThat(unmappedBody.data()).isNull(),
             () -> assertThat(missingBody.meta().message()).isNotBlank(),
@@ -149,11 +189,11 @@ class ContractClassificationTest {
     @Test
     void omitsNullFieldsFromResponseBody() {
         // arrange
-        ExampleModel example = exampleJpaRepository.save(new ExampleModel(EXAMPLE_NAME, EXAMPLE_DESCRIPTION));
+        Brand brand = fixture.brand(BRAND_NAME);
 
         // act
-        String successBody = getRaw(EXAMPLES_ENDPOINT + example.getId());
-        String failureBody = getRaw(EXAMPLES_ENDPOINT + "abc");
+        String successBody = getRaw(BRANDS_ENDPOINT + brand.getId());
+        String failureBody = getRaw(BRANDS_ENDPOINT + "abc");
 
         // assert
         assertAll(
@@ -165,18 +205,38 @@ class ContractClassificationTest {
     }
 
     private String getRaw(String endpoint) {
-        return testRestTemplate.getForEntity(endpoint, String.class).getBody();
+        HttpHeaders headers = requesterHeaders();
+        return testRestTemplate.exchange(endpoint, HttpMethod.GET, new HttpEntity<>(null, headers), String.class)
+            .getBody();
     }
 
-    private ResponseEntity<ApiResponse<ExampleV1Dto.ExampleResponse>> get(String endpoint) {
-        ParameterizedTypeReference<ApiResponse<ExampleV1Dto.ExampleResponse>> responseType =
+    private ResponseEntity<ApiResponse<BrandV1Dto.CustomerBrandResponse>> get(String endpoint) {
+        return exchange(endpoint, HttpMethod.GET);
+    }
+
+    private ResponseEntity<ApiResponse<BrandV1Dto.CustomerBrandResponse>> exchange(
+        String endpoint,
+        HttpMethod method
+    ) {
+        ParameterizedTypeReference<ApiResponse<BrandV1Dto.CustomerBrandResponse>> responseType =
             new ParameterizedTypeReference<>() {};
-        return testRestTemplate.exchange(endpoint, HttpMethod.GET, new HttpEntity<>(null), responseType);
+        return testRestTemplate.exchange(
+            endpoint,
+            method,
+            new HttpEntity<>(null, requesterHeaders()),
+            responseType
+        );
+    }
+
+    private HttpHeaders requesterHeaders() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set(USER_HEADER, requester.getId().toString());
+        return headers;
     }
 
     private void assertFailureContract(
-        ResponseEntity<ApiResponse<ExampleV1Dto.ExampleResponse>> response,
-        ApiResponse<ExampleV1Dto.ExampleResponse> body,
+        ResponseEntity<ApiResponse<BrandV1Dto.CustomerBrandResponse>> response,
+        ApiResponse<BrandV1Dto.CustomerBrandResponse> body,
         HttpStatus expectedStatus,
         String expectedErrorCode,
         String expectedMessage
