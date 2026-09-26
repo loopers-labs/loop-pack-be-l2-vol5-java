@@ -26,12 +26,19 @@
 | 삭제된 브랜드·상품의 이름이 남아서, 같은 이름으로 다시 만들 수 없게 된다. | 이름 중복은 삭제되지 않은 대상끼리만 비교한다(`P-ADMIN-01`, `P-ADMIN-02`). |
 | "삭제된 것은 보이지 않게"를 모든 조회에 한꺼번에 적용하면 관리자 조회와 주문 조회에서도 사라진다. | 삭제된 대상을 거르는 곳을 고객 조회와 새 주문으로 한정한다(`R-ADMIN-12`, `P-ADMIN-07`). 주문은 저장된 당시 값으로 보여 준다(`P-ORDER-07`). |
 
+**미결정 (2026-09-25): 활성 이름 중복의 동시성 보장 방식**
+
+- `P-ADMIN-01`, `P-ADMIN-02`에 따라 활성 브랜드끼리, 같은 브랜드의 활성 상품끼리 이름이 중복되면 안 된다. 삭제된 대상의 이름은 다시 사용할 수 있다.
+- 현재 `BrandNameValidator`와 `ProductNameValidator`가 활성 대상만 비교한다. 브랜드명 및 상품의 브랜드 ID·이름에 DB 유니크 제약은 없으므로, 같은 이름의 동시 생성·수정 요청이 모두 검사를 통과할 수 있다.
+- MySQL에서 `(name, deleted_at)` 또는 `(brand_id, name, deleted_at)` 유니크 키만 추가해도 활성 행의 `deleted_at = NULL` 중복은 막지 못한다.
+- 활성 행에만 이름이 설정되는 생성 컬럼의 유니크 인덱스 등 DB 보장 방법, 현재의 대소문자 구분 정책과 일치하는 비교 방식, DB 충돌을 도메인 오류로 반환하는 방법은 아직 결정하지 않았다. 기존의 이름 재사용 정책은 유지한다.
+
 **다시 검토할 조건**: 삭제한 이름을 다시 쓰지 못하게 해야 할 때, 또는 삭제한 데이터를 실제로 지워야 하는 요구가 생길 때
 
 ## ADR-002. 오류 코드는 HTTP를 모르는 enum 하나에 둔다
 
 - 상태: 결정 (2026-09-17)
-- 근거: [아키텍처의 의존 방향](./commerce-api-design.md#의존-방향), [API 계약의 오류 코드](./api-contract.md#오류-코드)
+- 근거: [아키텍처의 의존 방향](./architecture.md#의존-방향), [API 계약의 오류 코드](./api-contract.md#오류-코드)
 
 **상황**: starter의 `CoreException`은 `ErrorType`을 담는다. `ErrorType`은 HTTP 상태(`HttpStatus`)를 가지고, 응답의 `meta.errorCode`로 상태 문구(`Bad Request`, `Not Found`)를 쓴다. 이대로 쓰면 다음 문제가 생긴다.
 
@@ -128,7 +135,7 @@
 ## ADR-006. Repository에는 DIP를 적용하고 domain 객체를 JPA Entity로 사용한다
 
 - 상태: 결정 (2026-09-17)
-- 근거: [아키텍처의 의존 방향](./commerce-api-design.md#의존-방향), 테스트 계획, 과제의 `4. 실행·제출`
+- 근거: [아키텍처의 의존 방향](./architecture.md#의존-방향), 테스트 계획, 과제의 `4. 실행·제출`
 
 **상황**: application과 domain의 규칙은 DB 없이 빠르게 확인하고, repository의 저장·조회는 실제 JPA와 MySQL Testcontainers로 확인해야 한다. application이 Spring Data JPA나 구체 저장소를 직접 사용하면 규칙 테스트에도 DB가 필요하고, 저장 기술이 application으로 전파된다.
 
@@ -141,6 +148,10 @@ Repository 포트와 어댑터로 의존을 역전하는 것과 domain 객체에
 - C. domain에 Repository 포트를 두고 infrastructure의 JPA 어댑터가 포트를 구현하며, domain 객체를 JPA Entity로 함께 사용한다.
 
 **결정**: C. Repository에는 DIP를 적용하고 domain 객체를 JPA Entity로 함께 사용한다.
+
+**재확인 (2026-09-25)**: 현행 구조를 유지한다. 별도 영속 모델로 분리하면 domain에서 JPA annotation과 매핑 제약을 제거할 수 있지만, 같은 상태를 가진 Entity와 양방향 변환 코드를 추가·유지해야 한다. 현재 aggregate 구조에서는 분리 비용보다 얻는 이점이 작다. JPA 매핑이 도메인 규칙 표현을 방해하거나 두 모델의 변화 속도가 달라지면 다시 검토한다.
+
+**변경 감지의 트레이드오프**: 현재 방식에서는 트랜잭션 안에서 조회한 도메인 엔티티가 JPA 관리 상태이므로, 그 상태 변경을 JPA가 감지해 반영할 수 있다. 영속 모델을 분리하면 JPA는 도메인 객체의 변경을 직접 감지하지 못한다. 저장소 어댑터가 변경된 값을 관리 중인 JPA Entity에 옮기거나 저장을 명시적으로 처리해야 하며, 누락된 필드는 반영되지 않는다. 현재 유스케이스는 변경 후에도 Repository의 `save`를 호출한다. 따라서 변경 감지를 활용할 수 있다는 것은 `save` 호출을 생략하고 있다는 뜻이 아니다.
 
 ```text
 application ──▶ domain Repository(port) ◀── infrastructure JPA adapter ──▶ MySQL
