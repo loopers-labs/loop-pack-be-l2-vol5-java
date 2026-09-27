@@ -56,10 +56,6 @@ public class ProductService {
         }).toList();
     }
 
-    public PageResult<ProductModel> listActive(ProductSort sort, PageQuery query) {
-        return productRepository.findActivePage(sort, query);
-    }
-
     public PageResult<ProductModel> listAll(PageQuery query) {
         return productRepository.findPage(query);
     }

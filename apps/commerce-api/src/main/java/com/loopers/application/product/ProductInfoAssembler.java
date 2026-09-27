@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 import java.util.Map;
 
-/** 상품 + 브랜드 정보 + 좋아요 수 조합 (같은 BC 안, FR-PRODUCT-01/02, FR-ADMIN-PRODUCT-01/03, FR-LIKE-03). */
+/** 상품 + 브랜드 정보 + 좋아요 수 조합 (같은 BC 안, FR-PRODUCT-02, FR-ADMIN-PRODUCT-01/03, FR-LIKE-03. FR-PRODUCT-01 은 ProductReader, DR-31). */
 @RequiredArgsConstructor
 @Component
 public class ProductInfoAssembler {

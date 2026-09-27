@@ -1,6 +1,7 @@
 package com.loopers.interfaces.api.product;
 
 import com.loopers.application.product.ProductFacade;
+import com.loopers.application.product.query.ProductReader;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.PageResponse;
 import com.loopers.interfaces.api.auth.RequesterId;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProductV1Controller implements ProductV1ApiSpec {
 
     private final ProductFacade productFacade;
+    private final ProductReader productReader;
 
     @GetMapping
     @Override
@@ -27,7 +29,7 @@ public class ProductV1Controller implements ProductV1ApiSpec {
         @RequestParam(value = "sort", required = false) String sort,
         @ParameterObject PageQuery pageQuery
     ) {
-        var result = productFacade.listProducts(requesterId, sort, pageQuery);
+        var result = productReader.listProducts(requesterId, sort, pageQuery);
         return ApiResponse.success(PageResponse.from(result, ProductV1Dto.ProductResponse::from));
     }
 

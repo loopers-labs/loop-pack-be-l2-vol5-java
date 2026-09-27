@@ -3,7 +3,6 @@ package com.loopers.application.product;
 import com.loopers.domain.brand.BrandService;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.product.ProductService;
-import com.loopers.domain.product.ProductSort;
 import com.loopers.domain.user.UserService;
 import com.loopers.support.paging.PageQuery;
 import com.loopers.support.paging.PageResult;
@@ -18,14 +17,6 @@ public class ProductFacade {
     private final BrandService brandService;
     private final ProductService productService;
     private final ProductInfoAssembler assembler;
-
-    /** FR-PRODUCT-01 상품 목록 조회 (고객). 삭제되지 않은 상품만, 정렬 하나 (ASM-08). */
-    @Transactional(readOnly = true)
-    public PageResult<ProductInfo> listProducts(Long requesterId, String sort, PageQuery query) {
-        userService.getUser(requesterId);
-        PageResult<ProductModel> page = productService.listActive(ProductSort.from(sort), query);
-        return PageResult.of(assembler.assemble(page.items()), query, page.totalCount());
-    }
 
     /** FR-PRODUCT-02 상품 상세 조회 (고객). 삭제된 상품은 PRODUCT_NOT_FOUND. */
     @Transactional(readOnly = true)

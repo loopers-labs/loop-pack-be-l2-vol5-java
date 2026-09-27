@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Map;
 
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAnyPackage;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.simpleNameEndingWith;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
@@ -134,6 +135,26 @@ class ArchitectureTest {
                             resideInAnyPackage(otherAggregateDomainPackages(ag)).and(simpleNameEndingWith("Model")))
                     .check(classes);
         }
+    }
+
+    /** DR-31: 조회 Repository 는 엔티티(Model)를 반환하지 않는다. 결과는 전용 조회 DTO(*View 의 중첩 record)로만. */
+    @Test
+    void queryRepositoryDoesNotExposeModel() {
+        var classes = importClasses();
+        noClasses().that().resideInAPackage("..application..query..")
+                .and().haveSimpleNameEndingWith("Repository")
+                .should().dependOnClassesThat(resideInAPackage("..domain..").and(simpleNameEndingWith("Model")))
+                .check(classes);
+    }
+
+    /** DR-31: 조회 전용 DTO(*View 와 그 중첩 record)는 엔티티(Model)를 담지 않는다. */
+    @Test
+    void queryViewDoesNotHoldModel() {
+        var classes = importClasses();
+        noClasses().that().resideInAPackage("..application..query..")
+                .and().haveNameMatching(".*View(\\$.*)?")
+                .should().dependOnClassesThat(resideInAPackage("..domain..").and(simpleNameEndingWith("Model")))
+                .check(classes);
     }
 
     /** 설계 5-8: interfaces 는 domain 을 import 하지 않는다 (infrastructure 는 respectsLayerDependencies). */

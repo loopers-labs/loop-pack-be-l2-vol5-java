@@ -2,11 +2,8 @@ package com.loopers.infrastructure.product;
 
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.product.ProductRepository;
-import com.loopers.domain.product.ProductSort;
 import com.loopers.support.paging.PageQuery;
 import com.loopers.support.paging.PageResult;
-import com.querydsl.core.types.OrderSpecifier;
-import com.querydsl.jpa.impl.JPAQuery;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -15,7 +12,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
-import static com.loopers.domain.productlike.QProductLikeModel.productLikeModel;
 import static com.loopers.domain.product.QProductModel.productModel;
 
 @RequiredArgsConstructor
@@ -48,35 +44,6 @@ public class ProductRepositoryImpl implements ProductRepository {
     @Override
     public boolean existsActiveByBrandId(Long brandId) {
         return productJpaRepository.existsByBrandIdAndDeletedAtIsNull(brandId);
-    }
-
-    /**
-     * 설계 3-7-A: latest = created_at desc / price_asc = price asc / likes_desc = count(product_like) desc.
-     * 동률 보조 기준은 셋 다 id desc (ASM-08). likes_desc 는 같은 BC 의 TB-04 와 조인+집계 (DR-02).
-     */
-    @Override
-    public PageResult<ProductModel> findActivePage(ProductSort sort, PageQuery query) {
-        JPAQuery<ProductModel> select = queryFactory.selectFrom(productModel)
-            .where(productModel.deletedAt.isNull());
-        OrderSpecifier<?> primary = switch (sort) {
-            case LATEST -> productModel.createdAt.desc();
-            case PRICE_ASC -> productModel.price.asc();
-            case LIKES_DESC -> {
-                select.leftJoin(productLikeModel).on(productLikeModel.productId.eq(productModel.id))
-                    .groupBy(productModel.id);
-                yield productLikeModel.id.count().desc();
-            }
-        };
-        List<ProductModel> items = select
-            .orderBy(primary, productModel.id.desc())
-            .offset(query.offset())
-            .limit(query.size())
-            .fetch();
-        Long total = queryFactory.select(productModel.count())
-            .from(productModel)
-            .where(productModel.deletedAt.isNull())
-            .fetchOne();
-        return PageResult.of(items, query, total == null ? 0 : total);
     }
 
     @Override
