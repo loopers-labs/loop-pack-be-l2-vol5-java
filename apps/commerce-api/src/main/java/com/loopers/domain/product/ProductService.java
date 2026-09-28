@@ -2,8 +2,6 @@ package com.loopers.domain.product;
 
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
-import com.loopers.support.paging.PageQuery;
-import com.loopers.support.paging.PageResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -54,10 +52,6 @@ public class ProductService {
             }
             return product;
         }).toList();
-    }
-
-    public PageResult<ProductModel> listAll(PageQuery query) {
-        return productRepository.findPage(query);
     }
 
     /** 브랜드 존재·ACTIVE 검증(INV-10)은 Facade 가 BrandService 로 같은 트랜잭션에서 한다 (DR-04). */

@@ -1,6 +1,6 @@
 package com.loopers.application.productlike;
 
-import com.loopers.application.product.ProductFacade;
+import com.loopers.application.product.query.ProductReader;
 
 import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.productlike.ProductLikeRepository;
@@ -30,7 +30,7 @@ class ProductLikeFacadeIntegrationTest {
     @Autowired
     private ProductLikeFacade productLikeFacade;
     @Autowired
-    private ProductFacade productFacade;
+    private ProductReader productReader;
     @Autowired
     private ProductLikeRepository productLikeRepository;
     @Autowired
@@ -67,7 +67,7 @@ class ProductLikeFacadeIntegrationTest {
             productLikeFacade.like(user.getId(), product.getId());
 
             assertThat(productLikeRepository.find(user.getId(), product.getId())).isPresent();
-            assertThat(productFacade.getProduct(user.getId(), product.getId()).likeCount()).isEqualTo(1);
+            assertThat(productReader.getProduct(user.getId(), product.getId()).likeCount()).isEqualTo(1);
         }
 
         @DisplayName("[FR-LIKE-01][INV-04][ASM-06] 같은 쌍을 다시 등록해도 관계는 하나뿐이고 성공한다 (멱등).")

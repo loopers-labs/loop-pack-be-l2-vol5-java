@@ -1,12 +1,13 @@
 package com.loopers.application.product;
 
+import com.loopers.application.product.query.ProductReader;
+import com.loopers.application.product.query.ProductView;
 import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.user.UserModel;
 import com.loopers.support.error.ErrorType;
 import com.loopers.support.fixture.Fixtures;
 import com.loopers.support.paging.PageQuery;
-import com.loopers.support.paging.PageResult;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,6 +25,8 @@ class ProductFacadeIntegrationTest {
 
     @Autowired
     private ProductFacade productFacade;
+    @Autowired
+    private ProductReader productReader;
     @Autowired
     private Fixtures fixtures;
     @Autowired
@@ -46,67 +49,6 @@ class ProductFacadeIntegrationTest {
     }
 
     @Nested
-    @DisplayName("FR-PRODUCT-02 상품 상세 조회")
-    class GetProduct {
-        @DisplayName("[FR-PRODUCT-02] 상품 정보 + 브랜드 정보 + 좋아요 수 (INV-05, INV-10).")
-        @Test
-        void returnsProductWithBrandAndLikeCount() {
-            ProductModel product = fixtures.product(brand.getId(), "상품", 1000L, 3);
-            fixtures.like(user.getId(), product.getId());
-
-            ProductInfo info = productFacade.getProduct(user.getId(), product.getId());
-
-            assertThat(info.name()).isEqualTo("상품");
-            assertThat(info.brand().id()).isEqualTo(brand.getId());
-            assertThat(info.likeCount()).isEqualTo(1);
-        }
-
-        @DisplayName("[FR-PRODUCT-02 PRODUCT_NOT_FOUND] 존재하지 않는 상품.")
-        @Test
-        void throwsProductNotFound_whenMissing() {
-            assertThrowsErrorType(() -> productFacade.getProduct(user.getId(), 999L), ErrorType.PRODUCT_NOT_FOUND);
-        }
-
-        @DisplayName("[FR-PRODUCT-02 PRODUCT_NOT_FOUND] 삭제된 상품도 같은 실패.")
-        @Test
-        void throwsProductNotFound_whenDeleted() {
-            ProductModel deleted = fixtures.deletedProduct(brand.getId(), "삭제됨", 1000L, 3);
-
-            assertThrowsErrorType(() -> productFacade.getProduct(user.getId(), deleted.getId()), ErrorType.PRODUCT_NOT_FOUND);
-        }
-    }
-
-    @Nested
-    @DisplayName("FR-ADMIN-PRODUCT-01 상품 목록 (관리자)")
-    class ListProductsForAdmin {
-        @DisplayName("[FR-ADMIN-PRODUCT-01] 삭제 포함, 재고·삭제 여부·좋아요 수 포함, 최신순.")
-        @Test
-        void listsAllIncludingDeleted() {
-            ProductModel active = fixtures.product(brand.getId(), "활성", 1000L, 7);
-            ProductModel deleted = fixtures.deletedProduct(brand.getId(), "삭제됨", 1000L, 0);
-
-            PageResult<ProductInfo> page = productFacade.listProductsForAdmin(admin.getId(), PageQuery.of(0, 10));
-
-            assertThat(page.totalCount()).isEqualTo(2);
-            assertThat(page.items()).extracting(ProductInfo::id).containsExactly(deleted.getId(), active.getId());
-            assertThat(page.items()).extracting(ProductInfo::deleted).containsExactly(true, false);
-            assertThat(page.items().get(1).stock()).isEqualTo(7);
-        }
-
-        @DisplayName("[FR-ADMIN-PRODUCT-01 INVALID_PAGE] 페이지 값이 잘못되면 거절.")
-        @Test
-        void throwsInvalidPage() {
-            assertThrowsErrorType(() -> productFacade.listProductsForAdmin(admin.getId(), PageQuery.of(0, 101)), ErrorType.INVALID_PAGE);
-        }
-
-        @DisplayName("[FR-ADMIN-PRODUCT-01 NOT_ADMIN] 관리자가 아니면 거절.")
-        @Test
-        void throwsNotAdmin() {
-            assertThrowsErrorType(() -> productFacade.listProductsForAdmin(user.getId(), PageQuery.of(0, 10)), ErrorType.NOT_ADMIN);
-        }
-    }
-
-    @Nested
     @DisplayName("FR-ADMIN-PRODUCT-02 상품 생성")
     class CreateProduct {
         @DisplayName("[FR-ADMIN-PRODUCT-02][INV-10][INV-11] 생성되고 브랜드가 연결되며 고객 조회에 즉시 반영.")
@@ -117,7 +59,7 @@ class ProductFacadeIntegrationTest {
             assertThat(created.brand().id()).isEqualTo(brand.getId());
             assertThat(created.stock()).isEqualTo(10);
             assertThat(created.deleted()).isFalse();
-            assertThat(productFacade.getProduct(user.getId(), created.id()).price()).isEqualTo(1500L);
+            assertThat(productReader.getProduct(user.getId(), created.id()).price()).isEqualTo(1500L);
         }
 
         @DisplayName("[FR-ADMIN-PRODUCT-02 BRAND_NOT_FOUND] 브랜드가 없으면 생성되지 않는다.")
@@ -133,7 +75,7 @@ class ProductFacadeIntegrationTest {
 
             assertThrowsErrorType(() -> productFacade.createProduct(admin.getId(), deleted.getId(), "상품", 1000L, 1), ErrorType.BRAND_NOT_FOUND);
 
-            assertThat(productFacade.listProductsForAdmin(admin.getId(), PageQuery.of(0, 10)).totalCount()).isZero();
+            assertThat(productReader.listProductsForAdmin(admin.getId(), PageQuery.of(0, 10)).totalCount()).isZero();
         }
 
         @DisplayName("[FR-ADMIN-PRODUCT-02 INVALID_PRODUCT_NAME][INV-13]")
@@ -156,29 +98,6 @@ class ProductFacadeIntegrationTest {
     }
 
     @Nested
-    @DisplayName("FR-ADMIN-PRODUCT-03 상품 상세 (관리자)")
-    class GetProductForAdmin {
-        @DisplayName("[FR-ADMIN-PRODUCT-03] 삭제된 상품도 조회되며 재고·삭제 여부·좋아요 수 포함.")
-        @Test
-        void returnsDeletedProduct() {
-            ProductModel deleted = fixtures.deletedProduct(brand.getId(), "삭제됨", 1000L, 4);
-            fixtures.like(user.getId(), deleted.getId());
-
-            ProductInfo info = productFacade.getProductForAdmin(admin.getId(), deleted.getId());
-
-            assertThat(info.deleted()).isTrue();
-            assertThat(info.stock()).isEqualTo(4);
-            assertThat(info.likeCount()).isEqualTo(1);
-        }
-
-        @DisplayName("[FR-ADMIN-PRODUCT-03 PRODUCT_NOT_FOUND]")
-        @Test
-        void throwsProductNotFound() {
-            assertThrowsErrorType(() -> productFacade.getProductForAdmin(admin.getId(), 999L), ErrorType.PRODUCT_NOT_FOUND);
-        }
-    }
-
-    @Nested
     @DisplayName("FR-ADMIN-PRODUCT-04 상품 수정")
     class UpdateProduct {
         @DisplayName("[FR-ADMIN-PRODUCT-04][INV-11] 이름·가격만 바뀌고 브랜드·재고는 유지. 고객 조회에 즉시 반영.")
@@ -192,7 +111,7 @@ class ProductFacadeIntegrationTest {
             assertThat(updated.price()).isEqualTo(2000L);
             assertThat(updated.brand().id()).isEqualTo(brand.getId());
             assertThat(updated.stock()).isEqualTo(5);
-            assertThat(productFacade.getProduct(user.getId(), product.getId()).price()).isEqualTo(2000L);
+            assertThat(productReader.getProduct(user.getId(), product.getId()).price()).isEqualTo(2000L);
         }
 
         @DisplayName("[FR-ADMIN-PRODUCT-04 PRODUCT_NOT_FOUND] 존재하지 않음.")
@@ -245,8 +164,8 @@ class ProductFacadeIntegrationTest {
 
             productFacade.deleteProduct(admin.getId(), product.getId());
 
-            assertThrowsErrorType(() -> productFacade.getProduct(user.getId(), product.getId()), ErrorType.PRODUCT_NOT_FOUND);
-            ProductInfo adminView = productFacade.getProductForAdmin(admin.getId(), product.getId());
+            assertThrowsErrorType(() -> productReader.getProduct(user.getId(), product.getId()), ErrorType.PRODUCT_NOT_FOUND);
+            ProductView.Admin adminView = productReader.getProductForAdmin(admin.getId(), product.getId());
             assertThat(adminView.deleted()).isTrue();
             assertThat(adminView.likeCount()).isEqualTo(1);
         }

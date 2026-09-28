@@ -1,6 +1,5 @@
 package com.loopers.interfaces.api.product;
 
-import com.loopers.application.product.ProductFacade;
 import com.loopers.application.product.query.ProductReader;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.PageResponse;
@@ -19,7 +18,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/products")
 public class ProductV1Controller implements ProductV1ApiSpec {
 
-    private final ProductFacade productFacade;
     private final ProductReader productReader;
 
     @GetMapping
@@ -39,6 +37,6 @@ public class ProductV1Controller implements ProductV1ApiSpec {
         @RequesterId Long requesterId,
         @PathVariable("productId") Long productId
     ) {
-        return ApiResponse.success(ProductV1Dto.ProductResponse.from(productFacade.getProduct(requesterId, productId)));
+        return ApiResponse.success(ProductV1Dto.ProductResponse.from(productReader.getProduct(requesterId, productId)));
     }
 }

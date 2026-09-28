@@ -2,6 +2,8 @@ package com.loopers.application.product.query;
 
 import com.loopers.domain.product.ProductSort;
 import com.loopers.domain.user.UserService;
+import com.loopers.support.error.CoreException;
+import com.loopers.support.error.ErrorType;
 import com.loopers.support.paging.PageQuery;
 import com.loopers.support.paging.PageResult;
 import lombok.RequiredArgsConstructor;
@@ -20,5 +22,28 @@ public class ProductReader {
     public PageResult<ProductView.Summary> listProducts(Long requesterId, String sort, PageQuery query) {
         userService.getUser(requesterId);
         return productQueryRepository.findActivePage(ProductSort.from(sort), query);
+    }
+
+    /** FR-PRODUCT-02 상품 상세 조회 (고객). 없음·삭제됨 모두 ER-04 PRODUCT_NOT_FOUND. */
+    @Transactional(readOnly = true)
+    public ProductView.Summary getProduct(Long requesterId, Long productId) {
+        userService.getUser(requesterId);
+        return productQueryRepository.findActive(productId)
+            .orElseThrow(() -> new CoreException(ErrorType.PRODUCT_NOT_FOUND, "[id = " + productId + "] 상품을 찾을 수 없습니다."));
+    }
+
+    /** FR-ADMIN-PRODUCT-01 상품 목록 (관리자). 삭제 포함, 최신순. */
+    @Transactional(readOnly = true)
+    public PageResult<ProductView.Admin> listProductsForAdmin(Long requesterId, PageQuery query) {
+        userService.getAdmin(requesterId);
+        return productQueryRepository.findPage(query);
+    }
+
+    /** FR-ADMIN-PRODUCT-03 상품 상세 (관리자). 삭제 여부 무관. */
+    @Transactional(readOnly = true)
+    public ProductView.Admin getProductForAdmin(Long requesterId, Long productId) {
+        userService.getAdmin(requesterId);
+        return productQueryRepository.find(productId)
+            .orElseThrow(() -> new CoreException(ErrorType.PRODUCT_NOT_FOUND, "[id = " + productId + "] 상품을 찾을 수 없습니다."));
     }
 }

@@ -1,6 +1,7 @@
 package com.loopers.interfaces.api.product;
 
 import com.loopers.application.product.ProductFacade;
+import com.loopers.application.product.query.ProductReader;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.PageResponse;
 import com.loopers.interfaces.api.auth.RequesterId;
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProductAdminV1Controller implements ProductAdminV1ApiSpec {
 
     private final ProductFacade productFacade;
+    private final ProductReader productReader;
 
     @GetMapping
     @Override
@@ -31,7 +33,7 @@ public class ProductAdminV1Controller implements ProductAdminV1ApiSpec {
         @RequesterId Long requesterId,
         @ParameterObject PageQuery pageQuery
     ) {
-        var result = productFacade.listProductsForAdmin(requesterId, pageQuery);
+        var result = productReader.listProductsForAdmin(requesterId, pageQuery);
         return ApiResponse.success(PageResponse.from(result, ProductAdminV1Dto.ProductAdminResponse::from));
     }
 
@@ -53,7 +55,7 @@ public class ProductAdminV1Controller implements ProductAdminV1ApiSpec {
         @PathVariable("productId") Long productId
     ) {
         return ApiResponse.success(
-            ProductAdminV1Dto.ProductAdminResponse.from(productFacade.getProductForAdmin(requesterId, productId)));
+            ProductAdminV1Dto.ProductAdminResponse.from(productReader.getProductForAdmin(requesterId, productId)));
     }
 
     @PutMapping("/{productId}")

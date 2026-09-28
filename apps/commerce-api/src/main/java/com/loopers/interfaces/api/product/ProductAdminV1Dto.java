@@ -4,6 +4,7 @@ import com.loopers.interfaces.api.brand.BrandV1Dto;
 
 import com.loopers.application.product.ProductInfo;
 import com.loopers.application.product.StockInfo;
+import com.loopers.application.product.query.ProductView;
 
 public class ProductAdminV1Dto {
     /** EP-20 요청. 검증은 Model (ER-19/20/21), 브랜드는 Facade (ER-03). */
@@ -26,6 +27,12 @@ public class ProductAdminV1Dto {
             return new ProductAdminResponse(
                 info.id(), info.name(), info.price(), info.stock(),
                 BrandV1Dto.BrandResponse.from(info.brand()), info.likeCount(), info.deleted());
+        }
+
+        public static ProductAdminResponse from(ProductView.Admin view) {
+            return new ProductAdminResponse(
+                view.id(), view.name(), view.price(), view.stock(),
+                new BrandV1Dto.BrandResponse(view.brandId(), view.brandName()), view.likeCount(), view.deleted());
         }
     }
 
