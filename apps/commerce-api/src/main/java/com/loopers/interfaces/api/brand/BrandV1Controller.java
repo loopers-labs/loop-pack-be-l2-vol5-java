@@ -1,6 +1,6 @@
 package com.loopers.interfaces.api.brand;
 
-import com.loopers.application.brand.BrandFacade;
+import com.loopers.application.brand.query.BrandReader;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.auth.RequesterId;
 import lombok.RequiredArgsConstructor;
@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/brands")
 public class BrandV1Controller implements BrandV1ApiSpec {
 
-    private final BrandFacade brandFacade;
+    private final BrandReader brandReader;
 
     @GetMapping("/{brandId}")
     @Override
@@ -22,6 +22,6 @@ public class BrandV1Controller implements BrandV1ApiSpec {
         @RequesterId Long requesterId,
         @PathVariable("brandId") Long brandId
     ) {
-        return ApiResponse.success(BrandV1Dto.BrandResponse.from(brandFacade.getBrand(requesterId, brandId)));
+        return ApiResponse.success(BrandV1Dto.BrandResponse.from(brandReader.getBrand(requesterId, brandId)));
     }
 }

@@ -1,6 +1,7 @@
 package com.loopers.interfaces.api.brand;
 
 import com.loopers.application.brand.BrandFacade;
+import com.loopers.application.brand.query.BrandReader;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.PageResponse;
 import com.loopers.interfaces.api.auth.RequesterId;
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class BrandAdminV1Controller implements BrandAdminV1ApiSpec {
 
     private final BrandFacade brandFacade;
+    private final BrandReader brandReader;
 
     @GetMapping
     @Override
@@ -31,7 +33,7 @@ public class BrandAdminV1Controller implements BrandAdminV1ApiSpec {
         @RequesterId Long requesterId,
         @ParameterObject PageQuery pageQuery
     ) {
-        var result = brandFacade.listBrandsForAdmin(requesterId, pageQuery);
+        var result = brandReader.listBrandsForAdmin(requesterId, pageQuery);
         return ApiResponse.success(PageResponse.from(result, BrandAdminV1Dto.BrandAdminResponse::from));
     }
 
@@ -51,7 +53,7 @@ public class BrandAdminV1Controller implements BrandAdminV1ApiSpec {
         @RequesterId Long requesterId,
         @PathVariable("brandId") Long brandId
     ) {
-        return ApiResponse.success(BrandAdminV1Dto.BrandAdminResponse.from(brandFacade.getBrandForAdmin(requesterId, brandId)));
+        return ApiResponse.success(BrandAdminV1Dto.BrandAdminResponse.from(brandReader.getBrandForAdmin(requesterId, brandId)));
     }
 
     @PutMapping("/{brandId}")

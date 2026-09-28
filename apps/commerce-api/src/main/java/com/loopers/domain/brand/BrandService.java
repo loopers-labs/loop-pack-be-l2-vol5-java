@@ -2,8 +2,6 @@ package com.loopers.domain.brand;
 
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
-import com.loopers.support.paging.PageQuery;
-import com.loopers.support.paging.PageResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -37,10 +35,6 @@ public class BrandService {
     public Map<Long, BrandModel> getByIds(Collection<Long> brandIds) {
         return brandRepository.findByIds(brandIds).stream()
             .collect(Collectors.toMap(BrandModel::getId, Function.identity()));
-    }
-
-    public PageResult<BrandModel> listAll(PageQuery query) {
-        return brandRepository.findPage(query);
     }
 
     public BrandModel create(String name) {

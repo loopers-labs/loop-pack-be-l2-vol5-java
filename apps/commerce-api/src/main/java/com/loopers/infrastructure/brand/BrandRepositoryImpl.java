@@ -2,9 +2,6 @@ package com.loopers.infrastructure.brand;
 
 import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.brand.BrandRepository;
-import com.loopers.support.paging.PageQuery;
-import com.loopers.support.paging.PageResult;
-import com.querydsl.jpa.impl.JPAQueryFactory;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -12,13 +9,10 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
-import static com.loopers.domain.brand.QBrandModel.brandModel;
-
 @RequiredArgsConstructor
 @Component
 public class BrandRepositoryImpl implements BrandRepository {
     private final BrandJpaRepository brandJpaRepository;
-    private final JPAQueryFactory queryFactory;
 
     @Override
     public BrandModel save(BrandModel brand) {
@@ -39,16 +33,5 @@ public class BrandRepositoryImpl implements BrandRepository {
             return List.of();
         }
         return brandJpaRepository.findAllById(ids);
-    }
-
-    @Override
-    public PageResult<BrandModel> findPage(PageQuery query) {
-        List<BrandModel> items = queryFactory.selectFrom(brandModel)
-            .orderBy(brandModel.createdAt.desc(), brandModel.id.desc())
-            .offset(query.offset())
-            .limit(query.size())
-            .fetch();
-        long total = brandJpaRepository.count();
-        return PageResult.of(items, query, total);
     }
 }
