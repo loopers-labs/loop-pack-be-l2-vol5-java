@@ -7,8 +7,6 @@ import com.loopers.domain.order.OrderModel;
 import com.loopers.domain.order.OrderService;
 import com.loopers.domain.point.PointService;
 import com.loopers.domain.user.UserService;
-import com.loopers.support.paging.PageQuery;
-import com.loopers.support.paging.PageResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -60,33 +58,5 @@ public class OrderFacade {
         pointService.deduct(requesterId, order.getTotalAmount());
         order.confirm();
         return OrderInfo.from(order);
-    }
-
-    /** FR-ORDER-03 내 주문 목록. DRAFT·CONFIRMED 모두, 최신순. */
-    @Transactional(readOnly = true)
-    public PageResult<OrderInfo> listMyOrders(Long requesterId, PageQuery query) {
-        userService.getUser(requesterId);
-        return orderService.listByUser(requesterId, query).map(OrderInfo::from);
-    }
-
-    /** FR-ORDER-04 내 주문 상세. 남의 주문은 NOT_OWNER. */
-    @Transactional(readOnly = true)
-    public OrderInfo getMyOrder(Long requesterId, Long orderId) {
-        userService.getUser(requesterId);
-        return OrderInfo.from(orderService.getOwned(orderId, requesterId));
-    }
-
-    /** FR-ADMIN-ORDER-01 주문 목록 (관리자). 구매자별 묶음, 페이지 단위는 묶음 (ASM-19, ASM-20). */
-    @Transactional(readOnly = true)
-    public PageResult<OrderGroupInfo> listOrdersForAdmin(Long requesterId, PageQuery query) {
-        userService.getAdmin(requesterId);
-        return orderService.listGroupedByBuyer(query).map(OrderGroupInfo::from);
-    }
-
-    /** FR-ADMIN-ORDER-02 주문 상세 (관리자). 구매자 포함. */
-    @Transactional(readOnly = true)
-    public OrderInfo getOrderForAdmin(Long requesterId, Long orderId) {
-        userService.getAdmin(requesterId);
-        return OrderInfo.from(orderService.get(orderId));
     }
 }

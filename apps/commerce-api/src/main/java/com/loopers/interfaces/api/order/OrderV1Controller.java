@@ -1,6 +1,7 @@
 package com.loopers.interfaces.api.order;
 
 import com.loopers.application.order.OrderFacade;
+import com.loopers.application.order.query.OrderReader;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.PageResponse;
 import com.loopers.interfaces.api.auth.RequesterId;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class OrderV1Controller implements OrderV1ApiSpec {
 
     private final OrderFacade orderFacade;
+    private final OrderReader orderReader;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -48,7 +50,7 @@ public class OrderV1Controller implements OrderV1ApiSpec {
         @RequesterId Long requesterId,
         @ParameterObject PageQuery pageQuery
     ) {
-        var result = orderFacade.listMyOrders(requesterId, pageQuery);
+        var result = orderReader.listMyOrders(requesterId, pageQuery);
         return ApiResponse.success(PageResponse.from(result, OrderV1Dto.OrderResponse::from));
     }
 
@@ -58,6 +60,6 @@ public class OrderV1Controller implements OrderV1ApiSpec {
         @RequesterId Long requesterId,
         @PathVariable("orderId") Long orderId
     ) {
-        return ApiResponse.success(OrderV1Dto.OrderResponse.from(orderFacade.getMyOrder(requesterId, orderId)));
+        return ApiResponse.success(OrderV1Dto.OrderResponse.from(orderReader.getMyOrder(requesterId, orderId)));
     }
 }

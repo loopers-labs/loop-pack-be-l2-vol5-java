@@ -1,6 +1,6 @@
 package com.loopers.interfaces.api.order;
 
-import com.loopers.application.order.OrderFacade;
+import com.loopers.application.order.query.OrderReader;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.PageResponse;
 import com.loopers.interfaces.api.auth.RequesterId;
@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api-admin/v1/orders")
 public class OrderAdminV1Controller implements OrderAdminV1ApiSpec {
 
-    private final OrderFacade orderFacade;
+    private final OrderReader orderReader;
 
     @GetMapping
     @Override
@@ -25,7 +25,7 @@ public class OrderAdminV1Controller implements OrderAdminV1ApiSpec {
         @RequesterId Long requesterId,
         @ParameterObject PageQuery pageQuery
     ) {
-        var result = orderFacade.listOrdersForAdmin(requesterId, pageQuery);
+        var result = orderReader.listOrdersForAdmin(requesterId, pageQuery);
         return ApiResponse.success(PageResponse.from(result, OrderAdminV1Dto.AdminOrderGroupResponse::from));
     }
 
@@ -35,6 +35,6 @@ public class OrderAdminV1Controller implements OrderAdminV1ApiSpec {
         @RequesterId Long requesterId,
         @PathVariable("orderId") Long orderId
     ) {
-        return ApiResponse.success(OrderAdminV1Dto.AdminOrderResponse.from(orderFacade.getOrderForAdmin(requesterId, orderId)));
+        return ApiResponse.success(OrderAdminV1Dto.AdminOrderResponse.from(orderReader.getOrderForAdmin(requesterId, orderId)));
     }
 }
