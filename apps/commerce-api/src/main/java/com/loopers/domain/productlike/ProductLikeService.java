@@ -4,7 +4,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.Collection;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -28,10 +27,6 @@ public class ProductLikeService {
     }
 
     /** INV-05: 좋아요 수는 관계 개수. */
-    public long countOf(Long productId) {
-        return countOf(List.of(productId)).getOrDefault(productId, 0L);
-    }
-
     public Map<Long, Long> countOf(Collection<Long> productIds) {
         return productLikeRepository.countByProductIds(productIds);
     }
