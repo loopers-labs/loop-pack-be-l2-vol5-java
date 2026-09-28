@@ -80,24 +80,6 @@ class PointFacadeIntegrationTest {
     }
 
     @Nested
-    @DisplayName("FR-POINT-02 내 잔액 조회")
-    class GetBalance {
-        @DisplayName("[FR-POINT-02] 저장된 잔액을 돌려준다.")
-        @Test
-        void returnsBalance() {
-            PointInfo info = pointFacade.getBalance(user.getId());
-
-            assertThat(info.balance()).isEqualTo(1_000L);
-        }
-
-        @DisplayName("[FR-POINT-02 USER_NOT_FOUND]")
-        @Test
-        void throwsUserNotFound() {
-            assertThrowsErrorType(() -> pointFacade.getBalance(999L), ErrorType.USER_NOT_FOUND);
-        }
-    }
-
-    @Nested
     @DisplayName("FR-POINT-03 포인트 환불 [추가]")
     class Refund {
         @DisplayName("[FR-POINT-03][INV-01] 잔액에서 빠져 저장된다. 전액 환불로 0 까지 가능.")

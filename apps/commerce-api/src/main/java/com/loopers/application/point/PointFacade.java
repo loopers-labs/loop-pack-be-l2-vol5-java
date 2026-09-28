@@ -21,13 +21,6 @@ public class PointFacade {
         return PointInfo.from(pointService.charge(requesterId, amount));
     }
 
-    /** FR-POINT-02 내 잔액 조회. */
-    @Transactional(readOnly = true)
-    public PointInfo getBalance(Long requesterId) {
-        userService.getUser(requesterId);
-        return PointInfo.from(pointService.getByUserId(requesterId));
-    }
-
     /** FR-POINT-03 포인트 환불 [추가]. 잔액 감소까지만, 돈의 이동 없음 (ASM-24). */
     @Transactional
     public PointInfo refund(Long requesterId, Long amount) {
