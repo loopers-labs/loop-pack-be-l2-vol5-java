@@ -2,8 +2,6 @@ package com.loopers.infrastructure.productlike;
 
 import com.loopers.domain.productlike.ProductLikeModel;
 import com.loopers.domain.productlike.ProductLikeRepository;
-import com.loopers.support.paging.PageQuery;
-import com.loopers.support.paging.PageResult;
 import com.querydsl.core.Tuple;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import lombok.RequiredArgsConstructor;
@@ -16,7 +14,6 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static com.loopers.domain.productlike.QProductLikeModel.productLikeModel;
-import static com.loopers.domain.product.QProductModel.productModel;
 
 @RequiredArgsConstructor
 @Component
@@ -55,23 +52,5 @@ public class ProductLikeRepositoryImpl implements ProductLikeRepository {
                 Long count = row.get(productLikeModel.id.count());
                 return count == null ? 0L : count;
             }));
-    }
-
-    /** 설계 3-7-A FR-LIKE-03: TB-04.user_id, TB-03.deleted_at IS NULL, TB-04.created_at desc, id desc. */
-    @Override
-    public PageResult<ProductLikeModel> findPageByUserIdWithActiveProduct(Long userId, PageQuery query) {
-        List<ProductLikeModel> items = queryFactory.selectFrom(productLikeModel)
-            .join(productModel).on(productModel.id.eq(productLikeModel.productId))
-            .where(productLikeModel.userId.eq(userId), productModel.deletedAt.isNull())
-            .orderBy(productLikeModel.createdAt.desc(), productLikeModel.id.desc())
-            .offset(query.offset())
-            .limit(query.size())
-            .fetch();
-        Long total = queryFactory.select(productLikeModel.count())
-            .from(productLikeModel)
-            .join(productModel).on(productModel.id.eq(productLikeModel.productId))
-            .where(productLikeModel.userId.eq(userId), productModel.deletedAt.isNull())
-            .fetchOne();
-        return PageResult.of(items, query, total == null ? 0 : total);
     }
 }

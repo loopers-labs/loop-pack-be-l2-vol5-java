@@ -1,7 +1,5 @@
 package com.loopers.domain.productlike;
 
-import com.loopers.support.paging.PageQuery;
-import com.loopers.support.paging.PageResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -36,9 +34,5 @@ public class ProductLikeService {
 
     public Map<Long, Long> countOf(Collection<Long> productIds) {
         return productLikeRepository.countByProductIds(productIds);
-    }
-
-    public PageResult<ProductLikeModel> listMyLikes(Long userId, PageQuery query) {
-        return productLikeRepository.findPageByUserIdWithActiveProduct(userId, query);
     }
 }
