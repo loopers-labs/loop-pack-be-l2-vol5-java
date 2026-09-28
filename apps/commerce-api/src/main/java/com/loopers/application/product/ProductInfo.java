@@ -5,7 +5,7 @@ import com.loopers.application.brand.BrandInfo;
 import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.product.ProductModel;
 
-/** 설계 4-3-0 ProductSummary(고객) / ProductAdmin(관리자) 의 원천. 좋아요 수는 INV-05 계산값. */
+/** 명령 응답(FR-ADMIN-PRODUCT-02/04) 설계 4-3-0 ProductAdmin 의 원천. 조회는 ProductView (DR-31). 좋아요 수는 INV-05 계산값. */
 public record ProductInfo(
     Long id,
     String name,

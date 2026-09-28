@@ -45,7 +45,8 @@ flowchart TB
     end
     subgraph AP["application — 유스케이스 조립"]
         direction LR
-        F1[BrandFacade] ~~~ F2[ProductFacade] ~~~ F3[ProductLikeFacade] ~~~ F4[PointFacade] ~~~ F5[OrderFacade] ~~~ Q1["ProductReader<br/>(query, DR-31)"]
+        F1[BrandFacade] ~~~ F2[ProductFacade] ~~~ F3[ProductLikeFacade] ~~~ F4[PointFacade] ~~~ F5[OrderFacade]
+        Q1["BrandReader · ProductReader · ProductLikeReader · PointReader · OrderReader<br/>(query, DR-31)"]
     end
     subgraph DO["domain — 규칙 · 불변식"]
         direction LR
@@ -60,9 +61,9 @@ flowchart TB
     IN -.->|"*QueryRepository 구현 (DR-31)"| AP
 ```
 
-- 관리자 판정은 두 번 일어난다. 필터가 HTTP 경계에서 막고, Facade가 `UserService.getAdmin`으로 다시 확인한다(DR-25).
+- 관리자 판정은 두 번 일어난다. 필터가 HTTP 경계에서 막고, Facade·Reader가 `UserService.getAdmin`으로 다시 확인한다(DR-25).
 - Facade는 BC 경계를 넘는 조립을 맡고, 도메인 서비스는 자기 BC 안의 규칙만 가진다(같은 BC의 다른 AG Service·Repository는 부를 수 있다). BC 간 호출 허용 표는 5-6, AG 간 의존 규칙은 5-1~5-3.
-- 조회는 Facade 대신 Reader가 맡을 수 있다(DR-31). Reader는 조회 Repository 한 번으로 같은 BC 안 AG를 조인해 전용 조회 DTO로 돌려준다. 현재 FR-PRODUCT-01만 해당한다.
+- 조회는 Facade가 아니라 Reader가 맡는다(DR-31). Reader는 조회 Repository로 같은 BC 안 AG를 조인해 전용 조회 DTO로 돌려준다. Facade는 명령(쓰기)만 가진다.
 - 요청은 interfaces → application → domain 순으로 내려가고, 저장이 필요하면 domain의 Repository 인터페이스를 통해 infrastructure 구현체가 실행된다. 도메인은 JPA를 모른다.
 
 ### 0-3. 범위
@@ -540,7 +541,9 @@ fixture로만 채워진다. 런타임에 이 테이블에 쓰는 FR은 없다. `
 | FR-ADMIN-POINT-02 | TB-01(대상 사용자), TB-05 | TB-01.`id`=바디 userId; TB-05.`user_id` | — | 낮음 | 2 (BC-01, BC-03. Facade 조합, 5-6) |
 
 메모
-- FR-PRODUCT-01은 TB-03·TB-02·TB-04가 모두 같은 BC(BC-02)이므로 상품·브랜드·좋아요 수를 한 조회(조인 + 집계)로 읽는다. `likes_desc` 정렬도 같은 조회에서 처리한다. DR-02가 이걸 위해 있었고, 조회 경로는 DR-31.
+- FR-PRODUCT-01/02, FR-ADMIN-PRODUCT-01/03은 TB-03·TB-02·TB-04가 모두 같은 BC(BC-02)이므로 상품·브랜드·좋아요 수를 한 조회(조인 + 집계)로 읽는다. `likes_desc` 정렬도 같은 조회에서 처리한다. DR-02가 이걸 위해 있었고, 조회 경로는 DR-31.
+- FR-LIKE-03은 TB-04·TB-03·TB-02를 한 조회(조인)로 읽는다. 응답에 좋아요 수가 없어 집계는 없다 (DR-31).
+- FR-ORDER-03/04, FR-ADMIN-ORDER-01/02는 TB-06을 읽은 뒤 TB-07을 `order_id` IN으로 한 번에 읽어 붙인다(주문 1 : 품목 N).
 - 걸치는 BC 수 2 이상인 FR-ORDER-02, FR-ADMIN-POINT-01/02는 여러 BC 기준의 정렬·페이징이 없다. 각 BC를 ID로 한 건씩 조회하므로 Facade 조합으로 충분하다. OQ에 올릴 것 없음.
 - FR-ADMIN-ORDER-01의 2단계 조회는 한 BC 안이다. 묶음 순서는 원문에 없어 DR-11에서 정했다.
 
@@ -1062,29 +1065,33 @@ FR 28개 ↔ EP 28개, 1:1.
 
 패키지 `com.loopers.{interfaces.api, application, domain, infrastructure}.<ag>`. `<ag>`는 2-2의 AG 루트를 소문자로 붙인 식별자이고 계층마다 같은 이름을 쓴다. BC는 패키지가 아니다 — 아래 표의 BC 열과 `ArchitectureTest.AGGREGATES_BY_BC` 매핑이 BC 소속의 유일한 기록이다(DR-29).
 
-| BC | AG | `<ag>` | domain (Model / Service / Repository) | application (Facade) | interfaces.api |
+| BC | AG | `<ag>` | domain (Model / Service / Repository) | application (Facade / Reader) | interfaces.api |
 |---|---|---|---|---|---|
-| BC-01 사용자 | AG-01 | `user` | `UserModel` / `UserService` / `UserRepository` | 없음 (EP를 갖지 않는다. 다른 BC의 Facade가 `UserService`를 부른다) | 없음 |
-| BC-02 카탈로그 | AG-02 | `brand` | `BrandModel` / `BrandService` / `BrandRepository` | `BrandFacade` | `BrandV1*`, `BrandAdminV1*` |
-| BC-02 카탈로그 | AG-03 | `product` | `ProductModel`, `ProductSort` / `ProductService` / `ProductRepository` | `ProductFacade` | `ProductV1*`, `ProductAdminV1*` |
-| BC-02 카탈로그 | AG-04 | `productlike` | `ProductLikeModel` / `ProductLikeService` / `ProductLikeRepository` | `ProductLikeFacade` | `ProductLikeV1*` |
-| BC-03 포인트 | AG-05 | `point` | `PointModel` / `PointService` / `PointRepository` | `PointFacade` | `PointV1*`, `PointAdminV1*` |
-| BC-04 주문 | AG-06 | `order` | `OrderModel` (루트), `OrderItemModel` (포함) / `OrderService` / `OrderRepository` | `OrderFacade` | `OrderV1*`, `OrderAdminV1*` |
+| BC-01 사용자 | AG-01 | `user` | `UserModel` / `UserService` / `UserRepository` | 없음 (EP를 갖지 않는다. 다른 BC의 Facade·Reader가 `UserService`를 부른다) | 없음 |
+| BC-02 카탈로그 | AG-02 | `brand` | `BrandModel` / `BrandService` / `BrandRepository` | `BrandFacade` / `BrandReader` | `BrandV1*`, `BrandAdminV1*` |
+| BC-02 카탈로그 | AG-03 | `product` | `ProductModel`, `ProductSort` / `ProductService` / `ProductRepository` | `ProductFacade` / `ProductReader` | `ProductV1*`, `ProductAdminV1*` |
+| BC-02 카탈로그 | AG-04 | `productlike` | `ProductLikeModel` / `ProductLikeService` / `ProductLikeRepository` | `ProductLikeFacade` / `ProductLikeReader` | `ProductLikeV1*` |
+| BC-03 포인트 | AG-05 | `point` | `PointModel` / `PointService` / `PointRepository` | `PointFacade` / `PointReader` | `PointV1*`, `PointAdminV1*` |
+| BC-04 주문 | AG-06 | `order` | `OrderModel` (루트), `OrderItemModel` (포함) / `OrderService` / `OrderRepository` | `OrderFacade` / `OrderReader` | `OrderV1*`, `OrderAdminV1*` |
 
 `*` = `ApiSpec`, `Controller`, `Dto`. Repository는 AG 루트 단위(6개)만 있다. `OrderItemRepository`는 만들지 않는다 (5-3). 조회 전용 Repository는 이 수에 넣지 않는다(DR-31).
 
-조회 전용 (DR-31): `application.<ag>.query`에 `<Ag>Reader`, `<Ag>QueryRepository`(인터페이스), `<Ag>View`(조회별 중첩 record)를 두고, `infrastructure.<ag>.query`에 `<Ag>QueryRepositoryImpl`을 둔다. 현재는 `product`만 있다: `ProductReader`, `ProductQueryRepository`, `ProductView.Summary`, `ProductQueryRepositoryImpl`.
+조회 전용 (DR-31): `application.<ag>.query`에 `<Ag>Reader`, `<Ag>QueryRepository`(인터페이스), `<Ag>View`(조회별 중첩 record)를 두고, `infrastructure.<ag>.query`에 `<Ag>QueryRepositoryImpl`을 둔다. `user`를 뺀 AG 5개에 있다. View record: `BrandView.Summary`·`Admin` / `ProductView.Summary`(목록·상세 공용)·`Admin` / `ProductLikeView.Item` / `PointView.Balance` / `OrderView.Detail`·`Item`·`BuyerGroup`.
 
 Facade·Reader public 메서드 ↔ FR (28:28)
 
-| Facade | 메서드 → FR |
+| Facade / Reader | 메서드 → FR |
 |---|---|
-| `BrandFacade` | `getBrand` FR-BRAND-01 · `listBrandsForAdmin` FR-ADMIN-BRAND-01 · `createBrand` 02 · `getBrandForAdmin` 03 · `updateBrand` 04 · `deleteBrand` 05 |
-| `ProductReader` | `listProducts` FR-PRODUCT-01 (DR-31) |
-| `ProductFacade` | `getProduct` FR-PRODUCT-02 · `listProductsForAdmin` FR-ADMIN-PRODUCT-01 · `createProduct` 02 · `getProductForAdmin` 03 · `updateProduct` 04 · `deleteProduct` 05 · `updateStock` 06 |
-| `ProductLikeFacade` | `like` FR-LIKE-01 · `unlike` 02 · `listMyLikes` 03 |
-| `PointFacade` | `charge` FR-POINT-01 · `getBalance` 02 · `refund` 03 · `chargeByAdmin` FR-ADMIN-POINT-01 · `deductByAdmin` 02 |
-| `OrderFacade` | `createOrder` FR-ORDER-01 · `confirmOrder` 02 · `listMyOrders` 03 · `getMyOrder` 04 · `listOrdersForAdmin` FR-ADMIN-ORDER-01 · `getOrderForAdmin` 02 |
+| `BrandReader` | `getBrand` FR-BRAND-01 · `listBrandsForAdmin` FR-ADMIN-BRAND-01 · `getBrandForAdmin` 03 |
+| `BrandFacade` | `createBrand` FR-ADMIN-BRAND-02 · `updateBrand` 04 · `deleteBrand` 05 |
+| `ProductReader` | `listProducts` FR-PRODUCT-01 · `getProduct` 02 · `listProductsForAdmin` FR-ADMIN-PRODUCT-01 · `getProductForAdmin` 03 |
+| `ProductFacade` | `createProduct` FR-ADMIN-PRODUCT-02 · `updateProduct` 04 · `deleteProduct` 05 · `updateStock` 06 |
+| `ProductLikeReader` | `listMyLikes` FR-LIKE-03 |
+| `ProductLikeFacade` | `like` FR-LIKE-01 · `unlike` 02 |
+| `PointReader` | `getBalance` FR-POINT-02 |
+| `PointFacade` | `charge` FR-POINT-01 · `refund` 03 · `chargeByAdmin` FR-ADMIN-POINT-01 · `deductByAdmin` 02 |
+| `OrderReader` | `listMyOrders` FR-ORDER-03 · `getMyOrder` 04 · `listOrdersForAdmin` FR-ADMIN-ORDER-01 · `getOrderForAdmin` 02 |
+| `OrderFacade` | `createOrder` FR-ORDER-01 · `confirmOrder` 02 |
 
 ### 5-1 ~ 5-3. 계층·역할·애그리거트
 
@@ -1095,9 +1102,10 @@ Facade·Reader public 메서드 ↔ FR (28:28)
   - Model은 다른 AG를 모른다. 다른 AG의 Model을 필드로 들지 않고 메서드 파라미터로도 받지 않는다. 참조가 필요하면 Long ID만 든다 (`ProductModel.brandId`, `ProductLikeModel.productId`).
   - 도메인 Service는 같은 BC에 속한 다른 AG의 Repository나 Service를 사용해도 된다. 여러 AG에 걸친 규칙을 검증하기 위해서다. 현재 코드에는 쓰는 곳이 없다 — INV-10은 DR-04대로 Facade가 두 Service를 부르고, INV-04·05는 `ProductLikeService` 안에서 ID로만 끝난다.
   - Repository 인터페이스(domain)는 시그니처에 다른 AG의 Model을 넣지 않는다. 조인한 결과가 필요하면 자기 패키지에 읽기용 record를 두고 그것을 반환한다.
-  - Repository 구현체(infrastructure)는 조회 쿼리를 짤 때 같은 BC의 다른 Q클래스를 조인해도 된다. 결과는 자기 AG의 Model 또는 프로젝션으로 반환한다 (`ProductLikeRepositoryImpl.findPageByUserIdWithActiveProduct`가 `QProductModel`을 필터 조인). 다른 BC의 domain은 import하지 않는다.
+  - Repository 구현체(infrastructure)는 조회 쿼리를 짤 때 같은 BC의 다른 Q클래스를 조인해도 된다. 결과는 자기 AG의 Model 또는 프로젝션으로 반환한다 다른 BC의 domain은 import하지 않는다. 현재 쓰는 곳은 없다 — 다른 AG와 조인하는 조회는 모두 조회 Repository로 옮겼다 (DR-31).
 - 조회 경로 (DR-31): 위 AG 간 규칙은 쓰기(명령) 경로에 적용한다. 조회는 AG 경계를 넘어도 된다.
-  - 조회 FR은 Facade 대신 `application.<ag>.query`의 Reader가 맡을 수 있고, Controller가 Reader를 직접 부른다. 현재 FR-PRODUCT-01(`ProductReader.listProducts`)만 해당한다.
+  - 조회 FR 13개는 전부 Facade가 아니라 `application.<ag>.query`의 Reader가 맡고, Controller가 Reader를 직접 부른다. 명령의 응답(`*Info`, `ProductInfoAssembler`)은 이 규칙 밖이라 그대로 둔다.
+  - 없음·소유 판정(`*_NOT_FOUND`, `NOT_OWNER`)은 조회 Repository가 `Optional`로 돌려준 결과를 보고 Reader가 던진다. 코드와 순서는 명령 쪽 Service와 같다.
   - Reader는 요청자 확인(`UserService`) 외에는 조회 Repository만 부른다. 다른 BC 데이터가 필요하면 쿼리에 섞지 않고 그 BC의 Service를 부른다.
   - 조회 Repository 구현체는 같은 BC 안의 AG 테이블을 조인·집계해도 된다. BC 간 조인은 하지 않는다.
   - 조회 Repository와 Reader는 엔티티(Model)를 반환하지 않는다. 결과는 `<Ag>View`의 중첩 record(전용 조회 DTO)로만 돌려준다. 조회마다 record 하나를 두되, 파일은 AG당 `View` 하나로 모은다.
@@ -1117,7 +1125,7 @@ Facade·Reader public 메서드 ↔ FR (28:28)
 ### 5-5. 트랜잭션
 
 - 2-4가 전부 "즉시"이므로 Facade public 메서드 하나 = 트랜잭션 하나. 분리 없음. Reader public 메서드도 같다(읽기 전용).
-- 조회 FR 15개(FR-BRAND-01, PRODUCT-01/02, LIKE-03, POINT-02, ORDER-03/04, ADMIN-BRAND-01/03, ADMIN-PRODUCT-01/03, ADMIN-ORDER-01/02, 그리고 요청자 식별만 하는 조회)는 읽기 전용 트랜잭션.
+- 조회 FR 15개(FR-BRAND-01, PRODUCT-01/02, LIKE-03, POINT-02, ORDER-03/04, ADMIN-BRAND-01/03, ADMIN-PRODUCT-01/03, ADMIN-ORDER-01/02, 그리고 요청자 식별만 하는 조회)는 읽기 전용 트랜잭션. 요청자 식별을 뺀 13개는 Reader 메서드다(DR-31).
 - `OrderFacade.confirmOrder`는 한 트랜잭션에서 `ProductService.deductStock`(품목 수만큼) → `PointService.deduct` → `OrderModel.confirm` 순으로 부른다. 어느 하나가 예외를 던지면 전부 롤백 (ASM-14, DR-08). 순서는 검사 비용이 싼 것부터가 아니라 요구사항 FR-ORDER-02 실패 케이스 순서(상품 삭제 → 재고 → 잔액)를 따른다.
 - LK- 없음.
 
@@ -1159,15 +1167,15 @@ Facade·Reader public 메서드 ↔ FR (28:28)
 - [x] `interfaces` → `domain`·`infrastructure` import 없음 — `ArchitectureTest.interfacesDoNotDependOnDomain`, `respectsLayerDependencies`
 - [x] 조회 Repository → `*Model` 의존 없음 — `ArchitectureTest.queryRepositoryDoesNotExposeModel` (DR-31)
 - [x] 조회 전용 DTO(`*View`와 중첩 record) → `*Model` 의존 없음 — `ArchitectureTest.queryViewDoesNotHoldModel` (DR-31)
-- [x] Facade·Reader public 메서드 28개 ↔ FR 28개, 주석에 FR-ID — `ProductReader` 1, `BrandFacade` 6, `ProductFacade` 7, `ProductLikeFacade` 3, `PointFacade` 5, `OrderFacade` 6
+- [x] Facade·Reader public 메서드 28개 ↔ FR 28개, 주석에 FR-ID — Reader 13(`BrandReader` 3, `ProductReader` 4, `ProductLikeReader` 1, `PointReader` 1, `OrderReader` 4) + Facade 15(`BrandFacade` 3, `ProductFacade` 4, `ProductLikeFacade` 2, `PointFacade` 4, `OrderFacade` 2)
 - [x] EP 28개 ↔ ApiSpec 메서드 28개 — `BrandV1` 1, `ProductV1` 2, `ProductLikeV1` 3, `PointV1` 3, `OrderV1` 4, `BrandAdminV1` 5, `ProductAdminV1` 6, `PointAdminV1` 2, `OrderAdminV1` 2. 각 메서드 주석에 EP-ID
 - [x] 거부(AG 내) INV 14개가 Model/Service 안에서 검증됨 — INV-01·02 `PointModel` / INV-03·11·13 `ProductModel` / INV-14 `BrandModel` / INV-06·07·08·09·12 `OrderModel` / INV-15 `UserService` / INV-04·05 `ProductLikeService` + 고유 제약. INV-10 은 `BrandFacade.deleteBrand`·`ProductFacade.createProduct` 트랜잭션 (DR-04)
 - [x] 전이 메서드 3개만 존재, setter 없음 — `BrandModel.delete()`, `ProductModel.delete()`(둘 다 `BaseEntity` 상속), `OrderModel.confirm()`. `ensureDraft()` 는 전이가 아니라 사전 조건 검사. 단 `BaseEntity.restore()` 는 공유 모듈에 남아 있다 (DR-26)
 - [x] `ApiControllerAdvice` 가 ER-01~22 매핑, 매핑 없는 예외 밖으로 안 나감 — `CoreException` → `ErrorType` 22개 + 범용, 형식 오류는 파라미터·필드 이름 매핑 (DR-24), `Throwable` → 500
 - [x] 5-4 DR 대상 FR 없음 (해당 없음)
 - [x] 5-6 표 = 코드의 BC 간 호출 — 모든 Facade·Reader → `UserService.getUser/getAdmin`; `PointFacade.chargeByAdmin/deductByAdmin` → `UserService.getUser(target)`; `OrderFacade.createOrder` → `ProductService.getActiveProducts`; `OrderFacade.confirmOrder` → `ProductService.getActiveProducts`, `ProductService.deductStock`, `PointService.deduct`. 표 밖 호출 없음
-- [x] Repository 6개 (AG 루트 단위) — `User, Brand, Product, ProductLike, Point, Order`. `OrderItemRepository` 없음. 조회 전용은 별도로 `ProductQueryRepository` 1개 (DR-31)
-- [x] 5-7 대상 전부 테스트 있음 — 273개 통과. FR 성공/실패: `*FacadeIntegrationTest` 6개 + `ProductReaderIntegrationTest`(FR-PRODUCT-01). INV: `*ModelTest` 4개 + `UserServiceIntegrationTest`(INV-15) + `ProductLikeFacadeIntegrationTest`(INV-04·05). ST: ST-03 `OrderModelTest`, ST-01/02 는 DR-26 으로 미작성. ER: `*ApiE2ETest` 5개(`Brand`·`Product`·`ProductLike`·`Point`·`Order`) + 공통 ER-01·02 `RequesterV1ApiE2ETest`
+- [x] Repository 6개 (AG 루트 단위) — `User, Brand, Product, ProductLike, Point, Order`. `OrderItemRepository` 없음. 조회 전용은 별도로 `Brand, Product, ProductLike, Point, Order` 5개 (`*QueryRepository`, DR-31)
+- [x] 5-7 대상 전부 테스트 있음 — 273개 통과. FR 성공/실패: 명령은 `*FacadeIntegrationTest`, 조회는 `*ReaderIntegrationTest` 5개(`Brand`·`Product`·`ProductLike`·`Point`·`Order`). INV: `*ModelTest` 4개 + `UserServiceIntegrationTest`(INV-15) + `ProductLikeFacadeIntegrationTest`(INV-04·05). ST: ST-03 `OrderModelTest`, ST-01/02 는 DR-26 으로 미작성. ER: `*ApiE2ETest` 5개(`Brand`·`Product`·`ProductLike`·`Point`·`Order`) + 공통 ER-01·02 `RequesterV1ApiE2ETest`
 
 ---
 
@@ -1208,7 +1216,7 @@ Facade·Reader public 메서드 ↔ FR (28:28)
 | DR-28 | 5 | 4-1 페이징, 4-3-0 Page, ER-08 | 페이징 검증(`INVALID_PAGE`)과 결과 형태는 BC 밖 공통 값 객체 `support.paging.PageQuery`·`PageResult` 에 둔다. `page`·`size` 의 타입 오류는 DR-24 매핑으로 같은 코드(DR-30 으로 대체) | 각 BC Service 에서 검증 | 6개 EP 가 같은 규칙을 쓴다. `support` 는 `error` 처럼 모든 계층이 참조하는 공통 패키지다 | 커서 페이징(DR-19 되돌릴 조건)이 오면 여기서만 바꾼다 | 없음 |
 | DR-29 | 5 | 5-0, 5-1~5-3, 5-8, 2-1, 2-2 | 패키지를 BC가 아니라 AG 단위로 나눈다(`brand`·`product`·`productlike`·`user`·`point`·`order`). BC는 문서(5-0 표)와 `ArchitectureTest.AGGREGATES_BY_BC` 매핑으로만 존재하고, BC 간 import 금지 규칙은 그 매핑으로 계속 검사한다. 같은 BC 안 AG 간 규칙은 5-1~5-3: Model·Repository 시그니처는 다른 AG를 모르고(ID만), Service·RepositoryImpl은 같은 BC의 다른 AG를 써도 된다 | (a) BC 단위 패키지 `catalog` 아래 Brand·Product·ProductLike를 접두사로 나열(이전 구조) (b) `catalog.brand`처럼 BC/AG 2단 패키지 | (a)는 카탈로그 패키지 하나에 AG 3개의 Model·Service·Repository 9개가 섞여 AG 경계가 이름 접두사로만 보였다. (b)는 BC 하나짜리 패키지(`user.user`)가 생기고 ArchUnit 패턴도 2단이 된다. AG 단위로 펴면 패키지 = AG 루트가 되고 BC 규칙은 매핑 한 곳에서 관리된다 | AG가 늘어 BC 안에서 묶어 볼 필요가 커지면 (b)로 옮긴다. 그때도 `AGGREGATES_BY_BC` 만 고치면 규칙은 유지된다 | 없음 |
 | DR-30 | 5 | DR-19, DR-24, DR-28, ER-08, EP-02·06·12·14·19·25 | (1) `page` 상한 100 (`PageQuery.MAX_PAGE`), 초과는 ER-08. (2) 컨트롤러는 `page`·`size` 를 `Integer` 둘로 받지 않고 `PageQuery` 하나로 받는다. `PageQueryArgumentResolver`(`@RequesterId` 와 같은 `HandlerMethodArgumentResolver`)가 쿼리 파라미터를 읽어 `PageQuery.of` 로 만들고, 형식 오류(`page=abc`)도 리졸버가 `INVALID_PAGE` 를 직접 던진다. `ApiControllerAdvice` 의 `page`·`size` 타입 오류 매핑(DR-24)은 제거 | (a) Spring Data `Pageable` + `max-page-size` (b) `@ModelAttribute` DTO + Bean Validation | (a)는 상한 초과·음수를 에러가 아니라 보정(clamp)해 ER-08 요구와 어긋나고 interfaces 가 Spring Data 타입에 묶인다. (b)는 검증 규칙이 `PageQuery` 생성자와 어노테이션 두 곳에 생기고 `BindException` 매핑을 새로 둬야 한다. 리졸버는 검증을 `PageQuery` 한 곳에 두고 예외 경로(`CoreException` → advice)가 기존과 같다. `page` 상한은 오프셋(`page*size` ≤ 10,000) 폭주를 막는 값이며 `size` 와 같은 100 으로 단순화 | 깊은 페이지가 실제로 필요해지면 커서 페이징(DR-19 되돌릴 조건)으로 간다. 값만 바꿀 때는 `MAX_PAGE` 만 고친다 | ASM-20에 `page` 상한 확정 표시 `(설계 결정 DR-30)` |
-| DR-31 | 5 | 0-2, 3-7-A, 5-0, 5-1~5-3, 5-5, 5-6, 5-8, DR-02, DR-29, FR-PRODUCT-01 | 조회는 AG 경계를 넘어도 된다. 조회 FR은 `application.<ag>.query`의 Reader가 맡고 Controller가 Reader를 직접 부른다. Reader는 조회 Repository(인터페이스는 `application.<ag>.query`, 구현은 `infrastructure.<ag>.query`)를 부르고, 조회 Repository는 같은 BC 안 AG 테이블을 한 쿼리로 조인·집계해 전용 조회 DTO(`<Ag>View`의 중첩 record)로 바로 반환한다. 엔티티를 반환하지 않는다. BC 간 조인은 하지 않는다. 쓰기 경로의 AG 간 규칙(5-1~5-3)은 그대로. 우선 FR-PRODUCT-01만 옮겼다(`ProductReader.listProducts` → `ProductView.Summary`) | (a) 기존대로 Facade가 AG별 Service를 불러 Assembler로 조립 (b) 조회 Repository 인터페이스를 `domain`에 둔다 (c) 조회마다 DTO 파일을 따로 만든다 | (a)는 목록 한 번에 쿼리가 3번(상품·브랜드·좋아요 수) 나가고 `likes_desc`의 좋아요 수를 정렬과 표시에서 두 번 센다. (b)는 화면 모양의 조회 DTO가 도메인 규칙이 아닌데 domain에 들어간다. 대신 infrastructure → application 의존이 새로 생긴다(0-2). (c)는 조회가 늘수록 클래스가 폭발한다. AG당 `View` 하나에 중첩 record로 모은다. 엔티티 반환 금지는 ArchUnit 두 규칙으로 강제한다(5-8) | 조회가 다른 BC 데이터와 섞인 정렬·페이징을 요구하면(BC 간 조인 필요) 읽기 모델 분리나 BC 경계 재검토로 간다. 나머지 조회 FR(FR-PRODUCT-02, FR-ADMIN-PRODUCT-01/03, FR-LIKE-03 등)은 필요할 때 같은 방식으로 옮긴다 | 없음 |
+| DR-31 | 5 | 0-2, 3-7-A, 5-0, 5-1~5-3, 5-5, 5-6, 5-8, DR-02, DR-29, 조회 FR 13개 | 조회는 AG 경계를 넘어도 된다. 조회 FR은 `application.<ag>.query`의 Reader가 맡고 Controller가 Reader를 직접 부른다. Reader는 조회 Repository(인터페이스는 `application.<ag>.query`, 구현은 `infrastructure.<ag>.query`)를 부르고, 조회 Repository는 같은 BC 안 AG 테이블을 한 쿼리로 조인·집계해 전용 조회 DTO(`<Ag>View`의 중첩 record)로 바로 반환한다. 엔티티를 반환하지 않는다. BC 간 조인은 하지 않는다. 쓰기 경로의 AG 간 규칙(5-1~5-3)은 그대로. 조회 FR 13개를 전부 옮겼다(AG마다 `<Ag>Reader`). 명령과 그 응답(`*Info`, `ProductInfoAssembler`)은 바꾸지 않는다 | (a) 기존대로 Facade가 AG별 Service를 불러 Assembler로 조립 (b) 조회 Repository 인터페이스를 `domain`에 둔다 (c) 조회마다 DTO 파일을 따로 만든다 | (a)는 상품 목록 한 번에 쿼리가 3번(상품·브랜드·좋아요 수), 내 좋아요 목록은 4번 나가고, `likes_desc`의 좋아요 수를 정렬과 표시에서 두 번 센다. 조립이 없는 단일 AG 조회도 같은 경로로 모아 조회·명령의 경계를 한 가지로 둔다. (b)는 화면 모양의 조회 DTO가 도메인 규칙이 아닌데 domain에 들어간다. 대신 infrastructure → application 의존이 새로 생긴다(0-2). (c)는 조회가 늘수록 클래스가 폭발한다. AG당 `View` 하나에 중첩 record로 모은다. 엔티티 반환 금지는 ArchUnit 두 규칙으로 강제한다(5-8) | 조회가 다른 BC 데이터와 섞인 정렬·페이징을 요구하면(BC 간 조인 필요) 읽기 모델 분리나 BC 경계 재검토로 간다. 새 조회 FR도 같은 방식으로 Reader에 둔다 | 없음 |
 
 ### A-2. 열린 질문
 
@@ -1252,4 +1260,4 @@ Facade·Reader public 메서드 ↔ FR (28:28)
 | FR-ADMIN-POINT-01 | BC-03 | AG-05 | TB-05 | EP-27 | ER-01, ER-02, ER-09, ER-10 (+ ER-22 `userId` 누락·타입 오류) | `FR-ADMIN-POINT-01`, `_USER_NOT_FOUND`, `_BAD_REQUEST`, `_INVALID_AMOUNT`, `_BALANCE_LIMIT_EXCEEDED` |
 | FR-ADMIN-POINT-02 | BC-03 | AG-05 | TB-05 | EP-28 | ER-01, ER-02, ER-09, ER-11 (+ ER-22 `userId` 누락·타입 오류) | `FR-ADMIN-POINT-02`, `_USER_NOT_FOUND`, `_BAD_REQUEST`, `_INVALID_AMOUNT`, `_INSUFFICIENT_POINT` |
 
-공통 실패(`USER_NOT_FOUND`, `NOT_ADMIN`)는 ER 칸에 전부 적었고 테스트는 Facade마다 하나씩(중복 생략). `INV-15`는 `UserService.getAdmin` 단위 테스트. 빈 칸 없음.
+공통 실패(`USER_NOT_FOUND`, `NOT_ADMIN`)는 ER 칸에 전부 적었고 테스트는 Facade·Reader마다 하나씩(중복 생략). `INV-15`는 `UserService.getAdmin` 단위 테스트. 빈 칸 없음.
