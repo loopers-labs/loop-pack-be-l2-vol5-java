@@ -1,5 +1,8 @@
 package com.loopers.domain.order;
 
+import com.loopers.domain.common.PageNumber;
+import com.loopers.domain.common.PageSize;
+import com.loopers.domain.common.PageWindow;
 import com.loopers.support.error.DomainError;
 import com.loopers.support.error.DomainException;
 import lombok.RequiredArgsConstructor;
@@ -31,7 +34,7 @@ public class OrderService {
         return orderRepository.findById(orderId).orElseThrow(() -> new DomainException(DomainError.ORDER_NOT_FOUND));
     }
 
-    public List<Order> findPage(Long userId, OrderStatus status, int offset, int limit) {
-        return orderRepository.findPage(userId, status, offset, limit);
+    public PageWindow<Order> findPage(Long userId, OrderStatus status, PageNumber page, PageSize size) {
+        return orderRepository.findPage(userId, status, page, size);
     }
 }

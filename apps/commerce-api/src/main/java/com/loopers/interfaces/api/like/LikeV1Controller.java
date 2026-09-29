@@ -7,6 +7,7 @@ import com.loopers.application.like.LikeFacade;
 import com.loopers.domain.common.PageNumber;
 import com.loopers.domain.common.PageSize;
 import com.loopers.interfaces.api.ApiResponse;
+import com.loopers.interfaces.api.PageResponse;
 import com.loopers.interfaces.api.product.ProductV1Dto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -17,7 +18,6 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
@@ -45,7 +45,7 @@ public class LikeV1Controller {
     }
 
     @GetMapping("/api/v1/users/{userId}/likes")
-    public ApiResponse<List<ProductV1Dto.ProductResponse>> myLikes(
+    public ApiResponse<PageResponse<ProductV1Dto.ProductResponse>> myLikes(
         @RequestHeader("X-USER-ID") Long requesterId,
         @PathVariable Long userId,
         @RequestParam(defaultValue = "0") PageNumber page,
@@ -55,6 +55,6 @@ public class LikeV1Controller {
             throw new DomainException(DomainError.LIKE_LIST_NOT_FOUND);
         }
         return ApiResponse.success(
-            productViewQuery.findLikedBy(userId, page, size).stream().map(ProductV1Dto.ProductResponse::from).toList());
+            PageResponse.of(productViewQuery.findLikedBy(userId, page, size), page, size, ProductV1Dto.ProductResponse::from));
     }
 }

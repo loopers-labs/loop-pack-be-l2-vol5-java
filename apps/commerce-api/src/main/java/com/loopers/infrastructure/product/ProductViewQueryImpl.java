@@ -68,7 +68,7 @@ public class ProductViewQueryImpl implements ProductViewQuery {
     }
 
     @Override
-    public List<ProductViewQuery.View> findLikedBy(Long userId, PageNumber page, PageSize size) {
+    public PageWindow<ProductViewQuery.View> findLikedBy(Long userId, PageNumber page, PageSize size) {
         Query query = entityManager.createNativeQuery("""
             SELECT p.id, p.name, p.price, p.quantity, b.id, b.name,
                    COUNT(DISTINCT l.id) AS like_count, 1 AS liked
@@ -82,12 +82,14 @@ public class ProductViewQueryImpl implements ProductViewQuery {
              LIMIT :limit OFFSET :offset
             """);
         query.setParameter("userId", userId);
-        query.setParameter("limit", size.value());
+        query.setParameter("limit", PageWindow.limitOf(size));
         query.setParameter("offset", page.offsetWith(size));
 
-        return ((List<?>) query.getResultList()).stream()
+        List<ProductViewQuery.View> rows = ((List<?>) query.getResultList()).stream()
             .map(row -> toView((Object[]) row))
             .toList();
+
+        return PageWindow.of(rows, size);
     }
 
     private static String orderByOf(ProductViewQuery.Sort sort) {

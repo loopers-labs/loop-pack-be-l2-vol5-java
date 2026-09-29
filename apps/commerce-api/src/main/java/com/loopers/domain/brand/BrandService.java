@@ -1,12 +1,13 @@
 package com.loopers.domain.brand;
 
+import com.loopers.domain.common.PageNumber;
+import com.loopers.domain.common.PageSize;
+import com.loopers.domain.common.PageWindow;
 import com.loopers.support.error.DomainError;
 import com.loopers.support.error.DomainException;
 import com.loopers.domain.product.ProductsInBrand;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-
-import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -39,9 +40,10 @@ public class BrandService {
         brandRepository.save(brand);
     }
 
-    public List<Brand> findPage(int offset, int limit) {
-        return brandRepository.findPage(offset, limit);
+    public PageWindow<Brand> findPage(PageNumber page, PageSize size) {
+        return brandRepository.findPage(page, size);
     }
+
     public void requireAvailable(Long brandId) {
         brandRepository.findByIdForShare(brandId)
             .orElseThrow(() -> new DomainException(DomainError.BRAND_NOT_AVAILABLE));

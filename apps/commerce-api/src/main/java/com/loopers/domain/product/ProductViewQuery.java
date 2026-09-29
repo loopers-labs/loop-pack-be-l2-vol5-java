@@ -4,7 +4,6 @@ import com.loopers.domain.common.PageNumber;
 import com.loopers.domain.common.PageSize;
 import com.loopers.domain.common.PageWindow;
 
-import java.util.List;
 import java.util.Optional;
 
 public interface ProductViewQuery {
@@ -13,7 +12,7 @@ public interface ProductViewQuery {
 
     PageWindow<View> findPage(Criteria criteria);
 
-    List<View> findLikedBy(Long userId, PageNumber page, PageSize size);
+    PageWindow<View> findLikedBy(Long userId, PageNumber page, PageSize size);
 
     record View(
         Long id,

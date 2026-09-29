@@ -1,17 +1,13 @@
 package com.loopers.infrastructure.brand;
 
 import jakarta.persistence.LockModeType;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import java.util.List;
 import java.util.Optional;
 
 interface BrandJpaRepository extends JpaRepository<BrandEntity, Long> {
-
-    List<BrandEntity> findByDeletedAtIsNullOrderByIdDesc(Pageable pageable);
 
     Optional<BrandEntity> findByIdAndDeletedAtIsNull(Long id);
 

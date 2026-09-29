@@ -5,6 +5,7 @@ import com.loopers.domain.common.PageNumber;
 import com.loopers.domain.common.PageSize;
 import com.loopers.domain.order.OrderStatus;
 import com.loopers.interfaces.api.ApiResponse;
+import com.loopers.interfaces.api.PageResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -20,14 +21,15 @@ public class OrderAdminV1Controller {
     private final OrderFacade orderFacade;
 
     @GetMapping
-    public ApiResponse<OrderAdminV1Dto.AdminOrderPageResponse> findPage(
+    public ApiResponse<PageResponse<OrderAdminV1Dto.AdminOrderResponse>> findPage(
         @RequestParam(required = false) Long userId,
         @RequestParam(required = false) OrderStatus status,
         @RequestParam(defaultValue = "0") PageNumber page,
         @RequestParam(defaultValue = "20") PageSize size
     ) {
-        return ApiResponse.success(OrderAdminV1Dto.AdminOrderPageResponse.of(
-            orderFacade.findPageForAdmin(userId, status, page, size), page.value(), size.value()));
+        return ApiResponse.success(PageResponse.of(
+            orderFacade.findPageForAdmin(userId, status, page, size), page, size,
+            OrderAdminV1Dto.AdminOrderResponse::from));
     }
 
     @GetMapping("/{orderId}")

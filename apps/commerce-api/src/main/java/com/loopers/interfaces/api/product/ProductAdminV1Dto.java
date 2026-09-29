@@ -1,10 +1,7 @@
 package com.loopers.interfaces.api.product;
 
-import com.loopers.domain.common.PageWindow;
-import com.loopers.domain.product.ProductAdminQuery;
-
-import java.util.List;
 import com.loopers.domain.common.Quantity;
+import com.loopers.domain.product.ProductAdminQuery;
 import com.loopers.domain.product.Price;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductName;
@@ -60,15 +57,6 @@ public class ProductAdminV1Dto {
         static AdminProductListItem from(ProductAdminQuery.View view) {
             return new AdminProductListItem(
                 view.id(), view.brandId(), view.brandName(), view.name(), view.price(), view.quantity());
-        }
-    }
-
-    public record AdminProductPageResponse(
-        List<AdminProductListItem> items, int page, int size, boolean hasNext) {
-        public static AdminProductPageResponse of(PageWindow<ProductAdminQuery.View> productPage, int page, int size) {
-            return new AdminProductPageResponse(
-                productPage.items().stream().map(AdminProductListItem::from).toList(),
-                page, size, productPage.hasNext());
         }
     }
 

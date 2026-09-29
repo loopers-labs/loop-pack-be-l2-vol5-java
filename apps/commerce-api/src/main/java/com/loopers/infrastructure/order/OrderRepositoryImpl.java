@@ -1,5 +1,8 @@
 package com.loopers.infrastructure.order;
 
+import com.loopers.domain.common.PageNumber;
+import com.loopers.domain.common.PageSize;
+import com.loopers.domain.common.PageWindow;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.OrderRepository;
@@ -53,8 +56,9 @@ public class OrderRepositoryImpl implements OrderRepository {
     }
 
     @Override
-    public List<Order> findPage(Long userId, OrderStatus status, int offset, int limit) {
-        return toDomain(orderQueryRepository.findPage(userId, status, offset, limit));
+    public PageWindow<Order> findPage(Long userId, OrderStatus status, PageNumber page, PageSize size) {
+        return PageWindow.of(toDomain(orderQueryRepository.findPage(
+            userId, status, page.offsetWith(size), PageWindow.limitOf(size))), size);
     }
 
     private List<Order> toDomain(List<OrderEntity> entities) {

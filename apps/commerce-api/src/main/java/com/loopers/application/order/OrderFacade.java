@@ -55,8 +55,7 @@ public class OrderFacade {
 
     @Transactional(readOnly = true)
     public PageWindow<Order> findPageForAdmin(Long userId, OrderStatus status, PageNumber page, PageSize size) {
-        return PageWindow.of(
-            orderService.findPage(userId, status, page.offsetWith(size), PageWindow.limitOf(size)), size);
+        return orderService.findPage(userId, status, page, size);
     }
 
     @Transactional(readOnly = true)

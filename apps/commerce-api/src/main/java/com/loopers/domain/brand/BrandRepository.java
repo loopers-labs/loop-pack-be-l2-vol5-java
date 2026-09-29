@@ -1,6 +1,9 @@
 package com.loopers.domain.brand;
 
-import java.util.List;
+import com.loopers.domain.common.PageNumber;
+import com.loopers.domain.common.PageSize;
+import com.loopers.domain.common.PageWindow;
+
 import java.util.Optional;
 
 public interface BrandRepository {
@@ -13,5 +16,5 @@ public interface BrandRepository {
 
     Optional<Brand> findByIdForUpdate(Long id);
 
-    List<Brand> findPage(int offset, int limit);
+    PageWindow<Brand> findPage(PageNumber page, PageSize size);
 }

@@ -2,18 +2,24 @@ package com.loopers.infrastructure.brand;
 
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
+import com.loopers.domain.common.PageNumber;
+import com.loopers.domain.common.PageSize;
+import com.loopers.domain.common.PageWindow;
+import com.querydsl.jpa.impl.JPAQueryFactory;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
+
+import static com.loopers.infrastructure.brand.QBrandEntity.brandEntity;
 
 @Repository
 @RequiredArgsConstructor
 public class BrandRepositoryImpl implements BrandRepository {
 
     private final BrandJpaRepository brandJpaRepository;
+    private final JPAQueryFactory queryFactory;
 
     @Override
     public Brand save(Brand brand) {
@@ -42,9 +48,14 @@ public class BrandRepositoryImpl implements BrandRepository {
     }
 
     @Override
-    public List<Brand> findPage(int offset, int limit) {
-        PageRequest pageRequest = PageRequest.of(offset / limit, limit);
-        return brandJpaRepository.findByDeletedAtIsNullOrderByIdDesc(pageRequest).stream()
+    public PageWindow<Brand> findPage(PageNumber page, PageSize size) {
+        List<Brand> rows = queryFactory.selectFrom(brandEntity)
+            .where(brandEntity.deletedAt.isNull())
+            .orderBy(brandEntity.id.desc())
+            .offset(page.offsetWith(size))
+            .limit(PageWindow.limitOf(size))
+            .fetch().stream()
             .map(BrandEntity::toDomain).toList();
+        return PageWindow.of(rows, size);
     }
 }

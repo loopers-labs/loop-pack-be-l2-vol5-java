@@ -1,5 +1,9 @@
 package com.loopers.domain.order;
 
+import com.loopers.domain.common.PageNumber;
+import com.loopers.domain.common.PageSize;
+import com.loopers.domain.common.PageWindow;
+
 import java.util.List;
 import java.util.Optional;
 
@@ -13,5 +17,5 @@ public interface OrderRepository {
 
     List<Order> findByUserId(Long userId);
 
-    List<Order> findPage(Long userId, OrderStatus status, int offset, int limit);
+    PageWindow<Order> findPage(Long userId, OrderStatus status, PageNumber page, PageSize size);
 }

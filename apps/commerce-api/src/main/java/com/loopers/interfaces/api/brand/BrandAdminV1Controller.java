@@ -1,11 +1,11 @@
 package com.loopers.interfaces.api.brand;
 
 import com.loopers.application.brand.BrandFacade;
-import com.loopers.domain.common.PageWindow;
 import com.loopers.domain.brand.BrandService;
 import com.loopers.domain.common.PageNumber;
 import com.loopers.domain.common.PageSize;
 import com.loopers.interfaces.api.ApiResponse;
+import com.loopers.interfaces.api.PageResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -37,12 +37,12 @@ public class BrandAdminV1Controller {
     }
 
     @GetMapping
-    public ApiResponse<BrandAdminV1Dto.AdminBrandPageResponse> findPage(
+    public ApiResponse<PageResponse<BrandV1Dto.BrandResponse>> findPage(
         @RequestParam(defaultValue = "0") PageNumber page,
         @RequestParam(defaultValue = "20") PageSize size
     ) {
-        return ApiResponse.success(BrandAdminV1Dto.AdminBrandPageResponse.of(
-            brandService.findPage(page.offsetWith(size), PageWindow.limitOf(size)), page, size));
+        return ApiResponse.success(PageResponse.of(
+            brandService.findPage(page, size), page, size, BrandV1Dto.BrandResponse::from));
     }
 
     @GetMapping("/{brandId}")

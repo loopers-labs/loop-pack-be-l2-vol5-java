@@ -96,6 +96,22 @@ class AdminListApiTest {
                 .andExpect(jsonPath("$.data.items.length()").value(1))
                 .andExpect(jsonPath("$.data.items[0].name").value("무신사"));
         }
+
+        @DisplayName("COMMON-008 · 두 번째 페이지는 첫 페이지 다음 줄부터다")
+        @Test
+        void secondPageContinuesFromFirst() throws Exception {
+            brandFacade.register("무신사", "패션 플랫폼");
+            brandFacade.register("29CM", "셀렉트샵");
+            brandFacade.register("W컨셉", "여성 편집숍");
+
+            mvc.perform(asAdmin(get("/api-admin/v1/brands?page=1&size=2")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()").value(1))
+                .andExpect(jsonPath("$.data.items[0].name").value("무신사"))
+                .andExpect(jsonPath("$.data.page").value(1))
+                .andExpect(jsonPath("$.data.size").value(2))
+                .andExpect(jsonPath("$.data.hasNext").value(false));
+        }
     }
 
     @Nested
@@ -185,6 +201,21 @@ class AdminListApiTest {
                 .andExpect(jsonPath("$.data.items.length()").value(1))
                 .andExpect(jsonPath("$.data.items[0].id").value(confirmed))
                 .andExpect(jsonPath("$.data.items[0].paidAmount").value(1000));
+        }
+
+        @DisplayName("COMMON-008 · 두 번째 페이지는 첫 페이지 다음 줄부터다")
+        @Test
+        void secondPageContinuesFromFirst() throws Exception {
+            Long productId = product();
+            Long oldest = placeOrder(7L, productId);
+            placeOrder(8L, productId);
+            placeOrder(9L, productId);
+
+            mvc.perform(asAdmin(get("/api-admin/v1/orders?page=1&size=2")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()").value(1))
+                .andExpect(jsonPath("$.data.items[0].id").value(oldest))
+                .andExpect(jsonPath("$.data.hasNext").value(false));
         }
 
         @DisplayName("상세도 구매자와 결제 결과를 함께 돌려준다")

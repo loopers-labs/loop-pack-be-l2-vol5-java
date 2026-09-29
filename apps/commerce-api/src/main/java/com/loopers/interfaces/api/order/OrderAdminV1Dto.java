@@ -1,6 +1,5 @@
 package com.loopers.interfaces.api.order;
 
-import com.loopers.domain.common.PageWindow;
 import com.loopers.domain.order.Order;
 
 import java.time.Instant;
@@ -23,15 +22,6 @@ public class OrderAdminV1Dto {
             return new AdminOrderResponse(
                 base.id(), order.getUserId(), base.status(), base.totalAmount(),
                 base.paidAmount(), base.placedAt(), base.confirmedAt(), base.items());
-        }
-    }
-
-    public record AdminOrderPageResponse(
-        List<AdminOrderResponse> items, int page, int size, boolean hasNext) {
-        public static AdminOrderPageResponse of(PageWindow<Order> orderPage, int page, int size) {
-            return new AdminOrderPageResponse(
-                orderPage.items().stream().map(AdminOrderResponse::from).toList(),
-                page, size, orderPage.hasNext());
         }
     }
 }

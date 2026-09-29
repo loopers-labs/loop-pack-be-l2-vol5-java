@@ -7,6 +7,7 @@ import com.loopers.domain.common.Quantity;
 import com.loopers.domain.like.LikeService;
 import com.loopers.domain.product.Price;
 import com.loopers.interfaces.api.ApiResponse;
+import com.loopers.interfaces.api.PageResponse;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -72,7 +73,7 @@ class ProductV1ApiE2ETest {
 
     private static final ParameterizedTypeReference<ApiResponse<ProductV1Dto.ProductResponse>> PRODUCT =
         new ParameterizedTypeReference<>() {};
-    private static final ParameterizedTypeReference<ApiResponse<ProductV1Dto.ProductPageResponse>> PAGE =
+    private static final ParameterizedTypeReference<ApiResponse<PageResponse<ProductV1Dto.ProductResponse>>> PAGE =
         new ParameterizedTypeReference<>() {};
     private static final ParameterizedTypeReference<ApiResponse<Object>> ANY =
         new ParameterizedTypeReference<>() {};
@@ -268,6 +269,34 @@ class ProductV1ApiE2ETest {
                 testRestTemplate.exchange(CUSTOMER + "?size=1000", HttpMethod.GET, as(USER), ANY);
 
             assertThat(response.getStatusCode().value()).isEqualTo(400);
+        }
+    }
+
+    @Nested
+    @DisplayName("좋아요 목록")
+    class LikedList {
+        private PageResponse<ProductV1Dto.ProductResponse> likedPage(String query) {
+            return testRestTemplate.exchange(
+                "/api/v1/users/" + USER + "/likes" + query, HttpMethod.GET, as(USER), PAGE).getBody().data();
+        }
+
+        @DisplayName("COMMON-008 · 좋아요 목록도 hasNext 로 다음 페이지를 알린다")
+        @Test
+        void pagesWithHasNext() {
+            Long first = product("코트", 129_000);
+            Long second = product("셔츠", 59_000);
+            likeFacade.like(USER, first);
+            likeFacade.like(USER, second);
+
+            PageResponse<ProductV1Dto.ProductResponse> firstPage = likedPage("?page=0&size=1");
+            PageResponse<ProductV1Dto.ProductResponse> secondPage = likedPage("?page=1&size=1");
+
+            assertAll(
+                () -> assertThat(firstPage.items()).extracting(ProductV1Dto.ProductResponse::id).containsExactly(second),
+                () -> assertThat(firstPage.hasNext()).isTrue(),
+                () -> assertThat(secondPage.items()).extracting(ProductV1Dto.ProductResponse::id).containsExactly(first),
+                () -> assertThat(secondPage.hasNext()).isFalse()
+            );
         }
     }
 

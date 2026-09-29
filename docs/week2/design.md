@@ -166,7 +166,7 @@ flowchart LR
 | `GET /api/v1/products/{id}` | — | 200 · 브랜드명 · 좋아요 수 · `liked` · `soldOut` | 404 `PRODUCT_NOT_FOUND` |
 | `POST /api/v1/products/{id}/likes` | — | **200** · 바뀐 좋아요 수 (멱등) | 404 `PRODUCT_NOT_FOUND`(삭제된 상품) |
 | `DELETE /api/v1/products/{id}/likes` | — | 200 · 바뀐 좋아요 수 (멱등) | — (없어도 성공) |
-| `GET /api/v1/users/{userId}/likes` | `page` `size` | 200 · 상품 목록 | 404 `LIKE_LIST_NOT_FOUND`(남의 목록) |
+| `GET /api/v1/users/{userId}/likes` | `page` `size` | 200 · 목록 + `hasNext` | 404 `LIKE_LIST_NOT_FOUND`(남의 목록) |
 | `POST /api/v1/points/charge` | `amount` | 200 · 충전 후 잔액 | 400(0 이하·타입) · 409 `POINT_BALANCE_EXCEEDED` |
 | `GET /api/v1/points` | — | 200 · 잔액 | 400(헤더 누락) |
 | `POST /api/v1/orders` | `lines[{productId, quantity}]` | **201** · DRAFT 주문 | 400(빈 품목·수량 0) · 404 `PRODUCT_NOT_FOUND` |
@@ -180,7 +180,7 @@ flowchart LR
 
 | Method · Path | 입력 | 성공 | 대표 실패 |
 |---|---|---|---|
-| `GET /api-admin/v1/brands` | `page` `size` | 200 | — |
+| `GET /api-admin/v1/brands` | `page` `size` | 200 · 목록 + `hasNext` | — |
 | `POST /api-admin/v1/brands` | `name` `description` | **201** | 400(이름 1~50자 위반) |
 | `GET·PUT·DELETE /api-admin/v1/brands/{id}` | `name` `description` | 200 · **204**(삭제) | 404(삭제된 브랜드) · 409 `BRAND_HAS_PRODUCTS` |
 | `GET /api-admin/v1/products` | `brandId` `sort`(latest·price_asc·price_desc·**stock_asc**) `page` `size` | 200 · **수량 포함** | 400(모르는 정렬) |
@@ -1592,8 +1592,14 @@ ORDER BY 문자열은 중복되지 않는다 — 그것은 별칭을 아는 각 
 번호 페이징 화면이 있다는 전제도 우리가 세운 것이고, 원문에 그런 화면은 없다.
 
 → **`size + 1` 개를 읽어 "뒤에 더 있는지" 만 준다.** 질의가 하나로 줄고, 어긋날 두 숫자가 사라진다.
-판단은 `PageWindow` 한 곳에 모았다 — 넷이 각자 `rows.size() > size` 를 쓰면 그중 하나가 틀리는 날이 온다.
+판단은 `PageWindow` 한 곳에 모았다 — 다섯 목록이 각자 `rows.size() > size` 를 쓰면 그중 하나가 틀리는 날이 온다.
 넘치는 한 줄은 버린다. 그것은 다음 페이지의 첫 줄이고, 내보내면 페이지가 겹친다.
+
+**목록 계약은 한 모양이다.** 모든 조회 포트는 `(…, PageNumber, PageSize) → PageWindow<T>` 이고,
+`offsetWith` · `limitOf` 로 숫자를 푸는 일은 **infrastructure 에서만** 한다. 응답은 `PageResponse<T>` 하나다.
+`int offset, int limit` 을 계약에 올리면 푸는 곳이 호출자마다 생기고, 거기서 틀린다 —
+`size + 1` 로 부푼 `limit` 을 받은 쪽이 그것으로 다시 페이지 번호를 나누면 두 번째 페이지가 첫 페이지를 되풀이한다.
+**뒤집을 조건**: 커서 페이징으로 옮길 때(7장 끝). 그때는 `PageNumber` 자리에 커서 타입이 들어가고 `PageWindow` 는 남는다.
 
 **가장 크게 사는 것은 좋아요순 정렬이다.** `COUNT` 도 같은 `GROUP BY` 조인을 반복하고 있었으므로,
 7장에 "여기부터 느려진다" 고 적어 둔 질의가 **두 번 돌던 것이 한 번**이 됐다.
