@@ -36,6 +36,15 @@ spring:
       on-profile: local, test
 
 ---
+server:
+  address: 127.0.0.1 # 로컬 실행 전용 - 루프백에만 바인딩한다.
+
+spring:
+  config:
+    activate:
+      on-profile: local
+
+---
 spring:
   config:
     activate:

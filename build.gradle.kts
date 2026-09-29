@@ -38,6 +38,14 @@ subprojects {
     apply(plugin = "org.springframework.boot")
     apply(plugin = "io.spring.dependency-management")
     apply(plugin = "jacoco")
+    apply(plugin = "checkstyle")
+
+    configure<CheckstyleExtension> {
+        toolVersion = "10.26.1"
+        configFile = rootProject.file("config/checkstyle/checkstyle.xml")
+        isIgnoreFailures = false
+        maxWarnings = 0
+    }
 
     dependencyManagement {
         imports {
