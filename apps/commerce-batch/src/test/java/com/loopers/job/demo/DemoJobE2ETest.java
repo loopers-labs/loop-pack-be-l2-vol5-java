@@ -1,7 +1,6 @@
 package com.loopers.job.demo;
 
 import com.loopers.batch.job.demo.DemoJobConfig;
-import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
