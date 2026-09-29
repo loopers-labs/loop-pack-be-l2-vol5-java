@@ -1,4 +1,6 @@
 server:
+  # 로컬 실습용. 외부 인터페이스에 바인딩하지 않는다 — 인증이 없는 API 를 같은 망의 다른 기기가 부를 수 없게 한다.
+  address: 127.0.0.1
   shutdown: graceful
   tomcat:
     threads:
@@ -34,6 +36,14 @@ spring:
   config:
     activate:
       on-profile: local, test
+  # 관리자 경로(/api-admin/**)를 실제로 호출하기 위한 로컬 전용 계정.
+  # 비밀이 아니다 — 저장소에 그대로 들어가는 값이고, 이름으로 그 사실을 드러낸다.
+  # 이 블록은 local·test 프로파일에만 있다. dev 아래로는 내려가지 않는다.
+  security:
+    user:
+      name: admin
+      password: local-only-not-a-secret
+      roles: ADMIN
 
 ---
 spring:

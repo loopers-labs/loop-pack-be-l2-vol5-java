@@ -1,0 +1,78 @@
+### 이어지는 흐름 — 10,000 충전 → 7,000 결제 → 3,000 잔액
+#
+# 위에서부터 순서대로 실행한다. 앞 응답의 id 를 뒤 요청이 받아 쓴다.
+# 이 흐름이 검사하는 것은 개별 API 가 아니라 <b>세 애그리거트가 한 트랜잭션에서 맞아떨어지는가</b> 다:
+#   주문 확정 하나에서 재고가 줄고, 포인트가 빠지고, 원장에 줄이 생긴다.
+# 같은 내용을 OrderV1ApiE2ETest 가 자동으로도 검사한다 — 여기는 눈으로 보는 쪽이다.
+
+### 1. 브랜드 등록
+POST {{commerce-api}}/api-admin/v1/brands
+Authorization: Basic {{admin-user}} {{admin-password}}
+Content-Type: application/json
+
+{ "name": "무신사", "description": "패션 플랫폼" }
+
+> {% client.global.set("flow-brand-id", response.body.data.id); %}
+
+### 2. 상품 등록 — 7,000원
+POST {{commerce-api}}/api-admin/v1/products
+Authorization: Basic {{admin-user}} {{admin-password}}
+Content-Type: application/json
+
+{ "brandId": {{flow-brand-id}}, "name": "양말", "price": 7000 }
+
+> {% client.global.set("flow-product-id", response.body.data.id); %}
+
+### 3. 재고 10개 — 증감이 아니라 최종 수량이다
+PUT {{commerce-api}}/api-admin/v1/products/{{flow-product-id}}/stock
+Authorization: Basic {{admin-user}} {{admin-password}}
+Content-Type: application/json
+
+{ "quantity": 10 }
+
+### 4. 포인트 10,000 충전
+POST {{commerce-api}}/api/v1/points/charge
+X-USER-ID: {{user-id}}
+Content-Type: application/json
+
+{ "amount": 10000 }
+
+### 5. 주문 접수 — 7,000원 1개. 아직 아무것도 움직이지 않는다 (DRAFT)
+POST {{commerce-api}}/api/v1/orders
+X-USER-ID: {{user-id}}
+Content-Type: application/json
+
+{ "lines": [ { "productId": {{flow-product-id}}, "quantity": 1 } ] }
+
+> {% client.global.set("flow-order-id", response.body.data.id); %}
+
+### 6. 확정 — 여기서 재고 10→9, 포인트 10,000→3,000 이 함께 일어난다
+POST {{commerce-api}}/api/v1/orders/{{flow-order-id}}/confirm
+X-USER-ID: {{user-id}}
+
+### 7. 잔액 확인 → 3,000
+GET {{commerce-api}}/api/v1/points
+X-USER-ID: {{user-id}}
+
+### 8. 재고 확인 → 9
+GET {{commerce-api}}/api-admin/v1/products/{{flow-product-id}}
+Authorization: Basic {{admin-user}} {{admin-password}}
+
+### 9. 잔액보다 비싼 주문 — 3,000 밖에 없는데 7,000짜리를 또 산다
+POST {{commerce-api}}/api/v1/orders
+X-USER-ID: {{user-id}}
+Content-Type: application/json
+
+{ "lines": [ { "productId": {{flow-product-id}}, "quantity": 1 } ] }
+
+> {% client.global.set("flow-order-id-2", response.body.data.id); %}
+
+### 10. 확정 → 409. 이때 재고도 그대로 9 여야 한다
+# 재고를 먼저 빼고 포인트에서 실패하므로, 롤백이 안 되면 재고만 줄어든 채 남는다.
+# 그것이 이 요청이 실제로 보는 것이다 (다음 요청으로 확인)
+POST {{commerce-api}}/api/v1/orders/{{flow-order-id-2}}/confirm
+X-USER-ID: {{user-id}}
+
+### 11. 재고 재확인 → 여전히 9. 실패한 확정은 아무것도 남기지 않았다
+GET {{commerce-api}}/api-admin/v1/products/{{flow-product-id}}
+Authorization: Basic {{admin-user}} {{admin-password}}

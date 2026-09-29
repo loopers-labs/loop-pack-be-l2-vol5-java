@@ -1,0 +1,34 @@
+### 포인트
+
+### 충전
+POST {{commerce-api}}/api/v1/points/charge
+X-USER-ID: {{user-id}}
+Content-Type: application/json
+
+{
+  "amount": 10000
+}
+
+### 잔액
+GET {{commerce-api}}/api/v1/points
+X-USER-ID: {{user-id}}
+
+### ── 실패 확인 ──────────────────────────────────────────
+
+### 0원 충전 → 400. ChargeRequest 의 표준 생성자가 걸러내므로 도메인까지 가지 않는다
+POST {{commerce-api}}/api/v1/points/charge
+X-USER-ID: {{user-id}}
+Content-Type: application/json
+
+{
+  "amount": 0
+}
+
+### 음수 충전 → 400
+POST {{commerce-api}}/api/v1/points/charge
+X-USER-ID: {{user-id}}
+Content-Type: application/json
+
+{
+  "amount": -1000
+}

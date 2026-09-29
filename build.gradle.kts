@@ -1,3 +1,4 @@
+import com.diffplug.gradle.spotless.SpotlessExtension
 import org.gradle.api.Project.DEFAULT_VERSION
 import org.springframework.boot.gradle.tasks.bundling.BootJar
 
@@ -15,6 +16,7 @@ plugins {
     java
     id("org.springframework.boot") apply false
     id("io.spring.dependency-management")
+    id("com.diffplug.spotless") version "8.10.2" apply false
 }
 
 java {
@@ -38,6 +40,28 @@ subprojects {
     apply(plugin = "org.springframework.boot")
     apply(plugin = "io.spring.dependency-management")
     apply(plugin = "jacoco")
+    apply(plugin = "checkstyle")
+    apply(plugin = "com.diffplug.spotless")
+
+    configure<SpotlessExtension> {
+        // 기존 코드 전체 재포맷을 막고, origin/main 이후 바뀐 파일만 건드린다.
+        ratchetFrom("origin/main")
+        java {
+            // ponytail: 전체 재포맷기(palantir/google)는 continuation 을 8칸으로 바꿔
+            // 기존 4칸 스타일과 싸운다. 줄바꿈은 IDE 에 맡기고 여기선 정리만 한다.
+            removeUnusedImports()
+            leadingTabsToSpaces(4)
+            trimTrailingWhitespace()
+            endWithNewline()
+        }
+    }
+
+    configure<CheckstyleExtension> {
+        toolVersion = "10.26.1"
+        configFile = rootProject.file("config/checkstyle/checkstyle.xml")
+        isIgnoreFailures = false
+        maxWarnings = 0
+    }
 
     dependencyManagement {
         imports {
@@ -60,7 +84,6 @@ subprojects {
         // testcontainers:mysql 이 jdbc 사용함
         testRuntimeOnly("com.mysql:mysql-connector-j")
         testImplementation("org.springframework.boot:spring-boot-starter-test")
-        testImplementation("com.ninja-squad:springmockk:${project.properties["springMockkVersion"]}")
         testImplementation("org.mockito:mockito-core:${project.properties["mockitoVersion"]}")
         testImplementation("org.instancio:instancio-junit:${project.properties["instancioJUnitVersion"]}")
         // Testcontainers

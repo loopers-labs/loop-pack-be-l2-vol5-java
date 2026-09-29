@@ -1,0 +1,30 @@
+### 좋아요
+# 멱등하다 — 여러 번 눌러도 응답이 같다 (LIKE-002).
+# 그래서 목록이 내려주는 liked 값과 화면 상태가 어긋나도 사용자가 복구할 수 있다.
+
+### 좋아요 → 이미 눌렀어도 같은 응답
+POST {{commerce-api}}/api/v1/products/1/likes
+X-USER-ID: {{user-id}}
+
+### 한 번 더 — 결과가 같아야 한다
+POST {{commerce-api}}/api/v1/products/1/likes
+X-USER-ID: {{user-id}}
+
+### 취소 — 누른 적 없어도 같은 응답
+DELETE {{commerce-api}}/api/v1/products/1/likes
+X-USER-ID: {{user-id}}
+
+### 내가 좋아요한 상품 목록
+GET {{commerce-api}}/api/v1/users/{{user-id}}/likes?page=0&size=20
+X-USER-ID: {{user-id}}
+
+### ── 실패 확인 ──────────────────────────────────────────
+
+### 남의 목록 → 404. 403 이 아니다 —
+# 403 을 주면 "그 사용자는 존재한다" 가 새어 나간다
+GET {{commerce-api}}/api/v1/users/{{other-user-id}}/likes
+X-USER-ID: {{user-id}}
+
+### 삭제된(또는 없는) 상품에 좋아요 → 404
+POST {{commerce-api}}/api/v1/products/999999/likes
+X-USER-ID: {{user-id}}
