@@ -46,6 +46,11 @@ scheduler:
   like-count:
     enabled: false
 
+management:
+  health:
+    redis:
+      enabled: false
+
 ---
 spring:
   config:

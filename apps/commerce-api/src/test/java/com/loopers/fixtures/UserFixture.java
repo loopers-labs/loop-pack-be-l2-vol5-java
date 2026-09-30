@@ -1,6 +1,6 @@
 package com.loopers.fixtures;
 
-import com.loopers.domain.shopping.user.User;
+import com.loopers.domain.shopping.model.User;
 
 public final class UserFixture {
     private UserFixture() {}

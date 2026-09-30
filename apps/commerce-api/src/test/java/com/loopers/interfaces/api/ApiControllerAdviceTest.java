@@ -35,6 +35,16 @@ class ApiControllerAdviceTest {
         assertFailure(response, HttpStatus.NOT_FOUND, "Not Found", exception.getMessage());
     }
 
+    @DisplayName("예상치 못한 예외를 500 응답으로 변환한다")
+    @Test
+    void mapsUnexpectedExceptionToInternalServerError() {
+        RuntimeException exception = new RuntimeException("boom");
+
+        ResponseEntity<ApiResponse<?>> response = advice.handle(exception);
+
+        assertFailure(response, HttpStatus.INTERNAL_SERVER_ERROR, "Internal Server Error", "일시적인 오류가 발생했습니다.");
+    }
+
     private void assertFailure(
         ResponseEntity<ApiResponse<?>> response,
         HttpStatus status,

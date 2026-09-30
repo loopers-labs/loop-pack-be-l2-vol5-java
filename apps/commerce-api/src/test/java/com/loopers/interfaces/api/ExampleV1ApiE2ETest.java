@@ -3,13 +3,14 @@ package com.loopers.interfaces.api;
 import com.loopers.domain.example.ExampleModel;
 import com.loopers.infrastructure.example.ExampleJpaRepository;
 import com.loopers.interfaces.api.example.ExampleV1Dto;
+import com.loopers.support.test.E2ETest;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
@@ -23,7 +24,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@E2ETest
+@Tag("example")
 class ExampleV1ApiE2ETest {
 
     private static final Function<Long, String> ENDPOINT_GET = id -> "/api/v1/examples/" + id;
