@@ -38,3 +38,7 @@ out/
 
 ### Kotlin ###
 .kotlin
+
+### 개인 공부 노트 (GitHub엔 안 올림) ###
+docs/blog-notes.md
+docs/glossary.md
