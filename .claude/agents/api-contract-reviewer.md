@@ -12,7 +12,7 @@ tools: Read, Grep, Glob, Bash
 
 - `docs/week2/plan.md` — 7장(API 계약), 6-1 USR-01, 6장 각 규칙의 기대 결과, ADR-06·07·08·12
 - `docs/week1/order-discount-contract.md` — 10-1(오류 구분 기준), 8장(오류 상황별 외부 의미)
-- `apps/commerce-api/.../interfaces/api/ApiResponse.java`, `ApiControllerAdvice.java`, `support/error/ErrorType.java`
+- `apps/commerce-api/.../support/web/ApiResponse.java`, `support/web/ApiControllerAdvice.java`, `support/error/ErrorType.java`. Controller·DTO는 `{기능}/adapter/in/web/`에 있다.
 - 보고 형식: `.claude/skills/review/SKILL.md`의 "리뷰어 공통 보고 형식"
 
 ## 확인할 것
@@ -22,7 +22,7 @@ tools: Read, Grep, Glob, Bash
 3. **오류 매핑** — HTTP 상태가 `ApiControllerAdvice`의 대응표에서만 정해지는가. 새 `ErrorType`에 대응이 추가됐는가. 처리되지 않은 예외로 500이 되는 입력(헤더 누락, 필드 누락 등)이 없는가. `errorCode` 문자열이 기존 계약과 같은가.
 4. **식별** — 🔑 엔드포인트가 한 곳의 식별 처리를 거치는가 (헤더 누락·형식 오류·없는 사용자 → 401). 경로의 `userId`와 요청자를 비교하는가 (LIK-05 → 404).
 5. **응답 분리** — 고객 응답에 `stock`·생성/수정 시각 같은 관리자 필드가 새지 않는가. 관리자 응답에 `stock`·`brandId`·`userId`가 있는가. 엔티티를 그대로 응답하지 않는가 (`*Info`·DTO 변환).
-6. **Controller 역할** — Controller가 입력 파싱·Facade 호출·응답 변환만 하는가. Jackson 변환 함정(문자열 숫자, 실수, 단일 값 배열)을 HTTP 테스트로 확인했는가 (plan.md 13-2).
+6. **Controller 역할** — Controller가 입력 파싱·유스케이스 호출(쓰기는 `*CommandUseCase`, 읽기는 `*QueryService`)·응답 변환만 하는가. Jackson 변환 함정(문자열 숫자, 실수, 단일 값 배열)을 HTTP 테스트로 확인했는가 (plan.md 13-2).
 7. **관리자 경계** — `/api-admin/**`만 Security 대상이고 고객 POST가 CSRF에 막히지 않는가. 관리자·일반 사용자·식별 없는 요청 테스트가 있고, POST·PUT·DELETE 테스트에 `csrf()`가 있는가.
 
 ## 원칙

@@ -247,6 +247,8 @@ erDiagram
 
 ### 5-2. 계층 사이
 
+> **v0.8부터 헥사고날 구조다.** 아래 표와 설명은 v0.7까지의 layer-first 구조로, 과제 당시 기록으로 남긴다. 지금 구조와 이름 대응은 이 절 끝의 "헥사고날 구조 (v0.8~)"를 본다. 다른 장에 나오는 `*Facade`·`*Repository` 이름도 그 대응표로 읽는다.
+
 ```mermaid
 flowchart LR
   I[interfaces] --> AP[application] --> D[domain]
@@ -267,6 +269,43 @@ flowchart LR
 - **infrastructure → domain 화살표는 실행 방향과 반대다** — 실행 중에는 application이 JPA 구현을 호출하지만, 소스에서는 구현이 domain의 Repository 약속을 안다. 이것이 DIP다.
 - 스타터 관례에 따라 domain에도 `*Service`가 있을 수 있다. 이 프로젝트에서 domain의 `*Service`는 **한 도메인의 저장소 사용 + 엔티티 행동 호출**만 하며 트랜잭션을 열지 않는다(Facade의 트랜잭션에 참여). 여러 엔티티를 함께 보는 판단은 이름으로 구분되는 **도메인 서비스**(주문 확정 판단, 포인트 지갑 판단)가 맡는다.
 - 엔티티에 JPA 애노테이션을 두는 것은 허용한다 🔧. JPA 모델과 도메인 모델을 분리하면 매핑 코드가 두 배가 되는데, 이번 범위에는 그 비용을 정당화할 저장 기술 교체 요구가 없다.
+#### 헥사고날 구조 (v0.8~, 과제 밖 리팩터링)
+
+```mermaid
+flowchart LR
+  IN["adapter.in<br/>(web · scheduler)"] --> PIN["application.port.in<br/>*CommandUseCase"]
+  IN --> Q["application<br/>*QueryService"]
+  PIN -.구현.- CS["application<br/>*CommandService"]
+  CS --> D[domain]
+  CS --> POUT["application.port.out<br/>*Port"]
+  Q --> POUT
+  OUT["adapter.out.persistence<br/>*PersistenceAdapter"] -. "구현 (DIP)" .-> POUT
+```
+
+- **패키지** — 기능마다 `com.loopers.{기능}.{domain · application(port.in · port.out) · adapter(in.web · in.scheduler · out.persistence)}`. `adapter.in.web`에는 Controller만 두고, 요청·응답 DTO는 `web.dto`, Swagger 문서 인터페이스는 `web.spec`에 둔다. 기능: `brand`·`product`·`like`·`order`·`point`·`user`·`example`. 여러 기능이 함께 쓰는 것은 `common.domain`(Money), `support.web`(ApiResponse·ApiControllerAdvice·PageQuery·PageResponse), `support.persistence`(QueryDslSort), `support.error`.
+- ✅ **기준** ① JPA 모델과 도메인 모델은 분리하지 않는다 (위 "엔티티에 JPA 애노테이션" 항목과 같은 이유) ② 출력 포트는 애그리거트 루트마다 하나(`BrandPort`, `PointGroupPort`·`PointHistoryPort`). 조회 전용 투영은 따로 둔다(`ProductQueryPort`) ③ 쓰기는 입력 포트(`*CommandUseCase`)를 거치고, 읽기는 입력 포트 없이 `*QueryService`가 출력 포트로 읽는다 — CQRS-lite 🔧 ④ 다른 기능은 상대의 출력 포트를 직접 쓴다(예: 주문 → `ProductPort`·`PointGroupPort`, 브랜드 → `ProductPort`). 순환은 두 곳만 허용한다 ✅ — ① brand → product(BRD-02 삭제 전 상품 확인) ② product 조회 어댑터 → `like.domain`(좋아요 수·likes_desc 정렬을 SQL 조인 한 번으로). 그 밖의 새 순환은 ArchUnit `featuresAreFreeOfCycles`가 막는다. 끊어야 할 때는 묻는 쪽이 자기 출력 포트를 두고 어댑터가 상대 기능에 연결하거나(①), 상품에 좋아요 수를 두는(②) 방법이 있다.
+- **트랜잭션 경계는 그대로다** — ADR-11의 "유스케이스 하나 = 트랜잭션 하나"를 `*CommandService`·`*QueryService`의 공개 메서드가 이어받는다. 포인트 만료만 묶음마다 커밋한다(ADR-11 예외).
+- **ArchUnit** — `respectsHexagonalDependencies`: domain은 application·adapter를, application은 adapter를 모른다. 들어오는 어댑터는 출력 포트·나가는 어댑터를 모르고, 나가는 어댑터는 들어오는 어댑터를 모른다. ADR-12 규칙(domain·support.error는 HTTP를 모른다)은 그대로.
+- **이름 대응 (v0.7 → v0.8)**
+
+| v0.7 | v0.8 |
+|---|---|
+| `interfaces.api.{기능}.*V1Controller`, `interfaces.api.admin.{기능}.*AdminV1Controller` | `{기능}.adapter.in.web.*Controller`, `*AdminController` (이름에서 `V1`을 뺌. URL `/api/v1`·`/api-admin/v1`은 그대로) |
+| `*V1Dto`, `*AdminV1Dto` | `{기능}.adapter.in.web.dto.*Dto`, `*AdminDto` |
+| `*V1ApiSpec`, `*AdminV1ApiSpec` | `{기능}.adapter.in.web.spec.*ApiSpec`, `*AdminApiSpec` |
+| `interfaces.scheduler.PointExpirationScheduler` | `point.adapter.in.scheduler.PointExpirationScheduler` |
+| `interfaces.api.support.LoginUser*` | `user.adapter.in.web.LoginUser*` |
+| `domain.{기능}.*Repository`, `ProductQueryRepository` | `{기능}.application.port.out.*Port`, `ProductQueryPort` |
+| `infrastructure.{기능}.*RepositoryImpl` | `{기능}.adapter.out.persistence.*PersistenceAdapter` (`ProductQueryRepositoryImpl` → `ProductQueryPersistenceAdapter`) |
+| `infrastructure.{기능}.*JpaRepository` | `{기능}.adapter.out.persistence.*JpaRepository` |
+| `application.{기능}.*Info` | `{기능}.application.port.in.*Info` |
+| `BrandFacade` | `BrandCommandService`(`BrandCommandUseCase`) + `BrandQueryService` |
+| `ProductFacade` / `ProductAdminFacade` | `ProductQueryService` / `ProductCommandService`(`ProductCommandUseCase`) + `ProductAdminQueryService` |
+| `LikeFacade` | `LikeCommandService`(`LikeCommandUseCase`) + `LikeQueryService` |
+| `OrderFacade` / `OrderAdminFacade` | `OrderCommandService`(`OrderCommandUseCase`) + `OrderQueryService` / `OrderAdminQueryService` |
+| `PointFacade` / `PointExpirationFacade` | `PointCommandService`(`PointCommandUseCase`) + `PointQueryService` / `PointExpirationService`(`PointExpirationUseCase`) |
+| `UserFacade` | `UserQueryService` |
+| `ExampleFacade` + `domain.example.ExampleService` | `ExampleQueryService` |
 
 | 검사 규칙 | 수단 |
 |---|---|
@@ -845,3 +884,4 @@ sequenceDiagram
 | 2026-09-16 | v0.5 — 포인트 TDD 기대값 확정 | ① 만료 포인트로 결제 시 오류를 **잔액 부족과 같게** 결정(🤔-6). W-7 기대값에 "A 남은 4,000 유지·사용 내역 없음" 추가. ② 0원 결제는 **400**(P-21) — 잔액과 무관한 입력 오류. ③ W-8에 정상 짝(1원 충전 가능) 추가해 "무조건 거절" 구현을 잡는다. ④ 11장에 QueryDSL을 두는 자리와 조회 전용 클래스를 나누는 기준 추가 🔧 |
 | 2026-09-17 | v0.6 — 포인트 결제 TDD | W-6 → W-5 → W-7b → W-7 순서로 Red → Green 진행, 실제 Red 출력을 12-2에 기록. 변이 점검에서 살아남은 두 변이(잔액과 같은 금액 거절, 0원 사용 내역)를 막으려 W-5b·W-10 추가. 12-1에만 있고 코드에 없던 W-8 정상 짝 테스트 추가. 단계마다 커밋(test → feat → refactor) |
 | 2026-09-17 | v0.7 — **주문 확정·만료 배치와 문서 대조** | ① 주문 확정 구현(8장): 확인 메서드 `checkConfirmable`·`checkPayable`을 꺼내 확인을 변경보다 앞에 모음. 흐름도의 "결제해 줘(주문 #id)"를 "결제 → 그룹별 사용 이력 저장(주문 #id)"로 고침. ② 확정 가격 비교를 생성 때와 같은 snapshot 판매 단가로(ADR-06). ③ 만료 배치 구현(8-1): 묶음마다 `TransactionTemplate` 커밋(ADR-11 예외), 무한 반복 방지. ④ 5-2 구조 이름을 relaxed layered로 바로잡음 🔧. ⑤ 7-1 확정·생성·상세 응답 필드, 관리자 API 실행 시 403 전제. ⑥ ADR-09에 동시 확정의 이력 불일치, 확정 vs 만료 배치 추가. ⑦ 11장 변경 감지 메모, 12장 경계 예시를 실제 테스트 위치로. ⑧ 변이 점검 기록(12-3), AI 제안 기록 #19~21 |
+| 2026-09-29 | v0.8 — 헥사고날 구조로 리팩터링 (과제 밖) | 모든 기능을 `com.loopers.{기능}.{domain · application.port.in/out · adapter.in/out}`로 옮김(5-2 대응표). Facade를 쓰기 `*CommandService`(입력 포트 구현)와 읽기 `*QueryService`로 나눔. 공용 코드는 `common.domain`·`support.web`·`support.persistence`로. `JpaConfig` 리포지토리 스캔을 `*.adapter.out.persistence`로. ArchUnit 계층 규칙을 헥사고날 규칙으로 바꿈. 웹 어댑터 클래스 이름에서 `V1`을 빼고 DTO·ApiSpec을 `web.dto`·`web.spec`으로 나눔. 기능 사이 순환 검사 추가. 동작·API·테스트 기대값 변경 없음(`ExampleQueryService`가 `ExampleInfo`를 돌려주게 되어 그 테스트는 접근자만 바뀜) |
