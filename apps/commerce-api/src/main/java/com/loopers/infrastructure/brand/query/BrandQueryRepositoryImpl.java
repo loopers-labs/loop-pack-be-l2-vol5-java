@@ -23,9 +23,6 @@ public class BrandQueryRepositoryImpl implements BrandQueryRepository {
 
     @Override
     public Optional<BrandView.Summary> findActive(Long brandId) {
-        if (brandId == null) {
-            return Optional.empty();
-        }
         return Optional.ofNullable(queryFactory
             .select(Projections.constructor(BrandView.Summary.class, brandModel.id, brandModel.name))
             .from(brandModel)
@@ -50,9 +47,6 @@ public class BrandQueryRepositoryImpl implements BrandQueryRepository {
 
     @Override
     public Optional<BrandView.Admin> find(Long brandId) {
-        if (brandId == null) {
-            return Optional.empty();
-        }
         return Optional.ofNullable(queryFactory.select(admin())
             .from(brandModel)
             .where(brandModel.id.eq(brandId))

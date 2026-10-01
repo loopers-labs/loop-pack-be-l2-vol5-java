@@ -56,9 +56,6 @@ public class ProductQueryRepositoryImpl implements ProductQueryRepository {
 
     @Override
     public Optional<ProductView.Summary> findActive(Long productId) {
-        if (productId == null) {
-            return Optional.empty();
-        }
         return Optional.ofNullable(selectJoined(summary())
             .where(productModel.id.eq(productId), productModel.deletedAt.isNull())
             .fetchOne());
@@ -79,9 +76,6 @@ public class ProductQueryRepositoryImpl implements ProductQueryRepository {
 
     @Override
     public Optional<ProductView.Admin> find(Long productId) {
-        if (productId == null) {
-            return Optional.empty();
-        }
         return Optional.ofNullable(selectJoined(admin())
             .where(productModel.id.eq(productId))
             .fetchOne());

@@ -30,9 +30,6 @@ public class OrderQueryRepositoryImpl implements OrderQueryRepository {
 
     @Override
     public Optional<OrderView.Detail> find(Long orderId) {
-        if (orderId == null) {
-            return Optional.empty();
-        }
         return fetchDetails(selectHeaders().where(orderModel.id.eq(orderId))).stream().findFirst();
     }
 
