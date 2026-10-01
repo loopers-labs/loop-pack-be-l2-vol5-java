@@ -18,9 +18,9 @@ public class ProductReader {
 
     /** FR-PRODUCT-01 상품 목록 조회 (고객). 삭제되지 않은 상품만, 정렬 하나 (ASM-08). */
     @Transactional(readOnly = true)
-    public PageResult<ProductView.Summary> listProducts(Long requesterId, String sort, PageQuery query) {
+    public PageResult<ProductView.Summary> listProducts(Long requesterId, ProductSort sort, PageQuery query) {
         userService.getUser(requesterId);
-        return productQueryRepository.findActivePage(ProductSort.from(sort), query);
+        return productQueryRepository.findActivePage(sort, query);
     }
 
     /** FR-PRODUCT-02 상품 상세 조회 (고객). 없음·삭제됨 모두 ER-04 PRODUCT_NOT_FOUND. */

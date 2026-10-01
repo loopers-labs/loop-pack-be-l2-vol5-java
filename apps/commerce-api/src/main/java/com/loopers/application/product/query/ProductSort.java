@@ -5,7 +5,7 @@ import com.loopers.support.error.ErrorType;
 
 /**
  * FR-PRODUCT-01 정렬 (ASM-08). 정확히 하나, 기본 latest. 동률 보조 기준은 상품 id 내림차순.
- * 허용 목록 밖·둘 이상 지정은 ER-07 INVALID_SORT.
+ * 허용 목록 밖·둘 이상 지정은 ER-07 INVALID_SORT. 변환은 interfaces 가 한다 (DR-32).
  */
 public enum ProductSort {
     LATEST("latest"),

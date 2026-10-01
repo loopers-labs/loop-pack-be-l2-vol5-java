@@ -1,6 +1,7 @@
 package com.loopers.interfaces.api.product;
 
 import com.loopers.application.product.query.ProductReader;
+import com.loopers.application.product.query.ProductSort;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.PageResponse;
 import com.loopers.interfaces.api.auth.RequesterId;
@@ -27,7 +28,7 @@ public class ProductV1Controller implements ProductV1ApiSpec {
         @RequestParam(value = "sort", required = false) String sort,
         @ParameterObject PageQuery pageQuery
     ) {
-        var result = productReader.listProducts(requesterId, sort, pageQuery);
+        var result = productReader.listProducts(requesterId, ProductSort.from(sort), pageQuery);
         return ApiResponse.success(PageResponse.from(result, ProductV1Dto.ProductResponse::from));
     }
 
