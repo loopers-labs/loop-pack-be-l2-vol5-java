@@ -1,8 +1,8 @@
 package com.loopers.infrastructure.product.query;
 
 import com.loopers.application.product.query.ProductQueryRepository;
+import com.loopers.application.product.query.ProductSort;
 import com.loopers.application.product.query.ProductView;
-import com.loopers.domain.product.ProductSort;
 import com.loopers.support.paging.PageQuery;
 import com.loopers.support.paging.PageResult;
 import com.querydsl.core.types.Expression;

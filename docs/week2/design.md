@@ -1069,7 +1069,7 @@ FR 28개 ↔ EP 28개, 1:1.
 |---|---|---|---|---|---|
 | BC-01 사용자 | AG-01 | `user` | `UserModel` / `UserService` / `UserRepository` | 없음 (EP를 갖지 않는다. 다른 BC의 Facade·Reader가 `UserService`를 부른다) | 없음 |
 | BC-02 카탈로그 | AG-02 | `brand` | `BrandModel` / `BrandService` / `BrandRepository` | `BrandFacade` / `BrandReader` | `BrandV1*`, `BrandAdminV1*` |
-| BC-02 카탈로그 | AG-03 | `product` | `ProductModel`, `ProductSort` / `ProductService` / `ProductRepository` | `ProductFacade` / `ProductReader` | `ProductV1*`, `ProductAdminV1*` |
+| BC-02 카탈로그 | AG-03 | `product` | `ProductModel` / `ProductService` / `ProductRepository` | `ProductFacade` / `ProductReader`, `ProductSort` | `ProductV1*`, `ProductAdminV1*` |
 | BC-02 카탈로그 | AG-04 | `productlike` | `ProductLikeModel` / `ProductLikeService` / `ProductLikeRepository` | `ProductLikeFacade` / `ProductLikeReader` | `ProductLikeV1*` |
 | BC-03 포인트 | AG-05 | `point` | `PointModel` / `PointService` / `PointRepository` | `PointFacade` / `PointReader` | `PointV1*`, `PointAdminV1*` |
 | BC-04 주문 | AG-06 | `order` | `OrderModel` (루트), `OrderItemModel` (포함) / `OrderService` / `OrderRepository` | `OrderFacade` / `OrderReader` | `OrderV1*`, `OrderAdminV1*` |

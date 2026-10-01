@@ -1,6 +1,5 @@
 package com.loopers.application.product.query;
 
-import com.loopers.domain.product.ProductSort;
 import com.loopers.support.paging.PageQuery;
 import com.loopers.support.paging.PageResult;
 

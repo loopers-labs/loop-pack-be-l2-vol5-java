@@ -1,6 +1,5 @@
 package com.loopers.application.product.query;
 
-import com.loopers.domain.product.ProductSort;
 import com.loopers.domain.user.UserService;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
