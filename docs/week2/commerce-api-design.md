@@ -164,7 +164,7 @@ classDiagram
         합계
     }
 
-    Product "N" ..> "1" Brand : brandId
+    Product "N" ..> "1" Brand : brandId (required FK)
     Like "N" --> "1" User
     Like "N" --> "1" Product
 
@@ -174,42 +174,58 @@ classDiagram
 
     Order "N" --> "1" User
     Order "1" *-- "N" OrderItem
-    OrderItem "N" --> "1" Product
+    OrderItem "N" ..> "1" Product : productId (ID reference, no FK)
 ```
 
 #### 2.1.1 Brand–Product
 
 - [관계] Brand 1 : N Product
+- [도메인 표현] Product는 Brand 객체를 포함하지 않고 `brandId`로 Brand와의 관계를 참조한다.
 - [불변식] Brand 이름은 공백만으로 구성될 수 없고, 1자 이상 100자 이하여야 한다.
 - [불변식] 삭제 여부와 관계없이 Brand 이름은 유일해야 한다.
-- [도메인 규칙] 상품 등록 시 (존재하고) 삭제되지 않은 Brand가 필요하다.
-- [도메인 규칙] Product 수정 시 기존 Brand는 변경하지 않는다.
-- [도메인 표현] Product는 Brand 객체가 아니라 `brandId`로 관계를 참조한다. DB 외래 키와 JPA 연관관계는 Infrastructure의 `ProductJpaEntity`가 관리하고, Repository 구현체가 도메인 객체와 JPA 엔티티를 변환한다.
 - [불변식] Product 이름은 공백만으로 구성될 수 없고, 1자 이상 100자 이하여야 한다.
 - [불변식] Product 가격은 1원 이상 100,000,000원 이하여야 한다.
-- [불변식] 삭제되지 않은 Product가 하나라도 있으면 Brand 삭제를 거절한다. 재고가 0개인 Product도 포함한다.
+- [도메인 규칙] 상품 등록 시 (존재하고) 삭제되지 않은 Brand가 필요하다.
+- [도메인 규칙] Product 수정 시 기존 Brand는 변경하지 않는다.
+- [도메인 규칙] 삭제된 상품은 새 좋아요·새 주문·상품 수정·재고 변경에 사용할 수 없다.
 
-##### 삭제 전략에 대한 설계 판단
+##### 조회 정책
 
-- [대안 1] Brand와 Product를 물리 삭제한다.
-  - 삭제된 행이 남지 않아 조회에서 삭제 여부를 따로 다루지 않아도 된다.
-  - 기존 Order가 참조하던 Product가 사라져 주문 내역의 품목 정보가 깨진다.
-- [대안 2] Brand와 Product를 논리 삭제한다.
-  - 주문이 참조하는 상품 정보가 남고, 삭제된 Product에 걸린 좋아요도 취소할 수 있다.
-  - 모든 조회 경로에서 삭제 여부를 조건으로 다뤄야 한다.
+- 고객 브랜드·상품 상세와 상품 목록에서는 삭제된 대상을 제외한다.
+- 관리자 목록·상세는 삭제된 대상도 반환한다. 목록은 `status`로 필터링하고 응답에 삭제 상태를 제공한다.
 
-- [설계 결정] Brand와 Product는 논리 삭제한다.
-- [이유] 주문 내역은 구매 시점의 품목 정보를 그대로 보여줘야 하는데, 물리 삭제하면 이 참조가 깨진다. 삭제된 Product에 남은 좋아요를 취소할 수 있어야 한다는 요구도 삭제 기록이 남아야 만족한다.
-- [결과] 삭제 상태를 보존하므로, 고객 조회와 새 주문에서는 삭제된 Brand와 Product를 제외한다. 수정·재고 변경은 삭제되지 않은 대상에만 허용한다.
-  - 기존 Order는 삭제된 Product의 참조와 저장된 정보를 유지한다.
-  - 관리자 목록·상세 조회는 삭제된 대상도 반환하고 삭제 상태를 제공한다. 목록은 `status`로 삭제 상태를 필터링한다.
+##### 삭제 정책
+
+- Brand와 Product는 기존 참조를 유지하며, `deletedAt`에 삭제 시각을 기록하는 논리 삭제를 사용한다.
+- Product 단독 삭제는 해당 Product만 변경하며 Brand는 유지한다.
+- Brand 삭제는 연결된 미삭제 Product 전체를 포함한다. 재고 0인 상품도 포함하며, 연결 상품이 없어도 삭제할 수 있다.
+- 일괄 삭제는 하나의 성공·실패로 제공하며, 실패하면 이번 요청의 변경을 모두 취소한다.
+- 이미 삭제된 Product의 삭제 상태·시각과 다른 Brand·Product는 변경하지 않는다.
+- 재고 수량·기존 Like 관계·주문 스냅샷·결제 정보는 보존한다.
+- 삭제 전에 생성한 DRAFT 주문도 확정 시 상품 사용 가능 여부를 다시 확인한다. 삭제된 상품이 포함되면 확정을 거절하고 주문 상태·재고·포인트·결제 결과를 유지한다.
+
+##### 변경 충돌 정책
+
+- Brand의 수정·삭제와 Product의 수정·삭제·재고 설정은 같은 행의 오래된 저장을 버전 검사로 거절한다. 브랜드 일괄 삭제도 Brand·각 Product의 버전 검사에 참여한다.
+- 관리 API의 버전 충돌은 실패한 시도 전체를 rollback하고 새 트랜잭션에서 조회·검증·변경부터 제한적으로 자동 재시도한다. 재시도 성공은 기존 성공 응답, 최대 시도 횟수까지 충돌이 지속되면 `409 Conflict`다. 재조회 결과 대상이 없거나 삭제됐다면 기존 `404 Not Found`로 종료한다. 이름 중복 등 업무 오류는 재시도하지 않는다.
+- 재시도는 대상 ID·입력 명령을 유지하고 Brand·Product 객체와 버전을 새로 읽는다. 오래된 객체의 버전만 올려 다시 저장하지 않는다. 최대 시도 횟수는 최초 실행을 포함하며 일괄 삭제의 유스케이스 전체에 적용한다.
+- 같은 Brand에 대한 상품 등록·삭제, Product를 읽고 Like 등 다른 행만 저장하는 경쟁의 보호 전략은 별도 확정할 대상이다. 위 버전 검사만으로 해당 경쟁까지 해결했다고 보지 않는다.
+
+##### 삭제 책임
+
+- Brand와 Product는 별도 Aggregate이며, 각 객체의 `delete()`가 자신의 상태 변경을 책임진다. Brand는 Product 컬렉션을 소유하지 않는다.
+- `BrandDeletionPolicy`는 Brand만, `ProductDeletionPolicy`는 Product만 담당한다. 두 Policy는 서로를 호출하거나 Repository 조회·저장을 수행하지 않는다.
+- `BrandFacade`는 두 Policy를 조합하고, 상품 단독 삭제의 `ProductFacade`는 같은 `ProductDeletionPolicy`를 재사용한다.
+- application의 별도 RetryCoordinator는 트랜잭션 밖에서 Facade 프록시를 매 시도 호출한다. Facade는 한 시도의 조회·검증·변경·저장을 책임지고, Coordinator는 버전 충돌 재시도와 최대 시도 횟수까지 충돌이 지속될 때의 종료 처리를 책임진다.
+
+호출 경로, 저장 흐름, 트랜잭션 경계, 잠금과 rollback의 검증 기준은 [브랜드 일괄 삭제와 비노출 — 트랜잭션 설계](../week3/brand-deletion-transaction-design.md)에서 관리한다.
 
 #### 2.1.2 User–Like–Product
 
 - [관계] User 1 : N Like N : 1 Product
 - [실습용 사용자] User는 fixture로 저장하며, 고객별 API는 `X-USER-ID`로 존재하는 User를 식별한다. User CRUD는 이번 범위에 포함하지 않는다.
 - [도메인 규칙] 삭제된 Product에는 좋아요를 할 수 없다.
-- [도메인 규칙] User는 삭제된 Product에 남아 있는 자신의 좋아요를 취소할 수 있다.
+- [도메인 규칙] User는 삭제된 Product에 남아 있는 자신의 좋아요를 취소할 수 있다. 취소 시 Product의 존재·활성 여부를 요구하지 않는다.
 - [불변식] User는 하나의 Product에 Like를 여러 번 할 수 없다.
 
 ##### 조회 규칙
@@ -221,7 +237,8 @@ classDiagram
 
 - [관계] Order 1 : N OrderItem
 - [관계] User 1 : N Order
-- [관계] OrderItem N : 1 Product
+- [관계 표현] OrderItem은 `productId` 값으로 Product를 참조하며 Product 객체를 포함하지 않는다. 주문 품목의 Product ID는 DB FK로 설정하지 않는다.
+- [스냅샷] OrderItem은 주문 생성 시점의 Product ID·상품명·단가와 수량·합계를 보존한다. 주문 내역은 현재 Product를 다시 조회해 과거 상품 정보를 대체하지 않는다. Brand·Product 삭제 후에도 기존 주문의 품목과 결제 정보는 유지한다.
 - [도메인 규칙] Order 생성 시 여러 OrderItem의 수량·단가·합계와 DRAFT 상태를 저장한다.
 - [도메인 규칙] Order 생성 시 재고와 포인트는 차감하지 않는다.
 - [도메인 규칙] Order 생성·확정 시 존재하고 삭제되지 않은 Product와 양수 수량을 확인한다.
@@ -374,8 +391,8 @@ sequenceDiagram
 | 브랜드 목록 조회 | `GET` | `/brands` | Query: `status` (`ACTIVE`, `DELETED`, `ALL`; 기본 `ALL`) | `200 OK`<br/>삭제 상태를 포함한 브랜드 목록 | `400 Bad Request`<br/>잘못된 `status` 입력 |
 | 브랜드 등록 | `POST` | `/brands` | Body: `name`(공백만 불가, 1~100자) | `201 Created`<br/>생성된 브랜드 정보 | `400 Bad Request`<br/>이름 검증 실패<br/>`409 Conflict`<br/>이미 등록된 이름 |
 | 브랜드 상세 조회 | `GET` | `/brands/{brandId}` | Path: `brandId` | `200 OK`<br/>삭제 상태를 포함한 브랜드 상세 정보 | `404 Not Found`<br/>없는 Brand             |
-| 브랜드 수정 | `PUT` | `/brands/{brandId}` | Path: `brandId`<br/>Body: `name`(공백만 불가, 1~100자) | `200 OK`<br/>수정된 브랜드 정보 | `400 Bad Request`<br/>이름 검증 실패<br/>`404 Not Found`<br/>없거나 삭제된 Brand<br/>`409 Conflict`<br/>이미 등록된 이름 |
-| 브랜드 삭제 | `DELETE` | `/brands/{brandId}` | Path: `brandId` | `200 OK`<br/>삭제 완료 | `409 Conflict`<br/>삭제되지 않은 연결 Product 존재 |
+| 브랜드 수정 | `PUT` | `/brands/{brandId}` | Path: `brandId`<br/>Body: `name`(공백만 불가, 1~100자) | `200 OK`<br/>수정된 브랜드 정보 | `400 Bad Request`<br/>이름 검증 실패<br/>`404 Not Found`<br/>없거나 삭제된 Brand<br/>`409 Conflict`<br/>이미 등록된 이름 또는 최대 시도 횟수까지 버전 충돌 지속 |
+| 브랜드 삭제 | `DELETE` | `/brands/{brandId}` | Path: `brandId` | `200 OK`<br/>Brand와 연결된 활성 Product 논리 삭제 | `404 Not Found`<br/>없거나 삭제된 Brand<br/>`409 Conflict`<br/>Brand 또는 Product의 버전 충돌이 최대 시도 횟수까지 지속됨, 요청 변경 전체 롤백 |
 
 ##### 상품·재고
 
@@ -384,9 +401,9 @@ sequenceDiagram
 | 상품 목록 조회 | `GET` | `/products` | Query: `status` (`ACTIVE`, `DELETED`, `ALL`; 기본 `ALL`) | `200 OK`<br/>삭제 상태를 포함한 상품 목록 | `400 Bad Request`<br/>잘못된 `status` 입력 |
 | 상품 등록 | `POST` | `/products` | Body: `brandId`, 이름(공백만 불가, 1~100자), 가격(1~100,000,000원) | `201 Created`<br/>재고 0으로 생성된 상품 정보 | `400 Bad Request`<br/>상품 이름·가격 검증 실패<br/>`404 Not Found`<br/>없거나 삭제된 Brand |
 | 상품 상세 조회 | `GET` | `/products/{productId}` | Path: `productId` | `200 OK`<br/>상품·브랜드·재고·삭제 상태 정보 | `404 Not Found`<br/>없는 Product |
-| 상품 수정 | `PUT` | `/products/{productId}` | Path: `productId`<br/>Body: 이름(공백만 불가, 1~100자), 가격(1~100,000,000원) | `200 OK`<br/>수정된 상품 정보 | `400 Bad Request`<br/>상품 이름·가격 검증 실패<br/>`404 Not Found`<br/>없거나 삭제된 Product |
-| 상품 삭제 | `DELETE` | `/products/{productId}` | Path: `productId` | `200 OK`<br/>삭제 완료 | `404 Not Found`<br/>없는 Product |
-| 상품 재고 변경 | `PUT` | `/products/{productId}/stock` | Path: `productId`<br/>Body: 최종 재고 수량 | `200 OK`<br/>변경된 재고 수량 | `400 Bad Request`<br/>0 미만 재고 수량 |
+| 상품 수정 | `PUT` | `/products/{productId}` | Path: `productId`<br/>Body: 이름(공백만 불가, 1~100자), 가격(1~100,000,000원) | `200 OK`<br/>수정된 상품 정보 | `400 Bad Request`<br/>상품 이름·가격 검증 실패<br/>`404 Not Found`<br/>없거나 삭제된 Product<br/>`409 Conflict`<br/>최대 시도 횟수까지 버전 충돌 지속 |
+| 상품 삭제 | `DELETE` | `/products/{productId}` | Path: `productId` | `200 OK`<br/>Product 논리 삭제<br/>재고·기존 Like·주문 정보는 유지 | `404 Not Found`<br/>없거나 이미 삭제된 Product<br/>`409 Conflict`<br/>최대 시도 횟수까지 버전 충돌 지속 |
+| 상품 재고 변경 | `PUT` | `/products/{productId}/stock` | Path: `productId`<br/>Body: 최종 재고 수량 | `200 OK`<br/>변경된 재고 수량 | `400 Bad Request`<br/>0 미만 재고 수량<br/>`404 Not Found`<br/>없거나 삭제된 Product<br/>`409 Conflict`<br/>최대 시도 횟수까지 버전 충돌 지속 |
 
 ##### 주문
 
@@ -448,6 +465,36 @@ sequenceDiagram
 | 정상 차감 | 잔액 `100`에서 결제액 `70` 차감 | 잔액 `30` |
 | 잔액 부족 차감 | 잔액 `100`에서 결제액 `101` 차감 | 거절, 잔액 `100` 유지 |
 
+#### 2.4.2 브랜드 일괄 삭제
+
+| 규칙 | 주어진 상태·입력 | 기대값 |
+|---|---|---|
+| Brand와 활성 Product 삭제 | 활성 Brand에 활성 Product 여러 개 연결(재고 0인 상품 포함) | 성공, Brand와 연결된 모든 활성 Product의 삭제 상태 기록 |
+| 활성 Product 없음 | 활성 Brand에 상품이 없거나 기삭제 Product만 연결 | Brand 삭제 성공, 기삭제 Product 상태·시각 유지 |
+| 삭제된 Product 유지 | Brand에 이미 삭제된 Product도 연결 | 기존 삭제 상태와 삭제 시각 유지 |
+| 다른 Brand 보존 | 다른 Brand에 활성 Product 연결 | 다른 Brand와 Product는 변경하지 않음 |
+| 기존 관계·거래 정보 보존 | 삭제 대상 Product에 Like와 확정 Order 존재 | 재고·Like 관계·주문 스냅샷·총액·결제 결과 유지, 기존 자기 Like 취소 허용 |
+| 삭제 후 고객 조회 | 일괄 삭제가 commit된 뒤 상세·목록·내 좋아요 요청 | 상세는 `404`, 목록·내 좋아요에서는 삭제 대상 제외 |
+| 삭제 후 새 사용·변경 | 삭제된 상품에 새 좋아요·새 주문·수정·재고 변경 요청 | 기존 `404`, Like·Order 추가나 상품·재고 변경 없음 |
+| 기존 DRAFT 확정 | DRAFT 생성 후 Brand 삭제, 이후 주문 확정 요청 | 기존 `409`, DRAFT·모든 품목 재고·포인트·결제 결과 유지 |
+| Brand 없음·기삭제 | 존재하지 않거나 이미 삭제된 Brand 삭제 요청 | `404 Not Found`, Product 변경 없음 |
+| 중간 저장 실패 | 첫 Product 변경 SQL 실행 후 다음 저장에서 예외 발생 | 요청 실패, 이번 요청의 Brand·Product 변경 전체 롤백. 새 경계에서 재조회 |
+| 브랜드 수정·삭제 경쟁 | 같은 Brand 버전으로 이름 수정과 일괄 삭제 실행 | 충돌한 시도 전체 롤백 후 새 상태로 재시도. 삭제 상태를 복원하지 않으며 재검증 결과에 따라 성공·기삭제 `404`·최대 시도 횟수까지 충돌 지속 `409` |
+| 일괄 삭제 중 버전 충돌 | P1 변경 SQL 실행 후 Brand 또는 P2 버전 충돌 | 실패한 시도 전체 롤백, 다른 요청의 commit 보존. 전체 재시도 성공은 `200`, 최대 시도 횟수까지 충돌이 지속되면 `409` |
+| 재시도 후 최신 재고 보존 | 다른 요청이 재고 변경을 commit한 뒤 삭제 시도 충돌 | 새 재고·버전을 읽고 삭제 재시도 성공, 변경된 재고 유지 |
+| 버전 충돌 지속 | 모든 시도에서 버전 충돌 발생 | 최대 시도 횟수까지 모두 충돌하면 `409`, 해당 요청의 DB 변경 없음 |
+
+#### 2.4.3 상품 단독 삭제
+
+| 규칙 | 주어진 상태·입력 | 기대값 |
+|---|---|---|
+| 활성 Product 삭제 | 활성 Brand에 연결된 Product 삭제 요청 | 성공, Product만 논리 삭제되고 Brand는 활성 상태 유지 |
+| 재고 수량 보존 | 재고가 0 또는 양수인 Product 삭제 요청 | 삭제 성공, 재고 수량은 변경되지 않음 |
+| 기존 관계·주문 보존 | Product에 Like 또는 기존 Order·OrderItem이 존재 | 삭제 후에도 Like 관계와 주문 스냅샷을 유지하고, 기존 Like 취소 허용 |
+| 이미 삭제된 Product | 삭제된 Product에 삭제 요청 | `404 Not Found`, 기존 삭제 상태와 삭제 시각 유지 |
+| 삭제 후 변경 시도 | 삭제된 Product의 수정·재고 변경 요청 | `404 Not Found`, Product 상태와 재고 유지 |
+| 삭제·수정·재고 설정 경쟁 | 두 요청이 같은 Product 버전을 조회한 뒤 갱신 | 충돌한 시도는 롤백하고 새 상태로 제한적 재시도. 재검증 결과에 따라 성공·기삭제 `404`·최대 시도 횟수까지 충돌 지속 `409`, 관계없는 필드의 오래된 값 저장 없음 |
+
 ## 3. 설계 판단 — AI와 설계 다듬기
 
 초안을 기준으로 책임 중복과 변경에 취약한 의존을 검토한다. 미정 정책은 먼저 결정한 뒤, 선택한 대안과 이유를 각 설계 판단에 반영한다.
@@ -472,25 +519,7 @@ sequenceDiagram
   - 예를 들어 이미 관리 중인 Brand 소개를 응답에 추가하거나 Like 수를 숨기면, Product를 변경하지 않고 조회 결과 모델과 응답 DTO만 변경하면 된다.
   - Brand에 로고라는 새 상태 자체를 추가한다면 Brand도 변경되지만, Product는 변경하지 않는다.
 
-### 3.2 Brand 삭제 조건 검증 책임에 대한 설계 판단
-
-- [문제] Brand는 자신에게 연결된 삭제되지 않은 Product가 있는지를 판단하려면 Product 컬렉션이나 Repository를 알아야 한다.
-
-- [대안 1] Brand가 Product 컬렉션을 관리한다.
-  - 객체만 보면 Brand 삭제 조건을 확인할 수 있다.
-  - Brand 삭제 시 많은 Product를 읽을 수 있고, Brand와 Product가 강하게 결합된다.
-- [대안 2] Application이 삭제되지 않은 Product 존재 여부를 조회하고, Domain의 BrandDeletionPolicy가 그 결과로 삭제 가능 여부를 판단한다.
-  - Brand와 Product의 경계를 유지할 수 있다.
-  - 삭제 유스케이스가 조회·검증 협력을 추가로 책임져야 한다.
-
-- [설계 결정] Application은 Brand 조회·Product 존재 여부 조회·트랜잭션·저장을 관리하고, Domain의 BrandDeletionPolicy는 전달받은 결과로 Brand 삭제를 판단·수행한다.
-- [이유] 삭제되지 않은 Product가 있으면 Brand를 삭제할 수 없다는 것은 Brand와 Product를 함께 보는 도메인 규칙이다.
-  - Application에 검증을 두면 다른 삭제 경로에서 빠뜨릴 수 있다.
-  - BrandDeletionPolicy에 판단을 모으면 Product 컬렉션을 모두 읽지 않고도 규칙을 일관되게 지킬 수 있다.
-- [결과] Application이 ProductRepository의 삭제되지 않은 Product 존재 여부 조회를 호출해 결과를 Policy에 전달한다.
-  - Brand 삭제 기능은 모두 이 Policy를 거쳐야 하며, Application은 조건 판단을 직접 중복하지 않는다.
-
-### 3.3 Like 관계 책임에 대한 설계 판단
+### 3.2 Like 관계 책임에 대한 설계 판단
 
 - [문제] Like를 User나 Product 내부 컬렉션으로 두면 한쪽이 반대쪽의 생명주기까지 알아야 한다.
 
@@ -507,7 +536,7 @@ sequenceDiagram
 - [결과] Like는 `userId`, `productId`로 저장하고 `(userId, productId)` 유니크 제약으로 중복을 막는다.
   - Product의 좋아요 수는 Like 관계 수로 조회한다.
 
-### 3.4 Order 확정 협력 책임에 대한 설계 판단
+### 3.3 Order 확정 협력 책임에 대한 설계 판단
 
 - [문제] Order가 Product 재고와 Point를 직접 차감하면, Order가 다른 Aggregate의 규칙까지 알아야 한다.
 
@@ -525,7 +554,7 @@ sequenceDiagram
 - [결과] 주문 확정 Application은 요청자 소유의 DRAFT Order, 삭제되지 않은 Product, Point를 조회한 뒤 Product의 재고 차감과 Point의 잔액 차감, Order 확정을 호출한다.
   - 하나라도 실패하면 주문 확정 전체를 거절하고 변경을 저장하지 않는다.
 
-### 3.5 도메인 오류와 HTTP 오류 변환 책임에 대한 설계 판단
+### 3.4 도메인 오류와 HTTP 오류 변환 책임에 대한 설계 판단
 
 - [문제] Domain 객체가 CoreException과 HTTP 상태를 담은 ErrorType을 직접 사용하면, Domain이 HTTP 오류 표현에 의존한다.
   - 이 문제는 Point뿐 아니라 Brand·Product·Like·Order에도 반복될 수 있다.
@@ -543,7 +572,7 @@ sequenceDiagram
 - [결과] Point·Brand·Product·Like·Order는 `CoreException`과 `ErrorType`을 사용한다.
   - 도메인 오류와 HTTP 표현을 더 엄격히 분리해야 하는 요구가 생기면, `DomainException`과 오류 코드 매핑으로 전환한다.
 
-### 3.6 Commerce 도메인 모델과 JPA 매핑 분리
+### 3.5 Commerce 도메인 모델과 JPA 매핑 분리
 
 - [문제] Commerce의 `Brand`·`Product`·`Like`·`Point`·`Order`·`OrderItem`·`User`가 JPA 어노테이션 또는 공통 JPA `BaseEntity`에 직접 의존했다. Product는 Brand JPA 관계를 도메인 객체 참조로 보유했다.
 - [대안 1] 도메인 객체에 JPA 매핑을 계속 둔다.
