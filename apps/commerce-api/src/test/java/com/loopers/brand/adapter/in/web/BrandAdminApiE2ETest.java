@@ -255,20 +255,36 @@ class BrandAdminApiE2ETest {
     @Nested
     class Delete {
 
-        @DisplayName("BRD-02 재고 0인 살아 있는 상품이 연결돼 있으면 409이고, 브랜드는 삭제되지 않는다.")
+        @DisplayName("BRD-02 (W3 계약 변경) 재고 0인 살아 있는 상품이 연결돼 있어도 200이고, 브랜드와 상품이 함께 삭제된다.")
         @Test
-        void rejectsDelete_whenActiveProductRemains() throws Exception {
+        void deletesBrandWithActiveProducts() throws Exception {
             // arrange
             BrandModel brand = brandJpaRepository.save(new BrandModel("나이키", null));
-            productJpaRepository.save(new ProductModel(brand.getId(), "품절 상품", 1_000, 0));
+            ProductModel soldOut = productJpaRepository.save(new ProductModel(brand.getId(), "품절 상품", 1_000, 0));
 
             // act
             mockMvc.perform(delete(ENDPOINT + "/" + brand.getId()).with(ADMIN).with(csrf()))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.meta.errorCode").value("Conflict"));
+                    .andExpect(status().isOk());
+
+            // assert
+            assertThat(brandJpaRepository.findById(brand.getId()).orElseThrow().getDeletedAt()).isNotNull();
+            assertThat(productJpaRepository.findById(soldOut.getId()).orElseThrow().getDeletedAt()).isNotNull();
+        }
+
+        @DisplayName("W3 C-3 ROLE_USER·식별 없는 삭제 요청은 403이고, 브랜드와 연결 상품 모두 바뀌지 않는다.")
+        @Test
+        void forbidsNonAdminDelete_andChangesNothing() throws Exception {
+            // arrange
+            BrandModel brand = brandJpaRepository.save(new BrandModel("나이키", null));
+            ProductModel product = productJpaRepository.save(new ProductModel(brand.getId(), "에어맥스", 1_000, 3));
+
+            // act
+            mockMvc.perform(delete(ENDPOINT + "/" + brand.getId()).with(user("customer").roles("USER")).with(csrf())).andExpect(status().isForbidden());
+            mockMvc.perform(delete(ENDPOINT + "/" + brand.getId()).with(csrf())).andExpect(status().isForbidden());
 
             // assert
             assertThat(brandJpaRepository.findById(brand.getId()).orElseThrow().getDeletedAt()).isNull();
+            assertThat(productJpaRepository.findById(product.getId()).orElseThrow().getDeletedAt()).isNull();
         }
 
         @DisplayName("BRD-02 연결된 상품이 모두 삭제됐으면 브랜드를 삭제하고, 이후 조회는 404다.")
