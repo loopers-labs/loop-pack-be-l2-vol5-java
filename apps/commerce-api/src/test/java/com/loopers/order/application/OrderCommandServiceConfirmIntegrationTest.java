@@ -31,15 +31,17 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.domain.Sort;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.doAnswer;
 
 /**
  * 주문 확정 유스케이스 (ORD-02~05). 실제 빈과 테스트 DB로, 확정 뒤 DB에 남은 재고·그룹의 남은 금액·사용 이력·주문 상태를 확인한다.
@@ -73,6 +75,9 @@ class OrderCommandServiceConfirmIntegrationTest {
 
     @Autowired
     private PointHistoryJpaRepository pointHistoryJpaRepository;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
@@ -259,18 +264,30 @@ class OrderCommandServiceConfirmIntegrationTest {
     @Nested
     class Rollback {
 
-        @DisplayName("ORD-05 재고·포인트 차감과 사용 이력 저장이 끝난 뒤 주문 저장에서 실패하면, 재고·그룹의 남은 금액·사용 이력·주문 상태가 모두 요청 전으로 돌아간다.")
+        @DisplayName("ORD-05·W3 C-4 재고·그룹의 남은 금액·사용 이력의 SQL이 실제로 나간 뒤 주문 저장에서 실패하면, 새로 읽은 재고·남은 금액·사용 이력·주문 상태가 모두 요청 전이다.")
         @Test
         void rollsBackEverythingWhenLastStepFails() {
             // arrange
             pointCommandUseCase.charge(user.getId(), 10_000);
             Long orderId = createOrderOf7000(user);
+            List<Object> sentBeforeFailure = new ArrayList<>();
             // 확정된 주문을 저장할 때만 실패시킨다. 저장 위치가 변경보다 앞으로 옮겨지면 이 조건이 맞지 않아 테스트가 실패한다.
-            doThrow(new IllegalStateException("주문 저장 실패")).when(orderPort).save(argThat(order -> !order.isDraft()));
+            doAnswer(invocation -> {
+                // 같은 트랜잭션의 커넥션으로 읽으면 앞 단계의 UPDATE·INSERT가 이미 DB에 나가 있다 (아직 commit 전)
+                sentBeforeFailure.add(jdbcTemplate.queryForObject("SELECT stock FROM products WHERE id = ?", Integer.class, airMax.getId()));
+                sentBeforeFailure.add(jdbcTemplate.queryForObject("SELECT SUM(remaining) FROM point_groups", Long.class));
+                sentBeforeFailure.add(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM point_histories WHERE type = 'USE'", Long.class));
+                throw new IllegalStateException("주문 저장 실패");
+            }).when(orderPort).save(argThat(order -> !order.isDraft()));
 
-            // act & assert
+
+            // act
             assertThatThrownBy(() -> orderCommandUseCase.confirm(user.getId(), orderId))
-                .isInstanceOf(IllegalStateException.class);
+                    .isInstanceOf(IllegalStateException.class);
+
+            // assert: 실패 직전에는 재고 10 → 7, 남은 금액 10,000 → 3,000, 사용 이력 1줄이 DB에 반영돼 있었다
+            assertThat(sentBeforeFailure).containsExactly(7, 3_000L, 1L);
+            // assert: 트랜잭션이 끝난 뒤 새로 읽으면 전부 요청 전이다
             assertNothingChanged(orderId, Money.of(10_000));
         }
     }
