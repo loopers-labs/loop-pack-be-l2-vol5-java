@@ -5,6 +5,7 @@ import com.loopers.brand.application.port.in.BrandInfo;
 import com.loopers.brand.application.port.out.BrandPort;
 import com.loopers.brand.domain.BrandModel;
 import com.loopers.product.application.port.out.ProductPort;
+import com.loopers.product.domain.ProductModel;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
@@ -34,17 +35,22 @@ public class BrandCommandService implements BrandCommandUseCase {
     }
 
     /**
-     * BRD-02: 삭제되지 않은 상품(재고 0 포함)이 남은 브랜드는 삭제할 수 없다.
-     * 연결 상품 확인은 상품 저장소가 답하고, 삭제 행동은 브랜드가 한다.
+     * BRD-02 (W3): 브랜드와 삭제되지 않은 연결 상품 전부(재고 0 포함)를 한 트랜잭션에서 논리 삭제한다 (ADR-W3-05).
+     * 잠금 순서는 브랜드 → 상품 id 오름차순 (ADR-W3-03). 저장은 즉시 flush되므로 중간에 실패하면 이미 나간 UPDATE까지 함께 롤백된다.
      */
     @Transactional
     @Override
     public void delete(Long brandId) {
-        BrandModel brand = getActiveBrand(brandId);
-        if (productPort.existsActiveByBrandId(brandId)) {
-            throw new CoreException(ErrorType.CONFLICT, "삭제되지 않은 상품이 있는 브랜드는 삭제할 수 없습니다.");
-        }
+
+        BrandModel brand = brandPort.findActiveByIdForUpdate(brandId)
+                .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[brandId = " + brandId + "] 브랜드를 찾을 수 없습니다."));
         brand.delete();
+        brandPort.save(brand);
+
+        for (ProductModel product : productPort.findActiveByBrandIdForUpdate(brandId)) {
+            product.delete();
+            productPort.save(product);
+        }
     }
 
     private BrandModel getActiveBrand(Long brandId) {

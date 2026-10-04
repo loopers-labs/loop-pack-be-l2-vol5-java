@@ -26,9 +26,9 @@ public interface ProductPort {
     Page<ProductModel> findActive(Long brandId, Pageable pageable);
 
     /**
-     * BRD-02: 브랜드에 삭제되지 않은 상품이 남아 있는가 (재고 0 포함).
+     * 브랜드의 삭제되지 않은 상품 전부(재고 0 포함)를 id 오름차순 쓰기 잠금으로 찾는다 (ADR-W3-03·05).
      */
-    boolean existsActiveByBrandId(Long brandId);
+    List<ProductModel> findActiveByBrandIdForUpdate(Long brandId);
 
     /**
      * 삭제 여부와 관계없이 식별자로 한 번에 찾는다. 팔 수 있는지는 호출자가 상품에 묻는다 (PRD-06).

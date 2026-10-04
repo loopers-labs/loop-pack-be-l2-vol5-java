@@ -6,6 +6,7 @@ import com.loopers.product.domain.QProductModel;
 import com.loopers.support.persistence.QueryDslSort;
 import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.jpa.impl.JPAQueryFactory;
+import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -63,12 +64,12 @@ public class ProductPersistenceAdapter implements ProductPort {
     }
 
     @Override
-    public boolean existsActiveByBrandId(Long brandId) {
-        Integer one = queryFactory.selectOne()
-            .from(PRODUCT)
-            .where(PRODUCT.brandId.eq(brandId), PRODUCT.deletedAt.isNull())
-            .fetchFirst();
-        return one != null;
+    public List<ProductModel> findActiveByBrandIdForUpdate(Long brandId) {
+        return queryFactory.selectFrom(PRODUCT)
+                .where(PRODUCT.brandId.eq(brandId), PRODUCT.deletedAt.isNull())
+                .orderBy(PRODUCT.id.asc())
+                .setLockMode(LockModeType.PESSIMISTIC_WRITE)
+                .fetch();
     }
 
     @Override

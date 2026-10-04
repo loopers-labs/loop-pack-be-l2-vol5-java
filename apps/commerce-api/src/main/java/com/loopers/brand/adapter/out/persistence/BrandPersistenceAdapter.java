@@ -5,6 +5,7 @@ import com.loopers.brand.domain.BrandModel;
 import com.loopers.brand.domain.QBrandModel;
 import com.loopers.support.persistence.QueryDslSort;
 import com.querydsl.jpa.impl.JPAQueryFactory;
+import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -37,6 +38,16 @@ public class BrandPersistenceAdapter implements BrandPort {
         BrandModel brand = queryFactory.selectFrom(BRAND)
             .where(BRAND.id.eq(id), BRAND.deletedAt.isNull())
             .fetchOne();
+        return Optional.ofNullable(brand);
+    }
+
+    @Override
+    public Optional<BrandModel> findActiveByIdForUpdate(Long id) {
+        BrandModel brand = queryFactory.selectFrom(BRAND)
+                .where(BRAND.id.eq(id), BRAND.deletedAt.isNull())
+                .setLockMode(LockModeType.PESSIMISTIC_WRITE)
+                .fetchOne();
+
         return Optional.ofNullable(brand);
     }
 
