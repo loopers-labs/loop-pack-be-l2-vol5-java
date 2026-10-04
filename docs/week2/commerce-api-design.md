@@ -247,7 +247,8 @@ classDiagram
 
 ##### 변경 충돌 정책
 
-- 상품 수정과 삭제, 재고 설정과 주문 차감은 Product의 버전 검사에 참여하여 같은 행의 오래된 저장을 거절한다. 브랜드 일괄 삭제에 포함되는 Product도 같은 규칙을 따른다.
+- 상품 수정과 삭제, 관리자 재고 설정은 Product의 버전 검사에 참여하여 같은 행의 오래된 저장을 거절한다. 브랜드 일괄 삭제에 포함되는 Product도 같은 규칙을 따른다.
+- 주문의 재고 차감은 상품 사용 가능 여부와 현재 재고를 조건으로 함께 검사하고 차감한다. 차감 시 Product 버전을 증가시켜 관리 작업의 오래된 저장을 거절한다.
 - 관리 API의 버전 충돌은 최신 상태에서 제한적으로 자동 재시도한다. 최대 시도 횟수까지 충돌이 지속되면 `409 Conflict`, 재조회한 Product가 없거나 삭제됐다면 `404 Not Found`로 종료한다. 입력값 검증 등 업무 오류는 재시도하지 않는다.
 
 ##### StockQuantity VO
@@ -445,7 +446,7 @@ sequenceDiagram
 | 포인트 충전 | `POST` | `/points/charge` | Body: `amount` | `200 OK`<br/>충전 후 잔액 | `400 Bad Request`<br/>누락·잘못된 타입·양의 정수가 아닌 `amount` |
 | 내 포인트 잔액 조회 | `GET` | `/points` | - | `200 OK`<br/>저장된 포인트 잔액 | 기능별 대표 오류 없음 |
 | 주문 생성 | `POST` | `/orders` | Body: 주문 품목 | `201 Created`<br/>중복 품목을 합산해 품목·수량·단가·합계를 저장한 `DRAFT` Order 반환<br/>재고·포인트 미차감 | `400 Bad Request`<br/>주문 품목 또는 수량 입력 오류 |
-| 주문 확정 | `POST` | `/orders/{orderId}/confirm` | Path: `orderId` | `200 OK`<br/>재고·포인트 차감, 결제 정보 저장 후 `CONFIRMED` Order | `409 Conflict`<br/>DRAFT가 아닌 Order, 재고 부족 또는 잔액 부족 |
+| 주문 확정 | `POST` | `/orders/{orderId}/confirm` | Path: `orderId` | `200 OK`<br/>재고·포인트 차감, 결제 정보 저장 후 `CONFIRMED` Order | `404 Not Found`<br/>주문이 없거나 타인 소유<br/>`409 Conflict`<br/>DRAFT가 아닌 Order, 상품 사용 불가, 재고 부족, 잔액 부족 또는 최대 시도 횟수까지 버전 충돌 지속 |
 | 내 주문 목록 조회 | `GET` | `/orders` | - | `200 OK`<br/>내 주문의 품목·수량·금액·상태·결제액 목록 | 기능별 대표 오류 없음 |
 | 내 주문 상세 조회 | `GET` | `/orders/{orderId}` | Path: `orderId` | `200 OK`<br/>내 주문의 품목·수량·금액·상태·결제액 | `404 Not Found`<br/>조회할 수 없는 Order |
 
