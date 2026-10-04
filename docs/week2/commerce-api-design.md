@@ -128,6 +128,7 @@ flowchart LR
 classDiagram
     direction LR
 
+    class User
     class Brand {
         이름
         삭제상태
@@ -141,15 +142,16 @@ classDiagram
         재고차감()
     }
     class StockQuantity {
+        <<VO>>
         수량: 0 이상
     }
-    class User
     class Like
     class Point {
         충전()
         차감()
     }
     class PointBalance {
+        <<VO>>
         잔액: 0 이상
     }
     class Order {
@@ -159,16 +161,18 @@ classDiagram
         확정()
     }
     class OrderItem {
+        <<VO>>
         수량: 양수
         단가
         합계
     }
 
     Product "N" ..> "1" Brand : brandId (required FK)
+    Product "1" *-- "1" StockQuantity
+
     Like "N" --> "1" User
     Like "N" --> "1" Product
 
-    Product "1" *-- "1" StockQuantity
     Point "1" --> "1" User
     Point "1" *-- "1" PointBalance
 
@@ -177,7 +181,18 @@ classDiagram
     OrderItem "N" ..> "1" Product : productId (ID reference, no FK)
 ```
 
-#### 2.1.1 Brand
+#### 2.1.1 User
+
+- [관계와 경계] User는 독립된 애그리게이트다. 하나의 User에 여러 Order가 연결된다.
+- [관계 표현] User는 Order와 Like 컬렉션을 보유하지 않는다.
+- [도메인 책임] User는 사용자를 식별하는 ID를 보유한다.
+
+##### 사용자 식별
+
+- User는 fixture로 저장하며, 고객별 API는 `X-USER-ID`로 존재하는 User를 식별한다.
+- User CRUD는 이번 범위에 포함하지 않는다.
+
+#### 2.1.2 Brand
 
 - [관계와 경계] Brand는 독립된 애그리게이트다. 하나의 Brand에 여러 Product가 연결된다.
 - [관계 표현] Brand는 Product 컬렉션을 보유하지 않는다.
@@ -205,21 +220,19 @@ classDiagram
 - 이름 수정과 삭제는 Brand의 버전 검사에 참여하여 같은 행의 오래된 저장을 거절한다.
 - 관리 API의 버전 충돌은 최신 상태에서 제한적으로 자동 재시도한다. 최대 시도 횟수까지 충돌이 지속되면 `409 Conflict`, 재조회한 Brand가 없거나 삭제됐다면 `404 Not Found`로 종료한다. 이름 중복 등 업무 오류는 재시도하지 않는다.
 
-#### 2.1.2 Product
+#### 2.1.3 Product
 
-- [관계와 경계] Product는 Brand와 별도 애그리게이트이며, StockQuantity를 내부 값 객체로 보유한다. StockQuantity는 독립된 식별자와 생명주기를 갖지 않는다.
+- [관계와 경계] Product는 Brand와 별도 애그리게이트이며, StockQuantity VO를 내부에 보유한다.
 - [관계 표현] Product는 Brand 객체를 포함하지 않고 `brandId`로 Brand를 참조한다. 재고 수량은 StockQuantity VO로 표현한다.
 - [도메인 책임] Product는 자신의 이름, 가격, 재고, 삭제 상태를 관리한다. 재고 설정과 주문 수량 차감을 수행하며, `delete()`는 자신의 삭제 상태를 변경한다.
-- [도메인 책임] StockQuantity는 재고 수량의 검증과 계산을 담당한다.
 - [도메인 책임] `ProductDeletionPolicy`는 Product만 담당하며 Brand의 Policy를 호출하거나 Repository 조회와 저장을 수행하지 않는다.
 - [도메인 규칙] 상품 등록 시 존재하고 삭제되지 않은 Brand가 필요하다.
 - [도메인 규칙] Product 수정 시 기존 Brand는 변경하지 않는다.
 - [도메인 규칙] 삭제된 상품은 새 좋아요, 새 주문, 상품 수정, 재고 변경에 사용할 수 없다.
 - [도메인 규칙] 관리자는 Product 재고를 0 이상인 최종 수량으로 설정할 수 있다.
-- [도메인 규칙] Product는 주문 확정 시 재고를 검사하고 주문 수량만큼 차감한다. 재고가 부족하면 거절한다.
+- [도메인 규칙] Product의 재고 차감은 주문 수량이 양수이고 재고가 충분할 때만 허용한다.
 - [불변식] Product 이름은 공백만으로 구성될 수 없고, 1자 이상 100자 이하여야 한다.
 - [불변식] Product 가격은 1원 이상 100,000,000원 이하여야 한다.
-- [불변식] Product의 재고 수량은 0 이상이어야 한다.
 
 ##### 조회 정책
 
@@ -237,78 +250,82 @@ classDiagram
 - 상품 수정과 삭제, 재고 설정과 주문 차감은 Product의 버전 검사에 참여하여 같은 행의 오래된 저장을 거절한다. 브랜드 일괄 삭제에 포함되는 Product도 같은 규칙을 따른다.
 - 관리 API의 버전 충돌은 최신 상태에서 제한적으로 자동 재시도한다. 최대 시도 횟수까지 충돌이 지속되면 `409 Conflict`, 재조회한 Product가 없거나 삭제됐다면 `404 Not Found`로 종료한다. 입력값 검증 등 업무 오류는 재시도하지 않는다.
 
-#### 2.1.3 User–Like–Product
+##### StockQuantity VO
 
-- [관계] User 1 : N Like N : 1 Product
-- [실습용 사용자] User는 fixture로 저장하며, 고객별 API는 `X-USER-ID`로 존재하는 User를 식별한다. User CRUD는 이번 범위에 포함하지 않는다.
-- [도메인 규칙] 삭제된 Product에는 좋아요를 할 수 없다.
-- [도메인 규칙] User는 삭제된 Product에 남아 있는 자신의 좋아요를 취소할 수 있다. 취소 시 Product의 존재·활성 여부를 요구하지 않는다.
-- [불변식] User는 하나의 Product에 Like를 여러 번 할 수 없다.
+- [관계와 경계] StockQuantity는 Product 내부에서 재고 수량을 표현하는 VO다. 독립된 도메인 식별자와 생명주기를 갖지 않는다.
+- [관계 표현] 재고 수량을 `amount` 값 하나로 표현한다.
+- [값 동등성] 재고 수량이 같으면 같은 값으로 판단한다.
+- [도메인 책임] StockQuantity는 재고 수량의 검증과 차감 결과 계산을 담당한다.
+- [도메인 규칙] StockQuantity는 불변 값으로 다룬다. 차감 시 기존 값을 변경하지 않고, 기존 수량에서 차감 수량을 뺀 새 StockQuantity를 반환한다.
+- [도메인 규칙] 차감 수량은 양수여야 하며, 0과 음수는 거절한다.
+- [도메인 규칙] 차감 수량이 현재 재고보다 크면 재고 부족으로 거절한다.
+- [불변식] 재고 수량은 0 이상이어야 한다.
+
+#### 2.1.4 Like
+
+- [관계와 경계] User 1 : N Like N : 1 Product. Like는 User와 Product에서 독립된 좋아요 관계로 관리한다.
+- [관계 표현] Like는 `userId`와 `productId`로 User와 Product를 참조하며 두 객체를 포함하지 않는다. User와 Product는 Like 컬렉션을 보유하지 않는다.
+- [도메인 책임] Like는 사용자와 상품 사이의 좋아요 관계를 표현한다. 좋아요 등록은 관계 생성, 취소는 관계 제거로 처리한다.
+- [도메인 규칙] 존재하고 삭제되지 않은 Product에 좋아요를 할 수 있다.
+- [도메인 규칙] User는 삭제된 Product에 남아 있는 자신의 좋아요를 취소할 수 있다. 취소 시 Product의 존재와 활성 여부를 요구하지 않는다.
+- [불변식] 같은 `(userId, productId)`의 Like는 중복으로 존재할 수 없다. DB의 유니크 제약으로 중복 저장을 막는다.
 
 ##### 조회 규칙
 
-- Product의 좋아요 수는 Like 관계 수로 계산한다.
+- Product의 좋아요 수는 해당 Product의 Like 관계 수를 집계해 조회한다.
 - 내 좋아요 목록에서는 삭제된 Product를 제외한다.
-
-#### 2.1.4 Order–OrderItem
-
-- [관계] Order 1 : N OrderItem
-- [관계] User 1 : N Order
-- [관계 표현] OrderItem은 `productId` 값으로 Product를 참조하며 Product 객체를 포함하지 않는다. 주문 품목의 Product ID는 DB FK로 설정하지 않는다.
-- [스냅샷] OrderItem은 주문 생성 시점의 Product ID·상품명·단가와 수량·합계를 보존한다. 주문 내역은 현재 Product를 다시 조회해 과거 상품 정보를 대체하지 않는다. Brand·Product 삭제 후에도 기존 주문의 품목과 결제 정보는 유지한다.
-- [도메인 규칙] Order 생성 시 여러 OrderItem의 수량·단가·합계와 DRAFT 상태를 저장한다.
-- [도메인 규칙] Order 생성 시 재고와 포인트는 차감하지 않는다.
-- [도메인 규칙] Order 생성·확정 시 존재하고 삭제되지 않은 Product와 양수 수량을 확인한다.
-- [도메인 규칙] User는 자신의 DRAFT Order만 확정할 수 있다.
-- [도메인 규칙] Order 확정 시 재고·포인트를 차감하고, 결제액·결과를 저장한 뒤 CONFIRMED 상태로 변경한다.
-- [도메인 규칙] Order 확정 시 재고 또는 잔액이 부족하면 거절한다.
-- [불변식] OrderItem의 수량은 양수여야 한다.
-- [불변식] CONFIRMED 상태의 Order에는 결제액과 결제 결과가 저장되어야 한다.
-
-##### 중복 Product 품목 처리에 대한 설계 판단
-
-- [대안 1] 중복된 Product 품목이 있으면 주문을 거절한다.
-  - 요청한 품목 구성과 저장된 품목 구성이 항상 일치한다.
-  - 같은 상품을 두 번 담은 요청이 주문 자체를 실패시킨다.
-- [대안 2] 중복된 Product 품목의 수량을 합산한다.
-  - 하나의 Order에서 동일한 Product가 하나의 OrderItem으로 표현된다.
-  - 요청한 품목 수와 저장된 품목 수가 달라질 수 있다.
-
-- [설계 결정] 중복된 Product 품목은 수량을 합산한다.
-- [이유] 품목이 나뉘어 있으면 재고를 품목마다 따로 확인하게 되어 총수량 기준 판단이 어긋날 수 있다. 합산하면 Product당 한 번만 재고를 확인하면 된다.
-- [결과] 요청한 품목 수와 저장된 품목 수가 달라질 수 있어, 주문 생성 응답은 합산된 품목을 돌려줘야 한다.
-- [도메인 규칙] 중복 Product 품목을 합산한 뒤, 해당 Product의 총수량으로 재고를 확인한다.
 
 #### 2.1.5 Point
 
-##### 포인트 책임에 대한 설계 판단
-
-- [대안 1] User가 사용자별 포인트 잔액과 충전·차감 규칙을 함께 관리한다.
-  - 포인트 변경 정책이 추가되면 User도 함께 변경해야 한다.
-- [대안 2] Point를 User와 분리된 도메인으로 관리한다.
-  - Point가 사용자별 잔액과 충전·차감 규칙을 독립적으로 책임진다.
-  - 포인트 충전과 주문 확정 시 요청자의 `userId`로 Point를 별도로 조회해 조합해야 한다.
-
-- [설계 결정] Point가 사용자별 잔액과 충전·차감 규칙을 책임진다.
-- [이유] Point는 `userId`로 소유자인 User와 연결되고, 사용자별 잔액과 포인트 변경 규칙을 책임지도록 분리한다.
-  - 포인트 변경 정책이 User 등 다른 도메인 책임에 영향을 주지 않는다.
-- [결과] User에는 잔액을 중복 저장하지 않는다. 충전과 주문 확정은 요청자의 `userId`로 Point를 조회해 처리한다.
-  - 이후 포인트 이력, 만료일, 적립·차감 사유 등 기능이 필요하면 User를 변경하지 않고 Point 영역에서 확장할 수 있다.
-
-##### 포인트 규칙
-
-- [관계] User 1 : 1 Point
+- [관계와 경계] Point는 User와 별도 애그리게이트이며, PointBalance VO를 내부에 보유한다. 하나의 User에 하나의 Point가 연결된다.
+- [관계 표현] Point는 `userId`로 User를 참조하며 User 객체를 포함하지 않는다. 잔액은 PointBalance VO로 표현한다.
+- [도메인 책임] Point는 사용자별 잔액 상태를 관리하고 충전과 결제 차감을 수행한다. 금액 검증과 계산은 PointBalance에 맡기고, 반환된 새 값으로 자신의 잔액을 갱신한다.
 - [도메인 규칙] 1포인트는 1원이다.
-- [불변식] Point 잔액은 0포인트 이상이어야 한다.
-- [도메인 규칙] 충전액은 양의 정수여야 하며, 0과 음수는 거절한다.
-- [도메인 규칙] 충전은 기존 잔액에 충전액을 더하고, 합산 결과가 표현 범위를 넘으면 거절한다.
-- [도메인 규칙] Order 확정 시 Point는 결제액만큼 잔액을 차감하고, 잔액이 부족하면 거절한다.
+- [도메인 규칙] 새 Point의 잔액은 0포인트로 시작한다.
+- [도메인 규칙] 충전은 기존 잔액에 충전액을 더하고, 주문 확정의 결제는 주문 결제액만큼 잔액을 차감한다.
+- [도메인 규칙] 충전이나 결제 차감이 거절되면 기존 잔액을 유지한다.
+- [불변식] 같은 `userId`를 가진 Point는 중복으로 존재할 수 없다.
 
-##### 포인트 잔액 VO 선택
+##### PointBalance VO
 
-- [설계 결정] Point의 잔액은 PointBalance VO로 관리한다.
-- [이유] 잔액도 독립된 식별자·생명주기 없이 값과 0 이상·표현 범위 규칙이 중요하고, 충전과 주문 확정이라는 서로 다른 경로로 변경되기 때문에, 값 규칙을 PointBalance라는 VO에서 관리한다.
-- [결과] Point는 PointBalance가 검증한 새 잔액만 반영한다. 따라서 0 이상과 표현 범위 검증을 우회할 수 없고, 충전이 거절되면 기존 잔액이 유지된다.
+- [관계와 경계] PointBalance는 Point 내부에서 포인트 잔액을 표현하는 VO다. 독립된 도메인 식별자와 생명주기를 갖지 않는다.
+- [관계 표현] 포인트 잔액을 `amount` 값 하나로 표현한다.
+- [값 동등성] 잔액이 같으면 같은 값으로 판단한다.
+- [도메인 책임] PointBalance는 잔액과 변경 금액의 검증, 충전 및 차감 결과 계산을 담당한다.
+- [도메인 규칙] PointBalance는 불변 값으로 다룬다. 충전과 차감 시 기존 값을 변경하지 않고, 계산한 새 PointBalance를 반환한다.
+- [도메인 규칙] 충전액과 차감액은 양의 정수여야 하며, 0과 음수는 거절한다.
+- [도메인 규칙] 충전 후 잔액이 표현 가능한 정수 범위를 넘으면 거절한다.
+- [도메인 규칙] 차감액이 현재 잔액보다 크면 잔액 부족으로 거절한다.
+- [불변식] 잔액은 0포인트 이상이어야 한다.
+
+#### 2.1.6 Order
+
+- [관계와 경계] Order는 User와 별도 애그리게이트이며, OrderItem VO를 내부에 보유하는 애그리게이트 루트다.
+- [관계 표현] Order는 `userId`로 User를 참조하며 User 객체를 포함하지 않는다. OrderItem 컬렉션은 직접 보유한다.
+- [도메인 책임] Order는 자신의 소유자 정보, 품목 구성과 총액, DRAFT 상태 검사와 확정 상태 전이, 결제액과 결제 결과를 관리한다.
+- [도메인 규칙] Order 생성 시 여러 OrderItem의 수량·단가·합계와 DRAFT 상태를 저장한다.
+- [도메인 규칙] Order 생성 시 같은 `productId`의 품목은 수량을 합산해 하나의 OrderItem으로 저장한다.
+- [도메인 규칙] Order 생성 시 재고와 포인트는 차감하지 않는다.
+- [도메인 규칙] 주문 생성과 확정에는 존재하고 삭제되지 않은 Product와 양수 수량이 필요하다.
+- [도메인 규칙] User는 자신의 DRAFT Order만 확정할 수 있다.
+- [도메인 규칙] Order는 DRAFT 상태를 확인한 뒤 결제액과 결제 결과를 저장하고 CONFIRMED 상태로 변경한다.
+- [도메인 규칙] 주문 확정 시 각 Product의 합산된 총수량으로 재고를 확인한다.
+- [도메인 규칙] 주문 확정 시 재고 또는 잔액이 부족하면 확정을 거절한다.
+- [불변식] 하나의 Order는 같은 `productId`의 OrderItem을 중복으로 보유하지 않는다.
+- [불변식] Order 총액은 각 OrderItem의 품목 금액 합과 일치해야 한다.
+- [불변식] 하나의 Order에서 최초 확정은 한 번만 반영한다.
+- [불변식] CONFIRMED 상태의 Order에는 결제액과 결제 결과가 저장되어야 한다.
+
+##### OrderItem VO
+
+- [관계와 경계] OrderItem은 Order 내부에서 주문 품목을 표현하는 VO다. 독립된 도메인 식별자와 생명주기를 갖지 않는다.
+- [관계 표현] OrderItem은 `productId` 값으로 Product를 참조하며 Product 객체를 포함하지 않는다. 주문 품목의 Product ID는 DB FK로 설정하지 않는다.
+- [스냅샷] 주문 생성 시점의 Product ID, 상품명, 단가와 수량을 보존하며, 해당 단가와 수량으로 품목 금액을 계산한다. 주문 내역은 현재 Product를 다시 조회해 과거 상품 정보를 대체하지 않는다. Brand와 Product 삭제 후에도 기존 주문의 품목과 결제 정보는 유지한다.
+- [값 동등성] Product ID, 상품명, 단가와 수량이 모두 같으면 같은 품목 값으로 판단한다.
+- [도메인 책임] OrderItem은 품목의 상품 정보와 단가, 수량을 보유하고 수량 검증과 품목 금액 계산을 담당한다.
+- [도메인 규칙] OrderItem은 불변 값으로 다룬다. 수량 합산이 필요하면 합산 수량의 새 OrderItem을 만들고, Order가 품목을 교체하며 총액을 다시 계산한다.
+- [불변식] 수량은 양수여야 한다.
+- [불변식] 품목 금액은 저장된 단가와 수량의 곱과 일치해야 한다.
 
 ### 2.2 대표 흐름 시퀀스 다이어그램
 
@@ -427,7 +444,7 @@ sequenceDiagram
 |---|---|---|---|---|---|
 | 포인트 충전 | `POST` | `/points/charge` | Body: `amount` | `200 OK`<br/>충전 후 잔액 | `400 Bad Request`<br/>누락·잘못된 타입·양의 정수가 아닌 `amount` |
 | 내 포인트 잔액 조회 | `GET` | `/points` | - | `200 OK`<br/>저장된 포인트 잔액 | 기능별 대표 오류 없음 |
-| 주문 생성 | `POST` | `/orders` | Body: 주문 품목 | `201 Created`<br/>중복 품목을 합산해 품목·수량·단가·합계를 저장한 `DRAFT` Order<br/>재고·포인트 미차감 | `400 Bad Request`<br/>주문 품목 또는 수량 입력 오류 |
+| 주문 생성 | `POST` | `/orders` | Body: 주문 품목 | `201 Created`<br/>중복 품목을 합산해 품목·수량·단가·합계를 저장한 `DRAFT` Order 반환<br/>재고·포인트 미차감 | `400 Bad Request`<br/>주문 품목 또는 수량 입력 오류 |
 | 주문 확정 | `POST` | `/orders/{orderId}/confirm` | Path: `orderId` | `200 OK`<br/>재고·포인트 차감, 결제 정보 저장 후 `CONFIRMED` Order | `409 Conflict`<br/>DRAFT가 아닌 Order, 재고 부족 또는 잔액 부족 |
 | 내 주문 목록 조회 | `GET` | `/orders` | - | `200 OK`<br/>내 주문의 품목·수량·금액·상태·결제액 목록 | 기능별 대표 오류 없음 |
 | 내 주문 상세 조회 | `GET` | `/orders/{orderId}` | Path: `orderId` | `200 OK`<br/>내 주문의 품목·수량·금액·상태·결제액 | `404 Not Found`<br/>조회할 수 없는 Order |
@@ -501,42 +518,7 @@ sequenceDiagram
   - 예를 들어 이미 관리 중인 Brand 소개를 응답에 추가하거나 Like 수를 숨기면, Product를 변경하지 않고 조회 결과 모델과 응답 DTO만 변경하면 된다.
   - Brand에 로고라는 새 상태 자체를 추가한다면 Brand도 변경되지만, Product는 변경하지 않는다.
 
-### 3.2 Like 관계 책임에 대한 설계 판단
-
-- [문제] Like를 User나 Product 내부 컬렉션으로 두면 한쪽이 반대쪽의 생명주기까지 알아야 한다.
-
-- [대안 1] User 또는 Product가 Like 컬렉션을 관리한다.
-  - 한 객체에서 좋아요 관계를 접근할 수 있다.
-  - 관계가 많아질수록 컬렉션이 커지고 User·Product Aggregate가 결합된다.
-- [대안 2] Like를 독립 관계로 관리한다.
-  - User와 Product는 자신의 상태만 관리하고 Like가 관계의 생명주기를 책임진다.
-  - 관계 조회와 저장이 추가되며, `(userId, productId)` 유니크 제약으로 중복을 막아야 한다.
-
-- [설계 결정] Like를 User와 Product 사이의 독립 관계로 관리한다.
-- [이유] Like는 사용자와 상품의 관계 자체를 저장하고, 중복 방지·좋아요 수 계산·삭제된 상품의 기존 Like 취소를 책임져야 한다.
-  - User나 Product 컬렉션으로 관리하면 관계가 많아질수록 Aggregate가 커지고 두 객체가 결합된다.
-- [결과] Like는 `userId`, `productId`로 저장하고 `(userId, productId)` 유니크 제약으로 중복을 막는다.
-  - Product의 좋아요 수는 Like 관계 수로 조회한다.
-
-### 3.3 Order 확정 협력 책임에 대한 설계 판단
-
-- [문제] Order가 Product 재고와 Point를 직접 차감하면, Order가 다른 Aggregate의 규칙까지 알아야 한다.
-
-- [대안 1] Order가 Product와 Point를 직접 협력시킨다.
-  - 확정 호출은 짧게 표현할 수 있다.
-  - Order가 재고·포인트 규칙에 강하게 묶인다.
-- [대안 2] Application이 트랜잭션 안에서 Order·Product·Point를 조회·협력시키고, 각 객체는 자신의 규칙을 지킨다.
-  - Order는 상태 전이, Product는 재고, Point는 잔액 규칙에 집중한다.
-  - Application의 오케스트레이션과 트랜잭션 관리가 늘어난다.
-
-- [설계 결정] Application이 트랜잭션 안에서 Order·Product·Point를 조회·협력시키고, 각 객체는 자신의 규칙을 지킨다.
-- [이유] Order는 자신의 DRAFT 상태·주문 소유자·결제 정보·CONFIRMED 상태 전이를 책임진다.
-  - Product는 재고 차감, Point는 잔액 차감을 책임진다.
-  - 여러 객체를 조회하고 호출 순서를 조합하는 책임은 Application에 둔다.
-- [결과] 주문 확정 Application은 요청자 소유의 DRAFT Order, 삭제되지 않은 Product, Point를 조회한 뒤 Product의 재고 차감과 Point의 잔액 차감, Order 확정을 호출한다.
-  - 하나라도 실패하면 주문 확정 전체를 거절하고 변경을 저장하지 않는다.
-
-### 3.4 도메인 오류와 HTTP 오류 변환 책임에 대한 설계 판단
+### 3.2 도메인 오류와 HTTP 오류 변환 책임에 대한 설계 판단
 
 - [문제] Domain 객체가 CoreException과 HTTP 상태를 담은 ErrorType을 직접 사용하면, Domain이 HTTP 오류 표현에 의존한다.
   - 이 문제는 Point뿐 아니라 Brand·Product·Like·Order에도 반복될 수 있다.
@@ -554,7 +536,7 @@ sequenceDiagram
 - [결과] Point·Brand·Product·Like·Order는 `CoreException`과 `ErrorType`을 사용한다.
   - 도메인 오류와 HTTP 표현을 더 엄격히 분리해야 하는 요구가 생기면, `DomainException`과 오류 코드 매핑으로 전환한다.
 
-### 3.5 Commerce 도메인 모델과 JPA 매핑 분리
+### 3.3 Commerce 도메인 모델과 JPA 매핑 분리
 
 - [문제] Commerce의 `Brand`·`Product`·`Like`·`Point`·`Order`·`OrderItem`·`User`가 JPA 어노테이션 또는 공통 JPA `BaseEntity`에 직접 의존했다. Product는 Brand JPA 관계를 도메인 객체 참조로 보유했다.
 - [대안 1] 도메인 객체에 JPA 매핑을 계속 둔다.
