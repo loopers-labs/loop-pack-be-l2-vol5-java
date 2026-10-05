@@ -213,12 +213,7 @@ classDiagram
 - 일괄 삭제는 전체 성공 또는 전체 실패로 처리하며, 실패하면 이번 요청의 변경을 모두 취소한다.
 - 이미 삭제된 Product의 삭제 상태와 시각, 다른 Brand와 Product는 변경하지 않는다.
 - 재고 수량, 기존 Like 관계, 주문 스냅샷과 결제 정보는 보존한다.
-- 삭제 전에 생성한 DRAFT 주문도 확정 시 상품 사용 가능 여부를 다시 확인한다. 삭제된 상품이 포함되면 확정을 거절하고 주문 상태, 재고, 포인트와 결제 결과를 유지한다.
-
-##### 변경 충돌 정책
-
-- 이름 수정과 삭제는 Brand의 버전 검사에 참여하여 같은 행의 오래된 저장을 거절한다.
-- 관리 API의 버전 충돌은 최신 상태에서 제한적으로 자동 재시도한다. 최대 시도 횟수까지 충돌이 지속되면 `409 Conflict`, 재조회한 Brand가 없거나 삭제됐다면 `404 Not Found`로 종료한다. 이름 중복 등 업무 오류는 재시도하지 않는다.
+- 삭제 전에 생성했거나 삭제와 겹쳐 생성된 DRAFT 주문도 확정 시 상품 사용 가능 여부를 다시 확인한다. 삭제된 상품이 포함되면 확정을 거절하고 주문 상태, 재고, 포인트와 결제 결과를 유지한다.
 
 #### 2.1.3 Product
 
@@ -228,7 +223,7 @@ classDiagram
 - [도메인 책임] `ProductDeletionPolicy`는 Product만 담당하며 Brand의 Policy를 호출하거나 Repository 조회와 저장을 수행하지 않는다.
 - [도메인 규칙] 상품 등록 시 존재하고 삭제되지 않은 Brand가 필요하다.
 - [도메인 규칙] Product 수정 시 기존 Brand는 변경하지 않는다.
-- [도메인 규칙] 삭제된 상품은 새 좋아요, 새 주문, 상품 수정, 재고 변경에 사용할 수 없다.
+- [도메인 규칙] 새 좋아요와 주문 생성은 상품 조회 시 없거나 삭제된 Product를 거절한다. 삭제된 상품은 상품 수정과 재고 변경에 사용할 수 없다.
 - [도메인 규칙] 관리자는 Product 재고를 0 이상인 최종 수량으로 설정할 수 있다.
 - [도메인 규칙] Product의 재고 차감은 주문 수량이 양수이고 재고가 충분할 때만 허용한다.
 - [불변식] Product 이름은 공백만으로 구성될 수 없고, 1자 이상 100자 이하여야 한다.
@@ -244,12 +239,6 @@ classDiagram
 - Product는 기존 참조를 유지하며 `deletedAt`에 삭제 시각을 기록하는 논리 삭제를 사용한다.
 - 단독 삭제는 해당 Product만 변경하며 Brand는 유지한다.
 - 삭제해도 재고 수량, 기존 Like 관계, 주문 스냅샷과 결제 정보는 보존한다.
-
-##### 변경 충돌 정책
-
-- 상품 수정과 삭제, 관리자 재고 설정은 Product의 버전 검사에 참여하여 같은 행의 오래된 저장을 거절한다. 브랜드 일괄 삭제에 포함되는 Product도 같은 규칙을 따른다.
-- 주문의 재고 차감은 상품 사용 가능 여부와 현재 재고를 조건으로 함께 검사하고 차감한다. 차감 시 Product 버전을 증가시켜 관리 작업의 오래된 저장을 거절한다.
-- 관리 API의 버전 충돌은 최신 상태에서 제한적으로 자동 재시도한다. 최대 시도 횟수까지 충돌이 지속되면 `409 Conflict`, 재조회한 Product가 없거나 삭제됐다면 `404 Not Found`로 종료한다. 입력값 검증 등 업무 오류는 재시도하지 않는다.
 
 ##### StockQuantity VO
 
@@ -267,7 +256,8 @@ classDiagram
 - [관계와 경계] User 1 : N Like N : 1 Product. Like는 User와 Product에서 독립된 좋아요 관계로 관리한다.
 - [관계 표현] Like는 `userId`와 `productId`로 User와 Product를 참조하며 두 객체를 포함하지 않는다. User와 Product는 Like 컬렉션을 보유하지 않는다.
 - [도메인 책임] Like는 사용자와 상품 사이의 좋아요 관계를 표현한다. 좋아요 등록은 관계 생성, 취소는 관계 제거로 처리한다.
-- [도메인 규칙] 존재하고 삭제되지 않은 Product에 좋아요를 할 수 있다.
+- [도메인 규칙] 좋아요 등록 시 조회한 Product가 존재하고 삭제되지 않았는지 확인한다.
+- [도메인 규칙] 미삭제 Product를 확인한 뒤 삭제와 겹쳐 Like를 저장하는 요청은 성공을 허용한다.
 - [도메인 규칙] User는 삭제된 Product에 남아 있는 자신의 좋아요를 취소할 수 있다. 취소 시 Product의 존재와 활성 여부를 요구하지 않는다.
 - [불변식] 같은 `(userId, productId)`의 Like는 중복으로 존재할 수 없다. DB의 유니크 제약으로 중복 저장을 막는다.
 
@@ -307,10 +297,11 @@ classDiagram
 - [도메인 규칙] Order 생성 시 여러 OrderItem의 수량·단가·합계와 DRAFT 상태를 저장한다.
 - [도메인 규칙] Order 생성 시 같은 `productId`의 품목은 수량을 합산해 하나의 OrderItem으로 저장한다.
 - [도메인 규칙] Order 생성 시 재고와 포인트는 차감하지 않는다.
-- [도메인 규칙] 주문 생성과 확정에는 존재하고 삭제되지 않은 Product와 양수 수량이 필요하다.
+- [도메인 규칙] 주문 생성 시 상품 조회에서 존재하고 삭제되지 않은 Product와 양수 수량을 확인한다.
+- [도메인 규칙] 미삭제 Product를 확인한 뒤 삭제와 겹쳐 DRAFT를 저장하는 요청은 성공을 허용한다.
 - [도메인 규칙] User는 자신의 DRAFT Order만 확정할 수 있다.
 - [도메인 규칙] Order는 DRAFT 상태를 확인한 뒤 결제액과 결제 결과를 저장하고 CONFIRMED 상태로 변경한다.
-- [도메인 규칙] 주문 확정 시 각 Product의 합산된 총수량으로 재고를 확인한다.
+- [도메인 규칙] 주문 확정 시 상품 사용 가능 여부를 다시 검사하고 각 Product의 합산된 총수량으로 재고를 확인한다. 삭제된 상품이 포함되면 확정을 거절한다.
 - [도메인 규칙] 주문 확정 시 재고 또는 잔액이 부족하면 확정을 거절한다.
 - [불변식] 하나의 Order는 같은 `productId`의 OrderItem을 중복으로 보유하지 않는다.
 - [불변식] Order 총액은 각 OrderItem의 품목 금액 합과 일치해야 한다.
@@ -391,8 +382,8 @@ sequenceDiagram
 | 브랜드 목록 조회 | `GET` | `/brands` | Query: `status` (`ACTIVE`, `DELETED`, `ALL`; 기본 `ALL`) | `200 OK`<br/>삭제 상태를 포함한 브랜드 목록 | `400 Bad Request`<br/>잘못된 `status` 입력 |
 | 브랜드 등록 | `POST` | `/brands` | Body: `name`(공백만 불가, 1~100자) | `201 Created`<br/>생성된 브랜드 정보 | `400 Bad Request`<br/>이름 검증 실패<br/>`409 Conflict`<br/>이미 등록된 이름 |
 | 브랜드 상세 조회 | `GET` | `/brands/{brandId}` | Path: `brandId` | `200 OK`<br/>삭제 상태를 포함한 브랜드 상세 정보 | `404 Not Found`<br/>없는 Brand             |
-| 브랜드 수정 | `PUT` | `/brands/{brandId}` | Path: `brandId`<br/>Body: `name`(공백만 불가, 1~100자) | `200 OK`<br/>수정된 브랜드 정보 | `400 Bad Request`<br/>이름 검증 실패<br/>`404 Not Found`<br/>없거나 삭제된 Brand<br/>`409 Conflict`<br/>이미 등록된 이름 또는 최대 시도 횟수까지 버전 충돌 지속 |
-| [브랜드 삭제](../week3/brand-deletion-transaction-design.md) | `DELETE` | `/brands/{brandId}` | Path: `brandId` | `200 OK`<br/>Brand와 연결된 활성 Product 논리 삭제 | `404 Not Found`<br/>없거나 삭제된 Brand<br/>`409 Conflict`<br/>Brand 또는 Product의 버전 충돌이 최대 시도 횟수까지 지속됨, 요청 변경 전체 롤백 |
+| 브랜드 수정 | `PUT` | `/brands/{brandId}` | Path: `brandId`<br/>Body: `name`(공백만 불가, 1~100자) | `200 OK`<br/>수정된 브랜드 정보 | `400 Bad Request`<br/>이름 검증 실패<br/>`404 Not Found`<br/>없거나 삭제된 Brand<br/>`409 Conflict`<br/>이미 등록된 이름 |
+| 브랜드 삭제 | `DELETE` | `/brands/{brandId}` | Path: `brandId` | `200 OK`<br/>Brand와 연결된 활성 Product 논리 삭제 | `404 Not Found`<br/>없거나 삭제된 Brand |
 
 ##### 상품·재고
 
@@ -401,9 +392,25 @@ sequenceDiagram
 | 상품 목록 조회 | `GET` | `/products` | Query: `status` (`ACTIVE`, `DELETED`, `ALL`; 기본 `ALL`) | `200 OK`<br/>삭제 상태를 포함한 상품 목록 | `400 Bad Request`<br/>잘못된 `status` 입력 |
 | 상품 등록 | `POST` | `/products` | Body: `brandId`, 이름(공백만 불가, 1~100자), 가격(1~100,000,000원) | `201 Created`<br/>재고 0으로 생성된 상품 정보 | `400 Bad Request`<br/>상품 이름·가격 검증 실패<br/>`404 Not Found`<br/>없거나 삭제된 Brand |
 | 상품 상세 조회 | `GET` | `/products/{productId}` | Path: `productId` | `200 OK`<br/>상품·브랜드·재고·삭제 상태 정보 | `404 Not Found`<br/>없는 Product |
-| 상품 수정 | `PUT` | `/products/{productId}` | Path: `productId`<br/>Body: 이름(공백만 불가, 1~100자), 가격(1~100,000,000원) | `200 OK`<br/>수정된 상품 정보 | `400 Bad Request`<br/>상품 이름·가격 검증 실패<br/>`404 Not Found`<br/>없거나 삭제된 Product<br/>`409 Conflict`<br/>최대 시도 횟수까지 버전 충돌 지속 |
-| 상품 삭제 | `DELETE` | `/products/{productId}` | Path: `productId` | `200 OK`<br/>Product 논리 삭제<br/>재고·기존 Like·주문 정보는 유지 | `404 Not Found`<br/>없거나 이미 삭제된 Product<br/>`409 Conflict`<br/>최대 시도 횟수까지 버전 충돌 지속 |
-| 상품 재고 변경 | `PUT` | `/products/{productId}/stock` | Path: `productId`<br/>Body: 최종 재고 수량 | `200 OK`<br/>변경된 재고 수량 | `400 Bad Request`<br/>0 미만 재고 수량<br/>`404 Not Found`<br/>없거나 삭제된 Product<br/>`409 Conflict`<br/>최대 시도 횟수까지 버전 충돌 지속 |
+| 상품 수정 | `PUT` | `/products/{productId}` | Path: `productId`<br/>Body: 이름(공백만 불가, 1~100자), 가격(1~100,000,000원) | `200 OK`<br/>수정된 상품 정보 | `400 Bad Request`<br/>상품 이름·가격 검증 실패<br/>`404 Not Found`<br/>없거나 삭제된 Product |
+| 상품 삭제 | `DELETE` | `/products/{productId}` | Path: `productId` | `200 OK`<br/>Product 논리 삭제<br/>재고·기존 Like·주문 정보는 유지 | `404 Not Found`<br/>없거나 이미 삭제된 Product |
+| 상품 재고 변경 | `PUT` | `/products/{productId}/stock` | Path: `productId`<br/>Body: 최종 재고 수량 | `200 OK`<br/>변경된 재고 수량 | `400 Bad Request`<br/>0 미만 재고 수량<br/>`404 Not Found`<br/>없거나 삭제된 Product |
+
+##### 브랜드와 상품의 변경 정책
+
+Brand와 Product의 기존 행 변경은 버전 없이 조건부 갱신한다. 입력 검증과 UPDATE는 해당 Facade의 한 트랜잭션에서 처리하며, UPDATE에 대상 ID와 `deleted_at IS NULL` 조건을 포함한다.
+
+| 기능 | 갱신 컬럼 |
+|---|---|
+| 브랜드 이름 수정 | `name`, `updated_at` |
+| 상품 이름과 가격 수정 | `name`, `price`, `updated_at` |
+| 관리자 재고 설정 | 입력한 최종 수량으로 `stock`, `updated_at` |
+| 상품 단독 삭제 | `deleted_at`, `updated_at` |
+
+- 조회했던 객체 전체를 다시 저장하지 않는다. 상품 수정은 재고를, 재고 설정은 이름과 가격을, 삭제는 기존 상품 정보와 재고를 보존한다.
+- 같은 필드를 동시에 수정하면 마지막으로 반영된 요청의 값이 남는다. 관리자 재고 설정도 주문 차감 뒤에 실행되면 입력한 최종 수량을 적용한다. 오래된 편집의 버전 충돌 검사와 자동 재시도는 사용하지 않는다.
+- 대상이 없거나 삭제돼 UPDATE 조건에 일치하는 행이 없으면 `404`다. 같은 이름, 가격이나 수량을 다시 설정해도 `200`이며, Repository의 갱신 건수는 조건에 일치한 행 수를 기준으로 판정한다. MySQL Connector/J의 `useAffectedRows=false`를 사용해 동일 값 설정을 없는 대상으로 오인하지 않는다.
+- 브랜드 이름의 유일성은 DB 유니크 제약으로 보장하며 이름 중복은 기존 `409`로 처리한다.
 
 ##### 주문
 
@@ -435,7 +442,7 @@ sequenceDiagram
 
 | 기능 | Method | Path | 입력 | 성공 | 대표 오류 |
 |---|---|---|---|---|---|
-| 좋아요 등록 | `POST` | `/products/{productId}/likes` | Path: `productId` | `200 OK`<br/>좋아요 상태 보장 | `404 Not Found`<br/>없거나 삭제된 Product |
+| 좋아요 등록 | `POST` | `/products/{productId}/likes` | Path: `productId` | `200 OK`<br/>좋아요 상태 보장<br/>미삭제 확인 후 삭제와 겹친 등록 허용 | `404 Not Found`<br/>상품 조회 시 없거나 삭제된 Product |
 | 좋아요 취소 | `DELETE` | `/products/{productId}/likes` | Path: `productId` | `200 OK`<br/>좋아요 취소 상태 보장 | 기능별 대표 오류 없음 |
 | 내 좋아요 목록 조회 | `GET` | `/users/{userId}/likes` | Path: `userId` (`X-USER-ID`와 일치) | `200 OK`<br/>삭제된 Product를 제외한 내 좋아요 상품 목록 | `404 Not Found`<br/>조회할 수 없는 User |
 
@@ -445,7 +452,7 @@ sequenceDiagram
 |---|---|---|---|---|---|
 | 포인트 충전 | `POST` | `/points/charge` | Body: `amount` | `200 OK`<br/>충전 후 잔액 | `400 Bad Request`<br/>누락·잘못된 타입·양의 정수가 아닌 `amount` |
 | 내 포인트 잔액 조회 | `GET` | `/points` | - | `200 OK`<br/>저장된 포인트 잔액 | 기능별 대표 오류 없음 |
-| 주문 생성 | `POST` | `/orders` | Body: 주문 품목 | `201 Created`<br/>중복 품목을 합산해 품목·수량·단가·합계를 저장한 `DRAFT` Order 반환<br/>재고·포인트 미차감 | `400 Bad Request`<br/>주문 품목 또는 수량 입력 오류 |
+| 주문 생성 | `POST` | `/orders` | Body: 주문 품목 | `201 Created`<br/>중복 품목을 합산해 품목, 수량, 단가와 합계를 저장한 `DRAFT` Order 반환<br/>재고와 포인트 미차감<br/>미삭제 확인 후 삭제와 겹친 생성 허용 | `400 Bad Request`<br/>주문 품목 또는 수량 입력 오류<br/>`404 Not Found`<br/>상품 조회 시 없거나 삭제된 Product |
 | 주문 확정 | `POST` | `/orders/{orderId}/confirm` | Path: `orderId` | `200 OK`<br/>재고·포인트 차감, 결제 정보 저장 후 `CONFIRMED` Order | `404 Not Found`<br/>주문이 없거나 타인 소유<br/>`409 Conflict`<br/>DRAFT가 아닌 Order, 상품 사용 불가, 재고 부족, 잔액 부족 또는 최대 시도 횟수까지 버전 충돌 지속 |
 | 내 주문 목록 조회 | `GET` | `/orders` | - | `200 OK`<br/>내 주문의 품목·수량·금액·상태·결제액 목록 | 기능별 대표 오류 없음 |
 | 내 주문 상세 조회 | `GET` | `/orders/{orderId}` | Path: `orderId` | `200 OK`<br/>내 주문의 품목·수량·금액·상태·결제액 | `404 Not Found`<br/>조회할 수 없는 Order |
@@ -467,22 +474,30 @@ sequenceDiagram
 
 #### 2.4.2 브랜드 일괄 삭제
 
-| 규칙 | 주어진 상태·입력 | 기대값 |
+##### 일괄 삭제의 핵심 검증
+
+보존 대상은 기삭제 Product의 상태와 삭제 시각, 다른 Brand와 Product, 재고, 기존 Like 관계, 주문 스냅샷과 총액 및 포인트 결제 결과다.
+
+| 규칙 | 주어진 상태와 입력 | 기대값 |
 |---|---|---|
-| Brand와 활성 Product 삭제 | 활성 Brand에 활성 Product 여러 개 연결(재고 0인 상품 포함) | 성공, Brand와 연결된 모든 활성 Product의 삭제 상태 기록 |
-| 활성 Product 없음 | 활성 Brand에 상품이 없거나 기삭제 Product만 연결 | Brand 삭제 성공, 기삭제 Product 상태·시각 유지 |
-| 삭제된 Product 유지 | Brand에 이미 삭제된 Product도 연결 | 기존 삭제 상태와 삭제 시각 유지 |
-| 다른 Brand 보존 | 다른 Brand에 활성 Product 연결 | 다른 Brand와 Product는 변경하지 않음 |
-| 기존 관계·거래 정보 보존 | 삭제 대상 Product에 Like와 확정 Order 존재 | 재고·Like 관계·주문 스냅샷·총액·결제 결과 유지, 기존 자기 Like 취소 허용 |
-| 삭제 후 고객 조회 | 일괄 삭제가 commit된 뒤 상세·목록·내 좋아요 요청 | 상세는 `404`, 목록·내 좋아요에서는 삭제 대상 제외 |
-| 삭제 후 새 사용·변경 | 삭제된 상품에 새 좋아요·새 주문·수정·재고 변경 요청 | 기존 `404`, Like·Order 추가나 상품·재고 변경 없음 |
-| 기존 DRAFT 확정 | DRAFT 생성 후 Brand 삭제, 이후 주문 확정 요청 | 기존 `409`, DRAFT·모든 품목 재고·포인트·결제 결과 유지 |
-| Brand 없음·기삭제 | 존재하지 않거나 이미 삭제된 Brand 삭제 요청 | `404 Not Found`, Product 변경 없음 |
-| 중간 저장 실패 | 첫 Product 변경 SQL 실행 후 다음 저장에서 예외 발생 | 요청 실패, 이번 요청의 Brand·Product 변경 전체 롤백. 새 경계에서 재조회 |
-| 브랜드 수정·삭제 경쟁 | 같은 Brand 버전으로 이름 수정과 일괄 삭제 실행 | 충돌한 시도 전체 롤백 후 새 상태로 재시도. 삭제 상태를 복원하지 않으며 재검증 결과에 따라 성공·기삭제 `404`·최대 시도 횟수까지 충돌 지속 `409` |
-| 일괄 삭제 중 버전 충돌 | P1 변경 SQL 실행 후 Brand 또는 P2 버전 충돌 | 실패한 시도 전체 롤백, 다른 요청의 commit 보존. 전체 재시도 성공은 `200`, 최대 시도 횟수까지 충돌이 지속되면 `409` |
-| 재시도 후 최신 재고 보존 | 다른 요청이 재고 변경을 commit한 뒤 삭제 시도 충돌 | 새 재고·버전을 읽고 삭제 재시도 성공, 변경된 재고 유지 |
-| 버전 충돌 지속 | 모든 시도에서 버전 충돌 발생 | 최대 시도 횟수까지 모두 충돌하면 `409`, 해당 요청의 DB 변경 없음 |
+| 정상 처리와 보존 | 연결 상품 있음(재고 0과 기삭제 상품 포함), 상품 없음, 기삭제 상품만 있음의 각 사례. 다른 Brand와 Product, 기존 Like와 확정 Order도 준비 | `200 OK`, Brand와 연결된 미삭제 Product 전체 삭제, 보존 대상 유지 |
+| 없는 대상 | 없거나 이미 삭제된 Brand 삭제 요청 | `404 Not Found`, Brand와 Product 변경 없음 |
+| 중간 실패 | 미삭제 Product가 있는 Brand를 준비하고 Product UPDATE 후 Brand 갱신 경계에서 예외 발생, 또는 두 UPDATE 후 commit 전에 예외 발생 | 요청 실패, 이번 요청의 삭제 상태와 수정 시각 전체 롤백, 다른 요청의 commit 보존 |
+| 동일 Brand 삭제 경쟁 | 같은 Brand에 두 삭제 요청 실행, 한 요청이 commit | `200` 한 건, 다른 요청은 Brand 갱신 행 수 0으로 `404`, 기존 삭제 시각 유지 |
+| 다른 변경과의 경쟁 | 이름 수정, 상품 수정 또는 재고 변경과 일괄 삭제가 겹침 | 변경이 먼저 commit되면 삭제는 최신 이름, 가격과 재고를 보존. 삭제가 먼저 commit되면 수정과 재고 설정은 `404`, 주문 차감은 `409`로 해당 확정 전체 롤백 |
+
+수정 요청이 삭제 전에 미삭제 상태를 조회했더라도 UPDATE의 미삭제 조건으로 판정한다. 실패와 경쟁의 최종 상태는 서비스 트랜잭션과 모든 요청이 종료된 뒤 새 DB 조회로 확인한다.
+
+##### 관리자 접근과 연결 API의 동작 확인
+
+| 규칙 | 주어진 상태와 입력 | 기대값 |
+|---|---|---|
+| 관리자 접근 거절 | 일반 사용자 또는 식별 없는 브랜드 삭제 요청 | 기존 관리자 접근 규칙으로 `403`, Brand와 Product 변경 없음 |
+| 삭제 후 고객 조회 | 삭제가 commit된 뒤 고객 상세, 목록과 내 좋아요 조회 | 상세는 `404`, 목록과 내 좋아요에서 삭제 대상 제외 |
+| 삭제 후 새 사용 | 삭제 commit 후 시작한 새 좋아요와 주문 생성 요청 | `404`, Like와 Order 추가 없음 |
+| 기존 좋아요 취소 | 삭제된 Product에 본인의 기존 Like 존재 | 본인의 취소 허용 |
+| DRAFT 확정 거절 | 삭제 전에 생성했거나 삭제와 겹쳐 생성한 DRAFT의 확정 요청 | `409`, DRAFT, 모든 품목 재고, 포인트와 결제 결과 유지 |
+| 삭제와 겹친 생성과 등록 | 미삭제 Product 확인 후 삭제가 commit되고 DRAFT 또는 Like 저장 | DRAFT는 `201 Created`로 저장하고 재고와 포인트 미차감. Like는 `200 OK`로 관계 저장 |
 
 #### 2.4.3 상품 단독 삭제
 
@@ -493,7 +508,9 @@ sequenceDiagram
 | 기존 관계·주문 보존 | Product에 Like 또는 기존 Order·OrderItem이 존재 | 삭제 후에도 Like 관계와 주문 스냅샷을 유지하고, 기존 Like 취소 허용 |
 | 이미 삭제된 Product | 삭제된 Product에 삭제 요청 | `404 Not Found`, 기존 삭제 상태와 삭제 시각 유지 |
 | 삭제 후 변경 시도 | 삭제된 Product의 수정·재고 변경 요청 | `404 Not Found`, Product 상태와 재고 유지 |
-| 삭제·수정·재고 설정 경쟁 | 두 요청이 같은 Product 버전을 조회한 뒤 갱신 | 충돌한 시도는 롤백하고 새 상태로 제한적 재시도. 재검증 결과에 따라 성공·기삭제 `404`·최대 시도 횟수까지 충돌 지속 `409`, 관계없는 필드의 오래된 값 저장 없음 |
+| 동일 Product 삭제 경쟁 | 같은 Product에 두 삭제 요청 실행, 한 요청이 commit | `200` 한 건, 다른 요청은 갱신 행 수 0으로 `404`, 기존 삭제 시각 유지 |
+| 수정이나 재고 설정 후 삭제 | 수정 또는 재고 설정이 먼저 commit된 뒤 삭제 UPDATE 실행 | 삭제 성공, 변경된 이름과 가격 또는 재고 보존 |
+| 삭제 후 수정이나 재고 설정 | 삭제가 먼저 commit된 뒤 수정 또는 재고 설정 UPDATE 실행 | 미삭제 조건을 만족하지 못해 `404`, 기존 상품 정보와 재고 및 삭제 상태 유지 |
 
 ## 3. 설계 판단 — AI와 설계 다듬기
 
