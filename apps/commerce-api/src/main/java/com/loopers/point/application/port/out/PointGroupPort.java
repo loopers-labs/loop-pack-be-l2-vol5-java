@@ -15,6 +15,12 @@ public interface PointGroupPort {
     List<PointGroup> findRemainingByUserId(Long userId);
 
     /**
+     * findRemainingByUserId와 같은 대상·순서를 쓰기 잠금으로 읽는다. 결제가 쓴다 (R-2, ADR-W3-02).
+     */
+    List<PointGroup> findRemainingByUserIdForUpdate(Long userId);
+
+
+    /**
      * 만료 처리 대상: 만료 시각이 기준 시각 이하(P-20 정각부터 만료)이고 남은 금액이 있는 그룹을 id 순으로 limit개까지 돌려준다 (PNT-08, ADR-10).
      */
     List<PointGroup> findExpirable(ZonedDateTime now, int limit);

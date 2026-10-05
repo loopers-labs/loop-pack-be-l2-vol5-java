@@ -21,6 +21,11 @@ public interface ProductPort {
     Optional<ProductModel> findActiveById(Long id);
 
     /**
+     * 삭제되지 않은 상품을 쓰기 잠금으로 찾는다. 상품 행을 바꾸는 관리자 경로가 쓴다 (R-4, ADR-W3-01).
+     */
+    Optional<ProductModel> findActiveByIdForUpdate(Long id);
+
+    /**
      * 삭제되지 않은 상품 목록. brandId가 null이면 전체.
      */
     Page<ProductModel> findActive(Long brandId, Pageable pageable);
@@ -34,4 +39,10 @@ public interface ProductPort {
      * 삭제 여부와 관계없이 식별자로 한 번에 찾는다. 팔 수 있는지는 호출자가 상품에 묻는다 (PRD-06).
      */
     List<ProductModel> findAllByIds(Collection<Long> ids);
+
+
+    /**
+     * 삭제 여부와 관계없이 id 오름차순 쓰기 잠금으로 찾는다. 주문 확정이 쓴다 — 삭제됐는지는 잠근 뒤의 최신 상태로 판단한다 (R-1·R-5, ADR-W3-03).
+     */
+    List<ProductModel> findAllByIdsForUpdate(Collection<Long> ids);
 }

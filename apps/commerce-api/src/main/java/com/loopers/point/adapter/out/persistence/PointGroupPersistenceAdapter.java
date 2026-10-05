@@ -5,6 +5,7 @@ import com.loopers.point.application.port.out.PointGroupPort;
 import com.loopers.point.domain.PointGroup;
 import com.loopers.point.domain.QPointGroup;
 import com.querydsl.jpa.impl.JPAQueryFactory;
+import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -35,6 +36,15 @@ public class PointGroupPersistenceAdapter implements PointGroupPort {
             .where(POINT_GROUP.userId.eq(userId), POINT_GROUP.remaining.gt(Money.ZERO))
             .orderBy(POINT_GROUP.expiresAt.asc(), POINT_GROUP.id.asc())
             .fetch();
+    }
+
+    @Override
+    public List<PointGroup> findRemainingByUserIdForUpdate(Long userId) {
+        return queryFactory.selectFrom(POINT_GROUP)
+                .where(POINT_GROUP.userId.eq(userId), POINT_GROUP.remaining.gt(Money.ZERO))
+                .orderBy(POINT_GROUP.expiresAt.asc(), POINT_GROUP.id.asc())
+                .setLockMode(LockModeType.PESSIMISTIC_WRITE)
+                .fetch();
     }
 
     /**

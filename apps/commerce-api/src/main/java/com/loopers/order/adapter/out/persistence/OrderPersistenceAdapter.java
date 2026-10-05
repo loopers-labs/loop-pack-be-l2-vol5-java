@@ -6,6 +6,7 @@ import com.loopers.order.domain.QOrderModel;
 import com.loopers.support.persistence.QueryDslSort;
 import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.jpa.impl.JPAQueryFactory;
+import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -35,6 +36,15 @@ public class OrderPersistenceAdapter implements OrderPort {
     @Override
     public Optional<OrderModel> findById(Long orderId) {
         return orderJpaRepository.findById(orderId);
+    }
+
+    @Override
+    public Optional<OrderModel> findByIdForUpdate(Long orderId) {
+        OrderModel order = queryFactory.selectFrom(ORDER)
+                .where(ORDER.id.eq(orderId))
+                .setLockMode(LockModeType.PESSIMISTIC_WRITE)
+                .fetchOne();
+        return Optional.ofNullable(order);
     }
 
     /**

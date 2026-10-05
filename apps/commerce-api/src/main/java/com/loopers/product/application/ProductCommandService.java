@@ -56,7 +56,7 @@ public class ProductCommandService implements ProductCommandUseCase {
     }
 
     private ProductModel getActiveProduct(Long productId) {
-        return productPort.findActiveById(productId)
+        return productPort.findActiveByIdForUpdate(productId)
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[productId = " + productId + "] 상품을 찾을 수 없습니다."));
     }
 }

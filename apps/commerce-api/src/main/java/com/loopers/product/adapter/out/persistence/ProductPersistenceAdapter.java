@@ -42,6 +42,16 @@ public class ProductPersistenceAdapter implements ProductPort {
         return Optional.ofNullable(product);
     }
 
+    @Override
+    public Optional<ProductModel> findActiveByIdForUpdate(Long id) {
+        ProductModel product = queryFactory.selectFrom(PRODUCT)
+                .where(PRODUCT.id.eq(id), PRODUCT.deletedAt.isNull())
+                .setLockMode(LockModeType.PESSIMISTIC_WRITE)
+                .fetchOne();
+
+        return Optional.ofNullable(product);
+    }
+
     /**
      * 목록과 개수를 따로 센다. brandId가 null이면 브랜드 조건을 붙이지 않는다.
      * 정렬은 호출자가 넘긴 Sort를 그대로 쓴다 (관리자 목록은 id desc).
@@ -75,6 +85,15 @@ public class ProductPersistenceAdapter implements ProductPort {
     @Override
     public List<ProductModel> findAllByIds(Collection<Long> ids) {
         return productJpaRepository.findAllById(ids);
+    }
+
+    @Override
+    public List<ProductModel> findAllByIdsForUpdate(Collection<Long> ids) {
+        return queryFactory.selectFrom(PRODUCT)
+                .where(PRODUCT.id.in(ids))
+                .orderBy(PRODUCT.id.asc())
+                .setLockMode(LockModeType.PESSIMISTIC_WRITE)
+                .fetch();
     }
 
     private BooleanExpression brandIdEq(Long brandId) {

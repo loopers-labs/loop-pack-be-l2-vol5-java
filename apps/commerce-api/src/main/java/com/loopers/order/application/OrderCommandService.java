@@ -67,37 +67,36 @@ public class OrderCommandService implements OrderCommandUseCase {
     /**
      * ORD-02~05: 소유·상태(404·409) → 상품 재검증(409) → 잔액(409)을 모두 확인한 뒤에만 재고·포인트·주문을 바꾼다 (8장).
      * 네 가지 변경(재고, 그룹의 남은 금액, 사용 이력, 주문 상태)은 이 트랜잭션 하나로 함께 반영되거나 함께 되돌려진다.
+     * TODO : 로직 확인 필요 (forEach 2개)
      */
     @Transactional
     @Override
     public OrderInfo confirm(Long userId, Long orderId) {
         ZonedDateTime now = ZonedDateTime.now();
-        OrderModel order = getOwnedOrder(userId, orderId);
+        OrderModel order = orderPort.findByIdForUpdate(orderId)
+                .filter(found -> found.isOwnedBy(userId))
+                .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[orderId = " + orderId + "] 주문을 찾을 수 없습니다."));
         order.checkConfirmable();
 
         List<Long> productIds = order.getItems().stream().map(OrderItemModel::getProductId).toList();
-        List<ProductModel> products = productPort.findAllByIds(productIds);
+        List<ProductModel> products = productPort.findAllByIdsForUpdate(productIds);
         orderConfirmPolicy.check(order, products);
 
         Money paymentAmount = order.paymentAmount();
-        List<PointGroup> groups = pointGroupPort.findRemainingByUserId(userId);
+        List<PointGroup> groups = pointGroupPort.findRemainingByUserIdForUpdate(userId);
         pointWalletPolicy.checkPayable(groups, paymentAmount, now);
 
         // 여기부터 변경. orderConfirmPolicy.check가 모든 품목의 상품이 있고 재고가 충분함을 이미 확인했다.
         Map<Long, ProductModel> productsById = products.stream()
             .collect(Collectors.toMap(ProductModel::getId, Function.identity()));
         order.getItems().forEach(item -> productsById.get(item.getProductId()).decreaseStock(item.getQuantity()));
+        products.forEach(productPort::save);
 
         List<PointUsage> usages = pointWalletPolicy.pay(groups, paymentAmount, now);
+        usages.forEach(usage -> pointGroupPort.save(usage.group()));
         pointHistoryPort.saveAll(usages.stream().map(usage -> PointHistory.use(usage, order.getId(), now)).toList());
 
         order.confirm(now);
         return OrderInfo.from(orderPort.save(order));
-    }
-
-    private OrderModel getOwnedOrder(Long userId, Long orderId) {
-        return orderPort.findById(orderId)
-            .filter(order -> order.isOwnedBy(userId))
-            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[orderId = " + orderId + "] 주문을 찾을 수 없습니다."));
     }
 }
