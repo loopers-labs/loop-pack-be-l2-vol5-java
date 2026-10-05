@@ -39,11 +39,23 @@ public class ProductService {
      * 반환 순서는 입력 순서(중복 제거).
      */
     public List<ProductModel> getActiveProducts(Collection<Long> productIds) {
+        return getActiveProducts(productIds, productRepository::findByIds);
+    }
+
+    /**
+     * FR-ORDER-02: getActiveProducts 와 같은 검증을 하되, 상품 행을 비관적 쓰기 락으로 잠그며 읽는다 (DR-34).
+     * 확정 트랜잭션에서 상품을 처음 읽는 조회여야 한다. 락 없이 먼저 읽힌 엔티티는 1차 캐시의 옛 값이 그대로 쓰인다.
+     */
+    public List<ProductModel> getActiveProductsForUpdate(Collection<Long> productIds) {
+        return getActiveProducts(productIds, productRepository::findByIdsForUpdate);
+    }
+
+    private List<ProductModel> getActiveProducts(Collection<Long> productIds, Function<List<Long>, List<ProductModel>> loader) {
         if (productIds.stream().anyMatch(Objects::isNull)) {
             throw new CoreException(ErrorType.PRODUCT_NOT_FOUND, "상품이 지정되지 않은 품목이 있습니다.");
         }
         List<Long> distinctIds = List.copyOf(new LinkedHashSet<>(productIds));
-        Map<Long, ProductModel> found = productRepository.findByIds(distinctIds).stream()
+        Map<Long, ProductModel> found = loader.apply(distinctIds).stream()
             .collect(Collectors.toMap(ProductModel::getId, Function.identity()));
         return distinctIds.stream().map(id -> {
             ProductModel product = found.get(id);
@@ -77,7 +89,7 @@ public class ProductService {
         return product;
     }
 
-    /** FR-ORDER-02: 품목마다 재고 차감. 상품은 이미 getActiveProducts 로 검증된 것이어야 한다. */
+    /** FR-ORDER-02: 품목마다 재고 차감. 상품은 이미 getActiveProductsForUpdate 로 검증·잠금된 것이어야 한다. */
     public void deductStock(Long productId, int quantity) {
         ProductModel product = getActive(productId);
         product.deductStock(quantity);

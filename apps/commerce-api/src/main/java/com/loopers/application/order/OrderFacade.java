@@ -45,13 +45,14 @@ public class OrderFacade {
      * FR-ORDER-02 주문 확정. ST-03 DRAFT → CONFIRMED.
      * 한 트랜잭션에서 상품 삭제 재검증 → 재고 차감(품목마다) → 잔액 차감 → 확정. 어느 하나가 실패하면 전부 롤백 (ASM-14, DR-08).
      * 검사 순서는 요구사항 실패 케이스 순서: 주문 없음 → 소유 → DRAFT → 상품 삭제 → 재고 → 잔액 (EP-11).
+     * 동시 확정은 상품(id 오름차순) → 포인트 순서의 비관적 락으로 직렬화한다 (DR-34).
      */
     @Transactional
     public OrderInfo confirmOrder(Long requesterId, Long orderId) {
         userService.getUser(requesterId);
         OrderModel order = orderService.getOwned(orderId, requesterId);
         order.ensureDraft();
-        productService.getActiveProducts(order.getItems().stream().map(OrderItemModel::getProductId).toList());
+        productService.getActiveProductsForUpdate(order.getItems().stream().map(OrderItemModel::getProductId).toList());
         for (OrderItemModel item : order.getItems()) {
             productService.deductStock(item.getProductId(), item.getQuantity());
         }

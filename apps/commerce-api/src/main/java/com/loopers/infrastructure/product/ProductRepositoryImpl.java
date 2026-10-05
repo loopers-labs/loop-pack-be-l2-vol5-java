@@ -36,6 +36,14 @@ public class ProductRepositoryImpl implements ProductRepository {
     }
 
     @Override
+    public List<ProductModel> findByIdsForUpdate(Collection<Long> ids) {
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        return productJpaRepository.findAllByIdInForUpdate(ids);
+    }
+
+    @Override
     public List<ProductModel> findActiveByBrandId(Long brandId) {
         return productJpaRepository.findAllByBrandIdAndDeletedAtIsNull(brandId);
     }
