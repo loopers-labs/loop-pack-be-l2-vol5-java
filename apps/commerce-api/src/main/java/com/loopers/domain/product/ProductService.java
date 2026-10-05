@@ -83,10 +83,11 @@ public class ProductService {
         product.deductStock(quantity);
     }
 
-    /** INV-10 (FR-ADMIN-BRAND-05): 삭제되지 않은 소속 상품이 있으면 ER-18 BRAND_HAS_PRODUCTS. */
-    public void ensureNoActiveProductsOf(Long brandId) {
-        if (productRepository.existsActiveByBrandId(brandId)) {
-            throw new CoreException(ErrorType.BRAND_HAS_PRODUCTS, "[brandId = " + brandId + "] 삭제되지 않은 상품이 연결되어 있습니다.");
-        }
+    /**
+     * INV-10 (FR-ADMIN-BRAND-05): 삭제되지 않은 소속 상품(재고 0 포함)을 전부 ST-02 ACTIVE → DELETED.
+     * 이미 삭제된 상품은 건드리지 않는다. 좋아요 관계·주문 품목도 건드리지 않는다 (ASM-07, DR-33).
+     */
+    public void deleteAllOfBrand(Long brandId) {
+        productRepository.findActiveByBrandId(brandId).forEach(ProductModel::delete);
     }
 }

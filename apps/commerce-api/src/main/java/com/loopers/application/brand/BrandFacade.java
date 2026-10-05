@@ -28,12 +28,15 @@ public class BrandFacade {
         return BrandInfo.from(brandService.update(brandId, name));
     }
 
-    /** FR-ADMIN-BRAND-05 브랜드 삭제. INV-10 은 같은 트랜잭션에서 ProductService 조회로 지킨다 (DR-04). ST-01 ACTIVE → DELETED. */
+    /**
+     * FR-ADMIN-BRAND-05 브랜드 삭제. ST-01 ACTIVE → DELETED.
+     * INV-10 은 삭제되지 않은 소속 상품을 같은 트랜잭션에서 함께 삭제해 지킨다 (DR-04, DR-33). 중간에 실패하면 전부 롤백된다.
+     */
     @Transactional
     public void deleteBrand(Long requesterId, Long brandId) {
         userService.getAdmin(requesterId);
         brandService.getActive(brandId);
-        productService.ensureNoActiveProductsOf(brandId);
+        productService.deleteAllOfBrand(brandId);
         brandService.delete(brandId);
     }
 }

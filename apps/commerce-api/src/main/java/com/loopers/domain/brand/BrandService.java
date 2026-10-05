@@ -47,7 +47,7 @@ public class BrandService {
         return brand;
     }
 
-    /** ST-01 ACTIVE → DELETED. INV-10 의 상품 유무 검사는 Facade 가 ProductService 로 같은 트랜잭션에서 한다 (DR-04). */
+    /** ST-01 ACTIVE → DELETED. INV-10 의 소속 상품 삭제는 Facade 가 ProductService 로 같은 트랜잭션에서 한다 (DR-04, DR-33). */
     public void delete(Long brandId) {
         BrandModel brand = getActive(brandId);
         brand.delete();

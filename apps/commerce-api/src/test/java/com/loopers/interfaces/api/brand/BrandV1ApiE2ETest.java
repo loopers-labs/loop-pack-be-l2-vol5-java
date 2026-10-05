@@ -2,6 +2,7 @@ package com.loopers.interfaces.api.brand;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.domain.brand.BrandModel;
+import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.user.UserModel;
 import com.loopers.support.ApiTestClient;
 import com.loopers.support.fixture.Fixtures;
@@ -106,13 +107,34 @@ class BrandV1ApiE2ETest {
             api.post("/api-admin/v1/brands", admin.getId(), Map.of("name", "a".repeat(101))).assertError(HttpStatus.BAD_REQUEST, "INVALID_BRAND");
         }
 
-        @DisplayName("[ER-18 BRAND_HAS_PRODUCTS] 삭제되지 않은 상품이 연결된 브랜드 삭제는 409.")
+        @DisplayName("EP-18 삭제되지 않은 상품이 연결돼 있어도 200 + data null. 상품은 고객 목록에서 빠지고 관리자 상세에 삭제됨으로 남는다.")
         @Test
-        void brandHasProducts() {
+        void deleteWithProducts() {
             BrandModel brand = fixtures.brand("브랜드");
-            fixtures.product(brand.getId(), "상품", 1000L, 0);
+            ProductModel product = fixtures.product(brand.getId(), "상품", 1000L, 0);
 
-            api.delete("/api-admin/v1/brands/" + brand.getId(), admin.getId()).assertError(HttpStatus.CONFLICT, "BRAND_HAS_PRODUCTS");
+            var result = api.delete("/api-admin/v1/brands/" + brand.getId(), admin.getId()).assertSuccess(HttpStatus.OK);
+            assertThat(result.data().isNull() || result.data().isMissingNode()).isTrue();
+
+            var list = api.get("/api/v1/products?sort=latest&page=0&size=10", user.getId()).assertSuccess(HttpStatus.OK);
+            assertThat(list.data().path("totalCount").asLong()).isZero();
+            var detail = api.get("/api-admin/v1/products/" + product.getId(), admin.getId()).assertSuccess(HttpStatus.OK);
+            assertThat(detail.data().path("deleted").asBoolean()).isTrue();
+        }
+
+        @DisplayName("[ER-01 USER_NOT_FOUND][ER-02 NOT_ADMIN] EP-18 식별 실패·일반 사용자는 거절되고 브랜드·상품은 그대로.")
+        @Test
+        void deleteRejected_whenNotAdmin() {
+            BrandModel brand = fixtures.brand("브랜드");
+            ProductModel product = fixtures.product(brand.getId(), "상품", 1000L, 1);
+            String path = "/api-admin/v1/brands/" + brand.getId();
+
+            api.delete(path, null).assertError(HttpStatus.NOT_FOUND, "USER_NOT_FOUND");
+            api.delete(path, 999_999L).assertError(HttpStatus.NOT_FOUND, "USER_NOT_FOUND");
+            api.delete(path, user.getId()).assertError(HttpStatus.FORBIDDEN, "NOT_ADMIN");
+
+            assertThat(fixtures.reloadBrand(brand.getId()).isDeleted()).isFalse();
+            assertThat(fixtures.reloadProduct(product.getId()).isDeleted()).isFalse();
         }
 
         @DisplayName("[ER-03 BRAND_NOT_FOUND] 삭제된 브랜드의 수정·재삭제는 404.")

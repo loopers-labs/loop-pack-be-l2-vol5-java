@@ -11,6 +11,6 @@ public interface ProductRepository {
 
     List<ProductModel> findByIds(Collection<Long> ids);
 
-    /** FR-ADMIN-BRAND-05: 삭제되지 않은 소속 상품 유무 (재고 0 도 "있음"). */
-    boolean existsActiveByBrandId(Long brandId);
+    /** FR-ADMIN-BRAND-05: 삭제되지 않은 소속 상품 전부 (재고 0 포함). */
+    List<ProductModel> findActiveByBrandId(Long brandId);
 }
