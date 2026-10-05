@@ -43,7 +43,7 @@ class ArchitectureTest {
     /**
      * 기능끼리 서로를 참조하는 순환이 새로 생기지 않게 한다 (plan.md 5-2 기준 ④).
      * 예외 두 가지 (그 밖의 방향은 like → product → brand 처럼 한쪽으로만 흐른다):
-     * ① brand → product: 브랜드 삭제 전에 남은 상품을 확인한다(BRD-02).
+     * ① brand → product: 브랜드 일괄 삭제가 연결 상품을 잠금 조회해 함께 삭제한다(BRD-02, W3 ADR-W3-05).
      * ② product 조회 어댑터 → like.domain: 상품 목록의 좋아요 수·likes_desc 정렬을 SQL 조인 한 번으로 만든다(CQRS-lite 조회).
      */
     @DisplayName("헥사고날 · 기능 사이에 순환 참조가 없다 (예외: brand → product, product 조회 어댑터 → like.domain)")
