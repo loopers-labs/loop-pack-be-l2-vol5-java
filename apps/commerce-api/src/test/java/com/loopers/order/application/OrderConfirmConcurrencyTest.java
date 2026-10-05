@@ -9,6 +9,7 @@ import com.loopers.order.domain.OrderLines;
 import com.loopers.order.domain.OrderModel;
 import com.loopers.order.domain.OrderStatus;
 import com.loopers.point.application.PointQueryService;
+import com.loopers.point.application.port.in.PointExpirationUseCase;
 import com.loopers.point.application.port.in.PointCommandUseCase;
 import com.loopers.product.adapter.out.persistence.ProductJpaRepository;
 import com.loopers.product.application.port.in.ProductCommandUseCase;
@@ -25,7 +26,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -44,6 +47,7 @@ class OrderConfirmConcurrencyTest {
 
     private static final String OUT_OF_STOCK = "재고가 부족합니다";
     private static final String NOT_ENOUGH_POINTS = "포인트 잔액이 부족합니다";
+    private static final String ALREADY_CONFIRMED = "이미 확정된 주문입니다";
 
     @Autowired
     private OrderCommandUseCase orderCommandUseCase;
@@ -53,6 +57,9 @@ class OrderConfirmConcurrencyTest {
 
     @Autowired
     private PointQueryService pointQueryService;
+
+    @Autowired
+    private PointExpirationUseCase pointExpirationUseCase;
 
     @Autowired
     private ProductCommandUseCase productCommandUseCase;
@@ -71,6 +78,9 @@ class OrderConfirmConcurrencyTest {
 
     @Autowired
     private OrderJpaRepository orderJpaRepository;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
@@ -111,7 +121,8 @@ class OrderConfirmConcurrencyTest {
         assertThat(count(outcomes, Kind.SUCCESS)).isEqualTo(5);
         assertThat(outcomes.stream().filter(outcome -> outcome.rejectedWith(OUT_OF_STOCK)).count()).isEqualTo(3);
         assertThat(count(outcomes, Kind.TECHNICAL_ERROR)).isZero();
-        assertThat(outcomes).hasSize(8);
+        assertThat(count(outcomes, Kind.SUCCESS) + count(outcomes, Kind.BUSINESS_REJECTED) + count(outcomes, Kind.TECHNICAL_ERROR))
+            .isEqualTo(confirms.size());
 
         // assert: 새로 읽은 DB — 초기 재고 5 − 성공 수량 5 = 최종 재고 0, 확정된 주문만 결제됐다
         assertThat(stockOf(limited)).isZero();
@@ -147,9 +158,13 @@ class OrderConfirmConcurrencyTest {
         assertThat(count(outcomes, Kind.SUCCESS)).isEqualTo(2);
         assertThat(outcomes.stream().filter(outcome -> outcome.rejectedWith(NOT_ENOUGH_POINTS)).count()).isEqualTo(1);
         assertThat(count(outcomes, Kind.TECHNICAL_ERROR)).isZero();
+        assertThat(count(outcomes, Kind.SUCCESS) + count(outcomes, Kind.BUSINESS_REJECTED) + count(outcomes, Kind.TECHNICAL_ERROR))
+            .isEqualTo(confirms.size());
 
         // assert: 새로 읽은 DB — 10,000 − 4,000 × 2 = 2,000, 확정된 주문의 상품만 재고가 줄었다
         assertThat(balanceOf(buyer)).isEqualTo(2_000);
+        assertThat(useHistoryCount()).isEqualTo(2);
+        assertThat(historySumMatchesRemaining()).isTrue();
         for (int i = 0; i < 3; i++) {
             boolean confirmed = outcomes.get(i).kind() == Kind.SUCCESS;
             assertThat(stockOf(products.get(i))).isEqualTo(confirmed ? 9 : 10);
@@ -179,9 +194,9 @@ class OrderConfirmConcurrencyTest {
         assertThat(stockOf(product)).isEqualTo(9);
     }
 
-    @DisplayName("T-9 같은 상품에 대한 확정과 관리자 재고 설정(100)을 동시에 → 둘 다 성공하고, 최종 재고는 두 순서 중 하나의 결과(99 또는 100)다. 확정이 설정을 덮어쓴 4는 없다")
+    @DisplayName("T-9·R-4 같은 상품에 대한 확정과 관리자 이름 변경(가격 그대로)을 동시에 → 순서와 관계없이 둘 다 성공 · 최종 재고 4 · 새 이름. 관리자 쪽 전체 컬럼 UPDATE가 재고를 5로 되돌리지 않는다")
     @Test
-    void confirmAndAdminStockChange() throws Exception {
+    void confirmAndAdminRename() throws Exception {
         // arrange
         UserModel buyer = userJpaRepository.save(new UserModel("구매자"));
         pointCommandUseCase.charge(buyer.getId(), 10_000);
@@ -191,13 +206,71 @@ class OrderConfirmConcurrencyTest {
         // act
         List<Outcome> outcomes = ConcurrentRunner.run(List.of(
             () -> orderCommandUseCase.confirm(buyer.getId(), orderId),
-            () -> productCommandUseCase.changeStock(product.getId(), 100)
+            () -> productCommandUseCase.update(product.getId(), "새 이름", 1_000)
         ));
 
-        // assert: 설정 → 확정이면 99, 확정 → 설정이면 100
+        // assert: 어느 순서든 재고 차감과 이름 변경이 모두 남는다
         assertThat(outcomes).extracting(Outcome::kind).containsExactly(Kind.SUCCESS, Kind.SUCCESS);
-        assertThat(stockOf(product)).isIn(99, 100);
+        ProductModel reloaded = productJpaRepository.findById(product.getId()).orElseThrow();
+        assertThat(reloaded.getStock()).isEqualTo(4);
+        assertThat(reloaded.getName()).isEqualTo("새 이름");
         assertThat(balanceOf(buyer)).isEqualTo(9_000);
+    }
+
+    @DisplayName("R-3 같은 주문을 동시에 3번 확정 → 확정 1 · 이미 확정 409 2 · 기술 오류 0, 재고·잔액은 한 번만 줄어든다")
+    @Test
+    void sameOrderConfirmedConcurrently() throws Exception {
+        // arrange
+        UserModel buyer = userJpaRepository.save(new UserModel("구매자"));
+        pointCommandUseCase.charge(buyer.getId(), 10_000);
+        ProductModel product = saveProduct("상품", 1_000, 5);
+        Long orderId = createOrder(buyer, product, 2);
+
+        // act
+        List<Callable<?>> confirms = List.of(
+            () -> orderCommandUseCase.confirm(buyer.getId(), orderId),
+            () -> orderCommandUseCase.confirm(buyer.getId(), orderId),
+            () -> orderCommandUseCase.confirm(buyer.getId(), orderId)
+        );
+        List<Outcome> outcomes = ConcurrentRunner.run(confirms);
+
+        // assert
+        assertThat(count(outcomes, Kind.SUCCESS)).isEqualTo(1);
+        assertThat(outcomes.stream().filter(outcome -> outcome.rejectedWith(ALREADY_CONFIRMED)).count()).isEqualTo(2);
+        assertThat(count(outcomes, Kind.TECHNICAL_ERROR)).isZero();
+        assertThat(stockOf(product)).isEqualTo(3);
+        assertThat(balanceOf(buyer)).isEqualTo(8_000);
+        assertThat(useHistoryCount()).isEqualTo(1);
+    }
+
+    @DisplayName("R-6 같은 그룹에 대한 확정(7,000원)과 만료 배치를 동시에 → 확정이 먼저면 사용 7,000·만료 3,000, 배치가 먼저면 잔액 부족 409·만료 10,000. 어느 쪽이든 그룹의 이력 합 = 남은 금액 0")
+    @Test
+    void confirmAndExpiration() throws Exception {
+        // arrange: 배치의 기준 시각을 유효기간 뒤로 두어, 확정이 쓰려는 그룹을 배치도 만료 대상으로 본다
+        UserModel buyer = userJpaRepository.save(new UserModel("구매자"));
+        pointCommandUseCase.charge(buyer.getId(), 10_000);
+        ProductModel product = saveProduct("상품", 7_000, 5);
+        Long orderId = createOrder(buyer, product, 1);
+        ZonedDateTime batchTime = ZonedDateTime.now().plusYears(10);
+
+        // act
+        List<Outcome> outcomes = ConcurrentRunner.run(List.of(
+            () -> orderCommandUseCase.confirm(buyer.getId(), orderId),
+            () -> pointExpirationUseCase.expireAll(batchTime)
+        ));
+
+        // assert: 배치는 항상 성공하고, 확정은 성공 또는 잔액 부족(업무 거절)만 가능하다
+        Outcome confirm = outcomes.get(0);
+        assertThat(outcomes.get(1).kind()).isEqualTo(Kind.SUCCESS);
+        assertThat(confirm.kind() == Kind.SUCCESS || confirm.rejectedWith(NOT_ENOUGH_POINTS)).isTrue();
+        boolean confirmed = confirm.kind() == Kind.SUCCESS;
+        assertThat(jdbcTemplate.queryForObject("SELECT SUM(remaining) FROM point_groups", Long.class)).isZero();
+        assertThat(historySumMatchesRemaining()).isTrue();
+        assertThat(jdbcTemplate.queryForObject("SELECT SUM(amount) FROM point_histories WHERE type = 'EXPIRE'", Long.class))
+            .isEqualTo(confirmed ? -3_000L : -10_000L);
+        assertThat(stockOf(product)).isEqualTo(confirmed ? 4 : 5);
+        assertThat(orderJpaRepository.findById(orderId).orElseThrow().getStatus())
+            .isEqualTo(confirmed ? OrderStatus.CONFIRMED : OrderStatus.DRAFT);
     }
 
     @DisplayName("T-9 같은 상품에 대한 확정과 브랜드 일괄 삭제를 동시에 → 상품은 반드시 삭제되고, 확정이 먼저였으면 재고 4·CONFIRMED, 삭제가 먼저였으면 409·재고 5·DRAFT다")
@@ -241,6 +314,21 @@ class OrderConfirmConcurrencyTest {
 
     private int stockOf(ProductModel product) {
         return productJpaRepository.findById(product.getId()).orElseThrow().getStock();
+    }
+
+    private long useHistoryCount() {
+        return jdbcTemplate.queryForObject("SELECT COUNT(*) FROM point_histories WHERE type = 'USE'", Long.class);
+    }
+
+    /**
+     * W2 4-1: 그룹마다 이력 합(충전 + 사용·만료의 음수) = 남은 금액.
+     */
+    private boolean historySumMatchesRemaining() {
+        Long mismatched = jdbcTemplate.queryForObject("""
+            SELECT COUNT(*) FROM point_groups g
+            WHERE g.remaining <> (SELECT COALESCE(SUM(h.amount), 0) FROM point_histories h WHERE h.group_id = g.id)
+            """, Long.class);
+        return mismatched == 0;
     }
 
     private long balanceOf(UserModel user) {

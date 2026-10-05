@@ -49,7 +49,7 @@ public class BrandCommandServiceRollbackIntegrationTest {
         databaseCleanUp.truncateAllTables();
     }
 
-    @DisplayName("브랜드와 첫 상품의 삭제 UPDATE가 나간 뒤 두 번째 상품 저장에서 실패하면, 예외가 전달되고 새로 읽은 브랜드·상품은 모두 삭제 전 상태다")
+    @DisplayName("C-2·BRD-02 브랜드와 첫 상품의 삭제 UPDATE가 나간 뒤 두 번째 상품 저장에서 실패하면, 예외가 전달되고 새로 읽은 브랜드·상품은 모두 삭제 전 상태다")
     @Test
     void rollsBackBrandAndProducts_whenSecondProductSaveFails() {
         // arrange

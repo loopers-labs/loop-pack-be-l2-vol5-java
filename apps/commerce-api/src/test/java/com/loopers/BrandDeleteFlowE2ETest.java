@@ -136,7 +136,8 @@ public class BrandDeleteFlowE2ETest {
 
         // then 6 : 삭제 전에 만든 주문서 Draft는 확정 불가, 재고/잔액/주문 상태는 바뀌지 않는다.
         mockMvc.perform(post("/api/v1/orders/" + draftOrderId + "/confirm").header(USER_HEADER, buyer.getId()))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.meta.errorCode").value("Conflict"));
         mockMvc.perform(get("/api/v1/orders/" + draftOrderId).header(USER_HEADER, buyer.getId()))
                 .andExpect(jsonPath("$.data.status").value("DRAFT"));
         mockMvc.perform(get("/api/v1/points").header(USER_HEADER, buyer.getId()))
