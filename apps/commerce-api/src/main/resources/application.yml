@@ -25,6 +25,13 @@ spring:
       - logging.yml
       - monitoring.yml
 
+# W3 ADR-W3-04: 잠금 대기 상한. MySQL은 쿼리별 대기 시간 문법이 없어 커넥션마다 세션 변수로 둔다.
+# 넘기면 ERROR 1205 → CONCURRENCY_CONFLICT(409)로 응답한다. 확정 트랜잭션은 수십 ms라 3초는 붐빔의 신호다.
+datasource:
+  mysql-jpa:
+    main:
+      connection-init-sql: "SET SESSION innodb_lock_wait_timeout = 3"
+
 springdoc:
   use-fqn: true
   swagger-ui:

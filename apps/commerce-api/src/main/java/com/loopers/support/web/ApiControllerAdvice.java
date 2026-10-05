@@ -5,7 +5,10 @@ import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
+import jakarta.persistence.LockTimeoutException;
+import jakarta.persistence.PessimisticLockException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -16,6 +19,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.server.ServerWebInputException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
+import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -24,6 +28,10 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 @Slf4j
 public class ApiControllerAdvice {
+
+    private static final int MYSQL_LOCK_WAIT_TIMEOUT = 1205;
+    private static final int MYSQL_DEADLOCK = 1213;
+
     @ExceptionHandler
     public ResponseEntity<ApiResponse<?>> handle(CoreException e) {
         log.warn("CoreException : {}", e.getCustomMessage() != null ? e.getCustomMessage() : e.getMessage(), e);
@@ -108,10 +116,42 @@ public class ApiControllerAdvice {
         return failureResponse(ErrorType.NOT_FOUND, null);
     }
 
+    /**
+     * ADR-W3-04: 잠금 대기 초과(MySQL 1205)·교착(1213)은 500이 아니라 "다시 시도" 계약으로 알린다.
+     * 저장 어댑터가 @Repository가 아니어서 Spring 번역을 거치지 않은 JPA 예외도 함께 받는다.
+     */
+    @ExceptionHandler({
+        PessimisticLockingFailureException.class,
+        PessimisticLockException.class,
+        LockTimeoutException.class
+    })
+    public ResponseEntity<ApiResponse<?>> handleLockFailure(Exception e) {
+        log.warn("잠금 획득 실패: {}", e.getMessage());
+        return failureResponse(ErrorType.CONCURRENCY_CONFLICT, null);
+    }
+
+    /**
+     * 교착(1213)은 Hibernate가 잠금 조회에서 jakarta OptimisticLockException으로 감싸 올리는 등 예외 타입이 경로마다 다르다
+     * (Hibernate 6.6 ExceptionConverterImpl.wrapLockException). 그래서 타입이 아니라 원인 사슬의 MySQL 오류 번호로 한 번 더 판별한다.
+     */
     @ExceptionHandler
     public ResponseEntity<ApiResponse<?>> handle(Throwable e) {
+        if (isLockFailure(e)) {
+            log.warn("잠금 획득 실패: {}", e.getMessage());
+            return failureResponse(ErrorType.CONCURRENCY_CONFLICT, null);
+        }
         log.error("Exception : {}", e.getMessage(), e);
         return failureResponse(ErrorType.INTERNAL_ERROR, null);
+    }
+
+    private static boolean isLockFailure(Throwable e) {
+        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+            if (cause instanceof SQLException sql
+                && (sql.getErrorCode() == MYSQL_LOCK_WAIT_TIMEOUT || sql.getErrorCode() == MYSQL_DEADLOCK)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String extractMissingParameter(String message) {
@@ -136,6 +176,7 @@ public class ApiControllerAdvice {
             case UNAUTHORIZED -> HttpStatus.UNAUTHORIZED;
             case NOT_FOUND -> HttpStatus.NOT_FOUND;
             case CONFLICT -> HttpStatus.CONFLICT;
+            case CONCURRENCY_CONFLICT -> HttpStatus.CONFLICT;
         };
     }
 }

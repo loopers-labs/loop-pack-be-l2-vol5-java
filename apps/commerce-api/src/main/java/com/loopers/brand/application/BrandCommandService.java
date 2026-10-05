@@ -41,9 +41,7 @@ public class BrandCommandService implements BrandCommandUseCase {
     @Transactional
     @Override
     public void delete(Long brandId) {
-
-        BrandModel brand = brandPort.findActiveByIdForUpdate(brandId)
-                .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[brandId = " + brandId + "] 브랜드를 찾을 수 없습니다."));
+        BrandModel brand = getActiveBrand(brandId);
         brand.delete();
         brandPort.save(brand);
 
@@ -53,8 +51,11 @@ public class BrandCommandService implements BrandCommandUseCase {
         }
     }
 
+    /**
+     * 브랜드 행을 바꾸는 경로는 일괄 삭제와 같은 행 잠금에 참여한다. 잠그지 않으면 전체 컬럼 UPDATE가 동시에 끝난 삭제를 되살린다 (R-10, ADR-W3-01).
+     */
     private BrandModel getActiveBrand(Long brandId) {
-        return brandPort.findActiveById(brandId)
+        return brandPort.findActiveByIdForUpdate(brandId)
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[brandId = " + brandId + "] 브랜드를 찾을 수 없습니다."));
     }
 }

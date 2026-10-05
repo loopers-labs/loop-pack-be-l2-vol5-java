@@ -51,11 +51,12 @@ public class PointGroupPersistenceAdapter implements PointGroupPort {
      * point_groups(expires_at) 인덱스로 대상을 찾는다. 처리한 그룹은 남은 금액이 0이 되어 다음 조회에서 빠진다.
      */
     @Override
-    public List<PointGroup> findExpirable(ZonedDateTime now, int limit) {
+    public List<PointGroup> findExpirableForUpdate(ZonedDateTime now, int limit) {
         return queryFactory.selectFrom(POINT_GROUP)
             .where(POINT_GROUP.expiresAt.loe(now), POINT_GROUP.remaining.gt(Money.ZERO))
-            .orderBy(POINT_GROUP.id.asc())
+            .orderBy(POINT_GROUP.expiresAt.asc(), POINT_GROUP.id.asc())
             .limit(limit)
+            .setLockMode(LockModeType.PESSIMISTIC_WRITE)
             .fetch();
     }
 }

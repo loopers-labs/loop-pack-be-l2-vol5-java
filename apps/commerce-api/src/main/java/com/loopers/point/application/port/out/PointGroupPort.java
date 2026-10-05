@@ -21,7 +21,8 @@ public interface PointGroupPort {
 
 
     /**
-     * 만료 처리 대상: 만료 시각이 기준 시각 이하(P-20 정각부터 만료)이고 남은 금액이 있는 그룹을 id 순으로 limit개까지 돌려준다 (PNT-08, ADR-10).
+     * 만료 처리 대상: 만료 시각이 기준 시각 이하(P-20 정각부터 만료)이고 남은 금액이 있는 그룹을 limit개까지 쓰기 잠금으로 돌려준다 (PNT-08, ADR-10).
+     * 순서는 결제와 같은 (만료 시각, id)라, 같은 사용자의 그룹을 결제와 반대 순서로 잠그지 않는다 (R-6, ADR-W3-03).
      */
-    List<PointGroup> findExpirable(ZonedDateTime now, int limit);
+    List<PointGroup> findExpirableForUpdate(ZonedDateTime now, int limit);
 }

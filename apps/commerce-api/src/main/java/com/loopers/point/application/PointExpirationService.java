@@ -52,7 +52,7 @@ public class PointExpirationService implements PointExpirationUseCase {
      * 0원 만료 이력은 남기지 않는다 (P-21과 같은 이유 — 0원 이력은 원인을 찾기 어려운 데이터다).
      */
     private int expireChunk(ZonedDateTime now, int chunkSize) {
-        List<PointGroup> groups = pointGroupPort.findExpirable(now, chunkSize);
+        List<PointGroup> groups = pointGroupPort.findExpirableForUpdate(now, chunkSize);
         List<PointHistory> histories = groups.stream()
             .map(group -> PointHistory.expire(group, group.expire(now), now))
             .filter(history -> history.getAmount() != 0)

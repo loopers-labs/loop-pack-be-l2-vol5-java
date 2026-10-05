@@ -27,7 +27,8 @@ public class ProductCommandService implements ProductCommandUseCase {
     @Transactional
     @Override
     public ProductAdminInfo create(Long brandId, String name, long price, int stock) {
-        brandPort.findActiveById(brandId)
+        // 브랜드를 잠근 채 확인해, 동시에 진행 중인 일괄 삭제가 끝난 뒤의 상태로 판단한다 (R-11, 잠금 순서 브랜드 → 상품, ADR-W3-03)
+        brandPort.findActiveByIdForUpdate(brandId)
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[brandId = " + brandId + "] 브랜드를 찾을 수 없습니다."));
         ProductModel saved = productPort.save(new ProductModel(brandId, name, price, stock));
         return ProductAdminInfo.from(saved);
