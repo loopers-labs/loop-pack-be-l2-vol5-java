@@ -8,13 +8,20 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @Transactional
 public class PointApplicationService {
-    private final PointRepository repository;
-    public PointApplicationService(PointRepository repository) { this.repository = repository; }
-    public long balance(long userId) { return repository.findOrCreateForUpdate(userId).getBalance().value(); }
+    private final PointRepository pointRepository;
+
+    public PointApplicationService(PointRepository pointRepository) {
+        this.pointRepository = pointRepository;
+    }
+
+    public long balance(long userId) {
+        return pointRepository.findOrCreateForUpdate(userId).getBalance().value();
+    }
+
     public long charge(long userId, long amount) {
-        Point point = repository.findOrCreateForUpdate(userId);
+        Point point = pointRepository.findOrCreateForUpdate(userId);
         point.charge(amount);
-        repository.save(point);
+        pointRepository.save(point);
         return point.getBalance().value();
     }
 }

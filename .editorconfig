@@ -4,5 +4,10 @@ root = true
 max_line_length=130
 insert_final_newline = true
 
+[*.java]
+indent_style = space
+indent_size = 4
+ij_continuation_indent_size = 4
+
 [*Test.java]
 max_line_length = off

@@ -29,6 +29,8 @@ datasource:
       initialization-fail-timeout: 1  # DB 연결 실패 시 즉시 예외 발생 ( default: -1 = 무한대기 )
       data-source-properties:
         rewriteBatchedStatements: true
+        # 행 잠금 대기 상한(초). MySQL 기본값 50초 대신 3초 후 잠금 실패로 응답한다. JPA·JdbcTemplate 모든 경로에 적용된다.
+        sessionVariables: innodb_lock_wait_timeout=3
 
 ---
 spring.config.activate.on-profile: local
