@@ -42,7 +42,7 @@ public class OrderPersistenceAdapter implements OrderPort {
     public Optional<OrderModel> findByIdForUpdate(Long orderId) {
         OrderModel order = queryFactory.selectFrom(ORDER)
                 .where(ORDER.id.eq(orderId))
-                .setLockMode(LockModeType.PESSIMISTIC_WRITE)
+//                .setLockMode(LockModeType.PESSIMISTIC_WRITE) // TODO - 테스트 이후 원복할 것
                 .fetchOne();
         return Optional.ofNullable(order);
     }
