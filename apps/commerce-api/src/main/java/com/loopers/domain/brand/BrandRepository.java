@@ -2,6 +2,7 @@ package com.loopers.domain.brand;
 
 import java.util.Optional;
 import java.util.List;
+import java.time.ZonedDateTime;
 
 public interface BrandRepository {
 
@@ -20,6 +21,10 @@ public interface BrandRepository {
     List<Brand> findAllDeleted();
 
     List<Brand> findAllByIds(List<Long> brandIds);
+
+    int updateActiveName(Long brandId, String name, ZonedDateTime updatedAt);
+
+    int softDeleteActiveById(Long brandId, ZonedDateTime deletedAt);
 
     Brand save(Brand brand);
 }

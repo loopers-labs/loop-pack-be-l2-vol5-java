@@ -10,7 +10,7 @@
 관리자 요청 → Security FilterChain → BrandV1Controller.delete()
   → 주입된 BrandFacade 프록시: 트랜잭션 시작
     → BrandFacade.delete(brandId)
-      1. 이번 삭제에 사용할 시각을 한 번 결정
+      1. 활성 Brand 조회 → BrandDeletionPolicy가 삭제 시각 결정
       2. ProductRepository: 해당 Brand의 미삭제 Product 전체를 조건부 갱신
          재고가 0인 상품도 포함, 영향 행 수 0은 정상
       3. BrandRepository: 미삭제 Brand를 조건부 갱신
@@ -24,7 +24,7 @@ Facade가 두 애그리게이트의 조건부 갱신을 조합한다. Repository
 
 ## 2. 동시성 보호
 
-삭제에는 조회한 이름·가격·재고를 다시 저장할 필요가 없으므로 조건부 갱신을 사용한다. 미삭제 상태를 확인하고 삭제 시각만 기록해 최신 상품 정보를 보존한다. 실행 순서는 **Product → Brand**이며 두 UPDATE에 같은 시각을 전달한다.
+삭제는 미삭제 상태를 조건으로 조건부 갱신한다. 조회한 이름·가격·재고를 다시 저장하지 않고 삭제 시각만 기록해 최신 정보를 보존한다. 실행 순서는 **Product → Brand**이며 두 UPDATE에 같은 시각을 전달한다.
 
 ```sql
 UPDATE products

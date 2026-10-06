@@ -2,6 +2,7 @@ package com.loopers.domain.product;
 
 import java.util.Optional;
 import java.util.List;
+import java.time.ZonedDateTime;
 
 public interface ProductRepository {
 
@@ -13,7 +14,13 @@ public interface ProductRepository {
 
     List<Product> findAllDeleted();
 
-    boolean existsActiveByBrandId(Long brandId);
+    int updateActiveDetails(Long productId, String name, long price, ZonedDateTime updatedAt);
+
+    int updateActiveStock(Long productId, long stock, ZonedDateTime updatedAt);
+
+    int softDeleteActiveById(Long productId, ZonedDateTime deletedAt);
+
+    int softDeleteActiveByBrandId(Long brandId, ZonedDateTime deletedAt);
 
     Product save(Product product);
 }

@@ -6,6 +6,7 @@ import com.loopers.infrastructure.brand.BrandJpaRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -37,8 +38,23 @@ public class ProductRepositoryImpl implements ProductRepository {
     }
 
     @Override
-    public boolean existsActiveByBrandId(Long brandId) {
-        return productJpaRepository.existsByBrand_IdAndDeletedAtIsNull(brandId);
+    public int updateActiveDetails(Long productId, String name, long price, ZonedDateTime updatedAt) {
+        return productJpaRepository.updateActiveDetails(productId, name, price, updatedAt);
+    }
+
+    @Override
+    public int updateActiveStock(Long productId, long stock, ZonedDateTime updatedAt) {
+        return productJpaRepository.updateActiveStock(productId, stock, updatedAt);
+    }
+
+    @Override
+    public int softDeleteActiveById(Long productId, ZonedDateTime deletedAt) {
+        return productJpaRepository.softDeleteActiveById(productId, deletedAt);
+    }
+
+    @Override
+    public int softDeleteActiveByBrandId(Long brandId, ZonedDateTime deletedAt) {
+        return productJpaRepository.softDeleteActiveByBrandId(brandId, deletedAt);
     }
 
     @Override

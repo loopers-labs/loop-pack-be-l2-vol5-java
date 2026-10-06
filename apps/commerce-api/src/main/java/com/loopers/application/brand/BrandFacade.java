@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.ZonedDateTime;
 import java.util.List;
 
 @RequiredArgsConstructor
@@ -51,8 +52,11 @@ public class BrandFacade {
         }
 
         brand.rename(validName);
-        Brand savedBrand = brandRepository.save(brand);
-        return BrandInfo.from(savedBrand);
+        int updatedRows = brandRepository.updateActiveName(brandId, validName, ZonedDateTime.now());
+        if (updatedRows == 0) {
+            throw new CoreException(ErrorType.NOT_FOUND, "브랜드를 찾을 수 없습니다.");
+        }
+        return BrandInfo.from(brand);
     }
 
     @Transactional
@@ -69,8 +73,13 @@ public class BrandFacade {
     @Transactional
     public void delete(Long brandId) {
         Brand brand = findActiveBrandById(brandId);
-        brandDeletionPolicy.delete(brand, productRepository.existsActiveByBrandId(brandId));
-        brandRepository.save(brand);
+        brandDeletionPolicy.delete(brand);
+        ZonedDateTime deletedAt = brand.getDeletedAt();
+        productRepository.softDeleteActiveByBrandId(brandId, deletedAt);
+
+        if (brandRepository.softDeleteActiveById(brandId, deletedAt) == 0) {
+            throw new CoreException(ErrorType.NOT_FOUND, "브랜드를 찾을 수 없습니다.");
+        }
     }
 
     private Brand findBrandById(Long brandId) {

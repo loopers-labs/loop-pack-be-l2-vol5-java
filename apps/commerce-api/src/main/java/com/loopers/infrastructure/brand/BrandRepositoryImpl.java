@@ -5,6 +5,7 @@ import com.loopers.domain.brand.BrandRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -52,6 +53,16 @@ public class BrandRepositoryImpl implements BrandRepository {
     @Override
     public List<Brand> findAllByIds(List<Long> brandIds) {
         return map(brandJpaRepository.findAllById(brandIds));
+    }
+
+    @Override
+    public int updateActiveName(Long brandId, String name, ZonedDateTime updatedAt) {
+        return brandJpaRepository.updateActiveName(brandId, name, updatedAt);
+    }
+
+    @Override
+    public int softDeleteActiveById(Long brandId, ZonedDateTime deletedAt) {
+        return brandJpaRepository.softDeleteActiveById(brandId, deletedAt);
     }
 
     @Override
