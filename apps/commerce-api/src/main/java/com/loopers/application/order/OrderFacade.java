@@ -14,6 +14,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.ZonedDateTime;
+import java.util.Comparator;
 import java.util.List;
 
 @RequiredArgsConstructor
@@ -43,13 +45,16 @@ public class OrderFacade {
         order.validateDraft();
         Point point = pointRepository.findByUserId(userId)
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "사용자의 포인트를 찾을 수 없습니다."));
-        order.getItems().forEach(item -> {
-            Product product = productRepository.findById(item.getProductId())
-                .filter(found -> found.getDeletedAt() == null)
-                .orElseThrow(() -> new CoreException(ErrorType.CONFLICT, "주문 상품을 확정할 수 없습니다."));
-            product.decreaseStock(item.getQuantity());
-            productRepository.save(product);
-        });
+        order.getItems().stream()
+            .sorted(Comparator.comparing(OrderItem::getProductId))
+            .forEach(item -> {
+                int updatedRows = productRepository.decreaseActiveStock(
+                    item.getProductId(), item.getQuantity(), ZonedDateTime.now()
+                );
+                if (updatedRows == 0) {
+                    throw new CoreException(ErrorType.CONFLICT, "상품이 삭제되었거나 재고가 부족합니다.");
+                }
+            });
         point.pay(order.getTotalAmount());
         order.confirm(order.getTotalAmount());
         pointRepository.save(point);

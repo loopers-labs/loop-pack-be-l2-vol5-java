@@ -47,6 +47,21 @@ public interface ProductJpaRepository extends JpaRepository<ProductJpaEntity, Lo
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query(value = """
         UPDATE products
+        SET stock = stock - :quantity,
+            updated_at = :updatedAt
+        WHERE id = :productId
+          AND deleted_at IS NULL
+          AND stock >= :quantity
+        """, nativeQuery = true)
+    int decreaseActiveStock(
+        @Param("productId") Long productId,
+        @Param("quantity") int quantity,
+        @Param("updatedAt") ZonedDateTime updatedAt
+    );
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(value = """
+        UPDATE products
         SET deleted_at = :deletedAt,
             updated_at = :deletedAt
         WHERE id = :productId

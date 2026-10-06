@@ -18,6 +18,8 @@ public interface ProductRepository {
 
     int updateActiveStock(Long productId, long stock, ZonedDateTime updatedAt);
 
+    int decreaseActiveStock(Long productId, int quantity, ZonedDateTime updatedAt);
+
     int softDeleteActiveById(Long productId, ZonedDateTime deletedAt);
 
     int softDeleteActiveByBrandId(Long brandId, ZonedDateTime deletedAt);

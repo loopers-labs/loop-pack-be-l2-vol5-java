@@ -48,6 +48,11 @@ public class ProductRepositoryImpl implements ProductRepository {
     }
 
     @Override
+    public int decreaseActiveStock(Long productId, int quantity, ZonedDateTime updatedAt) {
+        return productJpaRepository.decreaseActiveStock(productId, quantity, updatedAt);
+    }
+
+    @Override
     public int softDeleteActiveById(Long productId, ZonedDateTime deletedAt) {
         return productJpaRepository.softDeleteActiveById(productId, deletedAt);
     }
