@@ -46,7 +46,7 @@ public class ProductPersistenceAdapter implements ProductPort {
     public Optional<ProductModel> findActiveByIdForUpdate(Long id) {
         ProductModel product = queryFactory.selectFrom(PRODUCT)
                 .where(PRODUCT.id.eq(id), PRODUCT.deletedAt.isNull())
-//                .setLockMode(LockModeType.PESSIMISTIC_WRITE) // TODO - 테스트 이후 원복할 것
+                .setLockMode(LockModeType.PESSIMISTIC_WRITE)
                 .fetchOne();
 
         return Optional.ofNullable(product);
@@ -92,7 +92,7 @@ public class ProductPersistenceAdapter implements ProductPort {
         return queryFactory.selectFrom(PRODUCT)
                 .where(PRODUCT.id.in(ids))
                 .orderBy(PRODUCT.id.asc())
-//                .setLockMode(LockModeType.PESSIMISTIC_WRITE)
+                .setLockMode(LockModeType.PESSIMISTIC_WRITE)
                 .fetch();
     }
 

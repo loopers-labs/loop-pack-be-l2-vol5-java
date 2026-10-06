@@ -43,7 +43,7 @@ public class PointGroupPersistenceAdapter implements PointGroupPort {
         return queryFactory.selectFrom(POINT_GROUP)
                 .where(POINT_GROUP.userId.eq(userId), POINT_GROUP.remaining.gt(Money.ZERO))
                 .orderBy(POINT_GROUP.expiresAt.asc(), POINT_GROUP.id.asc())
-//                .setLockMode(LockModeType.PESSIMISTIC_WRITE) // TODO - 테스트 이후 원복할 것
+                .setLockMode(LockModeType.PESSIMISTIC_WRITE)
                 .fetch();
     }
 
@@ -56,7 +56,7 @@ public class PointGroupPersistenceAdapter implements PointGroupPort {
             .where(POINT_GROUP.expiresAt.loe(now), POINT_GROUP.remaining.gt(Money.ZERO))
             .orderBy(POINT_GROUP.expiresAt.asc(), POINT_GROUP.id.asc())
             .limit(limit)
-//            .setLockMode(LockModeType.PESSIMISTIC_WRITE) // TODO - 테스트 이후 원복할 것
+            .setLockMode(LockModeType.PESSIMISTIC_WRITE)
             .fetch();
     }
 }
