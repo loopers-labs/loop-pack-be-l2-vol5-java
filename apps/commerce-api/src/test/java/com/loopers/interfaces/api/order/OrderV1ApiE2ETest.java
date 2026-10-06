@@ -185,11 +185,21 @@ class OrderV1ApiE2ETest {
             "/api/v1/points", org.springframework.http.HttpMethod.GET,
             new HttpEntity<>(headers), new ParameterizedTypeReference<>() {}
         );
+        Order confirmedOrder = orders.findById(orderId).orElseThrow();
 
         assertThat(chargeResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(createResponse.getBody().data().status()).isEqualTo("DRAFT");
         assertThat(confirmResponse.getBody().data().status()).isEqualTo("CONFIRMED");
         assertThat(confirmResponse.getBody().data().paymentAmount()).isEqualTo(7_000L);
+        assertThat(confirmedOrder.getStatus().name()).isEqualTo("CONFIRMED");
+        assertThat(confirmedOrder.getTotalAmount()).isEqualTo(7_000L);
+        assertThat(confirmedOrder.getPaymentAmount()).isEqualTo(7_000L);
+        assertThat(confirmedOrder.getPaymentResult().name()).isEqualTo("SUCCESS");
+        assertThat(confirmedOrder.getItems()).extracting(OrderItem::getProductId)
+            .containsExactly(airMax.getId(), pegasus.getId());
+        assertThat(confirmedOrder.getItems()).extracting(OrderItem::getQuantity).containsExactly(2, 3);
+        assertThat(confirmedOrder.getItems()).extracting(OrderItem::getUnitPrice)
+            .containsExactly(2_000L, 1_000L);
         assertThat(orderListResponse.getBody().data()).extracting(OrderV1Dto.OrderResponse::id)
             .containsExactly(orderId);
         assertThat(balanceResponse.getBody().data().balance()).isEqualTo(3_000L);

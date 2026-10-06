@@ -5,7 +5,6 @@ import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.OrderRepository;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
-import com.loopers.domain.point.Point;
 import com.loopers.domain.point.PointRepository;
 import com.loopers.application.user.UserValidator;
 import com.loopers.support.error.CoreException;
@@ -43,8 +42,17 @@ public class OrderFacade {
             .filter(found -> found.getUserId().equals(userId))
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "주문을 찾을 수 없습니다."));
         order.validateDraft();
-        Point point = pointRepository.findByUserId(userId)
+        pointRepository.findByUserId(userId)
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "사용자의 포인트를 찾을 수 없습니다."));
+
+        order.confirm(order.getTotalAmount());
+        int confirmedRows = orderRepository.confirmIfDraft(
+            orderId, userId, order.getPaymentAmount(), ZonedDateTime.now()
+        );
+        if (confirmedRows == 0) {
+            throw new CoreException(ErrorType.CONFLICT, "DRAFT 주문만 확정할 수 있습니다.");
+        }
+
         order.getItems().stream()
             .sorted(Comparator.comparing(OrderItem::getProductId))
             .forEach(item -> {
@@ -55,10 +63,14 @@ public class OrderFacade {
                     throw new CoreException(ErrorType.CONFLICT, "상품이 삭제되었거나 재고가 부족합니다.");
                 }
             });
-        point.pay(order.getTotalAmount());
-        order.confirm(order.getTotalAmount());
-        pointRepository.save(point);
-        return OrderInfo.from(orderRepository.save(order));
+
+        int debitedRows = pointRepository.decreaseBalanceIfEnough(
+            userId, order.getTotalAmount(), ZonedDateTime.now()
+        );
+        if (debitedRows == 0) {
+            throw new CoreException(ErrorType.CONFLICT, "포인트 잔액이 부족합니다.");
+        }
+        return OrderInfo.from(order);
     }
 
     @Transactional(readOnly = true)
