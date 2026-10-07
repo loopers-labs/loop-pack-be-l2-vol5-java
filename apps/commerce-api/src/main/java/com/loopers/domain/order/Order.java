@@ -46,7 +46,10 @@ public class Order {
         items.stream()
             .filter(existing -> existing.getProductId().equals(item.getProductId()))
             .findFirst()
-            .ifPresentOrElse(existing -> existing.addQuantity(item.getQuantity()), () -> items.add(item));
+            .ifPresentOrElse(
+                existing -> items.set(items.indexOf(existing), existing.addQuantity(item.getQuantity())),
+                () -> items.add(item)
+            );
         totalAmount = items.stream().mapToLong(OrderItem::getAmount).sum();
     }
 

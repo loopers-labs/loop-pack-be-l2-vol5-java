@@ -77,6 +77,46 @@ class OrderV1ApiE2ETest {
     }
 
     @Test
+    void rejectsDuplicateQuantityOverflowWithoutSavingAnOrderOrChangingExistingData() {
+        User user = saveUser();
+        Brand brand = brands.save(Brand.create("Nike"));
+        Product product = Product.create(brand.getId(), "Air Max", 100L);
+        product.changeStockTo(5L);
+        product = products.save(product);
+        Long productId = product.getId();
+        points.save(Point.create(user.getId(), new com.loopers.domain.point.PointBalance(1_000L)));
+        Order existingOrder = orders.save(Order.create(user.getId(), List.of(
+            OrderItem.create(product.getId(), product.getName(), product.getPrice(), 1)
+        )));
+        OrderV1Dto.CreateRequest request = new OrderV1Dto.CreateRequest(List.of(
+            new com.loopers.application.order.OrderFacade.OrderRequestItem(product.getId(), Integer.MAX_VALUE),
+            new com.loopers.application.order.OrderFacade.OrderRequestItem(product.getId(), Integer.MAX_VALUE),
+            new com.loopers.application.order.OrderFacade.OrderRequestItem(product.getId(), 3)
+        ));
+
+        ResponseEntity<ApiResponse<Object>> response = rest.exchange(
+            "/api/v1/orders", org.springframework.http.HttpMethod.POST,
+            new HttpEntity<>(request, headers(user.getId().toString())), new ParameterizedTypeReference<>() {}
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().meta().message()).contains("합산 주문 수량");
+        assertThat(orders.findAll()).extracting(Order::getId).containsExactly(existingOrder.getId());
+        Order savedOrder = orders.findById(existingOrder.getId()).orElseThrow();
+        assertThat(savedOrder.getStatus().name()).isEqualTo("DRAFT");
+        assertThat(savedOrder.getTotalAmount()).isEqualTo(100L);
+        assertThat(savedOrder.getPaymentAmount()).isNull();
+        assertThat(savedOrder.getPaymentResult()).isNull();
+        assertThat(savedOrder.getItems()).singleElement().satisfies(item -> {
+            assertThat(item.getProductId()).isEqualTo(productId);
+            assertThat(item.getQuantity()).isEqualTo(1);
+            assertThat(item.getUnitPrice()).isEqualTo(100L);
+        });
+        assertThat(products.findById(product.getId()).orElseThrow().getStock().amount()).isEqualTo(5L);
+        assertThat(points.findByUserId(user.getId()).orElseThrow().getBalance().amount()).isEqualTo(1_000L);
+    }
+
+    @Test
     void confirmsDraftOrderAndChargesPointAndStock() {
         User user = saveUser();
         Brand brand = brands.save(Brand.create("Nike"));
