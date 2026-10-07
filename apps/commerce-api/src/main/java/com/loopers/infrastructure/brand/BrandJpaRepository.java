@@ -1,6 +1,8 @@
 package com.loopers.infrastructure.brand;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -16,6 +18,14 @@ public interface BrandJpaRepository extends JpaRepository<BrandJpaEntity, Long> 
     boolean existsByNameAndIdNot(String name, Long brandId);
 
     Optional<BrandJpaEntity> findByIdAndDeletedAtIsNull(Long brandId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT b FROM BrandJpaEntity b WHERE b.id = :brandId AND b.deletedAt IS NULL")
+    Optional<BrandJpaEntity> findActiveByIdWithExclusiveLock(@Param("brandId") Long brandId);
+
+    @Lock(LockModeType.PESSIMISTIC_READ)
+    @Query("SELECT b FROM BrandJpaEntity b WHERE b.id = :brandId AND b.deletedAt IS NULL")
+    Optional<BrandJpaEntity> findActiveByIdWithSharedLock(@Param("brandId") Long brandId);
 
     List<BrandJpaEntity> findAllByDeletedAtIsNull();
 

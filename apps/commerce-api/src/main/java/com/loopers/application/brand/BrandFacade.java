@@ -72,7 +72,8 @@ public class BrandFacade {
 
     @Transactional
     public void delete(Long brandId) {
-        Brand brand = findActiveBrandById(brandId);
+        Brand brand = brandRepository.findActiveByIdWithExclusiveLock(brandId)
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "브랜드를 찾을 수 없습니다."));
         brandDeletionPolicy.delete(brand);
         ZonedDateTime deletedAt = brand.getDeletedAt();
         productRepository.softDeleteActiveByBrandId(brandId, deletedAt);

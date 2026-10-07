@@ -36,7 +36,7 @@ class BrandDeletionRollbackIntegrationTest {
     @Autowired
     private BrandFacade brandFacade;
 
-    @Autowired
+    @MockitoSpyBean
     private BrandRepository brandRepository;
 
     @Autowired
@@ -134,6 +134,43 @@ class BrandDeletionRollbackIntegrationTest {
             assertThat(item.getUnitPrice()).isEqualTo(100_000L);
             assertThat(item.getQuantity()).isEqualTo(1);
         });
+    }
+
+    @Test
+    void rollsBackBrandAndProductsWhenFailureOccursAfterBothUpdates() {
+        Brand brand = brandRepository.save(Brand.create("Nike"));
+        Product product = Product.create(brand.getId(), "Air Max", 100_000L);
+        product.changeStockTo(5L);
+        Long productId = productRepository.save(product).getId();
+        Timestamp brandUpdatedAtBefore = readUpdatedAt("brands", brand.getId());
+        Timestamp productUpdatedAtBefore = readUpdatedAt("products", productId);
+        AtomicInteger updatedBrandCount = new AtomicInteger();
+
+        doAnswer(invocation -> {
+            updatedBrandCount.set((int) invocation.callRealMethod());
+            // 두 UPDATE가 모두 실제 DB에 반영된 상태에서 commit 전에 실패시킨다.
+            assertThat(jdbcTemplate.queryForObject(
+                "SELECT deleted_at FROM brands WHERE id = ?", Timestamp.class, brand.getId()
+            )).isNotNull();
+            assertThat(jdbcTemplate.queryForObject(
+                "SELECT deleted_at FROM products WHERE id = ?", Timestamp.class, productId
+            )).isNotNull();
+            throw new IllegalStateException("Brand와 Product 갱신 후 테스트 실패");
+        }).when(brandRepository).softDeleteActiveById(eq(brand.getId()), any(ZonedDateTime.class));
+
+        assertThatThrownBy(() -> brandFacade.delete(brand.getId()))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage("Brand와 Product 갱신 후 테스트 실패");
+
+        entityManager.clear();
+        Brand savedBrand = brandRepository.findById(brand.getId()).orElseThrow();
+        Product savedProduct = productRepository.findById(productId).orElseThrow();
+        assertThat(updatedBrandCount.get()).isEqualTo(1);
+        assertThat(savedBrand.getDeletedAt()).isNull();
+        assertThat(savedProduct.getDeletedAt()).isNull();
+        assertThat(savedProduct.getStock().amount()).isEqualTo(5L);
+        assertThat(readUpdatedAt("brands", brand.getId())).isEqualTo(brandUpdatedAtBefore);
+        assertThat(readUpdatedAt("products", productId)).isEqualTo(productUpdatedAtBefore);
     }
 
     private Timestamp readUpdatedAt(String tableName, Long id) {

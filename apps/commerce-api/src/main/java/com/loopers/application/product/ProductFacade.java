@@ -96,7 +96,7 @@ public class ProductFacade {
 
     @Transactional
     public ProductInfo register(Long brandId, String name, long price) {
-        Brand brand = findActiveBrandById(brandId);
+        Brand brand = findActiveBrandByIdWithSharedLock(brandId);
         Product product = Product.create(brand.getId(), name, price);
 
         Product savedProduct = productRepository.save(product);
@@ -140,6 +140,15 @@ public class ProductFacade {
         }
 
         return brandRepository.findActiveById(brandId)
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "브랜드를 찾을 수 없습니다."));
+    }
+
+    private Brand findActiveBrandByIdWithSharedLock(Long brandId) {
+        if (brandId == null) {
+            throw new CoreException(ErrorType.BAD_REQUEST, "브랜드 ID는 필수입니다.");
+        }
+
+        return brandRepository.findActiveByIdWithSharedLock(brandId)
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "브랜드를 찾을 수 없습니다."));
     }
 

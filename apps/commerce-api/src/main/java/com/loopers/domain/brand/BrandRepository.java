@@ -14,6 +14,10 @@ public interface BrandRepository {
 
     Optional<Brand> findActiveById(Long brandId);
 
+    Optional<Brand> findActiveByIdWithExclusiveLock(Long brandId);
+
+    Optional<Brand> findActiveByIdWithSharedLock(Long brandId);
+
     List<Brand> findAll();
 
     List<Brand> findAllActive();

@@ -36,6 +36,16 @@ public class BrandRepositoryImpl implements BrandRepository {
     }
 
     @Override
+    public Optional<Brand> findActiveByIdWithExclusiveLock(Long brandId) {
+        return brandJpaRepository.findActiveByIdWithExclusiveLock(brandId).map(BrandJpaMapper::toDomain);
+    }
+
+    @Override
+    public Optional<Brand> findActiveByIdWithSharedLock(Long brandId) {
+        return brandJpaRepository.findActiveByIdWithSharedLock(brandId).map(BrandJpaMapper::toDomain);
+    }
+
+    @Override
     public List<Brand> findAll() {
         return map(brandJpaRepository.findAll());
     }
