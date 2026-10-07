@@ -13,26 +13,35 @@ import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.domain.user.User;
 import com.loopers.domain.user.UserRepository;
+import com.loopers.support.error.CoreException;
+import com.loopers.support.error.ErrorType;
 import com.loopers.utils.DatabaseCleanUp;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
-import java.time.ZonedDateTime;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 @SpringBootTest
 class OrderConfirmationTransactionIntegrationTest {
@@ -48,7 +57,7 @@ class OrderConfirmationTransactionIntegrationTest {
     @Autowired
     private BrandRepository brandRepository;
 
-    @Autowired
+    @MockitoSpyBean
     private ProductRepository productRepository;
 
     @MockitoSpyBean
@@ -65,6 +74,9 @@ class OrderConfirmationTransactionIntegrationTest {
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -140,7 +152,60 @@ class OrderConfirmationTransactionIntegrationTest {
         assertThat(pointAfterRollback.getBalance().amount()).isEqualTo(INITIAL_POINT_BALANCE);
     }
 
+    @Test
+    @DisplayName("첫 품목 차감 후 다음 품목의 재고가 부족하면 주문 확정 전체를 롤백한다")
+    void rollsBackFirstItemDeductionWhenSecondItemHasInsufficientStock() {
+        Fixture fixture = createFixture(0L);
+        AtomicReference<DatabaseState> stateBeforeRejection = new AtomicReference<>();
+
+        doAnswer(invocation -> {
+            int updatedRows = (int) invocation.callRealMethod();
+            assertThat(updatedRows).isZero();
+            // P2의 실제 조건부 UPDATE가 거절된 시점에 P1의 변경 SQL도 DB에서 확인한다.
+            stateBeforeRejection.set(readDatabaseState(fixture));
+            return updatedRows;
+        }).when(productRepository).decreaseActiveStock(
+            eq(fixture.secondProductId()), eq(1), any(ZonedDateTime.class)
+        );
+
+        assertThatThrownBy(() -> orderFacade.confirm(fixture.userId(), fixture.orderId()))
+            .isInstanceOfSatisfying(CoreException.class, exception -> {
+                assertThat(exception.getErrorType()).isEqualTo(ErrorType.CONFLICT);
+                assertThat(exception.getCustomMessage()).isEqualTo("상품이 삭제되었거나 재고가 부족합니다.");
+            });
+
+        assertThat(stateBeforeRejection.get()).isEqualTo(new DatabaseState(
+            3L, 0L, INITIAL_POINT_BALANCE, "CONFIRMED", TOTAL_AMOUNT, "SUCCESS"
+        ));
+        verify(pointRepository, never()).decreaseBalanceIfEnough(anyLong(), anyLong(), any(ZonedDateTime.class));
+
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            Order order = orderRepository.findById(fixture.orderId()).orElseThrow();
+            Product firstProduct = productRepository.findById(fixture.firstProductId()).orElseThrow();
+            Product secondProduct = productRepository.findById(fixture.secondProductId()).orElseThrow();
+            Point point = pointRepository.findByUserId(fixture.userId()).orElseThrow();
+
+            assertThat(order.getStatus()).isEqualTo(OrderStatus.DRAFT);
+            assertThat(order.getTotalAmount()).isEqualTo(TOTAL_AMOUNT);
+            assertThat(order.getPaymentAmount()).isNull();
+            assertThat(order.getPaymentResult()).isNull();
+            assertThat(order.getItems()).extracting(
+                OrderItem::getProductId, OrderItem::getProductName, OrderItem::getUnitPrice, OrderItem::getQuantity
+            ).containsExactlyInAnyOrder(
+                tuple(fixture.firstProductId(), "Air Max", 100L, 2),
+                tuple(fixture.secondProductId(), "Pegasus", 300L, 1)
+            );
+            assertThat(firstProduct.getStock().amount()).isEqualTo(INITIAL_FIRST_STOCK);
+            assertThat(secondProduct.getStock().amount()).isZero();
+            assertThat(point.getBalance().amount()).isEqualTo(INITIAL_POINT_BALANCE);
+        });
+    }
+
     private Fixture createFixture() {
+        return createFixture(INITIAL_SECOND_STOCK);
+    }
+
+    private Fixture createFixture(long secondStock) {
         User user = userRepository.save(User.create());
         Brand brand = brandRepository.save(Brand.create("Nike"));
 
@@ -149,7 +214,7 @@ class OrderConfirmationTransactionIntegrationTest {
         firstProduct = productRepository.save(firstProduct);
 
         Product secondProduct = Product.create(brand.getId(), "Pegasus", 300L);
-        secondProduct.changeStockTo(INITIAL_SECOND_STOCK);
+        secondProduct.changeStockTo(secondStock);
         secondProduct = productRepository.save(secondProduct);
 
         pointRepository.save(Point.create(user.getId(), new PointBalance(INITIAL_POINT_BALANCE)));
