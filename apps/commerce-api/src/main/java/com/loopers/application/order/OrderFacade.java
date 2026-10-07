@@ -1,5 +1,6 @@
 package com.loopers.application.order;
 
+import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.OrderRepository;
@@ -20,6 +21,7 @@ import java.util.List;
 @RequiredArgsConstructor
 @Component
 public class OrderFacade {
+    private final BrandRepository brandRepository;
     private final OrderRepository orderRepository;
     private final ProductRepository productRepository;
     private final PointRepository pointRepository;
@@ -45,6 +47,7 @@ public class OrderFacade {
         pointRepository.findByUserId(userId)
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "사용자의 포인트를 찾을 수 없습니다."));
 
+        lockActiveBrands(order);
         order.confirm(order.getTotalAmount());
         int confirmedRows = orderRepository.confirmIfDraft(
             orderId, userId, order.getPaymentAmount(), ZonedDateTime.now()
@@ -97,6 +100,22 @@ public class OrderFacade {
     public OrderInfo getOrder(Long orderId) {
         return orderRepository.findById(orderId).map(OrderInfo::from)
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "주문을 찾을 수 없습니다."));
+    }
+
+    private void lockActiveBrands(Order order) {
+        List<Long> brandIds = order.getItems().stream()
+            .map(item -> productRepository.findById(item.getProductId())
+                .filter(product -> product.getDeletedAt() == null)
+                .orElseThrow(() -> new CoreException(ErrorType.CONFLICT, "상품이 삭제되었거나 재고가 부족합니다.")))
+            .map(Product::getBrandId)
+            .distinct()
+            .sorted()
+            .toList();
+
+        for (Long brandId : brandIds) {
+            brandRepository.findActiveByIdWithSharedLock(brandId)
+                .orElseThrow(() -> new CoreException(ErrorType.CONFLICT, "상품이 삭제되었거나 재고가 부족합니다."));
+        }
     }
 
     private OrderItem toOrderItem(OrderRequestItem item) {
