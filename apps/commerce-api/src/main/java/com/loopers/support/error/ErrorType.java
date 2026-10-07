@@ -34,7 +34,6 @@ public enum ErrorType {
     /** 브랜드 */
     BRAND_NOT_FOUND(HttpStatus.NOT_FOUND, "BRAND_NOT_FOUND", "존재하지 않는 브랜드입니다."),
     INVALID_BRAND_NAME(HttpStatus.BAD_REQUEST, "INVALID_BRAND_NAME", "브랜드명은 앞뒤 공백을 제외하고 1~100자여야 합니다."),
-    BRAND_HAS_ACTIVE_PRODUCTS(HttpStatus.CONFLICT, "BRAND_HAS_ACTIVE_PRODUCTS", "삭제되지 않은 상품이 연결된 브랜드는 삭제할 수 없습니다."),
 
     /** 상품 */
     PRODUCT_NOT_FOUND(HttpStatus.NOT_FOUND, "PRODUCT_NOT_FOUND", "존재하지 않는 상품입니다."),

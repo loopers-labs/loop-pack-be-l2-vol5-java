@@ -30,6 +30,11 @@ public class OrderRepositoryImpl implements OrderRepository {
     }
 
     @Override
+    public Optional<OrderModel> findForUpdate(Long orderId) {
+        return orderJpaRepository.findForUpdateById(orderId);
+    }
+
+    @Override
     public OrderModel save(OrderModel order) {
         return orderJpaRepository.save(order);
     }

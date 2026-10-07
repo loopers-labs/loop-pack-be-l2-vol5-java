@@ -1,5 +1,6 @@
 package com.loopers.domain.product;
 
+import com.loopers.application.product.ProductFacade;
 import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.common.ListSort;
 import com.loopers.domain.common.PageCommand;
@@ -21,12 +22,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
-@DisplayName("ProductService 는 관리자 명령으로 상품을 등록·수정·삭제하고 활성 상품을 목록으로 제공한다.")
+@DisplayName("ProductFacade 는 관리자 명령으로 상품을 등록·수정·삭제하고 활성 상품을 목록으로 제공한다.")
 @SpringBootTest
 class AdminProductCommandIntegrationTest {
 
     @Autowired
-    private ProductService productService;
+    private ProductFacade productFacade;
     @Autowired
     private BrandFixture brandFixture;
     @Autowired
@@ -49,9 +50,9 @@ class AdminProductCommandIntegrationTest {
         void savesProductWithZeroStock() {
             BrandModel nike = brandFixture.createBrand("나이키");
 
-            ProductModel created = productService.create(nike.getId(), "  운동화  ", 89_000L);
+            ProductQueryResult created = productFacade.create(nike.getId(), "  운동화  ", 89_000L);
 
-            ProductModel saved = productJpaRepository.findById(created.getId()).orElseThrow();
+            ProductModel saved = productJpaRepository.findById(created.id()).orElseThrow();
             assertAll(
                 () -> assertThat(saved.getBrandId()).isEqualTo(nike.getId()),
                 () -> assertThat(saved.getName()).isEqualTo("운동화"),
@@ -63,7 +64,7 @@ class AdminProductCommandIntegrationTest {
         @DisplayName("존재하지 않는 브랜드면 BRAND_NOT_FOUND 로 거절하고 상품을 만들지 않는다.")
         @Test
         void rejectsUnknownBrand() {
-            assertThatThrownBy(() -> productService.create(999999L, "운동화", 10_000L))
+            assertThatThrownBy(() -> productFacade.create(999999L, "운동화", 10_000L))
                 .isInstanceOf(CoreException.class)
                 .hasFieldOrPropertyWithValue("errorType", ErrorType.BRAND_NOT_FOUND);
             assertThat(productJpaRepository.findAll()).isEmpty();
@@ -74,7 +75,7 @@ class AdminProductCommandIntegrationTest {
         void rejectsDeletedBrand() {
             BrandModel deleted = brandFixture.createDeletedBrand("사라진브랜드");
 
-            assertThatThrownBy(() -> productService.create(deleted.getId(), "운동화", 10_000L))
+            assertThatThrownBy(() -> productFacade.create(deleted.getId(), "운동화", 10_000L))
                 .isInstanceOf(CoreException.class)
                 .hasFieldOrPropertyWithValue("errorType", ErrorType.BRAND_NOT_FOUND);
             assertThat(productJpaRepository.findAll()).isEmpty();
@@ -85,7 +86,7 @@ class AdminProductCommandIntegrationTest {
         void rejectsZeroPrice() {
             BrandModel nike = brandFixture.createBrand("나이키");
 
-            assertThatThrownBy(() -> productService.create(nike.getId(), "운동화", 0L))
+            assertThatThrownBy(() -> productFacade.create(nike.getId(), "운동화", 0L))
                 .isInstanceOf(CoreException.class)
                 .hasFieldOrPropertyWithValue("errorType", ErrorType.INVALID_PRODUCT_PRICE);
             assertThat(productJpaRepository.findAll()).isEmpty();
@@ -101,7 +102,7 @@ class AdminProductCommandIntegrationTest {
             BrandModel nike = brandFixture.createBrand("나이키");
             ProductModel shoes = productFixture.createProduct(nike.getId(), "운동화", 89_000L, 5L);
 
-            productService.update(shoes.getId(), "러닝화", 99_000L);
+            productFacade.update(shoes.getId(), "러닝화", 99_000L);
 
             ProductModel saved = productJpaRepository.findById(shoes.getId()).orElseThrow();
             assertAll(
@@ -117,7 +118,7 @@ class AdminProductCommandIntegrationTest {
         void rejectsInvalidName() {
             ProductModel shoes = productFixture.createProduct("운동화", 89_000L, 5L);
 
-            assertThatThrownBy(() -> productService.update(shoes.getId(), " ", 99_000L))
+            assertThatThrownBy(() -> productFacade.update(shoes.getId(), " ", 99_000L))
                 .isInstanceOf(CoreException.class)
                 .hasFieldOrPropertyWithValue("errorType", ErrorType.INVALID_PRODUCT_NAME);
 
@@ -133,7 +134,7 @@ class AdminProductCommandIntegrationTest {
         void rejectsDeletedProduct() {
             ProductModel deleted = productFixture.createDeletedProduct("단종 운동화", 10_000L, 3L);
 
-            assertThatThrownBy(() -> productService.update(deleted.getId(), "새이름", 20_000L))
+            assertThatThrownBy(() -> productFacade.update(deleted.getId(), "새이름", 20_000L))
                 .isInstanceOf(CoreException.class)
                 .hasFieldOrPropertyWithValue("errorType", ErrorType.PRODUCT_NOT_FOUND);
         }
@@ -147,7 +148,7 @@ class AdminProductCommandIntegrationTest {
         void softDeletesProduct() {
             ProductModel shoes = productFixture.createProduct("운동화", 10_000L, 3L);
 
-            productService.delete(shoes.getId());
+            productFacade.delete(shoes.getId());
 
             assertThat(productJpaRepository.findById(shoes.getId()).orElseThrow().getDeletedAt()).isNotNull();
         }
@@ -157,7 +158,7 @@ class AdminProductCommandIntegrationTest {
         void rejectsDeletedProduct() {
             ProductModel deleted = productFixture.createDeletedProduct("단종 운동화", 10_000L, 3L);
 
-            assertThatThrownBy(() -> productService.delete(deleted.getId()))
+            assertThatThrownBy(() -> productFacade.delete(deleted.getId()))
                 .isInstanceOf(CoreException.class)
                 .hasFieldOrPropertyWithValue("errorType", ErrorType.PRODUCT_NOT_FOUND);
         }
@@ -175,7 +176,7 @@ class AdminProductCommandIntegrationTest {
             productFixture.createProduct("셋째", 3_000L, 3L);
 
             PageResult<ProductQueryResult> result =
-                productService.getAllProducts(PageCommand.of(null, null), ListSort.LATEST);
+                productFacade.getAllProducts(PageCommand.of(null, null), ListSort.LATEST);
 
             assertAll(
                 () -> assertThat(result.totalElements()).isEqualTo(3L),
@@ -192,7 +193,7 @@ class AdminProductCommandIntegrationTest {
             productFixture.createProduct("셋째", 3_000L, 3L);
 
             PageResult<ProductQueryResult> result =
-                productService.getAllProducts(PageCommand.of(0, 2), ListSort.OLDEST);
+                productFacade.getAllProducts(PageCommand.of(0, 2), ListSort.OLDEST);
 
             assertAll(
                 () -> assertThat(result.totalElements()).isEqualTo(3L),
@@ -209,7 +210,7 @@ class AdminProductCommandIntegrationTest {
             productFixture.createProduct(nike.getId(), "운동화", 89_000L, 7L);
 
             PageResult<ProductQueryResult> result =
-                productService.getAllProducts(PageCommand.of(null, null), ListSort.LATEST);
+                productFacade.getAllProducts(PageCommand.of(null, null), ListSort.LATEST);
 
             ProductQueryResult item = result.items().get(0);
             assertAll(

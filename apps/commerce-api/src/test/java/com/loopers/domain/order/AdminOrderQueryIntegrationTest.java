@@ -1,5 +1,6 @@
 package com.loopers.domain.order;
 
+import com.loopers.application.order.OrderFacade;
 import com.loopers.domain.common.ListSort;
 import com.loopers.domain.common.PageCommand;
 import com.loopers.domain.common.PageResult;
@@ -23,12 +24,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
-@DisplayName("OrderService 는 관리자에게 소유자와 무관한 전체 주문을 조회해 준다.")
+@DisplayName("OrderFacade 는 관리자에게 소유자와 무관한 전체 주문을 조회해 준다.")
 @SpringBootTest
 class AdminOrderQueryIntegrationTest {
 
     @Autowired
-    private OrderService orderService;
+    private OrderFacade orderFacade;
     @Autowired
     private UserFixture userFixture;
     @Autowired
@@ -42,7 +43,7 @@ class AdminOrderQueryIntegrationTest {
     }
 
     private OrderModel order(UserModel user, ProductModel product, long quantity) {
-        return orderService.create(user.getId(), List.of(new OrderItemCommand(product.getId(), quantity)));
+        return orderFacade.create(user.getId(), List.of(new OrderItemCommand(product.getId(), quantity)));
     }
 
     @DisplayName("전체 주문 목록")
@@ -57,7 +58,7 @@ class AdminOrderQueryIntegrationTest {
             OrderModel firstOrder = order(first, shoes, 1L);
             OrderModel secondOrder = order(second, shoes, 2L);
 
-            PageResult<OrderModel> result = orderService.getAllOrders(PageCommand.of(null, null), ListSort.LATEST);
+            PageResult<OrderModel> result = orderFacade.getAllOrders(PageCommand.of(null, null), ListSort.LATEST);
 
             assertAll(
                 () -> assertThat(result.totalElements()).isEqualTo(2L),
@@ -77,7 +78,7 @@ class AdminOrderQueryIntegrationTest {
             OrderModel second = order(user, shoes, 2L);
             order(user, shoes, 3L);
 
-            PageResult<OrderModel> result = orderService.getAllOrders(PageCommand.of(0, 2), ListSort.OLDEST);
+            PageResult<OrderModel> result = orderFacade.getAllOrders(PageCommand.of(0, 2), ListSort.OLDEST);
 
             assertAll(
                 () -> assertThat(result.totalElements()).isEqualTo(3L),
@@ -93,12 +94,12 @@ class AdminOrderQueryIntegrationTest {
             UserModel user = userFixture.createUserWithPoint();
             ProductModel shoes = productFixture.createProduct("운동화", 10_000L, 100L);
             ProductModel cap = productFixture.createProduct("모자", 5_000L, 100L);
-            orderService.create(user.getId(), List.of(
+            orderFacade.create(user.getId(), List.of(
                 new OrderItemCommand(shoes.getId(), 1L),
                 new OrderItemCommand(cap.getId(), 2L)
             ));
 
-            PageResult<OrderModel> result = orderService.getAllOrders(PageCommand.of(null, null), ListSort.LATEST);
+            PageResult<OrderModel> result = orderFacade.getAllOrders(PageCommand.of(null, null), ListSort.LATEST);
 
             assertThat(result.items().get(0).getItems()).hasSize(2);
         }
@@ -106,7 +107,7 @@ class AdminOrderQueryIntegrationTest {
         @DisplayName("주문이 없으면 빈 페이지를 반환한다.")
         @Test
         void returnsEmptyPage() {
-            PageResult<OrderModel> result = orderService.getAllOrders(PageCommand.of(null, null), ListSort.LATEST);
+            PageResult<OrderModel> result = orderFacade.getAllOrders(PageCommand.of(null, null), ListSort.LATEST);
 
             assertAll(
                 () -> assertThat(result.items()).isEmpty(),
@@ -125,7 +126,7 @@ class AdminOrderQueryIntegrationTest {
             ProductModel shoes = productFixture.createProduct("운동화", 10_000L, 100L);
             OrderModel created = order(user, shoes, 2L);
 
-            OrderModel found = orderService.getAnyOrder(created.getId());
+            OrderModel found = orderFacade.getAnyOrder(created.getId());
 
             assertAll(
                 () -> assertThat(found.getId()).isEqualTo(created.getId()),
@@ -138,7 +139,7 @@ class AdminOrderQueryIntegrationTest {
         @DisplayName("존재하지 않는 주문은 ORDER_NOT_FOUND 로 거절한다.")
         @Test
         void rejectsUnknownOrder() {
-            assertThatThrownBy(() -> orderService.getAnyOrder(999999L))
+            assertThatThrownBy(() -> orderFacade.getAnyOrder(999999L))
                 .isInstanceOf(CoreException.class)
                 .hasFieldOrPropertyWithValue("errorType", ErrorType.ORDER_NOT_FOUND);
         }

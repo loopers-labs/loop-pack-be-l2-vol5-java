@@ -1,7 +1,7 @@
 package com.loopers.interfaces.api.brand;
 
+import com.loopers.application.brand.BrandFacade;
 import com.loopers.domain.brand.BrandModel;
-import com.loopers.domain.brand.BrandService;
 import com.loopers.domain.common.ListSort;
 import com.loopers.domain.common.PageCommand;
 import com.loopers.domain.common.PageResult;
@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api-admin/v1/brands")
 public class BrandAdminV1Controller implements BrandAdminV1ApiSpec {
 
-    private final BrandService brandService;
+    private final BrandFacade brandFacade;
 
     @GetMapping
     @Override
@@ -34,7 +34,7 @@ public class BrandAdminV1Controller implements BrandAdminV1ApiSpec {
         @RequestParam(value = "size", required = false) Integer size,
         @RequestParam(value = "sort", required = false) String sort
     ) {
-        PageResult<BrandModel> result = brandService.getBrands(PageCommand.of(page, size), ListSort.from(sort));
+        PageResult<BrandModel> result = brandFacade.getBrands(PageCommand.of(page, size), ListSort.from(sort));
         return ApiResponse.success(PageResponse.of(result, BrandAdminV1Dto.AdminBrandResponse::from));
     }
 
@@ -43,7 +43,7 @@ public class BrandAdminV1Controller implements BrandAdminV1ApiSpec {
     public ResponseEntity<ApiResponse<BrandAdminV1Dto.AdminBrandResponse>> create(
         @RequestBody(required = false) BrandAdminV1Dto.BrandSaveRequest request
     ) {
-        BrandModel created = brandService.create(nameOf(request));
+        BrandModel created = brandFacade.create(nameOf(request));
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(ApiResponse.success(BrandAdminV1Dto.AdminBrandResponse.from(created)));
     }
@@ -51,7 +51,7 @@ public class BrandAdminV1Controller implements BrandAdminV1ApiSpec {
     @GetMapping("/{brandId}")
     @Override
     public ApiResponse<BrandAdminV1Dto.AdminBrandResponse> getBrand(@PathVariable(value = "brandId") Long brandId) {
-        return ApiResponse.success(BrandAdminV1Dto.AdminBrandResponse.from(brandService.getBrand(brandId)));
+        return ApiResponse.success(BrandAdminV1Dto.AdminBrandResponse.from(brandFacade.getBrand(brandId)));
     }
 
     @PutMapping("/{brandId}")
@@ -60,14 +60,14 @@ public class BrandAdminV1Controller implements BrandAdminV1ApiSpec {
         @PathVariable(value = "brandId") Long brandId,
         @RequestBody(required = false) BrandAdminV1Dto.BrandSaveRequest request
     ) {
-        BrandModel updated = brandService.update(brandId, nameOf(request));
+        BrandModel updated = brandFacade.update(brandId, nameOf(request));
         return ApiResponse.success(BrandAdminV1Dto.AdminBrandResponse.from(updated));
     }
 
     @DeleteMapping("/{brandId}")
     @Override
     public ApiResponse<Object> delete(@PathVariable(value = "brandId") Long brandId) {
-        brandService.delete(brandId);
+        brandFacade.delete(brandId);
         return ApiResponse.success();
     }
 

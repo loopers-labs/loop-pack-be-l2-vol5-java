@@ -3,8 +3,8 @@ package com.loopers.interfaces.api.order;
 import com.loopers.application.order.OrderConfirmFacade;
 import com.loopers.domain.order.OrderItemCommand;
 import com.loopers.domain.order.OrderModel;
-import com.loopers.domain.order.OrderService;
-import com.loopers.domain.point.PointService;
+import com.loopers.application.order.OrderFacade;
+import com.loopers.application.point.PointFacade;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.user.UserModel;
 import com.loopers.fixture.ProductFixture;
@@ -41,11 +41,11 @@ class OrderAdminV1ApiTest {
     @Autowired
     private ProductFixture productFixture;
     @Autowired
-    private OrderService orderService;
+    private OrderFacade orderFacade;
     @Autowired
     private OrderConfirmFacade orderConfirmFacade;
     @Autowired
-    private PointService pointService;
+    private PointFacade pointFacade;
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
 
@@ -63,8 +63,8 @@ class OrderAdminV1ApiTest {
             UserModel first = userFixture.createUserWithPoint();
             UserModel second = userFixture.createUserWithPoint();
             ProductModel shoes = productFixture.createProduct("운동화", 10_000L, 100L);
-            orderService.create(first.getId(), List.of(new OrderItemCommand(shoes.getId(), 1L)));
-            OrderModel latest = orderService.create(second.getId(), List.of(new OrderItemCommand(shoes.getId(), 2L)));
+            orderFacade.create(first.getId(), List.of(new OrderItemCommand(shoes.getId(), 1L)));
+            OrderModel latest = orderFacade.create(second.getId(), List.of(new OrderItemCommand(shoes.getId(), 2L)));
 
             mockMvc.perform(get(ENDPOINT))
                 .andExpect(status().isOk())
@@ -80,7 +80,7 @@ class OrderAdminV1ApiTest {
             UserModel user = userFixture.createUserWithPoint();
             ProductModel shoes = productFixture.createProduct("운동화", 10_000L, 100L);
             ProductModel cap = productFixture.createProduct("모자", 5_000L, 100L);
-            orderService.create(user.getId(), List.of(
+            orderFacade.create(user.getId(), List.of(
                 new OrderItemCommand(shoes.getId(), 1L),
                 new OrderItemCommand(cap.getId(), 2L)
             ));
@@ -99,9 +99,9 @@ class OrderAdminV1ApiTest {
         void returnsRequestedPage() throws Exception {
             UserModel user = userFixture.createUserWithPoint();
             ProductModel shoes = productFixture.createProduct("운동화", 10_000L, 100L);
-            OrderModel first = orderService.create(user.getId(), List.of(new OrderItemCommand(shoes.getId(), 1L)));
-            orderService.create(user.getId(), List.of(new OrderItemCommand(shoes.getId(), 2L)));
-            orderService.create(user.getId(), List.of(new OrderItemCommand(shoes.getId(), 3L)));
+            OrderModel first = orderFacade.create(user.getId(), List.of(new OrderItemCommand(shoes.getId(), 1L)));
+            orderFacade.create(user.getId(), List.of(new OrderItemCommand(shoes.getId(), 2L)));
+            orderFacade.create(user.getId(), List.of(new OrderItemCommand(shoes.getId(), 3L)));
 
             mockMvc.perform(get(ENDPOINT).param("page", "0").param("size", "2").param("sort", "oldest"))
                 .andExpect(status().isOk())
@@ -126,9 +126,9 @@ class OrderAdminV1ApiTest {
         @Test
         void returnsConfirmedOrder() throws Exception {
             UserModel user = userFixture.createUserWithPoint();
-            pointService.charge(user.getId(), 50_000L);
+            pointFacade.charge(user.getId(), 50_000L);
             ProductModel shoes = productFixture.createProduct("운동화", 10_000L, 100L);
-            OrderModel created = orderService.create(user.getId(), List.of(new OrderItemCommand(shoes.getId(), 2L)));
+            OrderModel created = orderFacade.create(user.getId(), List.of(new OrderItemCommand(shoes.getId(), 2L)));
             orderConfirmFacade.confirm(user.getId(), created.getId());
 
             mockMvc.perform(get(ENDPOINT + "/" + created.getId()))

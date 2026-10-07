@@ -1,5 +1,7 @@
-package com.loopers.domain.brand;
+package com.loopers.application.brand;
 
+import com.loopers.domain.brand.BrandModel;
+import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.common.ListSort;
 import com.loopers.domain.common.PageCommand;
 import com.loopers.domain.common.PageResult;
@@ -10,13 +12,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * Brand 만 주된 상태로 변경한다. 삭제 시 활성 Product 존재 여부를 읽어 BrandModel 에 전달하지만
- * Product 를 변경하지 않는다.
- */
+import java.time.ZonedDateTime;
+
+/** Brand API 유스케이스의 처리 순서와 트랜잭션 경계를 담당한다. */
 @RequiredArgsConstructor
 @Component
-public class BrandService {
+public class BrandFacade {
 
     private final BrandRepository brandRepository;
     private final ProductRepository productRepository;
@@ -38,10 +39,15 @@ public class BrandService {
         return brandRepository.save(brand);
     }
 
+    /**
+     * 브랜드와 연결된 미삭제 상품을 같은 트랜잭션에서 함께 삭제한다.
+     * 상품은 bulk UPDATE 한 번으로 처리하고, 중간 예외는 삼키지 않고 전파해 전체를 rollback 한다.
+     */
     @Transactional
     public void delete(Long brandId) {
         BrandModel brand = findActive(brandId);
-        brand.delete(productRepository.existsActiveByBrandId(brandId));
+        productRepository.softDeleteAllActiveByBrandId(brandId, ZonedDateTime.now());
+        brand.delete();
         brandRepository.save(brand);
     }
 

@@ -1,5 +1,6 @@
 package com.loopers.domain.order;
 
+import com.loopers.application.order.OrderFacade;
 import com.loopers.domain.common.ListSort;
 import com.loopers.domain.common.PageCommand;
 import com.loopers.domain.common.PageResult;
@@ -20,12 +21,12 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
-@DisplayName("OrderService 는 내 주문 목록을 Order 단위로 페이지 조회한다.")
+@DisplayName("OrderFacade 는 내 주문 목록을 Order 단위로 페이지 조회한다.")
 @SpringBootTest
 class OrderListIntegrationTest {
 
     @Autowired
-    private OrderService orderService;
+    private OrderFacade orderFacade;
     @Autowired
     private UserFixture userFixture;
     @Autowired
@@ -39,7 +40,7 @@ class OrderListIntegrationTest {
     }
 
     private OrderModel order(UserModel user, ProductModel product, long quantity) {
-        return orderService.create(user.getId(), List.of(new OrderItemCommand(product.getId(), quantity)));
+        return orderFacade.create(user.getId(), List.of(new OrderItemCommand(product.getId(), quantity)));
     }
 
     @DisplayName("소유 범위")
@@ -54,7 +55,7 @@ class OrderListIntegrationTest {
             OrderModel mine = order(me, shirt, 1L);
             order(other, shirt, 1L);
 
-            PageResult<OrderModel> result = orderService.getOrders(
+            PageResult<OrderModel> result = orderFacade.getOrders(
                 me.getId(), PageCommand.of(null, null), ListSort.LATEST);
 
             assertAll(
@@ -73,12 +74,12 @@ class OrderListIntegrationTest {
             UserModel user = userFixture.createUserWithPoint();
             ProductModel shirt = productFixture.createProduct("티셔츠", 1_000L, 100L);
             ProductModel pants = productFixture.createProduct("바지", 2_000L, 100L);
-            orderService.create(user.getId(), List.of(
+            orderFacade.create(user.getId(), List.of(
                 new OrderItemCommand(shirt.getId(), 1L),
                 new OrderItemCommand(pants.getId(), 2L)
             ));
 
-            PageResult<OrderModel> result = orderService.getOrders(
+            PageResult<OrderModel> result = orderFacade.getOrders(
                 user.getId(), PageCommand.of(null, null), ListSort.LATEST);
 
             assertAll(
@@ -100,7 +101,7 @@ class OrderListIntegrationTest {
             OrderModel second = order(user, shirt, 1L);
             OrderModel third = order(user, shirt, 1L);
 
-            PageResult<OrderModel> result = orderService.getOrders(
+            PageResult<OrderModel> result = orderFacade.getOrders(
                 user.getId(), PageCommand.of(null, null), ListSort.LATEST);
 
             assertThat(result.items()).extracting(OrderModel::getId)
@@ -116,7 +117,7 @@ class OrderListIntegrationTest {
             OrderModel second = order(user, shirt, 1L);
             OrderModel third = order(user, shirt, 1L);
 
-            PageResult<OrderModel> result = orderService.getOrders(
+            PageResult<OrderModel> result = orderFacade.getOrders(
                 user.getId(), PageCommand.of(null, null), ListSort.OLDEST);
 
             assertThat(result.items()).extracting(OrderModel::getId)
@@ -132,7 +133,7 @@ class OrderListIntegrationTest {
             OrderModel second = order(user, shirt, 1L);
             order(user, shirt, 1L);
 
-            PageResult<OrderModel> result = orderService.getOrders(
+            PageResult<OrderModel> result = orderFacade.getOrders(
                 user.getId(), PageCommand.of(0, 2), ListSort.OLDEST);
 
             assertAll(
@@ -154,7 +155,7 @@ class OrderListIntegrationTest {
             order(user, shirt, 1L);
             OrderModel third = order(user, shirt, 1L);
 
-            PageResult<OrderModel> result = orderService.getOrders(
+            PageResult<OrderModel> result = orderFacade.getOrders(
                 user.getId(), PageCommand.of(1, 2), ListSort.OLDEST);
 
             assertThat(result.items()).extracting(OrderModel::getId).containsExactly(third.getId());
@@ -165,7 +166,7 @@ class OrderListIntegrationTest {
         void returnsEmptyPage() {
             UserModel user = userFixture.createUserWithPoint();
 
-            PageResult<OrderModel> result = orderService.getOrders(
+            PageResult<OrderModel> result = orderFacade.getOrders(
                 user.getId(), PageCommand.of(null, null), ListSort.LATEST);
 
             assertAll(

@@ -1,6 +1,6 @@
 package com.loopers.interfaces.api.support;
 
-import com.loopers.domain.user.UserService;
+import com.loopers.application.user.UserFacade;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
@@ -19,7 +19,7 @@ public class CustomerIdArgumentResolver implements HandlerMethodArgumentResolver
 
     public static final String USER_ID_HEADER = "X-USER-ID";
 
-    private final UserService userService;
+    private final UserFacade userFacade;
 
     @Override
     public boolean supportsParameter(MethodParameter parameter) {
@@ -46,7 +46,7 @@ public class CustomerIdArgumentResolver implements HandlerMethodArgumentResolver
             throw new CoreException(ErrorType.INVALID_REQUEST, USER_ID_HEADER + " 헤더는 숫자여야 합니다.");
         }
 
-        userService.requireExists(userId);
+        userFacade.requireExists(userId);
         return userId;
     }
 }

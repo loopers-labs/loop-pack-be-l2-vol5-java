@@ -1,10 +1,12 @@
 package com.loopers.infrastructure.order;
 
 import com.loopers.domain.order.OrderModel;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -17,6 +19,11 @@ public interface OrderJpaRepository extends JpaRepository<OrderModel, Long> {
     /** 주문 품목을 함께 복원한다. */
     @EntityGraph(attributePaths = "items")
     Optional<OrderModel> findWithItemsById(Long id);
+
+    /** Order 행만 PK 로 잠근다. 잠금 범위를 품목까지 넓히지 않도록 EntityGraph·join 을 결합하지 않는다. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select o from OrderModel o where o.id = :id")
+    Optional<OrderModel> findForUpdateById(@Param("id") Long id);
 
     /** Order 단위로 페이지를 나누기 위해 식별자만 먼저 조회한다. */
     @Query("select o.id from OrderModel o where o.userId = :userId")

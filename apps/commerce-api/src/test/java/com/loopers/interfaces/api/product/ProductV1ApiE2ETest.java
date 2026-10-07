@@ -1,7 +1,7 @@
 package com.loopers.interfaces.api.product;
 
 import com.loopers.domain.brand.BrandModel;
-import com.loopers.domain.like.LikeService;
+import com.loopers.application.like.LikeFacade;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.user.UserModel;
 import com.loopers.fixture.BrandFixture;
@@ -48,7 +48,7 @@ class ProductV1ApiE2ETest {
     @Autowired
     private ProductFixture productFixture;
     @Autowired
-    private LikeService likeService;
+    private LikeFacade likeFacade;
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
 
@@ -82,7 +82,7 @@ class ProductV1ApiE2ETest {
             UserModel user = userFixture.createUserWithPoint();
             BrandModel nike = brandFixture.createBrand("나이키");
             ProductModel shoes = productFixture.createProduct(nike.getId(), "운동화", 89_000L, 7L);
-            likeService.like(user.getId(), shoes.getId());
+            likeFacade.like(user.getId(), shoes.getId());
 
             ResponseEntity<ApiResponse<ProductV1Dto.ProductResponse>> response =
                 getDetail(shoes.getId(), String.valueOf(user.getId()));
@@ -190,8 +190,8 @@ class ProductV1ApiE2ETest {
             UserModel other = userFixture.createUserWithPoint();
             ProductModel popular = productFixture.createProduct("인기 상품", 10_000L, 1L);
             ProductModel unpopular = productFixture.createProduct("한산한 상품", 10_000L, 1L);
-            likeService.like(user.getId(), popular.getId());
-            likeService.like(other.getId(), popular.getId());
+            likeFacade.like(user.getId(), popular.getId());
+            likeFacade.like(other.getId(), popular.getId());
 
             ResponseEntity<ApiResponse<PageResponse<ProductV1Dto.ProductResponse>>> response =
                 getList("?sort=likes_desc", String.valueOf(user.getId()));

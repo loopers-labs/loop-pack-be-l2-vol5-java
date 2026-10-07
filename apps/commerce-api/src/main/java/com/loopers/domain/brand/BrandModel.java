@@ -9,7 +9,8 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 
 /**
- * 브랜드 정보와 생명주기. 삭제 가능 여부는 전달받은 활성 상품 존재 여부로 스스로 판단한다.
+ * 브랜드 정보와 생명주기. 삭제는 상속한 BaseEntity.delete() 로 자신의 삭제 시각만 기록하며,
+ * 연결 상품의 일괄 삭제는 BrandFacade 가 같은 트랜잭션에서 조율한다.
  */
 @Entity
 @Table(name = "brand")
@@ -34,16 +35,6 @@ public class BrandModel extends BaseEntity {
 
     public void updateName(String newName) {
         this.name = validateName(newName);
-    }
-
-    /**
-     * 삭제되지 않은 상품이 하나라도 연결되어 있으면 재고가 0이어도 삭제하지 않는다.
-     */
-    public void delete(boolean hasActiveProducts) {
-        if (hasActiveProducts) {
-            throw new CoreException(ErrorType.BRAND_HAS_ACTIVE_PRODUCTS);
-        }
-        super.delete();
     }
 
     public boolean isDeleted() {

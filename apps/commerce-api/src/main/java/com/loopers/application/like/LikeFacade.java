@@ -1,8 +1,10 @@
-package com.loopers.domain.like;
+package com.loopers.application.like;
 
 import com.loopers.domain.common.ListSort;
 import com.loopers.domain.common.PageCommand;
 import com.loopers.domain.common.PageResult;
+import com.loopers.domain.like.LikeModel;
+import com.loopers.domain.like.LikeRepository;
 import com.loopers.domain.product.ProductQueryRepository;
 import com.loopers.domain.product.ProductQueryResult;
 import com.loopers.domain.product.ProductRepository;
@@ -12,12 +14,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * Like 만 주된 상태로 변경한다. 등록 시 Product 의 상태를 읽지만 Product 를 변경하지 않는다.
- */
+/** Like API 유스케이스의 처리 순서와 트랜잭션 경계를 담당한다. */
 @RequiredArgsConstructor
 @Component
-public class LikeService {
+public class LikeFacade {
 
     private final LikeRepository likeRepository;
     private final ProductRepository productRepository;
@@ -34,10 +34,7 @@ public class LikeService {
         return likeRepository.save(LikeModel.of(userId, productId));
     }
 
-    /**
-     * 삭제된 상품이라도 삭제 전에 만든 자신의 관계는 취소할 수 있으므로
-     * 상품의 삭제 여부와 관계없이 Like 를 찾아 삭제한다.
-     */
+    /** 삭제된 상품이라도 삭제 전에 만든 자신의 좋아요 관계는 취소할 수 있다. */
     @Transactional
     public void cancel(Long userId, Long productId) {
         LikeModel like = likeRepository.find(userId, productId)

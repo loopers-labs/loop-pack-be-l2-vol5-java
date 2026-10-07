@@ -1,8 +1,8 @@
 package com.loopers.interfaces.api.point;
 
+import com.loopers.application.point.PointFacade;
 import com.loopers.domain.point.PointChange;
 import com.loopers.domain.point.PointModel;
-import com.loopers.domain.point.PointService;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.support.CustomerId;
 import com.loopers.support.error.CoreException;
@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/points")
 public class PointV1Controller implements PointV1ApiSpec {
 
-    private final PointService pointService;
+    private final PointFacade pointFacade;
 
     @PostMapping("/charge")
     @Override
@@ -31,14 +31,14 @@ public class PointV1Controller implements PointV1ApiSpec {
             throw new CoreException(ErrorType.INVALID_POINT_AMOUNT);
         }
 
-        PointChange change = pointService.charge(userId, request.amount());
+        PointChange change = pointFacade.charge(userId, request.amount());
         return ApiResponse.success(PointV1Dto.PointResponse.of(change.afterBalance()));
     }
 
     @GetMapping
     @Override
     public ApiResponse<PointV1Dto.PointResponse> getBalance(@CustomerId Long userId) {
-        PointModel point = pointService.getPoint(userId);
+        PointModel point = pointFacade.getPoint(userId);
         return ApiResponse.success(PointV1Dto.PointResponse.from(point));
     }
 }

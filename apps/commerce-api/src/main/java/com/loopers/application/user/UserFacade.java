@@ -1,17 +1,16 @@
-package com.loopers.domain.user;
+package com.loopers.application.user;
 
+import com.loopers.domain.user.UserRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * 요청자 식별에 필요한 User 존재 여부 확인을 한곳에서 담당한다.
- */
+/** 요청자 식별에 필요한 User 존재 여부 확인의 application 진입점이다. */
 @RequiredArgsConstructor
 @Component
-public class UserService {
+public class UserFacade {
 
     private final UserRepository userRepository;
 

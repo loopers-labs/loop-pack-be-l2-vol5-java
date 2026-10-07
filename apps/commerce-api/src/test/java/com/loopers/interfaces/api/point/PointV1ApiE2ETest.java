@@ -1,6 +1,6 @@
 package com.loopers.interfaces.api.point;
 
-import com.loopers.domain.point.PointService;
+import com.loopers.application.point.PointFacade;
 import com.loopers.domain.user.UserModel;
 import com.loopers.fixture.UserFixture;
 import com.loopers.infrastructure.point.PointHistoryJpaRepository;
@@ -42,7 +42,7 @@ class PointV1ApiE2ETest {
     @Autowired
     private UserFixture userFixture;
     @Autowired
-    private PointService pointService;
+    private PointFacade pointFacade;
     @Autowired
     private PointJpaRepository pointJpaRepository;
     @Autowired
@@ -88,7 +88,7 @@ class PointV1ApiE2ETest {
         @Test
         void rejectsZeroAmount() {
             UserModel user = userFixture.createUserWithPoint();
-            pointService.charge(user.getId(), 1_000L);
+            pointFacade.charge(user.getId(), 1_000L);
 
             ResponseEntity<ApiResponse<PointV1Dto.PointResponse>> response = testRestTemplate.exchange(
                 ENDPOINT_CHARGE, HttpMethod.POST,
@@ -160,7 +160,7 @@ class PointV1ApiE2ETest {
         @Test
         void returnsStoredBalance() {
             UserModel user = userFixture.createUserWithPoint();
-            pointService.charge(user.getId(), 4_200L);
+            pointFacade.charge(user.getId(), 4_200L);
 
             ResponseEntity<ApiResponse<PointV1Dto.PointResponse>> response = testRestTemplate.exchange(
                 ENDPOINT_BALANCE, HttpMethod.GET, request(null, String.valueOf(user.getId())), RESPONSE_TYPE);
@@ -176,7 +176,7 @@ class PointV1ApiE2ETest {
         void returnsOnlyOwnBalance() {
             UserModel me = userFixture.createUserWithPoint();
             UserModel other = userFixture.createUserWithPoint();
-            pointService.charge(other.getId(), 9_000L);
+            pointFacade.charge(other.getId(), 9_000L);
 
             ResponseEntity<ApiResponse<PointV1Dto.PointResponse>> response = testRestTemplate.exchange(
                 ENDPOINT_BALANCE, HttpMethod.GET, request(null, String.valueOf(me.getId())), RESPONSE_TYPE);

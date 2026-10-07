@@ -2,11 +2,13 @@ package com.loopers.interfaces.api.order;
 
 import com.loopers.domain.order.OrderItemCommand;
 import com.loopers.domain.order.OrderModel;
-import com.loopers.domain.order.OrderService;
+import com.loopers.application.order.OrderFacade;
 import com.loopers.domain.order.OrderStatus;
-import com.loopers.domain.point.PointService;
+import com.loopers.application.point.PointFacade;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.user.UserModel;
+import com.loopers.fixture.OrderStateReader;
+import com.loopers.fixture.OrderStateReader.ConfirmState;
 import com.loopers.fixture.ProductFixture;
 import com.loopers.fixture.UserFixture;
 import com.loopers.infrastructure.order.OrderJpaRepository;
@@ -53,15 +55,17 @@ class OrderV1ApiE2ETest {
     @Autowired
     private ProductFixture productFixture;
     @Autowired
-    private OrderService orderService;
+    private OrderFacade orderFacade;
     @Autowired
-    private PointService pointService;
+    private PointFacade pointFacade;
     @Autowired
     private OrderJpaRepository orderJpaRepository;
     @Autowired
     private ProductJpaRepository productJpaRepository;
     @Autowired
     private PointJpaRepository pointJpaRepository;
+    @Autowired
+    private OrderStateReader orderStateReader;
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
 
@@ -183,10 +187,10 @@ class OrderV1ApiE2ETest {
         @Test
         void confirmsOrder() {
             UserModel user = userFixture.createUserWithPoint();
-            pointService.charge(user.getId(), 10_000L);
+            pointFacade.charge(user.getId(), 10_000L);
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
             ProductModel pants = productFixture.createProduct("바지", 3_000L, 4L);
-            OrderModel order = orderService.create(user.getId(), List.of(
+            OrderModel order = orderFacade.create(user.getId(), List.of(
                 new OrderItemCommand(shirt.getId(), 2L), new OrderItemCommand(pants.getId(), 1L)));
 
             ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> response = testRestTemplate.exchange(
@@ -211,9 +215,9 @@ class OrderV1ApiE2ETest {
         @Test
         void rejectsInsufficientPoint() {
             UserModel user = userFixture.createUserWithPoint();
-            pointService.charge(user.getId(), 1_000L);
+            pointFacade.charge(user.getId(), 1_000L);
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
-            OrderModel order = orderService.create(user.getId(),
+            OrderModel order = orderFacade.create(user.getId(),
                 List.of(new OrderItemCommand(shirt.getId(), 2L)));
 
             ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> response = testRestTemplate.exchange(
@@ -236,9 +240,9 @@ class OrderV1ApiE2ETest {
         @Test
         void rejectsInsufficientStock() {
             UserModel user = userFixture.createUserWithPoint();
-            pointService.charge(user.getId(), 100_000L);
+            pointFacade.charge(user.getId(), 100_000L);
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 1L);
-            OrderModel order = orderService.create(user.getId(),
+            OrderModel order = orderFacade.create(user.getId(),
                 List.of(new OrderItemCommand(shirt.getId(), 2L)));
 
             ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> response = testRestTemplate.exchange(
@@ -259,9 +263,9 @@ class OrderV1ApiE2ETest {
         @Test
         void rejectsAlreadyConfirmed() {
             UserModel user = userFixture.createUserWithPoint();
-            pointService.charge(user.getId(), 10_000L);
+            pointFacade.charge(user.getId(), 10_000L);
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
-            OrderModel order = orderService.create(user.getId(),
+            OrderModel order = orderFacade.create(user.getId(),
                 List.of(new OrderItemCommand(shirt.getId(), 2L)));
             testRestTemplate.exchange(ENDPOINT + "/" + order.getId() + "/confirm", HttpMethod.POST,
                 request(null, user.getId()), ORDER_TYPE);
@@ -283,9 +287,9 @@ class OrderV1ApiE2ETest {
         void rejectsOtherUsersOrder() {
             UserModel owner = userFixture.createUserWithPoint();
             UserModel other = userFixture.createUserWithPoint();
-            pointService.charge(other.getId(), 10_000L);
+            pointFacade.charge(other.getId(), 10_000L);
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
-            OrderModel order = orderService.create(owner.getId(),
+            OrderModel order = orderFacade.create(owner.getId(),
                 List.of(new OrderItemCommand(shirt.getId(), 2L)));
 
             ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> response = testRestTemplate.exchange(
@@ -297,6 +301,48 @@ class OrderV1ApiE2ETest {
                 () -> assertThat(response.getBody().meta().errorCode()).isEqualTo("ORDER_NOT_FOUND"),
                 () -> assertThat(pointJpaRepository.findByUserId(other.getId()).orElseThrow().getBalance())
                     .isEqualTo(10_000L)
+            );
+        }
+
+        @DisplayName("없는 주문의 확정은 404 ORDER_NOT_FOUND 로 거절하고 잔액·재고·이력을 바꾸지 않는다.")
+        @Test
+        void rejectsUnknownOrder() {
+            UserModel user = userFixture.createUserWithPoint();
+            pointFacade.charge(user.getId(), 10_000L);
+            ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
+            ConfirmState before = orderStateReader.confirmState(999_999L, user.getId(), List.of(shirt.getId()));
+
+            ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> response = testRestTemplate.exchange(
+                ENDPOINT + "/999999/confirm", HttpMethod.POST, request(null, user.getId()), ORDER_TYPE);
+
+            assertAll(
+                () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND),
+                () -> assertThat(response.getBody().meta().errorCode()).isEqualTo("ORDER_NOT_FOUND"),
+                () -> assertThat(orderStateReader.confirmState(999_999L, user.getId(), List.of(shirt.getId())))
+                    .isEqualTo(before)
+            );
+        }
+
+        @DisplayName("주문 생성 뒤 상품이 삭제되면 확정을 404 PRODUCT_NOT_FOUND 로 거절하고 주문·잔액·재고·이력을 유지한다.")
+        @Test
+        void rejectsDeletedProduct() {
+            UserModel user = userFixture.createUserWithPoint();
+            pointFacade.charge(user.getId(), 10_000L);
+            ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
+            OrderModel order = orderFacade.create(user.getId(), List.of(new OrderItemCommand(shirt.getId(), 2L)));
+            productFixture.deleteProduct(shirt.getId());
+            ConfirmState before = orderStateReader.confirmState(order.getId(), user.getId(), List.of(shirt.getId()));
+
+            ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> response = testRestTemplate.exchange(
+                ENDPOINT + "/" + order.getId() + "/confirm", HttpMethod.POST,
+                request(null, user.getId()), ORDER_TYPE);
+
+            assertAll(
+                () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND),
+                () -> assertThat(response.getBody().meta().errorCode()).isEqualTo("PRODUCT_NOT_FOUND"),
+                () -> assertThat(before.order().get(1)).isEqualTo(OrderStatus.DRAFT),
+                () -> assertThat(orderStateReader.confirmState(order.getId(), user.getId(), List.of(shirt.getId())))
+                    .isEqualTo(before)
             );
         }
     }
@@ -311,9 +357,9 @@ class OrderV1ApiE2ETest {
             UserModel other = userFixture.createUserWithPoint();
             ProductModel shirt = productFixture.createProduct("티셔츠", 1_000L, 100L);
             ProductModel pants = productFixture.createProduct("바지", 2_000L, 100L);
-            orderService.create(me.getId(), List.of(
+            orderFacade.create(me.getId(), List.of(
                 new OrderItemCommand(shirt.getId(), 1L), new OrderItemCommand(pants.getId(), 2L)));
-            orderService.create(other.getId(), List.of(new OrderItemCommand(shirt.getId(), 1L)));
+            orderFacade.create(other.getId(), List.of(new OrderItemCommand(shirt.getId(), 1L)));
 
             ResponseEntity<ApiResponse<PageResponse<OrderV1Dto.OrderResponse>>> response =
                 testRestTemplate.exchange(ENDPOINT, HttpMethod.GET, request(null, me.getId()), PAGE_TYPE);
@@ -365,11 +411,11 @@ class OrderV1ApiE2ETest {
         void returnsOldestFirstPage() {
             UserModel user = userFixture.createUserWithPoint();
             ProductModel shirt = productFixture.createProduct("티셔츠", 1_000L, 100L);
-            OrderModel first = orderService.create(user.getId(),
+            OrderModel first = orderFacade.create(user.getId(),
                 List.of(new OrderItemCommand(shirt.getId(), 1L)));
-            OrderModel second = orderService.create(user.getId(),
+            OrderModel second = orderFacade.create(user.getId(),
                 List.of(new OrderItemCommand(shirt.getId(), 1L)));
-            orderService.create(user.getId(), List.of(new OrderItemCommand(shirt.getId(), 1L)));
+            orderFacade.create(user.getId(), List.of(new OrderItemCommand(shirt.getId(), 1L)));
 
             ResponseEntity<ApiResponse<PageResponse<OrderV1Dto.OrderResponse>>> response =
                 testRestTemplate.exchange(ENDPOINT + "?page=0&size=2&sort=oldest", HttpMethod.GET,
@@ -393,7 +439,7 @@ class OrderV1ApiE2ETest {
         void returnsDraftOrderDetail() {
             UserModel user = userFixture.createUserWithPoint();
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
-            OrderModel order = orderService.create(user.getId(),
+            OrderModel order = orderFacade.create(user.getId(),
                 List.of(new OrderItemCommand(shirt.getId(), 2L)));
 
             ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> response = testRestTemplate.exchange(
@@ -420,7 +466,7 @@ class OrderV1ApiE2ETest {
             UserModel owner = userFixture.createUserWithPoint();
             UserModel other = userFixture.createUserWithPoint();
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
-            OrderModel order = orderService.create(owner.getId(),
+            OrderModel order = orderFacade.create(owner.getId(),
                 List.of(new OrderItemCommand(shirt.getId(), 1L)));
 
             ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> response = testRestTemplate.exchange(

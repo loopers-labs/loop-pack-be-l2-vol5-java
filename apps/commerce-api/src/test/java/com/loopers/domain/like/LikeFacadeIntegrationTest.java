@@ -1,5 +1,6 @@
 package com.loopers.domain.like;
 
+import com.loopers.application.like.LikeFacade;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.user.UserModel;
 import com.loopers.fixture.ProductFixture;
@@ -19,12 +20,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
-@DisplayName("LikeService 는 사용자–상품 좋아요 관계를 등록·취소한다.")
+@DisplayName("LikeFacade 는 사용자–상품 좋아요 관계를 등록·취소한다.")
 @SpringBootTest
-class LikeServiceIntegrationTest {
+class LikeFacadeIntegrationTest {
 
     @Autowired
-    private LikeService likeService;
+    private LikeFacade likeFacade;
     @Autowired
     private UserFixture userFixture;
     @Autowired
@@ -48,7 +49,7 @@ class LikeServiceIntegrationTest {
             UserModel user = userFixture.createUserWithPoint();
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
 
-            LikeModel like = likeService.like(user.getId(), shirt.getId());
+            LikeModel like = likeFacade.like(user.getId(), shirt.getId());
 
             assertAll(
                 () -> assertThat(like.getUserId()).isEqualTo(user.getId()),
@@ -62,9 +63,9 @@ class LikeServiceIntegrationTest {
         void rejectsDuplicate() {
             UserModel user = userFixture.createUserWithPoint();
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
-            likeService.like(user.getId(), shirt.getId());
+            likeFacade.like(user.getId(), shirt.getId());
 
-            assertThatThrownBy(() -> likeService.like(user.getId(), shirt.getId()))
+            assertThatThrownBy(() -> likeFacade.like(user.getId(), shirt.getId()))
                 .isInstanceOf(CoreException.class)
                 .extracting("errorType")
                 .isEqualTo(ErrorType.LIKE_ALREADY_EXISTS);
@@ -78,8 +79,8 @@ class LikeServiceIntegrationTest {
             UserModel second = userFixture.createUserWithPoint();
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
 
-            likeService.like(first.getId(), shirt.getId());
-            likeService.like(second.getId(), shirt.getId());
+            likeFacade.like(first.getId(), shirt.getId());
+            likeFacade.like(second.getId(), shirt.getId());
 
             assertThat(likeJpaRepository.findAll()).hasSize(2);
         }
@@ -89,7 +90,7 @@ class LikeServiceIntegrationTest {
         void rejectsUnknownProduct() {
             UserModel user = userFixture.createUserWithPoint();
 
-            assertThatThrownBy(() -> likeService.like(user.getId(), 999_999L))
+            assertThatThrownBy(() -> likeFacade.like(user.getId(), 999_999L))
                 .isInstanceOf(CoreException.class)
                 .extracting("errorType")
                 .isEqualTo(ErrorType.PRODUCT_NOT_FOUND);
@@ -102,7 +103,7 @@ class LikeServiceIntegrationTest {
             UserModel user = userFixture.createUserWithPoint();
             ProductModel deleted = productFixture.createDeletedProduct("단종 티셔츠", 2_000L, 5L);
 
-            assertThatThrownBy(() -> likeService.like(user.getId(), deleted.getId()))
+            assertThatThrownBy(() -> likeFacade.like(user.getId(), deleted.getId()))
                 .isInstanceOf(CoreException.class)
                 .extracting("errorType")
                 .isEqualTo(ErrorType.PRODUCT_NOT_FOUND);
@@ -118,9 +119,9 @@ class LikeServiceIntegrationTest {
         void removesRelation() {
             UserModel user = userFixture.createUserWithPoint();
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
-            likeService.like(user.getId(), shirt.getId());
+            likeFacade.like(user.getId(), shirt.getId());
 
-            likeService.cancel(user.getId(), shirt.getId());
+            likeFacade.cancel(user.getId(), shirt.getId());
 
             assertThat(likeJpaRepository.findAll()).isEmpty();
         }
@@ -131,7 +132,7 @@ class LikeServiceIntegrationTest {
             UserModel user = userFixture.createUserWithPoint();
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
 
-            assertThatThrownBy(() -> likeService.cancel(user.getId(), shirt.getId()))
+            assertThatThrownBy(() -> likeFacade.cancel(user.getId(), shirt.getId()))
                 .isInstanceOf(CoreException.class)
                 .extracting("errorType")
                 .isEqualTo(ErrorType.LIKE_NOT_FOUND);
@@ -142,10 +143,10 @@ class LikeServiceIntegrationTest {
         void allowsCancelOnDeletedProduct() {
             UserModel user = userFixture.createUserWithPoint();
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
-            likeService.like(user.getId(), shirt.getId());
+            likeFacade.like(user.getId(), shirt.getId());
             productFixture.deleteProduct(shirt.getId());
 
-            likeService.cancel(user.getId(), shirt.getId());
+            likeFacade.cancel(user.getId(), shirt.getId());
 
             assertThat(likeJpaRepository.findAll()).isEmpty();
         }
@@ -156,9 +157,9 @@ class LikeServiceIntegrationTest {
             UserModel owner = userFixture.createUserWithPoint();
             UserModel other = userFixture.createUserWithPoint();
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
-            likeService.like(owner.getId(), shirt.getId());
+            likeFacade.like(owner.getId(), shirt.getId());
 
-            assertThatThrownBy(() -> likeService.cancel(other.getId(), shirt.getId()))
+            assertThatThrownBy(() -> likeFacade.cancel(other.getId(), shirt.getId()))
                 .isInstanceOf(CoreException.class)
                 .extracting("errorType")
                 .isEqualTo(ErrorType.LIKE_NOT_FOUND);

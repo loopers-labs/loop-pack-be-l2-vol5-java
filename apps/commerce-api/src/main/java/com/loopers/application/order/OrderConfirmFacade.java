@@ -19,6 +19,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -40,17 +41,22 @@ public class OrderConfirmFacade {
 
     @Transactional
     public OrderInfo confirm(Long userId, Long orderId) {
-        OrderModel order = orderRepository.find(orderId)
+        OrderModel order = orderRepository.findForUpdate(orderId)
             .orElseThrow(() -> new CoreException(ErrorType.ORDER_NOT_FOUND));
         order.requireOwnedBy(userId);
         order.requireConfirmable();
 
-        List<OrderItemModel> items = order.getItems();
-        Map<Long, ProductModel> products = findActiveProducts(items);
-        PointModel point = pointRepository.findByUserId(userId)
-            .orElseThrow(() -> new CoreException(ErrorType.POINT_NOT_INITIALIZED));
+        // 잠근 Order 의 소유권·상태를 확인한 뒤 같은 트랜잭션에서 품목을 별도로 복원하고, 상품 ID 오름차순으로 처리한다.
+        List<OrderItemModel> items = order.getItems().stream()
+            .sorted(Comparator.comparing(OrderItemModel::getProductId))
+            .toList();
 
+        // Point 부족 요청이 공유 Product 잠금을 얻기 전에 끝나도록 Point 를 먼저 잠그고 바로 사용한다.
+        PointModel point = pointRepository.findByUserIdForUpdate(userId)
+            .orElseThrow(() -> new CoreException(ErrorType.POINT_NOT_INITIALIZED));
         PointChange pointChange = point.use(order.getOrderTotal().toWon());
+
+        Map<Long, ProductModel> products = lockActiveProducts(items);
 
         for (OrderItemModel item : items) {
             ProductModel product = products.get(item.getProductId());
@@ -67,10 +73,13 @@ public class OrderConfirmFacade {
         return OrderInfo.from(orderRepository.save(order));
     }
 
-    /** 저장된 OrderItem 의 상품이 모두 존재하고 삭제되지 않았는지 확인한다. */
-    private Map<Long, ProductModel> findActiveProducts(List<OrderItemModel> items) {
-        List<Long> productIds = items.stream().map(OrderItemModel::getProductId).toList();
-        Map<Long, ProductModel> products = productRepository.findAllActiveByIds(productIds).stream()
+    /**
+     * 저장된 OrderItem 의 상품을 중복 제거 ID 오름차순으로 잠가 조회하고,
+     * 하나라도 없거나 삭제됐으면 거절한다.
+     */
+    private Map<Long, ProductModel> lockActiveProducts(List<OrderItemModel> items) {
+        List<Long> productIds = items.stream().map(OrderItemModel::getProductId).distinct().sorted().toList();
+        Map<Long, ProductModel> products = productRepository.findAllActiveByIdsForUpdate(productIds).stream()
             .collect(Collectors.toMap(ProductModel::getId, Function.identity()));
 
         productIds.forEach(productId -> {

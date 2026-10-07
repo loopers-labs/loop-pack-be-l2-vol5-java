@@ -1,22 +1,27 @@
-package com.loopers.domain.product;
+package com.loopers.application.product;
 
 import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.common.ListSort;
 import com.loopers.domain.common.PageCommand;
 import com.loopers.domain.common.PageResult;
+import com.loopers.domain.product.ProductModel;
+import com.loopers.domain.product.ProductQueryRepository;
+import com.loopers.domain.product.ProductQueryResult;
+import com.loopers.domain.product.ProductRepository;
+import com.loopers.domain.product.ProductSort;
+import com.loopers.domain.product.StockChange;
+import com.loopers.domain.product.StockHistoryModel;
+import com.loopers.domain.product.StockHistoryRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * 상품 조회와 상품·재고 변경을 담당한다.
- * 목록·상세 조회는 QueryRepository 가 반환한 결과를 그대로 조회 계약으로 사용한다.
- */
+/** Product 조회·변경 API 유스케이스의 처리 순서와 트랜잭션 경계를 담당한다. */
 @RequiredArgsConstructor
 @Component
-public class ProductService {
+public class ProductFacade {
 
     private final ProductRepository productRepository;
     private final BrandRepository brandRepository;
@@ -25,8 +30,7 @@ public class ProductService {
 
     @Transactional(readOnly = true)
     public ProductQueryResult getProduct(Long productId) {
-        return productQueryRepository.findDetail(productId)
-            .orElseThrow(() -> new CoreException(ErrorType.PRODUCT_NOT_FOUND));
+        return findDetail(productId);
     }
 
     @Transactional(readOnly = true)
@@ -40,43 +44,53 @@ public class ProductService {
         return productQueryRepository.findAllPage(page, sort);
     }
 
-    /** Brand 의 존재와 삭제 여부를 읽어 확인하지만 Brand 를 변경하지 않는다. */
+    /** Brand의 존재와 삭제 여부를 확인하지만 Brand는 변경하지 않는다. */
     @Transactional
-    public ProductModel create(Long brandId, String name, Long price) {
+    public ProductQueryResult create(Long brandId, String name, Long price) {
         brandRepository.findActive(brandId)
             .orElseThrow(() -> new CoreException(ErrorType.BRAND_NOT_FOUND));
 
-        return productRepository.save(ProductModel.create(brandId, name, price));
+        ProductModel created = productRepository.save(ProductModel.create(brandId, name, price));
+        return findDetail(created.getId());
     }
 
     /** 브랜드 관계는 바꾸지 않는다. */
     @Transactional
-    public ProductModel update(Long productId, String name, Long price) {
-        ProductModel product = findActive(productId);
+    public ProductQueryResult update(Long productId, String name, Long price) {
+        ProductModel product = findActiveForUpdate(productId);
         product.update(name, price);
-        return productRepository.save(product);
+        ProductModel updated = productRepository.save(product);
+        return findDetail(updated.getId());
     }
 
     @Transactional
     public void delete(Long productId) {
-        ProductModel product = findActive(productId);
+        ProductModel product = findActiveForUpdate(productId);
         product.delete();
         productRepository.save(product);
     }
 
-    /** quantity 는 증감량이 아니라 변경 후의 최종 수량이다. */
+    /** finalQuantity는 증감량이 아니라 변경 후의 최종 수량이다. */
     @Transactional
     public ProductModel changeStock(Long productId, Long finalQuantity) {
-        ProductModel product = findActive(productId);
-
+        ProductModel product = findActiveForUpdate(productId);
         StockChange change = product.changeStock(finalQuantity);
 
         stockHistoryRepository.save(StockHistoryModel.changedByAdmin(product.getId(), change));
         return productRepository.save(product);
     }
 
-    private ProductModel findActive(Long productId) {
-        return productRepository.findActive(productId)
+    /**
+     * 재고를 바꾸지 않는 수정·삭제도 같은 Product 행 전체를 저장하므로,
+     * 주문 확정과 직렬화되도록 첫 조회부터 잠근 현재 상태를 사용한다.
+     */
+    private ProductModel findActiveForUpdate(Long productId) {
+        return productRepository.findActiveForUpdate(productId)
+            .orElseThrow(() -> new CoreException(ErrorType.PRODUCT_NOT_FOUND));
+    }
+
+    private ProductQueryResult findDetail(Long productId) {
+        return productQueryRepository.findDetail(productId)
             .orElseThrow(() -> new CoreException(ErrorType.PRODUCT_NOT_FOUND));
     }
 }

@@ -1,6 +1,6 @@
 package com.loopers.interfaces.api.support;
 
-import com.loopers.domain.user.UserService;
+import com.loopers.application.user.UserFacade;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
@@ -12,10 +12,10 @@ import java.util.List;
 @Configuration
 public class WebMvcConfig implements WebMvcConfigurer {
 
-    private final UserService userService;
+    private final UserFacade userFacade;
 
     @Override
     public void addArgumentResolvers(List<HandlerMethodArgumentResolver> resolvers) {
-        resolvers.add(new CustomerIdArgumentResolver(userService));
+        resolvers.add(new CustomerIdArgumentResolver(userFacade));
     }
 }

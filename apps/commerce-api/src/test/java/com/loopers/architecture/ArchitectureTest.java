@@ -32,4 +32,30 @@ class ArchitectureTest {
                 .resideInAnyPackage("..interfaces..", "..application..")
                 .check(classes);
     }
+
+    @Test
+    void controllersDoNotCallDomainServicesOrRepositories() {
+        var classes = new ClassFileImporter()
+                .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
+                .importPackages("com.loopers");
+
+        noClasses().that().haveSimpleNameEndingWith("Controller")
+                .should().dependOnClassesThat().haveSimpleNameEndingWith("Service")
+                .check(classes);
+
+        noClasses().that().haveSimpleNameEndingWith("Controller")
+                .should().dependOnClassesThat().haveSimpleNameEndingWith("Repository")
+                .check(classes);
+    }
+
+    @Test
+    void facadesDoNotCallOtherFacades() {
+        var classes = new ClassFileImporter()
+                .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
+                .importPackages("com.loopers");
+
+        noClasses().that().haveSimpleNameEndingWith("Facade")
+                .should().dependOnClassesThat().haveSimpleNameEndingWith("Facade")
+                .check(classes);
+    }
 }

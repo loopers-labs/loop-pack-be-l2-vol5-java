@@ -2,9 +2,11 @@ package com.loopers.interfaces.api.brand;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.domain.brand.BrandModel;
+import com.loopers.domain.product.ProductModel;
 import com.loopers.fixture.BrandFixture;
 import com.loopers.fixture.ProductFixture;
 import com.loopers.infrastructure.brand.BrandJpaRepository;
+import com.loopers.infrastructure.product.ProductJpaRepository;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -14,9 +16,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.security.test.context.support.WithAnonymousUser;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.ZonedDateTime;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -47,6 +54,8 @@ class BrandAdminV1ApiTest {
     @Autowired
     private BrandJpaRepository brandJpaRepository;
     @Autowired
+    private ProductJpaRepository productJpaRepository;
+    @Autowired
     private DatabaseCleanUp databaseCleanUp;
 
     @AfterEach
@@ -56,6 +65,21 @@ class BrandAdminV1ApiTest {
 
     private String json(Object body) throws Exception {
         return objectMapper.writeValueAsString(body);
+    }
+
+    private ZonedDateTime productDeletedAt(ProductModel product) {
+        return productJpaRepository.findById(product.getId()).orElseThrow().getDeletedAt();
+    }
+
+    /** 거절된 요청이 DB 를 바꾸지 않았는지 비교하기 위한 Brand·Product 의 수정·삭제 시각. */
+    private List<Object> modifiedTimes(BrandModel brand, ProductModel... products) {
+        BrandModel savedBrand = brandJpaRepository.findById(brand.getId()).orElseThrow();
+        List<Object> times = new ArrayList<>(Arrays.asList(savedBrand.getUpdatedAt(), savedBrand.getDeletedAt()));
+        for (ProductModel product : products) {
+            ProductModel saved = productJpaRepository.findById(product.getId()).orElseThrow();
+            times.addAll(Arrays.asList(saved.getUpdatedAt(), saved.getDeletedAt()));
+        }
+        return times;
     }
 
     @DisplayName("GET /api-admin/v1/brands")
@@ -205,9 +229,30 @@ class BrandAdminV1ApiTest {
     @DisplayName("DELETE /api-admin/v1/brands/{brandId}")
     @Nested
     class DeleteBrand {
-        @DisplayName("활성 상품이 없으면 삭제하고 200 과 빈 데이터로 응답한다.")
+        @DisplayName("재고 0 을 포함한 연결 미삭제 상품과 브랜드를 함께 삭제하고 200 과 빈 데이터로 응답하며, 다른 브랜드 상품은 유지한다.")
         @Test
-        void deletesBrand() throws Exception {
+        void deletesBrandWithProducts() throws Exception {
+            BrandModel nike = brandFixture.createBrand("나이키");
+            BrandModel adidas = brandFixture.createBrand("아디다스");
+            ProductModel shoes = productFixture.createProduct(nike.getId(), "운동화", 10_000L, 3L);
+            ProductModel soldOut = productFixture.createProduct(nike.getId(), "품절 운동화", 20_000L, 0L);
+            ProductModel slipper = productFixture.createProduct(adidas.getId(), "삼선 슬리퍼", 5_000L, 4L);
+            List<Object> adidasBefore = modifiedTimes(adidas, slipper);
+
+            mockMvc.perform(delete(ENDPOINT + "/" + nike.getId()).with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.meta.result").value("SUCCESS"))
+                .andExpect(jsonPath("$.data").doesNotExist());
+
+            assertThat(brandJpaRepository.findById(nike.getId()).orElseThrow().getDeletedAt()).isNotNull();
+            assertThat(productDeletedAt(shoes)).isNotNull();
+            assertThat(productDeletedAt(soldOut)).isNotNull();
+            assertThat(modifiedTimes(adidas, slipper)).isEqualTo(adidasBefore);
+        }
+
+        @DisplayName("연결 상품이 없는 브랜드도 삭제하고 200 으로 응답한다.")
+        @Test
+        void deletesBrandWithoutProducts() throws Exception {
             BrandModel nike = brandFixture.createBrand("나이키");
 
             mockMvc.perform(delete(ENDPOINT + "/" + nike.getId()).with(csrf()))
@@ -217,27 +262,62 @@ class BrandAdminV1ApiTest {
             assertThat(brandJpaRepository.findById(nike.getId()).orElseThrow().getDeletedAt()).isNotNull();
         }
 
-        @DisplayName("재고 0 인 활성 상품이 남아 있으면 409 BRAND_HAS_ACTIVE_PRODUCTS 로 거절하고 브랜드를 유지한다.")
-        @Test
-        void rejectsWhenActiveProductRemains() throws Exception {
-            BrandModel nike = brandFixture.createBrand("나이키");
-            productFixture.createProduct(nike.getId(), "품절 운동화", 10_000L, 0L);
-
-            mockMvc.perform(delete(ENDPOINT + "/" + nike.getId()).with(csrf()))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.meta.errorCode").value("BRAND_HAS_ACTIVE_PRODUCTS"));
-
-            assertThat(brandJpaRepository.findById(nike.getId()).orElseThrow().getDeletedAt()).isNull();
-        }
-
-        @DisplayName("이미 삭제된 브랜드는 404 BRAND_NOT_FOUND 로 거절한다.")
+        @DisplayName("이미 삭제된 브랜드는 404 BRAND_NOT_FOUND 로 거절하고 남은 상품을 바꾸지 않는다.")
         @Test
         void rejectsDeletedBrand() throws Exception {
             BrandModel deleted = brandFixture.createDeletedBrand("사라진브랜드");
+            ProductModel leftover = productFixture.createProduct(deleted.getId(), "남은 운동화", 10_000L, 2L);
+            List<Object> before = modifiedTimes(deleted, leftover);
 
             mockMvc.perform(delete(ENDPOINT + "/" + deleted.getId()).with(csrf()))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.meta.errorCode").value("BRAND_NOT_FOUND"));
+
+            assertThat(modifiedTimes(deleted, leftover)).isEqualTo(before);
+        }
+
+        @DisplayName("존재하지 않는 브랜드는 404 BRAND_NOT_FOUND 로 거절하고 다른 대상을 바꾸지 않는다.")
+        @Test
+        void rejectsUnknownBrand() throws Exception {
+            BrandModel adidas = brandFixture.createBrand("아디다스");
+            ProductModel slipper = productFixture.createProduct(adidas.getId(), "삼선 슬리퍼", 5_000L, 4L);
+            List<Object> before = modifiedTimes(adidas, slipper);
+
+            mockMvc.perform(delete(ENDPOINT + "/" + (adidas.getId() + 999L)).with(csrf()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.meta.errorCode").value("BRAND_NOT_FOUND"));
+
+            assertThat(modifiedTimes(adidas, slipper)).isEqualTo(before);
+        }
+
+        @DisplayName("유효한 CSRF 입력이 있어도 ADMIN 역할이 없는 사용자의 삭제는 403 으로 거절하고 DB 를 바꾸지 않는다.")
+        @WithMockUser(roles = "USER")
+        @Test
+        void rejectsNonAdmin() throws Exception {
+            BrandModel nike = brandFixture.createBrand("나이키");
+            ProductModel shoes = productFixture.createProduct(nike.getId(), "운동화", 10_000L, 3L);
+            List<Object> before = modifiedTimes(nike, shoes);
+
+            mockMvc.perform(delete(ENDPOINT + "/" + nike.getId()).with(csrf()))
+                .andExpect(status().isForbidden());
+
+            assertThat(modifiedTimes(nike, shoes)).isEqualTo(before);
+            assertThat(productDeletedAt(shoes)).isNull();
+        }
+
+        @DisplayName("유효한 CSRF 입력이 있어도 식별되지 않은 삭제 요청은 403 으로 거절하고 DB 를 바꾸지 않는다.")
+        @WithAnonymousUser
+        @Test
+        void rejectsAnonymous() throws Exception {
+            BrandModel nike = brandFixture.createBrand("나이키");
+            ProductModel shoes = productFixture.createProduct(nike.getId(), "운동화", 10_000L, 3L);
+            List<Object> before = modifiedTimes(nike, shoes);
+
+            mockMvc.perform(delete(ENDPOINT + "/" + nike.getId()).with(csrf()))
+                .andExpect(status().isForbidden());
+
+            assertThat(modifiedTimes(nike, shoes)).isEqualTo(before);
+            assertThat(productDeletedAt(shoes)).isNull();
         }
     }
 }

@@ -1,11 +1,11 @@
 package com.loopers.interfaces.api.product;
 
+import com.loopers.application.product.ProductFacade;
 import com.loopers.domain.common.ListSort;
 import com.loopers.domain.common.PageCommand;
 import com.loopers.domain.common.PageResult;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.product.ProductQueryResult;
-import com.loopers.domain.product.ProductService;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.PageResponse;
 import com.loopers.support.error.CoreException;
@@ -28,7 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api-admin/v1/products")
 public class ProductAdminV1Controller implements ProductAdminV1ApiSpec {
 
-    private final ProductService productService;
+    private final ProductFacade productFacade;
 
     @GetMapping
     @Override
@@ -38,7 +38,7 @@ public class ProductAdminV1Controller implements ProductAdminV1ApiSpec {
         @RequestParam(value = "sort", required = false) String sort
     ) {
         PageResult<ProductQueryResult> result =
-            productService.getAllProducts(PageCommand.of(page, size), ListSort.from(sort));
+            productFacade.getAllProducts(PageCommand.of(page, size), ListSort.from(sort));
         return ApiResponse.success(PageResponse.of(result, ProductAdminV1Dto.AdminProductResponse::from));
     }
 
@@ -54,9 +54,9 @@ public class ProductAdminV1Controller implements ProductAdminV1ApiSpec {
             throw new CoreException(ErrorType.INVALID_REQUEST);
         }
 
-        ProductModel created = productService.create(body.brandId(), body.name(), body.price());
+        ProductQueryResult created = productFacade.create(body.brandId(), body.name(), body.price());
         return ResponseEntity.status(HttpStatus.CREATED)
-            .body(ApiResponse.success(detailOf(created.getId())));
+            .body(ApiResponse.success(ProductAdminV1Dto.AdminProductResponse.from(created)));
     }
 
     @GetMapping("/{productId}")
@@ -64,7 +64,8 @@ public class ProductAdminV1Controller implements ProductAdminV1ApiSpec {
     public ApiResponse<ProductAdminV1Dto.AdminProductResponse> getProduct(
         @PathVariable(value = "productId") Long productId
     ) {
-        return ApiResponse.success(detailOf(productId));
+        ProductQueryResult product = productFacade.getProduct(productId);
+        return ApiResponse.success(ProductAdminV1Dto.AdminProductResponse.from(product));
     }
 
     @PutMapping("/{productId}")
@@ -76,14 +77,14 @@ public class ProductAdminV1Controller implements ProductAdminV1ApiSpec {
         ProductAdminV1Dto.ProductUpdateRequest body = request != null
             ? request
             : new ProductAdminV1Dto.ProductUpdateRequest(null, null);
-        productService.update(productId, body.name(), body.price());
-        return ApiResponse.success(detailOf(productId));
+        ProductQueryResult updated = productFacade.update(productId, body.name(), body.price());
+        return ApiResponse.success(ProductAdminV1Dto.AdminProductResponse.from(updated));
     }
 
     @DeleteMapping("/{productId}")
     @Override
     public ApiResponse<Object> delete(@PathVariable(value = "productId") Long productId) {
-        productService.delete(productId);
+        productFacade.delete(productId);
         return ApiResponse.success();
     }
 
@@ -93,11 +94,7 @@ public class ProductAdminV1Controller implements ProductAdminV1ApiSpec {
         @PathVariable(value = "productId") Long productId,
         @RequestBody(required = false) ProductAdminV1Dto.StockUpdateRequest request
     ) {
-        ProductModel changed = productService.changeStock(productId, request != null ? request.quantity() : null);
+        ProductModel changed = productFacade.changeStock(productId, request != null ? request.quantity() : null);
         return ApiResponse.success(ProductAdminV1Dto.StockResponse.from(changed));
-    }
-
-    private ProductAdminV1Dto.AdminProductResponse detailOf(Long productId) {
-        return ProductAdminV1Dto.AdminProductResponse.from(productService.getProduct(productId));
     }
 }

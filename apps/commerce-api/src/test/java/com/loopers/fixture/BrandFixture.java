@@ -19,7 +19,7 @@ public class BrandFixture {
 
     public BrandModel createDeletedBrand(String name) {
         BrandModel brand = createBrand(name);
-        brand.delete(false);
+        brand.delete();
         return brandJpaRepository.save(brand);
     }
 }

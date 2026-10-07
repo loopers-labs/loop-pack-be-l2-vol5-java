@@ -1,9 +1,9 @@
 package com.loopers.interfaces.api.product;
 
+import com.loopers.application.product.ProductFacade;
 import com.loopers.domain.common.PageCommand;
 import com.loopers.domain.common.PageResult;
 import com.loopers.domain.product.ProductQueryResult;
-import com.loopers.domain.product.ProductService;
 import com.loopers.domain.product.ProductSort;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.PageResponse;
@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/products")
 public class ProductV1Controller implements ProductV1ApiSpec {
 
-    private final ProductService productService;
+    private final ProductFacade productFacade;
 
     @GetMapping
     @Override
@@ -32,7 +32,7 @@ public class ProductV1Controller implements ProductV1ApiSpec {
         @RequestParam(required = false) String sort
     ) {
         PageResult<ProductQueryResult> result =
-            productService.getProducts(brandId, PageCommand.of(page, size), ProductSort.from(sort));
+            productFacade.getProducts(brandId, PageCommand.of(page, size), ProductSort.from(sort));
         return ApiResponse.success(PageResponse.of(result, ProductV1Dto.ProductResponse::from));
     }
 
@@ -42,7 +42,7 @@ public class ProductV1Controller implements ProductV1ApiSpec {
         @CustomerId Long userId,
         @PathVariable Long productId
     ) {
-        ProductQueryResult result = productService.getProduct(productId);
+        ProductQueryResult result = productFacade.getProduct(productId);
         return ApiResponse.success(ProductV1Dto.ProductResponse.from(result));
     }
 }

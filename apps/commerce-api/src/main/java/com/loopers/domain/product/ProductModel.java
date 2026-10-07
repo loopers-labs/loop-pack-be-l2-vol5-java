@@ -8,6 +8,7 @@ import jakarta.persistence.AttributeOverride;
 import jakarta.persistence.Column;
 import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import lombok.Getter;
 
@@ -16,7 +17,7 @@ import lombok.Getter;
  * 외부 객체가 수량을 직접 변경하지 못하게 한다.
  */
 @Entity
-@Table(name = "product")
+@Table(name = "product", indexes = @Index(columnList = "brand_id"))
 @Getter
 public class ProductModel extends BaseEntity {
 

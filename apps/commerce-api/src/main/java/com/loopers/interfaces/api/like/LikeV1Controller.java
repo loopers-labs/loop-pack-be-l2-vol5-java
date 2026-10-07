@@ -1,10 +1,10 @@
 package com.loopers.interfaces.api.like;
 
+import com.loopers.application.like.LikeFacade;
 import com.loopers.domain.common.ListSort;
 import com.loopers.domain.common.PageCommand;
 import com.loopers.domain.common.PageResult;
 import com.loopers.domain.like.LikeModel;
-import com.loopers.domain.like.LikeService;
 import com.loopers.domain.product.ProductQueryResult;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.PageResponse;
@@ -26,7 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class LikeV1Controller implements LikeV1ApiSpec {
 
-    private final LikeService likeService;
+    private final LikeFacade likeFacade;
 
     @PostMapping("/api/v1/products/{productId}/likes")
     @Override
@@ -34,7 +34,7 @@ public class LikeV1Controller implements LikeV1ApiSpec {
         @CustomerId Long userId,
         @PathVariable(value = "productId") Long productId
     ) {
-        LikeModel created = likeService.like(userId, productId);
+        LikeModel created = likeFacade.like(userId, productId);
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(ApiResponse.success(LikeV1Dto.LikeResponse.from(created)));
     }
@@ -45,7 +45,7 @@ public class LikeV1Controller implements LikeV1ApiSpec {
         @CustomerId Long userId,
         @PathVariable(value = "productId") Long productId
     ) {
-        likeService.cancel(userId, productId);
+        likeFacade.cancel(userId, productId);
         return ApiResponse.success();
     }
 
@@ -66,7 +66,7 @@ public class LikeV1Controller implements LikeV1ApiSpec {
         }
 
         PageResult<ProductQueryResult> result =
-            likeService.getMyLikedProducts(userId, PageCommand.of(page, size), ListSort.from(sort));
+            likeFacade.getMyLikedProducts(userId, PageCommand.of(page, size), ListSort.from(sort));
         return ApiResponse.success(PageResponse.of(result, ProductV1Dto.ProductResponse::from));
     }
 }

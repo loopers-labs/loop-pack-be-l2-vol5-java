@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
-@DisplayName("Brand 는 브랜드 정보와 삭제 가능 조건을 책임진다.")
+@DisplayName("Brand 는 브랜드 정보와 자신의 삭제 상태를 책임진다.")
 class BrandModelTest {
 
     @DisplayName("등록")
@@ -83,26 +83,17 @@ class BrandModelTest {
     @DisplayName("삭제")
     @Nested
     class Delete {
-        @DisplayName("연결된 활성 상품이 없으면 삭제한다.")
+        @DisplayName("연결 상품과 무관하게 삭제 시각을 기록한다.")
         @Test
-        void deletesWhenNoActiveProduct() {
+        void recordsDeletedAt() {
             BrandModel brand = BrandModel.create("나이키");
 
-            brand.delete(false);
+            brand.delete();
 
-            assertThat(brand.isDeleted()).isTrue();
-        }
-
-        @DisplayName("삭제되지 않은 상품이 하나라도 있으면 재고와 무관하게 BRAND_HAS_ACTIVE_PRODUCTS 로 거절한다.")
-        @Test
-        void rejectsWhenActiveProductExists() {
-            BrandModel brand = BrandModel.create("나이키");
-
-            assertThatThrownBy(() -> brand.delete(true))
-                .isInstanceOf(CoreException.class)
-                .extracting("errorType")
-                .isEqualTo(ErrorType.BRAND_HAS_ACTIVE_PRODUCTS);
-            assertThat(brand.isDeleted()).isFalse();
+            assertAll(
+                () -> assertThat(brand.isDeleted()).isTrue(),
+                () -> assertThat(brand.getDeletedAt()).isNotNull()
+            );
         }
     }
 }

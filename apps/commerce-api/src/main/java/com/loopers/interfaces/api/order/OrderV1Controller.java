@@ -1,13 +1,13 @@
 package com.loopers.interfaces.api.order;
 
 import com.loopers.application.order.OrderConfirmFacade;
+import com.loopers.application.order.OrderFacade;
 import com.loopers.application.order.OrderInfo;
 import com.loopers.domain.common.ListSort;
 import com.loopers.domain.common.PageCommand;
 import com.loopers.domain.common.PageResult;
 import com.loopers.domain.order.OrderItemCommand;
 import com.loopers.domain.order.OrderModel;
-import com.loopers.domain.order.OrderService;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.PageResponse;
 import com.loopers.interfaces.api.support.CustomerId;
@@ -31,7 +31,7 @@ import java.util.List;
 @RequestMapping("/api/v1/orders")
 public class OrderV1Controller implements OrderV1ApiSpec {
 
-    private final OrderService orderService;
+    private final OrderFacade orderFacade;
     private final OrderConfirmFacade orderConfirmFacade;
 
     @PostMapping
@@ -47,7 +47,7 @@ public class OrderV1Controller implements OrderV1ApiSpec {
         List<OrderItemCommand> commands = request.items().stream()
             .map(OrderV1Controller::toCommand)
             .toList();
-        OrderModel created = orderService.create(userId, commands);
+        OrderModel created = orderFacade.create(userId, commands);
 
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(ApiResponse.success(OrderV1Dto.OrderResponse.from(created)));
@@ -71,7 +71,7 @@ public class OrderV1Controller implements OrderV1ApiSpec {
         @RequestParam(value = "size", required = false) Integer size,
         @RequestParam(value = "sort", required = false) String sort
     ) {
-        PageResult<OrderModel> orders = orderService.getOrders(
+        PageResult<OrderModel> orders = orderFacade.getOrders(
             userId, PageCommand.of(page, size), ListSort.from(sort));
         return ApiResponse.success(PageResponse.of(orders, OrderV1Dto.OrderResponse::from));
     }
@@ -82,7 +82,7 @@ public class OrderV1Controller implements OrderV1ApiSpec {
         @CustomerId Long userId,
         @PathVariable(value = "orderId") Long orderId
     ) {
-        OrderModel order = orderService.getOrder(userId, orderId);
+        OrderModel order = orderFacade.getOrder(userId, orderId);
         return ApiResponse.success(OrderV1Dto.OrderResponse.from(order));
     }
 

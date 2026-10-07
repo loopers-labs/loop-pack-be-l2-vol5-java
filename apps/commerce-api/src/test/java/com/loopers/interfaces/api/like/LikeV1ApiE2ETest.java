@@ -1,6 +1,6 @@
 package com.loopers.interfaces.api.like;
 
-import com.loopers.domain.like.LikeService;
+import com.loopers.application.like.LikeFacade;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.user.UserModel;
 import com.loopers.fixture.ProductFixture;
@@ -47,7 +47,7 @@ class LikeV1ApiE2ETest {
     @Autowired
     private ProductFixture productFixture;
     @Autowired
-    private LikeService likeService;
+    private LikeFacade likeFacade;
     @Autowired
     private LikeJpaRepository likeJpaRepository;
     @Autowired
@@ -96,7 +96,7 @@ class LikeV1ApiE2ETest {
         void rejectsDuplicate() {
             UserModel user = userFixture.createUserWithPoint();
             ProductModel shoes = productFixture.createProduct("운동화", 10_000L, 3L);
-            likeService.like(user.getId(), shoes.getId());
+            likeFacade.like(user.getId(), shoes.getId());
 
             ResponseEntity<ApiResponse<LikeV1Dto.LikeResponse>> response = testRestTemplate.exchange(
                 likesOf(shoes.getId()), HttpMethod.POST, request(String.valueOf(user.getId())), LIKE_TYPE);
@@ -148,7 +148,7 @@ class LikeV1ApiE2ETest {
         void cancelsLike() {
             UserModel user = userFixture.createUserWithPoint();
             ProductModel shoes = productFixture.createProduct("운동화", 10_000L, 3L);
-            likeService.like(user.getId(), shoes.getId());
+            likeFacade.like(user.getId(), shoes.getId());
 
             ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
                 likesOf(shoes.getId()), HttpMethod.DELETE, request(String.valueOf(user.getId())), EMPTY_TYPE);
@@ -181,7 +181,7 @@ class LikeV1ApiE2ETest {
             UserModel owner = userFixture.createUserWithPoint();
             UserModel other = userFixture.createUserWithPoint();
             ProductModel shoes = productFixture.createProduct("운동화", 10_000L, 3L);
-            likeService.like(owner.getId(), shoes.getId());
+            likeFacade.like(owner.getId(), shoes.getId());
 
             ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
                 likesOf(shoes.getId()), HttpMethod.DELETE, request(String.valueOf(other.getId())), EMPTY_TYPE);
@@ -198,7 +198,7 @@ class LikeV1ApiE2ETest {
         void cancelsLikeOfDeletedProduct() {
             UserModel user = userFixture.createUserWithPoint();
             ProductModel shoes = productFixture.createProduct("운동화", 10_000L, 3L);
-            likeService.like(user.getId(), shoes.getId());
+            likeFacade.like(user.getId(), shoes.getId());
             productFixture.deleteProduct(shoes.getId());
 
             ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
@@ -230,9 +230,9 @@ class LikeV1ApiE2ETest {
             ProductModel first = productFixture.createProduct("첫째", 1_000L, 1L);
             ProductModel second = productFixture.createProduct("둘째", 2_000L, 2L);
             ProductModel othersPick = productFixture.createProduct("남의 것", 3_000L, 3L);
-            likeService.like(user.getId(), first.getId());
-            likeService.like(user.getId(), second.getId());
-            likeService.like(other.getId(), othersPick.getId());
+            likeFacade.like(user.getId(), first.getId());
+            likeFacade.like(user.getId(), second.getId());
+            likeFacade.like(other.getId(), othersPick.getId());
 
             ResponseEntity<ApiResponse<PageResponse<ProductV1Dto.ProductResponse>>> response =
                 get(user.getId(), String.valueOf(user.getId()), "");
@@ -251,7 +251,7 @@ class LikeV1ApiE2ETest {
         void includesProductDetails() {
             UserModel user = userFixture.createUserWithPoint();
             ProductModel shoes = productFixture.createProduct("운동화", 89_000L, 7L);
-            likeService.like(user.getId(), shoes.getId());
+            likeFacade.like(user.getId(), shoes.getId());
 
             ResponseEntity<ApiResponse<PageResponse<ProductV1Dto.ProductResponse>>> response =
                 get(user.getId(), String.valueOf(user.getId()), "");
@@ -271,7 +271,7 @@ class LikeV1ApiE2ETest {
             UserModel user = userFixture.createUserWithPoint();
             UserModel other = userFixture.createUserWithPoint();
             ProductModel shoes = productFixture.createProduct("운동화", 10_000L, 3L);
-            likeService.like(other.getId(), shoes.getId());
+            likeFacade.like(other.getId(), shoes.getId());
 
             ResponseEntity<ApiResponse<PageResponse<ProductV1Dto.ProductResponse>>> response =
                 get(other.getId(), String.valueOf(user.getId()), "");
@@ -289,8 +289,8 @@ class LikeV1ApiE2ETest {
             UserModel user = userFixture.createUserWithPoint();
             ProductModel first = productFixture.createProduct("첫째", 1_000L, 1L);
             ProductModel second = productFixture.createProduct("둘째", 2_000L, 2L);
-            likeService.like(user.getId(), first.getId());
-            likeService.like(user.getId(), second.getId());
+            likeFacade.like(user.getId(), first.getId());
+            likeFacade.like(user.getId(), second.getId());
 
             ResponseEntity<ApiResponse<PageResponse<ProductV1Dto.ProductResponse>>> response =
                 get(user.getId(), String.valueOf(user.getId()), "?sort=oldest");
@@ -320,7 +320,7 @@ class LikeV1ApiE2ETest {
             UserModel user = userFixture.createUserWithPoint();
             for (int i = 1; i <= 3; i++) {
                 ProductModel product = productFixture.createProduct("상품" + i, 1_000L * i, 1L);
-                likeService.like(user.getId(), product.getId());
+                likeFacade.like(user.getId(), product.getId());
             }
 
             ResponseEntity<ApiResponse<PageResponse<ProductV1Dto.ProductResponse>>> response =

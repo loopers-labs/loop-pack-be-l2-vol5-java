@@ -1,10 +1,10 @@
 package com.loopers.interfaces.api.order;
 
+import com.loopers.application.order.OrderFacade;
 import com.loopers.domain.common.ListSort;
 import com.loopers.domain.common.PageCommand;
 import com.loopers.domain.common.PageResult;
 import com.loopers.domain.order.OrderModel;
-import com.loopers.domain.order.OrderService;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.PageResponse;
 import lombok.RequiredArgsConstructor;
@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api-admin/v1/orders")
 public class OrderAdminV1Controller implements OrderAdminV1ApiSpec {
 
-    private final OrderService orderService;
+    private final OrderFacade orderFacade;
 
     @GetMapping
     @Override
@@ -31,13 +31,13 @@ public class OrderAdminV1Controller implements OrderAdminV1ApiSpec {
         @RequestParam(value = "size", required = false) Integer size,
         @RequestParam(value = "sort", required = false) String sort
     ) {
-        PageResult<OrderModel> result = orderService.getAllOrders(PageCommand.of(page, size), ListSort.from(sort));
+        PageResult<OrderModel> result = orderFacade.getAllOrders(PageCommand.of(page, size), ListSort.from(sort));
         return ApiResponse.success(PageResponse.of(result, OrderAdminV1Dto.AdminOrderResponse::from));
     }
 
     @GetMapping("/{orderId}")
     @Override
     public ApiResponse<OrderAdminV1Dto.AdminOrderResponse> getOrder(@PathVariable(value = "orderId") Long orderId) {
-        return ApiResponse.success(OrderAdminV1Dto.AdminOrderResponse.from(orderService.getAnyOrder(orderId)));
+        return ApiResponse.success(OrderAdminV1Dto.AdminOrderResponse.from(orderFacade.getAnyOrder(orderId)));
     }
 }

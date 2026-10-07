@@ -1,5 +1,6 @@
 package com.loopers.domain.like;
 
+import com.loopers.application.like.LikeFacade;
 import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.common.ListSort;
 import com.loopers.domain.common.PageCommand;
@@ -21,12 +22,12 @@ import org.springframework.boot.test.context.SpringBootTest;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
-@DisplayName("LikeService 는 자신의 좋아요 목록만 상품 정보와 함께 조회한다.")
+@DisplayName("LikeFacade 는 자신의 좋아요 목록만 상품 정보와 함께 조회한다.")
 @SpringBootTest
 class MyLikedProductsIntegrationTest {
 
     @Autowired
-    private LikeService likeService;
+    private LikeFacade likeFacade;
     @Autowired
     private UserFixture userFixture;
     @Autowired
@@ -42,7 +43,7 @@ class MyLikedProductsIntegrationTest {
     }
 
     private PageResult<ProductQueryResult> myLikes(UserModel user, ListSort sort) {
-        return likeService.getMyLikedProducts(user.getId(), PageCommand.of(null, null), sort);
+        return likeFacade.getMyLikedProducts(user.getId(), PageCommand.of(null, null), sort);
     }
 
     @DisplayName("소유 범위")
@@ -55,8 +56,8 @@ class MyLikedProductsIntegrationTest {
             UserModel other = userFixture.createUserWithPoint();
             ProductModel mine = productFixture.createProduct("내 것", 1_000L, 5L);
             ProductModel theirs = productFixture.createProduct("남의 것", 1_000L, 5L);
-            likeService.like(me.getId(), mine.getId());
-            likeService.like(other.getId(), theirs.getId());
+            likeFacade.like(me.getId(), mine.getId());
+            likeFacade.like(other.getId(), theirs.getId());
 
             PageResult<ProductQueryResult> result = myLikes(me, ListSort.LATEST);
 
@@ -91,8 +92,8 @@ class MyLikedProductsIntegrationTest {
             ProductModel shirt = productFixture.createProduct(brand.getId(), "티셔츠", 19_900L, 5L);
             UserModel me = userFixture.createUserWithPoint();
             UserModel other = userFixture.createUserWithPoint();
-            likeService.like(me.getId(), shirt.getId());
-            likeService.like(other.getId(), shirt.getId());
+            likeFacade.like(me.getId(), shirt.getId());
+            likeFacade.like(other.getId(), shirt.getId());
 
             ProductQueryResult result = myLikes(me, ListSort.LATEST).items().get(0);
 
@@ -110,8 +111,8 @@ class MyLikedProductsIntegrationTest {
             UserModel me = userFixture.createUserWithPoint();
             ProductModel active = productFixture.createProduct("판매 중", 1_000L, 5L);
             ProductModel removed = productFixture.createProduct("단종 예정", 1_000L, 5L);
-            likeService.like(me.getId(), active.getId());
-            likeService.like(me.getId(), removed.getId());
+            likeFacade.like(me.getId(), active.getId());
+            likeFacade.like(me.getId(), removed.getId());
             productFixture.deleteProduct(removed.getId());
 
             PageResult<ProductQueryResult> result = myLikes(me, ListSort.LATEST);
@@ -127,10 +128,10 @@ class MyLikedProductsIntegrationTest {
         void reflectsCancel() {
             UserModel me = userFixture.createUserWithPoint();
             ProductModel shirt = productFixture.createProduct("티셔츠", 1_000L, 5L);
-            likeService.like(me.getId(), shirt.getId());
+            likeFacade.like(me.getId(), shirt.getId());
             assertThat(myLikes(me, ListSort.LATEST).items().get(0).likeCount()).isEqualTo(1L);
 
-            likeService.cancel(me.getId(), shirt.getId());
+            likeFacade.cancel(me.getId(), shirt.getId());
 
             assertThat(myLikes(me, ListSort.LATEST).items()).isEmpty();
         }
@@ -146,9 +147,9 @@ class MyLikedProductsIntegrationTest {
             ProductModel first = productFixture.createProduct("첫번째", 1_000L, 5L);
             ProductModel second = productFixture.createProduct("두번째", 1_000L, 5L);
             ProductModel third = productFixture.createProduct("세번째", 1_000L, 5L);
-            likeService.like(me.getId(), first.getId());
-            likeService.like(me.getId(), second.getId());
-            likeService.like(me.getId(), third.getId());
+            likeFacade.like(me.getId(), first.getId());
+            likeFacade.like(me.getId(), second.getId());
+            likeFacade.like(me.getId(), third.getId());
 
             assertAll(
                 () -> assertThat(myLikes(me, ListSort.LATEST).items()).extracting(ProductQueryResult::id)
@@ -165,11 +166,11 @@ class MyLikedProductsIntegrationTest {
             ProductModel first = productFixture.createProduct("첫번째", 1_000L, 5L);
             ProductModel second = productFixture.createProduct("두번째", 1_000L, 5L);
             productFixture.createProduct("세번째", 1_000L, 5L);
-            likeService.like(me.getId(), first.getId());
-            likeService.like(me.getId(), second.getId());
+            likeFacade.like(me.getId(), first.getId());
+            likeFacade.like(me.getId(), second.getId());
 
             PageResult<ProductQueryResult> result =
-                likeService.getMyLikedProducts(me.getId(), PageCommand.of(0, 1), ListSort.OLDEST);
+                likeFacade.getMyLikedProducts(me.getId(), PageCommand.of(0, 1), ListSort.OLDEST);
 
             assertAll(
                 () -> assertThat(result.items()).extracting(ProductQueryResult::id).containsExactly(first.getId()),

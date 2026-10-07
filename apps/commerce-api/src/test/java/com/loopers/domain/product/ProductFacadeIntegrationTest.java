@@ -1,9 +1,10 @@
 package com.loopers.domain.product;
 
+import com.loopers.application.product.ProductFacade;
 import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.common.PageCommand;
 import com.loopers.domain.common.PageResult;
-import com.loopers.domain.like.LikeService;
+import com.loopers.application.like.LikeFacade;
 import com.loopers.domain.user.UserModel;
 import com.loopers.fixture.BrandFixture;
 import com.loopers.fixture.ProductFixture;
@@ -22,14 +23,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
-@DisplayName("ProductService 는 브랜드명·좋아요 수·현재 재고를 포함한 상품 조회를 담당한다.")
+@DisplayName("ProductFacade 는 브랜드명·좋아요 수·현재 재고를 포함한 상품 조회를 담당한다.")
 @SpringBootTest
-class ProductServiceIntegrationTest {
+class ProductFacadeIntegrationTest {
 
     @Autowired
-    private ProductService productService;
+    private ProductFacade productFacade;
     @Autowired
-    private LikeService likeService;
+    private LikeFacade likeFacade;
     @Autowired
     private BrandFixture brandFixture;
     @Autowired
@@ -45,7 +46,7 @@ class ProductServiceIntegrationTest {
     }
 
     private PageResult<ProductQueryResult> page(Long brandId, ProductSort sort) {
-        return productService.getProducts(brandId, PageCommand.of(null, null), sort);
+        return productFacade.getProducts(brandId, PageCommand.of(null, null), sort);
     }
 
     @DisplayName("상세 조회")
@@ -58,10 +59,10 @@ class ProductServiceIntegrationTest {
             ProductModel shirt = productFixture.createProduct(brand.getId(), "티셔츠", 19_900L, 5L);
             UserModel first = userFixture.createUserWithPoint();
             UserModel second = userFixture.createUserWithPoint();
-            likeService.like(first.getId(), shirt.getId());
-            likeService.like(second.getId(), shirt.getId());
+            likeFacade.like(first.getId(), shirt.getId());
+            likeFacade.like(second.getId(), shirt.getId());
 
-            ProductQueryResult result = productService.getProduct(shirt.getId());
+            ProductQueryResult result = productFacade.getProduct(shirt.getId());
 
             assertAll(
                 () -> assertThat(result.id()).isEqualTo(shirt.getId()),
@@ -79,18 +80,18 @@ class ProductServiceIntegrationTest {
         void returnsZeroLikeCount() {
             ProductModel shirt = productFixture.createProduct("티셔츠", 19_900L, 5L);
 
-            assertThat(productService.getProduct(shirt.getId()).likeCount()).isZero();
+            assertThat(productFacade.getProduct(shirt.getId()).likeCount()).isZero();
         }
 
         @DisplayName("관리자가 재고를 바꾸면 조회 시점의 수량을 반환한다.")
         @Test
         void returnsCurrentStockQuantity() {
             ProductModel shirt = productFixture.createProduct("티셔츠", 19_900L, 5L);
-            assertThat(productService.getProduct(shirt.getId()).stockQuantity()).isEqualTo(5L);
+            assertThat(productFacade.getProduct(shirt.getId()).stockQuantity()).isEqualTo(5L);
 
-            productService.changeStock(shirt.getId(), 2L);
+            productFacade.changeStock(shirt.getId(), 2L);
 
-            assertThat(productService.getProduct(shirt.getId()).stockQuantity()).isEqualTo(2L);
+            assertThat(productFacade.getProduct(shirt.getId()).stockQuantity()).isEqualTo(2L);
         }
 
         @DisplayName("없는 상품과 삭제된 상품은 PRODUCT_NOT_FOUND 로 응답한다.")
@@ -99,10 +100,10 @@ class ProductServiceIntegrationTest {
             ProductModel deleted = productFixture.createDeletedProduct("단종 티셔츠", 19_900L, 5L);
 
             assertAll(
-                () -> assertThatThrownBy(() -> productService.getProduct(999_999L))
+                () -> assertThatThrownBy(() -> productFacade.getProduct(999_999L))
                     .isInstanceOf(CoreException.class)
                     .extracting("errorType").isEqualTo(ErrorType.PRODUCT_NOT_FOUND),
-                () -> assertThatThrownBy(() -> productService.getProduct(deleted.getId()))
+                () -> assertThatThrownBy(() -> productFacade.getProduct(deleted.getId()))
                     .isInstanceOf(CoreException.class)
                     .extracting("errorType").isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
             );
@@ -196,8 +197,8 @@ class ProductServiceIntegrationTest {
             ProductModel noLike2 = productFixture.createProduct("무관심 2", 1_000L, 5L);
             UserModel first = userFixture.createUserWithPoint();
             UserModel second = userFixture.createUserWithPoint();
-            likeService.like(first.getId(), popular.getId());
-            likeService.like(second.getId(), popular.getId());
+            likeFacade.like(first.getId(), popular.getId());
+            likeFacade.like(second.getId(), popular.getId());
 
             assertThat(page(null, ProductSort.LIKES_DESC).items()).extracting(ProductQueryResult::id)
                 .containsExactly(popular.getId(), noLike2.getId(), noLike1.getId());
@@ -211,7 +212,7 @@ class ProductServiceIntegrationTest {
             productFixture.createProduct("세번째", 3_000L, 5L);
 
             PageResult<ProductQueryResult> result =
-                productService.getProducts(null, PageCommand.of(0, 2), ProductSort.PRICE_ASC);
+                productFacade.getProducts(null, PageCommand.of(0, 2), ProductSort.PRICE_ASC);
 
             assertAll(
                 () -> assertThat(result.items()).hasSize(2),
