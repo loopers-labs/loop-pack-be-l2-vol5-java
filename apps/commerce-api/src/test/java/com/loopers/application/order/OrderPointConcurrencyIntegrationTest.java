@@ -14,7 +14,6 @@ import com.loopers.domain.product.ProductRepository;
 import com.loopers.domain.user.User;
 import com.loopers.domain.user.UserRepository;
 import com.loopers.application.point.PointFacade;
-import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import com.loopers.utils.DatabaseCleanUp;
 import jakarta.persistence.EntityManager;
@@ -87,22 +86,23 @@ class OrderPointConcurrencyIntegrationTest {
         ExecutorService workers = Executors.newFixedThreadPool(ORDER_COUNT);
 
         try {
-            List<Future<ConfirmationResult>> attempts = competition.orders().stream()
-                .map(order -> submitConfirmation(workers, order, workersReady, startWorkers))
+            List<ConcurrentRequestResults.Attempt> attempts = competition.orders().stream()
+                .map(order -> new ConcurrentRequestResults.Attempt(
+                    "order:" + order.orderId(),
+                    submitConfirmation(workers, order, workersReady, startWorkers)
+                ))
                 .toList();
 
             assertThat(workersReady.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
             startWorkers.countDown();
 
-            List<ConfirmationResult> results = new ArrayList<>();
-            for (Future<ConfirmationResult> attempt : attempts) {
-                results.add(attempt.get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
-            }
-
-            assertThat(results).containsExactlyInAnyOrder(
-                ConfirmationResult.CONFIRMED,
-                ConfirmationResult.CONFIRMED,
-                ConfirmationResult.INSUFFICIENT_BALANCE
+            List<ConcurrentRequestResults.Result> results = ConcurrentRequestResults.collect(
+                attempts, TIMEOUT_SECONDS
+            );
+            ConcurrentRequestResults.assertExpectedCounts(
+                results, 2L, 1L, ORDER_COUNT,
+                exception -> exception.getErrorType() == ErrorType.CONFLICT
+                    && "포인트 잔액이 부족합니다.".equals(exception.getCustomMessage())
             );
 
             entityManager.clear();
@@ -129,6 +129,12 @@ class OrderPointConcurrencyIntegrationTest {
                     assertThat(item.getQuantity()).isEqualTo(1);
                     assertThat(item.getAmount()).isEqualTo(ORDER_AMOUNT);
                 });
+                ConcurrentRequestResults.Result result = results.stream()
+                    .filter(request -> request.requestId().equals("order:" + orderFixture.orderId()))
+                    .findFirst().orElseThrow();
+                assertThat(savedOrder.getStatus()).as("요청 결과와 주문 상태: %s", result.requestId())
+                    .isEqualTo(result.outcome() == ConcurrentRequestResults.Outcome.SUCCESS
+                        ? OrderStatus.CONFIRMED : OrderStatus.DRAFT);
                 if (savedOrder.getStatus() == OrderStatus.CONFIRMED) {
                     assertThat(savedOrder.getPaymentAmount()).isEqualTo(ORDER_AMOUNT);
                     assertThat(savedOrder.getPaymentResult().name()).isEqualTo("SUCCESS");
@@ -166,8 +172,11 @@ class OrderPointConcurrencyIntegrationTest {
 
             assertThat(workersReady.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
             startWorkers.countDown();
-            chargeAttempt.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-            confirmationAttempt.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            List<ConcurrentRequestResults.Result> results = ConcurrentRequestResults.collect(List.of(
+                new ConcurrentRequestResults.Attempt("point-charge:" + order.userId(), chargeAttempt),
+                new ConcurrentRequestResults.Attempt("order:" + order.orderId(), confirmationAttempt)
+            ), TIMEOUT_SECONDS);
+            ConcurrentRequestResults.assertExpectedCounts(results, 2L, 0L, 2L, exception -> false);
 
             entityManager.clear();
             Point savedPoint = pointRepository.findByUserId(order.userId()).orElseThrow();
@@ -193,19 +202,24 @@ class OrderPointConcurrencyIntegrationTest {
         ExecutorService workers = Executors.newFixedThreadPool(2);
 
         try {
-            Future<SameOrderResult> firstAttempt = submitSameOrderConfirmation(
+            Future<?> firstAttempt = submitConfirmation(
                 workers, order, workersReady, startWorkers
             );
-            Future<SameOrderResult> secondAttempt = submitSameOrderConfirmation(
+            Future<?> secondAttempt = submitConfirmation(
                 workers, order, workersReady, startWorkers
             );
 
             assertThat(workersReady.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
             startWorkers.countDown();
-            assertThat(List.of(
-                firstAttempt.get(TIMEOUT_SECONDS, TimeUnit.SECONDS),
-                secondAttempt.get(TIMEOUT_SECONDS, TimeUnit.SECONDS)
-            )).containsExactlyInAnyOrder(SameOrderResult.CONFIRMED, SameOrderResult.ALREADY_CONFIRMED);
+            List<ConcurrentRequestResults.Result> results = ConcurrentRequestResults.collect(List.of(
+                new ConcurrentRequestResults.Attempt("order:" + order.orderId() + ":first", firstAttempt),
+                new ConcurrentRequestResults.Attempt("order:" + order.orderId() + ":second", secondAttempt)
+            ), TIMEOUT_SECONDS);
+            ConcurrentRequestResults.assertExpectedCounts(
+                results, 1L, 1L, 2L,
+                exception -> exception.getErrorType() == ErrorType.CONFLICT
+                    && "DRAFT 주문만 확정할 수 있습니다.".equals(exception.getCustomMessage())
+            );
 
             entityManager.clear();
             Point savedPoint = pointRepository.findByUserId(order.userId()).orElseThrow();
@@ -234,27 +248,6 @@ class OrderPointConcurrencyIntegrationTest {
             OrderItem.create(product.getId(), product.getName(), product.getPrice(), 1)
         )));
         return new OrderFixture(user.getId(), product.getId(), order.getId());
-    }
-
-    private Future<SameOrderResult> submitSameOrderConfirmation(
-        ExecutorService workers,
-        OrderFixture order,
-        CountDownLatch workersReady,
-        CountDownLatch startWorkers
-    ) {
-        return workers.submit(() -> {
-            awaitStart(workersReady, startWorkers);
-            try {
-                orderFacade.confirm(order.userId(), order.orderId());
-                return SameOrderResult.CONFIRMED;
-            } catch (CoreException exception) {
-                if (exception.getErrorType() == ErrorType.CONFLICT
-                    && "DRAFT 주문만 확정할 수 있습니다.".equals(exception.getCustomMessage())) {
-                    return SameOrderResult.ALREADY_CONFIRMED;
-                }
-                throw exception;
-            }
-        });
     }
 
     private OrderFixture createChargeAndConfirmationFixture() {
@@ -301,41 +294,19 @@ class OrderPointConcurrencyIntegrationTest {
         return new Competition(user.getId(), List.copyOf(orders));
     }
 
-    private Future<ConfirmationResult> submitConfirmation(
+    private Future<?> submitConfirmation(
         ExecutorService workers,
         OrderFixture order,
         CountDownLatch workersReady,
         CountDownLatch startWorkers
     ) {
         return workers.submit(() -> {
-            workersReady.countDown();
-            if (!startWorkers.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-                throw new AssertionError("주문 확정 worker 시작 대기 시간이 초과됐습니다.");
-            }
-            try {
-                orderFacade.confirm(order.userId(), order.orderId());
-                return ConfirmationResult.CONFIRMED;
-            } catch (CoreException exception) {
-                if (exception.getErrorType() == ErrorType.CONFLICT
-                    && "포인트 잔액이 부족합니다.".equals(exception.getCustomMessage())) {
-                    return ConfirmationResult.INSUFFICIENT_BALANCE;
-                }
-                throw exception;
-            }
+            awaitStart(workersReady, startWorkers);
+            return orderFacade.confirm(order.userId(), order.orderId());
         });
     }
 
     private record Competition(Long userId, List<OrderFixture> orders) {}
 
     private record OrderFixture(Long userId, Long productId, Long orderId) {}
-
-    private enum ConfirmationResult {
-        CONFIRMED,
-        INSUFFICIENT_BALANCE
-    }
-
-    private enum SameOrderResult {
-        CONFIRMED,
-        ALREADY_CONFIRMED
-    }
 }

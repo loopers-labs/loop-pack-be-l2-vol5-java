@@ -13,7 +13,6 @@ import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.domain.user.User;
 import com.loopers.domain.user.UserRepository;
-import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import com.loopers.utils.DatabaseCleanUp;
 import jakarta.persistence.EntityManager;
@@ -83,27 +82,23 @@ class OrderInventoryConcurrencyIntegrationTest {
         ExecutorService workers = Executors.newFixedThreadPool(ORDER_COUNT);
 
         try {
-            List<Future<ConfirmationResult>> attempts = competition.orders().stream()
-                .map(order -> submitConfirmation(workers, order, workersReady, startWorkers))
+            List<ConcurrentRequestResults.Attempt> attempts = competition.orders().stream()
+                .map(order -> new ConcurrentRequestResults.Attempt(
+                    "order:" + order.orderId(),
+                    submitConfirmation(workers, order, workersReady, startWorkers)
+                ))
                 .toList();
 
             assertThat(workersReady.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
             startWorkers.countDown();
 
-            List<ConfirmationResult> results = new ArrayList<>();
-            for (Future<ConfirmationResult> attempt : attempts) {
-                results.add(attempt.get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
-            }
-
-            assertThat(results).containsExactlyInAnyOrder(
-                ConfirmationResult.CONFIRMED,
-                ConfirmationResult.CONFIRMED,
-                ConfirmationResult.CONFIRMED,
-                ConfirmationResult.CONFIRMED,
-                ConfirmationResult.CONFIRMED,
-                ConfirmationResult.INSUFFICIENT_STOCK,
-                ConfirmationResult.INSUFFICIENT_STOCK,
-                ConfirmationResult.INSUFFICIENT_STOCK
+            List<ConcurrentRequestResults.Result> results = ConcurrentRequestResults.collect(
+                attempts, TIMEOUT_SECONDS
+            );
+            ConcurrentRequestResults.assertExpectedCounts(
+                results, 5L, 3L, ORDER_COUNT,
+                exception -> exception.getErrorType() == ErrorType.CONFLICT
+                    && "상품이 삭제되었거나 재고가 부족합니다.".equals(exception.getCustomMessage())
             );
 
             entityManager.clear();
@@ -133,6 +128,12 @@ class OrderInventoryConcurrencyIntegrationTest {
             for (OrderFixture order : competition.orders()) {
                 Order persistedOrder = orderRepository.findById(order.orderId()).orElseThrow();
                 Point persistedPoint = pointRepository.findByUserId(order.userId()).orElseThrow();
+                ConcurrentRequestResults.Result result = results.stream()
+                    .filter(request -> request.requestId().equals("order:" + order.orderId()))
+                    .findFirst().orElseThrow();
+                assertThat(persistedOrder.getStatus()).as("요청 결과와 주문 상태: %s", result.requestId())
+                    .isEqualTo(result.outcome() == ConcurrentRequestResults.Outcome.SUCCESS
+                        ? OrderStatus.CONFIRMED : OrderStatus.DRAFT);
                 if (persistedOrder.getStatus() == OrderStatus.CONFIRMED) {
                     assertThat(persistedOrder.getPaymentAmount()).isEqualTo(UNIT_PRICE);
                     assertThat(persistedOrder.getPaymentResult().name()).isEqualTo("SUCCESS");
@@ -175,7 +176,7 @@ class OrderInventoryConcurrencyIntegrationTest {
         return new Competition(product.getId(), List.copyOf(orders));
     }
 
-    private Future<ConfirmationResult> submitConfirmation(
+    private Future<?> submitConfirmation(
         ExecutorService workers,
         OrderFixture order,
         CountDownLatch workersReady,
@@ -184,27 +185,13 @@ class OrderInventoryConcurrencyIntegrationTest {
         return workers.submit(() -> {
             workersReady.countDown();
             if (!startWorkers.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-                throw new AssertionError("Timed out waiting to start concurrent order confirmations");
+                throw new AssertionError("주문 확정 worker 시작 대기 시간이 초과됐습니다.");
             }
-            try {
-                orderFacade.confirm(order.userId(), order.orderId());
-                return ConfirmationResult.CONFIRMED;
-            } catch (CoreException exception) {
-                if (exception.getErrorType() == ErrorType.CONFLICT
-                    && "상품이 삭제되었거나 재고가 부족합니다.".equals(exception.getCustomMessage())) {
-                    return ConfirmationResult.INSUFFICIENT_STOCK;
-                }
-                throw exception;
-            }
+            return orderFacade.confirm(order.userId(), order.orderId());
         });
     }
 
     private record Competition(Long productId, List<OrderFixture> orders) {}
 
     private record OrderFixture(Long userId, Long orderId) {}
-
-    private enum ConfirmationResult {
-        CONFIRMED,
-        INSUFFICIENT_STOCK
-    }
 }
