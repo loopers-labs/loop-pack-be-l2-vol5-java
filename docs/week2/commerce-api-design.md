@@ -257,7 +257,6 @@ classDiagram
 - [관계 표현] Like는 `userId`와 `productId`로 User와 Product를 참조하며 두 객체를 포함하지 않는다. User와 Product는 Like 컬렉션을 보유하지 않는다.
 - [도메인 책임] Like는 사용자와 상품 사이의 좋아요 관계를 표현한다. 좋아요 등록은 관계 생성, 취소는 관계 제거로 처리한다.
 - [도메인 규칙] 좋아요 등록 시 조회한 Product가 존재하고 삭제되지 않았는지 확인한다.
-- [도메인 규칙] 미삭제 Product를 확인한 뒤 삭제와 겹쳐 Like를 저장하는 요청은 성공을 허용한다.
 - [도메인 규칙] User는 삭제된 Product에 남아 있는 자신의 좋아요를 취소할 수 있다. 취소 시 Product의 존재와 활성 여부를 요구하지 않는다.
 - [불변식] 같은 `(userId, productId)`의 Like는 중복으로 존재할 수 없다. DB의 유니크 제약으로 중복 저장을 막는다.
 
@@ -298,7 +297,6 @@ classDiagram
 - [도메인 규칙] Order 생성 시 같은 `productId`의 품목은 수량을 합산해 하나의 OrderItem으로 저장한다.
 - [도메인 규칙] Order 생성 시 재고와 포인트는 차감하지 않는다.
 - [도메인 규칙] 주문 생성 시 상품 조회에서 존재하고 삭제되지 않은 Product와 양수 수량을 확인한다.
-- [도메인 규칙] 미삭제 Product를 확인한 뒤 삭제와 겹쳐 DRAFT를 저장하는 요청은 성공을 허용한다.
 - [도메인 규칙] User는 자신의 DRAFT Order만 확정할 수 있다.
 - [도메인 규칙] Order는 DRAFT 상태를 확인한 뒤 결제액과 결제 결과를 저장하고 CONFIRMED 상태로 변경한다.
 - [도메인 규칙] 주문 확정 시 상품 사용 가능 여부를 다시 검사하고 각 Product의 합산된 총수량으로 재고를 확인한다. 삭제된 상품이 포함되면 확정을 거절한다.
@@ -338,18 +336,32 @@ sequenceDiagram
 
     A->>AAC: 상품 수정 요청
     AAC->>APP: 상품 수정 유스케이스 호출
+    Note over APP,DB: 유스케이스 트랜잭션 시작
     APP->>PR: 수정할 활성 상품 조회
     PR->>DB: 상품 조회
     DB-->>PR: 상품
     PR-->>APP: Product
 
+    APP->>BR: Product의 활성 Brand 공유 잠금 조회
+    BR->>DB: 활성 Brand 잠금 조회
+    DB-->>BR: Brand
+    BR-->>APP: Brand
+    Note over APP,DB: 활성 Brand가 없으면 404로 종료
+
     APP->>P: 상품 정보 변경
-    APP->>PR: 저장
-    PR->>DB: 상품 정보 반영
-    DB-->>PR: 저장 완료
-    PR-->>APP: Product
-    APP-->>AAC: 수정 결과
-    AAC-->>A: 성공 응답
+    APP->>PR: 활성 상품의 이름과 가격 갱신
+    PR->>DB: ID와 미삭제 조건으로 이름·가격 UPDATE
+    DB-->>PR: 갱신 행 수
+    PR-->>APP: 갱신 행 수
+    alt 갱신 행 수 1
+        Note over APP,DB: commit 후 Brand 공유 잠금 해제
+        APP-->>AAC: 수정 결과
+        AAC-->>A: 성공 응답
+    else 갱신 행 수 0
+        Note over APP,DB: rollback 후 Brand 공유 잠금 해제
+        APP-->>AAC: 상품 없음 또는 삭제됨 오류
+        AAC-->>A: 404 응답
+    end
 
     C->>CAC: 상품 상세 조회 요청
     CAC->>APP: 상품 상세 조회 유스케이스 호출
@@ -357,8 +369,8 @@ sequenceDiagram
     PR->>DB: 상품 조회
     DB-->>PR: Product
     PR-->>APP: Product
-    APP->>BR: Brand 조회
-    BR->>DB: Brand 조회
+    APP->>BR: 활성 Brand 조회
+    BR->>DB: 일반 조회 (잠금 없음)
     DB-->>BR: Brand
     BR-->>APP: Brand
     APP->>LR: Product의 Like 수 조회
@@ -383,7 +395,7 @@ sequenceDiagram
 | 브랜드 등록 | `POST` | `/brands` | Body: `name`(공백만 불가, 1~100자) | `201 Created`<br/>생성된 브랜드 정보 | `400 Bad Request`<br/>이름 검증 실패<br/>`409 Conflict`<br/>이미 등록된 이름 |
 | 브랜드 상세 조회 | `GET` | `/brands/{brandId}` | Path: `brandId` | `200 OK`<br/>삭제 상태를 포함한 브랜드 상세 정보 | `404 Not Found`<br/>없는 Brand             |
 | 브랜드 수정 | `PUT` | `/brands/{brandId}` | Path: `brandId`<br/>Body: `name`(공백만 불가, 1~100자) | `200 OK`<br/>수정된 브랜드 정보 | `400 Bad Request`<br/>이름 검증 실패<br/>`404 Not Found`<br/>없거나 삭제된 Brand<br/>`409 Conflict`<br/>이미 등록된 이름 |
-| 브랜드 삭제 | `DELETE` | `/brands/{brandId}` | Path: `brandId` | `200 OK`<br/>Brand와 연결된 활성 Product 논리 삭제 | `404 Not Found`<br/>없거나 삭제된 Brand |
+| 브랜드·연결 상품 일괄 삭제 | `DELETE` | `/brands/{brandId}` | Path: `brandId` | `200 OK`<br/>Brand와 연결된 활성 Product 논리 삭제 | `404 Not Found`<br/>없거나 삭제된 Brand |
 
 ##### 상품·재고
 
@@ -396,21 +408,8 @@ sequenceDiagram
 | 상품 삭제 | `DELETE` | `/products/{productId}` | Path: `productId` | `200 OK`<br/>Product 논리 삭제<br/>재고·기존 Like·주문 정보는 유지 | `404 Not Found`<br/>없거나 이미 삭제된 Product |
 | 상품 재고 변경 | `PUT` | `/products/{productId}/stock` | Path: `productId`<br/>Body: 최종 재고 수량 | `200 OK`<br/>변경된 재고 수량 | `400 Bad Request`<br/>0 미만 재고 수량<br/>`404 Not Found`<br/>없거나 삭제된 Product |
 
-##### 브랜드와 상품의 변경 정책
-
-Brand와 Product의 기존 행 변경은 버전 없이 조건부 갱신한다. 입력 검증과 UPDATE는 해당 Facade의 한 트랜잭션에서 처리하며, UPDATE에 대상 ID와 `deleted_at IS NULL` 조건을 포함한다.
-
-| 기능 | 갱신 컬럼 |
-|---|---|
-| 브랜드 이름 수정 | `name`, `updated_at` |
-| 상품 이름과 가격 수정 | `name`, `price`, `updated_at` |
-| 관리자 재고 설정 | 입력한 최종 수량으로 `stock`, `updated_at` |
-| 상품 단독 삭제 | `deleted_at`, `updated_at` |
-
-- 조회했던 객체 전체를 다시 저장하지 않는다. 상품 수정은 재고를, 재고 설정은 이름과 가격을, 삭제는 기존 상품 정보와 재고를 보존한다.
-- 같은 필드를 동시에 수정하면 마지막으로 반영된 요청의 값이 남는다. 관리자 재고 설정도 주문 차감 뒤에 실행되면 입력한 최종 수량을 적용한다. 오래된 편집의 버전 충돌 검사와 자동 재시도는 사용하지 않는다.
-- 대상이 없거나 삭제돼 UPDATE 조건에 일치하는 행이 없으면 `404`다. 같은 이름, 가격이나 수량을 다시 설정해도 `200`이며, Repository의 갱신 건수는 조건에 일치한 행 수를 기준으로 판정한다. MySQL Connector/J의 `useAffectedRows=false`를 사용해 동일 값 설정을 없는 대상으로 오인하지 않는다.
-- 브랜드 이름의 유일성은 DB 유니크 제약으로 보장하며 이름 중복은 기존 `409`로 처리한다.
+브랜드 이름, 상품 이름·가격이나 재고를 현재와 같은 값으로 설정해도 `200 OK`로 처리한다.
+같은 필드의 수정 요청이 겹치면 마지막으로 반영된 요청의 값이 남는다. 관리자 재고 설정은 입력한 최종 수량을 적용한다.
 
 ##### 주문
 
@@ -442,7 +441,7 @@ Brand와 Product의 기존 행 변경은 버전 없이 조건부 갱신한다. �
 
 | 기능 | Method | Path | 입력 | 성공 | 대표 오류 |
 |---|---|---|---|---|---|
-| 좋아요 등록 | `POST` | `/products/{productId}/likes` | Path: `productId` | `200 OK`<br/>좋아요 상태 보장<br/>미삭제 확인 후 삭제와 겹친 등록 허용 | `404 Not Found`<br/>상품 조회 시 없거나 삭제된 Product |
+| 좋아요 등록 | `POST` | `/products/{productId}/likes` | Path: `productId` | `200 OK`<br/>좋아요 상태 보장<br/>이후 Brand·Product가 삭제돼도 저장된 Like 관계 보존 | `404 Not Found`<br/>없거나 삭제된 Product 또는 Brand |
 | 좋아요 취소 | `DELETE` | `/products/{productId}/likes` | Path: `productId` | `200 OK`<br/>좋아요 취소 상태 보장 | 기능별 대표 오류 없음 |
 | 내 좋아요 목록 조회 | `GET` | `/users/{userId}/likes` | Path: `userId` (`X-USER-ID`와 일치) | `200 OK`<br/>삭제된 Product를 제외한 내 좋아요 상품 목록 | `404 Not Found`<br/>조회할 수 없는 User |
 
@@ -452,7 +451,7 @@ Brand와 Product의 기존 행 변경은 버전 없이 조건부 갱신한다. �
 |---|---|---|---|---|---|
 | 포인트 충전 | `POST` | `/points/charge` | Body: `amount` | `200 OK`<br/>충전 후 잔액 | `400 Bad Request`<br/>누락·잘못된 타입·양의 정수가 아닌 `amount`, 충전 후 잔액 범위 초과 |
 | 내 포인트 잔액 조회 | `GET` | `/points` | - | `200 OK`<br/>저장된 포인트 잔액 | 기능별 대표 오류 없음 |
-| 주문 생성 | `POST` | `/orders` | Body: 주문 품목 | `201 Created`<br/>중복 품목을 합산해 품목, 수량, 단가와 합계를 저장한 `DRAFT` Order 반환<br/>재고와 포인트 미차감<br/>미삭제 확인 후 삭제와 겹친 생성 허용 | `400 Bad Request`<br/>주문 품목 또는 수량 입력 오류<br/>`404 Not Found`<br/>상품 조회 시 없거나 삭제된 Product |
+| 주문 생성 | `POST` | `/orders` | Body: 주문 품목 | `201 Created`<br/>중복 품목을 합산해 품목, 수량, 단가와 합계를 저장한 `DRAFT` Order 반환<br/>재고와 포인트 미차감<br/>이후 Brand·Product가 삭제돼도 저장된 DRAFT 보존 | `400 Bad Request`<br/>주문 품목 또는 수량 입력 오류<br/>`404 Not Found`<br/>상품 조회 시 없거나 삭제된 Product 또는 Brand |
 | 주문 확정 | `POST` | `/orders/{orderId}/confirm` | Path: `orderId` | `200 OK`<br/>재고·포인트 차감, 결제 정보 저장 후 `CONFIRMED` Order | `404 Not Found`<br/>주문이 없거나 타인 소유<br/>`409 Conflict`<br/>DRAFT가 아닌 Order, 상품 사용 불가, 재고 부족 또는 잔액 부족 |
 | 내 주문 목록 조회 | `GET` | `/orders` | - | `200 OK`<br/>내 주문의 품목·수량·금액·상태·결제액 목록 | 기능별 대표 오류 없음 |
 | 내 주문 상세 조회 | `GET` | `/orders/{orderId}` | Path: `orderId` | `200 OK`<br/>내 주문의 품목·수량·금액·상태·결제액 | `404 Not Found`<br/>조회할 수 없는 Order |
@@ -471,7 +470,7 @@ Brand와 Product의 기존 행 변경은 버전 없이 조건부 갱신한다. �
 | 동시 충전 | 잔액 `100`에 서로 다른 요청이 각각 `200`, `300` 충전 | 두 요청 모두 성공, 원자적 증가 결과 잔액 `600` |
 | 충전과 차감의 동시 갱신 | 잔액 `10,000`에서 `2,000` 충전과 `7,000` 주문 차감 동시 실행 | 두 요청 모두 성공, 최종 잔액 `5,000` |
 
-#### 2.4.2 브랜드 일괄 삭제
+#### 2.4.2 브랜드와 연결 상품 일괄 삭제
 
 ##### 일괄 삭제의 핵심 검증
 
@@ -482,8 +481,9 @@ Brand와 Product의 기존 행 변경은 버전 없이 조건부 갱신한다. �
 | 정상 처리와 보존 | 연결 상품 있음(재고 0과 기삭제 상품 포함), 상품 없음, 기삭제 상품만 있음의 각 사례. 다른 Brand와 Product, 기존 Like와 확정 Order도 준비 | `200 OK`, Brand와 연결된 미삭제 Product 전체 삭제, 보존 대상 유지 |
 | 없는 대상 | 없거나 이미 삭제된 Brand 삭제 요청 | `404 Not Found`, Brand와 Product 변경 없음 |
 | 중간 실패 | 미삭제 Product가 있는 Brand를 준비하고 Product UPDATE 후 Brand 갱신 경계에서 예외 발생, 또는 두 UPDATE 후 commit 전에 예외 발생 | 요청 실패, 이번 요청의 삭제 상태와 수정 시각 전체 롤백, 다른 요청의 commit 보존 |
-| 동일 Brand 삭제 경쟁 | 같은 Brand에 두 삭제 요청 실행, 한 요청이 commit | `200` 한 건, 다른 요청은 Brand 갱신 행 수 0으로 `404`, 기존 삭제 시각 유지 |
-| 다른 변경과의 경쟁 | 이름 수정, 상품 수정 또는 재고 변경과 일괄 삭제가 겹침 | 변경이 먼저 commit되면 삭제는 최신 이름, 가격과 재고를 보존. 삭제가 먼저 commit되면 수정과 재고 설정은 `404`, 주문 차감은 `409`로 해당 확정 전체 롤백 |
+| 동일 Brand 삭제 경쟁 | 같은 Brand에 두 삭제 요청 실행, 한 요청이 commit | `200` 한 건, 다른 요청은 배타 잠금 대기 후 활성 Brand 조회 결과가 없어 `404`, 기존 삭제 시각 유지 |
+| 상품 등록과 삭제 경쟁 | 같은 Brand에서 Product 등록과 브랜드 일괄 삭제를 겹쳐 실행 | 등록이 Brand 공유 잠금을 먼저 얻으면 등록 성공 후 삭제가 새 Product까지 삭제. 삭제가 Brand 배타 잠금을 먼저 얻으면 삭제 성공, 등록은 `404`이며 Product를 만들지 않음 |
+| 다른 변경과의 경쟁 | 이름 수정, 상품 수정·삭제, 재고 변경 또는 주문 확정과 일괄 삭제가 겹침 | 변경이 먼저 잠금을 얻으면 해당 처리가 끝난 뒤 삭제가 진행되어 최신 이름, 가격과 재고를 보존. 삭제가 먼저 잠금을 얻으면 변경은 대기 후 각 API의 기존 오류 계약으로 종료 |
 
 수정 요청이 삭제 전에 미삭제 상태를 조회했더라도 UPDATE의 미삭제 조건으로 판정한다. 실패와 경쟁의 최종 상태는 서비스 트랜잭션과 모든 요청이 종료된 뒤 새 DB 조회로 확인한다.
 
@@ -496,7 +496,7 @@ Brand와 Product의 기존 행 변경은 버전 없이 조건부 갱신한다. �
 | 삭제 후 새 사용 | 삭제 commit 후 시작한 새 좋아요와 주문 생성 요청 | `404`, Like와 Order 추가 없음 |
 | 기존 좋아요 취소 | 삭제된 Product에 본인의 기존 Like 존재 | 본인의 취소 허용 |
 | DRAFT 확정 거절 | 삭제 전에 생성했거나 삭제와 겹쳐 생성한 DRAFT의 확정 요청 | `409`, DRAFT, 모든 품목 재고, 포인트와 결제 결과 유지 |
-| 삭제와 겹친 생성과 등록 | 미삭제 Product 확인 후 삭제가 commit되고 DRAFT 또는 Like 저장 | DRAFT는 `201 Created`로 저장하고 재고와 포인트 미차감. Like는 `200 OK`로 관계 저장 |
+| 삭제와 겹친 생성과 등록 | DRAFT 생성 또는 Like 등록과 브랜드 삭제가 경합 | 생성·등록이 Brand 공유 잠금을 먼저 얻으면 작업이 완료된 뒤 삭제 진행. 삭제가 배타 잠금을 먼저 얻으면 생성·등록은 대기 후 `404`; 이미 저장된 DRAFT는 확정 시 `409`, Like 관계는 보존하고 본인 취소 허용 |
 
 #### 2.4.3 상품 단독 삭제
 
@@ -594,8 +594,8 @@ Brand와 Product의 기존 행 변경은 버전 없이 조건부 갱신한다. �
   - 영속성 기술과 객체 관계가 도메인 규칙·모델에 함께 묶인다.
 - [대안 2] 순수 도메인 객체와 Infrastructure JPA 엔티티를 분리하고 Repository 구현체에서 변환한다.
   - 도메인은 ID·상태·규칙에 집중하고, JPA 연관관계와 테이블 표현은 Infrastructure에 한정된다.
-  - 매퍼가 추가되고 도메인 객체가 JPA 관리 대상이 아니므로 변경 후 명시적으로 저장해야 한다.
+  - 매퍼가 추가되고 도메인 객체가 JPA 관리 대상이 아니므로 Repository를 통해 변경을 명시적으로 반영해야 한다.
 
 - [설계 결정] Commerce의 도메인 모델을 JPA 어노테이션과 공통 JPA `BaseEntity`에서 분리한다. Product는 `brandId`를 보유하고, Infrastructure의 `ProductJpaEntity`가 `BrandJpaEntity`와 외래 키 연관관계를 가진다. 주문 품목의 DB 식별자는 `OrderItemJpaEntity`가 소유한다.
 - [이유] 업무 규칙을 JPA 프록시·영속성 컨텍스트의 생명주기와 독립적으로 다루고, 도메인 객체가 영속성 API 없이도 동작하도록 한다. Order는 주문 품목을 Aggregate 내부 모델로 유지하면서 저장 관계를 JPA 엔티티에 한정한다.
-- [결과] Brand·Product·Like·Point·Order·User Repository 구현체의 매퍼가 도메인 객체와 저장 엔티티를 변환한다. 주문 확정처럼 객체를 변경하는 Application 흐름은 저장소에 변경 객체를 명시적으로 저장한다. 기존 Commerce 테이블과 컬럼·제약은 유지한다. Example starter 모델은 이번 분리 범위에 포함하지 않는다.
+- [결과] Brand·Product·Like·Point·Order·User Repository 구현체의 매퍼가 도메인 객체와 저장 엔티티를 변환한다. Application은 Repository의 저장 또는 갱신 계약을 호출해 변경을 명시적으로 반영한다. 주문 확정은 주문 상태, 상품 재고와 포인트 잔액을 조건부 갱신한다. 기존 Commerce 테이블과 컬럼·제약은 유지한다. Example starter 모델은 이번 분리 범위에 포함하지 않는다.
