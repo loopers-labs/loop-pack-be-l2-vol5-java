@@ -7,10 +7,11 @@ import jakarta.persistence.AttributeOverride;
 import jakarta.persistence.Column;
 import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(name = "product")
+@Table(name = "product", indexes = @Index(name = "idx_product_brand_id", columnList = "brand_id"))
 public class ProductModel extends BaseEntity {
 
     // 이름 상한은 Brand와 동일한 원칙(DB 컬럼 크기에 맞춘 명시적 지정)을 따른다.

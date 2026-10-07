@@ -46,12 +46,14 @@ public class ProductService {
     }
 
     /**
-     * 주어진 브랜드를 참조하는 삭제되지 않은 상품이 하나라도 있는지 확인한다.
-     * 재고 수량과 무관하다 — 재고 0인 상품도 "삭제되지 않았다"는 사실만으로 포함된다.
+     * brandId로 고른 미삭제 상품을 전부 삭제한다 — 재고 0인 상품도 포함.
+     * "브랜드가 삭제되면 상품도 내린다"는 이유는 호출자(BrandAdminFacade)만 안다.
+     * 엔티티 delete()를 거쳐 멱등 규칙·@PreUpdate가 그대로 적용되게 하고, bulk UPDATE는 쓰지 않는다
+     * (docs/week3/design.md 3번 섹션). 매니지드 엔티티라 save() 없이 dirty checking으로 반영된다.
      */
-    @Transactional(readOnly = true)
-    public boolean hasActiveProduct(Long brandId) {
-        return productRepository.existsActiveByBrandId(brandId);
+    @Transactional
+    public void deleteAllByBrandId(Long brandId) {
+        productRepository.findAllActiveByBrandIdForUpdate(brandId).forEach(ProductModel::delete);
     }
 
     @Transactional
@@ -62,38 +64,43 @@ public class ProductService {
 
     @Transactional
     public ProductModel updateProduct(Long id, String name, Long price) {
-        ProductModel product = getProduct(id);
+        ProductModel product = getActiveProductForUpdate(id);
         product.update(name, price);
-        return productRepository.save(product);
+        return product;
     }
 
     @Transactional
     public ProductModel changeStock(Long id, int quantity) {
-        ProductModel product = getProduct(id);
+        ProductModel product = getActiveProductForUpdate(id);
         product.changeStock(quantity);
-        return productRepository.save(product);
+        return product;
     }
 
     /**
-     * 주문 확정 시 재고를 상대적으로 차감한다. 비관적 락으로 조회해 동시 확정 간 경합을 막는다
-     * (docs/week2/design.md 5번 섹션). 확정 시점에도 삭제 여부를 다시 확인한다 — 생성 시점엔
-     * 있던 상품이 확정 전에 삭제됐을 수 있다(3번 섹션 "확정 시에도 상품 삭제 여부를 다시 확인한다").
+     * 주문 확정 시 재고를 상대적으로 차감한다. 확정 시점에도 삭제 여부를 다시 확인한다 — 생성 시점엔
+     * 있던 상품이 확정 전에 삭제됐을 수 있다(docs/week2/design.md 3번 섹션).
      */
     @Transactional
     public ProductModel decreaseStock(Long id, int quantity) {
-        // findForUpdate로 이미 영속 상태로 조회했으므로 dirty checking이 커밋 시점에 자동 반영한다.
-        // save()를 다시 호출하면(merge) 락을 다시 획득하는 select가 한 번 더 나가는 걸 관찰해서 뺐다.
-        ProductModel product = productRepository.findForUpdate(id)
-            .filter(p -> p.getDeletedAt() == null)
-            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[id = " + id + "] 상품을 찾을 수 없습니다."));
+        ProductModel product = getActiveProductForUpdate(id);
         product.decreaseStock(quantity);
         return product;
     }
 
     @Transactional
     public void deleteProduct(Long id) {
-        ProductModel product = getProduct(id);
-        product.delete();
-        productRepository.save(product);
+        getActiveProductForUpdate(id).delete();
+    }
+
+    /**
+     * 상품 행을 바꾸는 모든 경로(차감·재고 설정·수정·삭제)가 같은 비관적 락에 참여한다.
+     * 한 경로라도 일반 SELECT로 읽으면, Hibernate가 전체 컬럼을 다시 쓰면서 그 사이 commit된
+     * 주문 차감을 옛 재고로 덮어쓴다 (docs/week3/design.md 6번 섹션).
+     * 이미 영속 상태라 dirty checking으로 반영된다 — save()(merge)를 다시 부르면 락 조회가 한 번 더 나간다.
+     */
+    private ProductModel getActiveProductForUpdate(Long id) {
+        return productRepository.findForUpdate(id)
+            .filter(p -> p.getDeletedAt() == null)
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[id = " + id + "] 상품을 찾을 수 없습니다."));
     }
 }

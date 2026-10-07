@@ -23,7 +23,11 @@ public interface ProductJpaRepository extends JpaRepository<ProductModel, Long> 
     @Query("SELECT p FROM ProductModel p WHERE p.id = :id")
     Optional<ProductModel> findForUpdate(@Param("id") Long id);
 
-    boolean existsByBrandIdAndDeletedAtIsNull(Long brandId);
+    // brand_id 인덱스(ProductModel @Table)를 타야 잠금이 이 브랜드의 행으로 한정된다 — 인덱스가 없으면
+    // InnoDB가 훑은 행 전체(=테이블 전체)를 잠근다.
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM ProductModel p WHERE p.brandId = :brandId AND p.deletedAt IS NULL ORDER BY p.id ASC")
+    List<ProductModel> findAllActiveByBrandIdForUpdate(@Param("brandId") Long brandId);
 
     @Query("SELECT p FROM ProductModel p WHERE p.deletedAt IS NULL "
         + "AND (:brandId IS NULL OR p.brandId = :brandId) "

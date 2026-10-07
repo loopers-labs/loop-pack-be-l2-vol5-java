@@ -203,35 +203,43 @@ class ProductServiceIntegrationTest {
         }
     }
 
-    @DisplayName("브랜드에 삭제되지 않은 상품이 있는지 확인할 때,")
+    @DisplayName("brandId로 고른 상품을 전부 삭제할 때,")
     @Nested
-    class HasActiveProduct {
-        @DisplayName("삭제되지 않은 상품이 있으면, true를 반환한다 — 재고 0이어도 마찬가지다.")
+    class DeleteAllByBrandId {
+        @DisplayName("해당 브랜드의 미삭제 상품은 재고 0인 것까지 모두 삭제되고, 다른 브랜드 상품은 유지된다.")
         @Test
-        void returnsTrue_whenActiveProductExistsEvenWithZeroStock() {
+        void deletesAllActiveProductsOfBrand_includingZeroStock_andKeepsOtherBrands() {
             // arrange
-            productJpaRepository.save(new ProductModel("품절상품", 1000L, 1L, 0));
+            ProductModel inStock = productJpaRepository.save(new ProductModel("재고있음", 1000L, 1L, 10));
+            ProductModel soldOut = productJpaRepository.save(new ProductModel("품절", 1000L, 1L, 0));
+            ProductModel otherBrand = productJpaRepository.save(new ProductModel("다른브랜드", 1000L, 2L, 10));
 
             // act
-            boolean result = productService.hasActiveProduct(1L);
+            productService.deleteAllByBrandId(1L);
 
             // assert
-            assertThat(result).isTrue();
+            assertAll(
+                () -> assertThat(productJpaRepository.findById(inStock.getId()).orElseThrow().getDeletedAt()).isNotNull(),
+                () -> assertThat(productJpaRepository.findById(soldOut.getId()).orElseThrow().getDeletedAt()).isNotNull(),
+                () -> assertThat(productJpaRepository.findById(otherBrand.getId()).orElseThrow().getDeletedAt()).isNull()
+            );
         }
 
-        @DisplayName("상품이 없거나 전부 삭제됐으면, false를 반환한다.")
+        @DisplayName("이미 삭제된 상품의 삭제 시각은 바뀌지 않는다.")
         @Test
-        void returnsFalse_whenNoActiveProductExists() {
+        void keepsOriginalDeletedAt_whenProductWasAlreadyDeleted() {
             // arrange
-            ProductModel deleted = productJpaRepository.save(new ProductModel("단종상품", 1000L, 1L, 0));
-            deleted.delete();
-            productJpaRepository.saveAndFlush(deleted);
+            ProductModel alreadyDeleted = productJpaRepository.save(new ProductModel("단종", 1000L, 1L, 10));
+            alreadyDeleted.delete();
+            productJpaRepository.saveAndFlush(alreadyDeleted);
+            var originalDeletedAt = productJpaRepository.findById(alreadyDeleted.getId()).orElseThrow().getDeletedAt();
 
             // act
-            boolean result = productService.hasActiveProduct(1L);
+            productService.deleteAllByBrandId(1L);
 
             // assert
-            assertThat(result).isFalse();
+            assertThat(productJpaRepository.findById(alreadyDeleted.getId()).orElseThrow().getDeletedAt())
+                .isEqualTo(originalDeletedAt);
         }
     }
 
