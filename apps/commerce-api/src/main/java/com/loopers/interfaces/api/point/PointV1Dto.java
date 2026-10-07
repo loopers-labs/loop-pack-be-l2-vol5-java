@@ -1,0 +1,14 @@
+package com.loopers.interfaces.api.point;
+
+import com.loopers.application.point.PointInfo;
+
+public class PointV1Dto {
+    public record ChargeRequest(Long amount) {
+    }
+
+    public record PointResponse(Long userId, Long balance) {
+        public static PointResponse from(PointInfo info) {
+            return new PointResponse(info.userId(), info.balance());
+        }
+    }
+}
