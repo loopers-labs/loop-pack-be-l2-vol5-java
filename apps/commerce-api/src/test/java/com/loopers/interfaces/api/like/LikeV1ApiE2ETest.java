@@ -153,6 +153,26 @@ class LikeV1ApiE2ETest {
             assertThat(likeJpaRepository.existsByUserIdAndProductId(1L, product.getId())).isFalse();
         }
 
+        @DisplayName("좋아요한 뒤 상품이 삭제됐어도, 자기 좋아요 취소는 200이고 관계가 실제로 삭제된다.")
+        @Test
+        void returns200AndRemovesRelation_whenProductWasDeletedAfterLike() {
+            // arrange
+            ProductModel product = createProduct();
+            String requestUrl = ENDPOINT.apply(product.getId());
+            ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
+            testRestTemplate.exchange(requestUrl, HttpMethod.POST, requestWithUser(1L), responseType);
+            product.delete();
+            productJpaRepository.saveAndFlush(product);
+
+            // act
+            ResponseEntity<ApiResponse<Object>> response =
+                testRestTemplate.exchange(requestUrl, HttpMethod.DELETE, requestWithUser(1L), responseType);
+
+            // assert
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(likeJpaRepository.existsByUserIdAndProductId(1L, product.getId())).isFalse();
+        }
+
         @DisplayName("등록된 적 없는 좋아요를 취소해도, 멱등하게 200을 반환한다.")
         @Test
         void returns200_whenRelationDoesNotExist() {
