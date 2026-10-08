@@ -25,7 +25,7 @@ public interface ProductRepository {
     List<Product> findAllForAdmin(Long brandId, int page, int size);
 
     /**
-     * 브랜드에 삭제되지 않은 상품이 남아 있는지 확인한다. 재고 0인 상품도 포함한다.
+     * 브랜드의 삭제되지 않은 상품을 식별자 오름차순으로 전부 조회한다. 재고 0인 상품도 포함한다.
      */
-    boolean existsActiveByBrandId(Long brandId);
+    List<Product> findAllActiveByBrandId(Long brandId);
 }

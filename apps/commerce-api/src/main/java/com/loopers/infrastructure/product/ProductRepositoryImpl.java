@@ -63,14 +63,12 @@ public class ProductRepositoryImpl implements ProductRepository {
     }
 
     @Override
-    public boolean existsActiveByBrandId(Long brandId) {
-        Integer found = queryFactory
-            .selectOne()
-            .from(product)
+    public List<Product> findAllActiveByBrandId(Long brandId) {
+        return queryFactory
+            .selectFrom(product)
             .where(product.brandId.eq(brandId), product.deletedAt.isNull())
-            .fetchFirst();
-
-        return found != null;
+            .orderBy(product.id.asc())
+            .fetch();
     }
 
     private BooleanExpression brandIdEq(Long brandId) {

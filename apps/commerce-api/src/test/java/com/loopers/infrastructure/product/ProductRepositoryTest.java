@@ -233,4 +233,29 @@ class ProductRepositoryTest {
         }
     }
 
+    @DisplayName("브랜드별 미삭제 상품을 조회할 때, ")
+    @Nested
+    class FindAllActiveByBrandId {
+        @DisplayName("해당 브랜드의 미삭제 상품만 식별자 오름차순으로 조회되고, 삭제된 상품과 다른 브랜드 상품은 제외된다.")
+        @Test
+        void returnsActiveProductsOfBrandOrderedById() {
+            // arrange
+            Product inStock = new Product(1L, "재고 있는 상품", new Price(1000L));
+            inStock.changeStock(5);
+            productRepository.save(inStock);
+            Product outOfStock = productRepository.save(new Product(1L, "품절 상품", new Price(1000L)));
+            Product deleted = new Product(1L, "삭제된 상품", new Price(1000L));
+            deleted.delete();
+            productRepository.save(deleted);
+            productRepository.save(new Product(2L, "다른 브랜드 상품", new Price(1000L)));
+
+            // act
+            List<Product> result = productRepository.findAllActiveByBrandId(1L);
+
+            // assert
+            assertThat(result).extracting(Product::getId)
+                .containsExactly(inStock.getId(), outOfStock.getId());
+        }
+    }
+
 }
