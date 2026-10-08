@@ -4,7 +4,7 @@
 
 목표는 고객 12개·관리자 13개 API와 관련 도메인·저장·권한·동시성·운영 DDL을 끝까지 연결하고 검증하는 것이다. 이 문서는 완료 증거를 추적하며 새 업무 정책을 정하지 않는다. 계약의 상세 기대값은 연결한 원문을 따른다.
 
-**W3 변경 상태:** 브랜드 일괄 삭제 `W3-BRAND-01..08`, 주문 재확정 거절 `W3-RECONFIRM-01..06`, 주문 저장 경계 실패·롤백 `W3-ORDER-TX-01..03`, **갱신 유실 대조군 `W3-LOST-UPDATE-01` 검증을 완료**했다. 최신 전체 검사는 57개 스위트·546개 통과다. 아래 주문 롤백 545개·재확정 541개·브랜드 538개 및 이전 514·513·509개, W2의 506개 통과 기록은 당시 증거로 보존한다. 과제 지정 경쟁 수치의 검증 등 나머지 W3 과제 전체의 완료를 뜻하지 않는다.
+**W3 변경 상태:** 브랜드 일괄 삭제 `W3-BRAND-01..08`, 주문 재확정 거절 `W3-RECONFIRM-01..06`, 주문 저장 경계 실패·롤백 `W3-ORDER-TX-01..03`, 갱신 유실 대조군 `W3-LOST-UPDATE-01`, 재고 8주문 경쟁 `W3-STOCK-RACE-01`, 포인트 3주문 경쟁 `W3-POINT-RACE-01`에 이어 **충전/결제 경쟁 `W3-CHARGE-ORDER-01`의 신규·관련 검증을 완료**했다. 이번 부분 검사는 ArchUnit을 포함한 10개 스위트·50개 통과와 Checkstyle test 위반 0이다. 마지막 전체 검사인 59개 스위트·548개 통과는 이번 충전/결제 테스트 추가 전의 증거다. 과거 547·546·545·541·538·514·513·509개와 W2의 506개 기록도 보존한다. **이번 변경 후 전체 최종 검사와 제출 정리는 사용자 요청으로 보류하며, 기술 글은 사용자가 작성한다.** W3 과제 전체의 제출 완료를 뜻하지 않는다.
 
 갱신 유실 대조군은 [계획·실행 기록](../week3/stock-lost-update-control-plan.md)에 재현 방법과 실제 결과를 남겼다. 테스트 전용 JDBC 경로만 추가했으며 실제 서비스의 잠금·업무 계약은 변경하지 않았다.
 
@@ -74,7 +74,73 @@ W2 초기 구현 증분의 기준선은 [고객 브랜드 조회 application 기
 
 잘못된 결과의 재현을 확인하는 테스트가 통과했으므로 `done`으로 기록했다. 실제 주문 서비스의 잠금·API 계약·스키마는 유지하며, 대조군 통과를 8개 주문 재고 경쟁이나 포인트 경쟁의 증거로 대체하지 않는다.
 
+## W3 재고 8주문 경쟁
+
+`W3-STOCK-RACE-01`은 기존 서비스의 트랜잭션·잠금을 유지한 실제 MySQL 경쟁 테스트다. [OrderStockConcurrencyIntegrationTest](../../apps/commerce-api/src/test/java/com/loopers/application/order/OrderStockConcurrencyIntegrationTest.java)와 [실행 기록](../week3/stock-order-concurrency-tdd-log.md)으로 과거 2개 주문 사례·대조군과 구분한다.
+
+| 범위 | 상태 | 완료 증거 |
+| --- | --- | --- |
+| 결과 집계 | done | 고유 DRAFT 8개·각 수량 1·재고 5·구매자별 충분한 잔액에서 시작만 맞춰 실행. 성공 5·정확한 INSUFFICIENT_STOCK 3·기술/예상 밖 오류 0 |
+| 주문·재고·잔액 정합성 | done | 성공 주문 ID와 DB CONFIRMED ID 일치, 실패 DRAFT 전체 행 보존. 수량식 5−5=0, 사용자별 초기 잔액−성공 결제액=최종 잔액, 결제 합 5,000·잔액 합 15,000 |
+| 보존·정리 | done | 품목 스냅샷·무관한 주문/상품/브랜드/사용자 보존. worker 종료 후 DB 재조회·정리, 미종료 시 정리 차단 |
+| 회귀·정적 검사 | done | 신규 단독 1개·관련 5개 스위트 16개·전체 58개 스위트 547개 통과. 전체 check 종료 코드 0, Checkstyle 11개 보고서 위반 0·ArchUnit 1개 통과 |
+
+잔액 10,000원에 4,000원 주문 3개 경쟁과 지정 충전·결제 동시 실행은 아래 별도 절에서 검증했다. 재고 경쟁의 통과는 모든 DB 대기 순서나 HTTP 동시 요청을 검증했다는 뜻이 아니다.
+
+## W3 포인트 3주문 경쟁
+
+`W3-POINT-RACE-01`의 기대값을 과제 원문·C10·P09/P13과 대조하고 [OrderPointConcurrencyIntegrationTest](../../apps/commerce-api/src/test/java/com/loopers/application/order/OrderPointConcurrencyIntegrationTest.java)를 추가해 실제 서비스·MySQL로 검증했다. 준비·실제 결과는 [실행 기록](../week3/point-order-concurrency-tdd-log.md)에서 구분한다.
+
+| 범위 | 상태 | 완료 증거 |
+| --- | --- | --- |
+| 결과와 주문 상태 | done | 잔액 10,000·4,000원 DRAFT 3개에서 성공 2·정확한 INSUFFICIENT_POINTS 1·기술 오류 0, 성공 ID와 DB 확정 ID 일치·거절 DRAFT 전체 행 보존 |
+| 잔액·재고·무관 데이터 | done | 성공 결제 합 8,000·잔액 2,000, 상품별 성공 수량만 차감·거절 상품 재고 5와 전체 행 유지, 품목 스냅샷·다른 사용자 데이터 보존 |
+| 회귀·정적 검사 | done | 신규 1개·관련 8개 스위트 48개·전체 59개 스위트 548개 통과. 전체 check 종료 코드 0, Checkstyle 11개 보고서 위반 0·ArchUnit 1개 통과 |
+
+## W3 충전과 주문 결제 경쟁
+
+`W3-CHARGE-ORDER-01`은 [PointChargeOrderConcurrencyIntegrationTest](../../apps/commerce-api/src/test/java/com/loopers/application/order/PointChargeOrderConcurrencyIntegrationTest.java)의 실제 충전·주문 서비스와 MySQL 호출로 검증했다. 준비 조건·반환 잔액과 최종 DB 값의 차이·실행 명령은 [실행 기록](../week3/point-charge-order-concurrency-tdd-log.md)을 따른다.
+
+| 범위 | 상태 | 완료 증거·남은 범위 |
+| --- | --- | --- |
+| 지정 수치 경쟁 | done | 충전 2,000·결제 7,000 두 요청 성공, 업무 거절 0·기술 오류 0. 초기 10,000에서 최종 잔액 5,000 |
+| 주문·재고·보존 | done | 같은 주문 ID의 CONFIRMED·결제액 7,000·확정 시각 저장, 두 품목 재고 A=5−2=3/B=4−1=3. 스냅샷·6개 테이블의 허용 변경 외 값·bob 데이터 보존 |
+| 신규·관련 검사 | done | 2026-10-08 21:27 KST 신규 1개, 21:28 KST 관련 10개 스위트·50개 통과(ArchUnit 1개 포함). 실패·오류·건너뜀 0, Checkstyle test 위반 0, 명령 종료 코드 0 |
+| 이번 변경 후 전체 최종 검사·제출 정리 | pending | 사용자 요청으로 보류. 전체 check를 실행하지 않았으며 이전 548개 기록을 새 테스트의 전체 검사 증거로 쓰지 않음. 기술 글은 사용자 작성 담당 |
+
+첫 실행부터 Green이어서 생산 코드·잠금·정책은 바꾸지 않았다. 두 선후 순서를 모두 강제하거나 DB 잠금 대기·HTTP 경쟁까지 관찰했다는 뜻은 아니다.
+
 ## 최신 통합 검사
+
+아래 전체 검사 기록은 충전/결제 증분 이전의 증거다. 이번 증분의 부분 검사 결과와 전체 최종 검사 보류는 바로 위 표에서 구분한다.
+
+### W3 포인트 3주문 경쟁 — 2026-10-08
+
+2026-10-08 21:14 KST, `./gradlew :apps:commerce-api:check --console=plain -q`가 종료 코드 0으로 통과했다.
+
+| 검사 | 실제 결과·범위 |
+| --- | --- |
+| 관련 테스트 | 21:08 KST 신규 1개·21:09 KST 관련 8개 스위트 48개 통과, 각 Checkstyle test 통과 |
+| 전체 API 모듈 테스트 XML | **59개 스위트·548개 통과**, 실패·오류·건너뜀 0. 기존 547개 대비 포인트 경쟁 1개 증가 |
+| Checkstyle·ArchUnit | Checkstyle XML 11개 보고서 위반 0, ArchitectureTest 1개 통과. 기존 규칙 유지 |
+| 완료 범위 | W3-POINT-RACE-01: 확정 2·포인트 부족 1·기술 오류 0·잔액 2,000, 결제 합 8,000·거절 주문/상품 전체 행 보존. 실제 서비스·락·정책·스키마 변경 없음 |
+| 검증 한계 | 첫 실행부터 Green. 독립 브랜드·상품의 3개 주문을 실제 서비스로 시작만 맞춘 검증이며 사용자 잠금 제거 비교·모든 대기 순서·HTTP 경쟁을 재현한 것은 아님 |
+
+[포인트 경쟁 실행 기록](../week3/point-order-concurrency-tdd-log.md#실행-기록)에 준비 조건·기대값·실제 결과를 구분했다. 이후 충전·결제 경쟁의 관련 검사는 별도 증분으로 완료했으며, 그 변경 후 전체 검사는 보류했다.
+
+### W3 재고 8주문 경쟁 — 2026-10-08
+
+2026-10-08 20:58 KST, `./gradlew :apps:commerce-api:check --console=plain -q`가 종료 코드 0으로 통과했다.
+
+| 검사 | 실제 결과·범위 |
+| --- | --- |
+| 관련 테스트 | 20:55 KST 신규 1개·20:56 KST 관련 5개 스위트 16개 통과, 각 Checkstyle test 통과 |
+| 전체 API 모듈 테스트 XML | **58개 스위트·547개 통과**, 실패·오류·건너뜀 0. 기존 546개 대비 재고 경쟁 1개 증가 |
+| Checkstyle·ArchUnit | Checkstyle XML 11개 보고서 위반 0, ArchitectureTest 1개 통과. 기존 규칙 유지 |
+| 완료 범위 | W3-STOCK-RACE-01: 확정 5·재고 부족 3·기술 오류 0·재고 0, 주문별 상태와 구매자별 결제 정합성. 실제 서비스·락·정책·스키마 변경 없음 |
+| 검증 한계 | 첫 실행부터 Green. 서비스 호출의 시작만 맞춘 고객 2명·주문 8개 검증이며 HTTP 경쟁·상품 잠금만의 효과·모든 실행 순서를 재현한 것은 아님 |
+
+[재고 경쟁 실행 기록](../week3/stock-order-concurrency-tdd-log.md#실행-기록)에 준비값·보존식·대기/정리와 실제 명령을 남겼다. 이후 포인트 3개 주문 경쟁은 별도 증분으로 검증했다.
 
 ### W3 갱신 유실 대조군 — 2026-10-08
 
@@ -292,7 +358,7 @@ P00~P16의 확정 내용을 따른다. P15는 사용자의 과제 피드백 수�
 | API-20 | 관리자 주문 상세·필터와 고객 조회의 범위 차이 | done | [주문 기록](commerce-tdd-order-log.md) |
 | API-21 | 고객 fixture·관리자 Security 권한 우선·CSRF·상태 보존 | done | [Security 보완](commerce-admin-security-log.md) · [브랜드 HTTP 기록](commerce-tdd-admin-brand-http-log.md) · [포인트·좋아요 기록](commerce-tdd-point-like-log.md) · [주문 기록](commerce-tdd-order-log.md) |
 | API-22 | 단가×수량·소계 합의 금액 범위 초과와 저장 방지 | done | [주문 기록](commerce-tdd-order-log.md) |
-| API-23 | 같은 주문·재고·잔액 경쟁, 충전/재고 설정과 확정 경합 | 기존 범위 done / P16 done | [W2 주문 기록](commerce-tdd-order-log.md)의 기존 경쟁과 OrderConcurrencyIntegrationTest의 [같은 주문 성공1·재확정 거절1](../week3/order-reconfirmation-tdd-log.md). W3 지정8주문·3주문 및 갱신 유실 대조군의 완료 증거는 아님 |
+| API-23 | 같은 주문·재고·잔액 경쟁, 충전/재고 설정과 확정 경합 | 기능·관련 검증 done / 이번 변경 후 전체 검사 보류 | [W2 주문 기록](commerce-tdd-order-log.md)·[재확정](../week3/order-reconfirmation-tdd-log.md)과 별도로 [재고 8주문](../week3/stock-order-concurrency-tdd-log.md)의 5성공·3품절·재고0, [포인트 3주문](../week3/point-order-concurrency-tdd-log.md)의 2성공·1잔액부족·잔액2,000·거절상품보존, [충전/결제](../week3/point-charge-order-concurrency-tdd-log.md)의 두 요청 성공·잔액5,000 검증. [대조군](../week3/stock-lost-update-control-plan.md)은 원인 재현의 별도 증거 |
 | API-24 | W2 브랜드 삭제/상품 등록, 상품 삭제/주문 확정 경합 → W3 일괄 삭제 관련 경합 | W2 done / W3 done | [W2 브랜드 HTTP 기록](commerce-tdd-admin-brand-http-log.md) · [주문 기록](commerce-tdd-order-log.md)은 기존 증거. W3-BRAND-07·08의 순차 선후 결과와 시작만 맞춘 경합은 [후속 검증 기록](../week3/brand-removal-tdd-log.md#네-번째-증분--w3-brand-0408-연결동시성-검증) 참조 |
 
 ## 통합·운영·최종 회귀 완료 증거
