@@ -82,14 +82,17 @@ public class Product {
     }
 
     public void changeStockTo(long quantity) {
+        validateActive();
         this.stock = new StockQuantity(quantity);
     }
 
     public void decreaseStock(int quantity) {
+        validateActive();
         this.stock = stock.decrease(quantity);
     }
 
     public void updateDetails(String name, long price) {
+        validateActive();
         String validatedName = validateName(name);
         long validatedPrice = validatePrice(price);
         this.name = validatedName;
@@ -99,6 +102,12 @@ public class Product {
     public void delete() {
         if (deletedAt == null) {
             deletedAt = ZonedDateTime.now();
+        }
+    }
+
+    private void validateActive() {
+        if (deletedAt != null) {
+            throw new CoreException(ErrorType.NOT_FOUND, "상품을 찾을 수 없습니다.");
         }
     }
 

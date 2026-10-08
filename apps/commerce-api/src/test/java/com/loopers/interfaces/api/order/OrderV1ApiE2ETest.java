@@ -32,6 +32,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -74,6 +75,92 @@ class OrderV1ApiE2ETest {
         assertThat(saved.getStatus().name()).isEqualTo("DRAFT");
         assertThat(saved.getTotalAmount()).isEqualTo(200L);
         assertThat(products.findById(product.getId()).orElseThrow().getStock().amount()).isZero();
+    }
+
+    @Test
+    void rejectsDuplicateQuantityOverflowWithoutSavingAnOrderOrChangingExistingData() {
+        User user = saveUser();
+        Brand brand = brands.save(Brand.create("Nike"));
+        Product product = Product.create(brand.getId(), "Air Max", 100L);
+        product.changeStockTo(5L);
+        product = products.save(product);
+        Long productId = product.getId();
+        points.save(Point.create(user.getId(), new com.loopers.domain.point.PointBalance(1_000L)));
+        Order existingOrder = orders.save(Order.create(user.getId(), List.of(
+            OrderItem.create(product.getId(), product.getName(), product.getPrice(), 1)
+        )));
+        OrderV1Dto.CreateRequest request = new OrderV1Dto.CreateRequest(List.of(
+            new com.loopers.application.order.OrderFacade.OrderRequestItem(product.getId(), Integer.MAX_VALUE),
+            new com.loopers.application.order.OrderFacade.OrderRequestItem(product.getId(), Integer.MAX_VALUE),
+            new com.loopers.application.order.OrderFacade.OrderRequestItem(product.getId(), 3)
+        ));
+
+        ResponseEntity<ApiResponse<Object>> response = rest.exchange(
+            "/api/v1/orders", org.springframework.http.HttpMethod.POST,
+            new HttpEntity<>(request, headers(user.getId().toString())), new ParameterizedTypeReference<>() {}
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().meta().message()).contains("합산 주문 수량");
+        assertThat(orders.findAll()).extracting(Order::getId).containsExactly(existingOrder.getId());
+        Order savedOrder = orders.findById(existingOrder.getId()).orElseThrow();
+        assertThat(savedOrder.getStatus().name()).isEqualTo("DRAFT");
+        assertThat(savedOrder.getTotalAmount()).isEqualTo(100L);
+        assertThat(savedOrder.getPaymentAmount()).isNull();
+        assertThat(savedOrder.getPaymentResult()).isNull();
+        assertThat(savedOrder.getItems()).singleElement().satisfies(item -> {
+            assertThat(item.getProductId()).isEqualTo(productId);
+            assertThat(item.getQuantity()).isEqualTo(1);
+            assertThat(item.getUnitPrice()).isEqualTo(100L);
+        });
+        assertThat(products.findById(product.getId()).orElseThrow().getStock().amount()).isEqualTo(5L);
+        assertThat(points.findByUserId(user.getId()).orElseThrow().getBalance().amount()).isEqualTo(1_000L);
+    }
+
+    @Test
+    void rejectsOrderTotalOverflowWithoutSavingAnOrderOrChangingExistingData() {
+        User user = saveUser();
+        Brand brand = brands.save(Brand.create("Nike"));
+        points.save(Point.create(user.getId(), new com.loopers.domain.point.PointBalance(1_000L)));
+        List<Product> preparedProducts = new ArrayList<>();
+        List<com.loopers.application.order.OrderFacade.OrderRequestItem> requestItems = new ArrayList<>();
+        for (int index = 0; index < 43; index++) {
+            Product product = Product.create(brand.getId(), "Product " + index, 100_000_000L);
+            product.changeStockTo(5L);
+            product = products.save(product);
+            preparedProducts.add(product);
+            requestItems.add(new com.loopers.application.order.OrderFacade.OrderRequestItem(
+                product.getId(), Integer.MAX_VALUE
+            ));
+        }
+        Product firstProduct = preparedProducts.getFirst();
+        Order existingOrder = orders.save(Order.create(user.getId(), List.of(
+            OrderItem.create(firstProduct.getId(), firstProduct.getName(), firstProduct.getPrice(), 1)
+        )));
+
+        ResponseEntity<ApiResponse<Object>> response = rest.exchange(
+            "/api/v1/orders", org.springframework.http.HttpMethod.POST,
+            new HttpEntity<>(new OrderV1Dto.CreateRequest(requestItems), headers(user.getId().toString())),
+            new ParameterizedTypeReference<>() {}
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().meta().message()).contains("주문 총액");
+        assertThat(orders.findAll()).extracting(Order::getId).containsExactly(existingOrder.getId());
+        Order savedOrder = orders.findById(existingOrder.getId()).orElseThrow();
+        assertThat(savedOrder.getStatus().name()).isEqualTo("DRAFT");
+        assertThat(savedOrder.getTotalAmount()).isEqualTo(100_000_000L);
+        assertThat(savedOrder.getPaymentAmount()).isNull();
+        assertThat(savedOrder.getPaymentResult()).isNull();
+        assertThat(savedOrder.getItems()).singleElement().satisfies(item -> {
+            assertThat(item.getProductId()).isEqualTo(firstProduct.getId());
+            assertThat(item.getQuantity()).isEqualTo(1);
+            assertThat(item.getUnitPrice()).isEqualTo(100_000_000L);
+        });
+        assertThat(preparedProducts).allSatisfy(product ->
+            assertThat(products.findById(product.getId()).orElseThrow().getStock().amount()).isEqualTo(5L)
+        );
+        assertThat(points.findByUserId(user.getId()).orElseThrow().getBalance().amount()).isEqualTo(1_000L);
     }
 
     @Test
@@ -185,11 +272,21 @@ class OrderV1ApiE2ETest {
             "/api/v1/points", org.springframework.http.HttpMethod.GET,
             new HttpEntity<>(headers), new ParameterizedTypeReference<>() {}
         );
+        Order confirmedOrder = orders.findById(orderId).orElseThrow();
 
         assertThat(chargeResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(createResponse.getBody().data().status()).isEqualTo("DRAFT");
         assertThat(confirmResponse.getBody().data().status()).isEqualTo("CONFIRMED");
         assertThat(confirmResponse.getBody().data().paymentAmount()).isEqualTo(7_000L);
+        assertThat(confirmedOrder.getStatus().name()).isEqualTo("CONFIRMED");
+        assertThat(confirmedOrder.getTotalAmount()).isEqualTo(7_000L);
+        assertThat(confirmedOrder.getPaymentAmount()).isEqualTo(7_000L);
+        assertThat(confirmedOrder.getPaymentResult().name()).isEqualTo("SUCCESS");
+        assertThat(confirmedOrder.getItems()).extracting(OrderItem::getProductId)
+            .containsExactly(airMax.getId(), pegasus.getId());
+        assertThat(confirmedOrder.getItems()).extracting(OrderItem::getQuantity).containsExactly(2, 3);
+        assertThat(confirmedOrder.getItems()).extracting(OrderItem::getUnitPrice)
+            .containsExactly(2_000L, 1_000L);
         assertThat(orderListResponse.getBody().data()).extracting(OrderV1Dto.OrderResponse::id)
             .containsExactly(orderId);
         assertThat(balanceResponse.getBody().data().balance()).isEqualTo(3_000L);
@@ -233,7 +330,7 @@ class OrderV1ApiE2ETest {
         User confirmedOrderUser = saveUser();
         Order draft = orders.save(Order.create(draftOrderUser.getId(), List.of(OrderItem.create(1L, "Air Max", 100L, 1))));
         Order confirmed = Order.create(confirmedOrderUser.getId(), List.of(OrderItem.create(2L, "Pegasus", 200L, 1)));
-        confirmed.confirm(200L);
+        confirmed.confirm();
         confirmed = orders.save(confirmed);
 
         ResponseEntity<ApiResponse<List<OrderV1Dto.OrderResponse>>> listResponse = adminClient.exchange(

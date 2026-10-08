@@ -6,6 +6,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.time.ZonedDateTime;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -114,6 +116,57 @@ class ProductTest {
                 () -> assertThat(product.getStock().amount()).isEqualTo(5L)
             );
         }
+
+        @DisplayName("삭제된 상품이면 NOT_FOUND 예외가 발생하고 기존 재고와 삭제 시각을 유지한다.")
+        @Test
+        void keepsStock_whenProductIsDeleted() {
+            Product product = Product.create(42L, "Air Max", 100_000L);
+            product.changeStockTo(5L);
+            product.delete();
+            ZonedDateTime deletedAt = product.getDeletedAt();
+
+            CoreException result = assertThrows(CoreException.class, () -> product.changeStockTo(10L));
+
+            assertAll(
+                () -> assertThat(result.getErrorType()).isEqualTo(ErrorType.NOT_FOUND),
+                () -> assertThat(result.getMessage()).isEqualTo("상품을 찾을 수 없습니다."),
+                () -> assertThat(product.getStock().amount()).isEqualTo(5L),
+                () -> assertThat(product.getDeletedAt()).isEqualTo(deletedAt)
+            );
+        }
+    }
+
+    @DisplayName("Product 재고를 차감할 때,")
+    @Nested
+    class DecreaseStock {
+        @DisplayName("활성 상품에 재고가 충분하면 주문 수량만큼 차감한다.")
+        @Test
+        void decreasesStock_whenProductIsActiveAndStockIsEnough() {
+            Product product = Product.create(42L, "Air Max", 100_000L);
+            product.changeStockTo(5L);
+
+            product.decreaseStock(2);
+
+            assertThat(product.getStock().amount()).isEqualTo(3L);
+        }
+
+        @DisplayName("삭제된 상품이면 NOT_FOUND 예외가 발생하고 기존 재고와 삭제 시각을 유지한다.")
+        @Test
+        void keepsStock_whenProductIsDeleted() {
+            Product product = Product.create(42L, "Air Max", 100_000L);
+            product.changeStockTo(5L);
+            product.delete();
+            ZonedDateTime deletedAt = product.getDeletedAt();
+
+            CoreException result = assertThrows(CoreException.class, () -> product.decreaseStock(2));
+
+            assertAll(
+                () -> assertThat(result.getErrorType()).isEqualTo(ErrorType.NOT_FOUND),
+                () -> assertThat(result.getMessage()).isEqualTo("상품을 찾을 수 없습니다."),
+                () -> assertThat(product.getStock().amount()).isEqualTo(5L),
+                () -> assertThat(product.getDeletedAt()).isEqualTo(deletedAt)
+            );
+        }
     }
 
     @DisplayName("Product 정보를 수정할 때,")
@@ -151,6 +204,25 @@ class ProductTest {
                 () -> assertThat(result.getErrorType()).isEqualTo(ErrorType.BAD_REQUEST),
                 () -> assertThat(product.getName()).isEqualTo("Air Max"),
                 () -> assertThat(product.getPrice()).isEqualTo(100_000L)
+            );
+        }
+
+        @DisplayName("삭제된 상품이면 NOT_FOUND 예외가 발생하고 기존 정보와 삭제 시각을 유지한다.")
+        @Test
+        void keepsDetails_whenProductIsDeleted() {
+            Product product = Product.create(42L, "Air Max", 100_000L);
+            product.delete();
+            ZonedDateTime deletedAt = product.getDeletedAt();
+
+            CoreException result = assertThrows(CoreException.class,
+                () -> product.updateDetails("Air Force", 120_000L));
+
+            assertAll(
+                () -> assertThat(result.getErrorType()).isEqualTo(ErrorType.NOT_FOUND),
+                () -> assertThat(result.getMessage()).isEqualTo("상품을 찾을 수 없습니다."),
+                () -> assertThat(product.getName()).isEqualTo("Air Max"),
+                () -> assertThat(product.getPrice()).isEqualTo(100_000L),
+                () -> assertThat(product.getDeletedAt()).isEqualTo(deletedAt)
             );
         }
     }

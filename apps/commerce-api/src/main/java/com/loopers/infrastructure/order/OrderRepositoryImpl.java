@@ -1,10 +1,13 @@
 package com.loopers.infrastructure.order;
 
 import com.loopers.domain.order.Order;
+import com.loopers.domain.order.OrderStatus;
+import com.loopers.domain.order.PaymentResult;
 import com.loopers.domain.order.OrderRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.time.ZonedDateTime;
 import java.util.Optional;
 import java.util.List;
 
@@ -24,6 +27,19 @@ public class OrderRepositoryImpl implements OrderRepository {
             OrderJpaMapper.update(order, entity);
         }
         return OrderJpaMapper.toDomain(orderJpaRepository.save(entity));
+    }
+
+    @Override
+    public int confirmIfDraft(Long orderId, Long userId, long paymentAmount, ZonedDateTime confirmedAt) {
+        return orderJpaRepository.confirmIfDraft(
+            orderId,
+            userId,
+            paymentAmount,
+            OrderStatus.DRAFT,
+            OrderStatus.CONFIRMED,
+            PaymentResult.SUCCESS,
+            confirmedAt
+        );
     }
 
     @Override

@@ -12,22 +12,12 @@ class BrandDeletionPolicyTest {
     private final BrandDeletionPolicy policy = new BrandDeletionPolicy();
 
     @Test
-    void deletesBrandWhenNoActiveProductExists() {
+    void deletesBrandWithoutLoadingItsProducts() {
         Brand brand = Brand.create("Nike");
 
-        policy.delete(brand, false);
+        policy.delete(brand);
 
         assertThat(brand.getDeletedAt()).isNotNull();
-    }
-
-    @Test
-    void keepsBrandWhenActiveProductExists() {
-        Brand brand = Brand.create("Nike");
-
-        CoreException exception = assertThrows(CoreException.class, () -> policy.delete(brand, true));
-
-        assertThat(exception.getErrorType()).isEqualTo(ErrorType.CONFLICT);
-        assertThat(brand.getDeletedAt()).isNull();
     }
 
     @Test
@@ -35,7 +25,7 @@ class BrandDeletionPolicyTest {
         Brand brand = Brand.create("Nike");
         brand.delete();
 
-        CoreException exception = assertThrows(CoreException.class, () -> policy.delete(brand, false));
+        CoreException exception = assertThrows(CoreException.class, () -> policy.delete(brand));
 
         assertThat(exception.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
     }

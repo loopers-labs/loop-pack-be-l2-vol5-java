@@ -3,24 +3,20 @@ package com.loopers.domain.order;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 
-public class OrderItem {
+public record OrderItem(Long productId, String productName, long unitPrice, int quantity) {
 
-    private Long productId;
-
-    private String productName;
-
-    private long unitPrice;
-
-    private int quantity;
-
-    private OrderItem(Long productId, String productName, long unitPrice, int quantity) {
+    public OrderItem {
         if (quantity <= 0) {
             throw new CoreException(ErrorType.BAD_REQUEST, "주문 수량은 양수여야 합니다.");
         }
-        this.productId = productId;
-        this.productName = productName;
-        this.unitPrice = unitPrice;
-        this.quantity = quantity;
+        if (unitPrice <= 0) {
+            throw new CoreException(ErrorType.BAD_REQUEST, "주문 단가는 1원 이상이어야 합니다.");
+        }
+        try {
+            Math.multiplyExact(unitPrice, quantity);
+        } catch (ArithmeticException exception) {
+            throw new CoreException(ErrorType.BAD_REQUEST, "주문 품목 금액이 저장 가능한 범위를 초과했습니다.");
+        }
     }
 
     public static OrderItem create(Long productId, String productName, long unitPrice, int quantity) {
@@ -33,10 +29,14 @@ public class OrderItem {
     public int getQuantity() { return quantity; }
     public long getAmount() { return unitPrice * quantity; }
 
-    void addQuantity(int additionalQuantity) {
+    OrderItem addQuantity(int additionalQuantity) {
         if (additionalQuantity <= 0) {
             throw new CoreException(ErrorType.BAD_REQUEST, "주문 수량은 양수여야 합니다.");
         }
-        quantity += additionalQuantity;
+        try {
+            return create(productId, productName, unitPrice, Math.addExact(quantity, additionalQuantity));
+        } catch (ArithmeticException exception) {
+            throw new CoreException(ErrorType.BAD_REQUEST, "합산 주문 수량이 저장 가능한 범위를 초과했습니다.");
+        }
     }
 }
