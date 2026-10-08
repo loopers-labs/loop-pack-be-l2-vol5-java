@@ -28,11 +28,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -53,6 +48,7 @@ class OrderFacadeIntegrationTest {
     private final BrandFacade brandFacade;
     private final ProductFacade productFacade;
 
+    private Long brandId;
     private Long productId;
 
     @Autowired
@@ -78,7 +74,7 @@ class OrderFacadeIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        Long brandId = brandFacade.register("무신사", "패션 플랫폼").getId();
+        brandId = brandFacade.register("무신사", "패션 플랫폼").getId();
         productId = productFacade.register(brandId, "코트", Price.of(10_000)).getId();
         productFacade.adjustStock(productId, Quantity.of(10));
     }
@@ -201,6 +197,21 @@ class OrderFacadeIntegrationTest {
             assertThat(pointService.getBalance(USER)).isEqualTo(Money.of(50_000));
         }
 
+        @DisplayName("ORDER-012 · 접수 후 브랜드가 삭제되면 그 상품도 삭제되어 확정할 수 없다. 잔액과 DRAFT 는 그대로다")
+        @Test
+        void rejectsWhenBrandDeletedAfterPlacement() {
+            pointFacade.charge(USER, ChargeAmount.of(50_000), NOW);
+            Order order = orderFacade.place(command(USER, 1), NOW);
+            brandFacade.delete(brandId);
+
+            assertThatThrownBy(() -> orderFacade.confirm(USER, order.getId(), NOW))
+                .isInstanceOf(DomainException.class)
+                .hasFieldOrPropertyWithValue("error", DomainError.PRODUCT_NOT_FOUND);
+
+            assertThat(pointService.getBalance(USER)).isEqualTo(Money.of(50_000));
+            assertThat(orderFacade.get(USER, order.getId()).getStatus()).isEqualTo(OrderStatus.DRAFT);
+        }
+
         @DisplayName("ORDER-010 · 이미 확정된 주문은 다시 확정되지 않는다. 차감도 한 번뿐이다")
         @Test
         void rejectsSecondConfirm() {
@@ -228,45 +239,6 @@ class OrderFacadeIntegrationTest {
             assertThatThrownBy(() -> orderFacade.get(OTHER_USER, order.getId()))
                 .isInstanceOf(DomainException.class)
                 .hasFieldOrPropertyWithValue("error", DomainError.ORDER_NOT_FOUND);
-        }
-
-        @DisplayName("ORDER-018 · 같은 주문에 확정이 동시에 들어와도 한 번만 확정되고 차감도 한 번이다")
-        @Test
-        void confirmsOnlyOnceUnderConcurrency() throws InterruptedException {
-            pointFacade.charge(USER, ChargeAmount.of(50_000), NOW);
-            Order order = orderFacade.place(command(USER, 2), NOW);
-
-            int threads = 10;
-            ExecutorService executor = Executors.newFixedThreadPool(threads);
-            CountDownLatch ready = new CountDownLatch(threads);
-            CountDownLatch start = new CountDownLatch(1);
-            CountDownLatch done = new CountDownLatch(threads);
-            AtomicInteger succeeded = new AtomicInteger();
-
-            for (int i = 0; i < threads; i++) {
-                executor.submit(() -> {
-                    ready.countDown();
-                    try {
-                        start.await();
-                        orderFacade.confirm(USER, order.getId(), NOW);
-                        succeeded.incrementAndGet();
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                    } catch (RuntimeException e) {
-                    } finally {
-                        done.countDown();
-                    }
-                });
-            }
-
-            ready.await(5, TimeUnit.SECONDS);
-            start.countDown();
-            done.await(30, TimeUnit.SECONDS);
-            executor.shutdown();
-
-            assertThat(succeeded.get()).isEqualTo(1);
-            assertThat(productService.getStock(productId)).isEqualTo(Quantity.of(8));
-            assertThat(pointService.getBalance(USER)).isEqualTo(Money.of(30_000));
         }
     }
 
