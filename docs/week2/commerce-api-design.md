@@ -219,7 +219,7 @@ classDiagram
 
 - [관계와 경계] Product는 Brand와 별도 애그리게이트이며, StockQuantity VO를 내부에 보유한다.
 - [관계 표현] Product는 Brand 객체를 포함하지 않고 `brandId`로 Brand를 참조한다. 재고 수량은 StockQuantity VO로 표현한다.
-- [도메인 책임] Product는 자신의 이름, 가격, 재고, 삭제 상태를 관리한다. 재고 설정과 주문 수량 차감을 수행하며, `delete()`는 자신의 삭제 상태를 변경한다.
+- [도메인 책임] Product는 자신의 이름, 가격, 재고, 삭제 상태를 관리한다. 상품 수정과 재고 설정 및 차감 전에 자신의 삭제 상태를 검사하며, `delete()`는 자신의 삭제 상태를 변경한다.
 - [도메인 책임] `ProductDeletionPolicy`는 Product만 담당하며 Brand의 Policy를 호출하거나 Repository 조회와 저장을 수행하지 않는다.
 - [도메인 규칙] 상품 등록 시 존재하고 삭제되지 않은 Brand가 필요하다.
 - [도메인 규칙] Product 수정 시 기존 Brand는 변경하지 않는다.
