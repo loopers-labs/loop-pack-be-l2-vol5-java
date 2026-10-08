@@ -1,5 +1,8 @@
 package com.loopers.domain.order;
 
+import com.loopers.support.error.CoreException;
+import com.loopers.support.error.ErrorType;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -50,7 +53,11 @@ public class Order {
                 existing -> items.set(items.indexOf(existing), existing.addQuantity(item.getQuantity())),
                 () -> items.add(item)
             );
-        totalAmount = items.stream().mapToLong(OrderItem::getAmount).sum();
+        try {
+            totalAmount = items.stream().mapToLong(OrderItem::getAmount).reduce(0L, Math::addExact);
+        } catch (ArithmeticException exception) {
+            throw new CoreException(ErrorType.BAD_REQUEST, "주문 총액이 저장 가능한 범위를 초과했습니다.");
+        }
     }
 
     public Long getId() { return id; }
@@ -63,9 +70,7 @@ public class Order {
 
     public void validateDraft() {
         if (status != OrderStatus.DRAFT) {
-            throw new com.loopers.support.error.CoreException(
-                com.loopers.support.error.ErrorType.CONFLICT, "DRAFT 주문만 확정할 수 있습니다."
-            );
+            throw new CoreException(ErrorType.CONFLICT, "DRAFT 주문만 확정할 수 있습니다.");
         }
     }
 

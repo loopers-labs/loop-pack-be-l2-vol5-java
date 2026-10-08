@@ -32,6 +32,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -113,6 +114,52 @@ class OrderV1ApiE2ETest {
             assertThat(item.getUnitPrice()).isEqualTo(100L);
         });
         assertThat(products.findById(product.getId()).orElseThrow().getStock().amount()).isEqualTo(5L);
+        assertThat(points.findByUserId(user.getId()).orElseThrow().getBalance().amount()).isEqualTo(1_000L);
+    }
+
+    @Test
+    void rejectsOrderTotalOverflowWithoutSavingAnOrderOrChangingExistingData() {
+        User user = saveUser();
+        Brand brand = brands.save(Brand.create("Nike"));
+        points.save(Point.create(user.getId(), new com.loopers.domain.point.PointBalance(1_000L)));
+        List<Product> preparedProducts = new ArrayList<>();
+        List<com.loopers.application.order.OrderFacade.OrderRequestItem> requestItems = new ArrayList<>();
+        for (int index = 0; index < 43; index++) {
+            Product product = Product.create(brand.getId(), "Product " + index, 100_000_000L);
+            product.changeStockTo(5L);
+            product = products.save(product);
+            preparedProducts.add(product);
+            requestItems.add(new com.loopers.application.order.OrderFacade.OrderRequestItem(
+                product.getId(), Integer.MAX_VALUE
+            ));
+        }
+        Product firstProduct = preparedProducts.getFirst();
+        Order existingOrder = orders.save(Order.create(user.getId(), List.of(
+            OrderItem.create(firstProduct.getId(), firstProduct.getName(), firstProduct.getPrice(), 1)
+        )));
+
+        ResponseEntity<ApiResponse<Object>> response = rest.exchange(
+            "/api/v1/orders", org.springframework.http.HttpMethod.POST,
+            new HttpEntity<>(new OrderV1Dto.CreateRequest(requestItems), headers(user.getId().toString())),
+            new ParameterizedTypeReference<>() {}
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().meta().message()).contains("주문 총액");
+        assertThat(orders.findAll()).extracting(Order::getId).containsExactly(existingOrder.getId());
+        Order savedOrder = orders.findById(existingOrder.getId()).orElseThrow();
+        assertThat(savedOrder.getStatus().name()).isEqualTo("DRAFT");
+        assertThat(savedOrder.getTotalAmount()).isEqualTo(100_000_000L);
+        assertThat(savedOrder.getPaymentAmount()).isNull();
+        assertThat(savedOrder.getPaymentResult()).isNull();
+        assertThat(savedOrder.getItems()).singleElement().satisfies(item -> {
+            assertThat(item.getProductId()).isEqualTo(firstProduct.getId());
+            assertThat(item.getQuantity()).isEqualTo(1);
+            assertThat(item.getUnitPrice()).isEqualTo(100_000_000L);
+        });
+        assertThat(preparedProducts).allSatisfy(product ->
+            assertThat(products.findById(product.getId()).orElseThrow().getStock().amount()).isEqualTo(5L)
+        );
         assertThat(points.findByUserId(user.getId()).orElseThrow().getBalance().amount()).isEqualTo(1_000L);
     }
 

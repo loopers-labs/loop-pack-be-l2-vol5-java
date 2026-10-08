@@ -4,7 +4,9 @@ import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -129,6 +131,45 @@ class OrderTest {
     }
 
     @Test
+    void acceptsOrderTotalAtTheLongLimit() {
+        Order order = Order.create(1L, itemsAtTheLongTotalLimit());
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.DRAFT);
+        assertThat(order.getTotalAmount()).isEqualTo(Long.MAX_VALUE);
+        assertThat(order.getItems()).allSatisfy(item -> {
+            assertThat(item.getUnitPrice()).isBetween(1L, 100_000_000L);
+            assertThat(item.getQuantity()).isPositive();
+        });
+    }
+
+    @Test
+    void rejectsOrderTotalOneUnitBeyondTheLongLimit() {
+        List<OrderItem> items = itemsAtTheLongTotalLimit();
+        items.add(OrderItem.create((long) items.size() + 1L, "Extra product", 1L, 1));
+
+        assertThatThrownBy(() -> Order.create(1L, items))
+            .isInstanceOfSatisfying(CoreException.class, exception -> {
+                assertThat(exception.getErrorType()).isEqualTo(ErrorType.BAD_REQUEST);
+                assertThat(exception.getCustomMessage()).contains("주문 총액");
+            });
+    }
+
+    @Test
+    void rejectsTotalOverflowAcrossProductsWithValidPriceAndQuantity() {
+        List<OrderItem> items = IntStream.rangeClosed(1, 43)
+            .mapToObj(productId -> OrderItem.create(
+                (long) productId, "Product " + productId, 100_000_000L, Integer.MAX_VALUE
+            ))
+            .toList();
+
+        assertThatThrownBy(() -> Order.create(1L, items))
+            .isInstanceOfSatisfying(CoreException.class, exception -> {
+                assertThat(exception.getErrorType()).isEqualTo(ErrorType.BAD_REQUEST);
+                assertThat(exception.getCustomMessage()).contains("주문 총액");
+            });
+    }
+
+    @Test
     void savesPaymentAmountAndResultWhenConfirmed() {
         Order order = Order.create(1L, List.of(OrderItem.create(10L, "Air Max", 100L, 2)));
 
@@ -137,5 +178,24 @@ class OrderTest {
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
         assertThat(order.getPaymentAmount()).isEqualTo(200L);
         assertThat(order.getPaymentResult()).isEqualTo(PaymentResult.SUCCESS);
+    }
+
+    private List<OrderItem> itemsAtTheLongTotalLimit() {
+        long unitPrice = 100_000_000L;
+        long fullItemAmount = unitPrice * Integer.MAX_VALUE;
+        int fullItemCount = Math.toIntExact(Long.MAX_VALUE / fullItemAmount);
+        List<OrderItem> items = new ArrayList<>();
+        for (long productId = 1L; productId <= fullItemCount; productId++) {
+            items.add(OrderItem.create(productId, "Product " + productId, unitPrice, Integer.MAX_VALUE));
+        }
+        long remainingAmount = Long.MAX_VALUE % fullItemAmount;
+        items.add(OrderItem.create(
+            (long) fullItemCount + 1L, "Remaining quantity", unitPrice,
+            Math.toIntExact(remainingAmount / unitPrice)
+        ));
+        items.add(OrderItem.create(
+            (long) fullItemCount + 2L, "Remaining amount", remainingAmount % unitPrice, 1
+        ));
+        return items;
     }
 }
