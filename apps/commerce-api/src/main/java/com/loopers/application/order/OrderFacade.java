@@ -48,7 +48,7 @@ public class OrderFacade {
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "사용자의 포인트를 찾을 수 없습니다."));
 
         lockActiveBrands(order);
-        order.confirm(order.getTotalAmount());
+        order.confirm();
         int confirmedRows = orderRepository.confirmIfDraft(
             orderId, userId, order.getPaymentAmount(), ZonedDateTime.now()
         );

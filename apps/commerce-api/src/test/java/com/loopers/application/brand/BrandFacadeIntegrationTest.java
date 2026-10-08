@@ -271,7 +271,7 @@ class BrandFacadeIntegrationTest {
             Order confirmedOrder = Order.create(user.getId(), List.of(
                 OrderItem.create(zeroStockProduct.getId(), zeroStockProduct.getName(), zeroStockProduct.getPrice(), 1)
             ));
-            confirmedOrder.confirm(confirmedOrder.getTotalAmount());
+            confirmedOrder.confirm();
             confirmedOrder = orderRepository.save(confirmedOrder);
             Long stockedProductId = stockedProduct.getId();
             productFacade.update(stockedProductId, "Pegasus Updated", 130_000L);

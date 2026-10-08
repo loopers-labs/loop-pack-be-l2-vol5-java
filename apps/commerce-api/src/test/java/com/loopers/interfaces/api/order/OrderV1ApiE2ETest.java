@@ -330,7 +330,7 @@ class OrderV1ApiE2ETest {
         User confirmedOrderUser = saveUser();
         Order draft = orders.save(Order.create(draftOrderUser.getId(), List.of(OrderItem.create(1L, "Air Max", 100L, 1))));
         Order confirmed = Order.create(confirmedOrderUser.getId(), List.of(OrderItem.create(2L, "Pegasus", 200L, 1)));
-        confirmed.confirm(200L);
+        confirmed.confirm();
         confirmed = orders.save(confirmed);
 
         ResponseEntity<ApiResponse<List<OrderV1Dto.OrderResponse>>> listResponse = adminClient.exchange(

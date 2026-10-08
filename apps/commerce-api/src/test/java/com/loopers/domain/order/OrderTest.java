@@ -173,7 +173,7 @@ class OrderTest {
     void savesPaymentAmountAndResultWhenConfirmed() {
         Order order = Order.create(1L, List.of(OrderItem.create(10L, "Air Max", 100L, 2)));
 
-        order.confirm(200L);
+        order.confirm();
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
         assertThat(order.getPaymentAmount()).isEqualTo(200L);

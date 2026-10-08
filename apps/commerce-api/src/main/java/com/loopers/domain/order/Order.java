@@ -74,10 +74,10 @@ public class Order {
         }
     }
 
-    public void confirm(long paymentAmount) {
+    public void confirm() {
         validateDraft();
         status = OrderStatus.CONFIRMED;
-        this.paymentAmount = paymentAmount;
+        this.paymentAmount = totalAmount;
         this.paymentResult = PaymentResult.SUCCESS;
     }
 }

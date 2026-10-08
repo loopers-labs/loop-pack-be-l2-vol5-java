@@ -79,7 +79,7 @@ class BrandDeletionRollbackIntegrationTest {
         Order pastOrder = Order.create(user.getId(), List.of(
             OrderItem.create(zeroStockProduct.getId(), zeroStockProduct.getName(), zeroStockProduct.getPrice(), 1)
         ));
-        pastOrder.confirm(pastOrder.getTotalAmount());
+        pastOrder.confirm();
         pastOrder = orderRepository.save(pastOrder);
 
         Timestamp brandUpdatedAtBefore = readUpdatedAt("brands", brand.getId());
