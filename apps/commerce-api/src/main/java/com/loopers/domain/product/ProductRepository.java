@@ -10,5 +10,5 @@ public interface ProductRepository {
 
     Optional<Product> findByIdForUpdate(Long id);
 
-    boolean existsByBrandId(Long brandId);
+    void deleteAllByBrandId(Long brandId);
 }

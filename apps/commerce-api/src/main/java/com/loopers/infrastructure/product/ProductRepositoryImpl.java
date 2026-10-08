@@ -5,6 +5,7 @@ import com.loopers.domain.product.ProductRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+import java.time.ZonedDateTime;
 import java.util.Optional;
 
 @Repository
@@ -35,7 +36,7 @@ public class ProductRepositoryImpl implements ProductRepository {
     }
 
     @Override
-    public boolean existsByBrandId(Long brandId) {
-        return productJpaRepository.existsByBrandIdAndDeletedAtIsNull(brandId);
+    public void deleteAllByBrandId(Long brandId) {
+        productJpaRepository.deleteAliveByBrandId(brandId, ZonedDateTime.now());
     }
 }

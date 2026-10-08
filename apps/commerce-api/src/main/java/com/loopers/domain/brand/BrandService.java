@@ -33,9 +33,7 @@ public class BrandService {
 
     public void delete(Long brandId) {
         Brand brand = findAliveForUpdate(brandId);
-        if (productsInBrand.hasAlive(brandId)) {
-            throw new DomainException(DomainError.BRAND_HAS_PRODUCTS);
-        }
+        productsInBrand.deleteAll(brandId);
         brand.delete();
         brandRepository.save(brand);
     }
