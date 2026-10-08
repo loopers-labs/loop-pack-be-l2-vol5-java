@@ -23,7 +23,12 @@ public interface ProductRepository {
      */
     List<ProductModel> findAllByIds(List<Long> ids);
 
-    boolean existsActiveByBrandId(Long brandId);
+    /**
+     * 브랜드의 미삭제 상품 전부를 productId 오름차순으로 비관적 락을 걸어 조회한다 — 브랜드 일괄 삭제용.
+     * 주문 확정과 같은 순서(오름차순)로 잠가 교착을 피한다. 페이지네이션이 없다 — findActive(...)를
+     * 재사용하면 첫 페이지만 삭제된다.
+     */
+    List<ProductModel> findAllActiveByBrandIdForUpdate(Long brandId);
 
     Page<ProductModel> findActive(Long brandId, ProductSort sort, Pageable pageable);
 
