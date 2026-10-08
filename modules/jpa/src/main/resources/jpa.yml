@@ -29,6 +29,7 @@ datasource:
       initialization-fail-timeout: 1  # DB 연결 실패 시 즉시 예외 발생 ( default: -1 = 무한대기 )
       data-source-properties:
         rewriteBatchedStatements: true
+        sessionVariables: innodb_lock_wait_timeout=3 # 행 잠금 대기 한도(초), connection-timeout 과 맞춘다 ( MySQL default: 50 )
 
 ---
 spring.config.activate.on-profile: local
