@@ -1,64 +1,60 @@
 package com.loopers.domain.brand;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
-import org.junit.jupiter.api.DisplayName;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-
 class BrandTest {
     @Test
-    @DisplayName("미삭제 상품이 있으면 브랜드 삭제를 거절한다")
-    void rejectsDeletionWithActiveProducts() {
+    void 브랜드_삭제는_이름을_보존하고_삭제_상태만_변경한다() {
         // arrange
         Brand brand = Brand.create("브랜드");
 
         // act
-        CoreException error = assertThrows(CoreException.class, () -> brand.delete(true));
+        brand.delete();
 
         // assert
-        assertThat(error.getErrorType()).isEqualTo(ErrorType.BRAND_HAS_ACTIVE_PRODUCTS);
-        assertThat(brand.isDeleted()).isFalse();
+        assertThat(brand.getName()).isEqualTo("브랜드");
+        assertThat(brand.isDeleted()).isTrue();
     }
 
     @Test
-    @DisplayName("미삭제 상품이 없으면 브랜드를 소프트 삭제한다")
-    void deletesBrand() {
+    void 미삭제_상품이_없으면_브랜드를_소프트_삭제한다() {
         // arrange
         Brand brand = Brand.create("브랜드");
 
         // act
-        brand.delete(false);
+        brand.delete();
 
         // assert
         assertThat(brand.isDeleted()).isTrue();
     }
 
     @Test
-    @DisplayName("이미 삭제한 브랜드를 다시 삭제해도 성공한다")
-    void repeatsDeletion() {
+    void 이미_삭제한_브랜드를_다시_삭제해도_성공한다() {
         // arrange
         Brand brand = Brand.create("브랜드");
-        brand.delete(false);
+        brand.delete();
 
         // act
-        brand.delete(false);
+        brand.delete();
 
         // assert
         assertThat(brand.isDeleted()).isTrue();
     }
 
     @Test
-    @DisplayName("삭제된 브랜드는 이름을 바꿀 수 없다")
-    void rejectsRenameAfterDeletion() {
+    void 삭제된_브랜드는_이름을_바꿀_수_없다() {
         // arrange
         Brand brand = Brand.create("브랜드");
-        brand.delete(false);
+        brand.delete();
 
         // act
         CoreException error = assertThrows(CoreException.class, () -> brand.rename("변경"));
@@ -69,8 +65,7 @@ class BrandTest {
     }
 
     @Test
-    @DisplayName("등록할 때 이름의 앞뒤 공백을 제거한다")
-    void trimsName() {
+    void 등록할_때_이름의_앞뒤_공백을_제거한다() {
         // arrange
         String name = "  브랜드  ";
 
@@ -82,8 +77,7 @@ class BrandTest {
     }
 
     @Test
-    @DisplayName("50자 이름으로 수정할 수 있다")
-    void allowsBoundaryLength() {
+    void 이름을_50자로_수정할_수_있다() {
         // arrange
         Brand brand = Brand.create("브랜드");
         String name = "가".repeat(50);
@@ -96,8 +90,7 @@ class BrandTest {
     }
 
     @Test
-    @DisplayName("50자를 넘는 수정은 거절하고 기존 이름을 유지한다")
-    void rejectsLongNameWithoutChangingName() {
+    void 이름이_50자를_넘는_수정은_거절하고_기존_이름을_유지한다() {
         // arrange
         Brand brand = Brand.create("가".repeat(50));
 
@@ -112,8 +105,7 @@ class BrandTest {
     @ParameterizedTest
     @NullAndEmptySource
     @ValueSource(strings = {" ", "   "})
-    @DisplayName("빈 이름으로 브랜드를 등록할 수 없다")
-    void rejectsBlankName(String name) {
+    void 빈_이름으로_브랜드를_등록할_수_없다(String name) {
         // arrange: null, 빈 문자열, 공백을 각각 입력한다
 
         // act

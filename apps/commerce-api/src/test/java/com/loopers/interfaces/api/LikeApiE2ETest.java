@@ -1,18 +1,20 @@
 package com.loopers.interfaces.api;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
 import com.fasterxml.jackson.databind.JsonNode;
+import com.loopers.application.brand.fixture.BrandFixture;
+import com.loopers.application.like.fixture.LikeFixture;
 import com.loopers.domain.brand.Brand;
-import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.like.ProductLike;
 import com.loopers.domain.like.ProductLikeRepository;
 import com.loopers.domain.product.Product;
-import com.loopers.domain.product.ProductRepository;
-import com.loopers.infrastructure.user.UserJpaEntity;
+import com.loopers.infrastructure.product.fixture.ProductFixture;
+import com.loopers.infrastructure.user.fixture.UserFixture;
 import com.loopers.utils.DatabaseCleanUp;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
+
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -22,98 +24,83 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
-import org.springframework.transaction.support.TransactionTemplate;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class LikeApiE2ETest {
-    @Autowired
-    private ProductLikeRepository likes;
+    @Autowired private LikeFixture fixture;
+    @Autowired private UserFixture users;
 
-    @Autowired
-    private BrandRepository brands;
+    @Autowired private ProductLikeRepository likes;
 
-    @Autowired
-    private ProductRepository products;
+    @Autowired private BrandFixture brands;
 
-    @Autowired
-    private TestRestTemplate rest;
+    @Autowired private ProductFixture products;
 
-    @PersistenceContext
-    private EntityManager entityManager;
+    @Autowired private TestRestTemplate rest;
 
-    @Autowired
-    private TransactionTemplate transactions;
-
-    @Autowired
-    private DatabaseCleanUp cleanUp;
+    @Autowired private DatabaseCleanUp cleanUp;
 
     @Test
-    @DisplayName("좋아요 등록은 요청자와 상품의 관계를 저장한다")
-    void registersRelation() {
+    void 좋아요_등록은_요청자와_상품의_관계를_저장한다() {
         // arrange
-        transactions.executeWithoutResult(status -> entityManager.persist(new UserJpaEntity(1L)));
-        Brand brand = brands.save(Brand.create("브랜드"));
-        Product product = Product.create(brand.getId(), "product", 2_000);
-        product.setStock(0);
-        product = products.save(product);
+        users.createUser(1);
+        Brand brand = brands.createBrand();
+        Product product = products.createProduct(brand.getId(), "product", 2_000, 0);
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.set("X-USER-ID", "1");
         HttpEntity<Void> request = new HttpEntity<>(headers);
 
         // act
-        var response = rest.exchange("/api/v1/products/" + product.getId() + "/likes", HttpMethod.POST,
-            request, JsonNode.class);
+        var response =
+                rest.exchange(
+                        "/api/v1/products/" + product.getId() + "/likes",
+                        HttpMethod.POST,
+                        request,
+                        JsonNode.class);
 
         // assert
         assertThat(response.getStatusCode().value()).isEqualTo(200);
         assertThat(response.getBody().has("data")).isFalse();
         assertThat(likes.exists(1, product.getId())).isTrue();
-        assertThat(entityManager.createQuery("select count(e) from ProductLikeJpaEntity e", Long.class)
-            .getSingleResult()).isEqualTo(1);
+        assertThat(fixture.rowCount()).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("이미 등록한 좋아요를 다시 등록해도 관계는 하나다")
-    void repeatedRegistrationKeepsOneRelation() {
+    void 이미_등록한_좋아요를_다시_등록해도_관계는_하나다() {
         // arrange
-        transactions.executeWithoutResult(status -> entityManager.persist(new UserJpaEntity(1L)));
-        Brand brand = brands.save(Brand.create("브랜드"));
-        Product product = Product.create(brand.getId(), "product", 2_000);
-        product.setStock(0);
-        product = products.save(product);
-        likes.save(new ProductLike(1, product.getId()));
+        users.createUser(1);
+        Brand brand = brands.createBrand();
+        Product product = products.createProduct(brand.getId(), "product", 2_000, 0);
+        fixture.createLike(1, product.getId());
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.set("X-USER-ID", "1");
         HttpEntity<Void> request = new HttpEntity<>(headers);
 
         // act
-        var response = rest.exchange("/api/v1/products/" + product.getId() + "/likes", HttpMethod.POST,
-            request, JsonNode.class);
+        var response =
+                rest.exchange(
+                        "/api/v1/products/" + product.getId() + "/likes",
+                        HttpMethod.POST,
+                        request,
+                        JsonNode.class);
 
         // assert
         assertThat(response.getStatusCode().value()).isEqualTo(200);
         assertThat(response.getBody().has("data")).isFalse();
-        assertThat(entityManager.createQuery("select count(e) from ProductLikeJpaEntity e", Long.class)
-            .getSingleResult()).isEqualTo(1);
+        assertThat(fixture.rowCount()).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("상품의 좋아요 수는 저장된 사용자 관계 수와 같다")
-    void readsLikeCountFromRelations() {
+    void 상품의_좋아요_수는_저장된_사용자_관계_수와_같다() {
         // arrange
-        transactions.executeWithoutResult(status -> entityManager.persist(new UserJpaEntity(1L)));
-        Brand brand = brands.save(Brand.create("브랜드"));
-        Product product = Product.create(brand.getId(), "product", 2_000);
-        product.setStock(0);
-        product = products.save(product);
-        transactions.executeWithoutResult(status -> entityManager.persist(new UserJpaEntity(2L)));
-        likes.save(new ProductLike(1, product.getId()));
-        likes.save(new ProductLike(2, product.getId()));
+        users.createUser(1);
+        Brand brand = brands.createBrand();
+        Product product = products.createProduct(brand.getId(), "product", 2_000, 0);
+        users.createUser(2);
+        fixture.createLike(1, product.getId());
+        fixture.createLike(2, product.getId());
 
         // act
         var response = rest.getForEntity("/api/v1/products/" + product.getId(), JsonNode.class);
@@ -126,95 +113,96 @@ class LikeApiE2ETest {
     }
 
     @Test
-    @DisplayName("DB는 같은 사용자와 상품의 중복 관계를 거절한다")
-    void databaseRejectsDuplicateRelation() {
+    void DB는_같은_사용자와_상품의_중복_관계를_거절한다() {
         // arrange
-        transactions.executeWithoutResult(status -> entityManager.persist(new UserJpaEntity(1L)));
-        Brand brand = brands.save(Brand.create("브랜드"));
-        Product product = Product.create(brand.getId(), "product", 2_000);
-        product.setStock(0);
-        product = products.save(product);
-        likes.save(new ProductLike(1, product.getId()));
+        users.createUser(1);
+        Brand brand = brands.createBrand();
+        Product product = products.createProduct(brand.getId(), "product", 2_000, 0);
+        fixture.createLike(1, product.getId());
         ProductLike duplicate = new ProductLike(1, product.getId());
 
         // act
         assertThrows(DataIntegrityViolationException.class, () -> likes.save(duplicate));
 
         // assert
-        assertThat(entityManager.createQuery("select count(e) from ProductLikeJpaEntity e", Long.class)
-            .getSingleResult()).isEqualTo(1);
+        assertThat(fixture.rowCount()).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("좋아요 취소는 본인 관계를 제거한다")
-    void cancelsOwnRelation() {
+    void 좋아요_취소는_본인_관계를_제거한다() {
         // arrange
-        transactions.executeWithoutResult(status -> entityManager.persist(new UserJpaEntity(1L)));
-        Brand brand = brands.save(Brand.create("브랜드"));
-        Product product = Product.create(brand.getId(), "product", 2_000);
-        product.setStock(0);
-        product = products.save(product);
-        likes.save(new ProductLike(1, product.getId()));
+        users.createUser(1);
+        Brand brand = brands.createBrand();
+        Product product = products.createProduct(brand.getId(), "product", 2_000, 0);
+        fixture.createLike(1, product.getId());
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.set("X-USER-ID", "1");
         HttpEntity<Void> request = new HttpEntity<>(headers);
 
         // act
-        var response = rest.exchange("/api/v1/products/" + product.getId() + "/likes", HttpMethod.DELETE,
-            request, JsonNode.class);
+        var response =
+                rest.exchange(
+                        "/api/v1/products/" + product.getId() + "/likes",
+                        HttpMethod.DELETE,
+                        request,
+                        JsonNode.class);
 
         // assert
         assertThat(response.getStatusCode().value()).isEqualTo(200);
         assertThat(likes.exists(1, product.getId())).isFalse();
-        assertThat(entityManager.createQuery("select count(e) from ProductLikeJpaEntity e", Long.class)
-            .getSingleResult()).isZero();
+        assertThat(fixture.rowCount()).isZero();
     }
 
     @Test
-    @DisplayName("본인 관계가 없는 상품의 취소도 성공한다")
-    void absentRelationCancellationSucceeds() {
+    void 본인_관계가_없는_상품의_취소도_성공하고_타인_관계는_유지한다() {
         // arrange
-        transactions.executeWithoutResult(status -> entityManager.persist(new UserJpaEntity(1L)));
-        Brand brand = brands.save(Brand.create("브랜드"));
-        Product product = Product.create(brand.getId(), "product", 2_000);
-        product.setStock(0);
-        product = products.save(product);
+        users.createUser(1);
+        Brand brand = brands.createBrand();
+        Product product = products.createProduct(brand.getId(), "product", 2_000, 0);
+        users.createUser(2);
+        fixture.createLike(2, product.getId());
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.set("X-USER-ID", "1");
         HttpEntity<Void> request = new HttpEntity<>(headers);
 
         // act
-        var response = rest.exchange("/api/v1/products/" + product.getId() + "/likes", HttpMethod.DELETE,
-            request, JsonNode.class);
+        var response =
+                rest.exchange(
+                        "/api/v1/products/" + product.getId() + "/likes",
+                        HttpMethod.DELETE,
+                        request,
+                        JsonNode.class);
 
         // assert
         assertThat(response.getStatusCode().value()).isEqualTo(200);
-        assertThat(entityManager.createQuery("select count(e) from ProductLikeJpaEntity e", Long.class)
-            .getSingleResult()).isZero();
+        assertThat(likes.exists(1, product.getId())).isFalse();
+        assertThat(likes.exists(2, product.getId())).isTrue();
+        assertThat(fixture.rowCount()).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("좋아요 취소는 다른 사용자의 관계를 유지한다")
-    void cancellationPreservesOtherUsersRelation() {
+    void 좋아요_취소는_다른_사용자의_관계를_유지한다() {
         // arrange
-        transactions.executeWithoutResult(status -> entityManager.persist(new UserJpaEntity(1L)));
-        Brand brand = brands.save(Brand.create("브랜드"));
-        Product product = Product.create(brand.getId(), "product", 2_000);
-        product.setStock(0);
-        product = products.save(product);
-        transactions.executeWithoutResult(status -> entityManager.persist(new UserJpaEntity(2L)));
-        likes.save(new ProductLike(1, product.getId()));
-        likes.save(new ProductLike(2, product.getId()));
+        users.createUser(1);
+        Brand brand = brands.createBrand();
+        Product product = products.createProduct(brand.getId(), "product", 2_000, 0);
+        users.createUser(2);
+        fixture.createLike(1, product.getId());
+        fixture.createLike(2, product.getId());
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.set("X-USER-ID", "1");
         HttpEntity<Void> request = new HttpEntity<>(headers);
 
         // act
-        var response = rest.exchange("/api/v1/products/" + product.getId() + "/likes", HttpMethod.DELETE,
-            request, JsonNode.class);
+        var response =
+                rest.exchange(
+                        "/api/v1/products/" + product.getId() + "/likes",
+                        HttpMethod.DELETE,
+                        request,
+                        JsonNode.class);
 
         // assert
         assertThat(response.getStatusCode().value()).isEqualTo(200);
@@ -223,218 +211,215 @@ class LikeApiE2ETest {
     }
 
     @Test
-    @DisplayName("내 좋아요 목록에는 내가 등록한 상품만 나온다")
-    void readsOnlyOwnLikedProducts() {
+    void 내_좋아요_목록에는_내가_등록한_상품만_나온다() {
         // arrange
-        transactions.executeWithoutResult(status -> entityManager.persist(new UserJpaEntity(1L)));
-        Brand brand = brands.save(Brand.create("브랜드"));
-        Product product = Product.create(brand.getId(), "product", 2_000);
-        product.setStock(0);
-        product = products.save(product);
-        transactions.executeWithoutResult(status -> entityManager.persist(new UserJpaEntity(2L)));
-        Product otherProduct = Product.create(brand.getId(), "otherProduct", 2_000);
-        otherProduct.setStock(0);
-        otherProduct = products.save(otherProduct);
-        likes.save(new ProductLike(1, product.getId()));
-        likes.save(new ProductLike(2, otherProduct.getId()));
+        users.createUser(1);
+        Brand brand = brands.createBrand("브랜드");
+        Product product = products.createProduct(brand.getId(), "product", 2_000, 0);
+        users.createUser(2);
+        Product otherProduct = products.createProduct(brand.getId(), "otherProduct", 2_000, 0);
+        fixture.createLike(1, product.getId());
+        fixture.createLike(2, otherProduct.getId());
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.set("X-USER-ID", "1");
         HttpEntity<Void> request = new HttpEntity<>(headers);
 
         // act
-        var response = rest.exchange("/api/v1/users/1/likes", HttpMethod.GET, request, JsonNode.class);
+        var response =
+                rest.exchange("/api/v1/users/1/likes", HttpMethod.GET, request, JsonNode.class);
 
         // assert
         assertThat(response.getStatusCode().value()).isEqualTo(200);
         JsonNode items = response.getBody().requiredAt("/data/items");
         assertThat(items.isArray()).isTrue();
-        assertThat(items.findValues("productId")).extracting(JsonNode::longValue).containsExactly(product.getId());
+        assertThat(items.findValues("productId"))
+                .extracting(JsonNode::longValue)
+                .containsExactly(product.getId());
     }
 
     @Test
-    @DisplayName("다른 사용자의 좋아요 목록은 접근 거절로 응답한다")
-    void rejectsOtherUsersList() {
+    void 다른_사용자의_좋아요_목록은_접근_거절로_응답한다() {
         // arrange
-        transactions.executeWithoutResult(status -> entityManager.persist(new UserJpaEntity(1L)));
-        transactions.executeWithoutResult(status -> entityManager.persist(new UserJpaEntity(2L)));
+        users.createUser(1);
+        users.createUser(2);
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.set("X-USER-ID", "1");
         HttpEntity<Void> request = new HttpEntity<>(headers);
 
         // act
-        var response = rest.exchange("/api/v1/users/2/likes", HttpMethod.GET, request, JsonNode.class);
+        var response =
+                rest.exchange("/api/v1/users/2/likes", HttpMethod.GET, request, JsonNode.class);
 
         // assert
         assertThat(response.getStatusCode().value()).isEqualTo(400);
-        assertThat(response.getBody().requiredAt("/meta/errorCode").asText()).isEqualTo("ACCESS_DENIED");
+        assertThat(response.getBody().requiredAt("/meta/errorCode").asText())
+                .isEqualTo("ACCESS_DENIED");
     }
 
     @Test
-    @DisplayName("삭제한 상품에는 기존 관계가 있어도 등록할 수 없다")
-    void rejectsRegistrationOnDeletedProduct() {
+    void 삭제한_상품에는_기존_관계가_있어도_등록할_수_없다() {
         // arrange
-        transactions.executeWithoutResult(status -> entityManager.persist(new UserJpaEntity(1L)));
-        Brand brand = brands.save(Brand.create("브랜드"));
-        Product product = Product.create(brand.getId(), "product", 2_000);
-        product.setStock(0);
-        product = products.save(product);
-        likes.save(new ProductLike(1, product.getId()));
-        product.delete();
-        products.save(product);
+        users.createUser(1);
+        Brand brand = brands.createBrand();
+        Product product = products.createProduct(brand.getId(), "product", 2_000, 0);
+        fixture.createLike(1, product.getId());
+        products.deleteProduct(product.getId());
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.set("X-USER-ID", "1");
         HttpEntity<Void> request = new HttpEntity<>(headers);
 
         // act
-        var response = rest.exchange("/api/v1/products/" + product.getId() + "/likes", HttpMethod.POST,
-            request, JsonNode.class);
+        var response =
+                rest.exchange(
+                        "/api/v1/products/" + product.getId() + "/likes",
+                        HttpMethod.POST,
+                        request,
+                        JsonNode.class);
 
         // assert
         assertThat(response.getStatusCode().value()).isEqualTo(400);
-        assertThat(response.getBody().requiredAt("/meta/errorCode").asText()).isEqualTo("PRODUCT_NOT_FOUND");
-        assertThat(entityManager.createQuery("select count(e) from ProductLikeJpaEntity e", Long.class)
-            .getSingleResult()).isEqualTo(1);
+        assertThat(response.getBody().requiredAt("/meta/errorCode").asText())
+                .isEqualTo("PRODUCT_NOT_FOUND");
+        assertThat(fixture.rowCount()).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("삭제한 상품은 내 좋아요 목록에서 제외하고 관계는 보존한다")
-    void excludesDeletedProductsFromOwnList() {
+    void 삭제한_상품은_내_좋아요_목록에서_제외하고_관계는_보존한다() {
         // arrange
-        transactions.executeWithoutResult(status -> entityManager.persist(new UserJpaEntity(1L)));
-        Brand brand = brands.save(Brand.create("브랜드"));
-        Product product = Product.create(brand.getId(), "product", 2_000);
-        product.setStock(0);
-        product = products.save(product);
-        likes.save(new ProductLike(1, product.getId()));
-        product.delete();
-        products.save(product);
+        users.createUser(1);
+        Brand brand = brands.createBrand();
+        Product product = products.createProduct(brand.getId(), "product", 2_000, 0);
+        fixture.createLike(1, product.getId());
+        products.deleteProduct(product.getId());
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.set("X-USER-ID", "1");
         HttpEntity<Void> request = new HttpEntity<>(headers);
 
         // act
-        var response = rest.exchange("/api/v1/users/1/likes", HttpMethod.GET, request, JsonNode.class);
+        var response =
+                rest.exchange("/api/v1/users/1/likes", HttpMethod.GET, request, JsonNode.class);
 
         // assert
         assertThat(response.getStatusCode().value()).isEqualTo(200);
         JsonNode items = response.getBody().requiredAt("/data/items");
         assertThat(items.isArray()).isTrue();
         assertThat(items).isEmpty();
-        assertThat(entityManager.createQuery("select count(e) from ProductLikeJpaEntity e", Long.class)
-            .getSingleResult()).isEqualTo(1);
+        assertThat(fixture.rowCount()).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("삭제한 상품에 남은 본인 관계를 취소할 수 있다")
-    void cancelsRelationOnDeletedProduct() {
+    void 삭제한_상품에_남은_본인_관계를_취소할_수_있다() {
         // arrange
-        transactions.executeWithoutResult(status -> entityManager.persist(new UserJpaEntity(1L)));
-        Brand brand = brands.save(Brand.create("브랜드"));
-        Product product = Product.create(brand.getId(), "product", 2_000);
-        product.setStock(0);
-        product = products.save(product);
-        likes.save(new ProductLike(1, product.getId()));
-        product.delete();
-        products.save(product);
+        users.createUser(1);
+        Brand brand = brands.createBrand();
+        Product product = products.createProduct(brand.getId(), "product", 2_000, 0);
+        fixture.createLike(1, product.getId());
+        products.deleteProduct(product.getId());
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.set("X-USER-ID", "1");
         HttpEntity<Void> request = new HttpEntity<>(headers);
 
         // act
-        var response = rest.exchange("/api/v1/products/" + product.getId() + "/likes", HttpMethod.DELETE,
-            request, JsonNode.class);
+        var response =
+                rest.exchange(
+                        "/api/v1/products/" + product.getId() + "/likes",
+                        HttpMethod.DELETE,
+                        request,
+                        JsonNode.class);
 
         // assert
         assertThat(response.getStatusCode().value()).isEqualTo(200);
         assertThat(likes.exists(1, product.getId())).isFalse();
-        assertThat(entityManager.createQuery("select count(e) from ProductLikeJpaEntity e", Long.class)
-            .getSingleResult()).isZero();
+        assertThat(fixture.rowCount()).isZero();
     }
 
     @Test
-    @DisplayName("없는 상품의 좋아요 등록을 거절한다")
-    void rejectsMissingProduct() {
+    void 없는_상품의_좋아요_등록을_거절한다() {
         // arrange
-        transactions.executeWithoutResult(status -> entityManager.persist(new UserJpaEntity(1L)));
+        users.createUser(1);
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.set("X-USER-ID", "1");
         HttpEntity<Void> request = new HttpEntity<>(headers);
 
         // act
-        var response = rest.exchange("/api/v1/products/999/likes", HttpMethod.POST, request, JsonNode.class);
+        var response =
+                rest.exchange(
+                        "/api/v1/products/999/likes", HttpMethod.POST, request, JsonNode.class);
 
         // assert
         assertThat(response.getStatusCode().value()).isEqualTo(400);
-        assertThat(response.getBody().requiredAt("/meta/errorCode").asText()).isEqualTo("PRODUCT_NOT_FOUND");
-        assertThat(entityManager.createQuery("select count(e) from ProductLikeJpaEntity e", Long.class)
-            .getSingleResult()).isZero();
+        assertThat(response.getBody().requiredAt("/meta/errorCode").asText())
+                .isEqualTo("PRODUCT_NOT_FOUND");
+        assertThat(fixture.rowCount()).isZero();
     }
 
     @Test
-    @DisplayName("유효한 상품이라도 식별 헤더가 없으면 등록할 수 없다")
-    void rejectsMissingIdentityForExistingProduct() {
+    void 유효한_상품이라도_식별_헤더가_없으면_등록할_수_없다() {
         // arrange
-        transactions.executeWithoutResult(status -> entityManager.persist(new UserJpaEntity(1L)));
-        Brand brand = brands.save(Brand.create("브랜드"));
-        Product product = Product.create(brand.getId(), "product", 2_000);
-        product.setStock(0);
-        product = products.save(product);
+        users.createUser(1);
+        Brand brand = brands.createBrand();
+        Product product = products.createProduct(brand.getId(), "product", 2_000, 0);
         HttpEntity<Void> request = new HttpEntity<>(new HttpHeaders());
 
         // act
-        var response = rest.exchange("/api/v1/products/" + product.getId() + "/likes", HttpMethod.POST,
-            request, JsonNode.class);
+        var response =
+                rest.exchange(
+                        "/api/v1/products/" + product.getId() + "/likes",
+                        HttpMethod.POST,
+                        request,
+                        JsonNode.class);
 
         // assert
         assertThat(response.getStatusCode().value()).isEqualTo(400);
-        assertThat(response.getBody().requiredAt("/meta/errorCode").asText()).isEqualTo("INVALID_REQUEST");
-        assertThat(entityManager.createQuery("select count(e) from ProductLikeJpaEntity e", Long.class)
-            .getSingleResult()).isZero();
+        assertThat(response.getBody().requiredAt("/meta/errorCode").asText())
+                .isEqualTo("INVALID_REQUEST");
+        assertThat(fixture.rowCount()).isZero();
     }
 
     @Test
-    @DisplayName("없는 상품의 없는 관계를 취소해도 성공한다")
-    void cancelsAbsentRelationForMissingProduct() {
+    void 없는_상품의_없는_관계를_취소해도_성공한다() {
         // arrange
-        transactions.executeWithoutResult(status -> entityManager.persist(new UserJpaEntity(1L)));
+        users.createUser(1);
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.set("X-USER-ID", "1");
         HttpEntity<Void> request = new HttpEntity<>(headers);
 
         // act
-        var response = rest.exchange("/api/v1/products/999/likes", HttpMethod.DELETE, request, JsonNode.class);
+        var response =
+                rest.exchange(
+                        "/api/v1/products/999/likes", HttpMethod.DELETE, request, JsonNode.class);
 
         // assert
         assertThat(response.getStatusCode().value()).isEqualTo(200);
-        assertThat(entityManager.createQuery("select count(e) from ProductLikeJpaEntity e", Long.class)
-            .getSingleResult()).isZero();
+        assertThat(fixture.rowCount()).isZero();
     }
 
     @Test
-    @DisplayName("좋아요 취소 결과는 공개 상품의 좋아요 수에 반영된다")
-    void cancellationUpdatesPublicCount() {
+    void 좋아요_취소_결과는_공개_상품의_좋아요_수에_반영된다() {
         // arrange
-        transactions.executeWithoutResult(status -> entityManager.persist(new UserJpaEntity(1L)));
-        Brand brand = brands.save(Brand.create("브랜드"));
-        Product product = Product.create(brand.getId(), "product", 2_000);
-        product.setStock(0);
-        product = products.save(product);
-        likes.save(new ProductLike(1, product.getId()));
+        users.createUser(1);
+        Brand brand = brands.createBrand();
+        Product product = products.createProduct(brand.getId(), "product", 2_000, 0);
+        fixture.createLike(1, product.getId());
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.set("X-USER-ID", "1");
         HttpEntity<Void> request = new HttpEntity<>(headers);
 
         // act
-        var response = rest.exchange("/api/v1/products/" + product.getId() + "/likes", HttpMethod.DELETE,
-            request, JsonNode.class);
+        var response =
+                rest.exchange(
+                        "/api/v1/products/" + product.getId() + "/likes",
+                        HttpMethod.DELETE,
+                        request,
+                        JsonNode.class);
         var detail = rest.getForEntity("/api/v1/products/" + product.getId(), JsonNode.class);
 
         // assert

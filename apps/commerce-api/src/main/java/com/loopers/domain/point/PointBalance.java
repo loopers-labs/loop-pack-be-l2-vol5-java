@@ -2,6 +2,7 @@ package com.loopers.domain.point;
 
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
+
 import lombok.Getter;
 
 @Getter
@@ -28,7 +29,7 @@ public class PointBalance {
     }
 
     public void charge(long amount) {
-        requirePositive(amount);
+        validateAmount(amount);
         try {
             balance = Math.addExact(balance, amount);
         } catch (ArithmeticException exception) {
@@ -37,14 +38,14 @@ public class PointBalance {
     }
 
     public void deduct(long amount) {
-        requirePositive(amount);
+        validateAmount(amount);
         if (amount > balance) {
             throw new CoreException(ErrorType.INSUFFICIENT_POINTS);
         }
         balance -= amount;
     }
 
-    private void requirePositive(long amount) {
+    public static void validateAmount(long amount) {
         if (amount <= 0) {
             throw new CoreException(ErrorType.INVALID_REQUEST);
         }

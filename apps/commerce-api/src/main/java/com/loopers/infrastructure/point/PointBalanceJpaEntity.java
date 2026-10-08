@@ -2,6 +2,7 @@ package com.loopers.infrastructure.point;
 
 import com.loopers.domain.BaseEntity;
 import com.loopers.domain.point.PointBalance;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
@@ -9,10 +10,14 @@ import jakarta.persistence.Table;
 @Entity
 @Table(name = "point_balances")
 public class PointBalanceJpaEntity extends BaseEntity {
-    @Column(nullable = false, unique = true) private long userId;
-    @Column(nullable = false) private long balance;
+    @Column(nullable = false, unique = true)
+    private long userId;
 
-    protected PointBalanceJpaEntity() {}
+    @Column(nullable = false)
+    private long balance;
+
+    protected PointBalanceJpaEntity() {
+    }
 
     public PointBalanceJpaEntity(PointBalance point) {
         userId = point.getUserId();

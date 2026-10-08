@@ -6,5 +6,5 @@ import org.springframework.data.domain.Pageable;
 
 public interface ProductQuery {
     Optional<ProductView> find(long id);
-    Page<ProductView> list(Long brandId, Pageable pageable, String sort);
+    Page<ProductView> list(Long brandId, Pageable pageable, ProductSort sort);
 }

@@ -4,16 +4,17 @@ import com.loopers.application.user.IdentifyUser;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.OrderRepository;
-import com.loopers.domain.order.OrderStatus;
-import com.loopers.domain.point.PointBalance;
 import com.loopers.domain.point.PointBalanceRepository;
-import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
+
 import lombok.RequiredArgsConstructor;
+
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Comparator;
 
 @Component
 @RequiredArgsConstructor
@@ -26,18 +27,33 @@ public class ConfirmOrderFacade {
 
     public OrderInfo confirm(Long userId, long orderId) {
         long owner = users.require(userId);
-        Order order = orders.findById(orderId).filter(value -> value.getUserId() == owner)
-            .orElseThrow(() -> new CoreException(ErrorType.ORDER_NOT_FOUND));
-        if (order.getStatus() == OrderStatus.CONFIRMED) { return OrderInfo.from(order); }
-        for (OrderItem item : order.getItems()) {
-            Product product = products.findById(item.getProductId()).orElseThrow(() -> new CoreException(ErrorType.PRODUCT_NOT_FOUND));
-            product.deductStock(item.getQuantity());
-            products.save(product);
-        }
-        PointBalance balance = points.findByUserId(owner).orElseGet(() -> PointBalance.empty(owner));
-        balance.deduct(order.getTotalAmount());
-        points.save(balance);
+        Order order = findOwnedOrder(owner, orderId);
+
+        confirmOrderState(order);
+        deductOrderStock(order);
+        points.deduct(owner, order.getTotalAmount());
+
+        return OrderInfo.from(order);
+    }
+
+    private Order findOwnedOrder(long owner, long orderId) {
+        return orders.findById(orderId)
+                .filter(order -> order.getUserId() == owner)
+                .orElseThrow(() -> new CoreException(ErrorType.ORDER_NOT_FOUND));
+    }
+
+    private void confirmOrderState(Order order) {
         order.confirm();
-        return OrderInfo.from(orders.save(order));
+        // 같은 주문의 경쟁은 첫 상태 전이에서 걸러낸다. 뒤에서 실패하면 이 변경도 함께 롤백된다.
+        orders.confirmIfDraft(order);
+    }
+
+    private void deductOrderStock(Order order) {
+        for (OrderItem item :
+                order.getItems().stream()
+                        .sorted(Comparator.comparingLong(OrderItem::getProductId))
+                        .toList()) {
+            products.deductStock(item.getProductId(), item.getQuantity());
+        }
     }
 }

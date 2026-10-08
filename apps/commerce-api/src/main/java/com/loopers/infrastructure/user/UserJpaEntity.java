@@ -9,7 +9,8 @@ import jakarta.persistence.Table;
 public class UserJpaEntity {
     @Id private Long id;
 
-    protected UserJpaEntity() {}
+    protected UserJpaEntity() {
+    }
 
     public UserJpaEntity(Long id) {
         this.id = id;

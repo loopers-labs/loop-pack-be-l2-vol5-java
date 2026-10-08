@@ -1,3 +1,4 @@
 package com.loopers.domain.like;
 
-public record ProductLike(long userId, long productId) {}
+public record ProductLike(long userId, long productId) {
+}

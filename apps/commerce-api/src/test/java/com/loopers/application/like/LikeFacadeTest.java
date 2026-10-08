@@ -1,5 +1,14 @@
 package com.loopers.application.like;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
 import com.loopers.application.product.query.ProductView;
 import com.loopers.application.user.IdentifyUser;
 import com.loopers.domain.like.ProductLike;
@@ -8,134 +17,107 @@ import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
-import org.junit.jupiter.api.DisplayName;
+
 import org.junit.jupiter.api.Test;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class LikeFacadeTest {
+    private final ProductLikeRepository likes = mock(ProductLikeRepository.class);
+    private final ProductRepository products = mock(ProductRepository.class);
+
     @Test
-    @DisplayName("등록하면 요청자와 상품의 관계가 생긴다")
-    void registersRelation() {
+    void 등록하면_요청자와_상품_관계의_저장을_요청한다() {
         // arrange
-        IdentifyUser users = new IdentifyUser(id -> id == 1 || id == 2);
-        FakeLikes likes = new FakeLikes();
-        FakeProducts products = new FakeProducts();
-        products.values.put(10L, Product.restore(10, 1, "상품", 1_000, 0, false));
+        IdentifyUser users = new IdentifyUser(id -> id == 1);
+        Product product = Product.restore(10, 1, "상품", 1_000, 0, false);
+        when(products.findById(10)).thenReturn(Optional.of(product));
         CreateLikeFacade facade = new CreateLikeFacade(users, likes, products);
 
         // act
         facade.create(1L, 10);
 
         // assert
-        assertThat(likes.values).containsExactly(new ProductLike(1, 10));
+        verify(likes).registerIfAbsent(new ProductLike(1, 10));
     }
 
     @Test
-    @DisplayName("등록된 관계의 재요청은 관계를 추가하지 않는다")
-    void repeatedRegistrationKeepsOneRelation() {
+    void 저장소의_등록이_정상_완료되면_좋아요_등록은_성공한다() {
         // arrange
-        IdentifyUser users = new IdentifyUser(id -> id == 1 || id == 2);
-        FakeLikes likes = new FakeLikes();
-        FakeProducts products = new FakeProducts();
-        products.values.put(10L, Product.restore(10, 1, "상품", 1_000, 0, false));
+        IdentifyUser users = new IdentifyUser(id -> id == 1);
+        Product product = Product.restore(10, 1, "상품", 1_000, 0, false);
+        when(products.findById(10)).thenReturn(Optional.of(product));
         CreateLikeFacade facade = new CreateLikeFacade(users, likes, products);
-        likes.save(new ProductLike(1, 10));
 
         // act
-        facade.create(1L, 10);
+        assertDoesNotThrow(() -> facade.create(1L, 10));
 
         // assert
-        assertThat(likes.values).containsExactly(new ProductLike(1, 10));
+        verify(likes).registerIfAbsent(new ProductLike(1, 10));
     }
 
     @Test
-    @DisplayName("취소하면 본인 관계만 제거한다")
-    void cancelOnlyRemovesOwnRelation() {
+    void 취소는_요청한_사용자와_상품_ID로_삭제를_요청한다() {
         // arrange
         IdentifyUser users = new IdentifyUser(id -> id == 1 || id == 2);
-        FakeLikes likes = new FakeLikes();
         DeleteLikeFacade facade = new DeleteLikeFacade(users, likes);
-        likes.save(new ProductLike(1, 10));
-        likes.save(new ProductLike(2, 10));
 
         // act
-        facade.delete(1L, 10);
+        facade.delete(2L, 10);
 
         // assert
-        assertThat(likes.values).containsExactly(new ProductLike(2, 10));
+        verify(likes).delete(2, 10);
     }
 
     @Test
-    @DisplayName("본인 관계가 없어도 다른 사용자의 관계를 유지한다")
-    void absentRelationCanBeCancelled() {
+    void 저장소의_삭제가_정상_완료되면_취소는_성공한다() {
         // arrange
         IdentifyUser users = new IdentifyUser(id -> id == 1 || id == 2);
-        FakeLikes likes = new FakeLikes();
         DeleteLikeFacade facade = new DeleteLikeFacade(users, likes);
-        likes.save(new ProductLike(2, 10));
 
         // act
-        facade.delete(1L, 10);
+        assertDoesNotThrow(() -> facade.delete(1L, 10));
 
         // assert
-        assertThat(likes.values).containsExactly(new ProductLike(2, 10));
+        verify(likes).delete(1, 10);
     }
 
     @Test
-    @DisplayName("삭제된 상품은 기존 관계가 있어도 등록을 거절한다")
-    void deletedProductRejectsRegistration() {
+    void 삭제된_상품은_등록을_거절한다() {
         // arrange
-        IdentifyUser users = new IdentifyUser(id -> id == 1 || id == 2);
-        FakeLikes likes = new FakeLikes();
-        FakeProducts products = new FakeProducts();
-        products.values.put(10L, Product.restore(10, 1, "상품", 1_000, 0, false));
+        IdentifyUser users = new IdentifyUser(id -> id == 1);
+        Product product = Product.restore(10, 1, "상품", 1_000, 0, true);
+        when(products.findById(10)).thenReturn(Optional.of(product));
         CreateLikeFacade facade = new CreateLikeFacade(users, likes, products);
-        likes.save(new ProductLike(1, 10));
-        products.values.get(10L).delete();
 
         // act
         CoreException error = assertThrows(CoreException.class, () -> facade.create(1L, 10));
 
         // assert
         assertThat(error.getErrorType()).isEqualTo(ErrorType.PRODUCT_NOT_FOUND);
-        assertThat(likes.values).containsExactly(new ProductLike(1, 10));
+        verify(likes, never()).registerIfAbsent(any(ProductLike.class));
+        verify(likes, never()).delete(1, 10);
     }
 
     @Test
-    @DisplayName("취소는 상품 조회 없이 저장된 본인 관계를 제거한다")
-    void cancelsWithoutProductLookup() {
+    void 유효한_사용자는_좋아요_취소를_요청할_수_있다() {
         // arrange
-        IdentifyUser users = new IdentifyUser(id -> id == 1 || id == 2);
-        FakeLikes likes = new FakeLikes();
+        IdentifyUser users = new IdentifyUser(id -> id == 1);
         DeleteLikeFacade facade = new DeleteLikeFacade(users, likes);
-        likes.save(new ProductLike(1, 10));
 
         // act
         facade.delete(1L, 10);
 
         // assert
-        assertThat(likes.values).isEmpty();
+        verify(likes).delete(1, 10);
     }
 
     @Test
-    @DisplayName("없는 상품은 등록할 수 없다")
-    void rejectsMissingProduct() {
+    void 없는_상품은_등록할_수_없다() {
         // arrange
-        IdentifyUser users = new IdentifyUser(id -> id == 1 || id == 2);
-        FakeLikes likes = new FakeLikes();
-        FakeProducts products = new FakeProducts();
-        products.values.put(10L, Product.restore(10, 1, "상품", 1_000, 0, false));
+        IdentifyUser users = new IdentifyUser(id -> id == 1);
+        when(products.findById(999)).thenReturn(Optional.empty());
         CreateLikeFacade facade = new CreateLikeFacade(users, likes, products);
 
         // act
@@ -143,17 +125,13 @@ class LikeFacadeTest {
 
         // assert
         assertThat(error.getErrorType()).isEqualTo(ErrorType.PRODUCT_NOT_FOUND);
-        assertThat(likes.values).isEmpty();
+        verify(likes, never()).registerIfAbsent(any(ProductLike.class));
     }
 
     @Test
-    @DisplayName("없는 사용자는 등록할 수 없다")
-    void rejectsMissingUser() {
+    void 없는_사용자는_등록할_수_없다() {
         // arrange
-        IdentifyUser users = new IdentifyUser(id -> id == 1 || id == 2);
-        FakeLikes likes = new FakeLikes();
-        FakeProducts products = new FakeProducts();
-        products.values.put(10L, Product.restore(10, 1, "상품", 1_000, 0, false));
+        IdentifyUser users = new IdentifyUser(id -> id == 1);
         CreateLikeFacade facade = new CreateLikeFacade(users, likes, products);
 
         // act
@@ -161,17 +139,13 @@ class LikeFacadeTest {
 
         // assert
         assertThat(error.getErrorType()).isEqualTo(ErrorType.USER_NOT_FOUND);
-        assertThat(likes.values).isEmpty();
+        verify(likes, never()).registerIfAbsent(any(ProductLike.class));
     }
 
     @Test
-    @DisplayName("식별 누락은 등록할 수 없다")
-    void rejectsMissingIdentity() {
+    void 식별_누락은_등록할_수_없다() {
         // arrange
-        IdentifyUser users = new IdentifyUser(id -> id == 1 || id == 2);
-        FakeLikes likes = new FakeLikes();
-        FakeProducts products = new FakeProducts();
-        products.values.put(10L, Product.restore(10, 1, "상품", 1_000, 0, false));
+        IdentifyUser users = new IdentifyUser(id -> id == 1);
         CreateLikeFacade facade = new CreateLikeFacade(users, likes, products);
 
         // act
@@ -179,16 +153,17 @@ class LikeFacadeTest {
 
         // assert
         assertThat(error.getErrorType()).isEqualTo(ErrorType.INVALID_REQUEST);
-        assertThat(likes.values).isEmpty();
+        verify(likes, never()).registerIfAbsent(any(ProductLike.class));
     }
 
     @Test
-    @DisplayName("본인의 좋아요 목록을 반환한다")
-    void returnsOwnList() {
+    void 본인의_좋아요_목록을_반환한다() {
         // arrange
         IdentifyUser users = new IdentifyUser(id -> id == 1);
-        ProductView expected = new ProductView(10, "상품", 1_000, new ProductView.BrandView(1, "브랜드"), 1);
-        GetLikeFacade facade = new GetLikeFacade(users, id -> id == 1 ? List.of(expected) : List.of());
+        ProductView expected =
+                new ProductView(10, "상품", 1_000, new ProductView.BrandView(1, "브랜드"), 1);
+        GetLikeFacade facade =
+                new GetLikeFacade(users, id -> id == 1 ? List.of(expected) : List.of());
 
         // act
         var result = facade.get(1L, 1);
@@ -198,8 +173,7 @@ class LikeFacadeTest {
     }
 
     @Test
-    @DisplayName("본인 좋아요가 없으면 빈 목록을 반환한다")
-    void returnsEmptyOwnList() {
+    void 본인_좋아요가_없으면_빈_목록을_반환한다() {
         // arrange
         IdentifyUser users = new IdentifyUser(id -> id == 1);
         GetLikeFacade facade = new GetLikeFacade(users, id -> List.of());
@@ -212,8 +186,7 @@ class LikeFacadeTest {
     }
 
     @Test
-    @DisplayName("타인 목록 접근은 권한 오류로 거절한다")
-    void rejectsForeignList() {
+    void 타인_목록_접근은_권한_오류로_거절한다() {
         // arrange
         IdentifyUser users = new IdentifyUser(id -> id == 1 || id == 2);
         GetLikeFacade facade = new GetLikeFacade(users, id -> List.of());
@@ -223,44 +196,5 @@ class LikeFacadeTest {
 
         // assert
         assertThat(error.getErrorType()).isEqualTo(ErrorType.ACCESS_DENIED);
-    }
-    private static class FakeLikes implements ProductLikeRepository {
-        private final Set<ProductLike> values = new HashSet<>();
-
-        @Override
-        public boolean exists(long userId, long productId) {
-            return values.contains(new ProductLike(userId, productId));
-        }
-
-        @Override
-        public void save(ProductLike like) {
-            if (!values.add(like)) {
-                throw new IllegalStateException("duplicate relation");
-            }
-        }
-
-        @Override
-        public void delete(long userId, long productId) {
-            values.remove(new ProductLike(userId, productId));
-        }
-    }
-
-    private static class FakeProducts implements ProductRepository {
-        private final Map<Long, Product> values = new HashMap<>();
-
-        @Override
-        public Optional<Product> findById(long id) {
-            return Optional.ofNullable(values.get(id));
-        }
-
-        @Override
-        public Product save(Product product) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public Page<Product> findAll(Pageable pageable) {
-            throw new UnsupportedOperationException();
-        }
     }
 }

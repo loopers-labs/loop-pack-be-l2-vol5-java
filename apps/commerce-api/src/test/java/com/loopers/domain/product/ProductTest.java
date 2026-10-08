@@ -1,20 +1,19 @@
 package com.loopers.domain.product;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
-import org.junit.jupiter.api.DisplayName;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-
 class ProductTest {
     @Test
-    @DisplayName("상품 정보 수정 시 브랜드는 유지한다")
-    void preservesBrandOnUpdate() {
+    void 상품_정보_수정_시_브랜드는_유지한다() {
         // arrange
         Product product = Product.create(3L, "상품", 1_000);
 
@@ -28,8 +27,7 @@ class ProductTest {
     }
 
     @Test
-    @DisplayName("새 상품의 초기 재고는 0개다")
-    void createsWithZeroStock() {
+    void 새_상품의_초기_재고는_0개다() {
         // arrange
         long brandId = 3L;
 
@@ -42,8 +40,7 @@ class ProductTest {
 
     @ParameterizedTest
     @ValueSource(ints = {0, Integer.MAX_VALUE})
-    @DisplayName("재고 설정은 증감량이 아닌 최종 수량을 저장한다")
-    void setsFinalStock(int stock) {
+    void 재고_설정은_증감량이_아닌_최종_수량을_저장한다(int stock) {
         // arrange
         Product product = Product.create(3, "상품", 1_000);
         product.setStock(5);
@@ -56,8 +53,7 @@ class ProductTest {
     }
 
     @Test
-    @DisplayName("재고 5개에서 2개를 차감하면 3개가 남는다")
-    void deductsStock() {
+    void 재고_5개에서_2개를_차감하면_3개가_남는다() {
         // arrange
         Product product = Product.create(3, "상품", 1_000);
         product.setStock(5);
@@ -71,14 +67,14 @@ class ProductTest {
 
     @ParameterizedTest
     @ValueSource(ints = {0, -1})
-    @DisplayName("유효하지 않은 차감 수량은 거절하고 재고를 유지한다")
-    void rejectsInvalidDeductionWithoutChangingStock(int quantity) {
+    void 유효하지_않은_차감_수량은_거절하고_재고를_유지한다(int quantity) {
         // arrange
         Product product = Product.create(3, "상품", 1_000);
         product.setStock(5);
 
         // act
-        CoreException error = assertThrows(CoreException.class, () -> product.deductStock(quantity));
+        CoreException error =
+                assertThrows(CoreException.class, () -> product.deductStock(quantity));
 
         // assert
         assertThat(error.getErrorType()).isEqualTo(ErrorType.INVALID_REQUEST);
@@ -86,8 +82,7 @@ class ProductTest {
     }
 
     @Test
-    @DisplayName("음수 재고 설정을 거절하고 기존 수량을 유지한다")
-    void rejectsNegativeStock() {
+    void 음수_재고_설정을_거절하고_기존_수량을_유지한다() {
         // arrange
         Product product = Product.create(3, "상품", 1_000);
         product.setStock(5);
@@ -101,8 +96,7 @@ class ProductTest {
     }
 
     @Test
-    @DisplayName("잘못된 가격으로 수정하면 이름도 바뀌지 않는다")
-    void rejectsInvalidInformationWithoutPartialChange() {
+    void 잘못된_가격으로_수정하면_이름도_바뀌지_않는다() {
         // arrange
         Product product = Product.create(3L, "상품", 1_000);
 
@@ -118,33 +112,32 @@ class ProductTest {
     @ParameterizedTest
     @NullAndEmptySource
     @ValueSource(strings = {" "})
-    @DisplayName("빈 상품 이름으로 등록할 수 없다")
-    void rejectsBlankName(String name) {
+    void 빈_상품_이름으로_등록할_수_없다(String name) {
         // arrange: null, 빈 문자열, 공백을 각각 입력한다
 
         // act
-        CoreException error = assertThrows(CoreException.class, () -> Product.create(3, name, 1_000));
+        CoreException error =
+                assertThrows(CoreException.class, () -> Product.create(3, name, 1_000));
 
         // assert
         assertThat(error.getErrorType()).isEqualTo(ErrorType.INVALID_REQUEST);
     }
 
     @Test
-    @DisplayName("상품 이름이 100자를 넘으면 등록을 거절한다")
-    void rejectsLongName() {
+    void 상품_이름이_100자를_넘으면_등록을_거절한다() {
         // arrange
         String name = "가".repeat(101);
 
         // act
-        CoreException error = assertThrows(CoreException.class, () -> Product.create(3, name, 1_000));
+        CoreException error =
+                assertThrows(CoreException.class, () -> Product.create(3, name, 1_000));
 
         // assert
         assertThat(error.getErrorType()).isEqualTo(ErrorType.INVALID_REQUEST);
     }
 
     @Test
-    @DisplayName("상품 이름은 100자까지 허용한다")
-    void allowsMaximumNameLength() {
+    void 상품_이름은_100자까지_허용한다() {
         // arrange
         String name = "가".repeat(100);
 
@@ -156,8 +149,7 @@ class ProductTest {
     }
 
     @Test
-    @DisplayName("상품 가격은 long 상한까지 허용한다")
-    void allowsMaximumPrice() {
+    void 상품_가격은_long_상한까지_허용한다() {
         // arrange
         long price = Long.MAX_VALUE;
 
@@ -169,8 +161,7 @@ class ProductTest {
     }
 
     @Test
-    @DisplayName("삭제된 상품의 삭제 재요청은 성공한다")
-    void repeatsDeletion() {
+    void 삭제된_상품의_삭제_재요청은_성공한다() {
         // arrange
         Product product = Product.create(3, "상품", 1_000);
         product.setStock(5);
@@ -182,9 +173,9 @@ class ProductTest {
         // assert
         assertThat(product.isDeleted()).isTrue();
     }
+
     @Test
-    @DisplayName("삭제된 상품의 정보는 변경할 수 없다")
-    void rejectsUpdateAfterDeletion() {
+    void 삭제된_상품의_정보는_변경할_수_없다() {
         // arrange
         Product product = Product.create(3, "상품", 1_000);
         product.setStock(5);
@@ -198,9 +189,9 @@ class ProductTest {
         assertThat(product.getName()).isEqualTo("상품");
         assertThat(product.getPrice()).isEqualTo(1_000);
     }
+
     @Test
-    @DisplayName("삭제된 상품의 재고는 설정할 수 없다")
-    void rejectsStockSettingAfterDeletion() {
+    void 삭제된_상품의_재고는_설정할_수_없다() {
         // arrange
         Product product = Product.create(3, "상품", 1_000);
         product.setStock(5);
@@ -213,9 +204,9 @@ class ProductTest {
         assertThat(error.getErrorType()).isEqualTo(ErrorType.PRODUCT_NOT_FOUND);
         assertThat(product.getStock()).isEqualTo(5);
     }
+
     @Test
-    @DisplayName("삭제된 상품의 재고는 차감할 수 없다")
-    void rejectsDeductionAfterDeletion() {
+    void 삭제된_상품의_재고는_차감할_수_없다() {
         // arrange
         Product product = Product.create(3, "상품", 1_000);
         product.setStock(5);
@@ -228,9 +219,9 @@ class ProductTest {
         assertThat(error.getErrorType()).isEqualTo(ErrorType.PRODUCT_NOT_FOUND);
         assertThat(product.getStock()).isEqualTo(5);
     }
+
     @Test
-    @DisplayName("재고보다 많이 차감하면 재고 부족으로 거절한다")
-    void rejectsInsufficientStock() {
+    void 재고보다_많이_차감하면_재고_부족으로_거절한다() {
         // arrange
         Product product = Product.create(3, "상품", 1_000);
         product.setStock(5);
