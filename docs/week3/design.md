@@ -17,9 +17,9 @@ W2 의 절을 가리킬 때는 `W2 6.3` 처럼 쓴다.
 기술 오류(잠금 대기 시간 초과 · 데드락 · 커넥션 고갈)는 업무 예외가 아니므로 409 로 바꾸지 않고 500 으로 둔다. 잠금 대기는 3 초에서 포기한다(4.4).
 경쟁 테스트는 이것을 "기술 오류" 로 따로 세고, 0 이어야 한다(4.2).
 
-## 1. 격리 수준은 READ COMMITTED 이고, 서버가 정한다
+## 1. 격리 수준은 READ COMMITTED 이고, MySQL 서버 옵션이 정한다
 
-MySQL 서버의 기본값(`GLOBAL transaction_isolation`)을 `READ-COMMITTED` 로 둔다.
+MySQL 서버를 `--transaction-isolation=READ-COMMITTED` 옵션으로 띄워, 서버 전체의 기본값(`GLOBAL transaction_isolation`)을 `READ-COMMITTED` 로 둔다.
 테스트 서버(`MySqlTestContainersConfig`)와 로컬 서버(`docker/infra-compose.yml`)가 서버 옵션으로 걸고,
 애플리케이션은 격리 수준을 지정하지 않는다 — `@Transactional` 에 `isolation` 이 없고, 커넥션 풀 설정도 없다.
 `TransactionIsolationIntegrationTest` 가 애플리케이션 트랜잭션이 실제로 그 값으로 도는지 본다.
@@ -108,9 +108,9 @@ MySQL 8.0 의 기본 `binlog_format` 이 행 변경을 기록하는 `ROW` 다.
 **판단에 쓰는 읽기 (W2 6.5 남는 규칙).** 평범한 읽기는 잠그지 않는다. READ COMMITTED 에서는 문장마다 최신 커밋을 읽지만,
 읽은 직후 남이 커밋하면 그 값은 낡고 그 값으로 한 판단도 낡는다. "판단에 쓰는 읽기는 잠금 읽기로" 는 그대로다.
 
-### 1.4 왜 서버에 두는가
+### 1.4 왜 커넥션 풀이 아니라 MySQL 서버에 두는가
 
-서버 기본값은 이 애플리케이션뿐 아니라 **DB 에 붙는 모든 클라이언트**(배치 · 운영 도구)에 같은 규칙을 준다.
+MySQL 서버 옵션은 이 애플리케이션뿐 아니라 **DB 에 붙는 모든 클라이언트**(배치 · 운영 도구)에 같은 규칙을 준다.
 대가는 dev · qa · prd 서버가 이 저장소 밖에 있다는 것이다. **운영 서버 파라미터에도 `transaction_isolation = READ-COMMITTED` 를 요구한다.**
 그 값이 다르면 운영만 다른 격리 수준으로 돈다 — 정합성은 그대로지만, 범위 잠금의 번짐과 1.3 의 실패 모양이 달라진다.
 
