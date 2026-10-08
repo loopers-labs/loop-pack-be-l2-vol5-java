@@ -35,6 +35,9 @@ public class Order {
     }
 
     public static Order create(Long userId, List<OrderItem> items) {
+        if (items == null || items.isEmpty()) {
+            throw new CoreException(ErrorType.BAD_REQUEST, "주문 품목은 하나 이상이어야 합니다.");
+        }
         Order order = new Order(null, userId, OrderStatus.DRAFT, 0L, null, null, List.of());
         items.forEach(order::addItem);
         return order;

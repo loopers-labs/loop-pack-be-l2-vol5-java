@@ -2,6 +2,7 @@ package com.loopers.domain.order;
 
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -22,6 +23,26 @@ class OrderTest {
         assertThat(order.getStatus()).isEqualTo(OrderStatus.DRAFT);
         assertThat(order.getTotalAmount()).isEqualTo(200L);
         assertThat(order.getItems()).hasSize(1);
+    }
+
+    @DisplayName("품목이 비어 있으면 Order 생성을 BAD_REQUEST로 거절한다.")
+    @Test
+    void rejectsEmptyItems() {
+        assertThatThrownBy(() -> Order.create(1L, List.of()))
+            .isInstanceOfSatisfying(CoreException.class, exception -> {
+                assertThat(exception.getErrorType()).isEqualTo(ErrorType.BAD_REQUEST);
+                assertThat(exception.getMessage()).isEqualTo("주문 품목은 하나 이상이어야 합니다.");
+            });
+    }
+
+    @DisplayName("품목 목록이 null이면 Order 생성을 BAD_REQUEST로 거절한다.")
+    @Test
+    void rejectsNullItems() {
+        assertThatThrownBy(() -> Order.create(1L, null))
+            .isInstanceOfSatisfying(CoreException.class, exception -> {
+                assertThat(exception.getErrorType()).isEqualTo(ErrorType.BAD_REQUEST);
+                assertThat(exception.getMessage()).isEqualTo("주문 품목은 하나 이상이어야 합니다.");
+            });
     }
 
     @Test
