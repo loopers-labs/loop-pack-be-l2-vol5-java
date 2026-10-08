@@ -9,6 +9,14 @@ public record OrderItem(Long productId, String productName, long unitPrice, int 
         if (quantity <= 0) {
             throw new CoreException(ErrorType.BAD_REQUEST, "주문 수량은 양수여야 합니다.");
         }
+        if (unitPrice <= 0) {
+            throw new CoreException(ErrorType.BAD_REQUEST, "주문 단가는 1원 이상이어야 합니다.");
+        }
+        try {
+            Math.multiplyExact(unitPrice, quantity);
+        } catch (ArithmeticException exception) {
+            throw new CoreException(ErrorType.BAD_REQUEST, "주문 품목 금액이 저장 가능한 범위를 초과했습니다.");
+        }
     }
 
     public static OrderItem create(Long productId, String productName, long unitPrice, int quantity) {
