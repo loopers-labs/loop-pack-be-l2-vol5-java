@@ -4,7 +4,7 @@
 
 목표는 고객 12개·관리자 13개 API와 관련 도메인·저장·권한·동시성·운영 DDL을 끝까지 연결하고 검증하는 것이다. 이 문서는 완료 증거를 추적하며 새 업무 정책을 정하지 않는다. 계약의 상세 기대값은 연결한 원문을 따른다.
 
-**W3 변경 상태:** 브랜드 일괄 삭제의 `W3-BRAND-01..08`을 구현·검증했다. 정상·경계·롤백에 이어 연결 API·접근 제한·DRAFT·과거 주문 보존과 삭제·주문·등록 경합을 확인했다. 최신 결과는 아래 네 번째 증분을 따른다. 이전 514·513·509개와 W2의 506개 통과 기록은 당시 증거로 보존한다. **브랜드 삭제 범위의 완료이며 나머지 W3 주문 과제까지 완료했다는 뜻은 아니다.**
+**W3 변경 상태:** 브랜드 일괄 삭제의 `W3-BRAND-01..08`과 후속 승인 P16의 **주문 재확정 거절 `W3-RECONFIRM-01..06` 구현·검증을 완료**했다. 최신 전체 검사는 55개 스위트·541개 통과다. 아래 브랜드 538개 및 이전 514·513·509개, W2의 506개 통과 기록은 당시 증거로 보존한다. 주문 저장 경계 실패·갱신 유실 대조군·과제 지정 경쟁 수치의 검증 등 나머지 W3 과제 전체의 완료를 뜻하지 않는다.
 
 ## 기준선과 기록 방법
 
@@ -34,9 +34,38 @@ W2 초기 구현 증분의 기준선은 [고객 브랜드 조회 application 기
 | 세 번째 증분 관련 회귀 | W3-BRAND-03, Checkstyle·ArchUnit | done | 신규 롤백 1개를 포함한 BrandRemovalTransactionTest 7개·Checkstyle 통과 후 전체 check 종료 코드0. 52개 스위트·514개 테스트, 실패·오류·건너뜀0. [실행 기록](../week3/brand-removal-tdd-log.md#세-번째-증분--w3-brand-03-롤백-검증). 생산 코드 변경 없이 최초 실행부터 통과했다 |
 | 네 번째 증분 관련 회귀 | W3-BRAND-04~08, Checkstyle·ArchUnit | done | 신규 24개·Checkstyle 통과 후 최종 전체 check 종료 코드0. 55개 스위트·538개 테스트, 실패·오류·건너뜀0. [실행 기록](../week3/brand-removal-tdd-log.md#네-번째-증분--w3-brand-0408-연결동시성-검증). 테스트 비교 기준과 동시성 검증 방식을 보완했으며 생산 코드 변경 없음 |
 
+## W3 주문 재확정 거절
+
+사용자가 승인한 `409 ORDER_ALREADY_CONFIRMED / 이미 확정된 주문입니다.`를 따른다. 실패 응답은 `meta.result=FAIL`·`data` 생략이며 기존 확정·결제 결과를 취소하지 않는다. 과거 W2의 재요청 성공 반환 증거와 구분한다.
+
+| 범위 | 상태 | 완료 증거 |
+| --- | --- | --- |
+| Order 상태 규칙·C10 오류 응답 | done | OrderTest·OrderV1ApiE2ETest: 도메인 재확정 거절, 정확한 HTTP 오류와 6개 테이블 전체 행 불변 |
+| 소유권·삭제 후 조회 | done | OrderV1ApiE2ETest: 타인의 확정 주문404 우선, 본인 확정 후 상품·브랜드 삭제여도 재확정409·GET 기존 결과 유지 |
+| 같은 주문 경합·기존 DRAFT 재시도 | done | OrderConcurrencyIntegrationTest: 시작만 맞춘 실제 서비스 경합의 성공1·정확한 상태 거절1·차감1회. HTTP 테스트에서 재고/포인트 부족의2사례 모두 보충 후 같은 DRAFT 확정 성공 |
+| 전체 회귀·정적 검사 | done | 관련60개 및 전체 check 종료 코드0. XML55개 스위트·541개 통과, Checkstyle11개 보고서 위반0·ArchUnit1개 통과 |
+
+실제 Red·Green과 최종 결과는 [주문 재확정 실행 기록](../week3/order-reconfirmation-tdd-log.md)에 남긴다. 브랜드 삭제의 완료 상태는 유지하며, 이 증분으로 다른 주문 원자성·경쟁 과제까지 완료 처리하지 않는다.
+
 ## 최신 통합 검사
 
+### W3 주문 재확정 거절 — 2026-10-08
+
+2026-10-08 16:19 KST, 최종 코드에서 `./gradlew :apps:commerce-api:check --console=plain -q`가 종료 코드 0으로 통과했다.
+
+| 검사 | 실제 결과·범위 |
+| --- | --- |
+| 관련 테스트 | 16:17 KST, OrderTest 8개·OrderV1ApiE2ETest 40개·OrderConcurrencyIntegrationTest 7개·OrderScenarioApiE2ETest 5개, 합계60개 통과 |
+| 전체 API 모듈 테스트 XML | **55개 테스트 스위트·541개 통과**, 실패·오류·건너뜀0개. 기존538개 대비 HTTP 실행 사례3개 증가이며 나머지는 승인된 계약에 맞게 변경·보강 |
+| Checkstyle·ArchUnit | Checkstyle XML11개 보고서의 위반0개, ArchitectureTest1개 통과. 검사 규칙 삭제·완화 없음 |
+| 완료 범위 | W3-RECONFIRM-01~06 및 영향받는 기존 회귀. 브랜드 삭제 완료 유지, 다른 W3 주문 원자성·갱신 유실·지정 경쟁 시나리오 완료를 뜻하지 않음 |
+| 검증 방식 | 도메인 Red·Green, HTTP/경합 Red47개 중5개 실패 후 서비스 상태 검사 연결. 같은 주문의 시작만 맞춘 경합과 커밋 후 순차 재요청을 구분 |
+
+Docker 미기동으로 발생한 첫 통합 실행 오류는 업무 Red와 구분했다. 고객 요청은 실제 HTTP, 관리자 삭제/재고 설정은 실제 계층·MySQL을 연결한 MockMvc다. 정확한 변경 책임·실행 명령·검증 한계는 [재확정 TDD 기록](../week3/order-reconfirmation-tdd-log.md)을 따른다.
+
 ### W3 네 번째 증분 — 2026-10-08
+
+아래는 브랜드 삭제 범위를 완료한 시점의 과거 기록이다. 후속 주문 재확정 거절의 검증 결과와 구분한다.
 
 2026-10-08 12:01 KST, 최종 코드에서 `./gradlew :apps:commerce-api:check --console=plain -q`가 종료 코드 0으로 통과했다.
 
@@ -129,7 +158,7 @@ W2 초기 구현 증분의 기준선은 [고객 브랜드 조회 application 기
 
 ## 정책 확인
 
-P00~P15의 확정 내용을 따른다. P15는 사용자의 과제 피드백 수정 요청으로 관리자 접근 방식과 검증 범위를 바로잡은 계약이다. 2026-09-18 추천 묶음에 대한 사용자의 “어 진행해줘” 답변으로 아래 정책 확인을 마쳤다. 이 표의 `confirmed`는 정책·문서 반영 상태이며, API·DB·동시성 구현의 `done`과 다르다. 새로운 완료 증거가 없는 구현 항목은 pending을 유지한다.
+P00~P16의 확정 내용을 따른다. P15는 사용자의 과제 피드백 수정 요청으로 관리자 접근 방식과 검증 범위를 바로잡은 계약이다. 2026-09-18 추천 묶음 승인과 2026-10-08 후속 P16 승인으로 아래 정책을 확인했다. 이 표의 `confirmed`는 정책·문서 반영 상태이며, API·DB·동시성 구현의 `done`과 다르다. 새로운 완료 증거가 없는 구현 항목은 pending을 유지한다.
 
 | 항목 | 확정한 범위 | 정책 상태 | 결정·문서 반영 증거 |
 | --- | --- | --- | --- |
@@ -142,12 +171,13 @@ P00~P15의 확정 내용을 따른다. P15는 사용자의 과제 피드백 수�
 | 구현 순서 | JPA 유지, 기능 구현 후 나머지 운영 수동 DDL 작성·검증 | confirmed | [P14](commerce-policy-decisions.md#구현-전에-확인할-정책-선택). 기존 브랜드 SQL 보존 |
 | 과제 관리자 접근·검증 보완 | 고객 fixture와 관리자 Security 역할 분리, 미식별403·쓰기 CSRF, 연결 시나리오와 모든 Java 모듈 lint | confirmed | [P15](commerce-policy-decisions.md#구현-전에-확인할-정책-선택) · [Security 기록](commerce-admin-security-log.md) · [Checkstyle 기록](commerce-checkstyle-scope-log.md) |
 | W3 브랜드 일괄 삭제 | 브랜드·연결 미삭제 상품 soft delete, 비관적 락·단일 트랜잭션·전체 롤백, 다른 대상·기존 주문 보존 | confirmed | [W3 요구·합의](commerce-policy-decisions.md#w3-브랜드상품-일괄-논리-삭제). P13을 유지하는 ID별 잠금·bulk UPDATE 구현을 채택했으며, 첫 증분 검증과 전체 계약 완료는 구분 |
+| W3 주문 재확정 거절 | 본인 CONFIRMED 재확정은409·최초 결과와 차감 보존, 타인404 우선·GET 유지·실패한 DRAFT 재시도 허용 | confirmed | [P16 요구·합의](commerce-policy-decisions.md#w3-주문-재확정-거절). W2의 재확정200 반환을 대체하며 충전·주문 생성의 반복 성공 정책은 유지 |
 
 ## API 25개 완료 증거
 
 경로는 [고객·관리자 계약표](commerce-api-contract.md#고객-api-계약표)를 따른다. 각 행의 `done`은 HTTP부터 필요한 저장 처리까지의 검증을 뜻한다. C01의 기존 [application 검증](commerce-tdd-brand-query-log.md)은 선행 증거이며 HTTP 완료 증거는 아니다. 모든 A01~A13에는 기존 업무 검증과 함께 [AdminSecurityApiTest](../../apps/commerce-api/src/test/java/com/loopers/interfaces/api/commerce/AdminSecurityApiTest.java)의 실제 관리자·일반·미식별 요청 검증을 적용했다.
 
-아래 기존 증거는 W2 당시 계약 기준이다. A05의 계약 변경과 연결 API의 추가 검증은 [W3 완료 증거](#w3-브랜드상품-일괄-삭제의-완료-증거)로 구분한다. 무관한 API의 기존 완료 증거를 취소하지 않는다.
+아래 기존 증거는 W2 당시 계약 기준이다. A05의 계약 변경은 [W3 브랜드 완료 증거](#w3-브랜드상품-일괄-삭제의-완료-증거), C10의 계약 변경은 [W3 재확정 증거](#w3-주문-재확정-거절)로 구분한다. 무관한 API의 기존 완료 증거를 취소하지 않는다.
 
 | ID | Method / Path | 연결 TDD | 상태 | 완료 증거: 테스트·실행 기록 |
 | --- | --- | --- | --- | --- |
@@ -160,7 +190,7 @@ P00~P15의 확정 내용을 따른다. P15는 사용자의 과제 피드백 수�
 | C07 | `POST /api/v1/points/charge` | API-07·08·21·23 | done | [포인트 HTTP](../../apps/commerce-api/src/test/java/com/loopers/interfaces/api/point/PointApiE2ETest.java) · [실행 기록](commerce-tdd-point-like-log.md) |
 | C08 | `GET /api/v1/points` | API-07·21 | done | [포인트 HTTP](../../apps/commerce-api/src/test/java/com/loopers/interfaces/api/point/PointApiE2ETest.java) · [실행 기록](commerce-tdd-point-like-log.md) |
 | C09 | `POST /api/v1/orders` | API-09~11·21·22 | done | [주문 HTTP](../../apps/commerce-api/src/test/java/com/loopers/interfaces/api/order/OrderV1ApiE2ETest.java) · [실행 기록](commerce-tdd-order-log.md) |
-| C10 | `POST /api/v1/orders/{orderId}/confirm` | API-11~15·21·23·24 | done | [주문 HTTP](../../apps/commerce-api/src/test/java/com/loopers/interfaces/api/order/OrderV1ApiE2ETest.java) · [실행 기록](commerce-tdd-order-log.md) |
+| C10 | `POST /api/v1/orders/{orderId}/confirm` | API-11~15·21·23·24 · W3-RECONFIRM-01..06 | done (P16 반영) | [주문 HTTP](../../apps/commerce-api/src/test/java/com/loopers/interfaces/api/order/OrderV1ApiE2ETest.java) · [W2 기록](commerce-tdd-order-log.md) · [W3 재확정409·보존 검증](../week3/order-reconfirmation-tdd-log.md) |
 | C11 | `GET /api/v1/orders` | API-04·15·20·21 | done | [주문 HTTP](../../apps/commerce-api/src/test/java/com/loopers/interfaces/api/order/OrderV1ApiE2ETest.java) · [실행 기록](commerce-tdd-order-log.md) |
 | C12 | `GET /api/v1/orders/{orderId}` | API-14·15·20·21 | done | [주문 HTTP](../../apps/commerce-api/src/test/java/com/loopers/interfaces/api/order/OrderV1ApiE2ETest.java) · [실행 기록](commerce-tdd-order-log.md) |
 | A01 | `GET /api-admin/v1/brands` | API-04·16·21 | done | [관리자 브랜드 HTTP](../../apps/commerce-api/src/test/java/com/loopers/interfaces/api/brand/AdminBrandMutationApiE2ETest.java) · [실행 기록](commerce-tdd-admin-brand-http-log.md) |
@@ -181,7 +211,7 @@ P00~P15의 확정 내용을 따른다. P15는 사용자의 과제 피드백 수�
 
 이 표는 [TDD 기대값](commerce-tdd-plan.md#api규칙별-테스트-기대값)의 색인이다. fixture 값·정렬 순서·응답·DB 기대값을 이 요약으로 대체하지 않는다. 후속 승인한 금액·HTTP·잠금 계약의 기대값으로 실행하며 완료 여부는 실제 증거로 갱신한다.
 
-기존 `API-16`의 상품 존재 시 삭제 거절과 `API-24`의 브랜드 경합 결과는 W2 기록이다. W3의 변경·추가 검증에는 별도 `W3-BRAND` ID를 사용한다.
+기존 `API-16`의 상품 존재 시 삭제 거절과 `API-24`의 브랜드 경합 결과는 W2 기록이다. W3의 변경·추가 검증에는 별도 `W3-BRAND` ID를 사용한다. `API-14·23`의 재확정 성공 반환은 P16으로 변경했으며 `W3-RECONFIRM` ID로 새 검증을 추적한다.
 
 | 사례 | 검증 범위 | 상태 | 완료 증거: 테스트·실행 기록 |
 | --- | --- | --- | --- |
@@ -198,7 +228,7 @@ P00~P15의 확정 내용을 따른다. P15는 사용자의 과제 피드백 수�
 | API-11 | 중복 상품 수량 합산·상한·합산 수량으로 확정 | done | [주문 기록](commerce-tdd-order-log.md) · OrderScenarioApiE2ETest의 합산 수량 5·재고 4 실패 후 5 성공 |
 | API-12 | 확정 시 주문·모든 재고·잔액의 원자적 반영 | done | [주문 기록](commerce-tdd-order-log.md) · OrderScenarioApiE2ETest의 4000원/재고 3·3/잔액 6000 |
 | API-13 | 재고/잔액 부족·삭제·잘못된 저장 수량과 실패 상태 보존 | done | [주문 기록](commerce-tdd-order-log.md) |
-| API-14 | 생성 스냅샷·재확정의 기존 결과·삭제 후 주문 보존 | done | [주문 기록](commerce-tdd-order-log.md) |
+| API-14 | 생성 스냅샷·재확정409·최초 결과 보존·상품/브랜드 삭제 후 GET | done (P16 반영) | [W2 기록](commerce-tdd-order-log.md)은 당시 재요청200의 증거. [W3 재확정 기록](../week3/order-reconfirmation-tdd-log.md)의 새409 계약·6개 테이블 불변 검증으로 대체 |
 | API-15 | 본인 좋아요·주문 접근, 타인/없는 대상 구분과 정보 비노출 | done | [포인트·좋아요 기록](commerce-tdd-point-like-log.md) · [주문 기록](commerce-tdd-order-log.md) |
 | API-16 | W2 브랜드 CRUD·고객 반영·미삭제 상품 삭제 방지·재삭제 보존 → W3 일괄 삭제 | W2 done / W3 done | [W2 브랜드 HTTP 기록](commerce-tdd-admin-brand-http-log.md)은 당시 계약. 새 삭제 계약은 W3-BRAND-01~06의 [검증 기록](../week3/brand-removal-tdd-log.md#네-번째-증분--w3-brand-0408-연결동시성-검증) 참조 |
 | API-17 | 상품 CRUD·브랜드 유지·고객 반영·논리 삭제·관계 보존 | done | [상품 기록](commerce-tdd-product-log.md) · [포인트·좋아요 기록](commerce-tdd-point-like-log.md) · [주문 기록](commerce-tdd-order-log.md) |
@@ -207,7 +237,7 @@ P00~P15의 확정 내용을 따른다. P15는 사용자의 과제 피드백 수�
 | API-20 | 관리자 주문 상세·필터와 고객 조회의 범위 차이 | done | [주문 기록](commerce-tdd-order-log.md) |
 | API-21 | 고객 fixture·관리자 Security 권한 우선·CSRF·상태 보존 | done | [Security 보완](commerce-admin-security-log.md) · [브랜드 HTTP 기록](commerce-tdd-admin-brand-http-log.md) · [포인트·좋아요 기록](commerce-tdd-point-like-log.md) · [주문 기록](commerce-tdd-order-log.md) |
 | API-22 | 단가×수량·소계 합의 금액 범위 초과와 저장 방지 | done | [주문 기록](commerce-tdd-order-log.md) |
-| API-23 | 같은 주문·재고·잔액 경쟁, 충전/재고 설정과 확정 경합 | done | [주문 기록](commerce-tdd-order-log.md) · OrderConcurrencyIntegrationTest |
+| API-23 | 같은 주문·재고·잔액 경쟁, 충전/재고 설정과 확정 경합 | 기존 범위 done / P16 done | [W2 주문 기록](commerce-tdd-order-log.md)의 기존 경쟁과 OrderConcurrencyIntegrationTest의 [같은 주문 성공1·재확정 거절1](../week3/order-reconfirmation-tdd-log.md). W3 지정8주문·3주문 및 갱신 유실 대조군의 완료 증거는 아님 |
 | API-24 | W2 브랜드 삭제/상품 등록, 상품 삭제/주문 확정 경합 → W3 일괄 삭제 관련 경합 | W2 done / W3 done | [W2 브랜드 HTTP 기록](commerce-tdd-admin-brand-http-log.md) · [주문 기록](commerce-tdd-order-log.md)은 기존 증거. W3-BRAND-07·08의 순차 선후 결과와 시작만 맞춘 경합은 [후속 검증 기록](../week3/brand-removal-tdd-log.md#네-번째-증분--w3-brand-0408-연결동시성-검증) 참조 |
 
 ## 통합·운영·최종 회귀 완료 증거

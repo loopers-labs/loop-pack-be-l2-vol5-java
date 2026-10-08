@@ -76,13 +76,16 @@ class OrderV1ApiE2ETest {
         assertThat(data.has("userId")).isFalse();
     }
 
-    @Test
-    void snapshotsSurvivePriceChangeAndDeletionAndConfirmationIsIdempotent() {
+    @ParameterizedTest
+    @ValueSource(strings = {"active", "deleted_product", "deleted_brand"})
+    void rejectsReconfirmationWhilePreservingSnapshotsAndAllStoredRows(String productState) {
         Product product = product(100, 5);
         jdbc.update("UPDATE user SET point_balance = 1000 WHERE id=1");
         long id = create("alice", product.getId(), 2);
         long other = create("alice", product.getId(), 2);
         assertThat(other).isNotEqualTo(id);
+        success(request(HttpMethod.POST, "/api/v1/products/" + product.getId() + "/likes", "alice", null), 200);
+        success(request(HttpMethod.POST, "/api/v1/products/" + product.getId() + "/likes", "bob", null), 200);
         jdbc.update("UPDATE product SET name='새 이름', price=999 WHERE id=?", product.getId());
 
         JsonNode confirmed = success(request(HttpMethod.POST, "/api/v1/orders/" + id + "/confirm", "alice", null), 200);
@@ -90,17 +93,49 @@ class OrderV1ApiE2ETest {
         assertThat(confirmed.path("paidAmount").asLong()).isEqualTo(200);
         assertThat(confirmed.path("items").get(0).path("productName").asText()).isEqualTo("상품");
         assertThat(confirmed.path("confirmedAt").asText()).isNotBlank();
-        jdbc.update("UPDATE product SET deleted_at=UTC_TIMESTAMP(6) WHERE id=?", product.getId());
+        if (!productState.equals("active")) {
+            String deletionPath = productState.equals("deleted_product")
+                ? "/api-admin/v1/products/" + product.getId()
+                : "/api-admin/v1/brands/" + product.getBrand().getId();
+            assertThat(success(request(HttpMethod.DELETE, deletionPath, "admin", null), 200)
+                .path("deleted").asBoolean()).isTrue();
+            assertThat(jdbc.queryForObject("SELECT deleted_at IS NOT NULL FROM product WHERE id=?",
+                Boolean.class, product.getId())).isTrue();
+        }
         var before = storedState();
-        assertThat(success(request(HttpMethod.POST, "/api/v1/orders/" + id + "/confirm", "alice", null), 200))
-            .isEqualTo(confirmed);
+
+        failure(request(HttpMethod.POST, "/api/v1/orders/" + id + "/confirm", "alice", null),
+            409, "ORDER_ALREADY_CONFIRMED", "이미 확정된 주문입니다.");
+
         assertThat(success(request(HttpMethod.GET, "/api/v1/orders/" + id, "alice", null), 200)).isEqualTo(confirmed);
         assertThat(storedState()).isEqualTo(before);
         assertThat(jdbc.queryForObject("SELECT point_balance FROM user WHERE id=1", Long.class)).isEqualTo(800);
         assertThat(jdbc.queryForObject("SELECT stock_quantity FROM product WHERE id=?", Integer.class, product.getId()))
             .isEqualTo(3);
-        failure(request(HttpMethod.POST, "/api/v1/orders/" + other + "/confirm", "alice", null),
-            404, "PRODUCT_NOT_FOUND", "상품을 찾을 수 없습니다.");
+        if (!productState.equals("active")) {
+            failure(request(HttpMethod.POST, "/api/v1/orders/" + other + "/confirm", "alice", null),
+                404, "PRODUCT_NOT_FOUND", "상품을 찾을 수 없습니다.");
+            assertThat(storedState()).isEqualTo(before);
+        }
+    }
+
+    @Test
+    void hidesConfirmedOrderFromOtherRequesterBeforeReportingStateConflict() {
+        Product product = product(100, 5);
+        jdbc.update("UPDATE user SET point_balance = 1000 WHERE id=1");
+        long id = create("alice", product.getId(), 2);
+        JsonNode confirmed = success(request(HttpMethod.POST, "/api/v1/orders/" + id + "/confirm", "alice", null), 200);
+        var before = storedState();
+
+        for (long requested : new long[]{id, Long.MAX_VALUE}) {
+            failure(request(HttpMethod.POST, "/api/v1/orders/" + requested + "/confirm", "bob", null),
+                404, "ORDER_NOT_FOUND", "주문을 찾을 수 없습니다.");
+            failure(request(HttpMethod.GET, "/api/v1/orders/" + requested, "bob", null),
+                404, "ORDER_NOT_FOUND", "주문을 찾을 수 없습니다.");
+            assertThat(storedState()).isEqualTo(before);
+        }
+
+        assertThat(success(request(HttpMethod.GET, "/api/v1/orders/" + id, "alice", null), 200)).isEqualTo(confirmed);
         assertThat(storedState()).isEqualTo(before);
     }
 
@@ -201,7 +236,7 @@ class OrderV1ApiE2ETest {
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
-    void refusesInsufficientStockOrPointsBeforeChangingAnyState(boolean stockFailure) {
+    void refusesInsufficientStockOrPointsAndAllowsDraftRetryAfterCorrection(boolean stockFailure) {
         Product first = product(100, 5);
         Product second = product(100, stockFailure ? 0 : 5);
         if (stockFailure) {
@@ -209,11 +244,47 @@ class OrderV1ApiE2ETest {
         }
         JsonNode order = success(request(HttpMethod.POST, "/api/v1/orders", "alice", "{\"items\":[{\"productId\":"
             + first.getId() + ",\"quantity\":1},{\"productId\":" + second.getId() + ",\"quantity\":1}]}"), 201);
+        long orderId = order.path("orderId").asLong();
         var before = storedState();
-        failure(request(HttpMethod.POST, "/api/v1/orders/" + order.path("orderId").asLong() + "/confirm", "alice", null),
+        failure(request(HttpMethod.POST, "/api/v1/orders/" + orderId + "/confirm", "alice", null),
             409, stockFailure ? "INSUFFICIENT_STOCK" : "INSUFFICIENT_POINTS",
             stockFailure ? "상품 재고가 부족합니다." : "포인트가 부족합니다.");
         assertThat(storedState()).isEqualTo(before);
+        JsonNode failedDraft = success(request(HttpMethod.GET, "/api/v1/orders/" + orderId, "alice", null), 200);
+        assertThat(failedDraft.path("status").asText()).isEqualTo("DRAFT");
+        assertThat(failedDraft.has("paidAmount")).isFalse();
+        assertThat(failedDraft.has("confirmedAt")).isFalse();
+
+        if (stockFailure) {
+            assertThat(success(request(HttpMethod.PUT, "/api-admin/v1/products/" + second.getId() + "/stock",
+                "admin", "{\"stockQuantity\":5}"), 200).path("stockQuantity").asInt()).isEqualTo(5);
+        } else {
+            assertThat(success(request(HttpMethod.POST, "/api/v1/points/charge", "alice", "{\"amount\":1000}"), 200)
+                .path("balance").asLong()).isEqualTo(1000);
+        }
+
+        JsonNode confirmed = success(request(HttpMethod.POST, "/api/v1/orders/" + orderId + "/confirm", "alice", null), 200);
+
+        assertThat(confirmed.path("orderId").asLong()).isEqualTo(orderId);
+        assertThat(confirmed.path("status").asText()).isEqualTo("CONFIRMED");
+        assertThat(confirmed.path("totalAmount").asLong()).isEqualTo(200);
+        assertThat(confirmed.path("paidAmount").asLong()).isEqualTo(200);
+        assertThat(confirmed.path("confirmedAt").asText()).isNotBlank();
+        assertThat(confirmed.path("items")).isEqualTo(order.path("items"));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM `order`", Long.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM order_item", Long.class)).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT point_balance FROM user WHERE id=1", Long.class)).isEqualTo(800);
+        for (Product product : List.of(first, second)) {
+            assertThat(jdbc.queryForObject("SELECT stock_quantity FROM product WHERE id=?", Integer.class, product.getId()))
+                .isEqualTo(4);
+        }
+        var afterConfirmation = storedState();
+
+        failure(request(HttpMethod.POST, "/api/v1/orders/" + orderId + "/confirm", "alice", null),
+            409, "ORDER_ALREADY_CONFIRMED", "이미 확정된 주문입니다.");
+        assertThat(storedState()).isEqualTo(afterConfirmation);
+        assertThat(success(request(HttpMethod.GET, "/api/v1/orders/" + orderId, "alice", null), 200)).isEqualTo(confirmed);
+        assertThat(storedState()).isEqualTo(afterConfirmation);
     }
 
     @ParameterizedTest
@@ -293,7 +364,9 @@ class OrderV1ApiE2ETest {
         return Map.of("orders", jdbc.queryForList("SELECT * FROM `order` ORDER BY id"),
             "items", jdbc.queryForList("SELECT * FROM order_item ORDER BY id"),
             "products", jdbc.queryForList("SELECT * FROM product ORDER BY id"),
-            "users", jdbc.queryForList("SELECT * FROM user ORDER BY id"));
+            "users", jdbc.queryForList("SELECT * FROM user ORDER BY id"),
+            "brands", jdbc.queryForList("SELECT * FROM brand ORDER BY id"),
+            "likes", jdbc.queryForList("SELECT * FROM `like` ORDER BY id"));
     }
 
     private ResponseEntity<JsonNode> request(HttpMethod method, String url, String requester, String body) {

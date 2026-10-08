@@ -64,9 +64,7 @@ public class OrderService {
         long userId = userResolver.resolve(requester).userId();
         Order order = orders.lockById(orderId).orElseThrow(this::orderNotFound);
         order.requireOwner(userId);
-        if (order.getStatus() == OrderStatus.CONFIRMED) {
-            return OrderInfo.from(order);
-        }
+        order.requireDraft();
         order.validateStoredQuantities();
         User user = users.lockById(userId).orElseThrow(UserResolutionException::userNotFound);
         Map<Long, Integer> quantities = order.getItems().stream()

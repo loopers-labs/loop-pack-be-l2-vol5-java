@@ -5,6 +5,7 @@ import com.loopers.application.product.ProductQueryException;
 import com.loopers.application.user.PointService;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
+import com.loopers.domain.order.OrderException;
 import com.loopers.domain.order.OrderQuantities;
 import com.loopers.domain.order.OrderStatus;
 import com.loopers.domain.product.ProductStockException;
@@ -14,19 +15,19 @@ import com.loopers.domain.user.UserRole;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -40,7 +41,6 @@ class OrderConcurrencyIntegrationTest {
     @Autowired private FixtureUserInitializer users;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private DatabaseCleanUp cleanup;
-    @Autowired private PlatformTransactionManager transactionManager;
     private long brandId;
 
     @BeforeEach
@@ -55,58 +55,51 @@ class OrderConcurrencyIntegrationTest {
     }
 
     @Test
-    void concurrentConfirmationOfSameOrderDeductsOnceAndReturnsSamePayment() throws Exception {
+    @DisplayName("W3 재확정 거절: 동일 주문의 동시 확정은 한 번만 성공하고 다른 요청은 거절된다.")
+    void concurrentConfirmationOfSameOrderSucceedsOnceAndRejectsDuplicate() throws Exception {
         long productId = product(5);
         points.charge("alice", 10000);
         long orderId = draft("alice", productId, 2);
+        OrderInfo draft = orders.getDetail("alice", orderId);
+        var originalItems = jdbc.queryForList("SELECT * FROM order_item ORDER BY id");
 
         var results = together(() -> orders.confirm("alice", orderId), () -> orders.confirm("alice", orderId));
 
-        assertThat(results).allSatisfy(result -> assertThat(result.failure()).isNull());
-        assertThat(results.get(0).value()).isEqualTo(results.get(1).value());
-        assertThat(orders.getDetail("alice", orderId).status()).isEqualTo(OrderStatus.CONFIRMED);
+        assertOneSuccessAndFailure(results, OrderException.class);
+        assertThat(results.stream().filter(result -> result.failure() != null).findFirst().orElseThrow().failure())
+            .isExactlyInstanceOf(OrderException.class)
+            .satisfies(error -> assertThat(((OrderException) error).getReason())
+                .isEqualTo(OrderException.Reason.ORDER_ALREADY_CONFIRMED));
+        OrderInfo confirmed = (OrderInfo) results.stream().filter(result -> result.failure() == null)
+            .findFirst().orElseThrow().value();
+        assertThat(confirmed.status()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(confirmed.items()).isEqualTo(draft.items());
+        assertThat(confirmed.totalAmount()).isEqualTo(draft.totalAmount());
+        assertThat(confirmed.paidAmount()).isEqualTo(2000L);
+        assertThat(confirmed.confirmedAt()).isNotNull();
+        assertThat(orders.getDetail("alice", orderId)).isEqualTo(confirmed);
+        assertThat(jdbc.queryForList("SELECT * FROM order_item ORDER BY id")).isEqualTo(originalItems);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM `order` WHERE status='CONFIRMED'", Long.class)).isEqualTo(1L);
         assertStock(productId, 3);
         assertThat(points.balance("alice").balance()).isEqualTo(8000);
     }
 
     @Test
-    void secondConfirmationWaitsForFirstCommitAndThenReusesItsResult() throws Exception {
+    @DisplayName("W3 순차 경계: 확정 커밋 후 재요청은 거절하고 최초 확정 시각·스냅샷·전체 저장값을 보존한다.")
+    void confirmationRetryAfterCommitIsRejectedWithoutChangingFirstResult() {
         long productId = product(5);
         points.charge("alice", 10000);
         long orderId = draft("alice", productId, 2);
-        CountDownLatch changed = new CountDownLatch(1);
-        CountDownLatch release = new CountDownLatch(1);
-        CountDownLatch secondStarted = new CountDownLatch(1);
-        try (var pool = Executors.newFixedThreadPool(2)) {
-            var first = pool.submit(() -> new TransactionTemplate(transactionManager).execute(status -> {
-                OrderInfo result = orders.confirm("alice", orderId);
-                changed.countDown();
-                try {
-                    if (!release.await(5, TimeUnit.SECONDS)) {
-                        throw new IllegalStateException("첫 확정 커밋 대기 시간 초과");
-                    }
-                } catch (InterruptedException exception) {
-                    Thread.currentThread().interrupt();
-                    throw new IllegalStateException(exception);
-                }
-                return result;
-            }));
-            try {
-                assertThat(changed.await(5, TimeUnit.SECONDS)).isTrue();
-                var second = pool.submit(() -> {
-                    secondStarted.countDown();
-                    return orders.confirm("alice", orderId);
-                });
-                assertThat(secondStarted.await(5, TimeUnit.SECONDS)).isTrue();
-                assertThatThrownBy(() -> second.get(250, TimeUnit.MILLISECONDS)).isInstanceOf(TimeoutException.class);
-                release.countDown();
-                assertThat(second.get(5, TimeUnit.SECONDS)).isEqualTo(first.get(5, TimeUnit.SECONDS));
-            } finally {
-                release.countDown();
-            }
-        }
+        OrderInfo confirmed = orders.confirm("alice", orderId);
+        var beforeRetry = storedState();
+
+        // 잠금 내부의 테스트 장벽은 제거한다. 실제 경합은 위의 시작만 맞춘 테스트가 담당한다.
+        assertAlreadyConfirmed(orderId);
+
+        assertThat(orders.getDetail("alice", orderId)).isEqualTo(confirmed);
         assertStock(productId, 3);
         assertThat(points.balance("alice").balance()).isEqualTo(8000);
+        assertThat(storedState()).isEqualTo(beforeRetry);
     }
 
     @Test
@@ -188,9 +181,15 @@ class OrderConcurrencyIntegrationTest {
             assertStock(productId, 3);
             assertThat(points.balance("alice").balance()).isEqualTo(8000);
             assertThat(orders.getDetail("alice", orderId).status()).isEqualTo(OrderStatus.CONFIRMED);
-            assertThat(orders.confirm("alice", orderId)).isEqualTo(results.get(0).value());
+            assertThat(orders.getDetail("alice", orderId)).isEqualTo(results.get(0).value());
+            var beforeRetry = storedState();
+
+            assertAlreadyConfirmed(orderId);
+
+            assertThat(storedState()).isEqualTo(beforeRetry);
         } else {
-            assertThat(results.get(0).failure()).isInstanceOf(ProductQueryException.class);
+            assertThat(results.get(0).failure()).isInstanceOfSatisfying(ProductQueryException.class,
+                error -> assertThat(error.getReason()).isEqualTo(ProductQueryException.Reason.PRODUCT_NOT_FOUND));
             assertStock(productId, 5);
             assertThat(points.balance("alice").balance()).isEqualTo(10000);
             assertThat(orders.getDetail("alice", orderId).status()).isEqualTo(OrderStatus.DRAFT);
@@ -209,6 +208,24 @@ class OrderConcurrencyIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT stock_quantity FROM product WHERE id=?", Integer.class, id)).isEqualTo(quantity);
     }
 
+    private void assertAlreadyConfirmed(long orderId) {
+        assertThatThrownBy(() -> orders.confirm("alice", orderId))
+            .isExactlyInstanceOf(OrderException.class)
+            .satisfies(error -> assertThat(((OrderException) error).getReason())
+                .isEqualTo(OrderException.Reason.ORDER_ALREADY_CONFIRMED));
+    }
+
+    private Map<String, List<Map<String, Object>>> storedState() {
+        return Map.of(
+            "brands", jdbc.queryForList("SELECT * FROM brand ORDER BY id"),
+            "products", jdbc.queryForList("SELECT * FROM product ORDER BY id"),
+            "orders", jdbc.queryForList("SELECT * FROM `order` ORDER BY id"),
+            "items", jdbc.queryForList("SELECT * FROM order_item ORDER BY id"),
+            "users", jdbc.queryForList("SELECT * FROM user ORDER BY id"),
+            "likes", jdbc.queryForList("SELECT * FROM `like` ORDER BY id")
+        );
+    }
+
     private void assertOneSuccessAndFailure(List<Outcome> outcomes, Class<? extends Exception> failureType) {
         assertThat(outcomes.stream().filter(value -> value.failure() == null).count()).isEqualTo(1);
         assertThat(outcomes.stream().filter(value -> value.failure() != null).map(Outcome::failure).toList())
@@ -218,12 +235,25 @@ class OrderConcurrencyIntegrationTest {
     private List<Outcome> together(Callable<?> first, Callable<?> second) throws Exception {
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
-        try (var pool = Executors.newFixedThreadPool(2)) {
-            var left = pool.submit(() -> invoke(first, ready, start));
-            var right = pool.submit(() -> invoke(second, ready, start));
+        var pool = Executors.newFixedThreadPool(2);
+        Future<Outcome> left = null;
+        Future<Outcome> right = null;
+        try {
+            left = pool.submit(() -> invoke(first, ready, start));
+            right = pool.submit(() -> invoke(second, ready, start));
             assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
             start.countDown();
             return List.of(left.get(10, TimeUnit.SECONDS), right.get(10, TimeUnit.SECONDS));
+        } finally {
+            start.countDown();
+            if (left != null) {
+                left.cancel(true);
+            }
+            if (right != null) {
+                right.cancel(true);
+            }
+            pool.shutdownNow();
+            assertThat(pool.awaitTermination(10, TimeUnit.SECONDS)).as("DB 정리 전에 모든 worker 종료").isTrue();
         }
     }
 
@@ -234,6 +264,9 @@ class OrderConcurrencyIntegrationTest {
                 throw new IllegalStateException("동시 요청 시작 시간 초과");
             }
             return new Outcome(action.call(), null);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            return new Outcome(null, exception);
         } catch (Exception exception) {
             return new Outcome(null, exception);
         }

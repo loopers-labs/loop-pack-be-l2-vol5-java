@@ -41,6 +41,7 @@ public class CommerceErrors {
             return switch (order.getReason()) {
                 case INVALID_ITEMS -> invalid();
                 case ORDER_NOT_FOUND -> new Failure(404, "ORDER_NOT_FOUND", "주문을 찾을 수 없습니다.");
+                case ORDER_ALREADY_CONFIRMED -> new Failure(409, "ORDER_ALREADY_CONFIRMED", "이미 확정된 주문입니다.");
                 case AMOUNT_LIMIT_EXCEEDED -> new Failure(409, "ORDER_AMOUNT_LIMIT_EXCEEDED", "주문 금액의 허용 범위를 초과합니다.");
             };
         }
