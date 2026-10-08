@@ -26,7 +26,7 @@ public class BrandService {
     }
 
     public Brand update(Long brandId, String name, String description) {
-        Brand brand = findAlive(brandId);
+        Brand brand = findAliveForUpdate(brandId);
         brand.update(name, description);
         return brandRepository.save(brand);
     }

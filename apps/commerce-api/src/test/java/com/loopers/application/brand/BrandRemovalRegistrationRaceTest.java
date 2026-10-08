@@ -114,6 +114,29 @@ class BrandRemovalRegistrationRaceTest {
         assertThat(aliveProductsOfBrand()).as("삭제된 브랜드 아래 살아 있는 상품").isZero();
     }
 
+    @DisplayName("BRAND-005 · 삭제가 먼저 브랜드를 잡으면, 수정은 브랜드 잠금에서 기다렸다가 BRAND_NOT_FOUND 로 거절되고 브랜드를 되살리지 않는다")
+    @Test
+    void updateWaitsForDeletionAndDoesNotRevive() throws Exception {
+        Race race = new Race(
+            () -> {
+                brandFacade.delete(brandId);
+                return null;
+            },
+            () -> brandFacade.update(brandId, "무신사 스탠다드", "패션 플랫폼")
+        );
+
+        race.run();
+
+        assertThat(race.secondWaitedOnLock).as("수정이 삭제의 브랜드 잠금에서 실제로 기다렸다").isTrue();
+        assertThat(brandAlive()).as("삭제된 브랜드가 수정으로 되살아나지 않는다").isFalse();
+        assertThat(race.secondFailure)
+            .isInstanceOf(DomainException.class)
+            .hasFieldOrPropertyWithValue("error", DomainError.BRAND_NOT_FOUND);
+        assertThat(jdbcTemplate.queryForObject("SELECT name FROM brand WHERE id = ?", String.class, brandId))
+            .isEqualTo("무신사");
+        assertThat(aliveProductsOfBrand()).as("삭제된 브랜드 아래 살아 있는 상품").isZero();
+    }
+
     private final class Race {
 
         private final Callable<Object> firstAction;
