@@ -3,8 +3,7 @@ package com.loopers.domain.brand;
 public class BrandDeletionException extends RuntimeException {
 
     public enum Reason {
-        BRAND_NOT_FOUND,
-        NON_DELETED_PRODUCTS_EXIST
+        BRAND_NOT_FOUND
     }
 
     private final Reason reason;

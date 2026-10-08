@@ -3,7 +3,6 @@ package com.loopers.application.brand;
 import com.loopers.application.product.AdminProductService;
 import com.loopers.application.product.ProductQueryException;
 import com.loopers.domain.brand.Brand;
-import com.loopers.domain.brand.BrandDeletionException;
 import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.user.UserRole;
 import com.loopers.interfaces.api.commerce.CommerceErrors;
@@ -53,13 +52,8 @@ class BrandConcurrencyIntegrationTest {
             var delete = pool.submit(() -> {
                 ready.countDown();
                 await(start);
-                try {
-                    adminBrands.delete(UserRole.ADMIN, brandId);
-                    return "deleted";
-                } catch (BrandDeletionException exception) {
-                    assertThat(exception.getReason()).isEqualTo(BrandDeletionException.Reason.NON_DELETED_PRODUCTS_EXIST);
-                    return "blocked";
-                }
+                adminBrands.delete(UserRole.ADMIN, brandId);
+                return "deleted";
             });
             var create = pool.submit(() -> {
                 ready.countDown();
@@ -75,7 +69,25 @@ class BrandConcurrencyIntegrationTest {
             assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
             start.countDown();
             String result = delete.get(10, TimeUnit.SECONDS) + "/" + create.get(10, TimeUnit.SECONDS);
-            assertThat(result).isIn("deleted/unavailable", "blocked/created");
+            // W3에서는 등록이 먼저 성공해도 뒤따른 브랜드 삭제가 그 상품을 함께 논리 삭제한다.
+            assertThat(result).isIn("deleted/unavailable", "deleted/created");
+            assertThat(jdbc.queryForObject("SELECT deleted_at FROM brand WHERE id = ?", java.sql.Timestamp.class,
+                brandId)).isNotNull();
+            var productRows = jdbc.queryForList("SELECT * FROM product WHERE brand_id = ?", brandId);
+            if (result.equals("deleted/created")) {
+                assertThat(productRows).hasSize(1);
+                var product = productRows.get(0);
+                assertThat(product.get("id")).isNotNull();
+                assertThat(product.get("name")).isEqualTo("상품");
+                assertThat(((Number) product.get("brand_id")).longValue()).isEqualTo(brandId);
+                assertThat(((Number) product.get("price")).longValue()).isEqualTo(100L);
+                assertThat(((Number) product.get("stock_quantity")).intValue()).isZero();
+                assertThat(product.get("created_at")).isNotNull();
+                assertThat(product.get("deleted_at")).isNotNull();
+                assertThat(product.get("updated_at")).isEqualTo(product.get("deleted_at"));
+            } else {
+                assertThat(productRows).isEmpty();
+            }
             assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM product p JOIN brand b ON b.id=p.brand_id "
                 + "WHERE p.deleted_at IS NULL AND b.deleted_at IS NOT NULL", Long.class)).isZero();
         }

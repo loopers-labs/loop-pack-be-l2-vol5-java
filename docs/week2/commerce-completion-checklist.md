@@ -4,16 +4,51 @@
 
 목표는 고객 12개·관리자 13개 API와 관련 도메인·저장·권한·동시성·운영 DDL을 끝까지 연결하고 검증하는 것이다. 이 문서는 완료 증거를 추적하며 새 업무 정책을 정하지 않는다. 계약의 상세 기대값은 연결한 원문을 따른다.
 
+**W3 변경 상태:** 브랜드·연결 미삭제 상품의 일괄 논리 삭제를 구현하고 `W3-BRAND-01` 첫 증분을 검증했다. 2026-10-08 전체 회귀 509개·Checkstyle·ArchUnit이 통과했지만 새 계약의 전체 경계·롤백·연결 흐름·주문 경합 검증은 남아 있다. 아래 2026-09-18의 506개 통과와 W2 `done` 증거는 과거 기록으로 보존한다. 이번 갱신은 W3 전체 과제 완료를 뜻하지 않는다.
+
 ## 기준선과 기록 방법
 
-이번 증분 전 기준선은 [고객 브랜드 조회 application 기록](commerce-tdd-brand-query-log.md#검사-결과)의 **111개 테스트 통과**, Checkstyle main/test 위반 0개, ArchUnit 통과와 HTTP API **0/25개**다. 재고 수량, 사용자 식별·fixture, 브랜드 도메인·영속성·고객 상세 application까지의 과거 증거로 보존한다. 현재 결과는 아래 최신 통합 검사에 구분한다. 테스트 수는 전체 완성률을 뜻하지 않는다.
+W2 초기 구현 증분의 기준선은 [고객 브랜드 조회 application 기록](commerce-tdd-brand-query-log.md#검사-결과)의 **111개 테스트 통과**, Checkstyle main/test 위반 0개, ArchUnit 통과와 HTTP API **0/25개**였다. 재고 수량, 사용자 식별·fixture, 브랜드 도메인·영속성·고객 상세 application까지의 과거 증거로 보존한다. 현재 결과는 아래 최신 통합 검사에 구분한다. 테스트 수는 전체 완성률을 뜻하지 않는다.
 
 - `pending`: 구현 중이거나, 일부 검증만 있거나, 완료 증거가 없는 항목. 기존 도메인 테스트만으로 API를 완료 처리하지 않는다.
 - `done`: 합의한 기대값의 구현·검증이 끝나고 증거 칸에 테스트 파일·사례와 실행 기록 링크를 남긴 항목.
 - API별 정상·대표 오류·권한·저장 상태를 해당 범위에 맞게 검증한다. 복수 API가 연결된 TDD 행은 모든 연결을 검증한 뒤 완료한다.
 - 실행 기록에는 변경 범위, 실제 Red·Green·Refactor, 실행 명령·결과·시점과 남은 범위를 남긴다. 이미 통과한 사례는 인위적인 Red로 만들지 않는다. 과거 로그의 테스트 수는 보존하고 최신 전체 검사 결과를 별도로 추가한다.
 
+## W3 브랜드·상품 일괄 삭제의 남은 검증
+
+확정 요구·합의와 구현 선택은 [정책 문서](commerce-policy-decisions.md#w3-브랜드상품-일괄-논리-삭제), 상세 기대값은 [W3 TDD 계획](commerce-tdd-plan.md#w3-브랜드상품-일괄-논리-삭제의-tdd-계획)을 따른다. `pending`은 이전 기능이 모두 미완료라는 뜻이 아니라, **변경된 계약의 증거가 일부이거나 아직 없다는 뜻**이다. 첫 증분의 실제 결과는 [W3 실행 기록](../week3/brand-removal-tdd-log.md)을 따른다.
+
+| 항목 | 연결 | 상태 | 남은 작업·완료 조건 |
+| --- | --- | --- | --- |
+| 잠금·SQL 구체화 | P13 · 첫 증분 | done | RC 트랜잭션·Brand 잠금 아래 Product ID 정렬 조회 → ID별 PK 잠금 → flush → bulk UPDATE → 이미 로딩된 Product refresh. 전체 clear 없이 정상 경로 상품 UPDATE 1회와 관리 객체 보존을 검증했다. N개 잠금 SELECT가 필요하며 경합 전체 검증은 아래 별도 항목이다 |
+| 정상 일괄 삭제·보존 | A05 · W3-BRAND-01 | done | [BrandRemovalTransactionTest](../../apps/commerce-api/src/test/java/com/loopers/application/brand/BrandRemovalTransactionTest.java): 실제 요청200, 재고 0 포함 상품 2개·브랜드 삭제, 행·참조·다른 대상·과거 확정 주문과 잔액 보존. [실행 기록](../week3/brand-removal-tdd-log.md) |
+| 기본 경계 전체 | A05 · W3-BRAND-02 | pending | 상품 없는 브랜드·없는 브랜드·재삭제의 기존 회귀는 통과했다. 이미 삭제된 상품을 섞은 fixture의 최초 삭제 시각 보존 등 02 전체 검증을 마친 뒤 완료한다 |
+| 실제 변경 뒤 전체 롤백 | A05 · W3-BRAND-03 | pending | 실제 상품 UPDATE 뒤 다음 브랜드 저장 단계에서 테스트 전용 예외를 유발한다. 서비스 트랜잭션 종료 후 별도 DB 조회로 전체 원상태·보존 대상을 확인한다 |
+| 삭제 후 사용 제한·접근 | C01~C06·C09, A04·A05·A09·A11 · W3-BRAND-04·05 | pending | 조회·내 좋아요 목록 제외, 새 좋아요·새 주문 거절, 기존 본인 좋아요 취소 유지, 삭제 대상 변경 거절, 권한·CSRF 실패 시 DB 불변 |
+| DRAFT·과거 주문 보호 | C10~C12·A12·A13 · W3-BRAND-01·03·06 | pending | 01의 삭제 성공 후 확정 주문 DB 보존은 검증했다. 삭제 전 DRAFT의 최초 확정 거절, 삭제 실패 후 보존과 연결 조회 검증은 남아 있다 |
+| 삭제와 주문 경합 | W3-BRAND-07 | pending | 추가 설계 검증. 락 확보 후 상태 판단과 실행 순서별 결과를 실제 독립 트랜잭션으로 확인한다 |
+| 삭제와 상품 등록 경합 | A07 · W3-BRAND-08 | pending | 과제의 선택 확장. 기존 경합 테스트를 새 기대값으로 바꿔 회귀 통과했다. 삭제 선행·등록 선행을 강제로 각각 재현한 검증은 아니므로 모든 순서의 증거로 보지 않는다 |
+| 첫 증분 관련 회귀 | 브랜드·상품·좋아요·주문, Checkstyle·ArchUnit | done | 관련 24개·Checkstyle 통과 후 `:apps:commerce-api:check` 종료 코드0. 52개 스위트·509개 테스트, 실패·오류·건너뜀0. [실행 기록](../week3/brand-removal-tdd-log.md). 아직 작성하지 않은 W3 사례의 완료 증거는 아니다 |
+
 ## 최신 통합 검사
+
+### W3 첫 증분 — 2026-10-08
+
+2026-10-08 11:09 KST, `W3-BRAND-01` 구현과 호출자 트랜잭션의 `READ_COMMITTED` 명시까지 포함한 코드에서 `./gradlew :apps:commerce-api:check --console=plain -q`가 종료 코드 0으로 통과했다.
+
+| 검사 | 실제 결과·범위 |
+| --- | --- |
+| 관련 테스트·정적 검사 | 새 일괄 삭제 2개·도메인 8개·관리자 HTTP 11개·브랜드 경합 3개, 합계 24개와 Checkstyle main/test 통과 |
+| 전체 API 모듈 테스트 XML | **52개 테스트 스위트·509개 통과**, 실패·오류·건너뜀 0개 |
+| Checkstyle·ArchUnit | API check에 연결된 정적 검사와 ArchitectureTest 통과. 검사 규칙 삭제·완화 없음 |
+| 완료 범위 | W3-BRAND-01과 첫 증분 회귀. W3-BRAND-02 전체·03~07 및 08의 선후 관계별 강제 재현은 완료로 표시하지 않음 |
+
+개별 실행 수를 합산하지 않고 API 모듈의 전체 테스트 XML로 집계했다. API check에 다른 모듈의 정적 검사가 연결돼 있어도 그 모듈의 별도 통합 테스트까지 실행했다는 뜻은 아니다. Red·Green·Refactor와 구현 선택은 [W3 실행 기록](../week3/brand-removal-tdd-log.md)에 남긴다.
+
+### W2 최종 검사 — 2026-09-18
+
+아래는 W2 계약 기준의 과거 검사 기록이며, 당시 수치와 증거를 보존한다.
 
 이전 448개 검사는 관리자 접근 지원 설정·연결 시나리오·다른 모듈 정적 검사 요구를 빠뜨렸다. 과제 피드백의 세 항목을 보완하고 아래 결과로 완료를 다시 확인했다. 이전 완료 판단을 그대로 재사용하지 않는다.
 
@@ -57,10 +92,13 @@ P00~P15의 확정 내용을 따른다. P15는 사용자의 과제 피드백 수�
 | 오류 처리 순서 | 관리자 권한 우선과 승인된 공통 처리 순서·오류 매핑. 기존 Example 계약 유지 | confirmed | [공통 계약](commerce-api-contract.md#공통-입력식별응답) · [오류 계약](commerce-api-contract.md#대표-오류와-상태-보존-제안) |
 | 구현 순서 | JPA 유지, 기능 구현 후 나머지 운영 수동 DDL 작성·검증 | confirmed | [P14](commerce-policy-decisions.md#구현-전에-확인할-정책-선택). 기존 브랜드 SQL 보존 |
 | 과제 관리자 접근·검증 보완 | 고객 fixture와 관리자 Security 역할 분리, 미식별403·쓰기 CSRF, 연결 시나리오와 모든 Java 모듈 lint | confirmed | [P15](commerce-policy-decisions.md#구현-전에-확인할-정책-선택) · [Security 기록](commerce-admin-security-log.md) · [Checkstyle 기록](commerce-checkstyle-scope-log.md) |
+| W3 브랜드 일괄 삭제 | 브랜드·연결 미삭제 상품 soft delete, 비관적 락·단일 트랜잭션·전체 롤백, 다른 대상·기존 주문 보존 | confirmed | [W3 요구·합의](commerce-policy-decisions.md#w3-브랜드상품-일괄-논리-삭제). P13을 유지하는 ID별 잠금·bulk UPDATE 구현을 채택했으며, 첫 증분 검증과 전체 계약 완료는 구분 |
 
 ## API 25개 완료 증거
 
 경로는 [고객·관리자 계약표](commerce-api-contract.md#고객-api-계약표)를 따른다. 각 행의 `done`은 HTTP부터 필요한 저장 처리까지의 검증을 뜻한다. C01의 기존 [application 검증](commerce-tdd-brand-query-log.md)은 선행 증거이며 HTTP 완료 증거는 아니다. 모든 A01~A13에는 기존 업무 검증과 함께 [AdminSecurityApiTest](../../apps/commerce-api/src/test/java/com/loopers/interfaces/api/commerce/AdminSecurityApiTest.java)의 실제 관리자·일반·미식별 요청 검증을 적용했다.
+
+아래 완료 증거는 W2 당시 계약 기준이다. A05의 계약 변경은 별도로 `W3 pending`을 표시하고, 다른 API의 브랜드 일괄 삭제 후 연결 검증은 [W3 남은 검증](#w3-브랜드상품-일괄-삭제의-남은-검증)에서 추적한다. 무관한 API의 기존 완료 증거를 취소하지 않는다.
 
 | ID | Method / Path | 연결 TDD | 상태 | 완료 증거: 테스트·실행 기록 |
 | --- | --- | --- | --- | --- |
@@ -80,7 +118,7 @@ P00~P15의 확정 내용을 따른다. P15는 사용자의 과제 피드백 수�
 | A02 | `POST /api-admin/v1/brands` | API-16·21 | done | [관리자 브랜드 HTTP](../../apps/commerce-api/src/test/java/com/loopers/interfaces/api/brand/AdminBrandMutationApiE2ETest.java) · [실행 기록](commerce-tdd-admin-brand-http-log.md) |
 | A03 | `GET /api-admin/v1/brands/{brandId}` | API-16·21 | done | [관리자 브랜드 HTTP](../../apps/commerce-api/src/test/java/com/loopers/interfaces/api/brand/AdminBrandMutationApiE2ETest.java) · [실행 기록](commerce-tdd-admin-brand-http-log.md) |
 | A04 | `PUT /api-admin/v1/brands/{brandId}` | API-16·18·21 | done | [관리자 브랜드 HTTP](../../apps/commerce-api/src/test/java/com/loopers/interfaces/api/brand/AdminBrandMutationApiE2ETest.java) · [실행 기록](commerce-tdd-admin-brand-http-log.md) |
-| A05 | `DELETE /api-admin/v1/brands/{brandId}` | API-16·21·24 | done | [관리자 브랜드 HTTP](../../apps/commerce-api/src/test/java/com/loopers/interfaces/api/brand/AdminBrandMutationApiE2ETest.java) · [실행 기록](commerce-tdd-admin-brand-http-log.md) |
+| A05 | `DELETE /api-admin/v1/brands/{brandId}` | API-16·21·24 · W3-BRAND-01..08 | W2 done / W3 pending | [W2 실행 기록](commerce-tdd-admin-brand-http-log.md)은 과거 거절 계약의 증거다. 현재 [관리자 브랜드 HTTP](../../apps/commerce-api/src/test/java/com/loopers/interfaces/api/brand/AdminBrandMutationApiE2ETest.java)는 새 삭제 계약으로 수정했고, [W3 첫 증분](../week3/brand-removal-tdd-log.md)의 01은 완료했다. 나머지는 위 별도 표 참조 |
 | A06 | `GET /api-admin/v1/products` | API-02·04·17·21 | done | [상품 HTTP·경계](../../apps/commerce-api/src/test/java/com/loopers/interfaces/api/product/ProductApiE2ETest.java) · [집계·페이지](../../apps/commerce-api/src/test/java/com/loopers/interfaces/api/product/ProductQueryApiE2ETest.java) · [실행 기록](commerce-tdd-product-log.md) |
 | A07 | `POST /api-admin/v1/products` | API-17·21·24 | done | [상품 HTTP·경계](../../apps/commerce-api/src/test/java/com/loopers/interfaces/api/product/ProductApiE2ETest.java) · [집계·페이지](../../apps/commerce-api/src/test/java/com/loopers/interfaces/api/product/ProductQueryApiE2ETest.java) · [실행 기록](commerce-tdd-product-log.md) |
 | A08 | `GET /api-admin/v1/products/{productId}` | API-17·21 | done | [상품 HTTP·경계](../../apps/commerce-api/src/test/java/com/loopers/interfaces/api/product/ProductApiE2ETest.java) · [집계·페이지](../../apps/commerce-api/src/test/java/com/loopers/interfaces/api/product/ProductQueryApiE2ETest.java) · [실행 기록](commerce-tdd-product-log.md) |
@@ -93,6 +131,8 @@ P00~P15의 확정 내용을 따른다. P15는 사용자의 과제 피드백 수�
 ## TDD API-01~24 완료 증거
 
 이 표는 [TDD 기대값](commerce-tdd-plan.md#api규칙별-테스트-기대값)의 색인이다. fixture 값·정렬 순서·응답·DB 기대값을 이 요약으로 대체하지 않는다. 후속 승인한 금액·HTTP·잠금 계약의 기대값으로 실행하며 완료 여부는 실제 증거로 갱신한다.
+
+기존 `API-16`의 상품 존재 시 삭제 거절과 `API-24`의 브랜드 경합 결과는 W2 기록이다. W3의 변경·추가 검증에는 별도 `W3-BRAND` ID를 사용한다.
 
 | 사례 | 검증 범위 | 상태 | 완료 증거: 테스트·실행 기록 |
 | --- | --- | --- | --- |
@@ -111,7 +151,7 @@ P00~P15의 확정 내용을 따른다. P15는 사용자의 과제 피드백 수�
 | API-13 | 재고/잔액 부족·삭제·잘못된 저장 수량과 실패 상태 보존 | done | [주문 기록](commerce-tdd-order-log.md) |
 | API-14 | 생성 스냅샷·재확정의 기존 결과·삭제 후 주문 보존 | done | [주문 기록](commerce-tdd-order-log.md) |
 | API-15 | 본인 좋아요·주문 접근, 타인/없는 대상 구분과 정보 비노출 | done | [포인트·좋아요 기록](commerce-tdd-point-like-log.md) · [주문 기록](commerce-tdd-order-log.md) |
-| API-16 | 브랜드 CRUD·고객 반영·미삭제 상품 삭제 방지·재삭제 보존 | done | [브랜드 HTTP 기록](commerce-tdd-admin-brand-http-log.md) |
+| API-16 | W2 브랜드 CRUD·고객 반영·미삭제 상품 삭제 방지·재삭제 보존 | W2 done / W3 pending | [W2 브랜드 HTTP 기록](commerce-tdd-admin-brand-http-log.md). 새 삭제 계약의 W3-BRAND-01은 [첫 증분](../week3/brand-removal-tdd-log.md)에서 완료, 02~06은 남은 검증 참조 |
 | API-17 | 상품 CRUD·브랜드 유지·고객 반영·논리 삭제·관계 보존 | done | [상품 기록](commerce-tdd-product-log.md) · [포인트·좋아요 기록](commerce-tdd-point-like-log.md) · [주문 기록](commerce-tdd-order-log.md) |
 | API-18 | 삭제 대상 변경 거절·이름/가격 입력 오류와 상태 보존 | done | [브랜드 HTTP 기록](commerce-tdd-admin-brand-http-log.md) · [상품 기록](commerce-tdd-product-log.md) |
 | API-19 | 최종 재고 설정·0·음수·Integer 경계·고객 조회 반영 | done | [상품 기록](commerce-tdd-product-log.md) |
@@ -119,11 +159,11 @@ P00~P15의 확정 내용을 따른다. P15는 사용자의 과제 피드백 수�
 | API-21 | 고객 fixture·관리자 Security 권한 우선·CSRF·상태 보존 | done | [Security 보완](commerce-admin-security-log.md) · [브랜드 HTTP 기록](commerce-tdd-admin-brand-http-log.md) · [포인트·좋아요 기록](commerce-tdd-point-like-log.md) · [주문 기록](commerce-tdd-order-log.md) |
 | API-22 | 단가×수량·소계 합의 금액 범위 초과와 저장 방지 | done | [주문 기록](commerce-tdd-order-log.md) |
 | API-23 | 같은 주문·재고·잔액 경쟁, 충전/재고 설정과 확정 경합 | done | [주문 기록](commerce-tdd-order-log.md) · OrderConcurrencyIntegrationTest |
-| API-24 | 브랜드 삭제/상품 등록, 상품 삭제/주문 확정 경합 | done | [브랜드 HTTP 기록](commerce-tdd-admin-brand-http-log.md) · [주문 기록](commerce-tdd-order-log.md) |
+| API-24 | W2 브랜드 삭제/상품 등록, 상품 삭제/주문 확정 경합 | W2 done / W3 pending | [W2 브랜드 HTTP 기록](commerce-tdd-admin-brand-http-log.md) · [주문 기록](commerce-tdd-order-log.md). W3-BRAND-08의 기존 회귀는 [첫 증분](../week3/brand-removal-tdd-log.md)에서 통과, 07과 선후 관계별 강제 재현은 남음 |
 
 ## 통합·운영·최종 회귀 완료 증거
 
-아래 모든 항목을 최종 전체 검사에 포함했다. 각 기능의 과거 단계별 기록과 현재 완료 상태를 구분한다.
+아래 모든 항목은 W2의 최종 전체 검사에 포함했다. W3 브랜드 삭제의 새로운 롤백·잠금·연결 검증은 위 pending 표에서 관리하며, 아래 증거로 완료 처리하지 않는다.
 
 | 항목 | 완료 확인 범위 | 상태 | 완료 증거: 파일·실행 기록 |
 | --- | --- | --- | --- |
@@ -138,7 +178,7 @@ P00~P15의 확정 내용을 따른다. P15는 사용자의 과제 피드백 수�
 | 전체 회귀 | 최종 코드의 :apps:commerce-api:check 성공. 실패·오류·건너뜀 0개 | done | [506개 최종 검사](#최신-통합-검사) |
 | Checkstyle·ArchUnit | 전체 Java 모듈 main/test/testFixtures 위반0·계층 의존 검사 통과. 규칙 삭제/완화 없음 | done | [최종 검사](#최신-통합-검사) |
 | 문서·코드 일치 | 정책→API→TDD→구현·실행 기록 대조, 로컬 링크·앵커·diff 확인. 운영 적용·초기화 방법 기록 | done | [전체 설계](commerce-erd-draft.md) · [TDD 계획](commerce-tdd-plan.md) · [운영 안내](commerce-schema-operations.md) |
-| 최종 범위 대조 | API 25행·TDD 24행·통합 12행의 완료 증거 확보 | done | 이 문서의 전체 표와 [최신 통합 검사](#최신-통합-검사). 과제 피드백의 세 보완과 최종 회귀 완료. 이 기능·검증 범위에 남은 항목 없음 |
+| 최종 범위 대조 | W2 API 25행·TDD 24행·통합 12행의 완료 증거 확보 | done | [W2 통합 검사](#최신-통합-검사). 당시 과제 피드백의 세 보완과 최종 회귀 완료. W3 브랜드 삭제의 남은 항목은 위 별도 표 참조 |
 
 동시 실패의 상태 보존은 다른 요청의 성공 효과를 취소하는 뜻이 아니다. 단독 실패는 전후 값 동일, 경합 실패는 실패 요청의 추가 효과 없음과 전체 최종 상태를 검증한다. 예를 들어 다른 조건이 충족된 상태에서 재고 5인 상품에 두 주문이 각 4개 확정을 요청하면 성공 1건·최종 재고 1·실패 주문 DRAFT를 확인한다.
 

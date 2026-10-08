@@ -4,6 +4,8 @@
 
 재고·사용자 식별·브랜드·주문 수량 규칙과 API-01~24의 기대값, 작은 기능의 구현 순서를 다룬다. 각 절은 도메인 단위 검증, application·실제 DB 연결, HTTP 완료를 구분한다. 최신 완료 증거와 전체 검사 결과는 [전체 완료 체크리스트](commerce-completion-checklist.md)에 모으고, 실제 Red·Green·Refactor는 기능별 실행 기록에 남긴다. 응답·금액·잠금 정책은 후속 추천 묶음 승인(P08·P12·P13)으로 확정했으며 아래 기대값으로 검증한다.
 
+**W3 변경 상태:** 브랜드와 연결된 미삭제 상품의 일괄 논리 삭제를 구현하고 `W3-BRAND-01` 첫 증분을 검증했다. 2026-10-08 전체 회귀 509개·Checkstyle·ArchUnit 통과는 [실행 기록](../week3/brand-removal-tdd-log.md)에 남긴다. 아래 [W3 계획](#w3-브랜드상품-일괄-논리-삭제의-tdd-계획)의 전체 롤백·연결 API·주문 경합 등은 아직 남아 있으며, W2의 과거 증거와 구분한다. 이번 변경은 브랜드 삭제 범위만 다룬다.
+
 ## 전체 구현 완료 목표
 
 2026-09-18 사용자가 현재 구상한 범위의 TDD를 끝까지 진행하도록 요청했다. 작은 증분 하나의 통과를 전체 완료로 간주하지 않는다. [전체 완료 체크리스트](commerce-completion-checklist.md)에 API·테스트·운영 검증의 증거를 기록한다. 최종 범위는 C01~C12·A01~A13의 25개 API, 아래 API-01~24의 업무·경계·저장·동시성 사례, 실제 DB 제약·운영 스키마, 기존 예시 회귀와 Checkstyle·ArchUnit, 구현과 일치하는 문서다.
@@ -16,11 +18,11 @@
 | --- | --- |
 | 1. 재고 차감·최종 수량 설정 | ProductStock 규칙을 Product의 생명주기·JPA·관리자 재고 API·주문 차감에 연결했다. [상품 기록](commerce-tdd-product-log.md) |
 | 2. 사용자 식별·권한 | 단일 fixture, DB 초기 잔액 0과 재실행 보존, 본인·관리자 진입 검사 완료. [포인트·좋아요 기록](commerce-tdd-point-like-log.md) |
-| 3. 브랜드 CRUD | 고객 상세와 관리자 전체 CRUD, 실제 상품 존재 조회·잠금·경합을 연결했다. [브랜드 HTTP 기록](commerce-tdd-admin-brand-http-log.md) |
+| 3. 브랜드 CRUD | W2의 고객 상세·관리자 CRUD·상품 존재 조회·잠금·경합을 검증했다. [브랜드 HTTP 기록](commerce-tdd-admin-brand-http-log.md)은 과거 증거다. W3 일괄 삭제의 첫 증분 `W3-BRAND-01`은 구현·검증했고, 나머지는 아래 계획에서 추적한다 |
 | 4~7. 상품·좋아요·포인트 | 변경·조회·집계·페이지·현재 관계·충전과 잔액 조회를 HTTP까지 검증했다. [상품](commerce-tdd-product-log.md) · [포인트·좋아요](commerce-tdd-point-like-log.md) |
 | 8~10. 주문 | 생성·스냅샷·본인/관리자 조회·확정·재요청·동시성·실제 flush 후 롤백을 검증했다. [주문 기록](commerce-tdd-order-log.md) |
 
-**25개 API가 HTTP부터 실제 DB까지 연결됐다.** 테스트 수나 API 수를 전체 개발 완료율로 환산하지 않는다. 최종 전체 회귀·Checkstyle·ArchUnit·수동 SQL·문서 검증은 [완료 체크리스트](commerce-completion-checklist.md#최신-통합-검사)에 실제 실행 결과를 기록한다.
+**W2 기준 25개 API가 HTTP부터 실제 DB까지 연결됐다.** 이 증거가 W3 일괄 삭제의 통과를 뜻하지는 않는다. 테스트 수나 API 수를 전체 개발 완료율로 환산하지 않는다. 최종 전체 회귀·Checkstyle·ArchUnit·수동 SQL·문서 검증은 [완료 체크리스트](commerce-completion-checklist.md#최신-통합-검사)에 실제 실행 결과를 기록한다.
 
 Layer-first·빌드 모듈·기존 ArchUnit 규칙을 유지한다. application은 domain의 약속을 사용하며 infrastructure 구현이나 controller DTO를 참조하지 않는다. HTTP 오류는 커머스 경로의 공통 처리기로 변환하고 Example 계약은 유지한다. 실습 fixture를 사용하며 로그인은 추가하지 않는다.
 
@@ -130,7 +132,9 @@ P00·P04의 논리 삭제와 재삭제 상태 보존을 `Brand`의 메모리 상
 
 ## 브랜드 삭제 조건의 TDD 계획
 
-`domain/brand/BrandDeletionService`는 `BrandRepository.findById(long)`로 삭제된 브랜드까지 포함해 대상을 조회한다. 이미 삭제됐다면 그대로 반환하고, 미삭제 상태라면 `domain/product/ProductRepository.existsNonDeletedByBrandId(long)`의 결과로 삭제 가능 여부를 판단한다. 외부에서 브랜드 객체와 ID를 따로 받지 않으며, 성공하면 해당 `Brand`의 삭제 상태를 변경해 반환한다. 이 반환이 DB 저장을 뜻하지는 않는다.
+이 절의 `BRAND-DELETE-01..07`은 **W2의 삭제 거절 정책을 검증한 과거 기록**이다. 당시 기대값과 실행 결과를 보존하며, W3의 일괄 삭제 성공 사례로 의미를 바꾸어 재사용하지 않는다. 새 계약은 다음 절의 `W3-BRAND-01..08`로 구분한다.
+
+W2 당시 `domain/brand/BrandDeletionService`는 `BrandRepository.findById(long)`로 삭제된 브랜드까지 포함해 대상을 조회했다. 이미 삭제됐다면 그대로 반환하고, 미삭제 상태라면 `domain/product/ProductRepository.existsNonDeletedByBrandId(long)`의 결과로 삭제 가능 여부를 판단했다. 외부에서 브랜드 객체와 ID를 따로 받지 않으며, 성공하면 해당 `Brand`의 삭제 상태를 변경해 반환했다. 이 반환 자체가 DB 저장을 뜻하지는 않았다.
 
 | 사례 ID | 조회 결과·동작 | 도메인 단위 테스트 기대값 |
 | --- | --- | --- |
@@ -142,7 +146,43 @@ P00·P04의 논리 삭제와 재삭제 상태 보존을 `Brand`의 메모리 상
 | BRAND-DELETE-06 | 두 브랜드 ID에 서로 다른 상품 존재 결과 | 각 ID의 대상·조건만 적용하고 다른 브랜드와 혼동하지 않음 |
 | BRAND-DELETE-07 | true 결과로 거절된 뒤 false 결과로 재요청 | 첫 실패 상태를 보존하고 조건이 바뀐 재요청에서 삭제 성공 |
 
-대상 없음·미삭제 상품 존재의 실패 사유는 HTTP와 독립된 `BrandDeletionException`으로 구분한다. 7개 사례를 [BrandDeletionServiceTest](../../apps/commerce-api/src/test/java/com/loopers/domain/brand/BrandDeletionServiceTest.java)에서 조회 대역으로 검증했으며, 실제 과정과 결과는 [브랜드 모델 실행 기록](commerce-tdd-brand-log.md)에 남긴다. 재고 0인 상품 포함·삭제 상품 제외는 상품 조회 포트의 계약이다. boolean 대역으로는 이 조건의 실제 SQL이나 DB 행 잠금을 검증하지 못한다. 현재 `findById`도 잠금·저장을 보장하지 않는다. Brand의 ID·JPA 저장·조회 구현과 저장소 Spring 연결은 아래에서 검증했으며, 상품 조회 구현·삭제 유스케이스의 저장·잠금·Spring·HTTP 연결도 후속 [관리자 브랜드 TDD](commerce-tdd-admin-brand-http-log.md)에서 검증했다.
+당시에는 대상 없음·미삭제 상품 존재의 실패 사유를 HTTP와 독립된 `BrandDeletionException`으로 구분했다. 조회 대역으로 검증한 7개 사례와 결과는 [브랜드 모델 실행 기록](commerce-tdd-brand-log.md)에 보존한다. 현재 [BrandDeletionServiceTest](../../apps/commerce-api/src/test/java/com/loopers/domain/brand/BrandDeletionServiceTest.java)는 W3 계약에 맞춘 8개 사례이며 과거 7개와 다르다. W2 boolean 대역은 실제 SQL·DB 행 잠금을 검증하지 못했고, `findById` 자체도 잠금·저장을 보장하지 않는다. W2의 실제 저장·잠금·Spring·HTTP 연결 증거는 [관리자 브랜드 TDD](commerce-tdd-admin-brand-http-log.md)를 따른다.
+
+## W3 브랜드·상품 일괄 논리 삭제의 TDD 계획
+
+근거는 사용자가 제공한 W3 과제의 「브랜드와 연관 상품의 일괄 처리」·「실패·경쟁 결과 확인」과 [이번 변경의 합의·구현 선택](commerce-policy-decisions.md#w3-브랜드상품-일괄-논리-삭제)이다. 브랜드와 연결된 미삭제 상품을 하나의 트랜잭션에서 soft delete하고 비관적 락을 유지한다. 아래 표는 전체 기대값이며, **현재 완료한 범위는 `W3-BRAND-01`**이다.
+
+| 사례 ID | 준비·실행 | 기대 결과 |
+| --- | --- | --- |
+| W3-BRAND-01 | 브랜드 1개와 미삭제 상품 2개(하나는 재고 0), 다른 브랜드·상품, 과거 주문을 준비하고 삭제 | `200`, 대상 브랜드·상품 모두 삭제 상태. 행·참조는 보존하며 다른 브랜드·상품과 과거 주문의 품목·수량·단가·총액·포인트 결제 결과는 불변 |
+| W3-BRAND-02 | 상품 없는 브랜드 삭제, 없는 브랜드 삭제, 브랜드 재삭제, 이미 삭제된 상품을 포함한 브랜드 삭제를 각각 실행 | 상품 없어도 `200`, 없는 브랜드는 기존 `404 BRAND_NOT_FOUND`, 재삭제는 `200`·추가 변경 없음. 이미 삭제된 상품의 최초 삭제 시각도 유지 |
+| W3-BRAND-03 | 실제 상품 변경 SQL 실행 뒤 다음 브랜드 저장 단계에서 테스트 전용 예외 발생 | 서비스 트랜잭션 종료 후 별도 DB 조회에서 브랜드·상품 모두 변경 전 상태. 다른 대상·과거 주문도 불변. 일부 성공 응답이나 독립 commit 없음 |
+| W3-BRAND-04 | 삭제 후 고객 브랜드·상품 조회, 새 좋아요, 내 좋아요 목록, 기존 본인 좋아요 취소, 새 주문 요청 | 고객 목록에서 제외·상세는 기존 없음 오류, 새 좋아요·새 주문 거절, 내 좋아요 목록 제외. 기존 본인 좋아요 취소는 성공하며 다른 사용자의 관계는 보존 |
+| W3-BRAND-05 | 삭제 대상 이름·가격·재고 변경 요청, 일반·미식별 사용자의 삭제, CSRF 누락·불일치 요청 | 삭제 대상 수정·재고 변경은 기존 없음 오류. 권한·CSRF는 기존 `403` 계약 유지. 거절 요청으로 DB 변경 없음 |
+| W3-BRAND-06 | 삭제 전에 생성한 DRAFT 주문을 브랜드 삭제 후 최초 확정 | 잠금 확보 후 삭제 상태를 다시 확인해 기존 `404 PRODUCT_NOT_FOUND`로 거절. 주문은 DRAFT, 이 요청의 재고·포인트 차감과 결제 결과는 없음 |
+| W3-BRAND-07 | 브랜드 삭제와 주문 생성·최초 확정의 경합을 각각 검증 | 삭제가 먼저 커밋되면 후속 생성·확정 거절. 생성이 먼저 끝나도 이후 삭제되면 그 DRAFT의 확정 거절. 최초 확정이 먼저 끝나면 이후 삭제해도 확정·결제 결과 보존 |
+| W3-BRAND-08 | 브랜드 삭제와 상품 등록을 동시에 실행 | 삭제가 먼저 끝나면 등록 거절. 등록이 먼저 커밋되면 그 상품도 후속 일괄 삭제 대상. 삭제 브랜드에 미삭제 상품이 남지 않음 |
+
+`W3-BRAND-01..06`은 과제의 브랜드 정상·실패·접근 경계를 검증한다. `07`은 합의한 설계의 추가 동시성 검증이고, `08`은 과제에서는 선택 확장이지만 기존 `BrandConcurrencyIntegrationTest`의 변경된 기대값을 확인하기 위한 회귀 계획이다.
+
+| 범위 | 2026-10-08 실행 상태 |
+| --- | --- |
+| W3-BRAND-01 | 완료. 실제 관리자 요청의 `200`·대상 브랜드/상품 삭제·다른 대상과 확정 주문/잔액 보존을 검증했다. 기술 검증으로 상품 UPDATE 1회와 이미 로딩된 상품 갱신·다른 관리 객체 보존도 확인했다 |
+| W3-BRAND-02 | 일부 기존 경계·재삭제 회귀는 통과했다. 이미 삭제된 상품을 섞은 fixture의 최초 삭제 시각 보존까지 새 계약의 전체 경계 검증은 남아 있다 |
+| W3-BRAND-03..07 | 미검증. 실제 SQL 이후 브랜드 저장 실패·연결 API·DRAFT·주문 경합을 순서대로 추가한다 |
+| W3-BRAND-08 | 기존 등록 경합 테스트를 새 기대값으로 수정해 회귀 통과. 삭제 선행과 등록 선행을 강제로 각각 재현한 증거는 아니다 |
+
+새 테스트 2개·도메인 8개·관리자 HTTP 11개·브랜드 경합 3개, 관련 24개와 Checkstyle이 통과했다. 이후 `:apps:commerce-api:check`의 52개 스위트·509개 테스트와 ArchUnit도 통과했다. 실제 Red·Green과 명령·범위는 [첫 증분 실행 기록](../week3/brand-removal-tdd-log.md)을 따른다. 전체 회귀 통과를 아직 작성하지 않은 위 사례의 증거로 사용하지 않는다.
+
+| 검증 경계 | 작성 시 지킬 조건 |
+| --- | --- |
+| 실제 롤백 | 초기 데이터를 먼저 commit한다. 상품 UPDATE가 실제 실행된 뒤 다음 저장 경계에서 예외를 내며, 앞 단계까지 모두 mock하지 않는다. 서비스 호출 종료 후 새 트랜잭션 또는 별도 JDBC 조회로 변경 전후 DB 값을 비교한다 |
+| 동시성 | 실제 Spring 서비스·repository·MySQL을 사용하고 각 worker는 독립 트랜잭션으로 실행한다. 시작만 맞추며 제품 코드에 장벽·sleep을 넣지 않는다. 모든 worker 종료 후 DB를 다시 읽고 성공·업무 거절·기술 오류를 구분한다 |
+| 자원 정리 | 대기·future에 제한 시간을 두고 `finally`에서 worker·executor·connection을 정리한다. 타임아웃·교착을 삭제 성공이나 업무 거절로 숨기지 않는다 |
+| bulk UPDATE 구현 | 대상 ID에 `deleted_at`·`updated_at`을 한 번에 갱신한다. bulk 이전 flush·이후 이미 로딩된 Product만 refresh하며 전체 clear는 하지 않는다. 정상 경로의 상품 UPDATE 1회와 관리 객체 보존은 검증했고, 이미 삭제된 상품 시각 보존 fixture는 02에서 추가한다 |
+| 잠금 순서 | `READ_COMMITTED` 호출자가 Brand 잠금을 보유한 상태에서 미삭제 Product ID 정렬 조회 → ID별 기본 키 `FOR UPDATE` → flush → bulk UPDATE한다. P13을 바꾸지 않으며 상품 수만큼 잠금 SELECT가 발생한다. UPDATE 1회가 전체 SQL 1회나 성능 개선 측정 결과를 뜻하지는 않는다 |
+
+작은 순서는 정상 일괄 삭제의 Red → 최소 구현 → 기본 경계 → 실제 SQL 이후 실패·롤백 → 삭제 후 사용 제한·보존 → 경합·회귀다. 첫 증분의 Red는 기대 `200`과 기존 응답 `409`의 차이였고, 최소 구현 후 통과했다. 기존 거절 테스트는 W3 요구에 따른 계약 전환 때문에 변경했으며 검사를 통과시키기 위한 완화가 아니다. W2 실행 로그는 고치지 않고 이후 증분도 실제 실행 범위만 완료로 기록한다.
 
 ## 브랜드 저장·조회 매핑의 TDD
 
@@ -197,6 +237,8 @@ P01/P08의 확정 규칙을 `domain/order/OrderQuantities`로 구현했다. 금�
 
 아래는 **테스트 계획**이다. [API 계약표](commerce-api-contract.md)의 ID를 테스트 이름 또는 설명에 연결하고 HTTP 상태·응답 필드뿐 아니라 성공·실패 후 저장값을 함께 검증한다. 금액·포인트는 승인된 원 단위 정수 Long/BIGINT이며 아래 표현 상한은 `M=Long.MAX_VALUE=9,223,372,036,854,775,807`로 고정한다. 덧셈·곱셈의 범위 초과를 검출하고 실패 시 상태를 보존한다.
 
+아래 `API-16`의 삭제 거절 기대값과 `API-24`의 브랜드 경합 증거는 W2 기준으로 보존한다. 새 브랜드 삭제 계약과 연결 API의 추가 검증은 위 `W3-BRAND-01..08`을 따른다.
+
 자원 ID와 수량의 범위는 이미 확정했다. 커머스 API의 `brandId`·`productId`·`orderId`에는 `Long.MAX_VALUE + 1`, 수량·재고에는 `Integer.MAX_VALUE + 1`을 원문 숫자로 보내 바인딩 단계의 범위 초과도 검증한다. 오류 응답은 승인된 400 INVALID_REQUEST로 검증하고 저장값은 유지한다. 현재 재고 객체의 `int` 단위 테스트만으로 HTTP 숫자 변환까지 검증했다고 보지 않는다.
 
 커머스 HTTP 경계에서는 누락·null·허용하지 않은 필드와 JSON 타입 강제 변환을 거절한다. C01·C02·C03은 X-USER-ID를 무시하고, C06 경로와 관리자 주문 필터는 외부 식별 문자열을 사용한다. 관리자 권한 검사는 Spring Security로 경로·본문 바인딩 전에 실행한다. 관리자·일반 사용자·미식별 요청을 MockMvc로 검증하고 쓰기 권한 테스트에는 유효한 csrf()를 넣는다. CSRF 누락·불일치는 별도 403 사례로 검증한다. 405 METHOD_NOT_ALLOWED·415 UNSUPPORTED_MEDIA_TYPE·406 NOT_ACCEPTABLE의 승인된 정확한 메시지와 기존 Example API 관찰 계약 보존을 함께 검증한다.
@@ -230,7 +272,7 @@ P01/P08의 확정 규칙을 `domain/order/OrderQuantities`로 구현했다. 금�
 | API-13 / C10 | 재고 부족 / 잔액3999 / DRAFT 생성 후 상품 삭제 / 저장 수량을0으로 훼손한 오류 fixture | 각 409 INSUFFICIENT_STOCK / 409 INSUFFICIENT_POINTS / 404 PRODUCT_NOT_FOUND / 500 INTERNAL_ERROR. DRAFT와 요청 직전의 모든 재고·잔액 유지. 부족 조건 개선 후 별도 확정 요청 가능하며 삭제는 재고 증가만으로 해결되지 않음 |
 | API-14 / C10·C12 | 생성 후 상품명·가격 변경, 확정 후 재확정·상품 삭제 | 생성 당시 이름·단가·총액 유지. 확정 재요청200은 기존 paidAmount·confirmedAt을 그대로 반환하고 추가 차감 없음. 상품 삭제 후에도 과거 주문 조회200 |
 | API-15 / C06·C10·C11·C12 | alice 헤더로 bob 목록·주문 접근, 없는 주문 접근 | 타인 좋아요 목록404 USER_NOT_FOUND. 타인/없는 주문은 동일404 ORDER_NOT_FOUND·메시지. 내 주문 목록에는 alice 주문만 포함하고 타인 정보·변경 없음 |
-| API-16 / A01~A05·C01 | 관리자 브랜드 생성→목록·상세→이름 수정→고객 상세→삭제·재삭제 | 생성201, 조회·수정200, 고객 상세에 수정된 이름. 이름 공백·101자 입력400·기존 값 유지. 미삭제 상품이 하나라도 연결되면 재고0이어도 삭제409·브랜드 유지. 상품이 없거나 모두 삭제되면 삭제200·고객 상세404. 브랜드 행·ID를 보존하고 deleted_at 기록. 재삭제는200·최초 deleted_at과 관련 상품 상태 유지(P00·P04) |
+| API-16 / A01~A05·C01 (W2 기록) | 관리자 브랜드 생성→목록·상세→이름 수정→고객 상세→삭제·재삭제 | 생성201, 조회·수정200, 고객 상세에 수정된 이름. 이름 공백·101자 입력400·기존 값 유지. W2 당시에는 미삭제 상품이 하나라도 연결되면 재고0이어도 삭제409·브랜드 유지. 상품이 없거나 모두 삭제되면 삭제200·고객 상세404. 브랜드 행·ID를 보존하고 deleted_at 기록. 재삭제는200·최초 deleted_at과 관련 상품 상태 유지(P00·P04). W3의 새 기대값은 W3-BRAND-01..06 참조 |
 | API-17 / A06~A10·C02·C03 | 유효한 상품 생성→조회→상품명·가격 수정→삭제·재삭제 | 생성201, 조회·수정200, 고객 조회에 현재 값 반영. brandId·재고는 유지. brandId를 PUT에 전달하면400 INVALID_REQUEST(P05·P12). 없는/삭제 브랜드로 생성404·저장 없음. 삭제200 후 고객 목록 제외·상세404·기존 주문 보존. 상품 행·ID를 보존하고 deleted_at 기록. 재삭제는200·최초 deleted_at과 주문·좋아요 관계 유지(P00·P04) |
 | API-18 / A04·A09·A11 | 삭제된 브랜드·상품 수정 또는 삭제 상품 재고 변경 | 각404 BRAND_NOT_FOUND/PRODUCT_NOT_FOUND, 기존 정보·재고·삭제 상태 유지. name 누락·공백·101자, price 음수·타입·범위 오류는400. 가격0은 P02에 따라 거절 |
 | API-19 / A11·C03 | 현재 재고10에서 stockQuantity=3, 이어서0, 별도 -1 요청. 별도 상한 테스트는 Integer.MAX_VALUE와 그 초과값 | 200·최종3, 200·최종0, 음수는400·직전 재고 유지. 최댓값은 정상 설정하고 초과 입력은 거절·직전 재고 유지. 고객 상세에도 최종 수량 반영. 더하기 연산으로 처리하지 않음 |
@@ -261,7 +303,7 @@ P01/P08의 확정 규칙을 `domain/order/OrderQuantities`로 구현했다. 금�
 | --- | --- | --- |
 | 1 | 상품 재고 차감·최종 수량 설정 규칙 | STOCK-01~05와 STOCK-SET-01~05의 Red → Green → Refactor |
 | 2 | 사용자 식별·권한 해석, fixture 연결·HTTP 진입 검증 | IDENTITY-01~10의 TDD 완료. 후속 HTTP에서 X-USER-ID와 API-21 연결까지 검증 |
-| 3 | 브랜드 이름·모델·생명주기·삭제 조건 후 등록·상세부터 CRUD 하나씩 | BRAND-NAME-01~04·BRAND-01~06·BRAND-LIFECYCLE-01~06·BRAND-DELETE-01~07 단위 검증과 BRAND-PERSIST-01~07의 Brand DB 매핑 검증 완료. BRAND-QUERY-01~03의 고객 상세 application 검증 완료. C01 HTTP와 관리자 등록·상세 application도 검증 완료. 상품 존재 SQL·나머지 관리자 유스케이스·행 잠금·A01~A05 HTTP와 API-16·18도 검증 완료. 상품 등록과 브랜드 삭제의 브랜드 잠금 공유·경합은 [관리자 브랜드 기록](commerce-tdd-admin-brand-http-log.md) 참조 |
+| 3 | 브랜드 이름·모델·생명주기·삭제 조건 후 등록·상세부터 CRUD 하나씩 | W2 기준 BRAND-NAME-01~04·BRAND-01~06·BRAND-LIFECYCLE-01~06·BRAND-DELETE-01~07 단위 검증과 BRAND-PERSIST-01~07의 Brand DB 매핑 검증 완료. BRAND-QUERY-01~03의 고객 상세 application 검증 완료. C01 HTTP와 관리자 등록·상세 application도 검증 완료. 상품 존재 SQL·나머지 관리자 유스케이스·행 잠금·A01~A05 HTTP와 API-16·18도 W2 계약으로 검증 완료. [관리자 브랜드 기록](commerce-tdd-admin-brand-http-log.md)은 과거 증거이며, W3 삭제·경합의 구현·검증은 W3-BRAND-01..08에서 별도로 진행 |
 | 4 | 상품 등록·수정·재고 설정 각각 | A07~A11, API-17~19, API-24의 브랜드 삭제·상품 등록 경합. 수량 객체를 상품 생명주기에 연결하고 STOCK-06 검증 |
 | 5 | 상품 상세·목록·필터·페이지·정렬을 순서대로 | C02·C03, A06, API-01~04 |
 | 6 | 좋아요 등록·취소·내 목록 각각 | C04~C06, API-05·06·15. 동시 중복도 관계1건·추가 변경 없음 확인. 신규·중복·취소의 200과 LikeResult는 확정 계약 |

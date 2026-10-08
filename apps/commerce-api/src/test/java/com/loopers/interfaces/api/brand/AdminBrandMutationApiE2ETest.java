@@ -20,6 +20,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -56,16 +59,29 @@ class AdminBrandMutationApiE2ETest {
     }
 
     @Test
-    void rejectsDeletionEvenWhenActiveProductHasZeroStock() {
+    void softDeletesBrandAndZeroStockProductIdempotently() {
         Brand brand = brands.save(new Brand("브랜드"));
         Product product = products.save(new Product(brand, "품절", 100, 0));
-        var before = jdbc.queryForList("SELECT * FROM brand");
+        var brandBefore = jdbc.queryForMap("SELECT * FROM brand WHERE id = ?", brand.getId());
+        var productBefore = jdbc.queryForMap("SELECT * FROM product WHERE id = ?", product.getId());
+        // W3에서는 재고 0도 일괄 삭제 대상이며 상품 존재 자체로 409를 반환하지 않는다.
         var result = request(HttpMethod.DELETE, "/api-admin/v1/brands/" + brand.getId(), null);
-        assertThat(result.getStatusCode().value()).isEqualTo(409);
-        assertThat(result.getBody().path("meta").path("errorCode").asText()).isEqualTo("BRAND_HAS_PRODUCTS");
-        assertThat(jdbc.queryForList("SELECT * FROM brand")).isEqualTo(before);
-        jdbc.update("UPDATE product SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?", product.getId());
+
+        assertThat(result.getStatusCode().value()).isEqualTo(200);
+        assertThat(result.getBody().path("meta").path("result").asText()).isEqualTo("SUCCESS");
+        assertThat(result.getBody().path("meta").has("errorCode")).isFalse();
+        assertThat(result.getBody().path("data").path("brandId").asLong()).isEqualTo(brand.getId());
+        assertThat(result.getBody().path("data").path("deleted").asBoolean()).isTrue();
+        var brandAfter = jdbc.queryForMap("SELECT * FROM brand WHERE id = ?", brand.getId());
+        var productAfter = jdbc.queryForMap("SELECT * FROM product WHERE id = ?", product.getId());
+        assertOnlyDeletionAndUpdateTimeChanged(brandBefore, brandAfter);
+        assertOnlyDeletionAndUpdateTimeChanged(productBefore, productAfter);
+        assertThat(productAfter.get("deleted_at")).isEqualTo(brandAfter.get("deleted_at"));
+        assertThat(productAfter.get("updated_at")).isEqualTo(productAfter.get("deleted_at"));
+
         assertThat(request(HttpMethod.DELETE, "/api-admin/v1/brands/" + brand.getId(), null).getStatusCode().value()).isEqualTo(200);
+        assertThat(jdbc.queryForMap("SELECT * FROM brand WHERE id = ?", brand.getId())).isEqualTo(brandAfter);
+        assertThat(jdbc.queryForMap("SELECT * FROM product WHERE id = ?", product.getId())).isEqualTo(productAfter);
     }
 
     @Test
@@ -112,5 +128,14 @@ class AdminBrandMutationApiE2ETest {
 
     private ResponseEntity<JsonNode> request(HttpMethod method, String path, String body) {
         return AdminMockMvc.exchange(mvc, method, path, "admin", body);
+    }
+
+    private void assertOnlyDeletionAndUpdateTimeChanged(Map<String, Object> before, Map<String, Object> after) {
+        assertThat(after.get("deleted_at")).isNotNull();
+        assertThat(after.get("updated_at")).isNotNull();
+        var expected = new LinkedHashMap<>(before);
+        expected.put("deleted_at", after.get("deleted_at"));
+        expected.put("updated_at", after.get("updated_at"));
+        assertThat(after).isEqualTo(expected);
     }
 }

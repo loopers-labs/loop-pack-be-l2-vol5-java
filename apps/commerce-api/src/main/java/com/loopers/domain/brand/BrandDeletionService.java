@@ -5,8 +5,8 @@ import com.loopers.domain.product.ProductRepository;
 import java.time.ZonedDateTime;
 
 /**
- * 조회 결과로 삭제 조건을 판단하고 도메인 상태를 변경한다.
- * DB 조회의 동시성 보호와 결과 저장은 이 기능을 연결하는 유스케이스가 책임진다.
+ * 브랜드와 연결된 미삭제 상품의 논리 삭제를 조율한다.
+ * 브랜드 잠금과 전체 트랜잭션, 최종 브랜드 저장은 호출 유스케이스가 책임진다.
  */
 public class BrandDeletionService {
 
@@ -24,9 +24,7 @@ public class BrandDeletionService {
         if (brand.isDeleted()) {
             return brand;
         }
-        if (productRepository.existsNonDeletedByBrandId(brandId)) {
-            throw new BrandDeletionException(BrandDeletionException.Reason.NON_DELETED_PRODUCTS_EXIST);
-        }
+        productRepository.softDeleteNonDeletedByBrandId(brandId, deletedAt);
         brand.delete(deletedAt);
         return brand;
     }

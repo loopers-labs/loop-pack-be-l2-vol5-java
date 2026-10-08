@@ -80,10 +80,8 @@ public class CommerceErrors {
         if (exception instanceof BrandQueryException || exception instanceof BrandStateException) {
             return new Failure(404, "BRAND_NOT_FOUND", "브랜드를 찾을 수 없습니다.");
         }
-        if (exception instanceof BrandDeletionException deletion) {
-            return deletion.getReason() == BrandDeletionException.Reason.BRAND_NOT_FOUND
-                ? new Failure(404, "BRAND_NOT_FOUND", "브랜드를 찾을 수 없습니다.")
-                : new Failure(409, "BRAND_HAS_PRODUCTS", "삭제되지 않은 상품이 연결되어 있습니다.");
+        if (exception instanceof BrandDeletionException) {
+            return new Failure(404, "BRAND_NOT_FOUND", "브랜드를 찾을 수 없습니다.");
         }
         if (exception instanceof InvalidRequestException || exception instanceof BrandNameException
             || exception instanceof MethodArgumentTypeMismatchException
