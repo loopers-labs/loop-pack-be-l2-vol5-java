@@ -39,7 +39,7 @@
 
 새 테스트 → 기존 주문 동시성·트랜잭션·서비스·대조군 회귀 → 전체 `:apps:commerce-api:check` 순서로 실행한다. 첫 실행부터 통과하면 업무 Red를 만들기 위해 잠금이나 기대값을 바꾸지 않는다. HTTP 동시 호출·상품 잠금만의 격리 실험·모든 스케줄링 순서를 검증한 것으로 기록하지 않는다.
 
-포인트 10,000원에 4,000원 주문 3개 경쟁은 이후 [별도 포인트 테스트](point-order-concurrency-tdd-log.md), 지정 충전·결제 경쟁은 [충전/결제 테스트](point-charge-order-concurrency-tdd-log.md)로 검증했다. 마지막 증분의 전체 최종 검사·제출 정리는 사용자 요청으로 보류하며, 기술 글은 사용자가 작성한다.
+포인트 10,000원에 4,000원 주문 3개 경쟁은 이후 [별도 포인트 테스트](point-order-concurrency-tdd-log.md), 지정 충전·결제 경쟁은 [충전/결제 테스트](point-charge-order-concurrency-tdd-log.md)로 검증했다. 2026-10-09 [전체 최종 검사](../week2/commerce-completion-checklist.md#최신-통합-검사)도 통과했다. 기술 글은 사용자가 작성하며 PR 초안 준비와 실제 제출은 구분한다.
 
 ## 실행 기록
 

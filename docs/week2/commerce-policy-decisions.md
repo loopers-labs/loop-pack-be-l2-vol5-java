@@ -6,7 +6,7 @@
 
 W2의 25개 API 연결·테스트와 6개 테이블의 수동 DDL·JPA validate·관계 제약 검증 증거는 [전체 완료 체크리스트](commerce-completion-checklist.md)에 보존한다. **2026-10-08 W3 브랜드 일괄 삭제의 정상 처리·기본 경계·전체 롤백·연결 API·접근 제한·주문 및 상품 등록 경합(W3-BRAND-01~08)을 검증했다.** 마지막 연결·동시성 검증 범위는 [네 번째 증분 기록](../week3/brand-removal-tdd-log.md#네-번째-증분--w3-brand-0408-연결동시성-검증)을 따른다. 후속 승인한 주문 재확정 거절 P16도 `W3-RECONFIRM-01..06` 구현·검증을 완료했으며 [별도 실행 기록](../week3/order-reconfirmation-tdd-log.md)으로 추적한다. 다른 W3 주문 경쟁·주문 내부 저장 경계 실패/롤백 검증·갱신 유실 대조군 과제까지 포함한 완료 표시는 아니다.
 
-후속으로 주문 내부 저장 경계의 실패·롤백 `W3-ORDER-TX-01..03`도 검증했다. 정책·생산 코드·락 변경 없이 테스트를 추가했으며 [실행 기록](../week3/order-transaction-tdd-log.md)에서 재확정 증분과 구분한다. 이후 갱신 유실 대조군 `W3-LOST-UPDATE-01`도 [별도 테스트로 재현·검증](../week3/stock-lost-update-control-plan.md)했다. 재고 8주문 경쟁은 [W3-STOCK-RACE-01](../week3/stock-order-concurrency-tdd-log.md), 포인트 3주문 경쟁은 [W3-POINT-RACE-01](../week3/point-order-concurrency-tdd-log.md), 충전/결제 경쟁은 [W3-CHARGE-ORDER-01](../week3/point-charge-order-concurrency-tdd-log.md)로 검증했다. 마지막 증분의 전체 최종 검사·제출 정리는 사용자 요청으로 보류한다.
+후속으로 주문 내부 저장 경계의 실패·롤백 `W3-ORDER-TX-01..03`도 검증했다. 정책·생산 코드·락 변경 없이 테스트를 추가했으며 [실행 기록](../week3/order-transaction-tdd-log.md)에서 재확정 증분과 구분한다. 이후 갱신 유실 대조군 `W3-LOST-UPDATE-01`도 [별도 테스트로 재현·검증](../week3/stock-lost-update-control-plan.md)했다. 재고 8주문 경쟁은 [W3-STOCK-RACE-01](../week3/stock-order-concurrency-tdd-log.md), 포인트 3주문 경쟁은 [W3-POINT-RACE-01](../week3/point-order-concurrency-tdd-log.md), 충전/결제 경쟁은 [W3-CHARGE-ORDER-01](../week3/point-charge-order-concurrency-tdd-log.md)로 검증했다. 2026-10-09 [전체 최종 검사](commerce-completion-checklist.md#최신-통합-검사)를 통과했고 PR 초안을 준비했다. 기술 글·실제 제출 상태는 완료 체크리스트에서 별도로 관리한다.
 
 ## 구현 전에 확인할 정책 선택
 
@@ -164,7 +164,7 @@ ProductStock.deduct가 계산한 변경 후 상태와 저장소의 감소량 명
 
 **포인트 경쟁 검증:** [W3-POINT-RACE-01](../week3/point-order-concurrency-tdd-log.md)에서 잔액 10,000원에 4,000원 주문 3개를 실행해 확정 2·포인트 부족 1·기술 오류 0·잔액 2,000원을 확인했다. 주문별 브랜드·상품을 분리하고 재고를 충분히 둔 것은 시험 조건이며 새로운 제품 정책이 아니다. 실패 주문의 재고 보존까지 확인했고 실제 서비스의 잠금·재시도 정책은 변경하지 않았다.
 
-**충전·결제 경쟁 검증:** [W3-CHARGE-ORDER-01](../week3/point-charge-order-concurrency-tdd-log.md)에서 같은 사용자 행을 잠그는 실제 충전·주문 서비스를 실행해 두 요청 성공·잔액 5,000을 확인했다. 초기 10,000+충전 2,000−결제 7,000의 합산과 품목별 재고·확정 결과를 검증했다. 생산 코드·P09/P13은 유지했으며, 관련 검사와 전체 최종 검사 보류를 구분한다.
+**충전·결제 경쟁 검증:** [W3-CHARGE-ORDER-01](../week3/point-charge-order-concurrency-tdd-log.md)에서 같은 사용자 행을 잠그는 실제 충전·주문 서비스를 실행해 두 요청 성공·잔액 5,000을 확인했다. 초기 10,000+충전 2,000−결제 7,000의 합산과 품목별 재고·확정 결과를 검증했다. 생산 코드·P09/P13은 유지했으며, 당시 관련 검사와 2026-10-09 전체 최종 검사 결과를 구분해 기록한다.
 
 ### 3. 동시 중복 좋아요와 200 응답
 
@@ -210,9 +210,9 @@ P04에 따라 중복 등록은 추가 관계 없이 200이다. DB 유일 제약�
 | 단일 fixture 매핑을 각 controller가 따로 해석하면 요청자 정보 변환·권한 검사가 흩어질 수 있음 | application 공통 기능이 외부 ID를 내부 ID·권한으로 해석. 초기 타입·기능 비용은 있지만 HTTP 외 호출에서도 재사용·단위 검증 가능 | HTTP 해석기가 요청자 정보를 제공. controller 중복은 줄지만 웹 경계 테스트와 application 직접 호출의 권한 보장이 별도로 필요 | 고객은 A의 UserResolver와 단일 fixture를 유지한다. 관리자는 P15에 따라 Spring Security의 ADMIN 역할을 검사하고 HTTP 경계에서 UserRole로 변환한다. application은 HTTP·Security 타입에 의존하지 않고 AdminAuthorization으로 전달된 역할을 재검사한다. 주문 소유권은 Order가 판단한다 |
 | 공통 입력 우선 설명과 관리자 권한 우선 설명이 복합 오류에서 다른 결과를 만들 수 있음 | 형식 오류 우선. 입력 변환을 먼저 활용하기 쉬우나 관리자 요청에는 채택하지 않음 | 관리자 경로 진입의 권한 오류 우선. 진입 검사 연결과 이후 입력 검증 순서를 관리해야 함 | P10에서 B로 확정. 일반 고객의 잘못된 관리자 ID 요청으로 순서를 검증하며, 구체 HTTP 상태·코드·메시지는 P12의 승인 계약을 따른다 |
 
-관리자 HTTP 진입 게이트는 application의 공통 해석 기능으로 권한을 확인한 뒤 상세 입력을 바인딩한다. application에 해석 기능을 둔다는 이유로 P10의 검사를 본문·경로 값 변환 뒤로 미루지 않는다. HTTP를 거치지 않는 유스케이스 호출의 역할 검사도 유지한다.
+관리자 HTTP 요청은 [AdminBoundaryConfig](../../apps/commerce-api/src/main/java/com/loopers/config/AdminBoundaryConfig.java)의 Spring Security 필터 체인에서 ADMIN 권한과 필요한 CSRF를 검사한 뒤 MVC의 본문·경로 입력 처리로 진행한다. 컨트롤러는 [AdminRequester](../../apps/commerce-api/src/main/java/com/loopers/interfaces/api/commerce/AdminRequester.java)로 인증 주체를 `UserRole`로 변환해 application에 전달하고, application은 [AdminAuthorization](../../apps/commerce-api/src/main/java/com/loopers/application/user/AdminAuthorization.java)으로 역할을 재검사한다. 입력 바인딩 전 권한 우선 보장은 Security가 담당하며, HTTP를 거치지 않는 유스케이스 호출의 역할 검사도 application에 유지한다.
 
-`UserResolver`는 domain의 `UserIdentityRepository`에 의존한다. 최초 식별·권한 규칙과 Spring 연결의 증거는 [사용자 식별 실행 기록](commerce-tdd-user-identity-log.md)에 보존했다. 현재 P03의 정방향·역방향 식별 조회는 `FixtureUserIdentityRepository`의 불변 Map 한 곳을 사용하며, 관리자 주문 응답도 별도 매핑을 만들지 않는다. `FixtureUserInitializer`는 시작 시 누락 DB 사용자만 잔액 0으로 생성하고 기존 잔액·감사 시각을 보존한다. 실제 초기화·포인트·좋아요 연결은 [해당 실행 기록](commerce-tdd-point-like-log.md), HTTP 진입 권한 우선은 [관리자 HTTP 실행 기록](commerce-tdd-admin-brand-http-log.md)으로 확인한다.
+`UserResolver`는 domain의 `UserIdentityRepository`에 의존한다. 최초 식별·권한 규칙과 Spring 연결의 증거는 [사용자 식별 실행 기록](commerce-tdd-user-identity-log.md)에 보존했다. 현재 P03의 정방향·역방향 식별 조회는 `FixtureUserIdentityRepository`의 불변 Map 한 곳을 사용하며, 관리자 주문 응답도 별도 매핑을 만들지 않는다. `FixtureUserInitializer`는 시작 시 누락 DB 사용자만 잔액 0으로 생성하고 기존 잔액·감사 시각을 보존한다. 실제 초기화·포인트·좋아요 연결은 [해당 실행 기록](commerce-tdd-point-like-log.md), 현재 HTTP 진입 권한 우선은 [관리자 Security 보완 기록](commerce-admin-security-log.md)으로 확인한다.
 
 ### 동시성 테스트의 상태 보존 범위
 

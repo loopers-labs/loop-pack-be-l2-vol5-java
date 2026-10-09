@@ -93,7 +93,7 @@ UPDATE 반환 행 수만으로 성공을 집계하지 않는다. 두 번째 쓰�
 
 새 대조군 테스트 → 기존 주문 트랜잭션·동시성 테스트 → 전체 `:apps:commerce-api:check` 순서로 검증한다. 테스트 수·실패 원인·종료 결과, Checkstyle·ArchUnit은 아래 실제 실행 결과만 기록한다. 문서만 작성한 이전 단계에서는 Gradle을 실행하지 않았으며 과거의 545개 통과 수치는 그대로 보존한다.
 
-이 대조군의 통과만으로 실제 주문 서비스의 동시성까지 검증됐다고 표시하지 않는다. 재고 5의 8개 주문 경쟁은 [재고 테스트](stock-order-concurrency-tdd-log.md), 포인트 3개 주문 경쟁은 [포인트 테스트](point-order-concurrency-tdd-log.md), 지정 충전·결제 경쟁은 [충전/결제 테스트](point-charge-order-concurrency-tdd-log.md)로 이후 각각 검증했다. 마지막 증분의 전체 최종 검사·제출 정리는 사용자 요청으로 보류한다. 제출용 기술 글은 사용자가 별도로 작성한다.
+이 대조군의 통과만으로 실제 주문 서비스의 동시성까지 검증됐다고 표시하지 않는다. 재고 5의 8개 주문 경쟁은 [재고 테스트](stock-order-concurrency-tdd-log.md), 포인트 3개 주문 경쟁은 [포인트 테스트](point-order-concurrency-tdd-log.md), 지정 충전·결제 경쟁은 [충전/결제 테스트](point-charge-order-concurrency-tdd-log.md)로 이후 각각 검증했다. 2026-10-09 [전체 최종 검사](../week2/commerce-completion-checklist.md#최신-통합-검사)도 통과했으며 제출용 기술 글은 사용자가 별도로 작성한다. PR 초안 준비를 실제 제출 완료로 간주하지 않는다.
 
 ## 실행 기록 — 2026-10-08
 
