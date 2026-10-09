@@ -13,6 +13,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -57,27 +60,36 @@ class LostUpdateReproductionTest {
         Long productId = productJpaRepository.save(new ProductModel(nike.getId(), "에어맥스", 1_000, 5)).getId();
         CyclicBarrier bothRead = new CyclicBarrier(2);
         ExecutorService executor = Executors.newFixedThreadPool(2);
+        List<Integer> readStocks = Collections.synchronizedList(new ArrayList<>());
+        int succeeded = 0;
 
         try {
             // act: 두 트랜잭션 모두 5를 읽은 것이 확실해진 다음에만 쓴다
             Runnable readThenWrite = () -> transactionTemplate.executeWithoutResult(status -> {
                 Integer stock = jdbcTemplate.queryForObject("SELECT stock FROM products WHERE id = ?", Integer.class, productId);
+                readStocks.add(stock);
                 awaitBarrier(bothRead);
                 jdbcTemplate.update("UPDATE products SET stock = ? WHERE id = ?", stock - 1, productId);
             });
             Future<?> first = executor.submit(readThenWrite);
             Future<?> second = executor.submit(readThenWrite);
             first.get(10, TimeUnit.SECONDS);
+            succeeded++;
             second.get(10, TimeUnit.SECONDS);
+            succeeded++;
         } finally {
             bothRead.reset();
             executor.shutdownNow();
             executor.awaitTermination(5, TimeUnit.SECONDS);
         }
 
-        // assert: 두 작업 모두 예외 없이 commit했는데(get이 통과), 재고는 1개만 줄었다
+        // assert: 두 트랜잭션 모두 5를 읽었고, 둘 다 예외 없이 commit했는데(get이 통과), 재고는 1개만 줄었다
         Integer finalStock = jdbcTemplate.queryForObject("SELECT stock FROM products WHERE id = ?", Integer.class, productId);
+        assertThat(readStocks).containsExactly(5, 5);
+        assertThat(succeeded).isEqualTo(2);
         assertThat(finalStock).isEqualTo(4);
+        // 불변식 위반: 성공 수량 2 + 최종 재고 4 ≠ 초기 재고 5
+        assertThat(succeeded + finalStock).isNotEqualTo(5);
     }
 
     private static void awaitBarrier(CyclicBarrier barrier) {

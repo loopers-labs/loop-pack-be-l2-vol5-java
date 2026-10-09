@@ -287,6 +287,26 @@ class BrandAdminApiE2ETest {
             assertThat(productJpaRepository.findById(product.getId()).orElseThrow().getDeletedAt()).isNull();
         }
 
+        @DisplayName("BRD-02 연결된 상품이 하나도 없는 브랜드도 200으로 삭제되고, 이후 조회는 404이며 다른 브랜드와 그 상품은 그대로다.")
+        @Test
+        void deletesBrand_whenNoProductsLinked() throws Exception {
+            // arrange
+            BrandModel empty = brandJpaRepository.save(new BrandModel("신규 브랜드", null));
+            BrandModel other = brandJpaRepository.save(new BrandModel("아디다스", null));
+            ProductModel otherProduct = productJpaRepository.save(new ProductModel(other.getId(), "삼바", 1_000, 3));
+
+            // act
+            mockMvc.perform(delete(ENDPOINT + "/" + empty.getId()).with(ADMIN).with(csrf()))
+                .andExpect(status().isOk());
+
+            // assert
+            assertThat(brandJpaRepository.findById(empty.getId()).orElseThrow().getDeletedAt()).isNotNull();
+            mockMvc.perform(get(ENDPOINT + "/" + empty.getId()).with(ADMIN))
+                .andExpect(status().isNotFound());
+            assertThat(brandJpaRepository.findById(other.getId()).orElseThrow().getDeletedAt()).isNull();
+            assertThat(productJpaRepository.findById(otherProduct.getId()).orElseThrow().getDeletedAt()).isNull();
+        }
+
         @DisplayName("BRD-02 연결된 상품이 모두 삭제됐으면 브랜드를 삭제하고, 이후 조회는 404다.")
         @Test
         void deletesBrand_whenAllProductsDeleted() throws Exception {
