@@ -7,7 +7,12 @@ import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
+import org.hibernate.annotations.DynamicUpdate;
 
+/**
+ * 재고는 조건부 UPDATE 로 바뀌므로, 더티체킹 UPDATE 가 변경된 컬럼만 쓰도록 해 재고 컬럼을 덮어쓰지 않게 한다.
+ */
+@DynamicUpdate
 @Getter
 @Entity
 @Table(name = "products")
@@ -69,9 +74,5 @@ public class Product extends BaseEntity {
      */
     public void changeStock(int quantity) {
         stock.changeQuantity(quantity);
-    }
-
-    public void deductStock(int quantity) {
-        stock.deduct(quantity);
     }
 }

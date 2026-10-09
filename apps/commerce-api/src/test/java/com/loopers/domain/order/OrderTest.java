@@ -67,53 +67,13 @@ class OrderTest {
         }
     }
 
-    @DisplayName("주문을 확정할 때, ")
+    /**
+     * DRAFT → CONFIRMED 전환과 결제액 기록은 OrderRepository.confirmIfDraft 의 조건부 UPDATE 가 맡는다.
+     */
+    @DisplayName("주문을 확정하기 전에는, ")
     @Nested
-    class Confirm {
-        @DisplayName("DRAFT 상태이면, CONFIRMED 상태가 되고 결제액이 기록된다.")
-        @Test
-        void confirmsOrder_whenStatusIsDraft() {
-            // arrange
-            Order order = new Order(1L, List.of(new OrderItem(10L, 2, 1000L)));
-
-            // act
-            order.confirm();
-
-            // assert
-            assertThat(order.getStatus()).isEqualTo(Order.OrderStatus.CONFIRMED);
-            assertThat(order.getPaidAmount()).isEqualTo(2000L);
-        }
-
-        @DisplayName("이미 확정된 주문이면, CONFLICT 예외가 발생한다.")
-        @Test
-        void throwsConflictException_whenAlreadyConfirmed() {
-            // arrange
-            Order order = new Order(1L, List.of(new OrderItem(10L, 2, 1000L)));
-            order.confirm();
-
-            // act
-            CoreException result = assertThrows(CoreException.class, order::confirm);
-
-            // assert
-            assertThat(result.getErrorType()).isEqualTo(ErrorType.CONFLICT);
-        }
-
-        @DisplayName("이미 확정된 주문의 재확정이 거절되어도, 기존 결제액은 유지된다.")
-        @Test
-        void keepsPaidAmount_whenReconfirmFails() {
-            // arrange
-            Order order = new Order(1L, List.of(new OrderItem(10L, 2, 1000L)));
-            order.confirm();
-
-            // act
-            assertThrows(CoreException.class, order::confirm);
-
-            // assert
-            assertThat(order.getStatus()).isEqualTo(Order.OrderStatus.CONFIRMED);
-            assertThat(order.getPaidAmount()).isEqualTo(2000L);
-        }
-
-        @DisplayName("확정 전에는, DRAFT 상태이고 결제액이 기록되지 않는다.")
+    class BeforeConfirm {
+        @DisplayName("DRAFT 상태이고 결제액이 기록되지 않는다.")
         @Test
         void hasNoPaidAmount_whenNotConfirmed() {
             // act

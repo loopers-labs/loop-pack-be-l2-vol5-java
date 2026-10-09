@@ -133,27 +133,29 @@ class OrderServiceTest {
     @DisplayName("주문을 확정할 때, ")
     @Nested
     class ConfirmOrder {
-        @DisplayName("DRAFT 상태 주문이면, CONFIRMED 상태와 결제액이 저장된다.")
+        @DisplayName("DRAFT 상태일 때만 CONFIRMED 로 바꾸는 조건부 갱신을 주문·주문자 식별자와 결제액(품목 단가 합)으로 실행하고, 다시 읽은 주문을 반환한다.")
         @Test
-        void savesConfirmedOrder_whenStatusIsDraft() {
+        void confirmsConditionally_andReturnsReloadedOrder() {
             // arrange
             Order order = new Order(1L, List.of(new OrderItem(10L, 2, 1000L)));
-            given(orderRepository.save(order)).willReturn(order);
+            given(orderRepository.confirmIfDraft(order.getId(), 1L, 2000L)).willReturn(1);
+            given(orderRepository.reload(order)).willReturn(order);
 
             // act
             Order result = orderService.confirmOrder(order);
 
             // assert
-            assertThat(result.getStatus()).isEqualTo(Order.OrderStatus.CONFIRMED);
-            assertThat(result.getPaidAmount()).isEqualTo(2000L);
+            assertThat(result).isSameAs(order);
+            verify(orderRepository).confirmIfDraft(order.getId(), 1L, 2000L);
+            verify(orderRepository, never()).save(any(Order.class));
         }
 
-        @DisplayName("이미 확정된 주문이면, CONFLICT 예외가 발생하고 저장하지 않는다.")
+        @DisplayName("조건부 갱신이 0건이면, 이미 확정된 주문으로 보고 CONFLICT 예외가 발생하고 다시 읽지 않는다.")
         @Test
-        void throwsConflictException_whenOrderIsNotDraft() {
+        void throwsConflictException_whenNoRowIsUpdated() {
             // arrange
             Order order = new Order(1L, List.of(new OrderItem(10L, 2, 1000L)));
-            order.confirm();
+            given(orderRepository.confirmIfDraft(order.getId(), 1L, 2000L)).willReturn(0);
 
             // act
             CoreException result = assertThrows(CoreException.class, () -> {
@@ -162,7 +164,8 @@ class OrderServiceTest {
 
             // assert
             assertThat(result.getErrorType()).isEqualTo(ErrorType.CONFLICT);
-            verify(orderRepository, never()).save(any(Order.class));
+            assertThat(result.getMessage()).isEqualTo("이미 확정된 주문입니다.");
+            verify(orderRepository, never()).reload(any(Order.class));
         }
     }
 }
