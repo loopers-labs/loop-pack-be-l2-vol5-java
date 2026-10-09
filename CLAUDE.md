@@ -18,3 +18,6 @@
   - Checklist는 사용자가 제공한다. 임의로 채우지 않는다.
   - References는 정말 필요한 경우에만 쓰고, 없으면 섹션을 제거한다.
 - PR을 바로 올리지 않는다. 제목과 본문 전문을 먼저 보여주고 허락을 받은 뒤에만 `gh pr create`를 실행한다.
+
+## 설계 문서
+[design.md](docs/week2/design.md).

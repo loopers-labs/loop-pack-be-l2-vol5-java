@@ -30,16 +30,14 @@ import java.util.stream.Collectors;
 public class ApiControllerAdvice {
 
     /**
-     * 경로·쿼리 파라미터 타입 오류. 경로 ID 형식 오류는 해당 *_NOT_FOUND (DR-01),
-     * page·size 는 ER-08. 그 밖은 ER-22.
+     * 경로 파라미터 타입 오류. 경로 ID 형식 오류는 해당 *_NOT_FOUND (DR-01), 그 밖은 ER-22.
+     * page·size 는 PageQueryArgumentResolver 가 직접 ER-08 을 던진다 (DR-30).
      */
     private static final Map<String, ErrorType> PARAMETER_ERRORS = Map.of(
         "brandId", ErrorType.BRAND_NOT_FOUND,
         "productId", ErrorType.PRODUCT_NOT_FOUND,
         "orderId", ErrorType.ORDER_NOT_FOUND,
-        "userId", ErrorType.USER_NOT_FOUND,
-        "page", ErrorType.INVALID_PAGE,
-        "size", ErrorType.INVALID_PAGE
+        "userId", ErrorType.USER_NOT_FOUND
     );
 
     /**

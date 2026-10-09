@@ -1,6 +1,7 @@
 package com.loopers.config;
 
 import com.loopers.interfaces.api.auth.RequesterIdArgumentResolver;
+import com.loopers.interfaces.api.paging.PageQueryArgumentResolver;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
@@ -12,9 +13,11 @@ import java.util.List;
 @RequiredArgsConstructor
 public class WebMvcConfig implements WebMvcConfigurer {
     private final RequesterIdArgumentResolver requesterIdArgumentResolver;
+    private final PageQueryArgumentResolver pageQueryArgumentResolver;
 
     @Override
     public void addArgumentResolvers(List<HandlerMethodArgumentResolver> resolvers) {
         resolvers.add(requesterIdArgumentResolver);
+        resolvers.add(pageQueryArgumentResolver);
     }
 }

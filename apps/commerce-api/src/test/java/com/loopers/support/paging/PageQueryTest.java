@@ -23,17 +23,17 @@ class PageQueryTest {
         assertThat(query.offset()).isZero();
     }
 
-    @DisplayName("[DR-19] size 상한 100 은 허용된다.")
+    @DisplayName("[DR-19] page·size 상한 100 은 허용된다.")
     @Test
-    void of_allowsMaxSize() {
-        PageQuery query = PageQuery.of(2, 100);
+    void of_allowsMaxPageAndSize() {
+        PageQuery query = PageQuery.of(100, 100);
 
-        assertThat(query.offset()).isEqualTo(200L);
+        assertThat(query.offset()).isEqualTo(10_000L);
     }
 
-    @DisplayName("[ER-08 INVALID_PAGE] page 음수, size 0·음수·101 은 INVALID_PAGE.")
+    @DisplayName("[ER-08 INVALID_PAGE] page 음수·101, size 0·음수·101 은 INVALID_PAGE.")
     @ParameterizedTest
-    @CsvSource({"-1, 20", "0, 0", "0, -1", "0, 101"})
+    @CsvSource({"-1, 20", "101, 20", "0, 0", "0, -1", "0, 101"})
     void of_throwsInvalidPage_whenOutOfRange(int page, int size) {
         assertThatThrownBy(() -> PageQuery.of(page, size))
             .isInstanceOf(CoreException.class)

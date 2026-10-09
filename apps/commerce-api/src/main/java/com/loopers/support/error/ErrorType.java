@@ -39,9 +39,8 @@ public enum ErrorType {
     ORDER_NOT_DRAFT(HttpStatus.CONFLICT, "확정할 수 없는 주문입니다."),
     INSUFFICIENT_STOCK(HttpStatus.CONFLICT, "재고가 부족합니다."),
 
-    /** ER-17 ~ ER-21 브랜드·상품 */
+    /** ER-17, ER-19 ~ ER-21 브랜드·상품 (ER-18 BRAND_HAS_PRODUCTS 는 DR-33 으로 삭제) */
     INVALID_BRAND(HttpStatus.BAD_REQUEST, "브랜드 정보가 올바르지 않습니다."),
-    BRAND_HAS_PRODUCTS(HttpStatus.CONFLICT, "상품이 남아 있는 브랜드는 삭제할 수 없습니다."),
     INVALID_PRODUCT_NAME(HttpStatus.BAD_REQUEST, "상품 이름이 올바르지 않습니다."),
     INVALID_PRODUCT_PRICE(HttpStatus.BAD_REQUEST, "상품 가격이 올바르지 않습니다."),
     INVALID_STOCK(HttpStatus.BAD_REQUEST, "재고 수량이 올바르지 않습니다.");

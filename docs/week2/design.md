@@ -34,7 +34,7 @@ flowchart LR
 
 ### 0-2. 계층 지도
 
-각 층에 놓인 것과 의존 방향. 패키지는 `com.loopers.{interfaces,application,domain,infrastructure}`. 실선은 호출·의존, 점선은 구현(의존성 역전). domain은 아무것도 의존하지 않고, infrastructure가 domain의 Repository 인터페이스를 구현하며 domain 쪽으로 의존한다(ArchUnit `ArchitectureTest`).
+각 층에 놓인 것과 의존 방향. 패키지는 `com.loopers.{interfaces,application,domain,infrastructure}.<ag>`, `<ag>`는 AG 단위(5-0). BC는 패키지가 아니라 문서와 `ArchitectureTest`의 BC→AG 매핑으로만 존재한다(DR-29). 실선은 호출·의존, 점선은 구현(의존성 역전). domain은 아무것도 의존하지 않고, infrastructure가 domain의 Repository 인터페이스를 구현하며 domain 쪽으로 의존한다(ArchUnit `ArchitectureTest`). 조회 전용 Repository만 예외로 인터페이스가 `application.<ag>.query`에 있어 infrastructure가 application 쪽으로 의존한다(DR-31).
 
 ```mermaid
 flowchart TB
@@ -46,21 +46,24 @@ flowchart TB
     subgraph AP["application — 유스케이스 조립"]
         direction LR
         F1[BrandFacade] ~~~ F2[ProductFacade] ~~~ F3[ProductLikeFacade] ~~~ F4[PointFacade] ~~~ F5[OrderFacade]
+        Q1["BrandReader · ProductReader · ProductLikeReader · PointReader · OrderReader<br/>(query, DR-31)"]
     end
     subgraph DO["domain — 규칙 · 불변식"]
         direction LR
-        D1["user<br/>UserModel · UserService"] ~~~ D2["catalog<br/>Brand · Product · ProductLike"] ~~~ D3["point<br/>PointModel · PointService"] ~~~ D4["order<br/>Order · OrderItem · BuyerOrders"]
+        D1["user<br/>UserModel · UserService"] ~~~ D2["brand<br/>BrandModel · BrandService"] ~~~ D2b["product<br/>ProductModel · ProductService"] ~~~ D2c["productlike<br/>ProductLikeModel · ProductLikeService"] ~~~ D3["point<br/>PointModel · PointService"] ~~~ D4["order<br/>Order · OrderItem · BuyerOrders"]
     end
     subgraph IN["infrastructure — 저장"]
-        R["*RepositoryImpl → *JpaRepository → MySQL"]
+        R["*RepositoryImpl → *JpaRepository → MySQL<br/>*QueryRepositoryImpl (조회 전용, DR-31)"]
     end
 
     IF --> AP --> DO
     IN -.->|"*Repository 구현"| DO
+    IN -.->|"*QueryRepository 구현 (DR-31)"| AP
 ```
 
-- 관리자 판정은 두 번 일어난다. 필터가 HTTP 경계에서 막고, Facade가 `UserService.getAdmin`으로 다시 확인한다(DR-25).
-- Facade는 BC 경계를 넘는 조립을 맡고, 도메인 서비스는 자기 BC 안의 규칙만 가진다. BC 간 호출 허용 표는 5-6.
+- 관리자 판정은 두 번 일어난다. 필터가 HTTP 경계에서 막고, Facade·Reader가 `UserService.getAdmin`으로 다시 확인한다(DR-25).
+- Facade는 BC 경계를 넘는 조립을 맡고, 도메인 서비스는 자기 BC 안의 규칙만 가진다(같은 BC의 다른 AG Service·Repository는 부를 수 있다). BC 간 호출 허용 표는 5-6, AG 간 의존 규칙은 5-1~5-3.
+- 조회는 Facade가 아니라 Reader가 맡는다(DR-31). Reader는 조회 Repository로 같은 BC 안 AG를 조인해 전용 조회 DTO로 돌려준다. Facade는 명령(쓰기)만 가진다.
 - 요청은 interfaces → application → domain 순으로 내려가고, 저장이 필요하면 domain의 Repository 인터페이스를 통해 infrastructure 구현체가 실행된다. 도메인은 JPA를 모른다.
 
 ### 0-3. 범위
@@ -68,7 +71,7 @@ flowchart TB
 | 구분 | 내용 |
 |---|---|
 | 이번 주차에 다루는 것 | 고객 API 13개(브랜드·상품 조회, 좋아요, 포인트 충전·조회·환불, 주문 생성·확정·조회) + 관리자 API(브랜드·상품·재고·포인트·주문). 목록은 4-2 |
-| 다루지 않는 것 | 배송, 주문 취소·수정, 쿠폰·할인, 외부 결제, 가입·로그인·인증, 관리자 권한 관리, 브랜드 필터·키워드 검색, 동시성 하의 불변식 유지. 근거는 요구사항 정의서 1-3 |
+| 다루지 않는 것 | 배송, 주문 취소·수정, 쿠폰·할인, 외부 결제, 가입·로그인·인증, 관리자 권한 관리, 브랜드 필터·키워드 검색, 동시성 하의 불변식 유지(주문 확정의 재고·잔액 차감은 예외, 요구 변경 DR-34). 근거는 요구사항 정의서 1-3 |
 | 설계에서만 고려한 것 | 포인트 이력, 충전금 단위·유효기간 (요구사항 정의서 1-3, 부록 A) |
 
 ---
@@ -222,7 +225,7 @@ flowchart TB
 | INV-07 | 주문 품목 | AG-06 | 거부 (AG 내) |
 | INV-08 | 주문, 주문 품목 | AG-06 | 거부 (AG 내) |
 | INV-09 | 주문, 결제액, 합계 | AG-06 | 거부 (AG 내) |
-| INV-10 | 상품, 브랜드 | AG-02, AG-03 | 거부 (FR 트랜잭션: FR-ADMIN-BRAND-05, FR-ADMIN-PRODUCT-02, DR-04). 동시 요청 창은 OQ-02 |
+| INV-10 | 상품, 브랜드 | AG-02, AG-03 | 거부 (FR 트랜잭션: FR-ADMIN-BRAND-05, FR-ADMIN-PRODUCT-02, DR-04). FR-ADMIN-BRAND-05는 소속 상품을 함께 삭제해 지킨다 (DR-33). 동시 요청 창은 OQ-02 |
 | INV-11 | 상품, 브랜드 | AG-03 | 거부 (AG 내). 상품이 브랜드 ID를 불변으로 들고, 수정 시 입력받지 않는다 (ASM-16) |
 | INV-12 | 주문, 주문 품목 | AG-06 | 거부 (AG 내) |
 | INV-13 | 상품, 가격 | AG-03 | 거부 (AG 내) |
@@ -281,7 +284,7 @@ BC-01 사용자는 모든 FR의 공통 사전 조건(요청자 식별·관리자
 | FR-ADMIN-BRAND-02 | BC-02 | 사용자 | AG-02 | 즉시 | |
 | FR-ADMIN-BRAND-03 | BC-02 | 사용자 | 없음 | 즉시 | 조회 |
 | FR-ADMIN-BRAND-04 | BC-02 | 사용자 | AG-02 | 즉시 | |
-| FR-ADMIN-BRAND-05 | BC-02 | 사용자 | AG-02 | 즉시 | 같은 트랜잭션에서 AG-03(삭제되지 않은 소속 상품 유무) 조회로 INV-10 검증 (DR-04) |
+| FR-ADMIN-BRAND-05 | BC-02 | 사용자 | AG-02, AG-03 (소속 상품 전부) | 즉시 (다중 AG) | 브랜드와 삭제되지 않은 소속 상품을 한 트랜잭션에서 삭제해 INV-10을 지킨다. 전부 또는 전무 (DR-04, DR-33). 좋아요 관계(AG-04)·주문 품목(AG-06)은 건드리지 않는다 |
 | FR-ADMIN-PRODUCT-01 | BC-02 | 사용자 | 없음 | 즉시 | 조회 |
 | FR-ADMIN-PRODUCT-02 | BC-02 | 사용자 | AG-03 | 즉시 | 같은 트랜잭션에서 AG-02(브랜드 존재·삭제 여부) 조회로 INV-10 검증 (DR-04) |
 | FR-ADMIN-PRODUCT-03 | BC-02 | 사용자 | 없음 | 즉시 | 조회 |
@@ -299,15 +302,15 @@ BC-01 사용자는 모든 FR의 공통 사전 조건(요청자 식별·관리자
 - [x] 출처 "설계 도입"인 소유 개념: 없음
 - [x] 모든 참조 개념(사용자, 상품, 잔액, 표현 범위)의 소유 컨텍스트가 2-3에 상류로 있다
 - [x] 모든 INV의 위반 시가 정해져 있다. 최종 일관성: 없음. 거부(FR 트랜잭션): INV-10, DR-04
-- [ ] 거부(FR 트랜잭션)인 INV-10의 관련 FR이 2-4에서 "즉시 다중 AG"인가 — **아니다.** 두 FR 모두 변경 AG는 하나이고 다른 AG는 조회로만 검증한다. 가이드의 문자에서 벗어나며 DR-04에 기록. 동시성 창은 OQ-02
+- [ ] 거부(FR 트랜잭션)인 INV-10의 관련 FR이 2-4에서 "즉시 다중 AG"인가 — **절반만.** FR-ADMIN-BRAND-05는 DR-33으로 AG-02·AG-03을 함께 바꾸는 "즉시 (다중 AG)"가 됐다. FR-ADMIN-PRODUCT-02는 여전히 변경 AG가 하나이고 AG-02는 조회로만 검증한다. 가이드의 문자에서 벗어나며 DR-04에 기록. 동시성 창은 OQ-02
 - [x] 모든 AG가 근거 INV를 가진다 (AG-01은 설계 피드백으로 추가된 INV-15, DR-06)
 - [x] 요구사항 3-2의 상태 전이 용어(주문, 브랜드, 상품)가 모두 AG 루트다
 - [x] 2-3에 순환이 없다 (DR-02로 카탈로그↔좋아요 순환 해소)
 - [x] 2-3 "변경" 행 2개가 모두 2-4 FR-ORDER-02에 변경 AG와 일관성으로 적혀 있다
 - [x] 요구사항 2절 FR 28개가 전부 2-4에 있고 진입 BC가 하나다
-- [x] 즉시 다중 AG FR(FR-ORDER-02)에 근거가 있다 (DR-08)
+- [x] 즉시 다중 AG FR(FR-ORDER-02, FR-ADMIN-BRAND-05)에 근거가 있다 (DR-08, DR-33)
 - [x] 참여 BC 3개 이상 FR(FR-ORDER-02)이 OQ-01에 있다
-- [x] 금지어 없음 (영문 식별자 user/catalog/point/order는 BC 식별자로 허용)
+- [x] 금지어 없음 (영문 식별자 user/catalog/point/order는 BC 식별자, brand/product/productlike는 AG 패키지 식별자로 허용)
 
 체크 안 된 항목 하나(INV-10)는 DR-04와 OQ-02로 처리하고 넘어간다 (동시성을 이번 범위에서 다루지 않기로 결정).
 
@@ -483,7 +486,7 @@ fixture로만 채워진다. 런타임에 이 테이블에 쓰는 FR은 없다. `
 |---|---|---|---|
 | TB-01 `user` | 삭제 없음 | 아니오 | — |
 | TB-02 `brand` | 논리 삭제 (`deleted_at`, ST-01. DR-16) | 아니오 | FR-ADMIN-BRAND-05 |
-| TB-03 `product` | 논리 삭제 (`deleted_at`, ST-02. DR-16) | 아니오 | FR-ADMIN-PRODUCT-05 |
+| TB-03 `product` | 논리 삭제 (`deleted_at`, ST-02. DR-16) | 아니오 | FR-ADMIN-PRODUCT-05, FR-ADMIN-BRAND-05 (소속 상품 함께, DR-33) |
 | TB-04 `product_like` | 물리 삭제 (`deleted_at` 미사용, DR-17) | 아니오 | FR-LIKE-02 |
 | TB-05 `point` | 삭제 없음 | 아니오 (DR-07) | — |
 | TB-06 `orders` | 삭제 없음 (DRAFT 삭제·만료는 범위 밖) | 아니오 | — |
@@ -496,7 +499,17 @@ fixture로만 채워진다. 런타임에 이 테이블에 쓰는 FR은 없다. `
 
 ### 3-6. 동시성 제어
 
-없음. 요구사항 FR에 동시성 비기능 문장이 없다. 재고·잔액·INV-10의 동시 요청 창은 OQ-02, OQ-03에 열려 있고 이번 범위에서 다루지 않는다. 버전 컬럼도 두지 않는다.
+요구 변경(DR-34): FR-ORDER-02 주문 확정이 동시에 와도 INV-01(잔액)·INV-03(재고)을 지킨다.
+
+| 대상 | 방식 | 잠그는 시점·순서 | 경합에서 진 요청 |
+|---|---|---|---|
+| AG-03 상품 (재고) | 비관적 행 잠금 (쓰기) | 확정 트랜잭션에서 상품을 처음 읽을 때. 품목의 상품 전부를 식별자 오름차순으로 | 앞 요청 커밋 뒤 최신 재고로 검사. 부족하면 기존 `INSUFFICIENT_STOCK` |
+| AG-05 포인트 (잔액) | 비관적 행 잠금 (쓰기) | 차감할 때. 확정에서는 상품 다음 | 앞 요청 커밋 뒤 최신 잔액으로 검사. 부족하면 기존 `INSUFFICIENT_POINT` |
+
+- 잠금 순서는 상품(식별자 오름차순) → 포인트로 고정한다. 여러 품목 주문끼리, 확정과 다른 차감 사이에 교착이 생기지 않게 한다.
+- 포인트 잠금은 차감 전부(FR-POINT-03 환불, FR-ADMIN-POINT-02 운영자 차감, FR-ORDER-02 결제)에 걸린다. 충전은 잠그지 않는다 (OQ-03 남은 항목).
+- 버전 컬럼은 두지 않는다. 새 ER도 없다.
+- INV-10의 동시 요청 창(브랜드 일괄 삭제와 상품 생성·수정·재고 변경·주문 확정의 경합, DR-33)은 OQ-02에 그대로 열려 있다.
 
 ### 3-7. 조회 패턴과 인덱스
 
@@ -525,7 +538,7 @@ fixture로만 채워진다. 런타임에 이 테이블에 쓰는 FR은 없다. `
 | FR-ADMIN-BRAND-02 | 없음 | — | — | 낮음 | 0 |
 | FR-ADMIN-BRAND-03 | TB-02 | `id` | — | 낮음 | 1 |
 | FR-ADMIN-BRAND-04 | TB-02 | `id`, `deleted_at` IS NULL | — | 낮음 | 1 |
-| FR-ADMIN-BRAND-05 | TB-02, TB-03 | TB-02.`id`, `deleted_at` IS NULL; TB-03.`brand_id`, `deleted_at` IS NULL (존재 여부) | — | 낮음 | 1 |
+| FR-ADMIN-BRAND-05 | TB-02, TB-03 | TB-02.`id`, `deleted_at` IS NULL; TB-03.`brand_id`, `deleted_at` IS NULL (소속 미삭제 상품 전부, 이어서 행마다 갱신. DR-33) | — | 낮음 | 1 |
 | FR-ADMIN-PRODUCT-01 | TB-03, TB-02, TB-04(개수) | TB-02.`id`=TB-03.`brand_id`; TB-04.`product_id` | TB-03.`created_at` desc, `id` desc. `page`, `size` (ASM-20) | 낮음 | 1 |
 | FR-ADMIN-PRODUCT-02 | TB-02 | `id`, `deleted_at` IS NULL | — | 낮음 | 1 |
 | FR-ADMIN-PRODUCT-03 | TB-03, TB-02, TB-04(개수) | TB-03.`id`; TB-02.`id`; TB-04.`product_id` | — | 낮음 | 1 |
@@ -538,7 +551,9 @@ fixture로만 채워진다. 런타임에 이 테이블에 쓰는 FR은 없다. `
 | FR-ADMIN-POINT-02 | TB-01(대상 사용자), TB-05 | TB-01.`id`=바디 userId; TB-05.`user_id` | — | 낮음 | 2 (BC-01, BC-03. Facade 조합, 5-6) |
 
 메모
-- FR-PRODUCT-01의 `likes_desc`는 TB-03과 TB-04가 같은 BC(BC-02)이므로 한 조회(조인 + 집계)로 처리한다. DR-02가 이걸 위해 있었다.
+- FR-PRODUCT-01/02, FR-ADMIN-PRODUCT-01/03은 TB-03·TB-02·TB-04가 모두 같은 BC(BC-02)이므로 상품·브랜드·좋아요 수를 한 조회(조인 + 집계)로 읽는다. `likes_desc` 정렬도 같은 조회에서 처리한다. DR-02가 이걸 위해 있었고, 조회 경로는 DR-31.
+- FR-LIKE-03은 TB-04·TB-03·TB-02를 한 조회(조인)로 읽는다. 응답에 좋아요 수가 없어 집계는 없다 (DR-31).
+- FR-ORDER-03/04, FR-ADMIN-ORDER-01/02는 TB-06을 읽은 뒤 TB-07을 `order_id` IN으로 한 번에 읽어 붙인다(주문 1 : 품목 N).
 - 걸치는 BC 수 2 이상인 FR-ORDER-02, FR-ADMIN-POINT-01/02는 여러 BC 기준의 정렬·페이징이 없다. 각 BC를 ID로 한 건씩 조회하므로 Facade 조합으로 충분하다. OQ에 올릴 것 없음.
 - FR-ADMIN-ORDER-01의 2단계 조회는 한 BC 안이다. 묶음 순서는 원문에 없어 DR-11에서 정했다.
 
@@ -555,7 +570,7 @@ fixture로만 채워진다. 런타임에 이 테이블에 쓰는 FR은 없다. `
 | IX-07 | TB-07 | `order_id`, `product_id` | 고유 | INV-08 고유 제약. FK `order_id` 조회(접두)도 겸한다 |
 
 만들지 않은 것
-- TB-03.`brand_id`: 읽는 FR이 FR-ADMIN-BRAND-05뿐이고 빈도 낮음. 가이드 규칙대로 두지 않는다. 브랜드 삭제가 느려지면 재검토.
+- TB-03.`brand_id`: 읽는 FR이 FR-ADMIN-BRAND-05뿐이고 빈도 낮음. 소속 상품을 함께 삭제하게 된 뒤(DR-33)에도 같다. 가이드 규칙대로 두지 않는다. 브랜드 삭제가 느려지면 재검토.
 - TB-02 `created_at`: 관리자 목록만 쓰고 빈도 낮음.
 - `likes_desc` 정렬용: 집계 결과 정렬이라 인덱스로 못 푼다. IX-02가 집계 자체를 돕는다.
 
@@ -564,7 +579,7 @@ fixture로만 채워진다. 런타임에 이 테이블에 쓰는 FR은 없다. `
 2-4와 전부 일치.
 
 - FR-ORDER-02가 TB-03(AG-03)·TB-05(AG-05)·TB-06(AG-06)을 한 트랜잭션에서 쓴다 → 2-4에 "즉시 (다중 AG), DR-08"이 있다.
-- FR-ADMIN-BRAND-05는 TB-02만 쓰고 TB-03은 읽는다. FR-ADMIN-PRODUCT-02는 TB-03만 쓰고 TB-02는 읽는다 → 2-4와 같다 (DR-04).
+- FR-ADMIN-BRAND-05는 TB-02와 TB-03(소속 미삭제 상품)을 한 트랜잭션에서 쓴다 → 2-4에 "즉시 (다중 AG), DR-33"이 있다. FR-ADMIN-PRODUCT-02는 TB-03만 쓰고 TB-02는 읽는다 → 2-4와 같다 (DR-04).
 - 나머지 명령 FR은 전부 테이블 하나(FR-ORDER-01은 같은 AG의 TB-06·TB-07)를 쓴다.
 - 최종 일관성 FR 없음. 3-4 실패로 인한 전이 없음.
 
@@ -577,9 +592,9 @@ fixture로만 채워진다. 런타임에 이 테이블에 쓰는 FR은 없다. `
 - [x] 모든 FK가 같은 AG 안에 있다 (TB-07→TB-06 하나뿐)
 - [x] FK 없는 참조마다 검증 FR 또는 준비 방식이 명시되어 있다
 - [x] 요구사항 3-2의 세 용어가 각각 ST- 하나를 가진다 (브랜드·상품은 `deleted_at`, 주문은 `status`)
-- [x] 동시성 비기능이 없으므로 3-6은 "없음"이고 버전 컬럼도 없다
+- [x] 3-6은 FR-ORDER-02의 재고·잔액 차감만 비관적 행 잠금으로 다루고(DR-34) 버전 컬럼은 없다
 - [x] 28개 FR이 전부 3-7-A에 있다
-- [x] 걸치는 BC 수 2 이상인 조회가 SQL 조인으로 처리되지 않는다 (Facade 조합)
+- [x] 걸치는 BC 수 2 이상인 조회가 SQL 조인으로 처리되지 않는다 (Facade 조합. 조회 Repository의 조인도 같은 BC 안만, DR-31)
 - [x] 모든 IX-에 근거 FR이 있다
 - [x] 3-8이 "전부 일치"다
 - [x] 금지어 없음 (클래스·패키지·URL·ORM 설정 없음. DB 제품명 없음)
@@ -587,7 +602,7 @@ fixture로만 채워진다. 런타임에 이 테이블에 쓰는 FR은 없다. `
 4장으로 인계되는 것
 - 3-1 소유 매핑 → 각 EP가 노출하는 데이터의 소유 BC
 - 3-4 ST-01/02/03 → 상태 변경 EP의 허용 전이와 ER
-- 3-6 없음 → 동시성 ER 없음
+- 3-6 비관적 행 잠금 → 동시성 ER 없음 (경합에서 진 요청은 기존 `INSUFFICIENT_*`)
 - 3-7-A 정렬/페이징 → 목록 EP의 정렬 옵션(상품 목록만)과 `page`, `size`
 - 요청·응답 필드는 컬럼명이 아니라 개념 언어로 다시 쓴다
 
@@ -603,7 +618,7 @@ fixture로만 채워진다. 런타임에 이 테이블에 쓰는 FR은 없다. `
 | 에러 코드 체계 | 범용 `ErrorType` | **도메인별 코드.** 요구사항 실패 케이스 이름 그대로 `errorCode`에 싣는다 | FR-POINT-01 (`BALANCE_LIMIT_EXCEEDED` 구분), FR-POINT-03 (`INVALID_AMOUNT` vs `INSUFFICIENT_POINT`), FR-ORDER-02 (`INSUFFICIENT_STOCK` vs `INSUFFICIENT_POINT`)에 "클라이언트가 구분해야 함" 명시 |
 | HTTP 상태 고정 매핑 | 검증 400 / 권한 403 / 참조 없음 404 / INV·ST 409 / 서버 500 | 동일. 요청자 식별 실패(`USER_NOT_FOUND`)도 참조 없음 404로 둔다 | DR-18 |
 | 검증 에러 형식 | 400 + `message` (확정 필요) | 확정: 400 + `message`에 실패 필드와 이유 한 문장. `details` 미사용 | — |
-| 페이징 | 오프셋 (확정 필요) | 확정: 쿼리 `page`(0부터, 기본 0), `size`(1~100, 기본 20). 페이지 정보는 `meta`가 아니라 `data` 안 (`items`, `page`, `size`, `totalCount`) | DR-19 |
+| 페이징 | 오프셋 (확정 필요) | 확정: 쿼리 `page`(0~100, 기본 0), `size`(1~100, 기본 20). 페이지 정보는 `meta`가 아니라 `data` 안 (`items`, `page`, `size`, `totalCount`) | DR-19, DR-30 |
 | 인증 전달 | 헤더 | `X-USER-ID`. 시스템이 넣는 값이라 형식 오류를 구분하지 않는다 | CON-03, DR-01 |
 | 식별자 | 내부 PK 노출 | 동일. Long | DR-01 |
 | 나머지 (응답 봉투, 시간 ISO 8601 UTC, 금액 정수, 멱등 키 미사용, 계약 변경) | | 1-3과 동일 | — |
@@ -770,7 +785,7 @@ FR 28개 ↔ EP 28개, 1:1.
 | 위치 | 필드 | 타입 | 필수 | 제약 | 의미 | 출처 개념 |
 |---|---|---|---|---|---|---|
 | 쿼리 | `sort` | string | 아니오 | `latest` \| `price_asc` \| `likes_desc`. 정확히 하나. 기본 `latest` (ASM-08) | 정렬 | 상품, 가격, 좋아요 수 |
-| 쿼리 | `page` | int | 아니오 | ≥ 0, 기본 0 | 페이지 번호 | — |
+| 쿼리 | `page` | int | 아니오 | 0~100, 기본 0 (DR-19, DR-30) | 페이지 번호 | — |
 | 쿼리 | `size` | int | 아니오 | 1~100, 기본 20 (DR-19) | 페이지 크기 | — |
 
 - 응답 200: `Page<ProductSummary>` (삭제되지 않은 상품만)
@@ -904,8 +919,8 @@ FR 28개 ↔ EP 28개, 1:1.
 - 근거 FR: FR-ADMIN-BRAND-05 / 소유 BC: BC-02 / 종류: 명령 / 권한: 관리자 / 멱등성: 아니오 (두 번째 호출은 ER-03)
 - 요청: 경로 `brandId`
 - 응답 200: `data` null
-- 상태 전이: ST-01 — ACTIVE → DELETED
-- 에러: ER-01 / ER-02 / ER-03 (없음 또는 이미 삭제됨, ASM-18) / ER-18 (삭제되지 않은 상품이 연결됨)
+- 상태 전이: ST-01 — ACTIVE → DELETED. 소속 미삭제 상품(재고 0 포함) 각각 ST-02 — ACTIVE → DELETED. 전부 또는 전무 (DR-33)
+- 에러: ER-01 / ER-02 / ER-03 (없음 또는 이미 삭제됨, ASM-18). 연결된 상품은 에러 조건이 아니다 (DR-33)
 
 ### EP-19 GET `/api-admin/v1/products`
 - 근거 FR: FR-ADMIN-PRODUCT-01 / 소유 BC: BC-02 / 종류: 조회 / 권한: 관리자 / 멱등성: 예
@@ -1012,18 +1027,18 @@ FR 28개 ↔ EP 28개, 1:1.
 | ER-15 | `ORDER_NOT_DRAFT` | 409 | 확정할 수 없는 주문입니다 | FR-ORDER-02 | ST (ST-03) | 없음 (CONFIRMED 유지) |
 | ER-16 | `INSUFFICIENT_STOCK` | 409 | 재고가 부족합니다 | FR-ORDER-02 | INV (INV-03) | 없음 (DRAFT 유지) |
 | ER-17 | `INVALID_BRAND` | 400 | 브랜드 정보가 올바르지 않습니다 | FR-ADMIN-BRAND-02 / 04 | 검증 (INV-14) | 없음 |
-| ER-18 | `BRAND_HAS_PRODUCTS` | 409 | 상품이 남아 있는 브랜드는 삭제할 수 없습니다 | FR-ADMIN-BRAND-05 | INV (INV-10) | 없음 (ACTIVE 유지) |
+| ER-18 | (삭제, DR-33) | — | 이전 `BRAND_HAS_PRODUCTS`. 브랜드 삭제가 소속 상품을 함께 삭제하게 되어 발생 조건이 없다. 번호는 재사용하지 않는다 | — | — | — |
 | ER-19 | `INVALID_PRODUCT_NAME` | 400 | 상품 이름이 올바르지 않습니다 | FR-ADMIN-PRODUCT-02 / 04 | 검증 (INV-13) | 없음 |
 | ER-20 | `INVALID_PRODUCT_PRICE` | 400 | 상품 가격이 올바르지 않습니다 | FR-ADMIN-PRODUCT-02 / 04 | 검증 (INV-13) | 없음 |
 | ER-21 | `INVALID_STOCK` | 400 | 재고 수량이 올바르지 않습니다 | FR-ADMIN-PRODUCT-02 / 06 | 검증 (INV-03) | 없음 |
 | ER-22 | `BAD_REQUEST` | 400 | 요청 형식이 올바르지 않습니다 | 없음 (요구사항 밖: JSON 파싱 불가, 바디 누락 등) | 검증 | 없음 |
 
 메모
-- 요구사항 2절의 실패 케이스 이름 21개(`USER_NOT_FOUND`, `NOT_ADMIN`, `BRAND_NOT_FOUND`, `PRODUCT_NOT_FOUND`, `ORDER_NOT_FOUND`, `NOT_OWNER`, `INVALID_SORT`, `INVALID_PAGE`, `INVALID_AMOUNT`, `BALANCE_LIMIT_EXCEEDED`, `INSUFFICIENT_POINT`, `EMPTY_ORDER_ITEMS`, `INVALID_QUANTITY`, `AMOUNT_OUT_OF_RANGE`, `ORDER_NOT_DRAFT`, `INSUFFICIENT_STOCK`, `INVALID_BRAND`, `BRAND_HAS_PRODUCTS`, `INVALID_PRODUCT_NAME`, `INVALID_PRODUCT_PRICE`, `INVALID_STOCK`)가 각각 ER- 하나에 있다. 재작명 없음.
+- 요구사항 2절의 실패 케이스 이름 20개(`USER_NOT_FOUND`, `NOT_ADMIN`, `BRAND_NOT_FOUND`, `PRODUCT_NOT_FOUND`, `ORDER_NOT_FOUND`, `NOT_OWNER`, `INVALID_SORT`, `INVALID_PAGE`, `INVALID_AMOUNT`, `BALANCE_LIMIT_EXCEEDED`, `INSUFFICIENT_POINT`, `EMPTY_ORDER_ITEMS`, `INVALID_QUANTITY`, `AMOUNT_OUT_OF_RANGE`, `ORDER_NOT_DRAFT`, `INSUFFICIENT_STOCK`, `INVALID_BRAND`, `INVALID_PRODUCT_NAME`, `INVALID_PRODUCT_PRICE`, `INVALID_STOCK`)가 각각 ER- 하나에 있다. 재작명 없음. `BRAND_HAS_PRODUCTS`(ER-18)는 요구 변경으로 삭제했다 (DR-33).
 - 상태 변화는 전부 "없음"이다(ASM-12: 실패 상태 없음). 따라서 5-4 예외 규칙 대상 FR은 없다.
 - 경로·바디 ID의 형식 오류(long 아님)는 해당 `*_NOT_FOUND`로 나간다 (DR-01). 값의 타입 오류 중 요구사항이 이름을 준 것(`amount`, `quantity`, `stock`, `price`, `page`, `size`)은 그 이름으로, 준 적 없는 것은 ER-22.
 - 매핑되지 않은 예외는 1-3 기본값대로 500 `INTERNAL_ERROR`. ER-로 세지 않는다.
-- 동시성 ER 없음 (3-6 없음).
+- 동시성 ER 없음 (3-6: 잠금 대기 뒤 기존 `INSUFFICIENT_STOCK`·`INSUFFICIENT_POINT`로 거절).
 
 ### 4-5. 계약 변경
 
@@ -1049,44 +1064,64 @@ FR 28개 ↔ EP 28개, 1:1.
 
 5장으로 인계되는 것
 - 4-3-0 공통 형태와 각 EP 요청·응답 → Dto. 필드명·타입·NULL 그대로
-- 4-4 ER-01~22 → 도메인 예외와 `ApiControllerAdvice` 매핑
+- 4-4 ER-01~22(ER-18 제외, DR-33) → 도메인 예외와 `ApiControllerAdvice` 매핑
 - 4-1 페이징(`page`, `size`, `Page<T>` 형태)과 봉투 → 한 곳에 구현
 
 ## 5. 객체 (Level 3)
 
 가이드 5-1~5-5, 5-7의 규칙을 그대로 따른다. 이 장에 쓰는 것은 이 프로젝트에 적용한 이름(5-0), 5-4·5-5의 적용 결과, 5-6 BC 간 호출 표다. 클래스 다이어그램은 없다.
 
-### 5-0. BC별 패키지와 클래스 (이름만)
+### 5-0. AG별 패키지와 클래스 (이름만)
 
-패키지 `com.loopers.{interfaces.api, application, domain, infrastructure}.<bc>`. `<bc>`는 2-1의 영문 식별자.
+패키지 `com.loopers.{interfaces.api, application, domain, infrastructure}.<ag>`. `<ag>`는 2-2의 AG 루트를 소문자로 붙인 식별자이고 계층마다 같은 이름을 쓴다. BC는 패키지가 아니다 — 아래 표의 BC 열과 `ArchitectureTest.AGGREGATES_BY_BC` 매핑이 BC 소속의 유일한 기록이다(DR-29).
 
-| BC | `<bc>` | domain (Model / Service / Repository) | application (Facade) | interfaces.api |
-|---|---|---|---|---|
-| BC-01 사용자 | `user` | `UserModel` / `UserService` / `UserRepository` | 없음 (EP를 갖지 않는다. 다른 BC의 Facade가 `UserService`를 부른다) | 없음 |
-| BC-02 카탈로그 | `catalog` | `BrandModel`, `ProductModel`, `ProductLikeModel` / `BrandService`, `ProductService`, `ProductLikeService` / `BrandRepository`, `ProductRepository`, `ProductLikeRepository` | `BrandFacade`, `ProductFacade`, `ProductLikeFacade` | `BrandV1*`, `ProductV1*`, `ProductLikeV1*`, `BrandAdminV1*`, `ProductAdminV1*` |
-| BC-03 포인트 | `point` | `PointModel` / `PointService` / `PointRepository` | `PointFacade` | `PointV1*`, `PointAdminV1*` |
-| BC-04 주문 | `order` | `OrderModel` (루트), `OrderItemModel` (포함, AG-06) / `OrderService` / `OrderRepository` | `OrderFacade` | `OrderV1*`, `OrderAdminV1*` |
+| BC | AG | `<ag>` | domain (Model / Service / Repository) | application (Facade / Reader) | interfaces.api |
+|---|---|---|---|---|---|
+| BC-01 사용자 | AG-01 | `user` | `UserModel` / `UserService` / `UserRepository` | 없음 (EP를 갖지 않는다. 다른 BC의 Facade·Reader가 `UserService`를 부른다) | 없음 |
+| BC-02 카탈로그 | AG-02 | `brand` | `BrandModel` / `BrandService` / `BrandRepository` | `BrandFacade` / `BrandReader` | `BrandV1*`, `BrandAdminV1*` |
+| BC-02 카탈로그 | AG-03 | `product` | `ProductModel` / `ProductService` / `ProductRepository` | `ProductFacade` / `ProductReader`, `ProductSort` | `ProductV1*`, `ProductAdminV1*` |
+| BC-02 카탈로그 | AG-04 | `productlike` | `ProductLikeModel` / `ProductLikeService` / `ProductLikeRepository` | `ProductLikeFacade` / `ProductLikeReader` | `ProductLikeV1*` |
+| BC-03 포인트 | AG-05 | `point` | `PointModel` / `PointService` / `PointRepository` | `PointFacade` / `PointReader` | `PointV1*`, `PointAdminV1*` |
+| BC-04 주문 | AG-06 | `order` | `OrderModel` (루트), `OrderItemModel` (포함) / `OrderService` / `OrderRepository` | `OrderFacade` / `OrderReader` | `OrderV1*`, `OrderAdminV1*` |
 
-`*` = `ApiSpec`, `Controller`, `Dto`. Repository는 AG 루트 단위(6개)만 있다. `OrderItemRepository`는 만들지 않는다 (5-3).
+`*` = `ApiSpec`, `Controller`, `Dto`. Repository는 AG 루트 단위(6개)만 있다. `OrderItemRepository`는 만들지 않는다 (5-3). 조회 전용 Repository는 이 수에 넣지 않는다(DR-31).
 
-Facade public 메서드 ↔ FR (28:28)
+조회 전용 (DR-31): `application.<ag>.query`에 `<Ag>Reader`, `<Ag>QueryRepository`(인터페이스), `<Ag>View`(조회별 중첩 record)를 두고, `infrastructure.<ag>.query`에 `<Ag>QueryRepositoryImpl`을 둔다. `user`를 뺀 AG 5개에 있다. View record: `BrandView.Summary`·`Admin` / `ProductView.Summary`(목록·상세 공용)·`Admin` / `ProductLikeView.Item` / `PointView.Balance` / `OrderView.Detail`·`Item`·`BuyerGroup`.
 
-| Facade | 메서드 → FR |
+Facade·Reader public 메서드 ↔ FR (28:28)
+
+| Facade / Reader | 메서드 → FR |
 |---|---|
-| `BrandFacade` | `getBrand` FR-BRAND-01 · `listBrandsForAdmin` FR-ADMIN-BRAND-01 · `createBrand` 02 · `getBrandForAdmin` 03 · `updateBrand` 04 · `deleteBrand` 05 |
-| `ProductFacade` | `listProducts` FR-PRODUCT-01 · `getProduct` 02 · `listProductsForAdmin` FR-ADMIN-PRODUCT-01 · `createProduct` 02 · `getProductForAdmin` 03 · `updateProduct` 04 · `deleteProduct` 05 · `updateStock` 06 |
-| `ProductLikeFacade` | `like` FR-LIKE-01 · `unlike` 02 · `listMyLikes` 03 |
-| `PointFacade` | `charge` FR-POINT-01 · `getBalance` 02 · `refund` 03 · `chargeByAdmin` FR-ADMIN-POINT-01 · `deductByAdmin` 02 |
-| `OrderFacade` | `createOrder` FR-ORDER-01 · `confirmOrder` 02 · `listMyOrders` 03 · `getMyOrder` 04 · `listOrdersForAdmin` FR-ADMIN-ORDER-01 · `getOrderForAdmin` 02 |
+| `BrandReader` | `getBrand` FR-BRAND-01 · `listBrandsForAdmin` FR-ADMIN-BRAND-01 · `getBrandForAdmin` 03 |
+| `BrandFacade` | `createBrand` FR-ADMIN-BRAND-02 · `updateBrand` 04 · `deleteBrand` 05 |
+| `ProductReader` | `listProducts` FR-PRODUCT-01 · `getProduct` 02 · `listProductsForAdmin` FR-ADMIN-PRODUCT-01 · `getProductForAdmin` 03 |
+| `ProductFacade` | `createProduct` FR-ADMIN-PRODUCT-02 · `updateProduct` 04 · `deleteProduct` 05 · `updateStock` 06 |
+| `ProductLikeReader` | `listMyLikes` FR-LIKE-03 |
+| `ProductLikeFacade` | `like` FR-LIKE-01 · `unlike` 02 |
+| `PointReader` | `getBalance` FR-POINT-02 |
+| `PointFacade` | `charge` FR-POINT-01 · `refund` 03 · `chargeByAdmin` FR-ADMIN-POINT-01 · `deductByAdmin` 02 |
+| `OrderReader` | `listMyOrders` FR-ORDER-03 · `getMyOrder` 04 · `listOrdersForAdmin` FR-ADMIN-ORDER-01 · `getOrderForAdmin` 02 |
+| `OrderFacade` | `createOrder` FR-ORDER-01 · `confirmOrder` 02 |
 
 ### 5-1 ~ 5-3. 계층·역할·애그리거트
 
 가이드와 동일. 이 프로젝트에서 특히 지키는 것:
 
-- `domain.order`는 `domain.catalog`·`domain.point`·`domain.user`를 import하지 않는다. `OrderItemModel`은 `productId`(Long)만 든다. 단가는 Facade가 `ProductService`에서 받은 값을 꺼내 `OrderModel.create(...)`에 넘긴다.
+- BC 간: `domain.<A>`는 다른 BC에 속한 `domain.<B>`를 import하지 않는다. `domain.order`는 `domain.brand`·`domain.product`·`domain.productlike`·`domain.point`·`domain.user`를 모른다. `OrderItemModel`은 `productId`(Long)만 든다. 단가는 Facade가 `ProductService`에서 받은 값을 꺼내 `OrderModel.create(...)`에 넘긴다.
+- AG 간 (같은 BC 안, DR-29):
+  - Model은 다른 AG를 모른다. 다른 AG의 Model을 필드로 들지 않고 메서드 파라미터로도 받지 않는다. 참조가 필요하면 Long ID만 든다 (`ProductModel.brandId`, `ProductLikeModel.productId`).
+  - 도메인 Service는 같은 BC에 속한 다른 AG의 Repository나 Service를 사용해도 된다. 여러 AG에 걸친 규칙을 검증하기 위해서다. 현재 코드에는 쓰는 곳이 없다 — INV-10은 DR-04대로 Facade가 두 Service를 부르고, INV-04·05는 `ProductLikeService` 안에서 ID로만 끝난다.
+  - Repository 인터페이스(domain)는 시그니처에 다른 AG의 Model을 넣지 않는다. 조인한 결과가 필요하면 자기 패키지에 읽기용 record를 두고 그것을 반환한다.
+  - Repository 구현체(infrastructure)는 조회 쿼리를 짤 때 같은 BC의 다른 Q클래스를 조인해도 된다. 결과는 자기 AG의 Model 또는 프로젝션으로 반환한다 다른 BC의 domain은 import하지 않는다. 현재 쓰는 곳은 없다 — 다른 AG와 조인하는 조회는 모두 조회 Repository로 옮겼다 (DR-31).
+- 조회 경로 (DR-31): 위 AG 간 규칙은 쓰기(명령) 경로에 적용한다. 조회는 AG 경계를 넘어도 된다.
+  - 조회 FR 13개는 전부 Facade가 아니라 `application.<ag>.query`의 Reader가 맡고, Controller가 Reader를 직접 부른다. 명령의 응답(`*Info`, `ProductInfoAssembler`)은 이 규칙 밖이라 그대로 둔다.
+  - 없음·소유 판정(`*_NOT_FOUND`, `NOT_OWNER`)은 조회 Repository가 `Optional`로 돌려준 결과를 보고 Reader가 던진다. 코드와 순서는 명령 쪽 Service와 같다.
+  - Reader는 요청자 확인(`UserService`) 외에는 조회 Repository만 부른다. 다른 BC 데이터가 필요하면 쿼리에 섞지 않고 그 BC의 Service를 부른다.
+  - 조회 Repository 구현체는 같은 BC 안의 AG 테이블을 조인·집계해도 된다. BC 간 조인은 하지 않는다.
+  - 조회 Repository와 Reader는 엔티티(Model)를 반환하지 않는다. 결과는 `<Ag>View`의 중첩 record(전용 조회 DTO)로만 돌려준다. 조회마다 record 하나를 두되, 파일은 AG당 `View` 하나로 모은다.
 - `OrderItemModel`을 만드는 코드는 `OrderModel` 안에만 있다. 같은 상품 합산(ASM-11, INV-08)과 합계 계산(INV-06)도 거기서.
 - 거부(AG 내) INV-의 위치: INV-01·02 `PointModel` / INV-03·11·13 `ProductModel` / INV-14 `BrandModel` / INV-06·07·08·09·12 `OrderModel` / INV-15 `UserModel` / INV-04·05 `ProductLikeService`(DR-05, 여러 Model에 걸친 같은 BC 규칙).
-- INV-10(거부·FR 트랜잭션, DR-04)은 어느 Model도 직접 검증하지 않는다. `BrandFacade.deleteBrand`가 `ProductService.existsActiveByBrand`를, `ProductFacade.createProduct`가 `BrandService.getActive`를 같은 트랜잭션에서 부른다.
+- INV-10(거부·FR 트랜잭션, DR-04)은 어느 Model도 직접 검증하지 않는다. `BrandFacade.deleteBrand`가 `ProductService.deleteAllOfBrand`(소속 미삭제 상품을 읽어 각각 `delete()`, DR-33)를, `ProductFacade.createProduct`가 `BrandService.getActive`를 같은 트랜잭션에서 부른다.
 - 3-2 전이 메서드: `BrandModel.delete()`, `ProductModel.delete()`, `OrderModel.confirm(...)`. `deletedAt`·`status`에 setter 없음. 복구·`fail()` 메서드 없음.
 - ID는 DB 자동 증가(DR-01). Model 생성자에서 ID를 만들지 않는다.
 
@@ -1094,28 +1129,29 @@ Facade public 메서드 ↔ FR (28:28)
 
 전부 기본 규칙이다. 4-4의 ER-01~22 모두 상태 변화 "없음"이므로 예외 규칙(실패 상태 저장)에 해당하는 FR이 없다.
 
-- 도메인 예외 하나(`CoreException`)에 `ErrorType`을 실어 던진다. `ErrorType`은 4-4의 코드 22개를 값으로 가지며 각 값이 HTTP 상태를 안다. 4-4에 없는 값을 추가하지 않는다. (구현: 기존 범용 값 `INTERNAL_ERROR`·`NOT_FOUND`·`CONFLICT`는 example 모듈과 500 처리용으로 남긴다. code 문자열은 enum 이름. DR-23)
+- 도메인 예외 하나(`CoreException`)에 `ErrorType`을 실어 던진다. `ErrorType`은 4-4의 코드 21개(ER-18 삭제, DR-33)를 값으로 가지며 각 값이 HTTP 상태를 안다. 4-4에 없는 값을 추가하지 않는다. (구현: 기존 범용 값 `INTERNAL_ERROR`·`NOT_FOUND`·`CONFLICT`는 example 모듈과 500 처리용으로 남긴다. code 문자열은 enum 이름. DR-23)
 - 요청자 식별 실패(ER-01)·관리자 아님(ER-02)은 `UserService`가 던진다. 나머지 참조 실패(ER-03·04·05)는 해당 BC의 Service, INV·ST 위반(ER-10·11·15·16·18)은 Model, 검증(ER-07·08·09·12·13·14·17·19·20·21)은 Model 생성자 또는 값 객체. ER-22와 500은 `ApiControllerAdvice` 기본 처리.
 
 ### 5-5. 트랜잭션
 
-- 2-4가 전부 "즉시"이므로 Facade public 메서드 하나 = 트랜잭션 하나. 분리 없음.
-- 조회 FR 15개(FR-BRAND-01, PRODUCT-01/02, LIKE-03, POINT-02, ORDER-03/04, ADMIN-BRAND-01/03, ADMIN-PRODUCT-01/03, ADMIN-ORDER-01/02, 그리고 요청자 식별만 하는 조회)는 읽기 전용 트랜잭션.
+- 2-4가 전부 "즉시"이므로 Facade public 메서드 하나 = 트랜잭션 하나. 분리 없음. Reader public 메서드도 같다(읽기 전용).
+- 조회 FR 15개(FR-BRAND-01, PRODUCT-01/02, LIKE-03, POINT-02, ORDER-03/04, ADMIN-BRAND-01/03, ADMIN-PRODUCT-01/03, ADMIN-ORDER-01/02, 그리고 요청자 식별만 하는 조회)는 읽기 전용 트랜잭션. 요청자 식별을 뺀 13개는 Reader 메서드다(DR-31).
 - `OrderFacade.confirmOrder`는 한 트랜잭션에서 `ProductService.deductStock`(품목 수만큼) → `PointService.deduct` → `OrderModel.confirm` 순으로 부른다. 어느 하나가 예외를 던지면 전부 롤백 (ASM-14, DR-08). 순서는 검사 비용이 싼 것부터가 아니라 요구사항 FR-ORDER-02 실패 케이스 순서(상품 삭제 → 재고 → 잔액)를 따른다.
+- `BrandFacade.deleteBrand`는 한 트랜잭션에서 `BrandService.getActive` → `ProductService.deleteAllOfBrand` → `BrandService.delete` 순으로 부른다. 브랜드가 없거나 이미 삭제됐으면 상품을 읽기 전에 거절한다. 어느 하나가 예외를 던지면 브랜드·상품 변경이 전부 롤백된다. 상품마다 따로 커밋하지 않는다 (DR-33).
 - LK- 없음.
 
 ### 5-6. BC 간 호출 표
 
 | 호출하는 Facade.메서드 | 근거 FR-ID | 호출받는 Service.메서드 | 목적 | 2-3 행 |
 |---|---|---|---|---|
-| 모든 Facade public 메서드 (28개) | 전부 (공통 사전 조건) | `UserService.getUser(requesterId)` — 관리자 FR은 `UserService.getAdmin(requesterId)` | 조회 | BC-01 → BC-02/03/04 |
+| 모든 Facade·Reader public 메서드 (28개) | 전부 (공통 사전 조건) | `UserService.getUser(requesterId)` — 관리자 FR은 `UserService.getAdmin(requesterId)` | 조회 | BC-01 → BC-02/03/04 |
 | `PointFacade.chargeByAdmin`, `deductByAdmin` | FR-ADMIN-POINT-01, 02 | `UserService.getUser(targetUserId)` (대상 사용자 존재) | 조회 | BC-01 → BC-03 |
 | `OrderFacade.createOrder` | FR-ORDER-01 | `ProductService.getActiveProducts(productIds)` → 존재·ACTIVE·가격 | 조회 | BC-02 → BC-04 |
 | `OrderFacade.confirmOrder` | FR-ORDER-02 | `ProductService.getActiveProducts(productIds)` → 삭제 여부 재검증 | 조회 | BC-02 → BC-04 |
 | `OrderFacade.confirmOrder` | FR-ORDER-02 | `ProductService.deductStock(productId, quantity)` (품목마다) | **변경** (DR-08) | BC-02 → BC-04 |
 | `OrderFacade.confirmOrder` | FR-ORDER-02 | `PointService.deduct(userId, totalAmount)` | **변경** (DR-08) | BC-03 → BC-04 |
 
-같은 BC 안의 Facade → Service 호출(`BrandFacade` → `ProductService`, `ProductFacade` → `BrandService`·`ProductLikeService` 등)은 BC 간이 아니므로 이 표에 없다. 2-3의 "표현 범위" 행은 상수 공유라 호출이 없다.
+같은 BC 안의 AG 간 호출(`BrandFacade` → `ProductService`, `ProductFacade` → `BrandService`·`ProductLikeService` 등)은 BC 간이 아니므로 이 표에 없다. 허용 범위는 5-1~5-3의 AG 간 규칙. 2-3의 "표현 범위" 행은 상수 공유라 호출이 없다.
 
 ### 5-7. 테스트
 
@@ -1134,18 +1170,23 @@ Facade public 메서드 ↔ FR (28:28)
 
 코드 작성 후 검사한 결과. 검사 수단은 각 항목 끝에 적었다.
 
-- [x] `domain.<A>` → `domain.<B>` import 없음 — `ArchitectureTest.domainDoesNotDependOnOtherBoundedContextDomain`
-- [x] `application.<A>` → `domain.<B>.Repository` import 없음 — `ArchitectureTest.applicationDoesNotDependOnOtherBoundedContextRepository`
+- [x] BC 간: `domain.<A>` → 다른 BC의 `domain.<B>` import 없음 — `ArchitectureTest.domainDoesNotDependOnOtherBoundedContextDomain`
+- [x] BC 간: `application.<A>` → 다른 BC의 `domain.<B>.Repository` import 없음 — `ArchitectureTest.applicationDoesNotDependOnOtherBoundedContextRepository`
+- [x] BC 간: `infrastructure.<A>` → 다른 BC의 `domain.<B>` import 없음 — `ArchitectureTest.infrastructureDoesNotDependOnOtherBoundedContextDomain`
+- [x] AG 간: `*Model` → 다른 AG의 `domain` import 없음 (같은 BC 포함) — `ArchitectureTest.modelDoesNotDependOnOtherAggregate`
+- [x] AG 간: `*Repository` 인터페이스 → 다른 AG의 `*Model` 의존 없음 (시그니처 포함) — `ArchitectureTest.repositoryDoesNotExposeOtherAggregateModel`
 - [x] `interfaces` → `domain`·`infrastructure` import 없음 — `ArchitectureTest.interfacesDoNotDependOnDomain`, `respectsLayerDependencies`
-- [x] Facade public 메서드 28개 ↔ FR 28개, 주석에 FR-ID — `BrandFacade` 6, `ProductFacade` 8, `ProductLikeFacade` 3, `PointFacade` 5, `OrderFacade` 6
+- [x] 조회 Repository → `*Model` 의존 없음 — `ArchitectureTest.queryRepositoryDoesNotExposeModel` (DR-31)
+- [x] 조회 전용 DTO(`*View`와 중첩 record) → `*Model` 의존 없음 — `ArchitectureTest.queryViewDoesNotHoldModel` (DR-31)
+- [x] Facade·Reader public 메서드 28개 ↔ FR 28개, 주석에 FR-ID — Reader 13(`BrandReader` 3, `ProductReader` 4, `ProductLikeReader` 1, `PointReader` 1, `OrderReader` 4) + Facade 15(`BrandFacade` 3, `ProductFacade` 4, `ProductLikeFacade` 2, `PointFacade` 4, `OrderFacade` 2)
 - [x] EP 28개 ↔ ApiSpec 메서드 28개 — `BrandV1` 1, `ProductV1` 2, `ProductLikeV1` 3, `PointV1` 3, `OrderV1` 4, `BrandAdminV1` 5, `ProductAdminV1` 6, `PointAdminV1` 2, `OrderAdminV1` 2. 각 메서드 주석에 EP-ID
-- [x] 거부(AG 내) INV 14개가 Model/Service 안에서 검증됨 — INV-01·02 `PointModel` / INV-03·11·13 `ProductModel` / INV-14 `BrandModel` / INV-06·07·08·09·12 `OrderModel` / INV-15 `UserService` / INV-04·05 `ProductLikeService` + 고유 제약. INV-10 은 `BrandFacade.deleteBrand`·`ProductFacade.createProduct` 트랜잭션 (DR-04)
+- [x] 거부(AG 내) INV 14개가 Model/Service 안에서 검증됨 — INV-01·02 `PointModel` / INV-03·11·13 `ProductModel` / INV-14 `BrandModel` / INV-06·07·08·09·12 `OrderModel` / INV-15 `UserService` / INV-04·05 `ProductLikeService` + 고유 제약. INV-10 은 `BrandFacade.deleteBrand`(소속 상품 함께 삭제, DR-33)·`ProductFacade.createProduct` 트랜잭션 (DR-04)
 - [x] 전이 메서드 3개만 존재, setter 없음 — `BrandModel.delete()`, `ProductModel.delete()`(둘 다 `BaseEntity` 상속), `OrderModel.confirm()`. `ensureDraft()` 는 전이가 아니라 사전 조건 검사. 단 `BaseEntity.restore()` 는 공유 모듈에 남아 있다 (DR-26)
-- [x] `ApiControllerAdvice` 가 ER-01~22 매핑, 매핑 없는 예외 밖으로 안 나감 — `CoreException` → `ErrorType` 22개 + 범용, 형식 오류는 파라미터·필드 이름 매핑 (DR-24), `Throwable` → 500
+- [x] `ApiControllerAdvice` 가 ER-01~22(ER-18 제외) 매핑, 매핑 없는 예외 밖으로 안 나감 — `CoreException` → `ErrorType` 21개 + 범용, 형식 오류는 파라미터·필드 이름 매핑 (DR-24), `Throwable` → 500
 - [x] 5-4 DR 대상 FR 없음 (해당 없음)
-- [x] 5-6 표 = 코드의 BC 간 호출 — 모든 Facade → `UserService.getUser/getAdmin`; `PointFacade.chargeByAdmin/deductByAdmin` → `UserService.getUser(target)`; `OrderFacade.createOrder` → `ProductService.getActiveProducts`; `OrderFacade.confirmOrder` → `ProductService.getActiveProducts`, `ProductService.deductStock`, `PointService.deduct`. 표 밖 호출 없음
-- [x] Repository 6개 (AG 루트 단위) — `User, Brand, Product, ProductLike, Point, Order`. `OrderItemRepository` 없음
-- [x] 5-7 대상 전부 테스트 있음 — 258개 통과. FR 성공/실패: `*FacadeIntegrationTest` 6개. INV: `*ModelTest` 4개 + `UserServiceIntegrationTest`(INV-15) + `ProductLikeFacadeIntegrationTest`(INV-04·05). ST: ST-03 `OrderModelTest`, ST-01/02 는 DR-26 으로 미작성. ER: `*ApiE2ETest` 3개
+- [x] 5-6 표 = 코드의 BC 간 호출 — 모든 Facade·Reader → `UserService.getUser/getAdmin`; `PointFacade.chargeByAdmin/deductByAdmin` → `UserService.getUser(target)`; `OrderFacade.createOrder` → `ProductService.getActiveProducts`; `OrderFacade.confirmOrder` → `ProductService.getActiveProducts`, `ProductService.deductStock`, `PointService.deduct`. 표 밖 호출 없음
+- [x] Repository 6개 (AG 루트 단위) — `User, Brand, Product, ProductLike, Point, Order`. `OrderItemRepository` 없음. 조회 전용은 별도로 `Brand, Product, ProductLike, Point, Order` 5개 (`*QueryRepository`, DR-31)
+- [x] 5-7 대상 전부 테스트 있음 — 273개 통과. FR 성공/실패: 명령은 `*FacadeIntegrationTest`, 조회는 `*ReaderIntegrationTest` 5개(`Brand`·`Product`·`ProductLike`·`Point`·`Order`). INV: `*ModelTest` 4개 + `UserServiceIntegrationTest`(INV-15) + `ProductLikeFacadeIntegrationTest`(INV-04·05). ST: ST-03 `OrderModelTest`, ST-01/02 는 DR-26 으로 미작성. ER: `*ApiE2ETest` 5개(`Brand`·`Product`·`ProductLike`·`Point`·`Order`) + 공통 ER-01·02 `RequesterV1ApiE2ETest`
 
 ---
 
@@ -1158,7 +1199,7 @@ Facade public 메서드 ↔ FR (28:28)
 | DR-01 | 1 | CON-03, ASM-01, ASM-26, TB-01~07 | 모든 테이블의 PK를 Long 자동 증가로 한다. `X-USER-ID` 값과 경로의 모든 `{…Id}`는 이 PK다 | (a) UUIDv7 (처음 검토했던 안) (b) 사용자만 UUID, 나머지 정수 (c) 헤더 형식 오류를 `INVALID_USER_ID`로 분리 | 팀 제약으로 확정. ID 생성은 DB가 맡으므로 코드에 생성 책임이 없다 | 팀 제약이 바뀌면 재검토. 그때 TB 컬럼 타입과 4장 요청 필드 타입이 함께 바뀐다 | 없음. ASM-01 유지 — `X-USER-ID`는 클라이언트가 아니라 시스템(앞단)이 넣는 값이므로 누락·형식 오류·없는 사용자를 나눌 실익이 없다. 셋 다 `USER_NOT_FOUND`. 같은 결로 경로·바디의 ID 형식 오류도 "그 ID가 가리키는 대상이 없다"로 보아 해당 `*_NOT_FOUND`로 처리한다(4장). 요구사항 6장 5번 항목은 이 결정으로 닫힌다 |
 | DR-02 | 2 | 좋아요, 좋아요 수, INV-05, FR-PRODUCT-01, FR-LIKE-01 | 좋아요·좋아요 수를 BC-02 카탈로그의 소유 개념으로 둔다. 별도 좋아요 BC를 만들지 않는다 | 좋아요 BC 분리 | 분리하면 카탈로그→좋아요(상품 존재 확인)와 좋아요→카탈로그(좋아요 수 조회)가 동시에 생겨 2-3 순환이 된다. 또 FR-PRODUCT-01의 `likes_desc` 정렬이 두 BC에 걸친 정렬·페이징이 되어 3-7-A에서 설계 불가로 떨어진다. 같은 BC 안에서는 AG-03과 AG-04를 한 조회로 정렬할 수 있다 | 좋아요가 상품 외 대상(브랜드 등)으로 확장되거나 팀이 갈리면 재검토한다 | 없음 |
 | DR-03 | 2 | 재고, INV-03, FR-ORDER-02, FR-ADMIN-PRODUCT-06 | 재고를 상품 AG(AG-03)의 포함 개념으로 둔다 | 재고를 별도 AG 또는 별도 BC로 | INV-03은 재고 단독 규칙이라 어디든 갈 수 있지만, 원문이 "상품은 이름·가격·재고를 가진다"로 못 박았고 재고를 참조하는 FR이 전부 상품 ID로 접근한다. 분리하면 FR-ORDER-02의 변경 AG가 하나 더 늘 뿐 얻는 게 없다 | 재고가 창고·위치 단위로 나뉘거나 상품 수정과 재고 변경의 잠금 경합이 문제되면 재검토한다 | 없음 |
-| DR-04 | 2 | INV-10, AG-02, AG-03, FR-ADMIN-BRAND-05, FR-ADMIN-PRODUCT-02 | 브랜드와 상품을 별개 AG로 두고 INV-10을 거부(FR 트랜잭션)로 배치한다. 두 FR은 변경 AG 하나 + 다른 AG 조회를 같은 트랜잭션에서 수행해 검증한다 | (a) 브랜드 AG 안에 상품을 포함 (b) 최종 일관성 | (a)는 상품이 3-2 상태 전이를 가진 루트 후보이고, 상품 하나를 수정할 때 브랜드와 소속 상품 전체를 읽게 된다. (b)는 원문이 "삭제된 브랜드에 상품 생성 불가"를 거절로 적었으므로 완화가 아니다. 가이드의 거부(FR 트랜잭션)는 "다중 AG 변경"을 전제하지만 여기서는 한쪽이 조회다. 문자에서 벗어나는 지점이며, 단일 요청 안에서는 트랜잭션 원자성으로 지켜지고 동시 요청 사이의 창은 OQ-02 | 요구사항에 동시성 비기능이 추가되면 3-6에서 잠금 방식을 정하고 이 DR을 갱신한다 | 없음 |
+| DR-04 | 2 | INV-10, AG-02, AG-03, FR-ADMIN-BRAND-05, FR-ADMIN-PRODUCT-02 | 브랜드와 상품을 별개 AG로 두고 INV-10을 거부(FR 트랜잭션)로 배치한다. 두 FR은 변경 AG 하나 + 다른 AG 조회를 같은 트랜잭션에서 수행해 검증한다 | (a) 브랜드 AG 안에 상품을 포함 (b) 최종 일관성 | (a)는 상품이 3-2 상태 전이를 가진 루트 후보이고, 상품 하나를 수정할 때 브랜드와 소속 상품 전체를 읽게 된다. (b)는 원문이 "삭제된 브랜드에 상품 생성 불가"를 거절로 적었으므로 완화가 아니다. 가이드의 거부(FR 트랜잭션)는 "다중 AG 변경"을 전제하지만 여기서는 한쪽이 조회다. 문자에서 벗어나는 지점이며, 단일 요청 안에서는 트랜잭션 원자성으로 지켜지고 동시 요청 사이의 창은 OQ-02 | 요구사항에 동시성 비기능이 추가되면 3-6에서 잠금 방식을 정하고 이 DR을 갱신한다. (갱신: DR-33으로 FR-ADMIN-BRAND-05는 AG-02·AG-03을 함께 바꾸게 되어 "한쪽이 조회"인 이탈은 FR-ADMIN-PRODUCT-02에만 남는다) | 없음 |
 | DR-05 | 2 | INV-04, AG-04, ASM-06, FR-LIKE-01 | INV-04(같은 쌍 최대 하나)는 루트 Model 하나가 검증할 수 없으므로 같은 BC의 Service가 "있으면 반환, 없으면 생성"으로 지키고, 3장에서 (사용자 ID, 상품 ID) 고유 제약을 함께 둔다 | 사용자별 좋아요 묶음을 AG 루트로 | ASM-06이 멱등이라 거절이 아니라 조회 후 생성이면 충분하다. 묶음 루트는 좋아요 수(상품 기준 집계)와 방향이 맞지 않는다 | ASM-06이 거절(`ALREADY_LIKED`)로 뒤집히면 검증이 예외를 던지도록 바꾸되 위치는 같다 | 없음 |
 | DR-06 | 2 | AG-01, ASM-26, 관리자 | 사용자 AG를 두되 근거 INV가 없으므로 요구사항 3-1에 INV-15 "관리자는 관리자 권한을 가진 사용자다(관리자 ⊂ 사용자)"를 추가하도록 피드백한다 | INV 없이 AG 유지 | 가이드 "근거 INV 없는 AG는 자격 없음"과 "모든 TB는 어느 AG 소속"이 충돌한다. ASM-26이 이미 이 규칙을 말하고 있으므로 INV로 올리는 것이 0-4에 맞다 | ASM-26이 "관리자를 별개 대상"으로 뒤집히면 AG-01을 둘로 나누고 INV-15를 다시 쓴다 | 요구사항 3-1에 INV-15 "관리자는 관리자 권한을 가진 사용자다" 추가 (확정) |
 | DR-07 | 2 | 잔액, AG-05, ASM-24, ASM-25, 요구사항 1-3 | 잔액을 단일 저장값으로 둔다. 포인트 이력·충전 건 테이블은 만들지 않는다 | 충전·차감마다 이력 행을 남기고 잔액을 합으로 계산 | 이력을 읽는 FR이 없다(가이드 3-5 "읽는 FR 없으면 만들지 않는다"). 요구사항 1-3이 요구한 "여지"는 AG 경계로 남긴다: 이력·충전 건이 들어와도 AG-05의 포함 개념이지 새 AG가 아니다 | ASM-25가 뒤집혀 사유 기록이 필요해지거나 포인트 이력 조회 FR이 생기면 AG-05에 이력 포함 개념을 추가한다 | 없음 |
@@ -1179,19 +1220,25 @@ Facade public 메서드 ↔ FR (28:28)
 | DR-21 | 4 | 4-3-0, EP-04, EP-05, EP-18, EP-23 | 공통 응답 형태를 4-3-0에 한 번 정의하고 EP 블록에서 이름으로 참조한다. FR 출력이 없는 명령(좋아요 등록·취소, 브랜드·상품 삭제)은 200 + `data` null | EP마다 응답 표 반복 / 삭제·좋아요 응답에 대상 요약 반환 | 같은 형태를 28번 반복하면 불일치가 생긴다. 출력 없는 FR에 필드를 만들면 "근거 못 쓰는 필드" | 클라이언트가 좋아요 후 좋아요 수를 바로 필요로 하면 EP-04 응답에 `likeCount`를 추가하고 FR-LIKE-01 출력에 반영한다 | 없음 |
 | DR-22 | 4 | OQ-04, FR-PRODUCT-01, FR-PRODUCT-02, ProductSummary | 고객 상품 응답에 재고를 넣지 않는다. 재고 부족은 확정 시 `INSUFFICIENT_STOCK`으로만 알린다 | `stock` 또는 `soldOut` 필드 추가 | 요구사항 FR-PRODUCT-01/02 출력에 재고가 없다. 설계가 임의로 넣을 수 없다 | 요구사항 출력에 재고가 추가되면 `ProductSummary`에 필드를 넣는다 | 없음 |
 | DR-23 | 5 | 4-1, ER-01~22, week1 `ContractClassificationTest` | `ErrorType.code` 를 HTTP reason phrase(`"Not Found"`)에서 enum 이름(`NOT_FOUND`, `USER_NOT_FOUND`)으로 바꾼다. 범용 4개(`INTERNAL_ERROR`, `BAD_REQUEST`, `NOT_FOUND`, `CONFLICT`)는 example 모듈과 ER-22·500 처리용으로 남긴다 | (a) 범용 4개만 reason phrase 유지, 새 21개만 enum 이름 (b) 5-4 문자 그대로 22개만 | (a)는 ER-22 `BAD_REQUEST` 의 code 가 `"Bad Request"` 가 되어 4-4 표와 어긋난다. (b)는 example 모듈이 깨진다. week1 계약 테스트·`docs/week1` 표의 기대값을 함께 고쳤다(승인) | 없음 | 없음 |
-| DR-24 | 5 | DR-01, EP-27, ER-22, 4-4 메모 | 요청 형식 오류의 코드 매핑: **경로** ID 형식 오류는 파라미터 이름으로 해당 `*_NOT_FOUND`(`brandId`·`productId`·`orderId`·`userId`), `page`·`size` 는 `INVALID_PAGE`. **바디** 필드 타입 오류는 필드 이름으로 `amount`→`INVALID_AMOUNT`, `quantity`→`INVALID_QUANTITY`, `stock`→`INVALID_STOCK`, `price`→`INVALID_PRODUCT_PRICE`, 바디 ID(`userId`·`brandId`·`productId`)와 그 밖은 ER-22 | 바디 ID 형식 오류도 `*_NOT_FOUND` (DR-01 문자 그대로) | DR-01 은 "경로·바디 ID" 라 했고 EP-27 은 "바디 `userId` 는 ER-22" 라 해 서로 어긋났다. 바디는 Jackson 파싱 실패라 필드 하나만 골라 도메인 실패로 바꾸기 어렵고, 요구사항이 이름을 준 값(`amount` 등)만 그 이름으로 낸다. 숫자 범위 초과는 원인 사슬에서 경로를 가진 `JsonMappingException` 을 찾아 같은 규칙을 적용한다. example 의 `/examples/abc` 는 매핑 표에 없어 기존 400 유지 | 바디 ID 를 도메인 실패로 내야 하는 클라이언트 요구가 생기면 Dto 를 문자열로 받아 Facade 앞에서 변환한다 | 없음 |
+| DR-24 | 5 | DR-01, EP-27, ER-22, 4-4 메모 | 요청 형식 오류의 코드 매핑: **경로** ID 형식 오류는 파라미터 이름으로 해당 `*_NOT_FOUND`(`brandId`·`productId`·`orderId`·`userId`), `page`·`size` 는 `INVALID_PAGE`(DR-30 으로 대체: 리졸버가 직접 던진다). **바디** 필드 타입 오류는 필드 이름으로 `amount`→`INVALID_AMOUNT`, `quantity`→`INVALID_QUANTITY`, `stock`→`INVALID_STOCK`, `price`→`INVALID_PRODUCT_PRICE`, 바디 ID(`userId`·`brandId`·`productId`)와 그 밖은 ER-22 | 바디 ID 형식 오류도 `*_NOT_FOUND` (DR-01 문자 그대로) | DR-01 은 "경로·바디 ID" 라 했고 EP-27 은 "바디 `userId` 는 ER-22" 라 해 서로 어긋났다. 바디는 Jackson 파싱 실패라 필드 하나만 골라 도메인 실패로 바꾸기 어렵고, 요구사항이 이름을 준 값(`amount` 등)만 그 이름으로 낸다. 숫자 범위 초과는 원인 사슬에서 경로를 가진 `JsonMappingException` 을 찾아 같은 규칙을 적용한다. example 의 `/examples/abc` 는 매핑 표에 없어 기존 400 유지 | 바디 ID 를 도메인 실패로 내야 하는 클라이언트 요구가 생기면 Dto 를 문자열로 받아 Facade 앞에서 변환한다 | 없음 |
 | DR-25 | 5 | CON-03, ASM-26, ER-01, ER-02, 5-4 | `/api-admin/**` 는 Spring Security 체인이 HTTP 경계다. `AdminAuthenticationFilter` 가 `X-USER-ID` 로 사용자를 조회해 관리자면 `ROLE_ADMIN` 인증을 세우고, 실패는 `ApiResponse` 봉투로 404 `USER_NOT_FOUND` / 403 `NOT_ADMIN` 을 쓴다. CSRF 는 끄고 세션은 STATELESS. Facade 는 5-6 대로 `UserService.getAdmin` 을 다시 부른다(이중 조회). 고객 API 는 체인 없이 `@RequesterId` 리졸버가 헤더를 파싱한다 | (a) 체인 제거, Facade 에서만 판정 (b) 필터만 판정하고 Facade 호출 생략 | 이전 커밋의 체인은 인증을 세우는 곳이 없어 모든 관리자 요청이 봉투 없는 403 이었고 CSRF 로 쓰기가 막혔다. (a)는 경계를 잃고, (b)는 웹 계층 없이(Facade 통합 테스트) 규칙이 안 지켜진다. 이중 조회는 PK 조회 한 번이라 비용이 작다 | 인증(자격 증명)이 범위에 들어오면 필터를 인증 방식에 맞게 바꾸고 DR-18 의 401 재분류와 함께 본다 | 없음 |
 | DR-26 | 5 | 5-3, 5-7, ST-01, ST-02 | `modules/jpa` 의 `BaseEntity.restore()` 는 그대로 둔다. `BrandModel`·`ProductModel` 에서 오버라이드해 막지 않으며, ST-01/02 DELETED→ACTIVE 금지 전이 테스트는 작성하지 않는다 | 두 Model 에서 `restore()` 를 오버라이드해 예외 | 공유 모듈은 손대지 않고, 선언만 있고 부르는 FR 이 없다. 5-3 "3-2 에 없는 전이 메서드를 만들지 않는다" 는 이 프로젝트가 만든 메서드에 대한 규칙으로 읽는다(승인) | 복구 FR 이 들어오거나 호출이 발견되면 오버라이드로 막고 ST 테스트를 추가한다 | 없음 |
 | DR-27 | 5 | ER-09, ER-13, ER-20, ER-21, `supports/jackson` | Jackson 기본값 `ACCEPT_FLOAT_AS_INT` 를 유지한다. `amount: 1.5` 는 `1` 로 들어오며 "정수 아님" 으로 거절되지 않는다 | `JacksonConfig` 에서 비활성화 | 공유 모듈이라 다른 앱에도 영향이 간다. 정수 필드에 소수를 보내는 클라이언트는 상정하지 않는다(승인) | 정수 강제가 필요해지면 `supports/jackson` 에서 끄고 ER-09/13/20/21 테스트에 소수 케이스를 추가한다 | 없음 |
-| DR-28 | 5 | 4-1 페이징, 4-3-0 Page, ER-08 | 페이징 검증(`INVALID_PAGE`)과 결과 형태는 BC 밖 공통 값 객체 `support.paging.PageQuery`·`PageResult` 에 둔다. `page`·`size` 의 타입 오류는 DR-24 매핑으로 같은 코드 | 각 BC Service 에서 검증 | 6개 EP 가 같은 규칙을 쓴다. `support` 는 `error` 처럼 모든 계층이 참조하는 공통 패키지다 | 커서 페이징(DR-19 되돌릴 조건)이 오면 여기서만 바꾼다 | 없음 |
+| DR-28 | 5 | 4-1 페이징, 4-3-0 Page, ER-08 | 페이징 검증(`INVALID_PAGE`)과 결과 형태는 BC 밖 공통 값 객체 `support.paging.PageQuery`·`PageResult` 에 둔다. `page`·`size` 의 타입 오류는 DR-24 매핑으로 같은 코드(DR-30 으로 대체) | 각 BC Service 에서 검증 | 6개 EP 가 같은 규칙을 쓴다. `support` 는 `error` 처럼 모든 계층이 참조하는 공통 패키지다 | 커서 페이징(DR-19 되돌릴 조건)이 오면 여기서만 바꾼다 | 없음 |
+| DR-29 | 5 | 5-0, 5-1~5-3, 5-8, 2-1, 2-2 | 패키지를 BC가 아니라 AG 단위로 나눈다(`brand`·`product`·`productlike`·`user`·`point`·`order`). BC는 문서(5-0 표)와 `ArchitectureTest.AGGREGATES_BY_BC` 매핑으로만 존재하고, BC 간 import 금지 규칙은 그 매핑으로 계속 검사한다. 같은 BC 안 AG 간 규칙은 5-1~5-3: Model·Repository 시그니처는 다른 AG를 모르고(ID만), Service·RepositoryImpl은 같은 BC의 다른 AG를 써도 된다 | (a) BC 단위 패키지 `catalog` 아래 Brand·Product·ProductLike를 접두사로 나열(이전 구조) (b) `catalog.brand`처럼 BC/AG 2단 패키지 | (a)는 카탈로그 패키지 하나에 AG 3개의 Model·Service·Repository 9개가 섞여 AG 경계가 이름 접두사로만 보였다. (b)는 BC 하나짜리 패키지(`user.user`)가 생기고 ArchUnit 패턴도 2단이 된다. AG 단위로 펴면 패키지 = AG 루트가 되고 BC 규칙은 매핑 한 곳에서 관리된다 | AG가 늘어 BC 안에서 묶어 볼 필요가 커지면 (b)로 옮긴다. 그때도 `AGGREGATES_BY_BC` 만 고치면 규칙은 유지된다 | 없음 |
+| DR-30 | 5 | DR-19, DR-24, DR-28, ER-08, EP-02·06·12·14·19·25 | (1) `page` 상한 100 (`PageQuery.MAX_PAGE`), 초과는 ER-08. (2) 컨트롤러는 `page`·`size` 를 `Integer` 둘로 받지 않고 `PageQuery` 하나로 받는다. `PageQueryArgumentResolver`(`@RequesterId` 와 같은 `HandlerMethodArgumentResolver`)가 쿼리 파라미터를 읽어 `PageQuery.of` 로 만들고, 형식 오류(`page=abc`)도 리졸버가 `INVALID_PAGE` 를 직접 던진다. `ApiControllerAdvice` 의 `page`·`size` 타입 오류 매핑(DR-24)은 제거 | (a) Spring Data `Pageable` + `max-page-size` (b) `@ModelAttribute` DTO + Bean Validation | (a)는 상한 초과·음수를 에러가 아니라 보정(clamp)해 ER-08 요구와 어긋나고 interfaces 가 Spring Data 타입에 묶인다. (b)는 검증 규칙이 `PageQuery` 생성자와 어노테이션 두 곳에 생기고 `BindException` 매핑을 새로 둬야 한다. 리졸버는 검증을 `PageQuery` 한 곳에 두고 예외 경로(`CoreException` → advice)가 기존과 같다. `page` 상한은 오프셋(`page*size` ≤ 10,000) 폭주를 막는 값이며 `size` 와 같은 100 으로 단순화 | 깊은 페이지가 실제로 필요해지면 커서 페이징(DR-19 되돌릴 조건)으로 간다. 값만 바꿀 때는 `MAX_PAGE` 만 고친다 | ASM-20에 `page` 상한 확정 표시 `(설계 결정 DR-30)` |
+| DR-31 | 5 | 0-2, 3-7-A, 5-0, 5-1~5-3, 5-5, 5-6, 5-8, DR-02, DR-29, 조회 FR 13개 | 조회는 AG 경계를 넘어도 된다. 조회 FR은 `application.<ag>.query`의 Reader가 맡고 Controller가 Reader를 직접 부른다. Reader는 조회 Repository(인터페이스는 `application.<ag>.query`, 구현은 `infrastructure.<ag>.query`)를 부르고, 조회 Repository는 같은 BC 안 AG 테이블을 한 쿼리로 조인·집계해 전용 조회 DTO(`<Ag>View`의 중첩 record)로 바로 반환한다. 엔티티를 반환하지 않는다. BC 간 조인은 하지 않는다. 쓰기 경로의 AG 간 규칙(5-1~5-3)은 그대로. 조회 FR 13개를 전부 옮겼다(AG마다 `<Ag>Reader`). 명령과 그 응답(`*Info`, `ProductInfoAssembler`)은 바꾸지 않는다 | (a) 기존대로 Facade가 AG별 Service를 불러 Assembler로 조립 (b) 조회 Repository 인터페이스를 `domain`에 둔다 (c) 조회마다 DTO 파일을 따로 만든다 | (a)는 상품 목록 한 번에 쿼리가 3번(상품·브랜드·좋아요 수), 내 좋아요 목록은 4번 나가고, `likes_desc`의 좋아요 수를 정렬과 표시에서 두 번 센다. 조립이 없는 단일 AG 조회도 같은 경로로 모아 조회·명령의 경계를 한 가지로 둔다. (b)는 화면 모양의 조회 DTO가 도메인 규칙이 아닌데 domain에 들어간다. 대신 infrastructure → application 의존이 새로 생긴다(0-2). (c)는 조회가 늘수록 클래스가 폭발한다. AG당 `View` 하나에 중첩 record로 모은다. 엔티티 반환 금지는 ArchUnit 두 규칙으로 강제한다(5-8) | 조회가 다른 BC 데이터와 섞인 정렬·페이징을 요구하면(BC 간 조인 필요) 읽기 모델 분리나 BC 경계 재검토로 간다. 새 조회 FR도 같은 방식으로 Reader에 둔다 | 없음 |
+| DR-32 | 5 | ASM-08, ER-07, EP-02, FR-PRODUCT-01, DR-30, DR-31 | 정렬값 `sort` 의 문자열 → `ProductSort` 변환은 interfaces 가 한다. `ProductV1Controller` 가 `ProductSort.from` 으로 바꿔 `ProductReader.listProducts` 에 넘기고, 허용 목록 밖·둘 이상 지정은 거기서 `INVALID_SORT`. `ProductSort` 는 조회 경로에서만 쓰이므로 `domain.product` 가 아니라 `application.product.query` 에 둔다 | (a) Reader 가 `String` 을 받아 변환 (b) Spring `Converter<String, ProductSort>` (c) `PageQuery` 처럼 `HandlerMethodArgumentResolver` | 요청 값의 형식 검증·변환은 `page`·`size` 와 같은 자리(DR-30, interfaces)에 둔다. (a)는 Reader 가 HTTP 문자열을 알게 되고, 잘못된 sort 와 없는 요청자가 함께 오면 `page` 와 달리 `USER_NOT_FOUND` 가 먼저 나간다. (b)는 변환 예외가 `MethodArgumentTypeMismatchException` 으로 감싸져 advice 매핑을 새로 둬야 한다. (c)는 `PageQuery` 가 6개 EP 공통이라 둔 것이고 sort 는 EP-02 하나뿐이다. `sort` 를 둘 이상 주면 Spring 이 쉼표로 이어 붙인 한 문자열이 되어 그대로 거절된다 | 정렬을 받는 EP 가 늘면 (c) 리졸버로 옮긴다 | 없음 |
+| DR-33 | 2, 3, 4, 5 | FR-ADMIN-BRAND-05, INV-10, ST-01, ST-02, EP-18, ER-18, DR-04, DR-21, OQ-02 | 요구 변경: 브랜드 삭제는 연결된 삭제되지 않은 상품(재고 0 포함)을 같은 트랜잭션에서 함께 논리 삭제한다. 이미 삭제된 상품·다른 브랜드는 바꾸지 않는다. `ProductService.deleteAllOfBrand`가 소속 미삭제 상품을 엔티티로 읽어 각각 `delete()`를 부르고 변경 감지로 반영한다. `BRAND_HAS_PRODUCTS`(ER-18)는 발생 조건이 없어 `ErrorType`과 4-4에서 삭제한다. 응답은 DR-21 그대로 200 + `data` null | (a) JPQL 벌크 `UPDATE product SET deleted_at = ? WHERE brand_id = ? AND deleted_at IS NULL` (b) `ER-18`을 정의만 남김 (c) 응답에 삭제된 상품 수·ID 반환 | (a)는 쿼리 한 번이지만 `@PreUpdate`를 거치지 않아 `updated_at`을 직접 넣어야 하고 영속성 컨텍스트와 어긋난다. 브랜드당 상품 수에 대한 요구가 없어 `BaseEntity.delete()`를 그대로 쓰는 쪽을 택했다. (b)는 쓰이지 않는 실패 이름이 계약에 남는다. (c)는 FR 출력에 없는 필드다(DR-21). 중간 실패 시 전부 롤백은 Facade 트랜잭션 하나로 지켜지며 상품마다 커밋하지 않는다. 동시 요청 창(상품 생성·수정·재고 변경·주문 확정과의 경합)은 OQ-02에 넣고 잠금은 두지 않는다 | 브랜드당 상품 수가 커져 삭제가 느려지면 (a)로 바꾸고 TB-03.`brand_id` 인덱스를 재검토한다. 동시성 비기능이 추가되면 OQ-02와 함께 잠금을 정한다 | FR-ADMIN-BRAND-05 사전 조건·결과·실패 케이스, FR-ADMIN-PRODUCT-05 부수 효과, INV-10 메모, 3-2 전이, 1-3 동시성 항목에 `(요구 변경 DR-33)` |
+| DR-34 | 3, 5 | FR-ORDER-02, FR-POINT-03, FR-ADMIN-POINT-02, INV-01, INV-03, AG-03, AG-05, DR-08, DR-33, OQ-03 | 요구 변경: 주문 확정이 동시에 와도 INV-01·INV-03을 지킨다. 상품·포인트 행을 비관적 쓰기 잠금(`SELECT ... FOR UPDATE`)으로 읽는다. 상품은 `ProductService.getActiveProductsForUpdate`가 품목 상품 전부를 id 오름차순으로 한 번에 잠그며, 확정 트랜잭션에서 상품을 처음 읽는 조회가 이것이어야 한다. 포인트는 `PointService.deduct`가 잠금 조회를 써서 차감 경로 전부가 잠근다. 잠금 순서는 상품 → 포인트. 경합에서 진 요청은 앞 요청 커밋 뒤 최신 값으로 검사해 기존 `INSUFFICIENT_STOCK`·`INSUFFICIENT_POINT`로 거절된다 | (a) 낙관적 잠금(`@Version`) (b) 조건부 원자 갱신 `UPDATE ... SET stock = stock - ? WHERE stock >= ?` (c) 확정 전용 포인트 차감만 잠금 | (a)는 재고·잔액이 남아 있어도 충돌로 실패하므로 재시도가 필요하고, 인기 상품 한 행에 확정이 몰리는 구조라 충돌이 잦다. 버전 컬럼도 새로 생긴다. (b)는 재고 검증이 도메인 모델 밖 SQL로 나가고 `@PreUpdate`·영속성 컨텍스트와 어긋난다(DR-33 (a)와 같은 이유). (c)는 환불·운영자 차감이 여전히 경합에 노출된다. 락 없이 먼저 읽은 엔티티는 이후 잠금 조회에서도 1차 캐시의 옛 값이 반환되므로, 기존 `getActiveProducts` 뒤에 잠그는 방식은 쓰지 않는다. 검증은 `OrderConfirmConcurrencyTest` (같은 상품 5건 동시 확정, 같은 사용자 5건 동시 확정) | 확정 지연이나 잠금 대기가 측정으로 문제가 되면 (b) 또는 재고 분리 저장을 재검토한다 | 요구사항 1-3 동시성 항목, FR-ORDER-02 비기능에 `(요구 변경 DR-34)` |
 
 ### A-2. 열린 질문
 
 | OQ-ID | 관련 ID | 질문 | 상태 |
 |---|---|---|---|
 | OQ-01 | FR-ORDER-02, BC-01, BC-02, BC-03 | 참여 BC가 3개(사용자·카탈로그·포인트)라 규칙상 자동 등록. 다만 셋 중 사용자는 모든 FR의 공통 식별 절차다. 이를 참여 BC 수에서 제외하는 규칙을 DR로 두고 닫을지, 경계 재조정 대상으로 볼지 | 열림 |
-| OQ-02 | INV-10, DR-04 | 브랜드 삭제와 그 브랜드 상품 생성이 동시에 오면 INV-10이 깨질 수 있다. 요구사항에 동시성 비기능이 없어 3-6에 넣을 수 없다. 요구사항에 비기능을 추가할지(→ 3-6 잠금), 이 창을 허용할지 | 열림 — 이번 요구사항은 동시성을 다루지 않기로 결정. 창을 허용하고 DR-04의 이탈 기록을 유지한다. 비기능이 추가되는 시점에 재개 |
-| OQ-03 | FR-ORDER-02, INV-01, INV-03 | 같은 상품에 대한 동시 확정, 같은 사용자의 동시 확정에서 재고·잔액이 음수가 될 수 있다. 위와 같은 이유로 3-6 대상이 아니다. 요구사항 FR-ORDER-02에 비기능 "동시 요청 하에서도 INV-01·INV-03 유지"를 추가할지 | 열림 — 위와 같은 결정. 비기능이 추가되는 시점에 재개 |
+| OQ-02 | INV-10, DR-04, DR-33 | 브랜드 삭제와 그 브랜드 상품 생성이 동시에 오면 INV-10이 깨질 수 있다. 브랜드 삭제가 소속 상품을 함께 삭제하게 된 뒤(DR-33)에는 같은 브랜드 상품의 수정·재고 변경, 그 상품을 포함한 주문 확정과도 경합한다(확정이 삭제 직전의 상품을 읽고 재고를 차감한 채 커밋할 수 있다). 요구사항에 동시성 비기능이 없어 3-6에 넣을 수 없다. 요구사항에 비기능을 추가할지(→ 3-6 잠금), 이 창을 허용할지 | 열림 — 이번 요구사항은 동시성을 다루지 않기로 결정. 창을 허용하고 DR-04의 이탈 기록을 유지한다. 비기능이 추가되는 시점에 재개 |
+| OQ-03 | FR-ORDER-02, INV-01, INV-03 | 같은 상품에 대한 동시 확정, 같은 사용자의 동시 확정에서 재고·잔액이 음수가 될 수 있다. 위와 같은 이유로 3-6 대상이 아니다. 요구사항 FR-ORDER-02에 비기능 "동시 요청 하에서도 INV-01·INV-03 유지"를 추가할지 | 확정 경로는 DR-34로 닫힘. 남은 항목: (1) 포인트 충전은 잠그지 않아 충전과 차감이 동시에 오면 충전이 유실될 수 있다 (2) 잠그지 않는 상품 쓰기(관리자 수정·재고 변경, 브랜드 삭제의 일괄 논리 삭제)가 확정과 겹치면 확정 전에 읽은 값으로 행 전체를 덮어 재고 차감이 유실될 수 있다 (OQ-02와 함께) |
 | OQ-04 | FR-PRODUCT-01/02, ProductSummary | 고객 상품 응답에 재고(또는 품절 여부)를 넣을지. 요구사항 출력에 없어 뺐지만, 없으면 고객이 확정 시점에야 `INSUFFICIENT_STOCK`을 본다. 넣으려면 FR-PRODUCT-01/02 출력에 재고를 추가해야 한다 | DR-22로 닫힘 |
 
 ## 부록 B. 추적성 매트릭스
@@ -1199,7 +1246,7 @@ Facade public 메서드 ↔ FR (28:28)
 | FR-ID | 진입 BC | 변경 AG | 쓰는 TB | EP | ER (실패 케이스별) | 테스트 |
 |---|---|---|---|---|---|---|
 | FR-BRAND-01 | BC-02 | 없음 | 없음 | EP-01 | ER-01, ER-03 | `FR-BRAND-01`, `FR-BRAND-01_BRAND_NOT_FOUND` |
-| FR-PRODUCT-01 | BC-02 | 없음 | 없음 | EP-02 | ER-01, ER-07, ER-08 | `FR-PRODUCT-01` (+ sort 3종), `_INVALID_SORT`, `_INVALID_PAGE` |
+| FR-PRODUCT-01 | BC-02 | 없음 | 없음 | EP-02 | ER-01, ER-07, ER-08 | `FR-PRODUCT-01` (+ sort 3종), `ER-07 INVALID_SORT` (EP-02 E2E, `ProductSortTest`, DR-32), `_INVALID_PAGE` |
 | FR-PRODUCT-02 | BC-02 | 없음 | 없음 | EP-03 | ER-01, ER-04 | `FR-PRODUCT-02`, `_PRODUCT_NOT_FOUND` |
 | FR-LIKE-01 | BC-02 | AG-04 | TB-04 | EP-04 | ER-01, ER-04 | `FR-LIKE-01` (+ 멱등), `_PRODUCT_NOT_FOUND`, `INV-04`, `INV-05` |
 | FR-LIKE-02 | BC-02 | AG-04 | TB-04 | EP-05 | ER-01, ER-04 | `FR-LIKE-02` (+ 없는 관계, 삭제된 상품), `_PRODUCT_NOT_FOUND` |
@@ -1215,7 +1262,7 @@ Facade public 메서드 ↔ FR (28:28)
 | FR-ADMIN-BRAND-02 | BC-02 | AG-02 | TB-02 | EP-15 | ER-01, ER-02, ER-17 | `FR-ADMIN-BRAND-02`, `_INVALID_BRAND`, `INV-14` |
 | FR-ADMIN-BRAND-03 | BC-02 | 없음 | 없음 | EP-16 | ER-01, ER-02, ER-03 | `FR-ADMIN-BRAND-03` (+ 삭제된 것 조회), `_BRAND_NOT_FOUND` |
 | FR-ADMIN-BRAND-04 | BC-02 | AG-02 | TB-02 | EP-17 | ER-01, ER-02, ER-03, ER-17 | `FR-ADMIN-BRAND-04`, `_BRAND_NOT_FOUND` ×2, `_INVALID_BRAND` |
-| FR-ADMIN-BRAND-05 | BC-02 | AG-02 | TB-02 | EP-18 | ER-01, ER-02, ER-03, ER-18 | `FR-ADMIN-BRAND-05`, `_BRAND_NOT_FOUND` ×2, `_BRAND_HAS_PRODUCTS`, `INV-10`, `ST-01` |
+| FR-ADMIN-BRAND-05 | BC-02 | AG-02, AG-03 | TB-02, TB-03 | EP-18 | ER-01, ER-02, ER-03 | `FR-ADMIN-BRAND-05` (+ 소속 상품 함께·이미 삭제된 상품 유지·다른 브랜드 유지·중간 실패 롤백·삭제 후 연결 8건), `_BRAND_NOT_FOUND` ×2, `_NOT_ADMIN`, `INV-10`, `ST-01`, `ST-02` |
 | FR-ADMIN-PRODUCT-01 | BC-02 | 없음 | 없음 | EP-19 | ER-01, ER-02, ER-08 | `FR-ADMIN-PRODUCT-01`, `_INVALID_PAGE` |
 | FR-ADMIN-PRODUCT-02 | BC-02 | AG-03 | TB-03 | EP-20 | ER-01, ER-02, ER-03, ER-19, ER-20, ER-21 | `FR-ADMIN-PRODUCT-02`, `_BRAND_NOT_FOUND`, `_INVALID_PRODUCT_NAME`, `_INVALID_PRODUCT_PRICE`, `_INVALID_STOCK`, `INV-10`, `INV-11`, `INV-13` |
 | FR-ADMIN-PRODUCT-03 | BC-02 | 없음 | 없음 | EP-21 | ER-01, ER-02, ER-04 | `FR-ADMIN-PRODUCT-03`, `_PRODUCT_NOT_FOUND` |
@@ -1227,4 +1274,4 @@ Facade public 메서드 ↔ FR (28:28)
 | FR-ADMIN-POINT-01 | BC-03 | AG-05 | TB-05 | EP-27 | ER-01, ER-02, ER-09, ER-10 (+ ER-22 `userId` 누락·타입 오류) | `FR-ADMIN-POINT-01`, `_USER_NOT_FOUND`, `_BAD_REQUEST`, `_INVALID_AMOUNT`, `_BALANCE_LIMIT_EXCEEDED` |
 | FR-ADMIN-POINT-02 | BC-03 | AG-05 | TB-05 | EP-28 | ER-01, ER-02, ER-09, ER-11 (+ ER-22 `userId` 누락·타입 오류) | `FR-ADMIN-POINT-02`, `_USER_NOT_FOUND`, `_BAD_REQUEST`, `_INVALID_AMOUNT`, `_INSUFFICIENT_POINT` |
 
-공통 실패(`USER_NOT_FOUND`, `NOT_ADMIN`)는 ER 칸에 전부 적었고 테스트는 Facade마다 하나씩(중복 생략). `INV-15`는 `UserService.getAdmin` 단위 테스트. 빈 칸 없음.
+공통 실패(`USER_NOT_FOUND`, `NOT_ADMIN`)는 ER 칸에 전부 적었고 테스트는 Facade·Reader마다 하나씩(중복 생략). `INV-15`는 `UserService.getAdmin` 단위 테스트. 빈 칸 없음.
