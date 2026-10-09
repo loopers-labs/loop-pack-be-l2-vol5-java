@@ -40,11 +40,15 @@ public class OrderService {
     }
 
     /**
-     * 확정에 실패하면 예외만 던지고 저장하지 않아 주문은 DRAFT 로 남는다.
+     * DRAFT 인 본인 주문만 조건부 UPDATE 로 확정한다. 영향 행이 0 이면 이미 확정된 주문이다.
+     * 결제액은 저장된 품목의 단가 × 수량 합이며, 응답에 쓸 수 있도록 갱신 뒤 DB 상태를 다시 읽은 주문을 반환한다.
      */
     @Transactional
     public Order confirmOrder(Order order) {
-        order.confirm();
-        return orderRepository.save(order);
+        int updated = orderRepository.confirmIfDraft(order.getId(), order.getUserId(), order.getTotalAmount());
+        if (updated == 0) {
+            throw new CoreException(ErrorType.CONFLICT, "이미 확정된 주문입니다.");
+        }
+        return orderRepository.reload(order);
     }
 }

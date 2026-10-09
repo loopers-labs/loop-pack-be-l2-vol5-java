@@ -73,108 +73,34 @@ class StockTest {
         }
     }
 
-    @DisplayName("재고를 차감할 때, ")
+    /**
+     * 재고 부족 판정과 차감은 ProductRepository.deductStockIfEnough 의 조건부 UPDATE 가 맡으므로, 입력 검증만 남긴다.
+     */
+    @DisplayName("차감 수량을 검증할 때, ")
     @Nested
-    class Deduct {
-        @DisplayName("재고가 충분하면, 요청한 수량만큼 차감된다.")
-        @Test
-        void deductsQuantity_whenStockIsSufficient() {
-            // arrange
-            Stock stock = new Stock(10);
-
-            // act
-            stock.deduct(3);
-
-            // assert
-            assertThat(stock.getQuantity()).isEqualTo(7);
-        }
-
-        @DisplayName("재고보다 많은 수량을 차감하면, CONFLICT 예외가 발생한다.")
-        @Test
-        void throwsConflictException_whenStockIsInsufficient() {
-            // arrange
-            Stock stock = new Stock(3);
-
-            // act
-            CoreException result = assertThrows(CoreException.class, () -> {
-                stock.deduct(4);
-            });
-
-            // assert
-            assertThat(result.getErrorType()).isEqualTo(ErrorType.CONFLICT);
-        }
-
-        @DisplayName("재고가 부족해 실패하면, 기존 재고 수량이 유지된다.")
-        @Test
-        void keepsQuantity_whenDeductFails() {
-            // arrange
-            Stock stock = new Stock(3);
-
-            // act
-            assertThrows(CoreException.class, () -> {
-                stock.deduct(4);
-            });
-
-            // assert
-            assertThat(stock.getQuantity()).isEqualTo(3);
-        }
-
-        @DisplayName("재고와 같은 수량을 차감하면, 재고가 0이 된다.")
-        @Test
-        void deductsToZero_whenQuantityEqualsStock() {
-            // arrange
-            Stock stock = new Stock(5);
-
-            // act
-            stock.deduct(5);
-
-            // assert
-            assertThat(stock.getQuantity()).isZero();
-        }
-
-        @DisplayName("0인 수량을 차감하면, BAD_REQUEST 예외가 발생한다.")
+    class ValidateDeductQuantity {
+        @DisplayName("0인 수량이면, BAD_REQUEST 예외가 발생한다.")
         @Test
         void throwsBadRequestException_whenQuantityIsZero() {
-            // arrange
-            Stock stock = new Stock(5);
-
             // act
             CoreException result = assertThrows(CoreException.class, () -> {
-                stock.deduct(0);
+                Stock.validateDeductQuantity(0);
             });
 
             // assert
             assertThat(result.getErrorType()).isEqualTo(ErrorType.BAD_REQUEST);
         }
 
-        @DisplayName("음수 수량을 차감하면, BAD_REQUEST 예외가 발생한다.")
+        @DisplayName("음수 수량이면, BAD_REQUEST 예외가 발생한다.")
         @Test
         void throwsBadRequestException_whenQuantityIsNegative() {
-            // arrange
-            Stock stock = new Stock(5);
-
             // act
             CoreException result = assertThrows(CoreException.class, () -> {
-                stock.deduct(-3);
+                Stock.validateDeductQuantity(-3);
             });
 
             // assert
             assertThat(result.getErrorType()).isEqualTo(ErrorType.BAD_REQUEST);
-        }
-
-        @DisplayName("음수 수량으로 실패하면, 재고가 늘어나지 않고 기존 수량이 유지된다.")
-        @Test
-        void keepsQuantity_whenQuantityIsNegative() {
-            // arrange
-            Stock stock = new Stock(5);
-
-            // act
-            assertThrows(CoreException.class, () -> {
-                stock.deduct(-3);
-            });
-
-            // assert
-            assertThat(stock.getQuantity()).isEqualTo(5);
         }
     }
 }

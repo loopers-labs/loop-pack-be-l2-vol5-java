@@ -2,6 +2,7 @@ package com.loopers.application.brand;
 
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
+import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
@@ -44,16 +45,15 @@ public class BrandFacade {
     }
 
     /**
-     * 삭제되지 않은 연결 상품이 하나라도 있으면 거절한다. 재고 0인 상품도 포함한다.
-     * 논리 삭제이므로 기존 상품·주문의 참조는 그대로 유지된다.
+     * 연결된 미삭제 상품을 재고 0인 상품까지 전부 함께 논리 삭제한다.
+     * 한 트랜잭션에서 처리하므로 중간에 실패하면 브랜드·상품 변경이 모두 취소된다.
+     * 논리 삭제이므로 기존 주문의 품목·단가 참조는 그대로 유지된다.
      */
     @Transactional
     public void deleteBrand(Long id) {
         Brand brand = findActiveBrand(id);
 
-        if (productRepository.existsActiveByBrandId(id)) {
-            throw new CoreException(ErrorType.CONFLICT, "삭제되지 않은 연결 상품이 남아 있어 브랜드를 삭제할 수 없습니다.");
-        }
+        productRepository.findAllActiveByBrandId(id).forEach(Product::delete);
         brand.delete();
     }
 

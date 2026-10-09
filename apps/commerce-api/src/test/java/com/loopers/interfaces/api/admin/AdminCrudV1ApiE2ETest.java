@@ -122,29 +122,41 @@ class AdminCrudV1ApiE2ETest {
             assertThat(found.getName()).isEqualTo("루퍼스");
         }
 
-        @DisplayName("삭제되지 않은 연결 상품이 있으면, 409 응답을 받고 삭제되지 않는다.")
+        @DisplayName("삭제되지 않은 연결 상품이 있으면, 204 응답을 받고 브랜드와 상품이 함께 논리 삭제된다.")
         @Test
-        void returnsConflict_whenActiveProductRemains() throws Exception {
+        void softDeletesLinkedProductsTogether_whenActiveProductsRemain() throws Exception {
             // arrange
             Long brandId = brandJpaRepository.save(new Brand("루퍼스")).getId();
-            productJpaRepository.save(new Product(brandId, "연결 상품", new Price(1000L)));
+            Product product = new Product(brandId, "연결 상품", new Price(1000L));
+            product.changeStock(5);
+            Long productId = productJpaRepository.save(product).getId();
 
             // act
-            adminDelete("/api-admin/v1/brands/" + brandId).andExpect(status().isConflict());
+            adminDelete("/api-admin/v1/brands/" + brandId).andExpect(status().isNoContent());
 
-            // assert
-            assertThat(brandJpaRepository.findById(brandId).orElseThrow().getDeletedAt()).isNull();
+            // assert - 브랜드와 상품 모두 레코드는 남고 deletedAt 만 기록된다
+            assertThat(brandJpaRepository.findById(brandId).orElseThrow().getDeletedAt()).isNotNull();
+            Product found = productJpaRepository.findById(productId).orElseThrow();
+            assertThat(found.getDeletedAt()).isNotNull();
+            assertThat(found.getName()).isEqualTo("연결 상품");
         }
 
-        @DisplayName("재고가 0인 상품만 남아 있어도, 409 응답을 받는다.")
+        @DisplayName("재고가 0인 상품도 함께 삭제되고, 다른 브랜드의 상품은 유지된다.")
         @Test
-        void returnsConflict_whenOnlyOutOfStockProductRemains() throws Exception {
-            // arrange
+        void softDeletesOutOfStockProductTogether_andKeepsOtherBrandProducts() throws Exception {
+            // arrange - 재고 0 은 품절일 뿐 삭제된 상품이 아니므로 삭제 대상에 포함된다
             Long brandId = brandJpaRepository.save(new Brand("루퍼스")).getId();
-            productJpaRepository.save(new Product(brandId, "품절 상품", new Price(1000L)));
+            Long outOfStockId = productJpaRepository.save(new Product(brandId, "품절 상품", new Price(1000L))).getId();
+            Long otherBrandId = brandJpaRepository.save(new Brand("다른 브랜드")).getId();
+            Long otherProductId = productJpaRepository.save(new Product(otherBrandId, "다른 브랜드 상품", new Price(1000L))).getId();
 
-            // act & assert - 재고 0 은 품절일 뿐 삭제된 상품이 아니다
-            adminDelete("/api-admin/v1/brands/" + brandId).andExpect(status().isConflict());
+            // act
+            adminDelete("/api-admin/v1/brands/" + brandId).andExpect(status().isNoContent());
+
+            // assert
+            assertThat(productJpaRepository.findById(outOfStockId).orElseThrow().getDeletedAt()).isNotNull();
+            assertThat(brandJpaRepository.findById(otherBrandId).orElseThrow().getDeletedAt()).isNull();
+            assertThat(productJpaRepository.findById(otherProductId).orElseThrow().getDeletedAt()).isNull();
         }
 
         @DisplayName("연결 상품이 모두 삭제되었으면, 204 응답을 받는다.")

@@ -12,6 +12,7 @@ import com.querydsl.jpa.impl.JPAQueryFactory;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.time.ZonedDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -63,14 +64,36 @@ public class ProductRepositoryImpl implements ProductRepository {
     }
 
     @Override
-    public boolean existsActiveByBrandId(Long brandId) {
-        Integer found = queryFactory
-            .selectOne()
-            .from(product)
+    public List<Product> findAllActiveByBrandId(Long brandId) {
+        return queryFactory
+            .selectFrom(product)
             .where(product.brandId.eq(brandId), product.deletedAt.isNull())
-            .fetchFirst();
+            .orderBy(product.id.asc())
+            .fetch();
+    }
 
-        return found != null;
+    @Override
+    public int deductStockIfEnough(Long productId, int quantity) {
+        return (int) queryFactory
+            .update(product)
+            .set(product.stock.quantity, product.stock.quantity.subtract(quantity))
+            .set(product.updatedAt, ZonedDateTime.now())
+            .where(
+                product.id.eq(productId),
+                product.stock.quantity.goe(quantity),
+                product.deletedAt.isNull()
+            )
+            .execute();
+    }
+
+    @Override
+    public int updateStock(Long productId, int quantity) {
+        return (int) queryFactory
+            .update(product)
+            .set(product.stock.quantity, quantity)
+            .set(product.updatedAt, ZonedDateTime.now())
+            .where(product.id.eq(productId), product.deletedAt.isNull())
+            .execute();
     }
 
     private BooleanExpression brandIdEq(Long brandId) {

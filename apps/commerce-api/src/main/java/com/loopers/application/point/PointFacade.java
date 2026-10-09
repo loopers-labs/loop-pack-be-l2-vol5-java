@@ -2,6 +2,7 @@ package com.loopers.application.point;
 
 import com.loopers.domain.point.Point;
 import com.loopers.domain.point.PointRepository;
+import com.loopers.domain.point.PointService;
 import com.loopers.domain.user.UserRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
@@ -15,6 +16,7 @@ public class PointFacade {
 
     private final UserRepository userRepository;
     private final PointRepository pointRepository;
+    private final PointService pointService;
 
     /**
      * @return 충전 후 잔액
@@ -23,11 +25,7 @@ public class PointFacade {
     public long charge(Long userId, long amount) {
         requireIdentifiedUser(userId);
 
-        Point point = pointRepository.findByUserId(userId)
-            .orElseGet(() -> new Point(userId));
-        point.charge(amount);
-
-        return pointRepository.save(point).getBalance();
+        return pointService.charge(userId, amount);
     }
 
     /**
