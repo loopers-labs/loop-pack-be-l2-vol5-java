@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class BrandTest {
 
-    @DisplayName("[INV-01] 브랜드 이름은 앞뒤 공백을 뺀 1자 이상 50자 이하다.")
+    @DisplayName("[INV-BRAND-01] 브랜드 이름은 앞뒤 공백을 뺀 1자 이상 50자 이하다.")
     @Nested
     class ValidName {
 
@@ -58,7 +58,7 @@ class BrandTest {
         }
     }
 
-    @DisplayName("[INV-04] 삭제된 브랜드의 이름은 바뀌지 않는다.")
+    @DisplayName("[INV-BRAND-04] 삭제된 브랜드의 이름은 바뀌지 않는다.")
     @Nested
     class KeepNameAfterDeletion {
 
@@ -98,7 +98,7 @@ class BrandTest {
         }
     }
 
-    @DisplayName("[INV-05] 이미 삭제된 브랜드는 다시 삭제되지 않는다.")
+    @DisplayName("[INV-BRAND-05] 이미 삭제된 브랜드는 다시 삭제되지 않는다.")
     @Nested
     class RejectRepeatedDeletion {
 

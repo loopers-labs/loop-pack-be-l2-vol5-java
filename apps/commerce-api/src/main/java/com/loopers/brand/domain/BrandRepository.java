@@ -9,6 +9,10 @@ public interface BrandRepository {
 
     Optional<Brand> findById(Long id);
 
+    Optional<Brand> findForProductCreate(Long id);
+
+    Optional<Brand> findForWrite(Long id);
+
     List<Brand> findAllByName(String name);
 
     List<Brand> findAll(int page, int size);

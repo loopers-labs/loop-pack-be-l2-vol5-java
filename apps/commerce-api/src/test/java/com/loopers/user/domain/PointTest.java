@@ -14,7 +14,27 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class PointTest {
 
-    @DisplayName("[INV-16] 포인트 잔액은 0 이상이다.")
+    @DisplayName("[INV-USER-22] 새 고객의 잔액은 0이다.")
+    @Nested
+    class InitialBalance {
+        @Test
+        void startsAtZero() {
+            assertThat(new Point(0L).balance()).isZero();
+        }
+    }
+
+    @DisplayName("[INV-POINT-21] 거절된 충전은 잔액을 바꾸지 않는다.")
+    @Nested
+    class RejectedChargeKeepsBalance {
+        @Test
+        void keepsBalance() {
+            Point point = new Point(1_000L);
+            assertThrows(CoreException.class, () -> point.charge(0L));
+            assertThat(point.balance()).isEqualTo(1_000L);
+        }
+    }
+
+    @DisplayName("[INV-POINT-16] 포인트 잔액은 0 이상이다.")
     @Nested
     class NonNegativeBalance {
 
@@ -40,7 +60,7 @@ class PointTest {
         }
     }
 
-    @DisplayName("[INV-17] 충전액은 양의 정수다.")
+    @DisplayName("[INV-POINT-17] 충전액은 양의 정수다.")
     @Nested
     class PositiveChargeAmount {
 
@@ -62,7 +82,7 @@ class PointTest {
         }
     }
 
-    @DisplayName("[INV-18] 충전 뒤 잔액은 기존 잔액과 충전액의 합이다.")
+    @DisplayName("[INV-POINT-18] 충전 뒤 잔액은 기존 잔액과 충전액의 합이다.")
     @Nested
     class ChargeAddsAmount {
 
@@ -83,7 +103,7 @@ class PointTest {
         }
     }
 
-    @DisplayName("[INV-19] 충전 뒤 잔액은 시스템이 표현할 수 있는 범위 안이다.")
+    @DisplayName("[INV-POINT-19] 충전 뒤 잔액은 시스템이 표현할 수 있는 범위 안이다.")
     @Nested
     class ChargeWithinRange {
 
@@ -105,7 +125,7 @@ class PointTest {
         }
     }
 
-    @DisplayName("[INV-20] 결제액은 현재 잔액 이하다.")
+    @DisplayName("[INV-POINT-20] 결제액은 현재 잔액 이하다.")
     @Nested
     class PayWithinBalance {
 

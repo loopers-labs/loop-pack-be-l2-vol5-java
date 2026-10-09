@@ -7,6 +7,8 @@ import com.loopers.product.domain.Product;
 import com.loopers.product.domain.ProductNameValidator;
 import com.loopers.product.domain.ProductRepository;
 import com.loopers.product.domain.ProductSort;
+import com.loopers.product.domain.Stock;
+import com.loopers.product.domain.StockRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorCode;
 import com.loopers.support.page.PageResult;
@@ -19,16 +21,19 @@ import java.util.List;
 public class ProductUseCase {
 
     private final ProductRepository productRepository;
+    private final StockRepository stockRepository;
     private final BrandRepository brandRepository;
     private final LikeRepository likeRepository;
     private final ProductNameValidator nameValidator;
 
     public ProductUseCase(
         ProductRepository productRepository,
+        StockRepository stockRepository,
         BrandRepository brandRepository,
         LikeRepository likeRepository
     ) {
         this.productRepository = productRepository;
+        this.stockRepository = stockRepository;
         this.brandRepository = brandRepository;
         this.likeRepository = likeRepository;
         this.nameValidator = new ProductNameValidator(productRepository);
@@ -39,14 +44,21 @@ public class ProductUseCase {
         requireActiveBrand(brandId);
         Product product = new Product(brandId, name, price);
         nameValidator.validateNotDuplicated(brandId, product.getName());
-        return productRepository.save(product);
+        Product saved = productRepository.save(product);
+        stockRepository.save(new Stock(saved.getId(), 0));
+        return saved;
     }
 
     @Transactional
     public Product changeStock(Long productId, int quantity) {
-        Product product = findRequired(productId);
-        product.changeStock(quantity);
-        return productRepository.save(product);
+        Product product = productRepository.findForStock(productId)
+            .orElseThrow(() -> new CoreException(ErrorCode.PRODUCT_NOT_FOUND));
+        if (product.isDeleted()) throw new CoreException(ErrorCode.PRODUCT_NOT_FOUND);
+        Stock stock = stockRepository.findForStockUpdateByProductId(productId)
+            .orElseThrow(() -> new CoreException(ErrorCode.PRODUCT_NOT_FOUND));
+        stock.changeQuantity(quantity);
+        stockRepository.save(stock);
+        return product;
     }
 
     @Transactional(readOnly = true)
@@ -61,7 +73,8 @@ public class ProductUseCase {
 
     @Transactional
     public Product update(Long productId, String name, long price, Long brandId) {
-        Product product = findRequired(productId);
+        Product product = productRepository.findForWrite(productId)
+            .orElseThrow(() -> new CoreException(ErrorCode.PRODUCT_NOT_FOUND));
         if (product.isDeleted()) {
             throw new CoreException(ErrorCode.PRODUCT_NOT_FOUND);
         }
@@ -81,7 +94,8 @@ public class ProductUseCase {
 
     @Transactional
     public void delete(Long productId) {
-        Product product = findRequired(productId);
+        Product product = productRepository.findForWrite(productId)
+            .orElseThrow(() -> new CoreException(ErrorCode.PRODUCT_NOT_FOUND));
         product.delete();
         productRepository.save(product);
     }
@@ -99,7 +113,7 @@ public class ProductUseCase {
         ProductSort requestedSort = sort == null ? ProductSort.LATEST : sort;
         return productRepository.findCustomerProducts(brandId, requestedSort, page, size).stream()
             .map(product -> new ProductView(
-                product,
+                product, stockRepository.findByProductId(product.getId()).orElse(new Stock(product.getId(), 0)),
                 likeRepository.countByProductId(product.getId())
             ))
             .toList();
@@ -115,6 +129,7 @@ public class ProductUseCase {
         List<CustomerProduct> content = findCustomerProducts(brandId, sort, page, size).stream()
             .map(view -> new CustomerProduct(
                 view.product(),
+                view.stock(),
                 findBrand(view.product().getBrandId()),
                 view.likeCount()
             ))
@@ -132,7 +147,7 @@ public class ProductUseCase {
             throw new CoreException(ErrorCode.PRODUCT_NOT_FOUND);
         }
         return new CustomerProduct(
-            product,
+                product, stockRepository.findByProductId(product.getId()).orElse(new Stock(product.getId(), 0)),
             findBrand(product.getBrandId()),
             likeRepository.countByProductId(productId)
         );
@@ -141,7 +156,9 @@ public class ProductUseCase {
     @Transactional(readOnly = true)
     public PageResult<AdminProduct> findAdminProductPage(Long brandId, int page, int size) {
         List<AdminProduct> content = productRepository.findAll(brandId, page, size).stream()
-            .map(product -> new AdminProduct(product, findBrand(product.getBrandId())))
+            .map(product -> new AdminProduct(product,
+                stockRepository.findByProductId(product.getId()).orElse(new Stock(product.getId(), 0)),
+                findBrand(product.getBrandId())))
             .toList();
         return new PageResult<>(content, page, size, productRepository.countAll(brandId));
     }
@@ -149,7 +166,9 @@ public class ProductUseCase {
     @Transactional(readOnly = true)
     public AdminProduct findAdminProduct(Long productId) {
         Product product = findRequired(productId);
-        return new AdminProduct(product, findBrand(product.getBrandId()));
+        return new AdminProduct(product,
+            stockRepository.findByProductId(product.getId()).orElse(new Stock(product.getId(), 0)),
+            findBrand(product.getBrandId()));
     }
 
     private Product findRequired(Long productId) {
@@ -158,7 +177,7 @@ public class ProductUseCase {
     }
 
     private Brand requireActiveBrand(Long brandId) {
-        Brand brand = brandRepository.findById(brandId)
+        Brand brand = brandRepository.findForProductCreate(brandId)
             .orElseThrow(() -> new CoreException(ErrorCode.BRAND_NOT_FOUND));
         if (brand.isDeleted()) {
             throw new CoreException(ErrorCode.BRAND_NOT_FOUND);
@@ -177,12 +196,12 @@ public class ProductUseCase {
             .orElseThrow(() -> new CoreException(ErrorCode.BRAND_NOT_FOUND));
     }
 
-    public record ProductView(Product product, long likeCount) {
+    public record ProductView(Product product, Stock stock, long likeCount) {
     }
 
-    public record CustomerProduct(Product product, Brand brand, long likeCount) {
+    public record CustomerProduct(Product product, Stock stock, Brand brand, long likeCount) {
     }
 
-    public record AdminProduct(Product product, Brand brand) {
+    public record AdminProduct(Product product, Stock stock, Brand brand) {
     }
 }

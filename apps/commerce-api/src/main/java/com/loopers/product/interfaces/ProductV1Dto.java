@@ -37,7 +37,7 @@ public class ProductV1Dto {
                 product.getPrice(),
                 BrandResponse.from(view.brand()),
                 view.likeCount(),
-                product.getStock().quantity() == 0
+                view.stock().quantity() == 0
             );
         }
     }
@@ -57,7 +57,7 @@ public class ProductV1Dto {
                 product.getName(),
                 product.getPrice(),
                 BrandResponse.from(view.brand()),
-                product.getStock().quantity(),
+                view.stock().quantity(),
                 product.isDeleted()
             );
         }

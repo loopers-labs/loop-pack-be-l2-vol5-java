@@ -33,7 +33,7 @@ class DomainRulesTest {
 
     /** 규칙 ID 를 찾는 자리는 @Nested 가 붙은 @DisplayName 맨 앞 대괄호 하나뿐이다. */
     private static final Pattern RULE_ID_IN_NESTED =
-        Pattern.compile("@DisplayName\\(\"\\[(INV-\\d+)\\][^\"]*\"\\)\\s*\\R\\s*@Nested");
+        Pattern.compile("@DisplayName\\(\"\\[(INV-[A-Z]+-\\d+)\\][^\"]*\"\\)\\s*\\R\\s*@Nested");
 
     /** 요구사항·정책 ID. 문서 어디에 적혀 있든 형식이 같다. */
     private static final Pattern REQUIREMENT_ID = Pattern.compile("\\b[RP]-[A-Z]+-\\d+\\b");

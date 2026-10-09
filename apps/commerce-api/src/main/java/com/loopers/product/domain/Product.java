@@ -3,7 +3,6 @@ package com.loopers.product.domain;
 import com.loopers.domain.BaseEntity;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorCode;
-import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 
@@ -14,9 +13,6 @@ public class Product extends BaseEntity {
     private Long brandId;
     private String name;
     private long price;
-    @Embedded
-    private Stock stock;
-
     protected Product() {
     }
 
@@ -27,7 +23,6 @@ public class Product extends BaseEntity {
         this.brandId = brandId;
         this.name = validateName(name);
         this.price = validatePrice(price);
-        this.stock = new Stock(0);
     }
 
     public Long getBrandId() {
@@ -40,10 +35,6 @@ public class Product extends BaseEntity {
 
     public long getPrice() {
         return price;
-    }
-
-    public Stock getStock() {
-        return stock;
     }
 
     public boolean isDeleted() {
@@ -59,16 +50,6 @@ public class Product extends BaseEntity {
         long validatedPrice = validatePrice(price);
         this.name = validatedName;
         this.price = validatedPrice;
-    }
-
-    public void changeStock(int quantity) {
-        ensureActive();
-        this.stock = new Stock(quantity);
-    }
-
-    public void decreaseStock(int quantity) {
-        ensureActive();
-        this.stock = stock.decrease(quantity);
     }
 
     @Override

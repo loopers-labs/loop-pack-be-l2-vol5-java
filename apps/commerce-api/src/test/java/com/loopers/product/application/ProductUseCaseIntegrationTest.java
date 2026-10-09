@@ -1,8 +1,11 @@
 package com.loopers.product.application;
 
+import com.loopers.support.fixture.TestEntities;
+
 import com.loopers.brand.domain.Brand;
 import com.loopers.like.domain.Like;
 import com.loopers.product.domain.Product;
+import com.loopers.product.domain.Stock;
 import com.loopers.product.domain.ProductSort;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorCode;
@@ -80,13 +83,12 @@ class ProductUseCaseIntegrationTest {
     @Nested class ChangeStock {
         @DisplayName("[경계값 분석] 최솟값 0으로 변경하면 저장 재고가 0이다.")
         @Test void persistsZeroStock() {
-            Product product = new Product(1L, "Air", 1_000L);
-            product.changeStock(5);
-            persist(product);
+            Product product = persist(new Product(1L, "Air", 1_000L));
+            persist(new Stock(product.getId(), 5));
             useCase.changeStock(product.getId(), 0);
             entityManager.flush();
             entityManager.clear();
-            assertThat(entityManager.find(Product.class, product.getId()).getStock().quantity()).isZero();
+            assertThat(TestEntities.stockQuantity(entityManager, product.getId())).isZero();
         }
     }
 
@@ -168,7 +170,7 @@ class ProductUseCaseIntegrationTest {
             Product result = useCase.create(brand.getId(), "Air", 1_000L);
             entityManager.flush();
             entityManager.clear();
-            assertThat(entityManager.find(Product.class, result.getId()).getStock().quantity()).isZero();
+            assertThat(TestEntities.stockQuantity(entityManager, result.getId())).isZero();
         }
     }
 

@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class LikeTest {
 
-    @DisplayName("[INV-25] 좋아요는 등록한 고객의 것이다.")
+    @DisplayName("[INV-LIKE-25] 좋아요는 등록한 고객의 것이다.")
     @Nested
     class OwnedByRegisteringUser {
 

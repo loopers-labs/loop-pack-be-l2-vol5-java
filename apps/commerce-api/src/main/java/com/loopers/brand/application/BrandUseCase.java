@@ -1,9 +1,10 @@
 package com.loopers.brand.application;
 
 import com.loopers.brand.domain.Brand;
-import com.loopers.brand.domain.BrandDeletionValidator;
 import com.loopers.brand.domain.BrandNameValidator;
+import com.loopers.brand.domain.BrandRemovalService;
 import com.loopers.brand.domain.BrandRepository;
+import com.loopers.product.domain.Product;
 import com.loopers.product.domain.ProductRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorCode;
@@ -17,13 +18,15 @@ import java.util.List;
 public class BrandUseCase {
 
     private final BrandRepository brandRepository;
+    private final ProductRepository productRepository;
     private final BrandNameValidator nameValidator;
-    private final BrandDeletionValidator deletionValidator;
+    private final BrandRemovalService removalService;
 
     public BrandUseCase(BrandRepository brandRepository, ProductRepository productRepository) {
         this.brandRepository = brandRepository;
+        this.productRepository = productRepository;
         this.nameValidator = new BrandNameValidator(brandRepository);
-        this.deletionValidator = new BrandDeletionValidator(productRepository);
+        this.removalService = new BrandRemovalService();
     }
 
     @Transactional
@@ -35,7 +38,8 @@ public class BrandUseCase {
 
     @Transactional
     public Brand update(Long brandId, String name) {
-        Brand brand = findRequired(brandId);
+        Brand brand = brandRepository.findForWrite(brandId)
+            .orElseThrow(() -> new CoreException(ErrorCode.BRAND_NOT_FOUND));
         if (brand.isDeleted()) {
             throw new CoreException(ErrorCode.BRAND_NOT_FOUND);
         }
@@ -61,12 +65,16 @@ public class BrandUseCase {
 
     @Transactional
     public void delete(Long brandId) {
-        Brand brand = findRequired(brandId);
+        Brand brand = brandRepository.findForWrite(brandId)
+            .orElseThrow(() -> new CoreException(ErrorCode.BRAND_NOT_FOUND));
         if (brand.isDeleted()) {
             throw new CoreException(ErrorCode.BRAND_NOT_FOUND);
         }
-        deletionValidator.validateDeletable(brand);
-        brand.delete();
+        List<Product> products = productRepository.findAllForBrandDelete(brandId);
+        removalService.remove(brand, products);
+        for (Product product : products) {
+            productRepository.save(product);
+        }
         brandRepository.save(brand);
     }
 

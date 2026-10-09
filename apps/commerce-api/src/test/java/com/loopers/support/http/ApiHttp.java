@@ -33,6 +33,7 @@ import java.util.Objects;
 import java.util.Set;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -68,7 +69,8 @@ public final class ApiHttp {
     }
 
     public static RequestPostProcessor admin() {
-        return user("admin").roles("ADMIN");
+        return request -> user("admin").roles("ADMIN").postProcessRequest(
+            httpBasic("admin", "admin").postProcessRequest(request));
     }
 
     public static RequestPostProcessor nonAdmin() {

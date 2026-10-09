@@ -1,5 +1,9 @@
 # 아키텍처
 
+> 변경일: 2026-10-07
+>
+> Point·Stock을 독립 JPA Entity와 저장 단위로 다루는 설계안으로 갱신했다.
+
 ## 목표
 
 시스템이 지켜야 하는 불변식을 지킨다.
@@ -49,6 +53,7 @@ interfaces ──▶ application ──▶ domain ◀── infrastructure
 
 ## JPA 영속성 모델
 
-- 현재 `Brand`, `Product`, `User`, `Order`, `Like`는 도메인 엔티티이자 JPA Entity인 동일 클래스다.
+- 분리 설계안에서는 `Brand`, `Product`, `User`, `Point`, `Stock`, `Order`, `Like`를 도메인 엔티티이자 JPA Entity인 동일 클래스로 둔다.
+- `Point`와 `Stock`은 각각 사용자·상품 식별자를 보유하는 독립 저장 단위다. User와 Product가 잔액·재고 상태를 임베드하거나 직접 저장하지 않는다.
 - domain에는 JPA 매핑 어노테이션과 기본 생성자가 있지만, 불변식 판단 로직은 JPA 저장소·쿼리·EntityManager에 의존하지 않는다.
 - domain에 Repository 포트를 두고 infrastructure의 JPA 어댑터가 구현한다. 선택 이유, 비용, 재검토 조건은 [ADR-006](./decisions.md#adr-006-repository에는-dip를-적용하고-domain-객체를-jpa-entity로-사용한다)에 기록한다.

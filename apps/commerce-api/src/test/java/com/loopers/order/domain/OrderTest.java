@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class OrderTest {
 
-    @DisplayName("[INV-27] 주문에는 품목이 하나 이상 있다.")
+    @DisplayName("[INV-ORDER-27] 주문에는 품목이 하나 이상 있다.")
     @Nested
     class AtLeastOneItem {
 
@@ -56,7 +56,7 @@ class OrderTest {
         }
     }
 
-    @DisplayName("[INV-28] 한 주문에 상품마다 품목이 하나다. 같은 상품이 여러 번 들어오면 수량이 합산된다.")
+    @DisplayName("[INV-ORDER-28] 한 주문에 상품마다 품목이 하나다. 같은 상품이 여러 번 들어오면 수량이 합산된다.")
     @Nested
     class OneItemPerProduct {
 
@@ -99,7 +99,7 @@ class OrderTest {
         }
     }
 
-    @DisplayName("[INV-29] 주문 합계는 품목 금액의 합이다.")
+    @DisplayName("[INV-ORDER-29] 주문 합계는 품목 금액의 합이다.")
     @Nested
     class TotalIsSumOfItemAmounts {
 
@@ -127,7 +127,7 @@ class OrderTest {
         }
     }
 
-    @DisplayName("[INV-30] 새 주문의 상태는 DRAFT다.")
+    @DisplayName("[INV-ORDER-30] 새 주문의 상태는 DRAFT다.")
     @Nested
     class InitialStatus {
 
@@ -142,7 +142,7 @@ class OrderTest {
         }
     }
 
-    @DisplayName("[INV-31] 주문은 구매자의 것이다.")
+    @DisplayName("[INV-ORDER-31] 주문은 구매자의 것이다.")
     @Nested
     class OwnedByBuyer {
 
@@ -179,7 +179,7 @@ class OrderTest {
         }
     }
 
-    @DisplayName("[INV-34] 확정된 주문은 결제 결과를 갖는다. DRAFT 주문은 갖지 않는다.")
+    @DisplayName("[INV-ORDER-34] 확정된 주문은 결제 결과를 갖는다. DRAFT 주문은 갖지 않는다.")
     @Nested
     class PaymentResultFollowsStatus {
 
@@ -208,7 +208,7 @@ class OrderTest {
         }
     }
 
-    @DisplayName("[INV-37] 확정된 주문의 결제 결과는 바뀌지 않는다.")
+    @DisplayName("[INV-ORDER-37] 확정된 주문의 결제 결과는 바뀌지 않는다.")
     @Nested
     class ImmutablePaymentResult {
 
@@ -236,7 +236,7 @@ class OrderTest {
         }
     }
 
-    @DisplayName("[INV-38] 품목 수량이 바뀌는 주문의 상태는 DRAFT다.")
+    @DisplayName("[INV-ORDER-38] 품목 수량이 바뀌는 주문의 상태는 DRAFT다.")
     @Nested
     class ChangeQuantityOnDraftOnly {
 
@@ -275,7 +275,7 @@ class OrderTest {
         }
     }
 
-    @DisplayName("[INV-39] 품목 수량은 양수다.")
+    @DisplayName("[INV-ORDERITEM-39] 품목 수량은 양수다.")
     @Nested
     class PositiveChangedQuantity {
 
@@ -299,7 +299,7 @@ class OrderTest {
         }
     }
 
-    @DisplayName("[INV-40] 품목은 주문을 생성한 시점의 상품 이름과 단가를 갖는다.")
+    @DisplayName("[INV-ORDERITEM-40] 품목은 주문을 생성한 시점의 상품 이름과 단가를 갖는다.")
     @Nested
     class KeepSnapshotOnQuantityChange {
 
@@ -320,7 +320,7 @@ class OrderTest {
         }
     }
 
-    @DisplayName("[INV-44] 확정에 성공한 주문의 상태는 CONFIRMED다.")
+    @DisplayName("[INV-ORDER-44] 확정에 성공한 주문의 상태는 CONFIRMED다.")
     @Nested
     class ConfirmedStatus {
 

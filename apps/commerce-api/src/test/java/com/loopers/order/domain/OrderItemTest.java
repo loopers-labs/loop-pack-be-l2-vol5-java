@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class OrderItemTest {
 
-    @DisplayName("[INV-39] 품목 수량은 양수다.")
+    @DisplayName("[INV-ORDERITEM-39] 품목 수량은 양수다.")
     @Nested
     class PositiveQuantity {
 
@@ -61,7 +61,7 @@ class OrderItemTest {
         }
     }
 
-    @DisplayName("[INV-40] 품목은 주문을 생성한 시점의 상품 이름과 단가를 갖는다.")
+    @DisplayName("[INV-ORDERITEM-40] 품목은 주문을 생성한 시점의 상품 이름과 단가를 갖는다.")
     @Nested
     class SnapshotAtCreation {
 
@@ -121,7 +121,7 @@ class OrderItemTest {
         }
     }
 
-    @DisplayName("[INV-41] 상품이 삭제되어도 그 상품의 주문 품목은 남는다.")
+    @DisplayName("[INV-ORDERITEM-41] 상품이 삭제되어도 그 상품의 주문 품목은 남는다.")
     @Nested
     class SurvivesProductDeletion {
 

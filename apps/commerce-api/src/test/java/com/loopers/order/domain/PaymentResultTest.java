@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class PaymentResultTest {
 
-    @DisplayName("[INV-42] 결제 결과는 결제액과 결제 시점을 갖는다.")
+    @DisplayName("[INV-PAYMENTRESULT-42] 결제 결과는 결제액과 결제 시점을 갖는다.")
     @Nested
     class RequiredFields {
 

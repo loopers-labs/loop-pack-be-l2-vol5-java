@@ -1,7 +1,11 @@
 package com.loopers.brand.application;
 
 import com.loopers.brand.domain.Brand;
+import com.loopers.order.domain.Order;
+import com.loopers.order.domain.OrderItem;
+import com.loopers.order.domain.OrderStatus;
 import com.loopers.product.domain.Product;
+import com.loopers.product.domain.Stock;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorCode;
 import com.loopers.testcontainers.MySqlTestContainersConfig;
@@ -14,6 +18,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.ZonedDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -44,22 +49,6 @@ class BrandUseCaseIntegrationTest {
                 () -> assertThat(found.getId()).isEqualTo(created.getId()),
                 () -> assertThat(updated.getName()).isEqualTo("Jordan"),
                 () -> assertThat(deleted.isDeleted()).isTrue()
-            );
-        }
-    }
-
-    @DisplayName("[R-ADMIN-02] 삭제되지 않은 상품이 연결된 브랜드는 삭제할 수 없다.")
-    @Nested class RejectBrandDeletionWithProduct {
-        @DisplayName("[의사결정표] 활성 상품이 연결되어 있으면 BRAND_HAS_PRODUCTS이고 브랜드를 유지한다.")
-        @Test void rejectsDeletionAndKeepsBrand() {
-            Brand brand = persist(new Brand("Nike"));
-            persist(new Product(brand.getId(), "Air", 1_000L));
-            CoreException result = assertThrows(CoreException.class, () -> useCase.delete(brand.getId()));
-            entityManager.clear();
-            Brand persisted = entityManager.find(Brand.class, brand.getId());
-            assertAll(
-                () -> assertThat(result.getErrorCode()).isEqualTo(ErrorCode.BRAND_HAS_PRODUCTS),
-                () -> assertThat(persisted.isDeleted()).isFalse()
             );
         }
     }
@@ -137,6 +126,51 @@ class BrandUseCaseIntegrationTest {
             assertAll(
                 () -> assertThat(result.getErrorCode()).isEqualTo(ErrorCode.BRAND_NOT_FOUND),
                 () -> assertThat(persisted.isDeleted()).isTrue()
+            );
+        }
+    }
+
+    @DisplayName("[R-ADMIN-16, R-ADMIN-14] 브랜드 삭제는 연결 상품만 함께 삭제하고 기존 주문은 보존한다.")
+    @Nested class RemoveBrandAndProducts {
+        @DisplayName("[상태 전이] 연결 상품을 삭제하고 다른 브랜드·기존 주문은 유지한다.")
+        @Test void removesLinkedProductsOnly() {
+            Brand brand = persist(new Brand("Nike"));
+            Product zeroStock = persist(new Product(brand.getId(), "Air", 1_000L));
+            Product stocked = persist(new Product(brand.getId(), "Dunk", 2_000L));
+            persist(new Stock(stocked.getId(), 3));
+            Product alreadyDeleted = new Product(brand.getId(), "Old", 500L);
+            alreadyDeleted.delete();
+            persist(alreadyDeleted);
+            var previousDeletedAt = alreadyDeleted.getDeletedAt();
+            Brand otherBrand = persist(new Brand("Puma"));
+            Product otherProduct = persist(new Product(otherBrand.getId(), "Suede", 3_000L));
+            Order pastOrder = new Order(1L, List.of(OrderItem.of(stocked, 2)));
+            pastOrder.confirm(4_000L, ZonedDateTime.now());
+            persist(pastOrder);
+
+            useCase.delete(brand.getId());
+            entityManager.flush();
+            entityManager.clear();
+
+            Brand removedBrand = entityManager.find(Brand.class, brand.getId());
+            Product removedZeroStock = entityManager.find(Product.class, zeroStock.getId());
+            Product removedStocked = entityManager.find(Product.class, stocked.getId());
+            Product preservedDeleted = entityManager.find(Product.class, alreadyDeleted.getId());
+            Product untouched = entityManager.find(Product.class, otherProduct.getId());
+            Order preservedOrder = entityManager.find(Order.class, pastOrder.getId());
+            assertAll(
+                () -> assertThat(removedBrand.isDeleted()).isTrue(),
+                () -> assertThat(removedZeroStock.isDeleted()).isTrue(),
+                () -> assertThat(removedStocked.isDeleted()).isTrue(),
+                () -> assertThat(preservedDeleted.getDeletedAt()).isEqualTo(previousDeletedAt),
+                () -> assertThat(entityManager.find(Brand.class, otherBrand.getId()).isDeleted()).isFalse(),
+                () -> assertThat(untouched.isDeleted()).isFalse(),
+                () -> assertThat(preservedOrder.getStatus()).isEqualTo(OrderStatus.CONFIRMED),
+                () -> assertThat(preservedOrder.getItems().get(0).productName()).isEqualTo("Dunk"),
+                () -> assertThat(preservedOrder.getItems().get(0).quantity()).isEqualTo(2),
+                () -> assertThat(preservedOrder.getItems().get(0).unitPrice()).isEqualTo(2_000L),
+                () -> assertThat(preservedOrder.getTotalAmount()).isEqualTo(4_000L),
+                () -> assertThat(preservedOrder.getPaymentResult().amount()).isEqualTo(4_000L)
             );
         }
     }

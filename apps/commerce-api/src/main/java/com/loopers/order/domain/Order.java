@@ -8,6 +8,7 @@ import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
@@ -25,6 +26,8 @@ public class Order extends BaseEntity {
     private OrderStatus status;
     @Embedded
     private PaymentResult paymentResult;
+    @Version
+    private Long version;
 
     protected Order() {
     }

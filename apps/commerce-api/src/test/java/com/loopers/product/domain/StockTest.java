@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class StockTest {
 
-    @DisplayName("[INV-14] 재고 수량은 0 이상이다.")
+    @DisplayName("[INV-STOCK-14] 재고 수량은 0 이상이다.")
     @Nested
     class NonNegativeQuantity {
 
@@ -41,7 +41,7 @@ class StockTest {
         }
     }
 
-    @DisplayName("[INV-15] 차감 수량은 현재 재고 이하다.")
+    @DisplayName("[INV-STOCK-15] 차감 수량은 현재 재고 이하다.")
     @Nested
     class DecreaseWithinStock {
 

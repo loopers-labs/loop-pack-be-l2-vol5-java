@@ -2,6 +2,8 @@ package com.loopers.brand.interfaces;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.loopers.brand.domain.Brand;
+import com.loopers.order.domain.Order;
+import com.loopers.product.domain.Product;
 import com.loopers.support.fixture.CommerceFixture;
 import com.loopers.testcontainers.MySqlTestContainersConfig;
 import com.loopers.user.domain.User;
@@ -33,6 +35,7 @@ import static com.loopers.support.http.ApiHttp.failure;
 import static com.loopers.support.http.ApiHttp.findById;
 import static com.loopers.support.http.ApiHttp.ids;
 import static com.loopers.support.http.ApiHttp.isNullOrAbsent;
+import static com.loopers.support.http.ApiHttp.nonAdmin;
 import static com.loopers.support.http.ApiHttp.success;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
@@ -42,6 +45,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -125,7 +129,7 @@ class BrandHttpTest {
         }
     }
 
-    @DisplayName("[R-ADMIN-12] 삭제된 브랜드와 상품은 고객 조회와 새 주문에서 제외한다.")
+    @DisplayName("[R-ADMIN-12] 삭제된 브랜드와 상품은 고객의 브랜드·상품 조회와 새 주문에서 제외한다.")
     @Nested
     class ExcludeDeletedBrandFromCustomer {
 
@@ -145,6 +149,145 @@ class BrandHttpTest {
             // assert
             mockMvc.perform(get(CUSTOMER_BRAND, brand.getId()).with(customer(customer)))
                 .andExpect(failure(HttpStatus.NOT_FOUND, "BRAND_NOT_FOUND"));
+        }
+    }
+
+    @DisplayName("[R-ADMIN-16] 브랜드 삭제 후 연결 상품의 고객 상품 조회와 신규 사용을 제한한다.")
+    @Nested
+    class DeletedBrandProductUsage {
+
+        @DisplayName("[상태 전이] 브랜드 삭제 후 고객 상품 목록·상세와 내 좋아요 목록에서 제외하고 새 좋아요를 거절하며 기존 좋아요 취소는 허용한다.")
+        @Test
+        void hidesProductAndRestrictsLikesAfterBrandDeletion() throws Exception {
+            User buyer = fixture.user();
+            Brand brand = fixture.brand("Nike");
+            Product product = fixture.product(brand, "Air", 3_000L, 5);
+            fixture.like(buyer, product);
+
+            mockMvc.perform(delete(ADMIN_BRAND, brand.getId()).with(admin()).with(csrf()))
+                .andExpect(success(HttpStatus.OK));
+
+            mockMvc.perform(get("/api/v1/products").with(customer(buyer)))
+                .andExpect(success(HttpStatus.OK))
+                .andExpect(jsonPath("$.data.totalElements").value(0));
+            mockMvc.perform(get("/api/v1/products/{productId}", product.getId()).with(customer(buyer)))
+                .andExpect(failure(HttpStatus.NOT_FOUND, "PRODUCT_NOT_FOUND"));
+            mockMvc.perform(get("/api/v1/users/{userId}/likes", buyer.getId()).with(customer(buyer)))
+                .andExpect(success(HttpStatus.OK))
+                .andExpect(jsonPath("$.data.totalElements").value(0));
+            mockMvc.perform(post("/api/v1/products/{productId}/likes", product.getId())
+                    .with(customer(buyer)).with(csrf()))
+                .andExpect(failure(HttpStatus.NOT_FOUND, "PRODUCT_NOT_FOUND"));
+            mockMvc.perform(delete("/api/v1/products/{productId}/likes", product.getId())
+                    .with(customer(buyer)).with(csrf()))
+                .andExpect(success(HttpStatus.OK));
+        }
+
+        @DisplayName("[상태 전이] 브랜드 삭제 후 연결 상품의 새 주문과 기존 DRAFT 확정을 거절하며 주문·재고·잔액은 유지한다.")
+        @Test
+        void rejectsOrdersAfterBrandDeletion() throws Exception {
+            User buyer = fixture.userWithPoint(10_000L);
+            Brand brand = fixture.brand("Nike");
+            Product product = fixture.product(brand, "Air", 3_000L, 5);
+            Order draft = fixture.draftOrder(buyer, fixture.item(product, 1));
+
+            mockMvc.perform(delete(ADMIN_BRAND, brand.getId()).with(admin()).with(csrf()))
+                .andExpect(success(HttpStatus.OK));
+
+            mockMvc.perform(post("/api/v1/orders").with(customer(buyer)).with(csrf())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"items\":[{\"productId\":%d,\"quantity\":1}]}".formatted(product.getId())))
+                .andExpect(failure(HttpStatus.NOT_FOUND, "PRODUCT_NOT_FOUND"));
+            mockMvc.perform(post("/api/v1/orders/{orderId}/confirm", draft.getId())
+                    .with(customer(buyer)).with(csrf()))
+                .andExpect(failure(HttpStatus.CONFLICT, "PRODUCT_NOT_AVAILABLE"));
+            mockMvc.perform(get("/api/v1/orders/{orderId}", draft.getId()).with(customer(buyer)))
+                .andExpect(success(HttpStatus.OK))
+                .andExpect(jsonPath("$.data.status").value("DRAFT"));
+            mockMvc.perform(get("/api-admin/v1/products/{productId}", product.getId()).with(admin()))
+                .andExpect(success(HttpStatus.OK))
+                .andExpect(jsonPath("$.data.stock").value(5));
+            mockMvc.perform(get("/api/v1/points").with(customer(buyer)))
+                .andExpect(success(HttpStatus.OK))
+                .andExpect(jsonPath("$.data.balance").value(10_000));
+        }
+
+        @DisplayName("[상태 전이] 브랜드 삭제 후 연결 상품의 관리자 수정·재고 변경을 거절하지만 관리자 상세 조회는 허용한다.")
+        @Test
+        void rejectsAdminChangesAfterBrandDeletion() throws Exception {
+            Brand brand = fixture.brand("Nike");
+            Product product = fixture.product(brand, "Air", 3_000L, 5);
+
+            mockMvc.perform(delete(ADMIN_BRAND, brand.getId()).with(admin()).with(csrf()))
+                .andExpect(success(HttpStatus.OK));
+
+            mockMvc.perform(put("/api-admin/v1/products/{productId}", product.getId())
+                    .with(admin()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"name\":\"Air Max\",\"price\":3500}"))
+                .andExpect(failure(HttpStatus.NOT_FOUND, "PRODUCT_NOT_FOUND"));
+            mockMvc.perform(put("/api-admin/v1/products/{productId}/stock", product.getId())
+                    .with(admin()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"quantity\":10}"))
+                .andExpect(failure(HttpStatus.NOT_FOUND, "PRODUCT_NOT_FOUND"));
+            mockMvc.perform(get("/api-admin/v1/products/{productId}", product.getId()).with(admin()))
+                .andExpect(success(HttpStatus.OK))
+                .andExpect(jsonPath("$.data.name").value("Air"))
+                .andExpect(jsonPath("$.data.stock").value(5));
+        }
+    }
+
+    @DisplayName("[R-ADMIN-14] 브랜드와 상품을 삭제해도 확정된 주문의 저장 정보와 결제 결과는 보존한다.")
+    @Nested
+    class PreservePastOrder {
+
+        @DisplayName("[상태 전이] 브랜드 삭제 전 확정한 주문의 품목·수량·단가·총액·결제 결과를 이후에도 조회한다.")
+        @Test
+        void keepsConfirmedOrderAfterBrandDeletion() throws Exception {
+            User buyer = fixture.userWithPoint(10_000L);
+            Brand brand = fixture.brand("Nike");
+            Product product = fixture.product(brand, "Air", 3_000L, 5);
+            Order order = fixture.draftOrder(buyer, fixture.item(product, 2));
+            mockMvc.perform(post("/api/v1/orders/{orderId}/confirm", order.getId())
+                    .with(customer(buyer)).with(csrf()))
+                .andExpect(success(HttpStatus.OK));
+
+            mockMvc.perform(delete(ADMIN_BRAND, brand.getId()).with(admin()).with(csrf()))
+                .andExpect(success(HttpStatus.OK));
+
+            mockMvc.perform(get("/api/v1/orders/{orderId}", order.getId()).with(customer(buyer)))
+                .andExpect(success(HttpStatus.OK))
+                .andExpect(jsonPath("$.data.status").value("CONFIRMED"))
+                .andExpect(jsonPath("$.data.items[0].productName").value("Air"))
+                .andExpect(jsonPath("$.data.items[0].quantity").value(2))
+                .andExpect(jsonPath("$.data.items[0].unitPrice").value(3_000))
+                .andExpect(jsonPath("$.data.totalAmount").value(6_000))
+                .andExpect(jsonPath("$.data.payment.amount").value(6_000))
+                .andExpect(jsonPath("$.data.payment.paidAt").isNotEmpty());
+        }
+    }
+
+    @DisplayName("[R-ACCESS-04, R-ADMIN-16] 브랜드 일괄 삭제는 관리자만 수행한다.")
+    @Nested
+    class RejectNonAdminDeletion {
+
+        @DisplayName("[동등 클래스 분할] 일반 사용자와 미인증자의 삭제 요청은 거절되고 브랜드·상품 상태는 그대로다.")
+        @Test
+        void preservesBrandAndProductForUnauthorizedRequests() throws Exception {
+            Brand brand = fixture.brand("Nike");
+            Product product = fixture.product(brand, "Air", 3_000L, 5);
+
+            mockMvc.perform(delete(ADMIN_BRAND, brand.getId()).with(nonAdmin()).with(csrf()))
+                .andExpect(status().isForbidden());
+            mockMvc.perform(delete(ADMIN_BRAND, brand.getId()).with(csrf()))
+                .andExpect(status().isForbidden());
+
+            mockMvc.perform(get(ADMIN_BRAND, brand.getId()).with(admin()))
+                .andExpect(success(HttpStatus.OK))
+                .andExpect(jsonPath("$.data.deleted").value(false));
+            mockMvc.perform(get("/api-admin/v1/products/{productId}", product.getId()).with(admin()))
+                .andExpect(success(HttpStatus.OK))
+                .andExpect(jsonPath("$.data.deleted").value(false))
+                .andExpect(jsonPath("$.data.stock").value(5));
         }
     }
 
@@ -319,6 +462,26 @@ class BrandHttpTest {
                 .andExpect(jsonPath("$.data.deleted").value(true));
         }
 
+        @DisplayName("[R-ADMIN-16] 연결 상품이 있는 브랜드를 삭제하면 상품도 고객에게 보이지 않는다.")
+        @Test
+        void deletesBrandWithLinkedProduct() throws Exception {
+            User buyer = fixture.user();
+            Brand brand = fixture.brand("Nike");
+            Product product = fixture.product(brand, "Air", 1_000L, 0);
+
+            mockMvc.perform(delete(ADMIN_BRAND, brand.getId()).with(admin()).with(csrf()))
+                .andExpect(success(HttpStatus.OK));
+
+            mockMvc.perform(get(ADMIN_BRAND, brand.getId()).with(admin()))
+                .andExpect(success(HttpStatus.OK))
+                .andExpect(jsonPath("$.data.deleted").value(true));
+            mockMvc.perform(get("/api-admin/v1/products/{productId}", product.getId()).with(admin()))
+                .andExpect(success(HttpStatus.OK))
+                .andExpect(jsonPath("$.data.deleted").value(true));
+            mockMvc.perform(get("/api/v1/products/{productId}", product.getId()).with(customer(buyer)))
+                .andExpect(failure(HttpStatus.NOT_FOUND, "PRODUCT_NOT_FOUND"));
+        }
+
         @DisplayName("[동등 클래스 분할] 존재하지 않는 브랜드를 삭제하면 404 BRAND_NOT_FOUND이다.")
         @Test
         void rejectsMissingBrandDeletion() throws Exception {
@@ -326,19 +489,6 @@ class BrandHttpTest {
                 .andExpect(failure(HttpStatus.NOT_FOUND, "BRAND_NOT_FOUND"));
         }
 
-        @DisplayName("[의사결정표] 판매 중인 상품이 연결된 브랜드를 삭제하면 409 BRAND_HAS_PRODUCTS이고 브랜드는 유지된다.")
-        @Test
-        void rejectsDeletingBrandWithProducts() throws Exception {
-            Brand brand = fixture.brand("Nike");
-            fixture.product(brand, "Air", 3_000L, 0);
-
-            mockMvc.perform(delete(ADMIN_BRAND, brand.getId()).with(admin()).with(csrf()))
-                .andExpect(failure(HttpStatus.CONFLICT, "BRAND_HAS_PRODUCTS"));
-
-            mockMvc.perform(get(ADMIN_BRAND, brand.getId()).with(admin()))
-                .andExpect(success(HttpStatus.OK))
-                .andExpect(jsonPath("$.data.deleted").value(false));
-        }
     }
 
     @DisplayName("[P-ADMIN-07] 관리자 브랜드 목록과 상세에는 삭제된 브랜드도 삭제 여부와 함께 보여 준다.")

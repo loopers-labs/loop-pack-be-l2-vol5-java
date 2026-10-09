@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ProductTest {
 
-    @DisplayName("[INV-06] 상품 이름은 앞뒤 공백을 뺀 1자 이상 100자 이하다.")
+    @DisplayName("[INV-PRODUCT-06] 상품 이름은 앞뒤 공백을 뺀 1자 이상 100자 이하다.")
     @Nested
     class ValidName {
 
@@ -55,7 +55,7 @@ class ProductTest {
         }
     }
 
-    @DisplayName("[INV-08] 상품 가격은 1원 이상 1,000,000,000원 이하다.")
+    @DisplayName("[INV-PRODUCT-08] 상품 가격은 1원 이상 1,000,000,000원 이하다.")
     @Nested
     class ValidPrice {
 
@@ -85,7 +85,7 @@ class ProductTest {
         }
     }
 
-    @DisplayName("[INV-09] 상품은 존재하며 삭제되지 않은 브랜드에 속한다.")
+    @DisplayName("[INV-PRODUCT-09] 상품은 존재하며 삭제되지 않은 브랜드에 속한다.")
     @Nested
     class BelongsToBrand {
 
@@ -100,7 +100,7 @@ class ProductTest {
         }
     }
 
-    @DisplayName("[INV-10] 상품의 소속 브랜드는 만든 뒤에 바뀌지 않는다.")
+    @DisplayName("[INV-PRODUCT-10] 상품의 소속 브랜드는 만든 뒤에 바뀌지 않는다.")
     @Nested
     class ImmutableBrand {
 
@@ -160,60 +160,7 @@ class ProductTest {
         }
     }
 
-    @DisplayName("[INV-11] 삭제된 상품의 이름·가격·재고는 바뀌지 않는다.")
-    @Nested
-    class ImmutableAfterDeletion {
-
-        @DisplayName("[상태 전이] 삭제된 상품의 수정과 재고 설정을 없는 대상으로 거절하고, 값은 그대로다.")
-        @Test
-        void rejectsUpdateAndStockChange_whenDeleted() {
-            // arrange
-            Product product = new Product(1L, "상품", 1_000L);
-            product.delete();
-
-            // act
-            CoreException updateResult = assertThrows(
-                CoreException.class,
-                () -> product.update("수정 상품", 2_000L, 1L)
-            );
-            CoreException stockResult = assertThrows(
-                CoreException.class,
-                () -> product.changeStock(10)
-            );
-
-            // assert
-            assertAll(
-                () -> assertThat(updateResult.getErrorCode())
-                    .isEqualTo(ErrorCode.PRODUCT_NOT_FOUND),
-                () -> assertThat(stockResult.getErrorCode()).isEqualTo(ErrorCode.PRODUCT_NOT_FOUND),
-                () -> assertThat(product.getName()).isEqualTo("상품"),
-                () -> assertThat(product.getPrice()).isEqualTo(1_000L),
-                () -> assertStockQuantity(product, 0),
-                () -> assertThat(product.isDeleted()).isTrue()
-            );
-        }
-
-        @DisplayName("[상태 전이] 삭제된 상품의 재고 차감을 없는 대상으로 거절하고, 재고는 그대로다.")
-        @Test
-        void throwsProductNotFound_andKeepsStock() {
-            // arrange
-            Product product = new Product(1L, "상품", 1_000L);
-            product.changeStock(5);
-            product.delete();
-
-            // act
-            CoreException result = assertThrows(
-                CoreException.class, () -> product.decreaseStock(1));
-
-            // assert
-            assertAll(
-                () -> assertThat(result.getErrorCode()).isEqualTo(ErrorCode.PRODUCT_NOT_FOUND),
-                () -> assertStockQuantity(product, 5)
-            );
-        }
-    }
-
-    @DisplayName("[INV-12] 이미 삭제된 상품은 다시 삭제되지 않는다.")
+    @DisplayName("[INV-PRODUCT-12] 이미 삭제된 상품은 다시 삭제되지 않는다.")
     @Nested
     class RejectRepeatedDeletion {
 
@@ -236,101 +183,4 @@ class ProductTest {
         }
     }
 
-    @DisplayName("[INV-13] 새로 만든 상품의 재고는 0이다.")
-    @Nested
-    class InitialStock {
-
-        @DisplayName("[상태 전이] 생성 직후와 일반 수정 뒤 모두 재고는 0이다.")
-        @Test
-        void startsWithZeroStock_andUpdateKeepsStock() {
-            // arrange
-            Product product = new Product(1L, "상품", 1_000L);
-
-            // act
-            product.update("수정 상품", 2_000L, 1L);
-
-            // assert
-            assertStockQuantity(product, 0);
-        }
-    }
-
-    @DisplayName("[INV-14] 재고 수량은 0 이상이다.")
-    @Nested
-    class NonNegativeStock {
-
-        @DisplayName("[경계값 분석] 재고를 0과 1로 설정할 수 있다.")
-        @ParameterizedTest
-        @ValueSource(ints = {0, 1})
-        void changesStock_whenQuantityIsNonNegative(int quantity) {
-            // arrange
-            Product product = new Product(1L, "상품", 1_000L);
-
-            // act
-            product.changeStock(quantity);
-
-            // assert
-            assertStockQuantity(product, quantity);
-        }
-
-        @DisplayName("[경계값 분석] 재고를 -1로 설정하면 재고 수량 오류로 거절하고, 재고는 그대로다.")
-        @Test
-        void throwsInvalidStockQuantity_andKeepsStock() {
-            // arrange
-            Product product = new Product(1L, "상품", 1_000L);
-
-            // act
-            CoreException result = assertThrows(
-                CoreException.class, () -> product.changeStock(-1));
-
-            // assert
-            assertAll(
-                () -> assertThat(result.getErrorCode()).isEqualTo(ErrorCode.INVALID_STOCK_QUANTITY),
-                () -> assertStockQuantity(product, 0)
-            );
-        }
-    }
-
-    @DisplayName("[INV-15] 차감 수량은 현재 재고 이하다.")
-    @Nested
-    class DecreaseWithinStock {
-
-        @DisplayName("[경계값 분석] 재고 5에서 5를 차감하면 0이 된다.")
-        @Test
-        void decreasesStock_whenQuantityEqualsStock() {
-            // arrange
-            Product product = new Product(1L, "상품", 1_000L);
-            product.changeStock(5);
-
-            // act
-            product.decreaseStock(5);
-
-            // assert
-            assertStockQuantity(product, 0);
-        }
-
-        @DisplayName("[경계값 분석] 재고 5에서 6을 차감하면 재고 부족으로 거절하고, 재고는 그대로다.")
-        @Test
-        void throwsInsufficientStock_andKeepsStock() {
-            // arrange
-            Product product = new Product(1L, "상품", 1_000L);
-            product.changeStock(5);
-
-            // act
-            CoreException result = assertThrows(
-                CoreException.class, () -> product.decreaseStock(6));
-
-            // assert
-            assertAll(
-                () -> assertThat(result.getErrorCode()).isEqualTo(ErrorCode.INSUFFICIENT_STOCK),
-                () -> assertStockQuantity(product, 5)
-            );
-        }
-    }
-
-    private static void assertStockQuantity(Product product, int expectedQuantity) {
-        assertThat(product.getStock())
-            .isNotNull()
-            .extracting(Stock::quantity)
-            .isEqualTo(expectedQuantity);
-    }
 }

@@ -36,6 +36,16 @@ public class BrandRepositoryAdapter implements BrandRepository {
     }
 
     @Override
+    public Optional<Brand> findForProductCreate(Long id) {
+        return jpaRepository.findForProductCreate(id);
+    }
+
+    @Override
+    public Optional<Brand> findForWrite(Long id) {
+        return jpaRepository.findForWrite(id);
+    }
+
+    @Override
     public List<Brand> findAllByName(String name) {
         return jpaRepository.findAllByName(name);
     }

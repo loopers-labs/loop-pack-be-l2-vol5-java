@@ -66,3 +66,5 @@ Red 테스트와 오류 코드는 바꾸지 않았다. Refactor 전후 모두 `S
 - 대표 TDD 사례: 재고 차감 규칙을 Red → Green → 조건 검증 메서드 분리 Refactor 순서로 진행했다.
 - 설계에서 바뀐 판단: 주문 상세 응답은 품목을 포함하고 요약 응답도 품목 수를 계산한다. Open EntityManager in View를 끈 환경이므로 주문과 품목을 함께 로딩하며, 대안과 재검토 조건은 ADR-007에 남겼다.
 - 검사: commerce-api 테스트 442개, Checkstyle, ArchUnit과 루트 전체 `check`가 통과했다.
+> 변경일: 2026-10-07
+> 구현 갱신: `Point`와 `Stock`을 `User`·`Product`의 임베디드 값에서 독립 JPA Entity와 저장소로 분리했다. 도메인 테스트는 중복된 `UserTest`와 Product의 재고 규칙을 제거하고 `PointTest`·`StockTest`로 책임을 모았다.

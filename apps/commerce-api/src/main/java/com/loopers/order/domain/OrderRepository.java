@@ -8,6 +8,7 @@ public interface OrderRepository {
     Order save(Order order);
 
     Optional<Order> findById(Long id);
+    Optional<Order> findForConfirmById(Long id);
 
     List<Order> findAllByBuyerId(Long buyerId, int page, int size);
 

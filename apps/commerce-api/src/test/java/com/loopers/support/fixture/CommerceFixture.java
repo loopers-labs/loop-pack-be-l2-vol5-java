@@ -5,7 +5,9 @@ import com.loopers.like.domain.Like;
 import com.loopers.order.domain.Order;
 import com.loopers.order.domain.OrderItem;
 import com.loopers.product.domain.Product;
+import com.loopers.product.domain.Stock;
 import com.loopers.user.domain.User;
+import com.loopers.user.domain.Point;
 import jakarta.persistence.EntityManager;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -33,10 +35,9 @@ public class CommerceFixture {
 
     public User userWithPoint(long balance) {
         User user = new User();
-        if (balance > 0) {
-            user.charge(balance);
-        }
-        return persist(user);
+        User saved = persist(user);
+        if (balance > 0) persist(new Point(saved.getId(), balance));
+        return saved;
     }
 
     public Brand brand(String name) {
@@ -51,8 +52,9 @@ public class CommerceFixture {
 
     public Product product(Brand brand, String name, long price, int stock) {
         Product product = new Product(brand.getId(), name, price);
-        product.changeStock(stock);
-        return persist(product);
+        Product saved = persist(product);
+        persist(new Stock(saved.getId(), stock));
+        return saved;
     }
 
     public Product deletedProduct(Brand brand, String name, long price) {

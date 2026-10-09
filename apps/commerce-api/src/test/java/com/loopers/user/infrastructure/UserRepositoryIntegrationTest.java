@@ -2,6 +2,8 @@ package com.loopers.user.infrastructure;
 
 import com.loopers.testcontainers.MySqlTestContainersConfig;
 import com.loopers.user.domain.User;
+import com.loopers.user.domain.Point;
+import com.loopers.user.domain.PointRepository;
 import com.loopers.user.domain.UserRepository;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.DisplayName;
@@ -23,6 +25,8 @@ class UserRepositoryIntegrationTest {
     private UserRepository repository;
     @Autowired
     private EntityManager entityManager;
+    @Autowired
+    private PointRepository pointRepository;
 
     @DisplayName("[R-POINT-06] 충전한 포인트 잔액은 DB에 저장된다.")
     @Nested
@@ -30,15 +34,14 @@ class UserRepositoryIntegrationTest {
         @DisplayName("[상태 전이] 10000 충전 후 flush·clear하여 조회하면 잔액이 10000이다.")
         @Test
         void reloadsChargedBalance() {
-            User user = new User();
-            user.charge(10_000L);
-            repository.save(user);
+            User user = repository.save(new User());
+            pointRepository.save(new Point(user.getId(), 10_000L));
             entityManager.flush();
             entityManager.clear();
 
-            User result = repository.findById(user.getId()).orElseThrow();
+            Point result = pointRepository.findByUserId(user.getId()).orElseThrow();
 
-            assertThat(result.getPoint().balance()).isEqualTo(10_000L);
+            assertThat(result.balance()).isEqualTo(10_000L);
         }
     }
 }

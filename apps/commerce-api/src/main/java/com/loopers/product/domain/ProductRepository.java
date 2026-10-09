@@ -9,6 +9,16 @@ public interface ProductRepository {
 
     Optional<Product> findById(Long id);
 
+    Optional<Product> findForOrder(Long id);
+
+    Optional<Product> findForLike(Long id);
+
+    Optional<Product> findForStock(Long id);
+
+    Optional<Product> findForWrite(Long id);
+
+    List<Product> findAllForBrandDelete(Long brandId);
+
     List<Product> findAllByBrandId(Long brandId);
 
     List<Product> findAllByBrandIdAndName(Long brandId, String name);

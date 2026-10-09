@@ -44,6 +44,7 @@ public enum ErrorCode {
     PRODUCT_NOT_AVAILABLE("주문한 상품 중 판매하지 않는 상품이 있습니다."),
     INSUFFICIENT_STOCK("재고가 부족합니다."),
     INSUFFICIENT_POINT("포인트 잔액이 부족합니다."),
+    POINT_CONFLICT("포인트 잔액이 변경되었습니다. 최신 잔액을 확인한 뒤 다시 시도해 주세요."),
     POINT_BALANCE_LIMIT_EXCEEDED("충전할 수 있는 한도를 넘었습니다."),
 
     /** 내부 오류 */

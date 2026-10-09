@@ -37,6 +37,7 @@ public final class ErrorStatus {
                  PRODUCT_NOT_AVAILABLE,
                  INSUFFICIENT_STOCK,
                  INSUFFICIENT_POINT,
+                 POINT_CONFLICT,
                  POINT_BALANCE_LIMIT_EXCEEDED -> HttpStatus.CONFLICT;
             case INTERNAL_ERROR -> HttpStatus.INTERNAL_SERVER_ERROR;
         };

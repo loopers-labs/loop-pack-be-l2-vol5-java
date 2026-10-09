@@ -6,6 +6,8 @@ import com.loopers.like.domain.LikeRepository;
 import com.loopers.product.application.ProductUseCase.CustomerProduct;
 import com.loopers.product.domain.Product;
 import com.loopers.product.domain.ProductRepository;
+import com.loopers.product.domain.Stock;
+import com.loopers.product.domain.StockRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorCode;
 import com.loopers.support.page.PageResult;
@@ -22,17 +24,20 @@ public class LikeUseCase {
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
     private final BrandRepository brandRepository;
+    private final StockRepository stockRepository;
 
     public LikeUseCase(
         LikeRepository likeRepository,
         ProductRepository productRepository,
         UserRepository userRepository,
-        BrandRepository brandRepository
+        BrandRepository brandRepository,
+        StockRepository stockRepository
     ) {
         this.likeRepository = likeRepository;
         this.productRepository = productRepository;
         this.userRepository = userRepository;
         this.brandRepository = brandRepository;
+        this.stockRepository = stockRepository;
     }
 
     @Transactional
@@ -80,6 +85,7 @@ public class LikeUseCase {
         List<CustomerProduct> content = findMine(userId, page, size).stream()
             .map(product -> new CustomerProduct(
                 product,
+                stockRepository.findByProductId(product.getId()).orElse(new Stock(product.getId(), 0)),
                 brandRepository.findById(product.getBrandId())
                     .orElseThrow(() -> new CoreException(ErrorCode.BRAND_NOT_FOUND)),
                 likeRepository.countByProductId(product.getId())
@@ -100,7 +106,7 @@ public class LikeUseCase {
     }
 
     private Product requireActiveProduct(Long productId) {
-        Product product = productRepository.findById(productId)
+        Product product = productRepository.findForLike(productId)
             .orElseThrow(() -> new CoreException(ErrorCode.PRODUCT_NOT_FOUND));
         if (product.isDeleted()) {
             throw new CoreException(ErrorCode.PRODUCT_NOT_FOUND);

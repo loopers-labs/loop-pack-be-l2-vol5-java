@@ -1,6 +1,12 @@
 # commerce-api 대표 흐름
 
-과제가 제시한 세 흐름을 API 경계와 도메인 상태 변화를 따라 그린 것이다. 구현 클래스나 저장 방식의 호출 순서를 표현하지 않는다. 흐름마다 기대값과 대표 오류를 함께 적으며, [요구사항](./requirements.md), [API 계약](./api-contract.md), [도메인 규칙](./domain-rules.yaml), [도메인 관계](./domain-relations.md)를 근거로 삼는다.
+> 변경일: 2026-10-07
+>
+> Point·Stock을 독립 저장 단위로 다루는 설계안으로 갱신했다.
+
+과제의 대표 흐름을 API 경계와 도메인 상태 변화를 따라 그린 것이다. 구현 클래스나 저장 방식의 호출 순서를 표현하지 않는다. 흐름마다 기대값과 대표 오류를 함께 적으며, [요구사항](./requirements.md), [API 계약](./api-contract.md), [도메인 규칙](./domain-rules.yaml), [도메인 관계](./domain-relations.md)를 근거로 삼는다.
+
+
 
 
 
@@ -90,6 +96,8 @@ sequenceDiagram
 
 ## 3. 포인트 충전 → 주문 확정
 
+주문 생성과 확정을 분리한 그림은 [주문 생성·확정 시퀀스](./order-sequence.md)에 있다.
+
 
 | 단계    | 요청                                           | 기대값                                                                                     |
 | ----- | -------------------------------------------- | --------------------------------------------------------------------------------------- |
@@ -107,7 +115,7 @@ sequenceDiagram
     autonumber
     actor C as 고객
     participant API as Commerce API
-    participant D as Point / Product / Order
+    participant D as Product / Stock / Point / Order
 
     C->>API: 포인트 10,000 충전
     API->>D: 잔액 0→10,000
@@ -118,7 +126,7 @@ sequenceDiagram
     API-->>C: 201, 재고와 잔액은 그대로
 
     C->>API: 주문 확정
-    API->>D: 상품·재고·잔액 조건 확인
+    API->>D: 상품·재고·포인트 조건 확인
     alt 확정 성공
         D->>D: 재고와 잔액 차감, 주문 CONFIRMED
         API-->>C: 200, 결제액 7,000
@@ -129,4 +137,40 @@ sequenceDiagram
 
     C->>API: 잔액과 주문 상세 조회
     API-->>C: 잔액 3,000, CONFIRMED 주문
+```
+
+## 4. 브랜드와 연결 상품 일괄 삭제
+
+| 단계 | 요청 | 기대값 |
+| --- | --- | --- |
+| 준비 | — | 브랜드 B에 상품 P1·P2가 연결되어 있고 P2의 재고는 0이다. 다른 브랜드의 상품과 기존 주문도 있다. |
+| 관리자 삭제 | `DELETE /api-admin/v1/brands/{brandId}` | B와 P1·P2가 함께 논리 삭제된다. 다른 브랜드·상품과 기존 주문은 유지된다. (R-ADMIN-16, R-ADMIN-14) |
+| 고객 조회 | B의 상품 목록·P1 상세·내 좋아요 목록 조회 | B의 상품은 보이지 않고 P1 상세는 `404 PRODUCT_NOT_FOUND`다. (R-ADMIN-12, R-LIKE-07) |
+| 새 사용 | P1 좋아요 등록·새 주문 | `404 PRODUCT_NOT_FOUND`로 거절된다. 기존 자기 좋아요 취소는 가능하다. (R-LIKE-07, R-LIKE-08, R-ORDER-05) |
+| 대표 오류 | 없거나 이미 삭제된 B를 삭제 | `404 BRAND_NOT_FOUND`. 다른 상태는 변경되지 않는다. |
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor A as 관리자
+    actor C as 고객
+    participant API as Commerce API
+    participant B as Brand
+    participant P as 연결 Product
+    participant O as 기존 Order
+
+    A->>API: 브랜드 B 삭제
+    API->>B: B 확인
+    API->>P: B의 미삭제 상품 P1·P2 확인
+    API->>P: P1·P2 삭제
+    API->>B: B 삭제
+    API-->>A: 200
+
+    C->>API: P1 상세·좋아요 등록·새 주문
+    API-->>C: 404 PRODUCT_NOT_FOUND
+    C->>API: 기존 주문 조회
+    API->>O: 저장된 품목·금액·결제 결과 조회
+    API-->>C: 200, 기존 주문 정보 유지
+
+    Note over API,O: 중간 실패 시 B와 P1·P2의 이번 변경은 함께 취소된다.
 ```

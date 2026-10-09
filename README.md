@@ -8,6 +8,9 @@ Loopers 에서 제공하는 스프링 자바 템플릿 프로젝트입니다.
 ```shell
 docker-compose -f ./docker/infra-compose.yml up
 ```
+
+로컬 Swagger UI는 `http://localhost:8080/swagger-ui.html`에서 연다. **Authorize**에서 `adminBasic`에는 `admin` / `admin`, `userId`에는 DB에 존재하는 사용자 ID를 입력한다. 두 값을 함께 저장하면 관리자 API에는 Basic 인증이, 일반 사용자 API에는 `X-USER-ID`가 자동으로 붙는다. 로컬 관리자 비밀번호는 `LOCAL_ADMIN_PASSWORD` 환경 변수로 바꿀 수 있으며, 이 계정은 `local` 프로필에서만 제공된다.
+
 ### Monitoring
 `local` 환경에서 모니터링을 할 수 있도록, `docker-compose` 를 통해 `prometheus` 와 `grafana` 를 제공합니다.
 

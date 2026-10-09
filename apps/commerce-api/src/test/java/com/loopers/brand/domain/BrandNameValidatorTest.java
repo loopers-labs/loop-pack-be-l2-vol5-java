@@ -16,7 +16,7 @@ import static org.mockito.Mockito.when;
 
 class BrandNameValidatorTest {
 
-    @DisplayName("[INV-02] 삭제되지 않은 브랜드끼리 이름이 같지 않다. 대소문자가 다르면 다른 이름이다.")
+    @DisplayName("[INV-BRAND-02] 삭제되지 않은 브랜드끼리 이름이 같지 않다. 대소문자가 다르면 다른 이름이다.")
     @Nested
     class ValidateBrandNameDuplication {
 

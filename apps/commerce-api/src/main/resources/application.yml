@@ -41,6 +41,17 @@ spring:
 spring:
   config:
     activate:
+      on-profile: local
+  security:
+    user:
+      name: admin
+      password: ${LOCAL_ADMIN_PASSWORD:admin}
+      roles: ADMIN
+
+---
+spring:
+  config:
+    activate:
       on-profile: dev
 
 ---

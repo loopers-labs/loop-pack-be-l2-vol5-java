@@ -1,9 +1,12 @@
 package com.loopers.user.application;
 
+import com.loopers.support.fixture.TestEntities;
+
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorCode;
 import com.loopers.testcontainers.MySqlTestContainersConfig;
 import com.loopers.user.domain.User;
+import com.loopers.user.domain.Point;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -32,7 +35,7 @@ class PointUseCaseIntegrationTest {
             useCase.charge(user.getId(), 1_000L);
             entityManager.flush();
             entityManager.clear();
-            assertThat(entityManager.find(User.class, user.getId()).getPoint().balance())
+            assertThat(TestEntities.pointBalance(entityManager, user.getId()))
                 .isEqualTo(1_000L);
         }
     }
@@ -41,9 +44,8 @@ class PointUseCaseIntegrationTest {
     @Nested class ReadStoredBalance {
         @DisplayName("[동등 클래스 분할] 저장된 고객의 현재 잔액을 제공한다.")
         @Test void returnsStoredBalance() {
-            User user = new User();
-            user.charge(2_000L);
-            persist(user);
+            User user = persist(new User());
+            persist(new Point(user.getId(), 2_000L));
             assertThat(useCase.getBalance(user.getId())).isEqualTo(2_000L);
         }
     }
@@ -56,7 +58,7 @@ class PointUseCaseIntegrationTest {
             assertThat(useCase.charge(user.getId(), 10_000L)).isEqualTo(10_000L);
             entityManager.flush();
             entityManager.clear();
-            assertThat(entityManager.find(User.class, user.getId()).getPoint().balance())
+            assertThat(TestEntities.pointBalance(entityManager, user.getId()))
                 .isEqualTo(10_000L);
         }
     }
@@ -65,15 +67,14 @@ class PointUseCaseIntegrationTest {
     @Nested class KeepBalanceOnInvalidCharge {
         @DisplayName("[경계값 분석] 잔액 1000에 0을 충전하면 오류이고 저장 잔액을 유지한다.")
         @Test void rejectsZeroAndDoesNotSave() {
-            User user = new User();
-            user.charge(1_000L);
-            persist(user);
+            User user = persist(new User());
+            persist(new Point(user.getId(), 1_000L));
             CoreException result = assertThrows(CoreException.class,
                 () -> useCase.charge(user.getId(), 0L));
             entityManager.clear();
             assertAll(
                 () -> assertThat(result.getErrorCode()).isEqualTo(ErrorCode.INVALID_CHARGE_AMOUNT),
-                () -> assertThat(entityManager.find(User.class, user.getId()).getPoint().balance())
+                () -> assertThat(TestEntities.pointBalance(entityManager, user.getId()))
                     .isEqualTo(1_000L)
             );
         }
