@@ -10,7 +10,6 @@ public enum DomainError {
     POINT_BALANCE_EXCEEDED(Failure.RULE_VIOLATION, "충전하면 잔액이 표현 범위를 넘습니다."),
 
     BRAND_ALREADY_DELETED(Failure.RULE_VIOLATION, "삭제된 브랜드는 수정할 수 없습니다."),
-    BRAND_HAS_PRODUCTS(Failure.RULE_VIOLATION, "삭제되지 않은 상품이 연결된 브랜드는 삭제할 수 없습니다."),
     BRAND_NOT_FOUND(Failure.UNIDENTIFIED, "브랜드를 찾을 수 없습니다."),
     BRAND_NOT_AVAILABLE(Failure.INVALID_REFERENCE, "참조할 수 없는 브랜드입니다."),
 

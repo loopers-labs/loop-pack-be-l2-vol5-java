@@ -26,16 +26,14 @@ public class BrandService {
     }
 
     public Brand update(Long brandId, String name, String description) {
-        Brand brand = findAlive(brandId);
+        Brand brand = findAliveForUpdate(brandId);
         brand.update(name, description);
         return brandRepository.save(brand);
     }
 
     public void delete(Long brandId) {
         Brand brand = findAliveForUpdate(brandId);
-        if (productsInBrand.hasAlive(brandId)) {
-            throw new DomainException(DomainError.BRAND_HAS_PRODUCTS);
-        }
+        productsInBrand.deleteAll(brandId);
         brand.delete();
         brandRepository.save(brand);
     }

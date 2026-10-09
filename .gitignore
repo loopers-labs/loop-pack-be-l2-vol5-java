@@ -43,4 +43,5 @@ out/
 .claude/
 
 ### 개인 기록 — 과제 산출물이 아니다
-docs/week2/writing.md
+docs/**/writing*.md
+ref/*

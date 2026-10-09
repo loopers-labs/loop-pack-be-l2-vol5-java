@@ -8,13 +8,22 @@ import com.loopers.application.product.ProductFacade;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.brand.BrandService;
+import com.loopers.domain.common.Quantity;
 import com.loopers.domain.product.Price;
+import com.loopers.domain.product.ProductService;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -28,6 +37,7 @@ class BrandRepositoryIntegrationTest {
     private final DatabaseCleanUp databaseCleanUp;
     private final BrandFacade brandFacade;
     private final EntityManager entityManager;
+    private final ProductService productService;
 
     @Autowired
     BrandRepositoryIntegrationTest(
@@ -36,8 +46,10 @@ class BrandRepositoryIntegrationTest {
         BrandRepository brandRepository,
         DatabaseCleanUp databaseCleanUp,
         BrandFacade brandFacade,
-        EntityManager entityManager
+        EntityManager entityManager,
+        ProductService productService
     ) {
+        this.productService = productService;
         this.brandService = brandService;
         this.productFacade = productFacade;
         this.brandRepository = brandRepository;
@@ -90,15 +102,29 @@ class BrandRepositoryIntegrationTest {
                 .hasFieldOrPropertyWithValue("error", DomainError.BRAND_NOT_FOUND);
     }
 
-    @DisplayName("BRAND-004 · 살아 있는 상품이 있으면 브랜드를 삭제할 수 없다. 재고 0인 상품도 포함한다.")
+    @DisplayName("BRAND-004 · 브랜드를 지우면 연결된 살아 있는 상품이 재고 0인 것까지 함께 삭제된다.")
     @Test
-    void rejectsDeleteWhenAliveProductExists() {
+    void deletesAliveProductsTogether() {
         Long brandId = brandFacade.register("무신사", "패션 플랫폼").getId();
-        productFacade.register(brandId, "코트", Price.of(129_000));
+        Long soldOut = productFacade.register(brandId, "코트", Price.of(129_000)).getId();
+        Long inStock = productFacade.register(brandId, "니트", Price.of(59_000)).getId();
+        productFacade.adjustStock(inStock, Quantity.of(5));
 
-        assertThatThrownBy(() -> brandFacade.delete(brandId)).isInstanceOf(DomainException.class)
-                .hasFieldOrPropertyWithValue("error", DomainError.BRAND_HAS_PRODUCTS);
-        assertThat(brandService.get(brandId).getName()).isEqualTo("무신사");
+        brandFacade.delete(brandId);
+
+        assertThatThrownBy(() -> brandService.get(brandId)).isInstanceOf(DomainException.class)
+                .hasFieldOrPropertyWithValue("error", DomainError.BRAND_NOT_FOUND);
+        for (Long productId : List.of(soldOut, inStock)) {
+            assertThatThrownBy(() -> productService.get(productId)).isInstanceOf(DomainException.class)
+                    .hasFieldOrPropertyWithValue("error", DomainError.PRODUCT_NOT_FOUND);
+            assertThatThrownBy(() -> productFacade.adjustStock(productId, Quantity.of(1)))
+                .as("삭제된 상품의 재고 변경은 거절된다")
+                .isInstanceOf(DomainException.class)
+                    .hasFieldOrPropertyWithValue("error", DomainError.PRODUCT_NOT_FOUND);
+        }
+        assertThat(deletedProductCount(brandId))
+            .as("논리 삭제는 행을 지우지 않는다")
+            .isEqualTo(2L);
     }
 
     @DisplayName("BRAND-004 · 연결된 상품이 전부 삭제되었다면 브랜드도 삭제된다.")
@@ -114,66 +140,89 @@ class BrandRepositoryIntegrationTest {
                 .hasFieldOrPropertyWithValue("error", DomainError.BRAND_NOT_FOUND);
     }
 
-    @DisplayName("다른 브랜드의 상품은 이 브랜드의 삭제를 막지 않는다.")
+    @DisplayName("다른 브랜드와 그 상품은 이 브랜드의 삭제에 영향받지 않는다. 연결 상품이 없는 브랜드도 지워진다.")
     @Test
-    void ignoresOtherBrandsProducts() {
+    void leavesOtherBrandsUntouched() {
         Long brandId = brandFacade.register("무신사", "패션 플랫폼").getId();
         Long other = brandFacade.register("29CM", "셀렉트샵").getId();
-        productFacade.register(other, "코트", Price.of(129_000));
+        Long otherProduct = productFacade.register(other, "코트", Price.of(129_000)).getId();
 
         brandFacade.delete(brandId);
 
         assertThatThrownBy(() -> brandService.get(brandId)).isInstanceOf(DomainException.class)
                 .hasFieldOrPropertyWithValue("error", DomainError.BRAND_NOT_FOUND);
+        assertThat(brandService.get(other).getName()).isEqualTo("29CM");
+        assertThat(productService.get(otherProduct).getName()).isEqualTo("코트");
     }
 
-    @DisplayName("BRAND-004 · 삭제 도중 같은 브랜드로 상품이 등록되어도 둘 중 하나만 성공한다.")
+    @DisplayName("BRAND-004 · 삭제와 같은 브랜드의 상품 등록이 겹쳐도, 삭제된 브랜드 아래 살아 있는 상품은 남지 않는다.")
     @Test
     void doesNotLeaveAliveProductUnderDeletedBrand() throws InterruptedException {
         Long brandId = brandFacade.register("무신사", "패션 플랫폼").getId();
 
-        java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(2);
-        java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
-        java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(2);
-        java.util.concurrent.atomic.AtomicBoolean deleted = new java.util.concurrent.atomic.AtomicBoolean();
-        java.util.concurrent.atomic.AtomicBoolean registered = new java.util.concurrent.atomic.AtomicBoolean();
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch done = new CountDownLatch(2);
+        List<Throwable> unexpected = new CopyOnWriteArrayList<>();
+        try {
+            executor.submit(() -> {
+                try {
+                    start.await();
+                    brandFacade.delete(brandId);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } catch (RuntimeException e) {
+                    unexpected.add(e);
+                } finally {
+                    done.countDown();
+                }
+            });
+            executor.submit(() -> {
+                try {
+                    start.await();
+                    productFacade.register(brandId, "코트", Price.of(129_000));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } catch (DomainException e) {
+                    if (e.error() != DomainError.BRAND_NOT_AVAILABLE) {
+                        unexpected.add(e);
+                    }
+                } catch (RuntimeException e) {
+                    unexpected.add(e);
+                } finally {
+                    done.countDown();
+                }
+            });
 
-        executor.submit(() -> {
-            try {
-                start.await();
-                brandFacade.delete(brandId);
-                deleted.set(true);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            } catch (RuntimeException e) {
-            } finally {
-                done.countDown();
-            }
-        });
-        executor.submit(() -> {
-            try {
-                start.await();
-                productFacade.register(brandId, "코트", Price.of(129_000));
-                registered.set(true);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            } catch (RuntimeException e) {
-            } finally {
-                done.countDown();
-            }
-        });
+            start.countDown();
+            assertThat(done.await(30, TimeUnit.SECONDS)).as("두 요청이 제한 시간 안에 끝난다").isTrue();
+        } finally {
+            executor.shutdownNow();
+        }
 
-        start.countDown();
-        done.await(30, java.util.concurrent.TimeUnit.SECONDS);
-        executor.shutdown();
-
-        assertThat(deleted.get() && registered.get()).isFalse();
+        assertThat(unexpected).as("삭제는 실패하지 않고, 등록은 성공하거나 BRAND_NOT_AVAILABLE 로만 거절된다").isEmpty();
+        assertThat(deletedRowCount(brandId)).isEqualTo(1L);
+        assertThat(aliveProductCount(brandId)).isZero();
     }
 
     private long deletedRowCount(Long id) {
         return ((Number) entityManager
             .createNativeQuery("SELECT COUNT(*) FROM brand WHERE id = :id AND deleted_at IS NOT NULL")
             .setParameter("id", id)
+            .getSingleResult()).longValue();
+    }
+
+    private long deletedProductCount(Long brandId) {
+        return ((Number) entityManager
+            .createNativeQuery("SELECT COUNT(*) FROM product WHERE brand_id = :brandId AND deleted_at IS NOT NULL")
+            .setParameter("brandId", brandId)
+            .getSingleResult()).longValue();
+    }
+
+    private long aliveProductCount(Long brandId) {
+        return ((Number) entityManager
+            .createNativeQuery("SELECT COUNT(*) FROM product WHERE brand_id = :brandId AND deleted_at IS NULL")
+            .setParameter("brandId", brandId)
             .getSingleResult()).longValue();
     }
 }
