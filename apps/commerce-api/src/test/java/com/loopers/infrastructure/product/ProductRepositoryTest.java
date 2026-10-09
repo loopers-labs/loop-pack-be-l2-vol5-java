@@ -242,7 +242,8 @@ class ProductRepositoryTest {
             // arrange
             Product inStock = new Product(1L, "재고 있는 상품", new Price(1000L));
             inStock.changeStock(5);
-            productRepository.save(inStock);
+            // save 는 merge 된 복사본을 반환하므로 식별자는 반환값에서 읽는다
+            Product savedInStock = productRepository.save(inStock);
             Product outOfStock = productRepository.save(new Product(1L, "품절 상품", new Price(1000L)));
             Product deleted = new Product(1L, "삭제된 상품", new Price(1000L));
             deleted.delete();
@@ -254,7 +255,7 @@ class ProductRepositoryTest {
 
             // assert
             assertThat(result).extracting(Product::getId)
-                .containsExactly(inStock.getId(), outOfStock.getId());
+                .containsExactly(savedInStock.getId(), outOfStock.getId());
         }
     }
 

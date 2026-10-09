@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.orm.jpa.JpaSystemException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -74,8 +75,10 @@ class BrandFacadeIntegrationTest {
                     + " CHECK (deleted_at IS NULL OR name <> '" + FAILING_PRODUCT_NAME + "')"
             );
 
-            // act
-            assertThrows(RuntimeException.class, () -> brandFacade.deleteBrand(brandId));
+            // act - MySQL CHECK 위반(3819)은 JpaSystemException 으로 번역되므로, 실패 원인이 위에서 추가한 CHECK 제약인지 메시지로 확인한다
+            JpaSystemException exception =
+                assertThrows(JpaSystemException.class, () -> brandFacade.deleteBrand(brandId));
+            assertThat(exception).rootCause().hasMessageContaining(FAIL_CONSTRAINT);
 
             // assert - 새 트랜잭션에서 재조회해 DB 상태를 확인한다
             assertThat(brandJpaRepository.findById(brandId).orElseThrow().getDeletedAt()).isNull();
