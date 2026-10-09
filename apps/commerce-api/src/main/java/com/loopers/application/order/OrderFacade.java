@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -63,9 +64,9 @@ public class OrderFacade {
         OrderModel order = orderService.getMyOrder(userId, orderId);
         order.requireDraft();
 
-        for (OrderItemModel item : order.getItems()) {
-            productService.deductStock(item.getProductId(), item.getQuantity());
-        }
+        order.getItems().stream()
+            .sorted(Comparator.comparingLong(OrderItemModel::getProductId))
+            .forEach(item -> productService.deductStock(item.getProductId(), item.getQuantity()));
         pointService.use(userId, order.getTotalAmount());
 
         order.confirm();
