@@ -9,6 +9,8 @@ import java.util.Optional;
 public interface ProductRepository {
     Optional<ProductModel> findActiveById(Long id);
 
+    Optional<ProductModel> findActiveByIdWithLock(Long id);
+
     Optional<ProductModel> findById(Long id);
 
     Page<ProductModel> findActiveProducts(Long brandId, ProductSortType sortType, Pageable pageable);
@@ -20,4 +22,6 @@ public interface ProductRepository {
     boolean existsActiveByBrandId(Long brandId);
 
     ProductModel save(ProductModel product);
+
+    List<ProductModel> findAllActiveByBrandId(Long brandId);
 }

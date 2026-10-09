@@ -23,6 +23,11 @@ public class ProductRepositoryImpl implements ProductRepository {
     }
 
     @Override
+    public Optional<ProductModel> findActiveByIdWithLock(Long id) {
+        return productJpaRepository.findByIdAndDeletedAtIsNullWithLock(id);
+    }
+
+    @Override
     public Optional<ProductModel> findById(Long id) {
         return productJpaRepository.findById(id);
     }
@@ -55,4 +60,8 @@ public class ProductRepositoryImpl implements ProductRepository {
     public ProductModel save(ProductModel product) {
         return productJpaRepository.save(product);
     }
+
+    @Override
+    public List<ProductModel> findAllActiveByBrandId(Long brandId) { return productJpaRepository.findByBrandIdAndDeletedAtIsNull(brandId); }
+
 }

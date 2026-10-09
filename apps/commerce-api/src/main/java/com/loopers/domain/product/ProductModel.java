@@ -98,4 +98,6 @@ public class ProductModel extends BaseEntity {
         }
         return price;
     }
+
+
 }
