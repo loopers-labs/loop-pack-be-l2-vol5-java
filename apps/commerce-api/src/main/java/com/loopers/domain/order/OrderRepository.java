@@ -10,6 +10,8 @@ public interface OrderRepository {
 
     Optional<OrderModel> findByIdAndUserId(Long id, Long userId);
 
+    Optional<OrderModel> findByIdAndUserIdForUpdate(Long id, Long userId);
+
     Optional<OrderModel> findById(Long id);
 
     Page<OrderModel> findAllByUserId(Long userId, Pageable pageable);

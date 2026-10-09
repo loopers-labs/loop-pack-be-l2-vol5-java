@@ -113,18 +113,72 @@ class AdminV1ApiE2ETest {
                 .andExpect(status().isForbidden());
         }
 
-        @DisplayName("연결된 삭제되지 않은 상품이 있으면, 삭제 요청 시 409를 응답한다.")
+        @DisplayName("연결된 삭제되지 않은 상품이 있으면, 삭제 요청 시 브랜드와 상품을 함께 삭제한다.")
         @Test
-        void returns409_whenBrandHasActiveProduct() throws Exception {
+        void deletesBrandAndProducts_whenBrandHasActiveProduct() throws Exception {
             // arrange
             BrandModel brand = brandJpaRepository.save(new BrandModel("나이키"));
-            productJpaRepository.save(new ProductModel(brand.getId(), "runner", 10_000L, 5));
+            ProductModel product = productJpaRepository.save(new ProductModel(brand.getId(), "runner", 10_000L, 5));
 
-            // act, assert
+            // act
             mvc.perform(delete("/api-admin/v1/brands/" + brand.getId())
                     .with(user("admin").roles("ADMIN"))
                     .with(csrf()))
-                .andExpect(status().isConflict());
+                .andExpect(status().isOk());
+
+            // assert
+            assertThat(brandJpaRepository.findById(brand.getId()).orElseThrow().getDeletedAt()).isNotNull();
+            assertThat(productJpaRepository.findById(product.getId()).orElseThrow().getDeletedAt()).isNotNull();
+        }
+
+        @DisplayName("연결된 상품이 없는 브랜드도, 삭제 요청 시 정상 처리한다.")
+        @Test
+        void deletesBrand_whenBrandHasNoProduct() throws Exception {
+            // arrange
+            BrandModel brand = brandJpaRepository.save(new BrandModel("나이키"));
+
+            // act
+            mvc.perform(delete("/api-admin/v1/brands/" + brand.getId())
+                    .with(user("admin").roles("ADMIN"))
+                    .with(csrf()))
+                .andExpect(status().isOk());
+
+            // assert
+            assertThat(brandJpaRepository.findById(brand.getId()).orElseThrow().getDeletedAt()).isNotNull();
+        }
+
+        @DisplayName("존재하지 않는 브랜드를 삭제하면, 404를 응답하고 다른 브랜드는 그대로다.")
+        @Test
+        void returns404_whenBrandDoesNotExist() throws Exception {
+            // arrange
+            BrandModel other = brandJpaRepository.save(new BrandModel("아디다스"));
+
+            // act
+            mvc.perform(delete("/api-admin/v1/brands/999")
+                    .with(user("admin").roles("ADMIN"))
+                    .with(csrf()))
+                .andExpect(status().isNotFound());
+
+            // assert
+            assertThat(brandJpaRepository.findById(other.getId()).orElseThrow().getDeletedAt()).isNull();
+        }
+
+        @DisplayName("일반 사용자가 삭제를 요청하면, 403을 응답하고 브랜드와 상품은 그대로다.")
+        @Test
+        void returns403_andKeepsData_whenNonAdminUserDeletesBrand() throws Exception {
+            // arrange
+            BrandModel brand = brandJpaRepository.save(new BrandModel("나이키"));
+            ProductModel product = productJpaRepository.save(new ProductModel(brand.getId(), "runner", 10_000L, 5));
+
+            // act
+            mvc.perform(delete("/api-admin/v1/brands/" + brand.getId())
+                    .with(user("customer").roles("USER"))
+                    .with(csrf()))
+                .andExpect(status().isForbidden());
+
+            // assert
+            assertThat(brandJpaRepository.findById(brand.getId()).orElseThrow().getDeletedAt()).isNull();
+            assertThat(productJpaRepository.findById(product.getId()).orElseThrow().getDeletedAt()).isNull();
         }
     }
 
@@ -181,6 +235,44 @@ class AdminV1ApiE2ETest {
             assertThat(deleted.getDeletedAt()).isNotNull();
         }
 
+        @DisplayName("삭제된 상품의 정보를 수정하면, 404를 응답하고 값은 그대로다.")
+        @Test
+        void returns404_whenUpdatingDeletedProduct() throws Exception {
+            // arrange
+            ProductModel product = saveDeletedProduct();
+            String updateBody = objectMapper.writeValueAsString(Map.of("name", "runner-pro", "price", 20_000));
+
+            // act
+            mvc.perform(put("/api-admin/v1/products/" + product.getId())
+                    .with(user("admin").roles("ADMIN"))
+                    .with(csrf())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(updateBody))
+                .andExpect(status().isNotFound());
+
+            // assert
+            assertThat(productJpaRepository.findById(product.getId()).orElseThrow().getName()).isEqualTo("runner");
+        }
+
+        @DisplayName("삭제된 상품의 재고를 변경하면, 404를 응답하고 재고는 그대로다.")
+        @Test
+        void returns404_whenChangingStockOfDeletedProduct() throws Exception {
+            // arrange
+            ProductModel product = saveDeletedProduct();
+            String stockBody = objectMapper.writeValueAsString(Map.of("stock", 100));
+
+            // act
+            mvc.perform(patch("/api-admin/v1/products/" + product.getId() + "/stock")
+                    .with(user("admin").roles("ADMIN"))
+                    .with(csrf())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(stockBody))
+                .andExpect(status().isNotFound());
+
+            // assert
+            assertThat(productJpaRepository.findById(product.getId()).orElseThrow().getStock()).isEqualTo(5);
+        }
+
         @DisplayName("존재하지 않는 브랜드로 생성을 요청하면, 404를 응답한다.")
         @Test
         void returns404_whenBrandDoesNotExist() throws Exception {
@@ -209,6 +301,13 @@ class AdminV1ApiE2ETest {
         void returns403_whenRequestedByUnauthenticatedUser() throws Exception {
             mvc.perform(get("/api-admin/v1/products"))
                 .andExpect(status().isForbidden());
+        }
+
+        private ProductModel saveDeletedProduct() {
+            BrandModel brand = brandJpaRepository.save(new BrandModel("나이키"));
+            ProductModel product = new ProductModel(brand.getId(), "runner", 10_000L, 5);
+            product.delete();
+            return productJpaRepository.save(product);
         }
     }
 

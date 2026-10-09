@@ -48,15 +48,22 @@ public class BrandService {
     }
 
     @Transactional
+    public BrandModel getBrandForUpdate(Long id) {
+        return brandRepository.findByIdForUpdate(id)
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[id = " + id + "] 브랜드를 찾을 수 없습니다."));
+    }
+
+    @Transactional
     public BrandModel updateBrand(Long id, String name) {
-        BrandModel brand = getBrandForAdmin(id);
+        BrandModel brand = getBrandForUpdate(id);
         brand.updateName(name);
         return brand;
     }
 
     @Transactional
     public void deleteBrand(Long id) {
-        BrandModel brand = getBrandForAdmin(id);
+        BrandModel brand = getBrandForUpdate(id);
         brand.delete();
+        brandRepository.save(brand);
     }
 }

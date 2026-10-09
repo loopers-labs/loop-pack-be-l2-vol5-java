@@ -51,11 +51,6 @@ public class ProductService {
         return productRepository.findAllActiveByIds(ids);
     }
 
-    @Transactional(readOnly = true)
-    public boolean hasActiveProductsByBrand(Long brandId) {
-        return productRepository.existsActiveByBrandId(brandId);
-    }
-
     @Transactional
     public ProductModel createProduct(Long brandId, String name, Long price, int stock) {
         return productRepository.save(new ProductModel(brandId, name, price, stock));
@@ -63,27 +58,44 @@ public class ProductService {
 
     @Transactional
     public ProductModel updateProduct(Long id, String name, Long price) {
-        ProductModel product = getProductForAdmin(id);
+        ProductModel product = getActiveProductForUpdate(id);
         product.updateNameAndPrice(name, price);
         return product;
     }
 
     @Transactional
     public ProductModel changeStock(Long id, int quantity) {
-        ProductModel product = getProductForAdmin(id);
+        ProductModel product = getActiveProductForUpdate(id);
         product.changeStock(quantity);
         return product;
     }
 
     @Transactional
     public void deleteProduct(Long id) {
-        ProductModel product = getProductForAdmin(id);
+        ProductModel product = productRepository.findByIdForUpdate(id)
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[id = " + id + "] 상품을 찾을 수 없습니다."));
         product.delete();
+    }
+
+    // id 오름차순으로 하나씩 잠근 뒤, 그 사이 삭제된 상품은 건너뛴다
+    @Transactional
+    public void deleteAllActiveByBrand(Long brandId) {
+        for (Long id : productRepository.findActiveIdsByBrandId(brandId)) {
+            productRepository.findByIdForUpdate(id)
+                .filter(product -> product.getDeletedAt() == null)
+                .ifPresent(ProductModel::delete);
+        }
     }
 
     @Transactional
     public void decreaseStock(Long id, int quantity) {
-        ProductModel product = getProduct(id);
+        ProductModel product = getActiveProductForUpdate(id);
         product.decreaseStock(quantity);
+    }
+
+    private ProductModel getActiveProductForUpdate(Long id) {
+        return productRepository.findByIdForUpdate(id)
+            .filter(product -> product.getDeletedAt() == null)
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[id = " + id + "] 상품을 찾을 수 없습니다."));
     }
 }

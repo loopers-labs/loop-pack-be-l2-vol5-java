@@ -43,9 +43,10 @@ public class OrderService {
         return orderRepository.save(new OrderModel(userId, items));
     }
 
-    @Transactional(readOnly = true)
+    // 확정할 주문을 잠근 뒤에 DRAFT인지 확인한다
+    @Transactional
     public OrderModel getDraftOrderOwnedBy(Long id, Long userId) {
-        return orderRepository.findByIdAndUserId(id, userId)
+        return orderRepository.findByIdAndUserIdForUpdate(id, userId)
             .filter(order -> order.getStatus() == OrderStatus.DRAFT)
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[id = " + id + "] 확정 가능한 주문을 찾을 수 없습니다."));
     }

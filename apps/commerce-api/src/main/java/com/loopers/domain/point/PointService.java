@@ -19,7 +19,7 @@ public class PointService {
 
     @Transactional
     public Long charge(Long userId, Long amount) {
-        PointModel point = pointRepository.findByUserId(userId)
+        PointModel point = pointRepository.findByUserIdForUpdate(userId)
             .orElseGet(() -> new PointModel(userId));
         point.charge(amount);
         return pointRepository.save(point).getBalance();
@@ -27,7 +27,7 @@ public class PointService {
 
     @Transactional
     public void pay(Long userId, Long amount) {
-        PointModel point = pointRepository.findByUserId(userId)
+        PointModel point = pointRepository.findByUserIdForUpdate(userId)
             .orElseGet(() -> new PointModel(userId));
         point.pay(amount);
         pointRepository.save(point);

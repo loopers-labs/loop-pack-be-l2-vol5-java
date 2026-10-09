@@ -13,6 +13,8 @@ public interface BrandRepository {
 
     Optional<BrandModel> findById(Long id);
 
+    Optional<BrandModel> findByIdForUpdate(Long id);
+
     Page<BrandModel> findAll(Pageable pageable);
 
     List<BrandModel> findAllByIds(List<Long> ids);

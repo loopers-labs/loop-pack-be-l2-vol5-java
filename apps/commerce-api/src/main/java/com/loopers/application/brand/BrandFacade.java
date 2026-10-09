@@ -3,12 +3,11 @@ package com.loopers.application.brand;
 import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.brand.BrandService;
 import com.loopers.domain.product.ProductService;
-import com.loopers.support.error.CoreException;
-import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 @RequiredArgsConstructor
 @Component
@@ -40,10 +39,11 @@ public class BrandFacade {
         return BrandAdminInfo.from(brand);
     }
 
+    @Transactional
     public void deleteBrand(Long id) {
-        if (productService.hasActiveProductsByBrand(id)) {
-            throw new CoreException(ErrorType.CONFLICT, "[id = " + id + "] 삭제되지 않은 상품이 연결된 브랜드는 삭제할 수 없습니다.");
-        }
+        // 잠금 순서: 브랜드 → 상품
+        brandService.getBrandForUpdate(id);
+        productService.deleteAllActiveByBrand(id);
         brandService.deleteBrand(id);
     }
 }

@@ -32,6 +32,11 @@ public class BrandRepositoryImpl implements BrandRepository {
     }
 
     @Override
+    public Optional<BrandModel> findByIdForUpdate(Long id) {
+        return brandJpaRepository.findByIdForUpdate(id);
+    }
+
+    @Override
     public Page<BrandModel> findAll(Pageable pageable) {
         return brandJpaRepository.findAll(pageable);
     }

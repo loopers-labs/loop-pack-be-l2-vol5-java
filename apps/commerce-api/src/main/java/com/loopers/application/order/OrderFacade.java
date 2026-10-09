@@ -14,6 +14,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -75,7 +76,11 @@ public class OrderFacade {
     public OrderInfo confirmOrder(Long orderId, Long userId) {
         OrderModel order = orderService.getDraftOrderOwnedBy(orderId, userId);
 
-        for (OrderItem item : order.getItems()) {
+        // 상품은 id 오름차순으로 잠근다
+        List<OrderItem> items = order.getItems().stream()
+            .sorted(Comparator.comparing(OrderItem::getProductId))
+            .toList();
+        for (OrderItem item : items) {
             productService.decreaseStock(item.getProductId(), item.getQuantity());
         }
 
