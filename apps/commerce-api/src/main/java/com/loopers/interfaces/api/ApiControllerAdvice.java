@@ -35,7 +35,7 @@ public class ApiControllerAdvice {
         String type = e.getRequiredType() != null ? e.getRequiredType().getSimpleName() : "unknown";
         String value = e.getValue() != null ? e.getValue().toString() : "null";
         String message = String.format("요청 파라미터 '%s' (타입: %s)의 값 '%s'이(가) 잘못되었습니다.", name, type, value);
-        return failureResponse(ErrorType.BAD_REQUEST, message);
+        return failureResponse(ErrorType.INVALID_INPUT, message);
     }
 
     @ExceptionHandler
@@ -43,7 +43,7 @@ public class ApiControllerAdvice {
         String name = e.getParameterName();
         String type = e.getParameterType();
         String message = String.format("필수 요청 파라미터 '%s' (타입: %s)가 누락되었습니다.", name, type);
-        return failureResponse(ErrorType.BAD_REQUEST, message);
+        return failureResponse(ErrorType.INVALID_INPUT, message);
     }
 
     @ExceptionHandler
@@ -88,7 +88,7 @@ public class ApiControllerAdvice {
             errorMessage = "요청 본문을 처리하는 중 오류가 발생했습니다. JSON 메세지 규격을 확인해주세요.";
         }
 
-        return failureResponse(ErrorType.BAD_REQUEST, errorMessage);
+        return failureResponse(ErrorType.INVALID_INPUT, errorMessage);
     }
 
     @ExceptionHandler
@@ -96,9 +96,9 @@ public class ApiControllerAdvice {
         String missingParams = extractMissingParameter(e.getReason() != null ? e.getReason() : "");
         if (!missingParams.isEmpty()) {
             String message = String.format("필수 요청 값 '%s'가 누락되었습니다.", missingParams);
-            return failureResponse(ErrorType.BAD_REQUEST, message);
+            return failureResponse(ErrorType.INVALID_INPUT, message);
         } else {
-            return failureResponse(ErrorType.BAD_REQUEST, null);
+            return failureResponse(ErrorType.INVALID_INPUT, null);
         }
     }
 
@@ -120,7 +120,7 @@ public class ApiControllerAdvice {
     }
 
     private ResponseEntity<ApiResponse<?>> failureResponse(ErrorType errorType, String errorMessage) {
-        return ResponseEntity.status(errorType.getStatus())
+        return ResponseEntity.status(ErrorTypeHttpStatusMapper.toHttpStatus(errorType))
             .body(ApiResponse.fail(errorType.getCode(), errorMessage != null ? errorMessage : errorType.getMessage()));
     }
 }

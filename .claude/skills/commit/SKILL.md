@@ -1,16 +1,16 @@
 ---
-description: '이모지와 컨벤셔널 커밋 메시지로 잘 포맷된 커밋을 생성합니다'
+name: commit
+description: '이모지와 컨벤셔널 커밋 메시지로 잘 포맷된 git 커밋을 생성합니다. 변경사항을 분석해 필요시 원자적 커밋으로 분할합니다.'
+when_to_use: '사용자가 커밋을 요청할 때 ("커밋해줘", "커밋하자", "변경사항 커밋", "commit") 사용한다.'
 allowed-tools:
-  [
-    'Bash(git add:*)',
-    'Bash(git status:*)',
-    'Bash(git commit:*)',
-    'Bash(git diff:*)',
-    'Bash(git log:*)',
-  ]
+  - Bash(git add:*)
+  - Bash(git status:*)
+  - Bash(git commit:*)
+  - Bash(git diff:*)
+  - Bash(git log:*)
 ---
 
-# Claude 명령어: Commit
+# Commit
 
 이모지와 컨벤셔널 커밋 메시지로 잘 포맷된 커밋을 생성합니다.
 

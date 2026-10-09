@@ -17,10 +17,10 @@ public class ExampleModel extends BaseEntity {
 
     public ExampleModel(String name, String description) {
         if (name == null || name.isBlank()) {
-            throw new CoreException(ErrorType.BAD_REQUEST, "이름은 비어있을 수 없습니다.");
+            throw new CoreException(ErrorType.INVALID_INPUT, "이름은 비어있을 수 없습니다.");
         }
         if (description == null || description.isBlank()) {
-            throw new CoreException(ErrorType.BAD_REQUEST, "설명은 비어있을 수 없습니다.");
+            throw new CoreException(ErrorType.INVALID_INPUT, "설명은 비어있을 수 없습니다.");
         }
 
         this.name = name;
@@ -37,7 +37,7 @@ public class ExampleModel extends BaseEntity {
 
     public void update(String newDescription) {
         if (newDescription == null || newDescription.isBlank()) {
-            throw new CoreException(ErrorType.BAD_REQUEST, "설명은 비어있을 수 없습니다.");
+            throw new CoreException(ErrorType.INVALID_INPUT, "설명은 비어있을 수 없습니다.");
         }
         this.description = newDescription;
     }

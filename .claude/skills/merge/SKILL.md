@@ -1,29 +1,29 @@
 ---
-description: '브랜치를 안전하게 병합하고 충돌을 해결합니다'
+name: merge
+description: '브랜치를 안전하게 병합하고 충돌을 해결합니다. 병합 전 상태 점검, 전략 선택(fast-forward/no-ff/squash), 충돌 해결 가이드를 제공합니다.'
+when_to_use: '사용자가 브랜치 병합을 요청할 때 ("병합해줘", "merge해줘", "브랜치 합쳐줘") 사용한다.'
 allowed-tools:
-  [
-    'Bash(git merge:*)',
-    'Bash(git status:*)',
-    'Bash(git diff:*)',
-    'Bash(git log:*)',
-    'Bash(git branch:*)',
-    'Bash(git fetch:*)',
-    'Bash(git pull:*)',
-    'Bash(git reset:*)',
-    'Bash(git checkout:*)',
-    'Bash(git stash:*)',
-  ]
+  - Bash(git merge:*)
+  - Bash(git status:*)
+  - Bash(git diff:*)
+  - Bash(git log:*)
+  - Bash(git branch:*)
+  - Bash(git fetch:*)
+  - Bash(git pull:*)
+  - Bash(git reset:*)
+  - Bash(git checkout:*)
+  - Bash(git stash:*)
 ---
 
-# Claude 명령어: Merge
+# Merge
 
 브랜치를 안전하게 병합하고 충돌을 자동으로 해결하는 Git 병합 전문 도구입니다.
 
 ## 사용법
 
 ```
-/git:merge [브랜치명]           # 지정된 브랜치를 현재 브랜치에 병합
-/git:merge                    # 대화형 병합 메뉴
+/merge [브랜치명]           # 지정된 브랜치를 현재 브랜치에 병합
+/merge                    # 대화형 병합 메뉴
 ```
 
 ## 주요 기능
@@ -232,8 +232,8 @@ renamed:    src/old-name.js -> src/new-name2.js
 ### 병합 취소 및 복구
 
 ```
-/git:merge --abort    # 진행 중인 병합 중단
-/git:merge --reset    # 병합 전 상태로 복구
+/merge --abort    # 진행 중인 병합 중단
+/merge --reset    # 병합 전 상태로 복구
 ```
 
 ### 백업 및 복구점
@@ -253,8 +253,8 @@ renamed:    src/old-name.js -> src/new-name2.js
 ### 부분 병합
 
 ```
-/git:merge --pick [커밋SHA]    # 특정 커밋만 선택적 병합
-/git:merge --range [시작]..[끝] # 커밋 범위 지정 병합
+/merge --pick [커밋SHA]    # 특정 커밋만 선택적 병합
+/merge --range [시작]..[끝] # 커밋 범위 지정 병합
 ```
 
 ### 병합 전략 옵션
@@ -277,20 +277,20 @@ renamed:    src/old-name.js -> src/new-name2.js
 ### 기본 병합
 
 ```
-/git:merge feature/user-auth
+/merge feature/user-auth
 ```
 
 ### 병합 전략 지정
 
 ```
-/git:merge --no-ff feature/user-auth    # No-fast-forward
-/git:merge --squash feature/user-auth   # Squash merge
+/merge --no-ff feature/user-auth    # No-fast-forward
+/merge --squash feature/user-auth   # Squash merge
 ```
 
 ### 충돌 해결 모드
 
 ```
-/git:merge --resolve    # 진행 중인 충돌 해결 계속
+/merge --resolve    # 진행 중인 충돌 해결 계속
 ```
 
 ## 문제 해결
