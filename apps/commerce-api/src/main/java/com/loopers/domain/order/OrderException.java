@@ -3,6 +3,7 @@ package com.loopers.domain.order;
 public class OrderException extends RuntimeException {
     public enum Reason {
         ORDER_NOT_FOUND,
+        ORDER_ALREADY_CONFIRMED,
         AMOUNT_LIMIT_EXCEEDED,
         INVALID_ITEMS
     }

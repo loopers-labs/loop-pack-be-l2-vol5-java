@@ -70,15 +70,20 @@ class OrderTest {
     }
 
     @Test
-    void confirmsOnceAndPreservesFirstPaymentAndTime() {
+    void rejectsReconfirmationAndPreservesFirstPaymentAndTime() {
         Order order = order();
         ZonedDateTime first = ZonedDateTime.parse("2026-09-18T00:00:00Z");
         order.confirm(first);
-        order.confirm(first.plusHours(1));
+        List<OrderItem> originalItems = order.getItems();
+
+        assertOrderReason(() -> order.confirm(first.plusHours(1)), OrderException.Reason.ORDER_ALREADY_CONFIRMED);
+
         assertAll(
             () -> assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED),
+            () -> assertThat(order.getTotalAmount()).isEqualTo(200),
             () -> assertThat(order.getPaidAmount()).isEqualTo(200),
-            () -> assertThat(order.getConfirmedAt()).isEqualTo(first)
+            () -> assertThat(order.getConfirmedAt()).isEqualTo(first),
+            () -> assertThat(order.getItems()).containsExactlyElementsOf(originalItems)
         );
     }
 

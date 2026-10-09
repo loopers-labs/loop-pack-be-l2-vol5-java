@@ -41,6 +41,7 @@ public class CommerceErrors {
             return switch (order.getReason()) {
                 case INVALID_ITEMS -> invalid();
                 case ORDER_NOT_FOUND -> new Failure(404, "ORDER_NOT_FOUND", "주문을 찾을 수 없습니다.");
+                case ORDER_ALREADY_CONFIRMED -> new Failure(409, "ORDER_ALREADY_CONFIRMED", "이미 확정된 주문입니다.");
                 case AMOUNT_LIMIT_EXCEEDED -> new Failure(409, "ORDER_AMOUNT_LIMIT_EXCEEDED", "주문 금액의 허용 범위를 초과합니다.");
             };
         }
@@ -80,10 +81,8 @@ public class CommerceErrors {
         if (exception instanceof BrandQueryException || exception instanceof BrandStateException) {
             return new Failure(404, "BRAND_NOT_FOUND", "브랜드를 찾을 수 없습니다.");
         }
-        if (exception instanceof BrandDeletionException deletion) {
-            return deletion.getReason() == BrandDeletionException.Reason.BRAND_NOT_FOUND
-                ? new Failure(404, "BRAND_NOT_FOUND", "브랜드를 찾을 수 없습니다.")
-                : new Failure(409, "BRAND_HAS_PRODUCTS", "삭제되지 않은 상품이 연결되어 있습니다.");
+        if (exception instanceof BrandDeletionException) {
+            return new Failure(404, "BRAND_NOT_FOUND", "브랜드를 찾을 수 없습니다.");
         }
         if (exception instanceof InvalidRequestException || exception instanceof BrandNameException
             || exception instanceof MethodArgumentTypeMismatchException

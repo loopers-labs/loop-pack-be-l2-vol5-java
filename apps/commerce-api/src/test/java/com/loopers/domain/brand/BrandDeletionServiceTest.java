@@ -7,11 +7,13 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.time.ZonedDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.LongPredicate;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiFunction;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -22,13 +24,13 @@ class BrandDeletionServiceTest {
     private static final long BRAND_ID = 10L;
     private static final ZonedDateTime DELETED_AT = ZonedDateTime.parse("2026-09-18T12:00:00+09:00");
 
-    @DisplayName("BRAND-DELETE-01: 미삭제 상품이 없으면 조회한 브랜드를 삭제 상태로 변경한다.")
+    @DisplayName("W3-BRAND-DOMAIN-01: 변경할 상품이 없어도 조회한 브랜드를 삭제 상태로 변경한다.")
     @Test
     void deletesBrandWithoutNonDeletedProducts() {
         Brand brand = new Brand("Original Brand");
         Map<Long, Brand> brands = Map.of(BRAND_ID, brand);
         BrandDeletionService service = new BrandDeletionService(
-            lookupRepository(brands), productLookup(id -> false));
+            lookupRepository(brands), productDeletion((id, timestamp) -> 0));
 
         Brand result = service.delete(BRAND_ID, DELETED_AT);
 
@@ -40,31 +42,41 @@ class BrandDeletionServiceTest {
         );
     }
 
-    @DisplayName("BRAND-DELETE-02: 미삭제 상품이 존재하면 삭제를 거절하고 브랜드를 보존한다.")
+    @DisplayName("W3-BRAND-DOMAIN-02: 연결 상품을 같은 삭제 시각으로 변경한 뒤 브랜드를 삭제한다.")
     @Test
-    void rejectsDeletionWhenNonDeletedProductsExist() {
+    void deletesBrandAfterSoftDeletingNonDeletedProducts() {
         Brand brand = new Brand("Original Brand");
         Map<Long, Brand> brands = Map.of(BRAND_ID, brand);
+        AtomicInteger calls = new AtomicInteger();
+        // W3는 상품 존재 시 거절하던 W2 계약을 브랜드·상품 일괄 논리 삭제로 대체한다.
         BrandDeletionService service = new BrandDeletionService(
-            lookupRepository(brands), productLookup(id -> true));
+            lookupRepository(brands), productDeletion((id, timestamp) -> {
+                calls.incrementAndGet();
+                assertThat(id).isEqualTo(BRAND_ID);
+                assertThat(timestamp).isEqualTo(DELETED_AT);
+                assertThat(brand.isDeleted()).isFalse();
+                return 2;
+            }));
+
+        Brand result = service.delete(BRAND_ID, DELETED_AT);
 
         assertAll(
-            () -> assertDeletionRejected(() -> service.delete(BRAND_ID, DELETED_AT),
-                BrandDeletionException.Reason.NON_DELETED_PRODUCTS_EXIST),
-            () -> assertThat(brand.isDeleted()).isFalse(),
-            () -> assertThat(brand.getDeletedAt()).isNull(),
+            () -> assertThat(result).isSameAs(brand),
+            () -> assertThat(calls.get()).isEqualTo(1),
+            () -> assertThat(brand.isDeleted()).isTrue(),
+            () -> assertThat(brand.getDeletedAt()).isEqualTo(DELETED_AT),
             () -> assertThat(brand.getName()).isEqualTo("Original Brand")
         );
     }
 
-    @DisplayName("BRAND-DELETE-03: 없는 브랜드는 상품 조회 없이 거절하고 다른 브랜드를 유지한다.")
+    @DisplayName("W3-BRAND-DOMAIN-03: 없는 브랜드는 상품 변경 없이 거절하고 다른 브랜드를 유지한다.")
     @Test
-    void rejectsMissingBrandBeforeProductLookup() {
+    void rejectsMissingBrandBeforeProductDeletion() {
         Brand otherBrand = new Brand("Other Brand");
         Map<Long, Brand> brands = Map.of(20L, otherBrand);
         BrandDeletionService service = new BrandDeletionService(
-            lookupRepository(brands), productLookup(id -> {
-                throw new AssertionError("없는 브랜드의 상품을 조회하면 안 된다.");
+            lookupRepository(brands), productDeletion((id, timestamp) -> {
+                throw new AssertionError("없는 브랜드의 상품을 변경하면 안 된다.");
             }));
 
         assertAll(
@@ -76,15 +88,15 @@ class BrandDeletionServiceTest {
         );
     }
 
-    @DisplayName("BRAND-DELETE-04: 재삭제는 상품을 다시 조회하지 않고 최초 상태를 반환한다.")
+    @DisplayName("W3-BRAND-DOMAIN-04: 이미 삭제된 브랜드는 상품 변경 없이 최초 상태를 반환한다.")
     @Test
-    void returnsDeletedBrandWithoutLookingUpProductsAgain() {
+    void returnsDeletedBrandWithoutDeletingProductsAgain() {
         Brand brand = new Brand("Original Brand");
         brand.delete(DELETED_AT);
         Map<Long, Brand> brands = Map.of(BRAND_ID, brand);
         BrandDeletionService service = new BrandDeletionService(
-            lookupRepository(brands), productLookup(id -> {
-                throw new AssertionError("재삭제에서 상품을 다시 조회하면 안 된다.");
+            lookupRepository(brands), productDeletion((id, timestamp) -> {
+                throw new AssertionError("재삭제에서 상품을 다시 변경하면 안 된다.");
             }));
 
         Brand result = service.delete(BRAND_ID, DELETED_AT.plusDays(1));
@@ -97,35 +109,38 @@ class BrandDeletionServiceTest {
         );
     }
 
-    @DisplayName("BRAND-DELETE-05: 상품 조회가 실패하면 브랜드 상태를 변경하지 않는다.")
+    @DisplayName("W3-BRAND-DOMAIN-05: 상품 일괄 변경이 실패하면 브랜드 상태를 변경하지 않는다.")
     @Test
-    void preservesBrandWhenProductLookupFails() {
+    void preservesBrandWhenProductDeletionFails() {
         Brand brand = new Brand("Original Brand");
         Map<Long, Brand> brands = Map.of(BRAND_ID, brand);
-        IllegalStateException lookupFailure = new IllegalStateException("상품 조회 실패");
+        IllegalStateException deletionFailure = new IllegalStateException("상품 일괄 변경 실패");
         BrandDeletionService service = new BrandDeletionService(
-            lookupRepository(brands), productLookup(id -> {
-                throw lookupFailure;
+            lookupRepository(brands), productDeletion((id, timestamp) -> {
+                throw deletionFailure;
             }));
 
         assertAll(
-            () -> assertThatThrownBy(() -> service.delete(BRAND_ID, DELETED_AT)).isSameAs(lookupFailure),
+            () -> assertThatThrownBy(() -> service.delete(BRAND_ID, DELETED_AT)).isSameAs(deletionFailure),
             () -> assertThat(brand.isDeleted()).isFalse(),
             () -> assertThat(brand.getDeletedAt()).isNull(),
             () -> assertThat(brand.getName()).isEqualTo("Original Brand")
         );
     }
 
-    @DisplayName("BRAND-DELETE-06: 삭제 대상 브랜드의 상품 존재 여부만 검사한다.")
+    @DisplayName("W3-BRAND-DOMAIN-06: 요청한 브랜드의 상품 변경만 위임하고 다른 브랜드는 보존한다.")
     @Test
-    void checksProductsOfTheRequestedBrandOnly() {
+    void delegatesProductDeletionForTheRequestedBrandOnly() {
         Brand brand = new Brand("Original Brand");
         Brand otherBrand = new Brand("Other Brand");
         long otherBrandId = 20L;
         Map<Long, Brand> brands = Map.of(BRAND_ID, brand, otherBrandId, otherBrand);
-        Set<Long> brandsWithProducts = Set.of(otherBrandId);
+        List<Long> requestedBrandIds = new ArrayList<>();
         BrandDeletionService service = new BrandDeletionService(
-            lookupRepository(brands), productLookup(brandsWithProducts::contains));
+            lookupRepository(brands), productDeletion((id, timestamp) -> {
+                requestedBrandIds.add(id);
+                return 2;
+            }));
 
         Brand result = service.delete(BRAND_ID, DELETED_AT);
 
@@ -134,25 +149,34 @@ class BrandDeletionServiceTest {
             () -> assertThat(brand.isDeleted()).isTrue(),
             () -> assertThat(brand.getDeletedAt()).isEqualTo(DELETED_AT),
             () -> assertThat(brand.getName()).isEqualTo("Original Brand"),
-            () -> assertDeletionRejected(() -> service.delete(otherBrandId, DELETED_AT),
-                BrandDeletionException.Reason.NON_DELETED_PRODUCTS_EXIST),
+            () -> assertThat(requestedBrandIds).containsExactly(BRAND_ID),
             () -> assertThat(otherBrand.isDeleted()).isFalse(),
             () -> assertThat(otherBrand.getDeletedAt()).isNull(),
             () -> assertThat(otherBrand.getName()).isEqualTo("Other Brand")
         );
     }
 
-    @DisplayName("BRAND-DELETE-07: 미삭제 상품이 없어지면 거절됐던 브랜드도 다시 삭제할 수 있다.")
+    @DisplayName("W3-BRAND-DOMAIN-07: 상품 변경 실패 후 다시 요청하면 성공한 요청의 시각으로 삭제한다.")
     @Test
-    void deletesAfterNonDeletedProductsAreRemoved() {
+    void deletesOnRetryAfterProductDeletionFailure() {
         Brand brand = new Brand("Original Brand");
         Map<Long, Brand> brands = Map.of(BRAND_ID, brand);
-        AtomicBoolean productsExist = new AtomicBoolean(true);
+        AtomicBoolean failDeletion = new AtomicBoolean(true);
+        List<ZonedDateTime> deletionAttempts = new ArrayList<>();
+        IllegalStateException failure = new IllegalStateException("상품 변경 실패");
         BrandDeletionService service = new BrandDeletionService(
-            lookupRepository(brands), productLookup(id -> productsExist.get()));
-        assertDeletionRejected(() -> service.delete(BRAND_ID, DELETED_AT),
-            BrandDeletionException.Reason.NON_DELETED_PRODUCTS_EXIST);
-        productsExist.set(false);
+            lookupRepository(brands), productDeletion((id, timestamp) -> {
+                deletionAttempts.add(timestamp);
+                if (failDeletion.get()) {
+                    throw failure;
+                }
+                return 2;
+            }));
+        assertThatThrownBy(() -> service.delete(BRAND_ID, DELETED_AT)).isSameAs(failure);
+        assertThat(brand.isDeleted()).isFalse();
+        assertThat(brand.getDeletedAt()).isNull();
+        assertThat(brand.getName()).isEqualTo("Original Brand");
+        failDeletion.set(false);
         ZonedDateTime successfulDeletionTime = DELETED_AT.plusDays(1);
 
         Brand result = service.delete(BRAND_ID, successfulDeletionTime);
@@ -161,6 +185,30 @@ class BrandDeletionServiceTest {
             () -> assertThat(result).isSameAs(brand),
             () -> assertThat(brand.isDeleted()).isTrue(),
             () -> assertThat(brand.getDeletedAt()).isEqualTo(successfulDeletionTime),
+            () -> assertThat(deletionAttempts).containsExactly(DELETED_AT, successfulDeletionTime),
+            () -> assertThat(brand.getName()).isEqualTo("Original Brand")
+        );
+    }
+
+    @DisplayName("W3-BRAND-DOMAIN-08: 성공 후 재삭제는 상품을 다시 변경하지 않고 최초 삭제 시각을 보존한다.")
+    @Test
+    void repeatedDeletionPreservesTheFirstSuccessfulResult() {
+        Brand brand = new Brand("Original Brand");
+        AtomicInteger calls = new AtomicInteger();
+        BrandDeletionService service = new BrandDeletionService(
+            lookupRepository(Map.of(BRAND_ID, brand)), productDeletion((id, timestamp) -> {
+                calls.incrementAndGet();
+                return 2;
+            }));
+        service.delete(BRAND_ID, DELETED_AT);
+
+        Brand repeated = service.delete(BRAND_ID, DELETED_AT.plusDays(1));
+
+        assertAll(
+            () -> assertThat(repeated).isSameAs(brand),
+            () -> assertThat(calls.get()).isEqualTo(1),
+            () -> assertThat(brand.isDeleted()).isTrue(),
+            () -> assertThat(brand.getDeletedAt()).isEqualTo(DELETED_AT),
             () -> assertThat(brand.getName()).isEqualTo("Original Brand")
         );
     }
@@ -184,11 +232,16 @@ class BrandDeletionServiceTest {
         };
     }
 
-    private ProductRepository productLookup(LongPredicate exists) {
+    private ProductRepository productDeletion(BiFunction<Long, ZonedDateTime, Integer> deletion) {
         return new ProductRepository() {
             @Override
+            public int softDeleteNonDeletedByBrandId(long brandId, ZonedDateTime deletedAt) {
+                return deletion.apply(brandId, deletedAt);
+            }
+
+            @Override
             public boolean existsNonDeletedByBrandId(long brandId) {
-                return exists.test(brandId);
+                throw new AssertionError("W3 브랜드 삭제에서는 상품 존재를 거절 조건으로 조회하면 안 된다.");
             }
 
             @Override

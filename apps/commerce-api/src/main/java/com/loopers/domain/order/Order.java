@@ -93,10 +93,14 @@ public class Order {
         }
     }
 
-    public void confirm(ZonedDateTime timestamp) {
+    public void requireDraft() {
         if (status == OrderStatus.CONFIRMED) {
-            return;
+            throw new OrderException(OrderException.Reason.ORDER_ALREADY_CONFIRMED);
         }
+    }
+
+    public void confirm(ZonedDateTime timestamp) {
+        requireDraft();
         validateStoredQuantities();
         confirmedAt = Objects.requireNonNull(timestamp, "timestamp");
         paidAmount = totalAmount;
