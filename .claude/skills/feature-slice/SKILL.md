@@ -14,11 +14,11 @@ description: 과제의 기능 하나(관리자 브랜드 CRUD, 상품 목록 조
 ```text
 이번 기능: (예: 상품 좋아요 등록·취소)
 정책: (적용할 규칙 ID와 한 줄 요약. 문서에 없는 정책이 필요하면 🤔로 따로 묻는다)
-구조: 계층별로 만들거나 바꿀 클래스와 책임
-  - interfaces: …
-  - application: … (Facade 메서드 하나 = 트랜잭션 하나, ADR-11)
+구조: com.loopers.{기능} 안에서 만들거나 바꿀 클래스와 책임 (plan.md 5-2 "헥사고날 구조")
+  - adapter.in.web: … (Controller·DTO)
+  - application.port.in / application: … (쓰기 *CommandUseCase → *CommandService, 읽기 *QueryService. 공개 메서드 하나 = 트랜잭션 하나, ADR-11)
   - domain: … (엔티티·VO·도메인 서비스가 지킬 규칙)
-  - infrastructure: …
+  - application.port.out / adapter.out.persistence: … (*Port → *PersistenceAdapter·*JpaRepository)
 허용 변경: 이 기능과 관련 테스트. 다른 기능·전체 패키지는 바꾸지 않는다.
 테스트: 경계별 목록 (domain 단위 / application / repository·DB flush→clear / HTTP)
         정상 + 대표 오류 + 거절 시 기존 값 유지
@@ -33,8 +33,8 @@ description: 과제의 기능 하나(관리자 브랜드 CRUD, 상품 목록 조
 ## 2. 구현
 
 - 도메인 규칙은 `tdd` 스킬로 구현한다.
-- application·infrastructure·interfaces도 테스트와 함께 쓴다. 경계와 방식은 `plan.md` 12장을 따른다.
-- 스타터 관례를 따른다: `*Model`, `*Facade`/`*Info`, `*V1Controller`/`*V1Dto`/`*V1ApiSpec`, `*Repository`/`*RepositoryImpl`/`*JpaRepository`, `CoreException(ErrorType)`, `ApiResponse`.
+- application·adapter.out·adapter.in도 테스트와 함께 쓴다. 경계와 방식은 `plan.md` 12장을 따른다.
+- 스타터 관례를 따른다: `*Model`, `*CommandUseCase`/`*CommandService`/`*QueryService`/`*Info`, `*Controller`, `web.dto.*Dto`, `web.spec.*ApiSpec` (이름에 `V1`을 붙이지 않는다. 버전은 URL에만), `*Port`/`*PersistenceAdapter`/`*JpaRepository`, `CoreException(ErrorType)`, `ApiResponse`.
 - 구현 중 설계와 다른 판단이 필요하면 **코드로 먼저 정하지 않고** 멈춰서 묻는다.
 - JPA 함정은 `plan.md` 11장을 확인한다 (`@Table(name)`, `save()` 반환값, 전역 삭제 필터 금지 등).
 

@@ -1,6 +1,6 @@
 ---
 name: domain-reviewer
-description: 변경(diff)을 도메인 모델링 관점에서 읽기 전용으로 검토한다. 규칙이 답해야 할 객체(Entity·VO·도메인 서비스·Facade)에 놓였는지, Tell Don't Ask와 setter 금지, 애그리거트 경계와 ID·객체 참조, plan.md의 없는 화살표, SOLID, 계층 의존(도메인의 HTTP 의존 포함), Facade 트랜잭션 경계를 확인한다. review 스킬이 도메인·Facade·패키지 의존이 바뀐 변경에 호출한다.
+description: 변경(diff)을 도메인 모델링 관점에서 읽기 전용으로 검토한다. 규칙이 답해야 할 객체(Entity·VO·도메인 서비스·응용 서비스)에 놓였는지, Tell Don't Ask와 setter 금지, 애그리거트 경계와 ID·객체 참조, plan.md의 없는 화살표, SOLID, 헥사고날 의존(포트·어댑터 방향, 도메인의 HTTP 의존 포함), 응용 서비스 트랜잭션 경계를 확인한다. review 스킬이 도메인·응용 서비스·포트·패키지 의존이 바뀐 변경에 호출한다.
 tools: Read, Grep, Glob, Bash
 ---
 
@@ -16,13 +16,13 @@ tools: Read, Grep, Glob, Bash
 
 ## 확인할 것
 
-1. **답하는 객체** — 바뀐 규칙이 plan.md 6장의 "답하는 것"과 같은 객체에 있는가. 자기 필드만으로 판단할 수 있는 규칙이 Facade·Controller에 있으면 지적한다.
+1. **답하는 객체** — 바뀐 규칙이 plan.md 6장의 "답하는 것"과 같은 객체에 있는가. 자기 필드만으로 판단할 수 있는 규칙이 `*CommandService`·`*QueryService`·Controller에 있으면 지적한다.
 2. **캡슐화** — 엔티티에 public setter·`@Setter`가 없는가. 호출자가 getter로 꺼내 검사하고 값을 넣는 코드(Tell, Don't Ask 위반)가 없는가. 불변식 검증이 생성자·행동 메서드 안에 있는가.
 3. **종류** — VO가 불변이고 생성자에서 검증하는가. 도메인 서비스가 상태를 갖지 않고 Spring·DB 없이 테스트할 수 있는가.
 4. **애그리거트와 참조** — 다른 애그리거트를 객체로 참조하지 않는가 (ID 참조, ADR-01). 루트 밖에서 내부 컬렉션을 직접 바꾸지 않는가.
 5. **없는 화살표** — plan.md 5-1의 없는 화살표가 import로 깨지지 않았는가. `grep`으로 확인한다.
-6. **계층** — domain이 `interfaces`·`application`·`infrastructure`·`org.springframework.http`를 import하지 않는가. Facade가 HTTP DTO를 모르는가. `./gradlew :apps:commerce-api:test --tests '*ArchitectureTest'`를 실행해 결과를 적는다.
-7. **트랜잭션** — `@Transactional`이 Facade 공개 메서드에 있고 조회는 readOnly인가. domain `*Service`가 트랜잭션을 열지 않는가. `*Info` 변환이 트랜잭션 안에서 끝나는가 (ADR-11).
+6. **헥사고날 의존** (plan.md 5-2 "헥사고날 구조") — 기능마다 domain이 `application`·`adapter`·`org.springframework.http`를 import하지 않는가. application이 `adapter`(웹 DTO·JPA 리포지토리·어댑터)를 모르는가. 웹·스케줄러 어댑터가 출력 포트(`*Port`)나 `adapter.out`을 직접 쓰지 않고, 쓰기는 입력 포트(`*CommandUseCase`)로, 읽기는 `*QueryService`로 부르는가. 새 저장 기능이 `application.port.out`의 포트 + `adapter.out.persistence`의 구현으로 나뉘었는가. 다른 기능의 출력 포트를 직접 쓰는 것은 합의된 방식(5-2 기준 ④)이므로 지적하지 않는다. `./gradlew :apps:commerce-api:test --tests '*ArchitectureTest'`를 실행해 결과를 적는다.
+7. **트랜잭션** — `@Transactional`이 `*CommandService`·`*QueryService` 공개 메서드(또는 클래스)에 있고 조회는 readOnly인가. domain의 도메인 서비스(`*Policy`)가 트랜잭션을 열지 않는가. `*Info` 변환이 트랜잭션 안에서 끝나는가 (ADR-11).
 8. **SOLID** — 한 클래스에 변경 이유가 둘 이상 섞였는가(SRP). 예상되는 정책 변경이 여러 곳을 바꾸게 되는가(OCP). 막아 주는 변경을 말할 수 없는 인터페이스·클래스를 추가했는가(과한 분리).
 
 ## 원칙

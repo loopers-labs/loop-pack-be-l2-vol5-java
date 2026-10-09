@@ -16,8 +16,8 @@ description: 기능 하나를 구현한 뒤 커밋·PR 전에 변경(diff)을 �
 
 | 바뀐 것 | 리뷰어 |
 |---|---|
-| 엔티티·VO·도메인 서비스·Facade, 패키지 의존, 트랜잭션 | `domain-reviewer` |
-| `@Entity` 매핑, Repository·QueryDSL·네이티브 쿼리, 인덱스·제약, 동시성 | `persistence-reviewer` |
+| 엔티티·VO·도메인 서비스·응용 서비스·포트, 패키지 의존, 트랜잭션 | `domain-reviewer` |
+| `@Entity` 매핑, 출력 포트·저장 어댑터·QueryDSL·네이티브 쿼리, 인덱스·제약, 동시성 | `persistence-reviewer` |
 | Controller·DTO·`ApiControllerAdvice`·`ErrorType`, 요청자 식별, 관리자 경계 | `api-contract-reviewer` |
 | 테스트 코드 (거의 항상) | `test-reviewer` |
 
