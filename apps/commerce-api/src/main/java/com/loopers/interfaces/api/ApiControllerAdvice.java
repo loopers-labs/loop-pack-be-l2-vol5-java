@@ -8,6 +8,7 @@ import com.loopers.support.error.CoreException;
 import com.loopers.support.error.DomainException;
 import com.loopers.support.error.ErrorType;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -138,6 +139,12 @@ public class ApiControllerAdvice {
     @ExceptionHandler
     public ResponseEntity<ApiResponse<?>> handleNotFound(NoResourceFoundException e) {
         return failureResponse(ErrorType.NOT_FOUND, null);
+    }
+
+    @ExceptionHandler
+    public ResponseEntity<ApiResponse<?>> handle(PessimisticLockingFailureException e) {
+        log.warn("PessimisticLockingFailureException : {}", e.getMessage());
+        return failureResponse(ErrorType.LOCK_UNAVAILABLE, null);
     }
 
     @ExceptionHandler

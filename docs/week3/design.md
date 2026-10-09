@@ -14,7 +14,7 @@ W2 의 절을 가리킬 때는 `W2 6.3` 처럼 쓴다.
 | 주문 최초 확정 | `OrderFacade.confirm` | `OrderConfirmation.confirm` → `OrderRepository` → `PointUsage.use` → `StockDeduction.deductStock` ×품목 | 주문 → 포인트 → 상품(id 오름차순), 전부 배타 | `ORDER_NOT_FOUND` 404 · `ORDER_NOT_DRAFT` 409 · `INSUFFICIENT_POINT` 409 · `PRODUCT_NOT_FOUND` 404 · `INSUFFICIENT_STOCK` 409 | 재고 · 잔액 · 원장 · `CONFIRMED` · 결제액 (3절) |
 | 같은 행의 동시 변경 | `PointFacade.charge` · `ProductFacade.adjustStock` · 위 둘 | 각 서비스가 저장소의 `…ForUpdate` 로 읽고 애그리거트가 판단 | 행 하나(포인트 또는 상품) — 확정과 같은 방향 | `INSUFFICIENT_*` 409 등 | 각 요청 단위 (4절) |
 
-기술 오류(잠금 대기 시간 초과 · 데드락 · 커넥션 고갈)는 업무 예외가 아니므로 409 로 바꾸지 않고 500 으로 둔다. 잠금 대기는 3 초에서 포기한다(4.4).
+잠금 대기 시간 초과와 데드락은 업무 예외가 아니므로 409 로 바꾸지 않고 503 `LOCK_UNAVAILABLE` 로 답한다(4.5). 커넥션 고갈 같은 그 밖의 기술 오류는 500 이다. 잠금 대기는 3 초에서 포기한다(4.4).
 경쟁 테스트는 이것을 "기술 오류" 로 따로 세고, 0 이어야 한다(4.2).
 
 ## 1. 격리 수준은 READ COMMITTED 이고, MySQL 서버 옵션이 정한다
@@ -436,10 +436,38 @@ MySQL 은 대기 시간을 넘기면 기본 설정(`innodb_rollback_on_timeout=O
 트랜잭션 전체가 되돌아가는 것은 그 예외(`PessimisticLockingFailureException`)가 `@Transactional` 밖으로 전파되기 때문이다.
 `LockWaitTimeoutTest` 가 이것을 본다 — 다른 커넥션이 둘째 품목을 쥔 채, 결제와 첫 품목 차감 SQL 이 나간 확정이 약 3 초에 포기하고
 잔액 · 두 재고 · `DRAFT` 가 모두 확정 전 그대로다. 설정을 빼면 10 초 안에 끝나지 않아 실패한다.
-응답은 0절대로 500 이다. 503 으로 나눌지는 지금 고를 수 있는 선택지다 — 클라이언트가 재시도를 판단하기 쉬워지는 대신 새 응답 계약이 생긴다.
+응답은 503 `LOCK_UNAVAILABLE` 이다(4.5).
 
 **뒤집을 조건**: 정상 요청이 잠금을 1 초 넘게 쥐게 되면(상품 수십만 개 브랜드의 삭제, 트랜잭션 안의 외부 호출) 늘린다.
 그때 `connection-timeout` 도 함께 본다 — 잠금 대기가 커넥션 대기보다 길어지면 위의 전파가 다시 생긴다.
+
+### 4.5 잠금을 얻지 못한 요청은 503 이다
+
+잠금 대기 초과와 교착의 희생자는 `ApiControllerAdvice` 가 503 `LOCK_UNAVAILABLE` 로 바꾼다(`COMMON-012`). 둘 다 Spring 의 `PessimisticLockingFailureException` 으로 올라오므로 처리기는 하나다.
+
+| MySQL | Hibernate | Spring |
+|---|---|---|
+| 1205 `Lock wait timeout exceeded` | `PessimisticLockException` | `PessimisticLockingFailureException` |
+| 1213 `Deadlock found` | `LockAcquisitionException` | `CannotAcquireLockException` (위의 하위 타입) |
+
+세 가지를 구분해 답한다.
+
+| 응답 | 뜻 | 클라이언트가 할 일 |
+|---|---|---|
+| 409 (`INSUFFICIENT_STOCK` 등) | 요청이 지금 상태와 맞지 않는다 | 같은 요청을 다시 보내도 결과가 같다 |
+| **503 `LOCK_UNAVAILABLE`** | 요청은 맞지만 지금 붐벼서 처리하지 못했다. 아무것도 반영되지 않았다 | 잠시 뒤 다시 보낸다 |
+| 500 | 예상하지 못한 오류 | 상태를 확인한다 |
+
+409 에 별도 에러 코드를 붙이는 선택지도 있다. 업무 거절과 같은 상태 코드라 클라이언트가 에러 코드까지 읽어야 재시도 여부를 안다. 상태 코드만으로 가를 수 있는 503 을 고른다.
+서버가 자동으로 재시도하지는 않는다. 확정을 다시 돌리면 같은 행에서 다시 줄을 서고, 재시도는 요청한 쪽이 판단하는 것이 맞다.
+
+`OrderLockFailureApiE2ETest` 가 확정 API 로 두 경우를 본다. 잠금 대기 초과는 다른 커넥션이 둘째 상품을 쥔 채 확정을 부른다.
+교착은 다른 커넥션이 상품 30 행을 먼저 바꿔 확정보다 무거워진 뒤 둘째 상품을 잡고, 확정이 그 행에서 기다리는 것을 `data_lock_waits` 로 확인한 다음 첫 상품을 요청해 순환을 만든다.
+InnoDB 는 바꾼 행이 적은 쪽을 희생자로 고르므로 확정이 진다. 두 경우 모두 503 이고, 잔액 · 재고 · `DRAFT` 가 그대로다.
+
+**지금 애플리케이션 경로끼리는 교착이 생기지 않는다.** 여러 행을 잠그는 경로가 확정 하나이고 순서가 고정이다(4.1). 교착을 다루는 이유는 DB 에 붙는 다른 클라이언트(배치 · 운영 도구)가 다른 순서로 잡을 수 있어서다. 테스트도 바깥 커넥션으로 순환을 만든다.
+
+**뒤집을 조건**: 클라이언트가 503 을 받고 무작정 재시도해 혼잡을 키우면 `Retry-After` 를 함께 준다. 교착이 애플리케이션 경로끼리 생기면(주문 취소처럼 상품 → 포인트 순서로 잠그는 경로) 응답을 바꾸기 전에 잠금 순서부터 맞춘다.
 
 ## 5. 갱신 유실을 재현하는 대조군
 
