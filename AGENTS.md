@@ -29,15 +29,20 @@ PR 01은 계획 정리·공통 기반·사용자 입력을 함께 다룬다. PR 
 - PR 05에서 Pay 소유의 OrderBill 저장·조회 구조를 먼저 준비하고 실제 결제 기록 생성은 PR 06에서 연결한다.
 - 선행 저장 구조는 fixture로 검증하며 Context 소유권을 유지한다. 준비용 공개 API·임시 상수 응답을 추가하지 않는다.
 
-- 패키지는 `interfaces`, `application`, `domain`, `infrastructure` 아래 Context → 기능 순서로 나눈다.
-- Context 이름은 `mall`, `shopping`, `ordering`, `pay`다. 예: `domain.mall.product`.
+- (2주차 당시 규칙, 역사적 기록) 패키지는 `interfaces`, `application`, `domain`, `infrastructure` 아래 Context → 기능 순서로 나눴다.
+  Context 이름은 `mall`, `shopping`, `ordering`, `pay`였다. 예: `domain.mall.product`.
+- 이후 `volume-3/refacto`에서 패키지 구조가 Context → 종류(kind) 순서로 바뀌었다. domain·application·interfaces는
+  `<layer>.<context>.<종류>` 순서를 따른다. 예: `domain.mall.model`, `application.mall.query`,
+  `interfaces.api.mall.controller`. infrastructure만 종류가 먼저다: `infrastructure.<종류>.<context>` 순서를 따른다.
+  예: `infrastructure.persistence.mall.entity`. 현재 구조와 결정 배경은 [CLAUDE.md](CLAUDE.md)와
+  [docs/refactor/](docs/refactor/)(`plan.md`, `context-notes.md`, `result.md`)를 참고한다.
 - `interfaces`는 HTTP 입력과 응답 변환을 담당하며 `infrastructure`에 직접 의존하지 않는다.
 - `application`은 유스케이스 순서와 트랜잭션을 조율하며 `interfaces`와 `infrastructure` 구현에 의존하지 않는다.
 - 신규 `domain`은 순수 Java로 상태·업무 규칙·repository 계약을 소유한다. Spring·JPA·HTTP와 다른 계층에 의존하지 않는다.
 - `infrastructure`는 domain 저장 계약과 application QueryDao·조회 타입을 사용한다. application 구현 서비스에는 의존하지 않는다.
 - HTTP 정책이나 업무 규칙을 infrastructure에서 중복 구현하지 않는다.
-- GET은 조회 전용 Controller → application QueryDao 계약 → infrastructure 구현으로 연결한다. 단순 조회는 JdbcClient,
-  동적 조건·정렬 조합이 많은 상품 조회는 QueryDSL을 사용한다.
+- GET은 조회 전용 Controller → application QueryDao 계약 → infrastructure 구현으로 연결한다. 조회 구현은 QueryDSL
+  Projection을 사용한다. 쓰기는 JPA, JdbcClient는 좋아요 집계 같은 배치 작업에만 사용하며 테스트 코드도 쓰지 않는다(3주차 후속 R03·R08에서 변경, 운영 코드는 `LayerArchitectureTest`가 검사한다).
 - DAO는 같은 DB의 Context 간 조인과 조회 모델 조합을 담당한다. Controller는 입력·404·ApiResponse 포장을 담당한다.
 - 조회 모델은 application의 순수 record이며 별도 HTTP Response 복사 없이 반환한다. domain은 HTTP DTO를 알지 못한다.
 - `@XUserId` resolver는 UserQueryDao.findById로 사용자 존재를 검사하고 ID를 반환한다. 형식 오류 시 DAO를 호출하지 않는다.
@@ -52,7 +57,7 @@ PR 01은 계획 정리·공통 기반·사용자 입력을 함께 다룬다. PR 
 - 도메인 `Product`와 저장 객체 `ProductJpaEntity`를 분리한다. domain은 JPA BaseEntity를 상속하지 않는다.
 - 도메인은 숨긴 생성자와 `create` / `restore`로 유효한 상태를 구성하고, 공개 setter 없이 의미 있는 행동으로 변경한다.
 - Money·Stock처럼 규칙이 모이는 값부터 값 객체로 분리한다. 실패하는 행동은 메모리 상태도 유지해야 한다.
-- 행동별 `ConfirmOrderUseCase` 인터페이스와 `ConfirmOrderService` 구현체를 두고 `execute`로 실행한다.
+- 행동별 `ConfirmOrderUseCase` 인터페이스와 `ConfirmOrderFacade` 구현체(컨텍스트 서비스를 순서대로 조율하는 `facade`)를 두고 `execute`로 실행한다.
 - 쓰기는 Request → Command → Result → Response, 조회는 Request → Criteria → 조회 record → ApiResponse를 사용한다.
 - 쓰기 트랜잭션은 application Service의 `execute`, 조회 readOnly 트랜잭션은 DAO 구현의 공개 메서드에 둔다.
 - DAO 상세 조회는 Optional을 반환하며 Controller가 기존 오류로 변환한다. 조회 UseCase·Service는 만들지 않는다.

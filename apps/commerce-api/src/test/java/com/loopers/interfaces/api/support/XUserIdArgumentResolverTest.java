@@ -8,8 +8,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 
-import com.loopers.application.shopping.user.UserQueryDao;
-import com.loopers.application.shopping.user.UserQueryModel;
+import com.loopers.application.shopping.query.UserQueryDao;
+import com.loopers.application.shopping.query.UserView;
 import com.loopers.application.support.error.ApplicationErrorCode;
 import com.loopers.application.support.error.ApplicationException;
 import com.loopers.support.error.CoreException;
@@ -53,7 +53,7 @@ class XUserIdArgumentResolverTest {
         @ValueSource(longs = {1L, 2L, Long.MAX_VALUE})
         void resolvesExistingUser(long id) throws Exception {
             // arrange
-            given(userQueryDao.findById(id)).willReturn(Optional.of(new UserQueryModel(id)));
+            given(userQueryDao.findById(id)).willReturn(Optional.of(new UserView(id)));
 
             // act
             Object userId = resolve("X-USER-ID", Long.toString(id));
@@ -68,7 +68,7 @@ class XUserIdArgumentResolverTest {
         @Test
         void resolvesLowercaseHeaderName() throws Exception {
             // arrange
-            given(userQueryDao.findById(2L)).willReturn(Optional.of(new UserQueryModel(2L)));
+            given(userQueryDao.findById(2L)).willReturn(Optional.of(new UserView(2L)));
 
             // act
             Object userId = resolve("x-user-id", "2");

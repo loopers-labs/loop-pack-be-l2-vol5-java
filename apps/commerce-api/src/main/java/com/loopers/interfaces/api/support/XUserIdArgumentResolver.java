@@ -1,6 +1,6 @@
 package com.loopers.interfaces.api.support;
 
-import com.loopers.application.shopping.user.UserQueryDao;
+import com.loopers.application.shopping.query.UserQueryDao;
 import com.loopers.application.support.error.ApplicationErrorCode;
 import com.loopers.application.support.error.ApplicationException;
 import com.loopers.support.error.CoreException;

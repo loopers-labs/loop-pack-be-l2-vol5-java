@@ -42,4 +42,15 @@ class LayerArchitectureTest {
             .that().resideInAPackage("com.loopers.infrastructure..")
             .should().dependOnClassesThat()
             .haveNameMatching("com\\.loopers\\.application\\..*Service");
+
+    @ArchTest
+    static final ArchRule JDBC_DEPENDENCY_RULE = noClasses()
+            .that().resideInAnyPackage(
+                    "com.loopers.domain..",
+                    "com.loopers.application..",
+                    "com.loopers.interfaces..",
+                    "com.loopers.infrastructure.."
+            )
+            .and().haveSimpleNameNotStartingWith("Jdbc")
+            .should().dependOnClassesThat().resideInAPackage("org.springframework.jdbc..");
 }

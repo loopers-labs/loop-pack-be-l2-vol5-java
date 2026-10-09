@@ -19,7 +19,9 @@ public class MySqlTestContainersConfig {
                 "--character-set-server=utf8mb4",
                 "--collation-server=utf8mb4_general_ci",
                 "--skip-character-set-client-handshake"
-            );
+            )
+            // 재사용 설정: ~/.testcontainers.properties 에 testcontainers.reuse.enable=true 가 있어야 적용되며, 없으면 기존과 동일하게 동작한다(CI 영향 없음)
+            .withReuse(true);
         mySqlContainer.start();
 
         String mySqlJdbcUrl = String.format(

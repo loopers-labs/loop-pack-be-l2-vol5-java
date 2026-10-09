@@ -33,6 +33,10 @@ scheduler:
   like-count:
     enabled: true
 
+query:
+  product-count-cache:
+    ttl: 30s # 브랜드 필터 없는 상품 목록 전체 개수 캐시 TTL (0s면 끔)
+
 ---
 spring:
   config:
@@ -45,6 +49,15 @@ spring.config.activate.on-profile: test
 scheduler:
   like-count:
     enabled: false
+
+query:
+  product-count-cache:
+    ttl: 0s
+
+management:
+  health:
+    redis:
+      enabled: false
 
 ---
 spring:

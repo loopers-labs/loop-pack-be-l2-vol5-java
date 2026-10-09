@@ -33,6 +33,12 @@ public class DatabaseCleanUp implements InitializingBean {
         entityManager.createNativeQuery("SET FOREIGN_KEY_CHECKS = 0").executeUpdate();
 
         for (String table : tableNames) {
+            // 빈 테이블은 TRUNCATE를 건너뛰어 불필요한 DDL 잠금/비용을 줄인다
+            boolean isEmpty = entityManager.createNativeQuery("SELECT 1 FROM `" + table + "` LIMIT 1")
+                .getResultList().isEmpty();
+            if (isEmpty) {
+                continue;
+            }
             entityManager.createNativeQuery("TRUNCATE TABLE `" + table + "`").executeUpdate();
         }
 
