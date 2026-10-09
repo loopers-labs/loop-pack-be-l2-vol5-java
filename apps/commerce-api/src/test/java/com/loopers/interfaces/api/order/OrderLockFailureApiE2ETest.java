@@ -49,6 +49,7 @@ class OrderLockFailureApiE2ETest {
     private static final long INITIAL_BALANCE = 50_000L;
     private static final int HEAVIER_ROWS = 30;
     private static final long GIVE_UP_SECONDS = 10;
+    private static final long DEADLOCK_DETECTED_WITHIN_MILLIS = 1_000;
     private static final ParameterizedTypeReference<ApiResponse<Object>> ANY = new ParameterizedTypeReference<>() {};
 
     private final TestRestTemplate testRestTemplate;
@@ -142,7 +143,12 @@ class OrderLockFailureApiE2ETest {
             try {
                 Future<ResponseEntity<ApiResponse<Object>>> confirm = executor.submit(() -> confirm(orderId));
                 assertThat(awaitConfirmWaitingOnProduct()).as("확정이 둘째 상품에서 기다린다").isTrue();
+                long cycleClosedAt = System.nanoTime();
                 lock(holder, coat);
+                long holderWaitedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - cycleClosedAt);
+                assertThat(holderWaitedMillis)
+                    .as("순환을 닫자마자 교착이 감지되어 확정이 희생됐다 — 잠금 대기 한도(3초)로 끝난 것이 아니다")
+                    .isLessThan(DEADLOCK_DETECTED_WITHIN_MILLIS);
                 response = confirm.get(GIVE_UP_SECONDS, TimeUnit.SECONDS);
             } finally {
                 holder.rollback();
@@ -229,5 +235,10 @@ class OrderLockFailureApiE2ETest {
             .isEqualTo(INITIAL_STOCK);
         assertThat(jdbcTemplate.queryForObject("SELECT status FROM orders WHERE id = ?", String.class, orderId))
             .isEqualTo("DRAFT");
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT paid_amount IS NULL AND confirmed_at IS NULL FROM orders WHERE id = ?", Boolean.class, orderId))
+            .as("결제액 · 확정 시각이 남지 않는다").isTrue();
+        assertThat(jdbcTemplate.queryForList("SELECT type FROM point_transaction WHERE user_id = ?", String.class, BUYER))
+            .as("결제 원장이 남지 않는다").containsExactly("CHARGE");
     }
 }

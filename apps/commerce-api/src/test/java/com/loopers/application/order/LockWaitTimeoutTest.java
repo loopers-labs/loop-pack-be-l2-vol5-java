@@ -38,6 +38,8 @@ class LockWaitTimeoutTest {
     private static final Instant NOW = Instant.parse("2026-10-08T00:00:00Z");
     private static final int INITIAL_STOCK = 10;
     private static final long GIVE_UP_SECONDS = 10;
+    private static final long LOCK_WAIT_MIN_MILLIS = 2_500;
+    private static final long LOCK_WAIT_MAX_MILLIS = 6_000;
 
     private final OrderFacade orderFacade;
     private final ProductFacade productFacade;
@@ -93,6 +95,7 @@ class LockWaitTimeoutTest {
         )), NOW).getId();
 
         Throwable failure;
+        long waitedMillis;
         ExecutorService executor = Executors.newSingleThreadExecutor();
         try (Connection holder = dataSource.getConnection()) {
             holder.setAutoCommit(false);
@@ -101,8 +104,10 @@ class LockWaitTimeoutTest {
                 lock.executeQuery().close();
             }
             try {
+                long startedAt = System.nanoTime();
                 Future<?> confirm = executor.submit(() -> orderFacade.confirm(BUYER, orderId, NOW));
                 failure = catchThrowable(() -> confirm.get(GIVE_UP_SECONDS, TimeUnit.SECONDS));
+                waitedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
             } finally {
                 holder.rollback();
             }
@@ -113,11 +118,18 @@ class LockWaitTimeoutTest {
 
         assertThat(failure).as("50 초를 기다리지 않고 제한 안에 포기한다").isInstanceOf(ExecutionException.class);
         assertThat(failure.getCause()).isInstanceOf(PessimisticLockingFailureException.class);
+        assertThat(waitedMillis).as("innodb_lock_wait_timeout=3 에서 포기한다")
+            .isBetween(LOCK_WAIT_MIN_MILLIS, LOCK_WAIT_MAX_MILLIS);
         assertThat(balance()).isEqualTo(50_000L);
         assertThat(quantityOf(coat)).isEqualTo(INITIAL_STOCK);
         assertThat(quantityOf(knit)).isEqualTo(INITIAL_STOCK);
         assertThat(jdbcTemplate.queryForObject("SELECT status FROM orders WHERE id = ?", String.class, orderId))
             .isEqualTo("DRAFT");
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT paid_amount IS NULL AND confirmed_at IS NULL FROM orders WHERE id = ?", Boolean.class, orderId))
+            .as("결제액 · 확정 시각이 남지 않는다").isTrue();
+        assertThat(jdbcTemplate.queryForList("SELECT type FROM point_transaction WHERE user_id = ?", String.class, BUYER))
+            .as("결제 원장이 남지 않는다").containsExactly("CHARGE");
     }
 
     private long balance() {

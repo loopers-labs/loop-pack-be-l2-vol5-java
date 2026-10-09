@@ -203,7 +203,6 @@ class OrderConcurrencyTest {
             for (Future<String> future : futures) {
                 results.add(future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
             }
-            assertThat(results).as("성공 + 업무 거절 + 기술 오류 = 전체 요청").hasSize(requests.size());
             assertThat(results).as("기술 오류는 업무 거절로 숨기지 않고 0 이어야 한다")
                 .noneMatch(result -> result.startsWith("기술 오류"));
             return results;

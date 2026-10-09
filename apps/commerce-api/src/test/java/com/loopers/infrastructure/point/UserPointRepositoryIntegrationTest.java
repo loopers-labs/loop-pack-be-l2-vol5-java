@@ -113,10 +113,11 @@ class UserPointRepositoryIntegrationTest {
             });
         }
 
-        ready.await(5, TimeUnit.SECONDS);
+        assertThat(ready.await(5, TimeUnit.SECONDS)).as("두 worker 가 준비된다").isTrue();
         start.countDown();
-        done.await(30, TimeUnit.SECONDS);
+        assertThat(done.await(30, TimeUnit.SECONDS)).as("두 충전이 제한 시간 안에 끝난다").isTrue();
         executor.shutdown();
+        assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).as("worker 가 정리된다").isTrue();
 
         assertThat(failures)
             .as("둘 다 성공해야 한다. 실패한 쪽은 %s", failures.stream().map(Throwable::toString).toList())
@@ -145,6 +146,7 @@ class UserPointRepositoryIntegrationTest {
         CountDownLatch start = new CountDownLatch(1);
         CountDownLatch done = new CountDownLatch(threads);
         AtomicInteger succeeded = new AtomicInteger();
+        ConcurrentLinkedQueue<Throwable> failures = new ConcurrentLinkedQueue<>();
 
         for (int i = 0; i < threads; i++) {
             executor.submit(() -> {
@@ -153,18 +155,23 @@ class UserPointRepositoryIntegrationTest {
                     start.await();
                     pointFacade.charge(userId, ChargeAmount.of(amountEach), NOW);
                     succeeded.incrementAndGet();
-                } catch (Exception e) {
+                } catch (Throwable t) {
+                    failures.add(t);
                 } finally {
                     done.countDown();
                 }
             });
         }
 
-        ready.await(5, TimeUnit.SECONDS);
+        assertThat(ready.await(5, TimeUnit.SECONDS)).as("모든 worker 가 준비된다").isTrue();
         start.countDown();
-        done.await(30, TimeUnit.SECONDS);
+        assertThat(done.await(30, TimeUnit.SECONDS)).as("모든 충전이 제한 시간 안에 끝난다").isTrue();
         executor.shutdown();
+        assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).as("worker 가 정리된다").isTrue();
 
+        assertThat(failures)
+            .as("모두 성공해야 한다. 실패한 쪽은 %s", failures.stream().map(Throwable::toString).toList())
+            .isEmpty();
         long expected = amountEach * (succeeded.get() + 1);
         assertThat(succeeded.get()).isEqualTo(threads);
         assertThat(pointService.getBalance(userId).amount()).isEqualTo(expected);
