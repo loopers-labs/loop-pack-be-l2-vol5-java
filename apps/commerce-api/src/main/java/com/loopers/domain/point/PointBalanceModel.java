@@ -11,6 +11,7 @@ import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 
 import java.time.ZonedDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -26,7 +27,7 @@ public class PointBalanceModel extends BaseEntity {
     private long balance;
 
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
-    @JoinColumn(name = "point_balance_id")
+    @JoinColumn(name = "point_balance_id", nullable = false)
     private List<PointGrant> grants = new ArrayList<>();
 
     protected PointBalanceModel() {}
@@ -57,7 +58,8 @@ public class PointBalanceModel extends BaseEntity {
         if (amount <= 0) {
             throw new IllegalArgumentException("적립 금액은 양수여야 합니다.");
         }
-        addGrant(amount, PointGrantType.REWARD, grantedAt, grantedAt.plusYears(1));
+        addGrant(amount, PointGrantType.REWARD, grantedAt, grantedAt.withZoneSameInstant(ZoneId.of("Asia/Seoul"))
+            .toLocalDate().plusYears(1).plusDays(1).atStartOfDay(ZoneId.of("Asia/Seoul")));
     }
 
     public void use(long amount) {

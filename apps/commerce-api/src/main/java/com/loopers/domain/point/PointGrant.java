@@ -37,7 +37,7 @@ public class PointGrant {
     private ZonedDateTime expiresAt;
 
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
-    @JoinColumn(name = "point_grant_id")
+    @JoinColumn(name = "point_grant_id", nullable = false)
     private List<PointUsage> usages = new ArrayList<>();
 
     protected PointGrant() {}

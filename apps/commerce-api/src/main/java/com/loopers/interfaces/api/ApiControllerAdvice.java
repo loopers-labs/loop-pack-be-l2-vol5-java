@@ -7,6 +7,7 @@ import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -110,6 +111,12 @@ public class ApiControllerAdvice {
     @ExceptionHandler
     public ResponseEntity<ApiResponse<?>> handleNotFound(NoResourceFoundException e) {
         return failureResponse(ErrorType.NOT_FOUND, null);
+    }
+
+    @ExceptionHandler
+    public ResponseEntity<ApiResponse<?>> handleLockFailure(PessimisticLockingFailureException e) {
+        log.warn("Database lock failure", e);
+        return failureResponse(ErrorType.SERVICE_UNAVAILABLE, null);
     }
 
     @ExceptionHandler

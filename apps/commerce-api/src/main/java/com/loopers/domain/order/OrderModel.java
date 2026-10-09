@@ -50,10 +50,14 @@ public class OrderModel extends BaseEntity {
     public List<OrderItem> getItems() { return List.copyOf(items); }
     public boolean isOwnedBy(Long userId) { return this.userId.equals(userId); }
 
-    public void confirm() {
+    public void validateConfirmable() {
         if (status != OrderStatus.DRAFT) {
             throw new CoreException(ErrorType.CONFLICT, "확정할 수 없는 주문 상태입니다.");
         }
+    }
+
+    public void confirm() {
+        validateConfirmable();
         paidAmount = totalAmount;
         status = OrderStatus.CONFIRMED;
     }

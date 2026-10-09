@@ -26,6 +26,11 @@ public class ProductRepositoryImpl implements ProductRepository {
     }
 
     @Override
+    public Optional<ProductModel> findForUpdate(Long id) {
+        return productJpaRepository.findForUpdate(id);
+    }
+
+    @Override
     public List<ProductModel> findAllActive() {
         return productJpaRepository.findByDeletedAtIsNull();
     }
@@ -36,7 +41,13 @@ public class ProductRepositoryImpl implements ProductRepository {
     }
 
     @Override
-    public boolean existsActiveByBrandId(Long brandId) {
-        return productJpaRepository.existsByBrandIdAndDeletedAtIsNull(brandId);
+    public List<ProductModel> findActiveByBrandIdForUpdate(Long brandId) {
+        // BrandFacade holds the brand write lock before this transaction's first snapshot read.
+        // Registration cannot add new products until deletion commits; brandId is immutable.
+        return productJpaRepository.findActiveIdsByBrandId(brandId).stream()
+            .map(productJpaRepository::findForUpdate)
+            .flatMap(Optional::stream)
+            .filter(product -> product.getDeletedAt() == null)
+            .toList();
     }
 }

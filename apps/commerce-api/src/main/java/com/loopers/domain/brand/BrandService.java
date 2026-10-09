@@ -30,6 +30,20 @@ public class BrandService {
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[id = " + id + "] 브랜드를 찾을 수 없습니다."));
     }
 
+    @Transactional
+    public BrandModel getForShare(Long id) {
+        return brandRepository.findForShare(id)
+            .filter(brand -> brand.getDeletedAt() == null)
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[id = " + id + "] 브랜드를 찾을 수 없습니다."));
+    }
+
+    @Transactional
+    public BrandModel getForUpdate(Long id) {
+        return brandRepository.findForUpdate(id)
+            .filter(brand -> brand.getDeletedAt() == null)
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[id = " + id + "] 브랜드를 찾을 수 없습니다."));
+    }
+
     @Transactional(readOnly = true)
     public List<BrandModel> getAllActiveByIds(Collection<Long> ids) {
         return brandRepository.findActiveByIds(ids);
@@ -42,7 +56,7 @@ public class BrandService {
 
     @Transactional
     public BrandModel update(Long id, String name, String description) {
-        BrandModel brand = get(id);
+        BrandModel brand = getForUpdate(id);
         BrandModel candidate = new BrandModel(name, description);
         if (!brand.getName().equalsIgnoreCase(candidate.getName())
             && brandRepository.existsActiveByNameIgnoreCase(candidate.getName())) {
@@ -54,7 +68,7 @@ public class BrandService {
 
     @Transactional
     public void delete(Long id) {
-        BrandModel brand = get(id);
+        BrandModel brand = getForUpdate(id);
         brand.markDeleted();
         brandRepository.save(brand);
     }

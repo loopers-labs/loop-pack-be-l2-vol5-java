@@ -63,7 +63,7 @@ class BrandServiceTest {
     @Test
     void deletesActiveBrand() {
         BrandModel brand = new BrandModel("Nike", null);
-        when(brandRepository.find(1L)).thenReturn(Optional.of(brand));
+        when(brandRepository.findForUpdate(1L)).thenReturn(Optional.of(brand));
 
         new BrandService(brandRepository).delete(1L);
 

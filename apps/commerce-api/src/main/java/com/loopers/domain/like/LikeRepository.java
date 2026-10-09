@@ -5,6 +5,10 @@ import java.util.Map;
 import java.util.Optional;
 
 public interface LikeRepository {
+    boolean registerIfAbsent(LikeModel like);
+
+    void deleteRelationship(Long userId, Long productId);
+
     Optional<LikeModel> find(Long userId, Long productId);
 
     LikeModel save(LikeModel like);

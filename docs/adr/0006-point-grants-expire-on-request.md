@@ -2,6 +2,7 @@
 
 Status: Accepted
 Date: 2026-09-17
+Refined by: [ADR 0015](./0015-point-expiration-uses-date-boundary-and-daily-batch.md) (만료 시각 계산, 일일 배치), [ADR 0010](./0010-point-balance-locks-before-ledger-read.md) (동시성 보호)
 
 ## Context
 
@@ -19,3 +20,5 @@ Date: 2026-09-17
 - 요청 시점의 잔액과 결제 가능 금액은 정확하게 계산된다.
 - 지급·사용·만료 이력이 남아 계산 근거를 확인할 수 있다.
 - 대량 만료 처리·알림·정시 회계 처리가 필요해지면 배치를 별도 도입한다.
+- 3주차에 만료 시각 계산을 날짜 경계로 다듬고 매일 배치를 추가했다. [ADR 0015](./0015-point-expiration-uses-date-boundary-and-daily-batch.md) 참고.
+- 3주차에 결제·충전·조회·배치의 동시성 보호를 추가했다. [ADR 0010](./0010-point-balance-locks-before-ledger-read.md) 참고.

@@ -52,7 +52,7 @@ class ProductServiceTest {
     @Test
     void changesStockOfActiveProduct() {
         ProductModel product = new ProductModel(1L, "운동화", 100_000L, 10);
-        when(productRepository.find(1L)).thenReturn(Optional.of(product));
+        when(productRepository.findForUpdate(1L)).thenReturn(Optional.of(product));
         when(productRepository.save(product)).thenReturn(product);
 
         ProductModel result = new ProductService(productRepository).changeStock(1L, 3);
@@ -64,7 +64,7 @@ class ProductServiceTest {
     @Test
     void updatesActiveProduct() {
         ProductModel product = new ProductModel(1L, "운동화", 100_000L, 10);
-        when(productRepository.find(1L)).thenReturn(Optional.of(product));
+        when(productRepository.findForUpdate(1L)).thenReturn(Optional.of(product));
         when(productRepository.save(product)).thenReturn(product);
 
         ProductModel result = new ProductService(productRepository).update(1L, "러닝화", 120_000L);
@@ -77,7 +77,7 @@ class ProductServiceTest {
     @Test
     void deletesActiveProductWhileKeepingStock() {
         ProductModel product = new ProductModel(1L, "운동화", 100_000L, 10);
-        when(productRepository.find(1L)).thenReturn(Optional.of(product));
+        when(productRepository.findForUpdate(1L)).thenReturn(Optional.of(product));
 
         new ProductService(productRepository).delete(1L);
 
@@ -90,7 +90,7 @@ class ProductServiceTest {
     void rejectsRepeatedDeleteOfProduct() {
         ProductModel product = new ProductModel(1L, "운동화", 100_000L, 10);
         product.markDeleted();
-        when(productRepository.find(1L)).thenReturn(Optional.of(product));
+        when(productRepository.findForUpdate(1L)).thenReturn(Optional.of(product));
 
         assertThatThrownBy(() -> new ProductService(productRepository).delete(1L))
             .isInstanceOf(CoreException.class)

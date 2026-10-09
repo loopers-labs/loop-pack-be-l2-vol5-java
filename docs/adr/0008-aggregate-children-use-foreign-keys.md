@@ -32,3 +32,7 @@ Date: 2026-09-18
 - `apps/commerce-api/src/main/java/com/loopers/domain/order/OrderModel.java`
 - `apps/commerce-api/src/main/java/com/loopers/domain/point/PointBalanceModel.java`
 - `apps/commerce-api/src/main/java/com/loopers/domain/point/PointGrant.java`
+
+## 3주차 보완 (2026-10-09)
+
+PointBalance → PointGrant, PointGrant → PointUsage의 JoinColumn에 `nullable=false`를 지정했다. 부모 없이 INSERT한 다음 부모 ID를 UPDATE하던 SQL 대신 INSERT부터 부모 ID를 함께 저장한다. 포인트 잠금 적용 중 다른 사용자 충전이 대기하는 테스트가 이 변경 후 통과했으며, 같은 사용자의 대기는 유지된다. 자세한 조회·잠금 정책은 ADR 0010을 따른다.

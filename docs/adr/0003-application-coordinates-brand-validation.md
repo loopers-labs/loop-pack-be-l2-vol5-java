@@ -26,3 +26,4 @@ Controller는 HTTP 변환만, Facade는 cross-aggregate 흐름과 트랜잭션 �
 
 - `apps/commerce-api/src/main/java/com/loopers/application/product/ProductFacade.java`
 - `apps/commerce-api/src/test/java/com/loopers/application/product/ProductFacadeTest.java`
+- 3주차에 등록·브랜드 변경 경쟁의 잠금 순서를 다룬 [ADR 0013](./0013-product-registration-and-brand-change-lock-order.md)

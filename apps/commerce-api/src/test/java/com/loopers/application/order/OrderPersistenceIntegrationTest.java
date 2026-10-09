@@ -1,5 +1,6 @@
 package com.loopers.application.order;
 
+import com.loopers.application.user.UserRegistrationService;
 import com.loopers.application.point.PointFacade;
 import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.order.OrderStatus;
@@ -28,6 +29,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class OrderPersistenceIntegrationTest {
 
     @Autowired
+    private UserRegistrationService registration;
+    @Autowired
     private OrderFacade orderFacade;
     @Autowired
     private PointFacade pointFacade;
@@ -55,7 +58,7 @@ class OrderPersistenceIntegrationTest {
 
     @Test
     void persistsConfirmedOrderStockAndPointBalanceAfterFlushAndClear() {
-        UserModel user = userJpaRepository.save(new UserModel());
+        UserModel user = registration.register();
         BrandModel brand = brandJpaRepository.save(new BrandModel("나이키", null));
         var product = productJpaRepository.save(new com.loopers.domain.product.ProductModel(
             brand.getId(), "운동화", 2_000L, 5
@@ -90,15 +93,17 @@ class OrderPersistenceIntegrationTest {
 
     @Test
     void rollsBackStockPointExpirationAndOrderWhenExpiredPointMakesPaymentInsufficient() {
-        UserModel user = userJpaRepository.save(new UserModel());
+        UserModel user = registration.register();
         BrandModel brand = brandJpaRepository.save(new BrandModel("아식스", null));
         var product = productJpaRepository.save(new com.loopers.domain.product.ProductModel(
             brand.getId(), "러닝화", 2_000L, 5
         ));
-        PointBalanceModel balance = new PointBalanceModel(user.getId());
-        balance.charge(1_000L);
-        balance.reward(1_000L, ZonedDateTime.now().minusYears(1));
-        pointBalanceJpaRepository.save(balance);
+        transactionTemplate.executeWithoutResult(status -> {
+            PointBalanceModel balance = pointBalanceJpaRepository.findByUserId(user.getId()).orElseThrow();
+            balance.charge(1_000L);
+            balance.reward(1_000L, ZonedDateTime.now().minusYears(1).minusDays(1));
+            pointBalanceJpaRepository.save(balance);
+        });
         OrderInfo draft = orderFacade.create(
             user.getId(),
             List.of(new OrderFacade.OrderLine(product.getId(), 1))

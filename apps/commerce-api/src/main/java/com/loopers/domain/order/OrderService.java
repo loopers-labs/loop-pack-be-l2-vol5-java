@@ -25,6 +25,12 @@ public class OrderService {
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "주문을 찾을 수 없습니다."));
     }
 
+    @Transactional
+    public OrderModel getForUpdate(Long id) {
+        return orderRepository.findForUpdate(id)
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "주문을 찾을 수 없습니다."));
+    }
+
     @Transactional(readOnly = true)
     public List<OrderModel> getByUser(Long userId) {
         return orderRepository.findByUserId(userId);

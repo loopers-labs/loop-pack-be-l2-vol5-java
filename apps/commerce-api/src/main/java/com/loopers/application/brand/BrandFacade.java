@@ -3,8 +3,7 @@ package com.loopers.application.brand;
 import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.brand.BrandService;
 import com.loopers.domain.product.ProductRepository;
-import com.loopers.support.error.CoreException;
-import com.loopers.support.error.ErrorType;
+import com.loopers.domain.product.ProductModel;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,9 +35,10 @@ public class BrandFacade {
 
     @Transactional
     public void delete(Long id) {
-        if (productRepository.existsActiveByBrandId(id)) {
-            throw new CoreException(ErrorType.CONFLICT, "활성 상품이 있는 브랜드는 삭제할 수 없습니다.");
-        }
         brandService.delete(id);
+        for (ProductModel product : productRepository.findActiveByBrandIdForUpdate(id)) {
+            product.markDeleted();
+            productRepository.save(product);
+        }
     }
 }

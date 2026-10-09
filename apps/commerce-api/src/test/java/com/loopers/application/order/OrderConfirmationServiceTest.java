@@ -40,8 +40,8 @@ class OrderConfirmationServiceTest {
         OrderModel order = new OrderModel(1L, List.of(item));
         ProductModel product = new ProductModel(1L, "티셔츠", 2_000L, 2);
         PointBalanceModel balance = balanceOf(4_000L);
-        when(orderService.get(100L)).thenReturn(order);
-        when(productService.get(10L)).thenReturn(product);
+        when(orderService.getForUpdate(100L)).thenReturn(order);
+        when(productService.getForUpdate(10L)).thenReturn(product);
         when(pointBalanceService.getAvailable(1L)).thenReturn(balance);
         when(orderService.save(order)).thenReturn(order);
 
@@ -60,8 +60,8 @@ class OrderConfirmationServiceTest {
         OrderItem item = new OrderItem(10L, "티셔츠", 2_000L, 2);
         OrderModel order = new OrderModel(1L, List.of(item));
         ProductModel product = new ProductModel(1L, "티셔츠", 2_000L, 1);
-        when(orderService.get(100L)).thenReturn(order);
-        when(productService.get(10L)).thenReturn(product);
+        when(orderService.getForUpdate(100L)).thenReturn(order);
+        when(productService.getForUpdate(10L)).thenReturn(product);
 
         assertThatThrownBy(() -> service().confirm(1L, 100L)).isInstanceOf(CoreException.class);
 
@@ -77,8 +77,8 @@ class OrderConfirmationServiceTest {
         OrderModel order = new OrderModel(1L, List.of(item));
         ProductModel product = new ProductModel(1L, "양말", 40L, 1);
         PointBalanceModel balance = balanceOf(40L);
-        when(orderService.get(100L)).thenReturn(order);
-        when(productService.get(10L)).thenReturn(product);
+        when(orderService.getForUpdate(100L)).thenReturn(order);
+        when(productService.getForUpdate(10L)).thenReturn(product);
         when(pointBalanceService.getAvailable(1L)).thenReturn(balance);
         when(orderService.save(order)).thenReturn(order);
 

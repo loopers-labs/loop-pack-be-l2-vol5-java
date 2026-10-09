@@ -15,16 +15,12 @@ public class LikeService {
 
     @Transactional
     public boolean register(Long userId, Long productId) {
-        if (likeRepository.find(userId, productId).isPresent()) {
-            return false;
-        }
-        likeRepository.save(new LikeModel(userId, productId));
-        return true;
+        return likeRepository.registerIfAbsent(new LikeModel(userId, productId));
     }
 
     @Transactional
     public void cancel(Long userId, Long productId) {
-        likeRepository.find(userId, productId).ifPresent(likeRepository::delete);
+        likeRepository.deleteRelationship(userId, productId);
     }
 
     @Transactional(readOnly = true)

@@ -17,7 +17,7 @@ public class ProductFacade {
 
     @Transactional
     public ProductInfo create(Long brandId, String name, long price, int initialStockQuantity) {
-        brandService.get(brandId);
+        brandService.getForShare(brandId);
         return ProductInfo.from(productService.create(brandId, name, price, initialStockQuantity));
     }
 

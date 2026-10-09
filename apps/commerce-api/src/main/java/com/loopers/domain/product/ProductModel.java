@@ -4,10 +4,11 @@ import com.loopers.domain.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(name = "product")
+@Table(name = "product", indexes = @Index(name = "idx_product_brand_deleted", columnList = "brand_id, deleted_at"))
 public class ProductModel extends BaseEntity {
 
     @Column(nullable = false)

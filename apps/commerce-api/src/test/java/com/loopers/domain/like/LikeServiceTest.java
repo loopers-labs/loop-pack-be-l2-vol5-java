@@ -5,11 +5,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.util.Optional;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -21,29 +18,26 @@ class LikeServiceTest {
 
     @Test
     void createsLikeOnlyWhenRelationshipDoesNotExist() {
-        when(likeRepository.find(1L, 2L)).thenReturn(Optional.empty());
+        when(likeRepository.registerIfAbsent(any(LikeModel.class))).thenReturn(true);
 
         assertThat(new LikeService(likeRepository).register(1L, 2L)).isTrue();
 
-        verify(likeRepository).save(any(LikeModel.class));
+        verify(likeRepository).registerIfAbsent(any(LikeModel.class));
     }
 
     @Test
     void keepsExistingLikeOnRepeatedRegister() {
-        when(likeRepository.find(1L, 2L)).thenReturn(Optional.of(new LikeModel(1L, 2L)));
+        when(likeRepository.registerIfAbsent(any(LikeModel.class))).thenReturn(false);
 
         assertThat(new LikeService(likeRepository).register(1L, 2L)).isFalse();
 
-        verify(likeRepository, never()).save(any());
+        verify(likeRepository).registerIfAbsent(any(LikeModel.class));
     }
 
     @Test
     void cancelsExistingLikeAndIgnoresAbsentLike() {
-        LikeModel like = new LikeModel(1L, 2L);
-        when(likeRepository.find(1L, 2L)).thenReturn(Optional.of(like));
-
         new LikeService(likeRepository).cancel(1L, 2L);
 
-        verify(likeRepository).delete(like);
+        verify(likeRepository).deleteRelationship(1L, 2L);
     }
 }

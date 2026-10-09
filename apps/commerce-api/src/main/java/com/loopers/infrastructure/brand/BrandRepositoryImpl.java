@@ -25,6 +25,16 @@ public class BrandRepositoryImpl implements BrandRepository {
     }
 
     @Override
+    public Optional<BrandModel> findForShare(Long id) {
+        return brandJpaRepository.findForShare(id);
+    }
+
+    @Override
+    public Optional<BrandModel> findForUpdate(Long id) {
+        return brandJpaRepository.findForUpdate(id);
+    }
+
+    @Override
     public List<BrandModel> findActiveByIds(Collection<Long> ids) {
         return brandJpaRepository.findByIdInAndDeletedAtIsNull(ids);
     }

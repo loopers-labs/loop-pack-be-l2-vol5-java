@@ -1,5 +1,6 @@
 package com.loopers.application.point;
 
+import com.loopers.application.user.UserRegistrationService;
 import com.loopers.domain.point.PointBalanceModel;
 import com.loopers.domain.user.UserModel;
 import com.loopers.infrastructure.point.PointBalanceJpaRepository;
@@ -20,6 +21,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PointExpirationPersistenceIntegrationTest {
 
     @Autowired
+    private UserRegistrationService registration;
+    @Autowired
     private PointFacade pointFacade;
     @Autowired
     private UserJpaRepository userJpaRepository;
@@ -39,11 +42,13 @@ class PointExpirationPersistenceIntegrationTest {
 
     @Test
     void expiresRewardDuringBalanceLookupAndPersistsTheResultOnlyOnce() {
-        UserModel user = userJpaRepository.save(new UserModel());
-        PointBalanceModel balance = new PointBalanceModel(user.getId());
-        balance.charge(1_000L);
-        balance.reward(500L, ZonedDateTime.now().minusYears(1));
-        pointBalanceJpaRepository.save(balance);
+        UserModel user = registration.register();
+        transactionTemplate.executeWithoutResult(status -> {
+            PointBalanceModel balance = pointBalanceJpaRepository.findByUserId(user.getId()).orElseThrow();
+            balance.charge(1_000L);
+            balance.reward(500L, ZonedDateTime.now().minusYears(1).minusDays(1));
+            pointBalanceJpaRepository.save(balance);
+        });
 
         assertThat(pointFacade.getBalance(user.getId()).balance()).isEqualTo(1_000L);
         assertPersistedBalance(user.getId(), 1_000L);

@@ -1,6 +1,6 @@
 # ADR 0005: 활성 Product가 있으면 Brand 삭제를 거절한다
 
-Status: Accepted
+Status: Superseded by [ADR 0014](./0014-brand-delete-cascades-to-active-products.md)
 Date: 2026-09-17
 
 ## Context
@@ -27,3 +27,4 @@ BrandFacade가 ProductRepository로 활성 Product 존재를 확인하고, Brand
 
 - `apps/commerce-api/src/main/java/com/loopers/application/brand/BrandFacade.java`
 - `apps/commerce-api/src/test/java/com/loopers/application/brand/BrandFacadeTest.java`
+- 이 결정을 대체한 [ADR 0014](./0014-brand-delete-cascades-to-active-products.md)

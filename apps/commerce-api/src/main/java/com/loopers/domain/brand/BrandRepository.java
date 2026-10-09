@@ -9,6 +9,10 @@ public interface BrandRepository {
 
     Optional<BrandModel> find(Long id);
 
+    Optional<BrandModel> findForShare(Long id);
+
+    Optional<BrandModel> findForUpdate(Long id);
+
     List<BrandModel> findActiveByIds(Collection<Long> ids);
 
     List<BrandModel> findAllActive();

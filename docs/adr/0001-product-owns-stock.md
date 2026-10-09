@@ -27,3 +27,4 @@ Stock은 Product 내부의 불변 값 객체로 둔다. Stock은 새 수량 값�
 - [설계 규칙](../week2/design.md)
 - `apps/commerce-api/src/main/java/com/loopers/domain/product/Stock.java`
 - `apps/commerce-api/src/test/java/com/loopers/domain/product/StockTest.java`
+- 3주차에 재고 차감의 동시성 보호 방식을 다룬 [ADR 0012](./0012-stock-decrement-locks-product-row.md)

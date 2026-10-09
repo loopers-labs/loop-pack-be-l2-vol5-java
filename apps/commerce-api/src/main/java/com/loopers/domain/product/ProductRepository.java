@@ -9,9 +9,11 @@ public interface ProductRepository {
 
     Optional<ProductModel> find(Long id);
 
+    Optional<ProductModel> findForUpdate(Long id);
+
     List<ProductModel> findAllActive();
 
     List<ProductModel> findActiveByIds(Collection<Long> ids);
 
-    boolean existsActiveByBrandId(Long brandId);
+    List<ProductModel> findActiveByBrandIdForUpdate(Long brandId);
 }

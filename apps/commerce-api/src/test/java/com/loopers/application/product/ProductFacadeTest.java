@@ -31,7 +31,7 @@ class ProductFacadeTest {
             .create(1L, "운동화", 100_000L, 10);
 
         InOrder inOrder = inOrder(brandService, productService);
-        inOrder.verify(brandService).get(1L);
+        inOrder.verify(brandService).getForShare(1L);
         inOrder.verify(productService).create(1L, "운동화", 100_000L, 10);
         assertThat(result).isEqualTo(ProductInfo.from(product));
     }
