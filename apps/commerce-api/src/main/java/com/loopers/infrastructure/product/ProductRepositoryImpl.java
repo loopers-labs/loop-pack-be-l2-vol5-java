@@ -20,8 +20,12 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
 
+import java.time.ZonedDateTime;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @RequiredArgsConstructor
 @Component
@@ -43,6 +47,21 @@ public class ProductRepositoryImpl implements ProductRepository {
     @Override
     public Optional<Product> findActive(Long productId) {
         return productJpaRepository.findByIdAndDeletedAtIsNull(productId);
+    }
+
+    @Override
+    public Optional<Product> findActiveForUpdate(Long productId) {
+        return productJpaRepository.findActiveForUpdate(productId);
+    }
+
+    @Override
+    public List<Product> findAllActiveForUpdate(Collection<Long> productIds) {
+        return productJpaRepository.findAllActiveForUpdate(productIds);
+    }
+
+    @Override
+    public Set<Long> findActiveIds(Collection<Long> productIds) {
+        return new HashSet<>(productJpaRepository.findActiveIds(productIds));
     }
 
     @Override
@@ -73,6 +92,11 @@ public class ProductRepositoryImpl implements ProductRepository {
             .where(PRODUCT.deletedAt.isNull(), brandEq(brandId))
             .fetchOne();
         return new PageImpl<>(content, pageable, total == null ? 0 : total);
+    }
+
+    @Override
+    public int deleteAllOfBrand(Long brandId, ZonedDateTime deletedAt) {
+        return productJpaRepository.deleteAllOfBrand(brandId, deletedAt);
     }
 
     // 좋아요가 없는 상품도 빠지지 않도록 outer join 으로 센다 (설계 6.2)

@@ -1,6 +1,5 @@
 package com.loopers.domain.like;
 
-import com.loopers.domain.product.ProductService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -12,14 +11,10 @@ import org.springframework.transaction.annotation.Transactional;
 public class LikeService {
 
     private final LikeRepository likeRepository;
-    private final ProductService productService;
 
-    /**
-     * 없거나 삭제된 상품에는 등록하지 않는다(LIK-01, 확인은 ProductService). 이미 있는 관계면 그대로 둔다(LIK-02, 멱등).
-     */
+    /** 이미 있는 관계면 그대로 둔다(LIK-02, 멱등). 살아 있는 상품인지(LIK-01)는 조율하는 LikeFacade 가 먼저 확인함 */
     @Transactional
     public void like(Long userId, Long productId) {
-        productService.getActiveProduct(productId);
         if (likeRepository.find(userId, productId).isPresent()) {
             return;
         }

@@ -1,7 +1,7 @@
 package com.loopers.infrastructure.order;
 
 import com.loopers.application.order.OrderFacade;
-import com.loopers.application.order.OrderInfo;
+import com.loopers.application.order.OrderDetailInfo;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderLine;
 import com.loopers.domain.order.OrderRepository;
@@ -54,7 +54,7 @@ class OrderQueryIntegrationTest {
         Order order = orderRepository.save(Order.draft(userId, List.of(
             new OrderLine(10L, firstProductName, 1_000L, 1),
             new OrderLine(20L, "두 번째 품목", 2_000L, 1)
-        )));
+        ), ZonedDateTime.now()));
         if (confirmed) {
             transactionTemplate.executeWithoutResult(status ->
                 orderRepository.findById(order.getId()).orElseThrow().confirm(3_000L, ZonedDateTime.now()));
@@ -103,11 +103,11 @@ class OrderQueryIntegrationTest {
         Order order = saveOrder(ME, "첫 품목", true);
 
         // act
-        OrderInfo info = orderFacade.getMyOrder(ME, order.getId());
+        OrderDetailInfo info = orderFacade.getMyOrder(ME, order.getId());
 
         // assert
         assertAll(
-            () -> assertThat(info.items()).extracting(OrderInfo.Item::productName).containsExactly("첫 품목", "두 번째 품목"),
+            () -> assertThat(info.items()).extracting(OrderDetailInfo.Item::productName).containsExactly("첫 품목", "두 번째 품목"),
             () -> assertThat(info.paymentAmount()).isEqualTo(3_000L)
         );
     }

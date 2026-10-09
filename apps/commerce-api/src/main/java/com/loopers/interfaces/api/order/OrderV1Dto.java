@@ -1,8 +1,9 @@
 package com.loopers.interfaces.api.order;
 
+import com.loopers.application.order.OrderDetailInfo;
 import com.loopers.application.order.OrderInfo;
 import com.loopers.application.order.OrderSummaryInfo;
-import com.loopers.domain.order.OrderService.OrderRequestLine;
+import com.loopers.application.order.OrderFacade.OrderRequestLine;
 
 import java.time.ZonedDateTime;
 import java.util.List;
@@ -42,6 +43,34 @@ public class OrderV1Dto {
                 info.orderedAt(),
                 info.items().stream()
                     .map(item -> new ItemResponse(item.productId(), item.productName(), item.unitPrice(), item.quantity(), item.amount()))
+                    .toList()
+            );
+        }
+    }
+
+    /** 내 주문 상세. 품목마다 판매 여부를 담아 삭제된 상품은 판매종료로 보여줄 수 있게 함 (설계 6.4) */
+    public record OrderDetailResponse(
+        Long id,
+        String status,
+        long totalAmount,
+        Long paymentAmount,
+        ZonedDateTime paidAt,
+        ZonedDateTime orderedAt,
+        List<ItemResponse> items
+    ) {
+        public record ItemResponse(Long productId, String productName, long unitPrice, int quantity, long amount, boolean onSale) {}
+
+        public static OrderDetailResponse from(OrderDetailInfo info) {
+            return new OrderDetailResponse(
+                info.id(),
+                info.status(),
+                info.totalAmount(),
+                info.paymentAmount(),
+                info.paidAt(),
+                info.orderedAt(),
+                info.items().stream()
+                    .map(item -> new ItemResponse(
+                        item.productId(), item.productName(), item.unitPrice(), item.quantity(), item.amount(), item.onSale()))
                     .toList()
             );
         }

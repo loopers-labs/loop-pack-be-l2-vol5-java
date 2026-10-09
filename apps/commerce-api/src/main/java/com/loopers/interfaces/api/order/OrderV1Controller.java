@@ -1,5 +1,6 @@
 package com.loopers.interfaces.api.order;
 
+import com.loopers.application.order.OrderConfirmRetrier;
 import com.loopers.application.order.OrderFacade;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.PageQuery;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class OrderV1Controller implements OrderV1ApiSpec {
 
     private final OrderFacade orderFacade;
+    private final OrderConfirmRetrier orderConfirmRetrier;
 
     @PostMapping
     @Override
@@ -30,7 +32,7 @@ public class OrderV1Controller implements OrderV1ApiSpec {
     @PostMapping("/{orderId}/confirm")
     @Override
     public ApiResponse<OrderV1Dto.OrderResponse> confirmOrder(LoginUser loginUser, @PathVariable Long orderId) {
-        return ApiResponse.success(OrderV1Dto.OrderResponse.from(orderFacade.confirmOrder(loginUser.id(), orderId)));
+        return ApiResponse.success(OrderV1Dto.OrderResponse.from(orderConfirmRetrier.confirmOrder(loginUser.id(), orderId)));
     }
 
     @GetMapping
@@ -49,7 +51,7 @@ public class OrderV1Controller implements OrderV1ApiSpec {
 
     @GetMapping("/{orderId}")
     @Override
-    public ApiResponse<OrderV1Dto.OrderResponse> getMyOrder(LoginUser loginUser, @PathVariable Long orderId) {
-        return ApiResponse.success(OrderV1Dto.OrderResponse.from(orderFacade.getMyOrder(loginUser.id(), orderId)));
+    public ApiResponse<OrderV1Dto.OrderDetailResponse> getMyOrder(LoginUser loginUser, @PathVariable Long orderId) {
+        return ApiResponse.success(OrderV1Dto.OrderDetailResponse.from(orderFacade.getMyOrder(loginUser.id(), orderId)));
     }
 }

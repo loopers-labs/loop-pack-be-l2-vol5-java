@@ -1,5 +1,6 @@
 package com.loopers.interfaces.api.point;
 
+import com.loopers.application.point.PointChargeRetrier;
 import com.loopers.application.point.PointFacade;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.auth.LoginUser;
@@ -16,11 +17,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class PointV1Controller implements PointV1ApiSpec {
 
     private final PointFacade pointFacade;
+    private final PointChargeRetrier pointChargeRetrier;
 
     @PostMapping("/charge")
     @Override
     public ApiResponse<PointV1Dto.PointResponse> charge(LoginUser loginUser, @RequestBody PointV1Dto.ChargeRequest request) {
-        return ApiResponse.success(PointV1Dto.PointResponse.from(pointFacade.charge(loginUser.id(), request.amount())));
+        return ApiResponse.success(PointV1Dto.PointResponse.from(pointChargeRetrier.charge(loginUser.id(), request.amount())));
     }
 
     @GetMapping

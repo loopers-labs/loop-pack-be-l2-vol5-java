@@ -6,6 +6,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.Version;
 
 /**
  * 사용자의 포인트 잔액. 1포인트는 1원이다. 사용자 한 명에 하나이며 사용자는 식별자로만 보관한다 (설계 2.3).
@@ -19,6 +20,10 @@ public class Point extends BaseEntity {
     private Long userId;
 
     private long balance;
+
+    /** 같은 사용자의 충전 · 결제가 겹치면 나중 commit 이 충돌함. 충돌한 유스케이스는 ~Retrier 가 새 트랜잭션으로 다시 실행 (3주차 설계 4.1) */
+    @Version
+    private Long version;
 
     protected Point() {}
 
@@ -48,14 +53,9 @@ public class Point extends BaseEntity {
         }
     }
 
-    /** 0원 결제는 허용한다 (설계 D-30). */
-    public boolean canPay(long amount) {
-        return amount >= 0 && amount <= balance;
-    }
-
-    /** 같은 판단을 거쳐 거절하므로 잔액은 0 아래로 내려가지 않는다 (PNT-03). */
+    /** 0원 결제는 허용함 (설계 D-30). 음수이거나 잔액보다 많으면 거절하므로 잔액은 0 아래로 내려가지 않음 (PNT-03) */
     public void pay(long amount) {
-        if (!canPay(amount)) {
+        if (amount < 0 || amount > balance) {
             throw new CoreException(PointErrorCode.INSUFFICIENT_POINT);
         }
         this.balance -= amount;

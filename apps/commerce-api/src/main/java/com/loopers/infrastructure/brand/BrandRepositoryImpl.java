@@ -30,7 +30,12 @@ public class BrandRepositoryImpl implements BrandRepository {
     }
 
     @Override
-    public boolean hasActiveProduct(Long brandId) {
-        return brandJpaRepository.existsActiveProductByBrandId(brandId);
+    public Optional<Brand> findActiveForUpdate(Long brandId) {
+        return brandJpaRepository.findActiveForUpdate(brandId);
+    }
+
+    @Override
+    public Optional<Brand> findActiveForShare(Long brandId) {
+        return brandJpaRepository.findActiveForShare(brandId);
     }
 }

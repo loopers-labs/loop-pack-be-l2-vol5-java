@@ -77,28 +77,6 @@ class PointTest {
         }
     }
 
-    @DisplayName("결제할 수 있는지 판단할 때, ")
-    @Nested
-    class CanPay {
-        @DisplayName("잔액 이하면 참이고, 잔액보다 크거나 음수면 거짓이다.")
-        @Test
-        void comparesWithBalance() {
-            Point point = pointWithBalance(1_000L);
-
-            assertAll(
-                () -> assertThat(point.canPay(1_000L)).isTrue(),
-                () -> assertThat(point.canPay(1_001L)).isFalse(),
-                () -> assertThat(point.canPay(-1L)).isFalse()
-            );
-        }
-
-        @DisplayName("0 원 결제는 잔액이 0 이어도 참이다. (D-30)")
-        @Test
-        void allowsZeroPayment() {
-            assertThat(new Point(1L).canPay(0L)).isTrue();
-        }
-    }
-
     @DisplayName("결제할 때, ")
     @Nested
     class Pay {
@@ -112,14 +90,35 @@ class PointTest {
             assertThat(point.getBalance()).isEqualTo(3_000L);
         }
 
-        @DisplayName("잔액보다 크면, INSUFFICIENT_POINT 예외가 발생하고 잔액은 그대로다.")
+        @DisplayName("잔액 전부를 내면, 잔액이 0 이 된다.")
         @Test
-        void throwsInsufficientPoint_andKeepsBalance_whenAmountExceedsBalance() {
+        void paysWholeBalance() {
+            Point point = pointWithBalance(1_000L);
+
+            point.pay(1_000L);
+
+            assertThat(point.getBalance()).isZero();
+        }
+
+        @DisplayName("0 원 결제는 잔액이 0 이어도 성공한다. (D-30)")
+        @Test
+        void allowsZeroPayment() {
+            Point point = new Point(1L);
+
+            point.pay(0L);
+
+            assertThat(point.getBalance()).isZero();
+        }
+
+        @DisplayName("잔액보다 크거나 음수면, INSUFFICIENT_POINT 예외가 발생하고 잔액은 그대로다. (PNT-03)")
+        @ParameterizedTest
+        @ValueSource(longs = {1_001L, -1L})
+        void throwsInsufficientPoint_andKeepsBalance(long amount) {
             // arrange
             Point point = pointWithBalance(1_000L);
 
             // act
-            CoreException result = assertThrows(CoreException.class, () -> point.pay(1_001L));
+            CoreException result = assertThrows(CoreException.class, () -> point.pay(amount));
 
             // assert
             assertAll(

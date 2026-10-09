@@ -71,13 +71,13 @@ public class Product extends BaseEntity {
         updateStock(stock);
     }
 
-    public boolean canDecrease(int quantity) {
-        return quantity > 0 && quantity <= stock;
-    }
-
+    /**
+     * 0 이하이거나 보유량보다 많으면 거절함 (PRD-06). 이유와 관계없이 OUT_OF_STOCK 임.
+     * 여러 품목 중 어느 상품인지 알 수 있도록 자신의 식별자를 담음 (설계 4.4, 6.4)
+     */
     public void decrease(int quantity) {
-        if (!canDecrease(quantity)) {
-            throw new CoreException(ProductErrorCode.OUT_OF_STOCK);
+        if (quantity <= 0 || quantity > stock) {
+            throw new CoreException(ProductErrorCode.OUT_OF_STOCK, null, ProductErrorDetail.of(getId()));
         }
         updateStock(stock - quantity);
     }

@@ -53,9 +53,4 @@ public class OrderItem extends BaseEntity {
     public long getAmount() {
         return unitPrice * quantity;
     }
-
-    /** 확정 시 스냅샷 단가와 현재 가격이 같아야 한다. 가격이 내려간 경우도 다르다고 본다 (ORD-09, 설계 2.3). */
-    public boolean isPriceMatched(long currentPrice) {
-        return unitPrice == currentPrice;
-    }
 }

@@ -1,13 +1,9 @@
 package com.loopers.domain.like;
 
 import com.loopers.domain.brand.Brand;
-import com.loopers.domain.brand.BrandService;
 import com.loopers.domain.brand.FakeBrandRepository;
 import com.loopers.domain.product.FakeProductRepository;
 import com.loopers.domain.product.Product;
-import com.loopers.domain.product.ProductErrorCode;
-import com.loopers.domain.product.ProductService;
-import com.loopers.support.error.CoreException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -15,7 +11,6 @@ import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class LikeServiceTest {
 
@@ -32,7 +27,7 @@ class LikeServiceTest {
         FakeBrandRepository brandRepository = new FakeBrandRepository();
         productRepository = new FakeProductRepository();
         likeRepository = new FakeLikeRepository();
-        likeService = new LikeService(likeRepository, new ProductService(productRepository, new BrandService(brandRepository)));
+        likeService = new LikeService(likeRepository);
         brand = brandRepository.save(new Brand("브랜드", null));
     }
 
@@ -71,31 +66,6 @@ class LikeServiceTest {
 
             // assert
             assertThat(likeService.countLikes(product.getId())).isEqualTo(1);
-        }
-
-        @DisplayName("삭제된 상품이면, PRODUCT_NOT_FOUND 예외가 발생하고 관계가 만들어지지 않는다. (LIK-01)")
-        @Test
-        void throwsProductNotFound_whenProductIsDeleted() {
-            // arrange
-            Product product = saveProduct();
-            product.delete();
-
-            // act
-            CoreException result = assertThrows(CoreException.class, () -> likeService.like(USER_A, product.getId()));
-
-            // assert
-            assertAll(
-                () -> assertThat(result.getErrorCode()).isEqualTo(ProductErrorCode.PRODUCT_NOT_FOUND),
-                () -> assertThat(likeRepository.find(USER_A, product.getId())).isEmpty()
-            );
-        }
-
-        @DisplayName("없는 상품이면, PRODUCT_NOT_FOUND 예외가 발생한다.")
-        @Test
-        void throwsProductNotFound_whenProductDoesNotExist() {
-            CoreException result = assertThrows(CoreException.class, () -> likeService.like(USER_A, 999L));
-
-            assertThat(result.getErrorCode()).isEqualTo(ProductErrorCode.PRODUCT_NOT_FOUND);
         }
     }
 

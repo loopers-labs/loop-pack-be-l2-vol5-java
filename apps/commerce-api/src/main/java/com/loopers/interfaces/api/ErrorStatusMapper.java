@@ -22,10 +22,11 @@ public final class ErrorStatusMapper {
         Map.entry(ErrorType.UNAUTHENTICATED, HttpStatus.UNAUTHORIZED),
         Map.entry(ErrorType.NOT_FOUND, HttpStatus.NOT_FOUND),
         Map.entry(ErrorType.CONFLICT, HttpStatus.CONFLICT),
+        Map.entry(ErrorType.LOCK_ACQUISITION_FAILED, HttpStatus.INTERNAL_SERVER_ERROR),
+        Map.entry(ErrorType.CONCURRENT_UPDATE_CONFLICT, HttpStatus.CONFLICT),
         Map.entry(BrandErrorCode.BRAND_NOT_FOUND, HttpStatus.NOT_FOUND),
         Map.entry(BrandErrorCode.INVALID_BRAND_NAME, HttpStatus.BAD_REQUEST),
         Map.entry(BrandErrorCode.INVALID_BRAND_DESCRIPTION, HttpStatus.BAD_REQUEST),
-        Map.entry(BrandErrorCode.BRAND_HAS_PRODUCTS, HttpStatus.CONFLICT),
         Map.entry(ProductErrorCode.PRODUCT_NOT_FOUND, HttpStatus.NOT_FOUND),
         Map.entry(ProductErrorCode.INVALID_PRODUCT_NAME, HttpStatus.BAD_REQUEST),
         Map.entry(ProductErrorCode.INVALID_PRICE, HttpStatus.BAD_REQUEST),
@@ -37,9 +38,9 @@ public final class ErrorStatusMapper {
         Map.entry(PointErrorCode.INSUFFICIENT_POINT, HttpStatus.CONFLICT),
         Map.entry(OrderErrorCode.ORDER_NOT_FOUND, HttpStatus.NOT_FOUND),
         Map.entry(OrderErrorCode.ORDER_ALREADY_CONFIRMED, HttpStatus.CONFLICT),
+        Map.entry(OrderErrorCode.ORDER_EXPIRED, HttpStatus.CONFLICT),
         Map.entry(OrderErrorCode.EMPTY_ORDER_ITEMS, HttpStatus.BAD_REQUEST),
-        Map.entry(OrderErrorCode.INVALID_QUANTITY, HttpStatus.BAD_REQUEST),
-        Map.entry(OrderErrorCode.PRODUCT_PRICE_CHANGED, HttpStatus.CONFLICT)
+        Map.entry(OrderErrorCode.INVALID_QUANTITY, HttpStatus.BAD_REQUEST)
     );
 
     private ErrorStatusMapper() {}

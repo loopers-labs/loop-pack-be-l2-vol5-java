@@ -37,8 +37,12 @@ public interface OrderV1ApiSpec {
         @Schema(description = "페이지 크기 (최대 100)") int size
     );
 
-    @Operation(summary = "내 주문 상세", description = "없는 주문과 타인의 주문은 ORDER_NOT_FOUND 입니다. 품목은 주문 시점의 상품명 · 단가입니다.")
-    ApiResponse<OrderV1Dto.OrderResponse> getMyOrder(
+    @Operation(
+        summary = "내 주문 상세",
+        description = "없는 주문과 타인의 주문은 ORDER_NOT_FOUND 입니다. 품목은 주문 시점의 상품명 · 단가입니다. "
+            + "품목의 onSale 은 상품의 현재 판매 여부이며, 삭제된 상품이면 false 입니다."
+    )
+    ApiResponse<OrderV1Dto.OrderDetailResponse> getMyOrder(
         @Parameter(hidden = true) LoginUser loginUser,
         @Schema(description = "주문 ID") Long orderId
     );

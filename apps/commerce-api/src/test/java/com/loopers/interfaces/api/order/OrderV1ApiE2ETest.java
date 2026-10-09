@@ -241,14 +241,21 @@ class OrderV1ApiE2ETest {
             assertThat(orderJpaRepository.findById(orderId).orElseThrow().isDraft()).isTrue();
         }
 
-        @DisplayName("잔액이 부족하면, 409 와 INSUFFICIENT_POINT 를 돌려준다.")
+        @DisplayName("잔액이 부족하면, 409 와 INSUFFICIENT_POINT 를 돌려주고 먼저 차감한 재고도 롤백되어 그대로다. (설계 5.4)")
         @Test
         void returnsInsufficientPoint() throws Exception {
-            Long orderId = createOrderId(itemsOf(first.getId(), 1));
+            charge(1_000L);
+            Long orderId = createOrderId(itemsOf(first.getId(), 1, second.getId(), 1));
 
             confirm(user, orderId)
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.meta.errorCode").value("INSUFFICIENT_POINT"));
+
+            mvc.perform(get("/api/v1/points").header(USER_ID_HEADER, String.valueOf(user.getId())))
+                .andExpect(jsonPath("$.data.balance").value(1_000));
+            assertThat(stockOf(first)).isEqualTo(10);
+            assertThat(stockOf(second)).isEqualTo(5);
+            assertThat(orderJpaRepository.findById(orderId).orElseThrow().isDraft()).isTrue();
         }
 
         @DisplayName("타인의 주문이면 404 와 ORDER_NOT_FOUND, 이미 확정한 주문이면 409 와 ORDER_ALREADY_CONFIRMED 를 돌려준다.")
@@ -328,11 +335,29 @@ class OrderV1ApiE2ETest {
                 .andExpect(jsonPath("$.data.items[0].productName").value("첫 번째 상품"))
                 .andExpect(jsonPath("$.data.items[0].unitPrice").value(1_000))
                 .andExpect(jsonPath("$.data.items[0].amount").value(2_000))
+                .andExpect(jsonPath("$.data.items[0].onSale").value(true))
                 .andExpect(jsonPath("$.data.userId").doesNotExist());
 
             mvc.perform(get("/api/v1/orders/" + orderId).header(USER_ID_HEADER, String.valueOf(other.getId())))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.meta.errorCode").value("ORDER_NOT_FOUND"));
+        }
+
+        @DisplayName("주문한 상품이 이후 삭제되었으면, 그 품목의 onSale 은 false 이고 나머지는 true 다. (설계 6.4)")
+        @Test
+        void marksDeletedProductAsNotOnSale() throws Exception {
+            // arrange
+            Long orderId = createOrderId(itemsOf(first.getId(), 1, second.getId(), 1));
+            Product deleted = productJpaRepository.findById(second.getId()).orElseThrow();
+            deleted.delete();
+            productJpaRepository.save(deleted);
+
+            // act & assert
+            mvc.perform(get("/api/v1/orders/" + orderId).header(USER_ID_HEADER, String.valueOf(user.getId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].onSale").value(true))
+                .andExpect(jsonPath("$.data.items[1].onSale").value(false))
+                .andExpect(jsonPath("$.data.items[1].productName").value("두 번째 상품"));
         }
     }
 }

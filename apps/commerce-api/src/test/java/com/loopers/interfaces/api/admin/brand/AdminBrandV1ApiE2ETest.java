@@ -72,10 +72,12 @@ class AdminBrandV1ApiE2ETest {
         return brandJpaRepository.save(new Brand(name, "설명"));
     }
 
-    private void saveProduct(Brand brand) {
-        transactionTemplate.executeWithoutResult(status ->
-            entityManager.persist(new Product(entityManager.find(Brand.class, brand.getId()), "상품", 1_000L))
-        );
+    private Product saveProduct(Brand brand) {
+        return transactionTemplate.execute(status -> {
+            Product product = new Product(entityManager.find(Brand.class, brand.getId()), "상품", 1_000L);
+            entityManager.persist(product);
+            return product;
+        });
     }
 
     @DisplayName("관리자 접근을 확인할 때, ")
@@ -189,19 +191,41 @@ class AdminBrandV1ApiE2ETest {
     @DisplayName("DELETE /api-admin/v1/brands/{brandId}")
     @Nested
     class Delete {
-        @DisplayName("삭제되지 않은 상품이 남아 있으면, 409 와 BRAND_HAS_PRODUCTS 를 돌려주고 브랜드는 그대로 조회된다.")
+        @DisplayName("삭제되지 않은 상품이 남아 있으면, 상품도 함께 삭제되어 고객 · 관리자 상품 상세에서 404 와 PRODUCT_NOT_FOUND 를 돌려준다. (BRD-02)")
         @Test
-        void rejects_whenActiveProductRemains() throws Exception {
+        void deletesProductsTogether_whenActiveProductRemains() throws Exception {
             // arrange
             Brand brand = saveBrand("브랜드");
-            saveProduct(brand);
+            Product product = saveProduct(brand);
 
-            // act & assert
+            // act
             mvc.perform(delete(ENDPOINT + "/" + brand.getId()).with(ADMIN).with(csrf()))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.meta.errorCode").value("BRAND_HAS_PRODUCTS"));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.meta.result").value("SUCCESS"));
 
+            // assert
+            mvc.perform(get("/api/v1/products/" + product.getId()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.meta.errorCode").value("PRODUCT_NOT_FOUND"));
+            mvc.perform(get("/api-admin/v1/products/" + product.getId()).with(ADMIN))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.meta.errorCode").value("PRODUCT_NOT_FOUND"));
+        }
+
+        @DisplayName("일반 사용자와 식별 없는 요청은 403 으로 거절하고, 브랜드와 상품을 바꾸지 않는다.")
+        @Test
+        void rejectsNonAdmin_andKeepsBrandAndProducts() throws Exception {
+            // arrange
+            Brand brand = saveBrand("브랜드");
+            Product product = saveProduct(brand);
+
+            // act
+            mvc.perform(delete(ENDPOINT + "/" + brand.getId()).with(CUSTOMER).with(csrf())).andExpect(status().isForbidden());
+            mvc.perform(delete(ENDPOINT + "/" + brand.getId()).with(csrf())).andExpect(status().isForbidden());
+
+            // assert
             mvc.perform(get(ENDPOINT + "/" + brand.getId()).with(ADMIN)).andExpect(status().isOk());
+            mvc.perform(get("/api-admin/v1/products/" + product.getId()).with(ADMIN)).andExpect(status().isOk());
         }
 
         @DisplayName("삭제한 브랜드는 상세 조회와 다시 삭제에서 404 와 BRAND_NOT_FOUND 를 돌려준다.")

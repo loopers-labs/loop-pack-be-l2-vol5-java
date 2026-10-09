@@ -83,32 +83,6 @@ class ProductStockTest {
         }
     }
 
-    @DisplayName("재고를 차감할 수 있는지 판단할 때, ")
-    @Nested
-    class CanDecrease {
-        @DisplayName("보유량 이하의 양수면, 참이다.")
-        @ParameterizedTest
-        @ValueSource(ints = {1, 5})
-        void returnsTrue_whenQuantityIsPositiveAndWithinStock(int quantity) {
-            // arrange
-            Product product = productWithStock(5);
-
-            // act & assert
-            assertThat(product.canDecrease(quantity)).isTrue();
-        }
-
-        @DisplayName("보유량보다 많거나 0 이하면, 거짓이다.")
-        @ParameterizedTest
-        @ValueSource(ints = {6, 0, -1})
-        void returnsFalse_whenQuantityExceedsStockOrIsNotPositive(int quantity) {
-            // arrange
-            Product product = productWithStock(5);
-
-            // act & assert
-            assertThat(product.canDecrease(quantity)).isFalse();
-        }
-    }
-
     @DisplayName("최종 재고를 설정할 때, ")
     @Nested
     class ChangeStock {

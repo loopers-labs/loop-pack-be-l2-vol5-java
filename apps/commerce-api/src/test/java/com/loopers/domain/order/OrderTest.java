@@ -18,6 +18,11 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class OrderTest {
 
     private static final Long USER_ID = 1L;
+    private static final ZonedDateTime CREATED_AT = ZonedDateTime.parse("2026-10-06T10:00:00+09:00[Asia/Seoul]");
+
+    private static Order draft(List<OrderLine> lines) {
+        return Order.draft(USER_ID, lines, CREATED_AT);
+    }
 
     private static OrderLine line(long productId, long unitPrice, int quantity) {
         return new OrderLine(productId, "상품" + productId, unitPrice, quantity);
@@ -30,7 +35,7 @@ class OrderTest {
         @Test
         void createsDraftWithTotal() {
             // act
-            Order order = Order.draft(USER_ID, List.of(line(1L, 1_000L, 2), line(2L, 2_500L, 2)));
+            Order order = draft(List.of(line(1L, 1_000L, 2), line(2L, 2_500L, 2)));
 
             // assert
             assertAll(
@@ -41,11 +46,21 @@ class OrderTest {
             );
         }
 
+        @DisplayName("만료 시각은 생성 시각 + 30분이다. (ORD-08)")
+        @Test
+        void setsExpiresAtThirtyMinutesLater() {
+            // act
+            Order order = draft(List.of(line(1L, 1_000L, 1)));
+
+            // assert
+            assertThat(order.getExpiresAt()).isEqualTo(CREATED_AT.plusMinutes(30));
+        }
+
         @DisplayName("같은 상품의 품목은 처음 등장한 위치에 하나로 합산한다. (ORD-03, D-33)")
         @Test
         void mergesSameProductAtFirstPosition() {
             // act
-            Order order = Order.draft(USER_ID, List.of(line(1L, 1_000L, 2), line(2L, 500L, 1), line(1L, 1_000L, 3)));
+            Order order = draft(List.of(line(1L, 1_000L, 2), line(2L, 500L, 1), line(1L, 1_000L, 3)));
 
             // assert
             assertAll(
@@ -58,7 +73,7 @@ class OrderTest {
         @DisplayName("품목이 없으면, EMPTY_ORDER_ITEMS 예외가 발생한다. (ORD-04)")
         @Test
         void throwsEmptyOrderItems_whenNoLines() {
-            CoreException result = assertThrows(CoreException.class, () -> Order.draft(USER_ID, List.of()));
+            CoreException result = assertThrows(CoreException.class, () -> draft(List.of()));
 
             assertThat(result.getErrorCode()).isEqualTo(OrderErrorCode.EMPTY_ORDER_ITEMS);
         }
@@ -67,7 +82,7 @@ class OrderTest {
         @ParameterizedTest
         @ValueSource(ints = {0, -1, 1_000})
         void throwsInvalidQuantity_whenQuantityIsOutOfRange(int quantity) {
-            CoreException result = assertThrows(CoreException.class, () -> Order.draft(USER_ID, List.of(line(1L, 1_000L, quantity))));
+            CoreException result = assertThrows(CoreException.class, () -> draft(List.of(line(1L, 1_000L, quantity))));
 
             assertThat(result.getErrorCode()).isEqualTo(OrderErrorCode.INVALID_QUANTITY);
         }
@@ -76,7 +91,7 @@ class OrderTest {
         @Test
         void throwsInvalidQuantity_whenMergedQuantityExceedsLimit() {
             CoreException result = assertThrows(CoreException.class,
-                () -> Order.draft(USER_ID, List.of(line(1L, 1_000L, 600), line(1L, 1_000L, 600))));
+                () -> draft(List.of(line(1L, 1_000L, 600), line(1L, 1_000L, 600))));
 
             assertThat(result.getErrorCode()).isEqualTo(OrderErrorCode.INVALID_QUANTITY);
         }
@@ -84,7 +99,7 @@ class OrderTest {
         @DisplayName("합계 0 원 주문은 허용한다. (0원 상품, 설계 5.2)")
         @Test
         void allowsZeroTotal() {
-            assertThat(Order.draft(USER_ID, List.of(line(1L, 0L, 3))).getTotalAmount()).isZero();
+            assertThat(draft(List.of(line(1L, 0L, 3))).getTotalAmount()).isZero();
         }
     }
 
@@ -95,8 +110,8 @@ class OrderTest {
         @Test
         void confirmsDraft() {
             // arrange
-            Order order = Order.draft(USER_ID, List.of(line(1L, 7_000L, 1)));
-            ZonedDateTime paidAt = ZonedDateTime.now();
+            Order order = draft(List.of(line(1L, 7_000L, 1)));
+            ZonedDateTime paidAt = CREATED_AT.plusMinutes(1);
 
             // act
             order.confirm(7_000L, paidAt);
@@ -113,8 +128,8 @@ class OrderTest {
         @Test
         void throwsAlreadyConfirmed_andKeepsPayment() {
             // arrange
-            Order order = Order.draft(USER_ID, List.of(line(1L, 7_000L, 1)));
-            ZonedDateTime paidAt = ZonedDateTime.now();
+            Order order = draft(List.of(line(1L, 7_000L, 1)));
+            ZonedDateTime paidAt = CREATED_AT.plusMinutes(1);
             order.confirm(7_000L, paidAt);
 
             // act
@@ -127,17 +142,37 @@ class OrderTest {
                 () -> assertThat(order.getPaidAt()).isEqualTo(paidAt)
             );
         }
+
+        @DisplayName("만료된 주문이면, ORDER_EXPIRED 예외가 발생하고 DRAFT 로 남으며 결제 정보는 비어 있다. (ORD-08)")
+        @Test
+        void throwsExpired_andKeepsDraft() {
+            // arrange
+            Order order = draft(List.of(line(1L, 7_000L, 1)));
+
+            // act
+            CoreException result = assertThrows(CoreException.class, () -> order.confirm(7_000L, CREATED_AT.plusMinutes(30)));
+
+            // assert
+            assertAll(
+                () -> assertThat(result.getErrorCode()).isEqualTo(OrderErrorCode.ORDER_EXPIRED),
+                () -> assertThat(order.getStatus()).isEqualTo(OrderStatus.DRAFT),
+                () -> assertThat(order.getPaymentAmount()).isNull(),
+                () -> assertThat(order.getPaidAt()).isNull()
+            );
+        }
     }
 
-    @DisplayName("품목의 가격 일치 판단은 스냅샷 단가와 같을 때만 참이고, 오르거나 내려도 거짓이다. (ORD-09)")
+    @DisplayName("확정할 수 있는지 검사할 때, 생성 시각 + 30분 직전이면 통과하고 30분부터는 ORDER_EXPIRED 예외가 발생한다. (ORD-08)")
     @Test
-    void matchesOnlySamePrice() {
-        OrderItem item = Order.draft(USER_ID, List.of(line(1L, 1_000L, 1))).getItems().get(0);
+    void rejectsFromThirtyMinutes() {
+        Order order = draft(List.of(line(1L, 1_000L, 1)));
 
+        order.validateConfirmable(CREATED_AT.plusMinutes(30).minusSeconds(1));
         assertAll(
-            () -> assertThat(item.isPriceMatched(1_000L)).isTrue(),
-            () -> assertThat(item.isPriceMatched(1_200L)).isFalse(),
-            () -> assertThat(item.isPriceMatched(800L)).isFalse()
+            () -> assertThat(assertThrows(CoreException.class, () -> order.validateConfirmable(CREATED_AT.plusMinutes(30))).getErrorCode())
+                .isEqualTo(OrderErrorCode.ORDER_EXPIRED),
+            () -> assertThat(assertThrows(CoreException.class, () -> order.validateConfirmable(CREATED_AT.plusMinutes(31))).getErrorCode())
+                .isEqualTo(OrderErrorCode.ORDER_EXPIRED)
         );
     }
 }

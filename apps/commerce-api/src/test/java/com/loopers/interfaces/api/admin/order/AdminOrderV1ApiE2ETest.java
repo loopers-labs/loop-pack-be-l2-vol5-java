@@ -16,6 +16,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
+import java.time.ZonedDateTime;
 import java.util.List;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
@@ -58,7 +59,7 @@ class AdminOrderV1ApiE2ETest {
     }
 
     private Order saveOrder(User user, String productName) {
-        return orderJpaRepository.save(Order.draft(user.getId(), List.of(new OrderLine(10L, productName, 1_000L, 2))));
+        return orderJpaRepository.save(Order.draft(user.getId(), List.of(new OrderLine(10L, productName, 1_000L, 2)), ZonedDateTime.now()));
     }
 
     @DisplayName("일반 사용자와 식별 없는 요청은 403 으로 거절한다.")

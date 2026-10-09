@@ -27,6 +27,6 @@ public interface AdminBrandV1ApiSpec {
         AdminBrandV1Dto.BrandRequest request
     );
 
-    @Operation(summary = "브랜드 삭제", description = "삭제되지 않은 상품이 남은 브랜드는 BRAND_HAS_PRODUCTS 입니다.")
+    @Operation(summary = "브랜드 삭제", description = "브랜드와 함께 그 브랜드의 삭제되지 않은 상품(재고 0 포함)을 모두 삭제합니다. 과거 주문은 바뀌지 않습니다.")
     ApiResponse<Object> deleteBrand(@Schema(description = "브랜드 ID") Long brandId);
 }

@@ -25,6 +25,12 @@ spring:
       - logging.yml
       - monitoring.yml
 
+# 행 잠금 대기 한도 3초. 공통 jpa.yml 은 배치 · 스트리머도 쓰므로 commerce-api 에서만 정함 (3주차 설계 4.5)
+datasource:
+  mysql-jpa:
+    main:
+      connection-init-sql: SET SESSION innodb_lock_wait_timeout = 3
+
 springdoc:
   use-fqn: true
   swagger-ui:

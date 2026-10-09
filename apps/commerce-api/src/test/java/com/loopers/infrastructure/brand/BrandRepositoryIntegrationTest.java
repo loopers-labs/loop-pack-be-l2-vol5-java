@@ -2,7 +2,6 @@ package com.loopers.infrastructure.brand;
 
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
-import com.loopers.domain.product.Product;
 import com.loopers.utils.DatabaseCleanUp;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.AfterEach;
@@ -53,56 +52,6 @@ class BrandRepositoryIntegrationTest {
             entityManager.persist(brand);
             return brand;
         });
-    }
-
-    private void saveProduct(Brand brand, int stock, boolean deleted) {
-        inTransaction(() -> {
-            Product product = new Product(entityManager.find(Brand.class, brand.getId()), "상품", 1_000L);
-            product.changeStock(stock);
-            if (deleted) {
-                product.delete();
-            }
-            entityManager.persist(product);
-            return product;
-        });
-    }
-
-    @DisplayName("브랜드에 삭제되지 않은 상품이 있는지 물을 때, ")
-    @Nested
-    class HasActiveProduct {
-        @DisplayName("재고가 0 인 삭제되지 않은 상품도 있다고 답한다.")
-        @Test
-        void returnsTrue_whenActiveProductHasZeroStock() {
-            // arrange
-            Brand brand = saveBrand("브랜드", false);
-            saveProduct(brand, 0, false);
-
-            // act & assert
-            assertThat(brandRepository.hasActiveProduct(brand.getId())).isTrue();
-        }
-
-        @DisplayName("삭제된 상품만 있으면 없다고 답한다.")
-        @Test
-        void returnsFalse_whenOnlyDeletedProductsRemain() {
-            // arrange
-            Brand brand = saveBrand("브랜드", false);
-            saveProduct(brand, 10, true);
-
-            // act & assert
-            assertThat(brandRepository.hasActiveProduct(brand.getId())).isFalse();
-        }
-
-        @DisplayName("다른 브랜드의 상품은 세지 않는다.")
-        @Test
-        void returnsFalse_whenOnlyOtherBrandHasProducts() {
-            // arrange
-            Brand brand = saveBrand("브랜드", false);
-            Brand other = saveBrand("다른 브랜드", false);
-            saveProduct(other, 10, false);
-
-            // act & assert
-            assertThat(brandRepository.hasActiveProduct(brand.getId())).isFalse();
-        }
     }
 
     @DisplayName("삭제되지 않은 브랜드를 조회할 때, ")

@@ -6,11 +6,16 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.ZonedDateTime;
+import java.util.Collection;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /** DB 없이 상품 서비스의 협력을 확인하기 위한 저장 구현. */
 public class FakeProductRepository implements ProductRepository {
@@ -30,6 +35,29 @@ public class FakeProductRepository implements ProductRepository {
     @Override
     public Optional<Product> findActive(Long productId) {
         return Optional.ofNullable(products.get(productId)).filter(product -> !product.isDeleted());
+    }
+
+    // fake 에는 잠금이 없다. 잠금 동작은 실제 DB 의 동시성 테스트에서 확인한다
+    @Override
+    public Optional<Product> findActiveForUpdate(Long productId) {
+        return findActive(productId);
+    }
+
+    @Override
+    public List<Product> findAllActiveForUpdate(Collection<Long> productIds) {
+        return productIds.stream()
+            .distinct()
+            .map(this::findActive)
+            .flatMap(Optional::stream)
+            .sorted(Comparator.comparing(Product::getId))
+            .toList();
+    }
+
+    @Override
+    public Set<Long> findActiveIds(Collection<Long> productIds) {
+        return productIds.stream()
+            .filter(productId -> findActive(productId).isPresent())
+            .collect(Collectors.toSet());
     }
 
     @Override
@@ -55,6 +83,11 @@ public class FakeProductRepository implements ProductRepository {
 
     @Override
     public Page<ProductView> findActiveViews(Long brandId, ProductSort sort, Pageable pageable) {
+        throw new UnsupportedOperationException("ProductRepositoryIntegrationTest 에서 확인한다");
+    }
+
+    @Override
+    public int deleteAllOfBrand(Long brandId, ZonedDateTime deletedAt) {
         throw new UnsupportedOperationException("ProductRepositoryIntegrationTest 에서 확인한다");
     }
 

@@ -15,6 +15,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -43,12 +44,15 @@ class OrderRepositoryIntegrationTest {
         databaseCleanUp.truncateAllTables();
     }
 
+    // DB 시각 정밀도와 무관하게 비교할 수 있도록 초 단위로 자름
+    private static final ZonedDateTime CREATED_AT = ZonedDateTime.now().truncatedTo(ChronoUnit.SECONDS);
+
     private Order saveDraft() {
         return orderRepository.save(Order.draft(USER_ID, List.of(
             new OrderLine(30L, "세 번째 상품", 3_000L, 1),
             new OrderLine(10L, "첫 번째 상품", 1_000L, 2),
             new OrderLine(30L, "세 번째 상품", 3_000L, 1)
-        )));
+        ), CREATED_AT));
     }
 
     private Order reload(Long orderId) {
@@ -60,7 +64,7 @@ class OrderRepositoryIntegrationTest {
         });
     }
 
-    @DisplayName("저장한 주문을 다시 읽으면, 품목이 요청 순서(합산은 처음 위치)대로 스냅샷과 함께 읽힌다.")
+    @DisplayName("저장한 주문을 다시 읽으면, 품목이 요청 순서(합산은 처음 위치)대로 스냅샷 · 만료 시각과 함께 읽힌다.")
     @Test
     void readsItemsInRequestOrder() {
         // arrange
@@ -73,6 +77,7 @@ class OrderRepositoryIntegrationTest {
         assertAll(
             () -> assertThat(found.getStatus()).isEqualTo(OrderStatus.DRAFT),
             () -> assertThat(found.getTotalAmount()).isEqualTo(8_000L),
+            () -> assertThat(found.getExpiresAt().toInstant()).isEqualTo(CREATED_AT.plusMinutes(30).toInstant()),
             () -> assertThat(found.getItems())
                 .extracting(OrderItem::getProductId, OrderItem::getProductName, OrderItem::getUnitPrice, OrderItem::getQuantity)
                 .containsExactly(tuple(30L, "세 번째 상품", 3_000L, 2), tuple(10L, "첫 번째 상품", 1_000L, 2))
