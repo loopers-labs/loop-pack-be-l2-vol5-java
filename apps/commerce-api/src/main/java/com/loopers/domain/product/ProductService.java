@@ -53,6 +53,9 @@ public class ProductService {
         return productRepository.save(new ProductModel(brandId, name, price, stock));
     }
 
+    @Transactional(readOnly = true)
+    public List<ProductModel> getActiveProductByBrandId(Long brandId) { return productRepository.findAllActiveByBrandId(brandId); }
+
     @Transactional
     public ProductModel update(Long id, String name, Long price) {
         ProductModel product = getActiveProduct(id);
@@ -62,7 +65,7 @@ public class ProductService {
 
     @Transactional
     public ProductModel deductStock(Long id, int quantity) {
-        ProductModel product = productRepository.findActiveById(id)
+        ProductModel product = productRepository.findActiveByIdWithLock(id)
             .orElseThrow(() -> new CoreException(ErrorType.BAD_REQUEST,
                 "[id = " + id + "] 삭제되었거나 존재하지 않는 상품은 주문할 수 없습니다."));
         product.deductStock(quantity);
@@ -71,7 +74,8 @@ public class ProductService {
 
     @Transactional
     public ProductModel changeStock(Long id, int quantity) {
-        ProductModel product = getActiveProduct(id);
+        ProductModel product = productRepository.findActiveByIdWithLock(id)
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[id = " + id + "] 상품을 찾을 수 없습니다."));
         product.changeStock(quantity);
         return productRepository.save(product);
     }
@@ -81,5 +85,19 @@ public class ProductService {
         ProductModel product = getProduct(id);
         product.delete();
         productRepository.save(product);
+    }
+
+    @Transactional
+    public void deleteAllByBrandId(Long brandId) {
+        // 1. findAllActiveByBrandId()로 목록 가져오기
+        List<ProductModel> products = getActiveProductByBrandId(brandId);
+
+        // 2. 각 product마다 product.delete() 호출
+        // 3. 각 product마다 productRepository.save() 호출
+        for (ProductModel product : products) {
+            // delete() 호출하고 save()
+            product.delete();
+            productRepository.save(product);
+        }
     }
 }

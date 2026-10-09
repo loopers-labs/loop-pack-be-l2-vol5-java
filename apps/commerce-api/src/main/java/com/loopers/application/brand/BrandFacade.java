@@ -2,10 +2,9 @@ package com.loopers.application.brand;
 
 import com.loopers.domain.brand.BrandService;
 import com.loopers.domain.product.ProductService;
-import com.loopers.support.error.CoreException;
-import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -36,11 +35,13 @@ public class BrandFacade {
         return BrandAdminInfo.from(brandService.update(brandId, name));
     }
 
+    @Transactional
     public void deleteBrand(Long brandId) {
-        if (productService.hasActiveProductsOfBrand(brandId)) {
-            throw new CoreException(ErrorType.BAD_REQUEST,
-                "[id = " + brandId + "] 삭제되지 않은 상품이 연결된 브랜드는 삭제할 수 없습니다.");
-        }
+//        if (productService.hasActiveProductsOfBrand(brandId)) {
+//            throw new CoreException(ErrorType.BAD_REQUEST,
+//                "[id = " + brandId + "] 삭제되지 않은 상품이 연결된 브랜드는 삭제할 수 없습니다.");
+//        }
+        productService.deleteAllByBrandId(brandId);
         brandService.delete(brandId);
     }
 }
