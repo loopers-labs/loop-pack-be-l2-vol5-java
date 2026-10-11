@@ -1,14 +1,12 @@
 package com.loopers.application.order;
 
-import com.loopers.domain.catalog.ProductModel;
-import com.loopers.domain.catalog.ProductService;
+import com.loopers.domain.product.ProductModel;
+import com.loopers.domain.product.ProductService;
 import com.loopers.domain.order.OrderItemModel;
 import com.loopers.domain.order.OrderModel;
 import com.loopers.domain.order.OrderService;
 import com.loopers.domain.point.PointService;
 import com.loopers.domain.user.UserService;
-import com.loopers.support.paging.PageQuery;
-import com.loopers.support.paging.PageResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,46 +45,19 @@ public class OrderFacade {
      * FR-ORDER-02 주문 확정. ST-03 DRAFT → CONFIRMED.
      * 한 트랜잭션에서 상품 삭제 재검증 → 재고 차감(품목마다) → 잔액 차감 → 확정. 어느 하나가 실패하면 전부 롤백 (ASM-14, DR-08).
      * 검사 순서는 요구사항 실패 케이스 순서: 주문 없음 → 소유 → DRAFT → 상품 삭제 → 재고 → 잔액 (EP-11).
+     * 동시 확정은 상품(id 오름차순) → 포인트 순서의 비관적 락으로 직렬화한다 (DR-34).
      */
     @Transactional
     public OrderInfo confirmOrder(Long requesterId, Long orderId) {
         userService.getUser(requesterId);
         OrderModel order = orderService.getOwned(orderId, requesterId);
         order.ensureDraft();
-        productService.getActiveProducts(order.getItems().stream().map(OrderItemModel::getProductId).toList());
+        productService.getActiveProductsForUpdate(order.getItems().stream().map(OrderItemModel::getProductId).toList());
         for (OrderItemModel item : order.getItems()) {
             productService.deductStock(item.getProductId(), item.getQuantity());
         }
         pointService.deduct(requesterId, order.getTotalAmount());
         order.confirm();
         return OrderInfo.from(order);
-    }
-
-    /** FR-ORDER-03 내 주문 목록. DRAFT·CONFIRMED 모두, 최신순. */
-    @Transactional(readOnly = true)
-    public PageResult<OrderInfo> listMyOrders(Long requesterId, PageQuery query) {
-        userService.getUser(requesterId);
-        return orderService.listByUser(requesterId, query).map(OrderInfo::from);
-    }
-
-    /** FR-ORDER-04 내 주문 상세. 남의 주문은 NOT_OWNER. */
-    @Transactional(readOnly = true)
-    public OrderInfo getMyOrder(Long requesterId, Long orderId) {
-        userService.getUser(requesterId);
-        return OrderInfo.from(orderService.getOwned(orderId, requesterId));
-    }
-
-    /** FR-ADMIN-ORDER-01 주문 목록 (관리자). 구매자별 묶음, 페이지 단위는 묶음 (ASM-19, ASM-20). */
-    @Transactional(readOnly = true)
-    public PageResult<OrderGroupInfo> listOrdersForAdmin(Long requesterId, PageQuery query) {
-        userService.getAdmin(requesterId);
-        return orderService.listGroupedByBuyer(query).map(OrderGroupInfo::from);
-    }
-
-    /** FR-ADMIN-ORDER-02 주문 상세 (관리자). 구매자 포함. */
-    @Transactional(readOnly = true)
-    public OrderInfo getOrderForAdmin(Long requesterId, Long orderId) {
-        userService.getAdmin(requesterId);
-        return OrderInfo.from(orderService.get(orderId));
     }
 }

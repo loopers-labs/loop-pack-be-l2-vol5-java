@@ -2,6 +2,7 @@ package com.loopers.interfaces.api.order;
 
 import com.loopers.application.order.OrderInfo;
 import com.loopers.application.order.OrderItemCommand;
+import com.loopers.application.order.query.OrderView;
 
 import java.time.ZonedDateTime;
 import java.util.List;
@@ -25,6 +26,10 @@ public class OrderV1Dto {
         static OrderItemResponse from(OrderInfo.Item item) {
             return new OrderItemResponse(item.productId(), item.quantity(), item.unitPrice(), item.lineAmount());
         }
+
+        static OrderItemResponse from(OrderView.Item item) {
+            return new OrderItemResponse(item.productId(), item.quantity(), item.unitPrice(), item.lineAmount());
+        }
     }
 
     /** 설계 4-3-0 OrderResponse (고객). paidAmount·confirmedAt 은 DRAFT 면 null. */
@@ -41,6 +46,12 @@ public class OrderV1Dto {
             return new OrderResponse(
                 info.id(), info.status(), info.totalAmount(), info.paidAmount(), info.confirmedAt(),
                 info.items().stream().map(OrderItemResponse::from).toList(), info.createdAt());
+        }
+
+        public static OrderResponse from(OrderView.Detail view) {
+            return new OrderResponse(
+                view.id(), view.status(), view.totalAmount(), view.paidAmount(), view.confirmedAt(),
+                view.items().stream().map(OrderItemResponse::from).toList(), view.createdAt());
         }
     }
 }

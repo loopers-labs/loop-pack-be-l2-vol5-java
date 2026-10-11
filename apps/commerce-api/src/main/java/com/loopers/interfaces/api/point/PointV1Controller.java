@@ -1,6 +1,7 @@
 package com.loopers.interfaces.api.point;
 
 import com.loopers.application.point.PointFacade;
+import com.loopers.application.point.query.PointReader;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.auth.RequesterId;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class PointV1Controller implements PointV1ApiSpec {
 
     private final PointFacade pointFacade;
+    private final PointReader pointReader;
 
     @PostMapping("/charge")
     @Override
@@ -29,7 +31,7 @@ public class PointV1Controller implements PointV1ApiSpec {
     @GetMapping
     @Override
     public ApiResponse<PointV1Dto.PointResponse> getBalance(@RequesterId Long requesterId) {
-        return ApiResponse.success(PointV1Dto.PointResponse.from(pointFacade.getBalance(requesterId)));
+        return ApiResponse.success(PointV1Dto.PointResponse.from(pointReader.getBalance(requesterId)));
     }
 
     @PostMapping("/refund")
