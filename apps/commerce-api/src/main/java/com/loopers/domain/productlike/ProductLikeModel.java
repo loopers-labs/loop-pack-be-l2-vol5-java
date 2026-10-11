@@ -3,6 +3,7 @@ package com.loopers.domain.productlike;
 import com.loopers.domain.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
@@ -12,7 +13,8 @@ import jakarta.persistence.UniqueConstraint;
  */
 @Entity
 @Table(name = "product_like",
-    uniqueConstraints = @UniqueConstraint(name = "ux_product_like_user_product", columnNames = {"user_id", "product_id"}))
+    uniqueConstraints = @UniqueConstraint(name = "ux_product_like_user_product", columnNames = {"user_id", "product_id"}),
+    indexes = @Index(name = "ix_product_like_product", columnList = "product_id"))
 public class ProductLikeModel extends BaseEntity {
 
     @Column(name = "user_id", nullable = false, updatable = false)

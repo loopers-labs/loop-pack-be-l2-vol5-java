@@ -5,15 +5,21 @@ import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 
 /**
  * AG-03 상품 (TB-03 product). 가격·재고를 포함 개념으로 가진다 (DR-03).
  * 상태 ST-02 는 deletedAt 의 NULL 여부 (DR-16). 전이: (없음) → ACTIVE, ACTIVE → DELETED (delete()).
- * 인덱스 IX-03 (latest), IX-04 (price_asc).
+ * 인덱스 IX-03 (latest), IX-04 (price_asc), IX-08·09 (brandId 필터 + latest·price_asc, DR-35).
  */
 @Entity
-@Table(name = "product")
+@Table(name = "product", indexes = {
+    @Index(name = "ix_product_latest", columnList = "deleted_at, created_at, id"),
+    @Index(name = "ix_product_price", columnList = "deleted_at, price, id"),
+    @Index(name = "ix_product_brand_latest", columnList = "brand_id, deleted_at, created_at, id"),
+    @Index(name = "ix_product_brand_price", columnList = "brand_id, deleted_at, price, id")
+})
 public class ProductModel extends BaseEntity {
     public static final int NAME_MAX_LENGTH = 200;
 
