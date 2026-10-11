@@ -12,7 +12,7 @@
 | 페이지 크기 | `size=50` 고정 |
 | 딥 페이지 | `page=99` (OFFSET 4,950. `page` 상한 100, DR-30) |
 | 인덱스 적용 전 | PK 와 `product_like` 의 `ux_product_like_user_product (user_id, product_id)` 만 있음 |
-| 인덱스 적용 후 | (적용한 인덱스를 여기에 적는다) |
+| 인덱스 적용 후 | 위에 더해 `product`: `ix_product_latest (deleted_at, created_at, id)`, `ix_product_price (deleted_at, price, id)`, `ix_product_brand_latest (brand_id, deleted_at, created_at, id)`, `ix_product_brand_price (brand_id, deleted_at, price, id)` / `product_like`: `ix_product_like_product (product_id)`. 쿼리는 그대로 |
 
 ## 2. 측정 방법
 
@@ -50,25 +50,25 @@
 
 | ID | 브랜드 | 페이지 | 정렬 | 인덱스 적용 전 | 인덱스 적용 후 |
 |---|---|---|---|---|---|
-| L01 | 전체 | 첫 페이지 | `latest` | 41,410.4 (40,286.0~43,414.0) | - |
-| L02 | 전체 | 첫 페이지 | `price_asc` | 37,686.8 (37,358.0~38,224.0) | - |
-| L03 | 전체 | 첫 페이지 | `likes_desc` | 37,608.6 (36,984.0~37,855.0) | - |
-| L04 | 전체 | 딥 페이지 | `latest` | 41,904.6 (41,552.0~42,176.0) | - |
-| L05 | 전체 | 딥 페이지 | `price_asc` | 38,652.4 (38,128.0~39,168.0) | - |
-| L06 | 전체 | 딥 페이지 | `likes_desc` | 38,378.8 (37,783.0~38,842.0) | - |
-| L07 | 1번 브랜드 | 첫 페이지 | `latest` | 5,605.4 (5,416.0~5,943.0) | - |
-| L08 | 1번 브랜드 | 첫 페이지 | `price_asc` | 5,222.6 (5,088.0~5,281.0) | - |
-| L09 | 1번 브랜드 | 첫 페이지 | `likes_desc` | 5,144.8 (5,063.0~5,229.0) | - |
-| L10 | 1번 브랜드 | 딥 페이지 | `latest` | 5,595.2 (5,394.0~5,720.0) | - |
-| L11 | 1번 브랜드 | 딥 페이지 | `price_asc` | 5,305.6 (5,231.0~5,440.0) | - |
-| L12 | 1번 브랜드 | 딥 페이지 | `likes_desc` | 5,236.6 (5,163.0~5,423.0) | - |
+| L01 | 전체 | 첫 페이지 | `latest` | 41,410.4 (40,286.0~43,414.0) | 65,350.6 (62,870.0~70,511.0) |
+| L02 | 전체 | 첫 페이지 | `price_asc` | 37,686.8 (37,358.0~38,224.0) | 60,067.0 (59,465.0~60,420.0) |
+| L03 | 전체 | 첫 페이지 | `likes_desc` | 37,608.6 (36,984.0~37,855.0) | 60,342.2 (59,502.0~61,038.0) |
+| L04 | 전체 | 딥 페이지 | `latest` | 41,904.6 (41,552.0~42,176.0) | 66,412.8 (65,336.0~67,741.0) |
+| L05 | 전체 | 딥 페이지 | `price_asc` | 38,652.4 (38,128.0~39,168.0) | 60,587.4 (60,004.0~61,452.0) |
+| L06 | 전체 | 딥 페이지 | `likes_desc` | 38,378.8 (37,783.0~38,842.0) | 60,413.8 (59,842.0~61,197.0) |
+| L07 | 1번 브랜드 | 첫 페이지 | `latest` | 5,605.4 (5,416.0~5,943.0) | 3,216.2 (3,129.0~3,477.0) |
+| L08 | 1번 브랜드 | 첫 페이지 | `price_asc` | 5,222.6 (5,088.0~5,281.0) | 2,960.6 (2,915.0~3,102.0) |
+| L09 | 1번 브랜드 | 첫 페이지 | `likes_desc` | 5,144.8 (5,063.0~5,229.0) | 2,953.0 (2,910.0~3,059.0) |
+| L10 | 1번 브랜드 | 딥 페이지 | `latest` | 5,595.2 (5,394.0~5,720.0) | 3,165.2 (3,117.0~3,267.0) |
+| L11 | 1번 브랜드 | 딥 페이지 | `price_asc` | 5,305.6 (5,231.0~5,440.0) | 2,975.0 (2,965.0~3,007.0) |
+| L12 | 1번 브랜드 | 딥 페이지 | `likes_desc` | 5,236.6 (5,163.0~5,423.0) | 2,982.0 (2,936.0~3,093.0) |
 
 ### 4-2. count 쿼리 실행 시간 (평균, ms)
 
 | ID | 브랜드 | 인덱스 적용 전 | 인덱스 적용 후 |
 |---|---|---|---|
-| C01 | 전체 | 968.6 (956.0~998.0) | - |
-| C02 | 1번 브랜드 | 896.6 (876.0~963.0) | - |
+| C01 | 전체 | 968.6 (956.0~998.0) | 858.8 (854.0~867.0) |
+| C02 | 1번 브랜드 | 896.6 (876.0~963.0) | 98.1 (97.1~99.5) |
 
 ## 5. 목록 쿼리 케이스별 상세
 
@@ -90,7 +90,7 @@ limit 0,50
 | 구분 | 실행 시간 (평균, ms) |
 |---|---|
 | 인덱스 적용 전 | 41,410.4 (40,286.0~43,414.0) |
-| 인덱스 적용 후 | - |
+| 인덱스 적용 후 | 65,350.6 (62,870.0~70,511.0) |
 
 **실행 계획 — 인덱스 적용 전**
 
@@ -111,7 +111,15 @@ limit 0,50
 **실행 계획 — 인덱스 적용 후**
 
 ```text
-(미측정)
+-> Limit: 50 row(s)  (actual time=62870..62870 rows=50 loops=1)
+    -> Sort: pm1_0.created_at DESC, pm1_0.id DESC, limit input to 50 row(s) per chunk  (actual time=62870..62870 rows=50 loops=1)
+        -> Table scan on <temporary>  (actual time=61097..62247 rows=4.75e+6 loops=1)
+            -> Aggregate using temporary table  (actual time=61097..61097 rows=4.75e+6 loops=1)
+                -> Nested loop left join  (cost=865491 rows=1.76e+6) (actual time=1.04..26282 rows=10.3e+6 loops=1)
+                    -> Nested loop inner join  (cost=283799 rows=403284) (actual time=1.03..17052 rows=4.75e+6 loops=1)
+                        -> Table scan on bm1_0  (cost=105 rows=1000) (actual time=0.0526..1.57 rows=1000 loops=1)
+                        -> Index lookup on pm1_0 using ix_product_brand_latest (brand_id=bm1_0.id, deleted_at=NULL), with index condition: (pm1_0.deleted_at is null)  (cost=243 rows=403) (actual time=0.153..16.8 rows=4751 loops=1000)
+                    -> Covering index lookup on plm1_0 using ix_product_like_product (product_id=pm1_0.id)  (cost=1.01 rows=4.36) (actual time=0.00152..0.00176 rows=1.53 loops=4.75e+6)
 ```
 
 ### L02
@@ -132,7 +140,7 @@ limit 0,50
 | 구분 | 실행 시간 (평균, ms) |
 |---|---|
 | 인덱스 적용 전 | 37,686.8 (37,358.0~38,224.0) |
-| 인덱스 적용 후 | - |
+| 인덱스 적용 후 | 60,067.0 (59,465.0~60,420.0) |
 
 **실행 계획 — 인덱스 적용 전**
 
@@ -153,7 +161,15 @@ limit 0,50
 **실행 계획 — 인덱스 적용 후**
 
 ```text
-(미측정)
+-> Limit: 50 row(s)  (actual time=60010..60010 rows=50 loops=1)
+    -> Sort: pm1_0.price, pm1_0.id DESC, limit input to 50 row(s) per chunk  (actual time=60010..60010 rows=50 loops=1)
+        -> Table scan on <temporary>  (actual time=58459..59580 rows=4.75e+6 loops=1)
+            -> Aggregate using temporary table  (actual time=58459..58459 rows=4.75e+6 loops=1)
+                -> Nested loop left join  (cost=861975 rows=1.76e+6) (actual time=0.356..26201 rows=10.3e+6 loops=1)
+                    -> Nested loop inner join  (cost=280283 rows=403284) (actual time=0.349..17028 rows=4.75e+6 loops=1)
+                        -> Table scan on bm1_0  (cost=104 rows=1000) (actual time=0.0663..2.04 rows=1000 loops=1)
+                        -> Index lookup on pm1_0 using ix_product_brand_latest (brand_id=bm1_0.id, deleted_at=NULL), with index condition: (pm1_0.deleted_at is null)  (cost=240 rows=403) (actual time=0.156..16.8 rows=4751 loops=1000)
+                    -> Covering index lookup on plm1_0 using ix_product_like_product (product_id=pm1_0.id)  (cost=1.01 rows=4.36) (actual time=0.00151..0.00175 rows=1.53 loops=4.75e+6)
 ```
 
 ### L03
@@ -174,7 +190,7 @@ limit 0,50
 | 구분 | 실행 시간 (평균, ms) |
 |---|---|
 | 인덱스 적용 전 | 37,608.6 (36,984.0~37,855.0) |
-| 인덱스 적용 후 | - |
+| 인덱스 적용 후 | 60,342.2 (59,502.0~61,038.0) |
 
 **실행 계획 — 인덱스 적용 전**
 
@@ -195,7 +211,15 @@ limit 0,50
 **실행 계획 — 인덱스 적용 후**
 
 ```text
-(미측정)
+-> Limit: 50 row(s)  (actual time=59936..59936 rows=50 loops=1)
+    -> Sort: `count(plm1_0.id)` DESC, pm1_0.id DESC, limit input to 50 row(s) per chunk  (actual time=59936..59936 rows=50 loops=1)
+        -> Table scan on <temporary>  (actual time=58417..59496 rows=4.75e+6 loops=1)
+            -> Aggregate using temporary table  (actual time=58417..58417 rows=4.75e+6 loops=1)
+                -> Nested loop left join  (cost=859734 rows=1.76e+6) (actual time=0.334..26144 rows=10.3e+6 loops=1)
+                    -> Nested loop inner join  (cost=278042 rows=403284) (actual time=0.329..16982 rows=4.75e+6 loops=1)
+                        -> Table scan on bm1_0  (cost=105 rows=1000) (actual time=0.0572..1.48 rows=1000 loops=1)
+                        -> Index lookup on pm1_0 using ix_product_brand_latest (brand_id=bm1_0.id, deleted_at=NULL), with index condition: (pm1_0.deleted_at is null)  (cost=238 rows=403) (actual time=0.156..16.8 rows=4751 loops=1000)
+                    -> Covering index lookup on plm1_0 using ix_product_like_product (product_id=pm1_0.id)  (cost=1.01 rows=4.36) (actual time=0.00151..0.00175 rows=1.53 loops=4.75e+6)
 ```
 
 ### L04
@@ -216,7 +240,7 @@ limit 4950,50
 | 구분 | 실행 시간 (평균, ms) |
 |---|---|
 | 인덱스 적용 전 | 41,904.6 (41,552.0~42,176.0) |
-| 인덱스 적용 후 | - |
+| 인덱스 적용 후 | 66,412.8 (65,336.0~67,741.0) |
 
 **실행 계획 — 인덱스 적용 전**
 
@@ -237,7 +261,15 @@ limit 4950,50
 **실행 계획 — 인덱스 적용 후**
 
 ```text
-(미측정)
+-> Limit/Offset: 50/4950 row(s)  (actual time=66335..66335 rows=50 loops=1)
+    -> Sort: pm1_0.created_at DESC, pm1_0.id DESC, limit input to 5000 row(s) per chunk  (actual time=66335..66335 rows=5000 loops=1)
+        -> Table scan on <temporary>  (actual time=64072..65305 rows=4.75e+6 loops=1)
+            -> Aggregate using temporary table  (actual time=64072..64072 rows=4.75e+6 loops=1)
+                -> Nested loop left join  (cost=861287 rows=1.76e+6) (actual time=0.472..27335 rows=10.3e+6 loops=1)
+                    -> Nested loop inner join  (cost=279595 rows=403284) (actual time=0.466..17943 rows=4.75e+6 loops=1)
+                        -> Table scan on bm1_0  (cost=105 rows=1000) (actual time=0.085..2.09 rows=1000 loops=1)
+                        -> Index lookup on pm1_0 using ix_product_brand_latest (brand_id=bm1_0.id, deleted_at=NULL), with index condition: (pm1_0.deleted_at is null)  (cost=239 rows=403) (actual time=0.169..17.7 rows=4751 loops=1000)
+                    -> Covering index lookup on plm1_0 using ix_product_like_product (product_id=pm1_0.id)  (cost=1.01 rows=4.36) (actual time=0.00154..0.00179 rows=1.53 loops=4.75e+6)
 ```
 
 ### L05
@@ -258,7 +290,7 @@ limit 4950,50
 | 구분 | 실행 시간 (평균, ms) |
 |---|---|
 | 인덱스 적용 전 | 38,652.4 (38,128.0~39,168.0) |
-| 인덱스 적용 후 | - |
+| 인덱스 적용 후 | 60,587.4 (60,004.0~61,452.0) |
 
 **실행 계획 — 인덱스 적용 전**
 
@@ -279,7 +311,15 @@ limit 4950,50
 **실행 계획 — 인덱스 적용 후**
 
 ```text
-(미측정)
+-> Limit/Offset: 50/4950 row(s)  (actual time=60188..60188 rows=50 loops=1)
+    -> Sort: pm1_0.price, pm1_0.id DESC, limit input to 5000 row(s) per chunk  (actual time=60188..60188 rows=5000 loops=1)
+        -> Table scan on <temporary>  (actual time=58056..59171 rows=4.75e+6 loops=1)
+            -> Aggregate using temporary table  (actual time=58056..58056 rows=4.75e+6 loops=1)
+                -> Nested loop left join  (cost=865327 rows=1.76e+6) (actual time=0.415..26019 rows=10.3e+6 loops=1)
+                    -> Nested loop inner join  (cost=283635 rows=403284) (actual time=0.397..16873 rows=4.75e+6 loops=1)
+                        -> Table scan on bm1_0  (cost=105 rows=1000) (actual time=0.0587..1.57 rows=1000 loops=1)
+                        -> Index lookup on pm1_0 using ix_product_brand_latest (brand_id=bm1_0.id, deleted_at=NULL), with index condition: (pm1_0.deleted_at is null)  (cost=243 rows=403) (actual time=0.15..16.7 rows=4751 loops=1000)
+                    -> Covering index lookup on plm1_0 using ix_product_like_product (product_id=pm1_0.id)  (cost=1.01 rows=4.36) (actual time=0.00151..0.00175 rows=1.53 loops=4.75e+6)
 ```
 
 ### L06
@@ -300,7 +340,7 @@ limit 4950,50
 | 구분 | 실행 시간 (평균, ms) |
 |---|---|
 | 인덱스 적용 전 | 38,378.8 (37,783.0~38,842.0) |
-| 인덱스 적용 후 | - |
+| 인덱스 적용 후 | 60,413.8 (59,842.0~61,197.0) |
 
 **실행 계획 — 인덱스 적용 전**
 
@@ -321,7 +361,15 @@ limit 4950,50
 **실행 계획 — 인덱스 적용 후**
 
 ```text
-(미측정)
+-> Limit/Offset: 50/4950 row(s)  (actual time=61197..61197 rows=50 loops=1)
+    -> Sort: `count(plm1_0.id)` DESC, pm1_0.id DESC, limit input to 5000 row(s) per chunk  (actual time=61196..61196 rows=5000 loops=1)
+        -> Table scan on <temporary>  (actual time=59049..60195 rows=4.75e+6 loops=1)
+            -> Aggregate using temporary table  (actual time=59049..59049 rows=4.75e+6 loops=1)
+                -> Nested loop left join  (cost=864883 rows=1.76e+6) (actual time=1.55..26640 rows=10.3e+6 loops=1)
+                    -> Nested loop inner join  (cost=283190 rows=403284) (actual time=1.54..17401 rows=4.75e+6 loops=1)
+                        -> Table scan on bm1_0  (cost=104 rows=1000) (actual time=0.072..1.99 rows=1000 loops=1)
+                        -> Index lookup on pm1_0 using ix_product_brand_latest (brand_id=bm1_0.id, deleted_at=NULL), with index condition: (pm1_0.deleted_at is null)  (cost=243 rows=403) (actual time=0.158..17.2 rows=4751 loops=1000)
+                    -> Covering index lookup on plm1_0 using ix_product_like_product (product_id=pm1_0.id)  (cost=1.01 rows=4.36) (actual time=0.00152..0.00176 rows=1.53 loops=4.75e+6)
 ```
 
 ### L07
@@ -342,7 +390,7 @@ limit 0,50
 | 구분 | 실행 시간 (평균, ms) |
 |---|---|
 | 인덱스 적용 전 | 5,605.4 (5,416.0~5,943.0) |
-| 인덱스 적용 후 | - |
+| 인덱스 적용 후 | 3,216.2 (3,129.0~3,477.0) |
 
 **실행 계획 — 인덱스 적용 전**
 
@@ -361,7 +409,13 @@ limit 0,50
 **실행 계획 — 인덱스 적용 후**
 
 ```text
-(미측정)
+-> Limit: 50 row(s)  (actual time=3140..3140 rows=50 loops=1)
+    -> Sort: pm1_0.created_at DESC, pm1_0.id DESC, limit input to 50 row(s) per chunk  (actual time=3140..3140 rows=50 loops=1)
+        -> Table scan on <temporary>  (actual time=3004..3082 rows=474993 loops=1)
+            -> Aggregate using temporary table  (actual time=3004..3004 rows=474992 loops=1)
+                -> Nested loop left join  (cost=1.6e+6 rows=4.48e+6) (actual time=0.404..1481 rows=999903 loops=1)
+                    -> Index lookup on pm1_0 using ix_product_brand_latest (brand_id=1, deleted_at=NULL), with index condition: (pm1_0.deleted_at is null)  (cost=122276 rows=1.03e+6) (actual time=0.389..878 rows=474993 loops=1)
+                    -> Covering index lookup on plm1_0 using ix_product_like_product (product_id=pm1_0.id)  (cost=1.01 rows=4.36) (actual time=896e-6..0.00111 rows=1.46 loops=474993)
 ```
 
 ### L08
@@ -382,7 +436,7 @@ limit 0,50
 | 구분 | 실행 시간 (평균, ms) |
 |---|---|
 | 인덱스 적용 전 | 5,222.6 (5,088.0~5,281.0) |
-| 인덱스 적용 후 | - |
+| 인덱스 적용 후 | 2,960.6 (2,915.0~3,102.0) |
 
 **실행 계획 — 인덱스 적용 전**
 
@@ -401,7 +455,13 @@ limit 0,50
 **실행 계획 — 인덱스 적용 후**
 
 ```text
-(미측정)
+-> Limit: 50 row(s)  (actual time=2922..2922 rows=50 loops=1)
+    -> Sort: pm1_0.price, pm1_0.id DESC, limit input to 50 row(s) per chunk  (actual time=2922..2922 rows=50 loops=1)
+        -> Table scan on <temporary>  (actual time=2811..2883 rows=474993 loops=1)
+            -> Aggregate using temporary table  (actual time=2811..2811 rows=474993 loops=1)
+                -> Nested loop left join  (cost=1.6e+6 rows=4.48e+6) (actual time=0.401..1448 rows=999903 loops=1)
+                    -> Index lookup on pm1_0 using ix_product_brand_latest (brand_id=1, deleted_at=NULL), with index condition: (pm1_0.deleted_at is null)  (cost=122276 rows=1.03e+6) (actual time=0.394..850 rows=474993 loops=1)
+                    -> Covering index lookup on plm1_0 using ix_product_like_product (product_id=pm1_0.id)  (cost=1.01 rows=4.36) (actual time=894e-6..0.0011 rows=1.46 loops=474993)
 ```
 
 ### L09
@@ -422,7 +482,7 @@ limit 0,50
 | 구분 | 실행 시간 (평균, ms) |
 |---|---|
 | 인덱스 적용 전 | 5,144.8 (5,063.0~5,229.0) |
-| 인덱스 적용 후 | - |
+| 인덱스 적용 후 | 2,953.0 (2,910.0~3,059.0) |
 
 **실행 계획 — 인덱스 적용 전**
 
@@ -441,7 +501,13 @@ limit 0,50
 **실행 계획 — 인덱스 적용 후**
 
 ```text
-(미측정)
+-> Limit: 50 row(s)  (actual time=2910..2910 rows=50 loops=1)
+    -> Sort: `count(plm1_0.id)` DESC, pm1_0.id DESC, limit input to 50 row(s) per chunk  (actual time=2910..2910 rows=50 loops=1)
+        -> Table scan on <temporary>  (actual time=2797..2870 rows=474993 loops=1)
+            -> Aggregate using temporary table  (actual time=2797..2797 rows=474993 loops=1)
+                -> Nested loop left join  (cost=1.6e+6 rows=4.48e+6) (actual time=0.399..1439 rows=999903 loops=1)
+                    -> Index lookup on pm1_0 using ix_product_brand_latest (brand_id=1, deleted_at=NULL), with index condition: (pm1_0.deleted_at is null)  (cost=122276 rows=1.03e+6) (actual time=0.392..836 rows=474993 loops=1)
+                    -> Covering index lookup on plm1_0 using ix_product_like_product (product_id=pm1_0.id)  (cost=1.01 rows=4.36) (actual time=902e-6..0.00111 rows=1.46 loops=474993)
 ```
 
 ### L10
@@ -462,7 +528,7 @@ limit 4950,50
 | 구분 | 실행 시간 (평균, ms) |
 |---|---|
 | 인덱스 적용 전 | 5,595.2 (5,394.0~5,720.0) |
-| 인덱스 적용 후 | - |
+| 인덱스 적용 후 | 3,165.2 (3,117.0~3,267.0) |
 
 **실행 계획 — 인덱스 적용 전**
 
@@ -481,7 +547,13 @@ limit 4950,50
 **실행 계획 — 인덱스 적용 후**
 
 ```text
-(미측정)
+-> Limit/Offset: 50/4950 row(s)  (actual time=3122..3122 rows=50 loops=1)
+    -> Sort: pm1_0.created_at DESC, pm1_0.id DESC, limit input to 5000 row(s) per chunk  (actual time=3122..3122 rows=5000 loops=1)
+        -> Table scan on <temporary>  (actual time=2982..3056 rows=474993 loops=1)
+            -> Aggregate using temporary table  (actual time=2982..2982 rows=474992 loops=1)
+                -> Nested loop left join  (cost=1.6e+6 rows=4.48e+6) (actual time=0.407..1461 rows=999903 loops=1)
+                    -> Index lookup on pm1_0 using ix_product_brand_latest (brand_id=1, deleted_at=NULL), with index condition: (pm1_0.deleted_at is null)  (cost=122276 rows=1.03e+6) (actual time=0.4..855 rows=474993 loops=1)
+                    -> Covering index lookup on plm1_0 using ix_product_like_product (product_id=pm1_0.id)  (cost=1.01 rows=4.36) (actual time=905e-6..0.00112 rows=1.46 loops=474993)
 ```
 
 ### L11
@@ -502,7 +574,7 @@ limit 4950,50
 | 구분 | 실행 시간 (평균, ms) |
 |---|---|
 | 인덱스 적용 전 | 5,305.6 (5,231.0~5,440.0) |
-| 인덱스 적용 후 | - |
+| 인덱스 적용 후 | 2,975.0 (2,965.0~3,007.0) |
 
 **실행 계획 — 인덱스 적용 전**
 
@@ -521,7 +593,13 @@ limit 4950,50
 **실행 계획 — 인덱스 적용 후**
 
 ```text
-(미측정)
+-> Limit/Offset: 50/4950 row(s)  (actual time=2966..2966 rows=50 loops=1)
+    -> Sort: pm1_0.price, pm1_0.id DESC, limit input to 5000 row(s) per chunk  (actual time=2966..2966 rows=5000 loops=1)
+        -> Table scan on <temporary>  (actual time=2803..2873 rows=474993 loops=1)
+            -> Aggregate using temporary table  (actual time=2803..2803 rows=474993 loops=1)
+                -> Nested loop left join  (cost=1.6e+6 rows=4.48e+6) (actual time=0.38..1443 rows=999903 loops=1)
+                    -> Index lookup on pm1_0 using ix_product_brand_latest (brand_id=1, deleted_at=NULL), with index condition: (pm1_0.deleted_at is null)  (cost=122276 rows=1.03e+6) (actual time=0.374..846 rows=474993 loops=1)
+                    -> Covering index lookup on plm1_0 using ix_product_like_product (product_id=pm1_0.id)  (cost=1.01 rows=4.36) (actual time=891e-6..0.0011 rows=1.46 loops=474993)
 ```
 
 ### L12
@@ -542,7 +620,7 @@ limit 4950,50
 | 구분 | 실행 시간 (평균, ms) |
 |---|---|
 | 인덱스 적용 전 | 5,236.6 (5,163.0~5,423.0) |
-| 인덱스 적용 후 | - |
+| 인덱스 적용 후 | 2,982.0 (2,936.0~3,093.0) |
 
 **실행 계획 — 인덱스 적용 전**
 
@@ -561,7 +639,13 @@ limit 4950,50
 **실행 계획 — 인덱스 적용 후**
 
 ```text
-(미측정)
+-> Limit/Offset: 50/4950 row(s)  (actual time=2946..2946 rows=50 loops=1)
+    -> Sort: `count(plm1_0.id)` DESC, pm1_0.id DESC, limit input to 5000 row(s) per chunk  (actual time=2945..2946 rows=5000 loops=1)
+        -> Table scan on <temporary>  (actual time=2802..2872 rows=474993 loops=1)
+            -> Aggregate using temporary table  (actual time=2802..2802 rows=474993 loops=1)
+                -> Nested loop left join  (cost=1.6e+6 rows=4.48e+6) (actual time=0.399..1441 rows=999903 loops=1)
+                    -> Index lookup on pm1_0 using ix_product_brand_latest (brand_id=1, deleted_at=NULL), with index condition: (pm1_0.deleted_at is null)  (cost=122276 rows=1.03e+6) (actual time=0.392..842 rows=474993 loops=1)
+                    -> Covering index lookup on plm1_0 using ix_product_like_product (product_id=pm1_0.id)  (cost=1.01 rows=4.36) (actual time=895e-6..0.0011 rows=1.46 loops=474993)
 ```
 
 ## 6. count 쿼리 상세
@@ -579,7 +663,7 @@ select count(pm1_0.id) from product pm1_0 where pm1_0.deleted_at is null
 | 구분 | 실행 시간 (평균, ms) |
 |---|---|
 | 인덱스 적용 전 | 968.6 (956.0~998.0) |
-| 인덱스 적용 후 | - |
+| 인덱스 적용 후 | 858.8 (854.0~867.0) |
 
 **실행 계획 — 인덱스 적용 전**
 
@@ -592,7 +676,9 @@ select count(pm1_0.id) from product pm1_0 where pm1_0.deleted_at is null
 **실행 계획 — 인덱스 적용 후**
 
 ```text
-(미측정)
+-> Aggregate: count(pm1_0.id)  (cost=470087 rows=1) (actual time=857..857 rows=1 loops=1)
+    -> Filter: (pm1_0.deleted_at is null)  (cost=239671 rows=2.3e+6) (actual time=0.334..721 rows=4.75e+6 loops=1)
+        -> Covering index lookup on pm1_0 using ix_product_latest (deleted_at=NULL)  (cost=239671 rows=2.3e+6) (actual time=0.334..519 rows=4.75e+6 loops=1)
 ```
 
 ### C02
@@ -606,7 +692,7 @@ select count(pm1_0.id) from product pm1_0 where pm1_0.deleted_at is null and pm1
 | 구분 | 실행 시간 (평균, ms) |
 |---|---|
 | 인덱스 적용 전 | 896.6 (876.0~963.0) |
-| 인덱스 적용 후 | - |
+| 인덱스 적용 후 | 98.1 (97.1~99.5) |
 
 **실행 계획 — 인덱스 적용 전**
 
@@ -619,7 +705,9 @@ select count(pm1_0.id) from product pm1_0 where pm1_0.deleted_at is null and pm1
 **실행 계획 — 인덱스 적용 후**
 
 ```text
-(미측정)
+-> Aggregate: count(pm1_0.id)  (cost=210711 rows=1) (actual time=98.7..98.7 rows=1 loops=1)
+    -> Filter: (pm1_0.deleted_at is null)  (cost=107926 rows=1.03e+6) (actual time=0.322..83.7 rows=474993 loops=1)
+        -> Covering index lookup on pm1_0 using ix_product_brand_latest (brand_id=1, deleted_at=NULL)  (cost=107926 rows=1.03e+6) (actual time=0.322..63.2 rows=474993 loops=1)
 ```
 
 ## 7. 분석
