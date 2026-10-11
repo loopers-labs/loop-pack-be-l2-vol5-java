@@ -270,7 +270,7 @@ class BrandFacadeIntegrationTest {
         @DisplayName("[FR-PRODUCT-01/02] 고객 상품 목록·상세에서 제외된다.")
         @Test
         void excludedFromCustomerProducts() {
-            assertThat(productReader.listProducts(buyer.getId(), ProductSort.LATEST, PageQuery.of(0, 10)).items()).isEmpty();
+            assertThat(productReader.listProducts(buyer.getId(), null, ProductSort.LATEST, PageQuery.of(0, 10)).items()).isEmpty();
             assertThrowsErrorType(() -> productReader.getProduct(buyer.getId(), product.getId()), ErrorType.PRODUCT_NOT_FOUND);
         }
 

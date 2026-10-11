@@ -8,6 +8,7 @@ import com.loopers.support.paging.PageResult;
 import com.querydsl.core.types.Expression;
 import com.querydsl.core.types.OrderSpecifier;
 import com.querydsl.core.types.Projections;
+import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.core.types.dsl.CaseBuilder;
 import com.querydsl.core.types.dsl.NumberExpression;
 import com.querydsl.jpa.impl.JPAQuery;
@@ -33,23 +34,26 @@ public class ProductQueryRepositoryImpl implements ProductQueryRepository {
 
     private final JPAQueryFactory queryFactory;
 
-    /** 설계 3-7-A: latest = created_at desc / price_asc = price asc / likes_desc = count(product_like) desc. 동률은 id desc (ASM-08). */
+    /**
+     * 설계 3-7-A: latest = created_at desc / price_asc = price asc / likes_desc = count(product_like) desc. 동률은 id desc (ASM-08).
+     * brandId 가 있으면 목록과 totalCount 모두 그 브랜드로 거른다 (DR-35).
+     */
     @Override
-    public PageResult<ProductView.Summary> findActivePage(ProductSort sort, PageQuery query) {
+    public PageResult<ProductView.Summary> findActivePage(Long brandId, ProductSort sort, PageQuery query) {
         OrderSpecifier<?> primary = switch (sort) {
             case LATEST -> productModel.createdAt.desc();
             case PRICE_ASC -> productModel.price.asc();
             case LIKES_DESC -> LIKE_COUNT.desc();
         };
         List<ProductView.Summary> items = selectJoined(summary())
-            .where(productModel.deletedAt.isNull())
+            .where(productModel.deletedAt.isNull(), brandIdEq(brandId))
             .orderBy(primary, productModel.id.desc())
             .offset(query.offset())
             .limit(query.size())
             .fetch();
         Long total = queryFactory.select(productModel.count())
             .from(productModel)
-            .where(productModel.deletedAt.isNull())
+            .where(productModel.deletedAt.isNull(), brandIdEq(brandId))
             .fetchOne();
         return PageResult.of(items, query, total == null ? 0 : total);
     }
@@ -79,6 +83,11 @@ public class ProductQueryRepositoryImpl implements ProductQueryRepository {
         return Optional.ofNullable(selectJoined(admin())
             .where(productModel.id.eq(productId))
             .fetchOne());
+    }
+
+    /** null 이면 조건 없음. Querydsl where 는 null 조건을 건너뛴다. */
+    private static BooleanExpression brandIdEq(Long brandId) {
+        return brandId == null ? null : productModel.brandId.eq(brandId);
     }
 
     private <T> JPAQuery<T> selectJoined(Expression<T> projection) {

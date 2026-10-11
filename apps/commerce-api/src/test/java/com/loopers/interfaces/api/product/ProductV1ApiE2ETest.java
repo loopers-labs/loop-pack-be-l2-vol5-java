@@ -71,6 +71,29 @@ class ProductV1ApiE2ETest {
             assertThat(item.has("stock")).isFalse();
         }
 
+        @DisplayName("brandId 로 거르면 그 브랜드 상품만. 없는 브랜드는 200 + 빈 목록 (DR-35).")
+        @Test
+        void filtersByBrand() {
+            BrandModel brand = fixtures.brand("브랜드");
+            BrandModel other = fixtures.brand("다른 브랜드");
+            ProductModel product = fixtures.product(brand.getId(), "상품", 1000L, 3);
+            fixtures.product(other.getId(), "다른 상품", 1000L, 3);
+
+            var filtered = api.get("/api/v1/products?brandId=" + brand.getId(), user.getId()).assertSuccess(HttpStatus.OK);
+            assertThat(filtered.data().path("totalCount").asLong()).isEqualTo(1);
+            assertThat(filtered.data().path("items").get(0).path("id").asLong()).isEqualTo(product.getId());
+
+            var unknown = api.get("/api/v1/products?brandId=999999", user.getId()).assertSuccess(HttpStatus.OK);
+            assertThat(unknown.data().path("totalCount").asLong()).isZero();
+            assertThat(unknown.data().path("items")).isEmpty();
+        }
+
+        @DisplayName("[ER-03 BRAND_NOT_FOUND] brandId 형식 오류는 404 (ID 형식 오류 규칙, DR-01·DR-35).")
+        @Test
+        void brandIdTypeError() {
+            api.get("/api/v1/products?brandId=abc", user.getId()).assertError(HttpStatus.NOT_FOUND, "BRAND_NOT_FOUND");
+        }
+
         @DisplayName("[ER-07 INVALID_SORT] 허용 목록 밖, 둘 이상 지정 모두 400.")
         @Test
         void invalidSort() {

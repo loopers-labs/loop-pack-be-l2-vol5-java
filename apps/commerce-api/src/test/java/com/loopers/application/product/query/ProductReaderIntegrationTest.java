@@ -56,7 +56,7 @@ class ProductReaderIntegrationTest {
             fixtures.deletedProduct(brand.getId(), "삭제됨", 500L, 1);
             fixtures.like(user.getId(), p1.getId());
 
-            PageResult<ProductView.Summary> page = productReader.listProducts(user.getId(), ProductSort.LATEST, PageQuery.of(0, 10));
+            PageResult<ProductView.Summary> page = productReader.listProducts(user.getId(), null, ProductSort.LATEST, PageQuery.of(0, 10));
 
             assertThat(page.totalCount()).isEqualTo(2);
             assertThat(page.items()).extracting(ProductView.Summary::id).containsExactly(p2.getId(), p1.getId());
@@ -71,7 +71,7 @@ class ProductReaderIntegrationTest {
             ProductModel expensive = fixtures.product(brand.getId(), "비싼것", 900L, 1);
             ProductModel cheapNew = fixtures.product(brand.getId(), "싼것-새", 100L, 1);
 
-            PageResult<ProductView.Summary> page = productReader.listProducts(user.getId(), ProductSort.PRICE_ASC, PageQuery.of(0, 10));
+            PageResult<ProductView.Summary> page = productReader.listProducts(user.getId(), null, ProductSort.PRICE_ASC, PageQuery.of(0, 10));
 
             assertThat(page.items()).extracting(ProductView.Summary::id)
                 .containsExactly(cheapNew.getId(), cheapOld.getId(), expensive.getId());
@@ -88,7 +88,7 @@ class ProductReaderIntegrationTest {
             fixtures.like(other.getId(), twoLikes.getId());
             fixtures.like(user.getId(), oneLike.getId());
 
-            PageResult<ProductView.Summary> page = productReader.listProducts(user.getId(), ProductSort.LIKES_DESC, PageQuery.of(0, 10));
+            PageResult<ProductView.Summary> page = productReader.listProducts(user.getId(), null, ProductSort.LIKES_DESC, PageQuery.of(0, 10));
 
             assertThat(page.items()).extracting(ProductView.Summary::id)
                 .containsExactly(twoLikes.getId(), oneLike.getId(), noLike.getId());
@@ -102,22 +102,60 @@ class ProductReaderIntegrationTest {
                 fixtures.product(brand.getId(), "상품" + i, 100L, 1);
             }
 
-            PageResult<ProductView.Summary> page = productReader.listProducts(user.getId(), ProductSort.LIKES_DESC, PageQuery.of(1, 2));
+            PageResult<ProductView.Summary> page = productReader.listProducts(user.getId(), null, ProductSort.LIKES_DESC, PageQuery.of(1, 2));
 
             assertThat(page.items()).hasSize(2);
             assertThat(page.totalCount()).isEqualTo(5);
         }
 
+        @DisplayName("[FR-PRODUCT-01] brandId 가 있으면 세 정렬 모두 그 브랜드의 삭제되지 않은 상품만, totalCount 도 그 기준 (DR-35).")
+        @Test
+        void filtersByBrand_allSorts() {
+            BrandModel other = fixtures.brand("다른 브랜드");
+            ProductModel cheap = fixtures.product(brand.getId(), "싼것", 100L, 1);
+            ProductModel expensive = fixtures.product(brand.getId(), "비싼것", 900L, 1);
+            fixtures.deletedProduct(brand.getId(), "삭제됨", 500L, 1);
+            ProductModel otherBrands = fixtures.product(other.getId(), "다른 브랜드 상품", 50L, 1);
+            fixtures.like(user.getId(), cheap.getId());
+            fixtures.like(user.getId(), otherBrands.getId());
+
+            PageResult<ProductView.Summary> latest = productReader.listProducts(user.getId(), brand.getId(), ProductSort.LATEST, PageQuery.of(0, 10));
+            PageResult<ProductView.Summary> priceAsc = productReader.listProducts(user.getId(), brand.getId(), ProductSort.PRICE_ASC, PageQuery.of(0, 10));
+            PageResult<ProductView.Summary> likesDesc = productReader.listProducts(user.getId(), brand.getId(), ProductSort.LIKES_DESC, PageQuery.of(0, 10));
+
+            assertThat(latest.totalCount()).isEqualTo(2);
+            assertThat(latest.items()).extracting(ProductView.Summary::id).containsExactly(expensive.getId(), cheap.getId());
+            assertThat(priceAsc.totalCount()).isEqualTo(2);
+            assertThat(priceAsc.items()).extracting(ProductView.Summary::id).containsExactly(cheap.getId(), expensive.getId());
+            assertThat(likesDesc.totalCount()).isEqualTo(2);
+            assertThat(likesDesc.items()).extracting(ProductView.Summary::id).containsExactly(cheap.getId(), expensive.getId());
+        }
+
+        @DisplayName("[FR-PRODUCT-01] 없는 브랜드·삭제된 브랜드의 brandId 는 거절하지 않고 빈 목록 (DR-35).")
+        @Test
+        void unknownOrDeletedBrand_returnsEmpty() {
+            BrandModel deletedBrand = fixtures.deletedBrand("삭제된 브랜드");
+            fixtures.product(brand.getId(), "상품", 100L, 1);
+
+            PageResult<ProductView.Summary> unknown = productReader.listProducts(user.getId(), 999L, ProductSort.LATEST, PageQuery.of(0, 10));
+            PageResult<ProductView.Summary> deleted = productReader.listProducts(user.getId(), deletedBrand.getId(), ProductSort.LATEST, PageQuery.of(0, 10));
+
+            assertThat(unknown.items()).isEmpty();
+            assertThat(unknown.totalCount()).isZero();
+            assertThat(deleted.items()).isEmpty();
+            assertThat(deleted.totalCount()).isZero();
+        }
+
         @DisplayName("[FR-PRODUCT-01 INVALID_PAGE] 페이지 값이 잘못되면 거절.")
         @Test
         void throwsInvalidPage() {
-            assertThrowsErrorType(() -> productReader.listProducts(user.getId(), ProductSort.LATEST, PageQuery.of(0, 0)), ErrorType.INVALID_PAGE);
+            assertThrowsErrorType(() -> productReader.listProducts(user.getId(), null, ProductSort.LATEST, PageQuery.of(0, 0)), ErrorType.INVALID_PAGE);
         }
 
         @DisplayName("[FR-PRODUCT-01 USER_NOT_FOUND] 요청자가 없으면 거절.")
         @Test
         void throwsUserNotFound() {
-            assertThrowsErrorType(() -> productReader.listProducts(999L, ProductSort.LATEST, PageQuery.of(0, 10)), ErrorType.USER_NOT_FOUND);
+            assertThrowsErrorType(() -> productReader.listProducts(999L, null, ProductSort.LATEST, PageQuery.of(0, 10)), ErrorType.USER_NOT_FOUND);
         }
     }
 

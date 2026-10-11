@@ -71,7 +71,7 @@ flowchart TB
 | 구분 | 내용 |
 |---|---|
 | 이번 주차에 다루는 것 | 고객 API 13개(브랜드·상품 조회, 좋아요, 포인트 충전·조회·환불, 주문 생성·확정·조회) + 관리자 API(브랜드·상품·재고·포인트·주문). 목록은 4-2 |
-| 다루지 않는 것 | 배송, 주문 취소·수정, 쿠폰·할인, 외부 결제, 가입·로그인·인증, 관리자 권한 관리, 브랜드 필터·키워드 검색, 동시성 하의 불변식 유지(주문 확정의 재고·잔액 차감은 예외, 요구 변경 DR-34). 근거는 요구사항 정의서 1-3 |
+| 다루지 않는 것 | 배송, 주문 취소·수정, 쿠폰·할인, 외부 결제, 가입·로그인·인증, 관리자 권한 관리, 키워드 검색, 동시성 하의 불변식 유지(주문 확정의 재고·잔액 차감은 예외, 요구 변경 DR-34). 근거는 요구사항 정의서 1-3 |
 | 설계에서만 고려한 것 | 포인트 이력, 충전금 단위·유효기간 (요구사항 정의서 1-3, 부록 A) |
 
 ---
@@ -522,7 +522,7 @@ fixture로만 채워진다. 런타임에 이 테이블에 쓰는 FR은 없다. `
 | FR-ID | 읽는 TB | 조건 컬럼 | 정렬/페이징 | 예상 빈도 | 걸치는 BC 수 |
 |---|---|---|---|---|---|
 | FR-BRAND-01 | TB-02 | `id`, `deleted_at` IS NULL | — | 중간 | 1 |
-| FR-PRODUCT-01 | TB-03, TB-02, TB-04(개수) | TB-03.`deleted_at` IS NULL; TB-02.`id`=TB-03.`brand_id`; TB-04.`product_id` | `latest`: `created_at` desc, `id` desc / `price_asc`: `price` asc, `id` desc / `likes_desc`: count(TB-04) desc, `id` desc. `page`, `size` (ASM-08) | 높음 | 1 |
+| FR-PRODUCT-01 | TB-03, TB-02, TB-04(개수) | TB-03.`deleted_at` IS NULL; TB-03.`brand_id` = ? (선택, DR-35); TB-02.`id`=TB-03.`brand_id`; TB-04.`product_id` | `latest`: `created_at` desc, `id` desc / `price_asc`: `price` asc, `id` desc / `likes_desc`: count(TB-04) desc, `id` desc. `page`, `size` (ASM-08) | 높음 | 1 |
 | FR-PRODUCT-02 | TB-03, TB-02, TB-04(개수) | TB-03.`id`, `deleted_at` IS NULL; TB-02.`id`; TB-04.`product_id` | — | 높음 | 1 |
 | FR-LIKE-01 | TB-03, TB-04 | TB-03.`id`, `deleted_at` IS NULL; TB-04.(`user_id`, `product_id`) | — | 중간 | 1 |
 | FR-LIKE-02 | TB-03, TB-04 | TB-03.`id`; TB-04.(`user_id`, `product_id`) | — | 중간 | 1 |
@@ -570,7 +570,7 @@ fixture로만 채워진다. 런타임에 이 테이블에 쓰는 FR은 없다. `
 | IX-07 | TB-07 | `order_id`, `product_id` | 고유 | INV-08 고유 제약. FK `order_id` 조회(접두)도 겸한다 |
 
 만들지 않은 것
-- TB-03.`brand_id`: 읽는 FR이 FR-ADMIN-BRAND-05뿐이고 빈도 낮음. 소속 상품을 함께 삭제하게 된 뒤(DR-33)에도 같다. 가이드 규칙대로 두지 않는다. 브랜드 삭제가 느려지면 재검토.
+- TB-03.`brand_id`: 읽는 FR이 FR-ADMIN-BRAND-05뿐이고 빈도 낮음. 소속 상품을 함께 삭제하게 된 뒤(DR-33)에도 같다. 가이드 규칙대로 두지 않는다. 브랜드 삭제가 느려지면 재검토. FR-PRODUCT-01 브랜드 필터(DR-35)가 생겨 빈도 높은 조회도 읽게 됐다. 정렬 인덱스와 묶을지는 대량 데이터 측정 뒤 정한다.
 - TB-02 `created_at`: 관리자 목록만 쓰고 빈도 낮음.
 - `likes_desc` 정렬용: 집계 결과 정렬이라 인덱스로 못 푼다. IX-02가 집계 자체를 돕는다.
 
@@ -784,13 +784,14 @@ FR 28개 ↔ EP 28개, 1:1.
 
 | 위치 | 필드 | 타입 | 필수 | 제약 | 의미 | 출처 개념 |
 |---|---|---|---|---|---|---|
+| 쿼리 | `brandId` | long | 아니오 | 하나. 없으면 전체. 없는·삭제된 브랜드는 빈 목록 (DR-35) | 브랜드 필터 | 브랜드 |
 | 쿼리 | `sort` | string | 아니오 | `latest` \| `price_asc` \| `likes_desc`. 정확히 하나. 기본 `latest` (ASM-08) | 정렬 | 상품, 가격, 좋아요 수 |
 | 쿼리 | `page` | int | 아니오 | 0~100, 기본 0 (DR-19, DR-30) | 페이지 번호 | — |
 | 쿼리 | `size` | int | 아니오 | 1~100, 기본 20 (DR-19) | 페이지 크기 | — |
 
-- 응답 200: `Page<ProductSummary>` (삭제되지 않은 상품만)
+- 응답 200: `Page<ProductSummary>` (삭제되지 않은 상품만. `brandId`가 있으면 그 브랜드만)
 - 상태 전이: 해당 없음
-- 에러: ER-01 / ER-07 (sort가 허용 목록 밖 또는 둘 이상) / ER-08 (page·size 범위·타입 오류)
+- 에러: ER-01 / ER-03 (`brandId` 형식 오류만. 없는·삭제된 브랜드는 에러가 아니라 빈 목록, DR-35) / ER-07 (sort가 허용 목록 밖 또는 둘 이상) / ER-08 (page·size 범위·타입 오류)
 
 ### EP-03 GET `/api/v1/products/{productId}`
 - 근거 FR: FR-PRODUCT-02 / 소유 BC: BC-02 / 종류: 조회 / 권한: 고객 / 멱등성: 예
@@ -1036,7 +1037,7 @@ FR 28개 ↔ EP 28개, 1:1.
 메모
 - 요구사항 2절의 실패 케이스 이름 20개(`USER_NOT_FOUND`, `NOT_ADMIN`, `BRAND_NOT_FOUND`, `PRODUCT_NOT_FOUND`, `ORDER_NOT_FOUND`, `NOT_OWNER`, `INVALID_SORT`, `INVALID_PAGE`, `INVALID_AMOUNT`, `BALANCE_LIMIT_EXCEEDED`, `INSUFFICIENT_POINT`, `EMPTY_ORDER_ITEMS`, `INVALID_QUANTITY`, `AMOUNT_OUT_OF_RANGE`, `ORDER_NOT_DRAFT`, `INSUFFICIENT_STOCK`, `INVALID_BRAND`, `INVALID_PRODUCT_NAME`, `INVALID_PRODUCT_PRICE`, `INVALID_STOCK`)가 각각 ER- 하나에 있다. 재작명 없음. `BRAND_HAS_PRODUCTS`(ER-18)는 요구 변경으로 삭제했다 (DR-33).
 - 상태 변화는 전부 "없음"이다(ASM-12: 실패 상태 없음). 따라서 5-4 예외 규칙 대상 FR은 없다.
-- 경로·바디 ID의 형식 오류(long 아님)는 해당 `*_NOT_FOUND`로 나간다 (DR-01). 값의 타입 오류 중 요구사항이 이름을 준 것(`amount`, `quantity`, `stock`, `price`, `page`, `size`)은 그 이름으로, 준 적 없는 것은 ER-22.
+- 경로·바디 ID의 형식 오류(long 아님)는 해당 `*_NOT_FOUND`로 나간다 (DR-01). EP-02 쿼리 `brandId`도 같다 (DR-35). 값의 타입 오류 중 요구사항이 이름을 준 것(`amount`, `quantity`, `stock`, `price`, `page`, `size`)은 그 이름으로, 준 적 없는 것은 ER-22.
 - 매핑되지 않은 예외는 1-3 기본값대로 500 `INTERNAL_ERROR`. ER-로 세지 않는다.
 - 동시성 ER 없음 (3-6: 잠금 대기 뒤 기존 `INSUFFICIENT_STOCK`·`INSUFFICIENT_POINT`로 거절).
 
@@ -1231,6 +1232,7 @@ Facade·Reader public 메서드 ↔ FR (28:28)
 | DR-32 | 5 | ASM-08, ER-07, EP-02, FR-PRODUCT-01, DR-30, DR-31 | 정렬값 `sort` 의 문자열 → `ProductSort` 변환은 interfaces 가 한다. `ProductV1Controller` 가 `ProductSort.from` 으로 바꿔 `ProductReader.listProducts` 에 넘기고, 허용 목록 밖·둘 이상 지정은 거기서 `INVALID_SORT`. `ProductSort` 는 조회 경로에서만 쓰이므로 `domain.product` 가 아니라 `application.product.query` 에 둔다 | (a) Reader 가 `String` 을 받아 변환 (b) Spring `Converter<String, ProductSort>` (c) `PageQuery` 처럼 `HandlerMethodArgumentResolver` | 요청 값의 형식 검증·변환은 `page`·`size` 와 같은 자리(DR-30, interfaces)에 둔다. (a)는 Reader 가 HTTP 문자열을 알게 되고, 잘못된 sort 와 없는 요청자가 함께 오면 `page` 와 달리 `USER_NOT_FOUND` 가 먼저 나간다. (b)는 변환 예외가 `MethodArgumentTypeMismatchException` 으로 감싸져 advice 매핑을 새로 둬야 한다. (c)는 `PageQuery` 가 6개 EP 공통이라 둔 것이고 sort 는 EP-02 하나뿐이다. `sort` 를 둘 이상 주면 Spring 이 쉼표로 이어 붙인 한 문자열이 되어 그대로 거절된다 | 정렬을 받는 EP 가 늘면 (c) 리졸버로 옮긴다 | 없음 |
 | DR-33 | 2, 3, 4, 5 | FR-ADMIN-BRAND-05, INV-10, ST-01, ST-02, EP-18, ER-18, DR-04, DR-21, OQ-02 | 요구 변경: 브랜드 삭제는 연결된 삭제되지 않은 상품(재고 0 포함)을 같은 트랜잭션에서 함께 논리 삭제한다. 이미 삭제된 상품·다른 브랜드는 바꾸지 않는다. `ProductService.deleteAllOfBrand`가 소속 미삭제 상품을 엔티티로 읽어 각각 `delete()`를 부르고 변경 감지로 반영한다. `BRAND_HAS_PRODUCTS`(ER-18)는 발생 조건이 없어 `ErrorType`과 4-4에서 삭제한다. 응답은 DR-21 그대로 200 + `data` null | (a) JPQL 벌크 `UPDATE product SET deleted_at = ? WHERE brand_id = ? AND deleted_at IS NULL` (b) `ER-18`을 정의만 남김 (c) 응답에 삭제된 상품 수·ID 반환 | (a)는 쿼리 한 번이지만 `@PreUpdate`를 거치지 않아 `updated_at`을 직접 넣어야 하고 영속성 컨텍스트와 어긋난다. 브랜드당 상품 수에 대한 요구가 없어 `BaseEntity.delete()`를 그대로 쓰는 쪽을 택했다. (b)는 쓰이지 않는 실패 이름이 계약에 남는다. (c)는 FR 출력에 없는 필드다(DR-21). 중간 실패 시 전부 롤백은 Facade 트랜잭션 하나로 지켜지며 상품마다 커밋하지 않는다. 동시 요청 창(상품 생성·수정·재고 변경·주문 확정과의 경합)은 OQ-02에 넣고 잠금은 두지 않는다 | 브랜드당 상품 수가 커져 삭제가 느려지면 (a)로 바꾸고 TB-03.`brand_id` 인덱스를 재검토한다. 동시성 비기능이 추가되면 OQ-02와 함께 잠금을 정한다 | FR-ADMIN-BRAND-05 사전 조건·결과·실패 케이스, FR-ADMIN-PRODUCT-05 부수 효과, INV-10 메모, 3-2 전이, 1-3 동시성 항목에 `(요구 변경 DR-33)` |
 | DR-34 | 3, 5 | FR-ORDER-02, FR-POINT-03, FR-ADMIN-POINT-02, INV-01, INV-03, AG-03, AG-05, DR-08, DR-33, OQ-03 | 요구 변경: 주문 확정이 동시에 와도 INV-01·INV-03을 지킨다. 상품·포인트 행을 비관적 쓰기 잠금(`SELECT ... FOR UPDATE`)으로 읽는다. 상품은 `ProductService.getActiveProductsForUpdate`가 품목 상품 전부를 id 오름차순으로 한 번에 잠그며, 확정 트랜잭션에서 상품을 처음 읽는 조회가 이것이어야 한다. 포인트는 `PointService.deduct`가 잠금 조회를 써서 차감 경로 전부가 잠근다. 잠금 순서는 상품 → 포인트. 경합에서 진 요청은 앞 요청 커밋 뒤 최신 값으로 검사해 기존 `INSUFFICIENT_STOCK`·`INSUFFICIENT_POINT`로 거절된다 | (a) 낙관적 잠금(`@Version`) (b) 조건부 원자 갱신 `UPDATE ... SET stock = stock - ? WHERE stock >= ?` (c) 확정 전용 포인트 차감만 잠금 | (a)는 재고·잔액이 남아 있어도 충돌로 실패하므로 재시도가 필요하고, 인기 상품 한 행에 확정이 몰리는 구조라 충돌이 잦다. 버전 컬럼도 새로 생긴다. (b)는 재고 검증이 도메인 모델 밖 SQL로 나가고 `@PreUpdate`·영속성 컨텍스트와 어긋난다(DR-33 (a)와 같은 이유). (c)는 환불·운영자 차감이 여전히 경합에 노출된다. 락 없이 먼저 읽은 엔티티는 이후 잠금 조회에서도 1차 캐시의 옛 값이 반환되므로, 기존 `getActiveProducts` 뒤에 잠그는 방식은 쓰지 않는다. 검증은 `OrderConfirmConcurrencyTest` (같은 상품 5건 동시 확정, 같은 사용자 5건 동시 확정) | 확정 지연이나 잠금 대기가 측정으로 문제가 되면 (b) 또는 재고 분리 저장을 재검토한다 | 요구사항 1-3 동시성 항목, FR-ORDER-02 비기능에 `(요구 변경 DR-34)` |
+| DR-35 | 1, 3, 4, 5 | FR-PRODUCT-01, EP-02, ER-03, TB-03, DR-01, DR-31, DR-33 | 요구 변경: 상품 목록에 브랜드 필터를 둔다. 쿼리 `brandId` 하나, 선택. 없으면 전체, 있으면 TB-03.`brand_id` = ? 를 목록과 `totalCount` 조회 양쪽에 건다. 없는·삭제된 브랜드는 확인하지 않고 빈 목록 200. `brandId` 형식 오류(long 아님)는 DR-01 규칙대로 ER-03 `BRAND_NOT_FOUND`. `ProductReader.listProducts` → `ProductQueryRepository.findActivePage`에 `Long brandId`(null 허용)를 그대로 넘긴다 | (a) 없는·삭제된 브랜드는 ER-03 404 (b) 형식 오류만 ER-22 400 (c) 여러 브랜드 동시 지정 (d) `sort`와 묶은 조회 조건 객체 | (a)는 브랜드 존재 확인 조회가 한 번 더 붙는다. 삭제된 브랜드의 상품은 함께 삭제되므로(DR-33) 조건만 걸어도 결과는 비어 있다. (b)는 쿼리의 `brandId`만 경로·바디와 다르게 다뤄야 해 advice에 경로 구분을 새로 둬야 한다. 형식 오류는 404, 없는 ID는 200이 되는 비대칭은 감수한다. (c)는 요구가 없다. (d)는 필터가 하나뿐이라 이르다 | 필터가 늘면 (d)로 묶는다. 없는 브랜드를 클라이언트가 구분해야 하면 (a) | FR-PRODUCT-01 사전 조건·출력, 1-3 브랜드 필터 항목 삭제에 `(요구 변경 DR-35)` |
 
 ### A-2. 열린 질문
 

@@ -25,10 +25,11 @@ public class ProductV1Controller implements ProductV1ApiSpec {
     @Override
     public ApiResponse<PageResponse<ProductV1Dto.ProductResponse>> listProducts(
         @RequesterId Long requesterId,
+        @RequestParam(value = "brandId", required = false) Long brandId,
         @RequestParam(value = "sort", required = false) String sort,
         @ParameterObject PageQuery pageQuery
     ) {
-        var result = productReader.listProducts(requesterId, ProductSort.from(sort), pageQuery);
+        var result = productReader.listProducts(requesterId, brandId, ProductSort.from(sort), pageQuery);
         return ApiResponse.success(PageResponse.from(result, ProductV1Dto.ProductResponse::from));
     }
 

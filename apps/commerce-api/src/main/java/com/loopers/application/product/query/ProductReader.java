@@ -16,11 +16,14 @@ public class ProductReader {
     private final UserService userService;
     private final ProductQueryRepository productQueryRepository;
 
-    /** FR-PRODUCT-01 상품 목록 조회 (고객). 삭제되지 않은 상품만, 정렬 하나 (ASM-08). */
+    /**
+     * FR-PRODUCT-01 상품 목록 조회 (고객). 삭제되지 않은 상품만, 정렬 하나 (ASM-08).
+     * brandId 가 null 이면 전체, 있으면 그 브랜드만. 없는·삭제된 브랜드는 확인하지 않고 빈 목록 (DR-35).
+     */
     @Transactional(readOnly = true)
-    public PageResult<ProductView.Summary> listProducts(Long requesterId, ProductSort sort, PageQuery query) {
+    public PageResult<ProductView.Summary> listProducts(Long requesterId, Long brandId, ProductSort sort, PageQuery query) {
         userService.getUser(requesterId);
-        return productQueryRepository.findActivePage(sort, query);
+        return productQueryRepository.findActivePage(brandId, sort, query);
     }
 
     /** FR-PRODUCT-02 상품 상세 조회 (고객). 없음·삭제됨 모두 ER-04 PRODUCT_NOT_FOUND. */
