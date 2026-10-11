@@ -5,7 +5,6 @@ import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 
 /**
@@ -14,10 +13,7 @@ import jakarta.persistence.Table;
  * 인덱스 IX-03 (latest), IX-04 (price_asc).
  */
 @Entity
-@Table(name = "product", indexes = {
-    @Index(name = "ix_product_latest", columnList = "deleted_at, created_at, id"),
-    @Index(name = "ix_product_price", columnList = "deleted_at, price, id")
-})
+@Table(name = "product")
 public class ProductModel extends BaseEntity {
     public static final int NAME_MAX_LENGTH = 200;
 
