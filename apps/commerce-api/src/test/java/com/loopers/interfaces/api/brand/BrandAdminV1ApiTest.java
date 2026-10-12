@@ -21,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -140,15 +141,34 @@ class BrandAdminV1ApiTest {
                 .andExpect(status().isNoContent());
         }
 
-        @DisplayName("BRAND-004 · 살아 있는 상품이 연결된 브랜드는 삭제할 수 없다. 409 다")
+        @DisplayName("BRAND-004 · 상품이 연결된 브랜드도 204 로 삭제되고, 그 상품은 고객 상세에서 404 다")
         @Test
-        void rejectsDeleteWithAliveProducts() throws Exception {
+        void deletesWithProducts() throws Exception {
             Long brandId = brandFacade.register("무신사", "패션 플랫폼").getId();
-            productFacade.register(brandId, "코트", Price.of(129_000));
+            Long productId = productFacade.register(brandId, "코트", Price.of(129_000)).getId();
 
             mvc.perform(asAdmin(delete(ADMIN + "/" + brandId)))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.meta.errorCode").value("BRAND_HAS_PRODUCTS"));
+                .andExpect(status().isNoContent());
+
+            mvc.perform(get("/api/v1/products/" + productId).header("X-USER-ID", 1L))
+                .andExpect(status().isNotFound());
+        }
+
+        @DisplayName("BRAND-004 · 일반 사용자와 식별 없는 요청의 삭제는 403 이고, 브랜드와 상품은 그대로 남는다")
+        @Test
+        void rejectsNonAdminDeleteWithoutChanges() throws Exception {
+            Long brandId = brandFacade.register("무신사", "패션 플랫폼").getId();
+            Long productId = productFacade.register(brandId, "코트", Price.of(129_000)).getId();
+
+            mvc.perform(delete(ADMIN + "/" + brandId).with(user("customer").roles("USER")).with(csrf()))
+                .andExpect(status().isForbidden());
+            mvc.perform(delete(ADMIN + "/" + brandId))
+                .andExpect(status().isForbidden());
+
+            mvc.perform(get("/api/v1/brands/" + brandId))
+                .andExpect(status().isOk());
+            mvc.perform(get("/api/v1/products/" + productId).header("X-USER-ID", 1L))
+                .andExpect(status().isOk());
         }
     }
 }

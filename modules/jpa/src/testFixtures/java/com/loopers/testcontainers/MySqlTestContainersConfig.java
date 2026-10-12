@@ -18,7 +18,8 @@ public class MySqlTestContainersConfig {
             .withCommand(
                 "--character-set-server=utf8mb4",
                 "--collation-server=utf8mb4_general_ci",
-                "--skip-character-set-client-handshake"
+                "--skip-character-set-client-handshake",
+                "--transaction-isolation=READ-COMMITTED"
             );
         mySqlContainer.start();
 

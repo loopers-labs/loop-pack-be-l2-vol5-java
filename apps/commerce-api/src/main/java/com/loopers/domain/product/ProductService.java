@@ -55,8 +55,8 @@ public class ProductService implements ProductAvailability, ProductsInBrand, Sto
     }
 
     @Override
-    public boolean hasAlive(Long brandId) {
-        return productRepository.existsByBrandId(brandId);
+    public void deleteAll(Long brandId) {
+        productRepository.deleteAllByBrandId(brandId);
     }
 
     private Product findAliveForUpdate(Long productId) {

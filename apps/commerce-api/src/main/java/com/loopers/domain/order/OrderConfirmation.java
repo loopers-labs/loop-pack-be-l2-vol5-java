@@ -26,11 +26,11 @@ public class OrderConfirmation {
         order.confirm(now);
         Order confirmed = orderRepository.save(order);
 
+        pointUsage.use(userId, confirmed.getPaidAmount(), now);
+
         confirmed.getItems().stream()
             .sorted(Comparator.comparing(OrderItem::productId))
             .forEach(item -> stockDeduction.deductStock(item.productId(), item.quantity().toQuantity()));
-
-        pointUsage.use(userId, confirmed.getPaidAmount(), now);
 
         return confirmed;
     }
