@@ -10,6 +10,7 @@
   python3 docs/week4/bench.py before                # 전체 케이스
   python3 docs/week4/bench.py after L03 L09 C01     # 일부 케이스만
   python3 docs/week4/bench.py before --warmup 1 --runs 5
+  python3 docs/week4/bench.py cte Q01 Q02 Q04 Q05 Q07 Q08 Q10 Q11   # 쿼리 변경 후 (문서 8장)
 
 결과
   docs/week4/results/<stage>/summary.tsv     케이스별 평균·최소·최대·각 회차(ms)
@@ -35,7 +36,7 @@ USER = os.environ.get("MYSQL_USER", "root")
 PASSWORD = os.environ.get("MYSQL_PWD", "root")
 DB = os.environ.get("MYSQL_DB", "loopers")
 
-CASE_SQL = re.compile(r"^### ([LC]\d{2})\s*$.*?^```sql\n(.*?)\n```", re.M | re.S)
+CASE_SQL = re.compile(r"^### ([LCQ]\d{2})\s*$.*?^```sql\n(.*?)\n```", re.M | re.S)
 ACTUAL_TIME = re.compile(r"actual time=([\d.]+)\.\.([\d.]+)")
 
 

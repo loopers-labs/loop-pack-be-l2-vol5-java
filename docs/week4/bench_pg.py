@@ -12,7 +12,9 @@ local-pg 프로필 앱의 statement 로그로 확인한 결과, PostgreSQL 에�
   PostgreSQL : ... offset 4950 rows fetch first 50 rows only
 앱은 brand_id·offset·limit 을 바인딩 변수($1..)로 보내지만, 여기서는 bench.py 와 같이 값을 직접 넣어 실행한다.
 실제로 실행한 SQL 은 결과 디렉터리의 <ID>.sql 에 남긴다.
-Q 케이스(쿼리 변경 후, 문서 8장)는 statement 로그로 잡은 PostgreSQL SQL 을 그대로 적어 두었으므로 바꿀 것이 없다.
+Q 케이스(쿼리 변경 후, 문서 8장)는 페이징이 CTE 안에 있다.
+  MySQL      : ... limit 4950,50) select ...
+  PostgreSQL : ... offset 4950 rows fetch first 50 rows only) select ...
 
 사용
   python3 docs/week4/bench_pg.py pg-after                # 전체 케이스
@@ -46,7 +48,7 @@ USER = os.environ.get("PG_USER", "application")
 DB = os.environ.get("PG_DB", "loopers")
 
 CASE_SQL = re.compile(r"^### ([LCQ]\d{2})\s*$.*?^```sql\n(.*?)\n```", re.M | re.S)
-MYSQL_LIMIT = re.compile(r" limit (\d+),(\d+)$")
+MYSQL_LIMIT = re.compile(r" limit (\d+),(\d+)(?=\)|$)")  # 문장 끝, 또는 CTE 를 닫는 괄호 앞 (Q 케이스)
 ACTUAL_TIME = re.compile(r"actual time=([\d.]+)\.\.([\d.]+)")
 
 
