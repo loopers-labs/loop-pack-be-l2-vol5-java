@@ -67,7 +67,6 @@ public class OrderCommandService implements OrderCommandUseCase {
     /**
      * ORD-02~05: 소유·상태(404·409) → 상품 재검증(409) → 잔액(409)을 모두 확인한 뒤에만 재고·포인트·주문을 바꾼다 (8장).
      * 네 가지 변경(재고, 그룹의 남은 금액, 사용 이력, 주문 상태)은 이 트랜잭션 하나로 함께 반영되거나 함께 되돌려진다.
-     * TODO : 로직 확인 필요 (forEach 2개)
      */
     @Transactional
     @Override

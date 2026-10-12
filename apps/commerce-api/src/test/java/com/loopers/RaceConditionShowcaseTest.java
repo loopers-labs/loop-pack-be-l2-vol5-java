@@ -99,11 +99,6 @@ public class RaceConditionShowcaseTest {
         print("재고 100 · 100명", results, "최종 재고 " + stockOf(product));
         assertThat(count(results, SUCCESS)).isEqualTo(100);
         assertThat(stockOf(product)).isZero();
-
-        /** Failed
-         * Expected :0
-         * Actual   :89
-         */
     }
 
     @DisplayName("[재고] 재고 100, 서로 다른 150명이 1개씩 동시에 주문 확정 → 성공 100 · 재고 부족 50, 재고는 0이고 음수가 되지 않는다")
@@ -137,12 +132,6 @@ public class RaceConditionShowcaseTest {
         assertThat(stockOf(product)).isZero();
         assertThat(buyers.stream().filter(buyer -> balanceOf(buyer) == 9_000).count()).isEqualTo(100);
         assertThat(buyers.stream().filter(buyer -> balanceOf(buyer) == 10_000).count()).isEqualTo(50);
-
-        /** Failed
-         * ▶ 재고 100 · 150명
-         *    요청 150 = 성공 150 + 재고 부족 0 + 잔액 부족 0 + 그 밖의 오류 0
-         *    최종 재고 84
-         * */
     }
 
     @DisplayName("[포인트] 한 사용자 잔액 100,000원, 1,000원 주문 100건을 동시에 확정 → 100건 모두 성공, 잔액 0")
@@ -173,11 +162,6 @@ public class RaceConditionShowcaseTest {
         print("잔액 100,000 · 1,000원 주문 100건", results, "최종 잔액 " + balanceOf(buyer));
         assertThat(count(results, SUCCESS)).isEqualTo(100);
         assertThat(balanceOf(buyer)).isZero();
-
-        /** Failed
-         * Expected :0L
-         * Actual   :89000L
-         * */
     }
 
 
