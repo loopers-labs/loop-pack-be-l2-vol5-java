@@ -43,12 +43,11 @@ public class OrderFacade {
         Order order = orderRepository.findById(orderId)
             .filter(found -> found.getUserId().equals(userId))
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "주문을 찾을 수 없습니다."));
-        order.validateDraft();
+        order.confirm();
         pointRepository.findByUserId(userId)
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "사용자의 포인트를 찾을 수 없습니다."));
 
         lockActiveBrands(order);
-        order.confirm();
         int confirmedRows = orderRepository.confirmIfDraft(
             orderId, userId, order.getPaymentAmount(), ZonedDateTime.now()
         );
