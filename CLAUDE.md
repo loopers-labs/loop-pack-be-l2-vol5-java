@@ -6,7 +6,7 @@
 
 - Loopers BE L2 과제 저장소. Java 21 · Spring Boot 3.4 · JPA(MySQL) · QueryDSL. 빌드 스크립트만 Gradle Kotlin DSL(`.kts`)이고 코드는 Java다.
 - 모듈: `apps/commerce-api`(과제 구현 대상) · `apps/commerce-batch` · `apps/commerce-streamer` · `modules/*`(jpa·redis·kafka 설정) · `supports/*`.
-- 계층(layer-first): `interfaces → application(Facade) → domain ← infrastructure`.
+- 구조(헥사고날, v0.8~): 기능마다 `com.loopers.{기능}.{domain · application.port.in/out · adapter.in/out}`. 쓰기는 `*CommandUseCase`, 읽기는 `*QueryService`. 기준과 옛 이름 대응은 `docs/week2/plan.md` 5-2.
 
 ## 기준 문서
 

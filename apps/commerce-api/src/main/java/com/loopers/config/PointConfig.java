@@ -1,6 +1,6 @@
 package com.loopers.config;
 
-import com.loopers.application.point.PointProperties;
+import com.loopers.point.application.PointProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 

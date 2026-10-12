@@ -1,6 +1,6 @@
 package com.loopers.config;
 
-import com.loopers.interfaces.api.ApiResponse;
+import com.loopers.support.web.ApiResponse;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
