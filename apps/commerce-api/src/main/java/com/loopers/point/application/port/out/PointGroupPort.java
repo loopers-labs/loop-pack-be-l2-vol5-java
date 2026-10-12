@@ -15,7 +15,7 @@ public interface PointGroupPort {
     List<PointGroup> findRemainingByUserId(Long userId);
 
     /**
-     * findRemainingByUserId와 같은 대상·순서를 쓰기 잠금으로 읽는다. 결제가 쓴다 (R-2, ADR-W3-02).
+     * findRemainingByUserId와 같은 대상·순서를 쓰기 잠금으로 읽는다. 결제와 충전이 쓴다 (R-2·R-7, ADR-W3-02).
      */
     List<PointGroup> findRemainingByUserIdForUpdate(Long userId);
 

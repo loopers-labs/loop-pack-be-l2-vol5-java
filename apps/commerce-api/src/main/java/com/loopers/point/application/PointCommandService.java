@@ -29,13 +29,14 @@ public class PointCommandService implements PointCommandUseCase {
 
     /**
      * PNT-02·PNT-03: 충전 한 번이 그룹 하나와 충전 이력 한 줄을 만들고, 충전 후 사용 가능 잔액을 돌려준다.
+     * 그룹을 쓰기 잠금으로 읽어, 잔액을 읽고 상한을 검사하고 그룹을 넣는 동안 같은 사용자의 다른 충전이 끼어들지 못하게 한다 (R-7, ADR-W3-02).
      */
     @Transactional
     @Override
     public PointBalanceInfo charge(Long userId, long amount) {
         ZonedDateTime now = ZonedDateTime.now();
         Money chargeAmount = toChargeAmount(amount);
-        List<PointGroup> groups = new ArrayList<>(pointGroupPort.findRemainingByUserId(userId));
+        List<PointGroup> groups = new ArrayList<>(pointGroupPort.findRemainingByUserIdForUpdate(userId));
         pointWalletPolicy.checkChargeable(groups, chargeAmount, now);
 
         PointGroup group = pointGroupPort.save(PointGroup.charge(userId, chargeAmount, now, pointProperties.chargeValidity()));
