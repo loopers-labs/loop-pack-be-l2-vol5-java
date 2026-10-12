@@ -11,9 +11,7 @@ public record PointBalance(long amount) {
     }
 
     public PointBalance add(long chargeAmount) {
-        if (chargeAmount <= 0) {
-            throw new CoreException(ErrorType.BAD_REQUEST, "충전액은 양수여야 합니다.");
-        }
+        validateChargeAmount(chargeAmount);
 
         if (exceedsMaximumBalance(chargeAmount)) {
             throw new CoreException(ErrorType.BAD_REQUEST, "충전 후 잔액이 저장 가능한 범위를 초과했습니다.");
@@ -27,6 +25,12 @@ public record PointBalance(long amount) {
             throw new CoreException(ErrorType.CONFLICT, "포인트 잔액이 부족합니다.");
         }
         return new PointBalance(amount - paymentAmount);
+    }
+
+    public static void validateChargeAmount(long chargeAmount) {
+        if (chargeAmount <= 0) {
+            throw new CoreException(ErrorType.BAD_REQUEST, "충전액은 양수여야 합니다.");
+        }
     }
 
     private boolean exceedsMaximumBalance(long chargeAmount) {

@@ -27,6 +27,9 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -345,12 +348,16 @@ class BrandV1ApiE2ETest {
             );
         }
 
-        @DisplayName("활성 Product가 연결되어 있으면, 409 응답과 Brand 미삭제를 반환한다.")
+        @DisplayName("활성 Product가 연결되어 있으면 Brand와 Product를 삭제하고 고객 조회에서 제외한다.")
         @Test
-        void keepsBrand_whenActiveProductExists() {
+        void deletesBrandAndActiveProducts_whenActiveProductExists() throws Exception {
             // arrange
             Brand brand = brandRepository.save(Brand.create("Nike"));
-            productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
+            Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
+            Brand otherBrand = brandRepository.save(Brand.create("Adidas"));
+            Product otherProduct = productRepository.save(
+                Product.create(otherBrand.getId(), "Superstar", 90_000L)
+            );
 
             // act
             ParameterizedTypeReference<ApiResponse<Object>> responseType = new ParameterizedTypeReference<>() {};
@@ -363,10 +370,20 @@ class BrandV1ApiE2ETest {
 
             // assert
             Brand savedBrand = brandRepository.findById(brand.getId()).orElseThrow();
+            Product savedProduct = productRepository.findById(product.getId()).orElseThrow();
             assertAll(
-                () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT),
-                () -> assertThat(savedBrand.getDeletedAt()).isNull()
+                () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK),
+                () -> assertThat(savedBrand.getDeletedAt()).isNotNull(),
+                () -> assertThat(savedProduct.getDeletedAt()).isNotNull()
             );
+            mockMvc.perform(get("/api/v1/brands/{brandId}", brand.getId()))
+                .andExpect(status().isNotFound());
+            mockMvc.perform(get("/api/v1/products/{productId}", product.getId()))
+                .andExpect(status().isNotFound());
+            mockMvc.perform(get("/api/v1/products"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].id").value(otherProduct.getId()));
         }
 
         @DisplayName("없는 Brand ID면, 404 응답을 반환한다.")

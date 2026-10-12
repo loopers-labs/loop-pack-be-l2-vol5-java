@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Comparator;
 import java.util.Map;
@@ -95,7 +96,7 @@ public class ProductFacade {
 
     @Transactional
     public ProductInfo register(Long brandId, String name, long price) {
-        Brand brand = findActiveBrandById(brandId);
+        Brand brand = findActiveBrandByIdWithSharedLock(brandId);
         Product product = Product.create(brand.getId(), name, price);
 
         Product savedProduct = productRepository.save(product);
@@ -107,8 +108,10 @@ public class ProductFacade {
         Product product = findActiveProductById(productId);
         product.changeStockTo(quantity);
 
-        Product savedProduct = productRepository.save(product);
-        return ProductInfo.from(savedProduct);
+        if (productRepository.updateActiveStock(productId, quantity, ZonedDateTime.now()) == 0) {
+            throw new CoreException(ErrorType.NOT_FOUND, "상품을 찾을 수 없습니다.");
+        }
+        return ProductInfo.from(product);
     }
 
     @Transactional
@@ -116,15 +119,19 @@ public class ProductFacade {
         Product product = findActiveProductById(productId);
         product.updateDetails(name, price);
 
-        Product savedProduct = productRepository.save(product);
-        return ProductInfo.from(savedProduct);
+        if (productRepository.updateActiveDetails(productId, name, price, ZonedDateTime.now()) == 0) {
+            throw new CoreException(ErrorType.NOT_FOUND, "상품을 찾을 수 없습니다.");
+        }
+        return ProductInfo.from(product);
     }
 
     @Transactional
     public void delete(Long productId) {
         Product product = findActiveProductById(productId);
         product.delete();
-        productRepository.save(product);
+        if (productRepository.softDeleteActiveById(productId, product.getDeletedAt()) == 0) {
+            throw new CoreException(ErrorType.NOT_FOUND, "상품을 찾을 수 없습니다.");
+        }
     }
 
     private Brand findActiveBrandById(Long brandId) {
@@ -133,6 +140,15 @@ public class ProductFacade {
         }
 
         return brandRepository.findActiveById(brandId)
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "브랜드를 찾을 수 없습니다."));
+    }
+
+    private Brand findActiveBrandByIdWithSharedLock(Long brandId) {
+        if (brandId == null) {
+            throw new CoreException(ErrorType.BAD_REQUEST, "브랜드 ID는 필수입니다.");
+        }
+
+        return brandRepository.findActiveByIdWithSharedLock(brandId)
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "브랜드를 찾을 수 없습니다."));
     }
 

@@ -80,7 +80,7 @@ class OtherDomainRepositoryIntegrationTest {
             assertThat(item.getQuantity()).isEqualTo(2);
         });
 
-        reloadedOrder.confirm(reloadedOrder.getTotalAmount());
+        reloadedOrder.confirm();
         orderRepository.save(reloadedOrder);
         entityManager.flush();
         entityManager.clear();

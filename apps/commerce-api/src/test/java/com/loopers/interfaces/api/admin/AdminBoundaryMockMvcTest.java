@@ -1,5 +1,9 @@
 package com.loopers.interfaces.api.admin;
 
+import com.loopers.domain.brand.Brand;
+import com.loopers.domain.brand.BrandRepository;
+import com.loopers.domain.product.Product;
+import com.loopers.domain.product.ProductRepository;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -8,9 +12,11 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -24,6 +30,12 @@ class AdminBoundaryMockMvcTest {
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
+
+    @Autowired
+    private BrandRepository brandRepository;
+
+    @Autowired
+    private ProductRepository productRepository;
 
     @AfterEach
     void tearDown() {
@@ -66,5 +78,23 @@ class AdminBoundaryMockMvcTest {
                 .contentType(APPLICATION_JSON)
                 .content("{\"name\":\"Nike\"}"))
             .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void rejectsNonAdminBrandDeletionWithoutChangingBrandOrProducts() throws Exception {
+        Brand brand = brandRepository.save(Brand.create("Nike"));
+        Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
+
+        mvc.perform(delete("/api-admin/v1/brands/{brandId}", brand.getId())
+                .with(user("customer").roles("USER"))
+                .with(csrf()))
+            .andExpect(status().isForbidden());
+
+        mvc.perform(delete("/api-admin/v1/brands/{brandId}", brand.getId())
+                .with(csrf()))
+            .andExpect(status().isForbidden());
+
+        assertThat(brandRepository.findById(brand.getId()).orElseThrow().getDeletedAt()).isNull();
+        assertThat(productRepository.findById(product.getId()).orElseThrow().getDeletedAt()).isNull();
     }
 }

@@ -1,5 +1,8 @@
 package com.loopers.domain.order;
 
+import com.loopers.support.error.CoreException;
+import com.loopers.support.error.ErrorType;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -32,6 +35,9 @@ public class Order {
     }
 
     public static Order create(Long userId, List<OrderItem> items) {
+        if (items == null || items.isEmpty()) {
+            throw new CoreException(ErrorType.BAD_REQUEST, "주문 품목은 하나 이상이어야 합니다.");
+        }
         Order order = new Order(null, userId, OrderStatus.DRAFT, 0L, null, null, List.of());
         items.forEach(order::addItem);
         return order;
@@ -46,8 +52,15 @@ public class Order {
         items.stream()
             .filter(existing -> existing.getProductId().equals(item.getProductId()))
             .findFirst()
-            .ifPresentOrElse(existing -> existing.addQuantity(item.getQuantity()), () -> items.add(item));
-        totalAmount = items.stream().mapToLong(OrderItem::getAmount).sum();
+            .ifPresentOrElse(
+                existing -> items.set(items.indexOf(existing), existing.addQuantity(item.getQuantity())),
+                () -> items.add(item)
+            );
+        try {
+            totalAmount = items.stream().mapToLong(OrderItem::getAmount).reduce(0L, Math::addExact);
+        } catch (ArithmeticException exception) {
+            throw new CoreException(ErrorType.BAD_REQUEST, "주문 총액이 저장 가능한 범위를 초과했습니다.");
+        }
     }
 
     public Long getId() { return id; }
@@ -60,16 +73,14 @@ public class Order {
 
     public void validateDraft() {
         if (status != OrderStatus.DRAFT) {
-            throw new com.loopers.support.error.CoreException(
-                com.loopers.support.error.ErrorType.CONFLICT, "DRAFT 주문만 확정할 수 있습니다."
-            );
+            throw new CoreException(ErrorType.CONFLICT, "DRAFT 주문만 확정할 수 있습니다.");
         }
     }
 
-    public void confirm(long paymentAmount) {
+    public void confirm() {
         validateDraft();
         status = OrderStatus.CONFIRMED;
-        this.paymentAmount = paymentAmount;
+        this.paymentAmount = totalAmount;
         this.paymentResult = PaymentResult.SUCCESS;
     }
 }

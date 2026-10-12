@@ -5,6 +5,7 @@ import com.loopers.domain.point.PointRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.time.ZonedDateTime;
 import java.util.Optional;
 
 @RequiredArgsConstructor
@@ -27,5 +28,15 @@ public class PointRepositoryImpl implements PointRepository {
             })
             .orElseGet(() -> PointJpaMapper.toNewEntity(point));
         return PointJpaMapper.toDomain(pointJpaRepository.save(entity));
+    }
+
+    @Override
+    public int increaseBalanceIfWithinMaximum(Long userId, long amount, long maximumBalance, ZonedDateTime updatedAt) {
+        return pointJpaRepository.increaseBalanceIfWithinMaximum(userId, amount, maximumBalance, updatedAt);
+    }
+
+    @Override
+    public int decreaseBalanceIfEnough(Long userId, long amount, ZonedDateTime updatedAt) {
+        return pointJpaRepository.decreaseBalanceIfEnough(userId, amount, updatedAt);
     }
 }

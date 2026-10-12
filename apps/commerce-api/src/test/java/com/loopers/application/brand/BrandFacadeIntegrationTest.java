@@ -1,9 +1,17 @@
 package com.loopers.application.brand;
 
+import com.loopers.application.product.ProductFacade;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
+import com.loopers.domain.like.Like;
+import com.loopers.domain.like.LikeRepository;
+import com.loopers.domain.order.Order;
+import com.loopers.domain.order.OrderItem;
+import com.loopers.domain.order.OrderRepository;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
+import com.loopers.domain.user.User;
+import com.loopers.domain.user.UserRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import com.loopers.utils.DatabaseCleanUp;
@@ -29,10 +37,22 @@ class BrandFacadeIntegrationTest {
     private BrandFacade brandFacade;
 
     @Autowired
+    private ProductFacade productFacade;
+
+    @Autowired
     private BrandRepository brandRepository;
 
     @Autowired
     private ProductRepository productRepository;
+
+    @Autowired
+    private LikeRepository likeRepository;
+
+    @Autowired
+    private OrderRepository orderRepository;
+
+    @Autowired
+    private UserRepository userRepository;
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
@@ -226,22 +246,79 @@ class BrandFacadeIntegrationTest {
             assertThat(brandRepository.findById(brand.getId()).orElseThrow().getDeletedAt()).isNotNull();
         }
 
-        @DisplayName("재고가 0인 Product라도 연결되어 있으면, CONFLICT 예외가 발생한다.")
+        @DisplayName("연결된 활성 Product를 모두 삭제하고 기존 관계와 다른 Brand를 보존한다.")
         @Test
-        void throwsException_whenActiveProductExists() {
+        void deletesActiveProductsAndPreservesRelatedData() {
             // arrange
             Brand brand = brandRepository.save(Brand.create("Nike"));
-            productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
+            Product zeroStockProduct = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
+            Product stockedProduct = Product.create(brand.getId(), "Pegasus", 120_000L);
+            stockedProduct.changeStockTo(9L);
+            stockedProduct = productRepository.save(stockedProduct);
+
+            Product previouslyDeletedProduct = Product.create(brand.getId(), "Retired", 80_000L);
+            previouslyDeletedProduct.changeStockTo(3L);
+            previouslyDeletedProduct.delete();
+            previouslyDeletedProduct = productRepository.save(previouslyDeletedProduct);
+
+            Brand otherBrand = brandRepository.save(Brand.create("Adidas"));
+            Product otherBrandProduct = productRepository.save(
+                Product.create(otherBrand.getId(), "Superstar", 90_000L)
+            );
+
+            User user = userRepository.save(User.create());
+            likeRepository.save(Like.create(user.getId(), zeroStockProduct.getId()));
+            Order confirmedOrder = Order.create(user.getId(), List.of(
+                OrderItem.create(zeroStockProduct.getId(), zeroStockProduct.getName(), zeroStockProduct.getPrice(), 1)
+            ));
+            confirmedOrder.confirm();
+            confirmedOrder = orderRepository.save(confirmedOrder);
+            Long stockedProductId = stockedProduct.getId();
+            productFacade.update(stockedProductId, "Pegasus Updated", 130_000L);
+            productFacade.changeStock(stockedProductId, 11L);
+            brandFacade.update(brand.getId(), "Nike Running");
+            entityManager.clear();
+            var previousDeletedAt = productRepository.findById(previouslyDeletedProduct.getId())
+                .orElseThrow()
+                .getDeletedAt();
 
             // act
-            CoreException result = assertThrows(CoreException.class, () -> {
-                brandFacade.delete(brand.getId());
-            });
+            brandFacade.delete(brand.getId());
 
             // assert
+            entityManager.clear();
+            Brand savedBrand = brandRepository.findById(brand.getId()).orElseThrow();
+            Product deletedZeroStockProduct = productRepository.findById(zeroStockProduct.getId()).orElseThrow();
+            Product deletedStockedProduct = productRepository.findById(stockedProduct.getId()).orElseThrow();
+            Product savedPreviouslyDeletedProduct = productRepository.findById(previouslyDeletedProduct.getId())
+                .orElseThrow();
+            Product savedOtherBrandProduct = productRepository.findById(otherBrandProduct.getId()).orElseThrow();
+            Order savedOrder = orderRepository.findById(confirmedOrder.getId()).orElseThrow();
             assertAll(
-                () -> assertThat(result.getErrorType()).isEqualTo(ErrorType.CONFLICT),
-                () -> assertThat(brand.getDeletedAt()).isNull()
+                () -> assertThat(savedBrand.getDeletedAt()).isNotNull(),
+                () -> assertThat(savedBrand.getName()).isEqualTo("Nike Running"),
+                () -> assertThat(deletedZeroStockProduct.getDeletedAt()).isNotNull(),
+                () -> assertThat(deletedZeroStockProduct.getDeletedAt()).isEqualTo(savedBrand.getDeletedAt()),
+                () -> assertThat(deletedZeroStockProduct.getStock().amount()).isZero(),
+                () -> assertThat(deletedStockedProduct.getDeletedAt()).isNotNull(),
+                () -> assertThat(deletedStockedProduct.getDeletedAt()).isEqualTo(savedBrand.getDeletedAt()),
+                () -> assertThat(deletedStockedProduct.getName()).isEqualTo("Pegasus Updated"),
+                () -> assertThat(deletedStockedProduct.getPrice()).isEqualTo(130_000L),
+                () -> assertThat(deletedStockedProduct.getStock().amount()).isEqualTo(11L),
+                () -> assertThat(savedPreviouslyDeletedProduct.getDeletedAt()).isEqualTo(previousDeletedAt),
+                () -> assertThat(savedPreviouslyDeletedProduct.getStock().amount()).isEqualTo(3L),
+                () -> assertThat(savedOtherBrandProduct.getDeletedAt()).isNull(),
+                () -> assertThat(likeRepository.findByUserIdAndProductId(user.getId(), zeroStockProduct.getId()))
+                    .isPresent(),
+                () -> assertThat(savedOrder.getStatus().name()).isEqualTo("CONFIRMED"),
+                () -> assertThat(savedOrder.getPaymentAmount()).isEqualTo(100_000L),
+                () -> assertThat(savedOrder.getPaymentResult().name()).isEqualTo("SUCCESS"),
+                () -> assertThat(savedOrder.getItems()).singleElement().satisfies(item -> {
+                    assertThat(item.getProductId()).isEqualTo(zeroStockProduct.getId());
+                    assertThat(item.getProductName()).isEqualTo("Air Max");
+                    assertThat(item.getUnitPrice()).isEqualTo(100_000L);
+                    assertThat(item.getQuantity()).isEqualTo(1);
+                })
             );
         }
 
