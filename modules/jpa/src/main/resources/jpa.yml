@@ -1,4 +1,7 @@
 spring:
+  profiles:
+    group:
+      local-pg: local # local 설정(redis 등)을 그대로 쓰고 DB만 PostgreSQL로 덮어쓴다
   jpa:
     open-in-view: false
     generate-ddl: false
@@ -43,6 +46,24 @@ datasource:
   mysql-jpa:
     main:
       jdbc-url: jdbc:mysql://localhost:3306/loopers
+      username: application
+      password: application
+
+---
+# local 문서보다 뒤에 있어야 local의 MySQL 값을 덮어쓴다
+spring.config.activate.on-profile: local-pg
+
+spring:
+  jpa:
+    properties:
+      hibernate:
+        auto_quote_keyword: true # user 등 PostgreSQL 예약어 테이블명 인용
+
+datasource:
+  mysql-jpa:
+    main:
+      driver-class-name: org.postgresql.Driver
+      jdbc-url: jdbc:postgresql://localhost:5432/loopers
       username: application
       password: application
 
