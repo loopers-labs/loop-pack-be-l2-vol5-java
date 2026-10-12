@@ -1,0 +1,35 @@
+Sort  (cost=211173.53..211173.71 rows=75 width=67) (actual time=297.014..301.466 rows=50 loops=1)
+  Sort Key: pm2_0.created_at DESC, pm2_0.id DESC
+  Sort Method: quicksort  Memory: 32kB
+  ->  GroupAggregate  (cost=211169.69..211171.19 rows=75 width=67) (actual time=296.995..301.456 rows=50 loops=1)
+        Group Key: pm2_0.id, bm1_0.id
+        ->  Sort  (cost=211169.69..211169.88 rows=75 width=67) (actual time=296.989..301.441 rows=64 loops=1)
+              Sort Key: pm2_0.id DESC, bm1_0.id
+              Sort Method: quicksort  Memory: 34kB
+              ->  Nested Loop Left Join  (cost=210556.10..211167.36 rows=75 width=67) (actual time=296.883..301.429 rows=64 loops=1)
+                    ->  Nested Loop  (cost=210555.67..210998.42 rows=50 width=59) (actual time=296.873..301.391 rows=50 loops=1)
+                          ->  Nested Loop  (cost=210555.39..210983.79 rows=50 width=46) (actual time=296.867..301.354 rows=50 loops=1)
+                                ->  Limit  (cost=210554.96..210560.79 rows=50 width=16) (actual time=296.836..301.291 rows=50 loops=1)
+                                      ->  Gather Merge  (cost=209977.42..671197.62 rows=3953040 width=16) (actual time=291.008..295.863 rows=5000 loops=1)
+                                            Workers Planned: 2
+                                            Workers Launched: 2
+                                            ->  Sort  (cost=208977.40..213918.70 rows=1976520 width=16) (actual time=285.872..285.932 rows=2729 loops=3)
+                                                  Sort Key: pm1_0.created_at DESC, pm1_0.id DESC
+                                                  Sort Method: top-N heapsort  Memory: 853kB
+                                                  Worker 0:  Sort Method: top-N heapsort  Memory: 853kB
+                                                  Worker 1:  Sort Method: top-N heapsort  Memory: 853kB
+                                                  ->  Parallel Seq Scan on product pm1_0  (cost=0.00..77660.25 rows=1976520 width=16) (actual time=0.915..79.782 rows=1583248 loops=3)
+                                                        Filter: (deleted_at IS NULL)
+                                                        Rows Removed by Filter: 83419
+                                ->  Index Scan using product_pkey on product pm2_0  (cost=0.43..8.45 rows=1 width=46) (actual time=0.001..0.001 rows=1 loops=50)
+                                      Index Cond: (id = pm1_0.id)
+                          ->  Index Scan using brand_pkey on brand bm1_0  (cost=0.28..0.29 rows=1 width=21) (actual time=0.001..0.001 rows=1 loops=50)
+                                Index Cond: (id = pm2_0.brand_id)
+                    ->  Index Scan using ix_product_like_product on product_like plm1_0  (cost=0.43..2.33 rows=105 width=16) (actual time=0.001..0.001 rows=1 loops=50)
+                          Index Cond: (product_id = pm2_0.id)
+Planning Time: 0.420 ms
+JIT:
+  Functions: 34
+  Options: Inlining false, Optimization false, Expressions true, Deforming true
+  Timing: Generation 0.519 ms, Inlining 0.000 ms, Optimization 0.383 ms, Emission 7.694 ms, Total 8.596 ms
+Execution Time: 308.099 ms
