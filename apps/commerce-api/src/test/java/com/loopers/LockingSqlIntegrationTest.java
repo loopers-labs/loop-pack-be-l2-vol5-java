@@ -136,6 +136,17 @@ public class LockingSqlIntegrationTest {
         assertThat(SqlRecorder.lockedTables()).containsExactly("brands", "products");
     }
 
+    @DisplayName("C-5·R-7 충전도 그룹을 잠근다 (동시 충전이 상한 검사를 함께 통과하지 않음)")
+    @Test
+    void chargeLocksPointGroups() {
+        // act
+        SqlRecorder.clear();
+        pointCommandUseCase.charge(user.getId(), 10_000);
+
+        // assert
+        assertThat(SqlRecorder.lockedTables()).containsExactly("point_groups");
+    }
+
     @DisplayName("C-5 포인트 만료 배치도 그룹을 잠근다 (확정의 결제와 같은 그룹을 덮어쓰지 않음)")
     @Test
     void expirationLocksPointGroups() {
