@@ -17,6 +17,7 @@ services:
   postgres:
     image: postgres:14
     command: postgres -c shared_buffers=1GB # MySQL 측정 조건(innodb_buffer_pool_size 1GB)과 맞춤
+    shm_size: 1g # 병렬 쿼리·VACUUM 의 동적 공유 메모리. 기본 64MB 면 대량 집계에서 "could not resize shared memory segment" 로 실패
     ports:
       - "5432:5432"
     environment:
