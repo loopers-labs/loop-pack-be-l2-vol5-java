@@ -12,10 +12,12 @@ local-pg 프로필 앱의 statement 로그로 확인한 결과, PostgreSQL 에�
   PostgreSQL : ... offset 4950 rows fetch first 50 rows only
 앱은 brand_id·offset·limit 을 바인딩 변수($1..)로 보내지만, 여기서는 bench.py 와 같이 값을 직접 넣어 실행한다.
 실제로 실행한 SQL 은 결과 디렉터리의 <ID>.sql 에 남긴다.
+Q 케이스(쿼리 변경 후, 문서 8장)는 statement 로그로 잡은 PostgreSQL SQL 을 그대로 적어 두었으므로 바꿀 것이 없다.
 
 사용
   python3 docs/week4/bench_pg.py pg-after                # 전체 케이스
   python3 docs/week4/bench_pg.py pg-after L03 L09 C01    # 일부 케이스만
+  python3 docs/week4/bench_pg.py pg-cte Q01 Q02 Q04 Q05 Q07 Q08 Q10 Q11   # 쿼리 변경 후 (문서 8장)
   python3 docs/week4/bench_pg.py pg-after --warmup 1 --runs 5
   python3 docs/week4/bench_pg.py pg-after --dry-run      # 실행할 SQL 만 출력 (DB 접속 안 함)
 
@@ -43,7 +45,7 @@ CONTAINER = os.environ.get("PG_CONTAINER", "docker-postgres-1")
 USER = os.environ.get("PG_USER", "application")
 DB = os.environ.get("PG_DB", "loopers")
 
-CASE_SQL = re.compile(r"^### ([LC]\d{2})\s*$.*?^```sql\n(.*?)\n```", re.M | re.S)
+CASE_SQL = re.compile(r"^### ([LCQ]\d{2})\s*$.*?^```sql\n(.*?)\n```", re.M | re.S)
 MYSQL_LIMIT = re.compile(r" limit (\d+),(\d+)$")
 ACTUAL_TIME = re.compile(r"actual time=([\d.]+)\.\.([\d.]+)")
 
