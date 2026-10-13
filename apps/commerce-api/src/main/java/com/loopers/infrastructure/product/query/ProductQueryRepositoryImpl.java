@@ -59,6 +59,18 @@ public class ProductQueryRepositoryImpl implements ProductQueryRepository {
     }
 
     @Override
+    public Optional<ProductView.DetailState> findDetailState(Long productId) {
+        return Optional.ofNullable(queryFactory
+            .select(Projections.constructor(ProductView.DetailState.class,
+                productModel.revision, brandModel.revision, productStatModel.likeCount))
+            .from(productModel)
+            .join(brandModel).on(brandModel.id.eq(productModel.brandId))
+            .join(productStatModel).on(productStatModel.productId.eq(productModel.id))
+            .where(productModel.id.eq(productId), productModel.deletedAt.isNull())
+            .fetchOne());
+    }
+
+    @Override
     public PageResult<ProductView.Admin> findPage(PageQuery query) {
         List<ProductView.Admin> items = selectJoined(admin())
             .orderBy(productModel.createdAt.desc(), productModel.id.desc())

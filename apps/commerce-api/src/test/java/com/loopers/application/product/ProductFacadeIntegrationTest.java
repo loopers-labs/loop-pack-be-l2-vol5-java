@@ -10,6 +10,7 @@ import com.loopers.support.error.ErrorType;
 import com.loopers.support.fixture.Fixtures;
 import com.loopers.support.paging.PageQuery;
 import com.loopers.utils.DatabaseCleanUp;
+import com.loopers.utils.RedisCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -35,6 +36,8 @@ class ProductFacadeIntegrationTest {
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
     @Autowired
+    private RedisCleanUp redisCleanUp;
+    @Autowired
     private TransactionTemplate transactionTemplate;
 
     private UserModel user;
@@ -52,6 +55,7 @@ class ProductFacadeIntegrationTest {
     @AfterEach
     void tearDown() {
         databaseCleanUp.truncateAllTables();
+        redisCleanUp.truncateAll();
     }
 
     @Nested

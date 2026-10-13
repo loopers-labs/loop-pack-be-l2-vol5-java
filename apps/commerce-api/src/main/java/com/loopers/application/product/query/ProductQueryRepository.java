@@ -13,6 +13,9 @@ public interface ProductQueryRepository {
     /** FR-PRODUCT-02: 존재하고 삭제되지 않은 상품. */
     Optional<ProductView.Summary> findActive(Long productId);
 
+    /** FR-PRODUCT-02 캐시 (DR-37): 존재하고 삭제되지 않은 상품의 상품·브랜드 revision 과 좋아요 수. 쿼리 하나로 읽는다. */
+    Optional<ProductView.DetailState> findDetailState(Long productId);
+
     /** FR-ADMIN-PRODUCT-01: 삭제 포함, 최신순. */
     PageResult<ProductView.Admin> findPage(PageQuery query);
 

@@ -9,6 +9,7 @@ import com.loopers.domain.user.UserModel;
 import com.loopers.support.error.ErrorType;
 import com.loopers.support.fixture.Fixtures;
 import com.loopers.utils.DatabaseCleanUp;
+import com.loopers.utils.RedisCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -33,6 +34,8 @@ class ProductLikeFacadeIntegrationTest {
     private Fixtures fixtures;
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
+    @Autowired
+    private RedisCleanUp redisCleanUp;
 
     private UserModel user;
     private BrandModel brand;
@@ -48,6 +51,7 @@ class ProductLikeFacadeIntegrationTest {
     @AfterEach
     void tearDown() {
         databaseCleanUp.truncateAllTables();
+        redisCleanUp.truncateAll();
     }
 
     /** 저장된 좋아요 수 (TB-08, DR-36). */

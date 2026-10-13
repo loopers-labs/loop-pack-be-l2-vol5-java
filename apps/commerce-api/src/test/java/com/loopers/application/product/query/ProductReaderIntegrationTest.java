@@ -9,6 +9,7 @@ import com.loopers.support.fixture.Fixtures;
 import com.loopers.support.paging.PageQuery;
 import com.loopers.support.paging.PageResult;
 import com.loopers.utils.DatabaseCleanUp;
+import com.loopers.utils.RedisCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -35,6 +36,8 @@ class ProductReaderIntegrationTest {
     private Fixtures fixtures;
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
+    @Autowired
+    private RedisCleanUp redisCleanUp;
 
     private UserModel user;
     private UserModel admin;
@@ -51,6 +54,7 @@ class ProductReaderIntegrationTest {
     @AfterEach
     void tearDown() {
         databaseCleanUp.truncateAllTables();
+        redisCleanUp.truncateAll();
     }
 
     @Nested
