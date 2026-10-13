@@ -5,8 +5,10 @@ import com.loopers.domain.common.PageSize;
 import com.loopers.domain.common.PageWindow;
 import com.loopers.support.error.DomainError;
 import com.loopers.support.error.DomainException;
+import com.loopers.domain.product.ProductListingChanged;
 import com.loopers.domain.product.ProductsInBrand;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -16,6 +18,8 @@ public class BrandService {
     private final BrandRepository brandRepository;
 
     private final ProductsInBrand productsInBrand;
+
+    private final ApplicationEventPublisher events;
 
     public Brand register(String name, String description) {
         return brandRepository.save(Brand.register(name, description));
@@ -28,6 +32,7 @@ public class BrandService {
     public Brand update(Long brandId, String name, String description) {
         Brand brand = findAliveForUpdate(brandId);
         brand.update(name, description);
+        events.publishEvent(new ProductListingChanged(brandId));
         return brandRepository.save(brand);
     }
 
@@ -36,6 +41,7 @@ public class BrandService {
         productsInBrand.deleteAll(brandId);
         brand.delete();
         brandRepository.save(brand);
+        events.publishEvent(new ProductListingChanged(brandId));
     }
 
     public PageWindow<Brand> findPage(PageNumber page, PageSize size) {

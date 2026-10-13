@@ -12,4 +12,6 @@ public interface ProductListingCache {
     Optional<PageWindow<ProductViewQuery.Listing>> find(Long brandId, ProductViewQuery.Sort sort, long generation);
 
     void save(Long brandId, ProductViewQuery.Sort sort, long generation, PageWindow<ProductViewQuery.Listing> page);
+
+    void invalidate(Long brandId);
 }
