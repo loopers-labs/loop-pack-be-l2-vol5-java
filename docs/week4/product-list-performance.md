@@ -3,6 +3,7 @@
 `GET /api/v1/products` (FR-PRODUCT-01, EP-02) 를 대량 데이터에서 측정하고, 인덱스 적용 전후를 케이스별로 비교한다.
 같은 케이스를 PostgreSQL 에서도 인덱스 적용 상태로 측정해 함께 적는다.
 `latest`·`price_asc` 쿼리를 바꾼 뒤 MySQL·PostgreSQL 에서 다시 잰 결과는 8장에 적는다.
+PostgreSQL 에 부분 인덱스를 더한 뒤 다시 잰 결과는 9장에 적는다.
 
 ## 1. 측정 환경
 
@@ -18,6 +19,7 @@
 | PostgreSQL | PostgreSQL 14.24 (docker `docker-postgres-1`, `local-pg` 프로필), `shared_buffers` 1GB, `shm_size` 1g. 나머지는 기본값 (`work_mem` 4MB, `max_parallel_workers_per_gather` 2, JIT 켜짐) |
 | PostgreSQL 데이터 | `docs/week4/seed-pg.sql` 로 생성. 규모·분포는 `seed.sql` 과 같지만 무작위 값이라 MySQL 과 행 단위로 같지는 않다. 브랜드 1,000 / 유저 1,000,000 / 상품 5,000,000 (삭제 250,257) / 좋아요 7,514,034. `brandId=1` 은 삭제되지 않은 상품 474,476개, 좋아요 1,000개 이상 상품 37개, 최대 좋아요 10,061 |
 | PostgreSQL 인덱스 | "인덱스 적용 후" 와 같다. PostgreSQL 은 인덱스 적용 상태만 측정했다 |
+| PostgreSQL 부분 인덱스 | 9장 측정에만 해당. 위에 더해 `product` 에 `WHERE deleted_at IS NULL` 부분 인덱스 4개 (9-1). DB 에 직접 만들었고 엔티티에는 없다 |
 
 ## 2. 측정 방법
 
@@ -57,22 +59,22 @@
 
 ### 4-1. 목록 쿼리 실행 시간 (평균, ms)
 
-| ID | 브랜드 | 페이지 | 정렬 | 인덱스 적용 전 | 인덱스 적용 후 | 쿼리 변경 후 (MySQL, [8장](#8-쿼리-변경-후-검증)) | PostgreSQL (인덱스 적용) | PostgreSQL (쿼리 변경 후, [8장](#8-쿼리-변경-후-검증)) |
-|---|---|---|---|---|---|---|---|---|
-| L01 | 전체 | 첫 페이지 | `latest` | 41,410.4 (40,286.0~43,414.0) | 65,350.6 (62,870.0~70,511.0) | [0.7 (0.7~0.8)](#q01) | 7,855.1 (7,237.1~8,464.0) | [227.2 (225.4~229.2)](#q01) |
-| L02 | 전체 | 첫 페이지 | `price_asc` | 37,686.8 (37,358.0~38,224.0) | 60,067.0 (59,465.0~60,420.0) | [680.8 (676.0~684.0)](#q02) | 7,441.3 (7,146.8~7,809.0) | [185.4 (183.7~186.9)](#q02) |
-| L03 | 전체 | 첫 페이지 | `likes_desc` | 37,608.6 (36,984.0~37,855.0) | 60,342.2 (59,502.0~61,038.0) | — (쿼리 그대로) | 7,264.1 (7,065.5~7,636.2) | — (쿼리 그대로) |
-| L04 | 전체 | 딥 페이지 | `latest` | 41,904.6 (41,552.0~42,176.0) | 66,412.8 (65,336.0~67,741.0) | [1.1 (1.0~1.2)](#q04) | 7,556.0 (7,304.7~7,857.6) | [303.7 (301.5~306.9)](#q04) |
-| L05 | 전체 | 딥 페이지 | `price_asc` | 38,652.4 (38,128.0~39,168.0) | 60,587.4 (60,004.0~61,452.0) | [683.8 (678.0~690.0)](#q05) | 7,370.5 (7,078.3~7,962.0) | [195.2 (193.7~198.3)](#q05) |
-| L06 | 전체 | 딥 페이지 | `likes_desc` | 38,378.8 (37,783.0~38,842.0) | 60,413.8 (59,842.0~61,197.0) | — (쿼리 그대로) | 7,885.5 (7,481.9~8,478.5) | — (쿼리 그대로) |
-| L07 | 1번 브랜드 | 첫 페이지 | `latest` | 5,605.4 (5,416.0~5,943.0) | 3,216.2 (3,129.0~3,477.0) | [0.6 (0.5~0.6)](#q07) | 1,529.5 (1,452.0~1,799.0) | [30.3 (27.9~32.5)](#q07) |
-| L08 | 1번 브랜드 | 첫 페이지 | `price_asc` | 5,222.6 (5,088.0~5,281.0) | 2,960.6 (2,915.0~3,102.0) | [76.7 (75.5~77.4)](#q08) | 1,511.4 (1,432.2~1,660.5) | [22.5 (21.4~23.8)](#q08) |
-| L09 | 1번 브랜드 | 첫 페이지 | `likes_desc` | 5,144.8 (5,063.0~5,229.0) | 2,953.0 (2,910.0~3,059.0) | — (쿼리 그대로) | 1,450.6 (1,426.0~1,518.9) | — (쿼리 그대로) |
-| L10 | 1번 브랜드 | 딥 페이지 | `latest` | 5,595.2 (5,394.0~5,720.0) | 3,165.2 (3,117.0~3,267.0) | [1.3 (1.1~1.6)](#q10) | 1,467.6 (1,448.7~1,508.1) | [41.2 (38.9~44.8)](#q10) |
-| L11 | 1번 브랜드 | 딥 페이지 | `price_asc` | 5,305.6 (5,231.0~5,440.0) | 2,975.0 (2,965.0~3,007.0) | [93.5 (91.7~96.5)](#q11) | 1,520.4 (1,454.9~1,623.6) | [25.6 (23.0~30.4)](#q11) |
-| L12 | 1번 브랜드 | 딥 페이지 | `likes_desc` | 5,236.6 (5,163.0~5,423.0) | 2,982.0 (2,936.0~3,093.0) | — (쿼리 그대로) | 1,486.2 (1,442.7~1,572.2) | — (쿼리 그대로) |
+| ID | 브랜드 | 페이지 | 정렬 | 인덱스 적용 전 | 인덱스 적용 후 | 쿼리 변경 후 (MySQL, [8장](#8-쿼리-변경-후-검증)) | PostgreSQL (인덱스 적용) | PostgreSQL (쿼리 변경 후, [8장](#8-쿼리-변경-후-검증)) | PostgreSQL (부분 인덱스, [9장](#9-postgresql-부분-인덱스-적용-후)) |
+|---|---|---|---|---|---|---|---|---|---|
+| L01 | 전체 | 첫 페이지 | `latest` | 41,410.4 (40,286.0~43,414.0) | 65,350.6 (62,870.0~70,511.0) | [0.7 (0.7~0.8)](#q01) | 7,855.1 (7,237.1~8,464.0) | [227.2 (225.4~229.2)](#q01) | [0.2 (0.2~0.2)](#q01-부분-인덱스) |
+| L02 | 전체 | 첫 페이지 | `price_asc` | 37,686.8 (37,358.0~38,224.0) | 60,067.0 (59,465.0~60,420.0) | [680.8 (676.0~684.0)](#q02) | 7,441.3 (7,146.8~7,809.0) | [185.4 (183.7~186.9)](#q02) | [0.2 (0.2~0.2)](#q02-부분-인덱스) |
+| L03 | 전체 | 첫 페이지 | `likes_desc` | 37,608.6 (36,984.0~37,855.0) | 60,342.2 (59,502.0~61,038.0) | — (쿼리 그대로) | 7,264.1 (7,065.5~7,636.2) | — (쿼리 그대로) | — (쿼리 그대로) |
+| L04 | 전체 | 딥 페이지 | `latest` | 41,904.6 (41,552.0~42,176.0) | 66,412.8 (65,336.0~67,741.0) | [1.1 (1.0~1.2)](#q04) | 7,556.0 (7,304.7~7,857.6) | [303.7 (301.5~306.9)](#q04) | [0.4 (0.4~0.5)](#q04-부분-인덱스) |
+| L05 | 전체 | 딥 페이지 | `price_asc` | 38,652.4 (38,128.0~39,168.0) | 60,587.4 (60,004.0~61,452.0) | [683.8 (678.0~690.0)](#q05) | 7,370.5 (7,078.3~7,962.0) | [195.2 (193.7~198.3)](#q05) | [0.5 (0.5~0.6)](#q05-부분-인덱스) |
+| L06 | 전체 | 딥 페이지 | `likes_desc` | 38,378.8 (37,783.0~38,842.0) | 60,413.8 (59,842.0~61,197.0) | — (쿼리 그대로) | 7,885.5 (7,481.9~8,478.5) | — (쿼리 그대로) | — (쿼리 그대로) |
+| L07 | 1번 브랜드 | 첫 페이지 | `latest` | 5,605.4 (5,416.0~5,943.0) | 3,216.2 (3,129.0~3,477.0) | [0.6 (0.5~0.6)](#q07) | 1,529.5 (1,452.0~1,799.0) | [30.3 (27.9~32.5)](#q07) | [0.2 (0.2~0.2)](#q07-부분-인덱스) |
+| L08 | 1번 브랜드 | 첫 페이지 | `price_asc` | 5,222.6 (5,088.0~5,281.0) | 2,960.6 (2,915.0~3,102.0) | [76.7 (75.5~77.4)](#q08) | 1,511.4 (1,432.2~1,660.5) | [22.5 (21.4~23.8)](#q08) | [0.3 (0.3~0.3)](#q08-부분-인덱스) |
+| L09 | 1번 브랜드 | 첫 페이지 | `likes_desc` | 5,144.8 (5,063.0~5,229.0) | 2,953.0 (2,910.0~3,059.0) | — (쿼리 그대로) | 1,450.6 (1,426.0~1,518.9) | — (쿼리 그대로) | — (쿼리 그대로) |
+| L10 | 1번 브랜드 | 딥 페이지 | `latest` | 5,595.2 (5,394.0~5,720.0) | 3,165.2 (3,117.0~3,267.0) | [1.3 (1.1~1.6)](#q10) | 1,467.6 (1,448.7~1,508.1) | [41.2 (38.9~44.8)](#q10) | [0.5 (0.4~0.5)](#q10-부분-인덱스) |
+| L11 | 1번 브랜드 | 딥 페이지 | `price_asc` | 5,305.6 (5,231.0~5,440.0) | 2,975.0 (2,965.0~3,007.0) | [93.5 (91.7~96.5)](#q11) | 1,520.4 (1,454.9~1,623.6) | [25.6 (23.0~30.4)](#q11) | [0.6 (0.6~0.6)](#q11-부분-인덱스) |
+| L12 | 1번 브랜드 | 딥 페이지 | `likes_desc` | 5,236.6 (5,163.0~5,423.0) | 2,982.0 (2,936.0~3,093.0) | — (쿼리 그대로) | 1,486.2 (1,442.7~1,572.2) | — (쿼리 그대로) | — (쿼리 그대로) |
 
-`likes_desc` 는 쿼리를 바꾸지 않아 "쿼리 변경 후" 를 재지 않았다. MySQL "쿼리 변경 후" 는 데이터를 다시 만든 뒤 잰 값이라, 같은 데이터에서의 변경 전 값은 8-3 에 따로 적었다.
+`likes_desc` 는 쿼리를 바꾸지 않아 "쿼리 변경 후"·"부분 인덱스" 를 재지 않았다. MySQL "쿼리 변경 후" 는 데이터를 다시 만든 뒤 잰 값이라, 같은 데이터에서의 변경 전 값은 8-3 에 따로 적었다.
 
 ### 4-2. count 쿼리 실행 시간 (평균, ms)
 
@@ -118,6 +120,7 @@ offset 0 rows fetch first 50 rows only
 | PostgreSQL (인덱스 적용) | 7,855.1 (7,237.1~8,464.0) |
 | 쿼리 변경 후 (MySQL, 데이터를 다시 만든 뒤. 같은 데이터의 변경 전은 [Q01](#q01)) | 0.7 (0.7~0.8) |
 | PostgreSQL (쿼리 변경 후) | 227.2 (225.4~229.2) |
+| PostgreSQL (부분 인덱스 적용 후, [9장](#9-postgresql-부분-인덱스-적용-후)) | 0.2 (0.2~0.2) |
 
 **실행 계획 — 인덱스 적용 전**
 
@@ -241,6 +244,33 @@ JIT:
 Execution Time: 232.224 ms
 ```
 
+**실행 계획 — PostgreSQL 부분 인덱스 적용 후** (SQL 은 [Q01](#q01), 인덱스는 [9-1](#9-1-변경-내용))
+
+```text
+Sort  (cost=614.68..614.87 rows=75 width=67) (actual time=0.158..0.160 rows=50 loops=1)
+  Sort Key: pm2_0.created_at DESC, pm2_0.id DESC
+  Sort Method: quicksort  Memory: 32kB
+  ->  GroupAggregate  (cost=610.85..612.35 rows=75 width=67) (actual time=0.131..0.144 rows=50 loops=1)
+        Group Key: pm2_0.id, bm1_0.id
+        ->  Sort  (cost=610.85..611.04 rows=75 width=67) (actual time=0.128..0.130 rows=73 loops=1)
+              Sort Key: pm2_0.id DESC, bm1_0.id
+              Sort Method: quicksort  Memory: 35kB
+              ->  Nested Loop Left Join  (cost=1.57..608.51 rows=75 width=67) (actual time=0.022..0.117 rows=73 loops=1)
+                    ->  Nested Loop  (cost=1.14..439.58 rows=50 width=59) (actual time=0.019..0.085 rows=50 loops=1)
+                          ->  Nested Loop  (cost=0.86..424.95 rows=50 width=46) (actual time=0.013..0.048 rows=50 loops=1)
+                                ->  Limit  (cost=0.43..1.95 rows=50 width=16) (actual time=0.007..0.012 rows=50 loops=1)
+                                      ->  Index Only Scan Backward using ix_product_latest_active on product pm1_0  (cost=0.43..144306.33 rows=4749460 width=16) (actual time=0.007..0.009 rows=50 loops=1)
+                                            Heap Fetches: 0
+                                ->  Index Scan using product_pkey on product pm2_0  (cost=0.43..8.45 rows=1 width=46) (actual time=0.001..0.001 rows=1 loops=50)
+                                      Index Cond: (id = pm1_0.id)
+                          ->  Index Scan using brand_pkey on brand bm1_0  (cost=0.28..0.29 rows=1 width=21) (actual time=0.001..0.001 rows=1 loops=50)
+                                Index Cond: (id = pm2_0.brand_id)
+                    ->  Index Scan using ix_product_like_product on product_like plm1_0  (cost=0.43..2.33 rows=105 width=16) (actual time=0.000..0.000 rows=1 loops=50)
+                          Index Cond: (product_id = pm2_0.id)
+Planning Time: 0.515 ms
+Execution Time: 0.200 ms
+```
+
 ### L02
 
 전체 · 첫 페이지 (`page=0`) · `price_asc` — `/api/v1/products?sort=price_asc&page=0&size=50`
@@ -276,6 +306,7 @@ offset 0 rows fetch first 50 rows only
 | PostgreSQL (인덱스 적용) | 7,441.3 (7,146.8~7,809.0) |
 | 쿼리 변경 후 (MySQL, 데이터를 다시 만든 뒤. 같은 데이터의 변경 전은 [Q02](#q02)) | 680.8 (676.0~684.0) |
 | PostgreSQL (쿼리 변경 후) | 185.4 (183.7~186.9) |
+| PostgreSQL (부분 인덱스 적용 후, [9장](#9-postgresql-부분-인덱스-적용-후)) | 0.2 (0.2~0.2) |
 
 **실행 계획 — 인덱스 적용 전**
 
@@ -398,6 +429,33 @@ JIT:
   Options: Inlining false, Optimization false, Expressions true, Deforming true
   Timing: Generation 0.729 ms, Inlining 0.000 ms, Optimization 0.512 ms, Emission 8.213 ms, Total 9.454 ms
 Execution Time: 192.472 ms
+```
+
+**실행 계획 — PostgreSQL 부분 인덱스 적용 후** (SQL 은 [Q02](#q02), 인덱스는 [9-1](#9-1-변경-내용))
+
+```text
+Sort  (cost=614.69..614.87 rows=75 width=59) (actual time=0.212..0.214 rows=50 loops=1)
+  Sort Key: pm2_0.price, pm2_0.id DESC
+  Sort Method: quicksort  Memory: 32kB
+  ->  GroupAggregate  (cost=610.85..612.35 rows=75 width=59) (actual time=0.191..0.202 rows=50 loops=1)
+        Group Key: pm2_0.id, bm1_0.id
+        ->  Sort  (cost=610.85..611.04 rows=75 width=59) (actual time=0.189..0.191 rows=79 loops=1)
+              Sort Key: pm2_0.id DESC, bm1_0.id
+              Sort Method: quicksort  Memory: 36kB
+              ->  Nested Loop Left Join  (cost=1.57..608.51 rows=75 width=59) (actual time=0.022..0.178 rows=79 loops=1)
+                    ->  Nested Loop  (cost=1.14..439.58 rows=50 width=51) (actual time=0.020..0.127 rows=50 loops=1)
+                          ->  Nested Loop  (cost=0.86..424.95 rows=50 width=38) (actual time=0.017..0.098 rows=50 loops=1)
+                                ->  Limit  (cost=0.43..1.95 rows=50 width=16) (actual time=0.008..0.012 rows=50 loops=1)
+                                      ->  Index Only Scan using ix_product_price_active on product pm1_0  (cost=0.43..144406.33 rows=4749460 width=16) (actual time=0.008..0.010 rows=50 loops=1)
+                                            Heap Fetches: 0
+                                ->  Index Scan using product_pkey on product pm2_0  (cost=0.43..8.45 rows=1 width=38) (actual time=0.002..0.002 rows=1 loops=50)
+                                      Index Cond: (id = pm1_0.id)
+                          ->  Index Scan using brand_pkey on brand bm1_0  (cost=0.28..0.29 rows=1 width=21) (actual time=0.000..0.000 rows=1 loops=50)
+                                Index Cond: (id = pm2_0.brand_id)
+                    ->  Index Scan using ix_product_like_product on product_like plm1_0  (cost=0.43..2.33 rows=105 width=16) (actual time=0.001..0.001 rows=1 loops=50)
+                          Index Cond: (product_id = pm2_0.id)
+Planning Time: 0.479 ms
+Execution Time: 0.248 ms
 ```
 
 ### L03
@@ -532,6 +590,7 @@ offset 4950 rows fetch first 50 rows only
 | PostgreSQL (인덱스 적용) | 7,556.0 (7,304.7~7,857.6) |
 | 쿼리 변경 후 (MySQL, 데이터를 다시 만든 뒤. 같은 데이터의 변경 전은 [Q04](#q04)) | 1.1 (1.0~1.2) |
 | PostgreSQL (쿼리 변경 후) | 303.7 (301.5~306.9) |
+| PostgreSQL (부분 인덱스 적용 후, [9장](#9-postgresql-부분-인덱스-적용-후)) | 0.4 (0.4~0.5) |
 
 **실행 계획 — 인덱스 적용 전**
 
@@ -655,6 +714,33 @@ JIT:
 Execution Time: 308.099 ms
 ```
 
+**실행 계획 — PostgreSQL 부분 인덱스 적용 후** (SQL 은 [Q04](#q04), 인덱스는 [9-1](#9-1-변경-내용))
+
+```text
+Sort  (cost=765.08..765.27 rows=75 width=67) (actual time=0.440..0.441 rows=50 loops=1)
+  Sort Key: pm2_0.created_at DESC, pm2_0.id DESC
+  Sort Method: quicksort  Memory: 32kB
+  ->  GroupAggregate  (cost=761.25..762.75 rows=75 width=67) (actual time=0.413..0.423 rows=50 loops=1)
+        Group Key: pm2_0.id, bm1_0.id
+        ->  Sort  (cost=761.25..761.44 rows=75 width=67) (actual time=0.410..0.412 rows=64 loops=1)
+              Sort Key: pm2_0.id DESC, bm1_0.id
+              Sort Method: quicksort  Memory: 34kB
+              ->  Nested Loop Left Join  (cost=151.97..758.91 rows=75 width=67) (actual time=0.313..0.401 rows=64 loops=1)
+                    ->  Nested Loop  (cost=151.54..589.98 rows=50 width=59) (actual time=0.308..0.371 rows=50 loops=1)
+                          ->  Nested Loop  (cost=151.26..575.35 rows=50 width=46) (actual time=0.304..0.335 rows=50 loops=1)
+                                ->  Limit  (cost=150.83..152.35 rows=50 width=16) (actual time=0.291..0.295 rows=50 loops=1)
+                                      ->  Index Only Scan Backward using ix_product_latest_active on product pm1_0  (cost=0.43..144306.33 rows=4749460 width=16) (actual time=0.007..0.217 rows=5000 loops=1)
+                                            Heap Fetches: 0
+                                ->  Index Scan using product_pkey on product pm2_0  (cost=0.43..8.45 rows=1 width=46) (actual time=0.001..0.001 rows=1 loops=50)
+                                      Index Cond: (id = pm1_0.id)
+                          ->  Index Scan using brand_pkey on brand bm1_0  (cost=0.28..0.29 rows=1 width=21) (actual time=0.001..0.001 rows=1 loops=50)
+                                Index Cond: (id = pm2_0.brand_id)
+                    ->  Index Scan using ix_product_like_product on product_like plm1_0  (cost=0.43..2.33 rows=105 width=16) (actual time=0.000..0.000 rows=1 loops=50)
+                          Index Cond: (product_id = pm2_0.id)
+Planning Time: 0.531 ms
+Execution Time: 0.482 ms
+```
+
 ### L05
 
 전체 · 딥 페이지 (`page=99`) · `price_asc` — `/api/v1/products?sort=price_asc&page=99&size=50`
@@ -690,6 +776,7 @@ offset 4950 rows fetch first 50 rows only
 | PostgreSQL (인덱스 적용) | 7,370.5 (7,078.3~7,962.0) |
 | 쿼리 변경 후 (MySQL, 데이터를 다시 만든 뒤. 같은 데이터의 변경 전은 [Q05](#q05)) | 683.8 (678.0~690.0) |
 | PostgreSQL (쿼리 변경 후) | 195.2 (193.7~198.3) |
+| PostgreSQL (부분 인덱스 적용 후, [9장](#9-postgresql-부분-인덱스-적용-후)) | 0.5 (0.5~0.6) |
 
 **실행 계획 — 인덱스 적용 전**
 
@@ -812,6 +899,33 @@ JIT:
   Options: Inlining false, Optimization false, Expressions true, Deforming true
   Timing: Generation 0.566 ms, Inlining 0.000 ms, Optimization 0.416 ms, Emission 7.677 ms, Total 8.659 ms
 Execution Time: 202.606 ms
+```
+
+**실행 계획 — PostgreSQL 부분 인덱스 적용 후** (SQL 은 [Q05](#q05), 인덱스는 [9-1](#9-1-변경-내용))
+
+```text
+Sort  (cost=765.19..765.38 rows=75 width=59) (actual time=0.513..0.515 rows=50 loops=1)
+  Sort Key: pm2_0.price, pm2_0.id DESC
+  Sort Method: quicksort  Memory: 32kB
+  ->  GroupAggregate  (cost=761.35..762.85 rows=75 width=59) (actual time=0.486..0.497 rows=50 loops=1)
+        Group Key: pm2_0.id, bm1_0.id
+        ->  Sort  (cost=761.35..761.54 rows=75 width=59) (actual time=0.484..0.486 rows=80 loops=1)
+              Sort Key: pm2_0.id DESC, bm1_0.id
+              Sort Method: quicksort  Memory: 36kB
+              ->  Nested Loop Left Join  (cost=152.08..759.02 rows=75 width=59) (actual time=0.309..0.473 rows=80 loops=1)
+                    ->  Nested Loop  (cost=151.64..590.08 rows=50 width=51) (actual time=0.300..0.411 rows=50 loops=1)
+                          ->  Nested Loop  (cost=151.37..575.46 rows=50 width=38) (actual time=0.296..0.373 rows=50 loops=1)
+                                ->  Limit  (cost=150.94..152.46 rows=50 width=16) (actual time=0.289..0.295 rows=50 loops=1)
+                                      ->  Index Only Scan using ix_product_price_active on product pm1_0  (cost=0.43..144406.33 rows=4749460 width=16) (actual time=0.011..0.218 rows=5000 loops=1)
+                                            Heap Fetches: 0
+                                ->  Index Scan using product_pkey on product pm2_0  (cost=0.43..8.45 rows=1 width=38) (actual time=0.001..0.001 rows=1 loops=50)
+                                      Index Cond: (id = pm1_0.id)
+                          ->  Index Scan using brand_pkey on brand bm1_0  (cost=0.28..0.29 rows=1 width=21) (actual time=0.001..0.001 rows=1 loops=50)
+                                Index Cond: (id = pm2_0.brand_id)
+                    ->  Index Scan using ix_product_like_product on product_like plm1_0  (cost=0.43..2.33 rows=105 width=16) (actual time=0.001..0.001 rows=1 loops=50)
+                          Index Cond: (product_id = pm2_0.id)
+Planning Time: 0.548 ms
+Execution Time: 0.561 ms
 ```
 
 ### L06
@@ -946,6 +1060,7 @@ offset 0 rows fetch first 50 rows only
 | PostgreSQL (인덱스 적용) | 1,529.5 (1,452.0~1,799.0) |
 | 쿼리 변경 후 (MySQL, 데이터를 다시 만든 뒤. 같은 데이터의 변경 전은 [Q07](#q07)) | 0.6 (0.5~0.6) |
 | PostgreSQL (쿼리 변경 후) | 30.3 (27.9~32.5) |
+| PostgreSQL (부분 인덱스 적용 후, [9장](#9-postgresql-부분-인덱스-적용-후)) | 0.2 (0.2~0.2) |
 
 **실행 계획 — 인덱스 적용 전**
 
@@ -1059,6 +1174,34 @@ Planning Time: 0.424 ms
 Execution Time: 32.589 ms
 ```
 
+**실행 계획 — PostgreSQL 부분 인덱스 적용 후** (SQL 은 [Q07](#q07), 인덱스는 [9-1](#9-1-변경-내용))
+
+```text
+Sort  (cost=615.03..615.22 rows=75 width=67) (actual time=0.161..0.162 rows=50 loops=1)
+  Sort Key: pm2_0.created_at DESC, pm2_0.id DESC
+  Sort Method: quicksort  Memory: 32kB
+  ->  GroupAggregate  (cost=611.20..612.70 rows=75 width=67) (actual time=0.137..0.149 rows=50 loops=1)
+        Group Key: pm2_0.id, bm1_0.id
+        ->  Sort  (cost=611.20..611.38 rows=75 width=67) (actual time=0.135..0.137 rows=81 loops=1)
+              Sort Key: pm2_0.id DESC, bm1_0.id
+              Sort Method: quicksort  Memory: 36kB
+              ->  Nested Loop Left Join  (cost=1.57..608.86 rows=75 width=67) (actual time=0.021..0.123 rows=81 loops=1)
+                    ->  Nested Loop  (cost=1.14..439.92 rows=50 width=59) (actual time=0.018..0.083 rows=50 loops=1)
+                          ->  Nested Loop  (cost=0.86..425.30 rows=50 width=46) (actual time=0.016..0.062 rows=50 loops=1)
+                                ->  Limit  (cost=0.43..2.30 rows=50 width=16) (actual time=0.010..0.014 rows=50 loops=1)
+                                      ->  Index Only Scan Backward using ix_product_brand_latest_active on product pm1_0  (cost=0.43..17253.11 rows=462439 width=16) (actual time=0.009..0.012 rows=50 loops=1)
+                                            Index Cond: (brand_id = 1)
+                                            Heap Fetches: 0
+                                ->  Index Scan using product_pkey on product pm2_0  (cost=0.43..8.45 rows=1 width=46) (actual time=0.001..0.001 rows=1 loops=50)
+                                      Index Cond: (id = pm1_0.id)
+                          ->  Index Scan using brand_pkey on brand bm1_0  (cost=0.28..0.29 rows=1 width=21) (actual time=0.000..0.000 rows=1 loops=50)
+                                Index Cond: (id = pm2_0.brand_id)
+                    ->  Index Scan using ix_product_like_product on product_like plm1_0  (cost=0.43..2.33 rows=105 width=16) (actual time=0.001..0.001 rows=1 loops=50)
+                          Index Cond: (product_id = pm2_0.id)
+Planning Time: 0.510 ms
+Execution Time: 0.203 ms
+```
+
 ### L08
 
 1번 브랜드 · 첫 페이지 (`page=0`) · `price_asc` — `/api/v1/products?sort=price_asc&page=0&size=50&brandId=1`
@@ -1094,6 +1237,7 @@ offset 0 rows fetch first 50 rows only
 | PostgreSQL (인덱스 적용) | 1,511.4 (1,432.2~1,660.5) |
 | 쿼리 변경 후 (MySQL, 데이터를 다시 만든 뒤. 같은 데이터의 변경 전은 [Q08](#q08)) | 76.7 (75.5~77.4) |
 | PostgreSQL (쿼리 변경 후) | 22.5 (21.4~23.8) |
+| PostgreSQL (부분 인덱스 적용 후, [9장](#9-postgresql-부분-인덱스-적용-후)) | 0.3 (0.3~0.3) |
 
 **실행 계획 — 인덱스 적용 전**
 
@@ -1206,6 +1350,34 @@ Sort  (cost=29371.91..29372.10 rows=75 width=59) (actual time=22.963..23.771 row
                           Index Cond: (product_id = pm2_0.id)
 Planning Time: 0.439 ms
 Execution Time: 23.818 ms
+```
+
+**실행 계획 — PostgreSQL 부분 인덱스 적용 후** (SQL 은 [Q08](#q08), 인덱스는 [9-1](#9-1-변경-내용))
+
+```text
+Sort  (cost=615.03..615.22 rows=75 width=59) (actual time=0.271..0.272 rows=50 loops=1)
+  Sort Key: pm2_0.price, pm2_0.id DESC
+  Sort Method: quicksort  Memory: 32kB
+  ->  GroupAggregate  (cost=611.20..612.70 rows=75 width=59) (actual time=0.244..0.256 rows=50 loops=1)
+        Group Key: pm2_0.id, bm1_0.id
+        ->  Sort  (cost=611.20..611.38 rows=75 width=59) (actual time=0.241..0.243 rows=95 loops=1)
+              Sort Key: pm2_0.id DESC, bm1_0.id
+              Sort Method: quicksort  Memory: 38kB
+              ->  Nested Loop Left Join  (cost=1.57..608.86 rows=75 width=59) (actual time=0.031..0.229 rows=95 loops=1)
+                    ->  Nested Loop  (cost=1.14..439.92 rows=50 width=51) (actual time=0.027..0.155 rows=50 loops=1)
+                          ->  Nested Loop  (cost=0.86..425.30 rows=50 width=38) (actual time=0.022..0.131 rows=50 loops=1)
+                                ->  Limit  (cost=0.43..2.30 rows=50 width=16) (actual time=0.013..0.017 rows=50 loops=1)
+                                      ->  Index Only Scan using ix_product_brand_price_active on product pm1_0  (cost=0.43..17261.11 rows=462439 width=16) (actual time=0.012..0.014 rows=50 loops=1)
+                                            Index Cond: (brand_id = 1)
+                                            Heap Fetches: 0
+                                ->  Index Scan using product_pkey on product pm2_0  (cost=0.43..8.45 rows=1 width=38) (actual time=0.002..0.002 rows=1 loops=50)
+                                      Index Cond: (id = pm1_0.id)
+                          ->  Index Scan using brand_pkey on brand bm1_0  (cost=0.28..0.29 rows=1 width=21) (actual time=0.000..0.000 rows=1 loops=50)
+                                Index Cond: (id = pm2_0.brand_id)
+                    ->  Index Scan using ix_product_like_product on product_like plm1_0  (cost=0.43..2.33 rows=105 width=16) (actual time=0.001..0.001 rows=1 loops=50)
+                          Index Cond: (product_id = pm2_0.id)
+Planning Time: 0.470 ms
+Execution Time: 0.312 ms
 ```
 
 ### L09
@@ -1334,6 +1506,7 @@ offset 4950 rows fetch first 50 rows only
 | PostgreSQL (인덱스 적용) | 1,467.6 (1,448.7~1,508.1) |
 | 쿼리 변경 후 (MySQL, 데이터를 다시 만든 뒤. 같은 데이터의 변경 전은 [Q10](#q10)) | 1.3 (1.1~1.6) |
 | PostgreSQL (쿼리 변경 후) | 41.2 (38.9~44.8) |
+| PostgreSQL (부분 인덱스 적용 후, [9장](#9-postgresql-부분-인덱스-적용-후)) | 0.5 (0.4~0.5) |
 
 **실행 계획 — 인덱스 적용 전**
 
@@ -1447,6 +1620,34 @@ Planning Time: 0.435 ms
 Execution Time: 42.456 ms
 ```
 
+**실행 계획 — PostgreSQL 부분 인덱스 적용 후** (SQL 은 [Q10](#q10), 인덱스는 [9-1](#9-1-변경-내용))
+
+```text
+Sort  (cost=799.71..799.89 rows=75 width=67) (actual time=0.456..0.458 rows=50 loops=1)
+  Sort Key: pm2_0.created_at DESC, pm2_0.id DESC
+  Sort Method: quicksort  Memory: 32kB
+  ->  GroupAggregate  (cost=795.87..797.37 rows=75 width=67) (actual time=0.434..0.445 rows=50 loops=1)
+        Group Key: pm2_0.id, bm1_0.id
+        ->  Sort  (cost=795.87..796.06 rows=75 width=67) (actual time=0.431..0.433 rows=64 loops=1)
+              Sort Key: pm2_0.id DESC, bm1_0.id
+              Sort Method: quicksort  Memory: 34kB
+              ->  Nested Loop Left Join  (cost=186.25..793.53 rows=75 width=67) (actual time=0.341..0.423 rows=64 loops=1)
+                    ->  Nested Loop  (cost=185.81..624.60 rows=50 width=59) (actual time=0.338..0.391 rows=50 loops=1)
+                          ->  Nested Loop  (cost=185.54..609.97 rows=50 width=46) (actual time=0.335..0.371 rows=50 loops=1)
+                                ->  Limit  (cost=185.11..186.97 rows=50 width=16) (actual time=0.327..0.331 rows=50 loops=1)
+                                      ->  Index Only Scan Backward using ix_product_brand_latest_active on product pm1_0  (cost=0.43..17253.11 rows=462439 width=16) (actual time=0.008..0.249 rows=5000 loops=1)
+                                            Index Cond: (brand_id = 1)
+                                            Heap Fetches: 0
+                                ->  Index Scan using product_pkey on product pm2_0  (cost=0.43..8.45 rows=1 width=46) (actual time=0.001..0.001 rows=1 loops=50)
+                                      Index Cond: (id = pm1_0.id)
+                          ->  Index Scan using brand_pkey on brand bm1_0  (cost=0.28..0.29 rows=1 width=21) (actual time=0.000..0.000 rows=1 loops=50)
+                                Index Cond: (id = pm2_0.brand_id)
+                    ->  Index Scan using ix_product_like_product on product_like plm1_0  (cost=0.43..2.33 rows=105 width=16) (actual time=0.000..0.001 rows=1 loops=50)
+                          Index Cond: (product_id = pm2_0.id)
+Planning Time: 0.525 ms
+Execution Time: 0.502 ms
+```
+
 ### L11
 
 1번 브랜드 · 딥 페이지 (`page=99`) · `price_asc` — `/api/v1/products?sort=price_asc&page=99&size=50&brandId=1`
@@ -1482,6 +1683,7 @@ offset 4950 rows fetch first 50 rows only
 | PostgreSQL (인덱스 적용) | 1,520.4 (1,454.9~1,623.6) |
 | 쿼리 변경 후 (MySQL, 데이터를 다시 만든 뒤. 같은 데이터의 변경 전은 [Q11](#q11)) | 93.5 (91.7~96.5) |
 | PostgreSQL (쿼리 변경 후) | 25.6 (23.0~30.4) |
+| PostgreSQL (부분 인덱스 적용 후, [9장](#9-postgresql-부분-인덱스-적용-후)) | 0.6 (0.6~0.6) |
 
 **실행 계획 — 인덱스 적용 전**
 
@@ -1594,6 +1796,34 @@ Sort  (cost=36366.48..36366.67 rows=75 width=59) (actual time=22.049..23.002 row
                           Index Cond: (product_id = pm2_0.id)
 Planning Time: 0.418 ms
 Execution Time: 23.068 ms
+```
+
+**실행 계획 — PostgreSQL 부분 인덱스 적용 후** (SQL 은 [Q11](#q11), 인덱스는 [9-1](#9-1-변경-내용))
+
+```text
+Sort  (cost=799.79..799.98 rows=75 width=59) (actual time=0.558..0.560 rows=50 loops=1)
+  Sort Key: pm2_0.price, pm2_0.id DESC
+  Sort Method: quicksort  Memory: 32kB
+  ->  GroupAggregate  (cost=795.96..797.46 rows=75 width=59) (actual time=0.524..0.540 rows=50 loops=1)
+        Group Key: pm2_0.id, bm1_0.id
+        ->  Sort  (cost=795.96..796.14 rows=75 width=59) (actual time=0.521..0.525 rows=155 loops=1)
+              Sort Key: pm2_0.id DESC, bm1_0.id
+              Sort Method: quicksort  Memory: 46kB
+              ->  Nested Loop Left Join  (cost=186.33..793.62 rows=75 width=59) (actual time=0.336..0.505 rows=155 loops=1)
+                    ->  Nested Loop  (cost=185.90..624.68 rows=50 width=51) (actual time=0.332..0.429 rows=50 loops=1)
+                          ->  Nested Loop  (cost=185.63..610.06 rows=50 width=38) (actual time=0.329..0.407 rows=50 loops=1)
+                                ->  Limit  (cost=185.19..187.06 rows=50 width=16) (actual time=0.325..0.329 rows=50 loops=1)
+                                      ->  Index Only Scan using ix_product_brand_price_active on product pm1_0  (cost=0.43..17261.11 rows=462439 width=16) (actual time=0.011..0.250 rows=5000 loops=1)
+                                            Index Cond: (brand_id = 1)
+                                            Heap Fetches: 0
+                                ->  Index Scan using product_pkey on product pm2_0  (cost=0.43..8.45 rows=1 width=38) (actual time=0.001..0.001 rows=1 loops=50)
+                                      Index Cond: (id = pm1_0.id)
+                          ->  Index Scan using brand_pkey on brand bm1_0  (cost=0.28..0.29 rows=1 width=21) (actual time=0.000..0.000 rows=1 loops=50)
+                                Index Cond: (id = pm2_0.brand_id)
+                    ->  Index Scan using ix_product_like_product on product_like plm1_0  (cost=0.43..2.33 rows=105 width=16) (actual time=0.001..0.001 rows=2 loops=50)
+                          Index Cond: (product_id = pm2_0.id)
+Planning Time: 0.469 ms
+Execution Time: 0.598 ms
 ```
 
 ### L12
@@ -2809,4 +3039,357 @@ Execution Time: 23.068 ms
 - CTE 안쪽이 정렬 인덱스 순서로 읽다가 멈추게 하면 남은 시간도 줄일 수 있다. MySQL `latest` 는 이미 그렇게 된다 (1ms 안팎). 정해야 할 것은 두 가지다.
   - `price_asc` 동률 방향 (두 DB 공통): 인덱스를 `(…, price, id desc)` 로 바꿀지, 동률 정책(ASM-08)을 바꿀지.
   - PostgreSQL 의 `IS NULL` 정렬 문제: 쿼리에서 정렬 키에 `deleted_at` 을 넣을지, 인덱스 컬럼 순서를 바꿀지(예: `(created_at, id, deleted_at)`), PostgreSQL 부분 인덱스를 쓸지. MySQL 에는 영향이 없어야 한다.
+    - PostgreSQL 은 부분 인덱스로 적용했다 → [9장](#9-postgresql-부분-인덱스-적용-후).
 - `likes_desc` 는 7-5 대로 따로 정한다.
+
+## 9. PostgreSQL 부분 인덱스 적용 후
+
+8-5 의 PostgreSQL 문제(`deleted_at IS NULL` 뒤의 인덱스 순서를 정렬에 못 씀, `price_asc` 정렬 방향)를 부분 인덱스로 풀고, PostgreSQL 에서 Q 케이스를 다시 측정한다. MySQL 은 바꾸지 않았다.
+
+### 9-1. 변경 내용
+
+PostgreSQL `product` 에 부분 인덱스 4개를 DB 에 직접 만들고 `ANALYZE product` 를 했다.
+
+```sql
+-- Q01·Q04: 전체 · latest  (order by created_at desc, id desc)
+CREATE INDEX ix_product_latest_active ON product (created_at, id) WHERE deleted_at IS NULL;
+-- Q02·Q05: 전체 · price_asc  (order by price, id desc)
+CREATE INDEX ix_product_price_active ON product (price, id DESC) WHERE deleted_at IS NULL;
+-- Q07·Q10: 브랜드 · latest  (where brand_id = ? order by created_at desc, id desc)
+CREATE INDEX ix_product_brand_latest_active ON product (brand_id, created_at, id) WHERE deleted_at IS NULL;
+-- Q08·Q11: 브랜드 · price_asc  (where brand_id = ? order by price, id desc)
+CREATE INDEX ix_product_brand_price_active ON product (brand_id, price, id DESC) WHERE deleted_at IS NULL;
+```
+
+- `deleted_at IS NULL` 을 인덱스 컬럼이 아니라 인덱스 조건(`WHERE`)으로 옮겼다.
+  - 삭제되지 않은 상품만 인덱스에 들어간다. 쿼리의 `WHERE` 에 같은 조건이 있어 플래너가 이 인덱스를 쓸 수 있다.
+  - 첫 컬럼이 정렬 키(브랜드는 `=` 조건인 `brand_id`) 가 되어, 인덱스 순서로 읽다가 필요한 만큼에서 멈출 수 있다.
+- `price_asc` 는 정렬이 `price asc, id desc` 라 인덱스도 `id DESC` 로 방향을 맞췄다.
+- JPA 엔티티에는 넣지 않았다. `@Index` 로는 `WHERE` 를 쓸 수 없고, PostgreSQL 측정에만 쓴다.
+  - `local-pg` 프로필의 `ddl-auto: update` 는 엔티티에 없는 인덱스를 지우지 않아 앱을 다시 띄워도 남는다. `seed-pg.sql` 의 `TRUNCATE` 도 인덱스를 지우지 않는다. DB 볼륨을 새로 만들면 다시 만들어야 한다.
+- 쿼리·데이터·기존 인덱스(`ix_product_*` 4개)는 그대로다.
+
+| 인덱스 | 크기 | 같은 용도의 기존 인덱스 |
+|---|---|---|
+| `ix_product_latest_active` | 143 MB | `ix_product_latest` 201 MB |
+| `ix_product_price_active` | 143 MB | `ix_product_price` 318 MB |
+| `ix_product_brand_latest_active` | 184 MB | `ix_product_brand_latest` 420 MB |
+| `ix_product_brand_price_active` | 184 MB | `ix_product_brand_price` 311 MB |
+
+### 9-2. 측정 방법
+
+- 8-2 와 같다 (워밍업 1회 + 측정 5회, 순차 실행, 맨 위 노드 `actual time` 끝 값). SQL 은 8-4 의 PostgreSQL SQL 그대로다.
+  ```
+  python3 docs/week4/bench_pg.py pg-partial Q01 Q02 Q04 Q05 Q07 Q08 Q10 Q11
+  ```
+  원본 결과는 `docs/week4/results/pg-partial/` 에 남는다.
+- "부분 인덱스 전" 은 8-3 의 PostgreSQL "변경 후" 값(`results/pg-cte/`)이다. 데이터·설정은 같다.
+
+### 9-3. 결과 요약 (평균, ms)
+
+| ID | 대응 | 브랜드 | 페이지 | 정렬 | 부분 인덱스 전 (8장) | 부분 인덱스 후 | CTE 안에서 쓴 인덱스 |
+|---|---|---|---|---|---|---|---|
+| [Q01](#q01-부분-인덱스) | [L01](#l01) | 전체 | 첫 페이지 | `latest` | 227.2 (225.4~229.2) | 0.2 (0.2~0.2) | `ix_product_latest_active` (역방향) |
+| [Q02](#q02-부분-인덱스) | [L02](#l02) | 전체 | 첫 페이지 | `price_asc` | 185.4 (183.7~186.9) | 0.2 (0.2~0.2) | `ix_product_price_active` |
+| [Q04](#q04-부분-인덱스) | [L04](#l04) | 전체 | 딥 페이지 | `latest` | 303.7 (301.5~306.9) | 0.4 (0.4~0.5) | `ix_product_latest_active` (역방향) |
+| [Q05](#q05-부분-인덱스) | [L05](#l05) | 전체 | 딥 페이지 | `price_asc` | 195.2 (193.7~198.3) | 0.5 (0.5~0.6) | `ix_product_price_active` |
+| [Q07](#q07-부분-인덱스) | [L07](#l07) | 1번 브랜드 | 첫 페이지 | `latest` | 30.3 (27.9~32.5) | 0.2 (0.2~0.2) | `ix_product_brand_latest_active` (역방향) |
+| [Q08](#q08-부분-인덱스) | [L08](#l08) | 1번 브랜드 | 첫 페이지 | `price_asc` | 22.5 (21.4~23.8) | 0.3 (0.3~0.3) | `ix_product_brand_price_active` |
+| [Q10](#q10-부분-인덱스) | [L10](#l10) | 1번 브랜드 | 딥 페이지 | `latest` | 41.2 (38.9~44.8) | 0.5 (0.4~0.5) | `ix_product_brand_latest_active` (역방향) |
+| [Q11](#q11-부분-인덱스) | [L11](#l11) | 1번 브랜드 | 딥 페이지 | `price_asc` | 25.6 (23.0~30.4) | 0.6 (0.6~0.6) | `ix_product_brand_price_active` |
+
+### 9-4. 분석
+
+- 8개 모두 CTE 안쪽이 부분 인덱스 `Index Only Scan` 으로 바뀌었다 (`latest` 는 `Backward`).
+  - 8장의 `Parallel Seq Scan` / `Index Only Scan` 범위 전체 읽기 + top-N heapsort 와 `Gather Merge` 가 없어졌다.
+  - 첫 페이지는 50건, 딥 페이지는 5,000건(offset + 50)을 읽고 멈춘다. `Heap Fetches: 0` 이라 테이블은 읽지 않는다.
+  - 플래너는 8개 모두 기존 `ix_product_*` 대신 부분 인덱스를 골랐다.
+- 그래서 남은 시간은 CTE 바깥(50건의 `product` PK 조회, `brand` 조인, `product_like` 집계, 다시 정렬)과 딥 페이지의 인덱스 5,000건 읽기다. 8개 모두 1ms 안이다.
+  - 첫 페이지 0.2~0.3ms, 딥 페이지 0.4~0.6ms.
+  - 전체(475만)와 1번 브랜드(47만)의 차이가 없어졌다. 읽는 양이 대상 범위가 아니라 페이지 위치로 정해지기 때문이다.
+- `price_asc` 도 `latest` 와 같아졌다. 인덱스의 `id DESC` 가 정렬 `price asc, id desc` 와 같은 방향이라, 정방향으로 읽으면 그 순서가 그대로 나온다.
+
+**확인하지 않은 것**
+
+- 앱의 바인딩 변수 실행: 8-5 와 같은 한계다. 특히 generic plan 에서는 offset·limit 값을 모르는 채로 계획을 세우므로, 부분 인덱스를 고르는지 따로 확인해야 한다.
+- count 쿼리(C01·C02): 다시 재지 않았다. 부분 인덱스가 작아 Index Only Scan 이 빨라질 수 있다.
+- 쓰기 비용: `product` 보조 인덱스가 4개에서 8개로 늘었다. 기존 `ix_product_*` 4개를 지울지는 정하지 않았다.
+- MySQL `price_asc` (Q02·Q05·Q08·Q11, 77~684ms): 이번 단계에서 바꾸지 않았다.
+
+### 9-5. 케이스별 상세
+
+#### Q01 (부분 인덱스)
+
+[L01](#l01) · [Q01](#q01) — 전체 · 첫 페이지 · `latest`. SQL 은 [Q01](#q01) 의 PostgreSQL SQL 과 같다.
+
+| 구분 | 실행 시간 (평균, ms) |
+|---|---|
+| PostgreSQL 부분 인덱스 전 (8장) | 227.2 (225.4~229.2) |
+| PostgreSQL 부분 인덱스 후 | 0.2 (0.2~0.2) |
+
+```text
+Sort  (cost=614.68..614.87 rows=75 width=67) (actual time=0.158..0.160 rows=50 loops=1)
+  Sort Key: pm2_0.created_at DESC, pm2_0.id DESC
+  Sort Method: quicksort  Memory: 32kB
+  ->  GroupAggregate  (cost=610.85..612.35 rows=75 width=67) (actual time=0.131..0.144 rows=50 loops=1)
+        Group Key: pm2_0.id, bm1_0.id
+        ->  Sort  (cost=610.85..611.04 rows=75 width=67) (actual time=0.128..0.130 rows=73 loops=1)
+              Sort Key: pm2_0.id DESC, bm1_0.id
+              Sort Method: quicksort  Memory: 35kB
+              ->  Nested Loop Left Join  (cost=1.57..608.51 rows=75 width=67) (actual time=0.022..0.117 rows=73 loops=1)
+                    ->  Nested Loop  (cost=1.14..439.58 rows=50 width=59) (actual time=0.019..0.085 rows=50 loops=1)
+                          ->  Nested Loop  (cost=0.86..424.95 rows=50 width=46) (actual time=0.013..0.048 rows=50 loops=1)
+                                ->  Limit  (cost=0.43..1.95 rows=50 width=16) (actual time=0.007..0.012 rows=50 loops=1)
+                                      ->  Index Only Scan Backward using ix_product_latest_active on product pm1_0  (cost=0.43..144306.33 rows=4749460 width=16) (actual time=0.007..0.009 rows=50 loops=1)
+                                            Heap Fetches: 0
+                                ->  Index Scan using product_pkey on product pm2_0  (cost=0.43..8.45 rows=1 width=46) (actual time=0.001..0.001 rows=1 loops=50)
+                                      Index Cond: (id = pm1_0.id)
+                          ->  Index Scan using brand_pkey on brand bm1_0  (cost=0.28..0.29 rows=1 width=21) (actual time=0.001..0.001 rows=1 loops=50)
+                                Index Cond: (id = pm2_0.brand_id)
+                    ->  Index Scan using ix_product_like_product on product_like plm1_0  (cost=0.43..2.33 rows=105 width=16) (actual time=0.000..0.000 rows=1 loops=50)
+                          Index Cond: (product_id = pm2_0.id)
+Planning Time: 0.515 ms
+Execution Time: 0.200 ms
+```
+
+#### Q02 (부분 인덱스)
+
+[L02](#l02) · [Q02](#q02) — 전체 · 첫 페이지 · `price_asc`. SQL 은 [Q02](#q02) 의 PostgreSQL SQL 과 같다.
+
+| 구분 | 실행 시간 (평균, ms) |
+|---|---|
+| PostgreSQL 부분 인덱스 전 (8장) | 185.4 (183.7~186.9) |
+| PostgreSQL 부분 인덱스 후 | 0.2 (0.2~0.2) |
+
+```text
+Sort  (cost=614.69..614.87 rows=75 width=59) (actual time=0.212..0.214 rows=50 loops=1)
+  Sort Key: pm2_0.price, pm2_0.id DESC
+  Sort Method: quicksort  Memory: 32kB
+  ->  GroupAggregate  (cost=610.85..612.35 rows=75 width=59) (actual time=0.191..0.202 rows=50 loops=1)
+        Group Key: pm2_0.id, bm1_0.id
+        ->  Sort  (cost=610.85..611.04 rows=75 width=59) (actual time=0.189..0.191 rows=79 loops=1)
+              Sort Key: pm2_0.id DESC, bm1_0.id
+              Sort Method: quicksort  Memory: 36kB
+              ->  Nested Loop Left Join  (cost=1.57..608.51 rows=75 width=59) (actual time=0.022..0.178 rows=79 loops=1)
+                    ->  Nested Loop  (cost=1.14..439.58 rows=50 width=51) (actual time=0.020..0.127 rows=50 loops=1)
+                          ->  Nested Loop  (cost=0.86..424.95 rows=50 width=38) (actual time=0.017..0.098 rows=50 loops=1)
+                                ->  Limit  (cost=0.43..1.95 rows=50 width=16) (actual time=0.008..0.012 rows=50 loops=1)
+                                      ->  Index Only Scan using ix_product_price_active on product pm1_0  (cost=0.43..144406.33 rows=4749460 width=16) (actual time=0.008..0.010 rows=50 loops=1)
+                                            Heap Fetches: 0
+                                ->  Index Scan using product_pkey on product pm2_0  (cost=0.43..8.45 rows=1 width=38) (actual time=0.002..0.002 rows=1 loops=50)
+                                      Index Cond: (id = pm1_0.id)
+                          ->  Index Scan using brand_pkey on brand bm1_0  (cost=0.28..0.29 rows=1 width=21) (actual time=0.000..0.000 rows=1 loops=50)
+                                Index Cond: (id = pm2_0.brand_id)
+                    ->  Index Scan using ix_product_like_product on product_like plm1_0  (cost=0.43..2.33 rows=105 width=16) (actual time=0.001..0.001 rows=1 loops=50)
+                          Index Cond: (product_id = pm2_0.id)
+Planning Time: 0.479 ms
+Execution Time: 0.248 ms
+```
+
+#### Q04 (부분 인덱스)
+
+[L04](#l04) · [Q04](#q04) — 전체 · 딥 페이지 · `latest`. SQL 은 [Q04](#q04) 의 PostgreSQL SQL 과 같다.
+
+| 구분 | 실행 시간 (평균, ms) |
+|---|---|
+| PostgreSQL 부분 인덱스 전 (8장) | 303.7 (301.5~306.9) |
+| PostgreSQL 부분 인덱스 후 | 0.4 (0.4~0.5) |
+
+```text
+Sort  (cost=765.08..765.27 rows=75 width=67) (actual time=0.440..0.441 rows=50 loops=1)
+  Sort Key: pm2_0.created_at DESC, pm2_0.id DESC
+  Sort Method: quicksort  Memory: 32kB
+  ->  GroupAggregate  (cost=761.25..762.75 rows=75 width=67) (actual time=0.413..0.423 rows=50 loops=1)
+        Group Key: pm2_0.id, bm1_0.id
+        ->  Sort  (cost=761.25..761.44 rows=75 width=67) (actual time=0.410..0.412 rows=64 loops=1)
+              Sort Key: pm2_0.id DESC, bm1_0.id
+              Sort Method: quicksort  Memory: 34kB
+              ->  Nested Loop Left Join  (cost=151.97..758.91 rows=75 width=67) (actual time=0.313..0.401 rows=64 loops=1)
+                    ->  Nested Loop  (cost=151.54..589.98 rows=50 width=59) (actual time=0.308..0.371 rows=50 loops=1)
+                          ->  Nested Loop  (cost=151.26..575.35 rows=50 width=46) (actual time=0.304..0.335 rows=50 loops=1)
+                                ->  Limit  (cost=150.83..152.35 rows=50 width=16) (actual time=0.291..0.295 rows=50 loops=1)
+                                      ->  Index Only Scan Backward using ix_product_latest_active on product pm1_0  (cost=0.43..144306.33 rows=4749460 width=16) (actual time=0.007..0.217 rows=5000 loops=1)
+                                            Heap Fetches: 0
+                                ->  Index Scan using product_pkey on product pm2_0  (cost=0.43..8.45 rows=1 width=46) (actual time=0.001..0.001 rows=1 loops=50)
+                                      Index Cond: (id = pm1_0.id)
+                          ->  Index Scan using brand_pkey on brand bm1_0  (cost=0.28..0.29 rows=1 width=21) (actual time=0.001..0.001 rows=1 loops=50)
+                                Index Cond: (id = pm2_0.brand_id)
+                    ->  Index Scan using ix_product_like_product on product_like plm1_0  (cost=0.43..2.33 rows=105 width=16) (actual time=0.000..0.000 rows=1 loops=50)
+                          Index Cond: (product_id = pm2_0.id)
+Planning Time: 0.531 ms
+Execution Time: 0.482 ms
+```
+
+#### Q05 (부분 인덱스)
+
+[L05](#l05) · [Q05](#q05) — 전체 · 딥 페이지 · `price_asc`. SQL 은 [Q05](#q05) 의 PostgreSQL SQL 과 같다.
+
+| 구분 | 실행 시간 (평균, ms) |
+|---|---|
+| PostgreSQL 부분 인덱스 전 (8장) | 195.2 (193.7~198.3) |
+| PostgreSQL 부분 인덱스 후 | 0.5 (0.5~0.6) |
+
+```text
+Sort  (cost=765.19..765.38 rows=75 width=59) (actual time=0.513..0.515 rows=50 loops=1)
+  Sort Key: pm2_0.price, pm2_0.id DESC
+  Sort Method: quicksort  Memory: 32kB
+  ->  GroupAggregate  (cost=761.35..762.85 rows=75 width=59) (actual time=0.486..0.497 rows=50 loops=1)
+        Group Key: pm2_0.id, bm1_0.id
+        ->  Sort  (cost=761.35..761.54 rows=75 width=59) (actual time=0.484..0.486 rows=80 loops=1)
+              Sort Key: pm2_0.id DESC, bm1_0.id
+              Sort Method: quicksort  Memory: 36kB
+              ->  Nested Loop Left Join  (cost=152.08..759.02 rows=75 width=59) (actual time=0.309..0.473 rows=80 loops=1)
+                    ->  Nested Loop  (cost=151.64..590.08 rows=50 width=51) (actual time=0.300..0.411 rows=50 loops=1)
+                          ->  Nested Loop  (cost=151.37..575.46 rows=50 width=38) (actual time=0.296..0.373 rows=50 loops=1)
+                                ->  Limit  (cost=150.94..152.46 rows=50 width=16) (actual time=0.289..0.295 rows=50 loops=1)
+                                      ->  Index Only Scan using ix_product_price_active on product pm1_0  (cost=0.43..144406.33 rows=4749460 width=16) (actual time=0.011..0.218 rows=5000 loops=1)
+                                            Heap Fetches: 0
+                                ->  Index Scan using product_pkey on product pm2_0  (cost=0.43..8.45 rows=1 width=38) (actual time=0.001..0.001 rows=1 loops=50)
+                                      Index Cond: (id = pm1_0.id)
+                          ->  Index Scan using brand_pkey on brand bm1_0  (cost=0.28..0.29 rows=1 width=21) (actual time=0.001..0.001 rows=1 loops=50)
+                                Index Cond: (id = pm2_0.brand_id)
+                    ->  Index Scan using ix_product_like_product on product_like plm1_0  (cost=0.43..2.33 rows=105 width=16) (actual time=0.001..0.001 rows=1 loops=50)
+                          Index Cond: (product_id = pm2_0.id)
+Planning Time: 0.548 ms
+Execution Time: 0.561 ms
+```
+
+#### Q07 (부분 인덱스)
+
+[L07](#l07) · [Q07](#q07) — 1번 브랜드 · 첫 페이지 · `latest`. SQL 은 [Q07](#q07) 의 PostgreSQL SQL 과 같다.
+
+| 구분 | 실행 시간 (평균, ms) |
+|---|---|
+| PostgreSQL 부분 인덱스 전 (8장) | 30.3 (27.9~32.5) |
+| PostgreSQL 부분 인덱스 후 | 0.2 (0.2~0.2) |
+
+```text
+Sort  (cost=615.03..615.22 rows=75 width=67) (actual time=0.161..0.162 rows=50 loops=1)
+  Sort Key: pm2_0.created_at DESC, pm2_0.id DESC
+  Sort Method: quicksort  Memory: 32kB
+  ->  GroupAggregate  (cost=611.20..612.70 rows=75 width=67) (actual time=0.137..0.149 rows=50 loops=1)
+        Group Key: pm2_0.id, bm1_0.id
+        ->  Sort  (cost=611.20..611.38 rows=75 width=67) (actual time=0.135..0.137 rows=81 loops=1)
+              Sort Key: pm2_0.id DESC, bm1_0.id
+              Sort Method: quicksort  Memory: 36kB
+              ->  Nested Loop Left Join  (cost=1.57..608.86 rows=75 width=67) (actual time=0.021..0.123 rows=81 loops=1)
+                    ->  Nested Loop  (cost=1.14..439.92 rows=50 width=59) (actual time=0.018..0.083 rows=50 loops=1)
+                          ->  Nested Loop  (cost=0.86..425.30 rows=50 width=46) (actual time=0.016..0.062 rows=50 loops=1)
+                                ->  Limit  (cost=0.43..2.30 rows=50 width=16) (actual time=0.010..0.014 rows=50 loops=1)
+                                      ->  Index Only Scan Backward using ix_product_brand_latest_active on product pm1_0  (cost=0.43..17253.11 rows=462439 width=16) (actual time=0.009..0.012 rows=50 loops=1)
+                                            Index Cond: (brand_id = 1)
+                                            Heap Fetches: 0
+                                ->  Index Scan using product_pkey on product pm2_0  (cost=0.43..8.45 rows=1 width=46) (actual time=0.001..0.001 rows=1 loops=50)
+                                      Index Cond: (id = pm1_0.id)
+                          ->  Index Scan using brand_pkey on brand bm1_0  (cost=0.28..0.29 rows=1 width=21) (actual time=0.000..0.000 rows=1 loops=50)
+                                Index Cond: (id = pm2_0.brand_id)
+                    ->  Index Scan using ix_product_like_product on product_like plm1_0  (cost=0.43..2.33 rows=105 width=16) (actual time=0.001..0.001 rows=1 loops=50)
+                          Index Cond: (product_id = pm2_0.id)
+Planning Time: 0.510 ms
+Execution Time: 0.203 ms
+```
+
+#### Q08 (부분 인덱스)
+
+[L08](#l08) · [Q08](#q08) — 1번 브랜드 · 첫 페이지 · `price_asc`. SQL 은 [Q08](#q08) 의 PostgreSQL SQL 과 같다.
+
+| 구분 | 실행 시간 (평균, ms) |
+|---|---|
+| PostgreSQL 부분 인덱스 전 (8장) | 22.5 (21.4~23.8) |
+| PostgreSQL 부분 인덱스 후 | 0.3 (0.3~0.3) |
+
+```text
+Sort  (cost=615.03..615.22 rows=75 width=59) (actual time=0.271..0.272 rows=50 loops=1)
+  Sort Key: pm2_0.price, pm2_0.id DESC
+  Sort Method: quicksort  Memory: 32kB
+  ->  GroupAggregate  (cost=611.20..612.70 rows=75 width=59) (actual time=0.244..0.256 rows=50 loops=1)
+        Group Key: pm2_0.id, bm1_0.id
+        ->  Sort  (cost=611.20..611.38 rows=75 width=59) (actual time=0.241..0.243 rows=95 loops=1)
+              Sort Key: pm2_0.id DESC, bm1_0.id
+              Sort Method: quicksort  Memory: 38kB
+              ->  Nested Loop Left Join  (cost=1.57..608.86 rows=75 width=59) (actual time=0.031..0.229 rows=95 loops=1)
+                    ->  Nested Loop  (cost=1.14..439.92 rows=50 width=51) (actual time=0.027..0.155 rows=50 loops=1)
+                          ->  Nested Loop  (cost=0.86..425.30 rows=50 width=38) (actual time=0.022..0.131 rows=50 loops=1)
+                                ->  Limit  (cost=0.43..2.30 rows=50 width=16) (actual time=0.013..0.017 rows=50 loops=1)
+                                      ->  Index Only Scan using ix_product_brand_price_active on product pm1_0  (cost=0.43..17261.11 rows=462439 width=16) (actual time=0.012..0.014 rows=50 loops=1)
+                                            Index Cond: (brand_id = 1)
+                                            Heap Fetches: 0
+                                ->  Index Scan using product_pkey on product pm2_0  (cost=0.43..8.45 rows=1 width=38) (actual time=0.002..0.002 rows=1 loops=50)
+                                      Index Cond: (id = pm1_0.id)
+                          ->  Index Scan using brand_pkey on brand bm1_0  (cost=0.28..0.29 rows=1 width=21) (actual time=0.000..0.000 rows=1 loops=50)
+                                Index Cond: (id = pm2_0.brand_id)
+                    ->  Index Scan using ix_product_like_product on product_like plm1_0  (cost=0.43..2.33 rows=105 width=16) (actual time=0.001..0.001 rows=1 loops=50)
+                          Index Cond: (product_id = pm2_0.id)
+Planning Time: 0.470 ms
+Execution Time: 0.312 ms
+```
+
+#### Q10 (부분 인덱스)
+
+[L10](#l10) · [Q10](#q10) — 1번 브랜드 · 딥 페이지 · `latest`. SQL 은 [Q10](#q10) 의 PostgreSQL SQL 과 같다.
+
+| 구분 | 실행 시간 (평균, ms) |
+|---|---|
+| PostgreSQL 부분 인덱스 전 (8장) | 41.2 (38.9~44.8) |
+| PostgreSQL 부분 인덱스 후 | 0.5 (0.4~0.5) |
+
+```text
+Sort  (cost=799.71..799.89 rows=75 width=67) (actual time=0.456..0.458 rows=50 loops=1)
+  Sort Key: pm2_0.created_at DESC, pm2_0.id DESC
+  Sort Method: quicksort  Memory: 32kB
+  ->  GroupAggregate  (cost=795.87..797.37 rows=75 width=67) (actual time=0.434..0.445 rows=50 loops=1)
+        Group Key: pm2_0.id, bm1_0.id
+        ->  Sort  (cost=795.87..796.06 rows=75 width=67) (actual time=0.431..0.433 rows=64 loops=1)
+              Sort Key: pm2_0.id DESC, bm1_0.id
+              Sort Method: quicksort  Memory: 34kB
+              ->  Nested Loop Left Join  (cost=186.25..793.53 rows=75 width=67) (actual time=0.341..0.423 rows=64 loops=1)
+                    ->  Nested Loop  (cost=185.81..624.60 rows=50 width=59) (actual time=0.338..0.391 rows=50 loops=1)
+                          ->  Nested Loop  (cost=185.54..609.97 rows=50 width=46) (actual time=0.335..0.371 rows=50 loops=1)
+                                ->  Limit  (cost=185.11..186.97 rows=50 width=16) (actual time=0.327..0.331 rows=50 loops=1)
+                                      ->  Index Only Scan Backward using ix_product_brand_latest_active on product pm1_0  (cost=0.43..17253.11 rows=462439 width=16) (actual time=0.008..0.249 rows=5000 loops=1)
+                                            Index Cond: (brand_id = 1)
+                                            Heap Fetches: 0
+                                ->  Index Scan using product_pkey on product pm2_0  (cost=0.43..8.45 rows=1 width=46) (actual time=0.001..0.001 rows=1 loops=50)
+                                      Index Cond: (id = pm1_0.id)
+                          ->  Index Scan using brand_pkey on brand bm1_0  (cost=0.28..0.29 rows=1 width=21) (actual time=0.000..0.000 rows=1 loops=50)
+                                Index Cond: (id = pm2_0.brand_id)
+                    ->  Index Scan using ix_product_like_product on product_like plm1_0  (cost=0.43..2.33 rows=105 width=16) (actual time=0.000..0.001 rows=1 loops=50)
+                          Index Cond: (product_id = pm2_0.id)
+Planning Time: 0.525 ms
+Execution Time: 0.502 ms
+```
+
+#### Q11 (부분 인덱스)
+
+[L11](#l11) · [Q11](#q11) — 1번 브랜드 · 딥 페이지 · `price_asc`. SQL 은 [Q11](#q11) 의 PostgreSQL SQL 과 같다.
+
+| 구분 | 실행 시간 (평균, ms) |
+|---|---|
+| PostgreSQL 부분 인덱스 전 (8장) | 25.6 (23.0~30.4) |
+| PostgreSQL 부분 인덱스 후 | 0.6 (0.6~0.6) |
+
+```text
+Sort  (cost=799.79..799.98 rows=75 width=59) (actual time=0.558..0.560 rows=50 loops=1)
+  Sort Key: pm2_0.price, pm2_0.id DESC
+  Sort Method: quicksort  Memory: 32kB
+  ->  GroupAggregate  (cost=795.96..797.46 rows=75 width=59) (actual time=0.524..0.540 rows=50 loops=1)
+        Group Key: pm2_0.id, bm1_0.id
+        ->  Sort  (cost=795.96..796.14 rows=75 width=59) (actual time=0.521..0.525 rows=155 loops=1)
+              Sort Key: pm2_0.id DESC, bm1_0.id
+              Sort Method: quicksort  Memory: 46kB
+              ->  Nested Loop Left Join  (cost=186.33..793.62 rows=75 width=59) (actual time=0.336..0.505 rows=155 loops=1)
+                    ->  Nested Loop  (cost=185.90..624.68 rows=50 width=51) (actual time=0.332..0.429 rows=50 loops=1)
+                          ->  Nested Loop  (cost=185.63..610.06 rows=50 width=38) (actual time=0.329..0.407 rows=50 loops=1)
+                                ->  Limit  (cost=185.19..187.06 rows=50 width=16) (actual time=0.325..0.329 rows=50 loops=1)
+                                      ->  Index Only Scan using ix_product_brand_price_active on product pm1_0  (cost=0.43..17261.11 rows=462439 width=16) (actual time=0.011..0.250 rows=5000 loops=1)
+                                            Index Cond: (brand_id = 1)
+                                            Heap Fetches: 0
+                                ->  Index Scan using product_pkey on product pm2_0  (cost=0.43..8.45 rows=1 width=38) (actual time=0.001..0.001 rows=1 loops=50)
+                                      Index Cond: (id = pm1_0.id)
+                          ->  Index Scan using brand_pkey on brand bm1_0  (cost=0.28..0.29 rows=1 width=21) (actual time=0.000..0.000 rows=1 loops=50)
+                                Index Cond: (id = pm2_0.brand_id)
+                    ->  Index Scan using ix_product_like_product on product_like plm1_0  (cost=0.43..2.33 rows=105 width=16) (actual time=0.001..0.001 rows=2 loops=50)
+                          Index Cond: (product_id = pm2_0.id)
+Planning Time: 0.469 ms
+Execution Time: 0.598 ms
+```

@@ -1,0 +1,23 @@
+Sort  (cost=615.03..615.22 rows=75 width=59) (actual time=0.271..0.272 rows=50 loops=1)
+  Sort Key: pm2_0.price, pm2_0.id DESC
+  Sort Method: quicksort  Memory: 32kB
+  ->  GroupAggregate  (cost=611.20..612.70 rows=75 width=59) (actual time=0.244..0.256 rows=50 loops=1)
+        Group Key: pm2_0.id, bm1_0.id
+        ->  Sort  (cost=611.20..611.38 rows=75 width=59) (actual time=0.241..0.243 rows=95 loops=1)
+              Sort Key: pm2_0.id DESC, bm1_0.id
+              Sort Method: quicksort  Memory: 38kB
+              ->  Nested Loop Left Join  (cost=1.57..608.86 rows=75 width=59) (actual time=0.031..0.229 rows=95 loops=1)
+                    ->  Nested Loop  (cost=1.14..439.92 rows=50 width=51) (actual time=0.027..0.155 rows=50 loops=1)
+                          ->  Nested Loop  (cost=0.86..425.30 rows=50 width=38) (actual time=0.022..0.131 rows=50 loops=1)
+                                ->  Limit  (cost=0.43..2.30 rows=50 width=16) (actual time=0.013..0.017 rows=50 loops=1)
+                                      ->  Index Only Scan using ix_product_brand_price_active on product pm1_0  (cost=0.43..17261.11 rows=462439 width=16) (actual time=0.012..0.014 rows=50 loops=1)
+                                            Index Cond: (brand_id = 1)
+                                            Heap Fetches: 0
+                                ->  Index Scan using product_pkey on product pm2_0  (cost=0.43..8.45 rows=1 width=38) (actual time=0.002..0.002 rows=1 loops=50)
+                                      Index Cond: (id = pm1_0.id)
+                          ->  Index Scan using brand_pkey on brand bm1_0  (cost=0.28..0.29 rows=1 width=21) (actual time=0.000..0.000 rows=1 loops=50)
+                                Index Cond: (id = pm2_0.brand_id)
+                    ->  Index Scan using ix_product_like_product on product_like plm1_0  (cost=0.43..2.33 rows=105 width=16) (actual time=0.001..0.001 rows=1 loops=50)
+                          Index Cond: (product_id = pm2_0.id)
+Planning Time: 0.470 ms
+Execution Time: 0.312 ms
