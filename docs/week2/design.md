@@ -1225,7 +1225,7 @@ Facade·Reader public 메서드 ↔ FR (28:28)
 - [x] 5-4 DR 대상 FR 없음 (해당 없음)
 - [x] 5-6 표 = 코드의 BC 간 호출 — 모든 Facade·Reader → `UserService.getUser/getAdmin`; `PointFacade.chargeByAdmin/deductByAdmin` → `UserService.getUser(target)`; `OrderFacade.createOrder` → `ProductService.getActiveProducts`; `OrderFacade.confirmOrder` → `ProductService.getActiveProducts`, `ProductService.deductStock`, `PointService.deduct`. 표 밖 호출 없음
 - [x] Repository 6개 (AG 루트 단위) — `User, Brand, Product, ProductLike, Point, Order`. `OrderItemRepository` 없음. 조회 전용은 별도로 `Brand, Product, ProductLike, Point, Order` 5개 (`*QueryRepository`, DR-31)
-- [x] 5-7 대상 전부 테스트 있음 — 273개 통과. FR 성공/실패: 명령은 `*FacadeIntegrationTest`, 조회는 `*ReaderIntegrationTest` 5개(`Brand`·`Product`·`ProductLike`·`Point`·`Order`). INV: `*ModelTest` 4개 + `UserServiceIntegrationTest`(INV-15) + `ProductLikeFacadeIntegrationTest`(INV-04·05). ST: ST-03 `OrderModelTest`, ST-01/02 는 DR-26 으로 미작성. ER: `*ApiE2ETest` 5개(`Brand`·`Product`·`ProductLike`·`Point`·`Order`) + 공통 ER-01·02 `RequesterV1ApiE2ETest`
+- [x] 5-7 대상 전부 테스트 있음 — 296개 통과. FR 성공/실패: 명령은 `*FacadeIntegrationTest`, 조회는 `*ReaderIntegrationTest` 5개(`Brand`·`Product`·`ProductLike`·`Point`·`Order`). INV: `*ModelTest` 4개 + `UserServiceIntegrationTest`(INV-15) + `ProductLikeFacadeIntegrationTest`(INV-04·05) + `ProductLikeConcurrencyTest`(INV-05 동시 등록·취소, DR-36). ST: ST-03 `OrderModelTest`, ST-01/02 는 DR-26 으로 미작성. ER: `*ApiE2ETest` 5개(`Brand`·`Product`·`ProductLike`·`Point`·`Order`) + 공통 ER-01·02 `RequesterV1ApiE2ETest`
 
 ---
 
@@ -1287,10 +1287,10 @@ Facade·Reader public 메서드 ↔ FR (28:28)
 | FR-ID | 진입 BC | 변경 AG | 쓰는 TB | EP | ER (실패 케이스별) | 테스트 |
 |---|---|---|---|---|---|---|
 | FR-BRAND-01 | BC-02 | 없음 | 없음 | EP-01 | ER-01, ER-03 | `FR-BRAND-01`, `FR-BRAND-01_BRAND_NOT_FOUND` |
-| FR-PRODUCT-01 | BC-02 | 없음 | 없음 | EP-02 | ER-01, ER-07, ER-08 | `FR-PRODUCT-01` (+ sort 3종), `ER-07 INVALID_SORT` (EP-02 E2E, `ProductSortTest`, DR-32), `_INVALID_PAGE` |
+| FR-PRODUCT-01 | BC-02 | 없음 | 없음 | EP-02 | ER-01, ER-07, ER-08 | `FR-PRODUCT-01` (+ sort 3종, `likes_desc` 페이지 구간·동률·삭제 상품 제외 DR-36), `ER-07 INVALID_SORT` (EP-02 E2E, `ProductSortTest`, DR-32), `_INVALID_PAGE` |
 | FR-PRODUCT-02 | BC-02 | 없음 | 없음 | EP-03 | ER-01, ER-04 | `FR-PRODUCT-02`, `_PRODUCT_NOT_FOUND` |
-| FR-LIKE-01 | BC-02 | AG-04 | TB-04, TB-08 | EP-04 | ER-01, ER-04 | `FR-LIKE-01` (+ 멱등), `_PRODUCT_NOT_FOUND`, `INV-04`, `INV-05` |
-| FR-LIKE-02 | BC-02 | AG-04 | TB-04, TB-08 | EP-05 | ER-01, ER-04 | `FR-LIKE-02` (+ 없는 관계, 삭제된 상품), `_PRODUCT_NOT_FOUND` |
+| FR-LIKE-01 | BC-02 | AG-04 | TB-04, TB-08 | EP-04 | ER-01, ER-04 | `FR-LIKE-01` (+ 멱등, 좋아요 수 +1·중복 등록 시 불변, 동시 등록 DR-36), `_PRODUCT_NOT_FOUND`, `INV-04`, `INV-05` |
+| FR-LIKE-02 | BC-02 | AG-04 | TB-04, TB-08 | EP-05 | ER-01, ER-04 | `FR-LIKE-02` (+ 없는 관계는 좋아요 수 불변, 삭제된 상품, 같은 쌍 동시 취소 시 한 번만 감소 DR-36), `_PRODUCT_NOT_FOUND` |
 | FR-LIKE-03 | BC-02 | 없음 | 없음 | EP-06 | ER-01, ER-06, ER-08 | `FR-LIKE-03` (+ 삭제 상품 제외), `_NOT_OWNER`, `_INVALID_PAGE` |
 | FR-POINT-01 | BC-03 | AG-05 | TB-05 | EP-07 | ER-01, ER-09, ER-10 | `FR-POINT-01`, `_INVALID_AMOUNT` ×4, `_BALANCE_LIMIT_EXCEEDED`, `INV-01`, `INV-02` |
 | FR-POINT-02 | BC-03 | 없음 | 없음 | EP-08 | ER-01 | `FR-POINT-02` |
@@ -1303,12 +1303,12 @@ Facade·Reader public 메서드 ↔ FR (28:28)
 | FR-ADMIN-BRAND-02 | BC-02 | AG-02 | TB-02 | EP-15 | ER-01, ER-02, ER-17 | `FR-ADMIN-BRAND-02`, `_INVALID_BRAND`, `INV-14` |
 | FR-ADMIN-BRAND-03 | BC-02 | 없음 | 없음 | EP-16 | ER-01, ER-02, ER-03 | `FR-ADMIN-BRAND-03` (+ 삭제된 것 조회), `_BRAND_NOT_FOUND` |
 | FR-ADMIN-BRAND-04 | BC-02 | AG-02 | TB-02 | EP-17 | ER-01, ER-02, ER-03, ER-17 | `FR-ADMIN-BRAND-04`, `_BRAND_NOT_FOUND` ×2, `_INVALID_BRAND` |
-| FR-ADMIN-BRAND-05 | BC-02 | AG-02, AG-03, AG-04 | TB-02, TB-03, TB-08 | EP-18 | ER-01, ER-02, ER-03 | `FR-ADMIN-BRAND-05` (+ 소속 상품 함께·이미 삭제된 상품 유지·다른 브랜드 유지·중간 실패 롤백·삭제 후 연결 8건), `_BRAND_NOT_FOUND` ×2, `_NOT_ADMIN`, `INV-10`, `ST-01`, `ST-02` |
+| FR-ADMIN-BRAND-05 | BC-02 | AG-02, AG-03, AG-04 | TB-02, TB-03, TB-08 | EP-18 | ER-01, ER-02, ER-03 | `FR-ADMIN-BRAND-05` (+ 소속 상품 함께·이미 삭제된 상품 유지·다른 브랜드 유지·중간 실패 롤백·삭제 후 연결 8건. 각각 좋아요 수 행 포함 DR-36), `_BRAND_NOT_FOUND` ×2, `_NOT_ADMIN`, `INV-10`, `ST-01`, `ST-02` |
 | FR-ADMIN-PRODUCT-01 | BC-02 | 없음 | 없음 | EP-19 | ER-01, ER-02, ER-08 | `FR-ADMIN-PRODUCT-01`, `_INVALID_PAGE` |
-| FR-ADMIN-PRODUCT-02 | BC-02 | AG-03, AG-04 | TB-03, TB-08 | EP-20 | ER-01, ER-02, ER-03, ER-19, ER-20, ER-21 | `FR-ADMIN-PRODUCT-02`, `_BRAND_NOT_FOUND`, `_INVALID_PRODUCT_NAME`, `_INVALID_PRODUCT_PRICE`, `_INVALID_STOCK`, `INV-10`, `INV-11`, `INV-13` |
+| FR-ADMIN-PRODUCT-02 | BC-02 | AG-03, AG-04 | TB-03, TB-08 | EP-20 | ER-01, ER-02, ER-03, ER-19, ER-20, ER-21 | `FR-ADMIN-PRODUCT-02` (+ 좋아요 수 0 행 생성 DR-36), `_BRAND_NOT_FOUND`, `_INVALID_PRODUCT_NAME`, `_INVALID_PRODUCT_PRICE`, `_INVALID_STOCK`, `INV-10`, `INV-11`, `INV-13` |
 | FR-ADMIN-PRODUCT-03 | BC-02 | 없음 | 없음 | EP-21 | ER-01, ER-02, ER-04 | `FR-ADMIN-PRODUCT-03`, `_PRODUCT_NOT_FOUND` |
 | FR-ADMIN-PRODUCT-04 | BC-02 | AG-03 | TB-03 | EP-22 | ER-01, ER-02, ER-04, ER-19, ER-20 | `FR-ADMIN-PRODUCT-04` (+ 기존 주문 단가 불변), `_PRODUCT_NOT_FOUND` ×2, `_INVALID_PRODUCT_NAME`, `_INVALID_PRODUCT_PRICE` |
-| FR-ADMIN-PRODUCT-05 | BC-02 | AG-03, AG-04 | TB-03, TB-08 | EP-23 | ER-01, ER-02, ER-04 | `FR-ADMIN-PRODUCT-05` (+ 좋아요·주문 품목 유지), `_PRODUCT_NOT_FOUND` ×2, `ST-02` |
+| FR-ADMIN-PRODUCT-05 | BC-02 | AG-03, AG-04 | TB-03, TB-08 | EP-23 | ER-01, ER-02, ER-04 | `FR-ADMIN-PRODUCT-05` (+ 좋아요·주문 품목 유지, 좋아요 수 행 삭제 반영 DR-36), `_PRODUCT_NOT_FOUND` ×2, `ST-02` |
 | FR-ADMIN-PRODUCT-06 | BC-02 | AG-03 | TB-03 | EP-24 | ER-01, ER-02, ER-04, ER-21 | `FR-ADMIN-PRODUCT-06`, `_PRODUCT_NOT_FOUND` ×2, `_INVALID_STOCK`, `INV-03` |
 | FR-ADMIN-ORDER-01 | BC-04 | 없음 | 없음 | EP-25 | ER-01, ER-02, ER-08 | `FR-ADMIN-ORDER-01` (+ 구매자 묶음), `_INVALID_PAGE` |
 | FR-ADMIN-ORDER-02 | BC-04 | 없음 | 없음 | EP-26 | ER-01, ER-02, ER-05 | `FR-ADMIN-ORDER-02`, `_ORDER_NOT_FOUND` |

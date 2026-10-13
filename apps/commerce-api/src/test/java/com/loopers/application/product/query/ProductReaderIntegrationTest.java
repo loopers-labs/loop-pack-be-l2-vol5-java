@@ -1,5 +1,6 @@
 package com.loopers.application.product.query;
 
+import com.loopers.application.product.ProductFacade;
 import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.user.UserModel;
@@ -16,6 +17,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import static com.loopers.support.ErrorAssertions.assertThrowsErrorType;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -24,6 +28,9 @@ class ProductReaderIntegrationTest {
 
     @Autowired
     private ProductReader productReader;
+    /** 삭제를 실제 경로(상품·좋아요 수 행 함께)로 만들 때만 쓴다. */
+    @Autowired
+    private ProductFacade productFacade;
     @Autowired
     private Fixtures fixtures;
     @Autowired
@@ -95,17 +102,60 @@ class ProductReaderIntegrationTest {
             assertThat(page.items()).extracting(ProductView.Summary::likeCount).containsExactly(2L, 1L, 0L);
         }
 
-        @DisplayName("[FR-PRODUCT-01] likes_desc 도 페이지 크기·totalCount 가 맞다.")
+        @DisplayName("[FR-PRODUCT-01] likes_desc 도 페이지 크기·totalCount 가 맞고, 정렬 뒤의 해당 구간을 돌려준다.")
         @Test
         void likesDesc_pagesCorrectly() {
+            List<ProductModel> products = new ArrayList<>();
+            List<UserModel> likers = new ArrayList<>();
             for (int i = 0; i < 5; i++) {
-                fixtures.product(brand.getId(), "상품" + i, 100L, 1);
+                products.add(fixtures.product(brand.getId(), "상품" + i, 100L, 1));
+                likers.add(fixtures.user());
+            }
+            // 상품 i 의 좋아요 수 = i. 정렬 순서는 상품4, 3, 2, 1, 0.
+            for (int i = 0; i < 5; i++) {
+                for (int j = 0; j < i; j++) {
+                    fixtures.like(likers.get(j).getId(), products.get(i).getId());
+                }
             }
 
             PageResult<ProductView.Summary> page = productReader.listProducts(user.getId(), null, ProductSort.LIKES_DESC, PageQuery.of(1, 2));
 
-            assertThat(page.items()).hasSize(2);
+            assertThat(page.items()).extracting(ProductView.Summary::id)
+                .containsExactly(products.get(2).getId(), products.get(1).getId());
+            assertThat(page.items()).extracting(ProductView.Summary::likeCount).containsExactly(2L, 1L);
             assertThat(page.totalCount()).isEqualTo(5);
+        }
+
+        @DisplayName("[FR-PRODUCT-01][ASM-08] likes_desc 동률이면 id 내림차순.")
+        @Test
+        void likesDesc_tieBrokenByIdDesc() {
+            ProductModel older = fixtures.product(brand.getId(), "옛", 100L, 1);
+            ProductModel newer = fixtures.product(brand.getId(), "새", 100L, 1);
+            fixtures.like(user.getId(), older.getId());
+            fixtures.like(user.getId(), newer.getId());
+
+            PageResult<ProductView.Summary> page = productReader.listProducts(user.getId(), null, ProductSort.LIKES_DESC, PageQuery.of(0, 10));
+
+            assertThat(page.items()).extracting(ProductView.Summary::id).containsExactly(newer.getId(), older.getId());
+        }
+
+        @DisplayName("[FR-PRODUCT-01][DR-36] likes_desc 는 좋아요가 가장 많아도 삭제된 상품을 빼고, 브랜드 필터에서도 같다.")
+        @Test
+        void likesDesc_excludesDeletedProducts() {
+            UserModel other = fixtures.user();
+            ProductModel active = fixtures.product(brand.getId(), "판매 중", 100L, 1);
+            ProductModel deleted = fixtures.product(brand.getId(), "삭제 예정", 100L, 1);
+            fixtures.like(user.getId(), deleted.getId());
+            fixtures.like(other.getId(), deleted.getId());
+            productFacade.deleteProduct(admin.getId(), deleted.getId());
+
+            PageResult<ProductView.Summary> all = productReader.listProducts(user.getId(), null, ProductSort.LIKES_DESC, PageQuery.of(0, 10));
+            PageResult<ProductView.Summary> byBrand = productReader.listProducts(user.getId(), brand.getId(), ProductSort.LIKES_DESC, PageQuery.of(0, 10));
+
+            assertThat(all.items()).extracting(ProductView.Summary::id).containsExactly(active.getId());
+            assertThat(all.totalCount()).isEqualTo(1);
+            assertThat(byBrand.items()).extracting(ProductView.Summary::id).containsExactly(active.getId());
+            assertThat(byBrand.totalCount()).isEqualTo(1);
         }
 
         @DisplayName("[FR-PRODUCT-01] brandId 가 있으면 세 정렬 모두 그 브랜드의 삭제되지 않은 상품만, totalCount 도 그 기준 (DR-35).")
