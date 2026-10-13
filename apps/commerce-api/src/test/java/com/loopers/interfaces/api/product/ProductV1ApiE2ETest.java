@@ -132,6 +132,29 @@ class ProductV1ApiE2ETest {
     }
 
     @Nested
+    @DisplayName("DR-37 고객 상품 조회 캐시")
+    class Cache {
+        @DisplayName("[DR-37] 고객이 상세·목록을 읽은 뒤 관리자가 상품을 수정하면, 다음 고객 조회에 새 값이 나온다.")
+        @Test
+        void adminUpdate_isShownToCustomer() {
+            BrandModel brand = fixtures.brand("브랜드");
+            ProductModel product = fixtures.product(brand.getId(), "상품", 1000L, 5);
+            api.get("/api/v1/products/" + product.getId(), user.getId()).assertSuccess(HttpStatus.OK);
+            api.get("/api/v1/products", user.getId()).assertSuccess(HttpStatus.OK);
+
+            api.put("/api-admin/v1/products/" + product.getId(), admin.getId(),
+                Map.of("name", "새 이름", "price", 2000)).assertSuccess(HttpStatus.OK);
+
+            var detail = api.get("/api/v1/products/" + product.getId(), user.getId()).assertSuccess(HttpStatus.OK);
+            assertThat(detail.data().path("name").asText()).isEqualTo("새 이름");
+            assertThat(detail.data().path("price").asLong()).isEqualTo(2000L);
+            var list = api.get("/api/v1/products", user.getId()).assertSuccess(HttpStatus.OK);
+            assertThat(list.data().path("items").get(0).path("name").asText()).isEqualTo("새 이름");
+            assertThat(list.data().path("items").get(0).path("price").asLong()).isEqualTo(2000L);
+        }
+    }
+
+    @Nested
     @DisplayName("EP-19~24 상품 (관리자)")
     class ProductAdmin {
         @DisplayName("EP-20 201 + ProductAdmin → EP-22 수정 → EP-24 재고 → EP-23 삭제 → EP-21 삭제됨 표시.")
