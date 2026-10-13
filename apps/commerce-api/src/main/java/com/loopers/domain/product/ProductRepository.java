@@ -1,8 +1,8 @@
 package com.loopers.domain.product;
 
-import java.util.Optional;
-import java.util.List;
 import java.time.ZonedDateTime;
+import java.util.List;
+import java.util.Optional;
 
 public interface ProductRepository {
 
@@ -11,6 +11,8 @@ public interface ProductRepository {
     List<Product> findAll();
 
     List<Product> findAllActive();
+
+    List<Product> findActivePage(Long brandId, ProductSort sort, int page, int size);
 
     List<Product> findAllDeleted();
 

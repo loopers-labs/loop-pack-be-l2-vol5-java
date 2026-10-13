@@ -5,6 +5,7 @@ import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.like.LikeRepository;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
+import com.loopers.domain.product.ProductSort;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
@@ -13,7 +14,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.ZonedDateTime;
 import java.util.List;
-import java.util.Comparator;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -46,15 +46,7 @@ public class ProductFacade {
         if (page < 0 || size < 1 || size > 100) {
             throw new CoreException(ErrorType.BAD_REQUEST, "페이지 입력이 올바르지 않습니다.");
         }
-        Comparator<Product> comparator = customerComparator(sort);
-        List<Product> products = productRepository.findAllActive().stream()
-            .filter(product -> brandId == null || product.getBrandId().equals(brandId))
-            .sorted(comparator)
-            .toList();
-        long offset = (long) page * size;
-        int from = (int) Math.min(offset, products.size());
-        int to = (int) Math.min(offset + size, products.size());
-        List<Product> pageProducts = products.subList(from, to);
+        List<Product> pageProducts = productRepository.findActivePage(brandId, customerSort(sort), page, size);
         List<Long> brandIds = pageProducts.stream().map(Product::getBrandId).distinct().toList();
         Map<Long, Brand> brandsById = brandRepository.findAllByIds(brandIds).stream()
             .collect(Collectors.toMap(Brand::getId, Function.identity()));
@@ -67,21 +59,15 @@ public class ProductFacade {
             .toList();
     }
 
-    private Comparator<Product> customerComparator(String sort) {
+    private ProductSort customerSort(String sort) {
         if (sort == null || sort.isBlank() || "latest".equals(sort)) {
-            return Comparator.comparing(Product::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder()))
-                .thenComparing(Product::getId, Comparator.reverseOrder());
+            return ProductSort.LATEST;
         }
-        if ("price_asc".equals(sort)) {
-            return Comparator.comparingLong(Product::getPrice)
-                .thenComparing(Product::getId);
-        }
-        if ("likes_desc".equals(sort)) {
-            return Comparator.comparingLong((Product product) -> likeRepository.countByProductId(product.getId()))
-                .reversed()
-                .thenComparing(Product::getId, Comparator.reverseOrder());
-        }
-        throw new CoreException(ErrorType.BAD_REQUEST, "정렬 입력이 올바르지 않습니다.");
+        return switch (sort) {
+            case "price_asc" -> ProductSort.PRICE_ASC;
+            case "likes_desc" -> ProductSort.LIKES_DESC;
+            default -> throw new CoreException(ErrorType.BAD_REQUEST, "정렬 입력이 올바르지 않습니다.");
+        };
     }
 
     @Transactional(readOnly = true)

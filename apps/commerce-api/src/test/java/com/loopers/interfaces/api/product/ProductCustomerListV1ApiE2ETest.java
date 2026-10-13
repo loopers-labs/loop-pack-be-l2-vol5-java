@@ -9,7 +9,10 @@ import com.loopers.domain.product.ProductRepository;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
@@ -21,6 +24,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -91,6 +95,70 @@ class ProductCustomerListV1ApiE2ETest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody().data()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("page와 size를 생략하면 최근 등록순 첫 페이지의 상품 20개를 반환한다.")
+    void defaultsToFirstPageWithTwentyProducts() {
+        Brand brand = brandRepository.save(Brand.create("Nike"));
+        List<Product> products = new ArrayList<>();
+        for (int index = 0; index < 21; index++) {
+            products.add(productRepository.save(Product.create(brand.getId(), "Product " + index, 10_000L)));
+        }
+
+        ResponseEntity<ApiResponse<List<ProductCustomerV1Dto.ProductResponse>>> response = getProducts("");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().data()).extracting(ProductCustomerV1Dto.ProductResponse::id)
+            .containsExactlyElementsOf(products.reversed().stream().limit(20).map(Product::getId).toList());
+    }
+
+    @Test
+    @DisplayName("마지막 페이지가 size보다 작아도 기존 상품 응답 필드를 그대로 반환한다.")
+    void returnsPartialLastPageWithExistingResponseFields() {
+        Brand brand = brandRepository.save(Brand.create("Nike"));
+        Product expensive = productRepository.save(Product.create(brand.getId(), "Expensive", 30_000L));
+        productRepository.save(Product.create(brand.getId(), "Cheap", 10_000L));
+        productRepository.save(Product.create(brand.getId(), "Middle", 20_000L));
+        likeRepository.save(Like.create(1L, expensive.getId()));
+        likeRepository.save(Like.create(2L, expensive.getId()));
+
+        ResponseEntity<ApiResponse<List<ProductCustomerV1Dto.ProductResponse>>> response = getProducts(
+            "?brandId=" + brand.getId() + "&sort=price_asc&page=1&size=2"
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().data()).containsExactly(new ProductCustomerV1Dto.ProductResponse(
+            expensive.getId(), brand.getId(), "Nike", "Expensive", 30_000L, 2L
+        ));
+    }
+
+    @Test
+    @DisplayName("마지막 상품 이후의 페이지는 정상 응답과 빈 목록을 반환한다.")
+    void returnsEmptyListForPageBeyondLastProduct() {
+        Brand brand = brandRepository.save(Brand.create("Nike"));
+        productRepository.save(Product.create(brand.getId(), "Product", 10_000L));
+
+        ResponseEntity<ApiResponse<List<ProductCustomerV1Dto.ProductResponse>>> response = getProducts(
+            "?page=1&size=2"
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().data()).isEmpty();
+    }
+
+    @ParameterizedTest(name = "size={0}")
+    @ValueSource(ints = {-1, 0, 101})
+    @DisplayName("기존 size 범위인 1부터 100을 벗어나면 400을 반환한다.")
+    void rejectsInvalidSize(int size) {
+        ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+            "/api/v1/products?size=" + size,
+            HttpMethod.GET,
+            null,
+            new ParameterizedTypeReference<>() {}
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
     @Test
