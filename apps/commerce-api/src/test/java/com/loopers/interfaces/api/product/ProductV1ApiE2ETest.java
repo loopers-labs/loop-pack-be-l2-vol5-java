@@ -273,6 +273,91 @@ class ProductV1ApiE2ETest {
     }
 
     @Nested
+    @DisplayName("목록 — 페이지를 고른 뒤에도 순서 · 집계 · 다음 페이지가 같다")
+    class ListPaging {
+        private PageResponse<ProductV1Dto.ProductResponse> page(Long requester, String query) {
+            return testRestTemplate.exchange(CUSTOMER + query, HttpMethod.GET, as(requester), PAGE).getBody().data();
+        }
+
+        @DisplayName("PRODUCT-012 · 같은 가격이 페이지 경계에 걸쳐도 id 내림차순이 이어지고, 빠지거나 겹치는 상품이 없다")
+        @Test
+        void keepsTieOrderAcrossPages() {
+            Long first = product("코트", 10_000);
+            Long second = product("셔츠", 10_000);
+            Long third = product("니트", 10_000);
+            Long cheapest = product("양말", 5_000);
+            String query = "?brandId=" + brandId + "&sort=price_asc&size=2";
+
+            PageResponse<ProductV1Dto.ProductResponse> firstPage = page(USER, query + "&page=0");
+            PageResponse<ProductV1Dto.ProductResponse> secondPage = page(USER, query + "&page=1");
+
+            assertAll(
+                () -> assertThat(firstPage.items()).extracting(ProductV1Dto.ProductResponse::id)
+                    .containsExactly(cheapest, third),
+                () -> assertThat(firstPage.hasNext()).isTrue(),
+                () -> assertThat(secondPage.items()).extracting(ProductV1Dto.ProductResponse::id)
+                    .containsExactly(second, first),
+                () -> assertThat(secondPage.hasNext()).isFalse()
+            );
+        }
+
+        @DisplayName("PRODUCT-007 · PRODUCT-008 · 가격순 목록에도 상품마다 좋아요 수와 요청자의 liked 가 담긴다")
+        @Test
+        void carriesLikeCountAndLikedPerRequester() {
+            Long cheap = product("셔츠", 59_000);
+            Long expensive = product("코트", 129_000);
+            likeFacade.like(USER, cheap);
+            likeFacade.like(OTHER_USER, cheap);
+            likeFacade.like(OTHER_USER, expensive);
+            String query = "?brandId=" + brandId + "&sort=price_asc";
+
+            List<ProductV1Dto.ProductResponse> byUser = page(USER, query).items();
+            List<ProductV1Dto.ProductResponse> byOther = page(OTHER_USER, query).items();
+
+            assertAll(
+                () -> assertThat(byUser).extracting(ProductV1Dto.ProductResponse::id).containsExactly(cheap, expensive),
+                () -> assertThat(byUser).extracting(ProductV1Dto.ProductResponse::likeCount).containsExactly(2L, 1L),
+                () -> assertThat(byUser).extracting(ProductV1Dto.ProductResponse::liked).containsExactly(true, false),
+                () -> assertThat(byOther).extracting(ProductV1Dto.ProductResponse::liked).containsExactly(true, true)
+            );
+        }
+
+        @DisplayName("PRODUCT-005 · 가장 싼 상품이 삭제되면 빠지고, 다음 상품이 그 자리를 채운다")
+        @Test
+        void fillsPageAfterDeletedProduct() {
+            Long deleted = product("양말", 1_000);
+            Long cheap = product("셔츠", 59_000);
+            Long expensive = product("코트", 129_000);
+            productFacade.delete(deleted);
+
+            PageResponse<ProductV1Dto.ProductResponse> firstPage =
+                page(USER, "?brandId=" + brandId + "&sort=price_asc&size=2&page=0");
+
+            assertAll(
+                () -> assertThat(firstPage.items()).extracting(ProductV1Dto.ProductResponse::id)
+                    .containsExactly(cheap, expensive),
+                () -> assertThat(firstPage.hasNext()).isFalse()
+            );
+        }
+
+        @DisplayName("COMMON-008 · 상품이 딱 한 페이지면 hasNext 는 false, 하나라도 넘치면 true 다")
+        @Test
+        void hasNextFollowsOneMoreItem() {
+            product("셔츠", 59_000);
+            product("코트", 129_000);
+            String query = "?brandId=" + brandId + "&sort=price_asc&page=0";
+
+            boolean exactlyOnePage = page(USER, query + "&size=2").hasNext();
+            boolean oneMore = page(USER, query + "&size=1").hasNext();
+
+            assertAll(
+                () -> assertThat(exactlyOnePage).isFalse(),
+                () -> assertThat(oneMore).isTrue()
+            );
+        }
+    }
+
+    @Nested
     @DisplayName("좋아요 목록")
     class LikedList {
         private PageResponse<ProductV1Dto.ProductResponse> likedPage(String query) {

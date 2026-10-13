@@ -12,7 +12,10 @@ import jakarta.persistence.Table;
 @Entity
 @Table(
     name = "product",
-    indexes = @Index(name = "idx_product_brand_id", columnList = "brand_id, deleted_at")
+    indexes = {
+        @Index(name = "idx_product_brand_id", columnList = "brand_id, deleted_at"),
+        @Index(name = "idx_product_brand_price", columnList = "brand_id, deleted_at, price, id DESC")
+    }
 )
 class ProductEntity extends BaseEntity {
 
