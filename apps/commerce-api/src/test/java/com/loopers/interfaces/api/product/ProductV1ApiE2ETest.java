@@ -9,6 +9,7 @@ import com.loopers.domain.product.Price;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.PageResponse;
 import com.loopers.utils.DatabaseCleanUp;
+import com.loopers.utils.RedisCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -38,6 +39,7 @@ class ProductV1ApiE2ETest {
     private final TestRestTemplate testRestTemplate;
     private final LikeService likeService;
     private final DatabaseCleanUp databaseCleanUp;
+    private final RedisCleanUp redisCleanUp;
     private final BrandFacade brandFacade;
     private final ProductFacade productFacade;
     private final LikeFacade likeFacade;
@@ -49,6 +51,7 @@ class ProductV1ApiE2ETest {
         TestRestTemplate testRestTemplate,
         LikeService likeService,
         DatabaseCleanUp databaseCleanUp,
+        RedisCleanUp redisCleanUp,
         BrandFacade brandFacade,
         ProductFacade productFacade,
         LikeFacade likeFacade
@@ -56,6 +59,7 @@ class ProductV1ApiE2ETest {
         this.testRestTemplate = testRestTemplate;
         this.likeService = likeService;
         this.databaseCleanUp = databaseCleanUp;
+        this.redisCleanUp = redisCleanUp;
         this.brandFacade = brandFacade;
         this.productFacade = productFacade;
         this.likeFacade = likeFacade;
@@ -69,6 +73,7 @@ class ProductV1ApiE2ETest {
     @AfterEach
     void tearDown() {
         databaseCleanUp.truncateAllTables();
+        redisCleanUp.truncateAll();
     }
 
     private static final ParameterizedTypeReference<ApiResponse<ProductV1Dto.ProductResponse>> PRODUCT =

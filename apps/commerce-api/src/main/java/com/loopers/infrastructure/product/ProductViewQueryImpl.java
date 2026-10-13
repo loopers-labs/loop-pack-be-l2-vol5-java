@@ -10,7 +10,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Repository
 @RequiredArgsConstructor
@@ -96,9 +98,51 @@ public class ProductViewQueryImpl implements ProductViewQuery {
         return PageWindow.of(rows, size);
     }
 
+    @Override
+    public PageWindow<ProductViewQuery.Listing> findListingPage(ProductViewQuery.Criteria criteria) {
+        Query query = entityManager.createNativeQuery(
+            "SELECT p.id, p.name, p.price, p.quantity, b.id, b.name " + pickedFrom(criteria));
+        query.setParameter("limit", PageWindow.limitOf(criteria.size()));
+        query.setParameter("offset", criteria.offset());
+        if (criteria.brandId() != null) {
+            query.setParameter("brandId", criteria.brandId());
+        }
+
+        List<ProductViewQuery.Listing> rows = ((List<?>) query.getResultList()).stream()
+            .map(row -> toListing((Object[]) row))
+            .toList();
+
+        return PageWindow.of(rows, criteria.size());
+    }
+
+    @Override
+    public Map<Long, ProductViewQuery.Likes> findLikesOfAlive(List<Long> productIds, Long viewerId) {
+        if (productIds.isEmpty()) {
+            return Map.of();
+        }
+        Query query = entityManager.createNativeQuery("""
+            SELECT p.id,
+                   (SELECT COUNT(*) FROM product_like l WHERE l.product_id = p.id) AS like_count,
+                   EXISTS (SELECT 1 FROM product_like ml WHERE ml.user_id = :viewerId AND ml.product_id = p.id) AS liked
+              FROM product p
+             WHERE p.id IN (:productIds) AND p.deleted_at IS NULL
+            """);
+        query.setParameter("productIds", productIds);
+        query.setParameter("viewerId", viewerId);
+
+        return ((List<?>) query.getResultList()).stream()
+            .map(row -> (Object[]) row)
+            .collect(Collectors.toMap(
+                row -> ((Number) row[0]).longValue(),
+                row -> new ProductViewQuery.Likes(((Number) row[1]).longValue(), ((Number) row[2]).intValue() == 1)));
+    }
+
     private static String pickedPage(ProductViewQuery.Criteria criteria) {
-        return PICKED_COLUMNS
-            + " FROM (SELECT id FROM product WHERE deleted_at IS NULL "
+        return PICKED_COLUMNS + pickedFrom(criteria);
+    }
+
+    private static String pickedFrom(ProductViewQuery.Criteria criteria) {
+        return " FROM (SELECT id FROM product WHERE deleted_at IS NULL "
             + (criteria.brandId() != null ? " AND brand_id = :brandId " : "")
             + " ORDER BY " + orderByOf(criteria.sort(), "")
             + " LIMIT :limit OFFSET :offset) picked "
@@ -128,6 +172,17 @@ public class ProductViewQueryImpl implements ProductViewQuery {
             case PRICE_ASC -> alias + "price ASC, " + alias + "id DESC";
             case LIKES_DESC -> "like_count DESC, " + alias + "id DESC";
         };
+    }
+
+    private ProductViewQuery.Listing toListing(Object[] row) {
+        return new ProductViewQuery.Listing(
+            ((Number) row[0]).longValue(),
+            (String) row[1],
+            ((Number) row[2]).longValue(),
+            ((Number) row[3]).intValue() == 0,
+            ((Number) row[4]).longValue(),
+            (String) row[5]
+        );
     }
 
     private ProductViewQuery.View toView(Object[] row) {

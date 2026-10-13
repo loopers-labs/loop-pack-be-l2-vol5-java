@@ -4,6 +4,8 @@ import com.loopers.domain.common.PageNumber;
 import com.loopers.domain.common.PageSize;
 import com.loopers.domain.common.PageWindow;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 public interface ProductViewQuery {
@@ -13,6 +15,25 @@ public interface ProductViewQuery {
     PageWindow<View> findPage(Criteria criteria);
 
     PageWindow<View> findLikedBy(Long userId, PageNumber page, PageSize size);
+
+    PageWindow<Listing> findListingPage(Criteria criteria);
+
+    Map<Long, Likes> findLikesOfAlive(List<Long> productIds, Long viewerId);
+
+    record Listing(
+        Long id,
+        String name,
+        long price,
+        boolean soldOut,
+        Long brandId,
+        String brandName
+    ) {
+        public View with(Likes likes) {
+            return new View(id, name, price, soldOut, brandId, brandName, likes.count(), likes.liked());
+        }
+    }
+
+    record Likes(long count, boolean liked) {}
 
     record View(
         Long id,
