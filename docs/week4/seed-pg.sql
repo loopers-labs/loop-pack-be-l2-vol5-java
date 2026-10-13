@@ -13,7 +13,8 @@
 -- 실행
 --   docker exec -i docker-postgres-1 psql -U application -d loopers -v ON_ERROR_STOP=1 < docs/week4/seed-pg.sql
 --
--- 주의: brand / user / product / product_like / product_stat 을 TRUNCATE 하고 시작한다 (id 도 1부터 다시 매긴다).
+-- 주의: brand / user / product / product_like / product_stat / catalog_revision 을 TRUNCATE 하고 시작한다 (id 도 1부터 다시 매긴다).
+--       revision 은 모두 0 으로 넣고 catalog_revision 행도 다시 만든다 (DR-37, docs/week5/cache-revision-pg.sql).
 -- =====================================================================
 
 SET client_encoding = 'UTF8';
@@ -43,7 +44,7 @@ SET work_mem = '256MB';
 -- ---------------------------------------------------------------------
 -- 2. 초기화
 -- ---------------------------------------------------------------------
-TRUNCATE TABLE product_stat, product_like, product, brand, "user" RESTART IDENTITY;
+TRUNCATE TABLE catalog_revision, product_stat, product_like, product, brand, "user" RESTART IDENTITY;
 
 ALTER TABLE seed_param ADD COLUMN now timestamptz, ADD COLUMN base timestamptz;
 UPDATE seed_param
@@ -53,8 +54,8 @@ SET now  = clock_timestamp(),
 -- ---------------------------------------------------------------------
 -- 3. 브랜드 / 유저
 -- ---------------------------------------------------------------------
-INSERT INTO brand (name, created_at, updated_at, deleted_at)
-SELECT '브랜드 ' || (n + 1), p.base, p.base, NULL
+INSERT INTO brand (name, revision, created_at, updated_at, deleted_at)
+SELECT '브랜드 ' || (n + 1), 0, p.base, p.base, NULL
 FROM seed_param p, generate_series(0, p.brand_count - 1) AS n
 ORDER BY n;
 
@@ -77,11 +78,12 @@ DECLARE
 BEGIN
     SELECT product_count INTO total FROM seed_param;
     WHILE k * 1000000 < total LOOP
-        INSERT INTO product (brand_id, name, price, stock, created_at, updated_at, deleted_at)
+        INSERT INTO product (brand_id, name, price, stock, revision, created_at, updated_at, deleted_at)
         SELECT 1 + floor(p.brand_count * power(random(), p.brand_skew)),
                '상품 ' || (k * 1000000 + n + 1),
                round(power(10, 3 + random() * 3)::numeric, -2),
                floor(random() * 1000),
+               0,
                p.base + ((k * 1000000 + n) * p.span_seconds / p.product_count) * interval '1 second',
                p.base + ((k * 1000000 + n) * p.span_seconds / p.product_count) * interval '1 second',
                CASE WHEN random() < p.deleted_ratio THEN p.now END
@@ -161,6 +163,11 @@ ORDER BY pr.id;
 
 CREATE INDEX ix_product_stat_likes ON product_stat (deleted_at, like_count, product_id);
 CREATE INDEX ix_product_stat_brand_likes ON product_stat (brand_id, deleted_at, like_count, product_id);
+
+-- 고객 상품 목록 캐시의 revision 행 (DR-37). 없으면 상품·브랜드 쓰기와 고객 목록 조회가 실패한다.
+INSERT INTO catalog_revision (name, revision, created_at, updated_at, deleted_at)
+SELECT 'product_list_latest', 0, p.now, p.now, NULL
+FROM seed_param p;
 
 -- ---------------------------------------------------------------------
 -- 6. 정리 / 통계 갱신

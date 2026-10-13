@@ -12,7 +12,8 @@
 -- 실행
 --   docker exec -i docker-mysql-1 mysql -uroot -proot loopers < docs/week4/seed.sql
 --
--- 주의: brand / user / product / product_like / product_stat 을 TRUNCATE 하고 시작한다.
+-- 주의: brand / user / product / product_like / product_stat / catalog_revision 을 TRUNCATE 하고 시작한다.
+--       revision 은 모두 0 으로 넣고 catalog_revision 행도 다시 만든다 (DR-37, docs/week5/cache-revision.sql).
 -- =====================================================================
 
 SET NAMES utf8mb4;
@@ -39,6 +40,7 @@ SET SESSION cte_max_recursion_depth = 1000000;
 -- ---------------------------------------------------------------------
 -- 2. 초기화
 -- ---------------------------------------------------------------------
+TRUNCATE TABLE catalog_revision;
 TRUNCATE TABLE product_stat;
 TRUNCATE TABLE product_like;
 TRUNCATE TABLE product;
@@ -58,8 +60,8 @@ SET @base = @now - INTERVAL @span_seconds SECOND;
 -- ---------------------------------------------------------------------
 -- 3. 브랜드 / 유저
 -- ---------------------------------------------------------------------
-INSERT INTO brand (name, created_at, updated_at, deleted_at)
-SELECT CONCAT('브랜드 ', n + 1), @base, @base, NULL
+INSERT INTO brand (name, revision, created_at, updated_at, deleted_at)
+SELECT CONCAT('브랜드 ', n + 1), 0, @base, @base, NULL
 FROM seq
 WHERE n < @brand_count
 ORDER BY n;
@@ -83,11 +85,12 @@ CREATE PROCEDURE seed_products()
 BEGIN
     DECLARE k INT DEFAULT 0;
     WHILE k * 1000000 < @product_count DO
-        INSERT INTO product (brand_id, name, price, stock, created_at, updated_at, deleted_at)
+        INSERT INTO product (brand_id, name, price, stock, revision, created_at, updated_at, deleted_at)
         SELECT 1 + FLOOR(@brand_count * POW(RAND(), @brand_skew)),
                CONCAT('상품 ', k * 1000000 + n + 1),
                ROUND(POW(10, 3 + RAND() * 3), -2),
                FLOOR(RAND() * 1000),
+               0,
                @base + INTERVAL FLOOR((k * 1000000 + n) * @span_seconds / @product_count) SECOND,
                @base + INTERVAL FLOOR((k * 1000000 + n) * @span_seconds / @product_count) SECOND,
                IF(RAND() < @deleted_ratio, @now, NULL)
@@ -175,6 +178,10 @@ ORDER BY pr.id;
 ALTER TABLE product_stat
     ADD INDEX ix_product_stat_likes (deleted_at, like_count, product_id),
     ADD INDEX ix_product_stat_brand_likes (brand_id, deleted_at, like_count, product_id);
+
+-- 고객 상품 목록 캐시의 revision 행 (DR-37). 없으면 상품·브랜드 쓰기와 고객 목록 조회가 실패한다.
+INSERT INTO catalog_revision (name, revision, created_at, updated_at, deleted_at)
+VALUES ('product_list_latest', 0, @now, @now, NULL);
 
 -- ---------------------------------------------------------------------
 -- 6. 정리 / 통계 갱신
