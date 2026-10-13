@@ -142,4 +142,22 @@ class ProductLikeFacadeIntegrationTest {
             assertThrowsErrorType(() -> productLikeFacade.unlike(user.getId(), 999L), ErrorType.PRODUCT_NOT_FOUND);
         }
     }
+
+    @Nested
+    @DisplayName("DR-37 캐시 revision")
+    class CacheRevision {
+        @DisplayName("[DR-37] 좋아요 수는 캐시 대상이 아니므로 등록·취소는 상품·브랜드·목록 revision 을 올리지 않는다.")
+        @Test
+        void likeAndUnlike_keepRevisions() {
+            fixtures.catalogRevision();
+            long listBefore = fixtures.listRevision();
+
+            productLikeFacade.like(user.getId(), product.getId());
+            productLikeFacade.unlike(user.getId(), product.getId());
+
+            assertThat(fixtures.reloadProduct(product.getId()).getRevision()).isZero();
+            assertThat(fixtures.reloadBrand(brand.getId()).getRevision()).isZero();
+            assertThat(fixtures.listRevision()).isEqualTo(listBefore);
+        }
+    }
 }

@@ -36,6 +36,7 @@ class RequesterV1ApiE2ETest {
 
     @BeforeEach
     void setUp() {
+        fixtures.catalogRevision();
         api = new ApiTestClient(restTemplate, objectMapper);
         user = fixtures.user();
         admin = fixtures.admin();

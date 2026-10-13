@@ -17,9 +17,11 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import static com.loopers.support.ErrorAssertions.assertThrowsErrorType;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 class ProductFacadeIntegrationTest {
@@ -32,6 +34,8 @@ class ProductFacadeIntegrationTest {
     private Fixtures fixtures;
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
+    @Autowired
+    private TransactionTemplate transactionTemplate;
 
     private UserModel user;
     private UserModel admin;
@@ -39,6 +43,7 @@ class ProductFacadeIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        fixtures.catalogRevision();
         user = fixtures.user();
         admin = fixtures.admin();
         brand = fixtures.brand("브랜드");
@@ -263,6 +268,70 @@ class ProductFacadeIntegrationTest {
             assertThrowsErrorType(() -> productFacade.updateStock(admin.getId(), product.getId(), null), ErrorType.INVALID_STOCK);
 
             assertThat(fixtures.reloadProduct(product.getId()).getStock()).isEqualTo(5);
+        }
+    }
+
+    @Nested
+    @DisplayName("DR-37 캐시 revision")
+    class CacheRevision {
+        @DisplayName("[DR-37] 상품 생성은 목록 revision 만 올린다.")
+        @Test
+        void create_bumpsListRevision() {
+            long listBefore = fixtures.listRevision();
+
+            ProductInfo created = productFacade.createProduct(admin.getId(), brand.getId(), "새 상품", 1500L, 10);
+
+            assertThat(fixtures.listRevision()).isEqualTo(listBefore + 1);
+            assertThat(fixtures.reloadProduct(created.id()).getRevision()).isZero();
+            assertThat(fixtures.reloadBrand(brand.getId()).getRevision()).isZero();
+        }
+
+        @DisplayName("[DR-37] 상품 수정·삭제는 그 상품 revision 과 목록 revision 을 올리고, 다른 상품·브랜드 revision 은 그대로다.")
+        @Test
+        void updateAndDelete_bumpProductAndListRevision() {
+            ProductModel product = fixtures.product(brand.getId(), "상품", 1000L, 5);
+            ProductModel other = fixtures.product(brand.getId(), "다른 상품", 1000L, 5);
+            long listBefore = fixtures.listRevision();
+
+            productFacade.updateProduct(admin.getId(), product.getId(), "새 이름", 2000L);
+            assertThat(fixtures.reloadProduct(product.getId()).getRevision()).isEqualTo(1);
+            assertThat(fixtures.listRevision()).isEqualTo(listBefore + 1);
+
+            productFacade.deleteProduct(admin.getId(), product.getId());
+            assertThat(fixtures.reloadProduct(product.getId()).getRevision()).isEqualTo(2);
+            assertThat(fixtures.listRevision()).isEqualTo(listBefore + 2);
+
+            assertThat(fixtures.reloadProduct(other.getId()).getRevision()).isZero();
+            assertThat(fixtures.reloadBrand(brand.getId()).getRevision()).isZero();
+        }
+
+        @DisplayName("[DR-37][DR-22] 재고 변경은 고객 조회 결과가 아니라 어떤 revision 도 올리지 않는다.")
+        @Test
+        void updateStock_keepsRevisions() {
+            ProductModel product = fixtures.product(brand.getId(), "상품", 1000L, 5);
+            long listBefore = fixtures.listRevision();
+
+            productFacade.updateStock(admin.getId(), product.getId(), 42);
+
+            assertThat(fixtures.reloadProduct(product.getId()).getRevision()).isZero();
+            assertThat(fixtures.listRevision()).isEqualTo(listBefore);
+        }
+
+        @DisplayName("[DR-37] 쓰기가 커밋 전에 롤백되면 상품·목록 revision 도 함께 롤백된다.")
+        @Test
+        void rollback_restoresRevisions() {
+            ProductModel product = fixtures.product(brand.getId(), "상품", 1000L, 5);
+            long listBefore = fixtures.listRevision();
+
+            assertThatThrownBy(() -> transactionTemplate.executeWithoutResult(status -> {
+                productFacade.updateProduct(admin.getId(), product.getId(), "새 이름", 2000L);
+                throw new IllegalStateException("커밋 전 실패");
+            })).isInstanceOf(IllegalStateException.class);
+
+            ProductModel reloaded = fixtures.reloadProduct(product.getId());
+            assertThat(reloaded.getName()).isEqualTo("상품");
+            assertThat(reloaded.getRevision()).isZero();
+            assertThat(fixtures.listRevision()).isEqualTo(listBefore);
         }
     }
 }

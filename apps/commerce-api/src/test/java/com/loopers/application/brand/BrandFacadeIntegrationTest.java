@@ -68,6 +68,7 @@ class BrandFacadeIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        fixtures.catalogRevision();
         user = fixtures.user();
         admin = fixtures.admin();
     }
@@ -344,6 +345,71 @@ class BrandFacadeIntegrationTest {
         @Test
         void remainsInAdminProducts() {
             assertThat(productReader.getProductForAdmin(admin.getId(), product.getId()).deleted()).isTrue();
+        }
+    }
+
+    @Nested
+    @DisplayName("DR-37 캐시 revision")
+    class CacheRevision {
+        @DisplayName("[DR-37] 브랜드 생성은 상품이 없어 어떤 revision 도 올리지 않는다.")
+        @Test
+        void create_keepsListRevision() {
+            long listBefore = fixtures.listRevision();
+
+            brandFacade.createBrand(admin.getId(), "새 브랜드");
+
+            assertThat(fixtures.listRevision()).isEqualTo(listBefore);
+        }
+
+        @DisplayName("[DR-37] 브랜드 수정은 그 브랜드 revision 과 목록 revision 만 올린다. 소속 상품 revision 은 그대로다.")
+        @Test
+        void update_bumpsBrandAndListRevision() {
+            BrandModel brand = fixtures.brand("브랜드");
+            ProductModel product = fixtures.product(brand.getId(), "상품", 1000L, 5);
+            long listBefore = fixtures.listRevision();
+
+            brandFacade.updateBrand(admin.getId(), brand.getId(), "새 이름");
+
+            assertThat(fixtures.reloadBrand(brand.getId()).getRevision()).isEqualTo(1);
+            assertThat(fixtures.reloadProduct(product.getId()).getRevision()).isZero();
+            assertThat(fixtures.listRevision()).isEqualTo(listBefore + 1);
+        }
+
+        @DisplayName("[DR-37] 브랜드 삭제는 브랜드·삭제되는 소속 상품·목록 revision 을 올린다. 이미 삭제된 상품과 다른 브랜드 상품은 그대로다.")
+        @Test
+        void delete_bumpsBrandProductsAndListRevision() {
+            BrandModel brand = fixtures.brand("브랜드");
+            BrandModel other = fixtures.brand("다른 브랜드");
+            ProductModel active = fixtures.product(brand.getId(), "상품", 1000L, 5);
+            ProductModel alreadyDeleted = fixtures.deletedProduct(brand.getId(), "삭제됨", 1000L, 5);
+            ProductModel otherProduct = fixtures.product(other.getId(), "다른 상품", 1000L, 5);
+            long deletedRevisionBefore = fixtures.reloadProduct(alreadyDeleted.getId()).getRevision();
+            long listBefore = fixtures.listRevision();
+
+            brandFacade.deleteBrand(admin.getId(), brand.getId());
+
+            assertThat(fixtures.reloadBrand(brand.getId()).getRevision()).isEqualTo(1);
+            assertThat(fixtures.reloadProduct(active.getId()).getRevision()).isEqualTo(1);
+            assertThat(fixtures.reloadProduct(alreadyDeleted.getId()).getRevision()).isEqualTo(deletedRevisionBefore);
+            assertThat(fixtures.reloadProduct(otherProduct.getId()).getRevision()).isZero();
+            assertThat(fixtures.reloadBrand(other.getId()).getRevision()).isZero();
+            assertThat(fixtures.listRevision()).isEqualTo(listBefore + 1);
+        }
+
+        @DisplayName("[DR-37] 브랜드 삭제가 중간에 실패하면 브랜드·상품·목록 revision 모두 그대로다.")
+        @Test
+        void delete_keepsRevisions_whenFailsMidway() {
+            BrandModel brand = fixtures.brand("브랜드");
+            ProductModel product = fixtures.product(brand.getId(), "상품", 1000L, 5);
+            long listBefore = fixtures.listRevision();
+            doThrow(new IllegalStateException("브랜드 삭제 실패")).when(brandService).delete(brand.getId());
+
+            assertThatThrownBy(() -> brandFacade.deleteBrand(admin.getId(), brand.getId()))
+                .isInstanceOf(IllegalStateException.class);
+
+            assertThat(fixtures.reloadBrand(brand.getId()).getRevision()).isZero();
+            assertThat(fixtures.reloadProduct(product.getId()).getRevision()).isZero();
+            assertThat(fixtures.listRevision()).isEqualTo(listBefore);
         }
     }
 }

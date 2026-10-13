@@ -42,6 +42,7 @@ class ProductReaderIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        fixtures.catalogRevision();
         user = fixtures.user();
         admin = fixtures.admin();
         brand = fixtures.brand("브랜드");
