@@ -4,6 +4,7 @@ import com.loopers.application.product.query.ProductReader;
 import com.loopers.application.product.query.ProductView;
 import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.product.ProductModel;
+import com.loopers.domain.productlike.ProductStatModel;
 import com.loopers.domain.user.UserModel;
 import com.loopers.support.error.ErrorType;
 import com.loopers.support.fixture.Fixtures;
@@ -60,6 +61,18 @@ class ProductFacadeIntegrationTest {
             assertThat(created.stock()).isEqualTo(10);
             assertThat(created.deleted()).isFalse();
             assertThat(productReader.getProduct(user.getId(), created.id()).price()).isEqualTo(1500L);
+        }
+
+        @DisplayName("[FR-ADMIN-PRODUCT-02][DR-36] 같은 브랜드로 좋아요 수 0 인 행이 함께 만들어진다.")
+        @Test
+        void createsStat() {
+            ProductInfo created = productFacade.createProduct(admin.getId(), brand.getId(), "새 상품", 1500L, 10);
+
+            ProductStatModel stat = fixtures.reloadStat(created.id());
+            assertThat(stat.getBrandId()).isEqualTo(brand.getId());
+            assertThat(stat.getLikeCount()).isZero();
+            assertThat(stat.getDeletedAt()).isNull();
+            assertThat(created.likeCount()).isZero();
         }
 
         @DisplayName("[FR-ADMIN-PRODUCT-02 BRAND_NOT_FOUND] 브랜드가 없으면 생성되지 않는다.")
@@ -168,6 +181,21 @@ class ProductFacadeIntegrationTest {
             ProductView.Admin adminView = productReader.getProductForAdmin(admin.getId(), product.getId());
             assertThat(adminView.deleted()).isTrue();
             assertThat(adminView.likeCount()).isEqualTo(1);
+        }
+
+        @DisplayName("[FR-ADMIN-PRODUCT-05][DR-36] 좋아요 수 행도 삭제로 표시되고 좋아요 수는 그대로다.")
+        @Test
+        void deletesStat_keepsLikeCount() {
+            ProductModel product = fixtures.product(brand.getId(), "상품", 1000L, 5);
+            ProductModel other = fixtures.product(brand.getId(), "다른 상품", 1000L, 5);
+            fixtures.like(user.getId(), product.getId());
+
+            productFacade.deleteProduct(admin.getId(), product.getId());
+
+            ProductStatModel stat = fixtures.reloadStat(product.getId());
+            assertThat(stat.getDeletedAt()).isNotNull();
+            assertThat(stat.getLikeCount()).isEqualTo(1);
+            assertThat(fixtures.reloadStat(other.getId()).getDeletedAt()).isNull();
         }
 
         @DisplayName("[FR-ADMIN-PRODUCT-05][ASM-22] 재고가 남아 있어도 삭제할 수 있다.")

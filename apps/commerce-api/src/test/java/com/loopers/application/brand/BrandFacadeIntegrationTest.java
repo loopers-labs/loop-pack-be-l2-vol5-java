@@ -162,7 +162,7 @@ class BrandFacadeIntegrationTest {
             assertThat(brandReader.getBrandForAdmin(admin.getId(), brand.getId()).deleted()).isTrue();
         }
 
-        @DisplayName("[FR-ADMIN-BRAND-05][INV-10][ST-02] 삭제되지 않은 소속 상품(재고 0 포함)이 함께 삭제된다.")
+        @DisplayName("[FR-ADMIN-BRAND-05][INV-10][ST-02][DR-36] 삭제되지 않은 소속 상품(재고 0 포함)과 그 좋아요 수 행이 함께 삭제된다.")
         @Test
         void deletesActiveProductsTogether() {
             BrandModel brand = fixtures.brand("브랜드");
@@ -174,22 +174,26 @@ class BrandFacadeIntegrationTest {
             assertThat(fixtures.reloadBrand(brand.getId()).isDeleted()).isTrue();
             assertThat(fixtures.reloadProduct(inStock.getId()).isDeleted()).isTrue();
             assertThat(fixtures.reloadProduct(soldOut.getId()).isDeleted()).isTrue();
+            assertThat(fixtures.reloadStat(inStock.getId()).getDeletedAt()).isNotNull();
+            assertThat(fixtures.reloadStat(soldOut.getId()).getDeletedAt()).isNotNull();
         }
 
-        @DisplayName("[FR-ADMIN-BRAND-05][INV-10] 이미 삭제된 소속 상품은 삭제 시각이 바뀌지 않는다.")
+        @DisplayName("[FR-ADMIN-BRAND-05][INV-10][DR-36] 이미 삭제된 소속 상품과 그 좋아요 수 행은 삭제 시각이 바뀌지 않는다.")
         @Test
         void keepsAlreadyDeletedProducts() {
             BrandModel brand = fixtures.brand("브랜드");
             ProductModel deleted = fixtures.deletedProduct(brand.getId(), "삭제된 상품", 1000L, 0);
             ZonedDateTime deletedAt = fixtures.reloadProduct(deleted.getId()).getDeletedAt();
+            ZonedDateTime statDeletedAt = fixtures.reloadStat(deleted.getId()).getDeletedAt();
 
             brandFacade.deleteBrand(admin.getId(), brand.getId());
 
             assertThat(fixtures.reloadBrand(brand.getId()).isDeleted()).isTrue();
             assertThat(fixtures.reloadProduct(deleted.getId()).getDeletedAt()).isEqualTo(deletedAt);
+            assertThat(fixtures.reloadStat(deleted.getId()).getDeletedAt()).isEqualTo(statDeletedAt);
         }
 
-        @DisplayName("[FR-ADMIN-BRAND-05] 다른 브랜드와 그 상품은 바뀌지 않는다.")
+        @DisplayName("[FR-ADMIN-BRAND-05][DR-36] 다른 브랜드와 그 상품·좋아요 수 행은 바뀌지 않는다.")
         @Test
         void doesNotTouchOtherBrands() {
             BrandModel target = fixtures.brand("대상");
@@ -201,9 +205,10 @@ class BrandFacadeIntegrationTest {
 
             assertThat(fixtures.reloadBrand(other.getId()).isDeleted()).isFalse();
             assertThat(fixtures.reloadProduct(otherProduct.getId()).isDeleted()).isFalse();
+            assertThat(fixtures.reloadStat(otherProduct.getId()).getDeletedAt()).isNull();
         }
 
-        @DisplayName("[FR-ADMIN-BRAND-05] 상품을 삭제한 뒤 중간에 실패하면 브랜드·상품 변경이 전부 취소된다.")
+        @DisplayName("[FR-ADMIN-BRAND-05][DR-36] 상품을 삭제한 뒤 중간에 실패하면 브랜드·상품·좋아요 수 행 변경이 전부 취소된다.")
         @Test
         void rollsBackAll_whenFailsMidway() {
             BrandModel brand = fixtures.brand("브랜드");
@@ -217,6 +222,8 @@ class BrandFacadeIntegrationTest {
             assertThat(fixtures.reloadBrand(brand.getId()).isDeleted()).isFalse();
             assertThat(fixtures.reloadProduct(first.getId()).isDeleted()).isFalse();
             assertThat(fixtures.reloadProduct(second.getId()).isDeleted()).isFalse();
+            assertThat(fixtures.reloadStat(first.getId()).getDeletedAt()).isNull();
+            assertThat(fixtures.reloadStat(second.getId()).getDeletedAt()).isNull();
         }
 
         @DisplayName("[FR-ADMIN-BRAND-05 NOT_ADMIN] 관리자가 아니면 거절하고 브랜드·상품은 그대로.")

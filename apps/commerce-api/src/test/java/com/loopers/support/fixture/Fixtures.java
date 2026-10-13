@@ -4,6 +4,7 @@ import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.productlike.ProductLikeModel;
 import com.loopers.domain.productlike.ProductLikeRepository;
+import com.loopers.domain.productlike.ProductStatModel;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.domain.point.PointModel;
@@ -96,19 +97,32 @@ public class Fixtures {
         return brand;
     }
 
+    /** 상품 + 좋아요 수 0 인 행 (DR-36). */
+    @Transactional
     public ProductModel product(Long brandId, String name, long price, int stock) {
-        return productRepository.save(new ProductModel(brandId, name, price, stock));
+        ProductModel product = productRepository.save(new ProductModel(brandId, name, price, stock));
+        productLikeRepository.saveStat(new ProductStatModel(product.getId(), brandId));
+        return product;
     }
 
     @Transactional
     public ProductModel deletedProduct(Long brandId, String name, long price, int stock) {
-        ProductModel product = productRepository.save(new ProductModel(brandId, name, price, stock));
+        ProductModel product = product(brandId, name, price, stock);
         product.delete();
+        productLikeRepository.deleteStat(product.getId());
         return product;
     }
 
+    /** 관계 + 좋아요 수 +1 (INV-05, DR-36). */
+    @Transactional
     public ProductLikeModel like(Long userId, Long productId) {
-        return productLikeRepository.save(new ProductLikeModel(userId, productId));
+        ProductLikeModel like = productLikeRepository.save(new ProductLikeModel(userId, productId));
+        productLikeRepository.increaseLikeCount(productId);
+        return like;
+    }
+
+    public ProductStatModel reloadStat(Long productId) {
+        return productLikeRepository.findStat(productId).orElseThrow();
     }
 
     public ProductModel reloadProduct(Long productId) {
