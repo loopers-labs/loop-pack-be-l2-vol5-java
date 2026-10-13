@@ -4,6 +4,7 @@
 같은 케이스를 PostgreSQL 에서도 인덱스 적용 상태로 측정해 함께 적는다.
 `latest`·`price_asc` 쿼리를 바꾼 뒤 MySQL·PostgreSQL 에서 다시 잰 결과는 8장에 적는다.
 PostgreSQL 에 부분 인덱스를 더한 뒤 다시 잰 결과는 9장에 적는다.
+좋아요 수를 별도 테이블(`product_stat`)에 저장하고 `likes_desc` 쿼리를 바꾼 뒤 다시 잰 결과는 10장에 적는다.
 
 ## 1. 측정 환경
 
@@ -19,6 +20,7 @@ PostgreSQL 에 부분 인덱스를 더한 뒤 다시 잰 결과는 9장에 적�
 | PostgreSQL | PostgreSQL 14.24 (docker `docker-postgres-1`, `local-pg` 프로필), `shared_buffers` 1GB, `shm_size` 1g. 나머지는 기본값 (`work_mem` 4MB, `max_parallel_workers_per_gather` 2, JIT 켜짐) |
 | PostgreSQL 데이터 | `docs/week4/seed-pg.sql` 로 생성. 규모·분포는 `seed.sql` 과 같지만 무작위 값이라 MySQL 과 행 단위로 같지는 않다. 브랜드 1,000 / 유저 1,000,000 / 상품 5,000,000 (삭제 250,257) / 좋아요 7,514,034. `brandId=1` 은 삭제되지 않은 상품 474,476개, 좋아요 1,000개 이상 상품 37개, 최대 좋아요 10,061 |
 | PostgreSQL 인덱스 | "인덱스 적용 후" 와 같다. PostgreSQL 은 인덱스 적용 상태만 측정했다 |
+| `product_stat` | 10장 측정에만 해당. 상품당 한 행인 좋아요 수 테이블과 인덱스 3개 (10-1). 이때 `product_like` 의 `ix_product_like_product` 는 지웠다 |
 | PostgreSQL 부분 인덱스 | 9장 측정에만 해당. 위에 더해 `product` 에 `WHERE deleted_at IS NULL` 부분 인덱스 4개 (9-1). DB 에 직접 만들었고 엔티티에는 없다 |
 
 ## 2. 측정 방법
@@ -74,7 +76,7 @@ PostgreSQL 에 부분 인덱스를 더한 뒤 다시 잰 결과는 9장에 적�
 | L11 | 1번 브랜드 | 딥 페이지 | `price_asc` | 5,305.6 (5,231.0~5,440.0) | 2,975.0 (2,965.0~3,007.0) | [93.5 (91.7~96.5)](#q11) | 1,520.4 (1,454.9~1,623.6) | [25.6 (23.0~30.4)](#q11) | [0.6 (0.6~0.6)](#q11-부분-인덱스) |
 | L12 | 1번 브랜드 | 딥 페이지 | `likes_desc` | 5,236.6 (5,163.0~5,423.0) | 2,982.0 (2,936.0~3,093.0) | — (쿼리 그대로) | 1,486.2 (1,442.7~1,572.2) | — (쿼리 그대로) | — (쿼리 그대로) |
 
-`likes_desc` 는 쿼리를 바꾸지 않아 "쿼리 변경 후"·"부분 인덱스" 를 재지 않았다. MySQL "쿼리 변경 후" 는 데이터를 다시 만든 뒤 잰 값이라, 같은 데이터에서의 변경 전 값은 8-3 에 따로 적었다.
+`likes_desc` 는 8·9장에서 쿼리를 바꾸지 않아 그 열을 재지 않았다. 좋아요 수를 저장한 뒤 다시 잰 값은 [10장](#10-likes_desc-좋아요-수-비정규화-후)에 있다 (MySQL Q03 0.8 / Q06 1.4 / Q09 0.9 / Q12 1.5ms). MySQL "쿼리 변경 후" 는 데이터를 다시 만든 뒤 잰 값이라, 같은 데이터에서의 변경 전 값은 8-3 에 따로 적었다.
 
 ### 4-2. count 쿼리 실행 시간 (평균, ms)
 
@@ -2093,6 +2095,7 @@ L01 (전체, `latest`) 실행 계획 단계별 누적 시간:
 - 인덱스가 정렬에 쓰이려면 집계 전에 페이지를 정해야 한다.
   - `latest`·`price_asc`: 인덱스 순서로 페이지의 상품 ID 50개를 먼저 고르고, 그 50건에만 브랜드 조인·좋아요 집계를 한다.
   - `likes_desc`: 좋아요 수를 상품에 저장(비정규화)하고 그 컬럼에 인덱스를 둬야 한다. 좋아요 등록·취소의 쓰기 경로가 바뀌는 변경이라 따로 정한다.
+    - 별도 테이블 `product_stat` 에 저장하는 것으로 적용했다 → [10장](#10-likes_desc-좋아요-수-비정규화-후).
 - 전체 count(C01)는 475만 건을 세는 비용이 남는다. 정확한 `totalCount` 가 꼭 필요한지는 별도로 검토할 수 있다.
 
 ## 8. 쿼리 변경 후 검증
@@ -3040,7 +3043,7 @@ Execution Time: 23.068 ms
   - `price_asc` 동률 방향 (두 DB 공통): 인덱스를 `(…, price, id desc)` 로 바꿀지, 동률 정책(ASM-08)을 바꿀지.
   - PostgreSQL 의 `IS NULL` 정렬 문제: 쿼리에서 정렬 키에 `deleted_at` 을 넣을지, 인덱스 컬럼 순서를 바꿀지(예: `(created_at, id, deleted_at)`), PostgreSQL 부분 인덱스를 쓸지. MySQL 에는 영향이 없어야 한다.
     - PostgreSQL 은 부분 인덱스로 적용했다 → [9장](#9-postgresql-부분-인덱스-적용-후).
-- `likes_desc` 는 7-5 대로 따로 정한다.
+- `likes_desc` 는 7-5 대로 따로 정한다. → [10장](#10-likes_desc-좋아요-수-비정규화-후).
 
 ## 9. PostgreSQL 부분 인덱스 적용 후
 
@@ -3393,3 +3396,263 @@ Sort  (cost=799.79..799.98 rows=75 width=59) (actual time=0.558..0.560 rows=50 l
 Planning Time: 0.469 ms
 Execution Time: 0.598 ms
 ```
+
+
+## 10. `likes_desc` 좋아요 수 비정규화 후
+
+7-5 의 두 번째 다음 단계(`likes_desc` 는 좋아요 수를 저장하고 그 컬럼에 인덱스를 둔다)를 적용하고, MySQL·PostgreSQL 에서 `likes_desc` 케이스를 다시 측정한다. 설계 결정은 `docs/week2/design.md` DR-36.
+
+### 10-1. 변경 내용
+
+**테이블**
+
+- 좋아요 수를 `product` 가 아니라 상품당 한 행인 별도 테이블 `product_stat` 에 둔다 (좋아요 AG 소유).
+  - 컬럼: `product_id`(고유), `brand_id`, `like_count`, 공통 컬럼(`created_at`·`updated_at`·`deleted_at`).
+  - `brand_id`·`deleted_at` 은 `product` 의 사본이다. `likes_desc` 의 정렬·브랜드 필터·삭제 상품 제외를 이 테이블만으로 하기 위해 둔다.
+  - 인덱스: `ux_product_stat_product (product_id)`, `ix_product_stat_likes (deleted_at, like_count, product_id)`, `ix_product_stat_brand_likes (brand_id, deleted_at, like_count, product_id)`.
+- 쓰기: 상품 생성 때 `like_count` 0 으로 만들고, 좋아요 등록·취소는 관계가 실제로 생기거나 지워졌을 때만 같은 트랜잭션에서 `like_count ± 1` 원자적 갱신을 한다. 상품·브랜드 삭제는 같은 트랜잭션에서 `deleted_at` 을 채운다.
+
+**쿼리**
+
+- `likes_desc` 도 `latest`·`price_asc` 와 같은 CTE 구조다. CTE 에서 `product_stat` 만으로 정렬·페이징해 상품 id 50개를 고르고, 바깥에서 그 50건에 `product`·`brand`·`product_stat` 을 붙인다.
+- 좋아요 수 집계(`left join product_like ... group by`)는 모든 조회에서 없어지고 `product_stat` 1:1 조인으로 바뀌었다. `latest`·`price_asc` 의 바깥 쿼리도 바뀌었으므로 8-4 의 Q01~Q11 SQL 은 변경 전 기록이다. 이번에 다시 재지 않았다.
+- count 쿼리(C01·C02)는 그대로 `product` 에서 센다.
+- `product_like` 의 `ix_product_like_product (product_id)` 는 쓰는 조회가 없어 지웠다 (엔티티와 두 DB 모두).
+
+**데이터**
+
+- 데이터를 다시 만들지 않고 이미 적재된 `product`·`product_like` 로 `product_stat` 을 채웠다 (`docs/week4/backfill-product-stat.sql`, `backfill-product-stat-pg.sql`).
+
+| 확인 항목 | MySQL | PostgreSQL |
+|---|---|---|
+| `product` 행 수 / `product_stat` 행 수 | 5,000,000 / 5,000,000 | 5,000,000 / 5,000,000 |
+| `product_like` 행 수 / `SUM(like_count)` | 7,636,480 / 7,636,480 | 7,514,034 / 7,514,034 |
+| 상품별 좋아요 수가 관계 수와 다른 행 | 0 | 0 |
+| `brand_id`·삭제 여부가 상품과 다른 행 | 0 | 0 |
+| 백필 시간 | 78초 | 20초 |
+
+- `seed.sql`·`seed-pg.sql` 도 `product_stat` 을 함께 채우도록 고쳤다.
+
+### 10-2. 검증 방법
+
+**실제 SQL 확인**
+
+- MySQL: 앱(`local` 프로필)을 띄워 10-4 의 케이스별 URL 4개를 호출하고 general log 로 실제 SQL 을 잡았다. 4개 모두 200 이었다. 8-2 와 같은 방법이며, 확인 뒤 `general_log = OFF`, `log_output = FILE` 로 되돌리고 로그 테이블을 비웠다. 케이스별 SQL 은 로그 그대로이고, 줄만 바꿨다.
+- 변경 전 SQL 과 출력을 비교하지는 않았다. 정렬·동률·브랜드 필터·삭제 상품 제외·페이지 구간은 통합 테스트(`ProductReaderIntegrationTest`)로 확인한다.
+
+**측정**
+
+- `bench.py` 로 2장과 같은 방식(워밍업 1회 + 측정 5회, 순차 실행, 맨 위 노드 `actual time` 끝 값)으로 쟀다. 케이스 ID 는 `Q` + 대응하는 L 번호다.
+  ```
+  python3 docs/week4/bench.py stat Q03 Q06 Q09 Q12
+  ```
+  원본 결과는 `docs/week4/results/stat/` 에 남는다.
+- MySQL "변경 전" 은 4-1 의 "인덱스 적용 후" 값이다. 8장에서 데이터를 다시 만들기 전에 잰 값이라 지금 데이터와 행 단위로 같지 않다. 규모·분포는 같다.
+
+### 10-3. 결과 요약 (평균, ms)
+
+**MySQL**
+
+| ID | 대응 | 브랜드 | 페이지 | 정렬 | 변경 전 (4-1 인덱스 적용 후) | 변경 후 | 변화 |
+|---|---|---|---|---|---|---|---|
+| [Q03](#q03) | [L03](#l03) | 전체 | 첫 페이지 | `likes_desc` | 60,342.2 (59,502.0~61,038.0) | 0.8 (0.6~0.9) | 약 7만 배 |
+| [Q06](#q06) | [L06](#l06) | 전체 | 딥 페이지 | `likes_desc` | 60,413.8 (59,842.0~61,197.0) | 1.4 (1.3~1.4) | 약 4만 배 |
+| [Q09](#q09) | [L09](#l09) | 1번 브랜드 | 첫 페이지 | `likes_desc` | 2,953.0 (2,910.0~3,059.0) | 0.9 (0.6~2.2) | 약 3,300배 |
+| [Q12](#q12) | [L12](#l12) | 1번 브랜드 | 딥 페이지 | `likes_desc` | 2,982.0 (2,936.0~3,093.0) | 1.5 (1.3~1.9) | 약 2,000배 |
+
+변경 전 값은 데이터를 다시 만들기 전에 잰 것이라 같은 데이터에서의 비교가 아니다 (10-2). 차이가 세 자릿수 이상이라 결론에는 영향이 없다.
+
+**PostgreSQL**
+
+(측정 후 작성)
+
+### 10-4. 케이스별 상세
+
+### Q03
+
+[L03](#l03) 의 변경 후 — 전체 · 첫 페이지 (`page=0`) · `likes_desc` — `/api/v1/products?sort=likes_desc&page=0&size=50`
+
+```sql
+with page (id) as (
+    select psm1_0.product_id
+    from product_stat psm1_0
+    where psm1_0.deleted_at is null
+    order by psm1_0.like_count desc,psm1_0.product_id desc
+    limit 0,50)
+select pm1_0.id,pm1_0.name,pm1_0.price,bm1_0.id,bm1_0.name,psm2_0.like_count
+from page pg1_0
+join product pm1_0 on pm1_0.id=pg1_0.id
+join brand bm1_0 on bm1_0.id=pm1_0.brand_id
+join product_stat psm2_0 on psm2_0.product_id=pm1_0.id
+order by psm2_0.like_count desc,psm2_0.product_id desc
+```
+
+| 구분 | 실행 시간 (평균, ms) |
+|---|---|
+| MySQL 변경 전 (L03, 4-1 인덱스 적용 후) | 60,342.2 (59,502.0~61,038.0) |
+| MySQL 변경 후 | 0.8 (0.6~0.9) |
+
+**실행 계획 — MySQL 변경 후**
+
+```text
+-> Sort: psm2_0.like_count DESC, psm2_0.product_id DESC  (actual time=0.731..0.733 rows=50 loops=1)
+    -> Stream results  (cost=252429 rows=50) (actual time=0.318..0.715 rows=50 loops=1)
+        -> Nested loop inner join  (cost=252429 rows=50) (actual time=0.314..0.7 rows=50 loops=1)
+            -> Nested loop inner join  (cost=252412 rows=50) (actual time=0.311..0.659 rows=50 loops=1)
+                -> Nested loop inner join  (cost=252360 rows=50) (actual time=0.291..0.418 rows=50 loops=1)
+                    -> Table scan on pg1_0  (cost=252302..252305 rows=50) (actual time=0.282..0.287 rows=50 loops=1)
+                        -> Materialize CTE page  (cost=252302..252302 rows=50) (actual time=0.281..0.281 rows=50 loops=1)
+                            -> Limit: 50 row(s)  (cost=252297 rows=50) (actual time=0.253..0.26 rows=50 loops=1)
+                                -> Filter: (psm1_0.deleted_at is null)  (cost=252297 rows=2.43e+6) (actual time=0.253..0.258 rows=50 loops=1)
+                                    -> Covering index lookup on psm1_0 using ix_product_stat_likes (deleted_at=NULL) (reverse)  (cost=252297 rows=2.43e+6) (actual time=0.252..0.256 rows=50 loops=1)
+                    -> Single-row index lookup on pm1_0 using PRIMARY (id=pg1_0.id)  (cost=0.998 rows=1) (actual time=0.00248..0.0025 rows=1 loops=50)
+                -> Single-row index lookup on psm2_0 using ux_product_stat_product (product_id=pg1_0.id)  (cost=0.934 rows=1) (actual time=0.0047..0.00472 rows=1 loops=50)
+            -> Single-row index lookup on bm1_0 using PRIMARY (id=pm1_0.brand_id)  (cost=0.252 rows=1) (actual time=688e-6..703e-6 rows=1 loops=50)
+```
+
+### Q06
+
+[L06](#l06) 의 변경 후 — 전체 · 딥 페이지 (`page=99`) · `likes_desc` — `/api/v1/products?sort=likes_desc&page=99&size=50`
+
+```sql
+with page (id) as (
+    select psm1_0.product_id
+    from product_stat psm1_0
+    where psm1_0.deleted_at is null
+    order by psm1_0.like_count desc,psm1_0.product_id desc
+    limit 4950,50)
+select pm1_0.id,pm1_0.name,pm1_0.price,bm1_0.id,bm1_0.name,psm2_0.like_count
+from page pg1_0
+join product pm1_0 on pm1_0.id=pg1_0.id
+join brand bm1_0 on bm1_0.id=pm1_0.brand_id
+join product_stat psm2_0 on psm2_0.product_id=pm1_0.id
+order by psm2_0.like_count desc,psm2_0.product_id desc
+```
+
+| 구분 | 실행 시간 (평균, ms) |
+|---|---|
+| MySQL 변경 전 (L06, 4-1 인덱스 적용 후) | 60,413.8 (59,842.0~61,197.0) |
+| MySQL 변경 후 | 1.4 (1.3~1.4) |
+
+**실행 계획 — MySQL 변경 후**
+
+```text
+-> Sort: psm2_0.like_count DESC, psm2_0.product_id DESC  (actual time=1.38..1.38 rows=50 loops=1)
+    -> Stream results  (cost=263193 rows=50) (actual time=1.08..1.37 rows=50 loops=1)
+        -> Nested loop inner join  (cost=263193 rows=50) (actual time=1.07..1.36 rows=50 loops=1)
+            -> Nested loop inner join  (cost=261938 rows=50) (actual time=1.07..1.33 rows=50 loops=1)
+                -> Nested loop inner join  (cost=257281 rows=50) (actual time=1.06..1.15 rows=50 loops=1)
+                    -> Table scan on pg1_0  (cost=252302..252305 rows=50) (actual time=1.06..1.06 rows=50 loops=1)
+                        -> Materialize CTE page  (cost=252302..252302 rows=50) (actual time=1.06..1.06 rows=50 loops=1)
+                            -> Limit/Offset: 50/4950 row(s)  (cost=252297 rows=50) (actual time=1.05..1.05 rows=50 loops=1)
+                                -> Filter: (psm1_0.deleted_at is null)  (cost=252297 rows=2.43e+6) (actual time=0.254..0.972 rows=5000 loops=1)
+                                    -> Covering index lookup on psm1_0 using ix_product_stat_likes (deleted_at=NULL) (reverse)  (cost=252297 rows=2.43e+6) (actual time=0.254..0.829 rows=5000 loops=1)
+                    -> Single-row index lookup on pm1_0 using PRIMARY (id=pg1_0.id)  (cost=0.994 rows=1) (actual time=0.00175..0.00176 rows=1 loops=50)
+                -> Single-row index lookup on psm2_0 using ux_product_stat_product (product_id=pg1_0.id)  (cost=0.93 rows=1) (actual time=0.00346..0.00347 rows=1 loops=50)
+            -> Single-row index lookup on bm1_0 using PRIMARY (id=pm1_0.brand_id)  (cost=0.25 rows=1) (actual time=457e-6..468e-6 rows=1 loops=50)
+```
+
+### Q09
+
+[L09](#l09) 의 변경 후 — 1번 브랜드 · 첫 페이지 (`page=0`) · `likes_desc` — `/api/v1/products?sort=likes_desc&page=0&size=50&brandId=1`
+
+```sql
+with page (id) as (
+    select psm1_0.product_id
+    from product_stat psm1_0
+    where psm1_0.deleted_at is null and psm1_0.brand_id=1
+    order by psm1_0.like_count desc,psm1_0.product_id desc
+    limit 0,50)
+select pm1_0.id,pm1_0.name,pm1_0.price,bm1_0.id,bm1_0.name,psm2_0.like_count
+from page pg1_0
+join product pm1_0 on pm1_0.id=pg1_0.id
+join brand bm1_0 on bm1_0.id=pm1_0.brand_id
+join product_stat psm2_0 on psm2_0.product_id=pm1_0.id
+order by psm2_0.like_count desc,psm2_0.product_id desc
+```
+
+| 구분 | 실행 시간 (평균, ms) |
+|---|---|
+| MySQL 변경 전 (L09, 4-1 인덱스 적용 후) | 2,953.0 (2,910.0~3,059.0) |
+| MySQL 변경 후 | 0.9 (0.6~2.2) |
+
+**실행 계획 — MySQL 변경 후**
+
+```text
+-> Sort: psm2_0.like_count DESC, psm2_0.product_id DESC  (actual time=2.23..2.23 rows=50 loops=1)
+    -> Stream results  (cost=103431 rows=50) (actual time=1.94..2.22 rows=50 loops=1)
+        -> Nested loop inner join  (cost=103431 rows=50) (actual time=1.94..2.21 rows=50 loops=1)
+            -> Nested loop inner join  (cost=103413 rows=50) (actual time=1.94..2.2 rows=50 loops=1)
+                -> Nested loop inner join  (cost=103362 rows=50) (actual time=1.93..2.02 rows=50 loops=1)
+                    -> Table scan on pg1_0  (cost=103304..103307 rows=50) (actual time=0.31..0.313 rows=50 loops=1)
+                        -> Materialize CTE page  (cost=103304..103304 rows=50) (actual time=0.309..0.309 rows=50 loops=1)
+                            -> Limit: 50 row(s)  (cost=103299 rows=50) (actual time=0.294..0.301 rows=50 loops=1)
+                                -> Filter: (psm1_0.deleted_at is null)  (cost=103299 rows=983788) (actual time=0.294..0.299 rows=50 loops=1)
+                                    -> Covering index lookup on psm1_0 using ix_product_stat_brand_likes (brand_id=1, deleted_at=NULL) (reverse)  (cost=103299 rows=983788) (actual time=0.293..0.296 rows=50 loops=1)
+                    -> Single-row index lookup on pm1_0 using PRIMARY (id=pg1_0.id)  (cost=0.996 rows=1) (actual time=0.034..0.0341 rows=1 loops=50)
+                -> Single-row index lookup on psm2_0 using ux_product_stat_product (product_id=pg1_0.id)  (cost=0.932 rows=1) (actual time=0.00351..0.00352 rows=1 loops=50)
+            -> Single-row index lookup on bm1_0 using PRIMARY (id=pm1_0.brand_id)  (cost=0.252 rows=1) (actual time=110e-6..122e-6 rows=1 loops=50)
+```
+
+### Q12
+
+[L12](#l12) 의 변경 후 — 1번 브랜드 · 딥 페이지 (`page=99`) · `likes_desc` — `/api/v1/products?sort=likes_desc&page=99&size=50&brandId=1`
+
+```sql
+with page (id) as (
+    select psm1_0.product_id
+    from product_stat psm1_0
+    where psm1_0.deleted_at is null and psm1_0.brand_id=1
+    order by psm1_0.like_count desc,psm1_0.product_id desc
+    limit 4950,50)
+select pm1_0.id,pm1_0.name,pm1_0.price,bm1_0.id,bm1_0.name,psm2_0.like_count
+from page pg1_0
+join product pm1_0 on pm1_0.id=pg1_0.id
+join brand bm1_0 on bm1_0.id=pm1_0.brand_id
+join product_stat psm2_0 on psm2_0.product_id=pm1_0.id
+order by psm2_0.like_count desc,psm2_0.product_id desc
+```
+
+| 구분 | 실행 시간 (평균, ms) |
+|---|---|
+| MySQL 변경 전 (L12, 4-1 인덱스 적용 후) | 2,982.0 (2,936.0~3,093.0) |
+| MySQL 변경 후 | 1.5 (1.3~1.9) |
+
+**실행 계획 — MySQL 변경 후**
+
+```text
+-> Sort: psm2_0.like_count DESC, psm2_0.product_id DESC  (actual time=1.86..1.86 rows=50 loops=1)
+    -> Stream results  (cost=114195 rows=50) (actual time=1.16..1.85 rows=50 loops=1)
+        -> Nested loop inner join  (cost=114195 rows=50) (actual time=1.16..1.84 rows=50 loops=1)
+            -> Nested loop inner join  (cost=112940 rows=50) (actual time=1.15..1.83 rows=50 loops=1)
+                -> Nested loop inner join  (cost=108283 rows=50) (actual time=1.15..1.5 rows=50 loops=1)
+                    -> Table scan on pg1_0  (cost=103304..103307 rows=50) (actual time=1.14..1.14 rows=50 loops=1)
+                        -> Materialize CTE page  (cost=103304..103304 rows=50) (actual time=1.14..1.14 rows=50 loops=1)
+                            -> Limit/Offset: 50/4950 row(s)  (cost=103299 rows=50) (actual time=1.13..1.13 rows=50 loops=1)
+                                -> Filter: (psm1_0.deleted_at is null)  (cost=103299 rows=983788) (actual time=0.307..1.04 rows=5000 loops=1)
+                                    -> Covering index lookup on psm1_0 using ix_product_stat_brand_likes (brand_id=1, deleted_at=NULL) (reverse)  (cost=103299 rows=983788) (actual time=0.307..0.884 rows=5000 loops=1)
+                    -> Single-row index lookup on pm1_0 using PRIMARY (id=pg1_0.id)  (cost=0.994 rows=1) (actual time=0.00706..0.00708 rows=1 loops=50)
+                -> Single-row index lookup on psm2_0 using ux_product_stat_product (product_id=pg1_0.id)  (cost=0.93 rows=1) (actual time=0.00651..0.00653 rows=1 loops=50)
+            -> Single-row index lookup on bm1_0 using PRIMARY (id=pm1_0.brand_id)  (cost=0.25 rows=1) (actual time=120e-6..137e-6 rows=1 loops=50)
+```
+
+
+### 10-5. 분석
+
+**MySQL: 네 케이스 모두 인덱스 순서로 읽다가 멈춘다**
+
+- CTE 안쪽이 `product_stat` 인덱스를 역방향으로 커버링 조회한다.
+  - 전체: `Covering index lookup on psm1_0 using ix_product_stat_likes (deleted_at=NULL) (reverse)`
+  - 1번 브랜드: `Covering index lookup on psm1_0 using ix_product_stat_brand_likes (brand_id=1, deleted_at=NULL) (reverse)`
+  - 첫 페이지는 50건, 딥 페이지는 5,000건(offset + 50)을 읽고 멈춘다. 정렬 단계가 없다.
+- 정렬이 `like_count desc, product_id desc` 로 두 키의 방향이 같아, 오름차순 인덱스를 역방향으로 읽으면 그 순서가 그대로 나온다. 방향이 섞인 `price_asc`(8-5)와 다른 점이다.
+- `deleted_at IS NULL` 은 `latest`(8-5)와 같이 `deleted_at=NULL` 인덱스 조회로 처리되어, 그 뒤 `(like_count, product_id)` 순서를 정렬에 그대로 쓴다.
+- 바깥은 50건에 `product` PK, `product_stat` 고유 인덱스, `brand` PK 조회가 각각 50회(`loops=50`)이고, 50행 정렬로 끝난다. 집계가 없다.
+- 그래서 대상 범위(전체 475만 / 1번 브랜드 47만)와 상관없이 시간이 같고, 딥 페이지만 인덱스를 5,000건 읽는 만큼(약 0.6ms) 더 걸린다.
+- 변경 전에는 `product` ⋈ `brand` ⟕ `product_like` 를 전부 집계한 뒤 정렬했다 (7-2, 7-4). 정렬 키가 집계 결과라 어떤 인덱스로도 페이지를 먼저 정할 수 없었다.
+
+**확인하지 않은 것**
+
+- Q09 의 5번째 측정(2.2ms)만 다른 회차(0.6~0.7ms)보다 느리다. 붙인 실행 계획이 그 회차로, `product` PK 조회가 회당 0.034ms 로 다른 케이스(0.002~0.007ms)보다 느리다. 버퍼 풀에 없던 페이지를 읽은 것으로 보이지만 확인하지 않았다.
+- 쓰기 비용: 좋아요 등록·취소마다 `product_stat` 한 행과 보조 인덱스 2개가 함께 갱신된다. 쓰기 쪽 시간은 재지 않았다.
+- `latest`·`price_asc`(Q01~Q11)는 바깥 쿼리가 `product_stat` 조인으로 바뀌었지만 다시 재지 않았다 (10-1).
