@@ -56,4 +56,30 @@ class BrandModelTest {
         assertThat(brand.isDeleted()).isTrue();
         assertThat(brand.getDeletedAt()).isNotNull();
     }
+
+    @DisplayName("[DR-37] 새 브랜드의 revision 은 0 이고, 이름 수정과 삭제는 revision 을 하나씩 올린다.")
+    @Test
+    void revision_increases_onUpdateAndDelete() {
+        BrandModel brand = new BrandModel("브랜드");
+        assertThat(brand.getRevision()).isZero();
+
+        brand.update("새 이름");
+        assertThat(brand.getRevision()).isEqualTo(1);
+
+        brand.delete();
+        assertThat(brand.getRevision()).isEqualTo(2);
+    }
+
+    @DisplayName("[DR-37] 실패한 수정, 이미 삭제된 브랜드의 삭제는 revision 을 올리지 않는다.")
+    @Test
+    void revision_unchanged_onFailedUpdateAndRepeatedDelete() {
+        BrandModel brand = new BrandModel("브랜드");
+
+        assertThrowsErrorType(() -> brand.update(""), ErrorType.INVALID_BRAND);
+        assertThat(brand.getRevision()).isZero();
+
+        brand.delete();
+        brand.delete();
+        assertThat(brand.getRevision()).isEqualTo(1);
+    }
 }

@@ -19,6 +19,10 @@ public class BrandModel extends BaseEntity {
     @Column(name = "name", nullable = false, length = NAME_MAX_LENGTH)
     private String name;
 
+    /** 고객 상품 상세 캐시 키의 revision (DR-37). 상품 응답에 실리는 브랜드 정보(이름·삭제)가 바뀔 때만 올린다. */
+    @Column(name = "revision", nullable = false)
+    private long revision;
+
     protected BrandModel() {}
 
     public BrandModel(String name) {
@@ -38,6 +42,16 @@ public class BrandModel extends BaseEntity {
 
     public void update(String name) {
         this.name = validateName(name);
+        this.revision++;
+    }
+
+    /** ST-01 ACTIVE → DELETED. 처음 삭제될 때만 revision 을 올린다 (DR-37). */
+    @Override
+    public void delete() {
+        if (!isDeleted()) {
+            this.revision++;
+        }
+        super.delete();
     }
 
     public boolean isDeleted() {
@@ -46,5 +60,9 @@ public class BrandModel extends BaseEntity {
 
     public String getName() {
         return name;
+    }
+
+    public long getRevision() {
+        return revision;
     }
 }

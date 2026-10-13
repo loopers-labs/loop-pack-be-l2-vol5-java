@@ -36,6 +36,13 @@ public class ProductModel extends BaseEntity {
     @Column(name = "stock", nullable = false)
     private Integer stock;
 
+    /**
+     * 고객 상세 캐시 키의 revision (DR-37). 고객 조회 결과(이름·가격·삭제)가 바뀔 때만 올린다.
+     * 재고는 고객 조회에 없으므로 올리지 않는다 (DR-22). @Version 을 쓰면 재고 차감마다 올라가 캐시가 깨진다.
+     */
+    @Column(name = "revision", nullable = false)
+    private long revision;
+
     protected ProductModel() {}
 
     public ProductModel(Long brandId, String name, Long price, Integer stock) {
@@ -81,6 +88,7 @@ public class ProductModel extends BaseEntity {
         Long validPrice = validatePrice(price);
         this.name = validName;
         this.price = validPrice;
+        this.revision++;
     }
 
     /** FR-ADMIN-PRODUCT-06: 증감이 아니라 최종 수량 설정. */
@@ -98,6 +106,15 @@ public class ProductModel extends BaseEntity {
                 "재고가 부족합니다. [productId = " + getId() + ", stock = " + stock + ", quantity = " + quantity + "]");
         }
         this.stock -= quantity;
+    }
+
+    /** ST-02 ACTIVE → DELETED. 처음 삭제될 때만 revision 을 올린다 (DR-37). */
+    @Override
+    public void delete() {
+        if (!isDeleted()) {
+            this.revision++;
+        }
+        super.delete();
     }
 
     public boolean isDeleted() {
@@ -118,5 +135,9 @@ public class ProductModel extends BaseEntity {
 
     public Integer getStock() {
         return stock;
+    }
+
+    public long getRevision() {
+        return revision;
     }
 }
