@@ -340,6 +340,52 @@ class ProductV1ApiE2ETest {
             );
         }
 
+        @DisplayName("PRODUCT-012 · PRODUCT-013 · 좋아요 수가 같으면 id 내림차순이고, 좋아요가 없는 상품도 페이지 경계를 넘어 빠짐없이 이어진다")
+        @Test
+        void keepsLikeTieOrderAcrossPages() {
+            Long noLikes = product("양말", 5_000);
+            Long firstTied = product("코트", 10_000);
+            Long secondTied = product("셔츠", 10_000);
+            Long popular = product("니트", 20_000);
+            likeFacade.like(USER, firstTied);
+            likeFacade.like(USER, secondTied);
+            likeFacade.like(USER, popular);
+            likeFacade.like(OTHER_USER, popular);
+            String query = "?brandId=" + brandId + "&sort=likes_desc&size=2";
+
+            PageResponse<ProductV1Dto.ProductResponse> firstPage = page(OTHER_USER, query + "&page=0");
+            PageResponse<ProductV1Dto.ProductResponse> secondPage = page(OTHER_USER, query + "&page=1");
+
+            assertAll(
+                () -> assertThat(firstPage.items()).extracting(ProductV1Dto.ProductResponse::id)
+                    .containsExactly(popular, secondTied),
+                () -> assertThat(firstPage.items()).extracting(ProductV1Dto.ProductResponse::likeCount)
+                    .containsExactly(2L, 1L),
+                () -> assertThat(firstPage.items()).extracting(ProductV1Dto.ProductResponse::liked)
+                    .containsExactly(true, false),
+                () -> assertThat(firstPage.hasNext()).isTrue(),
+                () -> assertThat(secondPage.items()).extracting(ProductV1Dto.ProductResponse::id)
+                    .containsExactly(firstTied, noLikes),
+                () -> assertThat(secondPage.items()).extracting(ProductV1Dto.ProductResponse::likeCount)
+                    .containsExactly(1L, 0L),
+                () -> assertThat(secondPage.hasNext()).isFalse()
+            );
+        }
+
+        @DisplayName("PRODUCT-005 · 좋아요가 가장 많은 상품이 삭제되면 인기순에서 빠진다")
+        @Test
+        void excludesDeletedFromLikesDesc() {
+            Long deleted = product("양말", 5_000);
+            Long kept = product("코트", 10_000);
+            likeFacade.like(USER, deleted);
+            likeFacade.like(OTHER_USER, deleted);
+            likeFacade.like(USER, kept);
+            productFacade.delete(deleted);
+
+            assertThat(page(USER, "?brandId=" + brandId + "&sort=likes_desc").items())
+                .extracting(ProductV1Dto.ProductResponse::id).containsExactly(kept);
+        }
+
         @DisplayName("COMMON-008 · 상품이 딱 한 페이지면 hasNext 는 false, 하나라도 넘치면 true 다")
         @Test
         void hasNextFollowsOneMoreItem() {

@@ -14,7 +14,7 @@ import jakarta.persistence.UniqueConstraint;
     uniqueConstraints = @UniqueConstraint(
         name = "uk_product_like_user_id_product_id", columnNames = {"user_id", "product_id"}
     ),
-    indexes = @Index(name = "idx_product_like_product_id", columnList = "product_id")
+    indexes = @Index(name = "idx_product_like_product_user", columnList = "product_id, user_id")
 )
 class ProductLikeEntity extends AuditEntity {
 

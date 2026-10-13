@@ -53,7 +53,7 @@ public class ProductViewQueryImpl implements ProductViewQuery {
     @Override
     public PageWindow<ProductViewQuery.View> findPage(ProductViewQuery.Criteria criteria) {
         String sql = criteria.sort() == ProductViewQuery.Sort.LIKES_DESC
-            ? aggregatedPage(criteria)
+            ? likesRankedPage(criteria)
             : pickedPage(criteria);
 
         Query query = entityManager.createNativeQuery(sql);
@@ -107,13 +107,19 @@ public class ProductViewQueryImpl implements ProductViewQuery {
             + " ORDER BY " + orderByOf(criteria.sort(), "p.");
     }
 
-    private static String aggregatedPage(ProductViewQuery.Criteria criteria) {
-        return SELECT_COLUMNS + " FROM product p " + JOINS
-            + " WHERE p.deleted_at IS NULL "
-            + (criteria.brandId() != null ? " AND p.brand_id = :brandId " : "")
-            + GROUP_BY
-            + " ORDER BY " + orderByOf(criteria.sort(), "p.")
-            + " LIMIT :limit OFFSET :offset";
+    private static String likesRankedPage(ProductViewQuery.Criteria criteria) {
+        return """
+            SELECT p.id, p.name, p.price, p.quantity, b.id, b.name, picked.like_count,
+                   EXISTS (SELECT 1 FROM product_like ml WHERE ml.user_id = :viewerId AND ml.product_id = p.id) AS liked
+            """
+            + " FROM (SELECT id, (SELECT COUNT(*) FROM product_like l WHERE l.product_id = product.id) AS like_count "
+            + " FROM product WHERE deleted_at IS NULL "
+            + (criteria.brandId() != null ? " AND brand_id = :brandId " : "")
+            + " ORDER BY " + orderByOf(criteria.sort(), "")
+            + " LIMIT :limit OFFSET :offset) picked "
+            + " JOIN product p ON p.id = picked.id "
+            + " JOIN brand b ON b.id = p.brand_id "
+            + " ORDER BY " + orderByOf(criteria.sort(), "p.");
     }
 
     private static String orderByOf(ProductViewQuery.Sort sort, String alias) {
