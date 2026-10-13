@@ -13,7 +13,7 @@
 -- 실행
 --   docker exec -i docker-postgres-1 psql -U application -d loopers -v ON_ERROR_STOP=1 < docs/week4/seed-pg.sql
 --
--- 주의: brand / user / product / product_like 를 TRUNCATE 하고 시작한다 (id 도 1부터 다시 매긴다).
+-- 주의: brand / user / product / product_like / product_stat 을 TRUNCATE 하고 시작한다 (id 도 1부터 다시 매긴다).
 -- =====================================================================
 
 SET client_encoding = 'UTF8';
@@ -43,7 +43,7 @@ SET work_mem = '256MB';
 -- ---------------------------------------------------------------------
 -- 2. 초기화
 -- ---------------------------------------------------------------------
-TRUNCATE TABLE product_like, product, brand, "user" RESTART IDENTITY;
+TRUNCATE TABLE product_stat, product_like, product, brand, "user" RESTART IDENTITY;
 
 ALTER TABLE seed_param ADD COLUMN now timestamptz, ADD COLUMN base timestamptz;
 UPDATE seed_param
@@ -145,13 +145,31 @@ END $$;
 ALTER TABLE product_like ADD CONSTRAINT ux_product_like_user_product UNIQUE (user_id, product_id);
 
 -- ---------------------------------------------------------------------
+-- 5-1. 좋아요 수 (product_stat, DR-36)
+--   상품마다 한 행. like_count 는 위에서 상품마다 넣은 좋아요 수(product_pop.like_count) 그대로다.
+--   brand_id·deleted_at 은 상품 사본, created_at 은 상품 생성 시각.
+--   적재 동안 보조 인덱스 2개를 떼어 두었다가 다시 붙인다 (backfill-product-stat-pg.sql 과 같다).
+-- ---------------------------------------------------------------------
+DROP INDEX IF EXISTS ix_product_stat_likes;
+DROP INDEX IF EXISTS ix_product_stat_brand_likes;
+
+INSERT INTO product_stat (product_id, brand_id, like_count, created_at, updated_at, deleted_at)
+SELECT pr.id, pr.brand_id, pp.like_count, pr.created_at, p.now, pr.deleted_at
+FROM seed_param p, product pr
+JOIN product_pop pp ON pp.product_id = pr.id
+ORDER BY pr.id;
+
+CREATE INDEX ix_product_stat_likes ON product_stat (deleted_at, like_count, product_id);
+CREATE INDEX ix_product_stat_brand_likes ON product_stat (brand_id, deleted_at, like_count, product_id);
+
+-- ---------------------------------------------------------------------
 -- 6. 정리 / 통계 갱신
 --   VACUUM 으로 visibility map 까지 채워 둬야 인덱스 온리 스캔이 힙을 다시 읽지 않는다
 --   (대량 적재 직후 ANALYZE 만 하면 측정 결과가 실제보다 나쁘게 나온다).
 -- ---------------------------------------------------------------------
 DROP TABLE product_pop;
 
-VACUUM (ANALYZE) brand, "user", product, product_like;
+VACUUM (ANALYZE) brand, "user", product, product_like, product_stat;
 
 -- ---------------------------------------------------------------------
 -- 7. 확인
@@ -160,9 +178,11 @@ SELECT (SELECT COUNT(*) FROM brand)                                AS brands,
        (SELECT COUNT(*) FROM "user")                               AS users,
        (SELECT COUNT(*) FROM product)                              AS products,
        (SELECT COUNT(*) FROM product WHERE deleted_at IS NOT NULL) AS deleted_products,
-       (SELECT COUNT(*) FROM product_like)                         AS likes;
+       (SELECT COUNT(*) FROM product_like)                         AS likes,
+       (SELECT COUNT(*) FROM product_stat)                         AS stats,
+       (SELECT SUM(like_count) FROM product_stat)                  AS like_sum;  -- stats = products, like_sum = likes
 
--- 좋아요 수 구간별 상품 수
+-- 좋아요 수 구간별 상품 수 (product_stat 기준)
 SELECT CASE
            WHEN c = 0       THEN '0'
            WHEN c = 1       THEN '1'
@@ -174,10 +194,8 @@ SELECT CASE
        END AS like_bucket,
        COUNT(*) AS products
 FROM (
-    SELECT p.id, COUNT(l.id) AS c
-    FROM product p
-    LEFT JOIN product_like l ON l.product_id = p.id
-    GROUP BY p.id
+    SELECT product_id, like_count AS c
+    FROM product_stat
 ) t
 GROUP BY like_bucket
 ORDER BY MIN(c);
