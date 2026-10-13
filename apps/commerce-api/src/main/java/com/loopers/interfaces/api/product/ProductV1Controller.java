@@ -1,7 +1,6 @@
 package com.loopers.interfaces.api.product;
 
-import com.loopers.support.error.DomainError;
-import com.loopers.support.error.DomainException;
+import com.loopers.application.product.ProductFacade;
 import com.loopers.domain.common.PageNumber;
 import com.loopers.domain.common.PageSize;
 import com.loopers.domain.product.ProductViewQuery;
@@ -20,7 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class ProductV1Controller {
 
-    private final ProductViewQuery productViewQuery;
+    private final ProductFacade productFacade;
 
     @GetMapping
     public ApiResponse<PageResponse<ProductV1Dto.ProductResponse>> list(
@@ -32,7 +31,7 @@ public class ProductV1Controller {
     ) {
         ProductViewQuery.Criteria criteria = new ProductViewQuery.Criteria(brandId, sort, page, size, userId);
         return ApiResponse.success(
-            PageResponse.of(productViewQuery.findPage(criteria), page, size, ProductV1Dto.ProductResponse::from));
+            PageResponse.of(productFacade.findPage(criteria), page, size, ProductV1Dto.ProductResponse::from));
     }
 
     @GetMapping("/{productId}")
@@ -40,8 +39,6 @@ public class ProductV1Controller {
         @RequestHeader("X-USER-ID") Long userId,
         @PathVariable Long productId
     ) {
-        return ApiResponse.success(ProductV1Dto.ProductResponse.from(
-                productViewQuery.findAliveById(productId, userId)
-                    .orElseThrow(() -> new DomainException(DomainError.PRODUCT_NOT_FOUND))));
+        return ApiResponse.success(ProductV1Dto.ProductResponse.from(productFacade.get(productId, userId)));
     }
 }

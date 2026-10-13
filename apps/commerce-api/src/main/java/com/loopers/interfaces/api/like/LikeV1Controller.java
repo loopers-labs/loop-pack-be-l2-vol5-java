@@ -2,7 +2,6 @@ package com.loopers.interfaces.api.like;
 
 import com.loopers.support.error.DomainError;
 import com.loopers.support.error.DomainException;
-import com.loopers.domain.product.ProductViewQuery;
 import com.loopers.application.like.LikeFacade;
 import com.loopers.domain.common.PageNumber;
 import com.loopers.domain.common.PageSize;
@@ -24,7 +23,6 @@ import org.springframework.web.bind.annotation.RestController;
 public class LikeV1Controller {
 
     private final LikeFacade likeFacade;
-    private final ProductViewQuery productViewQuery;
 
     @PostMapping("/api/v1/products/{productId}/likes")
     public ApiResponse<LikeV1Dto.LikeResponse> like(
@@ -55,6 +53,6 @@ public class LikeV1Controller {
             throw new DomainException(DomainError.LIKE_LIST_NOT_FOUND);
         }
         return ApiResponse.success(
-            PageResponse.of(productViewQuery.findLikedBy(userId, page, size), page, size, ProductV1Dto.ProductResponse::from));
+            PageResponse.of(likeFacade.findLikedBy(userId, page, size), page, size, ProductV1Dto.ProductResponse::from));
     }
 }

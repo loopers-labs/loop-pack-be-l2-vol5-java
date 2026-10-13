@@ -19,4 +19,8 @@ public class PointFacade {
     public Money charge(Long userId, ChargeAmount amount, Instant requestedAt) {
         return pointService.charge(userId, amount, requestedAt);
     }
+
+    public Money getBalance(Long userId) {
+        return pointService.getBalance(userId);
+    }
 }

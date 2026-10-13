@@ -4,7 +4,6 @@ import com.loopers.domain.product.ProductAdminQuery;
 import com.loopers.domain.common.PageNumber;
 import com.loopers.domain.common.PageSize;
 import com.loopers.application.product.ProductFacade;
-import com.loopers.domain.product.ProductService;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.PageResponse;
 import lombok.RequiredArgsConstructor;
@@ -27,8 +26,6 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProductAdminV1Controller {
 
     private final ProductFacade productFacade;
-    private final ProductService productService;
-    private final ProductAdminQuery productAdminQuery;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -47,14 +44,14 @@ public class ProductAdminV1Controller {
         @RequestParam(defaultValue = "20") PageSize size
     ) {
         return ApiResponse.success(PageResponse.of(
-            productAdminQuery.findPage(brandId, sort, page, size), page, size,
+            productFacade.findPageForAdmin(brandId, sort, page, size), page, size,
             ProductAdminV1Dto.AdminProductListItem::from));
     }
 
     @GetMapping("/{productId}")
     public ApiResponse<ProductAdminV1Dto.AdminProductResponse> get(@PathVariable Long productId) {
         return ApiResponse.success(
-            ProductAdminV1Dto.AdminProductResponse.from(productService.get(productId)));
+            ProductAdminV1Dto.AdminProductResponse.from(productFacade.getForAdmin(productId)));
     }
 
     @PutMapping("/{productId}")

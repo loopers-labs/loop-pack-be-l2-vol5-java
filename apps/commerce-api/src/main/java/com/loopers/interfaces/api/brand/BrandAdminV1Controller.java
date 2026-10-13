@@ -1,7 +1,6 @@
 package com.loopers.interfaces.api.brand;
 
 import com.loopers.application.brand.BrandFacade;
-import com.loopers.domain.brand.BrandService;
 import com.loopers.domain.common.PageNumber;
 import com.loopers.domain.common.PageSize;
 import com.loopers.interfaces.api.ApiResponse;
@@ -26,7 +25,6 @@ import org.springframework.web.bind.annotation.RestController;
 public class BrandAdminV1Controller {
 
     private final BrandFacade brandFacade;
-    private final BrandService brandService;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -42,12 +40,12 @@ public class BrandAdminV1Controller {
         @RequestParam(defaultValue = "20") PageSize size
     ) {
         return ApiResponse.success(PageResponse.of(
-            brandService.findPage(page, size), page, size, BrandV1Dto.BrandResponse::from));
+            brandFacade.findPage(page, size), page, size, BrandV1Dto.BrandResponse::from));
     }
 
     @GetMapping("/{brandId}")
     public ApiResponse<BrandV1Dto.BrandResponse> get(@PathVariable Long brandId) {
-        return ApiResponse.success(BrandV1Dto.BrandResponse.from(brandService.get(brandId)));
+        return ApiResponse.success(BrandV1Dto.BrandResponse.from(brandFacade.get(brandId)));
     }
 
     @PutMapping("/{brandId}")

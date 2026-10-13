@@ -1,5 +1,6 @@
 package com.loopers.architecture;
 
+import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
@@ -57,6 +58,17 @@ class ArchitectureTest {
         noClasses().that().resideInAPackage("..interfaces..")
             .should().dependOnClassesThat().resideInAPackage("..infrastructure..")
             .check(classes);
+    }
+
+    @DisplayName("6.1 · 표현 계층은 응용 계층으로만 들어간다 — 도메인 서비스와 조회 포트를 직접 부르지 않는다.")
+    @Test
+    void interfacesEnterThroughApplication() {
+        noClasses().that().resideInAPackage("..interfaces..")
+            .should().dependOnClassesThat(
+                JavaClass.Predicates.resideInAPackage("..domain..")
+                    .and(JavaClass.Predicates.simpleNameEndingWith("Service")
+                        .or(JavaClass.Predicates.simpleNameEndingWith("Query"))))
+            .check(productionClasses());
     }
 
     @DisplayName("도메인 모델은 JPA 를 모른다 — 엔티티는 infrastructure 에 있다.")

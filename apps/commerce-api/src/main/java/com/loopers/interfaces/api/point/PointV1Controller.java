@@ -1,7 +1,6 @@
 package com.loopers.interfaces.api.point;
 
 import com.loopers.application.point.PointFacade;
-import com.loopers.domain.point.PointService;
 import com.loopers.interfaces.api.ApiResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,7 +18,6 @@ import java.time.Instant;
 public class PointV1Controller {
 
     private final PointFacade pointFacade;
-    private final PointService pointService;
 
     @PostMapping("/charge")
     public ApiResponse<PointV1Dto.BalanceResponse> charge(
@@ -32,6 +30,6 @@ public class PointV1Controller {
 
     @GetMapping
     public ApiResponse<PointV1Dto.BalanceResponse> getBalance(@RequestHeader("X-USER-ID") Long userId) {
-        return ApiResponse.success(PointV1Dto.BalanceResponse.from(pointService.getBalance(userId)));
+        return ApiResponse.success(PointV1Dto.BalanceResponse.from(pointFacade.getBalance(userId)));
     }
 }
