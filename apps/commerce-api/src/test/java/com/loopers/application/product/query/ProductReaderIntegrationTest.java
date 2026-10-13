@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.redis.core.RedisTemplate;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -38,6 +39,8 @@ class ProductReaderIntegrationTest {
     private DatabaseCleanUp databaseCleanUp;
     @Autowired
     private RedisCleanUp redisCleanUp;
+    @Autowired
+    private RedisTemplate<String, String> redisTemplate;
 
     private UserModel user;
     private UserModel admin;
@@ -211,6 +214,28 @@ class ProductReaderIntegrationTest {
         @Test
         void throwsUserNotFound() {
             assertThrowsErrorType(() -> productReader.listProducts(999L, null, ProductSort.LATEST, PageQuery.of(0, 10)), ErrorType.USER_NOT_FOUND);
+        }
+    }
+
+    @Nested
+    @DisplayName("DR-37 목록 캐시 대상")
+    class ListCacheScope {
+        private static final String LIST_KEYS = "product:list:*";
+
+        @DisplayName("[DR-37] brandId 없는 latest 첫 페이지(size 20)만 목록 캐시에 채운다.")
+        @Test
+        void cachesOnlyLatestFirstPageOfDefaultSize() {
+            fixtures.product(brand.getId(), "상품", 1000L, 1);
+
+            productReader.listProducts(user.getId(), brand.getId(), ProductSort.LATEST, PageQuery.of(0, 20));
+            productReader.listProducts(user.getId(), null, ProductSort.PRICE_ASC, PageQuery.of(0, 20));
+            productReader.listProducts(user.getId(), null, ProductSort.LIKES_DESC, PageQuery.of(0, 20));
+            productReader.listProducts(user.getId(), null, ProductSort.LATEST, PageQuery.of(1, 20));
+            productReader.listProducts(user.getId(), null, ProductSort.LATEST, PageQuery.of(0, 50));
+            assertThat(redisTemplate.keys(LIST_KEYS)).isEmpty();
+
+            productReader.listProducts(user.getId(), null, ProductSort.LATEST, PageQuery.of(0, 20));
+            assertThat(redisTemplate.keys(LIST_KEYS)).containsExactly("product:list:latest:v1:s20:" + fixtures.listRevision());
         }
     }
 

@@ -11,4 +11,9 @@ public interface ProductCache {
     Optional<ProductCacheValue.Item> findDetail(Long productId, long productRevision, long brandRevision);
 
     void putDetail(Long productId, long productRevision, long brandRevision, ProductCacheValue.Item item);
+
+    /** FR-PRODUCT-01: 목록 revision 에 대응하는 latest 첫 페이지. */
+    Optional<ProductCacheValue.LatestPage> findLatestPage(long listRevision);
+
+    void putLatestPage(long listRevision, ProductCacheValue.LatestPage page);
 }

@@ -11,6 +11,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
 import java.time.Duration;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -53,6 +54,21 @@ class RedisProductCacheTest {
 
         assertThat(cache.findDetail(7L, 2L, 5L)).contains(ITEM);
         assertThat(cache.findDetail(7L, 3L, 5L)).isEmpty();
+    }
+
+    @DisplayName("[DR-37] latest 첫 페이지는 목록 revision 키로 master 에 TTL 과 함께 쓰고, 같은 키를 읽기 템플릿에서 읽는다.")
+    @Test
+    void latestPage_writesToMasterWithTtl_andReadsSameKey() {
+        ProductCacheValue.LatestPage page = new ProductCacheValue.LatestPage(List.of(ITEM), 21L);
+
+        cache.putLatestPage(4L, page);
+
+        ArgumentCaptor<String> json = ArgumentCaptor.forClass(String.class);
+        verify(writeOps).set(eq("product:list:latest:v1:s20:4"), json.capture(), eq(RedisProductCache.LIST_TTL));
+        when(readOps.get("product:list:latest:v1:s20:4")).thenReturn(json.getValue());
+
+        assertThat(cache.findLatestPage(4L)).contains(page);
+        assertThat(cache.findLatestPage(5L)).isEmpty();
     }
 
     @DisplayName("[DR-37] 읽기에서 Redis 가 실패하면 예외 없이 miss 다.")

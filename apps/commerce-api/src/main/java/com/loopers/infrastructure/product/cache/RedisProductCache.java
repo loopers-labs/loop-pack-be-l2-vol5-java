@@ -22,6 +22,7 @@ import java.util.Optional;
 @Component
 public class RedisProductCache implements ProductCache {
     static final Duration DETAIL_TTL = Duration.ofMinutes(30);
+    static final Duration LIST_TTL = Duration.ofMinutes(10);
     private static final String SCHEMA_VERSION = "v1";
 
     private final RedisTemplate<String, String> readTemplate;
@@ -43,6 +44,11 @@ public class RedisProductCache implements ProductCache {
         return "product:detail:" + SCHEMA_VERSION + ":" + productId + ":" + productRevision + ":" + brandRevision;
     }
 
+    /** product:list:latest:{스키마 버전}:s20:{목록 revision}. 첫 페이지만 캐시하므로 page 는 넣지 않는다. */
+    static String latestPageKey(long listRevision) {
+        return "product:list:latest:" + SCHEMA_VERSION + ":s20:" + listRevision;
+    }
+
     @Override
     public Optional<ProductCacheValue.Item> findDetail(Long productId, long productRevision, long brandRevision) {
         return get(detailKey(productId, productRevision, brandRevision), ProductCacheValue.Item.class);
@@ -51,6 +57,16 @@ public class RedisProductCache implements ProductCache {
     @Override
     public void putDetail(Long productId, long productRevision, long brandRevision, ProductCacheValue.Item item) {
         put(detailKey(productId, productRevision, brandRevision), item, DETAIL_TTL);
+    }
+
+    @Override
+    public Optional<ProductCacheValue.LatestPage> findLatestPage(long listRevision) {
+        return get(latestPageKey(listRevision), ProductCacheValue.LatestPage.class);
+    }
+
+    @Override
+    public void putLatestPage(long listRevision, ProductCacheValue.LatestPage page) {
+        put(latestPageKey(listRevision), page, LIST_TTL);
     }
 
     private <T> Optional<T> get(String key, Class<T> type) {

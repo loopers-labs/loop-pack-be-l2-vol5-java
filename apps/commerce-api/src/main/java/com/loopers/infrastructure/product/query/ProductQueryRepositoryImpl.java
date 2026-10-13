@@ -5,6 +5,8 @@ import com.loopers.application.product.query.ProductSort;
 import com.loopers.application.product.query.ProductView;
 import com.loopers.support.paging.PageQuery;
 import com.loopers.support.paging.PageResult;
+import com.loopers.domain.product.CatalogRevisionModel;
+import com.querydsl.core.Tuple;
 import com.querydsl.core.types.Expression;
 import com.querydsl.core.types.Projections;
 import com.querydsl.core.types.dsl.BooleanExpression;
@@ -17,10 +19,14 @@ import jakarta.persistence.TypedQuery;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import static com.loopers.domain.brand.QBrandModel.brandModel;
+import static com.loopers.domain.product.QCatalogRevisionModel.catalogRevisionModel;
 import static com.loopers.domain.product.QProductModel.productModel;
 import static com.loopers.domain.productlike.QProductStatModel.productStatModel;
 
@@ -68,6 +74,32 @@ public class ProductQueryRepositoryImpl implements ProductQueryRepository {
             .join(productStatModel).on(productStatModel.productId.eq(productModel.id))
             .where(productModel.id.eq(productId), productModel.deletedAt.isNull())
             .fetchOne());
+    }
+
+    @Override
+    public long findListRevision() {
+        Long revision = queryFactory.select(catalogRevisionModel.revision)
+            .from(catalogRevisionModel)
+            .where(catalogRevisionModel.name.eq(CatalogRevisionModel.PRODUCT_LIST_LATEST))
+            .fetchOne();
+        if (revision == null) {
+            throw new IllegalStateException("[name = " + CatalogRevisionModel.PRODUCT_LIST_LATEST + "] 목록 revision 행이 없습니다.");
+        }
+        return revision;
+    }
+
+    @Override
+    public Map<Long, Long> findLikeCounts(Collection<Long> productIds) {
+        if (productIds.isEmpty()) {
+            return Map.of();
+        }
+        return queryFactory.select(productStatModel.productId, productStatModel.likeCount)
+            .from(productStatModel)
+            .where(productStatModel.productId.in(productIds))
+            .fetch().stream()
+            .collect(Collectors.toMap(
+                (Tuple t) -> t.get(productStatModel.productId),
+                (Tuple t) -> t.get(productStatModel.likeCount)));
     }
 
     @Override

@@ -9,6 +9,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -18,6 +20,9 @@ import java.util.Optional;
 @RequiredArgsConstructor
 @Component
 public class ProductReader {
+    /** 캐시하는 목록 페이지 (DR-37): 첫 페이지, 기본 크기. */
+    static final PageQuery CACHED_PAGE = PageQuery.of(PageQuery.DEFAULT_PAGE, PageQuery.DEFAULT_SIZE);
+
     private final UserService userService;
     private final ProductQueryRepository productQueryRepository;
     private final ProductCache productCache;
@@ -26,11 +31,21 @@ public class ProductReader {
     /**
      * FR-PRODUCT-01 상품 목록 조회 (고객). 삭제되지 않은 상품만, 정렬 하나 (ASM-08).
      * brandId 가 null 이면 전체, 있으면 그 브랜드만. 없는·삭제된 브랜드는 확인하지 않고 빈 목록 (DR-35).
+     * 캐시 (DR-37): brandId 없는 latest 첫 페이지(size 20)만 목록 revision 에 대응하는 키로 캐시한다. 좋아요 수는 캐시에 없어 따로 붙인다.
      */
-    @Transactional(readOnly = true)
     public PageResult<ProductView.Summary> listProducts(Long requesterId, Long brandId, ProductSort sort, PageQuery query) {
         userService.getUser(requesterId);
-        return productQueryRepository.findActivePage(brandId, sort, query);
+        if (brandId != null || sort != ProductSort.LATEST || !CACHED_PAGE.equals(query)) {
+            return productCacheLoader.loadPage(brandId, sort, query);
+        }
+        long listRevision = productQueryRepository.findListRevision();
+        Optional<ProductCacheValue.LatestPage> cached = productCache.findLatestPage(listRevision);
+        if (cached.isPresent()) {
+            return withLikeCounts(cached.get(), query);
+        }
+        ProductCacheLoader.LoadedLatestPage loaded = productCacheLoader.loadLatestPage(query);
+        productCache.putLatestPage(loaded.listRevision(), ProductCacheValue.LatestPage.from(loaded.page()));
+        return loaded.page();
     }
 
     /**
@@ -65,6 +80,15 @@ public class ProductReader {
         userService.getAdmin(requesterId);
         return productQueryRepository.find(productId)
             .orElseThrow(() -> productNotFound(productId));
+    }
+
+    private PageResult<ProductView.Summary> withLikeCounts(ProductCacheValue.LatestPage page, PageQuery query) {
+        Map<Long, Long> likeCounts = productQueryRepository.findLikeCounts(
+            page.items().stream().map(ProductCacheValue.Item::id).toList());
+        List<ProductView.Summary> items = page.items().stream()
+            .map(item -> item.withLikeCount(likeCounts.getOrDefault(item.id(), 0L)))
+            .toList();
+        return PageResult.of(items, query, page.totalCount());
     }
 
     private static CoreException productNotFound(Long productId) {

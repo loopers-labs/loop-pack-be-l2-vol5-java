@@ -1,5 +1,9 @@
 package com.loopers.application.product.query;
 
+import com.loopers.support.paging.PageResult;
+
+import java.util.List;
+
 /**
  * 고객 상품 조회 캐시에 담는 값 (DR-37). 좋아요 수는 담지 않고 읽을 때 TB-08 에서 붙인다.
  * 모양이 바뀌면 캐시 키의 스키마 버전을 올려 옛 모양의 값을 읽지 않게 한다.
@@ -16,6 +20,13 @@ public final class ProductCacheValue {
 
         public ProductView.Summary withLikeCount(long likeCount) {
             return new ProductView.Summary(id, name, price, brandId, brandName, likeCount);
+        }
+    }
+
+    /** FR-PRODUCT-01 latest 첫 페이지 (brandId 없음, page 0, size 20). page·size 는 키에 고정이라 담지 않는다. */
+    public record LatestPage(List<Item> items, long totalCount) {
+        public static LatestPage from(PageResult<ProductView.Summary> page) {
+            return new LatestPage(page.items().stream().map(Item::from).toList(), page.totalCount());
         }
     }
 }
