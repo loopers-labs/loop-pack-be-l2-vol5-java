@@ -1,0 +1,18 @@
+Sort  (cost=466.26..466.39 rows=50 width=67) (actual time=0.344..0.346 rows=50 loops=1)
+  Sort Key: psm2_0.like_count DESC, pm1_0.id DESC
+  Sort Method: quicksort  Memory: 32kB
+  ->  Nested Loop  (cost=1.57..464.85 rows=50 width=67) (actual time=0.027..0.329 rows=50 loops=1)
+        ->  Nested Loop  (cost=1.14..439.93 rows=50 width=59) (actual time=0.022..0.196 rows=50 loops=1)
+              ->  Nested Loop  (cost=0.86..425.30 rows=50 width=46) (actual time=0.018..0.169 rows=50 loops=1)
+                    ->  Limit  (cost=0.43..2.30 rows=50 width=16) (actual time=0.012..0.019 rows=50 loops=1)
+                          ->  Index Only Scan Backward using ix_product_stat_brand_likes_active on product_stat psm1_0  (cost=0.43..17647.14 rows=472612 width=16) (actual time=0.011..0.016 rows=50 loops=1)
+                                Index Cond: (brand_id = 1)
+                                Heap Fetches: 0
+                    ->  Index Scan using product_pkey on product pm1_0  (cost=0.43..8.45 rows=1 width=38) (actual time=0.003..0.003 rows=1 loops=50)
+                          Index Cond: (id = psm1_0.product_id)
+              ->  Index Scan using brand_pkey on brand bm1_0  (cost=0.28..0.29 rows=1 width=21) (actual time=0.000..0.000 rows=1 loops=50)
+                    Index Cond: (id = pm1_0.brand_id)
+        ->  Index Scan using ux_product_stat_product on product_stat psm2_0  (cost=0.43..0.50 rows=1 width=16) (actual time=0.003..0.003 rows=1 loops=50)
+              Index Cond: (product_id = pm1_0.id)
+Planning Time: 0.549 ms
+Execution Time: 0.376 ms
