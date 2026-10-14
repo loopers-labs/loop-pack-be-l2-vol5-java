@@ -4,7 +4,7 @@ import com.loopers.brand.application.port.in.BrandCommandUseCase;
 import com.loopers.brand.application.port.in.BrandInfo;
 import com.loopers.brand.application.port.out.BrandPort;
 import com.loopers.brand.domain.BrandModel;
-import com.loopers.product.application.port.out.ProductListCachePort;
+import com.loopers.product.application.ProductListCacheInvalidator;
 import com.loopers.product.application.port.out.ProductPort;
 import com.loopers.product.domain.ProductModel;
 import com.loopers.support.error.CoreException;
@@ -19,7 +19,7 @@ public class BrandCommandService implements BrandCommandUseCase {
 
     private final BrandPort brandPort;
     private final ProductPort productPort;
-    private final ProductListCachePort productListCachePort;
+    private final ProductListCacheInvalidator productListCacheInvalidator;
 
     @Transactional
     @Override
@@ -34,7 +34,7 @@ public class BrandCommandService implements BrandCommandUseCase {
         BrandModel brand = getActiveBrand(brandId);
         brand.update(name, description);
         BrandModel saved = brandPort.save(brand);
-        productListCachePort.invalidateAll();
+        productListCacheInvalidator.invalidateAfterCommit();
         return BrandInfo.from(saved);
     }
 
@@ -53,7 +53,7 @@ public class BrandCommandService implements BrandCommandUseCase {
             product.delete();
             productPort.save(product);
         }
-        productListCachePort.invalidateAll();
+        productListCacheInvalidator.invalidateAfterCommit();
     }
 
     /**

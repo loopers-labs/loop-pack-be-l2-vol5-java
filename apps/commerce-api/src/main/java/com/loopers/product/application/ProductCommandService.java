@@ -3,7 +3,6 @@ package com.loopers.product.application;
 import com.loopers.brand.application.port.out.BrandPort;
 import com.loopers.product.application.port.in.ProductAdminInfo;
 import com.loopers.product.application.port.in.ProductCommandUseCase;
-import com.loopers.product.application.port.out.ProductListCachePort;
 import com.loopers.product.application.port.out.ProductPort;
 import com.loopers.product.domain.ProductModel;
 import com.loopers.support.error.CoreException;
@@ -21,7 +20,7 @@ public class ProductCommandService implements ProductCommandUseCase {
 
     private final ProductPort productPort;
     private final BrandPort brandPort;
-    private final ProductListCachePort productListCachePort;
+    private final ProductListCacheInvalidator productListCacheInvalidator;
 
     /**
      * PRD-02: 존재하며 삭제되지 않은 브랜드를 참조해야 한다.
@@ -33,7 +32,7 @@ public class ProductCommandService implements ProductCommandUseCase {
         brandPort.findActiveByIdForUpdate(brandId)
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[brandId = " + brandId + "] 브랜드를 찾을 수 없습니다."));
         ProductModel saved = productPort.save(new ProductModel(brandId, name, price, stock));
-        productListCachePort.invalidateAll();
+        productListCacheInvalidator.invalidateAfterCommit();
         return ProductAdminInfo.from(saved);
     }
 
@@ -43,7 +42,7 @@ public class ProductCommandService implements ProductCommandUseCase {
         ProductModel product = getActiveProduct(productId);
         product.update(name, price);
         ProductModel saved = productPort.save(product);
-        productListCachePort.invalidateAll();
+        productListCacheInvalidator.invalidateAfterCommit();
         return ProductAdminInfo.from(saved);
     }
 
@@ -59,7 +58,7 @@ public class ProductCommandService implements ProductCommandUseCase {
     @Override
     public void delete(Long productId) {
         getActiveProduct(productId).delete();
-        productListCachePort.invalidateAll();
+        productListCacheInvalidator.invalidateAfterCommit();
     }
 
     private ProductModel getActiveProduct(Long productId) {
