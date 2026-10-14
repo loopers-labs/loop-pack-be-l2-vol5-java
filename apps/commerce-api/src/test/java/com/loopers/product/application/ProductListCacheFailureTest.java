@@ -91,6 +91,24 @@ public class ProductListCacheFailureTest {
         assertThat(pricesFromCacheOrDb(brandId)).containsExactly(1_000L);
     }
 
+    @DisplayName("캐시가 비어 있을 때 같은 트랜잭션 안에서 조회한 commit 전 가격도, rollback 뒤에 보이지 않는다.")
+    @Test
+    void rolledBackChangeIsNotPublished_whenCacheWasEmpty() {
+        // arrange — 캐시를 미리 채우지 않는다. 트랜잭션 안의 조회가 miss가 되어 저장까지 가는 경로를 본다
+        Long brandId = brand();
+        Long productId = product(brandId, "A", 1_000);
+
+        // act
+        assertThatThrownBy(() -> transactionTemplate.executeWithoutResult(status -> {
+            productCommandUseCase.update(productId, "A", 9_000);
+            list(brandId);
+            throw new IllegalStateException("가격 변경 뒤 실패");
+        })).isInstanceOf(IllegalStateException.class);
+
+        // assert
+        assertThat(pricesFromCacheOrDb(brandId)).containsExactly(1_000L);
+    }
+
     @DisplayName("무효화와 commit 사이에 들어온 조회가 옛 값을 채워도, 변경이 끝난 뒤 시작한 조회는 새 가격을 받는다.")
     @Test
     void readBetweenInvalidationAndCommitDoesNotLeaveStaleValue() throws Exception {

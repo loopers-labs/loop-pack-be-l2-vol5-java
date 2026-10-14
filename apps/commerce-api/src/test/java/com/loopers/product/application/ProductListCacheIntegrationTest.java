@@ -2,10 +2,17 @@ package com.loopers.product.application;
 
 import com.loopers.brand.application.port.in.BrandCommandUseCase;
 import com.loopers.like.application.port.in.LikeCommandUseCase;
+import com.loopers.order.application.OrderQueryService;
+import com.loopers.order.application.port.in.OrderCommandUseCase;
+import com.loopers.order.application.port.in.OrderInfo;
+import com.loopers.order.domain.OrderLines;
+import com.loopers.point.application.port.in.PointCommandUseCase;
 import com.loopers.product.application.port.in.ProductCommandUseCase;
 import com.loopers.product.application.port.in.ProductInfo;
 import com.loopers.product.domain.ProductSort;
 import com.loopers.support.persistence.SqlRecorder;
+import com.loopers.user.adapter.out.persistence.UserJpaRepository;
+import com.loopers.user.domain.UserModel;
 import com.loopers.utils.DatabaseCleanUp;
 import com.loopers.utils.RedisCleanUp;
 import org.junit.jupiter.api.AfterEach;
@@ -44,6 +51,18 @@ class ProductListCacheIntegrationTest {
 
     @Autowired
     private LikeCommandUseCase likeCommandUseCase;
+
+    @Autowired
+    private UserJpaRepository userJpaRepository;
+
+    @Autowired
+    private PointCommandUseCase pointCommandUseCase;
+
+    @Autowired
+    private OrderCommandUseCase orderCommandUseCase;
+
+    @Autowired
+    private OrderQueryService orderQueryService;
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
@@ -93,9 +112,14 @@ class ProductListCacheIntegrationTest {
         assertThat(hit.getContent()).isEqualTo(dbOnly.getContent());
         assertThat(hit.getTotalElements()).isEqualTo(dbOnly.getTotalElements());
         assertThat(idsOf(hit)).containsExactly(expensive, cheap);
-        assertThat(SqlRecorder.statements())
-            .noneMatch(sql -> sql.contains("from likes"))
-            .noneMatch(sql -> sql.startsWith("select count"));
+        // hit에 남는 SQL은 비노출 확인용 PK 조회 하나뿐이다 — 목록·좋아요 조인·집계·건수·브랜드 조회는 나가지 않는다
+        assertThat(SqlRecorder.statements()).singleElement().satisfies(sql -> assertThat(sql)
+            .startsWith("select")
+            .contains("from products")
+            .contains(".id in (")
+            .doesNotContain("likes")
+            .doesNotContain("count(")
+            .doesNotContain("brands"));
     }
 
     @DisplayName("관리자가 가격을 바꾸고 commit한 뒤 조회하면 새 가격과 바뀐 가격순을 돌려준다.")
@@ -114,6 +138,29 @@ class ProductListCacheIntegrationTest {
         // assert
         assertThat(after.getContent()).extracting(ProductInfo::id, ProductInfo::price)
             .containsExactly(tuple(second, 2_000L), tuple(first, 3_000L));
+    }
+
+    @DisplayName("가격을 바꿔도 이미 확정한 주문의 단가·합계·결제액은 그대로다 — 목록 캐시와 주문 금액은 다른 책임이다.")
+    @Test
+    void pastOrderAmountIsKeptAfterPriceChange() {
+        // arrange
+        Long brandId = brand("브랜드");
+        Long productId = product(brandId, "A", 1_000);
+        Long userId = userJpaRepository.save(new UserModel("고객")).getId();
+        pointCommandUseCase.charge(userId, 10_000);
+        Long orderId = orderCommandUseCase.create(userId, List.of(new OrderLines.Line(productId, 2))).id();
+        orderCommandUseCase.confirm(userId, orderId);
+        list(brandId, ProductSort.PRICE_ASC);
+
+        // act
+        productCommandUseCase.update(productId, "A", 9_000);
+
+        // assert
+        assertThat(list(brandId, ProductSort.PRICE_ASC).getContent()).extracting(ProductInfo::price).containsExactly(9_000L);
+        OrderInfo order = orderQueryService.getMyOrder(userId, orderId);
+        assertThat(order.items()).extracting(OrderInfo.Item::unitPrice, OrderInfo.Item::amount).containsExactly(tuple(1_000L, 2_000L));
+        assertThat(order.totalAmount()).isEqualTo(2_000L);
+        assertThat(order.paidAmount()).isEqualTo(2_000L);
     }
 
     @DisplayName("상품 생성·삭제 뒤 조회하면 목록 구성과 전체 건수가 바뀐다.")
@@ -150,7 +197,9 @@ class ProductListCacheIntegrationTest {
         brandCommandUseCase.delete(deletedBrand);
 
         // assert
-        assertThat(idsOf(list(null, ProductSort.LATEST))).containsExactly(otherProduct);
+        Page<ProductInfo> all = list(null, ProductSort.LATEST);
+        assertThat(idsOf(all)).containsExactly(otherProduct);
+        assertThat(all.getTotalElements()).isEqualTo(1);
         assertThat(list(deletedBrand, ProductSort.LATEST).getContent()).isEmpty();
     }
 
