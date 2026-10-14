@@ -29,12 +29,14 @@ public class ProductListQueryService {
             return productQueryService.getProducts(brandId, sort, pageable);
         }
         ProductListKey key = ProductListKey.of(brandId, sort, pageable);
-        Optional<ProductListPage> cached = productListCachePort.find(key);
+        // 세대는 DB를 읽기 전에 읽는다. 그 사이 변경이 commit되면 세대가 올라가, 아래에서 저장하는 결과는 옛 세대에 들어간다.
+        long generation = productListCachePort.currentGeneration();
+        Optional<ProductListPage> cached = productListCachePort.find(generation, key);
         if (cached.isPresent()) {
             return cached.get().toPage();
         }
         Page<ProductInfo> page = productQueryService.getProducts(brandId, sort, pageable);
-        productListCachePort.save(key, ProductListPage.from(page));
+        productListCachePort.save(generation, key, ProductListPage.from(page));
         return page;
     }
 

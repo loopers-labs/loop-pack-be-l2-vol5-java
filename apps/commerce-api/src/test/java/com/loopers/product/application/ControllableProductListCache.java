@@ -78,19 +78,24 @@ public class ControllableProductListCache implements ProductListCachePort {
     }
 
     @Override
-    public Optional<ProductListPage> find(ProductListKey key) {
-        return delegate.find(key);
+    public long currentGeneration() {
+        return delegate.currentGeneration();
     }
 
     @Override
-    public void save(ProductListKey key, ProductListPage page) {
+    public Optional<ProductListPage> find(long generation, ProductListKey key) {
+        return delegate.find(generation, key);
+    }
+
+    @Override
+    public void save(long generation, ProductListKey key, ProductListPage page) {
         CountDownLatch reached = saveReached;
         CountDownLatch release = saveRelease;
         if (reached != null && reached.getCount() > 0) {
             reached.countDown();
             await(release);
         }
-        delegate.save(key, page);
+        delegate.save(generation, key, page);
     }
 
     private void await(CountDownLatch latch) {
