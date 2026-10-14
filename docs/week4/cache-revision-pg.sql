@@ -9,7 +9,7 @@
 -- PostgreSQL 기본(READ COMMITTED)은 문장마다 스냅샷이라, PostgreSQL 로 운영하려면 격리 수준을 따로 정해야 한다 (DR-37).
 --
 -- 실행
---   docker exec -i docker-postgres-1 psql -U application -d loopers -v ON_ERROR_STOP=1 < docs/week5/cache-revision-pg.sql
+--   docker exec -i docker-postgres-1 psql -U application -d loopers -v ON_ERROR_STOP=1 < docs/week4/cache-revision-pg.sql
 -- =====================================================================
 
 ALTER TABLE brand   ADD COLUMN IF NOT EXISTS revision bigint NOT NULL DEFAULT 0;

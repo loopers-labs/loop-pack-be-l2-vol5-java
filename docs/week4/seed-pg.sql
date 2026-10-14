@@ -14,7 +14,7 @@
 --   docker exec -i docker-postgres-1 psql -U application -d loopers -v ON_ERROR_STOP=1 < docs/week4/seed-pg.sql
 --
 -- 주의: brand / user / product / product_like / product_stat / catalog_revision 을 TRUNCATE 하고 시작한다 (id 도 1부터 다시 매긴다).
---       revision 은 모두 0 으로 넣고 catalog_revision 행도 다시 만든다 (DR-37, docs/week5/cache-revision-pg.sql).
+--       revision 은 모두 0 으로 넣고 catalog_revision 행도 다시 만든다 (DR-37, docs/week4/cache-revision-pg.sql).
 -- =====================================================================
 
 SET client_encoding = 'UTF8';

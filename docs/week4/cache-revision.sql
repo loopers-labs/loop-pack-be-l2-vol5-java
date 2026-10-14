@@ -6,7 +6,7 @@
 -- catalog_revision 의 행은 만들지 않으므로 마지막 INSERT 는 local 에서도 필요하다.
 --
 -- 실행
---   docker exec -i docker-mysql-1 mysql -uroot -proot loopers < docs/week5/cache-revision.sql
+--   docker exec -i docker-mysql-1 mysql -uroot -proot loopers < docs/week4/cache-revision.sql
 -- =====================================================================
 
 SET NAMES utf8mb4;

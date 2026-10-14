@@ -487,7 +487,7 @@ fixture로만 채워진다. 런타임에 이 테이블에 쓰는 FR은 없다. `
 - 소유 BC: BC-02 / 소속 AG: AG-03 / 대응 개념: 고객 상품 목록 캐시의 revision (DR-37)
 - 기본키: `id`
 - 고유 제약: (`name`) — 캐시하는 목록 하나에 한 행
-- 행은 배포 SQL로 `revision` 0인 채 만든다(`docs/week5/cache-revision.sql`). 런타임에 행을 만들거나 지우는 FR은 없다. 행이 없으면 목록 revision을 올리는 쓰기와 고객 목록 조회가 실패한다
+- 행은 배포 SQL로 `revision` 0인 채 만든다(`docs/week4/cache-revision.sql`). 런타임에 행을 만들거나 지우는 FR은 없다. 행이 없으면 목록 revision을 올리는 쓰기와 고객 목록 조회가 실패한다
 - 지금 행은 `product_list_latest`(brandId 없는 `latest` 첫 페이지, size 20) 하나다
 
 | 컬럼 | 타입 | NULL | 제약 | 의미 | 출처 |

@@ -13,7 +13,7 @@
 --   docker exec -i docker-mysql-1 mysql -uroot -proot loopers < docs/week4/seed.sql
 --
 -- 주의: brand / user / product / product_like / product_stat / catalog_revision 을 TRUNCATE 하고 시작한다.
---       revision 은 모두 0 으로 넣고 catalog_revision 행도 다시 만든다 (DR-37, docs/week5/cache-revision.sql).
+--       revision 은 모두 0 으로 넣고 catalog_revision 행도 다시 만든다 (DR-37, docs/week4/cache-revision.sql).
 -- =====================================================================
 
 SET NAMES utf8mb4;
