@@ -1,7 +1,9 @@
 package com.loopers.config.redis;
 
 
+import io.lettuce.core.ClientOptions;
 import io.lettuce.core.ReadFrom;
+import io.lettuce.core.SocketOptions;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -13,6 +15,7 @@ import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactor
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -21,6 +24,7 @@ import java.util.function.Consumer;
 public class RedisConfig{
     private static final String CONNECTION_MASTER = "redisConnectionMaster";
     public static final String REDIS_TEMPLATE_MASTER = "redisTemplateMaster";
+    private static final Duration DEFAULT_COMMAND_TIMEOUT = Duration.ofMillis(200);
 
     private final RedisProperties redisProperties;
 
@@ -75,7 +79,15 @@ public class RedisConfig{
             List<RedisNodeInfo> replicas,
             Consumer<LettuceClientConfiguration.LettuceClientConfigurationBuilder> customizer
     ){
-        LettuceClientConfiguration.LettuceClientConfigurationBuilder builder = LettuceClientConfiguration.builder();
+        Duration timeout = redisProperties.commandTimeout() == null
+                ? DEFAULT_COMMAND_TIMEOUT
+                : redisProperties.commandTimeout();
+        LettuceClientConfiguration.LettuceClientConfigurationBuilder builder = LettuceClientConfiguration.builder()
+                .commandTimeout(timeout)
+                .clientOptions(ClientOptions.builder()
+                        .disconnectedBehavior(ClientOptions.DisconnectedBehavior.REJECT_COMMANDS)
+                        .socketOptions(SocketOptions.builder().connectTimeout(timeout).build())
+                        .build());
         if(customizer != null) customizer.accept(builder);
         LettuceClientConfiguration clientConfig = builder.build();
         RedisStaticMasterReplicaConfiguration masterReplicaConfig = new RedisStaticMasterReplicaConfiguration(master.host(), master.port());

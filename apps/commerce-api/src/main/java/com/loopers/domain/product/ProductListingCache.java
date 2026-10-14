@@ -13,5 +13,5 @@ public interface ProductListingCache {
 
     void save(Long brandId, ProductViewQuery.Sort sort, long generation, PageWindow<ProductViewQuery.Listing> page);
 
-    void invalidate(Long brandId);
+    boolean invalidate(Long brandId);
 }

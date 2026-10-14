@@ -68,12 +68,14 @@ class RedisProductListingCache implements ProductListingCache {
     }
 
     @Override
-    public void invalidate(Long brandId) {
+    public boolean invalidate(Long brandId) {
         try {
             redis.opsForValue().increment(generationKey(brandId));
             redis.opsForValue().increment(generationKey(null));
+            return true;
         } catch (DataAccessException e) {
             log.warn("product listing cache invalidation failed for brand {}: {}", brandId, e.getMessage());
+            return false;
         }
     }
 
