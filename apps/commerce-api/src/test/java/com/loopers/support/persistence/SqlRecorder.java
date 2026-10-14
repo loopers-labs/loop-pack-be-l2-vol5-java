@@ -28,6 +28,13 @@ public class SqlRecorder implements StatementInspector {
     }
 
     /**
+     * 기록된 SQL 전체 (소문자). W4 캐시 hit에서 비싼 조회가 나가지 않았는지 볼 때 쓴다.
+     */
+    public static List<String> statements() {
+        return List.copyOf(STATEMENTS);
+    }
+
+    /**
      * 기록된 SELECT … FOR UPDATE가 잠근 테이블을 보낸 순서대로 돌려준다.
      */
     public static List<String> lockedTables() {
