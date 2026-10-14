@@ -47,13 +47,15 @@ public class RedisProductListCacheAdapter implements ProductListCachePort {
 
     /**
      * 세대 키가 없으면(첫 사용, Redis 재시작·축출) 현재 시각(ms)으로 시작한다. 1부터 다시 세면, 아직 TTL이 남은 옛 세대의
-     * 키와 번호가 겹칠 수 있어서다. 쓰기가 먼저 세대를 올려 1부터 시작해도, 시각으로 시작한 옛 세대와는 겹치지 않는다.
+     * 키와 번호가 겹칠 수 있어서다. 쓰기(invalidateAll)도 같은 규칙으로 시작한다.
+     * 전제: 세대가 1 ms에 1번보다 빠르게 오르지 않는다. 그보다 빠르면, 세대 키만 축출된 뒤 시각으로 다시 시작한 값이
+     * TTL이 남은 옛 세대와 겹칠 수 있다 (Redis 전체가 비워지는 재시작에서는 겹칠 옛 키도 없다).
      */
     @Override
     public long currentGeneration() {
         String generation = redisTemplate.opsForValue().get(GENERATION_KEY);
         if (generation == null) {
-            redisTemplate.opsForValue().setIfAbsent(GENERATION_KEY, String.valueOf(System.currentTimeMillis()));
+            startGenerationIfAbsent();
             generation = redisTemplate.opsForValue().get(GENERATION_KEY);
         }
         return Long.parseLong(generation);
@@ -83,7 +85,13 @@ public class RedisProductListCacheAdapter implements ProductListCachePort {
 
     @Override
     public void invalidateAll() {
+        // 키가 없을 때 INCR만 하면 1부터 다시 센다 — 먼저 시각으로 시작해 둔다
+        startGenerationIfAbsent();
         redisTemplate.opsForValue().increment(GENERATION_KEY);
+    }
+
+    private void startGenerationIfAbsent() {
+        redisTemplate.opsForValue().setIfAbsent(GENERATION_KEY, String.valueOf(System.currentTimeMillis()));
     }
 
     private static String keyOf(long generation, ProductListKey key) {

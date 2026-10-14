@@ -28,6 +28,7 @@ public class RedisConfig{
     // W4: Redis가 느리거나 멈췄을 때 요청이 얼마나 기다릴지의 상한. 캐시는 원본이 아니므로 짧게 포기하고 DB로 우회한다.
     // LettuceConnectionFactory를 직접 만들어 spring.data.redis.timeout 같은 Boot 설정이 적용되지 않으므로 여기서 정한다.
     // (Lettuce 기본 명령 대기는 60초다.)
+    // 이 두 factory를 쓰는 모든 명령의 전역 상한이다. 블로킹 명령(BLPOP, XREAD BLOCK)이나 큰 SCAN을 쓰게 되면 별도 factory를 둔다.
     private static final Duration COMMAND_TIMEOUT = Duration.ofMillis(200);
     private static final Duration CONNECT_TIMEOUT = Duration.ofMillis(200);
 
