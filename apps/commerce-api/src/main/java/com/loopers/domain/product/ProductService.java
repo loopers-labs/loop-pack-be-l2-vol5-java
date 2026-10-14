@@ -16,20 +16,32 @@ public class ProductService {
     private final ProductRepository productRepository;
 
     /**
-     * 증감이 아니라 최종 수량으로 재고를 설정한다.
+     * 증감이 아니라 최종 수량으로 재고를 설정한다. 단일 UPDATE 로 처리하고, 영향 행이 0 이면 없거나 삭제된 상품이다.
+     *
+     * @return 설정된 재고 수량
      */
     @Transactional
-    public Product changeStock(Long productId, int quantity) {
-        Product product = findActiveProduct(productId);
-        product.changeStock(quantity);
-        return product;
+    public int changeStock(Long productId, int quantity) {
+        Stock.validateQuantity(quantity);
+
+        if (productRepository.updateStock(productId, quantity) == 0) {
+            throw notFound(productId);
+        }
+        return quantity;
     }
 
+    /**
+     * 존재하며 삭제되지 않은 상품인지 먼저 확인(404)한 뒤, 재고가 충분할 때만 조건부 UPDATE 로 차감한다.
+     * 영향 행이 0 이면 재고 부족(409)이다.
+     */
     @Transactional
-    public Product deductStock(Long productId, int quantity) {
-        Product product = findActiveProduct(productId);
-        product.deductStock(quantity);
-        return product;
+    public void deductStock(Long productId, int quantity) {
+        Stock.validateDeductQuantity(quantity);
+        findActiveProduct(productId);
+
+        if (productRepository.deductStockIfEnough(productId, quantity) == 0) {
+            throw new CoreException(ErrorType.CONFLICT, "재고가 부족합니다.");
+        }
     }
 
     @Transactional

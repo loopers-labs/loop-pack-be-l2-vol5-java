@@ -37,6 +37,7 @@ public class Order extends BaseEntity {
 
     /**
      * 확정 시점에 기록되는 결제액. 확정 전에는 0 이다.
+     * DRAFT → CONFIRMED 전환과 결제액 기록은 OrderRepository.confirmIfDraft 의 조건부 UPDATE 가 맡는다.
      */
     private long paidAmount;
 
@@ -67,17 +68,6 @@ public class Order extends BaseEntity {
 
     public boolean isOwnedBy(Long userId) {
         return this.userId.equals(userId);
-    }
-
-    /**
-     * 확정에 실패하면 예외만 던지고 상태를 바꾸지 않아 DRAFT 로 남는다.
-     */
-    public void confirm() {
-        if (status != OrderStatus.DRAFT) {
-            throw new CoreException(ErrorType.CONFLICT, "이미 확정된 주문입니다.");
-        }
-        this.paidAmount = getTotalAmount();
-        this.status = OrderStatus.CONFIRMED;
     }
 
     /**

@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -225,29 +226,23 @@ class ProductServiceTest {
     @DisplayName("상품 재고를 변경할 때, ")
     @Nested
     class ChangeStock {
-        @DisplayName("존재하는 상품이면, 최종 수량으로 설정되도록 재고에 위임한다.")
+        @DisplayName("0 이상인 수량이면, 삭제되지 않은 상품의 재고를 최종 수량으로 설정하는 단일 UPDATE 를 실행하고 그 수량을 반환한다.")
         @Test
-        void delegatesToStock_whenProductExists() {
+        void updatesStockInSingleStatement_whenQuantityIsValid() {
             // arrange
-            Product product = new Product(1L, "루퍼스 티셔츠", new Price(1000L));
-            product.changeStock(10);
-            given(productRepository.findById(1L)).willReturn(Optional.of(product));
+            given(productRepository.updateStock(1L, 3)).willReturn(1);
 
             // act
-            Product result = productService.changeStock(1L, 3);
+            int result = productService.changeStock(1L, 3);
 
             // assert
-            assertThat(result.getStock().getQuantity()).isEqualTo(3);
+            assertThat(result).isEqualTo(3);
+            verify(productRepository).updateStock(1L, 3);
         }
 
-        @DisplayName("음수 수량이 주어지면, BAD_REQUEST 예외가 발생하고 기존 재고가 유지된다.")
+        @DisplayName("음수 수량이 주어지면, BAD_REQUEST 예외가 발생하고 재고를 갱신하지 않는다.")
         @Test
-        void throwsBadRequestExceptionAndKeepsStock_whenQuantityIsNegative() {
-            // arrange
-            Product product = new Product(1L, "루퍼스 티셔츠", new Price(1000L));
-            product.changeStock(10);
-            given(productRepository.findById(1L)).willReturn(Optional.of(product));
-
+        void throwsBadRequestException_whenQuantityIsNegative() {
             // act
             CoreException result = assertThrows(CoreException.class, () -> {
                 productService.changeStock(1L, -1);
@@ -255,14 +250,14 @@ class ProductServiceTest {
 
             // assert
             assertThat(result.getErrorType()).isEqualTo(ErrorType.BAD_REQUEST);
-            assertThat(product.getStock().getQuantity()).isEqualTo(10);
+            verify(productRepository, never()).updateStock(anyLong(), anyInt());
         }
 
-        @DisplayName("존재하지 않는 상품이면, NOT_FOUND 예외가 발생한다.")
+        @DisplayName("갱신이 0건이면(없거나 삭제된 상품), NOT_FOUND 예외가 발생한다.")
         @Test
-        void throwsNotFoundException_whenProductIsAbsent() {
+        void throwsNotFoundException_whenNoRowIsUpdated() {
             // arrange
-            given(productRepository.findById(1L)).willReturn(Optional.empty());
+            given(productRepository.updateStock(1L, 3)).willReturn(0);
 
             // act
             CoreException result = assertThrows(CoreException.class, () -> {
@@ -272,8 +267,61 @@ class ProductServiceTest {
             // assert
             assertThat(result.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
         }
+    }
 
-        @DisplayName("삭제된 상품이면, NOT_FOUND 예외가 발생한다.")
+    @DisplayName("상품 재고를 차감할 때, ")
+    @Nested
+    class DeductStock {
+        @DisplayName("존재하는 상품이고 1건이 갱신되면, 재고가 충분할 때만 차감하는 조건부 갱신이 실행되고 예외 없이 끝난다.")
+        @Test
+        void deductsConditionally_whenProductExistsAndStockIsSufficient() {
+            // arrange
+            Product product = new Product(1L, "루퍼스 티셔츠", new Price(1000L));
+            given(productRepository.findById(1L)).willReturn(Optional.of(product));
+            given(productRepository.deductStockIfEnough(1L, 2)).willReturn(1);
+
+            // act
+            productService.deductStock(1L, 2);
+
+            // assert
+            verify(productRepository).deductStockIfEnough(1L, 2);
+        }
+
+        @DisplayName("조건부 갱신이 0건이면, 재고 부족으로 보고 CONFLICT 예외가 발생한다.")
+        @Test
+        void throwsConflictException_whenNoRowIsUpdated() {
+            // arrange
+            Product product = new Product(1L, "루퍼스 티셔츠", new Price(1000L));
+            given(productRepository.findById(1L)).willReturn(Optional.of(product));
+            given(productRepository.deductStockIfEnough(1L, 2)).willReturn(0);
+
+            // act
+            CoreException result = assertThrows(CoreException.class, () -> {
+                productService.deductStock(1L, 2);
+            });
+
+            // assert
+            assertThat(result.getErrorType()).isEqualTo(ErrorType.CONFLICT);
+            assertThat(result.getMessage()).isEqualTo("재고가 부족합니다.");
+        }
+
+        @DisplayName("존재하지 않는 상품이면, NOT_FOUND 예외가 발생하고 차감하지 않는다.")
+        @Test
+        void throwsNotFoundException_whenProductIsAbsent() {
+            // arrange
+            given(productRepository.findById(1L)).willReturn(Optional.empty());
+
+            // act
+            CoreException result = assertThrows(CoreException.class, () -> {
+                productService.deductStock(1L, 2);
+            });
+
+            // assert
+            assertThat(result.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
+            verify(productRepository, never()).deductStockIfEnough(anyLong(), anyInt());
+        }
+
+        @DisplayName("삭제된 상품이면, NOT_FOUND 예외가 발생하고 차감하지 않는다.")
         @Test
         void throwsNotFoundException_whenProductIsDeleted() {
             // arrange
@@ -283,11 +331,12 @@ class ProductServiceTest {
 
             // act
             CoreException result = assertThrows(CoreException.class, () -> {
-                productService.changeStock(1L, 3);
+                productService.deductStock(1L, 2);
             });
 
             // assert
             assertThat(result.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
+            verify(productRepository, never()).deductStockIfEnough(anyLong(), anyInt());
         }
     }
 

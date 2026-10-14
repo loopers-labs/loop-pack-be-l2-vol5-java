@@ -2,6 +2,8 @@ package com.loopers.application.brand;
 
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
+import com.loopers.domain.product.Price;
+import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
@@ -13,6 +15,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -157,7 +160,7 @@ class BrandFacadeTest {
             // arrange
             Brand brand = new Brand("루퍼스");
             given(brandRepository.findById(1L)).willReturn(Optional.of(brand));
-            given(productRepository.existsActiveByBrandId(1L)).willReturn(false);
+            given(productRepository.findAllActiveByBrandId(1L)).willReturn(List.of());
 
             // act
             brandFacade.deleteBrand(1L);
@@ -167,22 +170,26 @@ class BrandFacadeTest {
             assertThat(brand.getName()).isEqualTo("루퍼스");
         }
 
-        @DisplayName("삭제되지 않은 연결 상품이 남아 있으면, CONFLICT 예외가 발생하고 삭제되지 않는다.")
+        @DisplayName("삭제되지 않은 연결 상품이 있으면, 재고 0인 상품을 포함해 브랜드와 함께 논리 삭제된다.")
         @Test
-        void throwsConflictException_whenActiveProductRemains() {
+        void deletesLinkedProductsTogether_whenActiveProductsRemain() {
             // arrange
             Brand brand = new Brand("루퍼스");
+            Product inStock = new Product(1L, "재고 있는 상품", new Price(1000L));
+            inStock.changeStock(5);
+            Product outOfStock = new Product(1L, "품절 상품", new Price(1000L));
             given(brandRepository.findById(1L)).willReturn(Optional.of(brand));
-            given(productRepository.existsActiveByBrandId(1L)).willReturn(true);
+            given(productRepository.findAllActiveByBrandId(1L)).willReturn(List.of(inStock, outOfStock));
 
             // act
-            CoreException result = assertThrows(CoreException.class, () -> {
-                brandFacade.deleteBrand(1L);
-            });
+            brandFacade.deleteBrand(1L);
 
             // assert
-            assertThat(result.getErrorType()).isEqualTo(ErrorType.CONFLICT);
-            assertThat(brand.getDeletedAt()).isNull();
+            assertThat(brand.getDeletedAt()).isNotNull();
+            assertThat(inStock.getDeletedAt()).isNotNull();
+            assertThat(outOfStock.getDeletedAt()).isNotNull();
+            assertThat(inStock.getName()).isEqualTo("재고 있는 상품");
+            assertThat(outOfStock.getName()).isEqualTo("품절 상품");
         }
 
         @DisplayName("이미 삭제된 브랜드이면, NOT_FOUND 예외가 발생하고 연결 상품을 확인하지 않는다.")
@@ -200,7 +207,7 @@ class BrandFacadeTest {
 
             // assert
             assertThat(result.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
-            verify(productRepository, never()).existsActiveByBrandId(1L);
+            verify(productRepository, never()).findAllActiveByBrandId(1L);
         }
     }
 }

@@ -205,6 +205,7 @@ class OrderV1ApiE2ETest {
 
             // assert
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+            assertThat(response.getBody().meta().message()).isEqualTo("재고가 부족합니다.");
             assertThat(orderJpaRepository.findById(orderId).orElseThrow().getStatus().name()).isEqualTo("DRAFT");
             assertThat(productJpaRepository.findById(productId).orElseThrow().getStock().getQuantity()).isEqualTo(1);
             assertThat(pointJpaRepository.findByUserId(userId).orElseThrow().getBalance()).isEqualTo(5000L);
@@ -225,6 +226,7 @@ class OrderV1ApiE2ETest {
 
             // assert
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+            assertThat(response.getBody().meta().message()).isEqualTo("포인트 잔액이 부족합니다.");
             assertThat(orderJpaRepository.findById(orderId).orElseThrow().getStatus().name()).isEqualTo("DRAFT");
             assertThat(productJpaRepository.findById(productId).orElseThrow().getStock().getQuantity())
                 .isEqualTo(10);
@@ -244,8 +246,33 @@ class OrderV1ApiE2ETest {
             // act
             ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> response = confirm(userId, orderId);
 
-            // assert
+            // assert - 재확정이 거절되어도 첫 확정의 차감 결과는 그대로다
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+            assertThat(response.getBody().meta().message()).isEqualTo("이미 확정된 주문입니다.");
+            assertThat(productJpaRepository.findById(productId).orElseThrow().getStock().getQuantity()).isEqualTo(8);
+            assertThat(pointJpaRepository.findByUserId(userId).orElseThrow().getBalance()).isEqualTo(3000L);
+        }
+
+        @DisplayName("삭제된 상품이 포함된 주문을 확정하면, 404 응답을 받고 주문은 DRAFT 로 남고 포인트도 차감되지 않는다.")
+        @Test
+        void returnsNotFound_whenOrderContainsDeletedProduct() {
+            // arrange
+            Long userId = saveUser();
+            Long productId = saveProduct(1000L, 10);
+            savePoint(userId, 5000L);
+            Long orderId = createOrder(userId, "[{\"productId\":" + productId + ",\"quantity\":2}]")
+                .getBody().data().orderId();
+            Product product = productJpaRepository.findById(productId).orElseThrow();
+            product.delete();
+            productJpaRepository.save(product);
+
+            // act
+            ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> response = confirm(userId, orderId);
+
+            // assert
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+            assertThat(orderJpaRepository.findById(orderId).orElseThrow().getStatus().name()).isEqualTo("DRAFT");
+            assertThat(pointJpaRepository.findByUserId(userId).orElseThrow().getBalance()).isEqualTo(5000L);
         }
 
         @DisplayName("남의 주문을 확정하려 하면, 404 응답을 받는다.")

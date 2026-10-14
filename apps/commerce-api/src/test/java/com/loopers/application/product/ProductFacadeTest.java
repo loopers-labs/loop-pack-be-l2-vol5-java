@@ -211,9 +211,7 @@ class ProductFacadeTest {
         @Test
         void delegatesToProductService() {
             // arrange
-            Product product = new Product(1L, "루퍼스 티셔츠", new Price(1000L));
-            product.changeStock(7);
-            given(productService.changeStock(1L, 7)).willReturn(product);
+            given(productService.changeStock(1L, 7)).willReturn(7);
 
             // act
             int result = productFacade.changeStock(1L, 7);

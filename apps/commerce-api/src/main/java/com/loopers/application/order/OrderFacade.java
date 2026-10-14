@@ -3,8 +3,7 @@ package com.loopers.application.order;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.OrderService;
-import com.loopers.domain.point.Point;
-import com.loopers.domain.point.PointRepository;
+import com.loopers.domain.point.PointService;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductService;
 import com.loopers.domain.user.UserRepository;
@@ -14,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Comparator;
 import java.util.List;
 
 @RequiredArgsConstructor
@@ -22,7 +22,7 @@ public class OrderFacade {
 
     private final UserRepository userRepository;
     private final ProductService productService;
-    private final PointRepository pointRepository;
+    private final PointService pointService;
     private final OrderService orderService;
 
     /**
@@ -40,17 +40,21 @@ public class OrderFacade {
     }
 
     /**
-     * 재고 → 포인트 → 확정 순서로 처리한다.
-     * 중간에 실패하면 예외가 전파되어 트랜잭션이 롤백되고 주문은 DRAFT 로 남는다.
+     * 주문 확정 → 포인트 차감 → 상품 ID 오름차순 재고 차감 순서로 조건부 UPDATE 한다.
+     * 어느 단계든 영향 행이 0 이면 CoreException 으로 전체가 롤백되어 주문은 DRAFT 로 남는다.
+     * 응답은 갱신 뒤 다시 읽은 주문으로 만든다.
      */
     @Transactional
     public OrderInfo confirmOrder(Long requesterId, Long orderId) {
         Order order = findOwnOrder(requesterId, orderId);
 
-        order.getItems().forEach(item -> productService.deductStock(item.getProductId(), item.getQuantity()));
-        deductPoint(requesterId, order.getTotalAmount());
+        Order confirmed = orderService.confirmOrder(order);
+        pointService.deduct(requesterId, order.getTotalAmount());
+        order.getItems().stream()
+            .sorted(Comparator.comparing(OrderItem::getProductId))
+            .forEach(item -> productService.deductStock(item.getProductId(), item.getQuantity()));
 
-        return OrderInfo.from(orderService.confirmOrder(order));
+        return OrderInfo.from(confirmed);
     }
 
     @Transactional(readOnly = true)
@@ -85,14 +89,6 @@ public class OrderFacade {
     private OrderItem toOrderItem(OrderCommand.Item item) {
         Product product = productService.getActiveProduct(item.productId());
         return new OrderItem(item.productId(), item.quantity(), product.getPrice().getAmount());
-    }
-
-    private void deductPoint(Long userId, long amount) {
-        Point point = pointRepository.findByUserId(userId)
-            .orElseGet(() -> new Point(userId));
-
-        point.deduct(amount);
-        pointRepository.save(point);
     }
 
     /**

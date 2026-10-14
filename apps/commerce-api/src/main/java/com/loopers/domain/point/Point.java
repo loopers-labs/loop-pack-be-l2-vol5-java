@@ -34,25 +34,32 @@ public class Point extends BaseEntity {
     }
 
     /**
+     * 첫 충전으로 포인트를 새로 만들 때 쓴다. 이미 있는 포인트의 누적은 PointRepository.addBalance 가 맡는다.
      * 충전에 실패하면 기존 잔액을 그대로 둔다.
      */
     public void charge(long amount) {
-        if (amount <= 0) {
-            throw new CoreException(ErrorType.BAD_REQUEST, "충전 금액은 1원 이상이어야 합니다.");
-        }
+        validateChargeAmount(amount);
         if (balance > Long.MAX_VALUE - amount) {
             throw new CoreException(ErrorType.BAD_REQUEST, "충전 결과가 표현 가능한 범위를 넘습니다.");
         }
         this.balance += amount;
     }
 
-    public void deduct(long amount) {
+    /**
+     * 충전 금액 입력 검증.
+     */
+    public static void validateChargeAmount(long amount) {
+        if (amount <= 0) {
+            throw new CoreException(ErrorType.BAD_REQUEST, "충전 금액은 1원 이상이어야 합니다.");
+        }
+    }
+
+    /**
+     * 차감 금액 입력 검증. 잔액 부족 판정과 차감은 PointRepository.deductIfEnough 의 조건부 UPDATE 가 맡는다.
+     */
+    public static void validateDeductAmount(long amount) {
         if (amount <= 0) {
             throw new CoreException(ErrorType.BAD_REQUEST, "차감 금액은 1원 이상이어야 합니다.");
         }
-        if (balance < amount) {
-            throw new CoreException(ErrorType.CONFLICT, "포인트 잔액이 부족합니다.");
-        }
-        this.balance -= amount;
     }
 }

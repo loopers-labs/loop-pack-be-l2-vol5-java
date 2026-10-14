@@ -49,8 +49,9 @@ public class ProductFacade {
      *
      * @return 변경된 재고 수량
      */
+    @Transactional
     public int changeStock(Long productId, int quantity) {
-        return productService.changeStock(productId, quantity).getStock().getQuantity();
+        return productService.changeStock(productId, quantity);
     }
 
     /**
