@@ -151,10 +151,6 @@ class ProductCacheE2ETest {
         return customer(HttpMethod.GET, "/api/v1/orders/" + orderId, USER, null).path("data");
     }
 
-    private String generationOf(Long brand) {
-        return redisTemplate.opsForValue().get("product:list:v1:gen:brand=" + (brand == null ? "all" : brand));
-    }
-
     private void changePriceBypassingApplication(Long productId, long price) {
         jdbcTemplate.update("UPDATE product SET price = ? WHERE id = ?", price, productId);
     }
@@ -252,7 +248,7 @@ class ProductCacheE2ETest {
             .extracting(ProductV1Dto.ProductResponse::id).containsExactly(kept);
     }
 
-    @DisplayName("CACHE-006 · 관리자가 가격을 바꾸고 커밋하면, 다음 조회는 새 가격과 바뀐 순서를 브랜드 목록과 전체 목록 모두에서 준다")
+    @DisplayName("CACHE-006 · 관리자가 가격을 바꾸고 커밋하면 브랜드 목록과 전체 목록의 키가 지워지고, 다음 조회는 새 가격과 바뀐 순서를 준다")
     @Test
     void priceUpdateRefreshesBrandAndAllListings() {
         Long cheaper = product("셔츠", 10_000);
@@ -262,9 +258,11 @@ class ProductCacheE2ETest {
         page(USER, "?sort=price_asc");
 
         admin(HttpMethod.PUT, "/api-admin/v1/products/" + pricier, Map.of("name", "코트", "price", 5_000));
+        Set<String> keysAfterUpdate = pageKeys();
         JsonNode order = order(pastOrder);
 
         assertAll(
+            () -> assertThat(keysAfterUpdate).as("커밋 뒤 두 목록의 키가 지워졌다").isEmpty(),
             () -> assertThat(page(USER, firstPriceAscPage()).items())
                 .extracting(ProductV1Dto.ProductResponse::id).containsExactly(pricier, cheaper),
             () -> assertThat(page(USER, "?sort=price_asc").items())
@@ -288,20 +286,16 @@ class ProductCacheE2ETest {
             .extracting(ProductV1Dto.ProductResponse::id).first().isEqualTo(registered);
     }
 
-    @DisplayName("CACHE-005 · 상품을 삭제하면 그 브랜드와 전체 목록의 세대가 오른다 — 꺼낼 때의 재확인에만 기대지 않는다")
+    @DisplayName("CACHE-005 · 상품을 삭제하면 그 브랜드와 전체 목록의 키가 지워진다 — 꺼낼 때의 재확인에만 기대지 않는다")
     @Test
-    void deletionBumpsGeneration() {
+    void deletionEvictsListings() {
         Long productId = product("셔츠", 10_000);
         page(USER, firstPriceAscPage());
-        String brandBefore = generationOf(brandId);
-        String allBefore = generationOf(null);
+        page(USER, "?sort=price_asc");
 
         admin(HttpMethod.DELETE, "/api-admin/v1/products/" + productId, null);
 
-        assertAll(
-            () -> assertThat(generationOf(brandId)).isNotEqualTo(brandBefore),
-            () -> assertThat(generationOf(null)).isNotEqualTo(allBefore)
-        );
+        assertThat(pageKeys()).isEmpty();
     }
 
     @DisplayName("CACHE-005 · 브랜드 이름을 바꾸면 다음 조회의 브랜드 이름이 바뀐다")
@@ -316,24 +310,22 @@ class ProductCacheE2ETest {
             .extracting(ProductV1Dto.ProductResponse::brandName).containsExactly("무신사 스탠다드");
     }
 
-    @DisplayName("CACHE-005 · 브랜드를 일괄 삭제하면 세대가 오르고 그 상품이 고객 결과에서 빠지며, 다른 브랜드 상품과 과거 주문은 그대로다")
+    @DisplayName("CACHE-005 · 브랜드를 일괄 삭제하면 키가 지워지고 그 상품이 고객 결과에서 빠지며, 다른 브랜드 상품과 과거 주문은 그대로다")
     @Test
-    void brandDeletionBumpsGenerationAndHidesProducts() {
+    void brandDeletionEvictsListingsAndHidesProducts() {
         Long deletedBrandProduct = product("셔츠", 10_000);
         Long otherBrand = brandFacade.register("29CM", "셀렉트샵").getId();
         Long otherBrandProduct = productFacade.register(otherBrand, "코트", Price.of(20_000)).getId();
         Long pastOrder = confirmedOrder(deletedBrandProduct, 10_000);
         page(USER, firstPriceAscPage());
         page(USER, "?sort=price_asc");
-        String brandBefore = generationOf(brandId);
-        String allBefore = generationOf(null);
 
         admin(HttpMethod.DELETE, "/api-admin/v1/brands/" + brandId, null);
+        Set<String> keysAfterDeletion = pageKeys();
         JsonNode order = order(pastOrder);
 
         assertAll(
-            () -> assertThat(generationOf(brandId)).isNotEqualTo(brandBefore),
-            () -> assertThat(generationOf(null)).isNotEqualTo(allBefore),
+            () -> assertThat(keysAfterDeletion).isEmpty(),
             () -> assertThat(page(USER, "?sort=price_asc").items())
                 .extracting(ProductV1Dto.ProductResponse::id).as("다른 브랜드 상품만 남는다").containsExactly(otherBrandProduct),
             () -> assertThat(order.path("status").asText()).isEqualTo("CONFIRMED"),
@@ -342,7 +334,7 @@ class ProductCacheE2ETest {
         );
     }
 
-    @DisplayName("CACHE-005 · 재고 조정으로 품절 여부가 바뀌면 다음 조회에 반영된다. 품절 여부가 그대로인 조정은 세대를 올리지 않는다")
+    @DisplayName("CACHE-005 · 재고 조정으로 품절 여부가 바뀌면 다음 조회에 반영된다. 품절 여부가 그대로인 조정은 키를 지우지 않는다")
     @Test
     void stockAdjustmentRefreshesOnlyWhenSoldOutFlips() {
         Long productId = product("셔츠", 10_000);
@@ -350,14 +342,13 @@ class ProductCacheE2ETest {
 
         admin(HttpMethod.PUT, "/api-admin/v1/products/" + productId + "/stock", Map.of("quantity", 5));
         boolean soldOutAfterRestock = page(USER, firstPriceAscPage()).items().get(0).soldOut();
-        String generationAfterRestock = generationOf(brandId);
 
         admin(HttpMethod.PUT, "/api-admin/v1/products/" + productId + "/stock", Map.of("quantity", 3));
 
         assertAll(
             () -> assertThat(soldOutBefore).isTrue(),
             () -> assertThat(soldOutAfterRestock).isFalse(),
-            () -> assertThat(generationOf(brandId)).as("5 → 3 은 품절 여부가 그대로다").isEqualTo(generationAfterRestock)
+            () -> assertThat(pageKeys()).as("5 → 3 은 품절 여부가 그대로다").hasSize(1)
         );
     }
 
@@ -379,12 +370,11 @@ class ProductCacheE2ETest {
         );
     }
 
-    @DisplayName("CACHE-007 · 변경이 rollback 되면 세대가 오르지 않고, 캐시는 변경 전 결과를 그대로 준다 — API 로는 rollback 을 고를 수 없어 바깥 트랜잭션에서 관리자 수정을 되돌린다")
+    @DisplayName("CACHE-007 · 변경이 rollback 되면 키가 지워지지 않고, 캐시는 변경 전 결과를 그대로 준다 — API 로는 rollback 을 고를 수 없어 바깥 트랜잭션에서 관리자 수정을 되돌린다")
     @Test
     void rolledBackChangeKeepsCache() {
         Long productId = product("셔츠", 10_000);
         page(USER, firstPriceAscPage());
-        String before = generationOf(brandId);
 
         transactionTemplate.executeWithoutResult(status -> {
             productFacade.update(productId, "셔츠", Price.of(1_000));
@@ -392,7 +382,7 @@ class ProductCacheE2ETest {
         });
 
         assertAll(
-            () -> assertThat(generationOf(brandId)).isEqualTo(before),
+            () -> assertThat(pageKeys()).hasSize(1),
             () -> assertThat(page(USER, firstPriceAscPage()).items())
                 .extracting(ProductV1Dto.ProductResponse::price).containsExactly(10_000L)
         );

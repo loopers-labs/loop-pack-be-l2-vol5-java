@@ -33,7 +33,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.Map;
 import java.util.Optional;
-import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -171,9 +170,9 @@ class ProductCacheFailureE2ETest {
         );
     }
 
-    @DisplayName("Q-5 · 이전 조회가 옛 DB 값을 변경 커밋 뒤에 늦게 채워도, 이후 조회는 새 가격이다 — 늦은 값은 옛 세대의 키에 들어간다")
+    @DisplayName("Q-5 · 이전 조회가 옛 DB 값을 변경 커밋 뒤에 늦게 채우면, 옛 가격이 TTL(60 초) 까지만 보이고 만료 뒤 원본과 같아진다")
     @Test
-    void lateFillGoesToOldGenerationAndIsNeverRead() throws Exception {
+    void lateFillStaysStaleOnlyUntilTtl() throws Exception {
         Long productId = product("셔츠", 10_000);
         cache.holdNextSave();
         ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -184,12 +183,17 @@ class ProductCacheFailureE2ETest {
             assertThat(changePriceAsAdmin(productId, 5_000).getStatusCode().value()).isEqualTo(200);
             cache.releaseHeldSave();
             long earlierSaw = earlier.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            long staleAfterLateFill = listedPrice();
+            Set<String> keys = pageKeys();
+            long secondsLeft = keys.stream().mapToLong(key -> redisTemplate.getExpire(key, TimeUnit.SECONDS)).max().orElse(-1);
+
+            redisTemplate.delete(keys);
 
             assertAll(
                 () -> assertThat(earlierSaw).as("이전 조회는 자기가 읽은 시점의 값").isEqualTo(10_000L),
-                () -> assertThat(cache.heldSaveGeneration()).as("늦은 저장은 일어났다 — 변경 전 세대에")
-                    .isLessThan(Long.parseLong(redisTemplate.opsForValue().get("product:list:v1:gen:brand=" + brandId))),
-                () -> assertThat(listedPrice()).as("이후 조회는 새 세대를 읽는다").isEqualTo(5_000L)
+                () -> assertThat(staleAfterLateFill).as("늦은 값이 살아 있는 키에 들어가 옛 가격이 보인다").isEqualTo(10_000L),
+                () -> assertThat(secondsLeft).as("늦은 키도 TTL 이 있다").isBetween(1L, 60L),
+                () -> assertThat(listedPrice()).as("만료 뒤 첫 조회는 원본과 같다").isEqualTo(priceInDatabase(productId))
             );
         } finally {
             cache.releaseHeldSave();
@@ -214,7 +218,6 @@ class ProductCacheFailureE2ETest {
         private final AtomicInteger invalidationFailures = new AtomicInteger();
         private volatile CountDownLatch saveEntered;
         private volatile CountDownLatch saveRelease;
-        private volatile long heldGeneration = -1;
 
         FailingListingCache(ProductListingCache real) {
             this.real = real;
@@ -239,34 +242,23 @@ class ProductCacheFailureE2ETest {
             }
         }
 
-        long heldSaveGeneration() {
-            return heldGeneration;
-        }
-
         void reset() {
             invalidationFailures.set(0);
             releaseHeldSave();
             saveEntered = null;
             saveRelease = null;
-            heldGeneration = -1;
         }
 
         @Override
-        public OptionalLong generation(Long brandId) {
-            return real.generation(brandId);
+        public Optional<PageWindow<ProductViewQuery.Listing>> find(Long brandId, ProductViewQuery.Sort sort) {
+            return real.find(brandId, sort);
         }
 
         @Override
-        public Optional<PageWindow<ProductViewQuery.Listing>> find(Long brandId, ProductViewQuery.Sort sort, long generation) {
-            return real.find(brandId, sort, generation);
-        }
-
-        @Override
-        public void save(Long brandId, ProductViewQuery.Sort sort, long generation, PageWindow<ProductViewQuery.Listing> page) {
+        public void save(Long brandId, ProductViewQuery.Sort sort, PageWindow<ProductViewQuery.Listing> page) {
             CountDownLatch entered = saveEntered;
             CountDownLatch release = saveRelease;
             if (entered != null && entered.getCount() > 0) {
-                heldGeneration = generation;
                 entered.countDown();
                 try {
                     if (!release.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
@@ -277,7 +269,7 @@ class ProductCacheFailureE2ETest {
                     throw new IllegalStateException(e);
                 }
             }
-            real.save(brandId, sort, generation, page);
+            real.save(brandId, sort, page);
         }
 
         @Override

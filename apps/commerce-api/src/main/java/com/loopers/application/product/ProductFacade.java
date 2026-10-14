@@ -19,7 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
-import java.util.OptionalLong;
 
 @Component
 @RequiredArgsConstructor
@@ -80,14 +79,10 @@ public class ProductFacade {
     }
 
     private PageWindow<ProductViewQuery.Listing> listingOf(ProductViewQuery.Criteria criteria) {
-        OptionalLong generation = productListingCache.generation(criteria.brandId());
-        if (generation.isEmpty()) {
-            return productViewQuery.findListingPage(criteria);
-        }
-        return productListingCache.find(criteria.brandId(), criteria.sort(), generation.getAsLong())
+        return productListingCache.find(criteria.brandId(), criteria.sort())
             .orElseGet(() -> {
                 PageWindow<ProductViewQuery.Listing> loaded = productViewQuery.findListingPage(criteria);
-                productListingCache.save(criteria.brandId(), criteria.sort(), generation.getAsLong(), loaded);
+                productListingCache.save(criteria.brandId(), criteria.sort(), loaded);
                 return loaded;
             });
     }

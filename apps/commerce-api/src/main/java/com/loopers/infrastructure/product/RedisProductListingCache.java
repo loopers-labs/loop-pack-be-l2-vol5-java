@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.Optional;
-import java.util.OptionalLong;
+import java.util.stream.Stream;
 
 @Slf4j
 @Component
@@ -37,20 +37,9 @@ class RedisProductListingCache implements ProductListingCache {
     }
 
     @Override
-    public OptionalLong generation(Long brandId) {
+    public Optional<PageWindow<ProductViewQuery.Listing>> find(Long brandId, ProductViewQuery.Sort sort) {
         try {
-            String value = redis.opsForValue().get(generationKey(brandId));
-            return OptionalLong.of(value == null ? 0L : Long.parseLong(value));
-        } catch (DataAccessException e) {
-            log.warn("product listing cache generation unavailable: {}", e.getMessage());
-            return OptionalLong.empty();
-        }
-    }
-
-    @Override
-    public Optional<PageWindow<ProductViewQuery.Listing>> find(Long brandId, ProductViewQuery.Sort sort, long generation) {
-        try {
-            String json = redis.opsForValue().get(pageKey(brandId, sort, generation));
+            String json = redis.opsForValue().get(pageKey(brandId, sort));
             return json == null ? Optional.empty() : Optional.of(objectMapper.readValue(json, PAGE));
         } catch (DataAccessException | JsonProcessingException e) {
             log.warn("product listing cache read failed: {}", e.getMessage());
@@ -59,9 +48,9 @@ class RedisProductListingCache implements ProductListingCache {
     }
 
     @Override
-    public void save(Long brandId, ProductViewQuery.Sort sort, long generation, PageWindow<ProductViewQuery.Listing> page) {
+    public void save(Long brandId, ProductViewQuery.Sort sort, PageWindow<ProductViewQuery.Listing> page) {
         try {
-            redis.opsForValue().set(pageKey(brandId, sort, generation), objectMapper.writeValueAsString(page), TTL);
+            redis.opsForValue().set(pageKey(brandId, sort), objectMapper.writeValueAsString(page), TTL);
         } catch (DataAccessException | JsonProcessingException e) {
             log.warn("product listing cache write failed: {}", e.getMessage());
         }
@@ -70,8 +59,9 @@ class RedisProductListingCache implements ProductListingCache {
     @Override
     public boolean invalidate(Long brandId) {
         try {
-            redis.opsForValue().increment(generationKey(brandId));
-            redis.opsForValue().increment(generationKey(null));
+            redis.delete(Stream.of(ProductViewQuery.Sort.values())
+                .flatMap(sort -> Stream.of(pageKey(brandId, sort), pageKey(null, sort)))
+                .toList());
             return true;
         } catch (DataAccessException e) {
             log.warn("product listing cache invalidation failed for brand {}: {}", brandId, e.getMessage());
@@ -79,12 +69,8 @@ class RedisProductListingCache implements ProductListingCache {
         }
     }
 
-    private static String generationKey(Long brandId) {
-        return PREFIX + "gen:brand=" + scope(brandId);
-    }
-
-    private static String pageKey(Long brandId, ProductViewQuery.Sort sort, long generation) {
-        return PREFIX + "brand=" + scope(brandId) + ":sort=" + sort + ":gen=" + generation;
+    private static String pageKey(Long brandId, ProductViewQuery.Sort sort) {
+        return PREFIX + "brand=" + scope(brandId) + ":sort=" + sort;
     }
 
     private static String scope(Long brandId) {
