@@ -34,7 +34,10 @@ springdoc:
 spring:
   config:
     activate:
-      on-profile: local, test
+      on-profile: local
+  jpa:
+    hibernate:
+      ddl-auto: validate
 
 ---
 spring:
