@@ -35,6 +35,15 @@ public class SqlRecorder implements StatementInspector {
     }
 
     /**
+     * 기록된 SELECT … FOR UPDATE 문장 (소문자).
+     */
+    public static List<String> lockingStatements() {
+        return STATEMENTS.stream()
+            .filter(sql -> sql.startsWith("select") && sql.contains(" for update"))
+            .toList();
+    }
+
+    /**
      * 기록된 SELECT … FOR UPDATE가 잠근 테이블을 보낸 순서대로 돌려준다.
      */
     public static List<String> lockedTables() {

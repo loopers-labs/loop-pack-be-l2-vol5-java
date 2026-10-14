@@ -134,6 +134,12 @@ public class LockingSqlIntegrationTest {
 
         // assert
         assertThat(SqlRecorder.lockedTables()).containsExactly("brands", "products");
+        // W4: 상품은 PK 범위(id IN … ORDER BY id)로 잠근다. InnoDB는 읽는 순서대로 잠그므로, 브랜드 조건으로 잠그면
+        // 옵티마이저가 고른 인덱스 순서(예: 가격순 인덱스 + 정렬)가 곧 잠금 순서가 되어 ADR-W3-03의 id 오름차순이 깨진다.
+        assertThat(SqlRecorder.lockingStatements())
+            .filteredOn(sql -> sql.contains("from products"))
+            .singleElement()
+            .satisfies(sql -> assertThat(sql).contains(".id in (").doesNotContain("brand_id="));
     }
 
     @DisplayName("C-5·R-7 충전도 그룹을 잠근다 (동시 충전이 상한 검사를 함께 통과하지 않음)")
