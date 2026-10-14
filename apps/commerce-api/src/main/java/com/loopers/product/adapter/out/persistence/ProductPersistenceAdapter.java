@@ -73,10 +73,23 @@ public class ProductPersistenceAdapter implements ProductPort {
         return new PageImpl<>(content, pageable, total == null ? 0 : total);
     }
 
+    /**
+     * 대상 id를 잠금 없이 고른 뒤, PK 범위로 id 오름차순 잠근다.
+     * 브랜드 조건으로 바로 잠그면 InnoDB가 읽는 순서 = 잠그는 순서라, 옵티마이저가 W4 가격순 인덱스를 골라 정렬하는 순간
+     * 잠금이 가격순이 된다(실측). 주문 확정(PK id 오름차순)과 순서가 어긋나 ADR-W3-03이 깨진다.
+     * 사이에 새 상품이 끼지 않는 이유: 호출자(브랜드 일괄 삭제)가 브랜드 행을 먼저 잠그고, 상품 등록도 그 브랜드 행을 잠근다(R-11).
+     */
     @Override
     public List<ProductModel> findActiveByBrandIdForUpdate(Long brandId) {
-        return queryFactory.selectFrom(PRODUCT)
+        List<Long> ids = queryFactory.select(PRODUCT.id)
+                .from(PRODUCT)
                 .where(PRODUCT.brandId.eq(brandId), PRODUCT.deletedAt.isNull())
+                .fetch();
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        return queryFactory.selectFrom(PRODUCT)
+                .where(PRODUCT.id.in(ids), PRODUCT.deletedAt.isNull())
                 .orderBy(PRODUCT.id.asc())
                 .setLockMode(LockModeType.PESSIMISTIC_WRITE)
                 .fetch();
