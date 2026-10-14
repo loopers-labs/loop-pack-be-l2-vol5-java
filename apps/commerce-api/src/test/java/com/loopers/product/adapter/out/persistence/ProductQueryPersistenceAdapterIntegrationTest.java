@@ -119,6 +119,34 @@ class ProductQueryPersistenceAdapterIntegrationTest {
             assertThat(page.getTotalElements()).isEqualTo(4);
         }
 
+        @DisplayName("W4 price_asc·latest도 페이지에 담긴 상품마다 좋아요 수를 돌려준다 — 페이지 밖 상품의 좋아요는 섞이지 않는다.")
+        @Test
+        void pagedSortsReturnLikeCountPerProduct() {
+            // arrange
+            ProductModel cheap = product(1L, "싼", 1_000);
+            ProductModel middle = product(1L, "중간", 2_000);
+            ProductModel outOfPage = product(1L, "비싼", 3_000);
+            like(1L, cheap);
+            like(2L, cheap);
+            like(1L, outOfPage);
+            like(2L, outOfPage);
+            like(3L, outOfPage);
+            flushAndClear();
+
+            // act
+            Page<ProductWithLikes> byPrice = productQueryPort.findSellable(1L, ProductSort.PRICE_ASC, PageRequest.of(0, 2));
+            Page<ProductWithLikes> byLatest = productQueryPort.findSellable(1L, ProductSort.LATEST, PageRequest.of(0, 2));
+
+            // assert
+            assertThat(byPrice.getContent())
+                .extracting(p -> p.product().getId(), ProductWithLikes::likeCount)
+                .containsExactly(tuple(cheap.getId(), 2L), tuple(middle.getId(), 0L));
+            assertThat(byLatest.getContent())
+                .extracting(p -> p.product().getId(), ProductWithLikes::likeCount)
+                .containsExactly(tuple(outOfPage.getId(), 3L), tuple(middle.getId(), 0L));
+            assertThat(byPrice.getTotalElements()).isEqualTo(3);
+        }
+
         @DisplayName("브랜드로 거르면 그 브랜드의 상품만, 페이지 크기만큼 돌려준다.")
         @Test
         void filtersByBrandAndPages() {

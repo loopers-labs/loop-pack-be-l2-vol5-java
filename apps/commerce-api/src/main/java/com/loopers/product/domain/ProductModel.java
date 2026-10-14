@@ -15,7 +15,12 @@ import org.hibernate.annotations.Comment;
 @Entity
 @Table(
     name = "products",
-    indexes = @Index(name = "idx_products_brand", columnList = "brand_id")
+    indexes = {
+        @Index(name = "idx_products_brand", columnList = "brand_id"),
+        // W4: 고객 목록 "브랜드 = ? AND 삭제 안 됨 ORDER BY price, id DESC"를 정렬 없이 앞에서 LIMIT만큼 읽는다.
+        // id만 DESC인 이유: 동률은 최신순(P-09)이라 정렬 방향이 섞인다. 운영 적용 SQL은 docs/week4/sql/product-indexes.sql
+        @Index(name = "idx_products_brand_deleted_price_id", columnList = "brand_id, deleted_at, price, id DESC")
+    }
 )
 public class ProductModel extends BaseEntity {
 
