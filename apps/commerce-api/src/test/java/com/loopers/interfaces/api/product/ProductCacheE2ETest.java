@@ -138,6 +138,19 @@ class ProductCacheE2ETest {
         }
     }
 
+    private Long confirmedOrder(Long productId, long amount) {
+        productFacade.adjustStock(productId, Quantity.of(1));
+        customer(HttpMethod.POST, "/api/v1/points/charge", USER, Map.of("amount", amount));
+        Long orderId = customer(HttpMethod.POST, "/api/v1/orders", USER,
+            Map.of("lines", List.of(Map.of("productId", productId, "quantity", 1)))).path("data").path("id").asLong();
+        customer(HttpMethod.POST, "/api/v1/orders/" + orderId + "/confirm", USER, null);
+        return orderId;
+    }
+
+    private JsonNode order(Long orderId) {
+        return customer(HttpMethod.GET, "/api/v1/orders/" + orderId, USER, null).path("data");
+    }
+
     private String generationOf(Long brand) {
         return redisTemplate.opsForValue().get("product:list:v1:gen:brand=" + (brand == null ? "all" : brand));
     }
@@ -244,16 +257,21 @@ class ProductCacheE2ETest {
     void priceUpdateRefreshesBrandAndAllListings() {
         Long cheaper = product("셔츠", 10_000);
         Long pricier = product("코트", 20_000);
+        Long pastOrder = confirmedOrder(pricier, 20_000);
         page(USER, firstPriceAscPage());
         page(USER, "?sort=price_asc");
 
         admin(HttpMethod.PUT, "/api-admin/v1/products/" + pricier, Map.of("name", "코트", "price", 5_000));
+        JsonNode order = order(pastOrder);
 
         assertAll(
             () -> assertThat(page(USER, firstPriceAscPage()).items())
                 .extracting(ProductV1Dto.ProductResponse::id).containsExactly(pricier, cheaper),
             () -> assertThat(page(USER, "?sort=price_asc").items())
-                .extracting(ProductV1Dto.ProductResponse::price).containsExactly(5_000L, 10_000L)
+                .extracting(ProductV1Dto.ProductResponse::price).containsExactly(5_000L, 10_000L),
+            () -> assertThat(order.path("totalAmount").asLong()).as("과거 주문 금액은 그대로").isEqualTo(20_000L),
+            () -> assertThat(order.path("paidAmount").asLong()).isEqualTo(20_000L),
+            () -> assertThat(order.path("items").get(0).path("unitPrice").asLong()).isEqualTo(20_000L)
         );
     }
 
@@ -298,21 +316,29 @@ class ProductCacheE2ETest {
             .extracting(ProductV1Dto.ProductResponse::brandName).containsExactly("무신사 스탠다드");
     }
 
-    @DisplayName("CACHE-005 · 브랜드를 일괄 삭제하면 그 브랜드와 전체 목록의 세대가 오르고, 상품이 고객 결과에서 빠진다")
+    @DisplayName("CACHE-005 · 브랜드를 일괄 삭제하면 세대가 오르고 그 상품이 고객 결과에서 빠지며, 다른 브랜드 상품과 과거 주문은 그대로다")
     @Test
     void brandDeletionBumpsGenerationAndHidesProducts() {
-        product("셔츠", 10_000);
+        Long deletedBrandProduct = product("셔츠", 10_000);
+        Long otherBrand = brandFacade.register("29CM", "셀렉트샵").getId();
+        Long otherBrandProduct = productFacade.register(otherBrand, "코트", Price.of(20_000)).getId();
+        Long pastOrder = confirmedOrder(deletedBrandProduct, 10_000);
         page(USER, firstPriceAscPage());
         page(USER, "?sort=price_asc");
         String brandBefore = generationOf(brandId);
         String allBefore = generationOf(null);
 
         admin(HttpMethod.DELETE, "/api-admin/v1/brands/" + brandId, null);
+        JsonNode order = order(pastOrder);
 
         assertAll(
             () -> assertThat(generationOf(brandId)).isNotEqualTo(brandBefore),
             () -> assertThat(generationOf(null)).isNotEqualTo(allBefore),
-            () -> assertThat(page(USER, "?sort=price_asc").items()).isEmpty()
+            () -> assertThat(page(USER, "?sort=price_asc").items())
+                .extracting(ProductV1Dto.ProductResponse::id).as("다른 브랜드 상품만 남는다").containsExactly(otherBrandProduct),
+            () -> assertThat(order.path("status").asText()).isEqualTo("CONFIRMED"),
+            () -> assertThat(order.path("items").get(0).path("productName").asText()).as("과거 주문은 그대로 조회된다").isEqualTo("셔츠"),
+            () -> assertThat(order.path("totalAmount").asLong()).isEqualTo(10_000L)
         );
     }
 

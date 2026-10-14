@@ -5,6 +5,7 @@ import com.github.dockerjava.api.model.PortBinding;
 import com.github.dockerjava.api.model.Ports;
 import com.loopers.application.brand.BrandFacade;
 import com.loopers.application.product.ProductFacade;
+import com.loopers.domain.common.Quantity;
 import com.loopers.domain.product.Price;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.PageResponse;
@@ -31,6 +32,7 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -201,6 +203,34 @@ class ProductCacheOutageE2ETest {
             () -> assertThat(jdbcTemplate.queryForObject("SELECT price FROM product WHERE id = ?", Long.class, productId))
                 .isEqualTo(5_000L),
             () -> assertThat(write.elapsed()).isLessThan(BOUNDED_WAIT)
+        );
+    }
+
+    @DisplayName("CACHE-009 · Redis 가 멈춰도 주문 확정은 DB 의 재고 · 포인트 규칙대로 처리되고, 마지막 재고를 팔아 무효화를 다시 시도해도 제한된 시간 안에 응답한다")
+    @Test
+    void confirmationIsUnaffectedWhileRedisIsDown() {
+        Long productId = product("셔츠", 10_000);
+        productFacade.adjustStock(productId, Quantity.of(1));
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("X-USER-ID", String.valueOf(USER));
+        testRestTemplate.exchange("/api/v1/points/charge", HttpMethod.POST,
+            new HttpEntity<>(Map.of("amount", 10_000), headers), String.class);
+        ResponseEntity<Map> placed = testRestTemplate.exchange("/api/v1/orders", HttpMethod.POST,
+            new HttpEntity<>(Map.of("lines", List.of(Map.of("productId", productId, "quantity", 1))), headers), Map.class);
+        Object orderId = ((Map<?, ?>) placed.getBody().get("data")).get("id");
+        pauseRedis();
+
+        Timed<ResponseEntity<String>> confirm = timed(() -> testRestTemplate.exchange(
+            "/api/v1/orders/" + orderId + "/confirm", HttpMethod.POST, new HttpEntity<>(null, headers), String.class));
+
+        assertAll(
+            () -> assertThat(confirm.value().getStatusCode().value()).isEqualTo(200),
+            () -> assertThat(confirm.elapsed()).isLessThan(BOUNDED_WAIT),
+            () -> assertThat(jdbcTemplate.queryForObject("SELECT quantity FROM product WHERE id = ?", Integer.class, productId))
+                .as("재고는 DB 에서 차감").isZero(),
+            () -> assertThat(jdbcTemplate.queryForObject("SELECT balance FROM user_point WHERE user_id = ?", Long.class, USER))
+                .as("포인트는 DB 에서 차감").isZero()
         );
     }
 

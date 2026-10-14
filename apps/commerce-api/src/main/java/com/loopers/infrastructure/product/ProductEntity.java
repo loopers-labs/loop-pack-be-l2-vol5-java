@@ -14,7 +14,9 @@ import jakarta.persistence.Table;
     name = "product",
     indexes = {
         @Index(name = "idx_product_brand_id", columnList = "brand_id, deleted_at"),
-        @Index(name = "idx_product_brand_price", columnList = "brand_id, deleted_at, price, id DESC")
+        @Index(name = "idx_product_brand_price", columnList = "brand_id, deleted_at, price, id DESC"),
+        @Index(name = "idx_product_alive_latest", columnList = "deleted_at, id"),
+        @Index(name = "idx_product_alive_price", columnList = "deleted_at, price, id DESC")
     }
 )
 class ProductEntity extends BaseEntity {

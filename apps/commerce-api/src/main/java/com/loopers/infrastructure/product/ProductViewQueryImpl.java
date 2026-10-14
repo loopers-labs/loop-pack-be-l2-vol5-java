@@ -18,21 +18,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ProductViewQueryImpl implements ProductViewQuery {
 
-    private static final String SELECT_COLUMNS = """
-        SELECT p.id, p.name, p.price, p.quantity, b.id, b.name,
-               COUNT(DISTINCT l.id) AS like_count,
-               MAX(CASE WHEN ml.id IS NULL THEN 0 ELSE 1 END) AS liked
-        """;
-
-    private static final String JOINS = """
-          JOIN brand b ON b.id = p.brand_id
-          LEFT JOIN product_like l ON l.product_id = p.id
-          LEFT JOIN product_like ml ON ml.product_id = p.id AND ml.user_id = :viewerId
-        """;
-
-    private static final String GROUP_BY = " GROUP BY p.id, p.name, p.price, p.quantity, b.id, b.name ";
-
-    private static final String PICKED_COLUMNS = """
+    private static final String VIEW_COLUMNS = """
         SELECT p.id, p.name, p.price, p.quantity, b.id, b.name,
                (SELECT COUNT(*) FROM product_like l WHERE l.product_id = p.id) AS like_count,
                EXISTS (SELECT 1 FROM product_like ml WHERE ml.user_id = :viewerId AND ml.product_id = p.id) AS liked
@@ -43,8 +29,8 @@ public class ProductViewQueryImpl implements ProductViewQuery {
     @Override
     public Optional<ProductViewQuery.View> findAliveById(Long productId, Long viewerId) {
         Query query = entityManager.createNativeQuery(
-            SELECT_COLUMNS + " FROM product p " + JOINS
-                + " WHERE p.id = :productId AND p.deleted_at IS NULL " + GROUP_BY);
+            VIEW_COLUMNS + " FROM product p JOIN brand b ON b.id = p.brand_id "
+                + " WHERE p.id = :productId AND p.deleted_at IS NULL ");
         query.setParameter("productId", productId);
         query.setParameter("viewerId", viewerId);
 
@@ -138,7 +124,7 @@ public class ProductViewQueryImpl implements ProductViewQuery {
     }
 
     private static String pickedPage(ProductViewQuery.Criteria criteria) {
-        return PICKED_COLUMNS + pickedFrom(criteria);
+        return VIEW_COLUMNS + pickedFrom(criteria);
     }
 
     private static String pickedFrom(ProductViewQuery.Criteria criteria) {
