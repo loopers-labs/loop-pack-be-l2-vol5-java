@@ -43,6 +43,14 @@ public class ProductQueryService {
         return ProductInfo.of(product, brandsOf(List.of(product)).get(product.product().getBrandId()));
     }
 
+    /**
+     * W4: 캐시에 담긴 상품이 아직 팔 수 있는지 원본에서 확인한다 (PK 조회).
+     */
+    @Transactional(readOnly = true)
+    public boolean areAllSellable(List<Long> productIds) {
+        return productQueryPort.findSellableIds(productIds).containsAll(productIds);
+    }
+
     private Map<Long, BrandModel> brandsOf(List<ProductWithLikes> products) {
         List<Long> brandIds = products.stream().map(product -> product.product().getBrandId()).distinct().toList();
         return brandPort.findAllByIds(brandIds).stream()

@@ -11,6 +11,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -32,12 +33,18 @@ public class ProductListQueryService {
         // 세대는 DB를 읽기 전에 읽는다. 그 사이 변경이 commit되면 세대가 올라가, 아래에서 저장하는 결과는 옛 세대에 들어간다.
         long generation = productListCachePort.currentGeneration();
         Optional<ProductListPage> cached = productListCachePort.find(generation, key);
-        if (cached.isPresent()) {
+        // 가격·이름·좋아요 수는 무효화가 실패하면 TTL 동안 옛 값일 수 있다(표시 신선도). 그러나 삭제된 상품의 비노출은
+        // 신선도로 허용하지 않으므로, hit여도 담긴 상품이 아직 팔 수 있는지 원본에서 확인한다. 하나라도 아니면 miss로 다룬다.
+        if (cached.isPresent() && productQueryService.areAllSellable(idsOf(cached.get()))) {
             return cached.get().toPage();
         }
         Page<ProductInfo> page = productQueryService.getProducts(brandId, sort, pageable);
         productListCachePort.save(generation, key, ProductListPage.from(page));
         return page;
+    }
+
+    private static List<Long> idsOf(ProductListPage page) {
+        return page.content().stream().map(ProductInfo::id).toList();
     }
 
     private static boolean insideWriteTransaction() {

@@ -18,9 +18,11 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -104,6 +106,17 @@ public class ProductQueryPersistenceAdapter implements ProductQueryPort {
             .fetch()
             .stream()
             .collect(Collectors.toMap(row -> row.get(LIKE.productId), row -> row.get(LIKE_COUNT)));
+    }
+
+    @Override
+    public Set<Long> findSellableIds(Collection<Long> productIds) {
+        if (productIds.isEmpty()) {
+            return Set.of();
+        }
+        return Set.copyOf(queryFactory.select(PRODUCT.id)
+            .from(PRODUCT)
+            .where(PRODUCT.id.in(productIds), PRODUCT.deletedAt.isNull())
+            .fetch());
     }
 
     private JPAQuery<Tuple> selectWithLikes() {
