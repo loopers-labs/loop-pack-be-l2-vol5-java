@@ -6,6 +6,7 @@ import com.loopers.product.application.port.out.ProductListKey;
 import com.loopers.product.application.port.out.ProductListPage;
 import com.loopers.product.domain.ProductSort;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
@@ -13,10 +14,15 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalLong;
 
 /**
  * 고객 상품 목록의 cache-aside (W4). 캐시를 먼저 보고, 없으면 DB에서 읽어 캐시에 넣는다.
+ * <p>
+ * 캐시는 빠르게 하려고 둔 복사본이라, Redis가 실패하면 원본(DB) 조회로 우회한다. 반대로 DB 조회의 실패는 감추지 않는다 —
+ * 빈 목록이나 가격 0으로 바꾸지 않고 기존 오류 계약을 그대로 따른다. 그래서 try는 캐시 호출만 감싼다.
  */
+@Slf4j
 @RequiredArgsConstructor
 @Component
 public class ProductListQueryService {
@@ -31,16 +37,45 @@ public class ProductListQueryService {
         }
         ProductListKey key = ProductListKey.of(brandId, sort, pageable);
         // 세대는 DB를 읽기 전에 읽는다. 그 사이 변경이 commit되면 세대가 올라가, 아래에서 저장하는 결과는 옛 세대에 들어간다.
-        long generation = productListCachePort.currentGeneration();
-        Optional<ProductListPage> cached = productListCachePort.find(generation, key);
-        // 가격·이름·좋아요 수는 무효화가 실패하면 TTL 동안 옛 값일 수 있다(표시 신선도). 그러나 삭제된 상품의 비노출은
-        // 신선도로 허용하지 않으므로, hit여도 담긴 상품이 아직 팔 수 있는지 원본에서 확인한다. 하나라도 아니면 miss로 다룬다.
-        if (cached.isPresent() && productQueryService.areAllSellable(idsOf(cached.get()))) {
-            return cached.get().toPage();
+        OptionalLong generation = currentGeneration();
+        if (generation.isPresent()) {
+            Optional<ProductListPage> cached = find(generation.getAsLong(), key);
+            // 가격·이름·좋아요 수는 무효화가 실패하면 TTL 동안 옛 값일 수 있다(표시 신선도). 그러나 삭제된 상품의 비노출은
+            // 신선도로 허용하지 않으므로, hit여도 담긴 상품이 아직 팔 수 있는지 원본에서 확인한다. 하나라도 아니면 miss로 다룬다.
+            if (cached.isPresent() && productQueryService.areAllSellable(idsOf(cached.get()))) {
+                return cached.get().toPage();
+            }
         }
         Page<ProductInfo> page = productQueryService.getProducts(brandId, sort, pageable);
-        productListCachePort.save(generation, key, ProductListPage.from(page));
+        generation.ifPresent(current -> save(current, key, page));
         return page;
+    }
+
+    /** Redis를 쓸 수 없으면 비어 있다 — 이번 요청은 캐시를 읽지도 채우지도 않는다. */
+    private OptionalLong currentGeneration() {
+        try {
+            return OptionalLong.of(productListCachePort.currentGeneration());
+        } catch (RuntimeException e) {
+            log.warn("상품 목록 캐시를 쓸 수 없어 DB에서 읽습니다.", e);
+            return OptionalLong.empty();
+        }
+    }
+
+    private Optional<ProductListPage> find(long generation, ProductListKey key) {
+        try {
+            return productListCachePort.find(generation, key);
+        } catch (RuntimeException e) {
+            log.warn("상품 목록 캐시 조회 실패 — DB에서 읽습니다.", e);
+            return Optional.empty();
+        }
+    }
+
+    private void save(long generation, ProductListKey key, Page<ProductInfo> page) {
+        try {
+            productListCachePort.save(generation, key, ProductListPage.from(page));
+        } catch (RuntimeException e) {
+            log.warn("상품 목록 캐시 저장 실패 — 응답은 DB 결과로 정상 반환합니다.", e);
+        }
     }
 
     private static List<Long> idsOf(ProductListPage page) {
