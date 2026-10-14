@@ -163,7 +163,7 @@ likes_desc는 hit에서 상품 1만·좋아요 9만 행 집계(DB 30 ms)가 PK 2
 - replica 복제 지연 장면은 테스트하지 못했다(테스트 Redis는 단일 노드). master 연결을 쓰는 이유는 설계 판단이다.
 - 캐시 hit에도 DB 조회 1개(PK `IN`)가 남는다. 비노출을 지키는 비용이다.
 - 같은 키의 동시 miss를 합치지 않는다(stampede 대응 없음). 만료 시점 분산(TTL jitter)도 없다.
-- 로컬 실행은 `ddl-auto: none`이다. seed를 다시 넣으려고 `--spring.jpa.hibernate.ddl-auto=create`로 띄우면 테이블이 다시 만들어지며, `@Index`에 없는 SQL 인덱스는 사라진다 — `docs/week4/sql`의 SQL을 다시 실행한다. 테스트도 로컬 MySQL을 쓰므로 테스트를 돌리면 seed가 지워진다.
+- 로컬 실행은 `ddl-auto: none`이다. seed를 다시 넣으려고 `--spring.jpa.hibernate.ddl-auto=create`로 띄우면 테이블이 다시 만들어지며, `@Index`에 없는 SQL 인덱스는 사라진다 — `docs/week4/sql`의 SQL을 다시 실행한다. 테스트도 같은 로컬 MySQL을 쓰지만 스키마는 `loopers_test`로 나눠, 테스트를 돌려도 `loopers`의 seed는 남는다 (`docker/mysql-init/01-test-schema.sql`, 기존 볼륨이면 root로 한 번 실행).
 
 ## 8. 커밋 이력 — 깨뜨리기 → 고치기
 
