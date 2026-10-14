@@ -20,16 +20,18 @@ public class ProductViewQueryImpl implements ProductViewQuery {
 
     private static final String VIEW_COLUMNS = """
         SELECT p.id, p.name, p.price, p.quantity, b.id, b.name,
-               (SELECT COUNT(*) FROM product_like l WHERE l.product_id = p.id) AS like_count,
+               COALESCE(c.like_count, 0) AS like_count,
                EXISTS (SELECT 1 FROM product_like ml WHERE ml.user_id = :viewerId AND ml.product_id = p.id) AS liked
         """;
+
+    private static final String LIKE_COUNT_JOIN = " LEFT JOIN product_like_count c ON c.product_id = p.id ";
 
     private final EntityManager entityManager;
 
     @Override
     public Optional<ProductViewQuery.View> findAliveById(Long productId, Long viewerId) {
         Query query = entityManager.createNativeQuery(
-            VIEW_COLUMNS + " FROM product p JOIN brand b ON b.id = p.brand_id "
+            VIEW_COLUMNS + " FROM product p JOIN brand b ON b.id = p.brand_id " + LIKE_COUNT_JOIN
                 + " WHERE p.id = :productId AND p.deleted_at IS NULL ");
         query.setParameter("productId", productId);
         query.setParameter("viewerId", viewerId);
@@ -63,14 +65,13 @@ public class ProductViewQueryImpl implements ProductViewQuery {
     public PageWindow<ProductViewQuery.View> findLikedBy(Long userId, PageNumber page, PageSize size) {
         Query query = entityManager.createNativeQuery("""
             SELECT p.id, p.name, p.price, p.quantity, b.id, b.name,
-                   COUNT(DISTINCT l.id) AS like_count, 1 AS liked
+                   COALESCE(c.like_count, 0) AS like_count, 1 AS liked
               FROM product_like ml
               JOIN product p ON p.id = ml.product_id AND p.deleted_at IS NULL
               JOIN brand b ON b.id = p.brand_id
-              LEFT JOIN product_like l ON l.product_id = p.id
+              LEFT JOIN product_like_count c ON c.product_id = p.id
              WHERE ml.user_id = :userId
-             GROUP BY p.id, p.name, p.price, p.quantity, b.id, b.name
-             ORDER BY MAX(ml.id) DESC
+             ORDER BY ml.id DESC
              LIMIT :limit OFFSET :offset
             """);
         query.setParameter("userId", userId);
@@ -87,7 +88,7 @@ public class ProductViewQueryImpl implements ProductViewQuery {
     @Override
     public PageWindow<ProductViewQuery.Listing> findListingPage(ProductViewQuery.Criteria criteria) {
         Query query = entityManager.createNativeQuery(
-            "SELECT p.id, p.name, p.price, p.quantity, b.id, b.name " + pickedFrom(criteria));
+            "SELECT p.id, p.name, p.price, p.quantity, b.id, b.name " + pickedFrom(criteria, ""));
         query.setParameter("limit", PageWindow.limitOf(criteria.size()));
         query.setParameter("offset", criteria.offset());
         if (criteria.brandId() != null) {
@@ -108,9 +109,10 @@ public class ProductViewQueryImpl implements ProductViewQuery {
         }
         Query query = entityManager.createNativeQuery("""
             SELECT p.id,
-                   (SELECT COUNT(*) FROM product_like l WHERE l.product_id = p.id) AS like_count,
+                   COALESCE(c.like_count, 0) AS like_count,
                    EXISTS (SELECT 1 FROM product_like ml WHERE ml.user_id = :viewerId AND ml.product_id = p.id) AS liked
               FROM product p
+              LEFT JOIN product_like_count c ON c.product_id = p.id
              WHERE p.id IN (:productIds) AND p.deleted_at IS NULL
             """);
         query.setParameter("productIds", productIds);
@@ -124,16 +126,17 @@ public class ProductViewQueryImpl implements ProductViewQuery {
     }
 
     private static String pickedPage(ProductViewQuery.Criteria criteria) {
-        return VIEW_COLUMNS + pickedFrom(criteria);
+        return VIEW_COLUMNS + pickedFrom(criteria, LIKE_COUNT_JOIN);
     }
 
-    private static String pickedFrom(ProductViewQuery.Criteria criteria) {
+    private static String pickedFrom(ProductViewQuery.Criteria criteria, String joins) {
         return " FROM (SELECT id FROM product WHERE deleted_at IS NULL "
             + (criteria.brandId() != null ? " AND brand_id = :brandId " : "")
             + " ORDER BY " + orderByOf(criteria.sort(), "")
             + " LIMIT :limit OFFSET :offset) picked "
             + " JOIN product p ON p.id = picked.id "
             + " JOIN brand b ON b.id = p.brand_id "
+            + joins
             + " ORDER BY " + orderByOf(criteria.sort(), "p.");
     }
 
@@ -142,9 +145,9 @@ public class ProductViewQueryImpl implements ProductViewQuery {
             SELECT p.id, p.name, p.price, p.quantity, b.id, b.name, picked.like_count,
                    EXISTS (SELECT 1 FROM product_like ml WHERE ml.user_id = :viewerId AND ml.product_id = p.id) AS liked
             """
-            + " FROM (SELECT id, (SELECT COUNT(*) FROM product_like l WHERE l.product_id = product.id) AS like_count "
-            + " FROM product WHERE deleted_at IS NULL "
-            + (criteria.brandId() != null ? " AND brand_id = :brandId " : "")
+            + " FROM (SELECT p.id, COALESCE(c.like_count, 0) AS like_count "
+            + " FROM product p " + LIKE_COUNT_JOIN + " WHERE p.deleted_at IS NULL "
+            + (criteria.brandId() != null ? " AND p.brand_id = :brandId " : "")
             + " ORDER BY " + orderByOf(criteria.sort(), "")
             + " LIMIT :limit OFFSET :offset) picked "
             + " JOIN product p ON p.id = picked.id "

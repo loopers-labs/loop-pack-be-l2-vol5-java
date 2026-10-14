@@ -2,9 +2,13 @@ package com.loopers.domain.like;
 
 public interface LikeRepository {
 
-    void save(ProductLike like);
+    boolean save(ProductLike like);
 
-    void delete(Long userId, Long productId);
+    boolean delete(Long userId, Long productId);
+
+    void increaseCount(Long productId);
+
+    void decreaseCount(Long productId);
 
     long countByProductId(Long productId);
 }
