@@ -108,7 +108,7 @@ class ProductListCacheIntegrationTest {
     }
 
     @Test
-    @DisplayName("hit면 같은 조회 조건의 저장된 응답을 반환하고 상품·브랜드·좋아요 SQL을 실행하지 않는다.")
+    @DisplayName("hit면 같은 조회 조건의 저장된 응답을 반환하고 상품·브랜드·좋아요 SQL 대신 삭제 확인만 실행한다.")
     void returnsCachedResultWithoutQueries_onHit() {
         Brand brand = brandRepository.save(Brand.create("Nike"));
         Product product = productRepository.save(Product.create(brand.getId(), "Air", 1_000L));
@@ -121,7 +121,9 @@ class ProductListCacheIntegrationTest {
 
         assertThat(second).isEqualTo(first);
         assertThat(second).extracting(CustomerProductInfo::price).containsExactly(1_000L);
-        assertThat(statistics.getPrepareStatementCount()).isZero();
+        assertThat(statistics.getPrepareStatementCount())
+            .as("목록·브랜드·좋아요 조회 없이 삭제 확인 1회만 실행한다.")
+            .isEqualTo(1L);
     }
 
     @ParameterizedTest(name = "처음 정렬={0}, 다음 정렬={1}")
@@ -135,7 +137,9 @@ class ProductListCacheIntegrationTest {
 
         productFacade.getCustomerList(null, 0, 20, secondSort);
 
-        assertThat(statistics.getPrepareStatementCount()).isZero();
+        assertThat(statistics.getPrepareStatementCount())
+            .as("목록·브랜드·좋아요 조회 없이 삭제 확인 1회만 실행한다.")
+            .isEqualTo(1L);
     }
 
     @Test

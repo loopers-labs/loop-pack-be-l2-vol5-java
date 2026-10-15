@@ -50,11 +50,20 @@ public class ProductFacade {
         // 조회를 시작할 때 읽은 버전의 키에만 저장해, 늦게 끝난 조회가 새 버전의 결과를 덮지 않게 한다.
         long version = productListCache.currentVersion(brandId);
         ProductListCacheKey key = new ProductListCacheKey(brandId, productSort, page, size, version);
-        return productListCache.find(key).orElseGet(() -> {
+        return productListCache.find(key).filter(this::containsOnlyActiveProducts).orElseGet(() -> {
             List<CustomerProductInfo> products = customerProductListReader.read(brandId, productSort, page, size);
             productListCache.put(key, products);
             return products;
         });
+    }
+
+    // 무효화가 누락돼도 삭제된 상품을 노출하지 않도록 hit 결과의 삭제 여부는 DB에서 확인한다.
+    private boolean containsOnlyActiveProducts(List<CustomerProductInfo> products) {
+        if (products.isEmpty()) {
+            return true;
+        }
+        List<Long> productIds = products.stream().map(CustomerProductInfo::id).toList();
+        return productRepository.countActiveByIds(productIds) == productIds.size();
     }
 
     private ProductSort customerSort(String sort) {

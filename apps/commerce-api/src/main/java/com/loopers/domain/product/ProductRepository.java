@@ -14,6 +14,8 @@ public interface ProductRepository {
 
     List<Product> findActivePage(Long brandId, ProductSort sort, int page, int size);
 
+    long countActiveByIds(List<Long> productIds);
+
     List<Product> findAllDeleted();
 
     int updateActiveDetails(Long productId, String name, long price, ZonedDateTime updatedAt);

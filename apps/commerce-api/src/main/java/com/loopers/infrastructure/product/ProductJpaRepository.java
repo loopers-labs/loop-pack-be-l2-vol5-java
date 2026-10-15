@@ -17,6 +17,8 @@ public interface ProductJpaRepository extends JpaRepository<ProductJpaEntity, Lo
 
     List<ProductJpaEntity> findAllByDeletedAtIsNullAndBrand_Id(Long brandId, Pageable pageable);
 
+    long countByIdInAndDeletedAtIsNull(List<Long> ids);
+
     @Query(value = """
         SELECT p.*
         FROM products p

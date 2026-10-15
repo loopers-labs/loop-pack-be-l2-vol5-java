@@ -71,6 +71,11 @@ public class ProductRepositoryImpl implements ProductRepository {
     }
 
     @Override
+    public long countActiveByIds(List<Long> productIds) {
+        return productJpaRepository.countByIdInAndDeletedAtIsNull(productIds);
+    }
+
+    @Override
     public List<Product> findAllDeleted() {
         return productJpaRepository.findAllByDeletedAtIsNotNull().stream().map(ProductJpaMapper::toDomain).toList();
     }

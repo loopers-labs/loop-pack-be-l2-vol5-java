@@ -186,7 +186,9 @@ class ProductListCacheInvalidationIntegrationTest {
         statistics.clear();
         productFacade.getCustomerList(otherBrand.getId(), 0, 20, "latest");
 
-        assertThat(statistics.getPrepareStatementCount()).isZero();
+        assertThat(statistics.getPrepareStatementCount())
+            .as("목록·브랜드·좋아요 조회 없이 삭제 확인 1회만 실행한다.")
+            .isEqualTo(1L);
     }
 
     @Test
@@ -201,7 +203,9 @@ class ProductListCacheInvalidationIntegrationTest {
         statistics.clear();
 
         assertThat(brandList()).isEqualTo(before);
-        assertThat(statistics.getPrepareStatementCount()).isZero();
+        assertThat(statistics.getPrepareStatementCount())
+            .as("목록·브랜드·좋아요 조회 없이 삭제 확인 1회만 실행한다.")
+            .isEqualTo(1L);
     }
 
     @Test
@@ -214,7 +218,9 @@ class ProductListCacheInvalidationIntegrationTest {
         statistics.clear();
 
         assertThat(brandList()).isEqualTo(before);
-        assertThat(statistics.getPrepareStatementCount()).isZero();
+        assertThat(statistics.getPrepareStatementCount())
+            .as("목록·브랜드·좋아요 조회 없이 삭제 확인 1회만 실행한다.")
+            .isEqualTo(1L);
     }
 
     private void warmUpBrandAndAllLists() {
