@@ -26,6 +26,20 @@ public class ProductViewQueryImpl implements ProductViewQuery {
 
     private static final String LIKE_COUNT_JOIN = " LEFT JOIN product_like_count c ON c.product_id = p.id ";
 
+    private static final String LIKED_RANKED_PAGE = """
+        SELECT p.id, p.name, p.price, p.quantity, b.id, b.name, picked.like_count,
+               EXISTS (SELECT 1 FROM product_like ml WHERE ml.user_id = :viewerId AND ml.product_id = p.id) AS liked
+          FROM (SELECT STRAIGHT_JOIN c.product_id, c.like_count
+                  FROM product_like_count c
+                  JOIN product alive ON alive.id = c.product_id AND alive.deleted_at IS NULL
+                 WHERE c.like_count > 0
+                 ORDER BY c.like_count DESC, c.product_id DESC
+                 LIMIT :limit OFFSET :offset) picked
+          JOIN product p ON p.id = picked.product_id
+          JOIN brand b ON b.id = p.brand_id
+         ORDER BY picked.like_count DESC, p.id DESC
+        """;
+
     private final EntityManager entityManager;
 
     @Override
@@ -42,10 +56,19 @@ public class ProductViewQueryImpl implements ProductViewQuery {
 
     @Override
     public PageWindow<ProductViewQuery.View> findPage(ProductViewQuery.Criteria criteria) {
-        String sql = criteria.sort() == ProductViewQuery.Sort.LIKES_DESC
-            ? likesRankedPage(criteria)
-            : pickedPage(criteria);
+        if (criteria.sort() != ProductViewQuery.Sort.LIKES_DESC) {
+            return PageWindow.of(viewsOf(pickedPage(criteria), criteria), criteria.size());
+        }
+        if (criteria.brandId() == null) {
+            List<ProductViewQuery.View> liked = viewsOf(LIKED_RANKED_PAGE, criteria);
+            if (liked.size() == PageWindow.limitOf(criteria.size())) {
+                return PageWindow.of(liked, criteria.size());
+            }
+        }
+        return PageWindow.of(viewsOf(likesRankedPage(criteria), criteria), criteria.size());
+    }
 
+    private List<ProductViewQuery.View> viewsOf(String sql, ProductViewQuery.Criteria criteria) {
         Query query = entityManager.createNativeQuery(sql);
         query.setParameter("viewerId", criteria.viewerId());
         query.setParameter("limit", PageWindow.limitOf(criteria.size()));
@@ -53,12 +76,9 @@ public class ProductViewQueryImpl implements ProductViewQuery {
         if (criteria.brandId() != null) {
             query.setParameter("brandId", criteria.brandId());
         }
-
-        List<ProductViewQuery.View> rows = ((List<?>) query.getResultList()).stream()
+        return ((List<?>) query.getResultList()).stream()
             .map(row -> toView((Object[]) row))
             .toList();
-
-        return PageWindow.of(rows, criteria.size());
     }
 
     @Override

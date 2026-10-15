@@ -391,6 +391,43 @@ class ProductV1ApiE2ETest {
                 .extracting(ProductV1Dto.ProductResponse::id).containsExactly(kept);
         }
 
+        @DisplayName("PRODUCT-005 · 012 · 013 · 전체 인기순은 좋아요가 있는 상품 뒤에 좋아요 0 인 상품(취소로 0 이 된 상품 포함)이 id 내림차순으로 이어지고, 삭제된 인기 상품은 빠진다")
+        @Test
+        void keepsAllLikesDescOrderAcrossZeroLikeBoundary() {
+            Long neverLiked = product("양말", 1_000);
+            Long unliked = product("모자", 2_000);
+            Long once = product("셔츠", 3_000);
+            Long deletedPopular = product("코트", 4_000);
+            Long popular = product("니트", 5_000);
+            Long newest = product("장갑", 6_000);
+            likeFacade.like(USER, unliked);
+            likeFacade.unlike(USER, unliked);
+            likeFacade.like(USER, once);
+            likeFacade.like(USER, deletedPopular);
+            likeFacade.like(OTHER_USER, deletedPopular);
+            likeFacade.like(USER, popular);
+            likeFacade.like(OTHER_USER, popular);
+            productFacade.delete(deletedPopular);
+
+            PageResponse<ProductV1Dto.ProductResponse> top = page(USER, "?sort=likes_desc&size=1&page=0");
+            PageResponse<ProductV1Dto.ProductResponse> first = page(USER, "?sort=likes_desc&size=2&page=0");
+            PageResponse<ProductV1Dto.ProductResponse> second = page(USER, "?sort=likes_desc&size=2&page=1");
+            PageResponse<ProductV1Dto.ProductResponse> third = page(USER, "?sort=likes_desc&size=2&page=2");
+
+            assertAll(
+                () -> assertThat(top.items()).extracting(ProductV1Dto.ProductResponse::id).containsExactly(popular),
+                () -> assertThat(top.hasNext()).isTrue(),
+                () -> assertThat(first.items()).extracting(ProductV1Dto.ProductResponse::id).containsExactly(popular, once),
+                () -> assertThat(first.items()).extracting(ProductV1Dto.ProductResponse::likeCount).containsExactly(2L, 1L),
+                () -> assertThat(first.hasNext()).isTrue(),
+                () -> assertThat(second.items()).extracting(ProductV1Dto.ProductResponse::id).containsExactly(newest, unliked),
+                () -> assertThat(second.items()).extracting(ProductV1Dto.ProductResponse::likeCount).containsExactly(0L, 0L),
+                () -> assertThat(second.hasNext()).isTrue(),
+                () -> assertThat(third.items()).extracting(ProductV1Dto.ProductResponse::id).containsExactly(neverLiked),
+                () -> assertThat(third.hasNext()).isFalse()
+            );
+        }
+
         @DisplayName("COMMON-008 · 상품이 딱 한 페이지면 hasNext 는 false, 하나라도 넘치면 true 다")
         @Test
         void hasNextFollowsOneMoreItem() {
