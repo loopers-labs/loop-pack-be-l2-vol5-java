@@ -16,6 +16,10 @@ public record ProductListPage(List<ProductInfo> content, int page, int size, lon
         return new ProductListPage(page.getContent(), page.getNumber(), page.getSize(), page.getTotalElements());
     }
 
+    public ProductListPage withContent(List<ProductInfo> content) {
+        return new ProductListPage(content, page, size, totalElements);
+    }
+
     public Page<ProductInfo> toPage() {
         return new PageImpl<>(content, PageRequest.of(page, size), totalElements);
     }

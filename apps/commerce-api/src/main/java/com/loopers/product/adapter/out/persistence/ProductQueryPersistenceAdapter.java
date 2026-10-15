@@ -22,7 +22,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -109,14 +108,13 @@ public class ProductQueryPersistenceAdapter implements ProductQueryPort {
     }
 
     @Override
-    public Set<Long> findSellableIds(Collection<Long> productIds) {
+    public List<ProductModel> findSellableByIds(Collection<Long> productIds) {
         if (productIds.isEmpty()) {
-            return Set.of();
+            return List.of();
         }
-        return Set.copyOf(queryFactory.select(PRODUCT.id)
-            .from(PRODUCT)
+        return queryFactory.selectFrom(PRODUCT)
             .where(PRODUCT.id.in(productIds), PRODUCT.deletedAt.isNull())
-            .fetch());
+            .fetch();
     }
 
     private JPAQuery<Tuple> selectWithLikes() {

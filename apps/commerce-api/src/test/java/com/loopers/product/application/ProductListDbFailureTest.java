@@ -76,7 +76,7 @@ class ProductListDbFailureTest {
         productCommandUseCase.create(brandId, "A", 1_000, 10);
         productListQueryService.getProducts(brandId, ProductSort.PRICE_ASC, FIRST_PAGE);
         doThrow(new DataAccessResourceFailureException("테스트: DB 실패"))
-            .when(productQueryPort).findSellableIds(any());
+            .when(productQueryPort).findSellableByIds(any());
 
         // act & assert
         assertThatThrownBy(() -> productListQueryService.getProducts(brandId, ProductSort.PRICE_ASC, FIRST_PAGE))

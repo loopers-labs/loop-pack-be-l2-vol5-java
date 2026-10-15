@@ -1,13 +1,14 @@
 package com.loopers.product.application.port.out;
 
+import com.loopers.product.domain.ProductModel;
 import com.loopers.product.domain.ProductSort;
 import com.loopers.product.domain.ProductWithLikes;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 
 /**
  * 고객 상품 조회 전용 약속 (ADR-02, ISP).
@@ -23,7 +24,7 @@ public interface ProductQueryPort {
     Optional<ProductWithLikes> findSellableById(Long productId);
 
     /**
-     * 주어진 상품 중 지금 팔 수 있는(삭제되지 않은) 상품의 id. W4 목록 캐시가 hit일 때 비노출을 원본으로 확인한다.
+     * 주어진 상품 중 지금 팔 수 있는(삭제되지 않은) 상품. W4 목록 캐시가 hit일 때 비노출과 가격·이름을 원본으로 확인한다 (PK 조회 1번).
      */
-    Set<Long> findSellableIds(Collection<Long> productIds);
+    List<ProductModel> findSellableByIds(Collection<Long> productIds);
 }
