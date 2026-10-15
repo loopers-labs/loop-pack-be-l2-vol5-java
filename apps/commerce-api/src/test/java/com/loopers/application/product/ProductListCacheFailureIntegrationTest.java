@@ -6,7 +6,6 @@ import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
-import com.loopers.domain.product.ProductSort;
 import com.loopers.infrastructure.product.RedisProductListCache;
 import com.loopers.utils.DatabaseCleanUp;
 import com.loopers.utils.RedisCleanUp;
@@ -27,13 +26,24 @@ import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.doAnswer;
 
 @SpringBootTest
 @Import(ProductListCacheFailureIntegrationTest.FaultInjectionConfig.class)
@@ -43,7 +53,7 @@ class ProductListCacheFailureIntegrationTest {
     @Autowired
     private FaultInjectingProductListCache faultInjectingCache;
 
-    @Autowired
+    @MockitoSpyBean
     private CustomerProductListReader customerProductListReader;
 
     @Autowired
@@ -202,20 +212,63 @@ class ProductListCacheFailureIntegrationTest {
     }
 
     @Test
-    @DisplayName("F4: 변경 전에 시작한 조회가 늦게 저장해도 변경 뒤 시작한 조회는 변경된 결과를 반환한다.")
-    void returnsChangedResult_whenEarlierReaderStoresLate() {
-        long versionReadBeforeWrite = faultInjectingCache.currentVersion(brand.getId());
-        List<CustomerProductInfo> staleResult = customerProductListReader.read(brand.getId(), ProductSort.LATEST, 0, 20);
+    @DisplayName("F4: 이전 DB 결과 읽기 → 관리자 가격 변경 커밋 → 이전 결과 저장 순서여도, 변경 뒤 시작한 조회는 새 가격을 받는다.")
+    void returnsChangedResult_whenEarlierReaderStoresLate() throws Exception {
+        LateFill lateFill = runLateFill(() -> productFacade.update(remaining.getId(), "Max 2", 9_000L));
 
-        productFacade.update(remaining.getId(), "Max 2", 9_000L);
-        faultInjectingCache.put(
-            new ProductListCacheKey(brand.getId(), ProductSort.LATEST, 0, 20, versionReadBeforeWrite),
-            staleResult
-        );
-
+        assertThat(lateFill.staleKeys()).as("조회 A가 이전 버전 키에 늦게 저장했다.").hasSize(1);
+        assertThat(lateFill.earlierResult())
+            .as("이미 시작한 조회는 자신이 읽은 시점의 결과를 반환한다.")
+            .filteredOn(info -> info.id().equals(remaining.getId()))
+            .extracting(CustomerProductInfo::price).containsExactly(2_000L);
         assertThat(findIn(brandList(), remaining.getId()))
             .extracting(CustomerProductInfo::name, CustomerProductInfo::price)
             .containsExactly("Max 2", 9_000L);
+    }
+
+    @Test
+    @DisplayName("F4: 이전 DB 결과 읽기 → 관리자 상품 삭제 커밋 → 이전 결과 저장 순서여도, 변경 뒤 시작한 조회는 삭제 상품을 받지 않는다.")
+    void hidesDeletedProduct_whenEarlierReaderStoresLate() throws Exception {
+        LateFill lateFill = runLateFill(() -> productFacade.delete(deletedLater.getId()));
+
+        assertThat(lateFill.staleKeys()).hasSize(1);
+        assertThat(lateFill.earlierResult()).extracting(CustomerProductInfo::id).contains(deletedLater.getId());
+        assertThat(brandList()).extracting(CustomerProductInfo::id).containsExactly(remaining.getId());
+    }
+
+    // 조회 A를 DB에서 이전 결과를 읽은 직후에 멈추고, 그 사이 변경을 커밋한 뒤 A의 늦은 저장을 재개한다.
+    private LateFill runLateFill(Runnable committedChange) throws Exception {
+        CountDownLatch readerFinishedDbRead = new CountDownLatch(1);
+        CountDownLatch releaseReader = new CountDownLatch(1);
+        AtomicBoolean pauseOnce = new AtomicBoolean(true);
+        doAnswer(invocation -> {
+            Object result = invocation.callRealMethod();
+            if (pauseOnce.getAndSet(false)) {
+                readerFinishedDbRead.countDown();
+                if (!releaseReader.await(5, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("조회 재개 신호를 기다리다 시간이 초과됐습니다.");
+                }
+            }
+            return result;
+        }).when(customerProductListReader).read(any(), any(), anyInt(), anyInt());
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<List<CustomerProductInfo>> earlierReader = executor.submit(this::brandList);
+            assertThat(readerFinishedDbRead.await(5, TimeUnit.SECONDS)).as("조회 A가 DB에서 이전 결과를 읽은 직후 멈춘다.").isTrue();
+
+            committedChange.run();
+            releaseReader.countDown();
+            List<CustomerProductInfo> earlierResult = earlierReader.get(5, TimeUnit.SECONDS);
+
+            return new LateFill(earlierResult, redisTemplate.keys("product:list:v1:ver=0:brand=" + brand.getId() + ":*"));
+        } finally {
+            releaseReader.countDown();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    private record LateFill(List<CustomerProductInfo> earlierResult, Set<String> staleKeys) {
     }
 
     private void expireCachedLists() {
