@@ -14,9 +14,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.ZonedDateTime;
 import java.util.List;
-import java.util.Map;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 @RequiredArgsConstructor
 @Component
@@ -25,6 +22,9 @@ public class ProductFacade {
     private final BrandRepository brandRepository;
     private final LikeRepository likeRepository;
     private final ProductRepository productRepository;
+    private final CustomerProductListReader customerProductListReader;
+    private final ProductListCache productListCache;
+    private final ProductListCacheInvalidator productListCacheInvalidator;
 
     @Transactional(readOnly = true)
     public ProductInfo getDetail(Long productId) {
@@ -41,24 +41,20 @@ public class ProductFacade {
         return CustomerProductInfo.from(product, brand, likeCount);
     }
 
-    @Transactional(readOnly = true)
+    // hit에서는 DB 커넥션을 잡지 않도록 트랜잭션은 miss의 DB 조회에만 연다.
     public List<CustomerProductInfo> getCustomerList(Long brandId, int page, int size, String sort) {
         if (page < 0 || size < 1 || size > 100) {
             throw new CoreException(ErrorType.BAD_REQUEST, "페이지 입력이 올바르지 않습니다.");
         }
-        List<Product> pageProducts = productRepository.findActivePage(brandId, customerSort(sort), page, size);
-        List<Long> brandIds = pageProducts.stream().map(Product::getBrandId).distinct().toList();
-        Map<Long, Brand> brandsById = brandRepository.findAllByIds(brandIds).stream()
-            .collect(Collectors.toMap(Brand::getId, Function.identity()));
-        List<Long> productIds = pageProducts.stream().map(Product::getId).toList();
-        Map<Long, Long> likeCountsByProductId = likeRepository.countByProductIds(productIds);
-        return pageProducts.stream()
-            .map(product -> CustomerProductInfo.from(
-                product,
-                brandsById.get(product.getBrandId()),
-                likeCountsByProductId.getOrDefault(product.getId(), 0L)
-            ))
-            .toList();
+        ProductSort productSort = customerSort(sort);
+        // 조회를 시작할 때 읽은 버전의 키에만 저장해, 늦게 끝난 조회가 새 버전의 결과를 덮지 않게 한다.
+        long version = productListCache.currentVersion(brandId);
+        ProductListCacheKey key = new ProductListCacheKey(brandId, productSort, page, size, version);
+        return productListCache.find(key).orElseGet(() -> {
+            List<CustomerProductInfo> products = customerProductListReader.read(brandId, productSort, page, size);
+            productListCache.put(key, products);
+            return products;
+        });
     }
 
     private ProductSort customerSort(String sort) {
@@ -88,6 +84,7 @@ public class ProductFacade {
         Product product = Product.create(brand.getId(), name, price);
 
         Product savedProduct = productRepository.save(product);
+        productListCacheInvalidator.invalidateAfterCommit(savedProduct.getBrandId());
         return ProductInfo.from(savedProduct);
     }
 
@@ -110,6 +107,7 @@ public class ProductFacade {
         if (productRepository.updateActiveDetails(productId, name, price, ZonedDateTime.now()) == 0) {
             throw new CoreException(ErrorType.NOT_FOUND, "상품을 찾을 수 없습니다.");
         }
+        productListCacheInvalidator.invalidateAfterCommit(product.getBrandId());
         return ProductInfo.from(product);
     }
 
@@ -120,6 +118,7 @@ public class ProductFacade {
         if (productRepository.softDeleteActiveById(productId, product.getDeletedAt()) == 0) {
             throw new CoreException(ErrorType.NOT_FOUND, "상품을 찾을 수 없습니다.");
         }
+        productListCacheInvalidator.invalidateAfterCommit(product.getBrandId());
     }
 
     private Brand findActiveBrandById(Long brandId) {

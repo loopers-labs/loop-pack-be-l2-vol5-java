@@ -7,6 +7,7 @@ import com.loopers.domain.product.ProductRepository;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.admin.AdminMockMvcClient;
 import com.loopers.utils.DatabaseCleanUp;
+import com.loopers.utils.RedisCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -54,6 +55,9 @@ class BrandV1ApiE2ETest {
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
 
+    @Autowired
+    private RedisCleanUp redisCleanUp;
+
     @BeforeEach
     void setUp() {
         adminClient = new AdminMockMvcClient(mockMvc, objectMapper);
@@ -62,6 +66,7 @@ class BrandV1ApiE2ETest {
     @AfterEach
     void tearDown() {
         databaseCleanUp.truncateAllTables();
+        redisCleanUp.truncateAll();
     }
 
     @DisplayName("POST /api-admin/v1/brands")

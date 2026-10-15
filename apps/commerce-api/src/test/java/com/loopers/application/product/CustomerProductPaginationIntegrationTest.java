@@ -8,6 +8,7 @@ import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.infrastructure.product.ProductJpaEntity;
 import com.loopers.utils.DatabaseCleanUp;
+import com.loopers.utils.RedisCleanUp;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.hibernate.SessionFactory;
@@ -54,6 +55,9 @@ class CustomerProductPaginationIntegrationTest {
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
 
+    @Autowired
+    private RedisCleanUp redisCleanUp;
+
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -71,6 +75,7 @@ class CustomerProductPaginationIntegrationTest {
     void tearDown() {
         statistics.setStatisticsEnabled(statisticsWereEnabled);
         databaseCleanUp.truncateAllTables();
+        redisCleanUp.truncateAll();
     }
 
     @ParameterizedTest(name = "정렬={0}, 브랜드 필터={1}")

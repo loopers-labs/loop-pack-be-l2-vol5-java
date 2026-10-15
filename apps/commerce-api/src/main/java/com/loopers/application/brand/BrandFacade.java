@@ -1,5 +1,6 @@
 package com.loopers.application.brand;
 
+import com.loopers.application.product.ProductListCacheInvalidator;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandDeletionPolicy;
 import com.loopers.domain.brand.BrandRepository;
@@ -19,6 +20,7 @@ public class BrandFacade {
 
     private final BrandRepository brandRepository;
     private final ProductRepository productRepository;
+    private final ProductListCacheInvalidator productListCacheInvalidator;
     private final BrandDeletionPolicy brandDeletionPolicy = new BrandDeletionPolicy();
 
     @Transactional(readOnly = true)
@@ -56,6 +58,7 @@ public class BrandFacade {
         if (updatedRows == 0) {
             throw new CoreException(ErrorType.NOT_FOUND, "브랜드를 찾을 수 없습니다.");
         }
+        productListCacheInvalidator.invalidateAfterCommit(brandId);
         return BrandInfo.from(brand);
     }
 
@@ -81,6 +84,7 @@ public class BrandFacade {
         if (brandRepository.softDeleteActiveById(brandId, deletedAt) == 0) {
             throw new CoreException(ErrorType.NOT_FOUND, "브랜드를 찾을 수 없습니다.");
         }
+        productListCacheInvalidator.invalidateAfterCommit(brandId);
     }
 
     private Brand findBrandById(Long brandId) {
