@@ -34,8 +34,19 @@ GET /api/v1/products?brandId=7&page=0&size=20&sort=price_asc
 - SQL 수·DB 시간은 1 VU의 준비 포함 1,003개 요청에 대한 Performance Schema 차이로 계산했다. 요청당 DB 시간은 누적 시간을 1,003으로 나눈 값이며 HTTP 지연과 측정 범위가 다르다.
 
 2절 비교표는 각 단계·VU별 한 번의 측정 결과다. DB·OS 캐시를 초기화하지 않았으며, 인덱스 생성과 같은 호스트의 자원 공유 영향을 포함한다.<br>
-100 VU도 실측 1,000회로 종료하는 단기 측정이며, 지속 부하에서의 안정화 여부는 확인하지 않았다.<br>
+100 VU도 실측 1,000회로 종료하는 단기 측정이다. 지속 부하 측정은 2절의 "100 VU 평균 미달 원인"에 따로 정리했다.<br>
 SQL 비용·실행계획의 전후 값은 각 개선 실험에서 수집했으며, 이전 상태의 재측정 원본은 단계별 `results.json`에 보관한다.
+
+### 측정 자료
+
+| 구분 | 실행 SQL·스크립트 | 측정 원본 |
+| --- | --- | --- |
+| 공통 | [seed](../../apps/commerce-api/src/test/java/com/loopers/fixture/ProductQuerySeed.java) · [스키마](../../docker/mysql/init.sql) · [k6](../k6/product-query.k6.js) | [기준 응답](../product-query-baseline/response-canonical.json) |
+| 기준선 | [queries.sql](../product-query-baseline/queries.sql) | [EXPLAIN](../product-query-baseline/explain.sql) · [EXPLAIN ANALYZE](../product-query-baseline/explain-analyze.sql) |
+| 1단계 | [queries.sql](../product-query-step1/queries.sql) | [results.json](../product-query-step1/results.json) |
+| 2단계 | [product-query-index.sql](../../docker/mysql/product-query-index.sql) | [results.json](../product-query-step2/results.json) |
+| 3단계 | [product-query-list-index.sql](../../docker/mysql/product-query-list-index.sql) | [results.json](../product-query-step3/results.json) |
+| 4단계 | [queries.sql](../product-query-step4/queries.sql) | [results.json](../product-query-step4/results.json) · [부하 원인·likes_desc 진단](../product-query-step4/final-state-diagnosis.json) |
 
 ## 2. 단계별 결과 비교
 
@@ -80,8 +91,31 @@ SQL 비용·실행계획의 전후 값은 각 개선 실험에서 수집했으�
 3단계(비교안 포함)와 4단계는 p99·실패율·응답 검증을 충족했고, 평균 20 ms 조건은 아직 미달이다.<br>
 4단계 행은 UNION ALL과 교차 측정한 두 회차 중 1회차 값이다. 두 회차와 대조 측정값은 7절에 정리했다.
 
+### 100 VU 평균 미달 원인
+
+k6의 각 VU는 응답을 받자마자 다음 요청을 보내므로, 평균 지연은 `VU 수 ÷ 초당 처리량`에 가깝다. 100 VU에서 평균 20 ms를 달성하려면 초당 약 5,000건을 처리해야 한다.<br>
+4단계 상태에서 앱을 다시 띄우고 1 VU 5,000회로 준비한 뒤, 1 VU 5,000회·100 VU 50,000회를 지속 측정해 원인을 확인했다.
+
+| 항목 (요청당 평균) | 1 VU | 100 VU |
+| --- | ---: | ---: |
+| HTTP 지연 | 1.808 ms | 39.264 ms |
+| 처리량 | 495 req/s | 2,502 req/s |
+| 커넥션 획득 대기 | 0.000 ms | 23.051 ms |
+| 커넥션 사용 시간 | 1.624 ms | 15.794 ms |
+| MySQL 실행 시간 (문장 7개 합) | 0.424 ms | 1.816 ms |
+
+- **커넥션 풀 포화:** 100 VU 동안 Hikari 커넥션 40개가 계속 모두 사용 중이었고, 커넥션을 기다리는 스레드가 55~60개였다. 평균 지연의 약 60%가 커넥션 대기다.
+- **커넥션 점유 시간의 대부분은 MySQL 실행 밖:** 커넥션을 잡고 있는 15.794 ms 중 MySQL 실행은 1.816 ms다.<br>
+  요청당 7번의 왕복(조회 3개, `autocommit`·읽기 전용 설정 4개)과 커넥션을 쥔 채 수행하는 애플리케이션 처리가 나머지를 차지한다. 둘의 비중은 측정하지 않았다.
+- **같은 PC의 자원 공유:** 100 VU 측정 중 MySQL 컨테이너 약 4.0코어, 앱 약 1.5코어, k6 약 0.9코어를 사용했다(논리 CPU 10개).
+
+따라서 SQL·인덱스를 더 줄여도 평균 20 ms에 도달하기 어렵다. 남은 수단은 커넥션 점유 시간 단축(왕복 수 감소), DB 접근 자체를 줄이는 캐시, 처리 자원 확대다.
+
+1,000회 100 VU 측정은 약 1.4초로 짧아 JVM 준비 상태에 민감하다.<br>
+앱 시작 직후 바로 측정하면 평균 84.111 ms, 충분히 준비한 뒤 지속 측정하면 평균 39.264~46.215 ms였다. 위 비교표의 100 VU 값은 같은 앱에서 1·10 VU 측정 직후 실행한 단기 값이다.
+
 응답 검증은 HTTP 200·`meta.result=SUCCESS`·상품 20개·정렬된 필드 값의 일치를 확인한다.<br>
-[기준 응답](../product-query-baseline/response-canonical.json)의 `id`, `brandId`, `brandName`, `name`, `price`, `likeCount` 순서와 상품 반환 순서를 고정해 체크섬을 비교했다.
+기준 응답의 `id`, `brandId`, `brandName`, `name`, `price`, `likeCount` 순서와 상품 반환 순서를 고정해 체크섬을 비교했다.
 
 ## 3. 개선 전 기준선
 
@@ -188,13 +222,16 @@ WHERE l.product_id = 5406;
 | 상품 목록 | 개선 후보 | 20개를 반환하지만 상품 10,000개를 읽고 `price, id`로 정렬했다. |
 | 브랜드 일괄 조회 | 현재 요청에서는 추가 개선 근거 없음 | 브랜드 ID 한 개를 기본 키로 한 번 조회해 한 행을 반환했다. |
 | 좋아요 COUNT | 개선 후보 | 상품마다 COUNT를 실행해 요청당 20회 발생했고, `product_id` 조건에 복합 인덱스 skip scan을 사용했다. |
+| 좋아요순 목록 (`likes_desc`) | 측정 대상 밖, 남은 병목 | 정렬 키가 상품별 좋아요 COUNT라, 후보 상품 전체에 COUNT를 실행한 뒤 정렬한다. |
+
+`likes_desc`는 최종 인덱스 상태에서 따로 측정했다. EXPLAIN ANALYZE 3회 기준 브랜드 7은 상품 10,000개에 COUNT를 실행해 89.7~209 ms,<br>
+브랜드 필터가 없으면 활성 상품 988,000개에 실행해 1,642~1,682 ms였다.<br>
+정렬 키가 계산값이라 인덱스로는 해결되지 않는다. 좋아요 수를 미리 저장하는 비정규화는 좋아요 쓰기 경로와 동시성 처리까지 바뀌므로 이번 범위에서 적용하지 않았다.
 
 ## 4. 1단계: UNION ALL 좋아요 일괄 조회
 
 상품별 COUNT 20개를 Native SQL의 `UNION ALL`로 연결했다.<br>
 중복 ID는 제거하고 파라미터로 바인딩한다. 빈 페이지에서는 좋아요 SQL을 생략하고, 좋아요가 없는 상품은 `0`을 반환한다.
-
-- [실행 SQL](../product-query-step1/queries.sql) · [측정 원본](../product-query-step1/results.json)
 
 ### 요청당 SQL 수와 좋아요 조회 비용
 
@@ -246,8 +283,6 @@ ALTER TABLE loopers.likes
     ADD INDEX idx_likes_product_id (product_id);
 ```
 
-- [인덱스 SQL](../../docker/mysql/product-query-index.sql) · [측정 원본](../product-query-step2/results.json)
-
 ### 요청당 SQL 수와 좋아요 조회 비용
 
 | 조회 | 적용 전 호출 수 | 적용 후 호출 수 | 적용 전 요청당 평균 DB 시간 | 적용 후 요청당 평균 DB 시간 |
@@ -288,8 +323,6 @@ ALTER TABLE loopers.likes
 ## 6. 3단계: 상품 인덱스 (가격 단일 비교 후 복합 채택)
 
 좋아요 인덱스·`UNION ALL`·seed·조회 SQL은 유지하고, **상품 인덱스 추가 전 → 가격 단일 → 단일 제거 후 복합** 순서로 비교했다.
-
-- [인덱스 SQL](../../docker/mysql/product-query-list-index.sql) · [측정 원본](../product-query-step3/results.json)
 
 ### 비교안: price 단일 인덱스
 
@@ -358,8 +391,6 @@ ALTER TABLE loopers.products
 2단계에서 `likes(product_id)` 인덱스를 추가하면서 1단계에서 `UNION ALL`을 고른 전제가 바뀌었다.<br>
 3단계 상태(같은 seed·인덱스)에서 좋아요 조회만 `IN + GROUP BY`로 바꿔 다시 비교했다.
 
-- [실행 SQL](../product-query-step4/queries.sql) · [측정 원본](../product-query-step4/results.json)
-
 ```sql
 SELECT l.product_id, COUNT(l.id) AS like_count
 FROM likes l
@@ -413,4 +444,5 @@ HTTP 지연도 같은 VU에서 IN이 대체로 낮았지만, 요청당 차이가
 UNION 분기 하나짜리 단위 테스트를 제거해 3단계 기록의 269개에서 1개 줄었다.<br>
 정렬·페이지·삭제 조건과 정상 응답의 필드 값이 유지됨을 확인했다.
 
-100 VU에서 p99·실패율·응답 검증은 목표를 충족했으며, **평균 54.459~60.431 ms를 20 ms 이하로 줄이는 목표가 남아 있다.**
+100 VU에서 p99·실패율·응답 검증은 목표를 충족했으며, **평균 54.459~60.431 ms를 20 ms 이하로 줄이는 목표가 남아 있다.**<br>
+남은 지연은 SQL 실행이 아니라 커넥션 대기와 점유 시간에서 생긴다(2절). `likes_desc`의 전체 COUNT 정렬도 측정 대상 밖의 병목으로 남아 있다(3절).
