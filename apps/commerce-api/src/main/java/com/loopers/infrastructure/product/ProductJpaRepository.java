@@ -1,9 +1,11 @@
 package com.loopers.infrastructure.product;
 
 import com.loopers.domain.product.ProductModel;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -14,9 +16,15 @@ public interface ProductJpaRepository extends JpaRepository<ProductModel, Long> 
 
     Optional<ProductModel> findByIdAndDeletedAtIsNull(Long id);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from ProductModel p where p.id = :id and p.deletedAt is null")
+    Optional<ProductModel> findByIdAndDeletedAtIsNullWithLock(@Param("id") Long id);
+
     List<ProductModel> findByIdInAndDeletedAtIsNull(List<Long> ids);
 
     boolean existsByBrandIdAndDeletedAtIsNull(Long brandId);
+
+    List<ProductModel> findByBrandIdAndDeletedAtIsNull(Long brandId);
 
     @Query(value = """
         select p from ProductModel p
@@ -44,4 +52,5 @@ public interface ProductJpaRepository extends JpaRepository<ProductModel, Long> 
         where p.deletedAt is null and (:brandId is null or p.brandId = :brandId)
         """)
     Page<ProductModel> findActiveOrderByLikesDesc(@Param("brandId") Long brandId, Pageable pageable);
+
 }

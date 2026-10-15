@@ -1,5 +1,6 @@
 package com.loopers.application.like;
 
+import com.loopers.application.product.ProductCachePort;
 import com.loopers.application.product.ProductInfo;
 import com.loopers.domain.brand.BrandService;
 import com.loopers.domain.like.LikeModel;
@@ -23,17 +24,21 @@ public class LikeFacade {
     private final ProductService productService;
     private final BrandService brandService;
     private final LikeService likeService;
+    private final ProductCachePort productCachePort;
 
     public LikeInfo like(Long userId, Long productId) {
         userService.getUser(userId);
-        productService.getActiveProduct(productId);
+        ProductModel product = productService.getActiveProduct(productId);
         likeService.like(userId, productId);
+        productCachePort.evictByBrandId(product.getBrandId());
         return new LikeInfo(productId, likeService.countByProduct(productId));
     }
 
     public LikeInfo unlike(Long userId, Long productId) {
         userService.getUser(userId);
+        ProductModel product = productService.getProduct(productId);
         likeService.unlike(userId, productId);
+        productCachePort.evictByBrandId(product.getBrandId());
         return new LikeInfo(productId, likeService.countByProduct(productId));
     }
 

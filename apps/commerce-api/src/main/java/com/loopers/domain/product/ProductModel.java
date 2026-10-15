@@ -5,10 +5,14 @@ import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(name = "products")
+@Table(name = "products", indexes = {
+    @Index(name = "idx_products_brand_deleted_price", columnList = "brand_id, deleted_at, price"),
+    @Index(name = "idx_products_brand_deleted_id",    columnList = "brand_id, deleted_at, id")
+})
 public class ProductModel extends BaseEntity {
 
     public static final int NAME_MAX_LENGTH = 100;
@@ -98,4 +102,6 @@ public class ProductModel extends BaseEntity {
         }
         return price;
     }
+
+
 }

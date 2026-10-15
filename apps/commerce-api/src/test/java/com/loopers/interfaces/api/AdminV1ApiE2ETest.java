@@ -86,19 +86,19 @@ class AdminV1ApiE2ETest {
             .andExpect(jsonPath("$.data.name").value("새 브랜드"))
             .andExpect(jsonPath("$.data.deleted").value(false));
     }
-
-    @DisplayName("삭제되지 않은 상품이 연결된 브랜드의 삭제는, 400으로 거절한다. 재고 0인 상품도 포함한다.")
+    @DisplayName("활성 상품이 연결된 브랜드를 삭제하면, 연결된 상품도 함께 삭제된다. 재고 0인 상품도 포함한다.")
     @Test
-    void rejectsBrandDeletion_whenActiveProductExists() throws Exception {
+    void deletesBrand_cascadesProductDeletion() throws Exception {
         // arrange
         BrandModel brand = brandJpaRepository.save(new BrandModel("브랜드A"));
-        productJpaRepository.save(new ProductModel(brand.getId(), "재고 0 상품", 10_000L, 0));
+        ProductModel product = productJpaRepository.save(new ProductModel(brand.getId(), "재고 0 상품", 10_000L, 0));
 
         // act & assert
         mvc.perform(delete("/api-admin/v1/brands/" + brand.getId())
                 .with(user("admin").roles("ADMIN")).with(csrf()))
-            .andExpect(status().isBadRequest());
-        assertThat(brandJpaRepository.findById(brand.getId()).get().getDeletedAt()).isNull();
+            .andExpect(status().isOk());
+        assertThat(brandJpaRepository.findById(brand.getId()).get().getDeletedAt()).isNotNull();
+        assertThat(productJpaRepository.findById(product.getId()).get().getDeletedAt()).isNotNull();
     }
 
     @DisplayName("상품이 모두 삭제된 브랜드는 삭제할 수 있고, 이후 고객 조회에서 404다.")
