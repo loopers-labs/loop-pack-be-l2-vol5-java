@@ -12,12 +12,22 @@ const vus = Number(__ENV.PRODUCT_QUERY_VUS || 1);
 const baseUrl = (__ENV.PRODUCT_QUERY_BASE_URL || 'http://localhost:18081').replace(/\/$/, '');
 const output = __ENV.PRODUCT_QUERY_RESULTS || '/tmp';
 const runName = __ENV.PRODUCT_QUERY_RUN || (vus === 1 ? 'baseline-vu1' : `concurrent-vu${vus}`);
+// 측정 페이지 밖 상품에 좋아요 등록·취소를 섞어 캐시 무효화가 잦을 때를 측정한다. 0이면 읽기만 실행한다.
+// 한 회차는 한 사용자가 등록한 뒤 취소하므로 무효화가 두 번 일어난다. 사용자는 회차마다 돌아가며 쓴다.
+const likeTogglesPerSecond = Number(__ENV.PRODUCT_QUERY_LIKE_TOGGLES_PER_SEC || 0);
+const likeWriteDuration = __ENV.PRODUCT_QUERY_LIKE_WRITE_DURATION || '30s';
+const likeProductId = __ENV.PRODUCT_QUERY_LIKE_PRODUCT_ID;
+const likeUserIds = (__ENV.PRODUCT_QUERY_LIKE_USER_IDS || '').split(',').filter((id) => id !== '');
 if (!Number.isSafeInteger(samples) || samples < 1 || !Number.isSafeInteger(warmup) || warmup < 0
   || !Number.isSafeInteger(vus) || vus < 1 || samples % vus !== 0) {
   throw new Error('실측 횟수는 양수이며 VU 수로 나누어 떨어져야 하고, 준비 횟수는 0 이상, VU 수는 양수여야 합니다.');
 }
 if (!/^[a-zA-Z0-9_-]+$/.test(runName)) {
   throw new Error('PRODUCT_QUERY_RUN은 영문자, 숫자, 하이픈, 밑줄만 사용할 수 있습니다.');
+}
+if (!Number.isFinite(likeTogglesPerSecond) || likeTogglesPerSecond < 0
+  || (likeTogglesPerSecond > 0 && (!likeProductId || likeUserIds.length === 0))) {
+  throw new Error('좋아요 쓰기를 섞으려면 초당 회차와 상품 ID, 좋아요하지 않은 사용자 ID 목록이 필요합니다.');
 }
 
 const samplesPerVu = samples / vus;
@@ -26,18 +36,33 @@ const measuredRequests = new Counter('product_query_requests');
 const warmupRequests = new Counter('product_query_warmup_requests');
 const responseMatches = new Rate('product_query_response_matches');
 const duration = new Trend('product_query_duration', true);
+const likeWrites = new Counter('product_query_like_writes');
+const likeWriteFailures = new Rate('product_query_like_write_failures');
 let mismatchLogged = false;
 
-export const options = {
-  scenarios: {
-    product_query: {
-      executor: 'per-vu-iterations',
-      vus,
-      iterations: warmup + samplesPerVu,
-      maxDuration: '15m',
-      gracefulStop: '15s',
-    },
+const scenarios = {
+  product_query: {
+    executor: 'per-vu-iterations',
+    vus,
+    iterations: warmup + samplesPerVu,
+    maxDuration: '15m',
+    gracefulStop: '15s',
   },
+};
+if (likeTogglesPerSecond > 0) {
+  scenarios.like_writes = {
+    executor: 'constant-arrival-rate',
+    rate: likeTogglesPerSecond,
+    timeUnit: '1s',
+    duration: likeWriteDuration,
+    preAllocatedVUs: 5,
+    maxVUs: 20,
+    exec: 'toggleLike',
+  };
+}
+
+export const options = {
+  scenarios,
   noConnectionReuse: true,
   summaryTrendStats: ['avg', 'min', 'p(50)', 'p(95)', 'p(99)', 'p(99.9)', 'max', 'count'],
   thresholds: {
@@ -102,6 +127,16 @@ export default function () {
   }
 }
 
+export function toggleLike() {
+  const likeUrl = `${baseUrl}/api/v1/products/${likeProductId}/likes`;
+  const userId = likeUserIds[execution.scenario.iterationInTest % likeUserIds.length];
+  const params = { headers: { 'X-USER-ID': userId }, timeout: '10s', tags: { phase: 'like_write' } };
+  for (const response of [http.post(likeUrl, null, params), http.del(likeUrl, null, params)]) {
+    likeWrites.add(1);
+    likeWriteFailures.add(response.status !== 200);
+  }
+}
+
 export function handleSummary(data) {
   const metric = data.metrics.product_query_duration;
   const values = metric ? metric.values : {};
@@ -109,6 +144,8 @@ export function handleSummary(data) {
   const warmed = data.metrics.product_query_warmup_requests;
   const matched = data.metrics.product_query_response_matches;
   const failed = data.metrics.http_req_failed;
+  const writes = data.metrics.product_query_like_writes;
+  const writeFailures = data.metrics.product_query_like_write_failures;
   const summary = {
     tool: 'k6',
     recorded_at_utc: new Date().toISOString(),
@@ -133,6 +170,9 @@ export function handleSummary(data) {
     p99_ms: values['p(99)'] ?? null,
     p99_9_ms: values['p(99.9)'] ?? null,
     max_ms: values.max ?? null,
+    like_toggles_per_second_requested: likeTogglesPerSecond,
+    like_writes_completed: writes ? writes.values.count : 0,
+    like_write_failure_rate: writeFailures ? writeFailures.values.rate : null,
     thresholds_passed: Object.values(data.metrics).every((item) =>
       !item.thresholds || Object.values(item.thresholds).every((threshold) => threshold.ok)),
   };
