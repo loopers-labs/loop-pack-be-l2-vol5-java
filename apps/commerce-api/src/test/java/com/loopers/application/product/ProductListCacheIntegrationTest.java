@@ -43,6 +43,9 @@ class ProductListCacheIntegrationTest {
     private ProductFacade productFacade;
 
     @Autowired
+    private CustomerProductListReader customerProductListReader;
+
+    @Autowired
     private BrandRepository brandRepository;
 
     @Autowired
@@ -165,6 +168,45 @@ class ProductListCacheIntegrationTest {
             .extracting(exception -> ((CoreException) exception).getErrorType())
             .isEqualTo(ErrorType.BAD_REQUEST);
         assertThat(redisTemplate.keys("product:list:v1:*")).isEmpty();
+    }
+
+    @ParameterizedTest(name = "정렬={0}, 브랜드 필터={1}, page={2}")
+    @CsvSource({
+        "latest, true, 0", "latest, true, 1", "latest, false, 1",
+        "price_asc, true, 0", "price_asc, true, 1", "price_asc, false, 1",
+        "likes_desc, true, 0", "likes_desc, true, 1", "likes_desc, false, 1"
+    })
+    @DisplayName("같은 입력의 DB 직접 조회·miss·hit 결과가 상품·순서·페이지까지 같고, hit만 목록 조회를 삭제 확인 1회로 줄인다.")
+    void dbOnlyMissAndHitReturnSameResult(String sort, boolean filterByBrand, int page) {
+        Brand brand = brandRepository.save(Brand.create("Nike"));
+        Brand otherBrand = brandRepository.save(Brand.create("Adidas"));
+        long[] prices = {300L, 100L, 200L, 100L, 300L};
+        int[] likeCounts = {1, 2, 0, 2, 1};
+        for (int index = 0; index < prices.length; index++) {
+            addLikes(productRepository.save(Product.create(brand.getId(), "Product " + index, prices[index])), likeCounts[index]);
+        }
+        productRepository.save(Product.create(otherBrand.getId(), "Other", 150L));
+        Long brandId = filterByBrand ? brand.getId() : null;
+        ProductSort productSort = ProductSort.valueOf(sort.toUpperCase());
+
+        statistics.clear();
+        List<CustomerProductInfo> dbOnly = customerProductListReader.read(brandId, productSort, page, 2);
+        long dbOnlyStatements = statistics.getPrepareStatementCount();
+
+        statistics.clear();
+        List<CustomerProductInfo> miss = productFacade.getCustomerList(brandId, page, 2, sort);
+        long missStatements = statistics.getPrepareStatementCount();
+
+        statistics.clear();
+        List<CustomerProductInfo> hit = productFacade.getCustomerList(brandId, page, 2, sort);
+        long hitStatements = statistics.getPrepareStatementCount();
+
+        assertThat(dbOnly).hasSize(2);
+        assertThat(miss).isEqualTo(dbOnly);
+        assertThat(hit).isEqualTo(dbOnly);
+        assertThat(dbOnlyStatements).as("DB 직접 조회는 상품 페이지·브랜드·좋아요 집계를 실행한다.").isEqualTo(3L);
+        assertThat(missStatements).as("miss는 DB 직접 조회와 같은 SQL을 실행한다.").isEqualTo(3L);
+        assertThat(hitStatements).as("hit은 삭제 확인 1회만 실행한다.").isEqualTo(1L);
     }
 
     private void addLikes(Product product, int count) {
