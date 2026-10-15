@@ -120,13 +120,16 @@ likes_desc는 hit에서 상품 1만·좋아요 9만 행 집계(DB 30 ms)가 PK 2
 | 좋아요 등록·취소 `LikeCommandService.like/unlike` | 좋아요 수·좋아요순 | ✅ (멱등 재요청도 무효화 — 정확성 우선, hit율 비용) |
 | 주문 확정 (재고·포인트) | 없음 | ✗ |
 
-- **경계** — `ProductListCacheInvalidator.invalidateAfterCommit()`이 `TransactionSynchronization.afterCommit`에 무효화를 등록한다. rollback이면 실행되지 않는다. commit 전에 지우면 그 사이 조회가 commit 전 원본(옛 값)을 다시 채운다 — 실패 장면 테스트로 재현했다.
+- **경계** — 쓰기는 사실만 이벤트로 발행하고(`ProductChangedEvent`·`BrandChangedEvent`·`ProductLikesChangedEvent`), `ProductListCacheEventListener`가 `@TransactionalEventListener(AFTER_COMMIT)`로 받아 무효화한다. rollback이면 실행되지 않는다. 트랜잭션 밖에서 발행되면 기본값은 조용히 무시하므로 `fallbackExecution = true`로 즉시 실행한다. commit 전에 지우면 그 사이 조회가 commit 전 원본(옛 값)을 다시 채운다 — 실패 장면 테스트로 재현했다.
 - **무효화 실패** — afterCommit에서 예외를 던지면 이미 commit된 요청이 500이 된다. 잡아서 기록만 하고, 그 목록은 TTL까지 옛 값일 수 있다(6장 정책).
 - **쓰기 트랜잭션 안의 조회는 캐시를 거치지 않는다** — 같은 트랜잭션이 읽은 commit 전 값을 캐시에 넣으면 rollback 뒤 존재하지 않는 결과가 남는다(실패 장면으로 재현: 9,000원이 남음).
 - `@Transactional` 하나가 MySQL과 Redis를 원자적으로 묶지 못한다. 그래서 실패 창을 TTL로 제한하고, 신선도로 허용하지 않는 것(비노출)은 원본으로 확인한다.
 - **ADR-11 예외 (W2)** — `ProductListQueryService`는 트랜잭션을 열지 않는다. Redis를 기다리는 동안 DB 커넥션을 잡지 않으려는 것이다. 경로에 따라 트랜잭션이 0~2개다 (hit: 비노출 확인 1개 / hit인데 팔 수 없는 상품이 섞임: 확인 + 목록 2개 / miss: 목록 1개). 두 트랜잭션이 다른 스냅샷을 봐도 반환하는 것은 원본에서 다시 읽은 결과다. ✅
 - **afterCommit의 Redis 호출 동안 DB 커넥션을 쥐고 있다** — Spring은 afterCommit 뒤에 커넥션을 반납한다. Redis가 느리면 쓰기마다 최대 200 ms 더 쥔다. 행 잠금은 commit 때 이미 풀려 경합은 아니다.
-- **기능 간 의존** — brand·like의 CommandService가 product의 응용 클래스 `ProductListCacheInvalidator`를 직접 주입받는다. W2 5-2 기준 ④("상대의 출력 포트를 쓴다")와 모양이 다르다. 🔧 지금은 그대로 두고 ArchUnit 예외 주석에 적었다. 🤔 출력 포트(`ProductListChangedPort`)나 `@TransactionalEventListener(AFTER_COMMIT)` 이벤트로 바꿀지는 학습자가 정한다 — 이벤트는 무효화할 캐시가 늘어도 brand·like가 바뀌지 않게 하지만 흐름이 한 단계 간접적이 된다. 어느 쪽도 "쓰기 경로에서 무효화를 빠뜨림"은 막지 못하므로, 실제 방어선은 쓰기 경로마다 "쓰기 → 목록 반영" 장면 테스트다.
+- **기능 간 의존 — 이벤트로 바꿨다** ✅ (v0.3) — 처음엔 brand·like가 product의 응용 클래스 `ProductListCacheInvalidator`를 직접 주입받았다(브랜드가 상품 캐시 사정을 앎). 비교한 안: (a) 그대로 (b) brand 쪽 출력 포트를 product가 구현 (c) 이벤트. (c)를 골랐다 — 발행하는 쪽은 사실만 알리고, 무효화할 캐시가 늘어도 brand·like가 바뀌지 않는다.
+  - 브랜드 이벤트는 `brand.domain`에 둔다. 리스너는 product → brand 방향이라 원래 흐름과 같다.
+  - 좋아요 이벤트는 `like.domain`에 두면 product가 like를 알게 돼 like → product → like 순환이 생긴다(ArchUnit 실패로 확인). 검사 규칙을 넓히는 대신 "이 상품의 좋아요 수가 바뀌었다"는 상품 쪽 사실 `product.domain.ProductLikesChangedEvent`를 like가 발행한다 — like → product는 원래 허용된 방향이다.
+  - 비용: 발행하는 코드만 읽어서는 캐시가 비워진다는 것이 보이지 않는다(pub/sub의 간접성). 연결은 쓰기 경로마다 "쓰기 → 목록 반영" 장면 테스트가 지킨다 — 리스너를 빠뜨리면 그 테스트가 실패한다.
 - **무효화가 필요 이상으로 잦다** — 세대가 전역 하나라 상품 하나의 좋아요가 모든 목록 키를 버린다. 이미 좋아요한 상태의 재요청·없는 좋아요 취소(멱등, ADR-08)와 브랜드 설명만 바꾼 수정도 무효화한다(`LikePort`가 바뀐 행 수를 돌려주지 않음). 정확성 문제는 아니고 hit율 비용이다. 🤔 (a) 바뀐 행 수가 0이면 무효화하지 않기 (b) 좋아요 수를 TTL 신선도에 맡기기(과제의 "영향 쓰기 경로 모두 반영"과 충돌하는지 판단 필요) (c) 브랜드별 세대 — 전체 목록 키는 어떤 쓰기에도 무효화돼야 해 효과가 제한적. 부하 측정으로 hit율을 본 뒤 정한다.
 - **seed는 무효화를 거치지 않는다** — JDBC로 직접 넣는다. 측정 전에 Redis의 목록 키가 남아 있으면 seed 직후 최대 60초 옛 목록이 보일 수 있다. seed 뒤 `redis-cli FLUSHDB`(로컬 전용)를 실행한다.
 
@@ -191,7 +194,7 @@ AI 리뷰어 3명(domain·persistence·test, 읽기 전용)에게 `53f26d2..HEAD
 | 3 | hit SQL 단언 `from likes`는 likes_desc 쿼리(`from products left join likes`)에서 늘 참이다 (test, Important) | **채택** | 단언을 "SQL은 PK `IN` 조회 하나뿐"으로 바꿈 |
 | 4 | "가격 변경 뒤 과거 주문 금액 유지" 장면이 없다 (test, Important) | **채택** | 확정 주문의 단가·합계·결제액 유지 테스트 추가 |
 | 5 | 문서가 "DB 오류는 감추지 않는다"의 증거로 장애 테스트를 들지만 DB 실패를 만드는 테스트가 없다 (test, Important) | **채택** | `ProductListDbFailureTest` 추가 (조회 포트 spy로 DB 실패, miss·hit 모두 오류 전달) |
-| 6 | brand·like가 product 응용 클래스를 직접 의존하고 ArchUnit 예외에 묻힌다 (domain, Important) | **기록 · 🤔** | 5장. 의존 방향은 순환이 아니라 그대로 두고 ArchUnit 예외 주석에 적음. 포트·이벤트 전환은 학습자 결정 |
+| 6 | brand·like가 product 응용 클래스를 직접 의존하고 ArchUnit 예외에 묻힌다 (domain, Important) | **채택 (v0.3)** | 5장. 학습자 결정으로 `@TransactionalEventListener(AFTER_COMMIT)` 이벤트로 전환. 좋아요 이벤트는 순환을 피해 product.domain에 둠 |
 | 7 | `ProductListQueryService`가 ADR-11(유스케이스 = 트랜잭션 하나)의 예외인데 기록이 없다 (domain, Important) | **채택** | 5장에 예외와 이유 기록 |
 | 8 | 좋아요 한 번(멱등 재요청 포함)이 모든 목록 키를 무효화한다 (domain Important, persistence Minor) | **기록 · 🤔** | 정확성 문제가 아니라 hit율 비용. 5장에 대안 (a)(b)(c)와 결정 조건 |
 | 9 | 세대 키가 없을 때 무효화가 INCR로 1부터 다시 센다 (persistence·domain, Minor) | **채택** | 무효화도 현재 시각부터 시작. 1 ms당 1번보다 빠른 증가에서는 겹칠 수 있다는 전제를 주석에 명시 |
@@ -208,3 +211,4 @@ AI 리뷰어 3명(domain·persistence·test, 읽기 전용)에게 `53f26d2..HEAD
 |---|---|---|
 | 2026-10-15 | v0.1 | 초안 — 조회 계약, 기준선·전후·hit 측정, ADR-W4-01~05, 실패 장면과 커밋 이력 |
 | 2026-10-15 | v0.2 | **AI 리뷰 반영** — 브랜드 일괄 삭제 잠금 순서 회귀(PK 범위 잠금), ADR-11 예외, 기능 간 의존·무효화 빈도(🤔), 최악 대기, DB 오류 테스트, 9장 검토 기록 15건 |
+| 2026-10-15 | v0.3 | **학습자 결정 반영** — 목록 캐시 무효화를 이벤트(`@TransactionalEventListener(AFTER_COMMIT)`)로 전환, 좋아요 이벤트는 product.domain(순환 회피). 테스트 스키마 `loopers_test` 분리 |
