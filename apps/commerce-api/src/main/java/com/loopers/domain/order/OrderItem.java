@@ -10,5 +10,8 @@ public record OrderItem(ProductId productId, Quantity quantity, Money unitPrice)
         Objects.requireNonNull(quantity);
         Objects.requireNonNull(unitPrice);
     }
-    public Money subtotal() { return unitPrice.multiply(quantity.value()); }
+
+    public Money subtotal() {
+        return unitPrice.multiply(quantity.value());
+    }
 }

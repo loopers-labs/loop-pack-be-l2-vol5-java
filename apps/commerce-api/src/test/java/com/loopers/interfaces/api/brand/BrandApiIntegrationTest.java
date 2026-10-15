@@ -52,7 +52,7 @@ class BrandApiIntegrationTest {
     }
 
     @Test
-    @DisplayName("재고 0 상품이 연결된 브랜드는 삭제할 수 없고 상품 삭제 후에는 브랜드를 논리 삭제한다")
+    @DisplayName("재고 0 상품이 연결된 브랜드를 삭제하면 브랜드와 상품을 함께 논리 삭제하고 삭제된 상품의 재고 변경을 거절한다")
     void managesProductsAndBrandDeletion() throws Exception {
         long brandId = service.create("브랜드").id().value();
         var created = mvc.perform(post("/api-admin/v1/products").with(user("admin").roles("ADMIN")).with(csrf())
@@ -61,20 +61,46 @@ class BrandApiIntegrationTest {
             .andExpect(status().isCreated()).andReturn();
         long productId = mapper.readTree(created.getResponse().getContentAsString()).path("data").path("id").asLong();
         mvc.perform(delete("/api-admin/v1/brands/{id}", brandId).with(user("admin").roles("ADMIN")).with(csrf()))
-            .andExpect(status().isConflict());
-        mvc.perform(put("/api-admin/v1/products/{id}/stock", productId).with(user("admin").roles("ADMIN")).with(csrf())
-                .contentType(MediaType.APPLICATION_JSON).content("{\"stock\":5}"))
-            .andExpect(status().isOk()).andExpect(jsonPath("$.data.stock").value(5));
-        mvc.perform(delete("/api-admin/v1/products/{id}", productId).with(user("admin").roles("ADMIN")).with(csrf()))
-            .andExpect(status().isOk());
-        mvc.perform(put("/api-admin/v1/products/{id}/stock", productId).with(user("admin").roles("ADMIN")).with(csrf())
-                .contentType(MediaType.APPLICATION_JSON).content("{\"stock\":2}"))
-            .andExpect(status().isConflict());
-        mvc.perform(delete("/api-admin/v1/brands/{id}", brandId).with(user("admin").roles("ADMIN")).with(csrf()))
             .andExpect(status().isOk());
         mvc.perform(get("/api-admin/v1/brands/{id}", brandId).with(user("admin").roles("ADMIN")))
             .andExpect(status().isOk()).andExpect(jsonPath("$.data.deleted").value(true));
+        mvc.perform(get("/api-admin/v1/products/{id}", productId).with(user("admin").roles("ADMIN")))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.deleted").value(true));
+        mvc.perform(put("/api-admin/v1/products/{id}/stock", productId).with(user("admin").roles("ADMIN")).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"stock\":2}"))
+            .andExpect(status().isConflict());
         mvc.perform(get("/api/v1/brands/{id}", brandId).header("X-USER-ID", "1")).andExpect(status().isNotFound());
+        mvc.perform(get("/api/v1/products/{id}", productId).header("X-USER-ID", "1")).andExpect(status().isNotFound());
+        mvc.perform(delete("/api-admin/v1/brands/{id}", brandId).with(user("admin").roles("ADMIN")).with(csrf()))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("없는 브랜드를 관리자가 삭제하면 404로 거절한다")
+    void rejectsMissingBrandDeletion() throws Exception {
+        mvc.perform(delete("/api-admin/v1/brands/{id}", 999_999L).with(user("admin").roles("ADMIN")).with(csrf()))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.meta.result").value("FAIL"));
+        assertThat(brands.count()).isZero();
+    }
+
+    @Test
+    @DisplayName("일반 사용자와 미식별 요청의 브랜드 삭제는 유효한 CSRF가 있어도 403이며 브랜드와 상품을 바꾸지 않는다")
+    void rejectsNonAdminBrandDeletion() throws Exception {
+        long brandId = service.create("브랜드").id().value();
+        var created = mvc.perform(post("/api-admin/v1/products").with(user("admin").roles("ADMIN")).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"brandId\":" + brandId + ",\"name\":\"상품\",\"price\":100,\"stock\":3}"))
+            .andExpect(status().isCreated()).andReturn();
+        long productId = mapper.readTree(created.getResponse().getContentAsString()).path("data").path("id").asLong();
+        mvc.perform(delete("/api-admin/v1/brands/{id}", brandId).with(user("customer").roles("USER")).with(csrf()))
+            .andExpect(status().isForbidden());
+        mvc.perform(delete("/api-admin/v1/brands/{id}", brandId).with(csrf()))
+            .andExpect(status().isForbidden());
+        mvc.perform(get("/api-admin/v1/brands/{id}", brandId).with(user("admin").roles("ADMIN")))
+            .andExpect(jsonPath("$.data.deleted").value(false));
+        mvc.perform(get("/api-admin/v1/products/{id}", productId).with(user("admin").roles("ADMIN")))
+            .andExpect(jsonPath("$.data.deleted").value(false));
     }
 
     @Test

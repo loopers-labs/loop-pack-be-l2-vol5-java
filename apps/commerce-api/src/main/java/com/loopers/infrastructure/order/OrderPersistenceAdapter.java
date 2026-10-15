@@ -6,18 +6,23 @@ import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.Quantity;
 import com.loopers.domain.product.ProductId;
-import org.springframework.stereotype.Repository;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 @Repository
 @Transactional(readOnly = true)
 public class OrderPersistenceAdapter implements OrderRepository {
-    private final OrderJpaRepository repository;
-    public OrderPersistenceAdapter(OrderJpaRepository repository) { this.repository = repository; }
+    private final OrderJpaRepository orderJpaRepository;
+
+    public OrderPersistenceAdapter(OrderJpaRepository orderJpaRepository) {
+        this.orderJpaRepository = orderJpaRepository;
+    }
+
     @Override
     @Transactional
     public Order save(Order order) {
@@ -25,32 +30,47 @@ public class OrderPersistenceAdapter implements OrderRepository {
         if (order.getId() == null) {
             entity = new OrderJpaEntity();
             entity.userId = order.getUserId();
-            order.getItems().forEach(i -> entity.items.add(new OrderItemJpaValue(i.productId().value(), i.quantity().value(), i.unitPrice().value())));
+            order.getItems().forEach(item -> entity.items.add(
+                new OrderItemJpaValue(item.productId().value(), item.quantity().value(), item.unitPrice().value())));
             entity.total = order.getTotal().value();
         } else {
-            entity = repository.findById(order.getId()).orElseThrow();
+            entity = orderJpaRepository.findById(order.getId()).orElseThrow();
         }
         entity.status = order.getStatus().name();
         entity.paidAmount = order.getPaidAmount().value();
         entity.paymentResult = order.getPaymentResult();
-        return toDomain(repository.save(entity));
+        return toDomain(orderJpaRepository.save(entity));
     }
+
     @Override
-    public Optional<Order> findById(long id) { return repository.findById(id).map(this::toDomain); }
+    public Optional<Order> findById(long id) {
+        return orderJpaRepository.findById(id).map(this::toDomain);
+    }
+
     @Override
     @Transactional
-    public Optional<Order> findByIdForUpdate(long id) { return repository.findForUpdate(id).map(this::toDomain); }
+    public Optional<Order> findByIdForUpdate(long id) {
+        return orderJpaRepository.findForUpdate(id).map(this::toDomain);
+    }
+
     @Override
     public List<Order> findPage(Long userId, int page, int size) {
-        var paging = PageRequest.of(page, size, Sort.by("id").descending());
-        var found = userId == null ? repository.findAll(paging) : repository.findByUserId(userId, paging);
+        PageRequest paging = PageRequest.of(page, size, Sort.by("id").descending());
+        Page<OrderJpaEntity> found = userId == null
+            ? orderJpaRepository.findAll(paging)
+            : orderJpaRepository.findByUserId(userId, paging);
         return found.stream().map(this::toDomain).toList();
     }
+
     private Order toDomain(OrderJpaEntity entity) {
-        Order order = Order.restore(entity.id, entity.userId, entity.items.stream()
-            .map(i -> new OrderItem(new ProductId(i.productId), new Quantity(i.quantity), new Money(i.unitPrice))).toList(),
-            Order.Status.valueOf(entity.status), new Money(entity.paidAmount), entity.paymentResult);
-        if (order.getTotal().value() != entity.total) { throw new IllegalStateException("저장된 주문 합계가 품목 합계와 다릅니다."); }
+        List<OrderItem> items = entity.items.stream()
+            .map(item -> new OrderItem(new ProductId(item.productId), new Quantity(item.quantity), new Money(item.unitPrice)))
+            .toList();
+        Order order = Order.restore(entity.id, entity.userId, items, Order.Status.valueOf(entity.status),
+            new Money(entity.paidAmount), entity.paymentResult);
+        if (order.getTotal().value() != entity.total) {
+            throw new IllegalStateException("저장된 주문 합계가 품목 합계와 다릅니다.");
+        }
         return order;
     }
 }

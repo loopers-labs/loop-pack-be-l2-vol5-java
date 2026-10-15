@@ -1,0 +1,44 @@
+name: Commerce checks
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: commerce-check-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  commerce-check:
+    name: commerce-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: corretto
+          java-version: '21'
+      - name: Compile commerce domain without framework dependencies
+        shell: bash
+        run: |
+          domain_output=$(mktemp -d)
+          mapfile -d '' domain_sources < <(find apps/commerce-api/src/main/java/com/loopers/domain -name '*.java' ! -path '*/example/*' ! -name 'BaseEntity.java' -print0)
+          test "${#domain_sources[@]}" -gt 0
+          javac --release 21 -proc:none -classpath "$domain_output" -sourcepath "$domain_output" -d "$domain_output" "${domain_sources[@]}"
+      - name: Check Docker for integration tests
+        run: docker info
+      - name: Run tests, Checkstyle and ArchUnit
+        run: bash ./gradlew :apps:commerce-api:check --no-daemon
+      - name: Upload verification reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: commerce-check-reports
+          path: |
+            apps/commerce-api/build/reports/
+            apps/commerce-api/build/test-results/
+          if-no-files-found: warn

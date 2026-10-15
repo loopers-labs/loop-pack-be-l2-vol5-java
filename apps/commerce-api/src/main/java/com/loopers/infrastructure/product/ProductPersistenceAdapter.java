@@ -6,18 +6,24 @@ import com.loopers.domain.common.Money;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductId;
 import com.loopers.domain.product.Stock;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.Query;
+import java.util.Collection;
+import java.util.List;
+import java.util.Optional;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
-import java.util.Optional;
 
 @Repository
 @Transactional(readOnly = true)
 public class ProductPersistenceAdapter implements ProductRepository {
-    private final ProductJpaRepository repository;
+    private final ProductJpaRepository productJpaRepository;
+    private final EntityManager entityManager;
 
-    private final jakarta.persistence.EntityManager entityManager;
-    public ProductPersistenceAdapter(ProductJpaRepository repository, jakarta.persistence.EntityManager entityManager) {
-        this.repository = repository;
+    public ProductPersistenceAdapter(ProductJpaRepository productJpaRepository, EntityManager entityManager) {
+        this.productJpaRepository = productJpaRepository;
         this.entityManager = entityManager;
     }
 
@@ -29,35 +35,56 @@ public class ProductPersistenceAdapter implements ProductRepository {
             entity = new ProductJpaEntity(product.getBrandId().value(), product.getName(),
                 product.getPrice().value(), product.getStock().value());
         } else {
-            entity = repository.findById(product.getId().value()).orElseThrow();
+            entity = productJpaRepository.findById(product.getId().value()).orElseThrow();
         }
         entity.update(product.getName(), product.getPrice().value(), product.getStock().value(), product.isDeleted());
-        return toDomain(repository.save(entity));
+        return toDomain(productJpaRepository.save(entity));
     }
 
     @Override
-    public Optional<Product> findById(ProductId id) { return repository.findById(id.value()).map(this::toDomain); }
+    public Optional<Product> findById(ProductId id) {
+        return productJpaRepository.findById(id.value()).map(this::toDomain);
+    }
 
     @Override
     @Transactional
-    public Optional<Product> findByIdForUpdate(ProductId id) { return repository.findForUpdate(id.value()).map(this::toDomain); }
-
-    @Override
-    public boolean existsActiveByBrandId(BrandId id) { return repository.existsByBrandIdAndDeletedFalse(id.value()); }
-
-    @Override
-    public java.util.List<Product> findPage(int page, int size) {
-        return repository.findAll(org.springframework.data.domain.PageRequest.of(page, size,
-            org.springframework.data.domain.Sort.by("id").descending())).stream().map(this::toDomain).toList();
+    public Optional<Product> findByIdForUpdate(ProductId id) {
+        return productJpaRepository.findForUpdate(id.value()).map(this::toDomain);
     }
 
     @Override
-    public java.util.List<Product> findAllByIds(java.util.Collection<ProductId> ids) {
-        return repository.findAllById(ids.stream().map(ProductId::value).toList()).stream().map(this::toDomain).toList();
+    @Transactional
+    public List<Product> findActiveByBrandIdForUpdate(BrandId brandId) {
+        // products.brand_id에는 인덱스가 없어 brand_id 조건으로 바로 FOR UPDATE를 걸면 스캔한 다른 브랜드 상품 행까지 잠긴다.
+        // 대상 ID만 잠금 없이 조회한 뒤 기본 키로 잠근다. 호출 전 브랜드 행을 잠가 두므로 그 사이 같은 브랜드 상품은 생기지 않는다.
+        List<Long> activeIds = productJpaRepository.findActiveIdsByBrandId(brandId.value());
+        if (activeIds.isEmpty()) {
+            return List.of();
+        }
+        return productJpaRepository.findAllByIdInForUpdate(activeIds).stream()
+            .filter(entity -> !entity.isDeleted())
+            .map(this::toDomain)
+            .toList();
     }
 
     @Override
-    public java.util.List<Product> search(Long brandId, int page, int size, String sort) {
+    public List<Product> findPage(int page, int size) {
+        return productJpaRepository.findAll(PageRequest.of(page, size, Sort.by("id").descending()))
+            .stream()
+            .map(this::toDomain)
+            .toList();
+    }
+
+    @Override
+    public List<Product> findAllByIds(Collection<ProductId> ids) {
+        return productJpaRepository.findAllById(ids.stream().map(ProductId::value).toList())
+            .stream()
+            .map(this::toDomain)
+            .toList();
+    }
+
+    @Override
+    public List<Product> search(Long brandId, int page, int size, String sort) {
         String order = switch (sort) {
             case "latest" -> "p.created_at desc, p.id desc";
             case "price_asc" -> "p.price asc, p.id desc";
@@ -66,10 +93,13 @@ public class ProductPersistenceAdapter implements ProductRepository {
         };
         String sql = "select p.* from products p where p.deleted=false"
             + (brandId == null ? "" : " and p.brand_id=:brand") + " order by " + order + " limit :size offset :offset";
-        var query = entityManager.createNativeQuery(sql, ProductJpaEntity.class)
-            .setParameter("size", size).setParameter("offset", (long) page * size);
-        if (brandId != null) { query.setParameter("brand", brandId); }
-        java.util.List<?> rows = query.getResultList();
+        Query query = entityManager.createNativeQuery(sql, ProductJpaEntity.class)
+            .setParameter("size", size)
+            .setParameter("offset", (long) page * size);
+        if (brandId != null) {
+            query.setParameter("brand", brandId);
+        }
+        List<?> rows = query.getResultList();
         return rows.stream().map(row -> toDomain((ProductJpaEntity) row)).toList();
     }
 
