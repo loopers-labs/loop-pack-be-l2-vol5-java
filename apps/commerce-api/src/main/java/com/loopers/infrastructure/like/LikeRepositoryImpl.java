@@ -11,8 +11,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 @RequiredArgsConstructor
 @Component
@@ -42,22 +40,16 @@ public class LikeRepositoryImpl implements LikeRepository {
             return Map.of();
         }
         List<Long> distinctIds = productIds.stream().distinct().toList();
-        String sql = IntStream.range(0, distinctIds.size())
-            .mapToObj(index -> "SELECT :productId" + index + " AS product_id, COUNT(l.id) AS like_count"
-                + " FROM likes l WHERE l.product_id = :productId" + index)
-            .collect(Collectors.joining(" UNION ALL "));
-        Query query = entityManager.createNativeQuery(sql);
-        for (int index = 0; index < distinctIds.size(); index++) {
-            query.setParameter("productId" + index, distinctIds.get(index));
-        }
+        Query query = entityManager.createNativeQuery(
+            "SELECT l.product_id, COUNT(l.id) AS like_count FROM likes l"
+                + " WHERE l.product_id IN (:productIds) GROUP BY l.product_id"
+        );
+        query.setParameter("productIds", distinctIds);
         Map<Long, Long> counts = new HashMap<>();
         List<?> rows = query.getResultList();
         for (Object result : rows) {
             Object[] row = (Object[]) result;
-            long count = ((Number) row[1]).longValue();
-            if (count > 0) {
-                counts.put(((Number) row[0]).longValue(), count);
-            }
+            counts.put(((Number) row[0]).longValue(), ((Number) row[1]).longValue());
         }
         return counts;
     }
