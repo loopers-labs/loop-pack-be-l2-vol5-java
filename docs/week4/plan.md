@@ -154,8 +154,13 @@ likes_desc는 hit에서 상품 1만·좋아요 9만 행 집계(DB 30 ms)가 PK 2
 | Redis 느림·중단 | 명령 대기 200 ms·연결 200 ms·끊긴 동안 명령 즉시 거절. 캐시 호출 실패는 DB로 우회, 그 요청은 캐시를 채우지 않음 | `ProductListCacheOutageTest` (2초 안에 DB 결과, 쓰기 성공, 재시작 뒤 재채움) |
 | DB 오류 | **감추지 않는다** — 빈 목록·가격 0·캐시 값으로 대신하지 않고 기존 오류 계약대로 전달 | `ProductListDbFailureTest` 2건 |
 | 주문 확정 | 캐시를 쓰지 않는다 — DB의 주문 단가·재고·포인트 규칙 그대로 | 변경 없음 |
+| Redis 메모리가 참 | `maxmemory 128mb` + `volatile-lru` — TTL이 있는 목록 키만 오래 안 쓴 순으로 버린다. 버린 키는 miss 한 번으로 다시 채운다 | 로컬 실험 (아래) |
 
 - 대기 시간은 `RedisConfig`에서 정한다. 이 저장소는 `LettuceConnectionFactory`를 직접 만들어 `spring.data.redis.timeout`이 적용되지 않는다(Lettuce 기본 명령 대기 60초). 200 ms는 명령 하나의 상한이고, 한 조회가 Redis를 부르는 횟수(세대 읽기, 없으면 시작·재조회, 목록 찾기, 저장)만큼 쌓일 수 있다 — 연결이 살아 있는데 응답만 없는 최악의 경우 한 요청이 약 1초까지 기다린다. 연결이 끊긴 경우는 즉시 거절이라 첫 호출에서 바로 DB로 간다. 이 상한은 `modules:redis`를 쓰는 다른 앱에도 함께 적용된다.
+- **축출 정책** ✅ (v0.3) — 기본값은 `maxmemory 0`(제한 없음) · `noeviction`이다(로컬 redis-master에서 확인). 이대로 메모리가 차면 새 목록 저장(SET)뿐 아니라 **무효화(INCR)도 OOM으로 실패**해, 가격을 바꿔도 TTL 동안 옛 목록이 보인다 — 축출이 없어서 정확성 창이 생긴다. 관리형(ElastiCache 기본 파라미터 그룹은 `volatile-lru`)이 아니므로 직접 정한다 (`docker/infra-compose.yml`).
+  - `volatile-lru`를 고른 이유: 축출해도 되는 것은 캐시(TTL 있음)뿐이다. TTL 없는 세대 키는 캐시 값이 아니라 "무엇이 최신인가"를 정하는 값이라 남긴다(지워져도 시각으로 다시 시작해 안전하지만, 그 안전은 테스트 한 건에 기댄다). 이후 잠금(Redisson)처럼 TTL 없는 키가 같은 노드에 생겨도 보호된다. `allkeys-lru`는 캐시 전용 노드일 때의 정석이다.
+  - 실험 (`maxmemory`만 잠시 낮춤, 값 1 KB·TTL 600초 키 3,000개 + TTL 없는 키 1개): **4 MB** → 3,000건 모두 OK, TTL 키 1,163개 축출, TTL 없는 키 유지. **2 MB** → 742건 OK 후 2,258건 `OOM command not allowed`. 빈 Redis가 이미 2.21 MB를 써서, TTL 키를 모두 버려도 상한 아래로 못 내려갔다. **`volatile-lru`는 버릴 TTL 키가 없으면 `noeviction`처럼 쓰기를 거절한다** — 상한은 TTL 없는 데이터보다 넉넉히 잡는다. 이때도 목록 저장 실패는 DB 응답으로, 무효화 실패는 TTL 정책으로 처리된다(위 표).
+  - 축출은 무효화가 아니다. 메모리 압박으로 사라지는 것과 틀린 값을 지우는 것은 다른 책임이라, 무효화를 축출에 기대지 않는다.
 - DB 오류를 감추지 않는다는 것은 `ProductListDbFailureTest`가 확인한다: miss의 목록 조회 실패, hit의 비노출 확인 실패 모두 오류를 그대로 전달한다(캐시 값으로 대신 응답하지 않음).
 - 장애 중 쓰기의 무효화도 실패한다. Redis가 **데이터를 유지한 채** 돌아오면(로컬 compose는 AOF 켜짐) 그 목록은 TTL까지 옛 값일 수 있다 — 위 "무효화 실패" 정책과 같다. 테스트는 영속화를 끈 Redis라 재시작 뒤 비어 있다.
 
@@ -211,4 +216,4 @@ AI 리뷰어 3명(domain·persistence·test, 읽기 전용)에게 `53f26d2..HEAD
 |---|---|---|
 | 2026-10-15 | v0.1 | 초안 — 조회 계약, 기준선·전후·hit 측정, ADR-W4-01~05, 실패 장면과 커밋 이력 |
 | 2026-10-15 | v0.2 | **AI 리뷰 반영** — 브랜드 일괄 삭제 잠금 순서 회귀(PK 범위 잠금), ADR-11 예외, 기능 간 의존·무효화 빈도(🤔), 최악 대기, DB 오류 테스트, 9장 검토 기록 15건 |
-| 2026-10-15 | v0.3 | **학습자 결정 반영** — 목록 캐시 무효화를 이벤트(`@TransactionalEventListener(AFTER_COMMIT)`)로 전환, 좋아요 이벤트는 product.domain(순환 회피). 테스트 스키마 `loopers_test` 분리 |
+| 2026-10-15 | v0.3 | **학습자 결정 반영** — 목록 캐시 무효화를 이벤트(`@TransactionalEventListener(AFTER_COMMIT)`)로 전환, 좋아요 이벤트는 product.domain(순환 회피). 테스트 스키마 `loopers_test` 분리. Redis `maxmemory 128mb` + `volatile-lru`와 축출 실험 |
