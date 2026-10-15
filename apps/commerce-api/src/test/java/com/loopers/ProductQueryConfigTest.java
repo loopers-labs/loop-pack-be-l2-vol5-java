@@ -46,6 +46,13 @@ class ProductQueryConfigTest {
         assertThat(environment.getProperty("spring.jpa.hibernate.ddl-auto")).isEqualTo("create");
     }
 
+    @Test
+    @DisplayName("local 프로필은 기동 시 상품 목록 캐시 워밍업을 실행하고, test 프로필은 실행하지 않는다.")
+    void warmUpRunsOnlyOutsideTestProfile() {
+        assertThat(loadConfiguration("local").getProperty("product.list-cache.warm-up.enabled")).isEqualTo("true");
+        assertThat(loadConfiguration("test").getProperty("product.list-cache.warm-up.enabled")).isEqualTo("false");
+    }
+
     private StandardEnvironment loadConfiguration(String... profiles) {
         StandardEnvironment environment = new StandardEnvironment();
         environment.getPropertySources().remove(StandardEnvironment.SYSTEM_PROPERTIES_PROPERTY_SOURCE_NAME);
