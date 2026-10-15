@@ -463,7 +463,8 @@ sequenceDiagram
 
 ##### 캐시 범위와 키
 
-아래 캐시 범위·변경 책임·장애 계약은 Redis 구현 단계에 적용할 설계다.
+아래 캐시 범위·변경 책임·장애 계약은 고객 상품 목록 Redis 캐시에 적용했다.<br>
+키·무효화·장애 흐름의 상세 설계는 [상품 목록 캐시 설계](../week4/product-list-cache.md)에 정리했다.
 
 - 고객 상품 목록 `GET /api/v1/products`의 공통 응답을 Cache-Aside로 캐싱한다.<br>
   공통 필드는 `id`, `brandId`, `brandName`, `name`, `price`, `likeCount`다.<br>
