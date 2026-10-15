@@ -9,12 +9,16 @@ import com.loopers.domain.product.ProductSort;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.Optional;
+import java.util.OptionalLong;
 
+@Slf4j
 @RequiredArgsConstructor
 @Component
 public class ProductFacade {
@@ -48,13 +52,43 @@ public class ProductFacade {
         }
         ProductSort productSort = customerSort(sort);
         // 조회를 시작할 때 읽은 버전의 키에만 저장해, 늦게 끝난 조회가 새 버전의 결과를 덮지 않게 한다.
-        long version = productListCache.currentVersion(brandId);
-        ProductListCacheKey key = new ProductListCacheKey(brandId, productSort, page, size, version);
-        return productListCache.find(key).filter(this::containsOnlyActiveProducts).orElseGet(() -> {
+        OptionalLong version = readCacheVersion(brandId);
+        if (version.isEmpty()) {
+            return customerProductListReader.read(brandId, productSort, page, size);
+        }
+        ProductListCacheKey key = new ProductListCacheKey(brandId, productSort, page, size, version.getAsLong());
+        return findCachedList(key).filter(this::containsOnlyActiveProducts).orElseGet(() -> {
             List<CustomerProductInfo> products = customerProductListReader.read(brandId, productSort, page, size);
-            productListCache.put(key, products);
+            storeCachedList(key, products);
             return products;
         });
+    }
+
+    // 캐시는 보조 수단이므로 Redis 오류는 DB 조회로 우회하고 응답에 전파하지 않는다.
+    private OptionalLong readCacheVersion(Long brandId) {
+        try {
+            return OptionalLong.of(productListCache.currentVersion(brandId));
+        } catch (RuntimeException exception) {
+            log.warn("상품 목록 캐시 버전을 읽지 못해 DB에서 조회합니다. brandId={}, cause={}", brandId, exception.toString());
+            return OptionalLong.empty();
+        }
+    }
+
+    private Optional<List<CustomerProductInfo>> findCachedList(ProductListCacheKey key) {
+        try {
+            return productListCache.find(key);
+        } catch (RuntimeException exception) {
+            log.warn("상품 목록 캐시를 읽지 못해 DB에서 조회합니다. key={}, cause={}", key.value(), exception.toString());
+            return Optional.empty();
+        }
+    }
+
+    private void storeCachedList(ProductListCacheKey key, List<CustomerProductInfo> products) {
+        try {
+            productListCache.put(key, products);
+        } catch (RuntimeException exception) {
+            log.warn("상품 목록 캐시를 저장하지 못했습니다. key={}, cause={}", key.value(), exception.toString());
+        }
     }
 
     // 무효화가 누락돼도 삭제된 상품을 노출하지 않도록 hit 결과의 삭제 여부는 DB에서 확인한다.
