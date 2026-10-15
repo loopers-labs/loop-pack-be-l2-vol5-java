@@ -1,5 +1,5 @@
--- 5단계 고정 요청: brandId=7, page=0, size=20, sort=price_asc.
--- 상품·브랜드 조회는 4단계와 같다. 좋아요 조회만 IN + GROUP BY로 바꾸고, 바인딩값을 대입했다.
+-- 4단계 고정 요청: brandId=7, page=0, size=20, sort=price_asc.
+-- 상품·브랜드 조회는 3단계와 같다. 좋아요 조회만 IN + GROUP BY로 바꾸고, 바인딩값을 대입했다.
 
 SELECT l.product_id, COUNT(l.id) AS like_count
 FROM likes l
