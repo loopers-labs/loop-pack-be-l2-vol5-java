@@ -182,14 +182,18 @@ class ProductListCacheIntegrationTest {
         assertThat(after.getTotalElements()).isEqualTo(2);
     }
 
-    @DisplayName("캐시에 담긴 브랜드를 일괄 삭제하면 그 상품이 목록에서 빠지고, 다른 브랜드 상품은 남는다.")
+    @DisplayName("캐시에 담긴 브랜드를 일괄 삭제하면 그 상품이 목록에서 빠지고, 다른 브랜드 상품과 그 상품의 과거 주문은 남는다.")
     @Test
     void brandDeleteRemovesItsProducts() {
         // arrange
         Long deletedBrand = brand("삭제될");
         Long otherBrand = brand("남을");
-        product(deletedBrand, "삭제될 상품", 1_000);
+        Long deletedProduct = product(deletedBrand, "삭제될 상품", 1_000);
         Long otherProduct = product(otherBrand, "남을 상품", 2_000);
+        Long userId = userJpaRepository.save(new UserModel("고객")).getId();
+        pointCommandUseCase.charge(userId, 10_000);
+        Long orderId = orderCommandUseCase.create(userId, List.of(new OrderLines.Line(deletedProduct, 3))).id();
+        orderCommandUseCase.confirm(userId, orderId);
         list(null, ProductSort.LATEST);
         list(deletedBrand, ProductSort.LATEST);
 
@@ -201,6 +205,11 @@ class ProductListCacheIntegrationTest {
         assertThat(idsOf(all)).containsExactly(otherProduct);
         assertThat(all.getTotalElements()).isEqualTo(1);
         assertThat(list(deletedBrand, ProductSort.LATEST).getContent()).isEmpty();
+        // 삭제는 고객 목록·새 주문에서 빼는 것이지, 이미 확정한 주문을 지우거나 바꾸는 것이 아니다
+        OrderInfo order = orderQueryService.getMyOrder(userId, orderId);
+        assertThat(order.items()).extracting(OrderInfo.Item::productId, OrderInfo.Item::unitPrice, OrderInfo.Item::amount)
+            .containsExactly(tuple(deletedProduct, 1_000L, 3_000L));
+        assertThat(order.paidAmount()).isEqualTo(3_000L);
     }
 
     @DisplayName("브랜드 이름을 바꾸면 목록의 브랜드 이름도 바뀐다.")
