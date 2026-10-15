@@ -25,6 +25,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.awaitility.Awaitility.await;
 
 @SpringBootTest(properties = "product.list-cache.ttl=1s")
@@ -149,23 +150,28 @@ public class ProductListCacheFailureTest {
         assertThat(pricesFromCacheOrDb(brandId)).containsExactly(3_000L);
     }
 
-    @DisplayName("commit 뒤 무효화가 실패해도 관리자 변경은 성공으로 남고, 오래된 가격은 TTL 안에서만 보이다가 원본과 같아진다.")
+    @DisplayName("commit 뒤 무효화가 실패해도 관리자 변경은 성공으로 남고, 가격·이름은 바로 원본 값을 보인다. 가격순의 순서만 TTL 안에서 옛 순서일 수 있다.")
     @Test
-    void failedInvalidationKeepsCommitAndRecoversByTtl() {
-        // arrange
+    void failedInvalidationKeepsCommitAndShowsSourcePrice() {
+        // arrange — 캐시: [A 1,000, B 2,000]
         Long brandId = brand();
-        Long productId = product(brandId, "A", 1_000);
+        Long a = product(brandId, "A", 1_000);
+        Long b = product(brandId, "B", 2_000);
         list(brandId);
 
-        // act
+        // act — B를 가장 싸게 바꾸지만 무효화는 실패한다
         cache.failInvalidate(true);
-        productCommandUseCase.update(productId, "A", 3_000);
+        productCommandUseCase.update(b, "B2", 500);
         cache.failInvalidate(false);
 
         // assert — DB의 commit은 되돌아가지 않는다
-        assertThat(pricesFromDb(brandId)).containsExactly(3_000L);
-        // 허용한 표시 신선도: 가격은 TTL(테스트 1초) 동안 옛 값일 수 있고, 만료 뒤 원본과 같아진다
-        await().atMost(WAIT).until(() -> pricesFromCacheOrDb(brandId).equals(List.of(3_000L)));
+        assertThat(pricesFromDb(brandId)).containsExactly(500L, 1_000L);
+        // 가격·이름은 hit여도 원본 값이다. 순서(id 목록)는 캐시의 옛 순서다
+        assertThat(list(brandId).getContent())
+            .extracting(ProductInfo::id, ProductInfo::name, ProductInfo::price)
+            .containsExactly(tuple(a, "A", 1_000L), tuple(b, "B2", 500L));
+        // 허용한 신선도: 순서는 TTL(테스트 1초)이 지나면 원본과 같아진다
+        await().atMost(WAIT).until(() -> pricesFromCacheOrDb(brandId).equals(List.of(500L, 1_000L)));
     }
 
     @DisplayName("무효화가 실패해도 삭제된 상품은 캐시를 통해 노출되지 않는다 — 비노출은 표시 신선도로 허용하지 않는다.")

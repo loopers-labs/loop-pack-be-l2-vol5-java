@@ -122,6 +122,30 @@ class ProductListCacheIntegrationTest {
             .doesNotContain("brands"));
     }
 
+    @DisplayName("앞 3페이지(0~2)만 캐시한다 — 뒤 페이지는 hit율이 낮아 매번 원본에서 읽고, 캐시 키도 늘리지 않는다.")
+    @Test
+    void onlyFrontPagesAreCached() {
+        // arrange
+        Long brandId = brand("브랜드");
+        product(brandId, "A", 1_000);
+        PageRequest lastCachedPage = PageRequest.of(2, 20);
+        PageRequest firstUncachedPage = PageRequest.of(3, 20);
+        productListQueryService.getProducts(brandId, ProductSort.LATEST, lastCachedPage);
+        productListQueryService.getProducts(brandId, ProductSort.LATEST, firstUncachedPage);
+
+        // act
+        SqlRecorder.clear();
+        productListQueryService.getProducts(brandId, ProductSort.LATEST, lastCachedPage);
+        List<String> cachedPageSql = List.copyOf(SqlRecorder.statements());
+        SqlRecorder.clear();
+        productListQueryService.getProducts(brandId, ProductSort.LATEST, firstUncachedPage);
+        List<String> uncachedPageSql = List.copyOf(SqlRecorder.statements());
+
+        // assert — 건수 SQL이 나가는지로 원본 조회 여부를 본다
+        assertThat(cachedPageSql).noneMatch(sql -> sql.contains("count("));
+        assertThat(uncachedPageSql).anyMatch(sql -> sql.contains("count("));
+    }
+
     @DisplayName("관리자가 가격을 바꾸고 commit한 뒤 조회하면 새 가격과 바뀐 가격순을 돌려준다.")
     @Test
     void priceChangeIsVisibleAfterCommit() {
