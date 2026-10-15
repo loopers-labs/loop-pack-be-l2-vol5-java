@@ -36,8 +36,10 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
@@ -143,9 +145,18 @@ class ProductListCacheApiE2ETest {
     }
 
     @Test
-    @DisplayName("관리자 API로 브랜드를 삭제하면 캐시된 고객 목록에서 연결 상품을 반환하지 않는다.")
-    void hidesBrandProducts_afterAdminBrandDelete() throws Exception {
-        warmUpCustomerList();
+    @DisplayName("관리자 API로 브랜드를 삭제하면 캐시된 목록에서 연결 상품이 빠지고, 다른 브랜드 목록과 과거 주문은 유지된다.")
+    void hidesBrandProducts_andKeepsOtherBrandAndPastOrder_afterAdminBrandDelete() throws Exception {
+        Product second = productRepository.save(Product.create(brand.getId(), "Max", 2_000L));
+        Brand otherBrand = brandRepository.save(Brand.create("Adidas"));
+        Product otherProduct = productRepository.save(Product.create(otherBrand.getId(), "Boost", 1_500L));
+        assertThat(customerList(brand.getId())).extracting(ProductCustomerV1Dto.ProductResponse::id)
+            .containsExactly(product.getId(), second.getId());
+        assertThat(customerList(otherBrand.getId())).extracting(ProductCustomerV1Dto.ProductResponse::id)
+            .containsExactly(otherProduct.getId());
+        assertThat(customerList(null)).hasSize(3);
+        Long orderId = createAndConfirmOrder(product.getId(), 1);
+        Set<String> otherBrandKeys = redisTemplate.keys("product:list:v1:*:brand=" + otherBrand.getId() + ":*");
 
         ResponseEntity<ApiResponse<Object>> response = adminClient.exchange(
             ADMIN_BRANDS + "/" + brand.getId(),
@@ -155,7 +166,22 @@ class ProductListCacheApiE2ETest {
         );
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(customerList()).isEmpty();
+        assertThat(customerList(brand.getId())).isEmpty();
+        assertThat(customerList(null)).extracting(ProductCustomerV1Dto.ProductResponse::id)
+            .containsExactly(otherProduct.getId());
+        assertThat(redisTemplate.keys("product:list:v1:*:brand=" + otherBrand.getId() + ":*"))
+            .as("다른 브랜드 목록 캐시는 무효화하지 않는다.")
+            .isEqualTo(otherBrandKeys);
+        assertThat(customerList(otherBrand.getId()))
+            .extracting(ProductCustomerV1Dto.ProductResponse::id, ProductCustomerV1Dto.ProductResponse::price)
+            .containsExactly(tuple(otherProduct.getId(), 1_500L));
+        OrderV1Dto.OrderResponse order = getOrder(orderId);
+        assertThat(order.status()).isEqualTo("CONFIRMED");
+        assertThat(order.totalAmount()).isEqualTo(1_000L);
+        assertThat(order.items())
+            .extracting(OrderV1Dto.OrderItemResponse::productId, OrderV1Dto.OrderItemResponse::productName,
+                OrderV1Dto.OrderItemResponse::unitPrice)
+            .containsExactly(tuple(product.getId(), "Air", 1_000L));
     }
 
     private void warmUpCustomerList() throws Exception {
@@ -209,10 +235,15 @@ class ProductListCacheApiE2ETest {
     }
 
     private List<ProductCustomerV1Dto.ProductResponse> customerList() throws Exception {
-        MvcResult result = mockMvc.perform(get("/api/v1/products")
-                .param("brandId", brand.getId().toString())
-                .param("sort", "price_asc"))
-            .andReturn();
+        return customerList(brand.getId());
+    }
+
+    private List<ProductCustomerV1Dto.ProductResponse> customerList(Long brandId) throws Exception {
+        MockHttpServletRequestBuilder request = get("/api/v1/products").param("sort", "price_asc");
+        if (brandId != null) {
+            request.param("brandId", brandId.toString());
+        }
+        MvcResult result = mockMvc.perform(request).andReturn();
         assertThat(result.getResponse().getStatus()).isEqualTo(HttpStatus.OK.value());
         ApiResponse<List<ProductCustomerV1Dto.ProductResponse>> body = objectMapper.readValue(
             result.getResponse().getContentAsString(),
