@@ -438,6 +438,8 @@ HTTP 지연도 같은 VU에서 IN이 대체로 낮았지만, 요청당 차이가
 
 이 선택은 `likes(product_id)` 인덱스가 있다는 전제에서만 유효하다. 인덱스를 바꾸면 좋아요 조회 방식도 함께 다시 측정한다.
 
+측정 뒤 같은 쿼리를 Native SQL에서 JPQL로 옮겼다. 실행되는 SQL은 별칭만 다르고, 실행계획도 같은 `idx_likes_product_id` 범위 스캔이다.
+
 ## 8. 최종 검증
 
 4단계 반영 후 `./gradlew :apps:commerce-api:check` 결과는 테스트 268개·실패/오류/skip 0개, Checkstyle·ArchUnit 통과다.<br>

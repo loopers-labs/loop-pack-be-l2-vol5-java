@@ -2,22 +2,19 @@ package com.loopers.infrastructure.like;
 
 import com.loopers.domain.like.Like;
 import com.loopers.domain.like.LikeRepository;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.Query;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @RequiredArgsConstructor
 @Component
 public class LikeRepositoryImpl implements LikeRepository {
 
     private final LikeJpaRepository likeJpaRepository;
-    private final EntityManager entityManager;
 
     @Override
     public Optional<Like> findByUserIdAndProductId(Long userId, Long productId) {
@@ -40,18 +37,8 @@ public class LikeRepositoryImpl implements LikeRepository {
             return Map.of();
         }
         List<Long> distinctIds = productIds.stream().distinct().toList();
-        Query query = entityManager.createNativeQuery(
-            "SELECT l.product_id, COUNT(l.id) AS like_count FROM likes l"
-                + " WHERE l.product_id IN (:productIds) GROUP BY l.product_id"
-        );
-        query.setParameter("productIds", distinctIds);
-        Map<Long, Long> counts = new HashMap<>();
-        List<?> rows = query.getResultList();
-        for (Object result : rows) {
-            Object[] row = (Object[]) result;
-            counts.put(((Number) row[0]).longValue(), ((Number) row[1]).longValue());
-        }
-        return counts;
+        return likeJpaRepository.countGroupByProductIdIn(distinctIds).stream()
+            .collect(Collectors.toMap(LikeCountRow::productId, LikeCountRow::likeCount));
     }
 
     @Override
