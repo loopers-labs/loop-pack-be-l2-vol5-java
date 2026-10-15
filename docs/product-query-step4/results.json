@@ -1,0 +1,201 @@
+{
+  "change": "Experiment: select product and brand response fields together; keep UNION ALL likes and existing indexes",
+  "decision": "reverted: no mean HTTP latency improvement in this run; p99 improved at 100 VU",
+  "comparison": {
+    "source": "../product-query-step3/results.json",
+    "stage": "composite",
+    "remeasured_before": false,
+    "source_sha256": "956677ab483e5cbe68f4d8c5b87db205136ef7a8a9ead722099b50d303e0c3af"
+  },
+  "tool": "k6 1.6.1",
+  "measured_samples_per_run": 1000,
+  "warmup_requests_per_vu": 3,
+  "no_connection_reuse": true,
+  "runs": [
+    {
+      "tool": "k6",
+      "recorded_at_utc": "2026-10-15T12:08:52.864Z",
+      "url": "http://127.0.0.1:18081/api/v1/products?brandId=7&page=0&size=20&sort=price_asc",
+      "request": {
+        "brandId": 7,
+        "page": 0,
+        "size": 20,
+        "sort": "price_asc"
+      },
+      "vus": 1,
+      "samples_requested": 1000,
+      "samples_per_vu": 1000,
+      "samples_completed": 1000,
+      "warmup_per_vu": 3,
+      "warmup_requested": 3,
+      "warmup_completed": 3,
+      "response_sha256": "11a56ff9962481b6d597757ae5a4e62ab27fe702ac967d35df574fa0dc06da76",
+      "response_match_rate": 1,
+      "response_mismatch_count": 0,
+      "duration_definition": "response.timings.duration: sending + waiting + receiving, ms",
+      "avg_ms": 4.908847000000006,
+      "min_ms": 2.477,
+      "p50_ms": 4.366,
+      "p95_ms": 8.448799999999995,
+      "p99_ms": 12.742489999999998,
+      "p99_9_ms": 21.447325000000365,
+      "max_ms": 24.769,
+      "thresholds_passed": true,
+      "http_failure_rate_including_warmup": 0,
+      "http_failure_rate": 0.0,
+      "status_counts": {
+        "measurement": {
+          "200": 1000
+        },
+        "warmup": {
+          "200": 3
+        }
+      },
+      "stage": "join_projection",
+      "k6_exit_code": 0
+    },
+    {
+      "tool": "k6",
+      "recorded_at_utc": "2026-10-15T12:08:54.073Z",
+      "url": "http://127.0.0.1:18081/api/v1/products?brandId=7&page=0&size=20&sort=price_asc",
+      "request": {
+        "brandId": 7,
+        "page": 0,
+        "size": 20,
+        "sort": "price_asc"
+      },
+      "vus": 10,
+      "samples_requested": 1000,
+      "samples_per_vu": 100,
+      "samples_completed": 1000,
+      "warmup_per_vu": 3,
+      "warmup_requested": 30,
+      "warmup_completed": 30,
+      "response_sha256": "11a56ff9962481b6d597757ae5a4e62ab27fe702ac967d35df574fa0dc06da76",
+      "response_match_rate": 1,
+      "response_mismatch_count": 0,
+      "duration_definition": "response.timings.duration: sending + waiting + receiving, ms",
+      "avg_ms": 9.279263999999998,
+      "min_ms": 4.981,
+      "p50_ms": 8.8175,
+      "p95_ms": 13.92885,
+      "p99_ms": 21.36199,
+      "p99_9_ms": 27.68872400000041,
+      "max_ms": 31.409,
+      "thresholds_passed": true,
+      "http_failure_rate_including_warmup": 0,
+      "http_failure_rate": 0.0,
+      "status_counts": {
+        "measurement": {
+          "200": 1000
+        },
+        "warmup": {
+          "200": 30
+        }
+      },
+      "stage": "join_projection",
+      "k6_exit_code": 0
+    },
+    {
+      "tool": "k6",
+      "recorded_at_utc": "2026-10-15T12:08:55.303Z",
+      "url": "http://127.0.0.1:18081/api/v1/products?brandId=7&page=0&size=20&sort=price_asc",
+      "request": {
+        "brandId": 7,
+        "page": 0,
+        "size": 20,
+        "sort": "price_asc"
+      },
+      "vus": 100,
+      "samples_requested": 1000,
+      "samples_per_vu": 10,
+      "samples_completed": 1000,
+      "warmup_per_vu": 3,
+      "warmup_requested": 300,
+      "warmup_completed": 300,
+      "response_sha256": "11a56ff9962481b6d597757ae5a4e62ab27fe702ac967d35df574fa0dc06da76",
+      "response_match_rate": 1,
+      "response_mismatch_count": 0,
+      "duration_definition": "response.timings.duration: sending + waiting + receiving, ms",
+      "avg_ms": 73.25149999999995,
+      "min_ms": 6.171,
+      "p50_ms": 72.34200000000001,
+      "p95_ms": 114.94329999999998,
+      "p99_ms": 139.38009,
+      "p99_9_ms": 197.57267200000018,
+      "max_ms": 199.243,
+      "thresholds_passed": true,
+      "http_failure_rate_including_warmup": 0,
+      "http_failure_rate": 0.0,
+      "status_counts": {
+        "measurement": {
+          "200": 1000
+        },
+        "warmup": {
+          "200": 300
+        }
+      },
+      "stage": "join_projection",
+      "k6_exit_code": 0
+    }
+  ],
+  "db_cost": [
+    {
+      "query": "like_union",
+      "sql": "SELECT ? AS `product_id` , COUNT ( `l` . `id` ) AS `like_count` FROM `likes` `l` WHERE `l` . `product_id` = ? UNION ALL SELECT ? AS `product_id` , COUNT ( `l` . `id` ) AS `like_count` FROM `likes` `l` WHERE `l` . `product_id` = ? UNION ALL SELECT ? AS `product_id` , COUNT ( `l` . `id` ) AS `like_count` FROM `likes` `l` WHERE `l` . `product_id` = ? UNION ALL SELECT ? AS `product_id` , COUNT ( `l` . `id` ) AS `like_count` FROM `likes` `l` WHERE `l` . `product_id` = ? UNION ALL SELECT ? AS `product_id` , COUNT ( `l` . `id` ) AS `like_count` FROM `likes` `l` WHERE `l` . `product_id` = ? UNION ALL SELECT ? AS `product_id` , COUNT ( `l` . `id` ) AS `like_count` FROM `likes` `l` WHERE `l` . `product_id` = ? UNION ALL SELECT ? AS `product_id` , COUNT ( `l` . `id` ) AS `like_count` FROM `likes` `l` WHERE `l` . `product_id` = ? UNION ALL SELECT ? AS `product_id` , COUNT ( `l` . `id` ) AS `like_count` FROM `likes` `l` WHERE `l` . `product_id` = ? UNION ALL SELECT ? AS `product_id` , COUNT ( `l` . `id` ) AS `like_count` FROM `likes` `l` WHERE `l` . `product_id` = ? UNION ALL SELECT ? AS `product_id` , COUNT ( `l` . `id` ) AS `like_count` FROM `likes` `l` WHERE `l` .",
+      "calls": 1003,
+      "db_ms": 470.764586,
+      "db_ms_per_request": 0.4693565164506481,
+      "examined": 103309,
+      "sent": 20060
+    },
+    {
+      "query": "product_brand_page",
+      "sql": "SELECT `pje1_0` . `id` , `b1_0` . `id` , `b1_0` . `name` , `pje1_0` . `name` , `pje1_0` . `price` FROM `products` `pje1_0` LEFT JOIN `brands` `b1_0` ON `b1_0` . `id` = `pje1_0` . `brand_id` WHERE `pje1_0` . `deleted_at` IS NULL AND `b1_0` . `id` = ? ORDER BY `pje1_0` . `price` , `pje1_0` . `id` LIMIT ?",
+      "calls": 1003,
+      "db_ms": 645.848517,
+      "db_ms_per_request": 0.6439167666999003,
+      "examined": 20060,
+      "sent": 20060
+    }
+  ],
+  "db_cost_request_count_including_warmup": 1003,
+  "environment_before": "captured_at_utc\tmysql_version\tinnodb_buffer_pool_bytes\ttransaction_isolation\tperformance_schema_enabled\n2026-10-15 12:05:50\t8.0.46\t134217728\tREPEATABLE-READ\t1\nentity\ttotal\nbrands\t100\nusers\t1000\nproducts\t1000000\nlikes\t5194998\nproduct_count\tprice_sum\tdeleted_products\n1000000\t50099500000\t12000\nbrand_id\tproduct_count\tprice_sum\n7\t10000\t500720000\nTABLE_NAME\tINDEX_NAME\tSEQ_IN_INDEX\tCOLUMN_NAME\tNON_UNIQUE\nbrands\tPRIMARY\t1\tid\t0\nbrands\tuk_brand_name\t1\tname\t0\nlikes\tidx_likes_product_id\t1\tproduct_id\t1\nlikes\tPRIMARY\t1\tid\t0\nlikes\tuk_like_user_product\t1\tuser_id\t0\nlikes\tuk_like_user_product\t2\tproduct_id\t0\nproducts\tFKa3a4mpsfdf4d2y6r8ra3sc8mv\t1\tbrand_id\t1\nproducts\tidx_products_brand_deleted_price\t1\tbrand_id\t1\nproducts\tidx_products_brand_deleted_price\t2\tdeleted_at\t1\nproducts\tidx_products_brand_deleted_price\t3\tprice\t1\nproducts\tPRIMARY\t1\tid\t0\n",
+  "environment_after": "captured_at_utc\tmysql_version\tinnodb_buffer_pool_bytes\ttransaction_isolation\tperformance_schema_enabled\n2026-10-15 12:08:55\t8.0.46\t134217728\tREPEATABLE-READ\t1\nentity\ttotal\nbrands\t100\nusers\t1000\nproducts\t1000000\nlikes\t5194998\nproduct_count\tprice_sum\tdeleted_products\n1000000\t50099500000\t12000\nbrand_id\tproduct_count\tprice_sum\n7\t10000\t500720000\nTABLE_NAME\tINDEX_NAME\tSEQ_IN_INDEX\tCOLUMN_NAME\tNON_UNIQUE\nbrands\tPRIMARY\t1\tid\t0\nbrands\tuk_brand_name\t1\tname\t0\nlikes\tidx_likes_product_id\t1\tproduct_id\t1\nlikes\tPRIMARY\t1\tid\t0\nlikes\tuk_like_user_product\t1\tuser_id\t0\nlikes\tuk_like_user_product\t2\tproduct_id\t0\nproducts\tFKa3a4mpsfdf4d2y6r8ra3sc8mv\t1\tbrand_id\t1\nproducts\tidx_products_brand_deleted_price\t1\tbrand_id\t1\nproducts\tidx_products_brand_deleted_price\t2\tdeleted_at\t1\nproducts\tidx_products_brand_deleted_price\t3\tprice\t1\nproducts\tPRIMARY\t1\tid\t0\n",
+  "explain": "id\tselect_type\ttable\tpartitions\ttype\tpossible_keys\tkey\tkey_len\tref\trows\tfiltered\tExtra\n1\tSIMPLE\tb\tNULL\tconst\tPRIMARY\tPRIMARY\t8\tconst\t1\t100.00\tNULL\n1\tSIMPLE\tp\tNULL\trange\tFKa3a4mpsfdf4d2y6r8ra3sc8mv,idx_products_brand_deleted_price\tidx_products_brand_deleted_price\t17\tNULL\t18758\t100.00\tUsing index condition\nid\tselect_type\ttable\tpartitions\ttype\tpossible_keys\tkey\tkey_len\tref\trows\tfiltered\tExtra\n1\tPRIMARY\tl\tNULL\tref\tuk_like_user_product,idx_likes_product_id\tidx_likes_product_id\t8\tconst\t5\t100.00\tUsing index\n2\tUNION\tl\tNULL\tref\tuk_like_user_product,idx_likes_product_id\tidx_likes_product_id\t8\tconst\t4\t100.00\tUsing index\n3\tUNION\tl\tNULL\tref\tuk_like_user_product,idx_likes_product_id\tidx_likes_product_id\t8\tconst\t3\t100.00\tUsing index\n4\tUNION\tl\tNULL\tref\tuk_like_user_product,idx_likes_product_id\tidx_likes_product_id\t8\tconst\t2\t100.00\tUsing index\n5\tUNION\tl\tNULL\tref\tuk_like_user_product,idx_likes_product_id\tidx_likes_product_id\t8\tconst\t1\t100.00\tUsing index\n6\tUNION\tl\tNULL\tref\tuk_like_user_product,idx_likes_product_id\tidx_likes_product_id\t8\tconst\t1\t100.00\tUsing index\n7\tUNION\tl\tNULL\tref\tuk_like_user_product,idx_likes_product_id\tidx_likes_product_id\t8\tconst\t10\t100.00\tUsing index\n8\tUNION\tl\tNULL\tref\tuk_like_user_product,idx_likes_product_id\tidx_likes_product_id\t8\tconst\t9\t100.00\tUsing index\n9\tUNION\tl\tNULL\tref\tuk_like_user_product,idx_likes_product_id\tidx_likes_product_id\t8\tconst\t8\t100.00\tUsing index\n10\tUNION\tl\tNULL\tref\tuk_like_user_product,idx_likes_product_id\tidx_likes_product_id\t8\tconst\t7\t100.00\tUsing index\n11\tUNION\tl\tNULL\tref\tuk_like_user_product,idx_likes_product_id\tidx_likes_product_id\t8\tconst\t1\t100.00\tUsing index\n12\tUNION\tl\tNULL\tref\tuk_like_user_product,idx_likes_product_id\tidx_likes_product_id\t8\tconst\t10\t100.00\tUsing index\n13\tUNION\tl\tNULL\tref\tuk_like_user_product,idx_likes_product_id\tidx_likes_product_id\t8\tconst\t9\t100.00\tUsing index\n14\tUNION\tl\tNULL\tref\tuk_like_user_product,idx_likes_product_id\tidx_likes_product_id\t8\tconst\t8\t100.00\tUsing index\n15\tUNION\tl\tNULL\tref\tuk_like_user_product,idx_likes_product_id\tidx_likes_product_id\t8\tconst\t7\t100.00\tUsing index\n16\tUNION\tl\tNULL\tref\tuk_like_user_product,idx_likes_product_id\tidx_likes_product_id\t8\tconst\t6\t100.00\tUsing index\n17\tUNION\tl\tNULL\tref\tuk_like_user_product,idx_likes_product_id\tidx_likes_product_id\t8\tconst\t5\t100.00\tUsing index\n18\tUNION\tl\tNULL\tref\tuk_like_user_product,idx_likes_product_id\tidx_likes_product_id\t8\tconst\t4\t100.00\tUsing index\n19\tUNION\tl\tNULL\tref\tuk_like_user_product,idx_likes_product_id\tidx_likes_product_id\t8\tconst\t3\t100.00\tUsing index\n20\tUNION\tl\tNULL\tref\tuk_like_user_product,idx_likes_product_id\tidx_likes_product_id\t8\tconst\t2\t100.00\tUsing index\n",
+  "explain_analyze": "EXPLAIN\n-> Limit: 20 row(s)  (cost=174925 rows=20) (actual time=0.458..0.46 rows=20 loops=1)\n    -> Index range scan on p using idx_products_brand_deleted_price over (brand_id = 7 AND deleted_at = NULL), with index condition: ((p.brand_id = 7) and (p.deleted_at is null))  (cost=174925 rows=18758) (actual time=0.457..0.459 rows=20 loops=1)\n\nEXPLAIN\n-> Append  (cost=41.2 rows=20) (actual time=0.00896..0.0505 rows=20 loops=1)\n    -> Stream results  (cost=2.01 rows=1) (actual time=0.00875..0.00879 rows=1 loops=1)\n        -> Aggregate: count(l.id)  (cost=2.01 rows=1) (actual time=0.00754..0.00758 rows=1 loops=1)\n            -> Covering index lookup on l using idx_likes_product_id (product_id=5406)  (cost=1.51 rows=5) (actual time=0.00417..0.00538 rows=5 loops=1)\n    -> Stream results  (cost=1.81 rows=1) (actual time=0.00267..0.00271 rows=1 loops=1)\n        -> Aggregate: count(l.id)  (cost=1.81 rows=1) (actual time=0.00237..0.00237 rows=1 loops=1)\n            -> Covering index lookup on l using idx_likes_product_id (product_id=105406)  (cost=1.41 rows=4) (actual time=0.00188..0.00213 rows=4 loops=1)\n    -> Stream results  (cost=1.6 rows=1) (actual time=0.00204..0.00213 rows=1 loops=1)\n        -> Aggregate: count(l.id)  (cost=1.6 rows=1) (actual time=0.00188..0.00188 rows=1 loops=1)\n            -> Covering index lookup on l using idx_likes_product_id (product_id=205406)  (cost=1.3 rows=3) (actual time=0.0015..0.00171 rows=3 loops=1)\n    -> Stream results  (cost=1.4 rows=1) (actual time=0.00192..0.00196 rows=1 loops=1)\n        -> Aggregate: count(l.id)  (cost=1.4 rows=1) (actual time=0.00167..0.00167 rows=1 loops=1)\n            -> Covering index lookup on l using idx_likes_product_id (product_id=305406)  (cost=1.2 rows=2) (actual time=0.00133..0.00146 rows=2 loops=1)\n    -> Stream results  (cost=1.2 rows=1) (actual time=0.00154..0.00158 rows=1 loops=1)\n        -> Aggregate: count(l.id)  (cost=1.2 rows=1) (actual time=0.00142..0.00142 rows=1 loops=1)\n            -> Covering index lookup on l using idx_likes_product_id (product_id=405406)  (cost=1.1 rows=1) (actual time=0.00117..0.00129 rows=1 loops=1)\n    -> Stream results  (cost=1.2 rows=1) (actual time=0.00154..0.00158 rows=1 loops=1)\n        -> Aggregate: count(l.id)  (cost=1.2 rows=1) (actual time=0.00129..0.00133 rows=1 loops=1)\n            -> Covering index lookup on l using idx_likes_product_id (product_id=505406)  (cost=1.1 rows=1) (actual time=0.00108..0.00108 rows=0 loops=1)\n    -> Stream results  (cost=3.02 rows=1) (actual time=0.00246..0.0025 rows=1 loops=1)\n        -> Aggregate: count(l.id)  (cost=3.02 rows=1) (actual time=0.00233..0.00237 rows=1 loops=1)\n            -> Covering index lookup on l using idx_likes_product_id (product_id=605406)  (cost=2.02 rows=10) (actual time=0.0015..0.00196 rows=10 loops=1)\n    -> Stream results  (cost=2.82 rows=1) (actual time=0.00221..0.00229 rows=1 loops=1)\n        -> Aggregate: count(l.id)  (cost=2.82 rows=1) (actual time=0.00208..0.00208 rows=1 loops=1)\n            -> Covering index lookup on l using idx_likes_product_id (product_id=705406)  (cost=1.92 rows=9) (actual time=0.00142..0.00179 rows=9 loops=1)\n    -> Stream results  (cost=2.61 rows=1) (actual time=0.00221..0.00225 rows=1 loops=1)\n        -> Aggregate: count(l.id)  (cost=2.61 rows=1) (actual time=0.00204..0.00204 rows=1 loops=1)\n            -> Covering index lookup on l using idx_likes_product_id (product_id=805406)  (cost=1.81 rows=8) (actual time=0.00137..0.00167 rows=8 loops=1)\n    -> Stream results  (cost=2.41 rows=1) (actual time=0.00233..0.00237 rows=1 loops=1)\n        -> Aggregate: count(l.id)  (cost=2.41 rows=1) (actual time=0.00208..0.00213 rows=1 loops=1)\n            -> Covering index lookup on l using idx_likes_product_id (product_id=905406)  (cost=1.71 rows=7) (actual time=0.00154..0.00179 rows=7 loops=1)\n    -> Stream results  (cost=1.2 rows=1) (actual time=0.00125..0.00129 rows=1 loops=1)\n        -> Aggregate: count(l.id)  (cost=1.2 rows=1) (actual time=0.00113..0.00117 rows=1 loops=1)\n            -> Covering index lookup on l using idx_likes_product_id (product_id=2706)  (cost=1.1 rows=1) (actual time=958e-6..958e-6 rows=0 loops=1)\n    -> Stream results  (cost=3.02 rows=1) (actual time=0.00237..0.00242 rows=1 loops=1)\n        -> Aggregate: count(l.id)  (cost=3.02 rows=1) (actual time=0.00221..0.00225 rows=1 loops=1)\n            -> Covering index lookup on l using idx_likes_product_id (product_id=102706)  (cost=2.02 rows=10) (actual time=0.0015..0.00188 rows=10 loops=1)\n    -> Stream results  (cost=2.82 rows=1) (actual time=0.0025..0.00258 rows=1 loops=1)\n        -> Aggregate: count(l.id)  (cost=2.82 rows=1) (actual time=0.00237..0.00237 rows=1 loops=1)\n            -> Covering index lookup on l using idx_likes_product_id (product_id=202706)  (cost=1.92 rows=9) (actual time=0.00163..0.00204 rows=9 loops=1)\n    -> Stream results  (cost=2.61 rows=1) (actual time=0.00213..0.00217 rows=1 loops=1)\n        -> Aggregate: count(l.id)  (cost=2.61 rows=1) (actual time=0.00188..0.00188 rows=1 loops=1)\n            -> Covering index lookup on l using idx_likes_product_id (product_id=302706)  (cost=1.81 rows=8) (actual time=0.00129..0.00167 rows=8 loops=1)\n    -> Stream results  (cost=2.41 rows=1) (actual time=0.00217..0.00221 rows=1 loops=1)\n        -> Aggregate: count(l.id)  (cost=2.41 rows=1) (actual time=0.00204..0.00208 rows=1 loops=1)\n            -> Covering index lookup on l using idx_likes_product_id (product_id=402706)  (cost=1.71 rows=7) (actual time=0.00146..0.00183 rows=7 loops=1)\n    -> Stream results  (cost=2.21 rows=1) (actual time=0.00192..0.00196 rows=1 loops=1)\n        -> Aggregate: count(l.id)  (cost=2.21 rows=1) (actual time=0.00167..0.00171 rows=1 loops=1)\n            -> Covering index lookup on l using idx_likes_product_id (product_id=502706)  (cost=1.61 rows=6) (actual time=0.00121..0.00146 rows=6 loops=1)\n    -> Stream results  (cost=2.01 rows=1) (actual time=0.00204..0.00209 rows=1 loops=1)\n        -> Aggregate: count(l.id)  (cost=2.01 rows=1) (actual time=0.00192..0.00196 rows=1 loops=1)\n            -> Covering index lookup on l using idx_likes_product_id (product_id=602706)  (cost=1.51 rows=5) (actual time=0.00146..0.00175 rows=5 loops=1)\n    -> Stream results  (cost=1.81 rows=1) (actual time=0.00188..0.00192 rows=1 loops=1)\n        -> Aggregate: count(l.id)  (cost=1.81 rows=1) (actual time=0.00167..0.00171 rows=1 loops=1)\n            -> Covering index lookup on l using idx_likes_product_id (product_id=702706)  (cost=1.41 rows=4) (actual time=0.00117..0.00142 rows=4 loops=1)\n    -> Stream results  (cost=1.6 rows=1) (actual time=0.0015..0.00154 rows=1 loops=1)\n        -> Aggregate: count(l.id)  (cost=1.6 rows=1) (actual time=0.00129..0.00129 rows=1 loops=1)\n            -> Covering index lookup on l using idx_likes_product_id (product_id=802706)  (cost=1.3 rows=3) (actual time=959e-6..0.00113 rows=3 loops=1)\n    -> Stream results  (cost=1.4 rows=1) (actual time=0.0015..0.00158 rows=1 loops=1)\n        -> Aggregate: count(l.id)  (cost=1.4 rows=1) (actual time=0.00137..0.00137 rows=1 loops=1)\n            -> Covering index lookup on l using idx_likes_product_id (product_id=902706)  (cost=1.2 rows=2) (actual time=0.00104..0.00121 rows=2 loops=1)\n\n",
+  "sql_source": "queries_sql contains the complete fixed literal SQL; DIGEST_TEXT is normalized and may truncate UNION ALL",
+  "verification": {
+    "red": {
+      "tests": 12,
+      "failures": 6,
+      "reason": "Expected 2 prepared statements, got 3 before JOIN projection"
+    },
+    "canonical_response_matches_all_runs": true,
+    "same_seed_and_indexes_as_step4": true,
+    "sql_calls_per_successful_fixed_request_verified_at_vu1": 2,
+    "native_union_count_branches_per_request": 20,
+    "entity_load_count_in_page_tests": 0,
+    "page_query_rows_in_page_tests": 2,
+    "experiment_full_check": {
+      "tests": 272,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "checkstyle": "passed",
+      "archunit": "passed"
+    },
+    "restored_full_check": {
+      "tests": 269,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "checkstyle": "passed",
+      "archunit": "passed"
+    },
+    "implementation_restored_to_pre_experiment_state": true
+  },
+  "limitations": "Each state was measured once at separate times on a shared host without resetting DB/OS caches; this does not establish that JOIN caused the latency difference.",
+  "experimental_implementation_patch": "--- a/apps/commerce-api/src/main/java/com/loopers/application/product/ProductFacade.java\n+++ b/apps/commerce-api/src/main/java/com/loopers/application/product/ProductFacade.java\n@@ -6,6 +6,7 @@\n import com.loopers.domain.product.Product;\n import com.loopers.domain.product.ProductRepository;\n import com.loopers.domain.product.ProductSort;\n+import com.loopers.domain.product.ProductSummary;\n import com.loopers.support.error.CoreException;\n import com.loopers.support.error.ErrorType;\n import lombok.RequiredArgsConstructor;\n@@ -14,9 +15,6 @@\n \n import java.time.ZonedDateTime;\n import java.util.List;\n-import java.util.Map;\n-import java.util.function.Function;\n-import java.util.stream.Collectors;\n \n @RequiredArgsConstructor\n @Component\n@@ -46,18 +44,11 @@\n         if (page < 0 || size < 1 || size > 100) {\n             throw new CoreException(ErrorType.BAD_REQUEST, \"페이지 입력이 올바르지 않습니다.\");\n         }\n-        List<Product> pageProducts = productRepository.findActivePage(brandId, customerSort(sort), page, size);\n-        List<Long> brandIds = pageProducts.stream().map(Product::getBrandId).distinct().toList();\n-        Map<Long, Brand> brandsById = brandRepository.findAllByIds(brandIds).stream()\n-            .collect(Collectors.toMap(Brand::getId, Function.identity()));\n-        List<Long> productIds = pageProducts.stream().map(Product::getId).toList();\n-        Map<Long, Long> likeCountsByProductId = likeRepository.countByProductIds(productIds);\n+        List<ProductSummary> pageProducts = productRepository.findActivePage(brandId, customerSort(sort), page, size);\n+        List<Long> productIds = pageProducts.stream().map(ProductSummary::id).toList();\n+        var likeCountsByProductId = likeRepository.countByProductIds(productIds);\n         return pageProducts.stream()\n-            .map(product -> CustomerProductInfo.from(\n-                product,\n-                brandsById.get(product.getBrandId()),\n-                likeCountsByProductId.getOrDefault(product.getId(), 0L)\n-            ))\n+            .map(product -> CustomerProductInfo.from(product, likeCountsByProductId.getOrDefault(product.id(), 0L)))\n             .toList();\n     }\n \n--- a/apps/commerce-api/src/main/java/com/loopers/application/product/CustomerProductInfo.java\n+++ b/apps/commerce-api/src/main/java/com/loopers/application/product/CustomerProductInfo.java\n@@ -2,6 +2,7 @@\n \n import com.loopers.domain.brand.Brand;\n import com.loopers.domain.product.Product;\n+import com.loopers.domain.product.ProductSummary;\n \n public record CustomerProductInfo(\n     Long id,\n@@ -11,6 +12,12 @@\n     long price,\n     long likeCount\n ) {\n+    public static CustomerProductInfo from(ProductSummary product, long likeCount) {\n+        return new CustomerProductInfo(\n+            product.id(), product.brandId(), product.brandName(), product.name(), product.price(), likeCount\n+        );\n+    }\n+\n     public static CustomerProductInfo from(Product product, Brand brand, long likeCount) {\n         return new CustomerProductInfo(\n             product.getId(),\n--- a/apps/commerce-api/src/main/java/com/loopers/domain/product/ProductRepository.java\n+++ b/apps/commerce-api/src/main/java/com/loopers/domain/product/ProductRepository.java\n@@ -12,7 +12,7 @@\n \n     List<Product> findAllActive();\n \n-    List<Product> findActivePage(Long brandId, ProductSort sort, int page, int size);\n+    List<ProductSummary> findActivePage(Long brandId, ProductSort sort, int page, int size);\n \n     List<Product> findAllDeleted();\n \n--- a/apps/commerce-api/src/main/java/com/loopers/infrastructure/product/ProductJpaRepository.java\n+++ b/apps/commerce-api/src/main/java/com/loopers/infrastructure/product/ProductJpaRepository.java\n@@ -1,5 +1,6 @@\n package com.loopers.infrastructure.product;\n \n+import com.loopers.domain.product.ProductSummary;\n import org.springframework.data.domain.Pageable;\n import org.springframework.data.jpa.repository.JpaRepository;\n import org.springframework.data.jpa.repository.Modifying;\n@@ -13,13 +14,26 @@\n \n     List<ProductJpaEntity> findAllByDeletedAtIsNull();\n \n-    List<ProductJpaEntity> findAllByDeletedAtIsNull(Pageable pageable);\n+    @Query(\"\"\"\n+        SELECT new com.loopers.domain.product.ProductSummary(p.id, b.id, b.name, p.name, p.price)\n+        FROM ProductJpaEntity p\n+        LEFT JOIN p.brand b\n+        WHERE p.deletedAt IS NULL\n+        \"\"\")\n+    List<ProductSummary> findActiveSummaries(Pageable pageable);\n \n-    List<ProductJpaEntity> findAllByDeletedAtIsNullAndBrand_Id(Long brandId, Pageable pageable);\n+    @Query(\"\"\"\n+        SELECT new com.loopers.domain.product.ProductSummary(p.id, b.id, b.name, p.name, p.price)\n+        FROM ProductJpaEntity p\n+        LEFT JOIN p.brand b\n+        WHERE p.deletedAt IS NULL AND b.id = :brandId\n+        \"\"\")\n+    List<ProductSummary> findActiveSummariesByBrandId(@Param(\"brandId\") Long brandId, Pageable pageable);\n \n     @Query(value = \"\"\"\n-        SELECT p.*\n+        SELECT p.id, p.brand_id, b.name, p.name, p.price\n         FROM products p\n+        LEFT JOIN brands b ON b.id = p.brand_id\n         WHERE p.deleted_at IS NULL\n         ORDER BY (\n             SELECT COUNT(*)\n@@ -27,11 +41,12 @@\n             WHERE l.product_id = p.id\n         ) DESC, p.id DESC\n         \"\"\", nativeQuery = true)\n-    List<ProductJpaEntity> findAllActiveOrderByLikeCountDesc(Pageable pageable);\n+    List<Object[]> findAllActiveOrderByLikeCountDesc(Pageable pageable);\n \n     @Query(value = \"\"\"\n-        SELECT p.*\n+        SELECT p.id, p.brand_id, b.name, p.name, p.price\n         FROM products p\n+        LEFT JOIN brands b ON b.id = p.brand_id\n         WHERE p.deleted_at IS NULL\n           AND p.brand_id = :brandId\n         ORDER BY (\n@@ -40,7 +55,7 @@\n             WHERE l.product_id = p.id\n         ) DESC, p.id DESC\n         \"\"\", nativeQuery = true)\n-    List<ProductJpaEntity> findAllActiveByBrandIdOrderByLikeCountDesc(@Param(\"brandId\") Long brandId, Pageable pageable);\n+    List<Object[]> findAllActiveByBrandIdOrderByLikeCountDesc(@Param(\"brandId\") Long brandId, Pageable pageable);\n \n     List<ProductJpaEntity> findAllByDeletedAtIsNotNull();\n \n--- a/apps/commerce-api/src/main/java/com/loopers/infrastructure/product/ProductRepositoryImpl.java\n+++ b/apps/commerce-api/src/main/java/com/loopers/infrastructure/product/ProductRepositoryImpl.java\n@@ -3,6 +3,7 @@\n import com.loopers.domain.product.Product;\n import com.loopers.domain.product.ProductRepository;\n import com.loopers.domain.product.ProductSort;\n+import com.loopers.domain.product.ProductSummary;\n import com.loopers.infrastructure.brand.BrandJpaRepository;\n import lombok.RequiredArgsConstructor;\n import org.springframework.data.domain.PageRequest;\n@@ -37,7 +38,7 @@\n     }\n \n     @Override\n-    public List<Product> findActivePage(Long brandId, ProductSort sort, int page, int size) {\n+    public List<ProductSummary> findActivePage(Long brandId, ProductSort sort, int page, int size) {\n         // JPA offset의 int 범위를 벗어난 요청은 기존 계약대로 빈 페이지를 반환한다.\n         if ((long) page * size > Integer.MAX_VALUE) {\n             return List.of();\n@@ -54,20 +55,30 @@\n             case LIKES_DESC -> Sort.unsorted();\n         };\n         Pageable pageable = PageRequest.of(page, size, jpaSort);\n-        List<ProductJpaEntity> entities = switch (sort) {\n+        return switch (sort) {\n             case LATEST, PRICE_ASC -> findActivePage(brandId, pageable);\n-            case LIKES_DESC -> brandId == null\n+            case LIKES_DESC -> (brandId == null\n                 ? productJpaRepository.findAllActiveOrderByLikeCountDesc(pageable)\n-                : productJpaRepository.findAllActiveByBrandIdOrderByLikeCountDesc(brandId, pageable);\n+                : productJpaRepository.findAllActiveByBrandIdOrderByLikeCountDesc(brandId, pageable))\n+                .stream().map(this::toSummary).toList();\n         };\n-        return entities.stream().map(ProductJpaMapper::toDomain).toList();\n     }\n \n-    private List<ProductJpaEntity> findActivePage(Long brandId, Pageable pageable) {\n+    private List<ProductSummary> findActivePage(Long brandId, Pageable pageable) {\n         if (brandId == null) {\n-            return productJpaRepository.findAllByDeletedAtIsNull(pageable);\n+            return productJpaRepository.findActiveSummaries(pageable);\n         }\n-        return productJpaRepository.findAllByDeletedAtIsNullAndBrand_Id(brandId, pageable);\n+        return productJpaRepository.findActiveSummariesByBrandId(brandId, pageable);\n+    }\n+\n+    private ProductSummary toSummary(Object[] row) {\n+        return new ProductSummary(\n+            ((Number) row[0]).longValue(),\n+            ((Number) row[1]).longValue(),\n+            (String) row[2],\n+            (String) row[3],\n+            ((Number) row[4]).longValue()\n+        );\n     }\n \n     @Override\n--- a/apps/commerce-api/src/test/java/com/loopers/application/product/CustomerProductPaginationIntegrationTest.java\n+++ b/apps/commerce-api/src/test/java/com/loopers/application/product/CustomerProductPaginationIntegrationTest.java\n@@ -6,6 +6,7 @@\n import com.loopers.domain.like.LikeRepository;\n import com.loopers.domain.product.Product;\n import com.loopers.domain.product.ProductRepository;\n+import com.loopers.infrastructure.brand.BrandJpaEntity;\n import com.loopers.infrastructure.product.ProductJpaEntity;\n import com.loopers.utils.DatabaseCleanUp;\n import jakarta.persistence.EntityManager;\n@@ -119,12 +120,49 @@\n             .containsExactly(products.get(firstIndex).getPrice(), products.get(secondIndex).getPrice());\n         assertThat(results).extracting(CustomerProductInfo::likeCount)\n             .containsExactly((long) likeCounts[firstIndex], (long) likeCounts[secondIndex]);\n+        assertThat(results).extracting(CustomerProductInfo::name)\n+            .containsExactly(products.get(firstIndex).getName(), products.get(secondIndex).getName());\n+        assertThat(results).extracting(CustomerProductInfo::brandId)\n+            .containsExactly(products.get(firstIndex).getBrandId(), products.get(secondIndex).getBrandId());\n+        assertThat(results).extracting(CustomerProductInfo::brandName).containsExactly(\"Nike\", \"Nike\");\n+        assertThat(statistics.getPrepareStatementCount())\n+            .as(\"상품·브랜드 페이지 조회와 좋아요 일괄 집계만 실행한다.\")\n+            .isEqualTo(2L);\n+        String pageQuery = List.of(statistics.getQueries()).stream()\n+            .filter(query -> query.contains(\"ProductSummary\") || query.contains(\"FROM products p\"))\n+            .findFirst().orElseThrow();\n+        assertThat(statistics.getQueryStatistics(pageQuery).getExecutionRowCount())\n+            .as(\"전체 후보가 아니라 요청 페이지의 두 행만 DB에서 반환한다.\")\n+            .isEqualTo(2L);\n         assertThat(statistics.getEntityStatistics(ProductJpaEntity.class.getName()).getLoadCount())\n-            .as(\"응답 페이지 밖의 상품을 애플리케이션으로 가져오지 않는다.\")\n-            .isEqualTo(2L);\n-        assertThat(statistics.getPrepareStatementCount())\n-            .as(\"상품 페이지, 브랜드 일괄 조회, 좋아요 일괄 집계만 실행한다.\")\n-            .isEqualTo(3L);\n+            .as(\"목록에 필요한 필드만 조회하고 상품 엔티티를 로딩하지 않는다.\")\n+            .isZero();\n+        assertThat(statistics.getEntityStatistics(BrandJpaEntity.class.getName()).getLoadCount())\n+            .as(\"브랜드 정보도 같은 조회에서 받아 엔티티를 로딩하지 않는다.\")\n+            .isZero();\n+    }\n+\n+    @ParameterizedTest(name = \"정렬={0}\")\n+    @ValueSource(strings = {\"latest\", \"price_asc\", \"likes_desc\"})\n+    @DisplayName(\"브랜드 필터가 없으면 서로 다른 브랜드의 상품 필드를 두 SQL로 정확히 반환한다.\")\n+    void returnsMatchingBrandFieldsWithoutBrandFilter(String sort) {\n+        Brand nike = brandRepository.save(Brand.create(\"Nike\"));\n+        Brand adidas = brandRepository.save(Brand.create(\"Adidas\"));\n+        Product first = productRepository.save(Product.create(nike.getId(), \"First\", 100L));\n+        Product second = productRepository.save(Product.create(adidas.getId(), \"Second\", 200L));\n+        likeRepository.save(Like.create(1L, first.getId()));\n+        entityManager.flush();\n+        entityManager.clear();\n+        statistics.clear();\n+\n+        List<CustomerProductInfo> results = productFacade.getCustomerList(null, 0, 20, sort);\n+\n+        assertThat(results).containsExactlyInAnyOrder(\n+            new CustomerProductInfo(first.getId(), nike.getId(), \"Nike\", \"First\", 100L, 1L),\n+            new CustomerProductInfo(second.getId(), adidas.getId(), \"Adidas\", \"Second\", 200L, 0L)\n+        );\n+        assertThat(statistics.getPrepareStatementCount()).isEqualTo(2L);\n+        assertThat(statistics.getEntityLoadCount()).isZero();\n     }\n \n     @ParameterizedTest(name = \"정렬={0}\")\n--- a/apps/commerce-api/src/test/java/com/loopers/infrastructure/ProductCustomerQueryIntegrationTest.java\n+++ b/apps/commerce-api/src/test/java/com/loopers/infrastructure/ProductCustomerQueryIntegrationTest.java\n@@ -7,6 +7,7 @@\n import com.loopers.domain.product.Product;\n import com.loopers.domain.product.ProductRepository;\n import com.loopers.domain.product.ProductSort;\n+import com.loopers.domain.product.ProductSummary;\n import jakarta.persistence.EntityManager;\n import jakarta.persistence.PersistenceContext;\n import org.junit.jupiter.api.DisplayName;\n@@ -58,10 +59,11 @@\n         entityManager.flush();\n         entityManager.clear();\n \n-        List<Product> results = productRepository.findActivePage(nike.getId(), ProductSort.PRICE_ASC, 0, 10);\n+        List<ProductSummary> results = productRepository.findActivePage(nike.getId(), ProductSort.PRICE_ASC, 0, 10);\n \n-        assertThat(results).extracting(Product::getId)\n+        assertThat(results).extracting(ProductSummary::id)\n             .containsExactly(firstAtSamePrice.getId(), secondAtSamePrice.getId(), expensive.getId());\n+        assertThat(results).extracting(ProductSummary::brandName).containsOnly(\"Nike\");\n     }\n \n     @Test\n@@ -83,9 +85,9 @@\n         );\n         entityManager.clear();\n \n-        List<Product> results = productRepository.findActivePage(brand.getId(), ProductSort.LATEST, 0, 10);\n+        List<ProductSummary> results = productRepository.findActivePage(brand.getId(), ProductSort.LATEST, 0, 10);\n \n-        assertThat(results).extracting(Product::getId)\n+        assertThat(results).extracting(ProductSummary::id)\n             .containsExactly(newerAtLatestTime.getId(), olderAtLatestTime.getId(), oldest.getId());\n     }\n \n@@ -104,9 +106,9 @@\n         entityManager.flush();\n         entityManager.clear();\n \n-        List<Product> results = productRepository.findActivePage(brand.getId(), ProductSort.LIKES_DESC, 0, 10);\n+        List<ProductSummary> results = productRepository.findActivePage(brand.getId(), ProductSort.LIKES_DESC, 0, 10);\n \n-        assertThat(results).extracting(Product::getId)\n+        assertThat(results).extracting(ProductSummary::id)\n             .containsExactly(mostLiked.getId(), newerTie.getId(), olderTie.getId(), notLiked.getId());\n     }\n }\n--- /dev/null\n+++ b/apps/commerce-api/src/main/java/com/loopers/domain/product/ProductSummary.java\n@@ -0,0 +1,10 @@\n+package com.loopers.domain.product;\n+\n+public record ProductSummary(\n+    Long id,\n+    Long brandId,\n+    String brandName,\n+    String name,\n+    long price\n+) {\n+}\n",
+  "queries_sql": "SELECT p.id, b.id AS brand_id, b.name AS brand_name, p.name, p.price\nFROM products p\nLEFT JOIN brands b ON b.id = p.brand_id\nWHERE p.deleted_at IS NULL AND b.id = 7\nORDER BY p.price, p.id\nLIMIT 20;\n\nSELECT 5406 AS product_id, COUNT(l.id) AS like_count FROM likes l WHERE l.product_id = 5406\nUNION ALL\nSELECT 105406 AS product_id, COUNT(l.id) AS like_count FROM likes l WHERE l.product_id = 105406\nUNION ALL\nSELECT 205406 AS product_id, COUNT(l.id) AS like_count FROM likes l WHERE l.product_id = 205406\nUNION ALL\nSELECT 305406 AS product_id, COUNT(l.id) AS like_count FROM likes l WHERE l.product_id = 305406\nUNION ALL\nSELECT 405406 AS product_id, COUNT(l.id) AS like_count FROM likes l WHERE l.product_id = 405406\nUNION ALL\nSELECT 505406 AS product_id, COUNT(l.id) AS like_count FROM likes l WHERE l.product_id = 505406\nUNION ALL\nSELECT 605406 AS product_id, COUNT(l.id) AS like_count FROM likes l WHERE l.product_id = 605406\nUNION ALL\nSELECT 705406 AS product_id, COUNT(l.id) AS like_count FROM likes l WHERE l.product_id = 705406\nUNION ALL\nSELECT 805406 AS product_id, COUNT(l.id) AS like_count FROM likes l WHERE l.product_id = 805406\nUNION ALL\nSELECT 905406 AS product_id, COUNT(l.id) AS like_count FROM likes l WHERE l.product_id = 905406\nUNION ALL\nSELECT 2706 AS product_id, COUNT(l.id) AS like_count FROM likes l WHERE l.product_id = 2706\nUNION ALL\nSELECT 102706 AS product_id, COUNT(l.id) AS like_count FROM likes l WHERE l.product_id = 102706\nUNION ALL\nSELECT 202706 AS product_id, COUNT(l.id) AS like_count FROM likes l WHERE l.product_id = 202706\nUNION ALL\nSELECT 302706 AS product_id, COUNT(l.id) AS like_count FROM likes l WHERE l.product_id = 302706\nUNION ALL\nSELECT 402706 AS product_id, COUNT(l.id) AS like_count FROM likes l WHERE l.product_id = 402706\nUNION ALL\nSELECT 502706 AS product_id, COUNT(l.id) AS like_count FROM likes l WHERE l.product_id = 502706\nUNION ALL\nSELECT 602706 AS product_id, COUNT(l.id) AS like_count FROM likes l WHERE l.product_id = 602706\nUNION ALL\nSELECT 702706 AS product_id, COUNT(l.id) AS like_count FROM likes l WHERE l.product_id = 702706\nUNION ALL\nSELECT 802706 AS product_id, COUNT(l.id) AS like_count FROM likes l WHERE l.product_id = 802706\nUNION ALL\nSELECT 902706 AS product_id, COUNT(l.id) AS like_count FROM likes l WHERE l.product_id = 902706;\n"
+}

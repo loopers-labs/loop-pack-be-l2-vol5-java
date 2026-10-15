@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS products (
     name VARCHAR(100) NOT NULL,
     PRIMARY KEY (id),
     KEY FKa3a4mpsfdf4d2y6r8ra3sc8mv (brand_id),
+    KEY idx_products_brand_deleted_price (brand_id, deleted_at, price),
     CONSTRAINT FKa3a4mpsfdf4d2y6r8ra3sc8mv FOREIGN KEY (brand_id) REFERENCES brands (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
@@ -44,7 +45,8 @@ CREATE TABLE IF NOT EXISTS likes (
     updated_at DATETIME(6) NOT NULL,
     user_id BIGINT NOT NULL,
     PRIMARY KEY (id),
-    UNIQUE KEY uk_like_user_product (user_id, product_id)
+    UNIQUE KEY uk_like_user_product (user_id, product_id),
+    KEY idx_likes_product_id (product_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS orders (

@@ -50,11 +50,13 @@ public class ProductFacade {
         List<Long> brandIds = pageProducts.stream().map(Product::getBrandId).distinct().toList();
         Map<Long, Brand> brandsById = brandRepository.findAllByIds(brandIds).stream()
             .collect(Collectors.toMap(Brand::getId, Function.identity()));
+        List<Long> productIds = pageProducts.stream().map(Product::getId).toList();
+        Map<Long, Long> likeCountsByProductId = likeRepository.countByProductIds(productIds);
         return pageProducts.stream()
             .map(product -> CustomerProductInfo.from(
                 product,
                 brandsById.get(product.getBrandId()),
-                likeRepository.countByProductId(product.getId())
+                likeCountsByProductId.getOrDefault(product.getId(), 0L)
             ))
             .toList();
     }

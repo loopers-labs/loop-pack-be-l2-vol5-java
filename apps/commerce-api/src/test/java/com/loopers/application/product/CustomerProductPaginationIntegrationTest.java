@@ -122,6 +122,25 @@ class CustomerProductPaginationIntegrationTest {
         assertThat(statistics.getEntityStatistics(ProductJpaEntity.class.getName()).getLoadCount())
             .as("응답 페이지 밖의 상품을 애플리케이션으로 가져오지 않는다.")
             .isEqualTo(2L);
+        assertThat(statistics.getPrepareStatementCount())
+            .as("상품 페이지, 브랜드 일괄 조회, 좋아요 일괄 집계만 실행한다.")
+            .isEqualTo(3L);
+    }
+
+    @ParameterizedTest(name = "정렬={0}")
+    @ValueSource(strings = {"latest", "price_asc", "likes_desc"})
+    @DisplayName("빈 페이지는 상품 조회만 수행하고 브랜드와 좋아요를 조회하지 않는다.")
+    void returnsEmptyPageWithoutBrandOrLikeQueries(String sort) {
+        Brand brand = brandRepository.save(Brand.create("Nike"));
+        productRepository.save(Product.create(brand.getId(), "Product", 100L));
+        entityManager.flush();
+        entityManager.clear();
+        statistics.clear();
+
+        List<CustomerProductInfo> results = productFacade.getCustomerList(brand.getId(), 1, 20, sort);
+
+        assertThat(results).isEmpty();
+        assertThat(statistics.getPrepareStatementCount()).isEqualTo(1L);
     }
 
     @ParameterizedTest(name = "정렬={0}")
