@@ -206,7 +206,7 @@ class ProductServiceIntegrationTest {
     @DisplayName("brandId로 고른 상품을 전부 삭제할 때,")
     @Nested
     class DeleteAllByBrandId {
-        @DisplayName("해당 브랜드의 미삭제 상품은 재고 0인 것까지 모두 삭제되고, 다른 브랜드 상품은 유지된다.")
+        @DisplayName("해당 브랜드의 미삭제 상품은 재고 0인 것까지 모두 삭제되어 그 id가 반환되고, 다른 브랜드 상품은 유지된다.")
         @Test
         void deletesAllActiveProductsOfBrand_includingZeroStock_andKeepsOtherBrands() {
             // arrange
@@ -215,10 +215,11 @@ class ProductServiceIntegrationTest {
             ProductModel otherBrand = productJpaRepository.save(new ProductModel("다른브랜드", 1000L, 2L, 10));
 
             // act
-            productService.deleteAllByBrandId(1L);
+            List<Long> deletedIds = productService.deleteAllByBrandId(1L);
 
             // assert
             assertAll(
+                () -> assertThat(deletedIds).containsExactlyInAnyOrder(inStock.getId(), soldOut.getId()),
                 () -> assertThat(productJpaRepository.findById(inStock.getId()).orElseThrow().getDeletedAt()).isNotNull(),
                 () -> assertThat(productJpaRepository.findById(soldOut.getId()).orElseThrow().getDeletedAt()).isNotNull(),
                 () -> assertThat(productJpaRepository.findById(otherBrand.getId()).orElseThrow().getDeletedAt()).isNull()

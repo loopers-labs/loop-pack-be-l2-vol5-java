@@ -1,0 +1,171 @@
+# 상품 쪽 후보 인덱스 검증 (2026-10-12, MySQL 8.0.46 docker, innodb_buffer_pool_size=128MB)
+# 후보: c1(brand_id,deleted_at,price,name) c2(brand_id,deleted_at,created_at DESC,name) c3(deleted_at,price,name) c4(deleted_at,created_at DESC,name)
+
+## [A] 1만 행(seed 프로필) — 후보를 하나씩 VISIBLE로 켠 EXPLAIN
+## none (기존 idx_product_brand_id만)
+brand=7 latest              [p ref key=idx_product_brand_id rows=100 Using where; Using filesort]
+brand=7 price_asc           [p ref key=idx_product_brand_id rows=100 Using where; Using filesort]
+brand=7 likes_desc          [p ref key=idx_product_brand_id rows=100 Using where; Using temporary; Using filesort]  [l ref key=idx_likes_product_id rows=26 Using index]
+brand=7 count               [p ref key=idx_product_brand_id rows=100 Using where]
+brand=null latest           [p ALL key=NULL rows=9971 Using where; Using filesort]
+brand=null price_asc        [p ALL key=NULL rows=9971 Using where; Using filesort]
+brand=null likes_desc       [p index key=PRIMARY rows=9971 Using where; Using temporary; Using filesort]  [l ref key=idx_likes_product_id rows=26 Using index]
+brand=null count            [p ALL key=NULL rows=9971 Using where]
+## +c1_brand_del_price
+brand=7 latest              [p ref key=c1_brand_del_price rows=91 Using index condition; Using filesort]
+brand=7 price_asc           [p ref key=c1_brand_del_price rows=91 Using index condition]
+brand=7 likes_desc          [p ref key=c1_brand_del_price rows=91 Using index condition; Using temporary; Using filesort]  [l ref key=idx_likes_product_id rows=26 Using index]
+brand=7 count               [p ref key=c1_brand_del_price rows=91 Using where; Using index]
+brand=null latest           [p ALL key=NULL rows=9971 Using where; Using filesort]
+brand=null price_asc        [p ALL key=NULL rows=9971 Using where; Using filesort]
+brand=null likes_desc       [p index key=PRIMARY rows=9971 Using where; Using temporary; Using filesort]  [l ref key=idx_likes_product_id rows=26 Using index]
+brand=null count            [p index key=c1_brand_del_price rows=9971 Using where; Using index]
+## +c1b_brand_price
+brand=7 latest              [p ref key=idx_product_brand_id rows=100 Using where; Using filesort]
+brand=7 price_asc           [p ref key=c1b_brand_price rows=100 Using where]
+brand=7 likes_desc          [p ref key=idx_product_brand_id rows=100 Using where; Using temporary; Using filesort]  [l ref key=idx_likes_product_id rows=26 Using index]
+brand=7 count               [p ref key=idx_product_brand_id rows=100 Using where]
+brand=null latest           [p ALL key=NULL rows=9971 Using where; Using filesort]
+brand=null price_asc        [p ALL key=NULL rows=9971 Using where; Using filesort]
+brand=null likes_desc       [p index key=PRIMARY rows=9971 Using where; Using temporary; Using filesort]  [l ref key=idx_likes_product_id rows=26 Using index]
+brand=null count            [p ALL key=NULL rows=9971 Using where]
+## +c2_brand_del_latest
+brand=7 latest              [p ref key=c2_brand_del_latest rows=91 Using index condition]
+brand=7 price_asc           [p ref key=c2_brand_del_latest rows=91 Using index condition; Using filesort]
+brand=7 likes_desc          [p ref key=c2_brand_del_latest rows=91 Using index condition; Using temporary; Using filesort]  [l ref key=idx_likes_product_id rows=26 Using index]
+brand=7 count               [p ref key=c2_brand_del_latest rows=91 Using where; Using index]
+brand=null latest           [p ALL key=NULL rows=9971 Using where; Using filesort]
+brand=null price_asc        [p ALL key=NULL rows=9971 Using where; Using filesort]
+brand=null likes_desc       [p index key=PRIMARY rows=9971 Using where; Using temporary; Using filesort]  [l ref key=idx_likes_product_id rows=26 Using index]
+brand=null count            [p index key=c2_brand_del_latest rows=9971 Using where; Using index]
+## +c3_del_price
+brand=7 latest              [p ref key=idx_product_brand_id rows=100 Using where; Using filesort]
+brand=7 price_asc           [p ref key=idx_product_brand_id rows=100 Using where; Using filesort]
+brand=7 likes_desc          [p ref key=idx_product_brand_id rows=100 Using where; Using temporary; Using filesort]  [l ref key=idx_likes_product_id rows=26 Using index]
+brand=7 count               [p ref key=idx_product_brand_id rows=100 Using where]
+brand=null latest           [p ref key=c3_del_price rows=4985 Using index condition; Using filesort]
+brand=null price_asc        [p ref key=c3_del_price rows=4985 Using index condition]
+brand=null likes_desc       [p ref key=c3_del_price rows=4985 Using index condition; Using temporary; Using filesort]  [l ref key=idx_likes_product_id rows=26 Using index]
+brand=null count            [p ref key=c3_del_price rows=4985 Using index condition]
+## +c4_del_latest
+brand=7 latest              [p ref key=idx_product_brand_id rows=100 Using where; Using filesort]
+brand=7 price_asc           [p ref key=idx_product_brand_id rows=100 Using where; Using filesort]
+brand=7 likes_desc          [p ref key=idx_product_brand_id rows=100 Using where; Using temporary; Using filesort]  [l ref key=idx_likes_product_id rows=26 Using index]
+brand=7 count               [p ref key=idx_product_brand_id rows=100 Using where]
+brand=null latest           [p ref key=c4_del_latest rows=4985 Using index condition]
+brand=null price_asc        [p ref key=c4_del_latest rows=4985 Using index condition; Using filesort]
+brand=null likes_desc       [p ref key=c4_del_latest rows=4985 Using index condition; Using temporary; Using filesort]  [l ref key=idx_likes_product_id rows=26 Using index]
+brand=null count            [p ref key=c4_del_latest rows=4985 Using index condition]
+
+## [B] 100만 행(scale-seed.sql: brand1=50%·삭제 10만, brand7=5051·삭제 0, 전체 삭제 10%) — EXPLAIN ANALYZE 3회 중 마지막
+## 기존 인덱스만
+brand=1 latest p0            3403ms rows=20         Sort: p.created_at DESC, p.`name`, p.id, limit input to 20 row|Index lookup on p using idx_product_brand_id|
+brand=1 price_asc p0         3295ms rows=20         Sort: p.price, p.`name`, p.id, limit input to 20 row|Index lookup on p using idx_product_brand_id|
+brand=1 count                3033ms rows=1          Index lookup on p using idx_product_brand_id|
+brand=7 latest p0            83.5ms rows=20         Sort: p.created_at DESC, p.`name`, p.id, limit input to 20 row|Index lookup on p using idx_product_brand_id|
+brand=7 price_asc p0         86.3ms rows=20         Sort: p.price, p.`name`, p.id, limit input to 20 row|Index lookup on p using idx_product_brand_id|
+brand=7 count                77.6ms rows=1          Index lookup on p using idx_product_brand_id|
+brand=null latest p0         940ms rows=20          Sort: p.created_at DESC, p.`name`, p.id, limit input to 20 row|Table scan on p|
+brand=null price_asc p0      833ms rows=20          Sort: p.price, p.`name`, p.id, limit input to 20 row|Table scan on p|
+brand=null count             374ms rows=1           Table scan on p|
+brand=1 price_asc p500       3508ms rows=20         Sort: p.price, p.`name`, p.id, limit input to 10020 row|Index lookup on p using idx_product_brand_id|
+
+## +c1_brand_del_price
+brand=1 latest p0            77479ms rows=20        Sort: p.created_at DESC, p.`name`, p.id, limit input to 20 row|Index lookup on p using idx_product_brand_id|
+brand=1 price_asc p0         0.619ms rows=20        Index range scan on p using c1_brand_del_price over|
+brand=1 count                2235ms rows=1          Index lookup on p using idx_product_brand_id|
+brand=7 latest p0            51.1ms rows=20         Sort: p.created_at DESC, p.`name`, p.id, limit input to 20 row|Index lookup on p using idx_product_brand_id|
+brand=7 price_asc p0         0.512ms rows=20        Index range scan on p using c1_brand_del_price over|
+brand=7 count                1.52ms rows=1          Covering index lookup on p using c1_brand_del_price|
+brand=null latest p0         873ms rows=20          Sort: p.created_at DESC, p.`name`, p.id, limit input to 20 row|Table scan on p|
+brand=null price_asc p0      790ms rows=20          Sort: p.price, p.`name`, p.id, limit input to 20 row|Table scan on p|
+brand=null count             260ms rows=1           Covering index scan on p using c1_brand_del_price|
+brand=1 price_asc p500       19.3ms rows=20         Index range scan on p using c1_brand_del_price over|
+## +c2_brand_del_latest
+brand=1 latest p0            0.307ms rows=20        Index range scan on p using c2_brand_del_latest over|
+brand=1 price_asc p0         3124ms rows=20         Sort: p.price, p.`name`, p.id, limit input to 20 row|Index lookup on p using idx_product_brand_id|
+brand=1 count                2851ms rows=1          Index lookup on p using idx_product_brand_id|
+brand=7 latest p0            0.674ms rows=20        Index range scan on p using c2_brand_del_latest over|
+brand=7 price_asc p0         41ms rows=20           Sort: p.price, p.`name`, p.id, limit input to 20 row|Index lookup on p using idx_product_brand_id|
+brand=7 count                1.47ms rows=1          Covering index lookup on p using c2_brand_del_latest|
+brand=null latest p0         868ms rows=20          Sort: p.created_at DESC, p.`name`, p.id, limit input to 20 row|Table scan on p|
+brand=null price_asc p0      821ms rows=20          Sort: p.price, p.`name`, p.id, limit input to 20 row|Table scan on p|
+brand=null count             286ms rows=1           Covering index scan on p using c2_brand_del_latest|
+brand=1 price_asc p500       3741ms rows=20         Sort: p.price, p.`name`, p.id, limit input to 10020 row|Index lookup on p using idx_product_brand_id|
+## +c3_del_price
+brand=1 latest p0            3725ms rows=20         Sort: p.created_at DESC, p.`name`, p.id, limit input to 20 row|Index lookup on p using idx_product_brand_id|
+brand=1 price_asc p0         0.395ms rows=20        Index range scan on p using c3_del_price over|
+brand=1 count                3448ms rows=1          Index lookup on p using idx_product_brand_id|
+brand=7 latest p0            48.4ms rows=20         Sort: p.created_at DESC, p.`name`, p.id, limit input to 20 row|Index lookup on p using idx_product_brand_id|
+brand=7 price_asc p0         9.98ms rows=20         Index range scan on p using c3_del_price over|
+brand=7 count                34.5ms rows=1          Index lookup on p using idx_product_brand_id|
+brand=null latest p0         5779ms rows=20         Sort: p.created_at DESC, p.`name`, p.id, limit input to 20 row|Index lookup on p using c3_del_price|
+brand=null price_asc p0      0.319ms rows=20        Index lookup on p using c3_del_price|
+brand=null count             5088ms rows=1          Index lookup on p using c3_del_price|
+brand=1 price_asc p500       4097ms rows=20         Sort: p.price, p.`name`, p.id, limit input to 10020 row|Index lookup on p using idx_product_brand_id|
+## +c4_del_latest
+brand=1 latest p0            0.4ms rows=20          Index range scan on p using c4_del_latest over|
+brand=1 price_asc p0         3773ms rows=20         Sort: p.price, p.`name`, p.id, limit input to 20 row|Index lookup on p using idx_product_brand_id|
+brand=1 count                3533ms rows=1          Index lookup on p using idx_product_brand_id|
+brand=7 latest p0            8.25ms rows=20         Index range scan on p using c4_del_latest over|
+brand=7 price_asc p0         18.6ms rows=20         Sort: p.price, p.`name`, p.id, limit input to 20 row|Index lookup on p using idx_product_brand_id|
+brand=7 count                16.8ms rows=1          Index lookup on p using idx_product_brand_id|
+brand=null latest p0         0.213ms rows=20        Index lookup on p using c4_del_latest|
+brand=null price_asc p0      4140ms rows=20         Sort: p.price, p.`name`, p.id, limit input to 20 row|Index lookup on p using c4_del_latest|
+brand=null count             3597ms rows=1          Index lookup on p using c4_del_latest|
+brand=1 price_asc p500       1790ms rows=20         Sort: p.price, p.`name`, p.id, limit input to 10020 row|Index lookup on p using idx_product_brand_id|
+
+## all 4 (재측정)
+brand=1 latest p0            0.206ms rows=20        Index range scan on p using c2_brand_del_latest over|
+brand=1 price_asc p0         0.459ms rows=20        Index range scan on p using c1_brand_del_price over|
+brand=1 count                1249ms rows=1          Index lookup on p using idx_product_brand_id|
+brand=7 latest p0            0.324ms rows=20        Index range scan on p using c2_brand_del_latest over|
+brand=7 price_asc p0         0.452ms rows=20        Index range scan on p using c1_brand_del_price over|
+brand=7 count                1.69ms rows=1          Covering index lookup on p using c1_brand_del_price|
+brand=null latest p0         0.219ms rows=20        Index lookup on p using c4_del_latest|
+brand=null price_asc p0      0.54ms rows=20         Index lookup on p using c3_del_price|
+brand=null count             4604ms rows=1          Index lookup on p using c3_del_price|
+brand=1 price_asc p500       33.4ms rows=20         Index range scan on p using c1_brand_del_price over|
+
+## [C] 100만 행 후보 인덱스 생성 시간·크기(MB)
+create_c1_ms	15112.5380
+create_c2_ms	13994.0520
+create_c3_ms	12809.5820
+create_c4_ms	12285.1000
+loopers_scale.product	analyze	status	OK
+PRIMARY	101.6
+c1_brand_del_price	59.7
+c2_brand_del_latest	59.7
+c3_del_price	50.7
+c4_del_latest	50.7
+idx_product_brand_id	26.6
+
+## [D] 쓰기 20,000건 (scale-writes.sql, 3회) — 기존 인덱스만
+insert_20k_ms	301.0310
+update_stock_20k_ms	215.9780
+update_price_20k_ms	299.8830
+insert_20k_ms	547.4870
+update_stock_20k_ms	187.1000
+update_price_20k_ms	450.4610
+insert_20k_ms	416.3680
+update_stock_20k_ms	193.1900
+update_price_20k_ms	208.5020
+## [D] 쓰기 20,000건 — 후보 4개 추가 후
+insert_20k_ms	14839.1440
+update_stock_20k_ms	478.7420
+update_price_20k_ms	3321.0710
+insert_20k_ms	8860.1650
+update_stock_20k_ms	2684.4520
+update_price_20k_ms	6320.7520
+insert_20k_ms	14108.7380
+update_stock_20k_ms	2867.2280
+update_price_20k_ms	6716.3510
+
+## [E] 전체 count가 왜 느려졌나 (후보 4개 VISIBLE, ANALYZE는 04:49 생성 직후 완료 — 통계는 최신)
+# 앱 형태: WHERE deleted_at is null and (null is null or brand_id=null)
+#   EXPLAIN: ref c3_del_price rows=506646 "Using index condition" (커버링 아님 → 90만 행 본체 재조회) — 4,604ms
+#   SHOW WARNINGS(옵티마이저가 바꾼 조건): where (p.deleted_at is null)   ← brand 조건은 접혀서 사라짐
+# 같은 의미, 브랜드 절 없이: WHERE deleted_at is null
+#   EXPLAIN: ref c3_del_price "Using where; Using index" (커버링) — actual 241ms, rows=900000
+# 기존 인덱스만(테이블 전체 스캔): 374ms
+# 통계 추정 rows=506,646 vs 실제 900,000 (deleted_at 값 분포: n_diff_pfx01=228)

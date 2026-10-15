@@ -1,0 +1,11 @@
+# 기준선 HTTP 지연 — 2026-10-12, 로컬 PC, Docker MySQL 8.0.46, seed 프로필, show-sql 켜짐(local)
+# 인덱스: product(PRIMARY, idx_product_brand_id), likes(PRIMARY, UK(user_id, product_id))
+warmup=50 measured=300 sequential
+case                              p50      p95      p99      max  (ms)
+target  brand7 price_asc        54.65    64.31    69.05    82.86
+brand7 latest                   52.28    61.86    66.28    72.64
+brand7 likes_desc              118.10   130.02   134.56   141.13
+all price_asc                   62.92    72.85    78.40    80.51
+all latest                      62.75    72.30    74.48    96.86
+all likes_desc                 554.62   598.17   635.38   650.27
+detail id=7                     21.97    26.50    29.40    34.38

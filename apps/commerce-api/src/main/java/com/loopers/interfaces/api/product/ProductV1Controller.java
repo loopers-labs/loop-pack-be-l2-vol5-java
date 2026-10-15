@@ -21,6 +21,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/products")
 public class ProductV1Controller implements ProductV1ApiSpec {
 
+    private static final int MAX_PAGE_SIZE = 100;
+
     private final ProductFacade productFacade;
 
     @GetMapping
@@ -52,6 +54,10 @@ public class ProductV1Controller implements ProductV1ApiSpec {
         }
         if (size < 1) {
             throw new CoreException(ErrorType.BAD_REQUEST, "페이지 크기는 1 이상이어야 합니다.");
+        }
+        // 한 요청이 읽고·정렬하고·직렬화하는 양을 요청자가 무제한으로 정하지 못하게 한다 (docs/week4/design.md 2번 섹션)
+        if (size > MAX_PAGE_SIZE) {
+            throw new CoreException(ErrorType.BAD_REQUEST, "페이지 크기는 " + MAX_PAGE_SIZE + " 이하여야 합니다.");
         }
         return PageRequest.of(page, size);
     }

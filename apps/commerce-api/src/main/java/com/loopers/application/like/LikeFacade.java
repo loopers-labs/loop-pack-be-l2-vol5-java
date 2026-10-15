@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+// 좋아요 등록·취소는 상품 캐시를 무효화하지 않는다 — 가장 잦은 쓰기라 지우면 캐시가 계속 비어 DB로 요청이 몰린다.
+// likeCount·likes_desc 순서는 TTL(60초) 안에 늦게 반영되는 것으로 계약을 바꿨다 (docs/week4/design.md 6번 섹션 "TTL 60초와 필드별 신선도").
 @RequiredArgsConstructor
 @Component
 public class LikeFacade {

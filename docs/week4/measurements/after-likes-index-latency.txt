@@ -1,0 +1,12 @@
+# 좋아요 product_id 인덱스 추가 후 HTTP 지연 — 기준선과 같은 조건(로컬 PC, Docker MySQL 8.0.46, seed, show-sql 켜짐)
+# 인덱스: product(PRIMARY, idx_product_brand_id), likes(PRIMARY, UK(user_id, product_id), idx_likes_product_id)
+# 결과 동일성: baseline-results.json의 39개 요청과 응답(id·price·likeCount·재고·브랜드·페이지 정보) 완전 일치
+warmup=50 measured=300 sequential
+case                              p50      p95      p99      max  (ms)
+target  brand7 price_asc        27.81    34.14    36.80    59.26
+brand7 latest                   26.48    31.31    33.39    37.09
+brand7 likes_desc               26.98    33.86    41.90    49.37
+all price_asc                   33.87    40.10    42.08    59.85
+all latest                      35.72    42.89    51.95    61.15
+all likes_desc                  95.51   106.92   112.80   119.88
+detail id=7                     21.85    28.15    50.72    52.96

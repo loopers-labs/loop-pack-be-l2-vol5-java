@@ -1,0 +1,4 @@
+org.springframework.context.ApplicationContextInitializer=\
+com.loopers.testcontainers.RedisTestContainersInitializer
+org.springframework.test.context.TestExecutionListener=\
+com.loopers.testcontainers.RedisCacheCleanUpListener

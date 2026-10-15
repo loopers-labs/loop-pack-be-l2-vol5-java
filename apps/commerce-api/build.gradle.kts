@@ -34,6 +34,9 @@ dependencies {
     // architecture
     testImplementation("com.tngtech.archunit:archunit:1.5.0")
 
+    // acceptance (실제 포트로 HTTP 요청 — 버전은 Spring Boot가 관리)
+    testImplementation("io.rest-assured:rest-assured")
+
     // test-fixtures
     testImplementation(testFixtures(project(":modules:jpa")))
     testImplementation(testFixtures(project(":modules:redis")))

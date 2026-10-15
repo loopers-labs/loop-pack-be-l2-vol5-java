@@ -1,5 +1,6 @@
 package com.loopers.application.order;
 
+import com.loopers.application.product.ProductCacheInvalidator;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.OrderService;
@@ -27,10 +28,12 @@ public class OrderFacade {
     private final OrderService orderService;
     private final ProductService productService;
     private final UserService userService;
+    private final ProductCacheInvalidator productCacheInvalidator;
 
     /**
      * 요청 품목마다 단가를 스냅샷으로 찍어(DRAFT 생성 시점, 3번 섹션) Order에 넘긴다.
      * 품목 병합·빈 목록 거절은 Order 생성자의 책임이라 여기서 다시 검사하지 않는다.
+     * 재고·가격을 바꾸지 않으므로 상품 캐시를 무효화하지 않는다 (docs/week4/design.md 7번 섹션).
      */
     @Transactional
     public OrderInfo createOrder(Long userId, List<OrderItemRequest> requestItems) {
@@ -65,6 +68,7 @@ public class OrderFacade {
      * 일관되고, 같은 주문에 확정 요청이 겹쳐도(더블클릭·재시도) 두 번 반영되지 않는다.
      * (docs/week2/design.md 5번 섹션 "Order 자신의 DRAFT→CONFIRMED 전이도 같은 방식으로 보호한다" 참고)
      * 하나라도 실패하면 트랜잭션 전체가 롤백된다 (docs/week2/design.md 4번 섹션 시퀀스 다이어그램).
+     * 재고가 바뀐 상품의 캐시 키는 commit 뒤에 지운다 — 롤백되면 지우지 않는다 (docs/week4/design.md 7번 섹션).
      */
     @Transactional
     public OrderInfo confirmOrder(Long orderId, Long requesterId) {
@@ -74,6 +78,10 @@ public class OrderFacade {
         order.getItems().stream()
             .sorted(Comparator.comparing(OrderItem::getProductId))
             .forEach(item -> productService.decreaseStock(item.getProductId(), item.getQuantity()));
+        // 재고를 바꾼 직후 등록한다 — 실행은 commit 뒤라, 이후 단계(포인트 차감·저장)가 실패해 롤백되면 지우지 않는다.
+        productCacheInvalidator.productsChanged(order.getItems().stream()
+            .map(OrderItem::getProductId)
+            .toList());
 
         long totalAmount = order.calculateTotalAmount();
         userService.payPoint(requesterId, totalAmount);

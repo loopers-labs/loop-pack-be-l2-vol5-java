@@ -50,10 +50,14 @@ public class ProductService {
      * "브랜드가 삭제되면 상품도 내린다"는 이유는 호출자(BrandAdminFacade)만 안다.
      * 엔티티 delete()를 거쳐 멱등 규칙·@PreUpdate가 그대로 적용되게 하고, bulk UPDATE는 쓰지 않는다
      * (docs/week3/design.md 3번 섹션). 매니지드 엔티티라 save() 없이 dirty checking으로 반영된다.
+     * 삭제한 상품 id를 돌려준다 — commit 뒤에는 brandId로 "삭제되지 않은 상품"을 다시 찾을 수 없으므로,
+     * 호출자가 캐시 무효화 대상을 트랜잭션 안에서 확보하게 한다 (docs/week4/design.md 7번 섹션).
      */
     @Transactional
-    public void deleteAllByBrandId(Long brandId) {
-        productRepository.findAllActiveByBrandIdForUpdate(brandId).forEach(ProductModel::delete);
+    public List<Long> deleteAllByBrandId(Long brandId) {
+        List<ProductModel> products = productRepository.findAllActiveByBrandIdForUpdate(brandId);
+        products.forEach(ProductModel::delete);
+        return products.stream().map(ProductModel::getId).toList();
     }
 
     @Transactional

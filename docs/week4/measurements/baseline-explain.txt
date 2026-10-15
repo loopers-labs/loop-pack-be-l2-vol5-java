@@ -1,0 +1,134 @@
+# 기준선 실행 계획 — MySQL 8.0.46, seed 프로필, 인덱스: product(PRIMARY, idx_product_brand_id), likes(PRIMARY, UK(user_id, product_id))
+# 대상 SQL은 performance_schema.events_statements_history_long에서 확인한, 서버가 실제로 받은 문장이다.
+
+## [목록 brand7 price_asc]
+EXPLAIN select pm1_0.id,pm1_0.brand_id,pm1_0.created_at,pm1_0.deleted_at,pm1_0.name,pm1_0.price,pm1_0.stock_remaining,pm1_0.updated_at from product pm1_0 where pm1_0.deleted_at is null and (7 is null or pm1_0.brand_id=7) order by pm1_0.price,pm1_0.name,pm1_0.id limit 20
+           id: 1
+  select_type: SIMPLE
+        table: pm1_0
+   partitions: NULL
+         type: ref
+possible_keys: idx_product_brand_id
+          key: idx_product_brand_id
+      key_len: 9
+          ref: const
+         rows: 100
+     filtered: 10.00
+        Extra: Using where; Using filesort
+
+## [목록 brand7 price_asc]
+EXPLAIN ANALYZE select pm1_0.id,pm1_0.brand_id,pm1_0.created_at,pm1_0.deleted_at,pm1_0.name,pm1_0.price,pm1_0.stock_remaining,pm1_0.updated_at from product pm1_0 where pm1_0.deleted_at is null and (7 is null or pm1_0.brand_id=7) order by pm1_0.price,pm1_0.name,pm1_0.id limit 20
+EXPLAIN: -> Limit: 20 row(s)  (cost=26 rows=20) (actual time=0.258..0.261 rows=20 loops=1)
+    -> Sort: pm1_0.price, pm1_0.`name`, pm1_0.id, limit input to 20 row(s) per chunk  (cost=26 rows=100) (actual time=0.258..0.259 rows=20 loops=1)
+        -> Filter: (pm1_0.deleted_at is null)  (cost=26 rows=100) (actual time=0.0434..0.173 rows=91 loops=1)
+            -> Index lookup on pm1_0 using idx_product_brand_id (brand_id=7)  (cost=26 rows=100) (actual time=0.0427..0.167 rows=100 loops=1)
+
+
+## [count brand7]
+EXPLAIN ANALYZE select count(pm1_0.id) from product pm1_0 where pm1_0.deleted_at is null and (7 is null or pm1_0.brand_id=7)
+EXPLAIN: -> Aggregate: count(pm1_0.id)  (cost=27 rows=1) (actual time=0.148..0.148 rows=1 loops=1)
+    -> Filter: (pm1_0.deleted_at is null)  (cost=26 rows=10) (actual time=0.13..0.143 rows=91 loops=1)
+        -> Index lookup on pm1_0 using idx_product_brand_id (brand_id=7)  (cost=26 rows=100) (actual time=0.129..0.137 rows=100 loops=1)
+
+
+## [브랜드 IN]
+EXPLAIN select bm1_0.id,bm1_0.category,bm1_0.created_at,bm1_0.deleted_at,bm1_0.description,bm1_0.name,bm1_0.updated_at from brand bm1_0 where bm1_0.id in (7)
+           id: 1
+  select_type: SIMPLE
+        table: bm1_0
+   partitions: NULL
+         type: const
+possible_keys: PRIMARY
+          key: PRIMARY
+      key_len: 8
+          ref: const
+         rows: 1
+     filtered: 100.00
+        Extra: NULL
+
+## [좋아요 집계 IN 20개]
+EXPLAIN select lm1_0.product_id,count(lm1_0.id) from likes lm1_0 where lm1_0.product_id in (5406,6,5506,2806,106,8306,5606,2906,206,8406,5706,3006,306,8506,5806,3106,406,8606,5906,3206) group by lm1_0.product_id
+           id: 1
+  select_type: SIMPLE
+        table: lm1_0
+   partitions: NULL
+         type: index
+possible_keys: UK18fd6srrna88d3mgfb2r1f3ps
+          key: UK18fd6srrna88d3mgfb2r1f3ps
+      key_len: 18
+          ref: NULL
+         rows: 163663
+     filtered: 50.00
+        Extra: Using where; Using index; Using temporary
+
+## [좋아요 집계 IN 20개]
+EXPLAIN ANALYZE select lm1_0.product_id,count(lm1_0.id) from likes lm1_0 where lm1_0.product_id in (5406,6,5506,2806,106,8306,5606,2906,206,8406,5706,3006,306,8506,5806,3106,406,8606,5906,3206) group by lm1_0.product_id
+EXPLAIN: -> Table scan on <temporary>  (actual time=36.2..36.2 rows=14 loops=1)
+    -> Aggregate using temporary table  (actual time=36.1..36.1 rows=14 loops=1)
+        -> Filter: (lm1_0.product_id in (5406,6,5506,2806,106,8306,5606,2906,206,8406,5706,3006,306,8506,5806,3106,406,8606,5906,3206))  (cost=16535 rows=81832) (actual time=0.736..36 rows=84 loops=1)
+            -> Covering index scan on lm1_0 using UK18fd6srrna88d3mgfb2r1f3ps  (cost=16535 rows=163663) (actual time=0.725..28.6 rows=168317 loops=1)
+
+
+## [목록 전체 price_asc]
+EXPLAIN ANALYZE select pm1_0.id,pm1_0.brand_id,pm1_0.created_at,pm1_0.deleted_at,pm1_0.name,pm1_0.price,pm1_0.stock_remaining,pm1_0.updated_at from product pm1_0 where pm1_0.deleted_at is null and (null is null or pm1_0.brand_id=null) order by pm1_0.price,pm1_0.name,pm1_0.id limit 20
+EXPLAIN: -> Limit: 20 row(s)  (cost=1021 rows=20) (actual time=7.93..7.93 rows=20 loops=1)
+    -> Sort: pm1_0.price, pm1_0.`name`, pm1_0.id, limit input to 20 row(s) per chunk  (cost=1021 rows=9971) (actual time=7.93..7.93 rows=20 loops=1)
+        -> Filter: (pm1_0.deleted_at is null)  (cost=1021 rows=9971) (actual time=0.095..5.77 rows=9001 loops=1)
+            -> Table scan on pm1_0  (cost=1021 rows=9971) (actual time=0.094..5.2 rows=10000 loops=1)
+
+
+## [count 전체]
+EXPLAIN ANALYZE select count(pm1_0.id) from product pm1_0 where pm1_0.deleted_at is null and (null is null or pm1_0.brand_id=null)
+EXPLAIN: -> Aggregate: count(pm1_0.id)  (cost=1121 rows=1) (actual time=4..4 rows=1 loops=1)
+    -> Filter: (pm1_0.deleted_at is null)  (cost=1021 rows=997) (actual time=0.324..3.64 rows=9001 loops=1)
+        -> Table scan on pm1_0  (cost=1021 rows=9971) (actual time=0.322..2.98 rows=10000 loops=1)
+
+
+## [목록 brand7 latest]
+EXPLAIN ANALYZE select pm1_0.id,pm1_0.brand_id,pm1_0.created_at,pm1_0.deleted_at,pm1_0.name,pm1_0.price,pm1_0.stock_remaining,pm1_0.updated_at from product pm1_0 where pm1_0.deleted_at is null and (7 is null or pm1_0.brand_id=7) order by pm1_0.created_at desc,pm1_0.name,pm1_0.id limit 20
+EXPLAIN: -> Limit: 20 row(s)  (cost=26 rows=20) (actual time=0.335..0.338 rows=20 loops=1)
+    -> Sort: pm1_0.created_at DESC, pm1_0.`name`, pm1_0.id, limit input to 20 row(s) per chunk  (cost=26 rows=100) (actual time=0.334..0.336 rows=20 loops=1)
+        -> Filter: (pm1_0.deleted_at is null)  (cost=26 rows=100) (actual time=0.0439..0.247 rows=91 loops=1)
+            -> Index lookup on pm1_0 using idx_product_brand_id (brand_id=7)  (cost=26 rows=100) (actual time=0.0432..0.237 rows=100 loops=1)
+
+
+## [목록 전체 latest]
+EXPLAIN ANALYZE select pm1_0.id,pm1_0.brand_id,pm1_0.created_at,pm1_0.deleted_at,pm1_0.name,pm1_0.price,pm1_0.stock_remaining,pm1_0.updated_at from product pm1_0 where pm1_0.deleted_at is null and (null is null or pm1_0.brand_id=null) order by pm1_0.created_at desc,pm1_0.name,pm1_0.id limit 20
+EXPLAIN: -> Limit: 20 row(s)  (cost=1021 rows=20) (actual time=7.64..7.64 rows=20 loops=1)
+    -> Sort: pm1_0.created_at DESC, pm1_0.`name`, pm1_0.id, limit input to 20 row(s) per chunk  (cost=1021 rows=9971) (actual time=7.64..7.64 rows=20 loops=1)
+        -> Filter: (pm1_0.deleted_at is null)  (cost=1021 rows=9971) (actual time=0.0817..4.92 rows=9001 loops=1)
+            -> Table scan on pm1_0  (cost=1021 rows=9971) (actual time=0.0808..4.31 rows=10000 loops=1)
+
+
+## [목록 brand7 likes_desc]
+EXPLAIN ANALYZE SELECT p.* FROM product p LEFT JOIN likes l ON l.product_id = p.id WHERE p.deleted_at IS NULL AND (7 IS NULL OR p.brand_id = 7) GROUP BY p.id ORDER BY COUNT(l.id) DESC, p.name ASC, p.id ASC limit 20
+EXPLAIN: -> Limit: 20 row(s)  (actual time=72.8..72.8 rows=20 loops=1)
+    -> Sort: `count(l.id)` DESC, p.`name`, p.id, limit input to 20 row(s) per chunk  (actual time=72.8..72.8 rows=20 loops=1)
+        -> Table scan on <temporary>  (actual time=72.8..72.8 rows=91 loops=1)
+            -> Aggregate using temporary table  (actual time=72.8..72.8 rows=91 loops=1)
+                -> Left hash join (l.product_id = p.id)  (cost=165492 rows=1.64e+6) (actual time=52.3..72.1 rows=391 loops=1)
+                    -> Filter: (p.deleted_at is null)  (cost=26 rows=10) (actual time=0.0507..0.31 rows=91 loops=1)
+                        -> Index lookup on p using idx_product_brand_id (brand_id=7)  (cost=26 rows=100) (actual time=0.0487..0.3 rows=100 loops=1)
+                    -> Hash
+                        -> Covering index scan on l using UK18fd6srrna88d3mgfb2r1f3ps  (cost=1654 rows=163663) (actual time=0.662..29.5 rows=168317 loops=1)
+
+
+## [목록 전체 likes_desc]
+EXPLAIN ANALYZE SELECT p.* FROM product p LEFT JOIN likes l ON l.product_id = p.id WHERE p.deleted_at IS NULL AND (null IS NULL OR p.brand_id = null) GROUP BY p.id ORDER BY COUNT(l.id) DESC, p.name ASC, p.id ASC limit 20
+EXPLAIN: -> Limit: 20 row(s)  (actual time=559..559 rows=20 loops=1)
+    -> Sort: `count(l.id)` DESC, p.`name`, p.id, limit input to 20 row(s) per chunk  (actual time=559..559 rows=20 loops=1)
+        -> Table scan on <temporary>  (actual time=553..557 rows=9001 loops=1)
+            -> Aggregate using temporary table  (actual time=553..553 rows=9001 loops=1)
+                -> Left hash join (l.product_id = p.id)  (cost=16.3e+6 rows=163e+6) (actual time=51.1..98 rows=153642 loops=1)
+                    -> Filter: (p.deleted_at is null)  (cost=1021 rows=997) (actual time=0.148..5.13 rows=9001 loops=1)
+                        -> Table scan on p  (cost=1021 rows=9971) (actual time=0.145..4.61 rows=10000 loops=1)
+                    -> Hash
+                        -> Covering index scan on l using UK18fd6srrna88d3mgfb2r1f3ps  (cost=17.3 rows=163663) (actual time=0.445..30 rows=168317 loops=1)
+
+
+## [상세 좋아요 count]
+EXPLAIN ANALYZE select count(lm1_0.id) from likes lm1_0 where lm1_0.product_id=7
+EXPLAIN: -> Aggregate: count(lm1_0.id)  (cost=6697 rows=1) (actual time=1.86..1.86 rows=1 loops=1)
+    -> Filter: (lm1_0.product_id = 7)  (cost=5060 rows=16366) (actual time=0.0357..1.85 rows=7 loops=1)
+        -> Covering index skip scan on lm1_0 using UK18fd6srrna88d3mgfb2r1f3ps over product_id = 7  (cost=5060 rows=16366) (actual time=0.0347..1.85 rows=7 loops=1)
+

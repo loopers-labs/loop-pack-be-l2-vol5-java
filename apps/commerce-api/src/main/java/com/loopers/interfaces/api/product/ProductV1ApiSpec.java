@@ -17,7 +17,7 @@ public interface ProductV1ApiSpec {
         @Schema(name = "브랜드 ID", description = "지정하면 해당 브랜드의 상품만 조회") Long brandId,
         @Schema(name = "정렬", description = "latest(기본) | price_asc | likes_desc") String sort,
         @Schema(name = "페이지", description = "0부터 시작, 기본 0") int page,
-        @Schema(name = "페이지 크기", description = "기본 20") int size
+        @Schema(name = "페이지 크기", description = "기본 20, 1~100") int size
     );
 
     @Operation(

@@ -24,6 +24,12 @@ spring:
       - logging.yml
       - monitoring.yml
 
+# 캐시 전용 Redis 연결(CacheRedisConfig) — 실패하면 DB로 대신하므로 짧게 기다린다 (docs/week4/design.md 8번 섹션)
+cache:
+  redis:
+    command-timeout: 50ms   # 명령 하나
+    connect-timeout: 1s     # 연결 수립(시작·재연결 때만)
+
 springdoc:
   use-fqn: true
   swagger-ui:
@@ -34,6 +40,20 @@ spring:
   config:
     activate:
       on-profile: local, test
+
+---
+# 4주차 조회 성능 측정용 재현 데이터 — local과 함께 켠다(--spring.profiles.active=local,seed).
+# local의 ddl-auto: create가 스키마를 만든 직후 seed SQL을 실행하므로, 재시작마다 같은 데이터로 다시 채워진다.
+spring:
+  config:
+    activate:
+      on-profile: seed
+  sql:
+    init:
+      mode: always
+      data-locations: classpath:seed/product-seed.sql
+  jpa:
+    defer-datasource-initialization: true
 
 ---
 spring:
