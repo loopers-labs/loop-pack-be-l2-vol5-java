@@ -1,0 +1,112 @@
+=== round 1 (vus=5) warmup 50 ===
+vus=5 iters=50 reqs=50 rps=311.60 avg=14.94 p50=10.27 p90=22.31 p95=41.98 max=42.00 http_failed=0 checks_pass=100 checks_fail=0
+=== round 1 reset counters ===
+time="2026-10-16T13:28:17+09:00" level=warning msg="/Users/hyun/dev/loopers-spring-java-template/docker/infra-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
++--------------------------+
+| history_rows_after_reset |
++--------------------------+
+|                        3 |
++--------------------------+
+=== round 1 measure 500 ===
+vus=5 iters=500 reqs=500 rps=577.50 avg=8.56 p50=8.15 p90=9.89 p95=10.71 max=20.25 http_failed=0 checks_pass=1000 checks_fail=0
+=== round 1 sql counters (ps-round-capture.sql) ===
+time="2026-10-16T13:28:18+09:00" level=warning msg="/Users/hyun/dev/loopers-spring-java-template/docker/infra-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
++-------------+--------------------------+------------+
+| USER        | EVENT_NAME               | COUNT_STAR |
++-------------+--------------------------+------------+
+| application | statement/com/Ping       |          5 |
+| application | statement/sql/commit     |       1500 |
+| application | statement/sql/select     |       1500 |
+| application | statement/sql/set_option |       6000 |
++-------------+--------------------------+------------+
++------------+--------------+------------+------------+-------------------------+------------------+
+| app_select | product_list | like_count | brand_find | app_product_query_total | app_other_select |
++------------+--------------+------------+------------+-------------------------+------------------+
+|       1500 |          500 |        500 |        500 |                    1500 |                0 |
++------------+--------------+------------+------------+-------------------------+------------------+
++------------+-------------+------------------------------------------------------------------------------------------------------+
+| COUNT_STAR | SCHEMA_NAME | digest_text                                                                                          |
++------------+-------------+------------------------------------------------------------------------------------------------------+
+|       2999 | loopers     | SET `autocommit` = ?                                                                                 |
+|       1500 | loopers     | COMMIT                                                                                               |
+|       1500 | loopers     | SET SESSION TRANSACTION READ ONLY                                                                    |
+|       1499 | loopers     | SET SESSION TRANSACTION READ WRITE                                                                   |
+|        500 | loopers     | SELECT `b1_0` . `id` , `b1_0` . `created_at` , `b1_0` . `deleted_at` , `b1_0` . `name` , `b1_0` . `u |
+|        500 | loopers     | SELECT `l1_0` . `product_id` , COUNT ( `l1_0` . `id` ) FROM `likes` `l1_0` WHERE `l1_0` . `product_i |
+|        500 | loopers     | SELECT `p1_0` . `id` , `p1_0` . `brand_id` , `p1_0` . `created_at` , `p1_0` . `deleted_at` , `p1_0`  |
+|          1 | loopers     | SELECT @@`version_comment` LIMIT ?                                                                   |
++------------+-------------+------------------------------------------------------------------------------------------------------+
+=== round 2 (vus=5) warmup 50 ===
+vus=5 iters=50 reqs=50 rps=561.54 avg=8.74 p50=8.43 p90=10.07 p95=10.36 max=10.47 http_failed=0 checks_pass=100 checks_fail=0
+=== round 2 reset counters ===
+time="2026-10-16T13:28:18+09:00" level=warning msg="/Users/hyun/dev/loopers-spring-java-template/docker/infra-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
++--------------------------+
+| history_rows_after_reset |
++--------------------------+
+|                        3 |
++--------------------------+
+=== round 2 measure 500 ===
+vus=5 iters=500 reqs=500 rps=566.14 avg=8.74 p50=8.36 p90=10.21 p95=10.85 max=21.90 http_failed=0 checks_pass=1000 checks_fail=0
+=== round 2 sql counters (ps-round-capture.sql) ===
+time="2026-10-16T13:28:20+09:00" level=warning msg="/Users/hyun/dev/loopers-spring-java-template/docker/infra-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
++-------------+--------------------------+------------+
+| USER        | EVENT_NAME               | COUNT_STAR |
++-------------+--------------------------+------------+
+| application | statement/sql/commit     |       1500 |
+| application | statement/sql/select     |       1500 |
+| application | statement/sql/set_option |       6000 |
++-------------+--------------------------+------------+
++------------+--------------+------------+------------+-------------------------+------------------+
+| app_select | product_list | like_count | brand_find | app_product_query_total | app_other_select |
++------------+--------------+------------+------------+-------------------------+------------------+
+|       1500 |          500 |        500 |        500 |                    1500 |                0 |
++------------+--------------+------------+------------+-------------------------+------------------+
++------------+-------------+------------------------------------------------------------------------------------------------------+
+| COUNT_STAR | SCHEMA_NAME | digest_text                                                                                          |
++------------+-------------+------------------------------------------------------------------------------------------------------+
+|       2994 | loopers     | SET `autocommit` = ?                                                                                 |
+|       1500 | loopers     | SET SESSION TRANSACTION READ WRITE                                                                   |
+|       1498 | loopers     | SET SESSION TRANSACTION READ ONLY                                                                    |
+|       1497 | loopers     | COMMIT                                                                                               |
+|        500 | loopers     | SELECT `b1_0` . `id` , `b1_0` . `created_at` , `b1_0` . `deleted_at` , `b1_0` . `name` , `b1_0` . `u |
+|        500 | loopers     | SELECT `l1_0` . `product_id` , COUNT ( `l1_0` . `id` ) FROM `likes` `l1_0` WHERE `l1_0` . `product_i |
+|        500 | loopers     | SELECT `p1_0` . `id` , `p1_0` . `brand_id` , `p1_0` . `created_at` , `p1_0` . `deleted_at` , `p1_0`  |
+|          1 | loopers     | SELECT @@`version_comment` LIMIT ?                                                                   |
++------------+-------------+------------------------------------------------------------------------------------------------------+
+=== round 3 (vus=5) warmup 50 ===
+vus=5 iters=50 reqs=50 rps=565.75 avg=8.66 p50=8.56 p90=10.06 p95=10.32 max=10.59 http_failed=0 checks_pass=100 checks_fail=0
+=== round 3 reset counters ===
+time="2026-10-16T13:28:20+09:00" level=warning msg="/Users/hyun/dev/loopers-spring-java-template/docker/infra-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
++--------------------------+
+| history_rows_after_reset |
++--------------------------+
+|                        3 |
++--------------------------+
+=== round 3 measure 500 ===
+vus=5 iters=500 reqs=500 rps=600.80 avg=8.25 p50=7.99 p90=9.39 p95=10.07 max=12.09 http_failed=0 checks_pass=1000 checks_fail=0
+=== round 3 sql counters (ps-round-capture.sql) ===
+time="2026-10-16T13:28:21+09:00" level=warning msg="/Users/hyun/dev/loopers-spring-java-template/docker/infra-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
++-------------+--------------------------+------------+
+| USER        | EVENT_NAME               | COUNT_STAR |
++-------------+--------------------------+------------+
+| application | statement/sql/commit     |       1500 |
+| application | statement/sql/select     |       1500 |
+| application | statement/sql/set_option |       6000 |
++-------------+--------------------------+------------+
++------------+--------------+------------+------------+-------------------------+------------------+
+| app_select | product_list | like_count | brand_find | app_product_query_total | app_other_select |
++------------+--------------+------------+------------+-------------------------+------------------+
+|       1500 |          500 |        500 |        500 |                    1500 |                0 |
++------------+--------------+------------+------------+-------------------------+------------------+
++------------+-------------+------------------------------------------------------------------------------------------------------+
+| COUNT_STAR | SCHEMA_NAME | digest_text                                                                                          |
++------------+-------------+------------------------------------------------------------------------------------------------------+
+|       2993 | loopers     | SET `autocommit` = ?                                                                                 |
+|       1500 | loopers     | SET SESSION TRANSACTION READ WRITE                                                                   |
+|       1499 | loopers     | SET SESSION TRANSACTION READ ONLY                                                                    |
+|       1497 | loopers     | COMMIT                                                                                               |
+|        500 | loopers     | SELECT `b1_0` . `id` , `b1_0` . `created_at` , `b1_0` . `deleted_at` , `b1_0` . `name` , `b1_0` . `u |
+|        500 | loopers     | SELECT `l1_0` . `product_id` , COUNT ( `l1_0` . `id` ) FROM `likes` `l1_0` WHERE `l1_0` . `product_i |
+|        500 | loopers     | SELECT `p1_0` . `id` , `p1_0` . `brand_id` , `p1_0` . `created_at` , `p1_0` . `deleted_at` , `p1_0`  |
+|          1 | loopers     | SELECT @@`version_comment` LIMIT ?                                                                   |
++------------+-------------+------------------------------------------------------------------------------------------------------+

@@ -5,20 +5,25 @@ import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.like.LikeService;
 import com.loopers.domain.product.Price;
 import com.loopers.domain.product.Product;
+import com.loopers.domain.product.ProductListCache;
 import com.loopers.domain.product.ProductService;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Answers;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -43,6 +48,13 @@ class ProductFacadeTest {
     @Mock
     private LikeService likeService;
 
+    @Mock
+    private ProductListCache productListCache;
+
+    // counter(...).increment() 가 null 에 걸리지 않도록 깊은 stub 으로 둔다
+    @Mock(answer = Answers.RETURNS_DEEP_STUBS)
+    private MeterRegistry meterRegistry;
+
     @InjectMocks
     private ProductFacade productFacade;
 
@@ -55,7 +67,9 @@ class ProductFacadeTest {
             // arrange
             given(productService.getProducts(null, "latest", 0, 20))
                 .willReturn(List.of(new Product(1L, "루퍼스 티셔츠", new Price(1000L))));
-            given(brandRepository.findById(1L)).willReturn(Optional.of(new Brand("루퍼스")));
+            Brand brand = new Brand("루퍼스");
+            ReflectionTestUtils.setField(brand, "id", 1L);
+            given(brandRepository.findAllByIdIn(eq(Set.of(1L)))).willReturn(List.of(brand));
             given(likeService.countByProductIds(anyList())).willReturn(Map.of(0L, 5L));
 
             // act
@@ -196,6 +210,9 @@ class ProductFacadeTest {
         @DisplayName("상품 삭제를 서비스에 위임한다.")
         @Test
         void delegatesToProductService() {
+            // arrange
+            given(productService.getActiveProduct(1L)).willReturn(new Product(1L, "루퍼스 티셔츠", new Price(1000L)));
+
             // act
             productFacade.deleteProduct(1L);
 

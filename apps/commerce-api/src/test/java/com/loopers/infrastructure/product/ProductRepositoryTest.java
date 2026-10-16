@@ -7,6 +7,7 @@ import com.loopers.domain.product.ProductRepository;
 import com.loopers.domain.product.ProductSortType;
 import com.loopers.infrastructure.like.LikeJpaRepository;
 import com.loopers.utils.DatabaseCleanUp;
+import com.loopers.utils.SqlCounter;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -17,6 +18,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -231,6 +233,24 @@ class ProductRepositoryTest {
             // assert
             assertThat(result).extracting(Product::getName).containsExactly("상품 C");
         }
+
+        @DisplayName("좋아요 많은 순 정렬은 페이지 안이 아니라 전체 기준으로 적용되어, 가장 늦게 저장된 상품이라도 좋아요가 가장 많으면 첫 페이지 첫 번째로 조회된다.")
+        @Test
+        void sortsByLikesDescAcrossPages() {
+            // arrange
+            Product first = productRepository.save(new Product(1L, "좋아요 1개", new Price(1000L)));
+            productRepository.save(new Product(1L, "좋아요 0개", new Price(1000L)));
+            Product last = productRepository.save(new Product(1L, "좋아요 2개", new Price(1000L)));
+            likeJpaRepository.save(new Like(1L, first.getId()));
+            likeJpaRepository.save(new Like(1L, last.getId()));
+            likeJpaRepository.save(new Like(2L, last.getId()));
+
+            // act
+            List<Product> result = productRepository.findAll(null, ProductSortType.LIKES_DESC, 0, 2);
+
+            // assert
+            assertThat(result).extracting(Product::getName).containsExactly("좋아요 2개", "좋아요 1개");
+        }
     }
 
     @DisplayName("브랜드별 미삭제 상품을 조회할 때, ")
@@ -256,6 +276,71 @@ class ProductRepositoryTest {
             // assert
             assertThat(result).extracting(Product::getId)
                 .containsExactly(savedInStock.getId(), outOfStock.getId());
+        }
+    }
+
+    @DisplayName("식별자 목록으로 미삭제 상품의 재고를 조회할 때, ")
+    @Nested
+    class FindActiveStockQuantities {
+        @DisplayName("삭제된 상품은 결과에서 빠지고, 남은 상품의 재고는 DB 에 저장된 값과 같다.")
+        @Test
+        void excludesDeletedAndReturnsStoredStock() {
+            // arrange
+            Product inStock = new Product(1L, "재고 있는 상품", new Price(1000L));
+            inStock.changeStock(5);
+            Product savedInStock = productRepository.save(inStock);
+            Product savedOutOfStock = productRepository.save(new Product(1L, "품절 상품", new Price(1000L)));
+            Product deleted = new Product(1L, "삭제된 상품", new Price(1000L));
+            deleted.changeStock(9);
+            deleted.delete();
+            Product savedDeleted = productRepository.save(deleted);
+
+            // act
+            Map<Long, Integer> result = productRepository.findActiveStockQuantities(
+                List.of(savedInStock.getId(), savedOutOfStock.getId(), savedDeleted.getId()));
+
+            // assert
+            assertThat(result).containsOnlyKeys(savedInStock.getId(), savedOutOfStock.getId());
+            assertThat(result.get(savedInStock.getId())).isEqualTo(5);
+            assertThat(result.get(savedOutOfStock.getId())).isZero();
+        }
+
+        @DisplayName("상품 수와 무관하게 SQL 1개로 조회한다.")
+        @Test
+        void executesSingleStatement() {
+            // arrange
+            Product first = productRepository.save(new Product(1L, "상품 1", new Price(1000L)));
+            Product second = productRepository.save(new Product(1L, "상품 2", new Price(2000L)));
+            Product third = productRepository.save(new Product(2L, "상품 3", new Price(3000L)));
+            SqlCounter sqlCounter = new SqlCounter(entityManager.getEntityManagerFactory());
+            sqlCounter.reset();
+
+            // act
+            Map<Long, Integer> result = productRepository.findActiveStockQuantities(
+                List.of(first.getId(), second.getId(), third.getId()));
+
+            // assert
+            long statements = sqlCounter.count();
+            sqlCounter.disable();
+            assertThat(result).hasSize(3);
+            assertThat(statements).isEqualTo(1);
+        }
+
+        @DisplayName("식별자 목록이 비어 있으면, SQL 을 실행하지 않고 빈 결과를 반환한다.")
+        @Test
+        void returnsEmptyWithoutQuery_whenIdsAreEmpty() {
+            // arrange
+            SqlCounter sqlCounter = new SqlCounter(entityManager.getEntityManagerFactory());
+            sqlCounter.reset();
+
+            // act
+            Map<Long, Integer> result = productRepository.findActiveStockQuantities(List.of());
+
+            // assert
+            long statements = sqlCounter.count();
+            sqlCounter.disable();
+            assertThat(result).isEmpty();
+            assertThat(statements).isZero();
         }
     }
 

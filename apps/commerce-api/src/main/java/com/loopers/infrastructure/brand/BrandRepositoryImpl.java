@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -24,6 +25,11 @@ public class BrandRepositoryImpl implements BrandRepository {
     @Override
     public Optional<Brand> findById(Long id) {
         return brandJpaRepository.findById(id);
+    }
+
+    @Override
+    public List<Brand> findAllByIdIn(Collection<Long> ids) {
+        return brandJpaRepository.findAllByIdIn(ids);
     }
 
     @Override

@@ -1,0 +1,69 @@
+*************************** 1. row ***************************
+           id: 1
+  select_type: PRIMARY
+        table: p1_0
+   partitions: NULL
+         type: ALL
+possible_keys: NULL
+          key: NULL
+      key_len: NULL
+          ref: NULL
+         rows: 9855
+     filtered: 1.00
+        Extra: Using where; Using filesort
+*************************** 2. row ***************************
+           id: 2
+  select_type: DEPENDENT SUBQUERY
+        table: l1_0
+   partitions: NULL
+         type: ref
+possible_keys: idx_likes_product_id
+          key: idx_likes_product_id
+      key_len: 9
+          ref: loopers.p1_0.id
+         rows: 24
+     filtered: 100.00
+        Extra: Using index
+*************************** 1. row ***************************
+EXPLAIN: -> Limit: 20 row(s)  (cost=1010 rows=20) (actual time=3.61..3.62 rows=20 loops=1)
+    -> Sort: (select #2) DESC, p1_0.id DESC, limit input to 20 row(s) per chunk  (cost=1010 rows=9855) (actual time=3.61..3.61 rows=20 loops=1)
+        -> Filter: ((p1_0.brand_id = 7) and (p1_0.deleted_at is null))  (cost=1010 rows=9855) (actual time=0.209..2.13 rows=100 loops=1)
+            -> Table scan on p1_0  (cost=1010 rows=9855) (actual time=0.204..1.86 rows=10000 loops=1)
+-> Select #2 (subquery in projection; dependent)
+    -> Aggregate: count(l1_0.id)  (cost=5.07 rows=1) (actual time=0.013..0.013 rows=1 loops=100)
+        -> Covering index lookup on l1_0 using idx_likes_product_id (product_id=p1_0.id)  (cost=2.67 rows=24) (actual time=0.0106..0.012 rows=22.1 loops=100)
+
+*************************** 1. row ***************************
+           id: 1
+  select_type: SIMPLE
+        table: l1_0
+   partitions: NULL
+         type: range
+possible_keys: uk_likes_user_product,idx_likes_product_id
+          key: idx_likes_product_id
+      key_len: 9
+          ref: NULL
+         rows: 850
+     filtered: 100.00
+        Extra: Using where; Using index
+*************************** 1. row ***************************
+EXPLAIN: -> Group aggregate: count(l1_0.id)  (cost=256 rows=850) (actual time=0.0225..0.133 rows=20 loops=1)
+    -> Filter: (l1_0.product_id in (9606,206,9906,5206,5506,806,5806,1106,6106,1406,6406,1706,6706,2006,7006,2306,7306,2606,7606,2906))  (cost=171 rows=850) (actual time=0.0142..0.114 rows=850 loops=1)
+        -> Covering index range scan on l1_0 using idx_likes_product_id over (product_id = 206) OR (product_id = 806) OR (18 more)  (cost=171 rows=850) (actual time=0.011..0.0785 rows=850 loops=1)
+
+*************************** 1. row ***************************
+           id: 1
+  select_type: SIMPLE
+        table: b1_0
+   partitions: NULL
+         type: const
+possible_keys: PRIMARY
+          key: PRIMARY
+      key_len: 8
+          ref: const
+         rows: 1
+     filtered: 100.00
+        Extra: NULL
+*************************** 1. row ***************************
+EXPLAIN: -> Rows fetched before execution  (cost=0..0 rows=1) (actual time=0..0 rows=1 loops=1)
+

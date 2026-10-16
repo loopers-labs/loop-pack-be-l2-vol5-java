@@ -1,0 +1,54 @@
+*************************** 1. row ***************************
+           id: 1
+  select_type: SIMPLE
+        table: p1_0
+   partitions: NULL
+         type: ALL
+possible_keys: NULL
+          key: NULL
+      key_len: NULL
+          ref: NULL
+         rows: 9955
+     filtered: 1.00
+        Extra: Using where; Using filesort
+*************************** 1. row ***************************
+EXPLAIN: -> Limit: 20 row(s)  (cost=1020 rows=20) (actual time=1.76..1.76 rows=20 loops=1)
+    -> Sort: p1_0.amount, p1_0.id DESC, limit input to 20 row(s) per chunk  (cost=1020 rows=9955) (actual time=1.76..1.76 rows=20 loops=1)
+        -> Filter: ((p1_0.brand_id = 7) and (p1_0.deleted_at is null))  (cost=1020 rows=9955) (actual time=0.0855..1.71 rows=100 loops=1)
+            -> Table scan on p1_0  (cost=1020 rows=9955) (actual time=0.0823..1.47 rows=10000 loops=1)
+
+*************************** 1. row ***************************
+           id: 1
+  select_type: SIMPLE
+        table: l1_0
+   partitions: NULL
+         type: index
+possible_keys: uk_likes_user_product
+          key: uk_likes_user_product
+      key_len: 18
+          ref: NULL
+         rows: 222504
+     filtered: 50.00
+        Extra: Using where; Using index; Using temporary
+*************************** 1. row ***************************
+EXPLAIN: -> Table scan on <temporary>  (actual time=20.3..20.3 rows=18 loops=1)
+    -> Aggregate using temporary table  (actual time=20.3..20.3 rows=18 loops=1)
+        -> Filter: (l1_0.product_id in (5406,2706,6,8206,5506,2806,106,8306,5606,2906,206,8406,5706,3006,306,8506,5806,3106,406,8606))  (cost=22483 rows=111252) (actual time=0.516..20 rows=437 loops=1)
+            -> Covering index scan on l1_0 using uk_likes_user_product  (cost=22483 rows=222504) (actual time=0.507..14.9 rows=223037 loops=1)
+
+*************************** 1. row ***************************
+           id: 1
+  select_type: SIMPLE
+        table: b1_0
+   partitions: NULL
+         type: const
+possible_keys: PRIMARY
+          key: PRIMARY
+      key_len: 8
+          ref: const
+         rows: 1
+     filtered: 100.00
+        Extra: NULL
+*************************** 1. row ***************************
+EXPLAIN: -> Rows fetched before execution  (cost=0..0 rows=1) (actual time=42e-6..42e-6 rows=1 loops=1)
+

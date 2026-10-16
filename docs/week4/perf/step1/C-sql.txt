@@ -1,0 +1,871 @@
+# C 1회 호출 시 앱 커넥션 SQL (step1)
+measured_at: 2026-10-16 13:34:02 KST
+request: GET /api/v1/products?sort=price_asc&page=0&size=20 (브랜드 필터 없음)
+http=200 time_total=0.038626s
+
+*************************** 1. row ***************************
+     EVENT_ID: 41762
+         conn: 370
+   EVENT_NAME: statement/com/Ping
+           ms: 0.07
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: NULL
+*************************** 2. row ***************************
+     EVENT_ID: 41763
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.114
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ ONLY
+*************************** 3. row ***************************
+     EVENT_ID: 41764
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.032
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=0
+*************************** 4. row ***************************
+     EVENT_ID: 41765
+         conn: 370
+   EVENT_NAME: statement/sql/select
+           ms: 2.722
+    ROWS_SENT: 20
+ROWS_EXAMINED: 10020
+NO_INDEX_USED: 1
+     SQL_TEXT: select p1_0.id,p1_0.brand_id,p1_0.created_at,p1_0.deleted_at,p1_0.name,p1_0.amount,p1_0.quantity,p1_0.updated_at from products p1_0 where p1_0.deleted_at is null order by p1_0.amount,p1_0.id desc limit 0,20
+*************************** 5. row ***************************
+     EVENT_ID: 41767
+         conn: 370
+   EVENT_NAME: statement/sql/commit
+           ms: 0.088
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: COMMIT
+*************************** 6. row ***************************
+     EVENT_ID: 41768
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.031
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=1
+*************************** 7. row ***************************
+     EVENT_ID: 41769
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.023
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ WRITE
+*************************** 8. row ***************************
+     EVENT_ID: 41770
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.016
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ ONLY
+*************************** 9. row ***************************
+     EVENT_ID: 41771
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.025
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=0
+*************************** 10. row ***************************
+     EVENT_ID: 41772
+         conn: 370
+   EVENT_NAME: statement/sql/select
+           ms: 0.399
+    ROWS_SENT: 19
+ROWS_EXAMINED: 448
+NO_INDEX_USED: 0
+     SQL_TEXT: select l1_0.product_id,count(l1_0.id) from likes l1_0 where l1_0.product_id in (2703,5406,8109,1,2704,5407,8110,2,2705,5408,8111,3,2706,5409,8112,4,2707,5410,8113,5) group by l1_0.product_id
+*************************** 11. row ***************************
+     EVENT_ID: 41774
+         conn: 370
+   EVENT_NAME: statement/sql/commit
+           ms: 0.016
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: COMMIT
+*************************** 12. row ***************************
+     EVENT_ID: 41775
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.016
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=1
+*************************** 13. row ***************************
+     EVENT_ID: 41776
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.019
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ WRITE
+*************************** 14. row ***************************
+     EVENT_ID: 41777
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.015
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ ONLY
+*************************** 15. row ***************************
+     EVENT_ID: 41778
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.014
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=0
+*************************** 16. row ***************************
+     EVENT_ID: 41779
+         conn: 370
+   EVENT_NAME: statement/sql/select
+           ms: 0.119
+    ROWS_SENT: 1
+ROWS_EXAMINED: 1
+NO_INDEX_USED: 0
+     SQL_TEXT: select b1_0.id,b1_0.created_at,b1_0.deleted_at,b1_0.name,b1_0.updated_at from brands b1_0 where b1_0.id=2
+*************************** 17. row ***************************
+     EVENT_ID: 41781
+         conn: 370
+   EVENT_NAME: statement/sql/commit
+           ms: 0.014
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: COMMIT
+*************************** 18. row ***************************
+     EVENT_ID: 41782
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.015
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=1
+*************************** 19. row ***************************
+     EVENT_ID: 41783
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.013
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ WRITE
+*************************** 20. row ***************************
+     EVENT_ID: 41784
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.018
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ ONLY
+*************************** 21. row ***************************
+     EVENT_ID: 41785
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.013
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=0
+*************************** 22. row ***************************
+     EVENT_ID: 41786
+         conn: 370
+   EVENT_NAME: statement/sql/select
+           ms: 0.045
+    ROWS_SENT: 1
+ROWS_EXAMINED: 1
+NO_INDEX_USED: 0
+     SQL_TEXT: select b1_0.id,b1_0.created_at,b1_0.deleted_at,b1_0.name,b1_0.updated_at from brands b1_0 where b1_0.id=3
+*************************** 23. row ***************************
+     EVENT_ID: 41788
+         conn: 370
+   EVENT_NAME: statement/sql/commit
+           ms: 0.012
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: COMMIT
+*************************** 24. row ***************************
+     EVENT_ID: 41789
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.015
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=1
+*************************** 25. row ***************************
+     EVENT_ID: 41790
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.013
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ WRITE
+*************************** 26. row ***************************
+     EVENT_ID: 41791
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.013
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ ONLY
+*************************** 27. row ***************************
+     EVENT_ID: 41792
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.012
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=0
+*************************** 28. row ***************************
+     EVENT_ID: 41793
+         conn: 370
+   EVENT_NAME: statement/sql/select
+           ms: 0.037
+    ROWS_SENT: 1
+ROWS_EXAMINED: 1
+NO_INDEX_USED: 0
+     SQL_TEXT: select b1_0.id,b1_0.created_at,b1_0.deleted_at,b1_0.name,b1_0.updated_at from brands b1_0 where b1_0.id=4
+*************************** 29. row ***************************
+     EVENT_ID: 41795
+         conn: 370
+   EVENT_NAME: statement/sql/commit
+           ms: 0.02
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: COMMIT
+*************************** 30. row ***************************
+     EVENT_ID: 41796
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.014
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=1
+*************************** 31. row ***************************
+     EVENT_ID: 41797
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.013
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ WRITE
+*************************** 32. row ***************************
+     EVENT_ID: 41798
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.013
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ ONLY
+*************************** 33. row ***************************
+     EVENT_ID: 41799
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.017
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=0
+*************************** 34. row ***************************
+     EVENT_ID: 41800
+         conn: 370
+   EVENT_NAME: statement/sql/select
+           ms: 0.043
+    ROWS_SENT: 1
+ROWS_EXAMINED: 1
+NO_INDEX_USED: 0
+     SQL_TEXT: select b1_0.id,b1_0.created_at,b1_0.deleted_at,b1_0.name,b1_0.updated_at from brands b1_0 where b1_0.id=5
+*************************** 35. row ***************************
+     EVENT_ID: 41802
+         conn: 370
+   EVENT_NAME: statement/sql/commit
+           ms: 0.016
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: COMMIT
+*************************** 36. row ***************************
+     EVENT_ID: 41803
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.024
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=1
+*************************** 37. row ***************************
+     EVENT_ID: 41804
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.015
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ WRITE
+*************************** 38. row ***************************
+     EVENT_ID: 41805
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.016
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ ONLY
+*************************** 39. row ***************************
+     EVENT_ID: 41806
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.028
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=0
+*************************** 40. row ***************************
+     EVENT_ID: 41807
+         conn: 370
+   EVENT_NAME: statement/sql/select
+           ms: 0.046
+    ROWS_SENT: 1
+ROWS_EXAMINED: 1
+NO_INDEX_USED: 0
+     SQL_TEXT: select b1_0.id,b1_0.created_at,b1_0.deleted_at,b1_0.name,b1_0.updated_at from brands b1_0 where b1_0.id=6
+*************************** 41. row ***************************
+     EVENT_ID: 41809
+         conn: 370
+   EVENT_NAME: statement/sql/commit
+           ms: 0.013
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: COMMIT
+*************************** 42. row ***************************
+     EVENT_ID: 41810
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.013
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=1
+*************************** 43. row ***************************
+     EVENT_ID: 41811
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.016
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ WRITE
+*************************** 44. row ***************************
+     EVENT_ID: 41812
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.013
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ ONLY
+*************************** 45. row ***************************
+     EVENT_ID: 41813
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.015
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=0
+*************************** 46. row ***************************
+     EVENT_ID: 41814
+         conn: 370
+   EVENT_NAME: statement/sql/select
+           ms: 0.05
+    ROWS_SENT: 1
+ROWS_EXAMINED: 1
+NO_INDEX_USED: 0
+     SQL_TEXT: select b1_0.id,b1_0.created_at,b1_0.deleted_at,b1_0.name,b1_0.updated_at from brands b1_0 where b1_0.id=7
+*************************** 47. row ***************************
+     EVENT_ID: 41816
+         conn: 370
+   EVENT_NAME: statement/sql/commit
+           ms: 0.014
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: COMMIT
+*************************** 48. row ***************************
+     EVENT_ID: 41817
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.016
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=1
+*************************** 49. row ***************************
+     EVENT_ID: 41818
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.013
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ WRITE
+*************************** 50. row ***************************
+     EVENT_ID: 41819
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.017
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ ONLY
+*************************** 51. row ***************************
+     EVENT_ID: 41820
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.015
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=0
+*************************** 52. row ***************************
+     EVENT_ID: 41821
+         conn: 370
+   EVENT_NAME: statement/sql/select
+           ms: 0.052
+    ROWS_SENT: 1
+ROWS_EXAMINED: 1
+NO_INDEX_USED: 0
+     SQL_TEXT: select b1_0.id,b1_0.created_at,b1_0.deleted_at,b1_0.name,b1_0.updated_at from brands b1_0 where b1_0.id=8
+*************************** 53. row ***************************
+     EVENT_ID: 41823
+         conn: 370
+   EVENT_NAME: statement/sql/commit
+           ms: 0.013
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: COMMIT
+*************************** 54. row ***************************
+     EVENT_ID: 41824
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.017
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=1
+*************************** 55. row ***************************
+     EVENT_ID: 41825
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.014
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ WRITE
+*************************** 56. row ***************************
+     EVENT_ID: 41826
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.012
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ ONLY
+*************************** 57. row ***************************
+     EVENT_ID: 41827
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.016
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=0
+*************************** 58. row ***************************
+     EVENT_ID: 41828
+         conn: 370
+   EVENT_NAME: statement/sql/select
+           ms: 0.029
+    ROWS_SENT: 1
+ROWS_EXAMINED: 1
+NO_INDEX_USED: 0
+     SQL_TEXT: select b1_0.id,b1_0.created_at,b1_0.deleted_at,b1_0.name,b1_0.updated_at from brands b1_0 where b1_0.id=9
+*************************** 59. row ***************************
+     EVENT_ID: 41830
+         conn: 370
+   EVENT_NAME: statement/sql/commit
+           ms: 0.012
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: COMMIT
+*************************** 60. row ***************************
+     EVENT_ID: 41831
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.02
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=1
+*************************** 61. row ***************************
+     EVENT_ID: 41832
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.015
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ WRITE
+*************************** 62. row ***************************
+     EVENT_ID: 41833
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.011
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ ONLY
+*************************** 63. row ***************************
+     EVENT_ID: 41834
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.012
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=0
+*************************** 64. row ***************************
+     EVENT_ID: 41835
+         conn: 370
+   EVENT_NAME: statement/sql/select
+           ms: 0.039
+    ROWS_SENT: 1
+ROWS_EXAMINED: 1
+NO_INDEX_USED: 0
+     SQL_TEXT: select b1_0.id,b1_0.created_at,b1_0.deleted_at,b1_0.name,b1_0.updated_at from brands b1_0 where b1_0.id=10
+*************************** 65. row ***************************
+     EVENT_ID: 41837
+         conn: 370
+   EVENT_NAME: statement/sql/commit
+           ms: 0.014
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: COMMIT
+*************************** 66. row ***************************
+     EVENT_ID: 41838
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.013
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=1
+*************************** 67. row ***************************
+     EVENT_ID: 41839
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.014
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ WRITE
+*************************** 68. row ***************************
+     EVENT_ID: 41840
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.018
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ ONLY
+*************************** 69. row ***************************
+     EVENT_ID: 41841
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.014
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=0
+*************************** 70. row ***************************
+     EVENT_ID: 41842
+         conn: 370
+   EVENT_NAME: statement/sql/select
+           ms: 0.031
+    ROWS_SENT: 1
+ROWS_EXAMINED: 1
+NO_INDEX_USED: 0
+     SQL_TEXT: select b1_0.id,b1_0.created_at,b1_0.deleted_at,b1_0.name,b1_0.updated_at from brands b1_0 where b1_0.id=11
+*************************** 71. row ***************************
+     EVENT_ID: 41844
+         conn: 370
+   EVENT_NAME: statement/sql/commit
+           ms: 0.017
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: COMMIT
+*************************** 72. row ***************************
+     EVENT_ID: 41845
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.014
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=1
+*************************** 73. row ***************************
+     EVENT_ID: 41846
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.014
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ WRITE
+*************************** 74. row ***************************
+     EVENT_ID: 41847
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.016
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ ONLY
+*************************** 75. row ***************************
+     EVENT_ID: 41848
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.018
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=0
+*************************** 76. row ***************************
+     EVENT_ID: 41849
+         conn: 370
+   EVENT_NAME: statement/sql/select
+           ms: 0.031
+    ROWS_SENT: 1
+ROWS_EXAMINED: 1
+NO_INDEX_USED: 0
+     SQL_TEXT: select b1_0.id,b1_0.created_at,b1_0.deleted_at,b1_0.name,b1_0.updated_at from brands b1_0 where b1_0.id=12
+*************************** 77. row ***************************
+     EVENT_ID: 41851
+         conn: 370
+   EVENT_NAME: statement/sql/commit
+           ms: 0.012
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: COMMIT
+*************************** 78. row ***************************
+     EVENT_ID: 41852
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.014
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=1
+*************************** 79. row ***************************
+     EVENT_ID: 41853
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.018
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ WRITE
+*************************** 80. row ***************************
+     EVENT_ID: 41854
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.012
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ ONLY
+*************************** 81. row ***************************
+     EVENT_ID: 41855
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.012
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=0
+*************************** 82. row ***************************
+     EVENT_ID: 41856
+         conn: 370
+   EVENT_NAME: statement/sql/select
+           ms: 0.028
+    ROWS_SENT: 1
+ROWS_EXAMINED: 1
+NO_INDEX_USED: 0
+     SQL_TEXT: select b1_0.id,b1_0.created_at,b1_0.deleted_at,b1_0.name,b1_0.updated_at from brands b1_0 where b1_0.id=13
+*************************** 83. row ***************************
+     EVENT_ID: 41858
+         conn: 370
+   EVENT_NAME: statement/sql/commit
+           ms: 0.014
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: COMMIT
+*************************** 84. row ***************************
+     EVENT_ID: 41859
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.016
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=1
+*************************** 85. row ***************************
+     EVENT_ID: 41860
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.012
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ WRITE
+*************************** 86. row ***************************
+     EVENT_ID: 41861
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.012
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ ONLY
+*************************** 87. row ***************************
+     EVENT_ID: 41862
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.012
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=0
+*************************** 88. row ***************************
+     EVENT_ID: 41863
+         conn: 370
+   EVENT_NAME: statement/sql/select
+           ms: 0.028
+    ROWS_SENT: 1
+ROWS_EXAMINED: 1
+NO_INDEX_USED: 0
+     SQL_TEXT: select b1_0.id,b1_0.created_at,b1_0.deleted_at,b1_0.name,b1_0.updated_at from brands b1_0 where b1_0.id=14
+*************************** 89. row ***************************
+     EVENT_ID: 41865
+         conn: 370
+   EVENT_NAME: statement/sql/commit
+           ms: 0.013
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: COMMIT
+*************************** 90. row ***************************
+     EVENT_ID: 41866
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.013
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=1
+*************************** 91. row ***************************
+     EVENT_ID: 41867
+         conn: 370
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.014
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ WRITE
++-------------+--------------------------+------------+
+| USER        | EVENT_NAME               | COUNT_STAR |
++-------------+--------------------------+------------+
+| application | statement/com/Ping       |          1 |
+| application | statement/sql/commit     |         15 |
+| application | statement/sql/select     |         15 |
+| application | statement/sql/set_option |         60 |
+| root        | statement/com/Quit       |          1 |
+| root        | statement/sql/select     |          3 |
+| root        | statement/sql/truncate   |          2 |
++-------------+--------------------------+------------+
++----------------+------------------+--------------+-------------------+
+| PROCESSLIST_ID | PROCESSLIST_USER | ATTR_NAME    | ATTR_VALUE        |
++----------------+------------------+--------------+-------------------+
+|            370 | application      | _client_name | MySQL Connector/J |
+|            371 | application      | _client_name | MySQL Connector/J |
+|            372 | application      | _client_name | MySQL Connector/J |
+|            373 | application      | _client_name | MySQL Connector/J |
+|            374 | application      | _client_name | MySQL Connector/J |
+|            375 | application      | _client_name | MySQL Connector/J |
+|            376 | application      | _client_name | MySQL Connector/J |
+|            377 | application      | _client_name | MySQL Connector/J |
+|            378 | application      | _client_name | MySQL Connector/J |
+|            379 | application      | _client_name | MySQL Connector/J |
+|            380 | application      | _client_name | MySQL Connector/J |
+|            381 | application      | _client_name | MySQL Connector/J |
+|            382 | application      | _client_name | MySQL Connector/J |
+|            383 | application      | _client_name | MySQL Connector/J |
+|            384 | application      | _client_name | MySQL Connector/J |
+|            385 | application      | _client_name | MySQL Connector/J |
+|            386 | application      | _client_name | MySQL Connector/J |
+|            387 | application      | _client_name | MySQL Connector/J |
+|            388 | application      | _client_name | MySQL Connector/J |
+|            389 | application      | _client_name | MySQL Connector/J |
+|            390 | application      | _client_name | MySQL Connector/J |
+|            391 | application      | _client_name | MySQL Connector/J |
+|            392 | application      | _client_name | MySQL Connector/J |
+|            393 | application      | _client_name | MySQL Connector/J |
+|            394 | application      | _client_name | MySQL Connector/J |
+|            395 | application      | _client_name | MySQL Connector/J |
+|            396 | application      | _client_name | MySQL Connector/J |
+|            414 | application      | _client_name | MySQL Connector/J |
+|            415 | application      | _client_name | MySQL Connector/J |
+|            416 | application      | _client_name | MySQL Connector/J |
+|            429 | root             | _client_name | libmysql          |
+|            429 | root             | program_name | mysql             |
++----------------+------------------+--------------+-------------------+

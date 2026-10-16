@@ -1,0 +1,51 @@
+*************************** 1. row ***************************
+           id: 1
+  select_type: SIMPLE
+        table: p1_0
+   partitions: NULL
+         type: ref
+possible_keys: idx_products_brand_deleted_amount_id
+          key: idx_products_brand_deleted_amount_id
+      key_len: 18
+          ref: const,const
+         rows: 100
+     filtered: 100.00
+        Extra: Using index condition
+*************************** 1. row ***************************
+EXPLAIN: -> Limit: 20 row(s)  (cost=35 rows=20) (actual time=0.0493..0.0619 rows=20 loops=1)
+    -> Index lookup on p1_0 using idx_products_brand_deleted_amount_id (brand_id=7, deleted_at=NULL), with index condition: (p1_0.deleted_at is null)  (cost=35 rows=100) (actual time=0.043..0.0548 rows=20 loops=1)
+
+*************************** 1. row ***************************
+           id: 1
+  select_type: SIMPLE
+        table: l1_0
+   partitions: NULL
+         type: range
+possible_keys: uk_likes_user_product,idx_likes_product_id
+          key: idx_likes_product_id
+      key_len: 9
+          ref: NULL
+         rows: 439
+     filtered: 100.00
+        Extra: Using where; Using index
+*************************** 1. row ***************************
+EXPLAIN: -> Group aggregate: count(l1_0.id)  (cost=132 rows=439) (actual time=0.0145..0.0825 rows=18 loops=1)
+    -> Filter: (l1_0.product_id in (5406,2706,6,8206,5506,2806,106,8306,5606,2906,206,8406,5706,3006,306,8506,5806,3106,406,8606))  (cost=88.3 rows=439) (actual time=0.00758..0.0692 rows=437 loops=1)
+        -> Covering index range scan on l1_0 using idx_likes_product_id over (product_id = 6) OR (product_id = 106) OR (18 more)  (cost=88.3 rows=439) (actual time=0.00683..0.0505 rows=437 loops=1)
+
+*************************** 1. row ***************************
+           id: 1
+  select_type: SIMPLE
+        table: b1_0
+   partitions: NULL
+         type: const
+possible_keys: PRIMARY
+          key: PRIMARY
+      key_len: 8
+          ref: const
+         rows: 1
+     filtered: 100.00
+        Extra: NULL
+*************************** 1. row ***************************
+EXPLAIN: -> Rows fetched before execution  (cost=0..0 rows=1) (actual time=84e-6..84e-6 rows=1 loops=1)
+

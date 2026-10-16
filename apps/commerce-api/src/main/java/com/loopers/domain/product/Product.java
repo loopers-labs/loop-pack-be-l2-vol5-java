@@ -5,6 +5,7 @@ import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import org.hibernate.annotations.DynamicUpdate;
@@ -15,7 +16,10 @@ import org.hibernate.annotations.DynamicUpdate;
 @DynamicUpdate
 @Getter
 @Entity
-@Table(name = "products")
+@Table(
+    name = "products",
+    indexes = @Index(name = "idx_products_brand_deleted_amount_id", columnList = "brand_id, deleted_at, amount, id DESC")
+)
 public class Product extends BaseEntity {
 
     public static final int MAX_NAME_LENGTH = 100;

@@ -1,0 +1,97 @@
+# B' EXPLAIN / EXPLAIN ANALYZE (실행한 문장은 파일 끝 '## 실행 문장' 참고)
+
+*************************** 1. row ***************************
+           id: 1
+  select_type: PRIMARY
+        table: p1_0
+   partitions: NULL
+         type: ALL
+possible_keys: NULL
+          key: NULL
+      key_len: NULL
+          ref: NULL
+         rows: 9700
+     filtered: 10.00
+        Extra: Using where; Using filesort
+*************************** 2. row ***************************
+           id: 2
+  select_type: DEPENDENT SUBQUERY
+        table: l1_0
+   partitions: NULL
+         type: ref
+possible_keys: idx_likes_product_id
+          key: idx_likes_product_id
+      key_len: 9
+          ref: loopers.p1_0.id
+         rows: 23
+     filtered: 100.00
+        Extra: Using index
+*************************** 1. row ***************************
+EXPLAIN: -> Limit: 20 row(s)  (cost=994 rows=20) (actual time=30.3..30.3 rows=20 loops=1)
+    -> Sort: (select #2) DESC, p1_0.id DESC, limit input to 20 row(s) per chunk  (cost=994 rows=9700) (actual time=30.3..30.3 rows=20 loops=1)
+        -> Filter: (p1_0.deleted_at is null)  (cost=994 rows=9700) (actual time=0.0869..1.8 rows=10000 loops=1)
+            -> Table scan on p1_0  (cost=994 rows=9700) (actual time=0.0862..1.46 rows=10000 loops=1)
+-> Select #2 (subquery in projection; dependent)
+    -> Aggregate: count(l1_0.id)  (cost=5.04 rows=1) (actual time=0.00264..0.00266 rows=1 loops=10000)
+        -> Covering index lookup on l1_0 using idx_likes_product_id (product_id=p1_0.id)  (cost=2.65 rows=23.9) (actual time=0.00116..0.00212 rows=22.3 loops=10000)
+
+*************************** 1. row ***************************
+           id: 1
+  select_type: SIMPLE
+        table: l1_0
+   partitions: NULL
+         type: range
+possible_keys: uk_likes_user_product,idx_likes_product_id
+          key: idx_likes_product_id
+      key_len: 9
+          ref: NULL
+         rows: 5470
+     filtered: 100.00
+        Extra: Using where; Using index
+*************************** 1. row ***************************
+EXPLAIN: -> Group aggregate: count(l1_0.id)  (cost=1644 rows=5470) (actual time=0.124..0.722 rows=20 loops=1)
+    -> Filter: (l1_0.product_id in (9990,8991,7992,6993,5994,4995,3996,2997,1998,999,9982,9935,9888,9841,9794,9747,9700,9653,9606,9512))  (cost=1097 rows=5470) (actual time=0.0385..0.603 rows=5470 loops=1)
+        -> Covering index range scan on l1_0 using idx_likes_product_id over (product_id = 999) OR (product_id = 1998) OR (18 more)  (cost=1097 rows=5470) (actual time=0.0379..0.424 rows=5470 loops=1)
+
+*************************** 1. row ***************************
+           id: 1
+  select_type: SIMPLE
+        table: b1_0
+   partitions: NULL
+         type: range
+possible_keys: PRIMARY
+          key: PRIMARY
+      key_len: 8
+          ref: NULL
+         rows: 19
+     filtered: 100.00
+        Extra: Using where
+*************************** 1. row ***************************
+EXPLAIN: -> Filter: (b1_0.id in (96,97,1,98,99,100,36,7,42,13,48,83,54,89,91,92,93,94,95))  (cost=8.57 rows=19) (actual time=0.00475..0.0109 rows=19 loops=1)
+    -> Index range scan on b1_0 using PRIMARY over (id = 1) OR (id = 7) OR (17 more)  (cost=8.57 rows=19) (actual time=0.00446..0.00962 rows=19 loops=1)
+
+
+## 실행 문장
+-- B' (브랜드 필터 없음, likes_desc, page 0, size 20) 1회 호출에서 캡처한 실제 SQL 의 실행 계획 (step3 이후 참고 측정, root 로 실행)
+-- EXPLAIN ANALYZE 는 쿼리를 실제로 실행한다.
+
+-- 1
+EXPLAIN
+select p1_0.id,p1_0.brand_id,p1_0.created_at,p1_0.deleted_at,p1_0.name,p1_0.amount,p1_0.quantity,p1_0.updated_at from products p1_0 where p1_0.deleted_at is null order by (select count(l1_0.id) from likes l1_0 where l1_0.product_id=p1_0.id) desc,p1_0.id desc limit 0,20\G
+
+EXPLAIN ANALYZE
+select p1_0.id,p1_0.brand_id,p1_0.created_at,p1_0.deleted_at,p1_0.name,p1_0.amount,p1_0.quantity,p1_0.updated_at from products p1_0 where p1_0.deleted_at is null order by (select count(l1_0.id) from likes l1_0 where l1_0.product_id=p1_0.id) desc,p1_0.id desc limit 0,20\G
+
+-- 2
+EXPLAIN
+select l1_0.product_id,count(l1_0.id) from likes l1_0 where l1_0.product_id in (9990,8991,7992,6993,5994,4995,3996,2997,1998,999,9982,9935,9888,9841,9794,9747,9700,9653,9606,9512) group by l1_0.product_id\G
+
+EXPLAIN ANALYZE
+select l1_0.product_id,count(l1_0.id) from likes l1_0 where l1_0.product_id in (9990,8991,7992,6993,5994,4995,3996,2997,1998,999,9982,9935,9888,9841,9794,9747,9700,9653,9606,9512) group by l1_0.product_id\G
+
+-- 3
+EXPLAIN
+select b1_0.id,b1_0.created_at,b1_0.deleted_at,b1_0.name,b1_0.updated_at from brands b1_0 where b1_0.id in (96,97,1,98,99,100,36,7,42,13,48,83,54,89,91,92,93,94,95)\G
+
+EXPLAIN ANALYZE
+select b1_0.id,b1_0.created_at,b1_0.deleted_at,b1_0.name,b1_0.updated_at from brands b1_0 where b1_0.id in (96,97,1,98,99,100,36,7,42,13,48,83,54,89,91,92,93,94,95)\G
