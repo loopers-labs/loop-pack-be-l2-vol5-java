@@ -30,7 +30,7 @@ public class LikeV1Dto {
                 info.name(),
                 info.price(),
                 info.likeCount(),
-                info.stock() == 0,
+                info.soldOut(),
                 new BrandSummary(info.brandId(), info.brandName()),
                 info.likedAt()
             );

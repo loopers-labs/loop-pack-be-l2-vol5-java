@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -19,6 +20,9 @@ class LikeRepositoryIntegrationTest {
 
     @Autowired
     private LikeRepository likeRepository;
+
+    @Autowired
+    private TransactionTemplate transactionTemplate;
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
@@ -39,19 +43,25 @@ class LikeRepositoryIntegrationTest {
             .isInstanceOf(DataIntegrityViolationException.class);
     }
 
-    @DisplayName("좋아요 수는 그 상품의 관계만 센다.")
+    @DisplayName("관계를 지우면, 그 사용자–상품 관계만 지우고 지운 행 수를 돌려준다. 이미 없으면 0 이다. (4주차 설계 3.2)")
     @Test
-    void countsRelationsOfProduct() {
+    void deletesOnlyThatRelation_andReturnsDeletedRows() {
         // arrange
         likeRepository.save(new Like(1L, 10L));
         likeRepository.save(new Like(2L, 10L));
         likeRepository.save(new Like(1L, 20L));
 
-        // act & assert
+        // act
+        Integer first = transactionTemplate.execute(status -> likeRepository.delete(1L, 10L));
+        Integer second = transactionTemplate.execute(status -> likeRepository.delete(1L, 10L));
+
+        // assert
         assertAll(
-            () -> assertThat(likeRepository.countByProductId(10L)).isEqualTo(2),
-            () -> assertThat(likeRepository.countByProductId(20L)).isEqualTo(1),
-            () -> assertThat(likeRepository.find(2L, 10L)).isPresent()
+            () -> assertThat(first).isEqualTo(1),
+            () -> assertThat(second).isZero(),
+            () -> assertThat(likeRepository.find(1L, 10L)).isEmpty(),
+            () -> assertThat(likeRepository.find(2L, 10L)).isPresent(),
+            () -> assertThat(likeRepository.find(1L, 20L)).isPresent()
         );
     }
 }

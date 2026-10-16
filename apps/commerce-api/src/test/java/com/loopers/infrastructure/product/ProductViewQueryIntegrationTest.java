@@ -3,6 +3,8 @@ package com.loopers.infrastructure.product;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.like.Like;
 import com.loopers.domain.product.Product;
+import com.loopers.domain.product.ProductLikeCount;
+import com.loopers.domain.product.ProductLikeCountRepository;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.domain.product.ProductSort;
 import com.loopers.domain.product.ProductView;
@@ -18,6 +20,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.ZonedDateTime;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
@@ -26,6 +30,9 @@ class ProductViewQueryIntegrationTest {
 
     @Autowired
     private ProductRepository productRepository;
+
+    @Autowired
+    private ProductLikeCountRepository productLikeCountRepository;
 
     @Autowired
     private EntityManager entityManager;
@@ -54,6 +61,7 @@ class ProductViewQueryIntegrationTest {
             Product product = new Product(entityManager.find(Brand.class, brand.getId()), name, price);
             product.changeStock(stock);
             entityManager.persist(product);
+            entityManager.persist(new ProductLikeCount(product.getId()));
             return product;
         });
     }
@@ -62,6 +70,7 @@ class ProductViewQueryIntegrationTest {
         transactionTemplate.executeWithoutResult(status -> {
             for (long userId : userIds) {
                 entityManager.persist(new Like(userId, product.getId()));
+                productLikeCountRepository.increase(product.getId(), ZonedDateTime.now());
             }
         });
     }
@@ -74,7 +83,7 @@ class ProductViewQueryIntegrationTest {
         return productRepository.findActiveViews(brandId, sort, PageRequest.of(0, 20));
     }
 
-    @DisplayName("좋아요가 없는 상품도 좋아요 수 0 으로 포함되고, 좋아요 수는 관계에서 센다.")
+    @DisplayName("좋아요가 없는 상품도 좋아요 수 0 으로 포함되고, 좋아요 수는 좋아요 수 행에서 읽는다.")
     @Test
     void includesProductsWithoutLikes() {
         // arrange

@@ -6,12 +6,17 @@ import com.loopers.domain.brand.BrandErrorCode;
 import com.loopers.support.error.CoreException;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
+import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
+/**
+ * 고객 조회는 브랜드와 삭제 여부로 거른다. (brand_id, deleted_at) 인덱스로 브랜드의 살아 있는 상품을 찾고,
+ * 보조 인덱스에 담긴 식별자로 건수를 인덱스만으로 센다 (4주차 docs/week4/product-query-brand-index.md)
+ */
 @Entity
-@Table(name = "product")
+@Table(name = "product", indexes = @Index(name = "idx_product_brand_deleted", columnList = "brand_id, deleted_at"))
 public class Product extends BaseEntity {
 
     private static final int MAX_NAME_LENGTH = 50;
@@ -55,6 +60,23 @@ public class Product extends BaseEntity {
 
     public boolean isDeleted() {
         return getDeletedAt() != null;
+    }
+
+    /** 품절은 재고 0 이다. 응답의 품절 여부와 목록 캐시 무효화가 이 기준 하나를 쓴다 (4주차 docs/week4/cache-design.md 3.3) */
+    public static boolean isSoldOut(int stock) {
+        return stock == 0;
+    }
+
+    public boolean isSoldOut() {
+        return isSoldOut(stock);
+    }
+
+    /**
+     * 목록 캐시의 무효화 범위(브랜드)를 정하는 데 쓴다. Brand 를 돌려주지 않아 응답 조합에는 쓸 수 없다 (설계 D-36 4주차 단서).
+     * 지연 로딩 참조라도 식별자만 읽으므로 브랜드 행을 조회하지 않는다
+     */
+    public Long getBrandId() {
+        return brand.getId();
     }
 
     // 브랜드는 바꾸지 않는다 (PRD-03)

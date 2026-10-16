@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.domain.user.User;
 import com.loopers.infrastructure.user.UserJpaRepository;
 import com.loopers.utils.DatabaseCleanUp;
+import com.loopers.utils.RedisCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -48,9 +49,14 @@ class PointOrderFlowE2ETest {
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
 
+    @Autowired
+    private RedisCleanUp redisCleanUp;
+
     @AfterEach
     void tearDown() {
         databaseCleanUp.truncateAllTables();
+        // 목록 첫 페이지는 캐시된다. DB 를 비우면 식별자가 다시 쓰이므로 캐시도 함께 비운다 (4주차 cache-design.md)
+        redisCleanUp.truncateAll();
     }
 
     private ResultActions perform(MockHttpServletRequestBuilder request, String body) throws Exception {

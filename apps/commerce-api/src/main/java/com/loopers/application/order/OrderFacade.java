@@ -7,6 +7,7 @@ import com.loopers.domain.order.OrderService;
 import com.loopers.domain.order.OrderStatus;
 import com.loopers.domain.point.PointService;
 import com.loopers.domain.product.Product;
+import com.loopers.domain.product.ProductListCache;
 import com.loopers.domain.product.ProductService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -15,8 +16,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 주문 유스케이스. 주문 · 상품 · 포인트 여러 애그리거트의 순서와 트랜잭션을 여기서 정함 (설계 4.4, D-11).
@@ -28,6 +31,7 @@ public class OrderFacade {
     private final OrderService orderService;
     private final ProductService productService;
     private final PointService pointService;
+    private final ProductListCache productListCache;
 
     public record OrderRequestLine(Long productId, int quantity) {}
 
@@ -72,12 +76,22 @@ public class OrderFacade {
         // 실패한 상품은 품목 순서대로 처음 것
         List<Long> productIds = order.getItems().stream().map(OrderItem::getProductId).toList();
         Map<Long, Product> products = productService.getActiveProductsForUpdate(productIds);
+        // 목록 캐시는 품절 여부만 담으므로 이번 차감으로 품절이 된 상품의 브랜드만 무효화함 (4주차 cache-design.md 3.3)
+        Set<Long> soldOutBrandIds = new LinkedHashSet<>();
         for (OrderItem item : order.getItems()) {
-            products.get(item.getProductId()).decrease(item.getQuantity());
+            Product product = products.get(item.getProductId());
+            boolean wasSoldOut = product.isSoldOut();
+            product.decrease(item.getQuantity());
+            if (!wasSoldOut && product.isSoldOut()) {
+                soldOutBrandIds.add(product.getBrandId());
+            }
         }
         // 충전한 적 없는 사용자의 0원 결제는 Point 행을 만들지 않음 (D-30)
         long paymentAmount = order.getTotalAmount();
         pointService.getPoint(userId).pay(paymentAmount);
-        return OrderInfo.from(orderService.confirm(order, paymentAmount));
+        OrderInfo confirmed = OrderInfo.from(orderService.confirm(order, paymentAmount));
+        // commit 뒤에 일어나며, 확정이 실패해 rollback 되면 일어나지 않음. Redis 실패는 확정 결과에 영향을 주지 않음 (3.4)
+        soldOutBrandIds.forEach(productListCache::invalidate);
+        return confirmed;
     }
 }

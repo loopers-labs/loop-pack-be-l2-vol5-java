@@ -23,6 +23,7 @@ import java.util.stream.Collectors;
 public class ProductService {
 
     private final ProductRepository productRepository;
+    private final ProductLikeCountRepository productLikeCountRepository;
     /** 일괄 삭제 시각의 기준. 엔티티를 거치지 않는 삭제라 시각을 여기서 정함 (3주차 설계 2.3) */
     private final Clock clock;
 
@@ -96,10 +97,15 @@ public class ProductService {
         return productRepository.findActiveViews(brandId, sort, pageable);
     }
 
-    /** 살아 있는 브랜드 조회는 조율하는 Facade 가 하고, 생성 입구의 확인은 Product 가 한 번 더 함 (BRD-02, 설계 4.4) */
+    /**
+     * 살아 있는 브랜드 조회는 조율하는 Facade 가 하고, 생성 입구의 확인은 Product 가 한 번 더 함 (BRD-02, 설계 4.4).
+     * 좋아요 수 행을 0 으로 함께 만들어, 모든 상품이 좋아요 수 행을 가진다 (4주차 설계 2.2)
+     */
     @Transactional
     public Product create(Brand brand, String name, long price) {
-        return productRepository.save(new Product(brand, name, price));
+        Product product = productRepository.save(new Product(brand, name, price));
+        productLikeCountRepository.save(new ProductLikeCount(product.getId()));
+        return product;
     }
 
     /** 변경 감지는 모든 컬럼을 다시 쓰므로, 잠금 읽기로 최신 재고를 봐서 그 사이의 차감을 덮어쓰지 않음 (3주차 설계 4.2) */
@@ -110,16 +116,47 @@ public class ProductService {
         return product;
     }
 
+    /** 잠금 안에서 바꾸기 전 품절 여부와 비교해, 품절 여부가 바뀌었는지 함께 돌려줌 (4주차 cache-design.md 3.3) */
     @Transactional
-    public Product changeStock(Long productId, int stock) {
+    public StockChange changeStock(Long productId, int stock) {
         Product product = getActiveProductForUpdate(productId);
+        boolean wasSoldOut = product.isSoldOut();
         product.changeStock(stock);
+        return new StockChange(product, wasSoldOut != product.isSoldOut());
+    }
+
+    /** 삭제한 상품을 돌려줌. 목록 캐시의 무효화 범위(브랜드)를 정하는 데 씀 (4주차 cache-design.md 3.3) */
+    @Transactional
+    public Product delete(Long productId) {
+        Product product = getActiveProductForUpdate(productId);
+        product.delete();
         return product;
     }
 
+    /**
+     * 좋아요 수를 읽지 않고 한 문장으로 1 늘림. 관계가 실제로 생긴 경우에만 부르며, 행 잠금이 짧도록 트랜잭션의 마지막 쓰기로 둠.
+     * 모든 상품은 좋아요 수 행을 가지므로 바뀐 행이 없으면 불변식이 깨진 것임 (4주차 설계 3.2)
+     */
     @Transactional
-    public void delete(Long productId) {
-        getActiveProductForUpdate(productId).delete();
+    public void increaseLikeCount(Long productId) {
+        requireLikeCountRow(productLikeCountRepository.increase(productId, ZonedDateTime.now(clock)), productId);
+    }
+
+    @Transactional
+    public void decreaseLikeCount(Long productId) {
+        requireLikeCountRow(productLikeCountRepository.decrease(productId, ZonedDateTime.now(clock)), productId);
+    }
+
+    /** 없는 상품은 0 이다. 없는 상품의 취소도 좋아요 수 0 으로 응답한다 (LIK-03, 설계 6.3) */
+    @Transactional(readOnly = true)
+    public long getLikeCount(Long productId) {
+        return productLikeCountRepository.findLikeCount(productId).orElse(0L);
+    }
+
+    private static void requireLikeCountRow(int updatedRows, Long productId) {
+        if (updatedRows != 1) {
+            throw new IllegalStateException("좋아요 수 행이 없는 상품: " + productId);
+        }
     }
 
     /** 브랜드의 삭제되지 않은 상품(재고 0 포함)을 모두 삭제하고 삭제한 수를 돌려줌. 대상이 없으면 0 (BRD-02, 3주차 설계 2.3) */

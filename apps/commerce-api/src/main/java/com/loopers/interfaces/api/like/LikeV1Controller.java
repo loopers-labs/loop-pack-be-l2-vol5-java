@@ -1,6 +1,7 @@
 package com.loopers.interfaces.api.like;
 
 import com.loopers.application.like.LikeFacade;
+import com.loopers.application.like.LikeRetrier;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.PageQuery;
 import com.loopers.interfaces.api.PageResponse;
@@ -18,11 +19,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class LikeV1Controller implements LikeV1ApiSpec {
 
     private final LikeFacade likeFacade;
+    private final LikeRetrier likeRetrier;
 
     @PostMapping("/api/v1/products/{productId}/likes")
     @Override
     public ApiResponse<LikeV1Dto.LikeResponse> like(LoginUser loginUser, @PathVariable Long productId) {
-        return ApiResponse.success(LikeV1Dto.LikeResponse.from(likeFacade.like(loginUser.id(), productId)));
+        return ApiResponse.success(LikeV1Dto.LikeResponse.from(likeRetrier.like(loginUser.id(), productId)));
     }
 
     @DeleteMapping("/api/v1/products/{productId}/likes")

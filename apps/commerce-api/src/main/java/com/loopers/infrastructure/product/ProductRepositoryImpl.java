@@ -1,17 +1,16 @@
 package com.loopers.infrastructure.product;
 
 import com.loopers.domain.brand.QBrand;
-import com.loopers.domain.like.QLike;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.domain.product.ProductSort;
 import com.loopers.domain.product.ProductView;
 import com.loopers.domain.product.ProductWithBrand;
 import com.loopers.domain.product.QProduct;
+import com.loopers.domain.product.QProductLikeCount;
 import com.querydsl.core.types.OrderSpecifier;
 import com.querydsl.core.types.Projections;
 import com.querydsl.core.types.dsl.BooleanExpression;
-import com.querydsl.core.types.dsl.NumberExpression;
 import com.querydsl.jpa.impl.JPAQuery;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import lombok.RequiredArgsConstructor;
@@ -33,8 +32,7 @@ public class ProductRepositoryImpl implements ProductRepository {
 
     private static final QProduct PRODUCT = QProduct.product;
     private static final QBrand BRAND = QBrand.brand;
-    private static final QLike LIKE = QLike.like;
-    private static final NumberExpression<Long> LIKE_COUNT = LIKE.id.count();
+    private static final QProductLikeCount LIKE_COUNT = QProductLikeCount.productLikeCount;
 
     private final ProductJpaRepository productJpaRepository;
     private final JPAQueryFactory queryFactory;
@@ -99,28 +97,27 @@ public class ProductRepositoryImpl implements ProductRepository {
         return productJpaRepository.deleteAllOfBrand(brandId, deletedAt);
     }
 
-    // 좋아요가 없는 상품도 빠지지 않도록 outer join 으로 센다 (설계 6.2)
+    // 좋아요 수는 관계를 집계하지 않고 좋아요 수 행에서 읽는다. 모든 상품이 행을 가지므로 inner join 이다 (4주차 설계 2.2, 4.1)
     private JPAQuery<ProductView> selectViews() {
         return queryFactory
             .select(Projections.constructor(ProductView.class,
-                PRODUCT.id, PRODUCT.name, PRODUCT.price, PRODUCT.stock, LIKE_COUNT,
+                PRODUCT.id, PRODUCT.name, PRODUCT.price, PRODUCT.stock, LIKE_COUNT.likeCount,
                 BRAND.id, BRAND.name, BRAND.description))
             .from(PRODUCT)
             .join(PRODUCT.brand, BRAND)
-            .leftJoin(LIKE).on(LIKE.productId.eq(PRODUCT.id))
-            .groupBy(PRODUCT.id, PRODUCT.name, PRODUCT.price, PRODUCT.stock, BRAND.id, BRAND.name, BRAND.description);
+            .join(LIKE_COUNT).on(LIKE_COUNT.productId.eq(PRODUCT.id));
     }
 
     private static BooleanExpression brandEq(Long brandId) {
         return brandId == null ? null : PRODUCT.brand.id.eq(brandId);
     }
 
+    // 좋아요순의 동점은 좋아요 수 행의 상품 식별자로 가른다. 값은 상품 식별자와 같고, (like_count, product_id) 인덱스 순서와 맞는다
     private static OrderSpecifier<?>[] orderOf(ProductSort sort) {
-        OrderSpecifier<?> primary = switch (sort) {
-            case LATEST -> PRODUCT.createdAt.desc();
-            case PRICE_ASC -> PRODUCT.price.asc();
-            case LIKES_DESC -> LIKE_COUNT.desc();
+        return switch (sort) {
+            case LATEST -> new OrderSpecifier<?>[] {PRODUCT.createdAt.desc(), PRODUCT.id.desc()};
+            case PRICE_ASC -> new OrderSpecifier<?>[] {PRODUCT.price.asc(), PRODUCT.id.desc()};
+            case LIKES_DESC -> new OrderSpecifier<?>[] {LIKE_COUNT.likeCount.desc(), LIKE_COUNT.productId.desc()};
         };
-        return new OrderSpecifier<?>[] {primary, PRODUCT.id.desc()};
     }
 }

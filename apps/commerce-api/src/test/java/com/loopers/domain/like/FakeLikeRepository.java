@@ -30,13 +30,8 @@ public class FakeLikeRepository implements LikeRepository {
     }
 
     @Override
-    public void delete(Like like) {
-        likes.remove(like);
-    }
-
-    @Override
-    public long countByProductId(Long productId) {
-        return likes.stream().filter(like -> Objects.equals(like.getProductId(), productId)).count();
+    public int delete(Long userId, Long productId) {
+        return find(userId, productId).map(like -> likes.remove(like) ? 1 : 0).orElse(0);
     }
 
     // 상품 · 브랜드와 조인하는 조회는 저장소 통합 테스트(실제 DB)에서 확인한다

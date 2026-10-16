@@ -6,6 +6,7 @@ import com.loopers.domain.product.ProductRepository;
 import com.loopers.domain.product.ProductWithBrand;
 import com.loopers.utils.DatabaseCleanUp;
 import jakarta.persistence.EntityManager;
+import org.hibernate.Hibernate;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,6 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.ZoneOffset;
@@ -185,5 +187,23 @@ class ProductRepositoryIntegrationTest {
 
         // assert
         assertThat(result).isZero();
+    }
+
+    @DisplayName("브랜드 식별자를 물으면, 브랜드 행을 읽지 않고 상품의 외래 키 값으로 돌려준다. (4주차 cache-design.md 3.2)")
+    @Test
+    void returnsBrandId_withoutLoadingBrand() {
+        // arrange
+        Brand brand = saveBrand("브랜드");
+        Product saved = saveProduct(brand, "상품", 1, false);
+
+        // act & assert
+        transactionTemplate.executeWithoutResult(status -> {
+            Product product = entityManager.find(Product.class, saved.getId());
+
+            assertAll(
+                () -> assertThat(product.getBrandId()).isEqualTo(brand.getId()),
+                () -> assertThat(Hibernate.isInitialized(ReflectionTestUtils.getField(product, "brand"))).isFalse()
+            );
+        });
     }
 }

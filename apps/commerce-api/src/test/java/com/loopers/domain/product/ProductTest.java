@@ -161,4 +161,39 @@ class ProductTest {
             () -> assertThat(product.getStock()).isEqualTo(5)
         );
     }
+
+    @DisplayName("품절 여부를 물을 때, ")
+    @Nested
+    class SoldOut {
+        @DisplayName("재고가 0 이면 품절이다. 새 상품은 재고 0 으로 시작한다.")
+        @Test
+        void isSoldOut_whenStockIsZero() {
+            Product product = new Product(brand(), "상품", 1_000L);
+
+            assertThat(product.isSoldOut()).isTrue();
+        }
+
+        @DisplayName("재고가 1 이상이면 품절이 아니다.")
+        @Test
+        void isNotSoldOut_whenStockIsPositive() {
+            Product product = new Product(brand(), "상품", 1_000L);
+            product.changeStock(1);
+
+            assertThat(product.isSoldOut()).isFalse();
+        }
+
+        @DisplayName("재고를 모두 차감하면 품절이 된다.")
+        @Test
+        void becomesSoldOut_whenAllStockIsDecreased() {
+            // arrange
+            Product product = new Product(brand(), "상품", 1_000L);
+            product.changeStock(2);
+
+            // act
+            product.decrease(2);
+
+            // assert
+            assertThat(product.isSoldOut()).isTrue();
+        }
+    }
 }

@@ -1,5 +1,8 @@
 package com.loopers.application;
 
+import com.loopers.application.like.LikeFacade;
+import com.loopers.application.like.LikeInfo;
+import com.loopers.application.like.LikeRetrier;
 import com.loopers.application.order.OrderConfirmRetrier;
 import com.loopers.application.order.OrderFacade;
 import com.loopers.application.point.PointChargeRetrier;
@@ -9,6 +12,7 @@ import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderErrorCode;
 import com.loopers.domain.point.Point;
 import com.loopers.domain.point.PointErrorCode;
+import com.loopers.domain.product.ProductErrorCode;
 import com.loopers.domain.user.User;
 import com.loopers.infrastructure.user.UserJpaRepository;
 import com.loopers.support.error.CoreException;
@@ -20,6 +24,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.MediaType;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -46,6 +52,7 @@ class RetrierTest {
 
     private static final Long USER_ID = 1L;
     private static final Long ORDER_ID = 10L;
+    private static final Long PRODUCT_ID = 20L;
 
     @Autowired
     private OrderConfirmRetrier orderConfirmRetrier;
@@ -53,11 +60,17 @@ class RetrierTest {
     @Autowired
     private PointChargeRetrier pointChargeRetrier;
 
+    @Autowired
+    private LikeRetrier likeRetrier;
+
     @MockitoBean
     private OrderFacade orderFacade;
 
     @MockitoBean
     private PointFacade pointFacade;
+
+    @MockitoBean
+    private LikeFacade likeFacade;
 
     @Autowired
     private MockMvc mvc;
@@ -170,6 +183,55 @@ class RetrierTest {
             assertAll(
                 () -> assertThat(result.getErrorCode()).isEqualTo(PointErrorCode.INVALID_CHARGE_AMOUNT),
                 () -> verify(pointFacade, times(1)).charge(USER_ID, 0L)
+            );
+        }
+    }
+
+    @DisplayName("좋아요 등록을 다시 실행할 때, (4주차 설계 3.3)")
+    @Nested
+    class Like {
+        @DisplayName("같은 관계의 유니크 키 위반이 나고 다음에 성공하면, 등록을 두 번 실행하고 결과를 돌려준다.")
+        @Test
+        void succeeds_afterDuplicateRelation() {
+            // arrange
+            when(likeFacade.like(USER_ID, PRODUCT_ID))
+                .thenThrow(new DuplicateKeyException("이미 있는 좋아요 관계"))
+                .thenReturn(new LikeInfo(PRODUCT_ID, 1L));
+
+            // act
+            LikeInfo result = likeRetrier.like(USER_ID, PRODUCT_ID);
+
+            // assert
+            assertAll(
+                () -> assertThat(result.likeCount()).isEqualTo(1L),
+                () -> verify(likeFacade, times(2)).like(USER_ID, PRODUCT_ID)
+            );
+        }
+
+        @DisplayName("관계 중복이 아닌 무결성 위반이면, 다시 실행하지 않고 그대로 나간다.")
+        @Test
+        void doesNotRetry_whenOtherIntegrityViolation() {
+            // arrange
+            when(likeFacade.like(USER_ID, PRODUCT_ID)).thenThrow(new DataIntegrityViolationException("다른 무결성 위반"));
+
+            // act & assert
+            assertThrows(DataIntegrityViolationException.class, () -> likeRetrier.like(USER_ID, PRODUCT_ID));
+            verify(likeFacade, times(1)).like(USER_ID, PRODUCT_ID);
+        }
+
+        @DisplayName("업무 거절이면, 다시 실행하지 않고 원래 오류 코드가 그대로 나간다.")
+        @Test
+        void doesNotRetry_whenRejectedByBusinessRule() {
+            // arrange
+            when(likeFacade.like(USER_ID, PRODUCT_ID)).thenThrow(new CoreException(ProductErrorCode.PRODUCT_NOT_FOUND));
+
+            // act
+            CoreException result = assertThrows(CoreException.class, () -> likeRetrier.like(USER_ID, PRODUCT_ID));
+
+            // assert
+            assertAll(
+                () -> assertThat(result.getErrorCode()).isEqualTo(ProductErrorCode.PRODUCT_NOT_FOUND),
+                () -> verify(likeFacade, times(1)).like(USER_ID, PRODUCT_ID)
             );
         }
     }

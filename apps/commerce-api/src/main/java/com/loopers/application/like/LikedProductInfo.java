@@ -1,6 +1,7 @@
 package com.loopers.application.like;
 
 import com.loopers.domain.like.LikedProduct;
+import com.loopers.domain.product.Product;
 
 import java.time.ZonedDateTime;
 
@@ -25,5 +26,9 @@ public record LikedProductInfo(
             likedProduct.brandName(),
             likedProduct.likedAt()
         );
+    }
+
+    public boolean soldOut() {
+        return Product.isSoldOut(stock);
     }
 }

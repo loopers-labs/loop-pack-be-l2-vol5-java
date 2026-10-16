@@ -5,6 +5,8 @@ import com.loopers.domain.like.Like;
 import com.loopers.domain.like.LikeRepository;
 import com.loopers.domain.like.LikedProduct;
 import com.loopers.domain.product.Product;
+import com.loopers.domain.product.ProductLikeCount;
+import com.loopers.domain.product.ProductLikeCountRepository;
 import com.loopers.utils.DatabaseCleanUp;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.AfterEach;
@@ -15,6 +17,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.transaction.support.TransactionTemplate;
+
+import java.time.ZonedDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
@@ -27,6 +31,9 @@ class LikedProductQueryIntegrationTest {
 
     @Autowired
     private LikeRepository likeRepository;
+
+    @Autowired
+    private ProductLikeCountRepository productLikeCountRepository;
 
     @Autowired
     private EntityManager entityManager;
@@ -46,6 +53,7 @@ class LikedProductQueryIntegrationTest {
         return transactionTemplate.execute(status -> {
             Product product = new Product(entityManager.find(Brand.class, brand.getId()), name, 1_000L);
             entityManager.persist(product);
+            entityManager.persist(new ProductLikeCount(product.getId()));
             return product;
         });
     }
@@ -59,14 +67,17 @@ class LikedProductQueryIntegrationTest {
     }
 
     private void like(long userId, Product product) {
-        transactionTemplate.executeWithoutResult(status -> entityManager.persist(new Like(userId, product.getId())));
+        transactionTemplate.executeWithoutResult(status -> {
+            entityManager.persist(new Like(userId, product.getId()));
+            productLikeCountRepository.increase(product.getId(), ZonedDateTime.now());
+        });
     }
 
     private Page<LikedProduct> myLikes() {
         return likeRepository.findLikedProducts(ME, PageRequest.of(0, 20));
     }
 
-    @DisplayName("내 관계만, 최근에 누른 순으로 돌려주고 좋아요 수는 모든 사용자의 관계에서 센다.")
+    @DisplayName("내 관계만, 최근에 누른 순으로 돌려주고 좋아요 수는 모든 사용자의 좋아요를 반영한다.")
     @Test
     void returnsOwnLikesByLikedAtDesc() {
         // arrange

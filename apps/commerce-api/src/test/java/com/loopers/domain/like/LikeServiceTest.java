@@ -38,23 +38,23 @@ class LikeServiceTest {
     @DisplayName("좋아요를 등록할 때, ")
     @Nested
     class Like_ {
-        @DisplayName("관계가 없으면, 관계를 만든다.")
+        @DisplayName("관계가 없으면, 관계를 만들고 만들었다고 알린다.")
         @Test
         void createsRelation() {
             // arrange
             Product product = saveProduct();
 
             // act
-            likeService.like(USER_A, product.getId());
+            boolean created = likeService.like(USER_A, product.getId());
 
             // assert
             assertAll(
-                () -> assertThat(likeRepository.find(USER_A, product.getId())).isPresent(),
-                () -> assertThat(likeService.countLikes(product.getId())).isEqualTo(1)
+                () -> assertThat(created).isTrue(),
+                () -> assertThat(likeRepository.find(USER_A, product.getId())).isPresent()
             );
         }
 
-        @DisplayName("이미 관계가 있으면, 그대로 두고 좋아요 수는 늘지 않는다. (LIK-02)")
+        @DisplayName("이미 관계가 있으면, 그대로 두고 만들지 않았다고 알린다. (LIK-02)")
         @Test
         void keepsSingleRelation_whenLikedTwice() {
             // arrange
@@ -62,17 +62,20 @@ class LikeServiceTest {
             likeService.like(USER_A, product.getId());
 
             // act
-            likeService.like(USER_A, product.getId());
+            boolean created = likeService.like(USER_A, product.getId());
 
             // assert
-            assertThat(likeService.countLikes(product.getId())).isEqualTo(1);
+            assertAll(
+                () -> assertThat(created).isFalse(),
+                () -> assertThat(likeRepository.find(USER_A, product.getId())).isPresent()
+            );
         }
     }
 
     @DisplayName("좋아요를 취소할 때, ")
     @Nested
     class Unlike {
-        @DisplayName("자신의 관계를 지운다.")
+        @DisplayName("자신의 관계를 지우고 지웠다고 알린다.")
         @Test
         void removesOwnRelation() {
             // arrange
@@ -80,10 +83,13 @@ class LikeServiceTest {
             likeService.like(USER_A, product.getId());
 
             // act
-            likeService.unlike(USER_A, product.getId());
+            boolean deleted = likeService.unlike(USER_A, product.getId());
 
             // assert
-            assertThat(likeService.countLikes(product.getId())).isZero();
+            assertAll(
+                () -> assertThat(deleted).isTrue(),
+                () -> assertThat(likeRepository.find(USER_A, product.getId())).isEmpty()
+            );
         }
 
         @DisplayName("다른 사용자가 취소해도 성공하지만, 내 관계는 남는다. (LIK-03)")
@@ -94,20 +100,23 @@ class LikeServiceTest {
             likeService.like(USER_A, product.getId());
 
             // act
-            likeService.unlike(USER_B, product.getId());
+            boolean deleted = likeService.unlike(USER_B, product.getId());
 
             // assert
-            assertThat(likeRepository.find(USER_A, product.getId())).isPresent();
+            assertAll(
+                () -> assertThat(deleted).isFalse(),
+                () -> assertThat(likeRepository.find(USER_A, product.getId())).isPresent()
+            );
         }
 
-        @DisplayName("관계가 없으면, 아무것도 바꾸지 않고 성공한다.")
+        @DisplayName("관계가 없으면, 아무것도 바꾸지 않고 지우지 않았다고 알린다.")
         @Test
         void succeeds_whenRelationDoesNotExist() {
             Product product = saveProduct();
 
-            likeService.unlike(USER_A, product.getId());
+            boolean deleted = likeService.unlike(USER_A, product.getId());
 
-            assertThat(likeService.countLikes(product.getId())).isZero();
+            assertThat(deleted).isFalse();
         }
 
         @DisplayName("상품이 삭제되었어도, 남아 있는 자신의 관계를 지운다. (LIK-03)")

@@ -16,7 +16,7 @@ public class ProductV1Dto {
                 info.name(),
                 info.price(),
                 info.likeCount(),
-                info.stock() == 0,
+                info.soldOut(),
                 new BrandSummary(info.brandId(), info.brandName())
             );
         }
@@ -29,7 +29,7 @@ public class ProductV1Dto {
                 info.name(),
                 info.price(),
                 info.likeCount(),
-                info.stock() == 0,
+                info.soldOut(),
                 new BrandDetail(info.brandId(), info.brandName(), info.brandDescription())
             );
         }

@@ -1,12 +1,13 @@
 package com.loopers.interfaces.api.product;
 
+import com.loopers.application.like.LikeFacade;
 import com.loopers.domain.brand.Brand;
-import com.loopers.domain.like.Like;
 import com.loopers.domain.product.Product;
+import com.loopers.domain.product.ProductService;
 import com.loopers.infrastructure.brand.BrandJpaRepository;
-import com.loopers.infrastructure.like.LikeJpaRepository;
 import com.loopers.infrastructure.product.ProductJpaRepository;
 import com.loopers.utils.DatabaseCleanUp;
+import com.loopers.utils.RedisCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -35,10 +36,16 @@ class ProductV1ApiE2ETest {
     private ProductJpaRepository productJpaRepository;
 
     @Autowired
-    private LikeJpaRepository likeJpaRepository;
+    private ProductService productService;
+
+    @Autowired
+    private LikeFacade likeFacade;
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
+
+    @Autowired
+    private RedisCleanUp redisCleanUp;
 
     private Brand brand;
 
@@ -50,12 +57,14 @@ class ProductV1ApiE2ETest {
     @AfterEach
     void tearDown() {
         databaseCleanUp.truncateAllTables();
+        // 목록 첫 페이지는 캐시된다. DB 를 비우면 식별자가 다시 쓰이므로 캐시도 함께 비운다 (4주차 cache-design.md)
+        redisCleanUp.truncateAll();
     }
 
+    // 모든 상품이 좋아요 수 행을 갖도록 생성 입구로 만든다 (4주차 설계 2.2)
     private Product saveProduct(String name, int stock) {
-        Product product = new Product(brand, name, 1_000L);
-        product.changeStock(stock);
-        return productJpaRepository.save(product);
+        Product product = productService.create(brand, name, 1_000L);
+        return productService.changeStock(product.getId(), stock).product();
     }
 
     @DisplayName("GET /api/v1/brands/{brandId}")
@@ -91,7 +100,7 @@ class ProductV1ApiE2ETest {
         @Test
         void returnsProductSummaries() throws Exception {
             Product product = saveProduct("상품", 0);
-            likeJpaRepository.save(new Like(1L, product.getId()));
+            likeFacade.like(1L, product.getId());
 
             mvc.perform(get("/api/v1/products"))
                 .andExpect(status().isOk())
@@ -110,7 +119,7 @@ class ProductV1ApiE2ETest {
         void sortsByLikes() throws Exception {
             Product popular = saveProduct("인기 상품", 1);
             Product plain = saveProduct("보통 상품", 1);
-            likeJpaRepository.save(new Like(1L, popular.getId()));
+            likeFacade.like(1L, popular.getId());
 
             mvc.perform(get("/api/v1/products").param("sort", "likes_desc"))
                 .andExpect(status().isOk())

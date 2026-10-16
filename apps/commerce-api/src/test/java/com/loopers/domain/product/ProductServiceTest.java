@@ -22,13 +22,15 @@ class ProductServiceTest {
 
     private FakeBrandRepository brandRepository;
     private FakeProductRepository productRepository;
+    private FakeProductLikeCountRepository productLikeCountRepository;
     private ProductService productService;
 
     @BeforeEach
     void setUp() {
         brandRepository = new FakeBrandRepository();
         productRepository = new FakeProductRepository();
-        productService = new ProductService(productRepository, Clock.systemDefaultZone());
+        productLikeCountRepository = new FakeProductLikeCountRepository();
+        productService = new ProductService(productRepository, productLikeCountRepository, Clock.systemDefaultZone());
     }
 
     @DisplayName("살아 있는 상품 식별자를 물으면, 없거나 삭제된 상품은 빠지고 예외가 발생하지 않는다. (설계 6.4)")
@@ -64,6 +66,19 @@ class ProductServiceTest {
                 () -> assertThat(product.getStock()).isZero(),
                 () -> assertThat(productService.getActiveProductWithBrand(product.getId()).brandId()).isEqualTo(brand.getId())
             );
+        }
+
+        @DisplayName("살아 있는 브랜드면, 좋아요 수 0 인 행을 함께 만든다. (4주차 설계 2.2)")
+        @Test
+        void createsZeroLikeCount() {
+            // arrange
+            Brand brand = brandRepository.save(new Brand("브랜드", null));
+
+            // act
+            Product product = productService.create(brand, "상품", 1_000L);
+
+            // assert
+            assertThat(productLikeCountRepository.findLikeCount(product.getId())).contains(0L);
         }
 
         // 없는 브랜드는 조율하는 AdminProductFacade 가 BrandService 로 거절함 (AdminProductFacadeTest)

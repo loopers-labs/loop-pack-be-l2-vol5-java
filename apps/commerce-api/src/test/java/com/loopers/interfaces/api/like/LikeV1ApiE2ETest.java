@@ -2,6 +2,7 @@ package com.loopers.interfaces.api.like;
 
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.product.Product;
+import com.loopers.domain.product.ProductService;
 import com.loopers.domain.user.User;
 import com.loopers.infrastructure.brand.BrandJpaRepository;
 import com.loopers.infrastructure.like.LikeJpaRepository;
@@ -50,6 +51,9 @@ class LikeV1ApiE2ETest {
     private LikeJpaRepository likeJpaRepository;
 
     @Autowired
+    private ProductService productService;
+
+    @Autowired
     private DatabaseCleanUp databaseCleanUp;
 
     private User user;
@@ -59,7 +63,7 @@ class LikeV1ApiE2ETest {
     void setUp() {
         user = userJpaRepository.save(new User());
         Brand brand = brandJpaRepository.save(new Brand("브랜드", null));
-        product = productJpaRepository.save(new Product(brand, "상품", 1_000L));
+        product = productService.create(brand, "상품", 1_000L);
     }
 
     @AfterEach
@@ -182,7 +186,7 @@ class LikeV1ApiE2ETest {
         @Test
         void returnsMyLikes() throws Exception {
             mvc.perform(asUser(post(likesOf(product.getId())))).andExpect(status().isOk());
-            Product deletedLater = productJpaRepository.save(new Product(brandJpaRepository.findAll().get(0), "삭제될 상품", 2_000L));
+            Product deletedLater = productService.create(brandJpaRepository.findAll().get(0), "삭제될 상품", 2_000L);
             mvc.perform(asUser(post(likesOf(deletedLater.getId())))).andExpect(status().isOk());
             deletedLater.delete();
             productJpaRepository.save(deletedLater);
