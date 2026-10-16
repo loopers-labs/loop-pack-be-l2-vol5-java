@@ -41,6 +41,7 @@
 ## 📎 References
 
 - 설계 문서: `docs/week4/plan.md` (ADR-W4-01~05)
-- 기술 글: `docs/week4/tech-writing.md` — 인덱스를 맞췄는데도 정렬이 남았던 이유
+- 기술 글: [commit 뒤에 지워도 옛 가격이 남았던 이유](https://tanonkim.github.io/posts/be-cache-list-invalidation/) — 순진한 cache-aside의 실패 장면 6개, 고칠 때마다 생긴 비용, 규모별 miss/hit 측정
+- 메모: `docs/week4/tech-writing.md` — 인덱스를 맞췄는데도 정렬이 남았던 이유
 - 인덱스 SQL: `docs/week4/sql/product-indexes.sql`
 - 측정 seed: `com.loopers.seed.CatalogSeeder` (`--spring.profiles.active=local,seed`)
