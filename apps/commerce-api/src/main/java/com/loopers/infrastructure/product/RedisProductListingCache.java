@@ -72,13 +72,16 @@ class RedisProductListingCache implements ProductListingCache {
 
     @Override
     public boolean invalidate(Long brandId) {
+        if (skipping()) {
+            return false;
+        }
         try {
             redis.delete(Stream.of(ProductViewQuery.Sort.values())
                 .flatMap(sort -> Stream.of(pageKey(brandId, sort), pageKey(null, sort)))
                 .toList());
             return true;
         } catch (DataAccessException e) {
-            log.warn("product listing cache invalidation failed for brand {}: {}", brandId, e.getMessage());
+            skipAfter(e);
             return false;
         }
     }

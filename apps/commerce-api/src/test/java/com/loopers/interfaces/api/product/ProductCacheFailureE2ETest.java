@@ -132,27 +132,12 @@ class ProductCacheFailureE2ETest {
         return redisTemplate.keys(PAGE_KEYS);
     }
 
-    @DisplayName("Q-5 · 커밋 뒤 무효화가 잠깐 실패해도 다시 시도해 회복한다 — 다음 조회는 새 가격이다")
+    @DisplayName("Q-5 · 커밋 뒤 무효화가 실패하면 다시 시도하지 않고 커밋은 그대로이며, 옛 가격은 TTL(60 초) 까지만 보이며, 만료 뒤 원본과 같아진다")
     @Test
-    void retryRecoversTransientInvalidationFailure() {
+    void failedInvalidationFallsBackToTtl() {
         Long productId = product("셔츠", 10_000);
         listedPrice();
-        cache.failNextInvalidations(2);
-
-        ResponseEntity<String> response = changePriceAsAdmin(productId, 5_000);
-
-        assertAll(
-            () -> assertThat(response.getStatusCode().value()).isEqualTo(200),
-            () -> assertThat(listedPrice()).isEqualTo(5_000L)
-        );
-    }
-
-    @DisplayName("Q-5 · 다시 시도해도 무효화가 실패하면 커밋은 그대로이고, 옛 가격은 TTL(60 초) 까지만 보이며, 만료 뒤 원본과 같아진다")
-    @Test
-    void exhaustedRetriesFallBackToTtl() {
-        Long productId = product("셔츠", 10_000);
-        listedPrice();
-        cache.failNextInvalidations(Integer.MAX_VALUE);
+        cache.failNextInvalidations(1);
 
         ResponseEntity<String> response = changePriceAsAdmin(productId, 5_000);
         long staleWhileCached = listedPrice();

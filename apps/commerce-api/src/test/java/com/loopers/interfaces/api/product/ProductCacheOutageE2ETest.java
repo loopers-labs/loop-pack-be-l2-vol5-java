@@ -49,6 +49,7 @@ class ProductCacheOutageE2ETest {
     private static final int OWN_REDIS_PORT = 16379;
     private static final Duration BOUNDED_WAIT = Duration.ofSeconds(2);
     private static final Duration RECOVERY_LIMIT = Duration.ofSeconds(15);
+    private static final Duration NO_REDIS_WAIT = Duration.ofMillis(300);
     private static final String CUSTOMER = "/api/v1/products";
     private static final Long USER = 1L;
 
@@ -158,6 +159,14 @@ class ProductCacheOutageE2ETest {
         return testRestTemplate.exchange(CUSTOMER + query, HttpMethod.GET, new HttpEntity<>(headers), PAGE);
     }
 
+    private ResponseEntity<String> changePriceAsAdmin(Long productId, long price) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        return testRestTemplate.withBasicAuth("admin", "local-only-not-a-secret").exchange(
+            "/api-admin/v1/products/" + productId, HttpMethod.PUT,
+            new HttpEntity<>(Map.of("name", "셔츠", "price", price), headers), String.class);
+    }
+
     private String firstPriceAscPage() {
         return "?brandId=" + brandId + "&sort=price_asc";
     }
@@ -238,18 +247,13 @@ class ProductCacheOutageE2ETest {
         );
     }
 
-    @DisplayName("Q-5 · Redis 가 멈춘 동안의 관리자 수정은 커밋되고, 무효화 재시도를 포함해 제한된 시간 안에 응답한다")
+    @DisplayName("Q-5 · Redis 가 멈춘 동안의 관리자 수정은 커밋되고, 무효화를 포함해 제한된 시간 안에 응답한다")
     @Test
     void adminWriteCommitsWithinBoundedTimeWhileRedisIsDown() {
         Long productId = product("셔츠", 10_000);
         pauseRedis();
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
 
-        Timed<ResponseEntity<String>> write = timed(() -> testRestTemplate
-            .withBasicAuth("admin", "local-only-not-a-secret")
-            .exchange("/api-admin/v1/products/" + productId, HttpMethod.PUT,
-                new HttpEntity<>(Map.of("name", "셔츠", "price", 5_000), headers), String.class));
+        Timed<ResponseEntity<String>> write = timed(() -> changePriceAsAdmin(productId, 5_000));
 
         assertAll(
             () -> assertThat(write.value().getStatusCode().value()).isEqualTo(200),
@@ -259,7 +263,25 @@ class ProductCacheOutageE2ETest {
         );
     }
 
-    @DisplayName("CACHE-009 · Redis 가 멈춰도 주문 확정은 DB 의 재고 · 포인트 규칙대로 처리되고, 마지막 재고를 팔아 무효화를 다시 시도해도 제한된 시간 안에 응답한다")
+    @DisplayName("Q-7 · Redis 가 멈춰 캐시를 건너뛰는 동안의 관리자 수정은 무효화를 위해 Redis 를 기다리지 않는다")
+    @Test
+    void adminWriteDoesNotWaitForRedisWhileSkippingIt() {
+        Long productId = product("셔츠", 10_000);
+        changePriceAsAdmin(productId, 9_000);
+        pauseRedis();
+        list(firstPriceAscPage());
+
+        Timed<ResponseEntity<String>> write = timed(() -> changePriceAsAdmin(productId, 5_000));
+
+        assertAll(
+            () -> assertThat(write.value().getStatusCode().value()).isEqualTo(200),
+            () -> assertThat(jdbcTemplate.queryForObject("SELECT price FROM product WHERE id = ?", Long.class, productId))
+                .isEqualTo(5_000L),
+            () -> assertThat(write.elapsed()).as("건너뛰는 동안은 Redis 대기 한도(200 ms)를 기다리지 않는다").isLessThan(NO_REDIS_WAIT)
+        );
+    }
+
+    @DisplayName("CACHE-009 · Redis 가 멈춰도 주문 확정은 DB 의 재고 · 포인트 규칙대로 처리되고, 마지막 재고를 팔아 무효화가 일어나도 제한된 시간 안에 응답한다")
     @Test
     void confirmationIsUnaffectedWhileRedisIsDown() {
         Long productId = product("셔츠", 10_000);
