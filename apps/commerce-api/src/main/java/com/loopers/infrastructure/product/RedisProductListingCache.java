@@ -15,6 +15,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 
 @Slf4j
@@ -23,10 +24,12 @@ class RedisProductListingCache implements ProductListingCache {
 
     private static final String PREFIX = "product:list:v1:";
     private static final Duration TTL = Duration.ofSeconds(60);
+    private static final Duration SKIP_AFTER_FAILURE = Duration.ofSeconds(5);
     private static final TypeReference<PageWindow<ProductViewQuery.Listing>> PAGE = new TypeReference<>() {};
 
     private final RedisTemplate<String, String> redis;
     private final ObjectMapper objectMapper;
+    private final AtomicLong skipUntilNanos = new AtomicLong(System.nanoTime());
 
     RedisProductListingCache(
         @Qualifier(RedisConfig.REDIS_TEMPLATE_MASTER) RedisTemplate<String, String> redis,
@@ -38,10 +41,16 @@ class RedisProductListingCache implements ProductListingCache {
 
     @Override
     public Optional<PageWindow<ProductViewQuery.Listing>> find(Long brandId, ProductViewQuery.Sort sort) {
+        if (skipping()) {
+            return Optional.empty();
+        }
         try {
             String json = redis.opsForValue().get(pageKey(brandId, sort));
             return json == null ? Optional.empty() : Optional.of(objectMapper.readValue(json, PAGE));
-        } catch (DataAccessException | JsonProcessingException e) {
+        } catch (DataAccessException e) {
+            skipAfter(e);
+            return Optional.empty();
+        } catch (JsonProcessingException e) {
             log.warn("product listing cache read failed: {}", e.getMessage());
             return Optional.empty();
         }
@@ -49,9 +58,14 @@ class RedisProductListingCache implements ProductListingCache {
 
     @Override
     public void save(Long brandId, ProductViewQuery.Sort sort, PageWindow<ProductViewQuery.Listing> page) {
+        if (skipping()) {
+            return;
+        }
         try {
             redis.opsForValue().set(pageKey(brandId, sort), objectMapper.writeValueAsString(page), TTL);
-        } catch (DataAccessException | JsonProcessingException e) {
+        } catch (DataAccessException e) {
+            skipAfter(e);
+        } catch (JsonProcessingException e) {
             log.warn("product listing cache write failed: {}", e.getMessage());
         }
     }
@@ -67,6 +81,15 @@ class RedisProductListingCache implements ProductListingCache {
             log.warn("product listing cache invalidation failed for brand {}: {}", brandId, e.getMessage());
             return false;
         }
+    }
+
+    private boolean skipping() {
+        return System.nanoTime() - skipUntilNanos.get() < 0;
+    }
+
+    private void skipAfter(DataAccessException e) {
+        skipUntilNanos.set(System.nanoTime() + SKIP_AFTER_FAILURE.toNanos());
+        log.warn("product listing cache unavailable, reading the source for {}s: {}", SKIP_AFTER_FAILURE.toSeconds(), e.getMessage());
     }
 
     private static String pageKey(Long brandId, ProductViewQuery.Sort sort) {

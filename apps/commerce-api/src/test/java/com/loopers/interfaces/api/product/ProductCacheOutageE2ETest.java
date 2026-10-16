@@ -32,8 +32,13 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
@@ -106,8 +111,21 @@ class ProductCacheOutageE2ETest {
         if (isPaused()) {
             DockerClientFactory.instance().client().unpauseContainerCmd(OWN_REDIS.getContainerId()).exec();
         }
+        awaitCacheWritable();
         OWN_REDIS.execInContainer("redis-cli", "FLUSHALL");
         databaseCleanUp.truncateAllTables();
+    }
+
+    private void awaitCacheWritable() throws Exception {
+        long deadline = System.nanoTime() + RECOVERY_LIMIT.toNanos();
+        while (System.nanoTime() < deadline) {
+            list(firstPriceAscPage());
+            if (!redisCli("--scan", "--pattern", "product:list:v1:brand=*").isEmpty()) {
+                return;
+            }
+            Thread.sleep(200);
+        }
+        throw new IllegalStateException("Redis 가 다시 쓰이지 않았다");
     }
 
     private static boolean isPaused() {
@@ -167,6 +185,41 @@ class ProductCacheOutageE2ETest {
             () -> assertThat(during.value().getStatusCode().value()).isEqualTo(200),
             () -> assertThat(during.value().getBody().data().items().get(0).price()).as("캐시가 아니라 원본").isEqualTo(5_000L),
             () -> assertThat(during.elapsed()).as("Redis 대기가 제한된다").isLessThan(BOUNDED_WAIT)
+        );
+    }
+
+    @DisplayName("Q-7 · Redis 가 응답 없이 멈춘 동안 캐시 대상 조회가 계속 몰려도, 요청마다 Redis 를 기다리지 않아 처리량이 유지된다")
+    @Test
+    void keepsBoundedLatencyUnderSustainedLoadWhileRedisIsDown() throws Exception {
+        product("셔츠", 10_000);
+        list(firstPriceAscPage());
+        pauseRedis();
+
+        int workers = 20;
+        long until = System.nanoTime() + Duration.ofSeconds(6).toNanos();
+        ExecutorService executor = Executors.newFixedThreadPool(workers);
+        List<Future<List<Duration>>> results = new ArrayList<>();
+        for (int i = 0; i < workers; i++) {
+            results.add(executor.submit(() -> {
+                List<Duration> elapsed = new ArrayList<>();
+                while (System.nanoTime() < until) {
+                    Timed<ResponseEntity<ApiResponse<PageResponse<ProductV1Dto.ProductResponse>>>> call = timed(() -> list(firstPriceAscPage()));
+                    assertThat(call.value().getStatusCode().value()).isEqualTo(200);
+                    elapsed.add(call.elapsed());
+                }
+                return elapsed;
+            }));
+        }
+        List<Duration> all = new ArrayList<>();
+        for (Future<List<Duration>> result : results) {
+            all.addAll(result.get(60, TimeUnit.SECONDS));
+        }
+        executor.shutdown();
+        Duration slowest = all.stream().max(Duration::compareTo).orElseThrow();
+
+        assertAll(
+            () -> assertThat(slowest).as("가장 느린 요청도 Redis 대기 한도 안이다").isLessThan(BOUNDED_WAIT),
+            () -> assertThat(all.size()).as("요청마다 Redis 대기 한도를 기다리지 않는다 — 6 초 동안 스레드마다 50 건 넘게").isGreaterThan(workers * 50)
         );
     }
 
