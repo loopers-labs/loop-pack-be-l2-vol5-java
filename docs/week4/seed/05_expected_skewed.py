@@ -1,12 +1,12 @@
 import zlib, math, sys
 def crc(s): return zlib.crc32(s.encode())
 def run(T):
-    M=1000
-    H=sum(1/n for n in range(1,M+1))
+    M=5000; S=0.7
+    H=sum(1/n**S for n in range(1,M+1))
     cum=0; hi_prev=0; size={}
     acc=0.0
     for k in range(1,M+1):
-        acc+=1/k
+        acc+=1/k**S
         hi=round(T*acc/H)
         size[k]=hi-hi_prev; hi_prev=hi
     rows=[(crc(f"pid:{k}:{j}"),k,j) for k in range(1,M+1) for j in range(1,size[k]+1)]

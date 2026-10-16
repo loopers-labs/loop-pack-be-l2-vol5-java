@@ -5,7 +5,8 @@ DROP PROCEDURE IF EXISTS seed_skewed $$
 CREATE PROCEDURE seed_skewed(IN p_total INT)
 BEGIN
     DECLARE v_base_date DATETIME(6) DEFAULT '2026-01-01 00:00:00.000000';
-    DECLARE v_brand_count INT DEFAULT 1000;
+    DECLARE v_brand_count INT DEFAULT 5000;
+    DECLARE v_brand_exponent DOUBLE DEFAULT 0.7;
     DECLARE v_user_count INT DEFAULT 200000;
     DECLARE v_harmonic DOUBLE;
     DECLARE v_like_scale DOUBLE;
@@ -14,6 +15,7 @@ BEGIN
     SET SESSION cte_max_recursion_depth = p_total;
 
     TRUNCATE TABLE product_like;
+    TRUNCATE TABLE product_like_count;
     TRUNCATE TABLE product;
     TRUNCATE TABLE brand;
 
@@ -26,13 +28,13 @@ BEGIN
     )
     SELECT n FROM seq;
 
-    SELECT SUM(1e0 / n) INTO v_harmonic FROM seed_seq WHERE n <= v_brand_count;
+    SELECT SUM(1e0 / POW(n, v_brand_exponent)) INTO v_harmonic FROM seed_seq WHERE n <= v_brand_count;
 
     CREATE TABLE seed_brand (k INT PRIMARY KEY, size INT NOT NULL);
     INSERT INTO seed_brand (k, size)
     SELECT k, hi - LAG(hi, 1, 0) OVER (ORDER BY k)
       FROM (
-          SELECT n AS k, ROUND(p_total * SUM(1e0 / n) OVER (ORDER BY n) / v_harmonic) AS hi
+          SELECT n AS k, ROUND(p_total * SUM(1e0 / POW(n, v_brand_exponent)) OVER (ORDER BY n) / v_harmonic) AS hi
             FROM seed_seq
            WHERE n <= v_brand_count
       ) cumulative;
@@ -97,6 +99,9 @@ BEGIN
          WHERE p.pop_rank BETWEEN v_from AND v_from + 49999;
         SET v_from = v_from + 50000;
     END WHILE;
+
+    INSERT INTO product_like_count (product_id, like_count)
+    SELECT product_id, COUNT(*) FROM product_like GROUP BY product_id;
 
     DROP TABLE seed_seq, seed_brand, seed_product;
 END $$
