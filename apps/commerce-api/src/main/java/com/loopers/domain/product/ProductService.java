@@ -4,7 +4,6 @@ import com.loopers.support.error.DomainError;
 import com.loopers.support.error.DomainException;
 import com.loopers.domain.common.Quantity;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -13,7 +12,7 @@ public class ProductService implements ProductAvailability, ProductsInBrand, Sto
 
     private final ProductRepository productRepository;
 
-    private final ApplicationEventPublisher events;
+    private final ProductListingEvents listingEvents;
 
     public Product register(Long brandId, String name, Price price) {
         Product product = productRepository.save(Product.register(brandId, name, price));
@@ -74,7 +73,7 @@ public class ProductService implements ProductAvailability, ProductsInBrand, Sto
     }
 
     private void listingChanged(Product product) {
-        events.publishEvent(new ProductListingChanged(product.getBrandId()));
+        listingEvents.changed(product.getBrandId());
     }
 
     private Product findAliveForUpdate(Long productId) {

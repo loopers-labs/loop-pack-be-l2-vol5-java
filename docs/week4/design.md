@@ -448,11 +448,11 @@ cache-aside 와 좋아요 붙이기는 `ProductFacade.findPage`(응용 계층)�
 | 브랜드 수정 · 일괄 삭제 | `BrandService` | 항상 |
 | 좋아요 | — | 목록 캐시에 좋아요가 없다(4.1) |
 
-**어떻게**: 도메인 서비스가 `ProductListingChanged(brandId)` 를 내고, 응용 계층의 `ProductListingInvalidation` 이 `@TransactionalEventListener(AFTER_COMMIT)` 으로 받아 포트의 `invalidate` 를 부른다.
+**어떻게**: 도메인 서비스가 포트 `ProductListingEvents.changed(brandId)` 로 알리고, 인프라의 구현이 이를 Spring 이벤트 `ProductListingChanged` 로 발행한다. 응용 계층의 `ProductListingInvalidation` 이 `@TransactionalEventListener(AFTER_COMMIT)` 으로 받아 포트의 `invalidate` 를 부른다.
 
 | 고를 수 있는 것 | 대가 |
 |---|---|
-| **도메인 서비스가 이벤트 · 응용 계층이 커밋 뒤 처리** (지금) | 도메인이 `ApplicationEventPublisher`(spring-context) 를 안다. ArchUnit 이 막는 것은 spring-tx · JPA · Spring Data · 웹이라 규칙 안이다. "커밋 뒤" 라는 트랜잭션의 의미는 응용 계층에만 있다 |
+| **도메인 서비스가 포트로 알림 · 응용 계층이 커밋 뒤 처리** (지금) | 도메인은 "이 브랜드의 목록이 바뀌었다" 는 사실만 알리고, 어떻게 전하는지(Spring 이벤트)는 인프라가 정한다 — 도메인이 spring-context 를 모르는 것을 ArchUnit 이 지킨다. "커밋 뒤" 라는 트랜잭션의 의미는 응용 계층에만 있다. 포트 하나와 구현 하나가 더 있다. 비동기 · 아웃박스(4.7 의 뒤집을 조건)로 옮길 때는 인프라 구현만 바꾼다 |
 | Facade 가 직접 무효화 | 품절이 뒤집혔는지는 도메인만 안다 — Facade 가 알려면 서비스가 그 사실을 돌려줘야 하고, 주문 확정은 `OrderConfirmation` 을 거쳐 품목마다 돌려줘야 한다 |
 | 트랜잭션 안에서 바로 무효화 | rollback 되어도 키가 지워져 있다. 해는 없지만(다음 요청이 miss 일 뿐) **커밋 전에 지우면 그 사이 옛 DB 를 읽은 요청이 키를 옛 값으로 다시 채워** 무효화가 없던 것이 된다 |
 
