@@ -136,4 +136,32 @@ class ProductModelTest {
 
         assertThat(product.isDeleted()).isTrue();
     }
+
+    @DisplayName("[DR-37] 새 상품의 revision 은 0 이고, 이름·가격 수정과 삭제는 revision 을 하나씩 올린다.")
+    @Test
+    void revision_increases_onUpdateAndDelete() {
+        ProductModel product = new ProductModel(7L, "상품", 1000L, 5);
+        assertThat(product.getRevision()).isZero();
+
+        product.update("새 이름", 2000L);
+        assertThat(product.getRevision()).isEqualTo(1);
+
+        product.delete();
+        assertThat(product.getRevision()).isEqualTo(2);
+    }
+
+    @DisplayName("[DR-37] 재고 변경·차감, 실패한 수정, 이미 삭제된 상품의 삭제는 revision 을 올리지 않는다.")
+    @Test
+    void revision_unchanged_onStockChangesFailedUpdateAndRepeatedDelete() {
+        ProductModel product = new ProductModel(7L, "상품", 1000L, 5);
+
+        product.changeStock(30);
+        product.deductStock(3);
+        assertThrowsErrorType(() -> product.update("새 이름", -1L), ErrorType.INVALID_PRODUCT_PRICE);
+        assertThat(product.getRevision()).isZero();
+
+        product.delete();
+        product.delete();
+        assertThat(product.getRevision()).isEqualTo(1);
+    }
 }

@@ -7,6 +7,7 @@ import com.loopers.domain.user.UserModel;
 import com.loopers.support.ApiTestClient;
 import com.loopers.support.fixture.Fixtures;
 import com.loopers.utils.DatabaseCleanUp;
+import com.loopers.utils.RedisCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -33,6 +34,8 @@ class ProductV1ApiE2ETest {
     private Fixtures fixtures;
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
+    @Autowired
+    private RedisCleanUp redisCleanUp;
 
     private ApiTestClient api;
     private UserModel user;
@@ -40,6 +43,7 @@ class ProductV1ApiE2ETest {
 
     @BeforeEach
     void setUp() {
+        fixtures.catalogRevision();
         api = new ApiTestClient(restTemplate, objectMapper);
         user = fixtures.user();
         admin = fixtures.admin();
@@ -48,6 +52,7 @@ class ProductV1ApiE2ETest {
     @AfterEach
     void tearDown() {
         databaseCleanUp.truncateAllTables();
+        redisCleanUp.truncateAll();
     }
 
     @Nested
@@ -69,6 +74,29 @@ class ProductV1ApiE2ETest {
             assertThat(item.path("brand").path("name").asText()).isEqualTo("브랜드");
             assertThat(item.path("likeCount").asLong()).isZero();
             assertThat(item.has("stock")).isFalse();
+        }
+
+        @DisplayName("brandId 로 거르면 그 브랜드 상품만. 없는 브랜드는 200 + 빈 목록 (DR-35).")
+        @Test
+        void filtersByBrand() {
+            BrandModel brand = fixtures.brand("브랜드");
+            BrandModel other = fixtures.brand("다른 브랜드");
+            ProductModel product = fixtures.product(brand.getId(), "상품", 1000L, 3);
+            fixtures.product(other.getId(), "다른 상품", 1000L, 3);
+
+            var filtered = api.get("/api/v1/products?brandId=" + brand.getId(), user.getId()).assertSuccess(HttpStatus.OK);
+            assertThat(filtered.data().path("totalCount").asLong()).isEqualTo(1);
+            assertThat(filtered.data().path("items").get(0).path("id").asLong()).isEqualTo(product.getId());
+
+            var unknown = api.get("/api/v1/products?brandId=999999", user.getId()).assertSuccess(HttpStatus.OK);
+            assertThat(unknown.data().path("totalCount").asLong()).isZero();
+            assertThat(unknown.data().path("items")).isEmpty();
+        }
+
+        @DisplayName("[ER-03 BRAND_NOT_FOUND] brandId 형식 오류는 404 (ID 형식 오류 규칙, DR-01·DR-35).")
+        @Test
+        void brandIdTypeError() {
+            api.get("/api/v1/products?brandId=abc", user.getId()).assertError(HttpStatus.NOT_FOUND, "BRAND_NOT_FOUND");
         }
 
         @DisplayName("[ER-07 INVALID_SORT] 허용 목록 밖, 둘 이상 지정 모두 400.")
@@ -100,6 +128,29 @@ class ProductV1ApiE2ETest {
             api.get("/api/v1/products/999999", user.getId()).assertError(HttpStatus.NOT_FOUND, "PRODUCT_NOT_FOUND");
             api.get("/api/v1/products/" + deleted.getId(), user.getId()).assertError(HttpStatus.NOT_FOUND, "PRODUCT_NOT_FOUND");
             api.get("/api/v1/products/x", user.getId()).assertError(HttpStatus.NOT_FOUND, "PRODUCT_NOT_FOUND");
+        }
+    }
+
+    @Nested
+    @DisplayName("DR-37 고객 상품 조회 캐시")
+    class Cache {
+        @DisplayName("[DR-37] 고객이 상세·목록을 읽은 뒤 관리자가 상품을 수정하면, 다음 고객 조회에 새 값이 나온다.")
+        @Test
+        void adminUpdate_isShownToCustomer() {
+            BrandModel brand = fixtures.brand("브랜드");
+            ProductModel product = fixtures.product(brand.getId(), "상품", 1000L, 5);
+            api.get("/api/v1/products/" + product.getId(), user.getId()).assertSuccess(HttpStatus.OK);
+            api.get("/api/v1/products", user.getId()).assertSuccess(HttpStatus.OK);
+
+            api.put("/api-admin/v1/products/" + product.getId(), admin.getId(),
+                Map.of("name", "새 이름", "price", 2000)).assertSuccess(HttpStatus.OK);
+
+            var detail = api.get("/api/v1/products/" + product.getId(), user.getId()).assertSuccess(HttpStatus.OK);
+            assertThat(detail.data().path("name").asText()).isEqualTo("새 이름");
+            assertThat(detail.data().path("price").asLong()).isEqualTo(2000L);
+            var list = api.get("/api/v1/products", user.getId()).assertSuccess(HttpStatus.OK);
+            assertThat(list.data().path("items").get(0).path("name").asText()).isEqualTo("새 이름");
+            assertThat(list.data().path("items").get(0).path("price").asLong()).isEqualTo(2000L);
         }
     }
 

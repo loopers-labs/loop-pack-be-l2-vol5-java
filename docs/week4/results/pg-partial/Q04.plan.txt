@@ -1,0 +1,22 @@
+Sort  (cost=765.08..765.27 rows=75 width=67) (actual time=0.440..0.441 rows=50 loops=1)
+  Sort Key: pm2_0.created_at DESC, pm2_0.id DESC
+  Sort Method: quicksort  Memory: 32kB
+  ->  GroupAggregate  (cost=761.25..762.75 rows=75 width=67) (actual time=0.413..0.423 rows=50 loops=1)
+        Group Key: pm2_0.id, bm1_0.id
+        ->  Sort  (cost=761.25..761.44 rows=75 width=67) (actual time=0.410..0.412 rows=64 loops=1)
+              Sort Key: pm2_0.id DESC, bm1_0.id
+              Sort Method: quicksort  Memory: 34kB
+              ->  Nested Loop Left Join  (cost=151.97..758.91 rows=75 width=67) (actual time=0.313..0.401 rows=64 loops=1)
+                    ->  Nested Loop  (cost=151.54..589.98 rows=50 width=59) (actual time=0.308..0.371 rows=50 loops=1)
+                          ->  Nested Loop  (cost=151.26..575.35 rows=50 width=46) (actual time=0.304..0.335 rows=50 loops=1)
+                                ->  Limit  (cost=150.83..152.35 rows=50 width=16) (actual time=0.291..0.295 rows=50 loops=1)
+                                      ->  Index Only Scan Backward using ix_product_latest_active on product pm1_0  (cost=0.43..144306.33 rows=4749460 width=16) (actual time=0.007..0.217 rows=5000 loops=1)
+                                            Heap Fetches: 0
+                                ->  Index Scan using product_pkey on product pm2_0  (cost=0.43..8.45 rows=1 width=46) (actual time=0.001..0.001 rows=1 loops=50)
+                                      Index Cond: (id = pm1_0.id)
+                          ->  Index Scan using brand_pkey on brand bm1_0  (cost=0.28..0.29 rows=1 width=21) (actual time=0.001..0.001 rows=1 loops=50)
+                                Index Cond: (id = pm2_0.brand_id)
+                    ->  Index Scan using ix_product_like_product on product_like plm1_0  (cost=0.43..2.33 rows=105 width=16) (actual time=0.000..0.000 rows=1 loops=50)
+                          Index Cond: (product_id = pm2_0.id)
+Planning Time: 0.531 ms
+Execution Time: 0.482 ms

@@ -1,0 +1,3 @@
+-> Aggregate: count(pm1_0.id)  (cost=540909 rows=1) (actual time=966..966 rows=1 loops=1)
+    -> Filter: (pm1_0.deleted_at is null)  (cost=492326 rows=485830) (actual time=0.426..830 rows=4.75e+6 loops=1)
+        -> Table scan on pm1_0  (cost=492326 rows=4.86e+6) (actual time=0.425..618 rows=5e+6 loops=1)

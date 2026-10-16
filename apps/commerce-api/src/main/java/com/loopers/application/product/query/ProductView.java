@@ -9,6 +9,10 @@ public final class ProductView {
     public record Summary(Long id, String name, Long price, Long brandId, String brandName, long likeCount) {
     }
 
+    /** FR-PRODUCT-02 캐시 키를 고를 상품·브랜드 revision 과 캐시에 담지 않는 좋아요 수 (DR-37). */
+    public record DetailState(long productRevision, long brandRevision, long likeCount) {
+    }
+
     /** FR-ADMIN-PRODUCT-01/03 관리자 목록·상세. 설계 4-3-0 ProductAdmin. 삭제된 상품·브랜드도 포함 (ASM-15). */
     public record Admin(
         Long id, String name, Long price, Integer stock, Long brandId, String brandName, long likeCount, boolean deleted

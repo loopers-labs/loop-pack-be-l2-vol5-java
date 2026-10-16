@@ -1,0 +1,10 @@
+Finalize Aggregate  (cost=22819.43..22819.44 rows=1 width=8) (actual time=19.060..20.342 rows=1 loops=1)
+  ->  Gather  (cost=22819.21..22819.42 rows=2 width=8) (actual time=19.021..20.338 rows=3 loops=1)
+        Workers Planned: 2
+        Workers Launched: 2
+        ->  Partial Aggregate  (cost=21819.21..21819.22 rows=1 width=8) (actual time=18.184..18.184 rows=1 loops=3)
+              ->  Parallel Index Only Scan using ix_product_brand_price on product pm1_0  (cost=0.43..21336.28 rows=193172 width=8) (actual time=0.040..13.541 rows=158159 loops=3)
+                    Index Cond: ((brand_id = 1) AND (deleted_at IS NULL))
+                    Heap Fetches: 0
+Planning Time: 0.183 ms
+Execution Time: 20.370 ms
