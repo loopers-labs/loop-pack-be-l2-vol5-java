@@ -1,0 +1,123 @@
+{
+  "Command": ".\\gradlew.bat :apps:commerce-api:check --console=plain",
+  "ExitCode": 0,
+  "Duration": "4m 2s",
+  "ValidationGitSha": "7d0da9098fc4e75fe566b256e2454782674e69b1",
+  "ImplementationGitSha": "5003d2c5242b408d8bced896e135627cf625e274",
+  "BootJarRebuilt": false,
+  "PerformanceJarSha256": "6D30AE13AC5E82A3C3EA38C36AEB394035BDB5B7505B336890D79495D4058BBE",
+  "Tests": 333.0,
+  "Failures": 0.0,
+  "Errors": 0.0,
+  "Skipped": 0.0,
+  "CheckstyleMainErrors": 0,
+  "CheckstyleTestErrors": 0,
+  "ArchUnitTests": 8.0,
+  "TestResultSuiteFiles": 116,
+  "RelatedSuites": [
+    {
+      "File": "TEST-com.loopers.architecture.DomainPurityArchitectureTest.xml",
+      "Name": "com.loopers.architecture.DomainPurityArchitectureTest",
+      "Tests": 2,
+      "Failures": 0,
+      "Errors": 0,
+      "Skipped": 0
+    },
+    {
+      "File": "TEST-com.loopers.architecture.LayerArchitectureTest.xml",
+      "Name": "com.loopers.architecture.LayerArchitectureTest",
+      "Tests": 6,
+      "Failures": 0,
+      "Errors": 0,
+      "Skipped": 0
+    },
+    {
+      "File": "TEST-com.loopers.infrastructure.query.mall.CachedProductQueryDaoTest.xml",
+      "Name": "com.loopers.infrastructure.query.mall.CachedProductQueryDaoTest",
+      "Tests": 3,
+      "Failures": 0,
+      "Errors": 0,
+      "Skipped": 0
+    },
+    {
+      "File": "TEST-com.loopers.infrastructure.query.mall.ProductDetailCacheInvalidationIntegrationTest.xml",
+      "Name": "com.loopers.infrastructure.query.mall.ProductDetailCacheInvalidationIntegrationTest",
+      "Tests": 0,
+      "Failures": 0,
+      "Errors": 0,
+      "Skipped": 0
+    },
+    {
+      "File": "TEST-com.loopers.infrastructure.query.mall.ProductDetailCacheInvalidationIntegrationTest$BrandChanges.xml",
+      "Name": "브랜드 범위 무효화",
+      "Tests": 3,
+      "Failures": 0,
+      "Errors": 0,
+      "Skipped": 0
+    },
+    {
+      "File": "TEST-com.loopers.infrastructure.query.mall.ProductDetailCacheInvalidationIntegrationTest$LikeChanges.xml",
+      "Name": "좋아요 관계와 집계 경계",
+      "Tests": 5,
+      "Failures": 0,
+      "Errors": 0,
+      "Skipped": 0
+    },
+    {
+      "File": "TEST-com.loopers.infrastructure.query.mall.ProductDetailCacheInvalidationIntegrationTest$OrderChanges.xml",
+      "Name": "주문 확정의 바깥 트랜잭션",
+      "Tests": 2,
+      "Failures": 0,
+      "Errors": 0,
+      "Skipped": 0
+    },
+    {
+      "File": "TEST-com.loopers.infrastructure.query.mall.ProductDetailCacheInvalidationIntegrationTest$ProductChanges.xml",
+      "Name": "상품 변경과 커밋 경계",
+      "Tests": 4,
+      "Failures": 0,
+      "Errors": 0,
+      "Skipped": 0
+    },
+    {
+      "File": "TEST-com.loopers.infrastructure.query.mall.ProductDetailCacheInvalidationListenerTest.xml",
+      "Name": "com.loopers.infrastructure.query.mall.ProductDetailCacheInvalidationListenerTest",
+      "Tests": 3,
+      "Failures": 0,
+      "Errors": 0,
+      "Skipped": 0
+    },
+    {
+      "File": "TEST-com.loopers.infrastructure.query.mall.ProductDetailCachePropertiesTest.xml",
+      "Name": "com.loopers.infrastructure.query.mall.ProductDetailCachePropertiesTest",
+      "Tests": 4,
+      "Failures": 0,
+      "Errors": 0,
+      "Skipped": 0
+    },
+    {
+      "File": "TEST-com.loopers.infrastructure.query.mall.ProductDetailCacheTest$Find.xml",
+      "Name": "캐시 조회",
+      "Tests": 7,
+      "Failures": 0,
+      "Errors": 0,
+      "Skipped": 0
+    },
+    {
+      "File": "TEST-com.loopers.infrastructure.query.mall.ProductDetailCacheTest$Invalidation.xml",
+      "Name": "변경 후 무효화",
+      "Tests": 4,
+      "Failures": 0,
+      "Errors": 0,
+      "Skipped": 0
+    },
+    {
+      "File": "TEST-com.loopers.interfaces.api.mall.controller.ProductDetailCacheHttpE2ETest.xml",
+      "Name": "com.loopers.interfaces.api.mall.controller.ProductDetailCacheHttpE2ETest",
+      "Tests": 5,
+      "Failures": 0,
+      "Errors": 0,
+      "Skipped": 0
+    }
+  ]
+}

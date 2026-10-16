@@ -1,0 +1,2 @@
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	pje1_0	NULL	ref	idx_products_deleted_brand_created,idx_products_deleted_brand_price,idx_products_deleted_like,idx_products_deleted_brand_like	idx_products_deleted_brand_created	9	const,const	960	100.00	Using index

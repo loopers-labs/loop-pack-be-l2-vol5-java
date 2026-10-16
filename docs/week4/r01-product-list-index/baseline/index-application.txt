@@ -1,0 +1,14 @@
+--------------
+ALTER TABLE week4_r01_index_benchmark.products
+    ADD INDEX idx_products_deleted_created
+        (deleted, created_at DESC, id DESC),
+    ADD INDEX idx_products_deleted_price
+        (deleted, price ASC, id DESC),
+    ALGORITHM=INPLACE,
+    LOCK=NONE
+--------------
+
+Query OK, 0 rows affected (8.26 sec)
+Records: 0  Duplicates: 0  Warnings: 0
+
+Bye

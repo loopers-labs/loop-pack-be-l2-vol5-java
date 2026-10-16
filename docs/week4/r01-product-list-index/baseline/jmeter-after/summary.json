@@ -1,0 +1,1266 @@
+{
+  "formatVersion": 1,
+  "status": "Finished",
+  "phase": "after",
+  "mode": "Measure",
+  "sourceRun": "after-measure-20261016-143837-2931151-1019c396",
+  "sourceDirectory": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396",
+  "sourceManifestSha256": "765B317250D5BB11458B284F1F8E0A5E88E8F4F31B52C9AF21E7432553D84B3C",
+  "startedAtUtc": "2026-10-16T05:38:37.3099312+00:00",
+  "finishedAtUtc": "2026-10-16T05:57:46.5086245+00:00",
+  "codeGitSha": "9b008ba096b4b8f084f9908a85a7735dfc603dc1",
+  "api": {
+    "jarName": "commerce-api-98da9d2.jar",
+    "jarSha256": "47A6839167CD1C0E2F459040E2B76572BB19C792E8701F180CBC033089883FCA",
+    "profile": "local",
+    "port": 18080,
+    "captureSql": false
+  },
+  "versions": {
+    "java": "21.0.10",
+    "jmeter": "5.6.3",
+    "mysql": "8.0.46",
+    "docker": "29.8.0",
+    "powershell": "7.6.5"
+  },
+  "inputs": {
+    "plan": {
+      "path": "docs/week4/r01-product-list-index/jmeter/product-list.jmx",
+      "sha256": "22A30AAA3A2917DE22324C0310B31FF7476555195DD8534ABA37E99CA7BCC7C0"
+    },
+    "expected": {
+      "path": "docs/week4/r01-product-list-index/jmeter/expected-responses.json",
+      "sha256": "20C827C6871C25E361E2E374D5DCEEBE8CC083F8613D840D3F9937D95F7C6B34"
+    },
+    "properties": {
+      "path": "docs/week4/r01-product-list-index/jmeter/results.properties",
+      "sha256": "9F1ED88AFCED5A5CF9F5E44B895DCA6C6D8BD8921F032422F25E65D9EA4C428B"
+    }
+  },
+  "conditions": {
+    "scenarios": [
+      "latest",
+      "price",
+      "brand7"
+    ],
+    "users": [
+      1,
+      10
+    ],
+    "repetitions": 2,
+    "warmupSeconds": 20,
+    "durationSeconds": 60,
+    "rampUpSeconds": 5,
+    "connectTimeoutMs": 3000,
+    "responseTimeoutMs": 30000,
+    "validation": "light",
+    "percentileMapping": {
+      "pct1": 90,
+      "pct2": 95,
+      "pct3": 99
+    }
+  },
+  "coverage": {
+    "plannedMeasurementRuns": 12,
+    "finishedMeasurementRuns": 12,
+    "finishedWarmupStages": 12,
+    "failedSamples": 0
+  },
+  "databaseBefore": {
+    "capturedAtUtc": "2026-10-16T05:38:39.9992345+00:00",
+    "schema": "week4_r01_index_benchmark",
+    "mysqlVersion": "8.0.46",
+    "products": 1000000,
+    "likes": 2597980,
+    "bufferPoolBytes": 134217728,
+    "productIndexes": [
+      "idx_products_deleted_brand_created",
+      "idx_products_deleted_brand_like",
+      "idx_products_deleted_brand_price",
+      "idx_products_deleted_created",
+      "idx_products_deleted_like",
+      "idx_products_deleted_price",
+      "PRIMARY"
+    ],
+    "settings": {
+      "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+      "autocommit": 1,
+      "sync_binlog": 1,
+      "tmp_table_size": 16777216,
+      "join_buffer_size": 262144,
+      "sort_buffer_size": 262144,
+      "max_heap_table_size": 16777216,
+      "transaction_isolation": "REPEATABLE-READ",
+      "innodb_buffer_pool_size": 134217728,
+      "innodb_redo_log_capacity": 104857600,
+      "innodb_flush_log_at_trx_commit": 1
+    }
+  },
+  "databaseAfter": {
+    "capturedAtUtc": "2026-10-16T05:57:46.4940875+00:00",
+    "schema": "week4_r01_index_benchmark",
+    "mysqlVersion": "8.0.46",
+    "products": 1000000,
+    "likes": 2597980,
+    "bufferPoolBytes": 134217728,
+    "productIndexes": [
+      "idx_products_deleted_brand_created",
+      "idx_products_deleted_brand_like",
+      "idx_products_deleted_brand_price",
+      "idx_products_deleted_created",
+      "idx_products_deleted_like",
+      "idx_products_deleted_price",
+      "PRIMARY"
+    ],
+    "settings": {
+      "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+      "autocommit": 1,
+      "sync_binlog": 1,
+      "tmp_table_size": 16777216,
+      "join_buffer_size": 262144,
+      "sort_buffer_size": 262144,
+      "max_heap_table_size": 16777216,
+      "transaction_isolation": "REPEATABLE-READ",
+      "innodb_buffer_pool_size": 134217728,
+      "innodb_redo_log_capacity": 104857600,
+      "innodb_flush_log_at_trx_commit": 1
+    }
+  },
+  "stages": [
+    {
+      "runName": "r01-latest-u1",
+      "repetition": 1,
+      "scenario": "latest",
+      "threads": 1,
+      "stage": "warmup",
+      "status": "Finished",
+      "startedAtUtc": "2026-10-16T05:38:42.3732794+00:00",
+      "finishedAtUtc": "2026-10-16T05:39:06.2016369+00:00",
+      "cliElapsedSeconds": 23.82,
+      "cliExitCode": 0,
+      "scheduledSeconds": 20,
+      "rampUpSeconds": 5,
+      "validation": "light",
+      "metrics": {
+        "samples": 155,
+        "successfulSamples": 155,
+        "failedSamples": 0,
+        "errorPercent": 0.0,
+        "meanMs": 119.25806451612904,
+        "minimumMs": 104.0,
+        "maximumMs": 191.0,
+        "successfulMeanMs": 119.25806451612904,
+        "observationWindowMs": 18987,
+        "throughputPerSecond": 8.163480275978301,
+        "successfulThroughputPerSecond": 8.163480275978301,
+        "firstSampleStartUtc": "2026-10-16T05:38:45.5990000+00:00",
+        "lastSampleEndUtc": "2026-10-16T05:39:04.5860000+00:00"
+      },
+      "jtl": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r01-latest-u1/warmup/samples.jtl",
+        "sha256": "32979CC53504705492E27E3E03C8881E02A24B50BA12734A25A5E6B0C35CA7C9",
+        "bytes": 25430
+      },
+      "responseCodes": [
+        {
+          "code": "200",
+          "count": 155
+        }
+      ],
+      "failures": [],
+      "htmlStatistics": null
+    },
+    {
+      "runName": "r01-latest-u1",
+      "repetition": 1,
+      "scenario": "latest",
+      "threads": 1,
+      "stage": "measurement",
+      "status": "Finished",
+      "startedAtUtc": "2026-10-16T05:39:08.5160818+00:00",
+      "finishedAtUtc": "2026-10-16T05:40:13.7741364+00:00",
+      "cliElapsedSeconds": 65.251,
+      "cliExitCode": 0,
+      "scheduledSeconds": 60,
+      "rampUpSeconds": 5,
+      "validation": "light",
+      "metrics": {
+        "samples": 439,
+        "successfulSamples": 439,
+        "failedSamples": 0,
+        "errorPercent": 0.0,
+        "meanMs": 132.53302961275622,
+        "minimumMs": 102.0,
+        "maximumMs": 482.0,
+        "successfulMeanMs": 132.53302961275625,
+        "observationWindowMs": 59063,
+        "throughputPerSecond": 7.432741310126476,
+        "successfulThroughputPerSecond": 7.432741310126475,
+        "firstSampleStartUtc": "2026-10-16T05:39:11.9470000+00:00",
+        "lastSampleEndUtc": "2026-10-16T05:40:11.0100000+00:00",
+        "medianMs": 122.0,
+        "p90Ms": 167.0,
+        "p95Ms": 190.0,
+        "p99Ms": 245.0
+      },
+      "jtl": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r01-latest-u1/measurement/samples.jtl",
+        "sha256": "DF26FBC56CD66C6AA05A828B23D0CFDB045F0BC2F54E2E5B20FCA12BCD20F6D1",
+        "bytes": 71722
+      },
+      "responseCodes": [
+        {
+          "code": "200",
+          "count": 439
+        }
+      ],
+      "failures": [],
+      "htmlStatistics": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r01-latest-u1/measurement/html/statistics.json",
+        "sha256": "50FE77A7B49098C570491DE81AEEBF62CBA590BA77A0B1D126B99235F498D59F",
+        "archivedPath": "statistics/r01-latest-u1.json"
+      }
+    },
+    {
+      "runName": "r01-latest-u10",
+      "repetition": 1,
+      "scenario": "latest",
+      "threads": 10,
+      "stage": "warmup",
+      "status": "Finished",
+      "startedAtUtc": "2026-10-16T05:40:16.4511087+00:00",
+      "finishedAtUtc": "2026-10-16T05:40:40.5851479+00:00",
+      "cliElapsedSeconds": 24.127,
+      "cliExitCode": 0,
+      "scheduledSeconds": 20,
+      "rampUpSeconds": 5,
+      "validation": "light",
+      "metrics": {
+        "samples": 694,
+        "successfulSamples": 694,
+        "failedSamples": 0,
+        "errorPercent": 0.0,
+        "meanMs": 251.89048991354466,
+        "minimumMs": 120.0,
+        "maximumMs": 454.0,
+        "successfulMeanMs": 251.89048991354466,
+        "observationWindowMs": 18941,
+        "throughputPerSecond": 36.640092920120374,
+        "successfulThroughputPerSecond": 36.640092920120374,
+        "firstSampleStartUtc": "2026-10-16T05:40:20.0380000+00:00",
+        "lastSampleEndUtc": "2026-10-16T05:40:38.9790000+00:00"
+      },
+      "jtl": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r01-latest-u10/warmup/samples.jtl",
+        "sha256": "10DD2EE1D2E1B7840C6ED0EE984740BF2C6A201B414932CF301912778BDC8197",
+        "bytes": 114566
+      },
+      "responseCodes": [
+        {
+          "code": "200",
+          "count": 694
+        }
+      ],
+      "failures": [],
+      "htmlStatistics": null
+    },
+    {
+      "runName": "r01-latest-u10",
+      "repetition": 1,
+      "scenario": "latest",
+      "threads": 10,
+      "stage": "measurement",
+      "status": "Finished",
+      "startedAtUtc": "2026-10-16T05:40:43.1554894+00:00",
+      "finishedAtUtc": "2026-10-16T05:41:48.3743219+00:00",
+      "cliElapsedSeconds": 65.215,
+      "cliExitCode": 0,
+      "scheduledSeconds": 60,
+      "rampUpSeconds": 5,
+      "validation": "light",
+      "metrics": {
+        "samples": 2417,
+        "successfulSamples": 2417,
+        "failedSamples": 0,
+        "errorPercent": 0.0,
+        "meanMs": 237.7277616880431,
+        "minimumMs": 102.0,
+        "maximumMs": 422.0,
+        "successfulMeanMs": 237.72776168804302,
+        "observationWindowMs": 59184,
+        "throughputPerSecond": 40.83874020005407,
+        "successfulThroughputPerSecond": 40.83874020005407,
+        "firstSampleStartUtc": "2026-10-16T05:40:46.3690000+00:00",
+        "lastSampleEndUtc": "2026-10-16T05:41:45.5530000+00:00",
+        "medianMs": 237.0,
+        "p90Ms": 279.0,
+        "p95Ms": 297.0,
+        "p99Ms": 344.82000000000016
+      },
+      "jtl": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r01-latest-u10/measurement/samples.jtl",
+        "sha256": "B180E6E0A23DB2F8C48DE4409A016D3B8C2E65C0932E5425782423F01B1B9D5C",
+        "bytes": 398945
+      },
+      "responseCodes": [
+        {
+          "code": "200",
+          "count": 2417
+        }
+      ],
+      "failures": [],
+      "htmlStatistics": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r01-latest-u10/measurement/html/statistics.json",
+        "sha256": "E7F7E603C2E05EB4FDC63E71AA654C53D461BE6A656D6B3042FB52B6A0375F45",
+        "archivedPath": "statistics/r01-latest-u10.json"
+      }
+    },
+    {
+      "runName": "r01-price-u1",
+      "repetition": 1,
+      "scenario": "price",
+      "threads": 1,
+      "stage": "warmup",
+      "status": "Finished",
+      "startedAtUtc": "2026-10-16T05:41:51.4390297+00:00",
+      "finishedAtUtc": "2026-10-16T05:42:15.4002794+00:00",
+      "cliElapsedSeconds": 23.954,
+      "cliExitCode": 0,
+      "scheduledSeconds": 20,
+      "rampUpSeconds": 5,
+      "validation": "light",
+      "metrics": {
+        "samples": 157,
+        "successfulSamples": 157,
+        "failedSamples": 0,
+        "errorPercent": 0.0,
+        "meanMs": 117.79617834394904,
+        "minimumMs": 99.0,
+        "maximumMs": 233.0,
+        "successfulMeanMs": 117.79617834394904,
+        "observationWindowMs": 19006,
+        "throughputPerSecond": 8.260549300220983,
+        "successfulThroughputPerSecond": 8.260549300220983,
+        "firstSampleStartUtc": "2026-10-16T05:41:54.8240000+00:00",
+        "lastSampleEndUtc": "2026-10-16T05:42:13.8300000+00:00"
+      },
+      "jtl": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r01-price-u1/warmup/samples.jtl",
+        "sha256": "5ABBEB2D9D451F7AF1A3A6795617E43AE338DD3C3AB548E263B186EF969B670C",
+        "bytes": 26068
+      },
+      "responseCodes": [
+        {
+          "code": "200",
+          "count": 157
+        }
+      ],
+      "failures": [],
+      "htmlStatistics": null
+    },
+    {
+      "runName": "r01-price-u1",
+      "repetition": 1,
+      "scenario": "price",
+      "threads": 1,
+      "stage": "measurement",
+      "status": "Finished",
+      "startedAtUtc": "2026-10-16T05:42:17.9660570+00:00",
+      "finishedAtUtc": "2026-10-16T05:43:22.8413762+00:00",
+      "cliElapsedSeconds": 64.869,
+      "cliExitCode": 0,
+      "scheduledSeconds": 60,
+      "rampUpSeconds": 5,
+      "validation": "light",
+      "metrics": {
+        "samples": 468,
+        "successfulSamples": 468,
+        "failedSamples": 0,
+        "errorPercent": 0.0,
+        "meanMs": 124.41880341880344,
+        "minimumMs": 99.0,
+        "maximumMs": 249.0,
+        "successfulMeanMs": 124.41880341880342,
+        "observationWindowMs": 59104,
+        "throughputPerSecond": 7.918245804006498,
+        "successfulThroughputPerSecond": 7.918245804006497,
+        "firstSampleStartUtc": "2026-10-16T05:42:21.2470000+00:00",
+        "lastSampleEndUtc": "2026-10-16T05:43:20.3510000+00:00",
+        "medianMs": 117.0,
+        "p90Ms": 154.10000000000002,
+        "p95Ms": 166.54999999999995,
+        "p99Ms": 204.96000000000004
+      },
+      "jtl": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r01-price-u1/measurement/samples.jtl",
+        "sha256": "415A1B1B7E9812862B3F286DE3CDED4DE09B60632CF577C4B878DF1C44617806",
+        "bytes": 77383
+      },
+      "responseCodes": [
+        {
+          "code": "200",
+          "count": 468
+        }
+      ],
+      "failures": [],
+      "htmlStatistics": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r01-price-u1/measurement/html/statistics.json",
+        "sha256": "05DB001FCC03B32C9447A74FB2BF00845711A84750015E7DDA5333D3612DCAAB",
+        "archivedPath": "statistics/r01-price-u1.json"
+      }
+    },
+    {
+      "runName": "r01-price-u10",
+      "repetition": 1,
+      "scenario": "price",
+      "threads": 10,
+      "stage": "warmup",
+      "status": "Finished",
+      "startedAtUtc": "2026-10-16T05:43:25.5684704+00:00",
+      "finishedAtUtc": "2026-10-16T05:43:49.7635419+00:00",
+      "cliElapsedSeconds": 24.186,
+      "cliExitCode": 0,
+      "scheduledSeconds": 20,
+      "rampUpSeconds": 5,
+      "validation": "light",
+      "metrics": {
+        "samples": 780,
+        "successfulSamples": 780,
+        "failedSamples": 0,
+        "errorPercent": 0.0,
+        "meanMs": 224.23333333333332,
+        "minimumMs": 101.0,
+        "maximumMs": 367.0,
+        "successfulMeanMs": 224.23333333333332,
+        "observationWindowMs": 19016,
+        "throughputPerSecond": 41.018090029448885,
+        "successfulThroughputPerSecond": 41.018090029448885,
+        "firstSampleStartUtc": "2026-10-16T05:43:29.1090000+00:00",
+        "lastSampleEndUtc": "2026-10-16T05:43:48.1250000+00:00"
+      },
+      "jtl": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r01-price-u10/warmup/samples.jtl",
+        "sha256": "031170D003B0D9640DDDC3FDB4C398D6B369A36A4F704EAA2124A7C5E34920D3",
+        "bytes": 130245
+      },
+      "responseCodes": [
+        {
+          "code": "200",
+          "count": 780
+        }
+      ],
+      "failures": [],
+      "htmlStatistics": null
+    },
+    {
+      "runName": "r01-price-u10",
+      "repetition": 1,
+      "scenario": "price",
+      "threads": 10,
+      "stage": "measurement",
+      "status": "Finished",
+      "startedAtUtc": "2026-10-16T05:43:52.4927402+00:00",
+      "finishedAtUtc": "2026-10-16T05:44:57.5749620+00:00",
+      "cliElapsedSeconds": 65.076,
+      "cliExitCode": 0,
+      "scheduledSeconds": 60,
+      "rampUpSeconds": 5,
+      "validation": "light",
+      "metrics": {
+        "samples": 2524,
+        "successfulSamples": 2524,
+        "failedSamples": 0,
+        "errorPercent": 0.0,
+        "meanMs": 227.4564183835181,
+        "minimumMs": 100.0,
+        "maximumMs": 345.0,
+        "successfulMeanMs": 227.4564183835182,
+        "observationWindowMs": 59086,
+        "throughputPerSecond": 42.71739498358325,
+        "successfulThroughputPerSecond": 42.717394983583254,
+        "firstSampleStartUtc": "2026-10-16T05:43:55.8450000+00:00",
+        "lastSampleEndUtc": "2026-10-16T05:44:54.9310000+00:00",
+        "medianMs": 228.0,
+        "p90Ms": 267.0,
+        "p95Ms": 279.0,
+        "p99Ms": 303.0
+      },
+      "jtl": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r01-price-u10/measurement/samples.jtl",
+        "sha256": "0C1E3AEC4EB43D80678C00E8BCDBA856D14AD36545A3CC9EE1E120CFE6164459",
+        "bytes": 421653
+      },
+      "responseCodes": [
+        {
+          "code": "200",
+          "count": 2524
+        }
+      ],
+      "failures": [],
+      "htmlStatistics": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r01-price-u10/measurement/html/statistics.json",
+        "sha256": "746558D00C87348DD98E9645C80D13C1E1EE63C43B7E56CC25DAA1F31729C171",
+        "archivedPath": "statistics/r01-price-u10.json"
+      }
+    },
+    {
+      "runName": "r01-brand7-u1",
+      "repetition": 1,
+      "scenario": "brand7",
+      "threads": 1,
+      "stage": "warmup",
+      "status": "Finished",
+      "startedAtUtc": "2026-10-16T05:45:00.1480707+00:00",
+      "finishedAtUtc": "2026-10-16T05:45:23.9047164+00:00",
+      "cliElapsedSeconds": 23.75,
+      "cliExitCode": 0,
+      "scheduledSeconds": 20,
+      "rampUpSeconds": 5,
+      "validation": "light",
+      "metrics": {
+        "samples": 853,
+        "successfulSamples": 853,
+        "failedSamples": 0,
+        "errorPercent": 0.0,
+        "meanMs": 20.713950762016413,
+        "minimumMs": 7.0,
+        "maximumMs": 206.0,
+        "successfulMeanMs": 20.713950762016413,
+        "observationWindowMs": 19035,
+        "throughputPerSecond": 44.81218807459942,
+        "successfulThroughputPerSecond": 44.81218807459942,
+        "firstSampleStartUtc": "2026-10-16T05:45:03.2960000+00:00",
+        "lastSampleEndUtc": "2026-10-16T05:45:22.3310000+00:00"
+      },
+      "jtl": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r01-brand7-u1/warmup/samples.jtl",
+        "sha256": "EEE30BD0762DE7E9FD2A2588A75840F7499C0E993A3619805F46066AF4DCB5F5",
+        "bytes": 148593
+      },
+      "responseCodes": [
+        {
+          "code": "200",
+          "count": 853
+        }
+      ],
+      "failures": [],
+      "htmlStatistics": null
+    },
+    {
+      "runName": "r01-brand7-u1",
+      "repetition": 1,
+      "scenario": "brand7",
+      "threads": 1,
+      "stage": "measurement",
+      "status": "Finished",
+      "startedAtUtc": "2026-10-16T05:45:25.9950019+00:00",
+      "finishedAtUtc": "2026-10-16T05:46:31.0595043+00:00",
+      "cliElapsedSeconds": 65.057,
+      "cliExitCode": 0,
+      "scheduledSeconds": 60,
+      "rampUpSeconds": 5,
+      "validation": "light",
+      "metrics": {
+        "samples": 1834,
+        "successfulSamples": 1834,
+        "failedSamples": 0,
+        "errorPercent": 0.0,
+        "meanMs": 30.930207197382792,
+        "minimumMs": 5.0,
+        "maximumMs": 774.0,
+        "successfulMeanMs": 30.93020719738277,
+        "observationWindowMs": 58847,
+        "throughputPerSecond": 31.165564939589103,
+        "successfulThroughputPerSecond": 31.165564939589103,
+        "firstSampleStartUtc": "2026-10-16T05:45:29.3620000+00:00",
+        "lastSampleEndUtc": "2026-10-16T05:46:28.2090000+00:00",
+        "medianMs": 25.0,
+        "p90Ms": 54.0,
+        "p95Ms": 64.25,
+        "p99Ms": 100.65000000000009
+      },
+      "jtl": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r01-brand7-u1/measurement/samples.jtl",
+        "sha256": "C43AB8FE2B7B07D59692109B8412BD31E45E9D3887A8F3EE34FD014CC966B60C",
+        "bytes": 319205
+      },
+      "responseCodes": [
+        {
+          "code": "200",
+          "count": 1834
+        }
+      ],
+      "failures": [],
+      "htmlStatistics": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r01-brand7-u1/measurement/html/statistics.json",
+        "sha256": "1D5575001076684311BD98745A94D0F3238B60859A65D05173BDFF461E9EF938",
+        "archivedPath": "statistics/r01-brand7-u1.json"
+      }
+    },
+    {
+      "runName": "r01-brand7-u10",
+      "repetition": 1,
+      "scenario": "brand7",
+      "threads": 10,
+      "stage": "warmup",
+      "status": "Finished",
+      "startedAtUtc": "2026-10-16T05:46:33.6934184+00:00",
+      "finishedAtUtc": "2026-10-16T05:46:58.2276335+00:00",
+      "cliElapsedSeconds": 24.527,
+      "cliExitCode": 0,
+      "scheduledSeconds": 20,
+      "rampUpSeconds": 5,
+      "validation": "light",
+      "metrics": {
+        "samples": 3756,
+        "successfulSamples": 3756,
+        "failedSamples": 0,
+        "errorPercent": 0.0,
+        "meanMs": 45.83306709265176,
+        "minimumMs": 12.0,
+        "maximumMs": 173.0,
+        "successfulMeanMs": 45.83306709265176,
+        "observationWindowMs": 18941,
+        "throughputPerSecond": 198.2999841613431,
+        "successfulThroughputPerSecond": 198.2999841613431,
+        "firstSampleStartUtc": "2026-10-16T05:46:37.5400000+00:00",
+        "lastSampleEndUtc": "2026-10-16T05:46:56.4810000+00:00"
+      },
+      "jtl": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r01-brand7-u10/warmup/samples.jtl",
+        "sha256": "61B62427ED284E63462D5483B74DFB88AEB610BC42050AEE075259EF099DC5D2",
+        "bytes": 660645
+      },
+      "responseCodes": [
+        {
+          "code": "200",
+          "count": 3756
+        }
+      ],
+      "failures": [],
+      "htmlStatistics": null
+    },
+    {
+      "runName": "r01-brand7-u10",
+      "repetition": 1,
+      "scenario": "brand7",
+      "threads": 10,
+      "stage": "measurement",
+      "status": "Finished",
+      "startedAtUtc": "2026-10-16T05:47:01.0559989+00:00",
+      "finishedAtUtc": "2026-10-16T05:48:07.4618498+00:00",
+      "cliElapsedSeconds": 66.399,
+      "cliExitCode": 0,
+      "scheduledSeconds": 60,
+      "rampUpSeconds": 5,
+      "validation": "light",
+      "metrics": {
+        "samples": 22174,
+        "successfulSamples": 22174,
+        "failedSamples": 0,
+        "errorPercent": 0.0,
+        "meanMs": 25.51131956345273,
+        "minimumMs": 10.0,
+        "maximumMs": 380.0,
+        "successfulMeanMs": 25.51131956345269,
+        "observationWindowMs": 58923,
+        "throughputPerSecond": 376.32164010657976,
+        "successfulThroughputPerSecond": 376.32164010657976,
+        "firstSampleStartUtc": "2026-10-16T05:47:04.3010000+00:00",
+        "lastSampleEndUtc": "2026-10-16T05:48:03.2240000+00:00",
+        "medianMs": 20.0,
+        "p90Ms": 43.0,
+        "p95Ms": 51.0,
+        "p99Ms": 88.0
+      },
+      "jtl": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r01-brand7-u10/measurement/samples.jtl",
+        "sha256": "6250F0DF50BA18F3ACEC6A5D72538C4BBA137993D3AFFC9D9FB4183808FD59A3",
+        "bytes": 3903500
+      },
+      "responseCodes": [
+        {
+          "code": "200",
+          "count": 22174
+        }
+      ],
+      "failures": [],
+      "htmlStatistics": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r01-brand7-u10/measurement/html/statistics.json",
+        "sha256": "87E6BF542BDD279181F2ADE2F508081B552F5CE04D828FF2B88CFF50D238E720",
+        "archivedPath": "statistics/r01-brand7-u10.json"
+      }
+    },
+    {
+      "runName": "r02-price-u1",
+      "repetition": 2,
+      "scenario": "price",
+      "threads": 1,
+      "stage": "warmup",
+      "status": "Finished",
+      "startedAtUtc": "2026-10-16T05:48:10.7619569+00:00",
+      "finishedAtUtc": "2026-10-16T05:48:34.9061061+00:00",
+      "cliElapsedSeconds": 24.139,
+      "cliExitCode": 0,
+      "scheduledSeconds": 20,
+      "rampUpSeconds": 5,
+      "validation": "light",
+      "metrics": {
+        "samples": 142,
+        "successfulSamples": 142,
+        "failedSamples": 0,
+        "errorPercent": 0.0,
+        "meanMs": 131.16901408450704,
+        "minimumMs": 99.0,
+        "maximumMs": 194.0,
+        "successfulMeanMs": 131.16901408450704,
+        "observationWindowMs": 19129,
+        "throughputPerSecond": 7.4232840190287,
+        "successfulThroughputPerSecond": 7.4232840190287,
+        "firstSampleStartUtc": "2026-10-16T05:48:14.1950000+00:00",
+        "lastSampleEndUtc": "2026-10-16T05:48:33.3240000+00:00"
+      },
+      "jtl": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r02-price-u1/warmup/samples.jtl",
+        "sha256": "4B6BBEB8631BE8A094727D0345324D8D76802C2D391185CB065B69E068CD835D",
+        "bytes": 23593
+      },
+      "responseCodes": [
+        {
+          "code": "200",
+          "count": 142
+        }
+      ],
+      "failures": [],
+      "htmlStatistics": null
+    },
+    {
+      "runName": "r02-price-u1",
+      "repetition": 2,
+      "scenario": "price",
+      "threads": 1,
+      "stage": "measurement",
+      "status": "Finished",
+      "startedAtUtc": "2026-10-16T05:48:37.8652988+00:00",
+      "finishedAtUtc": "2026-10-16T05:49:42.3845505+00:00",
+      "cliElapsedSeconds": 64.513,
+      "cliExitCode": 0,
+      "scheduledSeconds": 60,
+      "rampUpSeconds": 5,
+      "validation": "light",
+      "metrics": {
+        "samples": 360,
+        "successfulSamples": 360,
+        "failedSamples": 0,
+        "errorPercent": 0.0,
+        "meanMs": 161.59166666666664,
+        "minimumMs": 102.0,
+        "maximumMs": 484.0,
+        "successfulMeanMs": 161.59166666666667,
+        "observationWindowMs": 58943,
+        "throughputPerSecond": 6.107595473593132,
+        "successfulThroughputPerSecond": 6.107595473593133,
+        "firstSampleStartUtc": "2026-10-16T05:48:41.1600000+00:00",
+        "lastSampleEndUtc": "2026-10-16T05:49:40.1030000+00:00",
+        "medianMs": 160.5,
+        "p90Ms": 203.90000000000003,
+        "p95Ms": 218.84999999999997,
+        "p99Ms": 317.32999999999936
+      },
+      "jtl": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r02-price-u1/measurement/samples.jtl",
+        "sha256": "86718E7BC2B8C8571D6194EA0B5CF736358DAF291C3E65F51DFA3996C9B6B82C",
+        "bytes": 59565
+      },
+      "responseCodes": [
+        {
+          "code": "200",
+          "count": 360
+        }
+      ],
+      "failures": [],
+      "htmlStatistics": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r02-price-u1/measurement/html/statistics.json",
+        "sha256": "434EC2E7ED177612A2CD0900BA140C861A86628F43AB7B7DC71A936EC9E03A1C",
+        "archivedPath": "statistics/r02-price-u1.json"
+      }
+    },
+    {
+      "runName": "r02-price-u10",
+      "repetition": 2,
+      "scenario": "price",
+      "threads": 10,
+      "stage": "warmup",
+      "status": "Finished",
+      "startedAtUtc": "2026-10-16T05:49:45.1909657+00:00",
+      "finishedAtUtc": "2026-10-16T05:50:09.2164030+00:00",
+      "cliElapsedSeconds": 24.02,
+      "cliExitCode": 0,
+      "scheduledSeconds": 20,
+      "rampUpSeconds": 5,
+      "validation": "light",
+      "metrics": {
+        "samples": 678,
+        "successfulSamples": 678,
+        "failedSamples": 0,
+        "errorPercent": 0.0,
+        "meanMs": 258.49705014749264,
+        "minimumMs": 150.0,
+        "maximumMs": 414.0,
+        "successfulMeanMs": 258.49705014749264,
+        "observationWindowMs": 19028,
+        "throughputPerSecond": 35.631700651671224,
+        "successfulThroughputPerSecond": 35.631700651671224,
+        "firstSampleStartUtc": "2026-10-16T05:49:48.6810000+00:00",
+        "lastSampleEndUtc": "2026-10-16T05:50:07.7090000+00:00"
+      },
+      "jtl": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r02-price-u10/warmup/samples.jtl",
+        "sha256": "2BAB793A965083C4A6FE5DAF0014DD62A610345B8ACCF61F7260A41000BFE8D3",
+        "bytes": 113255
+      },
+      "responseCodes": [
+        {
+          "code": "200",
+          "count": 678
+        }
+      ],
+      "failures": [],
+      "htmlStatistics": null
+    },
+    {
+      "runName": "r02-price-u10",
+      "repetition": 2,
+      "scenario": "price",
+      "threads": 10,
+      "stage": "measurement",
+      "status": "Finished",
+      "startedAtUtc": "2026-10-16T05:50:11.9638288+00:00",
+      "finishedAtUtc": "2026-10-16T05:51:18.0053402+00:00",
+      "cliElapsedSeconds": 66.034,
+      "cliExitCode": 0,
+      "scheduledSeconds": 60,
+      "rampUpSeconds": 5,
+      "validation": "light",
+      "metrics": {
+        "samples": 2107,
+        "successfulSamples": 2107,
+        "failedSamples": 0,
+        "errorPercent": 0.0,
+        "meanMs": 271.9117228286668,
+        "minimumMs": 111.0,
+        "maximumMs": 753.0,
+        "successfulMeanMs": 271.91172282866637,
+        "observationWindowMs": 58807,
+        "throughputPerSecond": 35.82906796809904,
+        "successfulThroughputPerSecond": 35.82906796809904,
+        "firstSampleStartUtc": "2026-10-16T05:50:16.1700000+00:00",
+        "lastSampleEndUtc": "2026-10-16T05:51:14.9770000+00:00",
+        "medianMs": 267.0,
+        "p90Ms": 316.0,
+        "p95Ms": 341.0,
+        "p99Ms": 462.880000000001
+      },
+      "jtl": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r02-price-u10/measurement/samples.jtl",
+        "sha256": "971C1DEEF669F6C67AAFD677D49F74C635E28C0736D1980881E24C9B567EA7E7",
+        "bytes": 352046
+      },
+      "responseCodes": [
+        {
+          "code": "200",
+          "count": 2107
+        }
+      ],
+      "failures": [],
+      "htmlStatistics": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r02-price-u10/measurement/html/statistics.json",
+        "sha256": "9495599454A3E992438BE8CA211DCB4BE4D0393BBF9448EB467F256A494E85DC",
+        "archivedPath": "statistics/r02-price-u10.json"
+      }
+    },
+    {
+      "runName": "r02-brand7-u1",
+      "repetition": 2,
+      "scenario": "brand7",
+      "threads": 1,
+      "stage": "warmup",
+      "status": "Finished",
+      "startedAtUtc": "2026-10-16T05:51:20.7982976+00:00",
+      "finishedAtUtc": "2026-10-16T05:51:45.2883313+00:00",
+      "cliElapsedSeconds": 24.477,
+      "cliExitCode": 0,
+      "scheduledSeconds": 20,
+      "rampUpSeconds": 5,
+      "validation": "light",
+      "metrics": {
+        "samples": 801,
+        "successfulSamples": 801,
+        "failedSamples": 0,
+        "errorPercent": 0.0,
+        "meanMs": 21.607990012484393,
+        "minimumMs": 9.0,
+        "maximumMs": 733.0,
+        "successfulMeanMs": 21.607990012484393,
+        "observationWindowMs": 18647,
+        "throughputPerSecond": 42.955971469941545,
+        "successfulThroughputPerSecond": 42.955971469941545,
+        "firstSampleStartUtc": "2026-10-16T05:51:25.0370000+00:00",
+        "lastSampleEndUtc": "2026-10-16T05:51:43.6840000+00:00"
+      },
+      "jtl": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r02-brand7-u1/warmup/samples.jtl",
+        "sha256": "FFE2C3768D6339491511FBE53350409D0320F5B94CFCA8AEFA0C3AD7CD94D197",
+        "bytes": 139545
+      },
+      "responseCodes": [
+        {
+          "code": "200",
+          "count": 801
+        }
+      ],
+      "failures": [],
+      "htmlStatistics": null
+    },
+    {
+      "runName": "r02-brand7-u1",
+      "repetition": 2,
+      "scenario": "brand7",
+      "threads": 1,
+      "stage": "measurement",
+      "status": "Finished",
+      "startedAtUtc": "2026-10-16T05:51:47.6240208+00:00",
+      "finishedAtUtc": "2026-10-16T05:52:53.4184013+00:00",
+      "cliElapsedSeconds": 65.791,
+      "cliExitCode": 0,
+      "scheduledSeconds": 60,
+      "rampUpSeconds": 5,
+      "validation": "light",
+      "metrics": {
+        "samples": 3385,
+        "successfulSamples": 3385,
+        "failedSamples": 0,
+        "errorPercent": 0.0,
+        "meanMs": 16.540915805022095,
+        "minimumMs": 6.0,
+        "maximumMs": 218.0,
+        "successfulMeanMs": 16.540915805022156,
+        "observationWindowMs": 58979,
+        "throughputPerSecond": 57.39330948303633,
+        "successfulThroughputPerSecond": 57.39330948303633,
+        "firstSampleStartUtc": "2026-10-16T05:51:51.1730000+00:00",
+        "lastSampleEndUtc": "2026-10-16T05:52:50.1520000+00:00",
+        "medianMs": 14.0,
+        "p90Ms": 27.0,
+        "p95Ms": 34.0,
+        "p99Ms": 48.0
+      },
+      "jtl": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r02-brand7-u1/measurement/samples.jtl",
+        "sha256": "2897A8402B6A80588DF570397E67BDFFA8D5EA9314D7038DAE8A9FD6AA7E123F",
+        "bytes": 588808
+      },
+      "responseCodes": [
+        {
+          "code": "200",
+          "count": 3385
+        }
+      ],
+      "failures": [],
+      "htmlStatistics": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r02-brand7-u1/measurement/html/statistics.json",
+        "sha256": "8D3558A388BD24B5DA7B21AC4ECB1B9804442A41475CF5D890DDA2976A10A0CF",
+        "archivedPath": "statistics/r02-brand7-u1.json"
+      }
+    },
+    {
+      "runName": "r02-brand7-u10",
+      "repetition": 2,
+      "scenario": "brand7",
+      "threads": 10,
+      "stage": "warmup",
+      "status": "Finished",
+      "startedAtUtc": "2026-10-16T05:52:56.1547108+00:00",
+      "finishedAtUtc": "2026-10-16T05:53:20.5264275+00:00",
+      "cliElapsedSeconds": 24.364,
+      "cliExitCode": 0,
+      "scheduledSeconds": 20,
+      "rampUpSeconds": 5,
+      "validation": "light",
+      "metrics": {
+        "samples": 7364,
+        "successfulSamples": 7364,
+        "failedSamples": 0,
+        "errorPercent": 0.0,
+        "meanMs": 23.173003802281368,
+        "minimumMs": 9.0,
+        "maximumMs": 135.0,
+        "successfulMeanMs": 23.173003802281368,
+        "observationWindowMs": 18969,
+        "throughputPerSecond": 388.2123464600137,
+        "successfulThroughputPerSecond": 388.2123464600137,
+        "firstSampleStartUtc": "2026-10-16T05:52:59.5770000+00:00",
+        "lastSampleEndUtc": "2026-10-16T05:53:18.5460000+00:00"
+      },
+      "jtl": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r02-brand7-u10/warmup/samples.jtl",
+        "sha256": "84FDF5AB314968CB3529F0391F94D7E69A628C8F2C3D20F1E1D152143B9F43E2",
+        "bytes": 1295271
+      },
+      "responseCodes": [
+        {
+          "code": "200",
+          "count": 7364
+        }
+      ],
+      "failures": [],
+      "htmlStatistics": null
+    },
+    {
+      "runName": "r02-brand7-u10",
+      "repetition": 2,
+      "scenario": "brand7",
+      "threads": 10,
+      "stage": "measurement",
+      "status": "Finished",
+      "startedAtUtc": "2026-10-16T05:53:23.3717781+00:00",
+      "finishedAtUtc": "2026-10-16T05:54:30.4529822+00:00",
+      "cliElapsedSeconds": 67.074,
+      "cliExitCode": 0,
+      "scheduledSeconds": 60,
+      "rampUpSeconds": 5,
+      "validation": "light",
+      "metrics": {
+        "samples": 26944,
+        "successfulSamples": 26944,
+        "failedSamples": 0,
+        "errorPercent": 0.0,
+        "meanMs": 20.88134649643705,
+        "minimumMs": 8.0,
+        "maximumMs": 185.0,
+        "successfulMeanMs": 20.881346496437054,
+        "observationWindowMs": 58916,
+        "throughputPerSecond": 457.329078688302,
+        "successfulThroughputPerSecond": 457.329078688302,
+        "firstSampleStartUtc": "2026-10-16T05:53:26.6860000+00:00",
+        "lastSampleEndUtc": "2026-10-16T05:54:25.6020000+00:00",
+        "medianMs": 18.0,
+        "p90Ms": 27.0,
+        "p95Ms": 32.0,
+        "p99Ms": 52.0
+      },
+      "jtl": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r02-brand7-u10/measurement/samples.jtl",
+        "sha256": "418745E4D538E49F589A12B6914E126A7AE1E65C81177ED300FE32B31A7FA442",
+        "bytes": 4743327
+      },
+      "responseCodes": [
+        {
+          "code": "200",
+          "count": 26944
+        }
+      ],
+      "failures": [],
+      "htmlStatistics": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r02-brand7-u10/measurement/html/statistics.json",
+        "sha256": "29BE200A453CA49ED04CD59697D866FCF89BD75D360459201C3B328E0B01F0B7",
+        "archivedPath": "statistics/r02-brand7-u10.json"
+      }
+    },
+    {
+      "runName": "r02-latest-u1",
+      "repetition": 2,
+      "scenario": "latest",
+      "threads": 1,
+      "stage": "warmup",
+      "status": "Finished",
+      "startedAtUtc": "2026-10-16T05:54:34.0107902+00:00",
+      "finishedAtUtc": "2026-10-16T05:54:58.1243034+00:00",
+      "cliElapsedSeconds": 24.109,
+      "cliExitCode": 0,
+      "scheduledSeconds": 20,
+      "rampUpSeconds": 5,
+      "validation": "light",
+      "metrics": {
+        "samples": 125,
+        "successfulSamples": 125,
+        "failedSamples": 0,
+        "errorPercent": 0.0,
+        "meanMs": 148.648,
+        "minimumMs": 111.0,
+        "maximumMs": 224.0,
+        "successfulMeanMs": 148.648,
+        "observationWindowMs": 19012,
+        "throughputPerSecond": 6.574794866400168,
+        "successfulThroughputPerSecond": 6.574794866400168,
+        "firstSampleStartUtc": "2026-10-16T05:54:37.5560000+00:00",
+        "lastSampleEndUtc": "2026-10-16T05:54:56.5680000+00:00"
+      },
+      "jtl": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r02-latest-u1/warmup/samples.jtl",
+        "sha256": "87537A4B707A97C699C286D239173AD099A0C3DC5E1A89987E36E7DEF75FFF16",
+        "bytes": 20540
+      },
+      "responseCodes": [
+        {
+          "code": "200",
+          "count": 125
+        }
+      ],
+      "failures": [],
+      "htmlStatistics": null
+    },
+    {
+      "runName": "r02-latest-u1",
+      "repetition": 2,
+      "scenario": "latest",
+      "threads": 1,
+      "stage": "measurement",
+      "status": "Finished",
+      "startedAtUtc": "2026-10-16T05:55:01.9888647+00:00",
+      "finishedAtUtc": "2026-10-16T05:56:07.0390830+00:00",
+      "cliElapsedSeconds": 65.044,
+      "cliExitCode": 0,
+      "scheduledSeconds": 60,
+      "rampUpSeconds": 5,
+      "validation": "light",
+      "metrics": {
+        "samples": 440,
+        "successfulSamples": 440,
+        "failedSamples": 0,
+        "errorPercent": 0.0,
+        "meanMs": 131.34772727272724,
+        "minimumMs": 100.0,
+        "maximumMs": 291.0,
+        "successfulMeanMs": 131.34772727272727,
+        "observationWindowMs": 58652,
+        "throughputPerSecond": 7.501875468867216,
+        "successfulThroughputPerSecond": 7.501875468867217,
+        "firstSampleStartUtc": "2026-10-16T05:55:05.7580000+00:00",
+        "lastSampleEndUtc": "2026-10-16T05:56:04.4100000+00:00",
+        "medianMs": 123.0,
+        "p90Ms": 157.90000000000003,
+        "p95Ms": 196.0,
+        "p99Ms": 246.61999999999955
+      },
+      "jtl": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r02-latest-u1/measurement/samples.jtl",
+        "sha256": "9C3AF2584D50C895239728A493260C2421CD3CE5A6FA5C3353B78681155E4088",
+        "bytes": 71885
+      },
+      "responseCodes": [
+        {
+          "code": "200",
+          "count": 440
+        }
+      ],
+      "failures": [],
+      "htmlStatistics": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r02-latest-u1/measurement/html/statistics.json",
+        "sha256": "00C5E5BD64D0A18F89617DCA0716656D4A71D1AE8F02728A9CB6E40947EC9C55",
+        "archivedPath": "statistics/r02-latest-u1.json"
+      }
+    },
+    {
+      "runName": "r02-latest-u10",
+      "repetition": 2,
+      "scenario": "latest",
+      "threads": 10,
+      "stage": "warmup",
+      "status": "Finished",
+      "startedAtUtc": "2026-10-16T05:56:11.2163120+00:00",
+      "finishedAtUtc": "2026-10-16T05:56:35.1443605+00:00",
+      "cliElapsedSeconds": 23.921,
+      "cliExitCode": 0,
+      "scheduledSeconds": 20,
+      "rampUpSeconds": 5,
+      "validation": "light",
+      "metrics": {
+        "samples": 739,
+        "successfulSamples": 739,
+        "failedSamples": 0,
+        "errorPercent": 0.0,
+        "meanMs": 237.24221921515561,
+        "minimumMs": 102.0,
+        "maximumMs": 345.0,
+        "successfulMeanMs": 237.24221921515561,
+        "observationWindowMs": 19147,
+        "throughputPerSecond": 38.59612471927717,
+        "successfulThroughputPerSecond": 38.59612471927717,
+        "firstSampleStartUtc": "2026-10-16T05:56:14.3610000+00:00",
+        "lastSampleEndUtc": "2026-10-16T05:56:33.5080000+00:00"
+      },
+      "jtl": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r02-latest-u10/warmup/samples.jtl",
+        "sha256": "5FC6A71962F229A251F7D76EAD6DDF54415DE3CBFFE48ABEA3F4D9F6C9464629",
+        "bytes": 121938
+      },
+      "responseCodes": [
+        {
+          "code": "200",
+          "count": 739
+        }
+      ],
+      "failures": [],
+      "htmlStatistics": null
+    },
+    {
+      "runName": "r02-latest-u10",
+      "repetition": 2,
+      "scenario": "latest",
+      "threads": 10,
+      "stage": "measurement",
+      "status": "Finished",
+      "startedAtUtc": "2026-10-16T05:56:37.3554482+00:00",
+      "finishedAtUtc": "2026-10-16T05:57:43.5547997+00:00",
+      "cliElapsedSeconds": 66.194,
+      "cliExitCode": 0,
+      "scheduledSeconds": 60,
+      "rampUpSeconds": 5,
+      "validation": "light",
+      "metrics": {
+        "samples": 2169,
+        "successfulSamples": 2169,
+        "failedSamples": 0,
+        "errorPercent": 0.0,
+        "meanMs": 263.5260488704475,
+        "minimumMs": 130.0,
+        "maximumMs": 550.0,
+        "successfulMeanMs": 263.5260488704472,
+        "observationWindowMs": 58481,
+        "throughputPerSecond": 37.08896906687642,
+        "successfulThroughputPerSecond": 37.08896906687642,
+        "firstSampleStartUtc": "2026-10-16T05:56:42.2180000+00:00",
+        "lastSampleEndUtc": "2026-10-16T05:57:40.6990000+00:00",
+        "medianMs": 257.0,
+        "p90Ms": 320.0,
+        "p95Ms": 354.5,
+        "p99Ms": 469.60000000000036
+      },
+      "jtl": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r02-latest-u10/measurement/samples.jtl",
+        "sha256": "6C862E9F38280A5B0FE89643D31BD53CE311B439067A0A1BAED3E7103E8098EE",
+        "bytes": 358073
+      },
+      "responseCodes": [
+        {
+          "code": "200",
+          "count": 2169
+        }
+      ],
+      "failures": [],
+      "htmlStatistics": {
+        "sourcePath": "build/benchmark/jmeter/after-measure-20261016-143837-2931151-1019c396/r02-latest-u10/measurement/html/statistics.json",
+        "sha256": "78538598B5D5DE22881885AE58A9366397FBB6BD04076C16744AB592F6B6F049",
+        "archivedPath": "statistics/r02-latest-u10.json"
+      }
+    }
+  ],
+  "limits": [
+    "워밍업은 본 측정 통계와 분리했다.",
+    "각 실행의 지표를 유지하며 시나리오·동시 사용자·반복의 평균과 분위수를 합산하거나 평균하지 않았다.",
+    "처리량 분모는 첫 표본 시작부터 마지막 표본 종료까지의 실제 관측 구간이다. CLI 시간이나 예정된 60초가 아니다.",
+    "light 검증만으로 모든 상품 필드의 동일성이 증명되지는 않는다. 별도 full 응답 검증 자료를 함께 확인한다.",
+    "큰 JTL과 HTML 전체는 원본 build 경로에 보존하며 이 요약에는 복사하지 않는다."
+  ]
+}

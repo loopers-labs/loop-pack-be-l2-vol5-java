@@ -1,0 +1,3 @@
+EXPLAIN
+-> Aggregate: count(pje1_0.id)  (cost=99856 rows=1) (actual time=221..221 rows=1 loops=1)
+    -> Covering index lookup on pje1_0 using idx_products_deleted_brand_created (deleted=false)  (cost=50178 rows=496785) (actual time=0.483..163 rows=950400 loops=1)

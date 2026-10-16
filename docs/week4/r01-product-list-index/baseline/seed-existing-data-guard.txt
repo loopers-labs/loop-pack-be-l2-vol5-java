@@ -1,0 +1,9 @@
+Expected refusal: existing brands detected before INSERT
+exit_code=1
+java.lang.IllegalStateException: seed 대상 테이블이 비어 있지 않습니다: brands
+brands	users	wallets	products	product_likes
+1000	1000	1000	1000000	2597980
+price_sum	like_count_sum
+50950000000	2597980
+buffer_pool_bytes
+134217728

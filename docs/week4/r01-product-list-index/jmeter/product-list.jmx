@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="R01 product list before/after benchmark" enabled="true">
+      <stringProp name="TestPlan.comments">Defaults are a safe one-user, one-request correctness smoke test.
+Properties: scenario=latest|price|brand7; host=localhost; port=18080; protocol=http;
+threads=1; rampup=0 seconds; loops=1; scheduler=false; duration=0 seconds;
+connectTimeout=3000 ms; responseTimeout=30000 ms; validation=full|light (default full).
+full compares the complete response with expected-responses.json beside this JMX.
+Use -JexpectedFile=ABSOLUTE_PATH to override the expected JSON location.
+For a timed CLI run explicitly set -Jloops=-1 -Jscheduler=true -Jduration=SECONDS.
+With a finite loop count and a scheduler, the first limit reached ends each thread.
+No warm-up duration or measured-run duration is prescribed here.
+Use -Jvalidation=light for load runs; use the same validation mode before and after.
+A run contains one HTTP sampler and one selected scenario. Output/JTL/HTML are controlled by CLI options.
+No listeners, response storage, timers, HTTP caching, or authentication are included.</stringProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.tearDown_on_shutdown">true</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
+        <collectionProp name="Arguments.arguments"/>
+      </elementProp>
+    </TestPlan>
+    <hashTree>
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="One scenario per run" enabled="true">
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller" enabled="true">
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+          <stringProp name="LoopController.loops">${__P(loops,1)}</stringProp>
+        </elementProp>
+        <stringProp name="ThreadGroup.num_threads">${__P(threads,1)}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${__P(rampup,0)}</stringProp>
+        <stringProp name="ThreadGroup.scheduler">${__P(scheduler,false)}</stringProp>
+        <stringProp name="ThreadGroup.duration">${__P(duration,0)}</stringProp>
+        <stringProp name="ThreadGroup.delay">0</stringProp>
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+      </ThreadGroup>
+      <hashTree>
+        <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Accept JSON" enabled="true">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp name="Accept" elementType="Header">
+              <stringProp name="Header.name">Accept</stringProp>
+              <stringProp name="Header.value">application/json</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree/>
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="products-${__P(scenario,latest)}" enabled="true">
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="HTTP arguments">
+            <collectionProp name="Arguments.arguments"/>
+          </elementProp>
+          <stringProp name="HTTPSampler.domain">${__P(host,localhost)}</stringProp>
+          <stringProp name="HTTPSampler.port">${__P(port,18080)}</stringProp>
+          <stringProp name="HTTPSampler.protocol">${__P(protocol,http)}</stringProp>
+          <stringProp name="HTTPSampler.contentEncoding">UTF-8</stringProp>
+          <stringProp name="HTTPSampler.path">${requestPath}</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+          <boolProp name="HTTPSampler.follow_redirects">false</boolProp>
+          <boolProp name="HTTPSampler.auto_redirects">false</boolProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+          <boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp>
+          <stringProp name="HTTPSampler.implementation">HttpClient4</stringProp>
+          <stringProp name="HTTPSampler.connect_timeout">${__P(connectTimeout,3000)}</stringProp>
+          <stringProp name="HTTPSampler.response_timeout">${__P(responseTimeout,30000)}</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="Select scenario and validate run properties once per thread" enabled="true">
+            <stringProp name="scriptLanguage">groovy</stringProp>
+            <stringProp name="parameters"/>
+            <stringProp name="filename"/>
+            <stringProp name="cacheKey">true</stringProp>
+            <stringProp name="script"><![CDATA[
+if (vars.get('requestPath') != null) {
+    return
+}
+try {
+    def paths = [
+        latest: '/api/v1/products?sort=latest&page=0&size=20',
+        price: '/api/v1/products?sort=price_asc&page=0&size=20',
+        brand7: '/api/v1/products?brandId=7&sort=price_asc&page=0&size=20'
+    ]
+    String scenario = props.getProperty('scenario', 'latest')
+    String validation = props.getProperty('validation', 'full')
+    if (!paths.containsKey(scenario)) {
+        throw new IllegalArgumentException('scenario must be latest, price, or brand7')
+    }
+    if (!(validation in ['full', 'light'])) {
+        throw new IllegalArgumentException('validation must be full or light')
+    }
+    int loops = Integer.parseInt(props.getProperty('loops', '1'))
+    String schedulerValue = props.getProperty('scheduler', 'false')
+    if (!(schedulerValue in ['true', 'false'])) {
+        throw new IllegalArgumentException('scheduler must be true or false')
+    }
+    boolean scheduled = Boolean.parseBoolean(schedulerValue)
+    long duration = Long.parseLong(props.getProperty('duration', '0'))
+    if (loops == 0 || loops < -1) {
+        throw new IllegalArgumentException('loops must be positive or -1')
+    }
+    if (loops == -1 && (!scheduled || duration <= 0)) {
+        throw new IllegalArgumentException('loops=-1 requires scheduler=true and duration>0')
+    }
+    if (scheduled && duration <= 0) {
+        throw new IllegalArgumentException('scheduler=true requires duration>0 seconds')
+    }
+    vars.put('scenario', scenario)
+    vars.put('validation', validation)
+    vars.put('requestPath', paths[scenario])
+} catch (Exception error) {
+    log.error('Invalid benchmark configuration; stopping this thread before HTTP', error)
+    ctx.getThread().stop()
+    throw error
+}
+]]></stringProp>
+          </JSR223PreProcessor>
+          <hashTree/>
+          <JSR223Assertion guiclass="TestBeanGUI" testclass="JSR223Assertion" testname="HTTP and JSON contract (full smoke or light load)" enabled="true">
+            <stringProp name="scriptLanguage">groovy</stringProp>
+            <stringProp name="parameters"/>
+            <stringProp name="filename"/>
+            <stringProp name="cacheKey">true</stringProp>
+            <stringProp name="script"><![CDATA[
+import groovy.json.JsonSlurper
+import org.apache.jmeter.services.FileServer
+
+try {
+    if (prev.getResponseCode() != '200') {
+        throw new IllegalStateException('Expected HTTP 200, received ' + prev.getResponseCode())
+    }
+    def actual = new JsonSlurper().parseText(prev.getResponseDataAsString())
+    if (actual.meta?.result != 'SUCCESS') {
+        throw new IllegalStateException('Expected meta.result=SUCCESS')
+    }
+    if (!(actual.data?.items instanceof List) || actual.data.items.size() != 20 || actual.data.size != 20) {
+        throw new IllegalStateException('Expected data.size=20 and exactly 20 items')
+    }
+    if (vars.get('validation') == 'light') {
+        return
+    }
+    def fixture = vars.getObject('expectedResponseFixture')
+    if (fixture == null) {
+        File expectedFile = new File(props.getProperty('expectedFile', 'expected-responses.json'))
+        if (!expectedFile.isAbsolute()) {
+            expectedFile = new File(FileServer.getFileServer().getBaseDir(), expectedFile.getPath())
+        }
+        if (!expectedFile.isFile()) {
+            throw new IllegalStateException('Expected response JSON not found: ' + expectedFile.getAbsolutePath())
+        }
+        fixture = new JsonSlurper().parse(expectedFile, 'UTF-8')
+        vars.putObject('expectedResponseFixture', fixture)
+    }
+    def selected = fixture.scenarios[vars.get('scenario')]
+    if (selected == null || selected.requestPath != vars.get('requestPath')) {
+        throw new IllegalStateException('Expected JSON scenario/path does not match this request')
+    }
+    def expected = selected.response
+    if (actual.keySet() != expected.keySet() || actual.meta != expected.meta) {
+        throw new IllegalStateException('Response envelope/meta differs from the expected contract')
+    }
+    if (actual.data.keySet() != expected.data.keySet()) {
+        throw new IllegalStateException('Response page fields differ from the expected contract')
+    }
+    for (String field : ['page', 'size', 'totalElements', 'totalPages']) {
+        if (actual.data[field] != expected.data[field]) {
+            throw new IllegalStateException('data.' + field + ': expected=' + expected.data[field] + ', actual=' + actual.data[field])
+        }
+    }
+    for (int index = 0; index < expected.data.items.size(); index++) {
+        if (actual.data.items[index] != expected.data.items[index]) {
+            throw new IllegalStateException('data.items[' + index + '] differs: expected='
+                + expected.data.items[index] + ', actual=' + actual.data.items[index])
+        }
+    }
+} catch (Exception error) {
+    AssertionResult.setFailure(true)
+    AssertionResult.setFailureMessage(error.getMessage())
+}
+]]></stringProp>
+          </JSR223Assertion>
+          <hashTree/>
+        </hashTree>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>

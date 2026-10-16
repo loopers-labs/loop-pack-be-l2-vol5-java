@@ -1,8 +1,10 @@
 package com.loopers.application.shopping.service;
 
+import com.loopers.application.mall.event.AllProductDetailsChangedEvent;
 import com.loopers.application.shopping.dao.LikeCountAggregationDao;
 import com.loopers.application.shopping.usecase.LikeCountAggregationUseCase;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -11,11 +13,13 @@ import org.springframework.transaction.annotation.Transactional;
 // 좋아요 수 전체 재집계 유스케이스 구현체
 public class LikeCountAggregationService implements LikeCountAggregationUseCase {
     private final LikeCountAggregationDao aggregationDao;
+    private final ApplicationEventPublisher eventPublisher;
 
     // 전체 재집계
     @Override
     @Transactional
     public void execute() {
         aggregationDao.recountAll();
+        eventPublisher.publishEvent(new AllProductDetailsChangedEvent());
     }
 }

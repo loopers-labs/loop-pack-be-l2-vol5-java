@@ -36,6 +36,10 @@ scheduler:
 query:
   product-count-cache:
     ttl: 30s # 브랜드 필터 없는 상품 목록 전체 개수 캐시 TTL (0s면 끔)
+  product-detail-cache:
+    enabled: false
+    maximum-size: 1000
+    ttl: 30s
 
 ---
 spring:

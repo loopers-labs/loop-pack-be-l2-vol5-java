@@ -7,17 +7,24 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.verifyNoInteractions;
 
+import com.loopers.application.mall.event.ProductDetailsChangedEvent;
 import com.loopers.application.shopping.dao.LikeCountAggregationDao;
 import com.loopers.application.shopping.event.ProductLikeChangedEvent;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
+import org.springframework.context.ApplicationEventPublisher;
 
 class LikeCountDeltaFlushServiceTest {
     private final LikeCountDeltaBuffer buffer = new LikeCountDeltaBuffer();
     private final LikeCountAggregationDao aggregationDao = mock(LikeCountAggregationDao.class);
-    private final LikeCountDeltaFlushService service = new LikeCountDeltaFlushService(buffer, aggregationDao);
+    private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
+    private final LikeCountDeltaFlushService service = new LikeCountDeltaFlushService(buffer, aggregationDao, eventPublisher);
 
     @DisplayName("누적분이 없으면 DAO를 호출하지 않는다")
     @Test
@@ -25,6 +32,7 @@ class LikeCountDeltaFlushServiceTest {
         service.execute();
 
         verify(aggregationDao, never()).addDeltas(anyMap());
+        verifyNoInteractions(eventPublisher);
     }
 
     @DisplayName("누적분이 있으면 그대로 addDeltas를 호출하고 버퍼를 비운다")
@@ -35,7 +43,9 @@ class LikeCountDeltaFlushServiceTest {
 
         service.execute();
 
-        verify(aggregationDao).addDeltas(Map.of(10L, 2L, 20L, -1L));
+        InOrder order = inOrder(aggregationDao, eventPublisher);
+        order.verify(aggregationDao).addDeltas(Map.of(10L, 2L, 20L, -1L));
+        order.verify(eventPublisher).publishEvent(new ProductDetailsChangedEvent(Set.of(10L, 20L)));
         assertThat(buffer.drain()).isEmpty();
     }
 
@@ -48,5 +58,6 @@ class LikeCountDeltaFlushServiceTest {
         assertThatThrownBy(service::execute).isInstanceOf(IllegalStateException.class);
 
         assertThat(buffer.drain()).containsExactlyEntriesOf(Map.of(10L, 2L));
+        verifyNoInteractions(eventPublisher);
     }
 }

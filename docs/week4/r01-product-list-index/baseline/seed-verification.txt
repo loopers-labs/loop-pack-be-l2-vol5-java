@@ -1,0 +1,45 @@
+database_name	mysql_version	session_time_zone	global_time_zone
+week4_r01_index_benchmark	8.0.46	SYSTEM	SYSTEM
+brands	deleted_brands	users	wallets	total_balance
+1000	10	1000	1000	0
+products	active_products	deleted_products	price_sum	stored_like_count_sum	zero_like_products	popular_products	zero_stock_products	oldest_created_at	newest_created_at	distinct_created_at
+1000000	950400	49600	50950000000	2597980	166338	1000	100000	2026-09-30 15:41:00.000000	2026-10-01 00:00:00.000000	500
+brands_with_unexpected_product_count
+0
+brand_7_products	brand_7_active_products	brand_7_active_price_sum
+1000	960	49004000
+product_likes
+2597980
+duplicate_like_pairs
+0
+orphan_product_likes
+0
+orphan_products
+0
+orphan_wallets
+0
+active_products_of_deleted_brands
+0
+like_count_mismatches
+0
+product_formula_mismatches
+0
+like_formula_mismatches
+0
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+products	0	PRIMARY	1	id	A	935097	NULL	NULL		BTREE			YES	NULL
+products	1	idx_products_deleted_brand_created	1	deleted	A	1	NULL	NULL		BTREE			YES	NULL
+products	1	idx_products_deleted_brand_created	2	brand_id	A	2053	NULL	NULL		BTREE			YES	NULL
+products	1	idx_products_deleted_brand_created	3	created_at	D	482715	NULL	NULL		BTREE			YES	NULL
+products	1	idx_products_deleted_brand_created	4	id	D	921638	NULL	NULL		BTREE			YES	NULL
+products	1	idx_products_deleted_brand_price	1	deleted	A	1	NULL	NULL		BTREE			YES	NULL
+products	1	idx_products_deleted_brand_price	2	brand_id	A	2047	NULL	NULL		BTREE			YES	NULL
+products	1	idx_products_deleted_brand_price	3	price	A	440696	NULL	NULL		BTREE			YES	NULL
+products	1	idx_products_deleted_brand_price	4	id	D	931257	NULL	NULL		BTREE			YES	NULL
+products	1	idx_products_deleted_like	1	deleted	A	1	NULL	NULL		BTREE			YES	NULL
+products	1	idx_products_deleted_like	2	like_count	D	4	NULL	NULL		BTREE			YES	NULL
+products	1	idx_products_deleted_like	3	id	D	904623	NULL	NULL		BTREE			YES	NULL
+products	1	idx_products_deleted_brand_like	1	deleted	A	1	NULL	NULL		BTREE			YES	NULL
+products	1	idx_products_deleted_brand_like	2	brand_id	A	2051	NULL	NULL		BTREE			YES	NULL
+products	1	idx_products_deleted_brand_like	3	like_count	D	13048	NULL	NULL		BTREE			YES	NULL
+products	1	idx_products_deleted_brand_like	4	id	D	908231	NULL	NULL		BTREE			YES	NULL

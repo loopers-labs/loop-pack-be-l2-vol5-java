@@ -4,6 +4,8 @@ import jakarta.annotation.PostConstruct;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
+import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.core.env.Profiles;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import java.util.TimeZone;
 
@@ -21,6 +23,9 @@ public class CommerceApiApplication {
     }
 
     public static void main(String[] args) {
-        SpringApplication.run(CommerceApiApplication.class, args);
+        ConfigurableApplicationContext context = SpringApplication.run(CommerceApiApplication.class, args);
+        if (context.getEnvironment().acceptsProfiles(Profiles.of("benchmark-seed"))) {
+            context.close();
+        }
     }
 }

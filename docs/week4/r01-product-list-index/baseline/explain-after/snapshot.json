@@ -1,0 +1,31 @@
+{
+  "Likes": 2597980,
+  "Indexes": {
+    "PRIMARY": "id A",
+    "idx_products_deleted_like": "deleted A,like_count D,id D",
+    "idx_products_deleted_price": "deleted A,price A,id D",
+    "idx_products_deleted_created": "deleted A,created_at D,id D",
+    "idx_products_deleted_brand_like": "deleted A,brand_id A,like_count D,id D",
+    "idx_products_deleted_brand_price": "deleted A,brand_id A,price A,id D",
+    "idx_products_deleted_brand_created": "deleted A,brand_id A,created_at D,id D"
+  },
+  "PriceSum": 50950000000,
+  "Products": 1000000,
+  "Settings": {
+    "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+    "autocommit": 1,
+    "sync_binlog": 1,
+    "tmp_table_size": 16777216,
+    "join_buffer_size": 262144,
+    "sort_buffer_size": 262144,
+    "max_heap_table_size": 16777216,
+    "transaction_isolation": "REPEATABLE-READ",
+    "innodb_buffer_pool_size": 134217728,
+    "innodb_redo_log_capacity": 104857600,
+    "innodb_flush_log_at_trx_commit": 1
+  },
+  "MySqlVersion": "8.0.46",
+  "ActiveProducts": 950400,
+  "DatabaseSchema": "week4_r01_index_benchmark",
+  "StoredLikeCountSum": 2597980
+}

@@ -1,0 +1,100 @@
+{
+  "Purpose": "Correctness and tool smoke only; not the before-index load benchmark",
+  "ExecutedAtUtc": "2026-10-16T04:36:43.3282609Z",
+  "FinishedAtUtc": "2026-10-16T04:37:21.8278198Z",
+  "Mode": "Smoke",
+  "Status": "Finished",
+  "AppJar": "commerce-api-98da9d2.jar",
+  "AppJarSha256": "47A6839167CD1C0E2F459040E2B76572BB19C792E8701F180CBC033089883FCA",
+  "JMeterVersion": "5.6.3",
+  "PlanSha256": "42D042831A4C5CD1D1A5546999EA8107160BB181B868F1A5E57E3B4C794F5B4E",
+  "ExpectedSha256": "4797B0F6ACE100D6B113BFDD500C7F615546D227C70D15015286AA8DAB46EDD2",
+  "ResultPropertiesSha256": "9F1ED88AFCED5A5CF9F5E44B895DCA6C6D8BD8921F032422F25E65D9EA4C428B",
+  "DatabaseBefore": {
+    "Likes": 2597980,
+    "Products": 1000000,
+    "Settings": {
+      "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+      "autocommit": 1,
+      "sync_binlog": 1,
+      "tmp_table_size": 16777216,
+      "join_buffer_size": 262144,
+      "sort_buffer_size": 262144,
+      "max_heap_table_size": 16777216,
+      "transaction_isolation": "REPEATABLE-READ",
+      "innodb_buffer_pool_size": 134217728,
+      "innodb_redo_log_capacity": 104857600,
+      "innodb_flush_log_at_trx_commit": 1
+    },
+    "MySqlVersion": "8.0.46",
+    "DatabaseSchema": "week4_r01_index_benchmark",
+    "ProductIndexes": [
+      "idx_products_deleted_brand_created",
+      "idx_products_deleted_brand_like",
+      "idx_products_deleted_brand_price",
+      "idx_products_deleted_like",
+      "PRIMARY"
+    ],
+    "BufferPoolBytes": 134217728,
+    "CapturedAtUtc": "2026-10-16T04:36:45.9213651Z"
+  },
+  "DatabaseAfter": {
+    "Likes": 2597980,
+    "Products": 1000000,
+    "Settings": {
+      "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+      "autocommit": 1,
+      "sync_binlog": 1,
+      "tmp_table_size": 16777216,
+      "join_buffer_size": 262144,
+      "sort_buffer_size": 262144,
+      "max_heap_table_size": 16777216,
+      "transaction_isolation": "REPEATABLE-READ",
+      "innodb_buffer_pool_size": 134217728,
+      "innodb_redo_log_capacity": 104857600,
+      "innodb_flush_log_at_trx_commit": 1
+    },
+    "MySqlVersion": "8.0.46",
+    "DatabaseSchema": "week4_r01_index_benchmark",
+    "ProductIndexes": [
+      "idx_products_deleted_brand_created",
+      "idx_products_deleted_brand_like",
+      "idx_products_deleted_brand_price",
+      "idx_products_deleted_like",
+      "PRIMARY"
+    ],
+    "BufferPoolBytes": 134217728,
+    "CapturedAtUtc": "2026-10-16T04:37:21.8173196Z"
+  },
+  "Runs": [
+    {
+      "Scenario": "latest",
+      "Users": 1,
+      "Samples": 1,
+      "FailedSamples": 0,
+      "Validation": "full",
+      "Jtl": "latest-samples.jtl",
+      "HtmlGenerated": true
+    },
+    {
+      "Scenario": "price",
+      "Users": 1,
+      "Samples": 1,
+      "FailedSamples": 0,
+      "Validation": "full",
+      "Jtl": "price-samples.jtl",
+      "HtmlGenerated": true
+    },
+    {
+      "Scenario": "brand7",
+      "Users": 1,
+      "Samples": 1,
+      "FailedSamples": 0,
+      "Validation": "full",
+      "Jtl": "brand7-samples.jtl",
+      "HtmlGenerated": true
+    }
+  ],
+  "MeasuredLoadRuns": 0,
+  "MockRuns": 0
+}

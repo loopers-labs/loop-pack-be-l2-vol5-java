@@ -1,0 +1,6 @@
+EXPLAIN
+-> Limit: 20 row(s)  (cost=236121 rows=20) (actual time=0.0707..0.0976 rows=20 loops=1)
+    -> Nested loop inner join  (cost=236121 rows=491817) (actual time=0.07..0.0958 rows=20 loops=1)
+        -> Index range scan on pje1_0 using idx_products_deleted_created over (deleted = 0), with index condition: (pje1_0.deleted = false)  (cost=62246 rows=496785) (actual time=0.0607..0.0642 rows=20 loops=1)
+        -> Filter: (bje1_0.deleted = false)  (cost=0.25 rows=0.99) (actual time=0.00128..0.00136 rows=1 loops=20)
+            -> Single-row index lookup on bje1_0 using PRIMARY (id=pje1_0.brand_id)  (cost=0.25 rows=1) (actual time=0.00113..0.00116 rows=1 loops=20)

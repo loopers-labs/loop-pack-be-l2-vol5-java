@@ -1,0 +1,22 @@
+{
+  "ImplementationGitSha": "5003d2c5242b408d8bced896e135627cf625e274",
+  "JarName": "commerce-api-5003d2c.jar",
+  "JarSha256": "6D30AE13AC5E82A3C3EA38C36AEB394035BDB5B7505B336890D79495D4058BBE",
+  "SpringBoot": "3.4.4",
+  "Caffeine": "3.1.8",
+  "Hibernate": "6.6.11.Final",
+  "Micrometer": "1.14.5",
+  "Java": "21.0.10",
+  "JMeter": "5.6.3",
+  "MySQL": "8.0.46",
+  "PowerShell": "7.6.5",
+  "OperatingSystem": "Microsoft Windows 11 Home",
+  "OperatingSystemVersion": "10.0.26200",
+  "Cpu": {
+    "Name": "Intel(R) Core(TM) Ultra 7 258V",
+    "NumberOfCores": 8,
+    "NumberOfLogicalProcessors": 8
+  },
+  "PhysicalMemoryGiB": 31.48,
+  "Workload": "100 fixed active brand-7 products, closed-loop with no think time; generator/API/Docker database on one host"
+}

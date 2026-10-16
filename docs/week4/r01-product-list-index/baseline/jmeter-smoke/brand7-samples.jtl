@@ -1,0 +1,2 @@
+timeStamp,elapsed,label,responseCode,responseMessage,threadName,dataType,success,failureMessage,bytes,sentBytes,grpThreads,allThreads,URL,Latency,IdleTime,Connect
+1792125436612,79,products-brand7,200,,One scenario per run 1-1,text,true,,2491,199,1,1,http://localhost:18080/api/v1/products?brandId=7&sort=price_asc&page=0&size=20,74,0,29

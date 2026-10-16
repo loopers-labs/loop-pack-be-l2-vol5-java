@@ -1,6 +1,7 @@
 package com.loopers.application.mall.service;
 
 import com.loopers.application.mall.command.ProductCommand;
+import com.loopers.application.mall.event.ProductDetailsChangedEvent;
 import com.loopers.application.mall.usecase.CreateProductUseCase;
 import com.loopers.application.mall.usecase.DeleteProductUseCase;
 import com.loopers.application.mall.usecase.SetProductStockUseCase;
@@ -13,8 +14,10 @@ import com.loopers.domain.mall.repository.BrandRepository;
 import com.loopers.domain.mall.repository.ProductRepository;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeSet;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +28,7 @@ public class ProductService implements CreateProductUseCase, UpdateProductUseCas
         SetProductStockUseCase {
     private final ProductRepository productRepository;
     private final BrandRepository brandRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     // 상품 생성
     @Override
@@ -45,7 +49,9 @@ public class ProductService implements CreateProductUseCase, UpdateProductUseCas
         Product product = findProduct(command.productId());
         product.update(command.name(), command.description(), command.price());
         findBrand(product.getBrandId());
-        return productRepository.save(product).getId();
+        Product saved = productRepository.save(product);
+        eventPublisher.publishEvent(new ProductDetailsChangedEvent(Set.of(saved.getId())));
+        return saved.getId();
     }
 
     // 상품 삭제
@@ -55,6 +61,7 @@ public class ProductService implements CreateProductUseCase, UpdateProductUseCas
         Product product = findProduct(command.productId());
         product.delete();
         productRepository.save(product);
+        eventPublisher.publishEvent(new ProductDetailsChangedEvent(Set.of(product.getId())));
     }
 
     // 상품 재고 설정
@@ -64,7 +71,9 @@ public class ProductService implements CreateProductUseCase, UpdateProductUseCas
         Product product = findProduct(command.productId());
         product.setStock(command.stock());
         findBrand(product.getBrandId());
-        return productRepository.save(product).getId();
+        Product saved = productRepository.save(product);
+        eventPublisher.publishEvent(new ProductDetailsChangedEvent(Set.of(saved.getId())));
+        return saved.getId();
     }
 
     // 상품 id 오름차순으로 잠가 조회한 뒤 품목 등장 순서로 모두 검증하고 통과하면 차감·저장한다.
@@ -82,6 +91,9 @@ public class ProductService implements CreateProductUseCase, UpdateProductUseCas
         }
         for (Product product : lockedProducts.values()) {
             productRepository.save(product);
+        }
+        if (!lockedProducts.isEmpty()) {
+            eventPublisher.publishEvent(new ProductDetailsChangedEvent(lockedProducts.keySet()));
         }
     }
 

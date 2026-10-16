@@ -1,0 +1,10 @@
+{
+  "sourceCommit": "98da9d2",
+  "runner": "ApplicationRunner",
+  "transactionTimeoutSeconds": 3600,
+  "bufferPoolBytes": 134217728,
+  "startedAt": "2026-10-16T13:07:08.7082192+09:00",
+  "finishedAt": "2026-10-16T13:10:19.7948660+09:00",
+  "exitCode": 0,
+  "elapsedSeconds": 191.086
+}

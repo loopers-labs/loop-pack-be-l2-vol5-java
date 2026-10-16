@@ -1,0 +1,54 @@
+{
+  "Command": ".\\gradlew.bat :apps:commerce-api:test --tests *ProductDetailCacheInvalidationIntegrationTest* --console=plain",
+  "ExitCode": 0,
+  "Duration": "2m 15s",
+  "Tests": 14.0,
+  "Failures": 0.0,
+  "Errors": 0.0,
+  "Skipped": 0.0,
+  "AddedTest": "keepsCachedDetailsAndStoredCountAfterDeltaFlushRollback",
+  "Scope": "Testcontainers MySQL; rollback DB aggregate and cached details; delta-buffer recovery after outer rollback remains existing behavior",
+  "TestSourceSha256": "DAA6E84A21C2DFA37031275229530DF315834965761DDC7E5E9E521B2F50306E",
+  "Suites": [
+    {
+      "File": "TEST-com.loopers.infrastructure.query.mall.ProductDetailCacheInvalidationIntegrationTest.xml",
+      "Name": "com.loopers.infrastructure.query.mall.ProductDetailCacheInvalidationIntegrationTest",
+      "Tests": 0,
+      "Failures": 0,
+      "Errors": 0,
+      "Skipped": 0
+    },
+    {
+      "File": "TEST-com.loopers.infrastructure.query.mall.ProductDetailCacheInvalidationIntegrationTest$BrandChanges.xml",
+      "Name": "브랜드 범위 무효화",
+      "Tests": 3,
+      "Failures": 0,
+      "Errors": 0,
+      "Skipped": 0
+    },
+    {
+      "File": "TEST-com.loopers.infrastructure.query.mall.ProductDetailCacheInvalidationIntegrationTest$LikeChanges.xml",
+      "Name": "좋아요 관계와 집계 경계",
+      "Tests": 5,
+      "Failures": 0,
+      "Errors": 0,
+      "Skipped": 0
+    },
+    {
+      "File": "TEST-com.loopers.infrastructure.query.mall.ProductDetailCacheInvalidationIntegrationTest$OrderChanges.xml",
+      "Name": "주문 확정의 바깥 트랜잭션",
+      "Tests": 2,
+      "Failures": 0,
+      "Errors": 0,
+      "Skipped": 0
+    },
+    {
+      "File": "TEST-com.loopers.infrastructure.query.mall.ProductDetailCacheInvalidationIntegrationTest$ProductChanges.xml",
+      "Name": "상품 변경과 커밋 경계",
+      "Tests": 4,
+      "Failures": 0,
+      "Errors": 0,
+      "Skipped": 0
+    }
+  ]
+}

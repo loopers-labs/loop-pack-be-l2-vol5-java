@@ -1,0 +1,7 @@
+timeStamp,elapsed,label,responseCode,responseMessage,threadName,dataType,success,failureMessage,bytes,sentBytes,grpThreads,allThreads,URL,Latency,IdleTime,Connect
+1792126697964,15065,products-latest,200,,One scenario per run 1-1,text,true,,2521,186,1,1,http://localhost:18080/api/v1/products?sort=latest&page=0&size=20,15060,0,34
+1792126713212,8021,products-latest,200,,One scenario per run 1-1,text,true,,2521,186,1,1,http://localhost:18080/api/v1/products?sort=latest&page=0&size=20,8020,0,0
+1792126721234,11761,products-latest,200,,One scenario per run 1-1,text,true,,2521,186,1,1,http://localhost:18080/api/v1/products?sort=latest&page=0&size=20,11761,0,0
+1792126732998,10408,products-latest,200,,One scenario per run 1-1,text,true,,2521,186,1,1,http://localhost:18080/api/v1/products?sort=latest&page=0&size=20,10407,0,0
+1792126743411,7823,products-latest,200,,One scenario per run 1-1,text,true,,2521,186,1,1,http://localhost:18080/api/v1/products?sort=latest&page=0&size=20,7823,0,0
+1792126751237,11996,products-latest,200,,One scenario per run 1-1,text,true,,2521,186,1,1,http://localhost:18080/api/v1/products?sort=latest&page=0&size=20,11996,0,0

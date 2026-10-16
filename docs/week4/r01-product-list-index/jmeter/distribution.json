@@ -1,0 +1,9 @@
+{
+  "Version": "5.6.3",
+  "BinaryUrl": "https://dlcdn.apache.org/jmeter/binaries/apache-jmeter-5.6.3.zip",
+  "ChecksumUrl": "https://downloads.apache.org/jmeter/binaries/apache-jmeter-5.6.3.zip.sha512",
+  "ArchiveSha512": "387FADCA903EE0AA30E3F2115FDFEDB3898B102E6B9FE7CC3942703094BD2E65B235DF2B0C6D0D3248E74C9A7950A36E42625FD74425368342C12E40B0163076",
+  "LocalDirectory": "apache-jmeter-5.6.3",
+  "ArchiveIgnored": true,
+  "DistributionIgnored": true
+}

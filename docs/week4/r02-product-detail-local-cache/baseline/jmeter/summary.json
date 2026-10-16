@@ -1,0 +1,1424 @@
+{
+  "FormatVersion": 1,
+  "Status": "Verified",
+  "Purpose": "week4-r02-product-detail-cache-results",
+  "GeneratedAtUtc": "2026-10-16T07:10:54.0952958Z",
+  "StartedAtUtc": "2026-10-16T06:47:53.6303368Z",
+  "FinishedAtUtc": "2026-10-16T07:10:22.0970546Z",
+  "CodeGitSha": "7ea15c3678c7b1e6ba5dbf79f808a234e5177a6d",
+  "SourceManifest": {
+    "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/manifest.json",
+    "Bytes": 250383,
+    "Sha256": "714D9290BC5FD1DEEE198E60F40729A5366CC3A214F5473BD6B2F9AAF19AAF1A"
+  },
+  "ApplicationJar": {
+    "Path": "apps/commerce-api/build/libs/commerce-api-5003d2c.jar",
+    "Bytes": 83220653,
+    "Sha256": "6D30AE13AC5E82A3C3EA38C36AEB394035BDB5B7505B336890D79495D4058BBE"
+  },
+  "JMeterJar": {
+    "Path": "apache-jmeter-5.6.3/bin/ApacheJMeter.jar",
+    "Bytes": 13664,
+    "Sha256": "9C18010142B88CBA2659A8471BE414B34DD993E181BB10D6218FBAB3E7B8712B"
+  },
+  "JavaVersion": "21.0.10",
+  "JMeterVersion": "5.6.3",
+  "PercentileMethod": "raw JTL elapsed milliseconds; nearest-rank ceil(N*p), with zero mean allowed",
+  "HtmlValidation": "sample/error counts, average, and throughput only; percentiles may use interpolation",
+  "Configuration": {
+    "WorkloadIds": [
+      7,
+      1007,
+      2007,
+      3007,
+      4007,
+      5007,
+      6007,
+      7007,
+      8007,
+      9007,
+      10007,
+      11007,
+      12007,
+      13007,
+      14007,
+      15007,
+      16007,
+      17007,
+      19007,
+      20007,
+      21007,
+      22007,
+      23007,
+      24007,
+      25007,
+      26007,
+      27007,
+      28007,
+      29007,
+      30007,
+      31007,
+      32007,
+      33007,
+      34007,
+      35007,
+      36007,
+      37007,
+      38007,
+      39007,
+      40007,
+      41007,
+      42007,
+      44007,
+      45007,
+      46007,
+      47007,
+      48007,
+      49007,
+      50007,
+      51007,
+      52007,
+      53007,
+      54007,
+      55007,
+      56007,
+      57007,
+      58007,
+      59007,
+      60007,
+      61007,
+      62007,
+      63007,
+      64007,
+      65007,
+      66007,
+      67007,
+      69007,
+      70007,
+      71007,
+      72007,
+      73007,
+      74007,
+      75007,
+      76007,
+      77007,
+      78007,
+      79007,
+      80007,
+      81007,
+      82007,
+      83007,
+      84007,
+      85007,
+      86007,
+      87007,
+      88007,
+      89007,
+      90007,
+      91007,
+      92007,
+      94007,
+      95007,
+      96007,
+      97007,
+      98007,
+      99007,
+      100007,
+      101007,
+      102007,
+      103007
+    ],
+    "Users": [
+      1,
+      10
+    ],
+    "Repetitions": 2,
+    "WarmupSeconds": 20,
+    "MeasurementSeconds": 60,
+    "RampupSeconds": 5,
+    "ConnectTimeoutMs": 3000,
+    "ResponseTimeoutMs": 30000,
+    "CacheMaximumSize": 1000,
+    "CacheTtl": "30s",
+    "ApiPort": 18081,
+    "ManagementPort": 18082,
+    "Validation": "light",
+    "MeasurementOrder": [
+      "r1-OFF-u1",
+      "r1-OFF-u10",
+      "r1-ON-u1",
+      "r1-ON-u10",
+      "r2-ON-u1",
+      "r2-ON-u10",
+      "r2-OFF-u1",
+      "r2-OFF-u10"
+    ]
+  },
+  "Database": {
+    "Schema": "week4_r01_index_benchmark",
+    "Version": "8.0.46",
+    "Products": 1000000,
+    "ActiveProducts": 950400,
+    "Likes": 2597980,
+    "StoredLikes": 2597980,
+    "PriceSum": 50950000000,
+    "ProductIndexes": {
+      "PRIMARY": "id A",
+      "idx_products_deleted_like": "deleted A,like_count D,id D",
+      "idx_products_deleted_price": "deleted A,price A,id D",
+      "idx_products_deleted_created": "deleted A,created_at D,id D",
+      "idx_products_deleted_brand_like": "deleted A,brand_id A,like_count D,id D",
+      "idx_products_deleted_brand_price": "deleted A,brand_id A,price A,id D",
+      "idx_products_deleted_brand_created": "deleted A,brand_id A,created_at D,id D"
+    },
+    "Settings": {
+      "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+      "autocommit": 1,
+      "sync_binlog": 1,
+      "tmp_table_size": 16777216,
+      "join_buffer_size": 262144,
+      "sort_buffer_size": 262144,
+      "max_heap_table_size": 16777216,
+      "transaction_isolation": "REPEATABLE-READ",
+      "innodb_buffer_pool_size": 134217728,
+      "innodb_redo_log_capacity": 104857600,
+      "innodb_flush_log_at_trx_commit": 1
+    },
+    "BeforeAfterUnchanged": true
+  },
+  "Checks": {
+    "MainRuns": 8,
+    "Warmups": 8,
+    "SuccessfulStages": 16,
+    "FailedSamples": 0,
+    "DistinctIdsEachStage": 100,
+    "StoppedApiProcesses": 4,
+    "HtmlReports": 8,
+    "FrozenInputs": 6,
+    "ApplicationJarUnchanged": true,
+    "ProtectedListenerBytesUnchanged": true,
+    "ProtectedPorts": [
+      18080,
+      8081
+    ],
+    "OffDbLoadsEqualRequests": true,
+    "OnGetsEqualRequests": true,
+    "OnDbLoadsEqualMisses": true,
+    "RawJtlFiles": 16,
+    "RawStatisticsFiles": 8,
+    "BytePreservedStatisticsCopies": 8
+  },
+  "Inputs": [
+    {
+      "Path": "docs/week4/r02-product-detail-local-cache/jmeter/product-detail.jmx",
+      "Bytes": 8784,
+      "Sha256": "EA67E49104F50ACC45B6EA5A4FB95DB6C1B6236772D61F87224C41F442BC68F5"
+    },
+    {
+      "Path": "docs/week4/r02-product-detail-local-cache/jmeter/product-ids.csv",
+      "Bytes": 601,
+      "Sha256": "64C59799D8F0C1C2A2C402ACD80DEE07BDA15781036F08FF860FAF00BD928610"
+    },
+    {
+      "Path": "docs/week4/r02-product-detail-local-cache/jmeter/expected-responses.json",
+      "Bytes": 20646,
+      "Sha256": "EE7A228A874DD5A23C93EA0DC3D650969BECD97C74DB7B5FC82EDC4D8F0D3109"
+    },
+    {
+      "Path": "docs/week4/r02-product-detail-local-cache/jmeter/results.properties",
+      "Bytes": 1103,
+      "Sha256": "0D9F8E1E9CECC402A3C3D96A9CBAE7F134BD2371586C985AA67A265DFA2FAC71"
+    },
+    {
+      "Path": "docs/week4/r02-product-detail-local-cache/jmeter/run-benchmark.ps1",
+      "Bytes": 19771,
+      "Sha256": "43487C0092294BAE579F42ACA9CC5EBDBD2844F073D78FCFEA77E5D597B6B79F"
+    },
+    {
+      "Path": "docs/week4/r02-product-detail-local-cache/jmeter/benchmark-common.ps1",
+      "Bytes": 18720,
+      "Sha256": "C4122AF1499B8959C414A9C1EA1272FC300EFBA3363805E55189F443E43124DC"
+    }
+  ],
+  "Measurements": [
+    {
+      "Run": "r1-OFF-u1",
+      "Repetition": 1,
+      "CacheMode": "OFF",
+      "Users": 1,
+      "Stage": "measurement",
+      "StartedAtUtc": "2026-10-16T06:48:52.0566476Z",
+      "FinishedAtUtc": "2026-10-16T06:50:02.9958264Z",
+      "WallElapsedSeconds": 70.935,
+      "ScheduledSeconds": 60,
+      "Samples": 2881,
+      "FailedSamples": 0,
+      "ErrorRate": 0.0,
+      "AverageMs": 19.46233946546338,
+      "P50Ms": 14.0,
+      "P95Ms": 43.0,
+      "P99Ms": 80.0,
+      "ThroughputPerSecond": 48.812307275253296,
+      "SampleSpanSeconds": 59.022,
+      "UniqueIds": 100,
+      "Metrics": {
+        "DbLoads": 2881.0,
+        "Hits": 0.0,
+        "Misses": 0.0,
+        "Puts": 0.0,
+        "Evictions": 0.0,
+        "SizeBefore": 0.0,
+        "SizeAfter": 0.0,
+        "HitRate": null,
+        "DbLoadsPerRequest": 1.0,
+        "CacheMetricsPresent": true
+      },
+      "Jtl": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-off/u1/measurement/samples.jtl",
+        "Bytes": 451484,
+        "Sha256": "DA541842D21BCD6307D2912C8A615FDC2DEB614401D3E2387B020C71E6EAF697"
+      },
+      "MetricBefore": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-off/u1/measurement/metrics-before.prom",
+        "Bytes": 39542,
+        "Sha256": "3236A634585D1BECA9614A3F7EF18E6EEB8EAC98098851E0A86101910D27AB9A"
+      },
+      "MetricAfter": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-off/u1/measurement/metrics-after.prom",
+        "Bytes": 39611,
+        "Sha256": "A5D08A97E51F65172E69855D723F42A4AB61468C18BDA9E09A1884F88D9582A1"
+      },
+      "HtmlStatistics": {
+        "SampleCount": 2881,
+        "ErrorCount": 0,
+        "AverageMs": 19.46233946546338,
+        "ThroughputPerSecond": 48.812307275253296,
+        "Source": {
+          "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-off/u1/measurement/html/statistics.json",
+          "Bytes": 991,
+          "Sha256": "651B92DAA2B6EEE4B6F660DDA8CE30BD44D9F60552EA360D2F56B808DC5EEC1F"
+        },
+        "Export": "statistics/r1-off-u1.json"
+      }
+    },
+    {
+      "Run": "r1-OFF-u10",
+      "Repetition": 1,
+      "CacheMode": "OFF",
+      "Users": 10,
+      "Stage": "measurement",
+      "StartedAtUtc": "2026-10-16T06:50:38.4063879Z",
+      "FinishedAtUtc": "2026-10-16T06:51:52.7261617Z",
+      "WallElapsedSeconds": 74.316,
+      "ScheduledSeconds": 60,
+      "Samples": 29091,
+      "FailedSamples": 0,
+      "ErrorRate": 0.0,
+      "AverageMs": 19.372383211302466,
+      "P50Ms": 15.0,
+      "P95Ms": 41.0,
+      "P99Ms": 61.0,
+      "ThroughputPerSecond": 492.9341195607971,
+      "SampleSpanSeconds": 59.016,
+      "UniqueIds": 100,
+      "Metrics": {
+        "DbLoads": 29091.0,
+        "Hits": 0.0,
+        "Misses": 0.0,
+        "Puts": 0.0,
+        "Evictions": 0.0,
+        "SizeBefore": 0.0,
+        "SizeAfter": 0.0,
+        "HitRate": null,
+        "DbLoadsPerRequest": 1.0,
+        "CacheMetricsPresent": true
+      },
+      "Jtl": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-off/u10/measurement/samples.jtl",
+        "Bytes": 4621393,
+        "Sha256": "439399FBBE3657EDA30E5445B0C6DC3C46802CC33D2C48D9ABB023020DA6EA56"
+      },
+      "MetricBefore": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-off/u10/measurement/metrics-before.prom",
+        "Bytes": 40373,
+        "Sha256": "3BC3830171CB90F5D117EE7C43E3B97681EFAC1132944600D28E29AF04469520"
+      },
+      "MetricAfter": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-off/u10/measurement/metrics-after.prom",
+        "Bytes": 40365,
+        "Sha256": "0FC12FD4215ECB323694F23BA62C4BEBB269ACB4D5D624F5FE3BDDE3CEA0D577"
+      },
+      "HtmlStatistics": {
+        "SampleCount": 29091,
+        "ErrorCount": 0,
+        "AverageMs": 19.372383211302665,
+        "ThroughputPerSecond": 492.93411956079706,
+        "Source": {
+          "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-off/u10/measurement/html/statistics.json",
+          "Bytes": 945,
+          "Sha256": "637E94BC45361558930E7CF79B051CC8B98D9AB3DBF7902A623A6FCA5FB89589"
+        },
+        "Export": "statistics/r1-off-u10.json"
+      }
+    },
+    {
+      "Run": "r1-ON-u1",
+      "Repetition": 1,
+      "CacheMode": "ON",
+      "Users": 1,
+      "Stage": "measurement",
+      "StartedAtUtc": "2026-10-16T06:53:00.0616205Z",
+      "FinishedAtUtc": "2026-10-16T06:54:26.9222169Z",
+      "WallElapsedSeconds": 86.857,
+      "ScheduledSeconds": 60,
+      "Samples": 101351,
+      "FailedSamples": 0,
+      "ErrorRate": 0.0,
+      "AverageMs": 0.4066067429033754,
+      "P50Ms": 0.0,
+      "P95Ms": 1.0,
+      "P99Ms": 1.0,
+      "ThroughputPerSecond": 1717.2896404486767,
+      "SampleSpanSeconds": 59.018,
+      "UniqueIds": 100,
+      "Metrics": {
+        "DbLoads": 200.0,
+        "Hits": 101151.0,
+        "Misses": 200.0,
+        "Puts": 0.0,
+        "Evictions": 200.0,
+        "SizeBefore": 100.0,
+        "SizeAfter": 100.0,
+        "HitRate": 0.9980266598257541,
+        "DbLoadsPerRequest": 0.001973340174245937,
+        "CacheMetricsPresent": true
+      },
+      "Jtl": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-on/u1/measurement/samples.jtl",
+        "Bytes": 15691700,
+        "Sha256": "E642B34DD4D03913BA56902B08C28B0BD1193EE3725DC9D3A05F3A49BD785399"
+      },
+      "MetricBefore": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-on/u1/measurement/metrics-before.prom",
+        "Bytes": 40420,
+        "Sha256": "089ED527A155E2CFB3DD053CC4E6303C381602939870EBED2903B6213A5944E7"
+      },
+      "MetricAfter": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-on/u1/measurement/metrics-after.prom",
+        "Bytes": 40505,
+        "Sha256": "2CA65787C76E0E0BC7DA2A16A949A9A3B85877566EADDD265D809D43F7C68227"
+      },
+      "HtmlStatistics": {
+        "SampleCount": 101351,
+        "ErrorCount": 0,
+        "AverageMs": 0.4066067429033757,
+        "ThroughputPerSecond": 1717.2896404486767,
+        "Source": {
+          "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-on/u1/measurement/html/statistics.json",
+          "Bytes": 937,
+          "Sha256": "1072DBC6AD3EB2BB73BDE7112634A69758078521EDCD55BE3DF45854A4F49825"
+        },
+        "Export": "statistics/r1-on-u1.json"
+      }
+    },
+    {
+      "Run": "r1-ON-u10",
+      "Repetition": 1,
+      "CacheMode": "ON",
+      "Users": 10,
+      "Stage": "measurement",
+      "StartedAtUtc": "2026-10-16T06:55:39.8735837Z",
+      "FinishedAtUtc": "2026-10-16T06:58:53.6678416Z",
+      "WallElapsedSeconds": 193.756,
+      "ScheduledSeconds": 60,
+      "Samples": 793744,
+      "FailedSamples": 0,
+      "ErrorRate": 0.0,
+      "AverageMs": 0.5635355983793263,
+      "P50Ms": 0.0,
+      "P95Ms": 1.0,
+      "P99Ms": 3.0,
+      "ThroughputPerSecond": 13456.253072710935,
+      "SampleSpanSeconds": 58.987,
+      "UniqueIds": 100,
+      "Metrics": {
+        "DbLoads": 255.0,
+        "Hits": 793489.0,
+        "Misses": 255.0,
+        "Puts": 0.0,
+        "Evictions": 200.0,
+        "SizeBefore": 100.0,
+        "SizeAfter": 100.0,
+        "HitRate": 0.9996787377290411,
+        "DbLoadsPerRequest": 0.0003212622709588986,
+        "CacheMetricsPresent": true
+      },
+      "Jtl": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-on/u10/measurement/samples.jtl",
+        "Bytes": 124535068,
+        "Sha256": "9B7C871F9ACE71E774AD7762FEC9ADC8EC013509C05385F5DB0EC3C14DBD2113"
+      },
+      "MetricBefore": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-on/u10/measurement/metrics-before.prom",
+        "Bytes": 40502,
+        "Sha256": "5F1FA1278DAF82AE41925D52606039FF95E03E0952B5C9476F8787427506C1E3"
+      },
+      "MetricAfter": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-on/u10/measurement/metrics-after.prom",
+        "Bytes": 40564,
+        "Sha256": "C7079927DA3CC942379819F482938F7C87E8F7B682B0F35B88760C986B4AA656"
+      },
+      "HtmlStatistics": {
+        "SampleCount": 793744,
+        "ErrorCount": 0,
+        "AverageMs": 0.5635355983793201,
+        "ThroughputPerSecond": 13456.253072710937,
+        "Source": {
+          "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-on/u10/measurement/html/statistics.json",
+          "Bytes": 937,
+          "Sha256": "6E611A7B01F648B6A916ED91567A8113EDDA9CEFCF9C0C23D826A1661492DF7F"
+        },
+        "Export": "statistics/r1-on-u10.json"
+      }
+    },
+    {
+      "Run": "r2-ON-u1",
+      "Repetition": 2,
+      "CacheMode": "ON",
+      "Users": 1,
+      "Stage": "measurement",
+      "StartedAtUtc": "2026-10-16T06:59:55.3615785Z",
+      "FinishedAtUtc": "2026-10-16T07:01:19.7149455Z",
+      "WallElapsedSeconds": 84.326,
+      "ScheduledSeconds": 60,
+      "Samples": 90514,
+      "FailedSamples": 0,
+      "ErrorRate": 0.0,
+      "AverageMs": 0.4566254943986566,
+      "P50Ms": 0.0,
+      "P95Ms": 1.0,
+      "P99Ms": 2.0,
+      "ThroughputPerSecond": 1532.5510912446455,
+      "SampleSpanSeconds": 59.061,
+      "UniqueIds": 100,
+      "Metrics": {
+        "DbLoads": 200.0,
+        "Hits": 90314.0,
+        "Misses": 200.0,
+        "Puts": 0.0,
+        "Evictions": 200.0,
+        "SizeBefore": 100.0,
+        "SizeAfter": 100.0,
+        "HitRate": 0.9977903970656473,
+        "DbLoadsPerRequest": 0.002209602934352697,
+        "CacheMetricsPresent": true
+      },
+      "Jtl": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-on/u1/measurement/samples.jtl",
+        "Bytes": 14013906,
+        "Sha256": "E65DC709478A498A81ABB5B0BD9792CFF22E6279E004CA4A6AF8D9BD771B9F62"
+      },
+      "MetricBefore": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-on/u1/measurement/metrics-before.prom",
+        "Bytes": 39724,
+        "Sha256": "C8661B8ED2874AAB18F23F81D54A3A8A7AFD5564BADC2774325118D7CB85E7DF"
+      },
+      "MetricAfter": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-on/u1/measurement/metrics-after.prom",
+        "Bytes": 39791,
+        "Sha256": "C516984B662618CE3858B556991E2E70E3146B128BD173EACE7E3A54ED05E591"
+      },
+      "HtmlStatistics": {
+        "SampleCount": 90514,
+        "ErrorCount": 0,
+        "AverageMs": 0.45662549439865335,
+        "ThroughputPerSecond": 1532.5510912446455,
+        "Source": {
+          "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-on/u1/measurement/html/statistics.json",
+          "Bytes": 935,
+          "Sha256": "4267ADAEEB66F6D47823FE466E8F4F0CE7693018E9F7D95511AB93D8777BD7EE"
+        },
+        "Export": "statistics/r2-on-u1.json"
+      }
+    },
+    {
+      "Run": "r2-ON-u10",
+      "Repetition": 2,
+      "CacheMode": "ON",
+      "Users": 10,
+      "Stage": "measurement",
+      "StartedAtUtc": "2026-10-16T07:02:38.7186841Z",
+      "FinishedAtUtc": "2026-10-16T07:06:10.9137385Z",
+      "WallElapsedSeconds": 212.129,
+      "ScheduledSeconds": 60,
+      "Samples": 772064,
+      "FailedSamples": 0,
+      "ErrorRate": 0.0,
+      "AverageMs": 0.5739666659758776,
+      "P50Ms": 0.0,
+      "P95Ms": 1.0,
+      "P99Ms": 3.0,
+      "ThroughputPerSecond": 13078.736956227132,
+      "SampleSpanSeconds": 59.032,
+      "UniqueIds": 100,
+      "Metrics": {
+        "DbLoads": 219.0,
+        "Hits": 771845.0,
+        "Misses": 219.0,
+        "Puts": 0.0,
+        "Evictions": 200.0,
+        "SizeBefore": 100.0,
+        "SizeAfter": 100.0,
+        "HitRate": 0.9997163447589837,
+        "DbLoadsPerRequest": 0.0002836552410162888,
+        "CacheMetricsPresent": true
+      },
+      "Jtl": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-on/u10/measurement/samples.jtl",
+        "Bytes": 121134971,
+        "Sha256": "8E54DA7A94DD8D2F3E4B51CCB40501DF5D5FD20BDAB8FB9DEC3762E2157CB25C"
+      },
+      "MetricBefore": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-on/u10/measurement/metrics-before.prom",
+        "Bytes": 39798,
+        "Sha256": "D45C8828613196B1BBAD8FE4C964736967B84DBB6460C1DF94C53CC419A69683"
+      },
+      "MetricAfter": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-on/u10/measurement/metrics-after.prom",
+        "Bytes": 40992,
+        "Sha256": "957E9516E56F585FD7B03C3D6C5EC7D1D7689F4E1CD150FCD258A8BF44BD1E0C"
+      },
+      "HtmlStatistics": {
+        "SampleCount": 772064,
+        "ErrorCount": 0,
+        "AverageMs": 0.5739666659759244,
+        "ThroughputPerSecond": 13078.73695622713,
+        "Source": {
+          "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-on/u10/measurement/html/statistics.json",
+          "Bytes": 937,
+          "Sha256": "41CFBB13E913A81F55433C5BF506C379082DE8896ABA9FE8A63726D9AFE79B78"
+        },
+        "Export": "statistics/r2-on-u10.json"
+      }
+    },
+    {
+      "Run": "r2-OFF-u1",
+      "Repetition": 2,
+      "CacheMode": "OFF",
+      "Users": 1,
+      "Stage": "measurement",
+      "StartedAtUtc": "2026-10-16T07:07:10.6999751Z",
+      "FinishedAtUtc": "2026-10-16T07:08:21.651842Z",
+      "WallElapsedSeconds": 70.926,
+      "ScheduledSeconds": 60,
+      "Samples": 3249,
+      "FailedSamples": 0,
+      "ErrorRate": 0.0,
+      "AverageMs": 17.26192674669129,
+      "P50Ms": 13.0,
+      "P95Ms": 37.0,
+      "P99Ms": 51.0,
+      "ThroughputPerSecond": 55.06966337841961,
+      "SampleSpanSeconds": 58.998,
+      "UniqueIds": 100,
+      "Metrics": {
+        "DbLoads": 3249.0,
+        "Hits": 0.0,
+        "Misses": 0.0,
+        "Puts": 0.0,
+        "Evictions": 0.0,
+        "SizeBefore": 0.0,
+        "SizeAfter": 0.0,
+        "HitRate": null,
+        "DbLoadsPerRequest": 1.0,
+        "CacheMetricsPresent": true
+      },
+      "Jtl": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-off/u1/measurement/samples.jtl",
+        "Bytes": 508825,
+        "Sha256": "EDD711EB1735D7BF2E601FF51729AEE3A9EC1260ED27A676127978C0D1885EA1"
+      },
+      "MetricBefore": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-off/u1/measurement/metrics-before.prom",
+        "Bytes": 40236,
+        "Sha256": "06BD2E710FBA633CABCF6F67E8311892F26EF86F4A61E83FD90422B221063E52"
+      },
+      "MetricAfter": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-off/u1/measurement/metrics-after.prom",
+        "Bytes": 40306,
+        "Sha256": "8C19D0F3619CE5C1B25368C7E79E2EE9D35CC1A1558DD66BC5163C5709232B32"
+      },
+      "HtmlStatistics": {
+        "SampleCount": 3249,
+        "ErrorCount": 0,
+        "AverageMs": 17.261926746691312,
+        "ThroughputPerSecond": 55.069663378419605,
+        "Source": {
+          "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-off/u1/measurement/html/statistics.json",
+          "Bytes": 943,
+          "Sha256": "917A60ACBFA89067B46D4C4B435F7C218ADC45A5F5A0DF2D6CB776FDB8F09896"
+        },
+        "Export": "statistics/r2-off-u1.json"
+      }
+    },
+    {
+      "Run": "r2-OFF-u10",
+      "Repetition": 2,
+      "CacheMode": "OFF",
+      "Users": 10,
+      "Stage": "measurement",
+      "StartedAtUtc": "2026-10-16T07:08:57.1628074Z",
+      "FinishedAtUtc": "2026-10-16T07:10:13.7091248Z",
+      "WallElapsedSeconds": 76.518,
+      "ScheduledSeconds": 60,
+      "Samples": 30620,
+      "FailedSamples": 0,
+      "ErrorRate": 0.0,
+      "AverageMs": 18.353821032005225,
+      "P50Ms": 16.0,
+      "P95Ms": 32.0,
+      "P99Ms": 48.0,
+      "ThroughputPerSecond": 520.8103005459834,
+      "SampleSpanSeconds": 58.793,
+      "UniqueIds": 100,
+      "Metrics": {
+        "DbLoads": 30620.0,
+        "Hits": 0.0,
+        "Misses": 0.0,
+        "Puts": 0.0,
+        "Evictions": 0.0,
+        "SizeBefore": 0.0,
+        "SizeAfter": 0.0,
+        "HitRate": null,
+        "DbLoadsPerRequest": 1.0,
+        "CacheMetricsPresent": true
+      },
+      "Jtl": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-off/u10/measurement/samples.jtl",
+        "Bytes": 4863928,
+        "Sha256": "7D441D9753F3BF142A389E00A78E1703AA2C432BE34D108628D0813A3C290C7F"
+      },
+      "MetricBefore": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-off/u10/measurement/metrics-before.prom",
+        "Bytes": 40322,
+        "Sha256": "E62021D58828DF3F9EB576C13493CCDE7A43604BE2FDBEBA46C2894D33F8D3C3"
+      },
+      "MetricAfter": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-off/u10/measurement/metrics-after.prom",
+        "Bytes": 40356,
+        "Sha256": "08FC16A49671B35E473DA0F5969B7CFF6E29DFEAB9C6CAC57608D6AF69DFCB38"
+      },
+      "HtmlStatistics": {
+        "SampleCount": 30620,
+        "ErrorCount": 0,
+        "AverageMs": 18.353821032005182,
+        "ThroughputPerSecond": 520.8103005459833,
+        "Source": {
+          "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-off/u10/measurement/html/statistics.json",
+          "Bytes": 943,
+          "Sha256": "794D54F132A668E6459056BB72B76F7216C6B4B81A148DFD1CA4C9CE878C15BE"
+        },
+        "Export": "statistics/r2-off-u10.json"
+      }
+    }
+  ],
+  "Warmups": [
+    {
+      "Run": "r1-OFF-u1",
+      "Repetition": 1,
+      "CacheMode": "OFF",
+      "Users": 1,
+      "Stage": "warmup",
+      "StartedAtUtc": "2026-10-16T06:48:20.0926116Z",
+      "FinishedAtUtc": "2026-10-16T06:48:49.4102653Z",
+      "WallElapsedSeconds": 29.316,
+      "ScheduledSeconds": 20,
+      "Samples": 667,
+      "FailedSamples": 0,
+      "ErrorRate": 0.0,
+      "AverageMs": 26.700149925037483,
+      "P50Ms": 19.0,
+      "P95Ms": 49.0,
+      "P99Ms": 117.0,
+      "ThroughputPerSecond": 35.1311492678816,
+      "SampleSpanSeconds": 18.986,
+      "UniqueIds": 100,
+      "Metrics": {
+        "DbLoads": 667.0,
+        "Hits": 0.0,
+        "Misses": 0.0,
+        "Puts": 0.0,
+        "Evictions": 0.0,
+        "SizeBefore": 0.0,
+        "SizeAfter": 0.0,
+        "HitRate": null,
+        "DbLoadsPerRequest": 1.0,
+        "CacheMetricsPresent": true
+      },
+      "Jtl": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-off/u1/warmup/samples.jtl",
+        "Bytes": 104780,
+        "Sha256": "4CDF0909283062A3F6BD2E03F80AC00F2BC78170719676C27B6C0B2D52AA3EC5"
+      },
+      "MetricBefore": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-off/u1/warmup/metrics-before.prom",
+        "Bytes": 19783,
+        "Sha256": "90C02D4010CC939A31CF5EE506B607D73439BCCB09EDEAB2FFA9787128766E06"
+      },
+      "MetricAfter": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-off/u1/warmup/metrics-after.prom",
+        "Bytes": 39535,
+        "Sha256": "B9E34C2DB567C7F7BA4E317CA3FE39D9E2046A1C1DE5D037AE3576494A1BBEE6"
+      },
+      "HtmlStatistics": null
+    },
+    {
+      "Run": "r1-OFF-u10",
+      "Repetition": 1,
+      "CacheMode": "OFF",
+      "Users": 10,
+      "Stage": "warmup",
+      "StartedAtUtc": "2026-10-16T06:50:05.3904927Z",
+      "FinishedAtUtc": "2026-10-16T06:50:35.8215577Z",
+      "WallElapsedSeconds": 30.426,
+      "ScheduledSeconds": 20,
+      "Samples": 8019,
+      "FailedSamples": 0,
+      "ErrorRate": 0.0,
+      "AverageMs": 21.24766180321736,
+      "P50Ms": 19.0,
+      "P95Ms": 39.0,
+      "P99Ms": 52.0,
+      "ThroughputPerSecond": 422.03041945160777,
+      "SampleSpanSeconds": 19.001,
+      "UniqueIds": 100,
+      "Metrics": {
+        "DbLoads": 8019.0,
+        "Hits": 0.0,
+        "Misses": 0.0,
+        "Puts": 0.0,
+        "Evictions": 0.0,
+        "SizeBefore": 0.0,
+        "SizeAfter": 0.0,
+        "HitRate": null,
+        "DbLoadsPerRequest": 1.0,
+        "CacheMetricsPresent": true
+      },
+      "Jtl": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-off/u10/warmup/samples.jtl",
+        "Bytes": 1272146,
+        "Sha256": "135F0A81302EE6161449F470F8D92F7E5DB6F1DF321E7DEAD20EBF7F288B667E"
+      },
+      "MetricBefore": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-off/u10/warmup/metrics-before.prom",
+        "Bytes": 39605,
+        "Sha256": "45AB19F532B8B7EAA8FA009CF48D7C456E2049D533EBE76C89240632DB7F206D"
+      },
+      "MetricAfter": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-off/u10/warmup/metrics-after.prom",
+        "Bytes": 40371,
+        "Sha256": "F0570126AC5E94918F98A08AD7A3A79C4472714E18246926BDA8C7923F82801D"
+      },
+      "HtmlStatistics": null
+    },
+    {
+      "Run": "r1-ON-u1",
+      "Repetition": 1,
+      "CacheMode": "ON",
+      "Users": 1,
+      "Stage": "warmup",
+      "StartedAtUtc": "2026-10-16T06:52:23.7241404Z",
+      "FinishedAtUtc": "2026-10-16T06:52:56.838954Z",
+      "WallElapsedSeconds": 33.109,
+      "ScheduledSeconds": 20,
+      "Samples": 14730,
+      "FailedSamples": 0,
+      "ErrorRate": 0.0,
+      "AverageMs": 0.9348268839103869,
+      "P50Ms": 1.0,
+      "P95Ms": 2.0,
+      "P99Ms": 4.0,
+      "ThroughputPerSecond": 774.2851135407906,
+      "SampleSpanSeconds": 19.024,
+      "UniqueIds": 100,
+      "Metrics": {
+        "DbLoads": 100.0,
+        "Hits": 14630.0,
+        "Misses": 100.0,
+        "Puts": 0.0,
+        "Evictions": 0.0,
+        "SizeBefore": 0.0,
+        "SizeAfter": 100.0,
+        "HitRate": 0.9932111337406653,
+        "DbLoadsPerRequest": 0.006788866259334691,
+        "CacheMetricsPresent": true
+      },
+      "Jtl": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-on/u1/warmup/samples.jtl",
+        "Bytes": 2280863,
+        "Sha256": "2F60D12F25A25C1D256D52B9D739559E99A077533C114323B6A4B222327C4677"
+      },
+      "MetricBefore": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-on/u1/warmup/metrics-before.prom",
+        "Bytes": 19774,
+        "Sha256": "A5E1D9413C88BDFCB70A2BC7E19607686479923BDA032FF1A385C06A7187EAF1"
+      },
+      "MetricAfter": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-on/u1/warmup/metrics-after.prom",
+        "Bytes": 40418,
+        "Sha256": "72DA696F3951C497DBDE1B06DA747DEF280375ABFE88D6A54A1A7FC4F0A2A8E0"
+      },
+      "HtmlStatistics": null
+    },
+    {
+      "Run": "r1-ON-u10",
+      "Repetition": 1,
+      "CacheMode": "ON",
+      "Users": 10,
+      "Stage": "warmup",
+      "StartedAtUtc": "2026-10-16T06:54:32.4756891Z",
+      "FinishedAtUtc": "2026-10-16T06:55:30.8610386Z",
+      "WallElapsedSeconds": 58.38,
+      "ScheduledSeconds": 20,
+      "Samples": 210185,
+      "FailedSamples": 0,
+      "ErrorRate": 0.0,
+      "AverageMs": 0.6440278802007755,
+      "P50Ms": 1.0,
+      "P95Ms": 1.0,
+      "P99Ms": 4.0,
+      "ThroughputPerSecond": 11021.183996644118,
+      "SampleSpanSeconds": 19.071,
+      "UniqueIds": 100,
+      "Metrics": {
+        "DbLoads": 100.0,
+        "Hits": 210085.0,
+        "Misses": 100.0,
+        "Puts": 0.0,
+        "Evictions": 100.0,
+        "SizeBefore": 100.0,
+        "SizeAfter": 100.0,
+        "HitRate": 0.9995242286557081,
+        "DbLoadsPerRequest": 0.0004757713442919333,
+        "CacheMetricsPresent": true
+      },
+      "Jtl": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-on/u10/warmup/samples.jtl",
+        "Bytes": 32966105,
+        "Sha256": "5E9A95083A9747B5C5ABEDA1373F6F4682031F2F98FF42E9F463832FCA985918"
+      },
+      "MetricBefore": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-on/u10/warmup/metrics-before.prom",
+        "Bytes": 40504,
+        "Sha256": "BD16FBD9B8769DB90454407FC434276D75EB6827EF81A3D5B7BC8B5B76087451"
+      },
+      "MetricAfter": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-on/u10/warmup/metrics-after.prom",
+        "Bytes": 40510,
+        "Sha256": "302C0792CA5590173597F14AACAE378C0FFF9DA29D817AB44BDA00C77481B854"
+      },
+      "HtmlStatistics": null
+    },
+    {
+      "Run": "r2-ON-u1",
+      "Repetition": 2,
+      "CacheMode": "ON",
+      "Users": 1,
+      "Stage": "warmup",
+      "StartedAtUtc": "2026-10-16T06:59:21.0713687Z",
+      "FinishedAtUtc": "2026-10-16T06:59:52.5192691Z",
+      "WallElapsedSeconds": 31.432,
+      "ScheduledSeconds": 20,
+      "Samples": 15828,
+      "FailedSamples": 0,
+      "ErrorRate": 0.0,
+      "AverageMs": 0.8743366186504928,
+      "P50Ms": 1.0,
+      "P95Ms": 2.0,
+      "P99Ms": 4.0,
+      "ThroughputPerSecond": 833.0964787620402,
+      "SampleSpanSeconds": 18.999,
+      "UniqueIds": 100,
+      "Metrics": {
+        "DbLoads": 100.0,
+        "Hits": 15728.0,
+        "Misses": 100.0,
+        "Puts": 0.0,
+        "Evictions": 0.0,
+        "SizeBefore": 0.0,
+        "SizeAfter": 100.0,
+        "HitRate": 0.9936820823856457,
+        "DbLoadsPerRequest": 0.006317917614354309,
+        "CacheMetricsPresent": true
+      },
+      "Jtl": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-on/u1/warmup/samples.jtl",
+        "Bytes": 2450857,
+        "Sha256": "6313C8B2906F5C361B243C101B8B38AE453C9B24746AD7876385D2CFB8F973D1"
+      },
+      "MetricBefore": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-on/u1/warmup/metrics-before.prom",
+        "Bytes": 19781,
+        "Sha256": "2AB464F388A784F06E636C13C472508B52D0828104C37D75DC3006E086D79D34"
+      },
+      "MetricAfter": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-on/u1/warmup/metrics-after.prom",
+        "Bytes": 39715,
+        "Sha256": "D4A09D1FDBA1DEBDFA60C17DBB262408009258E92E5A907F23BFEA0A8AEC6FB8"
+      },
+      "HtmlStatistics": null
+    },
+    {
+      "Run": "r2-ON-u10",
+      "Repetition": 2,
+      "CacheMode": "ON",
+      "Users": 10,
+      "Stage": "warmup",
+      "StartedAtUtc": "2026-10-16T07:01:24.9967613Z",
+      "FinishedAtUtc": "2026-10-16T07:02:28.7727674Z",
+      "WallElapsedSeconds": 63.754,
+      "ScheduledSeconds": 20,
+      "Samples": 222281,
+      "FailedSamples": 0,
+      "ErrorRate": 0.0,
+      "AverageMs": 0.6014279223145478,
+      "P50Ms": 0.0,
+      "P95Ms": 1.0,
+      "P99Ms": 4.0,
+      "ThroughputPerSecond": 11719.354668634998,
+      "SampleSpanSeconds": 18.967,
+      "UniqueIds": 100,
+      "Metrics": {
+        "DbLoads": 102.0,
+        "Hits": 222179.0,
+        "Misses": 102.0,
+        "Puts": 0.0,
+        "Evictions": 100.0,
+        "SizeBefore": 100.0,
+        "SizeAfter": 100.0,
+        "HitRate": 0.9995411213733968,
+        "DbLoadsPerRequest": 0.00045887862660326344,
+        "CacheMetricsPresent": true
+      },
+      "Jtl": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-on/u10/warmup/samples.jtl",
+        "Bytes": 34866259,
+        "Sha256": "32CF6A6DC16CC31C2668DE289887C77384777FC9E60404A0121AC1532ECE3EFF"
+      },
+      "MetricBefore": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-on/u10/warmup/metrics-before.prom",
+        "Bytes": 39793,
+        "Sha256": "234C92980B2C1D25582D9F0CABD7BFDC43C4B691E69E18B31E4D9879488E5434"
+      },
+      "MetricAfter": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-on/u10/warmup/metrics-after.prom",
+        "Bytes": 39799,
+        "Sha256": "B35251369B1697DF7C86B79E7C3E17182F7FBC4F680E420EB99C6EB57343F3B5"
+      },
+      "HtmlStatistics": null
+    },
+    {
+      "Run": "r2-OFF-u1",
+      "Repetition": 2,
+      "CacheMode": "OFF",
+      "Users": 1,
+      "Stage": "warmup",
+      "StartedAtUtc": "2026-10-16T07:06:38.3906854Z",
+      "FinishedAtUtc": "2026-10-16T07:07:08.0521894Z",
+      "WallElapsedSeconds": 29.647,
+      "ScheduledSeconds": 20,
+      "Samples": 777,
+      "FailedSamples": 0,
+      "ErrorRate": 0.0,
+      "AverageMs": 22.85070785070785,
+      "P50Ms": 19.0,
+      "P95Ms": 43.0,
+      "P99Ms": 55.0,
+      "ThroughputPerSecond": 40.81739861315402,
+      "SampleSpanSeconds": 19.036,
+      "UniqueIds": 100,
+      "Metrics": {
+        "DbLoads": 777.0,
+        "Hits": 0.0,
+        "Misses": 0.0,
+        "Puts": 0.0,
+        "Evictions": 0.0,
+        "SizeBefore": 0.0,
+        "SizeAfter": 0.0,
+        "HitRate": null,
+        "DbLoadsPerRequest": 1.0,
+        "CacheMetricsPresent": true
+      },
+      "Jtl": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-off/u1/warmup/samples.jtl",
+        "Bytes": 122016,
+        "Sha256": "9A831C176ACCF8656C6D5747C93BF3B6779A37A3F462AD1E31A30E3DBB5D3FED"
+      },
+      "MetricBefore": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-off/u1/warmup/metrics-before.prom",
+        "Bytes": 20472,
+        "Sha256": "2487ECA4817414EA7631516F29F4B091C039F0FB04FC434D93425D5756822C64"
+      },
+      "MetricAfter": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-off/u1/warmup/metrics-after.prom",
+        "Bytes": 40235,
+        "Sha256": "AFDBAE1BE26B79CE64D9A14AE3D559CCE5268EC596DEDEFAC883532A9A1D3139"
+      },
+      "HtmlStatistics": null
+    },
+    {
+      "Run": "r2-OFF-u10",
+      "Repetition": 2,
+      "CacheMode": "OFF",
+      "Users": 10,
+      "Stage": "warmup",
+      "StartedAtUtc": "2026-10-16T07:08:24.1843303Z",
+      "FinishedAtUtc": "2026-10-16T07:08:54.4270759Z",
+      "WallElapsedSeconds": 30.23,
+      "ScheduledSeconds": 20,
+      "Samples": 5776,
+      "FailedSamples": 0,
+      "ErrorRate": 0.0,
+      "AverageMs": 29.702908587257618,
+      "P50Ms": 26.0,
+      "P95Ms": 55.0,
+      "P99Ms": 109.0,
+      "ThroughputPerSecond": 302.89999475588655,
+      "SampleSpanSeconds": 19.069,
+      "UniqueIds": 100,
+      "Metrics": {
+        "DbLoads": 5776.0,
+        "Hits": 0.0,
+        "Misses": 0.0,
+        "Puts": 0.0,
+        "Evictions": 0.0,
+        "SizeBefore": 0.0,
+        "SizeAfter": 0.0,
+        "HitRate": null,
+        "DbLoadsPerRequest": 1.0,
+        "CacheMetricsPresent": true
+      },
+      "Jtl": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-off/u10/warmup/samples.jtl",
+        "Bytes": 917222,
+        "Sha256": "BCB44C1B030A100E4A5E79D2F06DB5DEBF96013AAFB359FE9F4E58A4C6063D22"
+      },
+      "MetricBefore": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-off/u10/warmup/metrics-before.prom",
+        "Bytes": 40309,
+        "Sha256": "E65761C7FF79B84A6B7414743AE8A1DB55C1E72F7A9BCBE9392AF34518C19906"
+      },
+      "MetricAfter": {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-off/u10/warmup/metrics-after.prom",
+        "Bytes": 40318,
+        "Sha256": "54AAB11BD8508288FAC85359C0CD031FD2F6F9F234B27C115EFFC0C78A8A9B9A"
+      },
+      "HtmlStatistics": null
+    }
+  ],
+  "Sources": {
+    "Jtl": [
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-off/u1/warmup/samples.jtl",
+        "Bytes": 104780,
+        "Sha256": "4CDF0909283062A3F6BD2E03F80AC00F2BC78170719676C27B6C0B2D52AA3EC5"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-off/u1/measurement/samples.jtl",
+        "Bytes": 451484,
+        "Sha256": "DA541842D21BCD6307D2912C8A615FDC2DEB614401D3E2387B020C71E6EAF697"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-off/u10/warmup/samples.jtl",
+        "Bytes": 1272146,
+        "Sha256": "135F0A81302EE6161449F470F8D92F7E5DB6F1DF321E7DEAD20EBF7F288B667E"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-off/u10/measurement/samples.jtl",
+        "Bytes": 4621393,
+        "Sha256": "439399FBBE3657EDA30E5445B0C6DC3C46802CC33D2C48D9ABB023020DA6EA56"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-on/u1/warmup/samples.jtl",
+        "Bytes": 2280863,
+        "Sha256": "2F60D12F25A25C1D256D52B9D739559E99A077533C114323B6A4B222327C4677"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-on/u1/measurement/samples.jtl",
+        "Bytes": 15691700,
+        "Sha256": "E642B34DD4D03913BA56902B08C28B0BD1193EE3725DC9D3A05F3A49BD785399"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-on/u10/warmup/samples.jtl",
+        "Bytes": 32966105,
+        "Sha256": "5E9A95083A9747B5C5ABEDA1373F6F4682031F2F98FF42E9F463832FCA985918"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-on/u10/measurement/samples.jtl",
+        "Bytes": 124535068,
+        "Sha256": "9B7C871F9ACE71E774AD7762FEC9ADC8EC013509C05385F5DB0EC3C14DBD2113"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-on/u1/warmup/samples.jtl",
+        "Bytes": 2450857,
+        "Sha256": "6313C8B2906F5C361B243C101B8B38AE453C9B24746AD7876385D2CFB8F973D1"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-on/u1/measurement/samples.jtl",
+        "Bytes": 14013906,
+        "Sha256": "E65DC709478A498A81ABB5B0BD9792CFF22E6279E004CA4A6AF8D9BD771B9F62"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-on/u10/warmup/samples.jtl",
+        "Bytes": 34866259,
+        "Sha256": "32CF6A6DC16CC31C2668DE289887C77384777FC9E60404A0121AC1532ECE3EFF"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-on/u10/measurement/samples.jtl",
+        "Bytes": 121134971,
+        "Sha256": "8E54DA7A94DD8D2F3E4B51CCB40501DF5D5FD20BDAB8FB9DEC3762E2157CB25C"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-off/u1/warmup/samples.jtl",
+        "Bytes": 122016,
+        "Sha256": "9A831C176ACCF8656C6D5747C93BF3B6779A37A3F462AD1E31A30E3DBB5D3FED"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-off/u1/measurement/samples.jtl",
+        "Bytes": 508825,
+        "Sha256": "EDD711EB1735D7BF2E601FF51729AEE3A9EC1260ED27A676127978C0D1885EA1"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-off/u10/warmup/samples.jtl",
+        "Bytes": 917222,
+        "Sha256": "BCB44C1B030A100E4A5E79D2F06DB5DEBF96013AAFB359FE9F4E58A4C6063D22"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-off/u10/measurement/samples.jtl",
+        "Bytes": 4863928,
+        "Sha256": "7D441D9753F3BF142A389E00A78E1703AA2C432BE34D108628D0813A3C290C7F"
+      }
+    ],
+    "Statistics": [
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-off/u1/measurement/html/statistics.json",
+        "Bytes": 991,
+        "Sha256": "651B92DAA2B6EEE4B6F660DDA8CE30BD44D9F60552EA360D2F56B808DC5EEC1F"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-off/u10/measurement/html/statistics.json",
+        "Bytes": 945,
+        "Sha256": "637E94BC45361558930E7CF79B051CC8B98D9AB3DBF7902A623A6FCA5FB89589"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-on/u1/measurement/html/statistics.json",
+        "Bytes": 937,
+        "Sha256": "1072DBC6AD3EB2BB73BDE7112634A69758078521EDCD55BE3DF45854A4F49825"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-on/u10/measurement/html/statistics.json",
+        "Bytes": 937,
+        "Sha256": "6E611A7B01F648B6A916ED91567A8113EDDA9CEFCF9C0C23D826A1661492DF7F"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-on/u1/measurement/html/statistics.json",
+        "Bytes": 935,
+        "Sha256": "4267ADAEEB66F6D47823FE466E8F4F0CE7693018E9F7D95511AB93D8777BD7EE"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-on/u10/measurement/html/statistics.json",
+        "Bytes": 937,
+        "Sha256": "41CFBB13E913A81F55433C5BF506C379082DE8896ABA9FE8A63726D9AFE79B78"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-off/u1/measurement/html/statistics.json",
+        "Bytes": 943,
+        "Sha256": "917A60ACBFA89067B46D4C4B435F7C218ADC45A5F5A0DF2D6CB776FDB8F09896"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-off/u10/measurement/html/statistics.json",
+        "Bytes": 943,
+        "Sha256": "794D54F132A668E6459056BB72B76F7216C6B4B81A148DFD1CA4C9CE878C15BE"
+      }
+    ],
+    "Metrics": [
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-off/u1/warmup/metrics-before.prom",
+        "Bytes": 19783,
+        "Sha256": "90C02D4010CC939A31CF5EE506B607D73439BCCB09EDEAB2FFA9787128766E06"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-off/u1/warmup/metrics-after.prom",
+        "Bytes": 39535,
+        "Sha256": "B9E34C2DB567C7F7BA4E317CA3FE39D9E2046A1C1DE5D037AE3576494A1BBEE6"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-off/u1/measurement/metrics-before.prom",
+        "Bytes": 39542,
+        "Sha256": "3236A634585D1BECA9614A3F7EF18E6EEB8EAC98098851E0A86101910D27AB9A"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-off/u1/measurement/metrics-after.prom",
+        "Bytes": 39611,
+        "Sha256": "A5D08A97E51F65172E69855D723F42A4AB61468C18BDA9E09A1884F88D9582A1"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-off/u10/warmup/metrics-before.prom",
+        "Bytes": 39605,
+        "Sha256": "45AB19F532B8B7EAA8FA009CF48D7C456E2049D533EBE76C89240632DB7F206D"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-off/u10/warmup/metrics-after.prom",
+        "Bytes": 40371,
+        "Sha256": "F0570126AC5E94918F98A08AD7A3A79C4472714E18246926BDA8C7923F82801D"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-off/u10/measurement/metrics-before.prom",
+        "Bytes": 40373,
+        "Sha256": "3BC3830171CB90F5D117EE7C43E3B97681EFAC1132944600D28E29AF04469520"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-off/u10/measurement/metrics-after.prom",
+        "Bytes": 40365,
+        "Sha256": "0FC12FD4215ECB323694F23BA62C4BEBB269ACB4D5D624F5FE3BDDE3CEA0D577"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-on/u1/warmup/metrics-before.prom",
+        "Bytes": 19774,
+        "Sha256": "A5E1D9413C88BDFCB70A2BC7E19607686479923BDA032FF1A385C06A7187EAF1"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-on/u1/warmup/metrics-after.prom",
+        "Bytes": 40418,
+        "Sha256": "72DA696F3951C497DBDE1B06DA747DEF280375ABFE88D6A54A1A7FC4F0A2A8E0"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-on/u1/measurement/metrics-before.prom",
+        "Bytes": 40420,
+        "Sha256": "089ED527A155E2CFB3DD053CC4E6303C381602939870EBED2903B6213A5944E7"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-on/u1/measurement/metrics-after.prom",
+        "Bytes": 40505,
+        "Sha256": "2CA65787C76E0E0BC7DA2A16A949A9A3B85877566EADDD265D809D43F7C68227"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-on/u10/warmup/metrics-before.prom",
+        "Bytes": 40504,
+        "Sha256": "BD16FBD9B8769DB90454407FC434276D75EB6827EF81A3D5B7BC8B5B76087451"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-on/u10/warmup/metrics-after.prom",
+        "Bytes": 40510,
+        "Sha256": "302C0792CA5590173597F14AACAE378C0FFF9DA29D817AB44BDA00C77481B854"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-on/u10/measurement/metrics-before.prom",
+        "Bytes": 40502,
+        "Sha256": "5F1FA1278DAF82AE41925D52606039FF95E03E0952B5C9476F8787427506C1E3"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r1-on/u10/measurement/metrics-after.prom",
+        "Bytes": 40564,
+        "Sha256": "C7079927DA3CC942379819F482938F7C87E8F7B682B0F35B88760C986B4AA656"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-on/u1/warmup/metrics-before.prom",
+        "Bytes": 19781,
+        "Sha256": "2AB464F388A784F06E636C13C472508B52D0828104C37D75DC3006E086D79D34"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-on/u1/warmup/metrics-after.prom",
+        "Bytes": 39715,
+        "Sha256": "D4A09D1FDBA1DEBDFA60C17DBB262408009258E92E5A907F23BFEA0A8AEC6FB8"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-on/u1/measurement/metrics-before.prom",
+        "Bytes": 39724,
+        "Sha256": "C8661B8ED2874AAB18F23F81D54A3A8A7AFD5564BADC2774325118D7CB85E7DF"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-on/u1/measurement/metrics-after.prom",
+        "Bytes": 39791,
+        "Sha256": "C516984B662618CE3858B556991E2E70E3146B128BD173EACE7E3A54ED05E591"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-on/u10/warmup/metrics-before.prom",
+        "Bytes": 39793,
+        "Sha256": "234C92980B2C1D25582D9F0CABD7BFDC43C4B691E69E18B31E4D9879488E5434"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-on/u10/warmup/metrics-after.prom",
+        "Bytes": 39799,
+        "Sha256": "B35251369B1697DF7C86B79E7C3E17182F7FBC4F680E420EB99C6EB57343F3B5"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-on/u10/measurement/metrics-before.prom",
+        "Bytes": 39798,
+        "Sha256": "D45C8828613196B1BBAD8FE4C964736967B84DBB6460C1DF94C53CC419A69683"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-on/u10/measurement/metrics-after.prom",
+        "Bytes": 40992,
+        "Sha256": "957E9516E56F585FD7B03C3D6C5EC7D1D7689F4E1CD150FCD258A8BF44BD1E0C"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-off/u1/warmup/metrics-before.prom",
+        "Bytes": 20472,
+        "Sha256": "2487ECA4817414EA7631516F29F4B091C039F0FB04FC434D93425D5756822C64"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-off/u1/warmup/metrics-after.prom",
+        "Bytes": 40235,
+        "Sha256": "AFDBAE1BE26B79CE64D9A14AE3D559CCE5268EC596DEDEFAC883532A9A1D3139"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-off/u1/measurement/metrics-before.prom",
+        "Bytes": 40236,
+        "Sha256": "06BD2E710FBA633CABCF6F67E8311892F26EF86F4A61E83FD90422B221063E52"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-off/u1/measurement/metrics-after.prom",
+        "Bytes": 40306,
+        "Sha256": "8C19D0F3619CE5C1B25368C7E79E2EE9D35CC1A1558DD66BC5163C5709232B32"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-off/u10/warmup/metrics-before.prom",
+        "Bytes": 40309,
+        "Sha256": "E65761C7FF79B84A6B7414743AE8A1DB55C1E72F7A9BCBE9392AF34518C19906"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-off/u10/warmup/metrics-after.prom",
+        "Bytes": 40318,
+        "Sha256": "54AAB11BD8508288FAC85359C0CD031FD2F6F9F234B27C115EFFC0C78A8A9B9A"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-off/u10/measurement/metrics-before.prom",
+        "Bytes": 40322,
+        "Sha256": "E62021D58828DF3F9EB576C13493CCDE7A43604BE2FDBEBA46C2894D33F8D3C3"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/r2-off/u10/measurement/metrics-after.prom",
+        "Bytes": 40356,
+        "Sha256": "08FC16A49671B35E473DA0F5969B7CFF6E29DFEAB9C6CAC57608D6AF69DFCB38"
+      }
+    ],
+    "ProtectedListeners": [
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/protected-listeners-before.json",
+        "Bytes": 185,
+        "Sha256": "5927F7D985BC1D25D4D0FFD12330631F1A144DFCD1967C19EE400E115A395C5B"
+      },
+      {
+        "Path": "build/benchmark/r02/measure-20261016-154751-7670872-54668c79/protected-listeners-after.json",
+        "Bytes": 185,
+        "Sha256": "5927F7D985BC1D25D4D0FFD12330631F1A144DFCD1967C19EE400E115A395C5B"
+      }
+    ]
+  },
+  "Summarizer": {
+    "Path": "docs/week4/r02-product-detail-local-cache/jmeter/summarize-results.ps1",
+    "Bytes": 38507,
+    "Sha256": "2A9C86A8B26899F9E8B6049195E4A0A673DFFB381F2671AE73FA946E1393E630"
+  }
+}

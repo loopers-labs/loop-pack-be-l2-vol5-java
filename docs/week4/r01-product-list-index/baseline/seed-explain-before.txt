@@ -1,0 +1,184 @@
+=== 01-brands ===
+
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	INSERT	brands	NULL	ALL	NULL	NULL	NULL	NULL	NULL	NULL	NULL
+1	PRIMARY	<derived3>	NULL	ALL	NULL	NULL	NULL	NULL	10	100.00	NULL
+1	PRIMARY	<derived3>	NULL	ALL	NULL	NULL	NULL	NULL	10	100.00	Using join buffer (hash join)
+1	PRIMARY	<derived3>	NULL	ALL	NULL	NULL	NULL	NULL	10	100.00	Using join buffer (hash join)
+3	DERIVED	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+4	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+5	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+6	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+7	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+8	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+9	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+10	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+11	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+12	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+
+EXPLAIN
+-> Insert into brands
+    -> Inner hash join (no condition)  (cost=119 rows=1000)
+        -> Table scan on ones  (cost=1.26..3.62 rows=10)
+            -> Materialize union CTE digits if needed (query plan printed elsewhere)  (cost=1..1 rows=10)
+        -> Hash
+            -> Inner hash join (no condition)  (cost=16.3 rows=100)
+                -> Table scan on tens  (cost=1.26..3.62 rows=10)
+                    -> Materialize union CTE digits if needed (query plan printed elsewhere)  (cost=1..1 rows=10)
+                -> Hash
+                    -> Table scan on hundreds  (cost=1.26..3.62 rows=10)
+                        -> Materialize union CTE digits if needed  (cost=1..1 rows=10)
+                            -> Rows fetched before execution  (cost=0..0 rows=1)
+                            -> Rows fetched before execution  (cost=0..0 rows=1)
+                            -> Rows fetched before execution  (cost=0..0 rows=1)
+                            -> Rows fetched before execution  (cost=0..0 rows=1)
+                            -> Rows fetched before execution  (cost=0..0 rows=1)
+                            -> Rows fetched before execution  (cost=0..0 rows=1)
+                            -> Rows fetched before execution  (cost=0..0 rows=1)
+                            -> Rows fetched before execution  (cost=0..0 rows=1)
+                            -> Rows fetched before execution  (cost=0..0 rows=1)
+                            -> Rows fetched before execution  (cost=0..0 rows=1)
+
+
+=== 02-users ===
+
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	INSERT	users	NULL	ALL	NULL	NULL	NULL	NULL	NULL	NULL	NULL
+1	SIMPLE	brands	NULL	index	NULL	idx_brands_deleted_created	17	NULL	1000	100.00	Using index
+
+EXPLAIN
+-> Insert into users
+    -> Index scan on brands using idx_brands_deleted_created  (cost=102 rows=1000)
+
+
+=== 03-wallets ===
+
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	INSERT	wallets	NULL	ALL	NULL	NULL	NULL	NULL	NULL	NULL	NULL
+1	SIMPLE	users	NULL	index	NULL	PRIMARY	8	NULL	1000	100.00	Using index
+
+EXPLAIN
+-> Insert into wallets
+    -> Index scan on users using PRIMARY  (cost=101 rows=1000)
+
+
+=== 04-products ===
+
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	INSERT	products	NULL	ALL	NULL	NULL	NULL	NULL	NULL	NULL	NULL
+1	PRIMARY	<derived3>	NULL	ALL	NULL	NULL	NULL	NULL	10	100.00	Using temporary; Using filesort
+1	PRIMARY	<derived3>	NULL	ALL	NULL	NULL	NULL	NULL	10	100.00	Using join buffer (hash join)
+1	PRIMARY	<derived3>	NULL	ALL	NULL	NULL	NULL	NULL	10	100.00	Using join buffer (hash join)
+1	PRIMARY	brands	NULL	index	NULL	idx_brands_deleted_created	17	NULL	1000	100.00	Using index; Using join buffer (hash join)
+3	DERIVED	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+4	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+5	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+6	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+7	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+8	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+9	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+10	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+11	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+12	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+
+EXPLAIN
+-> Insert into products
+    -> Sort: ((1000 * (((100 * hundreds.n) + (10 * tens.n)) + ones.n)) + brands.id)
+        -> Stream results  (cost=100121 rows=1e+6)
+            -> Inner hash join (no condition)  (cost=100121 rows=1e+6)
+                -> Index scan on brands using idx_brands_deleted_created  (cost=0.102 rows=1000)
+                -> Hash
+                    -> Inner hash join (no condition)  (cost=119 rows=1000)
+                        -> Table scan on ones  (cost=1.26..3.62 rows=10)
+                            -> Materialize union CTE digits if needed (query plan printed elsewhere)  (cost=1..1 rows=10)
+                        -> Hash
+                            -> Inner hash join (no condition)  (cost=16.3 rows=100)
+                                -> Table scan on tens  (cost=1.26..3.62 rows=10)
+                                    -> Materialize union CTE digits if needed (query plan printed elsewhere)  (cost=1..1 rows=10)
+                                -> Hash
+                                    -> Table scan on hundreds  (cost=1.26..3.62 rows=10)
+                                        -> Materialize union CTE digits if needed  (cost=1..1 rows=10)
+                                            -> Rows fetched before execution  (cost=0..0 rows=1)
+                                            -> Rows fetched before execution  (cost=0..0 rows=1)
+                                            -> Rows fetched before execution  (cost=0..0 rows=1)
+                                            -> Rows fetched before execution  (cost=0..0 rows=1)
+                                            -> Rows fetched before execution  (cost=0..0 rows=1)
+                                            -> Rows fetched before execution  (cost=0..0 rows=1)
+                                            -> Rows fetched before execution  (cost=0..0 rows=1)
+                                            -> Rows fetched before execution  (cost=0..0 rows=1)
+                                            -> Rows fetched before execution  (cost=0..0 rows=1)
+                                            -> Rows fetched before execution  (cost=0..0 rows=1)
+
+
+=== 05-product-likes-1-to-5 ===
+
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	INSERT	product_likes	NULL	ALL	NULL	NULL	NULL	NULL	NULL	NULL	NULL
+1	PRIMARY	<derived2>	NULL	ALL	NULL	NULL	NULL	NULL	5	100.00	Using temporary; Using filesort
+1	PRIMARY	products	NULL	index	NULL	idx_products_deleted_brand_like	25	NULL	935097	33.33	Using where; Using index; Using join buffer (hash join)
+2	DERIVED	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+3	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+4	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+5	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+6	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+
+EXPLAIN
+-> Insert into product_likes
+    -> Sort: (products.id - 1) * 100 + k
+        -> Stream results  (cost=469680 rows=1.56e+6)
+            -> Filter: (like_numbers.k <= products.like_count)  (cost=469680 rows=1.56e+6)
+                -> Inner hash join (no condition)  (cost=469680 rows=1.56e+6)
+                    -> Index scan on products using idx_products_deleted_brand_like  (cost=6659 rows=935097)
+                    -> Hash
+                        -> Table scan on like_numbers  (cost=1.01..3.06 rows=5)
+                            -> Materialize union CTE like_numbers  (cost=0.5..0.5 rows=5)
+                                -> Rows fetched before execution  (cost=0..0 rows=1)
+                                -> Rows fetched before execution  (cost=0..0 rows=1)
+                                -> Rows fetched before execution  (cost=0..0 rows=1)
+                                -> Rows fetched before execution  (cost=0..0 rows=1)
+                                -> Rows fetched before execution  (cost=0..0 rows=1)
+
+
+=== 06-product-likes-6-to-100 ===
+
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	INSERT	product_likes	NULL	ALL	NULL	NULL	NULL	NULL	NULL	NULL	NULL
+1	PRIMARY	<derived3>	NULL	ALL	NULL	NULL	NULL	NULL	10	100.00	Using temporary; Using filesort
+1	PRIMARY	<derived3>	NULL	ALL	NULL	NULL	NULL	NULL	10	100.00	Using where; Using join buffer (hash join)
+1	PRIMARY	products	NULL	index	NULL	idx_products_deleted_brand_like	25	NULL	935097	10.00	Using where; Using index; Using join buffer (hash join)
+3	DERIVED	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+4	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+5	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+6	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+7	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+8	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+9	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+10	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+11	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+12	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+
+EXPLAIN
+-> Insert into product_likes
+    -> Sort: (((products.id - 1) * 100) + (((10 * tens.n) + ones.n) + 1))
+        -> Stream results  (cost=1.02e+6 rows=935097)
+            -> Inner hash join (no condition)  (cost=1.02e+6 rows=935097)
+                -> Filter: (products.like_count = 100)  (cost=962 rows=93510)
+                    -> Index scan on products using idx_products_deleted_brand_like  (cost=962 rows=935097)
+                -> Hash
+                    -> Filter: ((((10 * tens.n) + ones.n) + 1) >= 6)  (cost=16.3 rows=100)
+                        -> Inner hash join (no condition)  (cost=16.3 rows=100)
+                            -> Table scan on ones  (cost=1.26..3.62 rows=10)
+                                -> Materialize union CTE digits if needed (query plan printed elsewhere)  (cost=1..1 rows=10)
+                            -> Hash
+                                -> Table scan on tens  (cost=1.26..3.62 rows=10)
+                                    -> Materialize union CTE digits if needed  (cost=1..1 rows=10)
+                                        -> Rows fetched before execution  (cost=0..0 rows=1)
+                                        -> Rows fetched before execution  (cost=0..0 rows=1)
+                                        -> Rows fetched before execution  (cost=0..0 rows=1)
+                                        -> Rows fetched before execution  (cost=0..0 rows=1)
+                                        -> Rows fetched before execution  (cost=0..0 rows=1)
+                                        -> Rows fetched before execution  (cost=0..0 rows=1)
+                                        -> Rows fetched before execution  (cost=0..0 rows=1)
+                                        -> Rows fetched before execution  (cost=0..0 rows=1)
+                                        -> Rows fetched before execution  (cost=0..0 rows=1)
+                                        -> Rows fetched before execution  (cost=0..0 rows=1)

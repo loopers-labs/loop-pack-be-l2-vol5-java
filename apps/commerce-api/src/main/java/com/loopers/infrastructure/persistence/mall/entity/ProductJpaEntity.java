@@ -13,6 +13,8 @@ import java.time.Instant;
 
 @Entity
 @Table(name = "products", indexes = {
+    @Index(name = "idx_products_deleted_created", columnList = "deleted, created_at DESC, id DESC"),
+    @Index(name = "idx_products_deleted_price", columnList = "deleted, price ASC, id DESC"),
     @Index(name = "idx_products_deleted_brand_created", columnList = "deleted, brand_id, created_at DESC, id DESC"),
     @Index(name = "idx_products_deleted_brand_price", columnList = "deleted, brand_id, price ASC, id DESC"),
     @Index(name = "idx_products_deleted_like", columnList = "deleted, like_count DESC, id DESC"),

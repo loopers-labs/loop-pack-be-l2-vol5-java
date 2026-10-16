@@ -1,0 +1,39 @@
+{
+  "VerifiedAtUtc": "2026-10-16T05:28:06.3697728Z",
+  "DataUnchanged": true,
+  "SettingsCompared": 11,
+  "SettingsUnchanged": true,
+  "ExistingIndexesPreserved": true,
+  "SecondaryIndexes": 6,
+  "SameApiProcess": true,
+  "ApiProcessId": 34084,
+  "ApiJarName": "commerce-api-98da9d2.jar",
+  "UserGuiSha256": "F51DC3363E79FB6EEB15846ACA55C9028CB58F207C8F89CC973E2CE3B3FC89C0",
+  "HttpChecks": [
+    {
+      "Scenario": "latest",
+      "RequestPath": "/api/v1/products?sort=latest&page=0&size=20",
+      "StatusCode": 200,
+      "FullResponseMatches": true,
+      "Items": 20,
+      "TotalElements": 950400
+    },
+    {
+      "Scenario": "price",
+      "RequestPath": "/api/v1/products?sort=price_asc&page=0&size=20",
+      "StatusCode": 200,
+      "FullResponseMatches": true,
+      "Items": 20,
+      "TotalElements": 950400
+    },
+    {
+      "Scenario": "brand7",
+      "RequestPath": "/api/v1/products?brandId=7&sort=price_asc&page=0&size=20",
+      "StatusCode": 200,
+      "FullResponseMatches": true,
+      "Items": 20,
+      "TotalElements": 960
+    }
+  ],
+  "NewJMeterLoadExecuted": false
+}

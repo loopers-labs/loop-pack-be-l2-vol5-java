@@ -1,0 +1,45 @@
+# 데이터 생성 전용 프로필. 최초 빈 스키마 생성 외에는 ddl-auto를 none으로 유지한다.
+spring:
+  main:
+    web-application-type: none
+  jpa:
+    show-sql: false
+    hibernate:
+      ddl-auto: none
+
+datasource:
+  mysql-jpa:
+    main:
+      jdbc-url: ${BENCHMARK_DB_URL:jdbc:mysql://localhost:3306/week4_r01_index_benchmark}
+      username: ${BENCHMARK_DB_USERNAME:application}
+      password: ${BENCHMARK_DB_PASSWORD:application}
+      minimum-idle: 1
+      maximum-pool-size: 4
+      connection-init-sql: "SET time_zone = '+00:00'"
+  redis:
+    master:
+      host: localhost
+      port: 6379
+    replicas:
+      - host: localhost
+        port: 6380
+
+benchmark:
+  seed:
+    enabled: false
+
+scheduler:
+  like-count:
+    enabled: false
+
+query:
+  product-count-cache:
+    ttl: 0s
+
+management:
+  health:
+    redis:
+      enabled: false
+
+logging:
+  config: classpath:logback-benchmark-seed.xml

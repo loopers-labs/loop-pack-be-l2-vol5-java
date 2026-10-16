@@ -1,0 +1,34 @@
+{
+  "Total" : {
+    "transaction" : "Total",
+    "sampleCount" : 22174,
+    "errorCount" : 0,
+    "errorPct" : 0.0,
+    "meanResTime" : 25.51131956345273,
+    "medianResTime" : 20.0,
+    "minResTime" : 10.0,
+    "maxResTime" : 380.0,
+    "pct1ResTime" : 43.0,
+    "pct2ResTime" : 51.0,
+    "pct3ResTime" : 88.0,
+    "throughput" : 376.32164010657976,
+    "receivedKBytesPerSec" : 915.3426731178827,
+    "sentKBytesPerSec" : 73.13281873164978
+  },
+  "products-brand7" : {
+    "transaction" : "products-brand7",
+    "sampleCount" : 22174,
+    "errorCount" : 0,
+    "errorPct" : 0.0,
+    "meanResTime" : 25.51131956345273,
+    "medianResTime" : 20.0,
+    "minResTime" : 10.0,
+    "maxResTime" : 380.0,
+    "pct1ResTime" : 43.0,
+    "pct2ResTime" : 51.0,
+    "pct3ResTime" : 88.0,
+    "throughput" : 376.32164010657976,
+    "receivedKBytesPerSec" : 915.3426731178827,
+    "sentKBytesPerSec" : 73.13281873164978
+  }
+}

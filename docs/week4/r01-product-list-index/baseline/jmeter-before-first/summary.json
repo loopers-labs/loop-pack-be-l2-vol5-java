@@ -1,0 +1,255 @@
+{
+  "status": "FailedPartialBaseline",
+  "phase": "before",
+  "mode": "Measure",
+  "sourceRun": "before-measure-20261016-135736-2504485-962a33ef",
+  "sourceDirectory": "build/benchmark/jmeter/before-measure-20261016-135736-2504485-962a33ef",
+  "sourceManifestSha256": "BB02E4210CBB3FAD745A01AF1B90F953265004A4114F98E7E5A0E7D7FC4F36C3",
+  "startedAtUtc": "2026-10-16T04:57:36.2719763Z",
+  "finishedAtUtc": "2026-10-16T05:01:20.4975025Z",
+  "codeGitSha": "07b47bde4ca5c71f8c38818db122c2f65b79c176",
+  "api": {
+    "jarName": "commerce-api-98da9d2.jar",
+    "jarSha256": "47A6839167CD1C0E2F459040E2B76572BB19C792E8701F180CBC033089883FCA",
+    "profile": "local",
+    "port": 18080,
+    "captureSql": false
+  },
+  "versions": {
+    "java": "21.0.10",
+    "jmeter": "5.6.3",
+    "mysql": "8.0.46",
+    "docker": "29.8.0",
+    "powershell": "5.1.26100.9711"
+  },
+  "inputSha256": {
+    "plan": "22A30AAA3A2917DE22324C0310B31FF7476555195DD8534ABA37E99CA7BCC7C0",
+    "expected": "20C827C6871C25E361E2E374D5DCEEBE8CC083F8613D840D3F9937D95F7C6B34",
+    "properties": "9F1ED88AFCED5A5CF9F5E44B895DCA6C6D8BD8921F032422F25E65D9EA4C428B"
+  },
+  "requested": {
+    "scenarios": [
+      "latest",
+      "price",
+      "brand7"
+    ],
+    "users": [
+      1,
+      10
+    ],
+    "repetitions": 2,
+    "warmupSeconds": 20,
+    "durationSeconds": 60,
+    "rampUpSeconds": 5,
+    "connectTimeoutMs": 3000,
+    "responseTimeoutMs": 30000,
+    "validation": "light"
+  },
+  "coverage": {
+    "plannedMeasurementRuns": 12,
+    "attemptedMeasurementRuns": 2,
+    "measurementRunsWithoutFailures": 1,
+    "measurementRunsWithFailures": 1,
+    "measurementRunsNotStarted": 10,
+    "completedWarmupStages": 2,
+    "notStarted": "price/brand7의 1회차와 모든 시나리오의 2회차"
+  },
+  "database": {
+    "schema": "week4_r01_index_benchmark",
+    "productsBefore": 1000000,
+    "productsAfter": 1000000,
+    "likesBefore": 2597980,
+    "likesAfter": 2597980,
+    "bufferPoolBytesBefore": 134217728,
+    "bufferPoolBytesAfter": 134217728,
+    "productIndexesBefore": [
+      "idx_products_deleted_brand_created",
+      "idx_products_deleted_brand_like",
+      "idx_products_deleted_brand_price",
+      "idx_products_deleted_like",
+      "PRIMARY"
+    ],
+    "productIndexesAfter": [
+      "idx_products_deleted_brand_created",
+      "idx_products_deleted_brand_like",
+      "idx_products_deleted_brand_price",
+      "idx_products_deleted_like",
+      "PRIMARY"
+    ],
+    "indexesUnchanged": true,
+    "globalSettingsBefore": {
+      "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+      "autocommit": 1,
+      "sync_binlog": 1,
+      "tmp_table_size": 16777216,
+      "join_buffer_size": 262144,
+      "sort_buffer_size": 262144,
+      "max_heap_table_size": 16777216,
+      "transaction_isolation": "REPEATABLE-READ",
+      "innodb_buffer_pool_size": 134217728,
+      "innodb_redo_log_capacity": 104857600,
+      "innodb_flush_log_at_trx_commit": 1
+    },
+    "globalSettingsAfter": {
+      "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
+      "autocommit": 1,
+      "sync_binlog": 1,
+      "tmp_table_size": 16777216,
+      "join_buffer_size": 262144,
+      "sort_buffer_size": 262144,
+      "max_heap_table_size": 16777216,
+      "transaction_isolation": "REPEATABLE-READ",
+      "innodb_buffer_pool_size": 134217728,
+      "innodb_redo_log_capacity": 104857600,
+      "innodb_flush_log_at_trx_commit": 1
+    },
+    "globalSettingsCompared": 11,
+    "globalSettingsUnchanged": true,
+    "capturedBeforeUtc": "2026-10-16T04:57:40.09016Z",
+    "capturedAfterUtc": "2026-10-16T05:01:20.4831243Z"
+  },
+  "stages": [
+    {
+      "repetition": 1,
+      "scenario": "latest",
+      "threads": 1,
+      "stage": "warmup",
+      "status": "Finished",
+      "startedAtUtc": "2026-10-16T04:57:41.6332436Z",
+      "finishedAtUtc": "2026-10-16T04:58:13.2777559Z",
+      "cliElapsedSeconds": 31.63,
+      "cliExitCode": 0,
+      "scheduledSeconds": 20,
+      "rampUpSeconds": 5,
+      "validation": "light",
+      "samples": 2,
+      "successfulSamples": 2,
+      "failedSamples": 0,
+      "errorPercent": 0.0,
+      "allSampleElapsedMs": {
+        "minimum": 13304.0,
+        "mean": 13403.0,
+        "maximum": 13502.0
+      },
+      "successfulSampleMeanMs": 13403.0,
+      "failedElapsedRangeMs": null,
+      "failures": [],
+      "archivedJtl": "r01-latest-u1-warmup.jtl",
+      "sourceJtl": "r01-latest-u1/warmup/samples.jtl",
+      "sha256": "928FDE326EBBAAF37060A1C70D06061256D88F80C1C8BF2ED8FCEC43510401B1",
+      "htmlCreated": false,
+      "sourceHtml": "r01-latest-u1/warmup/html/index.html"
+    },
+    {
+      "repetition": 1,
+      "scenario": "latest",
+      "threads": 1,
+      "stage": "measurement",
+      "status": "Finished",
+      "startedAtUtc": "2026-10-16T04:58:14.5855083Z",
+      "finishedAtUtc": "2026-10-16T04:59:25.6764777Z",
+      "cliElapsedSeconds": 71.087,
+      "cliExitCode": 0,
+      "scheduledSeconds": 60,
+      "rampUpSeconds": 5,
+      "validation": "light",
+      "samples": 6,
+      "successfulSamples": 6,
+      "failedSamples": 0,
+      "errorPercent": 0.0,
+      "allSampleElapsedMs": {
+        "minimum": 7823.0,
+        "mean": 10845.666667,
+        "maximum": 15065.0
+      },
+      "successfulSampleMeanMs": 10845.666667,
+      "failedElapsedRangeMs": null,
+      "failures": [],
+      "archivedJtl": "r01-latest-u1-measurement.jtl",
+      "sourceJtl": "r01-latest-u1/measurement/samples.jtl",
+      "sha256": "C70F7F7C0601234FE5DF2503249000A3052336BB395327AEF0C4648C63F123C1",
+      "htmlCreated": true,
+      "sourceHtml": "r01-latest-u1/measurement/html/index.html"
+    },
+    {
+      "repetition": 1,
+      "scenario": "latest",
+      "threads": 10,
+      "stage": "warmup",
+      "status": "Finished",
+      "startedAtUtc": "2026-10-16T04:59:27.1551787Z",
+      "finishedAtUtc": "2026-10-16T04:59:54.0303884Z",
+      "cliElapsedSeconds": 26.866,
+      "cliExitCode": 0,
+      "scheduledSeconds": 20,
+      "rampUpSeconds": 5,
+      "validation": "light",
+      "samples": 10,
+      "successfulSamples": 10,
+      "failedSamples": 0,
+      "errorPercent": 0.0,
+      "allSampleElapsedMs": {
+        "minimum": 18822.0,
+        "mean": 20959.4,
+        "maximum": 22446.0
+      },
+      "successfulSampleMeanMs": 20959.4,
+      "failedElapsedRangeMs": null,
+      "failures": [],
+      "archivedJtl": "r01-latest-u10-warmup.jtl",
+      "sourceJtl": "r01-latest-u10/warmup/samples.jtl",
+      "sha256": "0E593E74B017ECD68056C4BED4C4BA47350569A093B1861AA977A2B904B7B2B8",
+      "htmlCreated": false,
+      "sourceHtml": "r01-latest-u10/warmup/html/index.html"
+    },
+    {
+      "repetition": 1,
+      "scenario": "latest",
+      "threads": 10,
+      "stage": "measurement",
+      "status": "Failed",
+      "startedAtUtc": "2026-10-16T04:59:55.3400361Z",
+      "finishedAtUtc": "2026-10-16T05:01:19.6481847Z",
+      "cliElapsedSeconds": 84.299,
+      "cliExitCode": 0,
+      "scheduledSeconds": 60,
+      "rampUpSeconds": 5,
+      "validation": "light",
+      "samples": 30,
+      "successfulSamples": 20,
+      "failedSamples": 10,
+      "errorPercent": 33.333333,
+      "allSampleElapsedMs": {
+        "minimum": 17182.0,
+        "mean": 25443.866667,
+        "maximum": 30017.0
+      },
+      "successfulSampleMeanMs": 23158.45,
+      "failedElapsedRangeMs": {
+        "minimum": 30007.0,
+        "maximum": 30017.0
+      },
+      "failures": [
+        {
+          "responseCode": "Non HTTP response code: java.net.SocketTimeoutException",
+          "responseMessage": "Non HTTP response message: Read timed out",
+          "samples": 10
+        }
+      ],
+      "archivedJtl": "r01-latest-u10-measurement.jtl",
+      "sourceJtl": "r01-latest-u10/measurement/samples.jtl",
+      "sha256": "C319F11CB613D9D729FEB34D36A14C99A33E55BEACA6B25D6628D623FA114EFE",
+      "htmlCreated": true,
+      "sourceHtml": "r01-latest-u10/measurement/html/index.html"
+    }
+  ],
+  "stopReason": "JTL 검증 실패: samples=30, failed=10. 원본을 보존합니다.",
+  "postflightError": null,
+  "limits": [
+    "첫 전체 최신순 1회차의 일부 기준선이며 계획한 12개 본 측정 전체 완료가 아니다.",
+    "동시 10명 평균에는 30초 응답 timeout 실패를 포함한다. timeout 표본은 서버 실제 완료 시간이 아니다.",
+    "light 검증은 전체 상품 필드·정렬·페이지의 동일성을 단독으로 증명하지 않는다.",
+    "소수 표본의 p95/p99를 일반화하거나 인덱스 개선 효과로 해석하지 않는다.",
+    "HTML 2개와 환경 전체 manifest는 원본 build 경로에만 보존하고 이 폴더에는 복사하지 않았다."
+  ]
+}

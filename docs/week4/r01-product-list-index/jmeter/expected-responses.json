@@ -1,0 +1,663 @@
+{
+  "description": "Independently calculated from the deterministic 1,000,000-product seed formulas; not copied from an API or database response.",
+  "seed": {
+    "products": 1000000,
+    "brands": 1000,
+    "users": 1000,
+    "baseTimestampUtc": "2026-10-01T00:00:00Z",
+    "brandId": 7,
+    "activeProducts": 950400,
+    "activeBrand7Products": 960,
+    "derivation": "Scan productId=1..1000000; b=(productId-1)%1000+1; t=floor((productId-1)/1000); retain b<991 and (t+b)%25!=0. latest orders floor(t/2) ASC, productId DESC; price orders price ASC, productId DESC."
+  },
+  "scenarios": {
+    "latest": {
+      "requestPath": "/api/v1/products?sort=latest&page=0&size=20",
+      "response": {
+        "meta": {
+          "result": "SUCCESS"
+        },
+        "data": {
+          "items": [
+            {
+              "productId": 1990,
+              "name": "product-1990",
+              "price": 64000,
+              "brand": {
+                "brandId": 990,
+                "name": "brand-990"
+              },
+              "likeCount": 5
+            },
+            {
+              "productId": 1989,
+              "name": "product-1989",
+              "price": 60300,
+              "brand": {
+                "brandId": 989,
+                "name": "brand-989"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 1988,
+              "name": "product-1988",
+              "price": 56600,
+              "brand": {
+                "brandId": 988,
+                "name": "brand-988"
+              },
+              "likeCount": 3
+            },
+            {
+              "productId": 1987,
+              "name": "product-1987",
+              "price": 52900,
+              "brand": {
+                "brandId": 987,
+                "name": "brand-987"
+              },
+              "likeCount": 2
+            },
+            {
+              "productId": 1986,
+              "name": "product-1986",
+              "price": 49200,
+              "brand": {
+                "brandId": 986,
+                "name": "brand-986"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 1985,
+              "name": "product-1985",
+              "price": 45500,
+              "brand": {
+                "brandId": 985,
+                "name": "brand-985"
+              },
+              "likeCount": 0
+            },
+            {
+              "productId": 1984,
+              "name": "product-1984",
+              "price": 41800,
+              "brand": {
+                "brandId": 984,
+                "name": "brand-984"
+              },
+              "likeCount": 5
+            },
+            {
+              "productId": 1983,
+              "name": "product-1983",
+              "price": 38100,
+              "brand": {
+                "brandId": 983,
+                "name": "brand-983"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 1982,
+              "name": "product-1982",
+              "price": 34400,
+              "brand": {
+                "brandId": 982,
+                "name": "brand-982"
+              },
+              "likeCount": 3
+            },
+            {
+              "productId": 1981,
+              "name": "product-1981",
+              "price": 30700,
+              "brand": {
+                "brandId": 981,
+                "name": "brand-981"
+              },
+              "likeCount": 2
+            },
+            {
+              "productId": 1980,
+              "name": "product-1980",
+              "price": 27000,
+              "brand": {
+                "brandId": 980,
+                "name": "brand-980"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 1979,
+              "name": "product-1979",
+              "price": 23300,
+              "brand": {
+                "brandId": 979,
+                "name": "brand-979"
+              },
+              "likeCount": 0
+            },
+            {
+              "productId": 1978,
+              "name": "product-1978",
+              "price": 19600,
+              "brand": {
+                "brandId": 978,
+                "name": "brand-978"
+              },
+              "likeCount": 5
+            },
+            {
+              "productId": 1977,
+              "name": "product-1977",
+              "price": 15900,
+              "brand": {
+                "brandId": 977,
+                "name": "brand-977"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 1976,
+              "name": "product-1976",
+              "price": 12200,
+              "brand": {
+                "brandId": 976,
+                "name": "brand-976"
+              },
+              "likeCount": 3
+            },
+            {
+              "productId": 1975,
+              "name": "product-1975",
+              "price": 8500,
+              "brand": {
+                "brandId": 975,
+                "name": "brand-975"
+              },
+              "likeCount": 2
+            },
+            {
+              "productId": 1973,
+              "name": "product-1973",
+              "price": 1100,
+              "brand": {
+                "brandId": 973,
+                "name": "brand-973"
+              },
+              "likeCount": 0
+            },
+            {
+              "productId": 1972,
+              "name": "product-1972",
+              "price": 97400,
+              "brand": {
+                "brandId": 972,
+                "name": "brand-972"
+              },
+              "likeCount": 5
+            },
+            {
+              "productId": 1971,
+              "name": "product-1971",
+              "price": 93700,
+              "brand": {
+                "brandId": 971,
+                "name": "brand-971"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 1970,
+              "name": "product-1970",
+              "price": 90000,
+              "brand": {
+                "brandId": 970,
+                "name": "brand-970"
+              },
+              "likeCount": 3
+            }
+          ],
+          "page": 0,
+          "size": 20,
+          "totalElements": 950400,
+          "totalPages": 47520
+        }
+      }
+    },
+    "price": {
+      "requestPath": "/api/v1/products?sort=price_asc&page=0&size=20",
+      "response": {
+        "meta": {
+          "result": "SUCCESS"
+        },
+        "data": {
+          "items": [
+            {
+              "productId": 999041,
+              "name": "product-999041",
+              "price": 1000,
+              "brand": {
+                "brandId": 41,
+                "name": "brand-41"
+              },
+              "likeCount": 2
+            },
+            {
+              "productId": 998041,
+              "name": "product-998041",
+              "price": 1000,
+              "brand": {
+                "brandId": 41,
+                "name": "brand-41"
+              },
+              "likeCount": 3
+            },
+            {
+              "productId": 997582,
+              "name": "product-997582",
+              "price": 1000,
+              "brand": {
+                "brandId": 582,
+                "name": "brand-582"
+              },
+              "likeCount": 5
+            },
+            {
+              "productId": 996582,
+              "name": "product-996582",
+              "price": 1000,
+              "brand": {
+                "brandId": 582,
+                "name": "brand-582"
+              },
+              "likeCount": 0
+            },
+            {
+              "productId": 995123,
+              "name": "product-995123",
+              "price": 1000,
+              "brand": {
+                "brandId": 123,
+                "name": "brand-123"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 994123,
+              "name": "product-994123",
+              "price": 1000,
+              "brand": {
+                "brandId": 123,
+                "name": "brand-123"
+              },
+              "likeCount": 5
+            },
+            {
+              "productId": 993664,
+              "name": "product-993664",
+              "price": 1000,
+              "brand": {
+                "brandId": 664,
+                "name": "brand-664"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 992664,
+              "name": "product-992664",
+              "price": 1000,
+              "brand": {
+                "brandId": 664,
+                "name": "brand-664"
+              },
+              "likeCount": 2
+            },
+            {
+              "productId": 991205,
+              "name": "product-991205",
+              "price": 1000,
+              "brand": {
+                "brandId": 205,
+                "name": "brand-205"
+              },
+              "likeCount": 0
+            },
+            {
+              "productId": 990205,
+              "name": "product-990205",
+              "price": 1000,
+              "brand": {
+                "brandId": 205,
+                "name": "brand-205"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 989746,
+              "name": "product-989746",
+              "price": 1000,
+              "brand": {
+                "brandId": 746,
+                "name": "brand-746"
+              },
+              "likeCount": 3
+            },
+            {
+              "productId": 988746,
+              "name": "product-988746",
+              "price": 1000,
+              "brand": {
+                "brandId": 746,
+                "name": "brand-746"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 987287,
+              "name": "product-987287",
+              "price": 1000,
+              "brand": {
+                "brandId": 287,
+                "name": "brand-287"
+              },
+              "likeCount": 2
+            },
+            {
+              "productId": 986287,
+              "name": "product-986287",
+              "price": 1000,
+              "brand": {
+                "brandId": 287,
+                "name": "brand-287"
+              },
+              "likeCount": 3
+            },
+            {
+              "productId": 985828,
+              "name": "product-985828",
+              "price": 1000,
+              "brand": {
+                "brandId": 828,
+                "name": "brand-828"
+              },
+              "likeCount": 5
+            },
+            {
+              "productId": 984828,
+              "name": "product-984828",
+              "price": 1000,
+              "brand": {
+                "brandId": 828,
+                "name": "brand-828"
+              },
+              "likeCount": 0
+            },
+            {
+              "productId": 983369,
+              "name": "product-983369",
+              "price": 1000,
+              "brand": {
+                "brandId": 369,
+                "name": "brand-369"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 982369,
+              "name": "product-982369",
+              "price": 1000,
+              "brand": {
+                "brandId": 369,
+                "name": "brand-369"
+              },
+              "likeCount": 5
+            },
+            {
+              "productId": 981910,
+              "name": "product-981910",
+              "price": 1000,
+              "brand": {
+                "brandId": 910,
+                "name": "brand-910"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 980910,
+              "name": "product-980910",
+              "price": 1000,
+              "brand": {
+                "brandId": 910,
+                "name": "brand-910"
+              },
+              "likeCount": 2
+            }
+          ],
+          "page": 0,
+          "size": 20,
+          "totalElements": 950400,
+          "totalPages": 47520
+        }
+      }
+    },
+    "brand7": {
+      "requestPath": "/api/v1/products?brandId=7&sort=price_asc&page=0&size=20",
+      "response": {
+        "meta": {
+          "result": "SUCCESS"
+        },
+        "data": {
+          "items": [
+            {
+              "productId": 559007,
+              "name": "product-559007",
+              "price": 1200,
+              "brand": {
+                "brandId": 7,
+                "name": "brand-7"
+              },
+              "likeCount": 0
+            },
+            {
+              "productId": 558007,
+              "name": "product-558007",
+              "price": 1200,
+              "brand": {
+                "brandId": 7,
+                "name": "brand-7"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 677007,
+              "name": "product-677007",
+              "price": 1500,
+              "brand": {
+                "brandId": 7,
+                "name": "brand-7"
+              },
+              "likeCount": 2
+            },
+            {
+              "productId": 676007,
+              "name": "product-676007",
+              "price": 1500,
+              "brand": {
+                "brandId": 7,
+                "name": "brand-7"
+              },
+              "likeCount": 3
+            },
+            {
+              "productId": 89007,
+              "name": "product-89007",
+              "price": 1700,
+              "brand": {
+                "brandId": 7,
+                "name": "brand-7"
+              },
+              "likeCount": 2
+            },
+            {
+              "productId": 88007,
+              "name": "product-88007",
+              "price": 1700,
+              "brand": {
+                "brandId": 7,
+                "name": "brand-7"
+              },
+              "likeCount": 3
+            },
+            {
+              "productId": 795007,
+              "name": "product-795007",
+              "price": 1800,
+              "brand": {
+                "brandId": 7,
+                "name": "brand-7"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 794007,
+              "name": "product-794007",
+              "price": 1800,
+              "brand": {
+                "brandId": 7,
+                "name": "brand-7"
+              },
+              "likeCount": 5
+            },
+            {
+              "productId": 207007,
+              "name": "product-207007",
+              "price": 2000,
+              "brand": {
+                "brandId": 7,
+                "name": "brand-7"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 206007,
+              "name": "product-206007",
+              "price": 2000,
+              "brand": {
+                "brandId": 7,
+                "name": "brand-7"
+              },
+              "likeCount": 5
+            },
+            {
+              "productId": 913007,
+              "name": "product-913007",
+              "price": 2100,
+              "brand": {
+                "brandId": 7,
+                "name": "brand-7"
+              },
+              "likeCount": 0
+            },
+            {
+              "productId": 912007,
+              "name": "product-912007",
+              "price": 2100,
+              "brand": {
+                "brandId": 7,
+                "name": "brand-7"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 325007,
+              "name": "product-325007",
+              "price": 2300,
+              "brand": {
+                "brandId": 7,
+                "name": "brand-7"
+              },
+              "likeCount": 0
+            },
+            {
+              "productId": 324007,
+              "name": "product-324007",
+              "price": 2300,
+              "brand": {
+                "brandId": 7,
+                "name": "brand-7"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 442007,
+              "name": "product-442007",
+              "price": 2600,
+              "brand": {
+                "brandId": 7,
+                "name": "brand-7"
+              },
+              "likeCount": 3
+            },
+            {
+              "productId": 561007,
+              "name": "product-561007",
+              "price": 2900,
+              "brand": {
+                "brandId": 7,
+                "name": "brand-7"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 560007,
+              "name": "product-560007",
+              "price": 2900,
+              "brand": {
+                "brandId": 7,
+                "name": "brand-7"
+              },
+              "likeCount": 5
+            },
+            {
+              "productId": 679007,
+              "name": "product-679007",
+              "price": 3200,
+              "brand": {
+                "brandId": 7,
+                "name": "brand-7"
+              },
+              "likeCount": 0
+            },
+            {
+              "productId": 678007,
+              "name": "product-678007",
+              "price": 3200,
+              "brand": {
+                "brandId": 7,
+                "name": "brand-7"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 91007,
+              "name": "product-91007",
+              "price": 3400,
+              "brand": {
+                "brandId": 7,
+                "name": "brand-7"
+              },
+              "likeCount": 0
+            }
+          ],
+          "page": 0,
+          "size": 20,
+          "totalElements": 960,
+          "totalPages": 48
+        }
+      }
+    }
+  }
+}

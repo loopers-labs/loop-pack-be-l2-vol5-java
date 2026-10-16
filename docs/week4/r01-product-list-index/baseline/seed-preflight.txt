@@ -1,0 +1,29 @@
+captured_at_utc	database_name	mysql_version	buffer_pool_bytes
+2026-10-16 04:03:11	week4_r01_index_benchmark	8.0.46	134217728
+remaining_transactions
+0
+brands	users	wallets	products	product_likes
+0	0	0	0	0
+TABLE_NAME	TABLE_ROWS
+brands	1000
+product_likes	2372859
+products	935097
+users	1000
+wallets	1000
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+products	0	PRIMARY	1	id	A	935097	NULL	NULL		BTREE			YES	NULL
+products	1	idx_products_deleted_brand_created	1	deleted	A	1	NULL	NULL		BTREE			YES	NULL
+products	1	idx_products_deleted_brand_created	2	brand_id	A	2053	NULL	NULL		BTREE			YES	NULL
+products	1	idx_products_deleted_brand_created	3	created_at	D	482715	NULL	NULL		BTREE			YES	NULL
+products	1	idx_products_deleted_brand_created	4	id	D	921638	NULL	NULL		BTREE			YES	NULL
+products	1	idx_products_deleted_brand_price	1	deleted	A	1	NULL	NULL		BTREE			YES	NULL
+products	1	idx_products_deleted_brand_price	2	brand_id	A	2047	NULL	NULL		BTREE			YES	NULL
+products	1	idx_products_deleted_brand_price	3	price	A	440696	NULL	NULL		BTREE			YES	NULL
+products	1	idx_products_deleted_brand_price	4	id	D	931257	NULL	NULL		BTREE			YES	NULL
+products	1	idx_products_deleted_like	1	deleted	A	1	NULL	NULL		BTREE			YES	NULL
+products	1	idx_products_deleted_like	2	like_count	D	4	NULL	NULL		BTREE			YES	NULL
+products	1	idx_products_deleted_like	3	id	D	904623	NULL	NULL		BTREE			YES	NULL
+products	1	idx_products_deleted_brand_like	1	deleted	A	1	NULL	NULL		BTREE			YES	NULL
+products	1	idx_products_deleted_brand_like	2	brand_id	A	2051	NULL	NULL		BTREE			YES	NULL
+products	1	idx_products_deleted_brand_like	3	like_count	D	13048	NULL	NULL		BTREE			YES	NULL
+products	1	idx_products_deleted_brand_like	4	id	D	908231	NULL	NULL		BTREE			YES	NULL

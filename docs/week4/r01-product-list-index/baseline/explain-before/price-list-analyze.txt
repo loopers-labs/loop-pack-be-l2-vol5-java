@@ -1,0 +1,7 @@
+EXPLAIN
+-> Limit: 20 row(s)  (cost=228384 rows=20) (actual time=11241..11241 rows=20 loops=1)
+    -> Nested loop inner join  (cost=228384 rows=491817) (actual time=11241..11241 rows=20 loops=1)
+        -> Sort: pje1_0.price, pje1_0.id DESC  (cost=54509 rows=496785) (actual time=11241..11241 rows=20 loops=1)
+            -> Index lookup on pje1_0 using idx_products_deleted_brand_created (deleted=false)  (cost=54509 rows=496785) (actual time=3.04..10393 rows=950400 loops=1)
+        -> Filter: (bje1_0.deleted = false)  (cost=0.25 rows=0.99) (actual time=0.00653..0.00661 rows=1 loops=20)
+            -> Single-row index lookup on bje1_0 using PRIMARY (id=pje1_0.brand_id)  (cost=0.25 rows=1) (actual time=0.00619..0.00622 rows=1 loops=20)
