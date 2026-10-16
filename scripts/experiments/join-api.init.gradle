@@ -1,0 +1,7 @@
+gradle.projectsEvaluated {
+    def api = gradle.rootProject.project(':apps:commerce-api')
+    api.sourceSets.test.java.srcDir(new File(gradle.rootProject.projectDir, 'scripts/experiments/java'))
+    api.tasks.named('test') {
+        systemProperty 'week4.repoRoot', gradle.rootProject.projectDir.absolutePath
+    }
+}

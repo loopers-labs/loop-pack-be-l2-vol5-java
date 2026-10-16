@@ -14,9 +14,31 @@ services:
     volumes:
       - mysql-8-data:/var/lib/mysql
 
+  mysql-benchmark:
+    image: mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b
+    profiles: [benchmark]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3307:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_USER: application
+      MYSQL_PASSWORD: application
+      MYSQL_DATABASE: loopers_benchmark
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_general_ci"]
+    volumes:
+      - mysql-benchmark-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql -h 127.0.0.1 -u $$MYSQL_USER -D $$MYSQL_DATABASE -e 'SELECT 1' >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 30s
+
   redis-master:
-    image: redis:7.0
+    image: redis:7.0.15
     container_name: redis-master
+    restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:
@@ -35,8 +57,9 @@ services:
       retries: 10
 
   redis-readonly:
-    image: redis:7.0
+    image: redis:7.0.15
     container_name: redis-readonly
+    restart: unless-stopped
     depends_on:
       redis-master:
         condition: service_healthy
@@ -102,6 +125,7 @@ services:
 
 volumes:
   mysql-8-data:
+  mysql-benchmark-data:
   redis_master_data:
   redis_readonly_data:
   kafka-data:

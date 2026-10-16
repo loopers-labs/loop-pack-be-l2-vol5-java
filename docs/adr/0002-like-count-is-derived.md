@@ -1,6 +1,6 @@
 # ADR 0002: 좋아요 수는 관계에서 집계한다
 
-Status: Accepted
+Status: Superseded by [ADR 0020](./0020-like-count-denormalized-counter.md)
 Date: 2026-09-17
 
 ## Context
@@ -26,3 +26,4 @@ Product는 좋아요 수를 변경하지 않는다. LikeRepository가 관계 저
 
 - [설계 규칙](../week2/design.md)
 - `apps/commerce-api/src/main/java/com/loopers/domain/like/LikeRepository.java`
+- week4에서 10만 건 스케일의 데이터 쏠림(좋아요가 한 상품에 몰리는 경우) 집계 비용을 확인하고 이 결정을 대체한 [ADR 0020](./0020-like-count-denormalized-counter.md)

@@ -37,6 +37,16 @@ spring:
       on-profile: local, test
 
 ---
+spring.config.activate.on-profile: benchmark
+
+server:
+  port: 8082
+
+management:
+  server:
+    port: 8083
+
+---
 spring:
   config:
     activate:
@@ -57,3 +67,27 @@ spring:
 springdoc:
   api-docs:
     enabled: false
+
+---
+spring.config.activate.on-profile: local, benchmark
+
+commerce:
+  cache:
+    price:
+      enabled: true
+      ttl-seconds: 300
+    popular:
+      enabled: true
+      ttl-seconds: 60
+
+---
+spring.config.activate.on-profile: local
+
+commerce.cache.price.prefix: commerce:price-page:v3:local
+commerce.cache.popular.prefix: commerce:popular-page:v1:local
+
+---
+spring.config.activate.on-profile: benchmark
+
+commerce.cache.price.prefix: commerce:price-page:v3:benchmark
+commerce.cache.popular.prefix: commerce:popular-page:v1:benchmark

@@ -1,0 +1,596 @@
+{
+  "recorded_at_utc": "2026-10-15T23:38:17.670477+00:00",
+  "command": ":apps:commerce-api:check :apps:commerce-api:bootJar",
+  "exit_code": 0,
+  "suites": 55,
+  "tests": 310,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "checkstyle": "passed",
+  "archunit": "passed",
+  "jar_sha256": "93281c5be8991704062b40a7ec5fd55b79ef0bf270c22df17adb97aca49193d2",
+  "product_total_count_included": false,
+  "personal_like_state": "isLiked from database, outside shared cache",
+  "suite_results": [
+    {
+      "name": "com.loopers.CommerceApiContextTest",
+      "tests": "1",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:35:40.493Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.394"
+    },
+    {
+      "name": "com.loopers.application.brand.BrandBulkDeletionExperimentTest",
+      "tests": "25",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:35:42.824Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "34.959"
+    },
+    {
+      "name": "com.loopers.application.brand.BrandConcurrencyTest",
+      "tests": "9",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:36:17.801Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "2.546"
+    },
+    {
+      "name": "com.loopers.application.brand.BrandFacadeTest",
+      "tests": "2",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:36:20.350Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.496"
+    },
+    {
+      "name": "com.loopers.application.brand.BrandHintComparisonTest",
+      "tests": "8",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:36:24.760Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "12.098"
+    },
+    {
+      "name": "com.loopers.application.brand.BrandRcBulkValidationTest",
+      "tests": "15",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:36:38.568Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "3.453"
+    },
+    {
+      "name": "com.loopers.application.brand.BrandRemovalTransactionTest",
+      "tests": "7",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:36:43.537Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "1.75"
+    },
+    {
+      "name": "com.loopers.application.brand.BrandRrBulkValidationTest",
+      "tests": "15",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:36:46.660Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "3.165"
+    },
+    {
+      "name": "com.loopers.application.brand.BrandRrHintBulkValidationTest",
+      "tests": "15",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:36:51.162Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "3.04"
+    },
+    {
+      "name": "com.loopers.application.like.LikeConcurrencyTest",
+      "tests": "7",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:36:55.532Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "2.155"
+    },
+    {
+      "name": "com.loopers.application.like.LikeCounterIntegrationTest",
+      "tests": "7",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:36:57.700Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "1.389"
+    },
+    {
+      "name": "com.loopers.application.order.LockFailureIntegrationTest",
+      "tests": "3",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:00.383Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "2.63"
+    },
+    {
+      "name": "com.loopers.application.order.OrderConfirmationConcurrencyTest",
+      "tests": "3",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:04.346Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.709"
+    },
+    {
+      "name": "com.loopers.application.order.OrderConfirmationServiceTest",
+      "tests": "3",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:05.056Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.233"
+    },
+    {
+      "name": "com.loopers.application.order.OrderPersistenceIntegrationTest",
+      "tests": "2",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:05.298Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.402"
+    },
+    {
+      "name": "com.loopers.application.order.StockConcurrencyTest",
+      "tests": "8",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:07.047Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "2.182"
+    },
+    {
+      "name": "com.loopers.application.order.TransactionFailureIntegrationTest",
+      "tests": "5",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:10.531Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "1.168"
+    },
+    {
+      "name": "com.loopers.application.point.PointConcurrencyTest",
+      "tests": "7",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:11.719Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "1.985"
+    },
+    {
+      "name": "com.loopers.application.point.PointExpirationBatchTest",
+      "tests": "3",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:14.966Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "3.419"
+    },
+    {
+      "name": "com.loopers.application.point.PointExpirationPersistenceIntegrationTest",
+      "tests": "1",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:18.397Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.259"
+    },
+    {
+      "name": "com.loopers.application.product.LocalPricePageCacheIntegrationTest",
+      "tests": "6",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:19.929Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "1.481"
+    },
+    {
+      "name": "com.loopers.application.product.PricePageCacheIntegrationTest",
+      "tests": "20",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:23.035Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "5.511"
+    },
+    {
+      "name": "com.loopers.application.product.ProductBrandFilterIntegrationTest",
+      "tests": "4",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:29.776Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.107"
+    },
+    {
+      "name": "com.loopers.application.product.ProductFacadeTest",
+      "tests": "1",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:29.884Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.075"
+    },
+    {
+      "name": "com.loopers.application.product.ProductListPersonalizationIntegrationTest",
+      "tests": "3",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:31.234Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.084"
+    },
+    {
+      "name": "com.loopers.application.product.ProductListQueryServiceTest",
+      "tests": "6",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:31.319Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.077"
+    },
+    {
+      "name": "com.loopers.application.product.ProductQueryServiceTest",
+      "tests": "1",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:31.397Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.14"
+    },
+    {
+      "name": "com.loopers.application.user.PointAccountRequiredTest",
+      "tests": "2",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:31.551Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.313"
+    },
+    {
+      "name": "com.loopers.application.user.UserRegistrationServiceTest",
+      "tests": "3",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:31.879Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.539"
+    },
+    {
+      "name": "com.loopers.architecture.LayeredArchitectureTest",
+      "tests": "1",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:37.653Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "1.741"
+    },
+    {
+      "name": "com.loopers.domain.brand.BrandModelTest",
+      "tests": "18",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:32.420Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.011"
+    },
+    {
+      "name": "com.loopers.domain.brand.BrandServiceTest",
+      "tests": "5",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:32.431Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.071"
+    },
+    {
+      "name": "예시 모델을 생성할 때,",
+      "tests": "3",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:32.503Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.006"
+    },
+    {
+      "name": "예시를 조회할 때,",
+      "tests": "2",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:32.529Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.304"
+    },
+    {
+      "name": "com.loopers.domain.example.ExampleServiceIntegrationTest",
+      "tests": "0",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "1970-01-01T00:00:00Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.0"
+    },
+    {
+      "name": "com.loopers.domain.like.LikeServiceTest",
+      "tests": "3",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:32.834Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.068"
+    },
+    {
+      "name": "com.loopers.domain.order.OrderModelTest",
+      "tests": "4",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:32.903Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.001"
+    },
+    {
+      "name": "com.loopers.domain.point.PointBalanceModelTest",
+      "tests": "7",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:32.904Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.004"
+    },
+    {
+      "name": "com.loopers.domain.product.ProductModelTest",
+      "tests": "14",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:32.909Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.004"
+    },
+    {
+      "name": "com.loopers.domain.product.ProductServiceTest",
+      "tests": "7",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:32.914Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.003"
+    },
+    {
+      "name": "com.loopers.domain.product.StockTest",
+      "tests": "6",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:32.917Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.002"
+    },
+    {
+      "name": "com.loopers.domain.user.UserServiceTest",
+      "tests": "2",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:32.919Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.066"
+    },
+    {
+      "name": "com.loopers.infrastructure.product.LocalPricePageCacheTest",
+      "tests": "2",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:32.985Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.001"
+    },
+    {
+      "name": "com.loopers.interfaces.api.ContractClassificationTest",
+      "tests": "4",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:34.637Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.858"
+    },
+    {
+      "name": "GET /api/v1/examples/{id}",
+      "tests": "3",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:35.506Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.446"
+    },
+    {
+      "name": "com.loopers.interfaces.api.ExampleV1ApiE2ETest",
+      "tests": "0",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "1970-01-01T00:00:00Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.0"
+    },
+    {
+      "name": "com.loopers.interfaces.api.LockFailureResponseTest",
+      "tests": "3",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:35.965Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.015"
+    },
+    {
+      "name": "com.loopers.interfaces.api.admin.AdminBoundaryIntegrationTest",
+      "tests": "2",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:35.995Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.328"
+    },
+    {
+      "name": "com.loopers.interfaces.api.admin.order.AdminOrderV1ControllerTest",
+      "tests": "1",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:36.529Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.014"
+    },
+    {
+      "name": "com.loopers.interfaces.api.brand.BrandV1ControllerTest",
+      "tests": "6",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:36.732Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.02"
+    },
+    {
+      "name": "com.loopers.interfaces.api.like.LikeV1ControllerTest",
+      "tests": "4",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:36.922Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.012"
+    },
+    {
+      "name": "com.loopers.interfaces.api.order.OrderV1ControllerTest",
+      "tests": "3",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:37.120Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.016"
+    },
+    {
+      "name": "com.loopers.interfaces.api.point.PointV1ControllerTest",
+      "tests": "2",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:37.336Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.014"
+    },
+    {
+      "name": "com.loopers.interfaces.api.product.ProductV1ControllerTest",
+      "tests": "14",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:37.605Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.044"
+    },
+    {
+      "name": "com.loopers.support.error.CoreExceptionTest",
+      "tests": "2",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-15T23:37:37.649Z",
+      "hostname": "hyeon-aui-MacBookPro.local",
+      "time": "0.001"
+    }
+  ],
+  "measurement_verification": {
+    "verified_at_utc": "2026-10-15T23:49:36.740517+00:00",
+    "same_jar_for_tests_and_measurements": true,
+    "provider_gets": 3000,
+    "mixed_gets": 1800,
+    "anonymous_gets": 1800,
+    "skew_sequential_gets": 6000,
+    "skew_concurrent_gets": 6000,
+    "personal_selects_per_representative_get": 5,
+    "anonymous_selects_per_representative_get": 3,
+    "personal_sql_probes": 45,
+    "anonymous_sql_probes": 9,
+    "product_count_sql_per_probe_or_burst": 0,
+    "selects_per_20_user_burst": 100,
+    "personal_query_ids_per_page": 20,
+    "personal_query_index": "uk_product_like_user_product",
+    "personal_query_covering": true,
+    "normal_page_liked_products": 12,
+    "skew_page_liked_products": 0,
+    "first_db_page_plan_rows_normal_and_skew": 20,
+    "first_db_page_plan_sort_normal_and_skew": false,
+    "redis_get_decode_measured_reads": 3000,
+    "cache_json_fields": [
+      "items"
+    ],
+    "cache_json_bytes": 1771,
+    "source_unchanged": true,
+    "owned_resources_cleaned": true
+  }
+}

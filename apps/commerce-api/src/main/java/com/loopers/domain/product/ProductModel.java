@@ -8,7 +8,10 @@ import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(name = "product", indexes = @Index(name = "idx_product_brand_deleted", columnList = "brand_id, deleted_at"))
+@Table(name = "product", indexes = {
+    @Index(name = "idx_product_brand_deleted", columnList = "brand_id, deleted_at"),
+    @Index(name = "idx_product_brand_price", columnList = "brand_id, deleted_at, price, created_at DESC, id DESC")
+})
 public class ProductModel extends BaseEntity {
 
     @Column(nullable = false)

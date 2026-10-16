@@ -2,7 +2,7 @@ package com.loopers.application.brand;
 
 import com.loopers.application.user.UserRegistrationService;
 import com.loopers.domain.brand.BrandModel;
-import com.loopers.domain.like.LikeModel;
+import com.loopers.domain.like.LikeService;
 import com.loopers.infrastructure.user.UserJpaRepository;
 import com.loopers.infrastructure.like.LikeJpaRepository;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -50,6 +50,7 @@ class BrandRemovalTransactionTest {
     @Autowired private MockMvc mvc;
     @Autowired private UserJpaRepository users;
     @Autowired private LikeJpaRepository likes;
+    @Autowired private LikeService likeService;
     @Autowired private BrandJpaRepository brands;
     @Autowired private ProductJpaRepository products;
     @Autowired private OrderJpaRepository orders;
@@ -116,7 +117,7 @@ class BrandRemovalTransactionTest {
     void deletionConnectsToCustomerRestrictionsAndPreservesOrderHistory() throws Exception {
         Fixture f = prepare();
         var user = registration.register();
-        likes.save(new LikeModel(user.getId(), f.j()));
+        likeService.register(user.getId(), f.j());
         OrderModel draft = orders.save(new OrderModel(user.getId(),
             List.of(new OrderItem(f.j(), "J", 2000, 1))));
 
@@ -183,6 +184,9 @@ class BrandRemovalTransactionTest {
             l.markDeleted();
             l = products.save(l);
             ProductModel m = products.save(new ProductModel(b.getId(), "M", 3000, 7));
+            for (ProductModel product : List.of(j, k, l, m)) {
+                likeService.initializeCount(product.getId());
+            }
             OrderModel order = new OrderModel(1L, List.of(new OrderItem(j.getId(), "J", 2000, 2)));
             order.confirm();
             order = orders.save(order);

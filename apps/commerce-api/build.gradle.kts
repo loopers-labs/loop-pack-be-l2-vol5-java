@@ -1,4 +1,5 @@
 dependencies {
+    implementation("com.github.ben-manes.caffeine:caffeine")
     // add-ons
     implementation(project(":modules:jpa"))
     implementation(project(":modules:redis"))

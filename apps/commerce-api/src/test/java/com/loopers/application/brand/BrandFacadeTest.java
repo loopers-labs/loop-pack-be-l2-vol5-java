@@ -4,6 +4,7 @@ import com.loopers.domain.brand.BrandService;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.domain.product.ProductModel;
 import java.util.List;
+import org.springframework.context.ApplicationEventPublisher;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -17,6 +18,9 @@ import static org.mockito.Mockito.when;
 class BrandFacadeTest {
 
     @Mock
+    private ApplicationEventPublisher events;
+
+    @Mock
     private BrandService brandService;
 
     @Mock
@@ -26,7 +30,7 @@ class BrandFacadeTest {
     void deletesBrandWhenThereAreNoActiveProducts() {
         when(productRepository.findActiveByBrandIdForUpdate(1L)).thenReturn(List.of());
 
-        new BrandFacade(brandService, productRepository).delete(1L);
+        new BrandFacade(brandService, productRepository, events).delete(1L);
 
         verify(brandService).delete(1L);
     }
@@ -36,7 +40,7 @@ class BrandFacadeTest {
         ProductModel product = new ProductModel(1L, "상품", 1000, 0);
         when(productRepository.findActiveByBrandIdForUpdate(1L)).thenReturn(List.of(product));
 
-        new BrandFacade(brandService, productRepository).delete(1L);
+        new BrandFacade(brandService, productRepository, events).delete(1L);
 
         verify(brandService).delete(1L);
         verify(productRepository).save(product);

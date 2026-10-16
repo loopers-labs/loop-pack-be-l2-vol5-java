@@ -1,0 +1,13 @@
+# Keep local raw outputs; publish only the selected evidence below.
+*
+!.gitignore
+!README.md
+!index-results.json
+!like-counter-results.json
+!100k-price-cache-providers-personal.json
+!100k-price-cache-skew-personal.json
+!price-cache-redis-read-cost-personal-build.json
+!price-cache-personal-validation.json
+!100k-likes-cache.json
+!likes-cache-validation.json
+!100k-popular-cache.json

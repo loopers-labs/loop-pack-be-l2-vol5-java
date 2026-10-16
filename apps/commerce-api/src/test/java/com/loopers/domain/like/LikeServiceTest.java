@@ -2,6 +2,8 @@ package com.loopers.domain.like;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -34,9 +36,11 @@ class LikeServiceTest {
         verify(likeRepository).registerIfAbsent(any(LikeModel.class));
     }
 
-    @Test
-    void cancelsExistingLikeAndIgnoresAbsentLike() {
-        new LikeService(likeRepository).cancel(1L, 2L);
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void reportsWhetherCancellationActuallyChangedTheRelationship(boolean changed) {
+        when(likeRepository.deleteRelationship(1L, 2L)).thenReturn(changed);
+        assertThat(new LikeService(likeRepository).cancel(1L, 2L)).isEqualTo(changed);
 
         verify(likeRepository).deleteRelationship(1L, 2L);
     }

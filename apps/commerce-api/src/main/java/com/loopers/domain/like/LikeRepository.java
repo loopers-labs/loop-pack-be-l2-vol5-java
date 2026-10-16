@@ -3,11 +3,14 @@ package com.loopers.domain.like;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 public interface LikeRepository {
+    void initializeCount(LikeCountModel count);
+
     boolean registerIfAbsent(LikeModel like);
 
-    void deleteRelationship(Long userId, Long productId);
+    boolean deleteRelationship(Long userId, Long productId);
 
     Optional<LikeModel> find(Long userId, Long productId);
 
@@ -18,4 +21,6 @@ public interface LikeRepository {
     List<LikeModel> findByUserId(Long userId);
 
     Map<Long, Long> countByProductIds(List<Long> productIds);
+
+    Set<Long> findLikedProductIds(Long userId, List<Long> productIds);
 }

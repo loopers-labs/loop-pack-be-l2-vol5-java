@@ -8,6 +8,7 @@ import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.brand.BrandService;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.product.ProductRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import com.loopers.infrastructure.brand.BrandJpaRepository;
 import com.loopers.infrastructure.product.ProductJpaRepository;
 import com.loopers.support.error.CoreException;
@@ -347,12 +348,12 @@ class BrandRcBulkValidationTest {
     static class CandidateConfig {
         @Bean
         @Primary
-        RcBulkFacade rcBulkFacade(BrandService brands, ProductRepository products, EntityManager em, JdbcTemplate jdbc,
+        RcBulkFacade rcBulkFacade(BrandService brands, ProductRepository products, EntityManager em, JdbcTemplate jdbc, ApplicationEventPublisher events,
                                  @Value("${candidate.strategy:rc}") String strategy) {
             return switch (strategy) {
-                case "rr-hint" -> new RrHintBulkFacade(brands, products, em, jdbc);
-                case "rr-plain" -> new RrBulkFacade(brands, products, em, jdbc);
-                default -> new RcBulkFacade(brands, products, em, jdbc);
+                case "rr-hint" -> new RrHintBulkFacade(brands, products, em, jdbc, events);
+                case "rr-plain" -> new RrBulkFacade(brands, products, em, jdbc, events);
+                default -> new RcBulkFacade(brands, products, em, jdbc, events);
             };
         }
     }
@@ -365,8 +366,8 @@ class BrandRcBulkValidationTest {
         volatile String observedIsolation;
         volatile int observedDeletedProducts;
 
-        RcBulkFacade(BrandService brands, ProductRepository products, EntityManager em, JdbcTemplate jdbc) {
-            super(brands, products);
+        RcBulkFacade(BrandService brands, ProductRepository products, EntityManager em, JdbcTemplate jdbc, ApplicationEventPublisher events) {
+            super(brands, products, events);
             this.brands = brands;
             this.em = em;
             this.jdbc = jdbc;
@@ -414,8 +415,8 @@ class BrandRcBulkValidationTest {
     }
 
     static class RrHintBulkFacade extends RcBulkFacade {
-        RrHintBulkFacade(BrandService brands, ProductRepository products, EntityManager em, JdbcTemplate jdbc) {
-            super(brands, products, em, jdbc);
+        RrHintBulkFacade(BrandService brands, ProductRepository products, EntityManager em, JdbcTemplate jdbc, ApplicationEventPublisher events) {
+            super(brands, products, em, jdbc, events);
         }
 
         @Override
@@ -443,8 +444,8 @@ class BrandRcBulkValidationTest {
     }
 
     static class RrBulkFacade extends RcBulkFacade {
-        RrBulkFacade(BrandService brands, ProductRepository products, EntityManager em, JdbcTemplate jdbc) {
-            super(brands, products, em, jdbc);
+        RrBulkFacade(BrandService brands, ProductRepository products, EntityManager em, JdbcTemplate jdbc, ApplicationEventPublisher events) {
+            super(brands, products, em, jdbc, events);
         }
 
         @Override

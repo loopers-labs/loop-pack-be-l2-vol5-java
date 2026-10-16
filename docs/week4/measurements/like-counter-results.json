@@ -1,0 +1,1694 @@
+{
+  "description": "문서에서 참조하는 기존 측정 원본을 묶었다. 각 결과는 해당 실행 시점의 기록이며 새 측정이 아니다.",
+  "source_count": 3,
+  "results": {
+    "100k-counter-api.json": {
+      "notes": [
+        "Current production service; no JOIN replacement or cache added.",
+        "Separate JVM per DB, sequential urllib requests; 10 warmup + 30 measured requests.",
+        "HTTP values verify final behavior, not a controlled causal latency comparison between JVMs.",
+        "SQL captured after HTTP timing; logging settings restored.",
+        "Missing non-product tables temporarily copied as empty schemas for ddl-auto=validate."
+      ],
+      "loopers_benchmark_100k": {
+        "http": {
+          "median_ms": 17.84437500009517,
+          "mean_ms": 20.097148700127338,
+          "p95_ms": 32.90158300114854,
+          "samples_ms": [
+            13.042374999713502,
+            12.710499999229796,
+            14.009583999722963,
+            13.063708000117913,
+            13.50191700112191,
+            13.308708999829832,
+            14.222791000065627,
+            14.371291999850655,
+            14.208582999344799,
+            14.86858300086169,
+            14.0875840006629,
+            13.11866700052633,
+            13.318666999111883,
+            21.07633400009945,
+            18.037750000075903,
+            17.651000000114436,
+            27.291083000818617,
+            25.750124999831314,
+            68.81933300064702,
+            20.813041999645066,
+            24.422374999630847,
+            19.534791999831214,
+            32.90158300114854,
+            23.998624999876483,
+            22.352291000061086,
+            25.182417000905843,
+            23.07545900112018,
+            19.12520800033235,
+            18.264166999870213,
+            16.785916999651818
+          ]
+        },
+        "response": {
+          "items": [
+            {
+              "id": 97407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 097407",
+              "price": 6000,
+              "likeCount": 2
+            },
+            {
+              "id": 94407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 094407",
+              "price": 6000,
+              "likeCount": 5
+            },
+            {
+              "id": 91407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 091407",
+              "price": 6000,
+              "likeCount": 8
+            },
+            {
+              "id": 88407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 088407",
+              "price": 6000,
+              "likeCount": 0
+            },
+            {
+              "id": 85407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 085407",
+              "price": 6000,
+              "likeCount": 3
+            },
+            {
+              "id": 82407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 082407",
+              "price": 6000,
+              "likeCount": 6
+            },
+            {
+              "id": 79407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 079407",
+              "price": 6000,
+              "likeCount": 9
+            },
+            {
+              "id": 76407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 076407",
+              "price": 6000,
+              "likeCount": 1
+            },
+            {
+              "id": 73407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 073407",
+              "price": 6000,
+              "likeCount": 4
+            },
+            {
+              "id": 70407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 070407",
+              "price": 6000,
+              "likeCount": 7
+            },
+            {
+              "id": 67407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 067407",
+              "price": 6000,
+              "likeCount": 10
+            },
+            {
+              "id": 64407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 064407",
+              "price": 6000,
+              "likeCount": 2
+            },
+            {
+              "id": 61407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 061407",
+              "price": 6000,
+              "likeCount": 5
+            },
+            {
+              "id": 58407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 058407",
+              "price": 6000,
+              "likeCount": 8
+            },
+            {
+              "id": 55407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 055407",
+              "price": 6000,
+              "likeCount": 0
+            },
+            {
+              "id": 52407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 052407",
+              "price": 6000,
+              "likeCount": 3
+            },
+            {
+              "id": 49407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 049407",
+              "price": 6000,
+              "likeCount": 6
+            },
+            {
+              "id": 46407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 046407",
+              "price": 6000,
+              "likeCount": 9
+            },
+            {
+              "id": 43407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 043407",
+              "price": 6000,
+              "likeCount": 1
+            },
+            {
+              "id": 40407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 040407",
+              "price": 6000,
+              "likeCount": 4
+            }
+          ],
+          "page": 0,
+          "size": 20,
+          "totalCount": 990
+        },
+        "sql_probe": {
+          "business_select_count": 5,
+          "queries": [
+            {
+              "sql": "select bm1_0.id,bm1_0.created_at,bm1_0.deleted_at,bm1_0.description,bm1_0.name,bm1_0.updated_at from brand bm1_0 where bm1_0.id=7",
+              "explain_json": {
+                "query_block": {
+                  "select_id": 1,
+                  "cost_info": {
+                    "query_cost": "1.00"
+                  },
+                  "table": {
+                    "table_name": "bm1_0",
+                    "access_type": "const",
+                    "possible_keys": [
+                      "PRIMARY"
+                    ],
+                    "key": "PRIMARY",
+                    "used_key_parts": [
+                      "id"
+                    ],
+                    "key_length": "8",
+                    "ref": [
+                      "const"
+                    ],
+                    "rows_examined_per_scan": 1,
+                    "rows_produced_per_join": 1,
+                    "filtered": "100.00",
+                    "cost_info": {
+                      "read_cost": "0.00",
+                      "eval_cost": "0.10",
+                      "prefix_cost": "0.00",
+                      "data_read_per_join": "4K"
+                    },
+                    "used_columns": [
+                      "id",
+                      "created_at",
+                      "deleted_at",
+                      "updated_at",
+                      "description",
+                      "name"
+                    ]
+                  }
+                }
+              },
+              "explain_analyze": "-> Rows fetched before execution  (cost=0..0 rows=1) (actual time=83e-6..83e-6 rows=1 loops=1)"
+            },
+            {
+              "sql": "select count(pm1_0.id) from product pm1_0 where pm1_0.deleted_at is null and (7 is null or pm1_0.brand_id=7) and exists(select bm1_0.id from brand bm1_0 where bm1_0.id=pm1_0.brand_id and bm1_0.deleted_at is null)",
+              "explain_json": {
+                "query_block": {
+                  "select_id": 1,
+                  "cost_info": {
+                    "query_cost": "102.97"
+                  },
+                  "nested_loop": [
+                    {
+                      "table": {
+                        "table_name": "bm1_0",
+                        "access_type": "const",
+                        "possible_keys": [
+                          "PRIMARY"
+                        ],
+                        "key": "PRIMARY",
+                        "used_key_parts": [
+                          "id"
+                        ],
+                        "key_length": "8",
+                        "ref": [
+                          "const"
+                        ],
+                        "rows_examined_per_scan": 1,
+                        "rows_produced_per_join": 1,
+                        "filtered": "100.00",
+                        "cost_info": {
+                          "read_cost": "0.00",
+                          "eval_cost": "0.10",
+                          "prefix_cost": "0.00",
+                          "data_read_per_join": "4K"
+                        },
+                        "used_columns": [
+                          "id",
+                          "deleted_at"
+                        ]
+                      }
+                    },
+                    {
+                      "table": {
+                        "table_name": "pm1_0",
+                        "access_type": "ref",
+                        "possible_keys": [
+                          "idx_product_brand_deleted",
+                          "idx_product_brand_price"
+                        ],
+                        "key": "idx_product_brand_deleted",
+                        "used_key_parts": [
+                          "brand_id",
+                          "deleted_at"
+                        ],
+                        "key_length": "17",
+                        "ref": [
+                          "const",
+                          "const"
+                        ],
+                        "rows_examined_per_scan": 990,
+                        "rows_produced_per_join": 990,
+                        "filtered": "100.00",
+                        "using_index": true,
+                        "cost_info": {
+                          "read_cost": "3.97",
+                          "eval_cost": "99.00",
+                          "prefix_cost": "102.97",
+                          "data_read_per_join": "440K"
+                        },
+                        "used_columns": [
+                          "id",
+                          "deleted_at",
+                          "brand_id"
+                        ],
+                        "attached_condition": "((`loopers_benchmark_100k`.`pm1_0`.`brand_id` = '7') and (`loopers_benchmark_100k`.`pm1_0`.`deleted_at` is null))"
+                      }
+                    }
+                  ]
+                }
+              },
+              "explain_analyze": "-> Aggregate: count(pm1_0.id)  (cost=202 rows=1) (actual time=0.22..0.22 rows=1 loops=1)\n    -> Filter: ((pm1_0.brand_id = '7') and (pm1_0.deleted_at is null))  (cost=103 rows=990) (actual time=0.013..0.188 rows=990 loops=1)\n        -> Covering index lookup on pm1_0 using idx_product_brand_deleted (brand_id=7, deleted_at=NULL)  (cost=103 rows=990) (actual time=0.012..0.129 rows=990 loops=1)"
+            },
+            {
+              "sql": "select pm1_0.id,pm1_0.brand_id,pm1_0.created_at,pm1_0.deleted_at,pm1_0.name,pm1_0.price,pm1_0.quantity,pm1_0.updated_at from product pm1_0 where pm1_0.deleted_at is null and (7 is null or pm1_0.brand_id=7) and exists(select bm1_0.id from brand bm1_0 where bm1_0.id=pm1_0.brand_id and bm1_0.deleted_at is null) order by pm1_0.price,pm1_0.created_at desc,pm1_0.id desc limit 20",
+              "explain_json": {
+                "query_block": {
+                  "select_id": 1,
+                  "cost_info": {
+                    "query_cost": "470.48"
+                  },
+                  "ordering_operation": {
+                    "using_filesort": false,
+                    "nested_loop": [
+                      {
+                        "table": {
+                          "table_name": "bm1_0",
+                          "access_type": "const",
+                          "possible_keys": [
+                            "PRIMARY"
+                          ],
+                          "key": "PRIMARY",
+                          "used_key_parts": [
+                            "id"
+                          ],
+                          "key_length": "8",
+                          "ref": [
+                            "const"
+                          ],
+                          "rows_examined_per_scan": 1,
+                          "rows_produced_per_join": 1,
+                          "filtered": "100.00",
+                          "cost_info": {
+                            "read_cost": "0.00",
+                            "eval_cost": "0.10",
+                            "prefix_cost": "0.00",
+                            "data_read_per_join": "4K"
+                          },
+                          "used_columns": [
+                            "id",
+                            "deleted_at"
+                          ]
+                        }
+                      },
+                      {
+                        "table": {
+                          "table_name": "pm1_0",
+                          "access_type": "ref",
+                          "possible_keys": [
+                            "idx_product_brand_deleted",
+                            "idx_product_brand_price"
+                          ],
+                          "key": "idx_product_brand_price",
+                          "used_key_parts": [
+                            "brand_id",
+                            "deleted_at"
+                          ],
+                          "key_length": "17",
+                          "ref": [
+                            "const",
+                            "const"
+                          ],
+                          "rows_examined_per_scan": 990,
+                          "rows_produced_per_join": 990,
+                          "filtered": "100.00",
+                          "index_condition": "((`loopers_benchmark_100k`.`pm1_0`.`brand_id` = '7') and (`loopers_benchmark_100k`.`pm1_0`.`deleted_at` is null))",
+                          "cost_info": {
+                            "read_cost": "371.48",
+                            "eval_cost": "99.00",
+                            "prefix_cost": "470.48",
+                            "data_read_per_join": "440K"
+                          },
+                          "used_columns": [
+                            "id",
+                            "created_at",
+                            "deleted_at",
+                            "updated_at",
+                            "brand_id",
+                            "name",
+                            "price",
+                            "quantity"
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "explain_analyze": "-> Limit: 20 row(s)  (cost=470 rows=20) (actual time=0.325..0.328 rows=20 loops=1)\n    -> Index lookup on pm1_0 using idx_product_brand_price (brand_id=7, deleted_at=NULL), with index condition: ((pm1_0.brand_id = '7') and (pm1_0.deleted_at is null))  (cost=470 rows=990) (actual time=0.324..0.326 rows=20 loops=1)"
+            },
+            {
+              "sql": "select bm1_0.id,bm1_0.created_at,bm1_0.deleted_at,bm1_0.description,bm1_0.name,bm1_0.updated_at from brand bm1_0 where bm1_0.id in (7) and bm1_0.deleted_at is null",
+              "explain_json": {
+                "query_block": {
+                  "select_id": 1,
+                  "cost_info": {
+                    "query_cost": "1.00"
+                  },
+                  "table": {
+                    "table_name": "bm1_0",
+                    "access_type": "const",
+                    "possible_keys": [
+                      "PRIMARY"
+                    ],
+                    "key": "PRIMARY",
+                    "used_key_parts": [
+                      "id"
+                    ],
+                    "key_length": "8",
+                    "ref": [
+                      "const"
+                    ],
+                    "rows_examined_per_scan": 1,
+                    "rows_produced_per_join": 1,
+                    "filtered": "100.00",
+                    "cost_info": {
+                      "read_cost": "0.00",
+                      "eval_cost": "0.10",
+                      "prefix_cost": "0.00",
+                      "data_read_per_join": "4K"
+                    },
+                    "used_columns": [
+                      "id",
+                      "created_at",
+                      "deleted_at",
+                      "updated_at",
+                      "description",
+                      "name"
+                    ]
+                  }
+                }
+              },
+              "explain_analyze": "-> Rows fetched before execution  (cost=0..0 rows=1) (actual time=42e-6..42e-6 rows=1 loops=1)"
+            },
+            {
+              "sql": "select product_id, like_count from product_like_count where product_id in (94407, 82407, 70407, 58407, 46407, 91407, 79407, 67407, 55407, 43407, 88407, 76407, 64407, 52407, 40407, 97407, 85407, 73407, 61407, 49407)",
+              "explain_json": {
+                "query_block": {
+                  "select_id": 1,
+                  "cost_info": {
+                    "query_cost": "9.02"
+                  },
+                  "table": {
+                    "table_name": "product_like_count",
+                    "access_type": "range",
+                    "possible_keys": [
+                      "PRIMARY"
+                    ],
+                    "key": "PRIMARY",
+                    "used_key_parts": [
+                      "product_id"
+                    ],
+                    "key_length": "8",
+                    "rows_examined_per_scan": 20,
+                    "rows_produced_per_join": 20,
+                    "filtered": "100.00",
+                    "cost_info": {
+                      "read_cost": "7.02",
+                      "eval_cost": "2.00",
+                      "prefix_cost": "9.02",
+                      "data_read_per_join": "480"
+                    },
+                    "used_columns": [
+                      "product_id",
+                      "like_count"
+                    ],
+                    "attached_condition": "(`loopers_benchmark_100k`.`product_like_count`.`product_id` in (94407,82407,70407,58407,46407,91407,79407,67407,55407,43407,88407,76407,64407,52407,40407,97407,85407,73407,61407,49407))"
+                  }
+                }
+              },
+              "explain_analyze": "-> Filter: (product_like_count.product_id in (94407,82407,70407,58407,46407,91407,79407,67407,55407,43407,88407,76407,64407,52407,40407,97407,85407,73407,61407,49407))  (cost=9.02 rows=20) (actual time=0.0986..0.385 rows=20 loops=1)\n    -> Index range scan on product_like_count using PRIMARY over (product_id = 40407) OR (product_id = 43407) OR (18 more)  (cost=9.02 rows=20) (actual time=0.0968..0.375 rows=20 loops=1)"
+            }
+          ],
+          "previous_general_log": "0",
+          "previous_log_output": "FILE"
+        },
+        "response_sha256": "44d1c1e5ddf4d811084238aca54a15396a6148f92626504f2561eed66a35eaf1",
+        "temporary_schema_tables": [
+          "example",
+          "order_item",
+          "orders",
+          "point_balance",
+          "point_grant",
+          "point_usage"
+        ],
+        "source_before": {
+          "product": "100000\t5000050000\t2684652594",
+          "product_like": "628186\t197309139391\t2819681657",
+          "brand": "100\t5050\t319428207",
+          "users": "200\t20100\t3013794949",
+          "indexes": "brand\tPRIMARY\t1\tid\tA\t0\nproduct\tidx_product_brand_deleted\t1\tbrand_id\tA\t1\nproduct\tidx_product_brand_deleted\t2\tdeleted_at\tA\t1\nproduct\tidx_product_brand_price\t1\tbrand_id\tA\t1\nproduct\tidx_product_brand_price\t2\tdeleted_at\tA\t1\nproduct\tidx_product_brand_price\t3\tprice\tA\t1\nproduct\tidx_product_brand_price\t4\tcreated_at\tD\t1\nproduct\tidx_product_brand_price\t5\tid\tD\t1\nproduct\tPRIMARY\t1\tid\tA\t0\nproduct_like\tidx_product_like_product\t1\tproduct_id\tA\t1\nproduct_like\tPRIMARY\t1\tid\tA\t0\nproduct_like\tuk_product_like_user_product\t1\tuser_id\tA\t0\nproduct_like\tuk_product_like_user_product\t2\tproduct_id\tA\t0\nproduct_like_count\tPRIMARY\t1\tproduct_id\tA\t0\nusers\tPRIMARY\t1\tid\tA\t0"
+        },
+        "source_unchanged": true
+      },
+      "loopers_benchmark_100k_hotspot": {
+        "http": {
+          "median_ms": 13.09402099923318,
+          "mean_ms": 13.796783233253032,
+          "p95_ms": 15.323334000640898,
+          "samples_ms": [
+            13.700583000172628,
+            15.323334000640898,
+            14.095874999838998,
+            12.959792000401649,
+            12.801167000361602,
+            12.709375001577428,
+            12.277791998712928,
+            11.507832999996026,
+            12.347915999271208,
+            13.0868329997611,
+            12.559082999359816,
+            15.173665999100194,
+            15.135790999920573,
+            28.603917000509682,
+            14.635999999882188,
+            13.243125000371947,
+            13.23824999963108,
+            12.866457998825354,
+            13.515750000806293,
+            14.12854100090044,
+            15.135499999814783,
+            12.27854200078582,
+            13.10120899870526,
+            12.223249999806285,
+            12.726708000627696,
+            12.826958000005106,
+            13.12162499925762,
+            13.564290999056539,
+            12.42429099875153,
+            12.590042000738322
+          ]
+        },
+        "response": {
+          "items": [
+            {
+              "id": 97407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 097407",
+              "price": 6000,
+              "likeCount": 50002
+            },
+            {
+              "id": 94407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 094407",
+              "price": 6000,
+              "likeCount": 5
+            },
+            {
+              "id": 91407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 091407",
+              "price": 6000,
+              "likeCount": 8
+            },
+            {
+              "id": 88407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 088407",
+              "price": 6000,
+              "likeCount": 0
+            },
+            {
+              "id": 85407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 085407",
+              "price": 6000,
+              "likeCount": 3
+            },
+            {
+              "id": 82407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 082407",
+              "price": 6000,
+              "likeCount": 6
+            },
+            {
+              "id": 79407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 079407",
+              "price": 6000,
+              "likeCount": 9
+            },
+            {
+              "id": 76407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 076407",
+              "price": 6000,
+              "likeCount": 1
+            },
+            {
+              "id": 73407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 073407",
+              "price": 6000,
+              "likeCount": 4
+            },
+            {
+              "id": 70407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 070407",
+              "price": 6000,
+              "likeCount": 7
+            },
+            {
+              "id": 67407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 067407",
+              "price": 6000,
+              "likeCount": 10
+            },
+            {
+              "id": 64407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 064407",
+              "price": 6000,
+              "likeCount": 2
+            },
+            {
+              "id": 61407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 061407",
+              "price": 6000,
+              "likeCount": 5
+            },
+            {
+              "id": 58407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 058407",
+              "price": 6000,
+              "likeCount": 8
+            },
+            {
+              "id": 55407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 055407",
+              "price": 6000,
+              "likeCount": 0
+            },
+            {
+              "id": 52407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 052407",
+              "price": 6000,
+              "likeCount": 3
+            },
+            {
+              "id": 49407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 049407",
+              "price": 6000,
+              "likeCount": 6
+            },
+            {
+              "id": 46407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 046407",
+              "price": 6000,
+              "likeCount": 9
+            },
+            {
+              "id": 43407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 043407",
+              "price": 6000,
+              "likeCount": 1
+            },
+            {
+              "id": 40407,
+              "brand": {
+                "id": 7,
+                "name": "W4 Brand 007"
+              },
+              "name": "W4 Product 040407",
+              "price": 6000,
+              "likeCount": 4
+            }
+          ],
+          "page": 0,
+          "size": 20,
+          "totalCount": 990
+        },
+        "sql_probe": {
+          "business_select_count": 5,
+          "queries": [
+            {
+              "sql": "select bm1_0.id,bm1_0.created_at,bm1_0.deleted_at,bm1_0.description,bm1_0.name,bm1_0.updated_at from brand bm1_0 where bm1_0.id=7",
+              "explain_json": {
+                "query_block": {
+                  "select_id": 1,
+                  "cost_info": {
+                    "query_cost": "1.00"
+                  },
+                  "table": {
+                    "table_name": "bm1_0",
+                    "access_type": "const",
+                    "possible_keys": [
+                      "PRIMARY"
+                    ],
+                    "key": "PRIMARY",
+                    "used_key_parts": [
+                      "id"
+                    ],
+                    "key_length": "8",
+                    "ref": [
+                      "const"
+                    ],
+                    "rows_examined_per_scan": 1,
+                    "rows_produced_per_join": 1,
+                    "filtered": "100.00",
+                    "cost_info": {
+                      "read_cost": "0.00",
+                      "eval_cost": "0.10",
+                      "prefix_cost": "0.00",
+                      "data_read_per_join": "4K"
+                    },
+                    "used_columns": [
+                      "id",
+                      "created_at",
+                      "deleted_at",
+                      "updated_at",
+                      "description",
+                      "name"
+                    ]
+                  }
+                }
+              },
+              "explain_analyze": "-> Rows fetched before execution  (cost=0..0 rows=1) (actual time=42e-6..84e-6 rows=1 loops=1)"
+            },
+            {
+              "sql": "select count(pm1_0.id) from product pm1_0 where pm1_0.deleted_at is null and (7 is null or pm1_0.brand_id=7) and exists(select bm1_0.id from brand bm1_0 where bm1_0.id=pm1_0.brand_id and bm1_0.deleted_at is null)",
+              "explain_json": {
+                "query_block": {
+                  "select_id": 1,
+                  "cost_info": {
+                    "query_cost": "102.97"
+                  },
+                  "nested_loop": [
+                    {
+                      "table": {
+                        "table_name": "bm1_0",
+                        "access_type": "const",
+                        "possible_keys": [
+                          "PRIMARY"
+                        ],
+                        "key": "PRIMARY",
+                        "used_key_parts": [
+                          "id"
+                        ],
+                        "key_length": "8",
+                        "ref": [
+                          "const"
+                        ],
+                        "rows_examined_per_scan": 1,
+                        "rows_produced_per_join": 1,
+                        "filtered": "100.00",
+                        "cost_info": {
+                          "read_cost": "0.00",
+                          "eval_cost": "0.10",
+                          "prefix_cost": "0.00",
+                          "data_read_per_join": "4K"
+                        },
+                        "used_columns": [
+                          "id",
+                          "deleted_at"
+                        ]
+                      }
+                    },
+                    {
+                      "table": {
+                        "table_name": "pm1_0",
+                        "access_type": "ref",
+                        "possible_keys": [
+                          "idx_product_brand_deleted",
+                          "idx_product_brand_price"
+                        ],
+                        "key": "idx_product_brand_deleted",
+                        "used_key_parts": [
+                          "brand_id",
+                          "deleted_at"
+                        ],
+                        "key_length": "17",
+                        "ref": [
+                          "const",
+                          "const"
+                        ],
+                        "rows_examined_per_scan": 990,
+                        "rows_produced_per_join": 990,
+                        "filtered": "100.00",
+                        "using_index": true,
+                        "cost_info": {
+                          "read_cost": "3.97",
+                          "eval_cost": "99.00",
+                          "prefix_cost": "102.97",
+                          "data_read_per_join": "440K"
+                        },
+                        "used_columns": [
+                          "id",
+                          "deleted_at",
+                          "brand_id"
+                        ],
+                        "attached_condition": "((`loopers_benchmark_100k_hotspot`.`pm1_0`.`brand_id` = '7') and (`loopers_benchmark_100k_hotspot`.`pm1_0`.`deleted_at` is null))"
+                      }
+                    }
+                  ]
+                }
+              },
+              "explain_analyze": "-> Aggregate: count(pm1_0.id)  (cost=202 rows=1) (actual time=0.217..0.217 rows=1 loops=1)\n    -> Filter: ((pm1_0.brand_id = '7') and (pm1_0.deleted_at is null))  (cost=103 rows=990) (actual time=0.0171..0.186 rows=990 loops=1)\n        -> Covering index lookup on pm1_0 using idx_product_brand_deleted (brand_id=7, deleted_at=NULL)  (cost=103 rows=990) (actual time=0.0161..0.13 rows=990 loops=1)"
+            },
+            {
+              "sql": "select pm1_0.id,pm1_0.brand_id,pm1_0.created_at,pm1_0.deleted_at,pm1_0.name,pm1_0.price,pm1_0.quantity,pm1_0.updated_at from product pm1_0 where pm1_0.deleted_at is null and (7 is null or pm1_0.brand_id=7) and exists(select bm1_0.id from brand bm1_0 where bm1_0.id=pm1_0.brand_id and bm1_0.deleted_at is null) order by pm1_0.price,pm1_0.created_at desc,pm1_0.id desc limit 20",
+              "explain_json": {
+                "query_block": {
+                  "select_id": 1,
+                  "cost_info": {
+                    "query_cost": "346.50"
+                  },
+                  "ordering_operation": {
+                    "using_filesort": false,
+                    "nested_loop": [
+                      {
+                        "table": {
+                          "table_name": "bm1_0",
+                          "access_type": "const",
+                          "possible_keys": [
+                            "PRIMARY"
+                          ],
+                          "key": "PRIMARY",
+                          "used_key_parts": [
+                            "id"
+                          ],
+                          "key_length": "8",
+                          "ref": [
+                            "const"
+                          ],
+                          "rows_examined_per_scan": 1,
+                          "rows_produced_per_join": 1,
+                          "filtered": "100.00",
+                          "cost_info": {
+                            "read_cost": "0.00",
+                            "eval_cost": "0.10",
+                            "prefix_cost": "0.00",
+                            "data_read_per_join": "4K"
+                          },
+                          "used_columns": [
+                            "id",
+                            "deleted_at"
+                          ]
+                        }
+                      },
+                      {
+                        "table": {
+                          "table_name": "pm1_0",
+                          "access_type": "ref",
+                          "possible_keys": [
+                            "idx_product_brand_deleted",
+                            "idx_product_brand_price"
+                          ],
+                          "key": "idx_product_brand_price",
+                          "used_key_parts": [
+                            "brand_id",
+                            "deleted_at"
+                          ],
+                          "key_length": "17",
+                          "ref": [
+                            "const",
+                            "const"
+                          ],
+                          "rows_examined_per_scan": 990,
+                          "rows_produced_per_join": 990,
+                          "filtered": "100.00",
+                          "index_condition": "((`loopers_benchmark_100k_hotspot`.`pm1_0`.`brand_id` = '7') and (`loopers_benchmark_100k_hotspot`.`pm1_0`.`deleted_at` is null))",
+                          "cost_info": {
+                            "read_cost": "247.50",
+                            "eval_cost": "99.00",
+                            "prefix_cost": "346.50",
+                            "data_read_per_join": "440K"
+                          },
+                          "used_columns": [
+                            "id",
+                            "created_at",
+                            "deleted_at",
+                            "updated_at",
+                            "brand_id",
+                            "name",
+                            "price",
+                            "quantity"
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "explain_analyze": "-> Limit: 20 row(s)  (cost=346 rows=20) (actual time=0.181..0.185 rows=20 loops=1)\n    -> Index lookup on pm1_0 using idx_product_brand_price (brand_id=7, deleted_at=NULL), with index condition: ((pm1_0.brand_id = '7') and (pm1_0.deleted_at is null))  (cost=346 rows=990) (actual time=0.181..0.183 rows=20 loops=1)"
+            },
+            {
+              "sql": "select bm1_0.id,bm1_0.created_at,bm1_0.deleted_at,bm1_0.description,bm1_0.name,bm1_0.updated_at from brand bm1_0 where bm1_0.id in (7) and bm1_0.deleted_at is null",
+              "explain_json": {
+                "query_block": {
+                  "select_id": 1,
+                  "cost_info": {
+                    "query_cost": "1.00"
+                  },
+                  "table": {
+                    "table_name": "bm1_0",
+                    "access_type": "const",
+                    "possible_keys": [
+                      "PRIMARY"
+                    ],
+                    "key": "PRIMARY",
+                    "used_key_parts": [
+                      "id"
+                    ],
+                    "key_length": "8",
+                    "ref": [
+                      "const"
+                    ],
+                    "rows_examined_per_scan": 1,
+                    "rows_produced_per_join": 1,
+                    "filtered": "100.00",
+                    "cost_info": {
+                      "read_cost": "0.00",
+                      "eval_cost": "0.10",
+                      "prefix_cost": "0.00",
+                      "data_read_per_join": "4K"
+                    },
+                    "used_columns": [
+                      "id",
+                      "created_at",
+                      "deleted_at",
+                      "updated_at",
+                      "description",
+                      "name"
+                    ]
+                  }
+                }
+              },
+              "explain_analyze": "-> Rows fetched before execution  (cost=0..0 rows=1) (actual time=0..42e-6 rows=1 loops=1)"
+            },
+            {
+              "sql": "select product_id, like_count from product_like_count where product_id in (94407, 82407, 70407, 58407, 46407, 91407, 79407, 67407, 55407, 43407, 88407, 76407, 64407, 52407, 40407, 97407, 85407, 73407, 61407, 49407)",
+              "explain_json": {
+                "query_block": {
+                  "select_id": 1,
+                  "cost_info": {
+                    "query_cost": "9.02"
+                  },
+                  "table": {
+                    "table_name": "product_like_count",
+                    "access_type": "range",
+                    "possible_keys": [
+                      "PRIMARY"
+                    ],
+                    "key": "PRIMARY",
+                    "used_key_parts": [
+                      "product_id"
+                    ],
+                    "key_length": "8",
+                    "rows_examined_per_scan": 20,
+                    "rows_produced_per_join": 20,
+                    "filtered": "100.00",
+                    "cost_info": {
+                      "read_cost": "7.02",
+                      "eval_cost": "2.00",
+                      "prefix_cost": "9.02",
+                      "data_read_per_join": "480"
+                    },
+                    "used_columns": [
+                      "product_id",
+                      "like_count"
+                    ],
+                    "attached_condition": "(`loopers_benchmark_100k_hotspot`.`product_like_count`.`product_id` in (94407,82407,70407,58407,46407,91407,79407,67407,55407,43407,88407,76407,64407,52407,40407,97407,85407,73407,61407,49407))"
+                  }
+                }
+              },
+              "explain_analyze": "-> Filter: (product_like_count.product_id in (94407,82407,70407,58407,46407,91407,79407,67407,55407,43407,88407,76407,64407,52407,40407,97407,85407,73407,61407,49407))  (cost=9.02 rows=20) (actual time=0.0327..0.0587 rows=20 loops=1)\n    -> Index range scan on product_like_count using PRIMARY over (product_id = 40407) OR (product_id = 43407) OR (18 more)  (cost=9.02 rows=20) (actual time=0.0315..0.056 rows=20 loops=1)"
+            }
+          ],
+          "previous_general_log": "0",
+          "previous_log_output": "FILE"
+        },
+        "response_sha256": "3f7920b40c84b074e920a4ce6ac9a2522786a3166270a90bd43cb906042e18f3",
+        "temporary_schema_tables": [
+          "example",
+          "order_item",
+          "orders",
+          "point_balance",
+          "point_grant",
+          "point_usage"
+        ],
+        "source_before": {
+          "product": "100000\t5000050000\t2684652594",
+          "product_like": "678186\t229968464391\t1299827649",
+          "brand": "100\t5050\t319428207",
+          "users": "50200\t1260045100\t1633309119",
+          "indexes": "brand\tPRIMARY\t1\tid\tA\t0\nproduct\tidx_product_brand_deleted\t1\tbrand_id\tA\t1\nproduct\tidx_product_brand_deleted\t2\tdeleted_at\tA\t1\nproduct\tidx_product_brand_price\t1\tbrand_id\tA\t1\nproduct\tidx_product_brand_price\t2\tdeleted_at\tA\t1\nproduct\tidx_product_brand_price\t3\tprice\tA\t1\nproduct\tidx_product_brand_price\t4\tcreated_at\tD\t1\nproduct\tidx_product_brand_price\t5\tid\tD\t1\nproduct\tPRIMARY\t1\tid\tA\t0\nproduct_like\tidx_product_like_product\t1\tproduct_id\tA\t1\nproduct_like\tPRIMARY\t1\tid\tA\t0\nproduct_like\tuk_product_like_user_product\t1\tuser_id\tA\t0\nproduct_like\tuk_product_like_user_product\t2\tproduct_id\tA\t0\nproduct_like_count\tPRIMARY\t1\tproduct_id\tA\t0\nusers\tPRIMARY\t1\tid\tA\t0"
+        },
+        "source_unchanged": true
+      }
+    },
+    "100k-counter-experiment.json": {
+      "recorded_at": "2026-10-14T14:19:58.938032Z",
+      "notes": [
+        "JDBC experiment, not HTTP latency. No production policy or implementation change.",
+        "Same indexed relationship schema in both modes; candidate maintains separate per-product counter.",
+        "Fixed closed-loop workers with persistent connections: read-only 4 readers; mixed 4 readers + 2 writers.",
+        "Two rounds per scenario; alternating mode order; 2s warmup + 8s measured per run.",
+        "Read latency includes JDBC query and full result consumption; write includes transaction and commit.",
+        "Mixed writes alternate register/cancel on one hot product with distinct synthetic users in FK-free copies.",
+        "No fixed arrival-rate/SLO claim; closed-loop results can hide queueing under external overload.",
+        "Counter backfill performed offline on disposable copies, not an online migration.",
+        "Prepared statements created per operation; connection startup and correctness audit excluded from timing."
+      ],
+      "loopers_benchmark_100k": {
+        "source_before": "100000\t5000050000\t5005000000\t4999555\t96990\t\n628186\t197309139391\t63133943\t31410769792\t\nbrand\tPRIMARY\t1\tid\tA\t\nproduct\tidx_product_brand_deleted\t1\tbrand_id\tA\t\nproduct\tidx_product_brand_deleted\t2\tdeleted_at\tA\t\nproduct\tidx_product_brand_price\t1\tbrand_id\tA\t\nproduct\tidx_product_brand_price\t2\tdeleted_at\tA\t\nproduct\tidx_product_brand_price\t3\tprice\tA\t\nproduct\tidx_product_brand_price\t4\tcreated_at\tD\t\nproduct\tidx_product_brand_price\t5\tid\tD\t\nproduct\tPRIMARY\t1\tid\tA\t\nproduct_like\tidx_product_like_product\t1\tproduct_id\tA\t\nproduct_like\tPRIMARY\t1\tid\tA\t\nproduct_like\tuk_product_like_user_product\t1\tuser_id\tA\t\nproduct_like\tuk_product_like_user_product\t2\tproduct_id\tA\t\nusers\tPRIMARY\t1\tid\tA\t\n",
+        "environment": "8.0.46\tloopers_benchmark_100k\tREPEATABLE-READ\t1\t1\t1\t\n",
+        "correctness": [
+          "first insert / duplicate insert / first cancel / absent cancel",
+          "insert/cancel rollback after relationship and after counter update",
+          "8 simultaneous duplicate registrations and cancellations: exactly one change",
+          "8 distinct users on the same product: all increments/decrements preserved",
+          "uncommitted register/cancel in both orders: follower waits, final state consistent"
+        ],
+        "expected_counts": {
+          "97407": 2,
+          "94407": 5,
+          "91407": 8,
+          "88407": 0,
+          "85407": 3,
+          "82407": 6,
+          "79407": 9,
+          "76407": 1,
+          "73407": 4,
+          "70407": 7,
+          "67407": 10,
+          "64407": 2,
+          "61407": 5,
+          "58407": 8,
+          "55407": 0,
+          "52407": 3,
+          "49407": 6,
+          "46407": 9,
+          "43407": 1,
+          "40407": 4
+        },
+        "aggregate_plan": "-> Group aggregate: count(0)  (cost=29.6 rows=95) (actual time=0.0186..0.0587 rows=18 loops=1)\n    -> Filter: (w4_counter_control.product_id in (97407,94407,91407,88407,85407,82407,79407,76407,73407,70407,67407,64407,61407,58407,55407,52407,49407,46407,43407,40407))  (cost=20.1 rows=95) (actual time=0.0126..0.0525 rows=93 loops=1)\n        -> Covering index range scan on w4_counter_control using idx_product_like_product over (product_id = 40407) OR (product_id = 43407) OR (18 more)  (cost=20.1 rows=95) (actual time=0.0115..0.0458 rows=93 loops=1)\n\t\n",
+        "counter_plan": "-> Filter: (w4_counter_value.product_id in (97407,94407,91407,88407,85407,82407,79407,76407,73407,70407,67407,64407,61407,58407,55407,52407,49407,46407,43407,40407))  (cost=9.02 rows=20) (actual time=0.00883..0.0271 rows=20 loops=1)\n    -> Index range scan on w4_counter_value using PRIMARY over (product_id = 40407) OR (product_id = 43407) OR (18 more)  (cost=9.02 rows=20) (actual time=0.00833..0.0252 rows=20 loops=1)\n\t\n",
+        "runs": [
+          {
+            "mode": "aggregate",
+            "scenario": "read_only",
+            "warmup_seconds": 2,
+            "measurement_seconds": 8,
+            "workers": 4,
+            "errors": 0,
+            "wall_seconds_including_setup_cleanup": 10.015810625,
+            "read": {
+              "p99_ms": 1.389875,
+              "operations_per_second": 5143.5,
+              "p95_ms": 1.016125,
+              "requests": 41148,
+              "max_ms": 31.053209,
+              "median_ms": 0.747583
+            },
+            "round": 1
+          },
+          {
+            "mode": "counter",
+            "scenario": "read_only",
+            "warmup_seconds": 2,
+            "measurement_seconds": 8,
+            "workers": 4,
+            "errors": 0,
+            "wall_seconds_including_setup_cleanup": 10.015259667,
+            "read": {
+              "p99_ms": 1.096292,
+              "operations_per_second": 6510.25,
+              "p95_ms": 0.791834,
+              "requests": 52082,
+              "max_ms": 32.068083,
+              "median_ms": 0.585625
+            },
+            "round": 1
+          },
+          {
+            "mode": "counter",
+            "scenario": "read_only",
+            "warmup_seconds": 2,
+            "measurement_seconds": 8,
+            "workers": 4,
+            "errors": 0,
+            "wall_seconds_including_setup_cleanup": 10.015905584,
+            "read": {
+              "p99_ms": 1.153042,
+              "operations_per_second": 6372.75,
+              "p95_ms": 0.809791,
+              "requests": 50982,
+              "max_ms": 32.3985,
+              "median_ms": 0.593875
+            },
+            "round": 2
+          },
+          {
+            "mode": "aggregate",
+            "scenario": "read_only",
+            "warmup_seconds": 2,
+            "measurement_seconds": 8,
+            "workers": 4,
+            "errors": 0,
+            "wall_seconds_including_setup_cleanup": 10.012730875,
+            "read": {
+              "p99_ms": 1.312459,
+              "operations_per_second": 5149.875,
+              "p95_ms": 0.997625,
+              "requests": 41199,
+              "max_ms": 30.115708,
+              "median_ms": 0.75125
+            },
+            "round": 2
+          },
+          {
+            "mode": "aggregate",
+            "scenario": "mixed",
+            "warmup_seconds": 2,
+            "measurement_seconds": 8,
+            "workers": 6,
+            "errors": 0,
+            "wall_seconds_including_setup_cleanup": 10.035878125,
+            "read": {
+              "p99_ms": 1.848125,
+              "operations_per_second": 4443.0,
+              "p95_ms": 1.266334,
+              "requests": 35544,
+              "max_ms": 39.308875,
+              "median_ms": 0.843875
+            },
+            "register": {
+              "p99_ms": 11.192208,
+              "operations_per_second": 186.25,
+              "p95_ms": 7.660083,
+              "requests": 1490,
+              "max_ms": 46.0985,
+              "median_ms": 5.070541
+            },
+            "cancel": {
+              "p99_ms": 11.135958,
+              "operations_per_second": 186.125,
+              "p95_ms": 7.422333,
+              "requests": 1489,
+              "max_ms": 42.1545,
+              "median_ms": 4.943834
+            },
+            "round": 1
+          },
+          {
+            "mode": "counter",
+            "scenario": "mixed",
+            "warmup_seconds": 2,
+            "measurement_seconds": 8,
+            "workers": 6,
+            "errors": 0,
+            "wall_seconds_including_setup_cleanup": 10.01971825,
+            "read": {
+              "p99_ms": 1.659,
+              "operations_per_second": 5294.375,
+              "p95_ms": 1.104292,
+              "requests": 42355,
+              "max_ms": 43.384625,
+              "median_ms": 0.692125
+            },
+            "register": {
+              "p99_ms": 12.692625,
+              "operations_per_second": 148.625,
+              "p95_ms": 9.48025,
+              "requests": 1189,
+              "max_ms": 51.618959,
+              "median_ms": 6.313334
+            },
+            "cancel": {
+              "p99_ms": 15.460208,
+              "operations_per_second": 148.625,
+              "p95_ms": 9.95825,
+              "requests": 1189,
+              "max_ms": 60.87075,
+              "median_ms": 6.130666
+            },
+            "round": 1
+          },
+          {
+            "mode": "counter",
+            "scenario": "mixed",
+            "warmup_seconds": 2,
+            "measurement_seconds": 8,
+            "workers": 6,
+            "errors": 0,
+            "wall_seconds_including_setup_cleanup": 10.022466958,
+            "read": {
+              "p99_ms": 1.505042,
+              "operations_per_second": 5669.875,
+              "p95_ms": 0.993584,
+              "requests": 45359,
+              "max_ms": 32.278416,
+              "median_ms": 0.659917
+            },
+            "cancel": {
+              "p99_ms": 12.06625,
+              "operations_per_second": 165.125,
+              "p95_ms": 8.2425,
+              "requests": 1321,
+              "max_ms": 36.704167,
+              "median_ms": 5.635666
+            },
+            "register": {
+              "p99_ms": 11.929667,
+              "operations_per_second": 165.125,
+              "p95_ms": 8.539667,
+              "requests": 1321,
+              "max_ms": 48.82325,
+              "median_ms": 5.831625
+            },
+            "round": 2
+          },
+          {
+            "mode": "aggregate",
+            "scenario": "mixed",
+            "warmup_seconds": 2,
+            "measurement_seconds": 8,
+            "workers": 6,
+            "errors": 0,
+            "wall_seconds_including_setup_cleanup": 10.018573292,
+            "read": {
+              "p99_ms": 1.654708,
+              "operations_per_second": 4570.375,
+              "p95_ms": 1.214292,
+              "requests": 36563,
+              "max_ms": 30.874958,
+              "median_ms": 0.830041
+            },
+            "cancel": {
+              "p99_ms": 9.698292,
+              "operations_per_second": 202.75,
+              "p95_ms": 6.510792,
+              "requests": 1622,
+              "max_ms": 35.460208,
+              "median_ms": 4.626375
+            },
+            "register": {
+              "p99_ms": 9.205083,
+              "operations_per_second": 202.625,
+              "p95_ms": 7.031042,
+              "requests": 1621,
+              "max_ms": 37.149667,
+              "median_ms": 4.720292
+            },
+            "round": 2
+          }
+        ],
+        "counter_storage": "4734976\t0\t\n",
+        "source_unchanged": true,
+        "temporary_tables_removed": true
+      },
+      "loopers_benchmark_100k_hotspot": {
+        "source_before": "100000\t5000050000\t5005000000\t4999555\t96990\t\n678186\t229968464391\t1323158943\t36281119792\t\nbrand\tPRIMARY\t1\tid\tA\t\nproduct\tidx_product_brand_deleted\t1\tbrand_id\tA\t\nproduct\tidx_product_brand_deleted\t2\tdeleted_at\tA\t\nproduct\tidx_product_brand_price\t1\tbrand_id\tA\t\nproduct\tidx_product_brand_price\t2\tdeleted_at\tA\t\nproduct\tidx_product_brand_price\t3\tprice\tA\t\nproduct\tidx_product_brand_price\t4\tcreated_at\tD\t\nproduct\tidx_product_brand_price\t5\tid\tD\t\nproduct\tPRIMARY\t1\tid\tA\t\nproduct_like\tidx_product_like_product\t1\tproduct_id\tA\t\nproduct_like\tPRIMARY\t1\tid\tA\t\nproduct_like\tuk_product_like_user_product\t1\tuser_id\tA\t\nproduct_like\tuk_product_like_user_product\t2\tproduct_id\tA\t\nusers\tPRIMARY\t1\tid\tA\t\n",
+        "environment": "8.0.46\tloopers_benchmark_100k_hotspot\tREPEATABLE-READ\t1\t1\t1\t\n",
+        "correctness": [
+          "first insert / duplicate insert / first cancel / absent cancel",
+          "insert/cancel rollback after relationship and after counter update",
+          "8 simultaneous duplicate registrations and cancellations: exactly one change",
+          "8 distinct users on the same product: all increments/decrements preserved",
+          "uncommitted register/cancel in both orders: follower waits, final state consistent"
+        ],
+        "expected_counts": {
+          "97407": 50002,
+          "94407": 5,
+          "91407": 8,
+          "88407": 0,
+          "85407": 3,
+          "82407": 6,
+          "79407": 9,
+          "76407": 1,
+          "73407": 4,
+          "70407": 7,
+          "67407": 10,
+          "64407": 2,
+          "61407": 5,
+          "58407": 8,
+          "55407": 0,
+          "52407": 3,
+          "49407": 6,
+          "46407": 9,
+          "43407": 1,
+          "40407": 4
+        },
+        "aggregate_plan": "-> Group aggregate: count(0)  (cost=30542 rows=91291) (actual time=0.0218..11.3 rows=18 loops=1)\n    -> Filter: (w4_counter_control.product_id in (97407,94407,91407,88407,85407,82407,79407,76407,73407,70407,67407,64407,61407,58407,55407,52407,49407,46407,43407,40407))  (cost=20423 rows=101193) (actual time=0.0158..9.53 rows=50093 loops=1)\n        -> Covering index range scan on w4_counter_control using idx_product_like_product over (product_id = 40407) OR (product_id = 43407) OR (18 more)  (cost=20423 rows=101193) (actual time=0.0147..6.87 rows=50093 loops=1)\n\t\n",
+        "counter_plan": "-> Filter: (w4_counter_value.product_id in (97407,94407,91407,88407,85407,82407,79407,76407,73407,70407,67407,64407,61407,58407,55407,52407,49407,46407,43407,40407))  (cost=9.02 rows=20) (actual time=0.0193..0.0494 rows=20 loops=1)\n    -> Index range scan on w4_counter_value using PRIMARY over (product_id = 40407) OR (product_id = 43407) OR (18 more)  (cost=9.02 rows=20) (actual time=0.0184..0.0469 rows=20 loops=1)\n\t\n",
+        "runs": [
+          {
+            "mode": "aggregate",
+            "scenario": "read_only",
+            "warmup_seconds": 2,
+            "measurement_seconds": 8,
+            "workers": 4,
+            "errors": 0,
+            "wall_seconds_including_setup_cleanup": 10.019133209,
+            "read": {
+              "p99_ms": 13.429041,
+              "operations_per_second": 498.0,
+              "p95_ms": 10.962041,
+              "requests": 3984,
+              "max_ms": 50.546333,
+              "median_ms": 7.4985
+            },
+            "round": 1
+          },
+          {
+            "mode": "counter",
+            "scenario": "read_only",
+            "warmup_seconds": 2,
+            "measurement_seconds": 8,
+            "workers": 4,
+            "errors": 0,
+            "wall_seconds_including_setup_cleanup": 10.014495666,
+            "read": {
+              "p99_ms": 1.760791,
+              "operations_per_second": 5679.5,
+              "p95_ms": 0.990417,
+              "requests": 45436,
+              "max_ms": 81.932625,
+              "median_ms": 0.613709
+            },
+            "round": 1
+          },
+          {
+            "mode": "counter",
+            "scenario": "read_only",
+            "warmup_seconds": 2,
+            "measurement_seconds": 8,
+            "workers": 4,
+            "errors": 0,
+            "wall_seconds_including_setup_cleanup": 10.014698042,
+            "read": {
+              "p99_ms": 1.173083,
+              "operations_per_second": 6418.25,
+              "p95_ms": 0.805167,
+              "requests": 51346,
+              "max_ms": 36.769709,
+              "median_ms": 0.592459
+            },
+            "round": 2
+          },
+          {
+            "mode": "aggregate",
+            "scenario": "read_only",
+            "warmup_seconds": 2,
+            "measurement_seconds": 8,
+            "workers": 4,
+            "errors": 0,
+            "wall_seconds_including_setup_cleanup": 10.018314208,
+            "read": {
+              "p99_ms": 12.557083,
+              "operations_per_second": 499.375,
+              "p95_ms": 10.730292,
+              "requests": 3995,
+              "max_ms": 44.937708,
+              "median_ms": 7.604375
+            },
+            "round": 2
+          },
+          {
+            "mode": "aggregate",
+            "scenario": "mixed",
+            "warmup_seconds": 2,
+            "measurement_seconds": 8,
+            "workers": 6,
+            "errors": 0,
+            "wall_seconds_including_setup_cleanup": 10.024040959,
+            "read": {
+              "p99_ms": 13.902875,
+              "operations_per_second": 491.375,
+              "p95_ms": 10.968,
+              "requests": 3931,
+              "max_ms": 45.545625,
+              "median_ms": 7.604041
+            },
+            "cancel": {
+              "p99_ms": 14.426625,
+              "operations_per_second": 194.375,
+              "p95_ms": 9.149458,
+              "requests": 1555,
+              "max_ms": 47.753167,
+              "median_ms": 4.443625
+            },
+            "register": {
+              "p99_ms": 13.6695,
+              "operations_per_second": 194.375,
+              "p95_ms": 9.067459,
+              "requests": 1555,
+              "max_ms": 50.386958,
+              "median_ms": 4.530667
+            },
+            "round": 1
+          },
+          {
+            "mode": "counter",
+            "scenario": "mixed",
+            "warmup_seconds": 2,
+            "measurement_seconds": 8,
+            "workers": 6,
+            "errors": 0,
+            "wall_seconds_including_setup_cleanup": 10.020323875,
+            "read": {
+              "p99_ms": 1.548959,
+              "operations_per_second": 5592.5,
+              "p95_ms": 1.022125,
+              "requests": 44740,
+              "max_ms": 32.07325,
+              "median_ms": 0.666042
+            },
+            "register": {
+              "p99_ms": 12.891166,
+              "operations_per_second": 156.625,
+              "p95_ms": 8.980917,
+              "requests": 1253,
+              "max_ms": 45.604083,
+              "median_ms": 6.055542
+            },
+            "cancel": {
+              "p99_ms": 12.547625,
+              "operations_per_second": 156.625,
+              "p95_ms": 8.802,
+              "requests": 1253,
+              "max_ms": 49.084,
+              "median_ms": 5.912542
+            },
+            "round": 1
+          },
+          {
+            "mode": "counter",
+            "scenario": "mixed",
+            "warmup_seconds": 2,
+            "measurement_seconds": 8,
+            "workers": 6,
+            "errors": 0,
+            "wall_seconds_including_setup_cleanup": 10.020284916,
+            "read": {
+              "p99_ms": 1.551458,
+              "operations_per_second": 5493.375,
+              "p95_ms": 1.05,
+              "requests": 43947,
+              "max_ms": 39.89325,
+              "median_ms": 0.677958
+            },
+            "cancel": {
+              "p99_ms": 12.783166,
+              "operations_per_second": 154.75,
+              "p95_ms": 9.125875,
+              "requests": 1238,
+              "max_ms": 49.812125,
+              "median_ms": 5.936791
+            },
+            "register": {
+              "p99_ms": 12.807875,
+              "operations_per_second": 154.75,
+              "p95_ms": 9.08975,
+              "requests": 1238,
+              "max_ms": 55.665666,
+              "median_ms": 6.140375
+            },
+            "round": 2
+          },
+          {
+            "mode": "aggregate",
+            "scenario": "mixed",
+            "warmup_seconds": 2,
+            "measurement_seconds": 8,
+            "workers": 6,
+            "errors": 0,
+            "wall_seconds_including_setup_cleanup": 10.026966625,
+            "read": {
+              "p99_ms": 18.195708,
+              "operations_per_second": 423.125,
+              "p95_ms": 12.730917,
+              "requests": 3385,
+              "max_ms": 117.298167,
+              "median_ms": 8.800875
+            },
+            "cancel": {
+              "p99_ms": 20.795125,
+              "operations_per_second": 173.125,
+              "p95_ms": 10.0715,
+              "requests": 1385,
+              "max_ms": 68.194,
+              "median_ms": 4.710708
+            },
+            "register": {
+              "p99_ms": 16.959875,
+              "operations_per_second": 173.0,
+              "p95_ms": 10.828875,
+              "requests": 1384,
+              "max_ms": 142.644459,
+              "median_ms": 4.92525
+            },
+            "round": 2
+          }
+        ],
+        "counter_storage": "4734976\t0\t\n",
+        "source_unchanged": true,
+        "temporary_tables_removed": true
+      }
+    },
+    "counter-backfill.json": {
+      "recorded_at": "2026-10-14T23:36:53.814957+09:00",
+      "databases": {
+        "loopers_benchmark": {
+          "source_before": "10000\t50005000\t500500000\t499951\t9699\n62756\t1969189146\t6314208\t314208599\nproduct\tidx_product_brand_deleted\t1\tbrand_id\tA\nproduct\tidx_product_brand_deleted\t2\tdeleted_at\tA\nproduct\tidx_product_brand_price\t1\tbrand_id\tA\nproduct\tidx_product_brand_price\t2\tdeleted_at\tA\nproduct\tidx_product_brand_price\t3\tprice\tA\nproduct\tidx_product_brand_price\t4\tcreated_at\tD\nproduct\tidx_product_brand_price\t5\tid\tD\nproduct\tPRIMARY\t1\tid\tA\nproduct_like\tidx_product_like_product\t1\tproduct_id\tA\nproduct_like\tPRIMARY\t1\tid\tA\nproduct_like\tuk_product_like_user_product\t1\tuser_id\tA\nproduct_like\tuk_product_like_user_product\t2\tproduct_id\tA",
+          "source_after": "10000\t50005000\t500500000\t499951\t9699\n62756\t1969189146\t6314208\t314208599\nproduct\tidx_product_brand_deleted\t1\tbrand_id\tA\nproduct\tidx_product_brand_deleted\t2\tdeleted_at\tA\nproduct\tidx_product_brand_price\t1\tbrand_id\tA\nproduct\tidx_product_brand_price\t2\tdeleted_at\tA\nproduct\tidx_product_brand_price\t3\tprice\tA\nproduct\tidx_product_brand_price\t4\tcreated_at\tD\nproduct\tidx_product_brand_price\t5\tid\tD\nproduct\tPRIMARY\t1\tid\tA\nproduct_like\tidx_product_like_product\t1\tproduct_id\tA\nproduct_like\tPRIMARY\t1\tid\tA\nproduct_like\tuk_product_like_user_product\t1\tuser_id\tA\nproduct_like\tuk_product_like_user_product\t2\tproduct_id\tA",
+          "source_unchanged": true,
+          "missing_or_mismatched": 0,
+          "orphan_counters": 0,
+          "counter_rows_and_total": "10000\t62756",
+          "schema": "product_like_count\tCREATE TABLE `product_like_count` (\n  `product_id` bigint NOT NULL,\n  `like_count` bigint NOT NULL,\n  PRIMARY KEY (`product_id`),\n  CONSTRAINT `chk_product_like_count_nonnegative` CHECK ((`like_count` >= 0))\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+        },
+        "loopers_benchmark_100k": {
+          "source_before": "100000\t5000050000\t5005000000\t4999555\t96990\n628186\t197309139391\t63133943\t31410769792\nproduct\tidx_product_brand_deleted\t1\tbrand_id\tA\nproduct\tidx_product_brand_deleted\t2\tdeleted_at\tA\nproduct\tidx_product_brand_price\t1\tbrand_id\tA\nproduct\tidx_product_brand_price\t2\tdeleted_at\tA\nproduct\tidx_product_brand_price\t3\tprice\tA\nproduct\tidx_product_brand_price\t4\tcreated_at\tD\nproduct\tidx_product_brand_price\t5\tid\tD\nproduct\tPRIMARY\t1\tid\tA\nproduct_like\tidx_product_like_product\t1\tproduct_id\tA\nproduct_like\tPRIMARY\t1\tid\tA\nproduct_like\tuk_product_like_user_product\t1\tuser_id\tA\nproduct_like\tuk_product_like_user_product\t2\tproduct_id\tA",
+          "source_after": "100000\t5000050000\t5005000000\t4999555\t96990\n628186\t197309139391\t63133943\t31410769792\nproduct\tidx_product_brand_deleted\t1\tbrand_id\tA\nproduct\tidx_product_brand_deleted\t2\tdeleted_at\tA\nproduct\tidx_product_brand_price\t1\tbrand_id\tA\nproduct\tidx_product_brand_price\t2\tdeleted_at\tA\nproduct\tidx_product_brand_price\t3\tprice\tA\nproduct\tidx_product_brand_price\t4\tcreated_at\tD\nproduct\tidx_product_brand_price\t5\tid\tD\nproduct\tPRIMARY\t1\tid\tA\nproduct_like\tidx_product_like_product\t1\tproduct_id\tA\nproduct_like\tPRIMARY\t1\tid\tA\nproduct_like\tuk_product_like_user_product\t1\tuser_id\tA\nproduct_like\tuk_product_like_user_product\t2\tproduct_id\tA",
+          "source_unchanged": true,
+          "missing_or_mismatched": 0,
+          "orphan_counters": 0,
+          "counter_rows_and_total": "100000\t628186",
+          "schema": "product_like_count\tCREATE TABLE `product_like_count` (\n  `product_id` bigint NOT NULL,\n  `like_count` bigint NOT NULL,\n  PRIMARY KEY (`product_id`),\n  CONSTRAINT `chk_product_like_count_nonnegative` CHECK ((`like_count` >= 0))\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+        },
+        "loopers_benchmark_100k_hotspot": {
+          "source_before": "100000\t5000050000\t5005000000\t4999555\t96990\n678186\t229968464391\t1323158943\t36281119792\nproduct\tidx_product_brand_deleted\t1\tbrand_id\tA\nproduct\tidx_product_brand_deleted\t2\tdeleted_at\tA\nproduct\tidx_product_brand_price\t1\tbrand_id\tA\nproduct\tidx_product_brand_price\t2\tdeleted_at\tA\nproduct\tidx_product_brand_price\t3\tprice\tA\nproduct\tidx_product_brand_price\t4\tcreated_at\tD\nproduct\tidx_product_brand_price\t5\tid\tD\nproduct\tPRIMARY\t1\tid\tA\nproduct_like\tidx_product_like_product\t1\tproduct_id\tA\nproduct_like\tPRIMARY\t1\tid\tA\nproduct_like\tuk_product_like_user_product\t1\tuser_id\tA\nproduct_like\tuk_product_like_user_product\t2\tproduct_id\tA",
+          "source_after": "100000\t5000050000\t5005000000\t4999555\t96990\n678186\t229968464391\t1323158943\t36281119792\nproduct\tidx_product_brand_deleted\t1\tbrand_id\tA\nproduct\tidx_product_brand_deleted\t2\tdeleted_at\tA\nproduct\tidx_product_brand_price\t1\tbrand_id\tA\nproduct\tidx_product_brand_price\t2\tdeleted_at\tA\nproduct\tidx_product_brand_price\t3\tprice\tA\nproduct\tidx_product_brand_price\t4\tcreated_at\tD\nproduct\tidx_product_brand_price\t5\tid\tD\nproduct\tPRIMARY\t1\tid\tA\nproduct_like\tidx_product_like_product\t1\tproduct_id\tA\nproduct_like\tPRIMARY\t1\tid\tA\nproduct_like\tuk_product_like_user_product\t1\tuser_id\tA\nproduct_like\tuk_product_like_user_product\t2\tproduct_id\tA",
+          "source_unchanged": true,
+          "missing_or_mismatched": 0,
+          "orphan_counters": 0,
+          "counter_rows_and_total": "100000\t678186",
+          "schema": "product_like_count\tCREATE TABLE `product_like_count` (\n  `product_id` bigint NOT NULL,\n  `like_count` bigint NOT NULL,\n  PRIMARY KEY (`product_id`),\n  CONSTRAINT `chk_product_like_count_nonnegative` CHECK ((`like_count` >= 0))\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+        }
+      },
+      "notes": [
+        "Offline deployment: do not restart the old aggregate-only writer after backfill.",
+        "LOCK TABLES protects the backfill; old/new writer coexistence is unsupported.",
+        "Source rows and indexes retained; product_like_count is intentionally persistent.",
+        "Counts/sums detect changes but are not cryptographic identity checks."
+      ]
+    }
+  },
+  "source_sha256": {
+    "100k-counter-api.json": "5002d43b1bc34e3b9dc60b424cb4a10627d34cf78d9475173bf009a2fee81ff8",
+    "100k-counter-experiment.json": "0b35078c460f97b0e5da2d91a0faec54244972ca389fbabe2473b42d9464229c",
+    "counter-backfill.json": "78990f8d8f0af883e1e75c2c5be05d8d3797d6d4d33a201f58841dd4f89a178c"
+  }
+}

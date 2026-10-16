@@ -6,7 +6,8 @@ import com.loopers.support.error.ErrorType;
 public enum ProductSort {
     LATEST,
     PRICE_ASC,
-    LIKES_DESC;
+    LIKES_DESC,
+    POPULAR;
 
     public static ProductSort from(String value) {
         if (value == null || value.isBlank()) {

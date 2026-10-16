@@ -3,10 +3,8 @@ package com.loopers.application.like;
 import com.loopers.application.user.UserRegistrationService;
 import com.loopers.application.product.ProductFacade;
 import com.loopers.domain.brand.BrandModel;
-import com.loopers.domain.product.ProductModel;
 import com.loopers.infrastructure.brand.BrandJpaRepository;
 import com.loopers.infrastructure.like.LikeJpaRepository;
-import com.loopers.infrastructure.product.ProductJpaRepository;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -15,6 +13,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -38,15 +37,22 @@ class LikeConcurrencyTest {
     @Autowired private LikeFacade likes;
     @Autowired private ProductFacade productFacade;
     @Autowired private BrandJpaRepository brands;
-    @Autowired private ProductJpaRepository products;
     @Autowired private LikeJpaRepository relationships;
     @Autowired private MockMvc mvc;
     @Autowired private TransactionTemplate transaction;
     @Autowired private DatabaseCleanUp cleanUp;
+    @Autowired private JdbcTemplate jdbc;
 
     @AfterEach
     void clean() {
-        cleanUp.truncateAllTables();
+        try {
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM product p LEFT JOIN product_like_count c "
+                + "ON c.product_id=p.id LEFT JOIN (SELECT product_id,COUNT(*) n FROM product_like GROUP BY product_id) l "
+                + "ON l.product_id=p.id WHERE c.product_id IS NULL OR c.like_count <> COALESCE(l.n,0)", Long.class))
+                .isZero();
+        } finally {
+            cleanUp.truncateAllTables();
+        }
     }
 
     @Test
@@ -191,7 +197,7 @@ class LikeConcurrencyTest {
 
     private long product() {
         long brandId = brands.save(new BrandModel("brand", null)).getId();
-        return products.save(new ProductModel(brandId, "product", 1_000L, 5)).getId();
+        return productFacade.create(brandId, "product", 1_000L, 5).id();
     }
 
     private static <T> List<T> concurrently(List<Callable<T>> tasks) throws Exception {

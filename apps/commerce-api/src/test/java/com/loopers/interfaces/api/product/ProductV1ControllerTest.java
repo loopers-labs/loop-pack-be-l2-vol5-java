@@ -6,11 +6,15 @@ import com.loopers.application.product.CustomerProductInfo;
 import com.loopers.application.product.ProductPage;
 import com.loopers.application.product.ProductQueryService;
 import com.loopers.application.product.ProductSort;
+import com.loopers.application.product.ProductListItemInfo;
+import com.loopers.application.product.ProductListQueryService;
 import com.loopers.application.brand.BrandInfo;
 import com.loopers.config.AdminRequestInterceptor;
 import com.loopers.config.WebMvcConfig;
 import com.loopers.interfaces.api.admin.product.AdminProductV1Controller;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -39,6 +43,9 @@ class ProductV1ControllerTest {
     @MockitoBean
     private ProductQueryService productQueryService;
 
+    @MockitoBean
+    private ProductListQueryService productListQueryService;
+
     @Test
     void returnsProductDetail() throws Exception {
         when(productQueryService.get(1L)).thenReturn(
@@ -51,26 +58,54 @@ class ProductV1ControllerTest {
             .andExpect(jsonPath("$.data.brand.id").value(2))
             .andExpect(jsonPath("$.data.brand.name").value("나이키"))
             .andExpect(jsonPath("$.data.likeCount").value(3))
-            .andExpect(jsonPath("$.data.stockQuantity").doesNotExist());
+            .andExpect(jsonPath("$.data.stockQuantity").doesNotExist())
+            .andExpect(jsonPath("$.data.isLiked").doesNotExist());
     }
 
-    @Test
-    void returnsProductsWithPageAndSort() throws Exception {
-        when(productQueryService.getList(null, 0, 20, ProductSort.LIKES_DESC)).thenReturn(
+    @ParameterizedTest
+    @EnumSource(ProductSort.class)
+    void returnsProductsWithPageAndSortWithoutTotalCount(ProductSort sort) throws Exception {
+        Long brandId = sort == ProductSort.POPULAR ? 2L : null;
+        when(productListQueryService.getList(null, brandId, 0, 20, sort)).thenReturn(
             new ProductPage<>(
-                java.util.List.of(new CustomerProductInfo(
+                java.util.List.of(new ProductListItemInfo(new CustomerProductInfo(
                     1L, new BrandInfo(2L, "나이키", null), "운동화", 100_000L, 3L, null
-                )),
+                ), false)),
                 0,
-                20,
-                1
+                20
             )
         );
 
-        mockMvc.perform(get("/api/v1/products").param("sort", "likes_desc"))
+        var request = get("/api/v1/products").param("sort", sort.name().toLowerCase(java.util.Locale.ROOT));
+        if (brandId != null) { request.param("brandId", brandId.toString()); }
+        mockMvc.perform(request)
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.items[0].likeCount").value(3))
-            .andExpect(jsonPath("$.data.totalCount").value(1));
+            .andExpect(jsonPath("$.data.items[0].isLiked").value(false))
+            .andExpect(jsonPath("$.data.page").value(0))
+            .andExpect(jsonPath("$.data.size").value(20))
+            .andExpect(jsonPath("$.data.totalCount").doesNotExist());
+    }
+
+    @ParameterizedTest
+    @EnumSource(ProductSort.class)
+    void returnsPersonalLikeStateForTheRequester(ProductSort sort) throws Exception {
+        when(productListQueryService.getList(7L, 2L, 0, 20, sort)).thenReturn(new ProductPage<>(
+            java.util.List.of(new ProductListItemInfo(
+                new CustomerProductInfo(1L, new BrandInfo(2L, "brand", null), "product", 1000, 3, null), true)),
+            0, 20));
+        mockMvc.perform(get("/api/v1/products").header("X-USER-ID", "7").param("brandId", "2")
+                .param("sort", sort.name().toLowerCase(java.util.Locale.ROOT)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.items[0].isLiked").value(true))
+            .andExpect(jsonPath("$.data.items[0].likeCount").value(3))
+            .andExpect(jsonPath("$.data.totalCount").doesNotExist());
+    }
+
+    @Test
+    void rejectsMalformedRequesterHeader() throws Exception {
+        mockMvc.perform(get("/api/v1/products").header("X-USER-ID", "not-a-number"))
+            .andExpect(status().isBadRequest());
     }
 
     @Test

@@ -4,6 +4,9 @@ import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.brand.BrandService;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.domain.product.ProductModel;
+import com.loopers.application.product.PricePageChanged;
+import com.loopers.application.product.PopularPageChanged;
+import org.springframework.context.ApplicationEventPublisher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,6 +18,7 @@ import java.util.List;
 public class BrandFacade {
     private final BrandService brandService;
     private final ProductRepository productRepository;
+    private final ApplicationEventPublisher events;
 
     public BrandInfo create(String name, String description) {
         BrandModel brand = brandService.create(name, description);
@@ -40,5 +44,7 @@ public class BrandFacade {
             product.markDeleted();
             productRepository.save(product);
         }
+        events.publishEvent(new PricePageChanged(id));
+        events.publishEvent(new PopularPageChanged(id));
     }
 }

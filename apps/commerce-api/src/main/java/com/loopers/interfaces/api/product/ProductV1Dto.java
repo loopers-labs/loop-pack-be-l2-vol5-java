@@ -3,6 +3,7 @@ package com.loopers.interfaces.api.product;
 import com.loopers.application.brand.BrandInfo;
 import com.loopers.application.product.CustomerProductInfo;
 import com.loopers.application.product.ProductPage;
+import com.loopers.application.product.ProductListItemInfo;
 
 import java.util.List;
 
@@ -26,13 +27,21 @@ public class ProductV1Dto {
         }
     }
 
-    public record ProductListResponse(List<ProductResponse> items, int page, int size, long totalCount) {
-        public static ProductListResponse from(ProductPage<CustomerProductInfo> page) {
+    public record ProductListItemResponse(Long id, BrandResponse brand, String name, long price,
+                                         long likeCount, boolean isLiked) {
+        public static ProductListItemResponse from(ProductListItemInfo item) {
+            var product = item.product();
+            return new ProductListItemResponse(product.id(), BrandResponse.from(product.brand()), product.name(),
+                product.price(), product.likeCount(), item.isLiked());
+        }
+    }
+
+    public record ProductListResponse(List<ProductListItemResponse> items, int page, int size) {
+        public static ProductListResponse from(ProductPage<ProductListItemInfo> page) {
             return new ProductListResponse(
-                page.items().stream().map(ProductResponse::from).toList(),
+                page.items().stream().map(ProductListItemResponse::from).toList(),
                 page.page(),
-                page.size(),
-                page.totalCount()
+                page.size()
             );
         }
     }

@@ -15,7 +15,7 @@ datasource:
         port: ${REDIS_REPLICA_1_PORT}
 
 ---
-spring.config.activate.on-profile: local, test
+spring.config.activate.on-profile: local, test, benchmark
 
 datasource:
   redis:

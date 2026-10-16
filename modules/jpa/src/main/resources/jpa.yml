@@ -47,6 +47,23 @@ datasource:
       password: application
 
 ---
+spring.config.activate.on-profile: benchmark
+
+spring:
+  jpa:
+    show-sql: false
+    hibernate:
+      ddl-auto: validate
+
+datasource:
+  mysql-jpa:
+    main:
+      jdbc-url: jdbc:mysql://localhost:3307/loopers_benchmark
+      username: application
+      password: application
+      pool-name: mysql-benchmark-pool
+
+---
 spring.config.activate.on-profile: test
 
 spring:

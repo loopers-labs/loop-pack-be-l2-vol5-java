@@ -1,6 +1,6 @@
 # ADR 0017: 좋아요 중복은 유니크 제약으로 판단하고 취소는 조건 삭제한다
 
-Status: Accepted
+Status: Accepted; amended by [ADR 0020](0020-like-count-denormalized-counter.md) for counter maintenance
 Date: 2026-10-09
 
 ## Context
@@ -9,7 +9,7 @@ Date: 2026-10-09
 
 ## Decision
 
-등록은 INSERT 후 `uk_product_like_user_product` 충돌만 중복으로 처리하고, 취소는 사용자·상품 조건의 DELETE로 처리한다. 최초 201·중복 200·취소 204를 유지한다. 별도 카운터나 상품 단위 잠금은 추가하지 않는다.
+등록은 INSERT 후 `uk_product_like_user_product` 충돌만 중복으로 처리하고, 취소는 사용자·상품 조건의 DELETE로 처리한다. 최초 201·중복 200·취소 204를 유지한다. 당시에는 별도 카운터나 상품 단위 잠금을 추가하지 않았다. week4의 [ADR 0020](0020-like-count-denormalized-counter.md)은 별도 카운터 미사용 결정을 변경해, 실제 관계 변경과 카운터 증감을 같은 트랜잭션으로 묶는다. 이 ADR의 중복·취소·삭제 경합 계약과 상품 추가 잠금 미사용은 유지한다.
 
 ## Alternatives and costs
 
