@@ -6,6 +6,7 @@ import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.OrderStatus;
 import com.loopers.domain.product.Product;
+import com.loopers.domain.product.ProductListRevision;
 import com.loopers.domain.user.User;
 import com.loopers.infrastructure.brand.BrandNameConverter;
 import org.hibernate.Session;
@@ -45,9 +46,11 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 @Testcontainers
 class CommerceSchemaIntegrationTest {
 
-    private static final List<String> TABLES = List.of("brand", "user", "product", "like", "order", "order_item");
+    private static final List<String> TABLES = List.of("brand", "user", "product", "like", "order", "order_item",
+        "product_list_revision");
     private static final List<String> SCRIPTS = List.of("001-brand.sql", "002-user.sql", "003-product.sql",
-        "004-like.sql", "005-order.sql", "006-order-item.sql");
+        "004-like.sql", "005-order.sql", "006-order-item.sql", "007-product-brand-price-index.sql",
+        "008-product-list-revision.sql");
 
     @Container
     private static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0")
@@ -61,7 +64,7 @@ class CommerceSchemaIntegrationTest {
         dataSource = new DriverManagerDataSource(MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
         jdbc = new JdbcTemplate(dataSource);
         // 이 클래스 전용 컨테이너에서만 자식 테이블부터 정리한다. 운영 SQL에는 DROP이 없다.
-        for (String table : List.of("order_item", "like", "order", "product", "user", "brand")) {
+        for (String table : List.of("product_list_revision", "order_item", "like", "order", "product", "user", "brand")) {
             jdbc.execute("DROP TABLE IF EXISTS `" + table + "`");
         }
         applySchema();
@@ -104,6 +107,7 @@ class CommerceSchemaIntegrationTest {
                 assertThat(loadedOrder.getItems().getFirst().getProductName()).isEqualTo("😀".repeat(100));
                 assertThat(loadedOrder.getItems().getFirst().getUnitPrice()).isEqualTo(Long.MAX_VALUE);
                 assertThat(session.find(ProductLike.class, like.getId()).getProduct().getId()).isEqualTo(product.getId());
+                assertThat(session.find(ProductListRevision.class, 1L).getRevision()).isZero();
             }
         }
         LocalDateTime databaseTime = jdbc.queryForObject("SELECT confirmed_at FROM `order` WHERE id = ?",
@@ -240,10 +244,36 @@ class CommerceSchemaIntegrationTest {
         assertIndex("product", "idx_product_brand_deleted", "brand_id", "deleted_at");
         assertIndex("product", "idx_product_latest", "deleted_at", "created_at", "id");
         assertIndex("product", "idx_product_price", "deleted_at", "price", "id");
+        assertIndex("product", "idx_product_brand_price", "brand_id", "deleted_at", "price", "id");
+        assertThat(jdbc.queryForList("""
+            SELECT COLLATION FROM information_schema.STATISTICS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'product' AND INDEX_NAME = 'idx_product_brand_price'
+            ORDER BY SEQ_IN_INDEX
+            """, String.class)).containsExactly("A", "A", "A", "D");
         assertIndex("like", "idx_like_product", "product_id");
         assertIndex("like", "idx_like_user_created", "user_id", "created_at", "id");
         assertIndex("order", "idx_order_user_created", "user_id", "created_at", "id");
         assertIndex("order", "idx_order_created", "created_at", "id");
+    }
+
+    @Test
+    void addsBrandPriceIndexToExistingDataWithoutReplacingRowsOrIndexes() {
+        // 이 클래스 전용 DB에서 001~006만 적용된 기존 배포 상태를 재현한다.
+        jdbc.execute("DROP INDEX idx_product_brand_price ON product");
+        seedRows();
+        var before = snapshot();
+        ResourceDatabasePopulator addition = new ResourceDatabasePopulator(
+            new ClassPathResource("db/schema/007-product-brand-price-index.sql"));
+
+        addition.execute(dataSource);
+
+        assertThat(snapshot()).isEqualTo(before);
+        assertIndex("product", "idx_product_brand_price", "brand_id", "deleted_at", "price", "id");
+        assertIndex("product", "idx_product_brand_deleted", "brand_id", "deleted_at");
+        assertIndex("product", "idx_product_latest", "deleted_at", "created_at", "id");
+        assertIndex("product", "idx_product_price", "deleted_at", "price", "id");
+        assertThatThrownBy(() -> addition.execute(dataSource)).isInstanceOf(ScriptStatementFailedException.class);
+        assertThat(snapshot()).isEqualTo(before);
     }
 
     @Test
@@ -254,6 +284,36 @@ class CommerceSchemaIntegrationTest {
         assertThatThrownBy(() -> new ResourceDatabasePopulator(new ClassPathResource("db/schema/002-user.sql"))
             .execute(dataSource)).isInstanceOf(ScriptStatementFailedException.class);
         assertThat(snapshot()).isEqualTo(before);
+    }
+
+    @Test
+    void addsASingleNonnegativeRevisionWithoutChangingExistingBusinessRows() {
+        jdbc.execute("DROP TABLE product_list_revision");
+        seedRows();
+        List<List<Map<String, Object>>> before = TABLES.stream()
+            .filter(table -> !"product_list_revision".equals(table))
+            .map(table -> jdbc.queryForList("SELECT * FROM `" + table + "` ORDER BY id"))
+            .toList();
+        ResourceDatabasePopulator addition = new ResourceDatabasePopulator(
+            new ClassPathResource("db/schema/008-product-list-revision.sql"));
+
+        addition.execute(dataSource);
+
+        assertThat(TABLES.stream().filter(table -> !"product_list_revision".equals(table))
+            .map(table -> jdbc.queryForList("SELECT * FROM `" + table + "` ORDER BY id"))).containsExactlyElementsOf(before);
+        assertThat(jdbc.queryForObject("SELECT revision FROM product_list_revision WHERE id = 1", Long.class)).isZero();
+        assertThat(jdbc.queryForObject("""
+            SELECT COLUMN_TYPE FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'product_list_revision' AND COLUMN_NAME = 'revision'
+            """, String.class)).isEqualTo("bigint");
+        assertCheckRejected("INSERT INTO product_list_revision (id, revision) VALUES (2, 0)",
+            "ck_product_list_revision_singleton");
+        assertCheckRejected("UPDATE product_list_revision SET revision = -1 WHERE id = 1",
+            "ck_product_list_revision_nonnegative");
+        jdbc.update("UPDATE product_list_revision SET revision = 42 WHERE id = 1");
+        var after = snapshot();
+        assertThatThrownBy(() -> addition.execute(dataSource)).isInstanceOf(ScriptStatementFailedException.class);
+        assertThat(snapshot()).isEqualTo(after);
     }
 
     private void assertCheckRejected(String statement, String constraint) {
@@ -280,7 +340,8 @@ class CommerceSchemaIntegrationTest {
 
     private SessionFactory validatedSessionFactory() {
         Configuration configuration = new Configuration();
-        for (Class<?> type : List.of(Brand.class, User.class, Product.class, ProductLike.class, Order.class, OrderItem.class)) {
+        for (Class<?> type : List.of(Brand.class, User.class, Product.class, ProductLike.class, Order.class, OrderItem.class,
+            ProductListRevision.class)) {
             configuration.addAnnotatedClass(type);
         }
         configuration.addAttributeConverter(BrandNameConverter.class, true);

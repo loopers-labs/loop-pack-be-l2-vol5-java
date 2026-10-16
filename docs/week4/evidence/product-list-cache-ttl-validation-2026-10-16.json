@@ -1,0 +1,78 @@
+{
+  "recordedAt": "2026-10-16T06:28:31Z",
+  "normalCheck": {
+    "command": "./gradlew :apps:commerce-api:check --console=plain",
+    "exitCode": 0,
+    "duration": "6m55s",
+    "result": {
+      "suites": 82,
+      "counts": {
+        "tests": 742,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    "archUnitTests": 1
+  },
+  "ttlMeasurement": {
+    "command": "./gradlew :apps:commerce-api:ttlMeasurement :apps:commerce-api:checkstyleTest --console=plain",
+    "exitCode": 0,
+    "duration": "11m15s",
+    "result": {
+      "suites": 1,
+      "counts": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    }
+  },
+  "checkstyle": {
+    "reports": 11,
+    "violations": 0
+  },
+  "productionMain": {
+    "files": 153,
+    "beforeSha256": "7ddc00d039f9a5d69ff72d79610c3caacb32427f7fe50e752af8d46c25e4f411",
+    "afterSha256": "7ddc00d039f9a5d69ff72d79610c3caacb32427f7fe50e752af8d46c25e4f411",
+    "unchanged": true
+  },
+  "evidence": {
+    "path": "docs/week4/evidence/product-list-cache-ttl-2026-10-16.json",
+    "bytes": 12704090,
+    "sha256": "4cccc60d7b92bb306747c3b54c88e7fe0329eb76a53b2f48389b91ed3057407f",
+    "sourceHashesMatched": true
+  },
+  "independentRawAudit": {
+    "requests": 11727,
+    "writes": 390,
+    "fullDtoHashesMatched": true,
+    "http200": true,
+    "sqlCountsMatched": true,
+    "lookupOrStoreErrors": 0,
+    "evictions": 0,
+    "naturalExpiryKeysAt61Seconds": 0,
+    "childrenStopped": true
+  },
+  "finalDatabase": {
+    "likes": 46955,
+    "products": 10000,
+    "revision": 390,
+    "aliceTargetLikes": 0
+  },
+  "sourceSha256": {
+    "apps/commerce-api/src/test/java/com/loopers/application/product/ProductListCacheTtlMeasurementTest.java": "085493d85d3314a3c5918c915a7462d81452f877acb2d090c0274e2b9b074b5d",
+    "apps/commerce-api/src/test/java/com/loopers/support/RedisCacheMemoryProbe.java": "e81a3c3b4c75e2ed9c1e45e8abc9210bb11cb392ae18357694d5f8b7479aebdf",
+    "apps/commerce-api/src/test/java/w4/measurement/ColdStartServer.java": "487af5a434e30ee589a830a0611fafa72b4f222ef693ab2df4caee536ce58341",
+    "apps/commerce-api/src/test/resources/fixtures/week4/product-query-baseline.sql": "912f7bbcfcce8ce19e47ead734a658a6ace998999c495cacf20fac65f0106197",
+    "apps/commerce-api/src/main/java/com/loopers/infrastructure/product/ProductQueryRepositoryImpl.java": "093d115d238ed4be44f0fcf0eb88416ad9ea5def4e12f1265c9b4a8302b6bede",
+    "apps/commerce-api/src/main/resources/application.yml": "dd3e0969549a36c60d137be8b4c341945506cb98817b67175e0456b28bb50a96"
+  },
+  "failedAttempt": {
+    "path": "docs/week4/evidence/product-list-cache-ttl-hash-failure-2026-10-16.json",
+    "reason": "Full DTO equality passed but hash assertion failed due to JSON object field order. Canonicalized object keys recursively while preserving array order and all DTO/SQL assertions, then reran full experiment.",
+    "sha256": "f6f612f74e18a89ace13602813e0bef62ee6d8276e333171e63fa9da586468f4"
+  }
+}

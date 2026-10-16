@@ -14,6 +14,7 @@ import com.loopers.domain.order.OrderQuantities;
 import com.loopers.domain.order.OrderRepository;
 import com.loopers.domain.order.OrderStatus;
 import com.loopers.domain.product.Product;
+import com.loopers.domain.product.ProductListRevisionRepository;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.domain.user.User;
 import com.loopers.domain.user.UserRepository;
@@ -40,14 +41,16 @@ public class OrderService {
     private final BrandRepository brands;
     private final ProductRepository products;
     private final OrderRepository orders;
+    private final ProductListRevisionRepository revisions;
 
     public OrderService(UserResolver userResolver, UserRepository users, BrandRepository brands,
-                        ProductRepository products, OrderRepository orders) {
+                        ProductRepository products, OrderRepository orders, ProductListRevisionRepository revisions) {
         this.userResolver = userResolver;
         this.users = users;
         this.brands = brands;
         this.products = products;
         this.orders = orders;
+        this.revisions = revisions;
     }
 
     public OrderInfo create(String requester, List<OrderQuantities.Item> inputs) {
@@ -75,7 +78,9 @@ public class OrderService {
         locked.forEach((id, product) -> product.deductStock(quantities.get(id)));
         user.deduct(order.getTotalAmount());
         order.confirm(ZonedDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS));
-        return OrderInfo.from(order);
+        OrderInfo result = OrderInfo.from(order);
+        revisions.advance();
+        return result;
     }
 
     @Transactional(readOnly = true)

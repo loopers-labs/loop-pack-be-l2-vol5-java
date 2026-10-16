@@ -1,0 +1,56 @@
+{
+  "recordedAt": "2026-10-16T14:52:47+09:00",
+  "command": "./gradlew :apps:commerce-api:check --console=plain",
+  "exitCode": 0,
+  "result": "BUILD SUCCESSFUL",
+  "duration": "6m 51s",
+  "testSuites": 81,
+  "testTotals": {
+    "tests": 734,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "testReportTimeRange": [
+    "2026-10-16T14:51:59+09:00",
+    "2026-10-16T14:51:59+09:00"
+  ],
+  "archUnit": {
+    "name": "com.loopers.architecture.ArchitectureTest",
+    "tests": "1",
+    "skipped": "0",
+    "failures": "0",
+    "errors": "0",
+    "timestamp": "2026-10-16T05:50:56.057Z",
+    "hostname": "junyoungui-Macmini.local",
+    "time": "1.011"
+  },
+  "checkstyleReports": 11,
+  "checkstyleViolations": 0,
+  "checkstyleNote": "Changed test Checkstyle executed; unchanged tasks were UP-TO-DATE in this check.",
+  "mainSources": {
+    "files": 153,
+    "sha256": "7ddc00d039f9a5d69ff72d79610c3caacb32427f7fe50e752af8d46c25e4f411",
+    "beforeSha256": "7ddc00d039f9a5d69ff72d79610c3caacb32427f7fe50e752af8d46c25e4f411",
+    "unchanged": true
+  },
+  "evidenceHashes": {
+    "docs/week4/evidence/product-list-cold-start-run1-2026-10-16.json": "abeaff044d3b7274a7fa92cd0f8c88c5801f83cfca0eed725ba37f884e08f462",
+    "docs/week4/evidence/product-list-cold-start-2026-10-16.json": "6bef220dad9388ea84b0935b871dc4174972b4001d52bc81c63c7bc8394fb4a7"
+  },
+  "measurementSourceHashes": {
+    "apps/commerce-api/build.gradle.kts": "b27f30481e6edd8fbce640426a3ad074566e3eeccaebbe0f9b03cadc5423f6b3",
+    "apps/commerce-api/src/test/java/com/loopers/application/product/ProductListColdStartMeasurementTest.java": "57c15ca00cdcfb4916747706f4efe40ed85b884b7764ffc69d6f197621556002",
+    "apps/commerce-api/src/test/java/w4/measurement/ColdStartServer.java": "487af5a434e30ee589a830a0611fafa72b4f222ef693ab2df4caee536ce58341"
+  },
+  "validationScope": "Measurement harness only; no production warming, TTL, transaction, lock, or main source/resource changes.",
+  "firstFocusedRun": {
+    "command": "./gradlew :apps:commerce-api:test --tests '*ProductListColdStartMeasurementTest' --tests '*RequestSqlProbeTest' --tests '*ArchitectureTest' :apps:commerce-api:checkstyleMain :apps:commerce-api:checkstyleTest --console=plain",
+    "exitCode": 0,
+    "testSuites": 3,
+    "tests": 10,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  }
+}

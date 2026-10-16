@@ -121,6 +121,89 @@ W2 초기 구현 증분의 기준선은 [고객 브랜드 조회 application 기
 
 ## 최신 통합 검사
 
+### W4 현재 상태와 문서 안내
+
+아래는 2026-10-16까지 완료한 구현·검증의 연결표다. 각 실행 기록의 과거 측정값·테스트 수는 당시 증거로 보존하며 최신 수치로 덮어쓰지 않는다.
+
+**이번 과제의 확정 선택:** 무필터 좋아요순 첫 페이지에 Redis + DB 버전 캐시와 TTL 60초를 사용하고 요청 시 채운다. 서버 시작 워밍은 도입하지 않는다. 워밍은 필수 미완료 작업이 아니며, 운영 최적성의 추가 검증과 현재 선택은 별개다.
+
+| 범위 | 현재 상태 | 확인할 문서 |
+| --- | --- | --- |
+| SQL·인덱스 개선 | 브랜드·가격순, 무필터 최신순·가격순, 무필터 좋아요순 개선과 전후 비교 완료 | [SQL·인덱스](../week4/product-query-optimization.md) · [페이지 한정 집계](../week4/global-list-query-optimization.md) · [좁은 순위 집계](../week4/product-like-ranking-tdd-log.md) |
+| Redis + DB 버전 | 좋아요순 첫 페이지의 hit/miss·변경·삭제·롤백·장애/복구 검증 완료 | [캐시 TDD](../week4/product-list-cache-tdd-log.md) |
+| 혼합 부하·중복 계산 | 혼합 부하와 miss 비용 측정, 같은 JVM의 요청 합치기 구현·비교 완료 | [혼합 측정](../week4/product-list-cache-mixed-load.md) · [비용 진단](../week4/product-list-cache-diagnostics.md) · [요청 합치기](../week4/product-list-single-flight-tdd-log.md) |
+| 시작 직후·TTL·메모리 | 첫 HTTP의 캐시 잔존 비교와 TTL 5/30/60초·키 수·메모리 실측 완료. TTL 60초 유지·서버 시작 워밍 미도입을 사용자 승인으로 확정 | [첫 조회](../week4/product-list-cold-start-measurement.md) · [TTL·메모리](../week4/product-list-cache-ttl-memory.md) |
+| 운영 검증 | 과제의 대상·TTL·채움 방식 선택은 완료. 실제 홈 요청·운영 트래픽에서의 최적 TTL/timeout·메모리 예산은 별도 검증. local 프로파일의 Redis 캐시 기본 OFF 유지 | [확정 선택·운영 검증 사항](commerce-policy-decisions.md#w4-캐시-설계의-선택과-미정-질문) |
+| 제출 | 기술 글·PR·플레이그라운드 제출 완료 여부는 별도 확인. 이번 문서 정리에서는 커밋·푸시·PR 제출을 하지 않음 | [W4 채점 기준](../week4/grading-criteria.md) |
+
+최신 검사는 아래 일반 `check`와 별도 TTL 측정 실행으로 구분한다. 이후 절들은 과거 증분의 검사 기록이다.
+
+### W4 TTL 5·30·60초와 키·메모리 비교 — 2026-10-16
+
+일반 `./gradlew :apps:commerce-api:check --console=plain`은 **82개 스위트·742개 테스트 통과**(실패/오류/skip 0, ArchUnit 1개 포함), 종료 코드 0이었다. 이후 신규 장시간 측정은 `./gradlew :apps:commerce-api:ttlMeasurement :apps:commerce-api:checkstyleTest --console=plain`으로 별도 실행하여 **전용 1개 테스트·11분 15초·종료 코드 0**을 확인했다. Checkstyle XML 11개·위반 0이며 새 하네스의 test 검사를 다시 실행했다. 두 실행을 한 번의 `check` 743개 통과로 표시하지 않는다.
+
+실제 앱 3개에서 조회 11,727회·좋아요 변경 390회의 전체 응답·SQL·버전을 검증했다. TTL 5/30/60초의 지속 조회 재계산은 39/7/4회, 변경 조회는 모두 390회였다. 변경 장면의 키 최대 10/60/120개·키 할당 메모리 약 31/187/374 KiB와 요청 중단 61초 뒤 키 0을 관찰했다. 측정 당시에는 60초 잠정 유지를 제안했고, 이후 사용자 승인으로 이번 과제의 60초 유지·워밍 미도입을 확정했다. 기존 설정 변경은 없다. main 소스/리소스 153개의 작업 전후 해시가 같고 기존 트랜잭션·락·local OFF를 유지했다.
+
+[실험 조건·결과·해석 한계](../week4/product-list-cache-ttl-memory.md), [원시 표본](../week4/evidence/product-list-cache-ttl-2026-10-16.json), [검사 집계·해시](../week4/evidence/product-list-cache-ttl-validation-2026-10-16.json)에 기록한다. TTL 다중 주기·메모리 실측은 완료했지만 실제 홈 접근/변경 분포·운영 최적값·제출은 별도 범위다. 아래 과거 검사·당시 미완료 기록은 보존한다.
+
+### W4 서버 재시작 직후 첫 조회 관찰 — 2026-10-16
+
+`./gradlew :apps:commerce-api:check --console=plain`이 **BUILD SUCCESSFUL·종료 코드 0**으로 완료됐다. **81개 스위트·734개 테스트 통과**, 실패·오류·skip 0, ArchUnit 1개 통과, Checkstyle XML 11개·위반 0이다. test와 변경된 test Checkstyle은 실행했고 변경 없는 검사 태스크는 UP-TO-DATE였다. 직전 733개에 새 JVM 기동 관찰 테스트 1개를 추가했다.
+
+같은 DB/Redis를 유지하며 실제 새 앱 JVM 16개에서 현재 버전 캐시 있음/없음 각각 8회의 첫 HTTP를 측정했다. 마지막 실행 중앙값은 279.74/402.82ms, 실제 hit 8건·miss 후 저장 8건이며 전체 DTO·첫 요청 순번·고유 PID·TTL·SQL 구성·DB 상태를 검증했다. 캐시 잔존 조건 간 약 30.6% 차이이며 운영 워밍의 효과나 SLO로 주장하지 않는다. main 소스/리소스 153개 해시가 작업 전후 같고 워밍·TTL·기존 트랜잭션/락은 변경하지 않았다.
+
+[측정 방법·결과·한계](../week4/product-list-cold-start-measurement.md), [최종 원시 표본](../week4/evidence/product-list-cold-start-2026-10-16.json), [검사 집계·해시](../week4/evidence/product-list-cold-start-validation-2026-10-16.json)에 기록한다. 과거 검사·측정은 아래에 보존한다.
+
+### W4 첫 miss의 좁은 좋아요 순위 집계 — 2026-10-16
+
+14:18 KST에 `./gradlew :apps:commerce-api:check --rerun-tasks --console=plain`이 **BUILD SUCCESSFUL·종료 코드 0**으로 완료됐다. **80개 스위트·733개 테스트 통과**, 실패·오류·skip 0, Checkstyle XML 11개·위반 0·ArchUnit 1개 통과다. 이전 724개에 구조/빈 페이지 4개·좋아요순 경계 2개·순위/상세 사이 커밋 경합 3개를 추가했다. 구조적 Red 13개 중 6실패 → 관련 Green 37개 → 전체 검사를 확인했다.
+
+고객 무필터 좋아요순만 `count → ID/count 순위 페이지 → 선정 상세 IN → 순위대로 합성`으로 변경했다. 기존 정렬·삭제·페이지·트랜잭션/락·Redis 정책을 유지한다. 순위와 상세 사이 가격·좋아요 변경 및 상품/브랜드 삭제가 커밋되어도 진행 중 RR snapshot은 이전 결과, 다음 조회는 새 결과임을 검증했다. SQL은 DB-only 2→3, 직접 계산하는 miss 4→5, hit 1 유지다. 동일 fixture의 실제 Redis miss 50표본에서 p50 57.57→26.61ms, p95 61.66→31.14ms였다. 별도 로컬 실행의 결과이며 운영 개선율 보장은 아니다.
+
+[TDD·전후 성능·한계](../week4/product-like-ranking-tdd-log.md)와 [검사 집계·증거 해시](../week4/evidence/product-like-ranking-validation-2026-10-16.json)에 기록한다. 당시 최종 혼합 부하·기존 동시성/롤백·장애 회귀도 통과했다. 이 증분 밖이었던 TTL 다중 주기·메모리는 [후속 실측](../week4/product-list-cache-ttl-memory.md)에서 완료했다. 실제 홈 접근 분포와 제출은 여전히 별도 확인 사항이다. 아래 기록은 변경 전의 증거로 보존한다.
+
+### W4 같은 버전의 miss 요청 합치기 — 2026-10-16
+
+13:57 KST에 `./gradlew :apps:commerce-api:check --rerun-tasks --console=plain`이 **BUILD SUCCESSFUL·종료 코드 0**으로 완료됐다. **79개 스위트·724개 테스트 통과**, 실패·오류·skip 0, Checkstyle XML 11개·위반 0·ArchUnit 통과다. 직전 705개에 primitive 13개·서비스 6개를 추가했다. 첫 실행은 Docker 미실행으로 초기화에 실패했으나 Desktop 실행 후 복구했다. 데이터·볼륨 삭제는 하지 않았다.
+
+같은 초기 버전의 진행 중 계산 공유, 리더 재확인, 사용자 선택인 500ms 후 DB 우회, 실패·인터럽트·슬롯 정리와 새 버전 독립을 검증했다. 기존 Redis + DB 버전·TTL 60초·local OFF·업무 트랜잭션/락은 유지했다. 같은 실행의 DB-only/기존 캐시/합치기 세 모드 비교에서 초당 2/10회 변경의 집계는 80→40 / 300→200회, 8명 burst는 세 번 모두 8→1회였다. 다만 2회 조건의 p95는 88.02→90.42ms로 늘었으며 쓰기 지연도 개선되지 않았다. 모든 조건의 속도 개선이나 여러 서버의 중복 제거를 주장하지 않는다.
+
+[TDD·실측·한계](../week4/product-list-single-flight-tdd-log.md), [원시 표본](../week4/evidence/product-list-single-flight-2026-10-16.json), [검사 집계·소스 해시](../week4/evidence/product-list-single-flight-validation-2026-10-16.json)에 기록한다. 당시 후속 범위였던 [첫 miss의 집계 SQL 개선](../week4/product-like-ranking-tdd-log.md)과 [TTL 다중 주기·메모리 실측](../week4/product-list-cache-ttl-memory.md)은 이후 완료했다. 운영 접근 분포와 실제 제출 완료는 별도 확인 사항이며 아래 검사는 당시 증거로 보존한다.
+
+### W4 버전별 중복 계산·miss 시간 분해 — 2026-10-16
+
+12:07 KST에 `./gradlew :apps:commerce-api:check --rerun-tasks --console=plain`이 **BUILD SUCCESSFUL·종료 코드 0**으로 완료됐다. **77개 스위트·705개 테스트 통과**, 실패·오류·skip 0, Checkstyle XML 11개·위반 0, ArchUnit 통과다. 기존 696개에 테스트 전용 단계 계측 단위 테스트 9개를 추가하고 혼합 실험을 확장했다. 운영 소스·리소스의 작업 전후 해시가 같으며 Redis 방식·TTL·기존 트랜잭션/락은 변경하지 않았다.
+
+같은 버전의 중복 계산은 초당 2회 변경에서 40버전/80회, 초당 10회에서 200버전/305회였다. 별도 8명 동시 조회는 3회 모두 한 버전에 8회 계산했다. miss 평균 시간의 약 90~91%가 DB snapshot에 쓰였으며 요청 합치기 검토를 다음 개선으로 제안했다. 이 진단 증분에서는 최적화를 구현하지 않았고 후속 [요청 합치기](../week4/product-list-single-flight-tdd-log.md)에서 구현·비교했다. 운영 성능을 보장한 결과는 아니다. [상세 결과·한계·소스 해시](../week4/product-list-cache-diagnostics.md)와 [원시 증거](../week4/evidence/product-list-cache-diagnostics-2026-10-16.json)에 기록한다. 아래 11:41 결과는 과거 실행으로 보존한다.
+
+### W4 읽기·좋아요 혼합 측정 및 전체 재검사 — 2026-10-16
+
+11:41 KST에 `./gradlew :apps:commerce-api:check --rerun-tasks --console=plain`이 **BUILD SUCCESSFUL·종료 코드 0**으로 완료됐다. **76개 스위트·696개 테스트 통과, 실패·오류·skip 0, Checkstyle XML 11개·위반 0, ArchUnit 통과**다. 이전 687개에 측정 도구 8개와 혼합 통합 테스트 1개를 추가했다. 생산 코드·기존 트랜잭션/락·TTL 60초·local 기본 OFF는 이번 증분에서 변경하지 않았다.
+
+최초에는 Docker 연결 불가로 초기화에 실패했으나 사용자 승인으로 Docker 앱 프로세스만 강제 종료·재실행한 뒤 복구했다. 기존 데이터·볼륨 삭제·초기화는 하지 않았다. 혼합 실험은 단독 실행과 전체 검사에서 각각 완료했다. 마지막 실행의 조회 2,400개·좋아요 변경 480개가 전체 응답·SQL·최종 DB 검사를 통과했다. 변경 없음/초당 2회/10회의 hit율은 100/80.25/25.75%였고, 초당 2회는 p95 악화, 초당 10회는 중앙값·p95·SELECT 수 악화도 확인했다.
+
+[실험 결과·한계·재실행 명령](../week4/product-list-cache-mixed-load.md)과 [원시 표본·소스 해시·검사 집계](../week4/evidence/product-list-cache-mixed-load-2026-10-16.json)를 보존한다. 운영 적중률·최대 처리량·TTL 최적값·여러 writer 경합·과제 제출 완료를 뜻하지 않는다. 아래 687개 통과는 이전 캐시 구현 시점의 기록이다.
+
+### W4 Redis + DB 버전 캐시 — 2026-10-16
+
+10:12 KST에 `./gradlew :apps:commerce-api:check --rerun-tasks --console=plain`이 **BUILD SUCCESSFUL·종료 코드 0**으로 완료됐다. **74개 스위트·687개 테스트 통과, 실패·오류·skip 0, Checkstyle XML 11개·위반 0, ArchUnit 통과**다. 신규 캐시 117개와 스키마 1개를 기존 569개에 추가했다.
+
+무필터 좋아요순 첫 페이지의 Redis + DB 버전 조율, 9개 영향 쓰기의 업무/버전 공동 rollback, 실제 RR·늦은 채움·진행 중 hit 삭제 경계, Redis 중단/동일 endpoint 복구, 기존 W3 동시성 결과를 검증했다. 기존 업무 잠금 순서는 유지하고 버전 행을 마지막에 갱신한다. 로컬은 사용자 선택으로 기본 OFF이며 캐시 테스트는 명시 ON이다.
+
+같은 1만 상품에서 DB-only/miss/hit 전체 응답 일치와 SELECT 2/4/1회를 확인했다. 마지막 실행의 HTTP p50은 각각 53.58/57.86/3.03ms였다. 선택 이유·원시 표본·장애/대기 수치·배포 조건은 [캐시 TDD 실행 기록](../week4/product-list-cache-tdd-log.md)에 남겼다. 운영 적중률·TTL 다중 주기/혼합 부하 최적화와 기술 글·실제 제출까지 완료했다는 뜻은 아니다. 아래 기록은 당시 결과로 보존한다.
+
+### W4 무필터 최신순·가격순 페이지 한정 집계 — 2026-10-15
+
+23:31 KST에 `./gradlew :apps:commerce-api:check --rerun-tasks --console=plain`이 **BUILD SUCCESSFUL·종료 코드 0**으로 완료됐다. **63개 스위트·569개 테스트 통과, 실패·오류·skip 0, Checkstyle XML 11개 위반 0·ArchUnit 통과**다. 시작 HEAD `c161dea`의 작업 트리에서 무필터 최신순·가격순 저장소 조회, 중간 DTO와 관련 테스트를 변경했다.
+
+구조적 Red 2개 → Green, size 1/20/100의 실제 HTTP·SQL 경계, 무필터 동점 페이지·노출 0개, 중간 쓰기 커밋에도 같은 스냅샷을 반환하는 실제 트랜잭션을 확인했다. 같은 10,000개 seed의 별도 전후 측정에서 p50 약 48~50% 감소를 확인했으며 원시 증거·선택 이유·한계는 [무필터 목록 개선 기록](../week4/global-list-query-optimization.md)에 남긴다. Redis·로컬 캐시·새 인덱스·쓰기 락 변경은 없으며 W4 캐시 과제 전체 완료를 뜻하지 않는다. 아래 검사는 당시 기록으로 보존한다.
+
+### W4 1단계 SQL·인덱스 개선 — 2026-10-15
+
+21:23 KST에 `./gradlew :apps:commerce-api:check --rerun-tasks --console=plain`이 **BUILD SUCCESSFUL·종료 코드 0**으로 완료됐다. **62개 스위트·559개 테스트 통과, 실패·오류·skip 0, Checkstyle XML 11개 위반 0·ArchUnit 통과**다. 시작 HEAD `9904a5f`에 고객 가격순·최신순 쿼리, 007 인덱스, 회귀·측정 테스트를 변경한 작업 트리 기준이다.
+
+동일 seed의 실제 API·SQL·실행 계획·반복 지연 비교와 인덱스 부재 Red→Green, 기존 데이터 보존 증거는 [W4 개선 기록](../week4/product-query-optimization.md)에 남긴다. Redis 캐시·장애 복구와 W4 전체 과제·실제 제출 완료를 뜻하지 않는다. 아래 W3 검사는 당시의 기록으로 보존한다.
+
 ### W3 최종 재검사와 문서 정합성 — 2026-10-09
 
 2026-10-09 14:35 KST, 코드 기준 `12f9afc`에서 아래 명령이 **BUILD SUCCESSFUL / 종료 코드 0**으로 끝났다. 이번 마무리에서는 문서만 수정했으며 코드·테스트·검사 규칙은 변경하지 않았다.

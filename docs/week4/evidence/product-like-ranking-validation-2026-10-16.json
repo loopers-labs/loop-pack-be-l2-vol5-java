@@ -1,0 +1,78 @@
+{
+  "validatedAtKstMinute": "2026-10-16 14:18 KST",
+  "head": "ee4e8ed2ccb69ef5b2dc86ab889f8cfe0ab4fa35",
+  "scope": "Uncommitted worktree including prior Redis/single-flight work and this narrow likes-ranking query increment",
+  "command": "./gradlew :apps:commerce-api:check --rerun-tasks --console=plain",
+  "result": "BUILD SUCCESSFUL",
+  "exitCode": 0,
+  "duration": "5m 26s",
+  "suites": 80,
+  "counts": {
+    "tests": 733,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "checkstyleReports": 11,
+  "checkstyleViolations": 0,
+  "archUnitTests": 1,
+  "archUnitFailures": 0,
+  "sourceSha256": {
+    "apps/commerce-api/src/main/java/com/loopers/infrastructure/product/ProductQueryRepositoryImpl.java": "093d115d238ed4be44f0fcf0eb88416ad9ea5def4e12f1265c9b4a8302b6bede",
+    "apps/commerce-api/src/main/java/com/loopers/infrastructure/product/ProductPageRow.java": "3ae2cd51377806d90dd2614560aefc25767e40e8061e83e70ef98b4a6c186afa",
+    "apps/commerce-api/src/main/java/com/loopers/application/product/ProductListReader.java": "2f2ed18f9c2ce0b44dabf2a35b0a7de9810c226710be349f90a2bd8abbe02107",
+    "apps/commerce-api/src/main/java/com/loopers/application/product/ProductQueryService.java": "87806d672a83e9eda482c0852761b8cbcf211de3e460d4ac3021d71a6b15fb28",
+    "apps/commerce-api/src/main/java/com/loopers/application/product/ProductListSingleFlight.java": "19caa771e48bf5c46ebc09f470e67382b374283f46e9c098844ae660be9623f8",
+    "apps/commerce-api/src/main/resources/application.yml": "dd3e0969549a36c60d137be8b4c341945506cb98817b67175e0456b28bb50a96",
+    "apps/commerce-api/src/test/java/com/loopers/application/product/ProductQueryBaselineTest.java": "ae4d8b9c9d8ddd86c6002dfb4adc3f22448fffe38b918ab63beea05c3d62c638",
+    "apps/commerce-api/src/test/java/com/loopers/application/product/ProductQueryServiceIntegrationTest.java": "4875f9565fb786ecec7d9eeb2b682b9a17ac57f9fa757c672789a16941eef0c5",
+    "apps/commerce-api/src/test/java/com/loopers/application/product/ProductLikeRankingSnapshotIntegrationTest.java": "bb0ad7d3c96322401edeb307d09ca1169c569d4c8c54f129edea0fdda7f67a1a",
+    "apps/commerce-api/src/test/java/com/loopers/application/product/ProductListCacheApiIntegrationTest.java": "390d66b9914eea98d5957f2f573e56c6f669633140ccc23e5fd362b5f16b051e",
+    "apps/commerce-api/src/test/java/com/loopers/application/product/ProductListCacheSnapshotIntegrationTest.java": "d15842d5aec55561a6f2abf14ca923db72cf83401729f481a984e3a4cc21d61f",
+    "apps/commerce-api/src/test/java/com/loopers/application/product/ProductListCacheMixedLoadIntegrationTest.java": "12a0fab16f2d59b3963ba27744e1d932c08dda1ce3d863cd01c2bd69810cdb9e"
+  },
+  "evidenceSha256": {
+    "docs/week4/evidence/product-like-ranking-mixed-after-2026-10-16.json": "2455b75a52164db7aa7ac212c6b13614e612c20551d63d5026ef2805ed0dafc8",
+    "docs/week4/evidence/product-like-ranking-cache-before-2026-10-16.json": "99a6865d623c80bf87956fa0caa1c1b8c9757d62a8a5c476354616fca4d329d0",
+    "docs/week4/evidence/product-like-ranking-before-2026-10-16.json": "e936fde615a517373159ba3d1e165537998535e11b2e0ba66843678ac85cb741",
+    "docs/week4/evidence/product-like-ranking-cache-after-2026-10-16.json": "087107001d64f9c968fe4b56177d5d2dfe54a0fd8be9f828fe7dae3511275fe7",
+    "docs/week4/evidence/product-like-ranking-after-2026-10-16.json": "c69db9f4a343a161fb06d9628ee530ac085b105fed776b5c099aedcdef69f048"
+  },
+  "tdd": {
+    "redTests": 13,
+    "redFailures": 6,
+    "redAlreadyPassing": 7,
+    "relatedGreenSuites": 5,
+    "relatedGreenTests": 37,
+    "relatedGreenFailures": 0,
+    "relatedGreenSkipped": 0
+  },
+  "measurements": {
+    "before": "Before production change: baseline read-cost test plus cache database/miss/hit test (BUILD SUCCESSFUL, 40s).",
+    "after": "Preserved from final full check: DB-only two rounds; cache database/miss/hit; three-mode mixed load and bursts.",
+    "equalBeforeAfter": [
+      "seedSha256",
+      "schemaScripts",
+      "mysqlVersion",
+      "physicalIndexes",
+      "all eight independent verified HTTP response cases"
+    ],
+    "mixed": {
+      "completed": true,
+      "phases": 24,
+      "mixedReads": 3600,
+      "mixedWrites": 720,
+      "burstReads": 48
+    },
+    "limitations": "Separate local JVM/container runs, warm DB/application; Redis miss is not cold disk. No fixed speed assertion or production latency guarantee."
+  },
+  "unchanged": [
+    "API response/sort/deletion contracts",
+    "read/write transaction boundaries and business locks",
+    "Redis key/payload/TTL 60s",
+    "DB revision strategy",
+    "single-flight 500ms wait",
+    "local cache disabled by default"
+  ],
+  "submitted": false
+}

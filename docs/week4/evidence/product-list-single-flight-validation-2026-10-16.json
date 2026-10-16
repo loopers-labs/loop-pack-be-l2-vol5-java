@@ -1,0 +1,45 @@
+{
+  "validatedAtKstMinute": "2026-10-16 13:57 KST",
+  "head": "ee4e8ed2ccb69ef5b2dc86ab889f8cfe0ab4fa35",
+  "scope": "Uncommitted worktree including prior Redis implementation and this single-flight increment",
+  "command": "./gradlew :apps:commerce-api:check --rerun-tasks --console=plain",
+  "result": "BUILD SUCCESSFUL",
+  "exitCode": 0,
+  "duration": "5m 39s",
+  "suites": 79,
+  "tests": 724,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "checkstyleReports": 11,
+  "checkstyleViolations": 0,
+  "archUnitTests": 1,
+  "gitDiffCheckExitCode": 0,
+  "firstFullAttempt": "Failed before DB integration checks: Docker daemon unavailable. Recovered by opening Docker Desktop; no existing data or volumes deleted.",
+  "tdd": {
+    "primitiveRedTests": 13,
+    "primitiveRedFailures": 8,
+    "primitiveGreenTests": 13,
+    "serviceRedTests": 4,
+    "serviceRedFailures": 3,
+    "serviceGreenTestsIncludingTwoAdditionalRegressions": 6
+  },
+  "measurement": {
+    "file": "product-list-single-flight-2026-10-16.json",
+    "sha256": "f2e7af7a656666c7b2a557ec8b877a0cc19d5ebc6812d3621a70bb4a05c4548c",
+    "completed": true,
+    "mixedReads": 3600,
+    "mixedWrites": 720,
+    "burstReads": 48,
+    "notes": "Measured inside the full check run, not a separate run; warmups and sentinel requests excluded from these counts. TTL 60s, configured follower wait 500ms, in-flight leader capacity 64."
+  },
+  "sourceSha256": {
+    "apps/commerce-api/src/main/java/com/loopers/application/product/ProductListSingleFlight.java": "19caa771e48bf5c46ebc09f470e67382b374283f46e9c098844ae660be9623f8",
+    "apps/commerce-api/src/main/java/com/loopers/application/product/ProductQueryService.java": "87806d672a83e9eda482c0852761b8cbcf211de3e460d4ac3021d71a6b15fb28",
+    "apps/commerce-api/src/main/java/com/loopers/application/product/ProductListReader.java": "2f2ed18f9c2ce0b44dabf2a35b0a7de9810c226710be349f90a2bd8abbe02107",
+    "apps/commerce-api/src/main/resources/application.yml": "dd3e0969549a36c60d137be8b4c341945506cb98817b67175e0456b28bb50a96",
+    "apps/commerce-api/src/test/java/com/loopers/application/product/ProductListSingleFlightTest.java": "3fcc74d6a20c1a04365ee5f707832575ad059f052779f91c683ec063f7587c32",
+    "apps/commerce-api/src/test/java/com/loopers/application/product/ProductListSingleFlightServiceTest.java": "8a870edd6eda2a69be7c3262ae8c62f2a00ab6d2cc1739898ba45b3bca2a0df3",
+    "apps/commerce-api/src/test/java/com/loopers/application/product/ProductListCacheMixedLoadIntegrationTest.java": "f4fb86ca1059acd3683ce6b2f78cbc838e5cdac40f4cae31906aeba4dd9a32cb"
+  }
+}

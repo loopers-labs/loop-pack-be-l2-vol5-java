@@ -1,0 +1,6263 @@
+{
+  "description": "W4 step 1: actual HTTP measurements, unchanged seed, sequential isolated DB/index experiments. Labels do not switch production code.",
+  "startingHead": "9904a5f2613c4e6ba4e28eb9a9e07efd803a805b",
+  "comparisonRuns": [
+    {
+      "artifact": "product-query-before-existing-r1.json",
+      "measuredAt": "2026-10-15T12:18:10.557870Z",
+      "stage": "before-existing-r1; actual DB-only HTTP path, no cache",
+      "sourceSha256": "15c250d8f88881f93e920eff255d30c286e79c851d415d5ce8438a2822250ebc",
+      "seedSha256": "912f7bbcfcce8ce19e47ead734a658a6ace998999c495cacf20fac65f0106197",
+      "javaVersion": "21.0.10",
+      "mysqlVersion": "8.0.46",
+      "seed": "fixtures/week4/product-query-baseline.sql (v1)",
+      "schemaScripts": [
+        "001-brand.sql",
+        "002-user.sql",
+        "003-product.sql",
+        "004-like.sql",
+        "005-order.sql",
+        "006-order-item.sql"
+      ],
+      "preparation": "Manual DDL, seed v1, ANALYZE TABLE brand/product/like/user, contract checks, warmups",
+      "seedStatistics": {
+        "zeroLikeProducts": 999,
+        "visibleProducts": 9812,
+        "likes": 46955,
+        "deletedProducts": 188,
+        "products": 10000,
+        "brands": 100,
+        "soldOutProducts": 588,
+        "priceSum": 509500000,
+        "popularProducts": 10
+      },
+      "request": "/api/v1/products?brandId=1007&sort=price_asc&page=0&size=20",
+      "warmupCount": 5,
+      "sampleCount": 20,
+      "rawHttpNanos": [
+        5514209,
+        6063916,
+        5700500,
+        6911916,
+        6503833,
+        5912750,
+        5247875,
+        5115333,
+        5456083,
+        5312292,
+        5101583,
+        5106417,
+        5488209,
+        5357292,
+        4959166,
+        5219500,
+        5055708,
+        4640709,
+        5127750,
+        5028291
+      ],
+      "httpLatencyMillis": {
+        "min": 4.640709,
+        "p50": 5.247875,
+        "p95": 6.503833,
+        "max": 6.911916
+      },
+      "sqlCountsPerRequest": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "response": {
+        "meta": {
+          "result": "SUCCESS"
+        },
+        "data": {
+          "items": [
+            {
+              "productId": 109407,
+              "name": "W4 product 09407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 108407,
+              "name": "W4 product 08407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 107407,
+              "name": "W4 product 07407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 106407,
+              "name": "W4 product 06407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 105407,
+              "name": "W4 product 05407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 103407,
+              "name": "W4 product 03407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 102407,
+              "name": "W4 product 02407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 101407,
+              "name": "W4 product 01407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 100407,
+              "name": "W4 product 00407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 109707,
+              "name": "W4 product 09707",
+              "price": 16900,
+              "stockQuantity": 0,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 108707,
+              "name": "W4 product 08707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 107707,
+              "name": "W4 product 07707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 106707,
+              "name": "W4 product 06707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 105707,
+              "name": "W4 product 05707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 104707,
+              "name": "W4 product 04707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 103707,
+              "name": "W4 product 03707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 102707,
+              "name": "W4 product 02707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 101707,
+              "name": "W4 product 01707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 100707,
+              "name": "W4 product 00707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 109007,
+              "name": "W4 product 09007",
+              "price": 26900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 7
+            }
+          ],
+          "page": 0,
+          "size": 20,
+          "totalElements": 99,
+          "totalPages": 5
+        }
+      },
+      "plansAfterTiming": [
+        {
+          "jdbcExecuteNanos": 375791,
+          "sql": "select count(p1_0.id) from product p1_0 join brand b1_0 on b1_0.id=p1_0.brand_id where p1_0.deleted_at is null and b1_0.deleted_at is null and b1_0.id=?",
+          "parameters": [
+            1007
+          ],
+          "explainAnalyze": [
+            {
+              "EXPLAIN": "-> Aggregate: count(p1_0.id)  (cost=20.1 rows=1) (actual time=0.0168..0.0168 rows=1 loops=1)\n    -> Filter: (p1_0.deleted_at is null)  (cost=10.2 rows=99) (actual time=0.00321..0.0141 rows=99 loops=1)\n        -> Covering index lookup on p1_0 using idx_product_brand_deleted (brand_id=1007, deleted_at=NULL)  (cost=10.2 rows=99) (actual time=0.00292..0.0112 rows=99 loops=1)\n"
+            }
+          ],
+          "explain": [
+            {
+              "id": 1,
+              "select_type": "SIMPLE",
+              "table": "b1_0",
+              "type": "const",
+              "possible_keys": "PRIMARY",
+              "key": "PRIMARY",
+              "key_len": "8",
+              "ref": "const",
+              "rows": 1,
+              "filtered": 100
+            },
+            {
+              "id": 1,
+              "select_type": "SIMPLE",
+              "table": "p1_0",
+              "type": "ref",
+              "possible_keys": "idx_product_brand_deleted,idx_product_latest,idx_product_price",
+              "key": "idx_product_brand_deleted",
+              "key_len": "17",
+              "ref": "const,const",
+              "rows": 99,
+              "filtered": 100,
+              "Extra": "Using where; Using index"
+            }
+          ]
+        },
+        {
+          "jdbcExecuteNanos": 1084625,
+          "sql": "select p1_0.id,p1_0.name,p1_0.price,p1_0.stock_quantity,b1_0.id,b1_0.name,count(pl1_0.id),p1_0.created_at,p1_0.updated_at,p1_0.deleted_at from product p1_0 join brand b1_0 on b1_0.id=p1_0.brand_id left join `like` pl1_0 on pl1_0.product_id=p1_0.id where p1_0.deleted_at is null and b1_0.deleted_at is null and b1_0.id=? group by p1_0.id,p1_0.name,p1_0.price,p1_0.stock_quantity,b1_0.id,b1_0.name,p1_0.created_at,p1_0.updated_at,p1_0.deleted_at order by p1_0.price,p1_0.id desc limit ?,?",
+          "parameters": [
+            1007,
+            0,
+            20
+          ],
+          "explainAnalyze": [
+            {
+              "EXPLAIN": "-> Limit: 20 row(s)  (actual time=0.465..0.465 rows=20 loops=1)\n    -> Sort: p1_0.price, p1_0.id DESC, limit input to 20 row(s) per chunk  (actual time=0.464..0.465 rows=20 loops=1)\n        -> Table scan on <temporary>  (actual time=0.448..0.454 rows=99 loops=1)\n            -> Aggregate using temporary table  (actual time=0.447..0.447 rows=99 loops=1)\n                -> Nested loop left join  (cost=113 rows=531) (actual time=0.0137..0.217 rows=459 loops=1)\n                    -> Index lookup on p1_0 using idx_product_brand_deleted (brand_id=1007, deleted_at=NULL), with index condition: (p1_0.deleted_at is null)  (cost=34.6 rows=99) (actual time=0.00962..0.0597 rows=99 loops=1)\n                    -> Covering index lookup on pl1_0 using idx_like_product (product_id=p1_0.id)  (cost=0.258 rows=5.36) (actual time=0.00112..0.00139 rows=4.54 loops=99)\n"
+            }
+          ],
+          "explain": [
+            {
+              "id": 1,
+              "select_type": "SIMPLE",
+              "table": "b1_0",
+              "type": "const",
+              "possible_keys": "PRIMARY",
+              "key": "PRIMARY",
+              "key_len": "8",
+              "ref": "const",
+              "rows": 1,
+              "filtered": 100,
+              "Extra": "Using temporary; Using filesort"
+            },
+            {
+              "id": 1,
+              "select_type": "SIMPLE",
+              "table": "p1_0",
+              "type": "ref",
+              "possible_keys": "idx_product_brand_deleted,idx_product_latest,idx_product_price",
+              "key": "idx_product_brand_deleted",
+              "key_len": "17",
+              "ref": "const,const",
+              "rows": 99,
+              "filtered": 100,
+              "Extra": "Using index condition"
+            },
+            {
+              "id": 1,
+              "select_type": "SIMPLE",
+              "table": "pl1_0",
+              "type": "ref",
+              "possible_keys": "idx_like_product",
+              "key": "idx_like_product",
+              "key_len": "8",
+              "ref": "w4_product_baseline.p1_0.id",
+              "rows": 5,
+              "filtered": 100,
+              "Extra": "Using index"
+            }
+          ]
+        }
+      ],
+      "physicalIndexes": [
+        {
+          "TABLE_NAME": "brand",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_product",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "user_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "uq_like_user_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "user_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "uq_like_user_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "user_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "idx_order_item_product",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "uq_order_item_order_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "order_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "uq_order_item_order_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_deleted",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "brand_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_deleted",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "deleted_at",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_latest",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "deleted_at",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_latest",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_latest",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "deleted_at",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "price",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "user",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        }
+      ],
+      "limitations": [
+        "One local process; sequential requests, no concurrent load",
+        "Contract checks and five warmups precede timing; this is not a cold-disk measurement",
+        "HTTP timing includes local client and JSON decoding; assertions and EXPLAIN are outside timing",
+        "JDBC executeNanos excludes subsequent ResultSet consumption; it is not complete query cost",
+        "Nearest-rank percentiles from 20 samples; no fixed speedup or latency pass threshold",
+        "Dedicated Redis is only application infrastructure here; this does not test cache hit/miss"
+      ]
+    },
+    {
+      "artifact": "product-query-before-candidate-r1.json",
+      "measuredAt": "2026-10-15T12:18:10.733154Z",
+      "stage": "before-candidate-r1; actual DB-only HTTP path, no cache",
+      "sourceSha256": "15c250d8f88881f93e920eff255d30c286e79c851d415d5ce8438a2822250ebc",
+      "seedSha256": "912f7bbcfcce8ce19e47ead734a658a6ace998999c495cacf20fac65f0106197",
+      "javaVersion": "21.0.10",
+      "mysqlVersion": "8.0.46",
+      "seed": "fixtures/week4/product-query-baseline.sql (v1)",
+      "schemaScripts": [
+        "001-brand.sql",
+        "002-user.sql",
+        "003-product.sql",
+        "004-like.sql",
+        "005-order.sql",
+        "006-order-item.sql"
+      ],
+      "preparation": "Manual DDL, seed v1, ANALYZE TABLE brand/product/like/user, contract checks, warmups",
+      "seedStatistics": {
+        "zeroLikeProducts": 999,
+        "visibleProducts": 9812,
+        "likes": 46955,
+        "deletedProducts": 188,
+        "products": 10000,
+        "brands": 100,
+        "soldOutProducts": 588,
+        "priceSum": 509500000,
+        "popularProducts": 10
+      },
+      "request": "/api/v1/products?brandId=1007&sort=price_asc&page=0&size=20",
+      "warmupCount": 5,
+      "sampleCount": 20,
+      "rawHttpNanos": [
+        5009000,
+        4498791,
+        4492208,
+        5282875,
+        4336500,
+        4548667,
+        5485042,
+        4800167,
+        4464083,
+        5241084,
+        5787875,
+        5730792,
+        5771667,
+        4976667,
+        4384459,
+        4238333,
+        5006916,
+        4553834,
+        4318583,
+        4864208
+      ],
+      "httpLatencyMillis": {
+        "min": 4.238333,
+        "p50": 4.800167,
+        "p95": 5.771667,
+        "max": 5.787875
+      },
+      "sqlCountsPerRequest": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "response": {
+        "meta": {
+          "result": "SUCCESS"
+        },
+        "data": {
+          "items": [
+            {
+              "productId": 109407,
+              "name": "W4 product 09407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 108407,
+              "name": "W4 product 08407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 107407,
+              "name": "W4 product 07407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 106407,
+              "name": "W4 product 06407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 105407,
+              "name": "W4 product 05407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 103407,
+              "name": "W4 product 03407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 102407,
+              "name": "W4 product 02407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 101407,
+              "name": "W4 product 01407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 100407,
+              "name": "W4 product 00407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 109707,
+              "name": "W4 product 09707",
+              "price": 16900,
+              "stockQuantity": 0,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 108707,
+              "name": "W4 product 08707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 107707,
+              "name": "W4 product 07707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 106707,
+              "name": "W4 product 06707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 105707,
+              "name": "W4 product 05707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 104707,
+              "name": "W4 product 04707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 103707,
+              "name": "W4 product 03707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 102707,
+              "name": "W4 product 02707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 101707,
+              "name": "W4 product 01707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 100707,
+              "name": "W4 product 00707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 109007,
+              "name": "W4 product 09007",
+              "price": 26900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 7
+            }
+          ],
+          "page": 0,
+          "size": 20,
+          "totalElements": 99,
+          "totalPages": 5
+        }
+      },
+      "plansAfterTiming": [
+        {
+          "jdbcExecuteNanos": 451958,
+          "sql": "select count(p1_0.id) from product p1_0 join brand b1_0 on b1_0.id=p1_0.brand_id where p1_0.deleted_at is null and b1_0.deleted_at is null and b1_0.id=?",
+          "parameters": [
+            1007
+          ],
+          "explainAnalyze": [
+            {
+              "EXPLAIN": "-> Aggregate: count(p1_0.id)  (cost=20.1 rows=1) (actual time=0.0191..0.0192 rows=1 loops=1)\n    -> Filter: (p1_0.deleted_at is null)  (cost=10.2 rows=99) (actual time=0.00363..0.0163 rows=99 loops=1)\n        -> Covering index lookup on p1_0 using idx_product_brand_deleted (brand_id=1007, deleted_at=NULL)  (cost=10.2 rows=99) (actual time=0.00325..0.0122 rows=99 loops=1)\n"
+            }
+          ],
+          "explain": [
+            {
+              "id": 1,
+              "select_type": "SIMPLE",
+              "table": "b1_0",
+              "type": "const",
+              "possible_keys": "PRIMARY",
+              "key": "PRIMARY",
+              "key_len": "8",
+              "ref": "const",
+              "rows": 1,
+              "filtered": 100
+            },
+            {
+              "id": 1,
+              "select_type": "SIMPLE",
+              "table": "p1_0",
+              "type": "ref",
+              "possible_keys": "idx_product_brand_deleted,idx_product_latest,idx_product_price,idx_product_brand_price",
+              "key": "idx_product_brand_deleted",
+              "key_len": "17",
+              "ref": "const,const",
+              "rows": 99,
+              "filtered": 100,
+              "Extra": "Using where; Using index"
+            }
+          ]
+        },
+        {
+          "jdbcExecuteNanos": 968667,
+          "sql": "select p1_0.id,p1_0.name,p1_0.price,p1_0.stock_quantity,b1_0.id,b1_0.name,count(pl1_0.id),p1_0.created_at,p1_0.updated_at,p1_0.deleted_at from product p1_0 join brand b1_0 on b1_0.id=p1_0.brand_id left join `like` pl1_0 on pl1_0.product_id=p1_0.id where p1_0.deleted_at is null and b1_0.deleted_at is null and b1_0.id=? group by p1_0.id,p1_0.name,p1_0.price,p1_0.stock_quantity,b1_0.id,b1_0.name,p1_0.created_at,p1_0.updated_at,p1_0.deleted_at order by p1_0.price,p1_0.id desc limit ?,?",
+          "parameters": [
+            1007,
+            0,
+            20
+          ],
+          "explainAnalyze": [
+            {
+              "EXPLAIN": "-> Limit: 20 row(s)  (actual time=0.477..0.478 rows=20 loops=1)\n    -> Sort: p1_0.price, p1_0.id DESC, limit input to 20 row(s) per chunk  (actual time=0.477..0.477 rows=20 loops=1)\n        -> Table scan on <temporary>  (actual time=0.459..0.465 rows=99 loops=1)\n            -> Aggregate using temporary table  (actual time=0.458..0.458 rows=99 loops=1)\n                -> Nested loop left join  (cost=113 rows=531) (actual time=0.0124..0.217 rows=459 loops=1)\n                    -> Index lookup on p1_0 using idx_product_brand_deleted (brand_id=1007, deleted_at=NULL), with index condition: (p1_0.deleted_at is null)  (cost=34.6 rows=99) (actual time=0.009..0.0594 rows=99 loops=1)\n                    -> Covering index lookup on pl1_0 using idx_like_product (product_id=p1_0.id)  (cost=0.258 rows=5.36) (actual time=0.0011..0.00138 rows=4.54 loops=99)\n"
+            }
+          ],
+          "explain": [
+            {
+              "id": 1,
+              "select_type": "SIMPLE",
+              "table": "b1_0",
+              "type": "const",
+              "possible_keys": "PRIMARY",
+              "key": "PRIMARY",
+              "key_len": "8",
+              "ref": "const",
+              "rows": 1,
+              "filtered": 100,
+              "Extra": "Using temporary; Using filesort"
+            },
+            {
+              "id": 1,
+              "select_type": "SIMPLE",
+              "table": "p1_0",
+              "type": "ref",
+              "possible_keys": "idx_product_brand_deleted,idx_product_latest,idx_product_price,idx_product_brand_price",
+              "key": "idx_product_brand_deleted",
+              "key_len": "17",
+              "ref": "const,const",
+              "rows": 99,
+              "filtered": 100,
+              "Extra": "Using index condition"
+            },
+            {
+              "id": 1,
+              "select_type": "SIMPLE",
+              "table": "pl1_0",
+              "type": "ref",
+              "possible_keys": "idx_like_product",
+              "key": "idx_like_product",
+              "key_len": "8",
+              "ref": "w4_product_baseline.p1_0.id",
+              "rows": 5,
+              "filtered": 100,
+              "Extra": "Using index"
+            }
+          ]
+        }
+      ],
+      "physicalIndexes": [
+        {
+          "TABLE_NAME": "brand",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_product",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "user_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "uq_like_user_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "user_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "uq_like_user_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "user_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "idx_order_item_product",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "uq_order_item_order_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "order_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "uq_order_item_order_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_deleted",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "brand_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_deleted",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "deleted_at",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "brand_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "deleted_at",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "price",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 4,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_latest",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "deleted_at",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_latest",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_latest",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "deleted_at",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "price",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "user",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        }
+      ],
+      "limitations": [
+        "One local process; sequential requests, no concurrent load",
+        "Contract checks and five warmups precede timing; this is not a cold-disk measurement",
+        "HTTP timing includes local client and JSON decoding; assertions and EXPLAIN are outside timing",
+        "JDBC executeNanos excludes subsequent ResultSet consumption; it is not complete query cost",
+        "Nearest-rank percentiles from 20 samples; no fixed speedup or latency pass threshold",
+        "Dedicated Redis is only application infrastructure here; this does not test cache hit/miss"
+      ]
+    },
+    {
+      "artifact": "product-query-before-existing-r2.json",
+      "measuredAt": "2026-10-15T12:18:10.863627Z",
+      "stage": "before-existing-r2; actual DB-only HTTP path, no cache",
+      "sourceSha256": "15c250d8f88881f93e920eff255d30c286e79c851d415d5ce8438a2822250ebc",
+      "seedSha256": "912f7bbcfcce8ce19e47ead734a658a6ace998999c495cacf20fac65f0106197",
+      "javaVersion": "21.0.10",
+      "mysqlVersion": "8.0.46",
+      "seed": "fixtures/week4/product-query-baseline.sql (v1)",
+      "schemaScripts": [
+        "001-brand.sql",
+        "002-user.sql",
+        "003-product.sql",
+        "004-like.sql",
+        "005-order.sql",
+        "006-order-item.sql"
+      ],
+      "preparation": "Manual DDL, seed v1, ANALYZE TABLE brand/product/like/user, contract checks, warmups",
+      "seedStatistics": {
+        "zeroLikeProducts": 999,
+        "visibleProducts": 9812,
+        "likes": 46955,
+        "deletedProducts": 188,
+        "products": 10000,
+        "brands": 100,
+        "soldOutProducts": 588,
+        "priceSum": 509500000,
+        "popularProducts": 10
+      },
+      "request": "/api/v1/products?brandId=1007&sort=price_asc&page=0&size=20",
+      "warmupCount": 5,
+      "sampleCount": 20,
+      "rawHttpNanos": [
+        4616708,
+        5281458,
+        4582833,
+        4513959,
+        4649959,
+        4532250,
+        4015875,
+        4234792,
+        4275541,
+        4472333,
+        4299750,
+        4309250,
+        4294958,
+        4188458,
+        4046709,
+        4036375,
+        4334541,
+        4180750,
+        4761250,
+        4060167
+      ],
+      "httpLatencyMillis": {
+        "min": 4.015875,
+        "p50": 4.29975,
+        "p95": 4.76125,
+        "max": 5.281458
+      },
+      "sqlCountsPerRequest": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "response": {
+        "meta": {
+          "result": "SUCCESS"
+        },
+        "data": {
+          "items": [
+            {
+              "productId": 109407,
+              "name": "W4 product 09407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 108407,
+              "name": "W4 product 08407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 107407,
+              "name": "W4 product 07407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 106407,
+              "name": "W4 product 06407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 105407,
+              "name": "W4 product 05407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 103407,
+              "name": "W4 product 03407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 102407,
+              "name": "W4 product 02407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 101407,
+              "name": "W4 product 01407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 100407,
+              "name": "W4 product 00407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 109707,
+              "name": "W4 product 09707",
+              "price": 16900,
+              "stockQuantity": 0,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 108707,
+              "name": "W4 product 08707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 107707,
+              "name": "W4 product 07707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 106707,
+              "name": "W4 product 06707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 105707,
+              "name": "W4 product 05707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 104707,
+              "name": "W4 product 04707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 103707,
+              "name": "W4 product 03707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 102707,
+              "name": "W4 product 02707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 101707,
+              "name": "W4 product 01707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 100707,
+              "name": "W4 product 00707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 109007,
+              "name": "W4 product 09007",
+              "price": 26900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 7
+            }
+          ],
+          "page": 0,
+          "size": 20,
+          "totalElements": 99,
+          "totalPages": 5
+        }
+      },
+      "plansAfterTiming": [
+        {
+          "jdbcExecuteNanos": 478959,
+          "sql": "select count(p1_0.id) from product p1_0 join brand b1_0 on b1_0.id=p1_0.brand_id where p1_0.deleted_at is null and b1_0.deleted_at is null and b1_0.id=?",
+          "parameters": [
+            1007
+          ],
+          "explainAnalyze": [
+            {
+              "EXPLAIN": "-> Aggregate: count(p1_0.id)  (cost=20.1 rows=1) (actual time=0.0192..0.0192 rows=1 loops=1)\n    -> Filter: (p1_0.deleted_at is null)  (cost=10.2 rows=99) (actual time=0.00379..0.0162 rows=99 loops=1)\n        -> Covering index lookup on p1_0 using idx_product_brand_deleted (brand_id=1007, deleted_at=NULL)  (cost=10.2 rows=99) (actual time=0.00342..0.0127 rows=99 loops=1)\n"
+            }
+          ],
+          "explain": [
+            {
+              "id": 1,
+              "select_type": "SIMPLE",
+              "table": "b1_0",
+              "type": "const",
+              "possible_keys": "PRIMARY",
+              "key": "PRIMARY",
+              "key_len": "8",
+              "ref": "const",
+              "rows": 1,
+              "filtered": 100
+            },
+            {
+              "id": 1,
+              "select_type": "SIMPLE",
+              "table": "p1_0",
+              "type": "ref",
+              "possible_keys": "idx_product_brand_deleted,idx_product_latest,idx_product_price",
+              "key": "idx_product_brand_deleted",
+              "key_len": "17",
+              "ref": "const,const",
+              "rows": 99,
+              "filtered": 100,
+              "Extra": "Using where; Using index"
+            }
+          ]
+        },
+        {
+          "jdbcExecuteNanos": 923500,
+          "sql": "select p1_0.id,p1_0.name,p1_0.price,p1_0.stock_quantity,b1_0.id,b1_0.name,count(pl1_0.id),p1_0.created_at,p1_0.updated_at,p1_0.deleted_at from product p1_0 join brand b1_0 on b1_0.id=p1_0.brand_id left join `like` pl1_0 on pl1_0.product_id=p1_0.id where p1_0.deleted_at is null and b1_0.deleted_at is null and b1_0.id=? group by p1_0.id,p1_0.name,p1_0.price,p1_0.stock_quantity,b1_0.id,b1_0.name,p1_0.created_at,p1_0.updated_at,p1_0.deleted_at order by p1_0.price,p1_0.id desc limit ?,?",
+          "parameters": [
+            1007,
+            0,
+            20
+          ],
+          "explainAnalyze": [
+            {
+              "EXPLAIN": "-> Limit: 20 row(s)  (actual time=0.487..0.488 rows=20 loops=1)\n    -> Sort: p1_0.price, p1_0.id DESC, limit input to 20 row(s) per chunk  (actual time=0.487..0.488 rows=20 loops=1)\n        -> Table scan on <temporary>  (actual time=0.47..0.476 rows=99 loops=1)\n            -> Aggregate using temporary table  (actual time=0.469..0.469 rows=99 loops=1)\n                -> Nested loop left join  (cost=113 rows=531) (actual time=0.0158..0.224 rows=459 loops=1)\n                    -> Index lookup on p1_0 using idx_product_brand_deleted (brand_id=1007, deleted_at=NULL), with index condition: (p1_0.deleted_at is null)  (cost=34.6 rows=99) (actual time=0.0114..0.062 rows=99 loops=1)\n                    -> Covering index lookup on pl1_0 using idx_like_product (product_id=p1_0.id)  (cost=0.258 rows=5.36) (actual time=0.00117..0.00145 rows=4.54 loops=99)\n"
+            }
+          ],
+          "explain": [
+            {
+              "id": 1,
+              "select_type": "SIMPLE",
+              "table": "b1_0",
+              "type": "const",
+              "possible_keys": "PRIMARY",
+              "key": "PRIMARY",
+              "key_len": "8",
+              "ref": "const",
+              "rows": 1,
+              "filtered": 100,
+              "Extra": "Using temporary; Using filesort"
+            },
+            {
+              "id": 1,
+              "select_type": "SIMPLE",
+              "table": "p1_0",
+              "type": "ref",
+              "possible_keys": "idx_product_brand_deleted,idx_product_latest,idx_product_price",
+              "key": "idx_product_brand_deleted",
+              "key_len": "17",
+              "ref": "const,const",
+              "rows": 99,
+              "filtered": 100,
+              "Extra": "Using index condition"
+            },
+            {
+              "id": 1,
+              "select_type": "SIMPLE",
+              "table": "pl1_0",
+              "type": "ref",
+              "possible_keys": "idx_like_product",
+              "key": "idx_like_product",
+              "key_len": "8",
+              "ref": "w4_product_baseline.p1_0.id",
+              "rows": 5,
+              "filtered": 100,
+              "Extra": "Using index"
+            }
+          ]
+        }
+      ],
+      "physicalIndexes": [
+        {
+          "TABLE_NAME": "brand",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_product",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "user_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "uq_like_user_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "user_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "uq_like_user_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "user_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "idx_order_item_product",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "uq_order_item_order_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "order_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "uq_order_item_order_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_deleted",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "brand_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_deleted",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "deleted_at",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_latest",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "deleted_at",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_latest",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_latest",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "deleted_at",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "price",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "user",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        }
+      ],
+      "limitations": [
+        "One local process; sequential requests, no concurrent load",
+        "Contract checks and five warmups precede timing; this is not a cold-disk measurement",
+        "HTTP timing includes local client and JSON decoding; assertions and EXPLAIN are outside timing",
+        "JDBC executeNanos excludes subsequent ResultSet consumption; it is not complete query cost",
+        "Nearest-rank percentiles from 20 samples; no fixed speedup or latency pass threshold",
+        "Dedicated Redis is only application infrastructure here; this does not test cache hit/miss"
+      ]
+    },
+    {
+      "artifact": "product-query-before-candidate-r2.json",
+      "measuredAt": "2026-10-15T12:18:11.010494Z",
+      "stage": "before-candidate-r2; actual DB-only HTTP path, no cache",
+      "sourceSha256": "15c250d8f88881f93e920eff255d30c286e79c851d415d5ce8438a2822250ebc",
+      "seedSha256": "912f7bbcfcce8ce19e47ead734a658a6ace998999c495cacf20fac65f0106197",
+      "javaVersion": "21.0.10",
+      "mysqlVersion": "8.0.46",
+      "seed": "fixtures/week4/product-query-baseline.sql (v1)",
+      "schemaScripts": [
+        "001-brand.sql",
+        "002-user.sql",
+        "003-product.sql",
+        "004-like.sql",
+        "005-order.sql",
+        "006-order-item.sql"
+      ],
+      "preparation": "Manual DDL, seed v1, ANALYZE TABLE brand/product/like/user, contract checks, warmups",
+      "seedStatistics": {
+        "zeroLikeProducts": 999,
+        "visibleProducts": 9812,
+        "likes": 46955,
+        "deletedProducts": 188,
+        "products": 10000,
+        "brands": 100,
+        "soldOutProducts": 588,
+        "priceSum": 509500000,
+        "popularProducts": 10
+      },
+      "request": "/api/v1/products?brandId=1007&sort=price_asc&page=0&size=20",
+      "warmupCount": 5,
+      "sampleCount": 20,
+      "rawHttpNanos": [
+        4528833,
+        4087250,
+        4644042,
+        4710459,
+        4251208,
+        4480167,
+        4570125,
+        4293042,
+        4396000,
+        4693708,
+        4467542,
+        3838625,
+        4062125,
+        4267208,
+        4149750,
+        4358250,
+        4196666,
+        4446041,
+        4508542,
+        4669292
+      ],
+      "httpLatencyMillis": {
+        "min": 3.838625,
+        "p50": 4.396,
+        "p95": 4.693708,
+        "max": 4.710459
+      },
+      "sqlCountsPerRequest": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "response": {
+        "meta": {
+          "result": "SUCCESS"
+        },
+        "data": {
+          "items": [
+            {
+              "productId": 109407,
+              "name": "W4 product 09407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 108407,
+              "name": "W4 product 08407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 107407,
+              "name": "W4 product 07407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 106407,
+              "name": "W4 product 06407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 105407,
+              "name": "W4 product 05407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 103407,
+              "name": "W4 product 03407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 102407,
+              "name": "W4 product 02407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 101407,
+              "name": "W4 product 01407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 100407,
+              "name": "W4 product 00407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 109707,
+              "name": "W4 product 09707",
+              "price": 16900,
+              "stockQuantity": 0,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 108707,
+              "name": "W4 product 08707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 107707,
+              "name": "W4 product 07707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 106707,
+              "name": "W4 product 06707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 105707,
+              "name": "W4 product 05707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 104707,
+              "name": "W4 product 04707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 103707,
+              "name": "W4 product 03707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 102707,
+              "name": "W4 product 02707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 101707,
+              "name": "W4 product 01707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 100707,
+              "name": "W4 product 00707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 109007,
+              "name": "W4 product 09007",
+              "price": 26900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 7
+            }
+          ],
+          "page": 0,
+          "size": 20,
+          "totalElements": 99,
+          "totalPages": 5
+        }
+      },
+      "plansAfterTiming": [
+        {
+          "jdbcExecuteNanos": 406875,
+          "sql": "select count(p1_0.id) from product p1_0 join brand b1_0 on b1_0.id=p1_0.brand_id where p1_0.deleted_at is null and b1_0.deleted_at is null and b1_0.id=?",
+          "parameters": [
+            1007
+          ],
+          "explainAnalyze": [
+            {
+              "EXPLAIN": "-> Aggregate: count(p1_0.id)  (cost=20.1 rows=1) (actual time=0.0169..0.0169 rows=1 loops=1)\n    -> Filter: (p1_0.deleted_at is null)  (cost=10.2 rows=99) (actual time=0.00292..0.0144 rows=99 loops=1)\n        -> Covering index lookup on p1_0 using idx_product_brand_deleted (brand_id=1007, deleted_at=NULL)  (cost=10.2 rows=99) (actual time=0.00262..0.0112 rows=99 loops=1)\n"
+            }
+          ],
+          "explain": [
+            {
+              "id": 1,
+              "select_type": "SIMPLE",
+              "table": "b1_0",
+              "type": "const",
+              "possible_keys": "PRIMARY",
+              "key": "PRIMARY",
+              "key_len": "8",
+              "ref": "const",
+              "rows": 1,
+              "filtered": 100
+            },
+            {
+              "id": 1,
+              "select_type": "SIMPLE",
+              "table": "p1_0",
+              "type": "ref",
+              "possible_keys": "idx_product_brand_deleted,idx_product_latest,idx_product_price,idx_product_brand_price",
+              "key": "idx_product_brand_deleted",
+              "key_len": "17",
+              "ref": "const,const",
+              "rows": 99,
+              "filtered": 100,
+              "Extra": "Using where; Using index"
+            }
+          ]
+        },
+        {
+          "jdbcExecuteNanos": 898292,
+          "sql": "select p1_0.id,p1_0.name,p1_0.price,p1_0.stock_quantity,b1_0.id,b1_0.name,count(pl1_0.id),p1_0.created_at,p1_0.updated_at,p1_0.deleted_at from product p1_0 join brand b1_0 on b1_0.id=p1_0.brand_id left join `like` pl1_0 on pl1_0.product_id=p1_0.id where p1_0.deleted_at is null and b1_0.deleted_at is null and b1_0.id=? group by p1_0.id,p1_0.name,p1_0.price,p1_0.stock_quantity,b1_0.id,b1_0.name,p1_0.created_at,p1_0.updated_at,p1_0.deleted_at order by p1_0.price,p1_0.id desc limit ?,?",
+          "parameters": [
+            1007,
+            0,
+            20
+          ],
+          "explainAnalyze": [
+            {
+              "EXPLAIN": "-> Limit: 20 row(s)  (actual time=0.448..0.449 rows=20 loops=1)\n    -> Sort: p1_0.price, p1_0.id DESC, limit input to 20 row(s) per chunk  (actual time=0.448..0.448 rows=20 loops=1)\n        -> Table scan on <temporary>  (actual time=0.431..0.438 rows=99 loops=1)\n            -> Aggregate using temporary table  (actual time=0.43..0.43 rows=99 loops=1)\n                -> Nested loop left join  (cost=120 rows=531) (actual time=0.011..0.201 rows=459 loops=1)\n                    -> Index lookup on p1_0 using idx_product_brand_deleted (brand_id=1007, deleted_at=NULL), with index condition: (p1_0.deleted_at is null)  (cost=34.6 rows=99) (actual time=0.0085..0.0615 rows=99 loops=1)\n                    -> Covering index lookup on pl1_0 using idx_like_product (product_id=p1_0.id)  (cost=0.335 rows=5.36) (actual time=887e-6..0.00121 rows=4.54 loops=99)\n"
+            }
+          ],
+          "explain": [
+            {
+              "id": 1,
+              "select_type": "SIMPLE",
+              "table": "b1_0",
+              "type": "const",
+              "possible_keys": "PRIMARY",
+              "key": "PRIMARY",
+              "key_len": "8",
+              "ref": "const",
+              "rows": 1,
+              "filtered": 100,
+              "Extra": "Using temporary; Using filesort"
+            },
+            {
+              "id": 1,
+              "select_type": "SIMPLE",
+              "table": "p1_0",
+              "type": "ref",
+              "possible_keys": "idx_product_brand_deleted,idx_product_latest,idx_product_price,idx_product_brand_price",
+              "key": "idx_product_brand_deleted",
+              "key_len": "17",
+              "ref": "const,const",
+              "rows": 99,
+              "filtered": 100,
+              "Extra": "Using index condition"
+            },
+            {
+              "id": 1,
+              "select_type": "SIMPLE",
+              "table": "pl1_0",
+              "type": "ref",
+              "possible_keys": "idx_like_product",
+              "key": "idx_like_product",
+              "key_len": "8",
+              "ref": "w4_product_baseline.p1_0.id",
+              "rows": 5,
+              "filtered": 100,
+              "Extra": "Using index"
+            }
+          ]
+        }
+      ],
+      "physicalIndexes": [
+        {
+          "TABLE_NAME": "brand",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_product",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "user_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "uq_like_user_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "user_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "uq_like_user_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "user_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "idx_order_item_product",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "uq_order_item_order_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "order_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "uq_order_item_order_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_deleted",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "brand_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_deleted",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "deleted_at",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "brand_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "deleted_at",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "price",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 4,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_latest",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "deleted_at",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_latest",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_latest",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "deleted_at",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "price",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "user",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        }
+      ],
+      "limitations": [
+        "One local process; sequential requests, no concurrent load",
+        "Contract checks and five warmups precede timing; this is not a cold-disk measurement",
+        "HTTP timing includes local client and JSON decoding; assertions and EXPLAIN are outside timing",
+        "JDBC executeNanos excludes subsequent ResultSet consumption; it is not complete query cost",
+        "Nearest-rank percentiles from 20 samples; no fixed speedup or latency pass threshold",
+        "Dedicated Redis is only application infrastructure here; this does not test cache hit/miss"
+      ]
+    },
+    {
+      "artifact": "product-query-after-existing-r1.json",
+      "measuredAt": "2026-10-15T12:19:13.208679Z",
+      "stage": "after-existing-r1; actual DB-only HTTP path, no cache",
+      "sourceSha256": "f46f73f1ef85afaec7b736be39581ca2d28c14ac69108cde82d7ec20bf607ba8",
+      "seedSha256": "912f7bbcfcce8ce19e47ead734a658a6ace998999c495cacf20fac65f0106197",
+      "javaVersion": "21.0.10",
+      "mysqlVersion": "8.0.46",
+      "seed": "fixtures/week4/product-query-baseline.sql (v1)",
+      "schemaScripts": [
+        "001-brand.sql",
+        "002-user.sql",
+        "003-product.sql",
+        "004-like.sql",
+        "005-order.sql",
+        "006-order-item.sql"
+      ],
+      "preparation": "Manual DDL, seed v1, ANALYZE TABLE brand/product/like/user, contract checks, warmups",
+      "seedStatistics": {
+        "likes": 46955,
+        "deletedProducts": 188,
+        "products": 10000,
+        "brands": 100,
+        "soldOutProducts": 588,
+        "priceSum": 509500000,
+        "popularProducts": 10,
+        "zeroLikeProducts": 999,
+        "visibleProducts": 9812
+      },
+      "request": "/api/v1/products?brandId=1007&sort=price_asc&page=0&size=20",
+      "warmupCount": 5,
+      "sampleCount": 20,
+      "rawHttpNanos": [
+        4643625,
+        5865250,
+        4802667,
+        4818083,
+        5289792,
+        5396375,
+        4978750,
+        5147916,
+        4730750,
+        4715500,
+        4866209,
+        5159084,
+        4979083,
+        4859000,
+        4869375,
+        4476625,
+        4732459,
+        4595084,
+        4794375,
+        4409583
+      ],
+      "httpLatencyMillis": {
+        "min": 4.409583,
+        "p50": 4.818083,
+        "p95": 5.396375,
+        "max": 5.86525
+      },
+      "sqlCountsPerRequest": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "response": {
+        "meta": {
+          "result": "SUCCESS"
+        },
+        "data": {
+          "items": [
+            {
+              "productId": 109407,
+              "name": "W4 product 09407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 108407,
+              "name": "W4 product 08407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 107407,
+              "name": "W4 product 07407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 106407,
+              "name": "W4 product 06407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 105407,
+              "name": "W4 product 05407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 103407,
+              "name": "W4 product 03407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 102407,
+              "name": "W4 product 02407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 101407,
+              "name": "W4 product 01407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 100407,
+              "name": "W4 product 00407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 109707,
+              "name": "W4 product 09707",
+              "price": 16900,
+              "stockQuantity": 0,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 108707,
+              "name": "W4 product 08707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 107707,
+              "name": "W4 product 07707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 106707,
+              "name": "W4 product 06707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 105707,
+              "name": "W4 product 05707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 104707,
+              "name": "W4 product 04707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 103707,
+              "name": "W4 product 03707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 102707,
+              "name": "W4 product 02707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 101707,
+              "name": "W4 product 01707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 100707,
+              "name": "W4 product 00707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 109007,
+              "name": "W4 product 09007",
+              "price": 26900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 7
+            }
+          ],
+          "page": 0,
+          "size": 20,
+          "totalElements": 99,
+          "totalPages": 5
+        }
+      },
+      "plansAfterTiming": [
+        {
+          "explainAnalyze": [
+            {
+              "EXPLAIN": "-> Aggregate: count(p1_0.id)  (cost=20.1 rows=1) (actual time=0.0159..0.0159 rows=1 loops=1)\n    -> Filter: (p1_0.deleted_at is null)  (cost=10.2 rows=99) (actual time=0.00258..0.0135 rows=99 loops=1)\n        -> Covering index lookup on p1_0 using idx_product_brand_deleted (brand_id=1007, deleted_at=NULL)  (cost=10.2 rows=99) (actual time=0.00221..0.0104 rows=99 loops=1)\n"
+            }
+          ],
+          "explain": [
+            {
+              "id": 1,
+              "select_type": "SIMPLE",
+              "table": "b1_0",
+              "type": "const",
+              "possible_keys": "PRIMARY",
+              "key": "PRIMARY",
+              "key_len": "8",
+              "ref": "const",
+              "rows": 1,
+              "filtered": 100
+            },
+            {
+              "id": 1,
+              "select_type": "SIMPLE",
+              "table": "p1_0",
+              "type": "ref",
+              "possible_keys": "idx_product_brand_deleted,idx_product_latest,idx_product_price",
+              "key": "idx_product_brand_deleted",
+              "key_len": "17",
+              "ref": "const,const",
+              "rows": 99,
+              "filtered": 100,
+              "Extra": "Using where; Using index"
+            }
+          ],
+          "jdbcExecuteNanos": 439166,
+          "sql": "select count(p1_0.id) from product p1_0 join brand b1_0 on b1_0.id=p1_0.brand_id where p1_0.deleted_at is null and b1_0.deleted_at is null and b1_0.id=?",
+          "parameters": [
+            1007
+          ]
+        },
+        {
+          "explainAnalyze": [
+            {
+              "EXPLAIN": "-> Limit: 20 row(s)  (cost=34.6 rows=20) (actual time=0.0583..0.0595 rows=20 loops=1)\n    -> Sort: p1_0.price, p1_0.id DESC, limit input to 20 row(s) per chunk  (cost=34.6 rows=99) (actual time=0.0579..0.0585 rows=20 loops=1)\n        -> Index lookup on p1_0 using idx_product_brand_deleted (brand_id=1007, deleted_at=NULL), with index condition: (p1_0.deleted_at is null)  (cost=34.6 rows=99) (actual time=0.00788..0.0484 rows=99 loops=1)\n-> Select #2 (subquery in projection; dependent)\n    -> Aggregate: count(pl1_0.id)  (cost=1.25 rows=1) (actual time=0.00139..0.0014 rows=1 loops=20)\n        -> Covering index lookup on pl1_0 using idx_like_product (product_id=p1_0.id)  (cost=0.753 rows=5.01) (actual time=0.00109..0.00124 rows=2.8 loops=20)\n"
+            }
+          ],
+          "explain": [
+            {
+              "id": 1,
+              "select_type": "PRIMARY",
+              "table": "b1_0",
+              "type": "const",
+              "possible_keys": "PRIMARY",
+              "key": "PRIMARY",
+              "key_len": "8",
+              "ref": "const",
+              "rows": 1,
+              "filtered": 100,
+              "Extra": "Using filesort"
+            },
+            {
+              "id": 1,
+              "select_type": "PRIMARY",
+              "table": "p1_0",
+              "type": "ref",
+              "possible_keys": "idx_product_brand_deleted,idx_product_latest,idx_product_price",
+              "key": "idx_product_brand_deleted",
+              "key_len": "17",
+              "ref": "const,const",
+              "rows": 99,
+              "filtered": 100,
+              "Extra": "Using index condition"
+            },
+            {
+              "id": 2,
+              "select_type": "DEPENDENT SUBQUERY",
+              "table": "pl1_0",
+              "type": "ref",
+              "possible_keys": "idx_like_product",
+              "key": "idx_like_product",
+              "key_len": "8",
+              "ref": "w4_product_baseline.p1_0.id",
+              "rows": 5,
+              "filtered": 100,
+              "Extra": "Using index"
+            }
+          ],
+          "jdbcExecuteNanos": 526625,
+          "sql": "select p1_0.id,p1_0.name,p1_0.price,p1_0.stock_quantity,b1_0.id,b1_0.name,(select count(pl1_0.id) from `like` pl1_0 where pl1_0.product_id=p1_0.id),p1_0.created_at,p1_0.updated_at,p1_0.deleted_at from product p1_0 join brand b1_0 on b1_0.id=p1_0.brand_id where p1_0.deleted_at is null and b1_0.deleted_at is null and b1_0.id=? order by p1_0.price,p1_0.id desc limit ?,?",
+          "parameters": [
+            1007,
+            0,
+            20
+          ]
+        }
+      ],
+      "physicalIndexes": [
+        {
+          "TABLE_NAME": "brand",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_product",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "user_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "uq_like_user_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "user_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "uq_like_user_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "user_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "idx_order_item_product",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "uq_order_item_order_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "order_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "uq_order_item_order_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_deleted",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "brand_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_deleted",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "deleted_at",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_latest",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "deleted_at",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_latest",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_latest",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "deleted_at",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "price",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "user",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        }
+      ],
+      "limitations": [
+        "One local process; sequential requests, no concurrent load",
+        "Contract checks and five warmups precede timing; this is not a cold-disk measurement",
+        "HTTP timing includes local client and JSON decoding; assertions and EXPLAIN are outside timing",
+        "JDBC executeNanos excludes subsequent ResultSet consumption; it is not complete query cost",
+        "Nearest-rank percentiles from 20 samples; no fixed speedup or latency pass threshold",
+        "Dedicated Redis is only application infrastructure here; this does not test cache hit/miss"
+      ]
+    },
+    {
+      "artifact": "product-query-after-candidate-r1.json",
+      "measuredAt": "2026-10-15T12:19:13.375270Z",
+      "stage": "after-candidate-r1; actual DB-only HTTP path, no cache",
+      "sourceSha256": "f46f73f1ef85afaec7b736be39581ca2d28c14ac69108cde82d7ec20bf607ba8",
+      "seedSha256": "912f7bbcfcce8ce19e47ead734a658a6ace998999c495cacf20fac65f0106197",
+      "javaVersion": "21.0.10",
+      "mysqlVersion": "8.0.46",
+      "seed": "fixtures/week4/product-query-baseline.sql (v1)",
+      "schemaScripts": [
+        "001-brand.sql",
+        "002-user.sql",
+        "003-product.sql",
+        "004-like.sql",
+        "005-order.sql",
+        "006-order-item.sql"
+      ],
+      "preparation": "Manual DDL, seed v1, ANALYZE TABLE brand/product/like/user, contract checks, warmups",
+      "seedStatistics": {
+        "likes": 46955,
+        "deletedProducts": 188,
+        "products": 10000,
+        "brands": 100,
+        "soldOutProducts": 588,
+        "priceSum": 509500000,
+        "popularProducts": 10,
+        "zeroLikeProducts": 999,
+        "visibleProducts": 9812
+      },
+      "request": "/api/v1/products?brandId=1007&sort=price_asc&page=0&size=20",
+      "warmupCount": 5,
+      "sampleCount": 20,
+      "rawHttpNanos": [
+        4541417,
+        4205042,
+        4012625,
+        4522875,
+        4605083,
+        4468167,
+        4528458,
+        4716041,
+        4337000,
+        4496417,
+        3971167,
+        4883833,
+        5116292,
+        4154958,
+        4518125,
+        4555583,
+        4389625,
+        4425292,
+        6522083,
+        4516916
+      ],
+      "httpLatencyMillis": {
+        "min": 3.971167,
+        "p50": 4.516916,
+        "p95": 5.116292,
+        "max": 6.522083
+      },
+      "sqlCountsPerRequest": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "response": {
+        "meta": {
+          "result": "SUCCESS"
+        },
+        "data": {
+          "items": [
+            {
+              "productId": 109407,
+              "name": "W4 product 09407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 108407,
+              "name": "W4 product 08407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 107407,
+              "name": "W4 product 07407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 106407,
+              "name": "W4 product 06407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 105407,
+              "name": "W4 product 05407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 103407,
+              "name": "W4 product 03407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 102407,
+              "name": "W4 product 02407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 101407,
+              "name": "W4 product 01407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 100407,
+              "name": "W4 product 00407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 109707,
+              "name": "W4 product 09707",
+              "price": 16900,
+              "stockQuantity": 0,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 108707,
+              "name": "W4 product 08707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 107707,
+              "name": "W4 product 07707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 106707,
+              "name": "W4 product 06707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 105707,
+              "name": "W4 product 05707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 104707,
+              "name": "W4 product 04707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 103707,
+              "name": "W4 product 03707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 102707,
+              "name": "W4 product 02707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 101707,
+              "name": "W4 product 01707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 100707,
+              "name": "W4 product 00707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 109007,
+              "name": "W4 product 09007",
+              "price": 26900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 7
+            }
+          ],
+          "page": 0,
+          "size": 20,
+          "totalElements": 99,
+          "totalPages": 5
+        }
+      },
+      "plansAfterTiming": [
+        {
+          "explainAnalyze": [
+            {
+              "EXPLAIN": "-> Aggregate: count(p1_0.id)  (cost=20.1 rows=1) (actual time=0.0189..0.0189 rows=1 loops=1)\n    -> Filter: (p1_0.deleted_at is null)  (cost=10.2 rows=99) (actual time=0.00358..0.0168 rows=99 loops=1)\n        -> Covering index lookup on p1_0 using idx_product_brand_deleted (brand_id=1007, deleted_at=NULL)  (cost=10.2 rows=99) (actual time=0.00325..0.0118 rows=99 loops=1)\n"
+            }
+          ],
+          "explain": [
+            {
+              "id": 1,
+              "select_type": "SIMPLE",
+              "table": "b1_0",
+              "type": "const",
+              "possible_keys": "PRIMARY",
+              "key": "PRIMARY",
+              "key_len": "8",
+              "ref": "const",
+              "rows": 1,
+              "filtered": 100
+            },
+            {
+              "id": 1,
+              "select_type": "SIMPLE",
+              "table": "p1_0",
+              "type": "ref",
+              "possible_keys": "idx_product_brand_deleted,idx_product_latest,idx_product_price,idx_product_brand_price",
+              "key": "idx_product_brand_deleted",
+              "key_len": "17",
+              "ref": "const,const",
+              "rows": 99,
+              "filtered": 100,
+              "Extra": "Using where; Using index"
+            }
+          ],
+          "jdbcExecuteNanos": 488167,
+          "sql": "select count(p1_0.id) from product p1_0 join brand b1_0 on b1_0.id=p1_0.brand_id where p1_0.deleted_at is null and b1_0.deleted_at is null and b1_0.id=?",
+          "parameters": [
+            1007
+          ]
+        },
+        {
+          "explainAnalyze": [
+            {
+              "EXPLAIN": "-> Limit: 20 row(s)  (cost=34.6 rows=20) (actual time=0.00963..0.0168 rows=20 loops=1)\n    -> Index lookup on p1_0 using idx_product_brand_price (brand_id=1007, deleted_at=NULL), with index condition: (p1_0.deleted_at is null)  (cost=34.6 rows=99) (actual time=0.00933..0.0156 rows=20 loops=1)\n-> Select #2 (subquery in projection; dependent)\n    -> Aggregate: count(pl1_0.id)  (cost=1.25 rows=1) (actual time=0.00124..0.00126 rows=1 loops=20)\n        -> Covering index lookup on pl1_0 using idx_like_product (product_id=p1_0.id)  (cost=0.753 rows=5.01) (actual time=885e-6..0.00108 rows=2.8 loops=20)\n"
+            }
+          ],
+          "explain": [
+            {
+              "id": 1,
+              "select_type": "PRIMARY",
+              "table": "b1_0",
+              "type": "const",
+              "possible_keys": "PRIMARY",
+              "key": "PRIMARY",
+              "key_len": "8",
+              "ref": "const",
+              "rows": 1,
+              "filtered": 100
+            },
+            {
+              "id": 1,
+              "select_type": "PRIMARY",
+              "table": "p1_0",
+              "type": "ref",
+              "possible_keys": "idx_product_brand_deleted,idx_product_latest,idx_product_price,idx_product_brand_price",
+              "key": "idx_product_brand_price",
+              "key_len": "17",
+              "ref": "const,const",
+              "rows": 99,
+              "filtered": 100,
+              "Extra": "Using index condition"
+            },
+            {
+              "id": 2,
+              "select_type": "DEPENDENT SUBQUERY",
+              "table": "pl1_0",
+              "type": "ref",
+              "possible_keys": "idx_like_product",
+              "key": "idx_like_product",
+              "key_len": "8",
+              "ref": "w4_product_baseline.p1_0.id",
+              "rows": 5,
+              "filtered": 100,
+              "Extra": "Using index"
+            }
+          ],
+          "jdbcExecuteNanos": 558500,
+          "sql": "select p1_0.id,p1_0.name,p1_0.price,p1_0.stock_quantity,b1_0.id,b1_0.name,(select count(pl1_0.id) from `like` pl1_0 where pl1_0.product_id=p1_0.id),p1_0.created_at,p1_0.updated_at,p1_0.deleted_at from product p1_0 join brand b1_0 on b1_0.id=p1_0.brand_id where p1_0.deleted_at is null and b1_0.deleted_at is null and b1_0.id=? order by p1_0.price,p1_0.id desc limit ?,?",
+          "parameters": [
+            1007,
+            0,
+            20
+          ]
+        }
+      ],
+      "physicalIndexes": [
+        {
+          "TABLE_NAME": "brand",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_product",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "user_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "uq_like_user_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "user_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "uq_like_user_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "user_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "idx_order_item_product",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "uq_order_item_order_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "order_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "uq_order_item_order_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_deleted",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "brand_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_deleted",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "deleted_at",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "brand_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "deleted_at",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "price",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 4,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_latest",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "deleted_at",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_latest",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_latest",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "deleted_at",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "price",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "user",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        }
+      ],
+      "limitations": [
+        "One local process; sequential requests, no concurrent load",
+        "Contract checks and five warmups precede timing; this is not a cold-disk measurement",
+        "HTTP timing includes local client and JSON decoding; assertions and EXPLAIN are outside timing",
+        "JDBC executeNanos excludes subsequent ResultSet consumption; it is not complete query cost",
+        "Nearest-rank percentiles from 20 samples; no fixed speedup or latency pass threshold",
+        "Dedicated Redis is only application infrastructure here; this does not test cache hit/miss"
+      ]
+    },
+    {
+      "artifact": "product-query-after-existing-r2.json",
+      "measuredAt": "2026-10-15T12:19:13.502317Z",
+      "stage": "after-existing-r2; actual DB-only HTTP path, no cache",
+      "sourceSha256": "f46f73f1ef85afaec7b736be39581ca2d28c14ac69108cde82d7ec20bf607ba8",
+      "seedSha256": "912f7bbcfcce8ce19e47ead734a658a6ace998999c495cacf20fac65f0106197",
+      "javaVersion": "21.0.10",
+      "mysqlVersion": "8.0.46",
+      "seed": "fixtures/week4/product-query-baseline.sql (v1)",
+      "schemaScripts": [
+        "001-brand.sql",
+        "002-user.sql",
+        "003-product.sql",
+        "004-like.sql",
+        "005-order.sql",
+        "006-order-item.sql"
+      ],
+      "preparation": "Manual DDL, seed v1, ANALYZE TABLE brand/product/like/user, contract checks, warmups",
+      "seedStatistics": {
+        "likes": 46955,
+        "deletedProducts": 188,
+        "products": 10000,
+        "brands": 100,
+        "soldOutProducts": 588,
+        "priceSum": 509500000,
+        "popularProducts": 10,
+        "zeroLikeProducts": 999,
+        "visibleProducts": 9812
+      },
+      "request": "/api/v1/products?brandId=1007&sort=price_asc&page=0&size=20",
+      "warmupCount": 5,
+      "sampleCount": 20,
+      "rawHttpNanos": [
+        4571292,
+        4829125,
+        4232000,
+        4448000,
+        4081000,
+        3740000,
+        3511625,
+        3894042,
+        3672750,
+        3965250,
+        3803334,
+        4374792,
+        4128292,
+        3598000,
+        3637209,
+        4107666,
+        4064292,
+        4061875,
+        4761583,
+        6161042
+      ],
+      "httpLatencyMillis": {
+        "min": 3.511625,
+        "p50": 4.064292,
+        "p95": 4.829125,
+        "max": 6.161042
+      },
+      "sqlCountsPerRequest": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "response": {
+        "meta": {
+          "result": "SUCCESS"
+        },
+        "data": {
+          "items": [
+            {
+              "productId": 109407,
+              "name": "W4 product 09407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 108407,
+              "name": "W4 product 08407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 107407,
+              "name": "W4 product 07407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 106407,
+              "name": "W4 product 06407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 105407,
+              "name": "W4 product 05407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 103407,
+              "name": "W4 product 03407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 102407,
+              "name": "W4 product 02407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 101407,
+              "name": "W4 product 01407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 100407,
+              "name": "W4 product 00407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 109707,
+              "name": "W4 product 09707",
+              "price": 16900,
+              "stockQuantity": 0,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 108707,
+              "name": "W4 product 08707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 107707,
+              "name": "W4 product 07707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 106707,
+              "name": "W4 product 06707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 105707,
+              "name": "W4 product 05707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 104707,
+              "name": "W4 product 04707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 103707,
+              "name": "W4 product 03707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 102707,
+              "name": "W4 product 02707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 101707,
+              "name": "W4 product 01707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 100707,
+              "name": "W4 product 00707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 109007,
+              "name": "W4 product 09007",
+              "price": 26900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 7
+            }
+          ],
+          "page": 0,
+          "size": 20,
+          "totalElements": 99,
+          "totalPages": 5
+        }
+      },
+      "plansAfterTiming": [
+        {
+          "explainAnalyze": [
+            {
+              "EXPLAIN": "-> Aggregate: count(p1_0.id)  (cost=20.1 rows=1) (actual time=0.0195..0.0195 rows=1 loops=1)\n    -> Filter: (p1_0.deleted_at is null)  (cost=10.2 rows=99) (actual time=0.004..0.0174 rows=99 loops=1)\n        -> Covering index lookup on p1_0 using idx_product_brand_deleted (brand_id=1007, deleted_at=NULL)  (cost=10.2 rows=99) (actual time=0.00367..0.0127 rows=99 loops=1)\n"
+            }
+          ],
+          "explain": [
+            {
+              "id": 1,
+              "select_type": "SIMPLE",
+              "table": "b1_0",
+              "type": "const",
+              "possible_keys": "PRIMARY",
+              "key": "PRIMARY",
+              "key_len": "8",
+              "ref": "const",
+              "rows": 1,
+              "filtered": 100
+            },
+            {
+              "id": 1,
+              "select_type": "SIMPLE",
+              "table": "p1_0",
+              "type": "ref",
+              "possible_keys": "idx_product_brand_deleted,idx_product_latest,idx_product_price",
+              "key": "idx_product_brand_deleted",
+              "key_len": "17",
+              "ref": "const,const",
+              "rows": 99,
+              "filtered": 100,
+              "Extra": "Using where; Using index"
+            }
+          ],
+          "jdbcExecuteNanos": 474500,
+          "sql": "select count(p1_0.id) from product p1_0 join brand b1_0 on b1_0.id=p1_0.brand_id where p1_0.deleted_at is null and b1_0.deleted_at is null and b1_0.id=?",
+          "parameters": [
+            1007
+          ]
+        },
+        {
+          "explainAnalyze": [
+            {
+              "EXPLAIN": "-> Limit: 20 row(s)  (cost=34.6 rows=20) (actual time=0.0825..0.0837 rows=20 loops=1)\n    -> Sort: p1_0.price, p1_0.id DESC, limit input to 20 row(s) per chunk  (cost=34.6 rows=99) (actual time=0.0821..0.0828 rows=20 loops=1)\n        -> Index lookup on p1_0 using idx_product_brand_deleted (brand_id=1007, deleted_at=NULL), with index condition: (p1_0.deleted_at is null)  (cost=34.6 rows=99) (actual time=0.0112..0.0694 rows=99 loops=1)\n-> Select #2 (subquery in projection; dependent)\n    -> Aggregate: count(pl1_0.id)  (cost=1.25 rows=1) (actual time=0.00226..0.00228 rows=1 loops=20)\n        -> Covering index lookup on pl1_0 using idx_like_product (product_id=p1_0.id)  (cost=0.753 rows=5.01) (actual time=0.00192..0.00209 rows=2.8 loops=20)\n"
+            }
+          ],
+          "explain": [
+            {
+              "id": 1,
+              "select_type": "PRIMARY",
+              "table": "b1_0",
+              "type": "const",
+              "possible_keys": "PRIMARY",
+              "key": "PRIMARY",
+              "key_len": "8",
+              "ref": "const",
+              "rows": 1,
+              "filtered": 100,
+              "Extra": "Using filesort"
+            },
+            {
+              "id": 1,
+              "select_type": "PRIMARY",
+              "table": "p1_0",
+              "type": "ref",
+              "possible_keys": "idx_product_brand_deleted,idx_product_latest,idx_product_price",
+              "key": "idx_product_brand_deleted",
+              "key_len": "17",
+              "ref": "const,const",
+              "rows": 99,
+              "filtered": 100,
+              "Extra": "Using index condition"
+            },
+            {
+              "id": 2,
+              "select_type": "DEPENDENT SUBQUERY",
+              "table": "pl1_0",
+              "type": "ref",
+              "possible_keys": "idx_like_product",
+              "key": "idx_like_product",
+              "key_len": "8",
+              "ref": "w4_product_baseline.p1_0.id",
+              "rows": 5,
+              "filtered": 100,
+              "Extra": "Using index"
+            }
+          ],
+          "jdbcExecuteNanos": 514417,
+          "sql": "select p1_0.id,p1_0.name,p1_0.price,p1_0.stock_quantity,b1_0.id,b1_0.name,(select count(pl1_0.id) from `like` pl1_0 where pl1_0.product_id=p1_0.id),p1_0.created_at,p1_0.updated_at,p1_0.deleted_at from product p1_0 join brand b1_0 on b1_0.id=p1_0.brand_id where p1_0.deleted_at is null and b1_0.deleted_at is null and b1_0.id=? order by p1_0.price,p1_0.id desc limit ?,?",
+          "parameters": [
+            1007,
+            0,
+            20
+          ]
+        }
+      ],
+      "physicalIndexes": [
+        {
+          "TABLE_NAME": "brand",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_product",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "user_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "uq_like_user_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "user_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "uq_like_user_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "user_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "idx_order_item_product",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "uq_order_item_order_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "order_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "uq_order_item_order_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_deleted",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "brand_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_deleted",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "deleted_at",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_latest",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "deleted_at",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_latest",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_latest",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "deleted_at",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "price",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "user",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        }
+      ],
+      "limitations": [
+        "One local process; sequential requests, no concurrent load",
+        "Contract checks and five warmups precede timing; this is not a cold-disk measurement",
+        "HTTP timing includes local client and JSON decoding; assertions and EXPLAIN are outside timing",
+        "JDBC executeNanos excludes subsequent ResultSet consumption; it is not complete query cost",
+        "Nearest-rank percentiles from 20 samples; no fixed speedup or latency pass threshold",
+        "Dedicated Redis is only application infrastructure here; this does not test cache hit/miss"
+      ]
+    },
+    {
+      "artifact": "product-query-after-candidate-r2.json",
+      "measuredAt": "2026-10-15T12:19:13.649887Z",
+      "stage": "after-candidate-r2; actual DB-only HTTP path, no cache",
+      "sourceSha256": "f46f73f1ef85afaec7b736be39581ca2d28c14ac69108cde82d7ec20bf607ba8",
+      "seedSha256": "912f7bbcfcce8ce19e47ead734a658a6ace998999c495cacf20fac65f0106197",
+      "javaVersion": "21.0.10",
+      "mysqlVersion": "8.0.46",
+      "seed": "fixtures/week4/product-query-baseline.sql (v1)",
+      "schemaScripts": [
+        "001-brand.sql",
+        "002-user.sql",
+        "003-product.sql",
+        "004-like.sql",
+        "005-order.sql",
+        "006-order-item.sql"
+      ],
+      "preparation": "Manual DDL, seed v1, ANALYZE TABLE brand/product/like/user, contract checks, warmups",
+      "seedStatistics": {
+        "likes": 46955,
+        "deletedProducts": 188,
+        "products": 10000,
+        "brands": 100,
+        "soldOutProducts": 588,
+        "priceSum": 509500000,
+        "popularProducts": 10,
+        "zeroLikeProducts": 999,
+        "visibleProducts": 9812
+      },
+      "request": "/api/v1/products?brandId=1007&sort=price_asc&page=0&size=20",
+      "warmupCount": 5,
+      "sampleCount": 20,
+      "rawHttpNanos": [
+        3709916,
+        3469625,
+        3303291,
+        4529333,
+        4329167,
+        4888417,
+        5035625,
+        4356708,
+        3384375,
+        3329375,
+        3805583,
+        4057833,
+        3342791,
+        3481875,
+        3483167,
+        4475958,
+        3712042,
+        3564041,
+        3886416,
+        4560834
+      ],
+      "httpLatencyMillis": {
+        "min": 3.303291,
+        "p50": 3.712042,
+        "p95": 4.888417,
+        "max": 5.035625
+      },
+      "sqlCountsPerRequest": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "response": {
+        "meta": {
+          "result": "SUCCESS"
+        },
+        "data": {
+          "items": [
+            {
+              "productId": 109407,
+              "name": "W4 product 09407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 108407,
+              "name": "W4 product 08407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 107407,
+              "name": "W4 product 07407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 106407,
+              "name": "W4 product 06407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 105407,
+              "name": "W4 product 05407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 103407,
+              "name": "W4 product 03407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 102407,
+              "name": "W4 product 02407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 101407,
+              "name": "W4 product 01407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 100407,
+              "name": "W4 product 00407",
+              "price": 6900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 1
+            },
+            {
+              "productId": 109707,
+              "name": "W4 product 09707",
+              "price": 16900,
+              "stockQuantity": 0,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 108707,
+              "name": "W4 product 08707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 107707,
+              "name": "W4 product 07707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 106707,
+              "name": "W4 product 06707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 105707,
+              "name": "W4 product 05707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 104707,
+              "name": "W4 product 04707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 103707,
+              "name": "W4 product 03707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 102707,
+              "name": "W4 product 02707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 101707,
+              "name": "W4 product 01707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 100707,
+              "name": "W4 product 00707",
+              "price": 16900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 4
+            },
+            {
+              "productId": 109007,
+              "name": "W4 product 09007",
+              "price": 26900,
+              "stockQuantity": 8,
+              "brand": {
+                "brandId": 1007,
+                "name": "W4 brand 007"
+              },
+              "likeCount": 7
+            }
+          ],
+          "page": 0,
+          "size": 20,
+          "totalElements": 99,
+          "totalPages": 5
+        }
+      },
+      "plansAfterTiming": [
+        {
+          "explainAnalyze": [
+            {
+              "EXPLAIN": "-> Aggregate: count(p1_0.id)  (cost=20.1 rows=1) (actual time=0.0169..0.017 rows=1 loops=1)\n    -> Filter: (p1_0.deleted_at is null)  (cost=10.2 rows=99) (actual time=0.00287..0.0143 rows=99 loops=1)\n        -> Covering index lookup on p1_0 using idx_product_brand_deleted (brand_id=1007, deleted_at=NULL)  (cost=10.2 rows=99) (actual time=0.00246..0.011 rows=99 loops=1)\n"
+            }
+          ],
+          "explain": [
+            {
+              "id": 1,
+              "select_type": "SIMPLE",
+              "table": "b1_0",
+              "type": "const",
+              "possible_keys": "PRIMARY",
+              "key": "PRIMARY",
+              "key_len": "8",
+              "ref": "const",
+              "rows": 1,
+              "filtered": 100
+            },
+            {
+              "id": 1,
+              "select_type": "SIMPLE",
+              "table": "p1_0",
+              "type": "ref",
+              "possible_keys": "idx_product_brand_deleted,idx_product_latest,idx_product_price,idx_product_brand_price",
+              "key": "idx_product_brand_deleted",
+              "key_len": "17",
+              "ref": "const,const",
+              "rows": 99,
+              "filtered": 100,
+              "Extra": "Using where; Using index"
+            }
+          ],
+          "jdbcExecuteNanos": 339625,
+          "sql": "select count(p1_0.id) from product p1_0 join brand b1_0 on b1_0.id=p1_0.brand_id where p1_0.deleted_at is null and b1_0.deleted_at is null and b1_0.id=?",
+          "parameters": [
+            1007
+          ]
+        },
+        {
+          "explainAnalyze": [
+            {
+              "EXPLAIN": "-> Limit: 20 row(s)  (cost=34.6 rows=20) (actual time=0.00879..0.0154 rows=20 loops=1)\n    -> Index lookup on p1_0 using idx_product_brand_price (brand_id=1007, deleted_at=NULL), with index condition: (p1_0.deleted_at is null)  (cost=34.6 rows=99) (actual time=0.00862..0.0147 rows=20 loops=1)\n-> Select #2 (subquery in projection; dependent)\n    -> Aggregate: count(pl1_0.id)  (cost=1.83 rows=1) (actual time=0.00121..0.00121 rows=1 loops=20)\n        -> Covering index lookup on pl1_0 using idx_like_product (product_id=p1_0.id)  (cost=1.33 rows=5.01) (actual time=890e-6..0.00106 rows=2.8 loops=20)\n"
+            }
+          ],
+          "explain": [
+            {
+              "id": 1,
+              "select_type": "PRIMARY",
+              "table": "b1_0",
+              "type": "const",
+              "possible_keys": "PRIMARY",
+              "key": "PRIMARY",
+              "key_len": "8",
+              "ref": "const",
+              "rows": 1,
+              "filtered": 100
+            },
+            {
+              "id": 1,
+              "select_type": "PRIMARY",
+              "table": "p1_0",
+              "type": "ref",
+              "possible_keys": "idx_product_brand_deleted,idx_product_latest,idx_product_price,idx_product_brand_price",
+              "key": "idx_product_brand_price",
+              "key_len": "17",
+              "ref": "const,const",
+              "rows": 99,
+              "filtered": 100,
+              "Extra": "Using index condition"
+            },
+            {
+              "id": 2,
+              "select_type": "DEPENDENT SUBQUERY",
+              "table": "pl1_0",
+              "type": "ref",
+              "possible_keys": "idx_like_product",
+              "key": "idx_like_product",
+              "key_len": "8",
+              "ref": "w4_product_baseline.p1_0.id",
+              "rows": 5,
+              "filtered": 100,
+              "Extra": "Using index"
+            }
+          ],
+          "jdbcExecuteNanos": 469791,
+          "sql": "select p1_0.id,p1_0.name,p1_0.price,p1_0.stock_quantity,b1_0.id,b1_0.name,(select count(pl1_0.id) from `like` pl1_0 where pl1_0.product_id=p1_0.id),p1_0.created_at,p1_0.updated_at,p1_0.deleted_at from product p1_0 join brand b1_0 on b1_0.id=p1_0.brand_id where p1_0.deleted_at is null and b1_0.deleted_at is null and b1_0.id=? order by p1_0.price,p1_0.id desc limit ?,?",
+          "parameters": [
+            1007,
+            0,
+            20
+          ]
+        }
+      ],
+      "physicalIndexes": [
+        {
+          "TABLE_NAME": "brand",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_product",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "user_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "idx_like_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "uq_like_user_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "user_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "like",
+          "INDEX_NAME": "uq_like_user_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "user_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "idx_order_user_created",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "idx_order_item_product",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "uq_order_item_order_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "order_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "order_item",
+          "INDEX_NAME": "uq_order_item_order_product",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "product_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_deleted",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "brand_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_deleted",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "deleted_at",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "brand_id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "deleted_at",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "price",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_brand_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 4,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_latest",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "deleted_at",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_latest",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "created_at",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_latest",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "deleted_at",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 2,
+          "COLUMN_NAME": "price",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "idx_product_price",
+          "NON_UNIQUE": 1,
+          "SEQ_IN_INDEX": 3,
+          "COLUMN_NAME": "id",
+          "COLLATION": "D",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "product",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        },
+        {
+          "TABLE_NAME": "user",
+          "INDEX_NAME": "PRIMARY",
+          "NON_UNIQUE": 0,
+          "SEQ_IN_INDEX": 1,
+          "COLUMN_NAME": "id",
+          "COLLATION": "A",
+          "INDEX_TYPE": "BTREE"
+        }
+      ],
+      "limitations": [
+        "One local process; sequential requests, no concurrent load",
+        "Contract checks and five warmups precede timing; this is not a cold-disk measurement",
+        "HTTP timing includes local client and JSON decoding; assertions and EXPLAIN are outside timing",
+        "JDBC executeNanos excludes subsequent ResultSet consumption; it is not complete query cost",
+        "Nearest-rank percentiles from 20 samples; no fixed speedup or latency pass threshold",
+        "Dedicated Redis is only application infrastructure here; this does not test cache hit/miss"
+      ]
+    }
+  ],
+  "finalSchemaRun": {
+    "measuredAt": "2026-10-15T12:22:29.629039Z",
+    "stage": "current; actual DB-only HTTP path, no cache",
+    "sourceSha256": "f46f73f1ef85afaec7b736be39581ca2d28c14ac69108cde82d7ec20bf607ba8",
+    "seedSha256": "912f7bbcfcce8ce19e47ead734a658a6ace998999c495cacf20fac65f0106197",
+    "javaVersion": "21.0.10",
+    "mysqlVersion": "8.0.46",
+    "seed": "fixtures/week4/product-query-baseline.sql (v1)",
+    "schemaScripts": [
+      "001-brand.sql",
+      "002-user.sql",
+      "003-product.sql",
+      "004-like.sql",
+      "005-order.sql",
+      "006-order-item.sql",
+      "007-product-brand-price-index.sql"
+    ],
+    "sessionIsolation": "REPEATABLE-READ",
+    "preparation": "Manual DDL, seed v1, ANALYZE TABLE brand/product/like/user, contract checks, warmups",
+    "seedStatistics": {
+      "zeroLikeProducts": 999,
+      "popularProducts": 10,
+      "priceSum": 509500000,
+      "soldOutProducts": 588,
+      "brands": 100,
+      "products": 10000,
+      "deletedProducts": 188,
+      "likes": 46955,
+      "visibleProducts": 9812
+    },
+    "request": "/api/v1/products?brandId=1007&sort=price_asc&page=0&size=20",
+    "warmupCount": 5,
+    "sampleCount": 20,
+    "rawHttpNanos": [
+      3573500,
+      3621500,
+      3306042,
+      3721083,
+      3628833,
+      3427250,
+      3319875,
+      3609500,
+      4232250,
+      3766625,
+      3755208,
+      3756125,
+      4024750,
+      3618250,
+      3309583,
+      4101417,
+      3776083,
+      4190333,
+      3992458,
+      3753917
+    ],
+    "httpLatencyMillis": {
+      "min": 3.306042,
+      "max": 4.23225,
+      "p95": 4.190333,
+      "p50": 3.721083
+    },
+    "sqlCountsPerRequest": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2
+    ],
+    "response": {
+      "meta": {
+        "result": "SUCCESS"
+      },
+      "data": {
+        "items": [
+          {
+            "productId": 109407,
+            "name": "W4 product 09407",
+            "price": 6900,
+            "stockQuantity": 8,
+            "brand": {
+              "brandId": 1007,
+              "name": "W4 brand 007"
+            },
+            "likeCount": 1
+          },
+          {
+            "productId": 108407,
+            "name": "W4 product 08407",
+            "price": 6900,
+            "stockQuantity": 8,
+            "brand": {
+              "brandId": 1007,
+              "name": "W4 brand 007"
+            },
+            "likeCount": 1
+          },
+          {
+            "productId": 107407,
+            "name": "W4 product 07407",
+            "price": 6900,
+            "stockQuantity": 8,
+            "brand": {
+              "brandId": 1007,
+              "name": "W4 brand 007"
+            },
+            "likeCount": 1
+          },
+          {
+            "productId": 106407,
+            "name": "W4 product 06407",
+            "price": 6900,
+            "stockQuantity": 8,
+            "brand": {
+              "brandId": 1007,
+              "name": "W4 brand 007"
+            },
+            "likeCount": 1
+          },
+          {
+            "productId": 105407,
+            "name": "W4 product 05407",
+            "price": 6900,
+            "stockQuantity": 8,
+            "brand": {
+              "brandId": 1007,
+              "name": "W4 brand 007"
+            },
+            "likeCount": 1
+          },
+          {
+            "productId": 103407,
+            "name": "W4 product 03407",
+            "price": 6900,
+            "stockQuantity": 8,
+            "brand": {
+              "brandId": 1007,
+              "name": "W4 brand 007"
+            },
+            "likeCount": 1
+          },
+          {
+            "productId": 102407,
+            "name": "W4 product 02407",
+            "price": 6900,
+            "stockQuantity": 8,
+            "brand": {
+              "brandId": 1007,
+              "name": "W4 brand 007"
+            },
+            "likeCount": 1
+          },
+          {
+            "productId": 101407,
+            "name": "W4 product 01407",
+            "price": 6900,
+            "stockQuantity": 8,
+            "brand": {
+              "brandId": 1007,
+              "name": "W4 brand 007"
+            },
+            "likeCount": 1
+          },
+          {
+            "productId": 100407,
+            "name": "W4 product 00407",
+            "price": 6900,
+            "stockQuantity": 8,
+            "brand": {
+              "brandId": 1007,
+              "name": "W4 brand 007"
+            },
+            "likeCount": 1
+          },
+          {
+            "productId": 109707,
+            "name": "W4 product 09707",
+            "price": 16900,
+            "stockQuantity": 0,
+            "brand": {
+              "brandId": 1007,
+              "name": "W4 brand 007"
+            },
+            "likeCount": 4
+          },
+          {
+            "productId": 108707,
+            "name": "W4 product 08707",
+            "price": 16900,
+            "stockQuantity": 8,
+            "brand": {
+              "brandId": 1007,
+              "name": "W4 brand 007"
+            },
+            "likeCount": 4
+          },
+          {
+            "productId": 107707,
+            "name": "W4 product 07707",
+            "price": 16900,
+            "stockQuantity": 8,
+            "brand": {
+              "brandId": 1007,
+              "name": "W4 brand 007"
+            },
+            "likeCount": 4
+          },
+          {
+            "productId": 106707,
+            "name": "W4 product 06707",
+            "price": 16900,
+            "stockQuantity": 8,
+            "brand": {
+              "brandId": 1007,
+              "name": "W4 brand 007"
+            },
+            "likeCount": 4
+          },
+          {
+            "productId": 105707,
+            "name": "W4 product 05707",
+            "price": 16900,
+            "stockQuantity": 8,
+            "brand": {
+              "brandId": 1007,
+              "name": "W4 brand 007"
+            },
+            "likeCount": 4
+          },
+          {
+            "productId": 104707,
+            "name": "W4 product 04707",
+            "price": 16900,
+            "stockQuantity": 8,
+            "brand": {
+              "brandId": 1007,
+              "name": "W4 brand 007"
+            },
+            "likeCount": 4
+          },
+          {
+            "productId": 103707,
+            "name": "W4 product 03707",
+            "price": 16900,
+            "stockQuantity": 8,
+            "brand": {
+              "brandId": 1007,
+              "name": "W4 brand 007"
+            },
+            "likeCount": 4
+          },
+          {
+            "productId": 102707,
+            "name": "W4 product 02707",
+            "price": 16900,
+            "stockQuantity": 8,
+            "brand": {
+              "brandId": 1007,
+              "name": "W4 brand 007"
+            },
+            "likeCount": 4
+          },
+          {
+            "productId": 101707,
+            "name": "W4 product 01707",
+            "price": 16900,
+            "stockQuantity": 8,
+            "brand": {
+              "brandId": 1007,
+              "name": "W4 brand 007"
+            },
+            "likeCount": 4
+          },
+          {
+            "productId": 100707,
+            "name": "W4 product 00707",
+            "price": 16900,
+            "stockQuantity": 8,
+            "brand": {
+              "brandId": 1007,
+              "name": "W4 brand 007"
+            },
+            "likeCount": 4
+          },
+          {
+            "productId": 109007,
+            "name": "W4 product 09007",
+            "price": 26900,
+            "stockQuantity": 8,
+            "brand": {
+              "brandId": 1007,
+              "name": "W4 brand 007"
+            },
+            "likeCount": 7
+          }
+        ],
+        "page": 0,
+        "size": 20,
+        "totalElements": 99,
+        "totalPages": 5
+      }
+    },
+    "plansAfterTiming": [
+      {
+        "explain": [
+          {
+            "id": 1,
+            "select_type": "SIMPLE",
+            "table": "b1_0",
+            "type": "const",
+            "possible_keys": "PRIMARY",
+            "key": "PRIMARY",
+            "key_len": "8",
+            "ref": "const",
+            "rows": 1,
+            "filtered": 100
+          },
+          {
+            "id": 1,
+            "select_type": "SIMPLE",
+            "table": "p1_0",
+            "type": "ref",
+            "possible_keys": "idx_product_brand_deleted,idx_product_latest,idx_product_price,idx_product_brand_price",
+            "key": "idx_product_brand_deleted",
+            "key_len": "17",
+            "ref": "const,const",
+            "rows": 99,
+            "filtered": 100,
+            "Extra": "Using where; Using index"
+          }
+        ],
+        "explainAnalyze": [
+          {
+            "EXPLAIN": "-> Aggregate: count(p1_0.id)  (cost=20.1 rows=1) (actual time=0.0244..0.0244 rows=1 loops=1)\n    -> Filter: (p1_0.deleted_at is null)  (cost=10.2 rows=99) (actual time=0.00413..0.0155 rows=99 loops=1)\n        -> Covering index lookup on p1_0 using idx_product_brand_deleted (brand_id=1007, deleted_at=NULL)  (cost=10.2 rows=99) (actual time=0.00375..0.0122 rows=99 loops=1)\n"
+          }
+        ],
+        "parameters": [
+          1007
+        ],
+        "sql": "select count(p1_0.id) from product p1_0 join brand b1_0 on b1_0.id=p1_0.brand_id where p1_0.deleted_at is null and b1_0.deleted_at is null and b1_0.id=?",
+        "jdbcExecuteNanos": 367417
+      },
+      {
+        "explain": [
+          {
+            "id": 1,
+            "select_type": "PRIMARY",
+            "table": "b1_0",
+            "type": "const",
+            "possible_keys": "PRIMARY",
+            "key": "PRIMARY",
+            "key_len": "8",
+            "ref": "const",
+            "rows": 1,
+            "filtered": 100
+          },
+          {
+            "id": 1,
+            "select_type": "PRIMARY",
+            "table": "p1_0",
+            "type": "ref",
+            "possible_keys": "idx_product_brand_deleted,idx_product_latest,idx_product_price,idx_product_brand_price",
+            "key": "idx_product_brand_price",
+            "key_len": "17",
+            "ref": "const,const",
+            "rows": 99,
+            "filtered": 100,
+            "Extra": "Using index condition"
+          },
+          {
+            "id": 2,
+            "select_type": "DEPENDENT SUBQUERY",
+            "table": "pl1_0",
+            "type": "ref",
+            "possible_keys": "idx_like_product",
+            "key": "idx_like_product",
+            "key_len": "8",
+            "ref": "w4_product_baseline.p1_0.id",
+            "rows": 5,
+            "filtered": 100,
+            "Extra": "Using index"
+          }
+        ],
+        "explainAnalyze": [
+          {
+            "EXPLAIN": "-> Limit: 20 row(s)  (cost=34.6 rows=20) (actual time=0.00833..0.016 rows=20 loops=1)\n    -> Index lookup on p1_0 using idx_product_brand_price (brand_id=1007, deleted_at=NULL), with index condition: (p1_0.deleted_at is null)  (cost=34.6 rows=99) (actual time=0.008..0.015 rows=20 loops=1)\n-> Select #2 (subquery in projection; dependent)\n    -> Aggregate: count(pl1_0.id)  (cost=1.45 rows=1) (actual time=0.00152..0.00154 rows=1 loops=20)\n        -> Covering index lookup on pl1_0 using idx_like_product (product_id=p1_0.id)  (cost=0.851 rows=5.98) (actual time=0.00121..0.00137 rows=2.8 loops=20)\n"
+          }
+        ],
+        "parameters": [
+          1007,
+          0,
+          20
+        ],
+        "sql": "select p1_0.id,p1_0.name,p1_0.price,p1_0.stock_quantity,b1_0.id,b1_0.name,(select count(pl1_0.id) from `like` pl1_0 where pl1_0.product_id=p1_0.id),p1_0.created_at,p1_0.updated_at,p1_0.deleted_at from product p1_0 join brand b1_0 on b1_0.id=p1_0.brand_id where p1_0.deleted_at is null and b1_0.deleted_at is null and b1_0.id=? order by p1_0.price,p1_0.id desc limit ?,?",
+        "jdbcExecuteNanos": 399375
+      }
+    ],
+    "physicalIndexes": [
+      {
+        "TABLE_NAME": "brand",
+        "INDEX_NAME": "PRIMARY",
+        "NON_UNIQUE": 0,
+        "SEQ_IN_INDEX": 1,
+        "COLUMN_NAME": "id",
+        "COLLATION": "A",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "like",
+        "INDEX_NAME": "idx_like_product",
+        "NON_UNIQUE": 1,
+        "SEQ_IN_INDEX": 1,
+        "COLUMN_NAME": "product_id",
+        "COLLATION": "A",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "like",
+        "INDEX_NAME": "idx_like_user_created",
+        "NON_UNIQUE": 1,
+        "SEQ_IN_INDEX": 1,
+        "COLUMN_NAME": "user_id",
+        "COLLATION": "A",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "like",
+        "INDEX_NAME": "idx_like_user_created",
+        "NON_UNIQUE": 1,
+        "SEQ_IN_INDEX": 2,
+        "COLUMN_NAME": "created_at",
+        "COLLATION": "D",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "like",
+        "INDEX_NAME": "idx_like_user_created",
+        "NON_UNIQUE": 1,
+        "SEQ_IN_INDEX": 3,
+        "COLUMN_NAME": "id",
+        "COLLATION": "D",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "like",
+        "INDEX_NAME": "PRIMARY",
+        "NON_UNIQUE": 0,
+        "SEQ_IN_INDEX": 1,
+        "COLUMN_NAME": "id",
+        "COLLATION": "A",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "like",
+        "INDEX_NAME": "uq_like_user_product",
+        "NON_UNIQUE": 0,
+        "SEQ_IN_INDEX": 1,
+        "COLUMN_NAME": "user_id",
+        "COLLATION": "A",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "like",
+        "INDEX_NAME": "uq_like_user_product",
+        "NON_UNIQUE": 0,
+        "SEQ_IN_INDEX": 2,
+        "COLUMN_NAME": "product_id",
+        "COLLATION": "A",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "order",
+        "INDEX_NAME": "idx_order_created",
+        "NON_UNIQUE": 1,
+        "SEQ_IN_INDEX": 1,
+        "COLUMN_NAME": "created_at",
+        "COLLATION": "D",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "order",
+        "INDEX_NAME": "idx_order_created",
+        "NON_UNIQUE": 1,
+        "SEQ_IN_INDEX": 2,
+        "COLUMN_NAME": "id",
+        "COLLATION": "D",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "order",
+        "INDEX_NAME": "idx_order_user_created",
+        "NON_UNIQUE": 1,
+        "SEQ_IN_INDEX": 1,
+        "COLUMN_NAME": "user_id",
+        "COLLATION": "A",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "order",
+        "INDEX_NAME": "idx_order_user_created",
+        "NON_UNIQUE": 1,
+        "SEQ_IN_INDEX": 2,
+        "COLUMN_NAME": "created_at",
+        "COLLATION": "D",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "order",
+        "INDEX_NAME": "idx_order_user_created",
+        "NON_UNIQUE": 1,
+        "SEQ_IN_INDEX": 3,
+        "COLUMN_NAME": "id",
+        "COLLATION": "D",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "order",
+        "INDEX_NAME": "PRIMARY",
+        "NON_UNIQUE": 0,
+        "SEQ_IN_INDEX": 1,
+        "COLUMN_NAME": "id",
+        "COLLATION": "A",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "order_item",
+        "INDEX_NAME": "idx_order_item_product",
+        "NON_UNIQUE": 1,
+        "SEQ_IN_INDEX": 1,
+        "COLUMN_NAME": "product_id",
+        "COLLATION": "A",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "order_item",
+        "INDEX_NAME": "PRIMARY",
+        "NON_UNIQUE": 0,
+        "SEQ_IN_INDEX": 1,
+        "COLUMN_NAME": "id",
+        "COLLATION": "A",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "order_item",
+        "INDEX_NAME": "uq_order_item_order_product",
+        "NON_UNIQUE": 0,
+        "SEQ_IN_INDEX": 1,
+        "COLUMN_NAME": "order_id",
+        "COLLATION": "A",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "order_item",
+        "INDEX_NAME": "uq_order_item_order_product",
+        "NON_UNIQUE": 0,
+        "SEQ_IN_INDEX": 2,
+        "COLUMN_NAME": "product_id",
+        "COLLATION": "A",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "product",
+        "INDEX_NAME": "idx_product_brand_deleted",
+        "NON_UNIQUE": 1,
+        "SEQ_IN_INDEX": 1,
+        "COLUMN_NAME": "brand_id",
+        "COLLATION": "A",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "product",
+        "INDEX_NAME": "idx_product_brand_deleted",
+        "NON_UNIQUE": 1,
+        "SEQ_IN_INDEX": 2,
+        "COLUMN_NAME": "deleted_at",
+        "COLLATION": "A",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "product",
+        "INDEX_NAME": "idx_product_brand_price",
+        "NON_UNIQUE": 1,
+        "SEQ_IN_INDEX": 1,
+        "COLUMN_NAME": "brand_id",
+        "COLLATION": "A",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "product",
+        "INDEX_NAME": "idx_product_brand_price",
+        "NON_UNIQUE": 1,
+        "SEQ_IN_INDEX": 2,
+        "COLUMN_NAME": "deleted_at",
+        "COLLATION": "A",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "product",
+        "INDEX_NAME": "idx_product_brand_price",
+        "NON_UNIQUE": 1,
+        "SEQ_IN_INDEX": 3,
+        "COLUMN_NAME": "price",
+        "COLLATION": "A",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "product",
+        "INDEX_NAME": "idx_product_brand_price",
+        "NON_UNIQUE": 1,
+        "SEQ_IN_INDEX": 4,
+        "COLUMN_NAME": "id",
+        "COLLATION": "D",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "product",
+        "INDEX_NAME": "idx_product_latest",
+        "NON_UNIQUE": 1,
+        "SEQ_IN_INDEX": 1,
+        "COLUMN_NAME": "deleted_at",
+        "COLLATION": "A",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "product",
+        "INDEX_NAME": "idx_product_latest",
+        "NON_UNIQUE": 1,
+        "SEQ_IN_INDEX": 2,
+        "COLUMN_NAME": "created_at",
+        "COLLATION": "D",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "product",
+        "INDEX_NAME": "idx_product_latest",
+        "NON_UNIQUE": 1,
+        "SEQ_IN_INDEX": 3,
+        "COLUMN_NAME": "id",
+        "COLLATION": "D",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "product",
+        "INDEX_NAME": "idx_product_price",
+        "NON_UNIQUE": 1,
+        "SEQ_IN_INDEX": 1,
+        "COLUMN_NAME": "deleted_at",
+        "COLLATION": "A",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "product",
+        "INDEX_NAME": "idx_product_price",
+        "NON_UNIQUE": 1,
+        "SEQ_IN_INDEX": 2,
+        "COLUMN_NAME": "price",
+        "COLLATION": "A",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "product",
+        "INDEX_NAME": "idx_product_price",
+        "NON_UNIQUE": 1,
+        "SEQ_IN_INDEX": 3,
+        "COLUMN_NAME": "id",
+        "COLLATION": "D",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "product",
+        "INDEX_NAME": "PRIMARY",
+        "NON_UNIQUE": 0,
+        "SEQ_IN_INDEX": 1,
+        "COLUMN_NAME": "id",
+        "COLLATION": "A",
+        "INDEX_TYPE": "BTREE"
+      },
+      {
+        "TABLE_NAME": "user",
+        "INDEX_NAME": "PRIMARY",
+        "NON_UNIQUE": 0,
+        "SEQ_IN_INDEX": 1,
+        "COLUMN_NAME": "id",
+        "COLLATION": "A",
+        "INDEX_TYPE": "BTREE"
+      }
+    ],
+    "limitations": [
+      "One local process; sequential requests, no concurrent load",
+      "Contract checks and five warmups precede timing; this is not a cold-disk measurement",
+      "HTTP timing includes local client and JSON decoding; assertions and EXPLAIN are outside timing",
+      "JDBC executeNanos excludes subsequent ResultSet consumption; it is not complete query cost",
+      "Nearest-rank percentiles from 20 samples; no fixed speedup or latency pass threshold",
+      "Dedicated Redis is only application infrastructure here; this does not test cache hit/miss"
+    ]
+  },
+  "finalVerification": {
+    "command": "./gradlew :apps:commerce-api:check --rerun-tasks --console=plain",
+    "verifiedOn": "2026-10-15 (Asia/Seoul)",
+    "exitCode": 0,
+    "suites": 62,
+    "tests": 559,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "architectureTest": "passed",
+    "checkstyleReports": 11,
+    "checkstyleViolations": 0
+  }
+}

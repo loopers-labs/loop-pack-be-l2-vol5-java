@@ -35,11 +35,26 @@ datasource:
     main:
       connection-init-sql: SET SESSION innodb_lock_wait_timeout=3
 
+commerce:
+  product-list-cache:
+    enabled: true
+    namespace: commerce:${spring.profiles.active:local}:products:v1
+    ttl: 60s
+    connect-timeout: 100ms
+    command-timeout: 100ms
+    single-flight-enabled: true
+    single-flight-wait-millis: 500
+    single-flight-max-in-flight: 64
+
 ---
 spring:
   config:
     activate:
       on-profile: local, test
+
+---
+spring.config.activate.on-profile: local, test
+commerce.product-list-cache.enabled: false
 
 ---
 spring:

@@ -1,0 +1,925 @@
+{
+  "startedAt" : "2026-10-16T06:14:28.973415Z",
+  "completed" : false,
+  "request" : "/api/v1/products?sort=likes_desc&page=0&size=20",
+  "ttlSeconds" : [ 5, 30, 60 ],
+  "productionSettingChanged" : false,
+  "seed" : {
+    "products" : 10000,
+    "likes" : 46955,
+    "visibleProducts" : 9812
+  },
+  "expectedPages" : {
+    "liked" : {
+      "items" : [ {
+        "productId" : 100997,
+        "name" : "W4 product 00997",
+        "price" : 89900,
+        "stockQuantity" : 48,
+        "likeCount" : 201,
+        "brand" : {
+          "brandId" : 1097,
+          "name" : "W4 brand 097"
+        }
+      }, {
+        "productId" : 109970,
+        "name" : "W4 product 09970",
+        "price" : 90000,
+        "stockQuantity" : 21,
+        "likeCount" : 200,
+        "brand" : {
+          "brandId" : 1070,
+          "name" : "W4 brand 070"
+        }
+      }, {
+        "productId" : 108973,
+        "name" : "W4 product 08973",
+        "price" : 1100,
+        "stockQuantity" : 24,
+        "likeCount" : 200,
+        "brand" : {
+          "brandId" : 1073,
+          "name" : "W4 brand 073"
+        }
+      }, {
+        "productId" : 107976,
+        "name" : "W4 product 07976",
+        "price" : 12200,
+        "stockQuantity" : 27,
+        "likeCount" : 200,
+        "brand" : {
+          "brandId" : 1076,
+          "name" : "W4 brand 076"
+        }
+      }, {
+        "productId" : 106979,
+        "name" : "W4 product 06979",
+        "price" : 23300,
+        "stockQuantity" : 30,
+        "likeCount" : 200,
+        "brand" : {
+          "brandId" : 1079,
+          "name" : "W4 brand 079"
+        }
+      }, {
+        "productId" : 105982,
+        "name" : "W4 product 05982",
+        "price" : 34400,
+        "stockQuantity" : 33,
+        "likeCount" : 200,
+        "brand" : {
+          "brandId" : 1082,
+          "name" : "W4 brand 082"
+        }
+      }, {
+        "productId" : 104985,
+        "name" : "W4 product 04985",
+        "price" : 45500,
+        "stockQuantity" : 36,
+        "likeCount" : 200,
+        "brand" : {
+          "brandId" : 1085,
+          "name" : "W4 brand 085"
+        }
+      }, {
+        "productId" : 103988,
+        "name" : "W4 product 03988",
+        "price" : 56600,
+        "stockQuantity" : 39,
+        "likeCount" : 200,
+        "brand" : {
+          "brandId" : 1088,
+          "name" : "W4 brand 088"
+        }
+      }, {
+        "productId" : 102991,
+        "name" : "W4 product 02991",
+        "price" : 67700,
+        "stockQuantity" : 42,
+        "likeCount" : 200,
+        "brand" : {
+          "brandId" : 1091,
+          "name" : "W4 brand 091"
+        }
+      }, {
+        "productId" : 101994,
+        "name" : "W4 product 01994",
+        "price" : 78800,
+        "stockQuantity" : 45,
+        "likeCount" : 200,
+        "brand" : {
+          "brandId" : 1094,
+          "name" : "W4 brand 094"
+        }
+      }, {
+        "productId" : 109990,
+        "name" : "W4 product 09990",
+        "price" : 64000,
+        "stockQuantity" : 41,
+        "likeCount" : 9,
+        "brand" : {
+          "brandId" : 1090,
+          "name" : "W4 brand 090"
+        }
+      }, {
+        "productId" : 109980,
+        "name" : "W4 product 09980",
+        "price" : 27000,
+        "stockQuantity" : 31,
+        "likeCount" : 9,
+        "brand" : {
+          "brandId" : 1080,
+          "name" : "W4 brand 080"
+        }
+      }, {
+        "productId" : 109960,
+        "name" : "W4 product 09960",
+        "price" : 53000,
+        "stockQuantity" : 11,
+        "likeCount" : 9,
+        "brand" : {
+          "brandId" : 1060,
+          "name" : "W4 brand 060"
+        }
+      }, {
+        "productId" : 109950,
+        "name" : "W4 product 09950",
+        "price" : 16000,
+        "stockQuantity" : 1,
+        "likeCount" : 9,
+        "brand" : {
+          "brandId" : 1050,
+          "name" : "W4 brand 050"
+        }
+      }, {
+        "productId" : 109940,
+        "name" : "W4 product 09940",
+        "price" : 79000,
+        "stockQuantity" : 41,
+        "likeCount" : 9,
+        "brand" : {
+          "brandId" : 1040,
+          "name" : "W4 brand 040"
+        }
+      }, {
+        "productId" : 109930,
+        "name" : "W4 product 09930",
+        "price" : 42000,
+        "stockQuantity" : 31,
+        "likeCount" : 9,
+        "brand" : {
+          "brandId" : 1030,
+          "name" : "W4 brand 030"
+        }
+      }, {
+        "productId" : 109920,
+        "name" : "W4 product 09920",
+        "price" : 5000,
+        "stockQuantity" : 21,
+        "likeCount" : 9,
+        "brand" : {
+          "brandId" : 1020,
+          "name" : "W4 brand 020"
+        }
+      }, {
+        "productId" : 109910,
+        "name" : "W4 product 09910",
+        "price" : 68000,
+        "stockQuantity" : 11,
+        "likeCount" : 9,
+        "brand" : {
+          "brandId" : 1010,
+          "name" : "W4 brand 010"
+        }
+      }, {
+        "productId" : 109891,
+        "name" : "W4 product 09891",
+        "price" : 97700,
+        "stockQuantity" : 42,
+        "likeCount" : 9,
+        "brand" : {
+          "brandId" : 1091,
+          "name" : "W4 brand 091"
+        }
+      }, {
+        "productId" : 109881,
+        "name" : "W4 product 09881",
+        "price" : 60700,
+        "stockQuantity" : 32,
+        "likeCount" : 9,
+        "brand" : {
+          "brandId" : 1081,
+          "name" : "W4 brand 081"
+        }
+      } ],
+      "page" : 0,
+      "size" : 20,
+      "totalElements" : 9812,
+      "totalPages" : 491
+    },
+    "unchanged" : {
+      "items" : [ {
+        "productId" : 109970,
+        "name" : "W4 product 09970",
+        "price" : 90000,
+        "stockQuantity" : 21,
+        "likeCount" : 200,
+        "brand" : {
+          "brandId" : 1070,
+          "name" : "W4 brand 070"
+        }
+      }, {
+        "productId" : 108973,
+        "name" : "W4 product 08973",
+        "price" : 1100,
+        "stockQuantity" : 24,
+        "likeCount" : 200,
+        "brand" : {
+          "brandId" : 1073,
+          "name" : "W4 brand 073"
+        }
+      }, {
+        "productId" : 107976,
+        "name" : "W4 product 07976",
+        "price" : 12200,
+        "stockQuantity" : 27,
+        "likeCount" : 200,
+        "brand" : {
+          "brandId" : 1076,
+          "name" : "W4 brand 076"
+        }
+      }, {
+        "productId" : 106979,
+        "name" : "W4 product 06979",
+        "price" : 23300,
+        "stockQuantity" : 30,
+        "likeCount" : 200,
+        "brand" : {
+          "brandId" : 1079,
+          "name" : "W4 brand 079"
+        }
+      }, {
+        "productId" : 105982,
+        "name" : "W4 product 05982",
+        "price" : 34400,
+        "stockQuantity" : 33,
+        "likeCount" : 200,
+        "brand" : {
+          "brandId" : 1082,
+          "name" : "W4 brand 082"
+        }
+      }, {
+        "productId" : 104985,
+        "name" : "W4 product 04985",
+        "price" : 45500,
+        "stockQuantity" : 36,
+        "likeCount" : 200,
+        "brand" : {
+          "brandId" : 1085,
+          "name" : "W4 brand 085"
+        }
+      }, {
+        "productId" : 103988,
+        "name" : "W4 product 03988",
+        "price" : 56600,
+        "stockQuantity" : 39,
+        "likeCount" : 200,
+        "brand" : {
+          "brandId" : 1088,
+          "name" : "W4 brand 088"
+        }
+      }, {
+        "productId" : 102991,
+        "name" : "W4 product 02991",
+        "price" : 67700,
+        "stockQuantity" : 42,
+        "likeCount" : 200,
+        "brand" : {
+          "brandId" : 1091,
+          "name" : "W4 brand 091"
+        }
+      }, {
+        "productId" : 101994,
+        "name" : "W4 product 01994",
+        "price" : 78800,
+        "stockQuantity" : 45,
+        "likeCount" : 200,
+        "brand" : {
+          "brandId" : 1094,
+          "name" : "W4 brand 094"
+        }
+      }, {
+        "productId" : 100997,
+        "name" : "W4 product 00997",
+        "price" : 89900,
+        "stockQuantity" : 48,
+        "likeCount" : 200,
+        "brand" : {
+          "brandId" : 1097,
+          "name" : "W4 brand 097"
+        }
+      }, {
+        "productId" : 109990,
+        "name" : "W4 product 09990",
+        "price" : 64000,
+        "stockQuantity" : 41,
+        "likeCount" : 9,
+        "brand" : {
+          "brandId" : 1090,
+          "name" : "W4 brand 090"
+        }
+      }, {
+        "productId" : 109980,
+        "name" : "W4 product 09980",
+        "price" : 27000,
+        "stockQuantity" : 31,
+        "likeCount" : 9,
+        "brand" : {
+          "brandId" : 1080,
+          "name" : "W4 brand 080"
+        }
+      }, {
+        "productId" : 109960,
+        "name" : "W4 product 09960",
+        "price" : 53000,
+        "stockQuantity" : 11,
+        "likeCount" : 9,
+        "brand" : {
+          "brandId" : 1060,
+          "name" : "W4 brand 060"
+        }
+      }, {
+        "productId" : 109950,
+        "name" : "W4 product 09950",
+        "price" : 16000,
+        "stockQuantity" : 1,
+        "likeCount" : 9,
+        "brand" : {
+          "brandId" : 1050,
+          "name" : "W4 brand 050"
+        }
+      }, {
+        "productId" : 109940,
+        "name" : "W4 product 09940",
+        "price" : 79000,
+        "stockQuantity" : 41,
+        "likeCount" : 9,
+        "brand" : {
+          "brandId" : 1040,
+          "name" : "W4 brand 040"
+        }
+      }, {
+        "productId" : 109930,
+        "name" : "W4 product 09930",
+        "price" : 42000,
+        "stockQuantity" : 31,
+        "likeCount" : 9,
+        "brand" : {
+          "brandId" : 1030,
+          "name" : "W4 brand 030"
+        }
+      }, {
+        "productId" : 109920,
+        "name" : "W4 product 09920",
+        "price" : 5000,
+        "stockQuantity" : 21,
+        "likeCount" : 9,
+        "brand" : {
+          "brandId" : 1020,
+          "name" : "W4 brand 020"
+        }
+      }, {
+        "productId" : 109910,
+        "name" : "W4 product 09910",
+        "price" : 68000,
+        "stockQuantity" : 11,
+        "likeCount" : 9,
+        "brand" : {
+          "brandId" : 1010,
+          "name" : "W4 brand 010"
+        }
+      }, {
+        "productId" : 109891,
+        "name" : "W4 product 09891",
+        "price" : 97700,
+        "stockQuantity" : 42,
+        "likeCount" : 9,
+        "brand" : {
+          "brandId" : 1091,
+          "name" : "W4 brand 091"
+        }
+      }, {
+        "productId" : 109881,
+        "name" : "W4 product 09881",
+        "price" : 60700,
+        "stockQuantity" : 32,
+        "likeCount" : 9,
+        "brand" : {
+          "brandId" : 1081,
+          "name" : "W4 brand 081"
+        }
+      } ],
+      "page" : 0,
+      "size" : 20,
+      "totalElements" : 9812,
+      "totalPages" : 491
+    }
+  },
+  "mysqlVersion" : "8.0.46",
+  "javaVersion" : "21.0.10",
+  "schema" : [ "001-brand.sql", "002-user.sql", "003-product.sql", "004-like.sql", "005-order.sql", "006-order-item.sql", "007-product-brand-price-index.sql", "008-product-list-revision.sql" ],
+  "sourceSha256" : {
+    "src/test/java/com/loopers/application/product/ProductListCacheTtlMeasurementTest.java" : "6e4a0e80789dd922c2fbda62128d449f361c3eb1b8f7d68cfd9104ccc473d9ec",
+    "src/test/java/com/loopers/support/RedisCacheMemoryProbe.java" : "e81a3c3b4c75e2ed9c1e45e8abc9210bb11cb392ae18357694d5f8b7479aebdf",
+    "src/test/java/w4/measurement/ColdStartServer.java" : "487af5a434e30ee589a830a0611fafa72b4f222ef693ab2df4caee536ce58341",
+    "src/test/resources/fixtures/week4/product-query-baseline.sql" : "912f7bbcfcce8ce19e47ead734a658a6ace998999c495cacf20fac65f0106197",
+    "src/main/java/com/loopers/infrastructure/product/ProductQueryRepositoryImpl.java" : "093d115d238ed4be44f0fcf0eb88416ad9ea5def4e12f1265c9b4a8302b6bede",
+    "src/main/resources/application.yml" : "dd3e0969549a36c60d137be8b4c341945506cb98817b67175e0456b28bb50a96"
+  },
+  "conditions" : "Three actual app JVMs share one owned MySQL/Redis; equal-byte distinct namespaces; only command-line TTL differs. All writes complete before reads, each tick rotates TTL order, HTTP requests are sequential. Scenario windows start empty after ten unmeasured warmup reads per JVM; no deletion/TTL refresh during a measurement window.",
+  "limitations" : [ "One local run per scenario, synthetic traffic and dataset; not a production optimum or concurrency/load capacity claim.", "All three TTLs share DB/Redis and OS resources; sequential order is rotated, not a randomized independent experiment.", "HTTP timing excludes parent assertions, child diagnostic capture, memory probes and JSON report writes; their scheduling lag is recorded.", "Actual offered rate can be lower than plan if sequential observer overhead overruns a tick; report actual duration and delays.", "JDBC execute timing excludes ResultSet consumption. Application/filter/JDBC observer overhead remains.", "Redis per-key MEMORY USAGE is allocation, STRLEN is payload, INFO memory is whole shared Redis process; RSS need not shrink after expiry.", "Memory snapshots use SCAN and are not atomic peaks. Expired keys may disappear while being observed.", "Hit ratio is per HTTP request; an ordinary miss has two Redis lookups because single-flight rechecks.", "Warmup errors are retained outside measurements. Measured errors are preserved and fail the experiment without retry.", "No application warmup feature, production TTL change, transaction/lock change, shared key deletion or shared volume deletion." ],
+  "sqlTemplates" : {
+    "14004123a9accd71" : "select u1_0.id,u1_0.point_balance,u1_0.created_at,u1_0.updated_at from user u1_0 where u1_0.id=? for update",
+    "3b4ef4f8fdfe3977" : "select p1_0.id,p1_0.brand_id,p1_0.created_at,p1_0.deleted_at,p1_0.name,p1_0.price,p1_0.stock_quantity,p1_0.updated_at from product p1_0 where p1_0.id=? for update",
+    "8f2885a248343645" : "select pl1_0.id from `like` pl1_0 join user u1_0 on u1_0.id=pl1_0.user_id join product p1_0 on p1_0.id=pl1_0.product_id where u1_0.id=? and p1_0.id=? limit ?",
+    "0d40cf9d6368f1d5" : "select b1_0.id,b1_0.created_at,b1_0.deleted_at,b1_0.name,b1_0.updated_at from brand b1_0 where b1_0.id=?",
+    "4cd762061edd7d08" : "delete pl1_0 from `like` pl1_0 where pl1_0.user_id=? and pl1_0.product_id=?",
+    "076e3a513c28c9a5" : "select count(pl1_0.id) from `like` pl1_0 join product p1_0 on p1_0.id=pl1_0.product_id where p1_0.id=?",
+    "3a75d9285b33d904" : "select plr1_0.revision from product_list_revision plr1_0 where plr1_0.id=1",
+    "0714d6269d01b006" : "select count(p1_0.id) from product p1_0 join brand b1_0 on b1_0.id=p1_0.brand_id where p1_0.deleted_at is null and b1_0.deleted_at is null",
+    "5d974ea1e7de0793" : "select p1_0.id,count(pl1_0.id) from product p1_0 join brand b1_0 on b1_0.id=p1_0.brand_id left join `like` pl1_0 on pl1_0.product_id=p1_0.id where p1_0.deleted_at is null and b1_0.deleted_at is null group by p1_0.id order by count(pl1_0.id) desc,p1_0.id desc limit ?,?",
+    "bc27e9bdf5788223" : "select p1_0.id,p1_0.name,p1_0.price,p1_0.stock_quantity,b1_0.id,b1_0.name,p1_0.created_at,p1_0.updated_at,p1_0.deleted_at from product p1_0 join brand b1_0 on b1_0.id=p1_0.brand_id where p1_0.deleted_at is null and b1_0.deleted_at is null and p1_0.id in (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+  },
+  "preparations" : [ {
+    "phase" : "warmup",
+    "outcomes" : [ "MISS_STORED", "HIT", "HIT", "HIT", "HIT", "HIT", "HIT", "HIT", "HIT", "HIT" ],
+    "ttlSeconds" : 5
+  }, {
+    "phase" : "warmup",
+    "outcomes" : [ "MISS_STORED", "HIT", "HIT", "HIT", "HIT", "HIT", "HIT", "HIT", "HIT", "HIT" ],
+    "ttlSeconds" : 30
+  }, {
+    "phase" : "warmup",
+    "outcomes" : [ "MISS_STORED", "HIT", "HIT", "HIT", "HIT", "HIT", "HIT", "HIT", "HIT", "HIT" ],
+    "ttlSeconds" : 60
+  }, {
+    "id" : "reset-STEADY",
+    "liked" : false,
+    "scheduledOffsetMillis" : 0,
+    "actualOffsetMillis" : 0.0,
+    "httpMillis" : 44.448667,
+    "status" : 200,
+    "body" : {
+      "meta" : {
+        "result" : "SUCCESS"
+      },
+      "data" : {
+        "productId" : 100997,
+        "liked" : false,
+        "likeCount" : 200
+      }
+    },
+    "sqlTemplateIds" : [ "14004123a9accd71", "3b4ef4f8fdfe3977", "8f2885a248343645", "0d40cf9d6368f1d5", "4cd762061edd7d08", "076e3a513c28c9a5" ],
+    "sqlCount" : 6,
+    "sqlExecuteNanos" : 6055751,
+    "counters" : {
+      "lookup.hit" : 0.0,
+      "lookup.miss" : 0.0,
+      "lookup.invalid" : 0.0,
+      "lookup.error" : 0.0,
+      "store.success" : 0.0,
+      "store.error" : 0.0
+    }
+  } ],
+  "scenarios" : [ {
+    "name" : "STEADY",
+    "targetDurationMillis" : 195000,
+    "plannedReadIntervalMillis" : 100,
+    "plannedOffsetsMillis" : "0..194900 step100",
+    "plannedWritesPerSecond" : 0,
+    "revisionBefore" : 0,
+    "reads" : [ {
+      "id" : "STEADY-0-ttl5",
+      "ttlSeconds" : 5,
+      "tick" : 0,
+      "position" : 0,
+      "scheduledOffsetMillis" : 0,
+      "actualOffsetMillis" : 19.6985,
+      "scheduleLagMillis" : 19.6985,
+      "httpMillis" : 42.222708,
+      "captureMillis" : 2.907292,
+      "status" : 200,
+      "revision" : 0,
+      "responseState" : "unchanged",
+      "outcome" : "MISS_STORED",
+      "missCause" : "FIRST_FILL",
+      "responseSha256" : "77f023cf7cbfc64270e9bcf99717e4b252eec03778c6ed96978aa16dcc87effd",
+      "selectCount" : 5,
+      "aggregateCount" : 1,
+      "sqlExecuteNanos" : 30899333,
+      "sqlTemplateIds" : [ "3a75d9285b33d904", "3a75d9285b33d904", "0714d6269d01b006", "5d974ea1e7de0793", "bc27e9bdf5788223" ],
+      "counters" : {
+        "lookup.hit" : 0.0,
+        "lookup.miss" : 2.0,
+        "lookup.invalid" : 0.0,
+        "lookup.error" : 0.0,
+        "store.success" : 1.0,
+        "store.error" : 0.0
+      }
+    } ],
+    "writes" : [ ],
+    "memorySnapshots" : [ {
+      "ttlSeconds" : 5,
+      "scheduledOffsetMillis" : 0,
+      "actualOffsetMillis" : 0.007208,
+      "dbRevision" : 0,
+      "currentVersionKeys" : 0,
+      "oldVersionKeys" : 0,
+      "snapshot" : {
+        "keyPrefix" : "commerce:test:ttl05:v1:",
+        "scannedKeys" : 0,
+        "duplicateScanKeys" : 0,
+        "vanishedDuringMeasurement" : 0,
+        "liveKeys" : 0,
+        "allocatedBytes" : 0,
+        "payloadBytes" : 0,
+        "entries" : [ ],
+        "server" : {
+          "usedMemoryBytes" : 1344824,
+          "usedMemoryDatasetBytes" : 269112,
+          "usedMemoryRssBytes" : 15773696,
+          "expiredKeys" : 0,
+          "evictedKeys" : 0,
+          "maxMemoryBytes" : 0,
+          "redisVersion" : "7.4.11"
+        },
+        "elapsedNanos" : 1921000
+      }
+    }, {
+      "ttlSeconds" : 30,
+      "scheduledOffsetMillis" : 0,
+      "actualOffsetMillis" : 2.529458,
+      "dbRevision" : 0,
+      "currentVersionKeys" : 0,
+      "oldVersionKeys" : 0,
+      "snapshot" : {
+        "keyPrefix" : "commerce:test:ttl30:v1:",
+        "scannedKeys" : 0,
+        "duplicateScanKeys" : 0,
+        "vanishedDuringMeasurement" : 0,
+        "liveKeys" : 0,
+        "allocatedBytes" : 0,
+        "payloadBytes" : 0,
+        "entries" : [ ],
+        "server" : {
+          "usedMemoryBytes" : 1344824,
+          "usedMemoryDatasetBytes" : 269112,
+          "usedMemoryRssBytes" : 15773696,
+          "expiredKeys" : 0,
+          "evictedKeys" : 0,
+          "maxMemoryBytes" : 0,
+          "redisVersion" : "7.4.11"
+        },
+        "elapsedNanos" : 1793541
+      }
+    }, {
+      "ttlSeconds" : 60,
+      "scheduledOffsetMillis" : 0,
+      "actualOffsetMillis" : 4.348667,
+      "dbRevision" : 0,
+      "currentVersionKeys" : 0,
+      "oldVersionKeys" : 0,
+      "snapshot" : {
+        "keyPrefix" : "commerce:test:ttl60:v1:",
+        "scannedKeys" : 0,
+        "duplicateScanKeys" : 0,
+        "vanishedDuringMeasurement" : 0,
+        "liveKeys" : 0,
+        "allocatedBytes" : 0,
+        "payloadBytes" : 0,
+        "entries" : [ ],
+        "server" : {
+          "usedMemoryBytes" : 1344824,
+          "usedMemoryDatasetBytes" : 269112,
+          "usedMemoryRssBytes" : 15773696,
+          "expiredKeys" : 0,
+          "evictedKeys" : 0,
+          "maxMemoryBytes" : 0,
+          "redisVersion" : "7.4.11"
+        },
+        "elapsedNanos" : 2249459
+      }
+    } ]
+  } ],
+  "servers" : [ {
+    "pid" : 9937,
+    "ready" : {
+      "cacheEnabled" : "true",
+      "port" : "59021",
+      "javaVersion" : "21.0.10",
+      "namespace" : "commerce:test:ttl05:v1",
+      "readyNanosFromMain" : "3257723416",
+      "pid" : "9937",
+      "ttlSeconds" : "5"
+    },
+    "namespace" : "commerce:test:ttl05:v1",
+    "ttlSeconds" : 5,
+    "childLog" : "/Users/junyoung/workspace/loop-pack-be-l2-vol5-java/apps/commerce-api/build/reports/week4/ttl-measurement-12152865772952889364/ttl-5/server.log"
+  }, {
+    "pid" : 9938,
+    "ready" : {
+      "cacheEnabled" : "true",
+      "port" : "59028",
+      "javaVersion" : "21.0.10",
+      "namespace" : "commerce:test:ttl30:v1",
+      "readyNanosFromMain" : "3230725583",
+      "pid" : "9938",
+      "ttlSeconds" : "30"
+    },
+    "namespace" : "commerce:test:ttl30:v1",
+    "ttlSeconds" : 30,
+    "childLog" : "/Users/junyoung/workspace/loop-pack-be-l2-vol5-java/apps/commerce-api/build/reports/week4/ttl-measurement-12152865772952889364/ttl-30/server.log"
+  }, {
+    "pid" : 9943,
+    "ready" : {
+      "cacheEnabled" : "true",
+      "port" : "59037",
+      "javaVersion" : "21.0.10",
+      "namespace" : "commerce:test:ttl60:v1",
+      "readyNanosFromMain" : "3333778375",
+      "pid" : "9943",
+      "ttlSeconds" : "60"
+    },
+    "namespace" : "commerce:test:ttl60:v1",
+    "ttlSeconds" : 60,
+    "childLog" : "/Users/junyoung/workspace/loop-pack-be-l2-vol5-java/apps/commerce-api/build/reports/week4/ttl-measurement-12152865772952889364/ttl-60/server.log"
+  } ],
+  "currentRequest" : {
+    "revision" : 0,
+    "id" : "STEADY-0-ttl5",
+    "ttlSeconds" : 5
+  },
+  "lastObservation" : {
+    "evidence" : {
+      "pid" : 9937,
+      "totalRequests" : 12,
+      "requests" : [ {
+        "sequence" : 12,
+        "requestId" : "STEADY-0-ttl5",
+        "path" : "/api/v1/products?sort=likes_desc&page=0&size=20",
+        "status" : 200,
+        "elapsedNanos" : 41391709
+      } ],
+      "sql" : [ {
+        "requestId" : "STEADY-0-ttl5",
+        "sql" : "select plr1_0.revision from product_list_revision plr1_0 where plr1_0.id=1",
+        "executeNanos" : 654250,
+        "success" : true
+      }, {
+        "requestId" : "STEADY-0-ttl5",
+        "sql" : "select plr1_0.revision from product_list_revision plr1_0 where plr1_0.id=1",
+        "executeNanos" : 515833,
+        "success" : true
+      }, {
+        "requestId" : "STEADY-0-ttl5",
+        "sql" : "select count(p1_0.id) from product p1_0 join brand b1_0 on b1_0.id=p1_0.brand_id where p1_0.deleted_at is null and b1_0.deleted_at is null",
+        "executeNanos" : 3484542,
+        "success" : true
+      }, {
+        "requestId" : "STEADY-0-ttl5",
+        "sql" : "select p1_0.id,count(pl1_0.id) from product p1_0 join brand b1_0 on b1_0.id=p1_0.brand_id left join `like` pl1_0 on pl1_0.product_id=p1_0.id where p1_0.deleted_at is null and b1_0.deleted_at is null group by p1_0.id order by count(pl1_0.id) desc,p1_0.id desc limit ?,?",
+        "executeNanos" : 25392000,
+        "success" : true
+      }, {
+        "requestId" : "STEADY-0-ttl5",
+        "sql" : "select p1_0.id,p1_0.name,p1_0.price,p1_0.stock_quantity,b1_0.id,b1_0.name,p1_0.created_at,p1_0.updated_at,p1_0.deleted_at from product p1_0 join brand b1_0 on b1_0.id=p1_0.brand_id where p1_0.deleted_at is null and b1_0.deleted_at is null and p1_0.id in (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "executeNanos" : 852708,
+        "success" : true
+      } ],
+      "counters" : {
+        "lookup.hit" : 0.0,
+        "lookup.miss" : 2.0,
+        "lookup.invalid" : 0.0,
+        "lookup.error" : 0.0,
+        "store.success" : 1.0,
+        "store.error" : 0.0
+      }
+    },
+    "response" : {
+      "meta" : {
+        "result" : "SUCCESS"
+      },
+      "data" : {
+        "items" : [ {
+          "productId" : 109970,
+          "name" : "W4 product 09970",
+          "price" : 90000,
+          "stockQuantity" : 21,
+          "brand" : {
+            "brandId" : 1070,
+            "name" : "W4 brand 070"
+          },
+          "likeCount" : 200
+        }, {
+          "productId" : 108973,
+          "name" : "W4 product 08973",
+          "price" : 1100,
+          "stockQuantity" : 24,
+          "brand" : {
+            "brandId" : 1073,
+            "name" : "W4 brand 073"
+          },
+          "likeCount" : 200
+        }, {
+          "productId" : 107976,
+          "name" : "W4 product 07976",
+          "price" : 12200,
+          "stockQuantity" : 27,
+          "brand" : {
+            "brandId" : 1076,
+            "name" : "W4 brand 076"
+          },
+          "likeCount" : 200
+        }, {
+          "productId" : 106979,
+          "name" : "W4 product 06979",
+          "price" : 23300,
+          "stockQuantity" : 30,
+          "brand" : {
+            "brandId" : 1079,
+            "name" : "W4 brand 079"
+          },
+          "likeCount" : 200
+        }, {
+          "productId" : 105982,
+          "name" : "W4 product 05982",
+          "price" : 34400,
+          "stockQuantity" : 33,
+          "brand" : {
+            "brandId" : 1082,
+            "name" : "W4 brand 082"
+          },
+          "likeCount" : 200
+        }, {
+          "productId" : 104985,
+          "name" : "W4 product 04985",
+          "price" : 45500,
+          "stockQuantity" : 36,
+          "brand" : {
+            "brandId" : 1085,
+            "name" : "W4 brand 085"
+          },
+          "likeCount" : 200
+        }, {
+          "productId" : 103988,
+          "name" : "W4 product 03988",
+          "price" : 56600,
+          "stockQuantity" : 39,
+          "brand" : {
+            "brandId" : 1088,
+            "name" : "W4 brand 088"
+          },
+          "likeCount" : 200
+        }, {
+          "productId" : 102991,
+          "name" : "W4 product 02991",
+          "price" : 67700,
+          "stockQuantity" : 42,
+          "brand" : {
+            "brandId" : 1091,
+            "name" : "W4 brand 091"
+          },
+          "likeCount" : 200
+        }, {
+          "productId" : 101994,
+          "name" : "W4 product 01994",
+          "price" : 78800,
+          "stockQuantity" : 45,
+          "brand" : {
+            "brandId" : 1094,
+            "name" : "W4 brand 094"
+          },
+          "likeCount" : 200
+        }, {
+          "productId" : 100997,
+          "name" : "W4 product 00997",
+          "price" : 89900,
+          "stockQuantity" : 48,
+          "brand" : {
+            "brandId" : 1097,
+            "name" : "W4 brand 097"
+          },
+          "likeCount" : 200
+        }, {
+          "productId" : 109990,
+          "name" : "W4 product 09990",
+          "price" : 64000,
+          "stockQuantity" : 41,
+          "brand" : {
+            "brandId" : 1090,
+            "name" : "W4 brand 090"
+          },
+          "likeCount" : 9
+        }, {
+          "productId" : 109980,
+          "name" : "W4 product 09980",
+          "price" : 27000,
+          "stockQuantity" : 31,
+          "brand" : {
+            "brandId" : 1080,
+            "name" : "W4 brand 080"
+          },
+          "likeCount" : 9
+        }, {
+          "productId" : 109960,
+          "name" : "W4 product 09960",
+          "price" : 53000,
+          "stockQuantity" : 11,
+          "brand" : {
+            "brandId" : 1060,
+            "name" : "W4 brand 060"
+          },
+          "likeCount" : 9
+        }, {
+          "productId" : 109950,
+          "name" : "W4 product 09950",
+          "price" : 16000,
+          "stockQuantity" : 1,
+          "brand" : {
+            "brandId" : 1050,
+            "name" : "W4 brand 050"
+          },
+          "likeCount" : 9
+        }, {
+          "productId" : 109940,
+          "name" : "W4 product 09940",
+          "price" : 79000,
+          "stockQuantity" : 41,
+          "brand" : {
+            "brandId" : 1040,
+            "name" : "W4 brand 040"
+          },
+          "likeCount" : 9
+        }, {
+          "productId" : 109930,
+          "name" : "W4 product 09930",
+          "price" : 42000,
+          "stockQuantity" : 31,
+          "brand" : {
+            "brandId" : 1030,
+            "name" : "W4 brand 030"
+          },
+          "likeCount" : 9
+        }, {
+          "productId" : 109920,
+          "name" : "W4 product 09920",
+          "price" : 5000,
+          "stockQuantity" : 21,
+          "brand" : {
+            "brandId" : 1020,
+            "name" : "W4 brand 020"
+          },
+          "likeCount" : 9
+        }, {
+          "productId" : 109910,
+          "name" : "W4 product 09910",
+          "price" : 68000,
+          "stockQuantity" : 11,
+          "brand" : {
+            "brandId" : 1010,
+            "name" : "W4 brand 010"
+          },
+          "likeCount" : 9
+        }, {
+          "productId" : 109891,
+          "name" : "W4 product 09891",
+          "price" : 97700,
+          "stockQuantity" : 42,
+          "brand" : {
+            "brandId" : 1091,
+            "name" : "W4 brand 091"
+          },
+          "likeCount" : 9
+        }, {
+          "productId" : 109881,
+          "name" : "W4 product 09881",
+          "price" : 60700,
+          "stockQuantity" : 32,
+          "brand" : {
+            "brandId" : 1081,
+            "name" : "W4 brand 081"
+          },
+          "likeCount" : 9
+        } ],
+        "page" : 0,
+        "size" : 20,
+        "totalElements" : 9812,
+        "totalPages" : 491
+      }
+    },
+    "id" : "STEADY-0-ttl5"
+  },
+  "failure" : "org.opentest4j.AssertionFailedError: \nexpected: \"e367cfb903813f823d2437ed86b036525ef290e7c63844420d2a4d7394d53e5e\"\n but was: \"77f023cf7cbfc64270e9bcf99717e4b252eec03778c6ed96978aa16dcc87effd\"",
+  "finishedAt" : "2026-10-16T06:14:44.309436Z",
+  "childrenStopped" : true
+}

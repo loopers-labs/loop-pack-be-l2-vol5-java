@@ -1,0 +1,765 @@
+{
+  "date": "2026-10-15",
+  "startingHead": "c161dea",
+  "scope": "Customer brandId=null LATEST/PRICE_ASC; no Redis, local cache, index, write transaction or lock changes",
+  "red": {
+    "command": "./gradlew :apps:commerce-api:test --tests 'com.loopers.application.product.ProductQueryBaselineTest' --tests 'com.loopers.application.product.ProductQueryServiceIntegrationTest' --tests 'com.loopers.application.product.ProductPageSnapshotIntegrationTest' --console=plain",
+    "stage": "Structural Red before production change; probe lifecycle corrected",
+    "exitCode": 1,
+    "suites": [
+      {
+        "name": "com.loopers.application.product.ProductQueryServiceIntegrationTest",
+        "tests": 12,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "failedCases": []
+      },
+      {
+        "name": "com.loopers.application.product.ProductQueryBaselineTest",
+        "tests": 5,
+        "failures": 2,
+        "errors": 0,
+        "skipped": 0,
+        "failedCases": [
+          {
+            "name": "[1] sort=latest",
+            "message": "java.lang.AssertionError: [count + 좋아요 없는 page + 선택 ID의 일괄 집계] \nExpected size: 3 but was: 2 in:\n[Query[sql=select count(p1_0.id) from product p1_0 join brand b1_0 on b1_0.id=p1_0.brand_id where p1_0.deleted_at is null and b1_0.deleted_at is null, parameters=[], executeNanos=1759125],\n    Query[sql=select p1_0.id,p1_0.name,p1_0.price,p1_0.stock_quantity,b1_0.id,b1_0.name,(select count(pl1_0.id) from `like` pl1_0 where pl1_0.product_id=p1_0.id),p1_0.created_at,p1_0.updated_at,p1_0.deleted_at from product p1_0 join brand b1_0 on b1_0.id=p1_0.brand_id where p1_0.deleted_at is null and b1_0.deleted_at is null order by p1_0.created_at desc,p1_0.id desc limit ?,?, parameters=[0, 1], executeNanos=30710250]]"
+          },
+          {
+            "name": "[2] sort=price_asc",
+            "message": "java.lang.AssertionError: [count + 좋아요 없는 page + 선택 ID의 일괄 집계] \nExpected size: 3 but was: 2 in:\n[Query[sql=select count(p1_0.id) from product p1_0 join brand b1_0 on b1_0.id=p1_0.brand_id where p1_0.deleted_at is null and b1_0.deleted_at is null, parameters=[], executeNanos=1740166],\n    Query[sql=select p1_0.id,p1_0.name,p1_0.price,p1_0.stock_quantity,b1_0.id,b1_0.name,(select count(pl1_0.id) from `like` pl1_0 where pl1_0.product_id=p1_0.id),p1_0.created_at,p1_0.updated_at,p1_0.deleted_at from product p1_0 join brand b1_0 on b1_0.id=p1_0.brand_id where p1_0.deleted_at is null and b1_0.deleted_at is null order by p1_0.price,p1_0.id desc limit ?,?, parameters=[0, 1], executeNanos=17596125]]"
+          }
+        ]
+      },
+      {
+        "name": "com.loopers.application.product.ProductPageSnapshotIntegrationTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "failedCases": []
+      }
+    ]
+  },
+  "initialGreen": {
+    "command": "./gradlew :apps:commerce-api:test --tests 'com.loopers.application.product.ProductQueryBaselineTest' --tests 'com.loopers.application.product.ProductQueryServiceIntegrationTest' --tests 'com.loopers.application.product.ProductPageSnapshotIntegrationTest' --tests 'com.loopers.support.JdbcReadProbeTest' --tests 'com.loopers.architecture.ArchitectureTest' :apps:commerce-api:checkstyleMain :apps:commerce-api:checkstyleTest --console=plain",
+    "exitCode": 0,
+    "suites": 5,
+    "tests": 25,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "note": "Before two zero-visible-result cases and exact three-read snapshot assertions were added; those passed final full check."
+  },
+  "benchmark": {
+    "command": "./gradlew :apps:commerce-api:test --tests 'com.loopers.application.product.ProductQueryBaselineTest.measuresExistingHttpQueryAgainstManualIndexesAndDeterministicTenThousandProducts' --console=plain",
+    "before": {
+      "file": "global-list-before-2026-10-15.json",
+      "measuredAt": "2026-10-15T14:23:05.639612Z",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "exitCode": 0
+    },
+    "after": {
+      "file": "global-list-after-2026-10-15.json",
+      "measuredAt": "2026-10-15T14:26:19.684886Z",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "exitCode": 0
+    },
+    "equivalence": {
+      "sameSeedHash": true,
+      "sameHarnessHash": true,
+      "sameSchemaScripts": true,
+      "samePhysicalIndexes": true,
+      "allEightExpectedAndVerifiedDataEqual": true
+    },
+    "comparisons": [
+      {
+        "round": 1,
+        "case": "all-latest",
+        "request": "/api/v1/products?sort=latest&page=0&size=20",
+        "before": {
+          "min": 20.312834,
+          "p50": 21.806,
+          "p95": 23.923417,
+          "max": 25.113583
+        },
+        "after": {
+          "min": 10.004542,
+          "p50": 11.265875,
+          "p95": 13.676042,
+          "max": 15.978542
+        },
+        "sqlBefore": [
+          2
+        ],
+        "sqlAfter": [
+          3
+        ],
+        "p50ReductionPercent": 48.335893790699814,
+        "p95ReductionPercent": 42.834077590170324
+      },
+      {
+        "round": 1,
+        "case": "all-price_asc",
+        "request": "/api/v1/products?sort=price_asc&page=0&size=20",
+        "before": {
+          "min": 20.239167,
+          "p50": 21.687583,
+          "p95": 22.938084,
+          "max": 23.501792
+        },
+        "after": {
+          "min": 9.537208,
+          "p50": 11.065083,
+          "p95": 12.881583,
+          "max": 16.829917
+        },
+        "sqlBefore": [
+          2
+        ],
+        "sqlAfter": [
+          3
+        ],
+        "p50ReductionPercent": 48.97963963988058,
+        "p95ReductionPercent": 43.84193989349765
+      },
+      {
+        "round": 2,
+        "case": "all-latest",
+        "request": "/api/v1/products?sort=latest&page=0&size=20",
+        "before": {
+          "min": 19.877625,
+          "p50": 21.081958,
+          "p95": 22.996208,
+          "max": 25.601834
+        },
+        "after": {
+          "min": 9.847834,
+          "p50": 10.622208,
+          "p95": 13.476834,
+          "max": 15.842375
+        },
+        "sqlBefore": [
+          2
+        ],
+        "sqlAfter": [
+          3
+        ],
+        "p50ReductionPercent": 49.61469897625258,
+        "p95ReductionPercent": 41.39540745152418
+      },
+      {
+        "round": 2,
+        "case": "all-price_asc",
+        "request": "/api/v1/products?sort=price_asc&page=0&size=20",
+        "before": {
+          "min": 19.458417,
+          "p50": 21.119208,
+          "p95": 26.023584,
+          "max": 33.658291
+        },
+        "after": {
+          "min": 9.680667,
+          "p50": 10.797791,
+          "p95": 15.495125,
+          "max": 15.75325
+        },
+        "sqlBefore": [
+          2
+        ],
+        "sqlAfter": [
+          3
+        ],
+        "p50ReductionPercent": 48.872178350627536,
+        "p95ReductionPercent": 40.4573751255784
+      }
+    ]
+  },
+  "finalCheck": {
+    "command": "./gradlew :apps:commerce-api:check --rerun-tasks --console=plain",
+    "exitCode": 0,
+    "buildResult": "BUILD SUCCESSFUL",
+    "duration": "1m 38s",
+    "finishedLocalMinute": "2026-10-15 23:31 KST",
+    "totals": {
+      "suites": 63,
+      "tests": 569,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "suites": [
+      {
+        "name": "com.loopers.CommerceApiContextTest",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:03.998Z"
+      },
+      {
+        "name": "com.loopers.application.brand.AdminBrandQueryServiceIntegrationTest",
+        "tests": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:04.344Z"
+      },
+      {
+        "name": "com.loopers.application.brand.BrandConcurrencyIntegrationTest",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:06.381Z"
+      },
+      {
+        "name": "com.loopers.application.brand.BrandQueryServiceIntegrationTest",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:09.879Z"
+      },
+      {
+        "name": "com.loopers.application.brand.BrandRegistrationServiceIntegrationTest",
+        "tests": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:10.153Z"
+      },
+      {
+        "name": "com.loopers.application.brand.BrandRemovalConcurrencyTest",
+        "tests": 9,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:10.713Z"
+      },
+      {
+        "name": "com.loopers.application.brand.BrandRemovalTransactionTest",
+        "tests": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:13.559Z"
+      },
+      {
+        "name": "com.loopers.application.like.LikeServiceIntegrationTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:14.749Z"
+      },
+      {
+        "name": "com.loopers.application.order.OrderConcurrencyIntegrationTest",
+        "tests": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:14.964Z"
+      },
+      {
+        "name": "com.loopers.application.order.OrderPointConcurrencyIntegrationTest",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:15.772Z"
+      },
+      {
+        "name": "com.loopers.application.order.OrderServiceIntegrationTest",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:15.980Z"
+      },
+      {
+        "name": "com.loopers.application.order.OrderStockConcurrencyIntegrationTest",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:16.281Z"
+      },
+      {
+        "name": "com.loopers.application.order.OrderTransactionTest",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:18.198Z"
+      },
+      {
+        "name": "com.loopers.application.order.PointChargeOrderConcurrencyIntegrationTest",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:19.026Z"
+      },
+      {
+        "name": "com.loopers.application.order.StockLostUpdateControlTest",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:19.193Z"
+      },
+      {
+        "name": "com.loopers.application.product.AdminProductServiceIntegrationTest",
+        "tests": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:19.289Z"
+      },
+      {
+        "name": "com.loopers.application.product.ProductPageSnapshotIntegrationTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:20.569Z"
+      },
+      {
+        "name": "com.loopers.application.product.ProductQueryBaselineTest",
+        "tests": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:27.293Z"
+      },
+      {
+        "name": "com.loopers.application.product.ProductQueryServiceIntegrationTest",
+        "tests": 14,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:37.833Z"
+      },
+      {
+        "name": "com.loopers.application.user.PointServiceIntegrationTest",
+        "tests": 18,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:39.446Z"
+      },
+      {
+        "name": "com.loopers.application.user.UserIdentityWiringTest",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:40.846Z"
+      },
+      {
+        "name": "com.loopers.application.user.UserResolverTest",
+        "tests": 11,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:40.927Z"
+      },
+      {
+        "name": "com.loopers.architecture.ArchitectureTest",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:40.931Z"
+      },
+      {
+        "name": "com.loopers.domain.brand.BrandDeletionServiceTest",
+        "tests": 8,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:41.852Z"
+      },
+      {
+        "name": "com.loopers.domain.brand.BrandLifecycleTest",
+        "tests": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:41.855Z"
+      },
+      {
+        "name": "com.loopers.domain.brand.BrandNameTest",
+        "tests": 13,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:41.869Z"
+      },
+      {
+        "name": "com.loopers.domain.brand.BrandTest",
+        "tests": 13,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:41.876Z"
+      },
+      {
+        "name": "예시 모델을 생성할 때,",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:41.880Z"
+      },
+      {
+        "name": "예시를 조회할 때,",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:41.896Z"
+      },
+      {
+        "name": "com.loopers.domain.example.ExampleServiceIntegrationTest",
+        "tests": 0,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "1970-01-01T00:00:00Z"
+      },
+      {
+        "name": "com.loopers.domain.order.OrderQuantitiesTest",
+        "tests": 16,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:42.043Z"
+      },
+      {
+        "name": "com.loopers.domain.order.OrderTest",
+        "tests": 8,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:42.050Z"
+      },
+      {
+        "name": "com.loopers.domain.product.ProductStockTest",
+        "tests": 19,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:42.052Z"
+      },
+      {
+        "name": "com.loopers.domain.product.ProductTest",
+        "tests": 14,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:42.058Z"
+      },
+      {
+        "name": "com.loopers.domain.user.UserPointsTest",
+        "tests": 13,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:42.062Z"
+      },
+      {
+        "name": "com.loopers.infrastructure.brand.BrandRepositoryIntegrationTest",
+        "tests": 8,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:42.073Z"
+      },
+      {
+        "name": "com.loopers.infrastructure.brand.BrandSchemaIntegrationTest",
+        "tests": 11,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:47.330Z"
+      },
+      {
+        "name": "com.loopers.infrastructure.like.ProductLikeRepositoryIntegrationTest",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:48.044Z"
+      },
+      {
+        "name": "com.loopers.infrastructure.product.ProductRepositoryIntegrationTest",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:48.362Z"
+      },
+      {
+        "name": "com.loopers.infrastructure.schema.CommerceSchemaIntegrationTest",
+        "tests": 32,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:52.988Z"
+      },
+      {
+        "name": "com.loopers.infrastructure.user.FixtureUserIdentityRepositoryTest",
+        "tests": 13,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:59.112Z"
+      },
+      {
+        "name": "com.loopers.infrastructure.user.FixtureUserInitializerIntegrationTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:30:59.135Z"
+      },
+      {
+        "name": "GET /api/v1/examples/{id}",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:31:00.571Z"
+      },
+      {
+        "name": "com.loopers.interfaces.api.ContractClassificationTest",
+        "tests": 0,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "1970-01-01T00:00:00Z"
+      },
+      {
+        "name": "GET /api/v1/examples/{id}",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:31:00.892Z"
+      },
+      {
+        "name": "com.loopers.interfaces.api.ExampleV1ApiE2ETest",
+        "tests": 0,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "1970-01-01T00:00:00Z"
+      },
+      {
+        "name": "com.loopers.interfaces.api.brand.AdminBrandApiE2ETest",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:31:01.150Z"
+      },
+      {
+        "name": "com.loopers.interfaces.api.brand.AdminBrandMutationApiE2ETest",
+        "tests": 11,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:31:02.235Z"
+      },
+      {
+        "name": "com.loopers.interfaces.api.brand.BrandRemovalAccessApiTest",
+        "tests": 9,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:31:03.121Z"
+      },
+      {
+        "name": "com.loopers.interfaces.api.brand.BrandRemovalCustomerApiTest",
+        "tests": 6,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:31:04.078Z"
+      },
+      {
+        "name": "com.loopers.interfaces.api.brand.BrandV1ApiE2ETest",
+        "tests": 15,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:31:04.877Z"
+      },
+      {
+        "name": "com.loopers.interfaces.api.commerce.AdminSecurityApiTest",
+        "tests": 57,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:31:05.983Z"
+      },
+      {
+        "name": "com.loopers.interfaces.api.commerce.CommerceJsonBoundaryApiE2ETest",
+        "tests": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:31:10.408Z"
+      },
+      {
+        "name": "com.loopers.interfaces.api.like.LikeApiE2ETest",
+        "tests": 25,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:31:10.939Z"
+      },
+      {
+        "name": "com.loopers.interfaces.api.order.OrderScenarioApiE2ETest",
+        "tests": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:31:12.905Z"
+      },
+      {
+        "name": "com.loopers.interfaces.api.order.OrderV1ApiE2ETest",
+        "tests": 40,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:31:13.335Z"
+      },
+      {
+        "name": "com.loopers.interfaces.api.order.PointOrderJourneyApiE2ETest",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:31:16.476Z"
+      },
+      {
+        "name": "com.loopers.interfaces.api.point.PointApiE2ETest",
+        "tests": 30,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:31:16.600Z"
+      },
+      {
+        "name": "com.loopers.interfaces.api.product.ProductApiE2ETest",
+        "tests": 18,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:31:18.622Z"
+      },
+      {
+        "name": "com.loopers.interfaces.api.product.ProductBoundaryApiE2ETest",
+        "tests": 20,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:31:19.828Z"
+      },
+      {
+        "name": "com.loopers.interfaces.api.product.ProductQueryApiE2ETest",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:31:21.237Z"
+      },
+      {
+        "name": "com.loopers.support.JdbcReadProbeTest",
+        "tests": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:31:21.506Z"
+      },
+      {
+        "name": "com.loopers.support.error.CoreExceptionTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timestamp": "2026-10-15T14:31:21.673Z"
+      }
+    ],
+    "checkstyle": [
+      {
+        "path": "apps/commerce-api/build/reports/checkstyle/main.xml",
+        "violations": 0
+      },
+      {
+        "path": "apps/commerce-api/build/reports/checkstyle/test.xml",
+        "violations": 0
+      },
+      {
+        "path": "apps/commerce-batch/build/reports/checkstyle/main.xml",
+        "violations": 0
+      },
+      {
+        "path": "apps/commerce-batch/build/reports/checkstyle/test.xml",
+        "violations": 0
+      },
+      {
+        "path": "apps/commerce-streamer/build/reports/checkstyle/main.xml",
+        "violations": 0
+      },
+      {
+        "path": "modules/jpa/build/reports/checkstyle/main.xml",
+        "violations": 0
+      },
+      {
+        "path": "modules/jpa/build/reports/checkstyle/testFixtures.xml",
+        "violations": 0
+      },
+      {
+        "path": "modules/kafka/build/reports/checkstyle/main.xml",
+        "violations": 0
+      },
+      {
+        "path": "modules/redis/build/reports/checkstyle/main.xml",
+        "violations": 0
+      },
+      {
+        "path": "modules/redis/build/reports/checkstyle/testFixtures.xml",
+        "violations": 0
+      },
+      {
+        "path": "supports/jackson/build/reports/checkstyle/main.xml",
+        "violations": 0
+      }
+    ],
+    "sha256": {
+      "apps/commerce-api/src/main/java/com/loopers/infrastructure/product/ProductQueryRepositoryImpl.java": "b17583b797fb30b8bdad56d8a53376ed311b9c5b1f3ca7c45b50071c0a291a4f",
+      "apps/commerce-api/src/main/java/com/loopers/infrastructure/product/ProductPageRow.java": "3888f56ebb3d02bfa2dc3b8a139d9f1379c889601cf16fb92212054e36fea9fd",
+      "apps/commerce-api/src/test/java/com/loopers/application/product/ProductQueryBaselineTest.java": "c78d6709301856044a1b1f1f6524a649f399e5135e432c4dcba06b13133928ab",
+      "apps/commerce-api/src/test/java/com/loopers/application/product/ProductQueryServiceIntegrationTest.java": "409faa522725b4d29518ab99e8a8ee1445bb867048d673ecaf2523b4e0886eb4",
+      "apps/commerce-api/src/test/java/com/loopers/application/product/ProductPageSnapshotIntegrationTest.java": "5952c1002817fb314903d41cd3903c7a4bfff742a452f65a8b57d57050818077"
+    }
+  },
+  "limitations": [
+    "Benchmark: warm sequential local reads, 2 rounds per single before/after process; not production throughput or independent replicated experiments.",
+    "Snapshot: actual default MySQL REPEATABLE READ transaction; no deletion-race policy or other isolation level guarantee.",
+    "Redis container is existing app test infrastructure; product list does not use a cache.",
+    "Initial Mockito probe reset failure was tooling failure, excluded from structural product Red.",
+    "Final full check regenerated benchmark output; primary comparison above uses preserved successful standalone before/after runs."
+  ]
+}

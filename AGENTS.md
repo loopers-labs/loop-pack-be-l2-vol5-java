@@ -14,6 +14,8 @@
 
 | 문서 | 역할 |
 | --- | --- |
+| [W4 채점 기준](docs/week4/grading-criteria.md) | 이번 주 상품 조회·인덱스·Redis 캐시 과제의 8개 평가 항목, 필수 증거와 선택 사항 |
+| [W4 과제 원문](docs/week4/assignment-original.md) | 2026-10-12 제공된 채점 기준 원문 보존 |
 | [전체 설계](docs/week2/commerce-erd-draft.md) | 확정 업무 규칙, 버드뷰, 계층 의존, ERD·도메인 책임, 세 대표 흐름 |
 | [API 계약](docs/week2/commerce-api-contract.md) | 공통 입력·응답, 고객·관리자 API, 필터·페이지·정렬, 오류 계약 |
 | [정책 선택과 설계 검토](docs/week2/commerce-policy-decisions.md) | 확정 정책·남은 제안과 설계 대안·선택 이유 |
