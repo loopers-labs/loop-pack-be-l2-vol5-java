@@ -64,7 +64,7 @@ public class ProductAdminV1Controller implements ProductAdminV1ApiSpec {
     public ApiResponse<ProductAdminV1Dto.AdminProductResponse> getProduct(
         @PathVariable(value = "productId") Long productId
     ) {
-        ProductQueryResult product = productFacade.getProduct(productId);
+        ProductQueryResult product = productFacade.getProductForAdmin(productId);
         return ApiResponse.success(ProductAdminV1Dto.AdminProductResponse.from(product));
     }
 

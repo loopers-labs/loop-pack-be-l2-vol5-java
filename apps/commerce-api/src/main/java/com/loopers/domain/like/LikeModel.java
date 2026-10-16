@@ -3,6 +3,7 @@ package com.loopers.domain.like;
 import com.loopers.domain.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import lombok.Getter;
@@ -13,7 +14,9 @@ import lombok.Getter;
 @Entity
 @Table(
     name = "product_like",
-    uniqueConstraints = @UniqueConstraint(name = "uk_like_user_product", columnNames = {"user_id", "product_id"})
+    uniqueConstraints = @UniqueConstraint(name = "uk_like_user_product", columnNames = {"user_id", "product_id"}),
+    // 상품별 좋아요 수 집계(목록 scalar·상세 DB count)는 product_id 로 시작하는 범위를 읽는다.
+    indexes = @Index(name = "idx_like_product", columnList = "product_id")
 )
 @Getter
 public class LikeModel extends BaseEntity {

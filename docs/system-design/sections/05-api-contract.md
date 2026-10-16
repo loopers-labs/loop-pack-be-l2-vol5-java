@@ -183,6 +183,8 @@ Spring Security 필터에서 거절되는 관리자 요청은 `403` 상태만 �
 
 고객 조회에는 삭제된 Brand와 Product를 노출하지 않는다. 상품 목록 요청에 `brandId`가 주어졌지만 해당 ID의 브랜드가 존재하지 않거나 삭제된 경우에는 `404`로 처리하지 않고 `200 OK`와 빈 페이지를 반환한다.
 
+고객 상세의 상품명·Brand 이름·가격·재고만 JSON String cache-aside로 저장하며 좋아요 수는 DB 조회로 합성한다. 기존 응답 필드와 application 합성을 유지한다. 기본정보는 공통 afterCommit callback에서 commit 뒤 동기 DEL하고 시험 10초/평시 5분의 고정 TTL을 hit에서 연장하지 않는다. JSON 형식 오류는 miss·DB 재조회/재채움·로그, cache 후처리 실패만 있으면 DB 성공 결과를 유지한다. 좋아요 count key/증감은 없고 삭제 비노출·소유권·주문 판단은 완화하지 않는다. [4.4 상품 조회](./04-use-cases.md#44-상품-조회)의 실패·늦은 fill·실제 만료/재채움 계약을 따른다.
+
 ### 좋아요
 
 |기능|Method & Path|입력|성공 결과|대표 오류|

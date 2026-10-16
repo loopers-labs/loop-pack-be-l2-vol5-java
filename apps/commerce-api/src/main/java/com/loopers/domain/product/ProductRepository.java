@@ -26,6 +26,9 @@ public interface ProductRepository {
 
     ProductModel save(ProductModel product);
 
+    /** 브랜드에 연결된 미삭제 상품의 식별자. 브랜드 변경이 영향을 주는 상품을 찾을 때 사용한다. */
+    List<Long> findActiveIdsByBrandId(Long brandId);
+
     /**
      * 브랜드에 연결된 미삭제 상품을 한 번의 bulk UPDATE 로 Soft Delete 한다.
      * 개별 Entity 행동·변경 감지·콜백을 거치지 않으므로 삭제·수정 시각에 같은 값을 직접 기록하며,

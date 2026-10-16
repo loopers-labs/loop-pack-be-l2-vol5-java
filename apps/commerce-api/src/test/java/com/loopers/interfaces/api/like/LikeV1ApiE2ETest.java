@@ -3,6 +3,7 @@ package com.loopers.interfaces.api.like;
 import com.loopers.application.like.LikeFacade;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.user.UserModel;
+import com.loopers.fixture.ProductDetailCacheCleanUp;
 import com.loopers.fixture.ProductFixture;
 import com.loopers.fixture.UserFixture;
 import com.loopers.infrastructure.like.LikeJpaRepository;
@@ -52,10 +53,13 @@ class LikeV1ApiE2ETest {
     private LikeJpaRepository likeJpaRepository;
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
+    @Autowired
+    private ProductDetailCacheCleanUp productDetailCacheCleanUp;
 
     @AfterEach
     void tearDown() {
         databaseCleanUp.truncateAllTables();
+        productDetailCacheCleanUp.deleteAll();
     }
 
     private HttpEntity<Object> request(String userId) {

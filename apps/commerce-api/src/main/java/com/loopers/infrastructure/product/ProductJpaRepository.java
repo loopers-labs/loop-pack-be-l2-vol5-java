@@ -27,6 +27,9 @@ public interface ProductJpaRepository extends JpaRepository<ProductModel, Long> 
     @Query("select p from ProductModel p where p.id in :ids and p.deletedAt is null order by p.id asc")
     List<ProductModel> findAllActiveForUpdateByIdIn(@Param("ids") Collection<Long> ids);
 
+    @Query("select p.id from ProductModel p where p.brandId = :brandId and p.deletedAt is null")
+    List<Long> findActiveIdsByBrandId(@Param("brandId") Long brandId);
+
     /**
      * {@code @Modifying} 의 flushAutomatically·clearAutomatically 는 켜지 않는다.
      * 무조건 clear 하면 아직 flush 하지 않은 변경을 잃을 수 있어 영속성 컨텍스트 처리는 호출 흐름에서 판단한다.

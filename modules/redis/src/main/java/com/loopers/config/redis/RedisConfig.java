@@ -1,7 +1,9 @@
 package com.loopers.config.redis;
 
 
+import io.lettuce.core.ClientOptions;
 import io.lettuce.core.ReadFrom;
+import io.lettuce.core.SocketOptions;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -76,6 +78,12 @@ public class RedisConfig{
             Consumer<LettuceClientConfiguration.LettuceClientConfigurationBuilder> customizer
     ){
         LettuceClientConfiguration.LettuceClientConfigurationBuilder builder = LettuceClientConfiguration.builder();
+        if(redisProperties.commandTimeout() != null) builder.commandTimeout(redisProperties.commandTimeout());
+        if(redisProperties.connectTimeout() != null) {
+            builder.clientOptions(ClientOptions.builder()
+                    .socketOptions(SocketOptions.builder().connectTimeout(redisProperties.connectTimeout()).build())
+                    .build());
+        }
         if(customizer != null) customizer.accept(builder);
         LettuceClientConfiguration clientConfig = builder.build();
         RedisStaticMasterReplicaConfiguration masterReplicaConfig = new RedisStaticMasterReplicaConfiguration(master.host(), master.port());

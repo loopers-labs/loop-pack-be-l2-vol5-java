@@ -183,6 +183,8 @@ PointHistory와 StockHistory는 현재 상태 변경과 같은 트랜잭션에�
 
 현재는 두 번째 대안을 선택한다. `ProductFacade`가 읽기 전용 트랜잭션에서 `ProductQueryRepository`를 호출하고, infrastructure 구현체가 Product·Brand 조인과 Like 집계를 수행해 `ProductQueryResult`를 반환한다. `brandName`과 `likeCount`는 ProductModel에 저장하지 않는다.
 
+목록은 위 호출 경계와 스칼라 집계를 출발점으로 유지한다. 상세에서 DB 데이터와 캐시 데이터를 합성하게 되면 application이 조정한다. DB projection을 위한 조인·집계와 DB/Redis 결과의 합성 책임을 구분한다. 상세의 필드·포트·실행 전략은 [4.4 상품 조회](./04-use-cases.md#44-상품-조회)의 보류 사항을 먼저 결정한다.
+
 Facade는 완성된 읽기 결과를 반환하는 조회 포트를 그대로 사용할 수 있으며, 조회 테이블 수만으로 Domain Service를 만들지 않는다. 조회 조건과 projection이 빠르게 늘어나 ProductFacade의 변경 이유가 쓰기 유스케이스와 분리되기 시작하면 별도 application QueryFacade 또는 QueryService를 검토한다.
 
 ## A.12 레이어 간 반환 모델
@@ -231,3 +233,14 @@ Soft Delete된 Brand와 Product를 관리자 목록·상세에서 어떻게 다�
 |`Money(BigDecimal)` Value Object 사용|소수 단위 금액이나 비율 계산 결과를 표현하기 쉽다.|현재 계약은 원 단위 정수이므로 소수 자릿수·반올림 정책과 저장·DTO 변환 규칙을 추가로 정해야 한다.|
 
 현재는 `Money(long 원)`을 선택한다. 상품 가격은 양수여야 하지만 합산의 시작값 등에서 0원이 필요하므로 Money 자체는 0을 허용하고, 상품 가격·주문 수량·포인트 충전액의 입력 조건은 각 모델과 유스케이스가 검증한다. `int`는 여러 품목의 주문 총액을 표현하기에 범위가 좁고, 현재 금액 계약에 소수 단위가 없어 `BigDecimal`은 사용하지 않는다. 도메인에서는 Money가 금액 계산과 오버플로 검사를 맡고, API의 금액 필드는 기존 `Long` 계약을 유지한다. 포인트 잔액과 사용액은 Money로 묶지 않고 Point의 규칙에 따라 다룬다.
+
+
+## A.16 상품 기본정보 캐시·좋아요 DB 조회와 고정 수명
+
+고객 상세의 상품명·Brand 이름·가격·재고만 JSON String cache-aside로 저장하고 좋아요 수는 DB에서 조회·집계한다. application이 기본정보·DB count·노출 권위 확인을 합성한다. 변경마다 DEL해도 반복 읽기 재사용은 가능하지만 이번에는 별도 count key/무효화·증감 책임을 줄이기로 했다. 상세 hit에 남는 count/권위 확인과 실제 줄인 기본정보 원본 비용은 따로 측정한다. DB count 비정규화는 목록 성능을 보고 결정하며 Redis 원본·주기 배치는 도입하지 않는다.
+
+TTL은 시험 10초/평시 5분의 고정값이다. hit 연장으로 옛 값이 무기한 남는 문제를 피하고 별도 최대 보존 metadata는 추가하지 않는다. 늦은 fill이 새 TTL로 들어올 수 있으므로 DB 변경 후 모든 요청의 5분 최신성 상한은 아니다. 진행 중 옛 fill 종료·실제 만료·다음 DB miss 재채움으로 복구를 검증한다.
+
+기본정보 영향 쓰기는 공통 afterCommit callback을 통해 commit 뒤 동기 DEL한다. 각 업무는 영향 상품을 전달하고 공통 도구는 TX 안의 등록·commit 뒤 실행·cache 예외 로그를 맡는다. 별도 캐시 AOP/AFTER_COMMIT 이벤트는 추가하지 않는다. rollback에서 미실행, cache 후처리 실패에서 DB 성공 보존·로그만/재시도 없음, JSON 형식 오류의 miss/DB 재채움은 유지한다.
+
+cold는 기본 miss+통제된 동시 miss 관측까지만 하며 조회 공유/잠금을 추가하지 않는다. 평시와 일반 업무 회귀는 cache on이고 필요한 캐시 비교만 off다. 기존 로컬 MySQL/Redis·loopers를 함께 사용하며 Quest의 격리 환경과 차이는 측정 한계로 남긴다. 앱/DB/Redis CPU 수집은 이번 범위에서 제외하되 성능과 무관하다고 일반화하지 않는다. [4.4 상품 조회](./04-use-cases.md#44-상품-조회)를 따른다.

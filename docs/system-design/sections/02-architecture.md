@@ -135,6 +135,8 @@ public interface ProductQueryRepository {
 
 `ProductQueryResult`의 `brandName`과 `likeCount`는 조회 시 계산·조합되는 스칼라 값이며 ProductModel의 영속 상태가 아니다. `stockQuantity`는 Product가 소유한 Stock의 현재 수량을 읽은 값이다. QueryRepository는 읽기 모델을 위한 포트이므로 애그리게잇 변경에 사용하지 않는다.
 
+목록은 기존 조인·스칼라 집계로 측정한다. 상세는 기본정보 JSON cache-aside와 DB 좋아요 count·노출 권위 확인을 application에서 합성한다. 캐시 포트 `ProductDetailCache`는 domain에 선언하고, infrastructure의 `ProductDetailRedisCache`가 기존 master template·JSON 변환·연결을 처리한다. 노출 확인·좋아요 수는 `ProductQueryRepository.findVisibleWithLikeCount`가 반환한다. 캐시 값과 이 DB 결과는 `ProductDetailData.CacheValue`·`ProductDetailData.DbResult`로 한 파일의 중첩 record로 두며, 최종 응답은 별도 책임인 `ProductQueryResult`로 합성한다. 고객 상세 조회(`ProductFacade.getProduct`)는 조회 유스케이스의 `@Transactional(readOnly = true)` 원칙의 예외로, 트랜잭션을 열지 않는다. Redis 대기 동안 DB 연결을 잡지 않기 위해서이며 각 경로의 DB 조회는 단일 SELECT다. 관리자 상세는 `getProductForAdmin`으로 DB를 읽는다. 기본정보 영향 쓰기는 TX 안에서 공통 afterCommit callback(`support.transaction.AfterCommitRunner`)에 등록하고 commit 뒤 동기 DEL한다. 트랜잭션 밖 등록은 `IllegalStateException`으로 거절한다. 별도 캐시 AOP/이벤트는 도입하지 않는다. JSON 형식 오류는 miss·DB 재조회/재채움·로그이고 고정 TTL은 hit에서 연장하지 않는다. [4.4 상품 조회](./04-use-cases.md#44-상품-조회)를 따른다.
+
 찾는 대상이 없을 때의 처리(예: NOT_FOUND)는 Repository가 아니라 호출자인 Facade가 판단한다.
 
 상태 변경에 필요한 비관적 잠금은 기존 일반 읽기 포트와 분리해 domain Repository에 명시한다. 주문 확정용 Order 단독 PK 잠금, 충전·결제용 사용자 Point 잠금, 상품 수정·삭제·최종 재고 설정용 Product 단건 잠금, 주문 확정용 여러 활성 Product의 ID 오름차순 잠금 계약을 각각 `findForUpdate`, `findByUserIdForUpdate`, `findActiveForUpdate`, `findAllActiveByIdsForUpdate`로 구현했다. JPA 잠금·SQL·힌트는 infrastructure에 둔다. 기존 상세·목록·DRAFT 생성·좋아요·잔액 조회까지 잠그지 않는다. 호출 Facade의 동일 트랜잭션에서 첫 Entity 조회부터 보호하며, 별도 commit·런타임 전략 전환·재시도 계층을 도입하지 않는다. 잠금 범위와 일반 단일 쿼리 → PK 힌트 → ID별 조회의 선택 기준은 [4.3](./04-use-cases.md#43-주문-확정)을 따른다.

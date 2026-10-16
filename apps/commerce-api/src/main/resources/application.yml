@@ -29,6 +29,17 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
 
+datasource:
+  redis:
+    connect-timeout: 200ms # 초기값. 정상·장애 대기 실측으로 조정한다. HTTP 전체 상한이 아니다.
+    command-timeout: 200ms
+
+commerce:
+  cache:
+    product-detail:
+      enabled: true # false 는 DB-only 비교 모드. 읽기·채움만 우회하고 commit 뒤 무효화는 유지한다.
+      ttl: 5m # 저장할 때 정하는 고정 TTL. hit 에서 연장하지 않는다.
+
 ---
 spring:
   config:
@@ -37,6 +48,17 @@ spring:
 
 server:
   address: 127.0.0.1 # 로컬 실습 전용. 외부에 공개하지 않는다.
+
+---
+spring:
+  config:
+    activate:
+      on-profile: test
+
+commerce:
+  cache:
+    product-detail:
+      ttl: 10s # 만료·복구 검증용 시험 TTL
 
 ---
 spring:

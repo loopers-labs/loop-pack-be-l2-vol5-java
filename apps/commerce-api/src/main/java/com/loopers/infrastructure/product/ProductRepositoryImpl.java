@@ -42,6 +42,11 @@ public class ProductRepositoryImpl implements ProductRepository {
     }
 
     @Override
+    public List<Long> findActiveIdsByBrandId(Long brandId) {
+        return productJpaRepository.findActiveIdsByBrandId(brandId);
+    }
+
+    @Override
     public int softDeleteAllActiveByBrandId(Long brandId, ZonedDateTime deletedAt) {
         return productJpaRepository.softDeleteAllActiveByBrandId(brandId, deletedAt);
     }

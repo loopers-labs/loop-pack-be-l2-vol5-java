@@ -20,6 +20,7 @@ import com.loopers.domain.product.ProductSort;
 import com.loopers.domain.product.StockChangeCause;
 import com.loopers.domain.user.UserModel;
 import com.loopers.fixture.BrandFixture;
+import com.loopers.fixture.ProductDetailCacheCleanUp;
 import com.loopers.fixture.ProductFixture;
 import com.loopers.fixture.UserFixture;
 import com.loopers.infrastructure.brand.BrandJpaRepository;
@@ -109,10 +110,13 @@ class BrandFacadeIntegrationTest {
     private EntityManager entityManager;
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
+    @Autowired
+    private ProductDetailCacheCleanUp productDetailCacheCleanUp;
 
     @AfterEach
     void tearDown() {
         databaseCleanUp.truncateAllTables();
+        productDetailCacheCleanUp.deleteAll();
     }
 
     /** 활성 조건 없이 새 트랜잭션에서 읽은 상품 행의 상태. */
@@ -470,9 +474,9 @@ class BrandFacadeIntegrationTest {
             );
         }
 
-        @DisplayName("product 테이블에는 brand_id 단독 인덱스가 하나만 있다.")
+        @DisplayName("product 보조 인덱스는 합의한 brand_id 선두 복합 인덱스 세 개이고, 같은 열 구성의 중복이 없다.")
         @Test
-        void hasSingleBrandIdIndex() {
+        void hasAgreedBrandIdIndexes() {
             Map<String, List<String>> columnsByIndex = new LinkedHashMap<>();
             jdbcTemplate.query("""
                     SELECT INDEX_NAME, COLUMN_NAME
@@ -488,11 +492,15 @@ class BrandFacadeIntegrationTest {
             System.out.println("[B-T3] product indexes = " + columnsByIndex + ", db = "
                 + jdbcTemplate.queryForMap("SELECT VERSION() AS version, @@transaction_isolation AS isolation"));
 
-            assertAll(
-                () -> assertThat(columnsByIndex.values()).filteredOn(columns -> columns.equals(List.of("brand_id")))
-                    .hasSize(1),
-                () -> assertThat(columnsByIndex.values()).filteredOn(columns -> columns.get(0).equals("brand_id"))
-                    .hasSize(1)
+            // 단독 brand_id 인덱스 없이도 일괄 삭제(brand_id = ? AND deleted_at IS NULL)가 쓸 brand_id 선두 인덱스가 남는다.
+            List<List<String>> secondaryIndexes = columnsByIndex.entrySet().stream()
+                .filter(entry -> !entry.getKey().equals("PRIMARY"))
+                .map(Map.Entry::getValue)
+                .toList();
+            assertThat(secondaryIndexes).containsExactlyInAnyOrder(
+                List.of("brand_id", "price"),
+                List.of("brand_id", "created_at"),
+                List.of("brand_id", "deleted_at")
             );
         }
     }

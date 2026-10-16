@@ -8,6 +8,7 @@ import com.loopers.domain.point.PointHistoryModel;
 import com.loopers.domain.point.PointHistoryRepository;
 import com.loopers.domain.point.PointModel;
 import com.loopers.domain.point.PointRepository;
+import com.loopers.domain.product.ProductDetailCache;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.domain.product.StockChange;
@@ -15,6 +16,7 @@ import com.loopers.domain.product.StockHistoryModel;
 import com.loopers.domain.product.StockHistoryRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
+import com.loopers.support.transaction.AfterCommitRunner;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +40,8 @@ public class OrderConfirmFacade {
     private final PointRepository pointRepository;
     private final PointHistoryRepository pointHistoryRepository;
     private final StockHistoryRepository stockHistoryRepository;
+    private final ProductDetailCache productDetailCache;
+    private final AfterCommitRunner afterCommitRunner;
 
     @Transactional
     public OrderInfo confirm(Long userId, Long orderId) {
@@ -70,7 +74,12 @@ public class OrderConfirmFacade {
         order.confirmWithPoints(pointChange.changedAmount());
 
         pointRepository.save(point);
-        return OrderInfo.from(orderRepository.save(order));
+        OrderInfo confirmed = OrderInfo.from(orderRepository.save(order));
+
+        // 재고가 바뀐 상품의 상세 기본정보는 주문 확정이 commit 된 뒤 무효화한다.
+        List<Long> changedProductIds = List.copyOf(products.keySet());
+        afterCommitRunner.runAfterCommit("상품 상세 기본정보 무효화", () -> productDetailCache.evictAll(changedProductIds));
+        return confirmed;
     }
 
     /**

@@ -2,6 +2,7 @@ package com.loopers.interfaces.api;
 
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.user.UserModel;
+import com.loopers.fixture.ProductDetailCacheCleanUp;
 import com.loopers.fixture.ProductFixture;
 import com.loopers.fixture.UserFixture;
 import com.loopers.interfaces.api.order.OrderV1Dto;
@@ -52,10 +53,13 @@ class CustomerPurchaseFlowE2ETest {
     private ProductFixture productFixture;
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
+    @Autowired
+    private ProductDetailCacheCleanUp productDetailCacheCleanUp;
 
     @AfterEach
     void tearDown() {
         databaseCleanUp.truncateAllTables();
+        productDetailCacheCleanUp.deleteAll();
     }
 
     private HttpEntity<Object> request(Object body, Long userId) {

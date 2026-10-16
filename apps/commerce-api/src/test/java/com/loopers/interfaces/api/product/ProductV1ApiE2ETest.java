@@ -5,6 +5,7 @@ import com.loopers.application.like.LikeFacade;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.user.UserModel;
 import com.loopers.fixture.BrandFixture;
+import com.loopers.fixture.ProductDetailCacheCleanUp;
 import com.loopers.fixture.ProductFixture;
 import com.loopers.fixture.UserFixture;
 import com.loopers.interfaces.api.ApiResponse;
@@ -51,10 +52,13 @@ class ProductV1ApiE2ETest {
     private LikeFacade likeFacade;
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
+    @Autowired
+    private ProductDetailCacheCleanUp productDetailCacheCleanUp;
 
     @AfterEach
     void tearDown() {
         databaseCleanUp.truncateAllTables();
+        productDetailCacheCleanUp.deleteAll();
     }
 
     private HttpEntity<Object> request(String userId) {

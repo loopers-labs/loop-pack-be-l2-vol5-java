@@ -5,6 +5,7 @@ import com.loopers.domain.common.ListSort;
 import com.loopers.domain.common.PageCommand;
 import com.loopers.domain.common.PageResult;
 import com.loopers.domain.like.QLikeModel;
+import com.loopers.domain.product.ProductDetailData;
 import com.loopers.domain.product.ProductQueryRepository;
 import com.loopers.domain.product.ProductQueryResult;
 import com.loopers.domain.product.ProductSort;
@@ -38,6 +39,24 @@ public class ProductQueryRepositoryImpl implements ProductQueryRepository {
     public Optional<ProductQueryResult> findDetail(Long productId) {
         return Optional.ofNullable(
             baseQuery().where(PRODUCT.id.eq(productId)).fetchOne()
+        );
+    }
+
+    /** 상세 SQL 과 같은 노출 조건·좋아요 집계를 쓰되 기본정보 열(상품명·브랜드 이름·가격·재고)은 선택하지 않는다. */
+    @Override
+    public Optional<ProductDetailData.DbResult> findVisibleWithLikeCount(Long productId) {
+        return Optional.ofNullable(
+            queryFactory
+                .select(Projections.constructor(
+                    ProductDetailData.DbResult.class,
+                    PRODUCT.id,
+                    PRODUCT.brandId,
+                    likeCount()
+                ))
+                .from(PRODUCT)
+                .join(BRAND).on(BRAND.id.eq(PRODUCT.brandId).and(BRAND.deletedAt.isNull()))
+                .where(PRODUCT.deletedAt.isNull(), PRODUCT.id.eq(productId))
+                .fetchOne()
         );
     }
 
