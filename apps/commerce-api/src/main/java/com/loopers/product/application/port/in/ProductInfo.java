@@ -19,4 +19,11 @@ public record ProductInfo(Long id, String name, long price, Long brandId, String
             productWithLikes.likeCount()
         );
     }
+
+    /**
+     * W4 목록 캐시 hit: 순서·브랜드·좋아요 수는 캐시 값 그대로 두고, 상품의 이름·가격만 원본 값으로 바꾼다.
+     */
+    public ProductInfo withSourceOf(ProductModel product) {
+        return new ProductInfo(id, product.getName(), product.getPrice().amount(), brandId, brandName, likeCount);
+    }
 }

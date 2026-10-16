@@ -13,6 +13,7 @@ services:
       - MYSQL_COLLATE=utf8mb4_general_ci
     volumes:
       - mysql-8-data:/var/lib/mysql
+      - ./mysql-init:/docker-entrypoint-initdb.d # 테스트 전용 스키마 loopers_test
 
   redis-master:
     image: redis:7.0
@@ -27,6 +28,11 @@ services:
         "--appendonly", "yes", # AOF (AppendOnlyFile) 영속성 기능 켜기
         "--save", "",
         "--latency-monitor-threshold", "100", # 특정 command 가 지정 시간(ms) 이상 걸리면 monitor 기록
+        # 메모리 상한과 축출 정책 (W4, docs/week4/plan.md ADR-W4-05). 기본값(maxmemory 0 · noeviction)이면
+        # 메모리가 찼을 때 쓰기가 실패해 목록 캐시 무효화(INCR)까지 막힌다.
+        # volatile-lru: TTL이 있는 키(목록 캐시)만 오래 안 쓴 순으로 버린다. TTL 없는 세대 키는 남는다.
+        "--maxmemory", "128mb",
+        "--maxmemory-policy", "volatile-lru",
       ]
     healthcheck:
       test: ["CMD", "redis-cli", "-p", "6379", "PING"]

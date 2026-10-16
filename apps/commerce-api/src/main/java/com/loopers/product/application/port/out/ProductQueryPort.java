@@ -1,10 +1,13 @@
 package com.loopers.product.application.port.out;
 
+import com.loopers.product.domain.ProductModel;
 import com.loopers.product.domain.ProductSort;
 import com.loopers.product.domain.ProductWithLikes;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -19,4 +22,9 @@ public interface ProductQueryPort {
     Page<ProductWithLikes> findSellable(Long brandId, ProductSort sort, Pageable pageable);
 
     Optional<ProductWithLikes> findSellableById(Long productId);
+
+    /**
+     * 주어진 상품 중 지금 팔 수 있는(삭제되지 않은) 상품. W4 목록 캐시가 hit일 때 비노출과 가격·이름을 원본으로 확인한다 (PK 조회 1번).
+     */
+    List<ProductModel> findSellableByIds(Collection<Long> productIds);
 }

@@ -4,10 +4,12 @@ import com.loopers.brand.application.port.out.BrandPort;
 import com.loopers.product.application.port.in.ProductAdminInfo;
 import com.loopers.product.application.port.in.ProductCommandUseCase;
 import com.loopers.product.application.port.out.ProductPort;
+import com.loopers.product.domain.ProductChangedEvent;
 import com.loopers.product.domain.ProductModel;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,6 +22,7 @@ public class ProductCommandService implements ProductCommandUseCase {
 
     private final ProductPort productPort;
     private final BrandPort brandPort;
+    private final ApplicationEventPublisher eventPublisher;
 
     /**
      * PRD-02: 존재하며 삭제되지 않은 브랜드를 참조해야 한다.
@@ -31,6 +34,7 @@ public class ProductCommandService implements ProductCommandUseCase {
         brandPort.findActiveByIdForUpdate(brandId)
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[brandId = " + brandId + "] 브랜드를 찾을 수 없습니다."));
         ProductModel saved = productPort.save(new ProductModel(brandId, name, price, stock));
+        eventPublisher.publishEvent(new ProductChangedEvent(saved.getId()));
         return ProductAdminInfo.from(saved);
     }
 
@@ -39,7 +43,9 @@ public class ProductCommandService implements ProductCommandUseCase {
     public ProductAdminInfo update(Long productId, String name, long price) {
         ProductModel product = getActiveProduct(productId);
         product.update(name, price);
-        return ProductAdminInfo.from(productPort.save(product));
+        ProductModel saved = productPort.save(product);
+        eventPublisher.publishEvent(new ProductChangedEvent(productId));
+        return ProductAdminInfo.from(saved);
     }
 
     @Transactional
@@ -54,6 +60,7 @@ public class ProductCommandService implements ProductCommandUseCase {
     @Override
     public void delete(Long productId) {
         getActiveProduct(productId).delete();
+        eventPublisher.publishEvent(new ProductChangedEvent(productId));
     }
 
     private ProductModel getActiveProduct(Long productId) {

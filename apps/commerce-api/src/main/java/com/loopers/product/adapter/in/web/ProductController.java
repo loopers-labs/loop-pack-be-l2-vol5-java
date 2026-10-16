@@ -2,6 +2,7 @@ package com.loopers.product.adapter.in.web;
 
 import com.loopers.product.adapter.in.web.dto.ProductDto;
 import com.loopers.product.adapter.in.web.spec.ProductApiSpec;
+import com.loopers.product.application.ProductListQueryService;
 import com.loopers.product.application.ProductQueryService;
 import com.loopers.product.domain.ProductSort;
 import com.loopers.support.web.ApiResponse;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProductController implements ProductApiSpec {
 
     private final ProductQueryService productQueryService;
+    private final ProductListQueryService productListQueryService;
 
     @GetMapping
     @Override
@@ -34,7 +36,7 @@ public class ProductController implements ProductApiSpec {
         ProductSort productSort = ProductDto.parseSort(sort);
         Pageable pageable = PageQuery.of(page, size).toPageable(Sort.unsorted());
         return ApiResponse.success(
-            PageResponse.from(productQueryService.getProducts(brandId, productSort, pageable), ProductDto.ProductResponse::from)
+            PageResponse.from(productListQueryService.getProducts(brandId, productSort, pageable), ProductDto.ProductResponse::from)
         );
     }
 

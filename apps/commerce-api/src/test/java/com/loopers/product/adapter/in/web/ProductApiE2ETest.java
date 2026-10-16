@@ -7,6 +7,7 @@ import com.loopers.like.domain.LikeModel;
 import com.loopers.product.adapter.out.persistence.ProductJpaRepository;
 import com.loopers.product.domain.ProductModel;
 import com.loopers.utils.DatabaseCleanUp;
+import com.loopers.utils.RedisCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -43,9 +44,14 @@ class ProductApiE2ETest {
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
 
+    @Autowired
+    private RedisCleanUp redisCleanUp;
+
     @AfterEach
     void tearDown() {
         databaseCleanUp.truncateAllTables();
+        // W4: 목록이 캐시되므로, DB만 비우면 다음 테스트가 이전 테스트의 목록을 받는다
+        redisCleanUp.truncateAll();
     }
 
     private ProductModel product(BrandModel brand, String name, long price) {
