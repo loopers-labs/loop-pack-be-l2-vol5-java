@@ -15,11 +15,11 @@
 | C-1 | 기존 모델·필터·정렬·페이지·삭제 조건을 유지한 실제 API를 개선했다 | `ProductQueryPersistenceAdapter` (3장), 기존 `ProductApiE2ETest`·`ProductQueryPersistenceAdapterIntegrationTest` 통과 + `pagedSortsReturnLikeCountPerProduct` | ✅ |
 | C-2 | 같은 데이터에서 SQL 수·실행 계획·결과·지연을 전후 비교했다 | 2장 표 (seed 1만, 응답 JSON 비교 동일) | ✅ |
 | C-3 | 좋아요 수 조회와 likes_desc의 전체 정렬 의미를 확인했다 | 2-3, ADR-W4-01 (likes_desc는 전체 후보를 센 뒤 페이지 선택 — 쿼리 유지) | ✅ |
-| C-4 | 한 공통 조회의 miss/hit 결과가 맞고 비싼 원본 호출이 줄었다 | `ProductListCacheIntegrationTest.hitReturnsSameResultWithoutListQueries`, 2-4 측정 (hit 시 SQL 1개, PK 조회) | ✅ |
+| C-4 | 한 공통 조회의 miss/hit 결과가 맞고 비싼 원본 호출이 줄었다 | `ProductListCacheIntegrationTest.hitReturnsSameResultWithoutListQueries`, 2-4 측정 (hit 시 SQL 1개, PK 조회), 2-5 규모별 miss/hit | ✅ |
 | C-5 | 키·TTL·사용자별 정보와 모든 영향 쓰기 경로를 정리했다 | 4장 (키·TTL), 5장 (쓰기 경로 표) | ✅ |
-| C-6 | 정상 관리자 변경·삭제·rollback의 기존 계약을 지키고, 무효화 실패·늦은 채움에서 선택한 신선도·복구 정책과 필수 보호 조건을 검증했다 | `ProductListCacheIntegrationTest` 쓰기 반영 6건(과거 주문 금액 유지 포함), `ProductListCacheFailureTest` 6건, `ProductListDbFailureTest` 2건 (6장) | ✅ |
+| C-6 | 정상 관리자 변경·삭제·rollback의 기존 계약을 지키고, 무효화 실패·늦은 채움에서 선택한 신선도·복구 정책과 필수 보호 조건을 검증했다 | `ProductListCacheIntegrationTest` 쓰기 반영 6건(과거 주문 금액 유지 포함), `ProductListCacheFailureTest` 6건(v0.4: 무효화 실패 시 이름·가격은 바로 원본, 순서만 TTL), `ProductListDbFailureTest` 2건 (6장) | ✅ |
 | C-7 | 실제 Redis 장애에서 DB 우회와 복구 후 재채움을 확인하고 실험 자원을 정리했다 | `ProductListCacheOutageTest` (전용 컨테이너 중단·재시작, `@AfterAll` 정리) | ✅ |
-| C-8 | 관련 회귀·lint·ArchUnit을 실행하고 설계의 비용과 한계를 기록했다 | `./gradlew :apps:commerce-api:test` 259건 실패 0, `./gradlew check -x test` 통과, ArchUnit 3건, 7장 비용·한계 | ✅ |
+| C-8 | 관련 회귀·lint·ArchUnit을 실행하고 설계의 비용과 한계를 기록했다 | `./gradlew :apps:commerce-api:test` 260건 실패 0, `./gradlew check -x test` 통과, ArchUnit 3건, 7장 비용·한계 | ✅ |
 
 ## 1. 조회 계약 — 바꾸지 않는 것 ✅
 
