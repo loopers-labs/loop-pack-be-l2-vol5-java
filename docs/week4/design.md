@@ -513,8 +513,18 @@ cache-aside 와 좋아요 붙이기는 `ProductFacade.findPage`(응용 계층)�
 - **얼마나 자주**: (목록을 바꾸는 쓰기의 초당 수) × (브레이커가 열려 있던 시간) + (Redis 가 정상일 때 `DEL` 이 실패한 수). 둘 다 이 환경에서 잴 수 없는 운영의 값이다.
   예를 들어 목록을 바꾸는 쓰기가 초당 0.1 건(관리자 수정과 마지막 재고를 판 확정)이고 Redis 가 한 달에 10 분 멈추면, 한 달에 약 60 번 각각 최대 60 초다(`정함`, 가정한 값).
   한정 판매처럼 품절이 몰리는 시간에 장애가 겹치면 그 시간의 쓰기 수만큼 늘어난다 — revision 의 쓰기 경합(4.3)이 커지는 조건과 같다.
-- **운영에서 셀 것**: 브레이커가 열린 횟수와 시간, 실패하거나 건너뛴 무효화 수, 목록을 바꾸는 쓰기 수. 지금은 카운터 없이 로그로만 센다 — 브레이커가 열릴 때의 경고(`product listing cache unavailable`)와 무효화를 못 했을 때의 오류(`invalidation failed`, 건너뛴 것 포함).
-- **뒤집을 조건**: 무효화를 못 한 쓰기가 목록을 바꾸는 쓰기의 1% 를 넘거나(`정함`), 장애 뒤 품절이 판매 중으로 보이는 문의가 생기면 위의 아웃박스로 간다. 로그로 세기 번거로워지면 두 수를 메트릭으로 옮긴다.
+- **운영에서 세는 것**(Micrometer, `/actuator/prometheus`):
+
+  | 메트릭 | 뜻 |
+  |---|---|
+  | `product.listing.cache.invalidation{result=deleted}` | 지웠다 |
+  | `product.listing.cache.invalidation{result=failed}` | `DEL` 이 실패했다(그리고 브레이커를 열었다) |
+  | `product.listing.cache.invalidation{result=skipped}` | 브레이커가 열린 창 안이라 건너뛰었다 |
+  | `product.listing.cache.breaker.opened` | 닫힌 브레이커가 열렸다. 열린 동안 겹친 실패는 한 번으로 센다 |
+
+  무효화는 목록을 바꾸는 쓰기마다 한 번이므로 세 결과의 합이 그 쓰기 수다. **옛 값을 남긴 쓰기의 비율** = (`failed` + `skipped`) / 합. 브레이커가 열려 있던 시간은 열림 횟수 × 5 초가 하한이다.
+  `ProductCacheOutageE2ETest` 가 Redis 를 멈춘 채 쓰기 · 조회를 섞어 네 값이 각각 한 번씩 오르는 것을 확인한다.
+- **뒤집을 조건**: 옛 값을 남긴 쓰기의 비율이 1% 를 넘거나(`정함`), 장애 뒤 품절이 판매 중으로 보이는 문의가 생기면 위의 아웃박스로 간다. revision(4.3)도 이 비율로 다시 본다 — 장애가 잦아 옛 값이 자주 남는데 아웃박스로도 줄지 않을 때다.
 
 k6, 브랜드 `1` 가격순 첫 페이지(캐시 대상), Redis 를 멈춘 채로(`results/c-outage-redis-rerun-*` · `c-outage-breaker-*`):
 

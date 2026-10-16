@@ -7,6 +7,8 @@ import com.loopers.config.redis.RedisConfig;
 import com.loopers.domain.common.PageWindow;
 import com.loopers.domain.product.ProductListingCache;
 import com.loopers.domain.product.ProductViewQuery;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.DataAccessException;
@@ -30,13 +32,22 @@ class RedisProductListingCache implements ProductListingCache {
     private final RedisTemplate<String, String> redis;
     private final ObjectMapper objectMapper;
     private final AtomicLong skipUntilNanos = new AtomicLong(System.nanoTime());
+    private final Counter breakerOpened;
+    private final Counter invalidationDeleted;
+    private final Counter invalidationFailed;
+    private final Counter invalidationSkipped;
 
     RedisProductListingCache(
         @Qualifier(RedisConfig.REDIS_TEMPLATE_MASTER) RedisTemplate<String, String> redis,
-        ObjectMapper objectMapper
+        ObjectMapper objectMapper,
+        MeterRegistry meterRegistry
     ) {
         this.redis = redis;
         this.objectMapper = objectMapper;
+        this.breakerOpened = meterRegistry.counter("product.listing.cache.breaker.opened");
+        this.invalidationDeleted = meterRegistry.counter("product.listing.cache.invalidation", "result", "deleted");
+        this.invalidationFailed = meterRegistry.counter("product.listing.cache.invalidation", "result", "failed");
+        this.invalidationSkipped = meterRegistry.counter("product.listing.cache.invalidation", "result", "skipped");
     }
 
     @Override
@@ -73,14 +84,17 @@ class RedisProductListingCache implements ProductListingCache {
     @Override
     public boolean invalidate(Long brandId) {
         if (skipping()) {
+            invalidationSkipped.increment();
             return false;
         }
         try {
             redis.delete(Stream.of(ProductViewQuery.Sort.values())
                 .flatMap(sort -> Stream.of(pageKey(brandId, sort), pageKey(null, sort)))
                 .toList());
+            invalidationDeleted.increment();
             return true;
         } catch (DataAccessException e) {
+            invalidationFailed.increment();
             skipAfter(e);
             return false;
         }
@@ -91,7 +105,11 @@ class RedisProductListingCache implements ProductListingCache {
     }
 
     private void skipAfter(DataAccessException e) {
-        skipUntilNanos.set(System.nanoTime() + SKIP_AFTER_FAILURE.toNanos());
+        long now = System.nanoTime();
+        long previous = skipUntilNanos.getAndSet(now + SKIP_AFTER_FAILURE.toNanos());
+        if (now - previous >= 0) {
+            breakerOpened.increment();
+        }
         log.warn("product listing cache unavailable, reading the source for {}s: {}", SKIP_AFTER_FAILURE.toSeconds(), e.getMessage());
     }
 

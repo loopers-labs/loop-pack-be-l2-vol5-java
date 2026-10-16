@@ -10,6 +10,8 @@ import com.loopers.domain.product.Price;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.PageResponse;
 import com.loopers.utils.DatabaseCleanUp;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -84,6 +86,7 @@ class ProductCacheOutageE2ETest {
     private final DatabaseCleanUp databaseCleanUp;
     private final BrandFacade brandFacade;
     private final ProductFacade productFacade;
+    private final MeterRegistry meterRegistry;
 
     private Long brandId;
 
@@ -93,13 +96,15 @@ class ProductCacheOutageE2ETest {
         JdbcTemplate jdbcTemplate,
         DatabaseCleanUp databaseCleanUp,
         BrandFacade brandFacade,
-        ProductFacade productFacade
+        ProductFacade productFacade,
+        MeterRegistry meterRegistry
     ) {
         this.testRestTemplate = testRestTemplate;
         this.jdbcTemplate = jdbcTemplate;
         this.databaseCleanUp = databaseCleanUp;
         this.brandFacade = brandFacade;
         this.productFacade = productFacade;
+        this.meterRegistry = meterRegistry;
     }
 
     @BeforeEach
@@ -165,6 +170,11 @@ class ProductCacheOutageE2ETest {
         return testRestTemplate.withBasicAuth("admin", "local-only-not-a-secret").exchange(
             "/api-admin/v1/products/" + productId, HttpMethod.PUT,
             new HttpEntity<>(Map.of("name", "셔츠", "price", price), headers), String.class);
+    }
+
+    private double count(String name, String... tags) {
+        Counter counter = meterRegistry.find(name).tags(tags).counter();
+        return counter == null ? 0 : counter.count();
     }
 
     private String firstPriceAscPage() {
@@ -278,6 +288,29 @@ class ProductCacheOutageE2ETest {
             () -> assertThat(jdbcTemplate.queryForObject("SELECT price FROM product WHERE id = ?", Long.class, productId))
                 .isEqualTo(5_000L),
             () -> assertThat(write.elapsed()).as("건너뛰는 동안은 Redis 대기 한도(200 ms)를 기다리지 않는다").isLessThan(NO_REDIS_WAIT)
+        );
+    }
+
+    @DisplayName("4.7 · Redis 가 멈추면 브레이커가 열린 횟수와 실패 · 건너뛴 무효화를 메트릭으로 센다 — 열려 있는 동안의 실패는 한 번으로 센다")
+    @Test
+    void countsBreakerOpeningsAndUnfinishedInvalidations() {
+        Long productId = product("셔츠", 10_000);
+        double opened = count("product.listing.cache.breaker.opened");
+        double failed = count("product.listing.cache.invalidation", "result", "failed");
+        double skipped = count("product.listing.cache.invalidation", "result", "skipped");
+        double deleted = count("product.listing.cache.invalidation", "result", "deleted");
+
+        changePriceAsAdmin(productId, 9_000);
+        pauseRedis();
+        changePriceAsAdmin(productId, 8_000);
+        changePriceAsAdmin(productId, 7_000);
+        list(firstPriceAscPage());
+
+        assertAll(
+            () -> assertThat(count("product.listing.cache.invalidation", "result", "deleted") - deleted).as("Redis 가 살아 있을 때 지움").isEqualTo(1),
+            () -> assertThat(count("product.listing.cache.invalidation", "result", "failed") - failed).as("멈춘 뒤 처음 무효화는 DEL 이 실패").isEqualTo(1),
+            () -> assertThat(count("product.listing.cache.invalidation", "result", "skipped") - skipped).as("열린 창 안의 무효화는 건너뜀").isEqualTo(1),
+            () -> assertThat(count("product.listing.cache.breaker.opened") - opened).as("창 안의 조회는 Redis 를 건드리지 않아 열림은 한 번").isEqualTo(1)
         );
     }
 
