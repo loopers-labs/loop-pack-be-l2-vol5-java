@@ -8,6 +8,8 @@ import com.loopers.testcontainers.MySqlTestContainersConfig;
 import com.loopers.user.domain.User;
 import com.loopers.utils.DatabaseCleanUp;
 import jakarta.persistence.EntityManager;
+import com.loopers.product.infrastructure.ProductRepositoryAdapter;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -40,6 +42,7 @@ import static com.loopers.support.http.ApiHttp.ids;
 import static com.loopers.support.http.ApiHttp.isNullOrAbsent;
 import static com.loopers.support.http.ApiHttp.success;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doReturn;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -74,6 +77,9 @@ class ProductHttpTest {
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
 
+    @MockitoSpyBean
+    private ProductRepositoryAdapter repositoryAdapter;
+
     private CommerceFixture fixture;
 
     @BeforeEach
@@ -85,6 +91,42 @@ class ProductHttpTest {
     void tearDown() {
         databaseCleanUp.truncateAllTables();
         fixture.truncateRemainingTables();
+    }
+
+    @DisplayName("상품 목록 last는 필터 후 다음 상품 존재 여부이며 페이지 간 상품을 건너뛰지 않는다")
+    @ParameterizedTest
+    @CsvSource({"latest,false", "latest,true", "price_asc,false", "price_asc,true",
+        "likes_desc,false", "likes_desc,true"})
+    void returnsLastWithoutSkippingLookahead(String sort, boolean filtered) throws Exception {
+        User buyer = fixture.user();
+        Brand brand = fixture.brand("Target");
+        Product first = fixture.product(brand, "First", 100L, 1);
+        Product second = fixture.product(brand, "Second", 200L, 1);
+        Product third = fixture.product(brand, "Third", 300L, 1);
+        Product fourth = fixture.product(brand, "Fourth", 400L, 1);
+        Product deleted = fixture.deletedProduct(brand, "Deleted", 50L);
+        fixture.like(buyer, first);
+        fixture.like(buyer, deleted);
+        if (filtered) fixture.product(fixture.brand("Other"), "Excluded", 50L, 1);
+        java.util.List<Long> expected = sort.equals("latest")
+            ? java.util.List.of(fourth.getId(), third.getId(), second.getId(), first.getId())
+            : java.util.List.of(first.getId(), second.getId(), third.getId(), fourth.getId());
+        java.util.List<Long> actual = new java.util.ArrayList<>();
+        for (int page = 0; page < 3; page++) {
+            var request = get(CUSTOMER_PRODUCTS).with(customer(buyer))
+                .param("sort", sort).param("page", String.valueOf(page)).param("size", "2");
+            if (filtered) request.param("brandId", brand.getId().toString());
+            MvcResult result = mockMvc.perform(request)
+                .andExpect(success(HttpStatus.OK))
+                .andExpect(jsonPath("$.data.totalElements").doesNotExist())
+                .andExpect(jsonPath("$.data.last").value(page >= 1))
+                .andExpect(jsonPath("$.data.size").value(2))
+                .andExpect(jsonPath("$.data.page").value(page))
+                .andExpect(jsonPath("$.data.content.length()").value(page < 2 ? 2 : 0))
+                .andReturn();
+            actual.addAll(ids(data(result).path("content")));
+        }
+        assertThat(actual).containsExactlyElementsOf(expected);
     }
 
     @DisplayName("[R-CATALOG-02] 고객은 상품 목록과 상품 상세를 조회할 수 있다.")
@@ -273,7 +315,7 @@ class ProductHttpTest {
     @Nested
     class DefaultAndMaxPageSize {
 
-        @DisplayName("[경계값 분석] size 없이 21개 상품을 조회하면 20개를 주고 size는 20, totalElements는 21이다.")
+        @DisplayName("[경계값 분석] size 없이 21개 상품을 조회하면 20개를 주고 size는 20, last는 false다.")
         @Test
         void usesDefaultSize() throws Exception {
             // arrange
@@ -289,7 +331,7 @@ class ProductHttpTest {
                 .andExpect(jsonPath("$.data.content.length()").value(20))
                 .andExpect(jsonPath("$.data.page").value(0))
                 .andExpect(jsonPath("$.data.size").value(20))
-                .andExpect(jsonPath("$.data.totalElements").value(21));
+                .andExpect(jsonPath("$.data.last").value(false));
         }
 
         @DisplayName("[경계값 분석] size 100은 200이고 size 100으로 응답한다.")
@@ -366,7 +408,7 @@ class ProductHttpTest {
     @Nested
     class EmptyPageBeyondLast {
 
-        @DisplayName("[경계값 분석] 상품 3개를 size 2로 조회하면 page 1은 1개, page 2는 빈 목록이고 totalElements는 3이다.")
+        @DisplayName("[경계값 분석] 상품 3개를 size 2로 조회하면 page 1은 1개, page 2는 빈 목록이고 둘 다 last는 true다.")
         @Test
         void returnsEmptyBeyondLastPage() throws Exception {
             // arrange
@@ -380,12 +422,12 @@ class ProductHttpTest {
             mockMvc.perform(get(CUSTOMER_PRODUCTS).param("page", "1").param("size", "2").with(customer(customer)))
                 .andExpect(success(HttpStatus.OK))
                 .andExpect(jsonPath("$.data.content.length()").value(1))
-                .andExpect(jsonPath("$.data.totalElements").value(3));
+                .andExpect(jsonPath("$.data.last").value(true));
             mockMvc.perform(get(CUSTOMER_PRODUCTS).param("page", "2").param("size", "2").with(customer(customer)))
                 .andExpect(success(HttpStatus.OK))
                 .andExpect(jsonPath("$.data.content").isEmpty())
                 .andExpect(jsonPath("$.data.page").value(2))
-                .andExpect(jsonPath("$.data.totalElements").value(3));
+                .andExpect(jsonPath("$.data.last").value(true));
         }
     }
 
@@ -1135,5 +1177,21 @@ class ProductHttpTest {
             () -> assertThat(found.path("price").asLong()).isEqualTo(price),
             () -> assertThat(found.path("stock").asInt(-1)).isEqualTo(stock)
         );
+    }
+
+    @DisplayName("서비스 사전 검사 이후 DB에서 발견한 상품명 중복도 409로 응답한다")
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void returnsConflictForDatabaseDuplicate(boolean update) throws Exception {
+        Brand brand = fixture.brand("브랜드");
+        fixture.product(brand, "DB 중복 이름", 100L, 0);
+        Product target = fixture.product(brand, "변경 대상", 100L, 0);
+        doReturn(java.util.List.of()).when(repositoryAdapter)
+            .findAllByBrandIdAndName(brand.getId(), "DB 중복 이름");
+        var request = update ? put(ADMIN_PRODUCT, target.getId()) : post(ADMIN_PRODUCTS);
+        mockMvc.perform(request.with(admin()).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"brandId\":" + brand.getId() + ",\"name\":\"DB 중복 이름\",\"price\":100}"))
+            .andExpect(failure(HttpStatus.CONFLICT, "DUPLICATE_PRODUCT_NAME"));
     }
 }

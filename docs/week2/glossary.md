@@ -17,4 +17,3 @@
 | 주문 상태 | 결제 전(`DRAFT`)과 결제 완료(`CONFIRMED`) | `OrderStatus` |
 | `DRAFT` | 결제 전 주문 상태. 재고와 포인트가 아직 차감되지 않았고 결제 결과가 없다 | `OrderStatus.DRAFT` |
 | `CONFIRMED` | 결제 완료 주문 상태. 재고와 포인트가 차감되었고 결제 결과를 갖는다 | `OrderStatus.CONFIRMED` |
-

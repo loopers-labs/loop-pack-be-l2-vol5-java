@@ -1,0 +1,5 @@
+# Combine with async-log-experiment-compose.yml. Head sampling, not tail sampling.
+services:
+  commerce-api:
+    environment:
+      EXPERIMENT_TRACE_SAMPLE_RATE: "0.01"

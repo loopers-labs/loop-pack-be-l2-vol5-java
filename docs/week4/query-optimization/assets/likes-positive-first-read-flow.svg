@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1560" height="1080" viewBox="0 0 1560 1080" role="img" aria-labelledby="title desc">
+<title id="title">좋아요 있는 상품 우선 조회: 변경 전후</title><desc id="desc">이전에는 상품 100만 행을 스캔했다. 변경 후 좋아요 69만 행을 21만 상품으로 집계하고 상품 PK를 21만 번 탐색한다. 페이지가 부족하면 좋아요 0개 상품을 ID순으로 채운다.</desc>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8" fill="none" stroke="#8c99ab"/></marker></defs><g font-family="Pretendard, Apple SD Gothic Neo, Noto Sans KR, sans-serif">
+<rect x="0" y="0" width="1560" height="1080" rx="0" fill="#f8fafc" stroke="#f8fafc"/>
+<text x="32" y="48" text-anchor="start" font-size="32" fill="#243248" font-weight="750">좋아요 0개 상품을 정렬 후보에서 빼면?</text>
+<text x="32" y="80" text-anchor="start" font-size="18" fill="#65748a" font-weight="400">브랜드 필터 없는 첫 페이지 · 좋아요 69만 개 · 좋아요 있는 상품 21만 개 / 없는 상품 79만 개</text>
+<rect x="24" y="110" width="488" height="792" rx="14" fill="#fff" stroke="#d9e1ec"/>
+<rect x="25" y="111" width="486" height="87" rx="13" fill="#fce7eb" stroke="#fce7eb"/>
+<text x="44" y="149" text-anchor="start" font-size="24" fill="#243248" font-weight="750">① 변경 전: 전체 상품 기준</text>
+<text x="44" y="179" text-anchor="start" font-size="17" fill="#65748a" font-weight="400">선집계 결과를 상품에 LEFT JOIN</text>
+<rect x="536" y="110" width="488" height="792" rx="14" fill="#fff" stroke="#d9e1ec"/>
+<rect x="537" y="111" width="486" height="87" rx="13" fill="#dff5e9" stroke="#dff5e9"/>
+<text x="556" y="149" text-anchor="start" font-size="24" fill="#243248" font-weight="750">② 변경 후: 좋아요 있는 상품 기준</text>
+<text x="556" y="179" text-anchor="start" font-size="17" fill="#65748a" font-weight="400">집계 결과에서 상품으로 INNER JOIN</text>
+<rect x="1048" y="110" width="488" height="792" rx="14" fill="#fff" stroke="#d9e1ec"/>
+<rect x="1049" y="111" width="486" height="87" rx="13" fill="#fff2d6" stroke="#fff2d6"/>
+<text x="1068" y="149" text-anchor="start" font-size="24" fill="#243248" font-weight="750">③ 페이지가 부족하면</text>
+<text x="1068" y="179" text-anchor="start" font-size="17" fill="#65748a" font-weight="400">좋아요 0개 상품을 이어 붙이기</text>
+<text x="268" y="237" text-anchor="middle" font-size="21" fill="#243248" font-weight="700">product · PK (id)</text>
+<path d="M268,279 L193.0,312" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M193.0,334 L155.5,372" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M193.0,334 L230.5,372" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M268,279 L343.0,312" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M343.0,334 L305.5,372" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M343.0,334 L380.5,372" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<rect x="253" y="256" width="30" height="23" rx="3" fill="#edf2f8" stroke="#67788e"/>
+<rect x="178.0" y="311" width="30" height="23" rx="3" fill="#edf2f8" stroke="#67788e"/>
+<rect x="328.0" y="311" width="30" height="23" rx="3" fill="#edf2f8" stroke="#67788e"/>
+<rect x="140.5" y="371" width="30" height="23" rx="3" fill="#ffe0e4" stroke="#d04d60"/>
+<text x="155.5" y="388" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<rect x="215.5" y="371" width="30" height="23" rx="3" fill="#ffe0e4" stroke="#d04d60"/>
+<text x="230.5" y="388" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<rect x="290.5" y="371" width="30" height="23" rx="3" fill="#ffe0e4" stroke="#d04d60"/>
+<text x="305.5" y="388" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<rect x="365.5" y="371" width="30" height="23" rx="3" fill="#ffe0e4" stroke="#d04d60"/>
+<text x="380.5" y="388" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<path d="M138.5,414 L397.5,414" fill="none" stroke="#d04d60" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M172.5,382 L213.5,382" fill="none" stroke="#d04d60" stroke-width="2" stroke-dasharray="5 5"/>
+<path d="M247.5,382 L288.5,382" fill="none" stroke="#d04d60" stroke-width="2" stroke-dasharray="5 5"/>
+<path d="M322.5,382 L363.5,382" fill="none" stroke="#d04d60" stroke-width="2" stroke-dasharray="5 5"/>
+<text x="268" y="451" text-anchor="middle" font-size="23" fill="#c53d53" font-weight="700">상품 100만 행 전체 스캔</text>
+<path d="M268,466 L268,497" fill="none" stroke="#8c99ab" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="73" y="505" width="390" height="60" rx="10" fill="#f3f6fa" stroke="#cbd5e1"/>
+<text x="268.0" y="530" text-anchor="middle" font-size="18" fill="#243248" font-weight="600">상품마다 좋아요 집계 결과 탐색</text>
+<text x="268.0" y="552" text-anchor="middle" font-size="18" fill="#243248" font-weight="400">100만 번 탐색 · 결과 100만 행</text>
+<path d="M268,568 L268,596" fill="none" stroke="#8c99ab" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="73" y="604" width="390" height="60" rx="10" fill="#f3f6fa" stroke="#cbd5e1"/>
+<text x="268.0" y="629" text-anchor="middle" font-size="18" fill="#243248" font-weight="600">좋아요 0개인 79만 상품까지 포함</text>
+<text x="268.0" y="651" text-anchor="middle" font-size="18" fill="#243248" font-weight="400">100만 후보에서 좋아요순 상위 20개</text>
+<text x="268" y="708" text-anchor="middle" font-size="17" fill="#65748a" font-weight="400">좋아요는 69만 → 21만 행 선집계</text>
+<rect x="49" y="761" width="438" height="116" rx="10" fill="#fff0f2" stroke="#f2d0d8"/>
+<text x="268" y="799" text-anchor="middle" font-size="27" fill="#b1324c" font-weight="700">목록 SQL 2.680초</text>
+<text x="268" y="840" text-anchor="middle" font-size="23" fill="#243248" font-weight="650">API 평균 2.595초</text>
+<rect x="585" y="222" width="390" height="60" rx="10" fill="#f3f6fa" stroke="#cbd5e1"/>
+<text x="780.0" y="247" text-anchor="middle" font-size="18" fill="#243248" font-weight="600">좋아요 인덱스 (product_id) 순서로 읽기</text>
+<text x="780.0" y="269" text-anchor="middle" font-size="18" fill="#243248" font-weight="400">69만 행 → 상품별 집계 21만 행</text>
+<path d="M780,285 L780,309" fill="none" stroke="#8c99ab" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="780" y="338" text-anchor="middle" font-size="21" fill="#243248" font-weight="700">product · PK (id)</text>
+<path d="M780,382 L705.0,415" fill="none" stroke="#25976b" stroke-width="2"/>
+<path d="M705.0,437 L667.5,475" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M705.0,437 L742.5,475" fill="none" stroke="#25976b" stroke-width="2"/>
+<path d="M780,382 L855.0,415" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M855.0,437 L817.5,475" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M855.0,437 L892.5,475" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<rect x="765" y="359" width="30" height="23" rx="3" fill="#d8f4e5" stroke="#26966a"/>
+<rect x="690.0" y="414" width="30" height="23" rx="3" fill="#d8f4e5" stroke="#26966a"/>
+<rect x="840.0" y="414" width="30" height="23" rx="3" fill="#edf2f8" stroke="#67788e"/>
+<rect x="652.5" y="474" width="30" height="23" rx="3" fill="#edf2f8" stroke="#67788e"/>
+<text x="667.5" y="491" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<rect x="727.5" y="474" width="30" height="23" rx="3" fill="#d8f4e5" stroke="#26966a"/>
+<text x="742.5" y="491" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<rect x="802.5" y="474" width="30" height="23" rx="3" fill="#edf2f8" stroke="#67788e"/>
+<text x="817.5" y="491" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<rect x="877.5" y="474" width="30" height="23" rx="3" fill="#edf2f8" stroke="#67788e"/>
+<text x="892.5" y="491" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<text x="780" y="524" text-anchor="middle" font-size="23" fill="#21845d" font-weight="700">해당 상품만 PK 탐색 × 21만 번</text>
+<text x="780" y="552" text-anchor="middle" font-size="18" fill="#65748a" font-weight="400">삭제 여부·브랜드 조건 확인</text>
+<path d="M780,566 L780,596" fill="none" stroke="#8c99ab" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="585" y="604" width="390" height="60" rx="10" fill="#f3f6fa" stroke="#cbd5e1"/>
+<text x="780.0" y="629" text-anchor="middle" font-size="18" fill="#243248" font-weight="600">좋아요 있는 21만 후보만 정렬</text>
+<text x="780.0" y="651" text-anchor="middle" font-size="18" fill="#243248" font-weight="400">좋아요 수 DESC · 상품 ID ASC</text>
+<text x="780" y="708" text-anchor="middle" font-size="19" fill="#21845d" font-weight="700">상위 20개 반환 → 충분하면 여기서 끝</text>
+<rect x="561" y="761" width="438" height="116" rx="10" fill="#ecfaf2" stroke="#b9e4cd"/>
+<text x="780" y="799" text-anchor="middle" font-size="27" fill="#21845d" font-weight="700">목록 SQL 1.650초</text>
+<text x="780" y="840" text-anchor="middle" font-size="23" fill="#243248" font-weight="650">API 평균 1.751초</text>
+<rect x="1097" y="222" width="390" height="60" rx="10" fill="#f3f6fa" stroke="#cbd5e1"/>
+<text x="1292.0" y="247" text-anchor="middle" font-size="18" fill="#243248" font-weight="600">해당 페이지의 좋아요 있는 상품</text>
+<text x="1292.0" y="269" text-anchor="middle" font-size="18" fill="#243248" font-weight="400">20개 미만일 때만 추가 조회</text>
+<path d="M1292,285 L1292,314" fill="none" stroke="#8c99ab" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="1292" y="343" text-anchor="middle" font-size="21" fill="#243248" font-weight="700">product · PK (id) 순서</text>
+<path d="M1292,386 L1217.0,419" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M1217.0,441 L1179.5,479" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M1217.0,441 L1254.5,479" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M1292,386 L1367.0,419" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M1367.0,441 L1329.5,479" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M1367.0,441 L1404.5,479" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<rect x="1277" y="363" width="30" height="23" rx="3" fill="#edf2f8" stroke="#67788e"/>
+<rect x="1202.0" y="418" width="30" height="23" rx="3" fill="#edf2f8" stroke="#67788e"/>
+<rect x="1352.0" y="418" width="30" height="23" rx="3" fill="#edf2f8" stroke="#67788e"/>
+<rect x="1164.5" y="478" width="30" height="23" rx="3" fill="#ffe0e4" stroke="#d04d60"/>
+<text x="1179.5" y="495" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<rect x="1239.5" y="478" width="30" height="23" rx="3" fill="#ffe0e4" stroke="#d04d60"/>
+<text x="1254.5" y="495" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<rect x="1314.5" y="478" width="30" height="23" rx="3" fill="#ffe0e4" stroke="#d04d60"/>
+<text x="1329.5" y="495" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<rect x="1389.5" y="478" width="30" height="23" rx="3" fill="#ffe0e4" stroke="#d04d60"/>
+<text x="1404.5" y="495" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<path d="M1162.5,521 L1421.5,521" fill="none" stroke="#d04d60" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M1196.5,489 L1237.5,489" fill="none" stroke="#d04d60" stroke-width="2" stroke-dasharray="5 5"/>
+<path d="M1271.5,489 L1312.5,489" fill="none" stroke="#d04d60" stroke-width="2" stroke-dasharray="5 5"/>
+<path d="M1346.5,489 L1387.5,489" fill="none" stroke="#d04d60" stroke-width="2" stroke-dasharray="5 5"/>
+<text x="1292" y="527" text-anchor="middle" font-size="18" fill="#243248" font-weight="650">삭제·브랜드 조건 + 좋아요 NOT EXISTS</text>
+<text x="1292" y="554" text-anchor="middle" font-size="19" fill="#21845d" font-weight="700">ID순으로 필요한 0개 상품을 조회</text>
+<path d="M1292,569 L1292,596" fill="none" stroke="#8c99ab" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="1097" y="604" width="390" height="60" rx="10" fill="#f3f6fa" stroke="#cbd5e1"/>
+<text x="1292.0" y="629" text-anchor="middle" font-size="18" fill="#243248" font-weight="600">예: 좋아요 있는 12개 + 0개인 8개</text>
+<text x="1292.0" y="651" text-anchor="middle" font-size="18" fill="#243248" font-weight="400">전부 0개라면 ID순으로 20개</text>
+<text x="1292" y="701" text-anchor="middle" font-size="17" fill="#65748a" font-weight="400">0개 구간 offset = max(0, 요청 offset − 양수 수)</text>
+<text x="1292" y="728" text-anchor="middle" font-size="16" fill="#65748a" font-weight="400">뒤쪽 페이지는 조건에 맞는 양수 상품 수 확인</text>
+<rect x="1073" y="761" width="438" height="116" rx="10" fill="#fff8e7" stroke="#ecd9ac"/>
+<text x="1292" y="800" text-anchor="middle" font-size="20" fill="#243248" font-weight="650">필터·offset에 따라 더 읽을 수 있음</text>
+<text x="1292" y="840" text-anchor="middle" font-size="19" fill="#65748a" font-weight="400">현재 첫 페이지에서는 실행하지 않음</text>
+<rect x="24" y="924" width="1512" height="127" rx="10" fill="#eef2f8" stroke="#d9e1ec"/>
+<text x="48" y="959" text-anchor="start" font-size="25" fill="#243248" font-weight="750">전체 API: 2.595초 → 1.751초 · 약 0.84초 / 33% 감소</text>
+<text x="48" y="994" text-anchor="start" font-size="20" fill="#243248" font-weight="400">남은 비용: 전체 상품 수 COUNT는 100만 행 스캔 · 상품별 좋아요 수·재고 재조회도 유지</text>
+<text x="48" y="1028" text-anchor="start" font-size="17" fill="#65748a" font-weight="400">API는 순차 3회 평균, 목록 SQL은 별도 EXPLAIN ANALYZE 1회 관측. 서로 합산하는 시간이 아님.</text>
+</g></svg>

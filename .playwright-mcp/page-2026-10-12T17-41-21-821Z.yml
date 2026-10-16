@@ -1,0 +1,42 @@
+- main [ref=e2]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]: WEEK 04 / LIVE REQUESTS
+      - heading "요청이 끝나는 순간." [level=1] [ref=e6]
+      - paragraph [ref=e7]: 점 하나가 실제 상품 목록 요청 한 건입니다.
+    - status [ref=e8]: 실행 완료
+  - generic [ref=e9]:
+    - generic [ref=e10]:
+      - text: 목표 요청률
+      - generic [ref=e11]: 1 RPS
+    - generic [ref=e12]:
+      - text: 응답 대기
+      - generic [ref=e13]: "0"
+    - generic [ref=e14]:
+      - text: 정상 응답
+      - generic [ref=e15]: "1"
+    - generic [ref=e16]:
+      - text: 실패
+      - generic [ref=e17]: "3"
+    - generic [ref=e18]:
+      - text: 전체 호출 시간 p95
+      - generic [ref=e19]: 5,002 ms
+  - generic [ref=e20]:
+    - generic [ref=e21]:
+      - heading "Request timeline" [level=2] [ref=e22]
+      - generic [ref=e23]:
+        - generic [ref=e24]: 대기
+        - generic [ref=e26]: 성공
+        - generic [ref=e28]: 타임아웃·오류
+        - generic [ref=e30]: 내용 불일치
+    - generic [ref=e32]:
+      - img "#1 · 정상 응답 · 3ms" [ref=e33]
+      - img "#2 · HTTP / 연결 오류 · 2ms" [ref=e34]
+      - img "#3 · 내용 불일치 · 3ms" [ref=e35]
+      - img "#4 · 5초 타임아웃 · 5002ms" [ref=e36]
+    - generic [ref=e37]: 점 위에 마우스를 올리면 응답 시간과 결과를 볼 수 있어요.
+  - generic [ref=e38]:
+    - generic [ref=e39]: 실패 또는 미전송이 발생해 다음 부하 단계는 실행하지 않았습니다
+    - generic [ref=e40]: 보낸 요청 4 · 미전송 0 · 미확인 0
+  - generic [ref=e41]: "GET http://127.0.0.1:18767/api/v1/products?brandId=7&sort=price_asc&page=0&size=20 X-USER-ID: 1 | 부하 단계 1 RPS | 단계당 4초 | 실행 20261013-024104-414631"
+  - generic [ref=e42]: k6 실제 요청 · 브라우저는 결과만 표시 · 5초 타임아웃 · 완료된 요청의 전체 호출 시간(연결 포함) 집계이벤트 기록을 추가한 시각화 실행입니다. 기존 성능 기준선과 구분하며, 실패 시간도 p95에 포함합니다.

@@ -1,10 +1,9 @@
 package com.loopers.product.interfaces;
 
 import com.loopers.interfaces.api.ApiResponse;
-import com.loopers.interfaces.api.ListResponse;
+import com.loopers.interfaces.api.SliceResponse;
 import com.loopers.interfaces.api.PageQuery;
 import com.loopers.interfaces.api.Requester;
-import com.loopers.product.application.ProductUseCase;
 import com.loopers.product.domain.ProductSort;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorCode;
@@ -20,10 +19,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/products")
 public class ProductV1Controller {
 
-    private final ProductUseCase productUseCase;
+    private final ProductReadFacade reads;
 
     @GetMapping
-    public ApiResponse<ListResponse<ProductV1Dto.CustomerProductResponse>> getProducts(
+    public ApiResponse<SliceResponse<ProductV1Dto.CustomerProductResponse>> getProducts(
         Requester requester,
         @RequestParam(required = false) Long brandId,
         @RequestParam(required = false) String sort,
@@ -31,10 +30,9 @@ public class ProductV1Controller {
         @RequestParam(defaultValue = PageQuery.DEFAULT_SIZE) int size
     ) {
         PageQuery query = new PageQuery(page, size);
-        return ApiResponse.success(ListResponse.from(
-            productUseCase.findCustomerProductPage(brandId, toSort(sort), query.page(), query.size()),
-            ProductV1Dto.CustomerProductResponse::from
-        ));
+        ProductSort requested = toSort(sort);
+        String normalized = requested == null ? "latest" : sort;
+        return reads.page(brandId, requested, normalized, query.page(), query.size());
     }
 
     @GetMapping("/{productId}")
@@ -42,9 +40,7 @@ public class ProductV1Controller {
         Requester requester,
         @PathVariable Long productId
     ) {
-        return ApiResponse.success(
-            ProductV1Dto.CustomerProductResponse.from(productUseCase.findCustomerProduct(productId))
-        );
+        return reads.detail(productId);
     }
 
     /**

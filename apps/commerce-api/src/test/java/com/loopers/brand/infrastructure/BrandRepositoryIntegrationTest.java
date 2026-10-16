@@ -3,6 +3,8 @@ package com.loopers.brand.infrastructure;
 import com.loopers.brand.domain.Brand;
 import com.loopers.brand.domain.BrandRepository;
 import jakarta.persistence.EntityManager;
+import com.loopers.support.error.CoreException;
+import com.loopers.support.error.ErrorCode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -13,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.loopers.testcontainers.MySqlTestContainersConfig;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 @Import(MySqlTestContainersConfig.class)
@@ -42,5 +45,25 @@ class BrandRepositoryIntegrationTest {
 
             assertThat(result.isDeleted()).isTrue();
         }
+    }
+
+    @DisplayName("DB에서 발견한 생성 시 이름 중복을 기존 도메인 오류로 반환한다")
+    @Test
+    void translatesDatabaseDuplicateOnInsert() {
+        repository.save(new Brand("동일 이름"));
+        assertThatThrownBy(() -> repository.save(new Brand("동일 이름")))
+            .isInstanceOfSatisfying(CoreException.class,
+                error -> assertThat(error.getErrorCode()).isEqualTo(ErrorCode.DUPLICATE_BRAND_NAME));
+    }
+
+    @DisplayName("수정 SQL의 이름 중복도 commit 이전에 기존 도메인 오류로 반환한다")
+    @Test
+    void translatesDatabaseDuplicateOnUpdate() {
+        repository.save(new Brand("동일 이름"));
+        Brand target = repository.save(new Brand("다른 이름"));
+        target.update("동일 이름");
+        assertThatThrownBy(() -> repository.save(target))
+            .isInstanceOfSatisfying(CoreException.class,
+                error -> assertThat(error.getErrorCode()).isEqualTo(ErrorCode.DUPLICATE_BRAND_NAME));
     }
 }

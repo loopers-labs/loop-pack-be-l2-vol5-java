@@ -32,6 +32,58 @@ class ProductUseCaseIntegrationTest {
     @Autowired private ProductUseCase useCase;
     @Autowired private EntityManager entityManager;
 
+    @Test void batchReadsPreserveZeroLikesMissingStockAndSharedBrand() {
+        Brand brand = persist(new Brand("Batch brand"));
+        Product first = persist(new Product(brand.getId(), "First", 100L));
+        Product second = persist(new Product(brand.getId(), "Second", 200L));
+        Product third = persist(new Product(brand.getId(), "Third", 300L));
+        persist(new Stock(first.getId(), 3));
+        persist(new Stock(second.getId(), 0));
+        persist(new Like(1L, first.getId()));
+        persist(new Like(2L, first.getId()));
+        entityManager.flush();
+        entityManager.clear();
+        var page = useCase.findCustomerProductPage(null, ProductSort.PRICE_ASC, 0, 20);
+        assertThat(page.last()).isTrue();
+        assertThat(page.content()).extracting(view -> view.product().getId())
+            .containsExactly(first.getId(), second.getId(), third.getId());
+        assertThat(page.content()).extracting(ProductUseCase.CustomerProduct::likeCount)
+            .containsExactly(2L, 0L, 0L);
+        assertThat(page.content()).extracting(view -> view.stock().quantity()).containsExactly(3, 0, 0);
+        assertThat(page.content()).allSatisfy(view -> assertThat(view.brand().getId()).isEqualTo(brand.getId()));
+    }
+
+    @Test void reusesRankingCountsAcrossFilteredPositiveAndZeroLikePages() {
+        Brand brand = persist(new Brand("Ranking brand"));
+        Product first = persist(new Product(brand.getId(), "First", 100L));
+        Product second = persist(new Product(brand.getId(), "Second", 200L));
+        Product third = persist(new Product(brand.getId(), "Third", 300L));
+        Product deleted = persist(new Product(brand.getId(), "Deleted", 400L));
+        persist(new Like(1L, first.getId()));
+        persist(new Like(2L, first.getId()));
+        persist(new Like(1L, second.getId()));
+        persist(new Like(1L, deleted.getId()));
+        persist(new Like(2L, deleted.getId()));
+        persist(new Like(3L, deleted.getId()));
+        deleted.delete();
+        entityManager.flush();
+        entityManager.clear();
+        for (Long brandId : new Long[]{null, brand.getId()}) {
+            var firstPage = useCase.findCustomerProductPage(brandId, ProductSort.LIKES_DESC, 0, 2);
+            assertThat(firstPage.last()).isFalse();
+            assertThat(firstPage.content()).extracting(view -> view.product().getId())
+                .containsExactly(first.getId(), second.getId());
+            assertThat(firstPage.content()).extracting(ProductUseCase.CustomerProduct::likeCount)
+                .containsExactly(2L, 1L);
+            var secondPage = useCase.findCustomerProductPage(brandId, ProductSort.LIKES_DESC, 1, 2);
+            assertThat(secondPage.last()).isTrue();
+            assertThat(secondPage.content()).singleElement().satisfies(view -> {
+                assertThat(view.product().getId()).isEqualTo(third.getId());
+                assertThat(view.likeCount()).isZero();
+            });
+        }
+    }
+
     @DisplayName("[R-ADMIN-04] 관리자는 상품을 생성·목록 조회·상세 조회·수정·삭제할 수 있다.")
     @Nested class ProductCrud {
         @DisplayName("[상태 전이] 상품 생성·목록·상세·수정·삭제 결과를 저장한다.")

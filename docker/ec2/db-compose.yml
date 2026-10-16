@@ -1,0 +1,63 @@
+name: week4-db
+services:
+  mysql:
+    image: mysql:8.0.46
+    restart: unless-stopped
+    ports:
+      - "${DB_BIND_ADDRESS:?Set DB private IP}:3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set root password}
+      MYSQL_DATABASE: perf_uniform_10k_v1
+      MYSQL_USER: application
+      MYSQL_PASSWORD: ${MYSQL_PWD:?Set application password}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --local-infile=1
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_ROOT_PASSWORD mysql -uroot -Nse 'SELECT 1'"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+  redis-master:
+    image: redis:7.0
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "", "--latency-monitor-threshold", "100"]
+    ports:
+      - "${DB_BIND_ADDRESS:?Set DB private IP}:6379:6379"
+    volumes:
+      - redis-master-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *logging
+  redis-replica:
+    image: redis:7.0
+    restart: unless-stopped
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--replicaof", "redis-master", "6379", "--replica-read-only", "yes", "--latency-monitor-threshold", "100"]
+    ports:
+      - "${DB_BIND_ADDRESS:?Set DB private IP}:6380:6379"
+    volumes:
+      - redis-replica-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *logging
+volumes:
+  mysql-data:
+  redis-master-data:
+  redis-replica-data:

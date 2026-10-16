@@ -44,16 +44,10 @@ public class LikeUseCase {
     public boolean register(Long userId, Long productId) {
         requireUser(userId);
         requireActiveProduct(productId);
-        Like existing = likeRepository.findByUserIdAndProductId(userId, productId).orElse(null);
-        if (existing == null) {
-            likeRepository.save(new Like(userId, productId));
-            return true;
-        }
-        if (!existing.isCanceled()) {
+        if (likeRepository.findByUserIdAndProductId(userId, productId).isPresent()) {
             return false;
         }
-        existing.reregister(userId);
-        likeRepository.save(existing);
+        likeRepository.save(new Like(userId, productId));
         return true;
     }
 
@@ -61,10 +55,9 @@ public class LikeUseCase {
     public void cancel(Long userId, Long productId) {
         requireUser(userId);
         likeRepository.findByUserIdAndProductId(userId, productId)
-            .filter(like -> !like.isCanceled())
             .ifPresent(like -> {
                 like.cancel(userId);
-                likeRepository.save(like);
+                likeRepository.delete(like);
             });
     }
 
@@ -92,6 +85,16 @@ public class LikeUseCase {
             ))
             .toList();
         return new PageResult<>(content, page, size, likeRepository.countAllByUserId(userId));
+    }
+
+    @Transactional(readOnly = true)
+    public PageResult<com.loopers.product.application.ProductUseCase.BasicProduct> findMineBasicPage(Long requesterId, Long userId, int page, int size) {
+        if (!requesterId.equals(userId)) throw new CoreException(ErrorCode.USER_NOT_FOUND);
+        List<Product> products = findMine(userId, page, size);
+        var brands = brandRepository.findAllByIds(products.stream().map(Product::getBrandId).distinct().toList()).stream()
+            .collect(java.util.stream.Collectors.toMap(com.loopers.brand.domain.Brand::getId, java.util.function.Function.identity()));
+        return new PageResult<>(products.stream().map(p -> new com.loopers.product.application.ProductUseCase.BasicProduct(p, brands.get(p.getBrandId()))).toList(),
+            page, size, likeRepository.countAllByUserId(userId));
     }
 
     @Transactional(readOnly = true)

@@ -46,4 +46,17 @@
              -->
         </root>
     </springProfile>
+    <springProfile name="experiment-async">
+        <appender name="EXPERIMENT_ASYNC" class="ch.qos.logback.classic.AsyncAppender">
+            <queueSize>8192</queueSize>
+            <discardingThreshold>0</discardingThreshold>
+            <neverBlock>false</neverBlock>
+            <includeCallerData>false</includeCallerData>
+            <maxFlushTime>30000</maxFlushTime>
+            <appender-ref ref="CONSOLE"/>
+        </appender>
+        <logger name="EXPERIMENT_TRACE" level="INFO" additivity="false">
+            <appender-ref ref="EXPERIMENT_ASYNC"/>
+        </logger>
+    </springProfile>
 </configuration>

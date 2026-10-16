@@ -1,0 +1,28 @@
+// ./gradlew -I docs/week4/seed-data/scripts/seed.gradle :apps:commerce-api:generateCatalogCsv
+allprojects {
+    afterEvaluate { p ->
+        if (p.path == ':apps:commerce-api') {
+            def seed = p.sourceSets.create('catalogSeed') {
+                java.srcDir rootProject.file('docs/week4/seed-data/scripts')
+                compileClasspath += p.sourceSets.main.output + p.configurations.runtimeClasspath
+                runtimeClasspath += output + compileClasspath
+            }
+            p.dependencies.add('catalogSeedImplementation', 'net.datafaker:datafaker:2.5.1')
+            p.tasks.register('generateCatalogCsv', JavaExec) {
+                dependsOn p.tasks.named('catalogSeedClasses')
+                classpath = seed.runtimeClasspath
+                mainClass = 'CatalogSeed'
+                workingDir rootProject.projectDir
+                args(p.findProperty('datasetDir') ?: 'docs/week4/seed-data/uniform-10k-v1',
+                     p.findProperty('seedValue') ?: '42',
+                     p.findProperty('datasetProfile') ?: 'uniform')
+            }
+            p.tasks.register('initCatalogSchema', JavaExec) {
+                dependsOn p.tasks.named('catalogSeedClasses')
+                classpath = seed.runtimeClasspath
+                mainClass = 'CatalogSchemaInit'
+                workingDir rootProject.projectDir
+            }
+        }
+    }
+}

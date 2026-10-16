@@ -14,6 +14,10 @@ interface BrandJpaRepository extends JpaRepository<Brand, Long> {
 
     List<Brand> findAllByName(String name);
 
+    List<Brand> findByDeletedAtIsNull(org.springframework.data.domain.Pageable pageable);
+
+    long countByDeletedAtIsNull();
+
     @Lock(LockModeType.PESSIMISTIC_READ)
     @Query("select b from Brand b where b.id = :id")
     Optional<Brand> findForProductCreate(@Param("id") Long id);

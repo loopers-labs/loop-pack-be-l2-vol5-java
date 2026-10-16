@@ -1,0 +1,8 @@
+catalog:
+  cache:
+    enabled: true
+
+# Keep the legacy fixed-data experiment cache disabled.
+experiment:
+  latest-cache:
+    enabled: false

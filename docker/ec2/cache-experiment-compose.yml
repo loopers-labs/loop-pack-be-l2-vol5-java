@@ -1,0 +1,5 @@
+# Fixed-data read experiment only. Remove this overlay after measurement.
+services:
+  commerce-api:
+    environment:
+      EXPERIMENT_LATEST_CACHE_ENABLED: "true"

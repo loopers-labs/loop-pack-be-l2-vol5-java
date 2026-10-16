@@ -2,6 +2,13 @@ package com.loopers.config.redis;
 
 
 import io.lettuce.core.ReadFrom;
+import io.lettuce.core.ClientOptions;
+import io.lettuce.core.SocketOptions;
+import io.lettuce.core.TimeoutOptions;
+import io.lettuce.core.resource.DefaultClientResources;
+import io.lettuce.core.resource.Delay;
+import java.time.Duration;
+import java.util.concurrent.TimeUnit;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -28,26 +35,34 @@ public class RedisConfig{
         this.redisProperties = redisProperties;
     }
 
+    @Bean(destroyMethod = "shutdown")
+    public DefaultClientResources redisClientResources() {
+        return DefaultClientResources.builder()
+                .reconnectDelay(Delay.exponential(Duration.ofMillis(1),
+                        redisProperties.reconnectMaxDelay(), 2, TimeUnit.MILLISECONDS))
+                .build();
+    }
+
     @Primary
     @Bean
-    public LettuceConnectionFactory defaultRedisConnectionFactory() {
+    public LettuceConnectionFactory defaultRedisConnectionFactory(DefaultClientResources redisClientResources) {
         int database = redisProperties.database();
         RedisNodeInfo master = redisProperties.master();
         List<RedisNodeInfo> replicas = redisProperties.replicas();
         return lettuceConnectionFactory(
-                database, master, replicas,
+                database, master, replicas, redisClientResources,
                 b -> b.readFrom(ReadFrom.REPLICA_PREFERRED)
         );
     }
 
     @Qualifier(CONNECTION_MASTER)
     @Bean
-    public LettuceConnectionFactory masterRedisConnectionFactory() {
+    public LettuceConnectionFactory masterRedisConnectionFactory(DefaultClientResources redisClientResources) {
         int database = redisProperties.database();
         RedisNodeInfo master = redisProperties.master();
         List<RedisNodeInfo> replicas = redisProperties.replicas();
         return lettuceConnectionFactory(
-                database, master, replicas,
+                database, master, replicas, redisClientResources,
                 b -> b.readFrom(ReadFrom.MASTER)
         );
     }
@@ -73,9 +88,17 @@ public class RedisConfig{
             int database,
             RedisNodeInfo master,
             List<RedisNodeInfo> replicas,
+            DefaultClientResources redisClientResources,
             Consumer<LettuceClientConfiguration.LettuceClientConfigurationBuilder> customizer
     ){
-        LettuceClientConfiguration.LettuceClientConfigurationBuilder builder = LettuceClientConfiguration.builder();
+        LettuceClientConfiguration.LettuceClientConfigurationBuilder builder = LettuceClientConfiguration.builder()
+                .clientResources(redisClientResources)
+                .commandTimeout(redisProperties.commandTimeout())
+                .clientOptions(ClientOptions.builder()
+                        .socketOptions(SocketOptions.builder()
+                                .connectTimeout(redisProperties.connectTimeout()).build())
+                        .timeoutOptions(TimeoutOptions.enabled(redisProperties.commandTimeout()))
+                        .build());
         if(customizer != null) customizer.accept(builder);
         LettuceClientConfiguration clientConfig = builder.build();
         RedisStaticMasterReplicaConfiguration masterReplicaConfig = new RedisStaticMasterReplicaConfiguration(master.host(), master.port());

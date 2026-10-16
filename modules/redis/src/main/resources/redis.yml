@@ -7,6 +7,9 @@ spring:
 datasource:
   redis:
     database: 0
+    command-timeout: ${REDIS_COMMAND_TIMEOUT:100ms}
+    connect-timeout: ${REDIS_CONNECT_TIMEOUT:100ms}
+    reconnect-max-delay: ${REDIS_RECONNECT_MAX_DELAY:1s}
     master:
       host: ${REDIS_MASTER_HOST}
       port: ${REDIS_MASTER_PORT}

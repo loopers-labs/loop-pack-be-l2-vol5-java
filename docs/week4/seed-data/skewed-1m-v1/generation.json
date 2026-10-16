@@ -1,0 +1,17 @@
+{
+  "dataset": "skewed-1m-v1", "seed": 42,
+  "reference_time_utc": "2026-01-01 00:00:00.000000", "datafaker_version": "2.5.1", "locale": "en",
+  "generator_version": 2, "profile": "skewed-1m",
+  "price": {"min": 1, "max": 99999999, "distribution": "uniform"},
+  "stock": {"min": 0, "max": 99999999, "distribution": "uniform"},
+  "likes_per_product": {"distribution": "fixed-marginals", "arbitrary_cap": null},
+  "brand_distribution": "tiered",
+  "brands": 1000, "users": 240000, "products": 1000000, "stocks": 1000000, "likes": 690000,
+  "targets": {"zero_products": 790000, "zero_users": 146400,
+    "top_1_percent_product_likes": 269100, "top_10_percent_product_likes": 579600,
+    "top_20_percent_user_likes": 614100},
+  "within_group_weights": "inverse-square-root rank, bounded to keep group order; synthetic, not fitted",
+  "pairing": "bipartite Havel-Hakimi, descending product degrees and highest remaining user degree",
+  "product_degree_groups": [[10000,269100,12,1000],[90000,310500,2,12],[110000,110400,1,2]],
+  "user_degree_groups": [[48000,614100,3,500],[45600,75900,1,3]]
+}

@@ -1,0 +1,6 @@
+# Fixed-data experiment: preserve trace format; backpressure instead of discarding.
+services:
+  commerce-api:
+    stop_grace_period: 75s
+    environment:
+      SPRING_PROFILES_ACTIVE: local,docker,experiment,experiment-async

@@ -1,0 +1,28 @@
+services:
+  commerce-api:
+    image: ${APP_IMAGE:?Set APP_IMAGE to the built or loaded image tag}
+    pull_policy: never
+    restart: unless-stopped
+    stop_grace_period: 40s
+    environment:
+      SPRING_PROFILES_ACTIVE: local,docker
+      SPRING_JPA_HIBERNATE_DDL_AUTO: none
+      MYSQL_HOST: ${MYSQL_HOST:?Set MYSQL_HOST}
+      MYSQL_PORT: ${MYSQL_PORT:-3306}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?Set MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER:?Set MYSQL_USER}
+      MYSQL_PWD: ${MYSQL_PWD:?Set MYSQL_PWD}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD}
+      REDIS_MASTER_HOST: ${REDIS_MASTER_HOST:?Set REDIS_MASTER_HOST}
+      REDIS_MASTER_PORT: ${REDIS_MASTER_PORT:-6379}
+      REDIS_REPLICA_1_HOST: ${REDIS_REPLICA_1_HOST:?Set REDIS_REPLICA_1_HOST}
+      REDIS_REPLICA_1_PORT: ${REDIS_REPLICA_1_PORT:-6380}
+      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:-}
+    ports:
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-8080}:8080"
+      - "${METRICS_BIND_ADDRESS:-127.0.0.1}:${METRICS_PORT:-8081}:8081"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

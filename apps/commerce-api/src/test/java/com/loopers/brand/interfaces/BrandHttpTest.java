@@ -9,6 +9,8 @@ import com.loopers.testcontainers.MySqlTestContainersConfig;
 import com.loopers.user.domain.User;
 import com.loopers.utils.DatabaseCleanUp;
 import jakarta.persistence.EntityManager;
+import com.loopers.brand.infrastructure.BrandRepositoryAdapter;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -38,6 +40,7 @@ import static com.loopers.support.http.ApiHttp.isNullOrAbsent;
 import static com.loopers.support.http.ApiHttp.nonAdmin;
 import static com.loopers.support.http.ApiHttp.success;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doReturn;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -69,6 +72,9 @@ class BrandHttpTest {
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
 
+    @MockitoSpyBean
+    private BrandRepositoryAdapter repositoryAdapter;
+
     private CommerceFixture fixture;
 
     @BeforeEach
@@ -80,6 +86,57 @@ class BrandHttpTest {
     void tearDown() {
         databaseCleanUp.truncateAllTables();
         fixture.truncateRemainingTables();
+    }
+
+    @Nested
+    @DisplayName("고객 브랜드 목록: 삭제 제외·페이지·사용자 식별·OpenAPI 계약")
+    class CustomerBrandList {
+        @Test
+        @DisplayName("삭제 브랜드를 페이지와 전체 개수에서 제외하고 id·name만 반환한다")
+        void excludesDeletedBeforePaging() throws Exception {
+            User user = fixture.user();
+            Brand first = fixture.brand("first");
+            Brand second = fixture.brand("second");
+            fixture.deletedBrand("deleted newest");
+            MvcResult page0 = mockMvc.perform(get("/api/v1/brands?page=0&size=1").with(customer(user)))
+                .andExpect(success(HttpStatus.OK)).andReturn();
+            assertThat(ids(data(page0).path("content"))).containsExactly(second.getId());
+            assertThat(data(page0).path("totalElements").asLong()).isEqualTo(2);
+            assertThat(com.loopers.support.http.ApiHttp.fieldNames(data(page0).path("content").get(0)))
+                .containsExactlyInAnyOrder("id", "name");
+            mockMvc.perform(get("/api/v1/brands?page=1&size=1").with(customer(user)))
+                .andExpect(success(HttpStatus.OK)).andExpect(jsonPath("$.data.content[0].id").value(first.getId()));
+            mockMvc.perform(get("/api/v1/brands?page=2&size=1").with(customer(user)))
+                .andExpect(success(HttpStatus.OK)).andExpect(jsonPath("$.data.content.length()").value(0))
+                .andExpect(jsonPath("$.data.totalElements").value(2));
+        }
+
+        @Test
+        @DisplayName("활성 브랜드가 없으면 기본 페이지 0·크기 20과 빈 목록을 반환한다")
+        void emptyDefaults() throws Exception {
+            User user = fixture.user();
+            fixture.deletedBrand("deleted");
+            mockMvc.perform(get("/api/v1/brands").with(customer(user))).andExpect(success(HttpStatus.OK))
+                .andExpect(jsonPath("$.data.content.length()").value(0)).andExpect(jsonPath("$.data.page").value(0))
+                .andExpect(jsonPath("$.data.size").value(20)).andExpect(jsonPath("$.data.totalElements").value(0));
+            mockMvc.perform(get("/api/v1/brands?size=100").with(customer(user))).andExpect(success(HttpStatus.OK));
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"page=-1", "size=0", "size=101", "page=wrong", "size=wrong"})
+        @DisplayName("잘못된 페이지·크기·숫자 형식은 400이다")
+        void rejectsInvalidPage(String query) throws Exception {
+            mockMvc.perform(get("/api/v1/brands?" + query).with(customer(fixture.user())))
+                .andExpect(failure(HttpStatus.BAD_REQUEST, "INVALID_REQUEST"));
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"", "wrong", "999999"})
+        @DisplayName("사용자 헤더 누락·잘못된 형식·없는 사용자는 401이다")
+        void requiresCustomer(String header) throws Exception {
+            mockMvc.perform(get("/api/v1/brands").with(customer(header.isEmpty() ? null : header)))
+                .andExpect(failure(HttpStatus.UNAUTHORIZED, "USER_NOT_IDENTIFIED"));
+        }
     }
 
     @DisplayName("[R-CATALOG-01] 고객은 존재하며 삭제되지 않은 브랜드의 상세를 조회할 수 있다.")
@@ -169,7 +226,8 @@ class BrandHttpTest {
 
             mockMvc.perform(get("/api/v1/products").with(customer(buyer)))
                 .andExpect(success(HttpStatus.OK))
-                .andExpect(jsonPath("$.data.totalElements").value(0));
+                .andExpect(jsonPath("$.data.content").isEmpty())
+                .andExpect(jsonPath("$.data.last").value(true));
             mockMvc.perform(get("/api/v1/products/{productId}", product.getId()).with(customer(buyer)))
                 .andExpect(failure(HttpStatus.NOT_FOUND, "PRODUCT_NOT_FOUND"));
             mockMvc.perform(get("/api/v1/users/{userId}/likes", buyer.getId()).with(customer(buyer)))
@@ -632,5 +690,19 @@ class BrandHttpTest {
             mockMvc.perform(get(ADMIN_BRANDS).param("page", page).param("size", size).with(admin()))
                 .andExpect(failure(HttpStatus.BAD_REQUEST, "INVALID_REQUEST"));
         }
+    }
+
+    @DisplayName("서비스 사전 검사 이후 DB에서 발견한 이름 중복도 409로 응답한다")
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void returnsConflictForDatabaseDuplicate(boolean update) throws Exception {
+        fixture.brand("DB 중복 이름");
+        Brand target = fixture.brand("변경 대상");
+        // A concurrent writer can commit after the application's preliminary lookup.
+        doReturn(java.util.List.of()).when(repositoryAdapter).findAllByName("DB 중복 이름");
+        var request = update ? put(ADMIN_BRAND, target.getId()) : post(ADMIN_BRANDS);
+        mockMvc.perform(request.with(admin()).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"DB 중복 이름\"}"))
+            .andExpect(failure(HttpStatus.CONFLICT, "DUPLICATE_BRAND_NAME"));
     }
 }

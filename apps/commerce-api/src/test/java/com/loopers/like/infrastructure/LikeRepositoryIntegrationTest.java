@@ -29,6 +29,22 @@ class LikeRepositoryIntegrationTest {
     @Autowired
     private EntityManager entityManager;
 
+    @DisplayName("상품별 좋아요 조회 인덱스가 생성된 DB 스키마에 존재한다.")
+    @Test
+    void createsProductLookupIndex() {
+        List<?> columns = entityManager.createNativeQuery("""
+            SELECT COLUMN_NAME
+            FROM information_schema.STATISTICS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'product_like'
+              AND INDEX_NAME = 'idx_product_like_product_id'
+              AND NON_UNIQUE = 1
+            ORDER BY SEQ_IN_INDEX
+            """).getResultList();
+
+        assertThat(columns).isEqualTo(List.of("product_id"));
+    }
+
     @DisplayName("[R-LIKE-02] 같은 고객은 같은 상품에 좋아요를 중복으로 보유할 수 없다.")
     @Nested
     class PreventDuplicateRelation {

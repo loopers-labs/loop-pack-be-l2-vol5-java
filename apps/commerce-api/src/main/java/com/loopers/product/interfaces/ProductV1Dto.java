@@ -21,6 +21,12 @@ public class ProductV1Dto {
         }
     }
 
+    public record BasicProductResponse(Long id, String name, long price, BrandResponse brand) {
+        public static BasicProductResponse from(ProductUseCase.BasicProduct view) {
+            return new BasicProductResponse(view.product().getId(), view.product().getName(), view.product().getPrice(), BrandResponse.from(view.brand()));
+        }
+    }
+
     public record CustomerProductResponse(
         Long id,
         String name,

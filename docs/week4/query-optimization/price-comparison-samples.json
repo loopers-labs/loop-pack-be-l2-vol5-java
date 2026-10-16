@@ -1,0 +1,143 @@
+{
+  "source": "Existing local build/06-optimize-price-query client.json and response artifacts; no new measurement",
+  "cases": [
+    {
+      "phase": "before",
+      "brandId": null,
+      "runId": "price-1791943186",
+      "sampleCount": 3,
+      "warmupCount": 3,
+      "responseTimesMs": [
+        3008.874,
+        3319.432,
+        3490.955
+      ],
+      "minMs": 3008.874,
+      "medianMs": 3319.432,
+      "maxMs": 3490.955,
+      "meanMs": 3273.087,
+      "statuses": [
+        200,
+        200,
+        200
+      ],
+      "repeatedResponseEqual": true
+    },
+    {
+      "phase": "before",
+      "brandId": 1,
+      "runId": "price-1791943186",
+      "sampleCount": 3,
+      "warmupCount": 3,
+      "responseTimesMs": [
+        170.409,
+        190.411,
+        198.267
+      ],
+      "minMs": 170.409,
+      "medianMs": 190.411,
+      "maxMs": 198.267,
+      "meanMs": 186.36233333333334,
+      "statuses": [
+        200,
+        200,
+        200
+      ],
+      "repeatedResponseEqual": true
+    },
+    {
+      "phase": "before",
+      "brandId": 601,
+      "runId": "price-1791943186",
+      "sampleCount": 3,
+      "warmupCount": 3,
+      "responseTimesMs": [
+        42.584,
+        47.252,
+        44.67
+      ],
+      "minMs": 42.584,
+      "medianMs": 44.67,
+      "maxMs": 47.252,
+      "meanMs": 44.83533333333334,
+      "statuses": [
+        200,
+        200,
+        200
+      ],
+      "repeatedResponseEqual": true
+    },
+    {
+      "phase": "after",
+      "brandId": null,
+      "runId": "priceindex-1791943528",
+      "sampleCount": 3,
+      "warmupCount": 3,
+      "responseTimesMs": [
+        22.151,
+        39.017,
+        24.186
+      ],
+      "minMs": 22.151,
+      "medianMs": 24.186,
+      "maxMs": 39.017,
+      "meanMs": 28.451333333333334,
+      "statuses": [
+        200,
+        200,
+        200
+      ],
+      "repeatedResponseEqual": true
+    },
+    {
+      "phase": "after",
+      "brandId": 1,
+      "runId": "priceindex-1791943528",
+      "sampleCount": 3,
+      "warmupCount": 3,
+      "responseTimesMs": [
+        25.82,
+        23.237,
+        23.098
+      ],
+      "minMs": 23.098,
+      "medianMs": 23.237,
+      "maxMs": 25.82,
+      "meanMs": 24.051666666666666,
+      "statuses": [
+        200,
+        200,
+        200
+      ],
+      "repeatedResponseEqual": true
+    },
+    {
+      "phase": "after",
+      "brandId": 601,
+      "runId": "priceindex-1791943528",
+      "sampleCount": 3,
+      "warmupCount": 3,
+      "responseTimesMs": [
+        22.92,
+        24.407,
+        22.161
+      ],
+      "minMs": 22.161,
+      "medianMs": 22.92,
+      "maxMs": 24.407,
+      "meanMs": 23.162666666666667,
+      "statuses": [
+        200,
+        200,
+        200
+      ],
+      "repeatedResponseEqual": true
+    }
+  ],
+  "beforeAfterFullJsonEqual": {
+    "None": true,
+    "1": true,
+    "601": true
+  },
+  "limitation": "3 samples per condition; not a reliable p95/p99 estimate"
+}

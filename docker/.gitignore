@@ -1,0 +1,4 @@
+app.env
+app.*.env
+*.tar
+*.tar.gz

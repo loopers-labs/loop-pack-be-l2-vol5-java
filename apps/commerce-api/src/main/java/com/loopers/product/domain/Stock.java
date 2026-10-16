@@ -6,6 +6,7 @@ import com.loopers.domain.BaseEntity;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.Check;
 
 @Entity
 @Table(name = "stock")
@@ -14,6 +15,8 @@ public class Stock extends BaseEntity {
     @Column(nullable = false, unique = true)
     private Long productId;
 
+    @Column(nullable = false)
+    @Check(name = "ck_stock_quantity", constraints = "quantity >= 0")
     private int quantity;
 
     protected Stock() {

@@ -1,0 +1,5 @@
+# Diagnostic comparison only: disable detailed per-request trace output.
+services:
+  commerce-api:
+    environment:
+      SPRING_APPLICATION_JSON: '{"logging":{"level":{"EXPERIMENT_TRACE":"OFF"}}}'

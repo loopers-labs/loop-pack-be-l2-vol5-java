@@ -4,6 +4,7 @@ import com.loopers.brand.domain.Brand;
 import com.loopers.brand.domain.BrandRepository;
 import com.loopers.like.domain.LikeRepository;
 import com.loopers.product.domain.Product;
+import com.loopers.product.domain.RankedProduct;
 import com.loopers.product.domain.ProductNameValidator;
 import com.loopers.product.domain.ProductRepository;
 import com.loopers.product.domain.ProductSort;
@@ -12,10 +13,14 @@ import com.loopers.product.domain.StockRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorCode;
 import com.loopers.support.page.PageResult;
+import com.loopers.support.page.SliceResult;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 public class ProductUseCase {
@@ -111,33 +116,105 @@ public class ProductUseCase {
             return List.of();
         }
         ProductSort requestedSort = sort == null ? ProductSort.LATEST : sort;
-        return productRepository.findCustomerProducts(brandId, requestedSort, page, size).stream()
-            .map(product -> new ProductView(
-                product, stockRepository.findByProductId(product.getId()).orElse(new Stock(product.getId(), 0)),
-                likeRepository.countByProductId(product.getId())
-            ))
-            .toList();
+        if (requestedSort == ProductSort.LIKES_DESC) {
+            List<RankedProduct> ranked = productRepository.findCustomerProductsByLikes(brandId, (long) page * size, size);
+            return toProductViews(ranked.stream().map(RankedProduct::product).toList(), rankingCounts(ranked));
+        }
+        return toProductViews(productRepository.findCustomerProducts(brandId, requestedSort, page, size));
     }
 
     @Transactional(readOnly = true)
-    public PageResult<CustomerProduct> findCustomerProductPage(
+    public SliceResult<CustomerProduct> findCustomerProductPage(
         Long brandId,
         ProductSort sort,
         int page,
         int size
     ) {
-        List<CustomerProduct> content = findCustomerProducts(brandId, sort, page, size).stream()
-            .map(view -> new CustomerProduct(
-                view.product(),
-                view.stock(),
-                findBrand(view.product().getBrandId()),
-                view.likeCount()
-            ))
+        if (brandId != null && !isActiveBrand(brandId)) {
+            return new SliceResult<>(List.of(), page, size, true);
+        }
+        ProductSort requestedSort = sort == null ? ProductSort.LATEST : sort;
+        List<RankedProduct> ranked = requestedSort == ProductSort.LIKES_DESC
+            ? productRepository.findCustomerProductsByLikes(brandId, (long) page * size, size + 1) : null;
+        List<Product> products = ranked == null
+            ? productRepository.findCustomerProductWindow(brandId, requestedSort, (long) page * size, size + 1)
+            : ranked.stream().map(RankedProduct::product).toList();
+        List<Product> selected = products.stream().limit(size).toList();
+        Map<Long, Brand> brands = brandRepository.findAllByIds(
+            selected.stream().map(Product::getBrandId).distinct().toList()
+        ).stream().collect(Collectors.toMap(Brand::getId, Function.identity()));
+        List<ProductView> views = ranked == null ? toProductViews(selected)
+            : toProductViews(selected, rankingCounts(ranked));
+        List<CustomerProduct> content = views.stream()
+            .map(view -> {
+                Brand brand = brands.get(view.product().getBrandId());
+                if (brand == null) throw new CoreException(ErrorCode.BRAND_NOT_FOUND);
+                return new CustomerProduct(view.product(), view.stock(), brand, view.likeCount());
+            })
             .toList();
-        long totalElements = brandId != null && !isActiveBrand(brandId)
-            ? 0
-            : productRepository.countCustomerProducts(brandId);
-        return new PageResult<>(content, page, size, totalElements);
+        return new SliceResult<>(content, page, size, products.size() <= size);
+    }
+
+    @Transactional(readOnly = true)
+    public SliceResult<BasicProduct> findBasicPage(Long brandId, ProductSort sort, int page, int size) {
+        if (brandId != null && !isActiveBrand(brandId)) return new SliceResult<>(List.of(), page, size, true);
+        ProductSort requested = sort == null ? ProductSort.LATEST : sort;
+        List<Product> products = requested == ProductSort.LIKES_DESC
+            ? productRepository.findCustomerProductsByLikes(brandId, (long) page * size, size + 1).stream().map(RankedProduct::product).toList()
+            : productRepository.findCustomerProductWindow(brandId, requested, (long) page * size, size + 1);
+        return new SliceResult<>(basicProducts(products.stream().limit(size).toList()), page, size, products.size() <= size);
+    }
+
+    @Transactional(readOnly = true)
+    public BasicProduct findBasicProduct(Long id) {
+        List<Product> products = productRepository.findActiveByIds(List.of(id));
+        if (products.isEmpty()) throw new CoreException(ErrorCode.PRODUCT_NOT_FOUND);
+        return basicProducts(products).getFirst();
+    }
+
+    public List<BasicProduct> basicProducts(List<Product> products) {
+        Map<Long, Brand> brands = brandRepository.findAllByIds(products.stream().map(Product::getBrandId).distinct().toList())
+            .stream().collect(Collectors.toMap(Brand::getId, Function.identity()));
+        return products.stream().map(p -> new BasicProduct(p, brands.get(p.getBrandId()))).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<LikeCount> findLikeCounts(List<Long> ids) {
+        List<Product> products = productRepository.findActiveByIds(ids);
+        Map<Long, Long> counts = likeRepository.countByProductIds(products.stream().map(Product::getId).toList());
+        return products.stream().map(p -> new LikeCount(p.getId(), counts.getOrDefault(p.getId(), 0L))).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<StockStatus> findStockStatuses(List<Long> ids) {
+        List<Product> products = productRepository.findActiveByIds(ids);
+        Map<Long, Stock> stocks = stockRepository.findAllByProductIds(products.stream().map(Product::getId).toList()).stream()
+            .collect(Collectors.toMap(Stock::getProductId, Function.identity()));
+        return products.stream().map(p -> new StockStatus(p.getId(), !stocks.containsKey(p.getId()) || stocks.get(p.getId()).quantity() == 0)).toList();
+    }
+
+    public record BasicProduct(Product product, Brand brand) { }
+    public record LikeCount(Long productId, long likeCount) { }
+    public record StockStatus(Long productId, boolean soldOut) { }
+
+    private Map<Long, Long> rankingCounts(List<RankedProduct> ranked) {
+        return ranked.stream().collect(Collectors.toMap(row -> row.product().getId(), RankedProduct::likeCount));
+    }
+
+    private List<ProductView> toProductViews(List<Product> products) {
+        if (products.isEmpty()) return List.of();
+        return toProductViews(products, likeRepository.countByProductIds(products.stream().map(Product::getId).toList()));
+    }
+
+    private List<ProductView> toProductViews(List<Product> products, Map<Long, Long> likes) {
+        if (products.isEmpty()) return List.of();
+        List<Long> ids = products.stream().map(Product::getId).toList();
+        Map<Long, Stock> stocks = stockRepository.findAllByProductIds(ids).stream()
+            .collect(Collectors.toMap(Stock::getProductId, Function.identity()));
+        return products.stream().map(product -> new ProductView(
+            product, stocks.getOrDefault(product.getId(), new Stock(product.getId(), 0)),
+            likes.getOrDefault(product.getId(), 0L)
+        )).toList();
     }
 
     @Transactional(readOnly = true)

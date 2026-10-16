@@ -1,0 +1,189 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1720" height="1028" viewBox="0 0 1720 1028" role="img" aria-labelledby="title desc">
+<title id="title">product_id 인덱스 추가 후: 상품 20개 조회</title><desc id="desc">상품 100만 행을 읽으며 상품별 좋아요 인덱스를 탐색한다. 상품별 개수 조회도 해당 상품 범위만 읽는다. 재고와 전체 상품 수 조회는 동일하다.</desc>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8" fill="none" stroke="#8c99ab"/></marker></defs>
+<g font-family="Pretendard, Apple SD Gothic Neo, Noto Sans KR, sans-serif">
+<rect x="0" y="0" width="1720" height="1028" rx="0" fill="#f8fafc" stroke="#f8fafc"/>
+<text x="36" y="49" text-anchor="start" font-size="32" fill="#243248" font-weight="750">product_id 인덱스 추가 후: 상품 20개 조회</text>
+<text x="36" y="81" text-anchor="start" font-size="18" fill="#65748a" font-weight="400">브랜드 필터 없음 · 좋아요 많은 순 · MySQL EXPLAIN ANALYZE 실제 관측</text>
+<rect x="24" y="109" width="400" height="901" rx="14" fill="#fff" stroke="#d9e1ec"/>
+<rect x="25" y="110" width="398" height="90" rx="13" fill="#fce7eb" stroke="#fce7eb"/>
+<text x="44" y="148" text-anchor="start" font-size="25" fill="#243248" font-weight="750">① 좋아요순 목록 조회</text>
+<text x="44" y="180" text-anchor="start" font-size="16" fill="#59677b" font-weight="400">전체 상품에서 상위 20개 선택</text>
+<rect x="448" y="109" width="400" height="901" rx="14" fill="#fff" stroke="#d9e1ec"/>
+<rect x="449" y="110" width="398" height="90" rx="13" fill="#fff2d6" stroke="#fff2d6"/>
+<text x="468" y="148" text-anchor="start" font-size="25" fill="#243248" font-weight="750">② 상품별 좋아요 수</text>
+<text x="468" y="180" text-anchor="start" font-size="16" fill="#59677b" font-weight="400">목록을 얻은 뒤 상품마다 반복</text>
+<rect x="872" y="109" width="400" height="901" rx="14" fill="#fff" stroke="#d9e1ec"/>
+<rect x="873" y="110" width="398" height="90" rx="13" fill="#dff5e9" stroke="#dff5e9"/>
+<text x="892" y="148" text-anchor="start" font-size="25" fill="#243248" font-weight="750">③ 상품별 재고 조회</text>
+<text x="892" y="180" text-anchor="start" font-size="16" fill="#59677b" font-weight="400">목록을 얻은 뒤 상품마다 반복</text>
+<rect x="1296" y="109" width="400" height="901" rx="14" fill="#fff" stroke="#d9e1ec"/>
+<rect x="1297" y="110" width="398" height="90" rx="13" fill="#ede8ff" stroke="#ede8ff"/>
+<text x="1316" y="148" text-anchor="start" font-size="25" fill="#243248" font-weight="750">④ 전체 상품 수 조회</text>
+<text x="1316" y="180" text-anchor="start" font-size="16" fill="#59677b" font-weight="400">페이지 정보에 넣을 전체 건수</text>
+<text x="127" y="237" text-anchor="middle" font-size="19" fill="#243248" font-weight="700">product</text>
+<text x="322" y="237" text-anchor="middle" font-size="19" fill="#243248" font-weight="700">product_like</text>
+<text x="127" y="262" text-anchor="middle" font-size="15" fill="#64748b" font-weight="400">PK (id)</text>
+<text x="322" y="262" text-anchor="middle" font-size="14" fill="#64748b" font-weight="400">(product_id)</text>
+<path d="M127,303 L87.0,336" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M87.0,358 L67.0,396" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M87.0,358 L107.0,396" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M127,303 L167.0,336" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M167.0,358 L147.0,396" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M167.0,358 L187.0,396" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<rect x="112" y="280" width="30" height="23" rx="3" fill="#edf2f8" stroke="#67788e"/>
+<rect x="72.0" y="335" width="30" height="23" rx="3" fill="#edf2f8" stroke="#67788e"/>
+<rect x="152.0" y="335" width="30" height="23" rx="3" fill="#edf2f8" stroke="#67788e"/>
+<rect x="52.0" y="395" width="30" height="23" rx="3" fill="#ffe0e4" stroke="#d04d60"/>
+<text x="67.0" y="412" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<rect x="92.0" y="395" width="30" height="23" rx="3" fill="#ffe0e4" stroke="#d04d60"/>
+<text x="107.0" y="412" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<rect x="132.0" y="395" width="30" height="23" rx="3" fill="#ffe0e4" stroke="#d04d60"/>
+<text x="147.0" y="412" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<rect x="172.0" y="395" width="30" height="23" rx="3" fill="#ffe0e4" stroke="#d04d60"/>
+<text x="187.0" y="412" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<path d="M50.0,438 L204.0,438" fill="none" stroke="#d04d60" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M84.0,406 L90.0,406" fill="none" stroke="#d04d60" stroke-width="2" stroke-dasharray="5 5"/>
+<path d="M124.0,406 L130.0,406" fill="none" stroke="#d04d60" stroke-width="2" stroke-dasharray="5 5"/>
+<path d="M164.0,406 L170.0,406" fill="none" stroke="#d04d60" stroke-width="2" stroke-dasharray="5 5"/>
+<path d="M322,303 L282.0,336" fill="none" stroke="#25976b" stroke-width="2"/>
+<path d="M282.0,358 L262.0,396" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M282.0,358 L302.0,396" fill="none" stroke="#25976b" stroke-width="2"/>
+<path d="M322,303 L362.0,336" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M362.0,358 L342.0,396" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M362.0,358 L382.0,396" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<rect x="307" y="280" width="30" height="23" rx="3" fill="#d8f4e5" stroke="#26966a"/>
+<rect x="267.0" y="335" width="30" height="23" rx="3" fill="#d8f4e5" stroke="#26966a"/>
+<rect x="347.0" y="335" width="30" height="23" rx="3" fill="#edf2f8" stroke="#67788e"/>
+<rect x="247.0" y="395" width="30" height="23" rx="3" fill="#edf2f8" stroke="#67788e"/>
+<text x="262.0" y="412" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<rect x="287.0" y="395" width="30" height="23" rx="3" fill="#d8f4e5" stroke="#26966a"/>
+<text x="302.0" y="412" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<rect x="327.0" y="395" width="30" height="23" rx="3" fill="#edf2f8" stroke="#67788e"/>
+<text x="342.0" y="412" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<rect x="367.0" y="395" width="30" height="23" rx="3" fill="#edf2f8" stroke="#67788e"/>
+<text x="382.0" y="412" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<text x="127" y="464" text-anchor="middle" font-size="17" fill="#c53d53" font-weight="700">전체 100만 행</text>
+<text x="322" y="447" text-anchor="middle" font-size="15" fill="#21845d" font-weight="700">상품별 탐색 × 100만</text>
+<text x="322" y="469" text-anchor="middle" font-size="15" fill="#21845d" font-weight="700">합계 69만 행 읽기</text>
+<path d="M127,480 L224,503" fill="none" stroke="#8c99ab" stroke-width="2" stroke-dasharray="5 5" marker-end="url(#arrow)"/>
+<path d="M322,480 L224,503" fill="none" stroke="#8c99ab" stroke-width="2" stroke-dasharray="5 5" marker-end="url(#arrow)"/>
+<rect x="89" y="510" width="270" height="60" rx="10" fill="#f3f6fa" stroke="#cbd5e1"/>
+<text x="224.0" y="535" text-anchor="middle" font-size="18" fill="#243248" font-weight="600">Nested loop LEFT JOIN</text>
+<text x="224.0" y="557" text-anchor="middle" font-size="18" fill="#243248" font-weight="400">약 148만 행 생성</text>
+<path d="M224,572 L224,597" fill="none" stroke="#8c99ab" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="89" y="605" width="270" height="60" rx="10" fill="#f3f6fa" stroke="#cbd5e1"/>
+<text x="224.0" y="630" text-anchor="middle" font-size="18" fill="#243248" font-weight="600">순서대로 상품별 집계</text>
+<text x="224.0" y="652" text-anchor="middle" font-size="18" fill="#243248" font-weight="400">100만 개 · 임시 테이블 없음</text>
+<path d="M224,667 L224,692" fill="none" stroke="#8c99ab" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="89" y="700" width="270" height="60" rx="10" fill="#e8f1ff" stroke="#86acf0"/>
+<text x="224.0" y="725" text-anchor="middle" font-size="18" fill="#243248" font-weight="600">좋아요순 정렬</text>
+<text x="224.0" y="747" text-anchor="middle" font-size="18" fill="#243248" font-weight="400">상위 20개 반환</text>
+<text x="648" y="237" text-anchor="middle" font-size="21" fill="#243248" font-weight="700">product_like</text>
+<text x="648" y="264" text-anchor="middle" font-size="16" fill="#64748b" font-weight="400">새 인덱스 (product_id)</text>
+<path d="M648,315 L578.0,348" fill="none" stroke="#25976b" stroke-width="2"/>
+<path d="M578.0,370 L543.0,408" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M578.0,370 L613.0,408" fill="none" stroke="#25976b" stroke-width="2"/>
+<path d="M648,315 L718.0,348" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M718.0,370 L683.0,408" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M718.0,370 L753.0,408" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<rect x="633" y="292" width="30" height="23" rx="3" fill="#d8f4e5" stroke="#26966a"/>
+<rect x="563.0" y="347" width="30" height="23" rx="3" fill="#d8f4e5" stroke="#26966a"/>
+<rect x="703.0" y="347" width="30" height="23" rx="3" fill="#edf2f8" stroke="#67788e"/>
+<rect x="528.0" y="407" width="30" height="23" rx="3" fill="#edf2f8" stroke="#67788e"/>
+<text x="543.0" y="424" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<rect x="598.0" y="407" width="30" height="23" rx="3" fill="#d8f4e5" stroke="#26966a"/>
+<text x="613.0" y="424" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<rect x="668.0" y="407" width="30" height="23" rx="3" fill="#edf2f8" stroke="#67788e"/>
+<text x="683.0" y="424" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<rect x="738.0" y="407" width="30" height="23" rx="3" fill="#edf2f8" stroke="#67788e"/>
+<text x="753.0" y="424" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<text x="648" y="482" text-anchor="middle" font-size="21" fill="#21845d" font-weight="700">해당 상품의 1,000행만 읽기</text>
+<text x="648" y="511" text-anchor="middle" font-size="16" fill="#65748a" font-weight="400">상품 순서 → 해당 상품 범위로 바로 이동</text>
+<path d="M648,526 L648,552" fill="none" stroke="#8c99ab" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="498" y="559" width="300" height="60" rx="10" fill="#f3f6fa" stroke="#cbd5e1"/>
+<text x="648.0" y="584" text-anchor="middle" font-size="18" fill="#243248" font-weight="600">product_id = 980807 범위 탐색</text>
+<text x="648.0" y="606" text-anchor="middle" font-size="18" fill="#243248" font-weight="400">69만 행 전체 스캔이 사라짐</text>
+<path d="M648,621 L648,655" fill="none" stroke="#8c99ab" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="513" y="663" width="270" height="60" rx="10" fill="#e8f1ff" stroke="#86acf0"/>
+<text x="648.0" y="688" text-anchor="middle" font-size="18" fill="#243248" font-weight="600">COUNT(id)</text>
+<text x="648.0" y="710" text-anchor="middle" font-size="18" fill="#243248" font-weight="400">개수 1개 반환</text>
+<text x="648" y="759" text-anchor="middle" font-size="20" fill="#c53d53" font-weight="700">이 쿼리를 상품마다 × 20번</text>
+<text x="1072" y="237" text-anchor="middle" font-size="21" fill="#243248" font-weight="700">stock</text>
+<text x="1072" y="264" text-anchor="middle" font-size="17" fill="#64748b" font-weight="400">유일 인덱스 (product_id)</text>
+<path d="M1072,315 L1002.0,348" fill="none" stroke="#25976b" stroke-width="2"/>
+<path d="M1002.0,370 L967.0,408" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M1002.0,370 L1037.0,408" fill="none" stroke="#25976b" stroke-width="2"/>
+<path d="M1072,315 L1142.0,348" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M1142.0,370 L1107.0,408" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M1142.0,370 L1177.0,408" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<rect x="1057" y="292" width="30" height="23" rx="3" fill="#d8f4e5" stroke="#26966a"/>
+<rect x="987.0" y="347" width="30" height="23" rx="3" fill="#d8f4e5" stroke="#26966a"/>
+<rect x="1127.0" y="347" width="30" height="23" rx="3" fill="#edf2f8" stroke="#67788e"/>
+<rect x="952.0" y="407" width="30" height="23" rx="3" fill="#edf2f8" stroke="#67788e"/>
+<text x="967.0" y="424" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<rect x="1022.0" y="407" width="30" height="23" rx="3" fill="#d8f4e5" stroke="#26966a"/>
+<text x="1037.0" y="424" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<rect x="1092.0" y="407" width="30" height="23" rx="3" fill="#edf2f8" stroke="#67788e"/>
+<text x="1107.0" y="424" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<rect x="1162.0" y="407" width="30" height="23" rx="3" fill="#edf2f8" stroke="#67788e"/>
+<text x="1177.0" y="424" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<text x="1072" y="482" text-anchor="middle" font-size="21" fill="#21845d" font-weight="700">해당 상품으로 바로 탐색</text>
+<path d="M1072,505 L1072,552" fill="none" stroke="#8c99ab" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="922" y="559" width="300" height="60" rx="10" fill="#f3f6fa" stroke="#cbd5e1"/>
+<text x="1072.0" y="584" text-anchor="middle" font-size="18" fill="#243248" font-weight="600">인덱스의 PK로 재고 행 조회</text>
+<text x="1072.0" y="606" text-anchor="middle" font-size="18" fill="#243248" font-weight="400">product_id = 980807 → 1행</text>
+<path d="M1072,621 L1072,655" fill="none" stroke="#8c99ab" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="937" y="663" width="270" height="60" rx="10" fill="#e8f1ff" stroke="#86acf0"/>
+<text x="1072.0" y="688" text-anchor="middle" font-size="18" fill="#243248" font-weight="600">재고 1개 반환</text>
+<text x="1072.0" y="710" text-anchor="middle" font-size="18" fill="#243248" font-weight="400">수량으로 품절 여부 계산</text>
+<text x="1072" y="759" text-anchor="middle" font-size="20" fill="#21845d" font-weight="700">상품마다 1행 조회 × 20번</text>
+<text x="1496" y="237" text-anchor="middle" font-size="21" fill="#243248" font-weight="700">product</text>
+<text x="1496" y="264" text-anchor="middle" font-size="17" fill="#64748b" font-weight="400">PK (id)</text>
+<path d="M1496,315 L1426.0,348" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M1426.0,370 L1391.0,408" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M1426.0,370 L1461.0,408" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M1496,315 L1566.0,348" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M1566.0,370 L1531.0,408" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<path d="M1566.0,370 L1601.0,408" fill="none" stroke="#8c99ab" stroke-width="2"/>
+<rect x="1481" y="292" width="30" height="23" rx="3" fill="#edf2f8" stroke="#67788e"/>
+<rect x="1411.0" y="347" width="30" height="23" rx="3" fill="#edf2f8" stroke="#67788e"/>
+<rect x="1551.0" y="347" width="30" height="23" rx="3" fill="#edf2f8" stroke="#67788e"/>
+<rect x="1376.0" y="407" width="30" height="23" rx="3" fill="#ffe0e4" stroke="#d04d60"/>
+<text x="1391.0" y="424" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<rect x="1446.0" y="407" width="30" height="23" rx="3" fill="#ffe0e4" stroke="#d04d60"/>
+<text x="1461.0" y="424" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<rect x="1516.0" y="407" width="30" height="23" rx="3" fill="#ffe0e4" stroke="#d04d60"/>
+<text x="1531.0" y="424" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<rect x="1586.0" y="407" width="30" height="23" rx="3" fill="#ffe0e4" stroke="#d04d60"/>
+<text x="1601.0" y="424" text-anchor="middle" font-size="15" fill="#243248" font-weight="400">···</text>
+<path d="M1374.0,450 L1618.0,450" fill="none" stroke="#d04d60" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M1408.0,418 L1444.0,418" fill="none" stroke="#d04d60" stroke-width="2" stroke-dasharray="5 5"/>
+<path d="M1478.0,418 L1514.0,418" fill="none" stroke="#d04d60" stroke-width="2" stroke-dasharray="5 5"/>
+<path d="M1548.0,418 L1584.0,418" fill="none" stroke="#d04d60" stroke-width="2" stroke-dasharray="5 5"/>
+<text x="1496" y="482" text-anchor="middle" font-size="21" fill="#c53d53" font-weight="700">상품 전체 100만 행 다시 읽기</text>
+<path d="M1496,505 L1496,552" fill="none" stroke="#8c99ab" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="1346" y="559" width="300" height="60" rx="10" fill="#f3f6fa" stroke="#cbd5e1"/>
+<text x="1496.0" y="584" text-anchor="middle" font-size="18" fill="#243248" font-weight="600">삭제되지 않은 상품 집계</text>
+<text x="1496.0" y="606" text-anchor="middle" font-size="18" fill="#243248" font-weight="400">COUNT(id)</text>
+<path d="M1496,621 L1496,655" fill="none" stroke="#8c99ab" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="1361" y="663" width="270" height="60" rx="10" fill="#e8f1ff" stroke="#86acf0"/>
+<text x="1496.0" y="688" text-anchor="middle" font-size="18" fill="#243248" font-weight="600">전체 건수 1개 반환</text>
+<text x="1496.0" y="710" text-anchor="middle" font-size="18" fill="#243248" font-weight="400">1,000,000</text>
+<rect x="39" y="806" width="370" height="183" rx="8" fill="#f6f8fc" stroke="#e0e7f0"/>
+<text x="56" y="847" text-anchor="start" font-size="18" fill="#243248" font-weight="400">읽기: 상품 100만 + 좋아요 69만</text>
+<text x="56" y="896" text-anchor="start" font-size="18" fill="#243248" font-weight="400">출력: 상품 20개</text>
+<text x="56" y="945" text-anchor="start" font-size="23" fill="#243248" font-weight="650">목록 SQL: 2.768초</text>
+<rect x="463" y="806" width="370" height="183" rx="8" fill="#f6f8fc" stroke="#e0e7f0"/>
+<text x="480" y="847" text-anchor="start" font-size="18" fill="#243248" font-weight="400">읽기: 해당 상품 좋아요 1,000행</text>
+<text x="480" y="896" text-anchor="start" font-size="18" fill="#243248" font-weight="400">출력: 좋아요 개수 1개</text>
+<text x="480" y="945" text-anchor="start" font-size="23" fill="#243248" font-weight="650">대표 상품 1회: 0.174ms</text>
+<rect x="887" y="806" width="370" height="183" rx="8" fill="#f6f8fc" stroke="#e0e7f0"/>
+<text x="904" y="847" text-anchor="start" font-size="18" fill="#243248" font-weight="400">읽기: 해당 재고 1행</text>
+<text x="904" y="896" text-anchor="start" font-size="18" fill="#243248" font-weight="400">출력: 재고 1개</text>
+<text x="904" y="945" text-anchor="start" font-size="23" fill="#243248" font-weight="650">실행 전 1행 조회</text>
+<rect x="1311" y="806" width="370" height="183" rx="8" fill="#f6f8fc" stroke="#e0e7f0"/>
+<text x="1328" y="847" text-anchor="start" font-size="18" fill="#243248" font-weight="400">읽기: 상품 100만</text>
+<text x="1328" y="896" text-anchor="start" font-size="18" fill="#243248" font-weight="400">출력: 전체 건수 1개</text>
+<text x="1328" y="945" text-anchor="start" font-size="23" fill="#243248" font-weight="650">268ms</text>
+</g></svg>

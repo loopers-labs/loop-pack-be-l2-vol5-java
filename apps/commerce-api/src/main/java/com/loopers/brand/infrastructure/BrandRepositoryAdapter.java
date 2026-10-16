@@ -3,6 +3,9 @@ package com.loopers.brand.infrastructure;
 import com.loopers.brand.domain.Brand;
 import com.loopers.brand.domain.BrandRepository;
 import jakarta.persistence.EntityManager;
+import com.loopers.support.error.CoreException;
+import com.loopers.support.error.DatabaseConstraintErrors;
+import com.loopers.support.error.ErrorCode;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Component;
@@ -23,11 +26,27 @@ public class BrandRepositoryAdapter implements BrandRepository {
 
     @Override
     public Brand save(Brand brand) {
-        if (brand.getId() == 0L) {
-            entityManager.persist(brand);
-            return brand;
+        try {
+            Brand saved;
+            if (brand.getId() == 0L) {
+                entityManager.persist(brand);
+                saved = brand;
+            } else {
+                saved = jpaRepository.save(brand);
+            }
+            entityManager.flush();
+            return saved;
+        } catch (RuntimeException failure) {
+            if (DatabaseConstraintErrors.isDuplicateKey(failure, "uk_brand_active_name")) {
+                throw new CoreException(ErrorCode.DUPLICATE_BRAND_NAME);
+            }
+            throw failure;
         }
-        return jpaRepository.save(brand);
+    }
+
+    @Override
+    public List<Brand> findAllByIds(List<Long> ids) {
+        return ids.isEmpty() ? List.of() : jpaRepository.findAllById(ids);
     }
 
     @Override
@@ -60,4 +79,16 @@ public class BrandRepositoryAdapter implements BrandRepository {
     public long countAll() {
         return jpaRepository.count();
     }
+
+    @Override
+    public List<Brand> findActive(int page, int size) {
+        Sort sort = Sort.by(Sort.Order.desc("createdAt"), Sort.Order.asc("id"));
+        return jpaRepository.findByDeletedAtIsNull(PageRequest.of(page, size, sort));
+    }
+
+    @Override
+    public long countActive() {
+        return jpaRepository.countByDeletedAtIsNull();
+    }
+
 }

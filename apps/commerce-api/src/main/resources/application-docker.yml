@@ -1,0 +1,32 @@
+# Experimental deployment: activate local,docker in this order.
+server:
+  address: 0.0.0.0
+  port: 8080
+
+management:
+  server:
+    address: 0.0.0.0
+    port: 8081
+
+spring:
+  jpa:
+    show-sql: false
+    hibernate:
+      ddl-auto: none
+  security:
+    user:
+      password: ${ADMIN_PASSWORD}
+
+datasource:
+  mysql-jpa:
+    main:
+      jdbc-url: jdbc:mysql://${MYSQL_HOST}:${MYSQL_PORT:3306}/${MYSQL_DATABASE}
+      username: ${MYSQL_USER}
+      password: ${MYSQL_PWD}
+  redis:
+    master:
+      host: ${REDIS_MASTER_HOST}
+      port: ${REDIS_MASTER_PORT:6379}
+    replicas:
+      - host: ${REDIS_REPLICA_1_HOST}
+        port: ${REDIS_REPLICA_1_PORT:6380}

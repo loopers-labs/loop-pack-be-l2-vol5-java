@@ -58,8 +58,14 @@ class LikeUseCaseIntegrationTest {
             persist(new Like(scenario.user().getId(), scenario.product().getId()));
             scenario.product().delete();
             entityManager.flush();
+            assertThat(countRows(scenario.product().getId())).isEqualTo(1L);
             useCase.cancel(scenario.user().getId(), scenario.product().getId());
-            assertThat(countLikes(scenario.product().getId())).isZero();
+            entityManager.flush();
+            entityManager.clear();
+            assertAll(
+                () -> assertThat(countRows(scenario.product().getId())).isZero(),
+                () -> assertThat(countLikes(scenario.product().getId())).isZero()
+            );
         }
     }
 
@@ -79,32 +85,81 @@ class LikeUseCaseIntegrationTest {
             useCase.register(scenario.user().getId(), scenario.product().getId());
             useCase.cancel(scenario.user().getId(), scenario.product().getId());
             useCase.cancel(scenario.user().getId(), scenario.product().getId());
-            assertThat(countLikes(scenario.product().getId())).isZero();
+            entityManager.flush();
+            entityManager.clear();
+            assertAll(
+                () -> assertThat(countRows(scenario.product().getId())).isZero(),
+                () -> assertThat(countLikes(scenario.product().getId())).isZero()
+            );
         }
     }
 
     @DisplayName("[INV-LIKE-45] 상품의 좋아요 수는 그 상품의 좋아요 관계 개수와 같다.")
-    @Nested class SoftCancel {
-        @DisplayName("[상태 전이] 취소하면 관계 행은 1로 남고 좋아요 수는 0이다.")
-        @Test void keepsRelationRowAfterCancel() {
+    @Nested class HardCancel {
+        @DisplayName("[상태 전이] 취소하면 DB의 관계 행과 좋아요 수가 모두 0이다.")
+        @Test void removesRelationRowAfterCancel() {
             Scenario scenario = scenario();
             useCase.register(scenario.user().getId(), scenario.product().getId());
             useCase.cancel(scenario.user().getId(), scenario.product().getId());
+            entityManager.flush();
+            entityManager.clear();
             assertAll(
-                () -> assertThat(countRows(scenario.product().getId())).isEqualTo(1L),
+                () -> assertThat(countRows(scenario.product().getId())).isZero(),
                 () -> assertThat(useCase.count(scenario.product().getId())).isZero()
             );
         }
 
-        @DisplayName("[상태 전이] 취소한 좋아요를 다시 등록하면 관계 행은 하나이고 좋아요 수는 1이다.")
-        @Test void reregistersCanceledLike() {
+        @DisplayName("[상태 전이] 취소 후 재등록하면 새 ID의 관계가 하나 생기고 반복 등록해도 좋아요 수는 1이다.")
+        @Test void createsNewRelationAfterCancellation() {
             Scenario scenario = scenario();
             useCase.register(scenario.user().getId(), scenario.product().getId());
+            Long originalId = entityManager.createQuery(
+                "select l.id from Like l where l.productId = :productId", Long.class)
+                .setParameter("productId", scenario.product().getId()).getSingleResult();
             useCase.cancel(scenario.user().getId(), scenario.product().getId());
-            useCase.register(scenario.user().getId(), scenario.product().getId());
+            entityManager.flush();
+            entityManager.clear();
+            boolean registered = useCase.register(scenario.user().getId(), scenario.product().getId());
+            boolean repeated = useCase.register(scenario.user().getId(), scenario.product().getId());
+            entityManager.flush();
+            entityManager.clear();
+            List<Like> relations = entityManager.createQuery(
+                "select l from Like l where l.productId = :productId", Like.class)
+                .setParameter("productId", scenario.product().getId()).getResultList();
             assertAll(
+                () -> assertThat(registered).isTrue(),
+                () -> assertThat(repeated).isFalse(),
+                () -> assertThat(entityManager.find(Like.class, originalId)).isNull(),
+                () -> assertThat(relations).singleElement().satisfies(like -> {
+                    assertThat(like.getId()).isNotEqualTo(originalId);
+                    assertThat(like.getUserId()).isEqualTo(scenario.user().getId());
+                    assertThat(like.getProductId()).isEqualTo(scenario.product().getId());
+                }),
                 () -> assertThat(countRows(scenario.product().getId())).isEqualTo(1L),
                 () -> assertThat(useCase.count(scenario.product().getId())).isEqualTo(1L)
+            );
+        }
+
+        @DisplayName("[오류 추측] 좋아요를 취소하면 해당 사용자·상품의 관계만 삭제된다.")
+        @Test void removesOnlyRequestedRelation() {
+            Scenario scenario = scenario();
+            User other = persist(new User());
+            Product otherProduct = persist(new Product(1L, "다른 상품", 200L));
+            useCase.register(scenario.user().getId(), scenario.product().getId());
+            Like othersLike = persist(new Like(other.getId(), scenario.product().getId()));
+            Like myOtherLike = persist(new Like(scenario.user().getId(), otherProduct.getId()));
+
+            useCase.cancel(scenario.user().getId(), scenario.product().getId());
+            entityManager.flush();
+            entityManager.clear();
+
+            assertAll(
+                () -> assertThat(countRows(scenario.product().getId())).isEqualTo(1L),
+                () -> assertThat(useCase.count(scenario.product().getId())).isEqualTo(1L),
+                () -> assertThat(entityManager.find(Like.class, othersLike.getId())).isNotNull(),
+                () -> assertThat(entityManager.find(Like.class, myOtherLike.getId())).isNotNull(),
+                () -> assertThat(useCase.findMine(scenario.user().getId(), 0, 20))
+                    .extracting(Product::getId).containsExactly(otherProduct.getId())
             );
         }
     }

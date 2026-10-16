@@ -9,6 +9,8 @@ public interface BrandRepository {
 
     Optional<Brand> findById(Long id);
 
+    List<Brand> findAllByIds(List<Long> ids);
+
     Optional<Brand> findForProductCreate(Long id);
 
     Optional<Brand> findForWrite(Long id);
@@ -18,4 +20,8 @@ public interface BrandRepository {
     List<Brand> findAll(int page, int size);
 
     long countAll();
+
+    List<Brand> findActive(int page, int size);
+
+    long countActive();
 }

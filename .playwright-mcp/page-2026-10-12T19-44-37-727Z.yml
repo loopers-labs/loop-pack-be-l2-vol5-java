@@ -1,0 +1,6 @@
+- generic [ref=e4]:
+  - banner [ref=e5]:
+    - heading "Queenit" [level=1] [ref=e6]
+    - link "검색 화면으로 이동" [ref=e7] [cursor=pointer]:
+      - /url: /search
+  - main [ref=e11]

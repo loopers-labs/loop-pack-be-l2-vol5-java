@@ -5,6 +5,8 @@ import java.util.Optional;
 
 public interface ProductRepository {
 
+    List<Product> findActiveByIds(List<Long> ids);
+
     Product save(Product product);
 
     Optional<Product> findById(Long id);
@@ -27,7 +29,9 @@ public interface ProductRepository {
 
     List<Product> findCustomerProducts(Long brandId, ProductSort sort, int page, int size);
 
+    List<RankedProduct> findCustomerProductsByLikes(Long brandId, long offset, int limit);
+
     long countAll(Long brandId);
 
-    long countCustomerProducts(Long brandId);
+    List<Product> findCustomerProductWindow(Long brandId, ProductSort sort, long offset, int limit);
 }

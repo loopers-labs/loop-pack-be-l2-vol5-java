@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1260" height="850" viewBox="0 0 1260 850" role="img" aria-labelledby="title"><title id="title">가격순 목록의 인덱스 탐색과 정렬</title><defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8" fill="#77859a"/></marker></defs><rect width="1260" height="850" fill="#f8fafc"/><style>text{font-family:Apple SD Gothic Neo,Noto Sans KR,sans-serif;fill:#243248}</style>
+<text x="30" y="49" font-size="30" text-anchor="start" font-weight="700">가격순: 20개를 보여 주려고 얼마나 읽을까?</text>
+<text x="30" y="83" font-size="19" text-anchor="start" font-weight="400">정렬 기준 price ASC, id ASC · 현재 정렬용 인덱스 없음</text>
+<rect x="24" y="110" width="384" height="653" rx="8" fill="#fff" stroke="#d9e1ea"/>
+<rect x="25" y="111" width="382" height="62" rx="8" fill="#fce5e8" stroke="#d9e1ea"/>
+<text x="216" y="150" font-size="25" text-anchor="middle" font-weight="700">무필터</text>
+<text x="216" y="209" font-size="19" text-anchor="middle" font-weight="700">idx_product_likes_filter</text>
+<text x="216" y="241" font-size="18" text-anchor="middle" font-weight="400">deleted_at IS NULL</text>
+<rect x="198" y="269" width="36" height="24" rx="8" fill="#fce5e8" stroke="#d9e1ea"/>
+<path d="M216 293 L131 325" stroke="#77859a"/>
+<rect x="113" y="325" width="36" height="24" rx="8" fill="#fce5e8" stroke="#d9e1ea"/>
+<path d="M131 349 L93 383" stroke="#77859a"/>
+<rect x="75" y="383" width="36" height="24" rx="8" fill="#fce5e8" stroke="#d9e1ea"/>
+<text x="93" y="400" font-size="16" text-anchor="middle" font-weight="400">···</text>
+<path d="M131 349 L169 383" stroke="#77859a"/>
+<rect x="151" y="383" width="36" height="24" rx="8" fill="#fce5e8" stroke="#d9e1ea"/>
+<text x="169" y="400" font-size="16" text-anchor="middle" font-weight="400">···</text>
+<path d="M216 293 L301 325" stroke="#77859a"/>
+<rect x="283" y="325" width="36" height="24" rx="8" fill="#fce5e8" stroke="#d9e1ea"/>
+<path d="M301 349 L263 383" stroke="#77859a"/>
+<rect x="245" y="383" width="36" height="24" rx="8" fill="#fce5e8" stroke="#d9e1ea"/>
+<text x="263" y="400" font-size="16" text-anchor="middle" font-weight="400">···</text>
+<path d="M301 349 L339 383" stroke="#77859a"/>
+<rect x="321" y="383" width="36" height="24" rx="8" fill="#fce5e8" stroke="#d9e1ea"/>
+<text x="339" y="400" font-size="16" text-anchor="middle" font-weight="400">···</text>
+<text x="216" y="447" font-size="22" text-anchor="middle" font-weight="700">상품 1,000,000행 읽기</text>
+<text x="216" y="476" font-size="17" text-anchor="middle" font-weight="400">인덱스 탐색 후 상품 행 접근</text>
+<path d="M216 490 V517" stroke="#77859a" stroke-width="2" marker-end="url(#a)"/>
+<rect x="49" y="527" width="334" height="64" rx="8" fill="#fff" stroke="#d9e1ea"/>
+<text x="216" y="553" font-size="20" text-anchor="middle" font-weight="700">가격 ↑ · ID ↑ 정렬</text>
+<text x="216" y="578" font-size="17" text-anchor="middle" font-weight="400">입력 전체를 보고 상위 21개 선택</text>
+<path d="M216 592 V618" stroke="#77859a" stroke-width="2" marker-end="url(#a)"/>
+<rect x="49" y="627" width="334" height="105" rx="8" fill="#fce5e8" stroke="#d9e1ea"/>
+<text x="216" y="658" font-size="21" text-anchor="middle" font-weight="700">SQL 21개 → 응답 20개</text>
+<text x="216" y="688" font-size="17" text-anchor="middle" font-weight="400">나머지 1개로 다음 페이지 확인</text>
+<text x="216" y="718" font-size="23" text-anchor="middle" font-weight="700">3,641ms</text>
+<rect x="438" y="110" width="384" height="653" rx="8" fill="#fff" stroke="#d9e1ea"/>
+<rect x="439" y="111" width="382" height="62" rx="8" fill="#fff1d8" stroke="#d9e1ea"/>
+<text x="630" y="150" font-size="25" text-anchor="middle" font-weight="700">브랜드 1</text>
+<text x="630" y="209" font-size="19" text-anchor="middle" font-weight="700">idx_product_brand_latest</text>
+<text x="630" y="241" font-size="18" text-anchor="middle" font-weight="400">brand_id = 1</text>
+<rect x="612" y="269" width="36" height="24" rx="8" fill="#fff1d8" stroke="#d9e1ea"/>
+<path d="M630 293 L545 325" stroke="#77859a"/>
+<rect x="527" y="325" width="36" height="24" rx="8" fill="#fff1d8" stroke="#d9e1ea"/>
+<path d="M545 349 L507 383" stroke="#77859a"/>
+<rect x="489" y="383" width="36" height="24" rx="8" fill="#fff1d8" stroke="#d9e1ea"/>
+<text x="507" y="400" font-size="16" text-anchor="middle" font-weight="400">···</text>
+<path d="M545 349 L583 383" stroke="#77859a"/>
+<rect x="565" y="383" width="36" height="24" rx="8" fill="#fff1d8" stroke="#d9e1ea"/>
+<text x="583" y="400" font-size="16" text-anchor="middle" font-weight="400">···</text>
+<path d="M630 293 L715 325" stroke="#77859a"/>
+<rect x="697" y="325" width="36" height="24" rx="8" fill="#fff1d8" stroke="#d9e1ea"/>
+<path d="M715 349 L677 383" stroke="#77859a"/>
+<rect x="659" y="383" width="36" height="24" rx="8" fill="#fff1d8" stroke="#d9e1ea"/>
+<text x="677" y="400" font-size="16" text-anchor="middle" font-weight="400">···</text>
+<path d="M715 349 L753 383" stroke="#77859a"/>
+<rect x="735" y="383" width="36" height="24" rx="8" fill="#fff1d8" stroke="#d9e1ea"/>
+<text x="753" y="400" font-size="16" text-anchor="middle" font-weight="400">···</text>
+<text x="630" y="447" font-size="22" text-anchor="middle" font-weight="700">상품 5,000행 읽기</text>
+<text x="630" y="476" font-size="17" text-anchor="middle" font-weight="400">인덱스 탐색 후 상품 행 접근</text>
+<path d="M630 490 V517" stroke="#77859a" stroke-width="2" marker-end="url(#a)"/>
+<rect x="463" y="527" width="334" height="64" rx="8" fill="#fff" stroke="#d9e1ea"/>
+<text x="630" y="553" font-size="20" text-anchor="middle" font-weight="700">가격 ↑ · ID ↑ 정렬</text>
+<text x="630" y="578" font-size="17" text-anchor="middle" font-weight="400">입력 전체를 보고 상위 21개 선택</text>
+<path d="M630 592 V618" stroke="#77859a" stroke-width="2" marker-end="url(#a)"/>
+<rect x="463" y="627" width="334" height="105" rx="8" fill="#fff1d8" stroke="#d9e1ea"/>
+<text x="630" y="658" font-size="21" text-anchor="middle" font-weight="700">SQL 21개 → 응답 20개</text>
+<text x="630" y="688" font-size="17" text-anchor="middle" font-weight="400">나머지 1개로 다음 페이지 확인</text>
+<text x="630" y="718" font-size="23" text-anchor="middle" font-weight="700">14.1ms</text>
+<rect x="852" y="110" width="384" height="653" rx="8" fill="#fff" stroke="#d9e1ea"/>
+<rect x="853" y="111" width="382" height="62" rx="8" fill="#e2f3e8" stroke="#d9e1ea"/>
+<text x="1044" y="150" font-size="25" text-anchor="middle" font-weight="700">브랜드 601</text>
+<text x="1044" y="209" font-size="19" text-anchor="middle" font-weight="700">uk_product_active_name</text>
+<text x="1044" y="241" font-size="18" text-anchor="middle" font-weight="400">brand_id = 601</text>
+<rect x="1026" y="269" width="36" height="24" rx="8" fill="#e2f3e8" stroke="#d9e1ea"/>
+<path d="M1044 293 L959 325" stroke="#77859a"/>
+<rect x="941" y="325" width="36" height="24" rx="8" fill="#e2f3e8" stroke="#d9e1ea"/>
+<path d="M959 349 L921 383" stroke="#77859a"/>
+<rect x="903" y="383" width="36" height="24" rx="8" fill="#e2f3e8" stroke="#d9e1ea"/>
+<text x="921" y="400" font-size="16" text-anchor="middle" font-weight="400">···</text>
+<path d="M959 349 L997 383" stroke="#77859a"/>
+<rect x="979" y="383" width="36" height="24" rx="8" fill="#e2f3e8" stroke="#d9e1ea"/>
+<text x="997" y="400" font-size="16" text-anchor="middle" font-weight="400">···</text>
+<path d="M1044 293 L1129 325" stroke="#77859a"/>
+<rect x="1111" y="325" width="36" height="24" rx="8" fill="#e2f3e8" stroke="#d9e1ea"/>
+<path d="M1129 349 L1091 383" stroke="#77859a"/>
+<rect x="1073" y="383" width="36" height="24" rx="8" fill="#e2f3e8" stroke="#d9e1ea"/>
+<text x="1091" y="400" font-size="16" text-anchor="middle" font-weight="400">···</text>
+<path d="M1129 349 L1167 383" stroke="#77859a"/>
+<rect x="1149" y="383" width="36" height="24" rx="8" fill="#e2f3e8" stroke="#d9e1ea"/>
+<text x="1167" y="400" font-size="16" text-anchor="middle" font-weight="400">···</text>
+<text x="1044" y="447" font-size="22" text-anchor="middle" font-weight="700">상품 333행 읽기</text>
+<text x="1044" y="476" font-size="17" text-anchor="middle" font-weight="400">인덱스 탐색 후 상품 행 접근</text>
+<path d="M1044 490 V517" stroke="#77859a" stroke-width="2" marker-end="url(#a)"/>
+<rect x="877" y="527" width="334" height="64" rx="8" fill="#fff" stroke="#d9e1ea"/>
+<text x="1044" y="553" font-size="20" text-anchor="middle" font-weight="700">가격 ↑ · ID ↑ 정렬</text>
+<text x="1044" y="578" font-size="17" text-anchor="middle" font-weight="400">입력 전체를 보고 상위 21개 선택</text>
+<path d="M1044 592 V618" stroke="#77859a" stroke-width="2" marker-end="url(#a)"/>
+<rect x="877" y="627" width="334" height="105" rx="8" fill="#e2f3e8" stroke="#d9e1ea"/>
+<text x="1044" y="658" font-size="21" text-anchor="middle" font-weight="700">SQL 21개 → 응답 20개</text>
+<text x="1044" y="688" font-size="17" text-anchor="middle" font-weight="400">나머지 1개로 다음 페이지 확인</text>
+<text x="1044" y="718" font-size="23" text-anchor="middle" font-weight="700">1.0ms</text>
+<text x="30" y="801" font-size="18" text-anchor="start" font-weight="400">실행계획에서 확인한 목록 SQL 단건 시간 · API 전체 응답 시간과 별도</text>
+</svg>

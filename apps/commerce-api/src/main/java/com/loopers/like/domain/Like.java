@@ -4,12 +4,15 @@ import com.loopers.domain.BaseEntity;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorCode;
 import jakarta.persistence.Entity;
+import jakarta.persistence.Column;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
 @Entity
 @Table(
     name = "product_like",
+    indexes = @Index(name = "idx_product_like_product_id", columnList = "product_id"),
     uniqueConstraints = @UniqueConstraint(
         name = "uk_product_like_user_product",
         columnNames = {"user_id", "product_id"}
@@ -17,7 +20,9 @@ import jakarta.persistence.UniqueConstraint;
 )
 public class Like extends BaseEntity {
 
+    @Column(nullable = false)
     private Long userId;
+    @Column(nullable = false)
     private Long productId;
 
     protected Like() {

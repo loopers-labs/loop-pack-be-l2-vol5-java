@@ -1,0 +1,5 @@
+services:
+  commerce-api:
+    environment:
+      SPRING_PROFILES_ACTIVE: local,docker,experiment
+      SERVER_TOMCAT_MBEANREGISTRY_ENABLED: "true"

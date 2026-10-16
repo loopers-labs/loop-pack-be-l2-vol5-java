@@ -5,6 +5,7 @@ import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import java.util.Optional;
+import java.util.List;
 
 interface StockJpaRepository extends JpaRepository<Stock, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
@@ -14,4 +15,6 @@ interface StockJpaRepository extends JpaRepository<Stock, Long> {
     Optional<Stock> findForStockUpdateByProductId(Long productId);
 
     Optional<Stock> findByProductId(Long productId);
+
+    List<Stock> findAllByProductIdIn(List<Long> productIds);
 }

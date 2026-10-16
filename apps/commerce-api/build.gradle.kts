@@ -1,5 +1,16 @@
+import org.springframework.boot.gradle.tasks.bundling.BootJar
+
 plugins {
     checkstyle
+}
+
+// Only the current bootJar enters the Docker build context, even if old JARs remain in libs/.
+tasks.register<Sync>("prepareDocker") {
+    group = "build"
+    description = "Prepare the executable JAR for the commerce-api Docker image"
+    from(tasks.named<BootJar>("bootJar").flatMap { it.archiveFile })
+    into(layout.buildDirectory.dir("docker"))
+    rename { "app.jar" }
 }
 
 checkstyle {
@@ -18,6 +29,21 @@ tasks.test {
     )
         .withPropertyName("domainRuleDocuments")
         .withPathSensitivity(PathSensitivity.RELATIVE)
+}
+
+// Logback configuration is process-global. The async profile needs its own JVM.
+val testAsyncLogging by tasks.registering(Test::class) {
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform()
+    systemProperty("user.timezone", "Asia/Seoul")
+    systemProperty("spring.profiles.active", "test")
+    jvmArgs("-Xshare:off")
+    include("**/ExperimentAsyncHttpTest.class")
+}
+tasks.test {
+    exclude("**/ExperimentAsyncHttpTest.class")
+    dependsOn(testAsyncLogging)
 }
 
 dependencies {

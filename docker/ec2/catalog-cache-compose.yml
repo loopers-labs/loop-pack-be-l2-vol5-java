@@ -1,0 +1,7 @@
+# Use after the experiment overlays; replaces the fixed-data experiment cache.
+services:
+  commerce-api:
+    environment:
+      SPRING_PROFILES_ACTIVE: local,docker,experiment,experiment-async,catalog-cache
+      CATALOG_CACHE_ENABLED: "true"
+      EXPERIMENT_LATEST_CACHE_ENABLED: "false"

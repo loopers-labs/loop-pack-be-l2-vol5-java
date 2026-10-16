@@ -88,6 +88,11 @@ public class BrandUseCase {
         return new PageResult<>(brandRepository.findAll(page, size), page, size, brandRepository.countAll());
     }
 
+    @Transactional(readOnly = true)
+    public PageResult<Brand> findActivePage(int page, int size) {
+        return new PageResult<>(brandRepository.findActive(page, size), page, size, brandRepository.countActive());
+    }
+
     private Brand findRequired(Long brandId) {
         return brandRepository.findById(brandId)
             .orElseThrow(() -> new CoreException(ErrorCode.BRAND_NOT_FOUND));

@@ -295,6 +295,55 @@ class LikeHttpTest {
         }
     }
 
+    @DisplayName("[R-CATALOG-05] 상품 목록에서 좋아요 수 내림차순 정렬을 제공한다.")
+    @Nested
+    class SortAfterCancellation {
+
+        @DisplayName("[상태 전이] 좋아요 3개를 모두 취소한 상품은 좋아요 1개인 상품 다음 페이지로 이동한다.")
+        @Test
+        void sortsAndPaginatesByRemainingLikes() throws Exception {
+            Brand brand = fixture.brand("좋아요 정렬");
+            Product canceled = fixture.product(brand, "취소할 상품", 1_000L, 5);
+            Product remaining = fixture.product(brand, "유지할 상품", 1_000L, 5);
+            User first = fixture.user();
+            User second = fixture.user();
+            User third = fixture.user();
+            fixture.like(first, canceled);
+            fixture.like(second, canceled);
+            fixture.like(third, canceled);
+            fixture.like(first, remaining);
+
+            mockMvc.perform(get(CUSTOMER_PRODUCTS).with(customer(first))
+                    .param("brandId", brand.getId().toString())
+                    .param("sort", "likes_desc").param("page", "0").param("size", "1"))
+                .andExpect(success(HttpStatus.OK))
+                .andExpect(jsonPath("$.data.content[0].id").value(canceled.getId()))
+                .andExpect(jsonPath("$.data.content[0].likeCount").value(3));
+
+            for (User owner : List.of(first, second, third)) {
+                mockMvc.perform(cancel(owner, canceled)).andExpect(success(HttpStatus.OK));
+            }
+
+            mockMvc.perform(get(CUSTOMER_PRODUCTS).with(customer(first))
+                    .param("brandId", brand.getId().toString())
+                    .param("sort", "likes_desc").param("page", "0").param("size", "1"))
+                .andExpect(success(HttpStatus.OK))
+                .andExpect(jsonPath("$.data.content.length()").value(1))
+                .andExpect(jsonPath("$.data.content[0].id").value(remaining.getId()))
+                .andExpect(jsonPath("$.data.content[0].likeCount").value(1))
+                .andExpect(jsonPath("$.data.last").value(false));
+
+            mockMvc.perform(get(CUSTOMER_PRODUCTS).with(customer(first))
+                    .param("brandId", brand.getId().toString())
+                    .param("sort", "likes_desc").param("page", "1").param("size", "1"))
+                .andExpect(success(HttpStatus.OK))
+                .andExpect(jsonPath("$.data.content.length()").value(1))
+                .andExpect(jsonPath("$.data.content[0].id").value(canceled.getId()))
+                .andExpect(jsonPath("$.data.content[0].likeCount").value(0))
+                .andExpect(jsonPath("$.data.last").value(true));
+        }
+    }
+
     private Product product(String name) {
         Brand brand = fixture.brand("Brand " + name);
         return fixture.product(brand, name, 1_000L, 5);

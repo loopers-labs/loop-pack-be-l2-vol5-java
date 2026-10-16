@@ -353,6 +353,8 @@
 | `totalElements` | 조건에 맞는 전체 항목 수 |
 
 
+고객 상품 목록 `GET /api/v1/products`는 위 표의 `totalElements` 대신 boolean `last`를 반환한다. 다음 페이지가 있으면 `false`, 없으면 `true`이며 빈 목록도 `true`다. `page`·`size`·정렬·필터 규칙은 유지한다. 나머지 목록 API는 기존 전체 개수 계약을 유지한다.
+
 ### OpenAPI 스키마
 
 요청·응답 필드의 타입, `required`, 배열 원소, 값 범위와 예시는 [OpenAPI 명세](../../apps/commerce-api/src/main/resources/static/openapi.yaml)의 각 `path`와 `components/schemas`에서 정의한다. 각 실패 응답의 `x-error-codes`는 그 엔드포인트와 HTTP 상태에서 허용하는 오류 코드다. HTTP 테스트는 실제 요청·응답 형식과 오류 코드가 이 명세를 따르는지 검사한다. 로컬 실행 후 `/swagger-ui.html`에서 같은 명세를 확인한다.
@@ -396,3 +398,19 @@
 
 
 관리자 접근 필터가 막는 요청은 `403`이며 오류 코드 없이 응답한다.
+
+
+## 4주차 고객 브랜드 목록 추가
+
+| 항목 | 계약 |
+| --- | --- |
+| 요청 | `GET /api/v1/brands?page=0&size=20`, `X-USER-ID` 필수 |
+| 대상 | 삭제되지 않은 브랜드만 반환 |
+| 정렬 | createdAt DESC, id ASC (기존 브랜드 목록 순서) |
+| 페이지 | page 기본 0·최소 0, size 기본 20·범위 1~100 |
+| 성공 | 200, `data: {content: [{id, name}], page, size, totalElements}`. totalElements는 삭제 제외 개수 |
+| 빈 목록 | 200, content 빈 배열. 범위 밖 페이지도 빈 배열 |
+| 오류 | 잘못된 페이지·크기·숫자 형식 400 INVALID_REQUEST, 사용자 식별 실패 401 USER_NOT_IDENTIFIED |
+| 캐시 | 고객용 키 분리, TTL 5분 ±30초, catalog revision. hit에도 사용자 식별 유지 |
+
+관리자 브랜드 목록은 기존 삭제 포함·관리자 권한 계약을 유지한다.

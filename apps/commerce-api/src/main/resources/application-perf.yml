@@ -1,0 +1,13 @@
+# Run with --spring.profiles.active=local,perf. No schema recreation during experiments.
+spring:
+  jpa:
+    show-sql: false
+    hibernate:
+      ddl-auto: none
+
+datasource:
+  mysql-jpa:
+    main:
+      jdbc-url: jdbc:mysql://${PERF_DB_HOST:127.0.0.1}:${PERF_DB_PORT:13307}/${PERF_DB_NAME:perf_uniform_10k_v1}
+      username: ${PERF_DB_USER:application}
+      password: ${PERF_DB_PASSWORD:application}

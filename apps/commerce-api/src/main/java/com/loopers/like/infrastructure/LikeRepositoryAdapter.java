@@ -7,6 +7,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.Optional;
 
 @Component
@@ -30,6 +32,12 @@ public class LikeRepositoryAdapter implements LikeRepository {
     }
 
     @Override
+    public void delete(Like like) {
+        jpaRepository.delete(like);
+        jpaRepository.flush();
+    }
+
+    @Override
     public Optional<Like> findByUserIdAndProductId(Long userId, Long productId) {
         return jpaRepository.findByUserIdAndProductId(userId, productId);
     }
@@ -48,7 +56,16 @@ public class LikeRepositoryAdapter implements LikeRepository {
     }
 
     @Override
+    public Map<Long, Long> countByProductIds(List<Long> productIds) {
+        if (productIds.isEmpty()) return Map.of();
+        return jpaRepository.countByProductIds(productIds).stream().collect(Collectors.toMap(
+            LikeJpaRepository.ProductLikeCount::getProductId,
+            LikeJpaRepository.ProductLikeCount::getLikeCount
+        ));
+    }
+
+    @Override
     public long countByProductId(Long productId) {
-        return jpaRepository.countByProductIdAndDeletedAtIsNull(productId);
+        return jpaRepository.countByProductId(productId);
     }
 }

@@ -2,6 +2,8 @@ package com.loopers.brand.interfaces;
 
 import com.loopers.brand.application.BrandUseCase;
 import com.loopers.interfaces.api.ApiResponse;
+import com.loopers.support.cache.CacheKeys;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.loopers.interfaces.api.ListResponse;
 import com.loopers.interfaces.api.PageQuery;
 import com.loopers.interfaces.api.RequestFields;
@@ -24,6 +26,8 @@ import org.springframework.web.bind.annotation.RestController;
 public class BrandAdminV1Controller {
 
     private final BrandUseCase brandUseCase;
+    private final com.loopers.support.cache.ResponseCache cache;
+    private final com.loopers.support.cache.CatalogReadTransaction cacheTransaction;
 
     @GetMapping
     public ApiResponse<ListResponse<BrandV1Dto.AdminBrandResponse>> getBrands(
@@ -31,10 +35,8 @@ public class BrandAdminV1Controller {
         @RequestParam(defaultValue = PageQuery.DEFAULT_SIZE) int size
     ) {
         PageQuery query = new PageQuery(page, size);
-        return ApiResponse.success(ListResponse.from(
-            brandUseCase.findPage(query.page(), query.size()),
-            BrandV1Dto.AdminBrandResponse::from
-        ));
+        return cacheTransaction.read(() -> cache.read(CacheKeys.BRANDS, CacheKeys.brands(page, size), new TypeReference<>() { },
+            () -> ApiResponse.success(ListResponse.from(brandUseCase.findPage(query.page(), query.size()), BrandV1Dto.AdminBrandResponse::from))));
     }
 
     @PostMapping
