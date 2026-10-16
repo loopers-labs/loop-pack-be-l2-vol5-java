@@ -8,6 +8,7 @@ import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.application.user.UserValidator;
 import com.loopers.application.product.CustomerProductInfo;
+import com.loopers.application.product.ProductListCacheInvalidator;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +28,7 @@ public class LikeFacade {
     private final ProductRepository productRepository;
     private final BrandRepository brandRepository;
     private final UserValidator userValidator;
+    private final ProductListCacheInvalidator productListCacheInvalidator;
 
     @Transactional
     public LikeInfo add(Long userId, Long productId) {
@@ -38,7 +40,11 @@ public class LikeFacade {
 
         return likeRepository.findByUserIdAndProductId(userId, productId)
             .map(LikeInfo::from)
-            .orElseGet(() -> LikeInfo.from(likeRepository.save(Like.create(userId, productId))));
+            .orElseGet(() -> {
+                Like saved = likeRepository.save(Like.create(userId, productId));
+                productListCacheInvalidator.invalidateAfterCommit(product.getBrandId());
+                return LikeInfo.from(saved);
+            });
     }
 
     @Transactional
@@ -47,6 +53,7 @@ public class LikeFacade {
         return likeRepository.findByUserIdAndProductId(userId, productId)
             .map(like -> {
                 likeRepository.delete(like);
+                productListCacheInvalidator.invalidateAfterCommit(findProduct(productId).getBrandId());
                 return LikeInfo.unliked(userId, productId);
             })
             .orElseGet(() -> LikeInfo.unliked(userId, productId));

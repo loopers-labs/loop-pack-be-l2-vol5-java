@@ -9,6 +9,14 @@ checkstyle {
     maxWarnings = 0
 }
 
+tasks.register<JavaExec>("seedProductQuery") {
+    group = "application"
+    description = "loopers DB에 상품 조회 seed를 적재하고 유지한다."
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set("com.loopers.fixture.ProductQuerySeedRunner")
+}
+
 dependencies {
     // add-ons
     implementation(project(":modules:jpa"))
@@ -33,4 +41,5 @@ dependencies {
     testImplementation(testFixtures(project(":modules:redis")))
     testImplementation("com.tngtech.archunit:archunit:1.5.0")
     testImplementation("org.springframework.security:spring-security-test")
+    testImplementation("org.testcontainers:mysql")
 }

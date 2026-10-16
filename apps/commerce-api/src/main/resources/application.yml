@@ -25,6 +25,18 @@ spring:
       - logging.yml
       - monitoring.yml
 
+# Redis 장애 시 요청이 오래 묶이지 않도록 연결·명령 대기를 제한하고, 실패하면 DB로 우회한다.
+datasource:
+  redis:
+    connect-timeout: 100ms
+    command-timeout: 100ms
+
+# 기동 시 정렬별 전체·활성 브랜드 목록의 첫 페이지를 캐시에 채운다.
+product:
+  list-cache:
+    warm-up:
+      enabled: true
+
 springdoc:
   use-fqn: true
   swagger-ui:
@@ -34,7 +46,22 @@ springdoc:
 spring:
   config:
     activate:
-      on-profile: local, test
+      on-profile: local
+  jpa:
+    hibernate:
+      ddl-auto: validate
+
+---
+spring:
+  config:
+    activate:
+      on-profile: test
+
+# 테스트 컨텍스트가 빈 DB로 목록 캐시를 채워 다른 테스트에 남기지 않도록 끈다.
+product:
+  list-cache:
+    warm-up:
+      enabled: false
 
 ---
 spring:

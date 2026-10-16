@@ -1,0 +1,1032 @@
+{
+  "change": "Step 5: Redis cache-aside on the customer product list (version keys, after-commit invalidation, active-product check on hit, Redis fallback); no cache warm-up",
+  "code": "commit e0f923f (cache commits 19e1a7f, 5e9bacb, 68e2c1b; JPQL like count e0f923f)",
+  "tool": "k6 1.6.1",
+  "measured_samples_per_run": 1000,
+  "warmup_requests_per_vu": 3,
+  "no_connection_reuse": true,
+  "method": {
+    "redis": "dedicated redis:7.0 container on port 16380 for measurement only; the shared local redis containers were not used",
+    "app": "bootJar of e0f923f, local profile, server 18081, management 18082, show-sql off, Redis master/replica pointed to the measurement container",
+    "run_1_order": "app start -> one request to fill the cache -> hit 1/10/100 VU -> FLUSHALL + cold 100 VU x3 -> fill -> sustained hit 100 VU x 50,000",
+    "run_2_order": "app restart -> FLUSHALL -> evictor on -> miss 1/10/100 VU -> evictor off -> fill -> mixed like toggles 5/s and 25/s with 100 VU x 50,000 reads",
+    "miss": "evict_on_set.py subscribes to keyevent set notifications on the measurement Redis and deletes product:list:v1:* keys right after they are stored; sequential requests always miss, concurrent requests can hit between SET and DEL",
+    "mixed": "k6 like_writes scenario: each iteration one user (200 users who had not liked product 908106) adds then cancels a like on product 908106, which is in brand 7 but outside the measured page; 2 invalidations per iteration; reads are still checked against the canonical response",
+    "hit_ratio": "misses = product page query calls from performance_schema digests; hit ratio = 1 - misses / read requests including warmup",
+    "hikari": "hikaricp acquire/usage timers from actuator prometheus before and after each run",
+    "like_state": "likes on product 908106: 1 before and 1 after"
+  },
+  "discarded_runs": [
+    "first miss 1/10 VU: cache key from earlier runs remained and evictor only deletes on new SET -> all hits; rerun after FLUSHALL",
+    "first mixed runs: one user alternated add/cancel concurrently -> duplicate-key 500s on like writes (existing like behavior under concurrent duplicate requests, unrelated to cache); rerun with per-iteration users"
+  ],
+  "runs": {
+    "hit-vu1": {
+      "k6": {
+        "tool": "k6",
+        "recorded_at_utc": "2026-10-15T17:40:45.378Z",
+        "url": "http://127.0.0.1:18081/api/v1/products?brandId=7&page=0&size=20&sort=price_asc",
+        "request": {
+          "brandId": 7,
+          "page": 0,
+          "size": 20,
+          "sort": "price_asc"
+        },
+        "vus": 1,
+        "samples_requested": 1000,
+        "samples_per_vu": 1000,
+        "samples_completed": 1000,
+        "warmup_per_vu": 3,
+        "warmup_requested": 3,
+        "warmup_completed": 3,
+        "response_sha256": "11a56ff9962481b6d597757ae5a4e62ab27fe702ac967d35df574fa0dc06da76",
+        "response_match_rate": 1,
+        "response_mismatch_count": 0,
+        "http_failure_rate": 0,
+        "duration_definition": "response.timings.duration: sending + waiting + receiving, ms",
+        "avg_ms": 2.506565999999998,
+        "min_ms": 1.07,
+        "p50_ms": 2.3075,
+        "p95_ms": 4.513549999999999,
+        "p99_ms": 5.484029999999999,
+        "p99_9_ms": 7.291575000000173,
+        "max_ms": 8.865,
+        "like_writes_per_second_requested": 0,
+        "like_writes_completed": 0,
+        "like_write_failure_rate": null,
+        "thresholds_passed": true
+      },
+      "read_requests_including_warmup": 1003,
+      "test_duration_s": 2.817,
+      "read_throughput_rps": 356.1,
+      "misses": 0,
+      "hit_ratio": 1.0,
+      "sql": {
+        "active_check": {
+          "calls": 1003,
+          "calls_per_read": 1.0,
+          "db_ms_per_call": 0.3202,
+          "examined": 20060
+        }
+      },
+      "sql_per_read": 1.0,
+      "redis_calls": {
+        "get": 2006
+      },
+      "redis_calls_per_read": {
+        "get": 2.0
+      },
+      "hikari": {
+        "acquires": 1003,
+        "acquire_wait_ms_per_acquire": 0.001,
+        "connection_hold_ms_per_acquire": 0.847
+      }
+    },
+    "hit-vu10": {
+      "k6": {
+        "tool": "k6",
+        "recorded_at_utc": "2026-10-15T17:40:46.430Z",
+        "url": "http://127.0.0.1:18081/api/v1/products?brandId=7&page=0&size=20&sort=price_asc",
+        "request": {
+          "brandId": 7,
+          "page": 0,
+          "size": 20,
+          "sort": "price_asc"
+        },
+        "vus": 10,
+        "samples_requested": 1000,
+        "samples_per_vu": 100,
+        "samples_completed": 1000,
+        "warmup_per_vu": 3,
+        "warmup_requested": 30,
+        "warmup_completed": 30,
+        "response_sha256": "11a56ff9962481b6d597757ae5a4e62ab27fe702ac967d35df574fa0dc06da76",
+        "response_match_rate": 1,
+        "response_mismatch_count": 0,
+        "http_failure_rate": 0,
+        "duration_definition": "response.timings.duration: sending + waiting + receiving, ms",
+        "avg_ms": 4.549825000000004,
+        "min_ms": 2.067,
+        "p50_ms": 4.3165,
+        "p95_ms": 7.33965,
+        "p99_ms": 9.28461,
+        "p99_9_ms": 10.409222000000135,
+        "max_ms": 11.63,
+        "like_writes_per_second_requested": 0,
+        "like_writes_completed": 0,
+        "like_write_failure_rate": null,
+        "thresholds_passed": true
+      },
+      "read_requests_including_warmup": 1030,
+      "test_duration_s": 0.538,
+      "read_throughput_rps": 1914.0,
+      "misses": 0,
+      "hit_ratio": 1.0,
+      "sql": {
+        "active_check": {
+          "calls": 993,
+          "calls_per_read": 0.964,
+          "db_ms_per_call": 0.3021,
+          "examined": 19600
+        },
+        "other": {
+          "calls": 6,
+          "calls_per_read": 0.006,
+          "db_ms_per_call": 0.2068,
+          "examined": 6
+        },
+        "transaction": {
+          "calls": 6,
+          "calls_per_read": 0.006,
+          "db_ms_per_call": 0.1495,
+          "examined": 0
+        }
+      },
+      "sql_per_read": 0.976,
+      "redis_calls": {
+        "get": 2060
+      },
+      "redis_calls_per_read": {
+        "get": 2.0
+      },
+      "hikari": {
+        "acquires": 1030,
+        "acquire_wait_ms_per_acquire": 0.01,
+        "connection_hold_ms_per_acquire": 1.452
+      }
+    },
+    "hit-vu100": {
+      "k6": {
+        "tool": "k6",
+        "recorded_at_utc": "2026-10-15T17:40:47.282Z",
+        "url": "http://127.0.0.1:18081/api/v1/products?brandId=7&page=0&size=20&sort=price_asc",
+        "request": {
+          "brandId": 7,
+          "page": 0,
+          "size": 20,
+          "sort": "price_asc"
+        },
+        "vus": 100,
+        "samples_requested": 1000,
+        "samples_per_vu": 10,
+        "samples_completed": 1000,
+        "warmup_per_vu": 3,
+        "warmup_requested": 300,
+        "warmup_completed": 300,
+        "response_sha256": "11a56ff9962481b6d597757ae5a4e62ab27fe702ac967d35df574fa0dc06da76",
+        "response_match_rate": 1,
+        "response_mismatch_count": 0,
+        "http_failure_rate": 0,
+        "duration_definition": "response.timings.duration: sending + waiting + receiving, ms",
+        "avg_ms": 18.475049999999992,
+        "min_ms": 1.228,
+        "p50_ms": 10.933,
+        "p95_ms": 44.147199999999984,
+        "p99_ms": 51.87649,
+        "p99_9_ms": 54.82335200000103,
+        "max_ms": 64.166,
+        "like_writes_per_second_requested": 0,
+        "like_writes_completed": 0,
+        "like_write_failure_rate": null,
+        "thresholds_passed": true
+      },
+      "read_requests_including_warmup": 1300,
+      "test_duration_s": 0.349,
+      "read_throughput_rps": 3728.3,
+      "misses": 0,
+      "hit_ratio": 1.0,
+      "sql": {
+        "active_check": {
+          "calls": 1287,
+          "calls_per_read": 0.99,
+          "db_ms_per_call": 0.1868,
+          "examined": 25860
+        },
+        "other": {
+          "calls": 8,
+          "calls_per_read": 0.006,
+          "db_ms_per_call": 0.1754,
+          "examined": 8
+        },
+        "transaction": {
+          "calls": 8,
+          "calls_per_read": 0.006,
+          "db_ms_per_call": 0.1306,
+          "examined": 0
+        }
+      },
+      "sql_per_read": 1.002,
+      "redis_calls": {
+        "get": 2600
+      },
+      "redis_calls_per_read": {
+        "get": 2.0
+      },
+      "hikari": {
+        "acquires": 1300,
+        "acquire_wait_ms_per_acquire": 0.053,
+        "connection_hold_ms_per_acquire": 1.608
+      }
+    },
+    "cold-vu100-r1": {
+      "k6": {
+        "tool": "k6",
+        "recorded_at_utc": "2026-10-15T17:40:48.295Z",
+        "url": "http://127.0.0.1:18081/api/v1/products?brandId=7&page=0&size=20&sort=price_asc",
+        "request": {
+          "brandId": 7,
+          "page": 0,
+          "size": 20,
+          "sort": "price_asc"
+        },
+        "vus": 100,
+        "samples_requested": 1000,
+        "samples_per_vu": 10,
+        "samples_completed": 1000,
+        "warmup_per_vu": 3,
+        "warmup_requested": 300,
+        "warmup_completed": 300,
+        "response_sha256": "11a56ff9962481b6d597757ae5a4e62ab27fe702ac967d35df574fa0dc06da76",
+        "response_match_rate": 1,
+        "response_mismatch_count": 0,
+        "http_failure_rate": 0,
+        "duration_definition": "response.timings.duration: sending + waiting + receiving, ms",
+        "avg_ms": 21.545446000000016,
+        "min_ms": 2.132,
+        "p50_ms": 11.1065,
+        "p95_ms": 46.157749999999986,
+        "p99_ms": 51.631029999999996,
+        "p99_9_ms": 62.32264800000007,
+        "max_ms": 62.97,
+        "like_writes_per_second_requested": 0,
+        "like_writes_completed": 0,
+        "like_write_failure_rate": null,
+        "thresholds_passed": true
+      },
+      "read_requests_including_warmup": 1300,
+      "test_duration_s": 0.408,
+      "read_throughput_rps": 3190.1,
+      "misses": 69,
+      "hit_ratio": 0.9469,
+      "sql": {
+        "active_check": {
+          "calls": 1227,
+          "calls_per_read": 0.944,
+          "db_ms_per_call": 0.1715,
+          "examined": 24480
+        },
+        "brand_batch": {
+          "calls": 69,
+          "calls_per_read": 0.053,
+          "db_ms_per_call": 0.0969,
+          "examined": 69
+        },
+        "like_count": {
+          "calls": 69,
+          "calls_per_read": 0.053,
+          "db_ms_per_call": 0.2502,
+          "examined": 7107
+        },
+        "other": {
+          "calls": 6,
+          "calls_per_read": 0.005,
+          "db_ms_per_call": 0.078,
+          "examined": 6
+        },
+        "product_page": {
+          "calls": 69,
+          "calls_per_read": 0.053,
+          "db_ms_per_call": 0.6748,
+          "examined": 1380
+        },
+        "transaction": {
+          "calls": 350,
+          "calls_per_read": 0.269,
+          "db_ms_per_call": 0.0644,
+          "examined": 0
+        }
+      },
+      "sql_per_read": 1.377,
+      "redis_calls": {
+        "get": 2600,
+        "set": 69
+      },
+      "redis_calls_per_read": {
+        "get": 2.0,
+        "set": 0.053
+      },
+      "hikari": {
+        "acquires": 1300,
+        "acquire_wait_ms_per_acquire": 0.561,
+        "connection_hold_ms_per_acquire": 3.532
+      }
+    },
+    "cold-vu100-r2": {
+      "k6": {
+        "tool": "k6",
+        "recorded_at_utc": "2026-10-15T17:40:49.215Z",
+        "url": "http://127.0.0.1:18081/api/v1/products?brandId=7&page=0&size=20&sort=price_asc",
+        "request": {
+          "brandId": 7,
+          "page": 0,
+          "size": 20,
+          "sort": "price_asc"
+        },
+        "vus": 100,
+        "samples_requested": 1000,
+        "samples_per_vu": 10,
+        "samples_completed": 1000,
+        "warmup_per_vu": 3,
+        "warmup_requested": 300,
+        "warmup_completed": 300,
+        "response_sha256": "11a56ff9962481b6d597757ae5a4e62ab27fe702ac967d35df574fa0dc06da76",
+        "response_match_rate": 1,
+        "response_mismatch_count": 0,
+        "http_failure_rate": 0,
+        "duration_definition": "response.timings.duration: sending + waiting + receiving, ms",
+        "avg_ms": 16.43031100000002,
+        "min_ms": 1.328,
+        "p50_ms": 14.916,
+        "p95_ms": 44.530899999999974,
+        "p99_ms": 50.84912,
+        "p99_9_ms": 54.132005000000326,
+        "max_ms": 57.134,
+        "like_writes_per_second_requested": 0,
+        "like_writes_completed": 0,
+        "like_write_failure_rate": null,
+        "thresholds_passed": true
+      },
+      "read_requests_including_warmup": 1300,
+      "test_duration_s": 0.355,
+      "read_throughput_rps": 3658.8,
+      "misses": 78,
+      "hit_ratio": 0.94,
+      "sql": {
+        "active_check": {
+          "calls": 1214,
+          "calls_per_read": 0.934,
+          "db_ms_per_call": 0.1474,
+          "examined": 24240
+        },
+        "brand_batch": {
+          "calls": 78,
+          "calls_per_read": 0.06,
+          "db_ms_per_call": 0.1537,
+          "examined": 78
+        },
+        "like_count": {
+          "calls": 78,
+          "calls_per_read": 0.06,
+          "db_ms_per_call": 0.3107,
+          "examined": 8034
+        },
+        "product_page": {
+          "calls": 78,
+          "calls_per_read": 0.06,
+          "db_ms_per_call": 0.9313,
+          "examined": 1560
+        },
+        "transaction": {
+          "calls": 388,
+          "calls_per_read": 0.298,
+          "db_ms_per_call": 0.0503,
+          "examined": 0
+        }
+      },
+      "sql_per_read": 1.412,
+      "redis_calls": {
+        "get": 2600,
+        "set": 78
+      },
+      "redis_calls_per_read": {
+        "get": 2.0,
+        "set": 0.06
+      },
+      "hikari": {
+        "acquires": 1300,
+        "acquire_wait_ms_per_acquire": 0.942,
+        "connection_hold_ms_per_acquire": 3.993
+      }
+    },
+    "cold-vu100-r3": {
+      "k6": {
+        "tool": "k6",
+        "recorded_at_utc": "2026-10-15T17:40:50.502Z",
+        "url": "http://127.0.0.1:18081/api/v1/products?brandId=7&page=0&size=20&sort=price_asc",
+        "request": {
+          "brandId": 7,
+          "page": 0,
+          "size": 20,
+          "sort": "price_asc"
+        },
+        "vus": 100,
+        "samples_requested": 1000,
+        "samples_per_vu": 10,
+        "samples_completed": 1000,
+        "warmup_per_vu": 3,
+        "warmup_requested": 300,
+        "warmup_completed": 300,
+        "response_sha256": "11a56ff9962481b6d597757ae5a4e62ab27fe702ac967d35df574fa0dc06da76",
+        "response_match_rate": 1,
+        "response_mismatch_count": 0,
+        "http_failure_rate": 0,
+        "duration_definition": "response.timings.duration: sending + waiting + receiving, ms",
+        "avg_ms": 30.095934999999972,
+        "min_ms": 3.013,
+        "p50_ms": 25.808,
+        "p95_ms": 61.72635,
+        "p99_ms": 65.99048,
+        "p99_9_ms": 70.2928820000001,
+        "max_ms": 71.174,
+        "like_writes_per_second_requested": 0,
+        "like_writes_completed": 0,
+        "like_write_failure_rate": null,
+        "thresholds_passed": true
+      },
+      "read_requests_including_warmup": 1300,
+      "test_duration_s": 0.655,
+      "read_throughput_rps": 1983.6,
+      "misses": 100,
+      "hit_ratio": 0.9231,
+      "sql": {
+        "active_check": {
+          "calls": 1185,
+          "calls_per_read": 0.912,
+          "db_ms_per_call": 0.4293,
+          "examined": 23760
+        },
+        "brand_batch": {
+          "calls": 99,
+          "calls_per_read": 0.076,
+          "db_ms_per_call": 0.2154,
+          "examined": 99
+        },
+        "like_count": {
+          "calls": 99,
+          "calls_per_read": 0.076,
+          "db_ms_per_call": 0.6876,
+          "examined": 10094
+        },
+        "product_page": {
+          "calls": 100,
+          "calls_per_read": 0.077,
+          "db_ms_per_call": 1.7559,
+          "examined": 2000
+        },
+        "transaction": {
+          "calls": 499,
+          "calls_per_read": 0.384,
+          "db_ms_per_call": 0.0699,
+          "examined": 0
+        }
+      },
+      "sql_per_read": 1.525,
+      "redis_calls": {
+        "get": 2600,
+        "set": 100
+      },
+      "redis_calls_per_read": {
+        "get": 2.0,
+        "set": 0.077
+      },
+      "hikari": {
+        "acquires": 1300,
+        "acquire_wait_ms_per_acquire": 5.592,
+        "connection_hold_ms_per_acquire": 10.775
+      }
+    },
+    "sustained-hit-vu100": {
+      "k6": {
+        "tool": "k6",
+        "recorded_at_utc": "2026-10-15T17:41:08.106Z",
+        "url": "http://127.0.0.1:18081/api/v1/products?brandId=7&page=0&size=20&sort=price_asc",
+        "request": {
+          "brandId": 7,
+          "page": 0,
+          "size": 20,
+          "sort": "price_asc"
+        },
+        "vus": 100,
+        "samples_requested": 50000,
+        "samples_per_vu": 500,
+        "samples_completed": 50000,
+        "warmup_per_vu": 3,
+        "warmup_requested": 300,
+        "warmup_completed": 300,
+        "response_sha256": "11a56ff9962481b6d597757ae5a4e62ab27fe702ac967d35df574fa0dc06da76",
+        "response_match_rate": 1,
+        "response_mismatch_count": 0,
+        "http_failure_rate": 0,
+        "duration_definition": "response.timings.duration: sending + waiting + receiving, ms",
+        "avg_ms": 14.649722579999917,
+        "min_ms": 0.587,
+        "p50_ms": 12.456,
+        "p95_ms": 33.52839999999998,
+        "p99_ms": 49.55009999999999,
+        "p99_9_ms": 80.38915400000084,
+        "max_ms": 128.682,
+        "like_writes_per_second_requested": 0,
+        "like_writes_completed": 0,
+        "like_write_failure_rate": null,
+        "thresholds_passed": true
+      },
+      "read_requests_including_warmup": 50300,
+      "test_duration_s": 9.716,
+      "read_throughput_rps": 5176.8,
+      "misses": 0,
+      "hit_ratio": 1.0,
+      "sql": {
+        "active_check": {
+          "calls": 49784,
+          "calls_per_read": 0.99,
+          "db_ms_per_call": 0.1745,
+          "examined": 992120
+        }
+      },
+      "sql_per_read": 0.99,
+      "redis_calls": {
+        "get": 100600
+      },
+      "redis_calls_per_read": {
+        "get": 2.0
+      },
+      "hikari": {
+        "acquires": 50300,
+        "acquire_wait_ms_per_acquire": 0.085,
+        "connection_hold_ms_per_acquire": 1.797
+      }
+    },
+    "miss-vu1": {
+      "k6": {
+        "tool": "k6",
+        "recorded_at_utc": "2026-10-15T17:43:10.075Z",
+        "url": "http://127.0.0.1:18081/api/v1/products?brandId=7&page=0&size=20&sort=price_asc",
+        "request": {
+          "brandId": 7,
+          "page": 0,
+          "size": 20,
+          "sort": "price_asc"
+        },
+        "vus": 1,
+        "samples_requested": 1000,
+        "samples_per_vu": 1000,
+        "samples_completed": 1000,
+        "warmup_per_vu": 3,
+        "warmup_requested": 3,
+        "warmup_completed": 3,
+        "response_sha256": "11a56ff9962481b6d597757ae5a4e62ab27fe702ac967d35df574fa0dc06da76",
+        "response_match_rate": 1,
+        "response_mismatch_count": 0,
+        "http_failure_rate": 0,
+        "duration_definition": "response.timings.duration: sending + waiting + receiving, ms",
+        "avg_ms": 5.812244000000004,
+        "min_ms": 2.786,
+        "p50_ms": 4.847,
+        "p95_ms": 11.636399999999995,
+        "p99_ms": 15.416709999999998,
+        "p99_9_ms": 20.735602000003478,
+        "max_ms": 52.306,
+        "like_toggles_per_second_requested": 0,
+        "like_writes_completed": 0,
+        "like_write_failure_rate": null,
+        "thresholds_passed": true
+      },
+      "read_requests_including_warmup": 1003,
+      "test_duration_s": 6.404,
+      "read_throughput_rps": 156.6,
+      "misses": 1003,
+      "hit_ratio": 0.0,
+      "sql": {
+        "brand_batch": {
+          "calls": 1003,
+          "calls_per_read": 1.0,
+          "db_ms_per_call": 0.0811,
+          "examined": 1003
+        },
+        "like_count": {
+          "calls": 1003,
+          "calls_per_read": 1.0,
+          "db_ms_per_call": 0.2131,
+          "examined": 103309
+        },
+        "product_page": {
+          "calls": 1003,
+          "calls_per_read": 1.0,
+          "db_ms_per_call": 0.5065,
+          "examined": 20060
+        },
+        "transaction": {
+          "calls": 5015,
+          "calls_per_read": 5.0,
+          "db_ms_per_call": 0.035,
+          "examined": 0
+        }
+      },
+      "sql_per_read": 8.0,
+      "redis_calls": {
+        "set": 1003,
+        "del": 1003,
+        "ping": 1,
+        "get": 2006,
+        "role": 2,
+        "hello": 5
+      },
+      "redis_calls_per_read": {
+        "set": 1.0,
+        "del": 1.0,
+        "ping": 0.001,
+        "get": 2.0,
+        "role": 0.002,
+        "hello": 0.005
+      },
+      "hikari": {
+        "acquires": 1003,
+        "acquire_wait_ms_per_acquire": 0.002,
+        "connection_hold_ms_per_acquire": 4.013
+      }
+    },
+    "miss-vu10": {
+      "k6": {
+        "tool": "k6",
+        "recorded_at_utc": "2026-10-15T17:43:11.736Z",
+        "url": "http://127.0.0.1:18081/api/v1/products?brandId=7&page=0&size=20&sort=price_asc",
+        "request": {
+          "brandId": 7,
+          "page": 0,
+          "size": 20,
+          "sort": "price_asc"
+        },
+        "vus": 10,
+        "samples_requested": 1000,
+        "samples_per_vu": 100,
+        "samples_completed": 1000,
+        "warmup_per_vu": 3,
+        "warmup_requested": 30,
+        "warmup_completed": 30,
+        "response_sha256": "11a56ff9962481b6d597757ae5a4e62ab27fe702ac967d35df574fa0dc06da76",
+        "response_match_rate": 1,
+        "response_mismatch_count": 0,
+        "http_failure_rate": 0,
+        "duration_definition": "response.timings.duration: sending + waiting + receiving, ms",
+        "avg_ms": 8.864055000000008,
+        "min_ms": 2.488,
+        "p50_ms": 8.9045,
+        "p95_ms": 12.728299999999999,
+        "p99_ms": 15.39095,
+        "p99_9_ms": 53.929031,
+        "max_ms": 53.96,
+        "like_toggles_per_second_requested": 0,
+        "like_writes_completed": 0,
+        "like_write_failure_rate": null,
+        "thresholds_passed": true
+      },
+      "read_requests_including_warmup": 1030,
+      "test_duration_s": 1.001,
+      "read_throughput_rps": 1028.5,
+      "misses": 880,
+      "hit_ratio": 0.1456,
+      "sql": {
+        "active_check": {
+          "calls": 149,
+          "calls_per_read": 0.145,
+          "db_ms_per_call": 0.2499,
+          "examined": 2960
+        },
+        "brand_batch": {
+          "calls": 871,
+          "calls_per_read": 0.846,
+          "db_ms_per_call": 0.1117,
+          "examined": 874
+        },
+        "like_count": {
+          "calls": 876,
+          "calls_per_read": 0.85,
+          "db_ms_per_call": 0.3122,
+          "examined": 90434
+        },
+        "other": {
+          "calls": 4,
+          "calls_per_read": 0.004,
+          "db_ms_per_call": 0.5302,
+          "examined": 4
+        },
+        "product_page": {
+          "calls": 880,
+          "calls_per_read": 0.854,
+          "db_ms_per_call": 0.8046,
+          "examined": 17540
+        },
+        "transaction": {
+          "calls": 4309,
+          "calls_per_read": 4.183,
+          "db_ms_per_call": 0.0543,
+          "examined": 0
+        }
+      },
+      "sql_per_read": 6.883,
+      "redis_calls": {
+        "set": 881,
+        "del": 881,
+        "get": 2060
+      },
+      "redis_calls_per_read": {
+        "set": 0.855,
+        "del": 0.855,
+        "get": 2.0
+      },
+      "hikari": {
+        "acquires": 1030,
+        "acquire_wait_ms_per_acquire": 0.02,
+        "connection_hold_ms_per_acquire": 5.855
+      }
+    },
+    "miss-vu100": {
+      "k6": {
+        "tool": "k6",
+        "recorded_at_utc": "2026-10-15T17:43:13.508Z",
+        "url": "http://127.0.0.1:18081/api/v1/products?brandId=7&page=0&size=20&sort=price_asc",
+        "request": {
+          "brandId": 7,
+          "page": 0,
+          "size": 20,
+          "sort": "price_asc"
+        },
+        "vus": 100,
+        "samples_requested": 1000,
+        "samples_per_vu": 10,
+        "samples_completed": 1000,
+        "warmup_per_vu": 3,
+        "warmup_requested": 300,
+        "warmup_completed": 300,
+        "response_sha256": "11a56ff9962481b6d597757ae5a4e62ab27fe702ac967d35df574fa0dc06da76",
+        "response_match_rate": 1,
+        "response_mismatch_count": 0,
+        "http_failure_rate": 0,
+        "duration_definition": "response.timings.duration: sending + waiting + receiving, ms",
+        "avg_ms": 74.2271960000001,
+        "min_ms": 2.943,
+        "p50_ms": 61.1505,
+        "p95_ms": 189.05924999999996,
+        "p99_ms": 220.54939999999996,
+        "p99_9_ms": 259.10582300000186,
+        "max_ms": 275.912,
+        "like_toggles_per_second_requested": 0,
+        "like_writes_completed": 0,
+        "like_write_failure_rate": null,
+        "thresholds_passed": true
+      },
+      "read_requests_including_warmup": 1300,
+      "test_duration_s": 1.12,
+      "read_throughput_rps": 1161.2,
+      "misses": 622,
+      "hit_ratio": 0.5215,
+      "sql": {
+        "active_check": {
+          "calls": 671,
+          "calls_per_read": 0.516,
+          "db_ms_per_call": 0.6693,
+          "examined": 13500
+        },
+        "brand_batch": {
+          "calls": 623,
+          "calls_per_read": 0.479,
+          "db_ms_per_call": 0.2242,
+          "examined": 621
+        },
+        "like_count": {
+          "calls": 619,
+          "calls_per_read": 0.476,
+          "db_ms_per_call": 0.7684,
+          "examined": 64066
+        },
+        "other": {
+          "calls": 16,
+          "calls_per_read": 0.012,
+          "db_ms_per_call": 0.1375,
+          "examined": 16
+        },
+        "product_page": {
+          "calls": 622,
+          "calls_per_read": 0.478,
+          "db_ms_per_call": 1.6588,
+          "examined": 12460
+        },
+        "transaction": {
+          "calls": 3123,
+          "calls_per_read": 2.402,
+          "db_ms_per_call": 0.1868,
+          "examined": 0
+        }
+      },
+      "sql_per_read": 4.365,
+      "redis_calls": {
+        "set": 623,
+        "del": 623,
+        "get": 2600
+      },
+      "redis_calls_per_read": {
+        "set": 0.479,
+        "del": 0.479,
+        "get": 2.0
+      },
+      "hikari": {
+        "acquires": 1300,
+        "acquire_wait_ms_per_acquire": 24.806,
+        "connection_hold_ms_per_acquire": 28.4
+      }
+    },
+    "mixed-toggle5-vu100": {
+      "k6": {
+        "tool": "k6",
+        "recorded_at_utc": "2026-10-15T17:43:37.199Z",
+        "url": "http://127.0.0.1:18081/api/v1/products?brandId=7&page=0&size=20&sort=price_asc",
+        "request": {
+          "brandId": 7,
+          "page": 0,
+          "size": 20,
+          "sort": "price_asc"
+        },
+        "vus": 100,
+        "samples_requested": 50000,
+        "samples_per_vu": 500,
+        "samples_completed": 50000,
+        "warmup_per_vu": 3,
+        "warmup_requested": 300,
+        "warmup_completed": 300,
+        "response_sha256": "11a56ff9962481b6d597757ae5a4e62ab27fe702ac967d35df574fa0dc06da76",
+        "response_match_rate": 1,
+        "response_mismatch_count": 0,
+        "http_failure_rate": 0,
+        "duration_definition": "response.timings.duration: sending + waiting + receiving, ms",
+        "avg_ms": 44.19143948000001,
+        "min_ms": 0.762,
+        "p50_ms": 27.7335,
+        "p95_ms": 125.84969999999997,
+        "p99_ms": 189.52753999999993,
+        "p99_9_ms": 311.1565660000031,
+        "max_ms": 413.387,
+        "like_toggles_per_second_requested": 5,
+        "like_writes_completed": 200,
+        "like_write_failure_rate": 0,
+        "thresholds_passed": true
+      },
+      "read_requests_including_warmup": 50300,
+      "test_duration_s": 23.125,
+      "read_throughput_rps": 2175.1,
+      "misses": 14094,
+      "hit_ratio": 0.7198,
+      "sql": {
+        "active_check": {
+          "calls": 36009,
+          "calls_per_read": 0.716,
+          "db_ms_per_call": 0.5766,
+          "examined": 720440
+        },
+        "brand_batch": {
+          "calls": 13894,
+          "calls_per_read": 0.276,
+          "db_ms_per_call": 0.5216,
+          "examined": 13905
+        },
+        "like_count": {
+          "calls": 13867,
+          "calls_per_read": 0.276,
+          "db_ms_per_call": 1.6582,
+          "examined": 1429743
+        },
+        "other": {
+          "calls": 800,
+          "calls_per_read": 0.016,
+          "db_ms_per_call": 1.5393,
+          "examined": 500
+        },
+        "product_page": {
+          "calls": 14094,
+          "calls_per_read": 0.28,
+          "db_ms_per_call": 3.6745,
+          "examined": 278240
+        },
+        "transaction": {
+          "calls": 70034,
+          "calls_per_read": 1.392,
+          "db_ms_per_call": 0.351,
+          "examined": 0
+        }
+      },
+      "sql_per_read": 2.956,
+      "redis_calls": {
+        "set": 13890,
+        "get": 100578,
+        "incr": 399
+      },
+      "redis_calls_per_read": {
+        "set": 0.276,
+        "get": 2.0,
+        "incr": 0.008
+      },
+      "hikari": {
+        "acquires": 50500,
+        "acquire_wait_ms_per_acquire": 15.118,
+        "connection_hold_ms_per_acquire": 15.638
+      }
+    },
+    "mixed-toggle25-vu100": {
+      "k6": {
+        "tool": "k6",
+        "recorded_at_utc": "2026-10-15T17:44:00.235Z",
+        "url": "http://127.0.0.1:18081/api/v1/products?brandId=7&page=0&size=20&sort=price_asc",
+        "request": {
+          "brandId": 7,
+          "page": 0,
+          "size": 20,
+          "sort": "price_asc"
+        },
+        "vus": 100,
+        "samples_requested": 50000,
+        "samples_per_vu": 500,
+        "samples_completed": 50000,
+        "warmup_per_vu": 3,
+        "warmup_requested": 300,
+        "warmup_completed": 300,
+        "response_sha256": "11a56ff9962481b6d597757ae5a4e62ab27fe702ac967d35df574fa0dc06da76",
+        "response_match_rate": 1,
+        "response_mismatch_count": 0,
+        "http_failure_rate": 0,
+        "duration_definition": "response.timings.duration: sending + waiting + receiving, ms",
+        "avg_ms": 43.48831742000006,
+        "min_ms": 0.625,
+        "p50_ms": 44.867999999999995,
+        "p95_ms": 85.22925,
+        "p99_ms": 111.13613,
+        "p99_9_ms": 149.3679440000052,
+        "max_ms": 252.283,
+        "like_toggles_per_second_requested": 25,
+        "like_writes_completed": 994,
+        "like_write_failure_rate": 0,
+        "thresholds_passed": true
+      },
+      "read_requests_including_warmup": 50300,
+      "test_duration_s": 22.424,
+      "read_throughput_rps": 2243.1,
+      "misses": 30477,
+      "hit_ratio": 0.3941,
+      "sql": {
+        "active_check": {
+          "calls": 20434,
+          "calls_per_read": 0.406,
+          "db_ms_per_call": 0.2556,
+          "examined": 409000
+        },
+        "brand_batch": {
+          "calls": 29499,
+          "calls_per_read": 0.586,
+          "db_ms_per_call": 0.1549,
+          "examined": 29521
+        },
+        "like_count": {
+          "calls": 29380,
+          "calls_per_read": 0.584,
+          "db_ms_per_call": 0.4991,
+          "examined": 3033659
+        },
+        "other": {
+          "calls": 3976,
+          "calls_per_read": 0.079,
+          "db_ms_per_call": 0.2911,
+          "examined": 2485
+        },
+        "product_page": {
+          "calls": 30477,
+          "calls_per_read": 0.606,
+          "db_ms_per_call": 1.1571,
+          "examined": 591674
+        },
+        "transaction": {
+          "calls": 150290,
+          "calls_per_read": 2.988,
+          "db_ms_per_call": 0.3222,
+          "examined": 0
+        }
+      },
+      "sql_per_read": 5.25,
+      "redis_calls": {
+        "set": 29578,
+        "get": 100600,
+        "incr": 1988
+      },
+      "redis_calls_per_read": {
+        "set": 0.588,
+        "get": 2.0,
+        "incr": 0.04
+      },
+      "hikari": {
+        "acquires": 51294,
+        "acquire_wait_ms_per_acquire": 18.562,
+        "connection_hold_ms_per_acquire": 16.283
+      }
+    }
+  },
+  "environment": "captured_at_utc\tmysql_version\tinnodb_buffer_pool_bytes\ttransaction_isolation\tperformance_schema_enabled\n2026-10-15 17:44:37\t8.0.46\t134217728\tREPEATABLE-READ\t1\nentity\ttotal\nbrands\t100\nusers\t1000\nproducts\t1000000\nlikes\t5194998\nproduct_count\tprice_sum\tdeleted_products\n1000000\t50099500000\t12000\nbrand_id\tproduct_count\tprice_sum\n7\t10000\t500720000\nTABLE_NAME\tINDEX_NAME\tSEQ_IN_INDEX\tCOLUMN_NAME\tNON_UNIQUE\nbrands\tPRIMARY\t1\tid\t0\nbrands\tuk_brand_name\t1\tname\t0\nlikes\tidx_likes_product_id\t1\tproduct_id\t1\nlikes\tPRIMARY\t1\tid\t0\nlikes\tuk_like_user_product\t1\tuser_id\t0\nlikes\tuk_like_user_product\t2\tproduct_id\t0\nproducts\tFKa3a4mpsfdf4d2y6r8ra3sc8mv\t1\tbrand_id\t1\nproducts\tidx_products_brand_deleted_price\t1\tbrand_id\t1\nproducts\tidx_products_brand_deleted_price\t2\tdeleted_at\t1\nproducts\tidx_products_brand_deleted_price\t3\tprice\t1\nproducts\tPRIMARY\t1\tid\t0\n",
+  "active_check_explain_analyze": "-> Aggregate: count(p.id) (actual time=0.0477..0.0478 rows=1 loops=1)\n    -> Filter: ((p.id in (...20 ids)) and (p.deleted_at is null)) (actual time=0.0228..0.0456 rows=20 loops=1)\n        -> Index range scan on p using PRIMARY (actual time=0.0213..0.0426 rows=20 loops=1)",
+  "limitations": "Each run measured once on a shared host without resetting DB/OS caches. Miss at 10/100 VU is partial because of the SET-DEL race. Mixed runs read 50,000 requests while writes ran for 20 s, so the write window and read window do not match exactly."
+}

@@ -1,5 +1,6 @@
 package com.loopers.infrastructure.product;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -11,6 +12,37 @@ import java.util.List;
 public interface ProductJpaRepository extends JpaRepository<ProductJpaEntity, Long> {
 
     List<ProductJpaEntity> findAllByDeletedAtIsNull();
+
+    List<ProductJpaEntity> findAllByDeletedAtIsNull(Pageable pageable);
+
+    List<ProductJpaEntity> findAllByDeletedAtIsNullAndBrand_Id(Long brandId, Pageable pageable);
+
+    long countByIdInAndDeletedAtIsNull(List<Long> ids);
+
+    @Query(value = """
+        SELECT p.*
+        FROM products p
+        WHERE p.deleted_at IS NULL
+        ORDER BY (
+            SELECT COUNT(*)
+            FROM likes l
+            WHERE l.product_id = p.id
+        ) DESC, p.id DESC
+        """, nativeQuery = true)
+    List<ProductJpaEntity> findAllActiveOrderByLikeCountDesc(Pageable pageable);
+
+    @Query(value = """
+        SELECT p.*
+        FROM products p
+        WHERE p.deleted_at IS NULL
+          AND p.brand_id = :brandId
+        ORDER BY (
+            SELECT COUNT(*)
+            FROM likes l
+            WHERE l.product_id = p.id
+        ) DESC, p.id DESC
+        """, nativeQuery = true)
+    List<ProductJpaEntity> findAllActiveByBrandIdOrderByLikeCountDesc(@Param("brandId") Long brandId, Pageable pageable);
 
     List<ProductJpaEntity> findAllByDeletedAtIsNotNull();
 
