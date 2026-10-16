@@ -314,6 +314,45 @@ class ProductCacheOutageE2ETest {
         );
     }
 
+    @DisplayName("4.7 · 순간적인 실패로 브레이커가 열리면 Redis 가 정상이어도 그 창 안의 무효화는 건너뛰어, 창이 닫힌 뒤 옛 가격이 hit 로 보이고 만료(키 삭제로 앞당김) 뒤 새 가격이 된다")
+    @Test
+    void writeInsideBreakerWindowLeavesStaleKeyUntilTtl() throws Exception {
+        Long productId = product("셔츠", 10_000);
+        list(firstPriceAscPage());
+        String key = redisCli("--scan", "--pattern", "product:list:v1:brand=" + brandId + ":*PRICE_ASC");
+        double skipped = count("product.listing.cache.invalidation", "result", "skipped");
+
+        redisCli("CLIENT", "PAUSE", "500", "ALL");
+        list(firstPriceAscPage());
+        Thread.sleep(700);
+        String pong = redisCli("PING");
+        ResponseEntity<String> write = changePriceAsAdmin(productId, 5_000);
+        String keyAfterWrite = redisCli("--scan", "--pattern", "product:list:v1:brand=" + brandId + ":*PRICE_ASC");
+
+        long deadline = System.nanoTime() + RECOVERY_LIMIT.toNanos();
+        long price = list(firstPriceAscPage()).getBody().data().items().get(0).price();
+        while (price != 10_000L && System.nanoTime() < deadline) {
+            Thread.sleep(200);
+            price = list(firstPriceAscPage()).getBody().data().items().get(0).price();
+        }
+        long staleAfterWindow = price;
+        long secondsLeft = Long.parseLong(redisCli("TTL", key));
+        redisCli("DEL", key);
+
+        assertAll(
+            () -> assertThat(key).as("캐시가 채워져 있었다").isNotEmpty(),
+            () -> assertThat(pong).as("쓰기 시점에 Redis 는 정상이다").isEqualTo("PONG"),
+            () -> assertThat(write.getStatusCode().value()).isEqualTo(200),
+            () -> assertThat(count("product.listing.cache.invalidation", "result", "skipped") - skipped)
+                .as("창 안의 무효화는 Redis 를 건드리지 않았다").isEqualTo(1),
+            () -> assertThat(keyAfterWrite).as("옛 키가 지워지지 않고 남았다").isEqualTo(key),
+            () -> assertThat(staleAfterWindow).as("창이 닫힌 뒤 옛 가격이 hit 로 보인다").isEqualTo(10_000L),
+            () -> assertThat(secondsLeft).as("옛 키는 TTL 이 있다").isBetween(1L, 60L),
+            () -> assertThat(list(firstPriceAscPage()).getBody().data().items().get(0).price())
+                .as("만료 뒤 첫 조회는 원본과 같다").isEqualTo(5_000L)
+        );
+    }
+
     @DisplayName("CACHE-009 · Redis 가 멈춰도 주문 확정은 DB 의 재고 · 포인트 규칙대로 처리되고, 마지막 재고를 팔아 무효화가 일어나도 제한된 시간 안에 응답한다")
     @Test
     void confirmationIsUnaffectedWhileRedisIsDown() {
