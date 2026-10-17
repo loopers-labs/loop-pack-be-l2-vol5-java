@@ -12,8 +12,12 @@ public class ProductService implements ProductAvailability, ProductsInBrand, Sto
 
     private final ProductRepository productRepository;
 
+    private final ProductListingEvents listingEvents;
+
     public Product register(Long brandId, String name, Price price) {
-        return productRepository.save(Product.register(brandId, name, price));
+        Product product = productRepository.save(Product.register(brandId, name, price));
+        listingChanged(product);
+        return product;
     }
 
     public Product get(Long productId) {
@@ -23,6 +27,7 @@ public class ProductService implements ProductAvailability, ProductsInBrand, Sto
     public Product update(Long productId, String name, Price price) {
         Product product = findAliveForUpdate(productId);
         product.update(name, price);
+        listingChanged(product);
         return productRepository.save(product);
     }
 
@@ -30,6 +35,7 @@ public class ProductService implements ProductAvailability, ProductsInBrand, Sto
         Product product = findAliveForUpdate(productId);
         product.delete();
         productRepository.save(product);
+        listingChanged(product);
     }
 
     public Quantity getStock(Long productId) {
@@ -38,7 +44,11 @@ public class ProductService implements ProductAvailability, ProductsInBrand, Sto
 
     public Product adjustStock(Long productId, Quantity quantity) {
         Product product = findAliveForUpdate(productId);
+        boolean wasSoldOut = product.isSoldOut();
         product.adjustTo(quantity);
+        if (product.isSoldOut() != wasSoldOut) {
+            listingChanged(product);
+        }
         return productRepository.save(product);
     }
 
@@ -47,6 +57,9 @@ public class ProductService implements ProductAvailability, ProductsInBrand, Sto
         Product product = findAliveForUpdate(productId);
         product.deduct(amount);
         productRepository.save(product);
+        if (product.isSoldOut()) {
+            listingChanged(product);
+        }
     }
 
     @Override
@@ -57,6 +70,10 @@ public class ProductService implements ProductAvailability, ProductsInBrand, Sto
     @Override
     public void deleteAll(Long brandId) {
         productRepository.deleteAllByBrandId(brandId);
+    }
+
+    private void listingChanged(Product product) {
+        listingEvents.changed(product.getBrandId());
     }
 
     private Product findAliveForUpdate(Long productId) {

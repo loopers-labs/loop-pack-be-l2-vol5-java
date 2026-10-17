@@ -7,6 +7,7 @@ spring:
 datasource:
   redis:
     database: 0
+    command-timeout: 200ms
     master:
       host: ${REDIS_MASTER_HOST}
       port: ${REDIS_MASTER_PORT}

@@ -8,6 +8,7 @@ import com.loopers.domain.common.Quantity;
 import com.loopers.domain.product.Price;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductAdminQuery;
+import com.loopers.domain.product.ProductListingCache;
 import com.loopers.domain.product.ProductService;
 import com.loopers.domain.product.ProductViewQuery;
 import com.loopers.support.error.DomainError;
@@ -15,6 +16,9 @@ import com.loopers.support.error.DomainException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+import java.util.Map;
 
 @Component
 @RequiredArgsConstructor
@@ -24,6 +28,7 @@ public class ProductFacade {
     private final ProductService productService;
     private final ProductViewQuery productViewQuery;
     private final ProductAdminQuery productAdminQuery;
+    private final ProductListingCache productListingCache;
 
     @Transactional
     public Product register(Long brandId, String name, Price price) {
@@ -47,7 +52,10 @@ public class ProductFacade {
     }
 
     public PageWindow<ProductViewQuery.View> findPage(ProductViewQuery.Criteria criteria) {
-        return productViewQuery.findPage(criteria);
+        if (!isCachedPage(criteria)) {
+            return productViewQuery.findPage(criteria);
+        }
+        return withLikes(listingOf(criteria), criteria.viewerId());
     }
 
     public ProductViewQuery.View get(Long productId, Long viewerId) {
@@ -62,5 +70,30 @@ public class ProductFacade {
 
     public Product getForAdmin(Long productId) {
         return productService.get(productId);
+    }
+
+    private static boolean isCachedPage(ProductViewQuery.Criteria criteria) {
+        return criteria.sort() != ProductViewQuery.Sort.LIKES_DESC
+            && criteria.page().equals(PageNumber.FIRST)
+            && criteria.size().equals(PageSize.DEFAULT);
+    }
+
+    private PageWindow<ProductViewQuery.Listing> listingOf(ProductViewQuery.Criteria criteria) {
+        return productListingCache.find(criteria.brandId(), criteria.sort())
+            .orElseGet(() -> {
+                PageWindow<ProductViewQuery.Listing> loaded = productViewQuery.findListingPage(criteria);
+                productListingCache.save(criteria.brandId(), criteria.sort(), loaded);
+                return loaded;
+            });
+    }
+
+    private PageWindow<ProductViewQuery.View> withLikes(PageWindow<ProductViewQuery.Listing> listing, Long viewerId) {
+        List<Long> ids = listing.items().stream().map(ProductViewQuery.Listing::id).toList();
+        Map<Long, ProductViewQuery.Likes> likes = productViewQuery.findLikesOfAlive(ids, viewerId);
+        List<ProductViewQuery.View> items = listing.items().stream()
+            .filter(item -> likes.containsKey(item.id()))
+            .map(item -> item.with(likes.get(item.id())))
+            .toList();
+        return new PageWindow<>(items, listing.hasNext());
     }
 }

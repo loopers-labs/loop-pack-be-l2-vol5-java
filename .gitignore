@@ -45,3 +45,7 @@ out/
 ### 개인 기록 — 과제 산출물이 아니다
 docs/**/writing*.md
 ref/*
+
+docs/week4/load/
+docs/week4/charts/
+.DS_Store

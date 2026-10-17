@@ -184,6 +184,14 @@ class ArchitectureTest {
             .check(productionClasses());
     }
 
+    @DisplayName("4.6 · 도메인은 Spring 이벤트를 모른다 — 목록이 바뀐 사실은 도메인의 포트로 알린다.")
+    @Test
+    void domainDoesNotKnowSpringEvents() {
+        noClasses().that().resideInAPackage("..domain..")
+            .should().dependOnClassesThat().resideInAPackage("org.springframework.context..")
+            .check(productionClasses());
+    }
+
     @DisplayName("필드 주입을 쓰지 않는다.")
     @Test
     void usesConstructorInjectionOnly() {

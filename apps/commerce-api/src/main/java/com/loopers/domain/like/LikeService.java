@@ -13,11 +13,15 @@ public class LikeService {
 
     public void like(Long userId, Long productId) {
         productAvailability.requireAvailable(productId);
-        likeRepository.save(ProductLike.of(userId, productId));
+        if (likeRepository.save(ProductLike.of(userId, productId))) {
+            likeRepository.increaseCount(productId);
+        }
     }
 
     public void unlike(Long userId, Long productId) {
-        likeRepository.delete(userId, productId);
+        if (likeRepository.delete(userId, productId)) {
+            likeRepository.decreaseCount(productId);
+        }
     }
 
     public long countOf(Long productId) {

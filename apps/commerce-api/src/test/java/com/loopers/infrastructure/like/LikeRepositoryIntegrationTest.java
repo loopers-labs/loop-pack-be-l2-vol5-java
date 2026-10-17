@@ -14,12 +14,17 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.LongStream;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -36,6 +41,7 @@ class LikeRepositoryIntegrationTest {
     private final BrandFacade brandFacade;
     private final ProductFacade productFacade;
     private final LikeFacade likeFacade;
+    private final JdbcTemplate jdbcTemplate;
 
     private Long productId;
 
@@ -45,13 +51,52 @@ class LikeRepositoryIntegrationTest {
         DatabaseCleanUp databaseCleanUp,
         BrandFacade brandFacade,
         ProductFacade productFacade,
-        LikeFacade likeFacade
+        LikeFacade likeFacade,
+        JdbcTemplate jdbcTemplate
     ) {
         this.likeService = likeService;
         this.databaseCleanUp = databaseCleanUp;
         this.brandFacade = brandFacade;
         this.productFacade = productFacade;
         this.likeFacade = likeFacade;
+        this.jdbcTemplate = jdbcTemplate;
+    }
+
+    private long counter() {
+        return jdbcTemplate.query("SELECT like_count FROM product_like_count WHERE product_id = ?",
+            rs -> rs.next() ? rs.getLong(1) : 0L, productId);
+    }
+
+    private long relations() {
+        return jdbcTemplate.queryForObject("SELECT COUNT(*) FROM product_like WHERE product_id = ?", Long.class, productId);
+    }
+
+    private int runConcurrently(List<Runnable> tasks) throws InterruptedException {
+        ExecutorService executor = Executors.newFixedThreadPool(tasks.size());
+        CountDownLatch ready = new CountDownLatch(tasks.size());
+        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch done = new CountDownLatch(tasks.size());
+        AtomicInteger failed = new AtomicInteger();
+        for (Runnable task : tasks) {
+            executor.submit(() -> {
+                ready.countDown();
+                try {
+                    start.await();
+                    task.run();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } catch (RuntimeException e) {
+                    failed.incrementAndGet();
+                } finally {
+                    done.countDown();
+                }
+            });
+        }
+        ready.await(5, TimeUnit.SECONDS);
+        start.countDown();
+        assertThat(done.await(30, TimeUnit.SECONDS)).isTrue();
+        executor.shutdown();
+        return failed.get();
     }
 
     @BeforeEach
@@ -65,13 +110,50 @@ class LikeRepositoryIntegrationTest {
         databaseCleanUp.truncateAllTables();
     }
 
-    @DisplayName("LIKE-008 · 좋아요 수는 관계를 세어 얻는다. 사용자가 다르면 따로 센다.")
+    @DisplayName("LIKE-008 · 좋아요 수는 카운터에서 읽고, 관계 행 수와 같다. 사용자가 다르면 따로 센다.")
     @Test
     void persistsAndCounts() {
         likeFacade.like(USER, productId);
-        likeFacade.like(OTHER, productId);
+        long returned = likeFacade.like(OTHER, productId);
 
-        assertThat(likeService.countOf(productId)).isEqualTo(2);
+        assertThat(returned).isEqualTo(2);
+        assertThat(counter()).isEqualTo(2).isEqualTo(relations());
+    }
+
+    @DisplayName("Q-6 · 누른 적 없는 취소 · 같은 취소의 반복 · 같은 좋아요의 반복은 카운터를 바꾸지 않는다 — 관계 행이 실제로 바뀔 때만 증감한다")
+    @Test
+    void counterMovesOnlyWhenRelationChanges() {
+        likeFacade.unlike(USER, productId);
+        long afterUnlikeOfNothing = counter();
+
+        likeFacade.like(USER, productId);
+        likeFacade.like(USER, productId);
+        long afterRepeatedLike = counter();
+
+        likeFacade.unlike(USER, productId);
+        likeFacade.unlike(USER, productId);
+
+        assertThat(afterUnlikeOfNothing).isZero();
+        assertThat(afterRepeatedLike).isEqualTo(1);
+        assertThat(counter()).isZero().isEqualTo(relations());
+    }
+
+    @DisplayName("Q-6 · 여러 사용자가 같은 상품에 동시에 좋아요 · 취소해도 카운터는 관계 행 수와 같다")
+    @Test
+    void counterMatchesRelationsUnderConcurrentLikesAndUnlikes() throws InterruptedException {
+        List<Runnable> stayers = LongStream.rangeClosed(1, 20)
+            .<Runnable>mapToObj(user -> () -> likeFacade.like(user, productId)).toList();
+        List<Runnable> leavers = LongStream.rangeClosed(21, 30)
+            .<Runnable>mapToObj(user -> () -> {
+                likeFacade.like(user, productId);
+                likeFacade.unlike(user, productId);
+            }).toList();
+
+        int failed = runConcurrently(Stream.concat(stayers.stream(), leavers.stream()).toList());
+
+        assertThat(failed).isZero();
+        assertThat(relations()).isEqualTo(20);
+        assertThat(counter()).isEqualTo(20);
     }
 
     @DisplayName("LIKE-003 · 누른 적 없어도 취소는 성공한다. 취소는 멱등이다.")
@@ -101,39 +183,16 @@ class LikeRepositoryIntegrationTest {
         assertThat(likeService.countOf(productId)).isZero();
     }
 
-    @DisplayName("LIKE-001 · 같은 사용자가 20번 동시에 눌러도 관계는 하나다. 유니크 제약이 지킨다.")
+    @DisplayName("LIKE-001 · 같은 사용자가 20번 동시에 눌러도 관계는 하나이고 카운터도 1 이다. 유니크 제약이 지킨다.")
     @Test
     void keepsSingleRelationUnderConcurrency() throws InterruptedException {
-        int threads = 20;
-        ExecutorService executor = Executors.newFixedThreadPool(threads);
-        CountDownLatch ready = new CountDownLatch(threads);
-        CountDownLatch start = new CountDownLatch(1);
-        CountDownLatch done = new CountDownLatch(threads);
-        AtomicInteger failed = new AtomicInteger();
+        List<Runnable> sameUser = Collections.nCopies(20, () -> likeFacade.like(USER, productId));
 
-        for (int i = 0; i < threads; i++) {
-            executor.submit(() -> {
-                ready.countDown();
-                try {
-                    start.await();
-                    likeFacade.like(USER, productId);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                } catch (RuntimeException e) {
-                    failed.incrementAndGet();
-                } finally {
-                    done.countDown();
-                }
-            });
-        }
+        int failed = runConcurrently(sameUser);
 
-        ready.await(5, TimeUnit.SECONDS);
-        start.countDown();
-        done.await(30, TimeUnit.SECONDS);
-        executor.shutdown();
-
-        assertThat(failed.get()).isZero();
-        assertThat(likeService.countOf(productId)).isEqualTo(1);
+        assertThat(failed).isZero();
+        assertThat(relations()).isEqualTo(1);
+        assertThat(counter()).isEqualTo(1);
     }
 
     @DisplayName("LIKE-003 · COMMON-009 · 취소는 행을 지우므로 다시 좋아요할 수 있다.")

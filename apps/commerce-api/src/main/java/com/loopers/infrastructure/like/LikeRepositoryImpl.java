@@ -10,19 +10,30 @@ import org.springframework.stereotype.Repository;
 public class LikeRepositoryImpl implements LikeRepository {
 
     private final ProductLikeJpaRepository productLikeJpaRepository;
+    private final ProductLikeCountJpaRepository productLikeCountJpaRepository;
 
     @Override
-    public void save(ProductLike like) {
-        productLikeJpaRepository.insertIfAbsent(like.userId(), like.productId());
+    public boolean save(ProductLike like) {
+        return productLikeJpaRepository.insertIfAbsent(like.userId(), like.productId()) == 1;
     }
 
     @Override
-    public void delete(Long userId, Long productId) {
-        productLikeJpaRepository.deleteByUserIdAndProductId(userId, productId);
+    public boolean delete(Long userId, Long productId) {
+        return productLikeJpaRepository.deleteRelation(userId, productId) == 1;
+    }
+
+    @Override
+    public void increaseCount(Long productId) {
+        productLikeCountJpaRepository.increase(productId);
+    }
+
+    @Override
+    public void decreaseCount(Long productId) {
+        productLikeCountJpaRepository.decrease(productId);
     }
 
     @Override
     public long countByProductId(Long productId) {
-        return productLikeJpaRepository.countByProductId(productId);
+        return productLikeCountJpaRepository.findById(productId).map(ProductLikeCountEntity::likeCount).orElse(0L);
     }
 }
