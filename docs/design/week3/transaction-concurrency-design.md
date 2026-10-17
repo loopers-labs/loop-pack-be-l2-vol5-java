@@ -117,7 +117,7 @@ InnoDB는 PostgreSQL의 REPEATABLE READ와 달라서 **갱신 유실을 감지�
 **남는 위험**
 
 1. 상품을 품목 순서대로 하나씩 잠그면 순서가 깨진다. 반드시 정렬된 `IN` 조회 하나로 잡는다.
-2. 브랜드 삭제의 상품 잠금(`brand_id` 보조 인덱스 범위, RR)은 next-key·갭 잠금을 잡는다. 실측(`LockBehaviorCharacterizationTest`): 같은 브랜드의 상품 수정·등록과 **직전 브랜드(id가 바로 앞)의 상품 등록**이 삭제가 끝날 때까지 기다린다. 다음 브랜드나 먼 브랜드의 등록, 다른 브랜드 상품 수정, 일반 조회는 기다리지 않는다. 순환이 아니라 삭제 한 건 동안의 불필요한 대기다. 확정의 `IN` 조회는 기본 키로 찾은 행만 잠가 인접 상품과 등록을 막지 않는다.
+2. 브랜드 삭제의 상품 잠금(`brand_id`로 시작하는 보조 인덱스 범위, RR)은 next-key·갭 잠금을 잡는다. 실측(`LockBehaviorCharacterizationTest`): 같은 브랜드의 상품 수정·등록과 **다음 브랜드(id가 바로 뒤)의 상품 등록**이 삭제가 끝날 때까지 기다린다. 직전 브랜드나 먼 브랜드의 등록, 다른 브랜드 상품 수정, 일반 조회는 기다리지 않는다. (W4에서 인덱스를 `(brand_id, deleted_at, price, id DESC)`로 바꾸기 전에는 대기하는 이웃이 **직전** 브랜드였다. 새 행이 같은 브랜드·가격 행들 맨 앞에 놓이도록 바뀌어 이웃이 뒤바뀌었고 영향의 크기는 같다.) 순환이 아니라 삭제 한 건 동안의 불필요한 대기다. 확정의 `IN` 조회는 기본 키로 찾은 행만 잠가 인접 상품과 등록을 막지 않는다.
 3. 나중에 추가되는 경로가 전역 순서를 어기면 교착이 생긴다. 이 표를 규칙으로 유지한다.
 4. 가장 큰 비용은 교착보다 **커넥션 점유**다. 한 상품에 요청이 몰리면 대기 요청이 풀을 비워 무관한 요청이 커넥션 획득 대기 3초를 넘길 수 있다.
 
@@ -373,8 +373,8 @@ AdminBrandController → AdminBrandFacade.delete(brandId)   ← @Transactional �
 |---|---|
 | ~~잠금 대기 한도를 짧게 두는 방법~~ | **실측 완료, 설정은 적용하지 않음**. JPA 표준 힌트 `jakarta.persistence.lock.timeout`은 MySQL 8.0에서 `0`(`for update nowait`로 즉시 `LockTimeoutException`)만 의미가 있고, 그 외 값(예: 500)은 SQL에 아무 절도 붙지 않아 무시된다(보유자가 풀 때까지 기다림). 유한한 대기는 MySQL 세션 변수 `innodb_lock_wait_timeout`으로만 가능하며, 줄이면 그 시간 뒤 `PessimisticLockException`(근본 원인 "Lock wait timeout exceeded")으로 실패한다. 적용 방법 후보는 jdbc-url의 `sessionVariables=innodb_lock_wait_timeout=N` 또는 풀의 `connection-init-sql`이다. 운영 튜닝이며 `modules` 공유 설정이라 이번 범위에 넣지 않았다 |
 | ~~Hibernate가 MySQL 8.0에서 `PESSIMISTIC_READ`를 `for share`로 생성하는지~~ | **확인됨**. 상품 등록의 브랜드 조회가 `... where id=? and deleted_at is null for share`로 나가고, 삭제의 브랜드 조회는 `for update`로 나간다 |
-| ~~`IN … ORDER BY id FOR UPDATE`의 실제 잠금 범위와 실행 계획~~ | **행동으로 확인**. 앱 계정은 `performance_schema.data_locks`를 읽을 수 없어(권한 거부) 별도 세션이 잠금 대기를 1초로 줄이고 문장을 시도해 막히는지로 관찰했다. `EXPLAIN`: 삭제의 상품 조회는 `idx_products_brand_id`(`type=ref`), 확정의 `IN` 조회는 `PRIMARY`(`type=range`). 범위는 2-3의 실측과 같다 |
+| ~~`IN … ORDER BY id FOR UPDATE`의 실제 잠금 범위와 실행 계획~~ | **행동으로 확인**. 앱 계정은 `performance_schema.data_locks`를 읽을 수 없어(권한 거부) 별도 세션이 잠금 대기를 1초로 줄이고 문장을 시도해 막히는지로 관찰했다. `EXPLAIN`: 삭제의 상품 조회는 `idx_products_brand_id`(W4에서 `idx_products_brand_price_id`로 교체, `type=ref`), 확정의 `IN` 조회는 `PRIMARY`(`type=range`). 범위는 2-3의 실측과 같다 |
 | ~~`StatementInspector`로 변경 문장 실패 주입이 되는지~~ | **확인됨** (D-29 실측). 주문 확정도 같은 장치로 확인: 재고 UPDATE가 전송된 뒤 첫 `update users`에서 실패시키면 재고·잔액·상태·결제 결과가 모두 변경 전으로 돌아간다 |
-| ~~갭 잠금의 영향(이웃 브랜드 상품 등록 대기)~~ | **실측 완료**. 삭제 중 직전 브랜드의 상품 등록만 기다린다(2-3). 영향은 삭제 한 건 동안으로 제한되어 한계로만 기록한다 |
+| ~~갭 잠금의 영향(이웃 브랜드 상품 등록 대기)~~ | **실측 완료**. 삭제 중 이웃 브랜드 한쪽(W4 인덱스 교체 이후 다음 브랜드)의 상품 등록만 기다린다(2-3). 영향은 삭제 한 건 동안으로 제한되어 한계로만 기록한다 |
 
 이 문서의 성능·잠금 범위에 관한 서술 중 위 표에서 취소선으로 표시하지 않은 것은 *실측 전 가설*이며, 실측하지 않은 항목을 검증됐다고 쓰지 않는다. 잠금 범위의 실측은 InnoDB 8.0 동작이므로 MySQL 버전을 바꾸면 `LockBehaviorCharacterizationTest`로 다시 확인한다.

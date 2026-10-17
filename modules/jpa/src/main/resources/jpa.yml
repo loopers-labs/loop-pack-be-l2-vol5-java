@@ -8,6 +8,10 @@ spring:
     properties:
       hibernate:
         default_batch_fetch_size: 100
+        # 기본 전략(default)은 기본키·테이블 컬럼을 물리 크기, 컬럼 이름 순으로 재배열해 복합키 선언 순서가 DDL 에 반영되지 않는다.
+        # legacy 는 재배열하지 않아 record 복합키(@EmbeddedId, @IdClass)의 컴포넌트 선언 순서가 기본키 컬럼 순서가 된다.
+        # 복합키는 record 로 선언한다(일반 클래스는 legacy 에서도 속성 이름 순으로 정렬된다).
+        column_ordering_strategy: legacy
         timezone.default_storage: NORMALIZE_UTC
         jdbc.time_zone: UTC
 

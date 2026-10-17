@@ -8,6 +8,7 @@ import com.loopers.domain.product.ProductRepository;
 import com.loopers.domain.product.Stock;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
+import com.loopers.support.fixture.ExposedProducts;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -19,12 +20,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @SpringBootTest
 class AdminBrandFacadeTest {
+
+    @Autowired
+    private ExposedProducts exposedProducts;
 
     @Autowired
     private AdminBrandFacade adminBrandFacade;
@@ -34,6 +39,9 @@ class AdminBrandFacadeTest {
 
     @Autowired
     private ProductRepository productRepository;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
@@ -53,12 +61,19 @@ class AdminBrandFacadeTest {
         return brandRepository.save(brand);
     }
 
+    // 삭제 상품은 집계 행이 없어야 하므로 저장소로 직접 저장한다.
     private Product saveProduct(Long brandId, int stock, boolean deleted) {
         Product product = Product.create(brandId, "러닝화", new Money(89_000), new Stock(stock));
         if (deleted) {
             product.delete();
+            return productRepository.save(product);
         }
-        return productRepository.save(product);
+        return exposedProducts.save(product);
+    }
+
+    private long likeCountRows(Long productId) {
+        return jdbcTemplate.queryForObject(
+            "select count(*) from product_like_counts where product_id = ?", Long.class, productId);
     }
 
     private String storedName(Long brandId) {
@@ -193,6 +208,23 @@ class AdminBrandFacadeTest {
             assertThat(brandRepository.findActive(brand.getId())).isEmpty();
             assertThat(productRepository.findActive(inStock.getId())).isEmpty();
             assertThat(productRepository.findActive(soldOut.getId())).isEmpty();
+        }
+
+        @DisplayName("연결된 상품의 좋아요 수 집계도 함께 지우고, 다른 브랜드 상품의 집계는 남긴다.")
+        @Test
+        void removesLikeCountRowsOfLinkedProducts() {
+            // arrange
+            Brand brand = saveBrand("루퍼스");
+            Brand other = saveBrand("다른 브랜드");
+            Product linked = saveProduct(brand.getId(), 10, false);
+            Product otherProduct = saveProduct(other.getId(), 10, false);
+
+            // act
+            adminBrandFacade.delete(brand.getId());
+
+            // assert
+            assertThat(likeCountRows(linked.getId())).isZero();
+            assertThat(likeCountRows(otherProduct.getId())).isEqualTo(1);
         }
 
         @DisplayName("연결된 상품을 모두 삭제하면 브랜드를 삭제할 수 있다.")

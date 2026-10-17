@@ -46,9 +46,10 @@ class LikeTest {
         @Test
         void isEqual_whenUserAndProductAreSame() {
             // assert
-            assertThat(new LikeId(1L, 10L)).isEqualTo(new LikeId(1L, 10L));
-            assertThat(new LikeId(1L, 10L)).isNotEqualTo(new LikeId(2L, 10L));
-            assertThat(new LikeId(1L, 10L)).isNotEqualTo(new LikeId(1L, 11L));
+            // LikeId(productId, userId): 상품 10, 사용자 1
+            assertThat(new LikeId(10L, 1L)).isEqualTo(new LikeId(10L, 1L));
+            assertThat(new LikeId(10L, 1L)).isNotEqualTo(new LikeId(10L, 2L));
+            assertThat(new LikeId(10L, 1L)).isNotEqualTo(new LikeId(11L, 1L));
         }
     }
 }

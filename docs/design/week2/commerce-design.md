@@ -169,7 +169,7 @@ Order ── 품목 금액 합계 / 포인트 결제액·결제 결과
 | **Brand** | Entity (soft delete) | 이름(앞뒤 공백 제거 후 1~50자, 공백뿐인 문자열 불가), 수정 | 식별자와 생명주기(수정·삭제)가 있다 |
 | **Product** | Entity (soft delete) | `brandId`, 이름(1~100자, 공백뿐인 문자열 불가), 가격 `Money`(1원 이상 1,000,000,000원 이하), 재고 `Stock`. `decreaseStock(q)`, `changeStock(n)` | 가격이 바뀌어도 같은 상품이다 |
 | **Stock** | **VO** (Product에 내장) | 재고 수량(`int`). `decrease(q)`는 새 `Stock`을 반환. 0 이상, 0 이하 수량·보유량 초과 차감 거절 | 값의 규칙을 한 곳에 모은다. `PointBalance`와 같은 방식으로 일관 |
-| **Like** | Entity (**복합키** `(userId, productId)`, `BaseEntity` 미상속) | `LikeId`(`@EmbeddedId`), 좋아요 시각 `likedAt`. hard delete (D-5) | 자체 생명주기(등록·취소)와 독립 조회(내 목록, 상품별 count)가 있다. PK가 곧 유일성이라 안 쓰는 컬럼이 없다 |
+| **Like** | Entity (**복합키** `(productId, userId)`, `BaseEntity` 미상속) | `LikeId`(`@EmbeddedId`), 좋아요 시각 `likedAt`. hard delete (D-5) | 자체 생명주기(등록·취소)와 독립 조회(내 목록, 상품별 count)가 있다. PK가 곧 유일성이라 안 쓰는 컬럼이 없다 |
 | **User** | Entity (최소) | 식별자, `PointBalance`. fixture로 생성. `chargePoint(m)`, `payPoint(m)` | 요청자 존재 확인(없는 사용자 `NOT_FOUND`)과 잔액 보유에 필요 |
 | **PointBalance** | **VO** (User에 내장) | 잔액 `Money`. `charge(m)`, `pay(m)`는 새 `PointBalance`를 반환. 잔액 0 허용, 충전액 양수, 합산 범위 초과·잔액 초과 결제 거절 | 값 규칙을 한 곳에 모은다 (D-8) |
 | **Money** | **VO** | 0 이상 정수 원(`long`). 연산은 새 값을 반환 | 단가·합계·잔액·결제액이 모두 사용 (D-7) |
@@ -419,7 +419,7 @@ Controller → OrderFacade.confirm(userId, orderId)   ← @Transactional 시작
 
 - **상황**: 같은 사용자의 중복 등록이나 없는 관계 취소를 오류로 볼지 정해야 했다. 좋아요 버튼은 더블 클릭·재시도가 흔하다.
 - **결정**: 두 경우 모두 성공으로 처리하고 관계는 하나만 유지한다. 클라이언트 동작이 같으므로 별도 errorCode를 두지 않는다 (D-3). 삭제된 상품은 새 등록만 `NOT_FOUND`, 자신의 기존 관계 취소는 허용한다. 타인 `userId`의 목록 조회는 `FORBIDDEN`으로 처리한다 (D-11).
-- **비용**: 클라이언트가 중복 요청이었는지 응답으로 알 수 없다. 순차 중복을 판단하려고 존재 확인 조회가 한 번 더 필요하다. `(user_id, product_id)` 복합 PK가 유일성을 보장한다 (좋아요 취소는 hard delete라 재등록 때 충돌하지 않는다, D-5, D-9).
+- **비용**: 클라이언트가 중복 요청이었는지 응답으로 알 수 없다. 순차 중복을 판단하려고 존재 확인 조회가 한 번 더 필요하다. `(product_id, user_id)` 복합 PK가 유일성을 보장한다 (좋아요 취소는 hard delete라 재등록 때 충돌하지 않는다, D-5, D-9).
 - **재검토 조건**: 클라이언트가 "이미 좋아요함"을 구분해야 하면 별도 errorCode를 검토한다. 동시에 들어온 요청이 PK 제약에 걸리는 경우의 오류 계약은 week3에서 동시성 설계와 함께 정한다.
 - **기각한 대안**: 중복 등록을 `CONFLICT`로 처리. 더블 클릭·재시도에서 사용자에게 불필요한 오류가 노출된다.
 
@@ -466,7 +466,7 @@ Controller → OrderFacade.confirm(userId, orderId)   ← @Transactional 시작
 ### D-9. Entity·VO 구성과 Aggregate 사이 id 참조
 
 - **상황**: 도메인 모델의 분류와 참조 방식을 한 번에 정해야 했다.
-- **결정**: 3-2의 표대로 정한다. VO는 `Money`, `Stock`, `PointBalance`, `PaymentResult`, Entity는 `Brand`, `Product`, `Like`, `User`, `Order`, `OrderItem`이다. `Like`는 `(userId, productId)` 복합키를 쓰고 `BaseEntity`를 상속하지 않는다. Aggregate 사이는 id로 참조하고, 조회 결과 조합은 application이 한다. `Order`가 소유하는 `OrderItem` 컬렉션은 `LAZY`로 두며, 트랜잭션 밖에서 읽지 못하므로 application이 `Info`로 변환해 내보낸다 (D-20).
+- **결정**: 3-2의 표대로 정한다. VO는 `Money`, `Stock`, `PointBalance`, `PaymentResult`, Entity는 `Brand`, `Product`, `Like`, `User`, `Order`, `OrderItem`이다. `Like`는 `(productId, userId)` 복합키를 쓰고 `BaseEntity`를 상속하지 않는다. Aggregate 사이는 id로 참조하고, 조회 결과 조합은 application이 한다. `Order`가 소유하는 `OrderItem` 컬렉션은 `LAZY`로 두며, 트랜잭션 밖에서 읽지 못하므로 application이 `Info`로 변환해 내보낸다 (D-20).
 - **근거 (id 참조)**:
   1. `@ManyToOne`은 기본이 EAGER라 `Order → User`, `OrderItem → Product → Brand`가 연쇄 로딩된다. LAZY는 설정 누락과 `LazyInitializationException` 위험이 있고, 목록은 브랜드 N+1이 생긴다.
   2. `Product`가 `List<Like>`를 가지면 `getLikes().size()`가 좋아요 행을 전부 로딩한다. 연관관계를 써도 집계 쿼리와 조합 코드는 필요하다.
@@ -475,7 +475,7 @@ Controller → OrderFacade.confirm(userId, orderId)   ← @Transactional 시작
   5. `new Like(1L, 10L)`처럼 연관 객체 없이 단위 테스트를 쓸 수 있다.
   6. 응답이 바뀌어도 모델은 바뀌지 않고 조합 코드만 바뀐다.
 - **근거 (Like 복합키)**: PK가 곧 유일성이라 대리키, `updatedAt`, `deletedAt` 같은 안 쓰는 컬럼이 없다. 검증 흐름(등록은 존재 확인 후 저장, 취소는 삭제하고 영향 행 0이어도 성공, 재등록은 새 행 INSERT)은 대리키와 같다.
-- **비용**: 조합 코드를 직접 써야 하고 목록 조회에서 일괄 조회가 필요하다. `likes_desc` 정렬은 Like 집계 쿼리가 필요하다. `Like`는 `BaseEntity`를 벗어나 `likedAt`을 직접 관리하고, `LikeId`의 `equals`/`hashCode` 보일러플레이트와 `product_id` 보조 인덱스가 필요하다.
+- **비용**: 조합 코드를 직접 써야 하고 목록 조회에서 일괄 조회가 필요하다. `likes_desc` 정렬은 Like 집계 쿼리가 필요하다. `Like`는 `BaseEntity`를 벗어나 `likedAt`을 직접 관리하고, `LikeId`의 `equals`/`hashCode` 보일러플레이트가 필요하다. (W2 당시에는 `product_id` 조건 집계를 위한 보조 인덱스도 필요하다고 보았으나, 실제 기본키가 `(product_id, user_id)`라 기본키가 이미 그 조회를 받친다. D-17 비용의 W4 정정 참고.)
 - **재검토 조건**: 수량 검증이 반복되면 `Quantity` VO를 도입한다. 재고 경합이 문제가 되면 `Stock` 분리를 week3에서 검토한다.
 - **기각한 대안**: `@ManyToOne` 연관관계, 읽기 전용 단방향 LAZY만 허용하는 절충안(규칙이 섞이고 soft delete 문제가 남음), `Like`의 대리키(`BaseEntity` 상속).
 
@@ -503,7 +503,7 @@ Controller → OrderFacade.confirm(userId, orderId)   ← @Transactional 시작
 ### D-12. 좋아요 수는 관계에서 집계하고, 이름·가격 범위는 정해진 값으로 검증한다
 
 - **상황**: 상품 목록·상세의 좋아요 수와 `likes_desc` 정렬을 어떻게 구할지, 그리고 이름·가격의 허용 범위를 정해야 했다.
-- **결정 (좋아요 수)**: Like 행에서 집계한다. 상세는 `count(*) ... where product_id = ?`(`product_id` 보조 인덱스), 목록은 페이지의 `productIds`로 `group by product_id`를 일괄 집계한다. `likes_desc` 정렬은 Product 쿼리에서 Like 집계를 left join하고 `order by coalesce(cnt, 0) desc, id desc`로 수행한다. 이 쿼리는 Product만 반환해 domain 타입을 유지하고, 표시용 수는 일괄 집계로 따로 조회한다. `Product.likeCount` 같은 카운터는 두지 않는다.
+- **결정 (좋아요 수)**: **(W4 대체: 좋아요 수의 출처는 별도 집계 테이블 `product_like_counts`이고 좋아요 TX가 함께 ±1 한다. `product-query-design.md` D-33)** Like 행에서 집계한다. 상세는 `count(*) ... where product_id = ?`(기본키 `(product_id, user_id)`의 접두), 목록은 페이지의 `productIds`로 `group by product_id`를 일괄 집계한다. `likes_desc` 정렬은 Product 쿼리에서 Like 집계를 left join하고 `order by coalesce(cnt, 0) desc, id desc`로 수행한다. 이 쿼리는 Product만 반환해 domain 타입을 유지하고, 표시용 수는 일괄 집계로 따로 조회한다. `Product.likeCount` 같은 카운터는 두지 않는다.
 - **결정 (범위)**: 값은 아래와 같다.
 
   | 대상 | 규칙 | 위반 시 |
@@ -517,8 +517,8 @@ Controller → OrderFacade.confirm(userId, orderId)   ← @Transactional 시작
   브랜드·상품은 설명 같은 부가 필드 없이 최소 필드로 시작한다.
 - **근거**: 관계에서 집계하면 관계와 카운터를 일치시킬 책임이 없고, 과제도 관계에서 조회하라고 한다. 가격 상한은 `단가 × 수량` 합계가 `long`을 넘지 않게 하려는 것이다. 이름 중복을 허용하면 `CONFLICT` 처리와 유니크 제약이 필요 없다.
 - **비용**: `likes_desc`는 Like 행 수에 비례해 느려질 수 있고, 집계가 정렬용과 표시용으로 두 번 일어난다.
-- **재검토 조건**: `likes_desc` 목록이 느려지면 카운터 비정규화를 week3 동시성 설계와 함께 검토한다. 이름 유일성이 필요해지면 `CONFLICT`와 유니크 제약을 추가한다.
-- **기각한 대안**: 카운터 비정규화(경합과 일치 책임이 생김), 가격 0원 허용(무료 상품 요구가 없음), 브랜드 이름 유일성(과제 요구 없음).
+- **재검토 조건**: `likes_desc` 목록이 느려지면 카운터 비정규화를 week3 동시성 설계와 함께 검토한다. → W4에서 충족되어 카운터 테이블로 대체했다(D-33). 이름 유일성이 필요해지면 `CONFLICT`와 유니크 제약을 추가한다.
+- **기각한 대안**: 카운터 비정규화(경합과 일치 책임이 생김. W4에서 `products` 컬럼이 아니라 별도 집계 테이블로 도입), 가격 0원 허용(무료 상품 요구가 없음), 브랜드 이름 유일성(과제 요구 없음).
 
 ### D-13. 브랜드 삭제 거절은 CONFLICT + 메시지로, 삭제 API 성공은 200 + ApiResponse.success()로 처리한다
 
@@ -568,8 +568,8 @@ Controller → OrderFacade.confirm(userId, orderId)   ← @Transactional 시작
 - **결정 (취소)**: 취소는 상품을 조회하지 않아, 관계가 없으면 아무것도 하지 않고 200으로 응답한다. 삭제된 상품과 한 번도 존재한 적 없는 `productId`도 같다. 등록은 상품 조회(없거나 삭제됨 `NOT_FOUND`) → 이미 있으면 그대로 성공, 없으면 저장이다. 요청자 존재 확인은 식별 필터가 앞단에서 한다 (D-19).
 - **결정 (내 목록)**: 항목은 `id`, `brandId`, 이름, 가격이고(재고·시각 제외), `page`(0 이상, 기본 0)·`size`(1~100, 기본 20)를 받아 `PageResponse`로 응답한다. 정렬은 최근에 좋아요한 순이며 같은 시각이면 상품 id 내림차순으로 고정한다. 삭제된 상품 제외는 좋아요와 상품을 id로 join하는 한 번의 쿼리(`ProductRepository.findAllActiveLikedBy`)에서 처리한다. 검사 순서는 요청자 존재(식별 필터, `NOT_FOUND`) → 소유자 비교(`FORBIDDEN`) → 페이지 형식(`INVALID_INPUT`) → 조회이다 (D-19).
 - **근거**: 취소의 목적은 "내 관계를 없애는 것"이라 상품의 상태와 무관하고, 상품을 조회하면 삭제된 상품의 관계를 취소할 방법을 따로 만들어야 한다. 좋아요를 먼저 페이징한 뒤 삭제된 상품을 걸러 내면 페이지가 비고 총 개수가 틀리므로 한 쿼리가 필요하다. 소유자 비교를 먼저 하면 존재하지 않는 `userId`를 보내도 사용자 존재 여부가 드러나지 않는다 (D-11). 형식 오류를 조회 전에 거절하는 기준은 D-15와 같다.
-- **비용**: 존재한 적 없는 `productId`로 취소해도 오류를 알려 주지 않아 클라이언트의 잘못된 id를 걸러 내지 못한다. 등록은 존재 확인 후 저장이라 같은 사용자의 동시 중복 등록은 기본키 충돌로 실패할 수 있고, 이 오류 계약은 week3(D-4)에서 정한다. 목록 항목에는 재고·시각·좋아요한 시각이 없으며 고객 상품 응답이 정해지면 통합한다. 복합키 엔티티의 `save`가 `merge`라 새 행에도 조회가 한 번 더 나간다. 상품별 좋아요 수 집계(`product_id` 조건)는 기본키 `(user_id, product_id)`로는 인덱스를 못 타므로 D-12에서 정한 `product_id` 보조 인덱스(`idx_likes_product_id`)를 고객 상품 조회 구현 때 추가했다 (D-18).
-- **재검토 조건**: 클라이언트가 잘못된 `productId`를 구분해야 하면 취소에 `NOT_FOUND`를 검토한다(존재한 적 없는 id만 거절). 고객 상품 응답이 정해지면 내 목록 항목을 그에 맞춘다. 좋아요 수가 많아져 집계가 느려지면 D-12의 카운터 비정규화를 week3와 함께 검토한다.
+- **비용**: 존재한 적 없는 `productId`로 취소해도 오류를 알려 주지 않아 클라이언트의 잘못된 id를 걸러 내지 못한다. 등록은 존재 확인 후 저장이라 같은 사용자의 동시 중복 등록은 기본키 충돌로 실패할 수 있고, 이 오류 계약은 week3(D-4)에서 정한다. 목록 항목에는 재고·시각·좋아요한 시각이 없으며 고객 상품 응답이 정해지면 통합한다. 복합키 엔티티의 `save`가 `merge`라 새 행에도 조회가 한 번 더 나간다. D-12에서 정한 `product_id` 보조 인덱스(`idx_likes_product_id`)는 고객 상품 조회 구현 때 추가했다 (D-18). **(W4 정정)** 당시에는 기본키가 `(user_id, product_id)`라 `product_id` 조건 집계가 인덱스를 못 탄다고 적었으나 사실이 아니다. 실제 DDL의 기본키는 `(product_id, user_id)`였다(Hibernate 기본 컬럼 정렬 전략이 컬럼 이름 순으로 재배열하므로 선언 `(userId, productId)`와 무관). 그래서 이 보조 인덱스는 기본키 접두와 겹쳤고, W4에서 제거했다(제거 전후 지연·응답 차이 없음). 반대로 `user_id` 조건(내 좋아요 목록)에는 쓸 인덱스가 없어 `user_id` 인덱스(`idx_likes_user_id`)를 추가했다.
+- **재검토 조건**: 클라이언트가 잘못된 `productId`를 구분해야 하면 취소에 `NOT_FOUND`를 검토한다(존재한 적 없는 id만 거절). 고객 상품 응답이 정해지면 내 목록 항목을 그에 맞춘다. 좋아요 수가 많아져 집계가 느려지면 D-12의 카운터 비정규화를 week3와 함께 검토한다. → W4에서 카운터 테이블로 대체했다(D-33).
 - **기각한 대안**: 취소 시 존재한 적 없는 `productId`를 `NOT_FOUND`로 거절(조회 하나가 늘고 "관계가 없으면 성공"과 규칙이 섞임), 좋아요를 먼저 페이징한 뒤 삭제된 상품을 걸러 내기(짧은 페이지와 잘못된 총 개수), 목록 응답에 재고·시각 포함(고객 상품 응답 확정 전에 노출 범위를 넓히게 됨).
 
 ### D-18. 고객 상품 목록·상세는 브랜드 정보와 좋아요 수를 조합해 응답하고, 재고는 노출하지 않는다
@@ -580,10 +580,10 @@ Controller → OrderFacade.confirm(userId, orderId)   ← @Transactional 시작
 - **결정 (브랜드 필터)**: `brandId`가 없으면 전체, 존재하지 않거나 삭제된 브랜드이면 오류가 아니라 빈 목록(200)이다. 브랜드를 따로 조회하지 않는다.
 - **결정 (응답)**: 상세와 목록 항목은 `{id, name, price, brand: {id, name}, likeCount}`이다. 목록은 `PageResponse`로 감싼다. 재고 수량도 품절 여부도 담지 않고 생성·수정 시각도 담지 않는다. 재고는 관리자 응답에만 있으며(D-16), 재고 부족은 주문 생성·확정 때 `OUT_OF_STOCK`으로 알린다. 조합은 application의 `ProductFacade`가 하고 `ProductDetailInfo(ProductInfo, BrandInfo, likeCount)`로 전달한다.
 - **결정 (N+1 방지)**: 목록은 상품 페이지(+count), 브랜드 일괄 조회, 좋아요 수 일괄 집계 쿼리로 조합해 항목마다 조회하지 않는다. 좋아요가 없는 상품은 집계에 없으므로 0으로 채운다.
-- **결정 (인덱스)**: 좋아요 수 집계를 위해 `likes.product_id`(`idx_likes_product_id`)에, 브랜드 필터와 브랜드 삭제 시 상품 확인을 위해 `products.brand_id`(`idx_products_brand_id`)에 보조 인덱스를 둔다.
+- **결정 (인덱스)**: 좋아요 수 집계는 기본키 `(product_id, user_id)`의 접두로 받는다(W2에서 둔 `likes.product_id` 보조 인덱스 `idx_likes_product_id`는 기본키와 겹쳐 W4에서 제거 — D-17 비용의 W4 정정 참고). 브랜드 필터와 브랜드 삭제 시 상품 확인을 위해 `products.brand_id`(`idx_products_brand_id`)에 보조 인덱스를 둔다.
 - **결정 (불변식이 깨졌을 때)**: 상품이 있는 브랜드는 삭제할 수 없으므로 상품의 브랜드는 항상 존재해야 한다(`brand`는 null이 아니다). 브랜드를 찾지 못하면 숨기지 않고 `INTERNAL_ERROR`(500)와 "상품 N 의 브랜드 M 을(를) 찾을 수 없습니다." 메시지로 드러낸다. 브랜드 삭제와 상품 등록이 동시에 일어나는 경쟁(D-16)에서만 생길 수 있다.
 - **근거**: 목록 화면은 상품마다 브랜드와 좋아요 수가 필요해 한 번에 내려주는 편이 호출을 줄인다. 정렬마다 동률 기준이 같으면 페이지를 넘길 때 항목이 겹치거나 빠지지 않는다. 존재하지 않는 브랜드 필터를 오류로 보면 목록 화면이 삭제된 브랜드의 링크에서 깨지므로 빈 목록이 더 단순하다. 불변식이 깨진 데이터를 `null`로 흘려보내면 원인을 찾기 어렵다.
-- **비용**: 재고를 노출하지 않으므로 품절 상품도 목록에 나오고 주문을 만들 때(`OUT_OF_STOCK`) 알게 된다. `likes_desc`는 조건에 맞는 상품 전체의 좋아요를 집계하므로 데이터가 많아지면 느리고, 그때는 D-12의 카운터 비정규화를 검토한다. 깨진 상품이 하나라도 있으면 그 목록 페이지 전체가 500이다. 메시지에 내부 id가 응답에 담긴다(로컬 실습 범위라 허용).
+- **비용**: 재고를 노출하지 않으므로 품절 상품도 목록에 나오고 주문을 만들 때(`OUT_OF_STOCK`) 알게 된다. `likes_desc`는 조건에 맞는 상품 전체의 좋아요를 집계하므로 데이터가 많아지면 느리고, 그때는 D-12의 카운터 비정규화를 검토한다(→ W4에서 카운터 테이블로 개선, D-33). 깨진 상품이 하나라도 있으면 그 목록 페이지 전체가 500이다. 메시지에 내부 id가 응답에 담긴다(로컬 실습 범위라 허용).
 - **재검토 조건**: 품절 표시가 필요하면 `soldOut` 같은 파생 값을 추가한다. week3에서 동시성을 다루면 불변식 위반 500은 사라져야 한다.
 - **기각한 대안**: 목록에 브랜드·좋아요 수 없이 id만 내려주기(클라이언트가 항목마다 추가 호출), 존재하지 않는 브랜드 필터를 `NOT_FOUND`로 거절(삭제된 브랜드 링크에서 목록이 깨짐), 재고 수량 노출(관리자 전용 정보를 고객에 열게 됨), 브랜드를 못 찾으면 `brand`를 null로 응답(원인 추적이 어려움).
 

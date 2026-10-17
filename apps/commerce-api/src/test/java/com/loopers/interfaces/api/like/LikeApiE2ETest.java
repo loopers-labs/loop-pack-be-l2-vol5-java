@@ -3,12 +3,14 @@ package com.loopers.interfaces.api.like;
 import com.loopers.domain.common.Money;
 import com.loopers.domain.like.Like;
 import com.loopers.domain.like.LikeRepository;
+import com.loopers.domain.like.LikeService;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.domain.product.Stock;
 import com.loopers.domain.user.User;
 import com.loopers.domain.user.UserRepository;
 import com.loopers.interfaces.api.ApiResponse;
+import com.loopers.support.fixture.ExposedProducts;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -37,6 +39,9 @@ class LikeApiE2ETest {
     private static final String USER_ID_HEADER = "X-USER-ID";
 
     @Autowired
+    private ExposedProducts exposedProducts;
+
+    @Autowired
     private TestRestTemplate testRestTemplate;
 
     @Autowired
@@ -47,6 +52,9 @@ class LikeApiE2ETest {
 
     @Autowired
     private LikeRepository likeRepository;
+
+    @Autowired
+    private LikeService likeService;
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
@@ -61,7 +69,7 @@ class LikeApiE2ETest {
     }
 
     private Product saveProduct(String name) {
-        return productRepository.save(Product.create(1L, name, new Money(89_000), new Stock(10)));
+        return exposedProducts.save(Product.create(1L, name, new Money(89_000), new Stock(10)));
     }
 
     private Product saveDeletedProduct(String name) {
@@ -130,7 +138,7 @@ class LikeApiE2ETest {
             assertSuccess(call(HttpMethod.POST, likesUrl(product.getId()), userId));
             assertSuccess(call(HttpMethod.POST, likesUrl(product.getId()), userId));
 
-            assertThat(likeRepository.countByProductId(product.getId())).isEqualTo(1);
+            assertThat(likeService.count(product.getId())).isEqualTo(1);
         }
 
         @DisplayName("없거나 삭제된 상품이면 404 NOT_FOUND 이고, 저장하지 않는다.")

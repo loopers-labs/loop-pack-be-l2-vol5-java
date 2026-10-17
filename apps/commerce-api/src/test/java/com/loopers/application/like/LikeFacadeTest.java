@@ -3,6 +3,7 @@ package com.loopers.application.like;
 import com.loopers.application.product.ProductInfo;
 import com.loopers.domain.common.Money;
 import com.loopers.domain.like.LikeRepository;
+import com.loopers.domain.like.LikeService;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.domain.product.Stock;
@@ -10,6 +11,7 @@ import com.loopers.domain.user.User;
 import com.loopers.domain.user.UserRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
+import com.loopers.support.fixture.ExposedProducts;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -28,10 +30,16 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class LikeFacadeTest {
 
     @Autowired
+    private ExposedProducts exposedProducts;
+
+    @Autowired
     private LikeFacade likeFacade;
 
     @Autowired
     private LikeRepository likeRepository;
+
+    @Autowired
+    private LikeService likeService;
 
     @Autowired
     private UserRepository userRepository;
@@ -52,7 +60,7 @@ class LikeFacadeTest {
     }
 
     private Product saveProduct(String name) {
-        return productRepository.save(Product.create(1L, name, new Money(89_000), new Stock(10)));
+        return exposedProducts.save(Product.create(1L, name, new Money(89_000), new Stock(10)));
     }
 
     private Product saveDeletedProduct(String name) {
@@ -94,7 +102,7 @@ class LikeFacadeTest {
             likeFacade.like(user.getId(), product.getId());
 
             // assert
-            assertThat(likeRepository.countByProductId(product.getId())).isEqualTo(1);
+            assertThat(likeService.count(product.getId())).isEqualTo(1);
         }
 
         @DisplayName("없거나 삭제된 상품이면 NOT_FOUND 로 거절하고, 저장하지 않는다.")

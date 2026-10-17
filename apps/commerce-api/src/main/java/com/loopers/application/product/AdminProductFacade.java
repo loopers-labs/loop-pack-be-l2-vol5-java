@@ -2,6 +2,7 @@ package com.loopers.application.product;
 
 import com.loopers.domain.brand.BrandService;
 import com.loopers.domain.common.Money;
+import com.loopers.domain.like.LikeService;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductService;
 import com.loopers.domain.product.Stock;
@@ -10,6 +11,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 
 /**
  * 관리자용 상품 유스케이스.
@@ -20,6 +23,7 @@ public class AdminProductFacade {
 
     private final BrandService brandService;
     private final ProductService productService;
+    private final LikeService likeService;
 
     @Transactional
     public ProductInfo create(Long brandId, String name, long price, int stock) {
@@ -27,6 +31,8 @@ public class AdminProductFacade {
         // 공유 잠금으로 읽어 브랜드 삭제(배타 잠금)와 차례로 처리한다. 등록끼리는 서로 기다리지 않는다 (D-27).
         brandService.getForShare(brandId);
         Product product = productService.create(brandId, name, new Money(price), new Stock(stock));
+        // 좋아요 수 집계 행이 있어야 브랜드 없는 좋아요순 목록에 나온다 (D-33).
+        likeService.createCount(product.getId());
         return ProductInfo.from(product);
     }
 
@@ -48,6 +54,7 @@ public class AdminProductFacade {
     @Transactional
     public void delete(Long productId) {
         productService.getForUpdate(productId).delete();
+        likeService.removeCounts(List.of(productId));
     }
 
     @Transactional(readOnly = true)

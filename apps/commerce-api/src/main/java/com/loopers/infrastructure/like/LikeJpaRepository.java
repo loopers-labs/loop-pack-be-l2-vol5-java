@@ -8,16 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Collection;
-import java.util.List;
-
 public interface LikeJpaRepository extends JpaRepository<Like, LikeId> {
-
-    long countByIdProductId(Long productId);
-
-    // 결과 행은 [상품 id, 좋아요 수]이다.
-    @Query("select l.id.productId, count(l) from Like l where l.id.productId in :productIds group by l.id.productId")
-    List<Object[]> countGroupByProductId(@Param("productIds") Collection<Long> productIds);
 
     // 삭제된 행 수를 돌려받으려고 JPQL 로 지운다. 변경 쿼리는 트랜잭션이 필요하며 Facade 의 트랜잭션에 참여한다.
     @Transactional

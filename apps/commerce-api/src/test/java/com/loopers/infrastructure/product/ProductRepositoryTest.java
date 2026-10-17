@@ -1,12 +1,12 @@
 package com.loopers.infrastructure.product;
 
 import com.loopers.domain.common.Money;
-import com.loopers.domain.like.Like;
-import com.loopers.domain.like.LikeRepository;
+import com.loopers.domain.like.LikeService;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductSort;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.domain.product.Stock;
+import com.loopers.support.fixture.ExposedProducts;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -25,16 +25,21 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import java.util.ArrayList;
 import java.util.List;
 
 @SpringBootTest
 class ProductRepositoryTest {
 
     @Autowired
-    private ProductRepository productRepository;
+    private ExposedProducts exposedProducts;
 
     @Autowired
-    private LikeRepository likeRepository;
+    private ProductRepository productRepository;
+
+    // 좋아요 수 집계도 함께 바뀌어야 해서 관계는 LikeService 로 만든다.
+    @Autowired
+    private LikeService likeService;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -195,7 +200,7 @@ class ProductRepositoryTest {
     @Nested
     class FindAllActiveLikedBy {
         private void like(Long userId, Product product) {
-            likeRepository.save(Like.create(userId, product.getId()));
+            likeService.like(userId, product.getId());
         }
 
         @DisplayName("내가 좋아요한 상품만, 최근에 좋아요한 순으로 반환한다.")
@@ -271,11 +276,11 @@ class ProductRepositoryTest {
     @Nested
     class FindAllActiveBySort {
         private Product saveWithPrice(Long brandId, String name, long price) {
-            return productRepository.save(Product.create(brandId, name, new Money(price), new Stock(1)));
+            return exposedProducts.save(Product.create(brandId, name, new Money(price), new Stock(1)));
         }
 
         private void like(Long userId, Product product) {
-            likeRepository.save(Like.create(userId, product.getId()));
+            likeService.like(userId, product.getId());
         }
 
         private PageRequest firstPage() {
@@ -415,21 +420,108 @@ class ProductRepositoryTest {
         }
     }
 
+    @DisplayName("좋아요 수 집계(product_like_counts)는,")
+    @Nested
+    class LikeCountRows {
+        // 상품 생성·삭제 유스케이스처럼 좋아요 수 집계 행도 함께 만들고 지운다(행의 생성·삭제 검증은 Admin Facade 테스트).
+        private Product saveWithPrice(Long brandId, String name, long price) {
+            return exposedProducts.save(Product.create(brandId, name, new Money(price), new Stock(1)));
+        }
+
+        private void like(Long userId, Product product) {
+            likeService.like(userId, product.getId());
+        }
+
+        private void delete(Product product) {
+            product.delete();
+            productRepository.save(product);
+            likeService.removeCounts(List.of(product.getId()));
+        }
+
+        @DisplayName("삭제된 상품의 행이 지워지면, 그 상품이 위에 있었어도 페이지는 크기를 채운다.")
+        @Test
+        void removesRow_andFillsPage_afterDelete() {
+            // arrange: 좋아요 5·4·3·2·1개. 가장 많은 상품을 삭제한다.
+            List<Product> products = new ArrayList<>();
+            for (int i = 1; i <= 5; i++) {
+                products.add(saveWithPrice(1L, "상품" + i, 1_000));
+            }
+            for (int i = 0; i < 5; i++) {
+                for (long userId = 1; userId <= 5 - i; userId++) {
+                    like(userId, products.get(i));
+                }
+            }
+            Product mostLiked = products.get(0);
+            delete(mostLiked);
+
+            // act
+            Page<Product> page = productRepository.findAllActive(null, ProductSort.LIKES_DESC, PageRequest.of(0, 3));
+
+            // assert
+            assertThat(page.getContent()).extracting(Product::getId)
+                .containsExactly(products.get(1).getId(), products.get(2).getId(), products.get(3).getId());
+            assertThat(page.getTotalElements()).isEqualTo(4);
+            assertThat(page.getTotalPages()).isEqualTo(2);
+        }
+
+        @DisplayName("삭제 상품의 행이 경쟁 등으로 남아 있어도 목록에는 나오지 않는다.")
+        @Test
+        void skipsStaleRowOfDeletedProduct() {
+            // arrange: 삭제된 상품에 집계 행이 잘못 남은 상태를 만든다.
+            Product active = saveWithPrice(1L, "판매 중", 1_000);
+            Product deleted = saveWithPrice(1L, "삭제됨", 1_000);
+            delete(deleted);
+            jdbcTemplate.update("insert into product_like_counts (product_id, like_count) values (?, 999)", deleted.getId());
+
+            // act
+            Page<Product> page = productRepository.findAllActive(null, ProductSort.LIKES_DESC, PageRequest.of(0, 10));
+
+            // assert
+            assertThat(page.getContent()).extracting(Product::getId).containsExactly(active.getId());
+            assertThat(page.getTotalElements()).isEqualTo(1);
+        }
+
+        @DisplayName("브랜드를 지정한 좋아요순도 집계로 정렬하고, 좋아요가 없는 상품도 포함하며 다른 브랜드는 제외한다.")
+        @Test
+        void ordersByCount_whenBrandIsGiven() {
+            // arrange
+            Product none = saveWithPrice(1L, "없음", 1_000);
+            Product few = saveWithPrice(1L, "조금", 1_000);
+            Product many = saveWithPrice(1L, "많이", 1_000);
+            Product otherBrand = saveWithPrice(2L, "다른 브랜드", 1_000);
+            like(1L, few);
+            like(1L, many);
+            like(2L, many);
+            like(1L, otherBrand);
+            like(2L, otherBrand);
+            like(3L, otherBrand);
+
+            // act
+            Page<Product> page = productRepository.findAllActive(1L, ProductSort.LIKES_DESC, PageRequest.of(0, 10));
+
+            // assert
+            assertThat(page.getContent()).extracting(Product::getId)
+                .containsExactly(many.getId(), few.getId(), none.getId());
+            assertThat(page.getTotalElements()).isEqualTo(3);
+        }
+    }
+
     @DisplayName("상품 테이블 스키마는,")
     @Nested
     class Schema {
-        @DisplayName("브랜드별 상품 조회(목록 필터, 브랜드 삭제 확인)를 위한 brand_id 인덱스를 가진다.")
+        @DisplayName("브랜드별 상품 조회(목록 필터, 브랜드 삭제 확인)를 위해 brand_id 로 시작하는 (brand_id, deleted_at, price, id DESC) 인덱스를 가진다.")
         @Test
-        void hasBrandIdIndex() {
-            // act
-            Integer count = jdbcTemplate.queryForObject(
-                "select count(*) from information_schema.statistics "
-                    + "where table_schema = database() and table_name = 'products' and index_name = 'idx_products_brand_id'",
-                Integer.class
+        void hasBrandPriceIndexWithDescendingId() {
+            // act: 컬럼을 인덱스 안의 순서대로, 정렬 방향(A 오름차순, D 내림차순)과 함께 읽는다.
+            List<String> columns = jdbcTemplate.queryForList(
+                "select concat(column_name, ':', collation) from information_schema.statistics "
+                    + "where table_schema = database() and table_name = 'products' "
+                    + "and index_name = 'idx_products_brand_price_id' order by seq_in_index",
+                String.class
             );
 
-            // assert
-            assertThat(count).isPositive();
+            // assert: price asc, id desc 정렬을 인덱스만으로 얻으려면 id 가 내림차순이어야 한다.
+            assertThat(columns).containsExactly("brand_id:A", "deleted_at:A", "price:A", "id:D");
         }
     }
 

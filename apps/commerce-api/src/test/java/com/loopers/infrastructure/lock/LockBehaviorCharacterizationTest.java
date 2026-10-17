@@ -109,19 +109,22 @@ class LockBehaviorCharacterizationTest {
         void usesBrandIndex() {
             Map<String, Object> plan = jdbcTemplate.queryForList("explain " + QUERY).get(0);
 
-            assertThat(plan).containsEntry("key", "idx_products_brand_id").containsEntry("type", "ref");
+            assertThat(plan).containsEntry("key", "idx_products_brand_price_id").containsEntry("type", "ref");
         }
 
-        @DisplayName("같은 브랜드의 상품 수정·등록과 직전 브랜드의 등록은 막고, 다른 브랜드와 일반 조회는 막지 않는다.")
+        @DisplayName("같은 브랜드의 상품 수정·등록과 다음 브랜드의 등록은 막고, 직전·먼 브랜드와 일반 조회는 막지 않는다.")
         @Test
-        void locksOwnBrandRangeAndPreviousNeighborGap() {
+        void locksOwnBrandRangeAndNextNeighborGap() {
             try (HeldRowLock lock = hold(QUERY)) {
                 assertThat(isBlocked("update products set stock = 9 where id = 81")).as("같은 브랜드 상품 수정").isTrue();
                 assertThat(isBlocked(insertForBrand(5))).as("같은 브랜드 상품 등록").isTrue();
-                assertThat(isBlocked(insertForBrand(4))).as("직전 브랜드 상품 등록(갭)").isTrue();
+                // 인덱스가 (brand_id, deleted_at, price, id DESC)라 새 행(가장 큰 id)은 같은 브랜드·가격 행들 맨 앞에 놓인다.
+                // 그래서 삭제가 잡은 브랜드 범위 바로 뒤의 갭(다음 브랜드 첫 레코드 앞)에 걸리고, 직전 브랜드의 등록은 걸리지 않는다.
+                // 이전 (brand_id) 인덱스에서는 반대로 직전 브랜드 등록이 막혔다. 영향의 크기(이웃 한쪽, 삭제 한 건 동안)는 같다.
+                assertThat(isBlocked(insertForBrand(6))).as("다음 브랜드 상품 등록(갭)").isTrue();
 
                 assertThat(isBlocked("update products set stock = 9 where id = 101")).as("다른 브랜드 상품 수정").isFalse();
-                assertThat(isBlocked(insertForBrand(6))).as("다음 브랜드 상품 등록").isFalse();
+                assertThat(isBlocked(insertForBrand(4))).as("직전 브랜드 상품 등록").isFalse();
                 assertThat(isBlocked(insertForBrand(1))).as("먼 브랜드 상품 등록").isFalse();
                 assertThat(isBlocked("select count(*) from products where brand_id = 5")).as("일반 조회").isFalse();
             }

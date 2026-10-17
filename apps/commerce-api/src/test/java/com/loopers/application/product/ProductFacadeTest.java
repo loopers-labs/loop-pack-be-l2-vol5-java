@@ -11,6 +11,7 @@ import com.loopers.domain.user.User;
 import com.loopers.domain.user.UserRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
+import com.loopers.support.fixture.ExposedProducts;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -29,6 +30,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @SpringBootTest
 class ProductFacadeTest {
+
+    @Autowired
+    private ExposedProducts exposedProducts;
 
     @Autowired
     private ProductFacade productFacade;
@@ -65,7 +69,7 @@ class ProductFacadeTest {
     }
 
     private Product saveProduct(Brand brand, String name, long price) {
-        return productRepository.save(Product.create(brand.getId(), name, new Money(price), new Stock(10)));
+        return exposedProducts.save(Product.create(brand.getId(), name, new Money(price), new Stock(10)));
     }
 
     private Product saveDeletedProduct(Brand brand, String name) {

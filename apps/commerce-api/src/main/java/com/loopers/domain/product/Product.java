@@ -22,7 +22,10 @@ import lombok.Getter;
 @Getter
 @Entity
 // 브랜드별 조회(고객 목록의 브랜드 필터, 브랜드 삭제 시 연결된 상품 확인)에 쓰는 보조 인덱스.
-@Table(name = "products", indexes = @Index(name = "idx_products_brand_id", columnList = "brand_id"))
+// 고객 목록 price_asc 의 where(brand_id 동등, deleted_at is null)와 order by(price asc, id desc)를 인덱스 순서로 처리하고
+// count 를 커버링으로 만든다. 정렬이 price 오름차순에 id 내림차순이라 id 는 DESC 로 둔다(MySQL 8 내림차순 인덱스).
+@Table(name = "products", indexes = @Index(
+    name = "idx_products_brand_price_id", columnList = "brand_id, deleted_at, price, id DESC"))
 public class Product extends BaseEntity {
 
     private static final int NAME_MAX_LENGTH = 100;
