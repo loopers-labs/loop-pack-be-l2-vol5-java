@@ -8,6 +8,8 @@ import com.loopers.domain.productlike.ProductLikeRepository;
 import com.loopers.domain.productlike.ProductStatModel;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.product.ProductRepository;
+import com.loopers.domain.product.ProductStockLedgerModel;
+import com.loopers.domain.product.ProductStockModel;
 import com.loopers.domain.point.PointModel;
 import com.loopers.domain.point.PointRepository;
 import com.loopers.domain.order.OrderModel;
@@ -121,10 +123,12 @@ public class Fixtures {
         return brand;
     }
 
-    /** 상품 + 좋아요 수 0 인 행 (DR-36). */
+    /** 상품 + 현재 재고 행과 초기 재고 ADJUSTMENT (DR-38) + 좋아요 수 0 인 행 (DR-36). */
     @Transactional
     public ProductModel product(Long brandId, String name, long price, int stock) {
         ProductModel product = productRepository.save(new ProductModel(brandId, name, price, stock));
+        ProductStockModel productStock = productRepository.saveStock(new ProductStockModel(product.getId()));
+        productStock.adjustTo(stock).ifPresent(productRepository::saveLedger);
         productLikeRepository.saveStat(new ProductStatModel(product.getId(), brandId));
         return product;
     }
@@ -147,6 +151,26 @@ public class Fixtures {
 
     public ProductStatModel reloadStat(Long productId) {
         return productLikeRepository.findStat(productId).orElseThrow();
+    }
+
+    /** TB-10 현재 재고 (DR-38). */
+    public int stockOf(Long productId) {
+        return productRepository.findStock(productId).orElseThrow().getAvailable();
+    }
+
+    /** TB-03 옛 stock 컬럼 (DR-38). 엔티티에 getter 가 없어 직접 읽는다. */
+    public int legacyStockOf(Long productId) {
+        return entityManager.createQuery("select p.stock from ProductModel p where p.id = :id", Integer.class)
+            .setParameter("id", productId)
+            .getSingleResult();
+    }
+
+    /** TB-11 원장, 쌓인 순서대로 (DR-38). */
+    public java.util.List<ProductStockLedgerModel> ledgerOf(Long productId) {
+        return entityManager.createQuery(
+                "select l from ProductStockLedgerModel l where l.productId = :productId order by l.id", ProductStockLedgerModel.class)
+            .setParameter("productId", productId)
+            .getResultList();
     }
 
     public ProductModel reloadProduct(Long productId) {

@@ -5,6 +5,8 @@ import com.loopers.application.product.ProductFacade;
 import com.loopers.application.point.PointFacade;
 import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.product.ProductModel;
+import com.loopers.domain.product.ProductStockLedgerModel;
+import com.loopers.domain.product.StockLedgerType;
 import com.loopers.domain.order.OrderModel;
 import com.loopers.domain.order.OrderStatus;
 import com.loopers.domain.user.UserModel;
@@ -24,6 +26,7 @@ import java.util.List;
 
 import static com.loopers.support.ErrorAssertions.assertThrowsErrorType;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 @SpringBootTest
 class OrderFacadeIntegrationTest {
@@ -66,7 +69,7 @@ class OrderFacadeIntegrationTest {
 
     /** 실패 후 재고·잔액·상태가 전부 그대로인지 (ASM-14). */
     private void assertNothingChanged(Long orderId, int expectedStock, long expectedBalance) {
-        assertThat(fixtures.reloadProduct(product.getId()).getStock()).isEqualTo(expectedStock);
+        assertThat(fixtures.stockOf(product.getId())).isEqualTo(expectedStock);
         assertThat(fixtures.balanceOf(user.getId())).isEqualTo(expectedBalance);
         OrderModel order = fixtures.reloadOrder(orderId);
         assertThat(order.getStatus()).isEqualTo(OrderStatus.DRAFT);
@@ -87,7 +90,7 @@ class OrderFacadeIntegrationTest {
             assertThat(info.items()).hasSize(1);
             assertThat(info.items().get(0).unitPrice()).isEqualTo(1_000L);
             assertThat(info.items().get(0).lineAmount()).isEqualTo(2_000L);
-            assertThat(fixtures.reloadProduct(product.getId()).getStock()).isEqualTo(5);
+            assertThat(fixtures.stockOf(product.getId())).isEqualTo(5);
             assertThat(fixtures.balanceOf(user.getId())).isEqualTo(10_000L);
         }
 
@@ -179,8 +182,28 @@ class OrderFacadeIntegrationTest {
             assertThat(info.status()).isEqualTo("CONFIRMED");
             assertThat(info.paidAmount()).isEqualTo(2_000L);
             assertThat(info.confirmedAt()).isNotNull();
-            assertThat(fixtures.reloadProduct(product.getId()).getStock()).isEqualTo(3);
+            assertThat(fixtures.stockOf(product.getId())).isEqualTo(3);
             assertThat(fixtures.balanceOf(user.getId())).isEqualTo(8_000L);
+        }
+
+        @DisplayName("[FR-ORDER-02][DR-38] 품목마다 주문 ID 를 가진 RESERVE 행(음수 수량)이 쌓이고, 옛 stock 컬럼도 같은 값이 된다.")
+        @Test
+        void recordsReservePerItem_andSyncsLegacyStock() {
+            ProductModel other = fixtures.product(brand.getId(), "다른 상품", 100L, 3);
+            OrderInfo order = orderFacade.createOrder(user.getId(), List.of(item(product.getId(), 2), item(other.getId(), 3)));
+
+            orderFacade.confirmOrder(user.getId(), order.id());
+
+            assertThat(fixtures.ledgerOf(product.getId()))
+                .extracting(ProductStockLedgerModel::getType, ProductStockLedgerModel::getQuantity, ProductStockLedgerModel::getOrderId)
+                .containsExactly(tuple(StockLedgerType.ADJUSTMENT, 5, null), tuple(StockLedgerType.RESERVE, -2, order.id()));
+            assertThat(fixtures.ledgerOf(other.getId()))
+                .extracting(ProductStockLedgerModel::getType, ProductStockLedgerModel::getQuantity, ProductStockLedgerModel::getOrderId)
+                .containsExactly(tuple(StockLedgerType.ADJUSTMENT, 3, null), tuple(StockLedgerType.RESERVE, -3, order.id()));
+            assertThat(fixtures.stockOf(product.getId())).isEqualTo(3);
+            assertThat(fixtures.legacyStockOf(product.getId())).isEqualTo(3);
+            assertThat(fixtures.stockOf(other.getId())).isZero();
+            assertThat(fixtures.legacyStockOf(other.getId())).isZero();
         }
 
         @DisplayName("[FR-ORDER-02][ASM-10] 확정 시 가격을 다시 조회하지 않는다. 결제액 = 생성 시 저장된 합계.")
@@ -203,7 +226,7 @@ class OrderFacadeIntegrationTest {
 
             orderFacade.confirmOrder(exact.getId(), order.getId());
 
-            assertThat(fixtures.reloadProduct(product.getId()).getStock()).isZero();
+            assertThat(fixtures.stockOf(product.getId())).isZero();
             assertThat(fixtures.balanceOf(exact.getId())).isZero();
         }
 
@@ -232,7 +255,7 @@ class OrderFacadeIntegrationTest {
 
             assertThrowsErrorType(() -> orderFacade.confirmOrder(user.getId(), order.getId()), ErrorType.ORDER_NOT_DRAFT);
 
-            assertThat(fixtures.reloadProduct(product.getId()).getStock()).isEqualTo(4);
+            assertThat(fixtures.stockOf(product.getId())).isEqualTo(4);
             assertThat(fixtures.balanceOf(user.getId())).isEqualTo(9_000L);
             assertThat(fixtures.reloadOrder(order.getId()).getStatus()).isEqualTo(OrderStatus.CONFIRMED);
         }
@@ -268,7 +291,9 @@ class OrderFacadeIntegrationTest {
             assertThrowsErrorType(() -> orderFacade.confirmOrder(user.getId(), order.getId()), ErrorType.INSUFFICIENT_STOCK);
 
             assertNothingChanged(order.getId(), 5, 10_000L);
-            assertThat(fixtures.reloadProduct(scarce.getId()).getStock()).isEqualTo(1);
+            assertThat(fixtures.stockOf(scarce.getId())).isEqualTo(1);
+            assertThat(fixtures.ledgerOf(product.getId())).extracting(ProductStockLedgerModel::getType).containsExactly(StockLedgerType.ADJUSTMENT);
+            assertThat(fixtures.legacyStockOf(product.getId())).isEqualTo(5);
         }
 
         @DisplayName("[FR-ORDER-02 INSUFFICIENT_POINT][ASM-12][ASM-14] 잔액 부족이면 거절, 이미 차감한 재고도 롤백, DRAFT 유지.")
@@ -279,7 +304,8 @@ class OrderFacadeIntegrationTest {
 
             assertThrowsErrorType(() -> orderFacade.confirmOrder(poor.getId(), order.getId()), ErrorType.INSUFFICIENT_POINT);
 
-            assertThat(fixtures.reloadProduct(product.getId()).getStock()).isEqualTo(5);
+            assertThat(fixtures.stockOf(product.getId())).isEqualTo(5);
+            assertThat(fixtures.ledgerOf(product.getId())).extracting(ProductStockLedgerModel::getType).containsExactly(StockLedgerType.ADJUSTMENT);
             assertThat(fixtures.balanceOf(poor.getId())).isEqualTo(1_999L);
             assertThat(fixtures.reloadOrder(order.getId()).getStatus()).isEqualTo(OrderStatus.DRAFT);
         }
@@ -296,7 +322,7 @@ class OrderFacadeIntegrationTest {
 
             assertThat(info.status()).isEqualTo("CONFIRMED");
             assertThat(fixtures.balanceOf(poor.getId())).isZero();
-            assertThat(fixtures.reloadProduct(product.getId()).getStock()).isEqualTo(4);
+            assertThat(fixtures.stockOf(product.getId())).isEqualTo(4);
         }
     }
 
@@ -311,7 +337,7 @@ class OrderFacadeIntegrationTest {
             OrderInfo order = orderFacade.createOrder(user.getId(), List.of(item(product.getId(), 2)));
             orderFacade.confirmOrder(user.getId(), order.id());
 
-            assertThat(fixtures.reloadProduct(product.getId()).getStock()).isEqualTo(3);
+            assertThat(fixtures.stockOf(product.getId())).isEqualTo(3);
             assertThat(fixtures.reloadProduct(product.getId()).getRevision()).isZero();
             assertThat(fixtures.reloadBrand(brand.getId()).getRevision()).isZero();
             assertThat(fixtures.listRevision()).isEqualTo(listBefore);

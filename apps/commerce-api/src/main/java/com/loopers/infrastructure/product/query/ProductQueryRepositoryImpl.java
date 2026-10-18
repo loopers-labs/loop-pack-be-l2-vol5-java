@@ -28,12 +28,14 @@ import java.util.stream.Collectors;
 import static com.loopers.domain.brand.QBrandModel.brandModel;
 import static com.loopers.domain.product.QCatalogRevisionModel.catalogRevisionModel;
 import static com.loopers.domain.product.QProductModel.productModel;
+import static com.loopers.domain.product.QProductStockModel.productStockModel;
 import static com.loopers.domain.productlike.QProductStatModel.productStatModel;
 
 /**
  * TB-03 에 TB-02·TB-08 을 조인해 한 쿼리로 읽는다. 셋 다 BC-02 (DR-02, DR-31).
  * 상품의 브랜드는 소프트 삭제만 되므로 brand 는 inner join 이고, 삭제된 브랜드도 그대로 실린다.
  * 좋아요 수는 TB-04 를 세지 않고 TB-08 에서 읽는다. 상품마다 TB-08 행이 하나 있으므로 inner join 이다 (DR-36).
+ * 관리자 조회의 재고는 TB-10 에서 읽는다. 상품마다 TB-10 행이 하나 있으므로 inner join 이다 (DR-38).
  */
 @RequiredArgsConstructor
 @Component
@@ -104,7 +106,7 @@ public class ProductQueryRepositoryImpl implements ProductQueryRepository {
 
     @Override
     public PageResult<ProductView.Admin> findPage(PageQuery query) {
-        List<ProductView.Admin> items = selectJoined(admin())
+        List<ProductView.Admin> items = selectAdmin()
             .orderBy(productModel.createdAt.desc(), productModel.id.desc())
             .offset(query.offset())
             .limit(query.size())
@@ -117,7 +119,7 @@ public class ProductQueryRepositoryImpl implements ProductQueryRepository {
 
     @Override
     public Optional<ProductView.Admin> find(Long productId) {
-        return Optional.ofNullable(selectJoined(admin())
+        return Optional.ofNullable(selectAdmin()
             .where(productModel.id.eq(productId))
             .fetchOne());
     }
@@ -179,6 +181,11 @@ public class ProductQueryRepositoryImpl implements ProductQueryRepository {
             .join(productStatModel).on(productStatModel.productId.eq(productModel.id));
     }
 
+    private JPAQuery<ProductView.Admin> selectAdmin() {
+        return selectJoined(admin())
+            .join(productStockModel).on(productStockModel.productId.eq(productModel.id));
+    }
+
     private static Expression<ProductView.Summary> summary() {
         return Projections.constructor(ProductView.Summary.class,
             productModel.id, productModel.name, productModel.price, brandModel.id, brandModel.name, LIKE_COUNT);
@@ -186,7 +193,7 @@ public class ProductQueryRepositoryImpl implements ProductQueryRepository {
 
     private static Expression<ProductView.Admin> admin() {
         return Projections.constructor(ProductView.Admin.class,
-            productModel.id, productModel.name, productModel.price, productModel.stock, brandModel.id, brandModel.name, LIKE_COUNT,
+            productModel.id, productModel.name, productModel.price, productStockModel.available, brandModel.id, brandModel.name, LIKE_COUNT,
             new CaseBuilder().when(productModel.deletedAt.isNotNull()).then(true).otherwise(false));
     }
 }

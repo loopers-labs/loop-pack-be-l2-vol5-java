@@ -4,6 +4,8 @@ import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.order.OrderModel;
 import com.loopers.domain.order.OrderStatus;
 import com.loopers.domain.product.ProductModel;
+import com.loopers.domain.product.ProductStockLedgerModel;
+import com.loopers.domain.product.StockLedgerType;
 import com.loopers.domain.user.UserModel;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
@@ -56,7 +58,7 @@ class OrderConfirmConcurrencyTest {
         databaseCleanUp.truncateAllTables();
     }
 
-    @DisplayName("[OQ-03][INV-03] 재고 3개 상품을 5명이 동시에 1개씩 확정하면 3건만 성공하고 재고는 0.")
+    @DisplayName("[OQ-03][INV-03][DR-38] 재고 3개 상품을 5명이 동시에 1개씩 확정하면 3건만 성공하고 재고는 0. 원장에는 RESERVE 3건, 합 = 현재 재고.")
     @Test
     void concurrentConfirm_sameProduct_doesNotOversell() throws InterruptedException {
         ProductModel product = fixtures.product(brand.getId(), "상품", 1_000L, 3);
@@ -72,8 +74,12 @@ class OrderConfirmConcurrencyTest {
 
         assertThat(results).filteredOn(SUCCESS::equals).hasSize(3);
         assertThat(results).filteredOn(r -> !SUCCESS.equals(r)).containsOnly(ErrorType.INSUFFICIENT_STOCK);
-        assertThat(fixtures.reloadProduct(product.getId()).getStock()).isZero();
+        assertThat(fixtures.stockOf(product.getId())).isZero();
         assertThat(countConfirmed(orderIds)).isEqualTo(3);
+        List<ProductStockLedgerModel> ledger = fixtures.ledgerOf(product.getId());
+        assertThat(ledger).filteredOn(e -> e.getType() == StockLedgerType.RESERVE).hasSize(3);
+        assertThat(ledger.stream().mapToInt(ProductStockLedgerModel::getQuantity).sum()).isZero();
+        assertThat(fixtures.legacyStockOf(product.getId())).isZero();
     }
 
     @DisplayName("[OQ-03][INV-01] 잔액 3,000원 사용자가 1,000원 주문 5건을 동시에 확정하면 3건만 성공하고 잔액은 0.")

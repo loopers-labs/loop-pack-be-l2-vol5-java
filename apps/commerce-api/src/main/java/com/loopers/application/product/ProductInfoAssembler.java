@@ -4,16 +4,18 @@ import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.brand.BrandService;
 import com.loopers.domain.productlike.ProductLikeService;
 import com.loopers.domain.product.ProductModel;
+import com.loopers.domain.product.ProductService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
 
-/** 상품 + 브랜드 정보 + 좋아요 수 조합 (같은 BC 안). 명령 응답 FR-ADMIN-PRODUCT-02/04 용. 조회는 ProductReader (DR-31). */
+/** 상품 + 재고 + 브랜드 정보 + 좋아요 수 조합 (같은 BC 안). 명령 응답 FR-ADMIN-PRODUCT-02/04 용. 조회는 ProductReader (DR-31). */
 @RequiredArgsConstructor
 @Component
 public class ProductInfoAssembler {
+    private final ProductService productService;
     private final BrandService brandService;
     private final ProductLikeService productLikeService;
 
@@ -24,11 +26,13 @@ public class ProductInfoAssembler {
     public List<ProductInfo> assemble(List<ProductModel> products) {
         List<Long> productIds = products.stream().map(ProductModel::getId).toList();
         List<Long> brandIds = products.stream().map(ProductModel::getBrandId).distinct().toList();
+        Map<Long, Integer> stocks = productService.stocksOf(productIds);
         Map<Long, BrandModel> brands = brandService.getByIds(brandIds);
         Map<Long, Long> likeCounts = productLikeService.countOf(productIds);
         return products.stream()
             .map(product -> ProductInfo.of(
                 product,
+                stocks.get(product.getId()),
                 brands.get(product.getBrandId()),
                 likeCounts.getOrDefault(product.getId(), 0L)))
             .toList();

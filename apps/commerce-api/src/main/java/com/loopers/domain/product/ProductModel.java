@@ -9,7 +9,7 @@ import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 
 /**
- * AG-03 상품 (TB-03 product). 가격·재고를 포함 개념으로 가진다 (DR-03).
+ * AG-03 상품 (TB-03 product). 가격·재고를 포함 개념으로 가진다 (DR-03). 재고는 TB-10·TB-11 에 따로 저장한다 (DR-38).
  * 상태 ST-02 는 deletedAt 의 NULL 여부 (DR-16). 전이: (없음) → ACTIVE, ACTIVE → DELETED (delete()).
  * 인덱스 IX-03 (latest), IX-04 (price_asc), IX-08·09 (brandId 필터 + latest·price_asc, DR-35).
  */
@@ -33,7 +33,12 @@ public class ProductModel extends BaseEntity {
     @Column(name = "price", nullable = false)
     private Long price;
 
-    @Column(name = "stock", nullable = false)
+    /**
+     * 옛 재고 컬럼. 진실은 TB-11 원장, 현재 값은 TB-10 이며 컬럼을 지울 때까지만 사본으로 둔다 (DR-38).
+     * 변경 감지는 행 전체를 쓰므로 updatable = false 로 막고, 생성 뒤 값은 ProductRepository.syncLegacyStock 의 단건 갱신으로만 맞춘다.
+     * 읽는 곳이 없도록 getter 를 두지 않는다.
+     */
+    @Column(name = "stock", nullable = false, updatable = false)
     private Integer stock;
 
     /**
@@ -74,7 +79,7 @@ public class ProductModel extends BaseEntity {
         return price;
     }
 
-    /** INV-03 재고 ≥ 0 (ASM-17). ER-21 INVALID_STOCK. */
+    /** INV-03 재고 ≥ 0 (ASM-17). ER-21 INVALID_STOCK. 옛 컬럼이 NOT NULL 이라 INSERT 전에 막는다. 검증의 주인은 ProductStockModel (DR-38). */
     private static Integer validateStock(Integer stock) {
         if (stock == null || stock < 0) {
             throw new CoreException(ErrorType.INVALID_STOCK, "재고는 0 이상이어야 합니다. [stock = " + stock + "]");
@@ -89,23 +94,6 @@ public class ProductModel extends BaseEntity {
         this.name = validName;
         this.price = validPrice;
         this.revision++;
-    }
-
-    /** FR-ADMIN-PRODUCT-06: 증감이 아니라 최종 수량 설정. */
-    public void changeStock(Integer stock) {
-        this.stock = validateStock(stock);
-    }
-
-    /** FR-ORDER-02: 재고 −= 수량. INV-03 위반이면 ER-16 INSUFFICIENT_STOCK (message 에 부족한 productId). */
-    public void deductStock(int quantity) {
-        if (quantity <= 0) {
-            throw new CoreException(ErrorType.INVALID_QUANTITY, "차감 수량은 양수여야 합니다. [quantity = " + quantity + "]");
-        }
-        if (stock < quantity) {
-            throw new CoreException(ErrorType.INSUFFICIENT_STOCK,
-                "재고가 부족합니다. [productId = " + getId() + ", stock = " + stock + ", quantity = " + quantity + "]");
-        }
-        this.stock -= quantity;
     }
 
     /** ST-02 ACTIVE → DELETED. 처음 삭제될 때만 revision 을 올린다 (DR-37). */
@@ -131,10 +119,6 @@ public class ProductModel extends BaseEntity {
 
     public Long getPrice() {
         return price;
-    }
-
-    public Integer getStock() {
-        return stock;
     }
 
     public long getRevision() {

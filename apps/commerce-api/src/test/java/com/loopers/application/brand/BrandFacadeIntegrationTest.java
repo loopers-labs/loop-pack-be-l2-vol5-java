@@ -318,7 +318,7 @@ class BrandFacadeIntegrationTest {
             assertThrowsErrorType(() -> orderFacade.confirmOrder(buyer.getId(), draftOrderId), ErrorType.PRODUCT_NOT_FOUND);
 
             assertThat(fixtures.reloadOrder(draftOrderId).getStatus()).isEqualTo(OrderStatus.DRAFT);
-            assertThat(fixtures.reloadProduct(product.getId()).getStock()).isEqualTo(8);
+            assertThat(fixtures.stockOf(product.getId())).isEqualTo(8);
             assertThat(fixtures.balanceOf(buyer.getId())).isEqualTo(balance);
         }
 

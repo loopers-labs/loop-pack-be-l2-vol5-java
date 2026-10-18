@@ -43,11 +43,13 @@ public class ProductService {
     }
 
     /**
-     * FR-ORDER-02: getActiveProducts 와 같은 검증을 하되, 상품 행을 비관적 쓰기 락으로 잠그며 읽는다 (DR-34).
-     * 확정 트랜잭션에서 상품을 처음 읽는 조회여야 한다. 락 없이 먼저 읽힌 엔티티는 1차 캐시의 옛 값이 그대로 쓰인다.
+     * FR-ORDER-02: getActiveProducts 와 같은 검증을 하되, 재고 행(product_id 오름차순, 쓰기 락) → 상품 행(id 오름차순, 읽기 락) 순으로 잠그며 읽는다 (DR-34, DR-38).
+     * 재고 행 락이 확정끼리를 줄 세우고, 상품 행 읽기 락이 확정 중 상품 수정·삭제를 막는다. 확정끼리는 상품 행에서 서로 기다리지 않는다.
+     * 확정 트랜잭션에서 재고·상품을 처음 읽는 조회여야 한다. 락 없이 먼저 읽힌 엔티티는 1차 캐시의 옛 값이 그대로 쓰인다.
      */
-    public List<ProductModel> getActiveProductsForUpdate(Collection<Long> productIds) {
-        return getActiveProducts(productIds, productRepository::findByIdsForUpdate);
+    public List<ProductModel> getActiveProductsForReserve(Collection<Long> productIds) {
+        productRepository.findStocksForUpdate(productIds.stream().filter(Objects::nonNull).distinct().toList());
+        return getActiveProducts(productIds, productRepository::findByIdsForShare);
     }
 
     private List<ProductModel> getActiveProducts(Collection<Long> productIds, Function<List<Long>, List<ProductModel>> loader) {
@@ -66,9 +68,15 @@ public class ProductService {
         }).toList();
     }
 
-    /** 브랜드 존재·ACTIVE 검증(INV-10)은 Facade 가 BrandService 로 같은 트랜잭션에서 한다 (DR-04). */
+    /**
+     * 브랜드 존재·ACTIVE 검증(INV-10)은 Facade 가 BrandService 로 같은 트랜잭션에서 한다 (DR-04).
+     * 현재 재고 행을 0 으로 만들고 초기 재고까지 ADJUSTMENT 로 맞춘다 (DR-38). 초기 재고가 0 이면 원장 행이 없다.
+     */
     public ProductModel create(Long brandId, String name, Long price, Integer stock) {
-        return productRepository.save(new ProductModel(brandId, name, price, stock));
+        ProductModel product = productRepository.save(new ProductModel(brandId, name, price, stock));
+        ProductStockModel productStock = productRepository.saveStock(new ProductStockModel(product.getId()));
+        productStock.adjustTo(stock).ifPresent(productRepository::saveLedger);
+        return product;
     }
 
     public ProductModel update(Long productId, String name, Long price) {
@@ -77,22 +85,39 @@ public class ProductService {
         return product;
     }
 
-    /** ST-02 ACTIVE → DELETED. 좋아요 관계·주문 품목은 건드리지 않는다 (ASM-07, 원문). */
+    /** ST-02 ACTIVE → DELETED. 좋아요 관계·주문 품목은 건드리지 않는다 (ASM-07, 원문). 재고 행·원장은 그대로 둔다 (DR-38). */
     public void delete(Long productId) {
         ProductModel product = getActive(productId);
         product.delete();
     }
 
-    public ProductModel updateStock(Long productId, Integer stock) {
-        ProductModel product = getActive(productId);
-        product.changeStock(stock);
-        return product;
+    /** 현재 재고. 상품마다 행이 있어야 한다 (DR-38). 없으면 IllegalStateException. */
+    private ProductStockModel getStock(Long productId) {
+        return productRepository.findStock(productId)
+            .orElseThrow(() -> new IllegalStateException("[productId = " + productId + "] 재고 행이 없습니다."));
     }
 
-    /** FR-ORDER-02: 품목마다 재고 차감. 상품은 이미 getActiveProductsForUpdate 로 검증·잠금된 것이어야 한다. */
-    public void deductStock(Long productId, int quantity) {
-        ProductModel product = getActive(productId);
-        product.deductStock(quantity);
+    /** 현재 재고 수량. 행이 없는 상품 ID 는 결과에 없다. */
+    public Map<Long, Integer> stocksOf(Collection<Long> productIds) {
+        return productRepository.findStocks(productIds).stream()
+            .collect(Collectors.toMap(ProductStockModel::getProductId, ProductStockModel::getAvailable));
+    }
+
+    /** FR-ADMIN-PRODUCT-06: 최종 수량 설정. 재고 행을 쓰기 락으로 읽어 맞추고, 차이만큼 ADJUSTMENT 를 남긴다 (DR-38). */
+    public ProductStockModel updateStock(Long productId, Integer stock) {
+        getActive(productId);
+        ProductStockModel productStock = productRepository.findStocksForUpdate(List.of(productId)).stream().findFirst()
+            .orElseThrow(() -> new IllegalStateException("[productId = " + productId + "] 재고 행이 없습니다."));
+        productStock.adjustTo(stock).ifPresent(productRepository::saveLedger);
+        productRepository.syncLegacyStock(productId, productStock.getAvailable());
+        return productStock;
+    }
+
+    /** FR-ORDER-02: 품목마다 재고 예약. 재고·상품은 이미 getActiveProductsForReserve 로 검증·잠금된 것이어야 한다. RESERVE 를 남긴다 (DR-38). */
+    public void reserveStock(Long orderId, Long productId, int quantity) {
+        ProductStockModel productStock = getStock(productId);
+        productRepository.saveLedger(productStock.reserve(orderId, quantity));
+        productRepository.syncLegacyStock(productId, productStock.getAvailable());
     }
 
     /**
