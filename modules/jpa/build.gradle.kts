@@ -13,6 +13,8 @@ dependencies {
     annotationProcessor("jakarta.annotation:jakarta.annotation-api")
     // jdbc-mysql
     runtimeOnly("com.mysql:mysql-connector-j")
+    // jdbc-postgresql (local-pg 프로필)
+    runtimeOnly("org.postgresql:postgresql")
 
     testImplementation("org.testcontainers:mysql")
 

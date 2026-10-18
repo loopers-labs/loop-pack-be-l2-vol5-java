@@ -11,12 +11,14 @@ import jakarta.persistence.Table;
 /**
  * AG-03 상품 (TB-03 product). 가격·재고를 포함 개념으로 가진다 (DR-03).
  * 상태 ST-02 는 deletedAt 의 NULL 여부 (DR-16). 전이: (없음) → ACTIVE, ACTIVE → DELETED (delete()).
- * 인덱스 IX-03 (latest), IX-04 (price_asc).
+ * 인덱스 IX-03 (latest), IX-04 (price_asc), IX-08·09 (brandId 필터 + latest·price_asc, DR-35).
  */
 @Entity
 @Table(name = "product", indexes = {
     @Index(name = "ix_product_latest", columnList = "deleted_at, created_at, id"),
-    @Index(name = "ix_product_price", columnList = "deleted_at, price, id")
+    @Index(name = "ix_product_price", columnList = "deleted_at, price, id"),
+    @Index(name = "ix_product_brand_latest", columnList = "brand_id, deleted_at, created_at, id"),
+    @Index(name = "ix_product_brand_price", columnList = "brand_id, deleted_at, price, id")
 })
 public class ProductModel extends BaseEntity {
     public static final int NAME_MAX_LENGTH = 200;
@@ -33,6 +35,13 @@ public class ProductModel extends BaseEntity {
 
     @Column(name = "stock", nullable = false)
     private Integer stock;
+
+    /**
+     * 고객 상세 캐시 키의 revision (DR-37). 고객 조회 결과(이름·가격·삭제)가 바뀔 때만 올린다.
+     * 재고는 고객 조회에 없으므로 올리지 않는다 (DR-22). @Version 을 쓰면 재고 차감마다 올라가 캐시가 깨진다.
+     */
+    @Column(name = "revision", nullable = false)
+    private long revision;
 
     protected ProductModel() {}
 
@@ -79,6 +88,7 @@ public class ProductModel extends BaseEntity {
         Long validPrice = validatePrice(price);
         this.name = validName;
         this.price = validPrice;
+        this.revision++;
     }
 
     /** FR-ADMIN-PRODUCT-06: 증감이 아니라 최종 수량 설정. */
@@ -96,6 +106,15 @@ public class ProductModel extends BaseEntity {
                 "재고가 부족합니다. [productId = " + getId() + ", stock = " + stock + ", quantity = " + quantity + "]");
         }
         this.stock -= quantity;
+    }
+
+    /** ST-02 ACTIVE → DELETED. 처음 삭제될 때만 revision 을 올린다 (DR-37). */
+    @Override
+    public void delete() {
+        if (!isDeleted()) {
+            this.revision++;
+        }
+        super.delete();
     }
 
     public boolean isDeleted() {
@@ -116,5 +135,9 @@ public class ProductModel extends BaseEntity {
 
     public Integer getStock() {
         return stock;
+    }
+
+    public long getRevision() {
+        return revision;
     }
 }

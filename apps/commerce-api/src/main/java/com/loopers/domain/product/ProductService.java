@@ -102,4 +102,12 @@ public class ProductService {
     public void deleteAllOfBrand(Long brandId) {
         productRepository.findActiveByBrandId(brandId).forEach(ProductModel::delete);
     }
+
+    /**
+     * 고객 상품 목록 캐시의 revision 을 올린다 (DR-37). 목록 결과(상품·브랜드 정보·totalCount)를 바꿀 수 있는 쓰기마다,
+     * 그 트랜잭션의 마지막 호출로 부른다. 첫 페이지에 실제로 영향이 있는지는 따지지 않는다.
+     */
+    public void bumpListRevision() {
+        productRepository.increaseListRevision();
+    }
 }

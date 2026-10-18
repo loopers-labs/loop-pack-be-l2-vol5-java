@@ -1,0 +1,28 @@
+Limit  (cost=2453641.98..2453642.10 rows=50 width=59) (actual time=7805.347..7805.356 rows=50 loops=1)
+  ->  Sort  (cost=2453629.60..2471451.62 rows=7128808 width=59) (actual time=7729.769..7729.906 rows=5000 loops=1)
+        Sort Key: (count(plm1_0.id)) DESC, pm1_0.id DESC
+        Sort Method: top-N heapsort  Memory: 1341kB
+        ->  GroupAggregate  (cost=1837425.69..1980001.85 rows=7128808 width=59) (actual time=5897.738..7411.276 rows=4749743 loops=1)
+              Group Key: pm1_0.id, bm1_0.id
+              ->  Sort  (cost=1837425.69..1855247.71 rows=7128808 width=59) (actual time=5897.674..6484.044 rows=10210933 loops=1)
+                    Sort Key: pm1_0.id DESC, bm1_0.id
+                    Sort Method: external merge  Disk: 707456kB
+                    ->  Hash Join  (cost=203213.90..489927.94 rows=7128808 width=59) (actual time=700.966..3190.602 rows=10210933 loops=1)
+                          Hash Cond: (pm1_0.brand_id = bm1_0.id)
+                          ->  Hash Right Join  (cost=203182.40..471104.01 rows=7128808 width=46) (actual time=700.849..2453.807 rows=10210933 loops=1)
+                                Hash Cond: (plm1_0.product_id = pm1_0.id)
+                                ->  Seq Scan on product_like plm1_0  (cost=0.00..137757.27 rows=7514027 width=16) (actual time=0.032..365.746 rows=7514034 loops=1)
+                                ->  Hash  (cost=106826.80..106826.80 rows=4743648 width=38) (actual time=700.409..700.410 rows=4749743 loops=1)
+                                      Buckets: 65536  Batches: 128  Memory Usage: 3127kB
+                                      ->  Seq Scan on product pm1_0  (cost=0.00..106826.80 rows=4743648 width=38) (actual time=0.065..305.746 rows=4749743 loops=1)
+                                            Filter: (deleted_at IS NULL)
+                                            Rows Removed by Filter: 250257
+                          ->  Hash  (cost=19.00..19.00 rows=1000 width=21) (actual time=0.112..0.112 rows=1000 loops=1)
+                                Buckets: 1024  Batches: 1  Memory Usage: 61kB
+                                ->  Seq Scan on brand bm1_0  (cost=0.00..19.00 rows=1000 width=21) (actual time=0.008..0.064 rows=1000 loops=1)
+Planning Time: 0.680 ms
+JIT:
+  Functions: 27
+  Options: Inlining true, Optimization true, Expressions true, Deforming true
+  Timing: Generation 0.515 ms, Inlining 28.238 ms, Optimization 24.442 ms, Emission 22.741 ms, Total 75.937 ms
+Execution Time: 7866.595 ms

@@ -1,0 +1,10 @@
+Finalize Aggregate  (cost=83601.76..83601.77 rows=1 width=8) (actual time=120.866..124.863 rows=1 loops=1)
+  ->  Gather  (cost=83601.55..83601.76 rows=2 width=8) (actual time=120.772..124.860 rows=3 loops=1)
+        Workers Planned: 2
+        Workers Launched: 2
+        ->  Partial Aggregate  (cost=82601.55..82601.56 rows=1 width=8) (actual time=120.002..120.003 rows=1 loops=3)
+              ->  Parallel Seq Scan on product pm1_0  (cost=0.00..77660.25 rows=1976520 width=8) (actual time=0.008..72.388 rows=1583248 loops=3)
+                    Filter: (deleted_at IS NULL)
+                    Rows Removed by Filter: 83419
+Planning Time: 0.137 ms
+Execution Time: 124.889 ms

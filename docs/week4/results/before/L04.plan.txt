@@ -1,0 +1,11 @@
+-> Limit/Offset: 50/4950 row(s)  (actual time=42176..42176 rows=50 loops=1)
+    -> Sort: pm1_0.created_at DESC, pm1_0.id DESC, limit input to 5000 row(s) per chunk  (actual time=42176..42176 rows=5000 loops=1)
+        -> Table scan on <temporary>  (actual time=39929..41118 rows=4.75e+6 loops=1)
+            -> Aggregate using temporary table  (actual time=39929..39929 rows=4.75e+6 loops=1)
+                -> Left hash join (plm1_0.product_id = pm1_0.id)  (cost=359e+9 rows=3.59e+12) (actual time=1621..13038 rows=10.3e+6 loops=1)
+                    -> Nested loop inner join  (cost=973351 rows=485830) (actual time=0.338..4071 rows=4.75e+6 loops=1)
+                        -> Filter: (pm1_0.deleted_at is null)  (cost=511813 rows=485830) (actual time=0.258..1594 rows=4.75e+6 loops=1)
+                            -> Table scan on pm1_0  (cost=511813 rows=4.86e+6) (actual time=0.256..1379 rows=5e+6 loops=1)
+                        -> Single-row index lookup on bm1_0 using PRIMARY (id=pm1_0.brand_id)  (cost=0.85 rows=1) (actual time=389e-6..411e-6 rows=1 loops=4.75e+6)
+                    -> Hash
+                        -> Covering index scan on plm1_0 using ux_product_like_user_product  (cost=145 rows=7.38e+6) (actual time=1.39..986 rows=7.6e+6 loops=1)

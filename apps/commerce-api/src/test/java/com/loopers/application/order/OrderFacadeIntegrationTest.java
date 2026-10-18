@@ -48,6 +48,7 @@ class OrderFacadeIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        fixtures.catalogRevision();
         user = fixtures.userWithBalance(10_000L);
         admin = fixtures.admin();
         brand = fixtures.brand("브랜드");
@@ -296,6 +297,24 @@ class OrderFacadeIntegrationTest {
             assertThat(info.status()).isEqualTo("CONFIRMED");
             assertThat(fixtures.balanceOf(poor.getId())).isZero();
             assertThat(fixtures.reloadProduct(product.getId()).getStock()).isEqualTo(4);
+        }
+    }
+
+    @Nested
+    @DisplayName("DR-37 캐시 revision")
+    class CacheRevision {
+        @DisplayName("[DR-37][DR-22] 주문 생성·확정은 재고만 바꾸므로 상품·브랜드·목록 revision 을 올리지 않는다.")
+        @Test
+        void createAndConfirm_keepRevisions() {
+            long listBefore = fixtures.listRevision();
+
+            OrderInfo order = orderFacade.createOrder(user.getId(), List.of(item(product.getId(), 2)));
+            orderFacade.confirmOrder(user.getId(), order.id());
+
+            assertThat(fixtures.reloadProduct(product.getId()).getStock()).isEqualTo(3);
+            assertThat(fixtures.reloadProduct(product.getId()).getRevision()).isZero();
+            assertThat(fixtures.reloadBrand(brand.getId()).getRevision()).isZero();
+            assertThat(fixtures.listRevision()).isEqualTo(listBefore);
         }
     }
 }

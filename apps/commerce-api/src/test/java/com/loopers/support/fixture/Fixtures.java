@@ -2,8 +2,10 @@ package com.loopers.support.fixture;
 
 import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.brand.BrandRepository;
+import com.loopers.domain.product.CatalogRevisionModel;
 import com.loopers.domain.productlike.ProductLikeModel;
 import com.loopers.domain.productlike.ProductLikeRepository;
+import com.loopers.domain.productlike.ProductStatModel;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.domain.point.PointModel;
@@ -12,6 +14,8 @@ import com.loopers.domain.order.OrderModel;
 import com.loopers.domain.order.OrderRepository;
 import com.loopers.domain.user.UserModel;
 import com.loopers.domain.user.UserRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,6 +30,8 @@ public class Fixtures {
     private final ProductLikeRepository productLikeRepository;
     private final PointRepository pointRepository;
     private final OrderRepository orderRepository;
+    @PersistenceContext
+    private EntityManager entityManager;
 
     public Fixtures(
         UserRepository userRepository,
@@ -41,6 +47,25 @@ public class Fixtures {
         this.productLikeRepository = productLikeRepository;
         this.pointRepository = pointRepository;
         this.orderRepository = orderRepository;
+    }
+
+    /**
+     * TB-09 목록 revision 행 (DR-37). 운영에서는 배포 SQL 로 만들고, 테스트는 truncate 뒤마다 다시 만든다.
+     * 상품·브랜드 쓰기 Facade 나 고객 상품 목록을 부르는 테스트는 @BeforeEach 에서 먼저 부른다. 빠뜨리면 쓰기가 실패한다.
+     */
+    @Transactional
+    public CatalogRevisionModel catalogRevision() {
+        CatalogRevisionModel revision = new CatalogRevisionModel(CatalogRevisionModel.PRODUCT_LIST_LATEST);
+        entityManager.persist(revision);
+        return revision;
+    }
+
+    /** TB-09 latest 첫 페이지 목록의 현재 revision (DR-37). */
+    public long listRevision() {
+        return entityManager.createQuery(
+                "select r.revision from CatalogRevisionModel r where r.name = :name", Long.class)
+            .setParameter("name", CatalogRevisionModel.PRODUCT_LIST_LATEST)
+            .getSingleResult();
     }
 
     /** DRAFT 주문. 단가는 상품의 현재 가격 사본. */
@@ -96,19 +121,32 @@ public class Fixtures {
         return brand;
     }
 
+    /** 상품 + 좋아요 수 0 인 행 (DR-36). */
+    @Transactional
     public ProductModel product(Long brandId, String name, long price, int stock) {
-        return productRepository.save(new ProductModel(brandId, name, price, stock));
+        ProductModel product = productRepository.save(new ProductModel(brandId, name, price, stock));
+        productLikeRepository.saveStat(new ProductStatModel(product.getId(), brandId));
+        return product;
     }
 
     @Transactional
     public ProductModel deletedProduct(Long brandId, String name, long price, int stock) {
-        ProductModel product = productRepository.save(new ProductModel(brandId, name, price, stock));
+        ProductModel product = product(brandId, name, price, stock);
         product.delete();
+        productLikeRepository.deleteStat(product.getId());
         return product;
     }
 
+    /** 관계 + 좋아요 수 +1 (INV-05, DR-36). */
+    @Transactional
     public ProductLikeModel like(Long userId, Long productId) {
-        return productLikeRepository.save(new ProductLikeModel(userId, productId));
+        ProductLikeModel like = productLikeRepository.save(new ProductLikeModel(userId, productId));
+        productLikeRepository.increaseLikeCount(productId);
+        return like;
+    }
+
+    public ProductStatModel reloadStat(Long productId) {
+        return productLikeRepository.findStat(productId).orElseThrow();
     }
 
     public ProductModel reloadProduct(Long productId) {

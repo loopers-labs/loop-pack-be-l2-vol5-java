@@ -1,0 +1,23 @@
+Sort  (cost=799.71..799.89 rows=75 width=67) (actual time=0.456..0.458 rows=50 loops=1)
+  Sort Key: pm2_0.created_at DESC, pm2_0.id DESC
+  Sort Method: quicksort  Memory: 32kB
+  ->  GroupAggregate  (cost=795.87..797.37 rows=75 width=67) (actual time=0.434..0.445 rows=50 loops=1)
+        Group Key: pm2_0.id, bm1_0.id
+        ->  Sort  (cost=795.87..796.06 rows=75 width=67) (actual time=0.431..0.433 rows=64 loops=1)
+              Sort Key: pm2_0.id DESC, bm1_0.id
+              Sort Method: quicksort  Memory: 34kB
+              ->  Nested Loop Left Join  (cost=186.25..793.53 rows=75 width=67) (actual time=0.341..0.423 rows=64 loops=1)
+                    ->  Nested Loop  (cost=185.81..624.60 rows=50 width=59) (actual time=0.338..0.391 rows=50 loops=1)
+                          ->  Nested Loop  (cost=185.54..609.97 rows=50 width=46) (actual time=0.335..0.371 rows=50 loops=1)
+                                ->  Limit  (cost=185.11..186.97 rows=50 width=16) (actual time=0.327..0.331 rows=50 loops=1)
+                                      ->  Index Only Scan Backward using ix_product_brand_latest_active on product pm1_0  (cost=0.43..17253.11 rows=462439 width=16) (actual time=0.008..0.249 rows=5000 loops=1)
+                                            Index Cond: (brand_id = 1)
+                                            Heap Fetches: 0
+                                ->  Index Scan using product_pkey on product pm2_0  (cost=0.43..8.45 rows=1 width=46) (actual time=0.001..0.001 rows=1 loops=50)
+                                      Index Cond: (id = pm1_0.id)
+                          ->  Index Scan using brand_pkey on brand bm1_0  (cost=0.28..0.29 rows=1 width=21) (actual time=0.000..0.000 rows=1 loops=50)
+                                Index Cond: (id = pm2_0.brand_id)
+                    ->  Index Scan using ix_product_like_product on product_like plm1_0  (cost=0.43..2.33 rows=105 width=16) (actual time=0.000..0.001 rows=1 loops=50)
+                          Index Cond: (product_id = pm2_0.id)
+Planning Time: 0.525 ms
+Execution Time: 0.502 ms

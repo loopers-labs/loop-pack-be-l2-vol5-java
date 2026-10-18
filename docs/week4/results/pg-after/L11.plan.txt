@@ -1,0 +1,26 @@
+Limit  (cost=462472.39..462472.51 rows=50 width=59) (actual time=1475.265..1475.270 rows=50 loops=1)
+  ->  Sort  (cost=462460.01..463619.04 rows=463613 width=59) (actual time=1470.808..1470.920 rows=5000 loops=1)
+        Sort Key: pm1_0.price, pm1_0.id DESC
+        Sort Method: top-N heapsort  Memory: 1581kB
+        ->  HashAggregate  (cost=412053.44..431658.23 rows=463613 width=59) (actual time=1319.851..1436.027 rows=474476 loops=1)
+              Group Key: pm1_0.id, bm1_0.id
+              Planned Partitions: 32  Batches: 33  Memory Usage: 4113kB  Disk Usage: 95264kB
+              ->  Nested Loop  (cost=91560.07..333018.93 rows=696723 width=59) (actual time=138.546..1185.490 rows=1028371 loops=1)
+                    ->  Index Scan using brand_pkey on brand bm1_0  (cost=0.28..8.29 rows=1 width=21) (actual time=0.007..0.014 rows=1 loops=1)
+                          Index Cond: (id = 1)
+                    ->  Hash Right Join  (cost=91559.79..326043.40 rows=696723 width=46) (actual time=138.536..1143.486 rows=1028371 loops=1)
+                          Hash Cond: (plm1_0.product_id = pm1_0.id)
+                          ->  Seq Scan on product_like plm1_0  (cost=0.00..137757.27 rows=7514027 width=16) (actual time=0.078..330.697 rows=7514034 loops=1)
+                          ->  Hash  (cost=82142.63..82142.63 rows=463613 width=38) (actual time=138.168..138.169 rows=474476 loops=1)
+                                Buckets: 65536  Batches: 16  Memory Usage: 2591kB
+                                ->  Bitmap Heap Scan on product pm1_0  (cost=19520.47..82142.63 rows=463613 width=38) (actual time=21.911..102.260 rows=474476 loops=1)
+                                      Recheck Cond: ((brand_id = 1) AND (deleted_at IS NULL))
+                                      Heap Blocks: exact=56816
+                                      ->  Bitmap Index Scan on ix_product_brand_price  (cost=0.00..19404.56 rows=463613 width=0) (actual time=16.952..16.952 rows=474476 loops=1)
+                                            Index Cond: ((brand_id = 1) AND (deleted_at IS NULL))
+Planning Time: 0.319 ms
+JIT:
+  Functions: 25
+  Options: Inlining false, Optimization false, Expressions true, Deforming true
+  Timing: Generation 0.548 ms, Inlining 0.000 ms, Optimization 0.351 ms, Emission 5.868 ms, Total 6.767 ms
+Execution Time: 1488.453 ms

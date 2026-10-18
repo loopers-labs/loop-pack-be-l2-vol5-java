@@ -4,11 +4,13 @@ import com.loopers.application.product.query.ProductReader;
 import com.loopers.application.product.query.ProductView;
 import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.product.ProductModel;
+import com.loopers.domain.productlike.ProductStatModel;
 import com.loopers.domain.user.UserModel;
 import com.loopers.support.error.ErrorType;
 import com.loopers.support.fixture.Fixtures;
 import com.loopers.support.paging.PageQuery;
 import com.loopers.utils.DatabaseCleanUp;
+import com.loopers.utils.RedisCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -16,9 +18,11 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import static com.loopers.support.ErrorAssertions.assertThrowsErrorType;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 class ProductFacadeIntegrationTest {
@@ -31,6 +35,10 @@ class ProductFacadeIntegrationTest {
     private Fixtures fixtures;
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
+    @Autowired
+    private RedisCleanUp redisCleanUp;
+    @Autowired
+    private TransactionTemplate transactionTemplate;
 
     private UserModel user;
     private UserModel admin;
@@ -38,6 +46,7 @@ class ProductFacadeIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        fixtures.catalogRevision();
         user = fixtures.user();
         admin = fixtures.admin();
         brand = fixtures.brand("브랜드");
@@ -46,6 +55,7 @@ class ProductFacadeIntegrationTest {
     @AfterEach
     void tearDown() {
         databaseCleanUp.truncateAllTables();
+        redisCleanUp.truncateAll();
     }
 
     @Nested
@@ -60,6 +70,18 @@ class ProductFacadeIntegrationTest {
             assertThat(created.stock()).isEqualTo(10);
             assertThat(created.deleted()).isFalse();
             assertThat(productReader.getProduct(user.getId(), created.id()).price()).isEqualTo(1500L);
+        }
+
+        @DisplayName("[FR-ADMIN-PRODUCT-02][DR-36] 같은 브랜드로 좋아요 수 0 인 행이 함께 만들어진다.")
+        @Test
+        void createsStat() {
+            ProductInfo created = productFacade.createProduct(admin.getId(), brand.getId(), "새 상품", 1500L, 10);
+
+            ProductStatModel stat = fixtures.reloadStat(created.id());
+            assertThat(stat.getBrandId()).isEqualTo(brand.getId());
+            assertThat(stat.getLikeCount()).isZero();
+            assertThat(stat.getDeletedAt()).isNull();
+            assertThat(created.likeCount()).isZero();
         }
 
         @DisplayName("[FR-ADMIN-PRODUCT-02 BRAND_NOT_FOUND] 브랜드가 없으면 생성되지 않는다.")
@@ -170,6 +192,21 @@ class ProductFacadeIntegrationTest {
             assertThat(adminView.likeCount()).isEqualTo(1);
         }
 
+        @DisplayName("[FR-ADMIN-PRODUCT-05][DR-36] 좋아요 수 행도 삭제로 표시되고 좋아요 수는 그대로다.")
+        @Test
+        void deletesStat_keepsLikeCount() {
+            ProductModel product = fixtures.product(brand.getId(), "상품", 1000L, 5);
+            ProductModel other = fixtures.product(brand.getId(), "다른 상품", 1000L, 5);
+            fixtures.like(user.getId(), product.getId());
+
+            productFacade.deleteProduct(admin.getId(), product.getId());
+
+            ProductStatModel stat = fixtures.reloadStat(product.getId());
+            assertThat(stat.getDeletedAt()).isNotNull();
+            assertThat(stat.getLikeCount()).isEqualTo(1);
+            assertThat(fixtures.reloadStat(other.getId()).getDeletedAt()).isNull();
+        }
+
         @DisplayName("[FR-ADMIN-PRODUCT-05][ASM-22] 재고가 남아 있어도 삭제할 수 있다.")
         @Test
         void deletesProduct_evenWithStock() {
@@ -235,6 +272,70 @@ class ProductFacadeIntegrationTest {
             assertThrowsErrorType(() -> productFacade.updateStock(admin.getId(), product.getId(), null), ErrorType.INVALID_STOCK);
 
             assertThat(fixtures.reloadProduct(product.getId()).getStock()).isEqualTo(5);
+        }
+    }
+
+    @Nested
+    @DisplayName("DR-37 캐시 revision")
+    class CacheRevision {
+        @DisplayName("[DR-37] 상품 생성은 목록 revision 만 올린다.")
+        @Test
+        void create_bumpsListRevision() {
+            long listBefore = fixtures.listRevision();
+
+            ProductInfo created = productFacade.createProduct(admin.getId(), brand.getId(), "새 상품", 1500L, 10);
+
+            assertThat(fixtures.listRevision()).isEqualTo(listBefore + 1);
+            assertThat(fixtures.reloadProduct(created.id()).getRevision()).isZero();
+            assertThat(fixtures.reloadBrand(brand.getId()).getRevision()).isZero();
+        }
+
+        @DisplayName("[DR-37] 상품 수정·삭제는 그 상품 revision 과 목록 revision 을 올리고, 다른 상품·브랜드 revision 은 그대로다.")
+        @Test
+        void updateAndDelete_bumpProductAndListRevision() {
+            ProductModel product = fixtures.product(brand.getId(), "상품", 1000L, 5);
+            ProductModel other = fixtures.product(brand.getId(), "다른 상품", 1000L, 5);
+            long listBefore = fixtures.listRevision();
+
+            productFacade.updateProduct(admin.getId(), product.getId(), "새 이름", 2000L);
+            assertThat(fixtures.reloadProduct(product.getId()).getRevision()).isEqualTo(1);
+            assertThat(fixtures.listRevision()).isEqualTo(listBefore + 1);
+
+            productFacade.deleteProduct(admin.getId(), product.getId());
+            assertThat(fixtures.reloadProduct(product.getId()).getRevision()).isEqualTo(2);
+            assertThat(fixtures.listRevision()).isEqualTo(listBefore + 2);
+
+            assertThat(fixtures.reloadProduct(other.getId()).getRevision()).isZero();
+            assertThat(fixtures.reloadBrand(brand.getId()).getRevision()).isZero();
+        }
+
+        @DisplayName("[DR-37][DR-22] 재고 변경은 고객 조회 결과가 아니라 어떤 revision 도 올리지 않는다.")
+        @Test
+        void updateStock_keepsRevisions() {
+            ProductModel product = fixtures.product(brand.getId(), "상품", 1000L, 5);
+            long listBefore = fixtures.listRevision();
+
+            productFacade.updateStock(admin.getId(), product.getId(), 42);
+
+            assertThat(fixtures.reloadProduct(product.getId()).getRevision()).isZero();
+            assertThat(fixtures.listRevision()).isEqualTo(listBefore);
+        }
+
+        @DisplayName("[DR-37] 쓰기가 커밋 전에 롤백되면 상품·목록 revision 도 함께 롤백된다.")
+        @Test
+        void rollback_restoresRevisions() {
+            ProductModel product = fixtures.product(brand.getId(), "상품", 1000L, 5);
+            long listBefore = fixtures.listRevision();
+
+            assertThatThrownBy(() -> transactionTemplate.executeWithoutResult(status -> {
+                productFacade.updateProduct(admin.getId(), product.getId(), "새 이름", 2000L);
+                throw new IllegalStateException("커밋 전 실패");
+            })).isInstanceOf(IllegalStateException.class);
+
+            ProductModel reloaded = fixtures.reloadProduct(product.getId());
+            assertThat(reloaded.getName()).isEqualTo("상품");
+            assertThat(reloaded.getRevision()).isZero();
+            assertThat(fixtures.listRevision()).isEqualTo(listBefore);
         }
     }
 }

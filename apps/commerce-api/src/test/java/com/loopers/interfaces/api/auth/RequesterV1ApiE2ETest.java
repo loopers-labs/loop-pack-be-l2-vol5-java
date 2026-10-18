@@ -5,6 +5,7 @@ import com.loopers.domain.user.UserModel;
 import com.loopers.support.ApiTestClient;
 import com.loopers.support.fixture.Fixtures;
 import com.loopers.utils.DatabaseCleanUp;
+import com.loopers.utils.RedisCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -29,6 +30,8 @@ class RequesterV1ApiE2ETest {
     private Fixtures fixtures;
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
+    @Autowired
+    private RedisCleanUp redisCleanUp;
 
     private ApiTestClient api;
     private UserModel user;
@@ -36,6 +39,7 @@ class RequesterV1ApiE2ETest {
 
     @BeforeEach
     void setUp() {
+        fixtures.catalogRevision();
         api = new ApiTestClient(restTemplate, objectMapper);
         user = fixtures.user();
         admin = fixtures.admin();
@@ -44,6 +48,7 @@ class RequesterV1ApiE2ETest {
     @AfterEach
     void tearDown() {
         databaseCleanUp.truncateAllTables();
+        redisCleanUp.truncateAll();
     }
 
     @Nested

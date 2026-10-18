@@ -9,6 +9,7 @@ import com.loopers.domain.user.UserModel;
 import com.loopers.support.error.ErrorType;
 import com.loopers.support.fixture.Fixtures;
 import com.loopers.utils.DatabaseCleanUp;
+import com.loopers.utils.RedisCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -16,8 +17,6 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-
-import java.util.List;
 
 import static com.loopers.support.ErrorAssertions.assertThrowsErrorType;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,6 +34,8 @@ class ProductLikeFacadeIntegrationTest {
     private Fixtures fixtures;
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
+    @Autowired
+    private RedisCleanUp redisCleanUp;
 
     private UserModel user;
     private BrandModel brand;
@@ -50,25 +51,28 @@ class ProductLikeFacadeIntegrationTest {
     @AfterEach
     void tearDown() {
         databaseCleanUp.truncateAllTables();
+        redisCleanUp.truncateAll();
     }
 
+    /** 저장된 좋아요 수 (TB-08, DR-36). */
     private long likeCount(Long productId) {
-        return productLikeRepository.countByProductIds(List.of(productId)).getOrDefault(productId, 0L);
+        return fixtures.reloadStat(productId).getLikeCount();
     }
 
     @Nested
     @DisplayName("FR-LIKE-01 좋아요 등록")
     class Like {
-        @DisplayName("[FR-LIKE-01][INV-05] 관계가 생성되고 좋아요 수가 관계 개수와 같다.")
+        @DisplayName("[FR-LIKE-01][INV-05] 관계가 생성되고 좋아요 수가 1 늘어난다.")
         @Test
         void createsRelation() {
             productLikeFacade.like(user.getId(), product.getId());
 
             assertThat(productLikeRepository.find(user.getId(), product.getId())).isPresent();
+            assertThat(likeCount(product.getId())).isEqualTo(1);
             assertThat(productReader.getProduct(user.getId(), product.getId()).likeCount()).isEqualTo(1);
         }
 
-        @DisplayName("[FR-LIKE-01][INV-04][ASM-06] 같은 쌍을 다시 등록해도 관계는 하나뿐이고 성공한다 (멱등).")
+        @DisplayName("[FR-LIKE-01][INV-04][INV-05][ASM-06] 같은 쌍을 다시 등록해도 관계는 하나뿐이고 좋아요 수도 늘지 않는다 (멱등).")
         @Test
         void isIdempotent() {
             productLikeFacade.like(user.getId(), product.getId());
@@ -114,15 +118,18 @@ class ProductLikeFacadeIntegrationTest {
             assertThat(likeCount(product.getId())).isZero();
         }
 
-        @DisplayName("[FR-LIKE-02][ASM-06] 관계가 없어도 변화 없이 성공한다.")
+        @DisplayName("[FR-LIKE-02][INV-05][ASM-06] 관계가 없어도 성공하고 좋아요 수는 줄지 않는다.")
         @Test
         void succeeds_whenNoRelation() {
+            UserModel other = fixtures.user();
+            fixtures.like(other.getId(), product.getId());
+
             productLikeFacade.unlike(user.getId(), product.getId());
 
-            assertThat(likeCount(product.getId())).isZero();
+            assertThat(likeCount(product.getId())).isEqualTo(1);
         }
 
-        @DisplayName("[FR-LIKE-02][ASM-07] 삭제된 상품에 남아 있는 관계는 취소할 수 있다.")
+        @DisplayName("[FR-LIKE-02][INV-05][ASM-07] 삭제된 상품에 남아 있는 관계는 취소할 수 있고 좋아요 수도 줄어든다.")
         @Test
         void succeeds_whenProductDeleted() {
             ProductModel deleted = fixtures.deletedProduct(brand.getId(), "삭제됨", 1000L, 1);
@@ -137,6 +144,24 @@ class ProductLikeFacadeIntegrationTest {
         @Test
         void throwsProductNotFound() {
             assertThrowsErrorType(() -> productLikeFacade.unlike(user.getId(), 999L), ErrorType.PRODUCT_NOT_FOUND);
+        }
+    }
+
+    @Nested
+    @DisplayName("DR-37 캐시 revision")
+    class CacheRevision {
+        @DisplayName("[DR-37] 좋아요 수는 캐시 대상이 아니므로 등록·취소는 상품·브랜드·목록 revision 을 올리지 않는다.")
+        @Test
+        void likeAndUnlike_keepRevisions() {
+            fixtures.catalogRevision();
+            long listBefore = fixtures.listRevision();
+
+            productLikeFacade.like(user.getId(), product.getId());
+            productLikeFacade.unlike(user.getId(), product.getId());
+
+            assertThat(fixtures.reloadProduct(product.getId()).getRevision()).isZero();
+            assertThat(fixtures.reloadBrand(brand.getId()).getRevision()).isZero();
+            assertThat(fixtures.listRevision()).isEqualTo(listBefore);
         }
     }
 }

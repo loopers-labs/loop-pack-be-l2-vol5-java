@@ -1,0 +1,1 @@
+select pm1_0.id,pm1_0.name,pm1_0.price,bm1_0.id,bm1_0.name,count(plm1_0.id) from product pm1_0 join brand bm1_0 on bm1_0.id=pm1_0.brand_id left join product_like plm1_0 on plm1_0.product_id=pm1_0.id where pm1_0.deleted_at is null and pm1_0.brand_id=1 group by pm1_0.id,bm1_0.id order by pm1_0.created_at desc,pm1_0.id desc offset 0 rows fetch first 50 rows only

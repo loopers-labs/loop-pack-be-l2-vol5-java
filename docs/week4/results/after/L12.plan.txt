@@ -1,0 +1,7 @@
+-> Limit/Offset: 50/4950 row(s)  (actual time=2946..2946 rows=50 loops=1)
+    -> Sort: `count(plm1_0.id)` DESC, pm1_0.id DESC, limit input to 5000 row(s) per chunk  (actual time=2945..2946 rows=5000 loops=1)
+        -> Table scan on <temporary>  (actual time=2802..2872 rows=474993 loops=1)
+            -> Aggregate using temporary table  (actual time=2802..2802 rows=474993 loops=1)
+                -> Nested loop left join  (cost=1.6e+6 rows=4.48e+6) (actual time=0.399..1441 rows=999903 loops=1)
+                    -> Index lookup on pm1_0 using ix_product_brand_latest (brand_id=1, deleted_at=NULL), with index condition: (pm1_0.deleted_at is null)  (cost=122276 rows=1.03e+6) (actual time=0.392..842 rows=474993 loops=1)
+                    -> Covering index lookup on plm1_0 using ix_product_like_product (product_id=pm1_0.id)  (cost=1.01 rows=4.36) (actual time=895e-6..0.0011 rows=1.46 loops=474993)
