@@ -143,7 +143,7 @@ flowchart TB
 | 브랜드 | 상품이 속하는 단위. ACTIVE/DELETED 상태를 가진다 | 용어집 |
 | 상품 | 하나의 브랜드에 속하며 현재 가격·재고·ACTIVE/DELETED 상태를 가진 판매 대상 | 용어집 |
 | 가격 | 상품의 현재 값. 관리자가 바꿀 수 있다 | 용어집 |
-| 재고 | 상품의 현재 수량. 관리자가 설정하고 주문 확정이 차감한다 (DR-03) | 용어집 |
+| 재고 | 상품의 현재 수량. 관리자가 설정하고 주문 확정이 차감한다 (DR-03). 저장은 현재 재고(TB-10)와 원장(TB-11)으로 나눈다 (DR-38) | 용어집 |
 | 좋아요 | 사용자–상품 관계. 같은 쌍에 하나 (DR-02) | 용어집 |
 | 좋아요 수 | 한 상품에 대한 좋아요 관계의 개수. 저장해 두고 관계 생성·삭제 때 함께 갱신한다 (DR-36) | 용어집 |
 
@@ -332,13 +332,15 @@ BC-01 사용자는 모든 FR의 공통 사전 조건(요청자 식별·관리자
 |---|---|---|---|---|
 | TB-01 | `user` | BC-01 | AG-01 | 사용자 (관리자는 컬럼) |
 | TB-02 | `brand` | BC-02 | AG-02 | 브랜드 |
-| TB-03 | `product` | BC-02 | AG-03 | 상품 (가격·재고는 컬럼) |
+| TB-03 | `product` | BC-02 | AG-03 | 상품 (가격은 컬럼. `stock`은 컬럼 삭제 전까지 남긴 재고 사본, DR-38) |
 | TB-04 | `product_like` | BC-02 | AG-04 | 좋아요 (DR-10) |
 | TB-05 | `point` | BC-03 | AG-05 | 포인트 (잔액은 컬럼) |
 | TB-06 | `orders` | BC-04 | AG-06 | 주문 (합계·결제액·결제 결과는 컬럼, DR-10, DR-13) |
 | TB-07 | `order_item` | BC-04 | AG-06 | 주문 품목 (단가는 컬럼, 항목 금액은 계산값) |
 | TB-08 | `product_stat` | BC-02 | AG-04 | 좋아요 수 (상품별 한 행, DR-36) |
 | TB-09 | `catalog_revision` | BC-02 | AG-03 | 고객 상품 목록 캐시의 revision (캐시하는 목록마다 한 행, DR-37) |
+| TB-10 | `product_stock` | BC-02 | AG-03 | 재고의 현재 값 (상품당 한 행, DR-38) |
+| TB-11 | `product_stock_ledger` | BC-02 | AG-03 | 재고 원장. 재고의 진실 (append-only, DR-38) |
 
 충전·환불·운영자 충전/차감·표현 범위는 테이블이 없다. 행위 또는 값 정의다.
 
@@ -389,7 +391,7 @@ fixture로만 채워진다. 런타임에 이 테이블에 쓰는 FR은 없다. `
 | `brand_id` | bigint | N | FK 없음 (AG 간, 3-3) | 소속 브랜드. 생성 후 불변 (INV-11) | 소유 |
 | `name` | varchar(200) | N | 길이 1~200 (INV-13, DR-11) | 상품 이름 | 소유 |
 | `price` | bigint | N | ≥ 0, 표현 범위 안 (INV-13, ASM-04) | 가격. 현재 값이며 관리자가 바꾼다 | 소유 |
-| `stock` | int | N | ≥ 0 (INV-03) | 재고 | 소유 |
+| `stock` | int | N | ≥ 0 | 옛 재고 컬럼. 진실은 TB-11, 현재 값은 TB-10이다. 컬럼을 지울 때까지 재고를 바꾸는 트랜잭션이 같은 값으로 맞춘다. 상품 엔티티의 변경 감지로는 쓰지 않는다 (DR-38) | 사본: TB-10.`available` |
 | `revision` | bigint | N | ≥ 0, 생성 시 0 | 고객 상품 상세 캐시 키의 일부. 이름·가격 수정과 삭제 때만 1 오른다. 재고 변경은 올리지 않는다 (DR-22, DR-37) | 소유 |
 | `created_at` | timestamp | N | | `latest` 정렬 기준 (ASM-08) | 시스템 |
 | `updated_at` | timestamp | N | | | 시스템 |
@@ -499,6 +501,41 @@ fixture로만 채워진다. 런타임에 이 테이블에 쓰는 FR은 없다. `
 | `updated_at` | timestamp | N | | | 시스템 |
 | `deleted_at` | timestamp | Y | | 항상 NULL (삭제 FR 없음) | 시스템 |
 
+### TB-10 `product_stock`
+
+- 소유 BC: BC-02 / 소속 AG: AG-03 / 대응 개념: 재고의 현재 값 (DR-38)
+- 기본키: `id`
+- 고유 제약: (`product_id`) — 상품 하나에 한 행
+- 상품이 생성될 때 `available` 0으로 함께 만들어지고 초기 재고까지 조정된다(FR-ADMIN-PRODUCT-02). 상품이 삭제돼도 행은 그대로다
+- `available`은 같은 상품의 TB-11 `quantity` 합이다. 원장 행을 남기는 트랜잭션이 같은 트랜잭션에서 함께 바꾼다
+
+| 컬럼 | 타입 | NULL | 제약 | 의미 | 출처 |
+|---|---|---|---|---|---|
+| `id` | bigint | N | PK, 자동 증가 | 행 식별자 | 시스템 |
+| `product_id` | bigint | N | 고유, FK 없음 (3-3) | 대상 상품. 생성 후 불변 | 소유 |
+| `available` | int | N | ≥ 0 (INV-03) | 현재 재고 | 계산: Σ TB-11.`quantity` |
+| `created_at` | timestamp | N | | | 시스템 |
+| `updated_at` | timestamp | N | | | 시스템 |
+| `deleted_at` | timestamp | Y | | 항상 NULL (삭제 FR 없음) | 시스템 |
+
+### TB-11 `product_stock_ledger`
+
+- 소유 BC: BC-02 / 소속 AG: AG-03 / 대응 개념: 재고 원장 (DR-38)
+- 기본키: `id`
+- 고유 제약: (`order_id`, `product_id`, `type`) — 한 주문의 한 상품은 예약·반환이 각각 최대 한 번 (INV-08로 주문 안 상품은 품목 하나). `ADJUSTMENT`는 `order_id`가 NULL이라 걸리지 않는다
+- append-only. 만든 행은 고치거나 지우지 않는다. 행은 `ProductStockModel`의 변경 메서드만 만든다
+
+| 컬럼 | 타입 | NULL | 제약 | 의미 | 출처 |
+|---|---|---|---|---|---|
+| `id` | bigint | N | PK, 자동 증가 | 행 식별자. 쌓인 순서 | 시스템 |
+| `product_id` | bigint | N | FK 없음 (3-3) | 대상 상품 | 소유 |
+| `type` | varchar(20) | N | `ADJUSTMENT` / `RESERVE` / `RELEASE` | 변동 종류. `ADJUSTMENT`는 관리자 설정·상품 생성·기존 재고 이관에서 차이만큼, `RESERVE`는 주문 확정의 품목별 차감, `RELEASE`는 주문 취소의 반환(취소 FR이 없어 아직 쓰지 않는다) | 소유 |
+| `quantity` | int | N | ≠ 0 | 부호 있는 변동량. 입고 +, 차감 − | 소유 |
+| `order_id` | bigint | Y | FK 없음 (3-3) | `RESERVE`·`RELEASE`의 주문. `ADJUSTMENT`는 NULL | 소유 |
+| `created_at` | timestamp | N | | 변동 시각 | 시스템 |
+| `updated_at` | timestamp | N | | 항상 `created_at`과 같다 | 시스템 |
+| `deleted_at` | timestamp | Y | | 항상 NULL | 시스템 |
+
 ### 3-3. 관계와 참조 무결성
 
 | 자식 TB | 자식 컬럼 | 부모 TB | 부모 컬럼 | FK 여부 | 삭제 시 | 근거 |
@@ -509,6 +546,9 @@ fixture로만 채워진다. 런타임에 이 테이블에 쓰는 FR은 없다. `
 | TB-04 `product_like` | `user_id` | TB-01 `user` | `id` | 아니오 | 없음 | BC 간 참조. 값이 요청자 ID이므로 공통 사전 조건(요청자 식별)이 검증한다 |
 | TB-08 `product_stat` | `product_id` | TB-03 `product` | `id` | 아니오 | 없음 | AG 간 참조. 상품 생성 트랜잭션이 함께 만들므로 고아도 누락도 생기지 않는다 (DR-36) |
 | TB-08 `product_stat` | `brand_id` | TB-02 `brand` | `id` | 아니오 | 없음 | TB-03.`brand_id` 사본. 상품 생성 때 그 값을 그대로 복사하고, 원본이 불변이라 다시 맞출 일이 없다 (INV-11) |
+| TB-10 `product_stock` | `product_id` | TB-03 `product` | `id` | 아니오 | 없음 | AG 안이지만 엔티티 연관 없이 ID로 든다. 상품 생성 트랜잭션이 함께 만들므로 고아도 누락도 생기지 않는다 (DR-38) |
+| TB-11 `product_stock_ledger` | `product_id` | TB-03 `product` | `id` | 아니오 | 없음 | 위와 같다. 상품은 삭제되지 않고 상태만 바뀌므로 고아는 생기지 않는다 (DR-38) |
+| TB-11 `product_stock_ledger` | `order_id` | TB-06 `orders` | `id` | 아니오 | 없음 | BC 간 참조. 값은 확정 중인 주문의 ID라 FR-ORDER-02가 이미 존재·소유를 검증했다 (DR-38) |
 | TB-05 `point` | `user_id` | TB-01 `user` | `id` | 아니오 | 없음 | BC 간 참조. fixture에서 사용자와 함께 준비, 런타임 생성 없음 (DR-12) |
 | TB-06 `orders` | `user_id` | TB-01 `user` | `id` | 아니오 | 없음 | BC 간 참조. 값이 요청자 ID이므로 공통 사전 조건이 검증한다 (FR-ORDER-01) |
 | TB-07 `order_item` | `product_id` | TB-03 `product` | `id` | 아니오 | 없음 | BC 간 참조. 검증 FR-ORDER-01 (존재·ACTIVE), FR-ORDER-02 재검증. DELETED 상품 참조는 의도된 유지 |
@@ -534,6 +574,8 @@ fixture로만 채워진다. 런타임에 이 테이블에 쓰는 FR은 없다. `
 | TB-07 `order_item` | 삭제 없음 (부모 CASCADE 정의만) | 아니오 | — |
 | TB-08 `product_stat` | 논리 삭제 (`deleted_at`). 대상 상품의 삭제를 따라간다 (DR-36) | 아니오 | FR-ADMIN-PRODUCT-05, FR-ADMIN-BRAND-05 |
 | TB-09 `catalog_revision` | 삭제 없음 (DR-37) | 아니오 | — |
+| TB-10 `product_stock` | 삭제 없음. 상품 삭제 뒤에도 남는다 (DR-38) | 아니오 | — |
+| TB-11 `product_stock_ledger` | 삭제 없음 (append-only, DR-38) | 예. 재고 변동 이력 자체다 | — |
 
 메모
 - 모든 테이블에 `deleted_at`이 공통으로 있으므로, 브랜드·상품의 상태(요구사항 3-2 ACTIVE/DELETED)는 별도 `status` 컬럼 없이 `deleted_at`의 NULL 여부로 표현한다. 둘 다 두면 같은 사실이 두 곳에 산다 (DR-16).
@@ -546,7 +588,8 @@ fixture로만 채워진다. 런타임에 이 테이블에 쓰는 FR은 없다. `
 
 | 대상 | 방식 | 잠그는 시점·순서 | 경합에서 진 요청 |
 |---|---|---|---|
-| AG-03 상품 (재고) | 비관적 행 잠금 (쓰기) | 확정 트랜잭션에서 상품을 처음 읽을 때. 품목의 상품 전부를 식별자 오름차순으로 | 앞 요청 커밋 뒤 최신 재고로 검사. 부족하면 기존 `INSUFFICIENT_STOCK` |
+| AG-03 재고 (TB-10, DR-38) | 비관적 행 잠금 (쓰기) | 확정 트랜잭션에서 재고·상품을 처음 읽을 때. 품목 상품의 재고 행 전부를 `product_id` 오름차순으로. 재고 변경(FR-ADMIN-PRODUCT-06)도 같은 행을 쓰기 잠금으로 읽는다 | 앞 요청 커밋 뒤 최신 재고로 검사. 부족하면 기존 `INSUFFICIENT_STOCK` |
+| AG-03 상품 (TB-03, DR-38) | 비관적 행 잠금 (읽기, `FOR SHARE`) | 확정에서 재고 다음. 품목의 상품 전부를 식별자 오름차순으로 | 진 요청이 없다. 확정 중 같은 상품의 수정·삭제가 확정 커밋 뒤로 밀린다. 확정끼리는 이 잠금으로 서로 기다리지 않는다 |
 | AG-05 포인트 (잔액) | 비관적 행 잠금 (쓰기) | 차감할 때. 확정에서는 상품 다음 | 앞 요청 커밋 뒤 최신 잔액으로 검사. 부족하면 기존 `INSUFFICIENT_POINT` |
 | AG-04 좋아요 수 (DR-36) | 원자적 갱신 (`like_count = like_count ± 1`) | 관계를 실제로 만들거나 지운 직후, 같은 트랜잭션에서 | 진 요청이 없다. 갱신이 줄을 서서 차례로 반영된다 |
 | AG-03 목록 revision (TB-09, DR-37) | 원자적 갱신 (`revision = revision + 1`) | 상품 생성·수정·삭제, 브랜드 수정·삭제 Facade의 마지막 호출에서 | 진 요청이 없다. 관리자 쓰기끼리 이 행에서 줄을 선다 |
@@ -555,7 +598,8 @@ fixture로만 채워진다. 런타임에 이 테이블에 쓰는 FR은 없다. `
 - 등록: 관계를 새로 저장했을 때만 +1. 같은 쌍의 동시 등록은 고유 제약(INV-04) 위반으로 한쪽 트랜잭션이 롤백되므로 +1도 함께 취소된다.
 - 취소: 쌍 조건 삭제의 지운 행 수가 1일 때만 -1. 같은 쌍의 동시 취소에서 둘 다 관계를 읽었더라도 실제로 지운 쪽만 줄인다.
 
-- 잠금 순서는 상품(식별자 오름차순) → 포인트로 고정한다. 여러 품목 주문끼리, 확정과 다른 차감 사이에 교착이 생기지 않게 한다.
+- 잠금 순서는 재고(`product_id` 오름차순) → 상품(식별자 오름차순) → 포인트로 고정한다. 여러 품목 주문끼리, 확정과 다른 차감 사이에 교착이 생기지 않게 한다 (DR-34, DR-38). 재고 변경도 재고 → 상품(옛 `stock` 컬럼 갱신) 순서라 확정과 엇갈리지 않는다.
+- 옛 `stock` 컬럼(DR-38)을 지우기 전까지는 확정과 재고 변경도 상품 행을 단건 갱신하므로, 확정의 읽기 잠금이 그 자리에서 쓰기 잠금으로 올라간다. 확정끼리는 이미 재고 행에서 줄을 서므로 대기가 늘지 않는다. 같은 행에서 관리자 수정이 쓰기 잠금을 기다리고 있어도 MySQL 8.0은 잠금 상향을 먼저 들어주어 교착이 나지 않음을 확인했다(8.0.46, 두 세션 재현). PostgreSQL은 확인하지 않았다. 재고 변경과 상품 수정이 상품 행에서 다투지 않게 되는 것은 컬럼을 지운 뒤다.
 - 목록 revision(TB-09)은 코드상 관리자 쓰기의 마지막 호출이다. 다만 조건 갱신은 호출 즉시 실행되고 엔티티 변경(상품·브랜드 행과 그 `revision`)은 커밋 직전 flush 때 나가므로, 실제로 잠그는 순서는 TB-08 조건 갱신 → TB-09 → (flush) TB-02·TB-03이다. 주문 확정·좋아요는 TB-09를 잠그지 않으므로 DR-34의 상품 → 포인트 순서와 엇갈리지 않는다. 관리자 쓰기끼리는 TB-09에서 먼저 줄을 서므로 서로 교착하지 않는다. 명시적 flush로 실제 순서를 코드 순서와 맞추는 것은 하지 않았다 (DR-37).
 - 상품·브랜드 `revision`은 이미 그 행을 쓰는 수정·삭제가 엔티티 메서드 안에서 올리므로 잠금이 늘지 않는다 (DR-37).
 - 포인트 잠금은 차감 전부(FR-POINT-03 환불, FR-ADMIN-POINT-02 운영자 차감, FR-ORDER-02 결제)에 걸린다. 충전은 잠그지 않는다 (OQ-03 남은 항목).
@@ -625,6 +669,8 @@ fixture로만 채워진다. 런타임에 이 테이블에 쓰는 FR은 없다. `
 | IX-10 | TB-08 | `product_id` | 고유 | 상품당 한 행. FR-PRODUCT-01/02, FR-ADMIN-PRODUCT-01/03 조인, FR-LIKE-01/02 갱신, FR-ADMIN-PRODUCT-05 삭제 반영 (DR-36) |
 | IX-11 | TB-08 | `deleted_at`, `like_count`, `product_id` | 복합 | FR-PRODUCT-01 `likes_desc` (DR-36) |
 | IX-12 | TB-08 | `brand_id`, `deleted_at`, `like_count`, `product_id` | 복합 | FR-PRODUCT-01 `brandId` 필터 + `likes_desc` (DR-36). `brand_id`·`deleted_at` 접두로 FR-ADMIN-BRAND-05 일괄 삭제 반영도 겸한다 |
+| IX-13 | TB-10 | `product_id` | 고유 | 상품당 한 행. FR-ORDER-02·FR-ADMIN-PRODUCT-06 잠금 조회(이 순서로 잠근다), FR-ADMIN-PRODUCT-01/03 조인 (DR-38) |
+| IX-14 | TB-11 | `order_id`, `product_id`, `type` | 고유 | 주문·상품별 예약·반환 최대 한 번 (DR-38). 원장을 상품별로 읽는 FR은 없어 `product_id` 인덱스는 두지 않는다 |
 
 만들지 않은 것
 - TB-02 `created_at`: 관리자 목록만 쓰고 빈도 낮음.
@@ -764,7 +810,7 @@ FR 28개 ↔ EP 28개, 1:1.
 | `id` | long | N | 상품 식별자 | TB-03.`id` |
 | `name` | string | N | 상품 이름 | TB-03.`name` |
 | `price` | long | N | 가격 | TB-03.`price` |
-| `stock` | int | N | 재고 | TB-03.`stock` |
+| `stock` | int | N | 재고 | TB-10.`available` (DR-38) |
 | `brand` | BrandSummary | N | 소속 브랜드 | TB-02 (같은 BC) |
 | `likeCount` | long | N | 좋아요 수 | TB-08.`like_count` (DR-36) |
 | `deleted` | boolean | N | 삭제 여부 (ST-02) | 계산 (TB-03.`deleted_at` IS NOT NULL) |
@@ -825,8 +871,8 @@ FR 28개 ↔ EP 28개, 1:1.
 
 | 필드 | 타입 | NULL | 의미 | 출처 |
 |---|---|---|---|---|
-| `productId` | long | N | 상품 식별자 | TB-03.`id` |
-| `stock` | int | N | 재고 | TB-03.`stock` |
+| `productId` | long | N | 상품 식별자 | TB-10.`product_id` |
+| `stock` | int | N | 재고 | TB-10.`available` (DR-38) |
 
 공통 요청 제약 (경로 ID): 모든 `{…Id}`는 long. 형식이 아닌 값은 해당 `*_NOT_FOUND`로 처리한다 (DR-01).
 
@@ -1141,12 +1187,12 @@ FR 28개 ↔ EP 28개, 1:1.
 |---|---|---|---|---|---|
 | BC-01 사용자 | AG-01 | `user` | `UserModel` / `UserService` / `UserRepository` | 없음 (EP를 갖지 않는다. 다른 BC의 Facade·Reader가 `UserService`를 부른다) | 없음 |
 | BC-02 카탈로그 | AG-02 | `brand` | `BrandModel` / `BrandService` / `BrandRepository` | `BrandFacade` / `BrandReader` | `BrandV1*`, `BrandAdminV1*` |
-| BC-02 카탈로그 | AG-03 | `product` | `ProductModel` / `ProductService` / `ProductRepository` | `ProductFacade` / `ProductReader`, `ProductSort` | `ProductV1*`, `ProductAdminV1*` |
+| BC-02 카탈로그 | AG-03 | `product` | `ProductModel` (루트), `ProductStockModel`·`ProductStockLedgerModel` (포함, DR-38), `CatalogRevisionModel` (포함, DR-37) / `ProductService` / `ProductRepository` | `ProductFacade` / `ProductReader`, `ProductSort` | `ProductV1*`, `ProductAdminV1*` |
 | BC-02 카탈로그 | AG-04 | `productlike` | `ProductLikeModel` (루트), `ProductStatModel` (포함, DR-36) / `ProductLikeService` / `ProductLikeRepository` | `ProductLikeFacade` / `ProductLikeReader` | `ProductLikeV1*` |
 | BC-03 포인트 | AG-05 | `point` | `PointModel` / `PointService` / `PointRepository` | `PointFacade` / `PointReader` | `PointV1*`, `PointAdminV1*` |
 | BC-04 주문 | AG-06 | `order` | `OrderModel` (루트), `OrderItemModel` (포함) / `OrderService` / `OrderRepository` | `OrderFacade` / `OrderReader` | `OrderV1*`, `OrderAdminV1*` |
 
-`*` = `ApiSpec`, `Controller`, `Dto`. Repository는 AG 루트 단위(6개)만 있다. `OrderItemRepository`는 만들지 않는다 (5-3). `ProductStatRepository`도 만들지 않고 `ProductLikeRepository`가 TB-08을 함께 맡는다 (DR-36). 조회 전용 Repository는 이 수에 넣지 않는다(DR-31).
+`*` = `ApiSpec`, `Controller`, `Dto`. Repository는 AG 루트 단위(6개)만 있다. `OrderItemRepository`는 만들지 않는다 (5-3). `ProductStatRepository`도 만들지 않고 `ProductLikeRepository`가 TB-08을 함께 맡는다 (DR-36). 같은 이유로 `ProductRepository`가 TB-10·TB-11을 함께 맡는다 (DR-38). 조회 전용 Repository는 이 수에 넣지 않는다(DR-31).
 
 조회 전용 (DR-31): `application.<ag>.query`에 `<Ag>Reader`, `<Ag>QueryRepository`(인터페이스), `<Ag>View`(조회별 중첩 record)를 두고, `infrastructure.<ag>.query`에 `<Ag>QueryRepositoryImpl`을 둔다. `user`를 뺀 AG 5개에 있다. View record: `BrandView.Summary`·`Admin` / `ProductView.Summary`(목록·상세 공용)·`Admin` / `ProductLikeView.Item` / `PointView.Balance` / `OrderView.Detail`·`Item`·`BuyerGroup`.
 
@@ -1202,8 +1248,9 @@ Facade·Reader public 메서드 ↔ FR (28:28)
 - 예외(DR-37): `ProductReader.getProduct`·`listProducts`는 트랜잭션이 없다. hit 경로에서 Redis를 기다리는 동안 커넥션을 잡지 않기 위해서다. revision과 결과를 함께 읽어야 하는 miss 경로와, 캐시 대상이 아닌 목록(목록과 `totalCount`)은 `ProductCacheLoader`의 읽기 전용 트랜잭션 하나에서 읽는다. MySQL 기본 격리 수준(REPEATABLE READ)이 트랜잭션의 첫 읽기에서 스냅샷을 정하므로 revision을 먼저 읽는다.
 - 상품·브랜드 쓰기 Facade는 목록 revision 올리기(`ProductService.bumpListRevision`)를 마지막에 부른다. 실패해서 롤백되면 revision도 함께 롤백되어, 새 revision의 키를 읽는 독자가 생기지 않는다 (DR-37).
 - 조회 FR 15개(FR-BRAND-01, PRODUCT-01/02, LIKE-03, POINT-02, ORDER-03/04, ADMIN-BRAND-01/03, ADMIN-PRODUCT-01/03, ADMIN-ORDER-01/02, 그리고 요청자 식별만 하는 조회)는 읽기 전용 트랜잭션. 요청자 식별을 뺀 13개는 Reader 메서드다(DR-31).
-- `OrderFacade.confirmOrder`는 한 트랜잭션에서 `ProductService.deductStock`(품목 수만큼) → `PointService.deduct` → `OrderModel.confirm` 순으로 부른다. 어느 하나가 예외를 던지면 전부 롤백 (ASM-14, DR-08). 순서는 검사 비용이 싼 것부터가 아니라 요구사항 FR-ORDER-02 실패 케이스 순서(상품 삭제 → 재고 → 잔액)를 따른다.
+- `OrderFacade.confirmOrder`는 한 트랜잭션에서 `ProductService.getActiveProductsForReserve`(재고·상품 잠금과 삭제 검증) → `ProductService.reserveStock`(품목 수만큼, DR-38) → `PointService.deduct` → `OrderModel.confirm` 순으로 부른다. 어느 하나가 예외를 던지면 전부 롤백 (ASM-14, DR-08). 순서는 검사 비용이 싼 것부터가 아니라 요구사항 FR-ORDER-02 실패 케이스 순서(상품 삭제 → 재고 → 잔액)를 따른다.
 - `BrandFacade.deleteBrand`는 한 트랜잭션에서 `BrandService.getActive` → `ProductService.deleteAllOfBrand` → `ProductLikeService`의 브랜드 단위 삭제 반영(DR-36) → `BrandService.delete` 순으로 부른다. 브랜드가 없거나 이미 삭제됐으면 상품을 읽기 전에 거절한다. 어느 하나가 예외를 던지면 브랜드·상품·좋아요 수 행 변경이 전부 롤백된다. 상품마다 따로 커밋하지 않는다 (DR-33).
+- `ProductService.create`·`updateStock`·`reserveStock`은 현재 재고 행과 원장 행, 옛 `stock` 컬럼을 같은 트랜잭션에서 함께 바꾼다 (DR-38).
 - `ProductFacade.createProduct`는 상품 저장 뒤 같은 트랜잭션에서 좋아요 수 행을 만들고, `deleteProduct`는 상품 삭제 뒤 같은 트랜잭션에서 그 행의 삭제를 반영한다 (DR-36).
 - LK- 없음.
 
@@ -1214,8 +1261,8 @@ Facade·Reader public 메서드 ↔ FR (28:28)
 | 모든 Facade·Reader public 메서드 (28개) | 전부 (공통 사전 조건) | `UserService.getUser(requesterId)` — 관리자 FR은 `UserService.getAdmin(requesterId)` | 조회 | BC-01 → BC-02/03/04 |
 | `PointFacade.chargeByAdmin`, `deductByAdmin` | FR-ADMIN-POINT-01, 02 | `UserService.getUser(targetUserId)` (대상 사용자 존재) | 조회 | BC-01 → BC-03 |
 | `OrderFacade.createOrder` | FR-ORDER-01 | `ProductService.getActiveProducts(productIds)` → 존재·ACTIVE·가격 | 조회 | BC-02 → BC-04 |
-| `OrderFacade.confirmOrder` | FR-ORDER-02 | `ProductService.getActiveProducts(productIds)` → 삭제 여부 재검증 | 조회 | BC-02 → BC-04 |
-| `OrderFacade.confirmOrder` | FR-ORDER-02 | `ProductService.deductStock(productId, quantity)` (품목마다) | **변경** (DR-08) | BC-02 → BC-04 |
+| `OrderFacade.confirmOrder` | FR-ORDER-02 | `ProductService.getActiveProductsForReserve(productIds)` → 재고·상품 잠금, 삭제 여부 재검증 (DR-34, DR-38) | 조회 | BC-02 → BC-04 |
+| `OrderFacade.confirmOrder` | FR-ORDER-02 | `ProductService.reserveStock(orderId, productId, quantity)` (품목마다, DR-38) | **변경** (DR-08) | BC-02 → BC-04 |
 | `OrderFacade.confirmOrder` | FR-ORDER-02 | `PointService.deduct(userId, totalAmount)` | **변경** (DR-08) | BC-03 → BC-04 |
 
 같은 BC 안의 AG 간 호출(`BrandFacade` → `ProductService`, `ProductFacade` → `BrandService`·`ProductLikeService` 등)은 BC 간이 아니므로 이 표에 없다. 허용 범위는 5-1~5-3의 AG 간 규칙. 2-3의 "표현 범위" 행은 상수 공유라 호출이 없다.
@@ -1251,7 +1298,7 @@ Facade·Reader public 메서드 ↔ FR (28:28)
 - [x] 전이 메서드 3개만 존재, setter 없음 — `BrandModel.delete()`, `ProductModel.delete()`(둘 다 `BaseEntity` 상속), `OrderModel.confirm()`. `ensureDraft()` 는 전이가 아니라 사전 조건 검사. 단 `BaseEntity.restore()` 는 공유 모듈에 남아 있다 (DR-26)
 - [x] `ApiControllerAdvice` 가 ER-01~22(ER-18 제외) 매핑, 매핑 없는 예외 밖으로 안 나감 — `CoreException` → `ErrorType` 21개 + 범용, 형식 오류는 파라미터·필드 이름 매핑 (DR-24), `Throwable` → 500
 - [x] 5-4 DR 대상 FR 없음 (해당 없음)
-- [x] 5-6 표 = 코드의 BC 간 호출 — 모든 Facade·Reader → `UserService.getUser/getAdmin`; `PointFacade.chargeByAdmin/deductByAdmin` → `UserService.getUser(target)`; `OrderFacade.createOrder` → `ProductService.getActiveProducts`; `OrderFacade.confirmOrder` → `ProductService.getActiveProducts`, `ProductService.deductStock`, `PointService.deduct`. 표 밖 호출 없음
+- [x] 5-6 표 = 코드의 BC 간 호출 — 모든 Facade·Reader → `UserService.getUser/getAdmin`; `PointFacade.chargeByAdmin/deductByAdmin` → `UserService.getUser(target)`; `OrderFacade.createOrder` → `ProductService.getActiveProducts`; `OrderFacade.confirmOrder` → `ProductService.getActiveProductsForReserve`, `ProductService.reserveStock`, `PointService.deduct`. 표 밖 호출 없음
 - [x] Repository 6개 (AG 루트 단위) — `User, Brand, Product, ProductLike, Point, Order`. `OrderItemRepository` 없음. 조회 전용은 별도로 `Brand, Product, ProductLike, Point, Order` 5개 (`*QueryRepository`, DR-31)
 - [x] 5-7 대상 전부 테스트 있음 — 296개 통과. FR 성공/실패: 명령은 `*FacadeIntegrationTest`, 조회는 `*ReaderIntegrationTest` 5개(`Brand`·`Product`·`ProductLike`·`Point`·`Order`). INV: `*ModelTest` 4개 + `UserServiceIntegrationTest`(INV-15) + `ProductLikeFacadeIntegrationTest`(INV-04·05) + `ProductLikeConcurrencyTest`(INV-05 동시 등록·취소, DR-36). ST: ST-03 `OrderModelTest`, ST-01/02 는 DR-26 으로 미작성. ER: `*ApiE2ETest` 5개(`Brand`·`Product`·`ProductLike`·`Point`·`Order`) + 공통 ER-01·02 `RequesterV1ApiE2ETest`
 
@@ -1265,7 +1312,7 @@ Facade·Reader public 메서드 ↔ FR (28:28)
 |---|---|---|---|---|---|---|---|
 | DR-01 | 1 | CON-03, ASM-01, ASM-26, TB-01~07 | 모든 테이블의 PK를 Long 자동 증가로 한다. `X-USER-ID` 값과 경로의 모든 `{…Id}`는 이 PK다 | (a) UUIDv7 (처음 검토했던 안) (b) 사용자만 UUID, 나머지 정수 (c) 헤더 형식 오류를 `INVALID_USER_ID`로 분리 | 팀 제약으로 확정. ID 생성은 DB가 맡으므로 코드에 생성 책임이 없다 | 팀 제약이 바뀌면 재검토. 그때 TB 컬럼 타입과 4장 요청 필드 타입이 함께 바뀐다 | 없음. ASM-01 유지 — `X-USER-ID`는 클라이언트가 아니라 시스템(앞단)이 넣는 값이므로 누락·형식 오류·없는 사용자를 나눌 실익이 없다. 셋 다 `USER_NOT_FOUND`. 같은 결로 경로·바디의 ID 형식 오류도 "그 ID가 가리키는 대상이 없다"로 보아 해당 `*_NOT_FOUND`로 처리한다(4장). 요구사항 6장 5번 항목은 이 결정으로 닫힌다 |
 | DR-02 | 2 | 좋아요, 좋아요 수, INV-05, FR-PRODUCT-01, FR-LIKE-01 | 좋아요·좋아요 수를 BC-02 카탈로그의 소유 개념으로 둔다. 별도 좋아요 BC를 만들지 않는다 | 좋아요 BC 분리 | 분리하면 카탈로그→좋아요(상품 존재 확인)와 좋아요→카탈로그(좋아요 수 조회)가 동시에 생겨 2-3 순환이 된다. 또 FR-PRODUCT-01의 `likes_desc` 정렬이 두 BC에 걸친 정렬·페이징이 되어 3-7-A에서 설계 불가로 떨어진다. 같은 BC 안에서는 AG-03과 AG-04를 한 조회로 정렬할 수 있다 | 좋아요가 상품 외 대상(브랜드 등)으로 확장되거나 팀이 갈리면 재검토한다 | 없음 |
-| DR-03 | 2 | 재고, INV-03, FR-ORDER-02, FR-ADMIN-PRODUCT-06 | 재고를 상품 AG(AG-03)의 포함 개념으로 둔다 | 재고를 별도 AG 또는 별도 BC로 | INV-03은 재고 단독 규칙이라 어디든 갈 수 있지만, 원문이 "상품은 이름·가격·재고를 가진다"로 못 박았고 재고를 참조하는 FR이 전부 상품 ID로 접근한다. 분리하면 FR-ORDER-02의 변경 AG가 하나 더 늘 뿐 얻는 게 없다 | 재고가 창고·위치 단위로 나뉘거나 상품 수정과 재고 변경의 잠금 경합이 문제되면 재검토한다 | 없음 |
+| DR-03 | 2 | 재고, INV-03, FR-ORDER-02, FR-ADMIN-PRODUCT-06 | 재고를 상품 AG(AG-03)의 포함 개념으로 둔다 | 재고를 별도 AG 또는 별도 BC로 | INV-03은 재고 단독 규칙이라 어디든 갈 수 있지만, 원문이 "상품은 이름·가격·재고를 가진다"로 못 박았고 재고를 참조하는 FR이 전부 상품 ID로 접근한다. 분리하면 FR-ORDER-02의 변경 AG가 하나 더 늘 뿐 얻는 게 없다 | 재고가 창고·위치 단위로 나뉘거나 상품 수정과 재고 변경의 잠금 경합이 문제되면 재검토한다 (갱신: DR-38로 AG는 그대로 두고 저장만 TB-10·TB-11로 나눴다. 상품 수정과 재고 변경은 이제 다른 행을 잠근다) | 없음 |
 | DR-04 | 2 | INV-10, AG-02, AG-03, FR-ADMIN-BRAND-05, FR-ADMIN-PRODUCT-02 | 브랜드와 상품을 별개 AG로 두고 INV-10을 거부(FR 트랜잭션)로 배치한다. 두 FR은 변경 AG 하나 + 다른 AG 조회를 같은 트랜잭션에서 수행해 검증한다 | (a) 브랜드 AG 안에 상품을 포함 (b) 최종 일관성 | (a)는 상품이 3-2 상태 전이를 가진 루트 후보이고, 상품 하나를 수정할 때 브랜드와 소속 상품 전체를 읽게 된다. (b)는 원문이 "삭제된 브랜드에 상품 생성 불가"를 거절로 적었으므로 완화가 아니다. 가이드의 거부(FR 트랜잭션)는 "다중 AG 변경"을 전제하지만 여기서는 한쪽이 조회다. 문자에서 벗어나는 지점이며, 단일 요청 안에서는 트랜잭션 원자성으로 지켜지고 동시 요청 사이의 창은 OQ-02 | 요구사항에 동시성 비기능이 추가되면 3-6에서 잠금 방식을 정하고 이 DR을 갱신한다. (갱신: DR-33으로 FR-ADMIN-BRAND-05는 AG-02·AG-03을 함께 바꾸게 되어 "한쪽이 조회"인 이탈은 FR-ADMIN-PRODUCT-02에만 남는다) | 없음 |
 | DR-05 | 2 | INV-04, AG-04, ASM-06, FR-LIKE-01 | INV-04(같은 쌍 최대 하나)는 루트 Model 하나가 검증할 수 없으므로 같은 BC의 Service가 "있으면 반환, 없으면 생성"으로 지키고, 3장에서 (사용자 ID, 상품 ID) 고유 제약을 함께 둔다 | 사용자별 좋아요 묶음을 AG 루트로 | ASM-06이 멱등이라 거절이 아니라 조회 후 생성이면 충분하다. 묶음 루트는 좋아요 수(상품 기준 집계)와 방향이 맞지 않는다 | ASM-06이 거절(`ALREADY_LIKED`)로 뒤집히면 검증이 예외를 던지도록 바꾸되 위치는 같다 | 없음 |
 | DR-06 | 2 | AG-01, ASM-26, 관리자 | 사용자 AG를 두되 근거 INV가 없으므로 요구사항 3-1에 INV-15 "관리자는 관리자 권한을 가진 사용자다(관리자 ⊂ 사용자)"를 추가하도록 피드백한다 | INV 없이 AG 유지 | 가이드 "근거 INV 없는 AG는 자격 없음"과 "모든 TB는 어느 AG 소속"이 충돌한다. ASM-26이 이미 이 규칙을 말하고 있으므로 INV로 올리는 것이 0-4에 맞다 | ASM-26이 "관리자를 별개 대상"으로 뒤집히면 AG-01을 둘로 나누고 INV-15를 다시 쓴다 | 요구사항 3-1에 INV-15 "관리자는 관리자 권한을 가진 사용자다" 추가 (확정) |
@@ -1297,10 +1344,11 @@ Facade·Reader public 메서드 ↔ FR (28:28)
 | DR-31 | 5 | 0-2, 3-7-A, 5-0, 5-1~5-3, 5-5, 5-6, 5-8, DR-02, DR-29, 조회 FR 13개 | 조회는 AG 경계를 넘어도 된다. 조회 FR은 `application.<ag>.query`의 Reader가 맡고 Controller가 Reader를 직접 부른다. Reader는 조회 Repository(인터페이스는 `application.<ag>.query`, 구현은 `infrastructure.<ag>.query`)를 부르고, 조회 Repository는 같은 BC 안 AG 테이블을 한 쿼리로 조인·집계해 전용 조회 DTO(`<Ag>View`의 중첩 record)로 바로 반환한다. 엔티티를 반환하지 않는다. BC 간 조인은 하지 않는다. 쓰기 경로의 AG 간 규칙(5-1~5-3)은 그대로. 조회 FR 13개를 전부 옮겼다(AG마다 `<Ag>Reader`). 명령과 그 응답(`*Info`, `ProductInfoAssembler`)은 바꾸지 않는다 | (a) 기존대로 Facade가 AG별 Service를 불러 Assembler로 조립 (b) 조회 Repository 인터페이스를 `domain`에 둔다 (c) 조회마다 DTO 파일을 따로 만든다 | (a)는 상품 목록 한 번에 쿼리가 3번(상품·브랜드·좋아요 수), 내 좋아요 목록은 4번 나가고, `likes_desc`의 좋아요 수를 정렬과 표시에서 두 번 센다. 조립이 없는 단일 AG 조회도 같은 경로로 모아 조회·명령의 경계를 한 가지로 둔다. (b)는 화면 모양의 조회 DTO가 도메인 규칙이 아닌데 domain에 들어간다. 대신 infrastructure → application 의존이 새로 생긴다(0-2). (c)는 조회가 늘수록 클래스가 폭발한다. AG당 `View` 하나에 중첩 record로 모은다. 엔티티 반환 금지는 ArchUnit 두 규칙으로 강제한다(5-8) | 조회가 다른 BC 데이터와 섞인 정렬·페이징을 요구하면(BC 간 조인 필요) 읽기 모델 분리나 BC 경계 재검토로 간다. 새 조회 FR도 같은 방식으로 Reader에 둔다 | 없음 |
 | DR-32 | 5 | ASM-08, ER-07, EP-02, FR-PRODUCT-01, DR-30, DR-31 | 정렬값 `sort` 의 문자열 → `ProductSort` 변환은 interfaces 가 한다. `ProductV1Controller` 가 `ProductSort.from` 으로 바꿔 `ProductReader.listProducts` 에 넘기고, 허용 목록 밖·둘 이상 지정은 거기서 `INVALID_SORT`. `ProductSort` 는 조회 경로에서만 쓰이므로 `domain.product` 가 아니라 `application.product.query` 에 둔다 | (a) Reader 가 `String` 을 받아 변환 (b) Spring `Converter<String, ProductSort>` (c) `PageQuery` 처럼 `HandlerMethodArgumentResolver` | 요청 값의 형식 검증·변환은 `page`·`size` 와 같은 자리(DR-30, interfaces)에 둔다. (a)는 Reader 가 HTTP 문자열을 알게 되고, 잘못된 sort 와 없는 요청자가 함께 오면 `page` 와 달리 `USER_NOT_FOUND` 가 먼저 나간다. (b)는 변환 예외가 `MethodArgumentTypeMismatchException` 으로 감싸져 advice 매핑을 새로 둬야 한다. (c)는 `PageQuery` 가 6개 EP 공통이라 둔 것이고 sort 는 EP-02 하나뿐이다. `sort` 를 둘 이상 주면 Spring 이 쉼표로 이어 붙인 한 문자열이 되어 그대로 거절된다 | 정렬을 받는 EP 가 늘면 (c) 리졸버로 옮긴다 | 없음 |
 | DR-33 | 2, 3, 4, 5 | FR-ADMIN-BRAND-05, INV-10, ST-01, ST-02, EP-18, ER-18, DR-04, DR-21, OQ-02 | 요구 변경: 브랜드 삭제는 연결된 삭제되지 않은 상품(재고 0 포함)을 같은 트랜잭션에서 함께 논리 삭제한다. 이미 삭제된 상품·다른 브랜드는 바꾸지 않는다. `ProductService.deleteAllOfBrand`가 소속 미삭제 상품을 엔티티로 읽어 각각 `delete()`를 부르고 변경 감지로 반영한다. `BRAND_HAS_PRODUCTS`(ER-18)는 발생 조건이 없어 `ErrorType`과 4-4에서 삭제한다. 응답은 DR-21 그대로 200 + `data` null | (a) JPQL 벌크 `UPDATE product SET deleted_at = ? WHERE brand_id = ? AND deleted_at IS NULL` (b) `ER-18`을 정의만 남김 (c) 응답에 삭제된 상품 수·ID 반환 | (a)는 쿼리 한 번이지만 `@PreUpdate`를 거치지 않아 `updated_at`을 직접 넣어야 하고 영속성 컨텍스트와 어긋난다. 브랜드당 상품 수에 대한 요구가 없어 `BaseEntity.delete()`를 그대로 쓰는 쪽을 택했다. (b)는 쓰이지 않는 실패 이름이 계약에 남는다. (c)는 FR 출력에 없는 필드다(DR-21). 중간 실패 시 전부 롤백은 Facade 트랜잭션 하나로 지켜지며 상품마다 커밋하지 않는다. 동시 요청 창(상품 생성·수정·재고 변경·주문 확정과의 경합)은 OQ-02에 넣고 잠금은 두지 않는다 | 브랜드당 상품 수가 커져 삭제가 느려지면 (a)로 바꾸고 TB-03.`brand_id` 인덱스를 재검토한다. 동시성 비기능이 추가되면 OQ-02와 함께 잠금을 정한다 | FR-ADMIN-BRAND-05 사전 조건·결과·실패 케이스, FR-ADMIN-PRODUCT-05 부수 효과, INV-10 메모, 3-2 전이, 1-3 동시성 항목에 `(요구 변경 DR-33)` |
-| DR-34 | 3, 5 | FR-ORDER-02, FR-POINT-03, FR-ADMIN-POINT-02, INV-01, INV-03, AG-03, AG-05, DR-08, DR-33, OQ-03 | 요구 변경: 주문 확정이 동시에 와도 INV-01·INV-03을 지킨다. 상품·포인트 행을 비관적 쓰기 잠금(`SELECT ... FOR UPDATE`)으로 읽는다. 상품은 `ProductService.getActiveProductsForUpdate`가 품목 상품 전부를 id 오름차순으로 한 번에 잠그며, 확정 트랜잭션에서 상품을 처음 읽는 조회가 이것이어야 한다. 포인트는 `PointService.deduct`가 잠금 조회를 써서 차감 경로 전부가 잠근다. 잠금 순서는 상품 → 포인트. 경합에서 진 요청은 앞 요청 커밋 뒤 최신 값으로 검사해 기존 `INSUFFICIENT_STOCK`·`INSUFFICIENT_POINT`로 거절된다 | (a) 낙관적 잠금(`@Version`) (b) 조건부 원자 갱신 `UPDATE ... SET stock = stock - ? WHERE stock >= ?` (c) 확정 전용 포인트 차감만 잠금 | (a)는 재고·잔액이 남아 있어도 충돌로 실패하므로 재시도가 필요하고, 인기 상품 한 행에 확정이 몰리는 구조라 충돌이 잦다. 버전 컬럼도 새로 생긴다. (b)는 재고 검증이 도메인 모델 밖 SQL로 나가고 `@PreUpdate`·영속성 컨텍스트와 어긋난다(DR-33 (a)와 같은 이유). (c)는 환불·운영자 차감이 여전히 경합에 노출된다. 락 없이 먼저 읽은 엔티티는 이후 잠금 조회에서도 1차 캐시의 옛 값이 반환되므로, 기존 `getActiveProducts` 뒤에 잠그는 방식은 쓰지 않는다. 검증은 `OrderConfirmConcurrencyTest` (같은 상품 5건 동시 확정, 같은 사용자 5건 동시 확정) | 확정 지연이나 잠금 대기가 측정으로 문제가 되면 (b) 또는 재고 분리 저장을 재검토한다 | 요구사항 1-3 동시성 항목, FR-ORDER-02 비기능에 `(요구 변경 DR-34)` |
+| DR-34 | 3, 5 | FR-ORDER-02, FR-POINT-03, FR-ADMIN-POINT-02, INV-01, INV-03, AG-03, AG-05, DR-08, DR-33, OQ-03 | 요구 변경: 주문 확정이 동시에 와도 INV-01·INV-03을 지킨다. 상품·포인트 행을 비관적 쓰기 잠금(`SELECT ... FOR UPDATE`)으로 읽는다. 상품은 `ProductService.getActiveProductsForUpdate`가 품목 상품 전부를 id 오름차순으로 한 번에 잠그며, 확정 트랜잭션에서 상품을 처음 읽는 조회가 이것이어야 한다. 포인트는 `PointService.deduct`가 잠금 조회를 써서 차감 경로 전부가 잠근다. 잠금 순서는 상품 → 포인트. 경합에서 진 요청은 앞 요청 커밋 뒤 최신 값으로 검사해 기존 `INSUFFICIENT_STOCK`·`INSUFFICIENT_POINT`로 거절된다 | (a) 낙관적 잠금(`@Version`) (b) 조건부 원자 갱신 `UPDATE ... SET stock = stock - ? WHERE stock >= ?` (c) 확정 전용 포인트 차감만 잠금 | (a)는 재고·잔액이 남아 있어도 충돌로 실패하므로 재시도가 필요하고, 인기 상품 한 행에 확정이 몰리는 구조라 충돌이 잦다. 버전 컬럼도 새로 생긴다. (b)는 재고 검증이 도메인 모델 밖 SQL로 나가고 `@PreUpdate`·영속성 컨텍스트와 어긋난다(DR-33 (a)와 같은 이유). (c)는 환불·운영자 차감이 여전히 경합에 노출된다. 락 없이 먼저 읽은 엔티티는 이후 잠금 조회에서도 1차 캐시의 옛 값이 반환되므로, 기존 `getActiveProducts` 뒤에 잠그는 방식은 쓰지 않는다. 검증은 `OrderConfirmConcurrencyTest` (같은 상품 5건 동시 확정, 같은 사용자 5건 동시 확정) | 확정 지연이나 잠금 대기가 측정으로 문제가 되면 (b) 또는 재고 분리 저장을 재검토한다. (갱신: DR-38로 상품 행 쓰기 잠금은 재고 행(TB-10) 쓰기 잠금 + 상품 행 읽기 잠금으로 바뀌었고, `getActiveProductsForUpdate`는 `getActiveProductsForReserve`가 됐다) | 요구사항 1-3 동시성 항목, FR-ORDER-02 비기능에 `(요구 변경 DR-34)` |
 | DR-35 | 1, 3, 4, 5 | FR-PRODUCT-01, EP-02, ER-03, TB-03, DR-01, DR-31, DR-33 | 요구 변경: 상품 목록에 브랜드 필터를 둔다. 쿼리 `brandId` 하나, 선택. 없으면 전체, 있으면 TB-03.`brand_id` = ? 를 목록과 `totalCount` 조회 양쪽에 건다. 없는·삭제된 브랜드는 확인하지 않고 빈 목록 200. `brandId` 형식 오류(long 아님)는 DR-01 규칙대로 ER-03 `BRAND_NOT_FOUND`. `ProductReader.listProducts` → `ProductQueryRepository.findActivePage`에 `Long brandId`(null 허용)를 그대로 넘긴다 | (a) 없는·삭제된 브랜드는 ER-03 404 (b) 형식 오류만 ER-22 400 (c) 여러 브랜드 동시 지정 (d) `sort`와 묶은 조회 조건 객체 | (a)는 브랜드 존재 확인 조회가 한 번 더 붙는다. 삭제된 브랜드의 상품은 함께 삭제되므로(DR-33) 조건만 걸어도 결과는 비어 있다. (b)는 쿼리의 `brandId`만 경로·바디와 다르게 다뤄야 해 advice에 경로 구분을 새로 둬야 한다. 형식 오류는 404, 없는 ID는 200이 되는 비대칭은 감수한다. (c)는 요구가 없다. (d)는 필터가 하나뿐이라 이르다 | 필터가 늘면 (d)로 묶는다. 없는 브랜드를 클라이언트가 구분해야 하면 (a) | FR-PRODUCT-01 사전 조건·출력, 1-3 브랜드 필터 항목 삭제에 `(요구 변경 DR-35)` |
 | DR-36 | 2, 3, 4, 5 | 좋아요 수, INV-05, AG-04, TB-08, IX-02, IX-10~12, FR-PRODUCT-01/02, FR-LIKE-01/02, FR-ADMIN-PRODUCT-01/02/03/05, FR-ADMIN-BRAND-05, DR-02, DR-15, DR-31, DR-33, DR-34 | 좋아요 수를 관계에서 세지 않고 저장한다. 저장 위치는 TB-03이 아니라 상품당 한 행인 별도 테이블 TB-08 `product_stat`(AG-04 포함 개념)이다. TB-08은 정렬·필터용으로 TB-03의 `brand_id`·`deleted_at` 사본을 든다. (1) 행은 상품 생성 트랜잭션에서 `like_count` 0으로 만든다. (2) 등록은 관계를 새로 저장했을 때만, 취소는 쌍 조건 삭제의 지운 행 수가 1일 때만 같은 트랜잭션에서 `like_count = like_count ± 1` 원자적 갱신을 한다. (3) 상품 삭제·브랜드 삭제는 같은 트랜잭션에서 TB-08.`deleted_at`도 채운다. TB-08은 만든 뒤 엔티티로 읽어 고치지 않고 조건 갱신(`UPDATE ... WHERE product_id = ?` / `brand_id = ?`)으로만 바꾼다. 변경 감지로 저장하면 행 전체를 쓰므로 그 사이 반영된 좋아요 수를 읽은 시점 값으로 덮는다. (4) 고객·관리자의 좋아요 수 조회와 `likes_desc` 정렬 모두 TB-08에서 읽는다. `likes_desc`는 TB-08만으로 페이지를 먼저 고르고 그 상품에만 조인한다. (5) TB-04 `product_id` 인덱스(IX-02)는 지운다. Repository는 늘리지 않고 `ProductLikeRepository`가 TB-08을 함께 맡는다 | (a) 그대로 관계 개수를 집계 (b) TB-03에 `like_count` 컬럼 (c) 첫 좋아요 때 행 생성 (d) 엔티티를 읽어 값을 바꾸는 갱신, 또는 비관적 잠금 (e) 이벤트·배치로 비동기 갱신 (f) 정렬에만 저장값을 쓰고 표시는 집계 유지 (g) 불일치 보정 배치 | (a)는 정렬 키가 집계값이라 대상 상품 전부를 집계한 뒤에야 정렬·페이징할 수 있다. 상품 500만·좋아요 760만에서 전체 목록이 수십 초였다(week4 `product-list-performance.md` 7장). (b)는 등록·취소마다 상품 행과 상품 인덱스 4개를 갱신하게 되고 재고 잠금(DR-34)과 같은 행을 두고 다툰다. 자주 바뀌는 값을 따로 떼어(수직 분할) 상품 쓰기와 분리한다. 사본 컬럼은 둘 다 상품 삭제 외에는 바뀌지 않는다(`brand_id`는 INV-11로 불변). (c)는 좋아요 0인 상품의 행이 없어 `likes_desc` 목록에서 빠지거나 TB-03과 다시 조인해야 한다. (d)는 동시 등록에서 갱신이 유실되거나 잠금 대기가 생긴다. 검증할 규칙이 없는 증감이라 DR-34 (b)를 버린 이유(검증이 SQL로 나감)가 해당하지 않는다. (e)는 정렬값과 관계 수가 한동안 어긋난다. (f)는 같은 화면에서 정렬 순서와 표시값이 어긋날 수 있다. (g)는 정상 경로에서 어긋날 곳이 없어 두지 않는다. 남는 경로는 DB 직접 수정뿐이다 | 인기 상품 한 행에 갱신이 몰려 대기가 문제되면 (e) 또는 행 분할 카운터로 간다. 좋아요 수 외의 상품 통계가 생기면 TB-08에 컬럼을 더한다 | 용어집 좋아요 수, FR-LIKE-01/02 결과에 `(설계 결정 DR-36)` |
 | DR-37 | 2, 3, 5 | FR-PRODUCT-01/02, FR-ADMIN-PRODUCT-02/04/05/06, FR-ADMIN-BRAND-04/05, FR-ORDER-02, FR-LIKE-01/02, TB-02, TB-03, TB-09, AG-03, DR-22, DR-31, DR-34, DR-36 | 고객 상품 상세와 고객 목록의 latest 첫 페이지(brandId 없음, page 0, size 20, `totalCount` 포함)를 Redis에 revision 기반으로 캐시한다. 좋아요 수는 캐시에 담지 않고 읽을 때 TB-08에서 붙인다. (1) revision은 DB에 둔다. 상세 키는 `product:detail:v1:{상품 id}:{TB-03.revision}:{TB-02.revision}`, 목록 키는 `product:list:latest:v1:s20:{TB-09.revision}`이다. `v1`은 캐시 값의 모양 버전이다. (2) 상품 `revision`은 이름·가격 수정과 삭제, 브랜드 `revision`은 이름 수정과 삭제가 엔티티 메서드 안에서 올린다. 목록 revision은 상품 생성·수정·삭제, 브랜드 수정·삭제 Facade가 같은 트랜잭션의 마지막에 조건 갱신으로 올린다. 첫 페이지에 실제로 영향이 있는지는 따지지 않는다. 재고 변경·주문 확정·좋아요·브랜드 생성은 어떤 revision도 올리지 않는다. (3) 독자는 매번 DB에서 현재 revision을 읽고 그 키만 읽는다(상세는 상품·브랜드 revision과 좋아요 수를 쿼리 하나로). revision 자체는 캐시하지 않는다. (4) miss는 `ProductCacheLoader`가 한 읽기 전용 트랜잭션에서 revision을 다시 읽은 뒤 결과를 읽어, 그 revision의 키에 쓴다. (5) 쓰기는 캐시를 지우지 않는다. 옛 키는 TTL(상세 30분, 목록 10분)로 정리된다. (6) Redis 장애는 던지지 않는다. 읽기는 miss, 쓰기는 무시다. 명령 대기 상한은 `datasource.redis.timeout` 300ms다. GET은 replica 우선, SET은 master로 보낸다 | (a) 쓰기 커밋 뒤 키 삭제(cache-aside 무효화) (b) 카탈로그 전체에 revision 하나 (c) 상품 `@Version`을 revision으로 사용 (d) 브랜드 수정 때 소속 상품 revision 일괄 갱신 (e) 좋아요 수까지 캐시 (f) 현재 revision도 Redis에 캐시 (g) 스탬피드 방지(단일 실행·분산 락) (h) 404 캐시 (i) 목록 revision 갱신 전 명시적 flush | (a)는 커밋과 삭제 사이, 삭제 실패, 늦게 끝난 이전 조회의 재삽입에서 옛 값이 남는다. revision 키는 한 번 쓰면 내용이 바뀌지 않아 이 경우가 모두 "옛 키에 남은 값"이 되고 새 독자는 그 키를 읽지 않는다. (b)는 관리자 쓰기 한 번에 모든 상세 캐시가 깨진다. (c)는 재고 차감마다 올라가 주문이 몰리는 상품일수록 상세 캐시가 깨진다. (d)는 브랜드 수정이 소속 상품 행을 잠그는데, 그 순서가 주문 확정의 상품 id 오름차순 잠금(DR-34)과 달라 교착 위험이 생긴다. 브랜드 revision을 키에 넣으면 상품 행을 건드리지 않는다. (e)는 좋아요마다 revision이 올라 hit가 거의 없다. (f)는 Redis의 revision이 DB와 어긋나면 옛 키를 계속 읽는다. (g)는 revision이 올라간 직후 miss가 몰리면 count(MySQL 약 0.86초, week4 `product-list-performance.md` 4-2)가 겹쳐 돌지만, 관리자 쓰기가 드물어 측정 전에는 두지 않는다. (h)는 삭제가 revision을 올려 바로 404가 되므로 이득이 적다. (i)는 실제 잠금 순서를 코드 순서와 맞추지만, 관리자 쓰기끼리는 TB-09에서 먼저 줄을 서고 주문 확정·좋아요는 TB-09를 잠그지 않아 지금 순서로도 교착이 없다(3-6). 검증은 `ProductCacheIntegrationTest`(DB-only·miss·hit 일치와 hit의 결과 조회 0회, 쓰기별 반영, 롤백, 늦은 채움, miss 스냅샷), `ProductCacheRedisOutageTest`(Redis 일시정지·복구), Facade 통합 테스트의 revision 증가 표 | 관리자 쓰기 직후 count 동시 실행이 측정으로 문제가 되면 (g). 캐시 대상이 늘면 TB-09에 행을, 상세 캐시 값이 다른 테이블의 값을 담게 되면 키에 그 revision을 더한다. PostgreSQL로 운영하면 miss 트랜잭션에 REPEATABLE READ를 명시해야 한다(기본 READ COMMITTED는 문장마다 스냅샷) | FR-PRODUCT-01/02 비기능에 `(설계 결정 DR-37)` |
+| DR-38 | 2, 3, 5 | 재고, INV-03, AG-03, TB-03, TB-10, TB-11, IX-13, IX-14, FR-ORDER-02, FR-ADMIN-PRODUCT-01/02/03/06, DR-03, DR-08, DR-34, DR-36 | 주문 구조 변경에 대비해 재고에 변동 종류(상태)를 남긴다. AG는 그대로(DR-03) 두고 저장만 둘로 나눈다. (1) TB-11 `product_stock_ledger`는 재고의 진실인 append-only 원장이다. 행 종류는 `ADJUSTMENT`(관리자 설정·상품 생성·기존 재고 이관에서 차이만큼, 같은 수량이면 행 없음) / `RESERVE`(주문 확정의 품목별 차감, 음수) / `RELEASE`(주문 취소의 반환, 양수. 취소 FR이 없어 아직 쓰지 않는다). (`order_id`, `product_id`, `type`) 고유. (2) TB-10 `product_stock`은 상품당 한 행인 현재 값 `available` 하나다. 상품별 원장 합과 같고, 원장 행을 남기는 트랜잭션이 함께 바꾼다. INV-03은 `available ≥ 0`으로 `ProductStockModel`이 지킨다. (3) 잠금: 확정은 재고 행 쓰기 잠금(`product_id` 오름차순) → 상품 행 읽기 잠금(`FOR SHARE`, 식별자 오름차순) → 포인트. 재고 변경도 재고 행을 쓰기 잠금으로 읽는다. (4) 옛 TB-03.`stock` 컬럼은 이관 기간 동안 남기고 같은 값으로 함께 쓴다. 엔티티에서 `updatable = false`로 막고 단건 갱신(`ProductRepository.syncLegacyStock`)으로만 맞춘다. 읽는 곳은 없다. 이관은 `docs/week5/product-stock.sql`(`-pg.sql`) | (a) 재고를 별도 AG로 (b) 원장 행에 상태 컬럼을 두고 갱신(예약 → 확정/해제) (c) 원장만 두고 매번 합산 (d) TB-10에 `on_hand`·`reserved` 두 값 (e) 상품 생성·이관 전용 행 종류(`INITIAL`·`OPENING`) (f) 원장 고유 키를 (`order_id`, `type`)로 (g) 확정이 상품 행만 쓰기 잠금(DR-34 그대로) (h) 상품 행을 잠그지 않음 (i) 옛 컬럼을 엔티티 변경 감지로 함께 씀 (j) 옛 컬럼을 바로 버림(NULL 허용 후 갱신 중단) | (a)는 원장이 늘어도 재고를 참조하는 FR이 전부 상품 ID로 들어오고 확정의 변경 AG만 늘어난다(DR-03). (b)는 원장이 이력이 아니라 상태가 되어 지난 변동을 잃는다. (c)는 확정마다 원장을 합산하고, 잠글 행이 없다. (d)는 지금 흐름(확정 = 즉시 차감)에서 `reserved`를 쓰는 곳이 없다. (e)는 0에서 시작해 차이만큼 맞춘 것으로 보면 `ADJUSTMENT` 하나로 같은 원장 합이 나온다. (f)는 상품이 둘 이상인 주문의 두 번째 `RESERVE`가 고유 제약에 걸린다. (g)는 재고가 상품 행 밖으로 나갔는데 상품 행으로 줄을 세우면, 옛 컬럼을 지운 뒤에도 재고 변경과 상품 수정이 같은 행에서 다툰다. (h)는 확정이 상품 삭제 여부를 읽은 직후 상품이 삭제될 수 있는 창이 새로 생긴다(DR-34가 막던 것). (i)는 `@DynamicUpdate`가 없어 행 전체를 쓰므로, 확정이 읽은 뒤 삭제된 상품의 `deleted_at`을 NULL로 되돌리고, 관리자 수정이 옛 재고로 덮는다(분리 전에도 있던 덮어쓰기다). (j)는 컬럼을 지우기 전까지 이관 결과를 옛 값과 맞춰 보고 되돌릴 수 있게 값을 맞춰 둔다 | 주문 생성 시 예약·결제 후 확정 같은 흐름이 들어오면 `RESERVE`·`RELEASE`의 시점과 (d)를 다시 본다. 옛 컬럼을 지우면 (4)와 `ProductModel` 생성자의 재고 검증, 이관 스크립트 안내를 걷어 내고 3-6 메모의 잠금 상향 문단을 지운다 | 없음 |
 
 ### A-2. 열린 질문
 
