@@ -41,9 +41,11 @@ public class LikeFacade {
         return likeRepository.findByUserIdAndProductId(userId, productId)
             .map(LikeInfo::from)
             .orElseGet(() -> {
-                Like saved = likeRepository.save(Like.create(userId, productId));
-                productListCacheInvalidator.invalidateAfterCommit(product.getBrandId());
-                return LikeInfo.from(saved);
+                Like like = Like.create(userId, productId);
+                if (likeRepository.insertIfAbsent(like)) {
+                    productListCacheInvalidator.invalidateAfterCommit(product.getBrandId());
+                }
+                return LikeInfo.from(like);
             });
     }
 
