@@ -463,7 +463,12 @@ callback 의 조회도 `last_checked_at` 을 갱신한다.
 
 - 10 s 마다, `REQUESTED` · `PENDING` · `UNKNOWN` 이고 `requested_at` 이 10 s 보다 오래됐고 `last_checked_at` 이 2 s 보다 오래된 결제를 오래된 순으로 50 건.
   `requested_at` 조건은 confirm 이 아직 POST 중인 결제를 건드리지 않기 위해서다.
-- 고른 결제의 `last_checked_at` 을 먼저 갱신(짧은 TX, 조건부 UPDATE)해 다른 서버의 sweeper 가 같은 결제를 집지 않게 한 뒤, TX 밖에서 조회 · TX B.
+- **집기는 짧은 TX 하나다.** `SELECT … FOR UPDATE SKIP LOCKED` 로 고르고, 고른 결제의 `last_checked_at` 을 갱신하고, 바로 commit 한다. 조회 · TX B 는 그 뒤 TX 밖에서 한다.
+  - SKIP LOCKED 는 두 sweeper 가 **같은 순간에** 집을 때 서로 기다리지 않고 다른 결제를 집게 한다. `last_checked_at` 은 집기 TX 가 끝난 **뒤** 조회하는 동안 다른 sweeper · reconcile 이 같은 결제를 건너뛰게 한다.
+  - SKIP LOCKED 만으로 막으려면 PG 조회 내내 TX 를 열어 둬야 한다. 그러면 HTTP 동안 잠금을 쥐고(원문 위반), 그 결제의 callback 이 TX B 에서 payment 잠금을 기다린다.
+  - 집기 TX 는 payment 행만 잠그고 남의 잠금을 기다리지 않으므로 TX B(주문 → payment)와 교착이 없다.
+  - 인덱스 `(status, requested_at)` 이 필요하다. 없으면 `FOR UPDATE` 가 조건 밖의 행까지 훑으며 잠근다(W3).
+  - 조건부 UPDATE(`WHERE last_checked_at < now - 2s`)만으로도 중복은 막는다. 다만 동시에 집는 sweeper 가 같은 행을 두고 잠금을 기다린다. **뒤집을 조건**: MySQL 8 미만으로 옮길 때.
 - `CONFLICT` 는 집지 않는다(`PAY-018`). 다시 조회해도 2건은 2건이다.
 - 테스트에서는 스케줄을 끄고 "한 번 돌리기" 를 직접 부른다.
 
@@ -502,7 +507,21 @@ callback 은 "확인해 보라" 는 계기라 놓쳐도 잃는 정보가 없다 
 | 키가 붙은 뒤 숨은 재전송으로 생긴 두 번째 거래 | 그 거래의 callback 이 오기 전에는 드러나지 않는다 | 키가 있는 결제는 키로만 조회한다(5.1). 종결된 결제마다 주문 조회를 더 하면 드러나지만 PG 조회가 그만큼 는다 |
 | confirm 스레드의 TX B(생성 응답 반영)가 DB 오류로 실패 | `REQUESTED` 로 남고 confirm 은 202 다 | POST 는 이미 나갔으므로 실패로 응답할 수 없다. callback · reconcile · sweeper 가 조회로 같은 결과에 닿는다 |
 
-운영에서 볼 지표: 미완료 결제의 체류 시간, `CONFLICT` 수, 불일치 기록 수, 실제 create · lookup 호출 수, 묶인 예약 수.
+### 9.1 지표
+
+한계의 장면이 **생겼는지조차 모르는 것**을 막는다. W4 의 캐시 지표(`product.listing.cache.*`)와 같은 이름 규칙이다. 단계마다 그 단계에서 생기는 지표를 함께 넣고, 테스트는 fixture 의 호출 수와 지표가 같은지도 대조한다.
+
+| 이름 | 종류 | 태그 | 보는 것 |
+|---|---|---|---|
+| `payment.create` | 카운터 | `result=accepted · rejected · unknown` | 실제 생성 호출 수 |
+| `payment.lookup` | 카운터 | `source=callback · reconcile · sweeper`, `result=found · not_found · unavailable` | 조회가 어느 입구에서 얼마나 나가고 얼마나 실패하나 |
+| `payment.settle` | 카운터 | `to=pending · success · failed · conflict · noop` | 결과 반영이 바꾼 것과 효과가 없던 것(중복) |
+| `payment.discrepancy` | 카운터 | `reason` | 0 이 아니면 사람이 본다 |
+| `payment.bulkhead.rejected` | 카운터 | — | 503 `PAYMENT_BUSY` |
+| `payment.callback` | 카운터 | `response=200 · 400 · 503` | callback 에 돌려준 것 |
+| `payment.unresolved` · `payment.unresolved.oldest` | 게이지 (30 s 마다 DB 에서) | `status` | 미완료 수와 가장 오래된 미완료의 나이 = 묶인 예약의 체류 시간 |
+
+회로 상태는 Resilience4j 가 내는 지표를 그대로 쓴다.
 
 ## 10. 지금 고르지 않은 선택지
 
@@ -583,4 +602,19 @@ JDK 내장 `HttpServer` 로 테스트 안에서 띄운다. 의존성을 더하�
 | 7 | 회복 도구 — timeout · 조회 재시도 · 회로 · bulkhead · reconcile 간격 | 회로 전이, 실제 호출 수, 21 번째 503 |
 | 7.5 | sweeper (선택) | 응답 유실 · 재시작 장면이 사람 없이 종결 |
 | 8 | 남은 장면 — 성공 뒤 내부 저장 실패 · 재시작 · 관리자 재고 설정 · 삭제 상품 · POINT 과거 주문 · 캐시 무효화 | 원문 6장 표의 나머지 |
+| 8.5 | 장애 실험 (k6 + fixture 지연) — 아래 표 | 그래프와 숫자. PR 의 "대표 결과" |
 | 9 | 기술 글 | — |
+
+지표(9.1)는 따로 단계를 두지 않고 1 ~ 8 단계마다 함께 넣는다.
+
+**8.5 장애 실험.** 설계의 주장(bulkhead 가 다른 API 를 지킨다, 회로가 PG 호출을 멈춘다)은 아직 계산이다. W4 처럼 k6 로 재서 확인한다. fixture 를 테스트 밖에서 띄우는 작은 진입점이 필요하다.
+
+| 실험 | 조건 | 재는 것 | 기대 |
+|---|---|---|---|
+| E1 기준선 | PG 접수 50 ms, confirm 초당 50 + 상품 목록 초당 300 | 두 API 의 p50 · p99 · 처리량 | 둘 다 안정 |
+| E2 PG 지연 · bulkhead 끔 | PG 접수 2 s | 상품 목록 p99, 사용 중 Tomcat 스레드 | 상품 목록도 느려진다 |
+| E3 PG 지연 · bulkhead 20 | E2 와 같음 | 같음 + 503 수 | 상품 목록은 E1 수준, confirm 일부만 503 |
+| E4 조회 실패 | 조회에 5xx | 회로 전이 시각, PG 조회 수 | 표본 5 회 안에 OPEN, 이후 조회 0, 대기 뒤 HALF_OPEN → 복구 |
+| E5 callback 폭주 | 같은 callback 1,000 건 동시 | 확정 · 예약 소비 · 불일치 수 | 확정 1, 소비 1, 나머지 효과 0 |
+
+**여유가 있으면** — sweeper 의 지수 backoff(확인할 때마다 간격 2 배, 상한 5 분, `check_count` 열. 영원히 0 건인 결제가 PG 를 계속 두드리지 않게), 관리자 결제 조회(`GET /api-admin/v1/payments?status=` · `/{id}/discrepancies`, 조회만).
