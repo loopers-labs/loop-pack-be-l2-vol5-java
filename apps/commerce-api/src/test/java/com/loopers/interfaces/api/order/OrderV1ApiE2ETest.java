@@ -1,6 +1,7 @@
 package com.loopers.interfaces.api.order;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.loopers.interfaces.api.order.OrderV1Dto.OrderItemRequest;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderItem;
@@ -11,6 +12,7 @@ import com.loopers.domain.user.UserRepository;
 import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.domain.point.Point;
+import com.loopers.domain.point.PointBalance;
 import com.loopers.domain.point.PointRepository;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.admin.AdminMockMvcClient;
@@ -19,6 +21,8 @@ import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -27,6 +31,7 @@ import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -62,7 +67,7 @@ class OrderV1ApiE2ETest {
         HttpHeaders headers = new HttpHeaders();
         headers.set("X-USER-ID", user.getId().toString());
         OrderV1Dto.CreateRequest request = new OrderV1Dto.CreateRequest(
-            java.util.List.of(new com.loopers.application.order.OrderFacade.OrderRequestItem(product.getId(), 2))
+            java.util.List.of(new com.loopers.interfaces.api.order.OrderV1Dto.OrderItemRequest(product.getId(), 2))
         );
 
         ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> response = rest.exchange(
@@ -75,6 +80,80 @@ class OrderV1ApiE2ETest {
         assertThat(saved.getStatus().name()).isEqualTo("DRAFT");
         assertThat(saved.getTotalAmount()).isEqualTo(200L);
         assertThat(products.findById(product.getId()).orElseThrow().getStock().amount()).isZero();
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void rejectsNullOrderItemWithoutSavingAnOrderOrChangingExistingData(boolean includeValidItem) {
+        User user = saveUser();
+        Brand brand = brands.save(Brand.create("Nike"));
+        Product product = Product.create(brand.getId(), "Air Max", 100L);
+        product.changeStockTo(5L);
+        product = products.save(product);
+        points.save(Point.create(user.getId(), new PointBalance(1_000L)));
+        Order existingOrder = orders.save(Order.create(user.getId(), List.of(
+            OrderItem.create(product.getId(), product.getName(), product.getPrice(), 1)
+        )));
+        List<OrderItemRequest> requestItems = new ArrayList<>();
+        if (includeValidItem) {
+            requestItems.add(new OrderItemRequest(product.getId(), 2));
+        }
+        requestItems.add(null);
+
+        ResponseEntity<ApiResponse<Object>> response = rest.exchange(
+            "/api/v1/orders", org.springframework.http.HttpMethod.POST,
+            new HttpEntity<>(new OrderV1Dto.CreateRequest(requestItems), headers(user.getId().toString())),
+            new ParameterizedTypeReference<>() {}
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().meta().result()).isEqualTo(ApiResponse.Metadata.Result.FAIL);
+        assertThat(orders.findAll()).singleElement().satisfies(savedOrder -> {
+            assertThat(savedOrder.getId()).isEqualTo(existingOrder.getId());
+            assertThat(savedOrder.getStatus()).isEqualTo(existingOrder.getStatus());
+            assertThat(savedOrder.getTotalAmount()).isEqualTo(existingOrder.getTotalAmount());
+            assertThat(savedOrder.getPaymentAmount()).isNull();
+            assertThat(savedOrder.getPaymentResult()).isNull();
+            assertThat(savedOrder.getItems()).containsExactlyElementsOf(existingOrder.getItems());
+        });
+        assertThat(products.findById(product.getId()).orElseThrow().getStock().amount()).isEqualTo(5L);
+        assertThat(points.findByUserId(user.getId()).orElseThrow().getBalance().amount()).isEqualTo(1_000L);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"{\"quantity\":1}", "{\"productId\":null,\"quantity\":1}"})
+    void rejectsMissingProductIdWithoutChangingExistingData(String invalidItem) {
+        User user = saveUser();
+        Brand brand = brands.save(Brand.create("Nike"));
+        Product product = Product.create(brand.getId(), "Air Max", 100L);
+        product.changeStockTo(5L);
+        product = products.save(product);
+        points.save(Point.create(user.getId(), new PointBalance(1_000L)));
+        Order existingOrder = orders.save(Order.create(user.getId(), List.of(
+            OrderItem.create(product.getId(), product.getName(), product.getPrice(), 1)
+        )));
+        HttpHeaders requestHeaders = headers(user.getId().toString());
+        requestHeaders.setContentType(MediaType.APPLICATION_JSON);
+        String request = "{\"items\":[{\"productId\":" + product.getId()
+            + ",\"quantity\":2}," + invalidItem + "]}";
+
+        ResponseEntity<ApiResponse<Object>> response = rest.exchange(
+            "/api/v1/orders", org.springframework.http.HttpMethod.POST,
+            new HttpEntity<>(request, requestHeaders), new ParameterizedTypeReference<>() {}
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().meta().result()).isEqualTo(ApiResponse.Metadata.Result.FAIL);
+        assertThat(orders.findAll()).singleElement().satisfies(saved -> {
+            assertThat(saved.getId()).isEqualTo(existingOrder.getId());
+            assertThat(saved.getStatus()).isEqualTo(existingOrder.getStatus());
+            assertThat(saved.getTotalAmount()).isEqualTo(existingOrder.getTotalAmount());
+            assertThat(saved.getItems()).containsExactlyElementsOf(existingOrder.getItems());
+            assertThat(saved.getPaymentAmount()).isNull();
+            assertThat(saved.getPaymentResult()).isNull();
+        });
+        assertThat(products.findById(product.getId()).orElseThrow().getStock().amount()).isEqualTo(5L);
+        assertThat(points.findByUserId(user.getId()).orElseThrow().getBalance().amount()).isEqualTo(1_000L);
     }
 
     @Test
@@ -90,9 +169,9 @@ class OrderV1ApiE2ETest {
             OrderItem.create(product.getId(), product.getName(), product.getPrice(), 1)
         )));
         OrderV1Dto.CreateRequest request = new OrderV1Dto.CreateRequest(List.of(
-            new com.loopers.application.order.OrderFacade.OrderRequestItem(product.getId(), Integer.MAX_VALUE),
-            new com.loopers.application.order.OrderFacade.OrderRequestItem(product.getId(), Integer.MAX_VALUE),
-            new com.loopers.application.order.OrderFacade.OrderRequestItem(product.getId(), 3)
+            new com.loopers.interfaces.api.order.OrderV1Dto.OrderItemRequest(product.getId(), Integer.MAX_VALUE),
+            new com.loopers.interfaces.api.order.OrderV1Dto.OrderItemRequest(product.getId(), Integer.MAX_VALUE),
+            new com.loopers.interfaces.api.order.OrderV1Dto.OrderItemRequest(product.getId(), 3)
         ));
 
         ResponseEntity<ApiResponse<Object>> response = rest.exchange(
@@ -123,13 +202,13 @@ class OrderV1ApiE2ETest {
         Brand brand = brands.save(Brand.create("Nike"));
         points.save(Point.create(user.getId(), new com.loopers.domain.point.PointBalance(1_000L)));
         List<Product> preparedProducts = new ArrayList<>();
-        List<com.loopers.application.order.OrderFacade.OrderRequestItem> requestItems = new ArrayList<>();
+        List<com.loopers.interfaces.api.order.OrderV1Dto.OrderItemRequest> requestItems = new ArrayList<>();
         for (int index = 0; index < 43; index++) {
             Product product = Product.create(brand.getId(), "Product " + index, 100_000_000L);
             product.changeStockTo(5L);
             product = products.save(product);
             preparedProducts.add(product);
-            requestItems.add(new com.loopers.application.order.OrderFacade.OrderRequestItem(
+            requestItems.add(new com.loopers.interfaces.api.order.OrderV1Dto.OrderItemRequest(
                 product.getId(), Integer.MAX_VALUE
             ));
         }
@@ -254,8 +333,8 @@ class OrderV1ApiE2ETest {
         ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> createResponse = rest.exchange(
             "/api/v1/orders", org.springframework.http.HttpMethod.POST,
             new HttpEntity<>(new OrderV1Dto.CreateRequest(List.of(
-                new com.loopers.application.order.OrderFacade.OrderRequestItem(airMax.getId(), 2),
-                new com.loopers.application.order.OrderFacade.OrderRequestItem(pegasus.getId(), 3)
+                new com.loopers.interfaces.api.order.OrderV1Dto.OrderItemRequest(airMax.getId(), 2),
+                new com.loopers.interfaces.api.order.OrderV1Dto.OrderItemRequest(pegasus.getId(), 3)
             )), headers),
             new ParameterizedTypeReference<>() {}
         );

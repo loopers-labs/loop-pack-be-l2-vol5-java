@@ -32,7 +32,7 @@ public class OrderV1Controller {
         if (userId == null) {
             throw new CoreException(ErrorType.BAD_REQUEST, "요청자 식별값이 필요합니다.");
         }
-        return ApiResponse.success(OrderV1Dto.OrderResponse.from(orderFacade.create(userId, request.items())));
+        return ApiResponse.success(OrderV1Dto.OrderResponse.from(orderFacade.create(userId, request.toOrderRequestItems())));
     }
 
     @PostMapping("/{orderId}/confirm")

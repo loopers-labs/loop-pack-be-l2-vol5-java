@@ -6,7 +6,7 @@ import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.model.ExposedPort;
 import com.github.dockerjava.api.model.PortBinding;
 import com.github.dockerjava.api.model.Ports;
-import com.loopers.application.order.OrderFacade.OrderRequestItem;
+import com.loopers.interfaces.api.order.OrderV1Dto.OrderItemRequest;
 import com.loopers.config.redis.RedisConfig;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
@@ -259,7 +259,7 @@ class ProductListCacheRedisOutageE2ETest {
     }
 
     private Long createAndConfirmOrder(Long userId, Long productId, int quantity) throws Exception {
-        OrderV1Dto.CreateRequest request = new OrderV1Dto.CreateRequest(List.of(new OrderRequestItem(productId, quantity)));
+        OrderV1Dto.CreateRequest request = new OrderV1Dto.CreateRequest(List.of(new OrderItemRequest(productId, quantity)));
         MvcResult created = mockMvc.perform(post("/api/v1/orders")
                 .header("X-USER-ID", userId)
                 .contentType(MediaType.APPLICATION_JSON)

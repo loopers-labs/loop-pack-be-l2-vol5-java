@@ -29,7 +29,8 @@ public class OrderFacade {
 
     @Transactional
     public OrderInfo create(Long userId, List<OrderRequestItem> requestItems) {
-        if (userId == null || requestItems == null || requestItems.isEmpty()) {
+        if (userId == null || requestItems == null || requestItems.isEmpty()
+            || requestItems.stream().anyMatch(item -> item == null || item.productId() == null)) {
             throw new CoreException(ErrorType.BAD_REQUEST, "주문 정보가 올바르지 않습니다.");
         }
         userValidator.validateExists(userId);

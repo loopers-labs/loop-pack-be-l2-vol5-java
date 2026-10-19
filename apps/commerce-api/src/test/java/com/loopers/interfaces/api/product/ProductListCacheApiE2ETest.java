@@ -3,7 +3,7 @@ package com.loopers.interfaces.api.product;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.config.redis.RedisConfig;
-import com.loopers.application.order.OrderFacade.OrderRequestItem;
+import com.loopers.interfaces.api.order.OrderV1Dto.OrderItemRequest;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.product.Product;
@@ -199,7 +199,7 @@ class ProductListCacheApiE2ETest {
         User user = userRepository.save(User.create());
         pointRepository.save(Point.create(user.getId(), new PointBalance(100_000L)));
         stockUp(productId);
-        OrderV1Dto.CreateRequest request = new OrderV1Dto.CreateRequest(List.of(new OrderRequestItem(productId, quantity)));
+        OrderV1Dto.CreateRequest request = new OrderV1Dto.CreateRequest(List.of(new OrderItemRequest(productId, quantity)));
         MvcResult created = mockMvc.perform(post("/api/v1/orders")
                 .header("X-USER-ID", user.getId())
                 .contentType(MediaType.APPLICATION_JSON)
