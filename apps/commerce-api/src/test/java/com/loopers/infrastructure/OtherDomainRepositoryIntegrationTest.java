@@ -92,10 +92,10 @@ class OtherDomainRepositoryIntegrationTest {
         Product second = productRepository.save(Product.create(brand.getId(), "Second", 200L));
         Product notLiked = productRepository.save(Product.create(brand.getId(), "Not liked", 300L));
         Product outside = productRepository.save(Product.create(brand.getId(), "Outside", 400L));
-        likeRepository.save(Like.create(1L, first.getId()));
-        likeRepository.save(Like.create(2L, first.getId()));
-        likeRepository.save(Like.create(1L, second.getId()));
-        likeRepository.save(Like.create(1L, outside.getId()));
+        likeRepository.insertIfAbsent(Like.create(1L, first.getId()));
+        likeRepository.insertIfAbsent(Like.create(2L, first.getId()));
+        likeRepository.insertIfAbsent(Like.create(1L, second.getId()));
+        likeRepository.insertIfAbsent(Like.create(1L, outside.getId()));
         entityManager.flush();
         entityManager.clear();
 
@@ -123,7 +123,7 @@ class OtherDomainRepositoryIntegrationTest {
             Product product = productRepository.save(Product.create(brand.getId(), "Product " + index, 100L));
             productIds.add(product.getId());
             if (index % 3 != 0) {
-                likeRepository.save(Like.create(1L, product.getId()));
+                likeRepository.insertIfAbsent(Like.create(1L, product.getId()));
                 expected.put(product.getId(), 1L);
             }
         }
@@ -138,7 +138,8 @@ class OtherDomainRepositoryIntegrationTest {
         User user = userRepository.save(User.create());
         Brand brand = brandRepository.save(Brand.create("Nike"));
         Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100L));
-        Like like = likeRepository.save(Like.create(user.getId(), product.getId()));
+        Like like = Like.create(user.getId(), product.getId());
+        assertThat(likeRepository.insertIfAbsent(like)).isTrue();
         Point point = pointRepository.save(Point.create(user.getId()));
         point.charge(300L);
         pointRepository.save(point);

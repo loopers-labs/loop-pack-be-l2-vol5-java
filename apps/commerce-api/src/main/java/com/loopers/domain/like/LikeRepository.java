@@ -14,8 +14,6 @@ public interface LikeRepository {
 
     Map<Long, Long> countByProductIds(List<Long> productIds);
 
-    Like save(Like like);
-
     // 관계를 새로 저장한 경우에만 true를 반환한다.
     boolean insertIfAbsent(Like like);
 

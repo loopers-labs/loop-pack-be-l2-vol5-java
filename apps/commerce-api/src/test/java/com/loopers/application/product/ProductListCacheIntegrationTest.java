@@ -212,7 +212,7 @@ class ProductListCacheIntegrationTest {
     private void addLikes(Product product, int count) {
         for (int index = 0; index < count; index++) {
             User user = userRepository.save(User.create());
-            likeRepository.save(Like.create(user.getId(), product.getId()));
+            likeRepository.insertIfAbsent(Like.create(user.getId(), product.getId()));
         }
     }
 }

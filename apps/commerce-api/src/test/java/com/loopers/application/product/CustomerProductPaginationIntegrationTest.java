@@ -166,7 +166,7 @@ class CustomerProductPaginationIntegrationTest {
 
     private void addLikes(Product product, int count) {
         for (long userId = 1; userId <= count; userId++) {
-            likeRepository.save(Like.create(userId, product.getId()));
+            likeRepository.insertIfAbsent(Like.create(userId, product.getId()));
         }
     }
 }

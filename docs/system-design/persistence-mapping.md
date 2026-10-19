@@ -17,6 +17,6 @@ Commerce 도메인 모델과 JPA 엔티티를 분리해 업무 규칙이 JPA 프
 
 이 구조에서는 매퍼가 필요하고, 도메인 객체의 변경을 Repository 저장·갱신 계약으로 명시적으로 반영해야 한다. 주문 확정처럼 동시성 제어가 필요한 변경은 유스케이스에 맞는 조건부 갱신 계약을 사용한다.
 
-좋아요의 `insertIfAbsent`는 같은 DataSource·트랜잭션의 JDBC INSERT로 관계를 추가한다. 기존 좋아요의 조회·일반 저장·삭제는 JPA 매핑을 유지한다. 동시 중복의 판정과 트랜잭션 처리 이유는 [오류 변환 설계](error-mapping.md#좋아요-동시-중복-등록)에 정리한다.
+좋아요의 `insertIfAbsent`는 같은 DataSource·트랜잭션의 JDBC INSERT로 관계를 추가한다. 좋아요 관계의 추가는 이 경로만 사용하며, 조회·삭제는 JPA 매핑을 유지한다. 동시 중복의 판정과 트랜잭션 처리 이유는 [오류 변환 설계](error-mapping.md#좋아요-동시-중복-등록)에 정리한다.
 
 이 분리는 Commerce 도메인에 적용한다. Example starter 모델은 기존 JPA 구성을 유지하며, Commerce 테이블·컬럼·제약은 변경하지 않는다.

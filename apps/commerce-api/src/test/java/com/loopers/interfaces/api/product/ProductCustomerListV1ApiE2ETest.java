@@ -125,8 +125,8 @@ class ProductCustomerListV1ApiE2ETest {
         Product expensive = productRepository.save(Product.create(brand.getId(), "Expensive", 30_000L));
         productRepository.save(Product.create(brand.getId(), "Cheap", 10_000L));
         productRepository.save(Product.create(brand.getId(), "Middle", 20_000L));
-        likeRepository.save(Like.create(1L, expensive.getId()));
-        likeRepository.save(Like.create(2L, expensive.getId()));
+        likeRepository.insertIfAbsent(Like.create(1L, expensive.getId()));
+        likeRepository.insertIfAbsent(Like.create(2L, expensive.getId()));
 
         ResponseEntity<ApiResponse<List<ProductCustomerV1Dto.ProductResponse>>> response = getProducts(
             "?brandId=" + brand.getId() + "&sort=price_asc&page=1&size=2"
@@ -184,10 +184,10 @@ class ProductCustomerListV1ApiE2ETest {
         Product mostLiked = productRepository.save(Product.create(brand.getId(), "Most", 10_000L));
         Product olderTie = productRepository.save(Product.create(brand.getId(), "Older", 10_000L));
         Product newerTie = productRepository.save(Product.create(brand.getId(), "Newer", 10_000L));
-        likeRepository.save(Like.create(1L, mostLiked.getId()));
-        likeRepository.save(Like.create(2L, mostLiked.getId()));
-        likeRepository.save(Like.create(1L, olderTie.getId()));
-        likeRepository.save(Like.create(2L, newerTie.getId()));
+        likeRepository.insertIfAbsent(Like.create(1L, mostLiked.getId()));
+        likeRepository.insertIfAbsent(Like.create(2L, mostLiked.getId()));
+        likeRepository.insertIfAbsent(Like.create(1L, olderTie.getId()));
+        likeRepository.insertIfAbsent(Like.create(2L, newerTie.getId()));
 
         ResponseEntity<ApiResponse<List<ProductCustomerV1Dto.ProductResponse>>> response = getProducts("?sort=likes_desc");
 

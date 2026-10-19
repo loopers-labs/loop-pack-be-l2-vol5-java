@@ -28,13 +28,4 @@ public class LikeJpaEntity extends BaseEntity {
 
     @Column(name = "product_id", nullable = false, updatable = false)
     private Long productId;
-
-    private LikeJpaEntity(Long userId, Long productId) {
-        this.userId = userId;
-        this.productId = productId;
-    }
-
-    public static LikeJpaEntity create(Long userId, Long productId) {
-        return new LikeJpaEntity(userId, productId);
-    }
 }

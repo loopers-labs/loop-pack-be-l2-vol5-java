@@ -97,10 +97,10 @@ class ProductCustomerQueryIntegrationTest {
         Product olderTie = productRepository.save(Product.create(brand.getId(), "Older tie", 10_000L));
         Product newerTie = productRepository.save(Product.create(brand.getId(), "Newer tie", 10_000L));
         Product notLiked = productRepository.save(Product.create(brand.getId(), "Not liked", 10_000L));
-        likeRepository.save(Like.create(1L, mostLiked.getId()));
-        likeRepository.save(Like.create(2L, mostLiked.getId()));
-        likeRepository.save(Like.create(1L, olderTie.getId()));
-        likeRepository.save(Like.create(1L, newerTie.getId()));
+        likeRepository.insertIfAbsent(Like.create(1L, mostLiked.getId()));
+        likeRepository.insertIfAbsent(Like.create(2L, mostLiked.getId()));
+        likeRepository.insertIfAbsent(Like.create(1L, olderTie.getId()));
+        likeRepository.insertIfAbsent(Like.create(1L, newerTie.getId()));
         entityManager.flush();
         entityManager.clear();
 

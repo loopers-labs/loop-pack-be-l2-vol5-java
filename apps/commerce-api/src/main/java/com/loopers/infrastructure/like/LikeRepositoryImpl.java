@@ -46,13 +46,6 @@ public class LikeRepositoryImpl implements LikeRepository {
     }
 
     @Override
-    public Like save(Like like) {
-        LikeJpaEntity entity = likeJpaRepository.findByUserIdAndProductId(like.getUserId(), like.getProductId())
-            .orElseGet(() -> LikeJpaMapper.toNewEntity(like));
-        return LikeJpaMapper.toDomain(likeJpaRepository.save(entity));
-    }
-
-    @Override
     public boolean insertIfAbsent(Like like) {
         // 같은 DataSource의 현재 트랜잭션에 참여한다. JPA 저장 실패로 rollback-only가 되는 경로를 피한다.
         try {

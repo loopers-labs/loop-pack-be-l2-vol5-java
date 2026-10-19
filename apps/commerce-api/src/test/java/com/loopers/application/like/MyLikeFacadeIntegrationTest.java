@@ -55,8 +55,8 @@ class MyLikeFacadeIntegrationTest {
         Product deleted = productRepository.save(Product.create(brand.getId(), "Pegasus", 90_000L));
         deleted.delete();
         productRepository.save(deleted);
-        likeRepository.save(Like.create(user.getId(), active.getId()));
-        likeRepository.save(Like.create(user.getId(), deleted.getId()));
+        likeRepository.insertIfAbsent(Like.create(user.getId(), active.getId()));
+        likeRepository.insertIfAbsent(Like.create(user.getId(), deleted.getId()));
 
         List<CustomerProductInfo> result = likeFacade.getMyLikes(user.getId());
 

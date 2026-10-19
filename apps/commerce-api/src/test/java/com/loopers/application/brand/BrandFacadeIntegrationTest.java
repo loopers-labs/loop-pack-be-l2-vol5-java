@@ -267,7 +267,7 @@ class BrandFacadeIntegrationTest {
             );
 
             User user = userRepository.save(User.create());
-            likeRepository.save(Like.create(user.getId(), zeroStockProduct.getId()));
+            likeRepository.insertIfAbsent(Like.create(user.getId(), zeroStockProduct.getId()));
             Order confirmedOrder = Order.create(user.getId(), List.of(
                 OrderItem.create(zeroStockProduct.getId(), zeroStockProduct.getName(), zeroStockProduct.getPrice(), 1)
             ));

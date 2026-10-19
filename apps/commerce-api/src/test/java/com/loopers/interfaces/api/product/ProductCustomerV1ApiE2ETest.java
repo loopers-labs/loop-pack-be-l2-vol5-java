@@ -51,7 +51,7 @@ class ProductCustomerV1ApiE2ETest {
     void returnsCustomerProductDetail() {
         Brand brand = brandRepository.save(Brand.create("Nike"));
         Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
-        likeRepository.save(Like.create(1L, product.getId()));
+        likeRepository.insertIfAbsent(Like.create(1L, product.getId()));
 
         ParameterizedTypeReference<ApiResponse<ProductCustomerV1Dto.ProductResponse>> responseType =
             new ParameterizedTypeReference<>() {};

@@ -168,7 +168,7 @@ class ProductListCacheInvalidationIntegrationTest {
     @DisplayName("좋아요 취소가 커밋되면 감소한 좋아요 수를 반환한다.")
     void showsDecreasedLikeCount_afterCancelCommits() {
         User user = userRepository.save(User.create());
-        likeRepository.save(Like.create(user.getId(), product.getId()));
+        likeRepository.insertIfAbsent(Like.create(user.getId(), product.getId()));
         warmUpBrandAndAllLists();
 
         likeFacade.cancel(user.getId(), product.getId());
