@@ -15,7 +15,9 @@ import org.springframework.stereotype.Component;
 import java.time.ZonedDateTime;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import static com.loopers.domain.like.QLike.like;
 import static com.loopers.domain.product.QProduct.product;
@@ -70,6 +72,22 @@ public class ProductRepositoryImpl implements ProductRepository {
             .where(product.brandId.eq(brandId), product.deletedAt.isNull())
             .orderBy(product.id.asc())
             .fetch();
+    }
+
+    @Override
+    public Map<Long, Integer> findActiveStockQuantities(Collection<Long> ids) {
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        return queryFactory
+            .select(product.id, product.stock.quantity)
+            .from(product)
+            .where(product.id.in(ids), product.deletedAt.isNull())
+            .fetch()
+            .stream()
+            .collect(Collectors.toMap(
+                tuple -> tuple.get(product.id),
+                tuple -> tuple.get(product.stock.quantity)));
     }
 
     @Override

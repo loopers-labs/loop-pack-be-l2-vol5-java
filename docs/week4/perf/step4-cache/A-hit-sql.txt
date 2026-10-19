@@ -1,0 +1,100 @@
+*************************** 1. row ***************************
+     EVENT_ID: 99
+         conn: 1172
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.067
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ ONLY
+*************************** 2. row ***************************
+     EVENT_ID: 100
+         conn: 1172
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.032
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=0
+*************************** 3. row ***************************
+     EVENT_ID: 101
+         conn: 1172
+   EVENT_NAME: statement/sql/select
+           ms: 0.176
+    ROWS_SENT: 20
+ROWS_EXAMINED: 20
+NO_INDEX_USED: 0
+     SQL_TEXT: select p1_0.id,p1_0.quantity from products p1_0 where p1_0.id in (5406,2706,6,8206,5506,2806,106,8306,5606,2906,206,8406,5706,3006,306,8506,5806,3106,406,8606) and p1_0.deleted_at is null
+*************************** 4. row ***************************
+     EVENT_ID: 103
+         conn: 1172
+   EVENT_NAME: statement/sql/commit
+           ms: 0.031
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: COMMIT
+*************************** 5. row ***************************
+     EVENT_ID: 104
+         conn: 1172
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.036
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=1
+*************************** 6. row ***************************
+     EVENT_ID: 105
+         conn: 1172
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.022
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ WRITE
++-------------+--------------------------+------------+
+| USER        | EVENT_NAME               | COUNT_STAR |
++-------------+--------------------------+------------+
+| application | statement/sql/commit     |          1 |
+| application | statement/sql/select     |          1 |
+| application | statement/sql/set_option |          4 |
+| root        | statement/com/Quit       |          1 |
+| root        | statement/sql/select     |          3 |
+| root        | statement/sql/truncate   |          2 |
++-------------+--------------------------+------------+
++----------------+------------------+--------------+-------------------+
+| PROCESSLIST_ID | PROCESSLIST_USER | ATTR_NAME    | ATTR_VALUE        |
++----------------+------------------+--------------+-------------------+
+|           1172 | application      | _client_name | MySQL Connector/J |
+|           1173 | application      | _client_name | MySQL Connector/J |
+|           1174 | application      | _client_name | MySQL Connector/J |
+|           1175 | application      | _client_name | MySQL Connector/J |
+|           1176 | application      | _client_name | MySQL Connector/J |
+|           1177 | application      | _client_name | MySQL Connector/J |
+|           1178 | application      | _client_name | MySQL Connector/J |
+|           1179 | application      | _client_name | MySQL Connector/J |
+|           1180 | application      | _client_name | MySQL Connector/J |
+|           1181 | application      | _client_name | MySQL Connector/J |
+|           1182 | application      | _client_name | MySQL Connector/J |
+|           1183 | application      | _client_name | MySQL Connector/J |
+|           1184 | application      | _client_name | MySQL Connector/J |
+|           1185 | application      | _client_name | MySQL Connector/J |
+|           1186 | application      | _client_name | MySQL Connector/J |
+|           1187 | application      | _client_name | MySQL Connector/J |
+|           1188 | application      | _client_name | MySQL Connector/J |
+|           1189 | application      | _client_name | MySQL Connector/J |
+|           1190 | application      | _client_name | MySQL Connector/J |
+|           1191 | application      | _client_name | MySQL Connector/J |
+|           1192 | application      | _client_name | MySQL Connector/J |
+|           1193 | application      | _client_name | MySQL Connector/J |
+|           1194 | application      | _client_name | MySQL Connector/J |
+|           1195 | application      | _client_name | MySQL Connector/J |
+|           1196 | application      | _client_name | MySQL Connector/J |
+|           1197 | application      | _client_name | MySQL Connector/J |
+|           1198 | application      | _client_name | MySQL Connector/J |
+|           1199 | application      | _client_name | MySQL Connector/J |
+|           1200 | application      | _client_name | MySQL Connector/J |
+|           1201 | application      | _client_name | MySQL Connector/J |
+|           1210 | root             | _client_name | libmysql          |
+|           1210 | root             | program_name | mysql             |
++----------------+------------------+--------------+-------------------+

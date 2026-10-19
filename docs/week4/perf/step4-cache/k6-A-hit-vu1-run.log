@@ -1,0 +1,133 @@
+=== round 1 delete cache key products:v1:brand=7:sort=price_asc:page=0:size=20 ===
+time="2026-10-17T00:10:10+09:00" level=warning msg="/Users/hyun/dev/loopers-spring-java-template/docker/infra-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+0
+=== round 1 (vus=1) warmup 50 ===
+vus=1 iters=50 reqs=50 rps=141.75 avg=6.88 p50=4.40 p90=9.12 p95=12.61 max=84.01 http_failed=0 checks_pass=100 checks_fail=0
+=== round 1 reset counters ===
+time="2026-10-17T00:10:10+09:00" level=warning msg="/Users/hyun/dev/loopers-spring-java-template/docker/infra-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
++--------------------------+
+| history_rows_after_reset |
++--------------------------+
+|                        3 |
++--------------------------+
+=== round 1 cache counters before ===
+product_list_cache_total{application="commerce-api",result="hit"} 50.0
+product_list_cache_total{application="commerce-api",result="miss"} 2.0
+=== round 1 measure 500 ===
+vus=1 iters=500 reqs=500 rps=324.57 avg=3.01 p50=2.70 p90=3.95 p95=4.63 max=22.12 http_failed=0 checks_pass=1000 checks_fail=0
+=== round 1 sql counters (ps-round-capture.sql) ===
+time="2026-10-17T00:10:13+09:00" level=warning msg="/Users/hyun/dev/loopers-spring-java-template/docker/infra-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
++-------------+--------------------------+------------+
+| USER        | EVENT_NAME               | COUNT_STAR |
++-------------+--------------------------+------------+
+| application | statement/com/Ping       |          1 |
+| application | statement/sql/commit     |        500 |
+| application | statement/sql/select     |        500 |
+| application | statement/sql/set_option |       2000 |
++-------------+--------------------------+------------+
++------------+--------------+------------+------------+-------------+-------------------------+------------------+
+| app_select | product_list | like_count | brand_find | stock_check | app_product_query_total | app_other_select |
++------------+--------------+------------+------------+-------------+-------------------------+------------------+
+|        500 |            0 |          0 |          0 |         500 |                     500 |                0 |
++------------+--------------+------------+------------+-------------+-------------------------+------------------+
++------------+-------------+------------------------------------------------------------------------------------------------------+
+| COUNT_STAR | SCHEMA_NAME | digest_text                                                                                          |
++------------+-------------+------------------------------------------------------------------------------------------------------+
+|       1000 | loopers     | SET `autocommit` = ?                                                                                 |
+|        500 | loopers     | COMMIT                                                                                               |
+|        500 | loopers     | SELECT `p1_0` . `id` , `p1_0` . `quantity` FROM `products` `p1_0` WHERE `p1_0` . `id` IN (...) AND ` |
+|        500 | loopers     | SET SESSION TRANSACTION READ ONLY                                                                    |
+|        500 | loopers     | SET SESSION TRANSACTION READ WRITE                                                                   |
+|          1 | loopers     | SELECT @@`version_comment` LIMIT ?                                                                   |
++------------+-------------+------------------------------------------------------------------------------------------------------+
+=== round 1 cache counters after ===
+product_list_cache_total{application="commerce-api",result="hit"} 550.0
+product_list_cache_total{application="commerce-api",result="miss"} 2.0
+=== round 2 delete cache key products:v1:brand=7:sort=price_asc:page=0:size=20 ===
+time="2026-10-17T00:10:13+09:00" level=warning msg="/Users/hyun/dev/loopers-spring-java-template/docker/infra-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+1
+=== round 2 (vus=1) warmup 50 ===
+vus=1 iters=50 reqs=50 rps=310.90 avg=3.14 p50=2.52 p90=3.58 p95=6.28 max=13.18 http_failed=0 checks_pass=100 checks_fail=0
+=== round 2 reset counters ===
+time="2026-10-17T00:10:13+09:00" level=warning msg="/Users/hyun/dev/loopers-spring-java-template/docker/infra-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
++--------------------------+
+| history_rows_after_reset |
++--------------------------+
+|                        3 |
++--------------------------+
+=== round 2 cache counters before ===
+product_list_cache_total{application="commerce-api",result="hit"} 599.0
+product_list_cache_total{application="commerce-api",result="miss"} 3.0
+=== round 2 measure 500 ===
+vus=1 iters=500 reqs=500 rps=461.19 avg=2.12 p50=1.94 p90=2.63 p95=3.02 max=7.81 http_failed=0 checks_pass=1000 checks_fail=0
+=== round 2 sql counters (ps-round-capture.sql) ===
+time="2026-10-17T00:10:15+09:00" level=warning msg="/Users/hyun/dev/loopers-spring-java-template/docker/infra-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
++-------------+--------------------------+------------+
+| USER        | EVENT_NAME               | COUNT_STAR |
++-------------+--------------------------+------------+
+| application | statement/sql/commit     |        500 |
+| application | statement/sql/select     |        500 |
+| application | statement/sql/set_option |       2000 |
++-------------+--------------------------+------------+
++------------+--------------+------------+------------+-------------+-------------------------+------------------+
+| app_select | product_list | like_count | brand_find | stock_check | app_product_query_total | app_other_select |
++------------+--------------+------------+------------+-------------+-------------------------+------------------+
+|        500 |            0 |          0 |          0 |         500 |                     500 |                0 |
++------------+--------------+------------+------------+-------------+-------------------------+------------------+
++------------+-------------+------------------------------------------------------------------------------------------------------+
+| COUNT_STAR | SCHEMA_NAME | digest_text                                                                                          |
++------------+-------------+------------------------------------------------------------------------------------------------------+
+|       1000 | loopers     | SET `autocommit` = ?                                                                                 |
+|        500 | loopers     | COMMIT                                                                                               |
+|        500 | loopers     | SELECT `p1_0` . `id` , `p1_0` . `quantity` FROM `products` `p1_0` WHERE `p1_0` . `id` IN (...) AND ` |
+|        500 | loopers     | SET SESSION TRANSACTION READ ONLY                                                                    |
+|        500 | loopers     | SET SESSION TRANSACTION READ WRITE                                                                   |
+|          1 | loopers     | SELECT @@`version_comment` LIMIT ?                                                                   |
++------------+-------------+------------------------------------------------------------------------------------------------------+
+=== round 2 cache counters after ===
+product_list_cache_total{application="commerce-api",result="hit"} 1099.0
+product_list_cache_total{application="commerce-api",result="miss"} 3.0
+=== round 3 delete cache key products:v1:brand=7:sort=price_asc:page=0:size=20 ===
+time="2026-10-17T00:10:15+09:00" level=warning msg="/Users/hyun/dev/loopers-spring-java-template/docker/infra-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+1
+=== round 3 (vus=1) warmup 50 ===
+vus=1 iters=50 reqs=50 rps=405.52 avg=2.39 p50=2.08 p90=3.02 p95=3.46 max=10.63 http_failed=0 checks_pass=100 checks_fail=0
+=== round 3 reset counters ===
+time="2026-10-17T00:10:15+09:00" level=warning msg="/Users/hyun/dev/loopers-spring-java-template/docker/infra-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
++--------------------------+
+| history_rows_after_reset |
++--------------------------+
+|                        3 |
++--------------------------+
+=== round 3 cache counters before ===
+product_list_cache_total{application="commerce-api",result="hit"} 1148.0
+product_list_cache_total{application="commerce-api",result="miss"} 4.0
+=== round 3 measure 500 ===
+vus=1 iters=500 reqs=500 rps=500.22 avg=1.95 p50=1.82 p90=2.31 p95=2.58 max=8.31 http_failed=0 checks_pass=1000 checks_fail=0
+=== round 3 sql counters (ps-round-capture.sql) ===
+time="2026-10-17T00:10:17+09:00" level=warning msg="/Users/hyun/dev/loopers-spring-java-template/docker/infra-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
++-------------+--------------------------+------------+
+| USER        | EVENT_NAME               | COUNT_STAR |
++-------------+--------------------------+------------+
+| application | statement/sql/commit     |        500 |
+| application | statement/sql/select     |        500 |
+| application | statement/sql/set_option |       2000 |
++-------------+--------------------------+------------+
++------------+--------------+------------+------------+-------------+-------------------------+------------------+
+| app_select | product_list | like_count | brand_find | stock_check | app_product_query_total | app_other_select |
++------------+--------------+------------+------------+-------------+-------------------------+------------------+
+|        500 |            0 |          0 |          0 |         500 |                     500 |                0 |
++------------+--------------+------------+------------+-------------+-------------------------+------------------+
++------------+-------------+------------------------------------------------------------------------------------------------------+
+| COUNT_STAR | SCHEMA_NAME | digest_text                                                                                          |
++------------+-------------+------------------------------------------------------------------------------------------------------+
+|       1000 | loopers     | SET `autocommit` = ?                                                                                 |
+|        500 | loopers     | COMMIT                                                                                               |
+|        500 | loopers     | SELECT `p1_0` . `id` , `p1_0` . `quantity` FROM `products` `p1_0` WHERE `p1_0` . `id` IN (...) AND ` |
+|        500 | loopers     | SET SESSION TRANSACTION READ ONLY                                                                    |
+|        500 | loopers     | SET SESSION TRANSACTION READ WRITE                                                                   |
+|          1 | loopers     | SELECT @@`version_comment` LIMIT ?                                                                   |
++------------+-------------+------------------------------------------------------------------------------------------------------+
+=== round 3 cache counters after ===
+product_list_cache_total{application="commerce-api",result="hit"} 1648.0
+product_list_cache_total{application="commerce-api",result="miss"} 4.0

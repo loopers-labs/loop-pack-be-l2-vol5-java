@@ -1,5 +1,7 @@
 package com.loopers.domain.like;
 
+import com.loopers.domain.product.ProductListCache;
+import com.loopers.domain.product.ProductRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import org.junit.jupiter.api.DisplayName;
@@ -25,6 +27,12 @@ class LikeServiceTest {
 
     @Mock
     private LikeRepository likeRepository;
+
+    @Mock
+    private ProductRepository productRepository;
+
+    @Mock
+    private ProductListCache productListCache;
 
     @InjectMocks
     private LikeService likeService;

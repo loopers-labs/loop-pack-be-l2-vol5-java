@@ -1,0 +1,53 @@
+*************************** 1. row ***************************
+           id: 1
+  select_type: SIMPLE
+        table: p1_0
+   partitions: NULL
+         type: ALL
+possible_keys: NULL
+          key: NULL
+      key_len: NULL
+          ref: NULL
+         rows: 9700
+     filtered: 10.00
+        Extra: Using where; Using filesort
+*************************** 1. row ***************************
+EXPLAIN: -> Limit: 20 row(s)  (cost=994 rows=20) (actual time=2.69..2.69 rows=20 loops=1)
+    -> Sort: p1_0.amount, p1_0.id DESC, limit input to 20 row(s) per chunk  (cost=994 rows=9700) (actual time=2.69..2.69 rows=20 loops=1)
+        -> Filter: (p1_0.deleted_at is null)  (cost=994 rows=9700) (actual time=0.0629..2 rows=10000 loops=1)
+            -> Table scan on p1_0  (cost=994 rows=9700) (actual time=0.0621..1.63 rows=10000 loops=1)
+
+*************************** 1. row ***************************
+           id: 1
+  select_type: SIMPLE
+        table: l1_0
+   partitions: NULL
+         type: range
+possible_keys: uk_likes_user_product,idx_likes_product_id
+          key: idx_likes_product_id
+      key_len: 9
+          ref: NULL
+         rows: 449
+     filtered: 100.00
+        Extra: Using where; Using index
+*************************** 1. row ***************************
+EXPLAIN: -> Group aggregate: count(l1_0.id)  (cost=135 rows=449) (actual time=0.0239..0.12 rows=19 loops=1)
+    -> Filter: (l1_0.product_id in (2703,5406,8109,1,2704,5407,8110,2,2705,5408,8111,3,2706,5409,8112,4,2707,5410,8113,5))  (cost=90.3 rows=449) (actual time=0.0165..0.104 rows=448 loops=1)
+        -> Covering index range scan on l1_0 using idx_likes_product_id over (product_id = 1) OR (product_id = 2) OR (18 more)  (cost=90.3 rows=449) (actual time=0.0157..0.0792 rows=448 loops=1)
+
+*************************** 1. row ***************************
+           id: 1
+  select_type: SIMPLE
+        table: b1_0
+   partitions: NULL
+         type: const
+possible_keys: PRIMARY
+          key: PRIMARY
+      key_len: 8
+          ref: const
+         rows: 1
+     filtered: 100.00
+        Extra: NULL
+*************************** 1. row ***************************
+EXPLAIN: -> Rows fetched before execution  (cost=0..0 rows=1) (actual time=0..42e-6 rows=1 loops=1)
+

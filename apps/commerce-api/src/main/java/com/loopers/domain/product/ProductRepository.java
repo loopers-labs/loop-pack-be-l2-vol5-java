@@ -2,6 +2,7 @@ package com.loopers.domain.product;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 public interface ProductRepository {
@@ -28,6 +29,14 @@ public interface ProductRepository {
      * 브랜드의 삭제되지 않은 상품을 식별자 오름차순으로 전부 조회한다. 재고 0인 상품도 포함한다.
      */
     List<Product> findAllActiveByBrandId(Long brandId);
+
+    /**
+     * 주어진 식별자 중 삭제되지 않은 상품의 재고를 한 번의 조회로 읽는다.
+     * 없거나 삭제된 상품은 결과에 포함되지 않는다.
+     *
+     * @return 상품 식별자 → 재고 수량
+     */
+    Map<Long, Integer> findActiveStockQuantities(Collection<Long> ids);
 
     /**
      * 삭제되지 않았고 재고가 충분할 때만 quantity = quantity - quantity 로 차감한다.

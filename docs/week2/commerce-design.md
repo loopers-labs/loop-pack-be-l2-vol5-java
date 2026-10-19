@@ -7,10 +7,16 @@
 ## 2.구조와 의존
 |계층|역할|의존금지|
 |--|--|--|
-|interfaces| HTTP 요청/응답 처리 | infrastructure
-|application| 유스케이스 조율 | controller DTO, infrastructure 구현 |
-|domain|상태·규칙, repository 인터페이스 | interfaces, application, infrastructure |
-|infrastructure|repository의 JPA 구현 | - |
+|interfaces| HTTP 요청/응답 처리 | infrastructure |
+|application| 유스케이스 조율 | interfaces, infrastructure |
+|domain|상태·규칙, repository·캐시 인터페이스, 캐시용 데이터(CachedProductItem) | interfaces, application, infrastructure |
+|infrastructure|repository의 JPA 구현, 캐시의 Redis 구현 | - |
+
+- 캐시 포트: domain/product/ProductListCache(인터페이스) → infrastructure/product/RedisProductListCache(구현). Repository와 같은 "domain 인터페이스 → infrastructure 구현" 방식이며, Repository 외 첫 사례다.
+- 캐시용 데이터 CachedProductItem은 domain에 둔다. domain은 application에 의존할 수 없어 application의 ProductInfo를 캐시 포트에서 쓸 수 없기 때문.
+- domain 안 like → product 의존 신설: LikeService가 ProductRepository·ProductListCache를 사용한다. 좋아요의 트랜잭션 경계가 LikeService라 commit 후 무효화 등록을 Service 안에서 해야 하고, 지울 캐시 키를 정하려면 상품의 brandId가 필요하기 때문.
+- 설정: config/cache/ProductCacheRedisConfig가 캐시 전용 Redis 연결을 만든다. modules/redis의 기존 설정(기본·master 연결)은 그대로 둔다. 기존 기본 연결은 replica 우선 읽기·대기 60초라 캐시에 그대로 쓰기 어렵고, 공통 모듈 설정을 바꾸지 않으려고 캐시 전용 연결을 분리했다.
+- ArchUnit: 기존 규칙 3개(domain → 바깥 계층 금지, application → interfaces·infrastructure 금지, interfaces → infrastructure 금지)는 변경 없이 모두 통과한다.
 
 ## 3.도메인 관계
 | 관계                          | 다중성   | 연결 방식                                              | 필요한 이유                                                                                | 책임 주체                                                                          |
@@ -367,4 +373,62 @@ AI와 설계 다듬기
        - 브랜드 삭제와 상품 등록의 동시 실행: 삭제된 브랜드에 상품이 등록되는 경합은
          다루지 않았다.
        - 교착(데드락) 상황, 잠금 대기 시간 초과, 대량 요청에서의 처리량은 측정하지 않았다.
+
+## 7. 4주차: 조회 성능과 캐시
+
+### 7-1. 조회 계약 (성능 개선 중에도 바꾸지 않음)
+4-1 의 GET /api/v1/products 계약을 코드 기준으로 구체화한 것이다. 인덱스·캐시 작업은 아래 계약을 유지한 채 진행한다.
+
+| 항목 | 계약 | 근거 |
+|---|---|---|
+| 파라미터 | brandId(query, 선택), sort(latest 기본 / price_asc / likes_desc), page(기본 0), size(기본 20) | ProductV1Controller.getProducts, ProductSortType.from |
+| 정렬 | latest: created_at DESC / price_asc: amount ASC / likes_desc: 좋아요 수 DESC. 세 정렬 모두 동점 시 id DESC (6-8) | ProductRepositoryImpl.findAll |
+| 노출 | deleted_at IS NULL 상품만 | ProductRepositoryImpl.findAll |
+| 응답 필드 | productId, productName, price, stockQuantity, brandId, brandName, likeCount. 사용자별 필드 없음, 전체 건수·페이지 정보 없음 | ProductV1Dto.ProductResponse |
+| 오류 | 잘못된 sort → 400, 파라미터 타입 오류 → 400, 없는 brandId → 200 빈 목록 | ProductSortType.from, ApiControllerAdvice |
+
+- 현재 동작 메모 (이번 과제에서 변경하지 않음):
+    - 삭제된 브랜드명이 응답될 수 있음 (브랜드 조회가 삭제 여부를 보지 않음)
+    - page/size 검증 없음
+
+### 7-2. 측정 대상
+- 요청: GET /api/v1/products?brandId=7&sort=price_asc&page=0&size=20
+- 예상 SQL 3개 (순서대로):
+    1. 상품 목록 — ProductRepositoryImpl.findAll (WHERE deleted_at IS NULL AND brand_id = ? ORDER BY amount ASC, id DESC LIMIT 20)
+    2. 좋아요 집계 — LikeJpaRepository.countGroupedByProductId (product_id IN (...) GROUP BY product_id, 1회)
+    3. 브랜드 조회 — ProductFacade.findBrandNames (brandId 필터 시 findById 1회)
+- 좋아요 집계 비용: likes 에 product_id 선두 인덱스 없음 (uk_likes_user_product 는 user_id 선두)
+- likes_desc 는 별도 기록: seed 후 1회 호출(브랜드 미지정, size 3) 117초. 정식 측정 아님.
+  정렬용 상관 서브쿼리가 상품 행마다 likes 를 세는 구조
+- 측정 도구·표본 수: k6 `shared-iterations`, 준비 50회(결과 버림) + 측정 500회 × 3회, VU 1·5. 단발은 curl (B 10회, 캐시 hit/miss 100회). 기록은 `docs/week4/02-optimization.md`.
+
+### 7-3. 측정 데이터
+- apps/commerce-api/src/test/resources/sql/product-perf-seed.sql, product-perf-verify.sql (로컬 docker MySQL 수동 실행과 테스트에서 재사용, 앱 자동 실행 경로 아님)
+- 브랜드 100, 사용자 1000, 상품 10000, 좋아요 223,037 (공식 기반, 재실행 시 동일 결과)
+- 가격 동점의 id DESC 는 ProductRepositoryTest.appliesSecondarySort_whenPrimarySortIsTied 로 확인 (price_asc 만 커버)
+
+### 7-4. 캐시 범위
+- 경로: GET /api/v1/products 중 brandId 있음 + sort=price_asc + size 20 + page 0~2 만 Redis cache-aside. 그 외 요청은 DB 경로.
+- 키 `products:v1:brand={brandId}:sort=price_asc:page={page}:size=20`, TTL 30초(저장 시에만).
+- 재사용 필드: productId, productName, price, brandId, brandName, likeCount. 제외: stockQuantity (hit 때 DB 에서 미삭제 상품의 재고를 SQL 1개로 읽어 붙임). 사용자별 필드는 응답에 없음 (7-1).
+- hit 확인: 캐시 ID 20개 중 미삭제 상품 수가 캐시 건수와 다르면 DB 경로로 돌아가 다시 저장 → 삭제 상품은 캐시가 남아 있어도 노출되지 않음.
+
+### 7-5. 변경 책임 — 응답을 바꾸는 쓰기 경로
+각 쓰기 트랜잭션 안에서 등록하고 commit 뒤 해당 브랜드의 page 0~2 키를 삭제한다 (rollback 이면 삭제하지 않음). 트랜잭션 경계는 그대로이며, 좋아요는 Facade 에 트랜잭션이 없어 LikeService 가 경계다.
+
+| 쓰기 경로 | 진입점 | 바뀌는 응답 | 캐시 |
+|---|---|---|---|
+| 상품 가격·이름 수정 | PUT /api-admin/v1/products/{productId} | price, productName, price_asc 순서 | commit 후 무효화 (ProductFacade) |
+| 상품 생성·삭제 | POST /api-admin/v1/products, DELETE /api-admin/v1/products/{productId} | 목록 포함 여부 | commit 후 무효화 (ProductFacade, 삭제는 삭제 전에 읽어 브랜드 확인) |
+| 브랜드 이름 변경·삭제 | PUT /api-admin/v1/brands/{brandId}, DELETE /api-admin/v1/brands/{brandId} | brandName, 삭제 시 연결 상품 제외 | commit 후 무효화 (BrandFacade) |
+| 좋아요 등록·취소 (취소는 물리 삭제) | POST·DELETE /api/v1/products/{productId}/likes | likeCount | commit 후 무효화 (LikeService, 상품 행이 없으면 건너뜀) |
+| 재고 변경 (주문 확정, 관리자 재고 설정) | POST /api/v1/orders/{orderId}/confirm, PUT /api-admin/v1/products/{productId}/stock | stockQuantity | 무효화 안 함. hit 가 재고를 DB 에서 읽음 |
+| 주문 생성 | POST /api/v1/orders | 없음 (재고 미차감) | 해당 없음 |
+
+### 7-6. 장애 계약
+- 연결: 캐시 전용 Redis 연결(master 단독), 명령 타임아웃 100ms, 연결 타임아웃 500ms, 끊기면 즉시 실패. 공통 모듈의 기본 연결(replica 우선, 60초)은 캐시에 쓰지 않는다.
+- Redis 오류: 조회 실패·역직렬화 실패는 miss 로 DB 우회해 정상 응답. 저장·삭제 실패는 로그와 카운터만 남기고, 쓰기 응답은 DB commit 대로 성공. DB 오류는 기존 오류 계약 그대로(빈 목록으로 감추지 않음).
+- 표시 신선도: 정상 변경 commit 직후의 순차 조회는 새 결과. 무효화 실패·늦은 채움에서는 가격·상품명·브랜드명·좋아요 수·가격순 순서·새 상품 노출이 TTL 만료 후 다음 miss 까지 옛 값일 수 있다 (시간 상한은 주장하지 않음). 항상 보호: 삭제 상품 비노출(hit 확인), 재고(hit 시 DB), 주문 금액·재고 판단(DB).
+- 복구: TTL 만료 뒤 첫 miss 가 DB 로 다시 채운다. Redis 재시작 뒤 자동 재연결(측정 0~105ms). 같은 컨테이너를 재시작하면 옛 키가 남은 TTL 과 함께 되살아날 수 있다(RDB/AOF) — 위 보호 항목은 그대로 유지된다.
+- 관찰: 카운터 product_list_cache_total{result=hit|miss|hit_check_failed|find_error|save_error|evict_error}. 측정값(ProductCacheRedisOutageTest): 중단 중 조회 1회 25~30ms, 응답 없음(pause) 중 229~240ms, 재시작 뒤 재연결 0~105ms.
        - 경쟁 테스트는 결과 불변식만 검증하며, 특정 교차 순서를 강제하지는 않는다.

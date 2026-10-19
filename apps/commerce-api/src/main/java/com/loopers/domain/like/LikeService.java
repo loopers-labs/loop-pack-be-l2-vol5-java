@@ -1,5 +1,7 @@
 package com.loopers.domain.like;
 
+import com.loopers.domain.product.ProductListCache;
+import com.loopers.domain.product.ProductRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +18,8 @@ import java.util.stream.Collectors;
 public class LikeService {
 
     private final LikeRepository likeRepository;
+    private final ProductRepository productRepository;
+    private final ProductListCache productListCache;
 
     /**
      * 이미 등록된 관계면 저장하지 않고 멱등하게 처리한다.
@@ -28,6 +32,7 @@ public class LikeService {
             return false;
         }
         likeRepository.save(new Like(userId, productId));
+        evictProductListCache(productId);
         return true;
     }
 
@@ -42,6 +47,16 @@ public class LikeService {
                 ErrorType.NOT_FOUND, "[userId = " + userId + ", productId = " + productId + "] 좋아요를 찾을 수 없습니다."));
 
         likeRepository.delete(like);
+        evictProductListCache(productId);
+    }
+
+    /**
+     * 좋아요 수가 바뀐 상품의 브랜드 목록 캐시를 commit 뒤 지우도록 등록한다.
+     * 삭제된 상품이어도 브랜드는 있으므로 그대로 등록하고, 상품 행 자체가 없으면 지울 브랜드를 알 수 없어 건너뛴다.
+     */
+    private void evictProductListCache(Long productId) {
+        productRepository.findById(productId)
+            .ifPresent(product -> productListCache.evictBrandAfterCommit(product.getBrandId()));
     }
 
     @Transactional(readOnly = true)

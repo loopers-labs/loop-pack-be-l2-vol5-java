@@ -3,6 +3,7 @@ package com.loopers.application.brand;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.product.Product;
+import com.loopers.domain.product.ProductListCache;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
@@ -18,6 +19,7 @@ public class BrandFacade {
 
     private final BrandRepository brandRepository;
     private final ProductRepository productRepository;
+    private final ProductListCache productListCache;
 
     @Transactional
     public Brand createBrand(String name) {
@@ -41,6 +43,7 @@ public class BrandFacade {
     public Brand updateBrand(Long id, String name) {
         Brand brand = findActiveBrand(id);
         brand.changeName(name);
+        productListCache.evictBrandAfterCommit(id);
         return brand;
     }
 
@@ -55,6 +58,7 @@ public class BrandFacade {
 
         productRepository.findAllActiveByBrandId(id).forEach(Product::delete);
         brand.delete();
+        productListCache.evictBrandAfterCommit(id);
     }
 
     /**

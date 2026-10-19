@@ -334,6 +334,21 @@ class AdminCrudV1ApiE2ETest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.length()").value(2));
         }
+
+        @DisplayName("브랜드 삭제 후 관리자 상품 목록에서 브랜드명이 그대로 나온다.")
+        @Test
+        void keepsBrandName_afterBrandIsDeleted() throws Exception {
+            // arrange
+            Long brandId = brandJpaRepository.save(new Brand("루퍼스")).getId();
+            productJpaRepository.save(new Product(brandId, "루퍼스 티셔츠", new Price(1000L)));
+            adminDelete("/api-admin/v1/brands/" + brandId).andExpect(status().isNoContent());
+
+            // act & assert
+            mockMvc.perform(get("/api-admin/v1/products").with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].brandName").value("루퍼스"));
+        }
     }
 
     /**

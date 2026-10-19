@@ -1,0 +1,71 @@
+*************************** 1. row ***************************
+           id: 1
+  select_type: PRIMARY
+        table: p1_0
+   partitions: NULL
+         type: ALL
+possible_keys: NULL
+          key: NULL
+      key_len: NULL
+          ref: NULL
+         rows: 9955
+     filtered: 1.00
+        Extra: Using where; Using filesort
+*************************** 2. row ***************************
+           id: 2
+  select_type: DEPENDENT SUBQUERY
+        table: l1_0
+   partitions: NULL
+         type: index
+possible_keys: NULL
+          key: uk_likes_user_product
+      key_len: 18
+          ref: NULL
+         rows: 222504
+     filtered: 10.00
+        Extra: Using where; Using index
+*************************** 1. row ***************************
+EXPLAIN: -> Limit: 20 row(s)  (cost=1020 rows=20) (actual time=1712..1712 rows=20 loops=1)
+    -> Sort: (select #2) DESC, p1_0.id DESC, limit input to 20 row(s) per chunk  (cost=1020 rows=9955) (actual time=1712..1712 rows=20 loops=1)
+        -> Filter: ((p1_0.brand_id = 7) and (p1_0.deleted_at is null))  (cost=1020 rows=9955) (actual time=0.134..1.77 rows=100 loops=1)
+            -> Table scan on p1_0  (cost=1020 rows=9955) (actual time=0.131..1.48 rows=10000 loops=1)
+-> Select #2 (subquery in projection; dependent)
+    -> Aggregate: count(l1_0.id)  (cost=4682 rows=1) (actual time=17.1..17.1 rows=1 loops=100)
+        -> Filter: (l1_0.product_id = p1_0.id)  (cost=2457 rows=22250) (actual time=1.9..17.1 rows=22.1 loops=100)
+            -> Covering index scan on l1_0 using uk_likes_user_product  (cost=2457 rows=222504) (actual time=0.119..12.5 rows=223037 loops=100)
+
+*************************** 1. row ***************************
+           id: 1
+  select_type: SIMPLE
+        table: l1_0
+   partitions: NULL
+         type: index
+possible_keys: uk_likes_user_product
+          key: uk_likes_user_product
+      key_len: 18
+          ref: NULL
+         rows: 222504
+     filtered: 50.00
+        Extra: Using where; Using index; Using temporary
+*************************** 1. row ***************************
+EXPLAIN: -> Table scan on <temporary>  (actual time=17.5..17.5 rows=20 loops=1)
+    -> Aggregate using temporary table  (actual time=17.5..17.5 rows=20 loops=1)
+        -> Filter: (l1_0.product_id in (9606,206,9906,5206,5506,806,5806,1106,6106,1406,6406,1706,6706,2006,7006,2306,7306,2606,7606,2906))  (cost=22483 rows=111252) (actual time=0.145..17.3 rows=850 loops=1)
+            -> Covering index scan on l1_0 using uk_likes_user_product  (cost=22483 rows=222504) (actual time=0.135..12.3 rows=223037 loops=1)
+
+*************************** 1. row ***************************
+           id: 1
+  select_type: SIMPLE
+        table: b1_0
+   partitions: NULL
+         type: const
+possible_keys: PRIMARY
+          key: PRIMARY
+      key_len: 8
+          ref: const
+         rows: 1
+     filtered: 100.00
+        Extra: NULL
+*************************** 1. row ***************************
+EXPLAIN: -> Rows fetched before execution  (cost=0..0 rows=1) (actual time=42e-6..84e-6 rows=1 loops=1)
+

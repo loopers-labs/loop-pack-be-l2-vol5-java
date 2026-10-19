@@ -1,0 +1,223 @@
+# B 1회 호출 시 앱 커넥션 SQL (개선 전)
+measured_at: 2026-10-16 11:55:49 KST
+request: GET /api/v1/products?brandId=7&sort=likes_desc&page=0&size=20
+http=200 time_total=1.380814s
+
+*************************** 1. row ***************************
+     EVENT_ID: 6698
+         conn: 207
+   EVENT_NAME: statement/com/Ping
+           ms: 0.066
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: NULL
+*************************** 2. row ***************************
+     EVENT_ID: 6699
+         conn: 207
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.125
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ ONLY
+*************************** 3. row ***************************
+     EVENT_ID: 6700
+         conn: 207
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.036
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=0
+*************************** 4. row ***************************
+     EVENT_ID: 6701
+         conn: 207
+   EVENT_NAME: statement/sql/select
+           ms: 1294.861
+    ROWS_SENT: 20
+ROWS_EXAMINED: 22313720
+NO_INDEX_USED: 1
+     SQL_TEXT: select p1_0.id,p1_0.brand_id,p1_0.created_at,p1_0.deleted_at,p1_0.name,p1_0.amount,p1_0.quantity,p1_0.updated_at from products p1_0 where p1_0.deleted_at is null and p1_0.brand_id=7 order by (select count(l1_0.id) from likes l1_0 where l1_0.product_id=p1_0.id) desc,p1_0.id desc limit 0,20
+*************************** 5. row ***************************
+     EVENT_ID: 6703
+         conn: 207
+   EVENT_NAME: statement/sql/commit
+           ms: 0.074
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: COMMIT
+*************************** 6. row ***************************
+     EVENT_ID: 6704
+         conn: 207
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.03
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=1
+*************************** 7. row ***************************
+     EVENT_ID: 6705
+         conn: 207
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.026
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ WRITE
+*************************** 8. row ***************************
+     EVENT_ID: 6706
+         conn: 207
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.018
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ ONLY
+*************************** 9. row ***************************
+     EVENT_ID: 6707
+         conn: 207
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.014
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=0
+*************************** 10. row ***************************
+     EVENT_ID: 6708
+         conn: 207
+   EVENT_NAME: statement/sql/select
+           ms: 13.564
+    ROWS_SENT: 20
+ROWS_EXAMINED: 223037
+NO_INDEX_USED: 0
+     SQL_TEXT: select l1_0.product_id,count(l1_0.id) from likes l1_0 where l1_0.product_id in (9606,206,9906,5206,5506,806,5806,1106,6106,1406,6406,1706,6706,2006,7006,2306,7306,2606,7606,2906) group by l1_0.product_id
+*************************** 11. row ***************************
+     EVENT_ID: 6710
+         conn: 207
+   EVENT_NAME: statement/sql/commit
+           ms: 0.028
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: COMMIT
+*************************** 12. row ***************************
+     EVENT_ID: 6711
+         conn: 207
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.017
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=1
+*************************** 13. row ***************************
+     EVENT_ID: 6712
+         conn: 207
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.016
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ WRITE
+*************************** 14. row ***************************
+     EVENT_ID: 6713
+         conn: 207
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.018
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ ONLY
+*************************** 15. row ***************************
+     EVENT_ID: 6714
+         conn: 207
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.014
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=0
+*************************** 16. row ***************************
+     EVENT_ID: 6715
+         conn: 207
+   EVENT_NAME: statement/sql/select
+           ms: 0.112
+    ROWS_SENT: 1
+ROWS_EXAMINED: 1
+NO_INDEX_USED: 0
+     SQL_TEXT: select b1_0.id,b1_0.created_at,b1_0.deleted_at,b1_0.name,b1_0.updated_at from brands b1_0 where b1_0.id=7
+*************************** 17. row ***************************
+     EVENT_ID: 6717
+         conn: 207
+   EVENT_NAME: statement/sql/commit
+           ms: 0.014
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: COMMIT
+*************************** 18. row ***************************
+     EVENT_ID: 6718
+         conn: 207
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.024
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET autocommit=1
+*************************** 19. row ***************************
+     EVENT_ID: 6719
+         conn: 207
+   EVENT_NAME: statement/sql/set_option
+           ms: 0.015
+    ROWS_SENT: 0
+ROWS_EXAMINED: 0
+NO_INDEX_USED: 0
+     SQL_TEXT: SET SESSION TRANSACTION READ WRITE
++-------------+--------------------------+------------+
+| USER        | EVENT_NAME               | COUNT_STAR |
++-------------+--------------------------+------------+
+| application | statement/com/Ping       |          1 |
+| application | statement/sql/commit     |          3 |
+| application | statement/sql/select     |          3 |
+| application | statement/sql/set_option |         12 |
+| root        | statement/com/Quit       |          1 |
+| root        | statement/sql/select     |          3 |
+| root        | statement/sql/truncate   |          2 |
++-------------+--------------------------+------------+
++----------------+------------------+--------------+-------------------+
+| PROCESSLIST_ID | PROCESSLIST_USER | ATTR_NAME    | ATTR_VALUE        |
++----------------+------------------+--------------+-------------------+
+|            206 | application      | _client_name | MySQL Connector/J |
+|            207 | application      | _client_name | MySQL Connector/J |
+|            209 | application      | _client_name | MySQL Connector/J |
+|            210 | application      | _client_name | MySQL Connector/J |
+|            211 | application      | _client_name | MySQL Connector/J |
+|            212 | application      | _client_name | MySQL Connector/J |
+|            213 | application      | _client_name | MySQL Connector/J |
+|            214 | application      | _client_name | MySQL Connector/J |
+|            215 | application      | _client_name | MySQL Connector/J |
+|            216 | application      | _client_name | MySQL Connector/J |
+|            217 | application      | _client_name | MySQL Connector/J |
+|            218 | application      | _client_name | MySQL Connector/J |
+|            219 | application      | _client_name | MySQL Connector/J |
+|            220 | application      | _client_name | MySQL Connector/J |
+|            221 | application      | _client_name | MySQL Connector/J |
+|            222 | application      | _client_name | MySQL Connector/J |
+|            223 | application      | _client_name | MySQL Connector/J |
+|            224 | application      | _client_name | MySQL Connector/J |
+|            225 | application      | _client_name | MySQL Connector/J |
+|            226 | application      | _client_name | MySQL Connector/J |
+|            227 | application      | _client_name | MySQL Connector/J |
+|            228 | application      | _client_name | MySQL Connector/J |
+|            229 | application      | _client_name | MySQL Connector/J |
+|            230 | application      | _client_name | MySQL Connector/J |
+|            246 | application      | _client_name | MySQL Connector/J |
+|            259 | application      | _client_name | MySQL Connector/J |
+|            260 | application      | _client_name | MySQL Connector/J |
+|            261 | application      | _client_name | MySQL Connector/J |
+|            264 | application      | _client_name | MySQL Connector/J |
+|            265 | application      | _client_name | MySQL Connector/J |
+|            271 | root             | _client_name | libmysql          |
+|            271 | root             | program_name | mysql             |
++----------------+------------------+--------------+-------------------+

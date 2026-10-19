@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 @RequiredArgsConstructor
 @Component
@@ -103,6 +104,14 @@ public class ProductService {
         return productRepository.findAllByIdIn(productIds).stream()
             .filter(product -> product.getDeletedAt() == null)
             .toList();
+    }
+
+    /**
+     * 주어진 식별자 중 삭제되지 않은 상품의 재고를 한 번에 읽는다. 없거나 삭제된 상품은 결과에 없다.
+     */
+    @Transactional(readOnly = true)
+    public Map<Long, Integer> getActiveStockQuantities(Collection<Long> productIds) {
+        return productRepository.findActiveStockQuantities(productIds);
     }
 
     private Product findActiveProduct(Long productId) {
