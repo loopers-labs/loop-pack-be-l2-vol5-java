@@ -38,3 +38,7 @@ Root
     ├── 📦 monitoring
     └── 📦 logging
 ```
+
+## 문서
+
+Commerce API 설계, 성능 실험과 제안은 [문서 안내](docs/README.md)에서 확인할 수 있습니다.

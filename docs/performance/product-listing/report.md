@@ -41,13 +41,13 @@ SQL 비용·실행계획의 전후 값은 각 개선 실험에서 수집했으�
 
 | 구분 | 실행 SQL·스크립트 | 측정 원본 |
 | --- | --- | --- |
-| 공통 | [seed](../../apps/commerce-api/src/test/java/com/loopers/fixture/ProductQuerySeed.java) · [스키마](../../docker/mysql/init.sql) · [k6](../k6/product-query.k6.js) | [기준 응답](../product-query-baseline/response-canonical.json) |
-| 기준선 | [queries.sql](../product-query-baseline/queries.sql) | [EXPLAIN](../product-query-baseline/explain.sql) · [EXPLAIN ANALYZE](../product-query-baseline/explain-analyze.sql) |
-| 1단계 | [queries.sql](../product-query-step1/queries.sql) | [results.json](../product-query-step1/results.json) |
-| 2단계 | [product-query-index.sql](../../docker/mysql/product-query-index.sql) | [results.json](../product-query-step2/results.json) |
-| 3단계 | [product-query-list-index.sql](../../docker/mysql/product-query-list-index.sql) | [results.json](../product-query-step3/results.json) |
-| 4단계 | [queries.sql](../product-query-step4/queries.sql) | [results.json](../product-query-step4/results.json) · [부하 원인·likes_desc 진단](../product-query-step4/final-state-diagnosis.json) |
-| 5단계 | [k6 좋아요 쓰기 시나리오](../k6/product-query.k6.js) · [miss 강제 스크립트](../product-query-step5/evict_on_set.py) | [results.json](../product-query-step5/results.json) · [워밍업](../product-query-step5/warm-up-results.json) |
+| 공통 | [seed](../../../apps/commerce-api/src/test/java/com/loopers/fixture/ProductQuerySeed.java) · [스키마](../../../docker/mysql/init.sql) · [k6](k6/product-listing.k6.js) | [기준 응답](results/baseline/response-canonical.json) |
+| 기준선 | [queries.sql](results/baseline/queries.sql) | [EXPLAIN](results/baseline/explain.sql) · [EXPLAIN ANALYZE](results/baseline/explain-analyze.sql) |
+| 1단계 | [queries.sql](results/step1/queries.sql) | [results.json](results/step1/results.json) |
+| 2단계 | [product-query-index.sql](../../../docker/mysql/product-query-index.sql) | [results.json](results/step2/results.json) |
+| 3단계 | [product-query-list-index.sql](../../../docker/mysql/product-query-list-index.sql) | [results.json](results/step3/results.json) |
+| 4단계 | [queries.sql](results/step4/queries.sql) | [results.json](results/step4/results.json) · [부하 원인·likes_desc 진단](results/step4/final-state-diagnosis.json) |
+| 5단계 | [k6 좋아요 쓰기 시나리오](k6/product-listing.k6.js) · [miss 강제 스크립트](results/step5/evict_on_set.py) | [results.json](results/step5/results.json) · [워밍업](results/step5/warm-up-results.json) |
 
 ## 2. 단계별 결과 비교
 
@@ -464,7 +464,7 @@ HTTP 지연도 같은 VU에서 IN이 대체로 낮았지만, 요청당 차이가
 
 ## 8. 5단계: 상품 목록 cache-aside
 
-고객 상품 목록의 공통 응답을 Redis에 저장했다. 캐시 설계와 장애 정책은 [설계 문서](../week2/commerce-api-design.md)의 캐시 절과 [상품 목록 캐시 설계](product-list-cache.md)에 정리했다.<br>
+고객 상품 목록의 공통 응답을 Redis에 저장했다. 캐시 설계와 장애 정책은 [상품 목록 유스케이스 설계](../../system-design/use-cases/product-listing.md)에 정리했다.<br>
 워밍업 없이, 첫 요청이 miss로 캐시를 채우는 순수 cache-aside를 측정했다. 측정용 Redis는 공유 로컬 컨테이너가 아니라 측정 전용 컨테이너를 사용했다.
 
 ### 요청 한 건의 비용
@@ -490,12 +490,12 @@ miss는 측정 전용 Redis에서 목록 캐시가 저장되는 즉시 지우는
 | 3 | 100 / 1,300 | 30.096 ms | 65.990 ms | 5.592 ms |
 
 캐시가 비어 있으면 처음 동시에 들어온 요청들이 모두 miss가 돼 한 키에 대해 69~100개의 DB 조회가 몰렸다. 이후 요청은 모두 hit이었다.<br>
-배포·Redis 재시작 직후에 생기는 구간이며, 아래 기동 시 워밍업으로 줄였다.
+애플리케이션 기동 직후의 빈 캐시는 아래 기동 시 워밍업으로 보완했다. 애플리케이션 실행 중 Redis만 재시작하면 워밍업은 실행되지 않으며, 복원된 항목을 사용하고 miss는 요청 시 DB에서 읽어 채운다.
 
 ### 빈 캐시 보완: 기동 시 워밍업
 
 앱이 기동할 때 정렬 3가지 × (전체 + 활성 브랜드 전부)의 첫 페이지(크기 20)를 미리 채운다. 이번 데이터에서는 300개 조건이다.<br>
-고객 목록 조회 경로를 그대로 사용하므로 버전 키·삭제 확인·Redis 장애 우회가 똑같이 적용되고, 이미 캐시된 조건은 DB를 다시 읽지 않는다.<br>
+고객 목록 조회 경로를 그대로 사용하므로 버전 키·삭제 확인·Redis 장애 우회가 똑같이 적용된다. 이미 캐시된 조건은 목록·브랜드·좋아요 재조회를 생략하며, 상품이 있는 cache hit에서도 삭제 확인 DB 조회 1회는 실행한다.<br>
 `ApplicationRunner`로 실행해, 워밍업이 끝난 뒤 readiness가 트래픽 수신 상태로 바뀐다. 실패한 조건은 경고 로그만 남기고 기동을 막지 않는다.
 
 #### 측정 방법
@@ -542,7 +542,7 @@ miss는 측정 전용 Redis에서 목록 캐시가 저장되는 즉시 지우는
 - 읽기 위주에서는 캐시 hit으로 커넥션 풀 병목이 해소돼 100 VU 자체 목표를 처음으로 달성했다.
 - 쓰기가 섞이면 무효화 직후의 동시 miss가 DB로 몰려 지연이 다시 늘어난다. 같은 키의 miss를 한 요청만 DB에서 읽게 하는 방식(single-flight)이 다음 개선 후보다.
 - 좋아요를 무효화 대상에서 빼면 hit 비율은 유지되지만, 변경 직후 순차 조회의 최신성 계약을 지키지 못해 적용하지 않았다.
-- 측정은 같은 PC에서 회차마다 한 번씩 수행했다. miss·쓰기 섞임 측정은 앱을 다시 띄운 별도 회차다. 상세 조건은 [측정 원본](../product-query-step5/results.json)에 남겼다.
+- 측정은 같은 PC에서 회차마다 한 번씩 수행했다. miss·쓰기 섞임 측정은 앱을 다시 띄운 별도 회차다. 상세 조건은 [측정 원본](results/step5/results.json)에 남겼다.
 
 ## 9. 정리
 

@@ -4,7 +4,7 @@ import execution from 'k6/execution';
 import http from 'k6/http';
 import { Counter, Rate, Trend } from 'k6/metrics';
 
-const baseline = JSON.parse(open('../product-query-baseline/response-canonical.json'));
+const baseline = JSON.parse(open('../results/baseline/response-canonical.json'));
 const responseSha256 = crypto.sha256(JSON.stringify(baseline), 'hex');
 const samples = Number(__ENV.PRODUCT_QUERY_SAMPLES || 1000);
 const warmup = Number(__ENV.PRODUCT_QUERY_WARMUP || 3);
