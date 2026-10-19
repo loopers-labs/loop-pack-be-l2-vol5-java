@@ -22,7 +22,7 @@ public class ProductListCacheWarmer {
     private final BrandRepository brandRepository;
 
     // 정렬마다 전체 목록과 활성 브랜드 목록의 첫 페이지를 기본 크기로 채운다.
-    // 고객 목록 조회 경로를 그대로 사용하므로 이미 캐시된 조건은 DB를 다시 읽지 않는다.
+    // 고객 목록 조회 경로를 사용해 hit은 목록 재조회를 생략하고 기존 삭제 확인 규칙을 따른다.
     public Result warmUp() {
         List<Long> brandIds = new ArrayList<>();
         brandIds.add(null);

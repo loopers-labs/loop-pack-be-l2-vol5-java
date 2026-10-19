@@ -45,7 +45,7 @@ public class ProductFacade {
         return CustomerProductInfo.from(product, brand, likeCount);
     }
 
-    // hit에서는 DB 커넥션을 잡지 않도록 트랜잭션은 miss의 DB 조회에만 연다.
+    // hit은 삭제 확인 조회만 수행하고, 목록 조회 트랜잭션은 miss에서만 연다.
     public List<CustomerProductInfo> getCustomerList(Long brandId, int page, int size, String sort) {
         if (page < 0 || size < 1 || size > 100) {
             throw new CoreException(ErrorType.BAD_REQUEST, "페이지 입력이 올바르지 않습니다.");
