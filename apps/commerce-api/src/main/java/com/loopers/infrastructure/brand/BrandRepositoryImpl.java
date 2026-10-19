@@ -2,7 +2,11 @@ package com.loopers.infrastructure.brand;
 
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
+import com.loopers.infrastructure.support.MySqlConstraintErrors;
+import com.loopers.support.error.CoreException;
+import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
 import java.time.ZonedDateTime;
@@ -67,7 +71,11 @@ public class BrandRepositoryImpl implements BrandRepository {
 
     @Override
     public int updateActiveName(Long brandId, String name, ZonedDateTime updatedAt) {
-        return brandJpaRepository.updateActiveName(brandId, name, updatedAt);
+        try {
+            return brandJpaRepository.updateActiveName(brandId, name, updatedAt);
+        } catch (DataIntegrityViolationException exception) {
+            throw translateDuplicateName(exception);
+        }
     }
 
     @Override
@@ -85,7 +93,17 @@ public class BrandRepositoryImpl implements BrandRepository {
         if (brand.getId() != null) {
             BrandJpaMapper.update(brand, entity);
         }
-        return BrandJpaMapper.toDomain(brandJpaRepository.save(entity));
+        try {
+            return BrandJpaMapper.toDomain(brandJpaRepository.saveAndFlush(entity));
+        } catch (DataIntegrityViolationException exception) {
+            throw translateDuplicateName(exception);
+        }
+    }
+
+    private RuntimeException translateDuplicateName(DataIntegrityViolationException exception) {
+        return MySqlConstraintErrors.isDuplicateKey(exception, "uk_brand_name")
+            ? new CoreException(ErrorType.CONFLICT, "이미 등록된 브랜드 이름입니다.")
+            : exception;
     }
 
     private List<Brand> map(List<BrandJpaEntity> entities) {
