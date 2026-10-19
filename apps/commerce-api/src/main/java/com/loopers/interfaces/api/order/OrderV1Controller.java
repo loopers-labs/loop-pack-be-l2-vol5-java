@@ -39,7 +39,8 @@ public class OrderV1Controller implements OrderV1ApiSpec {
     @Override
     public ApiResponse<OrderV1Dto.OrderResponse> confirmOrder(
         @RequesterId Long requesterId,
-        @PathVariable("orderId") Long orderId
+        @PathVariable("orderId") Long orderId,
+        @RequestBody OrderV1Dto.ConfirmOrderRequest request
     ) {
         return ApiResponse.success(OrderV1Dto.OrderResponse.from(orderFacade.confirmOrder(requesterId, orderId)));
     }

@@ -21,6 +21,10 @@ public class OrderV1Dto {
         }
     }
 
+    /** EP-11 요청. 결제 시도 키(클라이언트 생성 멱등키)·카드번호·카드 종류. */
+    public record ConfirmOrderRequest(String paymentAttemptKey, String cardNumber, String cardType) {
+    }
+
     /** 설계 4-3-0 OrderItemResponse. */
     public record OrderItemResponse(Long productId, Integer quantity, Long unitPrice, Long lineAmount) {
         static OrderItemResponse from(OrderInfo.Item item) {

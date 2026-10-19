@@ -15,7 +15,7 @@ public interface OrderV1ApiSpec {
 
     /** EP-11 POST /api/v1/orders/{orderId}/confirm — FR-ORDER-02 */
     @Operation(summary = "주문 확정", description = "재고와 포인트를 차감하고 주문을 CONFIRMED 로 바꾼다. 전부 아니면 전무.")
-    ApiResponse<OrderV1Dto.OrderResponse> confirmOrder(Long requesterId, Long orderId);
+    ApiResponse<OrderV1Dto.OrderResponse> confirmOrder(Long requesterId, Long orderId, OrderV1Dto.ConfirmOrderRequest request);
 
     /** EP-12 GET /api/v1/orders — FR-ORDER-03 */
     @Operation(summary = "내 주문 목록", description = "요청자의 주문 전부를 최신순 페이지로 반환한다.")
