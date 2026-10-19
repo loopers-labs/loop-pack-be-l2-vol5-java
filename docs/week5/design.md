@@ -13,7 +13,7 @@ PG 결제의 결과는 우리 DB 밖에서 생기므로 rollback 으로 되돌�
 ```
 TX A    주문 · 상품 검사 → 재고 예약 → 결제 시도 기록(REQUESTED) → 주문 PAYMENT_PENDING → commit
 TX 밖   PG 생성 POST (Tomcat 스레드가 응답을 기다린다, 상한은 timeout)
-TX B    PG 의 관찰을 결제 · 주문 · 예약에 한 번만 반영 → commit
+TX B    PG 의 관찰을 결제 · 주문 · 재고에 한 번만 반영 → commit
 ```
 
 - **PG 호출 동안 DB 트랜잭션 · 재고 잠금을 쥐지 않는다.** 원문 요구이고, 쥐면 PG 가 느려질 때 같은 상품의 다른 주문이 잠금을 기다린다.
@@ -49,8 +49,6 @@ TX B    PG 의 관찰을 결제 · 주문 · 예약에 한 번만 반영 → com
 erDiagram
     orders ||--|{ order_item : ""
     orders ||--o| payment : "0..1"
-    orders ||--o{ stock_reservation : "품목별"
-    product ||--o{ stock_reservation : ""
     payment ||--o{ payment_discrepancy : "불일치 기록"
 ```
 
@@ -75,19 +73,35 @@ erDiagram
 **이름이 `payment` 인데 과거 POINT 결제는 이 테이블에 없다.** POINT 결제의 사실은 `orders.paid_amount` · `point_transaction` 에 있고, 원문이 "이전 포인트 결제 주문은 기존 사실을 그대로 조회" 하라고 했다.
 **뒤집을 조건**: 결제 수단이 섞이거나(포인트 + 카드) 주문에 결제가 여러 번 붙으면, 모든 결제를 한 테이블에서 봐야 하므로 POINT 결제도 `payment` 로 옮기고 `order_id` 유일 제약을 푼다.
 
-### 3.2 `stock_reservation` — 재고 예약
+### 3.2 재고 예약 — 테이블을 두지 않는다
 
-| 열 | 제약 · 뜻 |
+**예약은 저장한 행이 아니라 세 사실의 조합이다.**
+
+| 사실 | 어디에 |
 |---|---|
-| `order_id` · `product_id` | **UNIQUE(둘을 묶어)** |
-| `quantity` | 확보한 수량 |
-| `status` | `HELD` · `CONSUMED` · `RETURNED`. **`HELD` 에서만** 바뀐다 → 소비 · 반환은 한 번뿐 |
+| 얼마를 묶었나 | `order_item.quantity` — 접수 뒤 바뀌지 않고(`ORDER-008`), 같은 상품은 한 품목으로 합쳐진다(`ORDER-004`) |
+| 묶었나 · 풀었나 · 썼나 | `payment.status` — 미완료(`REQUESTED` · `PENDING` · `UNKNOWN` · `CONFLICT`)면 묶여 있고, `SUCCESS` 면 소비, `FAILED` 면 반환 |
+| 가용 재고 | `product.quantity` — TX A 가 품목 수량만큼 뺀다 |
 
-`product.quantity` 는 열을 바꾸지 않고 뜻이 **가용 재고**가 된다. 예약하면 빼고, 반환하면 더한다. 소비할 때는 건드리지 않는다.
-관리자 재고 설정(`RSV-006`)은 이 열을 그대로 설정하므로 "예약을 뺀 가용 수량" 이라는 원문의 뜻과 맞는다.
+| 사건 | `product.quantity` (재고 5 · 수량 2) |
+|---|---|
+| TX A (예약) | 5 → 3 — 차감은 여기서 한 번(`RSV-001`) |
+| `SUCCESS` (소비) | 3 그대로 — 다시 빼지 않는다(`RSV-002`) |
+| `FAILED` (반환) | 3 → 5 — `order_item` 수량만큼 한 번 더한다(`RSV-003`) |
+| 미완료 · timeout · 회로 OPEN | 3 그대로(`RSV-004`) |
 
-지금 고를 수 있는 다른 길은 예약 테이블 없이 주문에 "예약 상태" 열 하나를 두는 것이다(수량은 `order_item` 에 있다).
-고르지 않는 이유: 주문 내용(무엇을 샀나)과 재고 사실(얼마를 묶었나)이 한 행에 섞이고, 상품별로 지금 묶인 수량을 셀 수 없다.
+- **반환이 한 번뿐인 것은 결제 전이가 보장한다.** `FAILED` 로 가는 전이는 TX B 가 행을 잠근 채 "종결 전일 때만" 일어나므로 한 번이고, 반환은 그 전이와 같은 TX 에서만 일어난다(5.3).
+- `product.quantity` 는 열을 바꾸지 않고 뜻이 **가용 재고**가 된다. 관리자 재고 설정(`RSV-006`)이 이 열을 그대로 설정하므로 "예약을 뺀 가용 수량" 이라는 원문의 뜻과 맞는다. 품절 판정 · W4 캐시의 `soldOut` 도 그대로 `quantity` 를 본다.
+- 상품마다 지금 묶인 수량은 `order_item` ⨝ `payment`(미완료)로 센다.
+
+**왜 예약 테이블을 두지 않나.** `stock_reservation(order_id, product_id, quantity, status)` 를 두면 수량은 `order_item` 과, 상태는 `payment.status` 와 언제나 같은 값이다.
+같은 사실을 두 곳에 두면 "결제는 `SUCCESS` 인데 예약은 묶인" 어긋난 상태가 가능해지고, 그것을 막는 코드와 테스트가 따로 필요하다.
+예약 상태 조건이 주던 2차 방어는 잃지만, 반환 경로는 `PaymentSettlement.apply` 하나뿐이다.
+원문도 "주문별 확보 수량 · 상태를 저장하는 최소 예약 방식으로 구현할 **수 있습니다**" 라고 했다 — 수량은 `order_item` 에, 상태는 `payment` 에 저장돼 있다.
+
+지금 고를 수 있는 다른 길:
+- 예약 테이블(위). **뒤집을 조건**: 예약의 생애가 결제와 갈라질 때 — 예약 만료, 일부 수량만 확보, 결제 없이 장바구니 단계에서 예약.
+- 전체 · 예약 수량을 상품에 나눠 두기(`product.reserved`). 가용 = `quantity - reserved`. 성공 때 상품 행을 잠가 두 열을 함께 바꿔야 하고, 관리자 설정 · 품절 판정 · 캐시 조회가 모두 바뀐다. **뒤집을 조건**: 상품마다 전체 · 묶인 재고를 한눈에 봐야 하는 화면(창고 관리)이 생길 때.
 
 ### 3.3 `payment_discrepancy` — 불일치 기록
 
@@ -217,7 +231,7 @@ confirm(userId, orderId, key, cardType, cardNo)
 
 - 상태는 **앞으로만** 간다. `PENDING` → `UNKNOWN`, 종결 → 미완료로 가는 줄이 표에 없다.
 - `UNKNOWN` 과 `REQUESTED` 는 같은 줄을 탄다. 둘 다 "보냈을 수 있고 결과를 모름" 이다. 다른 점은 생성 응답을 받았느냐뿐이다.
-- 주문 · 예약은 결제 상태가 정한다: 미완료(`REQUESTED` · `PENDING` · `UNKNOWN` · `CONFLICT`) → `PAYMENT_PENDING` · `HELD`, `SUCCESS` → `CONFIRMED` · `CONSUMED`, `FAILED` → `PAYMENT_FAILED` · `RETURNED`.
+- 주문과 재고는 결제 상태가 정한다: 미완료(`REQUESTED` · `PENDING` · `UNKNOWN` · `CONFLICT`) → `PAYMENT_PENDING` · 차감한 재고 유지, `SUCCESS` → `CONFIRMED` · 재고 그대로, `FAILED` → `PAYMENT_FAILED` · 재고 반환.
 - `FAILED` 로 가는 길은 **둘뿐**이다: 검증한 `FAILED`, 효과 0건 거절. timeout · 회로 OPEN · 조회 0건은 없다.
 
 ### 5.3 TX B 의 잠금
@@ -228,7 +242,7 @@ TX B(paymentId, observation)
   주문 행 FOR UPDATE                        ← 동시 callback · reconcile · TX A 가 여기서 한 줄로 선다
   payment 행 FOR UPDATE                     ← 잠근 뒤 상태를 다시 읽는다
   전이 표 적용 — 효과가 없으면 여기서 commit
-  예약 행들(상품 id 순) · 상품 행들(상품 id 순, 반환할 때만, 삭제된 상품 포함)
+  상품 행들(상품 id 순, 반환할 때만, 삭제된 상품 포함) — order_item 수량만큼 더한다
   불일치 INSERT (있으면)
   commit
 ```
@@ -237,8 +251,8 @@ TX B(paymentId, observation)
   TX B 가 payment 를 먼저 잠그면 TX A(주문 → payment)와 순서가 엇갈려 교착이 생기므로, TX B 도 주문부터 잡는다. 상품 id 순서는 W3 의 잠금 순서와 같다.
 - **반환은 삭제된 상품의 행도 잠근다.** 지금의 `findAliveByIdForUpdate` 는 `deletedAt is null` 인 행만 잠그므로, 그 경로로 반환하면 삭제된 상품에서 TX B 가 매번 실패해 결제가 끝나지 않는다.
   반환 전용으로 삭제 여부와 관계없이 잠그는 조회를 둔다. 반환은 수량만 더하고 `deleted_at` 을 건드리지 않으므로 삭제된 상품은 계속 보이지 않는다(`RSV-007`).
-  예약을 만드는 TX A 는 지금처럼 살아 있는 상품만 잠근다 — 삭제 뒤 새로 시작하는 확정은 막아야 하기 때문이다.
-- 예약 반환은 `HELD` 인 예약만, 소비도 `HELD` 인 예약만 바꾼다. 결제 행 잠금이 1차로, 예약의 상태 조건이 2차로 중복 반영을 막는다.
+  재고를 차감하는 TX A 는 지금처럼 살아 있는 상품만 잠근다 — 삭제 뒤 새로 시작하는 확정은 막아야 하기 때문이다.
+- 반환은 `FAILED` 로 가는 전이와 같은 TX 에서만 일어난다. 결제 행 잠금과 "종결 전일 때만" 이 중복 반환을 막는다(3.2).
 - 불일치 INSERT 는 상태 변경과 **같은 TX** 다. 따로 쓰면 "`CONFLICT` 인데 이유가 없는 결제" 가 생길 수 있다.
 
 **호출자가 넷이다**(Q-4). 이 경계는 호출자 수에 기대지 않고 위의 잠금과 상태 조건으로 스스로 막는다.
@@ -254,7 +268,7 @@ sequenceDiagram
     participant DB
     participant PG
     C->>A: POST /orders/42/confirm (key, cardType, cardNo)
-    A->>DB: TX A 예약 HELD + payment REQUESTED + 주문 PAYMENT_PENDING
+    A->>DB: TX A 재고 차감 + payment REQUESTED + 주문 PAYMENT_PENDING
     A->>PG: POST /api/v1/payments (LP-ORD-0000000042, 7000)
     PG-->>A: 202 TEST-TX-0042 PENDING
     A->>DB: TX B payment PENDING, 키 저장
@@ -266,7 +280,7 @@ sequenceDiagram
     PG->>A: callback (LP-ORD-0000000042, TEST-TX-0042, SUCCESS)
     A->>PG: GET /api/v1/payments/TEST-TX-0042
     PG-->>A: 200 SUCCESS, 7000
-    A->>DB: TX B payment SUCCESS, 예약 CONSUMED, 주문 CONFIRMED
+    A->>DB: TX B payment SUCCESS, 주문 CONFIRMED (재고 그대로)
     A-->>PG: 200
     C->>A: GET /orders/42
     A-->>C: CONFIRMED
@@ -281,11 +295,11 @@ sequenceDiagram
     participant A as commerce
     participant DB
     participant PG
-    A->>DB: TX A 예약 HELD + payment REQUESTED
+    A->>DB: TX A 재고 차감 + payment REQUESTED
     A->>PG: POST /api/v1/payments
     PG-->>A: 422 TEST_PG_REJECTED_BEFORE_CREATE, transactionCreated false
     Note over A: 다섯 조건 확인 (422 · code · false · orderId · amount)
-    A->>DB: TX B payment FAILED (키 없음), 예약 RETURNED, 주문 PAYMENT_FAILED
+    A->>DB: TX B payment FAILED (키 없음), 재고 반환, 주문 PAYMENT_FAILED
 ```
 
 가용 3 → 5. 다섯 조건 중 하나라도 어긋나면(본문 없는 422 등) `CreateUnknown` 이다.
@@ -301,11 +315,11 @@ sequenceDiagram
     A->>PG: POST /api/v1/payments
     Note over PG: 거래 TEST-TX-0042 생성
     PG--xA: 응답 유실 (read timeout)
-    A->>DB: TX B payment UNKNOWN (예약 유지)
+    A->>DB: TX B payment UNKNOWN (재고 그대로)
     Note over A: POST 를 다시 보내지 않는다
     A->>PG: reconcile 또는 sweeper — GET /api/v1/payments?orderId=LP-ORD-0000000042
     PG-->>A: 200 [TEST-TX-0042 SUCCESS]
-    A->>DB: TX B 키 저장, SUCCESS, 예약 CONSUMED, 주문 CONFIRMED
+    A->>DB: TX B 키 저장, SUCCESS, 주문 CONFIRMED
 ```
 
 조회 결과가 `[]` 이면 그대로 둔다. 2건이면 `CONFLICT` + `MULTIPLE_TRANSACTIONS`. 어느 쪽도 POST 를 다시 보내지 않는다. create 호출은 끝까지 1 회다.
@@ -343,7 +357,7 @@ sequenceDiagram
     participant DB
     CB->>DB: TX B 주문 · payment FOR UPDATE (잠금 획득)
     RC->>DB: TX B 주문 FOR UPDATE (대기)
-    CB->>DB: PENDING 에서 SUCCESS, 예약 CONSUMED, 확정
+    CB->>DB: PENDING 에서 SUCCESS, 확정
     CB->>DB: commit
     Note over RC: 잠금 획득, 행을 다시 읽으면 SUCCESS
     RC->>DB: 같은 결과 - 효과 없음, commit
@@ -385,7 +399,7 @@ sequenceDiagram
         B->>DB: TX B 키 저장, 상태 반영
     else 0건
         PG-->>B: []
-        Note over B: 그대로 둔다. POST 를 다시 보내지 않는다. 예약 HELD 유지
+        Note over B: 그대로 둔다. POST 를 다시 보내지 않는다. 차감한 재고 유지
     end
 ```
 
@@ -500,7 +514,7 @@ callback 은 "확인해 보라" 는 계기라 놓쳐도 잃는 정보가 없다 
 
 | 장면 | 결과 | 왜 자동으로 풀지 않나 |
 |---|---|---|
-| `REQUESTED` commit 뒤 POST 전에 프로세스 종료 | 조회 0건이 계속되고 주문 `PAYMENT_PENDING` · 예약 `HELD` 가 남는다 | 0건이 "안 보냈다" 의 증거가 아니다. 다시 보내면 이중 결제가 될 수 있다 |
+| `REQUESTED` commit 뒤 POST 전에 프로세스 종료 | 조회 0건이 계속되고 주문 `PAYMENT_PENDING` 과 차감한 재고가 남는다 | 0건이 "안 보냈다" 의 증거가 아니다. 다시 보내면 이중 결제가 될 수 있다 |
 | `CONFLICT` | 예약이 묶인 채 사람을 기다린다 | 어느 거래가 진짜인지, 금액이 다른 결제를 받을지는 사람이 PG 와 확인할 일이다 |
 | 종결 뒤 PG 가 다른 결과를 말함(`RESULT_AFTER_SETTLED`) | 상태는 그대로, 불일치 기록만 | 취소 API 가 없다(1.2). 특히 `FAILED` · 반환 뒤 `SUCCESS` 는 돈은 받았는데 재고가 팔렸을 수 있다 |
 | 오래된 미확인 결제 | 시간이 지나도 실패로 바꾸지 않는다 | 아직 성공할 거래의 재고를 남에게 팔 수 있다. 원문도 무조건 만료를 금한다 |
@@ -540,7 +554,7 @@ callback 은 "확인해 보라" 는 계기라 놓쳐도 잃는 정보가 없다 
 domain/payment          Payment(애그리거트 · 전이 표) · PaymentStatus · 관찰(sealed) · PaymentDiscrepancy
                         PaymentRepository · PaymentGateway(포트: create · lookup) · PaymentSettlement(TX B 의 규칙)
                         PaymentAttemptKey · ProviderOrderId · CardType
-domain/product          예약 · 소비 · 반환의 좁은 계약(StockDeduction 과 같은 모양) · 예약 애그리거트
+domain/product          차감(`StockDeduction`, 지금 것) · 반환(삭제된 상품 포함)의 좁은 계약
 domain/order            주문 상태 2 개 · 결제 시작 · 확정 · 실패 메서드. 예약을 걸치는 확정은 도메인 서비스가 진다
 application/payment     PaymentFacade — confirm · onCallback · reconcile · sweep 의 네 입구와 check(lookup → TX B) 하나
                         트랜잭션 경계 · bulkhead 는 여기에만 있다
@@ -579,7 +593,7 @@ JDK 내장 `HttpServer` 로 테스트 안에서 띄운다. 의존성을 더하�
 |---|---|
 | `PaymentTest` (DB 없음) | 5.2 의 전이 표 한 줄마다 한 테스트 |
 | `PaymentProviderContractTest` | 실제 adapter 가 보내는 메서드 · 경로 · 헤더 · JSON 타입 · 금액, query 인코딩, 응답 → 관찰 매핑, 다섯 조건의 422 |
-| `PaymentIntegrationTest` (MySQL + fixture) | 원문 6장 표의 장면 — 외부 거래 수 · create 수 · 주문 · 예약 · 가용 재고 · 포인트를 함께 단언 |
+| `PaymentIntegrationTest` (MySQL + fixture) | 원문 6장 표의 장면 — 외부 거래 수 · create 수 · 주문 · 가용 재고 · 포인트를 함께 단언 |
 | 동시성 | 같은 키 confirm 동시 · callback 과 reconcile 동시 · bulkhead 21 번째 |
 | 재시작 | 서비스 · client 를 다시 만들되 같은 DB 와 같은 fixture 를 유지 |
 | 외부 성공 뒤 내부 저장 실패 | 다른 커넥션이 주문 행을 잡고 있게 해서 TX B 를 잠금 대기 초과로 rollback 시킨다(W3 `LockWaitTimeoutTest` 와 같은 방식, 테스트 더블 없음). callback 은 503, 잠금을 놓은 뒤 reconcile 이 같은 거래를 조회해 한 번 확정하고 create 는 1 회 그대로 |
@@ -595,7 +609,7 @@ JDK 내장 `HttpServer` 로 테스트 안에서 띄운다. 의존성을 더하�
 | 0 | 문서(이 문서와 명세) | — |
 | 1 | PG fixture | fixture 가 계약대로 응답하고 손잡이가 동작한다 |
 | 2 | PG adapter | `PaymentProviderContractTest` |
-| 3 | 도메인 — `Payment` 전이 표 · 예약 · 주문 상태 | DB 없이 도는 애그리거트 테스트 |
+| 3 | 도메인 — `Payment` 전이 표 · 주문 상태 | DB 없이 도는 애그리거트 테스트 |
 | 4 | 저장 · TX A · 발송 | 동시 confirm 에도 create 1 |
 | 5 | TX B | 성공 · 실패 · 거절 · 중복 반영 0 |
 | 6 | callback · reconcile | callback-first ≡ lookup-first, 꾸민 callback 거절 |
@@ -615,6 +629,6 @@ JDK 내장 `HttpServer` 로 테스트 안에서 띄운다. 의존성을 더하�
 | E2 PG 지연 · bulkhead 끔 | PG 접수 2 s | 상품 목록 p99, 사용 중 Tomcat 스레드 | 상품 목록도 느려진다 |
 | E3 PG 지연 · bulkhead 20 | E2 와 같음 | 같음 + 503 수 | 상품 목록은 E1 수준, confirm 일부만 503 |
 | E4 조회 실패 | 조회에 5xx | 회로 전이 시각, PG 조회 수 | 표본 5 회 안에 OPEN, 이후 조회 0, 대기 뒤 HALF_OPEN → 복구 |
-| E5 callback 폭주 | 같은 callback 1,000 건 동시 | 확정 · 예약 소비 · 불일치 수 | 확정 1, 소비 1, 나머지 효과 0 |
+| E5 callback 폭주 | 같은 callback 1,000 건 동시 | 확정 · 가용 재고 · 불일치 수 | 확정 1, 재고 변화 0, 나머지 효과 0 |
 
 **여유가 있으면** — sweeper 의 지수 backoff(확인할 때마다 간격 2 배, 상한 5 분, `check_count` 열. 영원히 0 건인 결제가 PG 를 계속 두드리지 않게), 관리자 결제 조회(`GET /api-admin/v1/payments?status=` · `/{id}/discrepancies`, 조회만).
