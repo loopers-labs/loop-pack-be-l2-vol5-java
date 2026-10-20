@@ -50,6 +50,10 @@ public class ProductStockLedgerModel extends BaseEntity {
         return new ProductStockLedgerModel(productId, StockLedgerType.RESERVE, -quantity, orderId);
     }
 
+    static ProductStockLedgerModel release(Long productId, Long orderId, int quantity) {
+        return new ProductStockLedgerModel(productId, StockLedgerType.RELEASE, quantity, orderId);
+    }
+
     public Long getProductId() {
         return productId;
     }

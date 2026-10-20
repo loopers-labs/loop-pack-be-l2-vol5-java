@@ -2,10 +2,8 @@ package com.loopers.application.order;
 
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.product.ProductService;
-import com.loopers.domain.order.OrderItemModel;
 import com.loopers.domain.order.OrderModel;
 import com.loopers.domain.order.OrderService;
-import com.loopers.domain.point.PointService;
 import com.loopers.domain.user.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -21,8 +19,9 @@ import java.util.stream.Collectors;
 public class OrderFacade {
     private final UserService userService;
     private final ProductService productService;
-    private final PointService pointService;
     private final OrderService orderService;
+    private final OrderPaymentProcessor orderPaymentProcessor;
+    private final PaymentGateway paymentGateway;
 
     /**
      * FR-ORDER-01 주문 생성. ST-03 (없음) → DRAFT. 재고·잔액 변화 없음, 재고 부족은 확인하지 않는다.
@@ -42,22 +41,21 @@ public class OrderFacade {
     }
 
     /**
-     * FR-ORDER-02 주문 확정. ST-03 DRAFT → CONFIRMED.
-     * 한 트랜잭션에서 상품 삭제 재검증 → 재고 차감(품목마다) → 잔액 차감 → 확정. 어느 하나가 실패하면 전부 롤백 (ASM-14, DR-08).
-     * 검사 순서는 요구사항 실패 케이스 순서: 주문 없음 → 소유 → DRAFT → 상품 삭제 → 재고 → 잔액 (EP-11).
-     * 동시 확정은 재고(product_id 오름차순, 쓰기) → 상품(id 오름차순, 읽기) → 포인트 순서의 비관적 락으로 직렬화한다 (DR-34, DR-38).
+     * FR-ORDER-02 주문 확정 (PG 카드 결제). 트랜잭션 없음: 결제 시작(재고 예약, AWAITING_PAYMENT) 커밋 → PG 요청 → 결과 반영.
+     * 같은 결제 시도 키의 재요청은 PG 를 다시 부르지 않고 현재 상태를 돌려준다. 결과를 모르면 AWAITING_PAYMENT 그대로 돌려준다.
      */
-    @Transactional
-    public OrderInfo confirmOrder(Long requesterId, Long orderId) {
-        userService.getUser(requesterId);
-        OrderModel order = orderService.getOwned(orderId, requesterId);
-        order.ensureDraft();
-        productService.getActiveProductsForReserve(order.getItems().stream().map(OrderItemModel::getProductId).toList());
-        for (OrderItemModel item : order.getItems()) {
-            productService.reserveStock(order.getId(), item.getProductId(), item.getQuantity());
+    public OrderInfo confirmOrder(Long requesterId, Long orderId, String paymentAttemptKey, String cardType, String cardNo) {
+        OrderPaymentProcessor.Started started = orderPaymentProcessor.startPayment(requesterId, orderId, paymentAttemptKey);
+        if (started.alreadyStarted()) {
+            return started.order();
         }
-        pointService.deduct(requesterId, order.getTotalAmount());
-        order.confirm();
-        return OrderInfo.from(order);
+        OrderInfo order = started.order();
+        PaymentGatewayResult result = paymentGateway.request(order.userId(), order.id(), cardType, cardNo, order.totalAmount());
+        return orderPaymentProcessor.applyResult(order.id(), result);
+    }
+
+    /** PG callback 결과 반영. PG 주문 ID("ORDER-{id}")를 우리 주문 ID 로 바꿔 결과 반영에 넘긴다. 형식이 아니면 ER-05 ORDER_NOT_FOUND. */
+    public OrderInfo applyPaymentCallback(String pgOrderId, PaymentGatewayResult result) {
+        return orderPaymentProcessor.applyResult(PgOrderId.parse(pgOrderId), result);
     }
 }

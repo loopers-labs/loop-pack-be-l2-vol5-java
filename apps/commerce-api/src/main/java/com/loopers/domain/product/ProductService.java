@@ -120,6 +120,14 @@ public class ProductService {
         productRepository.syncLegacyStock(productId, productStock.getAvailable());
     }
 
+    /** 결제 실패: 품목별 예약분 반환. 재고 행을 product_id 오름차순 쓰기 락으로 읽고 RELEASE 를 남긴다 (DR-34, DR-38). 삭제된 상품도 반환한다. */
+    public void releaseStocks(Long orderId, Map<Long, Integer> quantitiesByProductId) {
+        for (ProductStockModel productStock : productRepository.findStocksForUpdate(List.copyOf(quantitiesByProductId.keySet()))) {
+            productRepository.saveLedger(productStock.release(orderId, quantitiesByProductId.get(productStock.getProductId())));
+            productRepository.syncLegacyStock(productStock.getProductId(), productStock.getAvailable());
+        }
+    }
+
     /**
      * INV-10 (FR-ADMIN-BRAND-05): 삭제되지 않은 소속 상품(재고 0 포함)을 전부 ST-02 ACTIVE → DELETED.
      * 이미 삭제된 상품은 건드리지 않는다. 좋아요 관계·주문 품목도 건드리지 않는다 (ASM-07, DR-33).

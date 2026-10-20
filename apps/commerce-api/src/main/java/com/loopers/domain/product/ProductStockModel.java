@@ -66,6 +66,15 @@ public class ProductStockModel extends BaseEntity {
         return ProductStockLedgerModel.reserve(productId, orderId, quantity);
     }
 
+    /** 결제 실패 시 예약분 반환: available += 수량. RELEASE 행을 돌려준다. 수량은 그 주문의 RESERVE 수량이어야 한다. */
+    public ProductStockLedgerModel release(Long orderId, int quantity) {
+        if (quantity <= 0) {
+            throw new CoreException(ErrorType.INVALID_QUANTITY, "반환 수량은 양수여야 합니다. [quantity = " + quantity + "]");
+        }
+        this.available += quantity;
+        return ProductStockLedgerModel.release(productId, orderId, quantity);
+    }
+
     public Long getProductId() {
         return productId;
     }

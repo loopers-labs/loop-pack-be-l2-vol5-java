@@ -24,4 +24,12 @@ public class OrderRepositoryImpl implements OrderRepository {
         }
         return orderJpaRepository.findById(id);
     }
+
+    @Override
+    public Optional<OrderModel> findForUpdate(Long id) {
+        if (id == null) {
+            return Optional.empty();
+        }
+        return orderJpaRepository.findByIdForUpdate(id);
+    }
 }

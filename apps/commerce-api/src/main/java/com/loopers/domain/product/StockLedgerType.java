@@ -6,6 +6,6 @@ public enum StockLedgerType {
     ADJUSTMENT,
     /** 주문 확정의 품목별 차감 (FR-ORDER-02). 수량은 음수, order_id 필수. */
     RESERVE,
-    /** 주문 취소 시 예약분 반환. 수량은 양수, order_id 필수. 주문 취소 FR 이 아직 없어 쓰는 곳이 없다. */
+    /** 결제 실패 시 예약분 반환 (주문 AWAITING_PAYMENT → FAILED). 수량은 양수, order_id 필수. */
     RELEASE
 }

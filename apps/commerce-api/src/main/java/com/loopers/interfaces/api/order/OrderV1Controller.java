@@ -42,7 +42,8 @@ public class OrderV1Controller implements OrderV1ApiSpec {
         @PathVariable("orderId") Long orderId,
         @RequestBody OrderV1Dto.ConfirmOrderRequest request
     ) {
-        return ApiResponse.success(OrderV1Dto.OrderResponse.from(orderFacade.confirmOrder(requesterId, orderId)));
+        return ApiResponse.success(OrderV1Dto.OrderResponse.from(orderFacade.confirmOrder(
+            requesterId, orderId, request.paymentAttemptKey(), request.cardType(), request.cardNumber())));
     }
 
     @GetMapping
