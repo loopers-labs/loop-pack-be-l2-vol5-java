@@ -24,6 +24,7 @@ spring:
       - redis.yml
       - logging.yml
       - monitoring.yml
+      - optional:classpath:application-secret.yml # PG 테스트 키(.gitignore). 견본은 application-secret.yml.example
 
 # W3 ADR-W3-04: 잠금 대기 상한. MySQL은 쿼리별 대기 시간 문법이 없어 커넥션마다 세션 변수로 둔다.
 # 넘기면 ERROR 1205 → CONCURRENCY_CONFLICT(409)로 응답한다. 확정 트랜잭션은 수십 ms라 3초는 붐빔의 신호다.
