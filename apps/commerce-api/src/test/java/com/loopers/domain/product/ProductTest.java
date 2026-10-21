@@ -58,4 +58,17 @@ class ProductTest {
         assertThat(restored.isDeleted()).isTrue();
         assertThat(restored.getPrice()).isEqualTo(new Money(0));
     }
+
+    @Test
+    @DisplayName("결제 실패로 확보 재고를 돌려주면 삭제된 상품이어도 재고가 늘고 삭제 상태는 유지된다")
+    void returnsStockEvenAfterDeletion() {
+        Product product = product();
+        product.decreaseStock(2);
+        product.delete();
+
+        product.returnStock(2);
+
+        assertThat(product.getStock()).isEqualTo(new Stock(5));
+        assertThat(product.isDeleted()).isTrue();
+    }
 }

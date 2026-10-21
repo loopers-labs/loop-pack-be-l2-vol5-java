@@ -15,7 +15,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class BrandApplicationServiceTest {
     private final FakeBrandRepository repository = new FakeBrandRepository();
-    private final BrandApplicationService service = new BrandApplicationService(repository, org.mockito.Mockito.mock(com.loopers.application.product.port.ProductRepository.class));
+    private final BrandApplicationService service = new BrandApplicationService(repository, org.mockito.Mockito.mock(com.loopers.application.product.port.ProductRepository.class),
+        org.mockito.Mockito.mock(org.springframework.context.ApplicationEventPublisher.class));
 
     @Test
     @DisplayName("브랜드 생성 시 저장소가 부여한 ID와 저장된 이름을 반환한다")

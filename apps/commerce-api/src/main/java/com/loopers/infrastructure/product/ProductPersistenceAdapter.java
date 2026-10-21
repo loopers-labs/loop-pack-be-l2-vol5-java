@@ -10,7 +10,9 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Repository;
@@ -55,7 +57,7 @@ public class ProductPersistenceAdapter implements ProductRepository {
     @Override
     @Transactional
     public List<Product> findActiveByBrandIdForUpdate(BrandId brandId) {
-        // products.brand_id에는 인덱스가 없어 brand_id 조건으로 바로 FOR UPDATE를 걸면 스캔한 다른 브랜드 상품 행까지 잠긴다.
+        // brand_id 조건으로 바로 FOR UPDATE를 걸면 실행 계획에 따라 스캔한 다른 브랜드 상품 행이나 인덱스 간격까지 잠길 수 있다.
         // 대상 ID만 잠금 없이 조회한 뒤 기본 키로 잠근다. 호출 전 브랜드 행을 잠가 두므로 그 사이 같은 브랜드 상품은 생기지 않는다.
         List<Long> activeIds = productJpaRepository.findActiveIdsByBrandId(brandId.value());
         if (activeIds.isEmpty()) {
@@ -65,6 +67,24 @@ public class ProductPersistenceAdapter implements ProductRepository {
             .filter(entity -> !entity.isDeleted())
             .map(this::toDomain)
             .toList();
+    }
+
+    @Override
+    public Map<ProductId, Long> findLikeCounts(Collection<ProductId> ids) {
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        return productJpaRepository.findLikeCountsByIdIn(ids.stream().map(ProductId::value).toList()).stream()
+            .collect(Collectors.toMap(row -> new ProductId((Long) row[0]), row -> (Long) row[1]));
+    }
+
+    @Override
+    @Transactional
+    public void adjustLikeCount(ProductId id, long delta) {
+        entityManager.createNativeQuery("update products set like_count = like_count + :delta where id = :id")
+            .setParameter("delta", delta)
+            .setParameter("id", id.value())
+            .executeUpdate();
     }
 
     @Override
@@ -88,7 +108,7 @@ public class ProductPersistenceAdapter implements ProductRepository {
         String order = switch (sort) {
             case "latest" -> "p.created_at desc, p.id desc";
             case "price_asc" -> "p.price asc, p.id desc";
-            case "likes_desc" -> "(select count(*) from product_likes l where l.product_id=p.id) desc, p.id desc";
+            case "likes_desc" -> "p.like_count desc, p.id desc";
             default -> throw new IllegalArgumentException("지원하지 않는 정렬입니다.");
         };
         String sql = "select p.* from products p where p.deleted=false"

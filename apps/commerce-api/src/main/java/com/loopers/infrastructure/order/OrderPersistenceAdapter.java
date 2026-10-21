@@ -37,8 +37,6 @@ public class OrderPersistenceAdapter implements OrderRepository {
             entity = orderJpaRepository.findById(order.getId()).orElseThrow();
         }
         entity.status = order.getStatus().name();
-        entity.paidAmount = order.getPaidAmount().value();
-        entity.paymentResult = order.getPaymentResult();
         return toDomain(orderJpaRepository.save(entity));
     }
 
@@ -66,8 +64,7 @@ public class OrderPersistenceAdapter implements OrderRepository {
         List<OrderItem> items = entity.items.stream()
             .map(item -> new OrderItem(new ProductId(item.productId), new Quantity(item.quantity), new Money(item.unitPrice)))
             .toList();
-        Order order = Order.restore(entity.id, entity.userId, items, Order.Status.valueOf(entity.status),
-            new Money(entity.paidAmount), entity.paymentResult);
+        Order order = Order.restore(entity.id, entity.userId, items, Order.Status.valueOf(entity.status));
         if (order.getTotal().value() != entity.total) {
             throw new IllegalStateException("저장된 주문 합계가 품목 합계와 다릅니다.");
         }

@@ -19,4 +19,11 @@ public record Stock(int value) {
         }
         return new Stock(value - amount);
     }
+
+    public Stock increase(int amount) {
+        if (amount <= 0) {
+            throw new InvalidValueException("반환량은 양수여야 합니다.");
+        }
+        return new Stock(Math.addExact(value, amount));
+    }
 }

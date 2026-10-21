@@ -7,9 +7,11 @@ import com.loopers.application.point.PointApplicationService;
 import com.loopers.application.product.ProductApplicationService;
 import com.loopers.infrastructure.user.UserJpaEntity;
 import com.loopers.infrastructure.user.UserJpaRepository;
+import com.loopers.support.pg.TestPgFixture;
 import com.loopers.utils.DatabaseCleanUp;
 import java.time.Duration;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -22,8 +24,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -61,12 +65,18 @@ class LockTimeoutTest {
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
 
+    @Autowired
+    private TestPgFixture testPgFixture;
+
     private long productId;
 
     private long orderId;
 
+    private final String attemptKey = UUID.randomUUID().toString();
+
     @BeforeEach
     void prepare() {
+        testPgFixture.start();
         userJpaRepository.save(new UserJpaEntity(1));
         long brandId = brandApplicationService.create("브랜드").id().value();
         productId = productApplicationService.create(brandId, "상품", 3000, 5).id();
@@ -76,13 +86,14 @@ class LockTimeoutTest {
     }
 
     @AfterEach
-    void clean() {
+    void clean() throws InterruptedException {
+        testPgFixture.close();
         jdbcTemplate.update("delete from order_items");
         databaseCleanUp.truncateAllTables();
     }
 
     @Test
-    @DisplayName("다른 트랜잭션이 상품 행을 잠근 동안 주문을 확정하면 약 3초 뒤 503으로 실패하고 주문·재고·잔액을 유지하며, 잠금이 풀리면 같은 요청이 성공한다")
+    @DisplayName("다른 트랜잭션이 상품 행을 잠근 동안 주문을 확정하면 약 3초 뒤 503으로 실패하고 주문·재고·잔액을 유지하며 PG를 부르지 않고, 잠금이 풀리면 같은 요청이 결제 대기가 된다")
     void failsWith503WhenLockWaitExceeded() throws Exception {
         CountDownLatch locked = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
@@ -96,7 +107,7 @@ class LockTimeoutTest {
             assertThat(locked.await(10, TimeUnit.SECONDS)).isTrue();
 
             long startedAt = System.nanoTime();
-            mockMvc.perform(post("/api/v1/orders/{id}/confirm", orderId).header("X-USER-ID", "1"))
+            mockMvc.perform(confirmRequest())
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.meta.result").value("FAIL"));
             Duration waited = Duration.ofNanos(System.nanoTime() - startedAt);
@@ -112,12 +123,21 @@ class LockTimeoutTest {
         assertThat(orderApplicationService.getMyOrder(1, orderId).status()).isEqualTo("DRAFT");
         assertThat(productApplicationService.getAdminProduct(productId).stock()).isEqualTo(5);
         assertThat(pointApplicationService.balance(1)).isEqualTo(10000);
+        assertThat(testPgFixture.server().createCalls()).isZero();
 
-        mockMvc.perform(post("/api/v1/orders/{id}/confirm", orderId).header("X-USER-ID", "1"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.status").value("CONFIRMED"));
+        mockMvc.perform(confirmRequest())
+            .andExpect(status().isAccepted())
+            .andExpect(jsonPath("$.data.status").value("PAYMENT_PENDING"));
         assertThat(productApplicationService.getAdminProduct(productId).stock()).isEqualTo(4);
-        assertThat(pointApplicationService.balance(1)).isEqualTo(7000);
+        assertThat(pointApplicationService.balance(1)).isEqualTo(10000);
+        assertThat(testPgFixture.server().createCalls()).isEqualTo(1);
+    }
+
+    private MockHttpServletRequestBuilder confirmRequest() {
+        return post("/api/v1/orders/{id}/confirm", orderId).header("X-USER-ID", "1")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"paymentAttemptKey\":\"" + attemptKey + "\",\"cardType\":\"" + TestPgFixture.CARD_TYPE
+                + "\",\"cardNo\":\"" + TestPgFixture.CARD_NO + "\"}");
     }
 
     private void awaitRelease(CountDownLatch release) {

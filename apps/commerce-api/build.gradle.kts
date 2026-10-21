@@ -10,6 +10,9 @@ checkstyle {
 }
 
 dependencies {
+    implementation("io.github.resilience4j:resilience4j-circuitbreaker:2.4.0")
+    implementation("io.github.resilience4j:resilience4j-core:2.4.0")
+
     testImplementation("com.tngtech.archunit:archunit:1.5.0")
 
     // add-ons
