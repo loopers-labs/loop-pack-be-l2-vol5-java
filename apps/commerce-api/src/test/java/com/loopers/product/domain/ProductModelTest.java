@@ -203,6 +203,35 @@ class ProductModelTest {
             assertThat(product.hasStock(5)).isTrue();
             assertThat(product.hasStock(6)).isFalse();
         }
+
+        @DisplayName("ADR-W5-02 재고 3개에 반환된 선점 2개를 더하면 5개다.")
+        @Test
+        void increasesStock() {
+            // arrange
+            ProductModel product = product(3);
+
+            // act
+            product.increaseStock(2);
+
+            // assert
+            assertThat(product.getStock()).isEqualTo(5);
+        }
+
+        @DisplayName("ADR-W5-02 0개 이하를 되돌리면 거절하고, 재고는 그대로다.")
+        @Test
+        void rejectsNonPositiveIncrease() {
+            // arrange
+            ProductModel product = product(3);
+
+            // act & assert
+            assertThatThrownBy(() -> product.increaseStock(0))
+                .isInstanceOf(CoreException.class)
+                .extracting("errorType").isEqualTo(ErrorType.BAD_REQUEST);
+            assertThatThrownBy(() -> product.increaseStock(-1))
+                .isInstanceOf(CoreException.class)
+                .extracting("errorType").isEqualTo(ErrorType.BAD_REQUEST);
+            assertThat(product.getStock()).isEqualTo(3);
+        }
     }
 
     @DisplayName("팔 수 있는 상품인지 물을 때, ")
