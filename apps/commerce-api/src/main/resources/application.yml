@@ -38,6 +38,17 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
 
+# W5 로컬 테스트 PG (plan.md 7장). base URL·callback URL은 로컬 설정에서만 온다. user-id는 과제 지정 가상 계정.
+# timeout (plan.md 6장 🔧): 생성은 읽기 3s·재시도 없음, 조회는 읽기 1s·재시도 있음.
+pg:
+  local:
+    base-url: http://localhost:8082
+    user-id: "135135"
+    callback-url: http://localhost:8080/api/v1/payments/callback
+    connect-timeout: 1s
+    create-read-timeout: 3s
+    lookup-read-timeout: 1s
+
 ---
 spring:
   config:
