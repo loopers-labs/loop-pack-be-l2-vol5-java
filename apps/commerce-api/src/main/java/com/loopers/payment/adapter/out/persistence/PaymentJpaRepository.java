@@ -33,4 +33,12 @@ public interface PaymentJpaRepository extends JpaRepository<Payment, Long> {
         @Param("now") ZonedDateTime now,
         Pageable pageable
     );
+
+    @Query("SELECT p.id FROM Payment p WHERE p.status IN :statuses "
+        + "AND p.sentAt < :sentBefore ORDER BY p.sentAt, p.id")
+    List<Long> findExpirableIds(
+        @Param("statuses") Collection<PaymentStatus> statuses,
+        @Param("sentBefore") ZonedDateTime sentBefore,
+        Pageable pageable
+    );
 }

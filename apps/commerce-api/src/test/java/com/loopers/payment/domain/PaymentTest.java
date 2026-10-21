@@ -356,6 +356,119 @@ class PaymentTest {
         }
     }
 
+    @DisplayName("보낸 뒤 30분 넘게 결과를 모르는 결제를 닫을 때 (만료), ")
+    @Nested
+    class ExpireUnresolved {
+
+        private static final ZonedDateTime EXPIRED_AT = NOW.plusMinutes(31);
+
+        @DisplayName("P-14 PENDING이면 FAILED(EXPIRED)로 닫고 APPLIED다. 종결 시각을 남기고 더 조회하지 않는다.")
+        @Test
+        void expiresPending() {
+            // arrange
+            Payment payment = pending();
+
+            // act
+            PaymentApplyOutcome outcome = payment.expireUnresolved(EXPIRED_AT);
+
+            // assert
+            assertThat(outcome).isEqualTo(PaymentApplyOutcome.APPLIED);
+            assertThat(payment.getStatus()).isEqualTo(PaymentStatus.FAILED);
+            assertThat(payment.getFailureReason()).isEqualTo("EXPIRED");
+            assertThat(payment.getCompletedAt()).isEqualTo(EXPIRED_AT);
+            assertThat(payment.getNextCheckAt()).isNull();
+            assertThat(payment.getTransactionKey()).isEqualTo(TX_KEY);
+        }
+
+        @DisplayName("P-14 UNKNOWN이면 FAILED(EXPIRED)로 닫고 APPLIED다.")
+        @Test
+        void expiresUnknown() {
+            // arrange
+            Payment payment = unknown();
+
+            // act
+            PaymentApplyOutcome outcome = payment.expireUnresolved(EXPIRED_AT);
+
+            // assert
+            assertThat(outcome).isEqualTo(PaymentApplyOutcome.APPLIED);
+            assertThat(payment.getStatus()).isEqualTo(PaymentStatus.FAILED);
+            assertThat(payment.getFailureReason()).isEqualTo("EXPIRED");
+            assertThat(payment.getCompletedAt()).isEqualTo(EXPIRED_AT);
+            assertThat(payment.getNextCheckAt()).isNull();
+        }
+
+        @DisplayName("P-14 REQUESTED·SENDING은 만료 대상이 아니다 (정리 스케줄러 몫) — CONFLICT이고 상태는 그대로다.")
+        @Test
+        void refusesNotYetSent() {
+            // arrange
+            Payment requested = requested();
+            Payment sending = sending();
+
+            // act
+            PaymentApplyOutcome requestedOutcome = requested.expireUnresolved(EXPIRED_AT);
+            PaymentApplyOutcome sendingOutcome = sending.expireUnresolved(EXPIRED_AT);
+
+            // assert
+            assertThat(requestedOutcome).isEqualTo(PaymentApplyOutcome.CONFLICT);
+            assertThat(requested.getStatus()).isEqualTo(PaymentStatus.REQUESTED);
+            assertThat(sendingOutcome).isEqualTo(PaymentApplyOutcome.CONFLICT);
+            assertThat(sending.getStatus()).isEqualTo(PaymentStatus.SENDING);
+            assertThat(sending.getCompletedAt()).isNull();
+        }
+
+        @DisplayName("P-14 이미 종결(SUCCESS·FAILED)이면 ALREADY_APPLIED이고 상태·사유·종결 시각은 처음 값이다.")
+        @Test
+        void finalIsAlreadyApplied() {
+            // arrange
+            Payment success = succeeded();
+            Payment failed = failed();
+
+            // act
+            PaymentApplyOutcome successOutcome = success.expireUnresolved(EXPIRED_AT);
+            PaymentApplyOutcome failedOutcome = failed.expireUnresolved(EXPIRED_AT);
+
+            // assert
+            assertThat(successOutcome).isEqualTo(PaymentApplyOutcome.ALREADY_APPLIED);
+            assertThat(success.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
+            assertThat(success.getCompletedAt()).isEqualTo(NOW);
+            assertThat(failedOutcome).isEqualTo(PaymentApplyOutcome.ALREADY_APPLIED);
+            assertThat(failed.getFailureReason()).isEqualTo("한도 초과");
+            assertThat(failed.getCompletedAt()).isEqualTo(NOW);
+        }
+
+        @DisplayName("P-14 두 번 만료해도 두 번째는 ALREADY_APPLIED이고 종결 시각은 처음 값이다.")
+        @Test
+        void expireTwice() {
+            // arrange
+            Payment payment = unknown();
+            payment.expireUnresolved(EXPIRED_AT);
+
+            // act
+            PaymentApplyOutcome outcome = payment.expireUnresolved(EXPIRED_AT.plusMinutes(1));
+
+            // assert
+            assertThat(outcome).isEqualTo(PaymentApplyOutcome.ALREADY_APPLIED);
+            assertThat(payment.getCompletedAt()).isEqualTo(EXPIRED_AT);
+        }
+
+        @DisplayName("P-15 만료 뒤 PG SUCCESS를 관찰하면 CONFLICT이고 FAILED(EXPIRED)는 그대로, 이상을 기록한다.")
+        @Test
+        void successAfterExpiryIsConflict() {
+            // arrange
+            Payment payment = pending();
+            payment.expireUnresolved(EXPIRED_AT);
+
+            // act
+            PaymentApplyOutcome outcome = payment.applyObservation(observed(ExternalPaymentStatus.SUCCESS), EXPIRED_AT.plusMinutes(1));
+
+            // assert
+            assertThat(outcome).isEqualTo(PaymentApplyOutcome.CONFLICT);
+            assertThat(payment.getStatus()).isEqualTo(PaymentStatus.FAILED);
+            assertThat(payment.getFailureReason()).isEqualTo("EXPIRED");
+            assertThat(payment.getLastCheckResult()).isEqualTo("CONFLICT:FAILED<-SUCCESS");
+        }
+    }
+
     @DisplayName("PG 조회 결과를 반영할 때, ")
     @Nested
     class ApplyObservation {

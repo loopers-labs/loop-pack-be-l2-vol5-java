@@ -38,6 +38,9 @@ public class Payment extends BaseEntity {
     /** ADR-W5-03: 보내지 않고 닫은 실패의 사유 */
     public static final String NOT_SENT = "NOT_SENT";
 
+    /** P-14: 보낸 뒤 30분 넘게 결과를 모르는 결제를 닫은 실패의 사유 */
+    public static final String EXPIRED = "EXPIRED";
+
     /**
      * plan.md 5-1: 다음 조회까지 기다릴 시간. 0번째는 PENDING·UNKNOWN이 된 직후, n번째는 n번 조회한 뒤. 끝 값을 계속 쓴다.
      */
@@ -85,7 +88,7 @@ public class Payment extends BaseEntity {
     private ExternalPaymentStatus pgStatus;
 
     @Column(name = "failure_reason")
-    @Comment("실패 사유. PG 사유 또는 NOT_SENT(보내지 않고 닫음, ADR-W5-03)")
+    @Comment("실패 사유. PG 사유, NOT_SENT(보내지 않고 닫음, ADR-W5-03) 또는 EXPIRED(보낸 뒤 30분 미해결)")
     private String failureReason;
 
     @Column(name = "requested_at", nullable = false)
@@ -173,6 +176,22 @@ public class Payment extends BaseEntity {
             return PaymentApplyOutcome.CONFLICT;
         }
         fail(NOT_SENT, now);
+        return PaymentApplyOutcome.APPLIED;
+    }
+
+    /**
+     * P-14: 보낸 뒤 오래 결과를 모르는 결제(PENDING·UNKNOWN)를 FAILED(EXPIRED)로 닫는다.
+     * 보내기 전·중(REQUESTED·SENDING)은 정리 스케줄러가 닫으므로 CONFLICT, 종결은 덮어쓰지 않는다.
+     * PG가 실제로는 승인했다면 뒤에 오는 SUCCESS는 CONFLICT로 남는다 (P-15, 수동 환불).
+     */
+    public PaymentApplyOutcome expireUnresolved(ZonedDateTime now) {
+        if (isFinal()) {
+            return PaymentApplyOutcome.ALREADY_APPLIED;
+        }
+        if (!isCheckable()) {
+            return PaymentApplyOutcome.CONFLICT;
+        }
+        fail(EXPIRED, now);
         return PaymentApplyOutcome.APPLIED;
     }
 

@@ -27,4 +27,9 @@ public interface PaymentPort {
      * reconcile 대상 (plan.md 5-1): PENDING·UNKNOWN 중 다음 조회 시각(next_check_at)이 now 이전(같음 포함)인 결제, 다음 조회 시각이 이른 순.
      */
     List<Payment> findDueForCheck(ZonedDateTime now, int limit);
+
+    /**
+     * 만료 대상 (P-14): PENDING·UNKNOWN 중 발송 시각(sent_at)이 sentBefore보다 이른 결제의 식별자, 발송이 이른 순.
+     */
+    List<Long> findExpirable(ZonedDateTime sentBefore, int limit);
 }
