@@ -20,7 +20,7 @@
 | C-6 | timeout·재시작·조회 0건에서 새 결제를 만들거나 예약을 임의 반환하지 않는다 | S-4·S-8·S-9: 생성 추가 0, 0건은 기록만 | ✅ |
 | C-7 | 실제 adapter HTTP 계약과 callback의 권위 조회·식별·금액 검증을 확인했다 | LocalPgPaymentGatewayAdapterTest G-1~G-11, S-6·S-9(권위 조회·금액·식별 검증) | ✅ |
 | C-8 | 중복·순서 변경·내부 저장 실패와 timeout·회로·조회 복구를 검증했다 | S-6·S-7·S-10, PaymentResultApplierIntegrationTest R-1~R-5 | ✅ |
-| C-9 | 관련 회귀·lint·ArchUnit을 실행하고 실험 자원을 정리했다 | `./gradlew :apps:commerce-api:check`·`check -x test` 통과. 실험 자원: spike 서버(8090)·ngrok 터널 종료(10-22), 에이전트 작업 공간·임시 스키마 정리 | 🟡 만료 작업 합친 뒤 최종 검사 |
+| C-9 | 관련 회귀·lint·ArchUnit을 실행하고 실험 자원을 정리했다 | `./gradlew :apps:commerce-api:check` 451/0/0/0, `check -x test` 통과 (10-22). 실험 자원: spike 서버(8090)·ngrok 터널 종료(10-22), 에이전트 작업 공간·임시 스키마 정리 | ✅ |
 
 ## 0-1. 부하 가정 ✅
 
