@@ -120,6 +120,17 @@ public class OrderModel extends BaseEntity {
         this.confirmedAt = now;
     }
 
+    public void startPayment() {
+    }
+
+    public boolean confirmPaid(ZonedDateTime now) {
+        return false;
+    }
+
+    public boolean failPayment() {
+        return false;
+    }
+
     private static ProductSnapshot snapshotOf(Map<Long, ProductSnapshot> snapshots, Long productId) {
         ProductSnapshot snapshot = snapshots.get(productId);
         if (snapshot == null) {

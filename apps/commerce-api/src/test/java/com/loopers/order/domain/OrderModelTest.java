@@ -137,4 +137,128 @@ class OrderModelTest {
                 .extracting("errorType").isEqualTo(ErrorType.CONFLICT);
         }
     }
+    @DisplayName("PG 결제로 확정할 때 (W5 plan.md 3-1), ")
+    @Nested
+    class PgPayment {
+
+        @DisplayName("DRAFT 주문이 결제를 시작하면 PAYMENT_PENDING·결제 수단 PG가 되고, 결제액·확정 시각은 아직 없다.")
+        @Test
+        void startPaymentMovesDraftToPaymentPending() {
+            // arrange
+            OrderModel order = draftOrder(7L);
+
+            // act
+            order.startPayment();
+
+            // assert
+            assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+            assertThat(order.getPaymentMethod()).isEqualTo(PaymentMethod.PG);
+            assertThat(order.getPaidAmount()).isNull();
+            assertThat(order.getConfirmedAt()).isNull();
+        }
+
+        @DisplayName("이미 PAYMENT_PENDING인 주문은 다시 결제를 시작할 수 없고(409), 상태는 그대로다.")
+        @Test
+        void startPaymentRejectsNonDraft() {
+            // arrange
+            OrderModel order = draftOrder(7L);
+            order.startPayment();
+
+            // act & assert
+            assertThatThrownBy(order::startPayment)
+                .isInstanceOf(CoreException.class)
+                .extracting("errorType").isEqualTo(ErrorType.CONFLICT);
+            assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+        }
+
+        @DisplayName("PAYMENT_PENDING 주문은 결제 성공으로 CONFIRMED가 되고 결제액 7,000·확정 시각을 고정하며 true를 돌려준다.")
+        @Test
+        void confirmPaidConfirmsPendingOrder() {
+            // arrange
+            OrderModel order = draftOrder(7L);
+            order.startPayment();
+
+            // act
+            boolean changed = order.confirmPaid(NOW);
+
+            // assert
+            assertThat(changed).isTrue();
+            assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+            assertThat(order.getPaidAmount()).isEqualTo(Money.of(7_000));
+            assertThat(order.getPaymentMethod()).isEqualTo(PaymentMethod.PG);
+            assertThat(order.getConfirmedAt()).isEqualTo(NOW);
+        }
+
+        @DisplayName("ADR-W5-04 ③ 이미 CONFIRMED면 다시 성공을 받아도 false이고 확정 시각은 처음 값이다.")
+        @Test
+        void confirmPaidIgnoresConfirmedOrder() {
+            // arrange
+            OrderModel order = draftOrder(7L);
+            order.startPayment();
+            order.confirmPaid(NOW);
+
+            // act
+            boolean changed = order.confirmPaid(NOW.plusHours(1));
+
+            // assert
+            assertThat(changed).isFalse();
+            assertThat(order.getConfirmedAt()).isEqualTo(NOW);
+        }
+
+        @DisplayName("ADR-W5-04 ③ DRAFT·PAYMENT_FAILED 주문은 결제 성공을 받아도 false이고 상태는 그대로다.")
+        @Test
+        void confirmPaidIgnoresDraftAndFailedOrder() {
+            // arrange
+            OrderModel draft = draftOrder(7L);
+            OrderModel failed = draftOrder(7L);
+            failed.startPayment();
+            failed.failPayment();
+
+            // act & assert
+            assertThat(draft.confirmPaid(NOW)).isFalse();
+            assertThat(draft.getStatus()).isEqualTo(OrderStatus.DRAFT);
+            assertThat(draft.getPaidAmount()).isNull();
+            assertThat(failed.confirmPaid(NOW)).isFalse();
+            assertThat(failed.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED);
+            assertThat(failed.getPaidAmount()).isNull();
+        }
+
+        @DisplayName("PAYMENT_PENDING 주문은 확인된 결제 실패로 PAYMENT_FAILED가 되고 true, 결제액·확정 시각은 없다.")
+        @Test
+        void failPaymentFailsPendingOrder() {
+            // arrange
+            OrderModel order = draftOrder(7L);
+            order.startPayment();
+
+            // act
+            boolean changed = order.failPayment();
+
+            // assert
+            assertThat(changed).isTrue();
+            assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED);
+            assertThat(order.getPaidAmount()).isNull();
+            assertThat(order.getConfirmedAt()).isNull();
+        }
+
+        @DisplayName("ADR-W5-04 ③ CONFIRMED·PAYMENT_FAILED·DRAFT 주문은 실패를 받아도 false이고 상태는 그대로다.")
+        @Test
+        void failPaymentIgnoresNonPendingOrder() {
+            // arrange
+            OrderModel confirmed = draftOrder(7L);
+            confirmed.startPayment();
+            confirmed.confirmPaid(NOW);
+            OrderModel failed = draftOrder(7L);
+            failed.startPayment();
+            failed.failPayment();
+            OrderModel draft = draftOrder(7L);
+
+            // act & assert
+            assertThat(confirmed.failPayment()).isFalse();
+            assertThat(confirmed.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+            assertThat(failed.failPayment()).isFalse();
+            assertThat(failed.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED);
+            assertThat(draft.failPayment()).isFalse();
+            assertThat(draft.getStatus()).isEqualTo(OrderStatus.DRAFT);
+        }
+    }
 }
