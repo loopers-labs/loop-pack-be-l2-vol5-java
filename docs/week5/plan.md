@@ -12,15 +12,15 @@
 
 | # | 체크리스트 (과제 원문 요약) | 증거 (예정) | 상태 |
 |---|---|---|---|
-| C-1 | 미확정 주문의 결제는 PG를 사용하고 포인트를 이중 차감하지 않는다 | S-1 정상 주문: 포인트 변화 0 | ⏳ |
-| C-2 | 이전 POINT 주문의 결제·품목 사실과 기존 소유권을 보존한다 | S-11 기존 기능 보호 | ⏳ |
-| C-3 | 생성 수락·처리 중·최종 성공·실패·결과 미확인을 구분한다 | 3장 상태 표, `PaymentTest` | ⏳ |
-| C-4 | 시도·발송·예약이 DB에서 중복을 막고 PG HTTP 동안 잠금을 계속 잡지 않는다 | S-5 동시 요청, 4장 TX 경계 | ⏳ |
-| C-5 | 성공은 추가 차감 없이 확정하고 확정 실패만 예약을 한 번 반환한다 | S-1·S-3·S-6 | ⏳ |
-| C-6 | timeout·재시작·조회 0건에서 새 결제를 만들거나 예약을 임의 반환하지 않는다 | S-4·S-8·S-9 | ⏳ |
-| C-7 | 실제 adapter HTTP 계약과 callback의 권위 조회·식별·금액 검증을 확인했다 | 어댑터 계약 테스트, S-6·S-9 | ⏳ |
-| C-8 | 중복·순서 변경·내부 저장 실패와 timeout·회로·조회 복구를 검증했다 | S-6·S-7·S-10 | ⏳ |
-| C-9 | 관련 회귀·lint·ArchUnit을 실행하고 실험 자원을 정리했다 | 전체 `check` | ⏳ |
+| C-1 | 미확정 주문의 결제는 PG를 사용하고 포인트를 이중 차감하지 않는다 | S01·PurchaseFlowE2ETest: 포인트 잔액·이력 변화 0 | ✅ |
+| C-2 | 이전 POINT 주문의 결제·품목 사실과 기존 소유권을 보존한다 | S11·OrderApiE2ETest#keepsPointConfirmedOrder·OrderAdminApiE2ETest: 이전 POINT 주문 조회, 재확정 409 | ✅ |
+| C-3 | 생성 수락·처리 중·최종 성공·실패·결과 미확인을 구분한다 | PaymentTest P-1~P-13, S-2·S-4 | ✅ |
+| C-4 | 시도·발송·예약이 DB에서 중복을 막고 PG HTTP 동안 잠금을 계속 잡지 않는다 | S-5·OrderConfirmConcurrencyTest·LockingSqlIntegrationTest(orders → products 잠금, PG는 TX 밖) | ✅ |
+| C-5 | 성공은 추가 차감 없이 확정하고 확정 실패만 예약을 한 번 반환한다 | S-1·S-3·S-6, StockReservationServiceIntegrationTest(5 → 3 → 5, 7 아님) | ✅ |
+| C-6 | timeout·재시작·조회 0건에서 새 결제를 만들거나 예약을 임의 반환하지 않는다 | S-4·S-8·S-9: 생성 추가 0, 0건은 기록만 | ✅ |
+| C-7 | 실제 adapter HTTP 계약과 callback의 권위 조회·식별·금액 검증을 확인했다 | LocalPgPaymentGatewayAdapterTest G-1~G-11, S-6·S-9(권위 조회·금액·식별 검증) | ✅ |
+| C-8 | 중복·순서 변경·내부 저장 실패와 timeout·회로·조회 복구를 검증했다 | S-6·S-7·S-10, PaymentResultApplierIntegrationTest R-1~R-5 | ✅ |
+| C-9 | 관련 회귀·lint·ArchUnit을 실행하고 실험 자원을 정리했다 | `./gradlew :apps:commerce-api:check` 444/0/0/0, `check -x test` 통과, 실험 서버 정리는 PR 전 | 🟡 |
 
 ## 0-1. 부하 가정 ✅
 
@@ -229,17 +229,17 @@ PaymentReconcileScheduler  PENDING·UNKNOWN 결제를 PG 조회로 확인 → �
 
 | # | 장면 | 핵심 기대 결과 | 테스트 |
 |---|---|---|---|
-| S-1 | 정상 PG 주문 | 외부 거래 1, 주문 CONFIRMED, 예약 소비 1, 포인트 변화 0 | ⏳ |
-| S-2 | 생성 수락 PENDING | 주문 미확정, 예약 유지, 조회 SUCCESS 뒤에만 확정 | ⏳ |
-| S-3 | 효과 전 확정 거절 | 외부 거래 0, 주문 실패, 예약 반환 1 | ⏳ |
-| S-4 | 거래 생성 뒤 응답만 유실 | 거래 1·UNKNOWN, create 추가 0, 조회로 종결 | ⏳ |
-| S-5 | 같은 주문·시도 동시 요청 | 시도·예약 각 1, create 1, 다른 키·불일치 거절 | ⏳ |
-| S-6 | callback-first·lookup-first·동시 적용 | 같은 최종 상태, 추가 차감·중복 반환 0 | ⏳ |
-| S-7 | 외부 성공 뒤 내부 저장 실패 | rollback, 재조회로 한 번 확정, create 추가 0 | ⏳ |
-| S-8 | 발송 기록 뒤 재시작 | 시도·예약 유지, 자동 재발송 0 | ⏳ |
-| S-9 | 조회 0건·복수·불일치 | 임의 종결·재결제 없음, 이상 기록 | ⏳ |
-| S-10 | timeout·회로 OPEN·복구 | 호출 수 제한, 상태 유지, 회복 뒤 조회 재개 | ⏳ |
-| S-11 | 기존 기능 보호 | POINT 기록·소유권, 재고 부족 시 PG 0회, 삭제 상품 | ⏳ |
+| S-1 | 정상 PG 주문 | 외부 거래 1, 주문 CONFIRMED, 예약 소비 1, 포인트 변화 0 | ✅ `S01*ScenarioTest` |
+| S-2 | 생성 수락 PENDING | 주문 미확정, 예약 유지, 조회 SUCCESS 뒤에만 확정 | ✅ `S02*ScenarioTest` |
+| S-3 | 효과 전 확정 거절 | 외부 거래 0, 주문 실패, 예약 반환 1 | ✅ `S03*ScenarioTest` |
+| S-4 | 거래 생성 뒤 응답만 유실 | 거래 1·UNKNOWN, create 추가 0, 조회로 종결 | ✅ `S04*ScenarioTest` |
+| S-5 | 같은 주문·시도 동시 요청 | 시도·예약 각 1, create 1, 다른 키·불일치 거절 | ✅ `S05*ScenarioTest` |
+| S-6 | callback-first·lookup-first·동시 적용 | 같은 최종 상태, 추가 차감·중복 반환 0 | ✅ `S06*ScenarioTest` |
+| S-7 | 외부 성공 뒤 내부 저장 실패 | rollback, 재조회로 한 번 확정, create 추가 0 | ✅ `S07*ScenarioTest` |
+| S-8 | 발송 기록 뒤 재시작 | 시도·예약 유지, 자동 재발송 0 | ✅ `S08*ScenarioTest` |
+| S-9 | 조회 0건·복수·불일치 | 임의 종결·재결제 없음, 이상 기록 | ✅ `S09*ScenarioTest` |
+| S-10 | timeout·회로 OPEN·복구 | 호출 수 제한, 상태 유지, 회복 뒤 조회 재개 | ✅ `S10*ScenarioTest` |
+| S-11 | 기존 기능 보호 | POINT 기록·소유권, 재고 부족 시 PG 0회, 삭제 상품 | ✅ `S11*ScenarioTest` |
 
 재고 예: 재고 5 · 수량 2 확보 → 가용 3. 성공 후 3, 확정 실패 후 5. 중복 실패 알림으로 7, UNKNOWN에서 5가 되면 버그.
 
@@ -304,3 +304,4 @@ PaymentReconcileScheduler  PENDING·UNKNOWN 결제를 PG 조회로 확인 → �
 | v0.5 | 2026-10-21 | 결과 반영 멱등성(4-1, ADR-W5-04): payment 비관적 잠금 + 종결 상태 가드 + 조건부 전이, 반환값 `APPLIED`·`ALREADY_APPLIED`·`CONFLICT`. PG 조회를 잠금 밖으로 옮김. 기대값 P-1~13·R-1~5 합의 |
 | v0.6 | 2026-10-21 | 구현 중 결정: §6 설정값 확정(생성도 느린 호출 2s로 차단, OPEN 10s는 부하 테스트로 검증), §9 `next_check_at` 추가·가용 재고 뜻, P-1~P-13 표(3-2-1), callback 필드는 `orderId`, 기존 테스트는 의도를 PG 흐름으로 이전(10-1) |
 | v0.7 | 2026-10-21 | §8 API를 구현에 맞춤: 결제 API는 payment 컨트롤러(순환 방지), 결제 상태 조회 `GET …/payment` 추가, 202/200 규칙, 멱등 키 400·409 |
+| v0.8 | 2026-10-21 | 구현 완료 반영: 체크리스트 C-1~C-8 증거, 장면 S-1~S-11 테스트 위치. C-9는 실험 자원 정리(PR 전) 남음 |
