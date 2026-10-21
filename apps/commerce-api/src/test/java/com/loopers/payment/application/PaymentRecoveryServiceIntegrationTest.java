@@ -317,16 +317,18 @@ class PaymentRecoveryServiceIntegrationTest {
         void zeroTransactionsIsRecordedOnly() {
             // arrange
             PaymentInfo info = unknownPayment("attempt-1", 0);
-            ZonedDateTime now = ZonedDateTime.now().plusSeconds(6);
+            ZonedDateTime checkedFrom = ZonedDateTime.now();
 
-            // act
-            paymentRecoveryUseCase.reconcileDue(now);
+            // act: 대상 고르기만 6초 뒤로 당기고, 조회 기록은 실제 조회 시각으로 남는다
+            paymentRecoveryUseCase.reconcileDue(ZonedDateTime.now().plusSeconds(6));
 
             // assert
+            ZonedDateTime checkedUntil = ZonedDateTime.now();
             Payment payment = paymentOf(info);
             assertThat(payment.getStatus()).isEqualTo(PaymentStatus.UNKNOWN);
             assertThat(payment.getLastCheckResult()).isEqualTo("NOT_FOUND");
-            assertThat(payment.getNextCheckAt()).isAfter(now.plusSeconds(9)).isBefore(now.plusSeconds(11));
+            assertThat(payment.getNextCheckAt().toInstant())
+                .isBetween(checkedFrom.plusSeconds(10).toInstant(), checkedUntil.plusSeconds(10).toInstant());
             assertThat(orderStatusOf(info)).isEqualTo(OrderStatus.PAYMENT_PENDING);
             assertThat(stock()).isEqualTo(3);
             assertThat(PG.createCalls()).isZero();
