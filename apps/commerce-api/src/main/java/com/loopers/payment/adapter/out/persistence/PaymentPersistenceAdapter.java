@@ -55,6 +55,6 @@ public class PaymentPersistenceAdapter implements PaymentPort {
 
     @Override
     public List<Payment> findDueForCheck(ZonedDateTime now, int limit) {
-        return List.of();
+        return paymentJpaRepository.findDueForCheck(UNRESOLVED, now, PageRequest.of(0, limit));
     }
 }

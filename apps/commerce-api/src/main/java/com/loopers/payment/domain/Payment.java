@@ -15,7 +15,9 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import org.hibernate.annotations.Comment;
 
+import java.time.Duration;
 import java.time.ZonedDateTime;
+import java.util.List;
 
 /**
  * 결제 시도 (plan.md 3-2). 주문당 1건. 외부 결과를 확인해 종결로 옮기고, 종결은 덮어쓰지 않는다 (ADR-W5-04).
@@ -29,12 +31,19 @@ import java.time.ZonedDateTime;
         @UniqueConstraint(name = "uk_payments_attempt_key", columnNames = "attempt_key"),
         @UniqueConstraint(name = "uk_payments_provider_order", columnNames = "provider_order_id")
     },
-    indexes = @Index(name = "idx_payments_status_checked", columnList = "status, last_checked_at")
+    indexes = @Index(name = "idx_payments_status_next_check", columnList = "status, next_check_at")
 )
 public class Payment extends BaseEntity {
 
     /** ADR-W5-03: 보내지 않고 닫은 실패의 사유 */
     public static final String NOT_SENT = "NOT_SENT";
+
+    /**
+     * plan.md 5-1: 다음 조회까지 기다릴 시간. 0번째는 PENDING·UNKNOWN이 된 직후, n번째는 n번 조회한 뒤. 끝 값을 계속 쓴다.
+     */
+    private static final List<Duration> CHECK_BACKOFF = List.of(
+        Duration.ofSeconds(5), Duration.ofSeconds(10), Duration.ofSeconds(30), Duration.ofMinutes(1), Duration.ofMinutes(5)
+    );
 
     @Column(name = "order_id", nullable = false)
     @Comment("주문 식별자. unique → 주문당 시도 1건 (plan.md 2)")
@@ -180,7 +189,7 @@ public class Payment extends BaseEntity {
         if (status == PaymentStatus.REQUESTED) {
             return PaymentApplyOutcome.CONFLICT;
         }
-        markPending(transactionKey);
+        markPending(transactionKey, now);
         return PaymentApplyOutcome.NOT_FINAL;
     }
 
@@ -190,6 +199,7 @@ public class Payment extends BaseEntity {
     public PaymentApplyOutcome recordUnknown(ZonedDateTime now) {
         if (status == PaymentStatus.SENDING) {
             this.status = PaymentStatus.UNKNOWN;
+            this.nextCheckAt = now.plus(CHECK_BACKOFF.get(0));
             return PaymentApplyOutcome.NOT_FINAL;
         }
         if (status == PaymentStatus.REQUESTED) {
@@ -235,10 +245,9 @@ public class Payment extends BaseEntity {
             recordCheck("CONFLICT:" + status + "<-" + observed, now);
             return PaymentApplyOutcome.CONFLICT;
         }
-        recordCheck("OBSERVED:" + observed, now);
         this.transactionKey = observation.transactionKey();
         this.pgStatus = observed;
-        return switch (observed) {
+        PaymentApplyOutcome outcome = switch (observed) {
             case PENDING -> {
                 this.status = PaymentStatus.PENDING;
                 yield PaymentApplyOutcome.NOT_FINAL;
@@ -253,6 +262,9 @@ public class Payment extends BaseEntity {
                 yield PaymentApplyOutcome.APPLIED;
             }
         };
+        // 상태를 바꾼 뒤에 기록해야 다음 조회 시각이 바뀐 상태(PENDING·종결)를 따른다
+        recordCheck("OBSERVED:" + observed, now);
+        return outcome;
     }
 
     /**
@@ -262,6 +274,18 @@ public class Payment extends BaseEntity {
         this.checkCount++;
         this.lastCheckedAt = now;
         this.lastCheckResult = result;
+        this.nextCheckAt = isCheckable() ? now.plus(backoffAfter(checkCount)) : null;
+    }
+
+    /**
+     * plan.md 5-1: 결과를 모르는 결제만 PG 조회로 확인한다.
+     */
+    private boolean isCheckable() {
+        return status == PaymentStatus.PENDING || status == PaymentStatus.UNKNOWN;
+    }
+
+    private static Duration backoffAfter(int checks) {
+        return CHECK_BACKOFF.get(Math.min(checks, CHECK_BACKOFF.size() - 1));
     }
 
     public boolean isFinal() {
@@ -281,16 +305,18 @@ public class Payment extends BaseEntity {
         return null;
     }
 
-    private void markPending(String transactionKey) {
+    private void markPending(String transactionKey, ZonedDateTime now) {
         this.status = PaymentStatus.PENDING;
         this.transactionKey = transactionKey;
         this.pgStatus = ExternalPaymentStatus.PENDING;
+        this.nextCheckAt = now.plus(CHECK_BACKOFF.get(0));
     }
 
     private void fail(String reason, ZonedDateTime now) {
         this.status = PaymentStatus.FAILED;
         this.failureReason = reason;
         this.completedAt = now;
+        this.nextCheckAt = null;
     }
 
     public Long getOrderId() {

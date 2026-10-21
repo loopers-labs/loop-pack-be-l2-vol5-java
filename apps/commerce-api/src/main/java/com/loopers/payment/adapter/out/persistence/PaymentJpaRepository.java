@@ -27,10 +27,10 @@ public interface PaymentJpaRepository extends JpaRepository<Payment, Long> {
     Optional<Payment> findByProviderOrderId(String providerOrderId);
 
     @Query("SELECT p FROM Payment p WHERE p.status IN :statuses "
-        + "AND (p.lastCheckedAt IS NULL OR p.lastCheckedAt < :checkedBefore) ORDER BY p.id")
-    List<Payment> findUnresolved(
+        + "AND p.nextCheckAt <= :now ORDER BY p.nextCheckAt, p.id")
+    List<Payment> findDueForCheck(
         @Param("statuses") Collection<PaymentStatus> statuses,
-        @Param("checkedBefore") ZonedDateTime checkedBefore,
+        @Param("now") ZonedDateTime now,
         Pageable pageable
     );
 }
