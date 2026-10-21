@@ -60,6 +60,14 @@ public class OrderModel extends BaseEntity {
     @Column(name = "transaction_key", length = 64)
     private String transactionKey;
 
+    /** 결제수단: 카드 종류. AWAITING_PAYMENT 진입 시 결제 시도 키와 함께 1회 기록. DRAFT 에는 없다. */
+    @Column(name = "card_type", length = 20)
+    private String cardType;
+
+    /** 결제수단: 마지막 4자리만 남긴 카드번호 ("****-****-****-1451"). 원문은 저장하지 않는다. DRAFT 에는 없다. */
+    @Column(name = "masked_card_no", length = 19)
+    private String maskedCardNo;
+
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<OrderItemModel> items = new ArrayList<>();
 
@@ -129,14 +137,30 @@ public class OrderModel extends BaseEntity {
         }
     }
 
-    /** ST-03 DRAFT → AWAITING_PAYMENT. 결제 시도 키를 기록한다. 재고 예약은 Facade 가 같은 트랜잭션에서, PG 요청은 커밋 이후 (DR-08 대체). */
-    public void startPayment(String paymentAttemptKey) {
+    /**
+     * ST-03 DRAFT → AWAITING_PAYMENT. 결제 시도 키·결제수단(카드 종류, 마스킹한 카드번호)을 기록한다.
+     * 카드 정보는 검증하지 않는다 (PG 가 거절하면 FAILED). 재고 예약은 Facade 가 같은 트랜잭션에서, PG 요청은 커밋 이후 (DR-08 대체).
+     */
+    public void startPayment(String paymentAttemptKey, String cardType, String cardNo) {
         if (paymentAttemptKey == null || paymentAttemptKey.isBlank() || paymentAttemptKey.length() > 64) {
             throw new CoreException(ErrorType.INVALID_PAYMENT_ATTEMPT_KEY, "결제 시도 키가 올바르지 않습니다. [id = " + getId() + "]");
         }
         ensureDraft();
         this.paymentAttemptKey = paymentAttemptKey;
+        this.cardType = cardType;
+        this.maskedCardNo = maskCardNo(cardNo);
         this.status = OrderStatus.AWAITING_PAYMENT;
+    }
+
+    /** 마지막 4자리만 남긴다. 없으면 null, 4자리 미만이면 전부 가린다. */
+    private static String maskCardNo(String cardNo) {
+        if (cardNo == null || cardNo.isBlank()) {
+            return null;
+        }
+        if (cardNo.length() < 4) {
+            return "****";
+        }
+        return "****-****-****-" + cardNo.substring(cardNo.length() - 4);
     }
 
     /** ST-03 AWAITING_PAYMENT → CONFIRMED (결제 성공). 결제액 = 합계 (INV-09), 결제 결과 = 확정 시각 (ASM-13). 결과 반영이 주문 행 락 안에서 호출한다. */

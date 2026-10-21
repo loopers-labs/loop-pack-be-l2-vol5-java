@@ -22,6 +22,6 @@ public interface OrderV1ApiSpec {
     ApiResponse<PageResponse<OrderV1Dto.OrderResponse>> listMyOrders(Long requesterId, PageQuery pageQuery);
 
     /** EP-13 GET /api/v1/orders/{orderId} — FR-ORDER-04 */
-    @Operation(summary = "내 주문 상세")
-    ApiResponse<OrderV1Dto.OrderResponse> getMyOrder(Long requesterId, Long orderId);
+    @Operation(summary = "내 주문 상세", description = "본인 주문의 품목·결제수단·결제 상태(AWAITING_PAYMENT·CONFIRMED·FAILED)를 반환한다. 새 결제 요청을 만들지 않는다.")
+    ApiResponse<OrderV1Dto.MyOrderResponse> getMyOrder(Long requesterId, Long orderId);
 }

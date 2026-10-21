@@ -33,13 +33,13 @@ public class OrderPaymentProcessor {
      * 검사 순서: 사용자 → 주문 없음 → 소유 → (같은 키면 현재 상태 반환) → 키 형식 → DRAFT → 상품 삭제 → 재고.
      */
     @Transactional
-    public Started startPayment(Long requesterId, Long orderId, String paymentAttemptKey) {
+    public Started startPayment(Long requesterId, Long orderId, String paymentAttemptKey, String cardType, String cardNo) {
         userService.getUser(requesterId);
         OrderModel order = orderService.getOwnedForUpdate(orderId, requesterId);
         if (order.isSamePaymentAttempt(paymentAttemptKey)) {
             return new Started(OrderInfo.from(order), true);
         }
-        order.startPayment(paymentAttemptKey);
+        order.startPayment(paymentAttemptKey, cardType, cardNo);
         productService.getActiveProductsForReserve(order.getItems().stream().map(OrderItemModel::getProductId).toList());
         for (OrderItemModel item : order.getItems()) {
             productService.reserveStock(order.getId(), item.getProductId(), item.getQuantity());

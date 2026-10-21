@@ -45,7 +45,7 @@ public class OrderFacade {
      * 같은 결제 시도 키의 재요청은 PG 를 다시 부르지 않고 현재 상태를 돌려준다. 결과를 모르면 AWAITING_PAYMENT 그대로 돌려준다.
      */
     public OrderInfo confirmOrder(Long requesterId, Long orderId, String paymentAttemptKey, String cardType, String cardNo) {
-        OrderPaymentProcessor.Started started = orderPaymentProcessor.startPayment(requesterId, orderId, paymentAttemptKey);
+        OrderPaymentProcessor.Started started = orderPaymentProcessor.startPayment(requesterId, orderId, paymentAttemptKey, cardType, cardNo);
         if (started.alreadyStarted()) {
             return started.order();
         }
