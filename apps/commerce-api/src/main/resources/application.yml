@@ -90,11 +90,12 @@ payment:
   dispatch:
     pool-size: 50
     queue-capacity: 0
-  # W5 정리(1분)·reconcile(5초) 스케줄러 (plan.md 5-1). test 프로필은 끄고 테스트가 서비스를 직접 부른다.
+  # W5 정리(1분)·reconcile(5초)·만료(1분, P-14) 스케줄러 (plan.md 5-1). test 프로필은 끄고 테스트가 서비스를 직접 부른다.
   scheduler:
     enabled: true
     close-delay: 60s
     reconcile-delay: 5s
+    expire-delay: 60s
 
 ---
 spring:

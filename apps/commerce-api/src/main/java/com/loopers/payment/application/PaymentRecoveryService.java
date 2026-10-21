@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.function.Function;
 
 /**
- * 정리와 reconcile의 판단 (plan.md 5-1, ADR-W5-01·03). 스케줄러는 언제 부를지만 알고, 무엇을 어떻게 닫고 확인할지는 여기와 PaymentResultApplier가 안다.
+ * 정리·reconcile·만료의 판단 (plan.md 5-1, ADR-W5-01·03, P-14). 스케줄러는 언제 부를지만 알고, 무엇을 어떻게 닫고 확인할지는 여기와 PaymentResultApplier가 안다.
  * 한 건의 실패가 다음 건을 막지 않도록 건마다 따로 처리하고 기록한다.
  */
 @Slf4j
@@ -25,6 +25,8 @@ public class PaymentRecoveryService implements PaymentRecoveryUseCase {
 
     /** 발송 이벤트를 잃었다고 볼 대기 시간. 평소 발송은 수 ms 안에 claim한다 */
     static final Duration STALE_AFTER = Duration.ofSeconds(30);
+    /** P-14: 보낸 뒤 이만큼 지나도 결과를 모르면 FAILED(EXPIRED)로 닫고 재고를 돌려준다 */
+    static final Duration EXPIRE_AFTER = Duration.ofMinutes(30);
     static final int CLOSE_PAGE_SIZE = 100;
     /** 한 번 실행에서 끝까지 비우되, 계속 실패하는 행 때문에 멈추지 않도록 쪽 수를 제한한다 */
     static final int MAX_CLOSE_PAGES = 10;
@@ -68,7 +70,28 @@ public class PaymentRecoveryService implements PaymentRecoveryUseCase {
 
     @Override
     public int expireOverdue(ZonedDateTime now) {
-        return 0;
+        ZonedDateTime sentBefore = now.minus(EXPIRE_AFTER);
+        int expired = drain(
+            limit -> paymentPort.findExpirable(sentBefore, limit),
+            this::expireAfterLastLookup,
+            "보낸 뒤 30분 미해결 결제 만료"
+        );
+        if (expired > 0) {
+            log.warn("보낸 뒤 30분 넘게 결과를 모르는 결제 {}건을 FAILED(EXPIRED)로 닫고 재고를 반환했습니다", expired);
+        }
+        return expired;
+    }
+
+    /**
+     * 닫기 전에 PG를 마지막으로 한 번 조회한다(잠금 밖). 그 조회로 종결됐으면 만료하지 않는다.
+     */
+    private PaymentApplyOutcome expireAfterLastLookup(Long paymentId) {
+        paymentResultApplier.reconcile(paymentId);
+        boolean resolved = paymentPort.findById(paymentId).map(Payment::isFinal).orElse(true);
+        if (resolved) {
+            return PaymentApplyOutcome.ALREADY_APPLIED;
+        }
+        return paymentResultApplier.expire(paymentId);
     }
 
     /**

@@ -8,6 +8,7 @@ import com.loopers.payment.application.port.out.PaymentOutboxPort;
 import com.loopers.payment.application.port.out.PaymentPort;
 import com.loopers.payment.application.port.out.PgLookupUnavailableException;
 import com.loopers.payment.application.port.out.PgTransaction;
+import com.loopers.payment.domain.ExternalPaymentStatus;
 import com.loopers.payment.domain.Payment;
 import com.loopers.payment.domain.PaymentApplyOutcome;
 import com.loopers.payment.domain.PaymentObservation;
@@ -25,7 +26,7 @@ import java.util.Optional;
 import java.util.function.Function;
 
 /**
- * 결과 적용 경계 (plan.md 4장, 4-1, ADR-W5-04). callback·reconcile·생성 응답·발송 실패·정리가 모두 여기로 와서 결제와 주문·재고를 함께 바꾼다.
+ * 결과 적용 경계 (plan.md 4장, 4-1, ADR-W5-04). callback·reconcile·생성 응답·발송 실패·정리·만료가 모두 여기로 와서 결제와 주문·재고를 함께 바꾼다.
  * <ul>
  *   <li>PG 조회는 트랜잭션·잠금 밖에서 한다.</li>
  *   <li>반영은 매번 새 트랜잭션(REQUIRES_NEW)이다 — AFTER_COMMIT 안(풀 거절)에서 불려도 이미 끝난 TX에 섞이지 않는다.</li>
@@ -147,6 +148,14 @@ public class PaymentResultApplier {
         });
     }
 
+    /**
+     * 보낸 뒤 30분 넘게 결과를 모르는 결제(PENDING·UNKNOWN)를 FAILED(EXPIRED)로 닫고 주문 PAYMENT_FAILED·재고 반환 (P-14).
+     * PG 마지막 조회는 호출자가 잠금 밖에서 먼저 한다. 그 사이 종결됐으면 ALREADY_APPLIED로 아무것도 바꾸지 않는다.
+     */
+    public PaymentApplyOutcome expire(Long paymentId) {
+        return inLockedPayment(paymentId, false, payment -> payment.expireUnresolved(ZonedDateTime.now()));
+    }
+
     private PaymentApplyOutcome recordCheck(Long paymentId, String result) {
         return inLockedPayment(paymentId, false, payment -> {
             if (payment.isFinal()) {
@@ -161,11 +170,21 @@ public class PaymentResultApplier {
         PaymentObservation observation = new PaymentObservation(
             observed.transactionKey(), observed.providerOrderId(), Money.of(observed.amount()), observed.status(), observed.reason());
         PaymentApplyOutcome outcome = payment.applyObservation(observation, ZonedDateTime.now());
-        if (outcome == PaymentApplyOutcome.CONFLICT || outcome == PaymentApplyOutcome.MISMATCH) {
+        if (outcome == PaymentApplyOutcome.CONFLICT && isSuccessAfterExpiry(payment, observed)) {
+            log.error("만료 뒤 성공 — 환불 필요. paymentId={}, providerOrderId={}, transactionKey={}",
+                payment.getId(), payment.getProviderOrderId(), observed.transactionKey());
+        } else if (outcome == PaymentApplyOutcome.CONFLICT || outcome == PaymentApplyOutcome.MISMATCH) {
             log.warn("PG 결과가 저장된 결제와 맞지 않아 반영하지 않습니다. paymentId={}, outcome={}, check={}",
                 payment.getId(), outcome, payment.getLastCheckResult());
         }
         return outcome;
+    }
+
+    /**
+     * P-15: 만료로 닫은 뒤 PG가 실제로는 승인했다 — FAILED는 그대로 두고 사람이 환불해야 한다.
+     */
+    private static boolean isSuccessAfterExpiry(Payment payment, PgTransaction observed) {
+        return Payment.EXPIRED.equals(payment.getFailureReason()) && observed.status() == ExternalPaymentStatus.SUCCESS;
     }
 
     /**
