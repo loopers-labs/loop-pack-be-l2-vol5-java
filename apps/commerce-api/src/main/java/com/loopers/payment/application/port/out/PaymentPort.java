@@ -24,7 +24,7 @@ public interface PaymentPort {
     Optional<Payment> findByProviderOrderId(String providerOrderId);
 
     /**
-     * reconcile 대상 (plan.md 5-1): PENDING·UNKNOWN 중 아직 조회하지 않았거나 마지막 조회가 checkedBefore보다 이른 결제, id 오름차순.
+     * reconcile 대상 (plan.md 5-1): PENDING·UNKNOWN 중 다음 조회 시각(next_check_at)이 now 이전(같음 포함)인 결제, 다음 조회 시각이 이른 순.
      */
-    List<Payment> findUnresolved(ZonedDateTime checkedBefore, int limit);
+    List<Payment> findDueForCheck(ZonedDateTime now, int limit);
 }

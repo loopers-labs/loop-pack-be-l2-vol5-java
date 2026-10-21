@@ -99,6 +99,10 @@ public class Payment extends BaseEntity {
     @Comment("PG 조회 횟수")
     private int checkCount;
 
+    @Column(name = "next_check_at")
+    @Comment("다음 PG 조회 예정 시각. PENDING·UNKNOWN만 있고 종결이면 없음 (plan.md 5-1)")
+    private ZonedDateTime nextCheckAt;
+
     @Column(name = "last_check_result")
     @Comment("마지막 조회 결과·이상 기록 (0건·복수·불일치·모순)")
     private String lastCheckResult;
@@ -347,6 +351,10 @@ public class Payment extends BaseEntity {
 
     public int getCheckCount() {
         return checkCount;
+    }
+
+    public ZonedDateTime getNextCheckAt() {
+        return nextCheckAt;
     }
 
     public String getLastCheckResult() {
