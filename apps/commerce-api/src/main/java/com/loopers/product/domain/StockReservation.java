@@ -7,7 +7,6 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
-import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import org.hibernate.annotations.Comment;
@@ -19,8 +18,7 @@ import org.hibernate.annotations.Comment;
 @Entity
 @Table(
     name = "stock_reservations",
-    uniqueConstraints = @UniqueConstraint(name = "uk_stock_reservations_order_product", columnNames = {"order_id", "product_id"}),
-    indexes = @Index(name = "idx_stock_reservations_order", columnList = "order_id")
+    uniqueConstraints = @UniqueConstraint(name = "uk_stock_reservations_order_product", columnNames = {"order_id", "product_id"})
 )
 public class StockReservation extends BaseEntity {
 
