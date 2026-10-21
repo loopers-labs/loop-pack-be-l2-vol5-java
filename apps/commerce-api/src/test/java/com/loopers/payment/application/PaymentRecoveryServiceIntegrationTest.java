@@ -353,4 +353,100 @@ class PaymentRecoveryServiceIntegrationTest {
             assertThat(PG.createCalls()).isEqualTo(2);
         }
     }
+
+    @DisplayName("만료 (PaymentReconcileScheduler.expire, P-14), ")
+    @Nested
+    class ExpireOverdue {
+
+        @DisplayName("P-14 보낸 지 30분이 넘은 UNKNOWN이 마지막 조회에서도 0건이면 FAILED(EXPIRED)·주문 PAYMENT_FAILED·예약 RELEASED이고 재고가 돌아온다(3→5). 조회 1번, 생성 0번.")
+        @Test
+        void expiresUnknownAfter30Minutes() {
+            // arrange
+            PaymentInfo info = unknownPayment("attempt-1", 0);
+
+            // act
+            int expired = paymentRecoveryUseCase.expireOverdue(ZonedDateTime.now().plusMinutes(31));
+
+            // assert
+            assertThat(expired).isEqualTo(1);
+            Payment payment = paymentOf(info);
+            assertThat(payment.getStatus()).isEqualTo(PaymentStatus.FAILED);
+            assertThat(payment.getFailureReason()).isEqualTo("EXPIRED");
+            assertThat(payment.getNextCheckAt()).isNull();
+            assertThat(orderStatusOf(info)).isEqualTo(OrderStatus.PAYMENT_FAILED);
+            assertThat(reservationRows(info)).containsExactly("RELEASED");
+            assertThat(stock()).isEqualTo(5);
+            assertThat(PG.lookupCalls()).isEqualTo(1);
+            assertThat(PG.createCalls()).isZero();
+        }
+
+        @DisplayName("P-14 보낸 지 29분이면 손대지 않는다 — UNKNOWN·예약 RESERVED·재고 3, PG 조회 0번.")
+        @Test
+        void keepsUnknownBefore30Minutes() {
+            // arrange
+            PaymentInfo info = unknownPayment("attempt-1", 0);
+
+            // act
+            int expired = paymentRecoveryUseCase.expireOverdue(ZonedDateTime.now().plusMinutes(29));
+
+            // assert
+            assertThat(expired).isZero();
+            assertThat(paymentOf(info).getStatus()).isEqualTo(PaymentStatus.UNKNOWN);
+            assertThat(orderStatusOf(info)).isEqualTo(OrderStatus.PAYMENT_PENDING);
+            assertThat(reservationRows(info)).containsExactly("RESERVED");
+            assertThat(stock()).isEqualTo(3);
+            assertThat(PG.lookupCalls()).isZero();
+        }
+
+        @DisplayName("P-14 만료 직전 마지막 조회에서 PG가 SUCCESS면 만료하지 않고 확정한다 — CONFIRMED·CONSUMED·재고 3.")
+        @Test
+        void lastLookupSuccessConfirmsInsteadOfExpiring() {
+            // arrange
+            PaymentInfo info = unknownPayment("attempt-1", 1);
+            PgTransaction transaction = paymentGatewayPort.findByProviderOrderId(paymentOf(info).getProviderOrderId()).get(0);
+            PG.complete(transaction.transactionKey(), "SUCCESS", null);
+
+            // act
+            int expired = paymentRecoveryUseCase.expireOverdue(ZonedDateTime.now().plusMinutes(31));
+
+            // assert
+            assertThat(expired).isZero();
+            assertThat(paymentOf(info).getStatus()).isEqualTo(PaymentStatus.SUCCESS);
+            assertThat(orderStatusOf(info)).isEqualTo(OrderStatus.CONFIRMED);
+            assertThat(reservationRows(info)).containsExactly("CONSUMED");
+            assertThat(stock()).isEqualTo(3);
+        }
+
+        @DisplayName("P-14 만료를 두 번 돌려도 두 번째는 0건이고 재고는 한 번만 돌아온다(5, 7이 아님).")
+        @Test
+        void expiringTwiceReleasesOnce() {
+            // arrange
+            PaymentInfo info = unknownPayment("attempt-1", 0);
+            paymentRecoveryUseCase.expireOverdue(ZonedDateTime.now().plusMinutes(31));
+
+            // act
+            int second = paymentRecoveryUseCase.expireOverdue(ZonedDateTime.now().plusMinutes(32));
+
+            // assert
+            assertThat(second).isZero();
+            assertThat(paymentOf(info).getStatus()).isEqualTo(PaymentStatus.FAILED);
+            assertThat(reservationRows(info)).containsExactly("RELEASED");
+            assertThat(stock()).isEqualTo(5);
+        }
+
+        @DisplayName("P-14 발송 권한만 쥔 SENDING은 30분이 넘어도 만료하지 않는다 (정리 스케줄러가 UNKNOWN으로 넘긴다).")
+        @Test
+        void keepsSending() {
+            // arrange
+            PaymentInfo info = stuckSendingPayment("attempt-1");
+
+            // act
+            int expired = paymentRecoveryUseCase.expireOverdue(ZonedDateTime.now().plusMinutes(31));
+
+            // assert
+            assertThat(expired).isZero();
+            assertThat(paymentOf(info).getStatus()).isEqualTo(PaymentStatus.SENDING);
+            assertThat(stock()).isEqualTo(3);
+        }
+    }
 }

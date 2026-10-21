@@ -18,5 +18,11 @@ public interface PaymentRecoveryUseCase {
      */
     int reconcileDue(ZonedDateTime now);
 
+    /**
+     * 만료 (P-14): 보낸 지 30분 넘게 결과를 모르는 결제(PENDING·UNKNOWN)를 마지막으로 한 번 조회하고, 그래도 종결이 아니면 FAILED(EXPIRED)로 닫고 재고를 반환한다.
+     * 만료한 결제 수를 돌려준다.
+     */
+    int expireOverdue(ZonedDateTime now);
+
     record StaleDispatchResult(int closedNotSent, int markedUnknown) {}
 }

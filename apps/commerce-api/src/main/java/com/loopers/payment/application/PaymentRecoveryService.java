@@ -66,6 +66,11 @@ public class PaymentRecoveryService implements PaymentRecoveryUseCase {
         return due.size();
     }
 
+    @Override
+    public int expireOverdue(ZonedDateTime now) {
+        return 0;
+    }
+
     /**
      * 쪽이 가득 찼으면 곧바로 다음 쪽을 본다. 이번 호출이 상태를 바꾼(APPLIED·NOT_FINAL) 건수를 돌려준다.
      */
