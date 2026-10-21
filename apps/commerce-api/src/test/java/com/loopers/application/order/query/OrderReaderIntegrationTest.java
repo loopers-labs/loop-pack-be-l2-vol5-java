@@ -78,16 +78,30 @@ class OrderReaderIntegrationTest {
     @Nested
     @DisplayName("FR-ORDER-04 내 주문 상세")
     class GetMyOrder {
-        @DisplayName("[FR-ORDER-04] 품목·수량·금액·상태·결제액을 돌려준다.")
+        @DisplayName("[FR-ORDER-04] 품목·수량·금액·상태를 돌려준다. 결제를 시작하지 않은 DRAFT 는 결제 정보가 없다.")
         @Test
         void returnsOrder() {
             OrderModel order = fixtures.draftOrder(user.getId(), product, 3);
 
-            OrderView.Detail info = orderReader.getMyOrder(user.getId(), order.getId());
+            OrderView.MyDetail info = orderReader.getMyOrder(user.getId(), order.getId());
 
             assertThat(info.items().get(0).quantity()).isEqualTo(3);
             assertThat(info.totalAmount()).isEqualTo(3_000L);
             assertThat(info.status()).isEqualTo("DRAFT");
+            assertThat(info.paidAmount()).isNull();
+            assertThat(info.payment()).isNull();
+        }
+
+        @DisplayName("[FR-ORDER-04] 결제를 시작한 주문은 결제수단(카드 종류·마스킹 카드번호)·결제 시도 키·결제액을 돌려준다.")
+        @Test
+        void returnsPayment_afterPaymentStarted() {
+            OrderModel order = fixtures.confirmedOrder(user.getId(), product, 2);
+
+            OrderView.MyDetail info = orderReader.getMyOrder(user.getId(), order.getId());
+
+            assertThat(info.status()).isEqualTo("CONFIRMED");
+            assertThat(info.paidAmount()).isEqualTo(2_000L);
+            assertThat(info.payment()).isEqualTo(new OrderView.Payment("SAMSUNG", "****-****-****-1451", "fixture-" + order.getId()));
         }
 
         @DisplayName("[FR-ORDER-04 ORDER_NOT_FOUND]")

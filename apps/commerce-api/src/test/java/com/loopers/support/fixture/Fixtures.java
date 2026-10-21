@@ -76,10 +76,12 @@ public class Fixtures {
             java.util.List.of(new OrderModel.Line(product.getId(), quantity, product.getPrice()))));
     }
 
+    /** CONFIRMED 주문 (DRAFT → AWAITING_PAYMENT → CONFIRMED). 재고·원장은 건드리지 않는다. */
     @Transactional
     public OrderModel confirmedOrder(Long userId, ProductModel product, int quantity) {
         OrderModel order = orderRepository.save(OrderModel.create(userId,
             java.util.List.of(new OrderModel.Line(product.getId(), quantity, product.getPrice()))));
+        order.startPayment("fixture-" + order.getId(), "SAMSUNG", "1234-5678-9814-1451");
         order.confirm();
         return order;
     }

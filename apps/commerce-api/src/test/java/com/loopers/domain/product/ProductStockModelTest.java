@@ -91,6 +91,29 @@ class ProductStockModelTest {
         assertThat(stock.getAvailable()).isEqualTo(5);
     }
 
+    @DisplayName("[DR-38] 반환은 수량만큼 늘리고 양수 수량의 RELEASE 행을 만든다 (결제 실패).")
+    @Test
+    void release_increasesAvailable_andRecordsRelease() {
+        ProductStockModel stock = stockOf(7L, 5);
+        stock.reserve(100L, 3);
+
+        ProductStockLedgerModel entry = stock.release(100L, 3);
+
+        assertThat(stock.getAvailable()).isEqualTo(5);
+        assertLedger(entry, StockLedgerType.RELEASE, 3, 100L);
+    }
+
+    @DisplayName("[INV-07][ER-13 INVALID_QUANTITY] 반환 수량이 0 이하면 거부되고 재고 유지.")
+    @ParameterizedTest
+    @ValueSource(ints = {0, -1})
+    void release_throwsInvalidQuantity_whenNotPositive(int quantity) {
+        ProductStockModel stock = stockOf(7L, 5);
+
+        assertThrowsErrorType(() -> stock.release(100L, quantity), ErrorType.INVALID_QUANTITY);
+
+        assertThat(stock.getAvailable()).isEqualTo(5);
+    }
+
     private static ProductStockModel stockOf(Long productId, int quantity) {
         ProductStockModel stock = new ProductStockModel(productId);
         stock.adjustTo(quantity);

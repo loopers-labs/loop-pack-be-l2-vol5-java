@@ -273,7 +273,7 @@ class BrandFacadeIntegrationTest {
             product = fixtures.product(brand.getId(), "상품", 1_000L, 10);
             productLikeFacade.like(buyer.getId(), product.getId());
             confirmedOrderId = orderFacade.createOrder(buyer.getId(), List.of(new OrderItemCommand(product.getId(), 2))).id();
-            orderFacade.confirmOrder(buyer.getId(), confirmedOrderId);
+            orderFacade.confirmOrder(buyer.getId(), confirmedOrderId, "attempt-1", "SAMSUNG", "1234-5678-9814-1451");
             draftOrderId = orderFacade.createOrder(buyer.getId(), List.of(new OrderItemCommand(product.getId(), 1))).id();
 
             brandFacade.deleteBrand(admin.getId(), brand.getId());
@@ -315,7 +315,8 @@ class BrandFacadeIntegrationTest {
         void rejectsConfirmOfDraftOrder() {
             long balance = fixtures.balanceOf(buyer.getId());
 
-            assertThrowsErrorType(() -> orderFacade.confirmOrder(buyer.getId(), draftOrderId), ErrorType.PRODUCT_NOT_FOUND);
+            assertThrowsErrorType(() -> orderFacade.confirmOrder(buyer.getId(), draftOrderId, "attempt-2", "SAMSUNG", "1234-5678-9814-1451"),
+                ErrorType.PRODUCT_NOT_FOUND);
 
             assertThat(fixtures.reloadOrder(draftOrderId).getStatus()).isEqualTo(OrderStatus.DRAFT);
             assertThat(fixtures.stockOf(product.getId())).isEqualTo(8);
@@ -325,7 +326,7 @@ class BrandFacadeIntegrationTest {
         @DisplayName("[FR-ORDER-04][ASM-10] 확정된 주문의 품목·수량·단가·총액·결제액이 그대로 조회된다.")
         @Test
         void keepsConfirmedOrder() {
-            OrderView.Detail order = orderReader.getMyOrder(buyer.getId(), confirmedOrderId);
+            OrderView.MyDetail order = orderReader.getMyOrder(buyer.getId(), confirmedOrderId);
 
             assertThat(order.status()).isEqualTo(OrderStatus.CONFIRMED.name());
             assertThat(order.totalAmount()).isEqualTo(2_000L);
