@@ -19,6 +19,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * 고객 주문 API. 주문 확정(POST /{orderId}/confirm)은 W5부터 PG 결제 요청이라 결제 쪽 PaymentController가 맡는다
+ * (order → payment 의존을 만들지 않기 위해, W5 plan.md 8).
+ */
 @RequiredArgsConstructor
 @RestController
 @RequestMapping("/api/v1/orders")
@@ -31,12 +35,6 @@ public class OrderController implements OrderApiSpec {
     @Override
     public ApiResponse<OrderDto.OrderResponse> createOrder(LoginUser loginUser, @RequestBody OrderDto.CreateRequest request) {
         return ApiResponse.success(OrderDto.OrderResponse.from(orderCommandUseCase.create(loginUser.id(), request.toLines())));
-    }
-
-    @PostMapping("/{orderId}/confirm")
-    @Override
-    public ApiResponse<OrderDto.OrderResponse> confirmOrder(LoginUser loginUser, @PathVariable Long orderId) {
-        return ApiResponse.success(OrderDto.OrderResponse.from(orderCommandUseCase.confirm(loginUser.id(), orderId)));
     }
 
     @GetMapping
