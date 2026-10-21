@@ -202,16 +202,19 @@ PaymentReconcileScheduler  PENDING·UNKNOWN 결제를 PG 조회로 확인 → �
 - 로컬 테스트 PG는 과제 계약대로 **직접 만든 테스트 fixture**(HTTP 서버)다. 응답 유실·지연·500·중복 callback을 마음대로 일으킬 수 있어 체크리스트 증거가 된다. 계약대로 멱등 키를 받지 않는다.
 - Toss는 `Idempotency-Key`를 받으므로 승인 timeout 뒤 재시도가 허용된다 — "키가 있는 PG는 재시도, 없는 PG는 조회만"을 두 어댑터로 대비한다.
 
-## 8. API 🔧 (과제 3절)
+## 8. API ✅ (과제 3절) — 결제 API는 `payment.adapter.in.web.PaymentController`
+
+확정 API를 `payment` 쪽 컨트롤러에 둔다: 결제가 주문·재고를 부르므로, 주문 컨트롤러가 결제를 부르면 기능 사이 순환이 생긴다 (ArchitectureTest). 경로는 그대로다.
 
 | API | 동작 | 응답 |
 |---|---|---|
-| `POST /api/v1/orders/{orderId}/confirm` | 헤더 `Idempotency-Key`(필수), body `{cardType, cardNo}`. 금액은 저장된 주문에서 | 대기·미확인 202 / 같은 시도 종결 200 / 이전 POINT 확정 주문 409 |
-| `GET /api/v1/orders/{orderId}` | 주문·결제수단·시도 상태·최종 결과. PG 호출 없음 | 200 |
-| `POST /api/v1/orders/{orderId}/payment/reconcile` | 본인 미완료 시도의 기존 거래 조회 → 결과 적용 | 202 / 200 |
-| `POST /api/v1/payments/callback` | `{transactionKey, orderId, status}` (`orderId` = providerOrderId, 과제 계약 용어) → 권위 조회 → 결과 적용 | 200 |
+| `POST /api/v1/orders/{orderId}/confirm` | 헤더 `Idempotency-Key`(없거나 비면 400), body `{cardType, cardNo}`(비면 400). 금액은 저장된 주문에서. 같은 키 재요청은 현재 상태 반환, 다른 주문에 쓴 키·이미 다른 키로 시작한 주문·DRAFT 아님은 409, 남의 주문 404 | 미종결(REQUESTED·SENDING·PENDING·UNKNOWN) **202** / 종결 **200** (풀 거절로 즉시 NOT_SENT 실패 포함) |
+| `GET /api/v1/orders/{orderId}/payment` | 본인 결제 상태. PG 호출 없음 | 200 / 404 |
+| `POST /api/v1/orders/{orderId}/payment/reconcile` | 본인 미완료 시도의 거래를 조회 → 결과 적용 | 종결 200 / 미종결 202 |
+| `POST /api/v1/payments/callback` | `{transactionKey, orderId, status}` (`orderId` = providerOrderId). 본문은 계기일 뿐 → 권위 조회 → 결과 적용. `X-USER-ID` 없이 호출된다 | 200 / 모르는 주문 404 |
+| `GET /api/v1/orders/{orderId}` | 주문 상태(`PAYMENT_PENDING`·`CONFIRMED`·`PAYMENT_FAILED`)·결제수단(`PG`·이전 `POINT`) | 200 |
 
-카드 번호는 저장·로그 금지 (요청 처리 중에만 PG로 전달).
+응답 본문: `{orderId, orderStatus, paymentStatus, failureReason, transactionKey}`. 카드 번호는 저장·로그 금지 (요청 처리 중 메모리 이벤트로만 PG에 전달, `toString`에서 가린다).
 
 ## 9. 저장 컬럼 ✅ — PG 응답을 어디까지 남기나
 
@@ -300,3 +303,4 @@ PaymentReconcileScheduler  PENDING·UNKNOWN 결제를 PG 조회로 확인 → �
 | v0.4 | 2026-10-21 | 놓친 발송은 바로 실패로 닫는다(ADR-W5-03): relay 스케줄러를 정리 스케줄러(`PaymentDispatchCloser`)로 바꾸고, 회로 OPEN 차단·풀 거절도 `FAILED`(효과 0건)로. 결제 생성 재발송 경로 없음 |
 | v0.5 | 2026-10-21 | 결과 반영 멱등성(4-1, ADR-W5-04): payment 비관적 잠금 + 종결 상태 가드 + 조건부 전이, 반환값 `APPLIED`·`ALREADY_APPLIED`·`CONFLICT`. PG 조회를 잠금 밖으로 옮김. 기대값 P-1~13·R-1~5 합의 |
 | v0.6 | 2026-10-21 | 구현 중 결정: §6 설정값 확정(생성도 느린 호출 2s로 차단, OPEN 10s는 부하 테스트로 검증), §9 `next_check_at` 추가·가용 재고 뜻, P-1~P-13 표(3-2-1), callback 필드는 `orderId`, 기존 테스트는 의도를 PG 흐름으로 이전(10-1) |
+| v0.7 | 2026-10-21 | §8 API를 구현에 맞춤: 결제 API는 payment 컨트롤러(순환 방지), 결제 상태 조회 `GET …/payment` 추가, 202/200 규칙, 멱등 키 400·409 |
