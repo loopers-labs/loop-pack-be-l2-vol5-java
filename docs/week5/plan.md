@@ -76,6 +76,24 @@
 - 조회 0건·2건 이상·금액/식별 불일치는 상태를 바꾸지 않고 **이상 기록**(`last_check_result`)만 남긴다. 재발송하지 않는다.
 - **보내지 않은 게 확실한** 경우(풀 거절, claim 전 정체, 회로 OPEN으로 호출 전 차단)는 바로 `FAILED`(효과 0건)로 닫고 재고를 반환한다. 다시 보내지 않는다 (ADR-W5-03). 보낸 뒤 결과를 모르면 `UNKNOWN` → 조회로만 종결한다.
 
+### 3-2-1. 상태 전이 기대값 ✅ (`PaymentTest`)
+
+| # | 주어진 상태 | 일어난 일 | 기대 |
+|---|---|---|---|
+| P-1 | — | 결제 생성 (주문 42, 5,000원) | `REQUESTED`, `LP-ORD-0000000042`. 금액 0 이하·빈 시도 키는 거절 |
+| P-2 | `REQUESTED` | 발송 권한 획득 | `SENDING` |
+| P-3 | `SENDING`·종결 | 발송 권한 다시 | 거절 (한 번만 보낸다) |
+| P-4 | `REQUESTED` | 보내지 못함 (풀 거절·정리) | `FAILED`(NOT_SENT) |
+| P-5 | `SENDING` | 회로 OPEN으로 호출 전 차단 | `FAILED`(NOT_SENT). `PENDING`·`UNKNOWN`이면 `CONFLICT`(보냈을 수 있다) |
+| P-6 | `SENDING` | 생성 수락 + transactionKey | `PENDING` |
+| P-7 | `SENDING` | 생성 timeout·응답 유실 | `UNKNOWN` (실패로 닫지 않는다). `PENDING`을 `UNKNOWN`으로 내리지 않는다 |
+| P-8 | `SENDING` | 효과 0건 업무 거절 | `FAILED` |
+| P-9 | `PENDING`·`UNKNOWN` | 조회 SUCCESS·FAILED·PENDING | `SUCCESS`·`FAILED` → `APPLIED`, PENDING → `NOT_FINAL` |
+| P-10 | 아무 상태 | 금액·식별자·거래 키 불일치 | 상태 그대로 + `MISMATCH` 기록 |
+| P-11 | `SUCCESS` | FAILED 관찰 | `CONFLICT`, SUCCESS 그대로 |
+| P-12 | `SUCCESS` | 같은 SUCCESS 다시 (중복 callback) | `ALREADY_APPLIED` |
+| P-13 | `SUCCESS` | 늦게 온 생성 응답·timeout | `ALREADY_APPLIED` (종결을 되돌리지 못한다) |
+
 ### 3-3. PG 관찰 → 내부 반영 (과제 4절 표)
 
 | PG 관찰 | 결제 | 주문 | 재고 예약 |
@@ -158,17 +176,24 @@ PaymentReconcileScheduler  PENDING·UNKNOWN 결제를 PG 조회로 확인 → �
 - 결제 생성은 **어떤 경우에도 두 번 보내지 않는다.** 보내지 못했으면 실패로 닫고, 보낸 뒤 모르면 조회만 한다.
 - 정리 주기: 대기 30초 + 주기 1분 → 놓친 건은 최악 약 1분 30초 안에 실패로 닫혀 재고가 풀린다. `fixedDelay`라 실행이 겹치지 않는다.
 
-## 6. 회복 전략 (Resilience4j) 🔧
+## 6. 회복 전략 (Resilience4j) ✅
 
-| 호출 | timeout | retry | circuit breaker | fallback |
-|---|---|---|---|---|
-| PG 생성 POST | 연결 1s · 읽기 3s | **없음** (HTTP client 숨은 재시도도 끔) | 🔧 별도 인스턴스: OPEN이면 **보내기 전** 차단 | 호출 전 차단 → `FAILED`(효과 0건) + 재고 반환. 보낸 뒤 예외 → `UNKNOWN` (실패 확정 X) |
-| PG 조회 GET | 연결 1s · 읽기 1s | 최대 3회(1+2), 100ms·200ms + jitter, 4xx 제외 | 조회 전용. 최소 표본 5 · 실패율 50% · 느린 호출 2s · OPEN 10s · HALF_OPEN 2회 | 저장된 상태 + `checkable=false` (FAILED 확정 X) |
-| 결과 적용 (DB) | — | 없음 (종결 상태·잠금이 중복 막음) | — | — |
+설정은 `application.yml`의 `resilience4j.*`, 적용은 `LocalPgPaymentGatewayAdapter`가 코드로 한다 (재시도 → 회로 → HTTP 순으로 감싼다. 포트 예외로 바꾸는 곳이 한 곳이다).
 
-- 전체 예산: 조회 1회 최대 ≈ 1s×3 + 0.3s = 3.3s.
-- TimeLimiter는 쓰지 않는다 🔧: 동기 HTTP client의 읽기 timeout이 실제 소켓을 끊는다. TimeLimiter는 Future 대기만 끊고 HTTP는 계속 돌 수 있다 (발제).
-- 업무 거절(4xx·FAILED)은 회로 실패율에 넣지 않는다.
+| 항목 | 생성 (`pgCreate`) | 조회 (`pgLookup`) |
+|---|---|---|
+| timeout | 연결 1s · 읽기 3s | 연결 1s · 읽기 1s |
+| retry | **없음** (인스턴스 자체가 없다. JDK HttpClient라 숨은 POST 재시도도 없다) | 최대 3회(1+2), 100ms·200ms 지수 + jitter ±50%. timeout·5xx·IO·해석 불가만 재시도 |
+| circuit breaker | 최근 10건(COUNT) · 최소 5건 · 실패율 50% · 느린 호출 2s(100%) · OPEN 10s · HALF_OPEN 2건 | 같음 |
+| 실패로 세지 않음 | `PgRejectedException`(업무 거절 4xx) | 404 외 4xx |
+| 회로 OPEN일 때 | 호출 전 차단 → `FAILED`(효과 0건) + 재고 반환 (ADR-W5-03) | `PgLookupUnavailableException` → 상태 유지, 확인 기록만 (실패 확정 X) |
+| TimeLimiter | 없음 | 없음 |
+
+- 생성도 2초 넘는 호출을 "느림"으로 센다 ✅: 느려지는 PG를 timeout(3s)까지 기다리지 않고 일찍 차단한다 (부하 가정 0-1: 3s × 100 TPS면 Tomcat 200을 넘는다).
+- OPEN 10초 ✅ — 단, **부하 테스트로 검증한다**: 타임세일 중 OPEN 동안의 결제는 모두 실패로 닫힌다(ADR-W5-03). 짧으면 회복 중인 PG를 다시 두드린다. 측정 결과로 다시 정한다.
+- 조회 1회 최대 예산 ≈ 1s×3 + 0.3s = 3.3s.
+- TimeLimiter를 쓰지 않는 이유: 동기 HTTP client의 읽기 timeout이 실제 소켓을 끊는다. TimeLimiter는 Future 대기만 끊고 HTTP는 계속 돌 수 있다 (발제).
+- 검증: `LocalPgPaymentGatewayAdapterTest` G-1~G-11. 생성 재시도를 일부러 넣으면 G-3·G-5·G-6이, 업무 거절 제외를 지우면 G-7이 실패함을 확인했다.
 
 ## 7. PG 어댑터 ✅ — 로컬 테스트 PG가 체크리스트 경로, Toss·PortOne은 같은 포트 뒤 추가 어댑터
 
@@ -184,14 +209,18 @@ PaymentReconcileScheduler  PENDING·UNKNOWN 결제를 PG 조회로 확인 → �
 | `POST /api/v1/orders/{orderId}/confirm` | 헤더 `Idempotency-Key`(필수), body `{cardType, cardNo}`. 금액은 저장된 주문에서 | 대기·미확인 202 / 같은 시도 종결 200 / 이전 POINT 확정 주문 409 |
 | `GET /api/v1/orders/{orderId}` | 주문·결제수단·시도 상태·최종 결과. PG 호출 없음 | 200 |
 | `POST /api/v1/orders/{orderId}/payment/reconcile` | 본인 미완료 시도의 기존 거래 조회 → 결과 적용 | 202 / 200 |
-| `POST /api/v1/payments/callback` | `{providerOrderId, transactionKey, status}` → 권위 조회 → 결과 적용 | 200 |
+| `POST /api/v1/payments/callback` | `{transactionKey, orderId, status}` (`orderId` = providerOrderId, 과제 계약 용어) → 권위 조회 → 결과 적용 | 200 |
 
 카드 번호는 저장·로그 금지 (요청 처리 중에만 PG로 전달).
 
-## 9. 저장 컬럼 🔧 — PG 응답을 어디까지 남기나
+## 9. 저장 컬럼 ✅ — PG 응답을 어디까지 남기나
 
-`payment` 테이블: `order_id`(uk) · `user_id` · `attempt_key`(uk) · `provider` · `provider_order_id`(uk) · `amount` · `status` · `transaction_key` · `pg_status`(PG 원문 상태) · `failure_reason` · `requested_at` · `sent_at` · `completed_at` · `last_checked_at` · `check_count` · `last_check_result`.
-원문 JSON은 남기지 않는다 🔧: Toss 응답에 `secret`·마스킹 카드 번호가 들어 있다 (spike T1).
+`payments`: `order_id`(uk) · `user_id` · `attempt_key`(uk) · `provider` · `provider_order_id`(uk) · `amount` · `status` · `transaction_key` · `pg_status`(PG가 마지막으로 알려 준 상태) · `failure_reason` · `requested_at` · `sent_at` · `completed_at` · `last_checked_at` · `check_count` · `last_check_result`(`OBSERVED:*`·`CONFLICT:*`·`MISMATCH:*`·`NOT_FOUND`·`MULTIPLE:n`·`UNAVAILABLE`) · **`next_check_at`** ✅(reconcile 다음 확인 시각. 5s → 10s → 30s → 1m → 5m, 종결이면 null).
+`payment_outbox`: `payment_id`(uk) · `event_type` · `status`(PENDING·CLAIMED·DONE·CLOSED) · `claimed_at` · `completed_at`.
+`stock_reservations`: `order_id`·`product_id`(uk) · `quantity` · `status`(RESERVED·CONSUMED·RELEASED).
+
+- 원문 JSON은 남기지 않는다: Toss 응답에 `secret`·마스킹 카드 번호가 들어 있다 (spike T1). 카드 번호 컬럼은 없다.
+- `product.stock`은 이제 **가용 재고**다. 관리자 재고 설정(`changeStock`)도 가용 재고를 설정하며, 결제 대기 주문이 선점한 수량은 포함하지 않는다.
 
 ## 10. 장면 테스트 (과제 6절)
 
@@ -210,6 +239,10 @@ PaymentReconcileScheduler  PENDING·UNKNOWN 결제를 PG 조회로 확인 → �
 | S-11 | 기존 기능 보호 | POINT 기록·소유권, 재고 부족 시 PG 0회, 삭제 상품 | ⏳ |
 
 재고 예: 재고 5 · 수량 2 확보 → 가용 3. 성공 후 3, 확정 실패 후 5. 중복 실패 알림으로 7, UNKNOWN에서 5가 되면 버그.
+
+## 10-1. 기존 테스트 이전 ✅
+
+포인트로 확정하던 테스트(주문 확정 통합·동시성, 교착·잠금 대기·경쟁 조건 E2E, 구매 흐름 등 12개 파일)는 지우지 않고 **증명하던 의도를 PG 흐름으로 옮긴다**: 초과 판매 방지 → TX A 재고 선점, 잠금 순서·교착 없음 → TX A의 order → product 순서, 포인트 차감 기대 → "포인트 변화 0"(C-1).
 
 ## 11. ADR
 
@@ -266,3 +299,4 @@ PaymentReconcileScheduler  PENDING·UNKNOWN 결제를 PG 조회로 확인 → �
 | v0.3 | 2026-10-21 | 발송을 AFTER_COMMIT 비동기(풀 50) + relay 안전망(1분, 30초 대기)으로, relay와 reconcile 스케줄러 분리, relay는 commerce-api 안 방아쇠로(ADR-W5-01 재작성) |
 | v0.4 | 2026-10-21 | 놓친 발송은 바로 실패로 닫는다(ADR-W5-03): relay 스케줄러를 정리 스케줄러(`PaymentDispatchCloser`)로 바꾸고, 회로 OPEN 차단·풀 거절도 `FAILED`(효과 0건)로. 결제 생성 재발송 경로 없음 |
 | v0.5 | 2026-10-21 | 결과 반영 멱등성(4-1, ADR-W5-04): payment 비관적 잠금 + 종결 상태 가드 + 조건부 전이, 반환값 `APPLIED`·`ALREADY_APPLIED`·`CONFLICT`. PG 조회를 잠금 밖으로 옮김. 기대값 P-1~13·R-1~5 합의 |
+| v0.6 | 2026-10-21 | 구현 중 결정: §6 설정값 확정(생성도 느린 호출 2s로 차단, OPEN 10s는 부하 테스트로 검증), §9 `next_check_at` 추가·가용 재고 뜻, P-1~P-13 표(3-2-1), callback 필드는 `orderId`, 기존 테스트는 의도를 PG 흐름으로 이전(10-1) |
