@@ -48,7 +48,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 장면 테스트 S-1~S-11 공통 바탕 (W5 plan.md 10장). 모든 장면이 같은 Spring 컨텍스트 하나를 쓰도록 설정·spy를 여기에만 둔다.
  *
  * <ul>
- *   <li>로컬 테스트 PG fixture가 실제 HTTP로 callback을 보내야 하므로 서버를 정해 둔 빈 포트로 띄운다. 고객 요청은 MockMvc로 보낸다.</li>
+ *   <li>로컬 테스트 PG fixture가 실제 HTTP로 callback을 보내야 하므로 서버를 정해 둔 빈 포트로 띄운다. 고객 요청은 MockMvc로 보낸다.
+ *   관리 포트(운영 8081)는 임의 포트로 둔다 — 같은 JVM에 캐시된 다른 DEFINED_PORT 컨텍스트(PaymentApiE2ETest)가 8081을 쥐고 있다.</li>
  *   <li>timeout은 짧게 줄인다: 생성 읽기 500ms, 조회 읽기 300ms. 회로 OPEN 대기는 2s (운영 10s) — S-10에서 회복을 기다리기 위해서다.</li>
  *   <li>스케줄러는 test 프로필에서 꺼져 있다. 정리·reconcile은 {@link PaymentRecoveryUseCase}를 "지금"을 넘겨 직접 부른다.</li>
  *   <li>spy는 평소에는 실제 동작을 그대로 하고, 장애를 넣는 장면(S-7·S-8)만 한 번씩 바꾼다. 각 테스트가 끝나면 Mockito가 되돌린다.</li>
@@ -61,6 +62,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "pg.local.create-read-timeout=500ms",
         "pg.local.lookup-read-timeout=300ms",
         "resilience4j.circuitbreaker.configs.pg.wait-duration-in-open-state=2s",
+        "management.server.port=0",
     })
 @AutoConfigureMockMvc
 abstract class PaymentScenarioSupport {
