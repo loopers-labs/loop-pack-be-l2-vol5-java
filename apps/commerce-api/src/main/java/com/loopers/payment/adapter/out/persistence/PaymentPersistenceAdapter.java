@@ -15,7 +15,7 @@ import java.util.Optional;
 @Component
 public class PaymentPersistenceAdapter implements PaymentPort {
 
-    /** reconcile이 확인할 상태 — 결과를 모르는 결제만 (plan.md 5-1) */
+    /** reconcile이 확인하고 만료가 닫는 상태 — 결과를 모르는 결제만 (plan.md 5-1, P-14) */
     private static final List<PaymentStatus> UNRESOLVED = List.of(PaymentStatus.PENDING, PaymentStatus.UNKNOWN);
 
     private final PaymentJpaRepository paymentJpaRepository;
@@ -60,6 +60,6 @@ public class PaymentPersistenceAdapter implements PaymentPort {
 
     @Override
     public List<Long> findExpirable(ZonedDateTime sentBefore, int limit) {
-        return List.of();
+        return paymentJpaRepository.findExpirableIds(UNRESOLVED, sentBefore, PageRequest.of(0, limit));
     }
 }
