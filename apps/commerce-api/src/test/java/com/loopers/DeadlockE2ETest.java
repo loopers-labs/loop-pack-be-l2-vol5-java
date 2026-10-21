@@ -3,6 +3,7 @@ package com.loopers;
 import com.jayway.jsonpath.JsonPath;
 import com.loopers.brand.adapter.out.persistence.BrandJpaRepository;
 import com.loopers.brand.domain.BrandModel;
+import com.loopers.payment.adapter.out.persistence.PaymentJpaRepository;
 import com.loopers.product.adapter.out.persistence.ProductJpaRepository;
 import com.loopers.product.domain.ProductModel;
 import com.loopers.user.adapter.out.persistence.UserJpaRepository;
@@ -38,6 +39,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * W3 ADR-W3-04·R-8: 교착(MySQL 1213)으로 확정 트랜잭션이 희생되면 500이 아니라 409 Concurrency Conflict이고 아무것도 바뀌지 않는다.
  * 테스트 트랜잭션이 상품 B → A 순서로 잠가 확정(A → B)과 교착을 만든다. InnoDB는 바꾼 행이 적은 쪽을 희생시키므로,
  * 테스트 트랜잭션이 먼저 다른 테이블에 여러 행을 추가해 무겁게 만든다 (실습 practice-locks.md 실험 1).
+ * W5: 확정은 PG 결제 요청 TX A다. TX A도 주문 → 상품 id 오름차순(A → B)으로 잠그므로 같은 교착이 생기고, 희생되면 재고 선점·결제 시도가 0이다.
+ * TX A가 commit되지 않으면 발송이 없으므로 PG fixture는 띄우지 않는다.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -65,6 +68,9 @@ class DeadlockE2ETest {
     private JdbcTemplate jdbcTemplate;
 
     @Autowired
+    private PaymentJpaRepository paymentJpaRepository;
+
+    @Autowired
     private DatabaseCleanUp databaseCleanUp;
 
     @AfterEach
@@ -72,7 +78,7 @@ class DeadlockE2ETest {
         databaseCleanUp.truncateAllTables();
     }
 
-    @DisplayName("ADR-W3-04 확정이 교착의 희생자가 되면 409 Concurrency Conflict이고, 재고·잔액·주문 상태가 그대로다")
+    @DisplayName("ADR-W3-04 확정이 교착의 희생자가 되면 409 Concurrency Conflict이고, 재고·잔액·주문 상태가 그대로이며 재고 선점·결제 시도가 없다")
     @Test
     void respondsConcurrencyConflict_whenConfirmIsDeadlockVictim() throws Exception {
         // arrange
@@ -108,9 +114,12 @@ class DeadlockE2ETest {
             }));
             assertThat(holdingSecond.await(WAIT_LIMIT.toSeconds(), TimeUnit.SECONDS)).isTrue();
 
-            // act: 확정은 A를 잠근 뒤 B에서 기다린다
+            // act: 확정(TX A)은 주문을 잠그고 A를 잠근 뒤 B에서 기다린다
             Future<MvcResult> confirm = executor.submit(() ->
-                mockMvc.perform(post("/api/v1/orders/" + orderId + "/confirm").header(USER_HEADER, buyer.getId())).andReturn());
+                mockMvc.perform(post("/api/v1/orders/" + orderId + "/confirm").header(USER_HEADER, buyer.getId())
+                    .header("Idempotency-Key", "attempt-1")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"cardType\": \"SAMSUNG\", \"cardNo\": \"1234-5678-9814-1451\"}")).andReturn());
             waitUntilLockedByOther(first.getId());
             requestFirst.countDown();
             MvcResult result = confirm.get(10, TimeUnit.SECONDS);
@@ -133,6 +142,8 @@ class DeadlockE2ETest {
             .andExpect(jsonPath("$.data.status").value("DRAFT"));
         mockMvc.perform(get("/api/v1/points").header(USER_HEADER, buyer.getId()))
             .andExpect(jsonPath("$.data.balance").value(10_000));
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM stock_reservations", Long.class)).isZero();
+        assertThat(paymentJpaRepository.count()).isZero();
     }
 
     /**
