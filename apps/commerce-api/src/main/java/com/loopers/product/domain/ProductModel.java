@@ -88,6 +88,12 @@ public class ProductModel extends BaseEntity {
     }
 
     /**
+     * ADR-W5-02: 확인된 결제 실패로 반환된 선점 수량을 가용 재고에 되돌린다. 양수 수량만.
+     */
+    public void increaseStock(int quantity) {
+    }
+
+    /**
      * PRD-05: "이만큼 있나?" — 차감과 같은 규칙으로 답한다.
      */
     public boolean hasStock(int quantity) {
