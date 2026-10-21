@@ -75,11 +75,13 @@ class OrderModelTest {
         }
     }
 
+    // W5: 포인트 확정(confirm(now))을 없앴다. 확정은 결제 시작(startPayment) → 결제 성공 확인(confirmPaid) 두 단계다 (W5 plan.md 3-1).
+    // 아래 규칙(ORD-05 결제액 고정, ORD-02·P-17 두 번 확정 금지)은 그 두 단계로 옮겨 확인한다.
     @DisplayName("주문을 확정할 때, ")
     @Nested
     class Confirm {
 
-        @DisplayName("ORD-05 결제할 금액은 자기 합계이고, 확정하면 CONFIRMED가 되며 결제액을 합계로 고정한다.")
+        @DisplayName("ORD-05 결제할 금액은 자기 합계이고, 결제를 시작해 성공을 확인하면 CONFIRMED가 되며 결제액을 합계로 고정한다.")
         @Test
         void confirmsDraftAndFixesPaidAmount() {
             // arrange
@@ -87,27 +89,30 @@ class OrderModelTest {
 
             // act
             Money paymentAmount = order.paymentAmount();
-            order.confirm(NOW);
+            order.startPayment();
+            order.confirmPaid(NOW);
 
             // assert
             assertThat(paymentAmount).isEqualTo(Money.of(7_000));
             assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
             assertThat(order.getPaidAmount()).isEqualTo(Money.of(7_000));
-            assertThat(order.getPaymentMethod()).isEqualTo(PaymentMethod.POINT);
+            assertThat(order.getPaymentMethod()).isEqualTo(PaymentMethod.PG);
             assertThat(order.getConfirmedAt()).isEqualTo(NOW);
         }
 
-        @DisplayName("ORD-02·P-17 이미 CONFIRMED인 주문은 다시 확정할 수 없고, 확정 시각은 처음 값 그대로다.")
+        @DisplayName("ORD-02·P-17 이미 CONFIRMED인 주문은 다시 결제를 시작(확정)할 수 없고, 상태·확정 시각은 처음 값 그대로다.")
         @Test
         void rejectsConfirmingTwice() {
             // arrange
             OrderModel order = draftOrder(7L);
-            order.confirm(NOW);
+            order.startPayment();
+            order.confirmPaid(NOW);
 
             // act & assert
-            assertThatThrownBy(() -> order.confirm(NOW.plusHours(1)))
+            assertThatThrownBy(order::startPayment)
                 .isInstanceOf(CoreException.class)
                 .extracting("errorType").isEqualTo(ErrorType.CONFLICT);
+            assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
             assertThat(order.getConfirmedAt()).isEqualTo(NOW);
             assertThat(order.isDraft()).isFalse();
         }
@@ -129,7 +134,8 @@ class OrderModelTest {
         void checkConfirmableRejectsConfirmed() {
             // arrange
             OrderModel order = draftOrder(7L);
-            order.confirm(NOW);
+            order.startPayment();
+            order.confirmPaid(NOW);
 
             // act & assert
             assertThatThrownBy(order::checkConfirmable)
@@ -137,6 +143,7 @@ class OrderModelTest {
                 .extracting("errorType").isEqualTo(ErrorType.CONFLICT);
         }
     }
+
     @DisplayName("PG 결제로 확정할 때 (W5 plan.md 3-1), ")
     @Nested
     class PgPayment {

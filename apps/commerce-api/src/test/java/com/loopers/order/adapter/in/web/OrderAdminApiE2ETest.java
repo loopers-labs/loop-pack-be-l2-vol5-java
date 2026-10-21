@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
@@ -39,6 +40,9 @@ class OrderAdminApiE2ETest {
     private OrderJpaRepository orderJpaRepository;
 
     @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @Autowired
     private DatabaseCleanUp databaseCleanUp;
 
     @AfterEach
@@ -46,15 +50,32 @@ class OrderAdminApiE2ETest {
         databaseCleanUp.truncateAllTables();
     }
 
-    private OrderModel order(Long userId, boolean confirmed) {
-        OrderModel order = OrderModel.create(
+    private static OrderModel draft(Long userId) {
+        return OrderModel.create(
             userId,
             OrderLines.of(List.of(new OrderLines.Line(1L, 2))),
             Map.of(1L, new ProductSnapshot(1L, "에어맥스", Money.of(3_500)))
         );
+    }
+
+    /**
+     * confirmed면 W2~W4에 포인트로 확정한 주문(C-2)을 만든다. W5부터 포인트 확정 경로가 없으므로 저장한 DRAFT 행을 SQL로 바꾼다.
+     */
+    private OrderModel order(Long userId, boolean confirmed) {
+        OrderModel saved = orderJpaRepository.save(draft(userId));
         if (confirmed) {
-            order.confirm(ZonedDateTime.now());
+            jdbcTemplate.update(
+                "UPDATE orders SET status = 'CONFIRMED', payment_method = 'POINT', paid_amount = total_amount, confirmed_at = NOW() WHERE id = ?",
+                saved.getId());
         }
+        return saved;
+    }
+
+    /** W5 PG 결제로 확정한 주문: 결제 시작 → 성공 확인 (W5 plan.md 3-1). */
+    private OrderModel pgConfirmedOrder(Long userId) {
+        OrderModel order = draft(userId);
+        order.startPayment();
+        order.confirmPaid(ZonedDateTime.now());
         return orderJpaRepository.save(order);
     }
 
@@ -97,7 +118,8 @@ class OrderAdminApiE2ETest {
     @Nested
     class GetDetail {
 
-        @DisplayName("ORD-06 확정된 주문의 품목·상태·금액·결제 결과와 구매자를 돌려준다.")
+        // W5: 여기의 확정 주문은 이전 POINT 확정 주문이다 (C-2 관리자 조회에서도 POINT·결제액 보존).
+        @DisplayName("ORD-06·C-2 확정된 주문의 품목·상태·금액·결제 결과와 구매자를 돌려준다.")
         @Test
         void returnsOrderDetailWithPaymentResult() throws Exception {
             // arrange
@@ -112,6 +134,21 @@ class OrderAdminApiE2ETest {
                 .andExpect(jsonPath("$.data.totalAmount").value(7_000))
                 .andExpect(jsonPath("$.data.paidAmount").value(7_000))
                 .andExpect(jsonPath("$.data.paymentMethod").value("POINT"))
+                .andExpect(jsonPath("$.data.confirmedAt").exists());
+        }
+
+        @DisplayName("ORD-06 PG 결제로 확정된 주문은 결제 수단 PG·결제액·확정 시각을 돌려준다.")
+        @Test
+        void returnsPgConfirmedOrderDetail() throws Exception {
+            // arrange
+            OrderModel confirmed = pgConfirmedOrder(4L);
+
+            // act & assert
+            mockMvc.perform(get(ENDPOINT + "/" + confirmed.getId()).with(ADMIN))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("CONFIRMED"))
+                .andExpect(jsonPath("$.data.paidAmount").value(7_000))
+                .andExpect(jsonPath("$.data.paymentMethod").value("PG"))
                 .andExpect(jsonPath("$.data.confirmedAt").exists());
         }
 
