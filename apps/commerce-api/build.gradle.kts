@@ -28,4 +28,7 @@ dependencies {
 
     // security test
     testImplementation("org.springframework.security:spring-security-test")
+
+    // resilience
+    testImplementation("io.github.resilience4j:resilience4j-circuitbreaker:${project.properties["resilience4jVersion"]}")
 }
