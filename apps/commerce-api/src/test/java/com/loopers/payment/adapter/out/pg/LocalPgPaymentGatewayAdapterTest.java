@@ -153,6 +153,18 @@ class LocalPgPaymentGatewayAdapterTest {
             assertThat(found.get(0).amount()).isEqualTo(5000L);
         }
 
+        @DisplayName("G-3 거래는 생겼지만 응답 없이 연결이 끊기면 PgUnknownResultException이고, HTTP 클라이언트가 POST를 다시 보내지 않아 생성 호출·거래는 각 1이다")
+        @Test
+        void unknownWithoutHiddenRetryWhenConnectionDropped() {
+            // arrange
+            PG.dropNextCreateConnection();
+
+            // act & assert
+            assertThatThrownBy(() -> adapter.request(paymentRequest())).isInstanceOf(PgUnknownResultException.class);
+            await().during(Duration.ofMillis(500)).atMost(Duration.ofSeconds(2))
+                .until(() -> PG.createCalls() == 1 && PG.transactionsCreated() == 1);
+        }
+
         @DisplayName("G-4 PG에 연결하지 못하면(connection refused) PgNotSentException이다")
         @Test
         void notSentWhenConnectionRefused() throws IOException {

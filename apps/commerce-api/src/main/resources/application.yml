@@ -49,6 +49,42 @@ pg:
     create-read-timeout: 3s
     lookup-read-timeout: 1s
 
+# W5 PG 회복 전략 (plan.md 6장 🔧). 어댑터가 레지스트리에서 이름으로 꺼내 코드로 감싼다 (LocalPgPaymentGatewayAdapter).
+# TimeLimiter는 쓰지 않는다 — HTTP 읽기 timeout이 소켓을 실제로 끊는다.
+resilience4j:
+  circuitbreaker:
+    configs:
+      pg:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        slow-call-duration-threshold: 2s
+        slow-call-rate-threshold: 100
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 2
+        automatic-transition-from-open-to-half-open-enabled: false
+    instances:
+      pgCreate: # 생성 전용. OPEN이면 보내기 전에 막는다 → 효과 0건 (ADR-W5-03)
+        base-config: pg
+        ignore-exceptions: # 업무 거절(4xx)은 PG 장애가 아니다
+          - com.loopers.payment.application.port.out.PgRejectedException
+      pgLookup: # 조회 전용. 생성 회로와 따로 열린다
+        base-config: pg
+        ignore-exceptions: # 404가 아닌 4xx는 요청·설정 문제다
+          - com.loopers.payment.adapter.out.pg.PgLookupClientErrorException
+  retry:
+    instances:
+      pgLookup: # 조회만 재시도한다. 생성은 재시도 인스턴스가 없다
+        max-attempts: 3 # 1 + 재시도 2
+        wait-duration: 100ms # 100ms · 200ms (×2), 각 ±50% jitter
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        enable-randomized-wait: true
+        randomized-wait-factor: 0.5
+        retry-exceptions: # timeout·5xx·IO·해석 불가만. 4xx·회로 OPEN은 재시도하지 않는다
+          - com.loopers.payment.adapter.out.pg.PgLookupRetryableException
+
 ---
 spring:
   config:

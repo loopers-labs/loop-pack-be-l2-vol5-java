@@ -141,6 +141,11 @@ public final class LocalTestPgServer implements AutoCloseable {
         createBehaviors.add(new CreateBehavior(CreateMode.FAIL_500, Duration.ZERO));
     }
 
+    /** 거래를 만든 뒤 응답 없이 연결을 끊는다 (응답 유실). HttpURLConnection은 이때 POST를 몰래 다시 보낸다(sun.net.http.retryPost). */
+    public void dropNextCreateConnection() {
+        createBehaviors.add(new CreateBehavior(CreateMode.CREATE_THEN_DROP, Duration.ZERO));
+    }
+
     /** 거래를 만든 뒤 200과 해석할 수 없는 본문으로 답한다. */
     public void garbleNextCreateResponse() {
         createBehaviors.add(new CreateBehavior(CreateMode.CREATE_THEN_GARBAGE, Duration.ZERO));
@@ -278,6 +283,7 @@ public final class LocalTestPgServer implements AutoCloseable {
         switch (behavior.mode()) {
             case CREATE_THEN_500 -> respond(exchange, 500, "{\"message\":\"서버 오류\"}");
             case CREATE_THEN_GARBAGE -> respond(exchange, 200, "{\"transactionKey\":");
+            case CREATE_THEN_DROP -> throw new ConnectionDropped();
             case CREATE_THEN_DELAY -> {
                 sleep(behavior.delay());
                 respond(exchange, 200, toJson(tx));
@@ -428,7 +434,14 @@ public final class LocalTestPgServer implements AutoCloseable {
         }
     }
 
-    private enum CreateMode { NORMAL, REJECT, CREATE_THEN_DELAY, CREATE_THEN_500, FAIL_500, CREATE_THEN_GARBAGE }
+    private enum CreateMode { NORMAL, REJECT, CREATE_THEN_DELAY, CREATE_THEN_500, FAIL_500, CREATE_THEN_GARBAGE, CREATE_THEN_DROP }
+
+    /** 응답 헤더를 보내기 전에 핸들러가 예외로 끝나면 HttpServer가 연결을 닫는다. */
+    private static final class ConnectionDropped extends RuntimeException {
+        ConnectionDropped() {
+            super("테스트가 일부러 연결을 끊었습니다", null, false, false);
+        }
+    }
 
     private record CreateBehavior(CreateMode mode, Duration delay) {
         static final CreateBehavior NORMAL = new CreateBehavior(CreateMode.NORMAL, Duration.ZERO);
