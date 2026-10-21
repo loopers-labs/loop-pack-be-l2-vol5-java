@@ -56,13 +56,6 @@ public class ProductRepositoryImpl implements ProductRepository {
     }
 
     @Override
-    public void syncLegacyStock(Long productId, int stock) {
-        if (productJpaRepository.updateLegacyStock(productId, stock) != 1) {
-            throw new IllegalStateException("[productId = " + productId + "] 상품 행이 없습니다.");
-        }
-    }
-
-    @Override
     public ProductStockModel saveStock(ProductStockModel stock) {
         return productStockJpaRepository.save(stock);
     }

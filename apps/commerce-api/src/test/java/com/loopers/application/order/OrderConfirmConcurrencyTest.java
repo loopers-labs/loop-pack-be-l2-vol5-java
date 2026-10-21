@@ -79,7 +79,6 @@ class OrderConfirmConcurrencyTest {
         List<ProductStockLedgerModel> ledger = fixtures.ledgerOf(product.getId());
         assertThat(ledger).filteredOn(e -> e.getType() == StockLedgerType.RESERVE).hasSize(3);
         assertThat(ledger.stream().mapToInt(ProductStockLedgerModel::getQuantity).sum()).isZero();
-        assertThat(fixtures.legacyStockOf(product.getId())).isZero();
     }
 
     @DisplayName("[OQ-03][INV-01] 잔액 3,000원 사용자가 1,000원 주문 5건을 동시에 확정하면 3건만 성공하고 잔액은 0.")

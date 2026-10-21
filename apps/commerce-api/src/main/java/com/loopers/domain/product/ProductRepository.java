@@ -17,12 +17,6 @@ public interface ProductRepository {
     /** FR-ADMIN-BRAND-05: 삭제되지 않은 소속 상품 전부 (재고 0 포함). */
     List<ProductModel> findActiveByBrandId(Long brandId);
 
-    /**
-     * TB-03 옛 stock 컬럼을 현재 재고 값으로 맞춘다 (DR-38, 컬럼 삭제 때 제거). 상품 엔티티를 거치지 않는 단건 갱신이라 다른 컬럼을 덮지 않는다.
-     * 대상 행이 없으면 IllegalStateException.
-     */
-    void syncLegacyStock(Long productId, int stock);
-
     ProductStockModel saveStock(ProductStockModel stock);
 
     Optional<ProductStockModel> findStock(Long productId);

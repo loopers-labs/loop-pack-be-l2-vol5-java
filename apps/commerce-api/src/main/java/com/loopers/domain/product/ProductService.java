@@ -73,7 +73,7 @@ public class ProductService {
      * 현재 재고 행을 0 으로 만들고 초기 재고까지 ADJUSTMENT 로 맞춘다 (DR-38). 초기 재고가 0 이면 원장 행이 없다.
      */
     public ProductModel create(Long brandId, String name, Long price, Integer stock) {
-        ProductModel product = productRepository.save(new ProductModel(brandId, name, price, stock));
+        ProductModel product = productRepository.save(new ProductModel(brandId, name, price));
         ProductStockModel productStock = productRepository.saveStock(new ProductStockModel(product.getId()));
         productStock.adjustTo(stock).ifPresent(productRepository::saveLedger);
         return product;
@@ -109,7 +109,6 @@ public class ProductService {
         ProductStockModel productStock = productRepository.findStocksForUpdate(List.of(productId)).stream().findFirst()
             .orElseThrow(() -> new IllegalStateException("[productId = " + productId + "] 재고 행이 없습니다."));
         productStock.adjustTo(stock).ifPresent(productRepository::saveLedger);
-        productRepository.syncLegacyStock(productId, productStock.getAvailable());
         return productStock;
     }
 
@@ -117,14 +116,12 @@ public class ProductService {
     public void reserveStock(Long orderId, Long productId, int quantity) {
         ProductStockModel productStock = getStock(productId);
         productRepository.saveLedger(productStock.reserve(orderId, quantity));
-        productRepository.syncLegacyStock(productId, productStock.getAvailable());
     }
 
     /** 결제 실패: 품목별 예약분 반환. 재고 행을 product_id 오름차순 쓰기 락으로 읽고 RELEASE 를 남긴다 (DR-34, DR-38). 삭제된 상품도 반환한다. */
     public void releaseStocks(Long orderId, Map<Long, Integer> quantitiesByProductId) {
         for (ProductStockModel productStock : productRepository.findStocksForUpdate(List.copyOf(quantitiesByProductId.keySet()))) {
             productRepository.saveLedger(productStock.release(orderId, quantitiesByProductId.get(productStock.getProductId())));
-            productRepository.syncLegacyStock(productStock.getProductId(), productStock.getAvailable());
         }
     }
 

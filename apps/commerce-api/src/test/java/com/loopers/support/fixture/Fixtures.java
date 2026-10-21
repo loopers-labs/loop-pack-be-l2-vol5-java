@@ -126,7 +126,7 @@ public class Fixtures {
     /** 상품 + 현재 재고 행과 초기 재고 ADJUSTMENT (DR-38) + 좋아요 수 0 인 행 (DR-36). */
     @Transactional
     public ProductModel product(Long brandId, String name, long price, int stock) {
-        ProductModel product = productRepository.save(new ProductModel(brandId, name, price, stock));
+        ProductModel product = productRepository.save(new ProductModel(brandId, name, price));
         ProductStockModel productStock = productRepository.saveStock(new ProductStockModel(product.getId()));
         productStock.adjustTo(stock).ifPresent(productRepository::saveLedger);
         productLikeRepository.saveStat(new ProductStatModel(product.getId(), brandId));
@@ -156,13 +156,6 @@ public class Fixtures {
     /** TB-10 현재 재고 (DR-38). */
     public int stockOf(Long productId) {
         return productRepository.findStock(productId).orElseThrow().getAvailable();
-    }
-
-    /** TB-03 옛 stock 컬럼 (DR-38). 엔티티에 getter 가 없어 직접 읽는다. */
-    public int legacyStockOf(Long productId) {
-        return entityManager.createQuery("select p.stock from ProductModel p where p.id = :id", Integer.class)
-            .setParameter("id", productId)
-            .getSingleResult();
     }
 
     /** TB-11 원장, 쌓인 순서대로 (DR-38). */

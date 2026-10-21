@@ -75,7 +75,7 @@ class ProductFacadeIntegrationTest {
             assertThat(productReader.getProduct(user.getId(), created.id()).price()).isEqualTo(1500L);
         }
 
-        @DisplayName("[FR-ADMIN-PRODUCT-02][DR-38] 현재 재고 행과 초기 재고만큼의 ADJUSTMENT 행이 함께 만들어지고, 옛 stock 컬럼도 같은 값이다.")
+        @DisplayName("[FR-ADMIN-PRODUCT-02][DR-38] 현재 재고 행과 초기 재고만큼의 ADJUSTMENT 행이 함께 만들어진다.")
         @Test
         void createsStockAndAdjustment() {
             ProductInfo created = productFacade.createProduct(admin.getId(), brand.getId(), "새 상품", 1500L, 10);
@@ -84,7 +84,6 @@ class ProductFacadeIntegrationTest {
             assertThat(fixtures.ledgerOf(created.id()))
                 .extracting(ProductStockLedgerModel::getType, ProductStockLedgerModel::getQuantity, ProductStockLedgerModel::getOrderId)
                 .containsExactly(tuple(StockLedgerType.ADJUSTMENT, 10, null));
-            assertThat(fixtures.legacyStockOf(created.id())).isEqualTo(10);
         }
 
         @DisplayName("[FR-ADMIN-PRODUCT-02][DR-38] 초기 재고 0 이면 재고 행은 0 이고 원장 행은 없다.")
@@ -271,9 +270,9 @@ class ProductFacadeIntegrationTest {
             assertThat(fixtures.stockOf(product.getId())).isEqualTo(42);
         }
 
-        @DisplayName("[FR-ADMIN-PRODUCT-06][DR-38] 차이만큼 ADJUSTMENT 행이 쌓이고(같은 수량이면 없음), 원장 합 = 현재 재고 = 옛 stock 컬럼.")
+        @DisplayName("[FR-ADMIN-PRODUCT-06][DR-38] 차이만큼 ADJUSTMENT 행이 쌓이고(같은 수량이면 없음), 원장 합 = 현재 재고.")
         @Test
-        void recordsAdjustmentDelta_andSyncsLegacyStock() {
+        void recordsAdjustmentDelta() {
             ProductModel product = fixtures.product(brand.getId(), "상품", 1000L, 5);
 
             productFacade.updateStock(admin.getId(), product.getId(), 42);
@@ -288,7 +287,6 @@ class ProductFacadeIntegrationTest {
                     tuple(StockLedgerType.ADJUSTMENT, -40));
             assertThat(fixtures.ledgerOf(product.getId()).stream().mapToInt(ProductStockLedgerModel::getQuantity).sum()).isEqualTo(2);
             assertThat(fixtures.stockOf(product.getId())).isEqualTo(2);
-            assertThat(fixtures.legacyStockOf(product.getId())).isEqualTo(2);
         }
 
         @DisplayName("[FR-ADMIN-PRODUCT-06 PRODUCT_NOT_FOUND] 존재하지 않음.")

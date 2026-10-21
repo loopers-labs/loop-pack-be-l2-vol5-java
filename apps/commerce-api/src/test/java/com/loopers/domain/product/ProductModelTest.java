@@ -11,13 +11,13 @@ import org.junit.jupiter.params.provider.ValueSource;
 import static com.loopers.support.ErrorAssertions.assertThrowsErrorType;
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** AG-03 상품. INV-11, INV-13, ST-02. 재고(INV-03)는 ProductStockModelTest (DR-38). 생성자의 재고 검증은 옛 컬럼 때문에 남아 있다. */
+/** AG-03 상품. INV-11, INV-13, ST-02. 재고(INV-03)는 ProductStockModelTest (DR-38). */
 class ProductModelTest {
 
-    @DisplayName("[INV-13][ASM-04] 이름 200자, 가격 0원, 재고 0 은 허용된다.")
+    @DisplayName("[INV-13][ASM-04] 이름 200자, 가격 0원은 허용된다.")
     @Test
     void create_succeeds_withBoundaryValues() {
-        ProductModel product = new ProductModel(1L, "a".repeat(200), 0L, 0);
+        ProductModel product = new ProductModel(1L, "a".repeat(200), 0L);
 
         assertThat(product.getBrandId()).isEqualTo(1L);
         assertThat(product.getPrice()).isZero();
@@ -29,13 +29,13 @@ class ProductModelTest {
     @NullAndEmptySource
     @ValueSource(strings = {"  "})
     void create_throwsInvalidName_whenBlank(String name) {
-        assertThrowsErrorType(() -> new ProductModel(1L, name, 1000L, 1), ErrorType.INVALID_PRODUCT_NAME);
+        assertThrowsErrorType(() -> new ProductModel(1L, name, 1000L), ErrorType.INVALID_PRODUCT_NAME);
     }
 
     @DisplayName("[INV-13][ER-19 INVALID_PRODUCT_NAME] 이름 201자는 거부된다.")
     @Test
     void create_throwsInvalidName_whenTooLong() {
-        assertThrowsErrorType(() -> new ProductModel(1L, "a".repeat(201), 1000L, 1), ErrorType.INVALID_PRODUCT_NAME);
+        assertThrowsErrorType(() -> new ProductModel(1L, "a".repeat(201), 1000L), ErrorType.INVALID_PRODUCT_NAME);
     }
 
     @DisplayName("[INV-13][ER-20 INVALID_PRODUCT_PRICE] 가격 누락·음수는 거부된다.")
@@ -43,27 +43,19 @@ class ProductModelTest {
     @NullSource
     @ValueSource(longs = {-1L, Long.MIN_VALUE})
     void create_throwsInvalidPrice_whenNegativeOrNull(Long price) {
-        assertThrowsErrorType(() -> new ProductModel(1L, "상품", price, 1), ErrorType.INVALID_PRODUCT_PRICE);
-    }
-
-    @DisplayName("[INV-03][ER-21 INVALID_STOCK] 재고 누락·음수는 거부된다 (ASM-17).")
-    @ParameterizedTest
-    @NullSource
-    @ValueSource(ints = {-1})
-    void create_throwsInvalidStock_whenNegativeOrNull(Integer stock) {
-        assertThrowsErrorType(() -> new ProductModel(1L, "상품", 1000L, stock), ErrorType.INVALID_STOCK);
+        assertThrowsErrorType(() -> new ProductModel(1L, "상품", price), ErrorType.INVALID_PRODUCT_PRICE);
     }
 
     @DisplayName("[INV-11] 브랜드 없이 상품을 만들 수 없다.")
     @Test
     void create_throwsBrandNotFound_whenBrandIdNull() {
-        assertThrowsErrorType(() -> new ProductModel(null, "상품", 1000L, 1), ErrorType.BRAND_NOT_FOUND);
+        assertThrowsErrorType(() -> new ProductModel(null, "상품", 1000L), ErrorType.BRAND_NOT_FOUND);
     }
 
     @DisplayName("[INV-11][ASM-16] 수정은 이름·가격만 바꾸고 브랜드는 그대로다.")
     @Test
     void update_changesNameAndPriceOnly() {
-        ProductModel product = new ProductModel(7L, "상품", 1000L, 5);
+        ProductModel product = new ProductModel(7L, "상품", 1000L);
 
         product.update("새 이름", 2000L);
 
@@ -75,7 +67,7 @@ class ProductModelTest {
     @DisplayName("[INV-13] 수정 실패 시 기존 값 유지.")
     @Test
     void update_keepsOldValues_whenInvalid() {
-        ProductModel product = new ProductModel(7L, "상품", 1000L, 5);
+        ProductModel product = new ProductModel(7L, "상품", 1000L);
 
         assertThrowsErrorType(() -> product.update("새 이름", -1L), ErrorType.INVALID_PRODUCT_PRICE);
 
@@ -86,7 +78,7 @@ class ProductModelTest {
     @DisplayName("[ST-02] delete() 로 ACTIVE → DELETED.")
     @Test
     void delete_marksDeleted() {
-        ProductModel product = new ProductModel(7L, "상품", 1000L, 5);
+        ProductModel product = new ProductModel(7L, "상품", 1000L);
 
         product.delete();
 
@@ -96,7 +88,7 @@ class ProductModelTest {
     @DisplayName("[DR-37] 새 상품의 revision 은 0 이고, 이름·가격 수정과 삭제는 revision 을 하나씩 올린다.")
     @Test
     void revision_increases_onUpdateAndDelete() {
-        ProductModel product = new ProductModel(7L, "상품", 1000L, 5);
+        ProductModel product = new ProductModel(7L, "상품", 1000L);
         assertThat(product.getRevision()).isZero();
 
         product.update("새 이름", 2000L);
@@ -109,7 +101,7 @@ class ProductModelTest {
     @DisplayName("[DR-37] 실패한 수정, 이미 삭제된 상품의 삭제는 revision 을 올리지 않는다. 재고는 상품 행 밖이라 revision 과 무관하다 (DR-38).")
     @Test
     void revision_unchanged_onFailedUpdateAndRepeatedDelete() {
-        ProductModel product = new ProductModel(7L, "상품", 1000L, 5);
+        ProductModel product = new ProductModel(7L, "상품", 1000L);
 
         assertThrowsErrorType(() -> product.update("새 이름", -1L), ErrorType.INVALID_PRODUCT_PRICE);
         assertThat(product.getRevision()).isZero();

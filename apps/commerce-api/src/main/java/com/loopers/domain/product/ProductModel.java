@@ -34,30 +34,21 @@ public class ProductModel extends BaseEntity {
     private Long price;
 
     /**
-     * 옛 재고 컬럼. 진실은 TB-11 원장, 현재 값은 TB-10 이며 컬럼을 지울 때까지만 사본으로 둔다 (DR-38).
-     * 변경 감지는 행 전체를 쓰므로 updatable = false 로 막고, 생성 뒤 값은 ProductRepository.syncLegacyStock 의 단건 갱신으로만 맞춘다.
-     * 읽는 곳이 없도록 getter 를 두지 않는다.
-     */
-    @Column(name = "stock", nullable = false, updatable = false)
-    private Integer stock;
-
-    /**
      * 고객 상세 캐시 키의 revision (DR-37). 고객 조회 결과(이름·가격·삭제)가 바뀔 때만 올린다.
-     * 재고는 고객 조회에 없으므로 올리지 않는다 (DR-22). @Version 을 쓰면 재고 차감마다 올라가 캐시가 깨진다.
+     * 재고는 고객 조회에 없으므로 올리지 않는다 (DR-22).
      */
     @Column(name = "revision", nullable = false)
     private long revision;
 
     protected ProductModel() {}
 
-    public ProductModel(Long brandId, String name, Long price, Integer stock) {
+    public ProductModel(Long brandId, String name, Long price) {
         if (brandId == null) {
             throw new CoreException(ErrorType.BRAND_NOT_FOUND, "브랜드가 지정되지 않았습니다.");
         }
         this.brandId = brandId;
         this.name = validateName(name);
         this.price = validatePrice(price);
-        this.stock = validateStock(stock);
     }
 
     /** INV-13 이름 1~200자 (ASM-04, DR-11). ER-19 INVALID_PRODUCT_NAME. */
@@ -77,14 +68,6 @@ public class ProductModel extends BaseEntity {
             throw new CoreException(ErrorType.INVALID_PRODUCT_PRICE, "상품 가격은 0 이상이어야 합니다. [price = " + price + "]");
         }
         return price;
-    }
-
-    /** INV-03 재고 ≥ 0 (ASM-17). ER-21 INVALID_STOCK. 옛 컬럼이 NOT NULL 이라 INSERT 전에 막는다. 검증의 주인은 ProductStockModel (DR-38). */
-    private static Integer validateStock(Integer stock) {
-        if (stock == null || stock < 0) {
-            throw new CoreException(ErrorType.INVALID_STOCK, "재고는 0 이상이어야 합니다. [stock = " + stock + "]");
-        }
-        return stock;
     }
 
     /** FR-ADMIN-PRODUCT-04: 이름·가격만. 브랜드(INV-11)·재고는 바꾸지 않는다 (ASM-16). */

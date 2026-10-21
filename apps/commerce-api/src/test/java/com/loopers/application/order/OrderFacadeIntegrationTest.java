@@ -186,9 +186,9 @@ class OrderFacadeIntegrationTest {
             assertThat(fixtures.balanceOf(user.getId())).isEqualTo(8_000L);
         }
 
-        @DisplayName("[FR-ORDER-02][DR-38] 품목마다 주문 ID 를 가진 RESERVE 행(음수 수량)이 쌓이고, 옛 stock 컬럼도 같은 값이 된다.")
+        @DisplayName("[FR-ORDER-02][DR-38] 품목마다 주문 ID 를 가진 RESERVE 행(음수 수량)이 쌓이고, 현재 재고가 그만큼 준다.")
         @Test
-        void recordsReservePerItem_andSyncsLegacyStock() {
+        void recordsReservePerItem() {
             ProductModel other = fixtures.product(brand.getId(), "다른 상품", 100L, 3);
             OrderInfo order = orderFacade.createOrder(user.getId(), List.of(item(product.getId(), 2), item(other.getId(), 3)));
 
@@ -201,9 +201,7 @@ class OrderFacadeIntegrationTest {
                 .extracting(ProductStockLedgerModel::getType, ProductStockLedgerModel::getQuantity, ProductStockLedgerModel::getOrderId)
                 .containsExactly(tuple(StockLedgerType.ADJUSTMENT, 3, null), tuple(StockLedgerType.RESERVE, -3, order.id()));
             assertThat(fixtures.stockOf(product.getId())).isEqualTo(3);
-            assertThat(fixtures.legacyStockOf(product.getId())).isEqualTo(3);
             assertThat(fixtures.stockOf(other.getId())).isZero();
-            assertThat(fixtures.legacyStockOf(other.getId())).isZero();
         }
 
         @DisplayName("[FR-ORDER-02][ASM-10] 확정 시 가격을 다시 조회하지 않는다. 결제액 = 생성 시 저장된 합계.")
@@ -293,7 +291,6 @@ class OrderFacadeIntegrationTest {
             assertNothingChanged(order.getId(), 5, 10_000L);
             assertThat(fixtures.stockOf(scarce.getId())).isEqualTo(1);
             assertThat(fixtures.ledgerOf(product.getId())).extracting(ProductStockLedgerModel::getType).containsExactly(StockLedgerType.ADJUSTMENT);
-            assertThat(fixtures.legacyStockOf(product.getId())).isEqualTo(5);
         }
 
         @DisplayName("[FR-ORDER-02 INSUFFICIENT_POINT][ASM-12][ASM-14] 잔액 부족이면 거절, 이미 차감한 재고도 롤백, DRAFT 유지.")
