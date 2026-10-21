@@ -110,17 +110,6 @@ public class OrderModel extends BaseEntity {
     }
 
     /**
-     * ORD-02·ORD-05: DRAFT만 확정한다. 결제액을 자기 합계로 고정하고 CONFIRMED로 바꾼다.
-     */
-    public void confirm(ZonedDateTime now) {
-        checkConfirmable();
-        this.status = OrderStatus.CONFIRMED;
-        this.paidAmount = totalAmount;
-        this.paymentMethod = PaymentMethod.POINT;
-        this.confirmedAt = now;
-    }
-
-    /**
      * W5 plan.md 3-1: DRAFT만 PG 결제를 시작한다. 결제액·확정 시각은 결과를 확인한 뒤에 정한다.
      */
     public void startPayment() {
