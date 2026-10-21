@@ -165,6 +165,32 @@ class PaymentPersistenceAdapterIntegrationTest {
         assertThat(first).extracting(Payment::getId).containsExactly(oldestId);
     }
 
+    @DisplayName("P-14 만료 대상은 PENDING·UNKNOWN 중 발송 시각(sent_at)이 기준보다 이른(같음 제외) 결제이고, 발송이 이른 순·limit만큼이다.")
+    @Test
+    void findsExpirable() {
+        // arrange: 기준 = NOW. 발송 시각이 NOW보다 이르면 대상
+        paymentPort.save(requested(1L, "attempt-1"));                                         // REQUESTED(발송 시각 없음) — 제외
+        Payment sending = requested(2L, "attempt-2");
+        sending.markSending(NOW.minusHours(1));
+        paymentPort.save(sending);                                                              // SENDING — 제외 (정리 스케줄러 몫)
+        Long middleId = paymentPort.save(unknownAt(3L, NOW.minusMinutes(10))).getId();          // UNKNOWN 10분 전 — 포함
+        Long oldestId = paymentPort.save(pendingAt(4L, NOW.minusMinutes(40))).getId();          // PENDING 40분 전 — 포함
+        Long newestId = paymentPort.save(unknownAt(5L, NOW.minusSeconds(1))).getId();           // UNKNOWN 1초 전 — 포함
+        paymentPort.save(unknownAt(6L, NOW));                                                   // 기준과 같은 시각 — 제외
+        paymentPort.save(pendingAt(7L, NOW.plusMinutes(1)));                                    // 기준 뒤 — 제외
+        Payment done = pendingAt(8L, NOW.minusHours(2));
+        done.applyObservation(new PaymentObservation(TX_KEY + 8L, "LP-ORD-0000000008", Money.of(7_000), ExternalPaymentStatus.SUCCESS, null), NOW);
+        paymentPort.save(done);                                                                 // SUCCESS — 제외
+
+        // act
+        List<Long> all = paymentPort.findExpirable(NOW, 10);
+        List<Long> first = paymentPort.findExpirable(NOW, 2);
+
+        // assert
+        assertThat(all).containsExactly(oldestId, middleId, newestId);
+        assertThat(first).containsExactly(oldestId, middleId);
+    }
+
     @DisplayName("plan.md 5-1 다음 조회 시각은 저장 뒤 다시 읽어도 그대로다.")
     @Test
     void savesNextCheckAt() {
