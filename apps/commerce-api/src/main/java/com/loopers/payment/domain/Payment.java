@@ -38,6 +38,9 @@ public class Payment extends BaseEntity {
     /** ADR-W5-03: 보내지 않고 닫은 실패의 사유 */
     public static final String NOT_SENT = "NOT_SENT";
 
+    /** P-14: 보낸 뒤 30분 넘게 결과를 모르는 결제를 닫은 실패의 사유 */
+    public static final String EXPIRED = "EXPIRED";
+
     /**
      * plan.md 5-1: 다음 조회까지 기다릴 시간. 0번째는 PENDING·UNKNOWN이 된 직후, n번째는 n번 조회한 뒤. 끝 값을 계속 쓴다.
      */
@@ -174,6 +177,13 @@ public class Payment extends BaseEntity {
         }
         fail(NOT_SENT, now);
         return PaymentApplyOutcome.APPLIED;
+    }
+
+    /**
+     * P-14: 보낸 뒤 오래 결과를 모르는 결제(PENDING·UNKNOWN)를 FAILED(EXPIRED)로 닫는다.
+     */
+    public PaymentApplyOutcome expireUnresolved(ZonedDateTime now) {
+        return PaymentApplyOutcome.NOT_FINAL;
     }
 
     /**
