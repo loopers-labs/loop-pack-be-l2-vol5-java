@@ -20,7 +20,7 @@
 | C-6 | timeout·재시작·조회 0건에서 새 결제를 만들거나 예약을 임의 반환하지 않는다 | S-4·S-8·S-9: 생성 추가 0, 0건은 기록만 | ✅ |
 | C-7 | 실제 adapter HTTP 계약과 callback의 권위 조회·식별·금액 검증을 확인했다 | LocalPgPaymentGatewayAdapterTest G-1~G-11, S-6·S-9(권위 조회·금액·식별 검증) | ✅ |
 | C-8 | 중복·순서 변경·내부 저장 실패와 timeout·회로·조회 복구를 검증했다 | S-6·S-7·S-10, PaymentResultApplierIntegrationTest R-1~R-5 | ✅ |
-| C-9 | 관련 회귀·lint·ArchUnit을 실행하고 실험 자원을 정리했다 | `./gradlew :apps:commerce-api:check` 444/0/0/0, `check -x test` 통과, 실험 서버 정리는 PR 전 | 🟡 |
+| C-9 | 관련 회귀·lint·ArchUnit을 실행하고 실험 자원을 정리했다 | `./gradlew :apps:commerce-api:check`·`check -x test` 통과. 실험 자원: spike 서버(8090)·ngrok 터널 종료(10-22), 에이전트 작업 공간·임시 스키마 정리 | 🟡 만료 작업 합친 뒤 최종 검사 |
 
 ## 0-1. 부하 가정 ✅
 
@@ -171,6 +171,8 @@ PaymentReconcileScheduler  PENDING·UNKNOWN 결제를 PG 조회로 확인 → �
 | 정리 (`PaymentDispatchCloser`) | `created_at`이 30초 넘게 지난 PENDING outbox 행 / claim 후 30초 넘게 결과 없는 행 | 앞은 `FAILED`(효과 0건) + 재고 반환, 뒤는 `UNKNOWN`으로 넘김 | 발송 |
 | reconcile (확인·대사) | `PENDING`·`UNKNOWN` 결제, `next_check_at <= now` | PG **조회** → SUCCESS·FAILED면 결과 적용 경계 | 결제 생성, 0건을 실패로 확정 |
 
+| 만료 (reconcile 스케줄러, 60초마다) ✅ | 보낸 지 30분 넘게 `PENDING`·`UNKNOWN`인 결제 | 마지막으로 한 번 더 조회 → 그래도 미종결이면 `FAILED`(EXPIRED) + 재고 반환 (ADR-W5-05) | 결제 생성 |
+
 - 두 스케줄러는 섞지 않는다: 정리는 "보내지 못한 일"을, reconcile은 "결과를 모르는 일"을 다룬다.
 - 발송 claim과 정리는 같은 조건부 UPDATE(`WHERE status='PENDING'` / `'REQUESTED'`)로 경쟁한다. 이긴 쪽 하나만 효과를 낸다 → 서버가 여러 대여도 발송 1회 또는 실패 1회.
 - 결제 생성은 **어떤 경우에도 두 번 보내지 않는다.** 보내지 못했으면 실패로 닫고, 보낸 뒤 모르면 조회만 한다.
@@ -285,6 +287,14 @@ PaymentReconcileScheduler  PENDING·UNKNOWN 결제를 PG 조회로 확인 → �
 - **비용**: 피크에 풀이 가득 차면 그 결제는 실패한다. 이번 범위는 "실패 후 새 결제 시도"가 없으므로 고객은 새 주문으로 다시 결제해야 한다. 풀 거절은 요청 스레드에서 바로 알 수 있으므로 202 대신 실패 결과를 즉시 돌려준다.
 - **재검토 조건**: 피크 실패율이 측정상 문제가 되면 풀 크기를 키우거나, 같은 주문의 재시도 허용(범위 밖)을 먼저 검토한다.
 
+### ADR-W5-05 · 30분 넘게 결과를 모르는 결제는 실패로 닫고 재고를 돌려준다
+
+- **상황**: 보낸 직후 서버가 죽었는데 PG에는 거래가 없으면, 조회는 영원히 0건이다. 0건은 영구적인 증거가 아니라 실패로 확정하지 않았으므로(3-2), 그 결제는 영원히 `UNKNOWN`이고 선점한 재고도 영원히 묶인다.
+- **선택**: 보낸 지 30분이 지나도 `PENDING`·`UNKNOWN`이면 마지막으로 한 번 더 조회하고, 그래도 미종결이면 `FAILED`(사유 `EXPIRED`)로 닫고 재고를 한 번 반환한다. 재고는 돌려줘야 한다 (학습자 결정).
+- **버린 대안**: 일정 횟수 넘게 확인이 안 되면 `NEEDS_REVIEW`로 두고 사람이 처리 — 실제 결제된 건을 실패로 닫을 위험은 없지만, 사람이 볼 때까지 재고가 묶인다.
+- **비용**: 실제로는 PG가 승인했는데 만료 뒤 SUCCESS가 오면, 결제는 FAILED 그대로 두고 `CONFLICT`로 기록·ERROR 로그를 남긴다 (재고는 다시 건드리지 않는다). 돈은 빠졌는데 주문은 실패라 **환불이 필요**하고, 환불은 이번 범위 밖이다.
+- **재검토 조건**: 만료 뒤 SUCCESS(`CONFLICT`)가 실제로 관찰되면 30분을 늘리거나 환불(취소 API) 연동을 먼저 한다.
+
 ### ADR-W5-04 · 결과 반영은 payment 행 비관적 잠금 + 상태 가드로 멱등하게
 
 - **상황**: 같은 결과가 callback 중복·callback과 reconcile 겹침·늦은 생성 응답으로 여러 번 온다. callback과 reconcile은 설계상 자주 겹친다.
@@ -305,3 +315,4 @@ PaymentReconcileScheduler  PENDING·UNKNOWN 결제를 PG 조회로 확인 → �
 | v0.6 | 2026-10-21 | 구현 중 결정: §6 설정값 확정(생성도 느린 호출 2s로 차단, OPEN 10s는 부하 테스트로 검증), §9 `next_check_at` 추가·가용 재고 뜻, P-1~P-13 표(3-2-1), callback 필드는 `orderId`, 기존 테스트는 의도를 PG 흐름으로 이전(10-1) |
 | v0.7 | 2026-10-21 | §8 API를 구현에 맞춤: 결제 API는 payment 컨트롤러(순환 방지), 결제 상태 조회 `GET …/payment` 추가, 202/200 규칙, 멱등 키 400·409 |
 | v0.8 | 2026-10-21 | 구현 완료 반영: 체크리스트 C-1~C-8 증거, 장면 S-1~S-11 테스트 위치. C-9는 실험 자원 정리(PR 전) 남음 |
+| v0.9 | 2026-10-22 | ADR-W5-05: 보낸 지 30분 넘게 미종결이면 마지막 조회 후 FAILED(EXPIRED) + 재고 반환. 포인트 결제 배분 코드 제거. 실험 자원 정리 |
