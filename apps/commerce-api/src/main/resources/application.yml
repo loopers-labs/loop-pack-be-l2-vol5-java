@@ -28,7 +28,7 @@ pg:
   base-url: http://localhost:8010
   callback-url: http://localhost:8080/api/v1/payments/callback
   connect-timeout: 1s
-  read-timeout: 3s
+  read-timeout: 9s
 
 springdoc:
   use-fqn: true
