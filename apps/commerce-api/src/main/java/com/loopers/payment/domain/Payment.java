@@ -3,6 +3,8 @@ package com.loopers.payment.domain;
 import com.loopers.common.domain.Money;
 import com.loopers.common.domain.MoneyConverter;
 import com.loopers.domain.BaseEntity;
+import com.loopers.support.error.CoreException;
+import com.loopers.support.error.ErrorType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
@@ -30,6 +32,9 @@ import java.time.ZonedDateTime;
     indexes = @Index(name = "idx_payments_status_checked", columnList = "status, last_checked_at")
 )
 public class Payment extends BaseEntity {
+
+    /** ADR-W5-03: 보내지 않고 닫은 실패의 사유 */
+    public static final String NOT_SENT = "NOT_SENT";
 
     @Column(name = "order_id", nullable = false)
     @Comment("주문 식별자. unique → 주문당 시도 1건 (plan.md 2)")
@@ -100,38 +105,188 @@ public class Payment extends BaseEntity {
 
     protected Payment() {}
 
+    private Payment(Long orderId, Long userId, String attemptKey, String provider, Money amount, ZonedDateTime now) {
+        this.orderId = orderId;
+        this.userId = userId;
+        this.attemptKey = attemptKey;
+        this.provider = provider;
+        this.providerOrderId = providerOrderIdOf(orderId);
+        this.amount = amount;
+        this.status = PaymentStatus.REQUESTED;
+        this.requestedAt = now;
+        this.checkCount = 0;
+    }
+
+    /**
+     * P-1·P-2: 주문 하나의 결제 시도를 REQUESTED로 만든다. 금액이 0 이하거나 시도 키가 비면 거절한다.
+     */
     public static Payment request(Long orderId, Long userId, String attemptKey, String provider, Money amount, ZonedDateTime now) {
-        return new Payment();
+        if (amount == null || amount.isZero()) {
+            throw new CoreException(ErrorType.BAD_REQUEST, "결제 금액은 0보다 커야 합니다.");
+        }
+        if (attemptKey == null || attemptKey.isBlank()) {
+            throw new CoreException(ErrorType.BAD_REQUEST, "결제 시도 키가 필요합니다.");
+        }
+        return new Payment(orderId, userId, attemptKey, provider, amount, now);
     }
 
+    /**
+     * plan.md 2: PG 생성·조회에 같은 문자열을 쓴다. 42 → LP-ORD-0000000042.
+     */
+    private static String providerOrderIdOf(Long orderId) {
+        return String.format("LP-ORD-%010d", orderId);
+    }
+
+    /**
+     * P-3: REQUESTED만 발송 권한을 얻는다. 그 밖은 다른 실행이 이미 가졌거나 끝난 것이다.
+     */
     public void markSending(ZonedDateTime now) {
+        if (status != PaymentStatus.REQUESTED) {
+            throw new CoreException(ErrorType.CONFLICT, "이미 발송 권한이 정해진 결제입니다.");
+        }
+        this.status = PaymentStatus.SENDING;
+        this.sentAt = now;
     }
 
+    /**
+     * P-7, ADR-W5-03: 보내지 않은 게 확실한 결제(REQUESTED·호출 전 차단된 SENDING)를 효과 0건 실패로 닫는다.
+     * 보냈을 수 있는 PENDING·UNKNOWN은 닫지 않는다 (CONFLICT).
+     */
     public PaymentApplyOutcome closeNotSent(ZonedDateTime now) {
-        return null;
+        if (isFinal()) {
+            return PaymentApplyOutcome.ALREADY_APPLIED;
+        }
+        if (status != PaymentStatus.REQUESTED && status != PaymentStatus.SENDING) {
+            return PaymentApplyOutcome.CONFLICT;
+        }
+        fail(NOT_SENT, now);
+        return PaymentApplyOutcome.APPLIED;
     }
 
+    /**
+     * P-4: 생성 수락(PENDING) 응답. UNKNOWN 뒤 늦게 온 응답도 받는다. 종결은 되돌리지 않는다.
+     */
     public PaymentApplyOutcome recordAccepted(String transactionKey, ZonedDateTime now) {
-        return null;
+        if (isFinal()) {
+            return PaymentApplyOutcome.ALREADY_APPLIED;
+        }
+        if (status == PaymentStatus.PENDING) {
+            return this.transactionKey.equals(transactionKey) ? PaymentApplyOutcome.ALREADY_APPLIED : PaymentApplyOutcome.MISMATCH;
+        }
+        if (status == PaymentStatus.REQUESTED) {
+            return PaymentApplyOutcome.CONFLICT;
+        }
+        markPending(transactionKey);
+        return PaymentApplyOutcome.NOT_FINAL;
     }
 
+    /**
+     * P-5: 보낸 뒤 결과를 모른다. SENDING만 UNKNOWN이 되고, PENDING·종결은 내리지 않는다.
+     */
     public PaymentApplyOutcome recordUnknown(ZonedDateTime now) {
-        return null;
+        if (status == PaymentStatus.SENDING) {
+            this.status = PaymentStatus.UNKNOWN;
+            return PaymentApplyOutcome.NOT_FINAL;
+        }
+        if (status == PaymentStatus.REQUESTED) {
+            return PaymentApplyOutcome.CONFLICT;
+        }
+        return PaymentApplyOutcome.ALREADY_APPLIED;
     }
 
+    /**
+     * P-6: 효과 0건 확정 거절(PG 업무 거절). 거래가 생긴 PENDING에는 맞지 않는다 (CONFLICT).
+     */
     public PaymentApplyOutcome recordRejected(String reason, ZonedDateTime now) {
-        return null;
+        if (isFinal()) {
+            return PaymentApplyOutcome.ALREADY_APPLIED;
+        }
+        if (status != PaymentStatus.SENDING && status != PaymentStatus.UNKNOWN) {
+            return PaymentApplyOutcome.CONFLICT;
+        }
+        fail(reason, now);
+        return PaymentApplyOutcome.APPLIED;
     }
 
+    /**
+     * P-8~P-13: PG 권위 조회 결과를 반영한다. 식별·금액이 맞는지 먼저 보고(P-13), 종결은 덮어쓰지 않는다(P-11·P-12).
+     * 조회마다 횟수·시각·결과를 남긴다.
+     */
     public PaymentApplyOutcome applyObservation(PaymentObservation observation, ZonedDateTime now) {
-        return null;
+        String mismatch = mismatchOf(observation);
+        if (mismatch != null) {
+            recordCheck("MISMATCH:" + mismatch, now);
+            return PaymentApplyOutcome.MISMATCH;
+        }
+        ExternalPaymentStatus observed = observation.status();
+        if (isFinal()) {
+            if (observed == ExternalPaymentStatus.PENDING || observed.name().equals(status.name())) {
+                recordCheck("OBSERVED:" + observed, now);
+                return PaymentApplyOutcome.ALREADY_APPLIED;
+            }
+            recordCheck("CONFLICT:" + status + "<-" + observed, now);
+            return PaymentApplyOutcome.CONFLICT;
+        }
+        if (status == PaymentStatus.REQUESTED) {
+            recordCheck("CONFLICT:" + status + "<-" + observed, now);
+            return PaymentApplyOutcome.CONFLICT;
+        }
+        recordCheck("OBSERVED:" + observed, now);
+        this.transactionKey = observation.transactionKey();
+        this.pgStatus = observed;
+        return switch (observed) {
+            case PENDING -> {
+                this.status = PaymentStatus.PENDING;
+                yield PaymentApplyOutcome.NOT_FINAL;
+            }
+            case SUCCESS -> {
+                this.status = PaymentStatus.SUCCESS;
+                this.completedAt = now;
+                yield PaymentApplyOutcome.APPLIED;
+            }
+            case FAILED -> {
+                fail(observation.reason(), now);
+                yield PaymentApplyOutcome.APPLIED;
+            }
+        };
     }
 
+    /**
+     * P-13: 조회 0건·복수처럼 판단할 수 없는 결과를 상태 변경 없이 남긴다.
+     */
     public void recordCheck(String result, ZonedDateTime now) {
+        this.checkCount++;
+        this.lastCheckedAt = now;
+        this.lastCheckResult = result;
     }
 
     public boolean isFinal() {
-        return false;
+        return status.isFinal();
+    }
+
+    private String mismatchOf(PaymentObservation observation) {
+        if (!providerOrderId.equals(observation.providerOrderId())) {
+            return "providerOrderId";
+        }
+        if (!amount.equals(observation.amount())) {
+            return "amount";
+        }
+        if (transactionKey != null && !transactionKey.equals(observation.transactionKey())) {
+            return "transactionKey";
+        }
+        return null;
+    }
+
+    private void markPending(String transactionKey) {
+        this.status = PaymentStatus.PENDING;
+        this.transactionKey = transactionKey;
+        this.pgStatus = ExternalPaymentStatus.PENDING;
+    }
+
+    private void fail(String reason, ZonedDateTime now) {
+        this.status = PaymentStatus.FAILED;
+        this.failureReason = reason;
+        this.completedAt = now;
     }
 
     public Long getOrderId() {
