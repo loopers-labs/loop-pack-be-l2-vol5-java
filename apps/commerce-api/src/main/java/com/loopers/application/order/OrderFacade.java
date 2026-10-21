@@ -4,6 +4,7 @@ import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.product.ProductService;
 import com.loopers.domain.order.OrderModel;
 import com.loopers.domain.order.OrderService;
+import com.loopers.domain.order.OrderStatus;
 import com.loopers.domain.user.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -51,6 +52,19 @@ public class OrderFacade {
         }
         OrderInfo order = started.order();
         PaymentGatewayResult result = paymentGateway.request(order.userId(), order.id(), cardType, cardNo, order.totalAmount());
+        return orderPaymentProcessor.applyResult(order.id(), result);
+    }
+
+    /**
+     * 결제 대기 해소. 트랜잭션 없음: 본인 주문 확인 → (AWAITING_PAYMENT 면) PG 에 PG 주문 ID 로 기존 거래 조회 → 결과 반영 (동기 응답·callback 과 같은 applyResult).
+     * 새 결제 요청을 만들지 않는다. AWAITING_PAYMENT 가 아니면 PG 를 부르지 않고 현재 상태를 돌려준다. 조회 실패는 UNKNOWN 이라 주문은 그대로다.
+     */
+    public OrderInfo resolveAwaitingPayment(Long requesterId, Long orderId) {
+        OrderInfo order = orderPaymentProcessor.getOwned(requesterId, orderId);
+        if (!OrderStatus.AWAITING_PAYMENT.name().equals(order.status())) {
+            return order;
+        }
+        PaymentGatewayResult result = paymentGateway.find(order.userId(), order.id());
         return orderPaymentProcessor.applyResult(order.id(), result);
     }
 

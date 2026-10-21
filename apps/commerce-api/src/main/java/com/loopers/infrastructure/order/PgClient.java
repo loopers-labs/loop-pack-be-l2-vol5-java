@@ -18,8 +18,9 @@ import java.net.http.HttpClient;
 import java.net.http.HttpConnectTimeoutException;
 
 /**
- * PaymentGateway 구현. PG POST /api/v1/payments 를 RestClient 로 부른다. 예외를 던지지 않고 결과로 바꾼다.
- * 2xx: 응답 status(PENDING·SUCCESS·FAILED) 그대로 / 4xx: FAILED / 5xx·read timeout: UNKNOWN / 연결 실패·connect timeout: NOT_SENT.
+ * PaymentGateway 구현. PG POST /api/v1/payments·GET /api/v1/payments?orderId= 를 RestClient 로 부른다. 예외를 던지지 않고 결과로 바꾼다.
+ * 결제 요청 — 2xx: 응답 status(PENDING·SUCCESS·FAILED) 그대로 / 4xx: FAILED / 5xx·read timeout: UNKNOWN / 연결 실패·connect timeout: NOT_SENT.
+ * 거래 조회 — 2xx: 응답 status 그대로 / 그 밖의 응답·예외: UNKNOWN.
  * 결제 요청은 재시도하지 않는다 (이중 결제 방지). 카드번호는 로그에 마스킹한다.
  */
 @Slf4j
@@ -69,6 +70,26 @@ public class PgClient implements PaymentGateway {
             return PaymentGatewayResult.unknown();
         } catch (RestClientException e) {
             log.warn("PG 응답 처리 실패, 결과 모름 [orderId = {}]", orderId, e);
+            return PaymentGatewayResult.unknown();
+        }
+    }
+
+    @Override
+    public PaymentGatewayResult find(Long userId, Long orderId) {
+        try {
+            return restClient.get()
+                .uri(uri -> uri.path("/api/v1/payments").queryParam("orderId", PgOrderId.of(orderId)).build())
+                .header("X-USER-ID", String.valueOf(userId))
+                .exchange((request, response) -> {
+                    HttpStatusCode status = response.getStatusCode();
+                    if (status.is2xxSuccessful()) {
+                        return toResult(orderId, response.bodyTo(PaymentResponse.class));
+                    }
+                    log.warn("PG 거래 조회 실패, 결과 모름 [orderId = {}, status = {}]", orderId, status);
+                    return PaymentGatewayResult.unknown();
+                });
+        } catch (RestClientException e) {
+            log.warn("PG 거래 조회 실패, 결과 모름 [orderId = {}]", orderId, e);
             return PaymentGatewayResult.unknown();
         }
     }

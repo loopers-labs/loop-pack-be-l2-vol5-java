@@ -46,6 +46,15 @@ public class OrderV1Controller implements OrderV1ApiSpec {
             requesterId, orderId, request.paymentAttemptKey(), request.cardType(), request.cardNumber())));
     }
 
+    @PostMapping("/{orderId}/payment/resolve-awaiting-payment")
+    @Override
+    public ApiResponse<OrderV1Dto.OrderResponse> resolveAwaitingPayment(
+        @RequesterId Long requesterId,
+        @PathVariable("orderId") Long orderId
+    ) {
+        return ApiResponse.success(OrderV1Dto.OrderResponse.from(orderFacade.resolveAwaitingPayment(requesterId, orderId)));
+    }
+
     @GetMapping
     @Override
     public ApiResponse<PageResponse<OrderV1Dto.OrderResponse>> listMyOrders(

@@ -13,7 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.stream.Collectors;
 
 /**
- * FR-ORDER-02 의 트랜잭션 단위 둘. PG 호출은 이 둘 사이, 트랜잭션 밖에서 Facade 가 한다.
+ * FR-ORDER-02 의 트랜잭션 단위. 결제 시작·결과 반영 (+ 결제 대기 해소 전 본인 주문 확인). PG 호출은 이들 사이, 트랜잭션 밖에서 Facade 가 한다.
  * 락 순서는 둘 다 주문 → 재고(product_id 오름차순) → 상품 (DR-34, DR-38).
  */
 @Slf4j
@@ -47,8 +47,15 @@ public class OrderPaymentProcessor {
         return new Started(OrderInfo.from(order), false);
     }
 
+    /** 결제 대기 해소의 사전 확인. 본인 주문을 락 없이 읽어 돌려준다. 검사 순서: 사용자 → 주문 없음 → 소유. */
+    @Transactional(readOnly = true)
+    public OrderInfo getOwned(Long requesterId, Long orderId) {
+        userService.getUser(requesterId);
+        return OrderInfo.from(orderService.getOwned(orderId, requesterId));
+    }
+
     /**
-     * 결제 결과 반영. 동기 응답·callback·reconciliation 공용. 주문 행 락으로 직렬화하고, AWAITING_PAYMENT 가 아니면 아무것도 하지 않는다 (멱등).
+     * 결제 결과 반영. 동기 응답·callback·결제 대기 해소 공용. 주문 행 락으로 직렬화하고, AWAITING_PAYMENT 가 아니면 아무것도 하지 않는다 (멱등).
      * SUCCESS → CONFIRMED (금액이 합계와 다르면 반영하지 않는다) / FAILED·NOT_SENT → FAILED + 재고 반환 / PENDING·UNKNOWN → 거래 키만 기록.
      */
     @Transactional
