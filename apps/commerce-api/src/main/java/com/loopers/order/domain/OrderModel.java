@@ -40,7 +40,7 @@ public class OrderModel extends BaseEntity {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
-    @Comment("주문 상태 — DRAFT·CONFIRMED (ORD-02)")
+    @Comment("주문 상태 — DRAFT·PAYMENT_PENDING·CONFIRMED·PAYMENT_FAILED (ORD-02, W5 3-1)")
     private OrderStatus status;
 
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
@@ -59,7 +59,7 @@ public class OrderModel extends BaseEntity {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "payment_method")
-    @Comment("결제 수단 — 확정 시 POINT, DRAFT는 없음 (ORD-05)")
+    @Comment("결제 수단 — POINT(W2~W4 확정) 또는 PG(W5 결제 시작), DRAFT는 없음 (ORD-05)")
     private PaymentMethod paymentMethod;
 
     @Column(name = "confirmed_at")
@@ -118,6 +118,40 @@ public class OrderModel extends BaseEntity {
         this.paidAmount = totalAmount;
         this.paymentMethod = PaymentMethod.POINT;
         this.confirmedAt = now;
+    }
+
+    /**
+     * W5 plan.md 3-1: DRAFT만 PG 결제를 시작한다. 결제액·확정 시각은 결과를 확인한 뒤에 정한다.
+     */
+    public void startPayment() {
+        checkConfirmable();
+        this.status = OrderStatus.PAYMENT_PENDING;
+        this.paymentMethod = PaymentMethod.PG;
+    }
+
+    /**
+     * W5 plan.md 3-3: 검증한 PG 성공. PAYMENT_PENDING일 때만 CONFIRMED로 바꾸고 결제액을 자기 합계로 고정한다.
+     * 그 밖의 상태면 아무것도 바꾸지 않고 false (ADR-W5-04 ③ 마지막 방어선).
+     */
+    public boolean confirmPaid(ZonedDateTime now) {
+        if (status != OrderStatus.PAYMENT_PENDING) {
+            return false;
+        }
+        this.status = OrderStatus.CONFIRMED;
+        this.paidAmount = totalAmount;
+        this.confirmedAt = now;
+        return true;
+    }
+
+    /**
+     * W5 plan.md 3-3: 검증한 PG 실패·효과 0건 확정 거절. PAYMENT_PENDING일 때만 PAYMENT_FAILED로 바꾼다 (ADR-W5-04 ③).
+     */
+    public boolean failPayment() {
+        if (status != OrderStatus.PAYMENT_PENDING) {
+            return false;
+        }
+        this.status = OrderStatus.PAYMENT_FAILED;
+        return true;
     }
 
     private static ProductSnapshot snapshotOf(Map<Long, ProductSnapshot> snapshots, Long productId) {

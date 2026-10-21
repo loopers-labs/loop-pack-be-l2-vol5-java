@@ -85,11 +85,32 @@ resilience4j:
         retry-exceptions: # timeout·5xx·IO·해석 불가만. 4xx·회로 OPEN은 재시도하지 않는다
           - com.loopers.payment.adapter.out.pg.PgLookupRetryableException
 
+# W5 결제 발송 풀 (ADR-W5-01·03, plan.md 0-1 🔧): 동시 PG 대기 100 TPS × 0.5s = 50. 대기열 0 — 넘치면 늦게 보내지 않고 바로 실패로 닫는다.
+payment:
+  dispatch:
+    pool-size: 50
+    queue-capacity: 0
+  # W5 정리(1분)·reconcile(5초) 스케줄러 (plan.md 5-1). test 프로필은 끄고 테스트가 서비스를 직접 부른다.
+  scheduler:
+    enabled: true
+    close-delay: 60s
+    reconcile-delay: 5s
+
 ---
 spring:
   config:
     activate:
       on-profile: local, test
+
+---
+spring:
+  config:
+    activate:
+      on-profile: test
+
+payment:
+  scheduler:
+    enabled: false
 
 ---
 spring:

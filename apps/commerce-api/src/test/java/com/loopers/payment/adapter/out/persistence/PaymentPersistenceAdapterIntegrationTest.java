@@ -57,16 +57,6 @@ class PaymentPersistenceAdapterIntegrationTest {
         return payment;
     }
 
-    private static Payment unknownCheckedAt(Long orderId, ZonedDateTime checkedAt) {
-        Payment payment = requested(orderId, "attempt-" + orderId);
-        payment.markSending(NOW);
-        payment.recordUnknown(NOW);
-        if (checkedAt != null) {
-            payment.recordCheck("NOT_FOUND", checkedAt);
-        }
-        return payment;
-    }
-
     @DisplayName("plan.md 9 결제를 저장하고 다시 읽으면 식별자·금액·상태·거래 키·조회 기록이 그대로다.")
     @Test
     void savesAndReloads() {
@@ -150,29 +140,52 @@ class PaymentPersistenceAdapterIntegrationTest {
         assertThat(missing).isEmpty();
     }
 
-    @DisplayName("plan.md 5-1 reconcile 대상은 PENDING·UNKNOWN 중 조회한 적 없거나 기준보다 먼저 조회한 결제이고, id 오름차순·limit만큼이다.")
+    @DisplayName("plan.md 5-1 reconcile 대상은 PENDING·UNKNOWN 중 다음 조회 시각이 지금 이전(같음 포함)인 결제이고, 다음 조회 시각이 이른 순·limit만큼이다.")
     @Test
-    void findsUnresolved() {
-        // arrange
-        ZonedDateTime checkedBefore = NOW.minusMinutes(1);
-        paymentPort.save(requested(1L, "attempt-1"));                                     // REQUESTED — 제외
+    void findsDueForCheck() {
+        // arrange: 수락·UNKNOWN 시각 + 5초가 다음 조회 시각이다
+        paymentPort.save(requested(1L, "attempt-1"));                                         // REQUESTED — 제외
         Payment sending = requested(2L, "attempt-2");
         sending.markSending(NOW);
-        paymentPort.save(sending);                                                          // SENDING — 제외
-        Long pendingId = paymentPort.save(pending(3L)).getId();                             // PENDING, 조회 전 — 포함
-        Long oldCheckedId = paymentPort.save(unknownCheckedAt(4L, NOW.minusMinutes(10))).getId(); // UNKNOWN, 10분 전 조회 — 포함
-        paymentPort.save(unknownCheckedAt(5L, NOW));                                        // UNKNOWN, 방금 조회 — 제외
-        paymentPort.save(unknownCheckedAt(6L, checkedBefore));                              // UNKNOWN, 기준과 같은 시각 — 제외
+        paymentPort.save(sending);                                                              // SENDING — 제외
+        Long dueNowId = paymentPort.save(unknownAt(3L, NOW.minusSeconds(5))).getId();           // 다음 조회 = NOW — 포함
+        Long oldestId = paymentPort.save(pendingAt(4L, NOW.minusMinutes(1))).getId();           // 다음 조회 = NOW-55s — 포함
+        Long middleId = paymentPort.save(unknownAt(5L, NOW.minusSeconds(30))).getId();          // 다음 조회 = NOW-25s — 포함
+        paymentPort.save(unknownAt(6L, NOW));                                                   // 다음 조회 = NOW+5s — 제외
         Payment done = pending(7L);
         done.applyObservation(new PaymentObservation(TX_KEY + 7L, "LP-ORD-0000000007", Money.of(7_000), ExternalPaymentStatus.SUCCESS, null), NOW);
-        paymentPort.save(done);                                                             // SUCCESS — 제외
+        paymentPort.save(done);                                                                 // SUCCESS — 제외
 
         // act
-        List<Payment> all = paymentPort.findUnresolved(checkedBefore, 10);
-        List<Payment> first = paymentPort.findUnresolved(checkedBefore, 1);
+        List<Payment> all = paymentPort.findDueForCheck(NOW, 10);
+        List<Payment> first = paymentPort.findDueForCheck(NOW, 1);
 
         // assert
-        assertThat(all).extracting(Payment::getId).containsExactly(pendingId, oldCheckedId);
-        assertThat(first).extracting(Payment::getId).containsExactly(pendingId);
+        assertThat(all).extracting(Payment::getId).containsExactly(oldestId, middleId, dueNowId);
+        assertThat(first).extracting(Payment::getId).containsExactly(oldestId);
+    }
+
+    @DisplayName("plan.md 5-1 다음 조회 시각은 저장 뒤 다시 읽어도 그대로다.")
+    @Test
+    void savesNextCheckAt() {
+        // act
+        Long id = paymentPort.save(unknownAt(42L, NOW)).getId();
+
+        // assert
+        assertThat(paymentPort.findById(id).orElseThrow().getNextCheckAt()).isEqualTo(NOW.plusSeconds(5));
+    }
+
+    private static Payment pendingAt(Long orderId, ZonedDateTime acceptedAt) {
+        Payment payment = requested(orderId, "attempt-" + orderId);
+        payment.markSending(acceptedAt);
+        payment.recordAccepted(TX_KEY + orderId, acceptedAt);
+        return payment;
+    }
+
+    private static Payment unknownAt(Long orderId, ZonedDateTime unknownAt) {
+        Payment payment = requested(orderId, "attempt-" + orderId);
+        payment.markSending(unknownAt);
+        payment.recordUnknown(unknownAt);
+        return payment;
     }
 }

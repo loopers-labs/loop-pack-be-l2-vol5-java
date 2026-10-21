@@ -592,4 +592,129 @@ class PaymentTest {
             assertThat(payment.getLastCheckResult()).isEqualTo("MULTIPLE:2");
         }
     }
+    @DisplayName("다음 PG 조회 시각을 정할 때 (next_check_at), ")
+    @Nested
+    class NextCheck {
+
+        @DisplayName("N-1 REQUESTED·SENDING은 조회 대상이 아니라 다음 조회 시각이 없다.")
+        @Test
+        void noCheckBeforeSent() {
+            // act & assert
+            assertThat(requested().getNextCheckAt()).isNull();
+            assertThat(sending().getNextCheckAt()).isNull();
+        }
+
+        @DisplayName("N-2 생성 수락으로 PENDING이 되면 5초 뒤에 처음 조회한다.")
+        @Test
+        void firstCheckFiveSecondsAfterAccepted() {
+            // arrange
+            Payment payment = sending();
+
+            // act
+            payment.recordAccepted(TX_KEY, NOW);
+
+            // assert
+            assertThat(payment.getNextCheckAt()).isEqualTo(NOW.plusSeconds(5));
+        }
+
+        @DisplayName("N-2 결과를 모르는 UNKNOWN이 되면 5초 뒤에 처음 조회한다.")
+        @Test
+        void firstCheckFiveSecondsAfterUnknown() {
+            // arrange
+            Payment payment = sending();
+
+            // act
+            payment.recordUnknown(NOW);
+
+            // assert
+            assertThat(payment.getNextCheckAt()).isEqualTo(NOW.plusSeconds(5));
+        }
+
+        @DisplayName("N-3 조회해도 종결이 아니면 조회 횟수에 따라 10초 → 30초 → 1분 → 5분 → 5분 뒤로 미룬다.")
+        @Test
+        void backsOffByCheckCount() {
+            // arrange
+            Payment payment = unknown();
+            ZonedDateTime t1 = NOW.plusSeconds(5);
+            ZonedDateTime t2 = t1.plusSeconds(10);
+            ZonedDateTime t3 = t2.plusSeconds(30);
+            ZonedDateTime t4 = t3.plusMinutes(1);
+            ZonedDateTime t5 = t4.plusMinutes(5);
+
+            // act & assert
+            payment.recordCheck("NOT_FOUND", t1);
+            assertThat(payment.getNextCheckAt()).isEqualTo(t1.plusSeconds(10));
+            payment.recordCheck("NOT_FOUND", t2);
+            assertThat(payment.getNextCheckAt()).isEqualTo(t2.plusSeconds(30));
+            payment.recordCheck("UNAVAILABLE", t3);
+            assertThat(payment.getNextCheckAt()).isEqualTo(t3.plusMinutes(1));
+            payment.recordCheck("NOT_FOUND", t4);
+            assertThat(payment.getNextCheckAt()).isEqualTo(t4.plusMinutes(5));
+            payment.recordCheck("NOT_FOUND", t5);
+            assertThat(payment.getNextCheckAt()).isEqualTo(t5.plusMinutes(5));
+        }
+
+        @DisplayName("N-3 UNKNOWN을 조회해 PENDING을 보면 첫 조회 뒤이므로 10초 뒤로 미룬다.")
+        @Test
+        void pendingObservationBacksOff() {
+            // arrange
+            Payment payment = unknown();
+
+            // act
+            payment.applyObservation(observed(ExternalPaymentStatus.PENDING), LATER);
+
+            // assert
+            assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
+            assertThat(payment.getNextCheckAt()).isEqualTo(LATER.plusSeconds(10));
+        }
+
+        @DisplayName("N-3 SENDING에서 조회로 PENDING을 보면 조회 대상이 되어 10초 뒤로 정한다.")
+        @Test
+        void sendingObservedPendingBecomesCheckable() {
+            // arrange
+            Payment payment = sending();
+
+            // act
+            payment.applyObservation(observed(ExternalPaymentStatus.PENDING), LATER);
+
+            // assert
+            assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
+            assertThat(payment.getNextCheckAt()).isEqualTo(LATER.plusSeconds(10));
+        }
+
+        @DisplayName("N-3 불일치(MISMATCH)도 조회 한 번으로 세어 10초 뒤로 미루고 상태는 그대로다.")
+        @Test
+        void mismatchBacksOff() {
+            // arrange
+            Payment payment = pending();
+
+            // act
+            payment.applyObservation(new PaymentObservation(TX_KEY, PROVIDER_ORDER_ID, Money.of(1), ExternalPaymentStatus.SUCCESS, null), LATER);
+
+            // assert
+            assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
+            assertThat(payment.getNextCheckAt()).isEqualTo(LATER.plusSeconds(10));
+        }
+
+        @DisplayName("N-4 조회로 SUCCESS·FAILED가 되면 더 조회하지 않는다 (다음 조회 시각 없음).")
+        @Test
+        void finalObservationClearsNextCheck() {
+            // act & assert
+            assertThat(succeeded().getNextCheckAt()).isNull();
+            assertThat(failed().getNextCheckAt()).isNull();
+        }
+
+        @DisplayName("N-4 UNKNOWN에서 효과 0건 확정 거절로 FAILED가 되면 다음 조회 시각이 없다.")
+        @Test
+        void rejectedClearsNextCheck() {
+            // arrange
+            Payment payment = unknown();
+
+            // act
+            payment.recordRejected("잘못된 카드", LATER);
+
+            // assert
+            assertThat(payment.getNextCheckAt()).isNull();
+        }
+    }
 }

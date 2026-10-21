@@ -54,7 +54,7 @@ public class PaymentPersistenceAdapter implements PaymentPort {
     }
 
     @Override
-    public List<Payment> findUnresolved(ZonedDateTime checkedBefore, int limit) {
-        return paymentJpaRepository.findUnresolved(UNRESOLVED, checkedBefore, PageRequest.of(0, limit));
+    public List<Payment> findDueForCheck(ZonedDateTime now, int limit) {
+        return paymentJpaRepository.findDueForCheck(UNRESOLVED, now, PageRequest.of(0, limit));
     }
 }
