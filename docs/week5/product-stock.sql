@@ -1,20 +1,21 @@
 -- =====================================================================
 -- 재고 테이블 분리 (MySQL, DR-38)
 --
--- product_stock(현재 재고)·product_stock_ledger(원장)를 만들고, product.stock 의 현재 값을 옮긴다.
+-- product_stock(현재 재고)·product_stock_ledger(원장)를 만들고, product.stock 의 현재 값을 옮긴 뒤 product.stock 컬럼을 지운다.
 --   product_stock        : 상품마다 한 행, available = product.stock
 --   product_stock_ledger : stock > 0 인 상품마다 ADJUSTMENT 한 행, quantity = product.stock (0 → 현재 값으로 맞춘 조정)
--- product.stock 컬럼은 지우지 않는다. 앱이 컬럼을 지울 때까지 같은 값으로 함께 쓴다 (DR-38).
+--   product.stock        : 끝의 검증이 모두 맞을 때만 지운다. 틀리면 에러로 멈추고 컬럼을 남긴다 (DR-38).
 --
 -- 순서
 --   운영(ddl-auto: none)은 새 앱을 배포하기 전에, 옛 앱의 재고 쓰기(확정·재고 변경·상품 생성)를 멈춘 상태에서 실행한다.
---   옮긴 뒤 옛 앱이 product.stock 만 바꾸면 두 테이블과 어긋난다.
---   local 프로필은 ddl-auto: update 가 테이블을 만들지만 행은 만들지 않으므로 이 스크립트가 필요하다.
+--   옮긴 뒤 옛 앱이 product.stock 만 바꾸면 두 테이블과 어긋난다. 새 앱은 product.stock 에 값을 넣지 않으므로
+--   컬럼이 남아 있는 동안에는 상품 생성이 NOT NULL 에 걸린다.
+--   local 프로필은 ddl-auto: update 가 테이블을 만들지만 행을 만들지 않고 옛 컬럼도 지우지 않으므로 이 스크립트가 필요하다.
 --
 -- 실행
 --   docker exec -i docker-mysql-1 mysql -uroot -proot loopers < docs/week5/product-stock.sql
 --
--- 주의: 두 테이블을 TRUNCATE 하고 시작한다. 새 앱 배포 뒤에 다시 돌리면 그 사이 쌓인 원장이 사라진다.
+-- 주의: 두 테이블을 TRUNCATE 하고 시작한다. product.stock 이 이미 지워진 DB 에서는 TRUNCATE 전에 에러로 멈춘다.
 -- =====================================================================
 
 SET NAMES utf8mb4;
@@ -45,6 +46,9 @@ CREATE TABLE IF NOT EXISTS product_stock_ledger (
 );
 
 SET SESSION sql_log_bin = 0;
+
+-- 이관을 마친 DB(product.stock 없음)면 여기서 에러로 멈춘다. 옮길 원본이 없는데 두 테이블을 비우지 않으려고.
+SELECT stock FROM product LIMIT 0;
 
 TRUNCATE TABLE product_stock;
 TRUNCATE TABLE product_stock_ledger;
@@ -103,3 +107,33 @@ LEFT JOIN (
     SELECT product_id, SUM(quantity) AS total FROM product_stock_ledger GROUP BY product_id
 ) l ON l.product_id = s.product_id
 WHERE s.available <> COALESCE(l.total, 0);
+
+-- ---------------------------------------------------------------------
+-- 옛 컬럼 삭제 (DR-38). 위 검증과 같은 조건이 모두 맞을 때만 지우고, 아니면 에러로 멈춰 컬럼을 남긴다.
+-- ---------------------------------------------------------------------
+DROP PROCEDURE IF EXISTS drop_legacy_product_stock;
+DELIMITER $$
+CREATE PROCEDURE drop_legacy_product_stock()
+BEGIN
+    IF (SELECT COUNT(*) FROM product) <> (SELECT COUNT(*) FROM product_stock)
+        OR EXISTS (
+            SELECT 1
+            FROM product p
+            LEFT JOIN product_stock s ON s.product_id = p.id
+            WHERE s.product_id IS NULL OR s.available <> p.stock)
+        OR EXISTS (
+            SELECT 1
+            FROM product_stock s
+            LEFT JOIN (
+                SELECT product_id, SUM(quantity) AS total FROM product_stock_ledger GROUP BY product_id
+            ) l ON l.product_id = s.product_id
+            WHERE s.available <> COALESCE(l.total, 0))
+    THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '재고 이관 검증 실패: product.stock 을 지우지 않는다';
+    END IF;
+    ALTER TABLE product DROP COLUMN stock;
+END$$
+DELIMITER ;
+
+CALL drop_legacy_product_stock();
+DROP PROCEDURE drop_legacy_product_stock;

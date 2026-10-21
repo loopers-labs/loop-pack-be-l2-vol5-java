@@ -2,15 +2,16 @@
 -- 재고 테이블 분리 (PostgreSQL, DR-38)
 --
 -- product-stock.sql (MySQL) 과 같은 일을 PostgreSQL 에서 한다.
--- product_stock(현재 재고)·product_stock_ledger(원장)를 만들고, product.stock 의 현재 값을 옮긴다.
--- product.stock 컬럼은 지우지 않는다. 앱이 컬럼을 지울 때까지 같은 값으로 함께 쓴다 (DR-38).
+-- product_stock(현재 재고)·product_stock_ledger(원장)를 만들고, product.stock 의 현재 값을 옮긴 뒤 product.stock 컬럼을 지운다.
+-- product.stock 은 끝의 검증이 모두 맞을 때만 지운다. 틀리면 에러로 멈추고 컬럼을 남긴다 (DR-38).
 --
 -- 순서: 새 앱을 띄우기 전에, 옛 앱의 재고 쓰기를 멈춘 상태에서 실행한다 (product-stock.sql 머리말과 같다).
 --
 -- 실행
 --   docker exec -i docker-postgres-1 psql -U application -d loopers -v ON_ERROR_STOP=1 < docs/week5/product-stock-pg.sql
+--   ON_ERROR_STOP 이 있어야 아래 가드·검증 실패에서 멈춘다.
 --
--- 주의: 두 테이블을 TRUNCATE 하고 시작한다. 새 앱 배포 뒤에 다시 돌리면 그 사이 쌓인 원장이 사라진다.
+-- 주의: 두 테이블을 TRUNCATE 하고 시작한다. product.stock 이 이미 지워진 DB 에서는 TRUNCATE 전에 에러로 멈춘다.
 -- =====================================================================
 
 CREATE TABLE IF NOT EXISTS product_stock (
@@ -34,6 +35,9 @@ CREATE TABLE IF NOT EXISTS product_stock_ledger (
     deleted_at timestamp(6) with time zone,
     CONSTRAINT ux_product_stock_ledger_order UNIQUE (order_id, product_id, type)
 );
+
+-- 이관을 마친 DB(product.stock 없음)면 여기서 에러로 멈춘다. 옮길 원본이 없는데 두 테이블을 비우지 않으려고.
+SELECT stock FROM product LIMIT 0;
 
 TRUNCATE TABLE product_stock, product_stock_ledger RESTART IDENTITY;
 
@@ -74,3 +78,28 @@ LEFT JOIN (
     SELECT product_id, SUM(quantity) AS total FROM product_stock_ledger GROUP BY product_id
 ) l ON l.product_id = s.product_id
 WHERE s.available <> COALESCE(l.total, 0);
+
+-- ---------------------------------------------------------------------
+-- 옛 컬럼 삭제 (DR-38). 위 검증과 같은 조건이 모두 맞을 때만 지우고, 아니면 에러로 멈춰 컬럼을 남긴다.
+-- ---------------------------------------------------------------------
+DO $$
+BEGIN
+    IF (SELECT COUNT(*) FROM product) <> (SELECT COUNT(*) FROM product_stock)
+        OR EXISTS (
+            SELECT 1
+            FROM product p
+            LEFT JOIN product_stock s ON s.product_id = p.id
+            WHERE s.product_id IS NULL OR s.available <> p.stock)
+        OR EXISTS (
+            SELECT 1
+            FROM product_stock s
+            LEFT JOIN (
+                SELECT product_id, SUM(quantity) AS total FROM product_stock_ledger GROUP BY product_id
+            ) l ON l.product_id = s.product_id
+            WHERE s.available <> COALESCE(l.total, 0))
+    THEN
+        RAISE EXCEPTION '재고 이관 검증 실패: product.stock 을 지우지 않는다';
+    END IF;
+    ALTER TABLE product DROP COLUMN stock;
+END
+$$;
