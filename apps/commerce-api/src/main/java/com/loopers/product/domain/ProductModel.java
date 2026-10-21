@@ -91,6 +91,10 @@ public class ProductModel extends BaseEntity {
      * ADR-W5-02: 확인된 결제 실패로 반환된 선점 수량을 가용 재고에 되돌린다. 양수 수량만.
      */
     public void increaseStock(int quantity) {
+        if (quantity <= 0) {
+            throw new CoreException(ErrorType.BAD_REQUEST, "되돌릴 수량은 1개 이상이어야 합니다.");
+        }
+        this.stock += quantity;
     }
 
     /**

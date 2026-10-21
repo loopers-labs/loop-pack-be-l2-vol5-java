@@ -1,6 +1,8 @@
 package com.loopers.product.domain;
 
 import com.loopers.domain.BaseEntity;
+import com.loopers.support.error.CoreException;
+import com.loopers.support.error.ErrorType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -42,18 +44,35 @@ public class StockReservation extends BaseEntity {
     protected StockReservation() {}
 
     public StockReservation(Long orderId, Long productId, int quantity) {
+        if (quantity <= 0) {
+            throw new CoreException(ErrorType.BAD_REQUEST, "선점 수량은 1개 이상이어야 합니다.");
+        }
         this.orderId = orderId;
         this.productId = productId;
         this.quantity = quantity;
         this.status = StockReservationStatus.RESERVED;
     }
 
+    /**
+     * 결제 성공: RESERVED일 때만 CONSUMED로 바꾸고 true. 이미 소비·반환됐으면 아무것도 바꾸지 않고 false (ADR-W5-04 ③).
+     */
     public boolean consume() {
-        return false;
+        return transitionFromReserved(StockReservationStatus.CONSUMED);
     }
 
+    /**
+     * 확인된 결제 실패: RESERVED일 때만 RELEASED로 바꾸고 true. true일 때만 호출자가 재고를 되돌린다 — 중복 실패가 재고를 두 번 늘리지 않는다 (R-2).
+     */
     public boolean release() {
-        return false;
+        return transitionFromReserved(StockReservationStatus.RELEASED);
+    }
+
+    private boolean transitionFromReserved(StockReservationStatus next) {
+        if (status != StockReservationStatus.RESERVED) {
+            return false;
+        }
+        this.status = next;
+        return true;
     }
 
     public Long getOrderId() {
