@@ -14,7 +14,7 @@
 |---|---|---|---|
 | C-1 | 미확정 주문의 결제는 PG를 사용하고 포인트를 이중 차감하지 않는다 | S01·PurchaseFlowE2ETest: 포인트 잔액·이력 변화 0 | ✅ |
 | C-2 | 이전 POINT 주문의 결제·품목 사실과 기존 소유권을 보존한다 | S11·OrderApiE2ETest#keepsPointConfirmedOrder·OrderAdminApiE2ETest: 이전 POINT 주문 조회, 재확정 409 | ✅ |
-| C-3 | 생성 수락·처리 중·최종 성공·실패·결과 미확인을 구분한다 | PaymentTest P-1~P-13, S-2·S-4 | ✅ |
+| C-3 | 생성 수락·처리 중·최종 성공·실패·결과 미확인을 구분한다 | PaymentTest P-1~P-15, S-2·S-4 | ✅ |
 | C-4 | 시도·발송·예약이 DB에서 중복을 막고 PG HTTP 동안 잠금을 계속 잡지 않는다 | S-5·OrderConfirmConcurrencyTest·LockingSqlIntegrationTest(orders → products 잠금, PG는 TX 밖) | ✅ |
 | C-5 | 성공은 추가 차감 없이 확정하고 확정 실패만 예약을 한 번 반환한다 | S-1·S-3·S-6, StockReservationServiceIntegrationTest(5 → 3 → 5, 7 아님) | ✅ |
 | C-6 | timeout·재시작·조회 0건에서 새 결제를 만들거나 예약을 임의 반환하지 않는다 | S-4·S-8·S-9: 생성 추가 0, 0건은 기록만 | ✅ |
@@ -93,6 +93,8 @@
 | P-11 | `SUCCESS` | FAILED 관찰 | `CONFLICT`, SUCCESS 그대로 |
 | P-12 | `SUCCESS` | 같은 SUCCESS 다시 (중복 callback) | `ALREADY_APPLIED` |
 | P-13 | `SUCCESS` | 늦게 온 생성 응답·timeout | `ALREADY_APPLIED` (종결을 되돌리지 못한다) |
+| P-14 | `PENDING`·`UNKNOWN` | 보낸 지 30분 미종결 → 만료 | `FAILED`(EXPIRED). `REQUESTED`·`SENDING`은 `CONFLICT`(정리 스케줄러 몫) |
+| P-15 | `FAILED`(EXPIRED) | SUCCESS 관찰 | `CONFLICT`, FAILED 그대로 (환불 필요, 범위 밖) |
 
 ### 3-3. PG 관찰 → 내부 반영 (과제 4절 표)
 
@@ -153,7 +155,7 @@ confirm 요청
 
 - `stock_reservation(order_id, product_id, quantity, status)` — `RESERVED → CONSUMED | RELEASED`. 예약할 때 `product.stock`(가용 재고)을 바로 줄인다.
 - 반환은 `RESERVED → RELEASED` 조건부 전이로 한 번만. 중복 실패 알림은 0행 갱신으로 무효과.
-- PG에 보낸 뒤에는 시간이 지나도 풀지 않는다 (성공했을 수 있다). 보내기 전 선점 만료(TTL)는 Toss·PortOne처럼 결제창 구간이 있을 때 다시 본다.
+- PG에 보낸 뒤에는 성공했을 수 있으므로 바로 풀지 않는다. 단 보낸 지 30분이 지나도 미종결이면 마지막 조회 후 실패로 닫고 반환한다 (ADR-W5-05). 보내기 전 선점 만료(TTL)는 Toss·PortOne처럼 결제창 구간이 있을 때 다시 본다.
 
 ## 5-1. 발송과 확인 — outbox · 이벤트 · 정리 · reconcile ✅ (ADR-W5-01·03)
 
@@ -242,6 +244,7 @@ PaymentReconcileScheduler  PENDING·UNKNOWN 결제를 PG 조회로 확인 → �
 | S-9 | 조회 0건·복수·불일치 | 임의 종결·재결제 없음, 이상 기록 | ✅ `S09*ScenarioTest` |
 | S-10 | timeout·회로 OPEN·복구 | 호출 수 제한, 상태 유지, 회복 뒤 조회 재개 | ✅ `S10*ScenarioTest` |
 | S-11 | 기존 기능 보호 | POINT 기록·소유권, 재고 부족 시 PG 0회, 삭제 상품 | ✅ `S11*ScenarioTest` |
+| S-12 | 보낸 지 30분 미종결 (ADR-W5-05) | 31분 → 마지막 조회 후 FAILED(EXPIRED)·재고 반환 1, 29분 → 그대로, 마지막 조회 SUCCESS → 확정, 만료 뒤 SUCCESS → CONFLICT·재고 변화 0, 만료·callback 동시 → 반환 1 |  ✅ `S12ExpireUnresolvedScenarioTest` |
 
 재고 예: 재고 5 · 수량 2 확보 → 가용 3. 성공 후 3, 확정 실패 후 5. 중복 실패 알림으로 7, UNKNOWN에서 5가 되면 버그.
 
@@ -315,4 +318,4 @@ PaymentReconcileScheduler  PENDING·UNKNOWN 결제를 PG 조회로 확인 → �
 | v0.6 | 2026-10-21 | 구현 중 결정: §6 설정값 확정(생성도 느린 호출 2s로 차단, OPEN 10s는 부하 테스트로 검증), §9 `next_check_at` 추가·가용 재고 뜻, P-1~P-13 표(3-2-1), callback 필드는 `orderId`, 기존 테스트는 의도를 PG 흐름으로 이전(10-1) |
 | v0.7 | 2026-10-21 | §8 API를 구현에 맞춤: 결제 API는 payment 컨트롤러(순환 방지), 결제 상태 조회 `GET …/payment` 추가, 202/200 규칙, 멱등 키 400·409 |
 | v0.8 | 2026-10-21 | 구현 완료 반영: 체크리스트 C-1~C-8 증거, 장면 S-1~S-11 테스트 위치. C-9는 실험 자원 정리(PR 전) 남음 |
-| v0.9 | 2026-10-22 | ADR-W5-05: 보낸 지 30분 넘게 미종결이면 마지막 조회 후 FAILED(EXPIRED) + 재고 반환. 포인트 결제 배분 코드 제거. 실험 자원 정리 |
+| v0.9 | 2026-10-22 | ADR-W5-05: 보낸 지 30분 넘게 미종결이면 마지막 조회 후 FAILED(EXPIRED) + 재고 반환. 포인트 결제 배분 코드 제거. 실험 자원 정리. P-14·P-15, S-12 추가 |
