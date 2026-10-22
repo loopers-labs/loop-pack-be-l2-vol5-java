@@ -1,9 +1,14 @@
 package com.loopers.infrastructure.payment;
 
+import com.loopers.domain.common.Money;
 import com.loopers.domain.payment.CreateObservation;
+import com.loopers.domain.payment.LookupResult;
 import com.loopers.domain.payment.PaymentCreation;
 import com.loopers.domain.payment.PaymentGateway;
+import com.loopers.domain.payment.PgTransaction;
+import com.loopers.domain.payment.ProviderOrderId;
 import com.loopers.domain.payment.TransactionKey;
+import com.loopers.domain.payment.TransactionStatus;
 import org.apache.hc.core5.http.ConnectionRequestTimeoutException;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
@@ -16,6 +21,8 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientException;
 
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.List;
 
 @Component
 class PgPaymentGateway implements PaymentGateway {
@@ -24,10 +31,16 @@ class PgPaymentGateway implements PaymentGateway {
     private static final String REJECTED_BEFORE_CREATE = "TEST_PG_REJECTED_BEFORE_CREATE";
 
     private final RestClient createClient;
+    private final RestClient lookupClient;
     private final PgProperties pg;
 
-    PgPaymentGateway(@Qualifier("pgCreateClient") RestClient createClient, PgProperties pg) {
+    PgPaymentGateway(
+        @Qualifier("pgCreateClient") RestClient createClient,
+        @Qualifier("pgLookupClient") RestClient lookupClient,
+        PgProperties pg
+    ) {
         this.createClient = createClient;
+        this.lookupClient = lookupClient;
         this.pg = pg;
     }
 
@@ -51,6 +64,72 @@ class PgPaymentGateway implements PaymentGateway {
             }
             return new CreateObservation.CreateUnknown();
         }
+    }
+
+    @Override
+    public LookupResult lookup(TransactionKey transactionKey) {
+        try {
+            return lookupClient.get()
+                .uri(PAYMENTS + "/{transactionKey}", transactionKey.value())
+                .exchange((request, response) -> {
+                    if (response.getStatusCode().isSameCodeAs(HttpStatus.NOT_FOUND)) {
+                        return new LookupResult.NotFound();
+                    }
+                    if (!response.getStatusCode().isSameCodeAs(HttpStatus.OK)) {
+                        return new LookupResult.Unavailable();
+                    }
+                    TransactionResponse body = response.bodyTo(TransactionResponse.class);
+                    if (body == null) {
+                        return new LookupResult.Unavailable();
+                    }
+                    return found(List.of(body));
+                });
+        } catch (RestClientException | HttpMessageNotReadableException e) {
+            return new LookupResult.Unavailable();
+        }
+    }
+
+    @Override
+    public LookupResult lookup(ProviderOrderId providerOrderId) {
+        try {
+            return lookupClient.get()
+                .uri(PAYMENTS + "?orderId={orderId}", providerOrderId.value())
+                .exchange((request, response) -> {
+                    if (!response.getStatusCode().isSameCodeAs(HttpStatus.OK)) {
+                        return new LookupResult.Unavailable();
+                    }
+                    TransactionResponse[] body = response.bodyTo(TransactionResponse[].class);
+                    if (body == null) {
+                        return new LookupResult.Unavailable();
+                    }
+                    if (body.length == 0) {
+                        return new LookupResult.NotFound();
+                    }
+                    return found(Arrays.asList(body));
+                });
+        } catch (RestClientException | HttpMessageNotReadableException e) {
+            return new LookupResult.Unavailable();
+        }
+    }
+
+    private static LookupResult found(List<TransactionResponse> responses) {
+        try {
+            return new LookupResult.Found(responses.stream().map(PgPaymentGateway::toTransaction).toList());
+        } catch (IllegalArgumentException e) {
+            return new LookupResult.Unavailable();
+        }
+    }
+
+    private static PgTransaction toTransaction(TransactionResponse response) {
+        if (response == null || response.amount() == null || response.status() == null) {
+            throw new IllegalArgumentException("PG 거래 응답에 빈 값이 있습니다");
+        }
+        return new PgTransaction(
+            new TransactionKey(response.transactionKey()),
+            new ProviderOrderId(response.orderId()),
+            Money.of(response.amount()),
+            TransactionStatus.valueOf(response.status())
+        );
     }
 
     private static CreateObservation observe(PaymentCreation creation, ConvertibleClientHttpResponse response)
@@ -93,6 +172,9 @@ class PgPaymentGateway implements PaymentGateway {
     }
 
     record CreateResponse(String transactionKey, String orderId, Long amount, String status) {
+    }
+
+    record TransactionResponse(String transactionKey, String orderId, Long amount, String status) {
     }
 
     record RejectionResponse(String code, Boolean transactionCreated, String orderId, Long amount) {

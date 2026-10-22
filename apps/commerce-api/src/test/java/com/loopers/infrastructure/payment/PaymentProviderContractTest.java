@@ -4,10 +4,13 @@ import com.loopers.domain.common.Money;
 import com.loopers.domain.payment.CardNumber;
 import com.loopers.domain.payment.CardType;
 import com.loopers.domain.payment.CreateObservation;
+import com.loopers.domain.payment.LookupResult;
 import com.loopers.domain.payment.PaymentCreation;
 import com.loopers.domain.payment.PaymentGateway;
+import com.loopers.domain.payment.PgTransaction;
 import com.loopers.domain.payment.ProviderOrderId;
 import com.loopers.domain.payment.TransactionKey;
+import com.loopers.domain.payment.TransactionStatus;
 import com.loopers.support.pg.PgFixture;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.DisplayName;
@@ -30,6 +33,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
+import java.util.List;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -186,6 +190,79 @@ class PaymentProviderContractTest {
             .formatted(key, orderId, amount);
     }
 
+    @Nested
+    @DisplayName("PG-007, PG-008, PAY-008: 조회는 PG 가 준 거래를 판정 없이 옮기고, 조회 실패는 관찰로 만들지 않는다")
+    class Lookup {
+
+        @DisplayName("키 조회 200 은 그 거래 하나를 Found 로 돌려준다")
+        @Test
+        void foundByKey() {
+            gateway.create(creation(60L, 7000));
+            String key = PG.transactionsOf("LP-ORD-0000000060").get(0).transactionKey();
+            PG.changeStatus(key, PgFixture.Status.SUCCESS);
+
+            LookupResult result = gateway.lookup(new TransactionKey(key));
+
+            assertThat(result).isEqualTo(new LookupResult.Found(List.of(new PgTransaction(
+                new TransactionKey(key), ProviderOrderId.of(60L), Money.of(7000), TransactionStatus.SUCCESS
+            ))));
+        }
+
+        @DisplayName("없는 키는 NotFound 다")
+        @Test
+        void notFoundByKey() {
+            assertThat(gateway.lookup(new TransactionKey("TEST-TX-9999")))
+                .isEqualTo(new LookupResult.NotFound());
+        }
+
+        @DisplayName("주문 조회는 그 주문의 거래를 모두 Found 로, 없으면 NotFound 로 돌려준다")
+        @Test
+        void byOrder() {
+            gateway.create(creation(61L, 7000));
+            gateway.create(creation(61L, 7000));
+
+            LookupResult found = gateway.lookup(ProviderOrderId.of(61L));
+
+            assertThat(found).isInstanceOfSatisfying(LookupResult.Found.class,
+                result -> assertThat(result.transactions()).hasSize(2));
+            assertThat(gateway.lookup(ProviderOrderId.of(62L))).isEqualTo(new LookupResult.NotFound());
+        }
+
+        @DisplayName("주문 번호는 query 값으로 인코딩해 보낸다")
+        @Test
+        void encodesOrderIdInQuery() {
+            gateway.lookup(new ProviderOrderId("LP-ORD&x=1"));
+
+            assertThat(lastLookup().rawQuery()).isEqualTo("orderId=LP-ORD%26x%3D1");
+        }
+
+        @DisplayName("5xx, 429, 해석할 수 없는 본문은 Unavailable 이다")
+        @ParameterizedTest(name = "{0}")
+        @MethodSource("com.loopers.infrastructure.payment.PaymentProviderContractTest#unavailableLookups")
+        void unavailable(String scene, int status, String body) {
+            PG.respondNextLookupWith(status, body);
+
+            assertThat(gateway.lookup(ProviderOrderId.of(64L)))
+                .isEqualTo(new LookupResult.Unavailable());
+        }
+    }
+
+    static Stream<Arguments> unavailableLookups() {
+        return Stream.of(
+            Arguments.of("500", 500, ""),
+            Arguments.of("503", 503, ""),
+            Arguments.of("429", 429, ""),
+            Arguments.of("200 인데 JSON 이 아님", 200, "not json")
+        );
+    }
+
+    private static PgFixture.ReceivedRequest lastLookup() {
+        return PG.receivedRequests().stream()
+            .filter(request -> request.method().equals("GET"))
+            .reduce((first, second) -> second)
+            .orElseThrow();
+    }
+
     private static PaymentCreation creation(long orderId, long amount) {
         return new PaymentCreation(
             ProviderOrderId.of(orderId),
@@ -197,6 +274,7 @@ class PaymentProviderContractTest {
 
     private static PgFixture.ReceivedRequest sentFor(String providerOrderId) {
         return PG.receivedRequests().stream()
+            .filter(request -> request.method().equals("POST"))
             .filter(request -> request.body().get("orderId").asText().equals(providerOrderId))
             .reduce((first, second) -> second)
             .orElseThrow();

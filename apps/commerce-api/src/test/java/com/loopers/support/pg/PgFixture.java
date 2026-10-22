@@ -14,6 +14,7 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.net.URLDecoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -48,7 +49,8 @@ public final class PgFixture implements AutoCloseable {
     private final Map<String, Stored> transactions = new ConcurrentHashMap<>();
     private final List<ReceivedRequest> received = new CopyOnWriteArrayList<>();
     private final AtomicBoolean rejectNext = new AtomicBoolean();
-    private final AtomicReference<RawResponse> nextResponse = new AtomicReference<>();
+    private final AtomicReference<RawResponse> nextCreateResponse = new AtomicReference<>();
+    private final AtomicReference<RawResponse> nextLookupResponse = new AtomicReference<>();
     private final AtomicBoolean dropNextResponse = new AtomicBoolean();
     private final AtomicReference<HeldResponse> holdNext = new AtomicReference<>();
 
@@ -122,7 +124,11 @@ public final class PgFixture implements AutoCloseable {
     }
 
     public void respondNextCreateWith(int status, String rawBody) {
-        nextResponse.set(new RawResponse(status, rawBody));
+        nextCreateResponse.set(new RawResponse(status, rawBody));
+    }
+
+    public void respondNextLookupWith(int status, String rawBody) {
+        nextLookupResponse.set(new RawResponse(status, rawBody));
     }
 
     public static SSLContext clientSslContext() {
@@ -166,12 +172,13 @@ public final class PgFixture implements AutoCloseable {
         received.add(new ReceivedRequest(
             exchange.getRequestMethod(),
             exchange.getRequestURI().getPath(),
+            exchange.getRequestURI().getRawQuery(),
             userOf(exchange),
             exchange.getRequestHeaders().getFirst("Content-Type"),
             request
         ));
         createCount.incrementAndGet();
-        RawResponse raw = nextResponse.getAndSet(null);
+        RawResponse raw = nextCreateResponse.getAndSet(null);
         if (raw != null) {
             respondRaw(exchange, raw.status(), raw.body());
             return;
@@ -206,6 +213,19 @@ public final class PgFixture implements AutoCloseable {
 
     private void lookup(HttpExchange exchange) throws IOException {
         String path = exchange.getRequestURI().getPath();
+        received.add(new ReceivedRequest(
+            exchange.getRequestMethod(),
+            path,
+            exchange.getRequestURI().getRawQuery(),
+            userOf(exchange),
+            exchange.getRequestHeaders().getFirst("Content-Type"),
+            null
+        ));
+        RawResponse raw = nextLookupResponse.getAndSet(null);
+        if (raw != null) {
+            respondRaw(exchange, raw.status(), raw.body());
+            return;
+        }
         if (path.equals(PAYMENTS)) {
             lookupByOrder(exchange);
             return;
@@ -238,13 +258,13 @@ public final class PgFixture implements AutoCloseable {
     }
 
     private static String queryParameter(HttpExchange exchange, String name) {
-        String query = exchange.getRequestURI().getQuery();
+        String query = exchange.getRequestURI().getRawQuery();
         if (query == null) {
             return null;
         }
         return Arrays.stream(query.split("&"))
             .filter(pair -> pair.startsWith(name + "="))
-            .map(pair -> pair.substring(name.length() + 1))
+            .map(pair -> URLDecoder.decode(pair.substring(name.length() + 1), StandardCharsets.UTF_8))
             .findFirst()
             .orElse(null);
     }
@@ -331,7 +351,14 @@ public final class PgFixture implements AutoCloseable {
     private record RawResponse(int status, String body) {
     }
 
-    public record ReceivedRequest(String method, String path, String userId, String contentType, JsonNode body) {
+    public record ReceivedRequest(
+        String method,
+        String path,
+        String rawQuery,
+        String userId,
+        String contentType,
+        JsonNode body
+    ) {
     }
 
     public record Transaction(String transactionKey, String orderId, long amount, Status status) {

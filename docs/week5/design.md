@@ -220,6 +220,10 @@ bulkhead(20)가 풀(30)보다 작아 평소에는 거의 일어나지 않는다.
 지금 고를 수 있는 다른 길: 연결 timeout · TLS 실패도 `NotSent` 로 본다. 요청 본문이 나가기 전이라 같은 논리가 서지만, 연결 계층의 오류를 하위 client 가 일관되게 구분해 주는지 확인해야 한다.
 **뒤집을 조건**: 하위 client 가 풀 대기 timeout 과 응답 timeout 을 같은 예외로 내어 가를 수 없을 때 — 그때는 `CreateUnknown` 으로 돌아간다.
 
+**누가 판정하나.** 생성의 관찰(`Accepted` · `RejectedNoEffect` · `NotSent` · `CreateUnknown`)은 adapter 가 만든다 — HTTP 응답의 모양 자체가 판정 기준이다(`PG-010` · `PG-011` · `PG-015`). 조회는 adapter 가 판정하지 않고 PG 가 준 거래를 그대로 옮긴다(`Found` · `NotFound` · `Unavailable`). `Verified` · `Mismatch` 는 우리 기록(저장 금액 · 붙은 키)과 비교해야 나오므로 도메인(`Payment`)이 만든다. 그래야 그 규칙을 DB · HTTP 없이 애그리거트 테스트로 확인한다.
+지금 고를 수 있는 다른 길: adapter 가 기대 금액 · 주문을 받아 `Verified` · `Mismatch` 까지 만든다. 비교 규칙이 infrastructure 로 새고, 규칙 테스트에 PG 가 필요해진다.
+**뒤집을 조건**: 판정에 HTTP 응답에만 있는 정보(헤더 · 서명 등)가 필요해질 때.
+
 **어느 조회를 쓰나.** 결제에 키가 있으면 키 조회(`GET /payments/{transactionKey}`), 없으면 주문 조회(`GET /payments?orderId=`)다. callback 은 본문의 키로 조회한다.
 결제에 이미 키 K 가 있는데 callback 이 K2 를 가리키고 그 거래가 우리 주문 · 금액과 맞으면, 같은 주문에 거래가 둘이라는 뜻이다 → `MULTIPLE_TRANSACTIONS`.
 키가 있는 결제는 주문 조회를 하지 않으므로, 키가 붙은 뒤 숨은 재전송으로 생긴 두 번째 거래는 그 거래의 callback 이 와야 드러난다. 이는 9장의 한계에 적는다.
