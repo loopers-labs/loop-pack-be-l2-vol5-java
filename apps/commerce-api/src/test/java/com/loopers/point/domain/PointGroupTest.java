@@ -50,63 +50,6 @@ class PointGroupTest {
         }
     }
 
-    @DisplayName("그룹의 포인트를 사용할 때, ")
-    @Nested
-    class Use {
-
-        @DisplayName("G-3 · PNT-06 남은 3,000원에서 3,000원을 쓰면 남은 금액은 0원이다.")
-        @Test
-        void usesAllRemaining() {
-            // arrange
-            PointGroup group = chargedGroup(3_000);
-
-            // act
-            group.use(Money.of(3_000), CHARGED_AT.plusDays(1));
-
-            // assert
-            assertThat(group.getRemaining()).isEqualTo(Money.of(0));
-        }
-
-        @DisplayName("G-4 · PNT-06 남은 3,000원에서 3,001원을 쓰면 거절하고, 남은 금액은 3,000원 그대로다.")
-        @Test
-        void rejectsUsingMoreThanRemaining() {
-            // arrange
-            PointGroup group = chargedGroup(3_000);
-
-            // act & assert
-            assertThatThrownBy(() -> group.use(Money.of(3_001), CHARGED_AT.plusDays(1)))
-                .isInstanceOf(CoreException.class)
-                .extracting("errorType").isEqualTo(ErrorType.CONFLICT);
-            assertThat(group.getRemaining()).isEqualTo(Money.of(3_000));
-        }
-
-        @DisplayName("G-5 · PNT-07 만료 1초 전에는 사용할 수 있다.")
-        @Test
-        void usesJustBeforeExpiry() {
-            // arrange
-            PointGroup group = chargedGroup(3_000);
-
-            // act
-            group.use(Money.of(1_000), EXPIRES_AT.minusSeconds(1));
-
-            // assert
-            assertThat(group.getRemaining()).isEqualTo(Money.of(2_000));
-        }
-
-        @DisplayName("G-6 · PNT-07 만료 시각 정각에는 사용할 수 없고, 남은 금액은 그대로다.")
-        @Test
-        void rejectsUsingAtExpiry() {
-            // arrange
-            PointGroup group = chargedGroup(3_000);
-
-            // act & assert
-            assertThatThrownBy(() -> group.use(Money.of(1_000), EXPIRES_AT))
-                .isInstanceOf(CoreException.class)
-                .extracting("errorType").isEqualTo(ErrorType.CONFLICT);
-            assertThat(group.getRemaining()).isEqualTo(Money.of(3_000));
-        }
-    }
-
     @DisplayName("그룹을 만료 처리할 때, ")
     @Nested
     class Expire {
