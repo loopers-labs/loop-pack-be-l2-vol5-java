@@ -5,6 +5,7 @@ import com.loopers.infrastructure.brand.BrandJpaEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
+import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
@@ -15,7 +16,13 @@ import lombok.NoArgsConstructor;
 @Entity
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@Table(name = "products")
+@Table(
+    name = "products",
+    indexes = {
+        @Index(name = "FKa3a4mpsfdf4d2y6r8ra3sc8mv", columnList = "brand_id"),
+        @Index(name = "idx_products_brand_deleted_price", columnList = "brand_id, deleted_at, price")
+    }
+)
 public class ProductJpaEntity extends BaseEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)

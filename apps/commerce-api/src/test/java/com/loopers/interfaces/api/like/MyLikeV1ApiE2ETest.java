@@ -57,7 +57,7 @@ class MyLikeV1ApiE2ETest {
         User user = userRepository.save(User.create());
         Brand brand = brandRepository.save(Brand.create("Nike"));
         Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
-        likeRepository.save(Like.create(user.getId(), product.getId()));
+        likeRepository.insertIfAbsent(Like.create(user.getId(), product.getId()));
         HttpHeaders headers = new HttpHeaders();
         headers.set("X-USER-ID", user.getId().toString());
 

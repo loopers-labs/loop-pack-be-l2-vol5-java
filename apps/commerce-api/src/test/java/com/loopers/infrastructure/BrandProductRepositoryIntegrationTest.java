@@ -6,9 +6,11 @@ import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.ZonedDateTime;
@@ -25,8 +27,36 @@ class BrandProductRepositoryIntegrationTest {
     @Autowired
     private ProductRepository productRepository;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     @PersistenceContext
     private EntityManager entityManager;
+
+    @Test
+    @DisplayName("목록 조회 인덱스의 브랜드·삭제·가격 순서를 유지하고 실험용 가격 단일 인덱스는 남기지 않는다.")
+    void keepsCompositeIndexWithoutExperimentalPriceIndex() {
+        assertThat(jdbcTemplate.queryForList("""
+            SELECT COLUMN_NAME
+            FROM information_schema.statistics
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'products'
+              AND INDEX_NAME = 'idx_products_brand_deleted_price'
+            ORDER BY SEQ_IN_INDEX
+            """, String.class)).containsExactly("brand_id", "deleted_at", "price");
+        assertThat(jdbcTemplate.queryForList("""
+            SELECT COLUMN_NAME
+            FROM information_schema.statistics
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'products'
+              AND INDEX_NAME = 'FKa3a4mpsfdf4d2y6r8ra3sc8mv'
+            ORDER BY SEQ_IN_INDEX
+            """, String.class)).containsExactly("brand_id");
+        assertThat(jdbcTemplate.queryForObject("""
+            SELECT COUNT(*)
+            FROM information_schema.statistics
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'products'
+              AND INDEX_NAME = 'idx_products_price'
+            """, Integer.class)).isZero();
+    }
 
     @Test
     void mapsBrandAndProductBetweenDomainAndJpaModels() {

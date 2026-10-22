@@ -44,8 +44,8 @@ class CustomerProductFacadeIntegrationTest {
     void returnsCustomerProductDetailWithBrandAndLikeCount() {
         Brand brand = brandRepository.save(Brand.create("Nike"));
         Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
-        likeRepository.save(Like.create(1L, product.getId()));
-        likeRepository.save(Like.create(2L, product.getId()));
+        likeRepository.insertIfAbsent(Like.create(1L, product.getId()));
+        likeRepository.insertIfAbsent(Like.create(2L, product.getId()));
 
         CustomerProductInfo info = productFacade.getCustomerDetail(product.getId());
 

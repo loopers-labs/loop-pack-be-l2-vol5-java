@@ -1,0 +1,7 @@
+SELECT DIGEST, DIGEST_TEXT, COUNT_STAR, SUM_TIMER_WAIT, SUM_ROWS_EXAMINED, SUM_ROWS_SENT
+FROM performance_schema.events_statements_summary_by_digest
+WHERE SCHEMA_NAME = 'loopers'
+  AND (DIGEST_TEXT LIKE '%pje1_0%'
+    OR DIGEST_TEXT LIKE '%bje1_0%'
+    OR DIGEST_TEXT LIKE '%lje1_0%')
+ORDER BY DIGEST;

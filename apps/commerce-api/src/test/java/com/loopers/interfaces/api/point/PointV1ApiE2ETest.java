@@ -11,6 +11,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
@@ -19,6 +21,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 
 import java.util.Map;
@@ -187,6 +190,56 @@ class PointV1ApiE2ETest {
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST),
                 () -> assertThat(savedPoint.getBalance().amount()).isZero()
+            );
+        }
+
+        @DisplayName("충전액에 소수 부분이 있으면, 400 응답을 반환하고 기존 잔액을 유지한다.")
+        @ParameterizedTest
+        @ValueSource(strings = {"100.9", "0.9", "1.009e2"})
+        void keepsBalance_whenAmountHasFractionalPart(String amount) {
+            User user = saveUser();
+            pointRepository.save(Point.create(user.getId(), new PointBalance(100L)));
+            HttpHeaders requestHeaders = headers(user.getId());
+            requestHeaders.setContentType(MediaType.APPLICATION_JSON);
+            HttpEntity<String> request = new HttpEntity<>("{\"amount\":" + amount + "}", requestHeaders);
+
+            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+                ENDPOINT_CHARGE,
+                HttpMethod.POST,
+                request,
+                new ParameterizedTypeReference<>() {}
+            );
+
+            Point savedPoint = pointRepository.findByUserId(user.getId()).orElseThrow();
+            assertAll(
+                () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST),
+                () -> assertThat(response.getBody().meta().result()).isEqualTo(ApiResponse.Metadata.Result.FAIL),
+                () -> assertThat(savedPoint.getBalance().amount()).isEqualTo(100L)
+            );
+        }
+
+        @DisplayName("소수점이나 지수 표기여도 값이 정수이면 정확한 금액으로 충전한다.")
+        @ParameterizedTest
+        @ValueSource(strings = {"100.0", "1e2"})
+        void chargesExactAmount_whenNumericValueIsAnInteger(String amount) {
+            User user = saveUser();
+            pointRepository.save(Point.create(user.getId()));
+            HttpHeaders requestHeaders = headers(user.getId());
+            requestHeaders.setContentType(MediaType.APPLICATION_JSON);
+            HttpEntity<String> request = new HttpEntity<>("{\"amount\":" + amount + "}", requestHeaders);
+
+            ResponseEntity<ApiResponse<PointV1Dto.ChargeResponse>> response = testRestTemplate.exchange(
+                ENDPOINT_CHARGE,
+                HttpMethod.POST,
+                request,
+                new ParameterizedTypeReference<>() {}
+            );
+
+            Point savedPoint = pointRepository.findByUserId(user.getId()).orElseThrow();
+            assertAll(
+                () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK),
+                () -> assertThat(response.getBody().data().balance()).isEqualTo(100L),
+                () -> assertThat(savedPoint.getBalance().amount()).isEqualTo(100L)
             );
         }
     }

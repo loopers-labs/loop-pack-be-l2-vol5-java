@@ -1,6 +1,8 @@
 package com.loopers.interfaces.api.admin.product;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.loopers.application.product.ProductInfo;
+import com.loopers.interfaces.api.serialization.ExactLongDeserializer;
 
 public class ProductV1Dto {
 
@@ -10,11 +12,18 @@ public class ProductV1Dto {
         ALL
     }
 
-    public record CreateRequest(Long brandId, String name, long price) {}
+    public record CreateRequest(
+        @JsonDeserialize(using = ExactLongDeserializer.class) Long brandId,
+        String name,
+        @JsonDeserialize(using = ExactLongDeserializer.class) long price
+    ) {}
 
-    public record UpdateRequest(String name, long price) {}
+    public record UpdateRequest(
+        String name,
+        @JsonDeserialize(using = ExactLongDeserializer.class) long price
+    ) {}
 
-    public record StockUpdateRequest(long quantity) {}
+    public record StockUpdateRequest(@JsonDeserialize(using = ExactLongDeserializer.class) long quantity) {}
 
     public record ProductResponse(
         Long id,

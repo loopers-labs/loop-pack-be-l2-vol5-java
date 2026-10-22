@@ -2,8 +2,12 @@ package com.loopers.infrastructure.product;
 
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
+import com.loopers.domain.product.ProductSort;
 import com.loopers.infrastructure.brand.BrandJpaRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Component;
 
 import java.time.ZonedDateTime;
@@ -30,6 +34,45 @@ public class ProductRepositoryImpl implements ProductRepository {
     @Override
     public List<Product> findAllActive() {
         return productJpaRepository.findAllByDeletedAtIsNull().stream().map(ProductJpaMapper::toDomain).toList();
+    }
+
+    @Override
+    public List<Product> findActivePage(Long brandId, ProductSort sort, int page, int size) {
+        // JPA offset의 int 범위를 벗어난 요청은 기존 계약대로 빈 페이지를 반환한다.
+        if ((long) page * size > Integer.MAX_VALUE) {
+            return List.of();
+        }
+        Sort jpaSort = switch (sort) {
+            case LATEST -> Sort.by(
+                Sort.Order.desc("createdAt"),
+                Sort.Order.desc("id")
+            );
+            case PRICE_ASC -> Sort.by(
+                Sort.Order.asc("price"),
+                Sort.Order.asc("id")
+            );
+            case LIKES_DESC -> Sort.unsorted();
+        };
+        Pageable pageable = PageRequest.of(page, size, jpaSort);
+        List<ProductJpaEntity> entities = switch (sort) {
+            case LATEST, PRICE_ASC -> findActivePage(brandId, pageable);
+            case LIKES_DESC -> brandId == null
+                ? productJpaRepository.findAllActiveOrderByLikeCountDesc(pageable)
+                : productJpaRepository.findAllActiveByBrandIdOrderByLikeCountDesc(brandId, pageable);
+        };
+        return entities.stream().map(ProductJpaMapper::toDomain).toList();
+    }
+
+    private List<ProductJpaEntity> findActivePage(Long brandId, Pageable pageable) {
+        if (brandId == null) {
+            return productJpaRepository.findAllByDeletedAtIsNull(pageable);
+        }
+        return productJpaRepository.findAllByDeletedAtIsNullAndBrand_Id(brandId, pageable);
+    }
+
+    @Override
+    public long countActiveByIds(List<Long> productIds) {
+        return productJpaRepository.countByIdInAndDeletedAtIsNull(productIds);
     }
 
     @Override

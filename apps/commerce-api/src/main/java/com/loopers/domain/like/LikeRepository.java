@@ -1,7 +1,8 @@
 package com.loopers.domain.like;
 
-import java.util.Optional;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 public interface LikeRepository {
 
@@ -11,7 +12,10 @@ public interface LikeRepository {
 
     long countByProductId(Long productId);
 
-    Like save(Like like);
+    Map<Long, Long> countByProductIds(List<Long> productIds);
+
+    // 관계를 새로 저장한 경우에만 true를 반환한다.
+    boolean insertIfAbsent(Like like);
 
     void delete(Like like);
 }
