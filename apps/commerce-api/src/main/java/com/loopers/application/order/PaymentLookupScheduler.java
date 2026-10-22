@@ -7,7 +7,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
-import java.time.Instant;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 결제 요청의 백업 거래 조회. confirmOrder 가 결제 시작 커밋 뒤, 결제 요청 전에 예약한다.
@@ -39,7 +39,7 @@ public class PaymentLookupScheduler {
 
     /** 지금부터 pg.lookup-delay 뒤 이 주문의 거래 조회를 한 번 예약한다. */
     public void schedule(Long userId, Long orderId) {
-        taskScheduler.schedule(() -> lookup(userId, orderId), Instant.now().plus(delay));
+        taskScheduler.getScheduledExecutor().schedule(() -> lookup(userId, orderId), delay.toMillis(), TimeUnit.MILLISECONDS);
     }
 
     private void lookup(Long userId, Long orderId) {
