@@ -29,6 +29,10 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
 
+pg:
+  base-url: http://localhost:8080
+  provider-id: "135135"
+
 ---
 spring:
   config:
