@@ -36,12 +36,16 @@ TX B    PG 의 관찰을 결제 · 주문 · 재고에 한 번만 반영 → com
 |---|---|---|---|
 | `orderId` | commerce DB | bigint | 주문 소유권 · 상태. 코드 안에서 `orderId` 는 언제나 이것이다 |
 | `paymentAttemptKey` | **클라이언트** (UUID 권장) | 1~64자 영문 · 숫자 · `-` | 같은 결제 요청의 재전송을 알아본다. **우리 서버의 멱등 키** |
-| `providerOrderId` | commerce adapter | `LP-ORD-%010d` | PG 에 보내는 주문 번호. PG 요청 본문에서는 필드 이름이 `orderId` 다 |
+| `providerOrderId` | commerce adapter | `LP-ORD-%010d` | PG 에 보내는 주문 번호. PG 의 본문(생성 요청 · 생성 응답 · 조회 응답 · callback)에서는 필드 이름이 `orderId` 다 |
 | `transactionKey` | **PG** | 문자열 | 거래 한 건. POST 마다 새로 나온다 — 멱등 키가 아니다 |
 
 `providerOrderId` 는 `orderId` 로 계산할 수 있어도 저장한다. 형식이 바뀌어도 이미 보낸 시도는 **보낸 그 문자열**로 조회해야 하고, callback 이 이 값으로 오므로 인덱스가 걸린 열이 필요하다.
 
 **뒤집을 조건**: 같은 PG 계정을 여러 환경(로컬 · 개발 · 스테이징)이 함께 쓰거나 DB 를 자주 초기화해 주문 번호가 겹치면, `providerOrderId` 에 환경 구분자를 넣는다(`LP-ORD-local-0000000042`). 원문 예시 형식과 달라지므로 지금은 쓰지 않는다.
+
+**callback 본문도 `orderId` 다.** 같은 PG 가 보내는 본문이라 생성 · 조회 응답과 이름이 같아야 adapter 가 한 가지 이름으로 읽고, fixture 는 거래 객체를 그대로 보낸다. `providerOrderId` 는 그 값을 **우리 쪽에서** 부르는 이름이다 — PG 계약 안에서 같은 값이 두 이름을 갖지 않는다.
+지금 고를 수 있는 다른 길: callback 본문만 `providerOrderId` 로 두고 callback 전용 record 를 만든다.
+**뒤집을 조건**: 실제 PG 의 callback 명세가 다른 필드 이름을 정할 때. 그때는 adapter 의 callback 요청 record 한 곳만 바꾼다.
 
 ## 3. 저장 모델
 
@@ -101,6 +105,9 @@ erDiagram
 
 지금 고를 수 있는 다른 길:
 - 예약 테이블(위). **뒤집을 조건**: 예약의 생애가 결제와 갈라질 때 — 예약 만료, 일부 수량만 확보, 결제 없이 장바구니 단계에서 예약.
+
+**왜 결제 전에 묶나.** 결제 뒤에 빼면 마지막 1 개를 둘이 동시에 결제했을 때 한 명은 돈만 내고 재고가 없다. 돌려줄 취소 API 가 없다(1.2). 묶고 시간이 지나면 푸는 길은 `RSV-004`(원문)가 막는다 — 풀어서 판 뒤 늦은 `SUCCESS` 가 오면 같은 장면이 된다.
+대가는 결과가 나올 때까지 재고가 묶이는 것이다. 얼마나 오래 묶였는지는 `payment.unresolved.oldest`(9.1)가 보여 준다. 영원히 묶이는 경우(9장 첫 줄)를 푸는 조건은 9장에 적는다.
 - 전체 · 예약 수량을 상품에 나눠 두기(`product.reserved`). 가용 = `quantity - reserved`. 성공 때 상품 행을 잠가 두 열을 함께 바꿔야 하고, 관리자 설정 · 품절 판정 · 캐시 조회가 모두 바뀐다. **뒤집을 조건**: 상품마다 전체 · 묶인 재고를 한눈에 봐야 하는 화면(창고 관리)이 생길 때.
 
 ### 3.3 `payment_discrepancy` — 불일치 기록
@@ -199,6 +206,7 @@ confirm(userId, orderId, key, cardType, cardNo)
 |---|---|---|
 | `Accepted(key)` | 생성 202 | 거래가 생겼고 처리 중 |
 | `RejectedNoEffect` | 생성 422 (`PG-010` 의 다섯 조건이 모두 맞을 때만) | 거래가 생기지 않았고 앞으로도 안 생김 |
+| `NotSent` | 커넥션 풀 대기 timeout (`PG-015`) | 연결을 얻지 못해 아무것도 보내지 않음 — 거래가 생기지 않았음이 확실 |
 | `CreateUnknown` | 생성 timeout · 연결 끊김 · 그 밖의 응답 | 거래가 생겼는지 모름 |
 | `Verified(key, status)` | 조회한 거래가 계정 · 주문 · 금액과 맞음 | PG 가 말한 이 거래의 현재 상태 |
 | `Mismatch(reason, …)` | 조회한 거래의 금액이 다름(`AMOUNT_MISMATCH`), 주문이 다름(`ORDER_MISMATCH`), 2건 이상이거나 **이미 붙은 키와 다른 키의 우리 거래**(`MULTIPLE_TRANSACTIONS`) | 불일치 |
@@ -207,16 +215,40 @@ confirm(userId, orderId, key, cardType, cardNo)
 
 조회 불가를 관찰로 만들지 않는 것이 핵심이다. 그래야 회로 OPEN 이 `PENDING` 을 `UNKNOWN` 으로 바꾸거나 `FAILED` 를 만드는 길이 처음부터 없다.
 
+**`NotSent` 를 `CreateUnknown` 과 가르는 이유.** 풀 대기 timeout 은 PG 와 연결을 맺기 전에 우리 쪽에서 끝난다. 보낸 바이트가 없으니 거래가 생길 수 없다 — 효과 0 이 증명된 실패다. UNKNOWN 으로 두면 보내지도 않은 결제가 재고를 영원히 묶는다(9장 첫 줄과 같은 결과를 우리가 만든다).
+bulkhead(20)가 풀(30)보다 작아 평소에는 거의 일어나지 않는다. bulkhead 가 없거나(E6a) 조회가 풀을 많이 쓸 때 드러난다.
+지금 고를 수 있는 다른 길: 연결 timeout · TLS 실패도 `NotSent` 로 본다. 요청 본문이 나가기 전이라 같은 논리가 서지만, 연결 계층의 오류를 하위 client 가 일관되게 구분해 주는지 확인해야 한다.
+**뒤집을 조건**: 하위 client 가 풀 대기 timeout 과 응답 timeout 을 같은 예외로 내어 가를 수 없을 때 — 그때는 `CreateUnknown` 으로 돌아간다.
+
 **어느 조회를 쓰나.** 결제에 키가 있으면 키 조회(`GET /payments/{transactionKey}`), 없으면 주문 조회(`GET /payments?orderId=`)다. callback 은 본문의 키로 조회한다.
 결제에 이미 키 K 가 있는데 callback 이 K2 를 가리키고 그 거래가 우리 주문 · 금액과 맞으면, 같은 주문에 거래가 둘이라는 뜻이다 → `MULTIPLE_TRANSACTIONS`.
 키가 있는 결제는 주문 조회를 하지 않으므로, 키가 붙은 뒤 숨은 재전송으로 생긴 두 번째 거래는 그 거래의 callback 이 와야 드러난다. 이는 9장의 한계에 적는다.
 
 ### 5.2 전이 표
 
+```mermaid
+stateDiagram-v2
+    [*] --> REQUESTED : TX A
+    REQUESTED --> PENDING : Accepted · Verified(PENDING)
+    REQUESTED --> UNKNOWN : CreateUnknown
+    UNKNOWN --> PENDING : Verified(PENDING)
+    REQUESTED --> SUCCESS : Verified(SUCCESS)
+    UNKNOWN --> SUCCESS : Verified(SUCCESS)
+    PENDING --> SUCCESS : Verified(SUCCESS)
+    REQUESTED --> FAILED : RejectedNoEffect · NotSent · Verified(FAILED)
+    UNKNOWN --> FAILED : Verified(FAILED)
+    PENDING --> FAILED : Verified(FAILED)
+    REQUESTED --> CONFLICT : Mismatch
+    UNKNOWN --> CONFLICT : Mismatch
+    PENDING --> CONFLICT : Mismatch
+```
+
+`SUCCESS` · `FAILED` · `CONFLICT` 에서 나가는 화살표가 없다. 종결 뒤에 다른 결과가 와도(늦은 `PENDING` callback 포함) 상태는 그대로이고 불일치만 남는다. 그림은 한눈에 보기 위한 것이고, 관찰과 효과까지 담은 것은 아래 표다.
+
 | 현재 | 관찰 | 다음 | 효과 (같은 TX B) |
 |---|---|---|---|
 | `REQUESTED` | `Accepted(K)` | `PENDING` | 키 K 저장 |
-| `REQUESTED` | `RejectedNoEffect` | `FAILED` | 예약 반환 · 주문 `PAYMENT_FAILED`. 키는 없다 — 꾸며 저장하지 않는다 |
+| `REQUESTED` | `RejectedNoEffect` · `NotSent` | `FAILED` | 예약 반환 · 주문 `PAYMENT_FAILED`. 키는 없다 — 꾸며 저장하지 않는다 |
 | `REQUESTED` | `CreateUnknown` | `UNKNOWN` | — |
 | `REQUESTED` · `UNKNOWN` · `PENDING` | `Verified(K, PENDING)` | `PENDING` | 키가 없으면 K 저장 |
 | `REQUESTED` · `UNKNOWN` · `PENDING` | `Verified(K, SUCCESS)` | `SUCCESS` | 키가 없으면 K 저장 · 예약 소비 · 주문 `CONFIRMED`(`payment_method=PG`, `paid_amount`) |
@@ -420,16 +452,30 @@ Apache 를 고르는 이유: 커넥션 풀의 상한과 **풀 대기 timeout** �
 | 커넥션 풀 대기 | 200 ms | 풀 앞에서 하염없이 기다리지 않는다. W4 의 DB 커넥션 대기와 같은 장면 |
 | 같은 호스트 동시 연결 · 전체 | 30 · 30 | bulkhead 20 + 조회 경로 여유. bulkhead 보다 작으면 자리를 얻고도 풀 앞에서 또 기다린다 |
 | 자동 재시도 | **끔** | `PG-012`. 생성의 숨은 재전송이 거래 2건의 경로다 |
+| 쉬는 연결 검사 · 정리 | 2 s 넘게 쉰 연결은 빌려주기 전에 확인, 30 s 넘게 쉰 연결은 닫음 | 상대가 먼저 끊은 연결로 POST 를 보내면 PG 가 받지 않았는데도 `CreateUnknown` 이 되고 재고가 묶인다 |
+| TLS | HTTPS, 검증은 끄지 않음. 테스트는 SSL bundle `pg` 로 fixture 인증서만 믿는다(12.1) | 모든 인증서를 믿는 설정은 운영으로 새면 중간자 공격에 열린다 |
 
 값은 `정함` 이다. **뒤집을 조건**: 실제 PG 의 응답 시간 분포를 알게 되면 p99 의 몇 배로 다시 잡는다.
 
 ### 7.2 조회 재시도 (`RESIL-005`)
 
-조회에만 둔다. 생성에는 두지 않는다.
+**sweeper 의 조회에만** 둔다. 생성에는 두지 않고, 요청 스레드에서 도는 조회(reconcile · callback)에도 두지 않는다.
 
-- 최대 3 회(처음 1 + 재시도 2), 간격 100 ms · 200 ms, 대상은 timeout · 연결 실패 · 5xx · 429.
-- 최악의 대기는 1 s × 3 + 0.3 s ≈ 3.3 s(study.md 의 예와 같다). callback · reconcile · sweeper 가 이 예산을 쓴다.
+| 입구 | 조회 | 실패하면 |
+|---|---|---|
+| reconcile (고객 요청) | 1 회 | "조회 불가" 와 저장된 상태(`RESIL-004`) |
+| callback (PG 요청) | 1 회 | 503 — PG 가 다시 보낸다(8.1) |
+| sweeper (백그라운드) | 최대 3 회 | 다음 주기 |
+
+- sweeper 의 재시도: 최대 3 회(처음 1 + 재시도 2), 간격 100 ms · 200 ms, 대상은 timeout · 연결 실패 · 5xx. 최악의 대기는 1 s × 3 + 0.3 s ≈ 3.3 s(study.md 의 예와 같다).
+- **요청 스레드에서 재시도하지 않는 이유.** 요청 스레드가 PG 를 기다리는 시간은 그대로 Tomcat 스레드를 붙잡는 시간이다. 재시도를 두면 reconcile 하나가 최악 3.3 s 를 쥐고, 조회가 느리지만 실패하지 않는 동안(timeout 안 남, 회로 안 열림)에는 회로도 이를 막지 못한다. reconcile 에는 bulkhead 도 없다(7.4 는 생성 경로뿐).
+  한 번으로 줄이면 요청이 PG 를 부르는 횟수가 어느 입구든 최대 1 회가 되고, 기다림은 응답 timeout(1 s)이 상한이다. 끈질긴 확인은 스레드를 붙잡아도 되는 sweeper 가 맡는다. callback 은 실패하면 503 을 주므로 재시도를 PG 의 재전송이 대신한다.
+- 지금 고를 수 있는 다른 길: 조회 경로에도 bulkhead 를 두고 재시도를 유지한다. 대기 자리 설정이 하나 더 는다.
+- **뒤집을 조건**: sweeper 를 끈 환경에서 일시적 조회 실패로 결과 반영이 눈에 띄게 늦어질 때 — reconcile 에 재시도 1 회를 되돌린다. PG 의 callback 재전송이 약해 503 에 기댈 수 없을 때 — callback 에 재시도를 되돌린다.
 - 404 · `[]` 는 재시도하지 않는다. 업무 결과다.
+- **429 는 재시도하지 않는다.** PG 가 "멈춰" 라고 한 신호에 100 ms 뒤 다시 부르면 과부하를 키운다(study.md: 외부가 과부하인데 즉시 다시 호출하면 실패를 증폭한다). sweeper 가 50 건을 한꺼번에 조회하다 429 를 받으면 50 건이 그대로 다시 몰린다.
+  429 는 바로 "조회 불가" 로 끝내고(`PAY-008`, 아무것도 쓰지 않음) 회로의 실패로만 센다(`RESIL-002`). 이어지면 회로가 열려 조회가 멈추고, 회복은 HALF_OPEN 이 맡는다. 그 결제는 다음 sweeper 주기나 reconcile 에서 다시 확인된다.
+  **뒤집을 조건**: PG 가 `Retry-After` 를 주게 되면 그 시간만큼 기다린 뒤 한 번 재시도하는 것을 검토한다.
 
 ### 7.3 Circuit breaker (`RESIL-001` · `002` · `003`)
 
@@ -437,8 +483,8 @@ Apache 를 고르는 이유: 커넥션 풀의 상한과 **풀 대기 timeout** �
 
 | 설정 | 값 |
 |---|---|
-| 창 | 호출 수 기준, 최근 10 회 |
-| 최소 표본 | 5 회 |
+| 창 | **시간 기준, 최근 10 s** |
+| 최소 표본 | 5 회 (창 안에서) |
 | 실패율 | 50 % 이상이면 OPEN |
 | 실패로 세는 것 | timeout · 연결 실패 · 5xx · 429. **404 · `[]` · `PENDING` 은 세지 않는다** |
 | OPEN 대기 | 10 s (테스트는 짧게 바꾼다) |
@@ -446,6 +492,20 @@ Apache 를 고르는 이유: 커넥션 풀의 상한과 **풀 대기 timeout** �
 
 **재시도와 회로의 순서**: 재시도가 회로를 감싼다(`Retry(CircuitBreaker(call))`). 그래서 재시도 한 번 한 번이 회로의 표본이 되고, 회로가 열리면 `CallNotPermitted` 는 재시도하지 않는다.
 반대로 회로가 재시도를 감싸면 세 번의 실패가 표본 하나로 줄어 회로가 늦게 열린다. 테스트에서 PG 의 실제 조회 수로 이 순서를 확인한다.
+
+**창을 시간으로 재는 이유.** 조회는 세 입구(callback · reconcile · sweeper)에서 오고 양이 크게 흔들린다. 몰릴 때는 초당 수십 번, 한가할 때는 sweeper 만 10 s 에 몇 번이다.
+호출 수 창(최근 10 회)은 몰릴 때 0.2 s 를, 한가할 때 몇 시간을 덮는다. 새벽의 실패 5 번이 창에 남아 있으면 아침의 첫 timeout 하나로 회로가 열린다 — 지금의 PG 는 멀쩡한데 오래된 기록이 조회를 멈춘다.
+시간 창은 언제나 "최근 10 s" 다. 한가해서 10 s 안에 표본 5 회가 안 차면 판단하지 않는데, 그때는 PG 를 두드리는 양 자체가 작고 재시도 예산 · sweeper 주기가 이미 속도를 늦춘다.
+10 s 는 sweeper 주기와 같다 — sweeper 가 한 번에 집는 50 건이 한 창 안에서 판단된다.
+
+**값을 어림하는 식.**
+- 감지 시간 ≈ 최소 표본 ÷ 초당 조회 수. 조회 50/s 면 약 0.1 s.
+- 평소 실패율이 p 일 때 잘못 열릴 확률 ≈ P(Binomial(5, p) ≥ 3). p = 1 % 면 약 10⁻⁵.
+- OPEN 대기는 PG 의 회복 시간 규모로 잡되, 열린 동안에도 sweeper(10 s)가 다시 확인하므로 그 주기에 맞춘다.
+
+값은 8.5 의 E4 실험으로 확인한다. 실험이 보여 주는 것은 "이 장애 모양에서 이 설정이 이렇게 움직인다" 이고, 운영의 최적값은 운영의 평소 실패율 · 조회율로 다시 맞춘다.
+지금 고를 수 있는 다른 길: 호출 수 창. 시계와 무관해 테스트가 결정적이다.
+**뒤집을 조건**: 조회량이 늘 일정하고 많아 두 창의 차이가 사라질 때, 시간 창 때문에 회로 테스트가 느린 빌드에서 흔들릴 때, E4 에서 호출 수 창이 더 낫게 나올 때. 그때 창 크기는 "평소 초당 조회 수 × 10 s" 로 잡는다.
 
 ### 7.4 Bulkhead (`RESIL-007`)
 
@@ -486,7 +546,23 @@ callback 의 조회도 `last_checked_at` 을 갱신한다.
 - `CONFLICT` 는 집지 않는다(`PAY-018`). 다시 조회해도 2건은 2건이다.
 - 테스트에서는 스케줄을 끄고 "한 번 돌리기" 를 직접 부른다.
 
+**`payment` 가 outbox 다.** sweeper 는 outbox 릴레이와 모양이 같다 — 업무 TX(TX A)가 할 일을 함께 적고, 릴레이가 SKIP LOCKED 로 집는다. 별도 outbox 테이블을 두지 않는 것은 할 일이 남았다는 사실을 `payment.status` 가 이미 담기 때문이다. 따로 두면 두 곳을 맞춰야 한다(재고 예약 테이블을 두지 않은 것과 같은 이유, 3.2).
+일반 outbox 와 다른 것은 릴레이의 일이다. outbox 릴레이는 **다시 보내고**, 그래서 받는 쪽이 중복을 견뎌야 한다. 이 PG 의 생성은 같은 orderId 도 새 거래를 만들어 중복을 견디지 못한다 — sweeper 는 다시 보내지 않고 **조회한다**.
+같은 행이 받는 쪽에서는 inbox 의 몫도 한다. callback 을 놓쳐도 확인할 대상이 `payment` 에 남아 있다(8.2).
+outbox 를 따로 써야 하는 것은 DB 바깥으로 나가는 후속 작업(알림 · 이벤트 발행)이다. 결과에 따른 DB 안의 변화(결제 · 주문 · 재고)는 TX B 하나로 이미 원자적이다. 이번 범위에는 바깥으로 나가는 후속 작업이 없다.
+**뒤집을 조건**: PG 가 멱등 키(같은 키의 재요청에 같은 거래)를 받게 될 때 — 생성을 outbox 로 보내면 9 장 첫 줄의 한계가 사라진다(10 장 "발송을 작업자에 맡김"). 확정 뒤 이벤트를 바깥으로 내야 할 때 — 그 이벤트를 TX B 에서 outbox 에 적는다.
+
 ## 8. callback
+
+**callback 은 결과가 아니라 계기다**(`SETTLE-002`). 믿지 않는 이유는 둘이다.
+
+| 믿을 수 없는 것 | 장면 | 막는 장치 |
+|---|---|---|
+| 진짜인가 | 서명이 없고(`SETTLE-010`) 경로가 열려 있다. 누구나 `SUCCESS` 를 보낼 수 있다 | 본문의 상태를 쓰지 않고 PG 를 조회해 계정 · 주문 · 키 · 금액을 확인한다 |
+| 오는가 · 언제 · 몇 번 | 유실 · 중복 · 순서 뒤바뀜 · 생성 응답보다 먼저 | 유실은 reconcile · sweeper, 중복은 TX B 의 잠금과 "종결 전일 때만", 순서는 전이 표(5.2), 먼저 옴은 `SETTLE-005` |
+
+그래서 callback 이 빨리 오면 빨리 끝나고, 안 와도 결국 끝난다. 정합성은 callback 에 기대지 않고, 지연만 callback 덕을 본다. 대가는 callback 마다 조회 한 번이다(E5 가 잰다).
+**뒤집을 조건**: PG 가 서명된 callback 과 권위 있는 전체 본문(금액 · 계정) · 순서 정보를 모두 줄 때 — 서명을 검증하고 본문으로 반영해 조회를 아낄 수 있다. 유실은 여전히 막지 못하므로 sweeper 는 남는다.
 
 ### 8.1 응답 코드 (`SETTLE-009`)
 
@@ -514,7 +590,7 @@ callback 은 "확인해 보라" 는 계기라 놓쳐도 잃는 정보가 없다 
 
 | 장면 | 결과 | 왜 자동으로 풀지 않나 |
 |---|---|---|
-| `REQUESTED` commit 뒤 POST 전에 프로세스 종료 | 조회 0건이 계속되고 주문 `PAYMENT_PENDING` 과 차감한 재고가 남는다 | 0건이 "안 보냈다" 의 증거가 아니다. 다시 보내면 이중 결제가 될 수 있다 |
+| `REQUESTED` commit 뒤 POST 전에 프로세스 종료 | 조회 0건이 계속되고 주문 `PAYMENT_PENDING` 과 차감한 재고가 남는다 | 0건이 "안 보냈다" 의 증거가 아니다. 다시 보내면 이중 결제가 될 수 있다. **뒤집을 조건**: PG 가 "생성된 거래는 N 초 안에 조회된다" 를 보장할 때 — `requested_at` 이 N 초를 넘었는데 주문 조회가 0 건이면 안 보냈음이 증명되므로 `FAILED` · 반환한다. 시간만이 아니라 시간 + PG 의 0 건이라 `RSV-004` 와 맞는다 |
 | `CONFLICT` | 예약이 묶인 채 사람을 기다린다 | 어느 거래가 진짜인지, 금액이 다른 결제를 받을지는 사람이 PG 와 확인할 일이다 |
 | 종결 뒤 PG 가 다른 결과를 말함(`RESULT_AFTER_SETTLED`) | 상태는 그대로, 불일치 기록만 | 취소 API 가 없다(1.2). 특히 `FAILED` · 반환 뒤 `SUCCESS` 는 돈은 받았는데 재고가 팔렸을 수 있다 |
 | 오래된 미확인 결제 | 시간이 지나도 실패로 바꾸지 않는다 | 아직 성공할 거래의 재고를 남에게 팔 수 있다. 원문도 무조건 만료를 금한다 |
@@ -527,7 +603,7 @@ callback 은 "확인해 보라" 는 계기라 놓쳐도 잃는 정보가 없다 
 
 | 이름 | 종류 | 태그 | 보는 것 |
 |---|---|---|---|
-| `payment.create` | 카운터 | `result=accepted · rejected · unknown` | 실제 생성 호출 수 |
+| `payment.create` | 카운터 | `result=accepted · rejected · not_sent · unknown` | 생성 시도와 결과. `not_sent` 는 PG 에 닿지 않은 것이라 fixture 의 create 수와 대조할 때 뺀다 |
 | `payment.lookup` | 카운터 | `source=callback · reconcile · sweeper`, `result=found · not_found · unavailable` | 조회가 어느 입구에서 얼마나 나가고 얼마나 실패하나 |
 | `payment.settle` | 카운터 | `to=pending · success · failed · conflict · noop` | 결과 반영이 바꾼 것과 효과가 없던 것(중복) |
 | `payment.discrepancy` | 카운터 | `reason` | 0 이 아니면 사람이 본다 |
@@ -542,11 +618,12 @@ callback 은 "확인해 보라" 는 계기라 놓쳐도 잃는 정보가 없다 
 | 선택지 | 하는 일 | 지금 고르지 않는 이유 | 뒤집을 조건 |
 |---|---|---|---|
 | confirm 안에서 결과 대기 | POST 뒤 예산(약 1.5 s) 동안 조회해 대부분 200 으로 결과를 준다 | 화면은 폴링과 비슷한데(스피너 → 결과) 스레드를 더 오래 쥐어 대기 자리 bulkhead 가 하나 더 필요하다. 계약이 비동기라 202 경로는 어차피 있다 | 결과까지의 지연이 UX 지표에서 문제로 보일 때, 가상 스레드를 켰을 때 |
-| 발송을 작업자에 맡김 | confirm 은 `READY` 만 기록하고 202, 작업자가 `READY` → `REQUESTED` 로 권한을 얻어 POST | 원문이 "발송 권한을 얻은 confirm 실행이 PG 를 부른다" 를 그린다. 즉시 거절(422)도 늦게 알게 된다. 작업자 · 상태 하나가 는다. 이득은 "확실히 안 보냄" 을 가르는 것 하나 | 생성 응답이 느려 confirm 지연이 UX 를 해칠 때, 9장 첫 줄이 운영에서 자주 보일 때 |
+| 발송을 작업자에 맡김 (생성의 outbox) | confirm 은 `READY` 만 기록하고 202, 작업자가 `READY` → `REQUESTED` 로 권한을 얻어 POST | 원문이 "발송 권한을 얻은 confirm 실행이 PG 를 부른다" 를 그린다. 즉시 거절(422)도 늦게 알게 된다. 작업자 · 상태 하나가 는다. 이득은 "확실히 안 보냄" 을 가르는 것 하나 — "보냈는지 모름" 의 창(9장 첫 줄)은 작업자로 옮겨 갈 뿐 크기가 같다. 작업자 없이 메모리에서 비동기로 보내면(`@Async`) 그 창이 큐 대기 시간 전체로 넓어진다 | 생성 응답이 느려 confirm 지연이 UX 를 해칠 때, 9장 첫 줄이 운영에서 자주 보일 때, PG 가 멱등 키를 받게 될 때(7.6) |
 | 예약과 POST 를 동시에 · 실패하면 보상 취소 | TX A 의 몇 ms 를 아낀다 | 취소 API 가 없다. 있어도 취소의 timeout 이 또 다른 미확인을 만들고, 사용자가 승인과 취소를 모두 겪는다. 재고는 같은 DB 라 미리 싸게 확보할 수 있다 — 막을 수 있는 실패는 막고 막을 수 없는 실패만 보상한다 | 재고가 다른 서비스로 나가 미리 잠글 수 없게 될 때 |
 | 가상 스레드 | 기다림을 싸게 만들어 스레드 고갈을 없앤다 | 앱 전체의 실행 모델이 바뀐다(W3 의 잠금 측정 · W4 의 k6 기준선이 모두 영향을 받는다). 스레드 풀이 하던 숨은 상한이 사라져 DB 풀 · PG 앞에 명시적 상한이 필요하다(7.4 가 그 하나다). Java 21 은 `synchronized` 안의 블로킹이 OS 스레드를 붙잡는다 | PG 지연 때 스레드 고갈이 측정될 때. Java 25(LTS)로 올릴 때 |
 | 서블릿 비동기 + `WebClient` | 기다리는 동안 아무 스레드도 쥐지 않는다 | 원문이 WebClient 를 새 필수로 두지 말라 한다. JPA 는 블로킹이라 TX A · B 를 이벤트 루프에서 떼어 내야 하고, `@Transactional` · MDC 가 체인을 넘지 않는다. 효과는 가상 스레드와 비슷한데 바꿀 코드가 훨씬 많다 | 가상 스레드를 쓸 수 없는 환경일 때 |
 | `CompletableFuture` 로 감싸기 | 일을 다른 스레드에 맡긴다 | confirm 은 응답을 받아야 다음 단계로 가므로 그사이 할 일이 없다. 기다리는 스레드가 옮겨 갈 뿐이고, `get()` 의 timeout 은 PG 거래를 취소하지 않는다(study.md) | — |
+| 조회 rate limiter | PG 조회 앞에서 서버당 초당 N 건만 보내고, 넘으면 기다리지 않고 "조회 불가". 실제 PG 는 보통 **가맹점 계정 단위**로 초당 한도를 두고(예: Stripe live 계정 초당 100), 생성과 조회가 그 한도를 나눠 쓴다. 조회를 묶어 두면 생성(실제 결제)이 429 를 받아 `CreateUnknown` 이 되는 것을 막는다 | 원문 PG 계약에 한도가 없어 숫자의 근거가 없다. 조회의 폭주는 회로 · reconcile 간격(2 s) · sweeper 크기(10 s 에 50 건) · 커넥션 풀(30)이 이미 늦추고, 429 는 재시도하지 않는다(7.2). 생성은 TX A 전에 막아야 하므로 `RestClient` 에 한도를 걸면 안 된다 — 보내지 않은 결제가 `UNKNOWN` 으로 남는다(7.4 와 같은 이유) | 실제 PG 의 한도를 알게 될 때(값은 계정 한도 × 조회 몫 ÷ 서버 수), 429 가 관측될 때, 8.5 의 E5(callback 폭주)에서 조회가 커넥션 풀 앞에 몰려 "조회 불가" 가 이어질 때. 서버가 여러 대라 서버당 나누기로 한도를 지키기 어려우면 공유 저장소의 분산 limiter |
 
 ## 11. 코드 배치
 
@@ -573,7 +650,32 @@ interfaces/api          confirm · reconcile(OrderV1Controller) · callback 컨�
 
 ### 12.1 PG fixture (테스트 전용, Q-3)
 
-JDK 내장 `HttpServer` 로 테스트 안에서 띄운다. 의존성을 더하지 않는다. 같은 orderId 의 새 POST 는 **새 거래를 만든다** — fixture 가 중복을 막으면 우리 코드가 POST 를 두 번 보내도 테스트가 통과한다.
+JDK 내장 `HttpsServer` 로 테스트 안에서 띄운다. 의존성을 더하지 않는다. 같은 orderId 의 새 POST 는 **새 거래를 만든다** — fixture 가 중복을 막으면 우리 코드가 POST 를 두 번 보내도 테스트가 통과한다.
+
+**HTTPS 로 띄운다.** 커넥션 풀 · 연결 timeout 이 실제 PG 처럼 TLS 인사를 포함한 연결에서 검증된다. 검증을 끄지 않고, 테스트 인증서만 믿는다.
+
+| 파일 (`src/test/resources`) | 내용 | 쓰는 곳 |
+|---|---|---|
+| `pg-fixture-keystore.p12` | 개인 키 + 자체 서명 인증서, SAN `IP:127.0.0.1` | fixture(서버) |
+| `pg-fixture-truststore.p12` | 인증서만 | `test` 프로파일의 SSL bundle `pg`(우리 client), fixture 테스트의 JDK `HttpClient` |
+
+비밀번호는 `local-only-not-a-secret` 이다. 테스트 전용 자체 서명 키라 유출돼도 다른 곳에서 믿지 않는다. 저장소에 둔다 — 없으면 SSL bundle 을 만들지 못해 모든 `@SpringBootTest` 가 뜨지 않는다.
+`.gitattributes` 의 `linguist-generated` 로 PR diff 에서 접힌다. 유효기간은 10 년이다. 다시 만들 때는 저장소 루트에서:
+
+```bash
+keytool -genkeypair -alias pg-fixture -keyalg RSA -keysize 2048 -validity 3650 \
+  -dname "CN=127.0.0.1" -ext SAN=ip:127.0.0.1 -storetype PKCS12 \
+  -keystore apps/commerce-api/src/test/resources/pg-fixture-keystore.p12 -storepass local-only-not-a-secret
+keytool -exportcert -alias pg-fixture \
+  -keystore apps/commerce-api/src/test/resources/pg-fixture-keystore.p12 -storepass local-only-not-a-secret \
+  -file pg-fixture.crt
+keytool -importcert -noprompt -alias pg-fixture -file pg-fixture.crt -storetype PKCS12 \
+  -keystore apps/commerce-api/src/test/resources/pg-fixture-truststore.p12 -storepass local-only-not-a-secret
+rm pg-fixture.crt
+```
+
+지금 고를 수 있는 다른 길: HTTP 로 띄운다. 풀의 재사용 · 상한 · 대기 timeout 은 HTTP 에서도 똑같이 검증되고 인증서가 없어진다.
+**뒤집을 조건**: 인증서 관리(만료 · 재생성)가 테스트 유지보수를 실제로 막을 때, 또는 `keytool` 이 없는 빌드 환경을 써야 할 때.
 
 | 손잡이 | 만드는 장면 |
 |---|---|
@@ -583,6 +685,8 @@ JDK 내장 `HttpServer` 로 테스트 안에서 띄운다. 의존성을 더하�
 | 다음 생성은 거래를 만들고 응답만 끊기 · 늦게 주기 | 응답 유실 · callback 이 생성 응답보다 먼저 |
 | 같은 orderId 로 거래 하나 더 만들기 · 금액이 다른 거래 만들기 | `MULTIPLE_TRANSACTIONS` · `AMOUNT_MISMATCH` |
 | 다음 N 번 조회를 timeout · 5xx · 429 로 | 회로 CLOSED → OPEN → HALF_OPEN → CLOSED · 재차단 |
+| N 번째 조회마다 5xx | 잡음 속에서 회로가 열리지 않음(E4b). 무작위 대신 주기로 만들어 재현된다 |
+| 생성 · 조회 응답 지연(실행 중 바꿈) | PG 느려짐(E2 · E3). 테스트 밖 실험에서는 관리 경로로 바꾼다(8.5) |
 | create · lookup 호출 수, 저장된 거래, 받은 요청(헤더 · 본문) | 모든 장면의 단언 |
 
 무작위 지연 · 성공 확률이 없다. 자동 callback · 자동 재전송도 없다. 테스트가 명령할 때만 상태가 바뀐다.
@@ -607,7 +711,7 @@ JDK 내장 `HttpServer` 로 테스트 안에서 띄운다. 의존성을 더하�
 | # | 단계 | 끝났다는 증거 |
 |---|---|---|
 | 0 | 문서(이 문서와 명세) | — |
-| 1 | PG fixture | fixture 가 계약대로 응답하고 손잡이가 동작한다 |
+| 1 | PG fixture | fixture 가 계약대로 응답하고, 2 단계 adapter 가 쓰는 손잡이(상태 변경 · callback · 생성 거절 · 응답 끊기 · 응답 붙잡기)가 동작한다. 나머지 손잡이(12.1 표)는 그 장면을 테스트하는 단계에서 red 로 더한다 — 어떤 모양이 필요한지는 그 장면의 테스트가 정한다 |
 | 2 | PG adapter | `PaymentProviderContractTest` |
 | 3 | 도메인 — `Payment` 전이 표 · 주문 상태 | DB 없이 도는 애그리거트 테스트 |
 | 4 | 저장 · TX A · 발송 | 동시 confirm 에도 create 1 |
@@ -628,7 +732,77 @@ JDK 내장 `HttpServer` 로 테스트 안에서 띄운다. 의존성을 더하�
 | E1 기준선 | PG 접수 50 ms, confirm 초당 50 + 상품 목록 초당 300 | 두 API 의 p50 · p99 · 처리량 | 둘 다 안정 |
 | E2 PG 지연 · bulkhead 끔 | PG 접수 2 s | 상품 목록 p99, 사용 중 Tomcat 스레드 | 상품 목록도 느려진다 |
 | E3 PG 지연 · bulkhead 20 | E2 와 같음 | 같음 + 503 수 | 상품 목록은 E1 수준, confirm 일부만 503 |
-| E4 조회 실패 | 조회에 5xx | 회로 전이 시각, PG 조회 수 | 표본 5 회 안에 OPEN, 이후 조회 0, 대기 뒤 HALF_OPEN → 복구 |
+| E4 회로 | 아래 E4a ~ E4e | | |
 | E5 callback 폭주 | 같은 callback 1,000 건 동시 | 확정 · 가용 재고 · 불일치 수 | 확정 1, 재고 변화 0, 나머지 효과 0 |
+
+E4 는 창 두 가지(시간 10 s · 호출 수 10 회)로 한 번씩, 앱을 다시 띄워 돌린다. 7.3 의 창 선택을 이 결과로 확인한다.
+
+| 실험 | 조건 | 재는 것 | 기대 | 어디서 |
+|---|---|---|---|---|
+| E4a 몰릴 때 장애 | 조회 50/s 중 어느 순간부터 전부 5xx | OPEN 까지 시간, 그동안 나간 조회 수 | 감지 ≈ 최소 표본 ÷ 조회율, OPEN 뒤 조회 0 | k6 · Grafana |
+| E4b 잡음 | 조회 50/s, 20 번째마다 5xx (5 %) | 잘못 열린 횟수 | 0 | JUnit |
+| E4c 한가한 뒤 | 실패 5 회 → 창보다 긴 공백 → PG 정상 → 실패 1 회 | 열렸나 | 시간 창은 닫힘. 호출 수 창은 열린다(오래된 실패) | JUnit, 창을 1 s 로 줄여서 |
+| E4d 회복 | E4a 뒤 PG 정상 | CLOSED 까지 시간, 그동안 확정이 늦어진 결제 수 | OPEN 대기 + 탐색 2 회 | k6 · Grafana |
+| E4e sweeper 일괄 | 10 s 마다 50 건 조회, PG 장애 | 한 일괄에서 나간 조회 수 | 50 건이 다 나가기 전에 OPEN | JUnit |
+
+**한계.** fixture 의 실패 모양(정확히 5 %, 한순간에 전부)은 실제 PG 와 다르다. 결과는 "이 모양에서 이 설정이 이렇게 움직인다" 이고 운영의 최적값이 아니다.
+
+**부하 모델.** 스레드 고갈은 트래픽만이 아니라 트래픽 × 외부가 붙잡는 시간의 문제다(리틀의 법칙: 필요한 스레드 = 초당 요청 × 머무는 시간).
+Tomcat 200 은 PG 50 ms 에서 초당 4,000 이 필요하지만, PG 2 s 에서는 **초당 100** 이면 찬다. 가정은 "아주 큰 트래픽" 이 아니라 "PG 가 느려지는 순간의 보통 이상 트래픽" 이다. E2 · E3 · E6 은 이 고갈선을 기준으로 돌린다.
+
+| 단계 | confirm /s | 상품 목록 /s | 뜻 (PG 2 s) |
+|---|---|---|---|
+| L1 | 50 | 300 | 고갈선 아래 |
+| L2 | 100 | 300 | 고갈선 |
+| L3 | 200 | 300 | 고갈선의 2 배 |
+
+**실행 환경.** W4 처럼 k6 를 EC2(서울)로 분리하고 SSH 역터널로 노트북의 앱에 보낸다. k6 가 앱 · MySQL 과 CPU 를 나눠 쓰지 않게 하기 위해서다. W4 에서 터널은 초당 4,300 건 근처가 한계였고, 이번 부하(L3 합계 초당 500)는 그보다 한참 아래다.
+fixture 는 노트북에 둔다. 지연은 잠자기라 CPU 를 쓰지 않는다. callback 은 fixture 가 같은 노트북의 앱으로 보낸다.
+숫자는 같은 환경 안의 비교(플랫폼 스레드 대 가상 스레드, bulkhead 켬 대 끔)로 읽는다. 앱까지 EC2 에 올려야 하는 때: 노트북의 앱 CPU 가 L3 에서 포화돼 비교가 CPU 에 묻힐 때.
+
+**E6 가상 스레드.** 설계 10장의 "가상 스레드" 를 실제로 잰다. `spring.threads.virtual.enabled` 로만 켜고 끈다. PG 2 s, L2 · L3.
+
+| | 플랫폼 스레드 | 가상 스레드 |
+|---|---|---|
+| bulkhead 끔 | E2 | **E6a** |
+| bulkhead 20 | E3 | **E6b** |
+
+- 재는 것: 상품 목록 p99, confirm 의 202 · 503 비율, 기다림이 옮겨 간 곳(PG 풀 · Hikari pending), 피닝 수(JFR `jdk.VirtualThreadPinned`, Java 21 은 `synchronized` 안의 블로킹이 OS 스레드를 붙잡는다).
+- 기대: E6a 에서 Tomcat 의 숨은 상한(200)이 사라지고 PG 풀(30)이 병목이 된다. 풀은 TX A 뒤에 있으므로 풀을 못 얻은 결제가 TX A 를 통과한 뒤 `NotSent` 로 `FAILED` 가 된다 — 재고는 돌아오지만 결제는 실패한다. E6b 는 bulkhead 가 TX A 앞에서 거절해 아무것도 커밋하지 않는다. **가상 스레드가 bulkhead 를 대신하지 못한다**는 것을 숫자로 확인한다.
+- 가상 스레드에서는 `tomcat_threads_busy` 가 뜻을 잃는다. 풀 pending 과 피닝 수를 본다.
+
+**모든 실험 뒤 정합성 검사.** 빠르기만 재면 "빨라졌는데 틀렸다" 를 놓친다. 실험마다 끝나면 같은 검사(`verify.sh`, SQL + fixture 의 숫자)를 돌리고, 하나라도 어기면 그 실험의 성능 숫자는 쓰지 않는다.
+
+| 불변식 | 확인 |
+|---|---|
+| 주문 하나에 PG 거래 1 건 이하 | fixture 의 `orderId` 별 거래 수 |
+| PG create 수 = `NotSent` 를 뺀 `payment` 행 수 | fixture `createCount` 와 DB |
+| 재고 보존: 초기 = 가용 + 묶임 + 판매 | `product.quantity` + 미완료 `order_item` + `SUCCESS` `order_item` |
+| `FAILED` 인데 재고를 쓴 주문 0, `SUCCESS` 인데 반환된 주문 0 | SQL |
+| 확정은 결제당 한 번 | `payment.settle{to=success}` = `SUCCESS` 행 수 |
+| 불일치 기록 | 그 실험이 의도한 것만 |
+
+멱등성은 k6 시나리오에 넣는다 — 같은 `paymentAttemptKey` 동시 5 회(연타), 같은 주문에 다른 키(409 `ORDER_NOT_DRAFT`), 같은 callback 반복(E5).
+
+**관측.** 이미 있는 것 — `docker/monitoring-compose.yml`(Prometheus 5 s 수집 · Grafana 3000), `/actuator/prometheus`(관리 포트 8081), W4 의 k6 · `measure.sh`. 실험할 때만 켜고 끈다.
+
+```bash
+docker compose -f docker/monitoring-compose.yml up -d
+docker compose -f docker/monitoring-compose.yml down
+```
+
+| 보는 것 | 지표 | 할 일 |
+|---|---|---|
+| 묶인 Tomcat 스레드 | `tomcat_threads_busy_threads` | `server.tomcat.mbeanregistry.enabled: true` |
+| 기다리는 JVM 스레드 | `jvm_threads_states_threads{state="timed-waiting"}` | 기본 |
+| DB 커넥션 대기 | `hikaricp_connections_pending` | 기본 |
+| PG 커넥션 풀 대기 | `httpcomponents_httpclient_pool_total_pending` · `leased` | adapter 단계에서 HttpClient5 풀 바인더 등록 |
+| PG 호출 지연 | `http_client_requests_seconds` | `RestClient` 를 스프링의 `RestClient.Builder` 로 만든다 |
+| 회로 · bulkhead | `resilience4j_circuitbreaker_state` · `resilience4j_bulkhead_available_concurrent_calls` | 7 단계에서 micrometer 모듈과 함께 |
+| 결제 업무 | `payment_*` (9.1) | 단계마다 |
+
+- 대시보드는 JSON 으로 `docker/grafana/provisioning/dashboards/` 에 둔다. 켤 때마다 같은 화면이 뜨고 리뷰어가 재현한다.
+- Prometheus 에 볼륨이 없어 끄면 데이터가 사라진다. 숫자는 k6 요약과 `measure.sh` 로 저장소에 남기고, 그래프는 캡처해 `docs/week5/charts/` 에 둔다(W4 와 같다).
+- fixture 는 테스트 클래스패스로 띄우는 `main` 과 Gradle 작업(`runPgFixture`)으로 테스트 밖에서 띄운다. 지연 · 실패 손잡이는 관리 경로(`POST /fixture/...`)로 실행 중에 바꾼다.
 
 **여유가 있으면** — sweeper 의 지수 backoff(확인할 때마다 간격 2 배, 상한 5 분, `check_count` 열. 영원히 0 건인 결제가 PG 를 계속 두드리지 않게), 관리자 결제 조회(`GET /api-admin/v1/payments?status=` · `/{id}/discrepancies`, 조회만).

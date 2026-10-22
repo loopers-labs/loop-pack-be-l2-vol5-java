@@ -61,6 +61,7 @@ W2 의 갈래에 넷을 더한다. 번호를 다시 쓰지 않는 규칙도 같�
 | `PG-012` | 생성은 어디서도 자동 재시도하지 않는다. HTTP client · 프록시 · 회복 라이브러리의 숨은 재시도도 끈다 | 원문 | — | 장면마다 create 호출 수를 센다 |
 | `PG-013` | 연결 · 응답 대기를 실제 request factory 에 제한한다 | 원문 | — | 값은 설계 7.1 |
 | `PG-014` | 카드 번호는 합성 값만 쓰고 DB · 로그에 남기지 않는다 | 원문 + 보안 | — | 시도 테이블에 카드 열이 없다 |
+| `PG-015` | 커넥션 풀에서 연결을 얻지 못해 끝난 생성(풀 대기 timeout)은 PG 의 응답이 아니라 **보내지 않음이 확실한** 실패다. `PG-011` 의 UNKNOWN 이 아니라 효과 0건 거절과 같이 `FAILED` · 예약 반환으로 다룬다 | 정함(`PG-011` 의 해석) | 풀 30 이 모두 빌려진 채 생성 | `FAILED`, 재고 반환, create 0 |
 
 ### 테스트 PG 장치 (fixture)
 
@@ -116,16 +117,17 @@ W2 의 갈래에 넷을 더한다. 번호를 다시 쓰지 않는 규칙도 같�
 | ID | 규칙 | 출처 | 깨는 입력 | 기대 |
 |---|---|---|---|---|
 | `SETTLE-001` | 결과 반영은 **한 경계**다. 생성 응답 · callback · reconcile · sweeper 가 모두 같은 반영을 부른다 | 원문 + 정함 | — | 설계 5장 |
-| `SETTLE-002` | callback 본문(`providerOrderId` · `transactionKey` · `status`)은 **확인 계기**다. 본문의 상태로 반영하지 않고, adapter 조회 결과에서 계정 · 주문 · 키 · 저장 금액을 확인한 뒤 반영한다 | 원문 | `SUCCESS` 를 꾸민 callback, PG 에는 `PENDING` | 주문 미확정 |
+| `SETTLE-002` | callback 본문(`orderId`(= providerOrderId) · `transactionKey` · `status`)은 **확인 계기**다. 본문의 상태로 반영하지 않고, adapter 조회 결과에서 계정 · 주문 · 키 · 저장 금액을 확인한 뒤 반영한다 | 원문 + 정함(필드 이름 `orderId`, 설계 2장) | `SUCCESS` 를 꾸민 callback, PG 에는 `PENDING` | 주문 미확정 |
 | `SETTLE-003` | callback-first 와 lookup-first 가 같은 `transactionKey` · 최종 상태로 수렴한다 | 원문 | — | — |
 | `SETTLE-004` | 중복 알림 · 동시 반영은 추가 재고 · 결제 효과가 없다. 상태 조건과 행 잠금으로 같은 TX 안에서 막는다 | 원문 | callback 과 reconcile 동시 | 확정 1 · 소비 1 |
-| `SETTLE-005` | 생성 응답보다 callback 이 먼저 오면(시도에 키가 없음) `providerOrderId` 로 시도를 찾고 조회로 확인한 키를 붙인다 | 정함 | — | 늦은 202 는 효과 0 |
+| `SETTLE-005` | 생성 응답보다 callback 이 먼저 오면(시도에 키가 없음) 본문의 `orderId`(= providerOrderId) 로 시도를 찾고 조회로 확인한 키를 붙인다 | 정함 | — | 늦은 202 는 효과 0 |
 | `SETTLE-006` | 종결 뒤 늦은 생성 응답 · timeout 처리는 상태를 되돌리지 않는다 | 원문 | — | 전이 표가 막는다 |
 | `SETTLE-007` | PG 성공 뒤 TX B 가 rollback 되면 같은 거래를 다시 조회해 한 번 반영한다. create 는 추가 0 | 원문 | TX B 에서 DB 오류 | 재조회로 확정 1 |
 | `SETTLE-008` | `POST /api/v1/orders/{orderId}/payment/reconcile` — 본인 주문의 미완료 시도를 조회 · 반영한다. 미완료면 202, 종결이면 200. 결제 시도가 없는 주문(DRAFT · 과거 POINT 주문)은 확인할 대상이 없으므로 404 `PAYMENT_NOT_FOUND` | 원문 + 정함(시도 없음) | 남의 주문 · DRAFT 주문 | 404 |
 | `SETTLE-009` | callback 응답 코드: 반영 · 중복 · 아직 PENDING · 불일치 · 모르는 주문은 200, 본문 해석 불가 400, **확인 조회 불가 · TX B DB 오류 503** | 정함 | 회로 OPEN 중 callback | 503, 상태 그대로 |
 | `SETTLE-010` | callback 경로는 고객 식별(`X-USER-ID`) 없이 받는다. 서명 검증은 하지 않는다 — 권위 조회가 위조를 막는다 | 정함 + 범위 | — | — |
 | `SETTLE-011` | `GET /api/v1/orders/{orderId}` 는 결제 수단 · 시도 상태 · 최종 결과를 보여 주고 새 결제 요청을 만들지 않는다 | 원문 | — | create 0 |
+| `SETTLE-012` | **callback 이 끝내 오지 않아도** 결과에 닿는다. callback 은 지연만 줄이고, 결과는 reconcile · sweeper 의 조회가 같은 경계로 반영한다 | 정함(`SETTLE-002` 의 귀결) | PG 에서 `SUCCESS` · `FAILED` 가 됐는데 callback 0 회 | reconcile(또는 sweeper 한 번)로 `CONFIRMED` · `PAYMENT_FAILED`, 재고 반환 1 회 |
 
 ## RESIL — 회복 도구
 
@@ -133,9 +135,9 @@ W2 의 갈래에 넷을 더한다. 번호를 다시 쓰지 않는 규칙도 같�
 |---|---|---|---|
 | `RESIL-001` | circuit breaker 는 **PG 조회 경로에만** 둔다 | 원문 | create 는 회로를 거치지 않는다 |
 | `RESIL-002` | 회로의 실패 표본은 timeout · 연결 실패 · 5xx · **429** 다. 404 · 빈 목록 · `PENDING` 은 업무 결과라 세지 않는다. 429 가 이어지면 회로가 열려 우리가 스스로 조회를 멈춘다 | 정함 | — |
-| `RESIL-003` | CLOSED → OPEN → HALF_OPEN → CLOSED, HALF_OPEN → OPEN 을 테스트로 확인한다. 최소 표본 · 실패율 · 대기 · 탐색 호출 수는 설계 7.3 | 원문 + 정함(값) | — |
+| `RESIL-003` | CLOSED → OPEN → HALF_OPEN → CLOSED, HALF_OPEN → OPEN 을 테스트로 확인한다. 창(시간 기준) · 최소 표본 · 실패율 · 대기 · 탐색 호출 수는 설계 7.3 | 원문 + 정함(값) | — |
 | `RESIL-004` | 회로 OPEN · 조회 실패에는 저장된 상태와 "확인 불가" 를 돌려준다. 금액 0 · 가짜 성공 · 포인트 대체 결제 · `FAILED` 확정을 하지 않는다 | 원문 | — |
-| `RESIL-005` | 조회 재시도는 횟수 · 간격 · 총 예산을 정하고 **실제 호출 수**를 테스트로 센다 | 원문 + 정함(값) | — |
+| `RESIL-005` | 조회 재시도는 횟수 · 간격 · 총 예산을 정하고 **실제 호출 수**를 테스트로 센다. 재시도는 **sweeper 의 조회에만** 둔다 — 요청 스레드에서 도는 reconcile · callback 은 조회 1 회다. **429 는 재시도하지 않는다** — 바로 "조회 불가" 로 끝내고 회로의 실패로만 센다(`RESIL-002`) | 원문 + 정함(값 · 입구 · 429 제외) | 조회 5xx 에 reconcile · 조회가 429 | reconcile 조회 1 회 · 429 조회 1 회, 상태 그대로 |
 | `RESIL-006` | sweeper — 미완료 시도를 정한 주기로 찾아 reconcile 과 같은 조회 · 반영을 부른다. 테스트에서는 주기를 끄고 한 번 실행을 직접 부른다 | 선택 | 수동 reconcile 이 기본 복구 경로 |
 | `RESIL-007` | **bulkhead** — confirm 의 PG 생성 경로는 동시에 20 개까지만 진행한다(세마포어, 대기 0). 자리는 **TX A 전에** 잡고 TX B 뒤에 `finally` 로 반납한다. 자리가 없으면 503 `PAYMENT_BUSY` · `Retry-After`, 예약 · 마킹 · create 모두 0 | 정함 | 동시 confirm 21 건 → 20 건 진행, 1 건 503 · 효과 0 |
 | `RESIL-008` | reconcile 은 같은 결제를 2초 안에 다시 확인하지 않는다(`last_checked_at`). 간격 안이면 PG 를 부르지 않고 저장된 상태를 돌려준다 | 정함 | 연속 reconcile 2 회 → lookup 1 회 |

@@ -1,0 +1,39 @@
+pg:
+  user-id: "135135"
+  connect-timeout: 500ms
+  create-timeout: 2s
+  lookup-timeout: 1s
+  pool-wait-timeout: 200ms
+  max-connections: 30
+
+---
+spring.config.activate.on-profile: local, test
+
+pg:
+  base-url: https://127.0.0.1:8090
+  callback-url: http://127.0.0.1:8080/api/v1/payments/callback
+
+---
+spring.config.activate.on-profile: test
+
+spring:
+  ssl:
+    bundle:
+      jks:
+        pg:
+          truststore:
+            location: classpath:pg-fixture-truststore.p12
+            password: local-only-not-a-secret
+            type: PKCS12
+
+pg:
+  ssl-bundle: pg
+
+---
+spring.config.activate.on-profile: dev
+
+---
+spring.config.activate.on-profile: qa
+
+---
+spring.config.activate.on-profile: prd
