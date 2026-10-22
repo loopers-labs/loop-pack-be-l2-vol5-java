@@ -32,7 +32,7 @@
 | 타임세일 오픈 1분 | 평소 피크의 50~100배 | 결제 시도 **100 TPS** |
 | PG 정상 응답 | 0.1~0.5s | 동시 대기 = 100 × 0.5 = 50 |
 | PG 지연 | 3s (생성 읽기 timeout 직전) | 동시 대기 = 100 × 3 = 300 > Tomcat 기본 200 → timeout·회로로 빨리 끊어야 다른 API가 산다 |
-| DB 커넥션 | Hikari 기본 10 | TX를 연 채 PG를 부르면 50 중 10만 진행 → PG 호출은 TX 밖 (4장) |
+| DB 커넥션 | Hikari 40 (`modules/jpa` jpa.yml `maximum-pool-size`) | TX를 연 채 PG를 부르면 발송 50 중 40만 진행하고 나머지 요청이 커넥션을 못 얻는다 → PG 호출은 TX 밖 (4장) |
 
 ## 1. 바꾸는 것과 바꾸지 않는 것 ✅ (과제 1절)
 
@@ -196,7 +196,12 @@ PaymentReconcileScheduler  PENDING·UNKNOWN 결제를 PG 조회로 확인 → �
 - 생성도 2초 넘는 호출을 "느림"으로 센다 ✅: 느려지는 PG를 timeout(3s)까지 기다리지 않고 일찍 차단한다 (부하 가정 0-1: 3s × 100 TPS면 Tomcat 200을 넘는다).
 - OPEN 10초 ✅ — 단, **부하 테스트로 검증한다**: 타임세일 중 OPEN 동안의 결제는 모두 실패로 닫힌다(ADR-W5-03). 짧으면 회복 중인 PG를 다시 두드린다. 측정 결과로 다시 정한다.
 - 조회 1회 최대 예산 ≈ 1s×3 + 0.3s = 3.3s.
-- TimeLimiter를 쓰지 않는 이유: 동기 HTTP client의 읽기 timeout이 실제 소켓을 끊는다. TimeLimiter는 Future 대기만 끊고 HTTP는 계속 돌 수 있다 (발제).
+- TimeLimiter를 쓰지 않는다 ✅ — 같은 일을 HTTP 클라이언트가 이미 하고, 더 확실하게 끊는다.
+  - 우리 설정: `JdkClientHttpRequestFactory.setReadTimeout(3s/1s)` (`LocalPgPaymentGatewayAdapter`).
+  - 그 값을 받은 Spring 6.2.5 `JdkClientHttpRequest`는 `HttpClient.sendAsync`로 보내고 타이머(`TimeoutHandler`)를 붙여, 시간이 지나면 **요청 future를 cancel**(응답 전)하거나 본문 스트림을 닫는다(본문 읽는 중). 즉 "읽기 바이트 간격"이 아니라 **보낸 뒤 응답 전체에 대한 시간 제한**이고, 취소 대상이 실제 HTTP 교환이다 (Java 16+).
+  - TimeLimiter를 얹으면: PG 호출을 `CompletableFuture`로 다른 스레드에 또 넘겨야 하고(발송 스레드 + 호출 스레드), `CompletableFuture.cancel()`은 실행 중인 호출을 멈추지 못해 우리만 "포기"를 기록하고 HTTP는 계속 돈다 → 결과 모름(`UNKNOWN`)만 는다.
+  - 요청 스레드는 결과를 기다리지 않고(202 즉시 응답, 발송은 풀로), 발송 스레드의 대기는 위 시간 제한이 끊는다 → TimeLimiter가 끊을 "제한 없는 대기"가 없다.
+  - 재검토 조건: 요청 스레드가 PG 결과를 기다려 동기로 답하는 흐름이 생기거나, HTTP 클라이언트를 시간 제한 없는 것으로 바꿀 때. Spring 주석상 `TimeoutHandler`는 JDK-8258397 우회책이라 버전업 때 동작을 다시 확인한다 (G-3·G-8).
 - 검증: `LocalPgPaymentGatewayAdapterTest` G-1~G-11. 생성 재시도를 일부러 넣으면 G-3·G-5·G-6이, 업무 거절 제외를 지우면 G-7이 실패함을 확인했다.
 
 ## 7. PG 어댑터 ✅ — 로컬 테스트 PG가 체크리스트 경로, Toss·PortOne은 같은 포트 뒤 추가 어댑터
@@ -319,3 +324,4 @@ PaymentReconcileScheduler  PENDING·UNKNOWN 결제를 PG 조회로 확인 → �
 | v0.7 | 2026-10-21 | §8 API를 구현에 맞춤: 결제 API는 payment 컨트롤러(순환 방지), 결제 상태 조회 `GET …/payment` 추가, 202/200 규칙, 멱등 키 400·409 |
 | v0.8 | 2026-10-21 | 구현 완료 반영: 체크리스트 C-1~C-8 증거, 장면 S-1~S-11 테스트 위치. C-9는 실험 자원 정리(PR 전) 남음 |
 | v0.9 | 2026-10-22 | ADR-W5-05: 보낸 지 30분 넘게 미종결이면 마지막 조회 후 FAILED(EXPIRED) + 재고 반환. 포인트 결제 배분 코드 제거. 실험 자원 정리. P-14·P-15, S-12 추가 |
+| v0.10 | 2026-10-22 | TimeLimiter 미사용 확정(§6): `setReadTimeout`이 Spring `JdkClientHttpRequest`에서 sendAsync + 타이머 취소로 동작하는 근거와 재검토 조건을 남김. 부하 가정의 Hikari를 실제 설정 40으로 정정(0-1) |

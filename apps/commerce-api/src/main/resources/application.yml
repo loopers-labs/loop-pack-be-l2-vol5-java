@@ -50,7 +50,7 @@ pg:
     lookup-read-timeout: 1s
 
 # W5 PG 회복 전략 (plan.md 6장 🔧). 어댑터가 레지스트리에서 이름으로 꺼내 코드로 감싼다 (LocalPgPaymentGatewayAdapter).
-# TimeLimiter는 쓰지 않는다 — HTTP 읽기 timeout이 소켓을 실제로 끊는다.
+# TimeLimiter는 쓰지 않는다 — read-timeout이 응답 전체 시간 제한이고, 넘으면 HTTP 요청 자체를 취소한다 (plan.md 6장).
 resilience4j:
   circuitbreaker:
     configs:
