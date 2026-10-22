@@ -265,6 +265,7 @@ PaymentReconcileScheduler  PENDING·UNKNOWN 결제를 PG 조회로 확인 → �
 - **선택**
   1. TX A에서 outbox 행을 함께 저장한다 (장부).
   2. commit 성공 시에만 `PaymentRequested` 이벤트를 비동기 스레드풀(50)에 넘기고 요청은 즉시 202를 받는다. 과제 PG는 생성 응답이 어차피 `PENDING`이라, 동기로 기다려도 고객이 받는 결과는 같다. 풀이 가득 차면 넘기지 않는다 (격벽).
+     - 비동기는 `PaymentSender.send`의 `@Async("paymentDispatchExecutor")`로 드러낸다. 입구 `PaymentDispatcher`는 그 빈을 부르고, 풀이 가득 차 던져지는 `TaskRejectedException`을 잡아 바로 닫는다. 함정 세 가지(같은 빈 안 호출 · `@EnableAsync` 누락 · 풀 이름 누락)는 모두 조용히 동기·무한 대기열로 바뀌므로, "풀이 가득 차면" 통합 테스트가 지킨다(뒤의 둘은 일부러 깨 실패를 확인함).
   3. 이벤트는 메모리에만 있으므로 놓친 행은 `PaymentDispatchCloser`가 1분마다 찾아 실패로 닫는다 (ADR-W5-03, 평소 0건).
   4. 스케줄러는 `commerce-api` 안 `payment.adapter.in.scheduler`에 **방아쇠만** 둔다. 판단·상태 변경은 유스케이스(application)에 있다.
 - **버린 대안과 비용**
@@ -326,3 +327,4 @@ PaymentReconcileScheduler  PENDING·UNKNOWN 결제를 PG 조회로 확인 → �
 | v0.9 | 2026-10-22 | ADR-W5-05: 보낸 지 30분 넘게 미종결이면 마지막 조회 후 FAILED(EXPIRED) + 재고 반환. 포인트 결제 배분 코드 제거. 실험 자원 정리. P-14·P-15, S-12 추가 |
 | v0.10 | 2026-10-22 | TimeLimiter 미사용 확정(§6): `setReadTimeout`이 Spring `JdkClientHttpRequest`에서 sendAsync + 타이머 취소로 동작하는 근거와 재검토 조건을 남김. 부하 가정의 Hikari를 실제 설정 40으로 정정(0-1) |
 | v0.11 | 2026-10-22 | 쓰지 않는 `PointGroup.use`(PNT-06 사용) 제거 — W5부터 포인트로 결제하지 않는다. 이전 POINT 주문의 사용 결과는 테스트에서 SQL로 둔다(C-2 방식). 만료(P-14)는 `PENDING`·`UNKNOWN` 둘 다 대상임을 재확인. k6 실험 런북 추가(§6) |
+| v0.12 | 2026-10-23 | 발송 비동기를 `executor.execute` 직접 호출에서 `PaymentSender`의 `@Async("paymentDispatchExecutor")`로 바꿔 코드에서 드러냄(ADR-W5-01 선택 2). 동작·테스트 기대값 변화 없음 |
