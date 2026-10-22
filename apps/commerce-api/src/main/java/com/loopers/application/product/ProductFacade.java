@@ -6,6 +6,7 @@ import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.product.ProductService;
 import com.loopers.domain.product.ProductSortType;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
@@ -19,6 +20,7 @@ public class ProductFacade {
     private final ProductService productService;
     private final BrandService brandService;
     private final LikeService likeService;
+    private final ProductCachePort productCachePort;
 
     public ProductInfo getProduct(Long productId) {
         ProductModel product = productService.getActiveProduct(productId);
@@ -27,6 +29,10 @@ public class ProductFacade {
         return ProductInfo.from(product, brandName, likeCount);
     }
 
+    @Cacheable(
+        cacheNames = "products",
+        key = "(#brandId == null ? 'all' : #brandId) + ':' + #sortType.name() + ':' + #page + ':' + #size"
+    )
     public ProductListInfo getProducts(Long brandId, ProductSortType sortType, int page, int size) {
         Page<ProductModel> products = productService.getActiveProducts(brandId, sortType, page, size);
 
@@ -57,18 +63,28 @@ public class ProductFacade {
 
     public ProductAdminInfo createProduct(Long brandId, String name, Long price, int stock) {
         brandService.validateActiveBrand(brandId);
-        return ProductAdminInfo.from(productService.create(brandId, name, price, stock));
+        ProductAdminInfo result = ProductAdminInfo.from(productService.create(brandId, name, price, stock));
+        productCachePort.evictByBrandId(brandId);
+        return result;
     }
 
     public ProductAdminInfo updateProduct(Long productId, String name, Long price) {
-        return ProductAdminInfo.from(productService.update(productId, name, price));
+        ProductModel product = productService.getProduct(productId);
+        ProductAdminInfo result = ProductAdminInfo.from(productService.update(productId, name, price));
+        productCachePort.evictByBrandId(product.getBrandId());
+        return result;
     }
 
     public ProductAdminInfo changeStock(Long productId, int quantity) {
-        return ProductAdminInfo.from(productService.changeStock(productId, quantity));
+        ProductModel product = productService.getProduct(productId);
+        ProductAdminInfo result = ProductAdminInfo.from(productService.changeStock(productId, quantity));
+        productCachePort.evictByBrandId(product.getBrandId());
+        return result;
     }
 
     public void deleteProduct(Long productId) {
+        ProductModel product = productService.getProduct(productId);
         productService.delete(productId);
+        productCachePort.evictByBrandId(product.getBrandId());
     }
 }
