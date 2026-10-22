@@ -194,7 +194,7 @@ PaymentReconcileScheduler  PENDING·UNKNOWN 결제를 PG 조회로 확인 → �
 | TimeLimiter | 없음 | 없음 |
 
 - 생성도 2초 넘는 호출을 "느림"으로 센다 ✅: 느려지는 PG를 timeout(3s)까지 기다리지 않고 일찍 차단한다 (부하 가정 0-1: 3s × 100 TPS면 Tomcat 200을 넘는다).
-- OPEN 10초 ✅ — 단, **부하 테스트로 검증한다**: 타임세일 중 OPEN 동안의 결제는 모두 실패로 닫힌다(ADR-W5-03). 짧으면 회복 중인 PG를 다시 두드린다. 측정 결과로 다시 정한다.
+- OPEN 10초 ✅ — 단, **부하 테스트로 검증한다**: 타임세일 중 OPEN 동안의 결제는 모두 실패로 닫힌다(ADR-W5-03). 짧으면 회복 중인 PG를 다시 두드린다. 측정 결과로 다시 정한다. 실험 절차는 런북 `docs/week5/k6/README.md` (미실행, 체크리스트 밖).
 - 조회 1회 최대 예산 ≈ 1s×3 + 0.3s = 3.3s.
 - TimeLimiter를 쓰지 않는다 ✅ — 같은 일을 HTTP 클라이언트가 이미 하고, 더 확실하게 끊는다.
   - 우리 설정: `JdkClientHttpRequestFactory.setReadTimeout(3s/1s)` (`LocalPgPaymentGatewayAdapter`).
@@ -325,3 +325,4 @@ PaymentReconcileScheduler  PENDING·UNKNOWN 결제를 PG 조회로 확인 → �
 | v0.8 | 2026-10-21 | 구현 완료 반영: 체크리스트 C-1~C-8 증거, 장면 S-1~S-11 테스트 위치. C-9는 실험 자원 정리(PR 전) 남음 |
 | v0.9 | 2026-10-22 | ADR-W5-05: 보낸 지 30분 넘게 미종결이면 마지막 조회 후 FAILED(EXPIRED) + 재고 반환. 포인트 결제 배분 코드 제거. 실험 자원 정리. P-14·P-15, S-12 추가 |
 | v0.10 | 2026-10-22 | TimeLimiter 미사용 확정(§6): `setReadTimeout`이 Spring `JdkClientHttpRequest`에서 sendAsync + 타이머 취소로 동작하는 근거와 재검토 조건을 남김. 부하 가정의 Hikari를 실제 설정 40으로 정정(0-1) |
+| v0.11 | 2026-10-22 | 쓰지 않는 `PointGroup.use`(PNT-06 사용) 제거 — W5부터 포인트로 결제하지 않는다. 이전 POINT 주문의 사용 결과는 테스트에서 SQL로 둔다(C-2 방식). 만료(P-14)는 `PENDING`·`UNKNOWN` 둘 다 대상임을 재확인. k6 실험 런북 추가(§6) |
