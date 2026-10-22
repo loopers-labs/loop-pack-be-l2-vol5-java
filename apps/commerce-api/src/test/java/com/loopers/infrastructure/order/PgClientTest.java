@@ -33,7 +33,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 결제 요청은 연결 실패만 NOT_SENT, 거래 조회는 어떤 실패도 UNKNOWN 인지 본다.
  */
 class PgClientTest {
-    private static final Duration READ_TIMEOUT = Duration.ofMillis(300);
+    private static final Duration READ_TIMEOUT = Duration.ofMillis(600);
+    private static final Duration LOOKUP_READ_TIMEOUT = Duration.ofMillis(200);
     private static final String CALLBACK_URL = "http://localhost:8080/api/v1/payments/callback";
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -78,7 +79,7 @@ class PgClientTest {
 
     private static PgClient clientFor(int port) {
         return new PgClient(RestClient.builder(),
-            new PgProperties("http://localhost:" + port, CALLBACK_URL, Duration.ofSeconds(1), READ_TIMEOUT));
+            new PgProperties("http://localhost:" + port, CALLBACK_URL, Duration.ofSeconds(1), READ_TIMEOUT, LOOKUP_READ_TIMEOUT));
     }
 
     /** 아무도 듣지 않는 포트의 클라이언트 (연결 거부). */
@@ -95,9 +96,14 @@ class PgClientTest {
     }
 
     private void respondAfterReadTimeout() {
+        respondAfter(READ_TIMEOUT.multipliedBy(3));
+    }
+
+    /** delay 뒤 200 SUCCESS. */
+    private void respondAfter(Duration delay) {
         responder = exchange -> {
             try {
-                Thread.sleep(READ_TIMEOUT.multipliedBy(3).toMillis());
+                Thread.sleep(delay.toMillis());
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return;
@@ -189,6 +195,14 @@ class PgClientTest {
             assertThat(request().outcome()).isEqualTo(Outcome.UNKNOWN);
         }
 
+        @DisplayName("거래 조회 read timeout 보다 늦은 응답도 결제 요청 read timeout 안이면 받는다.")
+        @Test
+        void usesPaymentReadTimeout() {
+            respondAfter(LOOKUP_READ_TIMEOUT.multipliedBy(2));
+
+            assertThat(request().outcome()).isEqualTo(Outcome.SUCCESS);
+        }
+
         @DisplayName("연결 거부는 요청이 PG 에 닿지 않은 것이 확실하므로 NOT_SENT.")
         @Test
         void notSent_onConnectionRefused() throws IOException {
@@ -238,6 +252,14 @@ class PgClientTest {
         @Test
         void unknown_onReadTimeout() {
             respondAfterReadTimeout();
+
+            assertThat(client.find(1L, 7L).outcome()).isEqualTo(Outcome.UNKNOWN);
+        }
+
+        @DisplayName("결제 요청 read timeout 안의 응답이라도 거래 조회 read timeout 을 넘으면 UNKNOWN.")
+        @Test
+        void unknown_afterLookupReadTimeout() {
+            respondAfter(LOOKUP_READ_TIMEOUT.multipliedBy(2));
 
             assertThat(client.find(1L, 7L).outcome()).isEqualTo(Outcome.UNKNOWN);
         }

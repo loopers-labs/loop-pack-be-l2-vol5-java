@@ -16,17 +16,20 @@ import org.springframework.web.client.RestClientException;
 import java.net.ConnectException;
 import java.net.http.HttpClient;
 import java.net.http.HttpConnectTimeoutException;
+import java.time.Duration;
 
 /**
  * PaymentGateway 구현. PG POST /api/v1/payments·GET /api/v1/payments?orderId= 를 RestClient 로 부른다. 예외를 던지지 않고 결과로 바꾼다.
  * 결제 요청 — 2xx: 응답 status(PENDING·SUCCESS·FAILED) 그대로 / 4xx: FAILED / 5xx·read timeout: UNKNOWN / 연결 실패·connect timeout: NOT_SENT.
  * 거래 조회 — 2xx: 응답 status 그대로 / 그 밖의 응답·예외: UNKNOWN.
+ * 결제 요청은 pg.read-timeout, 거래 조회는 그보다 짧은 pg.lookup-read-timeout 을 쓴다.
  * 결제 요청은 재시도하지 않는다 (이중 결제 방지). 카드번호는 로그에 마스킹한다.
  */
 @Slf4j
 @Component
 public class PgClient implements PaymentGateway {
-    private final RestClient restClient;
+    private final RestClient paymentClient;
+    private final RestClient lookupClient;
     private final PgProperties properties;
 
     public PgClient(RestClient.Builder builder, PgProperties properties) {
@@ -34,17 +37,23 @@ public class PgClient implements PaymentGateway {
             .version(HttpClient.Version.HTTP_1_1)
             .connectTimeout(properties.connectTimeout())
             .build();
-        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
-        requestFactory.setReadTimeout(properties.readTimeout());
-        this.restClient = builder.baseUrl(properties.baseUrl()).requestFactory(requestFactory).build();
+        this.paymentClient = restClient(builder, httpClient, properties.baseUrl(), properties.readTimeout());
+        this.lookupClient = restClient(builder, httpClient, properties.baseUrl(), properties.lookupReadTimeout());
         this.properties = properties;
+    }
+
+    /** 결제 요청·거래 조회는 read timeout 만 다르다. 연결(HttpClient)은 같이 쓴다. */
+    private static RestClient restClient(RestClient.Builder builder, HttpClient httpClient, String baseUrl, Duration readTimeout) {
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+        requestFactory.setReadTimeout(readTimeout);
+        return builder.clone().baseUrl(baseUrl).requestFactory(requestFactory).build();
     }
 
     @Override
     public PaymentGatewayResult request(Long userId, Long orderId, String cardType, String cardNo, Long amount) {
         PaymentRequest body = new PaymentRequest(PgOrderId.of(orderId), cardType, cardNo, amount, properties.callbackUrl());
         try {
-            return restClient.post()
+            return paymentClient.post()
                 .uri("/api/v1/payments")
                 .header("X-USER-ID", String.valueOf(userId))
                 .contentType(MediaType.APPLICATION_JSON)
@@ -77,7 +86,7 @@ public class PgClient implements PaymentGateway {
     @Override
     public PaymentGatewayResult find(Long userId, Long orderId) {
         try {
-            return restClient.get()
+            return lookupClient.get()
                 .uri(uri -> uri.path("/api/v1/payments").queryParam("orderId", PgOrderId.of(orderId)).build())
                 .header("X-USER-ID", String.valueOf(userId))
                 .exchange((request, response) -> {

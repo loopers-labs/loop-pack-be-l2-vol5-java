@@ -23,6 +23,7 @@ public class OrderFacade {
     private final OrderService orderService;
     private final OrderPaymentProcessor orderPaymentProcessor;
     private final PaymentGateway paymentGateway;
+    private final PaymentLookupScheduler paymentLookupScheduler;
 
     /**
      * FR-ORDER-01 주문 생성. ST-03 (없음) → DRAFT. 재고·잔액 변화 없음, 재고 부족은 확인하지 않는다.
@@ -43,6 +44,7 @@ public class OrderFacade {
 
     /**
      * FR-ORDER-02 주문 확정 (PG 카드 결제). 트랜잭션 없음: 결제 시작(재고 예약, AWAITING_PAYMENT) 커밋 → PG 요청 → 결과 반영.
+     * 결제 요청 전에 백업 거래 조회를 예약한다 (PaymentLookupScheduler, 결제 요청과 서로 기다리지 않는다).
      * 같은 결제 시도 키의 재요청은 PG 를 다시 부르지 않고 현재 상태를 돌려준다. 결과를 모르면 AWAITING_PAYMENT 그대로 돌려준다.
      */
     public OrderInfo confirmOrder(Long requesterId, Long orderId, String paymentAttemptKey, String cardType, String cardNo) {
@@ -51,6 +53,7 @@ public class OrderFacade {
             return started.order();
         }
         OrderInfo order = started.order();
+        paymentLookupScheduler.schedule(order.userId(), order.id());
         PaymentGatewayResult result = paymentGateway.request(order.userId(), order.id(), cardType, cardNo, order.totalAmount());
         return orderPaymentProcessor.applyResult(order.id(), result);
     }

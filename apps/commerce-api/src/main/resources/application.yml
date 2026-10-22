@@ -28,7 +28,9 @@ pg:
   base-url: http://localhost:8010
   callback-url: http://localhost:8080/api/v1/payments/callback
   connect-timeout: 1s
-  read-timeout: 9s
+  read-timeout: 9s # 결제 요청. 고객이 결제창에서 기다리는 한계를 10초로 보고 그 안에서 끝낸다
+  lookup-delay: 7s # 결제 요청 전송 시점부터 백업 거래 조회까지
+  lookup-read-timeout: 2s # 거래 조회. 7초 + 2초로 결제 요청 timeout 과 같이 끝난다
 
 springdoc:
   use-fqn: true
@@ -40,6 +42,15 @@ spring:
   config:
     activate:
       on-profile: local, test
+
+---
+spring:
+  config:
+    activate:
+      on-profile: test
+
+pg:
+  lookup-delay: 1h # 예약된 거래 조회가 뒤 테스트에 끼어들지 않게. 조회 예약은 PaymentLookupSchedulerIntegrationTest 가 짧은 지연으로 본다
 
 ---
 spring:
