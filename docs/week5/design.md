@@ -690,7 +690,7 @@ interfaces/api          confirm · reconcile(OrderV1Controller) · callback 컨�
   **뒤집을 조건**: TX A 의 순서 자체가 업무 규칙이 될 때(예: 결제 수단마다 차감 순서가 달라짐) — 그때는 순서를 도메인 서비스로 내려 DB 없이 테스트한다.
 - **confirm 은 포인트를 쓰지 않으므로 포인트 사용 경로(`UserPoint.use` 와 그 계약)를 두지 않는다.** 호출자 없는 코드를 남기지 않는다. 과거 POINT 주문의 원장을 읽어야 하므로 `TransactionType.USE` 는 남긴다(`PAY-011`). 충전 · 잔액 조회는 그대로다.
   **뒤집을 조건**: 포인트와 카드를 섞어 내는 결제가 범위에 들어올 때 — 그때는 부분 차감 · 보상 취소와 함께 새로 설계한다.
-- 4주차 목록 캐시가 `soldOut` 을 담는다(`ProductViewQuery.View`). 예약 · 반환이 품절 여부를 바꿀 수 있으므로 `ProductListingEvents` 의 무효화에 연결한다(`RSV-008`).
+- 4주차 목록 캐시가 `soldOut` 을 담는다(`ProductViewQuery.View`). 예약 · 반환이 품절 여부를 바꿀 수 있으므로 `ProductListingEvents` 의 무효화에 연결한다(`RSV-008`). 차감은 품절이 되면, 반환은 품절이었다면 알린다 — 관리자 재고 설정과 같은 "품절 여부가 바뀔 때만" 정책이다.
 
 ## 12. 검증
 

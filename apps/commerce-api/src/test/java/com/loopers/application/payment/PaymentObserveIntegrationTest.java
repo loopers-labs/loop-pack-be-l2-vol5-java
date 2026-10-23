@@ -227,6 +227,45 @@ class PaymentObserveIntegrationTest {
     }
 
     @Nested
+    @DisplayName("RSV-006: 관리자 재고 설정은 묶인 수량을 뺀 가용 재고를 정하고, 결제 결과는 그 위에 더해진다")
+    class AdminStockSetting {
+
+        @DisplayName("결제를 기다리는 동안 재고를 10 으로 설정하면 가용 재고가 10 이 되고, 묶인 주문은 그대로다")
+        @Test
+        void setsAvailableStock() {
+            observe(new CreateObservation.Accepted(KEY));
+
+            productFacade.adjustStock(coat, Quantity.of(10));
+
+            assertThat(stock()).isEqualTo(Quantity.of(10));
+            assertThat(storedOrder().getStatus()).isEqualTo(OrderStatus.PENDING);
+        }
+
+        @DisplayName("설정 뒤 결제가 실패하면 묶였던 2 개가 설정한 값 위에 더해진다. 10 + 2")
+        @Test
+        void failureReturnsOnTopOfSetting() {
+            observe(new CreateObservation.Accepted(KEY));
+            productFacade.adjustStock(coat, Quantity.of(10));
+
+            lookup(PgTransaction.Status.FAILED);
+
+            assertThat(stock()).isEqualTo(Quantity.of(12));
+        }
+
+        @DisplayName("설정 뒤 결제가 성공하면 다시 빼지 않는다. 10 그대로")
+        @Test
+        void successDoesNotDeductAgain() {
+            observe(new CreateObservation.Accepted(KEY));
+            productFacade.adjustStock(coat, Quantity.of(10));
+
+            lookup(PgTransaction.Status.SUCCESS);
+
+            assertThat(stock()).isEqualTo(Quantity.of(10));
+            assertThat(storedOrder().getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        }
+    }
+
+    @Nested
     @DisplayName("PAY-007, RSV-003: 같은 결과는 한 번만 반영한다")
     class Once {
 

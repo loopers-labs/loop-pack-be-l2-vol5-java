@@ -166,9 +166,13 @@ class ProductCacheE2ETest {
     }
 
     private void succeed(Long orderId) {
+        settle(orderId, PgTransaction.Status.SUCCESS);
+    }
+
+    private void settle(Long orderId, PgTransaction.Status status) {
         Payment payment = paymentRepository.findByOrderId(orderId).orElseThrow();
         paymentTransactions.observe(payment.getId(), new LookupResult.Found(List.of(new PgTransaction(
-                payment.getTransactionKey(), payment.getProviderOrderId(), payment.getAmount(), PgTransaction.Status.SUCCESS))),
+                payment.getTransactionKey(), payment.getProviderOrderId(), payment.getAmount(), status))),
             PaymentDiscrepancy.Source.LOOKUP, Instant.now());
     }
 
@@ -392,6 +396,24 @@ class ProductCacheE2ETest {
         assertAll(
             () -> assertThat(soldOutBefore).isFalse(),
             () -> assertThat(page(USER, firstPriceAscPage()).items().get(0).soldOut()).isTrue()
+        );
+    }
+
+    @DisplayName("CACHE-005, RSV-008 · 결제가 실패해 품절 상품에 재고가 돌아오면 다음 조회에서 품절이 아니다")
+    @Test
+    void failedPaymentReturningStockClearsSoldOut() {
+        Long productId = product("셔츠", 10_000);
+        productFacade.adjustStock(productId, Quantity.of(1));
+        Long orderId = customer(HttpMethod.POST, "/api/v1/orders", USER,
+            Map.of("lines", List.of(Map.of("productId", productId, "quantity", 1)))).path("data").path("id").asLong();
+        customer(HttpMethod.POST, "/api/v1/orders/" + orderId + "/confirm", USER, card(orderId));
+        boolean soldOutWhileReserved = page(USER, firstPriceAscPage()).items().get(0).soldOut();
+
+        settle(orderId, PgTransaction.Status.FAILED);
+
+        assertAll(
+            () -> assertThat(soldOutWhileReserved).isTrue(),
+            () -> assertThat(page(USER, firstPriceAscPage()).items().get(0).soldOut()).isFalse()
         );
     }
 

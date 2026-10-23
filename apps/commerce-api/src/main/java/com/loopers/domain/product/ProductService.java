@@ -66,8 +66,12 @@ public class ProductService implements ProductAvailability, ProductsInBrand, Sto
     public void restoreStock(Long productId, Quantity amount) {
         Product product = productRepository.findIncludingDeletedByIdForUpdate(productId)
             .orElseThrow(() -> new IllegalStateException("반환할 상품 행이 없습니다: id=" + productId));
+        boolean wasSoldOut = product.isSoldOut();
         product.restock(amount);
         productRepository.save(product);
+        if (wasSoldOut) {
+            listingChanged(product);
+        }
     }
 
     @Override
