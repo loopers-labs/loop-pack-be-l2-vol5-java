@@ -486,24 +486,27 @@ class OrderFacadeIntegrationTest {
     }
 
     @Nested
-    @DisplayName("FR-ORDER-02 PG callback 결과 반영")
+    @DisplayName("FR-ORDER-02 PG callback 결과 반영 (본문이 아니라 PG 거래 조회 결과로)")
     class PaymentCallback {
-        @DisplayName("[FR-ORDER-02][ST-03] PENDING 뒤 callback SUCCESS 면 CONFIRMED, 결제액 = 합계.")
+        @DisplayName("[FR-ORDER-02][ST-03] PENDING 뒤 callback 이 오면 PG 를 조회해 SUCCESS 면 CONFIRMED, 결제액 = 합계.")
         @Test
-        void confirms_onSuccessCallback() {
+        void confirms_whenLookupSucceeds() {
             OrderModel order = awaitingOrder(2);
+            fakePg.willFind(success(txOf(order), 2_000L));
 
             OrderInfo info = orderFacade.applyPaymentCallback(PgOrderId.of(order.getId()), success(txOf(order), 2_000L));
 
             assertThat(info.status()).isEqualTo("CONFIRMED");
             assertThat(info.paidAmount()).isEqualTo(2_000L);
             assertThat(fixtures.stockOf(product.getId())).isEqualTo(3);
+            assertThat(fakePg.finds()).containsExactly(order.getId());
         }
 
-        @DisplayName("[FR-ORDER-02][ST-03] callback FAILED 면 FAILED, 예약분 반환.")
+        @DisplayName("[FR-ORDER-02][ST-03] PG 조회가 FAILED 면 FAILED, 예약분 반환.")
         @Test
-        void failsAndReleases_onFailedCallback() {
+        void failsAndReleases_whenLookupFails() {
             OrderModel order = awaitingOrder(2);
+            fakePg.willFind(failed(txOf(order)));
 
             OrderInfo info = orderFacade.applyPaymentCallback(PgOrderId.of(order.getId()), failed(txOf(order)));
 
@@ -511,35 +514,65 @@ class OrderFacadeIntegrationTest {
             assertFailedAndReleased(order, 2);
         }
 
-        @DisplayName("[FR-ORDER-02] 같은 FAILED callback 이 두 번 와도 결과는 같다. 재고는 한 번만 반환된다.")
+        @DisplayName("[FR-ORDER-02] callback 본문은 믿지 않는다. 본문이 SUCCESS 라도 PG 조회가 FAILED 면 FAILED.")
         @Test
-        void duplicateFailedCallback_releasesOnce() {
+        void appliesLookupResult_notCallbackBody() {
             OrderModel order = awaitingOrder(2);
+            fakePg.willFind(failed(txOf(order)));
+
+            OrderInfo info = orderFacade.applyPaymentCallback(PgOrderId.of(order.getId()), success(txOf(order), 2_000L));
+
+            assertThat(info.status()).isEqualTo("FAILED");
+            assertFailedAndReleased(order, 2);
+        }
+
+        @DisplayName("[FR-ORDER-02] PG 조회가 실패(UNKNOWN)하면 본문이 SUCCESS 라도 AWAITING_PAYMENT 그대로.")
+        @Test
+        void keepsAwaiting_whenLookupUnknown() {
+            OrderModel order = awaitingOrder(2);
+            fakePg.willFind(PaymentGatewayResult.unknown());
+
+            OrderInfo info = orderFacade.applyPaymentCallback(PgOrderId.of(order.getId()), success(txOf(order), 2_000L));
+
+            assertThat(info.status()).isEqualTo("AWAITING_PAYMENT");
+            assertStillAwaiting(order, 2);
+        }
+
+        @DisplayName("[FR-ORDER-02] 같은 callback 이 두 번 와도 결과는 같다. 두 번째는 이미 결론난 주문이라 PG 를 부르지 않고, 재고는 한 번만 반환된다.")
+        @Test
+        void duplicateCallback_releasesOnce() {
+            OrderModel order = awaitingOrder(2);
+            fakePg.willFind(failed(txOf(order)));
 
             orderFacade.applyPaymentCallback(PgOrderId.of(order.getId()), failed(txOf(order)));
             OrderInfo second = orderFacade.applyPaymentCallback(PgOrderId.of(order.getId()), failed(txOf(order)));
 
             assertThat(second.status()).isEqualTo("FAILED");
             assertFailedAndReleased(order, 2);
+            assertThat(fakePg.finds()).containsExactly(order.getId());
         }
 
-        @DisplayName("[FR-ORDER-02] 이미 결론 난 주문에 늦게 온 다른 결과는 무시한다. CONFIRMED 유지, 재고 반환 없음.")
+        @DisplayName("[FR-ORDER-02] 이미 결론 난 주문에 늦게 온 callback 은 PG 를 부르지 않고 무시한다. CONFIRMED 유지, 재고 반환 없음.")
         @Test
         void ignoresLateCallback_afterConclusion() {
             OrderModel order = awaitingOrder(2);
+            fakePg.willFind(success(txOf(order), 2_000L));
             orderFacade.applyPaymentCallback(PgOrderId.of(order.getId()), success(txOf(order), 2_000L));
+            fakePg.willFind(failed(txOf(order)));
 
             OrderInfo info = orderFacade.applyPaymentCallback(PgOrderId.of(order.getId()), failed(txOf(order)));
 
             assertThat(info.status()).isEqualTo("CONFIRMED");
             assertThat(fixtures.stockOf(product.getId())).isEqualTo(3);
             assertThat(ledgerTypes()).containsExactly(StockLedgerType.ADJUSTMENT, StockLedgerType.RESERVE);
+            assertThat(fakePg.finds()).containsExactly(order.getId());
         }
 
-        @DisplayName("[FR-ORDER-02] 저장된 거래 키와 다른 거래의 callback 은 무시한다. AWAITING_PAYMENT 유지.")
+        @DisplayName("[FR-ORDER-02] PG 조회 결과의 거래 키가 저장된 거래 키와 다르면 무시한다. AWAITING_PAYMENT 유지.")
         @Test
-        void ignoresCallback_withDifferentTransactionKey() {
+        void ignoresLookup_withDifferentTransactionKey() {
             OrderModel order = awaitingOrder(2);
+            fakePg.willFind(success("tx-other", 2_000L));
 
             OrderInfo info = orderFacade.applyPaymentCallback(PgOrderId.of(order.getId()), success("tx-other", 2_000L));
 
@@ -548,21 +581,23 @@ class OrderFacadeIntegrationTest {
             assertThat(fixtures.reloadOrder(order.getId()).getTransactionKey()).isEqualTo(txOf(order));
         }
 
-        @DisplayName("[FR-ORDER-02] callback SUCCESS 금액이 합계와 다르면 확정하지 않는다. AWAITING_PAYMENT 유지.")
+        @DisplayName("[FR-ORDER-02] PG 조회 SUCCESS 금액이 합계와 다르면 확정하지 않는다. AWAITING_PAYMENT 유지.")
         @Test
-        void keepsAwaiting_whenCallbackAmountDiffers() {
+        void keepsAwaiting_whenLookupAmountDiffers() {
             OrderModel order = awaitingOrder(2);
+            fakePg.willFind(success(txOf(order), 2_001L));
 
-            OrderInfo info = orderFacade.applyPaymentCallback(PgOrderId.of(order.getId()), success(txOf(order), 2_001L));
+            OrderInfo info = orderFacade.applyPaymentCallback(PgOrderId.of(order.getId()), success(txOf(order), 2_000L));
 
             assertThat(info.status()).isEqualTo("AWAITING_PAYMENT");
             assertStillAwaiting(order, 2);
         }
 
-        @DisplayName("[FR-ORDER-02] 동기 응답을 못 받은(거래 키 없는) 주문도 callback 으로 확정되고, 그 거래 키가 기록된다.")
+        @DisplayName("[FR-ORDER-02] 동기 응답을 못 받은(거래 키 없는) 주문도 callback 으로 조회해 확정되고, 그 거래 키가 기록된다.")
         @Test
         void confirmsUnknownOrder_andRecordsTransactionKey() {
             OrderModel order = unknownOrder(2);
+            fakePg.willFind(success("tx-late", 2_000L));
 
             OrderInfo info = orderFacade.applyPaymentCallback(PgOrderId.of(order.getId()), success("tx-late", 2_000L));
 
@@ -574,6 +609,7 @@ class OrderFacadeIntegrationTest {
         @Test
         void callbackBeforeSyncResponse_winsAndSyncIsIgnored() {
             OrderModel order = fixtures.draftOrder(user.getId(), product, 2);
+            fakePg.willFind(failed(txOf(order)));
             fakePg.willRespond(request -> {
                 orderFacade.applyPaymentCallback(PgOrderId.of(request.orderId()), failed(txOf(order)));
                 return success(txOf(order), 2_000L);

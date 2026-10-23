@@ -21,7 +21,9 @@ import org.springframework.http.HttpStatus;
 import java.util.HashMap;
 import java.util.Map;
 
+import static com.loopers.support.FakePaymentGateway.failed;
 import static com.loopers.support.FakePaymentGateway.pending;
+import static com.loopers.support.FakePaymentGateway.success;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /** POST /api/v1/payments/callback 의 HTTP 계약. 테스트가 PG 역할로 callback 을 보낸다 (X-USER-ID 없음). */
@@ -82,10 +84,11 @@ class PaymentCallbackV1ApiE2ETest {
         return api.get("/api/v1/orders/" + order.getId(), user.getId()).assertSuccess(HttpStatus.OK).data().path("status").asText();
     }
 
-    @DisplayName("SUCCESS callback 은 200, 주문이 CONFIRMED 가 된다.")
+    @DisplayName("callback 은 200, PG 거래 조회가 SUCCESS 면 주문이 CONFIRMED 가 된다.")
     @Test
     void successCallback_confirmsOrder() {
         OrderModel order = awaitingOrder(2);
+        fakePg.willFind(success("tx-1", 2_000L));
 
         api.post(CALLBACK, null, callbackBody("ORDER-" + order.getId(), 2_000L, "SUCCESS")).assertSuccess(HttpStatus.OK);
 
@@ -93,10 +96,11 @@ class PaymentCallbackV1ApiE2ETest {
         assertThat(fixtures.stockOf(product.getId())).isEqualTo(3);
     }
 
-    @DisplayName("FAILED callback 은 200, 주문이 FAILED 가 되고 재고가 돌아온다.")
+    @DisplayName("callback 은 200, PG 거래 조회가 FAILED 면 주문이 FAILED 가 되고 재고가 돌아온다.")
     @Test
     void failedCallback_failsOrder() {
         OrderModel order = awaitingOrder(2);
+        fakePg.willFind(failed("tx-1"));
 
         api.post(CALLBACK, null, callbackBody("ORDER-" + order.getId(), 2_000L, "FAILED")).assertSuccess(HttpStatus.OK);
 
@@ -104,10 +108,11 @@ class PaymentCallbackV1ApiE2ETest {
         assertThat(fixtures.stockOf(product.getId())).isEqualTo(5);
     }
 
-    @DisplayName("모르는 status 의 callback 도 200 으로 받되 주문은 AWAITING_PAYMENT 그대로.")
+    @DisplayName("모르는 status 의 callback 도 200 으로 받는다. PG 거래 조회도 결론이 없으면(PENDING) 주문은 AWAITING_PAYMENT 그대로.")
     @Test
     void unknownStatusCallback_keepsAwaiting() {
         OrderModel order = awaitingOrder(2);
+        fakePg.willFind(pending("tx-1"));
 
         api.post(CALLBACK, null, callbackBody("ORDER-" + order.getId(), 2_000L, "CANCELED")).assertSuccess(HttpStatus.OK);
 

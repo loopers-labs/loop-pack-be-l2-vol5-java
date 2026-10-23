@@ -7,6 +7,7 @@ import com.loopers.domain.order.OrderService;
 import com.loopers.domain.order.OrderStatus;
 import com.loopers.domain.user.UserService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,6 +16,7 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+@Slf4j
 @RequiredArgsConstructor
 @Component
 public class OrderFacade {
@@ -75,8 +77,21 @@ public class OrderFacade {
         return orderPaymentProcessor.applyResult(order.id(), result);
     }
 
-    /** PG callback 결과 반영. PG 주문 ID("ORDER-{id}")를 우리 주문 ID 로 바꿔 결과 반영에 넘긴다. 형식이 아니면 ER-05 ORDER_NOT_FOUND. */
-    public OrderInfo applyPaymentCallback(String pgOrderId, PaymentGatewayResult result) {
-        return orderPaymentProcessor.applyResult(PgOrderId.parse(pgOrderId), result);
+    /**
+     * PG callback. 본문(claimed)은 믿지 않고 신호로만 쓴다: PG 주문 ID("ORDER-{id}")로 주문을 찾고, AWAITING_PAYMENT 면 PG 에 거래를 조회(권위 조회)해 그 결과를 반영한다.
+     * 이미 결론난 주문이면 PG 를 부르지 않고 현재 상태를 돌려준다. 조회 실패는 UNKNOWN 이라 주문은 그대로다 (결제 대기 만료가 거둔다).
+     * 본문과 조회 결과가 다르면 로그만 남긴다. PG 주문 ID 형식이 아니거나 주문이 없으면 ER-05 ORDER_NOT_FOUND.
+     */
+    public OrderInfo applyPaymentCallback(String pgOrderId, PaymentGatewayResult claimed) {
+        OrderInfo order = orderPaymentProcessor.get(PgOrderId.parse(pgOrderId));
+        if (!OrderStatus.AWAITING_PAYMENT.name().equals(order.status())) {
+            return order;
+        }
+        PaymentGatewayResult actual = paymentGateway.find(order.userId(), order.id());
+        if (claimed.outcome() != actual.outcome()
+            || (claimed.transactionKey() != null && actual.transactionKey() != null && !claimed.transactionKey().equals(actual.transactionKey()))) {
+            log.warn("PG callback 과 거래 조회 결과가 다름, 조회 결과 반영 [orderId = {}, claimed = {}, actual = {}]", order.id(), claimed, actual);
+        }
+        return orderPaymentProcessor.applyResult(order.id(), actual);
     }
 }

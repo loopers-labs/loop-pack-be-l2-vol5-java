@@ -55,6 +55,12 @@ public class OrderPaymentProcessor {
         return OrderInfo.from(orderService.getOwned(orderId, requesterId));
     }
 
+    /** callback 의 사전 확인. 요청자 없이 주문을 락 없이 읽어 돌려준다. 없으면 ER-05 ORDER_NOT_FOUND. */
+    @Transactional(readOnly = true)
+    public OrderInfo get(Long orderId) {
+        return OrderInfo.from(orderService.get(orderId));
+    }
+
     /**
      * 결제 결과 반영. 동기 응답·callback·결제 대기 해소 공용. 주문 행 락으로 직렬화하고, AWAITING_PAYMENT 가 아니면 아무것도 하지 않는다 (멱등).
      * SUCCESS → CONFIRMED (금액이 합계와 다르면 반영하지 않는다) / FAILED·NOT_SENT·ERROR → FAILED + 재고 반환 / PENDING·UNKNOWN → 거래 키만 기록.

@@ -115,6 +115,7 @@ class OrderConfirmConcurrencyTest {
         String transactionKey = FakePaymentGateway.transactionKeyOf(order.getId());
         fakePg.willRespond(pending(transactionKey));
         orderFacade.confirmOrder(user.getId(), order.getId(), "attempt-1", CARD_TYPE, CARD_NO);
+        fakePg.willFind(failed(transactionKey));
 
         List<Object> results = runConcurrently(i -> orderFacade.applyPaymentCallback(PgOrderId.of(order.getId()), failed(transactionKey)));
 
