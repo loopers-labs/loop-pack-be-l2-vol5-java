@@ -1,9 +1,11 @@
 package com.loopers.infrastructure.persistence.ordering.jpa;
 
+import com.loopers.domain.ordering.model.OrderStatus;
 import jakarta.persistence.LockModeType;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -11,6 +13,20 @@ import com.loopers.infrastructure.persistence.ordering.entity.OrderJpaEntity;
 
 // 주문 Spring Data JPA 리포지토리
 public interface OrderJpaRepository extends JpaRepository<OrderJpaEntity, Long> {
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+        update OrderJpaEntity o set o.status = com.loopers.domain.ordering.model.OrderStatus.PAYMENT_PENDING
+        where o.id = :id and o.userId = :userId and o.status = com.loopers.domain.ordering.model.OrderStatus.DRAFT
+        """)
+    int prepareIfDraft(@Param("id") long id, @Param("userId") long userId);
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+        update OrderJpaEntity o set o.status = :terminalStatus
+        where o.id = :id and o.status = com.loopers.domain.ordering.model.OrderStatus.PAYMENT_PENDING
+        """)
+    int completePgIfPending(@Param("id") long id, @Param("terminalStatus") OrderStatus terminalStatus);
 
     // 품목을 함께 조회(items는 기본 LAZY라 트랜잭션 밖에서 접근하면 LazyInitializationException이 난다)
     @Override

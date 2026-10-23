@@ -40,22 +40,7 @@ public class OrderService implements CreateOrderUseCase {
             items.add(OrderItem.create(product.getId(), product.getName(), product.getPrice(), entry.getValue()));
         }
         Order order = Order.create(command.userId(), items);
-        return OrderResult.from(orderRepository.save(order));
-    }
-
-    // 주문을 쓰기 잠금으로 조회하고 확정 가능 여부를 검증한다. 트랜잭션 안(파사드)에서만 호출한다
-    public Order lockForConfirm(long orderId) {
-        Order order = orderRepository.findByIdForUpdate(orderId)
-            .orElseThrow(() -> new ApplicationException(ApplicationErrorCode.ORDER_NOT_FOUND));
-        order.ensureCanConfirm();
-        return order;
-    }
-
-    // 주문을 확정하고 저장한다. 주문 기록은 주문 저장에 cascade로 함께 저장된다
-    public Order confirm(Order order) {
-        order.confirm();
-        orderRepository.save(order);
-        return order;
+        return OrderResult.from(orderRepository.insert(order));
     }
 
     // 동일 상품 수량 병합

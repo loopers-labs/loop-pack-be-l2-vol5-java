@@ -1,6 +1,7 @@
 package com.loopers.infrastructure.persistence.ordering.entity;
 
 import com.loopers.domain.ordering.model.OrderRecordStatus;
+import com.loopers.domain.ordering.model.PaymentMethod;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -36,15 +37,23 @@ public class OrderRecordJpaEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private OrderRecordStatus status;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_method", nullable = false, length = 10)
+    private PaymentMethod paymentMethod;
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
     protected OrderRecordJpaEntity() {}
 
     OrderRecordJpaEntity(long userId, long amount, OrderRecordStatus status) {
+        this(userId, amount, status, PaymentMethod.POINT);
+    }
+
+    OrderRecordJpaEntity(long userId, long amount, OrderRecordStatus status, PaymentMethod paymentMethod) {
         this.userId = userId;
         this.amount = amount;
         this.status = status;
+        this.paymentMethod = paymentMethod;
     }
 
     void assignOrder(OrderJpaEntity order) {
@@ -69,6 +78,10 @@ public class OrderRecordJpaEntity {
 
     public OrderRecordStatus getStatus() {
         return status;
+    }
+
+    public PaymentMethod getPaymentMethod() {
+        return paymentMethod;
     }
 
     public Instant getCreatedAt() {

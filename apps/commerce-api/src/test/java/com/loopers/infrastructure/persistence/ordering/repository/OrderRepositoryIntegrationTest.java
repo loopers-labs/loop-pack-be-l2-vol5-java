@@ -31,7 +31,7 @@ class OrderRepositoryIntegrationTest {
             OrderItem.create(1L, "상품1", 1_000L, 2),
             OrderItem.create(2L, "상품2", 3_000L, 1)
         );
-        Order order = orderRepository.save(Order.create(1L, items));
+        Order order = orderRepository.insert(Order.create(1L, items));
         entityManager.flush();
         entityManager.clear();
 
@@ -57,9 +57,9 @@ class OrderRepositoryIntegrationTest {
     @Test
     @Transactional
     void savesConfirmedOrder_withCascadedOrderRecord() {
-        Order order = orderRepository.save(Order.create(1L, List.of(OrderItem.create(1L, "상품", 1_000L, 2))));
+        Order order = Order.create(1L, List.of(OrderItem.create(1L, "상품", 1_000L, 2)));
         order.confirm();
-        Order confirmed = orderRepository.save(order);
+        Order confirmed = orderRepository.insert(order);
         entityManager.flush();
         entityManager.clear();
 

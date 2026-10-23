@@ -1,6 +1,7 @@
 package com.loopers.support.test;
 
 import com.loopers.domain.ordering.repository.OrderRepository;
+import com.loopers.application.pay.gateway.PaymentProviderGateway;
 import com.loopers.infrastructure.dao.shopping.JdbcLikeCountAggregationDao;
 import com.loopers.infrastructure.persistence.mall.jpa.ProductJpaRepository;
 import java.lang.annotation.ElementType;
@@ -16,6 +17,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 @SpringBootTest
 @MockitoSpyBean(types = {
     OrderRepository.class,
+    PaymentProviderGateway.class,
     ProductJpaRepository.class,
     JdbcLikeCountAggregationDao.class,
 })

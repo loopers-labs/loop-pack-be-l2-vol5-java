@@ -1,38 +1,50 @@
 package com.loopers.application.ordering.facade;
 
-import com.loopers.application.mall.service.ProductService;
 import com.loopers.application.ordering.command.ConfirmOrderCommand;
 import com.loopers.application.ordering.result.ConfirmOrderResult;
-import com.loopers.application.ordering.result.OrderResult;
-import com.loopers.application.ordering.service.OrderService;
+import com.loopers.application.ordering.result.ApplyOrderPaymentResult;
+import com.loopers.application.ordering.result.PrepareOrderPaymentResult;
+import com.loopers.application.ordering.service.OrderPaymentResultService;
+import com.loopers.application.ordering.usecase.PrepareOrderPaymentUseCase;
+import com.loopers.application.ordering.usecase.ApplyOrderPaymentUseCase;
 import com.loopers.application.ordering.usecase.ConfirmOrderUseCase;
-import com.loopers.application.pay.service.WalletService;
-import com.loopers.domain.ordering.model.Order;
-import com.loopers.domain.ordering.model.OrderRecord;
-import com.loopers.domain.pay.model.Wallet;
+import com.loopers.application.ordering.usecase.StartAutomaticPaymentRecoveryUseCase;
+import com.loopers.application.pay.gateway.PaymentProviderGateway;
+import com.loopers.application.pay.gateway.PaymentProviderGateway.ExpectedPayment;
+import com.loopers.application.pay.usecase.RecordPaymentObservationUseCase;
+import com.loopers.domain.pay.model.PaymentAttempt;
+import com.loopers.domain.pay.model.PaymentObservation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 @RequiredArgsConstructor
-// 주문·지갑·상품 서비스를 순서대로 호출해 주문 확정을 한 트랜잭션으로 조율하는 파사드
+// 짧은 DB TX 사이에서 최초 PG 생성만 한 번 호출한다.
 public class ConfirmOrderFacade implements ConfirmOrderUseCase {
-    private final OrderService orderService;
-    private final WalletService walletService;
-    private final ProductService productService;
+    private final PrepareOrderPaymentUseCase preparation;
+    private final PaymentProviderGateway gateway;
+    private final RecordPaymentObservationUseCase observations;
+    private final ApplyOrderPaymentUseCase application;
+    private final OrderPaymentResultService results;
+    private final StartAutomaticPaymentRecoveryUseCase automatic;
 
-    // 잠금 순서(주문 -> 지갑 -> 상품 id 오름차순)와 오류 우선순위(주문 상태 -> 상품 -> 잔액)를 호출 순서로 지킨다
     @Override
-    @Transactional
     public ConfirmOrderResult execute(ConfirmOrderCommand command) {
-        Order order = orderService.lockForConfirm(command.orderId());
-        Wallet wallet = walletService.lockByUserId(order.getUserId());
-        productService.decreaseStocks(order.quantitiesByProductId());
-        walletService.pay(wallet, order);
-        Order confirmed = orderService.confirm(order);
-
-        OrderRecord record = confirmed.getRecord().orElseThrow();
-        return new ConfirmOrderResult(OrderResult.from(confirmed), record.getAmount(), record.getStatus());
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            throw new IllegalStateException("PG 결제 조율은 DB 트랜잭션 밖에서 실행해야 합니다.");
+        }
+        PrepareOrderPaymentResult prepared = preparation.execute(command.preparation());
+        PaymentAttempt attempt = prepared.attempt();
+        if (prepared.dispatchAllowed()) {
+            PaymentObservation observation = gateway.create(new ExpectedPayment(attempt.getProviderOrderId(),
+                attempt.getAmount(), attempt.getTransactionKey()), command.card(), attempt.getScenario());
+            observations.execute(attempt.getAttemptKey(), observation);
+        }
+        ApplyOrderPaymentResult applied = application.execute(attempt.getAttemptKey());
+        if (prepared.dispatchAllowed() && applied.state() == ApplyOrderPaymentResult.State.PENDING) {
+            automatic.execute(attempt.getAttemptKey());
+        }
+        return results.read(command.userId(), command.orderId(), applied.attentionRequired());
     }
 }

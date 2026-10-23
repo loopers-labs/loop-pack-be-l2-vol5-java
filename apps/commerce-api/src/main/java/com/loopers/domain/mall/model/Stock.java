@@ -35,6 +35,17 @@ public record Stock(int value) {
         return new Stock(value - quantity);
     }
 
+    public Stock restore(int quantity) {
+        if (quantity <= 0) {
+            throw new DomainException(DomainErrorCode.INVALID_QUANTITY);
+        }
+        try {
+            return new Stock(Math.addExact(value, quantity));
+        } catch (ArithmeticException exception) {
+            throw new DomainException(DomainErrorCode.CALCULATION_OVERFLOW);
+        }
+    }
+
     public int getValue() {
         return value;
     }

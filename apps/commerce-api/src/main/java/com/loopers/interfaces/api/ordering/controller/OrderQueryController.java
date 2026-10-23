@@ -35,9 +35,9 @@ public class OrderQueryController {
 
     // 단건 주문 조회
     @GetMapping("/{orderId}")
-    public ApiResponse<OrderView> find(@PathVariable long orderId) {
+    public ApiResponse<OrderView> find(@XUserId long userId, @PathVariable long orderId) {
         RequestInputValidator.requirePositiveId(orderId, "주문 ID");
-        OrderView order = orderQueryDao.findOrder(orderId)
+        OrderView order = orderQueryDao.findOrder(userId, orderId)
             .orElseThrow(() -> new ApplicationException(ApplicationErrorCode.ORDER_NOT_FOUND));
         return ApiResponse.success(order);
     }

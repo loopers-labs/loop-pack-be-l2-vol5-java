@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 
 import com.loopers.application.mall.command.ProductCommand;
 import com.loopers.application.mall.usecase.SetProductStockUseCase;
-import com.loopers.application.ordering.command.ConfirmOrderCommand;
+import com.loopers.support.test.PgPaymentTestSupport;
 import com.loopers.application.ordering.usecase.ConfirmOrderUseCase;
 import com.loopers.application.pay.command.WalletCommand;
 import com.loopers.application.pay.usecase.ChargeWalletUseCase;
@@ -34,6 +34,7 @@ import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -43,6 +44,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 @Tag("slow")
 // 실제 Spring 서비스로 필수 경쟁 시나리오를 검증(requirement.md 완료 조건 + 잠금 순서)
 class ConfirmOrderConcurrencyIntegrationTest {
+    @Autowired private PgPaymentTestSupport pg;
+    @BeforeEach void stubPg() { pg.usePendingProvider(); }
     @Autowired
     private ConfirmOrderUseCase confirmOrderUseCase;
     @Autowired
@@ -71,7 +74,7 @@ class ConfirmOrderConcurrencyIntegrationTest {
         databaseCleanUp.truncateAllTables();
     }
 
-    @DisplayName("같은 주문을 동시에 두 번 확정하면 한 번만 성공하고 나머지는 기존 상태 오류로 거절된다")
+    @DisplayName("같은 주문을 동시에 두 번 확정하면 두 응답은 같은 완료를 반환하고 차감·생성·기록은 한 번이다")
     @Test
     void concurrentReconfirm_succeedsOnce() throws Exception {
         long productId = createProduct(5);
@@ -79,18 +82,18 @@ class ConfirmOrderConcurrencyIntegrationTest {
         Order order = createOrder(userId, List.of(OrderItem.create(productId, "상품", 1_000L, 1)));
 
         List<Callable<Object>> tasks = List.of(
-            () -> confirmOrderUseCase.execute(new ConfirmOrderCommand(order.getId())),
-            () -> confirmOrderUseCase.execute(new ConfirmOrderCommand(order.getId()))
+            () -> pg.confirmAndComplete(order),
+            () -> pg.confirmAndComplete(order)
         );
         List<Outcome<Object>> results = ConcurrentRequests.run(tasks, 10, 30);
 
         assertAll(
-            () -> assertThat(successCount(results)).isEqualTo(1),
-            () -> assertThat(errorCount(results, DomainErrorCode.ORDER_ALREADY_CONFIRMED)).isEqualTo(1),
+            () -> assertThat(successCount(results)).isEqualTo(2),
+            () -> assertThat(errorCount(results, DomainErrorCode.ORDER_ALREADY_CONFIRMED)).isZero(),
             () -> assertThat(technicalErrorCount(results, Set.of(DomainErrorCode.ORDER_ALREADY_CONFIRMED))).isZero(),
             () -> assertThat(productRepository.findById(productId).orElseThrow().getStock()).isEqualTo(4),
-            () -> assertThat(walletRepository.findByUserId(userId).orElseThrow().getBalance()).isEqualTo(9_000L),
-            () -> assertThat(probe.countUsePointBills(userId, order.getId())).isEqualTo(1L),
+            () -> assertThat(walletRepository.findByUserId(userId).orElseThrow().getBalance()).isEqualTo(10_000L),
+            () -> assertThat(probe.countUsePointBills(userId, order.getId())).isZero(),
             () -> assertThat(probe.countPaidOrderRecords(order.getId())).isEqualTo(1L)
         );
         assertOrderOutcome(order, true);
@@ -107,7 +110,7 @@ class ConfirmOrderConcurrencyIntegrationTest {
         }
 
         List<Callable<Object>> tasks = orders.stream()
-            .<Callable<Object>>map(order -> () -> confirmOrderUseCase.execute(new ConfirmOrderCommand(order.getId())))
+            .<Callable<Object>>map(order -> () -> pg.confirmAndComplete(order))
             .toList();
         List<Outcome<Object>> results = ConcurrentRequests.run(tasks, 10, 30);
 
@@ -123,11 +126,11 @@ class ConfirmOrderConcurrencyIntegrationTest {
             boolean succeeded = results.get(i).isSuccess();
             assertOrderOutcome(order, succeeded);
             assertThat(walletRepository.findByUserId(order.getUserId()).orElseThrow().getBalance())
-                .isEqualTo(succeeded ? 9_000L : 10_000L);
+                .isEqualTo(10_000L);
         }
     }
 
-    @DisplayName("한 사용자가 4,000원 주문 3건을 동시에 확정하면 잔액이 허용하는 만큼만 성공한다")
+    @DisplayName("한 사용자가 4,000원 주문 3건을 동시에 확정하면 포인트 제한 없이 모두 PG 결제를 완료한다")
     @Test
     void concurrentBalanceRace_acceptsUpToAvailableBalance() throws Exception {
         long userId = createUserWithWallet(10_000L);
@@ -138,15 +141,15 @@ class ConfirmOrderConcurrencyIntegrationTest {
         }
 
         List<Callable<Object>> tasks = orders.stream()
-            .<Callable<Object>>map(order -> () -> confirmOrderUseCase.execute(new ConfirmOrderCommand(order.getId())))
+            .<Callable<Object>>map(order -> () -> pg.confirmAndComplete(order))
             .toList();
         List<Outcome<Object>> results = ConcurrentRequests.run(tasks, 10, 30);
 
         assertAll(
-            () -> assertThat(successCount(results)).isEqualTo(2),
-            () -> assertThat(errorCount(results, DomainErrorCode.INSUFFICIENT_POINT)).isEqualTo(1),
+            () -> assertThat(successCount(results)).isEqualTo(3),
+            () -> assertThat(errorCount(results, DomainErrorCode.INSUFFICIENT_POINT)).isZero(),
             () -> assertThat(technicalErrorCount(results, Set.of(DomainErrorCode.INSUFFICIENT_POINT))).isZero(),
-            () -> assertThat(walletRepository.findByUserId(userId).orElseThrow().getBalance()).isEqualTo(2_000L)
+            () -> assertThat(walletRepository.findByUserId(userId).orElseThrow().getBalance()).isEqualTo(10_000L)
         );
         assertThat(results).hasSize(orders.size());
         for (int i = 0; i < orders.size(); i++) {
@@ -166,7 +169,7 @@ class ConfirmOrderConcurrencyIntegrationTest {
         Order order = createOrder(userId, List.of(OrderItem.create(productId, "상품", 7_000L, 1)));
 
         List<Callable<Object>> tasks = List.of(
-            () -> confirmOrderUseCase.execute(new ConfirmOrderCommand(order.getId())),
+            () -> pg.confirmAndComplete(order),
             () -> chargeWalletUseCase.execute(new WalletCommand.Charge(userId, 2_000L))
         );
         List<Outcome<Object>> results = ConcurrentRequests.run(tasks, 10, 30);
@@ -174,8 +177,8 @@ class ConfirmOrderConcurrencyIntegrationTest {
         assertAll(
             () -> assertThat(successCount(results)).isEqualTo(2),
             () -> assertThat(technicalErrorCount(results, Set.of())).isZero(),
-            () -> assertThat(walletRepository.findByUserId(userId).orElseThrow().getBalance()).isEqualTo(5_000L),
-            () -> assertThat(probe.countUsePointBills(userId, order.getId())).isEqualTo(1L)
+            () -> assertThat(walletRepository.findByUserId(userId).orElseThrow().getBalance()).isEqualTo(12_000L),
+            () -> assertThat(probe.countUsePointBills(userId, order.getId())).isZero()
         );
         assertOrderOutcome(order, true);
         assertThat(productRepository.findById(productId).orElseThrow().getStock()).isEqualTo(4);
@@ -190,7 +193,7 @@ class ConfirmOrderConcurrencyIntegrationTest {
         Order order = createOrder(userId, List.of(OrderItem.create(productId, "상품", 1_000L, 2)));
 
         List<Callable<Object>> tasks = List.of(
-            () -> confirmOrderUseCase.execute(new ConfirmOrderCommand(order.getId())),
+            () -> pg.confirmAndComplete(order),
             () -> setProductStockUseCase.execute(new ProductCommand.SetStock(productId, 10))
         );
         List<Outcome<Object>> results = ConcurrentRequests.run(tasks, 10, 30);
@@ -202,7 +205,7 @@ class ConfirmOrderConcurrencyIntegrationTest {
             () -> assertThat(finalStock).isIn(8, 10)
         );
         assertOrderOutcome(order, true);
-        assertThat(walletRepository.findByUserId(userId).orElseThrow().getBalance()).isEqualTo(8_000L);
+        assertThat(walletRepository.findByUserId(userId).orElseThrow().getBalance()).isEqualTo(10_000L);
     }
 
     @DisplayName("같은 두 상품을 반대 순서로 담은 두 주문이 동시에 확정돼도 데드락 없이 둘 다 성공한다")
@@ -222,8 +225,8 @@ class ConfirmOrderConcurrencyIntegrationTest {
         ));
 
         List<Callable<Object>> tasks = List.of(
-            () -> confirmOrderUseCase.execute(new ConfirmOrderCommand(order1.getId())),
-            () -> confirmOrderUseCase.execute(new ConfirmOrderCommand(order2.getId()))
+            () -> pg.confirmAndComplete(order1),
+            () -> pg.confirmAndComplete(order2)
         );
         List<Outcome<Object>> results = ConcurrentRequests.run(tasks, 10, 30);
 
@@ -235,8 +238,8 @@ class ConfirmOrderConcurrencyIntegrationTest {
         );
         assertOrderOutcome(order1, true);
         assertOrderOutcome(order2, true);
-        assertThat(walletRepository.findByUserId(user1).orElseThrow().getBalance()).isEqualTo(8_000L);
-        assertThat(walletRepository.findByUserId(user2).orElseThrow().getBalance()).isEqualTo(8_000L);
+        assertThat(walletRepository.findByUserId(user1).orElseThrow().getBalance()).isEqualTo(10_000L);
+        assertThat(walletRepository.findByUserId(user2).orElseThrow().getBalance()).isEqualTo(10_000L);
     }
 
     private void assertOrderOutcome(Order order, boolean succeeded) {
@@ -246,9 +249,9 @@ class ConfirmOrderConcurrencyIntegrationTest {
             () -> assertThat(probe.orderTotalAmount(order.getId())).isEqualTo(order.getTotalAmount()),
             () -> assertThat(probe.sumOrderItemQuantity(order.getId()))
                 .isEqualTo(order.getItems().stream().mapToLong(OrderItem::getQuantity).sum()),
-            () -> assertThat(probe.countUsePointBills(order.getUserId(), order.getId())).isEqualTo(succeeded ? 1 : 0),
+            () -> assertThat(probe.countUsePointBills(order.getUserId(), order.getId())).isZero(),
             () -> assertThat(probe.countPaidOrderRecords(order.getId())).isEqualTo(succeeded ? 1 : 0),
-            () -> assertThat(probe.sumPointBillAmountByOrder(order.getId())).isEqualTo(succeeded ? order.getTotalAmount() : 0),
+            () -> assertThat(probe.sumPointBillAmountByOrder(order.getId())).isZero(),
             () -> assertThat(probe.sumOrderRecordAmount(order.getId())).isEqualTo(succeeded ? order.getTotalAmount() : 0)
         );
     }
@@ -289,6 +292,6 @@ class ConfirmOrderConcurrencyIntegrationTest {
     }
 
     private Order createOrder(long userId, List<OrderItem> items) {
-        return orderRepository.save(Order.create(userId, items));
+        return orderRepository.insert(Order.create(userId, items));
     }
 }

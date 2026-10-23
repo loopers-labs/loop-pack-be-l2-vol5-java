@@ -10,8 +10,6 @@ import static org.mockito.Mockito.reset;
 
 import com.loopers.application.mall.command.BrandCommand;
 import com.loopers.application.mall.usecase.DeleteBrandUseCase;
-import com.loopers.application.ordering.command.ConfirmOrderCommand;
-import com.loopers.application.ordering.usecase.ConfirmOrderUseCase;
 import com.loopers.domain.mall.model.Brand;
 import com.loopers.domain.mall.model.Product;
 import com.loopers.domain.mall.repository.BrandRepository;
@@ -39,8 +37,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 class DeleteBrandRollbackIntegrationTest {
     @Autowired
     private DeleteBrandUseCase deleteBrandUseCase;
-    @Autowired
-    private ConfirmOrderUseCase confirmOrderUseCase;
     @Autowired
     private BrandRepository brandRepository;
     @Autowired
@@ -104,10 +100,9 @@ class DeleteBrandRollbackIntegrationTest {
         wallet.charge(Money.positive(10_000L));
         walletRepository.save(wallet);
         OrderItem item = OrderItem.create(product.getId(), "과거 주문 상품", 1_000L, 2);
-        Order order = orderRepository.save(Order.create(2L, List.of(item)));
-
-        confirmOrderUseCase.execute(new ConfirmOrderCommand(order.getId()));
-
-        return order.getId();
+        Order legacy = Order.create(2L, List.of(item));
+        legacy.confirm();
+        walletRepository.save(Wallet.restore(2L, 8_000L));
+        return orderRepository.insert(legacy).getId();
     }
 }

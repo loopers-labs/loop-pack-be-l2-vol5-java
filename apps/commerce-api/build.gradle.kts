@@ -1,5 +1,11 @@
 import org.gradle.api.plugins.quality.CheckstyleExtension
 
+dependencyManagement {
+    imports {
+        mavenBom("io.github.resilience4j:resilience4j-bom:2.3.0")
+    }
+}
+
 dependencies {
     // add-ons
     implementation(project(":modules:jpa"))
@@ -11,8 +17,11 @@ dependencies {
     // web
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
+    implementation("org.springframework.boot:spring-boot-starter-aop")
+    implementation("io.github.resilience4j:resilience4j-spring-boot3")
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
     implementation("com.github.ben-manes.caffeine:caffeine")
+    implementation("org.apache.httpcomponents.client5:httpclient5")
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:${project.properties["springDocOpenApiVersion"]}")
 
     // querydsl

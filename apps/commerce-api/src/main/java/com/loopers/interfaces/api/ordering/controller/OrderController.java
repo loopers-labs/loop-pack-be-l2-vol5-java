@@ -1,6 +1,5 @@
 package com.loopers.interfaces.api.ordering.controller;
 
-import com.loopers.application.ordering.command.ConfirmOrderCommand;
 import com.loopers.application.ordering.result.ConfirmOrderResult;
 import com.loopers.application.ordering.usecase.ConfirmOrderUseCase;
 import com.loopers.application.ordering.usecase.CreateOrderUseCase;
@@ -38,9 +37,11 @@ public class OrderController {
 
     // 주문 확정
     @PostMapping("/{orderId}/confirm")
-    public ApiResponse<OrderView> confirm(@PathVariable long orderId) {
+    public ResponseEntity<ApiResponse<OrderView>> confirm(@XUserId long userId, @PathVariable long orderId,
+                                                         @RequestBody OrderApiDto.ConfirmRequest request) {
         RequestInputValidator.requirePositiveId(orderId, "주문 ID");
-        ConfirmOrderResult result = confirmOrderUseCase.execute(new ConfirmOrderCommand(orderId));
-        return ApiResponse.success(OrderView.of(result.order(), result.paymentAmount(), result.paymentStatus()));
+        ConfirmOrderResult result = confirmOrderUseCase.execute(request.toCommand(userId, orderId));
+        return ResponseEntity.status(result.completed() ? HttpStatus.OK : HttpStatus.ACCEPTED)
+            .body(ApiResponse.success(OrderView.from(result)));
     }
 }

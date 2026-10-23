@@ -8,8 +8,28 @@ import com.loopers.domain.support.error.DomainException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class StockTest {
+
+    @DisplayName("재고 반환은 양수만 허용하고 int 한도를 넘으면 기존 수량을 유지한다")
+    @Test
+    void restoresStock_withoutOverflow() {
+        Stock stock = Stock.of(Integer.MAX_VALUE - 2);
+        assertThat(stock.restore(2).getValue()).isEqualTo(Integer.MAX_VALUE);
+        assertThatThrownBy(() -> stock.restore(3)).isInstanceOf(DomainException.class)
+            .extracting("errorCode").isEqualTo(DomainErrorCode.CALCULATION_OVERFLOW);
+        assertThat(stock.getValue()).isEqualTo(Integer.MAX_VALUE - 2);
+    }
+
+    @DisplayName("0 이하 반환 수량은 거절한다")
+    @ParameterizedTest
+    @ValueSource(ints = {0, -1})
+    void rejectsNonPositiveRestoration(int quantity) {
+        assertThatThrownBy(() -> Stock.of(5).restore(quantity)).isInstanceOf(DomainException.class)
+            .extracting("errorCode").isEqualTo(DomainErrorCode.INVALID_QUANTITY);
+    }
 
     @DisplayName("재고 설정")
     @Nested

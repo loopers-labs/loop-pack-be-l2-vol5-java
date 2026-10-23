@@ -1,0 +1,17 @@
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+  sql:
+    init:
+      mode: never
+
+datasource:
+  mysql-jpa:
+    main:
+      jdbc-url: jdbc:mysql://${PG_MYSQL_HOST:localhost}:${PG_MYSQL_PORT:3306}/loopers_test_pg
+      username: ${PG_MYSQL_USER:test_pg}
+      password: ${PG_MYSQL_PASSWORD:test_pg}
+      maximum-pool-size: 10
+      minimum-idle: 1

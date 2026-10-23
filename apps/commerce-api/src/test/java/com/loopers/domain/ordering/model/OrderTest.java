@@ -11,6 +11,8 @@ import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 class OrderTest {
 
@@ -107,13 +109,14 @@ class OrderTest {
                 .isInstanceOf(IllegalArgumentException.class);
         }
 
-        @DisplayName("DRAFT인데 주문 기록이 있으면 거절한다")
-        @Test
-        void rejectsRestore_whenDraftWithRecord() {
+        @DisplayName("확정 전이거나 결제 실패한 주문에 주문 기록이 있으면 거절한다")
+        @ParameterizedTest
+        @EnumSource(value = OrderStatus.class, names = {"DRAFT", "PAYMENT_PENDING", "PAYMENT_FAILED"})
+        void rejectsRestore_whenUnconfirmedWithRecord(OrderStatus status) {
             List<OrderItem> items = List.of(OrderItem.restore(1L, "상품", 1_000L, 1, 1_000L));
             OrderRecord record = OrderRecord.restore(1L, 1L, 1_000L, OrderRecordStatus.PAID, Instant.now());
 
-            assertThatThrownBy(() -> Order.restore(1L, 1L, OrderStatus.DRAFT, items, 1_000L, Instant.now(), record))
+            assertThatThrownBy(() -> Order.restore(1L, 1L, status, items, 1_000L, Instant.now(), record))
                 .isInstanceOf(IllegalArgumentException.class);
         }
     }
@@ -121,6 +124,19 @@ class OrderTest {
     @DisplayName("주문 확정")
     @Nested
     class Confirm {
+        @DisplayName("PG 대기·실패 주문을 기존 POINT 확정으로 바꾸지 않는다")
+        @ParameterizedTest
+        @EnumSource(value = OrderStatus.class, names = {"PAYMENT_PENDING", "PAYMENT_FAILED"})
+        void rejectsPointConfirm_forPgStates(OrderStatus status) {
+            Order order = Order.restore(1L, 1L, status, List.of(OrderItem.create(1L, "상품", 1_000L, 1)),
+                1_000L, Instant.now(), null);
+
+            assertThatThrownBy(order::confirm).isInstanceOf(DomainException.class)
+                .extracting("errorCode").isEqualTo(DomainErrorCode.ORDER_PAYMENT_NOT_ALLOWED);
+            assertThat(order.getStatus()).isEqualTo(status);
+            assertThat(order.getRecord()).isEmpty();
+        }
+
         @DisplayName("DRAFT 주문을 CONFIRMED로 전환한다")
         @Test
         void confirmsDraftOrder() {

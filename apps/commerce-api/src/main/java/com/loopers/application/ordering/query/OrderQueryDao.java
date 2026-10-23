@@ -8,9 +8,11 @@ import java.util.Optional;
 public interface OrderQueryDao {
     PageResult<OrderView> findOrders(long userId, PageCriteria criteria);
 
-    Optional<OrderView> findOrder(long orderId);
+    Optional<OrderView> findOrder(long userId, long orderId);
 
     PageResult<AdminOrderView> findAdminOrders(PageCriteria criteria);
 
     Optional<AdminOrderView> findAdminOrder(long orderId);
+
+    PageResult<AdminOrderView> findIncompletePayments(PageCriteria criteria);
 }
