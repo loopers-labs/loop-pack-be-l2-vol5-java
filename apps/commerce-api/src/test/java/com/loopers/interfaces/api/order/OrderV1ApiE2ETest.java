@@ -1,12 +1,14 @@
 package com.loopers.interfaces.api.order;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.loopers.application.order.OrderService;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.infrastructure.user.FixtureUserInitializer;
 import com.loopers.support.AdminMockMvc;
+import com.loopers.support.TerminalPgApiFixture;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,10 +31,12 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
-class OrderV1ApiE2ETest {
+class OrderV1ApiE2ETest extends TerminalPgApiFixture {
+    @Autowired private OrderService orders;
     @Autowired
     private MockMvc mvc;
     @Autowired
@@ -88,7 +92,7 @@ class OrderV1ApiE2ETest {
         success(request(HttpMethod.POST, "/api/v1/products/" + product.getId() + "/likes", "bob", null), 200);
         jdbc.update("UPDATE product SET name='새 이름', price=999 WHERE id=?", product.getId());
 
-        JsonNode confirmed = success(request(HttpMethod.POST, "/api/v1/orders/" + id + "/confirm", "alice", null), 200);
+        JsonNode confirmed = historicalPointConfirmation(id);
         assertThat(confirmed.path("status").asText()).isEqualTo("CONFIRMED");
         assertThat(confirmed.path("paidAmount").asLong()).isEqualTo(200);
         assertThat(confirmed.path("items").get(0).path("productName").asText()).isEqualTo("상품");
@@ -113,7 +117,7 @@ class OrderV1ApiE2ETest {
         assertThat(jdbc.queryForObject("SELECT stock_quantity FROM product WHERE id=?", Integer.class, product.getId()))
             .isEqualTo(3);
         if (!productState.equals("active")) {
-            failure(request(HttpMethod.POST, "/api/v1/orders/" + other + "/confirm", "alice", null),
+            failure(request(HttpMethod.POST, "/api/v1/orders/" + other + "/confirm", "alice", pgBody()),
                 404, "PRODUCT_NOT_FOUND", "상품을 찾을 수 없습니다.");
             assertThat(storedState()).isEqualTo(before);
         }
@@ -124,7 +128,7 @@ class OrderV1ApiE2ETest {
         Product product = product(100, 5);
         jdbc.update("UPDATE user SET point_balance = 1000 WHERE id=1");
         long id = create("alice", product.getId(), 2);
-        JsonNode confirmed = success(request(HttpMethod.POST, "/api/v1/orders/" + id + "/confirm", "alice", null), 200);
+        JsonNode confirmed = historicalPointConfirmation(id);
         var before = storedState();
 
         for (long requested : new long[]{id, Long.MAX_VALUE}) {
@@ -146,7 +150,7 @@ class OrderV1ApiE2ETest {
         long first = create("alice", product.getId(), 1);
         long second = create("alice", product.getId(), 1);
         long bob = create("bob", product.getId(), 1);
-        success(request(HttpMethod.POST, "/api/v1/orders/" + first + "/confirm", "alice", null), 200);
+        historicalPointConfirmation(first);
         jdbc.update("UPDATE `order` SET created_at='2020-01-01 00:00:00'");
 
         JsonNode mine = success(request(HttpMethod.GET, "/api/v1/orders?size=1", "alice", null), 200);
@@ -193,6 +197,15 @@ class OrderV1ApiE2ETest {
         assertThat(storedState()).isEqualTo(before);
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"PAYMENT_PENDING", "PAYMENT_FAILED"})
+    void approvedPgStatesAreAcceptedByTheExpandedAdminFilterContract(String status) {
+        var before = storedState();
+        assertThat(success(request(HttpMethod.GET, "/api-admin/v1/orders?status=" + status, "admin", null), 200)
+            .path("totalElements").asInt()).isZero();
+        assertThat(storedState()).isEqualTo(before);
+    }
+
     @Test
     void rejectsMappedRequesterWhoseDatabaseRowIsMissing() {
         jdbc.update("DELETE FROM user WHERE id=1");
@@ -236,7 +249,7 @@ class OrderV1ApiE2ETest {
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
-    void refusesInsufficientStockOrPointsAndAllowsDraftRetryAfterCorrection(boolean stockFailure) {
+    void pgStockAndHistoricalPointFailuresAllowRetryAfterCorrection(boolean stockFailure) {
         Product first = product(100, 5);
         Product second = product(100, stockFailure ? 0 : 5);
         if (stockFailure) {
@@ -246,9 +259,13 @@ class OrderV1ApiE2ETest {
             + first.getId() + ",\"quantity\":1},{\"productId\":" + second.getId() + ",\"quantity\":1}]}"), 201);
         long orderId = order.path("orderId").asLong();
         var before = storedState();
-        failure(request(HttpMethod.POST, "/api/v1/orders/" + orderId + "/confirm", "alice", null),
-            409, stockFailure ? "INSUFFICIENT_STOCK" : "INSUFFICIENT_POINTS",
-            stockFailure ? "상품 재고가 부족합니다." : "포인트가 부족합니다.");
+        if (stockFailure) {
+            failure(request(HttpMethod.POST, "/api/v1/orders/" + orderId + "/confirm", "alice", pgBody()),
+                409, "INSUFFICIENT_STOCK", "상품 재고가 부족합니다.");
+        } else {
+            // W5 no longer charges points through confirm HTTP; retain the historical POINT engine regression.
+            assertThatThrownBy(() -> orders.confirm("alice", orderId)).hasMessage("INSUFFICIENT_POINTS");
+        }
         assertThat(storedState()).isEqualTo(before);
         JsonNode failedDraft = success(request(HttpMethod.GET, "/api/v1/orders/" + orderId, "alice", null), 200);
         assertThat(failedDraft.path("status").asText()).isEqualTo("DRAFT");
@@ -263,7 +280,10 @@ class OrderV1ApiE2ETest {
                 .path("balance").asLong()).isEqualTo(1000);
         }
 
-        JsonNode confirmed = success(request(HttpMethod.POST, "/api/v1/orders/" + orderId + "/confirm", "alice", null), 200);
+        String paymentBody = pgBody();
+        JsonNode confirmed = stockFailure
+            ? success(request(HttpMethod.POST, "/api/v1/orders/" + orderId + "/confirm", "alice", paymentBody), 200)
+            : historicalPointConfirmation(orderId);
 
         assertThat(confirmed.path("orderId").asLong()).isEqualTo(orderId);
         assertThat(confirmed.path("status").asText()).isEqualTo("CONFIRMED");
@@ -273,15 +293,21 @@ class OrderV1ApiE2ETest {
         assertThat(confirmed.path("items")).isEqualTo(order.path("items"));
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM `order`", Long.class)).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM order_item", Long.class)).isEqualTo(2);
-        assertThat(jdbc.queryForObject("SELECT point_balance FROM user WHERE id=1", Long.class)).isEqualTo(800);
+        assertThat(jdbc.queryForObject("SELECT point_balance FROM user WHERE id=1", Long.class))
+            .isEqualTo(stockFailure ? 1000 : 800);
         for (Product product : List.of(first, second)) {
             assertThat(jdbc.queryForObject("SELECT stock_quantity FROM product WHERE id=?", Integer.class, product.getId()))
                 .isEqualTo(4);
         }
         var afterConfirmation = storedState();
 
-        failure(request(HttpMethod.POST, "/api/v1/orders/" + orderId + "/confirm", "alice", null),
-            409, "ORDER_ALREADY_CONFIRMED", "이미 확정된 주문입니다.");
+        if (stockFailure) {
+            assertThat(success(request(HttpMethod.POST, "/api/v1/orders/" + orderId + "/confirm", "alice", paymentBody), 200))
+                .isEqualTo(confirmed);
+        } else {
+            failure(request(HttpMethod.POST, "/api/v1/orders/" + orderId + "/confirm", "alice", null),
+                409, "ORDER_ALREADY_CONFIRMED", "이미 확정된 주문입니다.");
+        }
         assertThat(storedState()).isEqualTo(afterConfirmation);
         assertThat(success(request(HttpMethod.GET, "/api/v1/orders/" + orderId, "alice", null), 200)).isEqualTo(confirmed);
         assertThat(storedState()).isEqualTo(afterConfirmation);
@@ -294,7 +320,7 @@ class OrderV1ApiE2ETest {
         long id = create("alice", product.getId(), 1);
         jdbc.update("UPDATE order_item SET quantity=? WHERE order_id=?", quantity, id);
         var before = storedState();
-        failure(request(HttpMethod.POST, "/api/v1/orders/" + id + "/confirm", "alice", null),
+        failure(request(HttpMethod.POST, "/api/v1/orders/" + id + "/confirm", "alice", pgBody()),
             500, "INTERNAL_ERROR", "일시적인 오류가 발생했습니다.");
         assertThat(storedState()).isEqualTo(before);
     }
@@ -309,7 +335,7 @@ class OrderV1ApiE2ETest {
         var before = storedState();
 
         failure(request(confirm ? HttpMethod.POST : HttpMethod.GET,
-            "/api/v1/orders/" + id + (confirm ? "/confirm" : ""), "alice", null),
+            "/api/v1/orders/" + id + (confirm ? "/confirm" : ""), "alice", confirm ? pgBody() : null),
             500, "INTERNAL_ERROR", "일시적인 오류가 발생했습니다.");
 
         assertThat(storedState()).isEqualTo(before);
@@ -335,6 +361,11 @@ class OrderV1ApiE2ETest {
 
     private Product product(long price, int stock) {
         return products.save(new Product(brands.save(new Brand("브랜드")), "상품", price, stock));
+    }
+
+    private JsonNode historicalPointConfirmation(long orderId) {
+        orders.confirm("alice", orderId);
+        return success(request(HttpMethod.GET, "/api/v1/orders/" + orderId, "alice", null), 200);
     }
 
     private long create(String requester, long productId, int quantity) {

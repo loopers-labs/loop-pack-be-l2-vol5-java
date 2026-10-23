@@ -1,12 +1,14 @@
 package com.loopers.interfaces.api.brand;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.loopers.application.order.OrderService;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.infrastructure.user.FixtureUserInitializer;
 import com.loopers.support.AdminMockMvc;
+import com.loopers.support.TerminalPgApiFixture;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,7 +36,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
-class BrandRemovalCustomerApiTest {
+class BrandRemovalCustomerApiTest extends TerminalPgApiFixture {
+    @Autowired private OrderService orders;
     @Autowired private BrandRepository brands;
     @Autowired private ProductRepository products;
     @Autowired private FixtureUserInitializer initializer;
@@ -140,7 +143,7 @@ class BrandRemovalCustomerApiTest {
         deleteBrand();
         var beforeConfirmation = storedState();
 
-        failure(request(HttpMethod.POST, "/api/v1/orders/" + orderId + "/confirm", "alice", null), "PRODUCT_NOT_FOUND");
+        failure(request(HttpMethod.POST, "/api/v1/orders/" + orderId + "/confirm", "alice", pgBody()), "PRODUCT_NOT_FOUND");
 
         assertThat(success(request(HttpMethod.GET, "/api/v1/orders/" + orderId, "alice", null), 200)).isEqualTo(beforeDeletion);
         assertThat(jdbc.queryForObject("SELECT status FROM `order` WHERE id = ?", String.class, orderId)).isEqualTo("DRAFT");
@@ -156,7 +159,8 @@ class BrandRemovalCustomerApiTest {
     void preservesConfirmedOrderThroughCustomerAndAdminQueries() {
         long orderId = success(request(HttpMethod.POST, "/api/v1/orders", "alice", orderBody()), 201)
             .path("orderId").asLong();
-        JsonNode confirmed = success(request(HttpMethod.POST, "/api/v1/orders/" + orderId + "/confirm", "alice", null), 200);
+        orders.confirm("alice", orderId); // Historical POINT fixture; the current confirm API uses PG.
+        JsonNode confirmed = success(request(HttpMethod.GET, "/api/v1/orders/" + orderId, "alice", null), 200);
         assertThat(confirmed.path("status").asText()).isEqualTo("CONFIRMED");
         assertThat(confirmed.path("paidAmount").asLong()).isEqualTo(500);
         JsonNode changedProduct = success(AdminMockMvc.exchange(mvc, HttpMethod.PUT,

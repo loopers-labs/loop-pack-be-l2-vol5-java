@@ -3,6 +3,7 @@ package com.loopers.application.product;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.loopers.application.order.OrderService;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.common.PageResult;
@@ -13,6 +14,7 @@ import com.loopers.domain.product.ProductSort;
 import com.loopers.infrastructure.product.cache.ProductListCacheConfiguration;
 import com.loopers.infrastructure.user.FixtureUserInitializer;
 import com.loopers.support.AdminMockMvc;
+import com.loopers.support.TerminalPgApiFixture;
 import com.loopers.testcontainers.RedisTestContainersConfig;
 import com.loopers.utils.DatabaseCleanUp;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -46,11 +48,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties = "commerce.product-list-cache.enabled=true")
 @AutoConfigureMockMvc
-class ProductListCacheMutationApiTest {
+class ProductListCacheMutationApiTest extends TerminalPgApiFixture {
     private static final String NAMESPACE = "commerce:test:mutation-api:" + UUID.randomUUID() + ":products:v1";
     private static final String PAGE = "/api/v1/products?sort=likes_desc&page=0&size=20";
 
     @Autowired private TestRestTemplate http;
+    @Autowired private OrderService orders;
     @Autowired private MockMvc mvc;
     @Autowired private ObjectMapper mapper;
     @Autowired private BrandRepository brands;
@@ -169,7 +172,8 @@ class ProductListCacheMutationApiTest {
 
     @Test
     void brandDeletionHidesCachedProductsButPreservesHistoricalOrdersAndAccessRules() {
-        JsonNode confirmed = success(call(HttpMethod.POST, "/api/v1/orders/" + orderId + "/confirm", "alice", null), 200);
+        orders.confirm("alice", orderId); // Preserve an actual historical POINT record through later deletion.
+        JsonNode confirmed = success(call(HttpMethod.GET, "/api/v1/orders/" + orderId, "alice", null), 200);
         long pendingOrder = success(call(HttpMethod.POST, "/api/v1/orders", "alice", orderBody()), 201)
             .path("orderId").asLong();
         success(call(HttpMethod.POST, likePath(), "alice", null), 200);
@@ -186,7 +190,7 @@ class ProductListCacheMutationApiTest {
         assertThat(success(call(HttpMethod.GET, "/api/v1/orders/" + orderId, "alice", null), 200)).isEqualTo(confirmed);
         error(call(HttpMethod.GET, "/api/v1/orders/" + orderId, "bob", null), 404, "ORDER_NOT_FOUND");
         error(call(HttpMethod.POST, "/api/v1/orders", "alice", orderBody()), 404, "PRODUCT_NOT_FOUND");
-        error(call(HttpMethod.POST, "/api/v1/orders/" + pendingOrder + "/confirm", "alice", null), 404, "PRODUCT_NOT_FOUND");
+        error(call(HttpMethod.POST, "/api/v1/orders/" + pendingOrder + "/confirm", "alice", pgBody()), 404, "PRODUCT_NOT_FOUND");
         error(call(HttpMethod.POST, likePath(), "bob", null), 404, "PRODUCT_NOT_FOUND");
         long deletedRevision = revisions.current();
         success(call(HttpMethod.DELETE, likePath(), "alice", null), 200);
@@ -225,7 +229,7 @@ class ProductListCacheMutationApiTest {
             case DELETE_BRAND -> call(HttpMethod.DELETE, brandPath(), "admin", null);
             case REGISTER_LIKE -> call(HttpMethod.POST, likePath(), "alice", null);
             case CANCEL_LIKE -> call(HttpMethod.DELETE, likePath(), "alice", null);
-            case CONFIRM_ORDER -> call(HttpMethod.POST, "/api/v1/orders/" + orderId + "/confirm", "alice", null);
+            case CONFIRM_ORDER -> call(HttpMethod.POST, "/api/v1/orders/" + orderId + "/confirm", "alice", pgBody());
         };
         success(response, mutation == Mutation.CREATE_PRODUCT ? 201 : 200);
     }

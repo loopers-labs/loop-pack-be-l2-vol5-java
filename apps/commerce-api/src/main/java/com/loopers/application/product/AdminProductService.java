@@ -4,10 +4,12 @@ import com.loopers.application.user.AdminAuthorization;
 import com.loopers.domain.user.UserRole;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
+import com.loopers.domain.order.OrderRepository;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductListRevisionRepository;
 import com.loopers.domain.product.ProductQueryRepository;
 import com.loopers.domain.product.ProductRepository;
+import com.loopers.domain.product.ProductStock;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,14 +25,16 @@ public class AdminProductService {
     private final ProductRepository productRepository;
     private final ProductQueryRepository productQueryRepository;
     private final ProductListRevisionRepository revisions;
+    private final OrderRepository orders;
 
     public AdminProductService(BrandRepository brandRepository,
                                ProductRepository productRepository, ProductQueryRepository productQueryRepository,
-                               ProductListRevisionRepository revisions) {
+                               ProductListRevisionRepository revisions, OrderRepository orders) {
         this.brandRepository = brandRepository;
         this.productRepository = productRepository;
         this.productQueryRepository = productQueryRepository;
         this.revisions = revisions;
+        this.orders = orders;
     }
 
     public AdminProductInfo create(UserRole requester, long brandId, String name, long price, int stockQuantity) {
@@ -56,6 +60,8 @@ public class AdminProductService {
         AdminAuthorization.requireAdmin(requester);
         Product product = lockProduct(productId, false);
         int previousStock = product.getStockQuantity();
+        long heldQuantity = orders.sumHeldQuantityByProductId(productId);
+        ProductStock.validateCapacity(stockQuantity, heldQuantity);
         product.changeStockQuantityTo(stockQuantity);
         return infoAfterMutation(productRepository.save(product), previousStock != product.getStockQuantity());
     }

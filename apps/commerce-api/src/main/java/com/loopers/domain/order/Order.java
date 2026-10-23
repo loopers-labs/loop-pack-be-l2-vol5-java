@@ -43,6 +43,10 @@ public class Order {
     @Column(name = "status", nullable = false)
     private OrderStatus status = OrderStatus.DRAFT;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_method")
+    private OrderPaymentMethod paymentMethod;
+
     @Column(name = "total_amount", nullable = false, updatable = false)
     private long totalAmount;
 
@@ -97,19 +101,122 @@ public class Order {
         if (status == OrderStatus.CONFIRMED) {
             throw new OrderException(OrderException.Reason.ORDER_ALREADY_CONFIRMED);
         }
+        if (status != OrderStatus.DRAFT) {
+            throw new IllegalStateException("Only a draft order can start payment");
+        }
     }
 
+    /**
+     * 기존 POINT 확정 경로다. PG 준비·결과 반영과 혼용하지 않는다.
+     */
     public void confirm(ZonedDateTime timestamp) {
         requireDraft();
-        validateStoredQuantities();
-        confirmedAt = Objects.requireNonNull(timestamp, "timestamp");
+        validatePaymentState(null, OrderItemReservationStatus.NOT_RESERVED, false);
+        ZonedDateTime confirmationTime = Objects.requireNonNull(timestamp, "timestamp").truncatedTo(ChronoUnit.MICROS);
+        confirmedAt = confirmationTime;
         paidAmount = totalAmount;
+        paymentMethod = OrderPaymentMethod.POINT;
         status = OrderStatus.CONFIRMED;
     }
 
+    /**
+     * 주문·품목의 준비 상태만 변경한다. 실제 재고 차감·시도·발송 기록과의 공동 저장은 TX A 책임이다.
+     */
+    public void preparePgPayment() {
+        requireDraft();
+        validatePaymentState(null, OrderItemReservationStatus.NOT_RESERVED, false);
+        items.forEach(OrderItem::holdReservation);
+        paymentMethod = OrderPaymentMethod.PG;
+        status = OrderStatus.PAYMENT_PENDING;
+    }
+
+    /**
+     * 검증된 같은 시도의 성공을 적용한다. true는 객체 변경이며 DB 커밋 완료를 뜻하지 않는다.
+     */
+    public boolean confirmPgPayment(ZonedDateTime timestamp) {
+        ZonedDateTime confirmationTime = Objects.requireNonNull(timestamp, "timestamp").truncatedTo(ChronoUnit.MICROS);
+        if (status == OrderStatus.CONFIRMED) {
+            validatePaymentState(OrderPaymentMethod.PG, OrderItemReservationStatus.CONSUMED, true);
+            return false;
+        }
+        requirePaymentPending();
+        validatePaymentState(OrderPaymentMethod.PG, OrderItemReservationStatus.HELD, false);
+        items.forEach(OrderItem::consumeReservation);
+        paidAmount = totalAmount;
+        confirmedAt = confirmationTime;
+        status = OrderStatus.CONFIRMED;
+        return true;
+    }
+
+    /**
+     * 검증된 실패의 예약 상태만 반환 완료로 바꾼다. 실제 재고 반환과의 공동 저장은 TX B 책임이다.
+     */
+    public boolean failPgPayment() {
+        if (status == OrderStatus.PAYMENT_FAILED) {
+            validatePaymentState(OrderPaymentMethod.PG, OrderItemReservationStatus.RELEASED, false);
+            return false;
+        }
+        requirePaymentPending();
+        validatePaymentState(OrderPaymentMethod.PG, OrderItemReservationStatus.HELD, false);
+        items.forEach(OrderItem::releaseReservation);
+        status = OrderStatus.PAYMENT_FAILED;
+        return true;
+    }
+
+    public OrderPaymentMethod getPaymentMethod() {
+        return paymentMethod;
+    }
+
+    /** 결과를 관찰하기 전에 저장된 주문·예약·금액의 조합을 검증한다. 상태를 변경하지 않는다. */
+    public void validatePgPaymentState() {
+        switch (status) {
+            case PAYMENT_PENDING -> validatePaymentState(OrderPaymentMethod.PG, OrderItemReservationStatus.HELD, false);
+            case CONFIRMED -> validatePaymentState(OrderPaymentMethod.PG, OrderItemReservationStatus.CONSUMED, true);
+            case PAYMENT_FAILED -> validatePaymentState(OrderPaymentMethod.PG, OrderItemReservationStatus.RELEASED, false);
+            default -> throw new IllegalStateException("PG result requires a prepared order");
+        }
+    }
+
     public void validateStoredQuantities() {
-        if (items.isEmpty() || items.stream().anyMatch(item -> item.getQuantity() <= 0)) {
+        if (items == null || items.isEmpty() || items.stream().anyMatch(item -> item == null || item.getQuantity() <= 0)) {
             throw new IllegalStateException("Stored order must contain positive quantities");
+        }
+    }
+
+    private void requirePaymentPending() {
+        if (status != OrderStatus.PAYMENT_PENDING) {
+            throw new IllegalStateException("Only a pending PG order can receive a first result");
+        }
+    }
+
+    private void validatePaymentState(OrderPaymentMethod expectedMethod, OrderItemReservationStatus expectedReservation,
+                                      boolean confirmed) {
+        validateStoredQuantities();
+        if (paymentMethod != expectedMethod
+            || items.stream().anyMatch(item -> item.getReservationStatus() != expectedReservation)) {
+            throw new IllegalStateException("Stored payment method or reservations do not match the order state");
+        }
+        validateStoredAmount();
+        if (confirmed ? paidAmount == null || paidAmount != totalAmount || confirmedAt == null
+            : paidAmount != null || confirmedAt != null) {
+            throw new IllegalStateException("Stored successful payment fields do not match the order state");
+        }
+    }
+
+    private void validateStoredAmount() {
+        long sum = 0;
+        try {
+            for (OrderItem item : items) {
+                if (item.getUnitPrice() < 0) {
+                    throw new IllegalStateException("Stored order price must be non-negative");
+                }
+                sum = Math.addExact(sum, item.subtotal());
+            }
+        } catch (ArithmeticException | OrderException exception) {
+            throw new IllegalStateException("Stored order amount exceeds its supported range", exception);
+        }
+        if (totalAmount < 0 || totalAmount != sum) {
+            throw new IllegalStateException("Stored order total must match its item snapshots");
         }
     }
 

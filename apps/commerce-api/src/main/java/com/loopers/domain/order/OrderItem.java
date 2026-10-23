@@ -3,6 +3,8 @@ package com.loopers.domain.order;
 import com.loopers.domain.product.Product;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -36,6 +38,10 @@ public class OrderItem {
     @Column(name = "quantity", nullable = false, updatable = false)
     private int quantity;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "reservation_status", nullable = false)
+    private OrderItemReservationStatus reservationStatus = OrderItemReservationStatus.NOT_RESERVED;
+
     protected OrderItem() {
     }
 
@@ -67,6 +73,22 @@ public class OrderItem {
 
     public int getQuantity() {
         return quantity;
+    }
+
+    public OrderItemReservationStatus getReservationStatus() {
+        return reservationStatus;
+    }
+
+    void holdReservation() {
+        reservationStatus = reservationStatus.hold();
+    }
+
+    void consumeReservation() {
+        reservationStatus = reservationStatus.consume();
+    }
+
+    void releaseReservation() {
+        reservationStatus = reservationStatus.release();
     }
 
     public long subtotal() {

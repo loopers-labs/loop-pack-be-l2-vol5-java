@@ -237,9 +237,17 @@ class OrderPointConcurrencyIntegrationTest {
             for (var original : before.get(table)) {
                 long id = ((Number) original.get("id")).longValue();
                 var saved = row(after.get(table), id);
+                if (table.equals("orders")) {
+                    assertThat(original.get("payment_method")).as("시작 전 DRAFT의 결제수단은 미선택").isNull();
+                    assertThat(saved.get("payment_method")).as("성공한 POINT 주문만 결제수단 기록")
+                        .isEqualTo(successfulIds.contains(id) ? "POINT" : original.get("payment_method"));
+                } else if (table.equals("items")) {
+                    assertThat(saved.get("reservation_status")).as("기존 POINT 결제는 PG 예약을 만들지 않음")
+                        .isEqualTo("NOT_RESERVED");
+                }
                 List<String> changedColumns = switch (table) {
                     case "orders" -> successfulIds.contains(id)
-                        ? List.of("status", "paid_amount", "confirmed_at", "updated_at") : List.of();
+                        ? List.of("status", "payment_method", "paid_amount", "confirmed_at", "updated_at") : List.of();
                     case "products" -> successfulProductIds.contains(id)
                         ? List.of("stock_quantity", "updated_at") : List.of();
                     case "users" -> id == 1 ? List.of("point_balance", "updated_at") : List.of();

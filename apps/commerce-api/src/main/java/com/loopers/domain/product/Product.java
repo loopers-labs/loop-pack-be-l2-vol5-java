@@ -118,6 +118,17 @@ public class Product {
         stock.validateDeduction(quantity);
     }
 
+    public void validateReservedStockReturn(int quantity) {
+        stock.validateReturn(quantity);
+    }
+
+    /**
+     * 주문이 보호하는 HELD 예약을 반환하며 상품의 삭제 상태는 바꾸지 않는다.
+     */
+    public void returnReservedStock(int quantity) {
+        stock.returnReserved(quantity);
+    }
+
     public void delete(ZonedDateTime timestamp) {
         if (!isDeleted()) {
             this.deletedAt = Objects.requireNonNull(timestamp, "timestamp");

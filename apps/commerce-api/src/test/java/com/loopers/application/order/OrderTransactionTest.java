@@ -33,12 +33,17 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.Mockito.doAnswer;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+// Historical W3 POINT transactions stay covered through their existing service proxy.
+// The customer confirm endpoint now starts PG payments; actual GET and POINT re-confirm HTTP remain under test.
 class OrderTransactionTest {
     @Autowired
     private TestRestTemplate rest;
+    @Autowired
+    private OrderService orderService;
     @Autowired
     private BrandRepository brands;
     @Autowired
@@ -73,7 +78,8 @@ class OrderTransactionTest {
         Fixture fixture = fixture();
         var before = storedState();
 
-        JsonNode confirmed = success(confirm(fixture.orderId()), 200);
+        orderService.confirm("alice", fixture.orderId());
+        JsonNode confirmed = success(request(HttpMethod.GET, "/api/v1/orders/" + fixture.orderId(), "alice", null), 200);
 
         assertConfirmed(fixture, confirmed);
         assertUnrelatedStateUnchanged(before, storedState(), fixture);
@@ -86,9 +92,9 @@ class OrderTransactionTest {
         Fixture fixture = fixture();
         var before = storedState();
 
-        ResponseEntity<JsonNode> response = confirmWithFailure(fixture.orderId(), failOnWrite);
+        Throwable failure = confirmWithFailure(fixture.orderId(), failOnWrite);
 
-        assertInjectedFailure(response, before, fixture, failOnWrite);
+        assertInjectedFailure(failure, before, fixture, failOnWrite);
         assertThat(storedState()).isEqualTo(before);
         assertThat(success(request(HttpMethod.GET, "/api/v1/orders/" + fixture.orderId(), "alice", null), 200))
             .isEqualTo(fixture.draft());
@@ -101,12 +107,13 @@ class OrderTransactionTest {
         Fixture fixture = fixture();
         var before = storedState();
 
-        ResponseEntity<JsonNode> failed = confirmWithFailure(fixture.orderId(), 2);
+        Throwable failed = confirmWithFailure(fixture.orderId(), 2);
 
         assertInjectedFailure(failed, before, fixture, 2);
         assertThat(storedState()).isEqualTo(before);
 
-        JsonNode confirmed = success(confirm(fixture.orderId()), 200);
+        orderService.confirm("alice", fixture.orderId());
+        JsonNode confirmed = success(request(HttpMethod.GET, "/api/v1/orders/" + fixture.orderId(), "alice", null), 200);
         assertConfirmed(fixture, confirmed);
         assertUnrelatedStateUnchanged(before, storedState(), fixture);
         var afterSuccess = storedState();
@@ -127,7 +134,7 @@ class OrderTransactionTest {
         long otherOrder = success(request(HttpMethod.POST, "/api/v1/orders", "bob",
             "{\"items\":[{\"productId\":" + unrelated.getId() + ",\"quantity\":1}]}"), 201)
             .path("orderId").asLong();
-        success(request(HttpMethod.POST, "/api/v1/orders/" + otherOrder + "/confirm", "bob", null), 200);
+        orderService.confirm("bob", otherOrder);
         success(request(HttpMethod.POST, "/api/v1/products/" + first.getId() + "/likes", "alice", null), 200);
         success(request(HttpMethod.POST, "/api/v1/products/" + unrelated.getId() + "/likes", "bob", null), 200);
         JsonNode draft = success(request(HttpMethod.POST, "/api/v1/orders", "alice",
@@ -146,21 +153,21 @@ class OrderTransactionTest {
         return new Fixture(first.getId(), second.getId(), orderId, storedDraft);
     }
 
-    private ResponseEntity<JsonNode> confirmWithFailure(long orderId, int failOnWrite) {
-        // Fixture 작업은 커밋된 상태다. 요청 자체의 서비스 트랜잭션에만 장애를 주입한다.
+    private Throwable confirmWithFailure(long orderId, int failOnWrite) {
+        // Fixture 작업은 커밋된 상태다. 과거 POINT 서비스 프록시의 실제 트랜잭션에만 장애를 주입한다.
         probe.arm(failOnWrite);
         try {
-            return confirm(orderId);
+            return catchThrowable(() -> orderService.confirm("alice", orderId));
         } finally {
             probe.disarm();
         }
     }
 
-    private void assertInjectedFailure(ResponseEntity<JsonNode> response,
+    private void assertInjectedFailure(Throwable failure,
                                        Map<String, List<Map<String, Object>>> before,
                                        Fixture fixture, int failOnWrite) {
-        failure(response, 500, "INTERNAL_ERROR", "일시적인 오류가 발생했습니다.");
-        assertThat(response.getBody().toString()).doesNotContain("test-only", "SQLException", "update ");
+        assertThat(failure).isInstanceOf(RuntimeException.class)
+            .hasRootCauseInstanceOf(SQLException.class).hasRootCauseMessage("test-only: order write failed");
         JdbcWriteFailureProbe.Snapshot evidence = probe.snapshot();
         assertThat(evidence.completedWrites()).isEqualTo(failOnWrite - 1);
         assertThat(evidence.injectedFailures()).isEqualTo(1);
@@ -179,6 +186,8 @@ class OrderTransactionTest {
     private void assertConfirmed(Fixture fixture, JsonNode confirmed) {
         assertThat(confirmed.path("orderId").asLong()).isEqualTo(fixture.orderId());
         assertThat(confirmed.path("status").asText()).isEqualTo("CONFIRMED");
+        assertThat(confirmed.path("paymentMethod").asText()).isEqualTo("POINT");
+        assertThat(confirmed.has("payment")).isFalse();
         assertThat(confirmed.path("totalAmount").asLong()).isEqualTo(4000);
         assertThat(confirmed.path("paidAmount").asLong()).isEqualTo(4000);
         assertThat(confirmed.path("confirmedAt").asText()).isNotBlank();
@@ -190,6 +199,7 @@ class OrderTransactionTest {
         assertThat(jdbc.queryForObject("SELECT point_balance FROM user WHERE id=1", Long.class)).isEqualTo(6000);
         Map<String, Object> order = jdbc.queryForMap("SELECT * FROM `order` WHERE id=?", fixture.orderId());
         assertThat(order.get("status")).isEqualTo("CONFIRMED");
+        assertThat(order.get("payment_method")).isEqualTo("POINT");
         assertThat(order.get("paid_amount")).isEqualTo(4000L);
         assertThat(order.get("confirmed_at")).isNotNull();
         assertThat(success(request(HttpMethod.GET, "/api/v1/orders/" + fixture.orderId(), "alice", null), 200))

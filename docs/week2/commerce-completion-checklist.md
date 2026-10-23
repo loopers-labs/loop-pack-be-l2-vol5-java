@@ -2,7 +2,67 @@
 
 [전체 설계](commerce-erd-draft.md) · [API 계약](commerce-api-contract.md) · [정책 선택](commerce-policy-decisions.md) · [TDD 계획](commerce-tdd-plan.md)
 
-목표는 고객 12개·관리자 13개 API와 관련 도메인·저장·권한·동시성·운영 DDL을 끝까지 연결하고 검증하는 것이다. 이 문서는 완료 증거를 추적하며 새 업무 정책을 정하지 않는다. 계약의 상세 기대값은 연결한 원문을 따른다.
+W2~W4의 목표는 고객 12개·관리자 13개 API와 관련 도메인·저장·권한·동시성·운영 DDL을 끝까지 연결하고 검증하는 것이었다. 이 문서는 그 완료 증거와 W5 전환의 신규 검증 상태를 구분하며 새 업무 정책을 정하지 않는다. 계약의 상세 기대값은 연결한 원문을 따른다.
+
+## W5 설계 선택과 구현 상태
+
+**2026-10-23 17:30 KST 최신 복구 증분:** 사용자 위임으로 단건 재확인·callback ACK/오류·충돌 기록을 선택하고 두 HTTP 진입점을 기존 PG 조회·TX B에 연결했다. callback 권위 조회·중복/역순/동시 처리·SQL 일부 성공 후 전체 rollback과 재확인 복구를 검증했다. 신규106개를 포함한 관련10개 스위트·198개 통과, 실패·오류·skip0, ArchUnit1개 통과, commerce-api Checkstyle main/test 보고서2개 위반0. BUILD SUCCESSFUL·1분10초·종료0. 사용자의 속도 요청으로 전체 check는 반복하지 않았으며 선행1,764개는 당시 기록으로 보존한다. [복구 API TDD 기록](../week5/payment-recovery-api-tdd-log.md)을 최신 증거로 삼는다. 사용자 DB·추가 DDL·커밋·PR은 변경하지 않았다. 아래 선행 증분의 callback/reconcile 미완료 표시는 당시 상태이며 현재는 두 진입점이 연결됐다.
+
+**선행 고객 confirm 연결 범위:** 고객 confirm을 PG·HMAC 재요청 처리에 연결하고, 고객·관리자 주문 조회에 결제수단·상태를 추가했다. 최초 발송 실행만 요청 진입부터 계산한 180초 목표/175초 외부 예산·최대 12회 조회와 조회 회로를 사용한다. 기존 POINT 기록·소유권·포인트 API·TX A/B·잠금 순서는 유지한다. 당시 테스트·정적 검사 결과와 세부 한계는 [고객 결제 API TDD 기록](../week5/customer-payment-api-tdd-log.md)을 따른다. 당시 남았던 callback·수동 reconcile HTTP는 위 최신 증분에서 연결했다. 실제 요청의 180초 하드 상한을 검증했다고 주장하지 않는다. 사용자 DB에는 접근·이행하지 않았다.
+
+**고객 PG 연결 최종 전체 검사(2026-10-23 17:14:48 KST 결과 확인): 122개 스위트·1,764개 통과, 실패·오류·skip 0.** `:apps:commerce-api:check --rerun-tasks --console=plain`은 BUILD SUCCESSFUL·8분 49초·종료 0이다. ArchUnit 1개 통과, 모든 Java 모듈 Checkstyle 보고서 11개·위반 0. PG OFF의 기존 재요청·과거 POINT SQL 롤백 회귀 보완을 포함한다. 격리 테스트 DB만 사용했고 별도 W4 장시간 TTL 측정은 재실행하지 않았다. [Red·Green 및 상세 범위](../week5/customer-payment-api-tdd-log.md#최종-검사)를 보존하며 이 수치만으로 당시 미구현이던 callback/reconcile을 완료 처리하지 않으며 후속 복구 기록으로 구분한다.
+
+**2026-10-23 첫 증분:** 예약 상태 순수 enum의 전이 12개 조합을 TDD로 구현·검증했다. 당시 관련 주문·상품 회귀·ArchUnit 포함 70개 테스트와 commerce-api Checkstyle main/test가 통과했다. [예약 실행 기록](../week5/order-reservation-state-tdd-log.md)은 당시 범위의 증거로 보존한다. 저장 구조 A·시간/회로 초기값·UUID·PG 규격 카드 입력·발송 보호의 기존 설계 선택은 유지한다. 당시 POINT 결제 구현과 W2~W4의 통과 수를 PG 교체의 완료 증거로 이어받지 않는다. 아래 `pending`은 신규 W5 구현·검증 상태이며, 이미 선택한 설계까지 미정이라는 뜻은 아니다.
+
+**같은 날 후속 설계 보강 당시:** [주문·시도 전이표](commerce-erd-draft.md#주문결제-시도의-상태-전이표)와 [W5-STATE-01~16 테스트 기대값](commerce-tdd-plan.md#주문결제-상태-전이의-테스트-기대값)을 작성했다. 추가 비교 후 사용자가 **발송 시작 기록을 준비 TX A에 함께 저장하는 방식(Q08)을 선택**하여 공동 커밋/rollback·중단 기대값에 반영했다. 이 설계 보강 시점에는 코드·테스트를 추가하지 않았으며 위 70개는 앞선 예약 enum 증분의 기록이다.
+
+**선행 결제 시도 증분:** [PaymentAttempt 상태 TDD](../week5/payment-attempt-state-tdd-log.md)에서 추가한 **81개**, 당시 회귀·ArchUnit 포함 **8개 스위트·151개 통과**와 Checkstyle main/test 위반 0 기록을 보존한다. 이는 순수 모델 단계의 결과다.
+
+**선행 주문·예약·DB 연결 증분:** [실행 기록](../week5/order-payment-persistence-tdd-log.md)에 Order 상태·수단/null 검사, OrderItem 예약, PaymentAttempt JPA·저장소·009/010 이행과 실제 flush 뒤 공동 rollback 검증을 남긴다. 기존 POINT 사실은 유지하며 사용자 DB에는 적용하지 않았다. 이는 당시 저장 연결 증거이며 실제 재고·내부 TX A/B는 아래 후속 증분으로 연결한다. 당시 신규 Commerce PG HTTP·HMAC 요청 비교·새 오류·ACK는 미연결이었다. 현재 연결 범위는 위 최신 기록으로 구분하며 W5 전체 완료로 표시하지 않는다.
+
+**선행 저장 연결 최종 검사(2026-10-23 11:01 KST): 88개 스위트·992개 통과, 실패·오류·skip 0.** ArchUnit 통과, 모든 Java 모듈 Checkstyle 보고서 11개·위반 0, `:apps:commerce-api:check --rerun-tasks --console=plain` 종료 코드 0. 기본 회귀에서 분리된 장시간 TTL 측정은 재실행하지 않았다. 이 과거 검사 수를 아래 HTTP 증분의 결과로 사용하지 않는다.
+
+**선행 3단계 로컬 PG·HTTP 증분:** [실행 기록](../week5/local-test-pg-http-tdd-log.md)에 JDK HTTP fixture와 Apache HttpClient 5.4.2의 실제 생성/조회, 엄격한 거절·응답 유실·자동 재시도 금지·개별 timeout·자원 정리 증거를 남긴다. 검사 수·명령·최신 결과도 그 기록을 따른다. 당시 기존 OrderService·트랜잭션·락·POINT 결제는 변경하지 않았으며 HMAC은 제안으로 유지했다.
+
+**선행 HTTP 증분 전체 검사: 2026-10-23 11:42 KST, 92개 스위트·1,112개 통과, 실패·오류·skip 0.** ArchUnit 통과, Checkstyle 11개 보고서·위반 0. `:apps:commerce-api:check --rerun-tasks --console=plain` 종료 0이며, 상세 범위와 제외한 장시간 TTL 측정은 [당시 회귀 기록](../week5/local-test-pg-http-tdd-log.md#전체-회귀)을 따른다. 당시 미완료였던 TX A/B·실제 재고 효과는 아래 재고 증분의 별도 증거를 따른다. 당시 callback·회로도 pending이었으며 이 선행 검사로 완료 처리하지 않는다.
+
+**선행 4단계 첫 증분:** [재고 확보·반환 기록](../week5/order-stock-reservation-tdd-log.md)에 내부 신규 준비 TX A·결과 적용 TX B, 삭제 후 반환·관리자 반환 여유·승인 409·revision의 구현과 검증을 남긴다. 2026-10-23 13:47:59 KST 관련 94개(신규 93+ArchUnit 1)와 Checkstyle main/test가 통과했고, 13:49:14 KST 추가 관리자 경합 4개·Checkstyle test도 통과했다. **신규 증분 97개를 포함해 13:57 KST 전체 98개 스위트·1,209개 통과, 실패·오류·skip 0.** ArchUnit 1개·Checkstyle 11개 보고서 위반 0이며 전체 check는 7분 29초·종료 0이다. 당시 고객 confirm·실제 PG 조율·HMAC 채택은 포함하지 않았다.
+
+**선행 4단계 내부 HTTP 연결 증분:** `OrderPaymentCoordinator.startNew`의 신규 준비 TX A → 실제 PG 생성 HTTP → 결과 적용 TX B와, 저장된 거래의 단건 `refreshOnce`를 연결했다. 기존 REQUIRED·READ_COMMITTED·잠금 순서를 유지하며 조율 진입에서 활성 외부 TX를 거절한다. 실제 HTTP·DB의 효과 수, 롤백·조회 복구·경합·관련 검사 실행 결과는 [새 기록](../week5/order-payment-http-connection-tdd-log.md)을 따른다. 이 증분은 고객 confirm/reconcile·callback·HMAC·180초 제한 조회·회로를 구현한 것이 아니며, 선행 1,209개 결과를 새 증분의 통과 수로 사용하지 않는다.
+
+**선행 내부 연결 증분 전체 검사(2026-10-23 14:17 KST): 신규 40개를 포함한 101개 스위트·1,249개 통과, 실패·오류·skip 0.** ArchUnit 1개·Checkstyle 11개 보고서 위반 0. `:apps:commerce-api:check --rerun-tasks --console=plain`은 7분 27초·종료 0이며 별도 장시간 TTL 측정은 재실행하지 않았다. 고객 PG API 전환 완료와는 구분한다.
+
+**선행 HMAC 계산·비교 단위 증분(2026-10-23 14:51:53 KST): 신규 54개를 포함한 관련 13개 스위트·343개 통과, 실패·오류·skip 0.** ArchUnit 포함, Checkstyle main/test 보고서 2개 위반 0. [Red·Green·Refactor와 범위](../week5/payment-request-fingerprint-tdd-log.md)를 남겼다. 당시에는 전체 check·DB/PG 통합 검사를 재실행하지 않았으므로 앞선 1,249개에 신규 수를 더해 전체 통과라고 주장하지 않는다. 당시 미완료였던 지문 DB 저장·키 설정·내부 서비스·고객 HTTP 연결은 후속 증분의 별도 기록으로 구분한다.
+
+**선행 지문·버전 저장 증분(2026-10-23 15:24:51 KST 결과 확인): 신규 52개를 포함한 관련 22개 스위트·554개 통과, 실패·오류·skip 0.** ArchUnit 1개 통과, Checkstyle main/test 보고서 2개·위반 0, BUILD SUCCESSFUL·종료 0. [새 저장 실행 기록](../week5/payment-request-fingerprint-persistence-tdd-log.md)에 모델/JPA/011·기존 PG 전체 NULL·POINT 보존·실제 SQL 후 rollback·유일 제약 경합의 범위를 남겼다. 격리 Testcontainers DB만 사용하고 사용자 DB는 건드리지 않았다. 전체 check는 이번에 재실행하지 않았고 당시 기존 5인자 생성자·prepareNew는 무지문 경로였으며 현재 내부 연결은 후속 기록을 따른다.
+
+**선행 환경변수 키 설정 증분(2026-10-23 15:41:32 KST 결과 확인): 신규 92개를 포함한 관련 14개 스위트·403개 통과, 실패·오류·skip 0.** ArchUnit 1개 통과, Checkstyle main/test 보고서 2개·위반 0, BUILD SUCCESSFUL·종료 0. [키 설정 실행 기록](../week5/payment-fingerprint-key-configuration-tdd-log.md)에 현재/과거 키 공급·버전 선택·설정 오류의 비교 불가·출력 비노출을 남겼다. 합성 환경변수로 Spring 컨텍스트를 재생성한 검증이며 실제 비밀키 설정·서버 재시작·DB 검사는 수행하지 않았다. 사용자 DB에 접근하지 않았고 전체 check도 재실행하지 않았다. 당시 후속이던 내부 TX A·재요청·고객 HTTP 연결은 각각 후속 기록을 따른다.
+
+**선행 HMAC 주문 연결 증분(2026-10-23 16:08:14 KST 결과 확인): 신규 44개를 포함한 관련 42개 스위트·798개 통과, 실패·오류·skip 0.** ArchUnit 1개 통과, Checkstyle main/test 보고서 2개·위반 0, BUILD SUCCESSFUL·1분 8초·종료 0. [주문 연결 실행 기록](../week5/order-payment-fingerprint-connection-tdd-log.md)에 신규 TX A의 지문 공동 저장·동일 재요청의 상태 반환·상이 요청 충돌·실제 UNIQUE 경합·롤백·키 불가 복구를 남겼다. 기존 TX·락·POINT 사실은 유지하고 사용자 DB 대신 Testcontainers MySQL·로컬 HTTP·합성 키만 사용했다. 고객 PG API 연결·전체 check는 당시 범위가 아니었다.
+
+| 영향 범위 | 선택·검증 기준 | 구현·검증 상태 | 연결할 테스트 계획 |
+| --- | --- | --- | --- |
+| 예약 상태 전이 · W5-TDD-01 하위 범위 | [첫 실행 기록](../week5/order-reservation-state-tdd-log.md): 순수 enum의 정상/중복/금지 전이 12개 조합. 실제 재고·DB·동시성은 당시 미포함 | 선행 순수 범위 done. 후속 주문·저장·HTTP 연결 증거는 아래 각 행 참조 | OrderItemReservationStatusTest 12개 |
+| 결제 시도 순수 모델 · W5-TDD-01 하위 범위 | [결제 시도 실행 기록](../week5/payment-attempt-state-tdd-log.md): 최초 발송·정상/중복/충돌 관찰·종결 보존·입력 검증. 실제 발송·주문/재고 효과·저장은 당시 미포함 | 선행 순수 범위 done. W5-TDD-01·02의 DB/고객 HTTP 증거는 아래 연결 기록으로 구분 | PaymentAttemptTest 63개·PaymentValueValidationTest 18개, W5-STATE-05~10의 모델 하위 범위 |
+| 주문·결제 시도·예약 저장 | [DB 연결 기록](../week5/order-payment-persistence-tdd-log.md): Order 4상태·결제수단, OrderItem 예약, 별도 PaymentAttempt·유일성·이행·실제 flush/rollback. 별도 StockReservation 없음 | 저장 하위 범위 done. 실제 수량·서비스 TX·경합·고객 HTTP는 아래 후속 기록으로 분리 | W5-TDD-01~03의 저장 부분과 후속 07·15·22 증거를 구분 |
+| 로컬 테스트 PG·실제 HTTP adapter | [HTTP 기록](../week5/local-test-pg-http-tdd-log.md): 세 HTTP 계약·타입·고정 URL/계정·strict 422·거래 생성 후 응답 유실·조회·숨은 retry 금지 | 독립 HTTP 하위 범위 done. DB 효과·발송 보호는 후속 연결 기록 참조. callback 연결 done · 최신 복구 API 기록 참조 | W5-TDD-04~06·12·16·17의 외부 경계 부분 |
+| 개별 HTTP timeout·취소 | 실제 응답·풀 대기·전체 호출 제한과 연결 회수. 연결 3초는 하위 client 설정이며 네트워크 지연 실측과 구분 | 선행 하위 범위 done. 최초 요청 예산·조회 반복·회로는 최신 고객 연결 기록으로 구분. 실제 180초 하드 상한 검증 아님 | W5-TDD-26~33의 각 하위 증거와 남은 실제 운영 경계 구분 |
+| 내부 재고 확보·반환·TX A/B | [재고 기록](../week5/order-stock-reservation-tdd-log.md): 실제 수량·HELD·시도·발송 기록·revision 공동 저장, 소비/반환·롤백·경합 | 선행 내부 범위 done. 고객 confirm은 같은 TX A/B에 연결했으며 최신 검사 결과는 [고객 API 기록](../week5/customer-payment-api-tdd-log.md) 참조 | W5-TDD-07·09·15·21~23. callback 증거는 최신 복구 API 기록 참조 |
+| 요청 동일성 비교 | [HMAC 계산·비교 단위 TDD](../week5/payment-request-fingerprint-tdd-log.md): canonical v1·32바이트 비교·비교 불가·방어복사·비노출·동시 계산 | 계산·저장·키 설정·내부 재요청은 done. 고객 confirm의 동일/상이 요청·409/503/500 분류도 연결, 최신 검사 기록 참조. 담당자 사전 승인은 필수 조건 아님 | W5-HMAC-01~06의 계산·설정·저장·내부 및 고객 HTTP 증거를 별도로 추적 |
+| 요청 지문·버전 저장 | [저장 TDD 기록](../week5/payment-request-fingerprint-persistence-tdd-log.md): 불변 32바이트·두 버전, 기존 전체 NULL 보존, 실제 011 이행·JPA 재조회·제약·rollback·경합 | **저장 하위 범위 done, 당시 신규 52개 포함 관련 554개 통과.** 사용자 DB 이행은 미수행. 고객 연결은 최신 기록으로 구분 | W5-HMAC-03 저장 하위 범위 및 05의 legacy 비교 불가. 실제 PG POST 수·고객 응답은 최신 기록 참조 |
+| 환경변수 키 공급·버전 선택 | [키 설정 TDD 기록](../week5/payment-fingerprint-key-configuration-tdd-log.md): 현재 키 계산·저장 버전 비교, 전체 설정 검증·Spring bean·재생성·비노출 | **설정 하위 범위 done, 당시 신규 92개 포함 관련 403개 통과.** 실제 배포 키 공급은 미수행. 고객 API 연결과 503 검증은 최신 기록 참조 | W5-HMAC-02·04·05. 합성 키/컨텍스트 검증을 실제 배포 검증으로 확대하지 않음 |
+| 주문 서비스 HMAC 연결 | [주문 연결 기록](../week5/order-payment-fingerprint-connection-tdd-log.md): 신규 지문 공동 저장·소유권 우선·동일/상이 재요청·기존 NULL 보존·카드 없는 복구·동시성/rollback | **내부 서비스 범위 done, 당시 신규 44개 포함 관련 798개 통과.** 고객 confirm은 PG 흐름·HMAC 비교에 연결. callback/reconcile HTTP도 연결·관련 검사 통과 | W5-HMAC-02~05 및 W5-TDD-07·10·11·16. 고객 HTTP 증거는 최신 기록, 실제 배포 키 교체/프로세스 재시작과 구분 |
+| 최초 confirm의 대기·응답 | [시간·조회·회로 초기값](commerce-policy-decisions.md#w5-최초-결제-요청의-대기조회회로-설정)과 [응답 시점](commerce-api-contract.md#최초-confirm의-대기와-응답-시점) | 180초 목표/175초 외부 예산·최대 12회·조회 회로 연결. 동시 재요청은 루프를 추가하지 않음. 최신 실행 증거 참조, 실제 180초 하드 상한·최종 DB 커밋 보장은 별도 | W5-TDD-08·12·18·19·26~33 |
+| 내부 TX A → HTTP → TX B·단건 결과 복구 | [HTTP·DB 연결 기록](../week5/order-payment-http-connection-tdd-log.md): 신규 startNew의 커밋 후 생성 1회와 refreshOnce의 저장 식별자 단건 조회·TX B. 생성 재발송 금지·UNKNOWN 예약 유지·종결 보존·외부 TX 거절 | 내부 연결과 고객 confirm 연결. 최초 요청의 예산·조회 회로는 최신 기록 참조. 수동 reconcile·callback HTTP도 연결·관련 검사 통과 | W5-TDD-05~12·15~17, W5-STATE-11~15. 복구 HTTP·ACK는 최신 복구 API 기록 참조 |
+| 기존 POINT·포인트 API·조회 | 과거 사실·기존 오류 보존, 신규 PG 포인트 변화 0, 고객·관리자 상태 표시 | 고객/관리자 조회·PG confirm 연결. 실제 POINT·포인트 API 회귀와 상태 조합·페이지/필터·일관된 snapshot 검증 결과는 최신 기록 참조 | W5-TDD-20·24 · W5-HTTP-01~06 |
+| 삭제·관리자 재고·캐시 | 예약 후 삭제, 반환 여유·승인 409, 예약·반환과 DB 버전 공동 반영 | 선행 내부 서비스 관련 검사 통과. 실제 PG 연결 후 실행 결과는 새 기록 참조 | W5-TDD-21~23 |
+| 회귀·정적 검사·자원 정리 | W5 변경 후 관련 테스트·Checkstyle·ArchUnit과 실제 대기·자원 종료 확인 | 선행 검사 수는 당시 증거로 보존. 최신 복구 API 연결의 실행 명령·검사 수·결과·자원 정리는 [최신 기록](../week5/payment-recovery-api-tdd-log.md) 참조. callback/reconcile 포함 W5 전체 완료와 구분 | W5-TDD-25·33 |
+
+테스트 ID와 정확한 기대값은 [W5 TDD 계획](commerce-tdd-plan.md#w5-pg-결제-tdd-계획), 공식 9개 항목과의 대응은 [채점 항목 연결표](commerce-tdd-plan.md#9개-채점-항목과-증거-연결)를 따른다. 선택한 callback ACK·충돌 기록·단건 복구 예산과 선택적 과제 해석 질문은 [W5 질문·답변](commerce-policy-decisions.md#질문답변과-구현-전-남은-결정)에 유지한다. 아래 과거 실행 기록·완료 표는 수정된 PG 계약의 실행 결과가 아니다.
+
+**선행 고객 결제 계약 경계(2026-10-23 16:26:49 KST 결과 확인): 신규126개 포함16개 스위트·522개 통과, 실패·오류·skip0.** ArchUnit1개·Checkstyle main/test 보고서2개 위반0, BUILD SUCCESSFUL·8초·종료0. [계약 TDD 기록](../week5/customer-payment-contract-tdd-log.md)에 사용자 선택 JSON·오류3종·PG ID와 DB 없는 파서/DTO/오류분류/ID생성 증거를 남겼다. 당시 사용자 DB·기존 TX/락·고객 controller는 변경하지 않았고 전체 check도 재실행하지 않았다. 당시 미완료였던 confirm·조회·제한 조회·회로는 [후속 고객 API 기록](../week5/customer-payment-api-tdd-log.md)의 별도 증거로 구분한다. 당시 남았던 callback/reconcile HTTP는 최신 복구 증분에서 연결했다.
+
+## W2~W4 완료 증거의 범위
 
 **W3 변경 상태:** 브랜드 일괄 삭제 `W3-BRAND-01..08`, 주문 재확정 거절 `W3-RECONFIRM-01..06`, 주문 저장 경계 실패·롤백 `W3-ORDER-TX-01..03`, 갱신 유실 대조군 `W3-LOST-UPDATE-01`과 재고·포인트·충전/결제 경쟁의 구현·검증을 완료했다. **2026-10-09 최종 전체 재검사는 60개 스위트·549개 통과, 실패·오류·건너뜀 0, Checkstyle 11개 보고서 위반 0·ArchUnit 통과**다. 검증한 코드 기준은 `12f9afc`이며 이번 마무리는 문서만 수정했다. 과거 548·547·546·545·541·538·514·513·509개와 W2의 506개 기록은 당시 증거로 보존한다. PR 초안은 준비했으며 기술 글은 사용자가 작성한다. 실제 커밋·푸시·PR 생성·과제 제출 완료와는 구분한다.
 
@@ -121,11 +181,17 @@ W2 초기 구현 증분의 기준선은 [고객 브랜드 조회 application 기
 
 ## 최신 통합 검사
 
+고객 confirm·주문 조회·최초 제한 조회/회로 연결의 **최신 실행 명령·검사 범위·결과는 [복구 API TDD 기록](../week5/payment-recovery-api-tdd-log.md)을 따른다.** 아래 수치는 과거 내부 재고 증분 당시 결과이며 최신 검사 수로 합산하거나 대신하지 않는다. callback/reconcile HTTP를 포함한 W5 전체 완료 판정은 아직 아니다.
+
+**선행 내부 재고 검사 · 2026-10-23 13:57 KST: 98개 스위트·1,209개 통과, 실패·오류·skip 0.** `./gradlew :apps:commerce-api:check --rerun-tasks --console=plain`은 7분 29초·종료 0·BUILD SUCCESSFUL이며 39개 작업을 모두 실행했다. ArchUnit 1개 통과, Checkstyle XML 보고서 11개·위반 0이다. [당시 재고 실행 기록](../week5/order-stock-reservation-tdd-log.md)에 연결한다. 별도 `ttl-measurement` 장시간 측정만 재실행하지 않았으며 기본 check의 기동 직후·혼합 부하 테스트는 포함했다. 실제 PG/고객 confirm·callback 통합은 당시 미완료였다.
+
+선행 내부 재고 증분의 실행 상태·검사 수·당시 미연결 경계는 [재고 기록](../week5/order-stock-reservation-tdd-log.md), 선행 HTTP 검사는 [PG HTTP 기록](../week5/local-test-pg-http-tdd-log.md), 현재 W5 상태는 [별도 표](#w5-설계-선택과-구현-상태)를 따른다. 선행 저장 연결의 **2026-10-23 11:01 KST, 88개 스위트·992개 통과·Checkstyle/ArchUnit 통과**는 [당시 기록](../week5/order-payment-persistence-tdd-log.md#최종-실행-결과)으로 보존한다. 아래 W2~W4 수치도 각 증분 당시 기록이다.
+
 ### W4 현재 상태와 문서 안내
 
 아래는 2026-10-16까지 완료한 구현·검증의 연결표다. 각 실행 기록의 과거 측정값·테스트 수는 당시 증거로 보존하며 최신 수치로 덮어쓰지 않는다.
 
-**이번 과제의 확정 선택:** 무필터 좋아요순 첫 페이지에 Redis + DB 버전 캐시와 TTL 60초를 사용하고 요청 시 채운다. 서버 시작 워밍은 도입하지 않는다. 워밍은 필수 미완료 작업이 아니며, 운영 최적성의 추가 검증과 현재 선택은 별개다.
+**W4의 확정 선택:** 무필터 좋아요순 첫 페이지에 Redis + DB 버전 캐시와 TTL 60초를 사용하고 요청 시 채운다. 서버 시작 워밍은 도입하지 않는다. 워밍은 필수 미완료 작업이 아니며, 운영 최적성의 추가 검증과 현재 선택은 별개다. W5에서도 이 선택을 유지하되, 예약·반환 쓰기와 캐시 버전의 연결은 [W5 재고 증분](../week5/order-stock-reservation-tdd-log.md)의 별도 증거로 다룬다.
 
 | 범위 | 현재 상태 | 확인할 문서 |
 | --- | --- | --- |
@@ -389,6 +455,8 @@ Docker 미기동으로 발생한 첫 통합 실행 오류는 업무 Red와 구�
 
 ## 정책 확인
 
+이 절은 W2~W3의 정책 확인 기록이다. W5에서 바뀌는 PG 결제·재요청·예약과 승인한 초기 설정은 [W5 정책 선택](commerce-policy-decisions.md#w5-결제-교체의-선택과-질문)이 우선하며, 아래의 POINT 결제 계약을 신규 PG에 그대로 적용하지 않는다.
+
 P00~P16의 확정 내용을 따른다. P15는 사용자의 과제 피드백 수정 요청으로 관리자 접근 방식과 검증 범위를 바로잡은 계약이다. 2026-09-18 추천 묶음 승인과 2026-10-08 후속 P16 승인으로 아래 정책을 확인했다. 이 표의 `confirmed`는 정책·문서 반영 상태이며, API·DB·동시성 구현의 `done`과 다르다. 새로운 완료 증거가 없는 구현 항목은 pending을 유지한다.
 
 | 항목 | 확정한 범위 | 정책 상태 | 결정·문서 반영 증거 |
@@ -409,6 +477,8 @@ P00~P16의 확정 내용을 따른다. P15는 사용자의 과제 피드백 수�
 경로는 [고객·관리자 계약표](commerce-api-contract.md#고객-api-계약표)를 따른다. 각 행의 `done`은 HTTP부터 필요한 저장 처리까지의 검증을 뜻한다. C01의 기존 [application 검증](commerce-tdd-brand-query-log.md)은 선행 증거이며 HTTP 완료 증거는 아니다. 모든 A01~A13에는 기존 업무 검증과 함께 [AdminSecurityApiTest](../../apps/commerce-api/src/test/java/com/loopers/interfaces/api/commerce/AdminSecurityApiTest.java)의 실제 관리자·일반·미식별 요청 검증을 적용했다.
 
 아래 기존 증거는 W2 당시 계약 기준이다. A05의 계약 변경은 [W3 브랜드 완료 증거](#w3-브랜드상품-일괄-삭제의-완료-증거), C10의 계약 변경은 [W3 재확정 증거](#w3-주문-재확정-거절)로 구분한다. 무관한 API의 기존 완료 증거를 취소하지 않는다.
+
+**W5의 C10 PG 교체, 결제 상태 조회·예약 관련 변경, reconcile·callback 추가는 이 25개 `done`에 포함되지 않는다.** [W5 API 변경표](commerce-api-contract.md#교체-범위와-기존-api의-관계)와 [W5 구현 상태](#w5-설계-선택과-구현-상태)로 별도 추적한다.
 
 | ID | Method / Path | 연결 TDD | 상태 | 완료 증거: 테스트·실행 기록 |
 | --- | --- | --- | --- | --- |
@@ -443,6 +513,8 @@ P00~P16의 확정 내용을 따른다. P15는 사용자의 과제 피드백 수�
 이 표는 [TDD 기대값](commerce-tdd-plan.md#api규칙별-테스트-기대값)의 색인이다. fixture 값·정렬 순서·응답·DB 기대값을 이 요약으로 대체하지 않는다. 후속 승인한 금액·HTTP·잠금 계약의 기대값으로 실행하며 완료 여부는 실제 증거로 갱신한다.
 
 기존 `API-16`의 상품 존재 시 삭제 거절과 `API-24`의 브랜드 경합 결과는 W2 기록이다. W3의 변경·추가 검증에는 별도 `W3-BRAND` ID를 사용한다. `API-14·23`의 재확정 성공 반환은 P16으로 변경했으며 `W3-RECONFIRM` ID로 새 검증을 추적한다.
+
+W5에서 달라지는 포인트 차감·재확정·예약·원자성 기대값은 [기존 테스트 전환 계획](commerce-tdd-plan.md#기존-테스트-전환과-과거-증거-보존)을 따른다. 아래 과거 `done`을 신규 PG 테스트 통과로 표시하거나 과거 수치 자체를 바꾸지 않는다.
 
 | 사례 | 검증 범위 | 상태 | 완료 증거: 테스트·실행 기록 |
 | --- | --- | --- | --- |

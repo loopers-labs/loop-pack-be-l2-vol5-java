@@ -103,7 +103,7 @@ class ProductListCacheMixedLoadIntegrationTest {
     private static final ThreadLocal<Boolean> IN_SINGLE_FLIGHT = ThreadLocal.withInitial(() -> false);
     private static final List<String> SCHEMA = List.of("001-brand.sql", "002-user.sql", "003-product.sql",
         "004-like.sql", "005-order.sql", "006-order-item.sql", "007-product-brand-price-index.sql",
-        "008-product-list-revision.sql");
+        "008-product-list-revision.sql", "009-order-payment-state.sql", "010-payment-attempt.sql");
 
     @Container
     private static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0")

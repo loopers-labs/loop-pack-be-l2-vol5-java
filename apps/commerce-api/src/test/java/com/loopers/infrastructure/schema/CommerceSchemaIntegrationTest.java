@@ -5,6 +5,7 @@ import com.loopers.domain.like.ProductLike;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.OrderStatus;
+import com.loopers.domain.payment.PaymentAttempt;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductListRevision;
 import com.loopers.domain.user.User;
@@ -47,10 +48,11 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 class CommerceSchemaIntegrationTest {
 
     private static final List<String> TABLES = List.of("brand", "user", "product", "like", "order", "order_item",
-        "product_list_revision");
+        "product_list_revision", "payment_attempt");
     private static final List<String> SCRIPTS = List.of("001-brand.sql", "002-user.sql", "003-product.sql",
         "004-like.sql", "005-order.sql", "006-order-item.sql", "007-product-brand-price-index.sql",
-        "008-product-list-revision.sql");
+        "008-product-list-revision.sql", "009-order-payment-state.sql", "010-payment-attempt.sql",
+        "011-payment-request-fingerprint.sql");
 
     @Container
     private static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0")
@@ -64,7 +66,7 @@ class CommerceSchemaIntegrationTest {
         dataSource = new DriverManagerDataSource(MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
         jdbc = new JdbcTemplate(dataSource);
         // 이 클래스 전용 컨테이너에서만 자식 테이블부터 정리한다. 운영 SQL에는 DROP이 없다.
-        for (String table : List.of("product_list_revision", "order_item", "like", "order", "product", "user", "brand")) {
+        for (String table : List.of("payment_attempt", "product_list_revision", "order_item", "like", "order", "product", "user", "brand")) {
             jdbc.execute("DROP TABLE IF EXISTS `" + table + "`");
         }
         applySchema();
@@ -126,7 +128,7 @@ class CommerceSchemaIntegrationTest {
         assertThat(jdbc.queryForList("""
             SELECT DATETIME_PRECISION FROM information_schema.COLUMNS
             WHERE TABLE_SCHEMA = DATABASE() AND DATA_TYPE = 'datetime'
-            """, Integer.class)).hasSize(12).containsOnly(6);
+            """, Integer.class)).hasSize(13).containsOnly(6);
         assertThat(jdbc.queryForList("""
             SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS
             WHERE TABLE_SCHEMA = DATABASE() AND COLUMN_NAME IN ('name','product_name_snapshot')
@@ -204,7 +206,7 @@ class CommerceSchemaIntegrationTest {
     void acceptsConfirmedStateOnlyWithTheMatchingPaidAmountAndTimestamp() {
         seedRows();
         jdbc.update("""
-            UPDATE `order` SET status = 'CONFIRMED', paid_amount = total_amount,
+            UPDATE `order` SET status = 'CONFIRMED', payment_method = 'POINT', paid_amount = total_amount,
                 confirmed_at = '2026-09-18 01:02:03.123456' WHERE id = 1001
             """);
         var before = snapshot();
@@ -341,7 +343,7 @@ class CommerceSchemaIntegrationTest {
     private SessionFactory validatedSessionFactory() {
         Configuration configuration = new Configuration();
         for (Class<?> type : List.of(Brand.class, User.class, Product.class, ProductLike.class, Order.class, OrderItem.class,
-            ProductListRevision.class)) {
+            ProductListRevision.class, PaymentAttempt.class)) {
             configuration.addAnnotatedClass(type);
         }
         configuration.addAttributeConverter(BrandNameConverter.class, true);

@@ -12,6 +12,11 @@ import com.loopers.domain.product.ProductException;
 import com.loopers.domain.product.ProductStockException;
 import com.loopers.domain.order.OrderException;
 import com.loopers.domain.order.OrderQuantityException;
+import com.loopers.domain.payment.PaymentFingerprintUnavailableException;
+import com.loopers.domain.payment.PaymentRequestConflictException;
+import com.loopers.domain.payment.PaymentProviderUnavailableException;
+import com.loopers.domain.payment.PaymentResultConflictException;
+import com.loopers.domain.payment.PaymentRecoveryException;
 import com.loopers.interfaces.api.ApiResponse;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.dao.PessimisticLockingFailureException;
@@ -37,6 +42,31 @@ public class CommerceErrors {
     }
 
     public Failure translate(Exception exception) {
+        if (exception instanceof PaymentRecoveryException recovery) {
+            return switch (recovery.getReason()) {
+                case PAYMENT_NOT_STARTED -> new Failure(409, "PAYMENT_NOT_STARTED", "결제를 시작하지 않은 주문입니다.");
+                case PAYMENT_ATTEMPT_NOT_FOUND -> new Failure(404, "PAYMENT_ATTEMPT_NOT_FOUND", "결제 시도를 찾을 수 없습니다.");
+                case PAYMENT_RESULT_UNAVAILABLE -> new Failure(503, "PAYMENT_RESULT_UNAVAILABLE", "현재 결제 결과를 확인할 수 없습니다.");
+            };
+        }
+        if (exception instanceof PaymentProviderUnavailableException) {
+            return new Failure(503, "PAYMENT_PROVIDER_UNAVAILABLE", "현재 결제 서비스를 사용할 수 없습니다.");
+        }
+        if (exception instanceof PaymentResultConflictException) {
+            return new Failure(409, "PAYMENT_RESULT_CONFLICT", "외부 결제 결과가 저장된 결제 정보와 충돌합니다.");
+        }
+        if (exception instanceof PaymentRequestConflictException) {
+            return new Failure(409, "PAYMENT_REQUEST_CONFLICT", "기존 결제 시도와 일치하지 않는 요청입니다.");
+        }
+        if (exception instanceof PaymentFingerprintUnavailableException fingerprint) {
+            return switch (fingerprint.getReason()) {
+                case LEGACY_FINGERPRINT_MISSING -> new Failure(409, "PAYMENT_REQUEST_UNVERIFIABLE",
+                    "기존 결제 요청과 비교할 정보가 없습니다. 주문 조회 또는 결제 결과 재확인을 이용해 주세요.");
+                case SERVER_VERIFICATION_UNAVAILABLE -> new Failure(503, "PAYMENT_VERIFICATION_UNAVAILABLE",
+                    "현재 결제 요청을 확인할 수 없습니다.");
+                case CORRUPT_STORED_FINGERPRINT -> new Failure(500, "INTERNAL_ERROR", "일시적인 오류가 발생했습니다.");
+            };
+        }
         if (exception instanceof OrderException order) {
             return switch (order.getReason()) {
                 case INVALID_ITEMS -> invalid();
@@ -61,6 +91,8 @@ public class CommerceErrors {
             return switch (stock.getReason()) {
                 case INVALID_STOCK_QUANTITY -> invalid();
                 case INSUFFICIENT_STOCK -> new Failure(409, "INSUFFICIENT_STOCK", "상품 재고가 부족합니다.");
+                case STOCK_CAPACITY_EXCEEDED -> new Failure(409, "STOCK_CAPACITY_EXCEEDED",
+                    "예약 반환 수량을 포함하면 재고 저장 한도를 초과합니다.");
                 case INVALID_DEDUCTION_QUANTITY -> new Failure(500, "INTERNAL_ERROR", "일시적인 오류가 발생했습니다.");
             };
         }

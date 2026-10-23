@@ -78,7 +78,8 @@ class ProductQueryBaselineTest {
     private static final String INDEX_ADDITION = "007-product-brand-price-index.sql";
     private static final boolean COMPARE_INDEX = Boolean.parseBoolean(System.getenv("W4_COMPARE_BRAND_PRICE_INDEX"));
     private static final List<String> SCHEMA = List.of("001-brand.sql", "002-user.sql", "003-product.sql",
-        "004-like.sql", "005-order.sql", "006-order-item.sql");
+        "004-like.sql", "005-order.sql", "006-order-item.sql", "008-product-list-revision.sql",
+        "009-order-payment-state.sql", "010-payment-attempt.sql");
 
     @Container
     private static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0")

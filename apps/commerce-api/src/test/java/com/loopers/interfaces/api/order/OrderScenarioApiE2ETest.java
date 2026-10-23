@@ -1,12 +1,14 @@
 package com.loopers.interfaces.api.order;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.loopers.application.order.OrderService;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.infrastructure.user.FixtureUserInitializer;
 import com.loopers.support.AdminMockMvc;
+import com.loopers.support.TerminalPgApiFixture;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,7 +34,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
-class OrderScenarioApiE2ETest {
+class OrderScenarioApiE2ETest extends TerminalPgApiFixture {
+    @Autowired private OrderService orders;
     @Autowired private TestRestTemplate http;
     @Autowired private MockMvc mvc;
     @Autowired private BrandRepository brands;
@@ -53,7 +56,7 @@ class OrderScenarioApiE2ETest {
     }
 
     @Test
-    void api09And12CreateTwoSnapshotsAndDeductAllProductsAndBalanceTogether() {
+    void api09And12RetainHistoricalPointSnapshotsAndAtomicDeductions() {
         Product first = product(1000, 5);
         Product second = product(2000, 4);
         String body = "{\"items\":[" + item(first.getId(), 2) + "," + item(second.getId(), 1) + "]}";
@@ -72,7 +75,8 @@ class OrderScenarioApiE2ETest {
         assertThat(repeated.path("orderId").asLong()).isNotEqualTo(id);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM `order`", Long.class)).isEqualTo(2);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM order_item", Long.class)).isEqualTo(4);
-        JsonNode confirmed = success(call(HttpMethod.POST, "/api/v1/orders/" + id + "/confirm", "alice", null), 200);
+        orders.confirm("alice", id);
+        JsonNode confirmed = success(call(HttpMethod.GET, "/api/v1/orders/" + id, "alice", null), 200);
         assertThat(confirmed.path("paidAmount").asLong()).isEqualTo(4000);
         assertThat(confirmed.path("status").asText()).isEqualTo("CONFIRMED");
         assertStock(first.getId(), 3);
@@ -111,14 +115,14 @@ class OrderScenarioApiE2ETest {
         assertThat(created.path("totalAmount").asLong()).isEqualTo(5000);
         long orderId = created.path("orderId").asLong();
         var before = snapshot();
-        var failed = call(HttpMethod.POST, "/api/v1/orders/" + orderId + "/confirm", "alice", null);
+        var failed = call(HttpMethod.POST, "/api/v1/orders/" + orderId + "/confirm", "alice", pgBody());
         assertThat(failed.getStatusCode().value()).isEqualTo(409);
         assertThat(failed.getBody().path("meta").path("errorCode").asText()).isEqualTo("INSUFFICIENT_STOCK");
         assertThat(snapshot()).isEqualTo(before);
         success(call(HttpMethod.PUT, "/api-admin/v1/products/" + product.getId() + "/stock", "admin", "{\"stockQuantity\":5}"), 200);
-        success(call(HttpMethod.POST, "/api/v1/orders/" + orderId + "/confirm", "alice", null), 200);
+        success(call(HttpMethod.POST, "/api/v1/orders/" + orderId + "/confirm", "alice", pgBody()), 200);
         assertStock(product.getId(), 0);
-        assertBalance(5000);
+        assertBalance(10000); // PG, unlike the retained historical POINT path, never deducts points.
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM order_item WHERE order_id=?", Long.class, orderId)).isEqualTo(1);
     }
 

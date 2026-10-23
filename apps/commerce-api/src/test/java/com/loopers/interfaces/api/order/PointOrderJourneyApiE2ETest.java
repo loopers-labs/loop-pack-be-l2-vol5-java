@@ -1,6 +1,7 @@
 package com.loopers.interfaces.api.order;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.loopers.application.order.OrderService;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.product.Product;
@@ -23,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class PointOrderJourneyApiE2ETest {
+    @Autowired private OrderService orders;
     @Autowired private TestRestTemplate http;
     @Autowired private FixtureUserInitializer users;
     @Autowired private BrandRepository brands;
@@ -40,7 +42,7 @@ class PointOrderJourneyApiE2ETest {
     }
 
     @Test
-    void chargesFromZeroConfirmsMultipleItemsAndReadsOwnOrderAndRemainingBalance() {
+    void chargesFromZeroAndReadsHistoricalPointOrderAndRemainingBalance() {
         Brand brand = brands.save(new Brand("여정 브랜드"));
         Product first = products.save(new Product(brand, "첫 상품", 2000, 5));
         Product second = products.save(new Product(brand, "둘째 상품", 3000, 4));
@@ -61,12 +63,16 @@ class PointOrderJourneyApiE2ETest {
         assertThat(get("/api/v1/products/" + first.getId(), "alice").path("stockQuantity").asInt()).isEqualTo(5);
         assertThat(get("/api/v1/products/" + second.getId(), "alice").path("stockQuantity").asInt()).isEqualTo(4);
 
-        JsonNode confirmed = post("/api/v1/orders/" + orderId + "/confirm", null, 200);
+        // Prepare a historical POINT record through the preserved engine, not the new PG confirm endpoint.
+        orders.confirm("alice", orderId);
+        JsonNode confirmed = get("/api/v1/orders/" + orderId, "alice");
         assertThat(confirmed.path("orderId").asLong()).isEqualTo(orderId);
         assertThat(confirmed.path("status").asText()).isEqualTo("CONFIRMED");
         assertThat(confirmed.path("totalAmount").asLong()).isEqualTo(7000);
         assertThat(confirmed.path("paidAmount").asLong()).isEqualTo(7000);
         assertThat(confirmed.path("confirmedAt").asText()).isNotBlank();
+        assertThat(confirmed.path("paymentMethod").asText()).isEqualTo("POINT");
+        assertThat(confirmed.has("payment")).isFalse();
         assertThat(confirmed.path("items")).isEqualTo(draft.path("items"));
 
         assertThat(get("/api/v1/orders/" + orderId, "alice")).isEqualTo(confirmed);

@@ -2,10 +2,13 @@ package com.loopers.infrastructure.order;
 
 import com.loopers.domain.common.PageResult;
 import com.loopers.domain.order.Order;
+import com.loopers.domain.order.OrderItemReservationStatus;
 import com.loopers.domain.order.OrderRepository;
 import com.loopers.domain.order.OrderStatus;
 import jakarta.persistence.EntityManager;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -33,6 +36,17 @@ public class OrderRepositoryImpl implements OrderRepository {
     @Override
     public Optional<Order> lockById(long orderId) {
         return repository.lockById(orderId);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY, readOnly = true)
+    public long sumHeldQuantityByProductId(long productId) {
+        return entityManager.createQuery(
+                "select coalesce(sum(i.quantity), 0L) from OrderItem i"
+                    + " where i.product.id = :productId and i.reservationStatus = :status", Long.class)
+            .setParameter("productId", productId)
+            .setParameter("status", OrderItemReservationStatus.HELD)
+            .getSingleResult();
     }
 
     @Override

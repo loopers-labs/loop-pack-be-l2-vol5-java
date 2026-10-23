@@ -2,7 +2,260 @@
 
 [전체 설계](commerce-erd-draft.md) · [API 계약](commerce-api-contract.md) · [정책 선택과 설계 검토](commerce-policy-decisions.md)
 
-재고·사용자 식별·브랜드·주문 수량 규칙과 API-01~24의 기대값, 작은 기능의 구현 순서를 다룬다. 각 절은 도메인 단위 검증, application·실제 DB 연결, HTTP 완료를 구분한다. 최신 완료 증거와 전체 검사 결과는 [전체 완료 체크리스트](commerce-completion-checklist.md)에 모으고, 실제 Red·Green·Refactor는 기능별 실행 기록에 남긴다. 응답·금액·잠금 정책은 후속 추천 묶음 승인(P08·P12·P13)으로 확정했으며 아래 기대값으로 검증한다.
+재고·사용자 식별·브랜드·주문 수량 규칙과 API-01~24의 기대값, 작은 기능의 구현 순서를 다룬다. 각 절은 도메인 단위 검증, application·실제 DB 연결, HTTP 완료를 구분한다. 최신 완료 증거와 전체 검사 결과는 [전체 완료 체크리스트](commerce-completion-checklist.md)에 모으고, 실제 Red·Green·Refactor는 기능별 실행 기록에 남긴다. 기존 응답·금액·잠금 정책은 후속 추천 묶음 승인(P08·P12·P13)으로 확정한 선행 계약이다. W5에서 명시한 결제 경계의 변경은 아래 W5 계획을 우선하고, 변경 대상이 아닌 계약은 유지한다.
+
+## W5 PG 결제 TDD 계획
+
+**2026-10-23 현재 상태: 고객 confirm·주문 조회의 PG 연결과 최초 요청의 제한 조회·조회 회로 연결.** 고객 confirm은 신규 지문 공동 저장·동일 재요청 비교에 이어 TX A → TX 밖 PG → TX B를 사용하고, 고객·관리자 조회는 저장된 주문·결제 상태를 함께 읽는다. 최초 발송 실행만 요청 진입부터 180초 목표/175초 외부 예산·최대 12회 조회를 사용하며 동일 재요청은 긴 루프를 만들지 않는다. **callback·수동 reconcile HTTP도 연결했으며, 실제 요청의 180초 하드 상한이나 5초 내 DB 커밋 보장을 주장하지 않는다.** 이번 검증 결과와 한계는 [복구 API TDD 기록](../week5/payment-recovery-api-tdd-log.md)을 따른다. [고객 결제 API TDD 기록](../week5/customer-payment-api-tdd-log.md)은 선행 confirm·조회 증거로 보존한다.
+
+[예약 enum 12개](../week5/order-reservation-state-tdd-log.md)·[PaymentAttempt 81개와 당시 회귀 151개](../week5/payment-attempt-state-tdd-log.md), [주문·예약·JPA·009/010 SQL·POINT 이행](../week5/order-payment-persistence-tdd-log.md), [재고](../week5/order-stock-reservation-tdd-log.md)·[PG HTTP](../week5/local-test-pg-http-tdd-log.md)·[내부 HTTP 연결](../week5/order-payment-http-connection-tdd-log.md)은 선행 증거로 보존한다. [HMAC 순수 계산·비교의 신규 54개](../week5/payment-request-fingerprint-tdd-log.md), [지문·버전 저장](../week5/payment-request-fingerprint-persistence-tdd-log.md), [환경변수 키 공급](../week5/payment-fingerprint-key-configuration-tdd-log.md), [주문 지문 연결](../week5/order-payment-fingerprint-connection-tdd-log.md), [고객 계약 경계](../week5/customer-payment-contract-tdd-log.md)도 각 증분의 당시 범위로 구분한다. 과제 해석 확인은 선택 사항이고 구현 착수의 필수 선행 조건이 아니다. 승인한 저장 A안·UUID·PG 규격 카드 입력·시간/회로 초기값·커밋 승자만 발송하는 규칙을 유지한다. 아래 계획 자체나 이전 주의 통과 수는 W5 전체 완료 증거가 아니다. 근거는 [과제 원문](../week5/assignment-original.md)·[9개 채점 기준](../week5/grading-criteria.md)이며 [전체 설계](commerce-erd-draft.md#w5-pg-결제-설계)·[API](commerce-api-contract.md)·[정책](commerce-policy-decisions.md#w5-결제-교체의-선택과-질문)을 함께 따른다.
+
+### 6단계 진행 순서와 변경 책임
+
+선행 저장 연결 증분의 최종 전체 검사는 **2026-10-23 11:01 KST, 88개 스위트·992개 통과**였다. 실패·오류·skip 0, ArchUnit·전체 Java 모듈 Checkstyle 위반 0의 [당시 기록](../week5/order-payment-persistence-tdd-log.md#최종-실행-결과)을 보존한다. 선행 HTTP 검사는 [HTTP 기록](../week5/local-test-pg-http-tdd-log.md), 내부 재고·TX 증분 검사는 [재고 기록](../week5/order-stock-reservation-tdd-log.md), 내부 실제 HTTP·DB 연결은 [선행 연결 기록](../week5/order-payment-http-connection-tdd-log.md), 최신 고객 연결은 [고객 API 기록](../week5/customer-payment-api-tdd-log.md)을 따른다.
+
+한 단계 전체를 한 번에 구현하지 않고, 아래 사례 중 작은 행동 하나의 Red → Green → Refactor를 마친 뒤 확장한다. 승인한 저장 책임·대기 설정도 실제 구현과 구분하며, 남은 callback ACK·충돌 기록·callback/reconcile 요청 예산을 임의로 확정하지 않는다.
+
+| 단계 | 먼저 정리·검증할 것 | 변경 후보 책임·파일 범위 | 공식 채점 연결·현재 상태 |
+| --- | --- | --- | --- |
+| 1. 설계·계약 | 과거 POINT와 신규 PG의 구분, 상태·식별자·예약·TX A/HTTP/TX B, 아래 테스트와 미정 질문 | 전체 설계·API 계약·정책 선택·이 TDD 계획 | 1~8의 검증 계획. 남은 정책·기술 선택을 구분하며 해당 구현 전에 확인 |
+| 2. 모델·DB·POINT 이행 | 허용 상태 전이, 주문당 한 시도·요청 일치·발송 권한, 예약 수량과 이전 POINT 기록 보존 | `Order`·`OrderStatus`·`OrderPaymentMethod`·별도 `PaymentAttempt`·기존 `OrderItem`, 저장소·JPA·009/010/011 SQL·스키마 테스트 | 모델·저장·격리 DB의 POINT 이행·HMAC 지문/버전·기존 NULL 보존·키 공급을 구현·검증했다. 내부 TX A/B·실제 재고·고객 HTTP 연결은 4단계 증거로 구분한다. 사용자 DB에는 미적용. 별도 StockReservation 없음 |
+| 3. 실제 HTTP fixture·adapter | 작은 로컬 서버의 통제된 거래·호출 수와 세 요청의 실제 형식, strict 422·불확실 응답 구분 | `PaymentGateway`·`PaymentCreateRequest`·`PaymentGatewayResult`, `HttpTestPgClient`·로컬 설정, JDK `LocalTestPg`·실제 HTTP 계약/timeout 테스트 | 독립 HTTP 하위 범위 구현·검증. [실행 기록](../week5/local-test-pg-http-tdd-log.md) 참조. 예약 효과·고객 confirm은 후속 연결 기록으로 구분하며 callback HTTP도 연결했으며 검증 결과는 최신 복구 기록 참조 |
+| 4. 기본 결제 흐름 | TX A의 사전 검사·재고 확보·시도 저장 → TX 밖 PG → TX B의 결과 적용, 포인트 변화 0 | `OrderPaymentCoordinator.startAndAwait`·`OrderPaymentStockService`·고객 confirm·`OrderPaymentQueryService`·고객/관리자 응답 | 고객 confirm의 PG/HMAC 연결과 저장 상태 조회를 구현. POINT 재확정409·소유권·조회 사실 보존. 실제 HTTP·DB·조회 및 회귀 결과는 [최신 연결 기록](../week5/customer-payment-api-tdd-log.md) 참조 |
+| 5. 결과 복구·조회 보호 | callback·수동 reconcile 공통 결과 적용, 응답 유실·재시작·중복·저장 실패, 전체 예산·조회 회로 차단 | 내부 `refreshOnce`, `PaymentConfirmationDeadline`·`PaymentConfirmationWaiter`, 조회 회로와 실제 HTTP client 연결. callback/reconcile API도 연결 | 최초 요청 180초 목표/175초 외부 예산·최대12회·조회 회로를 연결했다. callback/reconcile ACK·단건 GET/10초 예산은 위임 선택 완료, HTTP를 연결했으며 검증 결과는 최신 복구 기록으로 구분. 제어 시계 검증과 실제 180초 하드 상한 검증은 구분 |
+| 6. 관련 회귀·증거 정리 | 기존 POINT·포인트 API·소유권·삭제·관리자 재고·캐시, 실제 SQL 롤백·경합, Checkstyle·ArchUnit | 영향받은 기존 테스트·W5 통합/HTTP 테스트·실행 기록·완료 체크리스트 | 각 증분 회귀는 실행 기록으로 구분. 최종 PG 교체 통합 검증·PR·기술 글의 작성/제출은 별도 상태 |
+
+고객 confirm은 기존 `OrderService.confirm()` 안에 PG 호출을 추가하는 방식이 아니라 coordinator의 별도 TX A/B 프록시를 사용한다. 외부 HTTP·조회 대기 중에는 기존 쓰기 트랜잭션과 잠금을 유지하지 않는다. **사용자 승인한 발송 보호:** PG 호출 전에 발송 시작 상태를 원자적으로 변경하고 커밋한 그 실행만 최초 POST할 수 있다. 전이 또는 커밋 실패는 POST하지 않고, 커밋 후 생성 호출 예산이 부족해도 자동 재발송하지 않는다. 로컬 발송 시작은 외부 PG의 PENDING 수락과 구분하며 UNKNOWN·재시작 뒤에도 보존한다. 고객 동일 요청은 지문 비교 뒤 현재 상태를 반환하고 새 PG 생성·긴 대기를 만들지 않는다. 별도 발송 권한 테이블·claim TX는 추가하지 않았다.
+
+**2026-10-23 사용자 선택 W5-Q08:** 준비와 발송 시작 기록을 **TX A에 함께** commit한다. 재고 예약·시도·주문 대기·발송 기록·목록 버전의 공동 저장/rollback과 커밋 승자만 최초 POST하는 기대를 고정하며 별도 발송 선점 TX는 추가하지 않는다. [선택 이유·미채택 대안](commerce-policy-decisions.md#발송-시작-기록의-tx-배치-비교)을 보존한다. 카드 입력은 로컬 PG 규격의 합성 값을 해당 실행에서만 사용하고 DB·로그에는 저장하지 않는다. 특정 예시 번호만 허용하는 제한은 추가하지 않는다. D10의 HMAC 계산·비교·TX A 공동 저장도 고객 confirm에 연결했다. 담당자 사전 승인을 필수 조건으로 두지 않는다. 기존 잠금 순서는 주문 → 필요한 사용자 → 브랜드 ID 오름차순 → 상품 ID 오름차순 → 필요한 시도 → 목록 revision 마지막으로 유지한다. 동일 요청 비교는 주문·시도만 잠그고 현재 상품을 다시 계산하지 않는다. 관리자 HELD 합계는 상품 잠금 아래 비잠금 집계로 읽으며 예약·반환도 같은 상품 잠금에 참여한다. 포인트 차감 제거가 재고·주문 보호까지 제거한다는 뜻은 아니다.
+
+**2026-10-23 HMAC 계산·비교·저장·환경변수 키 공급·내부 TX·고객 confirm 연결.** [W5-D10](commerce-policy-decisions.md#w5-hmac-요청-지문-제안)에 따라 최초/재요청 검증 중 카드 입력을 일시 사용하고 발송 권한을 얻은 실행만 PG에 전달한다. 카드 유래 지문 저장에 관한 과제 해석 질문은 Q04의 선택적 보완 사항으로 남기며 구현을 막는 조건으로 두지 않는다. [계산](../week5/payment-request-fingerprint-tdd-log.md)·[저장](../week5/payment-request-fingerprint-persistence-tdd-log.md)의 선행 증거와 [고객 연결](../week5/customer-payment-api-tdd-log.md)의 최신 증거를 구분한다. 이를 담당자의 공식 승인이나 W5 전체 완료로 해석하지 않는다.
+
+**W5-Q07 승인 구조:** 결제 시도는 별도 PaymentAttempt에 두고, 예약은 기존 OrderItem의 불변 `quantity`와 `NOT_RESERVED → HELD → CONSUMED 또는 RELEASED` 상태로 표현한다. 아래의 예약 수·예약 기록은 이 논리적 품목 예약을 가리키며 별도 StockReservation 행을 요구하지 않는다. 기존 POINT·기존/신규 DRAFT는 W5 예약이 없는 NOT_RESERVED에서 시작한다. 과거 POINT를 미예약으로 이행한다는 것은 당시 결제·재고 차감 사실을 없애는 뜻이 아니다.
+
+### 공통 관찰값과 테스트 경계
+
+**4단계 첫 증분 당시 범위:** `OrderPaymentStockService.prepareNew`는 DRAFT 신규 준비만 수행하며 기존 시도 재호출은 추가 확보 없이 내부 오류로 거절했다. 당시 카드 입력 비교·HMAC·고객 confirm 재요청은 연결하지 않았다. 내부 TX A/B의 JDBC 결과·롤백·경합은 [재고 실행 기록](../week5/order-stock-reservation-tdd-log.md)에서 검증하며 후속 실제 PG·고객 HTTP 증거와 구분한다. 현재도 기존 REQUIRED·READ_COMMITTED를 유지하므로 외부 TX에 참여한 메서드 반환을 커밋 증거로 보지 않는다.
+
+**선행 내부 HTTP 연결 증분 당시 범위:** `startNew`는 활성 외부 TX를 거절하고 별도 프록시 준비 커밋 후 생성 1회·TX B를 실행한다. `refreshOnce`는 소유권·시도와 저장 식별자로 조회 최대 1회·TX B를 실행하며 종결 시도는 HTTP 없이 반환한다. 신규 전용 메서드의 거절은 고객 동일 confirm의 응답 계약이 아니고 단건 조회도 고객 reconcile 또는 최초 180초 루프가 아니다. 당시 후속이던 HMAC·고객 DTO/confirm·제한 조회·회로는 각 후속 증분에 연결했다. callback/reconcile HTTP도 연결했으며 이번 검증 결과는 최신 복구 기록으로 구분한다. [선행 HTTP·DB 기록](../week5/order-payment-http-connection-tdd-log.md)의 당시 검사를 최신 고객 API 검사로 합산하지 않는다.
+
+| 구분 | 검증 기준 |
+| --- | --- |
+| 고정 수량 장면 | 다른 재고 변경이 없는 상품 재고 5·주문 수량 2. 확보 후 가용 3, SUCCESS 후 가용 3·예약 소비 1회, 확정 FAILED 후 가용 5·반환 1회. UNKNOWN/PENDING은 가용 3·예약 유지. 모든 PG 경로의 포인트 변화는 0 |
+| 비교할 값 | HTTP 상태·주문/시도 상태·조회 경로뿐 아니라 외부 거래 수·클라이언트 create/lookup 시도 수·fixture에 실제 도달한 호출 수·내부 시도 수·품목별 예약 상태/수량·가용 재고·포인트·품목 스냅샷을 대조. 연결 실패와 CB 차단은 서버 도달 수가 같아도 다른 사건으로 기록 |
+| 테스트 계층 | 순수 상태 전이는 단위 테스트, 실제 HTTP 형식/timeout은 adapter→로컬 HTTP 서버, DB 제약·롤백·경합은 기존 MySQL fixture, callback·접근 제어는 실제 controller 경유. 같은 모든 사례를 모든 계층에 반복하지 않음 |
+| 데이터 분리 | 기존 확정 POINT fixture, 교체 이전부터 존재한 DRAFT fixture, 새 DRAFT fixture를 따로 준비. 이전 DRAFT도 새 결제를 시작할 때 PG를 사용하고, POINT 확정 주문에는 새 시도·거래를 만들지 않음 |
+| 결과 판정 | PENDING 수락은 성공 결제 아님. timeout·일반 4xx/5xx·조회 404/0건은 효과 0의 증거 아님. 종결된 결과를 늦은 PENDING/UNKNOWN/상충 결과로 덮어쓰지 않음 |
+
+PG fixture는 [직접 준비한 로컬 HTTP 테스트 장치](commerce-erd-draft.md#이번-과제의-테스트-pg는-무엇인가)다. 업체 테스트 계정·API 키 없이 테스트 JVM 안의 JDK HttpServer가 실제 Apache HttpClient 요청을 받는다. 3단계는 독립 거래 저장·응답 유실·클라이언트 재생성과 조회를 검증했으며 주문·예약 DB 효과는 포함하지 않았다. 후속 내부 연결은 같은 DB·PG 거래를 유지하며 client·조율 객체를 재생성하는 W5-TDD-12·16 하위 범위를 다룬다. 고객 API와 전체 복구 완료 여부는 별도이며 메서드 mock만으로 실제 HTTP·DB 검증을 대신하지 않는다.
+
+**3단계 선행 증거의 경계:** W5-TDD-04의 생성/조회 형식과 URL·비노출, 05·06의 HTTP 분류, 12·16·17의 외부 거래/조회 부분, 27의 응답·풀·전체 호출 취소 부분을 [HTTP 기록](../week5/local-test-pg-http-tdd-log.md)에 연결한다. 당시 strict 422의 외부 거래 0건과 응답 유실의 거래 1건·재발송 0회는 검증했지만 실제 예약 반환/유지는 포함하지 않았다. 연결 3초는 설정 검증과 네트워크 지연 실측을 구분한다. 당시 미구현이던 180/175초 예산·12회 조회·회로는 [후속 고객 연결](../week5/customer-payment-api-tdd-log.md)의 별도 증거다.
+
+### 주문·결제 상태 전이의 테스트 기대값
+
+**2026-10-23 계획 작성 후 주문·시도 모델과 DB 연결 증분 구현.** [ORD/SEND/PAY 상태 전이표](commerce-erd-draft.md#주문결제-시도의-상태-전이표)를 기존 W5-TDD-01·02 및 관련 통합 사례로 구체화한다. 아래 ID는 시나리오 이름이지 새 채점 항목이나 구현한 테스트 수가 아니다. NOT_OBSERVED·sendStartedAt의 JPA·SQL과 [Q08](commerce-policy-decisions.md#발송-시작-기록의-tx-배치-비교)의 실제 재고·발송 시작 기록 공동 저장 TX A를 구현했다. 커밋 뒤 실제 발송은 [내부 HTTP 연결 기록](../week5/order-payment-http-connection-tdd-log.md), 고객 HTTP 표현·최초 대기는 [최신 고객 연결 기록](../week5/customer-payment-api-tdd-log.md)으로 구분한다. [선행 저장 기록](../week5/order-payment-persistence-tdd-log.md)과 [내부 서비스 기록](../week5/order-stock-reservation-tdd-log.md)의 당시 증거는 보존한다.
+
+#### 먼저 할 순수 상태·모델 테스트
+
+DB·PG 없이 상태와 불변 값, 허용/금지 행동을 검증한다. Order의 중복 변경 메서드를 무조건 성공으로 바꾸는 것이 아니라 **같은 PG 결과를 적용하는 경계에서 추가 변경이 없는지**를 나누어 확인한다. 실제 재고·커밋·HTTP 보장은 다음 통합 테스트에 맡긴다.
+
+| ID · 연결 | 준비·실행 | assertion할 기대값 |
+| --- | --- | --- |
+| W5-STATE-01 · ORD-01·02 | 새/기존 DRAFT에서 PG 준비 전이를 호출. DRAFT와 추가 3개 주문 상태에 requireDraft 검사를 각각 수행 | 준비 후 PAYMENT_PENDING, 주문 금액·품목 수량/단가 불변, paidAmount/confirmedAt 없음. requireDraft는 DRAFT만 허용. 모델 테스트를 TX A rollback 증거로 세지 않음 |
+| W5-STATE-02 · ORD-04 | PAYMENT_PENDING에서 검증된 성공 적용, 다른 시각으로 같은 성공 재적용 | CONFIRMED·paidAmount=저장 totalAmount·최초 확정 시각 유지. 중복이 최초 값을 덮어쓰지 않음 |
+| W5-STATE-03 · ORD-05 | PAYMENT_PENDING에서 검증된 실패 적용·중복 적용 | PAYMENT_FAILED, 성공 paidAmount/confirmedAt 없음. 실패 금액을 0으로 만들어 성공 기록처럼 표현하지 않음 |
+| W5-STATE-04 · ORD 금지 전이 | DRAFT에서 PG 결과 직행, 종결→DRAFT/반대 종결, 대기/실패 주문의 신규 시작 시도 | 금지한 상태 변경·두 번째 시도 허용 없음. 내부 금지 전이와 외부 오류 HTTP 매핑은 구분 |
+| W5-STATE-05 · PAY-01·SEND-01~04 | 새 시도의 초기 상태, 발송 선점 행동 2회, 이후 모든 결과 상태에서 시작 이력 조회 | 초기 NOT_OBSERVED·PG 관찰 없음. 최초 선점만 상태를 바꾸며 반복 선점은 권한 없음. 최초 발송 시각·주문/키/amount 불변. 단위 테스트에서 DB commit이나 동시 POST 1회를 증명했다고 하지 않음 |
+| W5-STATE-06 · PAY-02·03 | 발송을 시작한 미완료 시도 각각에 유효 PENDING과 확인 불가를 적용. PENDING→UNKNOWN→같은 거래 PENDING 순서도 수행 | PENDING/UNKNOWN 의미 구분, 기존 거래 키·발송 이력 보존. 주문 PAYMENT_PENDING·예약 HELD를 유지할 결과를 반환. 조회 404/0건과 일반 오류는 FAILED 아님 |
+| W5-STATE-07 · PAY-04~06 | 미완료 상태 각각에서 같은 거래의 SUCCESS/FAILED, 별도로 엄격한 효과 0건 거절 적용 | SUCCESS 또는 FAILED로 종결할 수 있음. 일반 거래 결과는 검증된 transactionKey 필요, 효과 0건 거절은 null 허용. 이미 확인한 거래가 있는데 효과 0건이라면 충돌·기존 상태 불변 |
+| W5-STATE-08 · PAY-07·08 | SUCCESS/FAILED 각각에 동일 종결, 유효한 늦은 PENDING, timeout/조회 불가 적용 | 같은 종결은 추가 효과 없음. 늦은 관찰은 종결·최초 금액/시각·거래 키·발송 이력을 바꾸지 않음 |
+| W5-STATE-09 · PAY-09·거래 연결 | 같은 결과 문자열이지만 계정/주문/거래/금액이 각각 다른 응답, 반대 종결·복수 거래를 구성. null 거래 키의 최초 연결·같은 키 재연결·다른 키 교체도 구분 | 불일치·모순은 충돌, 기존 상태·식별·금액 불변. 유효한 최초 연결/같은 키만 허용. 충돌 저장 형식·HTTP는 Q05 결정 후 추가 |
+| W5-STATE-10 · PAY-10 | 상태 읽기·동일 confirm 저장 결과 반환·시간 예산 소진만 발생, 별도로 발송 미시작 상태에 PG 결과 적용 시도 | 읽기·시간 경과만으로 결과를 새로 만들지 않음. 발송 미시작 결과 적용은 거절. 대기/미확인 결과의 예약 반환·새 생성 허용 없음 |
+
+`PaymentAttempt`의 발송 이력·관찰 규칙은 [선행 81개 단위 테스트](../week5/payment-attempt-state-tdd-log.md)로 구현했다. 이후 Order·OrderStatus·OrderItem 행동과 JPA·SQL 이행을 연결했고 당시 관리자 필터는 기존 두 상태로 보호했다. 최신 고객·관리자 조회 연결에서는 PAYMENT_PENDING·PAYMENT_FAILED 필터도 확장했다. W5-STATE-05~10의 모델·저장 증거와 실제 HTTP·고객 조회 증거를 구분하며 raw callback의 실제 controller·권위 조회 검증은 최신 복구 기록으로 구분한다.
+
+#### 실제 DB·HTTP 연결 때 검증할 결과
+
+고정 장면은 **가용 재고 5, 주문 수량 2, 포인트 잔액 10,000**이고 다른 재고·포인트 변경이 없다고 둔다. 상태 문자열뿐 아니라 아래 수치·시각·식별 관계를 **TX 종료 뒤 별도 DB 조회**로 대조한다. 실제 SQL 뒤 실패 주입·worker 순서 제어로 검증하며 sleep이나 테스트 외곽 rollback만으로 대신하지 않는다.
+
+| ID · 기존 계획 연결 | 어떻게 시험할지 | 최종 DB·외부 효과 기대값 |
+| --- | --- | --- |
+| W5-STATE-11 · TDD-07·08 | 준비와 발송 시작을 함께 저장한 TX A 커밋을 PG 호출 전에 별도 연결로 조회. 별도 사례에서 발송 기록을 포함한 실제 일부 저장 후 TX A 실패 주입 | 성공: PAYMENT_PENDING·시도 1·발송 시작 기록 있음·품목 HELD·가용 3·관련 목록 버전 증가. 실패: DRAFT·시도/발송 기록 0·NOT_RESERVED·가용 5·목록 버전 원복·create 0. 포인트는 둘 다 10,000. 준비만 커밋되고 발송 미시작으로 남는 중간 단계 없음 |
+| W5-STATE-12 · TDD-05·09 | 검증된 SUCCESS/FAILED·효과 0건 거절을 각각 적용하고 반복 | 성공: CONFIRMED/SUCCESS/CONSUMED·가용 3. 실패: PAYMENT_FAILED/FAILED/RELEASED·가용 5(7 아님). 효과 0건 거절은 외부 거래 0·transactionKey 없음. 모든 경로 포인트 10,000 |
+| W5-STATE-13 · TDD-10·11·16 | 독립 연결의 동시 confirm, TX A 커밋 전/후 HTTP 진입 통제, 준비·발송 기록 공동 커밋 직후 HTTP 전 중단 후 서비스 재생성 | 실제 호출까지 진행한 동시 정상 장면은 시도 1·create 1·거래 1·가용 3. 중단 장면은 거래 0건이어도 재시작 POST 0·발송 기록/HELD 유지. 커밋 미확인 실행도 POST 0. PG 대기 중 TX/업무 락 없음. 테스트는 실제 HTTP 0을 관찰하지만 재시작 실행은 저장 기록·조회 0건만으로 미발송을 확정하지 않음 |
+| W5-STATE-14 · TDD-12~14·17 | 거래 생성 뒤 응답 유실, callback-first/lookup-first/동시 적용, 본문만 SUCCESS인 가짜 알림·다른 거래 결과 주입 | 유실 후 UNKNOWN·HELD·가용 3, 같은 거래로 복구·create 추가 0. 진짜 SUCCESS는 한 번 확정, FAILED는 한 번 반환. 알림 본문/불일치 결과는 주문을 변경하지 않음. 첫 연결 거래 키·종결 결과 불변 |
+| W5-STATE-15 · TDD-15 | **외부 거래가 존재하는 SUCCESS/FAILED**의 TX B에서 각각 일부 실제 SQL 성공 뒤 다음 저장 실패. 실패 해제 뒤 같은 거래 재조회 | 시도·주문·예약·재고·변경한 목록 버전 전부 TX B 진입 전 값으로 rollback, PG 거래 결과는 남음. 재적용 후 성공 가용 3/실패 가용 5·create 추가 0. 상태만 종결됐거나 품목 일부만 소비/반환된 행 없음 |
+| W5-STATE-16 · TDD-20~24 | POINT 과거 주문 조회/재확정, 예약 전/후 삭제, 관리자 가용 설정·캐시 변경, PG 중 포인트 충전 | POINT 원래 사실과 본인 재확정409 유지. 예약 전 삭제 create 0; 예약 후 종결 가능·비노출 유지. 가용3·HELD2에서 관리자 가용10 설정 뒤 성공10/실패12. 재고 변경과 캐시 버전 원자성, PG 포인트 차감0·기존 충전 독립 유지 |
+
+W5-STATE-15의 추가 반례는 **효과 0건 거절의 TX B rollback 뒤 프로세스 재생성으로 원응답 증거도 잃는 경우**다. 이때 fixture 거래는 0건이며, 후속 조회 0건으로 실패를 복원하지 못한다. 내부 미완료·UNKNOWN/HELD·가용 3·재발송 0을 기대한다. 조회 가능한 거래의 FAILED와 달리 자동 종결을 보장할 수 없으며, 거절 증거의 별도 저장 체계를 채택한 것으로 간주하지 않는다.
+
+실제 HTTP의 200/202·소유권404·POINT 재확정409와 PG 세 요청 형식은 API 계약대로 검증한다. 고객 confirm의 요청 충돌409·과거 무지문409·서버 검증 불가503·손상500은 사용자 선택 계약을 따른다. **callback ACK·충돌 기록은 후속 위임 선택 REC-D03·05**를 따르며 실제 HTTP 연결 증거는 아래 복구 증분으로 구분한다. strict 422는 실제 adapter(W5-TDD-05·06), HMAC 요청 동일성·오류 응답은 최신 고객 API 증거로 연결한다. 담당자 확인은 선택 사항이며 표 작성 자체를 테스트 통과로 보지 않는다.
+
+### 구체 테스트 사례
+
+W5-TDD-01의 모델과 W5-TDD-02·03의 저장·이행 증거는 [선행 기록](../week5/order-payment-persistence-tdd-log.md), 실제 재고·내부 TX·DB 경합은 [재고 기록](../week5/order-stock-reservation-tdd-log.md), 내부 PG 연결은 [HTTP·DB 기록](../week5/order-payment-http-connection-tdd-log.md), 고객 confirm·조회·제한 조회/회로는 [최신 기록](../week5/customer-payment-api-tdd-log.md)을 따른다. callback/reconcile HTTP까지의 복구 통합 완료와 구분한다. 최초 대기·조회·회로 수치는 [승인한 초기 설정](commerce-policy-decisions.md#w5-최초-결제-요청의-대기조회회로-설정)을 단일 근거로 유지한다. 후속 위임 선택한 callback ACK·충돌 구조 로그·단건 복구 예산은 아래 W5-REC 계획의 기대값으로 유지하고 실제 통과 결과와 구분한다.
+
+| 사례 ID | 준비·실행 방법 | 기대 결과·남길 증거 |
+| --- | --- | --- |
+| W5-TDD-01 | 주문·PaymentAttempt·OrderItem 예약의 단위 상태 전이를 표로 만들고 같은 관찰을 두 번, 종결 뒤 PENDING/UNKNOWN과 반대 최종 결과를 적용 | 품목의 불변 quantity로 NOT_RESERVED→HELD→CONSUMED/RELEASED를 관리. PENDING/UNKNOWN은 미확정·HELD 유지, SUCCESS는 확정·소비, FAILED는 실패·반환. 중복 효과·종결 덮어쓰기 금지. **Order·OrderItem 연결과 requireDraft 확장·결제수단 null 경계도 구현.** 선행 [저장](../week5/order-payment-persistence-tdd-log.md)·[재고](../week5/order-stock-reservation-tdd-log.md)·[내부 HTTP](../week5/order-payment-http-connection-tdd-log.md) 증거와 최신 [고객 API 기록](../week5/customer-payment-api-tdd-log.md)을 구분. callback HTTP도 연결했으며 검증 결과는 최신 복구 기록 참조 |
+| W5-TDD-02 | 호출자 UUID 입력을 검증하고, 독립 MySQL 트랜잭션에서 같은 주문의 새 키·같은 키의 다른 주문/요청, 발송 시작 상태의 중복 선점과 커밋 실패를 실행 | UUID 키는 서비스 전체에서 중복 보호하고 주문당 한 PaymentAttempt를 유지. DB 제약·원자적 전이를 성공시키고 커밋한 실행만 발송 가능하며 단순 상태 읽기·전이/커밋 실패는 권한 없음. 품목별 예약 상태와 가용 수량은 같은 TX에서 반영하고 중복 확보하지 않음. 요청 불일치는 충돌이며 메모리 Set만으로 통과하지 않음. HMAC-SHA256 계산·저장·TX A·고객 HTTP의 증거를 각 실행 기록으로 구분한다. W5-Q04의 선택적 해석 확인은 선행 조건이 아님 |
+| W5-TDD-03 | 기존 스키마의 POINT 확정·DRAFT 및 품목/잔액 fixture를 준비한 뒤 이행 SQL 적용·JPA validate·별도 재조회 | 기존 확정 주문은 POINT·금액·결과·시각·품목 사실을 보존. PG 거래를 꾸며 넣지 않음. 기존 POINT·DRAFT 품목의 예약 상태는 NOT_RESERVED이며 기존 DRAFT는 PG 시작 대상. 별도 시도와 기존 품목 예약 상태/식별 관계의 DB 제약·수량 불변을 검증. W5-Q01의 실제 데이터 유무는 미확인이므로 이행 전에 읽기 전용 확인·보존 계획을 세우며 DB 초기화하지 않음 |
+| W5-TDD-04 | 실제 adapter가 과제 로컬 PG 규격의 합성 cardType/cardNo를 사용해 생성·transactionKey 조회·providerOrderId 목록 조회를 요청 | 정확한 method/path, 세 요청 모두 `X-USER-ID: 135135`, 문자열 orderId·정수 amount·동일한 주문 매핑, 카드 입력과 JSON 타입, URI builder 인코딩, 고정 callback URL 확인. 생성 202·조회 200/404·빈 배열·외부 상태 매핑 검증. 고객 입력으로 외부 URL을 바꾸지 못하고 합성 카드 번호가 DB·로그에 남지 않음. 원문의 예시 번호를 유일한 허용 값으로 바꾸지 않고 실제 카드·업체 PG를 사용하지 않음 |
+| W5-TDD-05 | fixture가 거래 저장·처리 예약 전에 strict 422로 종료하고 같은 거절 관찰을 중복 적용 | `422 + TEST_PG_REJECTED_BEFORE_CREATE + boolean false + 요청 orderId/amount 일치`를 모두 충족할 때만 REJECTED_NO_EFFECT. 외부 거래 0·FAILED·예약 반환 1회·가용 5, 꾸민 transactionKey 없음. 이후에도 fixture가 해당 거래를 만들지 않음을 확인 |
+| W5-TDD-06 | 본문 없는 422, 다른 code, 문자열 `"false"`/true, 잘못된 JSON, 주문/금액 불일치, 일반 4xx/5xx를 각각 반환 | 확정 거절로 오인하지 않음. 다른 확정 결과가 없다면 UNKNOWN·예약 유지, create 추가 0. 이미 종결했다면 그 결과 보존. 상태 코드만으로 반환하지 않음 |
+| W5-TDD-07 | 실제 TX A에서 소유권·입력·삭제·재고/저장 수량 실패를 만들고, 여러 품목 중 일부 SQL 실행 후 다음 저장 실패 주입. 발송 시작 기록 flush 후 후속 실패도 포함 | PG create 0·시도/예약/주문 대기/발송 시작 기록 및 해당 요청의 재고·목록 버전 변경 전체 rollback. 종료 후 별도 DB 조회로 확인. TX A가 전부 취소된 DRAFT는 조건 개선 후 다시 시작할 수 있으며, 이미 생성한 시도의 최종 실패와 구분 |
+| W5-TDD-08 | 기존/신규 DRAFT의 confirm에 실제 PG 생성 수락 PENDING을 반환하고, 승인한 제한 조회에서도 유효한 PENDING을 유지한 뒤 주문 GET 수행 | 시도 1·해당 품목의 HELD 예약 1, 가용 3, PAYMENT_PENDING·결제 PENDING·포인트 변화 0. 제한 조회의 횟수/시간 예산이 끝나도 결제 실패가 아니라 202·상태·조회 경로 반환. 도중 권위 조회에서 종결되면 저장한 결과로 조기 종료하는 장면은 W5-TDD-09/32로 구분. 일반 주문 GET의 create/외부 효과 0 |
+| W5-TDD-09 | 확보된 같은 거래를 권위 조회해 SUCCESS 또는 FAILED로 종결하고 동일 결과를 반복 적용 | SUCCESS: CONFIRMED·저장 금액·예약 소비 1·가용 3. FAILED: PAYMENT_FAILED·예약 반환 1·가용 5. 추가 차감·중복 반환 0, 모든 PG 경로의 포인트 변화 0. 같은 종결 시도의 재요청은 저장 결과 반환, 다른 키로 재결제 불가 |
+| W5-TDD-10 | 같은 주문·같은 키의 confirm을 독립 worker로 동시에 호출하고, 승자의 커밋 뒤 실제 HTTP 전 다른 실행이 발송 시작 상태를 읽게 통제. 다른 키/불일치 요청도 별도 실행 | 시도·예약 각 1, 발송 시작 전이를 성공시키고 커밋한 실행의 실제 create 1·외부 거래 1. 같은 상태를 읽은 다른 실행은 저장 상태만 반환하고 추가 POST 없음. DB 선점 전 또는 커밋 전에는 HTTP가 시작되지 않으며 로컬 발송 시작만으로 외부 PENDING 수락을 꾸미지 않음. 동시 요청의 허용 응답은 관찰 시점의 상태와 일치. 기술 오류를 정상 충돌이나 성공으로 세지 않음 |
+| W5-TDD-11 | PG create/lookup 진입을 fixture에서 유한하게 보류하고 그 시점의 TX 활성 여부·독립 연결의 재고 행 접근을 관찰 | 외부 HTTP 동안 업무 DB TX·재고 잠금을 보유하지 않음. TX A 결과는 별도 연결에서 이미 확인 가능. PG 종료 뒤 TX B가 별도로 열려 적용됨. annotation 이름이나 같은 클래스 자기 호출만으로 경계가 성립했다고 판단하지 않음 |
+| W5-TDD-12 | 실제 HTTP fixture가 거래 1건을 저장한 후 응답만 유실시키고, 같은 거래를 이후 SUCCESS 조회로 노출 | 생성 응답 유실 직후 내부 UNKNOWN·가용 3·예약 유지·외부 거래 1. 동일 confirm 재요청은 저장 상태만 반환하고 새 create/lookup을 시작하지 않는다. 최초 confirm의 제한 조회 또는 별도 수동 reconcile로 동일 거래를 확인해 한 번 확정하며 create 추가 0. 내부 단건 조회는 refreshOnce로 검증한다. 첫 응답 전 종결되면 저장 결과 반환, 예산 안에 확인하지 못하면 202·예약 유지. HTTP 호출 전 예외만 던지는 대역으로 응답 유실 증거를 대신하지 않음 |
+| W5-TDD-13 | 실제 callback controller와 수동 reconcile을 callback-first·lookup-first·동시 순서로 호출 | 모두 권위 조회한 같은 transactionKey·최종 상태로 수렴. 재고 추가 차감/중복 반환 0. 알림 body의 SUCCESS만으로 확정되지 않으며 callback은200·meta.SUCCESS·acknowledged=true, 확인 불가503·충돌409를 실제 HTTP로 검증 |
+| W5-TDD-14 | callback 선종결 뒤 늦은 생성 PENDING/timeout, 반대 최종 결과, 다른 주문·transactionKey·금액/제공자 계정 범위의 조회 결과를 적용 | 기존 종결 결과 불변, 상태 퇴행·다른 주문 변경·재고 추가 효과 없음. 불일치/상충은 거절·충돌 기록. 고객/콜백 충돌409와 내부orderId·attemptUUID·고정source/reason WARN을 검증하고 카드·외부문자열은 남기지 않음 |
+| W5-TDD-15 | PG SUCCESS 적용 TX B와 FAILED 적용 TX B 각각에서 실제 일부 SQL 성공 후 다음 저장 실패 주입 | 주문·시도·예약·재고·관련 버전의 내부 변경 전체 rollback. 외부 결과는 그대로 남음. 동일 거래 재조회 후 SUCCESS는 한 번 확정, FAILED는 한 번 반환하며 create 추가 0. 실패 반환 SQL만 남거나 반환 상태만 남지 않음 |
+| W5-TDD-16 | 발송 시작 DB commit 직후 실제 HTTP 전 중단, 별도로 외부 거래 생성 후 중단·UNKNOWN 전환을 재현. DB/fixture를 유지한 채 서비스·클라이언트를 재생성 | 시도·예약·발송 기록 보존. 외부 거래가 0건인 전자도 자동 재발송 0·예약 유지. 후자는 기존 거래 조회로 복구. UNKNOWN 전환으로 발송 시작 사실을 지우거나 새 앱 객체가 저장 상태를 읽었다는 이유로 발송 권한을 다시 얻지 않음. 메모리 상태를 잃어도 중복 create하지 않음 |
+| W5-TDD-17 | transactionKey 없음/있음의 복구 경로에서 조회 0건·PENDING·복수 거래·404·조회 실패를 각각 반환 | 임의 첫 거래 선택·성공/실패 확정·예약 반환·새 POST 없음. 미완료/충돌 상태 보존. 거래 식별자가 확보되면 해당 거래 조회를 연결하고, 빈 결과를 strict 생성 거절과 혼동하지 않음 |
+| W5-TDD-18 | 실제 HTTP 서버의 응답 대기를 제한하고, 동일 JVM의 공통 PG 조회 회로에 실패 누적→OPEN→HALF_OPEN→회복 및 재차단 순서 통제 | 승인한 HTTP timeout과 회로 초기 수치가 실제 연결 경계에서 작동하는지 확인. OPEN 동안 외부 lookup 0, fallback은 저장 상태·확인 불가이며 FAILED/가짜 성공/포인트 대체/예약 반환 없음. 회복 뒤 조회 재개. 수치 경계와 오류 분류는 W5-TDD-27/29~31로 상세 검증 |
+| W5-TDD-19 | 최초 confirm의 제한 조회 횟수·간격·전체 예산과 실제 호출 수를 대조하고, client/decorator의 숨은 create/lookup retry도 확인 | 승인한 최초 요청 전체 deadline이 호출 수·간격보다 우선. create 최대 1회·자동 재시도 없음. CB 허용 후 lookup 시도 최대 12회에는 연결 실패와 providerOrderId 조회도 포함하고, CB 차단은 외부 호출 0으로 분리. 별도 callback/reconcile의 조회를 이 12회에 섞지 않음. 한도 소진은 새 create/예약 반환 근거가 아니며 수동 reconcile 기본 경로·scheduler 비필수 유지 |
+| W5-TDD-20 | 과거 POINT·대기/UNKNOWN·PG 성공/실패를 고객/관리자 조회하고, 타인 접근·같은 PG 시도 재요청·과거 POINT의 본문 없는 재확정 실행 | 과거 POINT 사실과 기존 `409 ORDER_ALREADY_CONFIRMED` 보존. PG 필수 키·카드 검사가 이 과거 요청을 400으로 바꾸지 않음. POINT 타인 요청은 기존 404, 신규 본인 DRAFT의 PG 필수 입력 누락은 400. PG 동일 종결 시도는 200 저장 결과, 미완료는 202 상태·조회 경로. 외부 PG 고정 헤더를 내부 인증으로 사용하지 않음 |
+| W5-TDD-21 | 예약 전 삭제와 예약 완료 후 삭제를 나누고 후자의 SUCCESS/FAILED를 적용. 상품 삭제·브랜드 일괄 삭제 양쪽 확인 | 삭제 후 DRAFT 새 확정은 거절·PG 0. 이미 확보한 PAYMENT_PENDING은 스냅샷·예약으로 종결. 성공 추가 차감 없음, 실패 반환 1회여도 deleted 상태·비노출 유지. 참조/품목과 다른 대상은 보존 |
+| W5-TDD-22 | 예약 2·가용 3 상태에서 관리자가 가용 10으로 최종 설정하고 이후 SUCCESS/FAILED 적용, 설정/예약/반환 경합도 검증 | 설정 후 가용 10·예약 2 유지. 다른 변경이 없으면 SUCCESS 뒤 10, FAILED 뒤 12. W5-Q03 사용자 승인: 상품 잠금 후 `설정할 가용 수량 + 해당 상품의 모든 HELD 예약 합계 <= Integer.MAX_VALUE`를 안전하게 검사. 동등 경계 허용·초과 설정 거절 및 상태 불변. 아래 경계 사례로 반환 여유와 동시성 검증 |
+| W5-TDD-23 | 실제 캐시를 채운 뒤 예약·실패 반환·각 TX rollback·늦은 채움·Redis 장애/복구와 상품 조회를 연결 | 가용 재고를 담는 기존 payload의 변경과 DB 버전이 같은 TX에 반영/rollback. 커밋 후 새 요청은 올바른 재고·삭제 제외 결과. SUCCESS는 재고 추가 차감 없음. 기존 TTL 60초·키 대상·진행 중 조회 허용 계약은 변경하지 않음 |
+| W5-TDD-24 | PG 진행 중 별도 포인트 충전/조회, 주문 생성·품목 스냅샷·본인 목록·관리자 권한/CSRF·상품/좋아요 회귀 | PG로 포인트를 차감하거나 대체 결제하지 않음. 예: 초기 10,000 + 충전 2,000이면 PG 결제액과 무관하게 잔액 12,000. 기존 충전 규칙·입력/소유권·삭제 비노출·수량/금액 범위 유지 |
+| W5-TDD-25 | 작은 증분의 관련 테스트부터 전체 check까지 실제 실행하고 결과·잔여 자원 확인 | 실행 건수·실패·오류·skip·종료 코드, Checkstyle·ArchUnit을 기록. 테스트 0건·skip·환경 접속 실패를 통과로 세지 않음. 자신이 시작한 서버·worker·연결만 정리하며 기존 DB/볼륨을 삭제하지 않음 |
+
+W5-TDD-22의 반환 상한과 후속 `409 STOCK_CAPACITY_EXCEEDED`·“예약 반환 수량을 포함하면 재고 저장 한도를 초과합니다.”는 사용자 답변으로 확정하고 [재고 증분](../week5/order-stock-reservation-tdd-log.md)에서 연결했다. 다음 수량·저장 기대값은 고객 PG 전환에서도 유지한다.
+
+| 경계 준비·실행 | 기대값 |
+| --- | --- |
+| HELD 예약 2가 있는 상품에 가용 `Integer.MAX_VALUE - 2` 설정 후 확정 FAILED | 설정 허용, 예약 유지. 실패 반환 후 가용 `Integer.MAX_VALUE`, 반환 1회. 중복 FAILED에는 수량 증가 없음 |
+| 같은 예약 2에 가용 `Integer.MAX_VALUE - 1` 또는 `Integer.MAX_VALUE` 설정 | 반환 여유 부족으로 설정 거절. 가용 수량·예약·주문·목록 revision 등 해당 요청의 저장 상태 불변 |
+| 같은 상품에 여러 주문의 HELD 품목과 소비/반환 종결·NOT_RESERVED 품목이 함께 존재 | 모든 미종결 HELD 수량만 안전하게 합산. 한 주문만 세거나 CONSUMED·RELEASED·NOT_RESERVED 수량까지 더하지 않음. 합산 과정에서 int overflow·음수 우회를 허용하지 않음 |
+| 상한 근처 관리자 설정과 예약 확보/반환의 경합 | 같은 상품 행의 보호 경계 안에서 판단·변경. 최종 `가용 + HELD 합계`가 상한 이내이고 성공한 요청 효과 보존. 잠금 전에 읽은 예약 합계로 설정을 승인하지 않음 |
+| HELD 예약 0에서 가용 `Integer.MAX_VALUE` 설정 | 기존 최대 가용 수량 허용 계약 유지. 예약이 없는데 새 업무 한도를 임의로 낮추지 않음 |
+
+### 복구·callback HTTP 연결의 TDD 증분
+
+**2026-10-23 위임 선택을 구현한 복구 HTTP의 기대값이다. 두 경로는 코드에 연결했고 검증 결과는 [복구 API TDD 기록](../week5/payment-recovery-api-tdd-log.md)을 참조한다.** [복구 API 계약](commerce-api-contract.md#복구callback-http-계약-선택)과 [선택 이유](commerce-policy-decisions.md#w5-복구callback-http의-위임-선택)를 따른다. 기존 내부 `refreshOnce`·TX B·실제 SQL 뒤 rollback·client/서비스 재생성·결과 복구의 완료 증거를 미구현으로 되돌리지 않는다. 이번 증분은 실제 controller 진입과 두 경로의 경합·응답 증거를 보강한다. 표는 통과 결과나 새 테스트 개수를 미리 선언하는 것이 아니다.
+
+| ID | 준비·실행 | 기대값·관찰 |
+| --- | --- | --- |
+| W5-REC-01 | 본인/타인/없는 주문의 reconcile을 본문 없음·`{}`·추가 필드·배열/타입 오류로 호출 | 본인 기존 PG만 복구. 소유권 우선 404, DRAFT 409 `PAYMENT_NOT_STARTED`, POINT 409 `ORDER_ALREADY_CONFIRMED`; PG 입력 오류 400. 카드·시도 키는 요구하지 않음. 거절 시 PG 0회·DB 불변 |
+| W5-REC-02 | PG 종결 SUCCESS/FAILED를 정상 설정·PG OFF·지문 전체 NULL·HMAC 키 불가에서 reconcile | 저장 결과 200·PG 0회·신규 시도/예약/포인트 변화 0. 실패도 정상적인 저장 결제 결과임을 확인 |
+| W5-REC-03 | 미완료 PG의 transactionKey 있음/없음에서 reconcile, 권위 결과 PENDING/SUCCESS/FAILED | 각각 거래 GET/주문별 GET 최대 1회. PENDING 202·HELD, SUCCESS 200·소비, FAILED 200·반환 1회. 반복 호출 뒤 추가 create/차감/반환 0 |
+| W5-REC-04 | 미완료 reconcile에 조회 404·빈 목록·응답 유실/timeout·CB OPEN·PG OFF를 구분 | 404/빈 목록/실조회 실패는 202·확인 불가·예약 유지, CB OPEN은 PG 0회·저장 상태 보존·202, PG OFF는 503 `PAYMENT_PROVIDER_UNAVAILABLE`. 새 결제나 POINT 대체 없음 |
+| W5-REC-05 | callback 세 필드 누락/추가·타입·길이(코드 포인트)·공백·잘못된 status 입력 | 400·PG 0회·DB 불변. providerOrderId 6~255, transactionKey 1~255, status 3종. 외부 식별자 정규화나 고객 헤더 신뢰 없이 고정 계정으로 처리 |
+| W5-REC-06 | 없는 providerOrderId·저장 transactionKey와 다른 알림 키 | 각각 404 `PAYMENT_ATTEMPT_NOT_FOUND` / 409 `PAYMENT_RESULT_CONFLICT`, PG 0회·기존 주문/시도/예약 보존 |
+| W5-REC-07 | 알림 SUCCESS/권위 PENDING, 알림 FAILED/권위 SUCCESS 등 서로 다른 힌트와 실제 결과 | 본문만으로 확정/반환하지 않음. 고정 계정의 실제 GET 거래·주문·금액을 검증해 권위 결과 적용. 유효한 PENDING/중복/종결은 200 `meta.SUCCESS`·`acknowledged=true` |
+| W5-REC-08 | callback에서 거래 404·UNKNOWN·회로 차단·PG OFF. 미완료와 종결 모두 준비 | 앞 세 경우 503 `PAYMENT_RESULT_UNAVAILABLE`, OFF 503 `PAYMENT_PROVIDER_UNAVAILABLE`. CB 차단은 PG 0회·새 관찰 0. 실제 조회 실패의 미완료 UNKNOWN 가능, 종결은 언제나 보존. ACK 성공·FAILED·반환으로 숨기지 않음 |
+| W5-REC-09 | 종결 후 callback에 동일 결과·늦은 PENDING·반대 종결, 거래/주문/금액 불일치·복수 조회 거래 | 동일/늦은 비종결은 권위 조회 뒤 200·최초 결과 유지. 반대 종결/식별 충돌은 409·추가 효과 0. reconcile 주문별 복수 거래도 임의 첫 항목 선택하지 않음 |
+| W5-REC-10 | 실제 callback-first·reconcile-first·동시 요청, 최초 confirm의 늦은 PENDING/timeout까지 조합 | 성공은 추가 차감 없이 한 번 확정, 실패 반환 1회. 주문·시도·품목 예약 일치·포인트 변화 0·create 추가 0. DB 최종 숫자뿐 아니라 각 요청 응답·PG 호출/거래 수 대조 |
+| W5-REC-11 | callback 대상 사전 조회 뒤 PG 대기 중 다른 실행이 transactionKey를 연결하거나 종결 | 사전 결과/같은 JPA 객체를 맹신하지 않고 공통 TX B의 최신 잠금 상태로 재검증. 다른 거래는 409, 늦은 비종결은 최초 종결 보존. HTTP 중 DB TX·업무 잠금 없음 |
+| W5-REC-12 | 두 HTTP 경로에서 SUCCESS/FAILED 적용 중 실제 SQL 변경 후 저장 실패. 종료 뒤 별도 DB 조회, 같은 거래로 재확인 | HTTP 500 또는 기존 잠금 409를 성공 ACK/202로 숨기지 않음. 해당 TX 전체 rollback·외부 결과 유지. 재확인으로 정확히 한 번 확정/반환. 기존 내부 rollback 증거에 HTTP 경계만 추가 |
+| W5-REC-13 | 두 경로에 지연 HTTP·CB OPEN을 주고 호출/대기 횟수 계측 | 허용된 GET 최대 1회, 자동 retry·sleep·180초 루프 0. 기존 호출 전체 10초 제한과 자원 정리 유지. DB 처리까지 포함한 엄격한 10초 보장이나 실제 180초 운영 상한 검증으로 표시하지 않음 |
+| W5-REC-14 | 조작한 외부 식별자/카드 유사 문자열을 담은 충돌과 손상 응답을 로그 수집 상태로 호출 | WARN에 내부 orderId·attempt UUID·고정 source/reason만. callback 원문·카드·HMAC·외부 문자열·예외 원문 없음. 충돌 로그가 영속 감사/자동 복구를 보장한다고 주장하지 않음 |
+| W5-REC-15 | 고객/관리자 주문·POINT 기록·포인트 API·삭제 상품의 기예약 성공/반환·기존 캐시 회귀 | 기존 접근/저장 사실 유지, 신규 PG 포인트 변화 0. 삭제 상품을 반환해도 재노출하지 않음. 사용자 DB는 접근/이행하지 않고 격리 MySQL/로컬 HTTP만 사용 |
+| W5-REC-16 | 새 HTTP·경합·롤백과 핵심 confirm 회귀·ArchUnit·Checkstyle, latch/worker/fixture 종료를 유한하게 확인 | 사용자 속도 요청에 따라 이번에는 전체 check 반복을 생략하고 실행한 범위·스위트/테스트/실패/error/skip/종료 코드를 기록한다. 이전 전체 검사 1,764개는 당시 증거이며 이번 전체 통과로 표시하지 않음. 자신이 시작한 자원만 정리, 기존 DB/볼륨 삭제 없음. 완료 판정은 실제 결과 확인 후 갱신 |
+
+Red는 아직 없는 경로의 응답·요청 횟수·DB 상태가 기대와 다름을 확인하고, Green은 기존 내부 경계를 연결해 최소한의 기능으로 통과시킨다. Refactor에서는 외부 결과 분류·오류 변환·중복 효과 방어가 어느 한 경로에서 빠지지 않는지 확인한다. 상세 기대값을 낮추거나 기존 내부 복구 테스트를 삭제해 검사를 통과시키지 않는다.
+
+### 승인한 최초 요청 예산·조회·회로의 상세 검증
+
+아래는 W5-TDD-08·12·18·19를 [승인한 초기 설정](commerce-policy-decisions.md#w5-최초-결제-요청의-대기조회회로-설정)에 맞게 나눈 테스트 계획이다. 3단계의 개별 HTTP 제한·adapter 분류는 선행 증거이고, 전체 예산·조회 반복·회로는 [최신 고객 연결 기록](../week5/customer-payment-api-tdd-log.md)으로 구분한다. 최초 발송 권한을 얻은 confirm 실행만 해당 루프를 소유하며 동일 재요청은 긴 루프를 추가하지 않는다. 수치의 선택 이유는 정책 문서를 따르고 여기서는 입력·경계·관찰 증거를 정의한다.
+
+| 사례 ID | 준비·실행 방법 | 기대 결과·남길 증거 |
+| --- | --- | --- |
+| W5-TDD-26 · 단일 시간 예산 | 제어 가능한 경과 시계로 요청 진입, TX A, 생성 호출, 조회·대기 시간을 순서대로 진행. 외부 마감 직전/도달·다음 호출 예산 부족을 각각 구성 | 요청 진입부터 전체 목표 180초·외부 확인 마감 175초이며 TX A 종료/timeout마다 시작 시점을 갱신하지 않음. 호출 전체 제한과 최종 처리 여유를 확보할 수 없으면 새 외부 호출을 시작하지 않고 대기도 잔여 예산 이내. 종결 결과가 없다면 202·예약 유지이며, 5초 여유만으로 DB 완료나 실제 180초 상한을 증명하지 않음 |
+| W5-TDD-27 · 실제 HTTP 제한 | 실제 HTTP client와 통제된 로컬 연결/응답 장치로 풀 대기·연결·응답 지연 및 합산 지연을 각각 재현 | 풀 대기 1초·연결 3초, 생성 응답 60초/호출 전체 65초, 조회 응답 5초/호출 전체 10초 제한의 연결을 검증. 실제 요청 중단·연결 회수·숨은 재시도 0을 확인하고 Future 대기 종료만으로 통과하지 않음. 초기 전체 예산이 부족한 호출은 시작하지 않으며, timeout은 PG 거래 취소나 확정 FAILED의 증거가 아님 |
+| W5-TDD-28 · 간격·횟수 | 고정 시계와 제어한 jitter 값으로 첫 조회와 이후 완료 시점을 기록. 연결 실패·주문별 조회→거래별 조회·CB 차단을 섞어 원시 시도 수와 fixture 수신 수 대조 | 첫 조회는 시간·회로가 허용하면 즉시. 후속 간격은 이전 호출 완료 뒤 5→10→15초 상한의 ±20%인 4~6/8~12/12~18초이며 조회를 겹쳐 보내지 않음. 선택한 전체 간격과 다음 HTTP 10초 예산을 확보하지 못하면 종료하며 간격을 임의로 압축하지 않음. CB 허용 후 시작한 lookup 최대 12회에 연결 실패·주문별/거래별 조회를 모두 포함. CB 차단은 외부 0회이며 횟수를 깎지 않아도 deadline으로 종료. callback·별도 reconcile 조회는 이 횟수와 구분 |
+| W5-TDD-29 · 회로 표본 분류 | 실제 adapter 결과를 timeout·I/O·5xx·잘못된 JSON·필수 필드 누락과 유효 상태/404/빈 목록으로 나누고, 정상 응답의 지연도 별도 주입 | 앞의 장애는 실패 표본. 유효한 PENDING/SUCCESS/FAILED·계약상 조회 404/빈 목록은 통신 실패가 아니며 3초 초과면 지연 표본. 형식이 유효한 주문·거래·금액 불일치는 충돌로 분리해 업무 상태를 적용하지 않음. 내부 TX B 저장 실패를 PG 통신 실패에 섞지 않음. 계약 밖 4xx 분류는 adapter 설계에서 명시하며 임의 확정 실패·반환 금지 |
+| W5-TDD-30 · CLOSED 임계값·공유 | 같은 JVM/PG 계정에서 여러 주문의 조회를 한 회로에 누적. 빠른 실패와 느린 정상 표본을 분리하고 최근 20건 창의 이동·최소 표본 경계를 통제 | 최소 10건 전에는 비율만으로 열리지 않음. 10건 중 빠른 실패 4건은 실패율 조건 미충족, 5건이면 50%로 OPEN. 정상 응답도 10건 중 5건이 3초 초과면 OPEN, 정확히 3초는 느린 호출이 아님. 주문별 회로·POST/confirm 단위 집계가 아니며 오래된 표본은 창에서 제외. 이 회로가 동시 호출 수 제한이나 다중 서버 전체 동기화라고 주장하지 않음 |
+| W5-TDD-31 · OPEN·탐색·재차단 | OPEN 30초 직전/도달, HALF_OPEN 탐색 2건의 정상/장애/지연, 탐색 미완료 40초를 제어. 최초 요청 잔여 예산이 충분/부족한 장면 분리 | OPEN 동안 실제 lookup 0·차단 자체를 새 장애 표본에 더하지 않음. 예산 안에서 TX 없이 유한 대기 후 허용된 탐색만 진행. 탐색 2건의 실패율·지연율 모두 50% 미만이면 CLOSED, 하나라도 50% 이상이거나 40초 안에 탐색을 끝내지 못하면 OPEN. 예산 부족은 미완료 202·예약 유지이며 회로를 retry로 우회하지 않음 |
+| W5-TDD-32 · 조기 반환·callback 경합 | 생성 PENDING 후 제한 조회에서 SUCCESS/FAILED 확인. 별도로 조회 대기·OPEN 대기 중 callback이 먼저 종결하고 늦은 timeout/PENDING을 전달 | 2~3분을 채우지 않고 저장한 종결 결과로 조기 반환. 외부 조회 전·종료 직전 저장 상태를 확인해 callback 선종결을 보존하고 늦은 timeout으로 UNKNOWN/202로 되돌리지 않음. 끝까지 미확인이면 202·HELD 유지·추가 create 0·포인트 변화 0. 최종 저장 실패는 단순 미확인 202로 숨기지 않고 W5-TDD-15의 rollback·재조회 복구로 검증 |
+| W5-TDD-33 · 실제 전체 시간·자원 | 실제 요청 진입부터 TX A/HTTP/조회 대기/회로/최종 DB 처리/응답까지 시간을 관찰하고, DB 대기·클라이언트 취소·인바운드 제한·동시 긴 요청을 별도 점검 | 기존 DB 락 대기 3초를 유지하고 HTTP/대기 중 DB TX를 잡지 않음. HTTP 작업 중단·worker/연결 회수와 실제 응답 시간, 실패·자원 점유를 기록. 최종 처리 5초 여유 및 180초 목표의 성립 조건/미달을 공개하며 시계 제어 테스트만으로 하드 상한 달성을 선언하지 않음. callback·별도 reconcile은 후속 선택한 GET 최대1회·호출전체10초이며 이180초 루프를 적용하지 않음 |
+
+<a id="hmac-요청-지문의-조건부-검증-계획"></a>
+
+### HMAC 요청 지문의 검증 계획
+
+**선행 증거: 2026-10-23 W5-D10의 순수 계산·비교 첫 증분을 구현·검증했다.** [실행 기록](../week5/payment-request-fingerprint-tdd-log.md): 신규 54개, 관련 회귀·ArchUnit 포함 343개 통과 및 Checkstyle main/test 위반 0. W5-HMAC-01의 계산 범위와 05·06의 순수 하위 범위이며 DB/HTTP·전체 비노출·키 교체 검증 완료는 아니다. 과제 해석 확인은 선택 사항으로 남기며 담당자 사전 승인을 구현·테스트의 필수 조건으로 두지 않는다. 후속 실행 승인에 따라 계산 단위 테스트를 추가했으며 키 설정·DDL·고객 HTTP는 이번 증분에서 변경하지 않았다. 기존 W5-TDD-02·04·10·16의 요청 일치·카드 비저장·중복 효과 방지 요구는 그대로 유지하며 이 사례들을 공식 추가 채점 조건으로 만들지 않는다.
+
+목표는 **같은 내용의 재요청은 기존 상태로 연결하고, 같은 키의 변경 입력은 거절하면서 추가 결제·예약을 만들지 않는 것**이다. 계산 단위 다음으로 [지문 저장 TDD](../week5/payment-request-fingerprint-persistence-tdd-log.md)를 진행했다. 기존 PG의 지문·두 버전은 전체 NULL로 보존하고 이후 카드 입력으로 채우지 않는다. 전용 Testcontainers MySQL에서 011 실제 적용·JPA 재조회·부분 NULL/길이/버전 제약·독립 연결 rollback·유일 제약 경합을 검증한다. 이는 W5-HMAC-03의 저장 하위 범위이며 실제 TX A의 재고/revision·PG POST 수나 고객 동시 재요청 응답을 검증한 것은 아니다. 이 저장 증분 당시 기존 5인자 생성자와 prepareNew는 무지문 경로였으며, 후속 [키 설정 TDD](../week5/payment-fingerprint-key-configuration-tdd-log.md)에서 환경변수 공급·현재/과거 키 선택·설정 오류 비노출을 DB 없이 구현했다. 후속 [주문 지문 연결](../week5/order-payment-fingerprint-connection-tdd-log.md)에서는 `prepareNew`와 `prepareOrReuse`가 모두 지문을 저장하고 `startOrReuse`가 동일 재요청의 저장 결과를 반환한다. 기존 5인자 생성자는 과거 무지문 fixture 호환용으로 남기며 신규 경로에서는 사용하지 않는다. 현재 고객 confirm·제한 조회/회로는 [최신 고객 연결](../week5/customer-payment-api-tdd-log.md)을 따르고 callback/reconcile HTTP도 연결했으며 이번 검증 결과는 최신 복구 기록을 따른다. 컨텍스트 재생성·키 교체 검증을 실제 서버 재시작/여러 서버 배포 검증으로 확대하지 않는다.
+
+| 사례 ID | 준비·실행 방법 | 기대 결과·남길 증거 |
+| --- | --- | --- |
+| W5-HMAC-01 · 계산·표현 | 구현 전에 고정할 직렬화 규격과 시험용 키로 동일 입력을 반복 계산. JSON 공백/필드 순서만 다른 입력과 사용자·주문·저장 금액·카드 종류·유효한 합성 카드 번호가 각각 달라진 입력을 비교. RFC 테스트 벡터도 사용 | 동일한 의미·같은 키/형식 버전은 같은 32바이트 지문, 선택한 변경 입력은 다른 지문. 필드 경계가 모호한 이어 붙이기나 원본 JSON 비교가 아니며 PG 계약 밖 임의 카드 정규화 없음. client 제공 지문을 서버 계산 대신 신뢰하지 않음 |
+| W5-HMAC-02 · 재요청·충돌·호환 | 같은 키/같은 내용과 카드만 바꾼 confirm을 진행 중·종결 후 각각 요청. 다른 주문의 같은 키·같은 주문의 새 키와 타인 접근도 실행 | 같은 내용은 저장 상태/결과 반환, 변경 내용은 충돌이며 기존 지문/버전·예약·결제 결과 불변, create 추가 0. 소유권 우선·기존 POINT 본문 없는 409 유지. GET·reconcile·callback은 카드/지문 재제출 없이 기존 식별·권위 조회 사용 |
+| W5-HMAC-03 · 동시성·원자성 | 독립 MySQL TX/worker로 같은 키의 동일 내용 및 서로 다른 카드 요청을 각각 경합. 최초 시도/지문을 실제 flush한 뒤 TX A 실패를 별도로 주입하고 종료 후 독립 연결로 재조회 | 커밋한 시도/지문 한 벌만 남고 기존 값을 덮어쓰지 않음. 동일 내용은 기존 상태, 다른 내용은 충돌. 발송 전이·커밋 승자만 create 1회, 예약 중복 없음. TX A 실패 시 시도·지문·형식/키 버전·주문 대기·발송 기록·예약·가용 수량·목록 revision 전체 rollback, PG 0회 |
+| W5-HMAC-04 · 재시작·키 교체 | 같은 DB를 유지한 채 서비스 재생성·다른 인스턴스에서 재요청. 새 시도용 키 버전을 바꾸고 이전 시도는 기록된 키/형식 버전으로 비교 | 재시작·서버 교체에도 동일/변경 요청의 판단 유지. 새 키로 기존 지문을 임의 재작성하지 않음. 발송 이력 보존·create 추가 0. 기존 키/형식 지원을 유지하는 비용을 기록하고 자동 키 교체 제품 구축을 요구하지 않음 |
+| W5-HMAC-05 · 비교 불가 | 필요한 비밀키 누락·지원하지 않는 형식/키 버전을 주입해 신규/기존 confirm 실행. 별도로 기존 거래 reconcile 수행 | 비교 불가를 동일 요청·입력 불일치·PG 확정 실패로 단정하지 않음. 해당 confirm은 기술 오류로 처리하고 기존 지문/상태/예약 보존·새 POST 0. 원문으로의 fallback·현재 지문 덮어쓰기 없음. 카드 비교가 불필요한 기존 거래 복구를 방해하지 않음. HTTP/code 세부값은 Q05 선택 후 고정 |
+| W5-HMAC-06 · 비노출 | 정상·입력 오류·예외 경로에서 DB/HTTP 응답과 SQL bind·HTTP 요청/응답·DTO/toString·trace 로그를 관찰 | 카드 원문·복원용 암호문·원본 요청 본문이 DB에 없고 카드 원문이 로그/응답에 없음. 실제 저장 구현 시 카드 유래 비교 정보로는 지문·형식/키 버전만 시도 DB에 보존하고 지문·비밀키를 로그/응답에 노출하지 않음. 실제 카드 대신 합성 값만 사용하며 테스트 진단 출력에도 원문을 남기지 않음 |
+
+HMAC으로 PG 결과를 인증하거나 callback을 신뢰하지 않는다. 기존 W5-TDD-09·13~16의 TX B 한 번 적용·rollback·발송 이력 검증은 별도로 유지한다. 지문 비교 테스트 통과가 외부 거래의 정확히 한 번 완료나 W5 전체 통과를 의미하지 않는다.
+
+### 9개 채점 항목과 증거 연결
+
+표의 번호는 공식 채점 항목이며 아래 사례 수나 단계 수를 새 배점으로 만들지 않는다.
+
+| 공식 항목 | 연결할 W5-TDD 사례 | 필요한 판정 증거·현재 상태 |
+| --- | --- | --- |
+| 1. PG 교체·포인트 이중 차감 금지 | 03·07~10·20·24 | 기존/신규 DRAFT의 고객 confirm PG 연결과 포인트 변화 0. 실제 HTTP·DB 및 관련 회귀 결과는 [최신 기록](../week5/customer-payment-api-tdd-log.md) 참조 |
+| 2. 과거 POINT·품목·소유권 보존 | 03·20·21·24 | 과거 POINT의 기존409·품목·금액·시각과 고객/관리자 조회·접근 보호를 연결. 격리 DB·실제 API 검사 결과는 최신 기록 참조 |
+| 3. 수락·처리 중·종결·미확인 구분 | 01·05·06·08·09·14·17·20·26·32 | 상태 전이·202/200·조회 경로·일관된 조회 snapshot·상태 퇴행 금지를 고객 API에 연결. callback 순서 검증 결과는 최신 복구 기록 참조 |
+| 4. DB 중복 보호·HTTP 동안 TX/잠금 미보유 | 02·07·10·11·16 | 내부 신규 시작은 [HTTP·DB 연결 기록](../week5/order-payment-http-connection-tdd-log.md), 고객 동일 confirm의 HMAC 비교·생성1회·중복 루프 금지·HTTP 동안 TX 미보유는 최신 고객 기록 참조 |
+| 5. 예약 소비·확정 실패 반환 한 번 | 05·07~10·13·15·21~23 | 가용/예약 수량·중복 효과0·내부 원자성의 [재고 기록](../week5/order-stock-reservation-tdd-log.md)과 최신 고객 PG 연결 증거를 구분. callback HTTP 경합 검증 결과는 최신 복구 기록 참조 |
+| 6. 불확실할 때 재발송·임의 반환 금지 | 06·12·16~19·26~32 | 내부 발송 보호·예약 유지에 더해 고객 confirm·전체 조회 예산·회로를 연결. 시간 종료/회로 차단을 FAILED로 바꾸지 않음. callback/reconcile HTTP 복구도 연결했으며 검증 결과는 최신 복구 기록 참조 |
+| 7. 실제 adapter·callback 권위 조회 | 04~06·12~14·17·27·29 | 로컬 HTTP 형식·관찰 분류는 [3단계 기록](../week5/local-test-pg-http-tdd-log.md). 실제 callback controller·저장 주문 검증 결과는 최신 복구 기록 참조 |
+| 8. 중복·순서·저장 실패·timeout/회로/복구 | 10~19·26~33 | 개별 HTTP·내부 DB·단건 복구의 선행 증거와 고객 confirm·예산·회로의 최신 증거를 구분. callback-first/lookup-first·수동 reconcile HTTP의 통합 복구 검증 결과는 최신 복구 기록 참조 |
+| 9. 관련 회귀·lint·ArchUnit·자원 정리 | 20~25·33 | 증분별 실행 기록에 검사·자원 종료 증거를 보존. W5 교체 전체 완료 검사는 아직 아님 |
+
+### 미정 질문이 테스트에 미치는 영향
+
+질문 ID와 답변 상태는 [W5 정책 선택 문서](commerce-policy-decisions.md#w5-결제-교체의-선택과-질문)의 W5-Q01~09를 따른다. 승인·구현·검증을 구분하며, 질문이 남았다는 이유로 원문이 이미 정한 포인트 변화 0·UNKNOWN 예약 유지·create 재시도 금지까지 미정으로 돌리지 않는다.
+
+| 질문 | 결정 상태·테스트에 남은 확인 |
+| --- | --- |
+| W5-Q01 · 로컬 기존 데이터 | 기존 데이터 유무는 여전히 확인되지 않았으며 0건으로 단정하지 않는다. 사용자 승인에 따라 사용자 DB를 건드리지 않고 전용 Testcontainers DB의 기존 PG·POINT·DRAFT fixture로 이행을 검증한다. 실제 DB 적용·초기화는 하지 않음 |
+| W5-Q02 · 대기 응답과 수동 조회 | **최초 confirm 안에서 제한된 추가 조회 선택·연결.** 종결 시 조기 반환, 시간/횟수 한도 소진 시 미완료202·상태·조회 경로. 동일 재요청은 긴 루프를 추가하지 않음. 최신 검사 결과는 고객 연결 기록 참조. 수동 reconcile의 단건 GET·호출전체10초는 선택했으며 HTTP를 연결했으며 검증 결과는 최신 복구 기록 참조 |
+| W5-Q03 · 예약 반환 수치 상한 | **수량 정책 승인됨:** 설정할 가용 수량 + 모든 HELD 예약 합계가 Integer 상한 이하일 때만 설정. 동등 허용·초과 거절·안전 합산을 W5-TDD-22에서 검증. 후속 사용자 승인으로 `409 STOCK_CAPACITY_EXCEEDED`·“예약 반환 수량을 포함하면 재고 저장 한도를 초과합니다.”를 확정 |
+| W5-Q04 · 키·요청 동일성 | **UUID·서비스 전체 키 유일성·로컬 PG 합성 카드 입력·HMAC 선택 및 고객 confirm 연결.** 특정 카드 번호 한 종류 제한은 미채택. 같은 키의 다른 주문/내용은 충돌이며 카드 번호는 DB/로그에 남기지 않는다. 기존 전체NULL 지문을 보존하고 소급 생성하지 않는다. 환경변수 현재/과거 키 선택·TX A 공동 저장·재요청 비교와 사용자 선택409/503/500을 연결했다. 계산·저장·설정·내부/고객 HTTP의 증거를 각 실행 기록으로 구분한다. 과제 해석 질문은 선택 사항이며 공식 담당자 승인으로 주장하지 않음 |
+| W5-Q05 · callback 응답·충돌 기록 | **위임 선택 완료:** 유효관찰200 ACK·확인 불가503·충돌409, 내부 식별자와 고정 사유만의 WARN. 알림만으로 확정하지 않고 권위 조회하며 W5-REC-05~14에서 HTTP 증거 보강 |
+| W5-Q06 · timeout·재조회·회로 | **초기 수치 승인·개별 HTTP 및 최초 제한 조회/회로 연결.** Apache HttpClient 5.4.2의 [선행 증거](../week5/local-test-pg-http-tdd-log.md)와 180/175초·횟수/간격·회로의 [최신 증거](../week5/customer-payment-api-tdd-log.md)를 구분. 실제180초 하드 상한은 주장하지 않으며 callback/reconcile은 GET 최대1회·호출전체10초·반복대기없음으로 선택하고 HTTP를 연결했으며 검증 결과는 최신 복구 기록 참조 |
+| W5-Q07 · 예약 저장 위치 | **A안 승인·저장 연결 구현:** PaymentAttempt 별도 + 기존 OrderItem 예약 상태, 수동 SQL 009/010. 저장·이행 검증과 실제 서비스의 재고·TX·경합 검증을 구분한다. 별도 StockReservation은 미채택 |
+| W5-Q08 · 발송 TX 배치 | **사용자 TX A 동시 저장 선택·내부/고객 HTTP 연결:** 준비·발송 기록 공동 커밋/rollback, 커밋 후 POST와 예산 부족/발송 전 중단 뒤 재발송 금지. 고객 요청 일치·응답까지 연결했으며 별도 claim TX는 미채택 |
+| W5-Q09 · 결제수단 null | **사용자 확인·모델/저장/고객 조회 연결:** DRAFT는 null, PG 준비 후 PG 필수. 이전 POINT는 POINT 보존. 시도 없는 DRAFT를 UNKNOWN으로 꾸미지 않으며 손상된 PG 주문/시도 조합은500. 각 계층의 검증 증거는 실행 기록으로 구분 |
+
+### 고객 결제 HTTP 계약의 TDD 증분
+
+2026-10-23 사용자가 [JSON·오류·PG 주문 ID 계약](commerce-api-contract.md#고객-결제-api-상세-계약)을 선택했다. DB 없는 parser/DTO·오류 분류·식별자 생성의 [선행 계약 기록](../week5/customer-payment-contract-tdd-log.md)과 실제 controller PG 전환·조회 서비스·최초 대기/회로의 [최신 연결 기록](../week5/customer-payment-api-tdd-log.md)을 구분한다. 아래 표는 두 증분의 기대값 색인이며 실제 실행 결과는 각 기록을 따른다.
+
+| ID | 계약 경계의 기대값 | 실제 API 연결 검사의 기대값 |
+| --- | --- | --- |
+| W5-HTTP-01 | 정확한 세 필드·UUID·문자열 필수, 잘못된 타입/누락/null/추가 필드 거절. 카드 원문 정규화 없음·toString 비노출 | PG 분기에서만 필수 입력 검사. 본문 없는 POINT 본인409·타인404 유지 |
+| W5-HTTP-02 | 기존 주문 필드 보존·PG 다섯 상태·paymentMethod·payment·조회 경로, null 생략. API 정상 반환과 결제 결과 분리 | 실제 GET/confirm에서 상태·품목·금액을 일관된 저장 snapshot으로 조합. 목록 N+1 방지 |
+| W5-HTTP-03 | PG 종결 confirm200·미완료202, GET은 별도200 정책 | 최초 요청은 승인된 제한 조회 이후202, 동일 재요청은 긴 루프/POST 추가 없이 현재 저장 상태 |
+| W5-HTTP-04 | 내용 충돌409·전체NULL 지문409·서버키/형식503·저장 손상500. message 문자열 파싱 없이 분류 | 실제 HTTP의 소유권 우선·추가 PG/재고 효과0·키 문제 신규 준비 전체rollback |
+| W5-HTTP-05 | 신규 PG ID의0패딩·Long 경계·기존 매핑 보존·다른 주문의 시도 거절 | 주문 잠금/소유권 확인 안에서 저장 ID를 선택해 재요청·조회에 사용. 기존 다른 매핑도 정상 재사용 |
+| W5-HTTP-06 | 응답·오류에 카드·지문·키/버전 비노출, 기존 POINT/DRAFT 표현 구분 | 실제 controller/로그·조회·권한/관리자 필터·기존 POINT·포인트 API 회귀 |
+
+### 기존 테스트 전환과 과거 증거 보존
+
+기존 POINT 결제 테스트의 **실행 기록·당시 기대값은 삭제하지 않는다.** 다만 미확정 주문의 새 결제가 PG로 바뀐 뒤에도 신규 confirm에서 포인트 차감을 기대하는 테스트를 그대로 현재 계약으로 둘 수는 없다. W5 명세를 근거로 변경 대상·보존 대상을 나누고 변경한 기대값과 이유를 실행 기록에 남긴다.
+
+| 기존 범위·대표 테스트 | W5에서 유지하거나 전환할 것 |
+| --- | --- |
+| `OrderTest`, `OrderV1ApiE2ETest`의 재확정·과거 조회 | 이전 POINT fixture의 409·금액·시각·품목 보존을 유지. 신규 PG에는 동일 시도 결과 재반환·새 키 충돌·대기 상태를 별도 검증 |
+| `OrderTransactionTest`, `OrderServiceIntegrationTest`의 재고·포인트·확정 단일 TX | 과거 실행 증거는 보존. 신규 PG는 TX A 전체 rollback과 TX B 성공/실패 반영 rollback을 분리하고, 외부 거래는 내부 rollback으로 취소되지 않는 복구를 추가 |
+| `OrderConcurrencyIntegrationTest`, `OrderStockConcurrencyIntegrationTest` | 재고 초과 판매·부분 변경·중복 효과 금지는 유지. PG 동일 시도의 create/예약 1회·저장 상태 반환과 포인트 변화 0으로 연결 |
+| `OrderPointConcurrencyIntegrationTest`, `PointChargeOrderConcurrencyIntegrationTest`, `PointOrderJourneyApiE2ETest` | 기존 POINT 차감 경쟁의 과거 기록은 유지. 새 주문을 포인트로 결제하는 경로를 회귀 목적으로 다시 열지 않으며 신규 PG·충전 분리와 PG 포인트 변화 0 검증으로 전환 |
+| `CommerceSchemaIntegrationTest`, 브랜드 삭제·관리자 재고·캐시 회귀 | 과거 POINT 사실·기존 관계/제약을 보존하고, 새 상태/시도/예약 제약·삭제 전후·가용 재고 설정·버전 원자성 기대값을 추가 |
+
+순서 검증에는 테스트 fixture의 유한 래치·제어 가능한 외부 결과를 사용하고 생산 코드에 테스트용 sleep·장벽을 넣지 않는다. 승인한 조회 대기 정책은 별도 책임이며, 테스트에서는 제어 가능한 경과 시계·고정 jitter로 마감/간격/회로 경계를 결정적으로 검증한다. 무작위 지연·성공 확률로 필수 장면 재현을 대신하지 않는다. 실제 HTTP timeout·연결 종료 테스트와 시계/대역으로 진행하는 예산·회로 상태 테스트의 증거를 구분하고, 회로 설정만 존재한다는 이유로 실제 차단이나 180초 하드 상한을 주장하지 않는다.
+
+초기 데이터를 먼저 commit하고 테스트 전체를 한 TX로 감싸지 않는다. DB 변경 실패는 실제 SQL 성공 뒤 주입하며, 서비스 종료·모든 worker 종료 후 독립 연결로 최종 상태를 확인한다. HTTP 중단·재시작 시험은 같은 DB·외부 거래 상태를 유지한다. 기다림·조회 횟수에 상한을 두고 `finally`에서 자신이 만든 서버·executor·connection을 정리한다. 실행 전에 관련 테스트·lint·ArchUnit 범위를 제시하고, 실행 후에만 실제 Red/Green·통과 수를 기록한다.
+
+## W2~W4 선행 계획과 실행 기록의 범위
+
+아래 당시 수치·테스트 ID·순서는 과거 증거로 보존한다. W2~W3의 포인트 결제, 모든 확정 재요청의 409, 재고·포인트·확정 결과를 한 TX로 처리하는 설명은 **W5 신규 PG 결제 계약이 아니다.** 과거 POINT 조회·기존 오류와 변경 대상이 아닌 업무 규칙은 계속 보호한다. W4 조회·캐시 계약도 유지하되, 예약/반환으로 추가되는 쓰기 경계는 위 W5 사례에서 다시 검증한다.
 
 **W3 변경 상태:** 브랜드 일괄 논리 삭제의 `W3-BRAND-01..08`을 구현·검증했다. 정상·경계·전체 롤백에 이어 고객·관리자 연결, DRAFT 확정 거절, 과거 주문 보존과 삭제·주문·등록 경합을 확인했다. 결과는 [네 번째 증분](../week3/brand-removal-tdd-log.md#네-번째-증분--w3-brand-0408-연결동시성-검증), W2와 앞선 증분은 과거 기록으로 구분한다. 후속 승인 P16의 주문 재확정 거절도 `W3-RECONFIRM-01..06` 구현·검증을 완료했으며 [별도 실행 기록](../week3/order-reconfirmation-tdd-log.md)에 증거를 남겼다. 이번 증분은 재확정 계약에 한정하며 W3의 8개 주문 재고 경쟁·3개 주문 포인트 경쟁·주문 내부 저장 경계 실패/롤백 검증·갱신 유실 대조군 과제 완료를 뜻하지 않는다.
 
@@ -119,11 +372,15 @@ W4-CACHE-12의 첫 후속 증분은 TTL 60초 고정·조회 200회에 좋아요
 
 ## 전체 구현 완료 목표
 
+이 절은 W2~W4의 완료 범위·과거 진행 순서다. W5의 추가 API·시도·예약·PG 복구 완료 범위는 위 [6단계와 9개 항목](#w5-pg-결제-tdd-계획)으로 별도 판정한다.
+
 2026-09-18 사용자가 현재 구상한 범위의 TDD를 끝까지 진행하도록 요청했다. 작은 증분 하나의 통과를 전체 완료로 간주하지 않는다. [전체 완료 체크리스트](commerce-completion-checklist.md)에 API·테스트·운영 검증의 증거를 기록한다. 최종 범위는 C01~C12·A01~A13의 25개 API, 아래 API-01~24의 업무·경계·저장·동시성 사례, 실제 DB 제약·운영 스키마, 기존 예시 회귀와 Checkstyle·ArchUnit, 구현과 일치하는 문서다.
 
 진행 순서는 브랜드 HTTP → 관리자 브랜드·상품 → 상품 조회·좋아요 → 포인트 → 주문 생성·조회·확정·관리자 조회 → 경합·롤백과 최종 검증이다. 테스트를 먼저 실행해 의도한 실패를 확인한 뒤 최소 구현·리팩터링을 반복한다. C01 이후 금액·나머지 API·잠금 세부 정책도 사용자 승인으로 확정했다. JPA를 유지하며 기능 구현을 먼저 진행하고 나머지 운영 수동 DDL은 기능 구현 후 작성·검증한다(P14).
 
 ## 현재 단계와 이번 구현
+
+아래 표의 “현재”는 W5 교체 전 구현 기록을 뜻한다. 신규 PG 코드·테스트 완료를 나타내는 표가 아니며, 특히 포인트 차감·확정 재요청 계약의 전환은 위 W5 계획을 따른다.
 
 | 단계 | 현재 상태와 증거 |
 | --- | --- |
@@ -433,6 +690,8 @@ P01/P08의 확정 규칙을 `domain/order/OrderQuantities`로 구현했다. 금�
 
 ## API·규칙별 테스트 기대값
 
+아래 API ID는 선행 W2~W3 계약 추적용으로 보존한다. W5 신규 결제에 영향을 받는 API-12~14·20·23·24와 예약이 있는 API-19는 위 W5-TDD 사례를 함께 적용한다. POINT 차감·모든 재확정 409를 신규 PG에 강제하지 않으며, 기존 POINT 사실과 변경 대상이 아닌 기대값은 계속 보호한다.
+
 아래는 **테스트 계획**이다. [API 계약표](commerce-api-contract.md)의 ID를 테스트 이름 또는 설명에 연결하고 HTTP 상태·응답 필드뿐 아니라 성공·실패 후 저장값을 함께 검증한다. 금액·포인트는 승인된 원 단위 정수 Long/BIGINT이며 아래 표현 상한은 `M=Long.MAX_VALUE=9,223,372,036,854,775,807`로 고정한다. 덧셈·곱셈의 범위 초과를 검출하고 실패 시 상태를 보존한다.
 
 아래 `API-16`의 삭제 거절 기대값과 `API-24`의 브랜드 경합 증거는 W2 기준으로 보존한다. 새 브랜드 삭제 계약과 연결 API의 추가 검증은 위 `W3-BRAND-01..08`을 따른다.
@@ -483,6 +742,8 @@ P01/P08의 확정 규칙을 `domain/order/OrderQuantities`로 구현했다. 금�
 대표 사례만 통과시키고 API 계약표의 다른 행을 생략하지 않는다. 각 API에는 정상 1개 이상·대표 오류 1개 이상의 HTTP 계약 검증을 연결한다. 삭제·수정·충전·확정의 실패는 오류 코드뿐 아니라 **실패한 요청의 변경이 남지 않는지**도 확인한다. 단독 실행에서는 변경 전후 DB 값이 같아야 한다. 동시 실행에서는 다른 요청의 성공 효과를 보존하고 실패 요청의 추가 효과가 없는지 확인한다. API-23의 재고5에서 두 주문이 각4개를 요청하는 경우 최종 재고1·성공1건·실패 주문DRAFT를 유지해야 한다.
 
 ## 충전부터 주문 조회까지의 연결 검증
+
+이 절은 과거 POINT 결제의 연결 검증 기록이다. W5 신규 주문에는 아래 잔액 3,000 기대값을 재사용하지 않고 W5-TDD-24의 충전·PG 분리와 포인트 미차감을 검증한다.
 
 잔액 SQL 갱신 없이 fixture 초기 잔액 0에서 시작한다. 충전 API로 10000원을 충전하고 단가 2000원×2개·3000원×1개를 DRAFT로 생성한다. 생성 직후 잔액10000·재고 유지, 확정 후 결제액7000·잔액3000·각 상품 재고 차감을 확인한다. 별도 HTTP 요청으로 내 주문 목록·상세와 잔액을 다시 조회해 저장 결과를 검증하며 다른 사용자의 주문·잔액도 보존한다. [PointOrderJourneyApiE2ETest](../../apps/commerce-api/src/test/java/com/loopers/interfaces/api/order/PointOrderJourneyApiE2ETest.java)가 이 흐름을 담당한다.
 

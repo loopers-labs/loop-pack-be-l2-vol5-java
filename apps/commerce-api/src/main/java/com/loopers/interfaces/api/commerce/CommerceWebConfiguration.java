@@ -59,6 +59,7 @@ public class CommerceWebConfiguration implements WebMvcConfigurer {
 
     private boolean isCommerce(String path) {
         return path.startsWith("/api-admin/v1/")
+            || path.equals("/api/v1/payments/callback")
             || path.matches("/api/v1/(brands|products|users|points|orders)(/.*)?");
     }
 }

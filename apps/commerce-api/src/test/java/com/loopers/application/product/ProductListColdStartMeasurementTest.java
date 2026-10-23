@@ -56,7 +56,7 @@ class ProductListColdStartMeasurementTest {
     private static final int PAIRS = 8;
     private static final List<String> SCHEMA = List.of("001-brand.sql", "002-user.sql", "003-product.sql",
         "004-like.sql", "005-order.sql", "006-order-item.sql", "007-product-brand-price-index.sql",
-        "008-product-list-revision.sql");
+        "008-product-list-revision.sql", "009-order-payment-state.sql", "010-payment-attempt.sql");
     private static final Path OUTPUT = Path.of("build/reports/week4/product-list-cold-start.json");
 
     @Container

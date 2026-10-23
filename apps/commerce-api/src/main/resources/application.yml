@@ -36,6 +36,18 @@ datasource:
       connection-init-sql: SET SESSION innodb_lock_wait_timeout=3
 
 commerce:
+  test-pg:
+    # Customer confirm uses this local PG when enabled; no PG server is started here.
+    # Disabled PG rejects new payment and external recovery with 503; saved terminal reads remain available.
+    enabled: false
+    base-url: http://127.0.0.1:9090
+    callback-url: http://127.0.0.1:8080/api/v1/payments/callback
+    connect-timeout: 3s
+    pool-timeout: 1s
+    create-response-timeout: 60s
+    lookup-response-timeout: 5s
+    create-total-timeout: 65s
+    lookup-total-timeout: 10s
   product-list-cache:
     enabled: true
     namespace: commerce:${spring.profiles.active:local}:products:v1
@@ -45,6 +57,11 @@ commerce:
     single-flight-enabled: true
     single-flight-wait-millis: 500
     single-flight-max-in-flight: 64
+
+logging:
+  level:
+    # HTTP wire DEBUG would expose the synthetic card body. Never enable it for payment traffic.
+    org.apache.hc.client5.http.wire: "OFF"
 
 ---
 spring:

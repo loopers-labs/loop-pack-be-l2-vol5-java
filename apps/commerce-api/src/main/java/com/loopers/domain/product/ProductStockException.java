@@ -5,7 +5,8 @@ public class ProductStockException extends RuntimeException {
     public enum Reason {
         INVALID_STOCK_QUANTITY,
         INVALID_DEDUCTION_QUANTITY,
-        INSUFFICIENT_STOCK
+        INSUFFICIENT_STOCK,
+        STOCK_CAPACITY_EXCEEDED
     }
 
     private final Reason reason;
