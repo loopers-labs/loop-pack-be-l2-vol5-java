@@ -148,7 +148,7 @@ class PaymentTest {
             Payment payment = requested();
             payment.observe(new CreateObservation.CreateUnknown());
 
-            PaymentOutcome outcome = payment.observe(found(TransactionStatus.PENDING));
+            PaymentOutcome outcome = payment.observe(found(PgTransaction.Status.PENDING));
 
             assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
             assertThat(payment.getTransactionKey()).isEqualTo(KEY);
@@ -160,7 +160,7 @@ class PaymentTest {
         void success() {
             Payment payment = accepted();
 
-            PaymentOutcome outcome = payment.observe(found(TransactionStatus.SUCCESS));
+            PaymentOutcome outcome = payment.observe(found(PgTransaction.Status.SUCCESS));
 
             assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
             assertThat(outcome.effect()).isEqualTo(PaymentOutcome.Effect.CONFIRM_ORDER);
@@ -171,7 +171,7 @@ class PaymentTest {
         void failed() {
             Payment payment = accepted();
 
-            PaymentOutcome outcome = payment.observe(found(TransactionStatus.FAILED));
+            PaymentOutcome outcome = payment.observe(found(PgTransaction.Status.FAILED));
 
             assertThat(payment.getStatus()).isEqualTo(PaymentStatus.FAILED);
             assertThat(outcome.effect()).isEqualTo(PaymentOutcome.Effect.FAIL_ORDER);
@@ -182,7 +182,7 @@ class PaymentTest {
         void attachesKeyFromRequested() {
             Payment payment = requested();
 
-            PaymentOutcome outcome = payment.observe(found(TransactionStatus.SUCCESS));
+            PaymentOutcome outcome = payment.observe(found(PgTransaction.Status.SUCCESS));
 
             assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
             assertThat(payment.getTransactionKey()).isEqualTo(KEY);
@@ -199,12 +199,12 @@ class PaymentTest {
         void amountMismatch() {
             Payment payment = accepted();
 
-            PaymentOutcome outcome = payment.observe(found(transaction(KEY, ORDER, 9000, TransactionStatus.SUCCESS)));
+            PaymentOutcome outcome = payment.observe(found(transaction(KEY, ORDER, 9000, PgTransaction.Status.SUCCESS)));
 
             assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CONFLICT);
             assertThat(outcome.effect()).isEqualTo(PaymentOutcome.Effect.NONE);
             assertThat(outcome.discrepancy()).isEqualTo(new PaymentDiscrepancy(
-                PaymentDiscrepancy.Reason.AMOUNT_MISMATCH, KEY, TransactionStatus.SUCCESS, Money.of(9000)));
+                PaymentDiscrepancy.Reason.AMOUNT_MISMATCH, KEY, PgTransaction.Status.SUCCESS, Money.of(9000)));
         }
 
         @DisplayName("주문 번호가 다르면 ORDER_MISMATCH")
@@ -212,7 +212,7 @@ class PaymentTest {
         void orderMismatch() {
             Payment payment = accepted();
 
-            PaymentOutcome outcome = payment.observe(found(transaction(KEY, 99L, 7000, TransactionStatus.SUCCESS)));
+            PaymentOutcome outcome = payment.observe(found(transaction(KEY, 99L, 7000, PgTransaction.Status.SUCCESS)));
 
             assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CONFLICT);
             assertThat(outcome.discrepancy().reason()).isEqualTo(PaymentDiscrepancy.Reason.ORDER_MISMATCH);
@@ -224,8 +224,8 @@ class PaymentTest {
             Payment payment = requested();
 
             PaymentOutcome outcome = payment.observe(found(
-                transaction(KEY, ORDER, 7000, TransactionStatus.SUCCESS),
-                transaction(OTHER_KEY, ORDER, 7000, TransactionStatus.SUCCESS)
+                transaction(KEY, ORDER, 7000, PgTransaction.Status.SUCCESS),
+                transaction(OTHER_KEY, ORDER, 7000, PgTransaction.Status.SUCCESS)
             ));
 
             assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CONFLICT);
@@ -239,13 +239,13 @@ class PaymentTest {
         void otherKeyFromLookup() {
             Payment payment = accepted();
 
-            PaymentOutcome outcome = payment.observe(found(transaction(OTHER_KEY, ORDER, 7000, TransactionStatus.SUCCESS)));
+            PaymentOutcome outcome = payment.observe(found(transaction(OTHER_KEY, ORDER, 7000, PgTransaction.Status.SUCCESS)));
 
             assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CONFLICT);
             assertThat(payment.getTransactionKey()).isEqualTo(KEY);
             assertThat(outcome.effect()).isEqualTo(PaymentOutcome.Effect.NONE);
             assertThat(outcome.discrepancy()).isEqualTo(new PaymentDiscrepancy(
-                PaymentDiscrepancy.Reason.MULTIPLE_TRANSACTIONS, OTHER_KEY, TransactionStatus.SUCCESS, Money.of(7000)));
+                PaymentDiscrepancy.Reason.MULTIPLE_TRANSACTIONS, OTHER_KEY, PgTransaction.Status.SUCCESS, Money.of(7000)));
         }
 
         @DisplayName("붙은 키와 다른 키의 늦은 202 도 MULTIPLE_TRANSACTIONS 다. 202 에는 금액이 없으므로 관찰 금액은 비운다")
@@ -258,7 +258,7 @@ class PaymentTest {
             assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CONFLICT);
             assertThat(payment.getTransactionKey()).isEqualTo(KEY);
             assertThat(outcome.discrepancy()).isEqualTo(new PaymentDiscrepancy(
-                PaymentDiscrepancy.Reason.MULTIPLE_TRANSACTIONS, OTHER_KEY, TransactionStatus.PENDING, null));
+                PaymentDiscrepancy.Reason.MULTIPLE_TRANSACTIONS, OTHER_KEY, PgTransaction.Status.PENDING, null));
         }
 
         @DisplayName("맞는 거래면 불일치가 없다")
@@ -266,7 +266,7 @@ class PaymentTest {
         void noDiscrepancyWhenVerified() {
             Payment payment = accepted();
 
-            PaymentOutcome outcome = payment.observe(found(TransactionStatus.SUCCESS));
+            PaymentOutcome outcome = payment.observe(found(PgTransaction.Status.SUCCESS));
 
             assertThat(outcome.discrepancy()).isNull();
         }
@@ -279,9 +279,9 @@ class PaymentTest {
         @DisplayName("SUCCESS 뒤 같은 SUCCESS 는 효과가 없다. 중복 callback, 늦은 조회")
         @Test
         void sameResultHasNoEffect() {
-            Payment payment = settled(TransactionStatus.SUCCESS);
+            Payment payment = settled(PgTransaction.Status.SUCCESS);
 
-            PaymentOutcome outcome = payment.observe(found(TransactionStatus.SUCCESS));
+            PaymentOutcome outcome = payment.observe(found(PgTransaction.Status.SUCCESS));
 
             assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
             assertThat(outcome.effect()).isEqualTo(PaymentOutcome.Effect.NONE);
@@ -291,7 +291,7 @@ class PaymentTest {
         @DisplayName("종결 뒤 PG 가 다른 결과를 말하면 상태는 그대로, RESULT_AFTER_SETTLED 를 남긴다")
         @ParameterizedTest(name = "{0} 뒤 {1}")
         @MethodSource("com.loopers.domain.payment.PaymentTest#resultsAfterSettled")
-        void differentResultIsRecorded(TransactionStatus settledAs, TransactionStatus observed) {
+        void differentResultIsRecorded(PgTransaction.Status settledAs, PgTransaction.Status observed) {
             Payment payment = settled(settledAs);
 
             PaymentOutcome outcome = payment.observe(found(observed));
@@ -305,9 +305,9 @@ class PaymentTest {
         @DisplayName("종결 뒤 다른 키의 맞는 거래가 보이면 상태는 그대로, MULTIPLE_TRANSACTIONS 를 남긴다")
         @Test
         void otherKeyAfterSettled() {
-            Payment payment = settled(TransactionStatus.SUCCESS);
+            Payment payment = settled(PgTransaction.Status.SUCCESS);
 
-            PaymentOutcome outcome = payment.observe(found(transaction(OTHER_KEY, ORDER, 7000, TransactionStatus.SUCCESS)));
+            PaymentOutcome outcome = payment.observe(found(transaction(OTHER_KEY, ORDER, 7000, PgTransaction.Status.SUCCESS)));
 
             assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
             assertThat(outcome.effect()).isEqualTo(PaymentOutcome.Effect.NONE);
@@ -317,7 +317,7 @@ class PaymentTest {
         @DisplayName("종결 뒤 다른 키의 늦은 202 도 상태를 바꾸지 않는다")
         @Test
         void otherKeyFromLateCreateAfterSettled() {
-            Payment payment = settled(TransactionStatus.FAILED);
+            Payment payment = settled(PgTransaction.Status.FAILED);
 
             PaymentOutcome outcome = payment.observe(new CreateObservation.Accepted(OTHER_KEY));
 
@@ -330,9 +330,9 @@ class PaymentTest {
         @Test
         void conflictStays() {
             Payment payment = accepted();
-            payment.observe(found(transaction(KEY, ORDER, 9000, TransactionStatus.PENDING)));
+            payment.observe(found(transaction(KEY, ORDER, 9000, PgTransaction.Status.PENDING)));
 
-            PaymentOutcome outcome = payment.observe(found(TransactionStatus.SUCCESS));
+            PaymentOutcome outcome = payment.observe(found(PgTransaction.Status.SUCCESS));
 
             assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CONFLICT);
             assertThat(outcome.effect()).isEqualTo(PaymentOutcome.Effect.NONE);
@@ -342,9 +342,9 @@ class PaymentTest {
         @Test
         void conflictRecordsNewContradiction() {
             Payment payment = accepted();
-            payment.observe(found(transaction(KEY, ORDER, 9000, TransactionStatus.PENDING)));
+            payment.observe(found(transaction(KEY, ORDER, 9000, PgTransaction.Status.PENDING)));
 
-            PaymentOutcome outcome = payment.observe(found(transaction(KEY, 99L, 7000, TransactionStatus.SUCCESS)));
+            PaymentOutcome outcome = payment.observe(found(transaction(KEY, 99L, 7000, PgTransaction.Status.SUCCESS)));
 
             assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CONFLICT);
             assertThat(outcome.discrepancy().reason()).isEqualTo(PaymentDiscrepancy.Reason.ORDER_MISMATCH);
@@ -394,14 +394,14 @@ class PaymentTest {
 
     static Stream<Arguments> resultsAfterSettled() {
         return Stream.of(
-            Arguments.of(TransactionStatus.SUCCESS, TransactionStatus.FAILED),
-            Arguments.of(TransactionStatus.SUCCESS, TransactionStatus.PENDING),
-            Arguments.of(TransactionStatus.FAILED, TransactionStatus.SUCCESS),
-            Arguments.of(TransactionStatus.FAILED, TransactionStatus.PENDING)
+            Arguments.of(PgTransaction.Status.SUCCESS, PgTransaction.Status.FAILED),
+            Arguments.of(PgTransaction.Status.SUCCESS, PgTransaction.Status.PENDING),
+            Arguments.of(PgTransaction.Status.FAILED, PgTransaction.Status.SUCCESS),
+            Arguments.of(PgTransaction.Status.FAILED, PgTransaction.Status.PENDING)
         );
     }
 
-    private static Payment settled(TransactionStatus result) {
+    private static Payment settled(PgTransaction.Status result) {
         Payment payment = accepted();
         payment.observe(found(result));
         return payment;
@@ -413,7 +413,7 @@ class PaymentTest {
         return payment;
     }
 
-    private static LookupResult.Found found(TransactionStatus status) {
+    private static LookupResult.Found found(PgTransaction.Status status) {
         return found(transaction(KEY, ORDER, 7000, status));
     }
 
@@ -421,7 +421,7 @@ class PaymentTest {
         return new LookupResult.Found(List.of(transactions));
     }
 
-    private static PgTransaction transaction(TransactionKey key, Long orderId, long amount, TransactionStatus status) {
+    private static PgTransaction transaction(TransactionKey key, Long orderId, long amount, PgTransaction.Status status) {
         return new PgTransaction(key, ProviderOrderId.of(orderId), Money.of(amount), status);
     }
 

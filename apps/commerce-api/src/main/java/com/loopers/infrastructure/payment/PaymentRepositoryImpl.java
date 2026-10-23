@@ -3,6 +3,7 @@ package com.loopers.infrastructure.payment;
 import com.loopers.domain.payment.Payment;
 import com.loopers.domain.payment.PaymentAttemptKey;
 import com.loopers.domain.payment.PaymentRepository;
+import com.loopers.domain.payment.ProviderOrderId;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
@@ -35,6 +36,11 @@ public class PaymentRepositoryImpl implements PaymentRepository {
     @Override
     public Optional<Payment> findByOrderId(Long orderId) {
         return paymentJpaRepository.findByOrderId(orderId).map(PaymentEntity::toDomain);
+    }
+
+    @Override
+    public Optional<Payment> findByProviderOrderId(ProviderOrderId providerOrderId) {
+        return paymentJpaRepository.findByProviderOrderId(providerOrderId.value()).map(PaymentEntity::toDomain);
     }
 
     @Override

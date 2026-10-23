@@ -1,6 +1,5 @@
 package com.loopers.infrastructure.payment;
 
-import com.loopers.domain.payment.ObservationSource;
 import com.loopers.domain.payment.PaymentDiscrepancy;
 import com.loopers.domain.payment.PaymentDiscrepancyRepository;
 import lombok.RequiredArgsConstructor;
@@ -15,7 +14,7 @@ public class PaymentDiscrepancyRepositoryImpl implements PaymentDiscrepancyRepos
     private final PaymentDiscrepancyJpaRepository paymentDiscrepancyJpaRepository;
 
     @Override
-    public void record(Long paymentId, PaymentDiscrepancy discrepancy, ObservationSource source, Instant observedAt) {
+    public void record(Long paymentId, PaymentDiscrepancy discrepancy, PaymentDiscrepancy.Source source, Instant observedAt) {
         boolean recorded = paymentDiscrepancyJpaRepository
             .existsByPaymentIdAndReasonAndObservedTransactionKeyAndObservedStatus(
                 paymentId, discrepancy.reason(),

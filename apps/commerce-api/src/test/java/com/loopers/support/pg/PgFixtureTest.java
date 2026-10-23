@@ -48,6 +48,20 @@ class PgFixtureTest {
         pg.close();
     }
 
+    @DisplayName("callback 본문은 거래 객체 그대로다. orderId, transactionKey, amount, status")
+    @Test
+    void callbackBodyIsTransaction() throws Exception {
+        String key = transactionKeyOf(create(ORDER_ID, 7000));
+        pg.changeStatus(key, PgFixture.Status.SUCCESS);
+
+        JsonNode body = JSON.readTree(pg.callbackBody(key));
+
+        assertThat(body.get("transactionKey").asText()).isEqualTo(key);
+        assertThat(body.get("orderId").asText()).isEqualTo(ORDER_ID);
+        assertThat(body.get("amount").asLong()).isEqualTo(7000);
+        assertThat(body.get("status").asText()).isEqualTo("SUCCESS");
+    }
+
     @DisplayName("공용 fixture 는 test 프로필의 PG 주소(127.0.0.1:8090)에서 하나만 뜬다")
     @Test
     void sharedListensOnTestProfileAddress() {

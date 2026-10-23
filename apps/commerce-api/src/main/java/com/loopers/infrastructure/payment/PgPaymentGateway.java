@@ -8,7 +8,6 @@ import com.loopers.domain.payment.PaymentGateway;
 import com.loopers.domain.payment.PgTransaction;
 import com.loopers.domain.payment.ProviderOrderId;
 import com.loopers.domain.payment.TransactionKey;
-import com.loopers.domain.payment.TransactionStatus;
 import org.apache.hc.core5.http.ConnectionRequestTimeoutException;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
@@ -128,7 +127,7 @@ class PgPaymentGateway implements PaymentGateway {
             new TransactionKey(response.transactionKey()),
             new ProviderOrderId(response.orderId()),
             Money.of(response.amount()),
-            TransactionStatus.valueOf(response.status())
+            PgTransaction.Status.valueOf(response.status())
         );
     }
 

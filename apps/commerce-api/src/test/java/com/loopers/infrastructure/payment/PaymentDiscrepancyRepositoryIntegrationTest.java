@@ -1,11 +1,10 @@
 package com.loopers.infrastructure.payment;
 
 import com.loopers.domain.common.Money;
-import com.loopers.domain.payment.ObservationSource;
 import com.loopers.domain.payment.PaymentDiscrepancy;
 import com.loopers.domain.payment.PaymentDiscrepancyRepository;
 import com.loopers.domain.payment.TransactionKey;
-import com.loopers.domain.payment.TransactionStatus;
+import com.loopers.domain.payment.PgTransaction;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -53,7 +52,7 @@ class PaymentDiscrepancyRepositoryIntegrationTest {
 
     private void record(PaymentDiscrepancy discrepancy) {
         transactionTemplate.executeWithoutResult(status ->
-            paymentDiscrepancyRepository.record(PAYMENT, discrepancy, ObservationSource.LOOKUP, NOW));
+            paymentDiscrepancyRepository.record(PAYMENT, discrepancy, PaymentDiscrepancy.Source.LOOKUP, NOW));
     }
 
     private List<Map<String, Object>> rows() {
@@ -67,7 +66,7 @@ class PaymentDiscrepancyRepositoryIntegrationTest {
     @Test
     void records() {
         record(new PaymentDiscrepancy(
-            PaymentDiscrepancy.Reason.AMOUNT_MISMATCH, KEY, TransactionStatus.SUCCESS, Money.of(9_000)));
+            PaymentDiscrepancy.Reason.AMOUNT_MISMATCH, KEY, PgTransaction.Status.SUCCESS, Money.of(9_000)));
 
         assertThat(rows()).singleElement().satisfies(row -> {
             assertThat(row.get("reason")).isEqualTo("AMOUNT_MISMATCH");
@@ -83,7 +82,7 @@ class PaymentDiscrepancyRepositoryIntegrationTest {
     @Test
     void recordsSameObservationOnce() {
         PaymentDiscrepancy same = new PaymentDiscrepancy(
-            PaymentDiscrepancy.Reason.RESULT_AFTER_SETTLED, KEY, TransactionStatus.FAILED, Money.of(7_000));
+            PaymentDiscrepancy.Reason.RESULT_AFTER_SETTLED, KEY, PgTransaction.Status.FAILED, Money.of(7_000));
 
         for (int i = 0; i < 10; i++) {
             record(same);
@@ -96,9 +95,9 @@ class PaymentDiscrepancyRepositoryIntegrationTest {
     @Test
     void recordsDifferentObservations() {
         record(new PaymentDiscrepancy(
-            PaymentDiscrepancy.Reason.RESULT_AFTER_SETTLED, KEY, TransactionStatus.FAILED, Money.of(7_000)));
+            PaymentDiscrepancy.Reason.RESULT_AFTER_SETTLED, KEY, PgTransaction.Status.FAILED, Money.of(7_000)));
         record(new PaymentDiscrepancy(
-            PaymentDiscrepancy.Reason.RESULT_AFTER_SETTLED, KEY, TransactionStatus.PENDING, Money.of(7_000)));
+            PaymentDiscrepancy.Reason.RESULT_AFTER_SETTLED, KEY, PgTransaction.Status.PENDING, Money.of(7_000)));
 
         assertThat(rows()).hasSize(2);
     }

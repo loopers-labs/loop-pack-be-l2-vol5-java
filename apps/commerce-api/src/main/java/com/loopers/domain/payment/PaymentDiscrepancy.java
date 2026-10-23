@@ -5,9 +5,15 @@ import com.loopers.domain.common.Money;
 public record PaymentDiscrepancy(
     Reason reason,
     TransactionKey observedKey,
-    TransactionStatus observedStatus,
+    PgTransaction.Status observedStatus,
     Money observedAmount
 ) {
+
+    public enum Source {
+        CREATE_RESPONSE,
+        CALLBACK,
+        LOOKUP
+    }
 
     public enum Reason {
         MULTIPLE_TRANSACTIONS,

@@ -655,7 +655,7 @@ callback 은 "확인해 보라" 는 계기라 놓쳐도 잃는 정보가 없다 
 ```
 domain/payment          Payment(애그리거트 · 전이 표) · PaymentStatus · PaymentOutcome(전이가 요구하는 할 일) · PaymentDiscrepancy
                         CreateObservation(sealed: Accepted · RejectedNoEffect · NotSent · CreateUnknown)
-                        LookupResult(sealed: Found · NotFound · Unavailable) · PgTransaction · TransactionStatus
+                        LookupResult(sealed: Found · NotFound · Unavailable, 관찰은 Observation) · PgTransaction(Status)
                         PaymentRepository · PaymentGateway(포트: create · lookup)
                         PaymentAttemptKey · ProviderOrderId · TransactionKey · CardType · CardNumber · PaymentCreation
 domain/product          차감(`StockDeduction`, 지금 것) · 반환(삭제된 상품 포함)의 좁은 계약

@@ -5,8 +5,8 @@ import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.OrderService;
 import com.loopers.domain.payment.CardType;
 import com.loopers.domain.payment.CreateObservation;
-import com.loopers.domain.payment.LookupObservation;
-import com.loopers.domain.payment.ObservationSource;
+import com.loopers.domain.payment.LookupResult;
+import com.loopers.domain.payment.PaymentDiscrepancy;
 import com.loopers.domain.payment.Payment;
 import com.loopers.domain.payment.PaymentAttemptKey;
 import com.loopers.domain.payment.PaymentOutcome;
@@ -28,13 +28,24 @@ import java.util.function.Function;
 @RequiredArgsConstructor
 public class PaymentTransactions {
 
+    public sealed interface Begin {
+
+        Payment payment();
+
+        record Granted(Payment payment) implements Begin {
+        }
+
+        record Repeated(Payment payment) implements Begin {
+        }
+    }
+
     private final OrderService orderService;
     private final PaymentService paymentService;
     private final StockDeduction stockDeduction;
     private final StockRestoration stockRestoration;
 
     @Transactional
-    public PaymentBegin begin(Long userId, Long orderId, PaymentAttemptKey attemptKey, CardType cardType,
+    public Begin begin(Long userId, Long orderId, PaymentAttemptKey attemptKey, CardType cardType,
                               Instant now) {
         Order order = orderService.getOwnedForUpdate(userId, orderId);
 
@@ -44,7 +55,7 @@ public class PaymentTransactions {
             if (!payment.isSameRequest(order.getId(), order.getTotalAmount(), cardType)) {
                 throw new DomainException(DomainError.PAYMENT_ATTEMPT_CONFLICT);
             }
-            return new PaymentBegin.Repeated(payment);
+            return new Begin.Repeated(payment);
         }
 
         order.startPayment();
@@ -54,21 +65,23 @@ public class PaymentTransactions {
         Payment payment = paymentService.save(
             Payment.request(order.getId(), attemptKey, order.getTotalAmount(), cardType, now));
         orderService.save(order);
-        return new PaymentBegin.Granted(payment);
+        return new Begin.Granted(payment);
     }
 
     @Transactional
     public Payment observe(Long paymentId, CreateObservation observation, Instant now) {
-        return apply(paymentId, payment -> payment.observe(observation), ObservationSource.CREATE_RESPONSE, now);
+        return apply(paymentId, payment -> payment.observe(observation),
+            PaymentDiscrepancy.Source.CREATE_RESPONSE, now);
     }
 
     @Transactional
-    public Payment observe(Long paymentId, LookupObservation observation, ObservationSource source, Instant now) {
+    public Payment observe(Long paymentId, LookupResult.Observation observation, PaymentDiscrepancy.Source source,
+                           Instant now) {
         return apply(paymentId, payment -> payment.observe(observation), source, now);
     }
 
-    private Payment apply(Long paymentId, Function<Payment, PaymentOutcome> observation, ObservationSource source,
-                          Instant now) {
+    private Payment apply(Long paymentId, Function<Payment, PaymentOutcome> observation,
+                          PaymentDiscrepancy.Source source, Instant now) {
         Order order = orderService.getForUpdate(paymentService.orderIdOf(paymentId));
         Payment payment = paymentService.getForUpdate(paymentId);
 

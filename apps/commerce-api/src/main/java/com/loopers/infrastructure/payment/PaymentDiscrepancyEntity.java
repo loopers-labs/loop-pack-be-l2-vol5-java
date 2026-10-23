@@ -1,7 +1,6 @@
 package com.loopers.infrastructure.payment;
 
 import com.loopers.domain.AuditEntity;
-import com.loopers.domain.payment.ObservationSource;
 import com.loopers.domain.payment.PaymentDiscrepancy;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -33,7 +32,7 @@ class PaymentDiscrepancyEntity extends AuditEntity {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "source", nullable = false, updatable = false, length = 20)
-    private ObservationSource source;
+    private PaymentDiscrepancy.Source source;
 
     @Column(name = "observed_transaction_key", nullable = false, updatable = false, length = 64)
     private String observedTransactionKey;
@@ -49,7 +48,7 @@ class PaymentDiscrepancyEntity extends AuditEntity {
 
     protected PaymentDiscrepancyEntity() {}
 
-    static PaymentDiscrepancyEntity of(Long paymentId, PaymentDiscrepancy discrepancy, ObservationSource source,
+    static PaymentDiscrepancyEntity of(Long paymentId, PaymentDiscrepancy discrepancy, PaymentDiscrepancy.Source source,
                                        Instant observedAt) {
         PaymentDiscrepancyEntity entity = new PaymentDiscrepancyEntity();
         entity.paymentId = paymentId;

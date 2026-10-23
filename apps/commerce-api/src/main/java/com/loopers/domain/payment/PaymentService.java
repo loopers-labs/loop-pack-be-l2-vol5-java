@@ -17,6 +17,10 @@ public class PaymentService {
         return paymentRepository.findByAttemptKey(attemptKey);
     }
 
+    public Optional<Payment> findByProviderOrderId(ProviderOrderId providerOrderId) {
+        return paymentRepository.findByProviderOrderId(providerOrderId);
+    }
+
     public Long orderIdOf(Long paymentId) {
         return paymentRepository.findOrderIdById(paymentId)
             .orElseThrow(() -> new IllegalStateException("결제가 없습니다: id=" + paymentId));
@@ -31,7 +35,7 @@ public class PaymentService {
         return paymentRepository.save(payment);
     }
 
-    public void recordDiscrepancy(Long paymentId, PaymentDiscrepancy discrepancy, ObservationSource source,
+    public void recordDiscrepancy(Long paymentId, PaymentDiscrepancy discrepancy, PaymentDiscrepancy.Source source,
                                   Instant observedAt) {
         paymentDiscrepancyRepository.record(paymentId, discrepancy, source, observedAt);
     }

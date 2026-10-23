@@ -6,12 +6,11 @@ import com.loopers.application.payment.PaymentTransactions;
 import com.loopers.domain.payment.CardNumber;
 import com.loopers.domain.payment.CardType;
 import com.loopers.domain.payment.LookupResult;
-import com.loopers.domain.payment.ObservationSource;
+import com.loopers.domain.payment.PaymentDiscrepancy;
 import com.loopers.domain.payment.Payment;
 import com.loopers.domain.payment.PaymentAttemptKey;
 import com.loopers.domain.payment.PaymentRepository;
 import com.loopers.domain.payment.PgTransaction;
-import com.loopers.domain.payment.TransactionStatus;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -46,7 +45,7 @@ public class TestPayments {
         start(userId, orderId, now);
         Payment payment = paymentRepository.findByOrderId(orderId).orElseThrow();
         return paymentTransactions.observe(payment.getId(), new LookupResult.Found(List.of(new PgTransaction(
-                payment.getTransactionKey(), payment.getProviderOrderId(), payment.getAmount(), TransactionStatus.SUCCESS))),
-            ObservationSource.LOOKUP, now);
+                payment.getTransactionKey(), payment.getProviderOrderId(), payment.getAmount(), PgTransaction.Status.SUCCESS))),
+            PaymentDiscrepancy.Source.LOOKUP, now);
     }
 }

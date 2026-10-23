@@ -57,7 +57,7 @@ public class Payment {
             if (observation instanceof CreateObservation.Accepted(TransactionKey key)
                 && !key.equals(transactionKey)) {
                 return contradict(PaymentDiscrepancy.Reason.MULTIPLE_TRANSACTIONS,
-                    key, TransactionStatus.PENDING, null);
+                    key, PgTransaction.Status.PENDING, null);
             }
             return PaymentOutcome.none();
         }
@@ -76,7 +76,7 @@ public class Payment {
         };
     }
 
-    public PaymentOutcome observe(LookupObservation observation) {
+    public PaymentOutcome observe(LookupResult.Observation observation) {
         return switch (observation) {
             case LookupResult.NotFound notFound -> PaymentOutcome.none();
             case LookupResult.Found found -> observeFound(found);
@@ -133,7 +133,7 @@ public class Payment {
     }
 
     private PaymentOutcome contradict(PaymentDiscrepancy.Reason reason, TransactionKey observedKey,
-                                      TransactionStatus observedStatus, Money observedAmount) {
+                                      PgTransaction.Status observedStatus, Money observedAmount) {
         if (!isSettled()) {
             this.status = PaymentStatus.CONFLICT;
         }
@@ -144,9 +144,9 @@ public class Payment {
         return status == PaymentStatus.SUCCESS || status == PaymentStatus.FAILED;
     }
 
-    private boolean isSameResult(TransactionStatus observed) {
-        return status == PaymentStatus.SUCCESS && observed == TransactionStatus.SUCCESS
-            || status == PaymentStatus.FAILED && observed == TransactionStatus.FAILED;
+    private boolean isSameResult(PgTransaction.Status observed) {
+        return status == PaymentStatus.SUCCESS && observed == PgTransaction.Status.SUCCESS
+            || status == PaymentStatus.FAILED && observed == PgTransaction.Status.FAILED;
     }
 
     private PaymentOutcome fail() {

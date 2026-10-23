@@ -10,7 +10,6 @@ import com.loopers.domain.payment.PaymentGateway;
 import com.loopers.domain.payment.PgTransaction;
 import com.loopers.domain.payment.ProviderOrderId;
 import com.loopers.domain.payment.TransactionKey;
-import com.loopers.domain.payment.TransactionStatus;
 import com.loopers.support.pg.PgFixture;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.DisplayName;
@@ -204,7 +203,7 @@ class PaymentProviderContractTest {
             LookupResult result = gateway.lookup(new TransactionKey(key));
 
             assertThat(result).isEqualTo(new LookupResult.Found(List.of(new PgTransaction(
-                new TransactionKey(key), ProviderOrderId.of(60L), Money.of(7000), TransactionStatus.SUCCESS
+                new TransactionKey(key), ProviderOrderId.of(60L), Money.of(7000), PgTransaction.Status.SUCCESS
             ))));
         }
 

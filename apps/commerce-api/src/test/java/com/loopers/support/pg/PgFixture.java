@@ -1,5 +1,7 @@
 package com.loopers.support.pg;
 
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
@@ -113,15 +115,20 @@ public final class PgFixture implements AutoCloseable {
         }
     }
 
-    public int sendCallback(String transactionKey) {
-        Stored stored = transactions.get(transactionKey);
-        if (stored == null) {
-            throw new IllegalArgumentException("unknown transaction: " + transactionKey);
+    public String callbackBody(String transactionKey) {
+        try {
+            return JSON.writeValueAsString(storedOf(transactionKey).transaction());
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
+    }
+
+    public int sendCallback(String transactionKey) {
+        Stored stored = storedOf(transactionKey);
         try {
             HttpRequest request = HttpRequest.newBuilder(URI.create(stored.callbackUrl()))
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofByteArray(JSON.writeValueAsBytes(stored.transaction())))
+                .POST(HttpRequest.BodyPublishers.ofString(callbackBody(transactionKey)))
                 .build();
             return CALLBACK_CLIENT.send(request, HttpResponse.BodyHandlers.discarding()).statusCode();
         } catch (IOException e) {
@@ -130,6 +137,14 @@ public final class PgFixture implements AutoCloseable {
             Thread.currentThread().interrupt();
             throw new IllegalStateException(e);
         }
+    }
+
+    private Stored storedOf(String transactionKey) {
+        Stored stored = transactions.get(transactionKey);
+        if (stored == null) {
+            throw new IllegalArgumentException("unknown transaction: " + transactionKey);
+        }
+        return stored;
     }
 
     public void rejectNextCreate() {
@@ -393,5 +408,14 @@ public final class PgFixture implements AutoCloseable {
     }
 
     private record Rejection(String code, boolean transactionCreated, String orderId, long amount) {
+    }
+
+    @Configuration
+    static class SharedConfiguration {
+
+        @Bean(destroyMethod = "")
+        PgFixture sharedPgFixture() {
+            return shared();
+        }
     }
 }

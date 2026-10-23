@@ -91,7 +91,7 @@ class PaymentTransactionsIntegrationTest {
             List.of(new OrderCreateCommand.Line(coat, OrderQuantity.of(coats)))), NOW);
     }
 
-    private PaymentBegin begin(Long userId, Long orderId, PaymentAttemptKey key) {
+    private PaymentTransactions.Begin begin(Long userId, Long orderId, PaymentAttemptKey key) {
         return paymentTransactions.begin(userId, orderId, key, CardType.TEST, NOW);
     }
 
@@ -104,9 +104,9 @@ class PaymentTransactionsIntegrationTest {
         void grants() {
             Order order = place(USER, 2);
 
-            PaymentBegin result = begin(USER, order.getId(), KEY);
+            PaymentTransactions.Begin result = begin(USER, order.getId(), KEY);
 
-            assertThat(result).isInstanceOf(PaymentBegin.Granted.class);
+            assertThat(result).isInstanceOf(PaymentTransactions.Begin.Granted.class);
             Payment payment = result.payment();
             assertThat(payment.getId()).isNotNull();
             assertThat(payment.getStatus()).isEqualTo(PaymentStatus.REQUESTED);
@@ -128,9 +128,9 @@ class PaymentTransactionsIntegrationTest {
             Order order = place(USER, 2);
             Payment first = begin(USER, order.getId(), KEY).payment();
 
-            PaymentBegin again = begin(USER, order.getId(), KEY);
+            PaymentTransactions.Begin again = begin(USER, order.getId(), KEY);
 
-            assertThat(again).isInstanceOf(PaymentBegin.Repeated.class);
+            assertThat(again).isInstanceOf(PaymentTransactions.Begin.Repeated.class);
             assertThat(again.payment().getId()).isEqualTo(first.getId());
             assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(8));
         }

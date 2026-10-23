@@ -12,14 +12,13 @@ import com.loopers.domain.order.OrderStatus;
 import com.loopers.domain.payment.CardType;
 import com.loopers.domain.payment.CreateObservation;
 import com.loopers.domain.payment.LookupResult;
-import com.loopers.domain.payment.ObservationSource;
+import com.loopers.domain.payment.PaymentDiscrepancy;
 import com.loopers.domain.payment.Payment;
 import com.loopers.domain.payment.PaymentAttemptKey;
 import com.loopers.domain.payment.PaymentStatus;
 import com.loopers.domain.payment.PgTransaction;
 import com.loopers.domain.payment.ProviderOrderId;
 import com.loopers.domain.payment.TransactionKey;
-import com.loopers.domain.payment.TransactionStatus;
 import com.loopers.domain.product.Price;
 import com.loopers.domain.product.ProductService;
 import com.loopers.utils.DatabaseCleanUp;
@@ -101,14 +100,14 @@ class PaymentObserveIntegrationTest {
         return paymentTransactions.observe(payment.getId(), observation, LATER);
     }
 
-    private Payment lookup(TransactionStatus status) {
+    private Payment lookup(PgTransaction.Status status) {
         return lookup(status, 6_000);
     }
 
-    private Payment lookup(TransactionStatus status, long amount) {
+    private Payment lookup(PgTransaction.Status status, long amount) {
         LookupResult.Found found = new LookupResult.Found(List.of(new PgTransaction(
             KEY, ProviderOrderId.of(order.getId()), Money.of(amount), status)));
-        return paymentTransactions.observe(payment.getId(), found, ObservationSource.CALLBACK, LATER);
+        return paymentTransactions.observe(payment.getId(), found, PaymentDiscrepancy.Source.CALLBACK, LATER);
     }
 
     private Order storedOrder() {
@@ -180,7 +179,7 @@ class PaymentObserveIntegrationTest {
         void success() {
             observe(new CreateObservation.Accepted(KEY));
 
-            Payment result = lookup(TransactionStatus.SUCCESS);
+            Payment result = lookup(PgTransaction.Status.SUCCESS);
 
             assertThat(result.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
             assertThat(storedOrder().getStatus()).isEqualTo(OrderStatus.CONFIRMED);
@@ -194,7 +193,7 @@ class PaymentObserveIntegrationTest {
         void failed() {
             observe(new CreateObservation.Accepted(KEY));
 
-            Payment result = lookup(TransactionStatus.FAILED);
+            Payment result = lookup(PgTransaction.Status.FAILED);
 
             assertThat(result.getStatus()).isEqualTo(PaymentStatus.FAILED);
             assertThat(storedOrder().getStatus()).isEqualTo(OrderStatus.FAILED);
@@ -206,7 +205,7 @@ class PaymentObserveIntegrationTest {
         void settlesWithoutCreateResponse() {
             observe(new CreateObservation.CreateUnknown());
 
-            Payment result = lookup(TransactionStatus.SUCCESS);
+            Payment result = lookup(PgTransaction.Status.SUCCESS);
 
             assertThat(result.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
             assertThat(result.getTransactionKey()).isEqualTo(KEY);
@@ -219,7 +218,7 @@ class PaymentObserveIntegrationTest {
             observe(new CreateObservation.Accepted(KEY));
             productFacade.delete(coat);
 
-            Payment result = lookup(TransactionStatus.FAILED);
+            Payment result = lookup(PgTransaction.Status.FAILED);
 
             assertThat(result.getStatus()).isEqualTo(PaymentStatus.FAILED);
             assertThat(jdbcTemplate.queryForObject(
@@ -236,8 +235,8 @@ class PaymentObserveIntegrationTest {
         void restocksOnce() {
             observe(new CreateObservation.Accepted(KEY));
 
-            lookup(TransactionStatus.FAILED);
-            lookup(TransactionStatus.FAILED);
+            lookup(PgTransaction.Status.FAILED);
+            lookup(PgTransaction.Status.FAILED);
 
             assertThat(stock()).isEqualTo(Quantity.of(10));
         }
@@ -246,11 +245,11 @@ class PaymentObserveIntegrationTest {
         @Test
         void confirmsOnce() {
             observe(new CreateObservation.Accepted(KEY));
-            lookup(TransactionStatus.SUCCESS);
+            lookup(PgTransaction.Status.SUCCESS);
 
             paymentTransactions.observe(payment.getId(), new LookupResult.Found(List.of(new PgTransaction(
-                KEY, ProviderOrderId.of(order.getId()), Money.of(6_000), TransactionStatus.SUCCESS))),
-                ObservationSource.LOOKUP, LATER.plusSeconds(60));
+                KEY, ProviderOrderId.of(order.getId()), Money.of(6_000), PgTransaction.Status.SUCCESS))),
+                PaymentDiscrepancy.Source.LOOKUP, LATER.plusSeconds(60));
 
             assertThat(storedOrder().getConfirmedAt()).isEqualTo(LATER);
         }
@@ -260,7 +259,7 @@ class PaymentObserveIntegrationTest {
         void restocksOnceUnderConcurrency() throws InterruptedException {
             observe(new CreateObservation.Accepted(KEY));
 
-            List<Throwable> failures = runConcurrently(10, () -> lookup(TransactionStatus.FAILED));
+            List<Throwable> failures = runConcurrently(10, () -> lookup(PgTransaction.Status.FAILED));
 
             assertThat(failures).isEmpty();
             assertThat(stock()).isEqualTo(Quantity.of(10));
@@ -277,7 +276,7 @@ class PaymentObserveIntegrationTest {
         void amountMismatch() {
             observe(new CreateObservation.Accepted(KEY));
 
-            Payment result = lookup(TransactionStatus.SUCCESS, 9_000);
+            Payment result = lookup(PgTransaction.Status.SUCCESS, 9_000);
 
             assertThat(result.getStatus()).isEqualTo(PaymentStatus.CONFLICT);
             assertThat(storedOrder().getStatus()).isEqualTo(OrderStatus.PENDING);
@@ -290,8 +289,8 @@ class PaymentObserveIntegrationTest {
         void recordsOnce() {
             observe(new CreateObservation.Accepted(KEY));
 
-            lookup(TransactionStatus.SUCCESS, 9_000);
-            lookup(TransactionStatus.SUCCESS, 9_000);
+            lookup(PgTransaction.Status.SUCCESS, 9_000);
+            lookup(PgTransaction.Status.SUCCESS, 9_000);
 
             assertThat(discrepancies()).isEqualTo(1);
         }
@@ -300,9 +299,9 @@ class PaymentObserveIntegrationTest {
         @Test
         void resultAfterSettled() {
             observe(new CreateObservation.Accepted(KEY));
-            lookup(TransactionStatus.SUCCESS);
+            lookup(PgTransaction.Status.SUCCESS);
 
-            Payment result = lookup(TransactionStatus.FAILED);
+            Payment result = lookup(PgTransaction.Status.FAILED);
 
             assertThat(result.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
             assertThat(storedOrder().getStatus()).isEqualTo(OrderStatus.CONFIRMED);

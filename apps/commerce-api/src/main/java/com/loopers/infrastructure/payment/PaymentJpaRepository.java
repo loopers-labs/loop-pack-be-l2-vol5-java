@@ -13,6 +13,8 @@ interface PaymentJpaRepository extends JpaRepository<PaymentEntity, Long> {
 
     Optional<PaymentEntity> findByOrderId(Long orderId);
 
+    Optional<PaymentEntity> findByProviderOrderId(String providerOrderId);
+
     @Query("select p.orderId from PaymentEntity p where p.id = :id")
     Optional<Long> findOrderIdById(Long id);
 

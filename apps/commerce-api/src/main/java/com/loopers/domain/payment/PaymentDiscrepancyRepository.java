@@ -4,5 +4,5 @@ import java.time.Instant;
 
 public interface PaymentDiscrepancyRepository {
 
-    void record(Long paymentId, PaymentDiscrepancy discrepancy, ObservationSource source, Instant observedAt);
+    void record(Long paymentId, PaymentDiscrepancy discrepancy, PaymentDiscrepancy.Source source, Instant observedAt);
 }

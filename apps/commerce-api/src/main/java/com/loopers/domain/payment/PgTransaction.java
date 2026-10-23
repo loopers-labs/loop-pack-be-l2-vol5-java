@@ -6,6 +6,12 @@ public record PgTransaction(
     TransactionKey transactionKey,
     ProviderOrderId providerOrderId,
     Money amount,
-    TransactionStatus status
+    Status status
 ) {
+
+    public enum Status {
+        PENDING,
+        SUCCESS,
+        FAILED
+    }
 }
