@@ -1,0 +1,8 @@
+body { font-family: -apple-system, "Apple SD Gothic Neo", sans-serif; max-width: 960px; margin: 24px auto; padding: 0 16px; color: #1f2937; }
+h1 { font-size: 22px; } h2 { font-size: 17px; margin-top: 28px; }
+nav a { margin-right: 12px; }
+button { margin: 4px 6px 4px 0; padding: 6px 10px; cursor: pointer; }
+input { padding: 4px 6px; width: 120px; }
+pre { background: #f3f4f6; padding: 10px; overflow-x: auto; font-size: 12px; }
+.hint { color: #6b7280; font-size: 13px; }
+#logs summary { font-family: ui-monospace, Menlo, monospace; font-size: 12px; white-space: pre; cursor: pointer; }

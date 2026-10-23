@@ -5,7 +5,6 @@ import com.loopers.point.application.port.out.PointGroupPort;
 import com.loopers.point.application.port.out.PointHistoryPort;
 import com.loopers.point.domain.PointGroup;
 import com.loopers.point.domain.PointHistory;
-import com.loopers.point.domain.PointUsage;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -43,6 +42,12 @@ class PointGroupPersistenceAdapterIntegrationTest {
         return pointGroupPort.save(PointGroup.charge(userId, Money.of(amount), chargedAt, VALIDITY));
     }
 
+    private void spentBySql(PointGroup group, long remaining) {
+        entityManager.createNativeQuery("UPDATE point_groups SET remaining = ? WHERE id = ?")
+            .setParameter(1, remaining).setParameter(2, group.getId())
+            .executeUpdate();
+    }
+
     private void flushAndClear() {
         entityManager.flush();
         entityManager.clear();
@@ -74,8 +79,7 @@ class PointGroupPersistenceAdapterIntegrationTest {
         PointGroup later = chargedAt(1L, 5_000, ZonedDateTime.of(2026, 3, 1, 0, 0, 0, 0, SEOUL));
         PointGroup earlier = chargedAt(1L, 5_000, ZonedDateTime.of(2026, 1, 1, 0, 0, 0, 0, SEOUL));
         PointGroup emptied = chargedAt(1L, 3_000, ZonedDateTime.of(2025, 1, 1, 0, 0, 0, 0, SEOUL));
-        emptied.use(Money.of(3_000), ZonedDateTime.of(2025, 6, 1, 0, 0, 0, 0, SEOUL));
-        pointGroupPort.save(emptied);
+        spentBySql(emptied, 0);  // W5부터 포인트로 결제하지 않는다. 이전 POINT 주문이 다 쓴 그룹을 SQL로 둔다 (C-2와 같은 방식)
         chargedAt(2L, 9_000, ZonedDateTime.of(2026, 1, 1, 0, 0, 0, 0, SEOUL));
         flushAndClear();
 
@@ -93,9 +97,13 @@ class PointGroupPersistenceAdapterIntegrationTest {
         ZonedDateTime chargedAt = ZonedDateTime.of(2026, 1, 1, 0, 0, 0, 0, SEOUL);
         PointGroup group = chargedAt(1L, 10_000, chargedAt);
         pointHistoryPort.save(PointHistory.charge(group, chargedAt));
-        group.use(Money.of(7_000), chargedAt.plusDays(1));
-        pointGroupPort.save(group);
-        pointHistoryPort.save(PointHistory.use(new PointUsage(group, Money.of(7_000)), 99L, chargedAt.plusDays(1)));
+        spentBySql(group, 3_000);
+        // W5부터 포인트로 결제하지 않는다. 이전 POINT 주문이 남긴 사용 이력(-7,000)을 SQL로 둔다 (C-2와 같은 방식).
+        entityManager.createNativeQuery(
+                "INSERT INTO point_histories (user_id, group_id, type, amount, order_id, occurred_at) VALUES (?, ?, 'USE', ?, ?, ?)")
+            .setParameter(1, 1L).setParameter(2, group.getId()).setParameter(3, -7_000L).setParameter(4, 99L)
+            .setParameter(5, chargedAt.plusDays(1).toLocalDateTime())
+            .executeUpdate();
         flushAndClear();
 
         // act

@@ -38,3 +38,10 @@ out/
 
 ### Kotlin ###
 .kotlin
+
+### Secrets (PG 키: Toss·PortOne) ###
+.env
+.env.*
+!.env.example
+**/application-secret*.yml
+**/application-secret*.yaml

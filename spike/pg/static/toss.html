@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>Toss 실험</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://js.tosspayments.com/v2/standard"></script>
+</head>
+<body>
+  <nav><a href="./">← 로그</a><a href="portone.html">PortOne V1</a></nav>
+  <h1>Toss 결제위젯</h1>
+
+  <section id="checkout">
+    <h2>1. 결제창 열기</h2>
+    금액 <input id="amount" type="number" value="1000">
+    <div id="payment-method"></div>
+    <div id="agreement"></div>
+    <button id="pay">결제하기</button>
+    <p class="hint">결제창에서 인증까지만 끝나면 successUrl로 돌아온다. 이 시점에는 아직 승인 전이다 (승인 API를 10분 안에 불러야 한다).</p>
+  </section>
+
+  <section id="after" hidden>
+    <h2>2. 돌아온 값 (승인 전)</h2>
+    <pre id="returned"></pre>
+
+    <h2>3. 승인(confirm) 실험</h2>
+    <p class="hint">버튼마다 서버가 Toss에 한 번만 보낸다. 자동 재시도는 없다.</p>
+    <button data-exp="normal">A. 정상 승인</button>
+    <button data-exp="lost">B. 응답 유실 흉내 (timeout <input id="timeoutMs" type="number" value="800">ms)</button>
+    <button data-exp="again">C. 같은 승인 다시</button>
+    <button data-exp="amount">D. 금액 +1로 승인</button>
+    <button data-exp="idem">E. Idempotency-Key 같게 두 번</button>
+    <button data-exp="lookup">F. orderId로 조회</button>
+    <pre id="result"></pre>
+  </section>
+
+  <h2>이벤트 로그</h2>
+  <div id="logs"></div>
+
+  <script src="common.js"></script>
+  <script>
+    const q = new URLSearchParams(location.search);
+    const back = location.origin + location.pathname;
+
+    if (q.get("paymentKey")) {
+      document.getElementById("checkout").hidden = true;
+      document.getElementById("after").hidden = false;
+      show("returned", Object.fromEntries(q));
+    } else if (q.get("code")) {
+      show("result", { 결제창_실패: Object.fromEntries(q) });
+      document.getElementById("after").hidden = false;
+    }
+
+    const base = () => ({
+      paymentKey: q.get("paymentKey"),
+      orderId: q.get("orderId"),
+      amount: Number(q.get("amount")),
+    });
+    const idemKey = newId("idem");
+
+    const experiments = {
+      normal: () => api("POST", "/api/toss/confirm", base()),
+      lost: async () => {
+        const timeoutMs = Number(document.getElementById("timeoutMs").value);
+        const confirm = await api("POST", "/api/toss/confirm", { ...base(), timeoutMs });
+        const lookup = await api("GET", `/api/toss/orders/${encodeURIComponent(base().orderId)}`);
+        return { confirm: confirm.response, 바로_조회: lookup.response };
+      },
+      again: () => api("POST", "/api/toss/confirm", base()),
+      amount: () => api("POST", "/api/toss/confirm", { ...base(), amount: base().amount + 1 }),
+      idem: async () => {
+        const first = await api("POST", "/api/toss/confirm", { ...base(), idempotencyKey: idemKey });
+        const second = await api("POST", "/api/toss/confirm", { ...base(), idempotencyKey: idemKey });
+        return { 첫번째: first.response, 두번째: second.response };
+      },
+      lookup: () => api("GET", `/api/toss/orders/${encodeURIComponent(base().orderId)}`),
+    };
+
+    document.querySelectorAll("button[data-exp]").forEach((b) =>
+      b.addEventListener("click", async (ev) => {
+        if (ev.target.tagName === "INPUT") return;
+        show("result", "요청 중…");
+        const r = await experiments[b.dataset.exp]();
+        show("result", r.response || r);
+        refreshLogs();
+      })
+    );
+
+    async function setupWidget() {
+      if (q.get("paymentKey")) return;
+      const config = await api("GET", "/api/config");
+      const tossPayments = TossPayments(config.tossClientKey);
+      const widgets = tossPayments.widgets({ customerKey: TossPayments.ANONYMOUS });
+      const amountInput = document.getElementById("amount");
+      await widgets.setAmount({ currency: "KRW", value: Number(amountInput.value) });
+      await Promise.all([
+        widgets.renderPaymentMethods({ selector: "#payment-method", variantKey: "DEFAULT" }),
+        widgets.renderAgreement({ selector: "#agreement", variantKey: "AGREEMENT" }),
+      ]);
+      amountInput.addEventListener("change", () =>
+        widgets.setAmount({ currency: "KRW", value: Number(amountInput.value) })
+      );
+      document.getElementById("pay").addEventListener("click", () =>
+        widgets.requestPayment({
+          orderId: newId("SPIKE-TOSS"),
+          orderName: "PG 관찰 실험",
+          successUrl: back,
+          failUrl: back,
+        })
+      );
+    }
+    setupWidget().catch((e) => show("result", "위젯 초기화 실패: " + e.message));
+  </script>
+</body>
+</html>

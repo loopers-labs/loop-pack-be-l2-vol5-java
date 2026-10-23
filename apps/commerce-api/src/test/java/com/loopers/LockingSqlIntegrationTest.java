@@ -6,6 +6,9 @@ import com.loopers.brand.domain.BrandModel;
 import com.loopers.common.domain.Money;
 import com.loopers.order.application.port.in.OrderCommandUseCase;
 import com.loopers.order.domain.OrderLines;
+import com.loopers.payment.application.port.in.PaymentDispatchUseCase;
+import com.loopers.payment.application.port.in.PaymentRequestCommand;
+import com.loopers.payment.application.port.in.PaymentRequestUseCase;
 import com.loopers.point.adapter.out.persistence.PointGroupJpaRepository;
 import com.loopers.point.application.port.in.PointCommandUseCase;
 import com.loopers.point.application.port.in.PointExpirationUseCase;
@@ -23,6 +26,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.time.Period;
 import java.time.ZonedDateTime;
@@ -30,11 +35,21 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+// W5: PG fixture 주소(또는 발송 mock) 때문에 이 클래스만 쓰는 컨텍스트가 생긴다. 다른 클래스가 재사용하지 않으므로 끝나면 닫아
+// DB 커넥션을 돌려준다 — 캐시된 컨텍스트마다 Hikari 풀을 잡아 로컬 MySQL max_connections(151)를 넘기지 않게.
+@DirtiesContext
 @SpringBootTest(properties = "spring.jpa.properties.hibernate.session_factory.statement_inspector=com.loopers.support.persistence.SqlRecorder")
 public class LockingSqlIntegrationTest {
 
     @Autowired
     private OrderCommandUseCase orderCommandUseCase;
+
+    @Autowired
+    private PaymentRequestUseCase paymentRequestUseCase;
+
+    /** W5: 확정(TX A)이 commit 뒤 다른 스레드에서 보내는 SQL(발송·결과 반영)이 기록에 섞이지 않도록 발송 입구만 바꾼다. */
+    @MockitoBean
+    private PaymentDispatchUseCase paymentDispatchUseCase;
 
     @Autowired
     private PointCommandUseCase pointCommandUseCase;
@@ -82,9 +97,11 @@ public class LockingSqlIntegrationTest {
         SqlRecorder.clear();
     }
 
-    @DisplayName("C-5·ADR-W3-03 주문 확정은 주문 → 상품 → 포인트 그룹 순서로 잠근다 (재고·잔액·같은 주문 중복 확정 보호)")
+    // W5 이전: 포인트 확정이 주문 → 상품 → 포인트 그룹 순서로 잠갔다. 이제 확정은 PG 결제 요청 TX A라 포인트 그룹을 잠그지 않고(C-1),
+    // 주문 → 상품(id 오름차순) 순서만 남는다. 상품은 판매 가능·단가·재고 확인(OrderConfirmPolicy)과 재고 선점에서 같은 순서로 두 번 잠근다.
+    @DisplayName("C-5·ADR-W3-03 주문 확정은 주문 → 상품 순서로 잠근다 (재고·같은 주문 중복 확정 보호). 상품은 id 오름차순이고, 포인트 그룹은 잠그지 않는다")
     @Test
-    void confirmLocksOrderThenProductsThenPointGroups() {
+    void confirmLocksOrderThenProducts() {
         // arrange
         pointCommandUseCase.charge(user.getId(), 10_000);
         Long orderId = orderCommandUseCase.create(user.getId(), List.of(
@@ -94,10 +111,13 @@ public class LockingSqlIntegrationTest {
         SqlRecorder.clear();
 
         // act
-        orderCommandUseCase.confirm(user.getId(), orderId);
+        paymentRequestUseCase.request(new PaymentRequestCommand(user.getId(), orderId, "attempt-1", "SAMSUNG", "1234-5678-9814-1451"));
 
         // assert
-        assertThat(SqlRecorder.lockedTables()).containsExactly("orders", "products", "point_groups");
+        assertThat(SqlRecorder.lockedTables()).containsExactly("orders", "products", "products");
+        assertThat(SqlRecorder.lockingStatements())
+            .filteredOn(sql -> sql.contains("from products"))
+            .allSatisfy(sql -> assertThat(sql).contains(".id in (").contains("order by"));
     }
 
     @DisplayName("C-5 관리자 상품 수정·재고 설정·삭제도 상품 행을 잠근다 (확정의 재고 차감을 덮어쓰지 않음)")
@@ -153,7 +173,7 @@ public class LockingSqlIntegrationTest {
         assertThat(SqlRecorder.lockedTables()).containsExactly("point_groups");
     }
 
-    @DisplayName("C-5 포인트 만료 배치도 그룹을 잠근다 (확정의 결제와 같은 그룹을 덮어쓰지 않음)")
+    @DisplayName("C-5 포인트 만료 배치도 그룹을 잠근다 (충전과 같은 그룹을 덮어쓰지 않음)")
     @Test
     void expirationLocksPointGroups() {
         // arrange

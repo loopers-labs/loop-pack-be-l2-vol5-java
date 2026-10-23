@@ -87,19 +87,6 @@ public class PointGroup extends BaseEntity {
     }
 
     /**
-     * PNT-06: 남은 금액 이하만 쓸 수 있다. 거절하면 남은 금액은 바뀌지 않는다.
-     */
-    public void use(Money usage, ZonedDateTime now) {
-        if (!isUsableAt(now)) {
-            throw new CoreException(ErrorType.CONFLICT, "만료된 포인트는 사용할 수 없습니다.");
-        }
-        if (usage.isGreaterThan(remaining)) {
-            throw new CoreException(ErrorType.CONFLICT, "남은 포인트보다 많이 사용할 수 없습니다.");
-        }
-        this.remaining = remaining.minus(usage);
-    }
-
-    /**
      * PNT-08: 만료 시각이 된 그룹의 남은 금액을 0으로 만들고, 만료된 금액을 돌려준다. 다시 실행해도 결과가 같다.
      */
     public Money expire(ZonedDateTime now) {
