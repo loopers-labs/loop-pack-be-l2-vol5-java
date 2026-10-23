@@ -1,5 +1,6 @@
 package com.loopers.domain.order;
 
+import com.loopers.application.order.OrderInfo;
 import com.loopers.application.order.OrderFacade;
 import com.loopers.domain.common.ListSort;
 import com.loopers.domain.common.PageCommand;
@@ -42,7 +43,7 @@ class AdminOrderQueryIntegrationTest {
         databaseCleanUp.truncateAllTables();
     }
 
-    private OrderModel order(UserModel user, ProductModel product, long quantity) {
+    private OrderInfo order(UserModel user, ProductModel product, long quantity) {
         return orderFacade.create(user.getId(), List.of(new OrderItemCommand(product.getId(), quantity)));
     }
 
@@ -55,16 +56,16 @@ class AdminOrderQueryIntegrationTest {
             UserModel first = userFixture.createUserWithPoint();
             UserModel second = userFixture.createUserWithPoint();
             ProductModel shoes = productFixture.createProduct("운동화", 10_000L, 100L);
-            OrderModel firstOrder = order(first, shoes, 1L);
-            OrderModel secondOrder = order(second, shoes, 2L);
+            OrderInfo firstOrder = order(first, shoes, 1L);
+            OrderInfo secondOrder = order(second, shoes, 2L);
 
-            PageResult<OrderModel> result = orderFacade.getAllOrders(PageCommand.of(null, null), ListSort.LATEST);
+            PageResult<OrderInfo> result = orderFacade.getAllOrders(PageCommand.of(null, null), ListSort.LATEST);
 
             assertAll(
                 () -> assertThat(result.totalElements()).isEqualTo(2L),
-                () -> assertThat(result.items()).extracting(OrderModel::getId)
-                    .containsExactly(secondOrder.getId(), firstOrder.getId()),
-                () -> assertThat(result.items()).extracting(OrderModel::getUserId)
+                () -> assertThat(result.items()).extracting(OrderInfo::id)
+                    .containsExactly(secondOrder.id(), firstOrder.id()),
+                () -> assertThat(result.items()).extracting(OrderInfo::userId)
                     .containsExactly(second.getId(), first.getId())
             );
         }
@@ -74,17 +75,17 @@ class AdminOrderQueryIntegrationTest {
         void returnsOldestPage() {
             UserModel user = userFixture.createUserWithPoint();
             ProductModel shoes = productFixture.createProduct("운동화", 10_000L, 100L);
-            OrderModel first = order(user, shoes, 1L);
-            OrderModel second = order(user, shoes, 2L);
+            OrderInfo first = order(user, shoes, 1L);
+            OrderInfo second = order(user, shoes, 2L);
             order(user, shoes, 3L);
 
-            PageResult<OrderModel> result = orderFacade.getAllOrders(PageCommand.of(0, 2), ListSort.OLDEST);
+            PageResult<OrderInfo> result = orderFacade.getAllOrders(PageCommand.of(0, 2), ListSort.OLDEST);
 
             assertAll(
                 () -> assertThat(result.totalElements()).isEqualTo(3L),
                 () -> assertThat(result.totalPages()).isEqualTo(2),
-                () -> assertThat(result.items()).extracting(OrderModel::getId)
-                    .containsExactly(first.getId(), second.getId())
+                () -> assertThat(result.items()).extracting(OrderInfo::id)
+                    .containsExactly(first.id(), second.id())
             );
         }
 
@@ -99,15 +100,15 @@ class AdminOrderQueryIntegrationTest {
                 new OrderItemCommand(cap.getId(), 2L)
             ));
 
-            PageResult<OrderModel> result = orderFacade.getAllOrders(PageCommand.of(null, null), ListSort.LATEST);
+            PageResult<OrderInfo> result = orderFacade.getAllOrders(PageCommand.of(null, null), ListSort.LATEST);
 
-            assertThat(result.items().get(0).getItems()).hasSize(2);
+            assertThat(result.items().get(0).items()).hasSize(2);
         }
 
         @DisplayName("주문이 없으면 빈 페이지를 반환한다.")
         @Test
         void returnsEmptyPage() {
-            PageResult<OrderModel> result = orderFacade.getAllOrders(PageCommand.of(null, null), ListSort.LATEST);
+            PageResult<OrderInfo> result = orderFacade.getAllOrders(PageCommand.of(null, null), ListSort.LATEST);
 
             assertAll(
                 () -> assertThat(result.items()).isEmpty(),
@@ -124,15 +125,15 @@ class AdminOrderQueryIntegrationTest {
         void returnsOrderOfAnyUser() {
             UserModel user = userFixture.createUserWithPoint();
             ProductModel shoes = productFixture.createProduct("운동화", 10_000L, 100L);
-            OrderModel created = order(user, shoes, 2L);
+            OrderInfo created = order(user, shoes, 2L);
 
-            OrderModel found = orderFacade.getAnyOrder(created.getId());
+            OrderInfo found = orderFacade.getAnyOrder(created.id());
 
             assertAll(
-                () -> assertThat(found.getId()).isEqualTo(created.getId()),
-                () -> assertThat(found.getUserId()).isEqualTo(user.getId()),
-                () -> assertThat(found.getItems()).hasSize(1),
-                () -> assertThat(found.getStatus()).isEqualTo(OrderStatus.DRAFT)
+                () -> assertThat(found.id()).isEqualTo(created.id()),
+                () -> assertThat(found.userId()).isEqualTo(user.getId()),
+                () -> assertThat(found.items()).hasSize(1),
+                () -> assertThat(found.status()).isEqualTo(OrderStatus.DRAFT.name())
             );
         }
 

@@ -11,7 +11,10 @@ public interface OrderV1ApiSpec {
     ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> create(
         Long userId, OrderV1Dto.OrderCreateRequest request);
 
-    ApiResponse<OrderV1Dto.OrderResponse> confirm(Long userId, Long orderId);
+    ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> confirm(
+        Long userId, Long orderId, OrderV1Dto.OrderConfirmRequest request);
+
+    ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> reconcile(Long userId, Long orderId);
 
     ApiResponse<PageResponse<OrderV1Dto.OrderResponse>> getOrders(
         Long userId, Integer page, Integer size, String sort);

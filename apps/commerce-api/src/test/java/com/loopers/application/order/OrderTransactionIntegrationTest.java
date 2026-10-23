@@ -1,182 +1,186 @@
 package com.loopers.application.order;
 
-import com.loopers.application.point.PointFacade;
+import com.loopers.application.payment.ControllableProbe;
+import com.loopers.application.payment.PaymentTransactionProbe;
+import com.loopers.application.payment.PaymentTxTestConfig;
+import com.loopers.application.payment.PaymentReconcileFacade;
+import com.loopers.application.payment.PaymentObservationApplier;
+import com.loopers.application.payment.PaymentTransactionService;
 import com.loopers.domain.order.OrderItemCommand;
-import com.loopers.domain.order.OrderModel;
-import com.loopers.domain.order.OrderRepository;
-import com.loopers.domain.order.OrderStatus;
+import com.loopers.domain.payment.PaymentGateway;
+import com.loopers.domain.payment.PaymentObservation;
 import com.loopers.domain.product.ProductModel;
-import com.loopers.domain.user.UserModel;
-import com.loopers.fixture.OrderStateReader;
-import com.loopers.fixture.OrderStateReader.ConfirmState;
+import com.loopers.fixture.PgCommands;
+import com.loopers.fixture.PgTestSupport;
 import com.loopers.fixture.ProductFixture;
 import com.loopers.fixture.UserFixture;
+import com.loopers.fixture.pg.PaymentStatus;
+import com.loopers.fixture.pg.CreateOutcome;
+import com.loopers.fixture.pg.PgOperation;
+import com.loopers.fixture.pg.ResponsePlan;
 import com.loopers.utils.DatabaseCleanUp;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.jupiter.api.Assertions.assertAll;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/**
- * 주문 확정의 실제 변경 SQL 이 전송된 뒤 마지막 Order 저장 경계에서 실패하면 전체가 rollback 되는지 확인한다.
- * 테스트 전체를 부모 트랜잭션으로 감싸지 않고, 준비 데이터를 먼저 commit 한 뒤 실제 OrderConfirmFacade 프록시를 호출한다.
- * 운영 코드에는 flush·실패 분기를 넣지 않고, 이 클래스의 OrderRepository spy 에서만 flush 후 예외를 던진다.
- */
-@DisplayName("주문 확정은 실제 변경 SQL 이 flush 된 뒤 실패해도 Order·Point·Product·History 변경을 모두 rollback 한다.")
 @SpringBootTest
 @AutoConfigureMockMvc
-class OrderTransactionIntegrationTest {
+@Import(PaymentTxTestConfig.class)
+class OrderTransactionIntegrationTest extends PgTestSupport {
 
-    private static final String INJECTED_FAILURE = "flush 이후 마지막 Order 저장 경계에서 주입한 실패";
+    @Autowired private OrderConfirmFacade confirm;
+    @Autowired private OrderFacade orders;
+    @Autowired private PaymentReconcileFacade reconcile;
+    @Autowired private ProductFixture products;
+    @Autowired private UserFixture users;
+    @Autowired private ControllableProbe probe;
+    @Autowired private JdbcTemplate jdbc;
+    @Autowired private MockMvc mvc;
+    @Autowired private DatabaseCleanUp cleanup;
+    @Autowired private PaymentTransactionService transactions;
+    @Autowired private PaymentGateway gateway;
+    @Autowired private PaymentObservationApplier applier;
+    private Long user;
+    private Long order;
+    private ProductModel product;
 
-    @MockitoSpyBean
-    private OrderRepository orderRepository;
-
-    @Autowired
-    private OrderConfirmFacade orderConfirmFacade;
-    @Autowired
-    private OrderFacade orderFacade;
-    @Autowired
-    private PointFacade pointFacade;
-    @Autowired
-    private UserFixture userFixture;
-    @Autowired
-    private ProductFixture productFixture;
-    @Autowired
-    private OrderStateReader orderStateReader;
-    @PersistenceContext
-    private EntityManager entityManager;
-    @Autowired
-    private MockMvc mockMvc;
-    @Autowired
-    private DatabaseCleanUp databaseCleanUp;
+    @BeforeEach
+    void prepare() {
+        user = users.createUserWithoutPoint().getId();
+        product = products.createProduct("상품", 2000L, 5L);
+        order = orders.create(user, List.of(new OrderItemCommand(product.getId(), 2L))).id();
+    }
 
     @AfterEach
-    void tearDown() {
-        databaseCleanUp.truncateAllTables();
+    void clean() {
+        probe.clear();
+        awaitPgIdle();
+        cleanup.truncateAllTables();
     }
 
-    /** 실패 주입 시점에 현재 트랜잭션에서 읽은 DB 값: [주문 상태, 포인트 사용액, 결제액, 잔액, 재고들, 주문 원인 History 수]. */
-    private List<Object> readInCurrentTransaction(Long orderId, Long userId, List<Long> productIds) {
-        Object[] order = (Object[]) entityManager.createNativeQuery(
-                "SELECT status, used_point_amount, payment_amount FROM orders WHERE id = :orderId")
-            .setParameter("orderId", orderId)
-            .getSingleResult();
-        Number balance = (Number) entityManager.createNativeQuery(
-                "SELECT balance FROM point WHERE user_id = :userId")
-            .setParameter("userId", userId)
-            .getSingleResult();
-        List<Long> stocks = productIds.stream()
-            .map(productId -> ((Number) entityManager.createNativeQuery(
-                    "SELECT stock_quantity FROM product WHERE id = :productId")
-                .setParameter("productId", productId)
-                .getSingleResult()).longValue())
-            .toList();
-        Number stockHistories = (Number) entityManager.createNativeQuery(
-                "SELECT COUNT(*) FROM stock_history WHERE order_id = :orderId AND cause = 'ORDER_DEDUCTION'")
-            .setParameter("orderId", orderId)
-            .getSingleResult();
-        Number pointHistories = (Number) entityManager.createNativeQuery(
-                "SELECT COUNT(*) FROM point_history WHERE order_id = :orderId AND cause = 'ORDER_USE'")
-            .setParameter("orderId", orderId)
-            .getSingleResult();
-        return Arrays.asList(order[0], toLong(order[1]), toLong(order[2]), balance.longValue(), stocks,
-            stockHistories.longValue(), pointHistories.longValue());
+    private long stock() {
+        return jdbc.queryForObject("SELECT stock_quantity FROM product WHERE id = ?", Long.class, product.getId());
     }
 
-    private static Long toLong(Object value) {
-        return value == null ? null : ((Number) value).longValue();
-    }
-
-    @DisplayName("마지막 save 진입에서 flush 로 차감·확정·History SQL 이 전송된 뒤 예외가 나면, 예외를 전파하고 새 조회에서 모든 상태가 확정 전과 같다.")
     @Test
     void rollsBackEverythingWhenLastOrderSaveFailsAfterFlush() {
-        UserModel user = userFixture.createUserWithPoint();
-        pointFacade.charge(user.getId(), 10_000L);
-        ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
-        ProductModel pants = productFixture.createProduct("바지", 3_000L, 4L);
-        OrderModel order = orderFacade.create(user.getId(), List.of(
-            new OrderItemCommand(shirt.getId(), 2L),
-            new OrderItemCommand(pants.getId(), 1L)
-        ));
-        List<Long> productIds = List.of(shirt.getId(), pants.getId());
-        ConfirmState before = orderStateReader.confirmState(order.getId(), user.getId(), productIds);
-
-        AtomicBoolean injectedInTransaction = new AtomicBoolean(false);
-        AtomicBoolean flushCompleted = new AtomicBoolean(false);
-        AtomicReference<List<Object>> seenAtInjection = new AtomicReference<>();
-        doAnswer(invocation -> {
-            injectedInTransaction.set(TransactionSynchronizationManager.isActualTransactionActive());
-            entityManager.flush();
-            flushCompleted.set(true);
-            seenAtInjection.set(readInCurrentTransaction(order.getId(), user.getId(), productIds));
-            throw new IllegalStateException(INJECTED_FAILURE);
-        }).when(orderRepository).save(any(OrderModel.class));
-
-        assertThatThrownBy(() -> orderConfirmFacade.confirm(user.getId(), order.getId()))
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessage(INJECTED_FAILURE);
-
-        ConfirmState after = orderStateReader.confirmState(order.getId(), user.getId(), productIds);
-        assertAll(
-            () -> assertThat(injectedInTransaction).isTrue(),
-            () -> assertThat(flushCompleted).as("flush 가 실패 없이 끝난 뒤 주입했다").isTrue(),
-            () -> assertThat(seenAtInjection.get()).as("주입 시점 현재 트랜잭션의 DB 값")
-                .isEqualTo(Arrays.asList("CONFIRMED", 7_000L, 7_000L, 3_000L, List.of(3L, 3L), 2L, 1L)),
-            () -> assertThat(after).isEqualTo(before),
-            () -> assertThat(after.order()).isEqualTo(Arrays.asList(user.getId(),
-                OrderStatus.DRAFT, 7_000L, null, null, List.of(
-                    List.of(shirt.getId(), 2L, 2_000L), List.of(pants.getId(), 1L, 3_000L)))),
-            () -> assertThat(after.balance()).isEqualTo(10_000L),
-            () -> assertThat(after.stocks()).containsExactly(5L, 4L),
-            () -> assertThat(after.stockHistories()).isEmpty(),
-            () -> assertThat(after.pointHistories()).hasSize(1)
-        );
+        probe.on(PaymentTransactionProbe.Point.BEFORE_COMMIT, "beginConfirmation", order, () -> {
+            assertThat(stock()).isEqualTo(3L);
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM payment", Long.class)).isEqualTo(1);
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM stock_history", Long.class)).isEqualTo(1);
+            throw new IllegalStateException("SQL 후 TX A 실패");
+        });
+        assertThatThrownBy(() -> confirm.confirm(user, order, PgCommands.forOrder(order)))
+            .hasMessage("SQL 후 TX A 실패");
+        assertThat(orders.getOrder(user, order).status()).isEqualTo("DRAFT");
+        assertThat(stock()).isEqualTo(5L);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM payment", Long.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM stock_history", Long.class)).isZero();
+        assertThat(pg.state().counts().createReceived()).isZero();
     }
 
-    /**
-     * HTTP 계층의 기술 오류 응답 연결만 확인한다. SQL 이후 rollback 의 증거는 위 Facade 테스트가 맡는다.
-     */
-    @DisplayName("확정 중 업무 오류가 아닌 기술 예외가 나면 HTTP 500 Internal Server Error 로 응답하고 주문·잔액·재고·이력을 바꾸지 않는다.")
     @Test
     void respondsInternalServerErrorOnTechnicalFailure() throws Exception {
-        UserModel user = userFixture.createUserWithPoint();
-        pointFacade.charge(user.getId(), 10_000L);
-        ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
-        OrderModel order = orderFacade.create(user.getId(), List.of(new OrderItemCommand(shirt.getId(), 2L)));
-        List<Long> productIds = List.of(shirt.getId());
-        ConfirmState before = orderStateReader.confirmState(order.getId(), user.getId(), productIds);
-        doThrow(new IllegalStateException(INJECTED_FAILURE)).when(orderRepository).save(any(OrderModel.class));
-
-        mockMvc.perform(post("/api/v1/orders/" + order.getId() + "/confirm")
-                .header("X-USER-ID", String.valueOf(user.getId())))
+        success(order);
+        probe.on(PaymentTransactionProbe.Point.BEFORE_COMMIT, "applyObservation", order, () -> {
+            assertThat(jdbc.queryForObject("SELECT status FROM orders WHERE id = ?", String.class, order))
+                .isEqualTo("CONFIRMED");
+            assertThat(jdbc.queryForObject("SELECT status FROM payment WHERE order_id = ?", String.class, order))
+                .isEqualTo("SUCCESS");
+            throw new IllegalStateException("SQL 후 성공 TX B 실패");
+        });
+        String body = "{\"paymentAttemptKey\":\"" + PgCommands.forOrder(order).paymentAttemptKey()
+            + "\",\"cardType\":\"TEST\",\"cardNo\":\"0000-0000-0000-0000\"}";
+        mvc.perform(post("/api/v1/orders/" + order + "/confirm")
+                .header("X-USER-ID", user).contentType(MediaType.APPLICATION_JSON).content(body))
             .andExpect(status().isInternalServerError())
-            .andExpect(jsonPath("$.meta.result").value("FAIL"))
-            .andExpect(jsonPath("$.meta.errorCode").value("Internal Server Error"))
-            .andExpect(jsonPath("$.data").doesNotExist());
+            .andExpect(jsonPath("$.meta.errorCode").value("Internal Server Error"));
+        assertThat(orders.getOrder(user, order).status()).isEqualTo("PAYMENT_PENDING");
+        assertThat(jdbc.queryForMap("SELECT status, verification_status FROM payment WHERE order_id = ?", order))
+            .containsEntry("status", "UNKNOWN").containsEntry("verification_status", "NOT_CHECKED");
+        assertThat(stock()).isEqualTo(3L);
+        assertThat(pg.state().transactions()).singleElement().satisfies(transaction ->
+            assertThat(transaction.status()).isEqualTo(PaymentStatus.SUCCESS));
+        String transactionKey = pg.state().transactions().getFirst().transactionKey();
+        probe.clear();
+        assertThat(reconcile.reconcile(user, order).order().status()).isEqualTo("CONFIRMED");
+        assertRecoveredSuccess(transactionKey);
+        assertThat(reconcile.reconcile(user, order).order().status()).isEqualTo("CONFIRMED");
+        assertRecoveredSuccess(transactionKey);
+        assertThat(pg.state().counts().createReceived()).isEqualTo(1);
+        assertThat(pg.state().counts().lookupByOrderReceived()).isEqualTo(1);
+        assertThat(pg.state().counts().lookupByKeyReceived()).isEqualTo(1);
+    }
 
-        assertThat(orderStateReader.confirmState(order.getId(), user.getId(), productIds)).isEqualTo(before);
+    private void assertRecoveredSuccess(String transactionKey) {
+        assertThat(stock()).isEqualTo(3);
+        assertThat(jdbc.queryForMap("SELECT transaction_key, status FROM payment WHERE order_id = ?", order))
+            .containsEntry("transaction_key", transactionKey).containsEntry("status", "SUCCESS");
+        assertThat(jdbc.queryForMap("SELECT point_amount, paid_amount FROM orders WHERE id = ?", order))
+            .containsEntry("point_amount", 0L).containsEntry("paid_amount", 4000L);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM stock_history WHERE order_id = ? AND cause = 'ORDER_RESERVATION'",
+            Long.class, order)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM stock_history WHERE order_id = ? AND cause = 'ORDER_RELEASE'",
+            Long.class, order)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM point_history WHERE cause = 'ORDER_USE'", Long.class)).isZero();
+    }
+
+    @Test
+    void applyingSameExactRejectionTwiceReleasesReservationOnlyOnce() {
+        var begin = transactions.beginConfirmation(user, order, PgCommands.forOrder(order));
+        pg.enqueuePlan(PgOperation.CREATE, begin.request().providerOrderId(), ResponsePlan.outcome(CreateOutcome.REJECT_BEFORE_CREATE));
+        var rejection = gateway.create(begin.request());
+        assertThat(rejection).isInstanceOf(PaymentObservation.RejectedNoEffect.class);
+
+        assertThat(applier.apply(begin.token(), rejection).order().status()).isEqualTo("PAYMENT_FAILED");
+        assertThat(applier.apply(begin.token(), rejection).order().status()).isEqualTo("PAYMENT_FAILED");
+
+        assertThat(stock()).isEqualTo(5);
+        assertThat(jdbc.queryForMap("SELECT status, failure_kind, transaction_key FROM payment WHERE order_id = ?", order))
+            .containsEntry("status", "FAILED").containsEntry("failure_kind", "REJECTED_NO_EFFECT").containsEntry("transaction_key", null);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM stock_history WHERE order_id = ? AND cause = 'ORDER_RELEASE'",
+            Long.class, order)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM stock_history WHERE order_id = ? AND cause = 'ORDER_RESERVATION'",
+            Long.class, order)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM point_history WHERE cause = 'ORDER_USE'", Long.class)).isZero();
+        assertThat(pg.state().transactions()).isEmpty();
+        assertThat(pg.state().counts().createReceived()).isEqualTo(1);
+    }
+
+    @Test
+    void failureReleaseSqlRollbackDoesNotUndoCommittedReservation() {
+        confirm.confirm(user, order, PgCommands.forOrder(order));
+        String key = jdbc.queryForObject("SELECT transaction_key FROM payment WHERE order_id = ?", String.class, order);
+        pg.setStatus(key, PaymentStatus.FAILED);
+        probe.on(PaymentTransactionProbe.Point.BEFORE_COMMIT, "applyObservation", order, () -> {
+            assertThat(stock()).isEqualTo(5L);
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM stock_history WHERE cause = 'ORDER_RELEASE'", Long.class))
+                .isEqualTo(1);
+            throw new IllegalStateException("SQL 후 실패 반환 TX B 실패");
+        });
+        assertThatThrownBy(() -> reconcile.reconcile(user, order)).hasMessage("SQL 후 실패 반환 TX B 실패");
+        assertThat(stock()).isEqualTo(3L);
+        assertThat(orders.getOrder(user, order).payment().status()).isEqualTo("PENDING");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM stock_history WHERE cause = 'ORDER_RELEASE'", Long.class)).isZero();
+        probe.clear();
+        assertThat(reconcile.reconcile(user, order).order().status()).isEqualTo("PAYMENT_FAILED");
+        assertThat(reconcile.reconcile(user, order).order().status()).isEqualTo("PAYMENT_FAILED");
+        assertThat(stock()).isEqualTo(5L);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM stock_history WHERE cause = 'ORDER_RELEASE'", Long.class)).isEqualTo(1);
     }
 }

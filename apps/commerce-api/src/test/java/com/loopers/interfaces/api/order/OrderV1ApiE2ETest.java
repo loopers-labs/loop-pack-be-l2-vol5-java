@@ -1,7 +1,10 @@
 package com.loopers.interfaces.api.order;
 
+import com.loopers.fixture.PastPointOrderFixture;
+import com.loopers.fixture.PgCommands;
+import com.loopers.fixture.PgTestSupport;
+import com.loopers.application.order.OrderInfo;
 import com.loopers.domain.order.OrderItemCommand;
-import com.loopers.domain.order.OrderModel;
 import com.loopers.application.order.OrderFacade;
 import com.loopers.domain.order.OrderStatus;
 import com.loopers.application.point.PointFacade;
@@ -39,7 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 
 @DisplayName("주문 API 는 주문 생성·확정과 내 주문 조회를 제공한다.")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-class OrderV1ApiE2ETest {
+class OrderV1ApiE2ETest extends PgTestSupport {
 
     private static final String ENDPOINT = "/api/v1/orders";
 
@@ -47,6 +50,9 @@ class OrderV1ApiE2ETest {
         new ParameterizedTypeReference<>() {};
     private static final ParameterizedTypeReference<ApiResponse<PageResponse<OrderV1Dto.OrderResponse>>> PAGE_TYPE =
         new ParameterizedTypeReference<>() {};
+
+    @Autowired
+    private PastPointOrderFixture pastPoints;
 
     @Autowired
     private TestRestTemplate testRestTemplate;
@@ -76,6 +82,7 @@ class OrderV1ApiE2ETest {
 
     private HttpEntity<Object> request(Object body, Long userId) {
         HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
         if (userId != null) {
             headers.set("X-USER-ID", String.valueOf(userId));
         }
@@ -108,9 +115,9 @@ class OrderV1ApiE2ETest {
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED),
                 () -> assertThat(body.status()).isEqualTo("DRAFT"),
-                () -> assertThat(body.orderTotal()).isEqualTo(7_000L),
-                () -> assertThat(body.usedPointAmount()).isNull(),
-                () -> assertThat(body.paymentAmount()).isNull(),
+                () -> assertThat(body.totalAmount()).isEqualTo(7_000L),
+                () -> assertThat(body.pointAmount()).isNull(),
+                () -> assertThat(body.paidAmount()).isNull(),
                 () -> assertThat(body.items()).hasSize(2),
                 () -> assertThat(orderJpaRepository.findById(body.id()).orElseThrow().getStatus())
                     .isEqualTo(OrderStatus.DRAFT),
@@ -183,56 +190,58 @@ class OrderV1ApiE2ETest {
     @DisplayName("POST /api/v1/orders/{orderId}/confirm")
     @Nested
     class Confirm {
-        @DisplayName("본인의 DRAFT 주문을 확정해 재고·포인트를 차감하고 CONFIRMED 와 결제 정보를 반환한다.")
+        @DisplayName("본인의 DRAFT를 PG로 결제하고 포인트를 보존한다.")
         @Test
         void confirmsOrder() {
             UserModel user = userFixture.createUserWithPoint();
             pointFacade.charge(user.getId(), 10_000L);
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
             ProductModel pants = productFixture.createProduct("바지", 3_000L, 4L);
-            OrderModel order = orderFacade.create(user.getId(), List.of(
+            OrderInfo order = orderFacade.create(user.getId(), List.of(
                 new OrderItemCommand(shirt.getId(), 2L), new OrderItemCommand(pants.getId(), 1L)));
 
+            success(order.id());
             ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> response = testRestTemplate.exchange(
-                ENDPOINT + "/" + order.getId() + "/confirm", HttpMethod.POST,
-                request(null, user.getId()), ORDER_TYPE);
+                ENDPOINT + "/" + order.id() + "/confirm", HttpMethod.POST,
+                request(PgCommands.forOrder(order.id()), user.getId()), ORDER_TYPE);
 
             OrderV1Dto.OrderResponse body = response.getBody().data();
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK),
                 () -> assertThat(body.status()).isEqualTo("CONFIRMED"),
-                () -> assertThat(body.orderTotal()).isEqualTo(7_000L),
-                () -> assertThat(body.usedPointAmount()).isEqualTo(7_000L),
-                () -> assertThat(body.paymentAmount()).isEqualTo(7_000L),
+                () -> assertThat(body.totalAmount()).isEqualTo(7_000L),
+                () -> assertThat(body.pointAmount()).isZero(),
+                () -> assertThat(body.paidAmount()).isEqualTo(7_000L),
                 () -> assertThat(pointJpaRepository.findByUserId(user.getId()).orElseThrow().getBalance())
-                    .isEqualTo(3_000L),
+                    .isEqualTo(10_000L),
                 () -> assertThat(productJpaRepository.findById(shirt.getId()).orElseThrow().getStockQuantity())
                     .isEqualTo(3L)
             );
         }
 
-        @DisplayName("포인트가 부족하면 409 INSUFFICIENT_POINT 로 거절하고 상태를 유지한다.")
+        @DisplayName("포인트가 부족해도 PG 결제는 성공하고 잔액은 유지한다.")
         @Test
-        void rejectsInsufficientPoint() {
+        void allowsInsufficientPointBalance() {
             UserModel user = userFixture.createUserWithPoint();
             pointFacade.charge(user.getId(), 1_000L);
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
-            OrderModel order = orderFacade.create(user.getId(),
+            OrderInfo order = orderFacade.create(user.getId(),
                 List.of(new OrderItemCommand(shirt.getId(), 2L)));
 
+            success(order.id());
             ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> response = testRestTemplate.exchange(
-                ENDPOINT + "/" + order.getId() + "/confirm", HttpMethod.POST,
-                request(null, user.getId()), ORDER_TYPE);
+                ENDPOINT + "/" + order.id() + "/confirm", HttpMethod.POST,
+                request(PgCommands.forOrder(order.id()), user.getId()), ORDER_TYPE);
 
             assertAll(
-                () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT),
-                () -> assertThat(response.getBody().meta().errorCode()).isEqualTo("INSUFFICIENT_POINT"),
-                () -> assertThat(orderJpaRepository.findById(order.getId()).orElseThrow().getStatus())
-                    .isEqualTo(OrderStatus.DRAFT),
+                () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK),
+                () -> assertThat(response.getBody().data().payment().status()).isEqualTo("SUCCESS"),
+                () -> assertThat(orderJpaRepository.findById(order.id()).orElseThrow().getStatus())
+                    .isEqualTo(OrderStatus.CONFIRMED),
                 () -> assertThat(pointJpaRepository.findByUserId(user.getId()).orElseThrow().getBalance())
                     .isEqualTo(1_000L),
                 () -> assertThat(productJpaRepository.findById(shirt.getId()).orElseThrow().getStockQuantity())
-                    .isEqualTo(5L)
+                    .isEqualTo(3L)
             );
         }
 
@@ -242,13 +251,15 @@ class OrderV1ApiE2ETest {
             UserModel user = userFixture.createUserWithPoint();
             pointFacade.charge(user.getId(), 100_000L);
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 1L);
-            OrderModel order = orderFacade.create(user.getId(),
+            OrderInfo order = orderFacade.create(user.getId(),
                 List.of(new OrderItemCommand(shirt.getId(), 2L)));
 
             ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> response = testRestTemplate.exchange(
-                ENDPOINT + "/" + order.getId() + "/confirm", HttpMethod.POST,
-                request(null, user.getId()), ORDER_TYPE);
+                ENDPOINT + "/" + order.id() + "/confirm", HttpMethod.POST,
+                request(PgCommands.forOrder(order.id()), user.getId()), ORDER_TYPE);
 
+            assertThat(pg.state().counts().createReceived()).isZero();
+            assertThat(pg.state().transactions()).isEmpty();
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT),
                 () -> assertThat(response.getBody().meta().errorCode()).isEqualTo("INSUFFICIENT_STOCK"),
@@ -259,20 +270,19 @@ class OrderV1ApiE2ETest {
             );
         }
 
-        @DisplayName("이미 확정한 주문은 409 ORDER_NOT_CONFIRMABLE 로 거절한다.")
+        @DisplayName("과거 POINT 확정 주문의 재결제는 ORDER_NOT_CONFIRMABLE로 거절한다.")
         @Test
         void rejectsAlreadyConfirmed() {
             UserModel user = userFixture.createUserWithPoint();
             pointFacade.charge(user.getId(), 10_000L);
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
-            OrderModel order = orderFacade.create(user.getId(),
+            OrderInfo order = orderFacade.create(user.getId(),
                 List.of(new OrderItemCommand(shirt.getId(), 2L)));
-            testRestTemplate.exchange(ENDPOINT + "/" + order.getId() + "/confirm", HttpMethod.POST,
-                request(null, user.getId()), ORDER_TYPE);
+            pastPoints.confirm(user.getId(), order.id());
 
             ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> response = testRestTemplate.exchange(
-                ENDPOINT + "/" + order.getId() + "/confirm", HttpMethod.POST,
-                request(null, user.getId()), ORDER_TYPE);
+                ENDPOINT + "/" + order.id() + "/confirm", HttpMethod.POST,
+                request(PgCommands.forOrder(order.id()), user.getId()), ORDER_TYPE);
 
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT),
@@ -289,12 +299,12 @@ class OrderV1ApiE2ETest {
             UserModel other = userFixture.createUserWithPoint();
             pointFacade.charge(other.getId(), 10_000L);
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
-            OrderModel order = orderFacade.create(owner.getId(),
+            OrderInfo order = orderFacade.create(owner.getId(),
                 List.of(new OrderItemCommand(shirt.getId(), 2L)));
 
             ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> response = testRestTemplate.exchange(
-                ENDPOINT + "/" + order.getId() + "/confirm", HttpMethod.POST,
-                request(null, other.getId()), ORDER_TYPE);
+                ENDPOINT + "/" + order.id() + "/confirm", HttpMethod.POST,
+                request(PgCommands.forOrder(order.id()), other.getId()), ORDER_TYPE);
 
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND),
@@ -313,7 +323,7 @@ class OrderV1ApiE2ETest {
             ConfirmState before = orderStateReader.confirmState(999_999L, user.getId(), List.of(shirt.getId()));
 
             ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> response = testRestTemplate.exchange(
-                ENDPOINT + "/999999/confirm", HttpMethod.POST, request(null, user.getId()), ORDER_TYPE);
+                ENDPOINT + "/999999/confirm", HttpMethod.POST, request(PgCommands.forOrder(999999L), user.getId()), ORDER_TYPE);
 
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND),
@@ -329,19 +339,19 @@ class OrderV1ApiE2ETest {
             UserModel user = userFixture.createUserWithPoint();
             pointFacade.charge(user.getId(), 10_000L);
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
-            OrderModel order = orderFacade.create(user.getId(), List.of(new OrderItemCommand(shirt.getId(), 2L)));
+            OrderInfo order = orderFacade.create(user.getId(), List.of(new OrderItemCommand(shirt.getId(), 2L)));
             productFixture.deleteProduct(shirt.getId());
-            ConfirmState before = orderStateReader.confirmState(order.getId(), user.getId(), List.of(shirt.getId()));
+            ConfirmState before = orderStateReader.confirmState(order.id(), user.getId(), List.of(shirt.getId()));
 
             ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> response = testRestTemplate.exchange(
-                ENDPOINT + "/" + order.getId() + "/confirm", HttpMethod.POST,
-                request(null, user.getId()), ORDER_TYPE);
+                ENDPOINT + "/" + order.id() + "/confirm", HttpMethod.POST,
+                request(PgCommands.forOrder(order.id()), user.getId()), ORDER_TYPE);
 
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND),
                 () -> assertThat(response.getBody().meta().errorCode()).isEqualTo("PRODUCT_NOT_FOUND"),
                 () -> assertThat(before.order().get(1)).isEqualTo(OrderStatus.DRAFT),
-                () -> assertThat(orderStateReader.confirmState(order.getId(), user.getId(), List.of(shirt.getId())))
+                () -> assertThat(orderStateReader.confirmState(order.id(), user.getId(), List.of(shirt.getId())))
                     .isEqualTo(before)
             );
         }
@@ -411,9 +421,9 @@ class OrderV1ApiE2ETest {
         void returnsOldestFirstPage() {
             UserModel user = userFixture.createUserWithPoint();
             ProductModel shirt = productFixture.createProduct("티셔츠", 1_000L, 100L);
-            OrderModel first = orderFacade.create(user.getId(),
+            OrderInfo first = orderFacade.create(user.getId(),
                 List.of(new OrderItemCommand(shirt.getId(), 1L)));
-            OrderModel second = orderFacade.create(user.getId(),
+            OrderInfo second = orderFacade.create(user.getId(),
                 List.of(new OrderItemCommand(shirt.getId(), 1L)));
             orderFacade.create(user.getId(), List.of(new OrderItemCommand(shirt.getId(), 1L)));
 
@@ -424,7 +434,7 @@ class OrderV1ApiE2ETest {
             PageResponse<OrderV1Dto.OrderResponse> body = response.getBody().data();
             assertAll(
                 () -> assertThat(body.items()).extracting(OrderV1Dto.OrderResponse::id)
-                    .containsExactly(first.getId(), second.getId()),
+                    .containsExactly(first.id(), second.id()),
                 () -> assertThat(body.totalElements()).isEqualTo(3L),
                 () -> assertThat(body.totalPages()).isEqualTo(2)
             );
@@ -439,19 +449,19 @@ class OrderV1ApiE2ETest {
         void returnsDraftOrderDetail() {
             UserModel user = userFixture.createUserWithPoint();
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
-            OrderModel order = orderFacade.create(user.getId(),
+            OrderInfo order = orderFacade.create(user.getId(),
                 List.of(new OrderItemCommand(shirt.getId(), 2L)));
 
             ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> response = testRestTemplate.exchange(
-                ENDPOINT + "/" + order.getId(), HttpMethod.GET, request(null, user.getId()), ORDER_TYPE);
+                ENDPOINT + "/" + order.id(), HttpMethod.GET, request(null, user.getId()), ORDER_TYPE);
 
             OrderV1Dto.OrderResponse body = response.getBody().data();
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK),
                 () -> assertThat(body.status()).isEqualTo("DRAFT"),
-                () -> assertThat(body.orderTotal()).isEqualTo(4_000L),
-                () -> assertThat(body.usedPointAmount()).isNull(),
-                () -> assertThat(body.paymentAmount()).isNull(),
+                () -> assertThat(body.totalAmount()).isEqualTo(4_000L),
+                () -> assertThat(body.pointAmount()).isNull(),
+                () -> assertThat(body.paidAmount()).isNull(),
                 () -> assertThat(body.items()).hasSize(1),
                 () -> assertThat(body.items().get(0).productId()).isEqualTo(shirt.getId()),
                 () -> assertThat(body.items().get(0).quantity()).isEqualTo(2L),
@@ -466,11 +476,11 @@ class OrderV1ApiE2ETest {
             UserModel owner = userFixture.createUserWithPoint();
             UserModel other = userFixture.createUserWithPoint();
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
-            OrderModel order = orderFacade.create(owner.getId(),
+            OrderInfo order = orderFacade.create(owner.getId(),
                 List.of(new OrderItemCommand(shirt.getId(), 1L)));
 
             ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> response = testRestTemplate.exchange(
-                ENDPOINT + "/" + order.getId(), HttpMethod.GET, request(null, other.getId()), ORDER_TYPE);
+                ENDPOINT + "/" + order.id(), HttpMethod.GET, request(null, other.getId()), ORDER_TYPE);
 
             assertAll(
                 () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND),

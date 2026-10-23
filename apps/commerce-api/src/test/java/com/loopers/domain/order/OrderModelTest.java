@@ -62,7 +62,7 @@ class OrderModelTest {
             assertAll(
                 () -> assertThat(order.getUserId()).isEqualTo(OWNER_ID),
                 () -> assertThat(order.getStatus()).isEqualTo(OrderStatus.DRAFT),
-                () -> assertThat(order.getOrderTotal()).isEqualTo(Money.of(7_000L)),
+                () -> assertThat(order.getTotalAmount()).isEqualTo(Money.of(7_000L)),
                 () -> assertThat(order.getItems()).hasSize(2)
             );
         }
@@ -73,8 +73,8 @@ class OrderModelTest {
             OrderModel order = draftOrder();
 
             assertAll(
-                () -> assertThat(order.getUsedPointAmount()).isNull(),
-                () -> assertThat(order.getPaymentAmount()).isNull()
+                () -> assertThat(order.getPointAmount()).isNull(),
+                () -> assertThat(order.getPaidAmount()).isNull()
             );
         }
 
@@ -137,9 +137,9 @@ class OrderModelTest {
 
             assertAll(
                 () -> assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED),
-                () -> assertThat(order.getUsedPointAmount()).isEqualTo(7_000L),
-                () -> assertThat(order.getPaymentAmount()).isEqualTo(Money.of(7_000L)),
-                () -> assertThat(order.getOrderTotal()).isEqualTo(Money.of(7_000L))
+                () -> assertThat(order.getPointAmount()).isEqualTo(7_000L),
+                () -> assertThat(order.getPaidAmount()).isEqualTo(Money.of(7_000L)),
+                () -> assertThat(order.getTotalAmount()).isEqualTo(Money.of(7_000L))
             );
         }
 
@@ -154,7 +154,7 @@ class OrderModelTest {
                 .isEqualTo(ErrorType.INTERNAL_ERROR);
             assertAll(
                 () -> assertThat(order.getStatus()).isEqualTo(OrderStatus.DRAFT),
-                () -> assertThat(order.getPaymentAmount()).isNull()
+                () -> assertThat(order.getPaidAmount()).isNull()
             );
         }
 
@@ -182,7 +182,7 @@ class OrderModelTest {
                 .isEqualTo(ErrorType.ORDER_NOT_CONFIRMABLE);
             assertAll(
                 () -> assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED),
-                () -> assertThat(order.getUsedPointAmount()).isEqualTo(7_000L)
+                () -> assertThat(order.getPointAmount()).isEqualTo(7_000L)
             );
         }
 

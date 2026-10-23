@@ -1,12 +1,14 @@
 package com.loopers.domain.order;
 
 import com.loopers.domain.BaseEntity;
+import com.loopers.domain.common.EnumNameConverter;
 import com.loopers.domain.common.Money;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import jakarta.persistence.AttributeOverride;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -36,16 +38,22 @@ public class OrderModel extends BaseEntity {
     @Column(nullable = false)
     private OrderStatus status;
 
-    @Embedded
-    @AttributeOverride(name = "won", column = @Column(name = "order_total", nullable = false))
-    private Money orderTotal;
-
-    @Column(name = "used_point_amount")
-    private Long usedPointAmount;
+    /** 신규 enum 열은 native ENUM·값 CHECK 없는 VARCHAR 로 둔다(설계 3.6 열 타입과 ORM 매핑). */
+    @Convert(converter = PaymentMethodConverter.class)
+    @Column(name = "payment_method", length = 16)
+    private PaymentMethod paymentMethod;
 
     @Embedded
-    @AttributeOverride(name = "won", column = @Column(name = "payment_amount"))
-    private Money paymentAmount;
+    @AttributeOverride(name = "won", column = @Column(name = "total_amount", nullable = false))
+    private Money totalAmount;
+
+    @Column(name = "point_amount")
+    private Long pointAmount;
+
+    /** 실제로 성공한 결제액. PG 결제 대기·실패에서는 null 이다. */
+    @Embedded
+    @AttributeOverride(name = "won", column = @Column(name = "paid_amount"))
+    private Money paidAmount;
 
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @JoinColumn(name = "order_id", nullable = false)
@@ -57,7 +65,7 @@ public class OrderModel extends BaseEntity {
         this.userId = userId;
         this.status = OrderStatus.DRAFT;
         this.items = new ArrayList<>(items);
-        this.orderTotal = calculateTotal();
+        this.totalAmount = calculateTotal();
     }
 
     public static OrderModel draft(Long userId, List<OrderItemModel> items) {
@@ -73,6 +81,23 @@ public class OrderModel extends BaseEntity {
             total = total.add(item.calculateAmount());
         }
         return total;
+    }
+
+    public void requireStoredItemsConsistent() {
+        if (items.isEmpty() || items.stream().anyMatch(item ->
+            item.getProductId() == null || item.getQuantity() < 1 || item.getUnitPrice() == null)) {
+            throw new CoreException(ErrorType.INTERNAL_ERROR, "저장된 주문 품목이 올바르지 않습니다.");
+        }
+        try {
+            if (!calculateTotal().equals(totalAmount)) {
+                throw new CoreException(ErrorType.INTERNAL_ERROR, "주문 총액이 고정 품목 합계와 다릅니다.");
+            }
+        } catch (CoreException failure) {
+            if (failure.getErrorType() == ErrorType.NUMERIC_OVERFLOW) {
+                throw new CoreException(ErrorType.INTERNAL_ERROR, "저장된 주문 품목 금액이 표현 범위를 넘습니다.");
+            }
+            throw failure;
+        }
     }
 
     public List<OrderItemModel> getItems() {
@@ -94,19 +119,60 @@ public class OrderModel extends BaseEntity {
 
     /**
      * 차감한 포인트가 주문 총액과 같은 금전적 가치인지 확인하고 결제 결과를 기록한다.
+     * 기존 POINT 확정 경로이며 I4 에서 PG 결제로 바뀐다. 신규 PG 주문에는 호출하지 않는다(설계 3.6).
      */
     public void confirmWithPoints(long chargedPointAmount) {
         requireConfirmable();
-        if (chargedPointAmount != this.orderTotal.toWon()) {
+        if (chargedPointAmount != this.totalAmount.toWon()) {
             throw new CoreException(
                 ErrorType.INTERNAL_ERROR,
-                "차감한 포인트가 주문 총액과 다릅니다. [orderTotal = " + orderTotal.toWon()
+                "차감한 포인트가 주문 총액과 다릅니다. [totalAmount = " + totalAmount.toWon()
                     + ", usedPoint = " + chargedPointAmount + "]"
             );
         }
 
-        this.usedPointAmount = chargedPointAmount;
-        this.paymentAmount = Money.of(chargedPointAmount);
+        this.paymentMethod = PaymentMethod.POINT;
+        this.pointAmount = chargedPointAmount;
+        this.paidAmount = Money.of(chargedPointAmount);
         this.status = OrderStatus.CONFIRMED;
+    }
+
+    /** DRAFT 의 결제 정보가 비어 있을 때만 PG 결제를 시작한다. 신규 PG 결제의 포인트 사용액은 0 이다. */
+    public void startPgPayment() {
+        requireConfirmable();
+        if (paymentMethod != null || pointAmount != null || paidAmount != null) {
+            throw new CoreException(ErrorType.INTERNAL_ERROR, "DRAFT 주문에 결제 정보가 이미 있습니다.");
+        }
+        this.paymentMethod = PaymentMethod.PG;
+        this.pointAmount = 0L;
+        this.status = OrderStatus.PAYMENT_PENDING;
+    }
+
+    /** 검증한 PG 성공 금액이 주문 총액과 같을 때만 확정한다. 결과 반영 TX 의 상태 검사 뒤에 호출한다. */
+    public void confirmPg(Money amount) {
+        requirePgPending();
+        if (amount == null || !amount.equals(totalAmount)) {
+            throw new CoreException(ErrorType.INTERNAL_ERROR, "PG 성공 금액이 주문 총액과 다릅니다.");
+        }
+        this.paidAmount = amount;
+        this.status = OrderStatus.CONFIRMED;
+    }
+
+    public void failPg() {
+        requirePgPending();
+        this.paidAmount = null;
+        this.status = OrderStatus.PAYMENT_FAILED;
+    }
+
+    public static class PaymentMethodConverter extends EnumNameConverter<PaymentMethod> {
+        public PaymentMethodConverter() {
+            super(PaymentMethod.class);
+        }
+    }
+
+    private void requirePgPending() {
+        if (status != OrderStatus.PAYMENT_PENDING || paymentMethod != PaymentMethod.PG) {
+            throw new CoreException(ErrorType.INTERNAL_ERROR, "PG 결제 대기 주문이 아닙니다. [status = " + status + "]");
+        }
     }
 }

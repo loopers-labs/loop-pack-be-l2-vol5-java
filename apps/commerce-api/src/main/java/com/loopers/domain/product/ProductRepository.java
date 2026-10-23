@@ -24,6 +24,12 @@ public interface ProductRepository {
      */
     List<ProductModel> findAllActiveByIdsForUpdate(Collection<Long> productIds);
 
+    /**
+     * 결제 실패 반환용. 삭제된 상품도 포함해 비관적 쓰기 잠금으로 조회하고 ID 오름차순으로 돌려준다(설계 4.3).
+     * 반환은 상품 삭제와 무관하게 마무리해야 하므로 활성 조건을 두지 않는다. 물리 누락 판정은 호출자가 한다.
+     */
+    List<ProductModel> findAllByIdsForUpdate(Collection<Long> productIds);
+
     ProductModel save(ProductModel product);
 
     /** 브랜드에 연결된 미삭제 상품의 식별자. 브랜드 변경이 영향을 주는 상품을 찾을 때 사용한다. */

@@ -95,8 +95,8 @@ public class OrderStateReader {
             .sorted(Comparator.comparing(item -> item.getProductId()))
             .map(item -> List.<Object>of(item.getProductId(), item.getQuantity(), item.getUnitPrice().toWon()))
             .toList();
-        return Arrays.asList(order.getUserId(), order.getStatus(), order.getOrderTotal().toWon(),
-            order.getUsedPointAmount(), order.getPaymentAmount() != null ? order.getPaymentAmount().toWon() : null,
+        return Arrays.asList(order.getUserId(), order.getStatus(), order.getTotalAmount().toWon(),
+            order.getPointAmount(), order.getPaidAmount() != null ? order.getPaidAmount().toWon() : null,
             items);
     }
 }

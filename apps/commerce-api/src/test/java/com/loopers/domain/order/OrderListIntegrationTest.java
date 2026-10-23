@@ -1,5 +1,6 @@
 package com.loopers.domain.order;
 
+import com.loopers.application.order.OrderInfo;
 import com.loopers.application.order.OrderFacade;
 import com.loopers.domain.common.ListSort;
 import com.loopers.domain.common.PageCommand;
@@ -39,7 +40,7 @@ class OrderListIntegrationTest {
         databaseCleanUp.truncateAllTables();
     }
 
-    private OrderModel order(UserModel user, ProductModel product, long quantity) {
+    private OrderInfo order(UserModel user, ProductModel product, long quantity) {
         return orderFacade.create(user.getId(), List.of(new OrderItemCommand(product.getId(), quantity)));
     }
 
@@ -52,15 +53,15 @@ class OrderListIntegrationTest {
             UserModel me = userFixture.createUserWithPoint();
             UserModel other = userFixture.createUserWithPoint();
             ProductModel shirt = productFixture.createProduct("티셔츠", 1_000L, 100L);
-            OrderModel mine = order(me, shirt, 1L);
+            OrderInfo mine = order(me, shirt, 1L);
             order(other, shirt, 1L);
 
-            PageResult<OrderModel> result = orderFacade.getOrders(
+            PageResult<OrderInfo> result = orderFacade.getOrders(
                 me.getId(), PageCommand.of(null, null), ListSort.LATEST);
 
             assertAll(
                 () -> assertThat(result.totalElements()).isEqualTo(1L),
-                () -> assertThat(result.items()).extracting(OrderModel::getId).containsExactly(mine.getId())
+                () -> assertThat(result.items()).extracting(OrderInfo::id).containsExactly(mine.id())
             );
         }
     }
@@ -79,12 +80,12 @@ class OrderListIntegrationTest {
                 new OrderItemCommand(pants.getId(), 2L)
             ));
 
-            PageResult<OrderModel> result = orderFacade.getOrders(
+            PageResult<OrderInfo> result = orderFacade.getOrders(
                 user.getId(), PageCommand.of(null, null), ListSort.LATEST);
 
             assertAll(
                 () -> assertThat(result.totalElements()).isEqualTo(1L),
-                () -> assertThat(result.items().get(0).getItems()).hasSize(2)
+                () -> assertThat(result.items().get(0).items()).hasSize(2)
             );
         }
     }
@@ -97,15 +98,15 @@ class OrderListIntegrationTest {
         void sortsByLatest() {
             UserModel user = userFixture.createUserWithPoint();
             ProductModel shirt = productFixture.createProduct("티셔츠", 1_000L, 100L);
-            OrderModel first = order(user, shirt, 1L);
-            OrderModel second = order(user, shirt, 1L);
-            OrderModel third = order(user, shirt, 1L);
+            OrderInfo first = order(user, shirt, 1L);
+            OrderInfo second = order(user, shirt, 1L);
+            OrderInfo third = order(user, shirt, 1L);
 
-            PageResult<OrderModel> result = orderFacade.getOrders(
+            PageResult<OrderInfo> result = orderFacade.getOrders(
                 user.getId(), PageCommand.of(null, null), ListSort.LATEST);
 
-            assertThat(result.items()).extracting(OrderModel::getId)
-                .containsExactly(third.getId(), second.getId(), first.getId());
+            assertThat(result.items()).extracting(OrderInfo::id)
+                .containsExactly(third.id(), second.id(), first.id());
         }
 
         @DisplayName("oldest 는 먼저 만든 주문부터 반환한다.")
@@ -113,15 +114,15 @@ class OrderListIntegrationTest {
         void sortsByOldest() {
             UserModel user = userFixture.createUserWithPoint();
             ProductModel shirt = productFixture.createProduct("티셔츠", 1_000L, 100L);
-            OrderModel first = order(user, shirt, 1L);
-            OrderModel second = order(user, shirt, 1L);
-            OrderModel third = order(user, shirt, 1L);
+            OrderInfo first = order(user, shirt, 1L);
+            OrderInfo second = order(user, shirt, 1L);
+            OrderInfo third = order(user, shirt, 1L);
 
-            PageResult<OrderModel> result = orderFacade.getOrders(
+            PageResult<OrderInfo> result = orderFacade.getOrders(
                 user.getId(), PageCommand.of(null, null), ListSort.OLDEST);
 
-            assertThat(result.items()).extracting(OrderModel::getId)
-                .containsExactly(first.getId(), second.getId(), third.getId());
+            assertThat(result.items()).extracting(OrderInfo::id)
+                .containsExactly(first.id(), second.id(), third.id());
         }
 
         @DisplayName("page=0, size=2, oldest 는 앞의 두 건과 전체 자원 수를 반환한다.")
@@ -129,16 +130,16 @@ class OrderListIntegrationTest {
         void returnsFirstPageWithTotalElements() {
             UserModel user = userFixture.createUserWithPoint();
             ProductModel shirt = productFixture.createProduct("티셔츠", 1_000L, 100L);
-            OrderModel first = order(user, shirt, 1L);
-            OrderModel second = order(user, shirt, 1L);
+            OrderInfo first = order(user, shirt, 1L);
+            OrderInfo second = order(user, shirt, 1L);
             order(user, shirt, 1L);
 
-            PageResult<OrderModel> result = orderFacade.getOrders(
+            PageResult<OrderInfo> result = orderFacade.getOrders(
                 user.getId(), PageCommand.of(0, 2), ListSort.OLDEST);
 
             assertAll(
-                () -> assertThat(result.items()).extracting(OrderModel::getId)
-                    .containsExactly(first.getId(), second.getId()),
+                () -> assertThat(result.items()).extracting(OrderInfo::id)
+                    .containsExactly(first.id(), second.id()),
                 () -> assertThat(result.page()).isZero(),
                 () -> assertThat(result.size()).isEqualTo(2),
                 () -> assertThat(result.totalElements()).isEqualTo(3L),
@@ -153,12 +154,12 @@ class OrderListIntegrationTest {
             ProductModel shirt = productFixture.createProduct("티셔츠", 1_000L, 100L);
             order(user, shirt, 1L);
             order(user, shirt, 1L);
-            OrderModel third = order(user, shirt, 1L);
+            OrderInfo third = order(user, shirt, 1L);
 
-            PageResult<OrderModel> result = orderFacade.getOrders(
+            PageResult<OrderInfo> result = orderFacade.getOrders(
                 user.getId(), PageCommand.of(1, 2), ListSort.OLDEST);
 
-            assertThat(result.items()).extracting(OrderModel::getId).containsExactly(third.getId());
+            assertThat(result.items()).extracting(OrderInfo::id).containsExactly(third.id());
         }
 
         @DisplayName("주문이 없으면 빈 페이지를 반환한다.")
@@ -166,7 +167,7 @@ class OrderListIntegrationTest {
         void returnsEmptyPage() {
             UserModel user = userFixture.createUserWithPoint();
 
-            PageResult<OrderModel> result = orderFacade.getOrders(
+            PageResult<OrderInfo> result = orderFacade.getOrders(
                 user.getId(), PageCommand.of(null, null), ListSort.LATEST);
 
             assertAll(

@@ -57,7 +57,7 @@ class OrderServiceTest {
 
         assertAll(
             () -> assertThat(order.getStatus()).isEqualTo(OrderStatus.DRAFT),
-            () -> assertThat(order.getOrderTotal()).isEqualTo(Money.of(6_000L)),
+            () -> assertThat(order.getTotalAmount()).isEqualTo(Money.of(6_000L)),
             () -> assertThat(order.getItems()).singleElement().satisfies(item -> {
                 assertThat(item.getProductId()).isEqualTo(10L);
                 assertThat(item.getQuantity()).isEqualTo(3L);

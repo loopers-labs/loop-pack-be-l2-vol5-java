@@ -1,5 +1,7 @@
 package com.loopers.application.order;
 
+import com.loopers.fixture.PgTestSupport;
+import com.loopers.fixture.PgCommands;
 import com.loopers.domain.order.OrderItemCommand;
 import com.loopers.domain.order.OrderModel;
 import com.loopers.domain.order.OrderRepository;
@@ -42,9 +44,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
-@DisplayName("OrderConfirmFacade 는 주문 확정으로 Order·Point·Stock 을 한 트랜잭션에서 변경한다.")
-@SpringBootTest(properties = "logging.level.org.hibernate.orm.jdbc.bind=TRACE")
-class OrderConfirmFacadeIntegrationTest {
+@DisplayName("OrderConfirmFacade 는 TX A·PG HTTP·TX B로 결제하고 포인트를 사용하지 않는다.")
+@SpringBootTest
+class OrderConfirmFacadeIntegrationTest extends PgTestSupport {
 
     @Autowired
     private OrderConfirmFacade orderConfirmFacade;
@@ -109,131 +111,92 @@ class OrderConfirmFacadeIntegrationTest {
     @DisplayName("확정 성공")
     @Nested
     class Success {
-        @DisplayName("총액 7,000 을 잔액 10,000 에서 차감해 3,000 이 남고 품목별 재고를 차감하며 CONFIRMED 가 된다.")
+        @DisplayName("Point 없는 고객도 저장 총액으로 결제하고 품목별 재고를 확보한다.")
         @Test
         void confirmsOrder() {
-            UserModel user = userFixture.createUserWithPoint();
-            pointFacade.charge(user.getId(), 10_000L);
-            ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
-            ProductModel pants = productFixture.createProduct("바지", 3_000L, 4L);
-            OrderModel order = orderFacade.create(user.getId(), List.of(
-                new OrderItemCommand(shirt.getId(), 2L),
-                new OrderItemCommand(pants.getId(), 1L)
-            ));
-
-            OrderInfo confirmed = orderConfirmFacade.confirm(user.getId(), order.getId());
-
-            OrderModel saved = orderJpaRepository.findById(order.getId()).orElseThrow();
+            UserModel user = userFixture.createUserWithoutPoint();
+            ProductModel shirt = productFixture.createProduct("티셔츠", 2000L, 5L);
+            ProductModel pants = productFixture.createProduct("바지", 3000L, 4L);
+            OrderInfo order = orderFacade.create(user.getId(), List.of(
+                new OrderItemCommand(shirt.getId(), 2L), new OrderItemCommand(pants.getId(), 1L)));
+            success(order.id());
+            OrderInfo confirmed = orderConfirmFacade.confirm(user.getId(), order.id(), PgCommands.forOrder(order.id())).order();
             assertAll(
-                () -> assertThat(confirmed.status()).isEqualTo(OrderStatus.CONFIRMED.name()),
-                () -> assertThat(confirmed.orderTotal()).isEqualTo(7_000L),
-                () -> assertThat(confirmed.usedPointAmount()).isEqualTo(7_000L),
-                () -> assertThat(confirmed.paymentAmount()).isEqualTo(7_000L),
-                () -> assertThat(confirmed.items()).hasSize(2),
-                () -> assertThat(saved.getStatus()).isEqualTo(OrderStatus.CONFIRMED),
-                () -> assertThat(orderStateReader.orderRow(order.getId())).isEqualTo(List.of(
-                    user.getId(), OrderStatus.CONFIRMED, 7_000L, 7_000L, 7_000L, List.of(
-                        List.of(shirt.getId(), 2L, 2_000L), List.of(pants.getId(), 1L, 3_000L)))),
-                () -> assertThat(balanceOf(user)).isEqualTo(3_000L),
+                () -> assertThat(confirmed.status()).isEqualTo("CONFIRMED"),
+                () -> assertThat(confirmed.totalAmount()).isEqualTo(7000L),
+                () -> assertThat(confirmed.paidAmount()).isEqualTo(7000L),
+                () -> assertThat(confirmed.pointAmount()).isZero(),
+                () -> assertThat(pointJpaRepository.findByUserId(user.getId())).isEmpty(),
                 () -> assertThat(stockOf(shirt)).isEqualTo(3L),
                 () -> assertThat(stockOf(pants)).isEqualTo(3L)
             );
         }
 
-        @DisplayName("포인트 사용 이력 1건과 품목별 재고 차감 이력을 주문 식별자와 함께 남긴다.")
+        @DisplayName("재고 확보 이력을 남기고 포인트 이력·잔액은 유지한다.")
         @Test
-        void savesHistories() {
+        void savesReservationWithoutPointUse() {
             UserModel user = userFixture.createUserWithPoint();
-            pointFacade.charge(user.getId(), 10_000L);
-            ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
-            ProductModel pants = productFixture.createProduct("바지", 3_000L, 4L);
-            OrderModel order = orderFacade.create(user.getId(), List.of(
-                new OrderItemCommand(shirt.getId(), 2L),
-                new OrderItemCommand(pants.getId(), 1L)
-            ));
-
-            orderConfirmFacade.confirm(user.getId(), order.getId());
-
-            var pointHistories = pointHistoryJpaRepository.findAll().stream()
-                .filter(history -> history.getCause() == PointChangeCause.ORDER_USE)
-                .toList();
-            var stockHistories = stockHistoryJpaRepository.findAll().stream()
-                .filter(history -> history.getCause() == StockChangeCause.ORDER_DEDUCTION)
-                .toList();
-            assertAll(
-                () -> assertThat(pointHistories).hasSize(1),
-                () -> assertThat(pointHistories.get(0).getOrderId()).isEqualTo(order.getId()),
-                () -> assertThat(pointHistories.get(0).getBeforeBalance()).isEqualTo(10_000L),
-                () -> assertThat(pointHistories.get(0).getAfterBalance()).isEqualTo(3_000L),
-                () -> assertThat(pointHistories.get(0).getChangedAmount()).isEqualTo(7_000L),
-                () -> assertThat(stockHistories).hasSize(2),
-                () -> assertThat(stockHistories).allMatch(history -> order.getId().equals(history.getOrderId())),
-                () -> assertThat(stockHistories)
-                    .extracting(history -> List.of(history.getProductId(), history.getBeforeQuantity(),
-                        history.getAfterQuantity(), history.getChangedQuantity()))
-                    .containsExactlyInAnyOrder(
-                        List.of(shirt.getId(), 5L, 3L, 2L),
-                        List.of(pants.getId(), 4L, 3L, 1L))
-            );
+            pointFacade.charge(user.getId(), 10000L);
+            ProductModel product = productFixture.createProduct("상품", 2000L, 5L);
+            OrderInfo order = orderFacade.create(user.getId(), List.of(new OrderItemCommand(product.getId(), 2L)));
+            var before = orderStateReader.pointHistoryRows();
+            success(order.id());
+            orderConfirmFacade.confirm(user.getId(), order.id(), PgCommands.forOrder(order.id()));
+            assertThat(orderStateReader.pointHistoryRows()).isEqualTo(before);
+            assertThat(balanceOf(user)).isEqualTo(10000L);
+            assertThat(stockHistoryJpaRepository.findAll()).singleElement().satisfies(history -> {
+                assertThat(history.getCause()).isEqualTo(StockChangeCause.ORDER_RESERVATION);
+                assertThat(history.getOrderId()).isEqualTo(order.id());
+            });
         }
 
         @DisplayName("저장된 품목 순서와 관계없이 상품 ID 오름차순으로 재고를 차감하고 이력을 남긴다.")
         @Test
         void deductsInProductIdOrder() {
-            UserModel user = userFixture.createUserWithPoint();
-            pointFacade.charge(user.getId(), 10_000L);
-            ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
-            ProductModel pants = productFixture.createProduct("바지", 3_000L, 4L);
-            ProductModel socks = productFixture.createProduct("양말", 1_000L, 3L);
-            OrderModel order = orderFacade.create(user.getId(), List.of(
-                new OrderItemCommand(socks.getId(), 1L),
-                new OrderItemCommand(shirt.getId(), 1L),
-                new OrderItemCommand(pants.getId(), 1L)
-            ));
-
-            orderConfirmFacade.confirm(user.getId(), order.getId());
-
-            assertThat(orderStateReader.stockHistoryRows())
-                .as("History id 순서 = 처리 순서")
-                .extracting(row -> row.get(1))
-                .containsExactly(shirt.getId(), pants.getId(), socks.getId());
+            UserModel user = userFixture.createUserWithoutPoint();
+            ProductModel first = productFixture.createProduct("먼저", 2000L, 5L);
+            ProductModel second = productFixture.createProduct("나중", 3000L, 4L);
+            OrderInfo order = orderFacade.create(user.getId(), List.of(
+                new OrderItemCommand(second.getId(), 1L), new OrderItemCommand(first.getId(), 1L)));
+            orderConfirmFacade.confirm(user.getId(), order.id(), PgCommands.forOrder(order.id()));
+            assertThat(stockHistoryJpaRepository.findAll()).extracting(history -> history.getProductId())
+                .containsExactly(first.getId(), second.getId());
         }
 
-        @DisplayName("잔액과 주문 총액이 같으면 잔액 0 으로 확정할 수 있다.")
+        @DisplayName("잔액이 0이어도 PG 결제는 성공한다.")
         @Test
-        void allowsExactBalance() {
+        void allowsZeroPointBalance() {
             UserModel user = userFixture.createUserWithPoint();
-            pointFacade.charge(user.getId(), 4_000L);
-            ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
-            OrderModel order = orderFacade.create(user.getId(),
-                List.of(new OrderItemCommand(shirt.getId(), 2L)));
-
-            orderConfirmFacade.confirm(user.getId(), order.getId());
-
+            ProductModel product = productFixture.createProduct("상품", 2000L, 5L);
+            OrderInfo order = orderFacade.create(user.getId(), List.of(new OrderItemCommand(product.getId(), 1L)));
+            success(order.id());
+            assertThat(orderConfirmFacade.confirm(user.getId(), order.id(), PgCommands.forOrder(order.id())).order().status())
+                .isEqualTo("CONFIRMED");
             assertThat(balanceOf(user)).isZero();
         }
 
-        @DisplayName("주문 생성 뒤 상품 가격이 올라도 확정은 주문 당시 단가로 계산한 4,000 만 차감한다.")
+        @DisplayName("가격 변경 후에도 주문 당시 단가로 PG에 요청하고 포인트를 유지한다.")
         @Test
         void chargesSnapshotPriceAfterPriceChange() {
             UserModel user = userFixture.createUserWithPoint();
             pointFacade.charge(user.getId(), 10_000L);
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
-            OrderModel order = orderFacade.create(user.getId(),
+            OrderInfo order = orderFacade.create(user.getId(),
                 List.of(new OrderItemCommand(shirt.getId(), 2L)));
 
             productFacade.update(shirt.getId(), "티셔츠", 5_000L);
 
-            OrderInfo confirmed = orderConfirmFacade.confirm(user.getId(), order.getId());
+            success(order.id());
+            OrderInfo confirmed = orderConfirmFacade.confirm(user.getId(), order.id(), PgCommands.forOrder(order.id())).order();
 
-            OrderModel saved = orderJpaRepository.findById(order.getId()).orElseThrow();
+            OrderModel saved = orderJpaRepository.findById(order.id()).orElseThrow();
             assertAll(
                 () -> assertThat(confirmed.status()).isEqualTo(OrderStatus.CONFIRMED.name()),
-                () -> assertThat(confirmed.orderTotal()).isEqualTo(4_000L),
-                () -> assertThat(confirmed.usedPointAmount()).isEqualTo(4_000L),
-                () -> assertThat(confirmed.paymentAmount()).isEqualTo(4_000L),
+                () -> assertThat(confirmed.totalAmount()).isEqualTo(4_000L),
+                () -> assertThat(confirmed.pointAmount()).isZero(),
+                () -> assertThat(confirmed.paidAmount()).isEqualTo(4_000L),
                 () -> assertThat(saved.getStatus()).isEqualTo(OrderStatus.CONFIRMED),
-                () -> assertThat(balanceOf(user)).isEqualTo(6_000L)
+                () -> assertThat(balanceOf(user)).isEqualTo(10_000L)
             );
         }
     }
@@ -241,37 +204,17 @@ class OrderConfirmFacadeIntegrationTest {
     @DisplayName("확정 거절")
     @Nested
     class Rejection {
-        @DisplayName("포인트가 부족하면 주문·포인트·재고·이력을 모두 유지한다.")
+        @DisplayName("Point 잔액이 부족해도 PG 결제는 성공하고 잔액을 유지한다.")
         @Test
-        void rejectsInsufficientPoint() {
+        void allowsInsufficientPointBalance() {
             UserModel user = userFixture.createUserWithPoint();
-            pointFacade.charge(user.getId(), 6_999L);
-            ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
-            ProductModel pants = productFixture.createProduct("바지", 3_000L, 4L);
-            OrderModel order = orderFacade.create(user.getId(), List.of(
-                new OrderItemCommand(shirt.getId(), 2L),
-                new OrderItemCommand(pants.getId(), 1L)
-            ));
-
-            ConfirmState before = stateOf(order.getId(), user, shirt, pants);
-
-            assertThatThrownBy(() -> orderConfirmFacade.confirm(user.getId(), order.getId()))
-                .isInstanceOf(CoreException.class)
-                .extracting("errorType")
-                .isEqualTo(ErrorType.INSUFFICIENT_POINT);
-
-            assertAll(
-                () -> assertThat(stateOf(order.getId(), user, shirt, pants)).isEqualTo(before),
-                () -> assertThat(orderJpaRepository.findById(order.getId()).orElseThrow().getStatus())
-                    .isEqualTo(OrderStatus.DRAFT),
-                () -> assertThat(balanceOf(user)).isEqualTo(6_999L),
-                () -> assertThat(stockOf(shirt)).isEqualTo(5L),
-                () -> assertThat(stockOf(pants)).isEqualTo(4L),
-                () -> assertThat(stockHistoryJpaRepository.findAll()).noneMatch(
-                    history -> history.getCause() == StockChangeCause.ORDER_DEDUCTION),
-                () -> assertThat(pointHistoryJpaRepository.findAll()).noneMatch(
-                    history -> history.getCause() == PointChangeCause.ORDER_USE)
-            );
+            pointFacade.charge(user.getId(), 1000L);
+            ProductModel product = productFixture.createProduct("상품", 2000L, 5L);
+            OrderInfo order = orderFacade.create(user.getId(), List.of(new OrderItemCommand(product.getId(), 2L)));
+            success(order.id());
+            assertThat(orderConfirmFacade.confirm(user.getId(), order.id(), PgCommands.forOrder(order.id())).order().status())
+                .isEqualTo("CONFIRMED");
+            assertThat(balanceOf(user)).isEqualTo(1000L);
         }
 
         @DisplayName("한 품목의 재고가 부족하면 이미 차감한 다른 품목의 재고와 포인트까지 되돌린다.")
@@ -281,27 +224,30 @@ class OrderConfirmFacadeIntegrationTest {
             pointFacade.charge(user.getId(), 10_000L);
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
             ProductModel pants = productFixture.createProduct("바지", 3_000L, 1L);
-            OrderModel order = orderFacade.create(user.getId(), List.of(
+            OrderInfo order = orderFacade.create(user.getId(), List.of(
                 new OrderItemCommand(shirt.getId(), 2L),
                 new OrderItemCommand(pants.getId(), 2L)
             ));
 
-            ConfirmState before = stateOf(order.getId(), user, shirt, pants);
+            ConfirmState before = stateOf(order.id(), user, shirt, pants);
 
-            assertThatThrownBy(() -> orderConfirmFacade.confirm(user.getId(), order.getId()))
+            assertThatThrownBy(() -> orderConfirmFacade.confirm(user.getId(), order.id(), PgCommands.forOrder(order.id())))
                 .isInstanceOf(CoreException.class)
                 .extracting("errorType")
                 .isEqualTo(ErrorType.INSUFFICIENT_STOCK);
 
+            assertThat(pg.state().counts().createReceived()).isZero();
+            assertThat(pg.state().transactions()).isEmpty();
             assertAll(
-                () -> assertThat(stateOf(order.getId(), user, shirt, pants)).isEqualTo(before),
-                () -> assertThat(orderJpaRepository.findById(order.getId()).orElseThrow().getStatus())
+                () -> assertThat(stateOf(order.id(), user, shirt, pants)).isEqualTo(before),
+                () -> assertThat(orderJpaRepository.findById(order.id()).orElseThrow().getStatus())
                     .isEqualTo(OrderStatus.DRAFT),
                 () -> assertThat(balanceOf(user)).isEqualTo(10_000L),
                 () -> assertThat(stockOf(shirt)).isEqualTo(5L),
                 () -> assertThat(stockOf(pants)).isEqualTo(1L),
                 () -> assertThat(stockHistoryJpaRepository.findAll()).noneMatch(
-                    history -> history.getCause() == StockChangeCause.ORDER_DEDUCTION)
+                    history -> history.getCause() == StockChangeCause.ORDER_RESERVATION
+                        || history.getCause() == StockChangeCause.ORDER_RELEASE)
             );
         }
 
@@ -311,26 +257,29 @@ class OrderConfirmFacadeIntegrationTest {
             UserModel user = userFixture.createUserWithPoint();
             pointFacade.charge(user.getId(), 10_000L);
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
-            OrderModel order = orderFacade.create(user.getId(),
+            OrderInfo order = orderFacade.create(user.getId(),
                 List.of(new OrderItemCommand(shirt.getId(), 2L)));
 
             productFacade.changeStock(shirt.getId(), 1L);
 
-            ConfirmState before = stateOf(order.getId(), user, shirt);
+            ConfirmState before = stateOf(order.id(), user, shirt);
 
-            assertThatThrownBy(() -> orderConfirmFacade.confirm(user.getId(), order.getId()))
+            assertThatThrownBy(() -> orderConfirmFacade.confirm(user.getId(), order.id(), PgCommands.forOrder(order.id())))
                 .isInstanceOf(CoreException.class)
                 .extracting("errorType")
                 .isEqualTo(ErrorType.INSUFFICIENT_STOCK);
 
+            assertThat(pg.state().counts().createReceived()).isZero();
+            assertThat(pg.state().transactions()).isEmpty();
             assertAll(
-                () -> assertThat(stateOf(order.getId(), user, shirt)).isEqualTo(before),
-                () -> assertThat(orderJpaRepository.findById(order.getId()).orElseThrow().getStatus())
+                () -> assertThat(stateOf(order.id(), user, shirt)).isEqualTo(before),
+                () -> assertThat(orderJpaRepository.findById(order.id()).orElseThrow().getStatus())
                     .isEqualTo(OrderStatus.DRAFT),
                 () -> assertThat(balanceOf(user)).isEqualTo(10_000L),
                 () -> assertThat(stockOf(shirt)).isEqualTo(1L),
                 () -> assertThat(stockHistoryJpaRepository.findAll()).noneMatch(
-                    history -> history.getCause() == StockChangeCause.ORDER_DEDUCTION),
+                    history -> history.getCause() == StockChangeCause.ORDER_RESERVATION
+                        || history.getCause() == StockChangeCause.ORDER_RELEASE),
                 () -> assertThat(pointHistoryJpaRepository.findAll()).noneMatch(
                     history -> history.getCause() == PointChangeCause.ORDER_USE),
                 () -> assertThat(stockHistoryJpaRepository.findAll().stream()
@@ -338,30 +287,18 @@ class OrderConfirmFacadeIntegrationTest {
             );
         }
 
-        @DisplayName("이미 확정한 주문을 다시 확정하면 ORDER_NOT_CONFIRMABLE 로 거절하고 모든 상태를 유지한다.")
+        @DisplayName("같은 PG 시도 재요청은 저장 결과를 반환하고 추가 효과가 없다.")
         @Test
-        void rejectsAlreadyConfirmedOrder() {
-            UserModel user = userFixture.createUserWithPoint();
-            pointFacade.charge(user.getId(), 10_000L);
-            ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
-            OrderModel order = orderFacade.create(user.getId(),
-                List.of(new OrderItemCommand(shirt.getId(), 2L)));
-            orderConfirmFacade.confirm(user.getId(), order.getId());
-
-            ConfirmState before = stateOf(order.getId(), user, shirt);
-
-            assertThatThrownBy(() -> orderConfirmFacade.confirm(user.getId(), order.getId()))
-                .isInstanceOf(CoreException.class)
-                .extracting("errorType")
-                .isEqualTo(ErrorType.ORDER_NOT_CONFIRMABLE);
-
-            assertAll(
-                () -> assertThat(stateOf(order.getId(), user, shirt)).isEqualTo(before),
-                () -> assertThat(balanceOf(user)).isEqualTo(6_000L),
-                () -> assertThat(stockOf(shirt)).isEqualTo(3L),
-                () -> assertThat(stockHistoryJpaRepository.findAll().stream()
-                    .filter(history -> history.getCause() == StockChangeCause.ORDER_DEDUCTION).toList()).hasSize(1)
-            );
+        void returnsSamePgAttemptWithoutMoreEffects() {
+            UserModel user = userFixture.createUserWithoutPoint();
+            ProductModel product = productFixture.createProduct("상품", 2000L, 5L);
+            OrderInfo order = orderFacade.create(user.getId(), List.of(new OrderItemCommand(product.getId(), 1L)));
+            success(order.id());
+            var first = orderConfirmFacade.confirm(user.getId(), order.id(), PgCommands.forOrder(order.id()));
+            var second = orderConfirmFacade.confirm(user.getId(), order.id(), PgCommands.forOrder(order.id()));
+            assertThat(second).isEqualTo(first);
+            assertThat(pg.state().counts().createReceived()).isEqualTo(1);
+            assertThat(stockOf(product)).isEqualTo(4L);
         }
 
         @DisplayName("다른 사용자의 주문 확정은 ORDER_NOT_FOUND 로 거절한다.")
@@ -371,17 +308,17 @@ class OrderConfirmFacadeIntegrationTest {
             UserModel other = userFixture.createUserWithPoint();
             pointFacade.charge(other.getId(), 10_000L);
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
-            OrderModel order = orderFacade.create(owner.getId(),
+            OrderInfo order = orderFacade.create(owner.getId(),
                 List.of(new OrderItemCommand(shirt.getId(), 2L)));
 
-            ConfirmState before = stateOf(order.getId(), other, shirt);
+            ConfirmState before = stateOf(order.id(), other, shirt);
 
-            assertThatThrownBy(() -> orderConfirmFacade.confirm(other.getId(), order.getId()))
+            assertThatThrownBy(() -> orderConfirmFacade.confirm(other.getId(), order.id(), PgCommands.forOrder(order.id())))
                 .isInstanceOf(CoreException.class)
                 .extracting("errorType")
                 .isEqualTo(ErrorType.ORDER_NOT_FOUND);
             assertAll(
-                () -> assertThat(stateOf(order.getId(), other, shirt)).isEqualTo(before),
+                () -> assertThat(stateOf(order.id(), other, shirt)).isEqualTo(before),
                 () -> assertThat(balanceOf(other)).isEqualTo(10_000L),
                 () -> assertThat(stockOf(shirt)).isEqualTo(5L)
             );
@@ -395,7 +332,7 @@ class OrderConfirmFacadeIntegrationTest {
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
             ConfirmState before = stateOf(999_999L, user, shirt);
 
-            assertThatThrownBy(() -> orderConfirmFacade.confirm(user.getId(), 999_999L))
+            assertThatThrownBy(() -> orderConfirmFacade.confirm(user.getId(), 999_999L, PgCommands.forOrder(999_999L)))
                 .isInstanceOf(CoreException.class)
                 .extracting("errorType")
                 .isEqualTo(ErrorType.ORDER_NOT_FOUND);
@@ -408,43 +345,37 @@ class OrderConfirmFacadeIntegrationTest {
             UserModel user = userFixture.createUserWithPoint();
             pointFacade.charge(user.getId(), 10_000L);
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
-            OrderModel order = orderFacade.create(user.getId(),
+            OrderInfo order = orderFacade.create(user.getId(),
                 List.of(new OrderItemCommand(shirt.getId(), 2L)));
 
             ProductModel stored = productJpaRepository.findById(shirt.getId()).orElseThrow();
             stored.delete();
             productJpaRepository.save(stored);
 
-            ConfirmState before = stateOf(order.getId(), user, shirt);
+            ConfirmState before = stateOf(order.id(), user, shirt);
 
-            assertThatThrownBy(() -> orderConfirmFacade.confirm(user.getId(), order.getId()))
+            assertThatThrownBy(() -> orderConfirmFacade.confirm(user.getId(), order.id(), PgCommands.forOrder(order.id())))
                 .isInstanceOf(CoreException.class)
                 .extracting("errorType")
                 .isEqualTo(ErrorType.PRODUCT_NOT_FOUND);
             assertAll(
-                () -> assertThat(stateOf(order.getId(), user, shirt)).isEqualTo(before),
-                () -> assertThat(orderJpaRepository.findById(order.getId()).orElseThrow().getStatus())
+                () -> assertThat(stateOf(order.id(), user, shirt)).isEqualTo(before),
+                () -> assertThat(orderJpaRepository.findById(order.id()).orElseThrow().getStatus())
                     .isEqualTo(OrderStatus.DRAFT),
                 () -> assertThat(balanceOf(user)).isEqualTo(10_000L)
             );
         }
 
-        @DisplayName("Point 가 없는 사용자의 확정은 POINT_NOT_INITIALIZED 로 거절한다.")
+        @DisplayName("Point 없이도 PG 결제가 가능하다.")
         @Test
-        void rejectsWhenPointIsNotInitialized() {
+        void allowsUninitializedPoint() {
             UserModel user = userFixture.createUserWithoutPoint();
-            ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
-            OrderModel order = orderFacade.create(user.getId(),
-                List.of(new OrderItemCommand(shirt.getId(), 2L)));
-
-            ConfirmState before = stateOf(order.getId(), user, shirt);
-
-            assertThatThrownBy(() -> orderConfirmFacade.confirm(user.getId(), order.getId()))
-                .isInstanceOf(CoreException.class)
-                .extracting("errorType")
-                .isEqualTo(ErrorType.POINT_NOT_INITIALIZED);
-            assertThat(stockOf(shirt)).isEqualTo(5L);
-            assertThat(stateOf(order.getId(), user, shirt)).isEqualTo(before);
+            ProductModel product = productFixture.createProduct("상품", 2000L, 5L);
+            OrderInfo order = orderFacade.create(user.getId(), List.of(new OrderItemCommand(product.getId(), 1L)));
+            success(order.id());
+            assertThat(orderConfirmFacade.confirm(user.getId(), order.id(), PgCommands.forOrder(order.id())).order().status())
+                .isEqualTo("CONFIRMED");
+            assertThat(pointJpaRepository.findByUserId(user.getId())).isEmpty();
         }
     }
     @DisplayName("Order 잠금 범위")
@@ -459,17 +390,17 @@ class OrderConfirmFacadeIntegrationTest {
             UserModel user = userFixture.createUserWithPoint();
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
             ProductModel pants = productFixture.createProduct("바지", 3_000L, 4L);
-            OrderModel order = orderFacade.create(user.getId(), List.of(
+            OrderInfo order = orderFacade.create(user.getId(), List.of(
                 new OrderItemCommand(shirt.getId(), 2L),
                 new OrderItemCommand(pants.getId(), 1L)
             ));
 
             List<Object> observed = transactionTemplate.execute(status -> {
-                OrderModel locked = orderRepository.findForUpdate(order.getId()).orElseThrow();
+                OrderModel locked = orderRepository.findForUpdate(order.id()).orElseThrow();
                 boolean itemsLoadedByLock = entityManager.getEntityManagerFactory().getPersistenceUnitUtil()
                     .isLoaded(locked, "items");
-                LockProbe.Result orderRow = lockProbe.probe(LOCK_ORDER, order.getId());
-                LockProbe.Result itemRows = lockProbe.probe(LOCK_ITEMS, order.getId());
+                LockProbe.Result orderRow = lockProbe.probe(LOCK_ORDER, order.id());
+                LockProbe.Result itemRows = lockProbe.probe(LOCK_ITEMS, order.id());
                 List<Long> itemProductIds = locked.getItems().stream()
                     .map(item -> item.getProductId()).sorted().toList();
                 return List.of(itemsLoadedByLock, orderRow, itemRows, itemProductIds);
@@ -490,11 +421,11 @@ class OrderConfirmFacadeIntegrationTest {
         void releasesOrderLockAfterTransaction() {
             UserModel user = userFixture.createUserWithPoint();
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 5L);
-            OrderModel order = orderFacade.create(user.getId(), List.of(new OrderItemCommand(shirt.getId(), 1L)));
+            OrderInfo order = orderFacade.create(user.getId(), List.of(new OrderItemCommand(shirt.getId(), 1L)));
 
-            transactionTemplate.executeWithoutResult(status -> orderRepository.findForUpdate(order.getId()));
+            transactionTemplate.executeWithoutResult(status -> orderRepository.findForUpdate(order.id()));
 
-            assertThat(lockProbe.probe(LOCK_ORDER, order.getId())).isEqualTo(LockProbe.Result.ACQUIRED);
+            assertThat(lockProbe.probe(LOCK_ORDER, order.id())).isEqualTo(LockProbe.Result.ACQUIRED);
         }
     }
 

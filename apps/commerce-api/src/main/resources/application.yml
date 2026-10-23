@@ -39,6 +39,34 @@ commerce:
     product-detail:
       enabled: true # false 는 DB-only 비교 모드. 읽기·채움만 우회하고 commit 뒤 무효화는 유지한다.
       ttl: 5m # 저장할 때 정하는 고정 TTL. hit 에서 연장하지 않는다.
+  pg:
+    base-url: http://127.0.0.1:18080 # 로컬 PG 주소. 테스트는 fixture 의 임의 포트로 바꿔 주입한다.
+    callback-url: http://127.0.0.1:8080/api/v1/payments/callback # 기동 때 한 번 바인딩. 고객 입력으로 바꾸지 않는다.
+    account-id: '135135'
+    max-connections: 10 # PG 전용 풀(총·경로별 동일). 생성·조회가 공유한다.
+    pool-acquire-timeout: 200ms
+    connect-timeout: 300ms
+    read-timeout: 1s
+
+resilience4j:
+  circuitbreaker:
+    configs:
+      pgBase: # 초기 가설값. 근거·재검토 조건은 설계 2.9
+        slidingWindowType: COUNT_BASED
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        failureRateThreshold: 50
+        slowCallDurationThreshold: 800ms
+        slowCallRateThreshold: 50
+        waitDurationInOpenState: 5s
+        permittedNumberOfCallsInHalfOpenState: 2
+        automaticTransitionFromOpenToHalfOpenEnabled: false
+        maxWaitDurationInHalfOpenState: 10s
+    instances:
+      pgCreate:
+        baseConfig: pgBase
+      pgLookup:
+        baseConfig: pgBase
 
 ---
 spring:

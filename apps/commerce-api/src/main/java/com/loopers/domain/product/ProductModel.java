@@ -83,6 +83,11 @@ public class ProductModel extends BaseEntity {
         return stock.decrease(quantity);
     }
 
+    /** 결제 실패로 확보 수량을 반환한다. 삭제된 상품도 반환하며 삭제 상태·가격은 그대로 둔다. */
+    public StockChange releaseStock(long quantity) {
+        return stock.increase(quantity);
+    }
+
     public long getStockQuantity() {
         return stock.getQuantity();
     }

@@ -7,7 +7,9 @@ import com.loopers.domain.common.ListSort;
 import com.loopers.domain.common.PageCommand;
 import com.loopers.domain.common.PageResult;
 import com.loopers.domain.order.OrderItemCommand;
-import com.loopers.domain.order.OrderModel;
+import com.loopers.application.payment.PaymentApplyResult;
+import com.loopers.application.payment.PaymentConfirmCommand;
+import com.loopers.application.payment.PaymentReconcileFacade;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.PageResponse;
 import com.loopers.interfaces.api.support.CustomerId;
@@ -33,6 +35,7 @@ public class OrderV1Controller implements OrderV1ApiSpec {
 
     private final OrderFacade orderFacade;
     private final OrderConfirmFacade orderConfirmFacade;
+    private final PaymentReconcileFacade paymentReconcileFacade;
 
     @PostMapping
     @Override
@@ -47,7 +50,7 @@ public class OrderV1Controller implements OrderV1ApiSpec {
         List<OrderItemCommand> commands = request.items().stream()
             .map(OrderV1Controller::toCommand)
             .toList();
-        OrderModel created = orderFacade.create(userId, commands);
+        OrderInfo created = orderFacade.create(userId, commands);
 
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(ApiResponse.success(OrderV1Dto.OrderResponse.from(created)));
@@ -55,12 +58,28 @@ public class OrderV1Controller implements OrderV1ApiSpec {
 
     @PostMapping("/{orderId}/confirm")
     @Override
-    public ApiResponse<OrderV1Dto.OrderResponse> confirm(
+    public ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> confirm(
+        @CustomerId Long userId,
+        @PathVariable(value = "orderId") Long orderId,
+        @RequestBody(required = false) OrderV1Dto.OrderConfirmRequest request
+    ) {
+        PaymentConfirmCommand command = request == null
+            ? new PaymentConfirmCommand(null, null, null) : request.toCommand();
+        return paymentResponse(orderConfirmFacade.confirm(userId, orderId, command));
+    }
+
+    @PostMapping("/{orderId}/payment/reconcile")
+    @Override
+    public ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> reconcile(
         @CustomerId Long userId,
         @PathVariable(value = "orderId") Long orderId
     ) {
-        OrderInfo confirmed = orderConfirmFacade.confirm(userId, orderId);
-        return ApiResponse.success(OrderV1Dto.OrderResponse.from(confirmed));
+        return paymentResponse(paymentReconcileFacade.reconcile(userId, orderId));
+    }
+
+    private static ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> paymentResponse(PaymentApplyResult result) {
+        HttpStatus status = result.outcome() == PaymentApplyResult.Outcome.FINAL ? HttpStatus.OK : HttpStatus.ACCEPTED;
+        return ResponseEntity.status(status).body(ApiResponse.success(OrderV1Dto.OrderResponse.from(result.order())));
     }
 
     @GetMapping
@@ -71,7 +90,7 @@ public class OrderV1Controller implements OrderV1ApiSpec {
         @RequestParam(value = "size", required = false) Integer size,
         @RequestParam(value = "sort", required = false) String sort
     ) {
-        PageResult<OrderModel> orders = orderFacade.getOrders(
+        PageResult<OrderInfo> orders = orderFacade.getOrders(
             userId, PageCommand.of(page, size), ListSort.from(sort));
         return ApiResponse.success(PageResponse.of(orders, OrderV1Dto.OrderResponse::from));
     }
@@ -82,7 +101,7 @@ public class OrderV1Controller implements OrderV1ApiSpec {
         @CustomerId Long userId,
         @PathVariable(value = "orderId") Long orderId
     ) {
-        OrderModel order = orderFacade.getOrder(userId, orderId);
+        OrderInfo order = orderFacade.getOrder(userId, orderId);
         return ApiResponse.success(OrderV1Dto.OrderResponse.from(order));
     }
 

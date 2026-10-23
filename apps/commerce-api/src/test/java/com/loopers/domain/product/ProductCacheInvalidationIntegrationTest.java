@@ -1,5 +1,9 @@
 package com.loopers.domain.product;
 
+import org.springframework.test.context.ContextConfiguration;
+import com.loopers.fixture.PgFixtureContextInitializer;
+import com.loopers.fixture.PgCommands;
+import com.loopers.application.order.OrderInfo;
 import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.common.PageCommand;
 import com.loopers.domain.order.OrderItemCommand;
@@ -26,8 +30,12 @@ import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+@ContextConfiguration(initializers = PgFixtureContextInitializer.class)
 @DisplayName("상품 상세 기본정보에 영향을 주는 쓰기는 commit 뒤 해당 기본정보를 삭제하고, 좋아요 쓰기는 캐시를 건드리지 않는다.")
 class ProductCacheInvalidationIntegrationTest extends ProductCacheTestSupport {
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.loopers.fixture.pg.PgFixtureServer pg;
 
     private static final PageCommand FIRST_PAGE = PageCommand.of(null, null);
 
@@ -37,17 +45,21 @@ class ProductCacheInvalidationIntegrationTest extends ProductCacheTestSupport {
         return user;
     }
 
-    private OrderModel confirmedOrder(UserModel user, Long productId, long quantity) {
-        OrderModel order = orderFacade.create(user.getId(), List.of(new OrderItemCommand(productId, quantity)));
-        orderConfirmFacade.confirm(user.getId(), order.getId());
-        return order;
+    private OrderInfo confirmedOrder(UserModel user, Long productId, long quantity) {
+        OrderInfo order = orderFacade.create(user.getId(), List.of(new OrderItemCommand(productId, quantity)));
+        pg.enqueuePlan(com.loopers.fixture.pg.PgOperation.CREATE,
+            com.loopers.domain.payment.PaymentModel.providerOrderIdOf(order.id()),
+            com.loopers.fixture.pg.ResponsePlan.outcome(com.loopers.fixture.pg.CreateOutcome.SUCCESS));
+        OrderInfo confirmed = orderConfirmFacade.confirm(user.getId(), order.id(), PgCommands.forOrder(order.id())).order();
+        assertThat(confirmed.status()).isEqualTo("CONFIRMED");
+        return confirmed;
     }
 
     /** 과거 주문의 총액과 품목 단가를 새 조회로 읽는다. */
     private List<Long> orderAmounts(Long orderId) {
         OrderModel order = orderJpaRepository.findWithItemsById(orderId).orElseThrow();
         OrderItemModel item = order.getItems().get(0);
-        return List.of(order.getOrderTotal().toWon(), item.getUnitPrice().toWon(), item.getQuantity());
+        return List.of(order.getTotalAmount().toWon(), item.getUnitPrice().toWon(), item.getQuantity());
     }
 
     private void assertNotFound(Long productId) {
@@ -66,7 +78,7 @@ class ProductCacheInvalidationIntegrationTest extends ProductCacheTestSupport {
             ProductModel shoes = productFixture.createProduct(brand.getId(), "운동화", 1_000L, 10L);
             ProductModel cap = productFixture.createProduct(brand.getId(), "모자", 2_000L, 10L);
             UserModel user = userWithPoint(10_000L);
-            OrderModel pastOrder = confirmedOrder(user, shoes.getId(), 2L);
+            OrderInfo pastOrder = confirmedOrder(user, shoes.getId(), 2L);
             assertThat(productFacade.getProduct(shoes.getId()).price()).isEqualTo(1_000L);
             assertThat(hasKey(shoes.getId())).isTrue();
 
@@ -84,7 +96,7 @@ class ProductCacheInvalidationIntegrationTest extends ProductCacheTestSupport {
                 () -> assertThat(detail.stockQuantity()).isEqualTo(8L),
                 () -> assertThat(rawValue(shoes.getId())).contains("\"price\":3000"),
                 () -> assertThat(listOrder).containsExactly(cap.getId(), shoes.getId()),
-                () -> assertThat(orderAmounts(pastOrder.getId())).containsExactly(2_000L, 1_000L, 2L)
+                () -> assertThat(orderAmounts(pastOrder.id())).containsExactly(2_000L, 1_000L, 2L)
             );
         }
 
@@ -141,7 +153,7 @@ class ProductCacheInvalidationIntegrationTest extends ProductCacheTestSupport {
             ProductModel cap = productFixture.createProduct(nike.getId(), "모자", 2_000L, 10L);
             ProductModel slipper = productFixture.createProduct(adidas.getId(), "슬리퍼", 3_000L, 10L);
             UserModel user = userWithPoint(10_000L);
-            OrderModel pastOrder = confirmedOrder(user, cap.getId(), 1L);
+            OrderInfo pastOrder = confirmedOrder(user, cap.getId(), 1L);
             productFacade.getProduct(shoes.getId());
             productFacade.getProduct(cap.getId());
             productFacade.getProduct(slipper.getId());
@@ -159,7 +171,7 @@ class ProductCacheInvalidationIntegrationTest extends ProductCacheTestSupport {
                 () -> assertThat(productFacade.getProducts(null, FIRST_PAGE, ProductSort.LATEST).items())
                     .extracting(ProductQueryResult::id).containsExactly(slipper.getId()),
                 () -> assertThat(productFacade.getProduct(slipper.getId()).brandName()).isEqualTo("아디다스"),
-                () -> assertThat(orderAmounts(pastOrder.getId())).containsExactly(2_000L, 2_000L, 1L)
+                () -> assertThat(orderAmounts(pastOrder.id())).containsExactly(2_000L, 2_000L, 1L)
             );
         }
     }
@@ -215,12 +227,12 @@ class ProductCacheInvalidationIntegrationTest extends ProductCacheTestSupport {
             productFacade.getProduct(cap.getId());
             productFacade.getProduct(bag.getId());
             UserModel user = userWithPoint(100_000L);
-            OrderModel order = orderFacade.create(user.getId(), List.of(
+            OrderInfo order = orderFacade.create(user.getId(), List.of(
                 new OrderItemCommand(shoes.getId(), 3L),
                 new OrderItemCommand(cap.getId(), 1L)
             ));
 
-            orderConfirmFacade.confirm(user.getId(), order.getId());
+            orderConfirmFacade.confirm(user.getId(), order.id(), PgCommands.forOrder(order.id()));
 
             assertAll(
                 () -> assertThat(hasKey(shoes.getId())).isFalse(),

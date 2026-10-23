@@ -1,5 +1,10 @@
 package com.loopers.domain.brand;
 
+import com.loopers.fixture.PgFixtureContextInitializer;
+import org.springframework.test.context.ContextConfiguration;
+import com.loopers.fixture.PastPointOrderFixture;
+import com.loopers.fixture.PgCommands;
+import com.loopers.application.order.OrderInfo;
 import com.loopers.application.brand.BrandFacade;
 import com.loopers.application.like.LikeFacade;
 import com.loopers.application.order.OrderConfirmFacade;
@@ -63,8 +68,12 @@ import static org.junit.jupiter.api.Assertions.assertAll;
  * 이 테스트 클래스에만 Hibernate 바인딩 로그를 켠다.
  */
 @DisplayName("BrandFacade 는 브랜드를 등록·조회·수정·삭제한다.")
+@ContextConfiguration(initializers = PgFixtureContextInitializer.class)
 @SpringBootTest(properties = "logging.level.org.hibernate.orm.jdbc.bind=TRACE")
 class BrandFacadeIntegrationTest {
+
+    @Autowired
+    private PastPointOrderFixture pastPointOrders;
 
     @Autowired
     private BrandFacade brandFacade;
@@ -161,8 +170,8 @@ class BrandFacadeIntegrationTest {
         List<List<Object>> items = order.getItems().stream()
             .map(item -> List.<Object>of(item.getProductId(), item.getQuantity(), item.getUnitPrice().toWon()))
             .toList();
-        return Arrays.asList(order.getStatus(), order.getOrderTotal().toWon(), order.getUsedPointAmount(),
-            order.getPaymentAmount() != null ? order.getPaymentAmount().toWon() : null, items);
+        return Arrays.asList(order.getStatus(), order.getTotalAmount().toWon(), order.getPointAmount(),
+            order.getPaidAmount() != null ? order.getPaidAmount().toWon() : null, items);
     }
 
     @DisplayName("등록")
@@ -279,11 +288,11 @@ class BrandFacadeIntegrationTest {
             productFacade.changeStock(shoes.getId(), 5L);
             likeFacade.like(user.getId(), shoes.getId());
             likeFacade.like(user.getId(), slipper.getId());
-            OrderModel pastOrder = orderFacade.create(user.getId(), List.of(
+            OrderInfo pastOrder = orderFacade.create(user.getId(), List.of(
                 new OrderItemCommand(shoes.getId(), 2L),
                 new OrderItemCommand(slipper.getId(), 1L)
             ));
-            orderConfirmFacade.confirm(user.getId(), pastOrder.getId());
+            pastPointOrders.confirm(user.getId(), pastOrder.id());
 
             ProductRow shoesBefore = productRow(shoes.getId());
             ProductRow soldOutBefore = productRow(soldOut.getId());
@@ -292,7 +301,7 @@ class BrandFacadeIntegrationTest {
             List<List<Object>> likesBefore = likeRows();
             List<List<Object>> stockHistoriesBefore = stockHistoryRows();
             List<List<Object>> pointHistoriesBefore = pointHistoryRows();
-            List<Object> orderBefore = orderRow(pastOrder.getId());
+            List<Object> orderBefore = orderRow(pastOrder.id());
             ZonedDateTime requestedAt = ZonedDateTime.now().truncatedTo(ChronoUnit.SECONDS);
 
             brandFacade.delete(nike.getId());
@@ -315,7 +324,7 @@ class BrandFacadeIntegrationTest {
                 () -> assertThat(likeRows()).isEqualTo(likesBefore),
                 () -> assertThat(stockHistoryRows()).isEqualTo(stockHistoriesBefore),
                 () -> assertThat(pointHistoryRows()).isEqualTo(pointHistoriesBefore),
-                () -> assertThat(orderRow(pastOrder.getId())).isEqualTo(orderBefore)
+                () -> assertThat(orderRow(pastOrder.id())).isEqualTo(orderBefore)
             );
         }
 
@@ -513,7 +522,7 @@ class BrandFacadeIntegrationTest {
         /** 일괄 삭제 대상 브랜드(재고 있는 상품·재고 0 상품), 다른 브랜드 상품, 좋아요와 과거 확정 주문을 준비한 뒤 브랜드를 삭제한다. */
         private record RemovedBrand(
             UserModel user, ProductModel shoes, ProductModel soldOut, ProductModel slipper,
-            OrderModel pastOrder, List<Object> pastOrderBeforeRemoval
+            OrderInfo pastOrder, List<Object> pastOrderBeforeRemoval
         ) {
         }
 
@@ -527,9 +536,9 @@ class BrandFacadeIntegrationTest {
             pointFacade.charge(user.getId(), 50_000L);
             likeFacade.like(user.getId(), shoes.getId());
             likeFacade.like(user.getId(), slipper.getId());
-            OrderModel pastOrder = orderFacade.create(user.getId(), List.of(new OrderItemCommand(shoes.getId(), 1L)));
-            orderConfirmFacade.confirm(user.getId(), pastOrder.getId());
-            List<Object> pastOrderBeforeRemoval = orderRow(pastOrder.getId());
+            OrderInfo pastOrder = orderFacade.create(user.getId(), List.of(new OrderItemCommand(shoes.getId(), 1L)));
+            pastPointOrders.confirm(user.getId(), pastOrder.id());
+            List<Object> pastOrderBeforeRemoval = orderRow(pastOrder.id());
 
             brandFacade.delete(nike.getId());
 
@@ -607,27 +616,27 @@ class BrandFacadeIntegrationTest {
         void keepsExistingLikeCancelAndPastOrders() {
             RemovedBrand removed = removeBrandWithProducts();
             Long userId = removed.user().getId();
-            Long pastOrderId = removed.pastOrder().getId();
+            Long pastOrderId = removed.pastOrder().id();
 
             likeFacade.cancel(userId, removed.shoes().getId());
 
-            OrderModel customerView = orderFacade.getOrder(userId, pastOrderId);
-            OrderModel adminView = orderFacade.getAnyOrder(pastOrderId);
+            OrderInfo customerView = orderFacade.getOrder(userId, pastOrderId);
+            OrderInfo adminView = orderFacade.getAnyOrder(pastOrderId);
             assertAll(
                 () -> assertThat(likeJpaRepository.findByUserIdAndProductId(userId, removed.shoes().getId())).isEmpty(),
                 () -> assertThat(likeJpaRepository.findByUserIdAndProductId(userId, removed.slipper().getId())).isPresent(),
                 () -> assertThat(orderRow(pastOrderId)).isEqualTo(removed.pastOrderBeforeRemoval()),
-                () -> assertThat(customerView.getStatus()).isEqualTo(OrderStatus.CONFIRMED),
-                () -> assertThat(customerView.getOrderTotal().toWon()).isEqualTo(10_000L),
-                () -> assertThat(customerView.getPaymentAmount().toWon()).isEqualTo(10_000L),
-                () -> assertThat(customerView.getItems()).singleElement()
+                () -> assertThat(customerView.status()).isEqualTo(OrderStatus.CONFIRMED.name()),
+                () -> assertThat(customerView.totalAmount()).isEqualTo(10_000L),
+                () -> assertThat(customerView.paidAmount()).isEqualTo(10_000L),
+                () -> assertThat(customerView.items()).singleElement()
                     .satisfies(item -> {
-                        assertThat(item.getProductId()).isEqualTo(removed.shoes().getId());
-                        assertThat(item.getQuantity()).isEqualTo(1L);
-                        assertThat(item.getUnitPrice().toWon()).isEqualTo(10_000L);
+                        assertThat(item.productId()).isEqualTo(removed.shoes().getId());
+                        assertThat(item.quantity()).isEqualTo(1L);
+                        assertThat(item.unitPrice()).isEqualTo(10_000L);
                     }),
-                () -> assertThat(adminView.getId()).isEqualTo(pastOrderId),
-                () -> assertThat(adminView.getPaymentAmount().toWon()).isEqualTo(10_000L)
+                () -> assertThat(adminView.id()).isEqualTo(pastOrderId),
+                () -> assertThat(adminView.paidAmount()).isEqualTo(10_000L)
             );
         }
 
@@ -638,18 +647,18 @@ class BrandFacadeIntegrationTest {
             ProductModel shoes = productFixture.createProduct(nike.getId(), "운동화", 10_000L, 5L);
             UserModel user = userFixture.createUserWithPoint();
             pointFacade.charge(user.getId(), 50_000L);
-            OrderModel draft = orderFacade.create(user.getId(), List.of(new OrderItemCommand(shoes.getId(), 2L)));
-            List<Object> draftBefore = orderRow(draft.getId());
+            OrderInfo draft = orderFacade.create(user.getId(), List.of(new OrderItemCommand(shoes.getId(), 2L)));
+            List<Object> draftBefore = orderRow(draft.id());
             List<List<Object>> pointHistoriesBefore = pointHistoryRows();
             List<List<Object>> stockHistoriesBefore = stockHistoryRows();
             brandFacade.delete(nike.getId());
 
-            assertThatThrownBy(() -> orderConfirmFacade.confirm(user.getId(), draft.getId()))
+            assertThatThrownBy(() -> orderConfirmFacade.confirm(user.getId(), draft.id(), PgCommands.forOrder(draft.id())))
                 .isInstanceOf(CoreException.class)
                 .hasFieldOrPropertyWithValue("errorType", ErrorType.PRODUCT_NOT_FOUND);
 
             assertAll(
-                () -> assertThat(orderRow(draft.getId())).isEqualTo(draftBefore),
+                () -> assertThat(orderRow(draft.id())).isEqualTo(draftBefore),
                 () -> assertThat(draftBefore).containsExactly(OrderStatus.DRAFT, 20_000L, null, null,
                     List.of(List.of(shoes.getId(), 2L, 10_000L))),
                 () -> assertThat(pointJpaRepository.findByUserId(user.getId()).orElseThrow().getBalance())

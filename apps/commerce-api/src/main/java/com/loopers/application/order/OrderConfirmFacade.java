@@ -1,101 +1,63 @@
 package com.loopers.application.order;
 
-import com.loopers.domain.order.OrderItemModel;
-import com.loopers.domain.order.OrderModel;
-import com.loopers.domain.order.OrderRepository;
-import com.loopers.domain.point.PointChange;
-import com.loopers.domain.point.PointHistoryModel;
-import com.loopers.domain.point.PointHistoryRepository;
-import com.loopers.domain.point.PointModel;
-import com.loopers.domain.point.PointRepository;
-import com.loopers.domain.product.ProductDetailCache;
-import com.loopers.domain.product.ProductModel;
-import com.loopers.domain.product.ProductRepository;
-import com.loopers.domain.product.StockChange;
-import com.loopers.domain.product.StockHistoryModel;
-import com.loopers.domain.product.StockHistoryRepository;
+import com.loopers.application.payment.BeginConfirmationResult;
+import com.loopers.application.payment.PaymentApplyResult;
+import com.loopers.application.payment.PaymentConfirmCommand;
+import com.loopers.application.payment.PaymentObservationApplier;
+import com.loopers.application.payment.PaymentTransactionService;
+import com.loopers.application.payment.PrepareConfirmationResult;
+import com.loopers.domain.payment.CreateAdmission;
+import com.loopers.domain.payment.PaymentGateway;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
-import com.loopers.support.transaction.AfterCommitRunner;
+import com.loopers.support.persistence.ConstraintViolationClassifier;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Comparator;
-import java.util.List;
-import java.util.Map;
-import java.util.function.Function;
-import java.util.stream.Collectors;
-
-/**
- * 주문 확정은 Order·Point·Product 라는 여러 비즈니스 애그리게잇을 함께 변경하므로
- * Facade 가 처리 순서와 전체 트랜잭션을 관리한다. 업무 규칙은 각 모델이 지킨다.
- */
 @RequiredArgsConstructor
 @Component
 public class OrderConfirmFacade {
 
-    private final OrderRepository orderRepository;
-    private final ProductRepository productRepository;
-    private final PointRepository pointRepository;
-    private final PointHistoryRepository pointHistoryRepository;
-    private final StockHistoryRepository stockHistoryRepository;
-    private final ProductDetailCache productDetailCache;
-    private final AfterCommitRunner afterCommitRunner;
+    private final PaymentTransactionService transactions;
+    private final PaymentGateway gateway;
+    private final PaymentObservationApplier applier;
+    private final ConstraintViolationClassifier constraints;
 
-    @Transactional
-    public OrderInfo confirm(Long userId, Long orderId) {
-        OrderModel order = orderRepository.findForUpdate(orderId)
-            .orElseThrow(() -> new CoreException(ErrorType.ORDER_NOT_FOUND));
-        order.requireOwnedBy(userId);
-        order.requireConfirmable();
-
-        // 잠근 Order 의 소유권·상태를 확인한 뒤 같은 트랜잭션에서 품목을 별도로 복원하고, 상품 ID 오름차순으로 처리한다.
-        List<OrderItemModel> items = order.getItems().stream()
-            .sorted(Comparator.comparing(OrderItemModel::getProductId))
-            .toList();
-
-        // Point 부족 요청이 공유 Product 잠금을 얻기 전에 끝나도록 Point 를 먼저 잠그고 바로 사용한다.
-        PointModel point = pointRepository.findByUserIdForUpdate(userId)
-            .orElseThrow(() -> new CoreException(ErrorType.POINT_NOT_INITIALIZED));
-        PointChange pointChange = point.use(order.getOrderTotal().toWon());
-
-        Map<Long, ProductModel> products = lockActiveProducts(items);
-
-        for (OrderItemModel item : items) {
-            ProductModel product = products.get(item.getProductId());
-            StockChange stockChange = product.decreaseStock(item.getQuantity());
-            stockHistoryRepository.save(
-                StockHistoryModel.deductedByOrder(product.getId(), orderId, stockChange));
-            productRepository.save(product);
+    public PaymentApplyResult confirm(Long userId, Long orderId, PaymentConfirmCommand command) {
+        PrepareConfirmationResult prepared = transactions.prepareConfirmation(userId, orderId, command);
+        if (prepared.status() == PrepareConfirmationResult.Status.STORED) {
+            return stored(prepared.stored());
         }
-
-        pointHistoryRepository.save(PointHistoryModel.usedForOrder(point.getId(), orderId, pointChange));
-        order.confirmWithPoints(pointChange.changedAmount());
-
-        pointRepository.save(point);
-        OrderInfo confirmed = OrderInfo.from(orderRepository.save(order));
-
-        // 재고가 바뀐 상품의 상세 기본정보는 주문 확정이 commit 된 뒤 무효화한다.
-        List<Long> changedProductIds = List.copyOf(products.keySet());
-        afterCommitRunner.runAfterCommit("상품 상세 기본정보 무효화", () -> productDetailCache.evictAll(changedProductIds));
-        return confirmed;
+        if (gateway.checkCreateAdmission() == CreateAdmission.BLOCKED) {
+            prepared = transactions.prepareConfirmation(userId, orderId, command);
+            if (prepared.status() == PrepareConfirmationResult.Status.STORED) {
+                return stored(prepared.stored());
+            }
+            throw new CoreException(ErrorType.PG_CREATE_UNAVAILABLE);
+        }
+        BeginConfirmationResult begin;
+        try {
+            begin = transactions.beginConfirmation(userId, orderId, command);
+        } catch (DataIntegrityViolationException failure) {
+            String constraint = constraints.namedUniqueViolation(failure).orElse("");
+            if (!"uk_payment_order".equals(constraint) && !"uk_payment_key".equals(constraint)) {
+                throw failure;
+            }
+            prepared = transactions.prepareConfirmation(userId, orderId, command);
+            if (prepared.status() == PrepareConfirmationResult.Status.STORED) {
+                return stored(prepared.stored());
+            }
+            throw new CoreException(ErrorType.PAYMENT_ATTEMPT_CONFLICT);
+        }
+        if (begin.status() == BeginConfirmationResult.Status.STORED) {
+            return stored(begin.stored());
+        }
+        return applier.apply(begin.token(), gateway.create(begin.request()));
     }
 
-    /**
-     * 저장된 OrderItem 의 상품을 중복 제거 ID 오름차순으로 잠가 조회하고,
-     * 하나라도 없거나 삭제됐으면 거절한다.
-     */
-    private Map<Long, ProductModel> lockActiveProducts(List<OrderItemModel> items) {
-        List<Long> productIds = items.stream().map(OrderItemModel::getProductId).distinct().sorted().toList();
-        Map<Long, ProductModel> products = productRepository.findAllActiveByIdsForUpdate(productIds).stream()
-            .collect(Collectors.toMap(ProductModel::getId, Function.identity()));
-
-        productIds.forEach(productId -> {
-            if (!products.containsKey(productId)) {
-                throw new CoreException(ErrorType.PRODUCT_NOT_FOUND, "[productId = " + productId + "]");
-            }
-        });
-        return products;
+    private static PaymentApplyResult stored(OrderInfo order) {
+        boolean terminal = "CONFIRMED".equals(order.status()) || "PAYMENT_FAILED".equals(order.status());
+        return new PaymentApplyResult(order, terminal ? PaymentApplyResult.Outcome.FINAL : PaymentApplyResult.Outcome.PENDING);
     }
 }

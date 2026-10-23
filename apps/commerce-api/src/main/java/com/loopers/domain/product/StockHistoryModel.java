@@ -53,4 +53,12 @@ public class StockHistoryModel extends BaseEntity {
     public static StockHistoryModel deductedByOrder(Long productId, Long orderId, StockChange change) {
         return new StockHistoryModel(productId, change, StockChangeCause.ORDER_DEDUCTION, orderId);
     }
+
+    public static StockHistoryModel reservedByOrder(Long productId, Long orderId, StockChange change) {
+        return new StockHistoryModel(productId, change, StockChangeCause.ORDER_RESERVATION, orderId);
+    }
+
+    public static StockHistoryModel releasedByOrder(Long productId, Long orderId, StockChange change) {
+        return new StockHistoryModel(productId, change, StockChangeCause.ORDER_RELEASE, orderId);
+    }
 }

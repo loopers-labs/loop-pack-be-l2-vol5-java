@@ -4,7 +4,7 @@ import com.loopers.application.order.OrderFacade;
 import com.loopers.domain.common.ListSort;
 import com.loopers.domain.common.PageCommand;
 import com.loopers.domain.common.PageResult;
-import com.loopers.domain.order.OrderModel;
+import com.loopers.application.order.OrderInfo;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.PageResponse;
 import lombok.RequiredArgsConstructor;
@@ -31,7 +31,7 @@ public class OrderAdminV1Controller implements OrderAdminV1ApiSpec {
         @RequestParam(value = "size", required = false) Integer size,
         @RequestParam(value = "sort", required = false) String sort
     ) {
-        PageResult<OrderModel> result = orderFacade.getAllOrders(PageCommand.of(page, size), ListSort.from(sort));
+        PageResult<OrderInfo> result = orderFacade.getAllOrders(PageCommand.of(page, size), ListSort.from(sort));
         return ApiResponse.success(PageResponse.of(result, OrderAdminV1Dto.AdminOrderResponse::from));
     }
 

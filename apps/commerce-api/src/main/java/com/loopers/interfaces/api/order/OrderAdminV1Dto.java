@@ -1,46 +1,36 @@
 package com.loopers.interfaces.api.order;
 
-import com.loopers.domain.common.Money;
-import com.loopers.domain.order.OrderItemModel;
-import com.loopers.domain.order.OrderModel;
+import com.loopers.application.order.OrderInfo;
 
 import java.util.List;
 
 public class OrderAdminV1Dto {
 
-    /** 고객 품목 응답과 같은 값을 담지만, 관리자에게만 필요한 정보가 생겨도 고객 응답을 바꾸지 않도록 분리한다. */
     public record AdminOrderItemResponse(Long productId, Long quantity, Long unitPrice, Long amount) {
-        public static AdminOrderItemResponse from(OrderItemModel item) {
-            return new AdminOrderItemResponse(
-                item.getProductId(),
-                item.getQuantity(),
-                item.getUnitPrice().toWon(),
-                item.calculateAmount().toWon()
-            );
+        static AdminOrderItemResponse from(OrderInfo.Item item) {
+            return new AdminOrderItemResponse(item.productId(), item.quantity(), item.unitPrice(), item.amount());
         }
     }
 
-    /** 고객 주문 응답에 구매자 식별자를 더한 형태다. */
-    public record AdminOrderResponse(
-        Long id,
-        Long userId,
-        String status,
-        Long orderTotal,
-        Long usedPointAmount,
-        Long paymentAmount,
-        List<AdminOrderItemResponse> items
-    ) {
-        public static AdminOrderResponse from(OrderModel order) {
-            Money paymentAmount = order.getPaymentAmount();
-            return new AdminOrderResponse(
-                order.getId(),
-                order.getUserId(),
-                order.getStatus().name(),
-                order.getOrderTotal().toWon(),
-                order.getUsedPointAmount(),
-                paymentAmount != null ? paymentAmount.toWon() : null,
-                order.getItems().stream().map(AdminOrderItemResponse::from).toList()
-            );
+    public record AdminOrderPaymentResponse(String method, String status, String paymentAttemptKey, Long amount,
+                                      String orderUrl, String reconcileUrl, String verificationStatus) {
+        static AdminOrderPaymentResponse from(Long orderId, OrderInfo.PaymentInfo payment) {
+            if (payment == null) {
+                return null;
+            }
+            String reconcileUrl = "PG".equals(payment.method())
+                ? "/api/v1/orders/" + orderId + "/payment/reconcile" : null;
+            return new AdminOrderPaymentResponse(payment.method(), payment.status(), payment.paymentAttemptKey(),
+                payment.amount(), "/api-admin/v1/orders/" + orderId, reconcileUrl, payment.verificationStatus());
+        }
+    }
+
+    public record AdminOrderResponse(Long id, Long userId, String status, Long totalAmount, Long pointAmount, Long paidAmount,
+                                AdminOrderPaymentResponse payment, List<AdminOrderItemResponse> items) {
+        public static AdminOrderResponse from(OrderInfo info) {
+            return new AdminOrderResponse(info.id(), info.userId(), info.status(), info.totalAmount(), info.pointAmount(),
+                info.paidAmount(), AdminOrderPaymentResponse.from(info.id(), info.payment()),
+                info.items().stream().map(AdminOrderItemResponse::from).toList());
         }
     }
 }

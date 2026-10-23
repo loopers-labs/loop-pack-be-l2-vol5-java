@@ -1,5 +1,6 @@
 package com.loopers.domain.order;
 
+import com.loopers.application.order.OrderInfo;
 import com.loopers.application.order.OrderFacade;
 import com.loopers.domain.common.Money;
 import com.loopers.domain.product.ProductModel;
@@ -63,17 +64,17 @@ class OrderFacadeIntegrationTest {
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 10L);
             ProductModel pants = productFixture.createProduct("바지", 3_000L, 10L);
 
-            OrderModel created = orderFacade.create(user.getId(), List.of(
+            OrderInfo created = orderFacade.create(user.getId(), List.of(
                 new OrderItemCommand(shirt.getId(), 2L),
                 new OrderItemCommand(pants.getId(), 1L)
             ));
 
-            OrderModel saved = orderJpaRepository.findById(created.getId()).orElseThrow();
+            OrderModel saved = orderJpaRepository.findById(created.id()).orElseThrow();
             assertAll(
                 () -> assertThat(saved.getStatus()).isEqualTo(OrderStatus.DRAFT),
-                () -> assertThat(saved.getOrderTotal()).isEqualTo(Money.of(7_000L)),
+                () -> assertThat(saved.getTotalAmount()).isEqualTo(Money.of(7_000L)),
                 () -> assertThat(saved.getUserId()).isEqualTo(user.getId()),
-                () -> assertThat(orderStateReader.orderRow(created.getId())).isEqualTo(Arrays.asList(
+                () -> assertThat(orderStateReader.orderRow(created.id())).isEqualTo(Arrays.asList(
                     user.getId(), OrderStatus.DRAFT, 7_000L, null, null, List.of(
                         List.of(shirt.getId(), 2L, 2_000L), List.of(pants.getId(), 1L, 3_000L))))
             );
@@ -102,16 +103,16 @@ class OrderFacadeIntegrationTest {
             UserModel user = userFixture.createUserWithPoint();
             ProductModel shirt = productFixture.createProduct("티셔츠", 1_000L, 10L);
 
-            OrderModel created = orderFacade.create(user.getId(), List.of(
+            OrderInfo created = orderFacade.create(user.getId(), List.of(
                 new OrderItemCommand(shirt.getId(), 2L),
                 new OrderItemCommand(shirt.getId(), 3L)
             ));
 
-            List<OrderItemModel> items = orderFacade.getOrder(user.getId(), created.getId()).getItems();
+            List<OrderInfo.Item> items = orderFacade.getOrder(user.getId(), created.id()).items();
             assertAll(
                 () -> assertThat(items).hasSize(1),
-                () -> assertThat(items.get(0).getQuantity()).isEqualTo(5L),
-                () -> assertThat(created.getOrderTotal()).isEqualTo(Money.of(5_000L))
+                () -> assertThat(items.get(0).quantity()).isEqualTo(5L),
+                () -> assertThat(created.totalAmount()).isEqualTo(5_000L)
             );
         }
 
@@ -191,17 +192,17 @@ class OrderFacadeIntegrationTest {
         void keepsUnitPriceSnapshot() {
             UserModel user = userFixture.createUserWithPoint();
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 10L);
-            OrderModel created = orderFacade.create(user.getId(),
+            OrderInfo created = orderFacade.create(user.getId(),
                 List.of(new OrderItemCommand(shirt.getId(), 2L)));
 
             ProductModel stored = productJpaRepository.findById(shirt.getId()).orElseThrow();
             stored.update("티셔츠", 5_000L);
             productJpaRepository.save(stored);
 
-            OrderModel reloaded = orderFacade.getOrder(user.getId(), created.getId());
+            OrderInfo reloaded = orderFacade.getOrder(user.getId(), created.id());
             assertAll(
-                () -> assertThat(reloaded.getItems().get(0).getUnitPrice()).isEqualTo(Money.of(2_000L)),
-                () -> assertThat(reloaded.getOrderTotal()).isEqualTo(Money.of(4_000L))
+                () -> assertThat(reloaded.items().get(0).unitPrice()).isEqualTo(2_000L),
+                () -> assertThat(reloaded.totalAmount()).isEqualTo(4_000L)
             );
         }
     }
@@ -214,15 +215,15 @@ class OrderFacadeIntegrationTest {
         void returnsOwnOrder() {
             UserModel user = userFixture.createUserWithPoint();
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 10L);
-            OrderModel created = orderFacade.create(user.getId(),
+            OrderInfo created = orderFacade.create(user.getId(),
                 List.of(new OrderItemCommand(shirt.getId(), 2L)));
 
-            OrderModel found = orderFacade.getOrder(user.getId(), created.getId());
+            OrderInfo found = orderFacade.getOrder(user.getId(), created.id());
 
             assertAll(
-                () -> assertThat(found.getId()).isEqualTo(created.getId()),
-                () -> assertThat(found.getItems()).hasSize(1),
-                () -> assertThat(found.getItems().get(0).getProductId()).isEqualTo(shirt.getId())
+                () -> assertThat(found.id()).isEqualTo(created.id()),
+                () -> assertThat(found.items()).hasSize(1),
+                () -> assertThat(found.items().get(0).productId()).isEqualTo(shirt.getId())
             );
         }
 
@@ -232,10 +233,10 @@ class OrderFacadeIntegrationTest {
             UserModel owner = userFixture.createUserWithPoint();
             UserModel other = userFixture.createUserWithPoint();
             ProductModel shirt = productFixture.createProduct("티셔츠", 2_000L, 10L);
-            OrderModel created = orderFacade.create(owner.getId(),
+            OrderInfo created = orderFacade.create(owner.getId(),
                 List.of(new OrderItemCommand(shirt.getId(), 1L)));
 
-            assertThatThrownBy(() -> orderFacade.getOrder(other.getId(), created.getId()))
+            assertThatThrownBy(() -> orderFacade.getOrder(other.getId(), created.id()))
                 .isInstanceOf(CoreException.class)
                 .extracting("errorType")
                 .isEqualTo(ErrorType.ORDER_NOT_FOUND);

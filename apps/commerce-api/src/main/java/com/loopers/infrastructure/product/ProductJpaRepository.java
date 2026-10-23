@@ -27,6 +27,10 @@ public interface ProductJpaRepository extends JpaRepository<ProductModel, Long> 
     @Query("select p from ProductModel p where p.id in :ids and p.deletedAt is null order by p.id asc")
     List<ProductModel> findAllActiveForUpdateByIdIn(@Param("ids") Collection<Long> ids);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from ProductModel p where p.id in :ids order by p.id asc")
+    List<ProductModel> findAllForUpdateByIdIn(@Param("ids") Collection<Long> ids);
+
     @Query("select p.id from ProductModel p where p.brandId = :brandId and p.deletedAt is null")
     List<Long> findActiveIdsByBrandId(@Param("brandId") Long brandId);
 
