@@ -89,6 +89,17 @@ public final class PgFixture implements AutoCloseable {
         }
     }
 
+    public void reset() {
+        transactions.clear();
+        received.clear();
+        createCount.set(0);
+        rejectNext.set(false);
+        nextCreateResponse.set(null);
+        nextLookupResponse.set(null);
+        dropNextResponse.set(false);
+        holdNext.set(null);
+    }
+
     public String baseUrl() {
         return "https://127.0.0.1:" + server.getAddress().getPort();
     }

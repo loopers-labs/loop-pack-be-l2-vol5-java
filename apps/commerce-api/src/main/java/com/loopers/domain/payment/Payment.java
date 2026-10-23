@@ -140,6 +140,10 @@ public class Payment {
         return PaymentOutcome.conflict(new PaymentDiscrepancy(reason, observedKey, observedStatus, observedAmount));
     }
 
+    public boolean isAwaitingResult() {
+        return status == PaymentStatus.REQUESTED || status == PaymentStatus.PENDING || status == PaymentStatus.UNKNOWN;
+    }
+
     public boolean isSettled() {
         return status == PaymentStatus.SUCCESS || status == PaymentStatus.FAILED;
     }

@@ -47,12 +47,17 @@ public class OrderV1Controller {
         @RequestBody OrderV1Dto.ConfirmRequest request
     ) {
         Payment payment = paymentFacade.confirm(request.toCommand(userId, orderId), Instant.now());
-        ApiResponse<OrderV1Dto.ConfirmResponse> body = ApiResponse.success(
-            OrderV1Dto.ConfirmResponse.of(orderFacade.get(userId, orderId), payment));
-        if (payment.isSettled()) {
-            return ResponseEntity.ok(body);
-        }
-        return ResponseEntity.accepted().header(HttpHeaders.RETRY_AFTER, RETRY_AFTER_SECONDS).body(body);
+        return respond(payment, OrderV1Dto.ConfirmResponse.of(orderFacade.get(userId, orderId), payment));
+    }
+
+    @PostMapping("/{orderId}/payment/reconcile")
+    public ResponseEntity<ApiResponse<OrderV1Dto.ReconcileResponse>> reconcile(
+        @RequestHeader("X-USER-ID") Long userId,
+        @PathVariable Long orderId
+    ) {
+        PaymentFacade.ReconcileResult result = paymentFacade.reconcile(userId, orderId, Instant.now());
+        return respond(result.payment(), OrderV1Dto.ReconcileResponse.of(
+            orderFacade.get(userId, orderId), result.payment(), result.lookupUnavailable()));
     }
 
     @GetMapping
@@ -67,5 +72,14 @@ public class OrderV1Controller {
         @PathVariable Long orderId
     ) {
         return ApiResponse.success(OrderV1Dto.OrderResponse.from(orderFacade.get(userId, orderId)));
+    }
+
+    private static <T> ResponseEntity<ApiResponse<T>> respond(Payment payment, T data) {
+        if (payment.isSettled()) {
+            return ResponseEntity.ok(ApiResponse.success(data));
+        }
+        return ResponseEntity.accepted()
+            .header(HttpHeaders.RETRY_AFTER, RETRY_AFTER_SECONDS)
+            .body(ApiResponse.success(data));
     }
 }

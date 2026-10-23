@@ -62,6 +62,21 @@ class PgFixtureTest {
         assertThat(body.get("status").asText()).isEqualTo("SUCCESS");
     }
 
+    @DisplayName("reset 은 거래, 받은 요청, 생성 수, 다음 한 번 손잡이를 비운다. 거래 키 번호는 이어진다")
+    @Test
+    void resetClearsState() throws Exception {
+        String before = transactionKeyOf(create(ORDER_ID, 7000));
+        pg.rejectNextCreate();
+
+        pg.reset();
+
+        assertThat(pg.transactionsOf(ORDER_ID)).isEmpty();
+        assertThat(pg.receivedRequests()).isEmpty();
+        assertThat(pg.createCount()).isZero();
+        String after = transactionKeyOf(create(ORDER_ID, 7000));
+        assertThat(after).isNotEqualTo(before);
+    }
+
     @DisplayName("공용 fixture 는 test 프로필의 PG 주소(127.0.0.1:8090)에서 하나만 뜬다")
     @Test
     void sharedListensOnTestProfileAddress() {

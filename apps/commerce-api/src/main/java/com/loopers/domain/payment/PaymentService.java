@@ -17,6 +17,10 @@ public class PaymentService {
         return paymentRepository.findByAttemptKey(attemptKey);
     }
 
+    public Optional<Payment> findByOrderId(Long orderId) {
+        return paymentRepository.findByOrderId(orderId);
+    }
+
     public Optional<Payment> findByProviderOrderId(ProviderOrderId providerOrderId) {
         return paymentRepository.findByProviderOrderId(providerOrderId);
     }

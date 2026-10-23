@@ -64,6 +64,20 @@ public class OrderV1Dto {
         }
     }
 
+    public record ReconcileResponse(
+        Long orderId,
+        String orderStatus,
+        String paymentStatus,
+        String statusUrl,
+        boolean lookupUnavailable
+    ) {
+        public static ReconcileResponse of(Order order, Payment payment, boolean lookupUnavailable) {
+            return new ReconcileResponse(
+                order.getId(), order.getStatus().name(), payment.getStatus().name(),
+                "/api/v1/orders/" + order.getId(), lookupUnavailable);
+        }
+    }
+
     public record OrderItemResponse(Long productId, String productName, long unitPrice, int quantity, long lineTotal) {
         static OrderItemResponse from(OrderItem item) {
             return new OrderItemResponse(

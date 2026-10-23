@@ -79,6 +79,34 @@ class PaymentTest {
     }
 
     @Nested
+    @DisplayName("SETTLE-008, PAY-018: 결과를 기다리는 결제만 PG 에 확인할 대상이다")
+    class AwaitingResult {
+
+        @DisplayName("REQUESTED, PENDING, UNKNOWN 은 확인 대상이다")
+        @Test
+        void unresolved() {
+            Payment unknown = requested();
+            unknown.observe(new CreateObservation.CreateUnknown());
+
+            assertThat(requested().isAwaitingResult()).isTrue();
+            assertThat(accepted().isAwaitingResult()).isTrue();
+            assertThat(unknown.isAwaitingResult()).isTrue();
+        }
+
+        @DisplayName("SUCCESS, FAILED 는 끝났고 CONFLICT 는 사람이 풀 때까지 확인하지 않는다")
+        @Test
+        void settledOrConflict() {
+            Payment conflict = accepted();
+            conflict.observe(found(transaction(KEY, ORDER, 9000, PgTransaction.Status.SUCCESS)));
+
+            assertThat(settled(PgTransaction.Status.SUCCESS).isAwaitingResult()).isFalse();
+            assertThat(settled(PgTransaction.Status.FAILED).isAwaitingResult()).isFalse();
+            assertThat(conflict.getStatus()).isEqualTo(PaymentStatus.CONFLICT);
+            assertThat(conflict.isAwaitingResult()).isFalse();
+        }
+    }
+
+    @Nested
     @DisplayName("PG-005, PG-010, PG-011, PG-015: 생성 결과로 REQUESTED 가 바뀐다")
     class CreateResult {
 

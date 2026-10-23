@@ -81,6 +81,7 @@ class PaymentCallbackApiE2ETest {
 
     @BeforeEach
     void setUp() {
+        PG.reset();
         Long brandId = brandFacade.register("무신사", "패션 플랫폼").getId();
         coat = productFacade.register(brandId, "코트", Price.of(3_000)).getId();
         productFacade.adjustStock(coat, Quantity.of(10));
