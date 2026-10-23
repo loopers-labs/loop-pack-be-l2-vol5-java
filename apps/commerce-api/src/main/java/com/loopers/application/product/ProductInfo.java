@@ -15,12 +15,12 @@ public record ProductInfo(
     long likeCount,
     boolean deleted
 ) {
-    public static ProductInfo of(ProductModel product, BrandModel brand, long likeCount) {
+    public static ProductInfo of(ProductModel product, int stock, BrandModel brand, long likeCount) {
         return new ProductInfo(
             product.getId(),
             product.getName(),
             product.getPrice(),
-            product.getStock(),
+            stock,
             BrandInfo.from(brand),
             likeCount,
             product.isDeleted()

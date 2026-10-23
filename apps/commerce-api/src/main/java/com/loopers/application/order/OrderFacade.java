@@ -2,12 +2,12 @@ package com.loopers.application.order;
 
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.product.ProductService;
-import com.loopers.domain.order.OrderItemModel;
 import com.loopers.domain.order.OrderModel;
 import com.loopers.domain.order.OrderService;
-import com.loopers.domain.point.PointService;
+import com.loopers.domain.order.OrderStatus;
 import com.loopers.domain.user.UserService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,13 +16,17 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+@Slf4j
 @RequiredArgsConstructor
 @Component
 public class OrderFacade {
     private final UserService userService;
     private final ProductService productService;
-    private final PointService pointService;
     private final OrderService orderService;
+    private final OrderPaymentProcessor orderPaymentProcessor;
+    private final PaymentGateway paymentGateway;
+    private final PaymentLookupScheduler paymentLookupScheduler;
+    private final PaymentRequestGuard paymentRequestGuard;
 
     /**
      * FR-ORDER-01 주문 생성. ST-03 (없음) → DRAFT. 재고·잔액 변화 없음, 재고 부족은 확인하지 않는다.
@@ -42,22 +46,52 @@ public class OrderFacade {
     }
 
     /**
-     * FR-ORDER-02 주문 확정. ST-03 DRAFT → CONFIRMED.
-     * 한 트랜잭션에서 상품 삭제 재검증 → 재고 차감(품목마다) → 잔액 차감 → 확정. 어느 하나가 실패하면 전부 롤백 (ASM-14, DR-08).
-     * 검사 순서는 요구사항 실패 케이스 순서: 주문 없음 → 소유 → DRAFT → 상품 삭제 → 재고 → 잔액 (EP-11).
-     * 동시 확정은 상품(id 오름차순) → 포인트 순서의 비관적 락으로 직렬화한다 (DR-34).
+     * FR-ORDER-02 주문 확정 (PG 카드 결제). 트랜잭션 없음: 결제 시작(재고 예약, AWAITING_PAYMENT) 커밋 → PG 요청 → 결과 반영.
+     * 결제 요청 전에 백업 거래 조회를 예약한다 (PaymentLookupScheduler, 결제 요청과 서로 기다리지 않는다).
+     * 조회 예약·결제 요청은 PaymentRequestGuard(세마포어·서킷) 안에서 한다. 거기서 거절되면 둘 다 하지 않고 NOT_SENT 라 FAILED 다.
+     * 같은 결제 시도 키의 재요청은 PG 를 다시 부르지 않고 현재 상태를 돌려준다. 결과를 모르면 AWAITING_PAYMENT 그대로 돌려준다.
      */
-    @Transactional
-    public OrderInfo confirmOrder(Long requesterId, Long orderId) {
-        userService.getUser(requesterId);
-        OrderModel order = orderService.getOwned(orderId, requesterId);
-        order.ensureDraft();
-        productService.getActiveProductsForUpdate(order.getItems().stream().map(OrderItemModel::getProductId).toList());
-        for (OrderItemModel item : order.getItems()) {
-            productService.deductStock(item.getProductId(), item.getQuantity());
+    public OrderInfo confirmOrder(Long requesterId, Long orderId, String paymentAttemptKey, String cardType, String cardNo) {
+        OrderPaymentProcessor.Started started = orderPaymentProcessor.startPayment(requesterId, orderId, paymentAttemptKey, cardType, cardNo);
+        if (started.alreadyStarted()) {
+            return started.order();
         }
-        pointService.deduct(requesterId, order.getTotalAmount());
-        order.confirm();
-        return OrderInfo.from(order);
+        OrderInfo order = started.order();
+        PaymentGatewayResult result = paymentRequestGuard.run(order.id(), () -> {
+            paymentLookupScheduler.schedule(order.userId(), order.id());
+            return paymentGateway.request(order.userId(), order.id(), cardType, cardNo, order.totalAmount());
+        });
+        return orderPaymentProcessor.applyResult(order.id(), result);
+    }
+
+    /**
+     * 결제 대기 해소. 트랜잭션 없음: 본인 주문 확인 → (AWAITING_PAYMENT 면) PG 에 PG 주문 ID 로 기존 거래 조회 → 결과 반영 (동기 응답·callback 과 같은 applyResult).
+     * 새 결제 요청을 만들지 않는다. AWAITING_PAYMENT 가 아니면 PG 를 부르지 않고 현재 상태를 돌려준다. 조회 실패는 UNKNOWN 이라 주문은 그대로다.
+     */
+    public OrderInfo resolveAwaitingPayment(Long requesterId, Long orderId) {
+        OrderInfo order = orderPaymentProcessor.getOwned(requesterId, orderId);
+        if (!OrderStatus.AWAITING_PAYMENT.name().equals(order.status())) {
+            return order;
+        }
+        PaymentGatewayResult result = paymentGateway.find(order.userId(), order.id());
+        return orderPaymentProcessor.applyResult(order.id(), result);
+    }
+
+    /**
+     * PG callback. 본문(claimed)은 믿지 않고 신호로만 쓴다: PG 주문 ID("ORDER-{id}")로 주문을 찾고, AWAITING_PAYMENT 면 PG 에 거래를 조회(권위 조회)해 그 결과를 반영한다.
+     * 이미 결론난 주문이면 PG 를 부르지 않고 현재 상태를 돌려준다. 조회 실패는 UNKNOWN 이라 주문은 그대로다 (결제 대기 만료가 거둔다).
+     * 본문과 조회 결과가 다르면 로그만 남긴다. PG 주문 ID 형식이 아니거나 주문이 없으면 ER-05 ORDER_NOT_FOUND.
+     */
+    public OrderInfo applyPaymentCallback(String pgOrderId, PaymentGatewayResult claimed) {
+        OrderInfo order = orderPaymentProcessor.get(PgOrderId.parse(pgOrderId));
+        if (!OrderStatus.AWAITING_PAYMENT.name().equals(order.status())) {
+            return order;
+        }
+        PaymentGatewayResult actual = paymentGateway.find(order.userId(), order.id());
+        if (claimed.outcome() != actual.outcome()
+            || (claimed.transactionKey() != null && actual.transactionKey() != null && !claimed.transactionKey().equals(actual.transactionKey()))) {
+            log.warn("PG callback 과 거래 조회 결과가 다름, 조회 결과 반영 [orderId = {}, claimed = {}, actual = {}]", order.id(), claimed, actual);
+        }
+        return orderPaymentProcessor.applyResult(order.id(), actual);
     }
 }

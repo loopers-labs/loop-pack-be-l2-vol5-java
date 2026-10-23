@@ -7,8 +7,11 @@ import java.util.Optional;
 
 /** 주문 조회 전용 Repository. 주문과 품목을 {@link OrderView} 로 바로 반환한다 (DR-31). */
 public interface OrderQueryRepository {
-    /** FR-ORDER-04, FR-ADMIN-ORDER-02: 주문 한 건과 품목. 소유 판정은 Reader 가 한다. */
+    /** FR-ADMIN-ORDER-02: 주문 한 건과 품목. */
     Optional<OrderView.Detail> find(Long orderId);
+
+    /** FR-ORDER-04: 주문 한 건과 품목·결제 정보. 소유 판정은 Reader 가 한다. */
+    Optional<OrderView.MyDetail> findMyDetail(Long orderId);
 
     /** FR-ORDER-03: 사용자의 주문 전부, 최신순. */
     PageResult<OrderView.Detail> findPageByUserId(Long userId, PageQuery query);

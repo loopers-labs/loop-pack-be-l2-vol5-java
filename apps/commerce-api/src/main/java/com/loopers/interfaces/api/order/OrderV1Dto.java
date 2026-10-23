@@ -21,6 +21,10 @@ public class OrderV1Dto {
         }
     }
 
+    /** EP-11 요청. 결제 시도 키(클라이언트 생성 멱등키)·카드번호·카드 종류. */
+    public record ConfirmOrderRequest(String paymentAttemptKey, String cardNumber, String cardType) {
+    }
+
     /** 설계 4-3-0 OrderItemResponse. */
     public record OrderItemResponse(Long productId, Integer quantity, Long unitPrice, Long lineAmount) {
         static OrderItemResponse from(OrderInfo.Item item) {
@@ -52,6 +56,32 @@ public class OrderV1Dto {
             return new OrderResponse(
                 view.id(), view.status(), view.totalAmount(), view.paidAmount(), view.confirmedAt(),
                 view.items().stream().map(OrderItemResponse::from).toList(), view.createdAt());
+        }
+    }
+
+    /** EP-13 내 주문 상세. OrderResponse 에 결제 정보를 더한다. payment 는 DRAFT 면 null. PG 거래 키는 내보내지 않는다. */
+    public record MyOrderResponse(
+        Long id,
+        String status,
+        Long totalAmount,
+        Long paidAmount,
+        ZonedDateTime confirmedAt,
+        PaymentResponse payment,
+        List<OrderItemResponse> items,
+        ZonedDateTime createdAt
+    ) {
+        public static MyOrderResponse from(OrderView.MyDetail view) {
+            return new MyOrderResponse(
+                view.id(), view.status(), view.totalAmount(), view.paidAmount(), view.confirmedAt(),
+                PaymentResponse.from(view.payment()),
+                view.items().stream().map(OrderItemResponse::from).toList(), view.createdAt());
+        }
+    }
+
+    /** 결제수단(카드 종류, 마스킹한 카드번호)과 결제 시도 키. */
+    public record PaymentResponse(String cardType, String maskedCardNo, String paymentAttemptKey) {
+        static PaymentResponse from(OrderView.Payment payment) {
+            return payment == null ? null : new PaymentResponse(payment.cardType(), payment.maskedCardNo(), payment.paymentAttemptKey());
         }
     }
 }

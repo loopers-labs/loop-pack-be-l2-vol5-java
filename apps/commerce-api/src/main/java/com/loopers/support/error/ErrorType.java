@@ -38,6 +38,7 @@ public enum ErrorType {
     AMOUNT_OUT_OF_RANGE(HttpStatus.BAD_REQUEST, "주문 금액이 표현 범위를 초과합니다."),
     ORDER_NOT_DRAFT(HttpStatus.CONFLICT, "확정할 수 없는 주문입니다."),
     INSUFFICIENT_STOCK(HttpStatus.CONFLICT, "재고가 부족합니다."),
+    INVALID_PAYMENT_ATTEMPT_KEY(HttpStatus.BAD_REQUEST, "결제 시도 키가 올바르지 않습니다."),
 
     /** ER-17, ER-19 ~ ER-21 브랜드·상품 (ER-18 BRAND_HAS_PRODUCTS 는 DR-33 으로 삭제) */
     INVALID_BRAND(HttpStatus.BAD_REQUEST, "브랜드 정보가 올바르지 않습니다."),

@@ -9,7 +9,7 @@ import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 
 /**
- * AG-03 상품 (TB-03 product). 가격·재고를 포함 개념으로 가진다 (DR-03).
+ * AG-03 상품 (TB-03 product). 가격·재고를 포함 개념으로 가진다 (DR-03). 재고는 TB-10·TB-11 에 따로 저장한다 (DR-38).
  * 상태 ST-02 는 deletedAt 의 NULL 여부 (DR-16). 전이: (없음) → ACTIVE, ACTIVE → DELETED (delete()).
  * 인덱스 IX-03 (latest), IX-04 (price_asc), IX-08·09 (brandId 필터 + latest·price_asc, DR-35).
  */
@@ -33,26 +33,22 @@ public class ProductModel extends BaseEntity {
     @Column(name = "price", nullable = false)
     private Long price;
 
-    @Column(name = "stock", nullable = false)
-    private Integer stock;
-
     /**
      * 고객 상세 캐시 키의 revision (DR-37). 고객 조회 결과(이름·가격·삭제)가 바뀔 때만 올린다.
-     * 재고는 고객 조회에 없으므로 올리지 않는다 (DR-22). @Version 을 쓰면 재고 차감마다 올라가 캐시가 깨진다.
+     * 재고는 고객 조회에 없으므로 올리지 않는다 (DR-22).
      */
     @Column(name = "revision", nullable = false)
     private long revision;
 
     protected ProductModel() {}
 
-    public ProductModel(Long brandId, String name, Long price, Integer stock) {
+    public ProductModel(Long brandId, String name, Long price) {
         if (brandId == null) {
             throw new CoreException(ErrorType.BRAND_NOT_FOUND, "브랜드가 지정되지 않았습니다.");
         }
         this.brandId = brandId;
         this.name = validateName(name);
         this.price = validatePrice(price);
-        this.stock = validateStock(stock);
     }
 
     /** INV-13 이름 1~200자 (ASM-04, DR-11). ER-19 INVALID_PRODUCT_NAME. */
@@ -74,14 +70,6 @@ public class ProductModel extends BaseEntity {
         return price;
     }
 
-    /** INV-03 재고 ≥ 0 (ASM-17). ER-21 INVALID_STOCK. */
-    private static Integer validateStock(Integer stock) {
-        if (stock == null || stock < 0) {
-            throw new CoreException(ErrorType.INVALID_STOCK, "재고는 0 이상이어야 합니다. [stock = " + stock + "]");
-        }
-        return stock;
-    }
-
     /** FR-ADMIN-PRODUCT-04: 이름·가격만. 브랜드(INV-11)·재고는 바꾸지 않는다 (ASM-16). */
     public void update(String name, Long price) {
         String validName = validateName(name);
@@ -89,23 +77,6 @@ public class ProductModel extends BaseEntity {
         this.name = validName;
         this.price = validPrice;
         this.revision++;
-    }
-
-    /** FR-ADMIN-PRODUCT-06: 증감이 아니라 최종 수량 설정. */
-    public void changeStock(Integer stock) {
-        this.stock = validateStock(stock);
-    }
-
-    /** FR-ORDER-02: 재고 −= 수량. INV-03 위반이면 ER-16 INSUFFICIENT_STOCK (message 에 부족한 productId). */
-    public void deductStock(int quantity) {
-        if (quantity <= 0) {
-            throw new CoreException(ErrorType.INVALID_QUANTITY, "차감 수량은 양수여야 합니다. [quantity = " + quantity + "]");
-        }
-        if (stock < quantity) {
-            throw new CoreException(ErrorType.INSUFFICIENT_STOCK,
-                "재고가 부족합니다. [productId = " + getId() + ", stock = " + stock + ", quantity = " + quantity + "]");
-        }
-        this.stock -= quantity;
     }
 
     /** ST-02 ACTIVE → DELETED. 처음 삭제될 때만 revision 을 올린다 (DR-37). */
@@ -131,10 +102,6 @@ public class ProductModel extends BaseEntity {
 
     public Long getPrice() {
         return price;
-    }
-
-    public Integer getStock() {
-        return stock;
     }
 
     public long getRevision() {

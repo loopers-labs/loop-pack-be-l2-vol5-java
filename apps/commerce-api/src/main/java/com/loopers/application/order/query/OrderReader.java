@@ -23,11 +23,11 @@ public class OrderReader {
         return orderQueryRepository.findPageByUserId(requesterId, query);
     }
 
-    /** FR-ORDER-04 내 주문 상세. 없으면 ORDER_NOT_FOUND, 남의 주문은 NOT_OWNER (DR-18). */
+    /** FR-ORDER-04 내 주문 상세 (결제수단·결제 시도 키 포함). PG 를 부르지 않는다. 없으면 ORDER_NOT_FOUND, 남의 주문은 NOT_OWNER (DR-18). */
     @Transactional(readOnly = true)
-    public OrderView.Detail getMyOrder(Long requesterId, Long orderId) {
+    public OrderView.MyDetail getMyOrder(Long requesterId, Long orderId) {
         userService.getUser(requesterId);
-        OrderView.Detail order = getOrder(orderId);
+        OrderView.MyDetail order = orderQueryRepository.findMyDetail(orderId).orElseThrow(() -> orderNotFound(orderId));
         if (!order.userId().equals(requesterId)) {
             throw new CoreException(ErrorType.NOT_OWNER, "본인의 주문만 조회·확정할 수 있습니다.");
         }
@@ -49,7 +49,10 @@ public class OrderReader {
     }
 
     private OrderView.Detail getOrder(Long orderId) {
-        return orderQueryRepository.find(orderId)
-            .orElseThrow(() -> new CoreException(ErrorType.ORDER_NOT_FOUND, "[id = " + orderId + "] 주문을 찾을 수 없습니다."));
+        return orderQueryRepository.find(orderId).orElseThrow(() -> orderNotFound(orderId));
+    }
+
+    private static CoreException orderNotFound(Long orderId) {
+        return new CoreException(ErrorType.ORDER_NOT_FOUND, "[id = " + orderId + "] 주문을 찾을 수 없습니다.");
     }
 }
