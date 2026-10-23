@@ -8,6 +8,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
@@ -103,6 +104,38 @@ class PaymentTest {
             assertThat(settled(PgTransaction.Status.FAILED).isAwaitingResult()).isFalse();
             assertThat(conflict.getStatus()).isEqualTo(PaymentStatus.CONFLICT);
             assertThat(conflict.isAwaitingResult()).isFalse();
+        }
+    }
+
+    @Nested
+    @DisplayName("RESIL-008: 마지막으로 PG 에 확인한 뒤 정한 간격이 지났는지 답한다")
+    class CheckInterval {
+
+        private static final Duration INTERVAL = Duration.ofSeconds(2);
+
+        @DisplayName("한 번도 확인하지 않았으면 간격 안이 아니다")
+        @Test
+        void neverChecked() {
+            assertThat(requested().wasCheckedWithin(INTERVAL, NOW)).isFalse();
+        }
+
+        @DisplayName("확인 뒤 2 초 미만이면 간격 안이고, 2 초가 지나면 아니다")
+        @Test
+        void withinTwoSeconds() {
+            Payment payment = requested();
+            payment.markChecked(NOW);
+
+            assertThat(payment.wasCheckedWithin(INTERVAL, NOW.plusMillis(1_999))).isTrue();
+            assertThat(payment.wasCheckedWithin(INTERVAL, NOW.plusSeconds(2))).isFalse();
+        }
+
+        @DisplayName("시계가 거꾸로면(서버 사이 시각 차이) 간격 안으로 보지 않고 확인을 허용한다")
+        @Test
+        void clockBehind() {
+            Payment payment = requested();
+            payment.markChecked(NOW);
+
+            assertThat(payment.wasCheckedWithin(INTERVAL, NOW.minusSeconds(1))).isFalse();
         }
     }
 

@@ -77,7 +77,10 @@ public class PaymentTransactions {
     @Transactional
     public Payment observe(Long paymentId, LookupResult.Observation observation, PaymentDiscrepancy.Source source,
                            Instant now) {
-        return apply(paymentId, payment -> payment.observe(observation), source, now);
+        return apply(paymentId, payment -> {
+            payment.markChecked(now);
+            return payment.observe(observation);
+        }, source, now);
     }
 
     private Payment apply(Long paymentId, Function<Payment, PaymentOutcome> observation,

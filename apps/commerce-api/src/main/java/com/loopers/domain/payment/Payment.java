@@ -2,6 +2,7 @@ package com.loopers.domain.payment;
 
 import com.loopers.domain.common.Money;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 
@@ -17,10 +18,11 @@ public class Payment {
 
     private PaymentStatus status;
     private TransactionKey transactionKey;
+    private Instant lastCheckedAt;
 
     private Payment(Long id, Long orderId, PaymentAttemptKey attemptKey, ProviderOrderId providerOrderId,
                     Money amount, CardType cardType, Instant requestedAt,
-                    PaymentStatus status, TransactionKey transactionKey) {
+                    PaymentStatus status, TransactionKey transactionKey, Instant lastCheckedAt) {
         this.id = id;
         this.orderId = orderId;
         this.attemptKey = attemptKey;
@@ -30,6 +32,7 @@ public class Payment {
         this.requestedAt = requestedAt;
         this.status = status;
         this.transactionKey = transactionKey;
+        this.lastCheckedAt = lastCheckedAt;
     }
 
     public static Payment request(Long orderId, PaymentAttemptKey attemptKey, Money amount,
@@ -38,14 +41,25 @@ public class Payment {
             throw new IllegalArgumentException("orderId 는 필수입니다");
         }
         return new Payment(null, orderId, attemptKey, ProviderOrderId.of(orderId), amount, cardType, requestedAt,
-            PaymentStatus.REQUESTED, null);
+            PaymentStatus.REQUESTED, null, null);
     }
 
     public static Payment restore(Long id, Long orderId, PaymentAttemptKey attemptKey, ProviderOrderId providerOrderId,
                                   Money amount, CardType cardType, Instant requestedAt,
-                                  PaymentStatus status, TransactionKey transactionKey) {
+                                  PaymentStatus status, TransactionKey transactionKey, Instant lastCheckedAt) {
         return new Payment(id, orderId, attemptKey, providerOrderId, amount, cardType, requestedAt,
-            status, transactionKey);
+            status, transactionKey, lastCheckedAt);
+    }
+
+    public void markChecked(Instant checkedAt) {
+        this.lastCheckedAt = checkedAt;
+    }
+
+    public boolean wasCheckedWithin(Duration interval, Instant now) {
+        if (lastCheckedAt == null || now.isBefore(lastCheckedAt)) {
+            return false;
+        }
+        return Duration.between(lastCheckedAt, now).compareTo(interval) < 0;
     }
 
     public boolean isSameRequest(Long orderId, Money amount, CardType cardType) {
@@ -191,6 +205,10 @@ public class Payment {
 
     public PaymentStatus getStatus() {
         return status;
+    }
+
+    public Instant getLastCheckedAt() {
+        return lastCheckedAt;
     }
 
     public TransactionKey getTransactionKey() {

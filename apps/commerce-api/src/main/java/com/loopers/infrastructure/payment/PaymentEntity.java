@@ -54,6 +54,9 @@ class PaymentEntity extends AuditEntity {
     @Column(name = "transaction_key", length = 64)
     private String transactionKey;
 
+    @Column(name = "last_checked_at")
+    private Instant lastCheckedAt;
+
     protected PaymentEntity() {}
 
     static PaymentEntity from(Payment payment) {
@@ -71,12 +74,13 @@ class PaymentEntity extends AuditEntity {
     void apply(Payment payment) {
         this.status = payment.getStatus();
         this.transactionKey = payment.getTransactionKey() != null ? payment.getTransactionKey().value() : null;
+        this.lastCheckedAt = payment.getLastCheckedAt();
     }
 
     Payment toDomain() {
         return Payment.restore(
             getId(), orderId, PaymentAttemptKey.of(attemptKey), new ProviderOrderId(providerOrderId),
             Money.of(amount), cardType, requestedAt, status,
-            transactionKey != null ? new TransactionKey(transactionKey) : null);
+            transactionKey != null ? new TransactionKey(transactionKey) : null, lastCheckedAt);
     }
 }

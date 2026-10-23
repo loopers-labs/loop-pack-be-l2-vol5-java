@@ -19,6 +19,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 
@@ -26,6 +27,8 @@ import java.util.Optional;
 @Component
 @RequiredArgsConstructor
 public class PaymentFacade {
+
+    private static final Duration RECONCILE_INTERVAL = Duration.ofSeconds(2);
 
     public enum CallbackResult {
         APPLIED,
@@ -96,7 +99,7 @@ public class PaymentFacade {
         orderService.getOwned(userId, orderId);
         Payment payment = paymentService.findByOrderId(orderId)
             .orElseThrow(() -> new DomainException(DomainError.PAYMENT_NOT_FOUND));
-        if (!payment.isAwaitingResult()) {
+        if (!payment.isAwaitingResult() || payment.wasCheckedWithin(RECONCILE_INTERVAL, now)) {
             return new ReconcileResult(payment, false);
         }
         LookupResult result = payment.getTransactionKey() != null

@@ -492,6 +492,24 @@ class OrderV1ApiE2ETest {
             );
         }
 
+        @DisplayName("RESIL-008: 2 초 안에 다시 누른 reconcile 은 PG 를 부르지 않고 저장된 상태를 돌려준다")
+        @Test
+        void throttlesRepeatedReconcile() {
+            Long orderId = started(2);
+            long before = lookups();
+
+            ResponseEntity<ApiResponse<OrderV1Dto.ReconcileResponse>> first = reconcile(USER, orderId);
+            ResponseEntity<ApiResponse<OrderV1Dto.ReconcileResponse>> second = reconcile(USER, orderId);
+
+            assertAll(
+                () -> assertThat(lookups() - before).isEqualTo(1),
+                () -> assertThat(first.getStatusCode().value()).isEqualTo(202),
+                () -> assertThat(second.getStatusCode().value()).isEqualTo(202),
+                () -> assertThat(second.getBody().data().paymentStatus()).isEqualTo("PENDING"),
+                () -> assertThat(second.getBody().data().lookupUnavailable()).isFalse()
+            );
+        }
+
         @DisplayName("PG-011, PAY-005: 생성 응답이 끊겨 키가 없는 UNKNOWN 도 주문 번호 조회로 끝나고, create 는 다시 보내지 않는다")
         @Test
         void settlesUnknownByOrderLookup() {
