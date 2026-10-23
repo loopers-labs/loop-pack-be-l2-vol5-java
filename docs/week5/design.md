@@ -224,7 +224,8 @@ confirm(userId, orderId, key, cardType, cardNo)
 | `NotSent` | 커넥션 풀 대기 timeout (`PG-015`) | 연결을 얻지 못해 아무것도 보내지 않음 — 거래가 생기지 않았음이 확실 |
 | `CreateUnknown` | 생성 timeout · 연결 끊김 · 그 밖의 응답 | 거래가 생겼는지 모름 |
 | `Verified(key, status)` | 조회한 거래가 계정 · 주문 · 금액과 맞음 | PG 가 말한 이 거래의 현재 상태 |
-| `Mismatch(reason, …)` | 조회한 거래의 금액이 다름(`AMOUNT_MISMATCH`), 주문이 다름(`ORDER_MISMATCH`), 2건 이상이거나 **이미 붙은 키와 다른 키의 우리 거래**(`MULTIPLE_TRANSACTIONS`) | 불일치 |
+| `Mismatch(reason, …)` | 조회한 우리 주문의 거래가 금액이 다름(`AMOUNT_MISMATCH`), 2건 이상이거나 **이미 붙은 키와 다른 키의 우리 거래**(`MULTIPLE_TRANSACTIONS`) | 불일치 — 시도를 멈춘다 |
+| `ForeignTransaction` | 조회한 거래가 **다른 주문의 것**(`ORDER_MISMATCH`) | 우리 시도에 대한 관찰이 아니다 — 기록만 하고 상태를 바꾸지 않는다 |
 | `NotFound` | 조회 404 · `[]` | 지금은 거래가 보이지 않음 — **없다는 증거가 아님** |
 | *(조회 불가)* | timeout · 5xx · 429 · 회로 OPEN | **관찰이 아니다. TX B 를 부르지 않는다**(`PAY-008`) |
 
@@ -239,9 +240,12 @@ bulkhead(20)가 풀(30)보다 작아 평소에는 거의 일어나지 않는다.
 지금 고를 수 있는 다른 길: adapter 가 기대 금액 · 주문을 받아 `Verified` · `Mismatch` 까지 만든다. 비교 규칙이 infrastructure 로 새고, 규칙 테스트에 PG 가 필요해진다.
 **뒤집을 조건**: 판정에 HTTP 응답에만 있는 정보(헤더 · 서명 등)가 필요해질 때.
 
-**어느 조회를 쓰나.** 결제에 키가 있으면 키 조회(`GET /payments/{transactionKey}`), 없으면 주문 조회(`GET /payments?orderId=`)다. callback 은 본문의 키로 조회한다.
-결제에 이미 키 K 가 있는데 callback 이 K2 를 가리키고 그 거래가 우리 주문 · 금액과 맞으면, 같은 주문에 거래가 둘이라는 뜻이다 → `MULTIPLE_TRANSACTIONS`.
-키가 있는 결제는 주문 조회를 하지 않으므로, 키가 붙은 뒤 숨은 재전송으로 생긴 두 번째 거래는 그 거래의 callback 이 와야 드러난다. 이는 9장의 한계에 적는다.
+**어느 조회를 쓰나.** reconcile · sweeper 는 결제에 키가 있으면 키 조회(`GET /payments/{transactionKey}`), 없으면 주문 조회(`GET /payments?orderId=`)다. **callback 은 언제나 주문 조회다** — 본문에서는 `orderId` 만 쓰고 `transactionKey` · `status` 는 읽지 않는다(8장).
+주문 조회는 그 주문의 거래를 모두 돌려주므로, 키가 붙은 뒤 숨은 재전송으로 생긴 두 번째 거래도 callback 이 한 번 오면 `MULTIPLE_TRANSACTIONS` 로 드러난다. reconcile · sweeper 의 키 조회만으로는 드러나지 않는다(9장).
+
+**다른 주문의 거래는 상태를 바꾸지 않는다.** 조회한 거래의 주문 번호가 다르면 그것은 우리 시도에 대한 관찰이 아니므로 `ORDER_MISMATCH` 를 기록만 한다. 원문 5장의 "다른 주문 · 금액 · 거래의 응답은 거절 · 충돌 기록하며 기존 상태를 바꾸지 않는다" 를 따르고, 남의 주문 번호에 다른 거래 키를 붙인 꾸민 요청이 정상 결제를 `CONFLICT` 로 멈추는 길을 막는다. 우리 주문의 거래인데 금액이 다르거나 둘인 경우는 원문 표의 "충돌 보존" 이므로 `CONFLICT` 로 멈춘다.
+지금 고를 수 있는 다른 길: 주문 불일치도 `CONFLICT` 로 멈춘다. 이상을 놓치지 않지만, 바깥 입력 하나로 남의 결제를 멈출 수 있다.
+**뒤집을 조건**: 조회 경로가 모두 우리가 저장한 값(키 · 주문 번호)만으로 조회하게 되어, 다른 주문의 거래가 PG 의 오류로만 돌아올 수 있을 때.
 
 ### 5.2 전이 표
 
@@ -273,6 +277,7 @@ stateDiagram-v2
 | `REQUESTED` · `UNKNOWN` · `PENDING` | `Verified(K, SUCCESS)` | `SUCCESS` | 키가 없으면 K 저장 · 예약 소비 · 주문 `CONFIRMED`(`payment_method=PG`, `paid_amount`) |
 | `REQUESTED` · `UNKNOWN` · `PENDING` | `Verified(K, FAILED)` | `FAILED` | 키가 없으면 K 저장 · 예약 반환 · 주문 `FAILED` |
 | `REQUESTED` · `UNKNOWN` · `PENDING` | `Mismatch(r)` | `CONFLICT` | 불일치 1줄. 예약 · 주문 그대로 |
+| 모든 상태 | `ForeignTransaction` | 그대로 | 불일치 `ORDER_MISMATCH` 1줄. 키도 붙이지 않는다 |
 | `REQUESTED` · `UNKNOWN` · `PENDING` | `NotFound` | 그대로 | — |
 | 키 K 가 있는 모든 상태 | `Accepted(K)` · `CreateUnknown` | 그대로 | **늦은 생성 응답 · timeout 처리.** callback 이 먼저 반영한 경우다 |
 | 키 K 가 있는 모든 상태 | `Accepted(K2)` · `Verified(K2, *)` (다른 키) | 종결 전이면 `CONFLICT`, 종결이면 그대로 | 불일치 `MULTIPLE_TRANSACTIONS`. 두 번째 거래의 결과를 반영하지 않는다 |
@@ -583,7 +588,7 @@ outbox 를 따로 써야 하는 것은 DB 바깥으로 나가는 후속 작업(�
 
 | 믿을 수 없는 것 | 장면 | 막는 장치 |
 |---|---|---|
-| 진짜인가 | 서명이 없고(`SETTLE-010`) 경로가 열려 있다. 누구나 `SUCCESS` 를 보낼 수 있다 | 본문의 상태를 쓰지 않고 PG 를 조회해 계정 · 주문 · 키 · 금액을 확인한다 |
+| 진짜인가 | 서명이 없고(`SETTLE-010`) 경로가 열려 있다. 누구나 `SUCCESS` 나 남의 거래 키를 보낼 수 있다 | 본문에서는 어느 주문인지(`orderId`)만 쓴다. 상태 · 키는 읽지 않고 그 주문의 거래를 PG 에 조회해 계정 · 주문 · 키 · 금액을 확인한다 |
 | 오는가 · 언제 · 몇 번 | 유실 · 중복 · 순서 뒤바뀜 · 생성 응답보다 먼저 | 유실은 reconcile · sweeper, 중복은 TX B 의 잠금과 "종결 전일 때만", 순서는 전이 표(5.2), 먼저 옴은 `SETTLE-005` |
 
 그래서 callback 이 빨리 오면 빨리 끝나고, 안 와도 결국 끝난다. 정합성은 callback 에 기대지 않고, 지연만 callback 덕을 본다. 대가는 callback 마다 조회 한 번이다(E5 가 잰다).
@@ -604,6 +609,8 @@ outbox 를 따로 써야 하는 것은 DB 바깥으로 나가는 후속 작업(�
 
 불일치에 4xx · 5xx 를 주면 실제 PG 는 계속 다시 보낸다. 위조 callback 이라면 그만큼 우리가 PG 를 반복 조회하게 된다.
 
+**재전송은 실제 PG 의 일반적인 동작을 가정한 것이다.** 원문은 callback 재전송을 말하지 않고, 테스트 PG(fixture)도 다시 보내지 않는다(12.1). 그래서 이 환경에서 503 은 "확인하지 못했다" 는 사실을 알릴 뿐이고, 그 결제는 reconcile(원문의 기본 복구 경로) · sweeper 가 끝낸다(`SETTLE-012`). callback 이 아예 오지 않는 경우와 같은 길이다.
+
 ### 8.2 inbox — 지금 고를 수 있는 선택지
 
 callback 을 받자마자 `payment_inbox` 에 적고 200 을 준 뒤 작업자가 처리하는 방식이다. PG 를 기다리게 하지 않고, 재시도를 우리가 통제한다.
@@ -619,7 +626,7 @@ callback 은 "확인해 보라" 는 계기라 놓쳐도 잃는 정보가 없다 
 | `CONFLICT` | 예약이 묶인 채 사람을 기다린다 | 어느 거래가 진짜인지, 금액이 다른 결제를 받을지는 사람이 PG 와 확인할 일이다 |
 | 종결 뒤 PG 가 다른 결과를 말함(`RESULT_AFTER_SETTLED`) | 상태는 그대로, 불일치 기록만 | 취소 API 가 없다(1.2). 특히 `FAILED` · 반환 뒤 `SUCCESS` 는 돈은 받았는데 재고가 팔렸을 수 있다 |
 | 오래된 미확인 결제 | 시간이 지나도 실패로 바꾸지 않는다 | 아직 성공할 거래의 재고를 남에게 팔 수 있다. 원문도 무조건 만료를 금한다 |
-| 키가 붙은 뒤 숨은 재전송으로 생긴 두 번째 거래 | 그 거래의 callback 이 오기 전에는 드러나지 않는다 | 키가 있는 결제는 키로만 조회한다(5.1). 종결된 결제마다 주문 조회를 더 하면 드러나지만 PG 조회가 그만큼 는다 |
+| 키가 붙은 뒤 숨은 재전송으로 생긴 두 번째 거래 | 그 주문의 callback 이 오기 전에는 드러나지 않는다 | callback 은 주문 조회라 드러내지만, reconcile · sweeper 는 키로만 조회한다(5.1). callback 이 끝내 오지 않으면 남는다. 종결된 결제마다 주문 조회를 더 하면 드러나지만 PG 조회가 그만큼 는다 |
 | confirm 스레드의 TX B(생성 응답 반영)가 DB 오류로 실패 | `REQUESTED` 로 남고 confirm 은 202 다 | POST 는 이미 나갔으므로 실패로 응답할 수 없다. callback · reconcile · sweeper 가 조회로 같은 결과에 닿는다 |
 
 ### 9.1 지표

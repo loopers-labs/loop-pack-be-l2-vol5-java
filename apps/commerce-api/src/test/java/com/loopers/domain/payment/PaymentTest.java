@@ -235,15 +235,27 @@ class PaymentTest {
                 PaymentDiscrepancy.Reason.AMOUNT_MISMATCH, KEY, PgTransaction.Status.SUCCESS, Money.of(9000)));
         }
 
-        @DisplayName("주문 번호가 다르면 ORDER_MISMATCH")
+        @DisplayName("PAY-009, 원문 5장: 다른 주문의 거래면 ORDER_MISMATCH 를 기록만 하고 상태는 그대로다. 꾸민 callback 이 남의 결제를 멈추지 못한다")
         @Test
         void orderMismatch() {
             Payment payment = accepted();
 
             PaymentOutcome outcome = payment.observe(found(transaction(KEY, 99L, 7000, PgTransaction.Status.SUCCESS)));
 
-            assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CONFLICT);
+            assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
+            assertThat(outcome.effect()).isEqualTo(PaymentOutcome.Effect.NONE);
             assertThat(outcome.discrepancy().reason()).isEqualTo(PaymentDiscrepancy.Reason.ORDER_MISMATCH);
+        }
+
+        @DisplayName("다른 주문의 거래를 보아도 키가 없는 시도는 그 키를 붙이지 않는다")
+        @Test
+        void orderMismatchDoesNotAttachKey() {
+            Payment payment = requested();
+
+            payment.observe(found(transaction(OTHER_KEY, 99L, 7000, PgTransaction.Status.SUCCESS)));
+
+            assertThat(payment.getStatus()).isEqualTo(PaymentStatus.REQUESTED);
+            assertThat(payment.getTransactionKey()).isNull();
         }
 
         @DisplayName("주문 조회에 우리 거래가 2 건이면 MULTIPLE_TRANSACTIONS. 어느 키도 붙이지 않는다")
@@ -297,6 +309,27 @@ class PaymentTest {
             PaymentOutcome outcome = payment.observe(found(PgTransaction.Status.SUCCESS));
 
             assertThat(outcome.discrepancy()).isNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("PAY-009: CONFLICT 는 늦게 온 생성 결과로도 풀리지 않는다")
+    class ConflictHolds {
+
+        @DisplayName("키 없이 멈춘 CONFLICT 에 늦은 생성 결과가 와도 상태, 키, 주문, 재고 모두 그대로다")
+        @ParameterizedTest(name = "{0}")
+        @MethodSource("com.loopers.domain.payment.PaymentTest#lateCreateResultsOnConflict")
+        void ignoresLateCreateResult(CreateObservation late) {
+            Payment payment = requested();
+            payment.observe(found(
+                transaction(KEY, ORDER, 7000, PgTransaction.Status.PENDING),
+                transaction(OTHER_KEY, ORDER, 7000, PgTransaction.Status.PENDING)));
+
+            PaymentOutcome outcome = payment.observe(late);
+
+            assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CONFLICT);
+            assertThat(payment.getTransactionKey()).isNull();
+            assertThat(outcome.effect()).isEqualTo(PaymentOutcome.Effect.NONE);
         }
     }
 
@@ -455,6 +488,11 @@ class PaymentTest {
 
     static Stream<CreateObservation> lateCreateResults() {
         return Stream.of(new CreateObservation.Accepted(KEY), new CreateObservation.CreateUnknown());
+    }
+
+    static Stream<CreateObservation> lateCreateResultsOnConflict() {
+        return Stream.of(new CreateObservation.Accepted(KEY), new CreateObservation.RejectedNoEffect(),
+            new CreateObservation.NotSent(), new CreateObservation.CreateUnknown());
     }
 
     static Stream<CreateObservation> noEffect() {

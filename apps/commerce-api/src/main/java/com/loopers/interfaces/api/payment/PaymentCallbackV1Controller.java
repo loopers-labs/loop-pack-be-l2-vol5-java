@@ -23,7 +23,7 @@ public class PaymentCallbackV1Controller {
 
     @PostMapping("/callback")
     public ResponseEntity<ApiResponse<Object>> callback(@RequestBody PaymentCallbackV1Dto.CallbackRequest request) {
-        PaymentFacade.CallbackResult result = paymentFacade.onCallback(request.providerOrderId(), request.key(), Instant.now());
+        PaymentFacade.CallbackResult result = paymentFacade.onCallback(request.providerOrderId(), Instant.now());
         return switch (result) {
             case APPLIED -> ResponseEntity.ok(ApiResponse.success());
             case UNKNOWN_ORDER -> {

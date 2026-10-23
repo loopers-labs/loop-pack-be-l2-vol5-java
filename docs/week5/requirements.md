@@ -90,7 +90,7 @@ W2 의 갈래에 넷을 더한다. 번호를 다시 쓰지 않는 규칙도 같�
 | `PAY-006` | 시도 상태는 `REQUESTED` · `PENDING` · `UNKNOWN` · `SUCCESS` · `FAILED` · `CONFLICT` 이고 **앞으로만** 간다 | 정함(이름) | — | 전이 표는 설계 5.2 |
 | `PAY-007` | 종결(`SUCCESS` · `FAILED`)은 바뀌지 않는다. 같은 결과의 재관찰은 효과 0, **lookup 이 다른 결과를 말하면** 덮어쓰지 않고 불일치(`RESULT_AFTER_SETTLED`)를 기록한다(`PAY-017`). callback 본문만 다른 것은 불일치가 아니다(`SETTLE-002`) | 원문 + 정함(기록 수단) | `SUCCESS` 종결 뒤 lookup `FAILED` | 상태 · 예약 그대로, 불일치 1줄 |
 | `PAY-008` | 조회 실패 · 회로 OPEN 은 **아무것도 쓰지 않는다.** `PENDING` 을 `UNKNOWN` 으로, 발송한 시도를 미발송으로 되돌리지 않는다 | 원문 + 정함 | 조회 timeout | 상태 · 예약 그대로 |
-| `PAY-009` | 조회 0건 · 2건 이상 · 주문이나 금액 불일치는 성공도 실패도 아니다. 재발송 · 예약 반환을 하지 않는다. 0건은 미완료로 두고, 2건 이상 · 불일치는 시도를 `CONFLICT` 로 멈추고 불일치를 기록한다(`PAY-017`) | 원문 + 정함(기록 수단) | 같은 주문 거래 2건 | `CONFLICT`, 불일치 `MULTIPLE_TRANSACTIONS` 1줄, 예약 유지 |
+| `PAY-009` | 조회 0건 · 2건 이상 · 주문이나 금액 불일치는 성공도 실패도 아니다. 재발송 · 예약 반환을 하지 않는다. 0건은 미완료로 두고, 우리 주문의 거래가 2건 이상이거나 금액이 다르면 시도를 `CONFLICT` 로 멈추고 불일치를 기록한다(`PAY-017`). **다른 주문의 거래는 상태를 바꾸지 않고 기록만 한다**(원문 5장 "기존 상태를 바꾸지 않습니다") | 원문 + 정함(기록 수단) | 같은 주문 거래 2건 | `CONFLICT`, 불일치 `MULTIPLE_TRANSACTIONS` 1줄, 예약 유지 |
 | `PAY-010` | 결제 시도는 주문과 별도 테이블 `payment` 다(주문 1 : 시도 0..1). 금액 · `paymentAttemptKey` · providerOrderId · `transactionKey` · `cardType` · 상태와 주문 관계만 저장한다. 과거 POINT 결제는 이 테이블로 옮기지 않는다 | 원문 + 정함(테이블) | — | 카드 번호 열이 없다. POINT 주문에는 `payment` 행이 없다 |
 | `PAY-017` | **불일치 기록** `payment_discrepancy` — 검증한 lookup 결과가 우리 기록과 다를 때 TX B 안에서 한 줄 더한다. append-only(고치거나 지우지 않음). 이유는 `MULTIPLE_TRANSACTIONS` · `AMOUNT_MISMATCH` · `ORDER_MISMATCH` · `RESULT_AFTER_SETTLED`. 같은 관찰(결제 · 이유 · 관찰한 키 · 관찰한 상태)은 한 번만 남긴다. 업무 판단은 이 기록을 읽지 않는다 | 원문("충돌 기록") + 정함(형태) | 같은 모순 callback 10회 | 불일치 1줄 |
 | `PAY-018` | `CONFLICT` 시도는 sweeper 가 집지 않고, reconcile 은 PG 를 부르지 않고 저장된 상태를 돌려준다. 주문 `PENDING` 과 차감한 재고를 유지한다. 해결은 사람의 판단이다 | 정함 + 범위 | `CONFLICT` 에 reconcile | 202, create · lookup 0 |
@@ -117,7 +117,7 @@ W2 의 갈래에 넷을 더한다. 번호를 다시 쓰지 않는 규칙도 같�
 | ID | 규칙 | 출처 | 깨는 입력 | 기대 |
 |---|---|---|---|---|
 | `SETTLE-001` | 결과 반영은 **한 경계**다. 생성 응답 · callback · reconcile · sweeper 가 모두 같은 반영을 부른다 | 원문 + 정함 | — | 설계 5장 |
-| `SETTLE-002` | callback 본문(`orderId`(= providerOrderId) · `transactionKey` · `status`)은 **확인 계기**다. 본문의 상태로 반영하지 않고, adapter 조회 결과에서 계정 · 주문 · 키 · 저장 금액을 확인한 뒤 반영한다 | 원문 + 정함(필드 이름 `orderId`, 설계 2장) | `SUCCESS` 를 꾸민 callback, PG 에는 `PENDING` | 주문 미확정 |
+| `SETTLE-002` | callback 본문(`orderId`(= providerOrderId) · `transactionKey` · `status`)은 **확인 계기**다. 본문에서는 `orderId` 만 쓰고 상태 · 키는 읽지 않는다. 그 주문의 거래를 PG 에 주문 조회로 묻고, 계정 · 주문 · 키 · 저장 금액을 확인한 뒤 반영한다 | 원문 + 정함(필드 이름 `orderId`, 설계 2장) | `SUCCESS` 를 꾸민 callback, PG 에는 `PENDING` | 주문 미확정 |
 | `SETTLE-003` | callback-first 와 lookup-first 가 같은 `transactionKey` · 최종 상태로 수렴한다 | 원문 | — | — |
 | `SETTLE-004` | 중복 알림 · 동시 반영은 추가 재고 · 결제 효과가 없다. 상태 조건과 행 잠금으로 같은 TX 안에서 막는다 | 원문 | callback 과 reconcile 동시 | 확정 1 · 소비 1 |
 | `SETTLE-005` | 생성 응답보다 callback 이 먼저 오면(시도에 키가 없음) 본문의 `orderId`(= providerOrderId) 로 시도를 찾고 조회로 확인한 키를 붙인다 | 정함 | — | 늦은 202 는 효과 0 |

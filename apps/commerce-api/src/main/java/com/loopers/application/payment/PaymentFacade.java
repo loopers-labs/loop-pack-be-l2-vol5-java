@@ -9,7 +9,6 @@ import com.loopers.domain.payment.PaymentCreation;
 import com.loopers.domain.payment.PaymentGateway;
 import com.loopers.domain.payment.PaymentService;
 import com.loopers.domain.payment.ProviderOrderId;
-import com.loopers.domain.payment.TransactionKey;
 import com.loopers.support.error.DomainError;
 import com.loopers.support.error.DomainException;
 import lombok.RequiredArgsConstructor;
@@ -50,12 +49,12 @@ public class PaymentFacade {
         };
     }
 
-    public CallbackResult onCallback(ProviderOrderId providerOrderId, TransactionKey transactionKey, Instant now) {
+    public CallbackResult onCallback(ProviderOrderId providerOrderId, Instant now) {
         Optional<Payment> payment = paymentService.findByProviderOrderId(providerOrderId);
         if (payment.isEmpty()) {
             return CallbackResult.UNKNOWN_ORDER;
         }
-        return switch (paymentGateway.lookup(transactionKey)) {
+        return switch (paymentGateway.lookup(providerOrderId)) {
             case LookupResult.Unavailable unavailable -> CallbackResult.LOOKUP_UNAVAILABLE;
             case LookupResult.Observation observation -> {
                 paymentTransactions.observe(

@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -53,6 +54,7 @@ class PaymentCallbackApiE2ETest {
     private final ProductService productService;
     private final BrandFacade brandFacade;
     private final ProductFacade productFacade;
+    private final JdbcTemplate jdbcTemplate;
     private final DatabaseCleanUp databaseCleanUp;
 
     @LocalServerPort
@@ -68,6 +70,7 @@ class PaymentCallbackApiE2ETest {
         ProductService productService,
         BrandFacade brandFacade,
         ProductFacade productFacade,
+        JdbcTemplate jdbcTemplate,
         DatabaseCleanUp databaseCleanUp
     ) {
         this.testPayments = testPayments;
@@ -76,6 +79,7 @@ class PaymentCallbackApiE2ETest {
         this.productService = productService;
         this.brandFacade = brandFacade;
         this.productFacade = productFacade;
+        this.jdbcTemplate = jdbcTemplate;
         this.databaseCleanUp = databaseCleanUp;
     }
 
@@ -182,6 +186,31 @@ class PaymentCallbackApiE2ETest {
         );
     }
 
+    @DisplayName("원문 5장, SETTLE-002: 내 주문 번호에 남의 주문의 진짜 거래 키를 붙인 callback 은 그 키를 조회하지 않는다. 주문 번호로만 조회하므로 아무 결제도 바꾸지 않고 불일치도 없다")
+    @Test
+    void foreignTransactionKeyChangesNothing() {
+        Order victim = place();
+        started(victim);
+        Order other = place();
+        String otherKey = started(other);
+        PG.changeStatus(otherKey, PgFixture.Status.SUCCESS);
+
+        int response = callback("""
+            {"transactionKey":"%s","orderId":"%s","amount":6000,"status":"SUCCESS"}
+            """.formatted(otherKey, payment(victim).getProviderOrderId().value()));
+
+        assertAll(
+            () -> assertThat(response).isEqualTo(200),
+            () -> assertThat(payment(victim).getStatus()).isEqualTo(PaymentStatus.PENDING),
+            () -> assertThat(stored(victim).getStatus()).isEqualTo(OrderStatus.PENDING),
+            () -> assertThat(payment(other).getStatus()).isEqualTo(PaymentStatus.PENDING),
+            () -> assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from payment_discrepancy", Integer.class)).isZero(),
+            () -> assertThat(PG.receivedRequests()).filteredOn(request -> request.method().equals("GET"))
+                .extracting(PgFixture.ReceivedRequest::path).containsOnly("/api/v1/payments")
+        );
+    }
+
     @DisplayName("SETTLE-004: 같은 callback 이 세 번 와도 확정은 한 번이고, 확정 시각은 처음 그대로다")
     @Test
     void appliesDuplicatesOnce() {
@@ -222,7 +251,7 @@ class PaymentCallbackApiE2ETest {
         assertAll(
             () -> assertThat(callback("{}")).isEqualTo(400),
             () -> assertThat(callback("""
-                {"transactionKey":"","orderId":"LP-ORD-0000000001"}
+                {"transactionKey":"TEST-TX-0001","orderId":"LP"}
                 """)).isEqualTo(400),
             () -> assertThat(callback("not json")).isEqualTo(400)
         );
