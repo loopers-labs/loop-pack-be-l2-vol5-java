@@ -11,7 +11,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
-import java.util.concurrent.CancellationException;
 import java.util.function.Supplier;
 
 @Primary
@@ -21,7 +20,7 @@ public class CircuitBreakingPaymentGateway implements PaymentGateway {
     private final PaymentGateway delegate;
     private final CircuitBreaker circuitBreaker;
 
-    public CircuitBreakingPaymentGateway(@Qualifier("testPgPaymentGateway") PaymentGateway delegate,
+    public CircuitBreakingPaymentGateway(@Qualifier("pgLookupDelegate") PaymentGateway delegate,
                                          @Qualifier("pgLookupCircuitBreaker") CircuitBreaker circuitBreaker) {
         this.delegate = delegate;
         this.circuitBreaker = circuitBreaker;
@@ -44,16 +43,9 @@ public class CircuitBreakingPaymentGateway implements PaymentGateway {
 
     private PaymentLookupObservation executeLookup(Supplier<PaymentLookupObservation> lookup) {
         try {
-            return circuitBreaker.executeSupplier(() -> {
-                PaymentLookupObservation observation = lookup.get();
-                if (observation instanceof PaymentLookupObservation.Unavailable unavailable
-                    && unavailable.kind() == PaymentLookupObservation.FailureKind.CANCELLED) {
-                    throw new CancellationException("PG 조회 호출자 취소");
-                }
-                return observation;
-            });
-        } catch (CancellationException exception) {
-            return new PaymentLookupObservation.Unavailable("CANCELLED", PaymentLookupObservation.FailureKind.CANCELLED);
+            return circuitBreaker.executeSupplier(lookup);
+        } catch (PgLookupPolicyException exception) {
+            return exception.observation();
         } catch (CallNotPermittedException exception) {
             return new PaymentLookupObservation.Unavailable("CIRCUIT_OPEN", PaymentLookupObservation.FailureKind.CIRCUIT_OPEN);
         }

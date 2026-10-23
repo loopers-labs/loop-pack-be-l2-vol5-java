@@ -1,0 +1,12 @@
+# 단계 3: 실제 HTTP 조회 시도마다 허가를 소비한다.
+spring:
+  config:
+    activate:
+      on-profile: "pg-rate-limit-experiment | pg-time-limit-experiment"
+payment:
+  pg:
+    lookup-policy:
+      rate-limiter:
+        enabled: true
+        limit-for-period: 20
+        refresh-period: 1s

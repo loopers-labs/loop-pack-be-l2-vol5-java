@@ -21,6 +21,10 @@ public sealed interface PaymentLookupObservation {
 
     enum FailureKind {
         TEMPORARY_HTTP, TIMEOUT, NETWORK, HTTP_ERROR, INVALID_RESPONSE,
-        CANCELLED, CIRCUIT_OPEN, OTHER
+        CANCELLED, CIRCUIT_OPEN, RATE_LIMITED, DEADLINE_EXCEEDED, OTHER;
+
+        public boolean retryable() {
+            return this == TEMPORARY_HTTP || this == TIMEOUT || this == NETWORK;
+        }
     }
 }

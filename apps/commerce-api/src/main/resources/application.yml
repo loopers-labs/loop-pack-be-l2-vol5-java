@@ -46,7 +46,7 @@ payment:
     provider-account-id: "135135"
     connect-timeout: 1s
     read-timeout: 3s
-    # 조회 회복 정책은 하단의 pg-lookup-experiment 프로필에서 활성화한다. 운영 임계값은 아직 정하지 않았다.
+    # 조회 회복 정책은 하단의 네 실험 프로필에서 활성화한다. 운영 임계값은 아직 정하지 않았다.
     lookup-circuit-breaker:
       enabled: false
   # 미종결 시도를 마지막 변경 뒤 1분이 지나면 생성 후 24시간 동안 다시 조회한다.
@@ -118,6 +118,9 @@ springdoc:
 spring:
   config:
     activate:
-      on-profile: pg-lookup-experiment
+      on-profile: "pg-lookup-experiment | pg-retry-experiment | pg-rate-limit-experiment | pg-time-limit-experiment"
     import:
       - classpath:pg-test/circuit-breaker.yml
+      - classpath:pg-test/retry.yml
+      - classpath:pg-test/rate-limiter.yml
+      - classpath:pg-test/time-limiter.yml

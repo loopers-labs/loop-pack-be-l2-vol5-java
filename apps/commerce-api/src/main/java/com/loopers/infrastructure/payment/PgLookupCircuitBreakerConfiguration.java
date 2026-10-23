@@ -10,7 +10,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.time.Duration;
-import java.util.concurrent.CancellationException;
 
 @Slf4j
 @Configuration(proxyBeanMethods = false)
@@ -31,7 +30,7 @@ public class PgLookupCircuitBreakerConfiguration {
             .slowCallDurationThreshold(Duration.ofSeconds(60))
             .slowCallRateThreshold(100)
             .automaticTransitionFromOpenToHalfOpenEnabled(false)
-            .ignoreExceptions(CancellationException.class)
+            .ignoreExceptions(PgLookupPolicyException.LocalRejection.class)
             .recordResult(result -> result instanceof PaymentLookupObservation.Unavailable)
             .build();
         CircuitBreaker circuitBreaker = CircuitBreaker.of("pgLookup", config);

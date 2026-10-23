@@ -84,8 +84,10 @@ class CircuitBreakingPaymentGatewayTest {
     void excludesCallerCancellationAcrossLookupMethods() {
         PaymentLookupObservation.Unavailable cancelled = new PaymentLookupObservation.Unavailable(
             "CANCELLED", PaymentLookupObservation.FailureKind.CANCELLED);
-        when(delegate.lookup("TX-1")).thenReturn(cancelled);
-        when(delegate.lookupByOrder("LP-ORD-0000000042")).thenReturn(cancelled);
+        when(delegate.lookup("TX-1")).thenThrow(
+            new PgLookupPolicyException.LocalRejection(PaymentLookupObservation.FailureKind.CANCELLED));
+        when(delegate.lookupByOrder("LP-ORD-0000000042")).thenThrow(
+            new PgLookupPolicyException.LocalRejection(PaymentLookupObservation.FailureKind.CANCELLED));
 
         assertThat(gateway.lookup("TX-1")).isEqualTo(cancelled);
         assertThat(gateway.lookupByOrder("LP-ORD-0000000042")).isEqualTo(cancelled);

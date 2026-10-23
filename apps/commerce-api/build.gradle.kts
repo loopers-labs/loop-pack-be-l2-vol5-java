@@ -36,8 +36,11 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
-    // 직접 decorator로 연결하는 조회 CircuitBreaker를 추가하고 버전은 위 BOM으로 관리한다.
+    // 직접 decorator에 사용하는 조회 정책 모듈만 추가하고 버전은 위 BOM으로 관리한다.
     implementation("io.github.resilience4j:resilience4j-circuitbreaker")
+    implementation("io.github.resilience4j:resilience4j-retry")
+    implementation("io.github.resilience4j:resilience4j-ratelimiter")
+    implementation("io.github.resilience4j:resilience4j-timelimiter")
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:${project.properties["springDocOpenApiVersion"]}")
 
     // querydsl

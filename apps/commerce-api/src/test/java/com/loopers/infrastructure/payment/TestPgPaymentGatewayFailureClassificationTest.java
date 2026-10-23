@@ -62,7 +62,7 @@ class TestPgPaymentGatewayFailureClassificationTest {
     @CsvSource({"false,502,TEMPORARY_HTTP", "true,503,TEMPORARY_HTTP", "false,504,TEMPORARY_HTTP",
         "true,401,HTTP_ERROR", "false,429,HTTP_ERROR", "true,500,HTTP_ERROR",
         "false,200,INVALID_RESPONSE", "true,200,INVALID_RESPONSE"})
-    void classifiesHttpResponseFailures(boolean byOrder, int status, PaymentLookupObservation.FailureKind kind) {
+    void classifiesHttpResponsesBeforeRetry(boolean byOrder, int status, PaymentLookupObservation.FailureKind kind) {
         responseStatus = status;
 
         PaymentLookupObservation result = byOrder ? gateway(Duration.ofSeconds(1)).lookupByOrder("LP-ORD-000042")
@@ -72,36 +72,39 @@ class TestPgPaymentGatewayFailureClassificationTest {
             unavailable -> assertThat(unavailable.kind()).isEqualTo(kind));
     }
 
-    @DisplayName("응답 timeout은 일시적인 조회 실패로 분류한다.")
+    @DisplayName("응답 timeout은 재시도 가능한 조회 실패로 분류한다.")
     @Test
-    void classifiesReadTimeout() {
+    void classifiesReadTimeoutAsRetryable() {
         delayMillis = 300;
 
         assertThat(gateway(Duration.ofMillis(50)).lookup("TX-1"))
             .isInstanceOfSatisfying(PaymentLookupObservation.Unavailable.class, unavailable -> {
                 assertThat(unavailable.kind()).isEqualTo(PaymentLookupObservation.FailureKind.TIMEOUT);
+                assertThat(unavailable.kind().retryable()).isTrue();
             });
     }
 
-    @DisplayName("호출자의 중단은 일시적인 timeout으로 취급하지 않는다.")
+    @DisplayName("호출자의 중단은 재시도 가능한 timeout으로 취급하지 않는다.")
     @Test
-    void distinguishesCallerCancellationFromTimeout() {
+    void doesNotTreatCallerInterruptionAsRetryableTimeout() {
         Thread.currentThread().interrupt();
 
         assertThat(gateway(Duration.ofSeconds(1)).lookup("TX-1"))
             .isInstanceOfSatisfying(PaymentLookupObservation.Unavailable.class, unavailable -> {
                 assertThat(unavailable.kind()).isEqualTo(PaymentLookupObservation.FailureKind.CANCELLED);
+                assertThat(unavailable.kind().retryable()).isFalse();
             });
     }
 
-    @DisplayName("연결 실패는 일시적인 네트워크 오류로 분류한다.")
+    @DisplayName("연결 실패는 재시도 가능한 네트워크 오류로 분류한다.")
     @Test
-    void classifiesConnectionFailureAsNetworkError() {
+    void classifiesConnectionFailureAsRetryableNetworkError() {
         TestPgPaymentGateway gateway = gateway(Duration.ofSeconds(1));
         server.stop(0);
         assertThat(gateway.lookupByOrder("LP-ORD-000042"))
             .isInstanceOfSatisfying(PaymentLookupObservation.Unavailable.class, unavailable -> {
                 assertThat(unavailable.kind()).isEqualTo(PaymentLookupObservation.FailureKind.NETWORK);
+                assertThat(unavailable.kind().retryable()).isTrue();
             });
     }
 
