@@ -24,6 +24,9 @@ interface PaymentJpaRepository extends JpaRepository<PaymentEntity, Long> {
 
     Optional<PaymentEntity> findByProviderOrderId(String providerOrderId);
 
+    @Query("select p.status, count(p), min(p.requestedAt) from PaymentEntity p where p.status in :statuses group by p.status")
+    List<Object[]> summarizeByStatus(Collection<PaymentStatus> statuses);
+
     @Query("select p.orderId from PaymentEntity p where p.id = :id")
     Optional<Long> findOrderIdById(Long id);
 
@@ -38,7 +41,7 @@ interface PaymentJpaRepository extends JpaRepository<PaymentEntity, Long> {
         where p.status in :statuses
           and p.requestedAt < :requestedBefore
           and (p.lastCheckedAt is null or p.lastCheckedAt < :checkedBefore)
-        order by p.requestedAt
+        order by p.lastCheckedAt asc nulls first, p.requestedAt asc
         """)
     List<PaymentEntity> findDueForCheck(Collection<PaymentStatus> statuses, Instant requestedBefore,
                                         Instant checkedBefore, Pageable page);

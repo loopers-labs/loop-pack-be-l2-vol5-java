@@ -40,6 +40,10 @@ public class PaymentService {
         return paymentRepository.findDueForCheckSkippingLocked(requestedBefore, checkedBefore, limit);
     }
 
+    public List<PaymentRepository.Unresolved> summarizeUnresolved() {
+        return paymentRepository.summarizeUnresolved();
+    }
+
     public Payment save(Payment payment) {
         return paymentRepository.save(payment);
     }

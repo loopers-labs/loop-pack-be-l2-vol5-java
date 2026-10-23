@@ -19,6 +19,9 @@ payment:
   sweeper:
     enabled: true
     interval: 10s
+  unresolved-metrics:
+    enabled: true
+    interval: 30s
 
 ---
 spring.config.activate.on-profile: local, test
@@ -32,6 +35,8 @@ spring.config.activate.on-profile: test
 
 payment:
   sweeper:
+    enabled: false
+  unresolved-metrics:
     enabled: false
 
 spring:

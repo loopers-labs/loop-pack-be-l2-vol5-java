@@ -601,8 +601,12 @@ callback 의 조회도 `last_checked_at` 을 갱신한다.
 
 수동 reconcile 을 정한 주기로 대신 누른다. 새 로직은 "어떤 결제를 고를지" 뿐이다.
 
-- 10 s 마다, `REQUESTED` · `PENDING` · `UNKNOWN` 이고 `requested_at` 이 10 s 보다 오래됐고 `last_checked_at` 이 2 s 보다 오래된 결제를 오래된 순으로 50 건.
+- 10 s 마다, `REQUESTED` · `PENDING` · `UNKNOWN` 이고 `requested_at` 이 10 s 보다 오래됐고 `last_checked_at` 이 2 s 보다 오래된 결제를 50 건.
   `requested_at` 조건은 confirm 이 아직 POST 중인 결제를 건드리지 않기 위해서다.
+- **고르는 순서는 확인한 적 없는 결제 먼저, 그다음 가장 오래전에 확인한 결제다**(`last_checked_at` 오름차순, 빈 값 먼저, 같으면 `requested_at`)(`RESIL-012`).
+  요청이 오래된 순으로 고르면, 끝내 결과가 안 나오는 결제(조회 0 건이 계속되는 결제)가 가장 오래됐으므로 매 주기 맨 앞을 차지한다. 확인 간격(2 s)이 주기(10 s)보다 짧아 매번 다시 대상이 되므로, 이런 결제가 50 건 쌓이면 sweeper 는 그 50 건만 조회하고 새 결제를 영영 확인하지 못한다.
+  확인 시각 순이면 한 번 확인한 결제는 뒤로 가서, 미완료 결제를 돌아가며 확인한다. 끝나지 않는 결제는 사라지지 않고 다음 차례를 기다린다.
+  대가: 정렬 열(`last_checked_at`)이 인덱스 `(status, requested_at)` 의 순서와 달라 조건에 맞는 행을 모아 정렬한다. 미완료 결제가 수만 건으로 쌓이면 집기 TX 가 길어진다. **뒤집을 조건**: 집기 TX 가 느려질 만큼 미완료가 쌓일 때 — `(status, last_checked_at)` 인덱스를 더한다.
 - **집기는 짧은 TX 하나다.** `SELECT … FOR UPDATE SKIP LOCKED` 로 고르고, 고른 결제의 `last_checked_at` 을 갱신하고, 바로 commit 한다. 조회 · TX B 는 그 뒤 TX 밖에서 한다.
   - SKIP LOCKED 는 두 sweeper 가 **같은 순간에** 집을 때 서로 기다리지 않고 다른 결제를 집게 한다. `last_checked_at` 은 집기 TX 가 끝난 **뒤** 조회하는 동안 다른 sweeper · reconcile 이 같은 결제를 건너뛰게 한다.
   - SKIP LOCKED 만으로 막으려면 PG 조회 내내 TX 를 열어 둬야 한다. 그러면 HTTP 동안 잠금을 쥐고(원문 위반), 그 결제의 callback 이 TX B 에서 payment 잠금을 기다린다.

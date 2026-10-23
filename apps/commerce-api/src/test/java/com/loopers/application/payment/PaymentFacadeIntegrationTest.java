@@ -75,6 +75,7 @@ class PaymentFacadeIntegrationTest {
     private final PaymentTransactions paymentTransactions;
     private final PaymentGateway paymentGateway;
     private final PaymentSweeper paymentSweeper;
+    private final PaymentUnresolvedMetrics unresolvedMetrics;
     private final CircuitBreaker lookupCircuit;
     private final MeterRegistry meterRegistry;
     private final PaymentRepository paymentRepository;
@@ -94,6 +95,7 @@ class PaymentFacadeIntegrationTest {
         PaymentTransactions paymentTransactions,
         PaymentGateway paymentGateway,
         PaymentSweeper paymentSweeper,
+        PaymentUnresolvedMetrics unresolvedMetrics,
         CircuitBreaker lookupCircuit,
         MeterRegistry meterRegistry,
         PaymentRepository paymentRepository,
@@ -108,6 +110,7 @@ class PaymentFacadeIntegrationTest {
         this.paymentTransactions = paymentTransactions;
         this.paymentGateway = paymentGateway;
         this.paymentSweeper = paymentSweeper;
+        this.unresolvedMetrics = unresolvedMetrics;
         this.lookupCircuit = lookupCircuit;
         this.meterRegistry = meterRegistry;
         this.paymentRepository = paymentRepository;
@@ -523,6 +526,38 @@ class PaymentFacadeIntegrationTest {
             assertThat(paymentSweeper.sweepOnce(LATER)).isZero();
         }
 
+        @DisplayName("RESIL-012: 확인한 적 없는 결제를 먼저 집는다. 끝나지 않는 오래된 결제가 매 주기 앞자리를 차지해 새 결제를 밀어내지 않게")
+        @Test
+        void picksNeverCheckedBeforeOlderChecked() {
+            Order old = place(1);
+            confirm(old.getId(), "attempt-old");
+            paymentSweeper.sweepOnce(LATER);
+            Order fresh = place(1);
+            paymentFacade.confirm(new PaymentConfirmCommand(
+                USER, fresh.getId(), PaymentAttemptKey.of("attempt-fresh"), CardType.TEST, CARD), NOW.plusSeconds(1));
+            Instant now = LATER.plusSeconds(3);
+
+            List<Payment> picked = paymentTransactions.pickDueForCheck(now.minusSeconds(10), now.minusSeconds(2), 1, now);
+
+            assertThat(picked).extracting(Payment::getOrderId).containsExactly(fresh.getId());
+        }
+
+        @DisplayName("RESIL-012: 확인한 적 있는 결제끼리는 가장 오래전에 확인한 결제를 먼저 집어, 미확정 결제를 돌아가며 확인한다")
+        @Test
+        void picksLeastRecentlyCheckedFirst() {
+            Order first = place(1);
+            confirm(first.getId(), "attempt-first");
+            Order second = place(1);
+            confirm(second.getId(), "attempt-second");
+            paymentFacade.reconcile(USER, second.getId(), LATER);
+            paymentFacade.reconcile(USER, first.getId(), LATER.plusSeconds(1));
+            Instant now = LATER.plusSeconds(5);
+
+            List<Payment> picked = paymentTransactions.pickDueForCheck(now.minusSeconds(10), now.minusSeconds(2), 1, now);
+
+            assertThat(picked).extracting(Payment::getOrderId).containsExactly(second.getId());
+        }
+
         @DisplayName("5xx 는 100 ms, 200 ms 뒤 다시 조회해 최대 3 회 부른다. 세 번째에 성공하면 끝난다")
         @Test
         void retriesServerErrors() {
@@ -590,6 +625,31 @@ class PaymentFacadeIntegrationTest {
         private double count(String name, String... tags) {
             Counter counter = meterRegistry.find(name).tags(tags).counter();
             return counter == null ? 0 : counter.count();
+        }
+
+        private double gauge(String name, String status) {
+            return meterRegistry.get(name).tag("status", status).gauge().value();
+        }
+
+        @DisplayName("9.1: 미완료 결제를 상태별로 세고, 가장 오래된 요청의 나이를 초로 낸다. 끝난 결제는 세지 않는다")
+        @Test
+        void gaugesUnresolvedPayments() {
+            productFacade.adjustStock(coat, Quantity.of(100));
+            confirm(place(1).getId(), "attempt-pending");
+            Order unknown = place(1);
+            PG.dropNextCreateResponse();
+            paymentFacade.confirm(new PaymentConfirmCommand(
+                USER, unknown.getId(), PaymentAttemptKey.of("attempt-unknown"), CardType.TEST, CARD), NOW.plusSeconds(30));
+            PG.rejectNextCreate();
+            confirm(place(1).getId(), "attempt-failed");
+
+            unresolvedMetrics.refresh(NOW.plusSeconds(90));
+
+            assertThat(gauge("payment.unresolved", "pending")).isEqualTo(1);
+            assertThat(gauge("payment.unresolved.oldest", "pending")).isEqualTo(90);
+            assertThat(gauge("payment.unresolved", "unknown")).isEqualTo(1);
+            assertThat(gauge("payment.unresolved.oldest", "unknown")).isEqualTo(60);
+            assertThat(gauge("payment.unresolved", "conflict")).isZero();
         }
 
         @DisplayName("접수는 payment.create{result=accepted} 와 payment.observe{to=pending} 를 하나씩 센다")

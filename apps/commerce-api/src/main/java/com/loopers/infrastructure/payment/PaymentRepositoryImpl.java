@@ -65,4 +65,12 @@ public class PaymentRepositoryImpl implements PaymentRepository {
             .map(PaymentEntity::toDomain)
             .toList();
     }
+
+    @Override
+    public List<Unresolved> summarizeUnresolved() {
+        return paymentJpaRepository.summarizeByStatus(
+                List.of(PaymentStatus.REQUESTED, PaymentStatus.PENDING, PaymentStatus.UNKNOWN, PaymentStatus.CONFLICT)).stream()
+            .map(row -> new Unresolved((PaymentStatus) row[0], (Long) row[1], (Instant) row[2]))
+            .toList();
+    }
 }
