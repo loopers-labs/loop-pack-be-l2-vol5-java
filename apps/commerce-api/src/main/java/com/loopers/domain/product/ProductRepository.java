@@ -30,6 +30,9 @@ public interface ProductRepository {
      */
     void deductStock(long id, int quantity);
 
+    /** 예약 반환 수량을 현재 가용 재고에 더한다. 삭제된 상품도 삭제 상태를 유지한 채 반환한다. */
+    void restoreReservedStock(long id, int quantity);
+
     /**
      * 재고만 지정한 최종 수량으로 변경하고 저장 결과를 반환한다.
      * 음수 수량은 INVALID_REQUEST, 없거나 삭제된 상품은 PRODUCT_NOT_FOUND로 거절한다.

@@ -30,6 +30,19 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
 
+payment-provider:
+  lookup-retry:
+    max-attempts: 2
+    wait-duration: 200ms
+    total-timeout: 5s
+  lookup-circuit:
+    # 실측 운영값이 아닌, 상태 전이를 학습하기 위한 초깃값이다. PG GET 조회에만 적용한다.
+    sliding-window-size: 10
+    minimum-number-of-calls: 10
+    failure-rate-threshold: 50
+    wait-duration-in-open-state: 10s
+    permitted-calls-in-half-open-state: 1
+
 ---
 spring:
   config:

@@ -9,6 +9,8 @@ import java.util.Optional;
 public interface OrderRepository {
     Optional<Order> findById(long id);
 
+    Optional<Order> findByIdForUpdate(long id);
+
     /**
      * 신규 주문을 저장하거나 객체가 가진 전체 상태를 반영한다.
      * 주문 확정에는 DRAFT 조건을 검사하는 confirmIfDraft를 사용한다.
@@ -20,6 +22,13 @@ public interface OrderRepository {
      * 조건을 만족하지 않으면 INVALID_REQUEST로 거절한다.
      */
     void confirmIfDraft(Order order);
+
+    /** DRAFT 주문을 결제 대기로 바꾼 실행만 재고·결제를 준비할 수 있다. */
+    void awaitPaymentIfDraft(Order order);
+
+    void confirmIfPaymentPending(Order order);
+
+    void failIfPaymentPending(Order order);
 
     List<Order> findByUserId(long userId);
 

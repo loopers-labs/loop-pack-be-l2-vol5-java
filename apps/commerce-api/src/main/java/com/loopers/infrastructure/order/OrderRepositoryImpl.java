@@ -30,6 +30,11 @@ public class OrderRepositoryImpl implements OrderRepository {
     }
 
     @Override
+    public Optional<Order> findByIdForUpdate(long id) {
+        return repository.findByIdForUpdate(id).map(OrderJpaEntity::toDomain);
+    }
+
+    @Override
     public Order save(Order order) {
         OrderJpaEntity entity =
                 order.getId() == null
@@ -42,7 +47,7 @@ public class OrderRepositoryImpl implements OrderRepository {
     @Override
     public void confirmIfDraft(Order order) {
         int updated =
-                repository.confirmIfDraft(
+                repository.confirmIfStatus(
                         order.getId(),
                         order.getUserId(),
                         OrderStatus.DRAFT,
@@ -52,6 +57,36 @@ public class OrderRepositoryImpl implements OrderRepository {
                         ZonedDateTime.now());
         if (updated != 1) {
             throw new CoreException(ErrorType.INVALID_REQUEST);
+        }
+    }
+
+    @Override
+    public void awaitPaymentIfDraft(Order order) {
+        int updated = repository.awaitPaymentIfDraft(
+                order.getId(), order.getUserId(), OrderStatus.DRAFT,
+                OrderStatus.PAYMENT_PENDING, ZonedDateTime.now());
+        if (updated != 1) {
+            throw new CoreException(ErrorType.CONFLICT);
+        }
+    }
+
+    @Override
+    public void confirmIfPaymentPending(Order order) {
+        int updated = repository.confirmIfStatus(
+                order.getId(), order.getUserId(), OrderStatus.PAYMENT_PENDING, order.getStatus(),
+                order.getPaidAmount(), order.getPaymentResult().name(), ZonedDateTime.now());
+        if (updated != 1) {
+            throw new CoreException(ErrorType.CONFLICT);
+        }
+    }
+
+    @Override
+    public void failIfPaymentPending(Order order) {
+        int updated = repository.failIfPaymentPending(
+                order.getId(), order.getUserId(), OrderStatus.PAYMENT_PENDING, order.getStatus(),
+                order.getPaymentResult().name(), ZonedDateTime.now());
+        if (updated != 1) {
+            throw new CoreException(ErrorType.CONFLICT);
         }
     }
 

@@ -2,6 +2,8 @@ package com.loopers.application.order;
 
 import com.loopers.application.PagePolicy;
 import com.loopers.domain.order.OrderRepository;
+import com.loopers.domain.order.Order;
+import com.loopers.domain.payment.PaymentRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 
@@ -18,9 +20,10 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class GetAdminOrderFacade {
     private final OrderRepository orders;
+    private final PaymentRepository payments;
 
     public OrderInfo get(long id) {
-        return OrderInfo.from(
+        return toInfo(
                 orders.findById(id)
                         .orElseThrow(() -> new CoreException(ErrorType.ORDER_NOT_FOUND)));
     }
@@ -33,6 +36,9 @@ public class GetAdminOrderFacade {
         return orders.findAll(
                         userId,
                         PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt", "id")))
-                .map(OrderInfo::from);
+                .map(this::toInfo);
+    }
+    private OrderInfo toInfo(Order order) {
+        return OrderInfo.from(order, payments.findByOrderId(order.getId()).orElse(null));
     }
 }

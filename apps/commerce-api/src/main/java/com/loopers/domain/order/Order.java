@@ -103,4 +103,28 @@ public class Order {
         paymentResult = PaymentResult.SUCCESS;
         status = OrderStatus.CONFIRMED;
     }
+
+    public void awaitPayment() {
+        if (status != OrderStatus.DRAFT) {
+            throw new CoreException(ErrorType.INVALID_REQUEST);
+        }
+        status = OrderStatus.PAYMENT_PENDING;
+    }
+
+    public void completePayment() {
+        if (status != OrderStatus.PAYMENT_PENDING) {
+            throw new CoreException(ErrorType.CONFLICT);
+        }
+        paidAmount = totalAmount;
+        paymentResult = PaymentResult.SUCCESS;
+        status = OrderStatus.CONFIRMED;
+    }
+
+    public void failPayment() {
+        if (status != OrderStatus.PAYMENT_PENDING) {
+            throw new CoreException(ErrorType.CONFLICT);
+        }
+        paymentResult = PaymentResult.FAILED;
+        status = OrderStatus.PAYMENT_FAILED;
+    }
 }

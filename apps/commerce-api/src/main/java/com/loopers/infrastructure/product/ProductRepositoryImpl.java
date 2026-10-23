@@ -72,6 +72,14 @@ public class ProductRepositoryImpl implements ProductRepository {
     }
 
     @Override
+    public void restoreReservedStock(long id, int quantity) {
+        Product.validateQuantity(quantity);
+        if (repository.restoreReservedStock(id, quantity, Integer.MAX_VALUE - quantity, ZonedDateTime.now()) != 1) {
+            throw new CoreException(ErrorType.CONFLICT);
+        }
+    }
+
+    @Override
     public Product setStock(long id, int stock) {
         Product.validateStock(stock);
         if (repository.setStock(id, stock, ZonedDateTime.now()) == 0) {

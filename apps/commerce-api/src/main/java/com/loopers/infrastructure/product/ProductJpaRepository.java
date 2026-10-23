@@ -33,6 +33,15 @@ public interface ProductJpaRepository extends JpaRepository<ProductJpaEntity, Lo
             @Param("id") long id, @Param("quantity") int quantity, @Param("now") ZonedDateTime now);
 
     @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("update ProductJpaEntity p set p.stock = p.stock + :quantity, p.updatedAt = :now "
+            + "where p.id = :id and p.stock <= :maximumBeforeReturn")
+    int restoreReservedStock(
+            @Param("id") long id,
+            @Param("quantity") int quantity,
+            @Param("maximumBeforeReturn") int maximumBeforeReturn,
+            @Param("now") ZonedDateTime now);
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query(
             "update ProductJpaEntity p set p.stock = :stock, p.updatedAt = :now where p.id = :id"
                 + " and p.deletedAt is null")

@@ -3,6 +3,7 @@ package com.loopers.interfaces.api.order;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.loopers.application.order.CreateOrderFacade;
 import com.loopers.application.order.OrderInfo;
+import com.loopers.domain.payment.PaymentMethod;
 import com.loopers.interfaces.api.support.StrictIntegerDeserializer;
 import com.loopers.interfaces.api.support.StrictLongDeserializer;
 
@@ -37,7 +38,9 @@ public class OrderDto {
             List<Item> items,
             long totalAmount,
             Long paidAmount,
-            String paymentResult) {
+            String paymentResult,
+            PaymentMethod paymentMethod,
+            OrderInfo.PaymentInfo payment) {
         public static Customer from(OrderInfo o) {
             return new Customer(
                     o.orderId(),
@@ -45,7 +48,9 @@ public class OrderDto {
                     o.items().stream().map(Item::from).toList(),
                     o.totalAmount(),
                     o.paidAmount(),
-                    o.paymentResult());
+                    o.paymentResult(),
+                    o.paymentMethod(),
+                    o.payment());
         }
     }
 
@@ -56,7 +61,9 @@ public class OrderDto {
             List<Item> items,
             long totalAmount,
             Long paidAmount,
-            String paymentResult) {
+            String paymentResult,
+            PaymentMethod paymentMethod,
+            OrderInfo.PaymentInfo payment) {
         public static Admin from(OrderInfo o) {
             return new Admin(
                     o.orderId(),
@@ -65,7 +72,9 @@ public class OrderDto {
                     o.items().stream().map(Item::from).toList(),
                     o.totalAmount(),
                     o.paidAmount(),
-                    o.paymentResult());
+                    o.paymentResult(),
+                    o.paymentMethod(),
+                    o.payment());
         }
     }
 
