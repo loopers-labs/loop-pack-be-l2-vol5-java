@@ -1,5 +1,12 @@
 package com.loopers.interfaces.api.product;
 
+import com.loopers.application.payment.PaymentTransactions;
+import com.loopers.domain.payment.LookupResult;
+import com.loopers.domain.payment.ObservationSource;
+import com.loopers.domain.payment.Payment;
+import com.loopers.domain.payment.PaymentRepository;
+import com.loopers.domain.payment.PgTransaction;
+import com.loopers.domain.payment.TransactionStatus;
 import com.loopers.application.brand.BrandFacade;
 import com.loopers.application.like.LikeFacade;
 import com.loopers.application.product.ProductFacade;
@@ -29,6 +36,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -59,6 +67,8 @@ class ProductCacheE2ETest {
     private final LikeFacade likeFacade;
     private final TransactionTemplate transactionTemplate;
     private final ObjectMapper objectMapper;
+    private final PaymentTransactions paymentTransactions;
+    private final PaymentRepository paymentRepository;
 
     private Long brandId;
 
@@ -73,7 +83,9 @@ class ProductCacheE2ETest {
         ProductFacade productFacade,
         LikeFacade likeFacade,
         PlatformTransactionManager transactionManager,
-        ObjectMapper objectMapper
+        ObjectMapper objectMapper,
+        PaymentTransactions paymentTransactions,
+        PaymentRepository paymentRepository
     ) {
         this.testRestTemplate = testRestTemplate;
         this.jdbcTemplate = jdbcTemplate;
@@ -85,6 +97,8 @@ class ProductCacheE2ETest {
         this.likeFacade = likeFacade;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.objectMapper = objectMapper;
+        this.paymentTransactions = paymentTransactions;
+        this.paymentRepository = paymentRepository;
     }
 
     @BeforeEach
@@ -138,13 +152,25 @@ class ProductCacheE2ETest {
         }
     }
 
+    private static Map<String, Object> card(Long orderId) {
+        return Map.<String, Object>of("paymentAttemptKey", "attempt-" + orderId, "cardType", "TEST", "cardNo", "0000-0000-0000-0000");
+    }
+
     private Long confirmedOrder(Long productId, long amount) {
         productFacade.adjustStock(productId, Quantity.of(1));
         customer(HttpMethod.POST, "/api/v1/points/charge", USER, Map.of("amount", amount));
         Long orderId = customer(HttpMethod.POST, "/api/v1/orders", USER,
             Map.of("lines", List.of(Map.of("productId", productId, "quantity", 1)))).path("data").path("id").asLong();
-        customer(HttpMethod.POST, "/api/v1/orders/" + orderId + "/confirm", USER, null);
+        customer(HttpMethod.POST, "/api/v1/orders/" + orderId + "/confirm", USER, card(orderId));
+        succeed(orderId);
         return orderId;
+    }
+
+    private void succeed(Long orderId) {
+        Payment payment = paymentRepository.findByOrderId(orderId).orElseThrow();
+        paymentTransactions.observe(payment.getId(), new LookupResult.Found(List.of(new PgTransaction(
+                payment.getTransactionKey(), payment.getProviderOrderId(), payment.getAmount(), TransactionStatus.SUCCESS))),
+            ObservationSource.LOOKUP, Instant.now());
     }
 
     private JsonNode order(Long orderId) {
@@ -352,7 +378,7 @@ class ProductCacheE2ETest {
         );
     }
 
-    @DisplayName("CACHE-005 · 주문 확정이 마지막 재고를 팔면 다음 조회에서 품절이다")
+    @DisplayName("CACHE-005, RSV-001 · 결제 시작이 마지막 재고를 묶으면 다음 조회에서 품절이다")
     @Test
     void confirmationSellingLastStockMarksSoldOut() {
         Long productId = product("셔츠", 10_000);
@@ -362,7 +388,7 @@ class ProductCacheE2ETest {
         Long orderId = customer(HttpMethod.POST, "/api/v1/orders", USER,
             Map.of("lines", List.of(Map.of("productId", productId, "quantity", 1)))).path("data").path("id").asLong();
 
-        customer(HttpMethod.POST, "/api/v1/orders/" + orderId + "/confirm", USER, null);
+        customer(HttpMethod.POST, "/api/v1/orders/" + orderId + "/confirm", USER, card(orderId));
 
         assertAll(
             () -> assertThat(soldOutBefore).isFalse(),

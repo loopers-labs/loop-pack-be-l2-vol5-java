@@ -13,6 +13,7 @@ import com.loopers.domain.payment.CardType;
 import com.loopers.domain.payment.Payment;
 import com.loopers.domain.payment.PaymentAttemptKey;
 import com.loopers.domain.payment.PaymentRepository;
+import com.loopers.domain.payment.PaymentStatus;
 import com.loopers.domain.payment.ProviderOrderId;
 import com.loopers.domain.product.Price;
 import com.loopers.domain.product.ProductService;
@@ -119,6 +120,10 @@ class PaymentFacadeIntegrationTest {
         return PG.createCount() - createsBefore;
     }
 
+    private int lookups() {
+        return (int) PG.receivedRequests().stream().filter(request -> request.method().equals("GET")).count();
+    }
+
     private PgFixture.ReceivedRequest lastCreate() {
         return PG.receivedRequests().stream()
             .filter(request -> request.method().equals("POST"))
@@ -156,6 +161,78 @@ class PaymentFacadeIntegrationTest {
             assertThat(again.getId()).isEqualTo(first.getId());
             assertThat(creates()).isEqualTo(1);
             assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(8));
+        }
+    }
+
+    @Nested
+    @DisplayName("RESIL-010, PG-005, PG-010, PG-011: 생성 결과를 반영해 돌려주고, 결과를 기다리지 않는다")
+    class ObserveCreate {
+
+        @DisplayName("접수되면 PENDING 과 PG 가 만든 키를 돌려준다. 주문 PENDING, 재고는 묶인 채다")
+        @Test
+        void accepted() {
+            Order order = place(2);
+
+            Payment payment = confirm(order.getId(), "attempt-1");
+
+            String created = PG.transactionsOf(ProviderOrderId.of(order.getId()).value()).stream()
+                .map(PgFixture.Transaction::transactionKey)
+                .max(String::compareTo)
+                .orElseThrow();
+            assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
+            assertThat(payment.getTransactionKey().value()).isEqualTo(created);
+            assertThat(orderFacade.get(USER, order.getId()).getStatus()).isEqualTo(OrderStatus.PENDING);
+            assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(8));
+        }
+
+        @DisplayName("효과 0 건 거절이면 FAILED 를 돌려주고, 주문 FAILED, 재고를 돌려받는다")
+        @Test
+        void rejected() {
+            Order order = place(2);
+            PG.rejectNextCreate();
+
+            Payment payment = confirm(order.getId(), "attempt-1");
+
+            assertThat(payment.getStatus()).isEqualTo(PaymentStatus.FAILED);
+            assertThat(orderFacade.get(USER, order.getId()).getStatus()).isEqualTo(OrderStatus.FAILED);
+            assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(10));
+        }
+
+        @DisplayName("응답이 끊기면 UNKNOWN 을 돌려주고 다시 보내지 않는다. 재고는 묶인 채다")
+        @Test
+        void unknown() {
+            Order order = place(2);
+            PG.dropNextCreateResponse();
+
+            Payment payment = confirm(order.getId(), "attempt-1");
+
+            assertThat(payment.getStatus()).isEqualTo(PaymentStatus.UNKNOWN);
+            assertThat(creates()).isEqualTo(1);
+            assertThat(orderFacade.get(USER, order.getId()).getStatus()).isEqualTo(OrderStatus.PENDING);
+            assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(8));
+        }
+
+        @DisplayName("같은 키를 다시 보내면 반영된 상태를 돌려준다")
+        @Test
+        void repeatReturnsObservedState() {
+            Order order = place(2);
+            confirm(order.getId(), "attempt-1");
+
+            Payment again = confirm(order.getId(), "attempt-1");
+
+            assertThat(again.getStatus()).isEqualTo(PaymentStatus.PENDING);
+            assertThat(again.getTransactionKey()).isNotNull();
+        }
+
+        @DisplayName("confirm 은 PG 조회를 부르지 않는다. 결과는 callback, reconcile 이 맡는다")
+        @Test
+        void doesNotLookup() {
+            Order order = place(2);
+            int lookupsBefore = lookups();
+
+            confirm(order.getId(), "attempt-1");
+
+            assertThat(lookups()).isEqualTo(lookupsBefore);
         }
     }
 

@@ -1,9 +1,14 @@
 package com.loopers.interfaces.api.order;
 
 import com.loopers.application.order.OrderCreateCommand;
+import com.loopers.application.payment.PaymentConfirmCommand;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.OrderQuantity;
+import com.loopers.domain.payment.CardNumber;
+import com.loopers.domain.payment.CardType;
+import com.loopers.domain.payment.Payment;
+import com.loopers.domain.payment.PaymentAttemptKey;
 
 import java.time.Instant;
 import java.util.List;
@@ -33,6 +38,29 @@ public class OrderV1Dto {
             return new OrderCreateCommand(userId, lines.stream()
                 .map(line -> new OrderCreateCommand.Line(line.productId(), OrderQuantity.of(line.quantity())))
                 .toList());
+        }
+    }
+
+    public record ConfirmRequest(String paymentAttemptKey, CardType cardType, String cardNo) {
+        public ConfirmRequest {
+            PaymentAttemptKey.of(paymentAttemptKey);
+            if (cardType == null) {
+                throw new IllegalArgumentException("cardType 은 필수입니다.");
+            }
+            CardNumber.of(cardNo);
+        }
+
+        public PaymentConfirmCommand toCommand(Long userId, Long orderId) {
+            return new PaymentConfirmCommand(
+                userId, orderId, PaymentAttemptKey.of(paymentAttemptKey), cardType, CardNumber.of(cardNo));
+        }
+    }
+
+    public record ConfirmResponse(Long orderId, String orderStatus, String paymentStatus, String statusUrl) {
+        public static ConfirmResponse of(Order order, Payment payment) {
+            return new ConfirmResponse(
+                order.getId(), order.getStatus().name(), payment.getStatus().name(),
+                "/api/v1/orders/" + order.getId());
         }
     }
 

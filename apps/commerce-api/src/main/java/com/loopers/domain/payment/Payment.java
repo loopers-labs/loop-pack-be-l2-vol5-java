@@ -140,7 +140,7 @@ public class Payment {
         return PaymentOutcome.conflict(new PaymentDiscrepancy(reason, observedKey, observedStatus, observedAmount));
     }
 
-    private boolean isSettled() {
+    public boolean isSettled() {
         return status == PaymentStatus.SUCCESS || status == PaymentStatus.FAILED;
     }
 

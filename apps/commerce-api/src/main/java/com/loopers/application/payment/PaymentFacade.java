@@ -1,5 +1,6 @@
 package com.loopers.application.payment;
 
+import com.loopers.domain.payment.CreateObservation;
 import com.loopers.domain.payment.Payment;
 import com.loopers.domain.payment.PaymentCreation;
 import com.loopers.domain.payment.PaymentGateway;
@@ -22,9 +23,9 @@ public class PaymentFacade {
         return switch (begin) {
             case PaymentBegin.Repeated(Payment payment) -> payment;
             case PaymentBegin.Granted(Payment payment) -> {
-                paymentGateway.create(new PaymentCreation(
+                CreateObservation observation = paymentGateway.create(new PaymentCreation(
                     payment.getProviderOrderId(), command.cardType(), command.cardNumber(), payment.getAmount()));
-                yield payment;
+                yield paymentTransactions.observe(payment.getId(), observation, now);
             }
         };
     }

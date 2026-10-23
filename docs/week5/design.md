@@ -339,6 +339,12 @@ sequenceDiagram
 
 재고 5 · 수량 2 → TX A 뒤 가용 3, 성공 뒤에도 3(`RSV-005`). 포인트 변화 0.
 
+**confirm 의 응답.** 경로는 W2 와 같은 `POST /api/v1/orders/{orderId}/confirm` 이고, 본문(`paymentAttemptKey` · `cardType` · `cardNo`)이 필수다(Q-6). 응답 본문은 `{orderId, orderStatus, paymentStatus, statusUrl}` 이다.
+결제가 종결(`SUCCESS` · `FAILED`)이면 200, 아니면 202 와 `Retry-After: 1` 이다. 클라이언트는 그 간격 뒤에 `statusUrl`(`GET /orders/{id}`, DB 만 읽음)을 다시 본다. 종결이면 다시 볼 것이 없으므로 헤더를 붙이지 않는다.
+1 초는 fixture 의 callback 이 거의 즉시 오는 것에 맞춘 값이다. 헤더는 힌트일 뿐 서버가 폴링 간격을 강제하지 않는다.
+지금 고를 수 있는 다른 길: 서버 푸시(SSE · WebSocket)로 결과를 밀어 준다. 연결을 붙잡는 비용과 다중 서버 라우팅이 따라온다.
+**뒤집을 조건**: 실제 PG 의 결과 지연이 길어(수 초 이상) 폴링이 헛돌 때는 간격을 늘리거나 응답마다 늘려 가고, 폴링 부하가 DB 를 압박하면 푸시를 검토한다.
+
 ### 6.2 효과 0건 거절
 
 ```mermaid
@@ -721,6 +727,9 @@ rm pg-fixture.crt
 | create · lookup 호출 수, 저장된 거래, 받은 요청(헤더 · 본문) | 모든 장면의 단언 |
 
 무작위 지연 · 성공 확률이 없다. 자동 callback · 자동 재전송도 없다. 테스트가 명령할 때만 상태가 바뀐다.
+
+**공용 fixture(`PgFixture.shared()`).** confirm 을 거치는 테스트는 모두 PG 가 떠 있어야 한다. 테스트 소스의 `@Configuration` 이 컨텍스트가 뜰 때 test 프로필의 PG 주소(`127.0.0.1:8090`)에 fixture 하나를 띄우고, 모든 테스트가 그것을 같이 쓴다. 클래스마다 빈 포트로 띄우고 `@DynamicPropertySource` 로 주소를 바꾸면 설정이 달라 Spring 컨텍스트를 클래스마다 새로 만든다. PG 의 동작 자체를 보는 테스트(`PaymentFacadeIntegrationTest` 등)는 지금처럼 자기 fixture 를 따로 띄워, 앞 테스트가 남긴 거래 · 손잡이에 흔들리지 않게 한다.
+**뒤집을 조건**: 테스트 JVM 을 여러 개 병렬로 돌리게 될 때(포트가 겹친다), 또는 8090 을 쓰는 다른 프로세스와 자주 부딪칠 때 — 그때는 빈 포트로 띄우고 주소를 컨텍스트 초기화 단계에서 한 번만 넣는다.
 
 ### 12.2 테스트의 층
 

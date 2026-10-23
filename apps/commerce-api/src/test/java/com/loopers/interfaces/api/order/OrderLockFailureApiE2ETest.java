@@ -33,6 +33,7 @@ import java.sql.ResultSet;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -180,8 +181,10 @@ class OrderLockFailureApiE2ETest {
     private ResponseEntity<ApiResponse<Object>> confirm(Long orderId) {
         HttpHeaders headers = new HttpHeaders();
         headers.set("X-USER-ID", String.valueOf(BUYER));
+        Map<String, Object> card = Map.<String, Object>of(
+            "paymentAttemptKey", "attempt-" + orderId, "cardType", "TEST", "cardNo", "0000-0000-0000-0000");
         return testRestTemplate.exchange(
-            "/api/v1/orders/" + orderId + "/confirm", HttpMethod.POST, new HttpEntity<>(null, headers), ANY);
+            "/api/v1/orders/" + orderId + "/confirm", HttpMethod.POST, new HttpEntity<>(card, headers), ANY);
     }
 
     private static void lock(Connection holder, Long productId) throws Exception {
@@ -239,6 +242,8 @@ class OrderLockFailureApiE2ETest {
             "SELECT paid_amount IS NULL AND confirmed_at IS NULL FROM orders WHERE id = ?", Boolean.class, orderId))
             .as("결제액 · 확정 시각이 남지 않는다").isTrue();
         assertThat(jdbcTemplate.queryForList("SELECT type FROM point_transaction WHERE user_id = ?", String.class, BUYER))
-            .as("결제 원장이 남지 않는다").containsExactly("CHARGE");
+            .as("포인트 원장이 남지 않는다").containsExactly("CHARGE");
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM payment WHERE order_id = ?", Integer.class, orderId))
+            .as("결제 시도가 남지 않는다").isZero();
     }
 }

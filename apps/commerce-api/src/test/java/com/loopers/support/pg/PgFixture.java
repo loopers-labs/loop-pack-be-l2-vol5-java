@@ -41,6 +41,8 @@ public final class PgFixture implements AutoCloseable {
     private static final String USER_HEADER = "X-USER-ID";
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final HttpClient CALLBACK_CLIENT = HttpClient.newHttpClient();
+    private static final int SHARED_PORT = 8090;
+    private static PgFixture shared;
 
     private final HttpsServer server;
     private final ExecutorService executor;
@@ -59,9 +61,20 @@ public final class PgFixture implements AutoCloseable {
         this.executor = executor;
     }
 
+    public static synchronized PgFixture shared() {
+        if (shared == null) {
+            shared = start(SHARED_PORT);
+        }
+        return shared;
+    }
+
     public static PgFixture start() {
+        return start(0);
+    }
+
+    private static PgFixture start(int port) {
         try {
-            HttpsServer server = HttpsServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            HttpsServer server = HttpsServer.create(new InetSocketAddress("127.0.0.1", port), 0);
             server.setHttpsConfigurator(new HttpsConfigurator(serverSslContext()));
             ExecutorService executor = Executors.newCachedThreadPool();
             server.setExecutor(executor);

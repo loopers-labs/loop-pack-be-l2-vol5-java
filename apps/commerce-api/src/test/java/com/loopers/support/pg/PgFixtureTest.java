@@ -48,6 +48,13 @@ class PgFixtureTest {
         pg.close();
     }
 
+    @DisplayName("공용 fixture 는 test 프로필의 PG 주소(127.0.0.1:8090)에서 하나만 뜬다")
+    @Test
+    void sharedListensOnTestProfileAddress() {
+        assertThat(PgFixture.shared()).isSameAs(PgFixture.shared());
+        assertThat(PgFixture.shared().baseUrl()).isEqualTo("https://127.0.0.1:8090");
+    }
+
     @Nested
     @DisplayName("PG-003, PG-005: 생성 POST 는 거래를 만들고 202 PENDING 으로 접수를 알린다")
     class Create {
