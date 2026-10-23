@@ -12,6 +12,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
@@ -24,7 +25,8 @@ import java.time.Instant;
         @UniqueConstraint(name = "uk_payment_order_id", columnNames = "order_id"),
         @UniqueConstraint(name = "uk_payment_attempt_key", columnNames = "attempt_key"),
         @UniqueConstraint(name = "uk_payment_provider_order_id", columnNames = "provider_order_id")
-    }
+    },
+    indexes = @Index(name = "idx_payment_status_requested_at", columnList = "status, requested_at")
 )
 class PaymentEntity extends AuditEntity {
 

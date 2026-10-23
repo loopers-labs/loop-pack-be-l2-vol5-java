@@ -33,4 +33,21 @@ dependencies {
     // resilience
     implementation("io.github.resilience4j:resilience4j-circuitbreaker:${project.properties["resilience4jVersion"]}")
     implementation("io.github.resilience4j:resilience4j-bulkhead:${project.properties["resilience4jVersion"]}")
+    implementation("io.github.resilience4j:resilience4j-micrometer:${project.properties["resilience4jVersion"]}")
+}
+
+// W5 8.5 장애 실험용: PG fixture 를 테스트 밖에서 띄우는 실행 jar (테스트 클래스 + Jackson)
+tasks.register<Jar>("pgFixtureJar") {
+    group = "verification"
+    archiveFileName.set("pg-fixture.jar")
+    dependsOn(tasks.named("testClasses"))
+    from(sourceSets["test"].output)
+    from({
+        configurations["testRuntimeClasspath"]
+            .filter { it.name.startsWith("jackson-") }
+            .map { zipTree(it) }
+    })
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
+    manifest { attributes["Main-Class"] = "com.loopers.support.pg.PgFixtureServer" }
 }

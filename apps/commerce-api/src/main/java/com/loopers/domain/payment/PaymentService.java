@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 @Service
@@ -33,6 +34,10 @@ public class PaymentService {
     public Payment getForUpdate(Long paymentId) {
         return paymentRepository.findByIdForUpdate(paymentId)
             .orElseThrow(() -> new IllegalStateException("결제가 없습니다: id=" + paymentId));
+    }
+
+    public List<Payment> findDueForCheckSkippingLocked(Instant requestedBefore, Instant checkedBefore, int limit) {
+        return paymentRepository.findDueForCheckSkippingLocked(requestedBefore, checkedBefore, limit);
     }
 
     public Payment save(Payment payment) {

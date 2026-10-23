@@ -17,6 +17,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -60,6 +62,94 @@ class PgFixtureTest {
         assertThat(body.get("orderId").asText()).isEqualTo(ORDER_ID);
         assertThat(body.get("amount").asLong()).isEqualTo(7000);
         assertThat(body.get("status").asText()).isEqualTo("SUCCESS");
+    }
+
+    @Nested
+    @DisplayName("8.5 실험 손잡이: 실행 중에 PG 를 느리게 · 아프게 만들고, 결과를 스스로 알린다")
+    class LoadTestHandles {
+
+        @DisplayName("생성 지연을 켜면 거래는 바로 생기고 응답만 그만큼 늦게 온다")
+        @Test
+        void delaysCreates() throws Exception {
+            pg.delayCreates(Duration.ofMillis(300));
+            long startedAt = System.nanoTime();
+
+            HttpResponse<String> response = create(ORDER_ID, 7000);
+
+            assertThat(response.statusCode()).isEqualTo(202);
+            assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)).isGreaterThanOrEqualTo(300);
+        }
+
+        @DisplayName("N 번째 조회마다 정한 상태로 실패한다. 무작위가 아니라 주기라 재현된다")
+        @Test
+        void failsEveryNthLookup() throws Exception {
+            String key = transactionKeyOf(create(ORDER_ID, 7000));
+            pg.failEveryNthLookup(3, 500);
+
+            List<Integer> statuses = new ArrayList<>();
+            for (int i = 0; i < 6; i++) {
+                statuses.add(get("/api/v1/payments/" + key).statusCode());
+            }
+
+            assertThat(statuses).containsExactly(200, 200, 500, 200, 200, 500);
+        }
+
+        @DisplayName("자동 결과를 켜면 정한 시간 뒤 거래 상태를 바꾸고 callback 을 보낸다")
+        @Test
+        void settlesAutomatically() throws Exception {
+            try (CallbackReceiver receiver = CallbackReceiver.start()) {
+                pg.settleAutomatically(PgFixture.Status.SUCCESS, Duration.ofMillis(100));
+
+                String key = transactionKeyOf(create(ORDER_ID, 7000, receiver.url()));
+
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+                while (receiver.bodies().isEmpty() && System.nanoTime() < deadline) {
+                    Thread.sleep(20);
+                }
+                assertThat(receiver.bodies()).singleElement()
+                    .satisfies(body -> assertThat(JSON.readTree(body).get("status").asText()).isEqualTo("SUCCESS"));
+                assertThat(pg.transactionsOf(ORDER_ID)).singleElement()
+                    .satisfies(transaction -> assertThat(transaction.transactionKey()).isEqualTo(key));
+            }
+        }
+
+        @DisplayName("stats 는 생성 · 조회 수와 거래가 둘 이상인 주문 수를 센다 (정합성 검사용)")
+        @Test
+        void countsStats() throws Exception {
+            create(ORDER_ID, 7000);
+            create(ORDER_ID, 7000);
+            create("LP-ORD-0000000043", 7000);
+            get("/api/v1/payments?orderId=" + ORDER_ID);
+
+            PgFixture.Stats stats = pg.stats();
+
+            assertThat(stats.creates()).isEqualTo(3);
+            assertThat(stats.lookups()).isEqualTo(1);
+            assertThat(stats.transactions()).isEqualTo(3);
+            assertThat(stats.ordersWithMultipleTransactions()).isEqualTo(1);
+        }
+
+        @DisplayName("기록을 끄면 받은 요청을 쌓지 않는다. 부하에서 fixture 가 CPU 를 쓰지 않게")
+        @Test
+        void stopsRecording() throws Exception {
+            pg.recordRequests(false);
+
+            create(ORDER_ID, 7000);
+
+            assertThat(pg.receivedRequests()).isEmpty();
+            assertThat(pg.createCount()).isEqualTo(1);
+        }
+    }
+
+    @DisplayName("다음 N 번의 조회만 정한 상태로 실패하고, 그 뒤에는 정상으로 돌아온다")
+    @Test
+    void failsNextLookups() throws Exception {
+        String key = transactionKeyOf(create(ORDER_ID, 7000));
+        pg.failNextLookups(2, 503);
+
+        assertThat(get("/api/v1/payments/" + key).statusCode()).isEqualTo(503);
+        assertThat(get("/api/v1/payments/" + key).statusCode()).isEqualTo(503);
+        assertThat(get("/api/v1/payments/" + key).statusCode()).isEqualTo(200);
     }
 
     @DisplayName("reset 은 거래, 받은 요청, 생성 수, 다음 한 번 손잡이를 비운다. 거래 키 번호는 이어진다")

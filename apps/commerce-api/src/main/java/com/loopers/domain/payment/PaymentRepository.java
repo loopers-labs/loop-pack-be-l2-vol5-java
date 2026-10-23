@@ -1,5 +1,7 @@
 package com.loopers.domain.payment;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 public interface PaymentRepository {
@@ -15,4 +17,6 @@ public interface PaymentRepository {
     Optional<Long> findOrderIdById(Long paymentId);
 
     Optional<Payment> findByIdForUpdate(Long paymentId);
+
+    List<Payment> findDueForCheckSkippingLocked(Instant requestedBefore, Instant checkedBefore, int limit);
 }

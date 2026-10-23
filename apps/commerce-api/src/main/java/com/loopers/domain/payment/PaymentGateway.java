@@ -7,4 +7,8 @@ public interface PaymentGateway {
     LookupResult lookup(TransactionKey transactionKey);
 
     LookupResult lookup(ProviderOrderId providerOrderId);
+
+    LookupResult lookupRetrying(TransactionKey transactionKey);
+
+    LookupResult lookupRetrying(ProviderOrderId providerOrderId);
 }

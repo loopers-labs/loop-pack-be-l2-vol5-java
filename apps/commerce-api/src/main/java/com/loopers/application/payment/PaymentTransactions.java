@@ -11,6 +11,7 @@ import com.loopers.domain.payment.Payment;
 import com.loopers.domain.payment.PaymentAttemptKey;
 import com.loopers.domain.payment.PaymentOutcome;
 import com.loopers.domain.payment.PaymentService;
+import com.loopers.domain.payment.PaymentStatus;
 import com.loopers.domain.product.StockDeduction;
 import com.loopers.domain.product.StockRestoration;
 import com.loopers.support.error.DomainError;
@@ -21,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
 
@@ -43,6 +45,7 @@ public class PaymentTransactions {
     private final PaymentService paymentService;
     private final StockDeduction stockDeduction;
     private final StockRestoration stockRestoration;
+    private final PaymentMetrics paymentMetrics;
 
     @Transactional
     public Begin begin(Long userId, Long orderId, PaymentAttemptKey attemptKey, CardType cardType,
@@ -69,6 +72,16 @@ public class PaymentTransactions {
     }
 
     @Transactional
+    public List<Payment> pickDueForCheck(Instant requestedBefore, Instant checkedBefore, int limit, Instant now) {
+        List<Payment> due = paymentService.findDueForCheckSkippingLocked(requestedBefore, checkedBefore, limit);
+        due.forEach(payment -> {
+            payment.markChecked(now);
+            paymentService.save(payment);
+        });
+        return due;
+    }
+
+    @Transactional
     public Payment observe(Long paymentId, CreateObservation observation, Instant now) {
         return apply(paymentId, payment -> payment.observe(observation),
             PaymentDiscrepancy.Source.CREATE_RESPONSE, now);
@@ -87,8 +100,10 @@ public class PaymentTransactions {
                           PaymentDiscrepancy.Source source, Instant now) {
         Order order = orderService.getForUpdate(paymentService.orderIdOf(paymentId));
         Payment payment = paymentService.getForUpdate(paymentId);
+        PaymentStatus before = payment.getStatus();
 
         PaymentOutcome outcome = observation.apply(payment);
+        paymentMetrics.observed(before, payment.getStatus());
 
         switch (outcome.effect()) {
             case NONE -> {
@@ -106,6 +121,7 @@ public class PaymentTransactions {
             }
         }
         if (outcome.discrepancy() != null) {
+            paymentMetrics.discrepancy(outcome.discrepancy().reason());
             paymentService.recordDiscrepancy(paymentId, outcome.discrepancy(), source, now);
         }
         return paymentService.save(payment);

@@ -22,6 +22,7 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientException;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.function.Supplier;
@@ -31,6 +32,7 @@ class PgPaymentGateway implements PaymentGateway {
 
     private static final String PAYMENTS = "/api/v1/payments";
     private static final String REJECTED_BEFORE_CREATE = "TEST_PG_REJECTED_BEFORE_CREATE";
+    private static final List<Duration> RETRY_WAITS = List.of(Duration.ofMillis(100), Duration.ofMillis(200));
 
     private final RestClient createClient;
     private final RestClient lookupClient;
@@ -73,63 +75,112 @@ class PgPaymentGateway implements PaymentGateway {
 
     @Override
     public LookupResult lookup(TransactionKey transactionKey) {
-        return guarded(() -> lookupByKey(transactionKey));
+        return guarded(() -> lookupByKey(transactionKey)).result();
     }
 
     @Override
     public LookupResult lookup(ProviderOrderId providerOrderId) {
-        return guarded(() -> lookupByOrder(providerOrderId));
+        return guarded(() -> lookupByOrder(providerOrderId)).result();
     }
 
-    private LookupResult guarded(Supplier<LookupResult> lookup) {
+    @Override
+    public LookupResult lookupRetrying(TransactionKey transactionKey) {
+        return retrying(() -> lookupByKey(transactionKey));
+    }
+
+    @Override
+    public LookupResult lookupRetrying(ProviderOrderId providerOrderId) {
+        return retrying(() -> lookupByOrder(providerOrderId));
+    }
+
+    private LookupResult retrying(Supplier<LookupAttempt> lookup) {
+        LookupAttempt attempt = guarded(lookup);
+        for (Duration wait : RETRY_WAITS) {
+            if (!attempt.retryable()) {
+                break;
+            }
+            pause(wait);
+            attempt = guarded(lookup);
+        }
+        return attempt.result();
+    }
+
+    private LookupAttempt guarded(Supplier<LookupAttempt> lookup) {
         try {
             return lookupCircuit.executeSupplier(lookup);
         } catch (CallNotPermittedException e) {
-            return new LookupResult.Unavailable();
+            return LookupAttempt.unavailable(false);
         }
     }
 
-    private LookupResult lookupByKey(TransactionKey transactionKey) {
+    private static void pause(Duration wait) {
+        try {
+            Thread.sleep(wait);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private LookupAttempt lookupByKey(TransactionKey transactionKey) {
         try {
             return lookupClient.get()
                 .uri(PAYMENTS + "/{transactionKey}", transactionKey.value())
                 .exchange((request, response) -> {
                     if (response.getStatusCode().isSameCodeAs(HttpStatus.NOT_FOUND)) {
-                        return new LookupResult.NotFound();
+                        return LookupAttempt.of(new LookupResult.NotFound());
                     }
                     if (!response.getStatusCode().isSameCodeAs(HttpStatus.OK)) {
-                        return new LookupResult.Unavailable();
+                        return LookupAttempt.unavailable(response.getStatusCode().is5xxServerError());
                     }
                     TransactionResponse body = response.bodyTo(TransactionResponse.class);
                     if (body == null) {
-                        return new LookupResult.Unavailable();
+                        return LookupAttempt.unavailable(false);
                     }
-                    return found(List.of(body));
+                    return LookupAttempt.of(found(List.of(body)));
                 });
-        } catch (RestClientException | HttpMessageNotReadableException e) {
-            return new LookupResult.Unavailable();
+        } catch (HttpMessageNotReadableException e) {
+            return LookupAttempt.unavailable(false);
+        } catch (RestClientException e) {
+            return LookupAttempt.unavailable(true);
         }
     }
 
-    private LookupResult lookupByOrder(ProviderOrderId providerOrderId) {
+    private LookupAttempt lookupByOrder(ProviderOrderId providerOrderId) {
         try {
             return lookupClient.get()
                 .uri(PAYMENTS + "?orderId={orderId}", providerOrderId.value())
                 .exchange((request, response) -> {
                     if (!response.getStatusCode().isSameCodeAs(HttpStatus.OK)) {
-                        return new LookupResult.Unavailable();
+                        return LookupAttempt.unavailable(response.getStatusCode().is5xxServerError());
                     }
                     TransactionResponse[] body = response.bodyTo(TransactionResponse[].class);
                     if (body == null) {
-                        return new LookupResult.Unavailable();
+                        return LookupAttempt.unavailable(false);
                     }
                     if (body.length == 0) {
-                        return new LookupResult.NotFound();
+                        return LookupAttempt.of(new LookupResult.NotFound());
                     }
-                    return found(Arrays.asList(body));
+                    return LookupAttempt.of(found(Arrays.asList(body)));
                 });
-        } catch (RestClientException | HttpMessageNotReadableException e) {
-            return new LookupResult.Unavailable();
+        } catch (HttpMessageNotReadableException e) {
+            return LookupAttempt.unavailable(false);
+        } catch (RestClientException e) {
+            return LookupAttempt.unavailable(true);
+        }
+    }
+
+    record LookupAttempt(LookupResult result, boolean retryable) {
+
+        static LookupAttempt of(LookupResult result) {
+            return new LookupAttempt(result, false);
+        }
+
+        static LookupAttempt unavailable(boolean retryable) {
+            return new LookupAttempt(new LookupResult.Unavailable(), retryable);
+        }
+
+        boolean failed() {
+            return result instanceof LookupResult.Unavailable;
         }
     }
 

@@ -26,6 +26,9 @@ import com.loopers.support.error.DomainException;
 import com.loopers.support.error.ErrorType;
 import com.loopers.support.pg.PgFixture;
 import com.loopers.utils.DatabaseCleanUp;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -71,6 +74,9 @@ class PaymentFacadeIntegrationTest {
     private final PaymentFacade paymentFacade;
     private final PaymentTransactions paymentTransactions;
     private final PaymentGateway paymentGateway;
+    private final PaymentSweeper paymentSweeper;
+    private final CircuitBreaker lookupCircuit;
+    private final MeterRegistry meterRegistry;
     private final PaymentRepository paymentRepository;
     private final OrderFacade orderFacade;
     private final ProductService productService;
@@ -87,6 +93,9 @@ class PaymentFacadeIntegrationTest {
         PaymentFacade paymentFacade,
         PaymentTransactions paymentTransactions,
         PaymentGateway paymentGateway,
+        PaymentSweeper paymentSweeper,
+        CircuitBreaker lookupCircuit,
+        MeterRegistry meterRegistry,
         PaymentRepository paymentRepository,
         OrderFacade orderFacade,
         ProductService productService,
@@ -98,6 +107,9 @@ class PaymentFacadeIntegrationTest {
         this.paymentFacade = paymentFacade;
         this.paymentTransactions = paymentTransactions;
         this.paymentGateway = paymentGateway;
+        this.paymentSweeper = paymentSweeper;
+        this.lookupCircuit = lookupCircuit;
+        this.meterRegistry = meterRegistry;
         this.paymentRepository = paymentRepository;
         this.orderFacade = orderFacade;
         this.productService = productService;
@@ -124,6 +136,7 @@ class PaymentFacadeIntegrationTest {
         coat = productFacade.register(brandId, "코트", Price.of(3_000)).getId();
         productFacade.adjustStock(coat, Quantity.of(10));
         PG.reset();
+        lookupCircuit.reset();
         createsBefore = PG.createCount();
     }
 
@@ -445,6 +458,188 @@ class PaymentFacadeIntegrationTest {
             Thread.sleep(20);
         }
         return condition.getAsBoolean();
+    }
+
+    @Nested
+    @DisplayName("RESIL-005, RESIL-006: sweeper 는 사람 대신 미완료 결제를 조회해 끝내고, 이 경로의 조회만 재시도한다")
+    class Sweeper {
+
+        private static final Instant LATER = NOW.plusSeconds(11);
+
+        private String keyOf(Order order) {
+            return PG.transactionsOf(ProviderOrderId.of(order.getId()).value()).stream()
+                .map(PgFixture.Transaction::transactionKey).max(String::compareTo).orElseThrow();
+        }
+
+        @DisplayName("PG-011, SETTLE-012: 생성 응답이 끊겨 UNKNOWN 인 결제도 사람 없이 주문 조회로 끝난다. create 는 다시 보내지 않는다")
+        @Test
+        void settlesUnknownWithoutHuman() {
+            Order order = place(2);
+            PG.dropNextCreateResponse();
+            confirm(order.getId(), "attempt-1");
+            PG.changeStatus(keyOf(order), PgFixture.Status.SUCCESS);
+
+            int checked = paymentSweeper.sweepOnce(LATER);
+
+            assertThat(checked).isEqualTo(1);
+            assertThat(orderFacade.get(USER, order.getId()).getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+            assertThat(creates()).isEqualTo(1);
+        }
+
+        @DisplayName("요청한 지 10 초가 안 된 결제는 confirm 이 아직 처리 중일 수 있어 집지 않는다")
+        @Test
+        void skipsRecentRequests() {
+            Order order = place(2);
+            confirm(order.getId(), "attempt-1");
+            long before = lookups();
+
+            int checked = paymentSweeper.sweepOnce(NOW.plusSeconds(5));
+
+            assertThat(checked).isZero();
+            assertThat(lookups()).isEqualTo(before);
+        }
+
+        @DisplayName("RESIL-008: 2 초 안에 누가 확인한 결제는 집지 않는다")
+        @Test
+        void skipsRecentlyChecked() {
+            Order order = place(2);
+            confirm(order.getId(), "attempt-1");
+            paymentFacade.reconcile(USER, order.getId(), NOW.plusSeconds(10));
+            long before = lookups();
+
+            int checked = paymentSweeper.sweepOnce(LATER);
+
+            assertThat(checked).isZero();
+            assertThat(lookups()).isEqualTo(before);
+        }
+
+        @DisplayName("PAY-018: 끝난 결제는 집지 않는다. CONFLICT 와 함께 상태 조건(REQUESTED · PENDING · UNKNOWN)으로 거른다")
+        @Test
+        void skipsSettled() {
+            Order order = place(2);
+            PG.rejectNextCreate();
+            confirm(order.getId(), "attempt-1");
+
+            assertThat(paymentSweeper.sweepOnce(LATER)).isZero();
+        }
+
+        @DisplayName("5xx 는 100 ms, 200 ms 뒤 다시 조회해 최대 3 회 부른다. 세 번째에 성공하면 끝난다")
+        @Test
+        void retriesServerErrors() {
+            Order order = place(2);
+            confirm(order.getId(), "attempt-1");
+            PG.changeStatus(keyOf(order), PgFixture.Status.SUCCESS);
+            PG.failNextLookups(2, 500);
+            long before = lookups();
+
+            paymentSweeper.sweepOnce(LATER);
+
+            assertThat(lookups() - before).isEqualTo(3);
+            assertThat(orderFacade.get(USER, order.getId()).getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        }
+
+        @DisplayName("3 회 모두 실패하면 그대로 두고 다음 주기에 다시 본다")
+        @Test
+        void givesUpAfterThreeAttempts() {
+            Order order = place(2);
+            confirm(order.getId(), "attempt-1");
+            PG.failNextLookups(5, 500);
+            long before = lookups();
+
+            paymentSweeper.sweepOnce(LATER);
+
+            assertThat(lookups() - before).isEqualTo(3);
+            assertThat(orderFacade.get(USER, order.getId()).getStatus()).isEqualTo(OrderStatus.PENDING);
+        }
+
+        @DisplayName("429 는 PG 가 멈추라는 신호라 다시 부르지 않는다. 조회 1 회")
+        @Test
+        void doesNotRetryTooManyRequests() {
+            Order order = place(2);
+            confirm(order.getId(), "attempt-1");
+            PG.failNextLookups(5, 429);
+            long before = lookups();
+
+            paymentSweeper.sweepOnce(LATER);
+
+            assertThat(lookups() - before).isEqualTo(1);
+        }
+
+        @DisplayName("sweeper 둘이 동시에 돌아도 SKIP LOCKED 와 확인 시각으로 같은 결제를 겹쳐 조회하지 않는다")
+        @Test
+        void concurrentSweepsSplitTheWork() throws Exception {
+            productFacade.adjustStock(coat, Quantity.of(100));
+            for (int i = 0; i < 6; i++) {
+                Long orderId = place(1).getId();
+                confirm(orderId, "attempt-" + orderId);
+            }
+            long before = lookups();
+
+            CompletableFuture<Integer> first = CompletableFuture.supplyAsync(() -> paymentSweeper.sweepOnce(LATER));
+            CompletableFuture<Integer> second = CompletableFuture.supplyAsync(() -> paymentSweeper.sweepOnce(LATER));
+
+            assertThat(first.get(15, TimeUnit.SECONDS) + second.get(15, TimeUnit.SECONDS)).isEqualTo(6);
+            assertThat(lookups() - before).isEqualTo(6);
+        }
+    }
+
+    @Nested
+    @DisplayName("9.1: 결제 지표는 실제로 일어난 일과 같은 수를 센다")
+    class Metrics {
+
+        private double count(String name, String... tags) {
+            Counter counter = meterRegistry.find(name).tags(tags).counter();
+            return counter == null ? 0 : counter.count();
+        }
+
+        @DisplayName("접수는 payment.create{result=accepted} 와 payment.observe{to=pending} 를 하나씩 센다")
+        @Test
+        void countsAcceptedCreate() {
+            double created = count("payment.create", "result", "accepted");
+            double observed = count("payment.observe", "to", "pending");
+
+            confirm(place(2).getId(), "attempt-1");
+
+            assertThat(count("payment.create", "result", "accepted") - created).isEqualTo(1);
+            assertThat(count("payment.observe", "to", "pending") - observed).isEqualTo(1);
+        }
+
+        @DisplayName("같은 키의 재전송은 create 를 세지 않는다. fixture 의 create 수와 같다")
+        @Test
+        void createCountMatchesFixture() {
+            double created = count("payment.create", "result", "accepted");
+            Order order = place(2);
+
+            confirm(order.getId(), "attempt-1");
+            confirm(order.getId(), "attempt-1");
+
+            assertThat(count("payment.create", "result", "accepted") - created).isEqualTo(creates());
+        }
+
+        @DisplayName("sweeper 의 조회는 재시도가 몇 번이든 논리적 조회 한 번으로 센다")
+        @Test
+        void countsSweeperLookupOnce() {
+            Order order = place(2);
+            confirm(order.getId(), "attempt-1");
+            PG.failNextLookups(2, 500);
+            double looked = count("payment.lookup", "source", "sweeper", "result", "found");
+
+            paymentSweeper.sweepOnce(NOW.plusSeconds(11));
+
+            assertThat(count("payment.lookup", "source", "sweeper", "result", "found") - looked).isEqualTo(1);
+        }
+
+        @DisplayName("이미 같은 결과를 본 반영은 payment.observe{to=noop} 로 센다")
+        @Test
+        void countsNoop() {
+            Order order = place(2);
+            confirm(order.getId(), "attempt-1");
+            double noop = count("payment.observe", "to", "noop");
+
+            paymentFacade.reconcile(USER, order.getId(), NOW.plusSeconds(10));
+
+            assertThat(count("payment.observe", "to", "noop") - noop).isEqualTo(1);
+        }
     }
 
     @Nested

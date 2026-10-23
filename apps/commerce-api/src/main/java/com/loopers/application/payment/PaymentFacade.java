@@ -44,9 +44,11 @@ public class PaymentFacade {
     private final PaymentService paymentService;
     private final OrderService orderService;
     private final Bulkhead createBulkhead;
+    private final PaymentMetrics paymentMetrics;
 
     public Payment confirm(PaymentConfirmCommand command, Instant now) {
         if (!createBulkhead.tryAcquirePermission()) {
+            paymentMetrics.bulkheadRejected();
             throw new CoreException(ErrorType.PAYMENT_BUSY);
         }
         try {
@@ -65,6 +67,7 @@ public class PaymentFacade {
             case PaymentTransactions.Begin.Granted(Payment payment) -> {
                 CreateObservation observation = paymentGateway.create(new PaymentCreation(
                     payment.getProviderOrderId(), command.cardType(), command.cardNumber(), payment.getAmount()));
+                paymentMetrics.created(observation);
                 yield observeOrKeep(payment, observation, now);
             }
         };
@@ -81,11 +84,19 @@ public class PaymentFacade {
     }
 
     public CallbackResult onCallback(ProviderOrderId providerOrderId, Instant now) {
+        CallbackResult result = handleCallback(providerOrderId, now);
+        paymentMetrics.callback(result);
+        return result;
+    }
+
+    private CallbackResult handleCallback(ProviderOrderId providerOrderId, Instant now) {
         Optional<Payment> payment = paymentService.findByProviderOrderId(providerOrderId);
         if (payment.isEmpty()) {
             return CallbackResult.UNKNOWN_ORDER;
         }
-        return switch (paymentGateway.lookup(providerOrderId)) {
+        LookupResult result = paymentGateway.lookup(providerOrderId);
+        paymentMetrics.lookedUp("callback", result);
+        return switch (result) {
             case LookupResult.Unavailable unavailable -> CallbackResult.LOOKUP_UNAVAILABLE;
             case LookupResult.Observation observation -> {
                 paymentTransactions.observe(
@@ -105,6 +116,7 @@ public class PaymentFacade {
         LookupResult result = payment.getTransactionKey() != null
             ? paymentGateway.lookup(payment.getTransactionKey())
             : paymentGateway.lookup(payment.getProviderOrderId());
+        paymentMetrics.lookedUp("reconcile", result);
         return switch (result) {
             case LookupResult.Unavailable unavailable -> new ReconcileResult(payment, true);
             case LookupResult.Observation observation -> new ReconcileResult(paymentTransactions.observe(

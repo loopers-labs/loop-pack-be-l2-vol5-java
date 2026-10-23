@@ -23,14 +23,18 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -55,9 +59,20 @@ public final class PgFixture implements AutoCloseable {
     private final AtomicBoolean rejectNext = new AtomicBoolean();
     private final AtomicReference<RawResponse> nextCreateResponse = new AtomicReference<>();
     private final AtomicReference<RawResponse> nextLookupResponse = new AtomicReference<>();
+    private final AtomicInteger failingLookups = new AtomicInteger();
+    private final AtomicInteger failingLookupStatus = new AtomicInteger();
     private final AtomicBoolean dropNextResponse = new AtomicBoolean();
     private final AtomicReference<HeldResponse> holdNext = new AtomicReference<>();
     private final AtomicReference<CreateGate> createGate = new AtomicReference<>();
+    private final Map<String, Set<String>> keysByOrder = new ConcurrentHashMap<>();
+    private final AtomicInteger lookupCount = new AtomicInteger();
+    private final AtomicBoolean recording = new AtomicBoolean(true);
+    private final AtomicReference<Duration> createDelay = new AtomicReference<>(Duration.ZERO);
+    private final AtomicReference<Duration> lookupDelay = new AtomicReference<>(Duration.ZERO);
+    private final AtomicInteger failEveryNth = new AtomicInteger();
+    private final AtomicInteger failEveryNthStatus = new AtomicInteger();
+    private final AtomicReference<AutoSettle> autoSettle = new AtomicReference<>();
+    private final ScheduledExecutorService settler = Executors.newScheduledThreadPool(4);
 
     private PgFixture(HttpsServer server, ExecutorService executor) {
         this.server = server;
@@ -75,7 +90,7 @@ public final class PgFixture implements AutoCloseable {
         return start(0);
     }
 
-    private static PgFixture start(int port) {
+    static PgFixture start(int port) {
         try {
             HttpsServer server = HttpsServer.create(new InetSocketAddress("127.0.0.1", port), 0);
             server.setHttpsConfigurator(new HttpsConfigurator(serverSslContext()));
@@ -92,11 +107,18 @@ public final class PgFixture implements AutoCloseable {
 
     public void reset() {
         transactions.clear();
+        keysByOrder.clear();
         received.clear();
         createCount.set(0);
+        lookupCount.set(0);
+        createDelay.set(Duration.ZERO);
+        lookupDelay.set(Duration.ZERO);
+        failEveryNth.set(0);
+        autoSettle.set(null);
         rejectNext.set(false);
         nextCreateResponse.set(null);
         nextLookupResponse.set(null);
+        failingLookups.set(0);
         dropNextResponse.set(false);
         holdNext.set(null);
         createGate.set(null);
@@ -115,10 +137,41 @@ public final class PgFixture implements AutoCloseable {
     }
 
     public List<Transaction> transactionsOf(String orderId) {
-        return transactions.values().stream()
+        return keysByOrder.getOrDefault(orderId, Set.of()).stream()
+            .map(transactions::get)
+            .filter(Objects::nonNull)
             .map(Stored::transaction)
-            .filter(transaction -> transaction.orderId().equals(orderId))
             .toList();
+    }
+
+    public int lookupCount() {
+        return lookupCount.get();
+    }
+
+    public Stats stats() {
+        long multiple = keysByOrder.values().stream().filter(keys -> keys.size() > 1).count();
+        return new Stats(createCount.get(), lookupCount.get(), transactions.size(), multiple);
+    }
+
+    public void recordRequests(boolean on) {
+        recording.set(on);
+    }
+
+    public void delayCreates(Duration delay) {
+        createDelay.set(delay);
+    }
+
+    public void delayLookups(Duration delay) {
+        lookupDelay.set(delay);
+    }
+
+    public void failEveryNthLookup(int every, int status) {
+        failEveryNthStatus.set(status);
+        failEveryNth.set(every);
+    }
+
+    public void settleAutomatically(Status status, Duration after) {
+        autoSettle.set(status == null ? null : new AutoSettle(status, after));
     }
 
     public void changeStatus(String transactionKey, Status status) {
@@ -166,6 +219,11 @@ public final class PgFixture implements AutoCloseable {
 
     public void respondNextCreateWith(int status, String rawBody) {
         nextCreateResponse.set(new RawResponse(status, rawBody));
+    }
+
+    public void failNextLookups(int times, int status) {
+        failingLookupStatus.set(status);
+        failingLookups.set(times);
     }
 
     public void respondNextLookupWith(int status, String rawBody) {
@@ -216,7 +274,7 @@ public final class PgFixture implements AutoCloseable {
 
     private void create(HttpExchange exchange) throws IOException {
         JsonNode request = JSON.readTree(exchange.getRequestBody());
-        received.add(new ReceivedRequest(
+        record(new ReceivedRequest(
             exchange.getRequestMethod(),
             exchange.getRequestURI().getPath(),
             exchange.getRequestURI().getRawQuery(),
@@ -247,6 +305,14 @@ public final class PgFixture implements AutoCloseable {
         );
         transactions.put(transaction.transactionKey(),
             new Stored(userOf(exchange), request.get("callbackUrl").asText(), transaction));
+        keysByOrder.computeIfAbsent(transaction.orderId(), orderId -> ConcurrentHashMap.newKeySet())
+            .add(transaction.transactionKey());
+        AutoSettle settle = autoSettle.get();
+        if (settle != null) {
+            settler.schedule(() -> settle(transaction.transactionKey(), settle.status()),
+                settle.after().toMillis(), TimeUnit.MILLISECONDS);
+        }
+        pause(createDelay.get());
         CreateGate gate = createGate.get();
         if (gate != null) {
             gate.pass();
@@ -264,7 +330,9 @@ public final class PgFixture implements AutoCloseable {
 
     private void lookup(HttpExchange exchange) throws IOException {
         String path = exchange.getRequestURI().getPath();
-        received.add(new ReceivedRequest(
+        lookupCount.incrementAndGet();
+        pause(lookupDelay.get());
+        record(new ReceivedRequest(
             exchange.getRequestMethod(),
             path,
             exchange.getRequestURI().getRawQuery(),
@@ -275,6 +343,15 @@ public final class PgFixture implements AutoCloseable {
         RawResponse raw = nextLookupResponse.getAndSet(null);
         if (raw != null) {
             respondRaw(exchange, raw.status(), raw.body());
+            return;
+        }
+        if (failingLookups.getAndUpdate(left -> Math.max(0, left - 1)) > 0) {
+            respondRaw(exchange, failingLookupStatus.get(), "{}");
+            return;
+        }
+        int every = failEveryNth.get();
+        if (every > 0 && lookupCount.get() % every == 0) {
+            respondRaw(exchange, failEveryNthStatus.get(), "{}");
             return;
         }
         if (path.equals(PAYMENTS)) {
@@ -296,12 +373,38 @@ public final class PgFixture implements AutoCloseable {
     private void lookupByOrder(HttpExchange exchange) throws IOException {
         String orderId = queryParameter(exchange, "orderId");
         String userId = userOf(exchange);
-        List<Transaction> found = transactions.values().stream()
-            .filter(stored -> stored.ownedBy(userId))
+        List<Transaction> found = keysByOrder.getOrDefault(orderId, Set.of()).stream()
+            .map(transactions::get)
+            .filter(stored -> stored != null && stored.ownedBy(userId))
             .map(Stored::transaction)
-            .filter(transaction -> transaction.orderId().equals(orderId))
             .toList();
         respond(exchange, 200, found);
+    }
+
+    private void record(ReceivedRequest request) {
+        if (recording.get()) {
+            received.add(request);
+        }
+    }
+
+    private void settle(String transactionKey, Status status) {
+        try {
+            changeStatus(transactionKey, status);
+            sendCallback(transactionKey);
+        } catch (RuntimeException e) {
+            System.err.println("auto settle failed: " + transactionKey + " " + e);
+        }
+    }
+
+    private static void pause(Duration delay) {
+        if (delay.isZero()) {
+            return;
+        }
+        try {
+            Thread.sleep(delay);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private static String userOf(HttpExchange exchange) {
@@ -360,6 +463,7 @@ public final class PgFixture implements AutoCloseable {
     public void close() {
         server.stop(0);
         executor.shutdownNow();
+        settler.shutdownNow();
     }
 
     public enum Status {
@@ -436,6 +540,12 @@ public final class PgFixture implements AutoCloseable {
         String contentType,
         JsonNode body
     ) {
+    }
+
+    public record Stats(int creates, int lookups, int transactions, long ordersWithMultipleTransactions) {
+    }
+
+    private record AutoSettle(Status status, Duration after) {
     }
 
     public record Transaction(String transactionKey, String orderId, long amount, Status status) {

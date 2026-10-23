@@ -13,6 +13,11 @@ pg:
     open-wait: 10s
     half-open-calls: 2
 
+payment:
+  sweeper:
+    enabled: true
+    interval: 10s
+
 ---
 spring.config.activate.on-profile: local, test
 
@@ -22,6 +27,10 @@ pg:
 
 ---
 spring.config.activate.on-profile: test
+
+payment:
+  sweeper:
+    enabled: false
 
 spring:
   ssl:

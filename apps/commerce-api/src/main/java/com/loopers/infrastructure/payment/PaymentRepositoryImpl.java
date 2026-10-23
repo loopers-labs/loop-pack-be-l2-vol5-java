@@ -3,10 +3,14 @@ package com.loopers.infrastructure.payment;
 import com.loopers.domain.payment.Payment;
 import com.loopers.domain.payment.PaymentAttemptKey;
 import com.loopers.domain.payment.PaymentRepository;
+import com.loopers.domain.payment.PaymentStatus;
 import com.loopers.domain.payment.ProviderOrderId;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -51,5 +55,14 @@ public class PaymentRepositoryImpl implements PaymentRepository {
     @Override
     public Optional<Payment> findByIdForUpdate(Long paymentId) {
         return paymentJpaRepository.findByIdForUpdate(paymentId).map(PaymentEntity::toDomain);
+    }
+
+    @Override
+    public List<Payment> findDueForCheckSkippingLocked(Instant requestedBefore, Instant checkedBefore, int limit) {
+        return paymentJpaRepository.findDueForCheck(
+                List.of(PaymentStatus.REQUESTED, PaymentStatus.PENDING, PaymentStatus.UNKNOWN),
+                requestedBefore, checkedBefore, PageRequest.of(0, limit)).stream()
+            .map(PaymentEntity::toDomain)
+            .toList();
     }
 }

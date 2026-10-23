@@ -583,7 +583,8 @@ callback 의 조회도 `last_checked_at` 을 갱신한다.
   - 인덱스 `(status, requested_at)` 이 필요하다. 없으면 `FOR UPDATE` 가 조건 밖의 행까지 훑으며 잠근다(W3).
   - 조건부 UPDATE(`WHERE last_checked_at < now - 2s`)만으로도 중복은 막는다. 다만 동시에 집는 sweeper 가 같은 행을 두고 잠금을 기다린다. **뒤집을 조건**: MySQL 8 미만으로 옮길 때.
 - `CONFLICT` 는 집지 않는다(`PAY-018`). 다시 조회해도 2건은 2건이다.
-- 테스트에서는 스케줄을 끄고 "한 번 돌리기" 를 직접 부른다.
+- 주기 실행은 `payment.sweeper.enabled` · `interval` 로 켜고 끈다. test 프로필은 끄고, 테스트가 "한 번 돌리기"(`sweepOnce`)를 직접 부른다.
+- 재시도(7.2)는 adapter 의 `lookupRetrying` 에만 있다. 시도마다 회로를 거치므로 재시도 한 번 한 번이 회로의 표본이고, 회로가 막은 호출 · 429 · 해석할 수 없는 응답은 다시 부르지 않는다.
 
 **`payment` 가 outbox 다.** sweeper 는 outbox 릴레이와 모양이 같다 — 업무 TX(TX A)가 할 일을 함께 적고, 릴레이가 SKIP LOCKED 로 집는다. 별도 outbox 테이블을 두지 않는 것은 할 일이 남았다는 사실을 `payment.status` 가 이미 담기 때문이다. 따로 두면 두 곳을 맞춰야 한다(재고 예약 테이블을 두지 않은 것과 같은 이유, 3.2).
 일반 outbox 와 다른 것은 릴레이의 일이다. outbox 릴레이는 **다시 보내고**, 그래서 받는 쪽이 중복을 견뎌야 한다. 이 PG 의 생성은 같은 orderId 도 새 거래를 만들어 중복을 견디지 못한다 — sweeper 는 다시 보내지 않고 **조회한다**.
