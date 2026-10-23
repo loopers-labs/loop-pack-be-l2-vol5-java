@@ -624,7 +624,7 @@ callback 은 "확인해 보라" 는 계기라 놓쳐도 잃는 정보가 없다 
 |---|---|---|---|
 | `payment.create` | 카운터 | `result=accepted · rejected · not_sent · unknown` | 생성 시도와 결과. `not_sent` 는 PG 에 닿지 않은 것이라 fixture 의 create 수와 대조할 때 뺀다 |
 | `payment.lookup` | 카운터 | `source=callback · reconcile · sweeper`, `result=found · not_found · unavailable` | 조회가 어느 입구에서 얼마나 나가고 얼마나 실패하나 |
-| `payment.settle` | 카운터 | `to=pending · success · failed · conflict · noop` | 결과 반영이 바꾼 것과 효과가 없던 것(중복) |
+| `payment.observe` | 카운터 | `to=pending · success · failed · conflict · noop` | 결과 반영이 바꾼 것과 효과가 없던 것(중복) |
 | `payment.discrepancy` | 카운터 | `reason` | 0 이 아니면 사람이 본다 |
 | `payment.bulkhead.rejected` | 카운터 | — | 503 `PAYMENT_BUSY` |
 | `payment.callback` | 카운터 | `response=200 · 400 · 503` | callback 에 돌려준 것 |
@@ -656,7 +656,7 @@ domain/product          차감(`StockDeduction`, 지금 것) · 반환(삭제된
 domain/order            주문 상태(PENDING · FAILED 추가) · 결제 시작 · 확정 · 실패 메서드
 domain/payment          PaymentService — 찾기 · 저장의 얇은 층
 application/payment     PaymentFacade(트랜잭션 없음) — confirm · onCallback · reconcile · sweep 의 네 입구와 check(lookup → TX B) 하나
-                        PaymentTransactions(@Transactional) — begin(TX A) · settle(TX B)
+                        PaymentTransactions(@Transactional) — begin(TX A) · observe(TX B)
                         TX B 가 Payment.observe 와 PaymentOutcome 의 적용(주문 · 재고 · 불일치)을 한 번에 한다
                         트랜잭션 경계 · bulkhead 는 여기에만 있다
 infrastructure/payment  PgPaymentGateway(RestClient · timeout · 회로 · 재시도) · 엔티티 · JPA 리포지토리
@@ -810,7 +810,7 @@ fixture 는 노트북에 둔다. 지연은 잠자기라 CPU 를 쓰지 않는다
 | PG create 수 = `NotSent` 를 뺀 `payment` 행 수 | fixture `createCount` 와 DB |
 | 재고 보존: 초기 = 가용 + 묶임 + 판매 | `product.quantity` + 미완료 `order_item` + `SUCCESS` `order_item` |
 | `FAILED` 인데 재고를 쓴 주문 0, `SUCCESS` 인데 반환된 주문 0 | SQL |
-| 확정은 결제당 한 번 | `payment.settle{to=success}` = `SUCCESS` 행 수 |
+| 확정은 결제당 한 번 | `payment.observe{to=success}` = `SUCCESS` 행 수 |
 | 불일치 기록 | 그 실험이 의도한 것만 |
 
 멱등성은 k6 시나리오에 넣는다 — 같은 `paymentAttemptKey` 동시 5 회(연타), 같은 주문에 다른 키(409 `ORDER_NOT_DRAFT`), 같은 callback 반복(E5).

@@ -32,6 +32,11 @@ public class OrderService {
             .orElseThrow(() -> new DomainException(DomainError.ORDER_NOT_FOUND));
     }
 
+    public Order getForUpdate(Long orderId) {
+        return orderRepository.findByIdForUpdate(orderId)
+            .orElseThrow(() -> new DomainException(DomainError.ORDER_NOT_FOUND));
+    }
+
     public Order save(Order order) {
         return orderRepository.save(order);
     }

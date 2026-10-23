@@ -9,4 +9,8 @@ public interface PaymentRepository {
     Optional<Payment> findByAttemptKey(PaymentAttemptKey attemptKey);
 
     Optional<Payment> findByOrderId(Long orderId);
+
+    Optional<Long> findOrderIdById(Long paymentId);
+
+    Optional<Payment> findByIdForUpdate(Long paymentId);
 }
