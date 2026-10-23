@@ -5,8 +5,14 @@ import com.loopers.application.order.OrderCommand;
 import com.loopers.application.order.OrderFacade;
 import com.loopers.application.order.OrderInfo;
 import com.loopers.config.cache.ProductCacheRedisConfig;
+import com.loopers.domain.payment.PaymentAttempt;
+import com.loopers.domain.payment.PaymentFinalResult;
+import com.loopers.domain.payment.PaymentResultService;
 import com.loopers.domain.point.Point;
 import com.loopers.domain.product.ProductListCache;
+import com.loopers.infrastructure.payment.FakePaymentGateway;
+import com.loopers.infrastructure.payment.FakePaymentGatewayConfig;
+import com.loopers.infrastructure.payment.PaymentAttemptJpaRepository;
 import com.loopers.infrastructure.point.PointJpaRepository;
 import com.loopers.infrastructure.product.RedisProductListCache;
 import com.loopers.utils.DatabaseCleanUp;
@@ -21,6 +27,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.RedisSystemException;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -52,6 +59,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
  */
 @SpringBootTest
 @Sql("/sql/product-perf-seed.sql")
+@Import(FakePaymentGatewayConfig.class)
 class ProductCacheFailureTest {
 
     /**
@@ -92,6 +100,9 @@ class ProductCacheFailureTest {
 
     private final ProductFacade productFacade;
     private final OrderFacade orderFacade;
+    private final PaymentResultService paymentResultService;
+    private final FakePaymentGateway fakePaymentGateway;
+    private final PaymentAttemptJpaRepository paymentAttemptJpaRepository;
     private final PointJpaRepository pointJpaRepository;
     private final FaultInjectingProductListCache faultInjectingCache;
     private final RedisTemplate<String, String> cacheRedisTemplate;
@@ -105,6 +116,9 @@ class ProductCacheFailureTest {
     public ProductCacheFailureTest(
         ProductFacade productFacade,
         OrderFacade orderFacade,
+        PaymentResultService paymentResultService,
+        FakePaymentGateway fakePaymentGateway,
+        PaymentAttemptJpaRepository paymentAttemptJpaRepository,
         PointJpaRepository pointJpaRepository,
         ProductListCache productListCache,
         @Qualifier(ProductCacheRedisConfig.PRODUCT_CACHE_REDIS_TEMPLATE) RedisTemplate<String, String> cacheRedisTemplate,
@@ -116,6 +130,9 @@ class ProductCacheFailureTest {
     ) {
         this.productFacade = productFacade;
         this.orderFacade = orderFacade;
+        this.paymentResultService = paymentResultService;
+        this.fakePaymentGateway = fakePaymentGateway;
+        this.paymentAttemptJpaRepository = paymentAttemptJpaRepository;
         this.pointJpaRepository = pointJpaRepository;
         this.faultInjectingCache = (FaultInjectingProductListCache) productListCache;
         this.cacheRedisTemplate = cacheRedisTemplate;
@@ -141,6 +158,16 @@ class ProductCacheFailureTest {
     private void fillCache() {
         queryFixturePage();
         assertThat(cacheRedisTemplate.hasKey(CACHE_KEY)).isTrue();
+    }
+
+    /**
+     * 가짜 PG 를 성공으로 바꾸고 TX B 로 주문을 확정한다. 결제액(paidAmount)은 이 단계에서 기록된다.
+     */
+    private OrderInfo settlePaymentSuccess(Long userId, Long orderId) {
+        PaymentAttempt attempt = paymentAttemptJpaRepository.findByOrderId(orderId).orElseThrow();
+        fakePaymentGateway.markSuccess(attempt.getTransactionKey());
+        paymentResultService.applyFinal(attempt.getId(), PaymentFinalResult.success(attempt.getTransactionKey()));
+        return orderFacade.getOrder(userId, orderId);
     }
 
     private Map<String, Object> productRow(Long productId) {
@@ -284,7 +311,9 @@ class ProductCacheFailureTest {
 
             // act
             OrderInfo order = orderFacade.createOrder(userId, List.of(new OrderCommand.Item(FIRST_PRODUCT_ID, 2)));
-            OrderInfo confirmed = orderFacade.confirmOrder(userId, order.orderId());
+            orderFacade.confirmOrder(userId, order.orderId(),
+                new OrderCommand.Confirm("k-" + order.orderId(), "TEST", "0000-0000-0000-0000"));
+            OrderInfo confirmed = settlePaymentSuccess(userId, order.orderId());
             List<ProductInfo> result = queryFixturePage();
 
             // assert

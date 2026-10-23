@@ -28,16 +28,6 @@ public class PointRepositoryImpl implements PointRepository {
     }
 
     @Override
-    public int deductIfEnough(Long userId, long amount) {
-        return (int) queryFactory
-            .update(point)
-            .set(point.balance, point.balance.subtract(amount))
-            .set(point.updatedAt, ZonedDateTime.now())
-            .where(point.userId.eq(userId), point.balance.goe(amount))
-            .execute();
-    }
-
-    @Override
     public int addBalance(Long userId, long amount) {
         return (int) queryFactory
             .update(point)

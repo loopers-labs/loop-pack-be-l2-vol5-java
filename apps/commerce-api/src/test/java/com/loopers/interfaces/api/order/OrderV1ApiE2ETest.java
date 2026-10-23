@@ -5,18 +5,22 @@ import com.loopers.domain.product.Price;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.user.User;
 import com.loopers.infrastructure.order.OrderJpaRepository;
+import com.loopers.infrastructure.payment.FakePaymentGateway;
+import com.loopers.infrastructure.payment.FakePaymentGatewayConfig;
 import com.loopers.infrastructure.point.PointJpaRepository;
 import com.loopers.infrastructure.product.ProductJpaRepository;
 import com.loopers.infrastructure.user.UserJpaRepository;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.context.annotation.Import;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -28,12 +32,14 @@ import org.springframework.http.ResponseEntity;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import(FakePaymentGatewayConfig.class)
 class OrderV1ApiE2ETest {
 
     private static final String USER_ID_HEADER = "X-USER-ID";
     private static final String ENDPOINT_ORDERS = "/api/v1/orders";
 
     private final TestRestTemplate testRestTemplate;
+    private final FakePaymentGateway fakePaymentGateway;
     private final UserJpaRepository userJpaRepository;
     private final ProductJpaRepository productJpaRepository;
     private final PointJpaRepository pointJpaRepository;
@@ -43,6 +49,7 @@ class OrderV1ApiE2ETest {
     @Autowired
     public OrderV1ApiE2ETest(
         TestRestTemplate testRestTemplate,
+        FakePaymentGateway fakePaymentGateway,
         UserJpaRepository userJpaRepository,
         ProductJpaRepository productJpaRepository,
         PointJpaRepository pointJpaRepository,
@@ -50,11 +57,17 @@ class OrderV1ApiE2ETest {
         DatabaseCleanUp databaseCleanUp
     ) {
         this.testRestTemplate = testRestTemplate;
+        this.fakePaymentGateway = fakePaymentGateway;
         this.userJpaRepository = userJpaRepository;
         this.productJpaRepository = productJpaRepository;
         this.pointJpaRepository = pointJpaRepository;
         this.orderJpaRepository = orderJpaRepository;
         this.databaseCleanUp = databaseCleanUp;
+    }
+
+    @BeforeEach
+    void setUp() {
+        fakePaymentGateway.reset();
     }
 
     @AfterEach
@@ -168,9 +181,9 @@ class OrderV1ApiE2ETest {
     @DisplayName("POST /api/v1/orders/{orderId}/confirm")
     @Nested
     class ConfirmOrder {
-        @DisplayName("재고와 포인트가 충분하면, 200과 CONFIRMED 주문을 받고 재고·포인트가 차감된다.")
+        @DisplayName("재고가 충분하면, 202 와 PAYMENT_PENDING·PENDING 상태를 받고 재고만 확보되며 포인트는 변하지 않는다.")
         @Test
-        void confirmsOrder_whenStockAndPointAreSufficient() {
+        void startsPgPayment_whenStockIsSufficient() {
             // arrange
             Long userId = saveUser();
             Long productId = saveProduct(1000L, 10);
@@ -179,18 +192,19 @@ class OrderV1ApiE2ETest {
                 .getBody().data().orderId();
 
             // act
-            ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> response = confirm(userId, orderId);
+            ResponseEntity<ApiResponse<OrderV1Dto.ConfirmResponse>> response = confirm(userId, orderId, "k1");
 
             // assert
-            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-            assertThat(response.getBody().data().status()).isEqualTo("CONFIRMED");
-            assertThat(response.getBody().data().paidAmount()).isEqualTo(2000L);
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+            assertThat(response.getBody().data().orderStatus()).isEqualTo("PAYMENT_PENDING");
+            assertThat(response.getBody().data().attemptStatus()).isEqualTo("PENDING");
             assertThat(productJpaRepository.findById(productId).orElseThrow().getStock().getQuantity())
                 .isEqualTo(8);
-            assertThat(pointJpaRepository.findByUserId(userId).orElseThrow().getBalance()).isEqualTo(3000L);
+            assertThat(pointJpaRepository.findByUserId(userId).orElseThrow().getBalance()).isEqualTo(5000L);
+            assertThat(fakePaymentGateway.createCount()).isEqualTo(1);
         }
 
-        @DisplayName("재고가 부족하면, 409 응답을 받고 주문은 DRAFT 로 남고 포인트도 차감되지 않는다.")
+        @DisplayName("재고가 부족하면, 409 응답을 받고 주문은 DRAFT 로 남고 포인트도 변하지 않으며 PG 는 호출되지 않는다.")
         @Test
         void keepsEverything_whenStockIsInsufficient() {
             // arrange
@@ -201,7 +215,7 @@ class OrderV1ApiE2ETest {
                 .getBody().data().orderId();
 
             // act
-            ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> response = confirm(userId, orderId);
+            ResponseEntity<ApiResponse<OrderV1Dto.ConfirmResponse>> response = confirm(userId, orderId, "k1");
 
             // assert
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
@@ -209,51 +223,32 @@ class OrderV1ApiE2ETest {
             assertThat(orderJpaRepository.findById(orderId).orElseThrow().getStatus().name()).isEqualTo("DRAFT");
             assertThat(productJpaRepository.findById(productId).orElseThrow().getStock().getQuantity()).isEqualTo(1);
             assertThat(pointJpaRepository.findByUserId(userId).orElseThrow().getBalance()).isEqualTo(5000L);
+            assertThat(fakePaymentGateway.createCount()).isZero();
         }
 
-        @DisplayName("포인트가 부족하면, 409 응답을 받고 차감된 재고가 롤백된다.")
+        @DisplayName("이미 시도가 있는 주문에 다른 키로 다시 확정하면, 409 응답을 받고 첫 시도의 재고 확보는 그대로다.")
         @Test
-        void rollsBackStock_whenPointIsInsufficient() {
-            // arrange
-            Long userId = saveUser();
-            Long productId = saveProduct(1000L, 10);
-            savePoint(userId, 500L);
-            Long orderId = createOrder(userId, "[{\"productId\":" + productId + ",\"quantity\":2}]")
-                .getBody().data().orderId();
-
-            // act
-            ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> response = confirm(userId, orderId);
-
-            // assert
-            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
-            assertThat(response.getBody().meta().message()).isEqualTo("포인트 잔액이 부족합니다.");
-            assertThat(orderJpaRepository.findById(orderId).orElseThrow().getStatus().name()).isEqualTo("DRAFT");
-            assertThat(productJpaRepository.findById(productId).orElseThrow().getStock().getQuantity())
-                .isEqualTo(10);
-        }
-
-        @DisplayName("이미 확정된 주문을 다시 확정하면, 409 응답을 받는다.")
-        @Test
-        void returnsConflict_whenAlreadyConfirmed() {
+        void returnsConflict_whenDifferentKeyIsUsedForAttemptedOrder() {
             // arrange
             Long userId = saveUser();
             Long productId = saveProduct(1000L, 10);
             savePoint(userId, 5000L);
             Long orderId = createOrder(userId, "[{\"productId\":" + productId + ",\"quantity\":2}]")
                 .getBody().data().orderId();
-            confirm(userId, orderId);
+            assertThat(confirm(userId, orderId, "k1").getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
 
             // act
-            ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> response = confirm(userId, orderId);
+            ResponseEntity<ApiResponse<OrderV1Dto.ConfirmResponse>> response = confirm(userId, orderId, "k2");
 
-            // assert - 재확정이 거절되어도 첫 확정의 차감 결과는 그대로다
+            // assert - 재확정이 거절되어도 첫 시도의 확보 결과는 그대로다
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
-            assertThat(response.getBody().meta().message()).isEqualTo("이미 확정된 주문입니다.");
+            assertThat(response.getBody().meta().message()).isEqualTo("이미 결제 시도가 있는 주문입니다.");
             assertThat(productJpaRepository.findById(productId).orElseThrow().getStock().getQuantity()).isEqualTo(8);
-            assertThat(pointJpaRepository.findByUserId(userId).orElseThrow().getBalance()).isEqualTo(3000L);
+            assertThat(pointJpaRepository.findByUserId(userId).orElseThrow().getBalance()).isEqualTo(5000L);
+            assertThat(fakePaymentGateway.createCount()).isEqualTo(1);
         }
 
-        @DisplayName("삭제된 상품이 포함된 주문을 확정하면, 404 응답을 받고 주문은 DRAFT 로 남고 포인트도 차감되지 않는다.")
+        @DisplayName("삭제된 상품이 포함된 주문을 확정하면, 404 응답을 받고 주문은 DRAFT 로 남고 포인트도 변하지 않는다.")
         @Test
         void returnsNotFound_whenOrderContainsDeletedProduct() {
             // arrange
@@ -267,7 +262,7 @@ class OrderV1ApiE2ETest {
             productJpaRepository.save(product);
 
             // act
-            ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> response = confirm(userId, orderId);
+            ResponseEntity<ApiResponse<OrderV1Dto.ConfirmResponse>> response = confirm(userId, orderId, "k1");
 
             // assert
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
@@ -287,7 +282,7 @@ class OrderV1ApiE2ETest {
                 .getBody().data().orderId();
 
             // act
-            ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> response = confirm(otherId, orderId);
+            ResponseEntity<ApiResponse<OrderV1Dto.ConfirmResponse>> response = confirm(otherId, orderId, "k1");
 
             // assert
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
@@ -364,10 +359,14 @@ class OrderV1ApiE2ETest {
             ENDPOINT_ORDERS, HttpMethod.POST, new HttpEntity<>(body, headers), responseType());
     }
 
-    private ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> confirm(Long userId, Long orderId) {
+    private ResponseEntity<ApiResponse<OrderV1Dto.ConfirmResponse>> confirm(Long userId, Long orderId, String attemptKey) {
+        HttpHeaders headers = headers(userId);
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        String body = "{\"paymentAttemptKey\":\"" + attemptKey + "\",\"cardType\":\"TEST\",\"cardNo\":\"0000-0000-0000-0000\"}";
+
         return testRestTemplate.exchange(
             ENDPOINT_ORDERS + "/" + orderId + "/confirm", HttpMethod.POST,
-            new HttpEntity<>(null, headers(userId)), responseType());
+            new HttpEntity<>(body, headers), new ParameterizedTypeReference<>() {});
     }
 
     private ParameterizedTypeReference<ApiResponse<OrderV1Dto.OrderResponse>> responseType() {

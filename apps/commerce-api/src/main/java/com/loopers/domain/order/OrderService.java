@@ -40,15 +40,12 @@ public class OrderService {
     }
 
     /**
-     * DRAFT 인 본인 주문만 조건부 UPDATE 로 확정한다. 영향 행이 0 이면 이미 확정된 주문이다.
-     * 결제액은 저장된 품목의 단가 × 수량 합이며, 응답에 쓸 수 있도록 갱신 뒤 DB 상태를 다시 읽은 주문을 반환한다.
+     * 품목까지 함께 읽는다. 트랜잭션 밖에서 응답을 만드는 confirm 경로가 쓴다.
      */
-    @Transactional
-    public Order confirmOrder(Order order) {
-        int updated = orderRepository.confirmIfDraft(order.getId(), order.getUserId(), order.getTotalAmount());
-        if (updated == 0) {
-            throw new CoreException(ErrorType.CONFLICT, "이미 확정된 주문입니다.");
-        }
-        return orderRepository.reload(order);
+    @Transactional(readOnly = true)
+    public Order getOrderWithItems(Long orderId) {
+        return orderRepository.findByIdWithItems(orderId)
+            .orElseThrow(() -> new CoreException(
+                ErrorType.NOT_FOUND, "[id = " + orderId + "] 주문을 찾을 수 없습니다."));
     }
 }

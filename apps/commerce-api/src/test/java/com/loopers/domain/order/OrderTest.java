@@ -68,12 +68,12 @@ class OrderTest {
     }
 
     /**
-     * DRAFT → CONFIRMED 전환과 결제액 기록은 OrderRepository.confirmIfDraft 의 조건부 UPDATE 가 맡는다.
+     * PAYMENT_PENDING → CONFIRMED 전환과 결제액 기록은 OrderRepository.finishIfPaymentPending 의 조건부 UPDATE 가 맡는다.
      */
     @DisplayName("주문을 확정하기 전에는, ")
     @Nested
     class BeforeConfirm {
-        @DisplayName("DRAFT 상태이고 결제액이 기록되지 않는다.")
+        @DisplayName("DRAFT 상태이고 결제액·결제수단이 기록되지 않는다.")
         @Test
         void hasNoPaidAmount_whenNotConfirmed() {
             // act
@@ -82,6 +82,41 @@ class OrderTest {
             // assert
             assertThat(order.getStatus()).isEqualTo(Order.OrderStatus.DRAFT);
             assertThat(order.getPaidAmount()).isZero();
+            assertThat(order.getPaymentMethod()).isNull();
+        }
+    }
+
+    @DisplayName("결제를 시작할 때, ")
+    @Nested
+    class StartPayment {
+        @DisplayName("DRAFT 주문이면, PAYMENT_PENDING 이 되고 결제수단은 PG 로 기록되며 결제액은 아직 0 이다.")
+        @Test
+        void movesToPaymentPendingWithPg_whenDraft() {
+            // arrange
+            Order order = new Order(1L, List.of(new OrderItem(10L, 2, 1000L)));
+
+            // act
+            order.startPayment();
+
+            // assert
+            assertThat(order.getStatus()).isEqualTo(Order.OrderStatus.PAYMENT_PENDING);
+            assertThat(order.getPaymentMethod()).isEqualTo(Order.PaymentMethod.PG);
+            assertThat(order.getPaidAmount()).isZero();
+        }
+
+        @DisplayName("DRAFT 가 아니면, CONFLICT 예외가 발생하고 상태는 그대로다.")
+        @Test
+        void throwsConflict_whenNotDraft() {
+            // arrange
+            Order order = new Order(1L, List.of(new OrderItem(10L, 2, 1000L)));
+            order.startPayment();
+
+            // act
+            CoreException result = assertThrows(CoreException.class, order::startPayment);
+
+            // assert
+            assertThat(result.getErrorType()).isEqualTo(ErrorType.CONFLICT);
+            assertThat(order.getStatus()).isEqualTo(Order.OrderStatus.PAYMENT_PENDING);
         }
     }
 

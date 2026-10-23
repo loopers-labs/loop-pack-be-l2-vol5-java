@@ -3,7 +3,10 @@ package com.loopers.application.order;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.OrderService;
-import com.loopers.domain.point.PointService;
+import com.loopers.domain.payment.PaymentAttemptRepository;
+import com.loopers.domain.payment.PaymentGateway;
+import com.loopers.domain.payment.PaymentResultService;
+import com.loopers.domain.payment.PaymentStartService;
 import com.loopers.domain.product.Price;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductService;
@@ -14,7 +17,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -26,15 +28,15 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.BDDMockito.willThrow;
-import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class OrderFacadeTest {
+
+    private static final OrderCommand.Confirm CONFIRM = new OrderCommand.Confirm("k-100", "TEST", "0000-0000-0000-0000");
 
     @Mock
     private UserRepository userRepository;
@@ -43,10 +45,19 @@ class OrderFacadeTest {
     private ProductService productService;
 
     @Mock
-    private PointService pointService;
+    private OrderService orderService;
 
     @Mock
-    private OrderService orderService;
+    private PaymentStartService paymentStartService;
+
+    @Mock
+    private PaymentResultService paymentResultService;
+
+    @Mock
+    private PaymentGateway paymentGateway;
+
+    @Mock
+    private PaymentAttemptRepository paymentAttemptRepository;
 
     @InjectMocks
     private OrderFacade orderFacade;
@@ -142,141 +153,51 @@ class OrderFacadeTest {
         }
     }
 
+    /**
+     * 소유권·재고·기존 시도 판정은 TX A(PaymentStartService)에서 일어난다. 여기서는 TX A 가 거절했을 때
+     * Facade 가 PG 를 부르거나 결과를 반영하지 않는지만 본다. 재고 차감 순서·합산 규칙은 PaymentStartServiceTest 로 옮겼다.
+     */
     @DisplayName("주문을 확정할 때, ")
     @Nested
     class ConfirmOrder {
-        @DisplayName("본인 주문이고 재고·포인트가 충분하면, 주문 확정 → 포인트 차감 → 상품 ID 오름차순 재고 차감 순서로 처리하고 재조회한 주문을 반환한다.")
-        @Test
-        void confirmsThenDeductsPointThenStockInProductIdOrder_whenRequesterIsOwnerAndResourcesAreSufficient() {
-            // arrange - 품목은 상품 ID 역순으로 담아 정렬 여부를 확인한다
-            Order order = new Order(1L, List.of(
-                new OrderItem(20L, 1, 500L),
-                new OrderItem(10L, 2, 1000L)
-            ));
-            // 조건부 UPDATE 뒤 DB 에서 다시 읽은 주문(CONFIRMED, 결제액 기록)을 흉내 낸다
-            Order confirmed = mock(Order.class);
-            given(confirmed.getStatus()).willReturn(Order.OrderStatus.CONFIRMED);
-            given(confirmed.getPaidAmount()).willReturn(2500L);
-            given(userRepository.existsById(1L)).willReturn(true);
-            given(orderService.getOrder(100L)).willReturn(order);
-            given(orderService.confirmOrder(order)).willReturn(confirmed);
-
-            // act
-            OrderInfo result = orderFacade.confirmOrder(1L, 100L);
-
-            // assert - 응답은 UPDATE 뒤 다시 읽은 주문이다
-            assertThat(result.status()).isEqualTo("CONFIRMED");
-            assertThat(result.paidAmount()).isEqualTo(2500L);
-
-            InOrder inOrder = inOrder(orderService, pointService, productService);
-            inOrder.verify(orderService).confirmOrder(order);
-            inOrder.verify(pointService).deduct(1L, 2500L);
-            inOrder.verify(productService).deductStock(10L, 2);
-            inOrder.verify(productService).deductStock(20L, 1);
-        }
-
-        @DisplayName("같은 상품이 합산된 주문이면, 합산된 총수량 기준으로 재고를 차감한다.")
-        @Test
-        void deductsStockByMergedTotalQuantity() {
-            // arrange
-            Order order = new Order(1L, List.of(
-                new OrderItem(10L, 2, 1000L),
-                new OrderItem(10L, 3, 1000L)
-            ));
-            given(userRepository.existsById(1L)).willReturn(true);
-            given(orderService.getOrder(100L)).willReturn(order);
-            given(orderService.confirmOrder(order)).willReturn(order);
-
-            // act
-            orderFacade.confirmOrder(1L, 100L);
-
-            // assert
-            verify(productService).deductStock(10L, 5);
-        }
-
-        @DisplayName("요청자가 주문자와 다르면, 주문 존재를 알리지 않고 NOT_FOUND 예외가 발생하고 아무것도 갱신하지 않는다.")
+        @DisplayName("요청자가 주문자와 다르면, TX A 의 NOT_FOUND 예외가 전파되고 PG 호출·결과 반영은 일어나지 않는다.")
         @Test
         void throwsNotFoundException_whenRequesterIsNotOwner() {
             // arrange
-            Order order = new Order(1L, List.of(new OrderItem(10L, 2, 1000L)));
             given(userRepository.existsById(9L)).willReturn(true);
-            given(orderService.getOrder(100L)).willReturn(order);
+            given(paymentStartService.start(eq(9L), eq(100L), any()))
+                .willThrow(new CoreException(ErrorType.NOT_FOUND, "[id = 100] 주문을 찾을 수 없습니다."));
 
             // act
             CoreException result = assertThrows(CoreException.class, () -> {
-                orderFacade.confirmOrder(9L, 100L);
+                orderFacade.confirmOrder(9L, 100L, CONFIRM);
             });
 
             // assert
             assertThat(result.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
-            verify(orderService, never()).confirmOrder(any(Order.class));
-            verify(pointService, never()).deduct(anyLong(), anyLong());
-            verify(productService, never()).deductStock(anyLong(), anyInt());
+            verify(paymentGateway, never()).create(any());
+            verify(paymentResultService, never()).recordPending(anyLong(), any());
+            verify(paymentResultService, never()).applyFinal(anyLong(), any());
         }
 
-        @DisplayName("포인트가 부족하면, CONFLICT 예외가 전파되고 재고는 차감하지 않는다.")
-        @Test
-        void doesNotDeductStock_whenPointIsInsufficient() {
-            // arrange
-            Order order = new Order(1L, List.of(new OrderItem(10L, 2, 1000L)));
-            given(userRepository.existsById(1L)).willReturn(true);
-            given(orderService.getOrder(100L)).willReturn(order);
-            given(orderService.confirmOrder(order)).willReturn(order);
-            willThrow(new CoreException(ErrorType.CONFLICT, "포인트 잔액이 부족합니다."))
-                .given(pointService).deduct(1L, 2000L);
-
-            // act
-            CoreException result = assertThrows(CoreException.class, () -> {
-                orderFacade.confirmOrder(1L, 100L);
-            });
-
-            // assert
-            assertThat(result.getErrorType()).isEqualTo(ErrorType.CONFLICT);
-            verify(productService, never()).deductStock(anyLong(), anyInt());
-        }
-
-        @DisplayName("앞선 상품의 재고가 부족하면, CONFLICT 예외가 전파되고 뒤 상품의 재고는 차감하지 않는다.")
-        @Test
-        void stopsDeductingStock_whenEarlierProductStockIsInsufficient() {
-            // arrange
-            Order order = new Order(1L, List.of(
-                new OrderItem(10L, 2, 1000L),
-                new OrderItem(20L, 1, 500L)
-            ));
-            given(userRepository.existsById(1L)).willReturn(true);
-            given(orderService.getOrder(100L)).willReturn(order);
-            given(orderService.confirmOrder(order)).willReturn(order);
-            willThrow(new CoreException(ErrorType.CONFLICT, "재고가 부족합니다."))
-                .given(productService).deductStock(10L, 2);
-
-            // act
-            CoreException result = assertThrows(CoreException.class, () -> {
-                orderFacade.confirmOrder(1L, 100L);
-            });
-
-            // assert
-            assertThat(result.getErrorType()).isEqualTo(ErrorType.CONFLICT);
-            verify(productService, never()).deductStock(20L, 1);
-        }
-
-        @DisplayName("이미 확정된 주문이면, CONFLICT 예외가 전파되고 포인트와 재고는 차감하지 않는다.")
+        @DisplayName("이미 확정된 주문이면, TX A 의 CONFLICT 예외가 전파되고 PG 호출·결과 반영은 일어나지 않는다.")
         @Test
         void doesNotDeductAnything_whenAlreadyConfirmed() {
             // arrange
-            Order order = new Order(1L, List.of(new OrderItem(10L, 2, 1000L)));
             given(userRepository.existsById(1L)).willReturn(true);
-            given(orderService.getOrder(100L)).willReturn(order);
-            willThrow(new CoreException(ErrorType.CONFLICT, "이미 확정된 주문입니다."))
-                .given(orderService).confirmOrder(order);
+            given(paymentStartService.start(eq(1L), eq(100L), any()))
+                .willThrow(new CoreException(ErrorType.CONFLICT, "이미 확정된 주문입니다."));
 
             // act
             CoreException result = assertThrows(CoreException.class, () -> {
-                orderFacade.confirmOrder(1L, 100L);
+                orderFacade.confirmOrder(1L, 100L, CONFIRM);
             });
 
             // assert
             assertThat(result.getErrorType()).isEqualTo(ErrorType.CONFLICT);
-            verify(pointService, never()).deduct(anyLong(), anyLong());
+            verify(paymentGateway, never()).create(any());
+            verify(paymentResultService, never()).recordPending(anyLong(), any());
+            verify(paymentResultService, never()).applyFinal(anyLong(), any());
             verify(productService, never()).deductStock(anyLong(), anyInt());
         }
     }

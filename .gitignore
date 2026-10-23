@@ -38,3 +38,6 @@ out/
 
 ### Kotlin ###
 .kotlin
+
+### Local-only docs ###
+docs/week5/week5-assignment.pdf

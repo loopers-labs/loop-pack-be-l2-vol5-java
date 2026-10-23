@@ -53,4 +53,13 @@ public interface ProductRepository {
      * @return 갱신된 행 수. 0 이면 없거나 삭제된 상품이다.
      */
     int updateStock(Long productId, int quantity);
+
+    /**
+     * 예약 반환(TX B ⑧ 실패 쪽)에서만 quantity = quantity + quantity 로 재고를 되돌린다.
+     * deletedAt 조건을 두지 않는다. 삭제된 상품의 예약도 반환해야 하고, 재고가 늘어도 deletedAt 은 그대로라
+     * 다시 노출되지 않는다 (설계 결정 ⑯).
+     *
+     * @return 갱신된 행 수
+     */
+    int restoreStock(Long productId, int quantity);
 }

@@ -1,24 +1,25 @@
 package com.loopers.application.order;
 
-import com.loopers.application.point.PointFacade;
 import com.loopers.domain.order.Order;
-import com.loopers.domain.point.Point;
 import com.loopers.domain.product.Price;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.user.User;
 import com.loopers.infrastructure.order.OrderJpaRepository;
-import com.loopers.infrastructure.point.PointJpaRepository;
+import com.loopers.infrastructure.payment.FakePaymentGateway;
+import com.loopers.infrastructure.payment.FakePaymentGatewayConfig;
 import com.loopers.infrastructure.product.ProductJpaRepository;
 import com.loopers.infrastructure.user.UserJpaRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -39,22 +40,21 @@ import java.util.concurrent.TimeoutException;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 주문 확정의 동시 요청을 실제 MySQL 에서 검증한다.
+ * 주문 확정(PG 결제 시작)의 동시 요청을 실제 MySQL 에서 검증한다.
  * 데이터는 worker 시작 전에 commit 되고, 각 worker 는 독립 트랜잭션으로 실제 Spring bean 을 호출한다.
  * 클래스 단위 @Transactional 을 쓰지 않는다.
  */
 @SpringBootTest
+@Import(FakePaymentGatewayConfig.class)
 class OrderConcurrencyTest {
 
     private static final Duration TIMEOUT = Duration.ofSeconds(30);
     private static final String STOCK_REJECTED_MESSAGE = "재고가 부족합니다.";
-    private static final String POINT_REJECTED_MESSAGE = "포인트 잔액이 부족합니다.";
 
     private final OrderFacade orderFacade;
-    private final PointFacade pointFacade;
+    private final FakePaymentGateway fakePaymentGateway;
     private final UserJpaRepository userJpaRepository;
     private final ProductJpaRepository productJpaRepository;
-    private final PointJpaRepository pointJpaRepository;
     private final OrderJpaRepository orderJpaRepository;
     private final JdbcTemplate jdbcTemplate;
     private final TransactionTemplate transactionTemplate;
@@ -63,24 +63,27 @@ class OrderConcurrencyTest {
     @Autowired
     public OrderConcurrencyTest(
         OrderFacade orderFacade,
-        PointFacade pointFacade,
+        FakePaymentGateway fakePaymentGateway,
         UserJpaRepository userJpaRepository,
         ProductJpaRepository productJpaRepository,
-        PointJpaRepository pointJpaRepository,
         OrderJpaRepository orderJpaRepository,
         JdbcTemplate jdbcTemplate,
         TransactionTemplate transactionTemplate,
         DatabaseCleanUp databaseCleanUp
     ) {
         this.orderFacade = orderFacade;
-        this.pointFacade = pointFacade;
+        this.fakePaymentGateway = fakePaymentGateway;
         this.userJpaRepository = userJpaRepository;
         this.productJpaRepository = productJpaRepository;
-        this.pointJpaRepository = pointJpaRepository;
         this.orderJpaRepository = orderJpaRepository;
         this.jdbcTemplate = jdbcTemplate;
         this.transactionTemplate = transactionTemplate;
         this.databaseCleanUp = databaseCleanUp;
+    }
+
+    @BeforeEach
+    void setUp() {
+        fakePaymentGateway.reset();
     }
 
     @AfterEach
@@ -89,14 +92,14 @@ class OrderConcurrencyTest {
     }
 
     /**
-     * 결과 분류. 재고 부족·잔액 부족만 업무 거절로 세고, timeout·SQL 오류 등 나머지는 전부 기술 오류다.
+     * 결과 분류. 재고 부족만 업무 거절로 세고, timeout·SQL 오류 등 나머지는 전부 기술 오류다.
      */
     enum Outcome {
-        SUCCESS, STOCK_REJECTED, POINT_REJECTED, TECHNICAL
+        SUCCESS, STOCK_REJECTED, TECHNICAL
     }
 
     /**
-     * @param amount 성공 시 결제액 또는 충전액. 실패 시 0.
+     * @param amount 성공 시 주문 금액. 실패 시 0.
      * @param error  기술 오류의 원인. 거절·성공이면 null.
      */
     record Result(Outcome outcome, long amount, Throwable error) {}
@@ -143,9 +146,9 @@ class OrderConcurrencyTest {
     @DisplayName("[실제 서비스] 주문을 동시에 확정할 때, ")
     @Nested
     class ConfirmOrderConcurrently {
-        @DisplayName("재고 5인 상품을 1개씩 사는 주문 8개를 동시에 확정하면, 5개만 확정되고 3개는 재고 부족으로 거절되며 최종 재고는 0이다.")
+        @DisplayName("재고 5인 상품을 1개씩 사는 주문 8개를 동시에 확정하면, 5개만 재고를 확보해 PAYMENT_PENDING 이 되고 PG create 도 5회이며, 3개는 재고 부족으로 거절되고 최종 재고는 0이다.")
         @Test
-        void confirmsOnlyUpToStock_whenManyOrdersCompeteForOneProduct() throws Exception {
+        void reservesOnlyUpToStock_whenManyOrdersCompeteForOneProduct() throws Exception {
             // arrange
             int initialStock = 5;
             Long productId = saveProduct("경쟁 상품", 100L, initialStock);
@@ -153,7 +156,6 @@ class OrderConcurrencyTest {
             List<Callable<Long>> tasks = new ArrayList<>();
             for (int i = 0; i < 8; i++) {
                 Long userId = saveUser();
-                savePoint(userId, 1000L);
                 Long orderId = createOrder(userId, productId, 1);
                 orderIds.add(orderId);
                 tasks.add(confirmTask(userId, orderId));
@@ -166,90 +168,19 @@ class OrderConcurrencyTest {
             assertNoTechnicalError(results);
             assertThat(count(results, Outcome.SUCCESS)).isEqualTo(5);
             assertThat(count(results, Outcome.STOCK_REJECTED)).isEqualTo(3);
-            assertThat(count(results, Outcome.POINT_REJECTED)).isZero();
             assertThat(stockOf(productId)).isZero();
-            assertThat(confirmedCount(orderIds)).isEqualTo(5);
+            assertThat(paymentPendingCount(orderIds)).isEqualTo(5);
+            assertThat(fakePaymentGateway.createCount()).isEqualTo(5);
 
             // 공식 검증 - 각 주문 수량은 1
             assertThat(initialStock - count(results, Outcome.SUCCESS)).isEqualTo(stockOf(productId));
             assertThat(total(results)).isEqualTo(8);
         }
-
-        @DisplayName("잔액 10,000원인 한 사용자의 4,000원 주문 3개를 동시에 확정하면, 2개만 확정되고 1개는 잔액 부족으로 거절되며 거절된 주문의 재고는 유지된다.")
-        @Test
-        void confirmsOnlyWithinBalance_whenOneUserCompetesWithOwnOrders() throws Exception {
-            // arrange
-            long initialBalance = 10000L;
-            Long userId = saveUser();
-            savePoint(userId, initialBalance);
-            List<Long> productIds = new ArrayList<>();
-            List<Long> orderIds = new ArrayList<>();
-            List<Callable<Long>> tasks = new ArrayList<>();
-            for (int i = 0; i < 3; i++) {
-                Long productId = saveProduct("상품 " + i, 4000L, 10);
-                Long orderId = createOrder(userId, productId, 1);
-                productIds.add(productId);
-                orderIds.add(orderId);
-                tasks.add(confirmTask(userId, orderId));
-            }
-
-            // act
-            List<Result> results = runAll(tasks);
-
-            // assert
-            assertNoTechnicalError(results);
-            assertThat(count(results, Outcome.SUCCESS)).isEqualTo(2);
-            assertThat(count(results, Outcome.POINT_REJECTED)).isEqualTo(1);
-            assertThat(count(results, Outcome.STOCK_REJECTED)).isZero();
-            assertThat(balanceOf(userId)).isEqualTo(2000L);
-            for (int i = 0; i < 3; i++) {
-                Order order = orderJpaRepository.findById(orderIds.get(i)).orElseThrow();
-                int expectedStock = order.getStatus() == Order.OrderStatus.CONFIRMED ? 9 : 10;
-                assertThat(stockOf(productIds.get(i))).isEqualTo(expectedStock);
-            }
-
-            // 공식 검증
-            assertThat(initialBalance - successAmount(results)).isEqualTo(balanceOf(userId));
-            assertThat(total(results)).isEqualTo(3);
-        }
-
-        @DisplayName("잔액 10,000원에서 2,000원 충전과 7,000원 주문 확정을 동시에 하면, 둘 다 성공하고 최종 잔액은 5,000원이다.")
-        @Test
-        void appliesBothChargeAndPayment_whenTheyRunConcurrently() throws Exception {
-            // arrange
-            long initialBalance = 10000L;
-            long chargeAmount = 2000L;
-            Long userId = saveUser();
-            savePoint(userId, initialBalance);
-            Long productId = saveProduct("결제 상품", 7000L, 10);
-            Long orderId = createOrder(userId, productId, 1);
-
-            // act - 결과 순서는 과제 순서(충전, 확정)와 같다
-            List<Result> results = runAll(List.of(chargeTask(userId, chargeAmount), confirmTask(userId, orderId)));
-
-            // assert
-            assertNoTechnicalError(results);
-            assertThat(count(results, Outcome.SUCCESS)).isEqualTo(2);
-            assertThat(balanceOf(userId)).isEqualTo(5000L);
-            assertThat(stockOf(productId)).isEqualTo(9);
-
-            // 공식 검증
-            long charged = results.get(0).amount();
-            long paid = results.get(1).amount();
-            assertThat(initialBalance + charged - paid).isEqualTo(balanceOf(userId));
-            assertThat(total(results)).isEqualTo(2);
-        }
     }
 
     private Callable<Long> confirmTask(Long userId, Long orderId) {
-        return () -> orderFacade.confirmOrder(userId, orderId).paidAmount();
-    }
-
-    private Callable<Long> chargeTask(Long userId, long amount) {
-        return () -> {
-            pointFacade.charge(userId, amount);
-            return amount;
-        };
+        return () -> orderFacade.confirmOrder(userId, orderId,
+            new OrderCommand.Confirm("k-" + orderId, "TEST", "0000-0000-0000-0000")).order().totalAmount();
     }
 
     /**
@@ -292,13 +223,9 @@ class OrderConcurrencyTest {
     }
 
     private static Result classify(Throwable error) {
-        if (error instanceof CoreException core && core.getErrorType() == ErrorType.CONFLICT) {
-            if (STOCK_REJECTED_MESSAGE.equals(core.getMessage())) {
-                return new Result(Outcome.STOCK_REJECTED, 0L, null);
-            }
-            if (POINT_REJECTED_MESSAGE.equals(core.getMessage())) {
-                return new Result(Outcome.POINT_REJECTED, 0L, null);
-            }
+        if (error instanceof CoreException core && core.getErrorType() == ErrorType.CONFLICT
+            && STOCK_REJECTED_MESSAGE.equals(core.getMessage())) {
+            return new Result(Outcome.STOCK_REJECTED, 0L, null);
         }
         return new Result(Outcome.TECHNICAL, 0L, error);
     }
@@ -320,15 +247,7 @@ class OrderConcurrencyTest {
     private static long total(List<Result> results) {
         return count(results, Outcome.SUCCESS)
             + count(results, Outcome.STOCK_REJECTED)
-            + count(results, Outcome.POINT_REJECTED)
             + count(results, Outcome.TECHNICAL);
-    }
-
-    private static long successAmount(List<Result> results) {
-        return results.stream()
-            .filter(result -> result.outcome() == Outcome.SUCCESS)
-            .mapToLong(Result::amount)
-            .sum();
     }
 
     private static void await(CyclicBarrier barrier) {
@@ -349,12 +268,6 @@ class OrderConcurrencyTest {
         return productJpaRepository.save(product).getId();
     }
 
-    private void savePoint(Long userId, long balance) {
-        Point point = new Point(userId);
-        point.charge(balance);
-        pointJpaRepository.save(point);
-    }
-
     private Long createOrder(Long userId, Long productId, int quantity) {
         return orderFacade.createOrder(userId, List.of(new OrderCommand.Item(productId, quantity))).orderId();
     }
@@ -363,14 +276,10 @@ class OrderConcurrencyTest {
         return productJpaRepository.findById(productId).orElseThrow().getStock().getQuantity();
     }
 
-    private long balanceOf(Long userId) {
-        return pointJpaRepository.findByUserId(userId).orElseThrow().getBalance();
-    }
-
-    private long confirmedCount(List<Long> orderIds) {
+    private long paymentPendingCount(List<Long> orderIds) {
         return orderIds.stream()
             .map(id -> orderJpaRepository.findById(id).orElseThrow())
-            .filter(order -> order.getStatus() == Order.OrderStatus.CONFIRMED)
+            .filter(order -> order.getStatus() == Order.OrderStatus.PAYMENT_PENDING)
             .count();
     }
 }

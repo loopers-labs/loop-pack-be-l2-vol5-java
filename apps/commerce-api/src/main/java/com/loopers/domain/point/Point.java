@@ -53,13 +53,4 @@ public class Point extends BaseEntity {
             throw new CoreException(ErrorType.BAD_REQUEST, "충전 금액은 1원 이상이어야 합니다.");
         }
     }
-
-    /**
-     * 차감 금액 입력 검증. 잔액 부족 판정과 차감은 PointRepository.deductIfEnough 의 조건부 UPDATE 가 맡는다.
-     */
-    public static void validateDeductAmount(long amount) {
-        if (amount <= 0) {
-            throw new CoreException(ErrorType.BAD_REQUEST, "차감 금액은 1원 이상이어야 합니다.");
-        }
-    }
 }
