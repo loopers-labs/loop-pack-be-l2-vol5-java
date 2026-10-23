@@ -1,0 +1,33 @@
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 4964    79.981438/s
+    checks_succeeded...: 100.00% 4964 out of 4964
+    checks_failed......: 0.00%   0 out of 4964
+
+    ✓ order created (201)
+    ✓ confirm accepted (202/200)
+
+    CUSTOM
+    confirm_duration...............: avg=2.3s  p(50)=2.2s  p(95)=3.36s p(99)=3.74s max=4.04s
+    confirm_status.................: 2482   39.990719/s
+
+    HTTP
+    http_req_duration..............: avg=1.22s p(50)=1.74s p(95)=2.54s p(99)=3.61s max=4.04s
+      { expected_response:true }...: avg=1.22s p(50)=1.74s p(95)=2.54s p(99)=3.61s max=4.04s
+    http_req_failed................: 0.00%  0 out of 4964
+    http_reqs......................: 4964   79.981438/s
+
+    EXECUTION
+    iteration_duration.............: avg=2.45s p(50)=2.27s p(95)=3.77s p(99)=5s    max=5.41s
+    iterations.....................: 2482   39.990719/s
+    vus............................: 2      min=2         max=100
+    vus_max........................: 100    min=100       max=100
+
+    NETWORK
+    data_received..................: 2.1 MB 34 kB/s
+    data_sent......................: 1.1 MB 18 kB/s
+
+
+

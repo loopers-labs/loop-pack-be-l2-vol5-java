@@ -1,8 +1,11 @@
 package com.loopers.application.product;
 
+import com.loopers.application.order.ConfirmPaymentCommand;
 import com.loopers.application.order.OrderFacade;
 import com.loopers.application.order.OrderItemRequest;
 import com.loopers.domain.brand.BrandModel;
+import com.loopers.domain.payment.PaymentAttempt;
+import com.loopers.domain.payment.PaymentAttemptRepository;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.product.ProductService;
 import com.loopers.domain.product.ProductSort;
@@ -11,7 +14,6 @@ import com.loopers.infrastructure.brand.BrandJpaRepository;
 import com.loopers.infrastructure.cache.CacheRedisConfig;
 import com.loopers.infrastructure.product.ProductJpaRepository;
 import com.loopers.infrastructure.user.UserJpaRepository;
-import com.loopers.support.error.CoreException;
 import com.loopers.utils.DatabaseCleanUp;
 import com.loopers.utils.RedisCleanUp;
 import org.junit.jupiter.api.AfterEach;
@@ -72,6 +74,9 @@ class ProductCacheFailureTest {
 
     @MockitoSpyBean
     private ProductCache productCache;
+
+    @MockitoSpyBean
+    private PaymentAttemptRepository paymentAttemptRepository;
 
     // 어댑터(RedisProductCache)가 쓰는 캐시 전용 템플릿 — Redis 명령 실패를 주입하기 위해 감싼다.
     @MockitoSpyBean(name = CacheRedisConfig.CACHE_REDIS_TEMPLATE)
@@ -147,16 +152,17 @@ class ProductCacheFailureTest {
     @DisplayName("C2 — 쓰기 트랜잭션이 롤백되면,")
     @Nested
     class Rollback {
-        @DisplayName("재고 차감 뒤 포인트 부족으로 주문 확정이 롤백돼도, 캐시가 남아 있고 상세 조회의 재고가 DB 재고와 같다.")
+        @DisplayName("재고 차감 뒤 결제 시도 저장 실패로 주문 확정이 롤백돼도, 캐시가 남아 있고 상세 조회의 재고가 DB 재고와 같다.")
         @Test
         void cachedStockStillMatchesDb() {
-            // arrange — 캐시를 채운 뒤, 포인트가 없는 사용자의 주문을 만든다
+            // arrange — 캐시를 채운 뒤 주문을 만든다
             assertThat(productFacade.getProductDetail(airMax.getId()).remainingStock()).isEqualTo(10);
             Long userId = userJpaRepository.save(new UserModel()).getId();
             Long orderId = orderFacade.createOrder(userId, List.of(new OrderItemRequest(airMax.getId(), 3))).id();
+            doThrow(new IllegalStateException("결제 시도 저장 실패 주입")).when(paymentAttemptRepository).save(any(PaymentAttempt.class));
 
-            // act — 재고 차감(무효화 등록) 이후 포인트 차감에서 실패한다
-            assertThrows(CoreException.class, () -> orderFacade.confirmOrder(orderId, userId));
+            // act — 재고 차감(무효화 등록) 이후 결제 시도 저장에서 실패한다
+            assertThrows(IllegalStateException.class, () -> orderFacade.confirmOrder(orderId, userId, new ConfirmPaymentCommand("key-" + orderId, "TEST", "0000-0000-0000-0000")));
 
             // assert
             int dbStock = productJpaRepository.findById(airMax.getId()).orElseThrow().getRemainingStock();

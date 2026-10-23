@@ -30,6 +30,33 @@ cache:
     command-timeout: 50ms   # 명령 하나
     connect-timeout: 1s     # 연결 수립(시작·재연결 때만)
 
+# 로컬 테스트 PG (docs/week5/pg-contract.md, recovery.md 2번) — 주소는 설정으로 고정하고 고객 입력을 받지 않는다
+pg:
+  base-url: http://127.0.0.1:18080
+  user-id: "135135"
+  callback-url: http://127.0.0.1:8080/api/v1/payments/callback
+  create:
+    connect-timeout: 1s   # create는 연결·응답 timeout 모두 UNKNOWN으로 본다(D-025)
+    read-timeout: 2s
+  lookup:
+    connect-timeout: 1s
+    read-timeout: 1s
+    retry-initial-wait: 100ms  # 재조회 사이 대기 100ms → 200ms (D-028)
+    circuit-breaker:           # 조회 경로에만 (D-029, recovery.md 4번) — 측정 전 임시값
+      sliding-window-size: 20
+      minimum-number-of-calls: 20
+      failure-rate-threshold: 50
+      wait-duration-in-open-state: 30s
+      permitted-calls-in-half-open-state: 3
+
+# 결제 회복 작업 — 수신함과 미종결 결제를 같은 작업으로 처리한다 (docs/week5/design.md D-040~D-042)
+payment:
+  recovery:
+    enabled: true
+    interval: PT3M   # 회차 간격이자 수신함 재시도 간격 (recovery.md 3번)
+    batch-size: 100            # 한 번에 모으는 시도 수 — 회차는 밀린 게 없을 때까지 묶음을 반복한다 (D-047)
+    lookups-per-second: 20     # PG 조회 속도 상한 (D-047) — 측정 전 가정값
+
 springdoc:
   use-fqn: true
   swagger-ui:

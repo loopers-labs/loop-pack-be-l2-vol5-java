@@ -1,0 +1,14 @@
+{
+  "name": "lookup-list",
+  "request": {
+    "method": "GET",
+    "urlPath": "/api/v1/payments"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": "[]"
+  }
+}

@@ -9,6 +9,7 @@ import com.loopers.domain.user.UserService;
 import com.loopers.infrastructure.order.OrderJpaRepository;
 import com.loopers.infrastructure.product.ProductJpaRepository;
 import com.loopers.infrastructure.user.UserJpaRepository;
+import com.loopers.support.pg.TestPg;
 import com.loopers.utils.DatabaseCleanUp;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
@@ -23,6 +24,9 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.exactly;
+import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -62,9 +66,10 @@ class OrderTransactionTest {
         databaseCleanUp.truncateAllTables();
     }
 
-    @DisplayName("여러 품목의 주문 확정에서 재고·포인트 차감 SQL이 DB에 나간 뒤 주문 저장이 실패하면, DRAFT·재고·잔액·결제 결과가 전부 변경 전과 같다.")
+    // 5주차: 확정의 TX A(재고 확보·결제 시도 기록·주문 PAYMENT_PENDING)가 한 트랜잭션임을 본다. 포인트는 더 이상 차감하지 않는다.
+    @DisplayName("여러 품목의 주문 확정에서 재고 확보·결제 시도 SQL이 DB에 나간 뒤 주문 저장이 실패하면, DRAFT·재고·잔액이 변경 전과 같고 결제 시도와 PG 요청이 없다.")
     @Test
-    void rollsBackStockPointsAndConfirmation_whenOrderSaveFailsAfterDeductionsAreFlushed() {
+    void rollsBackStockAndPaymentAttempt_whenOrderSaveFailsAfterReservationIsFlushed() {
         // arrange — 각 저장이 자기 트랜잭션으로 commit된다
         Long userId = userJpaRepository.save(new UserModel()).getId();
         userService.chargePoint(userId, 10_000L);
@@ -77,12 +82,12 @@ class OrderTransactionTest {
 
         // 주문 저장 시점에: 앞 단계의 변경을 DB로 보내고, 같은 트랜잭션 안에서 반영된 값을 기록한 뒤 실패시킨다.
         AtomicLong stockAInside = new AtomicLong(-1);
-        AtomicLong balanceInside = new AtomicLong(-1);
+        AtomicLong attemptsInside = new AtomicLong(-1);
         AtomicReference<String> statusInside = new AtomicReference<>();
         doAnswer(invocation -> {
             entityManager.flush();
             stockAInside.set(singleNumber("SELECT stock_remaining FROM product WHERE id = " + productA));
-            balanceInside.set(singleNumber("SELECT point_balance FROM user WHERE id = " + userId));
+            attemptsInside.set(singleNumber("SELECT COUNT(*) FROM payment_attempt WHERE order_id = " + orderId));
             statusInside.set((String) entityManager
                 .createNativeQuery("SELECT status FROM orders WHERE id = " + orderId)
                 .getSingleResult());
@@ -92,18 +97,18 @@ class OrderTransactionTest {
         // act
         IllegalStateException exception = assertThrows(
             IllegalStateException.class,
-            () -> orderFacade.confirmOrder(orderId, userId)
+            () -> orderFacade.confirmOrder(orderId, userId, new ConfirmPaymentCommand("key-1", "TEST", "0000-0000-0000-0000"))
         );
 
-        // assert — 트랜잭션 안에서는 차감과 상태 전이가 DB에 반영돼 있었다(실제 SQL이 나갔다)
+        // assert — 트랜잭션 안에서는 재고 확보·시도 기록·상태 전이가 DB에 반영돼 있었다(실제 SQL이 나갔다)
         assertAll(
             () -> assertThat(exception.getMessage()).isEqualTo("주문 저장 실패 주입"),
             () -> assertThat(stockAInside.get()).isEqualTo(8L),
-            () -> assertThat(balanceInside.get()).isEqualTo(10_000L - (1_000L * 2 + 2_000L)),
-            () -> assertThat(statusInside.get()).isEqualTo("CONFIRMED")
+            () -> assertThat(attemptsInside.get()).isEqualTo(1L),
+            () -> assertThat(statusInside.get()).isEqualTo("PAYMENT_PENDING")
         );
 
-        // assert — 트랜잭션이 끝난 뒤 새로 읽은 DB: 전부 작업 전 상태
+        // assert — 트랜잭션이 끝난 뒤 새로 읽은 DB: 전부 작업 전 상태. commit 전에 실패했으므로 PG에는 아무것도 보내지 않았다(INV-005)
         Order reloaded = orderJpaRepository.findById(orderId).orElseThrow();
         assertAll(
             () -> assertThat(reloaded.getStatus()).isEqualTo(OrderStatus.DRAFT),
@@ -111,8 +116,10 @@ class OrderTransactionTest {
             () -> assertThat(reloaded.getConfirmedAt()).isNull(),
             () -> assertThat(productJpaRepository.findById(productA).orElseThrow().getRemainingStock()).isEqualTo(10),
             () -> assertThat(productJpaRepository.findById(productB).orElseThrow().getRemainingStock()).isEqualTo(10),
-            () -> assertThat(userJpaRepository.findById(userId).orElseThrow().getPoint().getBalance()).isEqualTo(10_000L)
+            () -> assertThat(userJpaRepository.findById(userId).orElseThrow().getPoint().getBalance()).isEqualTo(10_000L),
+            () -> assertThat(singleNumber("SELECT COUNT(*) FROM payment_attempt WHERE order_id = " + orderId)).isZero()
         );
+        TestPg.server().verify(exactly(0), postRequestedFor(urlEqualTo(TestPg.PAYMENTS_PATH)));
     }
 
     private long singleNumber(String sql) {

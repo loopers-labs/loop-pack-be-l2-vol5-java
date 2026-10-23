@@ -69,10 +69,12 @@ final class CustomerSteps {
             .then().extract();
     }
 
+    /** 확정 = PG 결제 시작. 테스트 PG는 기본으로 생성 요청을 202 PENDING으로 받으므로 결제는 진행 중(202)으로 끝난다. */
     static void confirmOrder(Long userId, Long orderId) {
-        RestAssured.given().header(USER_HEADER, userId)
+        RestAssured.given().header(USER_HEADER, userId).contentType(ContentType.JSON)
+            .body(Map.of("paymentAttemptKey", "key-" + orderId, "cardType", "TEST", "cardNo", "0000-0000-0000-0000"))
             .post("/api/v1/orders/{orderId}/confirm", orderId)
-            .then().statusCode(200);
+            .then().statusCode(202);
     }
 
     static ExtractableResponse<Response> getOrder(Long userId, Long orderId) {

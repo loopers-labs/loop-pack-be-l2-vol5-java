@@ -1,21 +1,29 @@
 package com.loopers.application.order;
 
-import com.loopers.application.product.ProductCacheInvalidator;
+import com.loopers.application.payment.CreatePaymentRequest;
+import com.loopers.application.payment.CreateResult;
+import com.loopers.application.payment.LookupRetry;
+import com.loopers.application.payment.PaymentAttemptStarter;
+import com.loopers.application.payment.PaymentAttemptStarter.StartedPayment;
+import com.loopers.application.payment.PaymentGateway;
+import com.loopers.application.payment.PaymentReconciler;
+import com.loopers.application.payment.PaymentResultApplier;
 import com.loopers.domain.order.Order;
-import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.OrderService;
+import com.loopers.domain.payment.PaymentAttempt;
+import com.loopers.domain.payment.PaymentAttemptRepository;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.product.ProductService;
-import com.loopers.domain.user.UserService;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 // 고객 전용 — 생성·확정·내 목록/상세. 관리자 조회(전체 목록/상세)는 OrderAdminFacade로 분리한다.
@@ -27,8 +35,12 @@ public class OrderFacade {
 
     private final OrderService orderService;
     private final ProductService productService;
-    private final UserService userService;
-    private final ProductCacheInvalidator productCacheInvalidator;
+    private final PaymentAttemptStarter paymentAttemptStarter;
+    private final PaymentResultApplier paymentResultApplier;
+    private final PaymentReconciler paymentReconciler;
+    private final OrderInfoAssembler orderInfoAssembler;
+    private final PaymentGateway paymentGateway;
+    private final PaymentAttemptRepository paymentAttemptRepository;
 
     /**
      * 요청 품목마다 단가를 스냅샷으로 찍어(DRAFT 생성 시점, 3번 섹션) Order에 넘긴다.
@@ -63,41 +75,64 @@ public class OrderFacade {
     }
 
     /**
-     * 확정: 소유자·상태 확인(Order 락) → 재고 차감(Product 락, productId 오름차순) → 포인트 차감(User 락)
-     * → 상태 전이. 락 순서는 Order → Product(오름차순) → User로 고정한다 — 데드락 방지 규칙과
-     * 일관되고, 같은 주문에 확정 요청이 겹쳐도(더블클릭·재시도) 두 번 반영되지 않는다.
-     * (docs/week2/design.md 5번 섹션 "Order 자신의 DRAFT→CONFIRMED 전이도 같은 방식으로 보호한다" 참고)
-     * 하나라도 실패하면 트랜잭션 전체가 롤백된다 (docs/week2/design.md 4번 섹션 시퀀스 다이어그램).
-     * 재고가 바뀐 상품의 캐시 키는 commit 뒤에 지운다 — 롤백되면 지우지 않는다 (docs/week4/design.md 7번 섹션).
+     * 확정 = PG 결제 시작(docs/week5/design.md 3번). 이 메서드에는 트랜잭션이 없다 — PG를 기다리는 동안 DB 트랜잭션과
+     * 재고 락을 쥐지 않기 위해서다. 순서만 조합한다:
+     * TX A(재고 확보·시도 기록 commit) → 트랜잭션 밖 create → 결과 기록(짧은 TX) → 응답을 잃었으면 바로 재조회(ⓐ) → TX B.
+     *
+     * - create는 TX A가 commit된 뒤 한 번만 보낸다. 자동 재시도하지 않는다(INV-005).
+     * - 같은 요청의 재시도(D-015 ②)는 PG를 부르지 않고 저장된 상태를 돌려준다.
+     * - 시도 INSERT가 UNIQUE에 걸리면 다시 읽어 같은 분류를 적용한다(D-026).
      */
-    @Transactional
-    public OrderInfo confirmOrder(Long orderId, Long requesterId) {
-        Order order = orderService.getOwnedOrderForUpdate(orderId, requesterId);
-        order.assertDraft();
+    public OrderInfo confirmOrder(Long orderId, Long requesterId, ConfirmPaymentCommand command) {
+        Optional<StartedPayment> started;
+        try {
+            started = paymentAttemptStarter.start(orderId, requesterId, command.attemptKey());
+        } catch (DataIntegrityViolationException e) {
+            if (!paymentAttemptStarter.isSameRequestAfterConflict(orderId, requesterId, command.attemptKey())) {
+                throw e;
+            }
+            started = Optional.empty();
+        }
+        started.ifPresent(payment -> send(payment, command));
+        return getMyOrder(orderId, requesterId);
+    }
 
-        order.getItems().stream()
-            .sorted(Comparator.comparing(OrderItem::getProductId))
-            .forEach(item -> productService.decreaseStock(item.getProductId(), item.getQuantity()));
-        // 재고를 바꾼 직후 등록한다 — 실행은 commit 뒤라, 이후 단계(포인트 차감·저장)가 실패해 롤백되면 지우지 않는다.
-        productCacheInvalidator.productsChanged(order.getItems().stream()
-            .map(OrderItem::getProductId)
-            .toList());
+    private void send(StartedPayment payment, ConfirmPaymentCommand command) {
+        CreateResult result = paymentGateway.create(new CreatePaymentRequest(
+            payment.providerOrderId(), command.cardType(), command.cardNo(), payment.amount()));
+        switch (result) {
+            case CreateResult.Accepted accepted -> paymentResultApplier.recordAccepted(payment.orderId(), accepted.transactionKey());
+            case CreateResult.RejectedNoEffect rejected -> paymentResultApplier.rejectBeforeCreate(payment.orderId());
+            case CreateResult.Unknown unknown -> {
+                paymentResultApplier.recordUnknown(payment.orderId());
+                // 응답만 잃은 경우(ⓐ)를 고객이 기다리는 동안 짧게 확인한다(D-028). 키를 모르므로 주문 식별자로 목록 조회한다.
+                paymentReconciler.reconcile(payment.orderId(), payment.providerOrderId(), null, LookupRetry.IMMEDIATE);
+            }
+        }
+    }
 
-        long totalAmount = order.calculateTotalAmount();
-        userService.payPoint(requesterId, totalAmount);
-
-        order.confirm(totalAmount);
-        Order confirmed = orderService.save(order);
-        return OrderInfo.from(confirmed);
+    /**
+     * 고객 결제 확인 — 이미 시작한 결제의 기존 거래를 PG에 물어 반영한다. 새 결제를 만들지 않는다(pg-contract.md 6번).
+     * - 결제 시도가 없는 주문(DRAFT, 이전 POINT 결제)은 409다(D-039). 남의 주문은 404다.
+     * - 이미 종결됐으면 PG를 부르지 않고 저장된 상태를 돌려준다(D-037).
+     * - 조회가 실패해도 상태를 바꾸지 않고 저장된 상태를 돌려준다(D-038, INV-004).
+     */
+    public OrderInfo reconcilePayment(Long orderId, Long requesterId) {
+        orderService.getOwnedOrder(orderId, requesterId);
+        PaymentAttempt attempt = paymentAttemptRepository.findByOrderId(orderId)
+            .orElseThrow(() -> new CoreException(ErrorType.CONFLICT, "결제를 시작하지 않은 주문입니다."));
+        if (!attempt.getStatus().isTerminal()) {
+            paymentReconciler.reconcile(orderId, attempt.getProviderOrderId(), attempt.getTransactionKey(), LookupRetry.CUSTOMER);
+        }
+        return getMyOrder(orderId, requesterId);
     }
 
     public List<OrderInfo> getMyOrders(Long requesterId) {
-        return orderService.getMyOrders(requesterId).stream()
-            .map(OrderInfo::from)
-            .toList();
+        return orderInfoAssembler.withPayments(orderService.getMyOrders(requesterId));
     }
 
     public OrderInfo getMyOrder(Long orderId, Long requesterId) {
-        return OrderInfo.from(orderService.getOwnedOrder(orderId, requesterId));
+        Order order = orderService.getOwnedOrder(orderId, requesterId);
+        return OrderInfo.from(order, paymentAttemptRepository.findByOrderId(orderId).orElse(null));
     }
 }

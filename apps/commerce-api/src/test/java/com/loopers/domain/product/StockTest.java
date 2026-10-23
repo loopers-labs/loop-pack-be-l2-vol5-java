@@ -97,6 +97,55 @@ class StockTest {
         }
     }
 
+    @DisplayName("예약을 반환할 때, ")
+    @Nested
+    class Increase {
+        @DisplayName("예약 수량만큼 더한다 — 재고 5에서 2를 예약하고 반환하면 5가 된다.")
+        @Test
+        void addsReservedQuantity() {
+            // arrange
+            Stock stock = new Stock(5);
+            stock.decrease(2);
+
+            // act
+            stock.increase(2);
+
+            // assert
+            assertThat(stock.remaining()).isEqualTo(5);
+        }
+
+        @DisplayName("예약 중에 관리자가 재고를 바꿨으면, 그 값에 더한다 — 가용 3 → 관리자 2 → 반환 +2 → 4. (INV-006)")
+        @Test
+        void addsToAdminChangedValue_notRestoringOldValue() {
+            // arrange
+            Stock stock = new Stock(5);
+            stock.decrease(2);
+            stock.set(2);
+
+            // act
+            stock.increase(2);
+
+            // assert
+            assertThat(stock.remaining()).isEqualTo(4);
+        }
+
+        @DisplayName("0 이하의 수량을 주면, BAD_REQUEST 예외가 발생하고 재고는 그대로 유지된다.")
+        @Test
+        void throwsBadRequestException_whenQuantityIsZeroOrNegative() {
+            // arrange
+            Stock stock = new Stock(3);
+
+            // act
+            CoreException result = assertThrows(CoreException.class, () -> stock.increase(0));
+
+            // assert
+            assertAll(
+                () -> assertThat(result.getErrorType()).isEqualTo(ErrorType.BAD_REQUEST),
+                () -> assertThat(stock.remaining()).isEqualTo(3)
+            );
+        }
+    }
+
     @DisplayName("재고를 설정할 때, ")
     @Nested
     class Set {

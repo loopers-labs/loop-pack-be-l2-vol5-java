@@ -1,0 +1,35 @@
+{
+  "name": "create",
+  "request": {
+    "method": "POST",
+    "url": "/api/v1/payments"
+  },
+  "response": {
+    "status": 202,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": "{\"transactionKey\":\"TEST-TX-{{jsonPath request.body '$.orderId'}}-{{jsonPath request.body '$.amount'}}\",\"orderId\":\"{{jsonPath request.body '$.orderId'}}\",\"amount\":{{jsonPath request.body '$.amount'}},\"status\":\"PENDING\"}",
+    "transformers": [
+      "response-template"
+    ],
+    "fixedDelayMilliseconds": 3000
+  },
+  "serveEventListeners": [
+    {
+      "name": "webhook",
+      "parameters": {
+        "method": "POST",
+        "url": "{{jsonPath originalRequest.body '$.callbackUrl'}}",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"transactionKey\":\"TEST-TX-{{jsonPath originalRequest.body '$.orderId'}}-{{jsonPath originalRequest.body '$.amount'}}\",\"providerOrderId\":\"{{jsonPath originalRequest.body '$.orderId'}}\",\"status\":\"SUCCESS\"}",
+        "delay": {
+          "type": "fixed",
+          "milliseconds": 1000
+        }
+      }
+    }
+  ]
+}

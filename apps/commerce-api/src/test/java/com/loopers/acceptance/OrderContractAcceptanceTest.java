@@ -15,7 +15,8 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 @DisplayName("주문 계약 보존")
 class OrderContractAcceptanceTest extends AcceptanceTest {
 
-    @DisplayName("A9 — 주문 뒤 관리자가 가격을 바꿔도, 내 주문의 단가와 결제액은 주문 당시 값 그대로다.")
+    // 5주차: 확정은 PG 결제 시작이라 결제가 끝나기 전엔 paidAmount가 없다. 주문 당시 금액은 결제 시도 금액(data.payment.amount)으로 본다.
+    @DisplayName("A9 — 주문 뒤 관리자가 가격을 바꿔도, 내 주문의 단가와 결제 금액은 주문 당시 값 그대로다.")
     @Test
     void priceChangeAfterOrder_keepsOrderAmount() {
         Long brand = AdminSteps.createBrand("나이키");
@@ -31,7 +32,7 @@ class OrderContractAcceptanceTest extends AcceptanceTest {
         assertAll(
             () -> assertThat(CustomerSteps.getProduct(product).jsonPath().getLong("data.price")).isEqualTo(12_000L),
             () -> assertThat(order.jsonPath().getLong("data.items[0].unitPrice")).isEqualTo(10_000L),
-            () -> assertThat(order.jsonPath().getLong("data.paidAmount")).isEqualTo(20_000L)
+            () -> assertThat(order.jsonPath().getLong("data.payment.amount")).isEqualTo(20_000L)
         );
     }
 

@@ -48,6 +48,16 @@ public class OrderService {
         return order;
     }
 
+    /**
+     * 결제 결과 반영(TX B) 전용 — 소유자를 따지지 않는다. 결과는 callback·스케줄러·관리자처럼 고객이 아닌 경로로도 들어온다.
+     * 락 순서는 주문 → 결제 시도 → 상품이다(docs/week5/design.md D-002).
+     */
+    @Transactional
+    public Order getOrderForUpdate(Long orderId) {
+        return orderRepository.findForUpdate(orderId)
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[id = " + orderId + "] 주문을 찾을 수 없습니다."));
+    }
+
     @Transactional(readOnly = true)
     public List<Order> getMyOrders(Long userId) {
         return orderRepository.findAllByUserId(userId);

@@ -2,6 +2,9 @@ package com.loopers.interfaces.api.order;
 
 import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.order.Order;
+import com.loopers.domain.payment.PaymentAttempt;
+import com.loopers.domain.payment.PaymentAttemptRepository;
+import com.loopers.domain.payment.PaymentAttemptStatus;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.user.UserModel;
 import com.loopers.infrastructure.brand.BrandJpaRepository;
@@ -20,9 +23,11 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -44,6 +49,9 @@ class OrderAdminV1ApiE2ETest {
 
     @Autowired
     private OrderJpaRepository orderJpaRepository;
+
+    @Autowired
+    private PaymentAttemptRepository paymentAttemptRepository;
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
@@ -124,6 +132,86 @@ class OrderAdminV1ApiE2ETest {
                     .with(user("customer").roles("USER"))
                     .with(csrf()))
                 .andExpect(status().isForbidden());
+        }
+    }
+
+    /** 결제 요청 중(요청됨)인 주문 — 발송 도중 서버가 죽은 흔적처럼, 거래 키를 모르는 미종결 결제다. */
+    private Order givenPaymentRequestedOrder() {
+        Order order = givenOrder();
+        order.startPgPayment();
+        Order saved = orderJpaRepository.save(order);
+        paymentAttemptRepository.save(new PaymentAttempt(saved.getId(), "key-" + saved.getId(),
+            String.format("LP-ORD-%010d", saved.getId()), 1000L));
+        return saved;
+    }
+
+    @DisplayName("POST /api-admin/v1/orders/{orderId}/payment/fail")
+    @Nested
+    class FailPayment {
+        @DisplayName("ADMIN 권한으로 요청하면, 200과 결제 실패 주문을 반환하고 처리자는 인증된 관리자 이름이다. (D-046)")
+        @Test
+        void failsPayment_andRecordsAuthenticatedAdmin() throws Exception {
+            // arrange
+            Order order = givenPaymentRequestedOrder();
+
+            // act & assert
+            mvc.perform(post("/api-admin/v1/orders/" + order.getId() + "/payment/fail")
+                    .with(user("admin-kim").roles("ADMIN"))
+                    .with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(order.getId()))
+                .andExpect(jsonPath("$.data.status").value("PAYMENT_FAILED"))
+                .andExpect(jsonPath("$.data.payment.status").value("FAILED"))
+                .andExpect(jsonPath("$.data.payment.resolvedBy").value("admin-kim"))
+                .andExpect(jsonPath("$.data.payment.watchUntil").exists())
+                .andExpect(jsonPath("$.data.conflicts").isArray());
+        }
+
+        @DisplayName("USER 권한으로 요청하면, 403 FORBIDDEN 응답을 받고 결제는 그대로다.")
+        @Test
+        void throwsForbidden_whenRequestedByUser() throws Exception {
+            // arrange
+            Order order = givenPaymentRequestedOrder();
+
+            // act & assert
+            mvc.perform(post("/api-admin/v1/orders/" + order.getId() + "/payment/fail")
+                    .with(user("customer").roles("USER"))
+                    .with(csrf()))
+                .andExpect(status().isForbidden());
+            assertThat(paymentAttemptRepository.findByOrderId(order.getId()).orElseThrow().getStatus())
+                .isEqualTo(PaymentAttemptStatus.REQUESTED);
+        }
+    }
+
+    @DisplayName("POST /api-admin/v1/orders/{orderId}/payment/reconcile")
+    @Nested
+    class ReconcilePayment {
+        @DisplayName("PG에서 아직 거래를 찾지 못하면, 202와 관리자용 결제 정보(PG 식별자 등)를 반환한다.")
+        @Test
+        void returns202_withAdminPaymentFields() throws Exception {
+            // arrange — 테스트 PG의 목록 조회 stub이 없어 조회 실패다: 상태를 바꾸지 않는다
+            Order order = givenPaymentRequestedOrder();
+
+            // act & assert
+            mvc.perform(post("/api-admin/v1/orders/" + order.getId() + "/payment/reconcile")
+                    .with(user("admin").roles("ADMIN"))
+                    .with(csrf()))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.data.payment.status").value("REQUESTED"))
+                .andExpect(jsonPath("$.data.payment.providerOrderId").value(String.format("LP-ORD-%010d", order.getId())))
+                .andExpect(jsonPath("$.data.payment.sendStartedAt").exists())
+                .andExpect(jsonPath("$.data.payment.emptyLookupCount").value(0));
+        }
+
+        @DisplayName("결제를 시작하지 않은 주문이면, 409를 반환한다.")
+        @Test
+        void returns409_whenPaymentNotStarted() throws Exception {
+            Order order = givenOrder();
+
+            mvc.perform(post("/api-admin/v1/orders/" + order.getId() + "/payment/reconcile")
+                    .with(user("admin").roles("ADMIN"))
+                    .with(csrf()))
+                .andExpect(status().isConflict());
         }
     }
 }

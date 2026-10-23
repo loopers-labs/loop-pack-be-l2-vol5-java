@@ -1,0 +1,10 @@
+{
+  "name": "lookup-single",
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/api/v1/payments/TEST-TX-.*"
+  },
+  "response": {
+    "status": 500
+  }
+}

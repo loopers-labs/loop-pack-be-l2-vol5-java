@@ -1,0 +1,17 @@
+{
+  "name": "create",
+  "request": {
+    "method": "POST",
+    "url": "/api/v1/payments"
+  },
+  "response": {
+    "status": 202,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": "{\"transactionKey\":\"TEST-TX-{{jsonPath request.body '$.orderId'}}-{{jsonPath request.body '$.amount'}}\",\"orderId\":\"{{jsonPath request.body '$.orderId'}}\",\"amount\":{{jsonPath request.body '$.amount'}},\"status\":\"PENDING\"}",
+    "transformers": [
+      "response-template"
+    ]
+  }
+}

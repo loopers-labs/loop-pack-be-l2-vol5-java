@@ -91,6 +91,22 @@ public class ProductService {
         return product;
     }
 
+    /**
+     * PG 결제 FAILED로 예약을 반환한다 — 지금 값에 더한다(상대 증가, INV-006). 관리자가 그 사이 재고를 다시 설정했어도
+     * 설정값 위에 예약분만 돌려준다. 차감과 같은 락에 참여한다.
+     * 이미 삭제된 상품은 반환을 건너뛴다 — 다시 팔리지 않는 숫자이고, 404로 결과 반영 전체를 롤백시키면 안 된다.
+     * 그래도 먼저 잠근 뒤 삭제 여부를 본다. 잠그지 않고 보면 관리자 삭제와 겹칠 때 판단이 어긋난다(docs/week5/design.md D-019).
+     */
+    @Transactional
+    public void returnReservedStock(Long id, int quantity) {
+        ProductModel product = productRepository.findForUpdate(id)
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[id = " + id + "] 상품을 찾을 수 없습니다."));
+        if (product.getDeletedAt() != null) {
+            return;
+        }
+        product.increaseStock(quantity);
+    }
+
     @Transactional
     public void deleteProduct(Long id) {
         getActiveProductForUpdate(id).delete();

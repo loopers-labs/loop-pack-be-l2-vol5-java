@@ -5,9 +5,11 @@ import com.github.dockerjava.api.command.InspectContainerResponse;
 import com.github.dockerjava.api.model.ExposedPort;
 import com.github.dockerjava.api.model.PortBinding;
 import com.github.dockerjava.api.model.Ports;
+import com.loopers.application.order.ConfirmPaymentCommand;
 import com.loopers.application.order.OrderFacade;
 import com.loopers.application.order.OrderItemRequest;
 import com.loopers.domain.brand.BrandModel;
+import com.loopers.domain.order.OrderStatus;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.product.ProductService;
 import com.loopers.domain.product.ProductSort;
@@ -15,6 +17,7 @@ import com.loopers.domain.user.UserModel;
 import com.loopers.domain.user.UserService;
 import com.loopers.infrastructure.brand.BrandJpaRepository;
 import com.loopers.infrastructure.cache.CacheRedisConfig;
+import com.loopers.infrastructure.order.OrderJpaRepository;
 import com.loopers.infrastructure.product.ProductJpaRepository;
 import com.loopers.infrastructure.user.UserJpaRepository;
 import com.loopers.utils.DatabaseCleanUp;
@@ -131,6 +134,9 @@ class ProductCacheRedisOutageTest {
 
     @Autowired
     private UserJpaRepository userJpaRepository;
+
+    @Autowired
+    private OrderJpaRepository orderJpaRepository;
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
@@ -262,7 +268,7 @@ class ProductCacheRedisOutageTest {
             log.info("[C5-중지 중 조회] 상세 {}ms, 목록 {}ms", detail.millis(), list.millis());
         }
 
-        @DisplayName("관리자 가격 수정과 주문 확정이 예외 없이 성공하고 DB에 반영된다(무효화 실패는 로그만 남는다).")
+        @DisplayName("관리자 가격 수정과 주문 확정(PG 결제 시작)이 예외 없이 성공하고 DB에 반영된다(무효화 실패는 로그만 남는다).")
         @Test
         void writesSucceed() {
             // arrange
@@ -274,14 +280,15 @@ class ProductCacheRedisOutageTest {
 
             // act
             Timed<ProductInfo> update = timed(() -> productAdminFacade.updateProduct(airMax.getId(), "에어맥스", NEW_PRICE));
-            assertThatCode(() -> orderFacade.confirmOrder(orderId, userId)).doesNotThrowAnyException();
+            assertThatCode(() -> orderFacade.confirmOrder(orderId, userId, new ConfirmPaymentCommand("key-" + orderId, "TEST", "0000-0000-0000-0000"))).doesNotThrowAnyException();
 
             // assert
             assertAll(
                 () -> assertThat(update.result().price()).isEqualTo(NEW_PRICE),
                 () -> assertThat(productJpaRepository.findById(airMax.getId()).orElseThrow().getPrice()).isEqualTo(NEW_PRICE),
                 () -> assertThat(productJpaRepository.findById(jordan.getId()).orElseThrow().getRemainingStock()).isEqualTo(8),
-                () -> assertThat(userService.getBalance(userId)).isEqualTo(10_000L - 2_000L * 2),
+                () -> assertThat(orderJpaRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING),
+                () -> assertThat(userService.getBalance(userId)).isEqualTo(10_000L),
                 () -> assertThat(update.millis()).isLessThan(STOPPED_LIMIT_MILLIS)
             );
             log.info("[C5-중지 중 쓰기] 가격 수정 {}ms", update.millis());

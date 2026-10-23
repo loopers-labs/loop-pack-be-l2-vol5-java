@@ -60,6 +60,13 @@ public class ProductModel extends BaseEntity {
         stock.decrease(quantity);
     }
 
+    /**
+     * PG 결제 실패 시 예약을 상대적으로 반환한다(docs/week5/design.md INV-006).
+     */
+    public void increaseStock(int quantity) {
+        stock.increase(quantity);
+    }
+
     private static void validateName(String name) {
         if (name == null || name.isBlank()) {
             throw new CoreException(ErrorType.BAD_REQUEST, "이름은 비어있을 수 없습니다.");

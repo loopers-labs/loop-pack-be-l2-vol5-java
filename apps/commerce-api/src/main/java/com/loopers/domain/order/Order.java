@@ -29,6 +29,9 @@ public class Order extends BaseEntity {
     @Enumerated(EnumType.STRING)
     private OrderStatus status;
 
+    @Enumerated(EnumType.STRING)
+    private PaymentMethod paymentMethod;
+
     // items는 Order 자신의 VO 모음(별도 aggregate가 아님)이라 항상 함께 필요하다 — LAZY로 두면
     // 트랜잭션 밖(Facade의 OrderInfo.from())에서 LazyInitializationException이 난다.
     @ElementCollection(fetch = FetchType.EAGER)
@@ -75,12 +78,12 @@ public class Order extends BaseEntity {
     }
 
     /**
-     * 이미 확정된 주문이면 409로 거절한다. 읽기 전용 사전 확인 — Product/User를 건드리기 전에
+     * DRAFT가 아니면(이미 확정·결제 진행·결제 실패) 409로 거절한다. 읽기 전용 사전 확인 — Product/User를 건드리기 전에
      * Facade가 먼저 호출해 실패를 앞당긴다(docs/week2/design.md 4번 섹션 시퀀스 다이어그램 1단계).
      */
     public void assertDraft() {
         if (status != OrderStatus.DRAFT) {
-            throw new CoreException(ErrorType.CONFLICT, "이미 확정된 주문입니다.");
+            throw new CoreException(ErrorType.CONFLICT, "결제를 시작할 수 없는 상태의 주문입니다. (현재: " + status + ")");
         }
     }
 
@@ -89,14 +92,48 @@ public class Order extends BaseEntity {
     }
 
     /**
-     * 상태를 CONFIRMED로 전이하고 결제액·확정시각을 저장한다. assertDraft()를 다시 실행해
-     * 재확정을 막는다 — Facade의 사전 확인과 별개로, 이 메서드 자체도 스스로 불변식을 지킨다.
+     * 포인트 결제로 바로 CONFIRMED로 전이하고 결제액·확정시각을 저장한다(4주차까지의 확정 경로).
+     * assertDraft()를 다시 실행해 재확정을 막는다 — Facade의 사전 확인과 별개로, 이 메서드 자체도 스스로 불변식을 지킨다.
      */
     public void confirm(long paidAmount) {
         assertDraft();
         this.status = OrderStatus.CONFIRMED;
+        this.paymentMethod = PaymentMethod.POINT;
         this.paidAmount = paidAmount;
         this.confirmedAt = ZonedDateTime.now();
+    }
+
+    /**
+     * PG 결제를 시작한다(TX A). 재고 예약과 결제 시도 생성은 같은 트랜잭션에서 호출자가 한다.
+     */
+    public void startPgPayment() {
+        assertDraft();
+        this.status = OrderStatus.PAYMENT_PENDING;
+        this.paymentMethod = PaymentMethod.PG;
+    }
+
+    /**
+     * PG 결제가 SUCCESS로 확인됐다(TX B). 결제 시도의 전이가 일어났을 때만 호출된다(INV-002).
+     */
+    public void completePayment(long paidAmount) {
+        assertPaymentPending();
+        this.status = OrderStatus.CONFIRMED;
+        this.paidAmount = paidAmount;
+        this.confirmedAt = ZonedDateTime.now();
+    }
+
+    /**
+     * PG 결제가 FAILED로 확인됐다(TX B). 예약 반환은 호출자가 같은 트랜잭션에서 한다(INV-001).
+     */
+    public void failPayment() {
+        assertPaymentPending();
+        this.status = OrderStatus.PAYMENT_FAILED;
+    }
+
+    private void assertPaymentPending() {
+        if (status != OrderStatus.PAYMENT_PENDING) {
+            throw new CoreException(ErrorType.CONFLICT, "결제 진행 중인 주문이 아닙니다. (현재: " + status + ")");
+        }
     }
 
     public Long getUserId() {
@@ -105,6 +142,10 @@ public class Order extends BaseEntity {
 
     public OrderStatus getStatus() {
         return status;
+    }
+
+    public PaymentMethod getPaymentMethod() {
+        return paymentMethod;
     }
 
     public List<OrderItem> getItems() {

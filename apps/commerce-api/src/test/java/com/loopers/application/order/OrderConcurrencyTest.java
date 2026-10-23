@@ -33,6 +33,8 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 
 /**
  * 실제 OrderFacade·UserFacade·repository·MySQL을 통과하는 경쟁 검증 (docs/week3/design.md 7번 섹션).
+ * 5주차부터 확정은 PG 결제 시작이다 — 성공한 확정은 재고를 확보하고 PAYMENT_PENDING이 되며, 포인트는 건드리지 않는다
+ * (docs/week5/design.md 1번). 테스트 PG는 기본으로 모든 생성 요청을 202 PENDING으로 받는다(TestPg).
  * 시작만 latch로 맞추고 순서는 DB 잠금에 맡긴다. 요청별 결과를 성공·업무 거절·기술 오류로 집계하고,
  * 모든 worker가 끝난 뒤 새로 읽은 DB 상태와 불변식으로 대조한다. 테스트 전체를 부모 트랜잭션으로 감싸지 않는다.
  */
@@ -67,7 +69,7 @@ class OrderConcurrencyTest {
         databaseCleanUp.truncateAllTables();
     }
 
-    @DisplayName("재고 5인 상품을 1개씩 사는 서로 다른 DRAFT 주문 8개를 동시에 확정하면, 확정 5·재고 부족 3·기술 오류 0이고 최종 재고는 0이다.")
+    @DisplayName("재고 5인 상품을 1개씩 사는 서로 다른 DRAFT 주문 8개를 동시에 확정하면, 결제 시작 5·재고 부족 3·기술 오류 0이고 최종 재고는 0이다.")
     @Test
     void stockCompetition() throws Exception {
         // arrange
@@ -88,7 +90,7 @@ class OrderConcurrencyTest {
         for (int i = 0; i < 8; i++) {
             Long orderId = orderIds.get(i);
             Long buyerId = buyerIds.get(i);
-            requests.add(() -> orderFacade.confirmOrder(orderId, buyerId));
+            requests.add(() -> orderFacade.confirmOrder(orderId, buyerId, command("key-" + orderId)));
         }
         Tally tally = runConcurrently(requests);
 
@@ -100,8 +102,8 @@ class OrderConcurrencyTest {
             () -> assertThat(tally.total()).isEqualTo(8)
         );
 
-        // assert — DB 재조회와 불변식
-        List<Order> confirmed = ordersWithStatus(OrderStatus.CONFIRMED);
+        // assert — DB 재조회와 불변식: 결제를 시작한 주문의 확보 수량만큼만 재고가 줄었다
+        List<Order> confirmed = ordersWithStatus(OrderStatus.PAYMENT_PENDING);
         int confirmedQuantity = confirmed.stream()
             .flatMap(order -> order.getItems().stream())
             .filter(item -> item.getProductId().equals(productId))
@@ -112,18 +114,18 @@ class OrderConcurrencyTest {
             () -> assertThat(confirmed).hasSize(tally.success()),
             () -> assertThat(ordersWithStatus(OrderStatus.DRAFT)).hasSize(tally.outOfStock()),
             () -> assertThat(finalStock).isZero(),
-            () -> assertThat(initialStock - confirmedQuantity).isEqualTo(finalStock),
-            () -> assertThat(confirmed).allSatisfy(order -> assertThat(order.getPaidAmount()).isEqualTo(price))
+            () -> assertThat(initialStock - confirmedQuantity).isEqualTo(finalStock)
         );
-        // 확정된 구매자만 결제액만큼 잔액이 줄고, 거절된 구매자 잔액은 그대로
+        // 포인트는 아무도 차감되지 않는다
         long totalBalance = buyerIds.stream().mapToLong(this::balanceOf).sum();
-        assertThat(totalBalance).isEqualTo(initialBalance * 8 - price * tally.success());
+        assertThat(totalBalance).isEqualTo(initialBalance * 8);
     }
 
-    @DisplayName("잔액 10,000원인 한 사용자가 서로 다른 상품의 4,000원 DRAFT 주문 3개를 동시에 확정하면, 확정 2·잔액 부족 1·기술 오류 0이고 최종 잔액은 2,000원이다.")
+    @DisplayName("잔액 10,000원인 한 사용자가 서로 다른 상품의 4,000원 DRAFT 주문 3개를 동시에 확정하면, 잔액보다 큰 합계여도 셋 다 결제를 시작하고 잔액은 그대로다.")
     @Test
-    void pointCompetition() throws Exception {
-        // arrange — 상품을 서로 다르게 두어 상품 잠금이 아니라 포인트(User) 잠금만이 이 경쟁을 직렬화하게 한다
+    void confirmsDoNotCompeteForPoints() throws Exception {
+        // arrange — 4주차까지는 포인트(User) 잠금이 이 경쟁을 직렬화해 하나가 잔액 부족으로 거절됐다.
+        // PG 결제로 바뀐 뒤에는 포인트를 차감하지 않으므로(과제: 포인트 차감 0회) 잔액이 확정을 막지 않는다.
         long initialBalance = 10_000L;
         long price = 4_000L;
         int initialStock = 10;
@@ -139,41 +141,27 @@ class OrderConcurrencyTest {
         // act
         List<Callable<?>> requests = new ArrayList<>();
         for (Long orderId : orderIds) {
-            requests.add(() -> orderFacade.confirmOrder(orderId, userId));
+            requests.add(() -> orderFacade.confirmOrder(orderId, userId, command("key-" + orderId)));
         }
         Tally tally = runConcurrently(requests);
 
-        // assert — 요청 집계
+        // assert
         assertAll(
             () -> assertThat(tally.technicalErrors()).as("기술 오류: %s", tally.technicalErrorDetails()).isEmpty(),
-            () -> assertThat(tally.success()).isEqualTo(2),
-            () -> assertThat(tally.insufficientPoints()).isEqualTo(1),
-            () -> assertThat(tally.total()).isEqualTo(3)
-        );
-
-        // assert — DB 재조회와 불변식: 초기 잔액 − 성공 결제액 합 = 최종 잔액, 거절된 주문의 재고는 그대로
-        List<Order> confirmed = ordersWithStatus(OrderStatus.CONFIRMED);
-        long paidSum = confirmed.stream().mapToLong(Order::getPaidAmount).sum();
-        List<Long> confirmedProductIds = confirmed.stream()
-            .map(order -> order.getItems().get(0).getProductId())
-            .toList();
-        assertAll(
-            () -> assertThat(confirmed).hasSize(2),
-            () -> assertThat(ordersWithStatus(OrderStatus.DRAFT)).hasSize(1),
-            () -> assertThat(balanceOf(userId)).isEqualTo(2_000L),
-            () -> assertThat(initialBalance - paidSum).isEqualTo(balanceOf(userId))
+            () -> assertThat(tally.success()).isEqualTo(3),
+            () -> assertThat(ordersWithStatus(OrderStatus.PAYMENT_PENDING)).hasSize(3),
+            () -> assertThat(balanceOf(userId)).isEqualTo(initialBalance)
         );
         for (Long productId : productIds) {
-            int expectedStock = confirmedProductIds.contains(productId) ? initialStock - 1 : initialStock;
             assertThat(productJpaRepository.findById(productId).orElseThrow().getRemainingStock())
                 .as("상품 %d의 재고", productId)
-                .isEqualTo(expectedStock);
+                .isEqualTo(initialStock - 1);
         }
     }
 
-    @DisplayName("잔액 10,000원에서 2,000원 충전과 7,000원 주문 확정을 동시에 실행하면, 둘 다 성공·기술 오류 0이고 최종 잔액은 5,000원이다.")
+    @DisplayName("잔액 10,000원에서 2,000원 충전과 7,000원 주문 확정을 동시에 실행하면, 둘 다 성공·기술 오류 0이고 최종 잔액은 충전만 반영한 12,000원이다.")
     @Test
-    void chargeAndPayCompetition() throws Exception {
+    void chargeAndConfirmDoNotInterfere() throws Exception {
         // arrange
         long initialBalance = 10_000L;
         long charge = 2_000L;
@@ -185,18 +173,21 @@ class OrderConcurrencyTest {
         // act
         Tally tally = runConcurrently(List.of(
             () -> userFacade.chargePoint(userId, charge),
-            () -> orderFacade.confirmOrder(orderId, userId)
+            () -> orderFacade.confirmOrder(orderId, userId, command("key-" + orderId))
         ));
 
-        // assert — 초기 잔액 + 성공 충전액 − 성공 결제액 = 최종 잔액
+        // assert — 확정은 포인트를 차감하지 않는다(과제: 포인트 차감 0회). 충전 규칙은 그대로다.
         Order order = orderJpaRepository.findById(orderId).orElseThrow();
         assertAll(
             () -> assertThat(tally.technicalErrors()).as("기술 오류: %s", tally.technicalErrorDetails()).isEmpty(),
             () -> assertThat(tally.success()).isEqualTo(2),
-            () -> assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED),
-            () -> assertThat(balanceOf(userId)).isEqualTo(initialBalance + charge - order.getPaidAmount()),
-            () -> assertThat(balanceOf(userId)).isEqualTo(5_000L)
+            () -> assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING),
+            () -> assertThat(balanceOf(userId)).isEqualTo(initialBalance + charge)
         );
+    }
+
+    private static ConfirmPaymentCommand command(String attemptKey) {
+        return new ConfirmPaymentCommand(attemptKey, "TEST", "0000-0000-0000-0000");
     }
 
     private Long createUserWithBalance(long balance) {
@@ -254,7 +245,7 @@ class OrderConcurrencyTest {
         }
     }
 
-    private enum Kind { SUCCESS, OUT_OF_STOCK, INSUFFICIENT_POINTS, TECHNICAL_ERROR }
+    private enum Kind { SUCCESS, OUT_OF_STOCK, TECHNICAL_ERROR }
 
     private record Outcome(Kind kind, String detail) {
         static final Outcome SUCCESS = new Outcome(Kind.SUCCESS, null);
@@ -263,15 +254,12 @@ class OrderConcurrencyTest {
             return new Outcome(Kind.TECHNICAL_ERROR, e.getClass().getSimpleName() + ": " + e.getMessage());
         }
 
-        /** 업무 거절(재고·잔액 부족)과 기술 오류(잠금 시간 초과·교착 등)를 섞지 않는다. */
+        /** 업무 거절(재고 부족)과 기술 오류(잠금 시간 초과·교착 등)를 섞지 않는다. */
         static Outcome classify(Exception e) {
             if (e instanceof CoreException core && core.getErrorType() == ErrorType.BAD_REQUEST) {
                 String message = core.getCustomMessage();
                 if (message != null && message.contains("재고")) {
                     return new Outcome(Kind.OUT_OF_STOCK, message);
-                }
-                if (message != null && message.contains("잔액")) {
-                    return new Outcome(Kind.INSUFFICIENT_POINTS, message);
                 }
             }
             return technical(e);
@@ -291,10 +279,6 @@ class OrderConcurrencyTest {
             return (int) count(Kind.OUT_OF_STOCK);
         }
 
-        int insufficientPoints() {
-            return (int) count(Kind.INSUFFICIENT_POINTS);
-        }
-
         List<Outcome> technicalErrors() {
             return outcomes.stream().filter(outcome -> outcome.kind() == Kind.TECHNICAL_ERROR).toList();
         }
@@ -304,7 +288,7 @@ class OrderConcurrencyTest {
         }
 
         int total() {
-            return success() + outOfStock() + insufficientPoints() + technicalErrors().size();
+            return success() + outOfStock() + technicalErrors().size();
         }
     }
 }

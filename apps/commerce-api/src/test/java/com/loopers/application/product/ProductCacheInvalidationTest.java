@@ -2,18 +2,20 @@ package com.loopers.application.product;
 
 import com.loopers.application.brand.BrandAdminFacade;
 import com.loopers.application.like.LikeFacade;
+import com.loopers.application.order.ConfirmPaymentCommand;
 import com.loopers.application.order.OrderFacade;
 import com.loopers.application.order.OrderItemRequest;
 import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.brand.BrandRepository;
+import com.loopers.domain.payment.PaymentAttempt;
+import com.loopers.domain.payment.PaymentAttemptRepository;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.user.UserModel;
-import com.loopers.domain.user.UserService;
 import com.loopers.infrastructure.brand.BrandJpaRepository;
 import com.loopers.infrastructure.cache.CacheRedisConfig;
 import com.loopers.infrastructure.product.ProductJpaRepository;
 import com.loopers.infrastructure.user.UserJpaRepository;
-import com.loopers.support.error.CoreException;
+import com.loopers.support.pg.TestPg;
 import com.loopers.utils.DatabaseCleanUp;
 import com.loopers.utils.RedisCleanUp;
 import org.junit.jupiter.api.AfterEach;
@@ -29,10 +31,14 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import java.util.List;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.post;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 
 // 쓰기 경로가 commit 뒤 무효화하는 키가 docs/week4/design.md 7번 섹션 표와 같은지 Redis 상태로 확인한다.
@@ -57,11 +63,11 @@ class ProductCacheInvalidationTest {
     @Autowired
     private ProductCache productCache;
 
-    @Autowired
-    private UserService userService;
-
     @MockitoSpyBean
     private BrandRepository brandRepository;
+
+    @MockitoSpyBean
+    private PaymentAttemptRepository paymentAttemptRepository;
 
     @Autowired
     private BrandJpaRepository brandJpaRepository;
@@ -182,7 +188,7 @@ class ProductCacheInvalidationTest {
         }
     }
 
-    @DisplayName("주문 확정 후,")
+    @DisplayName("주문 확정(PG 결제 시작) 후,")
     @Nested
     class ConfirmOrder {
         @DisplayName("주문 항목 상품의 키만 지워지고, 다른 상품 키와 목록 버전은 그대로다.")
@@ -190,14 +196,13 @@ class ProductCacheInvalidationTest {
         void evictsOrderedProductsOnly() {
             // arrange
             Long userId = userJpaRepository.save(new UserModel()).getId();
-            userService.chargePoint(userId, 10_000L);
             Long orderId = orderFacade.createOrder(userId, List.of(
                 new OrderItemRequest(airMax.getId(), 1),
                 new OrderItemRequest(jordan.getId(), 2)
             )).id();
 
             // act
-            orderFacade.confirmOrder(orderId, userId);
+            orderFacade.confirmOrder(orderId, userId, new ConfirmPaymentCommand("key-" + orderId, "TEST", "0000-0000-0000-0000"));
 
             // assert
             assertAll(
@@ -224,22 +229,49 @@ class ProductCacheInvalidationTest {
             );
         }
 
-        @DisplayName("재고 차감 뒤 포인트 부족으로 롤백되면, 무효화가 실행되지 않아 상품 키가 남는다.")
+        @DisplayName("재고 차감 뒤 결제 시도 저장 실패로 롤백되면, 무효화가 실행되지 않아 상품 키가 남는다.")
         @Test
         void doesNotEvict_whenRolledBack() {
-            // arrange — 재고 차감까지 진행된 뒤(무효화 등록 이후) 포인트 차감에서 실패한다
+            // arrange — 재고 차감까지 진행된 뒤(무효화 등록 이후) 결제 시도 저장에서 실패한다
             Long userId = userJpaRepository.save(new UserModel()).getId();
             Long orderId = orderFacade.createOrder(userId, List.of(
                 new OrderItemRequest(airMax.getId(), 1)
             )).id();
+            doThrow(new IllegalStateException("결제 시도 저장 실패 주입")).when(paymentAttemptRepository).save(any(PaymentAttempt.class));
 
             // act
-            assertThrows(CoreException.class, () -> orderFacade.confirmOrder(orderId, userId));
+            assertThrows(IllegalStateException.class, () -> orderFacade.confirmOrder(orderId, userId, new ConfirmPaymentCommand("key-" + orderId, "TEST", "0000-0000-0000-0000")));
 
             // assert
             assertAll(
                 () -> assertThat(productJpaRepository.findById(airMax.getId()).orElseThrow().getRemainingStock()).isEqualTo(10),
                 () -> assertThat(cached("product:" + airMax.getId())).isTrue()
+            );
+        }
+
+        @DisplayName("PG가 효과 없는 거절로 결제를 실패시켜 재고가 돌아오면, 그 상품 키가 다시 지워진다.")
+        @Test
+        void evictsAgain_whenStockIsReturnedOnFailure() {
+            // arrange — TX A의 무효화 뒤 다시 채운 캐시가, 실패 반영(TX B)으로 재고가 돌아온 뒤에도 남으면 옛 재고를 보여 준다
+            Long userId = userJpaRepository.save(new UserModel()).getId();
+            Long orderId = orderFacade.createOrder(userId, List.of(new OrderItemRequest(airMax.getId(), 1))).id();
+            TestPg.server().stubFor(post(urlEqualTo(TestPg.PAYMENTS_PATH))
+                .willReturn(aResponse().withStatus(422).withHeader("Content-Type", "application/json")
+                    .withBody("{\"code\":\"TEST_PG_REJECTED_BEFORE_CREATE\",\"orderId\":\"" + String.format("LP-ORD-%010d", orderId)
+                        + "\",\"amount\":1000,\"transactionCreated\":false}")));
+            doAnswer(invocation -> {
+                Object result = invocation.callRealMethod();
+                productCache.putProducts(List.of(CachedProduct.of(productJpaRepository.findById(airMax.getId()).orElseThrow(), 0L)));
+                return result;
+            }).when(paymentAttemptRepository).findByOrderIdForUpdate(orderId);
+
+            // act
+            orderFacade.confirmOrder(orderId, userId, new ConfirmPaymentCommand("key-" + orderId, "TEST", "0000-0000-0000-0000"));
+
+            // assert
+            assertAll(
+                () -> assertThat(productJpaRepository.findById(airMax.getId()).orElseThrow().getRemainingStock()).isEqualTo(10),
+                () -> assertThat(cached("product:" + airMax.getId())).isFalse()
             );
         }
     }

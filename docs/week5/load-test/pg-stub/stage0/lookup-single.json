@@ -1,0 +1,17 @@
+{
+  "name": "lookup-single",
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/api/v1/payments/TEST-TX-.*"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": "{\"transactionKey\":\"{{request.pathSegments.[3]}}\",\"orderId\":\"{{regexExtract request.pathSegments.[3] 'LP-ORD-[0-9]+'}}\",\"amount\":{{regexExtract request.pathSegments.[3] '[0-9]+$'}},\"status\":\"SUCCESS\"}",
+    "transformers": [
+      "response-template"
+    ]
+  }
+}
