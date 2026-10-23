@@ -11,7 +11,9 @@ import com.loopers.domain.payment.PgTransaction;
 import com.loopers.domain.payment.ProviderOrderId;
 import com.loopers.domain.payment.TransactionKey;
 import com.loopers.support.pg.PgFixture;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -32,6 +34,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.stream.Stream;
 
@@ -43,13 +46,24 @@ class PaymentProviderContractTest {
 
     private static final PgFixture PG = PgFixture.start();
 
+    private static final Duration OPEN_WAIT = Duration.ofMillis(300);
+
     @Autowired
     private PaymentGateway gateway;
+
+    @Autowired
+    private CircuitBreaker lookupCircuit;
 
     @DynamicPropertySource
     static void pgBaseUrl(DynamicPropertyRegistry registry) {
         registry.add("pg.base-url", PG::baseUrl);
         registry.add("pg.create-timeout", () -> "300ms");
+        registry.add("pg.lookup-circuit.open-wait", () -> OPEN_WAIT.toMillis() + "ms");
+    }
+
+    @BeforeEach
+    void closeCircuit() {
+        lookupCircuit.reset();
     }
 
     @AfterAll
@@ -253,6 +267,128 @@ class PaymentProviderContractTest {
             Arguments.of("429", 429, ""),
             Arguments.of("200 인데 JSON 이 아님", 200, "not json")
         );
+    }
+
+    @Nested
+    @DisplayName("RESIL-001, RESIL-002, RESIL-003, RESIL-004: 조회 경로 하나에 회로가 있고, 열리면 PG 를 부르지 않는다")
+    class LookupCircuit {
+
+        private final TransactionKey unknown = new TransactionKey("TEST-TX-NOPE");
+
+        private long lookups() {
+            return PG.receivedRequests().stream().filter(request -> request.method().equals("GET")).count();
+        }
+
+        private void failLookups(int times, int status) {
+            for (int i = 0; i < times; i++) {
+                PG.respondNextLookupWith(status, "{}");
+                assertThat(gateway.lookup(unknown)).isEqualTo(new LookupResult.Unavailable());
+            }
+        }
+
+        private TransactionKey createdKey(long orderId) {
+            gateway.create(creation(orderId, 7000));
+            return new TransactionKey(PG.transactionsOf(ProviderOrderId.of(orderId).value()).getFirst().transactionKey());
+        }
+
+        @DisplayName("창 안의 표본 5 회가 모두 5xx 면 OPEN 이 되고, 그 뒤 조회는 PG 를 부르지 않고 조회 불가다")
+        @Test
+        void opensOnServerErrors() {
+            failLookups(5, 500);
+            long before = lookups();
+
+            LookupResult result = gateway.lookup(unknown);
+
+            assertThat(lookupCircuit.getState()).isEqualTo(CircuitBreaker.State.OPEN);
+            assertThat(result).isEqualTo(new LookupResult.Unavailable());
+            assertThat(lookups()).isEqualTo(before);
+        }
+
+        @DisplayName("429 도 실패로 센다. 다시 보내지 않으므로 호출마다 PG 조회는 한 번이다")
+        @Test
+        void countsTooManyRequests() {
+            long before = lookups();
+
+            failLookups(5, 429);
+
+            assertThat(lookupCircuit.getState()).isEqualTo(CircuitBreaker.State.OPEN);
+            assertThat(lookups() - before).isEqualTo(5);
+        }
+
+        @DisplayName("404 는 업무 결과라 세지 않는다. 10 번 없어도 닫혀 있다")
+        @Test
+        void ignoresNotFound() {
+            for (int i = 0; i < 10; i++) {
+                assertThat(gateway.lookup(unknown)).isEqualTo(new LookupResult.NotFound());
+            }
+
+            assertThat(lookupCircuit.getState()).isEqualTo(CircuitBreaker.State.CLOSED);
+        }
+
+        @DisplayName("실패율이 50 % 아래면 닫혀 있다. 성공 4 회 · 실패 1 회")
+        @Test
+        void staysClosedUnderThreshold() {
+            TransactionKey key = createdKey(301L);
+            for (int i = 0; i < 4; i++) {
+                gateway.lookup(key);
+            }
+
+            failLookups(1, 500);
+
+            assertThat(lookupCircuit.getState()).isEqualTo(CircuitBreaker.State.CLOSED);
+        }
+
+        @DisplayName("회로는 하나다. 키 조회로 열리면 주문 조회도 PG 를 부르지 않는다")
+        @Test
+        void sharedByBothLookups() {
+            failLookups(5, 500);
+            long before = lookups();
+
+            LookupResult result = gateway.lookup(ProviderOrderId.of(302L));
+
+            assertThat(result).isEqualTo(new LookupResult.Unavailable());
+            assertThat(lookups()).isEqualTo(before);
+        }
+
+        @DisplayName("생성은 회로를 거치지 않는다. 회로가 열려도 POST 는 나간다")
+        @Test
+        void createIgnoresCircuit() {
+            failLookups(5, 500);
+            int before = PG.createCount();
+
+            CreateObservation observed = gateway.create(creation(303L, 7000));
+
+            assertThat(observed).isInstanceOf(CreateObservation.Accepted.class);
+            assertThat(PG.createCount()).isEqualTo(before + 1);
+        }
+
+        @DisplayName("대기가 지나면 HALF_OPEN 이고, 탐색 2 회가 성공하면 CLOSED 다")
+        @Test
+        void closesAfterSuccessfulProbes() throws InterruptedException {
+            TransactionKey key = createdKey(304L);
+            failLookups(5, 500);
+            Thread.sleep(OPEN_WAIT.plusMillis(100).toMillis());
+
+            gateway.lookup(key);
+            assertThat(lookupCircuit.getState()).isEqualTo(CircuitBreaker.State.HALF_OPEN);
+            gateway.lookup(key);
+
+            assertThat(lookupCircuit.getState()).isEqualTo(CircuitBreaker.State.CLOSED);
+        }
+
+        @DisplayName("HALF_OPEN 의 탐색이 실패하면 다시 OPEN 이다")
+        @Test
+        void reopensOnFailedProbe() throws InterruptedException {
+            TransactionKey key = createdKey(305L);
+            failLookups(5, 500);
+            Thread.sleep(OPEN_WAIT.plusMillis(100).toMillis());
+
+            gateway.lookup(key);
+            PG.respondNextLookupWith(500, "{}");
+            gateway.lookup(unknown);
+
+            assertThat(lookupCircuit.getState()).isEqualTo(CircuitBreaker.State.OPEN);
+        }
     }
 
     private static PgFixture.ReceivedRequest lastLookup() {

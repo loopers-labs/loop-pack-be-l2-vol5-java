@@ -8,6 +8,8 @@ import com.loopers.domain.payment.PaymentGateway;
 import com.loopers.domain.payment.PgTransaction;
 import com.loopers.domain.payment.ProviderOrderId;
 import com.loopers.domain.payment.TransactionKey;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import org.apache.hc.core5.http.ConnectionRequestTimeoutException;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
@@ -22,6 +24,7 @@ import org.springframework.web.client.RestClientException;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
+import java.util.function.Supplier;
 
 @Component
 class PgPaymentGateway implements PaymentGateway {
@@ -32,15 +35,18 @@ class PgPaymentGateway implements PaymentGateway {
     private final RestClient createClient;
     private final RestClient lookupClient;
     private final PgProperties pg;
+    private final CircuitBreaker lookupCircuit;
 
     PgPaymentGateway(
         @Qualifier("pgCreateClient") RestClient createClient,
         @Qualifier("pgLookupClient") RestClient lookupClient,
-        PgProperties pg
+        PgProperties pg,
+        CircuitBreaker pgLookupCircuitBreaker
     ) {
         this.createClient = createClient;
         this.lookupClient = lookupClient;
         this.pg = pg;
+        this.lookupCircuit = pgLookupCircuitBreaker;
     }
 
     @Override
@@ -67,6 +73,23 @@ class PgPaymentGateway implements PaymentGateway {
 
     @Override
     public LookupResult lookup(TransactionKey transactionKey) {
+        return guarded(() -> lookupByKey(transactionKey));
+    }
+
+    @Override
+    public LookupResult lookup(ProviderOrderId providerOrderId) {
+        return guarded(() -> lookupByOrder(providerOrderId));
+    }
+
+    private LookupResult guarded(Supplier<LookupResult> lookup) {
+        try {
+            return lookupCircuit.executeSupplier(lookup);
+        } catch (CallNotPermittedException e) {
+            return new LookupResult.Unavailable();
+        }
+    }
+
+    private LookupResult lookupByKey(TransactionKey transactionKey) {
         try {
             return lookupClient.get()
                 .uri(PAYMENTS + "/{transactionKey}", transactionKey.value())
@@ -88,8 +111,7 @@ class PgPaymentGateway implements PaymentGateway {
         }
     }
 
-    @Override
-    public LookupResult lookup(ProviderOrderId providerOrderId) {
+    private LookupResult lookupByOrder(ProviderOrderId providerOrderId) {
         try {
             return lookupClient.get()
                 .uri(PAYMENTS + "?orderId={orderId}", providerOrderId.value())

@@ -5,6 +5,12 @@ pg:
   lookup-timeout: 1s
   pool-wait-timeout: 200ms
   max-connections: 30
+  lookup-circuit:
+    window: 10s
+    minimum-calls: 5
+    failure-rate-percent: 50
+    open-wait: 10s
+    half-open-calls: 2
 
 ---
 spring.config.activate.on-profile: local, test

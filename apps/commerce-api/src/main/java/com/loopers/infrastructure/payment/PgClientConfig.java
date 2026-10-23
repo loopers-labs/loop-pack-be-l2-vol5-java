@@ -1,5 +1,8 @@
 package com.loopers.infrastructure.payment;
 
+import com.loopers.domain.payment.LookupResult;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import org.apache.hc.client5.http.config.ConnectionConfig;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
@@ -37,6 +40,20 @@ class PgClientConfig {
             .disableAutomaticRetries()
             .evictIdleConnections(TimeValue.ofSeconds(30))
             .build();
+    }
+
+    @Bean
+    CircuitBreaker pgLookupCircuitBreaker(PgProperties pg) {
+        PgProperties.LookupCircuit circuit = pg.lookupCircuit();
+        return CircuitBreaker.of("pg-lookup", CircuitBreakerConfig.custom()
+            .slidingWindowType(CircuitBreakerConfig.SlidingWindowType.TIME_BASED)
+            .slidingWindowSize((int) circuit.window().toSeconds())
+            .minimumNumberOfCalls(circuit.minimumCalls())
+            .failureRateThreshold(circuit.failureRatePercent())
+            .waitDurationInOpenState(circuit.openWait())
+            .permittedNumberOfCallsInHalfOpenState(circuit.halfOpenCalls())
+            .recordResult(result -> result instanceof LookupResult.Unavailable)
+            .build());
     }
 
     @Bean
