@@ -2,6 +2,7 @@ package com.loopers.interfaces.api;
 
 import com.loopers.domain.brand.BrandErrorCode;
 import com.loopers.domain.order.OrderErrorCode;
+import com.loopers.domain.payment.enums.PaymentErrorCode;
 import com.loopers.domain.point.PointErrorCode;
 import com.loopers.domain.product.ProductErrorCode;
 import com.loopers.domain.user.UserErrorCode;
@@ -40,7 +41,10 @@ public final class ErrorStatusMapper {
         Map.entry(OrderErrorCode.ORDER_ALREADY_CONFIRMED, HttpStatus.CONFLICT),
         Map.entry(OrderErrorCode.ORDER_EXPIRED, HttpStatus.CONFLICT),
         Map.entry(OrderErrorCode.EMPTY_ORDER_ITEMS, HttpStatus.BAD_REQUEST),
-        Map.entry(OrderErrorCode.INVALID_QUANTITY, HttpStatus.BAD_REQUEST)
+        Map.entry(OrderErrorCode.INVALID_QUANTITY, HttpStatus.BAD_REQUEST),
+        Map.entry(PaymentErrorCode.INVALID_PAYMENT_REQUEST, HttpStatus.BAD_REQUEST),
+        Map.entry(PaymentErrorCode.PAYMENT_ATTEMPT_CONFLICT, HttpStatus.CONFLICT),
+        Map.entry(PaymentErrorCode.PAYMENT_NOT_FOUND, HttpStatus.NOT_FOUND)
     );
 
     private ErrorStatusMapper() {}

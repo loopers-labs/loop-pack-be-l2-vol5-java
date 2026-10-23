@@ -54,6 +54,16 @@ public class FakeProductRepository implements ProductRepository {
     }
 
     @Override
+    public List<Product> findAllForUpdate(Collection<Long> productIds) {
+        return productIds.stream()
+            .distinct()
+            .map(products::get)
+            .filter(Objects::nonNull)
+            .sorted(Comparator.comparing(Product::getId))
+            .toList();
+    }
+
+    @Override
     public Set<Long> findActiveIds(Collection<Long> productIds) {
         return productIds.stream()
             .filter(productId -> findActive(productId).isPresent())

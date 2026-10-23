@@ -37,6 +37,17 @@ public class FakeOrderRepository implements OrderRepository {
         return Optional.ofNullable(orders.get(orderId));
     }
 
+    // fake 에는 잠금이 없다. 잠금 동작은 실제 DB 의 동시성 테스트에서 확인한다
+    @Override
+    public Optional<Order> findByIdAndUserIdForUpdate(Long orderId, Long userId) {
+        return findByIdAndUserId(orderId, userId);
+    }
+
+    @Override
+    public Optional<Order> findByIdForUpdate(Long orderId) {
+        return findById(orderId);
+    }
+
     @Override
     public Page<Order> findPage(Long userId, OrderStatus status, Pageable pageable) {
         List<Order> matched = orders.values().stream()

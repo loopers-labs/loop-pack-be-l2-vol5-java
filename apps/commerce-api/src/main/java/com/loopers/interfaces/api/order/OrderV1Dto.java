@@ -4,6 +4,7 @@ import com.loopers.application.order.OrderDetailInfo;
 import com.loopers.application.order.OrderInfo;
 import com.loopers.application.order.OrderSummaryInfo;
 import com.loopers.application.order.OrderFacade.OrderRequestLine;
+import com.loopers.application.order.facade.OrderPaymentFacade.ConfirmCommand;
 
 import java.time.ZonedDateTime;
 import java.util.List;
@@ -22,6 +23,19 @@ public class OrderV1Dto {
         }
     }
 
+    /** 금액은 받지 않고 저장된 주문에서 정함 */
+    public record ConfirmRequest(String paymentAttemptKey, String cardType, String cardNo) {
+        public ConfirmCommand toCommand() {
+            return new ConfirmCommand(paymentAttemptKey, cardType, cardNo);
+        }
+
+        @Override
+        public String toString() {
+            return "ConfirmRequest[paymentAttemptKey=" + paymentAttemptKey + ", cardType=" + cardType + ", cardNo=****]";
+        }
+    }
+
+    /** paymentCheck 는 이번 요청의 PG 조회 실패 시에만 UNAVAILABLE. 충돌 사유는 고객에게 내보내지 않음 */
     public record OrderResponse(
         Long id,
         String status,
@@ -29,8 +43,14 @@ public class OrderV1Dto {
         Long paymentAmount,
         ZonedDateTime paidAt,
         ZonedDateTime orderedAt,
-        List<ItemResponse> items
+        List<ItemResponse> items,
+        String paymentMethod,
+        String paymentStatus,
+        String paymentCheck,
+        String statusUrl
     ) {
+        private static final String UNAVAILABLE = "UNAVAILABLE";
+
         public record ItemResponse(Long productId, String productName, long unitPrice, int quantity, long amount) {}
 
         public static OrderResponse from(OrderInfo info) {
@@ -43,7 +63,11 @@ public class OrderV1Dto {
                 info.orderedAt(),
                 info.items().stream()
                     .map(item -> new ItemResponse(item.productId(), item.productName(), item.unitPrice(), item.quantity(), item.amount()))
-                    .toList()
+                    .toList(),
+                info.paymentMethod(),
+                info.paymentStatus(),
+                info.paymentUnavailable() ? UNAVAILABLE : null,
+                "/api/v1/orders/" + info.id()
             );
         }
     }
@@ -56,7 +80,9 @@ public class OrderV1Dto {
         Long paymentAmount,
         ZonedDateTime paidAt,
         ZonedDateTime orderedAt,
-        List<ItemResponse> items
+        List<ItemResponse> items,
+        String paymentMethod,
+        String paymentStatus
     ) {
         public record ItemResponse(Long productId, String productName, long unitPrice, int quantity, long amount, boolean onSale) {}
 
@@ -71,7 +97,9 @@ public class OrderV1Dto {
                 info.items().stream()
                     .map(item -> new ItemResponse(
                         item.productId(), item.productName(), item.unitPrice(), item.quantity(), item.amount(), item.onSale()))
-                    .toList()
+                    .toList(),
+                info.paymentMethod(),
+                info.paymentStatus()
             );
         }
     }
@@ -83,7 +111,9 @@ public class OrderV1Dto {
         Long paymentAmount,
         int itemCount,
         String representativeProductName,
-        ZonedDateTime orderedAt
+        ZonedDateTime orderedAt,
+        String paymentMethod,
+        String paymentStatus
     ) {
         public static OrderSummaryResponse from(OrderSummaryInfo info) {
             return new OrderSummaryResponse(
@@ -93,7 +123,9 @@ public class OrderV1Dto {
                 info.paymentAmount(),
                 info.itemCount(),
                 info.representativeProductName(),
-                info.orderedAt()
+                info.orderedAt(),
+                info.paymentMethod(),
+                info.paymentStatus()
             );
         }
     }

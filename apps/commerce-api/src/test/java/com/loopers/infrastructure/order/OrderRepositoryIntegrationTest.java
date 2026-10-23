@@ -90,7 +90,7 @@ class OrderRepositoryIntegrationTest {
         // arrange
         Order saved = saveDraft();
         transactionTemplate.executeWithoutResult(status ->
-            orderRepository.findByIdAndUserId(saved.getId(), USER_ID).orElseThrow().confirm(8_000L, ZonedDateTime.now()));
+            orderRepository.findByIdAndUserId(saved.getId(), USER_ID).orElseThrow().confirmWithPoint(8_000L, ZonedDateTime.now()));
 
         // act
         Order found = reload(saved.getId());

@@ -13,6 +13,12 @@ public interface OrderRepository {
 
     Optional<Order> findById(Long orderId);
 
+    /** 같은 주문의 동시 결제 시작을 줄 세움 (D-63) */
+    Optional<Order> findByIdAndUserIdForUpdate(Long orderId, Long userId);
+
+    /** 같은 주문의 결과 적용을 한 번만 일어나게 함 (D-63) */
+    Optional<Order> findByIdForUpdate(Long orderId);
+
     /** 주문 시각 desc, 식별자 desc. userId · status 가 null 이면 그 조건으로 거르지 않는다. */
     Page<Order> findPage(Long userId, OrderStatus status, Pageable pageable);
 }

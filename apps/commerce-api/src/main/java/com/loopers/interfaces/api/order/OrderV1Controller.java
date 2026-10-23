@@ -1,12 +1,15 @@
 package com.loopers.interfaces.api.order;
 
-import com.loopers.application.order.OrderConfirmRetrier;
 import com.loopers.application.order.OrderFacade;
+import com.loopers.application.order.OrderInfo;
+import com.loopers.application.order.facade.OrderPaymentFacade;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.PageQuery;
 import com.loopers.interfaces.api.PageResponse;
 import com.loopers.interfaces.api.auth.LoginUser;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,7 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class OrderV1Controller implements OrderV1ApiSpec {
 
     private final OrderFacade orderFacade;
-    private final OrderConfirmRetrier orderConfirmRetrier;
+    private final OrderPaymentFacade orderPaymentFacade;
 
     @PostMapping
     @Override
@@ -31,8 +34,24 @@ public class OrderV1Controller implements OrderV1ApiSpec {
 
     @PostMapping("/{orderId}/confirm")
     @Override
-    public ApiResponse<OrderV1Dto.OrderResponse> confirmOrder(LoginUser loginUser, @PathVariable Long orderId) {
-        return ApiResponse.success(OrderV1Dto.OrderResponse.from(orderConfirmRetrier.confirmOrder(loginUser.id(), orderId)));
+    public ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> confirmOrder(
+        LoginUser loginUser,
+        @PathVariable Long orderId,
+        @RequestBody OrderV1Dto.ConfirmRequest request
+    ) {
+        return respond(orderPaymentFacade.confirm(loginUser.id(), orderId, request.toCommand()));
+    }
+
+    @PostMapping("/{orderId}/payment/reconcile")
+    @Override
+    public ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> reconcilePayment(LoginUser loginUser, @PathVariable Long orderId) {
+        return respond(orderPaymentFacade.reconcile(loginUser.id(), orderId));
+    }
+
+    /** 미종결 202, 종결 200 */
+    private static ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> respond(OrderInfo info) {
+        HttpStatus status = info.paymentInProgress() ? HttpStatus.ACCEPTED : HttpStatus.OK;
+        return ResponseEntity.status(status).body(ApiResponse.success(OrderV1Dto.OrderResponse.from(info)));
     }
 
     @GetMapping

@@ -97,6 +97,8 @@ WHERE brand_id = :brandId AND deleted_at IS NULL
 
 ## 3. 주문 확정의 원자성
 
+> **5주차로 대체:** 포인트 결제 확정은 테스트 PG 결제로 바뀌었다. 확정 흐름(TX A · PG 생성 · TX B), 결과 확인(reconcile · 콜백)은 `docs/week5/design.md` 4장을 따른다. 이 절은 당시 결정의 기록으로 남긴다.
+
 **확정은 이미 `OrderFacade.confirmOrder` 한 트랜잭션이다(2주차 5.3, D-11).** 호출되는 도메인 서비스는 모두 `REQUIRED` 로 합류하고, 거절은 `CoreException`(RuntimeException)으로 Facade 밖까지 나가 전체가 rollback된다. 예외를 잡아 정상 반환하는 곳, 자기 호출, `REQUIRES_NEW` 는 없다.
 
 3주차에 바뀌는 것은 원자성이 아니라 **동시 요청의 보호**(4장)와 **재시도 층**(4.4)이다.
@@ -179,6 +181,8 @@ WHERE brand_id = :brandId AND deleted_at IS NULL
 
 ### 4.3 잠금 순서
 
+> **5주차로 대체 (주문 확정 경로):** 주문 확정은 orders → product 순서로 잠근다(5주차 설계 4.4, D-63). 브랜드 삭제 등 다른 경로는 이 절을 그대로 따른다.
+
 **자원 종류 사이: brand → product. 같은 종류의 여러 행: ID 오름차순.**
 
 | 경로 | 잠금 순서 |
@@ -212,6 +216,8 @@ WHERE brand_id = :brandId AND deleted_at IS NULL
 - **flush 때 UPDATE 순서는 제어하지 않는다.** Hibernate는 영속성 컨텍스트에 들어온 순서로 UPDATE를 낸다(`hibernate.order_updates` 로 바꿀 수 있음). 상품 행은 이미 잠겨 있고, 주문 행은 같은 주문끼리만, 포인트 행은 같은 고객끼리만 겹치므로 어떤 순서로 나가도 교착 고리가 생기지 않는다.
 
 ### 4.4 재시도 층
+
+> **5주차로 대체 (주문 확정 경로):** `OrderConfirmRetrier` 는 제거했다. 주문 확정은 주문 행 `FOR UPDATE` 로 직렬화하고 재시도 층을 두지 않는다(5주차 설계 4.3, D-63). 이 절은 당시 결정의 기록으로 남긴다.
 
 ```
 OrderV1Controller.confirmOrder

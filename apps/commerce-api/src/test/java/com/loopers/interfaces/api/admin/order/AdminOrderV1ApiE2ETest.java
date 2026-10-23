@@ -2,8 +2,13 @@ package com.loopers.interfaces.api.admin.order;
 
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderLine;
+import com.loopers.domain.payment.entity.Payment;
+import com.loopers.domain.payment.enums.ProviderTransactionStatus;
+import com.loopers.domain.payment.vo.PaymentLookupResult;
+import com.loopers.domain.payment.vo.ProviderTransaction;
 import com.loopers.domain.user.User;
 import com.loopers.infrastructure.order.OrderJpaRepository;
+import com.loopers.infrastructure.payment.persistence.PaymentJpaRepository;
 import com.loopers.infrastructure.user.UserJpaRepository;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
@@ -40,6 +45,9 @@ class AdminOrderV1ApiE2ETest {
 
     @Autowired
     private OrderJpaRepository orderJpaRepository;
+
+    @Autowired
+    private PaymentJpaRepository paymentJpaRepository;
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
@@ -127,5 +135,47 @@ class AdminOrderV1ApiE2ETest {
         mvc.perform(get(ENDPOINT + "/999999").with(ADMIN))
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.meta.errorCode").value("ORDER_NOT_FOUND"));
+    }
+
+    /** 같은 주문의 거래가 2 건이라 충돌이 기록된 PG 결제 주문. 결제 상태는 REQUESTED 그대로임 */
+    private Order saveConflictedPgOrder(User user) {
+        Order order = Order.draft(user.getId(), List.of(new OrderLine(10L, "상품 A", 1_000L, 2)), ZonedDateTime.now());
+        order.startPayment(ZonedDateTime.now());
+        Order saved = orderJpaRepository.save(order);
+        Payment payment = Payment.request(saved.getId(), "attempt-1", 2_000L);
+        String providerOrderId = Payment.providerOrderIdOf(saved.getId());
+        payment.apply(new PaymentLookupResult.Found(List.of(
+            new ProviderTransaction("TX-1", providerOrderId, 2_000L, ProviderTransactionStatus.SUCCESS),
+            new ProviderTransaction("TX-2", providerOrderId, 2_000L, ProviderTransactionStatus.SUCCESS))), ZonedDateTime.now());
+        paymentJpaRepository.save(payment);
+        return saved;
+    }
+
+    @DisplayName("목록 · 상세는 결제수단 · 결제 상태를 담고, 상세는 고객에게 숨기는 충돌 사유도 담는다. (5주차 설계 7장)")
+    @Test
+    void returnsPaymentFields_withConflictOnDetail() throws Exception {
+        Order order = saveConflictedPgOrder(buyer);
+
+        mvc.perform(get(ENDPOINT).param("status", "PAYMENT_PENDING").with(ADMIN))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.items[0].paymentMethod").value("PG"))
+            .andExpect(jsonPath("$.data.items[0].paymentStatus").value("REQUESTED"));
+        mvc.perform(get(ENDPOINT + "/" + order.getId()).with(ADMIN))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.paymentMethod").value("PG"))
+            .andExpect(jsonPath("$.data.paymentStatus").value("REQUESTED"))
+            .andExpect(jsonPath("$.data.paymentConflict").value("MULTIPLE_TRANSACTIONS"));
+    }
+
+    @DisplayName("결제 시도가 없는 주문이면, 결제 필드를 비워 둔다.")
+    @Test
+    void leavesPaymentFieldsEmpty_whenNoAttempt() throws Exception {
+        Order order = saveOrder(buyer, "상품 A");
+
+        mvc.perform(get(ENDPOINT + "/" + order.getId()).with(ADMIN))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.paymentMethod").doesNotExist())
+            .andExpect(jsonPath("$.data.paymentStatus").doesNotExist())
+            .andExpect(jsonPath("$.data.paymentConflict").doesNotExist());
     }
 }

@@ -23,6 +23,9 @@ public interface ProductRepository {
      */
     List<Product> findAllActiveForUpdate(Collection<Long> productIds);
 
+    /** 삭제 여부와 관계없이 식별자 오름차순으로 잠금. 확보 뒤 삭제된 상품의 예약 반환에 씀 */
+    List<Product> findAllForUpdate(Collection<Long> productIds);
+
     /** 주어진 식별자 중 삭제되지 않은 상품의 식별자. 없거나 삭제된 상품은 빠짐 */
     Set<Long> findActiveIds(Collection<Long> productIds);
 

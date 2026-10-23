@@ -31,6 +31,26 @@ datasource:
     main:
       connection-init-sql: SET SESSION innodb_lock_wait_timeout = 3
 
+# 로컬 테스트 PG 계약 (5주차 설계 3.1, 5). 실제 PG · 카드 · 외부 주소는 쓰지 않음
+payment:
+  test-pg:
+    base-url: http://127.0.0.1:8082
+    callback-url: http://127.0.0.1:8080/api/v1/payments/callback
+    provider-user-id: "135135"
+    connect-timeout: 1s
+    create-read-timeout: 3s
+    lookup-read-timeout: 1s
+    # 조회만 재조회 · 회로 적용. 강의 예시를 따른 초기값으로, 실제 PG 응답 시간 분포 측정 뒤 조정
+    lookup:
+      max-attempts: 3
+      retry-wait: 100ms
+      retry-wait-multiplier: 2 # 지수 백오프
+      sliding-window-size: 10 # 최근 10번의 시도 결과 확인 후 판단
+      minimum-number-of-calls: 5 # 시도가 5건 이상 쌓였을 때부터 판단
+      failure-rate-threshold: 50 # 최근 시도 중 실패가 50% 이상이면 OPEN
+      open-wait: 10s # open 후 10초 동안은 대기
+      half-open-calls: 2 # half_open 되었을 경우 2회 요청 보내봄
+
 springdoc:
   use-fqn: true
   swagger-ui:

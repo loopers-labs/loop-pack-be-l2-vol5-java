@@ -9,6 +9,7 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import lombok.Getter;
 import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 
 /**
  * 생성/수정/삭제 정보를 자동으로 관리해준다.
@@ -37,11 +38,16 @@ public abstract class BaseEntity {
      */
     protected void guard() {}
 
+    /** DB(DATETIME(6))와 같은 마이크로초 단위로 잘라, 저장 직후 값과 다시 읽은 값이 같게 함 */
+    private static ZonedDateTime now() {
+        return ZonedDateTime.now().truncatedTo(ChronoUnit.MICROS);
+    }
+
     @PrePersist
     private void prePersist() {
         guard();
 
-        ZonedDateTime now = ZonedDateTime.now();
+        ZonedDateTime now = now();
         this.createdAt = now;
         this.updatedAt = now;
     }
@@ -50,7 +56,7 @@ public abstract class BaseEntity {
     private void preUpdate() {
         guard();
 
-        this.updatedAt = ZonedDateTime.now();
+        this.updatedAt = now();
     }
 
     /**
@@ -58,7 +64,7 @@ public abstract class BaseEntity {
      */
     public void delete() {
         if (this.deletedAt == null) {
-            this.deletedAt = ZonedDateTime.now();
+            this.deletedAt = now();
         }
     }
 

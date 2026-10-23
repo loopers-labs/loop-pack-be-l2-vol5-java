@@ -19,6 +19,6 @@ public final class OrderStatusParam {
         return Arrays.stream(OrderStatus.values())
             .filter(status -> status.name().equals(value))
             .findFirst()
-            .orElseThrow(() -> new CoreException(ErrorType.BAD_REQUEST, "status 는 DRAFT, CONFIRMED 중 하나여야 합니다."));
+            .orElseThrow(() -> new CoreException(ErrorType.BAD_REQUEST, "status 는 DRAFT, PAYMENT_PENDING, CONFIRMED, PAYMENT_FAILED 중 하나여야 합니다."));
     }
 }

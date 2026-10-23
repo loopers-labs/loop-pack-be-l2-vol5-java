@@ -2,6 +2,7 @@ package com.loopers.application.order;
 
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderItem;
+import com.loopers.domain.payment.entity.Payment;
 
 import java.time.ZonedDateTime;
 import java.util.List;
@@ -18,7 +19,9 @@ public record OrderDetailInfo(
     Long paymentAmount,
     ZonedDateTime paidAt,
     ZonedDateTime orderedAt,
-    List<Item> items
+    List<Item> items,
+    String paymentMethod,
+    String paymentStatus
 ) {
     public record Item(Long productId, String productName, long unitPrice, int quantity, long amount, boolean onSale) {
         static Item of(OrderItem item, boolean onSale) {
@@ -27,7 +30,8 @@ public record OrderDetailInfo(
     }
 
     /** 품목의 상품 식별자가 activeProductIds 에 없으면 삭제된 상품이라 판매종료로 봄 */
-    public static OrderDetailInfo of(Order order, Set<Long> activeProductIds) {
+    /** payment 는 결제 시도가 없으면 null */
+    public static OrderDetailInfo of(Order order, Set<Long> activeProductIds, Payment payment) {
         return new OrderDetailInfo(
             order.getId(),
             order.getStatus().name(),
@@ -37,7 +41,9 @@ public record OrderDetailInfo(
             order.getCreatedAt(),
             order.getItems().stream()
                 .map(item -> Item.of(item, activeProductIds.contains(item.getProductId())))
-                .toList()
+                .toList(),
+            order.getPaymentMethod() == null ? null : order.getPaymentMethod().name(),
+            payment == null ? null : payment.getStatus().name()
         );
     }
 }

@@ -62,6 +62,22 @@ public class ProductService {
         return products;
     }
 
+    /** 예약 반환용. 상품은 논리 삭제라 행이 없으면 예약과 어긋난 것이므로 상태 오류로 막음 */
+    @Transactional
+    public Map<Long, Product> getProductsForUpdate(List<Long> productIds) {
+        Map<Long, Product> locked = productRepository.findAllForUpdate(productIds).stream()
+            .collect(Collectors.toMap(Product::getId, Function.identity()));
+        Map<Long, Product> products = new LinkedHashMap<>();
+        for (Long productId : productIds) {
+            Product product = locked.get(productId);
+            if (product == null) {
+                throw new IllegalStateException("예약한 상품이 없음: " + productId);
+            }
+            products.put(productId, product);
+        }
+        return products;
+    }
+
     /** product 행을 쓰는 경로가 같은 행을 잠그고 최신 상태로 판단하게 함 (3주차 설계 4.2) */
     private Product getActiveProductForUpdate(Long productId) {
         return productRepository.findActiveForUpdate(productId)

@@ -57,7 +57,7 @@ class OrderQueryIntegrationTest {
         ), ZonedDateTime.now()));
         if (confirmed) {
             transactionTemplate.executeWithoutResult(status ->
-                orderRepository.findById(order.getId()).orElseThrow().confirm(3_000L, ZonedDateTime.now()));
+                orderRepository.findById(order.getId()).orElseThrow().confirmWithPoint(3_000L, ZonedDateTime.now()));
         }
         return order;
     }

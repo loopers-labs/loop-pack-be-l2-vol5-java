@@ -117,6 +117,75 @@ class ProductStockTest {
         }
     }
 
+    @DisplayName("예약한 재고를 반환할 때, (5주차 설계 6)")
+    @Nested
+    class Release {
+        @DisplayName("재고 5 에서 2 를 예약한 뒤 반환하면, 5 로 돌아온다.")
+        @Test
+        void restoresReservedQuantity() {
+            // arrange
+            Product product = productWithStock(5);
+            product.decrease(2);
+
+            // act
+            product.release(2);
+
+            // assert
+            assertThat(product.getStock()).isEqualTo(5);
+        }
+
+        @DisplayName("삭제된 상품에도 반환하며, 삭제 상태는 그대로다.")
+        @Test
+        void releasesToDeletedProduct_andKeepsDeleted() {
+            // arrange
+            Product product = productWithStock(5);
+            product.decrease(2);
+            product.delete();
+
+            // act
+            product.release(2);
+
+            // assert
+            assertAll(
+                () -> assertThat(product.getStock()).isEqualTo(5),
+                () -> assertThat(product.isDeleted()).isTrue()
+            );
+        }
+
+        @DisplayName("0 이하의 수량이면, INVALID_STOCK 예외가 발생하고 재고는 그대로다.")
+        @ParameterizedTest
+        @ValueSource(ints = {0, -1})
+        void throwsInvalidStock_whenQuantityIsNotPositive(int quantity) {
+            // arrange
+            Product product = productWithStock(5);
+
+            // act
+            CoreException result = assertThrows(CoreException.class, () -> product.release(quantity));
+
+            // assert
+            assertAll(
+                () -> assertThat(result.getErrorCode()).isEqualTo(ProductErrorCode.INVALID_STOCK),
+                () -> assertThat(product.getStock()).isEqualTo(5)
+            );
+        }
+
+        @DisplayName("반환 후 재고가 저장 범위를 넘으면, INVALID_STOCK 예외가 발생하고 재고는 그대로다.")
+        @Test
+        void throwsInvalidStock_whenOverflow() {
+            // arrange
+            Product product = productWithStock(Integer.MAX_VALUE);
+
+            // act
+            CoreException result = assertThrows(CoreException.class, () -> product.release(1));
+
+            // assert
+            assertAll(
+                () -> assertThat(result.getErrorCode()).isEqualTo(ProductErrorCode.INVALID_STOCK),
+                () -> assertThat(product.getStock()).isEqualTo(Integer.MAX_VALUE)
+            );
+        }
+    }
+
     @DisplayName("상품을 생성하면, 재고는 0 이다.")
     @Test
     void startsWithZeroStock() {

@@ -4,11 +4,14 @@ import com.loopers.application.brand.BrandFacade;
 import com.loopers.application.like.LikeFacade;
 import com.loopers.application.order.OrderFacade;
 import com.loopers.application.order.OrderFacade.OrderRequestLine;
+import com.loopers.application.order.facade.OrderPaymentFacade;
+import com.loopers.application.order.facade.OrderPaymentFacade.ConfirmCommand;
 import com.loopers.application.point.PointFacade;
 import com.loopers.domain.product.ProductErrorCode;
 import com.loopers.support.error.CoreException;
-import com.loopers.utils.DatabaseCleanUp;
+import com.loopers.support.pg.TestPgServer;
 import com.loopers.support.redis.ProductCacheConnection;
+import com.loopers.utils.DatabaseCleanUp;
 import com.loopers.utils.RedisCleanUp;
 import jakarta.persistence.EntityManagerFactory;
 import org.hibernate.SessionFactory;
@@ -49,6 +52,9 @@ class ProductDetailCacheInvalidationTest {
     private OrderFacade orderFacade;
 
     @Autowired
+    private OrderPaymentFacade orderPaymentFacade;
+
+    @Autowired
     private LikeFacade likeFacade;
 
     @Autowired
@@ -72,9 +78,12 @@ class ProductDetailCacheInvalidationTest {
     /** 같은 브랜드의 다른 상품. 가격 2,000, 재고 2 */
     private Long otherProductId;
 
+    private final TestPgServer pg = TestPgServer.shared();
+
     @BeforeEach
     void setUp() {
         productCacheConnection.connect();
+        pg.reset();
         brandId = brandFacade.createBrand("브랜드", "설명").id();
         productId = createProduct(1_000L);
         otherProductId = createProduct(2_000L);
@@ -110,9 +119,10 @@ class ProductDetailCacheInvalidationTest {
         return statistics().getPrepareStatementCount() > 0;
     }
 
+    /** 재고는 결제 시작 때 확보되므로 품절 여부도 이때 바뀜 */
     private void confirmOrderOf(Long id, int quantity) {
         Long orderId = orderFacade.createOrder(BUYER, List.of(new OrderRequestLine(id, quantity))).id();
-        orderFacade.confirmOrder(BUYER, orderId);
+        orderPaymentFacade.confirm(BUYER, orderId, new ConfirmCommand("attempt-" + orderId, "TEST", "0000-0000-0000-0000"));
     }
 
     private void assertInvalidatedThatProductOnly() {
@@ -309,16 +319,16 @@ class ProductDetailCacheInvalidationTest {
             assertNotInvalidated();
         }
 
-        @DisplayName("rollback 된 주문 확정 (차감으로 품절이 될 뻔했지만 잔액 부족)")
+        @DisplayName("rollback 된 주문 확정 (확보로 품절이 될 뻔했지만 다른 품목 재고 부족)")
         @Test
         void onRolledBackConfirm() {
             // arrange
-            Long poorBuyer = 2L;
-            pointFacade.charge(poorBuyer, 1L);
-            Long orderId = orderFacade.createOrder(poorBuyer, List.of(new OrderRequestLine(productId, 2))).id();
+            Long orderId = orderFacade.createOrder(BUYER, List.of(
+                new OrderRequestLine(productId, 2), new OrderRequestLine(otherProductId, 3))).id();
+            ConfirmCommand command = new ConfirmCommand("attempt-1", "TEST", "0000-0000-0000-0000");
 
             // act
-            assertThrows(CoreException.class, () -> orderFacade.confirmOrder(poorBuyer, orderId));
+            assertThrows(CoreException.class, () -> orderPaymentFacade.confirm(BUYER, orderId, command));
 
             // assert
             assertNotInvalidated();

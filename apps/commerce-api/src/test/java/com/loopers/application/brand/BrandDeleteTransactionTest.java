@@ -1,15 +1,16 @@
 package com.loopers.application.brand;
 
-import com.loopers.application.order.OrderFacade;
+import com.loopers.application.order.facade.OrderPaymentFacade;
+import com.loopers.application.order.facade.OrderPaymentFacade.ConfirmCommand;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderLine;
-import com.loopers.domain.point.Point;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductErrorCode;
 import com.loopers.domain.product.ProductErrorDetail;
 import com.loopers.support.error.CoreException;
 import com.loopers.domain.product.ProductService;
+import com.loopers.support.pg.TestPgServer;
 import com.loopers.utils.DatabaseCleanUp;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.AfterEach;
@@ -44,7 +45,7 @@ class BrandDeleteTransactionTest {
     private BrandFacade brandFacade;
 
     @Autowired
-    private OrderFacade orderFacade;
+    private OrderPaymentFacade orderPaymentFacade;
 
     @MockitoSpyBean
     private ProductService productService;
@@ -95,25 +96,26 @@ class BrandDeleteTransactionTest {
         );
     }
 
-    @DisplayName("브랜드 삭제 전에 만든 DRAFT 주문을 확정하면, 상품 삭제 여부를 다시 확인해 PRODUCT_NOT_FOUND 로 거절하고 DRAFT 로 남는다. (ORD-09)")
+    @DisplayName("브랜드 삭제 전에 만든 DRAFT 주문을 확정하면, 상품 삭제 여부를 다시 확인해 PRODUCT_NOT_FOUND 로 거절하고 DRAFT 로 남으며 PG 를 부르지 않는다. (ORD-09)")
     @Test
     void rejectsConfirmingDraftCreatedBeforeBrandDeletion() {
         // arrange
         Order draft = persist(Order.draft(USER_ID, List.of(new OrderLine(soldOut.getId(), soldOut.getName(), soldOut.getPrice(), 1)),
             ZonedDateTime.now()));
-        Point point = new Point(USER_ID);
-        point.charge(10_000L);
-        persist(point);
         brandFacade.deleteBrand(brand.getId());
+        ConfirmCommand command = new ConfirmCommand("attempt-1", "TEST", "0000-0000-0000-0000");
+        TestPgServer pg = TestPgServer.shared();
+        pg.reset();
 
         // act
-        CoreException result = assertThrows(CoreException.class, () -> orderFacade.confirmOrder(USER_ID, draft.getId()));
+        CoreException result = assertThrows(CoreException.class, () -> orderPaymentFacade.confirm(USER_ID, draft.getId(), command));
 
         // assert
         assertAll(
             () -> assertThat(result.getErrorCode()).isEqualTo(ProductErrorCode.PRODUCT_NOT_FOUND),
             () -> assertThat(result.getDetail()).isEqualTo(ProductErrorDetail.of(soldOut.getId())),
-            () -> assertThat(orderStatusOf(draft.getId())).isEqualTo("DRAFT")
+            () -> assertThat(orderStatusOf(draft.getId())).isEqualTo("DRAFT"),
+            () -> assertThat(pg.createCount()).isZero()
         );
     }
 
@@ -166,7 +168,7 @@ class BrandDeleteTransactionTest {
     private Order persistConfirmedOrder(Product product) {
         ZonedDateTime now = ZonedDateTime.now();
         Order order = Order.draft(USER_ID, List.of(new OrderLine(product.getId(), product.getName(), product.getPrice(), 5)), now);
-        order.confirm(order.getTotalAmount(), now);
+        order.confirmWithPoint(order.getTotalAmount(), now);
         return persist(order);
     }
 

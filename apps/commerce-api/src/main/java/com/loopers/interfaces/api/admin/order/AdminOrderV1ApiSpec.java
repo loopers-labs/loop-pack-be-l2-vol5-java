@@ -15,7 +15,7 @@ public interface AdminOrderV1ApiSpec {
     )
     ApiResponse<PageResponse<AdminOrderV1Dto.OrderSummaryResponse>> getOrders(
         @Schema(description = "구매자 ID (선택)") Long userId,
-        @Schema(description = "주문 상태 (선택): DRAFT, CONFIRMED") String status,
+        @Schema(description = "주문 상태 (선택): DRAFT, PAYMENT_PENDING, CONFIRMED, PAYMENT_FAILED") String status,
         @Schema(description = "페이지 (1부터)") int page,
         @Schema(description = "페이지 크기 (최대 100)") int size
     );

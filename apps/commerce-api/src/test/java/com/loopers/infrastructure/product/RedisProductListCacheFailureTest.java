@@ -3,6 +3,8 @@ package com.loopers.infrastructure.product;
 import com.loopers.application.brand.BrandFacade;
 import com.loopers.application.order.OrderFacade;
 import com.loopers.application.order.OrderFacade.OrderRequestLine;
+import com.loopers.application.order.facade.OrderPaymentFacade;
+import com.loopers.application.order.facade.OrderPaymentFacade.ConfirmCommand;
 import com.loopers.application.order.OrderInfo;
 import com.loopers.application.point.PointFacade;
 import com.loopers.application.product.AdminProductFacade;
@@ -12,6 +14,7 @@ import com.loopers.config.ProductCacheRedisConfig;
 import com.loopers.domain.product.ProductService;
 import com.loopers.domain.product.ProductSort;
 import com.loopers.domain.product.ProductView;
+import com.loopers.support.pg.TestPgServer;
 import com.loopers.utils.DatabaseCleanUp;
 import jakarta.persistence.EntityManagerFactory;
 import org.hibernate.SessionFactory;
@@ -89,6 +92,9 @@ class RedisProductListCacheFailureTest {
     private OrderFacade orderFacade;
 
     @Autowired
+    private OrderPaymentFacade orderPaymentFacade;
+
+    @Autowired
     private PointFacade pointFacade;
 
     @Autowired
@@ -109,6 +115,7 @@ class RedisProductListCacheFailureTest {
 
     @BeforeEach
     void setUp() {
+        TestPgServer.shared().reset();
         brandId = brandFacade.createBrand("브랜드", null).id();
         productId = adminProductFacade.createProduct(brandId, "상품", 1_000L).id();
         adminProductFacade.createProduct(brandId, "다른 상품", 2_000L);
@@ -197,7 +204,7 @@ class RedisProductListCacheFailureTest {
         );
     }
 
-    @DisplayName("Redis 가 응답하지 않아도, 주문 확정은 DB 규칙대로 재고 · 포인트를 반영하고 성공한다. 품절 표시는 재처리 뒤 목록에 반영된다. (4.2, 5)")
+    @DisplayName("Redis 가 응답하지 않아도, 주문 확정은 DB 규칙대로 재고를 확보하고 결제를 시작한다. 품절 표시는 재처리 뒤 목록에 반영된다. (4.2, 5)")
     @Test
     void confirmsOrderByDatabaseRules_whileRedisIsUnresponsive() {
         // arrange
@@ -209,7 +216,7 @@ class RedisProductListCacheFailureTest {
         pause();
 
         // act
-        OrderInfo confirmed = orderFacade.confirmOrder(buyer, orderId);
+        OrderInfo confirmed = orderPaymentFacade.confirm(buyer, orderId, new ConfirmCommand("attempt-1", "TEST", "0000-0000-0000-0000"));
         boolean pendingDuringOutage = cache.hasPendingInvalidation(brandId);
         resume();
         Page<ProductInfo> beforeRetry = firstPage();
@@ -218,10 +225,10 @@ class RedisProductListCacheFailureTest {
 
         // assert
         assertAll(
-            () -> assertThat(confirmed.status()).isEqualTo("CONFIRMED"),
-            () -> assertThat(confirmed.paymentAmount()).isEqualTo(1_000L),
+            () -> assertThat(confirmed.status()).isEqualTo("PAYMENT_PENDING"),
+            () -> assertThat(confirmed.paymentStatus()).isEqualTo("PENDING"),
             () -> assertThat(productService.getActiveProduct(productId).getStock()).isZero(),
-            () -> assertThat(pointFacade.getPoint(buyer).balance()).isEqualTo(9_000L),
+            () -> assertThat(pointFacade.getPoint(buyer).balance()).isEqualTo(10_000L),
             () -> assertThat(pendingDuringOutage).isTrue(),
             () -> assertThat(infoOf(beforeRetry, productId).soldOut()).isFalse(),
             () -> assertThat(infoOf(afterRetry, productId).soldOut()).isTrue()

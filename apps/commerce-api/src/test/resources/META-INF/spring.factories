@@ -1,0 +1,4 @@
+org.springframework.context.ApplicationContextInitializer=\
+com.loopers.support.pg.TestPgContextInitializer
+org.springframework.test.context.TestExecutionListener=\
+com.loopers.support.pg.CircuitBreakerResetListener

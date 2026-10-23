@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.http.ResponseEntity;
 
 @Tag(name = "Order V1 API", description = "주문 API 입니다. X-USER-ID 헤더로 요청자를 식별합니다.")
 public interface OrderV1ApiSpec {
@@ -18,10 +19,24 @@ public interface OrderV1ApiSpec {
     ApiResponse<OrderV1Dto.OrderResponse> createOrder(@Parameter(hidden = true) LoginUser loginUser, OrderV1Dto.CreateRequest request);
 
     @Operation(
-        summary = "주문 확정",
-        description = "재고 · 포인트를 차감하고 CONFIRMED 로 바꿉니다. 상품 때문에 실패하면 data.productId 로 처음 실패한 상품을 알립니다."
+        summary = "주문 확정 (PG 결제 시작)",
+        description = "재고를 확보하고 테스트 PG 결제를 시작합니다. 포인트는 차감하지 않습니다. 금액은 저장된 주문 합계입니다. "
+            + "결제 대기 · 결과 미확인이면 202 와 조회 경로(statusUrl), 종결이면 200 입니다. "
+            + "같은 paymentAttemptKey 로 다시 보내면 저장된 상태만 돌려주고, 다른 키면 PAYMENT_ATTEMPT_CONFLICT 입니다. "
+            + "상품 때문에 실패하면 data.productId 로 처음 실패한 상품을 알립니다."
     )
-    ApiResponse<OrderV1Dto.OrderResponse> confirmOrder(
+    ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> confirmOrder(
+        @Parameter(hidden = true) LoginUser loginUser,
+        @Schema(description = "주문 ID") Long orderId,
+        OrderV1Dto.ConfirmRequest request
+    );
+
+    @Operation(
+        summary = "결제 결과 확인",
+        description = "본인 주문의 미완료 결제 시도를 테스트 PG 에서 조회해 반영합니다. 새 결제를 만들지 않습니다. "
+            + "미종결이면 202, 종결이면 200 입니다. PG 를 조회하지 못하면 저장된 상태와 paymentCheck=UNAVAILABLE 을 돌려줍니다."
+    )
+    ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> reconcilePayment(
         @Parameter(hidden = true) LoginUser loginUser,
         @Schema(description = "주문 ID") Long orderId
     );
@@ -32,7 +47,7 @@ public interface OrderV1ApiSpec {
     )
     ApiResponse<PageResponse<OrderV1Dto.OrderSummaryResponse>> getMyOrders(
         @Parameter(hidden = true) LoginUser loginUser,
-        @Schema(description = "주문 상태: CONFIRMED(기본), DRAFT") String status,
+        @Schema(description = "주문 상태: CONFIRMED(기본), DRAFT, PAYMENT_PENDING, PAYMENT_FAILED") String status,
         @Schema(description = "페이지 (1부터)") int page,
         @Schema(description = "페이지 크기 (최대 100)") int size
     );

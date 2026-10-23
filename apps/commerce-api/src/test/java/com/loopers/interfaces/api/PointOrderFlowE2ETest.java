@@ -2,11 +2,14 @@ package com.loopers.interfaces.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.loopers.domain.payment.entity.Payment;
 import com.loopers.domain.user.User;
 import com.loopers.infrastructure.user.UserJpaRepository;
+import com.loopers.support.pg.TestPgServer;
 import com.loopers.utils.DatabaseCleanUp;
 import com.loopers.utils.RedisCleanUp;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,7 +31,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * 대표 흐름(설계 5.1)을 실제 API 로 이어서 확인한다.
- * 관리자가 브랜드 · 상품 · 재고를 준비하고, 고객이 충전 → 여러 품목 주문 → 확정 → 잔액 · 주문을 조회한다.
+ * 관리자가 브랜드 · 상품 · 재고를 준비하고, 고객이 충전 → 여러 품목 주문 → 확정(PG 결제 시작) → 결과 확인 → 잔액 · 주문을 조회함.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -52,6 +55,13 @@ class PointOrderFlowE2ETest {
     @Autowired
     private RedisCleanUp redisCleanUp;
 
+    private final TestPgServer pg = TestPgServer.shared();
+
+    @BeforeEach
+    void setUp() {
+        pg.reset();
+    }
+
     @AfterEach
     void tearDown() {
         databaseCleanUp.truncateAllTables();
@@ -72,7 +82,7 @@ class PointOrderFlowE2ETest {
         return request.header(USER_ID_HEADER, String.valueOf(customer.getId()));
     }
 
-    @DisplayName("잔액 0 에서 10,000 원을 충전하고 여러 품목 7,000 원 주문을 확정하면, 잔액 3,000 원 · CONFIRMED 주문 · 줄어든 재고가 조회된다.")
+    @DisplayName("10,000 원을 충전하고 여러 품목 7,000 원 주문을 PG 로 결제하면, 잔액은 그대로 · CONFIRMED 주문 · 줄어든 재고가 조회된다.")
     @Test
     void chargeThenConfirmMultiItemOrder() throws Exception {
         // 관리자: 브랜드 · 상품 등록, 재고 설정
@@ -106,16 +116,26 @@ class PointOrderFlowE2ETest {
         mvc.perform(asCustomer(get("/api/v1/points"), customer))
             .andExpect(jsonPath("$.data.balance").value(10_000));
 
-        // 고객: 확정
-        mvc.perform(asCustomer(post("/api/v1/orders/" + orderId + "/confirm"), customer))
+        // 고객: 확정 = PG 결제 시작
+        perform(asCustomer(post("/api/v1/orders/" + orderId + "/confirm"), customer),
+            "{\"paymentAttemptKey\": \"attempt-1\", \"cardType\": \"TEST\", \"cardNo\": \"0000-0000-0000-0000\"}")
+            .andExpect(status().isAccepted())
+            .andExpect(jsonPath("$.data.status").value("PAYMENT_PENDING"))
+            .andExpect(jsonPath("$.data.totalAmount").value(7_000))
+            .andExpect(jsonPath("$.data.paymentAmount").doesNotExist());
+
+        // 테스트 PG 거래 성공 → 고객: 결과 확인
+        String transactionKey = pg.transactionsOf(Payment.providerOrderIdOf(orderId)).get(0).transactionKey();
+        pg.complete(transactionKey, "SUCCESS");
+        perform(asCustomer(post("/api/v1/orders/" + orderId + "/payment/reconcile"), customer), "")
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.status").value("CONFIRMED"))
-            .andExpect(jsonPath("$.data.totalAmount").value(7_000))
+            .andExpect(jsonPath("$.data.paymentMethod").value("PG"))
             .andExpect(jsonPath("$.data.paymentAmount").value(7_000));
 
-        // 고객: 잔액 3,000
+        // 고객: 포인트는 결제로 줄지 않음
         mvc.perform(asCustomer(get("/api/v1/points"), customer))
-            .andExpect(jsonPath("$.data.balance").value(3_000));
+            .andExpect(jsonPath("$.data.balance").value(10_000));
 
         // 고객: 내 주문 목록 · 상세
         mvc.perform(asCustomer(get("/api/v1/orders"), customer))

@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-/** 주문 애그리거트의 저장 · 조회 · 시각 결정. 상품 · 포인트와의 협력은 OrderFacadeTest 에서 확인함 (설계 4.4) */
+/** 주문 애그리거트의 저장 · 조회 · 시각 결정. 협력은 OrderFacadeTest · OrderPaymentFacadeTest 에서 확인함 */
 class OrderServiceTest {
 
     private static final Long USER_ID = 1L;
@@ -45,24 +45,27 @@ class OrderServiceTest {
         );
     }
 
-    @DisplayName("확정할 주문을 찾을 때, 타인의 주문이면 ORDER_NOT_FOUND 예외가 발생한다. (ORD-06)")
+    @DisplayName("결제를 위해 잠금으로 찾을 때, 타인의 주문이면 ORDER_NOT_FOUND 예외가 발생한다. (ORD-06)")
     @Test
     void throwsOrderNotFound_whenOrderBelongsToOthers() {
         Order order = createDraft();
 
-        CoreException result = assertThrows(CoreException.class, () -> orderService.getConfirmableOrder(OTHER_USER_ID, order.getId()));
+        CoreException result = assertThrows(CoreException.class, () -> orderService.getMyOrderForUpdate(OTHER_USER_ID, order.getId()));
 
         assertThat(result.getErrorCode()).isEqualTo(OrderErrorCode.ORDER_NOT_FOUND);
     }
 
-    @DisplayName("확정하면, 결제액과 시계의 현재 시각을 결제 시각으로 남기고 CONFIRMED 가 된다. (ORD-12)")
+    @DisplayName("결제를 시작하면 PAYMENT_PENDING 이 되고, 결과를 반영하면 결제액과 시계의 현재 시각을 결제 시각으로 남긴다. (5주차 설계 2.1)")
     @Test
-    void confirmsWithClockTime() {
-        Order order = orderService.getConfirmableOrder(USER_ID, createDraft().getId());
+    void startsAndConfirmsPaymentWithClockTime() {
+        Order order = orderService.getMyOrderForUpdate(USER_ID, createDraft().getId());
 
-        orderService.confirm(order, 2_000L);
+        orderService.startPayment(order);
+        OrderStatus started = order.getStatus();
+        orderService.confirmPaid(order, 2_000L);
 
         assertAll(
+            () -> assertThat(started).isEqualTo(OrderStatus.PAYMENT_PENDING),
             () -> assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED),
             () -> assertThat(order.getPaymentAmount()).isEqualTo(2_000L),
             () -> assertThat(order.getPaidAt()).isEqualTo(NOW)

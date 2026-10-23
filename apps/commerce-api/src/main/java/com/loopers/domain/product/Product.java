@@ -104,6 +104,18 @@ public class Product extends BaseEntity {
         updateStock(stock - quantity);
     }
 
+    /** 확보 뒤 삭제된 상품에도 반환하며, 삭제 여부는 바꾸지 않음 */
+    public void release(int quantity) {
+        if (quantity <= 0) {
+            throw new CoreException(ProductErrorCode.INVALID_STOCK);
+        }
+        try {
+            updateStock(Math.addExact(stock, quantity));
+        } catch (ArithmeticException e) {
+            throw new CoreException(ProductErrorCode.INVALID_STOCK);
+        }
+    }
+
     // 재고를 바꾸는 모든 행동이 거치는 한 곳. "재고는 0 이상"(PRD-05)을 여기서만 지킨다.
     private void updateStock(int newStock) {
         if (newStock < 0) {

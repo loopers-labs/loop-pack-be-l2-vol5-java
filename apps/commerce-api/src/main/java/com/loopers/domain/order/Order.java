@@ -20,6 +20,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import com.loopers.domain.order.enums.PaymentMethod;
 
 /**
  * 주문. 품목의 합산 · 수량 · 합계 · 상태 규칙을 지킨다 (설계 2.3).
@@ -53,9 +54,14 @@ public class Order extends BaseEntity {
     @Column(name = "payment_amount")
     private Long paymentAmount;
 
-    /** updatedAt 은 이후 변경으로 덮이므로 결제 시각을 따로 둔다 (설계 5.5). */
+    /** updatedAt 은 이후 변경으로 덮이므로 결제 시각을 따로 둔다 (설계 5.5). PG 결제는 내부 반영 시각임 */
     @Column(name = "paid_at")
     private ZonedDateTime paidAt;
+
+    /** DRAFT 에는 없음. 5주차 전 확정 주문은 POINT */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_method")
+    private PaymentMethod paymentMethod;
 
     /** 같은 주문의 확정이 겹치면 나중 commit 이 충돌하고, 재시도에서 CONFIRMED 를 읽어 기존 상태 오류로 끝남 (3주차 설계 4.1) */
     @Version
@@ -119,6 +125,10 @@ public class Order extends BaseEntity {
         return paidAt;
     }
 
+    public PaymentMethod getPaymentMethod() {
+        return paymentMethod;
+    }
+
     public ZonedDateTime getExpiresAt() {
         return expiresAt;
     }
@@ -144,12 +154,52 @@ public class Order extends BaseEntity {
         }
     }
 
-    /** 확정 가능한지 같은 검사를 거친 뒤 결제액과 결제 시각을 함께 남김 (ORD-12) */
-    public void confirm(long paymentAmount, ZonedDateTime paidAt) {
+    /** 5주차 전 POINT 확정 주문 재현용. 운영 경로에서는 부르지 않음 */
+    public void confirmWithPoint(long paymentAmount, ZonedDateTime paidAt) {
         validateConfirmable(paidAt);
+        this.status = OrderStatus.CONFIRMED;
+        this.paymentMethod = PaymentMethod.POINT;
+        this.paymentAmount = paymentAmount;
+        this.paidAt = paidAt;
+    }
+
+    /** 이후로는 만료로 끝내지 않음 (5주차 설계 2.1) */
+    public void startPayment(ZonedDateTime now) {
+        validateConfirmable(now);
+        this.status = OrderStatus.PAYMENT_PENDING;
+        this.paymentMethod = PaymentMethod.PG;
+    }
+
+    /** 0원 주문은 PG 없이 바로 확정함 (D-68) */
+    public void confirmWithoutPayment(ZonedDateTime now) {
+        validateConfirmable(now);
+        if (totalAmount != 0) {
+            throw new IllegalStateException("결제할 금액이 있는 주문: " + totalAmount);
+        }
+        this.status = OrderStatus.CONFIRMED;
+        this.paymentMethod = PaymentMethod.NONE;
+        this.paymentAmount = 0L;
+        this.paidAt = now;
+    }
+
+    /** 결제 대기가 아니면 결제 시도와 주문이 어긋난 것이라 상태 오류로 막음 */
+    public void confirmPaid(long paymentAmount, ZonedDateTime paidAt) {
+        requirePaymentPending();
         this.status = OrderStatus.CONFIRMED;
         this.paymentAmount = paymentAmount;
         this.paidAt = paidAt;
+    }
+
+    /** 재고 반환은 호출자가 같은 TX 에서 함 */
+    public void failPayment() {
+        requirePaymentPending();
+        this.status = OrderStatus.PAYMENT_FAILED;
+    }
+
+    private void requirePaymentPending() {
+        if (status != OrderStatus.PAYMENT_PENDING) {
+            throw new IllegalStateException("결제 대기 주문이 아님: " + status);
+        }
     }
 
     private static void validateQuantity(int quantity) {
