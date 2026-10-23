@@ -13,8 +13,4 @@ public record PointTransaction(
     static PointTransaction charge(ChargeAmount amount, Money balanceAfter, Instant occurredAt) {
         return new PointTransaction(TransactionType.CHARGE, amount.toMoney(), balanceAfter, occurredAt);
     }
-
-    static PointTransaction use(Money amount, Money balanceAfter, Instant occurredAt) {
-        return new PointTransaction(TransactionType.USE, amount, balanceAfter, occurredAt);
-    }
 }

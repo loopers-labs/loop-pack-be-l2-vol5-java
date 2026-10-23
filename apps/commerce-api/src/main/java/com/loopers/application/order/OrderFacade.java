@@ -4,7 +4,6 @@ import com.loopers.domain.common.PageNumber;
 import com.loopers.domain.common.PageSize;
 import com.loopers.domain.common.PageWindow;
 import com.loopers.domain.order.Order;
-import com.loopers.domain.order.OrderConfirmation;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.OrderService;
 import com.loopers.domain.order.OrderStatus;
@@ -22,7 +21,6 @@ import java.util.List;
 public class OrderFacade {
 
     private final OrderService orderService;
-    private final OrderConfirmation orderConfirmation;
     private final ProductService productService;
 
     @Transactional
@@ -36,11 +34,6 @@ public class OrderFacade {
             .toList();
 
         return orderService.place(Order.draft(command.userId(), items, now));
-    }
-
-    @Transactional
-    public Order confirm(Long userId, Long orderId, Instant now) {
-        return orderConfirmation.confirm(userId, orderId, now);
     }
 
     @Transactional(readOnly = true)

@@ -1,13 +1,12 @@
 package com.loopers.application.order;
 
 import com.loopers.application.brand.BrandFacade;
-import com.loopers.application.point.PointFacade;
 import com.loopers.application.product.ProductFacade;
 import com.loopers.domain.common.Quantity;
 import com.loopers.domain.order.OrderQuantity;
-import com.loopers.domain.point.ChargeAmount;
 import com.loopers.domain.product.Price;
 import com.loopers.support.error.DomainException;
+import com.loopers.support.payment.TestPayments;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,7 +38,7 @@ class OrderConcurrencyTest {
     private static final String SUCCESS = "성공";
 
     private final OrderFacade orderFacade;
-    private final PointFacade pointFacade;
+    private final TestPayments testPayments;
     private final ProductFacade productFacade;
     private final BrandFacade brandFacade;
     private final JdbcTemplate jdbcTemplate;
@@ -50,14 +49,14 @@ class OrderConcurrencyTest {
     @Autowired
     OrderConcurrencyTest(
         OrderFacade orderFacade,
-        PointFacade pointFacade,
+        TestPayments testPayments,
         ProductFacade productFacade,
         BrandFacade brandFacade,
         JdbcTemplate jdbcTemplate,
         DatabaseCleanUp databaseCleanUp
     ) {
         this.orderFacade = orderFacade;
-        this.pointFacade = pointFacade;
+        this.testPayments = testPayments;
         this.productFacade = productFacade;
         this.brandFacade = brandFacade;
         this.jdbcTemplate = jdbcTemplate;
@@ -74,13 +73,13 @@ class OrderConcurrencyTest {
         databaseCleanUp.truncateAllTables();
     }
 
-    @DisplayName("PRODUCT-023 · 재고 5 에 1개씩 사는 서로 다른 주문 8건: 확정 5 · 재고 부족 3 · 기술 오류 0 · 최종 재고 0")
+    @DisplayName("PRODUCT-023, RSV-001 · 재고 5 에 1개씩 사는 서로 다른 주문 8건의 결제 시작: 성공 5 · 재고 부족 3 · 기술 오류 0 · 최종 재고 0")
     @Test
     void stockRace() throws Exception {
         assertStockRace(8);
     }
 
-    @DisplayName("PRODUCT-023 · 재고 5 에 주문 12건 — 커넥션 풀(10)보다 요청이 많아도: 확정 5 · 재고 부족 7 · 기술 오류 0 · 최종 재고 0")
+    @DisplayName("PRODUCT-023, RSV-001 · 재고 5 에 주문 12건 — 커넥션 풀(10)보다 요청이 많아도: 성공 5 · 재고 부족 7 · 기술 오류 0 · 최종 재고 0")
     @Test
     void stockRaceBeyondPoolSize() throws Exception {
         assertStockRace(12);
@@ -90,11 +89,10 @@ class OrderConcurrencyTest {
         Long productId = product(1_000, 5);
         List<Callable<String>> confirms = new ArrayList<>();
         for (long buyer = 1; buyer <= requests; buyer++) {
-            pointFacade.charge(buyer, ChargeAmount.of(10_000), NOW);
             long owner = buyer;
             Long orderId = place(owner, productId, 1);
             confirms.add(() -> {
-                orderFacade.confirm(owner, orderId, NOW);
+                testPayments.start(owner, orderId, NOW);
                 return SUCCESS;
             });
         }
@@ -103,74 +101,22 @@ class OrderConcurrencyTest {
 
         assertThat(countBy(results)).isEqualTo(Map.of(SUCCESS, 5L, "INSUFFICIENT_STOCK", (long) requests - 5));
         assertThat(quantityOf(productId)).isZero();
-        assertThat(5 - confirmedQuantity(productId)).as("초기 재고 − 성공 주문의 품목 수량 합 = 최종 재고")
+        assertThat(5 - reservedQuantity(productId)).as("초기 재고 − 결제를 시작한 주문의 품목 수량 합 = 최종 재고")
             .isEqualTo(quantityOf(productId));
-        for (long buyer = 1; buyer <= requests; buyer++) {
-            assertThat(balance(buyer)).as("구매자 %d 의 잔액 = 초기 잔액 − 성공 결제액", buyer)
-                .isEqualTo(10_000 - paidAmount(buyer));
-            assertThat(balance(buyer)).as("구매자 %d 의 잔액 = 원장 합", buyer).isEqualTo(ledgerSum(buyer));
-        }
     }
 
-    @DisplayName("ORDER-014 · 한 사용자의 잔액 10,000원에 서로 다른 4,000원 주문 3건: 확정 2 · 잔액 부족 1 · 최종 잔액 2,000원 · 거절된 주문의 재고는 유지")
-    @Test
-    void pointRace() throws Exception {
-        long buyer = 1L;
-        Long productId = product(4_000, 100);
-        pointFacade.charge(buyer, ChargeAmount.of(10_000), NOW);
-        List<Long> orderIds = List.of(place(buyer, productId, 1), place(buyer, productId, 1), place(buyer, productId, 1));
-
-        List<String> results = runTogether(orderIds.stream()
-            .map(orderId -> (Callable<String>) () -> {
-                orderFacade.confirm(buyer, orderId, NOW);
-                return SUCCESS;
-            })
-            .toList());
-
-        assertThat(countBy(results)).isEqualTo(Map.of(SUCCESS, 2L, "INSUFFICIENT_POINT", 1L));
-        assertThat(balance(buyer)).isEqualTo(2_000L);
-        assertThat(balance(buyer)).as("초기 잔액 + 성공 충전 − 성공 결제 = 최종 잔액")
-            .isEqualTo(10_000 - paidAmount(buyer));
-        assertThat(balance(buyer)).as("잔액 = 원장 합").isEqualTo(ledgerSum(buyer));
-        assertThat(quantityOf(productId)).as("거절된 주문의 재고는 차감되지 않는다").isEqualTo(98);
-    }
-
-    @DisplayName("POINT · 잔액 10,000원에서 2,000원 충전과 7,000원 확정을 함께: 둘 다 성공 · 기술 오류 0 · 최종 잔액 5,000원")
-    @Test
-    void chargeAndPayRace() throws Exception {
-        long buyer = 1L;
-        Long productId = product(7_000, 100);
-        pointFacade.charge(buyer, ChargeAmount.of(10_000), NOW);
-        Long orderId = place(buyer, productId, 1);
-
-        List<String> results = runTogether(List.of(
-            () -> {
-                pointFacade.charge(buyer, ChargeAmount.of(2_000), NOW);
-                return SUCCESS;
-            },
-            () -> {
-                orderFacade.confirm(buyer, orderId, NOW);
-                return SUCCESS;
-            }
-        ));
-
-        assertThat(countBy(results)).isEqualTo(Map.of(SUCCESS, 2L));
-        assertThat(balance(buyer)).isEqualTo(5_000L);
-        assertThat(balance(buyer)).as("잔액 = 원장 합").isEqualTo(ledgerSum(buyer));
-    }
-
-    @DisplayName("ORDER-018 · 같은 주문에 확정 10건이 동시에: 확정 1 · ORDER_NOT_DRAFT 9 · 기술 오류 0 · 차감은 한 번")
+    @DisplayName("ORDER-018, PAY-003 · 같은 주문에 다른 키로 결제 시작 10건이 동시에: 성공 1 · ORDER_NOT_DRAFT 9 · 기술 오류 0 · 차감은 한 번")
     @Test
     void sameOrderRace() throws Exception {
         long buyer = 1L;
         Long productId = product(10_000, 10);
-        pointFacade.charge(buyer, ChargeAmount.of(50_000), NOW);
         Long orderId = place(buyer, productId, 2);
 
         List<Callable<String>> confirms = new ArrayList<>();
         for (int i = 0; i < 10; i++) {
+            String attemptKey = "attempt-" + i;
             confirms.add(() -> {
-                orderFacade.confirm(buyer, orderId, NOW);
+                testPayments.start(buyer, orderId, attemptKey, NOW);
                 return SUCCESS;
             });
         }
@@ -178,8 +124,6 @@ class OrderConcurrencyTest {
 
         assertThat(countBy(results)).isEqualTo(Map.of(SUCCESS, 1L, "ORDER_NOT_DRAFT", 9L));
         assertThat(quantityOf(productId)).isEqualTo(8);
-        assertThat(balance(buyer)).isEqualTo(30_000L);
-        assertThat(balance(buyer)).as("잔액 = 원장 합").isEqualTo(ledgerSum(buyer));
     }
 
     private List<String> runTogether(List<Callable<String>> requests) throws Exception {
@@ -243,29 +187,13 @@ class OrderConcurrencyTest {
         return quantity == null ? -1 : quantity;
     }
 
-    private int confirmedQuantity(Long productId) {
+    private int reservedQuantity(Long productId) {
         Integer sum = jdbcTemplate.queryForObject(
             "SELECT COALESCE(SUM(i.quantity), 0) FROM order_item i JOIN orders o ON o.id = i.order_id "
-                + "WHERE i.product_id = ? AND o.status = 'CONFIRMED'", Integer.class, productId);
+                + "WHERE i.product_id = ? AND o.status = 'PENDING'", Integer.class, productId);
         return sum == null ? -1 : sum;
     }
 
-    private long paidAmount(long buyer) {
-        Long sum = jdbcTemplate.queryForObject(
-            "SELECT COALESCE(SUM(paid_amount), 0) FROM orders WHERE user_id = ? AND status = 'CONFIRMED'",
-            Long.class, buyer);
-        return sum == null ? -1 : sum;
-    }
 
-    private long balance(long buyer) {
-        Long balance = jdbcTemplate.queryForObject("SELECT balance FROM user_point WHERE user_id = ?", Long.class, buyer);
-        return balance == null ? -1 : balance;
-    }
 
-    private long ledgerSum(long buyer) {
-        Long sum = jdbcTemplate.queryForObject(
-            "SELECT COALESCE(SUM(CASE WHEN type = 'CHARGE' THEN amount ELSE -amount END), 0) "
-                + "FROM point_transaction WHERE user_id = ?", Long.class, buyer);
-        return sum == null ? -1 : sum;
-    }
 }

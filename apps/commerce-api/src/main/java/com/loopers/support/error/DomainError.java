@@ -6,7 +6,6 @@ public enum DomainError {
     PRODUCT_ALREADY_DELETED(Failure.RULE_VIOLATION, "삭제된 상품은 수정할 수 없습니다."),
     PRODUCT_NOT_FOUND(Failure.UNIDENTIFIED, "상품을 찾을 수 없습니다."),
 
-    INSUFFICIENT_POINT(Failure.RULE_VIOLATION, "포인트 잔액이 부족합니다."),
     POINT_BALANCE_EXCEEDED(Failure.RULE_VIOLATION, "충전하면 잔액이 표현 범위를 넘습니다."),
 
     BRAND_ALREADY_DELETED(Failure.RULE_VIOLATION, "삭제된 브랜드는 수정할 수 없습니다."),

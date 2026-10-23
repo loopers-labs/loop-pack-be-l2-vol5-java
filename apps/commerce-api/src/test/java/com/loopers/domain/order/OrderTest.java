@@ -121,47 +121,6 @@ class OrderTest {
     }
 
     @Nested
-    @DisplayName("ORDER-010 · 016 · 017 · 확정은 DRAFT 에만, 한 번만")
-    class Confirm {
-        @DisplayName("확정하면 CONFIRMED 가 되고 결제액은 합계와 같다")
-        @Test
-        void confirms() {
-            Order order = draft(item(10L, "코트", 1_000, 2));
-
-            order.confirm(NOW);
-
-            assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
-            assertThat(order.getPaidAmount()).isEqualTo(Money.of(2_000));
-            assertThat(order.getConfirmedAt()).isEqualTo(NOW);
-        }
-
-        @DisplayName("이미 확정된 주문은 다시 확정할 수 없다 — 멱등이 아니라 거절이다")
-        @Test
-        void rejectsSecondConfirm() {
-            Order order = draft(item(10L, "코트", 1_000, 1));
-            order.confirm(NOW);
-
-            assertThatThrownBy(() -> order.confirm(NOW))
-                .isInstanceOf(DomainException.class)
-                .hasFieldOrPropertyWithValue("error", DomainError.ORDER_NOT_DRAFT);
-        }
-
-        @DisplayName("거절된 확정은 결제액을 건드리지 않는다")
-        @Test
-        void rejectedConfirmChangesNothing() {
-            Order order = draft(item(10L, "코트", 1_000, 1));
-            order.confirm(NOW);
-            Instant later = NOW.plusSeconds(60);
-
-            assertThatThrownBy(() -> order.confirm(later)).isInstanceOf(DomainException.class)
-                .hasFieldOrPropertyWithValue("error", DomainError.ORDER_NOT_DRAFT);
-
-            assertThat(order.getConfirmedAt()).isEqualTo(NOW);
-            assertThat(order.getPaidAmount()).isEqualTo(Money.of(1_000));
-        }
-    }
-
-    @Nested
     @DisplayName("ORDER-011 · 자기 주문만 다룰 수 있다")
     class Ownership {
         @DisplayName("주문은 주인이 누구인지 답한다 — 주인을 내주지 않는다")
@@ -233,16 +192,6 @@ class OrderTest {
 
             assertThatThrownBy(() -> draft.completePayment(NOW)).isInstanceOf(IllegalStateException.class);
             assertThatThrownBy(draft::failPayment).isInstanceOf(IllegalStateException.class);
-        }
-
-        @DisplayName("결제를 시작한 주문은 예전 확정(confirm)으로 확정할 수 없다")
-        @Test
-        void oldConfirmRejectsPaymentPending() {
-            Order order = started();
-
-            assertThatThrownBy(() -> order.confirm(NOW))
-                .isInstanceOf(DomainException.class)
-                .hasFieldOrPropertyWithValue("error", DomainError.ORDER_NOT_DRAFT);
         }
     }
 }

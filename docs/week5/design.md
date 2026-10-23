@@ -675,11 +675,11 @@ interfaces/api          confirm · reconcile(OrderV1Controller) · callback 컨�
 - 이름은 제안이다. 구현하며 더 맞는 이름이 보이면 바꾼다.
 - **TX A · TX B 는 facade 와 다른 빈(`PaymentTransactions`)에 둔다.** facade 는 TX A → POST → TX B 를 차례로 부르는데 POST 는 트랜잭션 밖이어야 한다. 같은 빈 안에서 부르면 프록시를 거치지 않아 `@Transactional` 이 걸리지 않는다(self-invocation).
 - **걸치는 판단은 애그리거트에, 순서 · 잠금은 `PaymentTransactions` 에 둔다.** TX A 를 쪼개면 판단은 모두 애그리거트에 있다 — DRAFT 인가(`Order.startPayment`), 재고가 충분한가(`Product`), 같은 요청인가(`Payment.isSameRequest`), 시도의 시작 상태(`Payment.request`). 남는 것은 키를 DRAFT 보다 먼저 보는 순서(4.3), 주문 → 상품(id 순) → payment 의 잠금 순서(5.3), 한 TX 로 묶는 경계이고, 이것은 트랜잭션 경계와 한 몸이라 application 에 둔다. TX B 의 적용을 facade 쪽에 둔 것(5장)과 같은 판단이다.
-  그래서 W2 의 `OrderConfirmation`(도메인 서비스)은 새 확정으로 교체할 때(5 단계 끝) 지운다. 도메인 패키지끼리는 서로 부르지 않고 id 로 가리키며, 셋을 엮는 곳은 `PaymentTransactions` 하나다.
+  그래서 확정을 도메인 서비스로 두지 않는다. 도메인 패키지끼리는 서로 부르지 않고 id 로 가리키며, 셋을 엮는 곳은 `PaymentTransactions` 하나다.
   혼자 커밋되면 안 되는 차감은 `ProductService` 가 아니라 좁은 계약 `StockDeduction` 으로 받는다 — 호출자를 `grep` 한 번으로 센다.
-  지금 고를 수 있는 다른 길: TX A 를 도메인 서비스(`OrderConfirmation` 을 고쳐 쓰기)에 두고 facade 는 트랜잭션만 연다. 판단이 없는 겹이 하나 더 생기고, 도메인 서비스가 다른 도메인의 좁은 계약을 import 해야 한다.
+  지금 고를 수 있는 다른 길: TX A 를 도메인 서비스에 두고 facade 는 트랜잭션만 연다. 판단이 없는 겹이 하나 더 생기고, 도메인 서비스가 다른 도메인의 좁은 계약을 import 해야 한다.
   **뒤집을 조건**: TX A 의 순서 자체가 업무 규칙이 될 때(예: 결제 수단마다 차감 순서가 달라짐) — 그때는 순서를 도메인 서비스로 내려 DB 없이 테스트한다.
-- **새 confirm 은 포인트를 쓰지 않으므로 `PointUsage` · `PointService.use` · `UserPoint.use` 를 지운다**(교체 커밋에서). 호출자 없는 코드를 남기지 않는다. 과거 POINT 주문의 원장을 읽어야 하므로 `TransactionType.USE` 는 남긴다(`PAY-011`). 충전 · 잔액 조회는 그대로다.
+- **confirm 은 포인트를 쓰지 않으므로 포인트 사용 경로(`UserPoint.use` 와 그 계약)를 두지 않는다.** 호출자 없는 코드를 남기지 않는다. 과거 POINT 주문의 원장을 읽어야 하므로 `TransactionType.USE` 는 남긴다(`PAY-011`). 충전 · 잔액 조회는 그대로다.
   **뒤집을 조건**: 포인트와 카드를 섞어 내는 결제가 범위에 들어올 때 — 그때는 부분 차감 · 보상 취소와 함께 새로 설계한다.
 - 4주차 목록 캐시가 `soldOut` 을 담는다(`ProductViewQuery.View`). 예약 · 반환이 품절 여부를 바꿀 수 있으므로 `ProductListingEvents` 의 무효화에 연결한다(`RSV-008`).
 

@@ -50,15 +50,6 @@ public class Order {
         return new Order(id, userId, List.copyOf(items), totalAmount, placedAt, status, paidAmount, confirmedAt);
     }
 
-    public void confirm(Instant confirmedAt) {
-        if (status != OrderStatus.DRAFT) {
-            throw new DomainException(DomainError.ORDER_NOT_DRAFT);
-        }
-        this.status = OrderStatus.CONFIRMED;
-        this.paidAmount = totalAmount;
-        this.confirmedAt = confirmedAt;
-    }
-
     public void startPayment() {
         if (status != OrderStatus.DRAFT) {
             throw new DomainException(DomainError.ORDER_NOT_DRAFT);

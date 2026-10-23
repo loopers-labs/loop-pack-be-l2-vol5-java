@@ -49,6 +49,7 @@ class PaymentTransactionsIntegrationTest {
     private final ProductFacade productFacade;
     private final DatabaseCleanUp databaseCleanUp;
 
+    private Long brandId;
     private Long coat;
     private Long shirt;
 
@@ -73,7 +74,7 @@ class PaymentTransactionsIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        Long brandId = brandFacade.register("무신사", "패션 플랫폼").getId();
+        brandId = brandFacade.register("무신사", "패션 플랫폼").getId();
         coat = productFacade.register(brandId, "코트", Price.of(3_000)).getId();
         shirt = productFacade.register(brandId, "셔츠", Price.of(1_000)).getId();
         productFacade.adjustStock(coat, Quantity.of(10));
@@ -198,6 +199,39 @@ class PaymentTransactionsIntegrationTest {
             assertThatThrownBy(() -> begin(USER, mine.getId(), KEY))
                 .isInstanceOf(DomainException.class)
                 .hasFieldOrPropertyWithValue("error", DomainError.PAYMENT_ATTEMPT_CONFLICT);
+        }
+    }
+
+    @Nested
+    @DisplayName("ORDER-012, RSV-001: 접수 뒤 상품이 삭제되면 결제를 시작할 수 없다")
+    class DeletedProduct {
+
+        @DisplayName("상품이 삭제되면 PRODUCT_NOT_FOUND 이고, 주문은 DRAFT, 시도는 없다")
+        @Test
+        void rejectsDeletedProduct() {
+            Order order = place(USER, 2);
+            productFacade.delete(coat);
+
+            assertThatThrownBy(() -> begin(USER, order.getId(), KEY))
+                .isInstanceOf(DomainException.class)
+                .hasFieldOrPropertyWithValue("error", DomainError.PRODUCT_NOT_FOUND);
+
+            assertThat(orderFacade.get(USER, order.getId()).getStatus()).isEqualTo(OrderStatus.DRAFT);
+            assertThat(paymentRepository.findByAttemptKey(KEY)).isEmpty();
+        }
+
+        @DisplayName("브랜드가 삭제되면 그 상품도 삭제되어 같다")
+        @Test
+        void rejectsDeletedBrand() {
+            Order order = place(USER, 2);
+            brandFacade.delete(brandId);
+
+            assertThatThrownBy(() -> begin(USER, order.getId(), KEY))
+                .isInstanceOf(DomainException.class)
+                .hasFieldOrPropertyWithValue("error", DomainError.PRODUCT_NOT_FOUND);
+
+            assertThat(orderFacade.get(USER, order.getId()).getStatus()).isEqualTo(OrderStatus.DRAFT);
+            assertThat(paymentRepository.findByAttemptKey(KEY)).isEmpty();
         }
     }
 
