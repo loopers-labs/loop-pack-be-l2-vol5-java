@@ -3,6 +3,7 @@ package com.loopers.interfaces.api.payment;
 import com.loopers.application.brand.BrandFacade;
 import com.loopers.application.order.OrderCreateCommand;
 import com.loopers.application.order.OrderFacade;
+import com.loopers.application.payment.PaymentFacade;
 import com.loopers.application.product.ProductFacade;
 import com.loopers.domain.common.Quantity;
 import com.loopers.domain.order.Order;
@@ -25,12 +26,15 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import javax.sql.DataSource;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -55,6 +59,8 @@ class PaymentCallbackApiE2ETest {
     private final BrandFacade brandFacade;
     private final ProductFacade productFacade;
     private final JdbcTemplate jdbcTemplate;
+    private final DataSource dataSource;
+    private final PaymentFacade paymentFacade;
     private final DatabaseCleanUp databaseCleanUp;
 
     @LocalServerPort
@@ -71,6 +77,8 @@ class PaymentCallbackApiE2ETest {
         BrandFacade brandFacade,
         ProductFacade productFacade,
         JdbcTemplate jdbcTemplate,
+        DataSource dataSource,
+        PaymentFacade paymentFacade,
         DatabaseCleanUp databaseCleanUp
     ) {
         this.testPayments = testPayments;
@@ -80,6 +88,8 @@ class PaymentCallbackApiE2ETest {
         this.brandFacade = brandFacade;
         this.productFacade = productFacade;
         this.jdbcTemplate = jdbcTemplate;
+        this.dataSource = dataSource;
+        this.paymentFacade = paymentFacade;
         this.databaseCleanUp = databaseCleanUp;
     }
 
@@ -208,6 +218,38 @@ class PaymentCallbackApiE2ETest {
                 "select count(*) from payment_discrepancy", Integer.class)).isZero(),
             () -> assertThat(PG.receivedRequests()).filteredOn(request -> request.method().equals("GET"))
                 .extracting(PgFixture.ReceivedRequest::path).containsOnly("/api/v1/payments")
+        );
+    }
+
+    @DisplayName("SETTLE-007, SETTLE-009: PG 성공 뒤 반영이 잠금 대기로 실패하면 503 이고 그대로다. 잠금이 풀린 뒤 reconcile 이 같은 거래로 한 번 확정하고 create 는 늘지 않는다")
+    @Test
+    void recoversAfterInternalSaveFailure() throws Exception {
+        Order order = place();
+        String key = started(order);
+        PG.changeStatus(key, PgFixture.Status.SUCCESS);
+        int creates = PG.createCount();
+
+        int response;
+        try (Connection holder = dataSource.getConnection()) {
+            holder.setAutoCommit(false);
+            try (PreparedStatement lock = holder.prepareStatement("SELECT id FROM orders WHERE id = ? FOR UPDATE")) {
+                lock.setLong(1, order.getId());
+                lock.executeQuery().close();
+            }
+            response = callbackFor(key);
+            assertThat(payment(order).getStatus()).isEqualTo(PaymentStatus.PENDING);
+            holder.rollback();
+        }
+
+        Payment reconciled = paymentFacade.reconcile(USER, order.getId(), NOW).payment();
+        paymentFacade.reconcile(USER, order.getId(), NOW);
+
+        assertAll(
+            () -> assertThat(response).isEqualTo(503),
+            () -> assertThat(reconciled.getStatus()).isEqualTo(PaymentStatus.SUCCESS),
+            () -> assertThat(stored(order).getStatus()).isEqualTo(OrderStatus.CONFIRMED),
+            () -> assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(8)),
+            () -> assertThat(PG.createCount()).isEqualTo(creates)
         );
     }
 

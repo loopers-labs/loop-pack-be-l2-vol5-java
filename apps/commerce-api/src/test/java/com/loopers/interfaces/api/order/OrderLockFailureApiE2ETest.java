@@ -18,11 +18,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import javax.sql.DataSource;
@@ -53,7 +56,7 @@ class OrderLockFailureApiE2ETest {
     private static final long DEADLOCK_DETECTED_WITHIN_MILLIS = 1_000;
     private static final ParameterizedTypeReference<ApiResponse<Object>> ANY = new ParameterizedTypeReference<>() {};
 
-    private final TestRestTemplate testRestTemplate;
+    private final RestTemplateBuilder restTemplateBuilder;
     private final OrderFacade orderFacade;
     private final ProductFacade productFacade;
     private final BrandFacade brandFacade;
@@ -62,13 +65,16 @@ class OrderLockFailureApiE2ETest {
     private final JdbcTemplate jdbcTemplate;
     private final DatabaseCleanUp databaseCleanUp;
 
+    @LocalServerPort
+    private int port;
+
     private Long brandId;
     private Long coat;
     private Long knit;
 
     @Autowired
     OrderLockFailureApiE2ETest(
-        TestRestTemplate testRestTemplate,
+        RestTemplateBuilder restTemplateBuilder,
         OrderFacade orderFacade,
         ProductFacade productFacade,
         BrandFacade brandFacade,
@@ -77,7 +83,7 @@ class OrderLockFailureApiE2ETest {
         JdbcTemplate jdbcTemplate,
         DatabaseCleanUp databaseCleanUp
     ) {
-        this.testRestTemplate = testRestTemplate;
+        this.restTemplateBuilder = restTemplateBuilder;
         this.orderFacade = orderFacade;
         this.productFacade = productFacade;
         this.brandFacade = brandFacade;
@@ -178,12 +184,18 @@ class OrderLockFailureApiE2ETest {
         return ids;
     }
 
+    private TestRestTemplate withoutRetry() {
+        return new TestRestTemplate(restTemplateBuilder
+            .requestFactory(SimpleClientHttpRequestFactory::new)
+            .rootUri("http://127.0.0.1:" + port));
+    }
+
     private ResponseEntity<ApiResponse<Object>> confirm(Long orderId) {
         HttpHeaders headers = new HttpHeaders();
         headers.set("X-USER-ID", String.valueOf(BUYER));
         Map<String, Object> card = Map.<String, Object>of(
             "paymentAttemptKey", "attempt-" + orderId, "cardType", "TEST", "cardNo", "0000-0000-0000-0000");
-        return testRestTemplate.exchange(
+        return withoutRetry().exchange(
             "/api/v1/orders/" + orderId + "/confirm", HttpMethod.POST, new HttpEntity<>(card, headers), ANY);
     }
 

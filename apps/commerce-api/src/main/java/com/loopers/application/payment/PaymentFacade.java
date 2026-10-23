@@ -12,11 +12,14 @@ import com.loopers.domain.payment.ProviderOrderId;
 import com.loopers.support.error.DomainError;
 import com.loopers.support.error.DomainException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.util.Optional;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class PaymentFacade {
@@ -44,9 +47,19 @@ public class PaymentFacade {
             case PaymentTransactions.Begin.Granted(Payment payment) -> {
                 CreateObservation observation = paymentGateway.create(new PaymentCreation(
                     payment.getProviderOrderId(), command.cardType(), command.cardNumber(), payment.getAmount()));
-                yield paymentTransactions.observe(payment.getId(), observation, now);
+                yield observeOrKeep(payment, observation, now);
             }
         };
+    }
+
+    private Payment observeOrKeep(Payment sent, CreateObservation observation, Instant now) {
+        try {
+            return paymentTransactions.observe(sent.getId(), observation, now);
+        } catch (DataAccessException e) {
+            log.warn("생성 응답을 반영하지 못해 저장된 상태로 응답한다: paymentId={}, observation={}",
+                sent.getId(), observation, e);
+            return sent;
+        }
     }
 
     public CallbackResult onCallback(ProviderOrderId providerOrderId, Instant now) {

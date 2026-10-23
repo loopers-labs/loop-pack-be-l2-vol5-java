@@ -737,8 +737,8 @@ rm pg-fixture.crt
 
 무작위 지연 · 성공 확률이 없다. 자동 callback · 자동 재전송도 없다. 테스트가 명령할 때만 상태가 바뀐다.
 
-**공용 fixture(`PgFixture.shared()`).** confirm 을 거치는 테스트는 모두 PG 가 떠 있어야 한다. 테스트 소스의 `@Configuration` 이 컨텍스트가 뜰 때 test 프로필의 PG 주소(`127.0.0.1:8090`)에 fixture 하나를 띄우고, 모든 테스트가 그것을 같이 쓴다. 클래스마다 빈 포트로 띄우고 `@DynamicPropertySource` 로 주소를 바꾸면 설정이 달라 Spring 컨텍스트를 클래스마다 새로 만든다. PG 의 동작 자체를 보는 테스트(`PaymentFacadeIntegrationTest` 등)는 지금처럼 자기 fixture 를 따로 띄워, 앞 테스트가 남긴 거래 · 손잡이에 흔들리지 않게 한다.
-테이블을 비우면 주문 id 가 다시 1 부터라, 공용 fixture 에는 같은 PG 주문 번호의 옛 거래가 남는다. 주문 번호 조회(`?orderId=`)를 거치는 테스트는 그 거래까지 받아 `MULTIPLE_TRANSACTIONS` 가 된다. 그래서 공용 fixture 의 상태를 읽는 테스트는 시작마다 `reset()` 한다(거래 키 번호는 이어져 키가 겹치지 않는다).
+**공용 fixture(`PgFixture.shared()`).** confirm 을 거치는 테스트는 모두 PG 가 떠 있어야 한다. 테스트 소스의 `@Configuration` 이 컨텍스트가 뜰 때 test 프로필의 PG 주소(`127.0.0.1:8090`)에 fixture 하나를 띄우고, 모든 테스트가 그것을 같이 쓴다. 클래스마다 빈 포트로 띄우고 `@DynamicPropertySource` 로 주소를 바꾸면 설정이 달라 Spring 컨텍스트를 클래스마다 새로 만든다. PG 의 동작 자체를 보는 테스트(`PaymentFacadeIntegrationTest` 등)는 자기 fixture 를 따로 띄워 다른 테스트 클래스와 섞이지 않게 한다.
+테이블을 비우면 주문 id 가 다시 1 부터라, fixture 에는 같은 PG 주문 번호의 옛 거래가 남는다. 주문 번호 조회(`?orderId=`)를 거치는 테스트는 그 거래까지 받아 `MULTIPLE_TRANSACTIONS` 가 된다. 같은 클래스 안의 테스트끼리도 그렇다. 그래서 fixture 의 상태를 읽는 테스트는 공용이든 자기 것이든 시작마다 `reset()` 한다(거래 키 번호는 이어져 키가 겹치지 않는다).
 **뒤집을 조건**: 테스트 JVM 을 여러 개 병렬로 돌리게 될 때(포트가 겹친다), 또는 8090 을 쓰는 다른 프로세스와 자주 부딪칠 때 — 그때는 빈 포트로 띄우고 주소를 컨텍스트 초기화 단계에서 한 번만 넣는다.
 
 ### 12.2 테스트의 층

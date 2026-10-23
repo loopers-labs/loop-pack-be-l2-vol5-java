@@ -32,8 +32,12 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
+import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -59,6 +63,7 @@ class PaymentFacadeIntegrationTest {
     private final ProductService productService;
     private final BrandFacade brandFacade;
     private final ProductFacade productFacade;
+    private final DataSource dataSource;
     private final DatabaseCleanUp databaseCleanUp;
 
     private Long coat;
@@ -72,6 +77,7 @@ class PaymentFacadeIntegrationTest {
         ProductService productService,
         BrandFacade brandFacade,
         ProductFacade productFacade,
+        DataSource dataSource,
         DatabaseCleanUp databaseCleanUp
     ) {
         this.paymentFacade = paymentFacade;
@@ -80,6 +86,7 @@ class PaymentFacadeIntegrationTest {
         this.productService = productService;
         this.brandFacade = brandFacade;
         this.productFacade = productFacade;
+        this.dataSource = dataSource;
         this.databaseCleanUp = databaseCleanUp;
     }
 
@@ -98,6 +105,7 @@ class PaymentFacadeIntegrationTest {
         Long brandId = brandFacade.register("무신사", "패션 플랫폼").getId();
         coat = productFacade.register(brandId, "코트", Price.of(3_000)).getId();
         productFacade.adjustStock(coat, Quantity.of(10));
+        PG.reset();
         createsBefore = PG.createCount();
     }
 
@@ -114,6 +122,13 @@ class PaymentFacadeIntegrationTest {
     private Payment confirm(Long orderId, String attemptKey) {
         return paymentFacade.confirm(new PaymentConfirmCommand(
             USER, orderId, PaymentAttemptKey.of(attemptKey), CardType.TEST, CARD), NOW);
+    }
+
+    private static void lockOrder(Connection holder, Long orderId) throws Exception {
+        try (PreparedStatement lock = holder.prepareStatement("SELECT id FROM orders WHERE id = ? FOR UPDATE")) {
+            lock.setLong(1, orderId);
+            lock.executeQuery().close();
+        }
     }
 
     private int creates() {
@@ -233,6 +248,41 @@ class PaymentFacadeIntegrationTest {
             confirm(order.getId(), "attempt-1");
 
             assertThat(lookups()).isEqualTo(lookupsBefore);
+        }
+    }
+
+    @Nested
+    @DisplayName("SETTLE-007, 9장: PG 가 받은 뒤 우리 쪽 반영이 실패해도 다시 보내지 않고, 조회로 한 번 끝난다")
+    class InternalSaveFailure {
+
+        @DisplayName("생성 응답을 반영하는 TX B 가 잠금 대기로 실패하면 오류 없이 REQUESTED 를 돌려주고, 잠금이 풀린 뒤 reconcile 이 한 번 확정한다")
+        @Test
+        void confirmKeepsRequestedThenReconcileSettles() throws Exception {
+            Order order = place(2);
+            PgFixture.HeldResponse held = PG.holdNextCreateResponse();
+            CompletableFuture<Payment> confirming = CompletableFuture.supplyAsync(() -> confirm(order.getId(), "attempt-1"));
+            held.awaitStored();
+
+            Payment returned;
+            try (Connection holder = dataSource.getConnection()) {
+                holder.setAutoCommit(false);
+                lockOrder(holder, order.getId());
+                held.release();
+                returned = confirming.get(15, TimeUnit.SECONDS);
+                holder.rollback();
+            }
+            String key = PG.transactionsOf(ProviderOrderId.of(order.getId()).value()).stream()
+                .map(PgFixture.Transaction::transactionKey).max(String::compareTo).orElseThrow();
+            PG.changeStatus(key, PgFixture.Status.SUCCESS);
+
+            Payment reconciled = paymentFacade.reconcile(USER, order.getId(), NOW).payment();
+
+            assertThat(returned.getStatus()).isEqualTo(PaymentStatus.REQUESTED);
+            assertThat(reconciled.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
+            assertThat(reconciled.getTransactionKey().value()).isEqualTo(key);
+            assertThat(orderFacade.get(USER, order.getId()).getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+            assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(8));
+            assertThat(creates()).isEqualTo(1);
         }
     }
 
