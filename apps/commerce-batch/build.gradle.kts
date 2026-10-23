@@ -8,7 +8,10 @@ dependencies {
 
     // batch
     implementation("org.springframework.boot:spring-boot-starter-batch")
+    implementation("org.springframework:spring-web")
+    implementation("io.github.resilience4j:resilience4j-circuitbreaker:2.4.0")
     testImplementation("org.springframework.batch:spring-batch-test")
+    testImplementation("com.h2database:h2")
 
     // querydsl
     annotationProcessor("com.querydsl:querydsl-apt::jakarta")

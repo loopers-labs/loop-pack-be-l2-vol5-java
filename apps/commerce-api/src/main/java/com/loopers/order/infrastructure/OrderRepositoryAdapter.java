@@ -2,6 +2,7 @@ package com.loopers.order.infrastructure;
 
 import com.loopers.order.domain.Order;
 import com.loopers.order.domain.OrderRepository;
+import com.loopers.order.domain.PaymentStatus;
 import jakarta.persistence.EntityManager;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -38,6 +39,17 @@ public class OrderRepositoryAdapter implements OrderRepository {
     @Override
     public Optional<Order> findForConfirmById(Long id) {
         return jpaRepository.findForConfirmById(id);
+    }
+
+    @Override
+    public Optional<Order> findByPaymentAttemptKey(String paymentAttemptKey) {
+        return jpaRepository.findByPayment_PaymentAttemptKey(paymentAttemptKey);
+    }
+
+    @Override
+    public List<Order> findUnresolvedPaymentOrders(long afterOrderId, int limit) {
+        return jpaRepository.findByPayment_StatusInAndIdGreaterThanOrderByIdAsc(
+            List.of(PaymentStatus.PENDING, PaymentStatus.UNKNOWN), afterOrderId, PageRequest.of(0, limit));
     }
 
     @Override

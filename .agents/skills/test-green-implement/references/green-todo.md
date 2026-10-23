@@ -304,3 +304,70 @@ Green 에이전트가 Red 전체를 실행하고 실패를 분석한 뒤, produc
   - 선행 작업: 기존 `BrandRemovalService`와 `ProductRepository.findAllByBrandId` 사용
   - 테스트 명령: `./gradlew :apps:commerce-api:test --tests 'com.loopers.brand.application.BrandUseCaseIntegrationTest' --tests 'com.loopers.brand.interfaces.BrandHttpTest' --rerun-tasks`
   - 완료 조건: 두 클래스 전체가 Green이고 새 두 사례에서 브랜드·연결 상품의 삭제와 다른 대상·기존 주문 보존을 확인한다.
+
+## PG 결제 도메인 Red 5개
+
+- [ ] 31. Payment 상태 기록과 결제 시도 재발송 정책
+  - 요구사항 ID: R-ORDER-32, INV-PAYMENT-50, INV-PAYMENT-51
+  - 관찰한 Red: 초기 `PaymentTest` 5개 중 5개 실패. 성공·실패 승인 결과 후 재발송이 차단되지 않고, 대기/미확인 상태·attempt key를 읽을 수 없으며, 승인 응답 본문이 기록되지 않는다. `TossPaymentAdapterTest`는 통과했다.
+  - 필요한 최소 동작: JPA가 기본 생성자와 변경 가능한 필드로 저장할 수 있도록 결제수단·금액·attempt key·PG 주문 ID·상태·발송 시각·결제 시각·거래 키·원문 응답을 매핑한다. 승인 성공은 `SUCCESS`, PG 거절은 `FAILED`, 결과 미확인은 `UNKNOWN`으로 기록한다. 발송 시작은 `PENDING`/`UNKNOWN`에서 허용하고, `SUCCESS`/`FAILED`이면 `PAYMENT_ALREADY_PROCESSED`로 거절한다. 재시도에서 기존 attempt key를 보존한다.
+  - 변경할 production 파일: `apps/commerce-api/src/main/java/com/loopers/order/domain/Payment.java`, `PaymentMethod.java`, `PaymentStatus.java`
+  - 선행 작업: 없음. 기존 `ErrorCode.PAYMENT_ALREADY_PROCESSED` 존재.
+  - 테스트 명령: `./gradlew :apps:commerce-api:test --tests com.loopers.order.domain.PaymentTest --tests com.loopers.order.infrastructure.payment.toss.TossPaymentAdapterTest`
+  - 완료 조건: `PaymentTest`가 Green이고 `TossPaymentAdapterTest` 회귀가 유지되며, 기존 호환 생성자 결과를 쓰는 어댑터 테스트를 수정하지 않는다. Adapter의 PG 원문 포착은 해당 테스트의 record equality 기대값과 충돌하므로 별도 해결 전에는 변경하지 않고 보고한다.
+
+## 동기 PG 주문 결제 흐름 Red
+
+- [ ] 33. Toss 동기 승인 흐름과 주문 재고 예약·결과 반영
+  - 요구사항 ID: R-ORDER-29, R-ORDER-30, R-ORDER-31, R-ORDER-32, INV-ORDER-45, INV-ORDER-46, INV-STOCK-47, INV-STOCK-49, INV-PAYMENT-51, C-10
+  - 관찰한 실패: `OrderPaymentFlowIntegrationTest` 6개 중 4개가 실패한다. UNKNOWN 반환 후 주문이 UNKNOWN으로 기록되지 않고, 주문에 `stockReservationStatus` 필드가 없어 성공/예약 검증 JPQL이 실패하며, 새 흐름에서 PG 호출 전 Payment·예약을 만들지 않아 CoreException이 난다. `OrderPaymentHttpTest` 3개 모두 기존 컨트롤러가 요청 본문과 PG 결과를 처리하지 않아 실패한다.
+  - 필요한 최소 동작: API 계약에 클라이언트 `paymentKey`를 받도록 추가한다. `paymentAttemptKey`는 Toss `Idempotency-Key`, `paymentKey`는 승인 요청의 결제 키로 전달한다. 별도 트랜잭션 서비스로 TX A에서 주문 검증·Stock 차감·RESERVED 상태·Payment PENDING 저장을 커밋하고, TX 밖에서 Gateway를 호출한 뒤 TX B에서 Approved는 Payment SUCCESS·예약 CONSUMED·주문 CONFIRMED, ProviderError는 Payment FAILED·재고 복구·예약 해제 후 커밋한다. Unknown은 Payment UNKNOWN을 기록하고 주문 DRAFT·예약 RESERVED를 유지한다. 이미 등록된 멱등키는 기존 규칙대로 PG에 재전달하지 않는다. Controller는 200 성공, 202 대기 응답을 주고 확정 거절은 422 PAYMENT_FAILED로 매핑한다. 결제 확정 요청은 `paymentKey`와 `paymentAttemptKey`만 받으며 카드 정보는 받지 않는다.
+  - 변경할 production 파일: `apps/commerce-api/src/main/java/com/loopers/order/interfaces/OrderV1Controller.java`, `OrderV1Dto.java`, `order/application/OrderUseCase.java`, 신규 `order/application/OrderPaymentTransactionService.java`, `order/domain/Order.java`, 신규 `order/domain/StockReservationStatus.java`, `order/infrastructure/OrderJpaRepository.java`, 신규 `order/infrastructure/payment/toss/TossPaymentConfiguration.java`, `support/error/ErrorCode.java`, `interfaces/api/ErrorStatus.java`
+  - 계약·검증 파일: `docs/week2/api-contract.md`, `apps/commerce-api/src/main/resources/static/openapi.yaml`; HTTP 요청 fixture는 두 키만 전달하도록 갱신했다.
+  - 선행 작업: `Payment`, `PaymentGateway`, StockRepository의 기존 PG·재고 모델 사용. 실제 PG 호출은 Toss 승인 포트로 한정한다.
+  - 테스트 명령: `./gradlew :apps:commerce-api:test --tests 'com.loopers.order.application.OrderPaymentFlowIntegrationTest' --tests 'com.loopers.order.interfaces.OrderPaymentHttpTest' --tests 'com.loopers.order.infrastructure.payment.toss.TossPaymentAdapterTest'`
+  - 완료 조건: 세 테스트 클래스 Green, `./gradlew :apps:commerce-api:check`, `./gradlew :apps:commerce-api:test --tests 'com.loopers.architecture.ArchitectureTest'`, `git diff --check` 통과. 기존 테스트의 기대값·규칙은 완화하지 않는다.
+
+## 테스트 PG 승인 응답 시나리오 Red 3개
+
+- [x] 34. 테스트 PG가 Toss 성공·실패·서버 오류 응답과 멱등 재응답을 제공
+  - 요구사항 ID: PG-01, Toss 멱등키 계약
+  - 관찰한 실패: `TestPgApiIntegrationTest` 5개 중 3개가 실패한다. 승인 거절 요청과 PG 서버 오류 요청이 모두 현재 구현에서 `200 DONE`으로 처리된다. 성공 재요청 두 테스트는 통과한다.
+  - 필요한 최소 동작: 성공 승인 결과는 기존처럼 멱등키별 최초 응답을 재사용한다. `test-payment-rejected` 요청은 거래를 만들지 않고 `403 REJECT_CARD_PAYMENT`와 공식 메시지를 반환하며, 같은 멱등키 재요청도 동일 응답을 반환한다. `test-payment-server-error` 요청은 `500 FAILED_INTERNAL_SYSTEM_PROCESSING`와 공식 메시지를 반환한다.
+  - 변경할 production 파일: `apps/test-pg/src/main/java/com/loopers/testpg/TestPgResponseTransformer.java`, `apps/test-pg/src/main/java/com/loopers/testpg/TransactionStore.java`
+  - 선행 작업: 테스트 PG HTTP 테스트가 위 응답과 거래 저장 여부를 검증하도록 작성됨; `docs/week5/toss-pg-api-contract.md`의 오류 계약 참조.
+  - 테스트 명령: `./gradlew :apps:test-pg:test --tests com.loopers.testpg.TestPgApiIntegrationTest`
+  - 완료 조건: 위 테스트 5개 Green, Checkstyle·`git diff --check` 통과, 테스트 파일 목록과 SHA-256이 구현 전과 동일하다.
+
+## PG 멱등키 통합 Red 3개
+
+- [x] 32. 이미 등록된 멱등키의 승인 요청 재처리 차단
+  - 요구사항 ID: R-ORDER-32, INV-PAYMENT-51
+  - 관찰한 Red: `OrderUseCaseIntegrationTest$RejectProcessedPaymentAttempt` 3개가 실패한다. SUCCESS/FAILED는 `PAYMENT_ALREADY_PROCESSED`를 던지지 않고, UNKNOWN은 기존 DRAFT 결제 상태를 반환하지 않고 레거시 확정 흐름으로 진입한다.
+  - 필요한 최소 동작: 결제 승인 요청을 처리하기 전에 해당 멱등키로 연결된 Payment를 조회한다. 기존 SUCCESS/FAILED이면 `PAYMENT_ALREADY_PROCESSED`로 거절하고, PENDING/UNKNOWN이면 저장된 결제와 주문 상태를 그대로 반환해 PG를 다시 호출하지 않는다. 키가 등록되지 않은 경우 기존 주문 확정 흐름을 유지한다.
+  - 변경할 production 파일: `apps/commerce-api/src/main/java/com/loopers/order/application/OrderUseCase.java`, `apps/commerce-api/src/main/java/com/loopers/order/domain/OrderRepository.java`, `apps/commerce-api/src/main/java/com/loopers/order/infrastructure/OrderJpaRepository.java`, `apps/commerce-api/src/main/java/com/loopers/order/infrastructure/OrderRepositoryAdapter.java`
+  - 선행 작업: Order가 Payment를 소유하고 Payment의 멱등키가 유일하게 저장됨.
+  - 테스트 명령: `./gradlew :apps:commerce-api:test --tests 'com.loopers.order.application.OrderUseCaseIntegrationTest$RejectProcessedPaymentAttempt'`
+  - 완료 조건: 위 통합 테스트 3개가 Green이며, 테스트 소스와 기대값은 바뀌지 않는다.
+
+## UNKNOWN 멱등키 통합 Red 1개
+
+- [ ] 35. UNKNOWN 결제 시도 재요청 차단
+  - 요구사항 ID: R-ORDER-32, INV-PAYMENT-50, INV-PAYMENT-51
+  - 관찰한 Red: `OrderPaymentFlowIntegrationTest$RejectProcessedPaymentAttempt.rejectsRetryForUnknownPayment`에서 같은 멱등키의 UNKNOWN 결제를 재요청해도 `PAYMENT_ALREADY_PROCESSED`가 발생하지 않는다.
+  - 필요한 최소 동작: 같은 멱등키로 이미 저장된 Payment가 `UNKNOWN`이면 기존 성공·실패와 같이 `PAYMENT_ALREADY_PROCESSED`로 거절하고 PG 승인 포트를 호출하지 않는다.
+  - 변경할 production 파일: `apps/commerce-api/src/main/java/com/loopers/order/application/OrderPaymentTransactionService.java`
+  - 선행 작업: 기존 SUCCESS/FAILED 결제 시도 차단 로직.
+  - 테스트 명령: `./gradlew :apps:commerce-api:test --tests 'com.loopers.order.application.OrderPaymentFlowIntegrationTest$RejectProcessedPaymentAttempt'`
+  - 완료 조건: 해당 중첩 테스트 세 사례가 Green이고, 테스트 소스와 기대값은 구현 전 해시와 같다.
+
+## UNKNOWN 결제 재조회·결과 반영 통합 Red 3개
+
+- [x] 36. UNKNOWN 조회 성공·실패·최대 횟수 보상 처리
+  - 요구사항 ID: R-ORDER-31, R-ORDER-33, INV-ORDER-46, INV-ORDER-47
+  - 관찰한 Red: `OrderPaymentFlowIntegrationTest`의 UNKNOWN 복구 성공, UNKNOWN 조회 중 최종 FAILED, 3회 조회 후 미확정 테스트가 모두 실패한다. 현재 `OrderUseCase.confirm`은 승인 결과가 UNKNOWN이면 그대로 기록하고 반환하며, `PaymentGateway`의 기본 `findByPaymentKey`는 미구현 예외를 던진다.
+  - 필요한 최소 동작: 승인 결과가 UNKNOWN이면 Resilience4j Retry로 POST 승인을 반복하지 않고 같은 `paymentKey` GET만 최대 3회 조회한다. `Unknown` 결과만 재시도하고 Approved/ProviderError에서 멈춘다. Approved는 성공 처리·예약 소비·주문 확정한다. ProviderError는 실패 처리·예약 반환한다. 3회 모두 Unknown이면 Payment UNKNOWN을 유지하고 주문을 취소·예약 반환한 뒤 PAYMENT_CANCELLATION_PENDING을 반환한다.
+  - 변경할 production 파일: `apps/commerce-api/build.gradle.kts`, `apps/commerce-api/src/main/java/com/loopers/order/application/OrderUseCase.java`, `OrderPaymentTransactionService.java`, `order/domain/Order.java`, `order/domain/OrderStatus.java`, `order/domain/PaymentGateway.java`, `order/infrastructure/payment/toss/TossPaymentAdapter.java`
+  - 선행 작업: PaymentGateway의 paymentKey 조회 포트와 PAYMENT_CANCELLATION_PENDING 오류 매핑이 존재함.
+  - 테스트 명령: `./gradlew :apps:commerce-api:test --tests 'com.loopers.order.application.OrderPaymentFlowIntegrationTest*' --tests 'com.loopers.order.interfaces.OrderPaymentHttpTest' --tests 'com.loopers.order.infrastructure.payment.toss.TossPaymentAdapterTest'`
+  - 완료 조건: UNKNOWN 조회 성공·최종 FAILED·3회 미확정 통합 테스트, 기존 HTTP 및 어댑터 테스트가 Green이고 테스트 파일과 기대값이 구현 전 해시와 같다. 이 조건은 충족했다. 전체 검증에서는 기존 `INV-PAYMENT-50` 표시명 매핑 1건과 테스트 파일 미사용 import Checkstyle 10건이 별도로 실패했다.

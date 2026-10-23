@@ -11,6 +11,7 @@ tags:
   - name: Like
   - name: Point
   - name: Customer Order
+  - name: PG Callback
   - name: Admin Brand
   - name: Admin Product
   - name: Admin Order
@@ -322,38 +323,69 @@ paths:
     post:
       tags: [Customer Order]
       operationId: C10ConfirmOrder
-      summary: 주문 확정
+      summary: 주문 확정 — PG 결제 요청
       security:
         - userId: []
       parameters:
         - $ref: '#/components/parameters/OrderId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmPaymentRequest'
       responses:
         '200':
-          description: CONFIRMED 주문 상세. 품목·합계와 결제액·결제 시각을 담음
+          description: 결제 성공을 반영한 CONFIRMED 주문 상세
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/OrderDetailEnvelope'
+        '202':
+          description: PG 처리가 PENDING. 주문·결제 상태와 조회 경로 반환
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfirmPendingEnvelope'
         '400':
-          $ref: '#/components/responses/InvalidRequest'
+          description: INVALID_REQUEST
+          x-error-codes: [INVALID_REQUEST]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
         '401':
           $ref: '#/components/responses/UserNotIdentified'
         '404':
-          description: ORDER_NOT_FOUND - 주문이 없거나 다른 고객의 주문
+          description: ORDER_NOT_FOUND
           x-error-codes: [ORDER_NOT_FOUND]
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
         '409':
-          description: ORDER_ALREADY_CONFIRMED, PRODUCT_NOT_AVAILABLE, INSUFFICIENT_STOCK, INSUFFICIENT_POINT 또는 재시도 한도 초과 POINT_CONFLICT
-          x-error-codes: [ORDER_ALREADY_CONFIRMED, PRODUCT_NOT_AVAILABLE, INSUFFICIENT_STOCK, INSUFFICIENT_POINT, POINT_CONFLICT]
+          description: ORDER_ALREADY_CONFIRMED, PRODUCT_NOT_AVAILABLE, INSUFFICIENT_STOCK, INSUFFICIENT_POINT, PAYMENT_ALREADY_PROCESSED, POINT_CONFLICT
+          x-error-codes: [ORDER_ALREADY_CONFIRMED, PRODUCT_NOT_AVAILABLE, INSUFFICIENT_STOCK, INSUFFICIENT_POINT, PAYMENT_ALREADY_PROCESSED, POINT_CONFLICT]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: PAYMENT_FAILED
+          x-error-codes: [PAYMENT_FAILED]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '503':
+          description: 결제 결과를 확인하지 못해 동일한 취소 멱등키로 최대 3회 취소를 요청했다. 최종 취소 결과가 확인되지 않으면 결제 상태는 CANCEL_PROCESSING이다.
+          x-error-codes: [PAYMENT_CANCELLATION_PENDING]
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
         '500':
-          description: INTERNAL_ERROR - 충돌 대상을 확인할 수 없거나 아직 DRAFT인 주문의 충돌 한도를 소진한 경우 등 내부 오류
+          description: INTERNAL_ERROR
           x-error-codes: [INTERNAL_ERROR]
           content:
             application/json:
@@ -371,7 +403,7 @@ paths:
         - $ref: '#/components/parameters/OrderId'
       responses:
         '200':
-          description: 주문 상세. DRAFT에는 payment가 없고 CONFIRMED에는 결제액·시각이 있음
+          description: 주문 상세. 결제 시작 전 payment는 null이며 시작 후에는 결제 상태를 포함한다. 결제 실패 조회도 200이다.
           content:
             application/json:
               schema:
@@ -383,6 +415,92 @@ paths:
         '404':
           description: ORDER_NOT_FOUND - 주문이 없거나 다른 고객의 주문
           x-error-codes: [ORDER_NOT_FOUND]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/orders/{orderId}/payment/reconcile:
+    post:
+      tags: [Customer Order]
+      operationId: C13ReconcilePayment
+      summary: 기존 PG 거래 결과 대사
+      security:
+        - userId: []
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      responses:
+        '200':
+          description: 성공 또는 실패 결과 반영 완료. 결제 FAILED도 대사 완료이면 200
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReconcileResultEnvelope'
+        '202':
+          description: 처리 중 또는 조회 불가. 주문·결제 상태와 조회 경로 반환
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReconcilePendingEnvelope'
+        '400':
+          description: INVALID_REQUEST
+          x-error-codes: [INVALID_REQUEST]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          $ref: '#/components/responses/UserNotIdentified'
+        '404':
+          description: ORDER_NOT_FOUND
+          x-error-codes: [ORDER_NOT_FOUND]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/payments/callback:
+    post:
+      tags: [PG Callback]
+      operationId: PaymentCallback
+      summary: PG 결제 결과 알림
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentCallbackRequest'
+      responses:
+        '200':
+          description: 권위 조회 결과 반영 완료 또는 동일 결과의 중복 알림
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CallbackSuccessEnvelope'
+        '202':
+          description: PG 처리 중 또는 조회 불가로 결과 미확정
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CallbackPendingEnvelope'
+        '400':
+          description: INVALID_REQUEST
+          x-error-codes: [INVALID_REQUEST]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: PAYMENT_ATTEMPT_NOT_FOUND
+          x-error-codes: [PAYMENT_ATTEMPT_NOT_FOUND]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          description: PAYMENT_RESULT_CONFLICT
+          x-error-codes: [PAYMENT_RESULT_CONFLICT]
           content:
             application/json:
               schema:
@@ -888,6 +1006,153 @@ components:
       description: ADMIN 역할이 없어 접근이 거절됨. 공통 응답 형식을 사용하지 않는다.
 
   schemas:
+    PendingMetadata:
+      type: object
+      required: [result]
+      properties:
+        result:
+          type: string
+          enum: [PENDING]
+        errorCode:
+          nullable: true
+          enum: [null]
+        message:
+          nullable: true
+          enum: [null]
+    ConfirmPaymentRequest:
+      type: object
+      required: [paymentKey, paymentAttemptKey]
+      properties:
+        paymentKey:
+          type: string
+          description: PG에서 발급되어 승인 요청에 사용하는 결제 키
+        paymentAttemptKey:
+          type: string
+          description: 클라이언트가 생성하며 같은 요청의 재전송에 재사용하는 시도 키
+    PaymentCallbackRequest:
+      type: object
+      required: [providerOrderId, transactionKey, status]
+      description: 알림 본문만으로 확정하지 않고 고정 PG 조회에서 계정·주문·거래·금액을 검증한다.
+      properties:
+        providerOrderId:
+          type: string
+        transactionKey:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, SUCCESS, FAILED]
+    Payment:
+      type: object
+      nullable: true
+      description: 결제 전에는 null이며 결제 시도 후에는 결제수단·상태·금액·결제 시각을 포함한다.
+      required: [method, status, amount, paidAt]
+      properties:
+        method:
+          type: string
+          enum: [PG, POINT]
+        status:
+          type: string
+          enum: [PENDING, UNKNOWN, SUCCESS, FAILED, CANCEL_PROCESSING, CANCELED]
+        amount:
+          type: integer
+          format: int64
+          minimum: 1
+          description: 결제 요청 금액. 이전 POINT 결제는 당시 결제액
+        paidAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: 결제 성공 시각. 성공 전에는 null
+    ReconcileResult:
+      type: object
+      required: [orderStatus, paymentStatus]
+      properties:
+        orderStatus:
+          $ref: '#/components/schemas/OrderStatus'
+        paymentStatus:
+          type: string
+          enum: [SUCCESS, FAILED]
+      example:
+        orderStatus: DRAFT
+        paymentStatus: FAILED
+    PaymentPendingResult:
+      type: object
+      required: [orderStatus, paymentStatus, statusUrl]
+      properties:
+        orderStatus:
+          type: string
+          enum: [DRAFT]
+        paymentStatus:
+          type: string
+          enum: [PENDING, UNKNOWN]
+        statusUrl:
+          type: string
+          description: 주문 상태 GET 조회 경로
+          example: /api/v1/orders/42
+      example:
+        orderStatus: DRAFT
+        paymentStatus: UNKNOWN
+        statusUrl: /api/v1/orders/42
+    ConfirmPendingResult:
+      type: object
+      required: [orderStatus, paymentStatus, statusUrl]
+      properties:
+        orderStatus:
+          type: string
+          enum: [DRAFT]
+        paymentStatus:
+          type: string
+          enum: [PENDING]
+        statusUrl:
+          type: string
+          description: 주문 상태 GET 조회 경로
+          example: /api/v1/orders/42
+      example:
+        orderStatus: DRAFT
+        paymentStatus: PENDING
+        statusUrl: /api/v1/orders/42
+    ConfirmPendingEnvelope:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: '#/components/schemas/PendingMetadata'
+        data:
+          $ref: '#/components/schemas/ConfirmPendingResult'
+    ReconcileResultEnvelope:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: '#/components/schemas/SuccessMetadata'
+        data:
+          $ref: '#/components/schemas/ReconcileResult'
+    ReconcilePendingEnvelope:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: '#/components/schemas/PendingMetadata'
+        data:
+          $ref: '#/components/schemas/PaymentPendingResult'
+    CallbackSuccessEnvelope:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: '#/components/schemas/SuccessMetadata'
+        data:
+          nullable: true
+          enum: [null]
+    CallbackPendingEnvelope:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: '#/components/schemas/PendingMetadata'
+        data:
+          nullable: true
+          enum: [null]
     SuccessMetadata:
       type: object
       required: [result]
@@ -934,6 +1199,10 @@ components:
             - INSUFFICIENT_POINT
             - POINT_CONFLICT
             - POINT_BALANCE_LIMIT_EXCEEDED
+            - PAYMENT_FAILED
+            - PAYMENT_CANCELLATION_PENDING
+            - PAYMENT_ATTEMPT_NOT_FOUND
+            - PAYMENT_RESULT_CONFLICT
             - INTERNAL_ERROR
         message:
           type: string
@@ -1159,7 +1428,7 @@ components:
         balance: 10000
     OrderStatus:
       type: string
-      enum: [DRAFT, CONFIRMED]
+      enum: [DRAFT, CONFIRMED, CANCELED]
     OrderItem:
       type: object
       required: [productId, productName, quantity, unitPrice, amount]
@@ -1183,7 +1452,7 @@ components:
           type: integer
           format: int64
           minimum: 1
-    Payment:
+    LegacyPayment:
       type: object
       required: [amount, paidAt]
       properties:
@@ -1198,7 +1467,7 @@ components:
           description: 결제 시각
     OrderDetail:
       type: object
-      required: [id, status, items, totalAmount]
+      required: [id, status, items, totalAmount, payment]
       properties:
         id:
           type: integer
@@ -1217,9 +1486,7 @@ components:
           minimum: 1
           description: 주문 품목 금액의 합계. DRAFT에도 존재함
         payment:
-          description: CONFIRMED일 때만 존재하는 결제액과 결제 시각. DRAFT에서는 생략함
-          allOf:
-            - $ref: '#/components/schemas/Payment'
+          $ref: '#/components/schemas/Payment'
     OrderSummary:
       type: object
       required: [id, status, itemCount, totalAmount]
@@ -1267,9 +1534,7 @@ components:
           minimum: 1
           description: 주문 품목 금액의 합계. DRAFT에도 존재함
         payment:
-          description: CONFIRMED일 때만 존재하는 결제액과 결제 시각. DRAFT에서는 생략함
-          allOf:
-            - $ref: '#/components/schemas/Payment'
+          $ref: '#/components/schemas/Payment'
     AdminOrderSummary:
       type: object
       required: [id, buyerId, status, itemCount, totalAmount]

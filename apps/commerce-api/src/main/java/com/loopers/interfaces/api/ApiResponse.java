@@ -3,11 +3,15 @@ package com.loopers.interfaces.api;
 public record ApiResponse<T>(Metadata meta, T data) {
     public record Metadata(Result result, String errorCode, String message) {
         public enum Result {
-            SUCCESS, FAIL
+            SUCCESS, PENDING, FAIL
         }
 
         public static Metadata success() {
             return new Metadata(Result.SUCCESS, null, null);
+        }
+
+        public static Metadata pending() {
+            return new Metadata(Result.PENDING, null, null);
         }
 
         public static Metadata fail(String errorCode, String errorMessage) {
@@ -21,6 +25,10 @@ public record ApiResponse<T>(Metadata meta, T data) {
 
     public static <T> ApiResponse<T> success(T data) {
         return new ApiResponse<>(Metadata.success(), data);
+    }
+
+    public static <T> ApiResponse<T> pending(T data) {
+        return new ApiResponse<>(Metadata.pending(), data);
     }
 
     public static ApiResponse<Object> fail(String errorCode, String errorMessage) {

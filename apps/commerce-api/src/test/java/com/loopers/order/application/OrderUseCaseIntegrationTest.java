@@ -6,6 +6,7 @@ import com.loopers.order.domain.Order;
 import com.loopers.order.domain.OrderItem;
 import com.loopers.order.domain.OrderRepository;
 import com.loopers.order.domain.OrderStatus;
+import com.loopers.order.domain.PaymentGateway;
 import com.loopers.product.domain.Product;
 import com.loopers.product.domain.Stock;
 import com.loopers.support.error.CoreException;
@@ -21,6 +22,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.util.List;
 
@@ -35,6 +37,7 @@ class OrderUseCaseIntegrationTest {
     @Autowired private OrderUseCase useCase;
     @Autowired private OrderRepository orderRepository;
     @Autowired private EntityManager entityManager;
+    @MockitoBean private PaymentGateway paymentGateway;
 
     @DisplayName("[INV-ORDER-32] 주문 생성은 재고와 잔액을 바꾸지 않는다.")
     @Nested class CreateWithoutDeduction {
@@ -92,7 +95,8 @@ class OrderUseCaseIntegrationTest {
                 () -> assertThat(entityManager.find(Order.class, scenario.order().getId()).getStatus())
                     .isEqualTo(OrderStatus.DRAFT),
                 () -> assertThat(TestEntities.stockQuantity(entityManager, scenario.product().getId())).isEqualTo(1),
-                () -> assertThat(TestEntities.pointBalance(entityManager, scenario.buyer().getId())).isEqualTo(10_000L)
+                () -> assertThat(TestEntities.pointBalance(entityManager, scenario.buyer().getId())).isEqualTo(10_000L),
+                () -> org.mockito.Mockito.verifyNoInteractions(paymentGateway)
             );
         }
 
@@ -108,21 +112,6 @@ class OrderUseCaseIntegrationTest {
                     .isEqualTo(OrderStatus.DRAFT),
                 () -> assertThat(TestEntities.stockQuantity(entityManager, scenario.product().getId())).isEqualTo(5),
                 () -> assertThat(TestEntities.pointBalance(entityManager, scenario.buyer().getId())).isEqualTo(3_999L)
-            );
-        }
-    }
-
-    @DisplayName("[INV-ORDER-36] 확정에 성공하면 재고는 품목 수량만큼, 잔액은 주문 합계만큼 줄어든다.")
-    @Nested class PersistConfirmation {
-        @DisplayName("[상태 전이] 재고 5와 잔액 10000에서 4000원 주문 확정 후 3과 6000이 저장된다.")
-        @Test void savesOrderProductAndBuyerTogether() {
-            Scenario scenario = confirmationScenario(5, 10_000L);
-            useCase.confirm(scenario.buyer().getId(), scenario.order().getId());
-            entityManager.flush();
-            entityManager.clear();
-            assertAll(
-                () -> assertThat(TestEntities.stockQuantity(entityManager, scenario.product().getId())).isEqualTo(3),
-                () -> assertThat(TestEntities.pointBalance(entityManager, scenario.buyer().getId())).isEqualTo(6_000L)
             );
         }
     }

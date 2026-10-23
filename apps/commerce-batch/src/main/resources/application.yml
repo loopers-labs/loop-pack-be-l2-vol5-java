@@ -16,6 +16,22 @@ spring:
       name: ${job.name:NONE}
     jdbc:
       initialize-schema: never
+  sql:
+    init:
+      mode: always
+
+payment:
+  toss:
+    base-url: ${TOSS_BASE_URL:https://api.tosspayments.com}
+    secret-key: ${TOSS_SECRET_KEY:}
+  resilience:
+    circuit-breaker:
+      sliding-window-seconds: ${PAYMENT_CB_SLIDING_WINDOW_SECONDS:30}
+      minimum-number-of-calls: ${PAYMENT_CB_MINIMUM_CALLS:20}
+      failure-rate-threshold: ${PAYMENT_CB_FAILURE_RATE_THRESHOLD:70}
+      wait-duration-in-open-state: ${PAYMENT_CB_OPEN_DURATION:30s}
+      permitted-number-of-calls-in-half-open-state: ${PAYMENT_CB_HALF_OPEN_CALLS:2}
+
 
 management:
   health:

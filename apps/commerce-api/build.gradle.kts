@@ -23,6 +23,9 @@ checkstyle {
 // DomainRulesTest 가 읽는 문서다. 입력으로 걸지 않으면 문서만 고쳤을 때
 // test 가 UP-TO-DATE 로 건너뛰어 어긋남이 드러나지 않는다.
 tasks.test {
+    doFirst {
+        systemProperty("commerce.api.test.classpath", sourceSets.test.get().runtimeClasspath.asPath)
+    }
     inputs.files(
         rootProject.file("docs/week2/domain-rules.yaml"),
         rootProject.file("docs/week2/requirements.md"),
@@ -57,6 +60,9 @@ dependencies {
     // web
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
+    implementation("io.github.resilience4j:resilience4j-bulkhead:2.4.0")
+    implementation("io.github.resilience4j:resilience4j-circuitbreaker:2.4.0")
+    implementation("io.github.resilience4j:resilience4j-retry:2.4.0")
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:${project.properties["springDocOpenApiVersion"]}")
 
     // admin boundary
@@ -70,6 +76,7 @@ dependencies {
     // test-fixtures
     testImplementation(testFixtures(project(":modules:jpa")))
     testImplementation(testFixtures(project(":modules:redis")))
+    testImplementation("org.wiremock:wiremock-standalone:3.13.2")
 
     // architecture test
     testImplementation("com.tngtech.archunit:archunit:1.5.0")

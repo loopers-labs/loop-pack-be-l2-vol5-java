@@ -5,8 +5,10 @@ import com.loopers.interfaces.api.ListResponse;
 import com.loopers.interfaces.api.PageQuery;
 import com.loopers.interfaces.api.Requester;
 import com.loopers.order.application.OrderUseCase;
+import com.loopers.order.domain.PaymentStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -35,13 +37,22 @@ public class OrderV1Controller {
     }
 
     @PostMapping("/{orderId}/confirm")
-    public ApiResponse<OrderV1Dto.OrderDetailResponse> confirmOrder(
+    public ResponseEntity<ApiResponse<?>> confirmOrder(
         Requester requester,
-        @PathVariable Long orderId
+        @PathVariable Long orderId,
+        @RequestBody(required = false) OrderV1Dto.ConfirmPaymentRequest request
     ) {
-        return ApiResponse.success(OrderV1Dto.OrderDetailResponse.from(
-            orderUseCase.confirm(requester.userId(), orderId)
-        ));
+        var order = request == null
+            ? orderUseCase.confirm(requester.userId(), orderId)
+            : orderUseCase.confirm(requester.userId(), orderId,
+                request.requiredPaymentKey(), request.requiredPaymentAttemptKey());
+        if (order.getPayment() != null
+            && (order.getPayment().status() == PaymentStatus.PENDING
+                || order.getPayment().status() == PaymentStatus.UNKNOWN)) {
+            return ResponseEntity.accepted().body(ApiResponse.pending(
+                OrderV1Dto.PendingPaymentResponse.from(order)));
+        }
+        return ResponseEntity.ok(ApiResponse.success(OrderV1Dto.OrderDetailResponse.from(order)));
     }
 
     @GetMapping

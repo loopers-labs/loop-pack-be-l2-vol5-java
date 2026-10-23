@@ -5,7 +5,11 @@ import com.loopers.order.application.OrderUseCase;
 import com.loopers.order.domain.Order;
 import com.loopers.order.domain.OrderItem;
 import com.loopers.order.domain.OrderStatus;
+import com.loopers.order.domain.Payment;
+import com.loopers.order.domain.PaymentMethod;
+import com.loopers.order.domain.PaymentStatus;
 import com.loopers.order.domain.PaymentResult;
+import com.fasterxml.jackson.annotation.JsonInclude;
 
 import java.time.ZonedDateTime;
 import java.util.List;
@@ -17,6 +21,19 @@ public class OrderV1Dto {
             return RequestFields.required(items).stream()
                 .map(item -> RequestFields.required(item).toCommand())
                 .toList();
+        }
+    }
+
+    public record ConfirmPaymentRequest(
+        String paymentKey,
+        String paymentAttemptKey
+    ) {
+        public String requiredPaymentKey() {
+            return RequestFields.required(paymentKey);
+        }
+
+        public String requiredPaymentAttemptKey() {
+            return RequestFields.required(paymentAttemptKey);
         }
     }
 
@@ -51,12 +68,18 @@ public class OrderV1Dto {
         }
     }
 
-    public record PaymentResponse(Long amount, ZonedDateTime paidAt) {
-        static PaymentResponse from(PaymentResult result) {
+    public record PaymentResponse(PaymentMethod method, PaymentStatus status, Long amount, ZonedDateTime paidAt) {
+        static PaymentResponse from(Order order) {
+            Payment payment = order.getPayment();
+            if (payment != null) {
+                return new PaymentResponse(
+                    payment.getMethod(), payment.status(), payment.getAmount(), payment.getPaidAt());
+            }
+            PaymentResult result = order.getPaymentResult();
             if (result == null) {
                 return null;
             }
-            return new PaymentResponse(result.amount(), result.paidAt());
+            return new PaymentResponse(PaymentMethod.POINT, PaymentStatus.SUCCESS, result.amount(), result.paidAt());
         }
     }
 
@@ -65,6 +88,7 @@ public class OrderV1Dto {
         OrderStatus status,
         List<OrderItemResponse> items,
         long totalAmount,
+        @JsonInclude(JsonInclude.Include.ALWAYS)
         PaymentResponse payment
     ) {
         public static OrderDetailResponse from(Order order) {
@@ -73,7 +97,17 @@ public class OrderV1Dto {
                 order.getStatus(),
                 OrderItemResponse.from(order),
                 order.getTotalAmount(),
-                PaymentResponse.from(order.getPaymentResult())
+                PaymentResponse.from(order)
+            );
+        }
+    }
+
+    public record PendingPaymentResponse(OrderStatus orderStatus, PaymentStatus paymentStatus, String statusUrl) {
+        public static PendingPaymentResponse from(Order order) {
+            return new PendingPaymentResponse(
+                order.getStatus(),
+                order.getPayment().status(),
+                "/api/v1/orders/" + order.getId()
             );
         }
     }
@@ -102,6 +136,7 @@ public class OrderV1Dto {
         OrderStatus status,
         List<OrderItemResponse> items,
         long totalAmount,
+        @JsonInclude(JsonInclude.Include.ALWAYS)
         PaymentResponse payment
     ) {
         public static AdminOrderDetailResponse from(Order order) {
@@ -111,7 +146,7 @@ public class OrderV1Dto {
                 order.getStatus(),
                 OrderItemResponse.from(order),
                 order.getTotalAmount(),
-                PaymentResponse.from(order.getPaymentResult())
+                PaymentResponse.from(order)
             );
         }
     }

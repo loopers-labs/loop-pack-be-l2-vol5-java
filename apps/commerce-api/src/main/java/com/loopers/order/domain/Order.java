@@ -5,9 +5,13 @@ import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorCode;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Embedded;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Table;
+import jakarta.persistence.CascadeType;
+import jakarta.persistence.OneToOne;
 import jakarta.persistence.Version;
 
 import java.time.ZonedDateTime;
@@ -24,8 +28,12 @@ public class Order extends BaseEntity {
     @ElementCollection(fetch = FetchType.EAGER)
     private List<OrderItem> items;
     private OrderStatus status;
+    @Enumerated(EnumType.STRING)
+    private StockReservationStatus stockReservationStatus;
     @Embedded
     private PaymentResult paymentResult;
+    @OneToOne(cascade = CascadeType.ALL, orphanRemoval = true)
+    private Payment payment;
     @Version
     private Long version;
 
@@ -57,8 +65,20 @@ public class Order extends BaseEntity {
         return status;
     }
 
+    public StockReservationStatus getStockReservationStatus() {
+        return stockReservationStatus;
+    }
+
     public PaymentResult getPaymentResult() {
         return paymentResult;
+    }
+
+    public Payment getPayment() {
+        return payment;
+    }
+
+    public void setPayment(Payment payment) {
+        this.payment = payment;
     }
 
     public boolean isOwnedBy(Long userId) {
@@ -86,6 +106,33 @@ public class Order extends BaseEntity {
         PaymentResult result = new PaymentResult(paymentAmount, paidAt);
         this.paymentResult = result;
         this.status = OrderStatus.CONFIRMED;
+    }
+
+    public void cancel() {
+        ensureDraft();
+        this.status = OrderStatus.CANCELED;
+    }
+
+    public void reserveStock() {
+        ensureDraft();
+        if (stockReservationStatus != null) {
+            throw new CoreException(ErrorCode.PAYMENT_ALREADY_PROCESSED);
+        }
+        stockReservationStatus = StockReservationStatus.RESERVED;
+    }
+
+    public void consumeStockReservation() {
+        if (stockReservationStatus != StockReservationStatus.RESERVED) {
+            throw new CoreException(ErrorCode.INTERNAL_ERROR);
+        }
+        stockReservationStatus = StockReservationStatus.CONSUMED;
+    }
+
+    public void releaseStockReservation() {
+        if (stockReservationStatus != StockReservationStatus.RESERVED) {
+            throw new CoreException(ErrorCode.INTERNAL_ERROR);
+        }
+        stockReservationStatus = null;
     }
 
     private static List<OrderItem> mergeItems(List<OrderItem> items) {

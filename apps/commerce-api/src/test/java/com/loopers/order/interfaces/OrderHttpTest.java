@@ -423,7 +423,7 @@ class OrderHttpTest {
         }
     }
 
-    @DisplayName("[R-ORDER-07~09] 확정할 수 없는 주문은 상태·재고·잔액을 바꾸지 않고 거절한다.")
+    @DisplayName("확정할 수 없는 주문은 상태·재고·잔액을 바꾸지 않고 거절한다.")
     @Nested
     class RejectInvalidConfirmation {
 

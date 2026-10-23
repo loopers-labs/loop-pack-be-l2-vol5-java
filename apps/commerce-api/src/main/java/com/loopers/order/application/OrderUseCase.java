@@ -5,6 +5,8 @@ import com.loopers.order.domain.OrderConfirmService;
 import com.loopers.order.domain.OrderItem;
 import com.loopers.order.domain.OrderRepository;
 import com.loopers.order.domain.OrderStatus;
+import com.loopers.order.domain.PaymentGateway;
+import com.loopers.order.domain.PaymentGateway.CancellationRequest;
 import com.loopers.product.domain.Product;
 import com.loopers.product.domain.ProductRepository;
 import com.loopers.product.domain.Stock;
@@ -17,22 +19,40 @@ import com.loopers.user.domain.User;
 import com.loopers.user.domain.UserRepository;
 import com.loopers.user.domain.Point;
 import com.loopers.user.domain.PointRepository;
+import io.github.resilience4j.retry.Retry;
+import io.github.resilience4j.retry.RetryConfig;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.OptimisticLockException;
 import org.hibernate.StaleObjectStateException;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.ZonedDateTime;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
 public class OrderUseCase {
+
+    private static final Retry PAYMENT_LOOKUP_RETRY = Retry.of("payment-key-lookup",
+        RetryConfig.<PaymentGateway.ApprovalResult>custom()
+            .maxAttempts(3)
+            .waitDuration(Duration.ZERO)
+            .retryOnResult(result -> result instanceof PaymentGateway.Unknown)
+            .build());
+
+    private static final Retry PAYMENT_CANCELLATION_RETRY = Retry.of("payment-cancellation",
+        RetryConfig.<PaymentGateway.CancellationResult>custom()
+            .maxAttempts(3)
+            .waitDuration(Duration.ZERO)
+            .retryOnResult(result -> result instanceof PaymentGateway.CancellationUnknown)
+            .build());
 
     private final OrderRepository orderRepository;
     private final ProductRepository productRepository;
@@ -41,7 +61,32 @@ public class OrderUseCase {
     private final StockRepository stockRepository;
     private final TransactionRetryExecutor transactionRetryExecutor;
     private final EntityManager entityManager;
+    private final OrderPaymentTransactionService paymentTransactionService;
+    private final PaymentGateway paymentGateway;
     private final OrderConfirmService confirmService = new OrderConfirmService();
+
+    @Autowired
+    public OrderUseCase(
+        OrderRepository orderRepository,
+        ProductRepository productRepository,
+        UserRepository userRepository,
+        PointRepository pointRepository,
+        StockRepository stockRepository,
+        TransactionRetryExecutor transactionRetryExecutor,
+        EntityManager entityManager,
+        OrderPaymentTransactionService paymentTransactionService,
+        PaymentGateway paymentGateway
+    ) {
+        this.orderRepository = orderRepository;
+        this.productRepository = productRepository;
+        this.userRepository = userRepository;
+        this.pointRepository = pointRepository;
+        this.stockRepository = stockRepository;
+        this.transactionRetryExecutor = transactionRetryExecutor;
+        this.entityManager = entityManager;
+        this.paymentTransactionService = paymentTransactionService;
+        this.paymentGateway = paymentGateway;
+    }
 
     public OrderUseCase(
         OrderRepository orderRepository,
@@ -52,13 +97,8 @@ public class OrderUseCase {
         TransactionRetryExecutor transactionRetryExecutor,
         EntityManager entityManager
     ) {
-        this.orderRepository = orderRepository;
-        this.productRepository = productRepository;
-        this.userRepository = userRepository;
-        this.pointRepository = pointRepository;
-        this.stockRepository = stockRepository;
-        this.transactionRetryExecutor = transactionRetryExecutor;
-        this.entityManager = entityManager;
+        this(orderRepository, productRepository, userRepository, pointRepository, stockRepository,
+            transactionRetryExecutor, entityManager, null, null);
     }
 
     @Transactional
@@ -95,6 +135,46 @@ public class OrderUseCase {
             }
             throw exception;
         }
+    }
+
+    public Order confirm(Long buyerId, Long orderId, String paymentAttemptKey) {
+        return confirm(buyerId, orderId, paymentAttemptKey, paymentAttemptKey);
+    }
+
+    public Order confirm(Long buyerId, Long orderId, String paymentKey, String paymentAttemptKey) {
+        return confirmWithPaymentGateway(buyerId, orderId, paymentKey, paymentAttemptKey);
+    }
+
+    private Order confirmWithPaymentGateway(Long buyerId, Long orderId, String paymentKey, String paymentAttemptKey) {
+        OrderPaymentTransactionService.DispatchPlan plan = paymentTransactionService.prepare(
+            buyerId, orderId, paymentKey, paymentAttemptKey);
+        if (!plan.shouldDispatch()) {
+            return plan.order();
+        }
+
+        PaymentGateway.ApprovalResult result = paymentGateway.approve(plan.request());
+        Order order = paymentTransactionService.recordResult(orderId, result);
+        if (result instanceof PaymentGateway.Unknown) {
+            result = PAYMENT_LOOKUP_RETRY.executeSupplier(() -> {
+                PaymentGateway.ApprovalResult lookup = paymentGateway.findByPaymentKey(paymentKey);
+                return lookup == null ? new PaymentGateway.Unknown() : lookup;
+            });
+            if (result instanceof PaymentGateway.Unknown) {
+                CancellationRequest cancellationRequest = new CancellationRequest(
+                    paymentKey,
+                    "결제 결과 확인 불가로 주문 취소",
+                    plan.order().getPayment().paymentAttemptKey() + "-cancel");
+                PaymentGateway.CancellationResult cancellation = PAYMENT_CANCELLATION_RETRY.executeSupplier(
+                    () -> paymentGateway.cancel(cancellationRequest));
+                paymentTransactionService.recordCancellationResultAndReleaseReservation(orderId, cancellation);
+                throw new CoreException(ErrorCode.PAYMENT_CANCELLATION_PENDING);
+            }
+            order = paymentTransactionService.recordResult(orderId, result);
+        }
+        if (result instanceof PaymentGateway.ProviderError || result instanceof PaymentGateway.DispatchRejected) {
+            throw new CoreException(ErrorCode.PAYMENT_FAILED);
+        }
+        return order;
     }
 
     private boolean isPointConflict(Throwable exception) {

@@ -1,3 +1,4 @@
+
 # commerce-api 도메인 규칙
 #
 # 요구사항에서 파생된 불변식이다. 그룹 키는 용어집(glossary.md)의 코드 이름에서 온다.
@@ -44,21 +45,26 @@ requirements:
   R-POINT-07:   [INV-POINT-19]
   R-POINT-08:   [INV-POINT-21]
 
+  R-STOCK-01:   [INV-STOCK-15]
+
   R-ORDER-01:   [INV-ORDER-27]
   R-ORDER-02:   [INV-ORDER-29, INV-ORDERITEM-40]
   R-ORDER-03:   [INV-ORDER-30, INV-ORDER-34]
   R-ORDER-04:   [INV-ORDER-32]
   R-ORDER-05:   [INV-ORDER-33]
   R-ORDER-06:   [INV-ORDERITEM-39]
-  R-ORDER-07:   [INV-ORDER-33]
-  R-ORDER-08:   [INV-STOCK-15]
   R-ORDER-09:   [INV-POINT-16, INV-POINT-20, INV-ORDER-43]
   R-ORDER-10:   [INV-ORDER-35]
-  R-ORDER-11:   [INV-ORDER-36, INV-ORDER-43]
+  R-ORDER-11:   [INV-ORDER-43]
   R-ORDER-12:   [INV-ORDER-34, INV-PAYMENTRESULT-42, INV-ORDER-43, INV-ORDER-44]
   R-ORDER-13:   []
   R-ORDER-14:   []
   R-ORDER-15:   [INV-ORDER-28]
+  R-ORDER-29:   []
+  R-ORDER-30:   [INV-STOCK-47, INV-ORDER-45]
+  R-ORDER-31:   [INV-STOCK-49, INV-ORDER-46]
+  R-ORDER-32:   [INV-PAYMENT-50, INV-PAYMENT-51]
+  R-ORDER-34:   [INV-ORDER-48]
 
   R-ADMIN-01:   []
   R-ADMIN-04:   []
@@ -92,7 +98,7 @@ requirements:
   P-ORDER-03:   [INV-ORDERITEM-40]
   P-ORDER-04:   [INV-ORDER-37]
   P-ORDER-05:   [INV-ORDER-38]
-  P-ORDER-06:   [INV-PAYMENTRESULT-42]
+  P-ORDER-13:   [INV-PAYMENTRESULT-42]
   P-ORDER-07:   [INV-ORDERITEM-40]
   P-ORDER-08:   []
   P-ORDER-09:   []
@@ -130,14 +136,16 @@ rules:
 
   Stock:
     INV-STOCK-14: 재고 수량은 0 이상이다.
-    INV-STOCK-15: 차감 수량은 현재 재고 이하다.
+    INV-STOCK-15: 재고 차감 수량은 처리 전 가용 재고 이하다.
+    INV-STOCK-47: PG 요청 전에 주문 품목 수량만큼 재고가 예약되어 있고 그 수량은 가용 재고에서 제외된 상태다.
+    INV-STOCK-49: PG 성공으로 예약을 확정한 뒤 가용 재고는 예약 직후와 같다. 예약 확정에 따른 추가 차감은 0이다.
 
   Point:
     INV-POINT-16: 포인트 잔액은 0 이상이다.
     INV-POINT-17: 충전액은 양의 정수다.
     INV-POINT-18: 충전 뒤 잔액은 기존 잔액과 충전액의 합이다.
     INV-POINT-19: 충전 뒤 잔액은 시스템이 표현할 수 있는 범위 안이다.
-    INV-POINT-20: 결제액은 현재 잔액 이하다.
+    INV-POINT-20: 포인트 결제액은 현재 포인트 잔액 이하다.
     INV-POINT-21: 거절된 충전은 잔액을 바꾸지 않는다.
 
   Like:
@@ -154,19 +162,24 @@ rules:
     INV-ORDER-30: 새 주문의 상태는 DRAFT다.
     INV-ORDER-31: 주문은 구매자의 것이다.
     INV-ORDER-32: 주문 생성은 재고와 잔액을 바꾸지 않는다.
-    INV-ORDER-33: 주문에 쓰인 상품은 주문 생성 시점과 확정 시점 모두 존재하며 삭제되지 않은 상태다.
-    INV-ORDER-34: 확정된 주문은 결제 결과를 갖는다. DRAFT 주문은 갖지 않는다.
-    INV-ORDER-35: 거절된 확정은 주문 상태·재고·잔액을 바꾸지 않는다.
-    INV-ORDER-36: 확정에 성공하면 재고는 품목 수량만큼, 잔액은 주문 합계만큼 줄어든다.
+    INV-ORDER-33: 주문에 쓰인 상품은 주문 생성 시점에 존재하며 삭제되지 않은 상태다.
+    INV-ORDER-34: 확정된 주문은 성공한 결제를 갖는다. DRAFT 주문은 성공한 결제를 갖지 않으며 미완료·실패 결제는 가질 수 있다.
+    INV-ORDER-35: 결제 시작 전 검증에서 거절된 요청은 주문 상태·재고·잔액을 바꾸지 않는다.
+    # INV-ORDER-36: 포인트 결제의 확정에 성공하면 재고는 품목 수량만큼, 잔액은 주문 합계만큼 줄어든다.
     INV-ORDER-37: 확정된 주문의 결제 결과는 바뀌지 않는다.
     INV-ORDER-38: 품목 수량이 바뀌는 주문의 상태는 DRAFT다.
     INV-ORDER-43: 결제액은 확정 시점의 주문 합계다.
     INV-ORDER-44: 확정에 성공한 주문의 상태는 CONFIRMED다.
+    INV-ORDER-45: PG 결제 요청 전에 주문 품목의 재고를 예약한다.
+    INV-ORDER-46: PG 결제가 완료되면 주문 품목의 재고 예약을 확정하고 주문 상태를 CONFIRMED로 바꾼다.
+    INV-ORDER-48: 결제 결과 확인을 위한 재조회가 끝난 뒤 PG 취소 요청도 최대 3회 미확정이면 재고 예약은 반환 완료되고 결제 상태는 CANCEL_PROCESSING이다. 취소가 확인되면 결제 상태는 CANCELED다.
 
   OrderItem:
     INV-ORDERITEM-39: 품목 수량은 양수다.
     INV-ORDERITEM-40: 품목은 주문을 생성한 시점의 상품 이름과 단가를 갖는다.
     INV-ORDERITEM-41: 상품이 삭제되어도 그 상품의 주문 품목은 남는다.
 
-  PaymentResult:
-    INV-PAYMENTRESULT-42: 결제 결과는 결제액과 결제 시점을 갖는다.
+  Payment:
+    INV-PAYMENTRESULT-42: 성공한 결제는 결제액과 결제 시점을 갖는다.
+    INV-PAYMENT-50: 같은 결제 시도를 재요청할 때 최초 승인 요청과 같은 멱등키를 사용해 중복 결제를 막는다.
+    INV-PAYMENT-51: 이미 사용된 멱등키로 들어온 결제 승인 요청은 PG에 다시 전달하지 않는다.

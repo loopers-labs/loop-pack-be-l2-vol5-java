@@ -9,6 +9,8 @@ public interface OrderRepository {
 
     Optional<Order> findById(Long id);
     Optional<Order> findForConfirmById(Long id);
+    Optional<Order> findByPaymentAttemptKey(String paymentAttemptKey);
+    List<Order> findUnresolvedPaymentOrders(long afterOrderId, int limit);
 
     List<Order> findAllByBuyerId(Long buyerId, int page, int size);
 
