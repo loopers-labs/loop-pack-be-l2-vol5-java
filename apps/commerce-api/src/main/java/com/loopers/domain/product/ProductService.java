@@ -46,6 +46,15 @@ public class ProductService {
             .collect(Collectors.toMap(Product::getId, Function.identity()));
     }
 
+    /**
+     * 여러 상품을 삭제된 상품까지 포함해 id 오름차순으로 잠그고 조회해 id 로 찾을 수 있게 돌려준다. 결제가 확정 실패했을 때
+     * 확보했던 재고를 돌려주는 유스케이스의 첫 상품 조회로 쓴다.
+     */
+    public Map<Long, Product> getAllByIdsForUpdate(Collection<Long> ids) {
+        return productRepository.findAllByIdsForUpdate(ids).stream()
+            .collect(Collectors.toMap(Product::getId, Function.identity()));
+    }
+
     public Product create(Long brandId, String name, Money price, Stock stock) {
         return productRepository.save(Product.create(brandId, name, price, stock));
     }

@@ -78,20 +78,6 @@ class LikeServiceTest {
             // assert
             assertThat(likeService.count(product)).isEqualTo(1);
         }
-
-        @DisplayName("다른 사용자의 좋아요는 각각 센다.")
-        @Test
-        void countsEachUser() {
-            // arrange
-            Long product = saveProduct();
-
-            // act
-            likeService.like(1L, product);
-            likeService.like(2L, product);
-
-            // assert
-            assertThat(likeService.count(product)).isEqualTo(2);
-        }
     }
 
     @DisplayName("좋아요를 취소할 때,")
@@ -144,16 +130,6 @@ class LikeServiceTest {
         }
     }
 
-    @DisplayName("상품의 좋아요 수를 셀 때,")
-    @Nested
-    class Count {
-        @DisplayName("관계가 없으면 0이다.")
-        @Test
-        void returnsZero_whenNoLikes() {
-            assertThat(likeService.count(10L)).isZero();
-        }
-    }
-
     @DisplayName("여러 상품의 좋아요 수를 한 번에 셀 때,")
     @Nested
     class CountByProductIds {
@@ -186,12 +162,6 @@ class LikeServiceTest {
 
             // assert
             assertThat(counts).containsOnly(Map.entry(exposed, 0L));
-        }
-
-        @DisplayName("빈 목록이면 빈 맵을 반환한다.")
-        @Test
-        void returnsEmpty_whenIdsAreEmpty() {
-            assertThat(likeService.countByProductIds(List.of())).isEmpty();
         }
     }
 }

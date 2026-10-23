@@ -20,7 +20,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * "트랜잭션에서 대상 행을 처음 읽는 조회가 잠금 조회여야 한다"는 규칙의 JPA 쪽 근거를 확인하는 실험이다 (설계 2-2).
+ * "트랜잭션에서 대상 행을 처음 읽는 조회가 잠금 조회여야 한다"는 규칙의 JPA 쪽 근거를 확인하는 실험이다.
  *
  * <p>영속성 컨텍스트는 트랜잭션마다 하나이고, 이미 읽은 엔티티는 1차 캐시에 남는다. 잠금 없이 먼저 읽은 상품을 같은
  * 트랜잭션에서 나중에 {@code FOR UPDATE} 로 다시 조회하면, DB 는 최신 행을 돌려주지만 Hibernate 는 이미 관리 중인 객체를

@@ -29,6 +29,12 @@ public interface ProductJpaRepository extends JpaRepository<Product, Long> {
     @Query("select p from Product p where p.id in :ids and p.deletedAt is null order by p.id")
     List<Product> findAllActiveByIdsForUpdate(@Param("ids") Collection<Long> ids);
 
+    // 삭제된 상품도 포함한다(결제 실패로 확보했던 재고를 돌려줄 때). 순서는 위와 같이 id 오름차순이라 활성 상품만 잠그는
+    // 차감 경로와 같은 순서로 잠근다.
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from Product p where p.id in :ids order by p.id")
+    List<Product> findAllByIdsForUpdate(@Param("ids") Collection<Long> ids);
+
     // 잠금 순서를 id 오름차순으로 고정해 같은 상품들을 잠그는 요청끼리 서로 엇갈리지 않게 한다.
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select p from Product p where p.brandId = :brandId and p.deletedAt is null order by p.id")

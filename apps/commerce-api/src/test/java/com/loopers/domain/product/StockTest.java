@@ -137,4 +137,57 @@ class StockTest {
             assertThat(stock.remaining()).isEqualTo(5);
         }
     }
+
+    @DisplayName("재고를 늘릴 때,")
+    @Nested
+    class Increase {
+        @DisplayName("수량만큼 늘어난 새 재고를 반환하고, 기존 재고는 그대로다.")
+        @ParameterizedTest
+        @CsvSource({"3, 2, 5", "0, 1, 1"})
+        void returnsIncreasedStock_andKeepsOriginal(int remaining, int quantity, int expected) {
+            // arrange
+            Stock stock = new Stock(remaining);
+
+            // act
+            Stock increased = stock.increase(quantity);
+
+            // assert
+            assertThat(increased.remaining()).isEqualTo(expected);
+            assertThat(stock.remaining()).isEqualTo(remaining);
+        }
+
+        @DisplayName("0 이하의 수량이면 INVALID_INPUT 으로 거절한다.")
+        @ParameterizedTest
+        @ValueSource(ints = {0, -1})
+        void rejectsWithInvalidInput_whenQuantityIsNotPositive(int quantity) {
+            // arrange
+            Stock stock = new Stock(3);
+
+            // act
+            CoreException exception = assertThrows(CoreException.class, () -> stock.increase(quantity));
+
+            // assert
+            assertThat(exception.getErrorType()).isEqualTo(ErrorType.INVALID_INPUT);
+            assertThat(stock.remaining()).isEqualTo(3);
+        }
+
+        @DisplayName("합계가 int 범위를 넘으면 INVALID_INPUT 으로 거절한다.")
+        @Test
+        void rejectsWithInvalidInput_whenSumOverflows() {
+            // arrange
+            Stock stock = new Stock(Integer.MAX_VALUE);
+
+            // act
+            CoreException exception = assertThrows(CoreException.class, () -> stock.increase(1));
+
+            // assert
+            assertThat(exception.getErrorType()).isEqualTo(ErrorType.INVALID_INPUT);
+        }
+
+        @DisplayName("차감한 수량을 그대로 늘리면 원래 재고로 돌아온다 (5 → 3 → 5).")
+        @Test
+        void returnsToOriginal_afterDecreaseAndIncrease() {
+            assertThat(new Stock(5).decrease(2).increase(2)).isEqualTo(new Stock(5));
+        }
+    }
 }

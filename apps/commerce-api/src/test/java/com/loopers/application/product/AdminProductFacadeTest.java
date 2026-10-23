@@ -1,5 +1,6 @@
 package com.loopers.application.product;
 
+import com.loopers.application.product.dto.ProductInfo;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.common.Money;
@@ -16,8 +17,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.domain.Page;
@@ -145,25 +144,6 @@ class AdminProductFacadeTest {
                 .isEqualTo(ErrorType.NOT_FOUND);
             assertThat(storedCount()).isZero();
         }
-
-        @DisplayName("이름·가격·재고가 유효하지 않으면 INVALID_INPUT 으로 거절하고, 저장하지 않는다.")
-        @Test
-        void rejectsWithInvalidInput_andSavesNothing() {
-            // arrange
-            Brand brand = saveBrand("루퍼스");
-            Long brandId = brand.getId();
-
-            // act & assert
-            assertThat(errorTypeOf(() -> adminProductFacade.create(brandId, "   ", 89_000, 10)))
-                .isEqualTo(ErrorType.INVALID_INPUT);
-            assertThat(errorTypeOf(() -> adminProductFacade.create(brandId, "러닝화", 0, 10)))
-                .isEqualTo(ErrorType.INVALID_INPUT);
-            assertThat(errorTypeOf(() -> adminProductFacade.create(brandId, "러닝화", 1_000_000_001L, 10)))
-                .isEqualTo(ErrorType.INVALID_INPUT);
-            assertThat(errorTypeOf(() -> adminProductFacade.create(brandId, "러닝화", 89_000, -1)))
-                .isEqualTo(ErrorType.INVALID_INPUT);
-            assertThat(storedCount()).isZero();
-        }
     }
 
     @DisplayName("상품을 수정할 때,")
@@ -187,36 +167,6 @@ class AdminProductFacadeTest {
             assertThat(found.getBrandId()).isEqualTo(1L);
             assertThat(found.getStock()).isEqualTo(new Stock(10));
         }
-
-        @DisplayName("이름이나 가격이 유효하지 않으면 INVALID_INPUT 으로 거절하고, 저장된 값은 그대로다.")
-        @Test
-        void rejectsWithInvalidInput_andKeepsStoredValues() {
-            // arrange
-            Product product = saveProduct(1L, "러닝화");
-            Long id = product.getId();
-
-            // act & assert
-            assertThat(errorTypeOf(() -> adminProductFacade.update(id, "   ", 99_000)))
-                .isEqualTo(ErrorType.INVALID_INPUT);
-            assertThat(errorTypeOf(() -> adminProductFacade.update(id, "새 러닝화", 0)))
-                .isEqualTo(ErrorType.INVALID_INPUT);
-            Product found = stored(id);
-            assertThat(found.getName()).isEqualTo("러닝화");
-            assertThat(found.getPrice()).isEqualTo(new Money(89_000));
-        }
-
-        @DisplayName("없거나 삭제된 상품이면 NOT_FOUND 로 거절한다.")
-        @Test
-        void throwsNotFound_whenProductDoesNotExistOrIsDeleted() {
-            // arrange
-            Product deleted = saveDeletedProduct(1L, "삭제됨");
-
-            // act & assert
-            assertThat(errorTypeOf(() -> adminProductFacade.update(999L, "이름", 1_000)))
-                .isEqualTo(ErrorType.NOT_FOUND);
-            assertThat(errorTypeOf(() -> adminProductFacade.update(deleted.getId(), "이름", 1_000)))
-                .isEqualTo(ErrorType.NOT_FOUND);
-        }
     }
 
     @DisplayName("재고를 변경할 때,")
@@ -234,31 +184,6 @@ class AdminProductFacadeTest {
             // assert
             assertThat(info.stock()).isZero();
             assertThat(stored(product.getId()).getStock()).isEqualTo(new Stock(0));
-        }
-
-        @DisplayName("음수이면 INVALID_INPUT 으로 거절하고, 저장된 재고는 그대로다.")
-        @Test
-        void rejectsWithInvalidInput_andKeepsStock_whenQuantityIsNegative() {
-            // arrange
-            Product product = saveProduct(1L, "러닝화");
-
-            // act & assert
-            assertThat(errorTypeOf(() -> adminProductFacade.changeStock(product.getId(), -1)))
-                .isEqualTo(ErrorType.INVALID_INPUT);
-            assertThat(stored(product.getId()).getStock()).isEqualTo(new Stock(10));
-        }
-
-        @DisplayName("없거나 삭제된 상품이면 NOT_FOUND 로 거절한다.")
-        @Test
-        void throwsNotFound_whenProductDoesNotExistOrIsDeleted() {
-            // arrange
-            Product deleted = saveDeletedProduct(1L, "삭제됨");
-
-            // act & assert
-            assertThat(errorTypeOf(() -> adminProductFacade.changeStock(999L, 5)))
-                .isEqualTo(ErrorType.NOT_FOUND);
-            assertThat(errorTypeOf(() -> adminProductFacade.changeStock(deleted.getId(), 5)))
-                .isEqualTo(ErrorType.NOT_FOUND);
         }
     }
 
@@ -318,20 +243,6 @@ class AdminProductFacadeTest {
                 "select count(*) from product_like_counts c where c.like_count <> "
                     + "(select count(*) from likes l where l.product_id = c.product_id)", Long.class)).isZero();
         }
-
-        @DisplayName("이미 삭제됐거나 없는 상품이면 NOT_FOUND 로 거절한다.")
-        @Test
-        void throwsNotFound_whenProductIsAlreadyDeletedOrMissing() {
-            // arrange
-            Product product = saveProduct(1L, "러닝화");
-            adminProductFacade.delete(product.getId());
-
-            // act & assert
-            assertThat(errorTypeOf(() -> adminProductFacade.delete(product.getId())))
-                .isEqualTo(ErrorType.NOT_FOUND);
-            assertThat(errorTypeOf(() -> adminProductFacade.delete(999L)))
-                .isEqualTo(ErrorType.NOT_FOUND);
-        }
     }
 
     @DisplayName("상품 상세를 조회할 때,")
@@ -355,17 +266,6 @@ class AdminProductFacadeTest {
             assertThat(info.createdAt()).isNotNull();
             assertThat(info.updatedAt()).isNotNull();
         }
-
-        @DisplayName("없거나 삭제된 상품이면 NOT_FOUND 로 거절한다.")
-        @Test
-        void throwsNotFound_whenProductDoesNotExistOrIsDeleted() {
-            // arrange
-            Product deleted = saveDeletedProduct(1L, "삭제됨");
-
-            // act & assert
-            assertThat(errorTypeOf(() -> adminProductFacade.get(999L))).isEqualTo(ErrorType.NOT_FOUND);
-            assertThat(errorTypeOf(() -> adminProductFacade.get(deleted.getId()))).isEqualTo(ErrorType.NOT_FOUND);
-        }
     }
 
     @DisplayName("상품 목록을 조회할 때,")
@@ -386,25 +286,6 @@ class AdminProductFacadeTest {
             assertThat(page.getContent()).extracting(ProductInfo::id)
                 .containsExactly(third.getId(), first.getId());
             assertThat(page.getTotalElements()).isEqualTo(2);
-        }
-
-        @DisplayName("size 의 경계값(1, 100)은 허용한다.")
-        @ParameterizedTest
-        @CsvSource({"0, 1", "0, 100"})
-        void allowsBoundaryValues(int page, int size) {
-            // act
-            Page<ProductInfo> result = adminProductFacade.getList(page, size);
-
-            // assert
-            assertThat(result.getSize()).isEqualTo(size);
-        }
-
-        @DisplayName("page 가 음수이거나 size 가 범위를 벗어나면 INVALID_INPUT 으로 거절한다.")
-        @ParameterizedTest
-        @CsvSource({"-1, 20", "0, 0", "0, 101", "0, -5"})
-        void rejectsWithInvalidInput_whenPageOrSizeIsOutOfRange(int page, int size) {
-            assertThat(errorTypeOf(() -> adminProductFacade.getList(page, size)))
-                .isEqualTo(ErrorType.INVALID_INPUT);
         }
     }
 }

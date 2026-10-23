@@ -25,7 +25,8 @@ public final class ErrorTypeHttpStatusMapper {
                  ORDER_ALREADY_CONFIRMED,
                  OUT_OF_STOCK,
                  INSUFFICIENT_POINT,
-                 PRODUCT_UNAVAILABLE -> HttpStatus.CONFLICT;
+                 PRODUCT_UNAVAILABLE,
+                 PAYMENT_ATTEMPT_CONFLICT -> HttpStatus.CONFLICT;
         };
     }
 }

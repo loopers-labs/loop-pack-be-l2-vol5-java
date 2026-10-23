@@ -24,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * 고객 상품 목록이 상품 수와 상관없이 정해진 횟수의 SQL 로 조회하는지(N+1 이 없는지) 실행된 SQL 문 수로 확인한다.
- * 통계는 이 클래스에서만 켠다. 문 수는 설계 문서(week4 product-query-design.md D-34)의 값이다.
+ * 통계는 이 클래스에서만 켠다.
  *
  * <p>총 개수 쿼리까지 실행되도록 페이지가 가득 차는 상품 수를 쓴다.
  * 일반: 상품 페이지 1 + 총 개수 1 + 브랜드 1 + 좋아요 수 1 = 4.

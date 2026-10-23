@@ -1,6 +1,6 @@
 package com.loopers.interfaces.api.admin.brand;
 
-import com.loopers.application.brand.BrandInfo;
+import com.loopers.application.brand.dto.BrandInfo;
 import jakarta.validation.constraints.NotNull;
 
 import java.time.ZonedDateTime;

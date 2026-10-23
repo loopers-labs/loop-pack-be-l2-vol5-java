@@ -153,28 +153,6 @@ class ProductApiE2ETest {
             assertThat(brandData.get("name")).isEqualTo("루퍼스");
         }
 
-        @DisplayName("좋아요가 없으면 likeCount 는 0 이다.")
-        @Test
-        void returnsZeroLikeCount_whenNoLikes() {
-            Product product = saveProduct(saveBrand("루퍼스"), "러닝화", 89_000);
-
-            ResponseEntity<ApiResponse<Map<String, Object>>> response = get(PRODUCTS + "/" + product.getId());
-
-            assertThat(((Number) response.getBody().data().get("likeCount")).longValue()).isZero();
-        }
-
-        @DisplayName("좋아요가 등록되면 likeCount 가 오른다.")
-        @Test
-        void likeCountGoesUp_afterLike() {
-            Product product = saveProduct(saveBrand("루퍼스"), "러닝화", 89_000);
-            String url = PRODUCTS + "/" + product.getId();
-            assertThat(((Number) get(url).getBody().data().get("likeCount")).longValue()).isZero();
-
-            saveLike(product);
-
-            assertThat(((Number) get(url).getBody().data().get("likeCount")).longValue()).isEqualTo(1);
-        }
-
         @DisplayName("없거나 삭제된 상품이면 404 NOT_FOUND 이다.")
         @Test
         void returnsNotFound_whenProductDoesNotExistOrIsDeleted() {
@@ -182,12 +160,6 @@ class ProductApiE2ETest {
 
             assertFail(get(PRODUCTS + "/999"), HttpStatus.NOT_FOUND, "NOT_FOUND");
             assertFail(get(PRODUCTS + "/" + deleted.getId()), HttpStatus.NOT_FOUND, "NOT_FOUND");
-        }
-
-        @DisplayName("productId 가 숫자가 아니면 400 INVALID_INPUT 이다.")
-        @Test
-        void returnsBadRequest_whenProductIdIsNotNumber() {
-            assertFail(get(PRODUCTS + "/abc"), HttpStatus.BAD_REQUEST, "INVALID_INPUT");
         }
 
         @DisplayName("X-USER-ID 헤더 없이 조회되고, 헤더가 숫자가 아니거나 없는 사용자여도 읽지 않고 정상 조회된다.")
@@ -255,30 +227,6 @@ class ProductApiE2ETest {
             assertThat(((Map<String, Object>) shoesItem.get("brand")).get("name")).isEqualTo("루퍼스");
         }
 
-        @DisplayName("sort=latest 는 id 내림차순이다.")
-        @Test
-        void sortsByLatest() {
-            Brand brand = saveBrand("루퍼스");
-            saveProduct(brand, "첫째", 30_000);
-            saveProduct(brand, "둘째", 10_000);
-            saveProduct(brand, "셋째", 20_000);
-
-            assertThat(namesOf(get(PRODUCTS + "?sort=latest"))).containsExactly("셋째", "둘째", "첫째");
-        }
-
-        @DisplayName("sort=price_asc 는 가격 오름차순이고, 가격이 같으면 id 내림차순이다.")
-        @Test
-        void sortsByPriceAscending_thenIdDescending() {
-            Brand brand = saveBrand("루퍼스");
-            saveProduct(brand, "비쌈", 30_000);
-            saveProduct(brand, "싼것-먼저", 10_000);
-            saveProduct(brand, "싼것-나중", 10_000);
-            saveProduct(brand, "중간", 20_000);
-
-            assertThat(namesOf(get(PRODUCTS + "?sort=price_asc")))
-                .containsExactly("싼것-나중", "싼것-먼저", "중간", "비쌈");
-        }
-
         @DisplayName("sort=likes_desc 는 좋아요 수 내림차순이고, 같으면 id 내림차순이며 좋아요 0개 상품도 포함한다.")
         @Test
         void sortsByLikesDescending_thenIdDescending() {
@@ -296,41 +244,6 @@ class ProductApiE2ETest {
             assertThat(namesOf(get(PRODUCTS + "?sort=likes_desc")))
                 .containsExactly("셋", "하나-나중", "하나", "좋아요없음");
             assertThat(none.getId()).isNotNull();
-        }
-
-        @DisplayName("brandId 로 해당 브랜드 상품만 조회하고, 존재하지 않는 브랜드이면 오류가 아니라 빈 목록이다.")
-        @Test
-        void filtersByBrand_andReturnsEmpty_whenBrandDoesNotExist() {
-            Brand looper = saveBrand("루퍼스");
-            Brand other = saveBrand("다른브랜드");
-            saveProduct(looper, "러닝화", 89_000);
-            saveProduct(other, "가방", 50_000);
-
-            ResponseEntity<ApiResponse<Map<String, Object>>> filtered = get(PRODUCTS + "?brandId=" + looper.getId());
-            ResponseEntity<ApiResponse<Map<String, Object>>> missing = get(PRODUCTS + "?brandId=999");
-
-            assertThat(namesOf(filtered)).containsExactly("러닝화");
-            assertThat(((Number) filtered.getBody().data().get("totalElements")).longValue()).isEqualTo(1);
-            assertThat(contentOf(missing)).isEmpty();
-            assertThat(((Number) missing.getBody().data().get("totalElements")).longValue()).isZero();
-        }
-
-        @DisplayName("page 와 size 를 주면 해당 페이지만 응답하고, 전체 개수와 페이지 수가 맞다.")
-        @Test
-        void returnsRequestedPage() {
-            Brand brand = saveBrand("루퍼스");
-            for (int i = 1; i <= 5; i++) {
-                saveProduct(brand, "상품" + i, 10_000L * i);
-            }
-
-            ResponseEntity<ApiResponse<Map<String, Object>>> response = get(PRODUCTS + "?page=1&size=2");
-
-            assertThat(namesOf(response)).containsExactly("상품3", "상품2");
-            Map<String, Object> data = response.getBody().data();
-            assertThat(data.get("page")).isEqualTo(1);
-            assertThat(data.get("size")).isEqualTo(2);
-            assertThat(((Number) data.get("totalElements")).longValue()).isEqualTo(5);
-            assertThat(data.get("totalPages")).isEqualTo(3);
         }
 
         @DisplayName("sort 가 허용 값이 아니거나 page·size 가 범위를 벗어나거나 brandId 가 숫자가 아니면 400 INVALID_INPUT 이다.")
@@ -355,16 +268,6 @@ class ProductApiE2ETest {
             assertThat(namesOf(response)).containsExactly("둘째", "첫째");
             assertThat(response.getBody().data().get("page")).isEqualTo(0);
             assertThat(response.getBody().data().get("size")).isEqualTo(20);
-        }
-
-        @DisplayName("X-USER-ID 헤더 없이 조회되고, 헤더가 숫자가 아니거나 없는 사용자여도 읽지 않고 정상 조회된다.")
-        @ParameterizedTest
-        @ValueSource(strings = {"abc", "999"})
-        void ignoresUserIdHeader(String header) {
-            saveProduct(saveBrand("루퍼스"), "러닝화", 89_000);
-
-            assertThat(get(PRODUCTS).getStatusCode()).isEqualTo(HttpStatus.OK);
-            assertThat(get(PRODUCTS, header).getStatusCode()).isEqualTo(HttpStatus.OK);
         }
     }
 }

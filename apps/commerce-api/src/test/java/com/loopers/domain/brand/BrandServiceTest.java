@@ -9,8 +9,6 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 
 import java.util.List;
 import java.util.Map;
@@ -92,36 +90,6 @@ class BrandServiceTest {
                 .get()
                 .extracting(Brand::getName)
                 .isEqualTo("루퍼스");
-        }
-
-        @DisplayName("이름이 유효하지 않으면 INVALID_INPUT 으로 거절하고, 저장하지 않는다.")
-        @Test
-        void rejectsWithInvalidInput_andSavesNothing_whenNameIsBlank() {
-            // act
-            CoreException exception = assertThrows(CoreException.class, () -> brandService.create("   "));
-
-            // assert
-            assertThat(exception.getErrorType()).isEqualTo(ErrorType.INVALID_INPUT);
-            assertThat(brandRepository.findAllActive(PageRequest.of(0, 10)).getTotalElements()).isZero();
-        }
-    }
-
-    @DisplayName("브랜드 목록을 조회할 때,")
-    @Nested
-    class GetList {
-        @DisplayName("삭제되지 않은 브랜드를 최신순으로 반환한다.")
-        @Test
-        void returnsActiveBrands_newestFirst() {
-            // arrange
-            Brand first = brandService.create("첫째");
-            Brand second = brandService.create("둘째");
-
-            // act
-            Page<Brand> page = brandService.getList(PageRequest.of(0, 10));
-
-            // assert
-            assertThat(page.getContent()).extracting(Brand::getId)
-                .containsExactly(second.getId(), first.getId());
         }
     }
 

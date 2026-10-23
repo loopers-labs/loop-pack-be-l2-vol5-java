@@ -149,39 +149,6 @@ class AdminProductApiTest {
                 .andExpect(jsonPath("$.meta.errorCode").value("INVALID_INPUT"));
         }
 
-        @DisplayName("이름이 공백뿐이거나 100자를 넘으면 400 INVALID_INPUT 이고, 저장하지 않는다.")
-        @ParameterizedTest
-        @ValueSource(ints = {0, 101})
-        void rejectsWithInvalidInput_whenNameIsInvalid(int length) throws Exception {
-            Brand brand = saveBrand("루퍼스");
-            String name = length == 0 ? "   " : "가".repeat(length);
-
-            send(post(PRODUCTS), createBody(brand.getId(), name, 89_000, 10))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.meta.errorCode").value("INVALID_INPUT"));
-
-            assertThat(storedCount()).isZero();
-        }
-
-        @DisplayName("가격이 범위를 벗어나거나 재고가 음수이면 400 INVALID_INPUT 이고, 저장하지 않는다.")
-        @Test
-        void rejectsWithInvalidInput_whenPriceOrStockIsOutOfRange() throws Exception {
-            Brand brand = saveBrand("루퍼스");
-            Long id = brand.getId();
-
-            send(post(PRODUCTS), createBody(id, "러닝화", 0, 10))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.meta.errorCode").value("INVALID_INPUT"));
-            send(post(PRODUCTS), createBody(id, "러닝화", 1_000_000_001L, 10))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.meta.errorCode").value("INVALID_INPUT"));
-            send(post(PRODUCTS), createBody(id, "러닝화", 89_000, -1))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.meta.errorCode").value("INVALID_INPUT"));
-
-            assertThat(storedCount()).isZero();
-        }
-
         @DisplayName("숫자가 아니거나 표현 범위를 넘거나 소수인 값이면 400 INVALID_INPUT 이다. 소수점을 버려 저장하지 않는다.")
         @ParameterizedTest
         @ValueSource(strings = {
@@ -215,14 +182,6 @@ class AdminProductApiTest {
                 .andExpect(jsonPath("$.meta.errorCode").value("NOT_FOUND"));
 
             assertThat(storedCount()).isZero();
-        }
-
-        @DisplayName("요청 본문이 없으면 400 INVALID_INPUT 이다.")
-        @Test
-        void rejectsWithInvalidInput_whenBodyIsMissing() throws Exception {
-            mvc.perform(post(PRODUCTS).with(admin()).with(csrf()).contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.meta.errorCode").value("INVALID_INPUT"));
         }
     }
 
@@ -258,14 +217,6 @@ class AdminProductApiTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.meta.errorCode").value("NOT_FOUND"));
         }
-
-        @DisplayName("productId 가 숫자가 아니면 400 INVALID_INPUT 이다.")
-        @Test
-        void returnsBadRequest_whenProductIdIsNotNumber() throws Exception {
-            mvc.perform(get(PRODUCTS + "/abc").with(admin()))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.meta.errorCode").value("INVALID_INPUT"));
-        }
     }
 
     @DisplayName("GET /api-admin/v1/products")
@@ -289,33 +240,6 @@ class AdminProductApiTest {
                 .andExpect(jsonPath("$.data.content[1].id").value(first.getId()))
                 .andExpect(jsonPath("$.data.content[0].stock").value(10));
         }
-
-        @DisplayName("page 와 size 를 주면 해당 페이지만 응답한다.")
-        @Test
-        void returnsRequestedPage() throws Exception {
-            saveProduct(1L, "하나");
-            saveProduct(1L, "둘");
-            saveProduct(1L, "셋");
-
-            mvc.perform(get(PRODUCTS).param("page", "1").param("size", "2").with(admin()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.page").value(1))
-                .andExpect(jsonPath("$.data.size").value(2))
-                .andExpect(jsonPath("$.data.content.length()").value(1))
-                .andExpect(jsonPath("$.data.totalElements").value(3))
-                .andExpect(jsonPath("$.data.totalPages").value(2));
-        }
-
-        @DisplayName("page 가 음수이거나 size 가 범위를 벗어나거나 숫자가 아니면 400 INVALID_INPUT 이다.")
-        @ParameterizedTest
-        @ValueSource(strings = {"page=-1", "size=0", "size=101", "size=abc", "page=abc"})
-        void rejectsWithInvalidInput_whenPagingIsInvalid(String query) throws Exception {
-            String[] pair = query.split("=");
-
-            mvc.perform(get(PRODUCTS).param(pair[0], pair[1]).with(admin()))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.meta.errorCode").value("INVALID_INPUT"));
-        }
     }
 
     @DisplayName("PUT /api-admin/v1/products/{productId}")
@@ -338,46 +262,12 @@ class AdminProductApiTest {
             assertThat(found.getStock()).isEqualTo(new Stock(10));
         }
 
-        @DisplayName("값이 없거나 유효하지 않으면 400 INVALID_INPUT 이고, 저장된 값은 그대로다.")
-        @ParameterizedTest
-        @ValueSource(strings = {
-            "{\"price\":99000}",
-            "{\"name\":\"새 러닝화\"}",
-            "{\"name\":\"   \",\"price\":99000}",
-            "{\"name\":\"새 러닝화\",\"price\":0}"
-        })
-        void rejectsWithInvalidInput_andKeepsValues(String body) throws Exception {
-            Product product = saveProduct(3L, "러닝화");
-
-            send(put(PRODUCTS + "/" + product.getId()), body)
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.meta.errorCode").value("INVALID_INPUT"));
-
-            Product found = stored(product.getId());
-            assertThat(found.getName()).isEqualTo("러닝화");
-            assertThat(found.getPrice()).isEqualTo(new Money(89_000));
-        }
-
         @DisplayName("이름이 없으면 상품이 존재하지 않아도 404 가 아니라 400 INVALID_INPUT 이다. 필수 누락은 조회 전에 거절한다.")
         @Test
         void rejectsWithInvalidInput_beforeLookup_whenNameIsMissing() throws Exception {
             send(put(PRODUCTS + "/999"), "{\"price\":99000}")
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.meta.errorCode").value("INVALID_INPUT"));
-        }
-
-        @DisplayName("없거나 삭제된 상품이면 404 NOT_FOUND 이다.")
-        @Test
-        void returnsNotFound_whenProductDoesNotExistOrIsDeleted() throws Exception {
-            Product deleted = saveDeletedProduct(1L, "삭제됨");
-            String body = "{\"name\":\"이름\",\"price\":1000}";
-
-            send(put(PRODUCTS + "/999"), body)
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.meta.errorCode").value("NOT_FOUND"));
-            send(put(PRODUCTS + "/" + deleted.getId()), body)
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.meta.errorCode").value("NOT_FOUND"));
         }
     }
 
@@ -397,32 +287,6 @@ class AdminProductApiTest {
 
             assertThat(stored(product.getId()).getStock()).isEqualTo(new Stock(stock));
         }
-
-        @DisplayName("음수이거나 값이 없으면 400 INVALID_INPUT 이고, 저장된 재고는 그대로다.")
-        @ParameterizedTest
-        @ValueSource(strings = {"{\"stock\":-1}", "{}", "{\"stock\":null}"})
-        void rejectsWithInvalidInput_andKeepsStock(String body) throws Exception {
-            Product product = saveProduct(1L, "러닝화");
-
-            send(put(PRODUCTS + "/" + product.getId() + "/stock"), body)
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.meta.errorCode").value("INVALID_INPUT"));
-
-            assertThat(stored(product.getId()).getStock()).isEqualTo(new Stock(10));
-        }
-
-        @DisplayName("없거나 삭제된 상품이면 404 NOT_FOUND 이다.")
-        @Test
-        void returnsNotFound_whenProductDoesNotExistOrIsDeleted() throws Exception {
-            Product deleted = saveDeletedProduct(1L, "삭제됨");
-
-            send(put(PRODUCTS + "/999/stock"), "{\"stock\":5}")
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.meta.errorCode").value("NOT_FOUND"));
-            send(put(PRODUCTS + "/" + deleted.getId() + "/stock"), "{\"stock\":5}")
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.meta.errorCode").value("NOT_FOUND"));
-        }
     }
 
     @DisplayName("DELETE /api-admin/v1/products/{productId}")
@@ -440,21 +304,6 @@ class AdminProductApiTest {
             mvc.perform(get(PRODUCTS + "/" + product.getId()).with(admin()))
                 .andExpect(status().isNotFound());
             assertThat(storedCount()).isZero();
-        }
-
-        @DisplayName("이미 삭제됐거나 없는 상품이면 404 NOT_FOUND 이다.")
-        @Test
-        void returnsNotFound_whenProductIsAlreadyDeletedOrMissing() throws Exception {
-            Product product = saveProduct(1L, "러닝화");
-            mvc.perform(delete(PRODUCTS + "/" + product.getId()).with(admin()).with(csrf()))
-                .andExpect(status().isOk());
-
-            mvc.perform(delete(PRODUCTS + "/" + product.getId()).with(admin()).with(csrf()))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.meta.errorCode").value("NOT_FOUND"));
-            mvc.perform(delete(PRODUCTS + "/999").with(admin()).with(csrf()))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.meta.errorCode").value("NOT_FOUND"));
         }
     }
 

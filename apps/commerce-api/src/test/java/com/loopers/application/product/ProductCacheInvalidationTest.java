@@ -3,8 +3,12 @@ package com.loopers.application.product;
 import com.loopers.application.brand.AdminBrandFacade;
 import com.loopers.application.like.LikeFacade;
 import com.loopers.application.order.OrderFacade;
-import com.loopers.application.order.OrderInfo;
-import com.loopers.application.order.OrderItemCommand;
+import com.loopers.application.order.dto.OrderInfo;
+import com.loopers.application.order.dto.OrderItemCommand;
+import com.loopers.application.product.cache.ProductListCache;
+import com.loopers.application.product.dto.ProductInfo;
+import com.loopers.application.product.dto.ProductListItemInfo;
+import com.loopers.application.product.dto.ProductListQuery;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.common.Money;
@@ -31,7 +35,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 관리자 쓰기가 commit 된 뒤 상품 목록 캐시를 비우는지 실제 MySQL·Redis 로 확인한다(week4 product-cache-design.md 5장).
+ * 관리자 쓰기가 commit 된 뒤 상품 목록 캐시를 비우는지 실제 MySQL·Redis 로 확인한다.
  * 각 테스트는 먼저 목록을 조회해 캐시를 채운 뒤 쓰기를 하고, 캐시가 남았는지와 다시 조회한 결과를 본다.
  */
 @SpringBootTest

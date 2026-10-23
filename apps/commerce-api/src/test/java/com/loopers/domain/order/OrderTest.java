@@ -134,13 +134,6 @@ class OrderTest {
             return new PaymentResult(new Money(7_000));
         }
 
-        @DisplayName("DRAFT 주문은 확정할 수 있는 상태다.")
-        @Test
-        void isConfirmable_whenDraft() {
-            // act & assert: 예외가 나지 않는다.
-            draftOrder().ensureConfirmable();
-        }
-
         @DisplayName("확정하면 CONFIRMED 가 되고, 결제액을 보존한다. 품목과 합계는 그대로다.")
         @Test
         void becomesConfirmed_withPaymentResult() {
@@ -155,12 +148,6 @@ class OrderTest {
             assertThat(order.getPaymentResult()).isEqualTo(payment());
             assertThat(order.getTotalAmount()).isEqualTo(new Money(7_000));
             assertThat(order.getItems()).hasSize(2);
-        }
-
-        @DisplayName("DRAFT 주문은 결제 결과가 비어 있다.")
-        @Test
-        void hasNoPaymentResult_whenDraft() {
-            assertThat(draftOrder().getPaymentResult()).isNull();
         }
 
         @DisplayName("이미 확정된 주문은 ORDER_ALREADY_CONFIRMED 로 거절하고, 기존 결제 결과를 유지한다.")
@@ -187,6 +174,128 @@ class OrderTest {
             // act & assert
             assertErrorType(ErrorType.INVALID_INPUT, () -> order.confirm(null));
             assertThat(order.getStatus()).isEqualTo(OrderStatus.DRAFT);
+            assertThat(order.getPaymentResult()).isNull();
+        }
+    }
+
+    @DisplayName("PG 결제를 진행할 때,")
+    @Nested
+    class Payment {
+        private Order draftOrder() {
+            return Order.create(
+                7L,
+                lines(new OrderLine(10L, 1), new OrderLine(20L, 2)),
+                Map.of(10L, product("티셔츠", 3_000), 20L, product("양말", 2_000))
+            );
+        }
+
+        private Order pendingOrder() {
+            Order order = draftOrder();
+            order.markPaymentPending();
+            return order;
+        }
+
+        private PaymentResult paid() {
+            return new PaymentResult(new Money(7_000));
+        }
+
+        @DisplayName("결제를 시작하면 DRAFT 가 PAYMENT_PENDING 이 되고, 결제 결과는 아직 없다.")
+        @Test
+        void becomesPaymentPending_withoutPaymentResult() {
+            // arrange
+            Order order = draftOrder();
+
+            // act
+            order.markPaymentPending();
+
+            // assert
+            assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+            assertThat(order.getPaymentResult()).isNull();
+        }
+
+        @DisplayName("이미 CONFIRMED 인 주문은 ORDER_ALREADY_CONFIRMED 로, 진행 중이거나 실패한 주문은 CONFLICT 로 시작을 거절한다.")
+        @Test
+        void rejectsStart_whenNotDraft() {
+            // arrange
+            Order confirmed = pendingOrder();
+            confirmed.completePayment(paid());
+            Order pending = pendingOrder();
+            Order failed = pendingOrder();
+            failed.failPayment();
+
+            // act & assert
+            assertErrorType(ErrorType.ORDER_ALREADY_CONFIRMED, confirmed::markPaymentPending);
+            assertErrorType(ErrorType.CONFLICT, pending::markPaymentPending);
+            assertErrorType(ErrorType.CONFLICT, failed::markPaymentPending);
+            assertThat(confirmed.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+            assertThat(pending.getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+            assertThat(failed.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED);
+        }
+
+        @DisplayName("성공을 반영하면 CONFIRMED 가 되고, 결제액을 보존한다. 품목과 합계는 그대로다.")
+        @Test
+        void becomesConfirmed_withPgPaymentResult() {
+            // arrange
+            Order order = pendingOrder();
+
+            // act
+            order.completePayment(paid());
+
+            // assert
+            assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+            assertThat(order.getPaymentResult()).isEqualTo(paid());
+            assertThat(order.getTotalAmount()).isEqualTo(new Money(7_000));
+            assertThat(order.getItems()).hasSize(2);
+        }
+
+        @DisplayName("확정 실패를 반영하면 PAYMENT_FAILED 가 되고, 결제 결과는 없다.")
+        @Test
+        void becomesPaymentFailed_withoutPaymentResult() {
+            // arrange
+            Order order = pendingOrder();
+
+            // act
+            order.failPayment();
+
+            // assert
+            assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED);
+            assertThat(order.getPaymentResult()).isNull();
+        }
+
+        @DisplayName("결제 대기가 아닌 주문의 성공·실패 반영은 CONFLICT 로 거절하고, 상태와 결제 결과를 유지한다.")
+        @Test
+        void rejectsCompleteAndFail_whenNotPaymentPending() {
+            // arrange
+            Order draft = draftOrder();
+            Order confirmed = pendingOrder();
+            confirmed.completePayment(paid());
+            Order failed = pendingOrder();
+            failed.failPayment();
+            PaymentResult other = new PaymentResult(new Money(1));
+
+            // act & assert
+            assertErrorType(ErrorType.CONFLICT, () -> draft.completePayment(paid()));
+            assertErrorType(ErrorType.CONFLICT, draft::failPayment);
+            assertErrorType(ErrorType.CONFLICT, () -> confirmed.completePayment(other));
+            assertErrorType(ErrorType.CONFLICT, confirmed::failPayment);
+            assertErrorType(ErrorType.CONFLICT, () -> failed.completePayment(paid()));
+            assertErrorType(ErrorType.CONFLICT, failed::failPayment);
+            assertThat(draft.getStatus()).isEqualTo(OrderStatus.DRAFT);
+            assertThat(confirmed.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+            assertThat(confirmed.getPaymentResult()).isEqualTo(paid());
+            assertThat(failed.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED);
+            assertThat(failed.getPaymentResult()).isNull();
+        }
+
+        @DisplayName("결제 결과가 없으면 INVALID_INPUT 으로 거절하고, PAYMENT_PENDING 을 유지한다.")
+        @Test
+        void rejectsWithInvalidInput_andStaysPending_whenPaymentResultIsNull() {
+            // arrange
+            Order order = pendingOrder();
+
+            // act & assert
+            assertErrorType(ErrorType.INVALID_INPUT, () -> order.completePayment(null));
+            assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
             assertThat(order.getPaymentResult()).isNull();
         }
     }

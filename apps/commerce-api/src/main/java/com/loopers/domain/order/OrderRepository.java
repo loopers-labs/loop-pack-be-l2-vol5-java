@@ -17,6 +17,12 @@ public interface OrderRepository {
      */
     Optional<Order> findByIdAndUserIdForUpdate(Long id, Long userId);
 
+    /**
+     * 주문자와 무관하게 id 로 배타 잠금(FOR UPDATE)하며 조회한다. 결제 결과를 적용하는 트랜잭션이 쓴다. 결과는 요청자가 없는
+     * 입구(PG 알림)에서도 들어오므로 소유권은 호출 전에 확인한다. 반드시 트랜잭션 안에서, 이 주문을 처음 읽는 조회로 호출한다.
+     */
+    Optional<Order> findByIdForUpdate(Long id);
+
     /** 주문자와 무관하게 id 로 조회한다. 관리자 조회용이다. */
     Optional<Order> findById(Long id);
 

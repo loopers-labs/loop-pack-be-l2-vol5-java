@@ -30,9 +30,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * 설계(D-27, D-28)가 기대는 잠금 동작을 실제 MySQL 8.0 으로 확인해 기록하는 <b>특성 테스트</b>다. 제품 코드의 정합성을
- * 검증하는 것이 아니라, 잠금 범위와 대기 한도에 관한 서술이 사실인지 고정한다. InnoDB 고유 동작이므로 이 테스트가 깨지면
- * 설계 문서 2-3·7장의 해당 서술을 다시 확인한다.
+ * 잠금 동작을 실제 MySQL 8.0 으로 확인해 기록하는 <b>특성 테스트</b>다. 제품 코드의 정합성을
+ * 검증하는 것이 아니라, 잠금 범위와 대기 한도에 관한 서술이 사실인지 고정한다. InnoDB 고유 동작이다.
  *
  * <p>앱 계정은 {@code performance_schema.data_locks} 를 읽을 수 없어, 잠금 범위는 별도 세션이 잠금 대기를 1초로 줄이고
  * 문장을 시도해 막히는지로 관찰한다. 별도 세션은 풀 밖의 연결이라 세션 변수가 풀로 새지 않는다.

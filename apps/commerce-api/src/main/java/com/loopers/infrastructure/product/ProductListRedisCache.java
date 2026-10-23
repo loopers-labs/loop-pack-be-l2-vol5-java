@@ -2,9 +2,9 @@ package com.loopers.infrastructure.product;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.loopers.application.product.ProductListCache;
-import com.loopers.application.product.ProductListQuery;
-import com.loopers.application.product.ProductListSnapshot;
+import com.loopers.application.product.cache.ProductListCache;
+import com.loopers.application.product.dto.ProductListQuery;
+import com.loopers.application.product.cache.CachedProductListInfo;
 import com.loopers.config.redis.RedisConfig;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
@@ -24,7 +24,7 @@ import java.util.Optional;
 /**
  * 상품 목록 캐시의 Redis 구현. 키 형식·JSON 직렬화·TTL·영역 비우기와 Redis 오류 처리를 여기서 숨긴다.
  *
- * <p>무효화 직후 replica 의 옛 값을 읽지 않도록 master 로 읽고 쓴다(D-41). 잡는 예외는 Redis 접근
+ * <p>무효화 직후 replica 의 옛 값을 읽지 않도록 master 로 읽고 쓴다. 잡는 예외는 Redis 접근
  * ({@link DataAccessException})과 JSON 변환({@link JsonProcessingException})뿐이며, 오류마다 로그와
  * {@value #ERROR_METRIC} 카운터를 남긴다. 정상 miss 는 오류로 세지 않는다.
  */
@@ -56,14 +56,14 @@ public class ProductListRedisCache implements ProductListCache {
     }
 
     @Override
-    public Optional<ProductListSnapshot> find(ProductListQuery query) {
+    public Optional<CachedProductListInfo> find(ProductListQuery query) {
         String key = keyOf(query);
         try {
             String payload = redisTemplate.opsForValue().get(key);
             if (payload == null) {
                 return Optional.empty();
             }
-            return Optional.of(objectMapper.readValue(payload, ProductListSnapshot.class));
+            return Optional.of(objectMapper.readValue(payload, CachedProductListInfo.class));
         } catch (DataAccessException | JsonProcessingException e) {
             recordError("find", key, e);
             return Optional.empty();
@@ -71,7 +71,7 @@ public class ProductListRedisCache implements ProductListCache {
     }
 
     @Override
-    public void save(ProductListQuery query, ProductListSnapshot snapshot) {
+    public void save(ProductListQuery query, CachedProductListInfo snapshot) {
         String key = keyOf(query);
         try {
             redisTemplate.opsForValue().set(key, objectMapper.writeValueAsString(snapshot), ttl);

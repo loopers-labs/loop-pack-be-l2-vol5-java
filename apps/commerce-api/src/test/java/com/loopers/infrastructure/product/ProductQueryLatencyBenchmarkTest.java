@@ -26,7 +26,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>로컬 docker MySQL 의 {@code loopers} 에 {@code sql/perf-seed.sql} 을 적재한 상태를 대상으로 하므로 환경변수
  * {@code PERF_JDBC_URL} 이 있을 때만 실행하고, 평소 {@code check} 에서는 건너뛴다(skip 으로 표시된다). SELECT 만 실행한다.
- * 적재와 체크섬 비교 절차는 {@code docs/design/week4/product-list-baseline.md} 에 있다.
  *
  * <pre>
  * PERF_JDBC_URL='jdbc:mysql://localhost:3306/loopers' PERF_JDBC_USER=application PERF_JDBC_PASSWORD=application \

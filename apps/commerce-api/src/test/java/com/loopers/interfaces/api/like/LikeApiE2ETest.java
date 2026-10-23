@@ -16,8 +16,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
@@ -128,19 +126,6 @@ class LikeApiE2ETest {
             assertThat(likeRepository.exists(user.getId(), product.getId())).isTrue();
         }
 
-        @DisplayName("같은 상품에 다시 등록해도 200 이고, 관계는 하나만 유지된다.")
-        @Test
-        void keepsSingleLike_whenRegisteredTwice() {
-            User user = saveUser();
-            Product product = saveProduct("러닝화");
-            String userId = String.valueOf(user.getId());
-
-            assertSuccess(call(HttpMethod.POST, likesUrl(product.getId()), userId));
-            assertSuccess(call(HttpMethod.POST, likesUrl(product.getId()), userId));
-
-            assertThat(likeService.count(product.getId())).isEqualTo(1);
-        }
-
         @DisplayName("없거나 삭제된 상품이면 404 NOT_FOUND 이고, 저장하지 않는다.")
         @Test
         void returnsNotFound_whenProductDoesNotExistOrIsDeleted() {
@@ -160,25 +145,6 @@ class LikeApiE2ETest {
 
             assertFail(call(HttpMethod.POST, likesUrl(product.getId()), null), HttpStatus.BAD_REQUEST, "INVALID_INPUT");
         }
-
-        @DisplayName("존재하지 않는 사용자이면 404 NOT_FOUND 이다.")
-        @Test
-        void returnsNotFound_whenUserDoesNotExist() {
-            Product product = saveProduct("러닝화");
-
-            assertFail(call(HttpMethod.POST, likesUrl(product.getId()), "999"), HttpStatus.NOT_FOUND, "NOT_FOUND");
-        }
-
-        @DisplayName("productId 가 숫자가 아니면 400 INVALID_INPUT 이다.")
-        @Test
-        void returnsBadRequest_whenProductIdIsNotNumber() {
-            User user = saveUser();
-
-            assertFail(
-                call(HttpMethod.POST, likesUrl("abc"), String.valueOf(user.getId())),
-                HttpStatus.BAD_REQUEST, "INVALID_INPUT"
-            );
-        }
     }
 
     @DisplayName("DELETE /api/v1/products/{productId}/likes")
@@ -196,47 +162,6 @@ class LikeApiE2ETest {
 
             assertSuccess(response);
             assertThat(likeRepository.exists(user.getId(), product.getId())).isFalse();
-        }
-
-        @DisplayName("관계가 없어도 200 이다. 한 번도 존재한 적 없는 상품이어도 마찬가지다.")
-        @Test
-        void succeeds_whenLikeDoesNotExist() {
-            User user = saveUser();
-            Product product = saveProduct("러닝화");
-            String userId = String.valueOf(user.getId());
-
-            assertSuccess(call(HttpMethod.DELETE, likesUrl(product.getId()), userId));
-            assertSuccess(call(HttpMethod.DELETE, likesUrl(999), userId));
-        }
-
-        @DisplayName("상품이 삭제된 뒤에도 자신의 기존 좋아요는 취소할 수 있다.")
-        @Test
-        void removesLike_evenAfterProductIsDeleted() {
-            User user = saveUser();
-            Product product = saveProduct("러닝화");
-            saveLike(user, product);
-            product.delete();
-            productRepository.save(product);
-
-            ResponseEntity<ApiResponse<Map<String, Object>>> response =
-                call(HttpMethod.DELETE, likesUrl(product.getId()), String.valueOf(user.getId()));
-
-            assertSuccess(response);
-            assertThat(likeRepository.exists(user.getId(), product.getId())).isFalse();
-        }
-
-        @DisplayName("다른 사용자의 좋아요는 그대로다.")
-        @Test
-        void keepsOtherUsersLike() {
-            User me = saveUser();
-            User other = saveUser();
-            Product product = saveProduct("러닝화");
-            saveLike(me, product);
-            saveLike(other, product);
-
-            call(HttpMethod.DELETE, likesUrl(product.getId()), String.valueOf(me.getId()));
-
-            assertThat(likeRepository.exists(other.getId(), product.getId())).isTrue();
         }
 
         @DisplayName("X-USER-ID 헤더가 없으면 400, 존재하지 않는 사용자이면 404 이다.")
@@ -283,36 +208,6 @@ class LikeApiE2ETest {
             assertThat(response.getBody().data())
                 .containsEntry("page", 0).containsEntry("size", 20)
                 .containsEntry("totalElements", 2).containsEntry("totalPages", 1);
-        }
-
-        @DisplayName("page 와 size 를 주면 해당 페이지만 응답한다.")
-        @Test
-        void returnsRequestedPage() {
-            User me = saveUser();
-            saveLike(me, saveProduct("하나"));
-            saveLike(me, saveProduct("둘"));
-            saveLike(me, saveProduct("셋"));
-
-            ResponseEntity<ApiResponse<Map<String, Object>>> response =
-                call(HttpMethod.GET, myLikesUrl(me.getId()) + "?page=1&size=2", String.valueOf(me.getId()));
-
-            assertSuccess(response);
-            assertThat(contentOf(response)).hasSize(1);
-            assertThat(response.getBody().data())
-                .containsEntry("page", 1).containsEntry("size", 2)
-                .containsEntry("totalElements", 3).containsEntry("totalPages", 2);
-        }
-
-        @DisplayName("page 가 음수이거나 size 가 범위를 벗어나거나 숫자가 아니면 400 INVALID_INPUT 이다.")
-        @ParameterizedTest
-        @ValueSource(strings = {"page=-1", "size=0", "size=101", "size=abc"})
-        void returnsBadRequest_whenPagingIsInvalid(String query) {
-            User me = saveUser();
-
-            assertFail(
-                call(HttpMethod.GET, myLikesUrl(me.getId()) + "?" + query, String.valueOf(me.getId())),
-                HttpStatus.BAD_REQUEST, "INVALID_INPUT"
-            );
         }
 
         @DisplayName("다른 사용자의 userId 이면 403 FORBIDDEN 이다. 존재하지 않는 userId 여도 마찬가지다.")

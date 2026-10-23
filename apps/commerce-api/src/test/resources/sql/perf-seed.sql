@@ -1,6 +1,6 @@
 -- 4주차 상품 목록 조회 측정용 seed. 같은 입력이면 항상 같은 자료가 만들어진다(난수 없음).
 -- 성능 측정에서만 쓴다. local 프로필 앱이 ddl-auto: create 로 만든 비어 있는 테이블(brands, products, users, likes, product_like_counts)에 적재한다.
--- 앱을 다시 띄우면 지워지므로 필요할 때 다시 적재한다. 절차는 docs/design/week4/product-list-baseline.md 참고.
+-- 앱을 다시 띄우면 지워지므로 필요할 때 다시 적재한다.
 -- 임시 테이블 perf_seq 만 만들었다 지우며, 다른 테이블의 데이터는 건드리지 않는다.
 --
 -- 구성

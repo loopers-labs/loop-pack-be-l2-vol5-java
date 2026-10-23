@@ -44,7 +44,7 @@ public class Order extends BaseEntity {
     @AttributeOverride(name = "amount", column = @Column(name = "total_amount", nullable = false))
     private Money totalAmount;
 
-    // 확정 전(DRAFT)에는 비어 있다. 컬럼이 모두 null 이면 값 자체가 null 로 읽힌다.
+    // 결제를 마치기(CONFIRMED) 전에는 비어 있다. 컬럼이 모두 null 이면 값 자체가 null 로 읽힌다.
     @Embedded
     @AttributeOverride(name = "paidAmount.amount", column = @Column(name = "paid_amount"))
     private PaymentResult paymentResult;
@@ -113,6 +113,48 @@ public class Order extends BaseEntity {
         }
         this.paymentResult = paymentResult;
         this.status = OrderStatus.CONFIRMED;
+    }
+
+    /**
+     * 상태만 PAYMENT_PENDING(결제 대기)으로 바꾼다. PG 호출은 하지 않는다. DRAFT 에서만 바꿀 수 있다. 재고 확보와 시도
+     * 기록은 호출하는 쪽(application)이 같은 트랜잭션에서 한다.
+     *
+     * <p>이미 CONFIRMED 인 주문은 기존 계약대로 ORDER_ALREADY_CONFIRMED 로, 그 밖의 진행 중·실패 주문은 CONFLICT 로
+     * 거절한다. 이미 시도가 있는 주문에 같은 요청이 다시 오는 경우는 application 이 저장된 결과로 먼저 응답한다.
+     */
+    public void markPaymentPending() {
+        if (status == OrderStatus.CONFIRMED) {
+            throw new CoreException(ErrorType.ORDER_ALREADY_CONFIRMED);
+        }
+        if (status != OrderStatus.DRAFT) {
+            throw new CoreException(ErrorType.CONFLICT, "이미 결제가 진행된 주문입니다.");
+        }
+        this.status = OrderStatus.PAYMENT_PENDING;
+    }
+
+    /**
+     * PG 성공을 확인해 결제 결과를 저장하고 CONFIRMED 로 바꾼다. PAYMENT_PENDING 에서만 가능하다. 재고는 시작할 때 이미
+     * 차감했으므로 건드리지 않는다. 거절되면 상태와 결제 결과는 그대로다.
+     */
+    public void completePayment(PaymentResult paymentResult) {
+        requirePaymentPending();
+        if (paymentResult == null) {
+            throw new CoreException(ErrorType.INVALID_INPUT, "결제 결과는 필수입니다.");
+        }
+        this.paymentResult = paymentResult;
+        this.status = OrderStatus.CONFIRMED;
+    }
+
+    /** PG 결제의 확정 실패를 반영해 PAYMENT_FAILED 로 바꾼다. PAYMENT_PENDING 에서만 가능하다. 재고 반환은 호출하는 쪽이 한다. */
+    public void failPayment() {
+        requirePaymentPending();
+        this.status = OrderStatus.PAYMENT_FAILED;
+    }
+
+    private void requirePaymentPending() {
+        if (status != OrderStatus.PAYMENT_PENDING) {
+            throw new CoreException(ErrorType.CONFLICT, "결제 대기 중인 주문이 아닙니다.");
+        }
     }
 
     public List<OrderItem> getItems() {

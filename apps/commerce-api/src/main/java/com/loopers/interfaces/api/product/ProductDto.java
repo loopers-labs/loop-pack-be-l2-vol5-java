@@ -1,7 +1,7 @@
 package com.loopers.interfaces.api.product;
 
-import com.loopers.application.product.ProductDetailInfo;
-import com.loopers.application.product.ProductListItemInfo;
+import com.loopers.application.product.dto.ProductDetailInfo;
+import com.loopers.application.product.dto.ProductListItemInfo;
 
 public class ProductDto {
     // 고객에게는 구매 판단에 필요한 값만 노출한다. 재고 수량·품절 여부와 생성·수정 시각은 담지 않는다(재고는 관리자 응답에만).

@@ -1,7 +1,7 @@
 package com.loopers.interfaces.api.point;
 
 import com.loopers.application.point.PointFacade;
-import com.loopers.application.point.PointInfo;
+import com.loopers.application.point.dto.PointInfo;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.Requester;
 import jakarta.validation.Valid;

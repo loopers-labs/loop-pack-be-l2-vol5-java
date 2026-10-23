@@ -1,9 +1,9 @@
 package com.loopers.infrastructure.product;
 
-import com.loopers.application.product.ProductListCache;
-import com.loopers.application.product.ProductListItemInfo;
-import com.loopers.application.product.ProductListQuery;
-import com.loopers.application.product.ProductListSnapshot;
+import com.loopers.application.product.cache.ProductListCache;
+import com.loopers.application.product.dto.ProductListItemInfo;
+import com.loopers.application.product.dto.ProductListQuery;
+import com.loopers.application.product.cache.CachedProductListInfo;
 import com.loopers.config.redis.RedisConfig;
 import com.loopers.domain.product.ProductSort;
 import com.loopers.utils.RedisCleanUp;
@@ -48,11 +48,11 @@ class ProductListRedisCacheTest {
     private static final ProductListQuery ALL_LATEST = new ProductListQuery(null, ProductSort.LATEST, 0, 20);
     private static final ProductListQuery BRAND_PRICE = new ProductListQuery(7L, ProductSort.PRICE_ASC, 1, 10);
 
-    private static ProductListSnapshot snapshot() {
-        return new ProductListSnapshot(
+    private static CachedProductListInfo snapshot() {
+        return new CachedProductListInfo(
             List.of(
-                new ProductListSnapshot.Item(3L, "티셔츠", 3_000, new ProductListItemInfo.BrandSummary(7L, "루퍼스")),
-                new ProductListSnapshot.Item(2L, "양말", 2_000, new ProductListItemInfo.BrandSummary(8L, "오프"))
+                new CachedProductListInfo.Item(3L, "티셔츠", 3_000, new ProductListItemInfo.BrandSummary(7L, "루퍼스")),
+                new CachedProductListInfo.Item(2L, "양말", 2_000, new ProductListItemInfo.BrandSummary(8L, "오프"))
             ),
             2
         );
@@ -113,7 +113,7 @@ class ProductListRedisCacheTest {
         @DisplayName("빈 목록도 저장하고 그대로 돌려준다.")
         @Test
         void returnsEmptyList_whenSnapshotHasNoItems() {
-            ProductListSnapshot empty = new ProductListSnapshot(List.of(), 0);
+            CachedProductListInfo empty = new CachedProductListInfo(List.of(), 0);
             productListCache.save(BRAND_PRICE, empty);
 
             assertThat(productListCache.find(BRAND_PRICE)).contains(empty);

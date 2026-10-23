@@ -18,6 +18,10 @@ public interface OrderJpaRepository extends JpaRepository<Order, Long> {
     @Query("select o from Order o where o.id = :id and o.userId = :userId")
     Optional<Order> findByIdAndUserIdForUpdate(@Param("id") Long id, @Param("userId") Long userId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select o from Order o where o.id = :id")
+    Optional<Order> findByIdForUpdate(@Param("id") Long id);
+
     // 정렬은 쿼리에 고정한다. `:userId is null or ...` 의 userId 는 목록 API 의 선택 필터 인자다.
     // null 이면 모든 주문을, 값이 있으면 그 구매자의 주문만 조회한다 (주문의 user_id 는 null 일 수 없다).
     @Query(

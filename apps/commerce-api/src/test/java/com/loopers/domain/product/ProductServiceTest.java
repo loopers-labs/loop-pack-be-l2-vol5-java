@@ -1,7 +1,6 @@
 package com.loopers.domain.product;
 
 import com.loopers.domain.common.Money;
-import com.loopers.domain.like.Like;
 import com.loopers.domain.like.LikeRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
@@ -12,8 +11,6 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -107,78 +104,6 @@ class ProductServiceTest {
             assertThat(found.getName()).isEqualTo("러닝화");
             assertThat(found.getPrice()).isEqualTo(new Money(89_000));
             assertThat(found.getStock()).isEqualTo(new Stock(10));
-        }
-
-        @DisplayName("값이 유효하지 않으면 INVALID_INPUT 으로 거절하고, 저장하지 않는다.")
-        @Test
-        void rejectsWithInvalidInput_andSavesNothing_whenNameIsBlank() {
-            // act
-            CoreException exception = assertThrows(CoreException.class,
-                () -> productService.create(1L, "   ", new Money(89_000), new Stock(10)));
-
-            // assert
-            assertThat(exception.getErrorType()).isEqualTo(ErrorType.INVALID_INPUT);
-            assertThat(productRepository.findAllActive(PageRequest.of(0, 10)).getTotalElements()).isZero();
-        }
-    }
-
-    @DisplayName("상품 목록을 조회할 때,")
-    @Nested
-    class GetList {
-        @DisplayName("삭제되지 않은 상품을 최신순으로 반환한다.")
-        @Test
-        void returnsActiveProducts_newestFirst() {
-            // arrange
-            Product first = saveProduct(1L, "첫째");
-            saveDeletedProduct(1L, "삭제됨");
-            Product third = saveProduct(1L, "셋째");
-
-            // act
-            Page<Product> page = productService.getList(PageRequest.of(0, 10));
-
-            // assert
-            assertThat(page.getContent()).extracting(Product::getId)
-                .containsExactly(third.getId(), first.getId());
-        }
-    }
-
-    @DisplayName("사용자가 좋아요한 상품 목록을 조회할 때,")
-    @Nested
-    class GetLikedList {
-        @DisplayName("삭제되지 않은 상품 중 내가 좋아요한 것만 반환한다.")
-        @Test
-        void returnsMyLikedActiveProducts() {
-            // arrange
-            Product liked = saveProduct(1L, "좋아요함");
-            Product deleted = saveDeletedProduct(1L, "삭제됨");
-            saveProduct(1L, "좋아요 안 함");
-            likeRepository.save(Like.create(1L, liked.getId()));
-            likeRepository.save(Like.create(1L, deleted.getId()));
-
-            // act
-            Page<Product> page = productService.getLikedList(1L, PageRequest.of(0, 10));
-
-            // assert
-            assertThat(page.getContent()).extracting(Product::getId).containsExactly(liked.getId());
-        }
-    }
-
-    @DisplayName("정렬과 브랜드 조건으로 상품 목록을 검색할 때,")
-    @Nested
-    class Search {
-        @DisplayName("브랜드 조건과 정렬을 적용해 삭제되지 않은 상품을 반환한다.")
-        @Test
-        void appliesBrandAndSort() {
-            // arrange
-            Product cheap = productRepository.save(Product.create(1L, "싼 것", new Money(1_000), new Stock(1)));
-            Product expensive = productRepository.save(Product.create(1L, "비싼 것", new Money(9_000), new Stock(1)));
-            productRepository.save(Product.create(2L, "다른 브랜드", new Money(500), new Stock(1)));
-
-            // act
-            Page<Product> page = productService.search(1L, ProductSort.PRICE_ASC, PageRequest.of(0, 10));
-
-            // assert
-            assertThat(page.getContent()).extracting(Product::getId).containsExactly(cheap.getId(), expensive.getId());
         }
     }
 

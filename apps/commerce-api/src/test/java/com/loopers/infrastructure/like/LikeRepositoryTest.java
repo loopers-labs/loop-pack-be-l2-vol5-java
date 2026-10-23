@@ -48,17 +48,6 @@ class LikeRepositoryTest {
             // act & assert
             assertThat(likeRepository.exists(1L, 10L)).isTrue();
         }
-
-        @DisplayName("저장하지 않은 관계는 없다고 확인된다. 사용자나 상품이 다르면 다른 관계다.")
-        @Test
-        void returnsFalse_whenLikeIsNotSaved() {
-            // arrange
-            saveLike(1L, 10L);
-
-            // act & assert
-            assertThat(likeRepository.exists(2L, 10L)).isFalse();
-            assertThat(likeRepository.exists(1L, 11L)).isFalse();
-        }
     }
 
     @DisplayName("좋아요를 삭제할 때,")

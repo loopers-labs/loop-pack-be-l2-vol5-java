@@ -24,7 +24,8 @@ public enum ErrorType {
     ORDER_ALREADY_CONFIRMED("이미 확정된 주문입니다. 주문 내역에서 결과를 확인해 주세요."),
     OUT_OF_STOCK("재고가 부족합니다. 수량을 줄이거나 다른 상품을 선택해 주세요."),
     INSUFFICIENT_POINT("포인트 잔액이 부족합니다. 포인트를 충전한 뒤 다시 시도해 주세요."),
-    PRODUCT_UNAVAILABLE("주문할 수 없는 상품입니다. 주문 상품을 확인해 주세요.");
+    PRODUCT_UNAVAILABLE("주문할 수 없는 상품입니다. 주문 상품을 확인해 주세요."),
+    PAYMENT_ATTEMPT_CONFLICT("이미 결제 시도가 있는 주문이거나 다른 주문에 쓰인 시도 키입니다. 주문 내역에서 결제 상태를 확인해 주세요.");
 
     private final String message;
 

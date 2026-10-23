@@ -37,7 +37,7 @@ class ArchitectureTest {
     @DisplayName("상품 저장(ProductRepository.save)은 ProductService 만 호출한다.")
     @Test
     void onlyProductServiceSavesProducts() {
-        // 상품 생성은 ProductService.create 를 거치고, 그 유스케이스가 좋아요 수 집계 행도 함께 만든다 (D-33).
+        // 상품 생성은 ProductService.create 를 거치고, 그 유스케이스가 좋아요 수 집계 행도 함께 만든다.
         // 저장소를 직접 불러 상품만 만드는 우회로를 막는다.
         noClasses().that().doNotBelongToAnyOf(ProductService.class)
             .should().callMethod(ProductRepository.class, "save", Product.class)

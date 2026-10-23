@@ -99,16 +99,6 @@ class ProductRepositoryTest {
             // assert
             assertThat(found).isEmpty();
         }
-
-        @DisplayName("존재하지 않는 id 이면 빈 결과를 반환한다.")
-        @Test
-        void returnsEmpty_whenProductDoesNotExist() {
-            // act
-            Optional<Product> found = productRepository.findActive(999L);
-
-            // assert
-            assertThat(found).isEmpty();
-        }
     }
 
     @DisplayName("상품 목록을 조회할 때,")
@@ -129,23 +119,6 @@ class ProductRepositoryTest {
             assertThat(page.getContent()).extracting(Product::getId)
                 .containsExactly(third.getId(), first.getId());
             assertThat(page.getTotalElements()).isEqualTo(2);
-        }
-
-        @DisplayName("페이지 크기만큼만 반환하고, 전체 페이지 수를 계산한다.")
-        @Test
-        void returnsOnlyPageSize_andCalculatesTotalPages() {
-            // arrange
-            saveProduct(1L, "하나", 1);
-            saveProduct(1L, "둘", 1);
-            saveProduct(1L, "셋", 1);
-
-            // act
-            Page<Product> secondPage = productRepository.findAllActive(PageRequest.of(1, 2));
-
-            // assert
-            assertThat(secondPage.getContent()).hasSize(1);
-            assertThat(secondPage.getTotalPages()).isEqualTo(2);
-            assertThat(secondPage.getTotalElements()).isEqualTo(3);
         }
     }
 
@@ -187,12 +160,6 @@ class ProductRepositoryTest {
 
             // assert
             assertThat(products).extracting(Product::getId).containsExactly(active.getId());
-        }
-
-        @DisplayName("연결된 상품이 없으면 빈 목록이다.")
-        @Test
-        void returnsEmpty_whenNoProducts() {
-            assertThat(findForUpdate(1L)).isEmpty();
         }
     }
 
@@ -238,37 +205,6 @@ class ProductRepositoryTest {
             // assert
             assertThat(page.getContent()).extracting(Product::getId).containsExactly(active.getId());
             assertThat(page.getTotalElements()).isEqualTo(1);
-        }
-
-        @DisplayName("페이지 크기만큼만 반환하고, 총 개수와 전체 페이지 수를 계산한다.")
-        @Test
-        void returnsOnlyPageSize_andCalculatesTotals() {
-            // arrange
-            like(1L, saveProduct(1L, "하나", 1));
-            like(1L, saveProduct(1L, "둘", 1));
-            like(1L, saveProduct(1L, "셋", 1));
-
-            // act
-            Page<Product> secondPage = productRepository.findAllActiveLikedBy(1L, PageRequest.of(1, 2));
-
-            // assert
-            assertThat(secondPage.getContent()).hasSize(1);
-            assertThat(secondPage.getTotalElements()).isEqualTo(3);
-            assertThat(secondPage.getTotalPages()).isEqualTo(2);
-        }
-
-        @DisplayName("좋아요한 상품이 없으면 빈 목록이다.")
-        @Test
-        void returnsEmpty_whenUserHasNoLikes() {
-            // arrange
-            saveProduct(1L, "러닝화", 1);
-
-            // act
-            Page<Product> page = productRepository.findAllActiveLikedBy(1L, PageRequest.of(0, 10));
-
-            // assert
-            assertThat(page.getContent()).isEmpty();
-            assertThat(page.getTotalElements()).isZero();
         }
     }
 

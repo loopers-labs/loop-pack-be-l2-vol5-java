@@ -1,6 +1,6 @@
 package com.loopers.application.like;
 
-import com.loopers.application.product.ProductInfo;
+import com.loopers.application.product.dto.ProductInfo;
 import com.loopers.domain.like.LikeService;
 import com.loopers.domain.product.ProductService;
 import com.loopers.support.error.CoreException;
@@ -41,7 +41,7 @@ public class LikeFacade {
 
     /**
      * 내 좋아요 상품 목록. 소유자가 URL 에 드러나 있어(userId) 요청자와 다르면 조회 없이 비교만으로 거절한다.
-     * 그래서 존재하지 않는 userId 여도 사용자 존재 여부가 드러나지 않는다 (D-11).
+     * 그래서 존재하지 않는 userId 여도 사용자 존재 여부가 드러나지 않는다.
      */
     @Transactional(readOnly = true)
     public Page<ProductInfo> getMyLikes(Long requesterId, Long userId, int page, int size) {

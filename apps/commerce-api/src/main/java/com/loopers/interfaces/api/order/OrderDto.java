@@ -1,12 +1,18 @@
 package com.loopers.interfaces.api.order;
 
-import com.loopers.application.order.OrderInfo;
-import com.loopers.application.order.OrderItemCommand;
-import com.loopers.application.order.OrderItemInfo;
-import com.loopers.application.order.OrderSummaryInfo;
-import com.loopers.application.order.PaymentInfo;
+import com.loopers.application.order.dto.OrderInfo;
+import com.loopers.application.order.dto.OrderItemCommand;
+import com.loopers.application.order.dto.OrderItemInfo;
+import com.loopers.application.order.dto.OrderSummaryInfo;
+import com.loopers.application.order.dto.PaymentInfo;
+import com.loopers.application.payment.dto.PaymentAttemptInfo;
+import com.loopers.application.payment.dto.PaymentCheckInfo;
+import com.loopers.application.order.dto.OrderConfirmCommand;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 
 import java.time.ZonedDateTime;
 import java.util.List;
@@ -25,6 +31,52 @@ public class OrderDto {
             return new OrderItemCommand(productId, quantity);
         }
     }
+
+    // 결제 시작 요청. 금액은 받지 않는다(저장된 주문 합계로 정한다). 카드 값은 합성 값이며 저장하지 않고 문자열 표현에 드러내지 않는다.
+    // 값 규칙은 형식만 본다. 같은 시도의 중복·충돌은 application 이 판단한다.
+    public record ConfirmRequest(
+        @NotBlank @Size(max = 64) String paymentAttemptKey,
+        @NotBlank String cardType,
+        @NotBlank @Pattern(regexp = "\\d{4}-\\d{4}-\\d{4}-\\d{4}") String cardNo
+    ) {
+        public OrderConfirmCommand toCommand(Long userId, Long orderId) {
+            return new OrderConfirmCommand(userId, orderId, paymentAttemptKey, cardType, cardNo);
+        }
+
+        @Override
+        public String toString() {
+            return "ConfirmRequest[paymentAttemptKey=" + paymentAttemptKey + ", cardType=" + cardType + ", cardNo=****]";
+        }
+    }
+
+    // 결제 시작·확인의 응답. 처리 중이거나 결과 미확인이면 202, PG 결과로 종결한 시도면 200 이다. 주문 상태와 시도 상태를
+    // 함께 담고, 최종 결과를 알려면 links.order 로 조회한다. lookupUnavailable 은 PG 를 조회하지 못해 저장된 상태를 그대로
+    // 돌려줬을 때만 true 이며, 실패가 아니라 아직 확인하지 못했다는 뜻이다(조회했다면 응답에서 생략된다).
+    public record PaymentStartResponse(
+        Long orderId, String orderStatus, AttemptResponse payment, LinksResponse links, Boolean lookupUnavailable
+    ) {
+        public static PaymentStartResponse from(PaymentAttemptInfo info) {
+            return new PaymentStartResponse(
+                info.orderId(),
+                info.orderStatus().name(),
+                new AttemptResponse(info.attemptStatus().name(), info.amount()),
+                new LinksResponse("/api/v1/orders/" + info.orderId()),
+                null
+            );
+        }
+
+        public static PaymentStartResponse from(PaymentCheckInfo result) {
+            PaymentStartResponse base = from(result.info());
+            return new PaymentStartResponse(
+                base.orderId(), base.orderStatus(), base.payment(), base.links(),
+                result.lookupFailed() ? Boolean.TRUE : null
+            );
+        }
+    }
+
+    public record AttemptResponse(String status, long amount) {}
+
+    public record LinksResponse(String order) {}
 
     // payment 는 확정된 주문에만 있고, 확정 전(DRAFT)에는 null 이다. orderedAt 은 주문을 만든 시각이다.
     public record OrderResponse(

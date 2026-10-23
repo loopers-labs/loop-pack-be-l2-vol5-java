@@ -2,8 +2,8 @@ package com.loopers.application.brand;
 
 import com.loopers.application.order.AdminOrderFacade;
 import com.loopers.application.order.OrderFacade;
-import com.loopers.application.order.OrderInfo;
-import com.loopers.application.order.OrderItemCommand;
+import com.loopers.application.order.dto.OrderInfo;
+import com.loopers.application.order.dto.OrderItemCommand;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.common.Money;
@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * 브랜드 일괄 삭제가 하나의 트랜잭션으로 반영되거나(성공) 전부 취소되는지(실패) 실제 MySQL 로 확인한다 (D-23).
+ * 브랜드 일괄 삭제가 하나의 트랜잭션으로 반영되거나(성공) 전부 취소되는지(실패) 실제 MySQL 로 확인한다.
  *
  * <p>테스트를 부모 트랜잭션으로 감싸지 않는다. 데이터는 각각 commit 해 두고, 삭제 뒤의 상태는 영속성 컨텍스트를 거치지
  * 않는 {@link JdbcTemplate} 로 새로 읽는다. 실패는 {@link FailingStatementInspector} 로 상품 UPDATE 문이 DB 로

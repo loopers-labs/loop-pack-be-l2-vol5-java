@@ -1,5 +1,6 @@
 package com.loopers.application.point;
 
+import com.loopers.application.point.dto.PointInfo;
 import com.loopers.domain.common.Money;
 import com.loopers.domain.user.User;
 import com.loopers.domain.user.UserService;
@@ -21,7 +22,7 @@ public class PointFacade {
 
     @Transactional
     public PointInfo charge(Long userId, long amount) {
-        // 결제와 같은 사용자 행을 바꾸므로, 처음 읽을 때부터 잠가서 낡은 잔액으로 더하지 않는다 (D-24, D-26).
+        // 결제와 같은 사용자 행을 바꾸므로, 처음 읽을 때부터 잠가서 낡은 잔액으로 더하지 않는다.
         User user = userService.getForUpdate(userId);
         user.chargePoint(new Money(amount));
         return PointInfo.from(user);

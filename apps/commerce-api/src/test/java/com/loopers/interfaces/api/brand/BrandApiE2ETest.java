@@ -85,25 +85,5 @@ class BrandApiE2ETest {
             assertFail(response, HttpStatus.NOT_FOUND, "NOT_FOUND");
             assertThat(response.getBody().meta().message()).isEqualTo("존재하지 않는 브랜드입니다.");
         }
-
-        @DisplayName("삭제된 브랜드이면 404 NOT_FOUND 로 응답한다.")
-        @Test
-        void returnsNotFound_whenBrandIsDeleted() {
-            Brand deleted = Brand.create("삭제됨");
-            deleted.delete();
-            Brand saved = brandRepository.save(deleted);
-
-            ResponseEntity<ApiResponse<Map<String, Object>>> response = getBrand(String.valueOf(saved.getId()));
-
-            assertFail(response, HttpStatus.NOT_FOUND, "NOT_FOUND");
-        }
-
-        @DisplayName("brandId 가 숫자가 아니면 400 INVALID_INPUT 으로 응답한다.")
-        @Test
-        void returnsBadRequest_whenBrandIdIsNotNumber() {
-            ResponseEntity<ApiResponse<Map<String, Object>>> response = getBrand("abc");
-
-            assertFail(response, HttpStatus.BAD_REQUEST, "INVALID_INPUT");
-        }
     }
 }

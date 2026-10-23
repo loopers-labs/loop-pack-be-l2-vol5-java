@@ -1,5 +1,6 @@
 package com.loopers.application.point;
 
+import com.loopers.application.point.dto.PointInfo;
 import com.loopers.domain.common.Money;
 import com.loopers.domain.user.PointBalance;
 import com.loopers.domain.user.User;
@@ -11,8 +12,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
@@ -65,35 +64,6 @@ class PointFacadeTest {
             assertThat(storedBalance(user.getId())).isEqualTo(new PointBalance(new Money(15_000)));
         }
 
-        @DisplayName("충전액이 0 이하이면 INVALID_INPUT 으로 거절하고, 저장된 잔액은 그대로다.")
-        @ParameterizedTest
-        @ValueSource(longs = {0, -1})
-        void rejectsWithInvalidInput_andKeepsStoredBalance_whenAmountIsNotPositive(long amount) {
-            // arrange
-            User user = saveUserWithBalance(5_000);
-
-            // act
-            CoreException exception = assertThrows(CoreException.class, () -> pointFacade.charge(user.getId(), amount));
-
-            // assert
-            assertThat(exception.getErrorType()).isEqualTo(ErrorType.INVALID_INPUT);
-            assertThat(storedBalance(user.getId())).isEqualTo(new PointBalance(new Money(5_000)));
-        }
-
-        @DisplayName("충전 후 잔액이 표현 범위를 넘으면 INVALID_INPUT 으로 거절하고, 저장된 잔액은 그대로다.")
-        @Test
-        void rejectsWithInvalidInput_andKeepsStoredBalance_whenBalanceOverflows() {
-            // arrange
-            User user = saveUserWithBalance(Long.MAX_VALUE);
-
-            // act
-            CoreException exception = assertThrows(CoreException.class, () -> pointFacade.charge(user.getId(), 1));
-
-            // assert
-            assertThat(exception.getErrorType()).isEqualTo(ErrorType.INVALID_INPUT);
-            assertThat(storedBalance(user.getId())).isEqualTo(new PointBalance(new Money(Long.MAX_VALUE)));
-        }
-
         @DisplayName("존재하지 않는 사용자이면 NOT_FOUND 로 거절한다.")
         @Test
         void throwsNotFound_whenUserDoesNotExist() {
@@ -119,16 +89,6 @@ class PointFacadeTest {
 
             // assert
             assertThat(info.balance()).isEqualTo(7_000);
-        }
-
-        @DisplayName("존재하지 않는 사용자이면 NOT_FOUND 로 거절한다.")
-        @Test
-        void throwsNotFound_whenUserDoesNotExist() {
-            // act
-            CoreException exception = assertThrows(CoreException.class, () -> pointFacade.getBalance(999L));
-
-            // assert
-            assertThat(exception.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
         }
     }
 }

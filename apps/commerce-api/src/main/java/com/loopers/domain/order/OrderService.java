@@ -32,7 +32,7 @@ public class OrderService {
 
     /**
      * 본인의 주문을 조회한다. 없는 주문과 다른 사용자의 주문은 같은 {@code NOT_FOUND} 로 거절해,
-     * 순차 id 로 다른 사람의 주문이 존재하는지 알아내지 못하게 한다 (D-11).
+     * 순차 id 로 다른 사람의 주문이 존재하는지 알아내지 못하게 한다.
      */
     public Order getMine(Long orderId, Long userId) {
         return orderRepository.findByIdAndUserId(orderId, userId).orElseThrow(OrderService::notFound);
@@ -44,6 +44,14 @@ public class OrderService {
      */
     public Order getMineForUpdate(Long orderId, Long userId) {
         return orderRepository.findByIdAndUserIdForUpdate(orderId, userId).orElseThrow(OrderService::notFound);
+    }
+
+    /**
+     * 주문자와 무관하게 주문을 잠그고 조회한다. 없으면 {@code NOT_FOUND} 다. 결제 결과 적용이 첫 주문 조회로 쓴다. 소유권은
+     * 확인하지 않으므로 요청자가 있는 입구는 먼저 {@link #getMine} 류로 확인한다.
+     */
+    public Order getForUpdate(Long orderId) {
+        return orderRepository.findByIdForUpdate(orderId).orElseThrow(OrderService::notFound);
     }
 
     private static CoreException notFound() {

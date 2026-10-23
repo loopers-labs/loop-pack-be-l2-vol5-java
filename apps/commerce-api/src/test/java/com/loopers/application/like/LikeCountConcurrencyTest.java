@@ -115,7 +115,7 @@ class LikeCountConcurrencyTest {
             requests.add(like(1L, product.getId()));
         }
 
-        // act: 겹친 요청은 기본키 충돌로 실패할 수 있다(week3 D-4). 어느 쪽이든 집계는 관계 수와 같아야 한다.
+        // act: 겹친 요청은 기본키 충돌로 실패할 수 있다. 어느 쪽이든 집계는 관계 수와 같아야 한다.
         Results results = ConcurrentRequests.run(requests);
 
         // assert
@@ -161,7 +161,7 @@ class LikeCountConcurrencyTest {
             requests.add(like(userId, product.getId()));
         }
 
-        // act: 삭제보다 늦게 상품을 조회한 좋아요는 NOT_FOUND 로 거절된다. 먼저 조회한 좋아요는 관계를 남길 수 있다 (D-36).
+        // act: 삭제보다 늦게 상품을 조회한 좋아요는 NOT_FOUND 로 거절된다. 먼저 조회한 좋아요는 관계를 남길 수 있다.
         Results results = ConcurrentRequests.run(requests);
 
         // assert: 증가는 UPDATE 만 쓰므로 행이 지워진 뒤의 증가는 0행 갱신으로 끝난다.

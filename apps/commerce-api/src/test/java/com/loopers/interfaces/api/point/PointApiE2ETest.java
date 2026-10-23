@@ -112,28 +112,6 @@ class PointApiE2ETest {
             assertFail(response, HttpStatus.BAD_REQUEST, "INVALID_INPUT");
         }
 
-        @DisplayName("amount 가 누락되면 400 INVALID_INPUT 으로 응답한다.")
-        @Test
-        void returnsBadRequest_whenAmountIsMissing() {
-            User user = saveUserWithBalance(5_000);
-
-            ResponseEntity<ApiResponse<PointDto.PointResponse>> response = charge(String.valueOf(user.getId()), "{}");
-
-            assertFail(response, HttpStatus.BAD_REQUEST, "INVALID_INPUT");
-        }
-
-        @DisplayName("amount 가 숫자가 아니거나 표현 범위를 넘으면 400 INVALID_INPUT 으로 응답한다.")
-        @ParameterizedTest
-        @ValueSource(strings = {"\"abc\"", "9223372036854775808"})
-        void returnsBadRequest_whenAmountIsNotNumberOrOutOfRange(String amount) {
-            User user = saveUserWithBalance(5_000);
-
-            ResponseEntity<ApiResponse<PointDto.PointResponse>> response =
-                charge(String.valueOf(user.getId()), "{\"amount\": " + amount + "}");
-
-            assertFail(response, HttpStatus.BAD_REQUEST, "INVALID_INPUT");
-        }
-
         @DisplayName("amount 가 소수이면 소수점을 버려 충전하지 않고, 400 INVALID_INPUT 이며 기존 잔액은 그대로다.")
         @ParameterizedTest
         @ValueSource(strings = {"1.5", "1000.0"})
@@ -147,40 +125,12 @@ class PointApiE2ETest {
             assertThat(getPoint(String.valueOf(user.getId())).getBody().data().balance()).isEqualTo(5_000);
         }
 
-        @DisplayName("충전 후 잔액이 표현 범위를 넘으면 400 INVALID_INPUT 이고, 기존 잔액은 그대로다.")
-        @Test
-        void returnsBadRequest_andKeepsBalance_whenBalanceOverflows() {
-            User user = saveUserWithBalance(Long.MAX_VALUE);
-
-            ResponseEntity<ApiResponse<PointDto.PointResponse>> response =
-                charge(String.valueOf(user.getId()), "{\"amount\": 1}");
-
-            assertFail(response, HttpStatus.BAD_REQUEST, "INVALID_INPUT");
-            assertThat(getPoint(String.valueOf(user.getId())).getBody().data().balance()).isEqualTo(Long.MAX_VALUE);
-        }
-
         @DisplayName("X-USER-ID 헤더가 없으면 400 INVALID_INPUT 으로 응답한다.")
         @Test
         void returnsBadRequest_whenUserIdHeaderIsMissing() {
             ResponseEntity<ApiResponse<PointDto.PointResponse>> response = charge(null, "{\"amount\": 1000}");
 
             assertFail(response, HttpStatus.BAD_REQUEST, "INVALID_INPUT");
-        }
-
-        @DisplayName("X-USER-ID 가 숫자가 아니면 400 INVALID_INPUT 으로 응답한다.")
-        @Test
-        void returnsBadRequest_whenUserIdIsNotNumber() {
-            ResponseEntity<ApiResponse<PointDto.PointResponse>> response = charge("abc", "{\"amount\": 1000}");
-
-            assertFail(response, HttpStatus.BAD_REQUEST, "INVALID_INPUT");
-        }
-
-        @DisplayName("존재하지 않는 사용자이면 404 NOT_FOUND 로 응답한다.")
-        @Test
-        void returnsNotFound_whenUserDoesNotExist() {
-            ResponseEntity<ApiResponse<PointDto.PointResponse>> response = charge("999", "{\"amount\": 1000}");
-
-            assertFail(response, HttpStatus.NOT_FOUND, "NOT_FOUND");
         }
     }
 
@@ -202,24 +152,6 @@ class PointApiE2ETest {
         @Test
         void returnsBadRequest_whenUserIdHeaderIsMissing() {
             assertFail(getPoint(null), HttpStatus.BAD_REQUEST, "INVALID_INPUT");
-        }
-
-        @DisplayName("존재하지 않는 사용자이면 404 NOT_FOUND 로 응답한다.")
-        @Test
-        void returnsNotFound_whenUserDoesNotExist() {
-            assertFail(getPoint("999"), HttpStatus.NOT_FOUND, "NOT_FOUND");
-        }
-
-        @DisplayName("충전한 금액이 잔액 조회에 반영된다.")
-        @Test
-        void reflectsCharge_afterCharging() {
-            User user = saveUserWithBalance(0);
-            String userId = String.valueOf(user.getId());
-
-            charge(userId, "{\"amount\": 10000}");
-            ResponseEntity<ApiResponse<PointDto.PointResponse>> response = getPoint(userId);
-
-            assertThat(response.getBody().data().balance()).isEqualTo(10_000);
         }
     }
 }

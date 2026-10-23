@@ -1,13 +1,14 @@
 package com.loopers.interfaces.api.admin.order;
 
 import com.loopers.application.order.OrderFacade;
-import com.loopers.application.order.OrderItemCommand;
+import com.loopers.application.order.dto.OrderItemCommand;
 import com.loopers.domain.common.Money;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.domain.product.Stock;
 import com.loopers.domain.user.User;
 import com.loopers.domain.user.UserRepository;
+import com.loopers.support.fixture.ConfirmedOrders;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
@@ -45,6 +47,9 @@ class AdminOrderApiTest {
 
     @Autowired
     private ProductRepository productRepository;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
@@ -91,7 +96,7 @@ class AdminOrderApiTest {
             Long secondOrder = placeOrder(
                 second, new OrderItemCommand(shirt.getId(), 1), new OrderItemCommand(socks.getId(), 2)
             );
-            orderFacade.confirm(second.getId(), secondOrder);
+            ConfirmedOrders.confirm(jdbcTemplate, secondOrder);
 
             // act & assert
             getAsAdmin(ORDERS)
@@ -153,7 +158,7 @@ class AdminOrderApiTest {
             User buyer = saveUser();
             Product shirt = saveProduct("티셔츠", 3_000);
             Long orderId = placeOrder(buyer, new OrderItemCommand(shirt.getId(), 2));
-            orderFacade.confirm(buyer.getId(), orderId);
+            ConfirmedOrders.confirm(jdbcTemplate, orderId);
 
             // act & assert
             getAsAdmin(ORDERS + "/" + orderId)

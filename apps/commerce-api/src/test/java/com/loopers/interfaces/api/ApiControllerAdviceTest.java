@@ -111,7 +111,7 @@ class ApiControllerAdviceTest {
 
             assertInvalidInput("/test/items", String.format(json, "3000000000"), "'items[1].quantity'");
             assertInvalidInput("/test/items", String.format(json, "\"abc\""), "'items[1].quantity'", "abc", "Integer");
-            // 소수(1.5) 거절은 앱의 ObjectMapper 설정(D-15)이라 standalone 에서는 재현되지 않는다. OrderApiE2ETest 가 검증한다.
+            // 소수(1.5) 거절은 앱의 ObjectMapper 설정이라 standalone 에서는 재현되지 않는다. OrderApiE2ETest 가 검증한다.
         }
 
         @DisplayName("배열이 아닌 필드의 위치는 지금처럼 필드명이다.")

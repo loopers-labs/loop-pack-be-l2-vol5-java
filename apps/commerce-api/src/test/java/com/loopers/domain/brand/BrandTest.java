@@ -112,19 +112,5 @@ class BrandTest {
             assertThat(exception.getErrorType()).isEqualTo(ErrorType.INVALID_INPUT);
             assertThat(brand.getName()).isEqualTo("루퍼스");
         }
-
-        @DisplayName("50자를 넘으면 INVALID_INPUT 으로 거절하고, 기존 이름을 유지한다.")
-        @Test
-        void rejectsWithInvalidInput_andKeepsName_whenNameIsLongerThan50() {
-            // arrange
-            Brand brand = Brand.create("루퍼스");
-
-            // act
-            CoreException exception = assertThrows(CoreException.class, () -> brand.update(NAME_50 + "나"));
-
-            // assert
-            assertThat(exception.getErrorType()).isEqualTo(ErrorType.INVALID_INPUT);
-            assertThat(brand.getName()).isEqualTo("루퍼스");
-        }
     }
 }

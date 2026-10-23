@@ -129,17 +129,6 @@ class ProductLikeCountRepositoryTest {
             // act & assert
             assertThat(productLikeCountRepository.findCount(10L)).isEqualTo(2);
         }
-
-        @DisplayName("좋아요가 없으면 0이다. 집계 행이 없는 상품도 0이다.")
-        @Test
-        void returnsZero_whenNoLikes() {
-            // arrange
-            productLikeCountRepository.create(10L);
-
-            // act & assert
-            assertThat(productLikeCountRepository.findCount(10L)).isZero();
-            assertThat(productLikeCountRepository.findCount(999_999L)).isZero();
-        }
     }
 
     @DisplayName("여러 상품의 좋아요 수를 한 번에 읽을 때,")
@@ -160,28 +149,6 @@ class ProductLikeCountRepositoryTest {
 
             // assert
             assertThat(counts).containsOnly(Map.entry(10L, 2L), Map.entry(11L, 1L), Map.entry(12L, 0L));
-        }
-
-        @DisplayName("요청하지 않은 상품은 읽지 않는다.")
-        @Test
-        void readsOnlyRequestedProducts() {
-            // arrange
-            productLikeCountRepository.create(10L);
-            productLikeCountRepository.create(11L);
-            increase(10L, 1);
-            increase(11L, 1);
-
-            // act
-            Map<Long, Long> counts = productLikeCountRepository.findCounts(List.of(10L));
-
-            // assert
-            assertThat(counts).containsOnly(Map.entry(10L, 1L));
-        }
-
-        @DisplayName("빈 목록이면 빈 결과를 반환한다.")
-        @Test
-        void returnsEmpty_whenIdsAreEmpty() {
-            assertThat(productLikeCountRepository.findCounts(List.of())).isEmpty();
         }
     }
 

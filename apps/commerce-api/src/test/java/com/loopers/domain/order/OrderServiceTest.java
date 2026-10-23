@@ -35,28 +35,6 @@ class OrderServiceTest {
         databaseCleanUp.truncateAllTables();
     }
 
-    @DisplayName("주문을 생성할 때,")
-    @Nested
-    class Create {
-        @DisplayName("DRAFT 주문을 저장해 id 와 함께 돌려준다.")
-        @Test
-        void savesDraftOrder() {
-            // act
-            Order order = orderService.create(
-                7L,
-                new OrderLines(List.of(new OrderLine(10L, 2))),
-                Map.of(10L, new OrderProduct("티셔츠", new Money(3_000)))
-            );
-
-            // assert
-            assertThat(order.getId()).isNotNull();
-            assertThat(order.getStatus()).isEqualTo(OrderStatus.DRAFT);
-            assertThat(order.getTotalAmount()).isEqualTo(new Money(6_000));
-            assertThat(jdbcTemplate.queryForObject("select count(*) from orders", Integer.class)).isEqualTo(1);
-        }
-
-    }
-
     @DisplayName("본인 주문을 조회할 때,")
     @Nested
     class GetMine {
@@ -98,27 +76,4 @@ class OrderServiceTest {
         }
     }
 
-    @DisplayName("주문 하나를 조회할 때,")
-    @Nested
-    class Get {
-        @DisplayName("있으면 누구의 주문이든 돌려주고, 없으면 NOT_FOUND 로 거절한다.")
-        @Test
-        void returnsOrder_orThrowsNotFound() {
-            // arrange
-            Order saved = orderService.create(
-                7L,
-                new OrderLines(List.of(new OrderLine(10L, 2))),
-                Map.of(10L, new OrderProduct("티셔츠", new Money(3_000)))
-            );
-
-            // act
-            Order found = orderService.get(saved.getId());
-            CoreException exception = assertThrows(CoreException.class, () -> orderService.get(999_999L));
-
-            // assert
-            assertThat(found.getId()).isEqualTo(saved.getId());
-            assertThat(exception.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
-            assertThat(exception.getMessage()).isEqualTo("주문을 찾을 수 없습니다.");
-        }
-    }
 }

@@ -4,6 +4,7 @@ import com.loopers.support.error.ErrorType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -23,6 +24,13 @@ class ErrorTypeHttpStatusMapperTest {
                     .as("ErrorType.%s 의 HTTP 상태 매핑", errorType.name())
                     .isNotNull();
             }
+        }
+
+        @DisplayName("결제 시도 충돌은 409 로 변환한다.")
+        @Test
+        void returnsConflict_forPaymentAttemptConflict() {
+            assertThat(ErrorTypeHttpStatusMapper.toHttpStatus(ErrorType.PAYMENT_ATTEMPT_CONFLICT))
+                .isEqualTo(HttpStatus.CONFLICT);
         }
     }
 }

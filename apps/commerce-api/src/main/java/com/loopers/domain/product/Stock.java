@@ -39,4 +39,19 @@ public record Stock(int remaining) {
         }
         return new Stock(remaining - quantity);
     }
+
+    /**
+     * 재고를 늘린 새 {@code Stock}을 반환한다. 확정 실패한 결제 대기 주문이 확보했던 수량을 돌려줄 때 쓴다.
+     * 같은 주문의 반환이 두 번 일어나지 않게 하는 것은 호출하는 쪽의 몫이다 (주문 상태 전이).
+     */
+    public Stock increase(int quantity) {
+        if (quantity <= 0) {
+            throw new CoreException(ErrorType.INVALID_INPUT, "반환 수량은 1 이상이어야 합니다.");
+        }
+        long sum = (long) remaining + quantity;
+        if (sum > Integer.MAX_VALUE) {
+            throw new CoreException(ErrorType.INVALID_INPUT, "재고가 허용 범위를 넘습니다.");
+        }
+        return new Stock((int) sum);
+    }
 }

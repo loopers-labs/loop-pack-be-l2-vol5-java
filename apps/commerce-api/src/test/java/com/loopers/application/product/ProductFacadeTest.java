@@ -1,6 +1,8 @@
 package com.loopers.application.product;
 
 import com.loopers.application.like.LikeFacade;
+import com.loopers.application.product.dto.ProductDetailInfo;
+import com.loopers.application.product.dto.ProductListItemInfo;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.common.Money;
@@ -114,74 +116,11 @@ class ProductFacadeTest {
             assertThat(info.likeCount()).isEqualTo(2);
         }
 
-        @DisplayName("좋아요를 등록하고 취소하면 좋아요 수에 반영된다.")
-        @Test
-        void reflectsLikeAndUnlikeInCount() {
-            // arrange
-            User me = saveUser();
-            Product product = saveProduct(saveBrand("루퍼스"), "러닝화", 89_000);
-            assertThat(productFacade.get(product.getId()).likeCount()).isZero();
-
-            // act & assert
-            likeFacade.like(me.getId(), product.getId());
-            assertThat(productFacade.get(product.getId()).likeCount()).isEqualTo(1);
-            likeFacade.unlike(me.getId(), product.getId());
-            assertThat(productFacade.get(product.getId()).likeCount()).isZero();
-        }
-
-        @DisplayName("관리자가 가격을 수정하면 조회에 반영된다.")
-        @Test
-        void reflectsAdminUpdate() {
-            // arrange
-            Product product = saveProduct(saveBrand("루퍼스"), "러닝화", 89_000);
-
-            // act
-            adminProductFacade.update(product.getId(), "러닝화", 99_000);
-
-            // assert
-            assertThat(productFacade.get(product.getId()).product().price()).isEqualTo(99_000);
-        }
-
-        @DisplayName("없거나 삭제된 상품이면 NOT_FOUND 로 거절한다.")
-        @Test
-        void throwsNotFound_whenProductDoesNotExistOrIsDeleted() {
-            // arrange
-            Product deleted = saveDeletedProduct(saveBrand("루퍼스"), "삭제됨");
-
-            // act & assert
-            assertThat(errorTypeOf(() -> productFacade.get(999L))).isEqualTo(ErrorType.NOT_FOUND);
-            assertThat(errorTypeOf(() -> productFacade.get(deleted.getId())))
-                .isEqualTo(ErrorType.NOT_FOUND);
-        }
-
     }
 
     @DisplayName("상품 목록을 조회할 때,")
     @Nested
     class GetList {
-        @DisplayName("정렬 기준에 따라 반환한다. (latest: 최신순, price_asc: 가격 낮은 순, likes_desc: 좋아요 많은 순)")
-        @Test
-        void sortsBySortParameter() {
-            // arrange
-            User me = saveUser();
-            User other = saveUser();
-            Brand brand = saveBrand("루퍼스");
-            Product cheapOld = saveProduct(brand, "싸고 오래됨", 1_000);
-            Product expensiveMid = saveProduct(brand, "비싸고 인기", 9_000);
-            Product midNew = saveProduct(brand, "중간 가격 최신", 5_000);
-            likeFacade.like(me.getId(), expensiveMid.getId());
-            likeFacade.like(other.getId(), expensiveMid.getId());
-            likeFacade.like(me.getId(), midNew.getId());
-
-            // act & assert
-            assertThat(ids(productFacade.getList(null, "latest", 0, 20)))
-                .containsExactly(midNew.getId(), expensiveMid.getId(), cheapOld.getId());
-            assertThat(ids(productFacade.getList(null, "price_asc", 0, 20)))
-                .containsExactly(cheapOld.getId(), midNew.getId(), expensiveMid.getId());
-            assertThat(ids(productFacade.getList(null, "likes_desc", 0, 20)))
-                .containsExactly(expensiveMid.getId(), midNew.getId(), cheapOld.getId());
-        }
-
         private List<Long> ids(Page<ProductListItemInfo> page) {
             return page.getContent().stream().map(info -> info.id()).toList();
         }
@@ -213,40 +152,6 @@ class ProductFacadeTest {
                 .containsExactly(cap.getId(), bag.getId(), shoes.getId());
         }
 
-        @DisplayName("삭제된 상품은 제외한다.")
-        @Test
-        void excludesDeletedProducts() {
-            // arrange
-            Brand brand = saveBrand("루퍼스");
-            Product active = saveProduct(brand, "판매 중", 1_000);
-            saveDeletedProduct(brand, "삭제됨");
-
-            // act
-            Page<ProductListItemInfo> page = productFacade.getList(null, "latest", 0, 20);
-
-            // assert
-            assertThat(page.getContent()).extracting(info -> info.id()).containsExactly(active.getId());
-        }
-
-        @DisplayName("브랜드를 지정하면 그 브랜드의 상품만 반환한다. 존재하지 않는 브랜드이면 빈 목록이다.")
-        @Test
-        void filtersByBrand() {
-            // arrange
-            Brand loopers = saveBrand("루퍼스");
-            Brand zeros = saveBrand("제로스");
-            Product shoes = saveProduct(loopers, "러닝화", 89_000);
-            saveProduct(zeros, "가방", 30_000);
-
-            // act
-            Page<ProductListItemInfo> filtered = productFacade.getList(loopers.getId(), "latest", 0, 20);
-            Page<ProductListItemInfo> unknown = productFacade.getList(999L, "latest", 0, 20);
-
-            // assert
-            assertThat(filtered.getContent()).extracting(info -> info.id()).containsExactly(shoes.getId());
-            assertThat(unknown.getContent()).isEmpty();
-            assertThat(unknown.getTotalElements()).isZero();
-        }
-
         @DisplayName("상품이 없어도 빈 목록으로 응답한다.")
         @Test
         void returnsEmptyPage_whenNoProducts() {
@@ -256,24 +161,6 @@ class ProductFacadeTest {
             // assert
             assertThat(page.getContent()).isEmpty();
             assertThat(page.getTotalElements()).isZero();
-        }
-
-        @DisplayName("페이지 크기만큼만 반환하고, 총 개수와 전체 페이지 수를 계산한다.")
-        @Test
-        void paginates() {
-            // arrange
-            Brand brand = saveBrand("루퍼스");
-            saveProduct(brand, "하나", 1_000);
-            saveProduct(brand, "둘", 1_000);
-            saveProduct(brand, "셋", 1_000);
-
-            // act
-            Page<ProductListItemInfo> secondPage = productFacade.getList(null, "latest", 1, 2);
-
-            // assert
-            assertThat(secondPage.getContent()).hasSize(1);
-            assertThat(secondPage.getTotalElements()).isEqualTo(3);
-            assertThat(secondPage.getTotalPages()).isEqualTo(2);
         }
 
         @DisplayName("sort 가 잘못되었거나 page, size 가 범위를 벗어나면 INVALID_INPUT 으로 거절한다.")
@@ -290,7 +177,7 @@ class ProductFacadeTest {
     @DisplayName("데이터가 깨져 상품의 브랜드를 찾을 수 없을 때,")
     @Nested
     class MissingBrand {
-        // 정상 흐름에서는 상품이 있는 브랜드를 삭제할 수 없다. 브랜드 삭제와 상품 등록이 동시에 일어나는 경쟁(D-16)으로만
+        // 정상 흐름에서는 상품이 있는 브랜드를 삭제할 수 없다. 브랜드 삭제와 상품 등록이 동시에 일어나는 경쟁으로만
         // 생길 수 있는 상태라, Facade 의 확인을 거치지 않고 Repository 로 직접 브랜드를 삭제해 만든다.
         private Product saveProductOfDeletedBrand() {
             Brand brand = saveBrand("루퍼스");

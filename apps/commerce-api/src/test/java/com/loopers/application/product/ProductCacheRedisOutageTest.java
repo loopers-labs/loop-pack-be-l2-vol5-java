@@ -1,6 +1,9 @@
 package com.loopers.application.product;
 
 import com.github.dockerjava.api.DockerClient;
+import com.loopers.application.product.cache.ProductListCache;
+import com.loopers.application.product.dto.ProductListItemInfo;
+import com.loopers.application.product.dto.ProductListQuery;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.common.Money;
@@ -29,8 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 /**
- * Redis 가 응답하지 않을 때 상품 목록이 제한된 대기 뒤 DB 결과로 응답하고, 돌아온 뒤 정확히 다시 채워지는지 확인한다
- * (week4 product-cache-design.md 6장).
+ * Redis 가 응답하지 않을 때 상품 목록이 제한된 대기 뒤 DB 결과로 응답하고, 돌아온 뒤 정확히 다시 채워지는지 확인한다.
  *
  * <p>테스트가 실제로 연결한 Redis 컨테이너를 pause 해 명령이 응답 없이 쌓이는 상황을 만든다. stop/start 는 매핑 포트가
  * 바뀌어 다른 테스트가 접속하지 못하므로 쓰지 않고, 실패해도 항상 unpause 한다. 대기 상한은 명령 timeout(300ms)이

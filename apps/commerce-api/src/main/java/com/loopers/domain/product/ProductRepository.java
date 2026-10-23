@@ -28,6 +28,13 @@ public interface ProductRepository {
      */
     List<Product> findAllActiveByIdsForUpdate(Collection<Long> ids);
 
+    /**
+     * id 목록에 해당하는 상품을 <b>삭제된 상품까지 포함해</b> id 오름차순으로 한 번에 배타 잠금(FOR UPDATE)하며 조회한다.
+     * 결제가 확정 실패했을 때 이미 확보했던 재고를 돌려주는 데 쓴다. 상품이 그사이 삭제됐어도 수량은 돌려받아야 하기 때문이다.
+     * 없는 id 는 결과에 없다. 반드시 트랜잭션 안에서, 이 상품들을 처음 읽는 조회로 호출한다.
+     */
+    List<Product> findAllByIdsForUpdate(Collection<Long> ids);
+
     /** 삭제되지 않은 상품을 id 내림차순으로 조회한다. 정렬은 Pageable 이 아니라 구현이 고정한다. */
     Page<Product> findAllActive(Pageable pageable);
 

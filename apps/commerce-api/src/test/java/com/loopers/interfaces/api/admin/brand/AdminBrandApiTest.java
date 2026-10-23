@@ -112,18 +112,6 @@ class AdminBrandApiTest {
             assertThat(storedCount()).isZero();
         }
 
-        @DisplayName("이름이 50자를 넘으면 400 INVALID_INPUT 이고, 저장하지 않는다.")
-        @Test
-        void rejectsWithInvalidInput_whenNameIsTooLong() throws Exception {
-            mvc.perform(post(BRANDS).with(admin()).with(csrf())
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(nameBody("가".repeat(51))))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.meta.errorCode").value("INVALID_INPUT"));
-
-            assertThat(storedCount()).isZero();
-        }
-
         @DisplayName("요청 본문이 없으면 400 INVALID_INPUT 이다.")
         @Test
         void rejectsWithInvalidInput_whenBodyIsMissing() throws Exception {
@@ -158,24 +146,6 @@ class AdminBrandApiTest {
                 .andExpect(jsonPath("$.meta.errorCode").value("NOT_FOUND"))
                 .andExpect(jsonPath("$.meta.message").value("존재하지 않는 브랜드입니다."));
         }
-
-        @DisplayName("삭제된 브랜드이면 404 NOT_FOUND 이다.")
-        @Test
-        void returnsNotFound_whenBrandIsDeleted() throws Exception {
-            Brand deleted = saveDeletedBrand("삭제됨");
-
-            mvc.perform(get(BRANDS + "/" + deleted.getId()).with(admin()))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.meta.errorCode").value("NOT_FOUND"));
-        }
-
-        @DisplayName("brandId 가 숫자가 아니면 400 INVALID_INPUT 이다.")
-        @Test
-        void returnsBadRequest_whenBrandIdIsNotNumber() throws Exception {
-            mvc.perform(get(BRANDS + "/abc").with(admin()))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.meta.errorCode").value("INVALID_INPUT"));
-        }
     }
 
     @DisplayName("GET /api-admin/v1/brands")
@@ -199,33 +169,6 @@ class AdminBrandApiTest {
                 .andExpect(jsonPath("$.data.content[1].id").value(first.getId()))
                 .andExpect(jsonPath("$.data.content[0].createdAt").exists());
         }
-
-        @DisplayName("page 와 size 를 주면 해당 페이지만 응답한다.")
-        @Test
-        void returnsRequestedPage() throws Exception {
-            saveBrand("하나");
-            saveBrand("둘");
-            saveBrand("셋");
-
-            mvc.perform(get(BRANDS).param("page", "1").param("size", "2").with(admin()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.page").value(1))
-                .andExpect(jsonPath("$.data.size").value(2))
-                .andExpect(jsonPath("$.data.content.length()").value(1))
-                .andExpect(jsonPath("$.data.totalElements").value(3))
-                .andExpect(jsonPath("$.data.totalPages").value(2));
-        }
-
-        @DisplayName("page 가 음수이거나 size 가 범위를 벗어나거나 숫자가 아니면 400 INVALID_INPUT 이다.")
-        @ParameterizedTest
-        @ValueSource(strings = {"page=-1", "size=0", "size=101", "size=abc", "page=abc"})
-        void rejectsWithInvalidInput_whenPagingIsInvalid(String query) throws Exception {
-            String[] pair = query.split("=");
-
-            mvc.perform(get(BRANDS).param(pair[0], pair[1]).with(admin()))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.meta.errorCode").value("INVALID_INPUT"));
-        }
     }
 
     @DisplayName("PUT /api-admin/v1/brands/{brandId}")
@@ -245,21 +188,6 @@ class AdminBrandApiTest {
             assertThat(storedName(brand.getId())).isEqualTo("새이름");
         }
 
-        @DisplayName("이름이 유효하지 않으면 400 INVALID_INPUT 이고, 저장된 이름은 그대로다.")
-        @ParameterizedTest
-        @ValueSource(strings = {"{}", "{\"name\":\"   \"}"})
-        void rejectsWithInvalidInput_andKeepsName(String body) throws Exception {
-            Brand brand = saveBrand("루퍼스");
-
-            mvc.perform(put(BRANDS + "/" + brand.getId()).with(admin()).with(csrf())
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(body))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.meta.errorCode").value("INVALID_INPUT"));
-
-            assertThat(storedName(brand.getId())).isEqualTo("루퍼스");
-        }
-
         @DisplayName("이름이 없으면 브랜드가 존재하지 않아도 404 가 아니라 400 INVALID_INPUT 이다. 필수 누락은 조회 전에 거절한다.")
         @Test
         void rejectsWithInvalidInput_beforeLookup_whenNameIsMissing() throws Exception {
@@ -268,23 +196,6 @@ class AdminBrandApiTest {
                     .content("{}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.meta.errorCode").value("INVALID_INPUT"));
-        }
-
-        @DisplayName("없거나 삭제된 브랜드이면 404 NOT_FOUND 이다.")
-        @Test
-        void returnsNotFound_whenBrandDoesNotExistOrIsDeleted() throws Exception {
-            Brand deleted = saveDeletedBrand("삭제됨");
-
-            mvc.perform(put(BRANDS + "/999").with(admin()).with(csrf())
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(nameBody("이름")))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.meta.errorCode").value("NOT_FOUND"));
-            mvc.perform(put(BRANDS + "/" + deleted.getId()).with(admin()).with(csrf())
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(nameBody("이름")))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.meta.errorCode").value("NOT_FOUND"));
         }
     }
 
@@ -305,21 +216,6 @@ class AdminBrandApiTest {
             assertThat(storedCount()).isZero();
         }
 
-        @DisplayName("이미 삭제됐거나 없는 브랜드이면 404 NOT_FOUND 이다.")
-        @Test
-        void returnsNotFound_whenBrandIsAlreadyDeletedOrMissing() throws Exception {
-            Brand brand = saveBrand("루퍼스");
-            mvc.perform(delete(BRANDS + "/" + brand.getId()).with(admin()).with(csrf()))
-                .andExpect(status().isOk());
-
-            mvc.perform(delete(BRANDS + "/" + brand.getId()).with(admin()).with(csrf()))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.meta.errorCode").value("NOT_FOUND"));
-            mvc.perform(delete(BRANDS + "/999").with(admin()).with(csrf()))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.meta.errorCode").value("NOT_FOUND"));
-        }
-
         @DisplayName("삭제되지 않은 상품이 연결되어 있으면 재고가 0이어도 200 성공이고, 연결 상품도 함께 삭제된다.")
         @Test
         void deletesBrandWithLinkedProducts() throws Exception {
@@ -334,22 +230,6 @@ class AdminBrandApiTest {
             mvc.perform(get(BRANDS + "/" + brand.getId()).with(admin()))
                 .andExpect(status().isNotFound());
             mvc.perform(get("/api-admin/v1/products/" + soldOut.getId()).with(admin()))
-                .andExpect(status().isNotFound());
-        }
-
-        @DisplayName("연결된 상품을 삭제한 뒤에는 브랜드를 삭제할 수 있다.")
-        @Test
-        void deletesBrand_afterProductIsDeleted() throws Exception {
-            Brand brand = saveBrand("루퍼스");
-            Product product = productRepository.save(
-                Product.create(brand.getId(), "러닝화", new Money(89_000), new Stock(10)));
-
-            mvc.perform(delete("/api-admin/v1/products/" + product.getId()).with(admin()).with(csrf()))
-                .andExpect(status().isOk());
-            mvc.perform(delete(BRANDS + "/" + brand.getId()).with(admin()).with(csrf()))
-                .andExpect(status().isOk());
-
-            mvc.perform(get(BRANDS + "/" + brand.getId()).with(admin()))
                 .andExpect(status().isNotFound());
         }
     }

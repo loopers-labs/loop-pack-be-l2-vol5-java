@@ -179,6 +179,19 @@ class SecurityConfigTest {
             assertThat(likeRepository.exists(user.getId(), product.getId())).isTrue();
         }
 
+        @DisplayName("PG 알림은 고객 식별 대상이 아니다. X-USER-ID 헤더와 CSRF 토큰 없이도 식별 필터에 걸리지 않고 처리한다.")
+        @Test
+        void servesPgCallback_withoutIdentityHeaderOrCsrfToken() throws Exception {
+            // act & assert: 모르는 주문의 알림이라 404 지만, 사용자 식별 오류(400, 존재하지 않는 사용자)가 아니라 알림 처리의 결과다.
+            mvc.perform(post("/api/v1/payments/callback")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"providerOrderId\":\"LP-ORD-0000099999\",\"transactionKey\":\"TEST-TX-0001\","
+                        + "\"status\":\"SUCCESS\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.meta.errorCode").value("NOT_FOUND"))
+                .andExpect(jsonPath("$.meta.message").value("결제 시도를 찾을 수 없습니다."));
+        }
+
         @DisplayName("카탈로그 조회는 X-USER-ID 헤더가 없거나 이상해도 읽지 않고 정상 처리한다.")
         @ParameterizedTest
         @ValueSource(strings = {"", "abc", "999"})

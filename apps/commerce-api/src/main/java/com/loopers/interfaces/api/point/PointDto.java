@@ -1,6 +1,6 @@
 package com.loopers.interfaces.api.point;
 
-import com.loopers.application.point.PointInfo;
+import com.loopers.application.point.dto.PointInfo;
 import jakarta.validation.constraints.NotNull;
 
 public class PointDto {

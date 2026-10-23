@@ -1,6 +1,6 @@
 package com.loopers.interfaces.api.admin.product;
 
-import com.loopers.application.product.ProductInfo;
+import com.loopers.application.product.dto.ProductInfo;
 import jakarta.validation.constraints.NotNull;
 
 import java.time.ZonedDateTime;

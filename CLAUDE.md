@@ -12,6 +12,8 @@ Loopers 에서 제공하는 Spring Boot(Java 21) 멀티 모듈 커머스 템플�
 
 실행·빌드 명령어와 모듈 구조 전체는 `docs/guide/development-environment.md`를 참고합니다.
 
+설계 문서는 `docs/design/{주차}/`에 두며, 사람용(`{주제}.md`, 80줄 이내)과 AI용 상세(`{주제}.ai.md`)로 나눕니다.
+
 `local` 프로필 실행 전에 `docker/infra-compose.yml`로 인프라(MySQL, Redis)를 먼저 띄웁니다. 모니터링(Prometheus + Grafana)은 `docker/monitoring-compose.yml`로 별도 실행하며 http://localhost:3000 (admin/admin) 으로 접속합니다.
 
 ## 빌드 및 테스트 명령어
@@ -59,8 +61,8 @@ Loopers 에서 제공하는 Spring Boot(Java 21) 멀티 모듈 커머스 템플�
 각 `apps` 모듈은 도메인별로 다음 4개 레이어를 따릅니다 (`apps/commerce-api/src/main/java/com/loopers/{layer}/{domain}` 참고):
 
 1. **`interfaces.api`** — Controller. API 스펙은 `{Domain}ApiSpec` 인터페이스(Swagger 어노테이션 등 문서화 목적)와 이를 구현하는 `{Domain}Controller`로 분리합니다. 요청/응답 DTO는 `{Domain}Dto`에 정적 record로 모아둡니다. 클래스 이름에는 버전(`V1`)을 붙이지 않고 URL 경로(`/api/v1/...`)로만 버전을 표현합니다. 관리자 API(`/api-admin/v1/...`)는 `interfaces.api.admin.{feature}` 패키지에 두고 클래스 이름에 `Admin` 접두사를 붙입니다(`AdminBrandController` 등. 단순명이 같은 Controller는 Spring 빈 이름이 충돌합니다). application의 관리자 Facade도 같은 기능 패키지에서 `Admin{Feature}Facade`로 구분합니다. 컨트롤러는 요청을 받아 `application` 레이어의 Facade만 호출하고, 응답은 공통 `ApiResponse<T>`(`interfaces.api.ApiResponse`)로 감쌉니다.
-2. **`application`** — Facade + Info. `{Domain}Facade`는 하나 이상의 `domain.Service`를 조합(오케스트레이션)하고, 도메인 모델을 `interfaces` 레이어에 노출할 `{Domain}Info`(record)로 변환합니다. 여러 도메인을 넘나드는 유스케이스 조합은 이 레이어의 책임입니다. Facade만 쓰는 외부 기술(캐시 등)의 포트 인터페이스도 이 레이어에 두며(`application.product.ProductListCache`), 입출력은 application의 타입으로만 정의합니다.
-3. **`domain`** — Model(JPA Entity), Service, Repository(인터페이스). 비즈니스 규칙(유효성 검증 등)은 Model 생성자/메소드 내부에서 `CoreException`을 던지는 방식으로 캡슐화합니다. Repository는 `domain` 레이어에 인터페이스로만 정의합니다. **트랜잭션 경계는 `application`의 Facade에서 `@Transactional`로 관리**하며(조회 유스케이스는 `readOnly = true`), 도메인 `Service`에는 `@Transactional`을 붙이지 않고 Facade가 연 트랜잭션에 참여합니다.
+2. **`application`** — Facade + Info. `{Domain}Facade`는 하나 이상의 `domain.Service`를 조합(오케스트레이션)하고, 도메인 모델을 `interfaces` 레이어에 노출할 `{Domain}Info`(record)로 변환합니다. 여러 도메인을 넘나드는 유스케이스 조합은 이 레이어의 책임입니다. Facade만 쓰는 외부 기술(캐시 등)의 포트 인터페이스도 이 레이어에 두며(`application.product.cache.ProductListCache`), 입출력은 application의 타입으로만 정의합니다. 데이터를 나르는 타입은 역할 접미사로 끝나게 짓고(`Info` 출력 값, `Command` 쓰기 입력, `Query` 읽기 입력, `Result` 처리 결과) `application.{domain}.dto` 하위 패키지에 두어 Facade·포트·컴포넌트와 섞이지 않게 하고, 외부 시스템 계약 타입은 기능별 하위 패키지(`application.payment.pg`)에 둡니다.
+3. **`domain`** — Model(JPA Entity), Service, Repository(인터페이스). 비즈니스 규칙(유효성 검증 등)은 Model 생성자/메소드 내부에서 `CoreException`을 던지는 방식으로 캡슐화합니다. Repository는 `domain` 레이어에 인터페이스로만 정의합니다. **트랜잭션 경계는 `application`의 Facade에서 `@Transactional`로 관리**하며(조회 유스케이스는 `readOnly = true`), 도메인 `Service`에는 `@Transactional`을 붙이지 않고 Facade가 연 트랜잭션에 참여합니다. 단, 외부 호출(PG 등)을 사이에 둔 유스케이스(`OrderFacade.confirm`, `PaymentResultCheckFacade`)는 메소드에 `@Transactional`을 달지 않고, 필요한 구간만 `TransactionTemplate`으로 감쌉니다(`docs/design/week5/pg-payment-design.md`). 외부 호출 동안 DB 연결과 잠금을 쥐지 않기 위해서입니다.
 4. **`infrastructure`** — `domain.Repository` 인터페이스의 실제 구현체(`{Domain}RepositoryImpl`)와 Spring Data JPA 인터페이스(`{Domain}JpaRepository`)가 위치합니다. `RepositoryImpl`은 `JpaRepository`에 위임하는 어댑터 역할만 합니다. application 포트의 구현(예: Redis 캐시)도 이 레이어에 두고, 키·직렬화·TTL·Redis 예외 처리를 여기서 숨깁니다.
 
 공통 지원 코드는 `support.error`에 있습니다: `CoreException`(비즈니스 예외, `ErrorType` 보유) + `ErrorType`(message를 가진 enum, `getCode()`는 상수명) 조합을 사용합니다. `ErrorType`은 HTTP 상태를 알지 못하며(`INTERNAL_ERROR`/`INVALID_INPUT`/`NOT_FOUND`/`CONFLICT`/`FORBIDDEN`과 주문 업무 규칙 위반 `ORDER_ALREADY_CONFIRMED`/`OUT_OF_STOCK`/`INSUFFICIENT_POINT`/`PRODUCT_UNAVAILABLE`), HTTP 상태 변환은 `interfaces.api.ErrorTypeHttpStatusMapper`가 전담합니다. `interfaces.api.ApiControllerAdvice`(`@RestControllerAdvice`)가 이를 포함한 각종 예외를 `ApiResponse.fail(...)`로 일괄 변환합니다. 새로운 에러 케이스를 추가할 때는 `ErrorType`에 항목을 추가하고 `ErrorTypeHttpStatusMapper`의 switch에도 매핑을 추가한 뒤(`default` 절이 없어 누락 시 컴파일 에러가 납니다) `CoreException`으로 던지세요.
@@ -72,7 +74,7 @@ Loopers 에서 제공하는 Spring Boot(Java 21) 멀티 모듈 커머스 템플�
 - 목록 API의 `page`·`size` 검증은 `support.paging.PageRequests`를, 응답은 `interfaces.api.PageResponse<T>`를 씁니다. `@RequestParam`의 `defaultValue`와 Swagger 설명은 리터럴 대신 `PageRequests`의 상수(`DEFAULT_PAGE`, `DEFAULT_SIZE`, `PAGE_PARAM_DESCRIPTION`, `SIZE_PARAM_DESCRIPTION`)를 참조합니다.
 - `supports:jackson`이 null 필드를 직렬화에서 뺍니다(`NON_NULL`). 값이 없는 필드는 `null`이 아니라 키 자체가 없는 응답이 됩니다.
 - 지연 로딩 컬렉션의 N+1은 `modules:jpa`의 `default_batch_fetch_size`로 줄입니다. 쿼리 수가 중요한 목록은 `OrderListQueryCountTest`처럼 SQL 개수를 테스트로 고정합니다.
-- 설계 결정의 이유와 알려진 한계는 `docs/design/week2/commerce-design.md`(6장 결정 기록)에 있습니다.
+- 설계 결정의 이유와 알려진 한계는 `docs/design/week2/commerce-design.ai.md`(6장 결정 기록)에 있습니다.
 
 ### 보안 설정과 요청자 식별 (`config`)
 
@@ -94,12 +96,12 @@ Loopers 에서 제공하는 Spring Boot(Java 21) 멀티 모듈 커머스 템플�
 ## 개발 규칙 (lint · ArchUnit)
 
 - `commerce-api`는 Checkstyle(`config/checkstyle/checkstyle.xml`, `AvoidStarImport`·`UnusedImports`)을 `check`에 연결해 사용합니다. 경고도 허용하지 않습니다(`maxWarnings = 0`).
-- `ArchitectureTest`가 레이어 의존 방향(`interfaces → application → domain`, `infrastructure → domain`)을 검사합니다. domain은 다른 레이어에, application은 interfaces·infrastructure에, interfaces는 infrastructure에 의존할 수 없습니다. 포트는 그것을 쓰는 레이어가 소유하므로 `infrastructure → application`은 application 포트 구현에 한해 허용합니다(검사 규칙은 없음, `docs/design/week2/commerce-design.md` 2-3).
+- `ArchitectureTest`가 레이어 의존 방향(`interfaces → application → domain`, `infrastructure → domain`)을 검사합니다. domain은 다른 레이어에, application은 interfaces·infrastructure에, interfaces는 infrastructure에 의존할 수 없습니다. 포트는 그것을 쓰는 레이어가 소유하므로 `infrastructure → application`은 application 포트 구현에 한해 허용합니다(검사 규칙은 없음, `docs/design/week2/commerce-design.ai.md` 2-3).
 
 ## AI 작업 규칙
 
 - 합의한 계약·기대값·패키지 의존을 따른다. 미정 정책은 먼저 질문한다.
 - 이번 기능에서 변경할 책임·파일·관련 테스트를 먼저 제안한다.
 - 작은 기능을 구현하고 diff와 관련 테스트·lint·ArchUnit 결과를 확인한다.
-- 검사를 통과시키기 위한 테스트·기대값·규칙 삭제나 완화는 하지 않는다.
+- 검사를 통과시키기 위한 테스트·기대값·규칙 삭제나 완화는 하지 않는다. 단, 사용자가 요청한 테스트 정리는 예외다.
 - 정책·검사 기준 변경이나 범위 밖 개편은 이유와 영향을 설명하고 확인을 받는다.

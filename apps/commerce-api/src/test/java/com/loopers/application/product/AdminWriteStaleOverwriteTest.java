@@ -2,7 +2,8 @@ package com.loopers.application.product;
 
 import com.loopers.application.brand.AdminBrandFacade;
 import com.loopers.application.order.OrderFacade;
-import com.loopers.application.order.OrderItemCommand;
+import com.loopers.application.order.dto.OrderItemCommand;
+import com.loopers.application.order.dto.OrderConfirmCommand;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.common.Money;
@@ -29,7 +30,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 쓰기 경로가 대상 행을 <b>처음 읽을 때부터 잠그는지</b>를 결정적으로 확인한다 (D-24). 같은 행을 바꾸는 다른 요청이 먼저
+ * 쓰기 경로가 대상 행을 <b>처음 읽을 때부터 잠그는지</b>를 결정적으로 확인한다. 같은 행을 바꾸는 다른 요청이 먼저
  * commit 한 변경(재고 차감, 삭제)을 전체 컬럼 UPDATE 가 낡은 값으로 덮어쓰지 않아야 한다.
  *
  * <p>{@code AdminWriteConcurrencyTest} 는 실제 요청끼리 경쟁시키지만 관리자 요청이 짧아 겹침이 확률적이다. 여기서는 테스트
@@ -220,10 +221,11 @@ class AdminWriteStaleOverwriteTest {
         assertThat(stockOf(product)).isEqualTo(9);
     }
 
-    @DisplayName("주문 확정은 동시에 commit 된 재고 설정 위에서 차감하고, 동시에 commit 된 삭제를 되살리지 않는다.")
+    @DisplayName("결제 시작은 동시에 commit 된 재고 설정 위에서 차감하고, 동시에 commit 된 삭제를 되살리지 않는다.")
     @Test
-    void confirmsOnLatestStock_andKeepsConcurrentDeletion() {
-        // arrange: 확정할 주문 두 개. 하나는 다른 요청이 재고를 20 으로 설정한 상품, 하나는 삭제한 상품이다.
+    void startsOnLatestStock_andKeepsConcurrentDeletion() {
+        // arrange: 결제를 시작할 주문 두 개. 하나는 다른 요청이 재고를 20 으로 설정한 상품, 하나는 삭제한 상품이다.
+        // PG 호출 없이 재고를 확보하는 트랜잭션 A(prepareConfirm)만 실행한다. 읽는 시점의 잠금은 이 트랜잭션이 정한다.
         Brand brand = saveBrand();
         Product restocked = saveProduct(brand.getId(), 10);
         Product removed = saveProduct(brand.getId(), 10);
@@ -234,17 +236,21 @@ class AdminWriteStaleOverwriteTest {
         // act & assert 1: 재고 설정이 commit 된 뒤의 값(20)에서 차감한다.
         Results restockResults = runBehindProductLock(restocked,
             "update products set stock = 20 where id = ?", new Object[] {restocked.getId()},
-            () -> orderFacade.confirm(buyer.getId(), restockedOrder));
+            () -> orderFacade.prepareConfirm(startCommand(buyer, restockedOrder, "attempt-restocked")));
         assertThat(restockResults.successes()).as("%s", restockResults.outcomes()).isEqualTo(1);
         assertThat(stockOf(restocked)).isEqualTo(18);
 
         // act & assert 2: 삭제가 commit 된 상품은 구매 불가로 거절되고 되살아나지 않는다.
         Results removeResults = runBehindProductLock(removed,
             "update products set deleted_at = current_timestamp(6) where id = ?", new Object[] {removed.getId()},
-            () -> orderFacade.confirm(buyer.getId(), removedOrder));
+            () -> orderFacade.prepareConfirm(startCommand(buyer, removedOrder, "attempt-removed")));
         assertThat(removeResults.rejectedWith(ErrorType.PRODUCT_UNAVAILABLE)).as("%s", removeResults.outcomes()).isEqualTo(1);
         assertThat(isDeleted("products", removed.getId())).isTrue();
         assertThat(stockOf(removed)).isEqualTo(10);
+    }
+
+    private OrderConfirmCommand startCommand(User buyer, Long orderId, String attemptKey) {
+        return new OrderConfirmCommand(buyer.getId(), orderId, attemptKey, "TEST", "0000-0000-0000-0000");
     }
 
     private User withBalance(long amount) {

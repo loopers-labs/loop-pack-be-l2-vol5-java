@@ -1,10 +1,13 @@
 package com.loopers.application.product;
 
+import com.loopers.application.product.cache.CachedProductListInfo;
+import com.loopers.application.product.cache.ProductListCache;
+import com.loopers.application.product.dto.ProductListItemInfo;
+import com.loopers.application.product.dto.ProductListQuery;
 import com.loopers.domain.product.ProductSort;
 import com.loopers.testcontainers.RedisTestContainersConfig;
 import com.loopers.utils.DatabaseCleanUp;
 import com.loopers.utils.RedisCleanUp;
-import jakarta.persistence.EntityManagerFactory;
 import org.hibernate.SessionFactory;
 import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.AfterAll;
@@ -22,7 +25,7 @@ import org.springframework.jdbc.datasource.init.ScriptUtils;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.testcontainers.containers.GenericContainer;
 
-import javax.sql.DataSource;
+import jakarta.persistence.EntityManagerFactory;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Arrays;
@@ -31,6 +34,7 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.stream.IntStream;
+import javax.sql.DataSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -43,7 +47,6 @@ import static org.mockito.Mockito.doReturn;
  * 호출 시간을 순차로 잰다(준비 20회, 측정 100회, 3라운드). HTTP 지연은 아니다.
  *
  * <p>측정용이라 환경변수 {@code PERF_CACHE_BENCHMARK=true} 일 때만 실행하고, 평소 {@code check} 에서는 건너뛴다(skip 으로 표시된다).
- * 결과는 {@code docs/design/week4/product-list-baseline.md} 5장에 기록한다.
  *
  * <pre>
  * PERF_CACHE_BENCHMARK=true ./gradlew :apps:commerce-api:test --tests '*ProductCacheLatencyBenchmarkTest' -i
@@ -129,7 +132,7 @@ class ProductCacheLatencyBenchmarkTest {
     @DisplayName("영역 비우기(SCAN + UNLINK)의 시간을 키 수별로 기록한다.")
     @Test
     void measureEvictAll() {
-        ProductListSnapshot snapshot = ProductListSnapshot.from(request(7L, "price_asc"));
+        CachedProductListInfo snapshot = CachedProductListInfo.from(request(7L, "price_asc"));
         for (int keys : List.of(100, 1_000, 10_000)) {
             long[] samples = new long[5];
             for (int i = 0; i < samples.length; i++) {
