@@ -31,6 +31,16 @@ pg:
   read-timeout: 9s # 결제 요청. 고객이 결제창에서 기다리는 한계를 10초로 보고 그 안에서 끝낸다. 넘기면 실패 처리
   lookup-delay: 7s # 결제 요청 전송 시점부터 백업 거래 조회까지
   lookup-read-timeout: 2s # 거래 조회. 7초 + 2초로 결제 요청 timeout 과 같이 끝난다
+  bulkhead:
+    max-concurrent-calls: 40 # 결제 요청을 동시에 기다리는 워커 스레드 수 (Tomcat 200 중). 넘으면 기다리지 않고 거절
+  circuit-breaker:
+    sliding-window-size: 20 # 최근 결제 요청 20건
+    minimum-number-of-calls: 10 # 10건이 쌓이기 전에는 열지 않는다
+    failure-rate-threshold: 50 # ERROR·NOT_SENT·UNKNOWN 비율(%)
+    slow-call-duration-threshold: 3s
+    slow-call-rate-threshold: 50 # 3초 넘은 호출 비율(%)
+    wait-duration-in-open-state: 10s
+    permitted-number-of-calls-in-half-open-state: 3
 
 springdoc:
   use-fqn: true
@@ -51,6 +61,9 @@ spring:
 
 pg:
   lookup-delay: 1h # 예약된 거래 조회가 뒤 테스트에 끼어들지 않게. 조회 예약은 PaymentLookupSchedulerIntegrationTest 가 짧은 지연으로 본다
+  circuit-breaker: # 컨텍스트를 같이 쓰는 테스트들의 실패 결과가 쌓여 서킷이 열리지 않게. 서킷은 PaymentRequestGuardTest 가 본다
+    sliding-window-size: 10000
+    minimum-number-of-calls: 10000
 
 ---
 spring:

@@ -24,6 +24,10 @@ dependencies {
 
     implementation("org.springframework.boot:spring-boot-starter-security")
 
+    // resilience
+    implementation("io.github.resilience4j:resilience4j-circuitbreaker")
+    implementation("io.github.resilience4j:resilience4j-bulkhead")
+
     // querydsl
     annotationProcessor("com.querydsl:querydsl-apt::jakarta")
     annotationProcessor("jakarta.persistence:jakarta.persistence-api")

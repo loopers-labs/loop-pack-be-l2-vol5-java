@@ -17,6 +17,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 
 import static com.loopers.support.FakePaymentGateway.failed;
@@ -27,12 +30,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * confirmOrder 의 백업 거래 조회 예약. 지연을 짧게(300ms) 줄인 별도 컨텍스트에서 본다 (test 프로필 기본은 1h 라 다른 테스트에선 조회가 나가지 않는다).
  * 결제 요청과 거래 조회는 서로 기다리지 않고, 둘의 결과는 applyResult 로만 만난다.
+ * 결제 요청 permit 은 1개로 줄여 PaymentRequestGuard 에 거절된 주문은 거래 조회도 예약되지 않는지 본다.
  */
-@SpringBootTest(properties = "pg.lookup-delay=300ms")
+@SpringBootTest(properties = {"pg.lookup-delay=300ms", "pg.bulkhead.max-concurrent-calls=1"})
 class PaymentLookupSchedulerIntegrationTest {
     private static final String KEY = "attempt-1";
     private static final String CARD_TYPE = "SAMSUNG";
     private static final String CARD_NO = "1234-5678-9814-1451";
+    private static final Duration LOOKUP_DELAY = Duration.ofMillis(300);
     private static final Duration AWAIT_TIMEOUT = Duration.ofSeconds(5);
 
     @Autowired
@@ -148,5 +153,32 @@ class PaymentLookupSchedulerIntegrationTest {
         awaitUntil(() -> fakePg.finds().contains(order.getId()));
         assertThat(statusOf(order)).isEqualTo(OrderStatus.CONFIRMED);
         assertThat(fixtures.stockOf(product.getId())).isEqualTo(3);
+    }
+
+    @DisplayName("결제 요청 permit 이 모두 잡혀 있으면 PG 를 부르지 않고 FAILED, 재고 반환. 거래 조회도 예약되지 않는다.")
+    @Test
+    void neitherRequestsNorLooksUp_whenBulkheadFull() throws Exception {
+        OrderModel holding = fixtures.draftOrder(user.getId(), product, 1);
+        OrderModel rejected = fixtures.draftOrder(user.getId(), product, 2);
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        fakePg.willRespond(request -> {
+            entered.countDown();
+            awaitUntil(() -> release.getCount() == 0);
+            return success(FakePaymentGateway.transactionKeyOf(request.orderId()), request.amount());
+        });
+        CompletableFuture<OrderInfo> first = CompletableFuture.supplyAsync(() -> confirm(holding));
+        assertThat(entered.await(AWAIT_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS)).isTrue();
+
+        OrderInfo info = confirm(rejected);
+        release.countDown();
+
+        assertThat(info.status()).isEqualTo("FAILED");
+        assertThat(first.get(AWAIT_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS).status()).isEqualTo("CONFIRMED");
+        assertThat(fakePg.requests()).extracting(FakePaymentGateway.Request::orderId).containsExactly(holding.getId());
+        assertThat(fixtures.stockOf(product.getId())).isEqualTo(4);
+        awaitUntil(() -> fakePg.finds().contains(holding.getId()));
+        Thread.sleep(LOOKUP_DELAY.multipliedBy(2).toMillis());
+        assertThat(fakePg.finds()).containsExactly(holding.getId());
     }
 }
