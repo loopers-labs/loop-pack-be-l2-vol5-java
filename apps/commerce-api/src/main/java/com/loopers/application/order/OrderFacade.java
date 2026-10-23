@@ -4,10 +4,11 @@ import com.loopers.domain.common.PageNumber;
 import com.loopers.domain.common.PageSize;
 import com.loopers.domain.common.PageWindow;
 import com.loopers.domain.order.Order;
-import com.loopers.domain.order.OrderConfirmation;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.OrderService;
 import com.loopers.domain.order.OrderStatus;
+import com.loopers.domain.payment.Payment;
+import com.loopers.domain.payment.PaymentService;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductService;
 import lombok.RequiredArgsConstructor;
@@ -21,8 +22,23 @@ import java.util.List;
 @RequiredArgsConstructor
 public class OrderFacade {
 
+    public enum PaymentMethod {
+        POINT,
+        PG
+    }
+
+    public record OrderDetail(Order order, Payment payment) {
+
+        public PaymentMethod paymentMethod() {
+            if (payment != null) {
+                return PaymentMethod.PG;
+            }
+            return order.getStatus() == OrderStatus.CONFIRMED ? PaymentMethod.POINT : null;
+        }
+    }
+
     private final OrderService orderService;
-    private final OrderConfirmation orderConfirmation;
+    private final PaymentService paymentService;
     private final ProductService productService;
 
     @Transactional
@@ -38,14 +54,21 @@ public class OrderFacade {
         return orderService.place(Order.draft(command.userId(), items, now));
     }
 
-    @Transactional
-    public Order confirm(Long userId, Long orderId, Instant now) {
-        return orderConfirmation.confirm(userId, orderId, now);
-    }
-
     @Transactional(readOnly = true)
     public Order get(Long userId, Long orderId) {
         return orderService.getOwned(userId, orderId);
+    }
+
+    @Transactional(readOnly = true)
+    public OrderDetail getDetail(Long userId, Long orderId) {
+        Order order = orderService.getOwned(userId, orderId);
+        return new OrderDetail(order, paymentService.findByOrderId(orderId).orElse(null));
+    }
+
+    @Transactional(readOnly = true)
+    public OrderDetail getDetailForAdmin(Long orderId) {
+        Order order = orderService.get(orderId);
+        return new OrderDetail(order, paymentService.findByOrderId(orderId).orElse(null));
     }
 
     @Transactional(readOnly = true)
@@ -56,10 +79,5 @@ public class OrderFacade {
     @Transactional(readOnly = true)
     public PageWindow<Order> findPageForAdmin(Long userId, OrderStatus status, PageNumber page, PageSize size) {
         return orderService.findPage(userId, status, page, size);
-    }
-
-    @Transactional(readOnly = true)
-    public Order getForAdmin(Long orderId) {
-        return orderService.get(orderId);
     }
 }

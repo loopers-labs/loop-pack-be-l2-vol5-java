@@ -1,10 +1,9 @@
 package com.loopers.infrastructure.product;
 
+import com.loopers.support.payment.TestPayments;
 import com.loopers.application.order.OrderCreateCommand;
 import com.loopers.application.order.OrderFacade;
-import com.loopers.application.point.PointFacade;
 import com.loopers.domain.order.OrderQuantity;
-import com.loopers.domain.point.ChargeAmount;
 import com.loopers.domain.product.Product;
 import com.loopers.support.error.DomainException;
 import com.loopers.utils.DatabaseCleanUp;
@@ -89,7 +88,7 @@ class BrandProductDeletionScaleTest {
     private final JdbcTemplate jdbcTemplate;
     private final DatabaseCleanUp databaseCleanUp;
     private final OrderFacade orderFacade;
-    private final PointFacade pointFacade;
+    private final TestPayments testPayments;
 
     @Autowired
     BrandProductDeletionScaleTest(
@@ -99,7 +98,7 @@ class BrandProductDeletionScaleTest {
         JdbcTemplate jdbcTemplate,
         DatabaseCleanUp databaseCleanUp,
         OrderFacade orderFacade,
-        PointFacade pointFacade
+        TestPayments testPayments
     ) {
         this.entityManager = entityManager;
         this.entityManagerFactory = entityManagerFactory;
@@ -108,7 +107,7 @@ class BrandProductDeletionScaleTest {
         this.jdbcTemplate = jdbcTemplate;
         this.databaseCleanUp = databaseCleanUp;
         this.orderFacade = orderFacade;
-        this.pointFacade = pointFacade;
+        this.testPayments = testPayments;
     }
 
     @AfterEach
@@ -444,7 +443,6 @@ class BrandProductDeletionScaleTest {
     }
 
     private Purchase draft(String group, Long userId, Long productId) {
-        pointFacade.charge(userId, ChargeAmount.of(100_000), NOW);
         Long orderId = orderFacade.place(
             new OrderCreateCommand(userId, List.of(new OrderCreateCommand.Line(productId, OrderQuantity.of(1)))),
             NOW
@@ -456,7 +454,7 @@ class BrandProductDeletionScaleTest {
         long start = System.nanoTime();
         String result;
         try {
-            orderFacade.confirm(purchase.userId(), purchase.orderId(), NOW);
+            testPayments.start(purchase.userId(), purchase.orderId(), NOW);
             result = "성공";
         } catch (DomainException e) {
             result = "거절 " + e.code();

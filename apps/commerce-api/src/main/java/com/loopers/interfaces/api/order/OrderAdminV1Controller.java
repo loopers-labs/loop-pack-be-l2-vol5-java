@@ -35,6 +35,6 @@ public class OrderAdminV1Controller {
     @GetMapping("/{orderId}")
     public ApiResponse<OrderAdminV1Dto.AdminOrderResponse> get(@PathVariable Long orderId) {
         return ApiResponse.success(
-            OrderAdminV1Dto.AdminOrderResponse.from(orderFacade.getForAdmin(orderId)));
+            OrderAdminV1Dto.AdminOrderResponse.from(orderFacade.getDetailForAdmin(orderId)));
     }
 }

@@ -1,13 +1,12 @@
 package com.loopers.interfaces.api.admin;
 
+import com.loopers.support.payment.TestPayments;
 import com.loopers.application.product.ProductFacade;
 import com.loopers.application.brand.BrandFacade;
-import com.loopers.application.point.PointFacade;
 import com.loopers.application.order.OrderCreateCommand;
 import com.loopers.application.order.OrderFacade;
 import com.loopers.domain.common.Quantity;
 import com.loopers.domain.order.OrderQuantity;
-import com.loopers.domain.point.ChargeAmount;
 import com.loopers.domain.product.Price;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
@@ -35,7 +34,7 @@ class AdminListApiTest {
     private static final Instant NOW = Instant.parse("2026-09-14T00:00:00Z");
 
     private final MockMvc mvc;
-    private final PointFacade pointFacade;
+    private final TestPayments testPayments;
     private final OrderFacade orderFacade;
     private final DatabaseCleanUp databaseCleanUp;
     private final BrandFacade brandFacade;
@@ -44,14 +43,14 @@ class AdminListApiTest {
     @Autowired
     AdminListApiTest(
         MockMvc mvc,
-        PointFacade pointFacade,
+        TestPayments testPayments,
         OrderFacade orderFacade,
         DatabaseCleanUp databaseCleanUp,
         BrandFacade brandFacade,
         ProductFacade productFacade
     ) {
         this.mvc = mvc;
-        this.pointFacade = pointFacade;
+        this.testPayments = testPayments;
         this.orderFacade = orderFacade;
         this.databaseCleanUp = databaseCleanUp;
         this.brandFacade = brandFacade;
@@ -153,7 +152,6 @@ class AdminListApiTest {
     @DisplayName("주문 목록 — ORDER-021")
     class Orders {
         private Long placeOrder(Long userId, Long productId) {
-            pointFacade.charge(userId, ChargeAmount.of(100_000), NOW);
             return orderFacade.place(new OrderCreateCommand(userId,
                 List.of(new OrderCreateCommand.Line(productId, OrderQuantity.of(1)))), NOW).getId();
         }
@@ -195,7 +193,7 @@ class AdminListApiTest {
             Long productId = product();
             Long confirmed = placeOrder(7L, productId);
             placeOrder(8L, productId);
-            orderFacade.confirm(7L, confirmed, NOW);
+            testPayments.startAndSucceed(7L, confirmed, NOW);
 
             mvc.perform(asAdmin(get("/api-admin/v1/orders?status=CONFIRMED")))
                 .andExpect(jsonPath("$.data.items.length()").value(1))
@@ -223,13 +221,15 @@ class AdminListApiTest {
         void showsDetail() throws Exception {
             Long productId = product();
             Long orderId = placeOrder(7L, productId);
-            orderFacade.confirm(7L, orderId, NOW);
+            testPayments.startAndSucceed(7L, orderId, NOW);
 
             mvc.perform(asAdmin(get("/api-admin/v1/orders/" + orderId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.userId").value(7))
                 .andExpect(jsonPath("$.data.status").value("CONFIRMED"))
-                .andExpect(jsonPath("$.data.paidAmount").value(1000));
+                .andExpect(jsonPath("$.data.paidAmount").value(1000))
+                .andExpect(jsonPath("$.data.paymentMethod").value("PG"))
+                .andExpect(jsonPath("$.data.paymentStatus").value("SUCCESS"));
         }
 
         @DisplayName("관리자는 남의 주문도 본다 — 고객의 404 와 다른 지점이다")

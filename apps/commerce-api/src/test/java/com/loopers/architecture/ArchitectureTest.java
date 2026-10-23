@@ -192,6 +192,15 @@ class ArchitectureTest {
             .check(productionClasses());
     }
 
+    @DisplayName("W5 11장 · 도메인은 PG 를 부르는 수단(Resilience4j · HTTP client)을 모른다 — 회로와 HTTP 는 adapter 의 일이다.")
+    @Test
+    void domainDoesNotKnowPgCallMechanics() {
+        noClasses().that().resideInAPackage("..domain..")
+            .should().dependOnClassesThat()
+            .resideInAnyPackage("io.github.resilience4j..", "org.springframework.web.client..", "org.apache.hc..")
+            .check(productionClasses());
+    }
+
     @DisplayName("필드 주입을 쓰지 않는다.")
     @Test
     void usesConstructorInjectionOnly() {

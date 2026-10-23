@@ -353,7 +353,7 @@ class ProductCacheOutageE2ETest {
         );
     }
 
-    @DisplayName("CACHE-009 · Redis 가 멈춰도 주문 확정은 DB 의 재고 · 포인트 규칙대로 처리되고, 마지막 재고를 팔아 무효화가 일어나도 제한된 시간 안에 응답한다")
+    @DisplayName("CACHE-009, PAY-012 · Redis 가 멈춰도 결제 시작은 DB 의 재고 규칙대로 처리되고, 마지막 재고를 묶어 무효화가 일어나도 제한된 시간 안에 응답한다. 포인트는 쓰지 않는다")
     @Test
     void confirmationIsUnaffectedWhileRedisIsDown() {
         Long productId = product("셔츠", 10_000);
@@ -369,15 +369,17 @@ class ProductCacheOutageE2ETest {
         pauseRedis();
 
         Timed<ResponseEntity<String>> confirm = timed(() -> testRestTemplate.exchange(
-            "/api/v1/orders/" + orderId + "/confirm", HttpMethod.POST, new HttpEntity<>(null, headers), String.class));
+            "/api/v1/orders/" + orderId + "/confirm", HttpMethod.POST, new HttpEntity<>(Map.of(
+                "paymentAttemptKey", "attempt-1", "cardType", "TEST", "cardNo", "0000-0000-0000-0000"), headers),
+            String.class));
 
         assertAll(
-            () -> assertThat(confirm.value().getStatusCode().value()).isEqualTo(200),
+            () -> assertThat(confirm.value().getStatusCode().value()).isEqualTo(202),
             () -> assertThat(confirm.elapsed()).isLessThan(BOUNDED_WAIT),
             () -> assertThat(jdbcTemplate.queryForObject("SELECT quantity FROM product WHERE id = ?", Integer.class, productId))
                 .as("재고는 DB 에서 차감").isZero(),
             () -> assertThat(jdbcTemplate.queryForObject("SELECT balance FROM user_point WHERE user_id = ?", Long.class, USER))
-                .as("포인트는 DB 에서 차감").isZero()
+                .as("포인트는 쓰지 않는다").isEqualTo(10_000)
         );
     }
 

@@ -61,6 +61,13 @@ public class Product {
         this.quantity = quantity.minus(amount);
     }
 
+    public void restock(Quantity amount) {
+        if (amount == null || !amount.isPositive()) {
+            throw new IllegalArgumentException("반환량은 양수여야 합니다");
+        }
+        this.quantity = quantity.plus(amount);
+    }
+
     public boolean isSoldOut() {
         return quantity.isZero();
     }

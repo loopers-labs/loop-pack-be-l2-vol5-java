@@ -1,11 +1,11 @@
 package com.loopers.infrastructure.product;
 
+import com.loopers.support.payment.TestPayments;
 import com.loopers.support.error.DomainError;
 import com.loopers.support.error.DomainException;
 import jakarta.persistence.EntityManager;
 import com.loopers.application.product.ProductFacade;
 import com.loopers.application.brand.BrandFacade;
-import com.loopers.application.point.PointFacade;
 import com.loopers.application.order.OrderCreateCommand;
 import com.loopers.application.order.OrderFacade;
 import com.loopers.domain.common.Quantity;
@@ -13,7 +13,6 @@ import com.loopers.domain.product.Price;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.domain.order.OrderQuantity;
-import com.loopers.domain.point.ChargeAmount;
 import com.loopers.domain.product.ProductService;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
@@ -38,7 +37,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ProductRepositoryIntegrationTest {
 
     private final ProductService productService;
-    private final PointFacade pointFacade;
+    private final TestPayments testPayments;
     private final OrderFacade orderFacade;
     private final ProductRepository productRepository;
     private final DatabaseCleanUp databaseCleanUp;
@@ -51,7 +50,7 @@ class ProductRepositoryIntegrationTest {
     @Autowired
     ProductRepositoryIntegrationTest(
         ProductService productService,
-        PointFacade pointFacade,
+        TestPayments testPayments,
         OrderFacade orderFacade,
         ProductRepository productRepository,
         DatabaseCleanUp databaseCleanUp,
@@ -60,7 +59,7 @@ class ProductRepositoryIntegrationTest {
         EntityManager entityManager
     ) {
         this.productService = productService;
-        this.pointFacade = pointFacade;
+        this.testPayments = testPayments;
         this.orderFacade = orderFacade;
         this.productRepository = productRepository;
         this.databaseCleanUp = databaseCleanUp;
@@ -130,7 +129,7 @@ class ProductRepositoryIntegrationTest {
         assertThat(productService.getStock(id)).isEqualTo(Quantity.of(12));
     }
 
-    @DisplayName("PRODUCT-023 · 재고 10에 20건의 주문 확정이 동시에 들어오면 10건만 성공하고 재고는 0이다.")
+    @DisplayName("PRODUCT-023, RSV-001 · 재고 10에 20건의 결제 시작이 동시에 들어오면 10건만 재고를 묶고 재고는 0이다.")
     @Test
     void deductsConcurrentlyWithoutGoingNegative() throws InterruptedException {
         Long id = productFacade.register(brandId, "코트", Price.of(1_000)).getId();
@@ -146,7 +145,6 @@ class ProductRepositoryIntegrationTest {
 
         for (int i = 0; i < threads; i++) {
             Long userId = 1_000L + i;
-            pointFacade.charge(userId, ChargeAmount.of(10_000), Instant.parse("2026-09-14T00:00:00Z"));
             Long orderId = orderFacade.place(
                 new OrderCreateCommand(userId, List.of(new OrderCreateCommand.Line(id, OrderQuantity.of(1)))),
                 Instant.parse("2026-09-14T00:00:00Z")).getId();
@@ -155,7 +153,7 @@ class ProductRepositoryIntegrationTest {
                 ready.countDown();
                 try {
                     start.await();
-                    orderFacade.confirm(userId, orderId, Instant.parse("2026-09-14T00:00:00Z"));
+                    testPayments.start(userId, orderId, Instant.parse("2026-09-14T00:00:00Z"));
                     succeeded.incrementAndGet();
                 } catch (DomainException e) {
                     if (e.error() == DomainError.INSUFFICIENT_STOCK) {
@@ -179,22 +177,21 @@ class ProductRepositoryIntegrationTest {
         assertThat(productService.getStock(id)).isEqualTo(Quantity.ZERO);
     }
 
-    @DisplayName("PRODUCT-006 · 삭제된 상품은 확정으로도 차감되지 않는다.")
+    @DisplayName("PRODUCT-006, ORDER-012 · 삭제된 상품은 결제 시작으로도 차감되지 않는다.")
     @Test
     void rejectsDeductOfDeleted() {
         Long id = productFacade.register(brandId, "코트", Price.of(1_000)).getId();
         productFacade.adjustStock(id, Quantity.of(5));
         Instant now = Instant.parse("2026-09-14T00:00:00Z");
-        pointFacade.charge(1L, ChargeAmount.of(10_000), now);
         Long orderId = orderFacade.place(
             new OrderCreateCommand(1L, List.of(new OrderCreateCommand.Line(id, OrderQuantity.of(1)))), now).getId();
         productFacade.delete(id);
 
-        assertThatThrownBy(() -> orderFacade.confirm(1L, orderId, now))
+        assertThatThrownBy(() -> testPayments.start(1L, orderId, now))
             .isInstanceOf(DomainException.class)
                 .hasFieldOrPropertyWithValue("error", DomainError.PRODUCT_NOT_FOUND);
         assertThat(quantityOf(id))
-            .as("확정이 거절되었으므로 재고는 그대로다")
+            .as("결제 시작이 거절되었으므로 재고는 그대로다")
             .isEqualTo(5);
     }
 

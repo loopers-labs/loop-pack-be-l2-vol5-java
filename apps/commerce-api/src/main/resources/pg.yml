@@ -1,0 +1,62 @@
+pg:
+  user-id: "135135"
+  connect-timeout: 500ms
+  create-timeout: 2s
+  lookup-timeout: 1s
+  pool-wait-timeout: 200ms
+  lookup-max-connections: 30
+  create-concurrency: 20
+  lookup-circuit:
+    window: 10s
+    minimum-calls: 10
+    failure-rate-percent: 50
+    slow-call-duration: 500ms
+    slow-call-rate-percent: 50
+    open-wait: 10s
+    half-open-calls: 2
+
+payment:
+  sweeper:
+    enabled: true
+    interval: 10s
+  unresolved-metrics:
+    enabled: true
+    interval: 30s
+
+---
+spring.config.activate.on-profile: local, test
+
+pg:
+  base-url: https://127.0.0.1:8090
+  callback-url: http://127.0.0.1:8080/api/v1/payments/callback
+
+---
+spring.config.activate.on-profile: test
+
+payment:
+  sweeper:
+    enabled: false
+  unresolved-metrics:
+    enabled: false
+
+spring:
+  ssl:
+    bundle:
+      jks:
+        pg:
+          truststore:
+            location: classpath:pg-fixture-truststore.p12
+            password: local-only-not-a-secret
+            type: PKCS12
+
+pg:
+  ssl-bundle: pg
+
+---
+spring.config.activate.on-profile: dev
+
+---
+spring.config.activate.on-profile: qa
+
+---
+spring.config.activate.on-profile: prd

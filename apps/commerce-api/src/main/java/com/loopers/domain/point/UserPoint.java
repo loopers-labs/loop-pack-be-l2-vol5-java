@@ -43,17 +43,6 @@ public class UserPoint {
         this.newTransactions.add(PointTransaction.charge(amount, next, occurredAt));
     }
 
-    public void use(Money amount, Instant now) {
-        if (amount == null || !amount.isPositive()) {
-            throw new IllegalArgumentException("사용액은 양수여야 합니다");
-        }
-        if (balance.isLessThan(amount)) {
-            throw new DomainException(DomainError.INSUFFICIENT_POINT);
-        }
-        this.balance = balance.minus(amount);
-        newTransactions.add(PointTransaction.use(amount, balance, now));
-    }
-
     public List<PointTransaction> pullNewTransactions() {
         List<PointTransaction> pulled = List.copyOf(newTransactions);
         newTransactions.clear();
