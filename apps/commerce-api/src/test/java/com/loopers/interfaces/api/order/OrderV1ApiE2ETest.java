@@ -27,7 +27,9 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
@@ -53,6 +55,7 @@ class OrderV1ApiE2ETest {
     private final BrandFacade brandFacade;
     private final ProductFacade productFacade;
     private final PaymentRepository paymentRepository;
+    private final JdbcTemplate jdbcTemplate;
 
     private Long productId;
 
@@ -65,7 +68,8 @@ class OrderV1ApiE2ETest {
         DatabaseCleanUp databaseCleanUp,
         BrandFacade brandFacade,
         ProductFacade productFacade,
-        PaymentRepository paymentRepository
+        PaymentRepository paymentRepository,
+        JdbcTemplate jdbcTemplate
     ) {
         this.testRestTemplate = testRestTemplate;
         this.productService = productService;
@@ -75,6 +79,7 @@ class OrderV1ApiE2ETest {
         this.brandFacade = brandFacade;
         this.productFacade = productFacade;
         this.paymentRepository = paymentRepository;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     @BeforeEach
@@ -586,6 +591,89 @@ class OrderV1ApiE2ETest {
                 () -> assertThat(response.getStatusCode().value()).isEqualTo(404),
                 () -> assertThat(response.getBody().meta().errorCode()).isEqualTo("ORDER_NOT_FOUND"),
                 () -> assertThat(lookups()).isEqualTo(before)
+            );
+        }
+    }
+
+    @Nested
+    @DisplayName("결제수단과 과거 주문 — PAY-011, SETTLE-011: 결제수단 · 시도 상태 · 최종 결과를 보여 주고, 포인트로 확정한 주문은 그대로다")
+    class PaymentMethodAndPastOrders {
+
+        private Long pastPointOrder(int quantity) {
+            Long orderId = place(USER, oneLine(quantity)).getBody().data().id();
+            jdbcTemplate.update(
+                "UPDATE orders SET status = 'CONFIRMED', paid_amount = total_amount, confirmed_at = ? WHERE id = ?",
+                Timestamp.from(NOW), orderId);
+            return orderId;
+        }
+
+        private OrderV1Dto.OrderResponse get(Long orderId) {
+            return testRestTemplate.exchange(ORDERS + "/" + orderId, HttpMethod.GET,
+                new HttpEntity<>(null, headers(USER)), ORDER).getBody().data();
+        }
+
+        @DisplayName("포인트로 확정한 과거 주문은 결제수단 POINT, 금액, 결과, 당시 품목이 그대로 보이고 결제 시도는 없다")
+        @Test
+        void showsPastPointOrder() {
+            Long orderId = pastPointOrder(2);
+
+            OrderV1Dto.OrderResponse order = get(orderId);
+
+            assertAll(
+                () -> assertThat(order.status()).isEqualTo("CONFIRMED"),
+                () -> assertThat(order.paymentMethod()).isEqualTo("POINT"),
+                () -> assertThat(order.paymentStatus()).isNull(),
+                () -> assertThat(order.paidAmount()).isEqualTo(2_000),
+                () -> assertThat(order.items().get(0).productName()).isEqualTo("코트")
+            );
+        }
+
+        @DisplayName("ORDER-010: 포인트로 확정한 주문에 confirm 하면 409 ORDER_NOT_DRAFT 이고 PG 를 부르지 않는다")
+        @Test
+        void rejectsConfirmOnPastPointOrder() {
+            Long orderId = pastPointOrder(1);
+            int creates = PG.createCount();
+
+            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+                ORDERS + "/" + orderId + "/confirm", HttpMethod.POST,
+                new HttpEntity<>(card("attempt-1"), headers(USER)), ANY);
+
+            assertAll(
+                () -> assertThat(response.getStatusCode().value()).isEqualTo(409),
+                () -> assertThat(response.getBody().meta().errorCode()).isEqualTo("ORDER_NOT_DRAFT"),
+                () -> assertThat(PG.createCount()).isEqualTo(creates),
+                () -> assertThat(paymentRepository.findByOrderId(orderId)).isEmpty()
+            );
+        }
+
+        @DisplayName("SETTLE-008: 포인트로 확정한 주문은 확인할 결제가 없어 reconcile 이 404 PAYMENT_NOT_FOUND 다")
+        @Test
+        void hasNothingToReconcile() {
+            Long orderId = pastPointOrder(1);
+
+            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+                ORDERS + "/" + orderId + "/payment/reconcile", HttpMethod.POST,
+                new HttpEntity<>(null, headers(USER)), ANY);
+
+            assertThat(response.getBody().meta().errorCode()).isEqualTo("PAYMENT_NOT_FOUND");
+        }
+
+        @DisplayName("PG 로 결제 중인 주문은 결제수단 PG 와 시도 상태를 보여 주고, 접수만 한 주문은 둘 다 없다")
+        @Test
+        void showsPgPaymentAndDraft() {
+            Long draft = place(USER, oneLine(1)).getBody().data().id();
+            Long paying = place(USER, oneLine(1)).getBody().data().id();
+            testRestTemplate.exchange(ORDERS + "/" + paying + "/confirm", HttpMethod.POST,
+                new HttpEntity<>(card("attempt-" + paying), headers(USER)), ANY);
+
+            OrderV1Dto.OrderResponse pg = get(paying);
+            OrderV1Dto.OrderResponse placed = get(draft);
+
+            assertAll(
+                () -> assertThat(pg.paymentMethod()).isEqualTo("PG"),
+                () -> assertThat(pg.paymentStatus()).isEqualTo("PENDING"),
+                () -> assertThat(placed.paymentMethod()).isNull(),
+                () -> assertThat(placed.paymentStatus()).isNull()
             );
         }
     }

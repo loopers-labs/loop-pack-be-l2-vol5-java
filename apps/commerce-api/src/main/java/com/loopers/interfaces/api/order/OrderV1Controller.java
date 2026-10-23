@@ -71,7 +71,7 @@ public class OrderV1Controller {
         @RequestHeader("X-USER-ID") Long userId,
         @PathVariable Long orderId
     ) {
-        return ApiResponse.success(OrderV1Dto.OrderResponse.from(orderFacade.get(userId, orderId)));
+        return ApiResponse.success(OrderV1Dto.OrderResponse.from(orderFacade.getDetail(userId, orderId)));
     }
 
     private static <T> ResponseEntity<ApiResponse<T>> respond(Payment payment, T data) {

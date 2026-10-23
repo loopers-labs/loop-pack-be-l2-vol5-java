@@ -1,6 +1,7 @@
 package com.loopers.interfaces.api.order;
 
 import com.loopers.application.order.OrderCreateCommand;
+import com.loopers.application.order.OrderFacade;
 import com.loopers.application.payment.PaymentConfirmCommand;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderItem;
@@ -93,9 +94,21 @@ public class OrderV1Dto {
         Long paidAmount,
         Instant placedAt,
         Instant confirmedAt,
-        List<OrderItemResponse> items
+        List<OrderItemResponse> items,
+        String paymentMethod,
+        String paymentStatus
     ) {
         public static OrderResponse from(Order order) {
+            return of(order, null, null);
+        }
+
+        public static OrderResponse from(OrderFacade.OrderDetail detail) {
+            OrderFacade.PaymentMethod method = detail.paymentMethod();
+            return of(detail.order(), method != null ? method.name() : null,
+                detail.payment() != null ? detail.payment().getStatus().name() : null);
+        }
+
+        private static OrderResponse of(Order order, String paymentMethod, String paymentStatus) {
             return new OrderResponse(
                 order.getId(),
                 order.getStatus().name(),
@@ -103,7 +116,9 @@ public class OrderV1Dto {
                 order.getPaidAmount() != null ? order.getPaidAmount().amount() : null,
                 order.getPlacedAt(),
                 order.getConfirmedAt(),
-                order.getItems().stream().map(OrderItemResponse::from).toList());
+                order.getItems().stream().map(OrderItemResponse::from).toList(),
+                paymentMethod,
+                paymentStatus);
         }
     }
 }

@@ -227,7 +227,9 @@ class AdminListApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.userId").value(7))
                 .andExpect(jsonPath("$.data.status").value("CONFIRMED"))
-                .andExpect(jsonPath("$.data.paidAmount").value(1000));
+                .andExpect(jsonPath("$.data.paidAmount").value(1000))
+                .andExpect(jsonPath("$.data.paymentMethod").value("PG"))
+                .andExpect(jsonPath("$.data.paymentStatus").value("SUCCESS"));
         }
 
         @DisplayName("관리자는 남의 주문도 본다 — 고객의 404 와 다른 지점이다")

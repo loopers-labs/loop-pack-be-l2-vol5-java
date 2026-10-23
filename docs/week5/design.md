@@ -147,7 +147,10 @@ WHERE a.reason = 'RESULT_AFTER_SETTLED';
 ### 3.4 `orders` 의 변경
 
 - `status` 에 `PENDING` · `FAILED` 를 더한다.
-- `payment_method`(`POINT` · `PG`) 열을 더한다. 기존 `CONFIRMED` 행은 `POINT` 다. DRAFT 는 null 이다.
+- **결제수단은 열로 두지 않고 저장된 사실에서 계산한다.** `payment` 행이 있으면 `PG`, 없는데 `CONFIRMED` 면 `POINT`(과거 주문), `DRAFT` 면 없음이다. 주문 상세(고객 · 관리자)가 결제수단과 결제 시도 상태를 함께 보여 준다(`SETTLE-011`).
+  같은 사실을 두 곳에 두지 않고, 기존 `CONFIRMED` 행을 `POINT` 로 채우는 이관도 필요 없다. 새 확정은 언제나 `payment` 행을 남기므로(4.1) 셋이 겹치지 않는다.
+  지금 고를 수 있는 다른 길: `orders.payment_method` 열. 목록 조회에서 결제 테이블을 읽지 않아도 된다.
+  **뒤집을 조건**: 결제수단이 셋 이상이 되거나 섞일 때(포인트 + 카드), 결제수단으로 주문 목록을 거르게 될 때.
 - `paid_amount` · `confirmed_at` 은 PG 성공 때 채운다. 실패에는 채우지 않는다.
 
 ## 4. 이중 결제를 막는 구조
