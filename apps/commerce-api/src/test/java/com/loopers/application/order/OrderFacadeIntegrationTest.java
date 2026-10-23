@@ -337,9 +337,9 @@ class OrderFacadeIntegrationTest {
             assertThat(fixtures.reloadOrder(order.getId()).getTransactionKey()).isNull();
         }
 
-        @DisplayName("[FR-ORDER-02][ST-03] PG FAILED·요청 미전송(NOT_SENT)이면 FAILED, 예약분은 RELEASE 로 반환된다.")
+        @DisplayName("[FR-ORDER-02][ST-03] PG FAILED·요청 미전송(NOT_SENT)·PG 오류·응답 지연(ERROR)이면 FAILED, 예약분은 RELEASE 로 반환된다.")
         @ParameterizedTest
-        @EnumSource(value = Outcome.class, names = {"FAILED", "NOT_SENT"})
+        @EnumSource(value = Outcome.class, names = {"FAILED", "NOT_SENT", "ERROR"})
         void failsAndReleases_whenPgFailsOrNotSent(Outcome outcome) {
             OrderModel order = fixtures.draftOrder(user.getId(), product, 2);
             fakePg.willRespond(new PaymentGatewayResult(outcome, null, null));

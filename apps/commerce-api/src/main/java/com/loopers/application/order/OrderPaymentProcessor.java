@@ -56,11 +56,12 @@ public class OrderPaymentProcessor {
 
     /**
      * 결제 결과 반영. 동기 응답·callback·결제 대기 해소 공용. 주문 행 락으로 직렬화하고, AWAITING_PAYMENT 가 아니면 아무것도 하지 않는다 (멱등).
-     * SUCCESS → CONFIRMED (금액이 합계와 다르면 반영하지 않는다) / FAILED·NOT_SENT → FAILED + 재고 반환 / PENDING·UNKNOWN → 거래 키만 기록.
+     * SUCCESS → CONFIRMED (금액이 합계와 다르면 반영하지 않는다) / FAILED·NOT_SENT·ERROR → FAILED + 재고 반환 / PENDING·UNKNOWN → 거래 키만 기록.
      */
     @Transactional
     public OrderInfo applyResult(Long orderId, PaymentGatewayResult result) {
         OrderModel order = orderService.getForUpdate(orderId);
+        // ERROR 로 FAILED 가 된 뒤 늦게 온 SUCCESS 도 여기서 무시된다. 결제 취소가 도입되면 이 경우를 결제 취소로 보낸다.
         if (!order.isAwaitingPayment()) {
             log.info("이미 결론난 주문, 결과 무시 [orderId = {}, status = {}, outcome = {}]", orderId, order.getStatus(), result.outcome());
             return OrderInfo.from(order);
@@ -80,7 +81,7 @@ public class OrderPaymentProcessor {
                 }
                 order.confirm();
             }
-            case FAILED, NOT_SENT -> {
+            case FAILED, NOT_SENT, ERROR -> {
                 order.fail();
                 productService.releaseStocks(order.getId(), order.getItems().stream()
                     .collect(Collectors.toMap(OrderItemModel::getProductId, OrderItemModel::getQuantity)));

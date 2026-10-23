@@ -16,11 +16,12 @@ import org.springframework.web.client.RestClientException;
 import java.net.ConnectException;
 import java.net.http.HttpClient;
 import java.net.http.HttpConnectTimeoutException;
+import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 
 /**
  * PaymentGateway 구현. PG POST /api/v1/payments·GET /api/v1/payments?orderId= 를 RestClient 로 부른다. 예외를 던지지 않고 결과로 바꾼다.
- * 결제 요청 — 2xx: 응답 status(PENDING·SUCCESS·FAILED) 그대로 / 4xx: FAILED / 5xx·read timeout: UNKNOWN / 연결 실패·connect timeout: NOT_SENT.
+ * 결제 요청 — 2xx: 응답 status(PENDING·SUCCESS·FAILED) 그대로 / 4xx: FAILED / 5xx·read timeout: ERROR / 연결 실패·connect timeout: NOT_SENT / 그 밖의 예외: UNKNOWN.
  * 거래 조회 — 2xx: 응답 status 그대로 / 그 밖의 응답·예외: UNKNOWN.
  * 결제 요청은 pg.read-timeout, 거래 조회는 그보다 짧은 pg.lookup-read-timeout 을 쓴다.
  * 결제 요청은 재시도하지 않는다 (이중 결제 방지). 카드번호는 로그에 마스킹한다.
@@ -67,13 +68,17 @@ public class PgClient implements PaymentGateway {
                         log.warn("PG 결제 거절 [orderId = {}, status = {}, card = {}]", orderId, status, mask(cardNo));
                         return new PaymentGatewayResult(Outcome.FAILED, null, null);
                     }
-                    log.warn("PG 응답 오류, 결과 모름 [orderId = {}, status = {}]", orderId, status);
-                    return PaymentGatewayResult.unknown();
+                    log.warn("PG 응답 오류, 실패 처리 [orderId = {}, status = {}]", orderId, status);
+                    return PaymentGatewayResult.error();
                 });
         } catch (ResourceAccessException e) {
             if (isNotSent(e)) {
                 log.warn("PG 연결 실패, 요청 미전송 [orderId = {}]", orderId, e);
                 return PaymentGatewayResult.notSent();
+            }
+            if (isReadTimeout(e)) {
+                log.warn("PG 응답 지연, 실패 처리 [orderId = {}]", orderId, e);
+                return PaymentGatewayResult.error();
             }
             log.warn("PG 응답 없음, 결과 모름 [orderId = {}]", orderId, e);
             return PaymentGatewayResult.unknown();
@@ -124,6 +129,16 @@ public class PgClient implements PaymentGateway {
     private static boolean isNotSent(Throwable e) {
         for (Throwable cause = e; cause != null; cause = cause.getCause()) {
             if (cause instanceof ConnectException || cause instanceof HttpConnectTimeoutException) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** read timeout. connect timeout(HttpConnectTimeoutException 도 HttpTimeoutException)은 isNotSent 가 먼저 거른다. */
+    private static boolean isReadTimeout(Throwable e) {
+        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+            if (cause instanceof HttpTimeoutException) {
                 return true;
             }
         }

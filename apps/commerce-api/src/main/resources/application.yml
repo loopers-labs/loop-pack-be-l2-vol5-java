@@ -28,7 +28,7 @@ pg:
   base-url: http://localhost:8010
   callback-url: http://localhost:8080/api/v1/payments/callback
   connect-timeout: 1s
-  read-timeout: 9s # 결제 요청. 고객이 결제창에서 기다리는 한계를 10초로 보고 그 안에서 끝낸다
+  read-timeout: 9s # 결제 요청. 고객이 결제창에서 기다리는 한계를 10초로 보고 그 안에서 끝낸다. 넘기면 실패 처리
   lookup-delay: 7s # 결제 요청 전송 시점부터 백업 거래 조회까지
   lookup-read-timeout: 2s # 거래 조회. 7초 + 2초로 결제 요청 timeout 과 같이 끝난다
 

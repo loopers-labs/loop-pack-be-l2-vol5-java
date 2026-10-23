@@ -99,22 +99,41 @@ class PaymentLookupSchedulerIntegrationTest {
         assertThat(fakePg.finds()).containsExactly(order.getId());
     }
 
-    @DisplayName("결제 요청이 응답 없이 걸린 동안 거래 조회가 결론내면, 결제 요청이 UNKNOWN 으로 끝나도 응답은 그 결론이다.")
+    @DisplayName("결제 요청이 응답 없이 걸린 동안 거래 조회가 결론내면, 결제 요청이 read timeout(ERROR)으로 끝나도 응답은 그 결론이다. 재고 반환 없음.")
     @Test
     void lookupConcludes_whilePaymentRequestHangs() {
         OrderModel order = fixtures.draftOrder(user.getId(), product, 2);
         String tx = FakePaymentGateway.transactionKeyOf(order.getId());
         fakePg.willRespond(request -> {
             awaitUntil(() -> statusOf(order) != OrderStatus.AWAITING_PAYMENT);
-            return PaymentGatewayResult.unknown();
+            return PaymentGatewayResult.error();
         });
         fakePg.willFind(success(tx, 2_000L));
 
         OrderInfo info = confirm(order);
 
         assertThat(info.status()).isEqualTo("CONFIRMED");
+        assertThat(fixtures.stockOf(product.getId())).isEqualTo(3);
         assertThat(fakePg.requests()).hasSize(1);
         assertThat(fakePg.finds()).containsExactly(order.getId());
+    }
+
+    @DisplayName("거래 조회가 PENDING 이면 주문은 결제 대기 그대로고, 뒤이어 결제 요청이 read timeout(ERROR)으로 끝나면 FAILED, 재고 반환.")
+    @Test
+    void paymentRequestErrorFails_afterLookupPending() {
+        OrderModel order = fixtures.draftOrder(user.getId(), product, 2);
+        String tx = FakePaymentGateway.transactionKeyOf(order.getId());
+        fakePg.willRespond(request -> {
+            awaitUntil(() -> fakePg.finds().contains(order.getId()) && tx.equals(fixtures.reloadOrder(order.getId()).getTransactionKey()));
+            assertThat(statusOf(order)).isEqualTo(OrderStatus.AWAITING_PAYMENT);
+            return PaymentGatewayResult.error();
+        });
+        fakePg.willFind(pending(tx));
+
+        OrderInfo info = confirm(order);
+
+        assertThat(info.status()).isEqualTo("FAILED");
+        assertThat(fixtures.stockOf(product.getId())).isEqualTo(5);
     }
 
     @DisplayName("결제 요청이 먼저 결론내도 거래 조회는 나가고, 이미 결론난 주문이라 조회 결과는 반영되지 않는다.")

@@ -30,7 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * PgClient 의 HTTP 응답 → 결제 결과 변환. PG 서버는 JDK HttpServer 로 띄운 가짜 (Spring 없음).
- * 결제 요청은 연결 실패만 NOT_SENT, 거래 조회는 어떤 실패도 UNKNOWN 인지 본다.
+ * 결제 요청은 연결 실패만 NOT_SENT·5xx 와 read timeout 은 ERROR, 거래 조회는 어떤 실패도 UNKNOWN 인지 본다.
  */
 class PgClientTest {
     private static final Duration READ_TIMEOUT = Duration.ofMillis(600);
@@ -179,20 +179,20 @@ class PgClientTest {
             assertThat(request().outcome()).isEqualTo(Outcome.FAILED);
         }
 
-        @DisplayName("5xx 는 결제가 됐는지 모르므로 UNKNOWN.")
+        @DisplayName("5xx 는 결제가 됐는지 몰라도 기다리지 않고 ERROR.")
         @Test
-        void unknown_on5xx() {
+        void error_on5xx() {
             respond(500, "{}");
 
-            assertThat(request().outcome()).isEqualTo(Outcome.UNKNOWN);
+            assertThat(request().outcome()).isEqualTo(Outcome.ERROR);
         }
 
-        @DisplayName("read timeout 은 요청이 닿았는지 모르므로 UNKNOWN.")
+        @DisplayName("read timeout 은 요청이 닿았는지 몰라도 기다리지 않고 ERROR.")
         @Test
-        void unknown_onReadTimeout() {
+        void error_onReadTimeout() {
             respondAfterReadTimeout();
 
-            assertThat(request().outcome()).isEqualTo(Outcome.UNKNOWN);
+            assertThat(request().outcome()).isEqualTo(Outcome.ERROR);
         }
 
         @DisplayName("거래 조회 read timeout 보다 늦은 응답도 결제 요청 read timeout 안이면 받는다.")
