@@ -3,12 +3,13 @@ package com.loopers.application.order;
 import com.loopers.application.user.UserRegistrationService;
 import com.loopers.application.point.PointFacade;
 import com.loopers.domain.brand.BrandModel;
-import com.loopers.domain.order.OrderModel;
 import com.loopers.domain.order.OrderStatus;
+import com.loopers.domain.order.ReservationStatus;
+import com.loopers.domain.payment.PaymentAttempt;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.infrastructure.brand.BrandJpaRepository;
 import com.loopers.infrastructure.order.OrderJpaRepository;
-import com.loopers.infrastructure.order.OrderRepositoryImpl;
+import com.loopers.infrastructure.payment.PaymentAttemptRepositoryImpl;
 import com.loopers.infrastructure.point.PointBalanceJpaRepository;
 import com.loopers.infrastructure.product.ProductJpaRepository;
 import com.loopers.infrastructure.user.UserJpaRepository;
@@ -21,8 +22,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.RequestBuilder;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
@@ -32,6 +35,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -55,7 +59,7 @@ class OrderConfirmationConcurrencyTest {
     @Autowired private TransactionTemplate transaction;
     @Autowired private DatabaseCleanUp cleanUp;
     @Autowired private MockMvc mvc;
-    @MockitoSpyBean private OrderRepositoryImpl persistence;
+    @MockitoSpyBean private PaymentAttemptRepositoryImpl persistence;
 
     @AfterEach
     void clean() {
@@ -64,18 +68,18 @@ class OrderConfirmationConcurrencyTest {
     }
 
     @Test
-    void sameOrderIsConfirmedOnceAndSevenRequestsAreRejected() throws Exception {
+    void sameOrderStartsPaymentOnceAndSevenOtherRequestsAreRejected() throws Exception {
         Fixture fixture = prepare();
 
         List<String> results = confirmTogether(fixture, 8);
 
         assertThat(results).filteredOn("success"::equals).hasSize(1);
         assertThat(results).filteredOn("state conflict"::equals).hasSize(7);
-        verifySingleConfirmation(fixture);
+        verifySinglePaymentStart(fixture);
     }
 
     @Test
-    void anotherRequestCanConfirmAfterFirstSaveFailsAndRollsBack() throws Exception {
+    void anotherRequestCanStartAfterFirstAttemptSaveFailsAndRollsBack() throws Exception {
         Fixture fixture = prepare();
         AtomicBoolean failFirst = new AtomicBoolean(true);
         doAnswer(invocation -> {
@@ -85,16 +89,16 @@ class OrderConfirmationConcurrencyTest {
                 assertThat(((Number) entityManager.createNativeQuery("select quantity from product where id = :id")
                     .setParameter("id", fixture.productId()).getSingleResult()).intValue()).isEqualTo(19);
                 assertThat(((Number) entityManager.createNativeQuery("select balance from point_balance where user_id = :id")
-                    .setParameter("id", fixture.userId()).getSingleResult()).longValue()).isEqualTo(19_020L);
+                    .setParameter("id", fixture.userId()).getSingleResult()).longValue()).isEqualTo(20_000L);
                 throw new IllegalStateException("test: first confirmation failed after SQL");
             }
             return saved;
-        }).when(persistence).save(any(OrderModel.class));
+        }).when(persistence).save(any(PaymentAttempt.class));
 
         List<String> results = confirmTogether(fixture, 2);
 
         assertThat(results).containsExactlyInAnyOrder("injected failure", "success");
-        verifySingleConfirmation(fixture);
+        verifySinglePaymentStart(fixture);
     }
 
     @Test
@@ -102,12 +106,17 @@ class OrderConfirmationConcurrencyTest {
         Fixture fixture = prepare();
         long otherUser = registration.register().getId();
         String path = "/api/v1/orders/" + fixture.orderId() + "/confirm";
-        mvc.perform(post(path).header("X-USER-ID", otherUser)).andExpect(status().isNotFound());
+        mvc.perform(confirmRequest(path, otherUser, "attempt-other")).andExpect(status().isNotFound());
         assertThat(orderRepository.findById(fixture.orderId()).orElseThrow().getStatus()).isEqualTo(OrderStatus.DRAFT);
         assertThat(products.findById(fixture.productId()).orElseThrow().getStockQuantity()).isEqualTo(20);
-        mvc.perform(post(path).header("X-USER-ID", fixture.userId())).andExpect(status().isOk());
-        mvc.perform(post(path).header("X-USER-ID", fixture.userId())).andExpect(status().isConflict());
-        verifySingleConfirmation(fixture);
+        mvc.perform(confirmRequest(path, fixture.userId(), "attempt-1")).andExpect(status().isAccepted());
+        mvc.perform(confirmRequest(path, fixture.userId(), "attempt-2")).andExpect(status().isConflict());
+        verifySinglePaymentStart(fixture);
+    }
+
+    private static RequestBuilder confirmRequest(String path, long userId, String key) {
+        return post(path).header("X-USER-ID", userId).contentType(MediaType.APPLICATION_JSON)
+            .content("{\"paymentAttemptKey\":\"" + key + "\",\"cardType\":\"TEST\",\"cardNo\":\"0000-0000-0000-0000\"}");
     }
 
     private Fixture prepare() {
@@ -119,22 +128,24 @@ class OrderConfirmationConcurrencyTest {
         return new Fixture(userId, productId, orderId);
     }
 
-    private void verifySingleConfirmation(Fixture fixture) {
+    private void verifySinglePaymentStart(Fixture fixture) {
         transaction.executeWithoutResult(status -> {
             assertThat(products.findById(fixture.productId()).orElseThrow().getStockQuantity()).isEqualTo(19);
-            assertThat(balances.findByUserId(fixture.userId()).orElseThrow().getBalance()).isEqualTo(19_020L);
+            assertThat(balances.findByUserId(fixture.userId()).orElseThrow().getBalance()).isEqualTo(20_000L);
             var order = orderRepository.findById(fixture.orderId()).orElseThrow();
-            assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
-            assertThat(order.getPaidAmount()).isEqualTo(1_000L);
-            assertThat(((Number) entityManager.createNativeQuery("select count(*) from point_usage")
+            assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+            assertThat(order.getReservationStatus()).isEqualTo(ReservationStatus.RESERVED);
+            assertThat(order.getPaidAmount()).isZero();
+            assertThat(((Number) entityManager.createNativeQuery("select count(*) from payment_attempt")
                 .getSingleResult()).longValue()).isEqualTo(1L);
-            assertThat(((Number) entityManager.createNativeQuery("select count(*) from point_grant")
-                .getSingleResult()).longValue()).isEqualTo(2L); // 최초 충전 + 한 번의 적립
+            assertThat(((Number) entityManager.createNativeQuery("select count(*) from point_usage")
+                .getSingleResult()).longValue()).isZero();
         });
     }
 
     private List<String> confirmTogether(Fixture fixture, int count) throws Exception {
         var executor = Executors.newFixedThreadPool(count);
+        var keys = new AtomicInteger();
         CountDownLatch ready = new CountDownLatch(count);
         CountDownLatch start = new CountDownLatch(1);
         List<Future<String>> futures = new ArrayList<>();
@@ -146,11 +157,12 @@ class OrderConfirmationConcurrencyTest {
                         throw new IllegalStateException("test start timed out");
                     }
                     try {
-                        orders.confirm(fixture.userId(), fixture.orderId());
+                        orders.confirm(fixture.userId(), fixture.orderId(), new OrderFacade.PaymentCommand(
+                            "attempt-" + keys.incrementAndGet(), "TEST", "0000-0000-0000-0000"));
                         return "success";
                     } catch (CoreException exception) {
                         assertThat(exception.getErrorType()).isEqualTo(ErrorType.CONFLICT);
-                        assertThat(exception.getMessage()).isEqualTo("확정할 수 없는 주문 상태입니다.");
+                        assertThat(exception.getMessage()).isEqualTo("이미 결제가 시작된 주문입니다.");
                         return "state conflict";
                     } catch (IllegalStateException exception) {
                         assertThat(exception.getMessage()).isEqualTo("test: first confirmation failed after SQL");

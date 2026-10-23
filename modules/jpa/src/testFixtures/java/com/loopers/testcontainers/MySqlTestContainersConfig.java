@@ -18,7 +18,9 @@ public class MySqlTestContainersConfig {
             .withCommand(
                 "--character-set-server=utf8mb4",
                 "--collation-server=utf8mb4_general_ci",
-                "--skip-character-set-client-handshake"
+                "--skip-character-set-client-handshake",
+                // 테스트마다 따로 뜬 Spring 컨텍스트가 연결 풀을 닫지 않고 쌓아 두므로 기본 151개로는 모자랄 수 있다.
+                "--max-connections=500"
             );
         mySqlContainer.start();
 

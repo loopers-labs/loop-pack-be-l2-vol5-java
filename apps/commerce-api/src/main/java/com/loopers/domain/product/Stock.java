@@ -30,6 +30,13 @@ public class Stock {
         return new Stock(this.quantity - quantity);
     }
 
+    public Stock increase(int quantity) {
+        if (quantity <= 0) {
+            throw new IllegalArgumentException("반환 수량은 양수여야 합니다.");
+        }
+        return new Stock(Math.addExact(this.quantity, quantity));
+    }
+
     public Stock changeTo(int quantity) {
         return new Stock(quantity);
     }

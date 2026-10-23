@@ -27,6 +27,10 @@ public class OrderModel extends BaseEntity {
     private long totalAmount;
     @Column(nullable = false)
     private long paidAmount;
+    @Enumerated(EnumType.STRING)
+    private PaymentMethod paymentMethod;
+    @Enumerated(EnumType.STRING)
+    private ReservationStatus reservationStatus;
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
     @JoinColumn(name = "order_id")
     private List<OrderItem> items = new ArrayList<>();
@@ -47,6 +51,8 @@ public class OrderModel extends BaseEntity {
     public OrderStatus getStatus() { return status; }
     public long getTotalAmount() { return totalAmount; }
     public long getPaidAmount() { return paidAmount; }
+    public PaymentMethod getPaymentMethod() { return paymentMethod; }
+    public ReservationStatus getReservationStatus() { return reservationStatus; }
     public List<OrderItem> getItems() { return List.copyOf(items); }
     public boolean isOwnedBy(Long userId) { return this.userId.equals(userId); }
 
@@ -59,6 +65,33 @@ public class OrderModel extends BaseEntity {
     public void confirm() {
         validateConfirmable();
         paidAmount = totalAmount;
+        paymentMethod = PaymentMethod.POINT;
         status = OrderStatus.CONFIRMED;
+    }
+
+    public void startPaymentWithReservedStock() {
+        validateConfirmable();
+        paymentMethod = PaymentMethod.PG;
+        reservationStatus = ReservationStatus.RESERVED;
+        status = OrderStatus.PAYMENT_PENDING;
+    }
+
+    public void completePayment() {
+        validatePaymentPending();
+        paidAmount = totalAmount;
+        reservationStatus = ReservationStatus.CONSUMED;
+        status = OrderStatus.CONFIRMED;
+    }
+
+    public void failPaymentWithReleasedStock() {
+        validatePaymentPending();
+        reservationStatus = ReservationStatus.RELEASED;
+        status = OrderStatus.PAYMENT_FAILED;
+    }
+
+    private void validatePaymentPending() {
+        if (status != OrderStatus.PAYMENT_PENDING) {
+            throw new CoreException(ErrorType.CONFLICT, "결제 대기 중인 주문이 아닙니다.");
+        }
     }
 }

@@ -170,10 +170,10 @@ class BrandRcBulkValidationTest {
     }
 
     @Test
-    void orderFirstCommitsItsStockAndPaymentBeforeDeletion() throws Exception {
+    void orderFirstCommitsItsStockReservationBeforeDeletion() throws Exception {
         Fixture f = fixture();
         Buyer b = buyer(f);
-        assertThat(race(() -> orders.confirm(b.user(), b.order()),
+        assertThat(race(() -> orders.confirm(b.user(), b.order(), command(b)),
             () -> deletion.delete(f.brand()), "product", f.product(), false)).isNull();
         assertDeleted(f, true);
         assertOrder(b, true);
@@ -186,7 +186,7 @@ class BrandRcBulkValidationTest {
         Fixture f = fixture();
         Buyer b = buyer(f);
         ErrorType result = race(() -> deletion.delete(f.brand()),
-            () -> orders.confirm(b.user(), b.order()), "product", f.product(), rollback);
+            () -> orders.confirm(b.user(), b.order(), command(b)), "product", f.product(), rollback);
         assertThat(result).isEqualTo(rollback ? null : ErrorType.NOT_FOUND);
         assertDeleted(f, !rollback);
         assertOrder(b, rollback);
@@ -332,13 +332,17 @@ class BrandRcBulkValidationTest {
             .isNull();
     }
 
-    private void assertOrder(Buyer b, boolean confirmed) {
+    private void assertOrder(Buyer b, boolean started) {
         assertThat(jdbc.queryForObject("select status from orders where id=?", String.class, b.order()))
-            .isEqualTo(confirmed ? "CONFIRMED" : "DRAFT");
+            .isEqualTo(started ? "PAYMENT_PENDING" : "DRAFT");
+        assertThat(jdbc.queryForObject("select reservation_status from orders where id=?", String.class, b.order()))
+            .isEqualTo(started ? "RESERVED" : null);
         assertThat(jdbc.queryForObject("select balance from point_balance where user_id=?", Long.class, b.user()))
-            .isEqualTo(confirmed ? 8040L : 10000L);
-        assertThat(jdbc.queryForObject("select paid_amount from orders where id=?", Long.class, b.order()))
-            .isEqualTo(confirmed ? 2000L : 0L);
+            .isEqualTo(10000L);
+    }
+
+    private static OrderFacade.PaymentCommand command(Buyer b) {
+        return new OrderFacade.PaymentCommand("attempt-" + b.order(), "TEST", "0000-0000-0000-0000");
     }
 
     private record Fixture(long brand, long product, long zeroStock, long otherBrand, long otherProduct) {}

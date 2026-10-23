@@ -1,6 +1,7 @@
 package com.loopers.interfaces.api.order;
 
 import com.loopers.application.order.OrderFacade;
+import com.loopers.application.order.OrderPaymentInfo;
 import com.loopers.interfaces.api.ApiResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -38,11 +39,28 @@ public class OrderV1Controller {
     }
 
     @PostMapping("/{orderId}/confirm")
-    public ApiResponse<OrderV1Dto.OrderResponse> confirm(
+    public ResponseEntity<ApiResponse<OrderV1Dto.PaymentResponse>> confirm(
+        @RequestHeader("X-USER-ID") Long userId,
+        @PathVariable Long orderId,
+        @RequestBody OrderV1Dto.ConfirmRequest request
+    ) {
+        OrderFacade.PaymentCommand command = new OrderFacade.PaymentCommand(
+            request.paymentAttemptKey(), request.cardType(), request.cardNo()
+        );
+        return paymentResponse(orderFacade.confirm(userId, orderId, command));
+    }
+
+    @PostMapping("/{orderId}/payment/reconcile")
+    public ResponseEntity<ApiResponse<OrderV1Dto.PaymentResponse>> reconcile(
         @RequestHeader("X-USER-ID") Long userId,
         @PathVariable Long orderId
     ) {
-        return ApiResponse.success(OrderV1Dto.OrderResponse.from(orderFacade.confirm(userId, orderId)));
+        return paymentResponse(orderFacade.reconcile(userId, orderId));
+    }
+
+    private static ResponseEntity<ApiResponse<OrderV1Dto.PaymentResponse>> paymentResponse(OrderPaymentInfo payment) {
+        HttpStatus status = payment.isFinished() ? HttpStatus.OK : HttpStatus.ACCEPTED;
+        return ResponseEntity.status(status).body(ApiResponse.success(OrderV1Dto.PaymentResponse.from(payment)));
     }
 
     @GetMapping

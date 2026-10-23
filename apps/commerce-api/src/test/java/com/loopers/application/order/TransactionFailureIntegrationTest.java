@@ -4,7 +4,6 @@ import com.loopers.application.point.PointFacade;
 import com.loopers.application.user.UserRegistrationService;
 import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.order.OrderStatus;
-import com.loopers.domain.point.PointBalanceService;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.infrastructure.brand.BrandJpaRepository;
 import com.loopers.infrastructure.order.OrderJpaRepository;
@@ -44,30 +43,13 @@ class TransactionFailureIntegrationTest {
     @Autowired private EntityManager entityManager;
     @Autowired private TransactionTemplate transaction;
     @Autowired private DatabaseCleanUp cleanUp;
-    @MockitoSpyBean private PointBalanceService pointService;
     @MockitoSpyBean private ProductRepositoryImpl productPersistence;
     @MockitoSpyBean private PointBalanceRepositoryImpl pointPersistence;
 
     @AfterEach
     void clean() {
-        reset(pointService, productPersistence, pointPersistence);
+        reset(productPersistence, pointPersistence);
         cleanUp.truncateAllTables();
-    }
-
-    @Test
-    void rollsBackStockSqlWhenFailureOccursBeforePointPayment() {
-        Purchase purchase = purchase(1);
-        doAnswer(invocation -> {
-            entityManager.flush();
-            assertStockSql(purchase.productIds().getFirst(), 4);
-            assertThat(number("select count(*) from point_usage")).isZero();
-            throw new IllegalStateException("failure before point payment");
-        }).when(pointService).use(purchase.userId(), 1_000L);
-
-        assertThatThrownBy(() -> orders.confirm(purchase.userId(), purchase.orderId()))
-            .isInstanceOf(IllegalStateException.class).hasMessage("failure before point payment");
-
-        assertRolledBack(purchase);
     }
 
     @Test
@@ -86,28 +68,9 @@ class TransactionFailureIntegrationTest {
             return Optional.of(failingProduct);
         }).when(productPersistence).findForUpdate(secondId);
 
-        assertThatThrownBy(() -> orders.confirm(purchase.userId(), purchase.orderId()))
+        assertThatThrownBy(() -> orders.confirm(purchase.userId(), purchase.orderId(),
+                new OrderFacade.PaymentCommand("attempt-1", "TEST", "0000-0000-0000-0000")))
             .isInstanceOf(IllegalStateException.class).hasMessage("failure at second product");
-
-        assertRolledBack(purchase);
-    }
-
-    @Test
-    void rollsBackBothStockUpdatesAndPointPaymentSqlBeforeReward() {
-        Purchase purchase = purchase(2);
-        doAnswer(invocation -> {
-            invocation.callRealMethod();
-            entityManager.flush();
-            purchase.productIds().forEach(id -> assertStockSql(id, 4));
-            assertThat(number("select balance from point_balance")).isEqualTo(8_000L);
-            assertThat(number("select sum(amount) from point_usage where type = 'PAYMENT'"))
-                .isEqualTo(2_000L);
-            assertThat(number("select count(*) from point_grant where type = 'REWARD'")).isZero();
-            throw new IllegalStateException("failure after point payment SQL");
-        }).when(pointService).use(purchase.userId(), 2_000L);
-
-        assertThatThrownBy(() -> orders.confirm(purchase.userId(), purchase.orderId()))
-            .isInstanceOf(IllegalStateException.class).hasMessage("failure after point payment SQL");
 
         assertRolledBack(purchase);
     }
@@ -181,6 +144,8 @@ class TransactionFailureIntegrationTest {
             var order = orderRepository.findById(purchase.orderId()).orElseThrow();
             assertThat(order.getStatus()).isEqualTo(OrderStatus.DRAFT);
             assertThat(order.getPaidAmount()).isZero();
+            assertThat(order.getReservationStatus()).isNull();
+            assertThat(number("select count(*) from payment_attempt")).isZero();
             assertThat(number("select count(*) from point_usage")).isZero();
             assertThat(number("select count(*) from point_grant")).isEqualTo(1);
         });

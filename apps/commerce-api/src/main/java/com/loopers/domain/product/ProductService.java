@@ -41,6 +41,13 @@ public class ProductService {
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[id = " + id + "] 상품을 찾을 수 없습니다."));
     }
 
+    /** 예약한 재고를 돌려줄 때만 쓴다. 예약 뒤 삭제된 상품도 행이 남아 있으므로 잠그고 재고를 더한다. */
+    @Transactional
+    public ProductModel getForUpdateIncludingDeleted(Long id) {
+        return productRepository.findForUpdate(id)
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[id = " + id + "] 상품을 찾을 수 없습니다."));
+    }
+
     @Transactional(readOnly = true)
     public Optional<ProductModel> findActive(Long id) {
         return productRepository.find(id)

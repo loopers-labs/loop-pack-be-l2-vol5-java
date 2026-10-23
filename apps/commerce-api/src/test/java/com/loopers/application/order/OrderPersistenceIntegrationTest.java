@@ -4,7 +4,8 @@ import com.loopers.application.user.UserRegistrationService;
 import com.loopers.application.point.PointFacade;
 import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.order.OrderStatus;
-import com.loopers.domain.point.PointBalanceModel;
+import com.loopers.domain.order.PaymentMethod;
+import com.loopers.domain.order.ReservationStatus;
 import com.loopers.domain.user.UserModel;
 import com.loopers.infrastructure.brand.BrandJpaRepository;
 import com.loopers.infrastructure.order.OrderJpaRepository;
@@ -20,10 +21,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
-import java.time.ZonedDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 class OrderPersistenceIntegrationTest {
@@ -57,7 +56,7 @@ class OrderPersistenceIntegrationTest {
     }
 
     @Test
-    void persistsConfirmedOrderStockAndPointBalanceAfterFlushAndClear() {
+    void persistsPgPendingOrderReservedStockAndUnchangedPointsAfterFlushAndClear() {
         UserModel user = registration.register();
         BrandModel brand = brandJpaRepository.save(new BrandModel("나이키", null));
         var product = productJpaRepository.save(new com.loopers.domain.product.ProductModel(
@@ -69,59 +68,28 @@ class OrderPersistenceIntegrationTest {
             user.getId(),
             List.of(new OrderFacade.OrderLine(product.getId(), 2))
         );
-        OrderInfo confirmed = orderFacade.confirm(user.getId(), draft.id());
+        OrderPaymentInfo started = orderFacade.confirm(user.getId(), draft.id(),
+            new OrderFacade.PaymentCommand("attempt-1", "TEST", "0000-0000-0000-0000"));
 
         transactionTemplate.executeWithoutResult(status -> {
             entityManager.flush();
             entityManager.clear();
 
-            var storedOrder = orderJpaRepository.findById(confirmed.id()).orElseThrow();
+            var storedOrder = orderJpaRepository.findById(started.order().id()).orElseThrow();
             var storedProduct = productJpaRepository.findById(product.getId()).orElseThrow();
             var storedBalance = pointBalanceJpaRepository.findByUserId(user.getId()).orElseThrow();
 
-            assertThat(storedOrder.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
-            assertThat(storedOrder.getPaidAmount()).isEqualTo(4_000L);
+            assertThat(storedOrder.getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+            assertThat(storedOrder.getPaymentMethod()).isEqualTo(PaymentMethod.PG);
+            assertThat(storedOrder.getReservationStatus()).isEqualTo(ReservationStatus.RESERVED);
+            assertThat(storedOrder.getPaidAmount()).isZero();
             assertThat(storedOrder.getItems()).singleElement().satisfies(item -> {
                 assertThat(item.getProductName()).isEqualTo("운동화");
                 assertThat(item.getUnitPrice()).isEqualTo(2_000L);
                 assertThat(item.getQuantity()).isEqualTo(2);
             });
             assertThat(storedProduct.getStockQuantity()).isEqualTo(3);
-            assertThat(storedBalance.getBalance()).isEqualTo(6_080L);
-        });
-    }
-
-    @Test
-    void rollsBackStockPointExpirationAndOrderWhenExpiredPointMakesPaymentInsufficient() {
-        UserModel user = registration.register();
-        BrandModel brand = brandJpaRepository.save(new BrandModel("아식스", null));
-        var product = productJpaRepository.save(new com.loopers.domain.product.ProductModel(
-            brand.getId(), "러닝화", 2_000L, 5
-        ));
-        transactionTemplate.executeWithoutResult(status -> {
-            PointBalanceModel balance = pointBalanceJpaRepository.findByUserId(user.getId()).orElseThrow();
-            balance.charge(1_000L);
-            balance.reward(1_000L, ZonedDateTime.now().minusYears(1).minusDays(1));
-            pointBalanceJpaRepository.save(balance);
-        });
-        OrderInfo draft = orderFacade.create(
-            user.getId(),
-            List.of(new OrderFacade.OrderLine(product.getId(), 1))
-        );
-
-        assertThatThrownBy(() -> orderFacade.confirm(user.getId(), draft.id()))
-            .isInstanceOf(com.loopers.support.error.CoreException.class);
-
-        transactionTemplate.executeWithoutResult(status -> {
-            entityManager.flush();
-            entityManager.clear();
-
-            assertThat(orderJpaRepository.findById(draft.id()).orElseThrow().getStatus())
-                .isEqualTo(OrderStatus.DRAFT);
-            assertThat(productJpaRepository.findById(product.getId()).orElseThrow().getStockQuantity())
-                .isEqualTo(5);
-            assertThat(pointBalanceJpaRepository.findByUserId(user.getId()).orElseThrow().getBalance())
-                .isEqualTo(2_000L);
+            assertThat(storedBalance.getBalance()).isEqualTo(10_000L);
         });
     }
 }

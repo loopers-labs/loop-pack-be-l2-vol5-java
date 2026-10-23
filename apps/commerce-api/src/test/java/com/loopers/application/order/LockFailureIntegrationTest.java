@@ -16,6 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.PessimisticLockingFailureException;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -62,13 +63,15 @@ class LockFailureIntegrationTest {
         try (var holder = dataSource.getConnection()) {
             holder.setAutoCommit(false);
             try {
-                try (var statement = holder.prepareStatement("select id from point_balance where user_id = ? for update")) {
-                    statement.setLong(1, userId);
+                try (var statement = holder.prepareStatement("select id from product where id = ? for update")) {
+                    statement.setLong(1, productId);
                     try (var result = statement.executeQuery()) {
                         assertThat(result.next()).isTrue();
                     }
                 }
-                var response = mvc.perform(post("/api/v1/orders/{id}/confirm", orderId).header("X-USER-ID", userId))
+                var response = mvc.perform(post("/api/v1/orders/{id}/confirm", orderId).header("X-USER-ID", userId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"paymentAttemptKey\":\"attempt-1\",\"cardType\":\"TEST\",\"cardNo\":\"0000-0000-0000-0000\"}"))
                     .andExpect(status().isServiceUnavailable()).andReturn();
                 assertThat(sqlCode(response.getResolvedException())).isEqualTo(1205);
             } finally {
@@ -80,7 +83,8 @@ class LockFailureIntegrationTest {
         var order = orderRepository.findById(orderId).orElseThrow();
         assertThat(order.getStatus()).isEqualTo(OrderStatus.DRAFT);
         assertThat(order.getPaidAmount()).isZero();
-        assertThat(jdbc.queryForObject("select count(*) from point_usage", Long.class)).isZero();
+        assertThat(order.getReservationStatus()).isNull();
+        assertThat(jdbc.queryForObject("select count(*) from payment_attempt", Long.class)).isZero();
     }
 
     @Test

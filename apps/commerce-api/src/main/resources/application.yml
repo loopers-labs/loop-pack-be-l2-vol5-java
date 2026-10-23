@@ -30,6 +30,27 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
 
+commerce:
+  payment:
+    pg:
+      base-url: http://127.0.0.1:18080
+      callback-url: http://127.0.0.1:8080/api/v1/payments/callback
+      connect-timeout: 300ms
+      read-timeout: 1s
+      lookup-read-timeout: 500ms
+      lookup-budget: 2s
+      # 조회 retry·회로. 동작 학습용 임시값이며 운영값이 아니다(ADR 0031).
+      lookup-retry:
+        max-attempts: 3
+        first-wait: 100ms
+        wait-multiplier: 2.0
+      lookup-circuit:
+        window-size: 4
+        minimum-calls: 4
+        failure-rate-threshold: 50
+        open-wait: 10s
+        half-open-calls: 2
+
 ---
 spring:
   config:

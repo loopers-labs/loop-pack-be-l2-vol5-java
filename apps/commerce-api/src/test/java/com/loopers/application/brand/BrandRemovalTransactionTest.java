@@ -136,7 +136,9 @@ class BrandRemovalTransactionTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"items\":[{\"productId\":" + f.j() + ",\"quantity\":1}]}"))
             .andExpect(status().isNotFound());
-        mvc.perform(post("/api/v1/orders/" + draft.getId() + "/confirm").header("X-USER-ID", user.getId()))
+        mvc.perform(post("/api/v1/orders/" + draft.getId() + "/confirm").header("X-USER-ID", user.getId())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"paymentAttemptKey\":\"attempt-1\",\"cardType\":\"TEST\",\"cardNo\":\"0000-0000-0000-0000\"}"))
             .andExpect(status().isNotFound());
         mvc.perform(put("/api-admin/v1/products/" + f.j()).header("X-USER-ROLE", "ADMIN")
                 .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"changed\",\"price\":3000}"))

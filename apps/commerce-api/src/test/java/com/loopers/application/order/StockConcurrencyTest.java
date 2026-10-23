@@ -4,10 +4,11 @@ import com.loopers.application.user.UserRegistrationService;
 import com.loopers.application.point.PointFacade;
 import com.loopers.application.product.ProductFacade;
 import com.loopers.application.brand.BrandFacade;
-import com.loopers.domain.order.OrderModel;
-import com.loopers.infrastructure.order.OrderRepositoryImpl;
+import com.loopers.domain.payment.PaymentAttempt;
+import com.loopers.infrastructure.payment.PaymentAttemptRepositoryImpl;
 import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.order.OrderStatus;
+import com.loopers.domain.order.ReservationStatus;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.infrastructure.brand.BrandJpaRepository;
 import com.loopers.infrastructure.order.OrderJpaRepository;
@@ -45,7 +46,7 @@ class StockConcurrencyTest {
     @Autowired private OrderFacade orders;
     @Autowired private ProductFacade productFacade;
     @Autowired private BrandFacade brandFacade;
-    @MockitoSpyBean private OrderRepositoryImpl orderPersistence;
+    @MockitoSpyBean private PaymentAttemptRepositoryImpl attemptPersistence;
     @Autowired private PointFacade points;
     @Autowired private UserJpaRepository users;
     @Autowired private BrandJpaRepository brands;
@@ -58,7 +59,7 @@ class StockConcurrencyTest {
 
     @AfterEach
     void clean() {
-        reset(orderPersistence);
+        reset(attemptPersistence);
         cleanUp.truncateAllTables();
     }
 
@@ -87,7 +88,7 @@ class StockConcurrencyTest {
     }
 
     @Test
-    void confirmsFiveOfEightOrdersAndPreservesRejectedOrdersAndBalances() throws Exception {
+    void reservesFiveOfEightOrdersAndPreservesRejectedOrdersAndBalances() throws Exception {
         long productId = product(5).getId();
         List<Purchase> purchases = new ArrayList<>();
         for (int i = 0; i < 8; i++) {
@@ -101,23 +102,22 @@ class StockConcurrencyTest {
         assertThat(results.stream().filter(Result::confirmed).count()).isEqualTo(5);
         assertThat(results.stream().filter(result -> !result.confirmed()).count()).isEqualTo(3);
         transaction.executeWithoutResult(status -> {
-            int sold = 0;
-            long paid = 0;
+            int reserved = 0;
             for (Result result : results) {
                 var order = orderRepository.findById(result.purchase().orderId()).orElseThrow();
                 long balance = balances.findByUserId(result.purchase().userId()).orElseThrow().getBalance();
-                assertThat(order.getStatus()).isEqualTo(result.confirmed() ? OrderStatus.CONFIRMED : OrderStatus.DRAFT);
-                assertThat(order.getPaidAmount()).isEqualTo(result.confirmed() ? 1_000L : 0L);
-                assertThat(balance).isEqualTo(result.confirmed() ? 9_020L : 10_000L);
+                assertThat(order.getStatus())
+                    .isEqualTo(result.confirmed() ? OrderStatus.PAYMENT_PENDING : OrderStatus.DRAFT);
+                assertThat(order.getReservationStatus()).isEqualTo(result.confirmed() ? ReservationStatus.RESERVED : null);
+                assertThat(order.getPaidAmount()).isZero();
+                assertThat(balance).isEqualTo(10_000L);
                 if (result.confirmed()) {
-                    sold += order.getItems().stream().mapToInt(item -> item.getQuantity()).sum();
-                    paid += order.getPaidAmount();
+                    reserved += order.getItems().stream().mapToInt(item -> item.getQuantity()).sum();
                 }
             }
             int remaining = products.findById(productId).orElseThrow().getStockQuantity();
             assertThat(remaining).isZero();
-            assertThat(sold + remaining).isEqualTo(5);
-            assertThat(paid).isEqualTo(5_000L);
+            assertThat(reserved + remaining).isEqualTo(5);
         });
     }
 
@@ -140,8 +140,9 @@ class StockConcurrencyTest {
             assertThat(products.findById(firstId).orElseThrow().getStockQuantity()).isEqualTo(2);
             assertThat(products.findById(secondId).orElseThrow().getStockQuantity()).isEqualTo(2);
             for (Purchase purchase : List.of(first, second)) {
-                assertThat(orderRepository.findById(purchase.orderId()).orElseThrow().getPaidAmount()).isEqualTo(3_000L);
-                assertThat(balances.findByUserId(purchase.userId()).orElseThrow().getBalance()).isEqualTo(7_060L);
+                assertThat(orderRepository.findById(purchase.orderId()).orElseThrow().getReservationStatus())
+                    .isEqualTo(ReservationStatus.RESERVED);
+                assertThat(balances.findByUserId(purchase.userId()).orElseThrow().getBalance()).isEqualTo(10_000L);
             }
         });
     }
@@ -163,9 +164,8 @@ class StockConcurrencyTest {
         transaction.executeWithoutResult(status -> {
             assertThat(products.findById(productId).orElseThrow().getStockQuantity()).isZero();
             assertThat(orderRepository.findById(purchase.orderId()).orElseThrow().getStatus())
-                .isEqualTo(confirmation.confirmed() ? OrderStatus.CONFIRMED : OrderStatus.DRAFT);
-            assertThat(balances.findByUserId(purchase.userId()).orElseThrow().getBalance())
-                .isEqualTo(confirmation.confirmed() ? 9_020L : 10_000L);
+                .isEqualTo(confirmation.confirmed() ? OrderStatus.PAYMENT_PENDING : OrderStatus.DRAFT);
+            assertThat(balances.findByUserId(purchase.userId()).orElseThrow().getBalance()).isEqualTo(10_000L);
         });
     }
 
@@ -188,7 +188,9 @@ class StockConcurrencyTest {
             assertThat(product.getStockQuantity()).isEqualTo(4);
             assertThat(product.getName()).isEqualTo("updated");
             assertThat(product.getPrice()).isEqualTo(2_000L);
-            assertThat(orderRepository.findById(purchase.orderId()).orElseThrow().getPaidAmount()).isEqualTo(1_000L);
+            assertThat(orderRepository.findById(purchase.orderId()).orElseThrow().getTotalAmount()).isEqualTo(1_000L);
+            assertThat(((Number) entityManager.createNativeQuery("select amount from payment_attempt where order_id = :id")
+                .setParameter("id", purchase.orderId()).getSingleResult()).longValue()).isEqualTo(1_000L);
         });
     }
 
@@ -200,7 +202,7 @@ class StockConcurrencyTest {
         List<Boolean> results = simultaneously(List.of(
             () -> {
                 try {
-                    orders.confirm(purchase.userId(), purchase.orderId());
+                    orders.confirm(purchase.userId(), purchase.orderId(), command(purchase));
                     return true;
                 } catch (CoreException exception) {
                     assertThat(exception.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
@@ -218,9 +220,8 @@ class StockConcurrencyTest {
             assertThat(stored.getDeletedAt()).isNotNull();
             assertThat(stored.getStockQuantity()).isEqualTo(confirmed ? 4 : 5);
             assertThat(orderRepository.findById(purchase.orderId()).orElseThrow().getStatus())
-                .isEqualTo(confirmed ? OrderStatus.CONFIRMED : OrderStatus.DRAFT);
-            assertThat(balances.findByUserId(purchase.userId()).orElseThrow().getBalance())
-                .isEqualTo(confirmed ? 9_020L : 10_000L);
+                .isEqualTo(confirmed ? OrderStatus.PAYMENT_PENDING : OrderStatus.DRAFT);
+            assertThat(balances.findByUserId(purchase.userId()).orElseThrow().getBalance()).isEqualTo(10_000L);
         });
     }
 
@@ -255,7 +256,7 @@ class StockConcurrencyTest {
     }
 
     @Test
-    void rollsBackFlushedStockPaymentAndRewardWhenOrderSaveFails() {
+    void rollsBackFlushedStockReservationWhenAttemptSaveFailsAndCanStartAgain() {
         long productId = product(5).getId();
         Purchase purchase = purchase(List.of(new OrderFacade.OrderLine(productId, 1)));
         doAnswer(invocation -> {
@@ -263,27 +264,23 @@ class StockConcurrencyTest {
             entityManager.flush();
             assertThat(((Number) entityManager.createNativeQuery("select quantity from product where id = :id")
                 .setParameter("id", productId).getSingleResult()).intValue()).isEqualTo(4);
-            assertThat(((Number) entityManager.createNativeQuery("select balance from point_balance where user_id = :id")
-                .setParameter("id", purchase.userId()).getSingleResult()).longValue()).isEqualTo(9_020L);
             throw new IllegalStateException("test: failure after actual updates");
-        }).when(orderPersistence).save(any(OrderModel.class));
+        }).when(attemptPersistence).save(any(PaymentAttempt.class));
 
-        assertThatThrownBy(() -> orders.confirm(purchase.userId(), purchase.orderId()))
+        assertThatThrownBy(() -> orders.confirm(purchase.userId(), purchase.orderId(), command(purchase)))
             .isInstanceOf(IllegalStateException.class).hasMessage("test: failure after actual updates");
 
         transaction.executeWithoutResult(status -> {
             assertThat(products.findById(productId).orElseThrow().getStockQuantity()).isEqualTo(5);
             var order = orderRepository.findById(purchase.orderId()).orElseThrow();
             assertThat(order.getStatus()).isEqualTo(OrderStatus.DRAFT);
-            assertThat(order.getPaidAmount()).isZero();
-            assertThat(balances.findByUserId(purchase.userId()).orElseThrow().getBalance()).isEqualTo(10_000L);
-            assertThat(((Number) entityManager.createNativeQuery("select count(*) from point_usage")
+            assertThat(order.getReservationStatus()).isNull();
+            assertThat(((Number) entityManager.createNativeQuery("select count(*) from payment_attempt")
                 .getSingleResult()).longValue()).isZero();
-            assertThat(((Number) entityManager.createNativeQuery("select count(*) from point_grant")
-                .getSingleResult()).longValue()).isEqualTo(1L);
         });
-        reset(orderPersistence);
-        assertThat(orders.confirm(purchase.userId(), purchase.orderId()).status()).isEqualTo(OrderStatus.CONFIRMED.name());
+        reset(attemptPersistence);
+        assertThat(orders.confirm(purchase.userId(), purchase.orderId(), command(purchase)).order().status())
+            .isEqualTo(OrderStatus.PAYMENT_PENDING.name());
     }
 
     private ProductModel product(int stock) {
@@ -297,9 +294,13 @@ class StockConcurrencyTest {
         return new Purchase(userId, orders.create(userId, items).id());
     }
 
+    private static OrderFacade.PaymentCommand command(Purchase purchase) {
+        return new OrderFacade.PaymentCommand("attempt-" + purchase.orderId(), "TEST", "0000-0000-0000-0000");
+    }
+
     private Result confirm(Purchase purchase) {
         try {
-            orders.confirm(purchase.userId(), purchase.orderId());
+            orders.confirm(purchase.userId(), purchase.orderId(), command(purchase));
             return new Result(purchase, true, null);
         } catch (CoreException exception) {
             if (exception.getErrorType() == ErrorType.CONFLICT && "재고가 부족합니다.".equals(exception.getMessage())) {
