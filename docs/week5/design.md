@@ -770,8 +770,7 @@ rm pg-fixture.crt
 | 다음 생성은 거래를 만들고 응답만 끊기 · 늦게 주기 | 응답 유실 · callback 이 생성 응답보다 먼저 |
 | 같은 orderId 로 거래 하나 더 만들기 · 금액이 다른 거래 만들기 | `MULTIPLE_TRANSACTIONS` · `AMOUNT_MISMATCH` |
 | 다음 N 번 조회를 timeout · 5xx · 429 로 | 회로 CLOSED → OPEN → HALF_OPEN → CLOSED · 재차단 |
-| N 번째 조회마다 5xx | 잡음 속에서 회로가 열리지 않음(E4b). 무작위 대신 주기로 만들어 재현된다 |
-| 생성 · 조회 응답 지연(실행 중 바꿈) | PG 느려짐(E2 · E3). 테스트 밖 실험에서는 관리 경로로 바꾼다(8.5) |
+| 조회 응답 지연 | 느린 호출로 회로가 열림 · 조회 풀이 차서 기다림 |
 | create · lookup 호출 수, 저장된 거래, 받은 요청(헤더 · 본문) | 모든 장면의 단언 |
 
 무작위 지연 · 성공 확률이 없다. 자동 callback · 자동 재전송도 없다. 테스트가 명령할 때만 상태가 바뀐다.
@@ -893,6 +892,6 @@ docker compose -f docker/monitoring-compose.yml down
 
 - 대시보드는 JSON 으로 `docker/grafana/provisioning/dashboards/` 에 둔다. 켤 때마다 같은 화면이 뜨고 리뷰어가 재현한다.
 - Prometheus 에 볼륨이 없어 끄면 데이터가 사라진다. 숫자는 k6 요약과 `measure.sh` 로 저장소에 남기고, 그래프는 캡처해 `docs/week5/charts/` 에 둔다(W4 와 같다).
-- fixture 는 테스트 클래스패스로 띄우는 `main` 과 Gradle 작업(`runPgFixture`)으로 테스트 밖에서 띄운다. 지연 · 실패 손잡이는 관리 경로(`POST /fixture/...`)로 실행 중에 바꾼다.
+- 실험용 PG 서버(fixture 를 테스트 밖에서 띄우는 `main`, 생성 지연 · N 번째 조회 실패 · 자동 결과 · 통계 손잡이, 관리 경로 `POST /fixture/...`)는 테스트 코드에 두지 않는다. 테스트가 쓰지 않는 손잡이를 테스트 fixture 에 두면 fixture 를 검증하는 테스트까지 따라 늘기 때문이다. 실험 결과는 기술 글에 남긴다. **뒤집을 조건**: 장애 실험을 CI 에서 반복해야 할 때 — 실험용 서버를 별도 모듈로 둔다.
 
 **여유가 있으면** — sweeper 의 지수 backoff(확인할 때마다 간격 2 배, 상한 5 분, `check_count` 열. 영원히 0 건인 결제가 PG 를 계속 두드리지 않게), 관리자 결제 조회(`GET /api-admin/v1/payments?status=` · `/{id}/discrepancies`, 조회만).

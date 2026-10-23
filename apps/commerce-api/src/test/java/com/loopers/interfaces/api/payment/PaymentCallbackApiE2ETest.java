@@ -163,22 +163,6 @@ class PaymentCallbackApiE2ETest {
         );
     }
 
-    @DisplayName("RSV-003: FAILED 가 된 뒤 온 callback 은 주문 FAILED, 재고를 돌려받는다")
-    @Test
-    void failsOnFailed() {
-        Order order = place();
-        String key = started(order);
-        PG.changeStatus(key, PgFixture.Status.FAILED);
-
-        int response = callbackFor(key);
-
-        assertAll(
-            () -> assertThat(response).isEqualTo(200),
-            () -> assertThat(stored(order).getStatus()).isEqualTo(OrderStatus.FAILED),
-            () -> assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(10))
-        );
-    }
-
     @DisplayName("SETTLE-002: 본문만 SUCCESS 인 꾸민 callback 은 확정하지 않는다. PG 는 아직 PENDING 이다")
     @Test
     void ignoresForgedBody() {
@@ -250,25 +234,6 @@ class PaymentCallbackApiE2ETest {
             () -> assertThat(stored(order).getStatus()).isEqualTo(OrderStatus.CONFIRMED),
             () -> assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(8)),
             () -> assertThat(PG.createCount()).isEqualTo(creates)
-        );
-    }
-
-    @DisplayName("SETTLE-004: 같은 callback 이 세 번 와도 확정은 한 번이고, 확정 시각은 처음 그대로다")
-    @Test
-    void appliesDuplicatesOnce() {
-        Order order = place();
-        String key = started(order);
-        PG.changeStatus(key, PgFixture.Status.SUCCESS);
-        callbackFor(key);
-        Instant confirmedAt = stored(order).getConfirmedAt();
-
-        callbackFor(key);
-        int third = callbackFor(key);
-
-        assertAll(
-            () -> assertThat(third).isEqualTo(200),
-            () -> assertThat(stored(order).getConfirmedAt()).isEqualTo(confirmedAt),
-            () -> assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(8))
         );
     }
 

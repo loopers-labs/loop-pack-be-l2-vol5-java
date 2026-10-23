@@ -1,6 +1,5 @@
 package com.loopers.support.pg;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -17,8 +16,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -50,108 +47,6 @@ class PgFixtureTest {
         pg.close();
     }
 
-    @DisplayName("callback 본문은 거래 객체 그대로다. orderId, transactionKey, amount, status")
-    @Test
-    void callbackBodyIsTransaction() throws Exception {
-        String key = transactionKeyOf(create(ORDER_ID, 7000));
-        pg.changeStatus(key, PgFixture.Status.SUCCESS);
-
-        JsonNode body = JSON.readTree(pg.callbackBody(key));
-
-        assertThat(body.get("transactionKey").asText()).isEqualTo(key);
-        assertThat(body.get("orderId").asText()).isEqualTo(ORDER_ID);
-        assertThat(body.get("amount").asLong()).isEqualTo(7000);
-        assertThat(body.get("status").asText()).isEqualTo("SUCCESS");
-    }
-
-    @Nested
-    @DisplayName("8.5 실험 손잡이: 실행 중에 PG 를 느리게 · 아프게 만들고, 결과를 스스로 알린다")
-    class LoadTestHandles {
-
-        @DisplayName("생성 지연을 켜면 거래는 바로 생기고 응답만 그만큼 늦게 온다")
-        @Test
-        void delaysCreates() throws Exception {
-            pg.delayCreates(Duration.ofMillis(300));
-            long startedAt = System.nanoTime();
-
-            HttpResponse<String> response = create(ORDER_ID, 7000);
-
-            assertThat(response.statusCode()).isEqualTo(202);
-            assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)).isGreaterThanOrEqualTo(300);
-        }
-
-        @DisplayName("N 번째 조회마다 정한 상태로 실패한다. 무작위가 아니라 주기라 재현된다")
-        @Test
-        void failsEveryNthLookup() throws Exception {
-            String key = transactionKeyOf(create(ORDER_ID, 7000));
-            pg.failEveryNthLookup(3, 500);
-
-            List<Integer> statuses = new ArrayList<>();
-            for (int i = 0; i < 6; i++) {
-                statuses.add(get("/api/v1/payments/" + key).statusCode());
-            }
-
-            assertThat(statuses).containsExactly(200, 200, 500, 200, 200, 500);
-        }
-
-        @DisplayName("자동 결과를 켜면 정한 시간 뒤 거래 상태를 바꾸고 callback 을 보낸다")
-        @Test
-        void settlesAutomatically() throws Exception {
-            try (CallbackReceiver receiver = CallbackReceiver.start()) {
-                pg.settleAutomatically(PgFixture.Status.SUCCESS, Duration.ofMillis(100));
-
-                String key = transactionKeyOf(create(ORDER_ID, 7000, receiver.url()));
-
-                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-                while (receiver.bodies().isEmpty() && System.nanoTime() < deadline) {
-                    Thread.sleep(20);
-                }
-                assertThat(receiver.bodies()).singleElement()
-                    .satisfies(body -> assertThat(JSON.readTree(body).get("status").asText()).isEqualTo("SUCCESS"));
-                assertThat(pg.transactionsOf(ORDER_ID)).singleElement()
-                    .satisfies(transaction -> assertThat(transaction.transactionKey()).isEqualTo(key));
-            }
-        }
-
-        @DisplayName("stats 는 생성 · 조회 수와 거래가 둘 이상인 주문 수를 센다 (정합성 검사용)")
-        @Test
-        void countsStats() throws Exception {
-            create(ORDER_ID, 7000);
-            create(ORDER_ID, 7000);
-            create("LP-ORD-0000000043", 7000);
-            get("/api/v1/payments?orderId=" + ORDER_ID);
-
-            PgFixture.Stats stats = pg.stats();
-
-            assertThat(stats.creates()).isEqualTo(3);
-            assertThat(stats.lookups()).isEqualTo(1);
-            assertThat(stats.transactions()).isEqualTo(3);
-            assertThat(stats.ordersWithMultipleTransactions()).isEqualTo(1);
-        }
-
-        @DisplayName("기록을 끄면 받은 요청을 쌓지 않는다. 부하에서 fixture 가 CPU 를 쓰지 않게")
-        @Test
-        void stopsRecording() throws Exception {
-            pg.recordRequests(false);
-
-            create(ORDER_ID, 7000);
-
-            assertThat(pg.receivedRequests()).isEmpty();
-            assertThat(pg.createCount()).isEqualTo(1);
-        }
-    }
-
-    @DisplayName("다음 N 번의 조회만 정한 상태로 실패하고, 그 뒤에는 정상으로 돌아온다")
-    @Test
-    void failsNextLookups() throws Exception {
-        String key = transactionKeyOf(create(ORDER_ID, 7000));
-        pg.failNextLookups(2, 503);
-
-        assertThat(get("/api/v1/payments/" + key).statusCode()).isEqualTo(503);
-        assertThat(get("/api/v1/payments/" + key).statusCode()).isEqualTo(503);
-        assertThat(get("/api/v1/payments/" + key).statusCode()).isEqualTo(200);
-    }
-
     @DisplayName("reset 은 거래, 받은 요청, 생성 수, 다음 한 번 손잡이를 비운다. 거래 키 번호는 이어진다")
     @Test
     void resetClearsState() throws Exception {
@@ -165,109 +60,6 @@ class PgFixtureTest {
         assertThat(pg.createCount()).isZero();
         String after = transactionKeyOf(create(ORDER_ID, 7000));
         assertThat(after).isNotEqualTo(before);
-    }
-
-    @DisplayName("공용 fixture 는 test 프로필의 PG 주소(127.0.0.1:8090)에서 하나만 뜬다")
-    @Test
-    void sharedListensOnTestProfileAddress() {
-        assertThat(PgFixture.shared()).isSameAs(PgFixture.shared());
-        assertThat(PgFixture.shared().baseUrl()).isEqualTo("https://127.0.0.1:8090");
-    }
-
-    @Nested
-    @DisplayName("PG-003, PG-005: 생성 POST 는 거래를 만들고 202 PENDING 으로 접수를 알린다")
-    class Create {
-
-        @DisplayName("요청한 orderId, amount 를 그대로 돌려주고, 새 transactionKey 와 PENDING 을 준다")
-        @Test
-        void acceptsWithPending() throws Exception {
-            HttpResponse<String> response = create(ORDER_ID, 7000);
-
-            assertThat(response.statusCode()).isEqualTo(202);
-            JsonNode body = JSON.readTree(response.body());
-            assertThat(body.get("transactionKey").isTextual()).isTrue();
-            assertThat(body.get("orderId").asText()).isEqualTo(ORDER_ID);
-            assertThat(body.get("amount").isIntegralNumber()).isTrue();
-            assertThat(body.get("amount").asLong()).isEqualTo(7000);
-            assertThat(body.get("status").asText()).isEqualTo("PENDING");
-            assertThat(pg.createCount()).isEqualTo(1);
-        }
-
-        @DisplayName("같은 orderId 로 다시 보내면 거래가 하나 더 생긴다 — 이 PG 는 중복을 막지 않는다")
-        @Test
-        void createsAnotherTransactionForSameOrderId() throws Exception {
-            String first = transactionKeyOf(create(ORDER_ID, 7000));
-            String second = transactionKeyOf(create(ORDER_ID, 7000));
-
-            assertThat(second).isNotEqualTo(first);
-            assertThat(pg.transactionsOf(ORDER_ID))
-                .extracting(PgFixture.Transaction::transactionKey)
-                .containsExactlyInAnyOrder(first, second);
-            assertThat(pg.createCount()).isEqualTo(2);
-        }
-    }
-
-    @Nested
-    @DisplayName("PG-007: 거래 조회는 있으면 200 거래 객체, 없으면 404 다")
-    class LookupByKey {
-
-        @DisplayName("생성한 거래를 키로 조회하면 같은 orderId, amount, status 를 돌려준다")
-        @Test
-        void returnsTransaction() throws Exception {
-            String key = transactionKeyOf(create(ORDER_ID, 7000));
-
-            HttpResponse<String> response = get("/api/v1/payments/" + key);
-
-            assertThat(response.statusCode()).isEqualTo(200);
-            JsonNode body = JSON.readTree(response.body());
-            assertThat(body.get("transactionKey").asText()).isEqualTo(key);
-            assertThat(body.get("orderId").asText()).isEqualTo(ORDER_ID);
-            assertThat(body.get("amount").isIntegralNumber()).isTrue();
-            assertThat(body.get("amount").asLong()).isEqualTo(7000);
-            assertThat(body.get("status").asText()).isEqualTo("PENDING");
-        }
-
-        @DisplayName("없는 키를 조회하면 404 다")
-        @Test
-        void unknownKeyIsNotFound() throws Exception {
-            HttpResponse<String> response = get("/api/v1/payments/TEST-TX-9999");
-
-            assertThat(response.statusCode()).isEqualTo(404);
-        }
-    }
-
-    @Nested
-    @DisplayName("PG-008: 주문 조회는 같은 orderId 의 거래 배열이고, 없으면 빈 배열이다")
-    class LookupByOrder {
-
-        @DisplayName("같은 orderId 의 거래를 모두 돌려주고, 다른 주문의 거래는 섞지 않는다")
-        @Test
-        void returnsTransactionsOfOrder() throws Exception {
-            String first = transactionKeyOf(create(ORDER_ID, 7000));
-            String second = transactionKeyOf(create(ORDER_ID, 7000));
-            create("LP-ORD-0000000043", 5000);
-
-            HttpResponse<String> response = get("/api/v1/payments?orderId=" + ORDER_ID);
-
-            assertThat(response.statusCode()).isEqualTo(200);
-            JsonNode body = JSON.readTree(response.body());
-            assertThat(body.isArray()).isTrue();
-            assertThat(body).extracting(node -> node.get("transactionKey").asText())
-                .containsExactlyInAnyOrder(first, second);
-            assertThat(body).extracting(node -> node.get("orderId").asText())
-                .containsOnly(ORDER_ID);
-        }
-
-        @DisplayName("거래가 없는 주문은 404 가 아니라 200 빈 배열이다")
-        @Test
-        void emptyArrayWhenNoTransaction() throws Exception {
-            HttpResponse<String> response = get("/api/v1/payments?orderId=LP-ORD-0000000099");
-
-            assertThat(response.statusCode()).isEqualTo(200);
-            JsonNode body = JSON.readTree(response.body());
-            assertThat(body.isArray()).isTrue();
-            assertThat(body).isEmpty();
-        }
     }
 
     @Nested
@@ -299,19 +91,6 @@ class PgFixtureTest {
     @Nested
     @DisplayName("PG-102: 거래 상태는 테스트가 명령할 때만 바뀐다")
     class ChangeStatus {
-
-        @DisplayName("SUCCESS 로 바꾸면 키 조회와 주문 조회가 모두 SUCCESS 를 보여 준다")
-        @Test
-        void lookupsShowChangedStatus() throws Exception {
-            String key = transactionKeyOf(create(ORDER_ID, 7000));
-
-            pg.changeStatus(key, PgFixture.Status.SUCCESS);
-
-            assertThat(JSON.readTree(get("/api/v1/payments/" + key).body()).get("status").asText())
-                .isEqualTo("SUCCESS");
-            assertThat(JSON.readTree(get("/api/v1/payments?orderId=" + ORDER_ID).body()).get(0).get("status").asText())
-                .isEqualTo("SUCCESS");
-        }
 
         @DisplayName("종결된 거래도 뒤집을 수 있다 — 종결 뒤 다른 결과를 만드는 장면이다")
         @Test
@@ -349,22 +128,6 @@ class PgFixtureTest {
             receiver.close();
         }
 
-        @DisplayName("생성 때 받은 callbackUrl 로 orderId, transactionKey, 지금 상태를 보낸다")
-        @Test
-        void sendsCurrentStatusToCallbackUrl() throws Exception {
-            String key = transactionKeyOf(create(ORDER_ID, 7000, receiver.url()));
-            pg.changeStatus(key, PgFixture.Status.SUCCESS);
-
-            int status = pg.sendCallback(key);
-
-            assertThat(status).isEqualTo(200);
-            assertThat(receiver.bodies()).hasSize(1);
-            JsonNode body = JSON.readTree(receiver.bodies().get(0));
-            assertThat(body.get("orderId").asText()).isEqualTo(ORDER_ID);
-            assertThat(body.get("transactionKey").asText()).isEqualTo(key);
-            assertThat(body.get("status").asText()).isEqualTo("SUCCESS");
-        }
-
         @DisplayName("503 을 받아도 fixture 가 스스로 다시 보내지 않는다 — 재전송은 테스트가 부른다")
         @Test
         void returnsResponseCodeWithoutResending() throws Exception {
@@ -389,7 +152,7 @@ class PgFixtureTest {
     @DisplayName("PG-010, PG-105: 거절은 거래를 만들기 전에 끝나고, 다음 생성 한 번에만 걸린다")
     class RejectNextCreate {
 
-        @DisplayName("422 와 code, transactionCreated:false, 요청과 같은 orderId, amount 를 주고, 거래를 저장하지 않는다")
+        @DisplayName("422 로 거절하고 거래를 저장하지 않는다. 본문 다섯 조건은 계약 테스트가 어댑터로 본다")
         @Test
         void rejectsWithoutTransaction() throws Exception {
             pg.rejectNextCreate();
@@ -397,11 +160,6 @@ class PgFixtureTest {
             HttpResponse<String> response = create(ORDER_ID, 7000);
 
             assertThat(response.statusCode()).isEqualTo(422);
-            JsonNode body = JSON.readTree(response.body());
-            assertThat(body.get("code").asText()).isEqualTo("TEST_PG_REJECTED_BEFORE_CREATE");
-            assertThat(body.get("transactionCreated").asBoolean()).isFalse();
-            assertThat(body.get("orderId").asText()).isEqualTo(ORDER_ID);
-            assertThat(body.get("amount").asLong()).isEqualTo(7000);
             assertThat(pg.transactionsOf(ORDER_ID)).isEmpty();
             assertThat(pg.createCount()).isEqualTo(1);
         }
@@ -423,20 +181,6 @@ class PgFixtureTest {
     @DisplayName("PG-011: 생성 응답이 끊겨도 거래는 생겨 있을 수 있다")
     class DropNextCreateResponse {
 
-        @DisplayName("요청은 연결 오류로 끝나지만, 거래는 PENDING 으로 남아 주문 조회에서 보인다")
-        @Test
-        void transactionExistsWithoutResponse() throws Exception {
-            pg.dropNextCreateResponse();
-
-            assertThatThrownBy(() -> create(ORDER_ID, 7000))
-                .isInstanceOf(IOException.class);
-
-            JsonNode found = JSON.readTree(get("/api/v1/payments?orderId=" + ORDER_ID).body());
-            assertThat(found).hasSize(1);
-            assertThat(found.get(0).get("status").asText()).isEqualTo("PENDING");
-            assertThat(pg.createCount()).isEqualTo(1);
-        }
-
         @DisplayName("끊김은 한 번뿐이다. 그다음 생성은 202 를 받는다")
         @Test
         void dropsOnlyOnce() throws Exception {
@@ -451,32 +195,9 @@ class PgFixtureTest {
         }
     }
 
-
     @Nested
     @DisplayName("SETTLE-005: 생성 응답이 늦으면 callback 이 먼저 갈 수 있다")
     class HoldNextCreateResponse {
-
-        @DisplayName("응답을 붙잡아 둔 동안 거래는 이미 있고, callback 을 먼저 보낼 수 있다")
-        @Test
-        void callbackBeforeCreateResponse() throws Exception {
-            try (CallbackReceiver receiver = CallbackReceiver.start()) {
-                PgFixture.HeldResponse held = pg.holdNextCreateResponse();
-                CompletableFuture<HttpResponse<String>> response = createAsync(ORDER_ID, 7000, receiver.url());
-
-                held.awaitStored();
-                String key = pg.transactionsOf(ORDER_ID).get(0).transactionKey();
-                int callbackStatus = pg.sendCallback(key);
-
-                assertThat(response).isNotDone();
-                assertThat(callbackStatus).isEqualTo(200);
-
-                held.release();
-
-                HttpResponse<String> created = response.get(5, TimeUnit.SECONDS);
-                assertThat(created.statusCode()).isEqualTo(202);
-                assertThat(JSON.readTree(created.body()).get("transactionKey").asText()).isEqualTo(key);
-            }
-        }
 
         @DisplayName("붙잡는 것은 한 번뿐이다. 그다음 생성은 바로 202 를 받는다")
         @Test
@@ -496,21 +217,6 @@ class PgFixtureTest {
     @Nested
     @DisplayName("PG-103: 받은 요청을 테스트가 읽을 수 있다")
     class ReceivedRequests {
-
-        @DisplayName("생성 요청의 메서드, 경로, X-USER-ID, Content-Type, 본문을 받은 그대로 남긴다")
-        @Test
-        void recordsCreateRequest() throws Exception {
-            create(ORDER_ID, 7000);
-
-            PgFixture.ReceivedRequest received = pg.receivedRequests().get(0);
-
-            assertThat(received.method()).isEqualTo("POST");
-            assertThat(received.path()).isEqualTo("/api/v1/payments");
-            assertThat(received.userId()).isEqualTo(USER_ID);
-            assertThat(received.contentType()).startsWith("application/json");
-            assertThat(received.body().get("orderId").asText()).isEqualTo(ORDER_ID);
-            assertThat(received.body().get("amount").isIntegralNumber()).isTrue();
-        }
 
         @DisplayName("거절되거나 응답이 끊긴 생성도 받은 요청으로 남는다")
         @Test

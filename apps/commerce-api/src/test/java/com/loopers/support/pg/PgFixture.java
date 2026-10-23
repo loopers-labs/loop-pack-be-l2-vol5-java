@@ -34,7 +34,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -66,13 +65,7 @@ public final class PgFixture implements AutoCloseable {
     private final AtomicReference<CreateGate> createGate = new AtomicReference<>();
     private final Map<String, Set<String>> keysByOrder = new ConcurrentHashMap<>();
     private final AtomicInteger lookupCount = new AtomicInteger();
-    private final AtomicBoolean recording = new AtomicBoolean(true);
-    private final AtomicReference<Duration> createDelay = new AtomicReference<>(Duration.ZERO);
     private final AtomicReference<Duration> lookupDelay = new AtomicReference<>(Duration.ZERO);
-    private final AtomicInteger failEveryNth = new AtomicInteger();
-    private final AtomicInteger failEveryNthStatus = new AtomicInteger();
-    private final AtomicReference<AutoSettle> autoSettle = new AtomicReference<>();
-    private final ScheduledExecutorService settler = Executors.newScheduledThreadPool(4);
 
     private PgFixture(HttpsServer server, ExecutorService executor) {
         this.server = server;
@@ -111,10 +104,7 @@ public final class PgFixture implements AutoCloseable {
         received.clear();
         createCount.set(0);
         lookupCount.set(0);
-        createDelay.set(Duration.ZERO);
         lookupDelay.set(Duration.ZERO);
-        failEveryNth.set(0);
-        autoSettle.set(null);
         rejectNext.set(false);
         nextCreateResponse.set(null);
         nextLookupResponse.set(null);
@@ -148,30 +138,8 @@ public final class PgFixture implements AutoCloseable {
         return lookupCount.get();
     }
 
-    public Stats stats() {
-        long multiple = keysByOrder.values().stream().filter(keys -> keys.size() > 1).count();
-        return new Stats(createCount.get(), lookupCount.get(), transactions.size(), multiple);
-    }
-
-    public void recordRequests(boolean on) {
-        recording.set(on);
-    }
-
-    public void delayCreates(Duration delay) {
-        createDelay.set(delay);
-    }
-
     public void delayLookups(Duration delay) {
         lookupDelay.set(delay);
-    }
-
-    public void failEveryNthLookup(int every, int status) {
-        failEveryNthStatus.set(status);
-        failEveryNth.set(every);
-    }
-
-    public void settleAutomatically(Status status, Duration after) {
-        autoSettle.set(status == null ? null : new AutoSettle(status, after));
     }
 
     public void changeStatus(String transactionKey, Status status) {
@@ -307,12 +275,6 @@ public final class PgFixture implements AutoCloseable {
             new Stored(userOf(exchange), request.get("callbackUrl").asText(), transaction));
         keysByOrder.computeIfAbsent(transaction.orderId(), orderId -> ConcurrentHashMap.newKeySet())
             .add(transaction.transactionKey());
-        AutoSettle settle = autoSettle.get();
-        if (settle != null) {
-            settler.schedule(() -> settle(transaction.transactionKey(), settle.status()),
-                settle.after().toMillis(), TimeUnit.MILLISECONDS);
-        }
-        pause(createDelay.get());
         CreateGate gate = createGate.get();
         if (gate != null) {
             gate.pass();
@@ -349,11 +311,6 @@ public final class PgFixture implements AutoCloseable {
             respondRaw(exchange, failingLookupStatus.get(), "{}");
             return;
         }
-        int every = failEveryNth.get();
-        if (every > 0 && lookupCount.get() % every == 0) {
-            respondRaw(exchange, failEveryNthStatus.get(), "{}");
-            return;
-        }
         if (path.equals(PAYMENTS)) {
             lookupByOrder(exchange);
             return;
@@ -382,18 +339,7 @@ public final class PgFixture implements AutoCloseable {
     }
 
     private void record(ReceivedRequest request) {
-        if (recording.get()) {
-            received.add(request);
-        }
-    }
-
-    private void settle(String transactionKey, Status status) {
-        try {
-            changeStatus(transactionKey, status);
-            sendCallback(transactionKey);
-        } catch (RuntimeException e) {
-            System.err.println("auto settle failed: " + transactionKey + " " + e);
-        }
+        received.add(request);
     }
 
     private static void pause(Duration delay) {
@@ -463,7 +409,6 @@ public final class PgFixture implements AutoCloseable {
     public void close() {
         server.stop(0);
         executor.shutdownNow();
-        settler.shutdownNow();
     }
 
     public enum Status {
@@ -540,12 +485,6 @@ public final class PgFixture implements AutoCloseable {
         String contentType,
         JsonNode body
     ) {
-    }
-
-    public record Stats(int creates, int lookups, int transactions, long ordersWithMultipleTransactions) {
-    }
-
-    private record AutoSettle(Status status, Duration after) {
     }
 
     public record Transaction(String transactionKey, String orderId, long amount, Status status) {

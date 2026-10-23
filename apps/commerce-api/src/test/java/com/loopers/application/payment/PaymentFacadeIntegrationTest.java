@@ -59,6 +59,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.function.IntFunction;
 
+import com.loopers.domain.common.Money;
+import com.loopers.domain.payment.CreateObservation;
+import com.loopers.domain.payment.LookupResult;
+import com.loopers.domain.payment.PaymentDiscrepancy;
+import com.loopers.domain.payment.PgTransaction;
+import com.loopers.domain.payment.TransactionKey;
+import org.springframework.jdbc.core.JdbcTemplate;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -84,8 +91,10 @@ class PaymentFacadeIntegrationTest {
     private final BrandFacade brandFacade;
     private final ProductFacade productFacade;
     private final DataSource dataSource;
+    private final JdbcTemplate jdbcTemplate;
     private final DatabaseCleanUp databaseCleanUp;
 
+    private Long brandId;
     private Long coat;
     private int createsBefore;
 
@@ -104,6 +113,7 @@ class PaymentFacadeIntegrationTest {
         BrandFacade brandFacade,
         ProductFacade productFacade,
         DataSource dataSource,
+        JdbcTemplate jdbcTemplate,
         DatabaseCleanUp databaseCleanUp
     ) {
         this.paymentFacade = paymentFacade;
@@ -119,6 +129,7 @@ class PaymentFacadeIntegrationTest {
         this.brandFacade = brandFacade;
         this.productFacade = productFacade;
         this.dataSource = dataSource;
+        this.jdbcTemplate = jdbcTemplate;
         this.databaseCleanUp = databaseCleanUp;
     }
 
@@ -135,7 +146,7 @@ class PaymentFacadeIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        Long brandId = brandFacade.register("무신사", "패션 플랫폼").getId();
+        brandId = brandFacade.register("무신사", "패션 플랫폼").getId();
         coat = productFacade.register(brandId, "코트", Price.of(3_000)).getId();
         productFacade.adjustStock(coat, Quantity.of(10));
         PG.reset();
@@ -792,5 +803,497 @@ class PaymentFacadeIntegrationTest {
         executor.shutdown();
         assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).as("worker 가 정리된다").isTrue();
         return List.copyOf(results);
+    }
+
+    @Nested
+    @DisplayName("결제 시작 TX A: 발송 권한, 같은 키, 소유권, 삭제 상품, 재고 부족")
+    class StartPayment {
+
+        private static final Long OTHER_USER = 2L;
+        private static final PaymentAttemptKey ATTEMPT = PaymentAttemptKey.of("attempt-1");
+
+        private Long shirt;
+
+        @BeforeEach
+        void addShirt() {
+            shirt = productFacade.register(brandId, "셔츠", Price.of(1_000)).getId();
+            productFacade.adjustStock(shirt, Quantity.of(1));
+        }
+
+        private Order placeFor(Long userId, int coats) {
+            return orderFacade.place(new OrderCreateCommand(userId,
+                List.of(new OrderCreateCommand.Line(coat, OrderQuantity.of(coats)))), NOW);
+        }
+
+        private PaymentTransactions.Begin begin(Long userId, Long orderId, PaymentAttemptKey key) {
+            return paymentTransactions.begin(userId, orderId, key, CardType.TEST, NOW);
+        }
+
+        @Nested
+        @DisplayName("PAY-004, RSV-001: 처음 온 요청이 발송 권한을 얻는다")
+        class Granted {
+
+            @DisplayName("DRAFT 주문이면 재고를 차감하고 REQUESTED 시도를 남기고 주문은 PENDING 이 된다")
+            @Test
+            void grants() {
+                Order order = placeFor(USER, 2);
+
+                PaymentTransactions.Begin result = begin(USER, order.getId(), ATTEMPT);
+
+                assertThat(result).isInstanceOf(PaymentTransactions.Begin.Granted.class);
+                Payment payment = result.payment();
+                assertThat(payment.getId()).isNotNull();
+                assertThat(payment.getStatus()).isEqualTo(PaymentStatus.REQUESTED);
+                assertThat(payment.getOrderId()).isEqualTo(order.getId());
+                assertThat(payment.getAmount()).isEqualTo(Money.of(6_000));
+                assertThat(paymentRepository.findByAttemptKey(ATTEMPT)).isPresent();
+                assertThat(orderFacade.get(USER, order.getId()).getStatus()).isEqualTo(OrderStatus.PENDING);
+                assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(8));
+            }
+        }
+
+        @Nested
+        @DisplayName("PAY-015, PAY-002: 같은 키가 다시 오면 키를 DRAFT 보다 먼저 본다")
+        class SameKey {
+
+            @DisplayName("같은 키, 같은 요청은 저장된 시도를 돌려주고 아무것도 다시 하지 않는다")
+            @Test
+            void repeats() {
+                Order order = placeFor(USER, 2);
+                Payment first = begin(USER, order.getId(), ATTEMPT).payment();
+
+                PaymentTransactions.Begin again = begin(USER, order.getId(), ATTEMPT);
+
+                assertThat(again).isInstanceOf(PaymentTransactions.Begin.Repeated.class);
+                assertThat(again.payment().getId()).isEqualTo(first.getId());
+                assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(8));
+            }
+
+            @DisplayName("같은 키를 다른 주문에 쓰면 충돌이고, 그 주문은 그대로다")
+            @Test
+            void conflictsForOtherOrder() {
+                Order first = placeFor(USER, 2);
+                Order second = placeFor(USER, 1);
+                begin(USER, first.getId(), ATTEMPT);
+
+                assertThatThrownBy(() -> begin(USER, second.getId(), ATTEMPT))
+                    .isInstanceOf(DomainException.class)
+                    .hasFieldOrPropertyWithValue("error", DomainError.PAYMENT_ATTEMPT_CONFLICT);
+
+                assertThat(orderFacade.get(USER, second.getId()).getStatus()).isEqualTo(OrderStatus.DRAFT);
+                assertThat(paymentRepository.findByOrderId(second.getId())).isEmpty();
+                assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(8));
+            }
+        }
+
+        @Nested
+        @DisplayName("PAY-003, PAY-014, Q-1: 시도가 있는 주문에 새 키가 오면 거절한다")
+        class NewKey {
+
+            @DisplayName("새 키는 ORDER_NOT_DRAFT 이고 두 번째 시도는 생기지 않는다")
+            @Test
+            void rejectsNewKeyOnStartedOrder() {
+                Order order = placeFor(USER, 2);
+                Payment first = begin(USER, order.getId(), ATTEMPT).payment();
+
+                assertThatThrownBy(() -> begin(USER, order.getId(), PaymentAttemptKey.of("attempt-2")))
+                    .isInstanceOf(DomainException.class)
+                    .hasFieldOrPropertyWithValue("error", DomainError.ORDER_NOT_DRAFT);
+
+                assertThat(paymentRepository.findByOrderId(order.getId()))
+                    .map(Payment::getId).contains(first.getId());
+                assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(8));
+            }
+        }
+
+        @Nested
+        @DisplayName("ORDER-011: 남의 주문은 없는 주문이다")
+        class Ownership {
+
+            @DisplayName("남의 주문이면 ORDER_NOT_FOUND 이고 아무것도 남지 않는다")
+            @Test
+            void rejectsOthersOrder() {
+                Order order = placeFor(OTHER_USER, 2);
+
+                assertThatThrownBy(() -> begin(USER, order.getId(), ATTEMPT))
+                    .isInstanceOf(DomainException.class)
+                    .hasFieldOrPropertyWithValue("error", DomainError.ORDER_NOT_FOUND);
+
+                assertThat(paymentRepository.findByAttemptKey(ATTEMPT)).isEmpty();
+                assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(10));
+            }
+
+            @DisplayName("남의 시도 키를 내 주문에 써도 남의 시도를 돌려주지 않고 충돌이다")
+            @Test
+            void doesNotRevealOthersAttempt() {
+                Order others = placeFor(OTHER_USER, 2);
+                Order mine = placeFor(USER, 2);
+                begin(OTHER_USER, others.getId(), ATTEMPT);
+
+                assertThatThrownBy(() -> begin(USER, mine.getId(), ATTEMPT))
+                    .isInstanceOf(DomainException.class)
+                    .hasFieldOrPropertyWithValue("error", DomainError.PAYMENT_ATTEMPT_CONFLICT);
+            }
+        }
+
+        @Nested
+        @DisplayName("ORDER-012, RSV-001: 접수 뒤 상품이 삭제되면 결제를 시작할 수 없다")
+        class DeletedProduct {
+
+            @DisplayName("상품이 삭제되면 PRODUCT_NOT_FOUND 이고, 주문은 DRAFT, 시도는 없다")
+            @Test
+            void rejectsDeletedProduct() {
+                Order order = placeFor(USER, 2);
+                productFacade.delete(coat);
+
+                assertThatThrownBy(() -> begin(USER, order.getId(), ATTEMPT))
+                    .isInstanceOf(DomainException.class)
+                    .hasFieldOrPropertyWithValue("error", DomainError.PRODUCT_NOT_FOUND);
+
+                assertThat(orderFacade.get(USER, order.getId()).getStatus()).isEqualTo(OrderStatus.DRAFT);
+                assertThat(paymentRepository.findByAttemptKey(ATTEMPT)).isEmpty();
+            }
+
+            @DisplayName("브랜드가 삭제되면 그 상품도 삭제되어 같다")
+            @Test
+            void rejectsDeletedBrand() {
+                Order order = placeFor(USER, 2);
+                brandFacade.delete(brandId);
+
+                assertThatThrownBy(() -> begin(USER, order.getId(), ATTEMPT))
+                    .isInstanceOf(DomainException.class)
+                    .hasFieldOrPropertyWithValue("error", DomainError.PRODUCT_NOT_FOUND);
+
+                assertThat(orderFacade.get(USER, order.getId()).getStatus()).isEqualTo(OrderStatus.DRAFT);
+                assertThat(paymentRepository.findByAttemptKey(ATTEMPT)).isEmpty();
+            }
+        }
+
+        @Nested
+        @DisplayName("ORDER-013, ORDER-015, RSV-001: 재고가 모자라면 아무것도 남기지 않는다")
+        class InsufficientStock {
+
+            @DisplayName("둘째 품목이 모자라면 첫 품목 차감도 되돌리고, 시도도 주문 변화도 없다")
+            @Test
+            void rollsBackEverything() {
+                Order order = orderFacade.place(new OrderCreateCommand(USER, List.of(
+                    new OrderCreateCommand.Line(coat, OrderQuantity.of(2)),
+                    new OrderCreateCommand.Line(shirt, OrderQuantity.of(2)))), NOW);
+
+                assertThatThrownBy(() -> begin(USER, order.getId(), ATTEMPT))
+                    .isInstanceOf(DomainException.class)
+                    .hasFieldOrPropertyWithValue("error", DomainError.INSUFFICIENT_STOCK);
+
+                assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(10));
+                assertThat(productService.getStock(shirt)).isEqualTo(Quantity.of(1));
+                assertThat(paymentRepository.findByAttemptKey(ATTEMPT)).isEmpty();
+                assertThat(orderFacade.get(USER, order.getId()).getStatus()).isEqualTo(OrderStatus.DRAFT);
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("결과 반영 TX B: 생성 결과, 검증한 결과, 관리자 재고 설정, 한 번만, 모순")
+    class ApplyResult {
+
+        private static final Instant LATER = NOW.plusSeconds(5);
+        private static final TransactionKey TX_KEY = new TransactionKey("TEST-TX-0001");
+
+        private Order order;
+        private Payment payment;
+
+        @BeforeEach
+        void startPayment() {
+            order = place(2);
+            payment = paymentTransactions.begin(USER, order.getId(), PaymentAttemptKey.of("attempt-1"), CardType.TEST, NOW)
+                .payment();
+        }
+
+        private Payment observe(CreateObservation observation) {
+            return paymentTransactions.observe(payment.getId(), observation, LATER);
+        }
+
+        private Payment lookup(PgTransaction.Status status) {
+            return lookup(status, 6_000);
+        }
+
+        private Payment lookup(PgTransaction.Status status, long amount) {
+            LookupResult.Found found = new LookupResult.Found(List.of(new PgTransaction(
+                TX_KEY, ProviderOrderId.of(order.getId()), Money.of(amount), status)));
+            return paymentTransactions.observe(payment.getId(), found, PaymentDiscrepancy.Source.CALLBACK, LATER);
+        }
+
+        private Order storedOrder() {
+            return orderFacade.get(USER, order.getId());
+        }
+
+        private Quantity stock() {
+            return productService.getStock(coat);
+        }
+
+        private int discrepancies() {
+            return jdbcTemplate.queryForObject(
+                "select count(*) from payment_discrepancy where payment_id = ?", Integer.class, payment.getId());
+        }
+
+        @Nested
+        @DisplayName("PG-005, PG-010, PG-011, PG-015: 생성 결과를 반영한다")
+        class CreateResult {
+
+            @DisplayName("접수되면 결제는 PENDING 과 키를 저장하고, 주문 PENDING 과 묶인 재고는 그대로다")
+            @Test
+            void accepted() {
+                Payment result = observe(new CreateObservation.Accepted(TX_KEY));
+
+                assertThat(result.getStatus()).isEqualTo(PaymentStatus.PENDING);
+                assertThat(result.getTransactionKey()).isEqualTo(TX_KEY);
+                assertThat(storedOrder().getStatus()).isEqualTo(OrderStatus.PENDING);
+                assertThat(stock()).isEqualTo(Quantity.of(8));
+            }
+
+            @DisplayName("효과 0 건 거절이면 결제와 주문이 FAILED 가 되고 재고를 돌려받는다")
+            @Test
+            void rejectedNoEffect() {
+                Payment result = observe(new CreateObservation.RejectedNoEffect());
+
+                assertThat(result.getStatus()).isEqualTo(PaymentStatus.FAILED);
+                assertThat(storedOrder().getStatus()).isEqualTo(OrderStatus.FAILED);
+                assertThat(storedOrder().getPaidAmount()).isNull();
+                assertThat(stock()).isEqualTo(Quantity.of(10));
+            }
+
+            @DisplayName("보내지 못했으면 거절과 같다")
+            @Test
+            void notSent() {
+                Payment result = observe(new CreateObservation.NotSent());
+
+                assertThat(result.getStatus()).isEqualTo(PaymentStatus.FAILED);
+                assertThat(storedOrder().getStatus()).isEqualTo(OrderStatus.FAILED);
+                assertThat(stock()).isEqualTo(Quantity.of(10));
+            }
+
+            @DisplayName("결과를 모르면 UNKNOWN 이고, 주문 PENDING 과 묶인 재고는 그대로다")
+            @Test
+            void unknown() {
+                Payment result = observe(new CreateObservation.CreateUnknown());
+
+                assertThat(result.getStatus()).isEqualTo(PaymentStatus.UNKNOWN);
+                assertThat(storedOrder().getStatus()).isEqualTo(OrderStatus.PENDING);
+                assertThat(stock()).isEqualTo(Quantity.of(8));
+            }
+        }
+
+        @Nested
+        @DisplayName("SETTLE-002, RSV-002, RSV-003: 검증한 결과로 주문과 재고를 마무리한다")
+        class Verified {
+
+            @DisplayName("SUCCESS 면 주문이 CONFIRMED 가 되고 결제 금액과 확정 시각을 남긴다. 재고는 다시 빼지 않는다")
+            @Test
+            void success() {
+                observe(new CreateObservation.Accepted(TX_KEY));
+
+                Payment result = lookup(PgTransaction.Status.SUCCESS);
+
+                assertThat(result.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
+                assertThat(storedOrder().getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+                assertThat(storedOrder().getPaidAmount()).isEqualTo(Money.of(6_000));
+                assertThat(storedOrder().getConfirmedAt()).isEqualTo(LATER);
+                assertThat(stock()).isEqualTo(Quantity.of(8));
+            }
+
+            @DisplayName("FAILED 면 주문이 FAILED 가 되고 재고를 돌려받는다")
+            @Test
+            void failed() {
+                observe(new CreateObservation.Accepted(TX_KEY));
+
+                Payment result = lookup(PgTransaction.Status.FAILED);
+
+                assertThat(result.getStatus()).isEqualTo(PaymentStatus.FAILED);
+                assertThat(storedOrder().getStatus()).isEqualTo(OrderStatus.FAILED);
+                assertThat(stock()).isEqualTo(Quantity.of(10));
+            }
+
+            @DisplayName("SETTLE-012: 생성 응답이 없어도 조회한 결과로 끝난다. 키는 조회에서 붙는다")
+            @Test
+            void settlesWithoutCreateResponse() {
+                observe(new CreateObservation.CreateUnknown());
+
+                Payment result = lookup(PgTransaction.Status.SUCCESS);
+
+                assertThat(result.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
+                assertThat(result.getTransactionKey()).isEqualTo(TX_KEY);
+                assertThat(storedOrder().getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+            }
+
+            @DisplayName("RSV-007: 결제 중에 상품이 삭제돼도 실패하면 재고를 돌려받고 결제가 끝난다. 상품은 계속 보이지 않는다")
+            @Test
+            void restocksDeletedProduct() {
+                observe(new CreateObservation.Accepted(TX_KEY));
+                productFacade.delete(coat);
+
+                Payment result = lookup(PgTransaction.Status.FAILED);
+
+                assertThat(result.getStatus()).isEqualTo(PaymentStatus.FAILED);
+                assertThat(jdbcTemplate.queryForObject(
+                    "select quantity from product where id = ?", Integer.class, coat)).isEqualTo(10);
+                assertThatThrownBy(() -> productService.get(coat))
+                    .isInstanceOf(DomainException.class)
+                    .hasFieldOrPropertyWithValue("error", DomainError.PRODUCT_NOT_FOUND);
+            }
+        }
+
+        @Nested
+        @DisplayName("RSV-006: 관리자 재고 설정은 묶인 수량을 뺀 가용 재고를 정하고, 결제 결과는 그 위에 더해진다")
+        class AdminStockSetting {
+
+            @DisplayName("결제를 기다리는 동안 재고를 10 으로 설정하면 가용 재고가 10 이 되고, 묶인 주문은 그대로다")
+            @Test
+            void setsAvailableStock() {
+                observe(new CreateObservation.Accepted(TX_KEY));
+
+                productFacade.adjustStock(coat, Quantity.of(10));
+
+                assertThat(stock()).isEqualTo(Quantity.of(10));
+                assertThat(storedOrder().getStatus()).isEqualTo(OrderStatus.PENDING);
+            }
+
+            @DisplayName("설정 뒤 결제가 실패하면 묶였던 2 개가 설정한 값 위에 더해진다. 10 + 2")
+            @Test
+            void failureReturnsOnTopOfSetting() {
+                observe(new CreateObservation.Accepted(TX_KEY));
+                productFacade.adjustStock(coat, Quantity.of(10));
+
+                lookup(PgTransaction.Status.FAILED);
+
+                assertThat(stock()).isEqualTo(Quantity.of(12));
+            }
+
+            @DisplayName("설정 뒤 결제가 성공하면 다시 빼지 않는다. 10 그대로")
+            @Test
+            void successDoesNotDeductAgain() {
+                observe(new CreateObservation.Accepted(TX_KEY));
+                productFacade.adjustStock(coat, Quantity.of(10));
+
+                lookup(PgTransaction.Status.SUCCESS);
+
+                assertThat(stock()).isEqualTo(Quantity.of(10));
+                assertThat(storedOrder().getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+            }
+        }
+
+        @Nested
+        @DisplayName("PAY-007, RSV-003: 같은 결과는 한 번만 반영한다")
+        class Once {
+
+            @DisplayName("FAILED 를 두 번 보아도 재고는 한 번만 돌려받는다")
+            @Test
+            void restocksOnce() {
+                observe(new CreateObservation.Accepted(TX_KEY));
+
+                lookup(PgTransaction.Status.FAILED);
+                lookup(PgTransaction.Status.FAILED);
+
+                assertThat(stock()).isEqualTo(Quantity.of(10));
+            }
+
+            @DisplayName("SUCCESS 를 두 번 보아도 확정 시각은 처음 그대로다")
+            @Test
+            void confirmsOnce() {
+                observe(new CreateObservation.Accepted(TX_KEY));
+                lookup(PgTransaction.Status.SUCCESS);
+
+                paymentTransactions.observe(payment.getId(), new LookupResult.Found(List.of(new PgTransaction(
+                    TX_KEY, ProviderOrderId.of(order.getId()), Money.of(6_000), PgTransaction.Status.SUCCESS))),
+                    PaymentDiscrepancy.Source.LOOKUP, LATER.plusSeconds(60));
+
+                assertThat(storedOrder().getConfirmedAt()).isEqualTo(LATER);
+            }
+
+            @DisplayName("FAILED callback 10 건이 동시에 와도 재고는 한 번만 돌려받는다")
+            @Test
+            void restocksOnceUnderConcurrency() throws InterruptedException {
+                observe(new CreateObservation.Accepted(TX_KEY));
+
+                List<Throwable> failures = runConcurrently(10, () -> lookup(PgTransaction.Status.FAILED));
+
+                assertThat(failures).isEmpty();
+                assertThat(stock()).isEqualTo(Quantity.of(10));
+                assertThat(storedOrder().getStatus()).isEqualTo(OrderStatus.FAILED);
+            }
+        }
+
+        @Nested
+        @DisplayName("PAY-009, PAY-017: 모순은 고치지 않고 기록한다")
+        class Contradiction {
+
+            @DisplayName("금액이 다르면 CONFLICT 로 멈추고 불일치 한 줄. 주문 PENDING 과 묶인 재고는 그대로다")
+            @Test
+            void amountMismatch() {
+                observe(new CreateObservation.Accepted(TX_KEY));
+
+                Payment result = lookup(PgTransaction.Status.SUCCESS, 9_000);
+
+                assertThat(result.getStatus()).isEqualTo(PaymentStatus.CONFLICT);
+                assertThat(storedOrder().getStatus()).isEqualTo(OrderStatus.PENDING);
+                assertThat(stock()).isEqualTo(Quantity.of(8));
+                assertThat(discrepancies()).isEqualTo(1);
+            }
+
+            @DisplayName("같은 모순이 반복돼도 불일치는 한 줄이다")
+            @Test
+            void recordsOnce() {
+                observe(new CreateObservation.Accepted(TX_KEY));
+
+                lookup(PgTransaction.Status.SUCCESS, 9_000);
+                lookup(PgTransaction.Status.SUCCESS, 9_000);
+
+                assertThat(discrepancies()).isEqualTo(1);
+            }
+
+            @DisplayName("SUCCESS 로 끝난 뒤 FAILED 가 보이면 덮어쓰지 않는다. 주문 CONFIRMED, 재고 그대로, 불일치 한 줄")
+            @Test
+            void resultAfterSettled() {
+                observe(new CreateObservation.Accepted(TX_KEY));
+                lookup(PgTransaction.Status.SUCCESS);
+
+                Payment result = lookup(PgTransaction.Status.FAILED);
+
+                assertThat(result.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
+                assertThat(storedOrder().getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+                assertThat(stock()).isEqualTo(Quantity.of(8));
+                assertThat(jdbcTemplate.queryForObject(
+                    "select reason from payment_discrepancy where payment_id = ?", String.class, payment.getId()))
+                    .isEqualTo("RESULT_AFTER_SETTLED");
+            }
+        }
+
+        private static List<Throwable> runConcurrently(int threads, Runnable call) throws InterruptedException {
+            ExecutorService executor = Executors.newFixedThreadPool(threads);
+            CountDownLatch ready = new CountDownLatch(threads);
+            CountDownLatch start = new CountDownLatch(1);
+            CountDownLatch done = new CountDownLatch(threads);
+            ConcurrentLinkedQueue<Throwable> failures = new ConcurrentLinkedQueue<>();
+
+            for (int i = 0; i < threads; i++) {
+                executor.submit(() -> {
+                    ready.countDown();
+                    try {
+                        start.await();
+                        call.run();
+                    } catch (Throwable t) {
+                        failures.add(t);
+                    } finally {
+                        done.countDown();
+                    }
+                });
+            }
+
+            assertThat(ready.await(5, TimeUnit.SECONDS)).as("모든 worker 가 준비된다").isTrue();
+            start.countDown();
+            assertThat(done.await(30, TimeUnit.SECONDS)).as("모든 반영이 제한 시간 안에 끝난다").isTrue();
+            executor.shutdown();
+            assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).as("worker 가 정리된다").isTrue();
+            return List.copyOf(failures);
+        }
     }
 }
