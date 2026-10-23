@@ -1,5 +1,6 @@
 package com.loopers.application.order;
 
+import com.loopers.application.payment.PaymentRequestFacade;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.order.Order;
@@ -18,6 +19,7 @@ import com.loopers.utils.DatabaseCleanUp;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -25,6 +27,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -43,7 +46,7 @@ class OrderInventoryConcurrencyIntegrationTest {
     private static final long TIMEOUT_SECONDS = 20L;
 
     @Autowired
-    private OrderFacade orderFacade;
+    private PaymentRequestFacade paymentRequestFacade;
 
     @Autowired
     private BrandRepository brandRepository;
@@ -74,8 +77,9 @@ class OrderInventoryConcurrencyIntegrationTest {
         databaseCleanUp.truncateAllTables();
     }
 
+    @DisplayName("재고 5에 서로 다른 주문 8건이 각 1개씩 결제를 요청하면 5건만 시작하고 3건은 재고 부족 409이며 최종 재고는 0이다.")
     @Test
-    void confirmsOnlyAvailableQuantityWhenEightOrdersCompeteForFiveItems() throws Exception {
+    void startsOnlyAvailableQuantityWhenEightOrdersCompeteForFiveItems() throws Exception {
         Competition competition = createCompetition();
         CountDownLatch workersReady = new CountDownLatch(ORDER_COUNT);
         CountDownLatch startWorkers = new CountDownLatch(1);
@@ -108,7 +112,7 @@ class OrderInventoryConcurrencyIntegrationTest {
                 competition.productId()
             )).isZero();
             assertThat(jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM orders WHERE status = 'CONFIRMED'",
+                "SELECT COUNT(*) FROM orders WHERE status = 'PAYMENT_PENDING' AND payment_method = 'PG'",
                 Long.class
             )).isEqualTo(5L);
             assertThat(jdbcTemplate.queryForObject(
@@ -116,12 +120,12 @@ class OrderInventoryConcurrencyIntegrationTest {
                 Long.class
             )).isEqualTo(3L);
             assertThat(jdbcTemplate.queryForObject(
-                "SELECT COALESCE(SUM(payment_amount), 0) FROM orders WHERE status = 'CONFIRMED'",
+                "SELECT COALESCE(SUM(amount), 0) FROM payment_attempts",
                 Long.class
             )).isEqualTo(5L * UNIT_PRICE);
             assertThat(jdbcTemplate.queryForObject(
                 "SELECT COALESCE(SUM(quantity), 0) FROM order_items oi "
-                    + "JOIN orders o ON o.id = oi.order_id WHERE o.status = 'CONFIRMED'",
+                    + "JOIN orders o ON o.id = oi.order_id WHERE o.status = 'PAYMENT_PENDING'",
                 Long.class
             )).isEqualTo(5L);
 
@@ -133,22 +137,14 @@ class OrderInventoryConcurrencyIntegrationTest {
                     .findFirst().orElseThrow();
                 assertThat(persistedOrder.getStatus()).as("요청 결과와 주문 상태: %s", result.requestId())
                     .isEqualTo(result.outcome() == ConcurrentRequestResults.Outcome.SUCCESS
-                        ? OrderStatus.CONFIRMED : OrderStatus.DRAFT);
-                if (persistedOrder.getStatus() == OrderStatus.CONFIRMED) {
-                    assertThat(persistedOrder.getPaymentAmount()).isEqualTo(UNIT_PRICE);
-                    assertThat(persistedOrder.getPaymentResult().name()).isEqualTo("SUCCESS");
-                    assertThat(persistedOrder.getItems()).singleElement().satisfies(item -> {
-                        assertThat(item.getProductId()).isEqualTo(competition.productId());
-                        assertThat(item.getQuantity()).isEqualTo(1);
-                    });
-                    assertThat(persistedPoint.getBalance().amount())
-                        .isEqualTo(INITIAL_POINT_BALANCE - UNIT_PRICE);
-                } else {
-                    assertThat(persistedOrder.getStatus()).isEqualTo(OrderStatus.DRAFT);
-                    assertThat(persistedPoint.getBalance().amount()).isEqualTo(INITIAL_POINT_BALANCE);
-                    assertThat(persistedOrder.getPaymentAmount()).isNull();
-                    assertThat(persistedOrder.getPaymentResult()).isNull();
-                }
+                        ? OrderStatus.PAYMENT_PENDING : OrderStatus.DRAFT);
+                assertThat(persistedOrder.getItems()).singleElement().satisfies(item -> {
+                    assertThat(item.getProductId()).isEqualTo(competition.productId());
+                    assertThat(item.getQuantity()).isEqualTo(1);
+                });
+                assertThat(persistedOrder.getPaymentAmount()).isNull();
+                assertThat(persistedOrder.getPaymentResult()).isNull();
+                assertThat(persistedPoint.getBalance().amount()).isEqualTo(INITIAL_POINT_BALANCE);
             }
         } finally {
             startWorkers.countDown();
@@ -185,9 +181,10 @@ class OrderInventoryConcurrencyIntegrationTest {
         return workers.submit(() -> {
             workersReady.countDown();
             if (!startWorkers.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-                throw new AssertionError("주문 확정 worker 시작 대기 시간이 초과됐습니다.");
+                throw new AssertionError("결제 요청 worker 시작 대기 시간이 초과됐습니다.");
             }
-            return orderFacade.confirm(order.userId(), order.orderId());
+            return paymentRequestFacade.requestPayment(
+                order.userId(), order.orderId(), UUID.randomUUID().toString(), "TEST", "0000-0000-0000-0000");
         });
     }
 

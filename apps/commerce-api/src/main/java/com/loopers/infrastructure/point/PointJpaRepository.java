@@ -25,18 +25,4 @@ public interface PointJpaRepository extends JpaRepository<PointJpaEntity, Long> 
         @Param("maximumBalance") long maximumBalance,
         @Param("updatedAt") ZonedDateTime updatedAt
     );
-
-    @Modifying(flushAutomatically = true, clearAutomatically = true)
-    @Query("""
-        UPDATE PointJpaEntity p
-        SET p.balance = p.balance - :amount,
-            p.updatedAt = :updatedAt
-        WHERE p.userId = :userId
-          AND p.balance >= :amount
-        """)
-    int decreaseBalanceIfEnough(
-        @Param("userId") Long userId,
-        @Param("amount") long amount,
-        @Param("updatedAt") ZonedDateTime updatedAt
-    );
 }

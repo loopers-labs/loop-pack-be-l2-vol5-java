@@ -11,6 +11,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Component;
 
 import java.time.ZonedDateTime;
+import java.math.BigInteger;
 import java.util.List;
 import java.util.Optional;
 
@@ -24,6 +25,11 @@ public class ProductRepositoryImpl implements ProductRepository {
     @Override
     public Optional<Product> findById(Long productId) {
         return productJpaRepository.findById(productId).map(ProductJpaMapper::toDomain);
+    }
+
+    @Override
+    public Optional<Product> findByIdWithExclusiveLock(Long productId) {
+        return productJpaRepository.findByIdWithExclusiveLock(productId).map(ProductJpaMapper::toDomain);
     }
 
     @Override
@@ -93,6 +99,16 @@ public class ProductRepositoryImpl implements ProductRepository {
     @Override
     public int decreaseActiveStock(Long productId, int quantity, ZonedDateTime updatedAt) {
         return productJpaRepository.decreaseActiveStock(productId, quantity, updatedAt);
+    }
+
+    @Override
+    public int increaseStock(Long productId, int quantity, ZonedDateTime updatedAt) {
+        return productJpaRepository.increaseStock(productId, quantity, updatedAt);
+    }
+
+    @Override
+    public BigInteger sumPendingReservationQuantity(Long productId) {
+        return productJpaRepository.sumPendingReservationQuantity(productId).toBigIntegerExact();
     }
 
     @Override

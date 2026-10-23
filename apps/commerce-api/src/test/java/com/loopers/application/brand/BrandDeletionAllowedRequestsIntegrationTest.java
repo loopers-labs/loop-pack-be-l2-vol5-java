@@ -2,6 +2,7 @@ package com.loopers.application.brand;
 
 import com.loopers.application.like.LikeFacade;
 import com.loopers.application.order.OrderFacade;
+import com.loopers.application.payment.PaymentRequestFacade;
 import com.loopers.application.product.ProductFacade;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
@@ -32,6 +33,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.sql.DataSource;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -57,6 +59,7 @@ class BrandDeletionAllowedRequestsIntegrationTest {
     @Autowired private BrandFacade brandFacade;
     @Autowired private ProductFacade productFacade;
     @Autowired private OrderFacade orderFacade;
+    @Autowired private PaymentRequestFacade paymentRequestFacade;
     @Autowired private LikeFacade likeFacade;
     @MockitoSpyBean private BrandRepository brandRepository;
     @MockitoSpyBean private ProductRepository productRepository;
@@ -98,7 +101,7 @@ class BrandDeletionAllowedRequestsIntegrationTest {
         try {
             Future<?> deletion = locks.submit(workers, () -> brandFacade.delete(fixture.brandId()));
             assertThat(deletionLocked.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
-            Future<?> mutation = locks.submit(workers, () -> changeProduct(change, fixture.productId()));
+            Future<?> mutation = locks.submitOutsideTransaction(workers, () -> changeProduct(change, fixture.productId()));
             mutation.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
             Product beforeDeletion = readProduct(fixture.productId());
 
@@ -138,7 +141,15 @@ class BrandDeletionAllowedRequestsIntegrationTest {
                 locks.awaitLatch(allowDeletionCommit);
             });
             assertThat(deletionWritesCompleted.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
-            Future<?> mutation = locks.submit(workers, mutationConnection, mutationStarted,
+            doAnswer(invocation -> {
+                locks.recordConnection(mutationConnection, mutationStarted);
+                return invocation.callRealMethod();
+            }).when(productRepository).findById(fixture.productId());
+            doAnswer(invocation -> {
+                locks.recordConnection(mutationConnection, mutationStarted);
+                return invocation.callRealMethod();
+            }).when(productRepository).findByIdWithExclusiveLock(fixture.productId());
+            Future<?> mutation = locks.submitOutsideTransaction(workers,
                 () -> changeProduct(change, fixture.productId()));
             assertThat(mutationStarted.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
             locks.awaitLockWait(mutationConnection.get(), "products");
@@ -199,7 +210,8 @@ class BrandDeletionAllowedRequestsIntegrationTest {
                     assertThat(orders).hasSize(1);
                     return orders.getFirst();
                 });
-                assertThatThrownBy(() -> orderFacade.confirm(fixture.userId(), order.getId()))
+                assertThatThrownBy(() -> paymentRequestFacade.requestPayment(fixture.userId(), order.getId(),
+                    UUID.randomUUID().toString(), "TEST", "0000-0000-0000-0000"))
                     .isInstanceOfSatisfying(CoreException.class, exception ->
                         assertThat(exception.getErrorType()).isEqualTo(ErrorType.CONFLICT));
                 new TransactionTemplate(transactionManager).executeWithoutResult(status -> {

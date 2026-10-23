@@ -1,5 +1,11 @@
 package com.loopers.interfaces.api.product;
 
+import com.loopers.application.payment.PaymentResultService;
+import com.loopers.domain.order.OrderStatus;
+import com.loopers.domain.payment.PaymentAttempt;
+import com.loopers.domain.payment.PaymentAttemptRepository;
+import com.loopers.support.testpg.TestPgControl;
+import java.util.UUID;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.config.redis.RedisConfig;
@@ -53,6 +59,12 @@ class ProductListCacheApiE2ETest {
 
     private static final String ADMIN_PRODUCTS = "/api-admin/v1/products";
     private static final String ADMIN_BRANDS = "/api-admin/v1/brands";
+
+    @Autowired
+    private PaymentAttemptRepository paymentAttemptRepository;
+
+    @Autowired
+    private PaymentResultService paymentResultService;
 
     @Autowired
     private MockMvc mockMvc;
@@ -207,11 +219,21 @@ class ProductListCacheApiE2ETest {
             .andReturn();
         assertThat(created.getResponse().getStatus()).isEqualTo(HttpStatus.CREATED.value());
         Long orderId = readData(created, new TypeReference<ApiResponse<OrderV1Dto.OrderResponse>>() {}).id();
-        MvcResult confirmed = mockMvc.perform(post("/api/v1/orders/" + orderId + "/confirm").header("X-USER-ID", user.getId()))
+        MvcResult confirmed = mockMvc.perform(post("/api/v1/orders/" + orderId + "/confirm").header("X-USER-ID", user.getId())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"paymentAttemptKey\":\"" + UUID.randomUUID() + "\",\"cardType\":\"TEST\",\"cardNo\":\"0000-0000-0000-0000\"}"))
             .andReturn();
-        assertThat(confirmed.getResponse().getStatus()).isEqualTo(HttpStatus.OK.value());
+        assertThat(confirmed.getResponse().getStatus()).isEqualTo(HttpStatus.ACCEPTED.value());
+        completePgPayment(orderId);
         orderUserId = user.getId();
         return orderId;
+    }
+
+    // 결제 요청 뒤 테스트 PG에서 거래를 처리하고 결과를 확인해 확정 주문을 만든다.
+    private void completePgPayment(Long orderId) {
+        PaymentAttempt attempt = paymentAttemptRepository.findByOrderId(orderId).orElseThrow();
+        TestPgControl.complete(attempt.getProviderOrderId());
+        assertThat(paymentResultService.check(attempt.getId()).payment().orderStatus()).isEqualTo(OrderStatus.CONFIRMED);
     }
 
     private void stockUp(Long productId) {

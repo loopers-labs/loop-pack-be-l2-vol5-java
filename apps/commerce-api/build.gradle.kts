@@ -43,3 +43,18 @@ dependencies {
     testImplementation("org.springframework.security:spring-security-test")
     testImplementation("org.testcontainers:mysql")
 }
+
+// PG fixture는 별도 보관하며 -PpgFixtureRoot로 루트를 지정할 수 있다.
+// 순수 단위 테스트는 fixture를 사용하지 않고, HTTP·이관 통합 테스트는 실제 파일을 요구한다.
+tasks.test {
+    val fixtureRoot = rootProject.file(providers.gradleProperty("pgFixtureRoot").getOrElse("."))
+    val fixtureDockerfile = fixtureRoot.resolve("apps/test-pg/Dockerfile")
+    val fixtureJar = fixtureRoot.resolve("apps/test-pg/build/libs/test-pg.jar")
+    val safetyMigration = fixtureRoot.resolve("docker/mysql/pg-payment-safety-migration.sql")
+    val conflictMigration = fixtureRoot.resolve("docker/mysql/pg-payment-conflict-migration.sql")
+    systemProperty("test-pg.dockerfile", fixtureDockerfile.absolutePath)
+    systemProperty("test-pg.jar", fixtureJar.absolutePath)
+    systemProperty("payment.safety-migration", safetyMigration.absolutePath)
+    systemProperty("payment.conflict-migration", conflictMigration.absolutePath)
+    inputs.files(fixtureDockerfile, fixtureJar, safetyMigration, conflictMigration)
+}
