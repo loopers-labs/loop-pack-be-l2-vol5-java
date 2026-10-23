@@ -173,4 +173,76 @@ class OrderTest {
             assertThat(order.isOwnedBy(2L)).isFalse();
         }
     }
+
+    @Nested
+    @DisplayName("PAY-013: 결제 주문은 DRAFT, PENDING, 그다음 CONFIRMED 또는 FAILED 로 간다")
+    class PaymentFlow {
+
+        private Order started() {
+            Order order = draft(item(10L, "코트", 3_000, 2));
+            order.startPayment();
+            return order;
+        }
+
+        @DisplayName("DRAFT 에서 결제를 시작하면 PENDING 이 되고, 아직 결제 금액은 없다")
+        @Test
+        void startsFromDraft() {
+            Order order = started();
+
+            assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
+            assertThat(order.getPaidAmount()).isNull();
+        }
+
+        @DisplayName("DRAFT 가 아니면 결제를 다시 시작할 수 없다")
+        @Test
+        void rejectsStartUnlessDraft() {
+            Order order = started();
+
+            assertThatThrownBy(order::startPayment)
+                .isInstanceOf(DomainException.class)
+                .hasFieldOrPropertyWithValue("error", DomainError.ORDER_NOT_DRAFT);
+        }
+
+        @DisplayName("결제가 성공하면 CONFIRMED 가 되고 결제 금액과 확정 시각을 남긴다")
+        @Test
+        void completes() {
+            Order order = started();
+
+            order.completePayment(NOW);
+
+            assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+            assertThat(order.getPaidAmount()).isEqualTo(Money.of(6_000));
+            assertThat(order.getConfirmedAt()).isEqualTo(NOW);
+        }
+
+        @DisplayName("결제가 실패하면 FAILED 가 되고 결제 금액은 없다")
+        @Test
+        void fails() {
+            Order order = started();
+
+            order.failPayment();
+
+            assertThat(order.getStatus()).isEqualTo(OrderStatus.FAILED);
+            assertThat(order.getPaidAmount()).isNull();
+        }
+
+        @DisplayName("PENDING 이 아니면 성공도 실패도 반영할 수 없다. 결제 쪽 전이가 지키는 것을 어긴 프로그래밍 오류다")
+        @Test
+        void completeOrFailOnlyWhilePending() {
+            Order draft = draft(item(10L, "코트", 3_000, 2));
+
+            assertThatThrownBy(() -> draft.completePayment(NOW)).isInstanceOf(IllegalStateException.class);
+            assertThatThrownBy(draft::failPayment).isInstanceOf(IllegalStateException.class);
+        }
+
+        @DisplayName("결제를 시작한 주문은 예전 확정(confirm)으로 확정할 수 없다")
+        @Test
+        void oldConfirmRejectsPaymentPending() {
+            Order order = started();
+
+            assertThatThrownBy(() -> order.confirm(NOW))
+                .isInstanceOf(DomainException.class)
+                .hasFieldOrPropertyWithValue("error", DomainError.ORDER_NOT_DRAFT);
+        }
+    }
 }

@@ -28,8 +28,11 @@
   ArchUnit 둘이 지킨다. 혼자 커밋되면 안 되는 연산(`OrderConfirmation.confirm` · `PointService.use` ·
   `ProductService.deductStock`)은 **스스로를 막지 못하므로 호출자가 하나뿐이라는 사실에 기댄다.**
   두 번째 호출자를 만들려 할 때는 먼저 묻는다.
-- **애그리거트를 걸치는 규칙은 도메인 서비스가 진다.** 확정은 `OrderConfirmation` 이고,
-  바깥은 좁은 계약(`StockDeduction` · `PointUsage`)으로만 안다 — 서비스를 통째로 주입받지 않는다.
+- **애그리거트를 걸치는 판단은 애그리거트가, 순서 · 잠금은 application 의 트랜잭션 메서드가 진다.**
+  판단(`Order.startPayment` · `Payment.isSameRequest` · `Payment.observe`)은 각 애그리거트에 있어 DB 없이 테스트하고,
+  그것을 부르는 순서 · 잠금 순서(주문 → 상품 id 순 → payment) · 경계는 `PaymentTransactions` 가 갖는다.
+  애그리거트끼리는 객체가 아니라 id 로 가리킨다. 혼자 커밋되면 안 되는 연산은 좁은 계약(`StockDeduction`)으로 받아
+  `grep` 한 번으로 호출자를 셀 수 있게 한다. W2 의 `OrderConfirmation` 은 새 확정으로 교체할 때 지운다(design 11).
 - **검증은 한 곳**: 같은 규칙을 Dto 와 도메인 양쪽에 쓰지 않는다. 타입을 공유한다.
 - **주석을 쓰지 않는다.** `apps/` 아래는 주석 0 줄이다. 설명이 필요하면 이름을 고치거나 `design.md` 에 적는다.
 - **테스트 더블을 두지 않는다.** 규칙은 더블 없이 애그리거트 테스트로 확인하고(74 개가 스프링·DB 없이 돈다),

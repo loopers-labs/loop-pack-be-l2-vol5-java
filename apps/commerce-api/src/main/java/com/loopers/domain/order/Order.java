@@ -59,6 +59,31 @@ public class Order {
         this.confirmedAt = confirmedAt;
     }
 
+    public void startPayment() {
+        if (status != OrderStatus.DRAFT) {
+            throw new DomainException(DomainError.ORDER_NOT_DRAFT);
+        }
+        this.status = OrderStatus.PENDING;
+    }
+
+    public void completePayment(Instant confirmedAt) {
+        requirePending();
+        this.status = OrderStatus.CONFIRMED;
+        this.paidAmount = totalAmount;
+        this.confirmedAt = confirmedAt;
+    }
+
+    public void failPayment() {
+        requirePending();
+        this.status = OrderStatus.FAILED;
+    }
+
+    private void requirePending() {
+        if (status != OrderStatus.PENDING) {
+            throw new IllegalStateException("결제 대기 중인 주문이 아닙니다: " + status);
+        }
+    }
+
     public boolean isOwnedBy(Long userId) {
         return this.userId.equals(userId);
     }

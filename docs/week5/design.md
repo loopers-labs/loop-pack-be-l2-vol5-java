@@ -11,7 +11,7 @@ W2 의 확정(`OrderConfirmation.confirm`)은 한 트랜잭션에서 주문 확�
 PG 결제의 결과는 우리 DB 밖에서 생기므로 rollback 으로 되돌릴 수 없다. 그래서 확정을 셋으로 나눈다.
 
 ```
-TX A    주문 · 상품 검사 → 재고 예약 → 결제 시도 기록(REQUESTED) → 주문 PAYMENT_PENDING → commit
+TX A    주문 · 상품 검사 → 재고 예약 → 결제 시도 기록(REQUESTED) → 주문 PENDING → commit
 TX 밖   PG 생성 POST (Tomcat 스레드가 응답을 기다린다, 상한은 timeout)
 TX B    PG 의 관찰을 결제 · 주문 · 재고에 한 번만 반영 → commit
 ```
@@ -69,7 +69,10 @@ erDiagram
 | `status` | `REQUESTED` · `PENDING` · `UNKNOWN` · `SUCCESS` · `FAILED` · `CONFLICT` |
 | `requested_at` · `settled_at` · `last_checked_at` | 마킹 · 종결 · 마지막 PG 확인 시각 |
 
-**주문과 다른 테이블로 둔다.** 주문의 생애(`DRAFT` → `PAYMENT_PENDING` → `CONFIRMED`)와 PG 와 주고받은 기록(`REQUESTED` → `PENDING` → `UNKNOWN` …)은 쓰는 말이 다르다.
+**주문과 다른 테이블로 둔다.** 주문의 생애(`DRAFT` → `PENDING` → `CONFIRMED`)와 PG 와 주고받은 기록(`REQUESTED` → `PENDING` → `UNKNOWN` …)은 같은 말도 뜻이 다르다 — 주문의 `PENDING` 은 결제가 `REQUESTED` · `PENDING` · `UNKNOWN` · `CONFLICT` 인 동안 모두를 뜻한다.
+주문 상태 이름은 짧게 둔다(`PENDING` · `FAILED`). 주문 상태만 보는 화면 · 관리자 목록에서 읽기 쉽고, 문서와 로그에서는 "주문 `PENDING`" · "결제 `PENDING`" 처럼 앞에 붙여 가른다.
+지금 고를 수 있는 다른 길: `PAYMENT_PENDING` · `PAYMENT_FAILED` — 이름만으로 주문 쪽 말임이 드러나 결제 · PG 의 `PENDING` · `FAILED` 와 섞이지 않는다.
+**뒤집을 조건**: 주문 상태와 결제 상태를 한 로그 줄 · 한 응답에 나란히 내보내 이름만으로는 어느 쪽인지 헷갈리는 일이 실제로 생길 때.
 `orders` 에 열로 붙이면 한 행에 상태 열이 둘이 되고 `Order` 가 `transactionKey` · `UNKNOWN` 같은 PG 개념을 알게 된다.
 지금 고를 수 있는 다른 길은 `orders` 에 열을 붙이는 것이고, 주문당 한 시도라 1:1 이므로 가능하다.
 **뒤집을 조건**: 결제 시도를 주문과 따로 읽는 곳이 없어질 때. 지금은 sweeper 가 결제를 상태로 찾으므로 그런 곳이 있다.
@@ -100,7 +103,7 @@ erDiagram
 
 **왜 예약 테이블을 두지 않나.** `stock_reservation(order_id, product_id, quantity, status)` 를 두면 수량은 `order_item` 과, 상태는 `payment.status` 와 언제나 같은 값이다.
 같은 사실을 두 곳에 두면 "결제는 `SUCCESS` 인데 예약은 묶인" 어긋난 상태가 가능해지고, 그것을 막는 코드와 테스트가 따로 필요하다.
-예약 상태 조건이 주던 2차 방어는 잃지만, 반환 경로는 `PaymentSettlement.apply` 하나뿐이다.
+예약 상태 조건이 주던 2차 방어는 잃지만, 반환 경로는 `PaymentFacade` 의 TX B 메서드 하나뿐이다.
 원문도 "주문별 확보 수량 · 상태를 저장하는 최소 예약 방식으로 구현할 **수 있습니다**" 라고 했다 — 수량은 `order_item` 에, 상태는 `payment` 에 저장돼 있다.
 
 지금 고를 수 있는 다른 길:
@@ -143,7 +146,7 @@ WHERE a.reason = 'RESULT_AFTER_SETTLED';
 
 ### 3.4 `orders` 의 변경
 
-- `status` 에 `PAYMENT_PENDING` · `PAYMENT_FAILED` 를 더한다.
+- `status` 에 `PENDING` · `FAILED` 를 더한다.
 - `payment_method`(`POINT` · `PG`) 열을 더한다. 기존 `CONFIRMED` 행은 `POINT` 다. DRAFT 는 null 이다.
 - `paid_amount` · `confirmed_at` 은 PG 성공 때 채운다. 실패에는 채우지 않는다.
 
@@ -191,14 +194,26 @@ confirm(userId, orderId, key, cardType, cardNo)
 2 를 3 보다 먼저 본다. 바꾸면 같은 키의 정상 재전송이 `ORDER_NOT_DRAFT` 로 거절된다.
 
 **동시 confirm 두 건이 2 를 함께 통과하는 경우.** 둘 다 아직 payment 가 없을 때 2 를 지나 TX A 로 들어온다. TX A 는 주문 행을 `FOR UPDATE` 로 먼저 잡으므로 진 쪽은 그 잠금 뒤에서 기다린다.
-이긴 쪽이 commit 하면 진 쪽은 `PAYMENT_PENDING` 인 주문을 본다. 여기서 바로 `ORDER_NOT_DRAFT` 를 내면 같은 키의 재전송이 409 가 되어 `PAY-004`(다른 실행은 저장된 상태를 돌려준다)와 어긋난다.
+이긴 쪽이 commit 하면 진 쪽은 `PENDING` 인 주문을 본다. 여기서 바로 `ORDER_NOT_DRAFT` 를 내면 같은 키의 재전송이 409 가 되어 `PAY-004`(다른 실행은 저장된 상태를 돌려준다)와 어긋난다.
 그래서 TX A 는 주문을 잠근 뒤 DRAFT 가 아니면 **키로 payment 를 한 번 더 찾는다** — 같은 키 · 같은 요청이면 저장된 상태(202), 다른 요청이면 409 충돌, 없으면 `ORDER_NOT_DRAFT`.
 주문 잠금이 동시 confirm 을 한 줄로 세우므로, `order_id` UNIQUE 는 잠금을 우회한 코드가 생겼을 때를 위한 2차 방어다.
 
 ## 5. 상태 전이 — 결과 반영 경계
 
-생성 응답 · callback · reconcile · sweeper 는 모두 **관찰**을 만들어 같은 경계(`PaymentSettlement.apply`, TX B)에 넘긴다.
+생성 응답 · callback · reconcile · sweeper 는 모두 **관찰**을 만들어 같은 경계(TX B)에 넘긴다.
 "늦은 생성 응답이 종결을 되돌리지 않는다" 같은 규칙은 특별 처리 없이 이 표에서 나온다.
+
+**`Payment` 는 할 일을 돌려주고, TX B 가 실행한다.** `Payment.observe(관찰)` 은 자기 상태만 바꾸고 `PaymentOutcome`(할 일: 없음 · 주문 확정 · 주문 실패와 재고 반환, 그리고 불일치 0 ~ 1 건)을 돌려준다.
+`PaymentFacade` 의 TX B 메서드가 잠금 아래에서 `observe` 를 부르고, **같은 메서드 안에서** 그 할 일대로 주문을 확정하거나 실패시키고 재고를 반환하고 불일치를 기록한 뒤 저장한다(5.3).
+`Payment` 가 `Order` · 상품을 직접 바꾸지 않는 이유: 애그리거트끼리 엉키고, 재고 반환에 필요한 행 잠금은 TX B 의 일이며, 전이 표를 DB 없이 애그리거트 테스트로 확인하기 위해서다.
+지금 고를 수 있는 다른 길: `Payment` 가 `Order` 를 인자로 받아 함께 바꾼다. 재고는 여전히 밖에서 바꿔야 해서 할 일이 두 곳으로 갈린다.
+**뒤집을 조건**: 결제 결과에 따른 후속 일이 주문 하나뿐이고 재고 반환이 없어질 때.
+
+**할 일의 적용은 도메인 서비스로 떼지 않고 TX B 메서드에 둔다.** 판단은 모두 `Payment.observe` 가 하고, 남는 것은 `PaymentOutcome` 을 주문 · 재고에 옮겨 적는 몇 줄이다. 판단이 없는 겹을 하나 더 두면 읽는 길만 길어진다.
+지키는 것은 하나다 — **`observe` 와 적용을 같은 메서드 안에서 짝지어 한 번만** 한다. `PaymentOutcome` 은 값이라 몇 번이든 적용할 수 있으므로, 이것을 적용하는 곳은 TX B 메서드 하나뿐이어야 재고가 두 번 반환되지 않는다(`RSV-003`).
+걸치는 판단의 본체(전이 표)는 `Payment` 에 있고, 여기 남는 것은 판단이 아니라 적용이다. TX A 도 같은 기준으로 둔다(11장).
+지금 고를 수 있는 다른 길: 도메인 서비스(`PaymentResolution.resolve`)로 떼어 `observe` 와 적용을 그 안에서 짝짓는다. 파사드는 트랜잭션과 잠금 순서만 갖는다.
+**뒤집을 조건**: TX B 메서드가 커져 트랜잭션 코드와 적용이 한눈에 구분되지 않을 때, 또는 같은 적용을 TX B 메서드 밖에서도 해야 할 때.
 
 ### 5.1 관찰
 
@@ -252,11 +267,11 @@ stateDiagram-v2
 | 현재 | 관찰 | 다음 | 효과 (같은 TX B) |
 |---|---|---|---|
 | `REQUESTED` | `Accepted(K)` | `PENDING` | 키 K 저장 |
-| `REQUESTED` | `RejectedNoEffect` · `NotSent` | `FAILED` | 예약 반환 · 주문 `PAYMENT_FAILED`. 키는 없다 — 꾸며 저장하지 않는다 |
+| `REQUESTED` | `RejectedNoEffect` · `NotSent` | `FAILED` | 예약 반환 · 주문 `FAILED`. 키는 없다 — 꾸며 저장하지 않는다 |
 | `REQUESTED` | `CreateUnknown` | `UNKNOWN` | — |
 | `REQUESTED` · `UNKNOWN` · `PENDING` | `Verified(K, PENDING)` | `PENDING` | 키가 없으면 K 저장 |
 | `REQUESTED` · `UNKNOWN` · `PENDING` | `Verified(K, SUCCESS)` | `SUCCESS` | 키가 없으면 K 저장 · 예약 소비 · 주문 `CONFIRMED`(`payment_method=PG`, `paid_amount`) |
-| `REQUESTED` · `UNKNOWN` · `PENDING` | `Verified(K, FAILED)` | `FAILED` | 키가 없으면 K 저장 · 예약 반환 · 주문 `PAYMENT_FAILED` |
+| `REQUESTED` · `UNKNOWN` · `PENDING` | `Verified(K, FAILED)` | `FAILED` | 키가 없으면 K 저장 · 예약 반환 · 주문 `FAILED` |
 | `REQUESTED` · `UNKNOWN` · `PENDING` | `Mismatch(r)` | `CONFLICT` | 불일치 1줄. 예약 · 주문 그대로 |
 | `REQUESTED` · `UNKNOWN` · `PENDING` | `NotFound` | 그대로 | — |
 | 키 K 가 있는 모든 상태 | `Accepted(K)` · `CreateUnknown` | 그대로 | **늦은 생성 응답 · timeout 처리.** callback 이 먼저 반영한 경우다 |
@@ -267,7 +282,7 @@ stateDiagram-v2
 
 - 상태는 **앞으로만** 간다. `PENDING` → `UNKNOWN`, 종결 → 미완료로 가는 줄이 표에 없다.
 - `UNKNOWN` 과 `REQUESTED` 는 같은 줄을 탄다. 둘 다 "보냈을 수 있고 결과를 모름" 이다. 다른 점은 생성 응답을 받았느냐뿐이다.
-- 주문과 재고는 결제 상태가 정한다: 미완료(`REQUESTED` · `PENDING` · `UNKNOWN` · `CONFLICT`) → `PAYMENT_PENDING` · 차감한 재고 유지, `SUCCESS` → `CONFIRMED` · 재고 그대로, `FAILED` → `PAYMENT_FAILED` · 재고 반환.
+- 주문과 재고는 결제 상태가 정한다: 미완료(`REQUESTED` · `PENDING` · `UNKNOWN` · `CONFLICT`) → 주문 `PENDING` · 차감한 재고 유지, `SUCCESS` → 주문 `CONFIRMED` · 재고 그대로, `FAILED` → 주문 `FAILED` · 재고 반환.
 - `FAILED` 로 가는 길은 **둘뿐**이다: 검증한 `FAILED`, 효과 0건 거절. timeout · 회로 OPEN · 조회 0건은 없다.
 
 ### 5.3 TX B 의 잠금
@@ -304,14 +319,14 @@ sequenceDiagram
     participant DB
     participant PG
     C->>A: POST /orders/42/confirm (key, cardType, cardNo)
-    A->>DB: TX A 재고 차감 + payment REQUESTED + 주문 PAYMENT_PENDING
+    A->>DB: TX A 재고 차감 + payment REQUESTED + 주문 PENDING
     A->>PG: POST /api/v1/payments (LP-ORD-0000000042, 7000)
     PG-->>A: 202 TEST-TX-0042 PENDING
     A->>DB: TX B payment PENDING, 키 저장
     A-->>C: 202 Retry-After 1, statusUrl
     loop 폴링 (DB 만 읽음)
         C->>A: GET /orders/42
-        A-->>C: PAYMENT_PENDING
+        A-->>C: 주문 PENDING
     end
     PG->>A: callback (LP-ORD-0000000042, TEST-TX-0042, SUCCESS)
     A->>PG: GET /api/v1/payments/TEST-TX-0042
@@ -335,7 +350,7 @@ sequenceDiagram
     A->>PG: POST /api/v1/payments
     PG-->>A: 422 TEST_PG_REJECTED_BEFORE_CREATE, transactionCreated false
     Note over A: 다섯 조건 확인 (422 · code · false · orderId · amount)
-    A->>DB: TX B payment FAILED (키 없음), 재고 반환, 주문 PAYMENT_FAILED
+    A->>DB: TX B payment FAILED (키 없음), 재고 반환, 주문 FAILED
 ```
 
 가용 3 → 5. 다섯 조건 중 하나라도 어긋나면(본문 없는 422 등) `CreateUnknown` 이다.
@@ -594,7 +609,7 @@ callback 은 "확인해 보라" 는 계기라 놓쳐도 잃는 정보가 없다 
 
 | 장면 | 결과 | 왜 자동으로 풀지 않나 |
 |---|---|---|
-| `REQUESTED` commit 뒤 POST 전에 프로세스 종료 | 조회 0건이 계속되고 주문 `PAYMENT_PENDING` 과 차감한 재고가 남는다 | 0건이 "안 보냈다" 의 증거가 아니다. 다시 보내면 이중 결제가 될 수 있다. **뒤집을 조건**: PG 가 "생성된 거래는 N 초 안에 조회된다" 를 보장할 때 — `requested_at` 이 N 초를 넘었는데 주문 조회가 0 건이면 안 보냈음이 증명되므로 `FAILED` · 반환한다. 시간만이 아니라 시간 + PG 의 0 건이라 `RSV-004` 와 맞는다 |
+| `REQUESTED` commit 뒤 POST 전에 프로세스 종료 | 조회 0건이 계속되고 주문 `PENDING` 과 차감한 재고가 남는다 | 0건이 "안 보냈다" 의 증거가 아니다. 다시 보내면 이중 결제가 될 수 있다. **뒤집을 조건**: PG 가 "생성된 거래는 N 초 안에 조회된다" 를 보장할 때 — `requested_at` 이 N 초를 넘었는데 주문 조회가 0 건이면 안 보냈음이 증명되므로 `FAILED` · 반환한다. 시간만이 아니라 시간 + PG 의 0 건이라 `RSV-004` 와 맞는다 |
 | `CONFLICT` | 예약이 묶인 채 사람을 기다린다 | 어느 거래가 진짜인지, 금액이 다른 결제를 받을지는 사람이 PG 와 확인할 일이다 |
 | 종결 뒤 PG 가 다른 결과를 말함(`RESULT_AFTER_SETTLED`) | 상태는 그대로, 불일치 기록만 | 취소 API 가 없다(1.2). 특히 `FAILED` · 반환 뒤 `SUCCESS` 는 돈은 받았는데 재고가 팔렸을 수 있다 |
 | 오래된 미확인 결제 | 시간이 지나도 실패로 바꾸지 않는다 | 아직 성공할 거래의 재고를 남에게 팔 수 있다. 원문도 무조건 만료를 금한다 |
@@ -632,12 +647,17 @@ callback 은 "확인해 보라" 는 계기라 놓쳐도 잃는 정보가 없다 
 ## 11. 코드 배치
 
 ```
-domain/payment          Payment(애그리거트 · 전이 표) · PaymentStatus · 관찰(sealed) · PaymentDiscrepancy
-                        PaymentRepository · PaymentGateway(포트: create · lookup) · PaymentSettlement(TX B 의 규칙)
-                        PaymentAttemptKey · ProviderOrderId · CardType
+domain/payment          Payment(애그리거트 · 전이 표) · PaymentStatus · PaymentOutcome(전이가 요구하는 할 일) · PaymentDiscrepancy
+                        CreateObservation(sealed: Accepted · RejectedNoEffect · NotSent · CreateUnknown)
+                        LookupResult(sealed: Found · NotFound · Unavailable) · PgTransaction · TransactionStatus
+                        PaymentRepository · PaymentGateway(포트: create · lookup)
+                        PaymentAttemptKey · ProviderOrderId · TransactionKey · CardType · CardNumber · PaymentCreation
 domain/product          차감(`StockDeduction`, 지금 것) · 반환(삭제된 상품 포함)의 좁은 계약
-domain/order            주문 상태 2 개 · 결제 시작 · 확정 · 실패 메서드. 예약을 걸치는 확정은 도메인 서비스가 진다
-application/payment     PaymentFacade — confirm · onCallback · reconcile · sweep 의 네 입구와 check(lookup → TX B) 하나
+domain/order            주문 상태(PENDING · FAILED 추가) · 결제 시작 · 확정 · 실패 메서드
+domain/payment          PaymentService — 찾기 · 저장의 얇은 층
+application/payment     PaymentFacade(트랜잭션 없음) — confirm · onCallback · reconcile · sweep 의 네 입구와 check(lookup → TX B) 하나
+                        PaymentTransactions(@Transactional) — begin(TX A) · settle(TX B)
+                        TX B 가 Payment.observe 와 PaymentOutcome 의 적용(주문 · 재고 · 불일치)을 한 번에 한다
                         트랜잭션 경계 · bulkhead 는 여기에만 있다
 infrastructure/payment  PgPaymentGateway(RestClient · timeout · 회로 · 재시도) · 엔티티 · JPA 리포지토리
 interfaces/api          confirm · reconcile(OrderV1Controller) · callback 컨트롤러 · 요청 record 의 타입 검증
@@ -647,7 +667,14 @@ interfaces/api          confirm · reconcile(OrderV1Controller) · callback 컨�
 - **생성 POST 는 confirm 만 부른다.**
 - domain 은 Resilience4j · `RestClient` 를 모른다. ArchUnit 규칙을 하나 더한다.
 - 이름은 제안이다. 구현하며 더 맞는 이름이 보이면 바꾼다.
-- 새 confirm 은 `PointUsage` 를 부르지 않는다. `PointService.use` 의 호출자가 없어지므로, 남길지 지울지는 구현 단계에서 묻는다.
+- **TX A · TX B 는 facade 와 다른 빈(`PaymentTransactions`)에 둔다.** facade 는 TX A → POST → TX B 를 차례로 부르는데 POST 는 트랜잭션 밖이어야 한다. 같은 빈 안에서 부르면 프록시를 거치지 않아 `@Transactional` 이 걸리지 않는다(self-invocation).
+- **걸치는 판단은 애그리거트에, 순서 · 잠금은 `PaymentTransactions` 에 둔다.** TX A 를 쪼개면 판단은 모두 애그리거트에 있다 — DRAFT 인가(`Order.startPayment`), 재고가 충분한가(`Product`), 같은 요청인가(`Payment.isSameRequest`), 시도의 시작 상태(`Payment.request`). 남는 것은 키를 DRAFT 보다 먼저 보는 순서(4.3), 주문 → 상품(id 순) → payment 의 잠금 순서(5.3), 한 TX 로 묶는 경계이고, 이것은 트랜잭션 경계와 한 몸이라 application 에 둔다. TX B 의 적용을 facade 쪽에 둔 것(5장)과 같은 판단이다.
+  그래서 W2 의 `OrderConfirmation`(도메인 서비스)은 새 확정으로 교체할 때(5 단계 끝) 지운다. 도메인 패키지끼리는 서로 부르지 않고 id 로 가리키며, 셋을 엮는 곳은 `PaymentTransactions` 하나다.
+  혼자 커밋되면 안 되는 차감은 `ProductService` 가 아니라 좁은 계약 `StockDeduction` 으로 받는다 — 호출자를 `grep` 한 번으로 센다.
+  지금 고를 수 있는 다른 길: TX A 를 도메인 서비스(`OrderConfirmation` 을 고쳐 쓰기)에 두고 facade 는 트랜잭션만 연다. 판단이 없는 겹이 하나 더 생기고, 도메인 서비스가 다른 도메인의 좁은 계약을 import 해야 한다.
+  **뒤집을 조건**: TX A 의 순서 자체가 업무 규칙이 될 때(예: 결제 수단마다 차감 순서가 달라짐) — 그때는 순서를 도메인 서비스로 내려 DB 없이 테스트한다.
+- **새 confirm 은 포인트를 쓰지 않으므로 `PointUsage` · `PointService.use` · `UserPoint.use` 를 지운다**(교체 커밋에서). 호출자 없는 코드를 남기지 않는다. 과거 POINT 주문의 원장을 읽어야 하므로 `TransactionType.USE` 는 남긴다(`PAY-011`). 충전 · 잔액 조회는 그대로다.
+  **뒤집을 조건**: 포인트와 카드를 섞어 내는 결제가 범위에 들어올 때 — 그때는 부분 차감 · 보상 취소와 함께 새로 설계한다.
 - 4주차 목록 캐시가 `soldOut` 을 담는다(`ProductViewQuery.View`). 예약 · 반환이 품절 여부를 바꿀 수 있으므로 `ProductListingEvents` 의 무효화에 연결한다(`RSV-008`).
 
 ## 12. 검증
@@ -719,7 +746,7 @@ rm pg-fixture.crt
 | 2 | PG adapter | `PaymentProviderContractTest` |
 | 3 | 도메인 — `Payment` 전이 표 · 주문 상태 | DB 없이 도는 애그리거트 테스트 |
 | 4 | 저장 · TX A · 발송 | 동시 confirm 에도 create 1 |
-| 5 | TX B | 성공 · 실패 · 거절 · 중복 반영 0 |
+| 5 | TX B, 그리고 confirm 교체 | 성공 · 실패 · 거절 · 중복 반영 0. 끝에서 한 커밋으로 confirm 엔드포인트를 새 계약으로 바꾸고, 기존 테스트를 Q-6 대로 옮기고, `OrderConfirmation` · `PointUsage` 를 지운다 — 새 경로가 결과에 닿기 전에 바꾸면 그 커밋의 confirm 은 영원히 대기가 된다 |
 | 6 | callback · reconcile | callback-first ≡ lookup-first, 꾸민 callback 거절 |
 | 7 | 회복 도구 — timeout · 조회 재시도 · 회로 · bulkhead · reconcile 간격 | 회로 전이, 실제 호출 수, 21 번째 503 |
 | 7.5 | sweeper (선택) | 응답 유실 · 재시작 장면이 사람 없이 종결 |

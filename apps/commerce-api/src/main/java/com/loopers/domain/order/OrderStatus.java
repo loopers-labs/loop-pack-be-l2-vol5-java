@@ -4,5 +4,9 @@ public enum OrderStatus {
 
     DRAFT,
 
-    CONFIRMED
+    PENDING,
+
+    CONFIRMED,
+
+    FAILED
 }

@@ -26,6 +26,16 @@ public class OrderService {
             .orElseThrow(() -> new DomainException(DomainError.ORDER_NOT_FOUND));
     }
 
+    public Order getOwnedForUpdate(Long userId, Long orderId) {
+        return orderRepository.findByIdForUpdate(orderId)
+            .filter(order -> order.isOwnedBy(userId))
+            .orElseThrow(() -> new DomainException(DomainError.ORDER_NOT_FOUND));
+    }
+
+    public Order save(Order order) {
+        return orderRepository.save(order);
+    }
+
     public List<Order> findMine(Long userId) {
         return orderRepository.findByUserId(userId);
     }

@@ -4,14 +4,14 @@ import java.util.List;
 
 public sealed interface LookupResult {
 
-    record Found(List<PgTransaction> transactions) implements LookupResult {
+    record Found(List<PgTransaction> transactions) implements LookupResult, LookupObservation {
 
         public Found {
             transactions = List.copyOf(transactions);
         }
     }
 
-    record NotFound() implements LookupResult {
+    record NotFound() implements LookupResult, LookupObservation {
     }
 
     record Unavailable() implements LookupResult {

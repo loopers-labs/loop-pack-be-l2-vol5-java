@@ -16,6 +16,8 @@ public enum DomainError {
     ORDER_NOT_DRAFT(Failure.RULE_VIOLATION, "확정할 수 없는 주문 상태입니다."),
     ORDER_NOT_FOUND(Failure.UNIDENTIFIED, "주문을 찾을 수 없습니다."),
 
+    PAYMENT_ATTEMPT_CONFLICT(Failure.RULE_VIOLATION, "같은 결제 시도 키로 다른 요청이 왔습니다."),
+
     LIKE_LIST_NOT_FOUND(Failure.UNIDENTIFIED, "좋아요 목록을 찾을 수 없습니다.");
 
     private final Failure failure;
