@@ -2,6 +2,7 @@ package com.loopers.infrastructure.order;
 
 import com.loopers.domain.BaseEntity;
 import com.loopers.domain.order.OrderStatus;
+import com.loopers.domain.order.PaymentMethod;
 import com.loopers.domain.order.PaymentResult;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Entity;
@@ -35,24 +36,29 @@ public class OrderJpaEntity extends BaseEntity {
     @Enumerated(EnumType.STRING)
     private PaymentResult paymentResult;
 
+    @Enumerated(EnumType.STRING)
+    private PaymentMethod paymentMethod;
+
     @Getter(AccessLevel.NONE)
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
     @JoinColumn(name = "order_id", nullable = false)
     private List<OrderItemJpaEntity> items = new ArrayList<>();
 
     private OrderJpaEntity(Long userId, OrderStatus status, long totalAmount, Long paymentAmount,
-                           PaymentResult paymentResult, List<OrderItemJpaEntity> items) {
+                           PaymentResult paymentResult, PaymentMethod paymentMethod, List<OrderItemJpaEntity> items) {
         this.userId = userId;
         this.status = status;
         this.totalAmount = totalAmount;
         this.paymentAmount = paymentAmount;
         this.paymentResult = paymentResult;
+        this.paymentMethod = paymentMethod;
         this.items.addAll(items);
     }
 
     public static OrderJpaEntity create(Long userId, OrderStatus status, long totalAmount, Long paymentAmount,
-                                        PaymentResult paymentResult, List<OrderItemJpaEntity> items) {
-        return new OrderJpaEntity(userId, status, totalAmount, paymentAmount, paymentResult, items);
+                                        PaymentResult paymentResult, PaymentMethod paymentMethod,
+                                        List<OrderItemJpaEntity> items) {
+        return new OrderJpaEntity(userId, status, totalAmount, paymentAmount, paymentResult, paymentMethod, items);
     }
 
     public List<OrderItemJpaEntity> getItems() {
@@ -64,5 +70,6 @@ public class OrderJpaEntity extends BaseEntity {
         totalAmount = order.getTotalAmount();
         paymentAmount = order.getPaymentAmount();
         paymentResult = order.getPaymentResult();
+        paymentMethod = order.getPaymentMethod();
     }
 }

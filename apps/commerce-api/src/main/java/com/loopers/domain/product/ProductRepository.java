@@ -1,12 +1,15 @@
 package com.loopers.domain.product;
 
 import java.time.ZonedDateTime;
+import java.math.BigInteger;
 import java.util.List;
 import java.util.Optional;
 
 public interface ProductRepository {
 
     Optional<Product> findById(Long productId);
+
+    Optional<Product> findByIdWithExclusiveLock(Long productId);
 
     List<Product> findAll();
 
@@ -23,6 +26,10 @@ public interface ProductRepository {
     int updateActiveStock(Long productId, long stock, ZonedDateTime updatedAt);
 
     int decreaseActiveStock(Long productId, int quantity, ZonedDateTime updatedAt);
+
+    int increaseStock(Long productId, int quantity, ZonedDateTime updatedAt);
+
+    BigInteger sumPendingReservationQuantity(Long productId);
 
     int softDeleteActiveById(Long productId, ZonedDateTime deletedAt);
 

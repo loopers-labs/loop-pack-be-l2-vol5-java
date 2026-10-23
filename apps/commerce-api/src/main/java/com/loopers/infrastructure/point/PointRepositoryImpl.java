@@ -34,9 +34,4 @@ public class PointRepositoryImpl implements PointRepository {
     public int increaseBalanceIfWithinMaximum(Long userId, long amount, long maximumBalance, ZonedDateTime updatedAt) {
         return pointJpaRepository.increaseBalanceIfWithinMaximum(userId, amount, maximumBalance, updatedAt);
     }
-
-    @Override
-    public int decreaseBalanceIfEnough(Long userId, long amount, ZonedDateTime updatedAt) {
-        return pointJpaRepository.decreaseBalanceIfEnough(userId, amount, updatedAt);
-    }
 }

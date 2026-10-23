@@ -1,0 +1,14 @@
+# 재현 실험용 값이다. 운영 임계값으로 결정한 설정이 아니다.
+payment:
+  pg:
+    read-timeout: 500ms
+    lookup-circuit-breaker:
+      enabled: true
+      sliding-window-size: 5
+      minimum-number-of-calls: 5
+      failure-rate-threshold: 50
+      wait-duration-in-open-state: 2s
+      permitted-number-of-calls-in-half-open-state: 2
+  # 다른 조회가 실험 표본에 섞이지 않도록 수동 reconcile을 사용한다.
+  periodic-check:
+    enabled: false

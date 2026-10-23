@@ -1,0 +1,14 @@
+# 단계 2: 기존 회로에 조회 Retry를 추가한다.
+spring:
+  config:
+    activate:
+      on-profile: "pg-retry-experiment | pg-rate-limit-experiment | pg-time-limit-experiment"
+payment:
+  pg:
+    lookup-policy:
+      retry:
+        enabled: true
+        max-attempts: 3
+        initial-wait: 100ms
+        multiplier: 2
+        jitter: 0.2

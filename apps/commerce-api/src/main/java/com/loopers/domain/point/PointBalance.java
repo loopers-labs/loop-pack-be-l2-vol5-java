@@ -20,13 +20,6 @@ public record PointBalance(long amount) {
         return new PointBalance(amount + chargeAmount);
     }
 
-    public PointBalance subtract(long paymentAmount) {
-        if (paymentAmount <= 0 || paymentAmount > amount) {
-            throw new CoreException(ErrorType.CONFLICT, "포인트 잔액이 부족합니다.");
-        }
-        return new PointBalance(amount - paymentAmount);
-    }
-
     public static void validateChargeAmount(long chargeAmount) {
         if (chargeAmount <= 0) {
             throw new CoreException(ErrorType.BAD_REQUEST, "충전액은 양수여야 합니다.");

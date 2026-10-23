@@ -9,6 +9,4 @@ public interface PointRepository {
     Point save(Point point);
 
     int increaseBalanceIfWithinMaximum(Long userId, long amount, long maximumBalance, ZonedDateTime updatedAt);
-
-    int decreaseBalanceIfEnough(Long userId, long amount, ZonedDateTime updatedAt);
 }

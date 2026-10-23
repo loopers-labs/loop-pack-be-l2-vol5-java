@@ -1,4 +1,4 @@
-package com.loopers.application.order;
+package com.loopers.application.payment;
 
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
@@ -6,6 +6,9 @@ import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.OrderRepository;
 import com.loopers.domain.order.OrderStatus;
+import com.loopers.domain.order.PaymentMethod;
+import com.loopers.domain.payment.PaymentAttempt;
+import com.loopers.domain.payment.PaymentAttemptRepository;
 import com.loopers.domain.point.Point;
 import com.loopers.domain.point.PointBalance;
 import com.loopers.domain.point.PointRepository;
@@ -16,8 +19,6 @@ import com.loopers.domain.user.UserRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import com.loopers.utils.DatabaseCleanUp;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -31,20 +32,21 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+// 결제 요청 TX A가 주문 전이·재고 차감·시도 생성을 함께 commit하거나 함께 되돌리는지 확인한다.
 @SpringBootTest
-class OrderConfirmationTransactionIntegrationTest {
+class PaymentRequestTransactionIntegrationTest {
 
     private static final long INITIAL_FIRST_STOCK = 5L;
     private static final long INITIAL_SECOND_STOCK = 4L;
@@ -52,7 +54,7 @@ class OrderConfirmationTransactionIntegrationTest {
     private static final long TOTAL_AMOUNT = 500L;
 
     @Autowired
-    private OrderFacade orderFacade;
+    private PaymentRequestFacade paymentRequestFacade;
 
     @Autowired
     private BrandRepository brandRepository;
@@ -61,6 +63,12 @@ class OrderConfirmationTransactionIntegrationTest {
     private ProductRepository productRepository;
 
     @MockitoSpyBean
+    private PaymentAttemptRepository paymentAttemptRepository;
+
+    @MockitoSpyBean
+    private PaymentGateway paymentGateway;
+
+    @Autowired
     private PointRepository pointRepository;
 
     @Autowired
@@ -78,127 +86,95 @@ class OrderConfirmationTransactionIntegrationTest {
     @Autowired
     private PlatformTransactionManager transactionManager;
 
-    @PersistenceContext
-    private EntityManager entityManager;
-
     @AfterEach
     void tearDown() {
         databaseCleanUp.truncateAllTables();
     }
 
+    @DisplayName("여러 품목의 결제 요청은 주문 전이·모든 품목의 재고 차감·시도 생성을 함께 commit하고 포인트는 쓰지 않는다.")
     @Test
-    void confirmsMultiItemDraftAndCommitsStockPointAndPaymentTogether() {
+    void commitsOrderStockAndAttemptTogether() {
         Fixture fixture = createFixture();
 
-        orderFacade.confirm(fixture.userId(), fixture.orderId());
+        paymentRequestFacade.requestPayment(fixture.userId(), fixture.orderId(), UUID.randomUUID().toString(), "TEST", "0000");
 
-        entityManager.clear();
-        Order confirmedOrder = orderRepository.findById(fixture.orderId()).orElseThrow();
-        Product firstProduct = productRepository.findById(fixture.firstProductId()).orElseThrow();
-        Product secondProduct = productRepository.findById(fixture.secondProductId()).orElseThrow();
-        Point point = pointRepository.findByUserId(fixture.userId()).orElseThrow();
-
-        assertThat(confirmedOrder.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
-        assertThat(confirmedOrder.getTotalAmount()).isEqualTo(TOTAL_AMOUNT);
-        assertThat(confirmedOrder.getPaymentAmount()).isEqualTo(TOTAL_AMOUNT);
-        assertThat(confirmedOrder.getPaymentResult().name()).isEqualTo("SUCCESS");
-        assertThat(confirmedOrder.getItems()).hasSize(2);
-        assertThat(firstProduct.getStock().amount()).isEqualTo(3L);
-        assertThat(secondProduct.getStock().amount()).isEqualTo(3L);
-        assertThat(point.getBalance().amount()).isEqualTo(500L);
+        Order order = orderRepository.findById(fixture.orderId()).orElseThrow();
+        PaymentAttempt attempt = paymentAttemptRepository.findByOrderId(fixture.orderId()).orElseThrow();
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+        assertThat(order.getPaymentMethod()).isEqualTo(PaymentMethod.PG);
+        assertThat(order.getTotalAmount()).isEqualTo(TOTAL_AMOUNT);
+        assertThat(order.getPaymentAmount()).isNull();
+        assertThat(order.getItems()).hasSize(2);
+        assertThat(attempt.getAmount()).isEqualTo(TOTAL_AMOUNT);
+        assertThat(stock(fixture.firstProductId())).isEqualTo(3L);
+        assertThat(stock(fixture.secondProductId())).isEqualTo(3L);
+        assertThat(point(fixture)).isEqualTo(INITIAL_POINT_BALANCE);
     }
 
+    @DisplayName("주문 전이와 재고 차감 뒤 시도 저장이 실패하면 TX A 전체를 되돌리고 PG를 호출하지 않는다.")
     @Test
-    void rollsBackAllDatabaseChangesWhenFailureOccursAfterConfirmationWrites() {
+    void rollsBackEveryChangeWhenAttemptSaveFails() {
         Fixture fixture = createFixture();
         AtomicReference<DatabaseState> stateBeforeFailure = new AtomicReference<>();
-
         doAnswer(invocation -> {
-            int updatedRows = (int) invocation.callRealMethod();
-            assertThat(updatedRows).isEqualTo(1);
-            entityManager.flush();
             stateBeforeFailure.set(readDatabaseState(fixture));
-            throw new IllegalStateException("포인트 차감 변경 후 실패 주입");
-        }).when(pointRepository).decreaseBalanceIfEnough(
-            eq(fixture.userId()), eq(TOTAL_AMOUNT), any(ZonedDateTime.class)
-        );
+            throw new IllegalStateException("시도 저장 전 실패 주입");
+        }).when(paymentAttemptRepository).save(any());
 
-        assertThatThrownBy(() -> orderFacade.confirm(fixture.userId(), fixture.orderId()))
+        assertThatThrownBy(() -> paymentRequestFacade.requestPayment(
+            fixture.userId(), fixture.orderId(), UUID.randomUUID().toString(), "TEST", "0000"))
             .isInstanceOf(IllegalStateException.class)
-            .hasMessage("포인트 차감 변경 후 실패 주입");
+            .hasMessage("시도 저장 전 실패 주입");
 
         assertThat(stateBeforeFailure.get()).isEqualTo(new DatabaseState(
-            3L,
-            3L,
-            500L,
-            "CONFIRMED",
-            TOTAL_AMOUNT,
-            "SUCCESS"
+            3L, 3L, INITIAL_POINT_BALANCE, "PAYMENT_PENDING", "PG", null
         ));
-
-        entityManager.clear();
-        Order orderAfterRollback = orderRepository.findById(fixture.orderId()).orElseThrow();
-        Product firstProductAfterRollback = productRepository.findById(fixture.firstProductId()).orElseThrow();
-        Product secondProductAfterRollback = productRepository.findById(fixture.secondProductId()).orElseThrow();
-        Point pointAfterRollback = pointRepository.findByUserId(fixture.userId()).orElseThrow();
-
-        assertThat(orderAfterRollback.getStatus()).isEqualTo(OrderStatus.DRAFT);
-        assertThat(orderAfterRollback.getTotalAmount()).isEqualTo(TOTAL_AMOUNT);
-        assertThat(orderAfterRollback.getPaymentAmount()).isNull();
-        assertThat(orderAfterRollback.getPaymentResult()).isNull();
-        assertThat(orderAfterRollback.getItems()).hasSize(2);
-        assertThat(firstProductAfterRollback.getStock().amount()).isEqualTo(INITIAL_FIRST_STOCK);
-        assertThat(secondProductAfterRollback.getStock().amount()).isEqualTo(INITIAL_SECOND_STOCK);
-        assertThat(pointAfterRollback.getBalance().amount()).isEqualTo(INITIAL_POINT_BALANCE);
+        assertThat(readDatabaseState(fixture)).isEqualTo(new DatabaseState(
+            INITIAL_FIRST_STOCK, INITIAL_SECOND_STOCK, INITIAL_POINT_BALANCE, "DRAFT", null, null
+        ));
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM payment_attempts", Long.class)).isZero();
+        verify(paymentGateway, never()).create(any());
     }
 
+    @DisplayName("첫 품목 차감 후 다음 품목의 재고가 부족하면 409로 TX A 전체를 되돌린다.")
     @Test
-    @DisplayName("첫 품목 차감 후 다음 품목의 재고가 부족하면 주문 확정 전체를 롤백한다")
     void rollsBackFirstItemDeductionWhenSecondItemHasInsufficientStock() {
         Fixture fixture = createFixture(0L);
         AtomicReference<DatabaseState> stateBeforeRejection = new AtomicReference<>();
-
         doAnswer(invocation -> {
             int updatedRows = (int) invocation.callRealMethod();
             assertThat(updatedRows).isZero();
-            // P2의 실제 조건부 UPDATE가 거절된 시점에 P1의 변경 SQL도 DB에서 확인한다.
+            // 두 번째 상품의 조건부 차감이 거절된 시점에 앞선 변경이 같은 트랜잭션 안에 있음을 확인한다.
             stateBeforeRejection.set(readDatabaseState(fixture));
             return updatedRows;
-        }).when(productRepository).decreaseActiveStock(
-            eq(fixture.secondProductId()), eq(1), any(ZonedDateTime.class)
-        );
+        }).when(productRepository).decreaseActiveStock(eq(fixture.secondProductId()), eq(1), any(ZonedDateTime.class));
 
-        assertThatThrownBy(() -> orderFacade.confirm(fixture.userId(), fixture.orderId()))
+        assertThatThrownBy(() -> paymentRequestFacade.requestPayment(
+            fixture.userId(), fixture.orderId(), UUID.randomUUID().toString(), "TEST", "0000"))
             .isInstanceOfSatisfying(CoreException.class, exception -> {
                 assertThat(exception.getErrorType()).isEqualTo(ErrorType.CONFLICT);
                 assertThat(exception.getCustomMessage()).isEqualTo("상품이 삭제되었거나 재고가 부족합니다.");
             });
 
         assertThat(stateBeforeRejection.get()).isEqualTo(new DatabaseState(
-            3L, 0L, INITIAL_POINT_BALANCE, "CONFIRMED", TOTAL_AMOUNT, "SUCCESS"
+            3L, 0L, INITIAL_POINT_BALANCE, "PAYMENT_PENDING", "PG", null
         ));
-        verify(pointRepository, never()).decreaseBalanceIfEnough(anyLong(), anyLong(), any(ZonedDateTime.class));
-
+        verify(paymentAttemptRepository, never()).save(any());
+        verify(paymentGateway, never()).create(any());
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
             Order order = orderRepository.findById(fixture.orderId()).orElseThrow();
-            Product firstProduct = productRepository.findById(fixture.firstProductId()).orElseThrow();
-            Product secondProduct = productRepository.findById(fixture.secondProductId()).orElseThrow();
-            Point point = pointRepository.findByUserId(fixture.userId()).orElseThrow();
-
             assertThat(order.getStatus()).isEqualTo(OrderStatus.DRAFT);
-            assertThat(order.getTotalAmount()).isEqualTo(TOTAL_AMOUNT);
-            assertThat(order.getPaymentAmount()).isNull();
-            assertThat(order.getPaymentResult()).isNull();
+            assertThat(order.getPaymentMethod()).isNull();
             assertThat(order.getItems()).extracting(
                 OrderItem::getProductId, OrderItem::getProductName, OrderItem::getUnitPrice, OrderItem::getQuantity
             ).containsExactlyInAnyOrder(
                 tuple(fixture.firstProductId(), "Air Max", 100L, 2),
                 tuple(fixture.secondProductId(), "Pegasus", 300L, 1)
             );
-            assertThat(firstProduct.getStock().amount()).isEqualTo(INITIAL_FIRST_STOCK);
-            assertThat(secondProduct.getStock().amount()).isZero();
-            assertThat(point.getBalance().amount()).isEqualTo(INITIAL_POINT_BALANCE);
         });
+        assertThat(stock(fixture.firstProductId())).isEqualTo(INITIAL_FIRST_STOCK);
+        assertThat(stock(fixture.secondProductId())).isZero();
+        assertThat(point(fixture)).isEqualTo(INITIAL_POINT_BALANCE);
     }
 
     private Fixture createFixture() {
@@ -219,54 +195,39 @@ class OrderConfirmationTransactionIntegrationTest {
 
         pointRepository.save(Point.create(user.getId(), new PointBalance(INITIAL_POINT_BALANCE)));
 
-        Order order = Order.create(user.getId(), List.of(
+        Order order = orderRepository.save(Order.create(user.getId(), List.of(
             OrderItem.create(firstProduct.getId(), firstProduct.getName(), firstProduct.getPrice(), 2),
             OrderItem.create(secondProduct.getId(), secondProduct.getName(), secondProduct.getPrice(), 1)
-        ));
-        order = orderRepository.save(order);
+        )));
 
         return new Fixture(user.getId(), firstProduct.getId(), secondProduct.getId(), order.getId());
     }
 
+    private long stock(Long productId) {
+        return productRepository.findById(productId).orElseThrow().getStock().amount();
+    }
+
+    private long point(Fixture fixture) {
+        return pointRepository.findByUserId(fixture.userId()).orElseThrow().getBalance().amount();
+    }
+
+    // 호출한 스레드의 트랜잭션에 참여하므로 TX A 안에서는 commit 전 변경을 본다.
     private DatabaseState readDatabaseState(Fixture fixture) {
         long firstStock = jdbcTemplate.queryForObject(
-            "SELECT stock FROM products WHERE id = ?",
-            Long.class,
-            fixture.firstProductId()
-        );
+            "SELECT stock FROM products WHERE id = ?", Long.class, fixture.firstProductId());
         long secondStock = jdbcTemplate.queryForObject(
-            "SELECT stock FROM products WHERE id = ?",
-            Long.class,
-            fixture.secondProductId()
-        );
+            "SELECT stock FROM products WHERE id = ?", Long.class, fixture.secondProductId());
         long pointBalance = jdbcTemplate.queryForObject(
-            "SELECT balance FROM points WHERE user_id = ?",
-            Long.class,
-            fixture.userId()
-        );
+            "SELECT balance FROM points WHERE user_id = ?", Long.class, fixture.userId());
         Map<String, Object> order = jdbcTemplate.queryForMap(
-            "SELECT status, payment_amount, payment_result FROM orders WHERE id = ?",
-            fixture.orderId()
-        );
-
-        return new DatabaseState(
-            firstStock,
-            secondStock,
-            pointBalance,
-            (String) order.get("status"),
-            ((Number) order.get("payment_amount")).longValue(),
-            (String) order.get("payment_result")
-        );
+            "SELECT status, payment_method, payment_amount FROM orders WHERE id = ?", fixture.orderId());
+        Number paymentAmount = (Number) order.get("payment_amount");
+        return new DatabaseState(firstStock, secondStock, pointBalance, (String) order.get("status"),
+            (String) order.get("payment_method"), paymentAmount == null ? null : paymentAmount.longValue());
     }
 
     private record Fixture(Long userId, Long firstProductId, Long secondProductId, Long orderId) {}
 
-    private record DatabaseState(
-        long firstStock,
-        long secondStock,
-        long pointBalance,
-        String orderStatus,
-        long paymentAmount,
-        String paymentResult
-    ) {}
+    private record DatabaseState(long firstStock, long secondStock, long pointBalance, String orderStatus,
+                                 String paymentMethod, Long paymentAmount) {}
 }

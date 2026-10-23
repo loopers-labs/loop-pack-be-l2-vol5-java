@@ -17,6 +17,13 @@ tasks.register<JavaExec>("seedProductQuery") {
     mainClass.set("com.loopers.fixture.ProductQuerySeedRunner")
 }
 
+// Resilience4j의 직접, 전이 의존성 버전을 함께 맞춘다.
+dependencyManagement {
+    imports {
+        mavenBom("io.github.resilience4j:resilience4j-bom:${project.properties["resilience4jVersion"]}")
+    }
+}
+
 dependencies {
     // add-ons
     implementation(project(":modules:jpa"))
@@ -29,6 +36,11 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
+    // 직접 decorator에 사용하는 조회 정책 모듈만 추가하고 버전은 위 BOM으로 관리한다.
+    implementation("io.github.resilience4j:resilience4j-circuitbreaker")
+    implementation("io.github.resilience4j:resilience4j-retry")
+    implementation("io.github.resilience4j:resilience4j-ratelimiter")
+    implementation("io.github.resilience4j:resilience4j-timelimiter")
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:${project.properties["springDocOpenApiVersion"]}")
 
     // querydsl
@@ -42,4 +54,19 @@ dependencies {
     testImplementation("com.tngtech.archunit:archunit:1.5.0")
     testImplementation("org.springframework.security:spring-security-test")
     testImplementation("org.testcontainers:mysql")
+}
+
+// PG fixture는 별도 보관하며 -PpgFixtureRoot로 루트를 지정할 수 있다.
+// 순수 단위 테스트는 fixture를 사용하지 않고, HTTP·이관 통합 테스트는 실제 파일을 요구한다.
+tasks.test {
+    val fixtureRoot = rootProject.file(providers.gradleProperty("pgFixtureRoot").getOrElse("."))
+    val fixtureDockerfile = fixtureRoot.resolve("apps/test-pg/Dockerfile")
+    val fixtureJar = fixtureRoot.resolve("apps/test-pg/build/libs/test-pg.jar")
+    val safetyMigration = fixtureRoot.resolve("docker/mysql/pg-payment-safety-migration.sql")
+    val conflictMigration = fixtureRoot.resolve("docker/mysql/pg-payment-conflict-migration.sql")
+    systemProperty("test-pg.dockerfile", fixtureDockerfile.absolutePath)
+    systemProperty("test-pg.jar", fixtureJar.absolutePath)
+    systemProperty("payment.safety-migration", safetyMigration.absolutePath)
+    systemProperty("payment.conflict-migration", conflictMigration.absolutePath)
+    inputs.files(fixtureDockerfile, fixtureJar, safetyMigration, conflictMigration)
 }

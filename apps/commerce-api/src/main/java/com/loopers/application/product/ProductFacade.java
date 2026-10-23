@@ -12,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 
 import java.time.ZonedDateTime;
 import java.util.List;
@@ -29,6 +30,7 @@ public class ProductFacade {
     private final CustomerProductListReader customerProductListReader;
     private final ProductListCache productListCache;
     private final ProductListCacheInvalidator productListCacheInvalidator;
+    private final ProductStockTransaction productStockTransaction;
 
     @Transactional(readOnly = true)
     public ProductInfo getDetail(Long productId) {
@@ -131,15 +133,9 @@ public class ProductFacade {
         return ProductInfo.from(savedProduct);
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.NEVER)
     public ProductInfo changeStock(Long productId, long quantity) {
-        Product product = findActiveProductById(productId);
-        product.changeStockTo(quantity);
-
-        if (productRepository.updateActiveStock(productId, quantity, ZonedDateTime.now()) == 0) {
-            throw new CoreException(ErrorType.NOT_FOUND, "상품을 찾을 수 없습니다.");
-        }
-        return ProductInfo.from(product);
+        return productStockTransaction.changeStock(productId, quantity);
     }
 
     @Transactional

@@ -1,12 +1,14 @@
 package com.loopers.application.brand;
 
-import com.loopers.application.order.OrderFacade;
+import com.loopers.application.payment.PaymentRequestFacade;
+import com.loopers.application.payment.PaymentStatusInfo;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.OrderRepository;
 import com.loopers.domain.order.OrderStatus;
+import com.loopers.domain.order.PaymentMethod;
 import com.loopers.domain.point.Point;
 import com.loopers.domain.point.PointBalance;
 import com.loopers.domain.point.PointRepository;
@@ -32,6 +34,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import javax.sql.DataSource;
 import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -54,7 +57,7 @@ import static org.mockito.Mockito.verify;
 class BrandDeletionOrderLockIntegrationTest {
 
     @Autowired private BrandFacade brandFacade;
-    @Autowired private OrderFacade orderFacade;
+    @Autowired private PaymentRequestFacade paymentRequestFacade;
     @MockitoSpyBean private BrandRepository brandRepository;
     @MockitoSpyBean private ProductRepository productRepository;
     @MockitoSpyBean private OrderRepository orderRepository;
@@ -97,17 +100,17 @@ class BrandDeletionOrderLockIntegrationTest {
             calls.verify(brandRepository).findActiveByIdWithSharedLock(fixture.brandId());
             calls.verify(brandRepository).findActiveByIdWithSharedLock(secondBrand.getId());
             return invocation.callRealMethod();
-        }).when(orderRepository).confirmIfDraft(eq(order.getId()), eq(fixture.userId()), eq(300L), any());
+        }).when(orderRepository).requestPgPaymentIfDraft(eq(order.getId()), eq(fixture.userId()), any());
 
-        orderFacade.confirm(fixture.userId(), order.getId());
+        requestPayment(fixture.userId(), order.getId());
 
         verify(brandRepository, times(1)).findActiveByIdWithSharedLock(fixture.brandId());
         verify(brandRepository, times(1)).findActiveByIdWithSharedLock(secondBrand.getId());
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
             assertThat(orderRepository.findById(order.getId()).orElseThrow().getStatus())
-                .isEqualTo(OrderStatus.CONFIRMED);
+                .isEqualTo(OrderStatus.PAYMENT_PENDING);
             assertThat(pointRepository.findByUserId(fixture.userId()).orElseThrow().getBalance().amount())
-                .isEqualTo(700L);
+                .isEqualTo(1_000L);
             for (Long productId : List.of(fixture.productId(), secondProduct.getId(), thirdProduct.getId())) {
                 assertThat(productRepository.findById(productId).orElseThrow().getStock().amount())
                     .isEqualTo(4L);
@@ -116,7 +119,7 @@ class BrandDeletionOrderLockIntegrationTest {
     }
 
     @Test
-    @DisplayName("삭제가 Brand 잠금을 먼저 얻으면 확정은 기다린 뒤 거절되고 차감하지 않는다")
+    @DisplayName("삭제가 Brand 잠금을 먼저 얻으면 결제 요청은 기다린 뒤 거절되고 차감하지 않는다")
     void confirmationWaitsForDeletionBeforeAnyProductIsDeleted() throws Exception {
         Fixture fixture = createFixture();
         CountDownLatch deletionLocked = new CountDownLatch(1);
@@ -135,8 +138,9 @@ class BrandDeletionOrderLockIntegrationTest {
         try {
             Future<?> deletion = locks.submit(workers, () -> brandFacade.delete(fixture.brandId()));
             assertThat(deletionLocked.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
-            Future<?> confirmation = locks.submit(workers, confirmationConnection, confirmationStarted,
-                () -> orderFacade.confirm(fixture.userId(), fixture.orderId()));
+            recordTransactionAConnection(fixture, confirmationConnection, confirmationStarted);
+            Future<?> confirmation = locks.submitOutsideTransaction(workers,
+                () -> requestPayment(fixture.userId(), fixture.orderId()));
             assertThat(confirmationStarted.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
             locks.awaitLockWait(confirmationConnection.get(), "brands");
 
@@ -154,7 +158,7 @@ class BrandDeletionOrderLockIntegrationTest {
     }
 
     @Test
-    @DisplayName("확정이 먼저 공유 잠금을 얻으면 삭제는 확정 종료까지 기다리고 결제 정보를 보존한다")
+    @DisplayName("결제 요청이 먼저 공유 잠금을 얻으면 삭제는 TX A 종료까지 기다리고 결제 대기 주문과 재고 차감을 보존한다")
     void deletionWaitsForConfirmationAndPreservesPayment() throws Exception {
         Fixture fixture = createFixture();
         CountDownLatch confirmationLocked = new CountDownLatch(1);
@@ -167,11 +171,11 @@ class BrandDeletionOrderLockIntegrationTest {
             confirmationLocked.countDown();
             locks.awaitLatch(allowConfirmation);
             return invocation.callRealMethod();
-        }).when(orderRepository).confirmIfDraft(eq(fixture.orderId()), eq(fixture.userId()), eq(100L), any());
+        }).when(orderRepository).requestPgPaymentIfDraft(eq(fixture.orderId()), eq(fixture.userId()), any());
 
         try {
-            Future<?> confirmation = locks.submit(workers,
-                () -> orderFacade.confirm(fixture.userId(), fixture.orderId()));
+            Future<?> confirmation = locks.submitOutsideTransaction(workers,
+                () -> requestPayment(fixture.userId(), fixture.orderId()));
             assertThat(confirmationLocked.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
             Future<?> deletion = locks.submit(workers, deletionConnection, deletionStarted,
                 () -> brandFacade.delete(fixture.brandId()));
@@ -181,7 +185,7 @@ class BrandDeletionOrderLockIntegrationTest {
             allowConfirmation.countDown();
             confirmation.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
             deletion.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-            assertFinalState(fixture, true, OrderStatus.CONFIRMED, 4L, 900L);
+            assertFinalState(fixture, true, OrderStatus.PAYMENT_PENDING, 4L, 1_000L);
         } finally {
             allowConfirmation.countDown();
             locks.shutDown(workers);
@@ -189,7 +193,7 @@ class BrandDeletionOrderLockIntegrationTest {
     }
 
     @Test
-    @DisplayName("삭제의 실제 상품 변경이 롤백되면 대기하던 확정은 활성 Brand로 계속 진행한다")
+    @DisplayName("삭제의 실제 상품 변경이 롤백되면 대기하던 결제 요청은 활성 Brand로 계속 진행한다")
     void confirmationContinuesAfterDeletionRollsBack() throws Exception {
         Fixture fixture = createFixture();
         CountDownLatch productsDeleted = new CountDownLatch(1);
@@ -207,8 +211,9 @@ class BrandDeletionOrderLockIntegrationTest {
         try {
             Future<?> deletion = locks.submit(workers, () -> brandFacade.delete(fixture.brandId()));
             assertThat(productsDeleted.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
-            Future<?> confirmation = locks.submit(workers, confirmationConnection, confirmationStarted,
-                () -> orderFacade.confirm(fixture.userId(), fixture.orderId()));
+            recordTransactionAConnection(fixture, confirmationConnection, confirmationStarted);
+            Future<?> confirmation = locks.submitOutsideTransaction(workers,
+                () -> requestPayment(fixture.userId(), fixture.orderId()));
             assertThat(confirmationStarted.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
             locks.awaitLockWait(confirmationConnection.get(), "brands");
 
@@ -217,7 +222,7 @@ class BrandDeletionOrderLockIntegrationTest {
                 .isInstanceOf(ExecutionException.class).cause()
                 .isInstanceOf(IllegalStateException.class).hasMessage("Brand 저장 경계에서 실패 주입");
             confirmation.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-            assertFinalState(fixture, false, OrderStatus.CONFIRMED, 4L, 900L);
+            assertFinalState(fixture, false, OrderStatus.PAYMENT_PENDING, 4L, 1_000L);
         } finally {
             allowFailure.countDown();
             locks.shutDown(workers);
@@ -233,6 +238,19 @@ class BrandDeletionOrderLockIntegrationTest {
             OrderItem.create(product.getId(), product.getName(), product.getPrice(), 1)
         )));
         return new Fixture(brand.getId(), product.getId(), user.getId(), order.getId());
+    }
+
+    // 결제 요청은 TX A를 스스로 열므로, TX A의 첫 조회에서 그 connection을 기록해 잠금 대기를 관찰한다.
+    private void recordTransactionAConnection(Fixture fixture, AtomicLong connectionId, CountDownLatch started) {
+        doAnswer(invocation -> {
+            locks.recordConnection(connectionId, started);
+            return invocation.callRealMethod();
+        }).when(orderRepository).findById(fixture.orderId());
+    }
+
+    private PaymentStatusInfo requestPayment(Long userId, Long orderId) {
+        return paymentRequestFacade.requestPayment(
+            userId, orderId, UUID.randomUUID().toString(), "TEST", "0000-0000-0000-0000");
     }
 
     private Product saveProduct(Long brandId, String name) {
@@ -258,13 +276,9 @@ class BrandDeletionOrderLockIntegrationTest {
                 assertThat(item.getQuantity()).isEqualTo(1);
                 assertThat(item.getUnitPrice()).isEqualTo(100L);
             });
-            if (orderStatus == OrderStatus.CONFIRMED) {
-                assertThat(order.getPaymentAmount()).isEqualTo(100L);
-                assertThat(order.getPaymentResult().name()).isEqualTo("SUCCESS");
-            } else {
-                assertThat(order.getPaymentAmount()).isNull();
-                assertThat(order.getPaymentResult()).isNull();
-            }
+            assertThat(order.getPaymentMethod()).isEqualTo(orderStatus == OrderStatus.PAYMENT_PENDING ? PaymentMethod.PG : null);
+            assertThat(order.getPaymentAmount()).isNull();
+            assertThat(order.getPaymentResult()).isNull();
         });
     }
 

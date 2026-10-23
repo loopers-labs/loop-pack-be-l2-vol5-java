@@ -4,6 +4,9 @@ import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderItem;
+import com.loopers.domain.order.PaymentResult;
+import com.loopers.domain.order.PaymentMethod;
+import com.loopers.domain.order.OrderStatus;
 import com.loopers.domain.order.OrderRepository;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
@@ -76,11 +79,10 @@ class BrandDeletionRollbackIntegrationTest {
         otherBrandProduct = productRepository.save(otherBrandProduct);
 
         User user = userRepository.save(User.create());
-        Order pastOrder = Order.create(user.getId(), List.of(
-            OrderItem.create(zeroStockProduct.getId(), zeroStockProduct.getName(), zeroStockProduct.getPrice(), 1)
-        ));
-        pastOrder.confirm();
-        pastOrder = orderRepository.save(pastOrder);
+        // 이전 포인트 결제로 확정된 주문을 저장된 상태 그대로 둔다.
+        OrderItem pastOrderItem = OrderItem.create(zeroStockProduct.getId(), zeroStockProduct.getName(), zeroStockProduct.getPrice(), 1);
+        Order pastOrder = orderRepository.save(Order.reconstitute(null, user.getId(), OrderStatus.CONFIRMED,
+            pastOrderItem.getAmount(), pastOrderItem.getAmount(), PaymentResult.SUCCESS, PaymentMethod.POINT, List.of(pastOrderItem)));
 
         Timestamp brandUpdatedAtBefore = readUpdatedAt("brands", brand.getId());
         Timestamp zeroStockUpdatedAtBefore = readUpdatedAt("products", zeroStockProduct.getId());
