@@ -22,6 +22,9 @@ class OrderServiceIntegrationTest {
     private OrderService orderService;
 
     @Autowired
+    private OrderRepository orderRepository;
+
+    @Autowired
     private DatabaseCleanUp databaseCleanUp;
 
     @AfterEach
@@ -51,6 +54,21 @@ class OrderServiceIntegrationTest {
             // arrange
             OrderModel order = orderService.createOrder(1L, List.of(new OrderItem(1L, 2, 10_000L)));
             orderService.confirmOrder(order, order.getTotalAmount());
+
+            // act
+            CoreException result = assertThrows(CoreException.class, () -> orderService.getDraftOrderOwnedBy(order.getId(), 1L));
+
+            // assert
+            assertThat(result.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
+        }
+
+        @DisplayName("PG 결제를 시작해 결과를 기다리는 주문도 DRAFT가 아니므로, NOT_FOUND 예외가 발생한다.")
+        @Test
+        void throwsNotFoundException_whenPaymentIsPending() {
+            // arrange
+            OrderModel order = orderService.createOrder(1L, List.of(new OrderItem(1L, 2, 10_000L)));
+            order.startPgPayment();
+            orderRepository.save(order);
 
             // act
             CoreException result = assertThrows(CoreException.class, () -> orderService.getDraftOrderOwnedBy(order.getId(), 1L));

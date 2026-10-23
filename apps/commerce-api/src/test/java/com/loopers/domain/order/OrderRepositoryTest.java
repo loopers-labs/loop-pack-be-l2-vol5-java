@@ -67,4 +67,42 @@ class OrderRepositoryTest {
             assertThat(result).isEmpty();
         }
     }
+
+    @DisplayName("PG 결제를 진행한 주문을 다룰 때, ")
+    @Nested
+    class PgPaymentOrder {
+        @DisplayName("결제 대기 상태와 결제수단은, flush/clear 후 재조회해도 그대로다. 결제수단이 없는 DRAFT는 비어 있다.")
+        @Test
+        void persistsStatusAndPaymentMethod() {
+            // arrange
+            OrderModel draft = orderRepository.save(new OrderModel(1L, List.of(new OrderItem(1L, 2, 10_000L))));
+            OrderModel pending = orderRepository.save(new OrderModel(1L, List.of(new OrderItem(1L, 1, 5_000L))));
+            pending.startPgPayment();
+            entityManager.flush();
+            entityManager.clear();
+
+            // act
+            OrderModel foundDraft = orderRepository.findById(draft.getId()).orElseThrow();
+            OrderModel foundPending = orderRepository.findById(pending.getId()).orElseThrow();
+
+            // assert
+            assertThat(foundDraft.getStatus()).isEqualTo(OrderStatus.DRAFT);
+            assertThat(foundDraft.getPaymentMethod()).isNull();
+            assertThat(foundPending.getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+            assertThat(foundPending.getPaymentMethod()).isEqualTo(PaymentMethod.PG);
+        }
+
+        @DisplayName("소유자를 모르는 잠금 조회는 주문 id로만 찾고, 없는 주문은 빈 결과다.")
+        @Test
+        void findsByIdForUpdate_regardlessOfOwner() {
+            // arrange
+            OrderModel saved = orderRepository.save(new OrderModel(1L, List.of(new OrderItem(1L, 2, 10_000L))));
+            entityManager.flush();
+            entityManager.clear();
+
+            // act & assert
+            assertThat(orderRepository.findByIdForUpdate(saved.getId())).isPresent();
+            assertThat(orderRepository.findByIdForUpdate(99_999L)).isEmpty();
+        }
+    }
 }

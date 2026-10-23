@@ -28,6 +28,14 @@ public class Stock {
         remaining -= quantity;
     }
 
+    // 확보했다가 결제가 확정 실패한 수량을 되돌린다. 반환이 한 번만 일어나게 하는 것은 재고 예약의 상태 전이가 맡는다
+    public void increase(int quantity) {
+        if (quantity <= 0) {
+            throw new CoreException(ErrorType.BAD_REQUEST, "되돌릴 수 없는 수량입니다.");
+        }
+        remaining = Math.addExact(remaining, quantity);
+    }
+
     public int getRemaining() {
         return remaining;
     }

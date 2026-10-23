@@ -3,9 +3,9 @@ package com.loopers.application.order;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.OrderModel;
 import com.loopers.domain.order.OrderService;
-import com.loopers.domain.point.PointService;
+import com.loopers.domain.payment.PaymentAttemptModel;
+import com.loopers.domain.payment.PaymentAttemptService;
 import com.loopers.domain.product.ProductModel;
-import com.loopers.domain.product.ProductRevisionService;
 import com.loopers.domain.product.ProductService;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
@@ -15,38 +15,46 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+/**
+ * 주문 생성과 조회. 확정(결제)은 {@link com.loopers.application.payment.PaymentFacade}가 맡는다.
+ * 조회에는 PG 결제 시도의 상태를 함께 담는다. 목록은 주문마다 시도를 읽지 않도록 한 번에 읽는다.
+ */
 @RequiredArgsConstructor
 @Component
 public class OrderFacade {
     private final OrderService orderService;
     private final ProductService productService;
-    private final PointService pointService;
-    private final ProductRevisionService productRevisionService;
+    private final PaymentAttemptService paymentAttemptService;
 
     // 주문 품목(items)은 지연 로딩 컬렉션이라, 조회와 Info 매핑이 같은 트랜잭션(세션) 안에서 끝나야 한다.
     @Transactional(readOnly = true)
     public OrderInfo getOrder(Long id, Long userId) {
-        return OrderInfo.from(orderService.getOrder(id, userId));
+        OrderModel order = orderService.getOrder(id, userId);
+        return OrderInfo.from(order, paymentAttemptService.findByOrderId(order.getId()).orElse(null));
     }
 
     @Transactional(readOnly = true)
     public Page<OrderInfo> getOrders(Long userId, Pageable pageable) {
-        return orderService.getOrders(userId, pageable).map(OrderInfo::from);
+        Page<OrderModel> orders = orderService.getOrders(userId, pageable);
+        Map<Long, PaymentAttemptModel> attempts = attemptsOf(orders.getContent());
+        return orders.map(order -> OrderInfo.from(order, attempts.get(order.getId())));
     }
 
     @Transactional(readOnly = true)
     public OrderAdminInfo getOrderForAdmin(Long id) {
-        return OrderAdminInfo.from(orderService.getOrderForAdmin(id));
+        OrderModel order = orderService.getOrderForAdmin(id);
+        return OrderAdminInfo.from(order, paymentAttemptService.findByOrderId(order.getId()).orElse(null));
     }
 
     @Transactional(readOnly = true)
     public Page<OrderAdminInfo> getOrdersForAdmin(Pageable pageable) {
-        return orderService.getOrdersForAdmin(pageable).map(OrderAdminInfo::from);
+        Page<OrderModel> orders = orderService.getOrdersForAdmin(pageable);
+        Map<Long, PaymentAttemptModel> attempts = attemptsOf(orders.getContent());
+        return orders.map(order -> OrderAdminInfo.from(order, attempts.get(order.getId())));
     }
 
     @Transactional
@@ -74,24 +82,7 @@ public class OrderFacade {
         return OrderInfo.from(order);
     }
 
-    @Transactional
-    public OrderInfo confirmOrder(Long orderId, Long userId) {
-        OrderModel order = orderService.getDraftOrderOwnedBy(orderId, userId);
-
-        // 상품은 id 오름차순으로 잠근다
-        List<OrderItem> items = order.getItems().stream()
-            .sorted(Comparator.comparing(OrderItem::getProductId))
-            .toList();
-        for (OrderItem item : items) {
-            productService.decreaseStock(item.getProductId(), item.getQuantity());
-        }
-
-        pointService.pay(userId, order.getTotalAmount());
-        orderService.confirmOrder(order, order.getTotalAmount());
-
-        // 재고만 바뀌어 목록 순서는 그대로다. 상품 revision만 다른 잠금을 모두 잡은 뒤 마지막에 올린다
-        productRevisionService.increaseAll(items.stream().map(OrderItem::getProductId).toList());
-
-        return OrderInfo.from(order);
+    private Map<Long, PaymentAttemptModel> attemptsOf(List<OrderModel> orders) {
+        return paymentAttemptService.findAllByOrderIds(orders.stream().map(OrderModel::getId).toList());
     }
 }

@@ -43,6 +43,20 @@ public class OrderService {
         return orderRepository.save(new OrderModel(userId, items));
     }
 
+    // 상태와 상관없이 본인 주문을 잠근다. 결제 시도가 이미 있는 주문의 같은 요청을 알아보려면 DRAFT가 아니어도 읽어야 한다
+    @Transactional
+    public OrderModel getOrderOwnedByForUpdate(Long id, Long userId) {
+        return orderRepository.findByIdAndUserIdForUpdate(id, userId)
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[id = " + id + "] 주문을 찾을 수 없습니다."));
+    }
+
+    // 소유자를 모르는 경로(callback)의 결과 적용에서 쓴다. 소유권은 호출 전에 이미 확인했다
+    @Transactional
+    public OrderModel getOrderForUpdate(Long id) {
+        return orderRepository.findByIdForUpdate(id)
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[id = " + id + "] 주문을 찾을 수 없습니다."));
+    }
+
     // 확정할 주문을 잠근 뒤에 DRAFT인지 확인한다
     @Transactional
     public OrderModel getDraftOrderOwnedBy(Long id, Long userId) {

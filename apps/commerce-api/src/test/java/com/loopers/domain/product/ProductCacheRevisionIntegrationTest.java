@@ -3,23 +3,27 @@ package com.loopers.domain.product;
 import com.loopers.application.brand.BrandFacade;
 import com.loopers.application.like.LikeFacade;
 import com.loopers.application.order.OrderFacade;
+import com.loopers.application.payment.PaymentFacade;
 import com.loopers.application.product.ProductFacade;
 import com.loopers.concurrency.ConcurrentRunner;
 import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.OrderModel;
-import com.loopers.domain.point.PointModel;
 import com.loopers.infrastructure.brand.BrandJpaRepository;
 import com.loopers.infrastructure.order.OrderJpaRepository;
-import com.loopers.infrastructure.point.PointJpaRepository;
 import com.loopers.infrastructure.product.ProductJpaRepository;
 import com.loopers.support.error.CoreException;
+import com.loopers.support.pg.PaymentTestSupport;
+import com.loopers.support.pg.TestPgResetExtension;
+import com.loopers.support.pg.TestPgServer;
+import com.loopers.support.pg.TestPgStatus;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -37,9 +41,12 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 // 캐시 키가 쓰는 revision을, 결과를 바꾸는 쓰기만 같은 트랜잭션에서 올리는지 본다.
 // 목록 revision은 (최신순, 가격순, 좋아요순) 순서로 비교한다
 @SpringBootTest
+@ExtendWith(TestPgResetExtension.class)
 class ProductCacheRevisionIntegrationTest {
 
     private static final long USER_ID = 1L;
+
+    private final TestPgServer pg = TestPgServer.shared();
 
     @Autowired
     private ProductListRevisionService productListRevisionService;
@@ -60,13 +67,13 @@ class ProductCacheRevisionIntegrationTest {
     private OrderFacade orderFacade;
 
     @Autowired
+    private PaymentFacade paymentFacade;
+
+    @Autowired
     private BrandJpaRepository brandJpaRepository;
 
     @Autowired
     private ProductJpaRepository productJpaRepository;
-
-    @Autowired
-    private PointJpaRepository pointJpaRepository;
 
     @Autowired
     private OrderJpaRepository orderJpaRepository;
@@ -270,18 +277,17 @@ class ProductCacheRevisionIntegrationTest {
         }
     }
 
-    @DisplayName("주문을 확정하면, ")
+    @DisplayName("주문의 PG 결제를 진행하면, ")
     @Nested
-    class OrderConfirm {
-        @DisplayName("재고가 줄어든 상품의 revision만 오르고, 목록 순서는 그대로라 목록 revision은 그대로다.")
+    class OrderPayment {
+        @DisplayName("결제를 시작할 때 재고를 확보한 상품의 revision만 오르고, 목록 순서는 그대로라 목록 revision은 그대로다.")
         @Test
-        void increasesOnlyItemProductRevisions() {
+        void increasesOnlyItemProductRevisions_whenPaymentStarts() {
             // arrange
-            chargePoint(100_000L);
             Long orderId = saveDraftOrder();
 
             // act
-            orderFacade.confirmOrder(orderId, USER_ID);
+            PaymentTestSupport.startPayment(paymentFacade, orderId, USER_ID);
 
             // assert
             assertAll(
@@ -292,20 +298,61 @@ class ProductCacheRevisionIntegrationTest {
             );
         }
 
-        @DisplayName("잔액 부족으로 확정이 롤백되면, 상품 revision도 그대로다.")
+        @DisplayName("결제 성공을 확인해도 재고가 바뀌지 않아 revision은 오르지 않는다.")
         @Test
-        void keepsRevisions_whenConfirmIsRolledBack() {
+        void keepsRevisions_whenPaymentSucceeds() {
             // arrange
-            chargePoint(1_000L);
             Long orderId = saveDraftOrder();
+            PaymentTestSupport.startPayment(paymentFacade, orderId, USER_ID);
+            PaymentTestSupport.completeAt(pg, orderId, TestPgStatus.SUCCESS);
 
             // act
-            assertThrows(CoreException.class, () -> orderFacade.confirmOrder(orderId, USER_ID));
+            paymentFacade.reconcile(orderId, USER_ID);
 
             // assert
             assertAll(
+                () -> assertThat(productRevision(productId)).isEqualTo(1L),
+                () -> assertThat(productRevision(otherBrandProductId)).isEqualTo(1L)
+            );
+        }
+
+        @DisplayName("확정 실패로 재고를 되돌리면 revision이 한 번 더 오르고, 같은 실패 확인이 다시 와도 더 오르지 않는다.")
+        @Test
+        void increasesRevisionOnce_whenPaymentFailsAndStockIsReturned() {
+            // arrange
+            Long orderId = saveDraftOrder();
+            PaymentTestSupport.startPayment(paymentFacade, orderId, USER_ID);
+            PaymentTestSupport.completeAt(pg, orderId, TestPgStatus.FAILED);
+
+            // act
+            paymentFacade.reconcile(orderId, USER_ID);
+            paymentFacade.reconcile(orderId, USER_ID);
+
+            // assert
+            assertAll(
+                () -> assertThat(productRevision(productId)).isEqualTo(2L),
+                () -> assertThat(productRevision(otherBrandProductId)).isEqualTo(2L),
+                () -> assertThat(listRevisions(brandId)).containsExactly(0L, 0L, 0L)
+            );
+        }
+
+        @DisplayName("재고 부족으로 결제 시작이 롤백되면, 상품 revision도 그대로다.")
+        @Test
+        void keepsRevisions_whenPaymentStartIsRolledBack() {
+            // arrange: 두 번째 품목의 재고(5)보다 많이 주문해 TX A가 재고 확보 도중에 실패하게 한다
+            Long orderId = orderJpaRepository.save(new OrderModel(USER_ID, List.of(
+                new OrderItem(productId, 1, 10_000L),
+                new OrderItem(otherBrandProductId, 6, 5_000L)
+            ))).getId();
+
+            // act
+            assertThrows(CoreException.class, () -> PaymentTestSupport.startPayment(paymentFacade, orderId, USER_ID));
+
+            // assert: 첫 품목의 재고 차감까지 함께 되돌아간다
+            assertAll(
                 () -> assertThat(productRevision(productId)).isZero(),
-                () -> assertThat(productRevision(otherBrandProductId)).isZero()
+                () -> assertThat(productRevision(otherBrandProductId)).isZero(),
+                () -> assertThat(productJpaRepository.findById(productId).orElseThrow().getStock()).isEqualTo(5)
             );
         }
     }
@@ -355,12 +402,6 @@ class ProductCacheRevisionIntegrationTest {
             productIds.add(productJpaRepository.save(new ProductModel(brandId, "product-" + i, 1_000L, 1)).getId());
         }
         return productIds;
-    }
-
-    private void chargePoint(long amount) {
-        PointModel point = new PointModel(USER_ID);
-        point.charge(amount);
-        pointJpaRepository.save(point);
     }
 
     private Long saveDraftOrder() {

@@ -6,19 +6,21 @@ import com.github.dockerjava.api.model.PortBinding;
 import com.github.dockerjava.api.model.Ports;
 import com.loopers.application.order.OrderFacade;
 import com.loopers.application.order.OrderItemCommand;
+import com.loopers.application.payment.PaymentFacade;
 import com.loopers.domain.brand.BrandModel;
-import com.loopers.domain.point.PointModel;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.product.ProductSortType;
 import com.loopers.infrastructure.brand.BrandJpaRepository;
-import com.loopers.infrastructure.point.PointJpaRepository;
 import com.loopers.infrastructure.product.ProductJpaRepository;
+import com.loopers.support.pg.PaymentTestSupport;
+import com.loopers.support.pg.TestPgResetExtension;
 import com.loopers.utils.DatabaseCleanUp;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.domain.PageRequest;
@@ -43,6 +45,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
  * 다른 테스트가 함께 쓰는 Redis 컨테이너는 건드리지 않고, 재시작해도 같은 주소로 다시 붙도록 호스트 포트를 고정한다.
  */
 @SpringBootTest
+@ExtendWith(TestPgResetExtension.class)
 class ProductCacheRedisOutageTest {
 
     private static final long BUYER_ID = 1L;
@@ -72,6 +75,9 @@ class ProductCacheRedisOutageTest {
     private OrderFacade orderFacade;
 
     @Autowired
+    private PaymentFacade paymentFacade;
+
+    @Autowired
     private MeterRegistry meterRegistry;
 
     @Autowired
@@ -79,9 +85,6 @@ class ProductCacheRedisOutageTest {
 
     @Autowired
     private ProductJpaRepository productJpaRepository;
-
-    @Autowired
-    private PointJpaRepository pointJpaRepository;
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
@@ -95,9 +98,6 @@ class ProductCacheRedisOutageTest {
         nikeId = brandJpaRepository.save(new BrandModel("나이키")).getId();
         runnerId = productJpaRepository.save(new ProductModel(nikeId, "runner", 30_000L, 5)).getId();
         productJpaRepository.save(new ProductModel(nikeId, "slipper", 10_000L, 3));
-        PointModel point = new PointModel(BUYER_ID);
-        point.charge(1_000_000L);
-        pointJpaRepository.save(point);
     }
 
     @AfterEach
@@ -128,7 +128,7 @@ class ProductCacheRedisOutageTest {
         productFacade.updateProduct(runnerId, "runner", 5_000L);
         List<ProductInfo> afterChangeDuringOutage = list();
         Long orderId = orderFacade.createOrder(BUYER_ID, List.of(new OrderItemCommand(runnerId, 2))).id();
-        orderFacade.confirmOrder(orderId, BUYER_ID);
+        PaymentTestSupport.startPayment(paymentFacade, orderId, BUYER_ID);
 
         // assert 1
         assertAll(
@@ -136,7 +136,7 @@ class ProductCacheRedisOutageTest {
             () -> assertThat(readDuringOutage).as("Redis를 기다리는 시간은 제한된다").isLessThan(Duration.ofSeconds(1)),
             () -> assertThat(cacheCount("get", "error") - errorsBefore).as("miss가 아니라 Redis 오류로 기록").isGreaterThanOrEqualTo(1),
             () -> assertThat(priceOf(afterChangeDuringOutage, "runner")).as("변경은 commit되고 조회에 반영").isEqualTo(5_000L),
-            () -> assertThat(productJpaRepository.findById(runnerId).orElseThrow().getStock()).as("주문 확정은 DB 규칙대로 재고 차감").isEqualTo(3)
+            () -> assertThat(productJpaRepository.findById(runnerId).orElseThrow().getStock()).as("결제 시작은 DB 규칙대로 재고 확보").isEqualTo(3)
         );
 
         // act 3 — 같은 Redis를 다시 시작하고, 다시 연결될 때까지 기다린다

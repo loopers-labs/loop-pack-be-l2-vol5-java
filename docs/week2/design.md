@@ -42,6 +42,8 @@ Order ── 품목 금액 합계 / 포인트 결제액 / 결제 결과
 
 ## 4. 대표 흐름 — 포인트 충전 → 주문 확정
 
+> 5주차에 주문 확정의 결제가 포인트에서 테스트 PG로 바뀐다. 아래는 2~4주차 흐름이며, 새 흐름은 9-4절에 있다.
+
 ```
 ① POST /api/v1/points/charge
    → PointBalance.charge(amount) → 잔액 저장 → 충전 후 잔액 응답
@@ -85,7 +87,7 @@ Order ── 품목 금액 합계 / 포인트 결제액 / 결제 결과
 | POST | `/api/v1/points/charge` | (사용자 식별), `amount`(양의 정수) | 충전 후 잔액 | 잘못된 입력 오류 (0 이하·누락·타입 오류·표현범위 초과) |
 | GET | `/api/v1/points` | (사용자 식별) | 잔액 (0원 포함) | - |
 | POST | `/api/v1/orders` | (사용자 식별), 품목 목록(상품id·수량) | DRAFT 주문(품목·수량·단가·합계) | 잘못된 입력 오류 (수량 0 이하), 없는 대상 오류 (삭제/존재하지 않는 상품) |
-| POST | `/api/v1/orders/{orderId}/confirm` | (사용자 식별) | CONFIRMED 주문(결제액·결제 결과) | 재고·잔액 부족 거절, 없는 대상 오류 (본인 소유 아니거나 없음) |
+| POST | `/api/v1/orders/{orderId}/confirm` | (사용자 식별) | CONFIRMED 주문(결제액·결제 결과) | 재고·잔액 부족 거절, 없는 대상 오류 (본인 소유 아니거나 없음) — **5주차에 PG 결제 시작으로 변경, 9-6절** |
 | GET | `/api/v1/orders` | (사용자 식별), `page`, `size` | 내 주문 목록 | - |
 | GET | `/api/v1/orders/{orderId}` | (사용자 식별) | 내 주문 상세 | 없는 대상 오류 (본인 것 아니거나 없음) |
 
@@ -518,6 +520,272 @@ AI와 설계·구현하며 나온 제안 중, 측정이나 테스트로 문제�
 - 브랜드 없는 좋아요순은 miss일 때 약 2.4초가 걸리고, 그 순간 요청이 몰리는 경우(stampede)는 다루지 않았다.
 - 브랜드 없는 최신순·가격순은 브랜드로 시작하는 인덱스를 쓰지 못해 DB 경로가 약 300ms다.
 - 측정은 노트북의 Docker Desktop(WSL2)에서 앱·DB·Redis가 한 머신에 있는 조건이다. 절대 시간보다 같은 실행 안의 전후 차이를 봤다.
+
+## 9. 5주차 — 결제를 포인트에서 테스트 PG로 교체
+
+미확정 주문의 결제를 같은 DB 안의 포인트 차감에서 외부 테스트 PG 호출로 바꾼다. PG의 HTTP 계약·adapter·timeout·재조회·회로 차단기는 [`docs/week5/pg-contract.md`](../week5/pg-contract.md)에 있고, 이 절은 주문·재고·결제 시도의 **상태와 트랜잭션 경계**를 다룬다. 핵심 전제는 하나다. 외부 거래는 우리 DB rollback으로 되돌릴 수 없고, timeout은 실패가 아니라 **결과를 모르는 상태**다.
+
+### 9-1. 바꾸는 것과 지키는 것
+
+| 대상 | 이번 변경 | 유지할 것 |
+|---|---|---|
+| 미확정 DRAFT 주문의 확정 | 확정 요청이 PG 결제를 시작한다. 결제 시도·재고 예약·결과 적용 경계를 추가한다 | 소유권, 품목, 양수 수량, 저장 금액, 삭제 상품 검사. **포인트 차감 0회** |
+| 이전 POINT 결제 주문 | 기존 사실을 그대로 조회한다 | 결제수단 POINT, 결제액, 결과, 당시 품목. 다시 확정하면 기존대로 404 |
+| 포인트 충전·조회 | API는 그대로 두고 주문 결제에서만 떼어낸다 | 본인 잔액과 충전 규칙 |
+| 고객·관리자 주문 조회 | 결제수단, 결제 시도 상태, 최종 결과를 보여 준다 | 접근 구분, 과거 주문 |
+
+범위 밖: 주문당 결제 시도는 하나다. 실패 뒤 새 시도, 환불, 정산, 사용자 취소, 카드 저장, 상시 재조회 스케줄러는 만들지 않는다. 기본 복구 경로는 본인이 부르는 reconcile API다.
+
+### 9-2. 모델
+
+```
+orders            1 ── 0..1  payment_attempt      (주문당 시도 하나)
+orders            1 ── 0..1  stock_reservation    (주문당 예약 하나, 수량은 주문 품목)
+order_item (기존)            ── 품목별 수량: 확보·반환할 수량의 원본
+```
+
+| 테이블 | 컬럼 (새로 추가) | 제약 | 이유 |
+|---|---|---|---|
+| `orders` | `status`에 `PAYMENT_PENDING`·`PAYMENT_FAILED` 추가, `payment_method`(`POINT`·`PG`, DRAFT는 비어 있음) | — | 과거 POINT 주문과 새 PG 주문을 결제수단으로 구분한다. 기존 확정 주문은 `POINT`다 |
+| `payment_attempt` | `order_id`, `user_id`, `attempt_key`(클라이언트가 보낸 `paymentAttemptKey`), `provider_order_id`, `transaction_key`(PG가 준 값, 처음엔 비어 있음), `amount`, `card_type`, `status`, `unknown_reason`, `conflict_reason` | `order_id` UNIQUE, `attempt_key` UNIQUE, `transaction_key` UNIQUE | 주문당 시도 하나와 키의 요청 일치를 **DB가** 지킨다. 메모리 잠금만 쓰지 않는다. **카드번호 컬럼은 없다** |
+| `stock_reservation` | `order_id`, `status`(`RESERVED`·`CONSUMED`·`RELEASED`) | `order_id` UNIQUE | "반환은 한 번만"을 상태 전이 하나로 지킨다 |
+
+- **식별자 세 개를 나눠 저장한다.** `attempt_key`는 우리 쪽 요청 중복 제어, `provider_order_id`(`LP-ORD-0000000042`)는 PG의 주문 단위 조회, `transaction_key`는 PG 거래 한 건 조회에 쓴다. 내부 `order_id`는 소유권·품목·상태 조회용이다.
+- **예약 수량은 주문 품목에서 읽는다.** 주문 품목은 확정 뒤 바뀌지 않는 스냅샷이라, 예약 행에 수량을 다시 쓰지 않는다. (버린 대안: 상품별 예약 행 — 상태를 품목 수만큼 함께 바꿔야 해서 "한 번만"을 지키는 지점이 늘어난다.)
+- **가용 재고는 `product.stock` 그대로다.** 확보할 때 기존 `Stock.decrease`로 줄이고, 확정 실패 때만 한 번 늘린다. 성공 때는 다시 줄이지 않는다.
+- 같은 키로 다른 카드번호를 보내면 구별할 수 없다. 카드번호를 저장하지 않기 때문이다. 키의 요청 일치는 주문·사용자·카드 종류까지만 비교한다 (9-11절).
+
+### 9-3. 상태와 전이
+
+**결제 시도**
+
+```
+REQUESTED ──Accepted(key)──────────▶ PENDING ──조회 SUCCESS──▶ SUCCESS
+    │                                   │
+    ├──Unknown(timeout·끊김·형식)──▶ UNKNOWN ──조회 1건 일치 PENDING──▶ PENDING
+    │                                   ├──조회 SUCCESS──▶ SUCCESS
+    │                                   └──조회 FAILED───▶ FAILED
+    └──RejectedNoEffect(정확한 422)──────────────────────────▶ FAILED
+```
+
+- `REQUESTED`는 "발송 권한을 얻어 기록했다"이다. 실제로 나갔는지는 모른다 (9-11절).
+- `PENDING`은 PG가 거래를 만들고 처리 중이라고 알려 준 상태, `UNKNOWN`은 우리가 결과를 확정할 수 없는 상태다. 둘 다 새 결제를 만들어도 된다는 뜻이 아니다.
+- `SUCCESS`·`FAILED`는 종결이다. 종결 뒤의 어떤 관찰도 상태를 되돌리거나 덮어쓰지 않는다. 늦게 온 create 응답이나 timeout도 마찬가지다.
+- `UNKNOWN`은 `REQUESTED`에서만 들어간다. 이미 `PENDING`(거래가 있다는 것을 안다)인 시도를 늦은 timeout이 `UNKNOWN`으로 되돌리지 않는다.
+- 조회 0건, 2건 이상, 주문·금액·거래 키 불일치는 상태를 바꾸지 않는다. 2건 이상과 불일치는 `conflict_reason`에 남긴다 (첫 거래를 고르지 않는다).
+
+**주문과 재고 예약**
+
+| 결제 시도 | 주문 | 재고 예약 | 가용 재고 (재고 5, 수량 2) |
+|---|---|---|---|
+| (확정 전) | `DRAFT` | 없음 | 5 |
+| `REQUESTED`·`PENDING`·`UNKNOWN` | `PAYMENT_PENDING` | `RESERVED` | 3 |
+| `SUCCESS` | `CONFIRMED` (결제액 기록, 결제수단 PG) | `CONSUMED` — 추가 차감 없음 | 3 |
+| `FAILED` | `PAYMENT_FAILED` | `RELEASED` — 한 번 반환 | 5 |
+
+중복 실패 알림으로 7이 되거나, `UNKNOWN`·timeout만으로 5로 돌아가면 잘못이다. 예약 반환은 `RESERVED → RELEASED` 전이가 일어난 트랜잭션에서만 한다.
+
+### 9-4. 트랜잭션 경계
+
+PG 호출 동안 DB 트랜잭션·재고 잠금을 잡지 않는다. 확정은 세 단계로 나눈다.
+
+```
+POST /orders/{id}/confirm
+ ① 로컬 TX A  주문 잠금(본인) → 상태·기존 시도 확인 → 상품 잠금(id 오름차순)·미삭제 확인·Stock.decrease
+              → 예약 RESERVED, 시도 REQUESTED 저장 → 주문 PAYMENT_PENDING → 상품 revision → commit
+              (재고 부족·삭제 상품·잘못된 입력이면 전체 rollback, PG 호출 0회)
+ ② TX 밖      TX A를 commit한 실행만 PaymentGateway.requestPayment 1회 (재시도 없음)
+ ③ 로컬 TX B  applyObservation(시도, 생성 관찰) → commit
+              ↳ 응답: 주문이 PAYMENT_PENDING이면 202, CONFIRMED·PAYMENT_FAILED면 200
+
+POST /orders/{id}/payment/reconcile           POST /payments/callback
+ TX 밖  거래 조회 (키를 알면 단건,              TX 밖  알림의 transactionKey로 단건 조회
+        모르면 주문별)                                (알림 본문의 status는 쓰지 않는다)
+ TX B   applyObservation(시도, 조회 관찰)       TX B   applyObservation(시도, 조회 관찰)
+```
+
+- **발송 권한은 TX A의 commit이다.** 같은 주문의 동시 확정은 주문 잠금에서 줄을 서고, 늦게 온 요청은 잠금 뒤 이미 생긴 시도를 보고 저장된 상태를 돌려준다. PG POST는 하지 않는다. 마지막 방어선은 `order_id`·`attempt_key` 유일 제약이다. 서로 다른 두 주문이 같은 키를 동시에 쓰면 뒤늦은 쪽의 TX A가 유일 제약 위반으로 통째로 rollback되고, Facade가 이를 409로 바꿔 알린다(트랜잭션 밖이라 예외를 삼키지 않고 변환만 한다).
+- **TX B가 rollback되면 아무것도 반영되지 않는다.** 외부 성공 뒤 내부 저장이 실패해도, 같은 거래를 다시 조회해서(reconcile·callback) 한 번 확정할 수 있다. create는 다시 보내지 않는다.
+- 트랜잭션을 나누는 위치는 application의 결제 Facade다. TX A·TX B는 서로 다른 빈의 `@Transactional` 메서드로 두고, 같은 객체 안 호출(자기 호출)로 부르지 않는다 (7-4절 반례 1과 같은 이유).
+- 발송을 기록한 뒤 프로세스가 멈추면, 재시작 뒤에도 시도는 `REQUESTED`로 남는다. 자동으로 다시 보내지 않고, reconcile이 기존 거래를 조회한다.
+
+### 9-5. 잠금 순서 (7-3·8-4절 확장)
+
+기준: **주문 → 결제 시도 → 재고 예약 → 브랜드 → 상품(id 오름차순) → 포인트 → 상품 revision → 목록 revision**. 결제 시도와 예약은 주문당 하나라서 주문을 잠근 뒤에만 잠근다. 모든 경로가 이 순서의 부분집합을 같은 방향으로 잠근다.
+
+| 경로 | 잠그는 행 (순서대로) |
+|---|---|
+| 확정 TX A | 주문 → (결제 시도 조회) → 상품(품목 id 오름차순) → 상품 revision |
+| 결과 적용 TX B — 성공·보류 | 주문 → 결제 시도 → 재고 예약 |
+| 결과 적용 TX B — 확정 실패 | 주문 → 결제 시도 → 재고 예약 → 상품(품목 id 오름차순) → 상품 revision |
+| 관리자 재고 설정·상품 수정·삭제 | 상품(id) (기존과 같음) |
+| 브랜드 일괄 삭제 | 브랜드 → 상품 (기존과 같음) |
+| 포인트 충전 | 포인트 (기존과 같음, 주문 확정은 이제 포인트를 잠그지 않는다) |
+
+확정 실패의 재고 반환은 삭제된 상품 행도 잠금 조회로 읽고 재고만 늘린다. 삭제 시각은 건드리지 않으므로 반환이 삭제 상품을 다시 노출하지 않는다.
+
+### 9-6. API 계약 (5절 변경분)
+
+| method | path | 입력 | 성공 | 대표 오류 |
+|---|---|---|---|---|
+| POST | `/api/v1/orders/{orderId}/confirm` | (사용자 식별), `paymentAttemptKey`, `cardType`, `cardNo` (금액은 받지 않고 저장된 주문 합계로 정함) | 결과 대기·미확인이면 **202**, 종결(`CONFIRMED`·`PAYMENT_FAILED`)이면 **200**. 본문은 주문·결제 상태와 조회 경로(저장된 상태를 읽는 `orderPath`, PG 거래를 다시 확인하는 `reconcilePath`) | 400 입력 오류·재고 부족, 404 본인 소유 아님·없음·이미 POINT로 확정·삭제 상품, 409 상충하는 시도 |
+| POST | `/api/v1/orders/{orderId}/payment/reconcile` | (사용자 식별) | 위와 같음. 이미 종결이면 조회 없이 200 | 404 본인 소유 아님·PG 시도 없음 |
+| POST | `/api/v1/payments/callback` | `transactionKey`, `orderId`(= providerOrderId, `providerOrderId` 이름으로도 받음), `status`(받지만 쓰지 않음) | 처리 후 `orderId`·`orderStatus`·`paymentStatus`만 (202·200 규칙 같음). PG가 볼 필요 없는 품목·금액은 담지 않는다 | 400 거래 키·주문 번호가 비어 있음, 404 해당 시도 없음 (상태 변화 없음) |
+| GET | `/api/v1/orders/{orderId}`, 관리자 `/api-admin/v1/orders/{orderId}` | — | 기존 필드 + 결제수단, 결제 시도 상태, 최종 결과 | 기존과 같음 |
+
+**응답에 담는 결제 정보** (구현)
+- 고객: `paymentMethod`, `payment.status`, 결제 결과를 기다리거나 모를 때의 `orderPath`(GET, 저장된 상태 조회)·`reconcilePath`(POST, PG 거래 확인), 이번 호출에서 PG에 물었지만 확인하지 못했을 때의 `payment.lookupUnavailable: true`. 거래 키·충돌·결과 미확인 이유 같은 PG 내부 값은 담지 않는다.
+- 관리자: 위에 더해 `payment.transactionKey`, `payment.unknownReason`, `payment.conflict`. 운영자가 미확인·충돌 결제를 판단하는 근거다.
+- DRAFT 주문과 이전 POINT 주문에는 `payment`가 없다. 카드번호는 어디에도 없다.
+- `lookupUnavailable`은 저장된 상태가 아니라 그 응답에만 해당한다. 결제를 실패로 정했다는 뜻이 아니고, 상태는 마지막으로 아는 그대로다.
+
+**같은 키·같은 주문 규칙** (주문을 잠근 뒤 판단)
+
+| 상황 | 결과 |
+|---|---|
+| DRAFT 주문, 처음 보는 키 | 새 시도 (TX A → PG → TX B) |
+| 이미 시도가 있는 주문, 같은 키·같은 카드 종류 | 저장된 상태 반환 (202 또는 200), PG 호출 없음 |
+| 이미 시도가 있는 주문, 다른 키 또는 다른 카드 종류 | 409, 두 번째 시도 없음 |
+| 다른 주문에서 이미 쓴 키 | 409 |
+| 이전 POINT로 확정된 주문 | 기존 404 유지 (7-2절 결정) |
+
+callback 엔드포인트는 고객 식별 헤더(`@LoginUserId`)를 쓰지 않는다. PG의 `X-USER-ID: 135135`는 제공자 계정이고 고객 인증을 대신하지 않는다. 본문은 확인 요청의 계기일 뿐이라, 조작한 본문으로는 주문을 확정할 수 없다 (9-7절).
+
+### 9-7. 결과 적용 규칙 — `applyObservation`
+
+PG 조회는 이 트랜잭션 밖에서 끝내고, 관찰 결과만 넘긴다. 주문 → 결제 시도 → 예약 순으로 잠근 뒤 판단한다.
+
+| 관찰 | 시도가 종결 전일 때 | 시도가 종결일 때 |
+|---|---|---|
+| `Accepted(key)` | 키를 저장하고 `PENDING` (키가 이미 있고 다르면 충돌 기록) | 변화 없음 |
+| `RejectedNoEffect` | 시도가 `REQUESTED`(발송 직후)일 때만 `FAILED`, 주문 `PAYMENT_FAILED`, 예약 `RELEASED` + 재고 반환 1회. 이미 거래를 안 시도(`PENDING`·`UNKNOWN`)에 뒤늦게 온 거절은 근거로 쓰지 않는다 | 변화 없음 |
+| `Unknown(reason)` | `REQUESTED`면 `UNKNOWN` + 이유 기록, 그 밖에는 변화 없음 | 변화 없음 |
+| 조회 1건, 주문·금액·(저장된) 키 일치 | `PENDING`: 키 저장·`PENDING` / `SUCCESS`: 시도 `SUCCESS`, 주문 `CONFIRMED`(결제액), 예약 `CONSUMED` / `FAILED`: 위 확정 실패와 같음 | 같은 결과면 변화 없음. 성공과 실패가 **반대**면 덮어쓰지 않고 충돌 기록. 더 오래된 `PENDING` 관찰이 늦게 온 것은 충돌이 아니라 그대로 둔다 |
+| 조회 1건, 불일치 | 충돌 기록, 상태 변화 없음 | 변화 없음 |
+| 조회 0건 | 변화 없음 (create 재발송 없음) | 변화 없음 |
+| 조회 2건 이상 | 충돌 기록, 상태 변화 없음 | 변화 없음 |
+| `Unavailable` (회로 OPEN 포함) | 변화 없음, 응답에 확인 불가 | 변화 없음 |
+
+- 거래 키는 create 응답뿐 아니라 조회 결과에서도 저장한다. 주문별 조회의 1건이 주문·금액과 맞으면 그 키를 저장한다. create 응답을 잃은 시도가 키를 얻는 경로다.
+- **이미 종결한 시도는 callback·reconcile 모두 PG를 다시 조회하지 않고 저장된 결과를 돌려준다.** 그래서 종결 뒤의 반대 결과 충돌(`TERMINAL_RESULT_MISMATCH`)은 종결 직전에 조회를 마친 오래된 관찰이 늦게 적용되는 경쟁에서만 기록된다.
+- 충돌은 마지막으로 기록한 것 하나만 남기고(`conflict_reason`), 상태를 바꾸지 않는다. 이후의 올바른 관찰은 충돌이 기록돼 있어도 종결할 수 있다.
+- 성공·반환 상태 전이와 재고 변경을 **같은 트랜잭션**에서 한다. 중복 callback이나 동시 reconcile이 두 번 확정·반환하지 못하는 이유는 잠금 뒤 상태 확인이지, callback 횟수 제한이 아니다.
+
+### 9-8. 기존 기능과의 연결
+
+| 기능 | 연결 |
+|---|---|
+| 포인트 | 확정이 포인트를 쓰지 않는다. 충전·조회 API와 잔액 규칙은 그대로다. `PointService.pay`는 확정 경로에서 빠진다 |
+| 관리자 재고 설정 | 값은 "예약을 뺀 가용 수량"이다. 예약은 이미 `product.stock`에서 빠져 있으므로 설정값을 그대로 쓴다. 예약 수량을 지우지 않고, PG 성공 때 다시 차감하지 않는다. 예: 재고 5 → 2개 확보 → 3 → 관리자가 10으로 설정 → 10 → 확정 실패 반환 → 12 |
+| 삭제 상품 | 새 조회·새 주문에서는 계속 빠진다. 삭제 전에 확보를 마친 `PAYMENT_PENDING` 주문은 저장된 품목·금액·예약으로 마무리한다. 삭제 뒤 새로 확정하는 DRAFT는 기존대로 404다. 물리 삭제는 없다 (6절) |
+| 4주차 캐시 | 상품 캐시가 재고를 담으므로, 확보(TX A)와 반환(확정 실패 TX B)에서 품목의 상품 revision을 올린다. 성공(소비)은 재고가 바뀌지 않아 올리지 않는다 |
+| 관리자·고객 조회 | 결제수단(POINT·PG), 시도 상태, 최종 결과를 더한다. 카드번호는 어디에도 없다 |
+| 이전 POINT 주문 | 결제수단 컬럼이 생기기 전에 확정한 주문은 저장된 값이 비어 있다. 읽을 때 확정된 주문의 빈 값을 POINT로 보정하고 저장된 값은 바꾸지 않는다. 마이그레이션 도구가 없어 기존 행을 고치지 않는다 |
+
+### 9-9. AI 반례 검토 (구현 전)
+
+과제 요구대로 구현 전에 AI(Claude)에게 응답 유실, 성공 뒤 내부 저장 실패, 중복 callback을 중심으로 반례를 묻고, 상태와 효과를 정했다. 아래 "검증" 열은 통합 테스트(`PaymentIntegrationTest`)에서 확인할 장면이다.
+
+| # | 반례 | 잘못 만들면 | 설계 대응 | 검증 |
+|---|---|---|---|---|
+| 1 | 거래가 생긴 뒤 create 응답만 유실 | timeout을 FAILED로 보고 예약 반환 → PG는 성공, 재고는 다른 주문에 팔림. 재발송하면 이중 결제 | `UNKNOWN`·예약 유지·재발송 0. 주문별 조회로 키를 찾아 종결 | 거래 1·UNKNOWN·create 추가 0, 조회로 종결 |
+| 2 | PG 성공을 조회했는데 TX B commit 실패 | 성공을 잃거나, 다음 확정이 새 결제를 보냄 | TX B 전체 rollback, 시도는 그대로. 같은 거래 재조회로 한 번 확정 | rollback 뒤 재조회로 한 번 확정, create 추가 0 |
+| 3 | 같은 SUCCESS callback이 두 번, 또는 callback과 reconcile이 동시에 | 재고 이중 차감·이중 확정 | 주문 잠금 뒤 종결 여부 확인. 소비는 재고를 바꾸지 않음 | 같은 최종 상태, 추가 차감 0 |
+| 4 | 같은 FAILED callback이 두 번 | `stock += quantity` 두 번 → 5가 7 | `RESERVED → RELEASED` 전이에서만 반환 | 반환 1회, 가용 재고 5 |
+| 5 | callback이 먼저 종결한 뒤 create 응답(202)이나 timeout이 늦게 도착 | 종결이 `PENDING`·`UNKNOWN`으로 되돌아감 | 종결 시도에는 어떤 관찰도 적용하지 않음 | 종결 상태 유지 |
+| 6 | 같은 주문·같은 키로 확정을 동시에 | create 두 번 | 주문 잠금 + 유일 제약. TX A를 commit한 실행만 발송 | 시도·예약 각 1, create 1 |
+| 7 | 같은 주문에 새 키로 다시 확정 | 두 번째 PG 시도 | 409, 시도 하나 유지 | 효과 없이 거절 |
+| 8 | 조작한 callback (`status: SUCCESS`, PG는 PENDING) | 위조로 주문 확정 | 본문 status를 쓰지 않고 권위 조회 결과만 적용 | 주문 미확정 (실제 controller 경유) |
+| 9 | 다른 주문의 실제 거래 키를 담은 callback | 남의 결제로 내 주문 확정 | 조회한 거래의 주문 번호·금액을 시도와 대조, 불일치는 충돌 기록 | 상태 변화 없음 |
+| 10 | 주문별 조회가 2건 (누군가 같은 주문으로 두 번 보냄) | 첫 거래로 확정 | 충돌 기록, 미확인 유지 | 임의 종결 없음 |
+| 11 | 조회 0건이 계속됨 (발송 기록 뒤 멈춤) | "거래 없음"으로 보고 새 결제 허용 | 미확인 유지, 재발송 없음 (9-11절 한계) | 재시작 뒤 자동 재발송 0 |
+| 12 | 조회 회로 OPEN | 확인 불가를 실패로 확정 | `Unavailable`은 상태를 바꾸지 않음 | 기존 상태 유지, 회복 뒤 조회 재개 |
+| 13 | PG 호출 중 재고 잠금 보유 | 다른 주문·상품 조회가 PG 지연만큼 멈춤 | 호출을 TX A·B 사이로 뺌 | 확정 경로의 SQL·잠금 구간 대조 |
+| 14 | 확정 실패 반환이 삭제 상품을 되살림 | 모든 컬럼 UPDATE가 낡은 `deleted_at`을 씀 | 잠금 조회로 처음 읽은 뒤 재고만 증가 (7-3절 규칙) | 반환 뒤에도 삭제 상품 비노출 |
+| 15 | 재고 부족인데 PG부터 호출 | 결제는 됐는데 재고 없음 | 확보(TX A)가 PG 호출보다 먼저, 부족하면 PG 0회 | 재고 부족 시 PG 0회 |
+
+### 9-10. 기존 계약·테스트 변경 (승인 뒤 반영함)
+
+> 2026-10-23에 승인을 받아 아래대로 바꿨다. 지우거나 완화한 기대값은 없다. 계약에서 사라진 세 장면은 새 계약을 검증하는 테스트로 바꿨다.
+> 잔액 부족 409 → "잔액이 주문 금액보다 적어도 PG 결제는 시작되고 잔액은 그대로", 잔액 경쟁 2/3 → "한 사용자의 주문 3건을 동시에 확정해도 모두 결제 대기이고 잔액은 그대로", 충전과 결제 동시 → "충전분만 늘어 12,000원".
+> 이미 시작한 주문의 재확정은 기존 404에서 "같은 요청이면 저장된 상태, 다른 요청이면 409"로 바뀌었다 (9-6절). 이전에 포인트로 확정한 주문은 기존 404를 그대로 둔다.
+
+확정 계약이 "포인트로 즉시 확정"에서 "PG 결제 시작"으로 바뀌므로, 확정을 부르는 기존 테스트 8개 파일의 기대값이 바뀐다. CLAUDE.md 규칙 4·5에 따라 이유와 영향을 적고 확인을 받은 뒤 바꾼다. 검사를 통과시키려고 기대값을 지우거나 완화하지 않고, 같은 의도를 새 계약으로 다시 검증한다.
+
+| 파일 | 지금 검증하는 것 | 바뀌는 점 |
+|---|---|---|
+| `OrderV1ApiE2ETest` | 확정하면 재고·잔액 차감, 재고 부족 400, **잔액 부족 409**, 남의 주문 404 | 확정 요청에 키·카드 입력을 더하고 테스트 PG를 연결한다. 잔액 차감 대신 "잔액 변화 0". 잔액 부족 409 시나리오는 계약에서 사라진다 (PG 결제는 잔액을 보지 않음) |
+| `OrderTransactionTest` | 재고·잔액 변경 뒤 주문 저장 실패 시 전부 rollback, 삭제 상품 404, 재확정 404 | rollback 검증을 TX A(재고·예약·시도)에 맞춘다. 잔액 대신 예약·시도 행이 함께 rollback되는지 본다 |
+| `OrderConcurrencyTest` | 재고 경쟁 5/8, **잔액 경쟁 2/3**, 충전과 결제 동시, 중복 확정, 관리자 재고와 확정, 반대 순서 품목 | 재고 경쟁·중복 확정·관리자 재고·반대 순서는 TX A 기준으로 유지한다. 잔액 경쟁과 충전·결제 동시는 확정이 포인트를 쓰지 않아 대상이 사라진다 |
+| `IntegratedFlowE2ETest` | 브랜드 등록부터 확정까지의 전체 흐름 | 확정 단계를 PG 결제 → 조회로 종결까지로 바꾼다 |
+| `ProductCacheChangeIntegrationTest` | 확정 뒤 재고 캐시 반영, **잔액 부족 rollback 시 revision 불변** | 확보·반환 뒤 캐시 반영으로 바꾼다. 잔액 부족 rollback은 재고 부족 rollback으로 대신한다 |
+| `ProductCacheRedisOutageTest` | Redis 중단 중에도 주문 처리 | 확정을 PG 흐름으로 부른다 |
+| `ProductCacheRevisionIntegrationTest` | 확정 시 상품 revision만 증가, **잔액 부족 rollback 시 불변** | 확보·반환 시 revision 증가, 성공 시 불변. rollback 대조는 재고 부족으로 |
+| `OrderServiceIntegrationTest` | 이미 확정된 주문은 DRAFT 조회에서 NOT_FOUND | 그대로 두되, `PAYMENT_PENDING`도 DRAFT가 아니라는 경우를 더한다 |
+
+`PointServiceIntegrationTest`·`PointModelTest`의 `pay` 규칙은 도메인 규칙이라 그대로 둔다.
+
+### 9-11. 비용과 한계
+
+- **발송 기록 뒤 멈춘 시도는 영원히 미확인일 수 있다.** TX A를 commit하고 HTTP를 보내기 전에 멈추면 실제 발송은 0회지만, 로컬 기록만으로는 "보낸 뒤 응답을 잃음"과 구분할 수 없다. 재발송보다 중복 결제 방지를 택했으므로, 이 시도는 조회 0건이 계속되고 예약을 오래 점유한다. 사람의 판단(운영 조치)이 필요하다.
+- **PG 연결 실패도 미확인이다** (pg-contract.md 11절 열린 결정 1). PG가 내려간 동안 확정한 주문은 모두 `PAYMENT_PENDING`으로 남고, 예약을 반환받지 못한다.
+- **시간 경과로 실패 처리하지 않는다.** 아직 성공할 수 있는 거래의 재고를 다른 주문에 팔지 않기 위해서다. 대신 장기 미확인 주문의 예약 점유 비용이 남는다.
+- **같은 키로 다른 카드번호를 보내면 같은 요청으로 본다.** 카드번호를 저장하지 않아 비교할 수 없다. 카드 종류까지만 비교한다.
+- **상시 재조회 스케줄러가 없다.** callback이 유실되면 사용자가 reconcile을 불러야 종결된다.
+- 운영에서는 미완료 결제의 체류 시간, 조회 불가·충돌 건수, 실제 발송 수와 예약 점유량을 봐야 한다. 미확인 기록을 지우거나 서버를 재시작해도 외부 거래는 취소되지 않는다.
+
+
+### 9-12. 구현 뒤 확인 (2026-10-23)
+
+**테스트 결과**
+- `./gradlew :apps:commerce-api:check`: **351건 실행, 실패 0, skip 3.** checkstyle·ArchUnit도 통과했다.
+- skip 3건은 다른 작업의 PG 지연 실험 하네스(`PG_LATENCY_EXPERIMENT=true`일 때만 도는 옵트인)라서 이번 검증에 세지 않았다.
+- 이 실행 뒤에 "PG 호출 중 잠금" 테스트 1건을 더했고, `PaymentIntegrationTest` 16건 통과를 다시 확인했다.
+
+**9-9절 반례를 확인한 테스트**
+
+| # | 반례 | 확인한 테스트 |
+|---|---|---|
+| 1 | 응답 유실 | `PaymentIntegrationTest.LostResponse` — 연결 끊김·timeout·확정 실패 3건 |
+| 2 | 성공 뒤 내부 저장 실패 | `PaymentRecoveryIntegrationTest.InternalFailureAfterExternalResult` — 성공 적용 실패, 반환 도중(변경이 DB로 나간 뒤) 실패 |
+| 3 | 같은 성공 알림·조회가 동시에 | `PaymentCallbackIntegrationTest.ArrivalOrder` — 6개 동시 |
+| 4 | 같은 실패 알림이 여러 번 | `ArrivalOrder`(4개 동시), `PaymentIntegrationTest.RejectedBeforeCreate` — 가용 재고가 5를 넘지 않음 |
+| 5 | 종결 뒤 늦은 응답 | `ArrivalOrder`(callback이 먼저 종결, 늦은 생성 응답), `PaymentAttemptModelTest` |
+| 6 | 같은 주문·같은 키 동시 | `OrderConcurrencyTest` — 시도·예약·확보·create 각 1회 |
+| 7 | 같은 주문에 새 키 | `PaymentIntegrationTest.ConflictingRequests`, `OrderConcurrencyTest`(다른 키 동시) |
+| 8 | 조작한 callback | `PaymentCallbackIntegrationTest.DoesNotTrustCallbackBody` — 실제 controller 경유 |
+| 9 | 다른 주문의 거래 키 | `AmbiguousLookup` — 주문·금액 불일치 |
+| 10 | 같은 주문의 거래 2건 | `AmbiguousLookup` — 둘 다 SUCCESS여도 확정하지 않음 |
+| 11 | 조회 0건·재시작 | `AmbiguousLookup`, `PaymentRecoveryIntegrationTest.AfterRestart` — 자동 재발송 0 |
+| 12 | 회로 OPEN | `PaymentRecoveryIntegrationTest.LookupOutage` — 호출 수 3 → 5 → 5, 회복 뒤 조회 재개 |
+| 13 | PG 호출 중 잠금 보유 | `PaymentIntegrationTest.DuringPgCall` — 아래 변이 4 (이 항목은 처음에 직접 확인하는 테스트가 없어 구현 뒤에 더했다) |
+| 14 | 반환이 삭제 상품을 되살림 | `PaymentIntegrationTest.ExistingFeatures` — 반환 뒤에도 삭제 상태, 성공은 저장된 품목으로 확정 |
+| 15 | 재고 부족인데 PG 호출 | `OrderV1ApiE2ETest`, `OrderTransactionTest` — PG 호출 0회 |
+
+**테스트가 실제로 잡는지 확인한 변이** (운영 코드를 일부러 바꿔 돌리고, 파일 해시로 원복을 확인했다)
+
+| # | 바꾼 것 | 결과 |
+|---|---|---|
+| 1 | 저장된 시도에도 create를 다시 보냄(`sendRequired` 확인 제거) | 2건 실패 — `OrderTransactionTest`, `PaymentIntegrationTest`의 같은 요청 반복 |
+| 2 | TX A의 첫 주문 조회에서 잠금 제거 | 1건 실패 — `OrderConcurrencyTest` 같은 요청 동시 4건: 응답 4 기대, 실제 1. 늦게 온 같은 요청이 "시도 없음"으로 읽어 새 시도를 만들려다 거절된다. 다른 키 동시 테스트는 이 변이에서도 통과한다(성공 1·거절 3으로 결과가 같다) |
+| 3 | 재고 반환에서 상품 revision 증가 제거 | 3건 실패 — revision 기대 2 실제 1, 캐시된 재고 기대 3 실제 0(사용자가 낡은 재고를 본다), 실패 주입 지점 미도달 |
+| 4 | `PaymentFacade.confirm` 전체를 한 트랜잭션으로 감싸 PG 호출이 잠금 안에서 일어남 | 1건 실패 — 관리자 변경이 첫 호출의 PG 대기가 끝날 때까지 막힘 |
+| 5 | `PaymentAttemptModel.applyLookup`의 종결 분기 제거 | 3건 실패 — 같은 성공·실패·반대 결과가 다시 와도 효과가 한 번이어야 하는 테스트 |
+| 6 | `applyCreate`의 종결 보호 제거 | **실패 없음** — 접수·거절·미확인이 각자 종결 상태를 건드리지 않는 조건을 따로 갖고 있어 동작이 같은 중복 보호(동치 변이)다 |
+
+변이 2는 처음 시도가 Docker 중단으로 무효였고(`Could not find a valid Docker environment`, 8건 전부 실패), 실패 원인을 확인한 뒤 다시 해서 위 결과를 얻었다.
+
+**구현하며 설계와 달라진 것**: 거절(`RejectedNoEffect`)은 발송 직후(`REQUESTED`)일 때만 실패로 정한다. 종결 뒤 더 오래된 `PENDING` 관찰은 충돌로 기록하지 않는다. 종결한 시도는 PG를 다시 조회하지 않는다. 고객 응답에는 거래 키·충돌을 담지 않고 관리자 응답에만 담는다. 키 유일 제약 위반은 Facade가 409로 바꾼다. 각각 9-6·9-7절에 반영했다.
+
+**검토에서 찾아 고친 것** (과제 원문과 문장 단위로 다시 대조해 찾았고, 위 테스트를 돌린 뒤에 고쳤다)
+- callback 본문의 주문 필드: 과제 문장은 `providerOrderId`라고 부르는데 `orderId`만 받아 이름이 다르면 400이 됐다. 두 이름을 모두 받게 했다 (`PaymentV1DtoTest`, 별칭을 빼면 실패 확인).
+- 이전 POINT 확정 주문: 결제수단이 비어 보였다. 읽을 때 POINT로 보정했다 (`OrderModelTest.LegacyPaymentMethod`, 보정을 빼면 실패 확인).
+- 202 응답의 조회 경로: reconcile 경로만 주던 것에 주문 조회 경로를 더했다 (`OrderV1DtoTest`, 빼면 실패 확인).
+
+**확인하지 못한 것**
+- 실제 PG·네트워크 장애·프로세스 강제 종료는 재현하지 않았다. "발송 기록 뒤 재시작"은 TX A만 부른 뒤 서비스·클라이언트를 새로 만드는 방식으로 대신했다.
+- 처리량·지연은 이 변경으로는 측정하지 않았다.
+- `check` 전체는 Docker가 자주 끊겨 한 번 통과를 확인했다. 그 뒤의 변경은 `PaymentIntegrationTest`의 테스트 1건 추가뿐이다.
 
 ---
 *이 문서는 구현하며 판단이 바뀌면 그때그때 갱신한다 (완성 후 고정하는 문서가 아님).*

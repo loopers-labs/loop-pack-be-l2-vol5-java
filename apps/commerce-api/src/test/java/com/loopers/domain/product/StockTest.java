@@ -84,4 +84,38 @@ class StockTest {
             assertThat(stock.getRemaining()).isEqualTo(0);
         }
     }
+
+    @DisplayName("확보한 재고를 되돌릴 때, ")
+    @Nested
+    class Increase {
+        @DisplayName("양수 수량이면, 그만큼 재고가 늘어난다. 재고 5에서 2를 확보했다가 되돌리면 5다.")
+        @Test
+        void increasesRemaining_whenQuantityIsPositive() {
+            // arrange
+            Stock stock = new Stock(5);
+            stock.decrease(2);
+
+            // act
+            stock.increase(2);
+
+            // assert
+            assertThat(stock.getRemaining()).isEqualTo(5);
+        }
+
+        @DisplayName("수량이 0 이하이면, BAD_REQUEST 예외가 발생하고 재고가 유지된다.")
+        @Test
+        void throwsBadRequestException_whenQuantityIsNotPositive() {
+            // arrange
+            Stock stock = new Stock(3);
+
+            // act
+            CoreException zero = assertThrows(CoreException.class, () -> stock.increase(0));
+            CoreException negative = assertThrows(CoreException.class, () -> stock.increase(-1));
+
+            // assert
+            assertThat(zero.getErrorType()).isEqualTo(ErrorType.BAD_REQUEST);
+            assertThat(negative.getErrorType()).isEqualTo(ErrorType.BAD_REQUEST);
+            assertThat(stock.getRemaining()).isEqualTo(3);
+        }
+    }
 }

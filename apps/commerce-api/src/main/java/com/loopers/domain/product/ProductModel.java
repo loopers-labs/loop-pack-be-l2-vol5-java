@@ -78,6 +78,11 @@ public class ProductModel extends BaseEntity {
         stock.decrease(quantity);
     }
 
+    // 삭제 여부와 상관없이 재고만 되돌린다. 삭제 시각은 건드리지 않으므로 삭제된 상품이 다시 보이지 않는다
+    public void increaseStock(int quantity) {
+        stock.increase(quantity);
+    }
+
     public Long getBrandId() {
         return brandId;
     }

@@ -5,15 +5,18 @@ import com.loopers.application.like.LikeFacade;
 import com.loopers.application.order.OrderFacade;
 import com.loopers.application.order.OrderInfo;
 import com.loopers.application.order.OrderItemCommand;
+import com.loopers.application.payment.PaymentFacade;
 import com.loopers.domain.brand.BrandModel;
-import com.loopers.domain.point.PointModel;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.product.ProductRevisionService;
 import com.loopers.domain.product.ProductSortType;
 import com.loopers.infrastructure.brand.BrandJpaRepository;
-import com.loopers.infrastructure.point.PointJpaRepository;
 import com.loopers.infrastructure.product.ProductJpaRepository;
 import com.loopers.support.error.CoreException;
+import com.loopers.support.pg.PaymentTestSupport;
+import com.loopers.support.pg.TestPgResetExtension;
+import com.loopers.support.pg.TestPgServer;
+import com.loopers.support.pg.TestPgStatus;
 import com.loopers.utils.DatabaseCleanUp;
 import com.loopers.utils.RedisCleanUp;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -21,6 +24,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.domain.PageRequest;
@@ -33,10 +37,12 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 // 각 장면은 목록을 먼저 캐시에 올린 뒤 변경하고, 변경이 끝난 뒤 시작한 조회가 변경된 결과를 돌려주는지 본다
 @SpringBootTest
+@ExtendWith(TestPgResetExtension.class)
 class ProductCacheChangeIntegrationTest {
 
     private static final long BUYER_ID = 1L;
-    private static final long POOR_BUYER_ID = 2L;
+
+    private final TestPgServer pg = TestPgServer.shared();
 
     @Autowired
     private ProductFacade productFacade;
@@ -51,6 +57,9 @@ class ProductCacheChangeIntegrationTest {
     private OrderFacade orderFacade;
 
     @Autowired
+    private PaymentFacade paymentFacade;
+
+    @Autowired
     private ProductRevisionService productRevisionService;
 
     @Autowired
@@ -58,9 +67,6 @@ class ProductCacheChangeIntegrationTest {
 
     @Autowired
     private ProductJpaRepository productJpaRepository;
-
-    @Autowired
-    private PointJpaRepository pointJpaRepository;
 
     @Autowired
     private MeterRegistry meterRegistry;
@@ -85,8 +91,6 @@ class ProductCacheChangeIntegrationTest {
         slipperId = productJpaRepository.save(new ProductModel(nikeId, "slipper", 10_000L, 3)).getId();
         capId = productJpaRepository.save(new ProductModel(nikeId, "cap", 20_000L, 4)).getId();
         productJpaRepository.save(new ProductModel(adidasId, "jacket", 50_000L, 7));
-        chargePoint(BUYER_ID, 1_000_000L);
-        chargePoint(POOR_BUYER_ID, 1_000L);
     }
 
     @AfterEach
@@ -170,8 +174,31 @@ class ProductCacheChangeIntegrationTest {
         productFacade.changeStock(slipperId, 10);
         assertThat(stockOf(list(nikeId, ProductSortType.PRICE_ASC), "slipper")).isEqualTo(10);
 
-        confirmOrder(slipperId, 4);
-        assertThat(stockOf(list(nikeId, ProductSortType.PRICE_ASC), "slipper")).isEqualTo(6);
+        Long orderId = orderFacade.createOrder(BUYER_ID, List.of(new OrderItemCommand(slipperId, 4))).id();
+        PaymentTestSupport.startPayment(paymentFacade, orderId, BUYER_ID);
+        assertThat(stockOf(list(nikeId, ProductSortType.PRICE_ASC), "slipper")).as("결제 시작: 확보한 만큼 줄어든다").isEqualTo(6);
+
+        PaymentTestSupport.completeAt(pg, orderId, TestPgStatus.SUCCESS);
+        paymentFacade.reconcile(orderId, BUYER_ID);
+        assertThat(stockOf(list(nikeId, ProductSortType.PRICE_ASC), "slipper")).as("결제 성공: 다시 줄지 않는다").isEqualTo(6);
+    }
+
+    @DisplayName("결제가 확정 실패하면, 되돌린 재고가 이후 조회에 반영된다. 같은 실패 확인이 다시 와도 한 번만 되돌린다.")
+    @Test
+    void reflectsReturnedStock_afterPaymentFailure() {
+        // arrange: 재고 3을 모두 확보한 상태를 캐시에 올린다
+        Long orderId = orderFacade.createOrder(BUYER_ID, List.of(new OrderItemCommand(slipperId, 3))).id();
+        PaymentTestSupport.startPayment(paymentFacade, orderId, BUYER_ID);
+        assertThat(stockOf(list(nikeId, ProductSortType.PRICE_ASC), "slipper")).isZero();
+
+        // act
+        PaymentTestSupport.completeAt(pg, orderId, TestPgStatus.FAILED);
+        paymentFacade.reconcile(orderId, BUYER_ID);
+        paymentFacade.reconcile(orderId, BUYER_ID);
+
+        // assert
+        assertThat(stockOf(list(nikeId, ProductSortType.PRICE_ASC), "slipper")).isEqualTo(3);
+        assertThat(productJpaRepository.findById(slipperId).orElseThrow().getStock()).isEqualTo(3);
     }
 
     @DisplayName("상품을 등록하거나 브랜드 이름을 바꾸면, 이후 조회는 새 상품과 바뀐 브랜드 이름을 반환한다.")
@@ -188,18 +215,18 @@ class ProductCacheChangeIntegrationTest {
         assertThat(list(nikeId, ProductSortType.PRICE_ASC)).extracting(ProductInfo::brandName).containsOnly("NIKE");
     }
 
-    @DisplayName("주문 확정이 잔액 부족으로 롤백되면, 상품 revision과 재고가 그대로라 캐시된 이전 결과가 DB와 같다.")
+    @DisplayName("주문 확정이 재고 부족으로 롤백되면, 상품 revision과 재고가 그대로라 캐시된 이전 결과가 DB와 같다.")
     @Test
     void keepsCachedResult_whenChangeIsRolledBack() {
         // arrange
         List<ProductInfo> before = list(nikeId, ProductSortType.PRICE_ASC);
         long revisionBefore = productRevision(runnerId);
-        Long orderId = orderFacade.createOrder(POOR_BUYER_ID, List.of(new OrderItemCommand(runnerId, 1))).id();
+        Long orderId = orderFacade.createOrder(BUYER_ID, List.of(new OrderItemCommand(runnerId, 6))).id();
         double listHitsBefore = cacheCount("product.list.cache");
         double productHitsBefore = cacheCount("product.cache");
 
         // act
-        assertThrows(CoreException.class, () -> orderFacade.confirmOrder(orderId, POOR_BUYER_ID));
+        assertThrows(CoreException.class, () -> PaymentTestSupport.startPayment(paymentFacade, orderId, BUYER_ID));
         List<ProductInfo> after = list(nikeId, ProductSortType.PRICE_ASC);
 
         // assert
@@ -224,15 +251,10 @@ class ProductCacheChangeIntegrationTest {
         return products.stream().filter(product -> product.name().equals(name)).findFirst().orElseThrow().stock();
     }
 
+    // 주문을 만들어 PG 결제를 시작하고, PG가 성공으로 끝낸 것을 조회로 확인해 CONFIRMED로 마무리한다
     private OrderInfo confirmOrder(Long productId, int quantity) {
         Long orderId = orderFacade.createOrder(BUYER_ID, List.of(new OrderItemCommand(productId, quantity))).id();
-        return orderFacade.confirmOrder(orderId, BUYER_ID);
-    }
-
-    private void chargePoint(long userId, long amount) {
-        PointModel point = new PointModel(userId);
-        point.charge(amount);
-        pointJpaRepository.save(point);
+        return PaymentTestSupport.startAndSucceed(paymentFacade, pg, orderId, BUYER_ID).order();
     }
 
     private long productRevision(Long productId) {

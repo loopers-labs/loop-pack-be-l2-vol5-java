@@ -123,6 +123,15 @@ public class ProductService {
         return product;
     }
 
+    // 확보했던 재고를 되돌린다. 삭제된 상품도 잠금 조회로 읽어 재고만 늘리고 삭제 시각은 건드리지 않아, 반환이 삭제 상품을 다시 노출하지 않는다.
+    // 상품 revision은 올리지 않는다 — 결제 결과 적용이 품목을 모두 처리한 뒤 상품 id 오름차순으로 한꺼번에 올린다
+    @Transactional
+    public void increaseStock(Long id, int quantity) {
+        ProductModel product = productRepository.findByIdForUpdate(id)
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[id = " + id + "] 상품을 찾을 수 없습니다."));
+        product.increaseStock(quantity);
+    }
+
     private ProductModel getActiveProductForUpdate(Long id) {
         return productRepository.findByIdForUpdate(id)
             .filter(product -> product.getDeletedAt() == null)

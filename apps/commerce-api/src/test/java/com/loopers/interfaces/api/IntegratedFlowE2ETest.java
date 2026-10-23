@@ -1,11 +1,16 @@
 package com.loopers.interfaces.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.loopers.support.pg.PaymentTestSupport;
+import com.loopers.support.pg.TestPgResetExtension;
+import com.loopers.support.pg.TestPgServer;
+import com.loopers.support.pg.TestPgStatus;
 import com.loopers.utils.DatabaseCleanUp;
 import com.loopers.utils.RedisCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -34,7 +39,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
+@ExtendWith(TestPgResetExtension.class)
 class IntegratedFlowE2ETest {
+
+    private final TestPgServer pg = TestPgServer.shared();
 
     @Autowired
     private MockMvc mvc;
@@ -115,14 +123,27 @@ class IntegratedFlowE2ETest {
             .andReturn().getResponse().getContentAsString();
         Long orderId = objectMapper.readTree(orderResponse).path("data").path("id").asLong();
 
-        // 7. 고객이 주문을 확정하면, 재고가 줄고 포인트가 결제액만큼 차감된다
-        mvc.perform(post("/api/v1/orders/" + orderId + "/confirm").header("X-USER-ID", "1"))
+        // 7. 고객이 주문을 확정하면 PG 결제가 시작되어 재고가 확보되고 주문은 결제 대기다. 포인트는 쓰지 않는다
+        mvc.perform(post("/api/v1/orders/" + orderId + "/confirm")
+                .header("X-USER-ID", "1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(PaymentTestSupport.confirmBodyOf(orderId)))
+            .andExpect(status().isAccepted())
+            .andExpect(jsonPath("$.data.status").value("PAYMENT_PENDING"))
+            .andExpect(jsonPath("$.data.paymentMethod").value("PG"));
+
+        mvc.perform(get("/api/v1/points").header("X-USER-ID", "1"))
+            .andExpect(jsonPath("$.data.balance").value(10_000));
+
+        // 7-1. PG가 성공으로 처리한 뒤 고객이 결과를 확인하면, 주문이 확정되고 결제액이 기록된다
+        PaymentTestSupport.completeAt(pg, orderId, TestPgStatus.SUCCESS);
+        mvc.perform(post("/api/v1/orders/" + orderId + "/payment/reconcile").header("X-USER-ID", "1"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.status").value("CONFIRMED"))
             .andExpect(jsonPath("$.data.paidAmount").value(10_000));
 
         mvc.perform(get("/api/v1/points").header("X-USER-ID", "1"))
-            .andExpect(jsonPath("$.data.balance").value(0));
+            .andExpect(jsonPath("$.data.balance").value(10_000));
 
         // 8. 고객이 본인 주문 상세를 다시 조회하면, 확정된 상태 그대로 조회된다
         mvc.perform(get("/api/v1/orders/" + orderId).header("X-USER-ID", "1"))
