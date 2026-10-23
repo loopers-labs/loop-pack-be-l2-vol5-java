@@ -4,7 +4,7 @@ pg:
   create-timeout: 2s
   lookup-timeout: 1s
   pool-wait-timeout: 200ms
-  max-connections: 30
+  lookup-max-connections: 30
   create-concurrency: 20
   lookup-circuit:
     window: 10s

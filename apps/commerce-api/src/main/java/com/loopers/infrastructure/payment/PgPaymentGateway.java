@@ -108,7 +108,7 @@ class PgPaymentGateway implements PaymentGateway {
     private LookupAttempt guarded(Supplier<LookupAttempt> lookup) {
         try {
             return lookupCircuit.executeSupplier(lookup);
-        } catch (CallNotPermittedException e) {
+        } catch (CallNotPermittedException | LookupPoolExhausted e) {
             return LookupAttempt.unavailable(false);
         }
     }
@@ -141,7 +141,7 @@ class PgPaymentGateway implements PaymentGateway {
         } catch (HttpMessageNotReadableException e) {
             return LookupAttempt.unavailable(false);
         } catch (RestClientException e) {
-            return LookupAttempt.unavailable(true);
+            return unavailableOrPoolExhausted(e);
         }
     }
 
@@ -165,7 +165,21 @@ class PgPaymentGateway implements PaymentGateway {
         } catch (HttpMessageNotReadableException e) {
             return LookupAttempt.unavailable(false);
         } catch (RestClientException e) {
-            return LookupAttempt.unavailable(true);
+            return unavailableOrPoolExhausted(e);
+        }
+    }
+
+    private static LookupAttempt unavailableOrPoolExhausted(RestClientException e) {
+        if (e instanceof ResourceAccessException && e.getCause() instanceof ConnectionRequestTimeoutException) {
+            throw new LookupPoolExhausted();
+        }
+        return LookupAttempt.unavailable(true);
+    }
+
+    static final class LookupPoolExhausted extends RuntimeException {
+
+        LookupPoolExhausted() {
+            super(null, null, false, false);
         }
     }
 

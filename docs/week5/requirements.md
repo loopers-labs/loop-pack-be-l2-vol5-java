@@ -61,7 +61,7 @@ W2 의 갈래에 넷을 더한다. 번호를 다시 쓰지 않는 규칙도 같�
 | `PG-012` | 생성은 어디서도 자동 재시도하지 않는다. HTTP client · 프록시 · 회복 라이브러리의 숨은 재시도도 끈다 | 원문 | — | 장면마다 create 호출 수를 센다 |
 | `PG-013` | 연결 · 응답 대기를 실제 request factory 에 제한한다 | 원문 | — | 값은 설계 7.1 |
 | `PG-014` | 카드 번호는 합성 값만 쓰고 DB · 로그에 남기지 않는다 | 원문 + 보안 | — | 시도 테이블에 카드 열이 없다 |
-| `PG-015` | 커넥션 풀에서 연결을 얻지 못해 끝난 생성(풀 대기 timeout)은 PG 의 응답이 아니라 **보내지 않음이 확실한** 실패다. `PG-011` 의 UNKNOWN 이 아니라 효과 0건 거절과 같이 `FAILED` · 예약 반환으로 다룬다 | 정함(`PG-011` 의 해석) | 풀 30 이 모두 빌려진 채 생성 | `FAILED`, 재고 반환, create 0 |
+| `PG-015` | 커넥션 풀에서 연결을 얻지 못해 끝난 생성(풀 대기 timeout)은 PG 의 응답이 아니라 **보내지 않음이 확실한** 실패다. `PG-011` 의 UNKNOWN 이 아니라 효과 0건 거절과 같이 `FAILED` · 예약 반환으로 다룬다 | 정함(`PG-011` 의 해석) | 생성 풀(20)이 모두 빌려진 채 생성 | `FAILED`, 재고 반환, create 0 |
 
 ### 테스트 PG 장치 (fixture)
 
@@ -141,7 +141,9 @@ W2 의 갈래에 넷을 더한다. 번호를 다시 쓰지 않는 규칙도 같�
 | `RESIL-006` | sweeper — 미완료 시도를 정한 주기로 찾아 reconcile 과 같은 조회 · 반영을 부른다. 테스트에서는 주기를 끄고 한 번 실행을 직접 부른다 | 선택 | 수동 reconcile 이 기본 복구 경로 |
 | `RESIL-007` | **bulkhead** — confirm 의 PG 생성 경로는 동시에 20 개까지만 진행한다(세마포어, 대기 0). 자리는 **TX A 전에** 잡고 TX B 뒤에 `finally` 로 반납한다. 자리가 없으면 503 `PAYMENT_BUSY` · `Retry-After`, 예약 · 마킹 · create 모두 0 | 정함 | 동시 confirm 21 건 → 20 건 진행, 1 건 503 · 효과 0 |
 | `RESIL-008` | reconcile 은 같은 결제를 2초 안에 다시 확인하지 않는다(`last_checked_at`). 간격 안이면 PG 를 부르지 않고 저장된 상태를 돌려준다 | 정함 | 연속 reconcile 2 회 → lookup 1 회 |
-| `RESIL-009` | HTTP client 는 동기 `RestClient`, 하위는 Apache HttpClient 5. 연결 · 응답 · **커넥션 풀 대기**에 각각 timeout 을 두고, 같은 호스트 동시 연결 상한은 bulkhead 이상이다 | 원문(동기 client · 실제 factory 에 timeout) + 정함 | 값은 설계 7장 |
+| `RESIL-009` | HTTP client 는 동기 `RestClient`, 하위는 Apache HttpClient 5. 연결 · 응답 · **커넥션 풀 대기**에 각각 timeout 을 두고, 생성 풀 크기는 bulkhead 와 같다 | 원문(동기 client · 실제 factory 에 timeout) + 정함 | 값은 설계 7장 |
+| `RESIL-010` | 생성과 조회는 커넥션 풀을 따로 쓴다. 생성이 생성 풀을 모두 써도 조회는 조회 풀에서 연결을 얻는다 | 정함 | 생성 풀이 모두 빌려진 채 주문 조회 | `NotFound`(조회 불가가 아님) |
+| `RESIL-011` | 조회 풀을 기다리다 실패한 조회는 조회 불가로 끝내고 다시 시도하지 않는다. 우리 쪽 포화라 회로는 실패로도 성공으로도 세지 않는다 | 정함 | 조회 풀 1 이 빌려진 채 조회 | 조회 불가, PG 조회 0, 회로 기록 없음 |
 | `RESIL-010` | confirm 은 결과를 기다리지 않는다. 생성 응답을 반영하면 202 와 `Retry-After` 를 돌려주고, 결과는 callback · 고객 폴링 · reconcile · sweeper 가 맡는다 | 정함 | confirm 의 lookup 0 회 |
 
 ---

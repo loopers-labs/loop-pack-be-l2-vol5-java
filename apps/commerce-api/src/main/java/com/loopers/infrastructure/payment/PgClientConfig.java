@@ -19,6 +19,7 @@ import org.apache.hc.client5.http.ssl.DefaultClientTlsStrategy;
 import org.apache.hc.core5.ssl.SSLContexts;
 import org.apache.hc.core5.util.TimeValue;
 import org.apache.hc.core5.util.Timeout;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.ssl.SslBundles;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -32,30 +33,33 @@ import java.time.Duration;
 class PgClientConfig {
 
     @Bean(destroyMethod = "")
-    PoolingHttpClientConnectionManager pgConnectionPool(PgProperties pg, SslBundles sslBundles) {
-        return PoolingHttpClientConnectionManagerBuilder.create()
-            .setMaxConnTotal(pg.maxConnections())
-            .setMaxConnPerRoute(pg.maxConnections())
-            .setDefaultConnectionConfig(ConnectionConfig.custom()
-                .setConnectTimeout(Timeout.ofMilliseconds(pg.connectTimeout().toMillis()))
-                .setValidateAfterInactivity(TimeValue.ofSeconds(2))
-                .build())
-            .setTlsSocketStrategy(new DefaultClientTlsStrategy(sslContext(pg, sslBundles)))
-            .build();
+    PoolingHttpClientConnectionManager pgCreateConnectionPool(PgProperties pg, SslBundles sslBundles) {
+        return pool(pg, sslBundles, pg.createConcurrency());
+    }
+
+    @Bean(destroyMethod = "")
+    PoolingHttpClientConnectionManager pgLookupConnectionPool(PgProperties pg, SslBundles sslBundles) {
+        return pool(pg, sslBundles, pg.lookupMaxConnections());
     }
 
     @Bean(destroyMethod = "close")
-    CloseableHttpClient pgHttpClient(PoolingHttpClientConnectionManager pool) {
-        return HttpClients.custom()
-            .setConnectionManager(pool)
-            .disableAutomaticRetries()
-            .evictIdleConnections(TimeValue.ofSeconds(30))
-            .build();
+    CloseableHttpClient pgCreateHttpClient(@Qualifier("pgCreateConnectionPool") PoolingHttpClientConnectionManager pool) {
+        return httpClient(pool);
+    }
+
+    @Bean(destroyMethod = "close")
+    CloseableHttpClient pgLookupHttpClient(@Qualifier("pgLookupConnectionPool") PoolingHttpClientConnectionManager pool) {
+        return httpClient(pool);
     }
 
     @Bean
-    MeterBinder pgConnectionPoolMetrics(PoolingHttpClientConnectionManager pgConnectionPool) {
-        return new PoolingHttpClientConnectionManagerMetricsBinder(pgConnectionPool, "pg");
+    MeterBinder pgCreateConnectionPoolMetrics(@Qualifier("pgCreateConnectionPool") PoolingHttpClientConnectionManager pool) {
+        return new PoolingHttpClientConnectionManagerMetricsBinder(pool, "pg-create");
+    }
+
+    @Bean
+    MeterBinder pgLookupConnectionPoolMetrics(@Qualifier("pgLookupConnectionPool") PoolingHttpClientConnectionManager pool) {
+        return new PoolingHttpClientConnectionManagerMetricsBinder(pool, "pg-lookup");
     }
 
     @Bean
@@ -89,6 +93,7 @@ class PgClientConfig {
             .waitDurationInOpenState(circuit.openWait())
             .permittedNumberOfCallsInHalfOpenState(circuit.halfOpenCalls())
             .recordResult(result -> result instanceof PgPaymentGateway.LookupAttempt attempt && attempt.failed())
+            .ignoreExceptions(PgPaymentGateway.LookupPoolExhausted.class)
             .build());
     }
 
@@ -103,13 +108,37 @@ class PgClientConfig {
     }
 
     @Bean
-    RestClient pgCreateClient(RestClient.Builder builder, CloseableHttpClient pgHttpClient, PgProperties pg) {
-        return client(builder, pgHttpClient, pg, pg.createTimeout());
+    RestClient pgCreateClient(
+        RestClient.Builder builder, @Qualifier("pgCreateHttpClient") CloseableHttpClient http, PgProperties pg
+    ) {
+        return client(builder, http, pg, pg.createTimeout());
     }
 
     @Bean
-    RestClient pgLookupClient(RestClient.Builder builder, CloseableHttpClient pgHttpClient, PgProperties pg) {
-        return client(builder, pgHttpClient, pg, pg.lookupTimeout());
+    RestClient pgLookupClient(
+        RestClient.Builder builder, @Qualifier("pgLookupHttpClient") CloseableHttpClient http, PgProperties pg
+    ) {
+        return client(builder, http, pg, pg.lookupTimeout());
+    }
+
+    private static PoolingHttpClientConnectionManager pool(PgProperties pg, SslBundles sslBundles, int size) {
+        return PoolingHttpClientConnectionManagerBuilder.create()
+            .setMaxConnTotal(size)
+            .setMaxConnPerRoute(size)
+            .setDefaultConnectionConfig(ConnectionConfig.custom()
+                .setConnectTimeout(Timeout.ofMilliseconds(pg.connectTimeout().toMillis()))
+                .setValidateAfterInactivity(TimeValue.ofSeconds(2))
+                .build())
+            .setTlsSocketStrategy(new DefaultClientTlsStrategy(sslContext(pg, sslBundles)))
+            .build();
+    }
+
+    private static CloseableHttpClient httpClient(PoolingHttpClientConnectionManager pool) {
+        return HttpClients.custom()
+            .setConnectionManager(pool)
+            .disableAutomaticRetries()
+            .evictIdleConnections(TimeValue.ofSeconds(30))
+            .build();
     }
 
     private static SSLContext sslContext(PgProperties pg, SslBundles sslBundles) {

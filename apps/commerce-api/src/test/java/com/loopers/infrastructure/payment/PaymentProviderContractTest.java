@@ -348,7 +348,7 @@ class PaymentProviderContractTest {
             assertThat(lookupCircuit.getState()).isEqualTo(CircuitBreaker.State.CLOSED);
         }
 
-        @DisplayName("응답은 오지만 500 ms 를 넘는 조회가 80 % 이상이면 실패가 없어도 OPEN 이다. 커넥션 풀이 차기 전에 끊는다")
+        @DisplayName("응답은 오지만 500 ms 를 넘는 조회가 50 % 이상이면 실패가 없어도 OPEN 이다. 커넥션 풀이 차기 전에 끊는다")
         @Test
         void opensOnSlowCalls() {
             TransactionKey key = createdKey(306L);
