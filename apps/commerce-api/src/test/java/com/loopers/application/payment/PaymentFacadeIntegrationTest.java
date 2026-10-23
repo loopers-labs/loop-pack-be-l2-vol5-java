@@ -1,5 +1,6 @@
 package com.loopers.application.payment;
 
+import com.loopers.CommerceApiApplication;
 import com.loopers.application.brand.BrandFacade;
 import com.loopers.application.order.OrderCreateCommand;
 import com.loopers.application.order.OrderFacade;
@@ -12,6 +13,8 @@ import com.loopers.domain.payment.CardNumber;
 import com.loopers.domain.payment.CardType;
 import com.loopers.domain.payment.Payment;
 import com.loopers.domain.payment.PaymentAttemptKey;
+import com.loopers.domain.payment.PaymentCreation;
+import com.loopers.domain.payment.PaymentGateway;
 import com.loopers.domain.payment.PaymentRepository;
 import com.loopers.domain.payment.PaymentStatus;
 import com.loopers.domain.payment.ProviderOrderId;
@@ -28,7 +31,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.WebApplicationType;
+import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
@@ -58,6 +64,8 @@ class PaymentFacadeIntegrationTest {
     private static final CardNumber CARD = CardNumber.of("0000-0000-0000-0000");
 
     private final PaymentFacade paymentFacade;
+    private final PaymentTransactions paymentTransactions;
+    private final PaymentGateway paymentGateway;
     private final PaymentRepository paymentRepository;
     private final OrderFacade orderFacade;
     private final ProductService productService;
@@ -72,6 +80,8 @@ class PaymentFacadeIntegrationTest {
     @Autowired
     PaymentFacadeIntegrationTest(
         PaymentFacade paymentFacade,
+        PaymentTransactions paymentTransactions,
+        PaymentGateway paymentGateway,
         PaymentRepository paymentRepository,
         OrderFacade orderFacade,
         ProductService productService,
@@ -81,6 +91,8 @@ class PaymentFacadeIntegrationTest {
         DatabaseCleanUp databaseCleanUp
     ) {
         this.paymentFacade = paymentFacade;
+        this.paymentTransactions = paymentTransactions;
+        this.paymentGateway = paymentGateway;
         this.paymentRepository = paymentRepository;
         this.orderFacade = orderFacade;
         this.productService = productService;
@@ -283,6 +295,65 @@ class PaymentFacadeIntegrationTest {
             assertThat(orderFacade.get(USER, order.getId()).getStatus()).isEqualTo(OrderStatus.CONFIRMED);
             assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(8));
             assertThat(creates()).isEqualTo(1);
+        }
+    }
+
+    @Nested
+    @DisplayName("PAY-005, 6.7: 발송을 기록한 뒤 서버가 다시 떠도 create 를 다시 보내지 않고, 기존 거래를 조회로 찾는다")
+    class Restart {
+
+        private ConfigurableApplicationContext restartedServer() {
+            return new SpringApplicationBuilder(CommerceApiApplication.class)
+                .profiles("test")
+                .web(WebApplicationType.NONE)
+                .run("--spring.jpa.hibernate.ddl-auto=none", "--pg.base-url=" + PG.baseUrl());
+        }
+
+        private Payment requestedOnly(Order order) {
+            return paymentTransactions.begin(
+                USER, order.getId(), PaymentAttemptKey.of("attempt-1"), CardType.TEST, NOW).payment();
+        }
+
+        @DisplayName("POST 직후 종료: 다시 뜬 서버의 reconcile 이 주문 조회로 그 거래를 찾아 한 번 확정한다. create 는 1 회 그대로다")
+        @Test
+        void sentBeforeCrash() {
+            Order order = place(2);
+            Payment requested = requestedOnly(order);
+            paymentGateway.create(new PaymentCreation(
+                requested.getProviderOrderId(), CardType.TEST, CARD, requested.getAmount()));
+            String key = PG.transactionsOf(requested.getProviderOrderId().value()).getFirst().transactionKey();
+            PG.changeStatus(key, PgFixture.Status.SUCCESS);
+
+            Payment settled;
+            int createsAfterRestart;
+            try (ConfigurableApplicationContext restarted = restartedServer()) {
+                createsAfterRestart = creates();
+                settled = restarted.getBean(PaymentFacade.class).reconcile(USER, order.getId(), NOW).payment();
+            }
+
+            assertThat(createsAfterRestart).as("다시 떠도 저절로 보내지 않는다").isEqualTo(1);
+            assertThat(creates()).isEqualTo(1);
+            assertThat(settled.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
+            assertThat(settled.getTransactionKey().value()).isEqualTo(key);
+            assertThat(orderFacade.get(USER, order.getId()).getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+            assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(8));
+        }
+
+        @DisplayName("POST 전에 종료: 조회 0 건이면 미완료 그대로 두고 다시 보내지 않는다. 묶인 재고도 그대로다 (9장 첫 줄)")
+        @Test
+        void crashedBeforeSending() {
+            Order order = place(2);
+            requestedOnly(order);
+
+            Payment checked;
+            try (ConfigurableApplicationContext restarted = restartedServer()) {
+                checked = restarted.getBean(PaymentFacade.class).reconcile(USER, order.getId(), NOW).payment();
+            }
+
+            assertThat(creates()).isZero();
+            assertThat(checked.getStatus()).isEqualTo(PaymentStatus.REQUESTED);
+            assertThat(orderFacade.get(USER, order.getId()).getStatus()).isEqualTo(OrderStatus.PENDING);
+            assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(8));
         }
     }
 
