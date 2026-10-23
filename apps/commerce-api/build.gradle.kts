@@ -32,4 +32,5 @@ dependencies {
 
     // resilience
     implementation("io.github.resilience4j:resilience4j-circuitbreaker:${project.properties["resilience4jVersion"]}")
+    implementation("io.github.resilience4j:resilience4j-bulkhead:${project.properties["resilience4jVersion"]}")
 }

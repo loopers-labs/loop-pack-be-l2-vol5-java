@@ -57,6 +57,7 @@ public final class PgFixture implements AutoCloseable {
     private final AtomicReference<RawResponse> nextLookupResponse = new AtomicReference<>();
     private final AtomicBoolean dropNextResponse = new AtomicBoolean();
     private final AtomicReference<HeldResponse> holdNext = new AtomicReference<>();
+    private final AtomicReference<CreateGate> createGate = new AtomicReference<>();
 
     private PgFixture(HttpsServer server, ExecutorService executor) {
         this.server = server;
@@ -98,6 +99,7 @@ public final class PgFixture implements AutoCloseable {
         nextLookupResponse.set(null);
         dropNextResponse.set(false);
         holdNext.set(null);
+        createGate.set(null);
     }
 
     public String baseUrl() {
@@ -186,6 +188,12 @@ public final class PgFixture implements AutoCloseable {
         dropNextResponse.set(true);
     }
 
+    public CreateGate holdAllCreates() {
+        CreateGate gate = new CreateGate();
+        createGate.set(gate);
+        return gate;
+    }
+
     public HeldResponse holdNextCreateResponse() {
         HeldResponse held = new HeldResponse();
         holdNext.set(held);
@@ -239,6 +247,10 @@ public final class PgFixture implements AutoCloseable {
         );
         transactions.put(transaction.transactionKey(),
             new Stored(userOf(exchange), request.get("callbackUrl").asText(), transaction));
+        CreateGate gate = createGate.get();
+        if (gate != null) {
+            gate.pass();
+        }
         HeldResponse held = holdNext.getAndSet(null);
         if (held != null) {
             held.markStored();
@@ -352,6 +364,32 @@ public final class PgFixture implements AutoCloseable {
 
     public enum Status {
         PENDING, SUCCESS, FAILED
+    }
+
+    public static final class CreateGate {
+
+        private final CountDownLatch released = new CountDownLatch(1);
+        private final AtomicInteger arrived = new AtomicInteger();
+
+        public int arrived() {
+            return arrived.get();
+        }
+
+        public void release() {
+            released.countDown();
+        }
+
+        private void pass() {
+            arrived.incrementAndGet();
+            try {
+                if (!released.await(10, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("create gate timed out");
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(e);
+            }
+        }
     }
 
     public static final class HeldResponse {

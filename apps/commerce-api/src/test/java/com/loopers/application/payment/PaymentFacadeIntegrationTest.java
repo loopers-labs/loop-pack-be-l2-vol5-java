@@ -21,7 +21,9 @@ import com.loopers.domain.payment.ProviderOrderId;
 import com.loopers.domain.product.Price;
 import com.loopers.domain.product.ProductService;
 import com.loopers.support.error.DomainError;
+import com.loopers.support.error.CoreException;
 import com.loopers.support.error.DomainException;
+import com.loopers.support.error.ErrorType;
 import com.loopers.support.pg.PgFixture;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterAll;
@@ -42,13 +44,16 @@ import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 import java.util.function.IntFunction;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -105,6 +110,7 @@ class PaymentFacadeIntegrationTest {
     @DynamicPropertySource
     static void pgBaseUrl(DynamicPropertyRegistry registry) {
         registry.add("pg.base-url", PG::baseUrl);
+        registry.add("pg.create-timeout", () -> "5s");
     }
 
     @AfterAll
@@ -355,6 +361,90 @@ class PaymentFacadeIntegrationTest {
             assertThat(orderFacade.get(USER, order.getId()).getStatus()).isEqualTo(OrderStatus.PENDING);
             assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(8));
         }
+    }
+
+    @Nested
+    @DisplayName("RESIL-007: PG 생성 경로는 동시에 20 개까지만 진행하고, 자리가 없으면 아무것도 하지 않고 거절한다")
+    class Bulkhead {
+
+        @DisplayName("PG 가 응답을 붙잡은 동안 confirm 21 건이 오면 20 건만 PG 에 가고 1 건은 PAYMENT_BUSY 다. 거절된 주문은 재고 · 시도 · create 모두 0")
+        @Test
+        void rejectsTheTwentyFirst() throws Exception {
+            productFacade.adjustStock(coat, Quantity.of(100));
+            List<Order> orders = new ArrayList<>();
+            for (int i = 0; i < 21; i++) {
+                orders.add(place(1));
+            }
+            PgFixture.CreateGate gate = PG.holdAllCreates();
+            ExecutorService executor = Executors.newFixedThreadPool(21);
+            List<Future<Object>> calls = new ArrayList<>();
+            List<Object> results = new ArrayList<>();
+            try {
+                for (Order order : orders) {
+                    calls.add(executor.submit(() -> {
+                        try {
+                            return confirm(order.getId(), "attempt-" + order.getId());
+                        } catch (CoreException e) {
+                            return e;
+                        }
+                    }));
+                }
+                assertThat(eventually(() -> gate.arrived() == 20)).as("20 건이 PG 에 닿는다").isTrue();
+                assertThat(eventually(() -> calls.stream().filter(Future::isDone).count() == 1))
+                    .as("나머지 1 건은 PG 를 기다리지 않고 바로 끝난다").isTrue();
+                gate.release();
+                for (Future<Object> call : calls) {
+                    results.add(call.get(15, TimeUnit.SECONDS));
+                }
+            } finally {
+                gate.release();
+                executor.shutdownNow();
+            }
+
+            List<CoreException> rejected = results.stream()
+                .filter(CoreException.class::isInstance).map(CoreException.class::cast).toList();
+            assertThat(results).filteredOn(Payment.class::isInstance).hasSize(20);
+            assertThat(rejected).singleElement()
+                .satisfies(e -> assertThat(e.getErrorType()).isEqualTo(ErrorType.PAYMENT_BUSY));
+            assertThat(creates()).isEqualTo(20);
+            assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(80));
+            assertThat(orders.stream().filter(order -> paymentRepository.findByOrderId(order.getId()).isEmpty()))
+                .singleElement()
+                .satisfies(order -> assertThat(orderFacade.get(USER, order.getId()).getStatus())
+                    .isEqualTo(OrderStatus.DRAFT));
+        }
+
+        @DisplayName("끝난 confirm 은 자리를 돌려준다. 거절로 끝나도 돌려준다 — 20 을 넘게 차례로 불러도 PAYMENT_BUSY 가 나지 않는다")
+        @Test
+        void returnsPermits() {
+            productFacade.adjustStock(coat, Quantity.of(100));
+            Long started = place(1).getId();
+            confirm(started, "attempt-started");
+            for (int i = 0; i < 25; i++) {
+                Long orderId = place(1).getId();
+                confirm(orderId, "attempt-" + orderId);
+            }
+            for (int i = 0; i < 25; i++) {
+                String newKey = "attempt-again-" + i;
+                assertThatThrownBy(() -> confirm(started, newKey))
+                    .isInstanceOf(DomainException.class)
+                    .hasFieldOrPropertyWithValue("error", DomainError.ORDER_NOT_DRAFT);
+            }
+            Long next = place(1).getId();
+
+            assertThat(confirm(next, "attempt-next").getStatus()).isEqualTo(PaymentStatus.PENDING);
+        }
+    }
+
+    private static boolean eventually(BooleanSupplier condition) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline) {
+            if (condition.getAsBoolean()) {
+                return true;
+            }
+            Thread.sleep(20);
+        }
+        return condition.getAsBoolean();
     }
 
     @Nested

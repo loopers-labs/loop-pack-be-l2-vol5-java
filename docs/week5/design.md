@@ -549,7 +549,8 @@ confirm 의 생성 경로에 세마포어 bulkhead 를 둔다. 동시 20, 대기
 **자리를 TX A 전에 잡는다.** PG 호출만 감싸면 TX A 가 `REQUESTED` 를 commit 한 뒤 자리가 없어 POST 를 못 보낼 수 있다.
 그러면 보내지 않은 결제가 "보냈을 수 있다" 로 영원히 남고 재고가 묶인다 — 4.2 의 대가를 우리가 스스로 만드는 것이다.
 그래서 Resilience4j 의 데코레이터가 아니라 `tryAcquirePermission` 과 `onComplete`(`finally`)로 TX A 부터 TX B 까지를 덮는다.
-자리가 없으면 503 이고 아무것도 반영하지 않는다. 503 은 W3 의 `LOCK_UNAVAILABLE` 처럼 `ErrorType` 의 상수로 낸다 — 도메인 실패가 아니라 일시적 혼잡이다.
+자리가 없으면 503 `PAYMENT_BUSY` 이고 아무것도 반영하지 않는다. 503 은 W3 의 `LOCK_UNAVAILABLE` 처럼 `ErrorType` 의 상수로 낸다 — 도메인 실패가 아니라 일시적 혼잡이다. 두 503 모두 `Retry-After: 1` 을 붙인다(`ApiControllerAdvice` 한 곳).
+자리 수는 `pg.create-concurrency`(20)이고, 같은 호스트 커넥션 상한(30)보다 작게 둔다(7.1).
 
 **왜 필요한가.** timeout 은 요청 **하나**의 상한이고 동시에 몇 개가 기다리는지의 상한이 아니다.
 PG 가 2 s 씩 느려진 순간 confirm 이 초당 100 건이면 Tomcat 스레드 200 개가 모두 PG 를 기다리고 상품 조회까지 멈춘다(리틀의 법칙: 100 × 2 = 200).

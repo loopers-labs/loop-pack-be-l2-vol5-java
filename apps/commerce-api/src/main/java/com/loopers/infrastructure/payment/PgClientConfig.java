@@ -1,6 +1,8 @@
 package com.loopers.infrastructure.payment;
 
 import com.loopers.domain.payment.LookupResult;
+import io.github.resilience4j.bulkhead.Bulkhead;
+import io.github.resilience4j.bulkhead.BulkheadConfig;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import org.apache.hc.client5.http.config.ConnectionConfig;
@@ -40,6 +42,14 @@ class PgClientConfig {
             .disableAutomaticRetries()
             .evictIdleConnections(TimeValue.ofSeconds(30))
             .build();
+    }
+
+    @Bean
+    Bulkhead pgCreateBulkhead(PgProperties pg) {
+        return Bulkhead.of("pg-create", BulkheadConfig.custom()
+            .maxConcurrentCalls(pg.createConcurrency())
+            .maxWaitDuration(Duration.ZERO)
+            .build());
     }
 
     @Bean

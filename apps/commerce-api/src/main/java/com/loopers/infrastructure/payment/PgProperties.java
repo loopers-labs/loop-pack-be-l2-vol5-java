@@ -15,6 +15,7 @@ record PgProperties(
     Duration lookupTimeout,
     Duration poolWaitTimeout,
     int maxConnections,
+    int createConcurrency,
     LookupCircuit lookupCircuit
 ) {
 

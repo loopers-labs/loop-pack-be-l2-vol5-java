@@ -9,7 +9,10 @@ import com.loopers.domain.payment.PaymentCreation;
 import com.loopers.domain.payment.PaymentGateway;
 import com.loopers.domain.payment.PaymentService;
 import com.loopers.domain.payment.ProviderOrderId;
+import com.loopers.support.error.CoreException;
 import com.loopers.support.error.DomainError;
+import com.loopers.support.error.ErrorType;
+import io.github.resilience4j.bulkhead.Bulkhead;
 import com.loopers.support.error.DomainException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,8 +40,20 @@ public class PaymentFacade {
     private final PaymentGateway paymentGateway;
     private final PaymentService paymentService;
     private final OrderService orderService;
+    private final Bulkhead createBulkhead;
 
     public Payment confirm(PaymentConfirmCommand command, Instant now) {
+        if (!createBulkhead.tryAcquirePermission()) {
+            throw new CoreException(ErrorType.PAYMENT_BUSY);
+        }
+        try {
+            return start(command, now);
+        } finally {
+            createBulkhead.onComplete();
+        }
+    }
+
+    private Payment start(PaymentConfirmCommand command, Instant now) {
         PaymentTransactions.Begin begin = paymentTransactions.begin(
             command.userId(), command.orderId(), command.attemptKey(), command.cardType(), now);
 
