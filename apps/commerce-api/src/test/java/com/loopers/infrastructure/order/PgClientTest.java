@@ -112,6 +112,23 @@ class PgClientTest {
         };
     }
 
+    /** 200 헤더와 본문 첫 바이트는 바로, 나머지 본문은 read timeout 보다 늦게 보낸다. */
+    private void respondBodySlowly() {
+        responder = exchange -> {
+            byte[] bytes = transaction("SUCCESS").getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(bytes, 0, 1);
+                out.flush();
+                Thread.sleep(READ_TIMEOUT.multipliedBy(3).toMillis());
+                out.write(bytes, 1, bytes.length - 1);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        };
+    }
+
     private static void write(HttpExchange exchange, int status, String body) throws IOException {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().add("Content-Type", "application/json");
@@ -191,6 +208,14 @@ class PgClientTest {
         @Test
         void error_onReadTimeout() {
             respondAfterReadTimeout();
+
+            assertThat(request().outcome()).isEqualTo(Outcome.ERROR);
+        }
+
+        @DisplayName("응답 헤더가 와도 본문이 read timeout 안에 다 오지 않으면 ERROR.")
+        @Test
+        void error_whenBodyNotCompletedInReadTimeout() {
+            respondBodySlowly();
 
             assertThat(request().outcome()).isEqualTo(Outcome.ERROR);
         }

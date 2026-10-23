@@ -5,7 +5,9 @@ import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.Optional;
 
 @RequiredArgsConstructor
 @Component
@@ -36,6 +38,11 @@ public class OrderService {
     public OrderModel getForUpdate(Long orderId) {
         return orderRepository.findForUpdate(orderId)
             .orElseThrow(() -> new CoreException(ErrorType.ORDER_NOT_FOUND, "[id = " + orderId + "] 주문을 찾을 수 없습니다."));
+    }
+
+    /** 결제 대기 만료용: startedBefore 이전에 결제를 시작한 결제 대기 주문 하나를 잠근다. 다른 트랜잭션이 잠근 주문은 건너뛴다. */
+    public Optional<OrderModel> findExpiredAwaitingForUpdate(ZonedDateTime startedBefore) {
+        return orderRepository.findExpiredAwaitingForUpdate(startedBefore);
     }
 
     /** 결제 시작용: 락을 잡은 요청자의 주문. 없으면 ER-05, 남의 것이면 ER-06 (getOwned 와 같은 순서). */

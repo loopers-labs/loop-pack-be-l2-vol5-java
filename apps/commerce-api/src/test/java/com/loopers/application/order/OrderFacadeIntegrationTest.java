@@ -8,6 +8,7 @@ import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.product.ProductStockLedgerModel;
 import com.loopers.domain.product.StockLedgerType;
 import com.loopers.domain.order.OrderModel;
+import com.loopers.domain.order.OrderService;
 import com.loopers.domain.order.OrderStatus;
 import com.loopers.domain.user.UserModel;
 import com.loopers.support.FakePaymentGateway;
@@ -24,8 +25,13 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static com.loopers.support.ErrorAssertions.assertThrowsErrorType;
 import static com.loopers.support.FakePaymentGateway.failed;
@@ -49,6 +55,12 @@ class OrderFacadeIntegrationTest {
     private ProductFacade productFacade;
     @Autowired
     private FakePaymentGateway fakePg;
+    @Autowired
+    private OrderPaymentProcessor orderPaymentProcessor;
+    @Autowired
+    private OrderService orderService;
+    @Autowired
+    private TransactionTemplate transactionTemplate;
     @Autowired
     private Fixtures fixtures;
     @Autowired
@@ -664,6 +676,74 @@ class OrderFacadeIntegrationTest {
 
             assertThat(fakePg.finds()).isEmpty();
             assertThat(statusOf(order)).isEqualTo(OrderStatus.AWAITING_PAYMENT);
+        }
+    }
+
+    @Nested
+    @DisplayName("FR-ORDER-02 결제 대기 만료 (OrderPaymentProcessor.expireOne)")
+    class ExpireAwaitingPayment {
+        @DisplayName("[FR-ORDER-02][ST-03] 기준 시각 전에 결제를 시작한 결제 대기 주문은 FAILED, 예약분 반환. 결제 시작 시각이 기록돼 있다.")
+        @Test
+        void failsAndReleases_whenStartedBeforeThreshold() {
+            OrderModel order = unknownOrder(2);
+            assertThat(fixtures.reloadOrder(order.getId()).getPaymentStartedAt()).isNotNull();
+
+            boolean expired = orderPaymentProcessor.expireOne(ZonedDateTime.now());
+
+            assertThat(expired).isTrue();
+            assertFailedAndReleased(order, 2);
+            assertThat(orderPaymentProcessor.expireOne(ZonedDateTime.now())).isFalse();
+        }
+
+        @DisplayName("[FR-ORDER-02] 기준 시각 뒤에 결제를 시작한 주문은 그대로다.")
+        @Test
+        void keepsAwaiting_whenStartedAfterThreshold() {
+            OrderModel order = unknownOrder(2);
+            ZonedDateTime startedAt = fixtures.reloadOrder(order.getId()).getPaymentStartedAt();
+
+            assertThat(orderPaymentProcessor.expireOne(startedAt.minusSeconds(1))).isFalse();
+            assertStillAwaiting(order, 2);
+        }
+
+        @DisplayName("[FR-ORDER-02] 이미 결론난 주문(CONFIRMED·FAILED)은 만료 대상이 아니다.")
+        @Test
+        void ignoresConcludedOrders() {
+            OrderModel confirmed = fixtures.draftOrder(user.getId(), product, 1);
+            confirm(user.getId(), confirmed.getId());
+            OrderModel failed = fixtures.draftOrder(user.getId(), product, 1);
+            fakePg.willRespond(failed(null));
+            confirm(user.getId(), failed.getId());
+
+            assertThat(orderPaymentProcessor.expireOne(ZonedDateTime.now())).isFalse();
+            assertThat(statusOf(confirmed)).isEqualTo(OrderStatus.CONFIRMED);
+            assertThat(statusOf(failed)).isEqualTo(OrderStatus.FAILED);
+        }
+
+        @DisplayName("[FR-ORDER-02] 다른 트랜잭션이 잠근 주문은 기다리지 않고 건너뛰고, 락이 풀리면 만료된다 (SKIP LOCKED).")
+        @Test
+        void skipsLockedOrder() throws Exception {
+            OrderModel order = unknownOrder(2);
+            CountDownLatch locked = new CountDownLatch(1);
+            CountDownLatch release = new CountDownLatch(1);
+            CompletableFuture<Void> holder = CompletableFuture.runAsync(() -> transactionTemplate.executeWithoutResult(status -> {
+                orderService.getForUpdate(order.getId());
+                locked.countDown();
+                try {
+                    release.await(5, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }));
+            assertThat(locked.await(5, TimeUnit.SECONDS)).isTrue();
+
+            boolean expiredWhileLocked = CompletableFuture.supplyAsync(() -> orderPaymentProcessor.expireOne(ZonedDateTime.now()))
+                .get(3, TimeUnit.SECONDS);
+            release.countDown();
+            holder.get(5, TimeUnit.SECONDS);
+
+            assertThat(expiredWhileLocked).isFalse();
+            assertThat(orderPaymentProcessor.expireOne(ZonedDateTime.now())).isTrue();
+            assertFailedAndReleased(order, 2);
         }
     }
 

@@ -16,7 +16,7 @@ public record PaymentGatewayResult(Outcome outcome, String transactionKey, Long 
         /** 요청이 PG 에 닿지 않았음이 확실하다 (연결 실패). 주문 FAILED, 재고 반환. */
         NOT_SENT,
         /**
-         * PG 오류(5xx)·응답 지연(read timeout). 결제됐는지 모르지만 고객이 기다리는 한계(10초) 안에 결론내려고 실패로 본다. 주문 FAILED, 재고 반환.
+         * PG 오류(5xx)·응답 지연(read timeout, 본문 수신 끊김 포함). 결제됐는지 모르지만 고객이 기다리는 한계(10초) 안에 결론내려고 실패로 본다. 주문 FAILED, 재고 반환.
          * 실제로 결제됐으면 늦게 온 SUCCESS 는 이미 결론난 주문이라 무시된다.
          */
         ERROR,

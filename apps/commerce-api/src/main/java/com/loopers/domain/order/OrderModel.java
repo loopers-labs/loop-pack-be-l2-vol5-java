@@ -25,7 +25,10 @@ import java.util.Map;
  * 인덱스 IX-06 (내 주문 목록, 구매자 묶음).
  */
 @Entity
-@Table(name = "orders", indexes = @Index(name = "ix_orders_user_created", columnList = "user_id, created_at, id"))
+@Table(name = "orders", indexes = {
+    @Index(name = "ix_orders_user_created", columnList = "user_id, created_at, id"),
+    @Index(name = "ix_orders_status_payment_started", columnList = "status, payment_started_at")
+})
 public class OrderModel extends BaseEntity {
 
     /** 주문 생성 입력 한 줄. 단가는 Facade 가 카탈로그 BC 에서 받아 넘긴다 (설계 5-1). */
@@ -55,6 +58,10 @@ public class OrderModel extends BaseEntity {
     /** 결제 시도 키. 클라이언트가 만든 confirm 멱등키. AWAITING_PAYMENT 진입 시 1회 기록, 같은 키의 재요청은 현재 상태를 돌려준다. DRAFT 에는 없다. */
     @Column(name = "payment_attempt_key", length = 64)
     private String paymentAttemptKey;
+
+    /** 결제 시작 시각. AWAITING_PAYMENT 진입 시 1회 기록. 결제 대기 만료(정리 job)의 기준이다. DRAFT 에는 없다. */
+    @Column(name = "payment_started_at")
+    private ZonedDateTime paymentStartedAt;
 
     /** PG 거래 키. PG 응답·callback 으로 처음 받을 때 1회 기록 (결과 반영 시 비어 있으면 채운다). reconciliation 조회에 쓴다. 받기 전에는 없다. */
     @Column(name = "transaction_key", length = 64)
@@ -138,7 +145,7 @@ public class OrderModel extends BaseEntity {
     }
 
     /**
-     * ST-03 DRAFT → AWAITING_PAYMENT. 결제 시도 키·결제수단(카드 종류, 마스킹한 카드번호)을 기록한다.
+     * ST-03 DRAFT → AWAITING_PAYMENT. 결제 시도 키·결제수단(카드 종류, 마스킹한 카드번호)·결제 시작 시각을 기록한다.
      * 카드 정보는 검증하지 않는다 (PG 가 거절하면 FAILED). 재고 예약은 Facade 가 같은 트랜잭션에서, PG 요청은 커밋 이후 (DR-08 대체).
      */
     public void startPayment(String paymentAttemptKey, String cardType, String cardNo) {
@@ -149,6 +156,7 @@ public class OrderModel extends BaseEntity {
         this.paymentAttemptKey = paymentAttemptKey;
         this.cardType = cardType;
         this.maskedCardNo = maskCardNo(cardNo);
+        this.paymentStartedAt = ZonedDateTime.now();
         this.status = OrderStatus.AWAITING_PAYMENT;
     }
 
@@ -227,6 +235,10 @@ public class OrderModel extends BaseEntity {
 
     public String getTransactionKey() {
         return transactionKey;
+    }
+
+    public ZonedDateTime getPaymentStartedAt() {
+        return paymentStartedAt;
     }
 
     public List<OrderItemModel> getItems() {

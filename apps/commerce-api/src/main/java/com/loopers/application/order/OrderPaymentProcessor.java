@@ -10,10 +10,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.ZonedDateTime;
 import java.util.stream.Collectors;
 
 /**
- * FR-ORDER-02 의 트랜잭션 단위. 결제 시작·결과 반영 (+ 결제 대기 해소 전 본인 주문 확인). PG 호출은 이들 사이, 트랜잭션 밖에서 Facade 가 한다.
+ * FR-ORDER-02 의 트랜잭션 단위. 결제 시작·결과 반영·결제 대기 만료 (+ 결제 대기 해소 전 본인 주문 확인). PG 호출은 이들 사이, 트랜잭션 밖에서 Facade 가 한다.
  * 락 순서는 둘 다 주문 → 재고(product_id 오름차순) → 상품 (DR-34, DR-38).
  */
 @Slf4j
@@ -81,14 +82,32 @@ public class OrderPaymentProcessor {
                 }
                 order.confirm();
             }
-            case FAILED, NOT_SENT, ERROR -> {
-                order.fail();
-                productService.releaseStocks(order.getId(), order.getItems().stream()
-                    .collect(Collectors.toMap(OrderItemModel::getProductId, OrderItemModel::getQuantity)));
-            }
+            case FAILED, NOT_SENT, ERROR -> failAndReleaseStocks(order);
             case PENDING, UNKNOWN -> {
             }
         }
         return OrderInfo.from(order);
+    }
+
+    /**
+     * 결제 대기 만료. startedBefore 이전에 결제를 시작하고 아직 AWAITING_PAYMENT 인 주문 하나를 FAILED + 재고 반환한다. 처리했으면 true.
+     * 주문 하나에 트랜잭션 하나라 락 순서가 applyResult 와 같다 (주문 → 재고). 다른 트랜잭션이 잠근 주문(결과 반영 중)은 건너뛴다 (SKIP LOCKED).
+     * 늦게 온 SUCCESS 는 applyResult 가 이미 결론난 주문이라 무시한다.
+     */
+    @Transactional
+    public boolean expireOne(ZonedDateTime startedBefore) {
+        return orderService.findExpiredAwaitingForUpdate(startedBefore)
+            .map(order -> {
+                log.warn("결제 대기 만료, 실패 처리 [orderId = {}, paymentStartedAt = {}]", order.getId(), order.getPaymentStartedAt());
+                failAndReleaseStocks(order);
+                return true;
+            })
+            .orElse(false);
+    }
+
+    private void failAndReleaseStocks(OrderModel order) {
+        order.fail();
+        productService.releaseStocks(order.getId(), order.getItems().stream()
+            .collect(Collectors.toMap(OrderItemModel::getProductId, OrderItemModel::getQuantity)));
     }
 }

@@ -28,9 +28,12 @@ pg:
   base-url: http://localhost:8010
   callback-url: http://localhost:8080/api/v1/payments/callback
   connect-timeout: 1s
-  read-timeout: 9s # 결제 요청. 고객이 결제창에서 기다리는 한계를 10초로 보고 그 안에서 끝낸다. 넘기면 실패 처리
-  lookup-delay: 7s # 결제 요청 전송 시점부터 백업 거래 조회까지
-  lookup-read-timeout: 2s # 거래 조회. 7초 + 2초로 결제 요청 timeout 과 같이 끝난다
+  read-timeout: 8s # 결제 요청. 요청 전송부터 본문 수신까지의 마감. 고객이 결제창에서 기다리는 한계(10초) 안에서 끝낸다. 넘기면 실패 처리
+  lookup-delay: 6s # 결제 요청 전송 시점부터 백업 거래 조회까지
+  lookup-read-timeout: 2s # 거래 조회. 6초 + 2초로 결제 요청 timeout 과 같이 끝난다
+  payment-expiry: 9s # 결제 시작부터. 지나도 결제 대기면 정리 job 이 FAILED. 결제 요청·거래 조회(8초)가 끝난 뒤라 서로 겹치지 않는다
+  payment-expiry-interval: 1s # 정리 job 주기
+  payment-expiry-batch-size: 100 # 정리 job 한 번에 처리하는 최대 주문 수
   bulkhead:
     max-concurrent-calls: 40 # 결제 요청을 동시에 기다리는 워커 스레드 수 (Tomcat 200 중). 넘으면 기다리지 않고 거절
   circuit-breaker:
@@ -61,6 +64,7 @@ spring:
 
 pg:
   lookup-delay: 1h # 예약된 거래 조회가 뒤 테스트에 끼어들지 않게. 조회 예약은 PaymentLookupSchedulerIntegrationTest 가 짧은 지연으로 본다
+  payment-expiry-interval: 1h # 정리 job 이 테스트의 결제 대기 주문을 거두지 않게. job 은 PaymentExpiryJobIntegrationTest 가 짧은 주기로 본다
   circuit-breaker: # 컨텍스트를 같이 쓰는 테스트들의 실패 결과가 쌓여 서킷이 열리지 않게. 서킷은 PaymentRequestGuardTest 가 본다
     sliding-window-size: 10000
     minimum-number-of-calls: 10000

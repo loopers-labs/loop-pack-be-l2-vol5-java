@@ -8,11 +8,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
+import java.io.IOException;
 import java.net.ConnectException;
 import java.net.http.HttpClient;
 import java.net.http.HttpConnectTimeoutException;
@@ -21,7 +23,8 @@ import java.time.Duration;
 
 /**
  * PaymentGateway 구현. PG POST /api/v1/payments·GET /api/v1/payments?orderId= 를 RestClient 로 부른다. 예외를 던지지 않고 결과로 바꾼다.
- * 결제 요청 — 2xx: 응답 status(PENDING·SUCCESS·FAILED) 그대로 / 4xx: FAILED / 5xx·read timeout: ERROR / 연결 실패·connect timeout: NOT_SENT / 그 밖의 예외: UNKNOWN.
+ * 결제 요청 — 2xx: 응답 status(PENDING·SUCCESS·FAILED) 그대로 / 4xx: FAILED / 5xx·read timeout·본문 수신 끊김: ERROR / 연결 실패·connect timeout: NOT_SENT / 그 밖의 예외: UNKNOWN.
+ * read timeout 은 요청 전송부터 본문 수신까지의 마감이다 (JdkClientHttpRequestFactory: 응답이 늦으면 요청 취소, 본문이 늦으면 스트림을 닫는다).
  * 거래 조회 — 2xx: 응답 status 그대로 / 그 밖의 응답·예외: UNKNOWN.
  * 결제 요청은 pg.read-timeout, 거래 조회는 그보다 짧은 pg.lookup-read-timeout 을 쓴다.
  * 결제 요청은 재시도하지 않는다 (이중 결제 방지). 카드번호는 로그에 마스킹한다.
@@ -83,6 +86,10 @@ public class PgClient implements PaymentGateway {
             log.warn("PG 응답 없음, 결과 모름 [orderId = {}]", orderId, e);
             return PaymentGatewayResult.unknown();
         } catch (RestClientException e) {
+            if (isBodyCutOff(e)) {
+                log.warn("PG 응답 본문 수신 실패(지연·끊김), 실패 처리 [orderId = {}]", orderId, e);
+                return PaymentGatewayResult.error();
+            }
             log.warn("PG 응답 처리 실패, 결과 모름 [orderId = {}]", orderId, e);
             return PaymentGatewayResult.unknown();
         }
@@ -139,6 +146,22 @@ public class PgClient implements PaymentGateway {
     private static boolean isReadTimeout(Throwable e) {
         for (Throwable cause = e; cause != null; cause = cause.getCause()) {
             if (cause instanceof HttpTimeoutException) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 응답 본문을 받다 끊김. read timeout 이 본문 수신 중에 오면 HttpTimeoutException 이 아니라 스트림이 닫혀 IOException 으로 끝난다.
+     * 본문 형식 오류(HttpMessageNotReadableException, 원인 JsonParseException 도 IOException)는 아니다.
+     */
+    private static boolean isBodyCutOff(Throwable e) {
+        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+            if (cause instanceof HttpMessageNotReadableException) {
+                return false;
+            }
+            if (cause instanceof IOException) {
                 return true;
             }
         }
