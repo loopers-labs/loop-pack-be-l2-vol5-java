@@ -37,7 +37,7 @@ product:
     warm-up:
       enabled: true
 
-# 로컬 테스트 PG 연동. 기본 연결 1초, 응답 3초이며 test 응답은 1초다.
+# 로컬 테스트 PG 연동. 기본 연결 1초, 응답 3초이며 실험 프로필은 응답 500ms로 비교한다.
 # 로컬 테스트 PG는 Commerce 관리 포트(8081)와 겹치지 않게 8082에서 실행한다.
 payment:
   pg:
@@ -46,6 +46,9 @@ payment:
     provider-account-id: "135135"
     connect-timeout: 1s
     read-timeout: 3s
+    # 조회 회복 정책은 하단의 pg-lookup-experiment 프로필에서 활성화한다. 운영 임계값은 아직 정하지 않았다.
+    lookup-circuit-breaker:
+      enabled: false
   # 미종결 시도를 마지막 변경 뒤 1분이 지나면 생성 후 24시간 동안 다시 조회한다.
   periodic-check:
     enabled: true
@@ -109,3 +112,12 @@ spring:
 springdoc:
   api-docs:
     enabled: false
+
+---
+# PG 실험 프로필에서만 외부 조회 회복 설정을 읽는다.
+spring:
+  config:
+    activate:
+      on-profile: pg-lookup-experiment
+    import:
+      - classpath:pg-test/circuit-breaker.yml

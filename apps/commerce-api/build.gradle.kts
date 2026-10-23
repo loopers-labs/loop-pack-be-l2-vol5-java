@@ -17,6 +17,13 @@ tasks.register<JavaExec>("seedProductQuery") {
     mainClass.set("com.loopers.fixture.ProductQuerySeedRunner")
 }
 
+// Resilience4j의 직접, 전이 의존성 버전을 함께 맞춘다.
+dependencyManagement {
+    imports {
+        mavenBom("io.github.resilience4j:resilience4j-bom:${project.properties["resilience4jVersion"]}")
+    }
+}
+
 dependencies {
     // add-ons
     implementation(project(":modules:jpa"))
@@ -29,6 +36,8 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
+    // 직접 decorator로 연결하는 조회 CircuitBreaker를 추가하고 버전은 위 BOM으로 관리한다.
+    implementation("io.github.resilience4j:resilience4j-circuitbreaker")
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:${project.properties["springDocOpenApiVersion"]}")
 
     // querydsl

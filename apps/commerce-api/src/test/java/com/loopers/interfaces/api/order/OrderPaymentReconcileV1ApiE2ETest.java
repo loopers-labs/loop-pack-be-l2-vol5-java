@@ -208,10 +208,10 @@ class OrderPaymentReconcileV1ApiE2ETest {
     @Nested
     class StoredStateOnFailure {
 
-        @DisplayName("PG 조회가 실패하면 202와 조회 불가를 응답하고 저장 상태와 예약을 유지한다.")
+        @DisplayName("PG 조회가 실패하거나 차단되면 202와 조회 불가를 응답하고 저장 상태와 예약을 유지한다.")
         @ParameterizedTest
         @EnumSource(value = PaymentLookupObservation.FailureKind.class,
-            names = {"TIMEOUT"})
+            names = {"TIMEOUT", "CIRCUIT_OPEN"})
         void answersStoredStateWhenLookupIsUnavailable(PaymentLookupObservation.FailureKind kind) throws Exception {
             Fixture fixture = requested(null);
             TestPgControl.complete(fixture.providerOrderId());

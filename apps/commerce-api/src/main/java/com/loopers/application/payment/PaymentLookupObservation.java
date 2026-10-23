@@ -21,6 +21,6 @@ public sealed interface PaymentLookupObservation {
 
     enum FailureKind {
         TEMPORARY_HTTP, TIMEOUT, NETWORK, HTTP_ERROR, INVALID_RESPONSE,
-        CANCELLED, OTHER
+        CANCELLED, CIRCUIT_OPEN, OTHER
     }
 }
