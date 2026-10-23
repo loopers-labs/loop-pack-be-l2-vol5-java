@@ -268,6 +268,11 @@ class OrderTransactionTest {
         }
 
         @Override
+        public Optional<Product> findIncludingDeletedByIdForUpdate(Long id) {
+            return delegate.findIncludingDeletedByIdForUpdate(id);
+        }
+
+        @Override
         public void deleteAllByBrandId(Long brandId) {
             delegate.deleteAllByBrandId(brandId);
         }

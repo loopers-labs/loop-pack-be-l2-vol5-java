@@ -194,7 +194,7 @@ class PaymentTest {
     @DisplayName("PAY-017: 조회한 거래가 우리 기록과 어긋나면 CONFLICT 가 되고 불일치를 남긴다")
     class Mismatch {
 
-        @DisplayName("금액이 다르면 AMOUNT_MISMATCH. 주문과 재고는 건드리지 않는다")
+        @DisplayName("금액이 다르면 AMOUNT_MISMATCH 이고 PG 가 말한 금액을 남긴다. 주문과 재고는 건드리지 않는다")
         @Test
         void amountMismatch() {
             Payment payment = accepted();
@@ -204,7 +204,7 @@ class PaymentTest {
             assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CONFLICT);
             assertThat(outcome.effect()).isEqualTo(PaymentOutcome.Effect.NONE);
             assertThat(outcome.discrepancy()).isEqualTo(new PaymentDiscrepancy(
-                PaymentDiscrepancy.Reason.AMOUNT_MISMATCH, KEY, TransactionStatus.SUCCESS));
+                PaymentDiscrepancy.Reason.AMOUNT_MISMATCH, KEY, TransactionStatus.SUCCESS, Money.of(9000)));
         }
 
         @DisplayName("주문 번호가 다르면 ORDER_MISMATCH")
@@ -245,10 +245,10 @@ class PaymentTest {
             assertThat(payment.getTransactionKey()).isEqualTo(KEY);
             assertThat(outcome.effect()).isEqualTo(PaymentOutcome.Effect.NONE);
             assertThat(outcome.discrepancy()).isEqualTo(new PaymentDiscrepancy(
-                PaymentDiscrepancy.Reason.MULTIPLE_TRANSACTIONS, OTHER_KEY, TransactionStatus.SUCCESS));
+                PaymentDiscrepancy.Reason.MULTIPLE_TRANSACTIONS, OTHER_KEY, TransactionStatus.SUCCESS, Money.of(7000)));
         }
 
-        @DisplayName("붙은 키와 다른 키의 늦은 202 도 MULTIPLE_TRANSACTIONS 다")
+        @DisplayName("붙은 키와 다른 키의 늦은 202 도 MULTIPLE_TRANSACTIONS 다. 202 에는 금액이 없으므로 관찰 금액은 비운다")
         @Test
         void otherKeyFromLateCreate() {
             Payment payment = accepted();
@@ -258,7 +258,7 @@ class PaymentTest {
             assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CONFLICT);
             assertThat(payment.getTransactionKey()).isEqualTo(KEY);
             assertThat(outcome.discrepancy()).isEqualTo(new PaymentDiscrepancy(
-                PaymentDiscrepancy.Reason.MULTIPLE_TRANSACTIONS, OTHER_KEY, TransactionStatus.PENDING));
+                PaymentDiscrepancy.Reason.MULTIPLE_TRANSACTIONS, OTHER_KEY, TransactionStatus.PENDING, null));
         }
 
         @DisplayName("맞는 거래면 불일치가 없다")
@@ -299,7 +299,7 @@ class PaymentTest {
             assertThat(payment.getStatus()).isEqualTo(PaymentStatus.valueOf(settledAs.name()));
             assertThat(outcome.effect()).isEqualTo(PaymentOutcome.Effect.NONE);
             assertThat(outcome.discrepancy()).isEqualTo(new PaymentDiscrepancy(
-                PaymentDiscrepancy.Reason.RESULT_AFTER_SETTLED, KEY, observed));
+                PaymentDiscrepancy.Reason.RESULT_AFTER_SETTLED, KEY, observed, Money.of(7000)));
         }
 
         @DisplayName("종결 뒤 다른 키의 맞는 거래가 보이면 상태는 그대로, MULTIPLE_TRANSACTIONS 를 남긴다")

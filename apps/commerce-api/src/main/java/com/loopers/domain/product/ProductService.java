@@ -8,7 +8,7 @@ import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
-public class ProductService implements ProductAvailability, ProductsInBrand, StockDeduction {
+public class ProductService implements ProductAvailability, ProductsInBrand, StockDeduction, StockRestoration {
 
     private final ProductRepository productRepository;
 
@@ -60,6 +60,14 @@ public class ProductService implements ProductAvailability, ProductsInBrand, Sto
         if (product.isSoldOut()) {
             listingChanged(product);
         }
+    }
+
+    @Override
+    public void restoreStock(Long productId, Quantity amount) {
+        Product product = productRepository.findIncludingDeletedByIdForUpdate(productId)
+            .orElseThrow(() -> new IllegalStateException("반환할 상품 행이 없습니다: id=" + productId));
+        product.restock(amount);
+        productRepository.save(product);
     }
 
     @Override

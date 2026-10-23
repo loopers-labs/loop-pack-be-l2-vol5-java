@@ -1,6 +1,13 @@
 package com.loopers.domain.payment;
 
-public record PaymentDiscrepancy(Reason reason, TransactionKey observedKey, TransactionStatus observedStatus) {
+import com.loopers.domain.common.Money;
+
+public record PaymentDiscrepancy(
+    Reason reason,
+    TransactionKey observedKey,
+    TransactionStatus observedStatus,
+    Money observedAmount
+) {
 
     public enum Reason {
         MULTIPLE_TRANSACTIONS,

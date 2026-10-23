@@ -17,6 +17,10 @@ interface ProductJpaRepository extends JpaRepository<ProductEntity, Long> {
     @Query("select p from ProductEntity p where p.id = :id and p.deletedAt is null")
     Optional<ProductEntity> findAliveByIdForUpdate(Long id);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from ProductEntity p where p.id = :id")
+    Optional<ProductEntity> findIncludingDeletedByIdForUpdate(Long id);
+
     @Modifying
     @Query("update ProductEntity p set p.deletedAt = :now, p.updatedAt = :now "
         + "where p.brandId = :brandId and p.deletedAt is null")

@@ -57,7 +57,7 @@ public class Payment {
             if (observation instanceof CreateObservation.Accepted(TransactionKey key)
                 && !key.equals(transactionKey)) {
                 return contradict(PaymentDiscrepancy.Reason.MULTIPLE_TRANSACTIONS,
-                    key, TransactionStatus.PENDING);
+                    key, TransactionStatus.PENDING, null);
             }
             return PaymentOutcome.none();
         }
@@ -90,20 +90,21 @@ public class Payment {
                 .filter(candidate -> !candidate.transactionKey().equals(transactionKey))
                 .findFirst()
                 .orElseThrow();
-            return contradict(PaymentDiscrepancy.Reason.MULTIPLE_TRANSACTIONS, other.transactionKey(), other.status());
+            return contradict(PaymentDiscrepancy.Reason.MULTIPLE_TRANSACTIONS,
+                other.transactionKey(), other.status(), other.amount());
         }
         PgTransaction transaction = transactions.getFirst();
         if (!transaction.providerOrderId().equals(providerOrderId)) {
             return contradict(PaymentDiscrepancy.Reason.ORDER_MISMATCH,
-                transaction.transactionKey(), transaction.status());
+                transaction.transactionKey(), transaction.status(), transaction.amount());
         }
         if (!transaction.amount().equals(amount)) {
             return contradict(PaymentDiscrepancy.Reason.AMOUNT_MISMATCH,
-                transaction.transactionKey(), transaction.status());
+                transaction.transactionKey(), transaction.status(), transaction.amount());
         }
         if (transactionKey != null && !transaction.transactionKey().equals(transactionKey)) {
             return contradict(PaymentDiscrepancy.Reason.MULTIPLE_TRANSACTIONS,
-                transaction.transactionKey(), transaction.status());
+                transaction.transactionKey(), transaction.status(), transaction.amount());
         }
         if (status == PaymentStatus.CONFLICT) {
             return PaymentOutcome.none();
@@ -113,7 +114,7 @@ public class Payment {
                 return PaymentOutcome.none();
             }
             return contradict(PaymentDiscrepancy.Reason.RESULT_AFTER_SETTLED,
-                transaction.transactionKey(), transaction.status());
+                transaction.transactionKey(), transaction.status(), transaction.amount());
         }
         if (transactionKey == null) {
             this.transactionKey = transaction.transactionKey();
@@ -132,11 +133,11 @@ public class Payment {
     }
 
     private PaymentOutcome contradict(PaymentDiscrepancy.Reason reason, TransactionKey observedKey,
-                                      TransactionStatus observedStatus) {
+                                      TransactionStatus observedStatus, Money observedAmount) {
         if (!isSettled()) {
             this.status = PaymentStatus.CONFLICT;
         }
-        return PaymentOutcome.conflict(new PaymentDiscrepancy(reason, observedKey, observedStatus));
+        return PaymentOutcome.conflict(new PaymentDiscrepancy(reason, observedKey, observedStatus, observedAmount));
     }
 
     private boolean isSettled() {
