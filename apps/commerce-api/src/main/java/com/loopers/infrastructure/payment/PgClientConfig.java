@@ -84,6 +84,8 @@ class PgClientConfig {
             .slidingWindowSize((int) circuit.window().toSeconds())
             .minimumNumberOfCalls(circuit.minimumCalls())
             .failureRateThreshold(circuit.failureRatePercent())
+            .slowCallDurationThreshold(circuit.slowCallDuration())
+            .slowCallRateThreshold(circuit.slowCallRatePercent())
             .waitDurationInOpenState(circuit.openWait())
             .permittedNumberOfCallsInHalfOpenState(circuit.halfOpenCalls())
             .recordResult(result -> result instanceof PgPaymentGateway.LookupAttempt attempt && attempt.failed())

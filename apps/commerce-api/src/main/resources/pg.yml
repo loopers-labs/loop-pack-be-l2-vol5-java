@@ -8,8 +8,10 @@ pg:
   create-concurrency: 20
   lookup-circuit:
     window: 10s
-    minimum-calls: 5
+    minimum-calls: 10
     failure-rate-percent: 50
+    slow-call-duration: 500ms
+    slow-call-rate-percent: 80
     open-wait: 10s
     half-open-calls: 2
 

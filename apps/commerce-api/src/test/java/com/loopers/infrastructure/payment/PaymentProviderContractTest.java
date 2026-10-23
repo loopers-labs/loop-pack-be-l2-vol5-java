@@ -273,6 +273,8 @@ class PaymentProviderContractTest {
     @DisplayName("RESIL-001, RESIL-002, RESIL-003, RESIL-004: 조회 경로 하나에 회로가 있고, 열리면 PG 를 부르지 않는다")
     class LookupCircuit {
 
+        private static final int MIN_CALLS = 10;
+
         private final TransactionKey unknown = new TransactionKey("TEST-TX-NOPE");
 
         private long lookups() {
@@ -291,10 +293,10 @@ class PaymentProviderContractTest {
             return new TransactionKey(PG.transactionsOf(ProviderOrderId.of(orderId).value()).getFirst().transactionKey());
         }
 
-        @DisplayName("창 안의 표본 5 회가 모두 5xx 면 OPEN 이 되고, 그 뒤 조회는 PG 를 부르지 않고 조회 불가다")
+        @DisplayName("창 안의 표본이 최소 10 회 차고 모두 5xx 면 OPEN 이 되고, 그 뒤 조회는 PG 를 부르지 않고 조회 불가다")
         @Test
         void opensOnServerErrors() {
-            failLookups(5, 500);
+            failLookups(MIN_CALLS, 500);
             long before = lookups();
 
             LookupResult result = gateway.lookup(unknown);
@@ -309,10 +311,10 @@ class PaymentProviderContractTest {
         void countsTooManyRequests() {
             long before = lookups();
 
-            failLookups(5, 429);
+            failLookups(MIN_CALLS, 429);
 
             assertThat(lookupCircuit.getState()).isEqualTo(CircuitBreaker.State.OPEN);
-            assertThat(lookups() - before).isEqualTo(5);
+            assertThat(lookups() - before).isEqualTo(MIN_CALLS);
         }
 
         @DisplayName("404 는 업무 결과라 세지 않는다. 10 번 없어도 닫혀 있다")
@@ -325,23 +327,47 @@ class PaymentProviderContractTest {
             assertThat(lookupCircuit.getState()).isEqualTo(CircuitBreaker.State.CLOSED);
         }
 
-        @DisplayName("실패율이 50 % 아래면 닫혀 있다. 성공 4 회 · 실패 1 회")
+        @DisplayName("표본이 최소 10 회를 채워도 실패율이 50 % 아래면 닫혀 있다. 성공 8 회 · 실패 2 회")
         @Test
         void staysClosedUnderThreshold() {
             TransactionKey key = createdKey(301L);
-            for (int i = 0; i < 4; i++) {
+            for (int i = 0; i < 8; i++) {
                 gateway.lookup(key);
             }
 
-            failLookups(1, 500);
+            failLookups(2, 500);
 
             assertThat(lookupCircuit.getState()).isEqualTo(CircuitBreaker.State.CLOSED);
+        }
+
+        @DisplayName("표본이 최소 10 회에 못 미치면 모두 실패여도 판단하지 않는다. sweeper 재시도로 결제 한두 건의 실패가 표본 여러 개가 돼도 열리지 않게")
+        @Test
+        void waitsForMinimumCalls() {
+            failLookups(MIN_CALLS - 1, 500);
+
+            assertThat(lookupCircuit.getState()).isEqualTo(CircuitBreaker.State.CLOSED);
+        }
+
+        @DisplayName("응답은 오지만 500 ms 를 넘는 조회가 80 % 이상이면 실패가 없어도 OPEN 이다. 커넥션 풀이 차기 전에 끊는다")
+        @Test
+        void opensOnSlowCalls() {
+            TransactionKey key = createdKey(306L);
+            PG.delayLookups(Duration.ofMillis(600));
+            try {
+                for (int i = 0; i < MIN_CALLS; i++) {
+                    assertThat(gateway.lookup(key)).isInstanceOf(LookupResult.Found.class);
+                }
+            } finally {
+                PG.delayLookups(Duration.ZERO);
+            }
+
+            assertThat(lookupCircuit.getState()).isEqualTo(CircuitBreaker.State.OPEN);
         }
 
         @DisplayName("회로는 하나다. 키 조회로 열리면 주문 조회도 PG 를 부르지 않는다")
         @Test
         void sharedByBothLookups() {
-            failLookups(5, 500);
+            failLookups(MIN_CALLS, 500);
             long before = lookups();
 
             LookupResult result = gateway.lookup(ProviderOrderId.of(302L));
@@ -353,7 +379,7 @@ class PaymentProviderContractTest {
         @DisplayName("생성은 회로를 거치지 않는다. 회로가 열려도 POST 는 나간다")
         @Test
         void createIgnoresCircuit() {
-            failLookups(5, 500);
+            failLookups(MIN_CALLS, 500);
             int before = PG.createCount();
 
             CreateObservation observed = gateway.create(creation(303L, 7000));
@@ -366,7 +392,7 @@ class PaymentProviderContractTest {
         @Test
         void closesAfterSuccessfulProbes() throws InterruptedException {
             TransactionKey key = createdKey(304L);
-            failLookups(5, 500);
+            failLookups(MIN_CALLS, 500);
             Thread.sleep(OPEN_WAIT.plusMillis(100).toMillis());
 
             gateway.lookup(key);
@@ -380,7 +406,7 @@ class PaymentProviderContractTest {
         @Test
         void reopensOnFailedProbe() throws InterruptedException {
             TransactionKey key = createdKey(305L);
-            failLookups(5, 500);
+            failLookups(MIN_CALLS, 500);
             Thread.sleep(OPEN_WAIT.plusMillis(100).toMillis());
 
             gateway.lookup(key);

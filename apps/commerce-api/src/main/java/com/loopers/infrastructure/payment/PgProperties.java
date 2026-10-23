@@ -23,6 +23,8 @@ record PgProperties(
         Duration window,
         int minimumCalls,
         float failureRatePercent,
+        Duration slowCallDuration,
+        float slowCallRatePercent,
         Duration openWait,
         int halfOpenCalls
     ) {
