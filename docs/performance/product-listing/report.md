@@ -464,7 +464,7 @@ HTTP 지연도 같은 VU에서 IN이 대체로 낮았지만, 요청당 차이가
 
 ## 8. 5단계: 상품 목록 cache-aside
 
-고객 상품 목록의 공통 응답을 Redis에 저장했다. 캐시 설계와 장애 정책은 [상품 목록 유스케이스 설계](../../system-design/use-cases/product-listing.md)에 정리했다.<br>
+고객 상품 목록의 공통 응답을 Redis에 저장했다. 캐시 설계와 장애 정책은 [상품 목록 캐시 설계](../../system-design/use-cases/product-list-cache.md)에 정리했다.<br>
 워밍업 없이, 첫 요청이 miss로 캐시를 채우는 순수 cache-aside를 측정했다. 측정용 Redis는 공유 로컬 컨테이너가 아니라 측정 전용 컨테이너를 사용했다.
 
 ### 요청 한 건의 비용

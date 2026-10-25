@@ -2,47 +2,21 @@
 
 고객의 상품 상세 조회 결과를 Application에서 조합하는 책임을 정리한다. HTTP 요청·응답 계약은 [API 계약](../api-contracts.md), 도메인 규칙은 [도메인 모델](../domain-model.md)을 기준으로 한다.
 
-## 상품 수정 후 상세 조회 흐름
+## 조회 흐름
 
-관리자가 상품 정보를 수정한 뒤 고객이 상세 조회에서 변경된 상품·브랜드 정보와 좋아요 수를 확인하는 흐름이다.
+고객이 활성 상품·브랜드 정보와 좋아요 수를 확인하는 흐름이다.
 
 ```mermaid
 sequenceDiagram
-    participant A as 관리자
-    participant AAC as 관리자 상품 API
+    participant C as 고객
+    participant CAC as 고객 상품 API
     participant APP as Application
-    participant P as Product
     participant PR as Product Repository
     participant BR as Brand Repository
     participant LR as Like Repository
     participant DB as DB
-    participant C as 고객
-    participant CAC as 고객 상품 API
 
     Note over PR,DB: Repository는 Domain의 조회·저장 계약이며,<br/>실행 시 Infrastructure의 JPA 구현체가 주입된다.
-
-    A->>AAC: 상품 수정 요청
-    AAC->>APP: 상품 수정 유스케이스 호출
-    Note over APP,DB: 유스케이스 트랜잭션 시작
-    APP->>PR: 수정할 활성 상품 조회
-    PR->>DB: 상품 조회
-    DB-->>PR: 상품
-    PR-->>APP: Product
-
-    APP->>P: 상품 정보 변경
-    APP->>PR: 활성 상품의 이름과 가격 갱신
-    PR->>DB: ID와 미삭제 조건으로 이름·가격 UPDATE
-    DB-->>PR: 갱신 행 수
-    PR-->>APP: 갱신 행 수
-    alt 갱신 행 수 1
-        Note over APP,DB: 상품 변경 commit
-        APP-->>AAC: 수정 결과
-        AAC-->>A: 성공 응답
-    else 갱신 행 수 0
-        Note over APP,DB: 해당 시도의 변경 rollback
-        APP-->>AAC: 상품 없음 또는 삭제됨 오류
-        AAC-->>A: 404 응답
-    end
 
     C->>CAC: 상품 상세 조회 요청
     CAC->>APP: 상품 상세 조회 유스케이스 호출
