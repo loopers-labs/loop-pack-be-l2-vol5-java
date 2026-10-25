@@ -1,8 +1,8 @@
 package com.loopers.application.brand;
 
+import com.loopers.support.payment.TestPayments;
 import com.loopers.application.order.OrderCreateCommand;
 import com.loopers.application.order.OrderFacade;
-import com.loopers.application.point.PointFacade;
 import com.loopers.application.product.ProductFacade;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
@@ -11,7 +11,6 @@ import com.loopers.domain.common.PageSize;
 import com.loopers.domain.common.PageWindow;
 import com.loopers.domain.common.Quantity;
 import com.loopers.domain.order.OrderQuantity;
-import com.loopers.domain.point.ChargeAmount;
 import com.loopers.domain.product.Price;
 import com.loopers.infrastructure.brand.BrandRepositoryImpl;
 import com.loopers.utils.DatabaseCleanUp;
@@ -46,7 +45,7 @@ class BrandRemovalTransactionTest {
     private final BrandFacade brandFacade;
     private final ProductFacade productFacade;
     private final OrderFacade orderFacade;
-    private final PointFacade pointFacade;
+    private final TestPayments testPayments;
     private final SaveFailingBrandRepository brandRepository;
     private final JdbcTemplate jdbcTemplate;
     private final DatabaseCleanUp databaseCleanUp;
@@ -64,7 +63,7 @@ class BrandRemovalTransactionTest {
         BrandFacade brandFacade,
         ProductFacade productFacade,
         OrderFacade orderFacade,
-        PointFacade pointFacade,
+        TestPayments testPayments,
         SaveFailingBrandRepository brandRepository,
         JdbcTemplate jdbcTemplate,
         DatabaseCleanUp databaseCleanUp
@@ -72,7 +71,7 @@ class BrandRemovalTransactionTest {
         this.brandFacade = brandFacade;
         this.productFacade = productFacade;
         this.orderFacade = orderFacade;
-        this.pointFacade = pointFacade;
+        this.testPayments = testPayments;
         this.brandRepository = brandRepository;
         this.jdbcTemplate = jdbcTemplate;
         this.databaseCleanUp = databaseCleanUp;
@@ -94,10 +93,9 @@ class BrandRemovalTransactionTest {
         Long otherBrand = brandFacade.register("29CM", "셀렉트샵").getId();
         otherProduct = productFacade.register(otherBrand, "셔츠", Price.of(30_000)).getId();
 
-        pointFacade.charge(BUYER, ChargeAmount.of(50_000), NOW);
         pastOrder = orderFacade.place(new OrderCreateCommand(BUYER,
             List.of(new OrderCreateCommand.Line(inStock, OrderQuantity.of(2)))), NOW).getId();
-        orderFacade.confirm(BUYER, pastOrder, NOW);
+        testPayments.startAndSucceed(BUYER, pastOrder, NOW);
     }
 
     @AfterEach

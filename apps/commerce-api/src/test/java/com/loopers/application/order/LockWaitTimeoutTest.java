@@ -1,11 +1,11 @@
 package com.loopers.application.order;
 
+import com.loopers.support.payment.TestPayments;
+import com.loopers.support.pg.PgFixture;
 import com.loopers.application.brand.BrandFacade;
-import com.loopers.application.point.PointFacade;
 import com.loopers.application.product.ProductFacade;
 import com.loopers.domain.common.Quantity;
 import com.loopers.domain.order.OrderQuantity;
-import com.loopers.domain.point.ChargeAmount;
 import com.loopers.domain.product.Price;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
@@ -44,7 +44,7 @@ class LockWaitTimeoutTest {
     private final OrderFacade orderFacade;
     private final ProductFacade productFacade;
     private final BrandFacade brandFacade;
-    private final PointFacade pointFacade;
+    private final TestPayments testPayments;
     private final DataSource dataSource;
     private final JdbcTemplate jdbcTemplate;
     private final DatabaseCleanUp databaseCleanUp;
@@ -57,7 +57,7 @@ class LockWaitTimeoutTest {
         OrderFacade orderFacade,
         ProductFacade productFacade,
         BrandFacade brandFacade,
-        PointFacade pointFacade,
+        TestPayments testPayments,
         DataSource dataSource,
         JdbcTemplate jdbcTemplate,
         DatabaseCleanUp databaseCleanUp
@@ -65,7 +65,7 @@ class LockWaitTimeoutTest {
         this.orderFacade = orderFacade;
         this.productFacade = productFacade;
         this.brandFacade = brandFacade;
-        this.pointFacade = pointFacade;
+        this.testPayments = testPayments;
         this.dataSource = dataSource;
         this.jdbcTemplate = jdbcTemplate;
         this.databaseCleanUp = databaseCleanUp;
@@ -78,7 +78,6 @@ class LockWaitTimeoutTest {
         knit = productFacade.register(brandId, "니트", Price.of(5_000)).getId();
         productFacade.adjustStock(coat, Quantity.of(INITIAL_STOCK));
         productFacade.adjustStock(knit, Quantity.of(INITIAL_STOCK));
-        pointFacade.charge(BUYER, ChargeAmount.of(50_000), NOW);
     }
 
     @AfterEach
@@ -86,7 +85,7 @@ class LockWaitTimeoutTest {
         databaseCleanUp.truncateAllTables();
     }
 
-    @DisplayName("ORDER-015 · 다른 트랜잭션이 둘째 품목을 쥐고 있으면, 확정은 잠금 대기 한도에서 포기하고 결제와 첫 품목 차감까지 전부 되돌린다")
+    @DisplayName("ORDER-015, RSV-001 · 다른 트랜잭션이 둘째 품목을 쥐고 있으면, 결제 시작은 잠금 대기 한도에서 포기하고 첫 품목 차감과 결제 시도까지 전부 되돌린다. PG 는 부르지 않는다")
     @Test
     void givesUpOnLockWaitAndRollsBackEverything() throws Exception {
         Long orderId = orderFacade.place(new OrderCreateCommand(BUYER, List.of(
@@ -96,6 +95,7 @@ class LockWaitTimeoutTest {
 
         Throwable failure;
         long waitedMillis;
+        int createsBefore;
         ExecutorService executor = Executors.newSingleThreadExecutor();
         try (Connection holder = dataSource.getConnection()) {
             holder.setAutoCommit(false);
@@ -104,8 +104,9 @@ class LockWaitTimeoutTest {
                 lock.executeQuery().close();
             }
             try {
+                createsBefore = PgFixture.shared().createCount();
                 long startedAt = System.nanoTime();
-                Future<?> confirm = executor.submit(() -> orderFacade.confirm(BUYER, orderId, NOW));
+                Future<?> confirm = executor.submit(() -> testPayments.start(BUYER, orderId, NOW));
                 failure = catchThrowable(() -> confirm.get(GIVE_UP_SECONDS, TimeUnit.SECONDS));
                 waitedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
             } finally {
@@ -120,7 +121,6 @@ class LockWaitTimeoutTest {
         assertThat(failure.getCause()).isInstanceOf(PessimisticLockingFailureException.class);
         assertThat(waitedMillis).as("innodb_lock_wait_timeout=3 에서 포기한다")
             .isBetween(LOCK_WAIT_MIN_MILLIS, LOCK_WAIT_MAX_MILLIS);
-        assertThat(balance()).isEqualTo(50_000L);
         assertThat(quantityOf(coat)).isEqualTo(INITIAL_STOCK);
         assertThat(quantityOf(knit)).isEqualTo(INITIAL_STOCK);
         assertThat(jdbcTemplate.queryForObject("SELECT status FROM orders WHERE id = ?", String.class, orderId))
@@ -128,13 +128,9 @@ class LockWaitTimeoutTest {
         assertThat(jdbcTemplate.queryForObject(
             "SELECT paid_amount IS NULL AND confirmed_at IS NULL FROM orders WHERE id = ?", Boolean.class, orderId))
             .as("결제액 · 확정 시각이 남지 않는다").isTrue();
-        assertThat(jdbcTemplate.queryForList("SELECT type FROM point_transaction WHERE user_id = ?", String.class, BUYER))
-            .as("결제 원장이 남지 않는다").containsExactly("CHARGE");
-    }
-
-    private long balance() {
-        Long value = jdbcTemplate.queryForObject("SELECT balance FROM user_point WHERE user_id = ?", Long.class, BUYER);
-        return value == null ? -1 : value;
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM payment WHERE order_id = ?", Integer.class, orderId))
+            .as("결제 시도가 남지 않는다").isZero();
+        assertThat(PgFixture.shared().createCount()).as("PG 를 부르지 않는다").isEqualTo(createsBefore);
     }
 
     private int quantityOf(Long productId) {

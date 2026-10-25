@@ -36,6 +36,11 @@ public class ProductRepositoryImpl implements ProductRepository {
     }
 
     @Override
+    public Optional<Product> findIncludingDeletedByIdForUpdate(Long id) {
+        return productJpaRepository.findIncludingDeletedByIdForUpdate(id).map(ProductEntity::toDomain);
+    }
+
+    @Override
     public void deleteAllByBrandId(Long brandId) {
         productJpaRepository.deleteAliveByBrandId(brandId, ZonedDateTime.now());
     }

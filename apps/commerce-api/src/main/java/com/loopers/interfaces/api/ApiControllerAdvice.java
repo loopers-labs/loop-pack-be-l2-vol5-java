@@ -9,6 +9,7 @@ import com.loopers.support.error.DomainException;
 import com.loopers.support.error.ErrorType;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.PessimisticLockingFailureException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -28,6 +29,8 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 @Slf4j
 public class ApiControllerAdvice {
+
+    private static final String RETRY_AFTER_SECONDS = "1";
 
     @ExceptionHandler
     public ResponseEntity<ApiResponse<?>> handle(CoreException e) {
@@ -160,7 +163,10 @@ public class ApiControllerAdvice {
     }
 
     private ResponseEntity<ApiResponse<?>> failureResponse(ErrorType errorType, String errorMessage) {
-        return ResponseEntity.status(errorType.getStatus())
-            .body(ApiResponse.fail(errorType.getCode(), errorMessage != null ? errorMessage : errorType.getMessage()));
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(errorType.getStatus());
+        if (errorType.getStatus() == HttpStatus.SERVICE_UNAVAILABLE) {
+            response.header(HttpHeaders.RETRY_AFTER, RETRY_AFTER_SECONDS);
+        }
+        return response.body(ApiResponse.fail(errorType.getCode(), errorMessage != null ? errorMessage : errorType.getMessage()));
     }
 }

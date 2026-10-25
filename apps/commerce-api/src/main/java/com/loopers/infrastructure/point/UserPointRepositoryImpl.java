@@ -25,11 +25,6 @@ public class UserPointRepositoryImpl implements UserPointRepository {
     }
 
     @Override
-    public Optional<UserPoint> findForUpdate(Long userId) {
-        return userPointJpaRepository.findByUserIdForUpdate(userId).map(UserPointEntity::toDomain);
-    }
-
-    @Override
     public Optional<UserPoint> findByUserId(Long userId) {
         return userPointJpaRepository.findByUserId(userId).map(UserPointEntity::toDomain);
     }

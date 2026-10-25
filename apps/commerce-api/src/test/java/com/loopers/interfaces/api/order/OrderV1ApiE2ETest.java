@@ -10,6 +10,9 @@ import com.loopers.domain.point.PointService;
 import com.loopers.domain.product.Price;
 import com.loopers.domain.product.ProductService;
 import com.loopers.interfaces.api.ApiResponse;
+import com.loopers.domain.payment.Payment;
+import com.loopers.domain.payment.PaymentRepository;
+import com.loopers.support.pg.PgFixture;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,8 +27,11 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -48,6 +54,8 @@ class OrderV1ApiE2ETest {
     private final DatabaseCleanUp databaseCleanUp;
     private final BrandFacade brandFacade;
     private final ProductFacade productFacade;
+    private final PaymentRepository paymentRepository;
+    private final JdbcTemplate jdbcTemplate;
 
     private Long productId;
 
@@ -59,7 +67,9 @@ class OrderV1ApiE2ETest {
         PointFacade pointFacade,
         DatabaseCleanUp databaseCleanUp,
         BrandFacade brandFacade,
-        ProductFacade productFacade
+        ProductFacade productFacade,
+        PaymentRepository paymentRepository,
+        JdbcTemplate jdbcTemplate
     ) {
         this.testRestTemplate = testRestTemplate;
         this.productService = productService;
@@ -68,10 +78,13 @@ class OrderV1ApiE2ETest {
         this.databaseCleanUp = databaseCleanUp;
         this.brandFacade = brandFacade;
         this.productFacade = productFacade;
+        this.paymentRepository = paymentRepository;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     @BeforeEach
     void setUp() {
+        PG.reset();
         Long brandId = brandFacade.register("무신사", "패션 플랫폼").getId();
         productId = productFacade.register(brandId, "코트", Price.of(1_000)).getId();
         productFacade.adjustStock(productId, Quantity.of(10));
@@ -88,6 +101,16 @@ class OrderV1ApiE2ETest {
         new ParameterizedTypeReference<>() {};
     private static final ParameterizedTypeReference<ApiResponse<Object>> ANY =
         new ParameterizedTypeReference<>() {};
+    private static final ParameterizedTypeReference<ApiResponse<OrderV1Dto.ConfirmResponse>> CONFIRM =
+        new ParameterizedTypeReference<>() {};
+    private static final ParameterizedTypeReference<ApiResponse<OrderV1Dto.ReconcileResponse>> RECONCILE =
+        new ParameterizedTypeReference<>() {};
+    private static final PgFixture PG = PgFixture.shared();
+    private static final String CARD_NO = "0000-0000-0000-0000";
+
+    private static Map<String, Object> card(String attemptKey) {
+        return Map.<String, Object>of("paymentAttemptKey", attemptKey, "cardType", "TEST", "cardNo", CARD_NO);
+    }
 
     private HttpHeaders headers(Long userId) {
         HttpHeaders headers = new HttpHeaders();
@@ -178,42 +201,68 @@ class OrderV1ApiE2ETest {
     }
 
     @Nested
-    @DisplayName("확정")
+    @DisplayName("확정 — Q-6: 같은 경로로 PG 결제를 시작한다. 본문이 필수이고, 결과를 기다리지 않는다")
     class Confirm {
         private Long placed(Long userId, int quantity) {
             return place(userId, oneLine(quantity)).getBody().data().id();
         }
 
-        @DisplayName("확정하면 200 · CONFIRMED · 결제액이 담기고, 재고와 잔액이 줄어든다")
+        private ResponseEntity<ApiResponse<OrderV1Dto.ConfirmResponse>> confirm(Long userId, Long orderId, Object body) {
+            return testRestTemplate.exchange(
+                ORDERS + "/" + orderId + "/confirm", HttpMethod.POST,
+                new HttpEntity<>(body, headers(userId)), CONFIRM);
+        }
+
+        private ResponseEntity<ApiResponse<Object>> confirmAny(Long userId, Long orderId, Object body) {
+            return testRestTemplate.exchange(
+                ORDERS + "/" + orderId + "/confirm", HttpMethod.POST,
+                new HttpEntity<>(body, headers(userId)), ANY);
+        }
+
+        @DisplayName("RESIL-010, PAY-012: 접수되면 202, Retry-After, 주문 PENDING, 결제 PENDING, 조회 경로를 돌려준다. 재고는 묶이고 포인트는 그대로다")
         @Test
-        void confirms() {
+        void accepts() {
             pointFacade.charge(USER, ChargeAmount.of(50_000), NOW);
             Long orderId = placed(USER, 2);
 
-            ResponseEntity<ApiResponse<OrderV1Dto.OrderResponse>> response = testRestTemplate.exchange(
-                ORDERS + "/" + orderId + "/confirm", HttpMethod.POST,
-                new HttpEntity<>(null, headers(USER)), ORDER);
+            ResponseEntity<ApiResponse<OrderV1Dto.ConfirmResponse>> response = confirm(USER, orderId, card("attempt-1"));
 
             assertAll(
-                () -> assertThat(response.getStatusCode().value()).isEqualTo(200),
-                () -> assertThat(response.getBody().data().status()).isEqualTo("CONFIRMED"),
-                () -> assertThat(response.getBody().data().paidAmount()).isEqualTo(2_000),
+                () -> assertThat(response.getStatusCode().value()).isEqualTo(202),
+                () -> assertThat(response.getHeaders().getFirst(HttpHeaders.RETRY_AFTER)).isEqualTo("1"),
+                () -> assertThat(response.getBody().data().orderId()).isEqualTo(orderId),
+                () -> assertThat(response.getBody().data().orderStatus()).isEqualTo("PENDING"),
+                () -> assertThat(response.getBody().data().paymentStatus()).isEqualTo("PENDING"),
+                () -> assertThat(response.getBody().data().statusUrl()).isEqualTo(ORDERS + "/" + orderId),
                 () -> assertThat(productService.getStock(productId)).isEqualTo(Quantity.of(8)),
-                () -> assertThat(pointService.getBalance(USER)).isEqualTo(Money.of(48_000))
+                () -> assertThat(pointService.getBalance(USER)).isEqualTo(Money.of(50_000))
             );
         }
 
-        @DisplayName("ORDER-010 · 이미 확정된 주문은 409 · ORDER_NOT_DRAFT 다")
+        @DisplayName("PAY-015: 결과가 끝났으면 200 이다. 효과 0 건 거절은 주문 FAILED 이고 재고를 돌려받는다")
         @Test
-        void rejectsSecondConfirm() {
-            pointFacade.charge(USER, ChargeAmount.of(50_000), NOW);
-            Long orderId = placed(USER, 1);
-            testRestTemplate.exchange(ORDERS + "/" + orderId + "/confirm", HttpMethod.POST,
-                new HttpEntity<>(null, headers(USER)), ANY);
+        void returnsOkWhenSettled() {
+            Long orderId = placed(USER, 2);
+            PG.rejectNextCreate();
 
-            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
-                ORDERS + "/" + orderId + "/confirm", HttpMethod.POST,
-                new HttpEntity<>(null, headers(USER)), ANY);
+            ResponseEntity<ApiResponse<OrderV1Dto.ConfirmResponse>> response = confirm(USER, orderId, card("attempt-1"));
+
+            assertAll(
+                () -> assertThat(response.getStatusCode().value()).isEqualTo(200),
+                () -> assertThat(response.getHeaders().getFirst(HttpHeaders.RETRY_AFTER)).isNull(),
+                () -> assertThat(response.getBody().data().orderStatus()).isEqualTo("FAILED"),
+                () -> assertThat(response.getBody().data().paymentStatus()).isEqualTo("FAILED"),
+                () -> assertThat(productService.getStock(productId)).isEqualTo(Quantity.of(10))
+            );
+        }
+
+        @DisplayName("ORDER-010, PAY-003: 시도가 있는 주문에 새 키가 오면 409 ORDER_NOT_DRAFT 다")
+        @Test
+        void rejectsNewKeyOnStartedOrder() {
+            Long orderId = placed(USER, 1);
+            confirm(USER, orderId, card("attempt-1"));
+
+            ResponseEntity<ApiResponse<Object>> response = confirmAny(USER, orderId, card("attempt-2"));
 
             assertAll(
                 () -> assertThat(response.getStatusCode().value()).isEqualTo(409),
@@ -221,39 +270,84 @@ class OrderV1ApiE2ETest {
             );
         }
 
-        @DisplayName("ORDER-014 · 잔액이 모자라면 409 이고 재고도 그대로다")
+        @DisplayName("PAY-002: 같은 키를 다른 주문에 쓰면 409 PAYMENT_ATTEMPT_CONFLICT 다")
         @Test
-        void rejectsWhenPointIsShort() {
-            pointFacade.charge(USER, ChargeAmount.of(1_000), NOW);
-            Long orderId = placed(USER, 2);
+        void rejectsSameKeyForOtherOrder() {
+            Long first = placed(USER, 1);
+            Long second = placed(USER, 1);
+            confirm(USER, first, card("attempt-1"));
 
-            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
-                ORDERS + "/" + orderId + "/confirm", HttpMethod.POST,
-                new HttpEntity<>(null, headers(USER)), ANY);
+            ResponseEntity<ApiResponse<Object>> response = confirmAny(USER, second, card("attempt-1"));
 
             assertAll(
                 () -> assertThat(response.getStatusCode().value()).isEqualTo(409),
-                () -> assertThat(response.getBody().meta().errorCode()).isEqualTo("INSUFFICIENT_POINT"),
-                () -> assertThat(productService.getStock(productId)).isEqualTo(Quantity.of(10)),
-                () -> assertThat(pointService.getBalance(USER)).isEqualTo(Money.of(1_000))
+                () -> assertThat(response.getBody().meta().errorCode()).isEqualTo("PAYMENT_ATTEMPT_CONFLICT")
             );
         }
 
-        @DisplayName("ORDER-011 · 남의 주문은 404 다. 존재를 숨긴다")
+        @DisplayName("ORDER-011: 남의 주문은 404 다. 존재를 숨긴다")
         @Test
         void rejectsForeignOrder() {
-            pointFacade.charge(USER, ChargeAmount.of(50_000), NOW);
             Long orderId = placed(USER, 1);
 
-            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
-                ORDERS + "/" + orderId + "/confirm", HttpMethod.POST,
-                new HttpEntity<>(null, headers(OTHER_USER)), ANY);
+            ResponseEntity<ApiResponse<Object>> response = confirmAny(OTHER_USER, orderId, card("attempt-1"));
 
             assertAll(
                 () -> assertThat(response.getStatusCode().value()).isEqualTo(404),
                 () -> assertThat(response.getBody().meta().errorCode()).isEqualTo("ORDER_NOT_FOUND")
             );
         }
+
+        @DisplayName("Q-6: 본문이 없으면 400 이고 아무것도 하지 않는다")
+        @Test
+        void rejectsMissingBody() {
+            Long orderId = placed(USER, 1);
+            int creates = PG.createCount();
+
+            ResponseEntity<ApiResponse<Object>> response = confirmAny(USER, orderId, null);
+
+            assertAll(
+                () -> assertThat(response.getStatusCode().value()).isEqualTo(400),
+                () -> assertThat(PG.createCount()).isEqualTo(creates),
+                () -> assertThat(productService.getStock(productId)).isEqualTo(Quantity.of(10))
+            );
+        }
+
+        @DisplayName("PAY-016, PAY-019: 키 형식, 카드 종류, 카드 번호 형식이 틀리면 400 이다")
+        @Test
+        void rejectsMalformedInput() {
+            Long orderId = placed(USER, 1);
+
+            assertAll(
+                () -> assertThat(confirmAny(USER, orderId, Map.of(
+                    "paymentAttemptKey", "a".repeat(65), "cardType", "TEST", "cardNo", CARD_NO))
+                    .getStatusCode().value()).isEqualTo(400),
+                () -> assertThat(confirmAny(USER, orderId, Map.of(
+                    "paymentAttemptKey", "attempt-1", "cardType", "VISA", "cardNo", CARD_NO))
+                    .getStatusCode().value()).isEqualTo(400),
+                () -> assertThat(confirmAny(USER, orderId, Map.of(
+                    "paymentAttemptKey", "attempt-1", "cardType", "TEST", "cardNo", "1234"))
+                    .getStatusCode().value()).isEqualTo(400),
+                () -> assertThat(productService.getStock(productId)).isEqualTo(Quantity.of(10))
+            );
+        }
+
+        @DisplayName("PG-001: 본문에 callbackUrl 을 넣어도 PG 에는 설정의 callbackUrl 이 간다")
+        @Test
+        void ignoresInjectedCallbackUrl() {
+            Long orderId = placed(USER, 1);
+            Map<String, Object> body = new HashMap<>(card("attempt-1"));
+            body.put("callbackUrl", "https://attacker.example/steal");
+
+            confirm(USER, orderId, body);
+
+            String sent = PG.receivedRequests().stream()
+                .filter(request -> request.method().equals("POST"))
+                .reduce((first, second) -> second).orElseThrow()
+                .body().get("callbackUrl").asText();
+            assertThat(sent).isEqualTo("http://127.0.0.1:8080/api/v1/payments/callback");
+        }
+
     }
 
     @Nested
@@ -291,29 +385,225 @@ class OrderV1ApiE2ETest {
     }
 
     @Nested
-    @DisplayName("연결 흐름 — 충전 → 주문 확정 → 잔액")
-    class EndToEndFlow {
-        @DisplayName("잔액 0에서 10,000원을 충전하고 7,000원을 결제하면 잔액은 3,000원이다")
-        @Test
-        void chargeThenOrderThenBalance() {
-            testRestTemplate.exchange(POINTS + "/charge", HttpMethod.POST,
-                new HttpEntity<>(Map.of("amount", 10_000), headers(USER)), ANY);
-
-            Object body = Map.of("lines", List.of(
-                Map.of("productId", productId, "quantity", 7)));
-            Long orderId = place(USER, body).getBody().data().id();
-
+    @DisplayName("결제 확인 — SETTLE-008: 본인 주문의 미완료 결제를 PG 에 조회해 반영한다")
+    class Reconcile {
+        private Long started(int quantity) {
+            Long orderId = place(USER, oneLine(quantity)).getBody().data().id();
             testRestTemplate.exchange(ORDERS + "/" + orderId + "/confirm", HttpMethod.POST,
-                new HttpEntity<>(null, headers(USER)), ANY);
+                new HttpEntity<>(card("attempt-" + orderId), headers(USER)), ANY);
+            return orderId;
+        }
 
-            ResponseEntity<ApiResponse<Map<String, Object>>> balance = testRestTemplate.exchange(
-                POINTS, HttpMethod.GET, new HttpEntity<>(null, headers(USER)),
-                new ParameterizedTypeReference<>() {});
+        private Payment payment(Long orderId) {
+            return paymentRepository.findByOrderId(orderId).orElseThrow();
+        }
+
+        private String keyOf(Long orderId) {
+            return PG.transactionsOf(payment(orderId).getProviderOrderId().value()).stream()
+                .map(PgFixture.Transaction::transactionKey).max(String::compareTo).orElseThrow();
+        }
+
+        private ResponseEntity<ApiResponse<OrderV1Dto.ReconcileResponse>> reconcile(Long userId, Long orderId) {
+            return testRestTemplate.exchange(ORDERS + "/" + orderId + "/payment/reconcile", HttpMethod.POST,
+                new HttpEntity<>(null, headers(userId)), RECONCILE);
+        }
+
+        private ResponseEntity<ApiResponse<Object>> reconcileAny(Long userId, Long orderId) {
+            return testRestTemplate.exchange(ORDERS + "/" + orderId + "/payment/reconcile", HttpMethod.POST,
+                new HttpEntity<>(null, headers(userId)), ANY);
+        }
+
+        private long lookups() {
+            return PG.receivedRequests().stream().filter(request -> request.method().equals("GET")).count();
+        }
+
+        @DisplayName("SETTLE-012: callback 이 오지 않아도 PG 가 SUCCESS 면 확인으로 확정되고 200 이다")
+        @Test
+        void confirmsWithoutCallback() {
+            Long orderId = started(2);
+            PG.changeStatus(keyOf(orderId), PgFixture.Status.SUCCESS);
+
+            ResponseEntity<ApiResponse<OrderV1Dto.ReconcileResponse>> response = reconcile(USER, orderId);
 
             assertAll(
-                () -> assertThat(((Number) balance.getBody().data().get("balance")).longValue()).isEqualTo(3_000),
-                () -> assertThat(productService.getStock(productId)).isEqualTo(Quantity.of(3))
+                () -> assertThat(response.getStatusCode().value()).isEqualTo(200),
+                () -> assertThat(response.getBody().data().orderStatus()).isEqualTo("CONFIRMED"),
+                () -> assertThat(response.getBody().data().paymentStatus()).isEqualTo("SUCCESS"),
+                () -> assertThat(response.getBody().data().lookupUnavailable()).isFalse(),
+                () -> assertThat(productService.getStock(productId)).isEqualTo(Quantity.of(8))
+            );
+        }
+
+        @DisplayName("아직 PENDING 이면 202 와 Retry-After 이고 그대로다")
+        @Test
+        void staysPending() {
+            Long orderId = started(2);
+
+            ResponseEntity<ApiResponse<OrderV1Dto.ReconcileResponse>> response = reconcile(USER, orderId);
+
+            assertAll(
+                () -> assertThat(response.getStatusCode().value()).isEqualTo(202),
+                () -> assertThat(response.getHeaders().getFirst(HttpHeaders.RETRY_AFTER)).isEqualTo("1"),
+                () -> assertThat(response.getBody().data().paymentStatus()).isEqualTo("PENDING"),
+                () -> assertThat(response.getBody().data().lookupUnavailable()).isFalse()
+            );
+        }
+
+        @DisplayName("RESIL-008: 2 초 안에 다시 누른 reconcile 은 PG 를 부르지 않고 저장된 상태를 돌려준다")
+        @Test
+        void throttlesRepeatedReconcile() {
+            Long orderId = started(2);
+            long before = lookups();
+
+            ResponseEntity<ApiResponse<OrderV1Dto.ReconcileResponse>> first = reconcile(USER, orderId);
+            ResponseEntity<ApiResponse<OrderV1Dto.ReconcileResponse>> second = reconcile(USER, orderId);
+
+            assertAll(
+                () -> assertThat(lookups() - before).isEqualTo(1),
+                () -> assertThat(first.getStatusCode().value()).isEqualTo(202),
+                () -> assertThat(second.getStatusCode().value()).isEqualTo(202),
+                () -> assertThat(second.getBody().data().paymentStatus()).isEqualTo("PENDING"),
+                () -> assertThat(second.getBody().data().lookupUnavailable()).isFalse()
+            );
+        }
+
+        @DisplayName("RESIL-004, PAY-008: 조회가 안 되면 202, 저장된 상태와 확인 불가를 돌려주고 아무것도 바꾸지 않는다")
+        @Test
+        void reportsUnavailable() {
+            Long orderId = started(2);
+            PG.changeStatus(keyOf(orderId), PgFixture.Status.SUCCESS);
+            PG.respondNextLookupWith(500, "{}");
+
+            ResponseEntity<ApiResponse<OrderV1Dto.ReconcileResponse>> response = reconcile(USER, orderId);
+
+            assertAll(
+                () -> assertThat(response.getStatusCode().value()).isEqualTo(202),
+                () -> assertThat(response.getBody().data().paymentStatus()).isEqualTo("PENDING"),
+                () -> assertThat(response.getBody().data().lookupUnavailable()).isTrue(),
+                () -> assertThat(payment(orderId).getStatus().name()).isEqualTo("PENDING")
+            );
+        }
+
+        @DisplayName("PAY-018: CONFLICT 는 PG 를 부르지 않고 저장된 상태로 202 다. 해결은 사람이 한다")
+        @Test
+        void doesNotLookupConflict() {
+            Long orderId = started(2);
+            PG.respondNextLookupWith(200, """
+                {"transactionKey":"%s","orderId":"%s","amount":9999,"status":"SUCCESS"}
+                """.formatted(keyOf(orderId), payment(orderId).getProviderOrderId().value()));
+            reconcile(USER, orderId);
+            long before = lookups();
+
+            ResponseEntity<ApiResponse<OrderV1Dto.ReconcileResponse>> response = reconcile(USER, orderId);
+
+            assertAll(
+                () -> assertThat(response.getStatusCode().value()).isEqualTo(202),
+                () -> assertThat(response.getBody().data().paymentStatus()).isEqualTo("CONFLICT"),
+                () -> assertThat(response.getBody().data().orderStatus()).isEqualTo("PENDING"),
+                () -> assertThat(lookups()).isEqualTo(before),
+                () -> assertThat(productService.getStock(productId)).isEqualTo(Quantity.of(8))
+            );
+        }
+
+        @DisplayName("SETTLE-008: 결제를 시작하지 않은 주문은 404 PAYMENT_NOT_FOUND 다")
+        @Test
+        void rejectsDraft() {
+            Long orderId = place(USER, oneLine(1)).getBody().data().id();
+
+            ResponseEntity<ApiResponse<Object>> response = reconcileAny(USER, orderId);
+
+            assertAll(
+                () -> assertThat(response.getStatusCode().value()).isEqualTo(404),
+                () -> assertThat(response.getBody().meta().errorCode()).isEqualTo("PAYMENT_NOT_FOUND")
+            );
+        }
+
+        @DisplayName("ORDER-011: 남의 주문은 404 ORDER_NOT_FOUND 이고 PG 를 부르지 않는다")
+        @Test
+        void rejectsForeignOrder() {
+            Long orderId = started(1);
+            long before = lookups();
+
+            ResponseEntity<ApiResponse<Object>> response = reconcileAny(OTHER_USER, orderId);
+
+            assertAll(
+                () -> assertThat(response.getStatusCode().value()).isEqualTo(404),
+                () -> assertThat(response.getBody().meta().errorCode()).isEqualTo("ORDER_NOT_FOUND"),
+                () -> assertThat(lookups()).isEqualTo(before)
             );
         }
     }
+
+    @Nested
+    @DisplayName("결제수단과 과거 주문 — PAY-011, SETTLE-011: 결제수단 · 시도 상태 · 최종 결과를 보여 주고, 포인트로 확정한 주문은 그대로다")
+    class PaymentMethodAndPastOrders {
+
+        private Long pastPointOrder(int quantity) {
+            Long orderId = place(USER, oneLine(quantity)).getBody().data().id();
+            jdbcTemplate.update(
+                "UPDATE orders SET status = 'CONFIRMED', paid_amount = total_amount, confirmed_at = ? WHERE id = ?",
+                Timestamp.from(NOW), orderId);
+            return orderId;
+        }
+
+        private OrderV1Dto.OrderResponse get(Long orderId) {
+            return testRestTemplate.exchange(ORDERS + "/" + orderId, HttpMethod.GET,
+                new HttpEntity<>(null, headers(USER)), ORDER).getBody().data();
+        }
+
+        @DisplayName("포인트로 확정한 과거 주문은 결제수단 POINT, 금액, 결과, 당시 품목이 그대로 보이고 결제 시도는 없다")
+        @Test
+        void showsPastPointOrder() {
+            Long orderId = pastPointOrder(2);
+
+            OrderV1Dto.OrderResponse order = get(orderId);
+
+            assertAll(
+                () -> assertThat(order.status()).isEqualTo("CONFIRMED"),
+                () -> assertThat(order.paymentMethod()).isEqualTo("POINT"),
+                () -> assertThat(order.paymentStatus()).isNull(),
+                () -> assertThat(order.paidAmount()).isEqualTo(2_000),
+                () -> assertThat(order.items().get(0).productName()).isEqualTo("코트")
+            );
+        }
+
+        @DisplayName("ORDER-010: 포인트로 확정한 주문에 confirm 하면 409 ORDER_NOT_DRAFT 이고 PG 를 부르지 않는다")
+        @Test
+        void rejectsConfirmOnPastPointOrder() {
+            Long orderId = pastPointOrder(1);
+            int creates = PG.createCount();
+
+            ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(
+                ORDERS + "/" + orderId + "/confirm", HttpMethod.POST,
+                new HttpEntity<>(card("attempt-1"), headers(USER)), ANY);
+
+            assertAll(
+                () -> assertThat(response.getStatusCode().value()).isEqualTo(409),
+                () -> assertThat(response.getBody().meta().errorCode()).isEqualTo("ORDER_NOT_DRAFT"),
+                () -> assertThat(PG.createCount()).isEqualTo(creates),
+                () -> assertThat(paymentRepository.findByOrderId(orderId)).isEmpty()
+            );
+        }
+
+        @DisplayName("PG 로 결제 중인 주문은 결제수단 PG 와 시도 상태를 보여 주고, 접수만 한 주문은 둘 다 없다")
+        @Test
+        void showsPgPaymentAndDraft() {
+            Long draft = place(USER, oneLine(1)).getBody().data().id();
+            Long paying = place(USER, oneLine(1)).getBody().data().id();
+            testRestTemplate.exchange(ORDERS + "/" + paying + "/confirm", HttpMethod.POST,
+                new HttpEntity<>(card("attempt-" + paying), headers(USER)), ANY);
+
+            OrderV1Dto.OrderResponse pg = get(paying);
+            OrderV1Dto.OrderResponse placed = get(draft);
+
+            assertAll(
+                () -> assertThat(pg.status()).isEqualTo("PENDING"),
+                () -> assertThat(pg.paymentMethod()).isEqualTo("PG"),
+                () -> assertThat(pg.paymentStatus()).isEqualTo("PENDING"),
+                () -> assertThat(placed.paymentMethod()).isNull(),
+                () -> assertThat(placed.paymentStatus()).isNull()
+            );
+        }
+    }
+
 }

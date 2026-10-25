@@ -1,9 +1,13 @@
 package com.loopers.interfaces.api.order;
 
 import com.loopers.application.order.OrderFacade;
+import com.loopers.application.payment.PaymentFacade;
+import com.loopers.domain.payment.Payment;
 import com.loopers.interfaces.api.ApiResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,7 +25,10 @@ import java.util.List;
 @RequiredArgsConstructor
 public class OrderV1Controller {
 
+    private static final String RETRY_AFTER_SECONDS = "1";
+
     private final OrderFacade orderFacade;
+    private final PaymentFacade paymentFacade;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -34,12 +41,23 @@ public class OrderV1Controller {
     }
 
     @PostMapping("/{orderId}/confirm")
-    public ApiResponse<OrderV1Dto.OrderResponse> confirm(
+    public ResponseEntity<ApiResponse<OrderV1Dto.ConfirmResponse>> confirm(
+        @RequestHeader("X-USER-ID") Long userId,
+        @PathVariable Long orderId,
+        @RequestBody OrderV1Dto.ConfirmRequest request
+    ) {
+        Payment payment = paymentFacade.confirm(request.toCommand(userId, orderId), Instant.now());
+        return respond(payment, OrderV1Dto.ConfirmResponse.of(orderFacade.get(userId, orderId), payment));
+    }
+
+    @PostMapping("/{orderId}/payment/reconcile")
+    public ResponseEntity<ApiResponse<OrderV1Dto.ReconcileResponse>> reconcile(
         @RequestHeader("X-USER-ID") Long userId,
         @PathVariable Long orderId
     ) {
-        return ApiResponse.success(
-            OrderV1Dto.OrderResponse.from(orderFacade.confirm(userId, orderId, Instant.now())));
+        PaymentFacade.ReconcileResult result = paymentFacade.reconcile(userId, orderId, Instant.now());
+        return respond(result.payment(), OrderV1Dto.ReconcileResponse.of(
+            orderFacade.get(userId, orderId), result.payment(), result.lookupUnavailable()));
     }
 
     @GetMapping
@@ -53,6 +71,15 @@ public class OrderV1Controller {
         @RequestHeader("X-USER-ID") Long userId,
         @PathVariable Long orderId
     ) {
-        return ApiResponse.success(OrderV1Dto.OrderResponse.from(orderFacade.get(userId, orderId)));
+        return ApiResponse.success(OrderV1Dto.OrderResponse.from(orderFacade.getDetail(userId, orderId)));
+    }
+
+    private static <T> ResponseEntity<ApiResponse<T>> respond(Payment payment, T data) {
+        if (payment.isSettled()) {
+            return ResponseEntity.ok(ApiResponse.success(data));
+        }
+        return ResponseEntity.accepted()
+            .header(HttpHeaders.RETRY_AFTER, RETRY_AFTER_SECONDS)
+            .body(ApiResponse.success(data));
     }
 }

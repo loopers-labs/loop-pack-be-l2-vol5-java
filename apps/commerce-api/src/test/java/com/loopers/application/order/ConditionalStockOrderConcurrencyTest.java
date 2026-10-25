@@ -1,12 +1,12 @@
 package com.loopers.application.order;
 
 import com.loopers.application.brand.BrandFacade;
-import com.loopers.application.point.PointFacade;
 import com.loopers.application.product.ProductFacade;
 import com.loopers.domain.common.Quantity;
 import com.loopers.domain.product.StockDeduction;
 import com.loopers.support.error.DomainError;
 import com.loopers.support.error.DomainException;
+import com.loopers.support.payment.TestPayments;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -30,25 +30,25 @@ class ConditionalStockOrderConcurrencyTest extends OrderConcurrencyTest {
     @Autowired
     ConditionalStockOrderConcurrencyTest(
         OrderFacade orderFacade,
-        PointFacade pointFacade,
+        TestPayments testPayments,
         ProductFacade productFacade,
         BrandFacade brandFacade,
         JdbcTemplate jdbcTemplate,
         DatabaseCleanUp databaseCleanUp,
         ConditionalStockDeduction conditionalStockDeduction
     ) {
-        super(orderFacade, pointFacade, productFacade, brandFacade, jdbcTemplate, databaseCleanUp);
+        super(orderFacade, testPayments, productFacade, brandFacade, jdbcTemplate, databaseCleanUp);
         this.conditionalStockDeduction = conditionalStockDeduction;
     }
 
-    @DisplayName("PRODUCT-023 · 조건부 UPDATE: 재고 5 에 주문 8건 — 확정 5 · 재고 부족 3 · 기술 오류 0 · 최종 재고 0")
+    @DisplayName("PRODUCT-023 · 조건부 UPDATE: 재고 5 에 주문 8건의 결제 시작 — 성공 5 · 재고 부족 3 · 기술 오류 0 · 최종 재고 0")
     @Test
     @Override
     void stockRace() throws Exception {
         int before = conditionalStockDeduction.calls();
         super.stockRace();
         assertThat(conditionalStockDeduction.calls() - before)
-            .as("확정이 조건부 UPDATE 로 차감했다")
+            .as("결제 시작이 조건부 UPDATE 로 차감했다")
             .isEqualTo(8);
     }
 

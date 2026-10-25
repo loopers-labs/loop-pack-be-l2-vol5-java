@@ -1,13 +1,12 @@
 package com.loopers.application.product;
 
+import com.loopers.support.payment.TestPayments;
 import com.loopers.application.brand.BrandFacade;
-import com.loopers.application.point.PointFacade;
 import com.loopers.application.order.OrderCreateCommand;
 import com.loopers.application.order.OrderFacade;
 import com.loopers.domain.common.Quantity;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderQuantity;
-import com.loopers.domain.point.ChargeAmount;
 import com.loopers.domain.product.Price;
 import com.loopers.domain.product.ProductService;
 import com.loopers.utils.DatabaseCleanUp;
@@ -31,7 +30,7 @@ class StockAdjustmentLostUpdateTest {
 
     private final OrderFacade orderFacade;
     private final ProductService productService;
-    private final PointFacade pointFacade;
+    private final TestPayments testPayments;
     private final DatabaseCleanUp databaseCleanUp;
     private final BrandFacade brandFacade;
     private final ProductFacade productFacade;
@@ -42,14 +41,14 @@ class StockAdjustmentLostUpdateTest {
     StockAdjustmentLostUpdateTest(
         OrderFacade orderFacade,
         ProductService productService,
-        PointFacade pointFacade,
+        TestPayments testPayments,
         DatabaseCleanUp databaseCleanUp,
         BrandFacade brandFacade,
         ProductFacade productFacade
     ) {
         this.orderFacade = orderFacade;
         this.productService = productService;
-        this.pointFacade = pointFacade;
+        this.testPayments = testPayments;
         this.databaseCleanUp = databaseCleanUp;
         this.brandFacade = brandFacade;
         this.productFacade = productFacade;
@@ -60,7 +59,6 @@ class StockAdjustmentLostUpdateTest {
         Long brandId = brandFacade.register("무신사", "패션 플랫폼").getId();
         productId = productFacade.register(brandId, "코트", Price.of(10_000)).getId();
         productFacade.adjustStock(productId, Quantity.of(10));
-        pointFacade.charge(USER, ChargeAmount.of(1_000_000), NOW);
     }
 
     @AfterEach
@@ -103,6 +101,6 @@ class StockAdjustmentLostUpdateTest {
         Order order = orderFacade.place(
             new OrderCreateCommand(USER, List.of(new OrderCreateCommand.Line(productId, OrderQuantity.of(1)))),
             NOW);
-        orderFacade.confirm(USER, order.getId(), NOW);
+        testPayments.start(USER, order.getId(), NOW);
     }
 }

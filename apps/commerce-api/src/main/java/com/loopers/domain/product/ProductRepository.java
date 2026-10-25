@@ -10,5 +10,7 @@ public interface ProductRepository {
 
     Optional<Product> findByIdForUpdate(Long id);
 
+    Optional<Product> findIncludingDeletedByIdForUpdate(Long id);
+
     void deleteAllByBrandId(Long brandId);
 }

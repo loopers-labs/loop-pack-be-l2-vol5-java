@@ -18,11 +18,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import javax.sql.DataSource;
@@ -33,6 +36,7 @@ import java.sql.ResultSet;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -52,7 +56,7 @@ class OrderLockFailureApiE2ETest {
     private static final long DEADLOCK_DETECTED_WITHIN_MILLIS = 1_000;
     private static final ParameterizedTypeReference<ApiResponse<Object>> ANY = new ParameterizedTypeReference<>() {};
 
-    private final TestRestTemplate testRestTemplate;
+    private final RestTemplateBuilder restTemplateBuilder;
     private final OrderFacade orderFacade;
     private final ProductFacade productFacade;
     private final BrandFacade brandFacade;
@@ -61,13 +65,16 @@ class OrderLockFailureApiE2ETest {
     private final JdbcTemplate jdbcTemplate;
     private final DatabaseCleanUp databaseCleanUp;
 
+    @LocalServerPort
+    private int port;
+
     private Long brandId;
     private Long coat;
     private Long knit;
 
     @Autowired
     OrderLockFailureApiE2ETest(
-        TestRestTemplate testRestTemplate,
+        RestTemplateBuilder restTemplateBuilder,
         OrderFacade orderFacade,
         ProductFacade productFacade,
         BrandFacade brandFacade,
@@ -76,7 +83,7 @@ class OrderLockFailureApiE2ETest {
         JdbcTemplate jdbcTemplate,
         DatabaseCleanUp databaseCleanUp
     ) {
-        this.testRestTemplate = testRestTemplate;
+        this.restTemplateBuilder = restTemplateBuilder;
         this.orderFacade = orderFacade;
         this.productFacade = productFacade;
         this.brandFacade = brandFacade;
@@ -177,11 +184,19 @@ class OrderLockFailureApiE2ETest {
         return ids;
     }
 
+    private TestRestTemplate withoutRetry() {
+        return new TestRestTemplate(restTemplateBuilder
+            .requestFactory(SimpleClientHttpRequestFactory::new)
+            .rootUri("http://127.0.0.1:" + port));
+    }
+
     private ResponseEntity<ApiResponse<Object>> confirm(Long orderId) {
         HttpHeaders headers = new HttpHeaders();
         headers.set("X-USER-ID", String.valueOf(BUYER));
-        return testRestTemplate.exchange(
-            "/api/v1/orders/" + orderId + "/confirm", HttpMethod.POST, new HttpEntity<>(null, headers), ANY);
+        Map<String, Object> card = Map.<String, Object>of(
+            "paymentAttemptKey", "attempt-" + orderId, "cardType", "TEST", "cardNo", "0000-0000-0000-0000");
+        return withoutRetry().exchange(
+            "/api/v1/orders/" + orderId + "/confirm", HttpMethod.POST, new HttpEntity<>(card, headers), ANY);
     }
 
     private static void lock(Connection holder, Long productId) throws Exception {
@@ -239,6 +254,8 @@ class OrderLockFailureApiE2ETest {
             "SELECT paid_amount IS NULL AND confirmed_at IS NULL FROM orders WHERE id = ?", Boolean.class, orderId))
             .as("결제액 · 확정 시각이 남지 않는다").isTrue();
         assertThat(jdbcTemplate.queryForList("SELECT type FROM point_transaction WHERE user_id = ?", String.class, BUYER))
-            .as("결제 원장이 남지 않는다").containsExactly("CHARGE");
+            .as("포인트 원장이 남지 않는다").containsExactly("CHARGE");
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM payment WHERE order_id = ?", Integer.class, orderId))
+            .as("결제 시도가 남지 않는다").isZero();
     }
 }

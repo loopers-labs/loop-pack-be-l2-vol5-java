@@ -3,6 +3,8 @@ server:
   address: 127.0.0.1
   shutdown: graceful
   tomcat:
+    mbeanregistry:
+      enabled: true # 실험(W5 8.5)에서 바쁜 워커 스레드 수(tomcat.threads.busy)를 보기 위해 켠다
     threads:
       max: 200 # 최대 워커 스레드 수 (default : 200)
       min-spare: 10 # 최소 유지 스레드 수 (default : 10)
@@ -25,6 +27,7 @@ spring:
       - redis.yml
       - logging.yml
       - monitoring.yml
+      - pg.yml
 
 springdoc:
   use-fqn: true

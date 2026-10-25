@@ -199,4 +199,42 @@ class ProductTest {
                 .hasFieldOrPropertyWithValue("error", DomainError.PRODUCT_ALREADY_DELETED);
         }
     }
+
+    @Nested
+    @DisplayName("RSV-003, RSV-007: 결제가 실패하면 묶었던 재고를 돌려받는다")
+    class Restock {
+
+        @DisplayName("돌려받은 수량만큼 가용 재고가 늘어난다")
+        @Test
+        void addsBack() {
+            Product product = registered();
+            product.adjustTo(Quantity.of(3));
+
+            product.restock(Quantity.of(2));
+
+            assertThat(product.getQuantity()).isEqualTo(Quantity.of(5));
+        }
+
+        @DisplayName("삭제된 상품도 돌려받고, 삭제된 채로 남는다")
+        @Test
+        void addsBackToDeleted() {
+            Product product = registered();
+            product.adjustTo(Quantity.of(3));
+            product.delete();
+
+            product.restock(Quantity.of(2));
+
+            assertThat(product.getQuantity()).isEqualTo(Quantity.of(5));
+            assertThat(product.isDeleted()).isTrue();
+        }
+
+        @DisplayName("0 이하는 돌려받을 수 없다. 반환 수량은 주문 품목에서 오므로 프로그래밍 오류다")
+        @Test
+        void rejectsNonPositive() {
+            Product product = registered();
+
+            assertThatThrownBy(() -> product.restock(Quantity.ZERO)).isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> product.restock(null)).isInstanceOf(IllegalArgumentException.class);
+        }
+    }
 }
