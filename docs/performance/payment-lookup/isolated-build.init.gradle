@@ -1,0 +1,12 @@
+def isolatedRoot = new File(System.getProperty("pg.isolated.build"))
+gradle.beforeProject { project ->
+    def relative = project.path == ':' ? 'root' : project.path.substring(1).replace(':', '/')
+    project.layout.buildDirectory.set(new File(isolatedRoot, relative + "/build"))
+}
+gradle.projectsEvaluated {
+    def commerce = gradle.rootProject.project(':apps:commerce-api')
+    def pg = gradle.rootProject.project(':apps:test-pg')
+    commerce.tasks.named('test').configure { task ->
+        task.systemProperty('test-pg.jar', pg.layout.buildDirectory.file('libs/test-pg.jar').get().asFile.absolutePath)
+    }
+}

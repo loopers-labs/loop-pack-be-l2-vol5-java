@@ -42,6 +42,6 @@ out/
 ### Kotlin ###
 .kotlin
 
-# PG 측정 자료는 로컬에 보관한다.
-/docs/performance/payment-normal/
-/docs/performance/payment-lookup/
+# PG 측정 원본은 로컬에 보관하고 보고서·요약과 재현 스크립트만 올린다.
+/docs/performance/payment-normal/results/
+/docs/performance/payment-lookup/**/*.json
