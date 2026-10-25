@@ -1,0 +1,17 @@
+server:
+  address: 127.0.0.1
+  port: ${TEST_PG_PORT:8082}
+
+spring:
+  application:
+    name: test-pg
+
+test-pg:
+  provider-account-id: "135135"
+  processing-delay: ${TEST_PG_PROCESSING_DELAY:3s}
+  callback-connect-timeout: 1s
+  callback-read-timeout: 2s
+  processing-mode: ${TEST_PG_PROCESSING_MODE:AUTO}
+  drop-response-delay: ${TEST_PG_DROP_RESPONSE_DELAY:3s}
+  control:
+    enabled: ${TEST_PG_CONTROL_ENABLED:false}

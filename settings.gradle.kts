@@ -2,6 +2,7 @@ rootProject.name = "loopers-java-spring-template"
 
 include(
     ":apps:commerce-api",
+    ":apps:test-pg",
     ":apps:commerce-streamer",
     ":apps:commerce-batch",
     ":modules:jpa",

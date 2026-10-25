@@ -1,0 +1,6 @@
+**
+!apps/
+!apps/test-pg/
+!apps/test-pg/build/
+!apps/test-pg/build/libs/
+!apps/test-pg/build/libs/test-pg.jar

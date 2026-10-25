@@ -1,0 +1,14 @@
+services:
+  test-pg:
+    build:
+      context: ..
+      dockerfile: apps/test-pg/Dockerfile
+    ports:
+      - "127.0.0.1:${TEST_PG_PORT:-8082}:8080"
+    environment:
+      SERVER_PORT: 8080
+      SERVER_ADDRESS: 0.0.0.0
+      TEST_PG_PROCESSING_DELAY: ${TEST_PG_PROCESSING_DELAY:-3s}
+      TEST_PG_PROCESSING_MODE: ${TEST_PG_PROCESSING_MODE:-AUTO}
+      TEST_PG_DROP_RESPONSE_DELAY: ${TEST_PG_DROP_RESPONSE_DELAY:-3s}
+      TEST_PG_CONTROL_ENABLED: ${TEST_PG_CONTROL_ENABLED:-true}
