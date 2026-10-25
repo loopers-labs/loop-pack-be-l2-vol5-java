@@ -6,11 +6,31 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigInteger;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class StockQuantityTest {
+
+    @DisplayName("예약 반환 여유를 포함한 합이 long 최댓값 이하면 유효하다.")
+    @Test
+    void permitsCapacityAtBoundary() {
+        new StockQuantity(Long.MAX_VALUE).validateReservationCapacity(BigInteger.ZERO);
+        new StockQuantity(Long.MAX_VALUE - 2).validateReservationCapacity(BigInteger.TWO);
+        new StockQuantity(0L).validateReservationCapacity(BigInteger.valueOf(Long.MAX_VALUE));
+    }
+
+    @DisplayName("예약 반환 여유를 포함한 합이 범위를 넘으면 BAD_REQUEST로 거절한다.")
+    @Test
+    void rejectsCapacityOverflow() {
+        CoreException exception = assertThrows(CoreException.class,
+            () -> new StockQuantity(Long.MAX_VALUE - 1).validateReservationCapacity(BigInteger.TWO));
+        assertThat(exception.getErrorType()).isEqualTo(ErrorType.BAD_REQUEST);
+        assertThrows(CoreException.class, () -> new StockQuantity(0L)
+            .validateReservationCapacity(BigInteger.valueOf(Long.MAX_VALUE).add(BigInteger.ONE)));
+    }
 
     @DisplayName("재고 수량을 만들 때,")
     @Nested

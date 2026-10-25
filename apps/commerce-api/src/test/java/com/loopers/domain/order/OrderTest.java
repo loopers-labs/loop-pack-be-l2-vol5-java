@@ -4,6 +4,8 @@ import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -190,15 +192,150 @@ class OrderTest {
             });
     }
 
+    @DisplayName("DRAFT 주문의 PG 결제 요청은 PAYMENT_PENDING으로 바꾸고 결제 정보는 비워 둔다.")
     @Test
-    void savesPaymentAmountAndResultWhenConfirmed() {
-        Order order = Order.create(1L, List.of(OrderItem.create(10L, "Air Max", 100L, 2)));
+    void requestsPgPaymentFromDraft() {
+        Order order = draftOrder();
 
-        order.confirm();
+        order.requestPgPayment();
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+        assertThat(order.getPaymentMethod()).isEqualTo(PaymentMethod.PG);
+        assertThat(order.getPaymentAmount()).isNull();
+        assertThat(order.getPaymentResult()).isNull();
+    }
+
+    @DisplayName("DRAFT가 아닌 주문의 PG 결제 요청은 CONFLICT로 거절하고 상태를 유지한다.")
+    @Test
+    void rejectsPgPaymentRequestUnlessDraft() {
+        Order pending = draftOrder();
+        pending.requestPgPayment();
+        Order pointConfirmed = Order.reconstitute(2L, 1L, OrderStatus.CONFIRMED, 200L, 200L, PaymentResult.SUCCESS,
+            PaymentMethod.POINT, List.of(OrderItem.create(10L, "Air Max", 100L, 2)));
+
+        assertConflict(pending::requestPgPayment);
+        assertConflict(pointConfirmed::requestPgPayment);
+        assertThat(pending.getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+        assertThat(pointConfirmed.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(pointConfirmed.getPaymentMethod()).isEqualTo(PaymentMethod.POINT);
+    }
+
+    @DisplayName("PG 결제 성공은 PAYMENT_PENDING 주문을 CONFIRMED로 바꾸고 총액과 SUCCESS를 저장한다.")
+    @Test
+    void completesPgPaymentFromPending() {
+        Order order = draftOrder();
+        order.requestPgPayment();
+
+        order.completePgPayment();
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(order.getPaymentMethod()).isEqualTo(PaymentMethod.PG);
         assertThat(order.getPaymentAmount()).isEqualTo(200L);
         assertThat(order.getPaymentResult()).isEqualTo(PaymentResult.SUCCESS);
+    }
+
+    @DisplayName("PG 결제 실패는 PAYMENT_PENDING 주문을 PAYMENT_FAILED로 바꾸고 결제액은 비워 둔다.")
+    @Test
+    void failsPgPaymentFromPending() {
+        Order order = draftOrder();
+        order.requestPgPayment();
+
+        order.failPgPayment();
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED);
+        assertThat(order.getPaymentMethod()).isEqualTo(PaymentMethod.PG);
+        assertThat(order.getPaymentAmount()).isNull();
+        assertThat(order.getPaymentResult()).isEqualTo(PaymentResult.FAILED);
+    }
+
+    @DisplayName("PG 결제 요청과 실패 이후에도 재고 보상 기준인 합산 품목 스냅샷을 보존한다.")
+    @Test
+    void preservesItemSnapshotsForStockCompensation() {
+        Order order = Order.create(1L, List.of(
+            OrderItem.create(10L, "Air Max", 100L, 2),
+            OrderItem.create(10L, "Air Max", 100L, 3),
+            OrderItem.create(20L, "Pegasus", 200L, 3)
+        ));
+        List<OrderItem> snapshots = List.of(
+            OrderItem.create(10L, "Air Max", 100L, 5),
+            OrderItem.create(20L, "Pegasus", 200L, 3)
+        );
+
+        order.requestPgPayment();
+
+        assertThat(order.getItems()).containsExactlyElementsOf(snapshots);
+
+        order.failPgPayment();
+
+        assertThat(order.getItems()).containsExactlyElementsOf(snapshots);
+        assertThat(order.getTotalAmount()).isEqualTo(1_100L);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED);
+    }
+
+    @DisplayName("PAYMENT_PENDING이 아닌 주문의 PG 결제 성공·실패 반영은 정합성 오류(INTERNAL_ERROR)로 거절하고 상태를 유지한다.")
+    @Test
+    void rejectsPgPaymentResultUnlessPending() {
+        Order draft = draftOrder();
+        Order failed = draftOrder();
+        failed.requestPgPayment();
+        failed.failPgPayment();
+        Order completed = draftOrder();
+        completed.requestPgPayment();
+        completed.completePgPayment();
+
+        assertIntegrityError(draft::completePgPayment);
+        assertIntegrityError(draft::failPgPayment);
+        assertIntegrityError(failed::completePgPayment);
+        assertIntegrityError(completed::failPgPayment);
+        assertThat(draft.getStatus()).isEqualTo(OrderStatus.DRAFT);
+        assertThat(failed.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED);
+        assertThat(completed.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(completed.getPaymentResult()).isEqualTo(PaymentResult.SUCCESS);
+    }
+
+    @DisplayName("복원은 저장된 결제수단을 그대로 쓰고 주문 상태로 결제수단을 추론하지 않는다.")
+    @Test
+    void restoresStoredPaymentMethodWithoutInferringFromStatus() {
+        List<OrderItem> items = List.of(OrderItem.create(10L, "Air Max", 100L, 2));
+
+        Order pointConfirmed = Order.reconstitute(
+            1L, 1L, OrderStatus.CONFIRMED, 200L, 200L, PaymentResult.SUCCESS, PaymentMethod.POINT, items
+        );
+        Order pgConfirmed = Order.reconstitute(
+            2L, 1L, OrderStatus.CONFIRMED, 200L, 200L, PaymentResult.SUCCESS, PaymentMethod.PG, items
+        );
+        Order draft = Order.reconstitute(3L, 1L, OrderStatus.DRAFT, 200L, null, null, null, items);
+
+        assertThat(pointConfirmed.getPaymentMethod()).isEqualTo(PaymentMethod.POINT);
+        assertThat(pgConfirmed.getPaymentMethod()).isEqualTo(PaymentMethod.PG);
+        assertThat(draft.getPaymentMethod()).isNull();
+    }
+
+    @DisplayName("DRAFT가 아닌 주문을 결제수단 없이 복원하면 정합성 오류(INTERNAL_ERROR)로 거절한다.")
+    @ParameterizedTest
+    @EnumSource(value = OrderStatus.class, names = {"PAYMENT_PENDING", "CONFIRMED", "PAYMENT_FAILED"})
+    void rejectsRestoringPaidOrderWithoutPaymentMethod(OrderStatus status) {
+        List<OrderItem> items = List.of(OrderItem.create(10L, "Air Max", 100L, 2));
+
+        assertIntegrityError(() -> Order.reconstitute(1L, 1L, status, 200L, 200L, PaymentResult.SUCCESS, null, items));
+    }
+
+    private Order draftOrder() {
+        return Order.create(1L, List.of(OrderItem.create(10L, "Air Max", 100L, 2)));
+    }
+
+    private void assertIntegrityError(Runnable transition) {
+        assertThatThrownBy(transition::run)
+            .isInstanceOfSatisfying(CoreException.class, exception ->
+                assertThat(exception.getErrorType()).isEqualTo(ErrorType.INTERNAL_ERROR)
+            );
+    }
+
+    private void assertConflict(Runnable transition) {
+        assertThatThrownBy(transition::run)
+            .isInstanceOfSatisfying(CoreException.class, exception ->
+                assertThat(exception.getErrorType()).isEqualTo(ErrorType.CONFLICT)
+            );
     }
 
     private List<OrderItem> itemsAtTheLongTotalLimit() {

@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.brand.BrandRepository;
+import com.loopers.domain.order.Order;
+import com.loopers.domain.order.OrderItem;
+import com.loopers.domain.order.OrderRepository;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.admin.AdminMockMvcClient;
@@ -47,6 +50,9 @@ class ProductV1ApiE2ETest {
 
     @Autowired
     private ProductRepository productRepository;
+
+    @Autowired
+    private OrderRepository orderRepository;
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
@@ -150,6 +156,27 @@ class ProductV1ApiE2ETest {
     @DisplayName("PUT /api-admin/v1/products/{productId}/stock")
     @Nested
     class ChangeStock {
+        @DisplayName("미완료 예약을 반환할 수 없는 재고 설정은 400이고 기존 재고를 유지한다.")
+        @Test
+        void rejectsStockThatCannotAccommodatePendingReservation() {
+            Brand brand = brandRepository.save(Brand.create("Nike"));
+            Product product = Product.create(brand.getId(), "Air Max", 3_500L);
+            product.changeStockTo(8L);
+            Product saved = productRepository.save(product);
+            Order order = Order.create(1L, List.of(OrderItem.create(saved.getId(), "Air Max", 3_500L, 2)));
+            order.requestPgPayment();
+            Order savedOrder = orderRepository.save(order);
+
+            ResponseEntity<ApiResponse<Object>> response = adminClient.exchange(
+                ENDPOINT_PRODUCTS + "/" + saved.getId() + "/stock", HttpMethod.PUT,
+                new HttpEntity<>(new ProductV1Dto.StockUpdateRequest(Long.MAX_VALUE - 1)),
+                new ParameterizedTypeReference<>() {});
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(productRepository.findById(saved.getId()).orElseThrow().getStock().amount()).isEqualTo(8L);
+            assertThat(orderRepository.findById(savedOrder.getId()).orElseThrow().getStatus()).isEqualTo(order.getStatus());
+        }
+
         @DisplayName("0 이상인 최종 수량이면, 200 응답과 변경된 재고를 반환한다.")
         @Test
         void returnsUpdatedStock_whenQuantityIsZeroOrMore() {

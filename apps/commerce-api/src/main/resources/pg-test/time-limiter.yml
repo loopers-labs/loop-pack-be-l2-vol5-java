@@ -1,0 +1,11 @@
+# 단계 4: 재시도와 대기를 포함한 논리적 조회를 제한한다.
+spring:
+  config:
+    activate:
+      on-profile: "pg-time-limit-experiment"
+payment:
+  pg:
+    lookup-policy:
+      time-limiter:
+        enabled: true
+        timeout: 900ms

@@ -20,6 +20,7 @@ final class OrderJpaMapper {
             entity.getTotalAmount(),
             entity.getPaymentAmount(),
             entity.getPaymentResult(),
+            entity.getPaymentMethod(),
             items
         );
     }
@@ -34,6 +35,7 @@ final class OrderJpaMapper {
             order.getTotalAmount(),
             order.getPaymentAmount(),
             order.getPaymentResult(),
+            order.getPaymentMethod(),
             items
         );
     }

@@ -1,15 +1,23 @@
 package com.loopers.infrastructure.product;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.ZonedDateTime;
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 
 public interface ProductJpaRepository extends JpaRepository<ProductJpaEntity, Long> {
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM ProductJpaEntity p WHERE p.id = :productId")
+    Optional<ProductJpaEntity> findByIdWithExclusiveLock(@Param("productId") Long productId);
 
     List<ProductJpaEntity> findAllByDeletedAtIsNull();
 
@@ -90,6 +98,29 @@ public interface ProductJpaRepository extends JpaRepository<ProductJpaEntity, Lo
         @Param("quantity") int quantity,
         @Param("updatedAt") ZonedDateTime updatedAt
     );
+
+    // 결제 실패의 재고 반환은 논리 삭제된 상품도 대상이며, 읽은 값이 아니라 현재 재고에 더한다.
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+        UPDATE ProductJpaEntity p
+        SET p.stock = p.stock + :quantity,
+            p.updatedAt = :updatedAt
+        WHERE p.id = :productId
+        """)
+    int increaseStock(
+        @Param("productId") Long productId,
+        @Param("quantity") int quantity,
+        @Param("updatedAt") ZonedDateTime updatedAt
+    );
+
+    // READ_COMMITTED의 잠금 없는 최신 조회. 주문 행을 잠그지 않아 TX B의 주문→상품 순서와 교착하지 않는다.
+    @Query(value = """
+        SELECT COALESCE(SUM(i.quantity), 0)
+        FROM order_items i
+        JOIN orders o ON o.id = i.order_id
+        WHERE i.product_id = :productId AND o.status = 'PAYMENT_PENDING' AND o.payment_method = 'PG'
+        """, nativeQuery = true)
+    BigDecimal sumPendingReservationQuantity(@Param("productId") Long productId);
 
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query(value = """

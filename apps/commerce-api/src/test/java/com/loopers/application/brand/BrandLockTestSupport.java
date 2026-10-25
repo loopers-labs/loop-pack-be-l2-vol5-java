@@ -21,15 +21,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
-final class BrandLockTestSupport {
+// 실제 MySQL 잠금 대기를 관찰하는 테스트 지원 도구다. 결제 요청·재고 경합 테스트도 함께 쓴다.
+public final class BrandLockTestSupport {
 
-    static final long TIMEOUT_SECONDS = 10L;
+    public static final long TIMEOUT_SECONDS = 10L;
 
     private final DataSource dataSource;
     private final JdbcTemplate jdbcTemplate;
     private final TransactionTemplate transaction;
 
-    BrandLockTestSupport(
+    public BrandLockTestSupport(
         DataSource dataSource, JdbcTemplate jdbcTemplate, PlatformTransactionManager transactionManager
     ) {
         this.dataSource = dataSource;
@@ -37,12 +38,12 @@ final class BrandLockTestSupport {
         this.transaction = new TransactionTemplate(transactionManager);
     }
 
-    void assertSharedLock(Long brandId) throws SQLException {
+    public void assertSharedLock(Long brandId) throws SQLException {
         assertThat(readBrandWithLock(brandId, "FOR SHARE")).isEqualTo(brandId);
         assertLockCannotBeAcquired(brandId, "FOR UPDATE");
     }
 
-    void assertExclusiveLock(Long brandId) {
+    public void assertExclusiveLock(Long brandId) {
         assertLockCannotBeAcquired(brandId, "FOR SHARE");
     }
 
@@ -69,11 +70,11 @@ final class BrandLockTestSupport {
         }
     }
 
-    Future<?> submit(ExecutorService workers, Runnable operation) {
+    public Future<?> submit(ExecutorService workers, Runnable operation) {
         return submit(workers, new AtomicLong(), new CountDownLatch(1), operation);
     }
 
-    Future<?> submit(
+    public Future<?> submit(
         ExecutorService workers, AtomicLong connectionId, CountDownLatch started, Runnable operation
     ) {
         return workers.submit(() -> transaction.executeWithoutResult(status -> {
@@ -83,7 +84,18 @@ final class BrandLockTestSupport {
         }));
     }
 
-    void awaitLockWait(long connectionId, String tableName) throws SQLException {
+    // 스스로 트랜잭션 경계를 여는 작업(결제 요청)은 바깥 트랜잭션 없이 실행한다.
+    public Future<?> submitOutsideTransaction(ExecutorService workers, Runnable operation) {
+        return workers.submit(operation);
+    }
+
+    // 업무 트랜잭션 안에서 호출해 그 트랜잭션이 쓰는 connection ID를 기록한다.
+    public void recordConnection(AtomicLong connectionId, CountDownLatch started) {
+        connectionId.set(jdbcTemplate.queryForObject("SELECT CONNECTION_ID()", Long.class));
+        started.countDown();
+    }
+
+    public void awaitLockWait(long connectionId, String tableName) throws SQLException {
         // 관찰용 connection으로 실제 대기 행을 확인한다. 업무 connection은 변경하지 않는다.
         try (Connection observer = DriverManager.getConnection(
             System.getProperty("datasource.mysql-jpa.main.jdbc-url"), "root",
@@ -112,7 +124,7 @@ final class BrandLockTestSupport {
         }
     }
 
-    void awaitLatch(CountDownLatch latch) {
+    public void awaitLatch(CountDownLatch latch) {
         try {
             if (!latch.await(TIMEOUT_SECONDS * 2, TimeUnit.SECONDS)) {
                 throw new AssertionError("트랜잭션 처리 대기 한도 초과");
@@ -123,7 +135,7 @@ final class BrandLockTestSupport {
         }
     }
 
-    void shutDown(ExecutorService workers) throws InterruptedException {
+    public void shutDown(ExecutorService workers) throws InterruptedException {
         workers.shutdown();
         if (!workers.awaitTermination(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
             workers.shutdownNow();

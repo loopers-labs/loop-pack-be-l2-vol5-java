@@ -2,6 +2,7 @@ package com.loopers.infrastructure.order;
 
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderStatus;
+import com.loopers.domain.order.PaymentMethod;
 import com.loopers.domain.order.PaymentResult;
 import com.loopers.domain.order.OrderRepository;
 import lombok.RequiredArgsConstructor;
@@ -30,15 +31,23 @@ public class OrderRepositoryImpl implements OrderRepository {
     }
 
     @Override
-    public int confirmIfDraft(Long orderId, Long userId, long paymentAmount, ZonedDateTime confirmedAt) {
-        return orderJpaRepository.confirmIfDraft(
-            orderId,
-            userId,
-            paymentAmount,
-            OrderStatus.DRAFT,
-            OrderStatus.CONFIRMED,
-            PaymentResult.SUCCESS,
-            confirmedAt
+    public int requestPgPaymentIfDraft(Long orderId, Long userId, ZonedDateTime requestedAt) {
+        return orderJpaRepository.requestPgPaymentIfDraft(
+            orderId, userId, OrderStatus.DRAFT, OrderStatus.PAYMENT_PENDING, PaymentMethod.PG, requestedAt
+        );
+    }
+
+    @Override
+    public int completePgPaymentIfPending(Long orderId, long paymentAmount, ZonedDateTime completedAt) {
+        return orderJpaRepository.terminatePgPaymentIfPending(
+            orderId, OrderStatus.PAYMENT_PENDING, OrderStatus.CONFIRMED, paymentAmount, PaymentResult.SUCCESS, completedAt
+        );
+    }
+
+    @Override
+    public int failPgPaymentIfPending(Long orderId, ZonedDateTime failedAt) {
+        return orderJpaRepository.terminatePgPaymentIfPending(
+            orderId, OrderStatus.PAYMENT_PENDING, OrderStatus.PAYMENT_FAILED, null, PaymentResult.FAILED, failedAt
         );
     }
 

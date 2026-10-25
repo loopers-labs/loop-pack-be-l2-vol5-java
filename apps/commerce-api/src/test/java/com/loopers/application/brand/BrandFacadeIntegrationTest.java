@@ -7,6 +7,9 @@ import com.loopers.domain.like.Like;
 import com.loopers.domain.like.LikeRepository;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderItem;
+import com.loopers.domain.order.PaymentResult;
+import com.loopers.domain.order.PaymentMethod;
+import com.loopers.domain.order.OrderStatus;
 import com.loopers.domain.order.OrderRepository;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
@@ -268,11 +271,10 @@ class BrandFacadeIntegrationTest {
 
             User user = userRepository.save(User.create());
             likeRepository.insertIfAbsent(Like.create(user.getId(), zeroStockProduct.getId()));
-            Order confirmedOrder = Order.create(user.getId(), List.of(
-                OrderItem.create(zeroStockProduct.getId(), zeroStockProduct.getName(), zeroStockProduct.getPrice(), 1)
-            ));
-            confirmedOrder.confirm();
-            confirmedOrder = orderRepository.save(confirmedOrder);
+            // 이전 포인트 결제로 확정된 주문을 저장된 상태 그대로 둔다.
+            OrderItem confirmedOrderItem = OrderItem.create(zeroStockProduct.getId(), zeroStockProduct.getName(), zeroStockProduct.getPrice(), 1);
+            Order confirmedOrder = orderRepository.save(Order.reconstitute(null, user.getId(), OrderStatus.CONFIRMED,
+                confirmedOrderItem.getAmount(), confirmedOrderItem.getAmount(), PaymentResult.SUCCESS, PaymentMethod.POINT, List.of(confirmedOrderItem)));
             Long stockedProductId = stockedProduct.getId();
             productFacade.update(stockedProductId, "Pegasus Updated", 130_000L);
             productFacade.changeStock(stockedProductId, 11L);

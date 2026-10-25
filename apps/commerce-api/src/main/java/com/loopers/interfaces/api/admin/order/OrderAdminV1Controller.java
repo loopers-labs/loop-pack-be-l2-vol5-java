@@ -2,7 +2,6 @@ package com.loopers.interfaces.api.admin.order;
 
 import com.loopers.application.order.OrderFacade;
 import com.loopers.interfaces.api.ApiResponse;
-import com.loopers.interfaces.api.order.OrderV1Dto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -18,12 +17,12 @@ public class OrderAdminV1Controller {
     private final OrderFacade orderFacade;
 
     @GetMapping
-    public ApiResponse<List<OrderV1Dto.OrderResponse>> getOrders() {
-        return ApiResponse.success(orderFacade.getAllOrders().stream().map(OrderV1Dto.OrderResponse::from).toList());
+    public ApiResponse<List<OrderAdminV1Dto.OrderResponse>> getOrders() {
+        return ApiResponse.success(orderFacade.getAllOrders().stream().map(OrderAdminV1Dto.OrderResponse::from).toList());
     }
 
     @GetMapping("/{orderId}")
-    public ApiResponse<OrderV1Dto.OrderResponse> getOrder(@PathVariable Long orderId) {
-        return ApiResponse.success(OrderV1Dto.OrderResponse.from(orderFacade.getOrder(orderId)));
+    public ApiResponse<OrderAdminV1Dto.OrderResponse> getOrder(@PathVariable Long orderId) {
+        return ApiResponse.success(OrderAdminV1Dto.OrderResponse.from(orderFacade.getOrder(orderId)));
     }
 }

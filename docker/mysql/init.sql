@@ -57,8 +57,9 @@ CREATE TABLE IF NOT EXISTS orders (
     total_amount BIGINT NOT NULL,
     updated_at DATETIME(6) NOT NULL,
     user_id BIGINT DEFAULT NULL,
-    payment_result ENUM('SUCCESS') DEFAULT NULL,
-    status ENUM('CONFIRMED', 'DRAFT') DEFAULT NULL,
+    payment_method ENUM('PG', 'POINT') DEFAULT NULL,
+    payment_result ENUM('FAILED', 'SUCCESS') DEFAULT NULL,
+    status ENUM('CONFIRMED', 'DRAFT', 'PAYMENT_FAILED', 'PAYMENT_PENDING') DEFAULT NULL,
     PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
@@ -71,7 +72,29 @@ CREATE TABLE IF NOT EXISTS order_items (
     product_name VARCHAR(100) NOT NULL,
     PRIMARY KEY (id),
     KEY FKbioxgbv59vetrxe0ejfubep1w (order_id),
+    KEY idx_order_items_product_id (product_id),
     CONSTRAINT FKbioxgbv59vetrxe0ejfubep1w FOREIGN KEY (order_id) REFERENCES orders (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS payment_attempts (
+    amount BIGINT NOT NULL,
+    conflict_detected_at DATETIME(6) DEFAULT NULL,
+    created_at DATETIME(6) NOT NULL,
+    deleted_at DATETIME(6) DEFAULT NULL,
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    last_checked_at DATETIME(6) DEFAULT NULL,
+    order_id BIGINT NOT NULL,
+    updated_at DATETIME(6) NOT NULL,
+    payment_attempt_key VARCHAR(36) NOT NULL,
+    provider_order_id VARCHAR(64) NOT NULL,
+    transaction_key VARCHAR(255) DEFAULT NULL,
+    conflict_reason ENUM('RESULT_CONTRADICTION', 'TRANSACTION_MISMATCH', 'MULTIPLE_TRANSACTIONS') DEFAULT NULL,
+    status ENUM('FAILED', 'PENDING', 'REQUESTED', 'SUCCEEDED', 'UNKNOWN') NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_payment_attempts_key (payment_attempt_key),
+    UNIQUE KEY uk_payment_attempts_order_id (order_id),
+    UNIQUE KEY uk_payment_attempts_provider_order_id (provider_order_id),
+    KEY idx_payment_attempts_status_checked (status, last_checked_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS points (

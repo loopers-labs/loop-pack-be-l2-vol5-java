@@ -1,5 +1,11 @@
 package com.loopers.interfaces.api.product;
 
+import com.loopers.application.payment.PaymentResultService;
+import com.loopers.domain.order.OrderStatus;
+import com.loopers.domain.payment.PaymentAttempt;
+import com.loopers.domain.payment.PaymentAttemptRepository;
+import com.loopers.support.testpg.TestPgControl;
+import java.util.UUID;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.dockerjava.api.DockerClient;
@@ -94,6 +100,12 @@ class ProductListCacheRedisOutageE2ETest {
     }
 
     @Autowired
+    private PaymentAttemptRepository paymentAttemptRepository;
+
+    @Autowired
+    private PaymentResultService paymentResultService;
+
+    @Autowired
     private MockMvc mockMvc;
 
     @Autowired
@@ -142,7 +154,7 @@ class ProductListCacheRedisOutageE2ETest {
     @AfterEach
     void tearDown() {
         startRedisIfStopped();
-        redisTemplate.getConnectionFactory().getConnection().serverCommands().flushAll();
+        flushRedisAfterReconnect();
         statistics.setStatisticsEnabled(statisticsWereEnabled);
         databaseCleanUp.truncateAllTables();
     }
@@ -170,7 +182,7 @@ class ProductListCacheRedisOutageE2ETest {
         assertThat(order.status()).isEqualTo("CONFIRMED");
         assertThat(order.totalAmount()).isEqualTo(2_000L);
         assertThat(productRepository.findById(air.getId()).orElseThrow().getStock().amount()).isEqualTo(8L);
-        assertThat(pointRepository.findByUserId(user.getId()).orElseThrow().getBalance().amount()).isEqualTo(8_000L);
+        assertThat(pointRepository.findByUserId(user.getId()).orElseThrow().getBalance().amount()).isEqualTo(10_000L);
 
         startRedisIfStopped();
 
@@ -232,6 +244,26 @@ class ProductListCacheRedisOutageE2ETest {
         throw new IllegalStateException("Redis 재시작 뒤 30초 안에 다시 연결되지 않았습니다.");
     }
 
+    // 재시작 직후에는 PING이 한 번 성공해도 다음 명령이 앱의 짧은 명령 timeout(100ms)을 넘길 수 있다.
+    // 정리용 비우기도 성공할 때까지 짧게 다시 시도한다.
+    private void flushRedisAfterReconnect() {
+        long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+        while (true) {
+            try {
+                redisTemplate.execute(connection -> {
+                    connection.serverCommands().flushAll();
+                    return null;
+                }, true);
+                return;
+            } catch (RuntimeException exception) {
+                if (System.nanoTime() >= deadline) {
+                    throw exception;
+                }
+                sleepBriefly();
+            }
+        }
+    }
+
     private DockerClient dockerClient() {
         return DockerClientFactory.instance().client();
     }
@@ -267,10 +299,20 @@ class ProductListCacheRedisOutageE2ETest {
             .andReturn();
         assertThat(created.getResponse().getStatus()).isEqualTo(HttpStatus.CREATED.value());
         Long orderId = readData(created, new TypeReference<ApiResponse<OrderV1Dto.OrderResponse>>() {}).id();
-        MvcResult confirmed = mockMvc.perform(post("/api/v1/orders/" + orderId + "/confirm").header("X-USER-ID", userId))
+        MvcResult confirmed = mockMvc.perform(post("/api/v1/orders/" + orderId + "/confirm").header("X-USER-ID", userId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"paymentAttemptKey\":\"" + UUID.randomUUID() + "\",\"cardType\":\"TEST\",\"cardNo\":\"0000-0000-0000-0000\"}"))
             .andReturn();
-        assertThat(confirmed.getResponse().getStatus()).isEqualTo(HttpStatus.OK.value());
+        assertThat(confirmed.getResponse().getStatus()).isEqualTo(HttpStatus.ACCEPTED.value());
+        completePgPayment(orderId);
         return orderId;
+    }
+
+    // 결제 요청 뒤 테스트 PG에서 거래를 처리하고 결과를 확인해 확정 주문을 만든다.
+    private void completePgPayment(Long orderId) {
+        PaymentAttempt attempt = paymentAttemptRepository.findByOrderId(orderId).orElseThrow();
+        TestPgControl.complete(attempt.getProviderOrderId());
+        assertThat(paymentResultService.check(attempt.getId()).payment().orderStatus()).isEqualTo(OrderStatus.CONFIRMED);
     }
 
     private OrderV1Dto.OrderResponse getOrder(Long userId, Long orderId) throws Exception {

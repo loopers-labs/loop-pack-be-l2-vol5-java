@@ -37,6 +37,26 @@ product:
     warm-up:
       enabled: true
 
+# 로컬 테스트 PG 연동. 기본 연결 1초, 응답 3초이며 실험 프로필은 응답 500ms로 비교한다.
+# 로컬 테스트 PG는 Commerce 관리 포트(8081)와 겹치지 않게 8082에서 실행한다.
+payment:
+  pg:
+    base-url: http://127.0.0.1:8082
+    callback-url: http://127.0.0.1:8080/api/v1/payments/callback
+    provider-account-id: "135135"
+    connect-timeout: 1s
+    read-timeout: 3s
+    # 조회 회복 정책은 하단의 네 실험 프로필에서 활성화한다. 운영 임계값은 아직 정하지 않았다.
+    lookup-circuit-breaker:
+      enabled: false
+  # 미종결 시도를 마지막 변경 뒤 1분이 지나면 생성 후 24시간 동안 다시 조회한다.
+  periodic-check:
+    enabled: true
+    interval: 1m
+    idle-threshold: 1m
+    batch-size: 100
+    lookup-window: 24h
+
 springdoc:
   use-fqn: true
   swagger-ui:
@@ -63,6 +83,14 @@ product:
     warm-up:
       enabled: false
 
+# 테스트 PG의 응답 유실 시나리오(3초 지연)보다 짧게 두어 UNKNOWN을 관찰한다.
+# 주기 조회는 끄고 테스트가 서비스를 직접 호출한다.
+payment:
+  pg:
+    read-timeout: 1s
+  periodic-check:
+    enabled: false
+
 ---
 spring:
   config:
@@ -84,3 +112,15 @@ spring:
 springdoc:
   api-docs:
     enabled: false
+
+---
+# PG 실험 프로필에서만 외부 조회 회복 설정을 읽는다.
+spring:
+  config:
+    activate:
+      on-profile: "pg-lookup-experiment | pg-retry-experiment | pg-rate-limit-experiment | pg-time-limit-experiment"
+    import:
+      - classpath:pg-test/circuit-breaker.yml
+      - classpath:pg-test/retry.yml
+      - classpath:pg-test/rate-limiter.yml
+      - classpath:pg-test/time-limiter.yml

@@ -165,14 +165,15 @@ class OtherDomainRepositoryIntegrationTest {
             assertThat(item.getQuantity()).isEqualTo(2);
         });
 
-        reloadedOrder.confirm();
+        reloadedOrder.requestPgPayment();
         orderRepository.save(reloadedOrder);
         entityManager.flush();
         entityManager.clear();
 
-        Order confirmedOrder = orderRepository.findById(order.getId()).orElseThrow();
-        assertThat(confirmedOrder.getStatus().name()).isEqualTo("CONFIRMED");
-        assertThat(confirmedOrder.getItems()).hasSize(1);
+        Order requestedOrder = orderRepository.findById(order.getId()).orElseThrow();
+        assertThat(requestedOrder.getStatus().name()).isEqualTo("PAYMENT_PENDING");
+        assertThat(requestedOrder.getPaymentMethod().name()).isEqualTo("PG");
+        assertThat(requestedOrder.getItems()).hasSize(1);
         likeRepository.delete(like);
         assertThat(likeRepository.findByUserIdAndProductId(user.getId(), product.getId())).isEmpty();
     }

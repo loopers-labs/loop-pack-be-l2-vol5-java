@@ -43,11 +43,13 @@ SQL 비용·실행계획의 전후 값은 각 개선 실험에서 수집했으�
 | --- | --- | --- |
 | 공통 | [seed](../../../apps/commerce-api/src/test/java/com/loopers/fixture/ProductQuerySeed.java) · [스키마](../../../docker/mysql/init.sql) · [k6](k6/product-listing.k6.js) | [기준 응답](results/baseline/response-canonical.json) |
 | 기준선 | [queries.sql](results/baseline/queries.sql) | [EXPLAIN](results/baseline/explain.sql) · [EXPLAIN ANALYZE](results/baseline/explain-analyze.sql) |
-| 1단계 | [queries.sql](results/step1/queries.sql) | [results.json](results/step1/results.json) |
-| 2단계 | [product-query-index.sql](../../../docker/mysql/product-query-index.sql) | [results.json](results/step2/results.json) |
-| 3단계 | [product-query-list-index.sql](../../../docker/mysql/product-query-list-index.sql) | [results.json](results/step3/results.json) |
-| 4단계 | [queries.sql](results/step4/queries.sql) | [results.json](results/step4/results.json) · [부하 원인·likes_desc 진단](results/step4/final-state-diagnosis.json) |
-| 5단계 | [k6 좋아요 쓰기 시나리오](k6/product-listing.k6.js) · [miss 강제 스크립트](results/step5/evict_on_set.py) | [results.json](results/step5/results.json) · [워밍업](results/step5/warm-up-results.json) |
+| 1단계 | [queries.sql](results/step1/queries.sql) | `results/step1/results.json` |
+| 2단계 | [product-query-index.sql](../../../docker/mysql/product-query-index.sql) | `results/step2/results.json` |
+| 3단계 | [product-query-list-index.sql](../../../docker/mysql/product-query-list-index.sql) | `results/step3/results.json` |
+| 4단계 | [queries.sql](results/step4/queries.sql) | `results/step4/results.json` · 부하 원인·likes_desc 진단(`results/step4/final-state-diagnosis.json`) |
+| 5단계 | [k6 좋아요 쓰기 시나리오](k6/product-listing.k6.js) · [miss 강제 스크립트](results/step5/evict_on_set.py) | `results/step5/results.json` · 워밍업(`results/step5/warm-up-results.json`) |
+
+단계별 json 측정 원본은 저장소에 올리지 않고 로컬에 보관한다. 표와 본문에 적은 json 경로는 로컬 원본의 위치다. 기준 응답은 k6가 응답 검증에 읽는 입력이라 저장소에 둔다.
 
 ## 2. 단계별 결과 비교
 
@@ -464,7 +466,7 @@ HTTP 지연도 같은 VU에서 IN이 대체로 낮았지만, 요청당 차이가
 
 ## 8. 5단계: 상품 목록 cache-aside
 
-고객 상품 목록의 공통 응답을 Redis에 저장했다. 캐시 설계와 장애 정책은 [상품 목록 유스케이스 설계](../../system-design/use-cases/product-listing.md)에 정리했다.<br>
+고객 상품 목록의 공통 응답을 Redis에 저장했다. 캐시 설계와 장애 정책은 [상품 목록 캐시 설계](../../system-design/use-cases/product-list-cache.md)에 정리했다.<br>
 워밍업 없이, 첫 요청이 miss로 캐시를 채우는 순수 cache-aside를 측정했다. 측정용 Redis는 공유 로컬 컨테이너가 아니라 측정 전용 컨테이너를 사용했다.
 
 ### 요청 한 건의 비용
@@ -542,7 +544,7 @@ miss는 측정 전용 Redis에서 목록 캐시가 저장되는 즉시 지우는
 - 읽기 위주에서는 캐시 hit으로 커넥션 풀 병목이 해소돼 100 VU 자체 목표를 처음으로 달성했다.
 - 쓰기가 섞이면 무효화 직후의 동시 miss가 DB로 몰려 지연이 다시 늘어난다. 같은 키의 miss를 한 요청만 DB에서 읽게 하는 방식(single-flight)이 다음 개선 후보다.
 - 좋아요를 무효화 대상에서 빼면 hit 비율은 유지되지만, 변경 직후 순차 조회의 최신성 계약을 지키지 못해 적용하지 않았다.
-- 측정은 같은 PC에서 회차마다 한 번씩 수행했다. miss·쓰기 섞임 측정은 앱을 다시 띄운 별도 회차다. 상세 조건은 [측정 원본](results/step5/results.json)에 남겼다.
+- 측정은 같은 PC에서 회차마다 한 번씩 수행했다. miss·쓰기 섞임 측정은 앱을 다시 띄운 별도 회차다. 상세 조건은 측정 원본(`results/step5/results.json`)에 남겼다.
 
 ## 9. 정리
 
