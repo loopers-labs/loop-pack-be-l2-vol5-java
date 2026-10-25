@@ -42,6 +42,9 @@ out/
 ### Kotlin ###
 .kotlin
 
-# PG 측정 원본은 로컬에 보관하고 보고서·요약과 재현 스크립트만 올린다.
+# 측정 원본은 로컬에 보관하고 보고서·요약과 재현 스크립트만 올린다.
 /docs/performance/payment-normal/results/
 /docs/performance/payment-lookup/**/*.json
+/docs/performance/product-listing/results/**/*.json
+# k6가 응답 검증에 읽는 입력 파일이라 저장소에 둔다.
+!/docs/performance/product-listing/results/baseline/response-canonical.json

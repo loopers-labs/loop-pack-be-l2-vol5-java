@@ -1,6 +1,6 @@
 # 상품 목록 조회 성능 실험
 
-이 폴더는 상품 목록 조회 개선의 측정 보고서, K6 스크립트, 실행 계획과 결과 원본을 함께 보관한다. 캐시의 동작 계약은 [상품 목록 캐시 설계](../../system-design/use-cases/product-list-cache.md)에 있다.
+이 폴더는 상품 목록 조회 개선의 측정 보고서, K6 스크립트와 측정에 쓴 SQL을 보관한다. 단계별 json 결과 원본은 로컬에 보관한다. 캐시의 동작 계약은 [상품 목록 캐시 설계](../../system-design/use-cases/product-list-cache.md)에 있다.
 
 ## 실행
 
@@ -14,5 +14,5 @@
 
 - [측정 보고서](report.md): 환경, 방법, 단계별 결과와 판단
 - [K6 시나리오](k6/product-listing.k6.js): 응답 검증과 부하 패턴
-- [기준선 결과](results/baseline/)
-- [단계별 원본](results/): baseline, step1~step5
+- [기준선 SQL과 기준 응답](results/baseline/)
+- [단계별 측정 SQL·스크립트](results/): baseline, step1, step4, step5
