@@ -219,7 +219,7 @@ commit 전에 보내면 rollback된 확정의 이벤트가 남으므로 택하�
 ### 공통 설정과 topic
 
 - 공통 `kafka.yml`의 consumer `value-serializer`는 `value-deserializer`로 바로잡는다. `properties` 아래의 `enable-auto-commit`은 Kafka가 읽지 않는 키이므로 consumer 속성 `enable-auto-commit`으로 옮긴다.
-- local·test 프로필은 admin 주소만 컨테이너 내부 주소(`kafka:9092`)를 가리킨다. producer·consumer와 같은 주소를 쓰도록 맞춘다.
+- local·test 프로필의 admin 속성에는 컨테이너 내부 주소(`kafka:9092`)가 있지만, Spring Boot가 admin의 `bootstrap.servers`를 공통 주소로 다시 덮어써 실제로는 쓰이지 않는다. 세 client가 같은 broker를 쓰는지는 테스트로 확인한다.
 - `auto.create.topics.enable`은 broker 설정이라 client 속성으로는 효과가 없다. `order-events`는 자동 생성에 기대지 않고, local·test 프로필에서 commerce-api가 없을 때만 partition 3, 복제 1로 만든다. 운영 topic의 생성과 partition 변경은 배포 절차가 맡는다.
 
 ## 실패와 중단
