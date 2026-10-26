@@ -1,6 +1,6 @@
 # 주문 결제 요청
 
-> 주문 결제: **1. 결제 요청** → [2. PG 연동](../external-systems/payment-gateway.md) → [3. 결과 반영](order-payment-result.md)
+> 주문 결제: **1. 결제 요청** → [2. PG 연동](../external-systems/payment-gateway.md) → [3. 결과 반영](order-payment-result.md) → [4. 확정 이벤트](order-confirmed-event.md)
 
 고객이 본인 DRAFT 주문의 결제를 요청하면 재고를 차감하고 테스트 PG에 결제를 보낸다. 포인트는 조회하거나 차감하지 않는다.<br>
 HTTP 입력·응답은 [API 계약](../api-contracts.md), 상태와 불변식은 [도메인 모델](../domain-model.md), 저장 구조와 데이터 전환은 [영속성 매핑 설계](../persistence-mapping.md#저장-모델과-데이터-전환)를 따른다.

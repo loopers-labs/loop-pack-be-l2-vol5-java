@@ -1,6 +1,6 @@
 # 시스템 설계 문서
 
-Commerce API의 설계를 책임별로 안내한다. 시스템 구조와 도메인 규칙, 고객·관리자 API, 유스케이스, 외부 연동, 영속성·오류 변환 순으로 읽는다.
+Commerce 시스템(`commerce-api`, `commerce-streamer`)의 설계를 책임별로 안내한다. 시스템 구조와 도메인 규칙, 고객·관리자 API, 유스케이스, 외부 연동, 영속성·오류 변환 순으로 읽는다.
 
 ## 시스템 구조와 도메인
 
@@ -34,13 +34,14 @@ Commerce API의 설계를 책임별로 안내한다. 시스템 구조와 도메�
 
 ### 주문·결제
 
-결제 요청·PG 연동·결과 반영과 callback·reconcile·주기 조회를 구현했다. 조회 CircuitBreaker, Retry, RateLimiter, TimeLimiter는 [회복 정책과 실험 프로필](use-cases/order-payment-recovery.md#조회-회복-정책)로 적용하며 기본 프로필에서는 비활성화한다. 운영 활성화 등 후속 결정은 같은 문서의 미정 사항으로 남긴다. 각 문서 상단의 안내에서 결제 흐름을 연결한다.
+결제 요청·PG 연동·결과 반영과 callback·reconcile·주기 조회를 구현했다. 조회 CircuitBreaker, Retry, RateLimiter, TimeLimiter는 [회복 정책과 실험 프로필](use-cases/order-payment-recovery.md#조회-회복-정책)로 적용하며 기본 프로필에서는 비활성화한다. 운영 활성화 등 후속 결정은 같은 문서의 미정 사항으로 남긴다. PG 성공으로 확정한 주문은 Kafka 이벤트로 `commerce-streamer`에 전달해 상품 구매 활동으로 저장한다. 각 문서 상단의 안내에서 결제 흐름을 연결한다.
 
 | 문서 | 다루는 내용 |
 | --- | --- |
 | [주문 결제 요청](use-cases/order-payment-request.md) | 멱등성·재요청 정책, 재고 차감과 PG 요청 조율, 동시성 |
 | [주문 결제 결과 반영](use-cases/order-payment-result.md) | 결과 판정, 중복 반영 방지, 충돌 기록, 주문 품목 스냅샷 기반 재고 보상 |
 | [주문 결제 회복](use-cases/order-payment-recovery.md) | 수동 재확인·주기 조회, 조회 회복 정책과 실행 프로필, 재시작 후 확인과 복구 한계 |
+| [주문 확정 이벤트](use-cases/order-confirmed-event.md) | `OrderConfirmed` 계약, commit 뒤 발행과 누락 구간, 구매 활동 소비의 중복 판정, listener·offset 정책 |
 
 ## 외부 시스템 연동
 
@@ -57,7 +58,7 @@ Commerce API의 설계를 책임별로 안내한다. 시스템 구조와 도메�
 
 | 문서 | 다루는 내용 |
 | --- | --- |
-| [영속성 매핑 설계](persistence-mapping.md) | Domain과 JPA 저장 모델의 경계·변환, 결제 스키마와 과거 데이터 전환 |
+| [영속성 매핑 설계](persistence-mapping.md) | Domain과 JPA 저장 모델의 경계·변환, 결제·확정 시각·구매 활동 스키마와 과거 데이터 전환 |
 | [오류 변환 설계](error-mapping.md) | Domain 오류 표현과 HTTP/API 응답 변환 방식 |
 
 ## 문서 갱신 기준

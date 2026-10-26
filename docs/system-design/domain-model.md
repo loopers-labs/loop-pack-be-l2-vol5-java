@@ -38,6 +38,7 @@ classDiagram
         결제수단: POINT | PG
         결제액
         결제결과
+        확정시각
     }
     class PaymentAttempt {
         시도 키
@@ -46,6 +47,10 @@ classDiagram
         금액
         상태
         충돌 사유
+    }
+    class ProductPurchaseActivity {
+        수량: 양수
+        확정시각
     }
     class OrderItem {
         <<VO>>
@@ -68,6 +73,9 @@ classDiagram
     OrderItem "N" ..> "1" Product : productId (ID reference, no FK)
 
     PaymentAttempt "0..1" ..> "1" Order : orderId
+
+    ProductPurchaseActivity "N" ..> "1" Order : orderId (event fact, no FK)
+    ProductPurchaseActivity "N" ..> "1" Product : productId (event fact, no FK)
 ```
 
 ### User
@@ -184,7 +192,7 @@ classDiagram
 
 - [관계와 경계] Order는 User와 별도 애그리게이트이며, OrderItem VO를 내부에 보유하는 애그리게이트 루트다.
 - [관계 표현] Order는 `userId`로 User를 참조하며 User 객체를 포함하지 않는다. OrderItem 컬렉션은 직접 보유한다.
-- [도메인 책임] Order는 자신의 소유자 정보, 품목 구성과 총액, 결제 상태 전이, 결제수단·결제액과 결제 결과를 관리한다.
+- [도메인 책임] Order는 자신의 소유자 정보, 품목 구성과 총액, 결제 상태 전이, 결제수단·결제액·결제 결과와 확정 시각을 관리한다.
 - [도메인 규칙] Order 생성 시 여러 OrderItem의 수량·단가·합계와 DRAFT 상태를 저장한다.
 - [도메인 규칙] Order 생성 시 같은 `productId`의 품목은 수량을 합산해 하나의 OrderItem으로 저장한다.
 - [도메인 규칙] Order 생성 시 재고는 차감하지 않는다.
@@ -193,7 +201,7 @@ classDiagram
 - [도메인 규칙] User는 자신의 DRAFT Order만 결제를 요청할 수 있다.
 - [도메인 규칙] 결제 요청 시 상품 사용 가능 여부를 다시 검사하고 각 Product의 합산된 총수량으로 재고를 확보한다. 삭제된 상품이 포함되거나 재고가 부족하면 요청을 거절한다.
 - [도메인 규칙] Order 상태는 `DRAFT → PAYMENT_PENDING → CONFIRMED` 또는 `PAYMENT_PENDING → PAYMENT_FAILED`로만 바뀐다. 처리 중과 결과 미확인은 모두 `PAYMENT_PENDING`이고, 구분은 PaymentAttempt가 맡는다.
-- [도메인 규칙] 결제 요청은 결제수단을 `PG`로 기록한다. PG 성공이 확인되면 결제액(주문 총액)과 결제 결과 `SUCCESS`를 저장하고 `CONFIRMED`로 바꾼다. PG 실패가 확인되면 결제 결과 `FAILED`를 저장하고 `PAYMENT_FAILED`로 바꾸며, 결제액은 비워 둔다. 외부 `PENDING`을 `CONFIRMED`로 바꾸지 않는다.
+- [도메인 규칙] 결제 요청은 결제수단을 `PG`로 기록한다. PG 성공이 확인되면 결제액(주문 총액), 결제 결과 `SUCCESS`와 확정 시각을 저장하고 `CONFIRMED`로 바꾼다. PG 실패가 확인되면 결제 결과 `FAILED`를 저장하고 `PAYMENT_FAILED`로 바꾸며, 결제액은 비워 둔다. 외부 `PENDING`을 `CONFIRMED`로 바꾸지 않는다.
 - [도메인 규칙] DRAFT가 아닌 주문의 결제 요청은 `409`로 거절한다. 같은 시도 키의 재전송은 이 전이 전에 [멱등성과 재요청 정책](use-cases/order-payment-request.md#멱등성과-재요청-정책)이 저장된 상태로 응답한다.
 - [도메인 규칙] `PAYMENT_PENDING`이 아닌 주문의 결과 반영은 업무 충돌이 아니라 정합성 오류다. 미종결 시도는 `PAYMENT_PENDING` 주문에만 존재하므로 불변식이 깨진 경우에만 생긴다. 결과 반영 전체를 rollback하고 내부 오류로 처리한다. 경로별 응답은 [결과 반영의 실패 처리](use-cases/order-payment-result.md#실패-처리)를 따른다.
 - [도메인 규칙] 재고를 차감한 `PAYMENT_PENDING` 주문은 이후 상품이 삭제돼도 저장된 품목·금액으로 결과를 마무리한다.
@@ -202,6 +210,8 @@ classDiagram
 - [불변식] Order 총액은 각 OrderItem의 품목 금액 합과 일치해야 하며 `long`으로 표현 가능한 범위 안이어야 한다. 합산 결과가 `Long.MAX_VALUE`를 초과하면 주문 생성을 `400 Bad Request`로 거절한다.
 - [불변식] 하나의 Order에서 결제 결과는 한 번만 반영한다.
 - [불변식] CONFIRMED 상태의 Order에는 결제수단, 결제액과 결제 결과가 저장되어야 한다. 이전 포인트 결제 주문의 결제수단은 `POINT`다.
+- [불변식] 확정 시각은 최초 확정 때 한 번 저장하고 바꾸지 않는다. 확정 시각을 저장하기 전에 확정한 주문(POINT·PG)은 비어 있을 수 있으며, 다른 시각으로 추정해 채우지 않는다.
+- [도메인 규칙] 최초 PG 성공 확정은 [주문 확정 이벤트](use-cases/order-confirmed-event.md)의 근거다. 확정 시각이 없는 이전 확정 주문은 이벤트를 소급 발행하지 않는다.
 - [복원 규칙] 결제수단은 저장된 값을 복원한다. 과거 POINT 주문의 데이터 전환과 새 PG 주문의 저장 규칙은 [영속성 매핑 설계](persistence-mapping.md#결제수단과-과거-주문-전환)를 따른다. CONFIRMED 상태만으로 결제수단을 추론하지 않는다.
 
 #### 결제 재고 보상
@@ -258,3 +268,12 @@ classDiagram
 - [도메인 규칙] 복수 거래나 결과를 판정할 수 없는 모순 관찰은 충돌 사유(`MULTIPLE_TRANSACTIONS`, `TRANSACTION_MISMATCH`, `RESULT_CONTRADICTION`)로 보존한다. 처음 기록한 사유와 시각을 유지하고 지우거나 덮어쓰지 않으며, 충돌 기록은 시도 상태·거래 키·주문·재고를 바꾸지 않는다. 기록 규칙은 [충돌 기록](use-cases/order-payment-result.md#충돌-기록)을 따른다.
 - [불변식] 카드 정보는 저장하지 않는다.
 
+### ProductPurchaseActivity
+
+- [관계와 경계] 상품 구매 활동은 `commerce-streamer`가 소유하는 별도 사실이다. Order·Product 애그리게이트를 참조하지 않고 `orderId`, `productId` 값만 보존한다.
+- [도메인 책임] 확정 주문에서 상품별로 구매한 수량과 최초 확정 시각을 보존한다. 이후 주간 상품 랭킹의 입력이다.
+- [도메인 규칙] 구매 활동은 `OrderConfirmed` 이벤트로만 만든다. 상품의 존재·삭제 여부와 현재 가격을 다시 조회하지 않으며, 결제·재고를 다시 처리하지 않는다.
+- [도메인 규칙] 같은 확정 사실을 다시 받으면 활동을 추가하지 않는다. 같은 이벤트 ID나 주문에 다른 사실이 오면 충돌로 드러내고 저장하지 않는다. 판정과 저장 방식은 [주문 확정 이벤트](use-cases/order-confirmed-event.md#소비)를 따른다.
+- [불변식] 한 주문의 같은 상품 활동은 하나이며 수량은 양수다.
+- [불변식] 확정 시각은 이벤트의 최초 확정 시각이며 저장 뒤 바뀌지 않는다. 소비 시각이 아니다.
+- [불변식] 한 주문의 구매 활동은 모든 품목이 함께 있거나 하나도 없다.
