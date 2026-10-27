@@ -8,6 +8,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.time.ZonedDateTime;
 import java.util.List;
 
 import static com.loopers.support.ErrorAssertions.assertThrowsErrorType;
@@ -16,6 +17,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** AG-06 주문. INV-06, INV-07, INV-08, INV-09, INV-12, ST-03 (DRAFT → AWAITING_PAYMENT → CONFIRMED | FAILED). */
 class OrderModelTest {
+
+    private static final ZonedDateTime NOW = ZonedDateTime.parse("2026-09-07T10:00:00.123456789+09:00[Asia/Seoul]");
 
     private static OrderModel.Line line(long productId, int quantity, long unitPrice) {
         return new OrderModel.Line(productId, quantity, unitPrice);
@@ -157,16 +160,16 @@ class OrderModelTest {
         assertThat(order.isSamePaymentAttempt("key-1")).isTrue();
     }
 
-    @DisplayName("[ST-03][INV-09] confirm() 으로 AWAITING_PAYMENT → CONFIRMED. 결제액 = 합계, 확정 시각 기록.")
+    @DisplayName("[ST-03][INV-09] confirm() 으로 AWAITING_PAYMENT → CONFIRMED. 결제액 = 합계, 확정 시각은 받은 시각을 마이크로초까지 잘라 기록.")
     @Test
     void confirm_transitionsToConfirmed() {
         OrderModel order = awaitingPayment();
 
-        order.confirm();
+        order.confirm(NOW);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
         assertThat(order.getPaidAmount()).isEqualTo(order.getTotalAmount());
-        assertThat(order.getConfirmedAt()).isNotNull();
+        assertThat(order.getConfirmedAt()).isEqualTo(ZonedDateTime.parse("2026-09-07T10:00:00.123456+09:00[Asia/Seoul]"));
         assertThat(order.isAwaitingPayment()).isFalse();
     }
 
@@ -188,16 +191,16 @@ class OrderModelTest {
     void confirmAndFail_throwIllegalState_whenNotAwaitingPayment() {
         OrderModel draft = draft();
         OrderModel confirmed = awaitingPayment();
-        confirmed.confirm();
+        confirmed.confirm(NOW);
         var firstConfirmedAt = confirmed.getConfirmedAt();
         OrderModel failed = awaitingPayment();
         failed.fail();
 
-        assertThatThrownBy(draft::confirm).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> draft.confirm(NOW)).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(draft::fail).isInstanceOf(IllegalStateException.class);
-        assertThatThrownBy(confirmed::confirm).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> confirmed.confirm(NOW.plusSeconds(1))).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(confirmed::fail).isInstanceOf(IllegalStateException.class);
-        assertThatThrownBy(failed::confirm).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> failed.confirm(NOW)).isInstanceOf(IllegalStateException.class);
 
         assertThat(draft.getStatus()).isEqualTo(OrderStatus.DRAFT);
         assertThat(confirmed.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
