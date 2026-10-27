@@ -306,7 +306,7 @@ class OrderPaymentReconcileV1ApiE2ETest {
             User other = userRepository.save(User.create());
             Fixture draft = draft();
             Order pointOrder = orderRepository.save(Order.reconstitute(null, fixture.userId(), OrderStatus.CONFIRMED,
-                7_000L, 7_000L, PaymentResult.SUCCESS, PaymentMethod.POINT,
+                7_000L, 7_000L, PaymentResult.SUCCESS, PaymentMethod.POINT, null,
                 List.of(OrderItem.create(fixture.productId(), "Air Max", 3_500L, QUANTITY))));
             int lookups = TestPgControl.stats(fixture.providerOrderId()).lookupRequests();
 

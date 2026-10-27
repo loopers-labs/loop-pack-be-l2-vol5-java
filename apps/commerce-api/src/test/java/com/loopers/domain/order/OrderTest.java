@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.IntStream;
@@ -15,6 +16,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class OrderTest {
+
+    private static final ZonedDateTime CONFIRMED_AT = ZonedDateTime.parse("2026-09-07T10:00:00.123456+09:00");
 
     @Test
     void createsDraftAndCalculatesTotal() {
@@ -211,7 +214,7 @@ class OrderTest {
         Order pending = draftOrder();
         pending.requestPgPayment();
         Order pointConfirmed = Order.reconstitute(2L, 1L, OrderStatus.CONFIRMED, 200L, 200L, PaymentResult.SUCCESS,
-            PaymentMethod.POINT, List.of(OrderItem.create(10L, "Air Max", 100L, 2)));
+            PaymentMethod.POINT, null, List.of(OrderItem.create(10L, "Air Max", 100L, 2)));
 
         assertConflict(pending::requestPgPayment);
         assertConflict(pointConfirmed::requestPgPayment);
@@ -220,18 +223,32 @@ class OrderTest {
         assertThat(pointConfirmed.getPaymentMethod()).isEqualTo(PaymentMethod.POINT);
     }
 
-    @DisplayName("PG 결제 성공은 PAYMENT_PENDING 주문을 CONFIRMED로 바꾸고 총액과 SUCCESS를 저장한다.")
+    @DisplayName("PG 결제 성공은 PAYMENT_PENDING 주문을 CONFIRMED로 바꾸고 총액, SUCCESS와 확정 시각을 저장한다.")
     @Test
     void completesPgPaymentFromPending() {
         Order order = draftOrder();
         order.requestPgPayment();
 
-        order.completePgPayment();
+        order.completePgPayment(CONFIRMED_AT);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
         assertThat(order.getPaymentMethod()).isEqualTo(PaymentMethod.PG);
         assertThat(order.getPaymentAmount()).isEqualTo(200L);
         assertThat(order.getPaymentResult()).isEqualTo(PaymentResult.SUCCESS);
+        assertThat(order.getConfirmedAt()).isEqualTo(CONFIRMED_AT);
+    }
+
+    @DisplayName("확정 시각 없이 PG 결제 성공을 반영하면 정합성 오류(INTERNAL_ERROR)로 거절하고 결제 대기를 유지한다.")
+    @Test
+    void rejectsPgPaymentCompletionWithoutConfirmedAt() {
+        Order order = draftOrder();
+        order.requestPgPayment();
+
+        assertIntegrityError(() -> order.completePgPayment(null));
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+        assertThat(order.getPaymentAmount()).isNull();
+        assertThat(order.getConfirmedAt()).isNull();
     }
 
     @DisplayName("PG 결제 실패는 PAYMENT_PENDING 주문을 PAYMENT_FAILED로 바꾸고 결제액은 비워 둔다.")
@@ -246,6 +263,7 @@ class OrderTest {
         assertThat(order.getPaymentMethod()).isEqualTo(PaymentMethod.PG);
         assertThat(order.getPaymentAmount()).isNull();
         assertThat(order.getPaymentResult()).isEqualTo(PaymentResult.FAILED);
+        assertThat(order.getConfirmedAt()).isNull();
     }
 
     @DisplayName("PG 결제 요청과 실패 이후에도 재고 보상 기준인 합산 품목 스냅샷을 보존한다.")
@@ -281,16 +299,19 @@ class OrderTest {
         failed.failPgPayment();
         Order completed = draftOrder();
         completed.requestPgPayment();
-        completed.completePgPayment();
+        completed.completePgPayment(CONFIRMED_AT);
 
-        assertIntegrityError(draft::completePgPayment);
+        assertIntegrityError(() -> draft.completePgPayment(CONFIRMED_AT));
         assertIntegrityError(draft::failPgPayment);
-        assertIntegrityError(failed::completePgPayment);
+        assertIntegrityError(() -> failed.completePgPayment(CONFIRMED_AT));
         assertIntegrityError(completed::failPgPayment);
+        assertIntegrityError(() -> completed.completePgPayment(CONFIRMED_AT.plusHours(1)));
         assertThat(draft.getStatus()).isEqualTo(OrderStatus.DRAFT);
         assertThat(failed.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED);
+        assertThat(failed.getConfirmedAt()).isNull();
         assertThat(completed.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
         assertThat(completed.getPaymentResult()).isEqualTo(PaymentResult.SUCCESS);
+        assertThat(completed.getConfirmedAt()).isEqualTo(CONFIRMED_AT);
     }
 
     @DisplayName("복원은 저장된 결제수단을 그대로 쓰고 주문 상태로 결제수단을 추론하지 않는다.")
@@ -299,16 +320,36 @@ class OrderTest {
         List<OrderItem> items = List.of(OrderItem.create(10L, "Air Max", 100L, 2));
 
         Order pointConfirmed = Order.reconstitute(
-            1L, 1L, OrderStatus.CONFIRMED, 200L, 200L, PaymentResult.SUCCESS, PaymentMethod.POINT, items
+            1L, 1L, OrderStatus.CONFIRMED, 200L, 200L, PaymentResult.SUCCESS, PaymentMethod.POINT, null, items
         );
         Order pgConfirmed = Order.reconstitute(
-            2L, 1L, OrderStatus.CONFIRMED, 200L, 200L, PaymentResult.SUCCESS, PaymentMethod.PG, items
+            2L, 1L, OrderStatus.CONFIRMED, 200L, 200L, PaymentResult.SUCCESS, PaymentMethod.PG, CONFIRMED_AT, items
         );
-        Order draft = Order.reconstitute(3L, 1L, OrderStatus.DRAFT, 200L, null, null, null, items);
+        Order draft = Order.reconstitute(3L, 1L, OrderStatus.DRAFT, 200L, null, null, null, null, items);
 
         assertThat(pointConfirmed.getPaymentMethod()).isEqualTo(PaymentMethod.POINT);
         assertThat(pgConfirmed.getPaymentMethod()).isEqualTo(PaymentMethod.PG);
         assertThat(draft.getPaymentMethod()).isNull();
+    }
+
+    @DisplayName("복원은 저장된 확정 시각을 그대로 쓰고, 확정 시각을 저장하기 전에 확정한 주문은 비워 둔다.")
+    @Test
+    void restoresStoredConfirmedAtWithoutInferring() {
+        List<OrderItem> items = List.of(OrderItem.create(10L, "Air Max", 100L, 2));
+
+        Order pgConfirmed = Order.reconstitute(
+            1L, 1L, OrderStatus.CONFIRMED, 200L, 200L, PaymentResult.SUCCESS, PaymentMethod.PG, CONFIRMED_AT, items
+        );
+        Order legacyPgConfirmed = Order.reconstitute(
+            2L, 1L, OrderStatus.CONFIRMED, 200L, 200L, PaymentResult.SUCCESS, PaymentMethod.PG, null, items
+        );
+        Order legacyPointConfirmed = Order.reconstitute(
+            3L, 1L, OrderStatus.CONFIRMED, 200L, 200L, PaymentResult.SUCCESS, PaymentMethod.POINT, null, items
+        );
+
+        assertThat(pgConfirmed.getConfirmedAt()).isEqualTo(CONFIRMED_AT);
+        assertThat(legacyPgConfirmed.getConfirmedAt()).isNull();
+        assertThat(legacyPointConfirmed.getConfirmedAt()).isNull();
     }
 
     @DisplayName("DRAFT가 아닌 주문을 결제수단 없이 복원하면 정합성 오류(INTERNAL_ERROR)로 거절한다.")
@@ -317,7 +358,7 @@ class OrderTest {
     void rejectsRestoringPaidOrderWithoutPaymentMethod(OrderStatus status) {
         List<OrderItem> items = List.of(OrderItem.create(10L, "Air Max", 100L, 2));
 
-        assertIntegrityError(() -> Order.reconstitute(1L, 1L, status, 200L, 200L, PaymentResult.SUCCESS, null, items));
+        assertIntegrityError(() -> Order.reconstitute(1L, 1L, status, 200L, 200L, PaymentResult.SUCCESS, null, null, items));
     }
 
     private Order draftOrder() {

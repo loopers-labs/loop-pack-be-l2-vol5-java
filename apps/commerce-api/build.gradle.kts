@@ -64,9 +64,11 @@ tasks.test {
     val fixtureJar = rootProject.file("apps/test-pg/build/libs/test-pg.jar")
     val safetyMigration = rootProject.file("docker/mysql/pg-payment-safety-migration.sql")
     val conflictMigration = rootProject.file("docker/mysql/pg-payment-conflict-migration.sql")
+    val confirmedAtMigration = rootProject.file("docker/mysql/order-confirmed-at-migration.sql")
     systemProperty("test-pg.dockerfile", fixtureDockerfile.absolutePath)
     systemProperty("test-pg.jar", fixtureJar.absolutePath)
     systemProperty("payment.safety-migration", safetyMigration.absolutePath)
     systemProperty("payment.conflict-migration", conflictMigration.absolutePath)
-    inputs.files(fixtureDockerfile, fixtureJar, safetyMigration, conflictMigration)
+    systemProperty("order.confirmed-at-migration", confirmedAtMigration.absolutePath)
+    inputs.files(fixtureDockerfile, fixtureJar, safetyMigration, conflictMigration, confirmedAtMigration)
 }
