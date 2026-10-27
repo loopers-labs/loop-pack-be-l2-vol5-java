@@ -8,6 +8,8 @@ import com.loopers.domain.productlike.ProductLikeRepository;
 import com.loopers.domain.productlike.ProductStatModel;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.product.ProductRepository;
+import com.loopers.domain.product.ProductStockLedgerModel;
+import com.loopers.domain.product.ProductStockModel;
 import com.loopers.domain.point.PointModel;
 import com.loopers.domain.point.PointRepository;
 import com.loopers.domain.order.OrderModel;
@@ -74,10 +76,12 @@ public class Fixtures {
             java.util.List.of(new OrderModel.Line(product.getId(), quantity, product.getPrice()))));
     }
 
+    /** CONFIRMED 주문 (DRAFT → AWAITING_PAYMENT → CONFIRMED). 재고·원장은 건드리지 않는다. */
     @Transactional
     public OrderModel confirmedOrder(Long userId, ProductModel product, int quantity) {
         OrderModel order = orderRepository.save(OrderModel.create(userId,
             java.util.List.of(new OrderModel.Line(product.getId(), quantity, product.getPrice()))));
+        order.startPayment("fixture-" + order.getId(), "SAMSUNG", "1234-5678-9814-1451");
         order.confirm();
         return order;
     }
@@ -121,10 +125,12 @@ public class Fixtures {
         return brand;
     }
 
-    /** 상품 + 좋아요 수 0 인 행 (DR-36). */
+    /** 상품 + 현재 재고 행과 초기 재고 ADJUSTMENT (DR-38) + 좋아요 수 0 인 행 (DR-36). */
     @Transactional
     public ProductModel product(Long brandId, String name, long price, int stock) {
-        ProductModel product = productRepository.save(new ProductModel(brandId, name, price, stock));
+        ProductModel product = productRepository.save(new ProductModel(brandId, name, price));
+        ProductStockModel productStock = productRepository.saveStock(new ProductStockModel(product.getId()));
+        productStock.adjustTo(stock).ifPresent(productRepository::saveLedger);
         productLikeRepository.saveStat(new ProductStatModel(product.getId(), brandId));
         return product;
     }
@@ -147,6 +153,19 @@ public class Fixtures {
 
     public ProductStatModel reloadStat(Long productId) {
         return productLikeRepository.findStat(productId).orElseThrow();
+    }
+
+    /** TB-10 현재 재고 (DR-38). */
+    public int stockOf(Long productId) {
+        return productRepository.findStock(productId).orElseThrow().getAvailable();
+    }
+
+    /** TB-11 원장, 쌓인 순서대로 (DR-38). */
+    public java.util.List<ProductStockLedgerModel> ledgerOf(Long productId) {
+        return entityManager.createQuery(
+                "select l from ProductStockLedgerModel l where l.productId = :productId order by l.id", ProductStockLedgerModel.class)
+            .setParameter("productId", productId)
+            .getResultList();
     }
 
     public ProductModel reloadProduct(Long productId) {

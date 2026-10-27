@@ -121,7 +121,7 @@ class ProductCacheIntegrationTest {
 
     private OrderInfo confirmedOrder(Long productId, int quantity) {
         OrderInfo order = orderFacade.createOrder(user.getId(), List.of(new OrderItemCommand(productId, quantity)));
-        return orderFacade.confirmOrder(user.getId(), order.id());
+        return orderFacade.confirmOrder(user.getId(), order.id(), "attempt-" + order.id(), "SAMSUNG", "1234-5678-9814-1451");
     }
 
     /** 결과 조회 없이 응답했는지 (hit). */
@@ -197,7 +197,7 @@ class ProductCacheIntegrationTest {
             assertThat(itemOf(page, target.getId()).price()).isEqualTo(5000L);
             assertThat(itemOf(page, other.getId()).price()).isEqualTo(3000L);
             assertThat(ids(page)).isEqualTo(orderBefore);
-            OrderView.Detail placed = orderReader.getMyOrder(user.getId(), order.id());
+            OrderView.MyDetail placed = orderReader.getMyOrder(user.getId(), order.id());
             assertThat(placed.totalAmount()).isEqualTo(2000L);
             assertThat(placed.items().get(0).unitPrice()).isEqualTo(1000L);
         }
@@ -226,7 +226,7 @@ class ProductCacheIntegrationTest {
             PageResult<ProductView.Summary> page = latestPage();
             assertThat(ids(page)).containsExactly(b1.getId());
             assertThat(page.totalCount()).isEqualTo(1);
-            OrderView.Detail placed = orderReader.getMyOrder(user.getId(), order.id());
+            OrderView.MyDetail placed = orderReader.getMyOrder(user.getId(), order.id());
             assertThat(placed.items()).extracting(OrderView.Item::productId).containsExactly(a1.getId());
             assertThat(placed.totalAmount()).isEqualTo(1000L);
         }

@@ -2,9 +2,11 @@ package com.loopers.infrastructure.order;
 
 import com.loopers.domain.order.OrderModel;
 import com.loopers.domain.order.OrderRepository;
+import com.loopers.domain.order.OrderStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.time.ZonedDateTime;
 import java.util.Optional;
 
 @RequiredArgsConstructor
@@ -23,5 +25,19 @@ public class OrderRepositoryImpl implements OrderRepository {
             return Optional.empty();
         }
         return orderJpaRepository.findById(id);
+    }
+
+    @Override
+    public Optional<OrderModel> findForUpdate(Long id) {
+        if (id == null) {
+            return Optional.empty();
+        }
+        return orderJpaRepository.findByIdForUpdate(id);
+    }
+
+    @Override
+    public Optional<OrderModel> findExpiredAwaitingForUpdate(ZonedDateTime startedBefore) {
+        return orderJpaRepository.findFirstByStatusAndPaymentStartedAtLessThanEqualOrderByPaymentStartedAtAsc(
+            OrderStatus.AWAITING_PAYMENT, startedBefore);
     }
 }

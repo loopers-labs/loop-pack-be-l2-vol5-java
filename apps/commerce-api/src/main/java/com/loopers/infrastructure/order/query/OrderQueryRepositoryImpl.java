@@ -33,6 +33,36 @@ public class OrderQueryRepositoryImpl implements OrderQueryRepository {
         return fetchDetails(selectHeaders().where(orderModel.id.eq(orderId))).stream().findFirst();
     }
 
+    /** 헤더에 결제 컬럼(결제 시도 키·카드 종류·마스킹 카드번호)을 더해 읽는다. 결제 시도 키가 없으면(DRAFT) payment 는 null. */
+    @Override
+    public Optional<OrderView.MyDetail> findMyDetail(Long orderId) {
+        Tuple h = queryFactory.select(
+                orderModel.id, orderModel.userId, orderModel.status, orderModel.totalAmount,
+                orderModel.paidAmount, orderModel.confirmedAt, orderModel.createdAt,
+                orderModel.paymentAttemptKey, orderModel.cardType, orderModel.maskedCardNo)
+            .from(orderModel)
+            .where(orderModel.id.eq(orderId))
+            .fetchOne();
+        if (h == null) {
+            return Optional.empty();
+        }
+        String paymentAttemptKey = h.get(orderModel.paymentAttemptKey);
+        OrderView.Payment payment = paymentAttemptKey == null
+            ? null
+            : new OrderView.Payment(h.get(orderModel.cardType), h.get(orderModel.maskedCardNo), paymentAttemptKey);
+        OrderStatus status = h.get(orderModel.status);
+        return Optional.of(new OrderView.MyDetail(
+            orderId,
+            h.get(orderModel.userId),
+            status == null ? null : status.name(),
+            h.get(orderModel.totalAmount),
+            h.get(orderModel.paidAmount),
+            h.get(orderModel.confirmedAt),
+            payment,
+            fetchItems(List.of(orderId)).getOrDefault(orderId, List.of()),
+            h.get(orderModel.createdAt)));
+    }
+
     /** 설계 3-7-A FR-ORDER-03: TB-06.user_id, created_at desc, id desc. */
     @Override
     public PageResult<OrderView.Detail> findPageByUserId(Long userId, PageQuery query) {

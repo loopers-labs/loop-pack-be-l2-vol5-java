@@ -24,6 +24,27 @@ public final class OrderView {
     ) {
     }
 
+    /**
+     * FR-ORDER-04 내 주문 상세. Detail 에 결제 정보를 더한다. 시도 상태·최종 결과는 status (AWAITING_PAYMENT·CONFIRMED·FAILED).
+     * payment 는 DRAFT 면 null. PG 거래 키는 담지 않는다.
+     */
+    public record MyDetail(
+        Long id,
+        Long userId,
+        String status,
+        Long totalAmount,
+        Long paidAmount,
+        ZonedDateTime confirmedAt,
+        Payment payment,
+        List<Item> items,
+        ZonedDateTime createdAt
+    ) {
+    }
+
+    /** 결제수단(카드 종류, 마스킹한 카드번호)과 결제 시도 키. */
+    public record Payment(String cardType, String maskedCardNo, String paymentAttemptKey) {
+    }
+
     /** 설계 4-3-0 OrderItemResponse. 항목 금액 = 단가 × 수량 (저장하지 않는다, DR-13). */
     public record Item(Long productId, Integer quantity, Long unitPrice, Long lineAmount) {
     }

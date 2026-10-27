@@ -13,7 +13,7 @@ import java.util.List;
 public interface ProductJpaRepository extends JpaRepository<ProductModel, Long> {
     List<ProductModel> findAllByBrandIdAndDeletedAtIsNull(Long brandId);
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Lock(LockModeType.PESSIMISTIC_READ)
     @Query("select p from ProductModel p where p.id in :ids order by p.id")
-    List<ProductModel> findAllByIdInForUpdate(@Param("ids") Collection<Long> ids);
+    List<ProductModel> findAllByIdInForShare(@Param("ids") Collection<Long> ids);
 }

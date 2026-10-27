@@ -7,6 +7,9 @@
 --   - 스키마가 이미 만들어져 있어야 한다 (local 프로필로 앱을 한 번 띄우면 ddl-auto: update 로 생성됨).
 --   - local 프로필은 ddl-auto: update 라 앱을 다시 띄워도 데이터는 유지된다.
 --     단 update 는 엔티티에서 뺀 인덱스를 DB 에서 지우지 않으므로, 인덱스를 빼고 비교할 때는 직접 DROP INDEX 한다.
+--   - product.stock 컬럼이 있어야 한다. 엔티티에서 이 컬럼을 뺐으므로(DR-38) 새로 만든 스키마에는 없다. 그때는 먼저
+--       ALTER TABLE product ADD COLUMN stock INT NOT NULL DEFAULT 0;
+--     로 만들고, seed 뒤에 docs/week5/product-stock.sql 로 재고 테이블에 옮기고 컬럼을 지운다.
 --   - root 로 실행한다 (sql_log_bin, innodb_buffer_pool_size 변경에 권한이 필요).
 --
 -- 실행
