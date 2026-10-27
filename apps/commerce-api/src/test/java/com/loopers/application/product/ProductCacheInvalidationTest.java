@@ -6,7 +6,13 @@ import com.loopers.application.order.OrderCommand;
 import com.loopers.application.order.OrderFacade;
 import com.loopers.application.order.OrderInfo;
 import com.loopers.config.cache.ProductCacheRedisConfig;
+import com.loopers.domain.payment.PaymentAttempt;
+import com.loopers.domain.payment.PaymentFinalResult;
+import com.loopers.domain.payment.PaymentResultService;
 import com.loopers.domain.point.Point;
+import com.loopers.infrastructure.payment.FakePaymentGateway;
+import com.loopers.infrastructure.payment.FakePaymentGatewayConfig;
+import com.loopers.infrastructure.payment.PaymentAttemptJpaRepository;
 import com.loopers.infrastructure.point.PointJpaRepository;
 import com.loopers.utils.DatabaseCleanUp;
 import com.loopers.utils.RedisCleanUp;
@@ -20,6 +26,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.test.context.jdbc.Sql;
 
@@ -35,6 +42,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @SpringBootTest
 @Sql("/sql/product-perf-seed.sql")
+@Import(FakePaymentGatewayConfig.class)
 class ProductCacheInvalidationTest {
 
     private static final Long FIRST_PRODUCT_ID = 5406L;
@@ -44,6 +52,9 @@ class ProductCacheInvalidationTest {
     private final BrandFacade brandFacade;
     private final LikeFacade likeFacade;
     private final OrderFacade orderFacade;
+    private final PaymentResultService paymentResultService;
+    private final FakePaymentGateway fakePaymentGateway;
+    private final PaymentAttemptJpaRepository paymentAttemptJpaRepository;
     private final PointJpaRepository pointJpaRepository;
     private final RedisTemplate<String, String> cacheRedisTemplate;
     private final EntityManagerFactory entityManagerFactory;
@@ -58,6 +69,9 @@ class ProductCacheInvalidationTest {
         BrandFacade brandFacade,
         LikeFacade likeFacade,
         OrderFacade orderFacade,
+        PaymentResultService paymentResultService,
+        FakePaymentGateway fakePaymentGateway,
+        PaymentAttemptJpaRepository paymentAttemptJpaRepository,
         PointJpaRepository pointJpaRepository,
         @Qualifier(ProductCacheRedisConfig.PRODUCT_CACHE_REDIS_TEMPLATE) RedisTemplate<String, String> cacheRedisTemplate,
         EntityManagerFactory entityManagerFactory,
@@ -68,6 +82,9 @@ class ProductCacheInvalidationTest {
         this.brandFacade = brandFacade;
         this.likeFacade = likeFacade;
         this.orderFacade = orderFacade;
+        this.paymentResultService = paymentResultService;
+        this.fakePaymentGateway = fakePaymentGateway;
+        this.paymentAttemptJpaRepository = paymentAttemptJpaRepository;
         this.pointJpaRepository = pointJpaRepository;
         this.cacheRedisTemplate = cacheRedisTemplate;
         this.entityManagerFactory = entityManagerFactory;
@@ -85,6 +102,16 @@ class ProductCacheInvalidationTest {
         sqlCounter.disable();
         databaseCleanUp.truncateAllTables();
         redisCleanUp.truncateAll();
+    }
+
+    /**
+     * 가짜 PG 를 성공으로 바꾸고 TX B 로 주문을 확정한다. 결제액(paidAmount)은 이 단계에서 기록된다.
+     */
+    private OrderInfo settlePaymentSuccess(Long userId, Long orderId) {
+        PaymentAttempt attempt = paymentAttemptJpaRepository.findByOrderId(orderId).orElseThrow();
+        fakePaymentGateway.markSuccess(attempt.getTransactionKey());
+        paymentResultService.applyFinal(attempt.getId(), PaymentFinalResult.success(attempt.getTransactionKey()));
+        return orderFacade.getOrder(userId, orderId);
     }
 
     private List<ProductInfo> queryFixturePage() {
@@ -266,7 +293,9 @@ class ProductCacheInvalidationTest {
             fillCache();
 
             // act
-            orderFacade.confirmOrder(userId, orderId);
+            orderFacade.confirmOrder(userId, orderId,
+                new OrderCommand.Confirm("k-" + orderId, "TEST", "0000-0000-0000-0000"));
+            settlePaymentSuccess(userId, orderId);
             boolean keyExistsAfterWrite = cacheRedisTemplate.hasKey(CACHE_KEY);
             List<ProductInfo> result = queryFixturePage();
 
@@ -287,7 +316,9 @@ class ProductCacheInvalidationTest {
             point.charge(10_000L);
             pointJpaRepository.save(point);
             Long orderId = orderFacade.createOrder(userId, List.of(new OrderCommand.Item(FIRST_PRODUCT_ID, 2))).orderId();
-            return orderFacade.confirmOrder(userId, orderId);
+            orderFacade.confirmOrder(userId, orderId,
+                new OrderCommand.Confirm("k-" + orderId, "TEST", "0000-0000-0000-0000"));
+            return settlePaymentSuccess(userId, orderId);
         }
 
         @DisplayName("주문 확정 뒤 그 상품의 가격을 수정해도, 기존 주문의 단가·결제액은 변경 전 가격 그대로다.")

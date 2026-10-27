@@ -22,8 +22,19 @@ import java.util.Map;
 @Table(name = "orders")
 public class Order extends BaseEntity {
 
+    /**
+     * DRAFT → PAYMENT_PENDING (TX A) → CONFIRMED / PAYMENT_FAILED (TX B). CONFIRMED·PAYMENT_FAILED 는 종결이다.
+     */
     public enum OrderStatus {
-        DRAFT, CONFIRMED
+        DRAFT, PAYMENT_PENDING, CONFIRMED, PAYMENT_FAILED
+    }
+
+    /**
+     * 무엇으로 결제했는가. 상태(어디까지 진행됐는가)와 다른 축이다.
+     * 교체 전 POINT 로 확정한 주문은 POINT, PG 결제를 시작한 주문은 PG, 아직 결제하지 않은 DRAFT 는 null 이다.
+     */
+    public enum PaymentMethod {
+        POINT, PG
     }
 
     private Long userId;
@@ -31,13 +42,16 @@ public class Order extends BaseEntity {
     @Enumerated(EnumType.STRING)
     private OrderStatus status;
 
+    @Enumerated(EnumType.STRING)
+    private PaymentMethod paymentMethod;
+
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
     @JoinColumn(name = "order_id")
     private List<OrderItem> items = new ArrayList<>();
 
     /**
      * 확정 시점에 기록되는 결제액. 확정 전에는 0 이다.
-     * DRAFT → CONFIRMED 전환과 결제액 기록은 OrderRepository.confirmIfDraft 의 조건부 UPDATE 가 맡는다.
+     * PAYMENT_PENDING → CONFIRMED 전환과 결제액 기록은 OrderRepository.finishIfPaymentPending 의 조건부 UPDATE 가 맡는다.
      */
     private long paidAmount;
 
@@ -68,6 +82,18 @@ public class Order extends BaseEntity {
 
     public boolean isOwnedBy(Long userId) {
         return this.userId.equals(userId);
+    }
+
+    /**
+     * TX A ②. 잠긴 행에서 DRAFT → PAYMENT_PENDING 으로 바꾸고 결제수단을 PG 로 기록한다.
+     * DRAFT 가 아니면 결제를 시작할 수 없다. (CONFIRMED 주문의 "이미 확정" 판정은 PaymentStartService 가 먼저 한다.)
+     */
+    public void startPayment() {
+        if (status != OrderStatus.DRAFT) {
+            throw new CoreException(ErrorType.CONFLICT, "결제를 시작할 수 없는 주문 상태입니다.");
+        }
+        this.status = OrderStatus.PAYMENT_PENDING;
+        this.paymentMethod = PaymentMethod.PG;
     }
 
     /**

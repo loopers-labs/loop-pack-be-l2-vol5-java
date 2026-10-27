@@ -16,6 +16,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -130,42 +131,37 @@ class OrderServiceTest {
         }
     }
 
-    @DisplayName("주문을 확정할 때, ")
+    @DisplayName("품목까지 함께 조회할 때, ")
     @Nested
-    class ConfirmOrder {
-        @DisplayName("DRAFT 상태일 때만 CONFIRMED 로 바꾸는 조건부 갱신을 주문·주문자 식별자와 결제액(품목 단가 합)으로 실행하고, 다시 읽은 주문을 반환한다.")
+    class GetOrderWithItems {
+        @DisplayName("존재하는 주문이면, 품목을 함께 읽는 조회로 해당 주문을 반환한다.")
         @Test
-        void confirmsConditionally_andReturnsReloadedOrder() {
+        void returnsOrderWithItems_whenOrderExists() {
             // arrange
             Order order = new Order(1L, List.of(new OrderItem(10L, 2, 1000L)));
-            given(orderRepository.confirmIfDraft(order.getId(), 1L, 2000L)).willReturn(1);
-            given(orderRepository.reload(order)).willReturn(order);
+            given(orderRepository.findByIdWithItems(1L)).willReturn(Optional.of(order));
 
             // act
-            Order result = orderService.confirmOrder(order);
+            Order result = orderService.getOrderWithItems(1L);
 
             // assert
             assertThat(result).isSameAs(order);
-            verify(orderRepository).confirmIfDraft(order.getId(), 1L, 2000L);
-            verify(orderRepository, never()).save(any(Order.class));
+            verify(orderRepository, never()).findById(anyLong());
         }
 
-        @DisplayName("조건부 갱신이 0건이면, 이미 확정된 주문으로 보고 CONFLICT 예외가 발생하고 다시 읽지 않는다.")
+        @DisplayName("존재하지 않는 주문이면, NOT_FOUND 예외가 발생한다.")
         @Test
-        void throwsConflictException_whenNoRowIsUpdated() {
+        void throwsNotFoundException_whenOrderIsAbsent() {
             // arrange
-            Order order = new Order(1L, List.of(new OrderItem(10L, 2, 1000L)));
-            given(orderRepository.confirmIfDraft(order.getId(), 1L, 2000L)).willReturn(0);
+            given(orderRepository.findByIdWithItems(1L)).willReturn(Optional.empty());
 
             // act
             CoreException result = assertThrows(CoreException.class, () -> {
-                orderService.confirmOrder(order);
+                orderService.getOrderWithItems(1L);
             });
 
             // assert
-            assertThat(result.getErrorType()).isEqualTo(ErrorType.CONFLICT);
-            assertThat(result.getMessage()).isEqualTo("이미 확정된 주문입니다.");
-            verify(orderRepository, never()).reload(any(Order.class));
+            assertThat(result.getErrorType()).isEqualTo(ErrorType.NOT_FOUND);
         }
     }
 }

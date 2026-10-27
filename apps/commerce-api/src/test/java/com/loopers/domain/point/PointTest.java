@@ -73,23 +73,4 @@ class PointTest {
             assertThat(point.getBalance()).isEqualTo(1000L);
         }
     }
-
-    /**
-     * 잔액 부족 판정과 차감은 PointRepository.deductIfEnough 의 조건부 UPDATE 가 맡으므로, 입력 검증만 남긴다.
-     */
-    @DisplayName("차감 금액을 검증할 때, ")
-    @Nested
-    class ValidateDeductAmount {
-        @DisplayName("0 이하 금액이면, BAD_REQUEST 예외가 발생한다.")
-        @Test
-        void throwsBadRequestException_whenAmountIsNotPositive() {
-            // act
-            CoreException result = assertThrows(CoreException.class, () -> {
-                Point.validateDeductAmount(0L);
-            });
-
-            // assert
-            assertThat(result.getErrorType()).isEqualTo(ErrorType.BAD_REQUEST);
-        }
-    }
 }

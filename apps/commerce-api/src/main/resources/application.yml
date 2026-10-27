@@ -29,11 +29,56 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
 
+# 미확인 결제 시도의 스케줄러 조회 (설계 5-3 결정 ⑫). 기간은 ISO-8601 (PT30S = 30초, PT1M = 1분).
+payment:
+  lookup:
+    enabled: true          # false 면 스케줄러 빈은 만들고 자동 실행만 끈다
+    fixed-delay: PT30S     # 실행 주기
+    min-age: PT60S         # 마지막 변경 후 이 시간이 지난 시도만 대상
+    initial-interval: PT1M # 첫 조회 뒤 다음 조회까지
+    multiplier: 2          # 조회마다 간격에 곱하는 배수
+    max-interval: PT30M    # 간격 상한
+    max-lookups: 10        # 최대 조회 횟수. 도달하면 수동 확인 필요
+  # 실제 HTTP adapter (설계 1-6 결정 ㉒·㉓·㉔). base URL·callback URL·제공자 계정은 여기 고정하고 고객 입력으로 바꾸지 않는다.
+  pg:
+    enabled: true
+    base-url: http://127.0.0.1:8082
+    callback-url: http://127.0.0.1:8080/api/v1/payments/callback
+    user-id: "135135"
+    connect-timeout: PT1S  # 로컬 PG 연결은 수십 ms. 1초가 지나면 프로세스가 없거나 멈춘 것이다. 0(무한 대기)은 두지 않는다 (설계 5-7 결정 ㉜)
+    read-timeout: PT3S     # confirm 요청 스레드가 PG 때문에 묶이는 시간의 상한. 0(무한 대기)은 두지 않는다
+    # PG 조회(목록·단건) 한 경로에만 거는 서킷브레이커 (설계 5-7 결정 ㉗~㉜). create 에는 걸지 않는다. 키 이름은 Resilience4j 설정 이름이다.
+    circuit-breaker:
+      sliding-window-type: COUNT_BASED              # 조회는 호출이 드물어 시간 창으로는 표본이 안 모인다
+      sliding-window-size: 10                       # 스케줄러 한두 주기 + 사용자 reconcile 몇 번
+      minimum-number-of-calls: 5                    # 1~2회 실패만으로 열리지 않게 한다
+      failure-rate-threshold: 50                    # 절반이 실패하면 PG 장애로 본다 (%)
+      wait-duration-in-open-state: PT10S            # 스케줄러 주기(30초)보다 짧아 다음 주기에 HALF_OPEN 시험이 가능하다
+      permitted-number-of-calls-in-half-open-state: 2  # 한 번의 운으로 닫히지 않게 한다
+
 ---
 spring:
   config:
     activate:
       on-profile: local, test
+
+---
+# 테스트는 자동 실행을 끄고 Facade 메서드를 직접 호출한다. 간격 0·한도 2 로 "한도 소진 → 수동 확인 필요"를 짧게 확인한다.
+spring:
+  config:
+    activate:
+      on-profile: test
+
+payment:
+  lookup:
+    enabled: false
+    min-age: PT0S
+    initial-interval: PT0S
+    multiplier: 1
+    max-interval: PT0S
+    max-lookups: 2
+  pg:
+    enabled: false         # 가짜 PG 를 @Import 하지 않은 테스트가 실제 HTTP 를 보내면 조용히 UNKNOWN 이 되는 대신 크게 실패한다
 
 ---
 server:

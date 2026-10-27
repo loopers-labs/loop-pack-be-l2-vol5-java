@@ -37,16 +37,4 @@ public class PointService {
         created.charge(amount);
         return pointRepository.save(created).getBalance();
     }
-
-    /**
-     * 잔액이 충분할 때만 차감한다. 영향 행이 0 이면 잔액 부족(포인트 행 없음 포함)이다.
-     */
-    @Transactional
-    public void deduct(Long userId, long amount) {
-        Point.validateDeductAmount(amount);
-
-        if (pointRepository.deductIfEnough(userId, amount) == 0) {
-            throw new CoreException(ErrorType.CONFLICT, "포인트 잔액이 부족합니다.");
-        }
-    }
 }

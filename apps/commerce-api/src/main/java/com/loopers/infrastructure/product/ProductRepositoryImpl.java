@@ -114,6 +114,16 @@ public class ProductRepositoryImpl implements ProductRepository {
             .execute();
     }
 
+    @Override
+    public int restoreStock(Long productId, int quantity) {
+        return (int) queryFactory
+            .update(product)
+            .set(product.stock.quantity, product.stock.quantity.add(quantity))
+            .set(product.updatedAt, ZonedDateTime.now())
+            .where(product.id.eq(productId))
+            .execute();
+    }
+
     private BooleanExpression brandIdEq(Long brandId) {
         return brandId == null ? null : product.brandId.eq(brandId);
     }

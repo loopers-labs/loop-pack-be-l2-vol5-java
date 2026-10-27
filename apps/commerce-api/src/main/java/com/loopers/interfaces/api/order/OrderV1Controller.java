@@ -1,6 +1,7 @@
 package com.loopers.interfaces.api.order;
 
 import com.loopers.application.order.OrderCommand;
+import com.loopers.application.order.OrderConfirmInfo;
 import com.loopers.application.order.OrderFacade;
 import com.loopers.application.order.OrderInfo;
 import com.loopers.interfaces.api.ApiResponse;
@@ -8,6 +9,7 @@ import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -46,13 +48,18 @@ public class OrderV1Controller {
         return ApiResponse.success(OrderV1Dto.OrderResponse.from(info));
     }
 
+    /**
+     * 진행 중(REQUESTED·PENDING·UNKNOWN)이면 202, 종결(SUCCESS·FAILED)이면 200 으로 같은 모양의 본문을 돌려준다.
+     */
     @PostMapping("/{orderId}/confirm")
-    public ApiResponse<OrderV1Dto.OrderResponse> confirmOrder(
+    public ResponseEntity<ApiResponse<OrderV1Dto.ConfirmResponse>> confirmOrder(
         @RequestHeader(value = USER_ID_HEADER, required = false) Long userId,
-        @PathVariable(value = "orderId") Long orderId
+        @PathVariable(value = "orderId") Long orderId,
+        @RequestBody OrderV1Dto.ConfirmRequest request
     ) {
-        OrderInfo info = orderFacade.confirmOrder(userId, orderId);
-        return ApiResponse.success(OrderV1Dto.OrderResponse.from(info));
+        OrderConfirmInfo info = orderFacade.confirmOrder(userId, orderId, request.toCommand());
+        HttpStatus status = info.settled() ? HttpStatus.OK : HttpStatus.ACCEPTED;
+        return ResponseEntity.status(status).body(ApiResponse.success(OrderV1Dto.ConfirmResponse.from(info)));
     }
 
     @GetMapping
