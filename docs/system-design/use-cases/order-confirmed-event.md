@@ -371,6 +371,33 @@ Kafka transaction의 exactly-once는 Kafka record와 offset을 함께 다루는 
 
 재전달 실험은 low-level consumer로 첫 consumer의 offset commit만 보류한다. 두 번째 consumer는 seek이나 offset reset 없이 group의 committed offset에서 읽는다. partition 배정과 key 매핑 실험은 업무 topic과 분리된 topic을 쓰고 구매 활동을 만들지 않는다.
 
+### Partition·group 실험 설계
+
+`KafkaPartitionGroupExperimentTest`는 현재 저장소에 실제로 존재하는 `KafkaTestContainersConfig`를 작은 Spring 테스트 컨텍스트에서 재사용한다. 이 컨텍스트는 Kafka fixture만 로드하며 API·streamer의 업무 listener나 MySQL·Redis를 올리지 않는다. producer·consumer·admin은 fixture가 설정한 실제 `spring.kafka.bootstrap-servers` 주소를 함께 사용한다. 컨테이너 내부 주소나 로컬 Compose 고정 포트를 넣지 않는다.
+
+- 각 실행의 고유 topic을 partition 2개·복제 1개로 생성한다. group도 고유 ID를 사용한다.
+- 같은 group의 consumer를 1→2→3개로 늘린다. 각 consumer의 전용 스레드만 subscribe·poll·groupMetadata·assignment·commit·close를 호출한다. 제어 스레드에서 호출하는 consumer API는 종료를 위한 thread-safe `wakeup`뿐이다.
+- broker가 보고한 group `STABLE`, 실제 member ID와 수, 각 consumer가 poll 뒤 보고한 generation·assignment가 일치하는지를 유한하게 기다린다. 같은 배정이 연속 관찰된 뒤 각 partition의 소유자가 한 명인지 검증한다. 1개일 때 두 partition, 2개일 때 하나씩, 3개일 때 적어도 한 member의 빈 배정을 기대한다.
+- 각 안정된 단계에서 partition 0·1을 명시해 새 record를 보낸다. 실제 send metadata의 topic·partition·offset을 수신 record·member와 대조한다. 실험 consumer는 읽은 record의 진행 위치만 동기 commit해 다음 rebalance에 이전 단계의 record가 섞이지 않게 한다. 구매 활동 handler는 호출하지 않는다.
+- key 실험은 별도 topic에서 partition 인자를 생략한 producer send를 사용한다. 고정된 partition 수에서 같은 key의 metadata partition이 같은지 확인하고, 다른 key 간 partition의 차이는 요구하지 않는다.
+- 테스트는 만든 client·consumer 스레드·topic·group을 정리한다. 공유 Kafka 컨테이너는 test fixture/JVM과 Testcontainers가 수명과 최종 정리를 맡으며, 테스트 하나가 다른 테스트의 공유 broker를 중간에 내리지 않는다.
+
+실험 producer는 `acks=all`과 producer 멱등성을 사용한다. 단일 broker·복제 1에서는 현재 ISR이 한 개이므로 다중 replica의 기록, leader 장애의 인계, `min.insync.replicas` 미달 쓰기 거절을 증명하지 않는다. group 배정과 key 매핑 검증은 복제 장애 실험과 구분한다.
+
+2026-10-28 실행에서는 다음 배정을 실제 broker와 consumer 양쪽에서 확인했다. 이 표는 해당 실행의 관찰값이며 어떤 이름의 consumer가 항상 idle이어야 한다는 규칙은 아니다.
+
+| 실제 member 수 | consumer-1 | consumer-2 | consumer-3 |
+| --- | --- | --- | --- |
+| 1 | partition 0·1 | 미참여 | 미참여 |
+| 2 | partition 0 | partition 1 | 미참여 |
+| 3 | partition 0 | partition 1 | 배정 없음 |
+
+각 단계의 두 partition record를 실제 send metadata와 같은 위치에서 읽었고, key 42·43은 모두 partition 0, key 44는 partition 1로 반복 전송됐다. 서로 다른 key가 같은 partition에 갈 수 있다는 관찰이다. source의 expected offset·key별 partition 값은 이 숫자로 고정하지 않는다.
+
+```bash
+./gradlew :apps:commerce-streamer:test --tests '*KafkaPartitionGroupExperimentTest'
+```
+
 ### 발행 누락 사례
 
 두 사례를 통해 주문 DB commit과 Kafka 발행 사이에 누락 구간이 있음을 확인한다. 다음 단계에서는 Outbox로 이 경계를 개선한다.
