@@ -29,6 +29,9 @@ spring:
 kafka:
   topics:
     order-events: order-events
+  groups:
+    # group은 "이 용도로 어디까지 처리했나"(committed offset)를 갖는다. 다른 용도(예: 9주차 랭킹)는 새 group id를 쓴다 (D-7).
+    purchase-activity: commerce-streamer.product-purchase-activity
 
 demo-kafka:
   test:
@@ -39,6 +42,13 @@ spring:
   config:
     activate:
       on-profile: local, test
+
+# api(8080·관리 8081)와 함께 로컬에서 띄울 수 있게 포트를 나눈다
+server:
+  port: 8085
+management:
+  server:
+    port: 8086
 
 ---
 spring:
