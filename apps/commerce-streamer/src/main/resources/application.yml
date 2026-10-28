@@ -29,6 +29,14 @@ order:
   confirmed-event:
     topic: order-events
     group-id: purchase-activity
+    consumer:
+      concurrency: 3
+      auto-offset-reset: earliest
+      allow-auto-create-topics: false
+      fetch-min-bytes: 1
+      fetch-max-wait: 500ms
+      ack-mode: MANUAL_IMMEDIATE
+      sync-commits: true
 
 demo-kafka:
   test:
@@ -39,6 +47,17 @@ spring:
   config:
     activate:
       on-profile: local, test
+
+---
+spring:
+  config:
+    activate:
+      on-profile: test
+
+order:
+  confirmed-event:
+    consumer:
+      fetch-max-wait: 100ms
 
 ---
 spring:

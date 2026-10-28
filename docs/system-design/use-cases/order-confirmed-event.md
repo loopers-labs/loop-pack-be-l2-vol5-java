@@ -283,15 +283,22 @@ commit 전에 보내면 rollback된 확정의 이벤트가 남으므로 택하�
 
 구매 활동 listener는 기존 batch factory(`BATCH_LISTENER_DEFAULT`)를 바꾸지 않고 commerce-streamer의 별도 record listener factory를 쓴다.
 
+4단계에서는 `PurchaseActivityListenerIntegrationTest`로 실제 등록된 listener와 factory의 설정을 확인한다. 정상 record 완료 뒤 실패 record와 그 다음 record를 같은 partition에 발행하고, 두 번째 품목 저장 오류로 전체 rollback·소비 중단·실패 offset 유지가 되는지 확인한다. 오류 제거 후 같은 container/group을 재시작해 같은 topic·partition·offset을 다시 받고, DB commit 뒤 ack 직전에도 offset이 유지되는지 통제된 대기로 관찰한다. 이후 ack와 뒤 record의 정상 처리까지 확인한다. 이는 DB 실패 복구 검증이며, DB 성공 뒤 offset 미커밋 종료는 6단계의 `PurchaseActivityRedeliveryIntegrationTest`로 별도 검증한다.
+
+이 검증은 handler를 실제 호출하는 listener 스레드와 handler 반환 후의 스레드가 같은지, 반환 시 활성 DB 트랜잭션이 없고 새 조회에는 구매 활동이 보이는지도 확인한다. 실패 지점의 offset을 `n`이라고 할 때 소비 종료 뒤 `n`, 재시작 후 DB commit 뒤 ack 직전에도 `n`, ack 뒤 `n+1`이라는 값을 실제 broker에서 비교한다. 다음 record 진입도 잠시 제어해 이전 record의 ack 결과를 따로 관찰한다.
+
 | 설정 | 값 | 이유 |
 | --- | --- | --- |
 | group | `purchase-activity` | 구매 활동 저장 전용이다. 다른 소비 목적은 별도 group으로 같은 로그를 따로 읽는다. |
-| listener 형태 | record 단위, concurrency 1 | record마다 소비 TX와 ack가 하나씩 대응한다. 처리량은 partition 수 안에서 인스턴스를 늘려 조정한다. |
+| listener 형태 | record 단위, `order.confirmed-event.consumer.concurrency=3` | `order-events` 3개 partition을 같은 앱 인스턴스 안의 consumer 3개가 분담한다. partition 간 처리를 병렬화하며, 같은 partition 안의 순서는 유지한다. 인스턴스를 추가하면 전체 consumer 수가 partition 수를 넘을 수 있고 일부 consumer는 배정받지 못한다. |
 | key / value 역직렬화 | `StringDeserializer` / `ByteArrayDeserializer` | JSON 파싱과 계약 검증을 listener가 직접 해서 형식 오류를 원인과 함께 드러낸다. |
 | `enable.auto.commit` | `false` | 주기적 자동 commit이 DB 완료 전에 offset을 넘기지 않게 한다. Kafka consumer가 실제로 받은 설정 값으로 확인한다. |
-| ack mode | `MANUAL_IMMEDIATE` | 소비 TX commit 뒤 listener 스레드에서 해당 record의 offset을 바로 commit한다. |
-| `auto.offset.reset` | `earliest` | group에 commit된 위치가 없을 때 처음부터 읽는다. 공통 설정의 `latest`는 group이 생기기 전에 발행된 확정 이벤트를 건너뛴다. |
-| fetch 대기 | Kafka 기본값 | batch factory의 1MiB·5초 대기는 대량 처리용이다. 확정 이벤트는 건별로 바로 처리한다. |
+| ack mode | `order.confirmed-event.consumer.ack-mode=MANUAL_IMMEDIATE` | 소비 TX commit 뒤 listener 스레드에서 해당 record의 offset을 바로 commit한다. |
+| `syncCommits` | `order.confirmed-event.consumer.sync-commits=true` | consumer 스레드의 ack가 동기 offset commit을 사용한다. |
+| `auto.offset.reset` | `order.confirmed-event.consumer.auto-offset-reset=earliest` | group에 commit된 위치가 없을 때 보존 중인 가장 이른 record부터 읽는다. |
+| `fetch.min.bytes` | `order.confirmed-event.consumer.fetch-min-bytes=1` | 구매 활동 factory는 기존 batch factory의 1MiB 임계값을 상속하지 않는다. 데이터가 있으면 작은 record도 이 임계값을 만족한다. |
+| `fetch.max.wait.ms` | `order.confirmed-event.consumer.fetch-max-wait=500ms`, test `100ms` | broker가 `fetch.min.bytes`를 채우지 못했을 때 기다리는 상한이다. `fetch.min.bytes=1`이면 주로 데이터가 없는 fetch의 대기에 영향을 준다. |
+| `allow.auto.create.topics` | `order.confirmed-event.consumer.allow-auto-create-topics=false` | streamer가 먼저 시작해도 업무 topic을 broker 기본 partition 수로 자동 생성하지 않는다. topic 준비는 API의 로컬 초기화나 테스트 AdminClient가 맡는다. |
 | error handler | `CommonContainerStoppingErrorHandler` | [실패와 중단](#실패와-중단) |
 
 ### producer 설정
@@ -304,7 +311,7 @@ commit 전에 보내면 rollback된 확정의 이벤트가 남으므로 택하�
 
 ### 공통 설정과 topic
 
-- 공통 `kafka.yml`의 consumer `value-serializer`는 `value-deserializer`로 바로잡는다. `properties` 아래의 `enable-auto-commit`은 Kafka가 읽지 않는 키이므로 consumer 속성 `enable-auto-commit`으로 옮긴다.
+- 공통 `kafka.yml`의 consumer는 `StringDeserializer`, `ByteArrayDeserializer`, `enable-auto-commit=false`를 이미 올바르게 지정한다. 전용 record factory는 이 공통 설정을 바탕으로 만들며, 테스트에서 유효 설정을 확인한다.
 - local·test 프로필의 admin 속성에는 컨테이너 내부 주소(`kafka:9092`)가 있지만, Spring Boot가 admin의 `bootstrap.servers`를 공통 주소로 다시 덮어써 실제로는 쓰이지 않는다. 세 client가 같은 broker를 쓰는지는 테스트로 확인한다.
 - API는 `modules:kafka`와 공통 `kafka.yml`을 사용한다. 발행 topic은 `order.confirmed-event.topic`으로 지정하며 기본값은 `order-events`다.
 - `auto.create.topics.enable`은 broker 설정이라 client 속성으로는 효과가 없다. local·test 프로필의 `OrderConfirmedKafkaConfig`는 `AdminClient.createTopics`로 없는 topic만 partition 3, 복제 1로 준비한다. 이미 존재하면 partition 수를 유지한다. `NewTopic` 빈은 기존 partition 수를 늘릴 수 있어 사용하지 않는다([Spring Kafka topic 설정](https://docs.spring.io/spring-kafka/reference/3.3/kafka/configuring-topics.html)). 운영 topic의 생성과 partition 변경은 배포 절차가 맡는다.
@@ -322,6 +329,8 @@ commit 전에 보내면 rollback된 확정의 이벤트가 남으므로 택하�
 | rebalance 중 같은 record 동시 처리 | 유일 제약이 한 저장만 통과 | 나머지는 새 트랜잭션의 판정으로 no-op |
 
 실패한 record는 건너뛰지 않고 컨테이너를 멈춘다.
+
+선택한 `CommonContainerStoppingErrorHandler`는 중단 후 원래 오류를 감싼 예외를 던진다. 정상 recover/skip으로 반환하는 정책이 아니며 `DefaultErrorHandler`의 `commitRecovered` 설정으로 이 동작을 대신하지 않는다. 테스트는 단순히 `isRunning=false`가 된 순간이 아니라 해당 컨테이너의 `ConsumerStoppedEvent` 이후 실제 group committed offset을 확인한다. 종료가 시작된 것과 consumer 종료가 끝난 것을 구분한다([Spring Kafka 오류 처리](https://docs.spring.io/spring-kafka/reference/3.3/kafka/annotation-error-handling.html)).
 
 - 건너뛰면 구매 활동이 조용히 빠진다. 빠른 재시도를 반복하면 같은 오류를 키운다.
 - 멈추면 실패 record와 그 뒤 record의 offset은 commit되지 않고, 이미 ack한 record의 offset만 남는다. 재시작한 컨테이너는 commit된 위치, 즉 실패 record부터 다시 읽는다.
