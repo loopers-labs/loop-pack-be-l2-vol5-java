@@ -62,11 +62,11 @@ commerce-streamer는 주문·상품·결제·포인트 테이블을 읽거나 �
 | --- | --- |
 | topic | `order-events`. 테스트는 실행마다 고유 suffix를 붙인 topic을 쓴다. |
 | key | 내부 `orderId`의 10진 문자열 (`"42"`). payload의 `orderId`와 같아야 한다. |
-| value | UTF-8 JSON. 아래 필드만 담는다. |
-| `eventType` / `schemaVersion` | `"OrderConfirmed"` / `1` |
+| value | UTF-8 JSON. 현재 payload는 아래 필드로 구성한다. |
+| `eventType` / `schemaVersion` | `"OrderConfirmed"` / `1`은 과제 지정값이다. schemaVersion은 payload의 구조와 의미를 해석하는 계약의 버전이며, 변경 정책은 아래를 따른다. |
 | `eventId` | `order-confirmed:v1:{orderId}`. 주문당 한 번뿐인 최초 확정 사실에서 유도한다. |
 | `orderId` | 확정 주문 ID |
-| `confirmedAt` | 최초 확정 시각. `orders.confirmed_at`과 같은 값의 UTC ISO-8601이며 마이크로초까지 표현한다. |
+| `confirmedAt` | 최초 확정 시각으로 `orders.confirmed_at`과 같은 순간을 UTC 문자열(`Z`)로 표현한다. 기존 DB의 `DATETIME(6)`에 맞춰 마이크로초 정밀도(소수초 최대 6자리)를 유지한다. |
 | `items` | `productId`, `quantity`의 목록. 저장된 주문 품목 스냅샷에서 만들며 상품당 하나, 상품 ID 오름차순, 수량은 양수다. 주문은 생성할 때 같은 상품의 수량을 합산해 품목 하나로 저장하므로, 스냅샷을 그대로 옮기면 상품 중복이 없다. |
 
 ```json
@@ -85,11 +85,50 @@ commerce-streamer는 주문·상품·결제·포인트 테이블을 읽거나 �
 
 예시의 ID와 시각은 합성 값이다.
 
+### Producer의 이벤트 구성
+
+Producer는 저장된 주문 사실을 일정한 형태로 구성한다. 정상 발행과 재발행에서 같은 확정 사실은 같은 `eventId`, 구매 내용, 품목 순서를 유지한다.
+
+1. `eventId`는 `order-confirmed:v1:{orderId}`로 계산한다. 한 주문의 최초 확정 사실은 하나이므로 producer에 별도 eventId 컬럼을 두지 않아도 같은 ID를 재구성할 수 있다.
+2. `confirmedAt`은 최초 PG 성공으로 주문을 확정할 때 주문 상태와 같은 DB 트랜잭션에서 저장한다. 기존 코드의 마이크로초 절삭과 DB의 `DATETIME(6)` 기준을 유지한다. 중복 callback·reconcile에서 바꾸지 않으며, 발행·재발행 모두 저장된 값을 같은 순간의 UTC 문자열로 표현한다. producer의 발행 시각이나 consumer의 처리 시각을 넣지 않는다.
+3. `items`는 저장된 주문 품목 스냅샷으로 구성한다. 같은 상품의 수량은 주문 생성 시 합산되어 있으므로 이를 재사용하고, producer가 `productId` 오름차순으로 정렬해서 발행한다. 재발행도 같은 구성 규칙을 사용한다.
+
+소비자의 중복 판정은 별도의 비교 계약이다. JSON 속성 순서와 `items` 배열 순서가 달라도 필드 값이 같은 사실은 동일하게 판단하며, 수량이나 확정 시각이 다르면 충돌로 처리한다. 자세한 규칙은 [사실의 비교](#사실의-비교)를 따른다.
+
 - `eventId`의 `v1`은 ID 형식의 버전이다. payload의 `schemaVersion`이 바뀌어도 같은 확정 사실은 같은 `eventId`를 유지한다. 전송 시도 횟수, 현재 시각, 새 UUID는 넣지 않는다.
 - 소비자는 `eventId`를 불투명한 식별자로 다룬다. 형식을 해석해 `orderId`를 꺼내지 않는다.
 - 카드 정보, PG 거래 키, 사용자 식별자, 금액처럼 구매 활동에 필요 없는 값은 담지 않는다.
-- 같은 사실인지는 JSON 문자열이 아니라 정규화한 값으로 비교한다. 속성 순서와 `items` 배열 순서는 사실을 바꾸지 않는다. 규칙은 [사실의 비교](#사실의-비교)를 따른다.
 - 고객이나 관리자가 `OrderConfirmed`를 발행하는 HTTP endpoint는 두지 않는다. 합성 이벤트 주입은 테스트 코드에서만 한다.
+
+### schemaVersion의 의미와 변경 정책
+
+`schemaVersion`은 애플리케이션이 관리하는 payload 계약의 버전이다. `eventId`가 어떤 확정 사실인지를 식별한다면, schemaVersion은 그 사실을 어떤 필드 구조와 의미로 읽을지 나타낸다. 이번 과제는 버전 1을 사용한다.
+
+| 명세 변경 | 버전 정책 |
+| --- | --- |
+| JSON 속성·배열의 표현 순서만 달라지고 계약 구조·의미는 같음 | 현재 버전 유지 |
+| 선택 필드 추가를 포함한 필드 구성·타입·필수 여부·의미 등 명세 변경 | 새 버전 도입 |
+
+명세는 Producer와 Consumer의 약속이며, schemaVersion으로 그 이력을 구분한다. 선택 필드 추가도 새 버전으로 남긴다. 호환성은 버전 증가 여부와 별개로 확인한다. 기존 Consumer가 새 필드를 무시해도 동일한 업무를 처리하는지, 새 Consumer가 그 필드가 없는 과거 메시지를 처리할 수 있는지 검증한다.
+
+메시지 DTO와 해석 코드는 버전별로 구분한다. V1의 필드 구조·의미를 바꾸어 V2를 섞지 않고, V2 명세가 정해지면 V2 DTO와 해석기를 추가한다. 각 버전의 명세 문서, JSON 예시와 테스트를 함께 보존한다.
+
+Producer는 발행할 버전의 DTO로 메시지를 구성한다. Consumer는 schemaVersion에 해당하는 DTO·해석기를 선택하고 공통 구매 사실 모델인 `OrderConfirmation`으로 변환해 구매 활동 저장에 전달한다. 새 버전을 추가할 때 기존 버전의 해석기도 유지해 여러 버전을 함께 지원한다.
+
+변경 명세를 공유하고, 먼저 Consumer가 기존 버전과 새 버전을 모두 지원하도록 준비·배포한 뒤 Producer가 새 버전을 발행한다. 선택 필드 추가라도 새 버전 번호의 지원 여부를 확인한다. 메시지에 새 번호를 넣는 것만으로 Consumer에 새 해석 코드가 생기지는 않는다.
+
+지원 목록에 없는 버전은 계약 오류로 거절한다. 공통 구매 사실로 임의 변환하거나 DB handler를 호출하지 않으며, 성공 ack를 하지 않는다. 실패 record를 완료한 위치로 offset이 진행하지 않도록 하는 실제 ack·error handler 설정과 중단·복구 정책은 4번 listener 설계에서 검토·검증한다.
+
+구현은 다음 책임으로 나눈다. 특정 앱의 DTO를 다른 앱에서 import하거나 modules에 비즈니스 DTO를 넣지 않는다.
+
+| 위치 | 구현 | 책임 |
+| --- | --- | --- |
+| commerce-api infrastructure | `OrderConfirmedMessageV1` | 저장된 확정 사실을 V1 JSON 계약으로 구성 |
+| commerce-streamer interfaces | `OrderConfirmedParser` | 공통 JSON·eventType 검증, schemaVersion에 등록된 해석기 선택, key와 변환 결과 orderId 일치 검증 |
+| commerce-streamer interfaces | `OrderConfirmedVersionReader` | 지원 버전 번호와 공통 구매 사실로 변환하는 해석 규칙의 계약 |
+| commerce-streamer interfaces | `OrderConfirmedV1Reader`, `OrderConfirmedMessageV1` | V1의 엄격한 필드 타입 검증, V1 DTO 구성과 `OrderConfirmation` 변환 |
+
+Spring이 수집한 버전별 해석기를 버전 번호에 대응하는 불변 맵으로 등록한다. 같은 번호의 해석기가 중복 등록되면 구성이 모호하므로 시작 단계에서 거절한다. 현재 실제 명세와 DTO·해석기는 V1이며, 추가 버전은 실제 명세가 정해질 때 해석기를 추가해 함께 지원한다.
 
 ### key 선택
 
