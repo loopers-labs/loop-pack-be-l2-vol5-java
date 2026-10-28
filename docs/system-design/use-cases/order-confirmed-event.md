@@ -371,6 +371,24 @@ Kafka transaction의 exactly-once는 Kafka record와 offset을 함께 다루는 
 
 재전달 실험은 low-level consumer로 첫 consumer의 offset commit만 보류한다. 두 번째 consumer는 seek이나 offset reset 없이 group의 committed offset에서 읽는다. partition 배정과 key 매핑 실험은 업무 topic과 분리된 topic을 쓰고 구매 활동을 만들지 않는다.
 
+### DB commit 뒤 offset 미커밋 재전달 설계
+
+`PurchaseActivityRedeliveryIntegrationTest`는 실제 broker·MySQL과 애플리케이션 listener의 `OrderConfirmedParser`·`PurchaseActivityHandler`를 사용한다. record listener factory의 유효 consumer 설정을 복사하고 같은 topic·group·DB에서 consumer만 새로 만든다. 업무 listener는 이 테스트에서 자동 시작하지 않는다.
+
+- target 앞에 준비용 record를 발행해 target offset `n`이 로그의 시작과 다르게 한다. send metadata에서 실제 위치를 얻으며 숫자를 고정하지 않는다.
+- 첫 consumer만 배정 callback에서 `n`으로 seek하고 group offset `n`을 동기 commit한다. 종료 callback은 commit하지 않는다. 첫 poll 결과를 실제 handler로 저장하고, `position=n+1`과 별개로 broker의 committed offset이 `n`인지 확인한다.
+- 첫 consumer는 완료 offset을 요청하지 않고 유한한 `close(Duration)`로 닫는다. 자동 commit은 false이며 비동기 commit은 사용하지 않는다. 실제 consumer의 호출 이력과 종료 뒤 broker offset을 함께 확인한다.
+- 새 consumer는 일반 subscribe·poll만 한다. seek·offset reset 없이 처음 받은 record가 target의 같은 topic·partition·offset인지 검증한다. 시작 위치를 잃어 `earliest`로 돌아갔다면 준비용 record 때문에 이 검증이 실패한다.
+- 두 번째 처리도 실제 handler를 호출한다. 별도 DB 트랜잭션의 flush·clear 뒤 완료 기록과 활동의 행 ID·내용·생성/수정 시각이 첫 처리 뒤와 같은지 비교한다. 그 뒤에만 `n+1`을 commit한다.
+
+기대값은 target 전달 2회, 완료 기록 1행·활동 2행 유지, committed offset `n → n → n+1`이다. 테스트에서 계약에 맞게 준비한 OrderConfirmed record를 실제 broker에 발행하고, 실제 parser·handler·DB로 재전달을 검증한다. PG 주문 생성·확정부터 producer 발행까지의 경로는 별도 테스트에서 검증한다. 통제된 close를 사용하므로 OS 강제 종료나 broker 장애를 시험했다고 표현하지 않는다. DB commit 전 오류·전체 rollback·실제 Spring listener 중단·같은 group 재시작은 기존 `PurchaseActivityListenerIntegrationTest`와 함께 검증한다.
+
+2026-10-28 대상 테스트 실행에서는 준비용 record의 다음 offset `n=1`을 사용했다. 첫 consumer의 poll 뒤 position은 2지만 DB commit 뒤·consumer close 뒤 committed offset은 모두 1이었다. 새 consumer가 동일 위치 1을 받아 no-op 처리한 뒤에도 1을 유지했고, 명시적 commit 뒤 2로 진행했다. 완료 기록 1행과 상품 7×2·8×1의 활동 2행은 ID·내용·생성/수정 시각이 같았다. 실제 Spring listener 실패·복구 테스트도 함께 통과했다.
+
+```bash
+./gradlew :apps:commerce-streamer:test --tests '*PurchaseActivityRedeliveryIntegrationTest' --tests '*PurchaseActivityListenerIntegrationTest'
+```
+
 ### Partition·group 실험 설계
 
 `KafkaPartitionGroupExperimentTest`는 현재 저장소에 실제로 존재하는 `KafkaTestContainersConfig`를 작은 Spring 테스트 컨텍스트에서 재사용한다. 이 컨텍스트는 Kafka fixture만 로드하며 API·streamer의 업무 listener나 MySQL·Redis를 올리지 않는다. producer·consumer·admin은 fixture가 설정한 실제 `spring.kafka.bootstrap-servers` 주소를 함께 사용한다. 컨테이너 내부 주소나 로컬 Compose 고정 포트를 넣지 않는다.
