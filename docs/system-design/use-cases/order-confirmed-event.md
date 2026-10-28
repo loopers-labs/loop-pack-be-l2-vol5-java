@@ -217,6 +217,7 @@ commit 전에 보내면 rollback된 확정의 이벤트가 남으므로 택하�
 | `product_purchase_activity` | 확정 주문의 상품별 구매 사실. `order_id`, `product_id`, `quantity`, `confirmed_at` | `(order_id, product_id)` 유일 |
 
 - 구매 활동의 `confirmed_at`은 이벤트의 최초 확정 시각이다. 소비 시각을 쓰지 않는다.
+- 소비 모델은 시각을 UTC `Instant`의 마이크로초 정밀도로 정규화하고 `datetime(6)`에 저장한다. `event_id`의 DB 비교는 대소문자와 뒤 공백을 구분해 애플리케이션의 문자열 비교와 일치시킨다.
 - 확정 시각과 품목은 구매 활동에만 둔다. 처리 기록은 처리 여부만 표시하고, 같은 사실인지는 구매 활동과 비교해 판정한다.
 - `product_id`는 과거 주문의 상품 식별자로 보존한다. 소비할 때 상품의 존재·삭제·가격을 조회하지 않고 상품 테이블에 FK를 두지 않는다. 삭제·비노출 상품을 거르는 일은 활동을 읽는 쪽(이후 랭킹)이 맡는다.
 
@@ -247,6 +248,10 @@ commit 전에 보내면 rollback된 확정의 이벤트가 남으므로 택하�
 
 ### 소비 트랜잭션
 
+구현 책임은 streamer 안에서 나눈다. `OrderConfirmedParser`는 메시지를 검증하고 `OrderConfirmation`이 품목을 정규화한다. `PurchaseActivityHandler`는 트랜잭션 호출과 중복 경쟁 복구를, 별도 Bean인 `PurchaseActivityTransaction`은 완료 기록과 품목의 원자적 저장을 맡는다. `PurchaseActivityRepository`의 JPA 구현만 두 테이블에 접근한다. API 애플리케이션이나 현재 상품 모델에 의존하지 않는다.
+
+이번 단계의 기대값은 신규 주문의 활동 2행, 동일 사실 재수신 후 2행 유지, 다른 주문 추가 후 3행·상품 7 합계 5다. ID·수량·시각 충돌은 기존 값을 유지한 채 실패하고, 두 번째 품목 저장 오류는 완료 기록과 첫 품목도 rollback한다. 동시 요청이 모두 사전 조회를 통과하도록 통제해 DB 유일 제약과 rollback 뒤 새 트랜잭션 판정을 확인한다.
+
 1. listener가 record의 key와 value를 파싱하고 계약을 검증한다.
 2. 소비 TX에서 같은 `eventId` 또는 `orderId`의 완료 기록을 찾는다. 있으면 판정 규칙으로 no-op이나 충돌을 정한다.
 3. 없으면 완료 기록과 모든 품목의 구매 활동을 저장하고 commit한다. 중간 품목 저장이 실패하면 완료 기록과 앞선 품목도 함께 rollback한다.
@@ -262,6 +267,15 @@ commit 전에 보내면 rollback된 확정의 이벤트가 남으므로 택하�
 - rollback 뒤 새 트랜잭션에서 기존 완료 기록을 다시 읽어 판정 규칙을 적용한다. 같은 사실이면 no-op으로 완료하고, 다르면 충돌이다.
 - 새 트랜잭션에서도 기존 기록을 찾지 못하면 판정할 수 없으므로 원래 오류로 실패시킨다.
 - 중복 키가 아닌 저장 오류는 중복으로 바꾸지 않고 그대로 실패시킨다.
+
+완료 기록을 `saveAndFlush`하는 저장 경계에서 MySQL 중복 키(오류 1062, SQLState 23000)만 `DuplicateOrderConfirmationException`으로 변환한다. 구매 활동의 저장 오류와 다른 무결성 오류는 이 복구 경로에 넣지 않는다. `PurchaseActivityHandler`는 기존 트랜잭션 참여를 금지하고, 별도 Bean의 `REQUIRES_NEW` 메서드가 rollback을 마친 뒤 새 트랜잭션의 비교 메서드를 호출한다.
+
+### 구매 활동 검증
+
+- `OrderConfirmationTest`: 양수 규칙, 동일 상품 수량 합산·정렬, overflow 거절과 불변 목록.
+- `PurchaseActivityIntegrationTest`: 실제 MySQL의 행·수량·확정 시각, ID·payload 충돌, 중간 품목 오류의 전체 rollback, 각 유일 제약과 동시 경쟁 후 새 TX 판정. 저장 후 flush·clear한 새 조회와 별도 SQL로 확인한다.
+- `PurchaseActivityKafkaIntegrationTest`: 실제 broker에 JSON record를 발행하고 실제 Spring listener로 저장한 뒤 group committed offset을 확인한다. 같은 사실을 새 record로 추가 발행해 완료 기록 1행·활동 2행 유지도 확인한다. 이 검증은 같은 broker record의 offset 미커밋 재전달 실험을 대체하지 않는다.
+- streamer의 `ArchitectureTest`와 Checkstyle은 계층 의존·순수 도메인의 JPA/Lombok 의존 금지·Java import 규칙을 검사한다.
 
 ## Kafka 설정
 

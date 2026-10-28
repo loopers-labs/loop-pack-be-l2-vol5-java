@@ -24,6 +24,9 @@ class OrderConfirmationTest {
 
         assertThat(event.items()).containsExactly(
             new OrderConfirmation.Item(7L, 2), new OrderConfirmation.Item(8L, 1));
+        assertThat(event.activities()).containsExactly(
+            ProductPurchaseActivity.create(42L, 7L, 2, CONFIRMED_AT),
+            ProductPurchaseActivity.create(42L, 8L, 1, CONFIRMED_AT));
         assertThatThrownBy(() -> event.items().clear()).isInstanceOf(UnsupportedOperationException.class);
     }
 

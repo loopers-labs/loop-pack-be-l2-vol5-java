@@ -3,6 +3,7 @@ package com.loopers.domain.purchase;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Comparator;
 import java.util.Map;
 import java.util.TreeMap;
 
@@ -20,6 +21,27 @@ public record OrderConfirmation(String eventId, long orderId, Instant confirmedA
         }
         items = quantities.entrySet().stream().map(entry -> new Item(entry.getKey(), entry.getValue())).toList();
         confirmedAt = confirmedAt.truncatedTo(ChronoUnit.MICROS);
+    }
+
+    public List<ProductPurchaseActivity> activities() {
+        return items.stream()
+            .map(item -> ProductPurchaseActivity.create(orderId, item.productId(), item.quantity(), confirmedAt))
+            .toList();
+    }
+
+    public void verifyExisting(List<ProcessedOrderConfirmation> processed, List<ProductPurchaseActivity> savedActivities) {
+        if (processed.size() != 1 || !processed.getFirst().eventId().equals(eventId)
+            || processed.getFirst().orderId() != orderId) {
+            throw new OrderConfirmationConflictException(
+                "확정 이벤트 식별자 충돌: receivedEventId=" + eventId + ", receivedOrderId=" + orderId + ", stored=" + processed);
+        }
+        List<ProductPurchaseActivity> sorted = savedActivities.stream()
+            .sorted(Comparator.comparingLong(ProductPurchaseActivity::productId)).toList();
+        if (!activities().equals(sorted)) {
+            throw new OrderConfirmationConflictException(
+                "구매 사실 충돌: eventId=" + eventId + ", orderId=" + orderId
+                    + ", stored=" + sorted + ", received=" + activities());
+        }
     }
 
     public record Item(long productId, int quantity) {

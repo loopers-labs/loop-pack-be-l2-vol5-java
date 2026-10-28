@@ -25,6 +25,11 @@ spring:
       - logging.yml
       - monitoring.yml
 
+order:
+  confirmed-event:
+    topic: order-events
+    group-id: purchase-activity
+
 demo-kafka:
   test:
     topic-name: demo.internal.topic-v1
