@@ -1,6 +1,7 @@
 package com.loopers.payment.application;
 
 import com.loopers.common.domain.Money;
+import com.loopers.order.application.OrderConfirmedRecorder;
 import com.loopers.order.application.port.out.OrderPort;
 import com.loopers.order.domain.OrderModel;
 import com.loopers.payment.application.port.out.PaymentGatewayPort;
@@ -21,6 +22,7 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
@@ -46,6 +48,7 @@ public class PaymentResultApplier {
     private final PaymentGatewayPort paymentGatewayPort;
     private final OrderPort orderPort;
     private final StockReservationUseCase stockReservationUseCase;
+    private final OrderConfirmedRecorder orderConfirmedRecorder;
     private final TransactionTemplate newTransaction;
 
     public PaymentResultApplier(
@@ -54,6 +57,7 @@ public class PaymentResultApplier {
         PaymentGatewayPort paymentGatewayPort,
         OrderPort orderPort,
         StockReservationUseCase stockReservationUseCase,
+        OrderConfirmedRecorder orderConfirmedRecorder,
         PlatformTransactionManager transactionManager
     ) {
         this.paymentPort = paymentPort;
@@ -61,6 +65,7 @@ public class PaymentResultApplier {
         this.paymentGatewayPort = paymentGatewayPort;
         this.orderPort = orderPort;
         this.stockReservationUseCase = stockReservationUseCase;
+        this.orderConfirmedRecorder = orderConfirmedRecorder;
         this.newTransaction = new TransactionTemplate(transactionManager);
         this.newTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
@@ -216,13 +221,18 @@ public class PaymentResultApplier {
         Long orderId = payment.getOrderId();
         OrderModel order = orderPort.findByIdForUpdate(orderId).orElseThrow();
         boolean success = payment.getStatus() == PaymentStatus.SUCCESS;
-        boolean changed = success ? order.confirmPaid(ZonedDateTime.now()) : order.failPayment();
+        // 확정 시각은 DB 정밀도(datetime(6))로 자른다 — 이벤트의 confirmedAt이 저장된 사실과 같아야 한다 (W6 D-2).
+        boolean changed = success ? order.confirmPaid(ZonedDateTime.now().truncatedTo(ChronoUnit.MICROS)) : order.failPayment();
         if (!changed) {
             log.warn("결제는 종결됐지만 주문이 PAYMENT_PENDING이 아니라 바꾸지 않았습니다. orderId={}, status={}", orderId, order.getStatus());
         }
         orderPort.save(order);
         if (success) {
             stockReservationUseCase.consume(orderId);
+            if (changed) {
+                // 최초 확정에서만 같은 TX로 발행 기록을 남긴다. 이미 확정된 주문의 반복 적용은 새 이벤트를 만들지 않는다 (W6 D-3, C-2).
+                orderConfirmedRecorder.record(order);
+            }
         } else {
             stockReservationUseCase.release(orderId);
         }
