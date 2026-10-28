@@ -76,7 +76,12 @@ class BrokerFailureReplicationTest {
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, cluster.bootstrapServers());
         props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 5_000);
         props.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, 15_000);
+        // 방금 만든 topic은 metadata가 퍼지기 전이라 앱 설정(max.block.ms 1s)으로는 첫 send가 막힐 수 있다.
+        // 이 테스트는 복제 보장을 보므로 metadata 대기만 늘린다 (앱의 topic은 기동 때 만들어져 있다).
+        props.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, 15_000);
         producer = new KafkaProducer<>(props);
+        awaitLeader(TOPIC);
+        awaitLeader(STRICT_TOPIC);
     }
 
     @AfterAll
@@ -136,6 +141,22 @@ class BrokerFailureReplicationTest {
 
     private RecordMetadata send(String topic, String value) throws Exception {
         return producer.send(new ProducerRecord<>(topic, "key", value)).get(30, TimeUnit.SECONDS);
+    }
+
+    private void awaitLeader(String topic) throws Exception {
+        long deadline = System.currentTimeMillis() + 30_000;
+        while (System.currentTimeMillis() < deadline) {
+            try (Admin admin = admin()) {
+                TopicDescription description = admin.describeTopics(List.of(topic)).allTopicNames().get(10, TimeUnit.SECONDS).get(topic);
+                if (description.partitions().get(0).leader() != null && description.partitions().get(0).isr().size() == 3) {
+                    return;
+                }
+            } catch (ExecutionException ignored) {
+                // 아직 metadata가 없다
+            }
+            Thread.sleep(200);
+        }
+        throw new IllegalStateException(topic + "의 leader가 준비되지 않았습니다");
     }
 
     private int leaderOf(String topic) throws Exception {
