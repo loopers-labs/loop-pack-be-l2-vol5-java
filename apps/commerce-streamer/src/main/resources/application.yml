@@ -14,7 +14,7 @@ spring:
   main:
     web-application-type: servlet
   application:
-    name: commerce-api
+    name: commerce-streamer # W6: commerce-api로 복사돼 있어 client-id가 api와 같았다
   profiles:
     active: local
   config:
@@ -24,6 +24,11 @@ spring:
       - kafka.yml
       - logging.yml
       - monitoring.yml
+
+# W6 (docs/week6/plan.md D-7): 구매 활동 consumer. DLT 이름은 기본 recoverer 규칙(원래 topic + .DLT)을 따른다.
+kafka:
+  topics:
+    order-events: order-events
 
 demo-kafka:
   test:
