@@ -1,5 +1,6 @@
 package com.loopers.application.payment;
 
+import com.loopers.application.order.event.OrderConfirmedEvent;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.OrderRepository;
@@ -12,6 +13,7 @@ import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +32,7 @@ public class PaymentResultTransaction {
     private final OrderRepository orderRepository;
     private final ProductRepository productRepository;
     private final Clock clock;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
     // TX B: 시도·주문·품목을 다시 읽고 도메인 전이 검사와 DB 조건부 갱신을 함께 적용한다.
     // 시도를 종결한 요청만 주문을 종결하고, 실패면 같은 트랜잭션에서 재고를 반환한다.
@@ -144,6 +147,7 @@ public class PaymentResultTransaction {
         if (orderRepository.completePgPaymentIfPending(order.getId(), order.getPaymentAmount(), order.getConfirmedAt()) != 1) {
             throw integrityError("결제 대기 주문을 확정하지 못했습니다.");
         }
+        applicationEventPublisher.publishEvent(OrderConfirmedEvent.from(order));
     }
 
     // 결제 요청 이후 고정된 품목 스냅샷의 수량만큼 Product ID 오름차순으로 반환한다.
