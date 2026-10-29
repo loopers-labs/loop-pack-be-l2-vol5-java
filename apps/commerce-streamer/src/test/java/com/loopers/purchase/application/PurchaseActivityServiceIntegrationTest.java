@@ -17,15 +17,20 @@ import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.loopers.support.KafkaTestSupport.orderConfirmedJson;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 
 /**
  * W6 D-6·ADR-W6-05 멱등 consumer (C-6). 완료 기록과 품목을 한 TX로 저장하고, 같은 사실은 no-op, 충돌은 저장 없이 드러낸다.
@@ -126,6 +131,17 @@ class PurchaseActivityServiceIntegrationTest extends StreamerIntegrationTestSupp
     @DisplayName("C-6 같은 이벤트가 동시에 두 번 처리되면(rebalance 중 예전·새 consumer) 하나만 저장하고 다른 하나는 no-op이다 — 활동 2행.")
     @Test
     void concurrentDuplicatesSaveOnce() throws Exception {
+        // arrange: 두 스레드가 모두 빠른 길(SELECT)에서 "없음"을 본 뒤에 INSERT하도록 맞춘다 — 경합을 우연에 맡기지 않는다.
+        // 그래서 한쪽은 반드시 유일 제약(1062)에 걸리고, 새 TX에서 다시 찾아 no-op으로 판정해야 한다.
+        CyclicBarrier bothChecked = new CyclicBarrier(2);
+        AtomicInteger lookups = new AtomicInteger();
+        doAnswer(invocation -> {
+            Object found = invocation.callRealMethod();
+            if (lookups.incrementAndGet() <= 2) {
+                bothChecked.await(10, TimeUnit.SECONDS);
+            }
+            return found;
+        }).when(purchaseActivityPort).findByEventIdOrOrderId(anyString(), anyLong());
         CountDownLatch start = new CountDownLatch(1);
         Callable<Result> task = () -> {
             start.await();
@@ -144,6 +160,7 @@ class PurchaseActivityServiceIntegrationTest extends StreamerIntegrationTestSupp
         }
         assertThat(consumedCount()).isEqualTo(1);
         assertThat(activityCount()).isEqualTo(2);
+        assertThat(lookups.get()).isEqualTo(3); // 빠른 길 2번 + 유일 제약 위반 뒤 다시 찾기 1번
     }
 
     @DisplayName("C-6 두 번째 품목 저장이 실패하면 완료 기록과 첫 품목까지 rollback하고, 완료 기록이 없으니 중복으로 바꾸지 않고 그대로 실패한다.")

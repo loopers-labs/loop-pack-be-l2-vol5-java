@@ -35,6 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
@@ -134,6 +135,13 @@ class OrderConfirmedListenerIntegrationTest extends StreamerIntegrationTestSuppo
             // act: 실패하는 record
             RecordMetadata sent = send("42", json);
 
+            // assert: 재시도 도중에는 ack하지 않는다 — committed offset이 아직 n 이하다 (처리 전에 ack하면 여기서 n+1이 보인다)
+            await().atMost(WAIT).untilAsserted(() -> verify(purchaseActivityPort, atLeast(2))
+                .saveAll(argThat(message -> message.eventId().equals(eventId)), anyString()));
+            assertThat(committed(sent)).satisfiesAnyOf(
+                offset -> assertThat(offset).isNull(),
+                offset -> assertThat(offset).isLessThanOrEqualTo(sent.offset()));
+
             // assert: 재시도 소진 → DLT, 원래 topic은 n+1 commit, DB는 비어 있다
             List<ConsumerRecord<String, String>> dead = KafkaTopicReader.read(KafkaTestContainersConfig.bootstrapServers(),
                 orderEventsTopic + PurchaseActivityKafkaConfig.DLT_SUFFIX, record -> record.value().equals(json), 1, WAIT);
@@ -167,9 +175,9 @@ class OrderConfirmedListenerIntegrationTest extends StreamerIntegrationTestSuppo
             assertThat(activityCount()).isEqualTo(2);
         }
 
-        @DisplayName("C-6 충돌(같은 eventId · 다른 수량)은 재시도해도 같으므로 재시도 없이 DLT로 보낸다 — 활동은 처음 2행 그대로.")
+        @DisplayName("C-6 충돌(같은 eventId · 다른 수량)도 같은 자리에서 1+3번 시도한 뒤 DLT로 보낸다 — 활동은 처음 2행 그대로.")
         @Test
-        void conflictGoesToDeadLetterWithoutRetry() throws Exception {
+        void conflictRetriesThenGoesToDeadLetter() throws Exception {
             String eventId = UUID.randomUUID().toString();
             send("42", orderConfirmedJson(eventId, 42L, AT, new long[][]{{7, 2}, {8, 1}}));
             await().atMost(WAIT).untilAsserted(() -> assertThat(activityCount()).isEqualTo(2));
@@ -177,29 +185,51 @@ class OrderConfirmedListenerIntegrationTest extends StreamerIntegrationTestSuppo
 
             RecordMetadata sent = send("42", conflicting);
 
-            List<ConsumerRecord<String, String>> dead = KafkaTopicReader.read(KafkaTestContainersConfig.bootstrapServers(),
-                orderEventsTopic + PurchaseActivityKafkaConfig.DLT_SUFFIX, record -> record.value().equals(conflicting), 1, Duration.ofSeconds(10));
+            List<ConsumerRecord<String, String>> dead = deadLettersOf(conflicting);
             assertThat(dead).singleElement().satisfies(record ->
                 assertThat(new String(record.headers().lastHeader("kafka_dlt-exception-cause-fqcn").value(), StandardCharsets.UTF_8))
                     .contains("ConflictingOrderConfirmationException"));
             awaitCommitted(sent, sent.offset() + 1);
+            assertAttempts(conflicting, 1 + PurchaseActivityKafkaConfig.MAX_RETRIES);
             assertThat(activityRepository.findByOrderIdOrderByProductId(42L))
                 .extracting(row -> row.getQuantity()).containsExactly(2, 1);
         }
 
-        @DisplayName("계약에 맞지 않는 원문(수량 0)은 재시도 없이 DLT로 보내고 저장하지 않는다.")
+        @DisplayName("계약에 맞지 않는 원문(수량 0)도 1+3번 시도한 뒤 DLT로 보내고 저장하지 않는다.")
         @Test
-        void invalidPayloadGoesToDeadLetter() throws Exception {
+        void invalidPayloadRetriesThenGoesToDeadLetter() throws Exception {
             String invalid = orderConfirmedJson(UUID.randomUUID().toString(), 77L, AT, new long[][]{{7, 0}});
 
             RecordMetadata sent = send("77", invalid);
 
-            List<ConsumerRecord<String, String>> dead = KafkaTopicReader.read(KafkaTestContainersConfig.bootstrapServers(),
-                orderEventsTopic + PurchaseActivityKafkaConfig.DLT_SUFFIX, record -> record.value().equals(invalid), 1, Duration.ofSeconds(10));
-            assertThat(dead).hasSize(1);
+            assertThat(deadLettersOf(invalid)).hasSize(1);
             awaitCommitted(sent, sent.offset() + 1);
+            assertAttempts(invalid, 1 + PurchaseActivityKafkaConfig.MAX_RETRIES);
             assertThat(consumedCount()).isZero();
         }
+
+        @DisplayName("R-6 정수 자리에 실수(수량 1.9)가 오면 1로 바꿔 저장하지 않고, 1+3번 시도한 뒤 DLT로 보낸다.")
+        @Test
+        void fractionalQuantityIsNotTruncated() throws Exception {
+            String fractional = orderConfirmedJson(UUID.randomUUID().toString(), 78L, AT, new long[][]{{7, 1}}).replace("\"quantity\":1", "\"quantity\":1.9");
+
+            RecordMetadata sent = send("78", fractional);
+
+            assertThat(deadLettersOf(fractional)).hasSize(1);
+            awaitCommitted(sent, sent.offset() + 1);
+            assertThat(consumedCount()).isZero();
+            assertThat(activityCount()).isZero();
+        }
+    }
+
+    private List<ConsumerRecord<String, String>> deadLettersOf(String value) {
+        return KafkaTopicReader.read(KafkaTestContainersConfig.bootstrapServers(),
+            orderEventsTopic + PurchaseActivityKafkaConfig.DLT_SUFFIX, record -> record.value().equals(value), 1, WAIT);
+    }
+
+    /** 매 시도는 파싱부터 한다 — 같은 원문의 파싱 횟수 = 시도 횟수. */
+    private void assertAttempts(String value, int expected) {
+        verify(parser, times(expected)).parse(argThat(record -> record != null && value.equals(record.value())));
     }
 
     private static long header(ConsumerRecord<String, String> record, String name) {

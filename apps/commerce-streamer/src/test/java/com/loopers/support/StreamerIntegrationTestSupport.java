@@ -1,6 +1,7 @@
 package com.loopers.support;
 
 import com.loopers.config.PurchaseActivityKafkaConfig;
+import com.loopers.purchase.adapter.in.kafka.OrderConfirmedMessageParser;
 import com.loopers.purchase.adapter.out.persistence.ProductPurchaseActivityJpaRepository;
 import com.loopers.purchase.application.port.out.PurchaseActivityPort;
 import com.loopers.testcontainers.KafkaTestContainersConfig;
@@ -31,6 +32,10 @@ public abstract class StreamerIntegrationTestSupport {
     /** E-3·C-6: 저장 중 DB 실패를 넣는다. */
     @MockitoSpyBean
     protected PurchaseActivityPort purchaseActivityPort;
+
+    /** ADR-W6-06: listener가 같은 record를 몇 번 시도했는지 센다 (파싱은 매 시도의 첫 단계). */
+    @MockitoSpyBean
+    protected OrderConfirmedMessageParser parser;
 
     @Autowired
     protected ProductPurchaseActivityJpaRepository activityRepository;
