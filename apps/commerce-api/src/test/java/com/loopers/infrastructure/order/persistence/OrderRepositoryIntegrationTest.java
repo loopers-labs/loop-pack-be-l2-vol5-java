@@ -103,6 +103,26 @@ class OrderRepositoryIntegrationTest {
         );
     }
 
+    @DisplayName("확정 시각을 다시 읽으면, 확정할 때 메모리에 남긴 값과 정확히 같다. (6주차 D-82)")
+    @Test
+    void readsConfirmedAtEqualToInMemoryValue() {
+        // arrange
+        Order saved = saveDraft();
+        // 나노초까지 넣어, 자르지 않으면 DB 반올림 값과 달라지는 상황을 만듦
+        ZonedDateTime at = CREATED_AT.plusSeconds(1).plusNanos(123_456_789);
+        ZonedDateTime inMemory = transactionTemplate.execute(status -> {
+            Order order = orderRepository.findByIdAndUserId(saved.getId(), USER_ID).orElseThrow();
+            order.confirmWithPoint(8_000L, at);
+            return order.getConfirmedAt();
+        });
+
+        // act
+        Order found = reload(saved.getId());
+
+        // assert
+        assertThat(found.getConfirmedAt().toInstant()).isEqualTo(inMemory.toInstant());
+    }
+
     @DisplayName("소유자가 아닌 사용자로 조회하면, 주문이 없는 것과 같다.")
     @Test
     void hidesOthersOrder() {

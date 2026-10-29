@@ -80,6 +80,8 @@ services:
       - KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR=1 # consumer offset 복제 갯수 (현재는 1 - 로컬용이라서)
       - KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1 # transaction log 토픽 복제 갯수 (현재는 1 - 로컬용이라서)
       - KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR=1 # In-Sync-Replica 최소 수 (현재는 1 - 로컬용이라서)
+      # topic 은 kafka-init 이 정한 partition 수로 만듦. 켜 두면 첫 구독 · 전송이 기본값(partition 1)으로 먼저 만들 수 있음 (6주차 D-95)
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=false
     volumes:
       - kafka-data:/bitnami/kafka
     healthcheck:
@@ -87,6 +89,22 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+
+  kafka-init:
+    image: bitnamilegacy/kafka:3.5.1
+    container_name: kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        create() { kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic "$$1" --partitions "$$2" --replication-factor 1; }
+        create order-events 3
+        create order-events.DLT 3
+        create demo.internal.topic-v1 1
+    restart: "no"
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest

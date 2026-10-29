@@ -22,6 +22,7 @@ AI와 함께 이 저장소에서 기능을 구현할 때 따르는 규칙입니�
 ./gradlew :apps:commerce-api:test --tests '*ArchitectureTest'
 ./gradlew :apps:commerce-api:checkstyleMain :apps:commerce-api:checkstyleTest
 ./gradlew :apps:commerce-api:check
+./gradlew :apps:commerce-streamer:check
 ```
 
 ## 검사를 우회하지 않는다
@@ -72,6 +73,7 @@ AI와 함께 이 저장소에서 기능을 구현할 때 따르는 규칙입니�
 |---|---|
 | `facade` | 유스케이스 조율(`~Facade`), 트랜잭션 단계(`~Steps`), 재시도(`~Retrier`) |
 | `dto` | 결과 · 명령 타입(`~Info`, `~Command`) |
+| `listener` | 트랜잭션 단계에 묶인 애플리케이션 이벤트 처리(`~Listener`) |
 
 ### infrastructure/{기능}/
 
@@ -80,6 +82,7 @@ AI와 함께 이 저장소에서 기능을 구현할 때 따르는 규칙입니�
 | `persistence` | `~JpaRepository`, `~RepositoryImpl` |
 | `client` | 외부 시스템 adapter와 그 설정 |
 | `cache` | Redis 캐시 구현 |
+| `messaging` | Kafka 등 메시지 발행 · 소비 adapter와 메시지 타입 |
 
 ### interfaces/api/{기능}/
 

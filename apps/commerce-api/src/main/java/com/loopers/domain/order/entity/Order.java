@@ -18,6 +18,7 @@ import jakarta.persistence.Version;
 
 import java.time.Duration;
 import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -55,6 +56,10 @@ public class Order extends BaseEntity {
     /** updatedAt 은 이후 변경으로 덮이므로 따로 둠 (설계 5.5) */
     @Column(name = "paid_at")
     private ZonedDateTime paidAt;
+
+    /** 결제 시각과 갈라질 수 있어 따로 둠. 주문 확정 이벤트의 확정 시각 (6주차 D-71) */
+    @Column(name = "confirmed_at")
+    private ZonedDateTime confirmedAt;
 
     /** DRAFT 에는 없음. 5주차 전 확정 주문은 POINT */
     @Enumerated(EnumType.STRING)
@@ -119,6 +124,10 @@ public class Order extends BaseEntity {
         return paidAt;
     }
 
+    public ZonedDateTime getConfirmedAt() {
+        return confirmedAt;
+    }
+
     public PaymentMethod getPaymentMethod() {
         return paymentMethod;
     }
@@ -151,7 +160,7 @@ public class Order extends BaseEntity {
         this.status = OrderStatus.CONFIRMED;
         this.paymentMethod = PaymentMethod.POINT;
         this.paymentAmount = paymentAmount;
-        this.paidAt = paidAt;
+        markConfirmedAt(paidAt);
     }
 
     /** 이후로는 만료로 끝내지 않음 (5주차 설계 2.1) */
@@ -170,7 +179,7 @@ public class Order extends BaseEntity {
         this.status = OrderStatus.CONFIRMED;
         this.paymentMethod = PaymentMethod.NONE;
         this.paymentAmount = 0L;
-        this.paidAt = now;
+        markConfirmedAt(now);
     }
 
     /** 결제 대기가 아니면 결제 시도와 주문이 어긋난 것이라 상태 오류로 막음 */
@@ -178,13 +187,20 @@ public class Order extends BaseEntity {
         requirePaymentPending();
         this.status = OrderStatus.CONFIRMED;
         this.paymentAmount = paymentAmount;
-        this.paidAt = paidAt;
+        markConfirmedAt(paidAt);
     }
 
     /** 재고 반환은 호출자가 같은 TX 에서 함 */
     public void failPayment() {
         requirePaymentPending();
         this.status = OrderStatus.PAYMENT_FAILED;
+    }
+
+    /** DB(DATETIME(6))와 같은 마이크로초로 잘라, 이벤트에 담는 메모리 값과 저장 값이 같게 함 (6주차 D-82) */
+    private void markConfirmedAt(ZonedDateTime at) {
+        ZonedDateTime stored = at.truncatedTo(ChronoUnit.MICROS);
+        this.paidAt = stored;
+        this.confirmedAt = stored;
     }
 
     private void requirePaymentPending() {
