@@ -20,4 +20,7 @@ public interface ProductJpaRepository extends JpaRepository<ProductJpaEntity, Lo
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select p from ProductJpaEntity p where p.id in :ids order by p.id")
     List<ProductJpaEntity> findAllByIdInForUpdate(@Param("ids") Collection<Long> ids);
+
+    @Query("select p.id, p.likeCount from ProductJpaEntity p where p.id in :ids")
+    List<Object[]> findLikeCountsByIdIn(@Param("ids") Collection<Long> ids);
 }

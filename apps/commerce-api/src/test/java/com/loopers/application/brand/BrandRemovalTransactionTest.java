@@ -19,6 +19,7 @@ import com.loopers.utils.DatabaseCleanUp;
 import jakarta.persistence.EntityManager;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -265,6 +266,16 @@ class BrandRemovalTransactionTest {
         @Override
         public List<Product> findActiveByBrandIdForUpdate(BrandId brandId) {
             return delegate.findActiveByBrandIdForUpdate(brandId);
+        }
+
+        @Override
+        public Map<ProductId, Long> findLikeCounts(Collection<ProductId> ids) {
+            return delegate.findLikeCounts(ids);
+        }
+
+        @Override
+        public void adjustLikeCount(ProductId id, long delta) {
+            delegate.adjustLikeCount(id, delta);
         }
     }
 }

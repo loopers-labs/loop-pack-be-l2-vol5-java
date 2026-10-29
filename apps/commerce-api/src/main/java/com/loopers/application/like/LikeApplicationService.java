@@ -21,10 +21,16 @@ public class LikeApplicationService {
     public void register(long userId, long productId) {
         ProductId id = new ProductId(productId);
         products.findByIdForUpdate(id).filter(p -> !p.isDeleted()).orElseThrow(ProductNotFoundException::new);
-        likes.save(new Like(userId, id));
+        if (likes.save(new Like(userId, id))) {
+            products.adjustLikeCount(id, 1);
+        }
     }
 
     public void cancel(long userId, long productId) {
-        likes.delete(new Like(userId, new ProductId(productId)));
+        ProductId id = new ProductId(productId);
+        // 원자적 UPDATE가 상품 행 잠금을 잡으므로 취소 경로에는 별도 잠금을 두지 않는다(설계 18절).
+        if (likes.delete(new Like(userId, id))) {
+            products.adjustLikeCount(id, -1);
+        }
     }
 }
