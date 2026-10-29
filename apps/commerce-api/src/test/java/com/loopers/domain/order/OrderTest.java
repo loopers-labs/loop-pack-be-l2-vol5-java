@@ -143,6 +143,11 @@ class OrderTest {
             return order;
         }
 
+        private Order stored() {
+            Order order = started();
+            return Order.restore(42L, USER, order.getItems(), order.getTotalAmount(), NOW, order.getStatus(), null, null);
+        }
+
         @DisplayName("DRAFT 에서 결제를 시작하면 PENDING 이 되고, 아직 결제 금액은 없다")
         @Test
         void startsFromDraft() {
@@ -165,13 +170,31 @@ class OrderTest {
         @DisplayName("결제가 성공하면 CONFIRMED 가 되고 결제 금액과 확정 시각을 남긴다")
         @Test
         void completes() {
-            Order order = started();
+            Order order = stored();
 
             order.completePayment(NOW);
 
             assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
             assertThat(order.getPaidAmount()).isEqualTo(Money.of(6_000));
             assertThat(order.getConfirmedAt()).isEqualTo(NOW);
+        }
+
+        @DisplayName("EVT-006: 확정 시각은 마이크로초까지만 남긴다. 메모리, DB, 이벤트의 값이 같아야 하기 때문이다")
+        @Test
+        void keepsConfirmedAtToMicros() {
+            Order order = stored();
+
+            order.completePayment(Instant.parse("2026-09-14T00:00:00.123456789Z"));
+
+            assertThat(order.getConfirmedAt()).isEqualTo(Instant.parse("2026-09-14T00:00:00.123456Z"));
+        }
+
+        @DisplayName("EVT-004: 저장되지 않은 주문은 확정할 수 없다. 확정 사실의 eventId 가 주문 id 에서 나오기 때문이다")
+        @Test
+        void completesOnlyStoredOrder() {
+            Order order = started();
+
+            assertThatThrownBy(() -> order.completePayment(NOW)).isInstanceOf(IllegalStateException.class);
         }
 
         @DisplayName("결제가 실패하면 FAILED 가 되고 결제 금액은 없다")

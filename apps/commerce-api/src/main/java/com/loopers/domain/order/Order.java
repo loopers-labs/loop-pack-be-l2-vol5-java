@@ -5,6 +5,7 @@ import com.loopers.support.error.DomainException;
 import com.loopers.domain.common.Money;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -21,6 +22,8 @@ public class Order {
     private OrderStatus status;
     private Money paidAmount;
     private Instant confirmedAt;
+
+    private final List<Object> events = new ArrayList<>();
 
     private Order(Long id, Long userId, List<OrderItem> items, Money totalAmount, Instant placedAt,
                   OrderStatus status, Money paidAmount, Instant confirmedAt) {
@@ -59,9 +62,19 @@ public class Order {
 
     public void completePayment(Instant confirmedAt) {
         requirePending();
+        if (id == null) {
+            throw new IllegalStateException("저장되지 않은 주문은 확정할 수 없습니다");
+        }
         this.status = OrderStatus.CONFIRMED;
         this.paidAmount = totalAmount;
-        this.confirmedAt = confirmedAt;
+        this.confirmedAt = confirmedAt.truncatedTo(ChronoUnit.MICROS);
+        events.add(OrderConfirmed.of(this));
+    }
+
+    public List<Object> pullEvents() {
+        List<Object> pulled = List.copyOf(events);
+        events.clear();
+        return pulled;
     }
 
     public void failPayment() {
