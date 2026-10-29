@@ -19,6 +19,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.SendResult;
 
 import java.time.ZonedDateTime;
 import java.util.List;
@@ -74,6 +75,23 @@ class OrderConfirmedKafkaPublisherTest {
             .thenReturn(CompletableFuture.failedFuture(failure));
 
         publisher.onConfirmed(event());
+
+        assertFailure(failure);
+    }
+
+    @DisplayName("listener가 반환한 뒤 전송이 실패해도 등록한 콜백이 식별자와 원인을 남긴다.")
+    @Test
+    void exposesFailureCompletedAfterListenerReturns() {
+        CompletableFuture<SendResult<Object, Object>> pending = new CompletableFuture<>();
+        IllegalStateException failure = new IllegalStateException("listener 반환 뒤 비동기 전송 오류");
+        when(kafkaTemplate.send(eq(TOPIC), eq("42"), any())).thenReturn(pending);
+
+        publisher.onConfirmed(event());
+
+        assertThat(pending).isNotDone();
+        assertThat(logs.list).isEmpty();
+
+        pending.completeExceptionally(failure);
 
         assertFailure(failure);
     }

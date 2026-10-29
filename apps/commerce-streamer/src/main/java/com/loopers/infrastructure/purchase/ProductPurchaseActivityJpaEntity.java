@@ -6,6 +6,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import org.hibernate.annotations.FractionalSeconds;
 
 import java.time.Instant;
 
@@ -22,7 +23,8 @@ public class ProductPurchaseActivityJpaEntity extends BaseEntity {
     @Column(nullable = false)
     private int quantity;
 
-    @Column(name = "confirmed_at", nullable = false, columnDefinition = "datetime(6)")
+    @Column(name = "confirmed_at", nullable = false)
+    @FractionalSeconds(6)
     private Instant confirmedAt;
 
     protected ProductPurchaseActivityJpaEntity() {}

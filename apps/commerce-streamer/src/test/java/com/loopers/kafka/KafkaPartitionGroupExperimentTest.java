@@ -5,7 +5,9 @@ import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.ConsumerGroupDescription;
 import org.apache.kafka.clients.admin.DescribeConsumerGroupsOptions;
+import org.apache.kafka.clients.admin.DescribeTopicsOptions;
 import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerGroupMetadata;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -215,11 +217,29 @@ class KafkaPartitionGroupExperimentTest {
         String topic = purpose + "-experiment-" + UUID.randomUUID();
         admin.createTopics(List.of(new NewTopic(topic, 2, (short) 1))).all().get(10, TimeUnit.SECONDS);
         topics.add(topic);
-        var description = admin.describeTopics(List.of(topic)).allTopicNames().get(10, TimeUnit.SECONDS).get(topic);
+        TopicDescription description = awaitTopicDescription(topic);
         assertThat(description.partitions()).hasSize(2);
         assertThat(description.partitions()).allSatisfy(partition -> assertThat(partition.replicas()).hasSize(1));
         assertThat(admin.describeCluster().nodes().get(10, TimeUnit.SECONDS)).hasSize(1);
         return topic;
+    }
+
+    private TopicDescription awaitTopicDescription(String topic) throws Exception {
+        long deadline = System.nanoTime() + DEADLINE.toNanos();
+        ExecutionException lastFailure = null;
+        while (System.nanoTime() < deadline) {
+            try {
+                return admin.describeTopics(List.of(topic), new DescribeTopicsOptions().timeoutMs(2_000))
+                    .allTopicNames().get(3, TimeUnit.SECONDS).get(topic);
+            } catch (ExecutionException e) {
+                if (!(e.getCause() instanceof RetriableException)) {
+                    throw e;
+                }
+                lastFailure = e;
+            }
+            Thread.sleep(50L);
+        }
+        throw new AssertionError("topic metadata 준비 대기 실패: topic=" + topic, lastFailure);
     }
 
     private StableAssignment awaitStable(String group, Set<TopicPartition> expected, int count) throws Exception {

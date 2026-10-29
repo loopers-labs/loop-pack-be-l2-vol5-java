@@ -9,11 +9,14 @@ import jakarta.persistence.UniqueConstraint;
 
 @Entity
 @Table(name = "processed_order_confirmation", uniqueConstraints = {
-    @UniqueConstraint(name = "uk_processed_confirmation_event", columnNames = "event_id"),
-    @UniqueConstraint(name = "uk_processed_confirmation_order", columnNames = "order_id")
+    @UniqueConstraint(name = ProcessedOrderConfirmationJpaEntity.EVENT_UNIQUE_CONSTRAINT, columnNames = "event_id"),
+    @UniqueConstraint(name = ProcessedOrderConfirmationJpaEntity.ORDER_UNIQUE_CONSTRAINT, columnNames = "order_id")
 })
 public class ProcessedOrderConfirmationJpaEntity extends BaseEntity {
-    @Column(name = "event_id", nullable = false, columnDefinition = "varchar(255) COLLATE utf8mb4_0900_bin")
+    static final String EVENT_UNIQUE_CONSTRAINT = "uk_processed_confirmation_event";
+    static final String ORDER_UNIQUE_CONSTRAINT = "uk_processed_confirmation_order";
+
+    @Column(name = "event_id", nullable = false, length = 255)
     private String eventId;
 
     @Column(name = "order_id", nullable = false)

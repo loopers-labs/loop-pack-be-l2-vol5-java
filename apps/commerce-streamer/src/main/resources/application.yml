@@ -14,7 +14,7 @@ spring:
   main:
     web-application-type: servlet
   application:
-    name: commerce-api
+    name: commerce-streamer
   profiles:
     active: local
   config:
@@ -46,7 +46,10 @@ demo-kafka:
 spring:
   config:
     activate:
-      on-profile: local, test
+      on-profile: local
+  jpa:
+    hibernate:
+      ddl-auto: validate
 
 ---
 spring:
@@ -57,7 +60,7 @@ spring:
 order:
   confirmed-event:
     consumer:
-      fetch-max-wait: 100ms
+      fetch-max-wait: 100ms # 테스트용으로 줄여둔 값 (기본값은 500ms)
 
 ---
 spring:

@@ -10,6 +10,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataAccessResourceFailureException;
@@ -80,6 +81,18 @@ class PurchaseActivityIntegrationTest {
         assertCounts(2, 3);
         assertThat(jdbc.queryForObject("select sum(quantity) from product_purchase_activity where product_id = 7", Long.class))
             .isEqualTo(5L);
+    }
+
+    @DisplayName("확정 시각은 DB 재조회 뒤에도 마이크로초까지 보존한다.")
+    @ParameterizedTest
+    @ValueSource(strings = {"2026-09-07T01:00:00.000001Z", "2026-09-07T01:00:00.123456Z", "2026-09-07T01:00:00.999999Z"})
+    void preservesMicrosecondPrecision(String confirmedAt) {
+        OrderConfirmation event = new OrderConfirmation("event-42", 42L, Instant.parse(confirmedAt),
+            List.of(new OrderConfirmation.Item(7L, 2)));
+
+        handler.consume(event);
+
+        assertThat(activities(42L)).isEqualTo(event.activities());
     }
 
     @DisplayName("상품 순서와 분할 수량이 달라도 정규화한 같은 사실은 no-op이다.")

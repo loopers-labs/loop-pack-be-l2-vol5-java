@@ -2,9 +2,12 @@ package com.loopers.interfaces.consumer;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.loopers.application.purchase.PurchaseActivityHandler;
 import com.loopers.domain.purchase.OrderConfirmation;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.kafka.support.Acknowledgment;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -16,6 +19,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class OrderConfirmedVersionDispatchTest {
@@ -54,6 +58,20 @@ class OrderConfirmedVersionDispatchTest {
         assertThatThrownBy(() -> new OrderConfirmedParser(new ObjectMapper(), List.of(first, duplicate)))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("중복");
+    }
+
+    @DisplayName("listener 메서드는 미지원 버전에서 업무 handler와 성공 ack를 호출하지 않고 예외를 전달한다.")
+    @Test
+    void rejectsUnsupportedVersionBeforeBusinessHandlingAndAck() {
+        var parser = new OrderConfirmedParser(new ObjectMapper(), List.of(new OrderConfirmedV1Reader()));
+        PurchaseActivityHandler handler = mock(PurchaseActivityHandler.class);
+        Acknowledgment acknowledgment = mock(Acknowledgment.class);
+        var consumer = new OrderConfirmedConsumer(parser, handler);
+        var record = new ConsumerRecord<>("order-events", 0, 0L, "42", payload(3));
+
+        assertThatThrownBy(() -> consumer.listen(record, acknowledgment))
+            .isInstanceOf(IllegalArgumentException.class);
+        verifyNoInteractions(handler, acknowledgment);
     }
 
     private static OrderConfirmedVersionReader reader(int version, OrderConfirmation result) {

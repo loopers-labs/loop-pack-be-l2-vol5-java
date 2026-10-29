@@ -55,13 +55,17 @@ PG 결제를 켜기 전에 변경 SQL로 상태·결제 결과의 ENUM 확장, `
 
 이미 PG 스키마를 쓰는 DB는 모든 쓰기를 멈춘 뒤 `docker/mysql/pg-payment-safety-migration.sql`을 한 번 적용한다. POINT 전용 기존 DB는 `pg-payment-migration.sql` 다음에 적용하고, 새 DB는 갱신된 `init.sql`을 사용한다. `order_items(product_id)` 인덱스를 추가하며 기존 가용 수량과 과거 주문·결제 사실은 변경하지 않는다. 용량 불변식에 위배되는 기존 값은 전환 전에 확인하고, 이 데이터 확인을 생략한 채 기동하지 않는다.
 
-### 주문 확정 시각 전환
+### 주문 확정 시각과 구매 활동 테이블 전환
 
-확정 이벤트를 켜기 전에 애플리케이션 쓰기를 멈추고 `docker/mysql/order-confirmed-at-migration.sql`로 `orders.confirmed_at`을 추가한다. 새 DB는 같은 컬럼과 구매 활동 테이블을 포함한 `init.sql`을 사용한다.
+확정 이벤트를 켜기 전에 애플리케이션 쓰기를 멈추고 `docker/mysql/order-confirmed-at-migration.sql`로 `orders.confirmed_at`을 추가한다. 구매 활동 소비를 켜기 전에는 `docker/mysql/purchase-activity-migration.sql`로 streamer의 두 테이블을 만든다. 새 DB는 같은 컬럼과 구매 활동 테이블을 포함한 `init.sql`을 사용한다.
 
 이미 확정한 주문(POINT·PG)의 `confirmed_at`은 NULL로 둔다. `updated_at` 등 다른 시각으로 추정해 채우지 않으며, 이 주문들의 확정 이벤트를 소급 발행하지 않는다.
 
 구매 활동 테이블은 `commerce-streamer`가 소유하며 템플릿 구성에 따라 같은 MySQL schema에 둔다. 서비스별로 DB를 나누더라도 두 앱이 서로의 테이블을 읽지 않는 경계는 같다.
+
+API와 streamer의 local 프로필은 `ddl-auto=validate`로 준비된 스키마를 확인한다. streamer를 재시작해도 완료 기록과 구매 활동을 삭제하지 않는다. test 프로필의 격리 DB는 공통 설정의 `create`를 사용한다. 로컬 DB가 비어 있으면 먼저 `init.sql`을, 기존 DB라면 필요한 변경 SQL을 적용한다.
+
+구매 활동 Entity에는 MySQL DDL 문자열을 넣지 않는다. 확정 시각의 소수초 정밀도는 `@FractionalSeconds(6)`으로 선언하고 SQL 타입은 Hibernate dialect가 정한다.
 
 ### 구매 활동의 확정 시각
 

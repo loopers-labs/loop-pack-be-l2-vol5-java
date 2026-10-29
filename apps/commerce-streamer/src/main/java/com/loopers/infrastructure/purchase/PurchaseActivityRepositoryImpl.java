@@ -4,10 +4,10 @@ import com.loopers.domain.purchase.ProcessedOrderConfirmation;
 import com.loopers.domain.purchase.DuplicateOrderConfirmationException;
 import com.loopers.domain.purchase.ProductPurchaseActivity;
 import com.loopers.domain.purchase.PurchaseActivityRepository;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.stereotype.Repository;
 import org.springframework.dao.DataIntegrityViolationException;
 
-import java.sql.SQLException;
 import java.util.List;
 
 @Repository
@@ -39,7 +39,9 @@ public class PurchaseActivityRepositoryImpl implements PurchaseActivityRepositor
             processedRepository.saveAndFlush(ProcessedOrderConfirmationJpaEntity.create(confirmation));
         } catch (DataIntegrityViolationException e) {
             for (Throwable cause = e; cause != null; cause = cause.getCause()) {
-                if (cause instanceof SQLException sql && sql.getErrorCode() == 1062 && "23000".equals(sql.getSQLState())) {
+                if (cause instanceof ConstraintViolationException violation
+                    && violation.getKind() == ConstraintViolationException.ConstraintKind.UNIQUE
+                    && isCompletionConstraint(violation.getConstraintName())) {
                     throw new DuplicateOrderConfirmationException(e);
                 }
             }
@@ -50,5 +52,14 @@ public class PurchaseActivityRepositoryImpl implements PurchaseActivityRepositor
     @Override
     public void saveActivity(ProductPurchaseActivity activity) {
         activityRepository.saveAndFlush(ProductPurchaseActivityJpaEntity.create(activity));
+    }
+
+    private static boolean isCompletionConstraint(String constraintName) {
+        if (constraintName == null) {
+            return false;
+        }
+        String name = constraintName.substring(constraintName.lastIndexOf('.') + 1);
+        return ProcessedOrderConfirmationJpaEntity.EVENT_UNIQUE_CONSTRAINT.equalsIgnoreCase(name)
+            || ProcessedOrderConfirmationJpaEntity.ORDER_UNIQUE_CONSTRAINT.equalsIgnoreCase(name);
     }
 }
