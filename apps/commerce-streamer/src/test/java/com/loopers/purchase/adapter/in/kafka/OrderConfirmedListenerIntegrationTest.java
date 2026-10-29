@@ -11,6 +11,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.utils.Utils;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -220,6 +221,25 @@ class OrderConfirmedListenerIntegrationTest extends StreamerIntegrationTestSuppo
             assertThat(consumedCount()).isZero();
             assertThat(activityCount()).isZero();
         }
+    }
+
+    @DisplayName("R-7 DLT partition은 원래 번호가 아니라 key(주문 ID)로 정한다 — 원래 topic의 partition 수가 DLT와 달라도 DLT 발행이 막히지 않고, 원래 partition은 헤더에 남는다.")
+    @Test
+    void deadLetterPartitionIsChosenByKey() throws Exception {
+        // arrange: key "79"의 hash가 고르는 partition이 아닌 곳에 일부러 보낸다 — 원래 번호를 따르면 다른 partition에 쌓인다
+        String key = "79";
+        int byKey = Utils.toPositive(Utils.murmur2(key.getBytes(StandardCharsets.UTF_8))) % 3;
+        int elsewhere = (byKey + 1) % 3;
+        String invalid = orderConfirmedJson(UUID.randomUUID().toString(), 79L, AT, new long[][]{{7, 0}});
+
+        RecordMetadata sent = kafkaTemplate.send(new ProducerRecord<>(orderEventsTopic, elsewhere, key, invalid)).get(10, TimeUnit.SECONDS).getRecordMetadata();
+
+        assertThat(deadLettersOf(invalid)).singleElement().satisfies(record -> {
+            assertThat(record.partition()).isEqualTo(byKey);
+            assertThat(header(record, "kafka_dlt-original-partition")).isEqualTo(elsewhere);
+            assertThat(header(record, "kafka_dlt-original-offset")).isEqualTo(sent.offset());
+        });
+        awaitCommitted(sent, sent.offset() + 1);
     }
 
     private List<ConsumerRecord<String, String>> deadLettersOf(String value) {
