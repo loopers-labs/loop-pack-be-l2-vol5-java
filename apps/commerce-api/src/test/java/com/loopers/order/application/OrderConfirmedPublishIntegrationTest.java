@@ -321,7 +321,7 @@ class OrderConfirmedPublishIntegrationTest {
             assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM event_outbox", Long.class)).isZero();
         }
 
-        @DisplayName("C-2 같은 PG 성공을 다시 적용해도(reconcile 두 번) 발행 기록은 1건, broker record도 1건이고 PG 생성 호출은 늘지 않는다.")
+        @DisplayName("C-2 같은 PG 성공을 다시 적용해도(reconcile 두 번) 결제 단계(ALREADY_APPLIED)에서 막혀 발행 기록은 1건, broker record도 1건이고 PG 생성 호출은 늘지 않는다.")
         @Test
         void repeatedApplyPublishesOnce() {
             PG.complete(transactionKey, "SUCCESS", null);
@@ -334,6 +334,19 @@ class OrderConfirmedPublishIntegrationTest {
             assertThat(outboxRows()).hasSize(1);
             assertThat(recordsOf(outboxRows().get(0).getEventId(), Duration.ofSeconds(5))).hasSize(1);
             assertThat(PG.createCalls()).isEqualTo(createCallsAfterFirst);
+        }
+
+        @DisplayName("C-2 결제가 처음 종결되더라도 주문이 이미 CONFIRMED면 주문을 바꾸지 않고 발행 기록도 만들지 않는다 — 최초 확정에서만 기록한다.")
+        @Test
+        void alreadyConfirmedOrderDoesNotPublishAgain() {
+            // arrange: 결제는 PENDING인데 주문만 먼저 CONFIRMED (어떤 경로로든 확정이 두 번 오는 상황을 직접 만든다)
+            jdbcTemplate.update("UPDATE orders SET status = 'CONFIRMED', confirmed_at = NOW(6) WHERE id = ?", info.orderId());
+            PG.complete(transactionKey, "SUCCESS", null);
+
+            PaymentApplyOutcome outcome = paymentResultApplier.reconcile(info.paymentId());
+
+            assertThat(outcome).isEqualTo(PaymentApplyOutcome.APPLIED);
+            assertThat(outboxRows()).isEmpty();
         }
     }
 

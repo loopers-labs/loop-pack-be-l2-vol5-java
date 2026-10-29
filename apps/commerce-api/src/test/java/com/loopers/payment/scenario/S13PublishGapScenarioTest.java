@@ -13,6 +13,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.kafka.KafkaException;
 
 import java.time.Duration;
 import java.time.ZonedDateTime;
@@ -25,6 +26,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 
 /**
  * S-13 · E-4 (W6 plan.md D-8, C-8·C-9) — 직접 after-commit 발행의 누락 구간.
@@ -94,6 +96,24 @@ class S13PublishGapScenarioTest extends PaymentScenarioSupport {
         assertThat(paymentOf(orderId).getStatus()).isEqualTo(PaymentStatus.SUCCESS);
         assertThat(PG.createCalls()).isEqualTo(1);
         assertThat(recordsOf(row.getEventId(), Duration.ofSeconds(3))).isEmpty();
+    }
+
+    @DisplayName("S-13 send 호출이 바로 예외를 던져도(broker 전부 장애 → metadata 대기가 max.block.ms를 넘김) 발행 기록에 실패 원인이 남는다 — published_at은 null.")
+    @Test
+    void synchronousSendFailureAlsoRecordsTheCause() throws Exception {
+        // arrange: KafkaTemplate은 metadata timeout을 future가 아니라 send() 호출의 예외로 던진다
+        doThrow(new KafkaException("Send failed", new TimeoutException("Topic order-events not present in metadata after 1000 ms. (주입)")))
+            .when(messageSendPort).send(anyString(), anyString(), anyString());
+
+        // act
+        Long orderId = confirmByCallback(2, "attempt-1");
+
+        // assert
+        EventOutbox row = await().atMost(WAIT).until(() -> outboxOf(orderId), r -> r.getLastError() != null);
+        assertThat(row.getLastError()).contains("TimeoutException").contains("not present in metadata");
+        assertThat(row.getPublishedAt()).isNull();
+        assertThat(orderStatusOf(orderId)).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(PG.createCalls()).isEqualTo(1);
     }
 
     /** 주문 → 확정 요청(202) → PG 수락 → PG 승인 → callback. callback이 결과 적용 경계를 지나 주문을 확정한다. */
