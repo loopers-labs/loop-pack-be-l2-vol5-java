@@ -87,6 +87,16 @@ class OrderConfirmedTest {
             assertThat(event.confirmedAt()).isEqualTo("2026-10-28T14:03:12.000000+09:00");
         }
 
+        @DisplayName("확정 시각이 다른 zone(UTC 05:03:12Z, DB에서 다시 읽은 값)이어도 KST로 쓴다 — 2026-10-28T14:03:12.123456+09:00")
+        @Test
+        void writesConfirmedAtInKst() {
+            ZonedDateTime sameInstantInUtc = CONFIRMED_AT.withZoneSameInstant(ZoneId.of("UTC"));
+
+            OrderConfirmed event = OrderConfirmed.from("evt-1", confirmed(sameInstantInUtc));
+
+            assertThat(event.confirmedAt()).isEqualTo("2026-10-28T14:03:12.123456+09:00");
+        }
+
         @DisplayName("C-3 이벤트에는 eventId·eventType·schemaVersion·orderId·confirmedAt·items만, 품목에는 productId·quantity만 있다 (가격·상품명·사용자 없음).")
         @Test
         void carriesNoSensitiveOrExtraFields() {
