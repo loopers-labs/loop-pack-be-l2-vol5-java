@@ -435,7 +435,7 @@ handle(record):
 - 구현: `DefaultErrorHandler(DeadLetterPublishingRecoverer, ExponentialBackOff 3회)`.
   - recover(DLT 발행)가 성공하면 원래 record의 offset이 **n+1로 commit**된다 (`ackAfterHandle` 기본 true). DB는 이미 rollback이라 구매 활동 0행.
   - DLT 발행 자체가 실패하면(Kafka 장애) recover 실패 → offset을 commit하지 않고 다시 시도한다 → 유실 없음.
-  - DLT도 RF 3·min.insync 2. 기본 recoverer는 **원래와 같은 partition 번호**로 보내므로 DLT partition 수 ≥ 원래 topic.
+  - DLT도 RF 3·min.insync 2. partition은 **key(주문 ID)로** 고른다(resolver가 `-1`). 원래 topic과 partition 수를 맞출 필요가 없고, 원래 partition·offset은 헤더에 남는다 (R-7, 10-29).
   - DLT record 헤더에 원래 topic·partition·offset·예외가 남는다 → 재생·조사의 근거.
 - **과제 검증과의 차이 (C-7)**: 과제 6절 예시는 중단형 handler라 "실패 record 이후 offset이 진행하지 않음 → 오류 제거 후 재시작 → 재전달"을 본다. DLT를 골랐으므로 과제 문구대로 "재시도 소진·recover·ackAfterHandle"을 설명하고, 검증은 **DB 실패 주입 → 3회 재시도 → DLT 기록·원래 offset n+1·구매 활동 0행 → 오류 제거 → DLT 재생 → 저장 1번·재생 재실행 시 no-op**으로 바꾼다.
 
@@ -513,7 +513,7 @@ handle(record):
 | S5 | `d75f3639` | 멱등 consumer, record listener, 재시도 3회 → DLT, E-3 |
 | S6 | `c6d0f912` | E-1 배정, E-2 재전달 |
 
-검사: `:apps:commerce-api:check` 473 · `:apps:commerce-streamer:check` 32, 실패·오류·skip 0 (Checkstyle·ArchitectureTest 포함). 10-29 밤 R-1 ~ R-6 반영 뒤: api 476 · streamer 37 · 실패·오류·skip 0, lint 통과.
+검사: `:apps:commerce-api:check` 473 · `:apps:commerce-streamer:check` 32, 실패·오류·skip 0 (Checkstyle·ArchitectureTest 포함). 10-29 밤 R-1 ~ R-6 반영 뒤: api 476 · streamer 37 · 실패·오류·skip 0, lint 통과. R-7 반영 뒤 streamer 38 · 실패 0.
 Red 단계는 둘 다 컴파일 오류가 아니라 assertion 실패였다 (S2 8개 중 7개 — 필드 목록 검사 1개는 뼈대 record 정의로 이미 통과, S4 16개 중 16개).
 
 ### 🤔 학습자 검토가 필요한 것 (아침)
@@ -532,6 +532,7 @@ Red 단계는 둘 다 컴파일 오류가 아니라 assertion 실패였다 (S2 8
 |---|---|---|---|
 | DLT 이름 | 기본 recoverer 규칙(원래 topic + `.DLT`) | resolver로 `order-events.DLT` 명시 | Spring Kafka 3.3의 기본은 `-dlt`. 어긋나 DLT 발행이 86번 실패하는 동안 partition이 멈췄다 (유실은 없음) |
 | recover 뒤 commit | "ackAfterHandle 기본 true라 n+1 commit" | `commitRecovered=true` 명시 | MANUAL_IMMEDIATE에서는 이 값이 true일 때만 recover한 offset을 바로 commit한다. false면 다음 record ack 때 함께 넘어간다 |
+| DLT partition | 원래와 같은 번호 (DLT partition 수 ≥ 원래) | `-1` — producer가 key로 고른다 | 원래 topic만 partition을 늘리면 DLT에 그 번호가 없어 발행이 막히고 partition이 멈춘다(R-7). 학습자 결정(10-29) |
 | 재시도 범위 (ADR-W6-06) | 계약 위반·충돌은 재시도 없이 DLT | 모든 실패를 3회 재시도 뒤 DLT | 학습자 결정(10-29 저녁). 반론은 ADR에 기록 |
 | 동기 send 실패 기록 | catch에서 바로 `markFailed` | 결과 executor의 새 TX로 기록 | AFTER_COMMIT 단계에서는 commit된 TX에 합류해 `last_error`가 사라졌다 — 테스트로 확인(R-1) |
 | streamer 파싱 | 공용 ObjectMapper 그대로 | parser만 복사본을 엄격하게(실수·문자열 숫자·단일 객체 배열 변환 끔) | 수량 1.9가 1로 저장됐다(R-6). 공용 설정은 그대로 둔다 |

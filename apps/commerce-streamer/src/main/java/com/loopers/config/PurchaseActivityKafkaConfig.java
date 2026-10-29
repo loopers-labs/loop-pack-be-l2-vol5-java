@@ -63,9 +63,11 @@ public class PurchaseActivityKafkaConfig {
 
     private static DefaultErrorHandler errorHandler(KafkaTemplate<String, String> template) {
         // DLT 이름을 기본값에 맡기지 않는다 — Spring Kafka 3.3의 기본은 "원래 topic-dlt"라서, ".DLT"로 만든 topic과 어긋나
-        // DLT 발행이 계속 실패했다(그동안 offset을 commit하지 않아 같은 record를 반복 재시도하며 partition이 막혔다). 같은 partition 번호로 보낸다.
+        // DLT 발행이 계속 실패했다(그동안 offset을 commit하지 않아 같은 record를 반복 재시도하며 partition이 막혔다).
+        // partition은 -1 — 번호를 정하지 않고 producer가 key(주문 ID)로 고른다. 원래 번호를 따르면 원래 topic만 partition을 늘렸을 때
+        // DLT에 그 번호가 없어 같은 이유로 막힌다 (R-7). 원래 partition·offset은 DLT 헤더에 남는다.
         DeadLetterPublishingRecoverer recoverer = new DeadLetterPublishingRecoverer(template,
-            (record, exception) -> new TopicPartition(record.topic() + DLT_SUFFIX, record.partition()));
+            (record, exception) -> new TopicPartition(record.topic() + DLT_SUFFIX, -1));
         ExponentialBackOffWithMaxRetries backOff = new ExponentialBackOffWithMaxRetries(MAX_RETRIES);
         backOff.setInitialInterval(1_000L);
         backOff.setMultiplier(2.0);
@@ -78,7 +80,7 @@ public class PurchaseActivityKafkaConfig {
     }
 
     /**
-     * DLT도 원래 topic과 같은 내구성(RF 3, min.insync 2). 기본 recoverer가 같은 partition 번호로 보내므로 partition 수도 같게(3) 둔다.
+     * DLT도 원래 topic과 같은 내구성(RF 3, min.insync 2). partition은 key로 고르므로 원래 topic과 수를 맞출 필요는 없다.
      */
     @Bean
     NewTopic orderEventsDeadLetterTopic(@Value("${kafka.topics.order-events}") String topic) {
