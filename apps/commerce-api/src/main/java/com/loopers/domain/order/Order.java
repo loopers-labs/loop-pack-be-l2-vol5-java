@@ -12,6 +12,7 @@ import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import lombok.Getter;
 
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -54,6 +55,12 @@ public class Order extends BaseEntity {
      * PAYMENT_PENDING → CONFIRMED 전환과 결제액 기록은 OrderRepository.finishIfPaymentPending 의 조건부 UPDATE 가 맡는다.
      */
     private long paidAmount;
+
+    /**
+     * 최초 확정 시각 (6주차 설계 D2). finishIfPaymentPending 이 CONFIRMED 로 바꾸는 같은 UPDATE 에서 updatedAt 과 같은 값으로 한 번만 기록한다.
+     * 이전 POINT 확정 주문과 확정 전 주문은 null 이다. 소급해서 채우지 않는다.
+     */
+    private ZonedDateTime confirmedAt;
 
     protected Order() {}
 

@@ -14,7 +14,7 @@ spring:
   main:
     web-application-type: servlet
   application:
-    name: commerce-api
+    name: commerce-streamer
   profiles:
     active: local
   config:
@@ -29,11 +29,40 @@ demo-kafka:
   test:
     topic-name: demo.internal.topic-v1
 
+# 구매 활동 consumer (6주차 설계 D12·D14). topic 은 앱이 만들지 않는다 (운영자 생성, 테스트는 AdminClient 로 직접 생성).
+purchase-activity:
+  topic: order-events
+  group-id: purchase-activity
+  fetch-min-bytes: 1           # Kafka 기본값. record listener 라 묶음 이득이 없고 튜닝할 측정 근거가 없다 (설계 D14)
+  fetch-max-wait-ms: 500
+  retry:
+    max-retries: 3             # 일시 오류 재시도 횟수 (첫 시도 제외). 총 대기 1+2+4초는 max.poll.interval.ms(기본 5분)보다 충분히 짧다
+    initial-backoff-ms: 1000
+    multiplier: 2
+  dead-letter:
+    send-timeout-ms: 3000      # 영구 오류 record 를 {topic}.DLT 로 보낼 때 broker 저장 확인(acks=all) 대기 상한 (설계 D12)
+
 ---
 spring:
   config:
     activate:
       on-profile: local, test
+
+---
+# 테스트: 작은 메시지가 fetch 대기 때문에 늦게 보이지 않게 fetch 값을 줄이고(긴 sleep 대신), 재시도도 짧게 (설계 D14)
+spring:
+  config:
+    activate:
+      on-profile: test
+
+purchase-activity:
+  fetch-min-bytes: 1
+  fetch-max-wait-ms: 100
+  retry:
+    max-retries: 2
+    initial-backoff-ms: 100
+  dead-letter:
+    send-timeout-ms: 1000
 
 ---
 spring:

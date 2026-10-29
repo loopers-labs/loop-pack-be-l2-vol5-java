@@ -1,6 +1,7 @@
 package com.loopers.domain.payment;
 
 import com.loopers.domain.order.Order;
+import com.loopers.domain.order.OrderConfirmedEvent;
 import com.loopers.domain.order.OrderRepository;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.domain.product.StockReservation;
@@ -13,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 
 /**
  * 로컬 TX B. create 응답·callback·reconcile 세 입구가 공유하며, 검증된 PG 결과를 시도·주문·예약에 한 번만 반영한다.
@@ -32,23 +34,35 @@ public class PaymentResultService {
     /**
      * ⑥⑦⑧ 을 한 TX 로 실행한다.
      *
-     * @return ⑥ 이 1행이면 true. 0행(이미 종결)이면 아무 효과 없이 false.
+     * @return ⑥ 이 1행이면 applied=true. 0행(이미 종결)이면 아무 효과 없이 applied=false.
+     *         ⑦ 이 주문을 처음 CONFIRMED 로 만든 경우에만 firstConfirmation(발행 payload)이 채워진다 (6주차 설계 D3·D4).
      */
     @Transactional
-    public boolean applyFinal(Long attemptId, PaymentFinalResult result) {
+    public PaymentApplyResult applyFinal(Long attemptId, PaymentFinalResult result) {
         PaymentAttempt attempt = paymentAttemptRepository.findById(attemptId)
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[id = " + attemptId + "] 결제 시도를 찾을 수 없습니다."));
 
         int settled = paymentAttemptRepository.settleIfOpen(
             attemptId, result.status(), result.failureReason(), result.transactionKey());
         if (settled == 0) {
-            return false;
+            return PaymentApplyResult.notApplied();
         }
 
+        // 확정 시각은 밀리초로 잘라 한 번만 만든다. 저장(confirmedAt·updatedAt)과 발행 payload 가 같은 값을 쓴다 (6주차 설계 D2).
+        ZonedDateTime at = ZonedDateTime.now(clock).truncatedTo(ChronoUnit.MILLIS);
+        OrderConfirmedEvent firstConfirmation = null;
         if (result.isSuccess()) {
-            orderRepository.finishIfPaymentPending(attempt.getOrderId(), Order.OrderStatus.CONFIRMED, attempt.getAmount());
+            int confirmedRows = orderRepository.finishIfPaymentPending(
+                attempt.getOrderId(), Order.OrderStatus.CONFIRMED, attempt.getAmount(), at);
+            if (confirmedRows == 1) {
+                // 벌크 UPDATE 는 영속성 컨텍스트를 거치지 않으므로, 같은 TX 에서 먼저 읽힌 Order 엔티티는 confirmedAt 이 null 일 수 있다.
+                // 그래서 confirmedAt 은 엔티티가 아니라 위의 at 을 쓰고, 품목만 DB 에서 읽는다. payload 는 TX 안에서 완성한다 (D4).
+                Order order = orderRepository.findByIdWithItems(attempt.getOrderId())
+                    .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[id = " + attempt.getOrderId() + "] 주문을 찾을 수 없습니다."));
+                firstConfirmation = OrderConfirmedEvent.of(attempt.getOrderId(), at, order.getItems());
+            }
         } else {
-            orderRepository.finishIfPaymentPending(attempt.getOrderId(), Order.OrderStatus.PAYMENT_FAILED, 0L);
+            orderRepository.finishIfPaymentPending(attempt.getOrderId(), Order.OrderStatus.PAYMENT_FAILED, 0L, at);
         }
 
         for (StockReservation reservation : stockReservationRepository.findAllByOrderId(attempt.getOrderId())) {
@@ -58,7 +72,7 @@ public class PaymentResultService {
                 productRepository.restoreStock(reservation.getProductId(), reservation.getQuantity());
             }
         }
-        return true;
+        return PaymentApplyResult.applied(firstConfirmation);
     }
 
     /**

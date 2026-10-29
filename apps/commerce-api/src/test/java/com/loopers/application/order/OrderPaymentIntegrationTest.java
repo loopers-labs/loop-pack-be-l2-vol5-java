@@ -4,6 +4,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.loopers.domain.order.Order;
+import com.loopers.domain.payment.PaymentApplyResult;
 import com.loopers.domain.payment.PaymentAttempt;
 import com.loopers.domain.payment.PaymentFinalResult;
 import com.loopers.domain.payment.PaymentResultService;
@@ -143,11 +144,12 @@ class OrderPaymentIntegrationTest {
 
             // act 2 - PG 가 성공으로 바뀐 결과를 TX B 에 적용
             fakePaymentGateway.markSuccess(attempt.getTransactionKey());
-            boolean applied = paymentResultService.applyFinal(
+            PaymentApplyResult applied = paymentResultService.applyFinal(
                 attempt.getId(), PaymentFinalResult.success(attempt.getTransactionKey()));
 
             // assert 2
-            assertThat(applied).isTrue();
+            assertThat(applied.applied()).isTrue();
+            assertThat(applied.isFirstConfirmation()).isTrue();
             Order order = orderOf(orderId);
             assertThat(order.getStatus()).isEqualTo(Order.OrderStatus.CONFIRMED);
             assertThat(order.getPaidAmount()).isEqualTo(2000L);

@@ -4,6 +4,7 @@ import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderRepository;
 import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.jpa.impl.JPAQueryFactory;
+import com.querydsl.jpa.impl.JPAUpdateClause;
 import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -61,12 +62,16 @@ public class OrderRepositoryImpl implements OrderRepository {
     }
 
     @Override
-    public int finishIfPaymentPending(Long orderId, Order.OrderStatus status, long paidAmount) {
-        return (int) queryFactory
+    public int finishIfPaymentPending(Long orderId, Order.OrderStatus status, long paidAmount, ZonedDateTime at) {
+        JPAUpdateClause update = queryFactory
             .update(order)
             .set(order.status, status)
             .set(order.paidAmount, paidAmount)
-            .set(order.updatedAt, ZonedDateTime.now())
+            .set(order.updatedAt, at);
+        if (status == Order.OrderStatus.CONFIRMED) {
+            update.set(order.confirmedAt, at);
+        }
+        return (int) update
             .where(order.id.eq(orderId), order.status.eq(Order.OrderStatus.PAYMENT_PENDING))
             .execute();
     }
