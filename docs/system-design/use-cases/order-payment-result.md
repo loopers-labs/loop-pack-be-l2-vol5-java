@@ -25,7 +25,7 @@ PG의 관찰을 결제 시도·주문에 한 번만 반영하고 확정 실패�
 | --- | --- | --- | --- |
 | 처리 중 | `PENDING` | `PAYMENT_PENDING` | 차감 상태 유지 |
 | 미확인 | 마지막 저장 상태 유지 (`REQUESTED`의 생성 응답 유실은 `UNKNOWN`). 조회 불가도 상태를 바꾸지 않으므로 `REQUESTED`·`UNKNOWN`은 결과 미확인, PG가 접수를 확인한 `PENDING`은 결제 대기로 표시 | `PAYMENT_PENDING` | 차감 상태 유지 |
-| 성공 | `SUCCEEDED` | `CONFIRMED`, `PG`, 결제액, `SUCCESS`, 확정 시각. commit 뒤 [확정 이벤트](order-confirmed-event.md#발행) 발행 | 추가 차감 없음 |
+| 성공 | `SUCCEEDED` | `CONFIRMED`, `PG`, 결제액, `SUCCESS`, 확정 시각. commit 뒤 [확정 이벤트](../../../apps/commerce-api/docs/order-confirmed-producer.md#발행-조건) 발행 | 추가 차감 없음 |
 | 실패 | `FAILED` | `PAYMENT_FAILED`, `PG`, 결제 결과 `FAILED` | 주문 품목 수량만큼 한 번 반환 |
 | 충돌 | 미종결 유지, [충돌 사유 기록](#충돌-기록) | `PAYMENT_PENDING` (결과 미확인 표시) | 임의 반환 없음 |
 
@@ -180,7 +180,7 @@ TX B에서 상품 활성 여부를 다시 확인하거나 Brand 잠금을 얻지
 
 저장 오류와 정합성 오류의 경로별 응답은 [결제 경로의 응답 변환](../error-mapping.md#결제-경로의-응답-변환)을 따른다. TX B rollback이 확인된 경우 해당 요청이 수행한 상태·재고 변경은 취소된다.
 
-TX B commit 뒤 응답용 재조회나 응답 전송에 실패한 경우는 rollback과 구분한다. 확정 이벤트의 발행 실패도 commit된 결과를 바꾸지 않으며 [발행 누락 구간](order-confirmed-event.md#발행-누락-구간)으로 남는다. 오류 응답이나 timeout만으로 DB 반영 여부를 단정하지 않으며, 이미 commit된 종결 상태와 재고 효과는 유지한다. 이후 같은 callback·reconcile은 저장된 결과를 확인하고 추가 확정·반환을 하지 않는다.
+TX B commit 뒤 응답용 재조회나 응답 전송에 실패한 경우는 rollback과 구분한다. 확정 이벤트의 발행 실패도 commit된 결과를 바꾸지 않으며 [발행 누락 구간](../../../apps/commerce-api/docs/order-confirmed-producer.md#발행-누락-구간)으로 남는다. 오류 응답이나 timeout만으로 DB 반영 여부를 단정하지 않으며, 이미 commit된 종결 상태와 재고 효과는 유지한다. 이후 같은 callback·reconcile은 저장된 결과를 확인하고 추가 확정·반환을 하지 않는다.
 
 ## 검증 기준
 

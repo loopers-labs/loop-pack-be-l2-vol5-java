@@ -41,7 +41,11 @@ Commerce 시스템(`commerce-api`, `commerce-streamer`)의 설계를 책임별�
 | [주문 결제 요청](use-cases/order-payment-request.md) | 멱등성·재요청 정책, 재고 차감과 PG 요청 조율, 동시성 |
 | [주문 결제 결과 반영](use-cases/order-payment-result.md) | 결과 판정, 중복 반영 방지, 충돌 기록, 주문 품목 스냅샷 기반 재고 보상 |
 | [주문 결제 회복](use-cases/order-payment-recovery.md) | 수동 재확인·주기 조회, 조회 회복 정책과 실행 프로필, 재시작 후 확인과 복구 한계 |
-| [주문 확정 이벤트](use-cases/order-confirmed-event.md) | `OrderConfirmed` 계약, commit 뒤 발행과 누락 구간, 구매 활동 소비의 중복 판정, listener·offset 정책 |
+| [주문 확정 이벤트 공통 계약](use-cases/order-confirmed-event.md) | payload·신원·버전, 전체 경계와 전달 보장 |
+| [주문 확정 Producer](../../apps/commerce-api/docs/order-confirmed-producer.md) | 최초 확정·이벤트 구성, after-commit 발행·전송 실패 |
+| [Kafka Broker](../../modules/kafka/docs/broker.md) | broker 주소, topic·partition·복제·보존과 단일 broker 한계 |
+| [구매 활동 Consumer](../../apps/commerce-streamer/docs/purchase-activity-consumer.md) | 계약 해석, DB 멱등성·트랜잭션, listener·ack·복구 |
+| [주문 확정 이벤트 검증](use-cases/order-confirmed-event-verification.md) | 모듈별 테스트 위치, listener 실패·복구, offset 미커밋 재전달, partition·group 실험, 발행 누락 사례 |
 
 ## 외부 시스템 연동
 
@@ -63,6 +67,7 @@ Commerce 시스템(`commerce-api`, `commerce-streamer`)의 설계를 책임별�
 
 ## 문서 갱신 기준
 
+- 모듈별 Producer·Broker·Consumer 설계는 해당 모듈의 `docs/`에 두고, 공유 이벤트 계약과 전체 처리 경계는 이 시스템 설계 문서에서 관리한다.
 - 규칙의 기준 문서는 책임에 맞는 한 곳에 두고, 다른 문서에서는 요약과 링크로 연결한다. 여러 문서에 걸친 흐름은 각 문서 상단의 안내로 연결한다.
 - 시스템·도메인·API·영속성·오류 문서는 폴더 루트에, 외부 연동은 `external-systems/`, 유스케이스는 `use-cases/`에 둔다. 이 README에서는 파일 위치와 함께 문서의 책임별로 안내한다.
 - 구현 진행 중인 설계는 상태를 명시한다. 구현된 동작은 해당 설계 문서와 관련 테스트를 기준으로 확인한다.
