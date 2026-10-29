@@ -53,8 +53,10 @@ public class OutboxPublishService implements OutboxPublishUseCase {
                     }
                 }, resultExecutor);
         } catch (RuntimeException e) {
-            // send() 호출 자체가 실패해도(직렬화·설정 오류 등) 확정은 그대로 둔다
-            recordFailure(event, e);
+            // send() 호출 자체가 실패해도(metadata 대기가 max.block.ms를 넘김·직렬화 오류 등) 확정은 그대로 둔다.
+            // 여기는 AFTER_COMMIT 단계라 이미 commit된 TX가 아직 스레드에 묶여 있다 — 바로 쓰면 그 TX에 합류해 기록이 commit되지 않는다.
+            // 결과 표시와 같은 executor에서 새 TX로 남긴다.
+            resultExecutor.execute(() -> recordFailure(event, e));
         }
     }
 
