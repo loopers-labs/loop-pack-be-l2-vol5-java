@@ -7,8 +7,10 @@ import com.loopers.application.point.PointApplicationService;
 import com.loopers.application.order.OrderApplicationService;
 import com.loopers.application.order.OrderNotFoundException;
 import com.loopers.domain.common.RuleViolationException;
+import com.loopers.infrastructure.payment.TestPgServer;
 import com.loopers.infrastructure.user.UserJpaEntity;
 import com.loopers.infrastructure.user.UserJpaRepository;
+import com.loopers.support.pg.TestPgFixture;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,7 +21,9 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
@@ -43,17 +47,25 @@ class OrderApiIntegrationTest {
     @Autowired private UserJpaRepository users;
     @Autowired private DatabaseCleanUp cleanup;
     @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbc;
+    @Autowired private TestPgFixture pg;
+    private TestPgServer server;
     private long first;
     private long second;
     @BeforeEach
     void prepare() {
+        server = pg.start();
         users.save(new UserJpaEntity(1));
         users.save(new UserJpaEntity(2));
         long brand = brands.create("브랜드").id().value();
         first = products.create(brand, "첫 상품", 2000, 5).id();
         second = products.create(brand, "둘째 상품", 3000, 5).id();
     }
-    @AfterEach void clean() { jdbc.update("delete from order_items"); cleanup.truncateAllTables(); }
+    @AfterEach
+    void clean() throws InterruptedException {
+        pg.close();
+        jdbc.update("delete from order_items");
+        cleanup.truncateAllTables();
+    }
     private List<OrderApplicationService.ItemRequest> items() {
         return List.of(new OrderApplicationService.ItemRequest(first, 2), new OrderApplicationService.ItemRequest(second, 1));
     }
@@ -75,17 +87,19 @@ class OrderApiIntegrationTest {
                 .containsExactlyInAnyOrder(true, false);
         }
         assertThat(products.getAdminProduct(first).stock()).isZero();
-        assertThat(points.balance(1) + points.balance(2)).isEqualTo(18000);
+        assertThat(server.createCalls()).isEqualTo(1);
+        assertThat(points.balance(1) + points.balance(2)).isEqualTo(20000);
     }
 
     private boolean attemptConfirm(long userId, long orderId) {
-        try { orders.confirm(userId, orderId); return true; }
+        try { orders.confirm(userId, orderId, TestPgFixture.command()); return true; }
         catch (RuleViolationException e) { return false; }
     }
 
     @Test
-    @DisplayName("충전 API에서 여러 품목 주문 확정과 내 주문·잔액 및 관리자 조회까지 연결된다")
+    @DisplayName("충전 API에서 여러 품목 주문을 PG로 확정하고 내 주문·잔액(변화 없음) 및 관리자 조회까지 연결된다")
     void completesHttpFlow() throws Exception {
+        server.createBehavior(TestPgServer.CreateBehavior.ACCEPT_SUCCESS);
         mvc.perform(post("/api/v1/points/charge").header("X-USER-ID", "1").contentType(MediaType.APPLICATION_JSON)
             .content("{\"amount\":10000}")).andExpect(status().isOk());
         var response = mvc.perform(post("/api/v1/orders").header("X-USER-ID", "1").contentType(MediaType.APPLICATION_JSON)
@@ -93,35 +107,62 @@ class OrderApiIntegrationTest {
             .andExpect(status().isCreated()).andExpect(jsonPath("$.data.status").value("DRAFT"))
             .andExpect(jsonPath("$.data.total").value(7000)).andReturn();
         long id = mapper.readTree(response.getResponse().getContentAsString()).path("data").path("id").asLong();
+        mvc.perform(get("/api/v1/orders/{id}", id).header("X-USER-ID", "1"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.paidAmount").value(0))
+            .andExpect(jsonPath("$.data.paymentResult").value("NOT_PAID"))
+            .andExpect(jsonPath("$.data.paymentMethod").doesNotExist());
         assertThat(points.balance(1)).isEqualTo(10000);
         assertThat(products.getAdminProduct(first).stock()).isEqualTo(5);
         products.change(first, "가격 변경", 9999);
-        mvc.perform(post("/api/v1/orders/{id}/confirm", id).header("X-USER-ID", "1"))
-            .andExpect(status().isOk()).andExpect(jsonPath("$.data.paidAmount").value(7000))
-            .andExpect(jsonPath("$.data.paymentResult").value("SUCCESS"));
+        String attemptKey = UUID.randomUUID().toString();
+        mvc.perform(confirm(id, attemptKey))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("CONFIRMED"))
+            .andExpect(jsonPath("$.data.paidAmount").value(7000))
+            .andExpect(jsonPath("$.data.paymentResult").value("SUCCESS"))
+            .andExpect(jsonPath("$.data.paymentMethod").value("PG"));
+        assertThat(jdbc.queryForMap("select method, amount, result from payment_records where order_id = ?", id))
+            .containsEntry("method", "PG").containsEntry("amount", 7000L).containsEntry("result", "SUCCESS");
         mvc.perform(get("/api/v1/orders/{id}", id).header("X-USER-ID", "1"))
-            .andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("CONFIRMED"));
-        mvc.perform(get("/api/v1/points").header("X-USER-ID", "1")).andExpect(jsonPath("$.data.balance").value(3000));
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("CONFIRMED"))
+            .andExpect(jsonPath("$.data.paidAmount").value(7000)).andExpect(jsonPath("$.data.paymentResult").value("SUCCESS"))
+            .andExpect(jsonPath("$.data.paymentMethod").value("PG"));
+        mvc.perform(get("/api/v1/orders").header("X-USER-ID", "1"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data[0].id").value(id))
+            .andExpect(jsonPath("$.data[0].paidAmount").value(7000)).andExpect(jsonPath("$.data[0].paymentMethod").value("PG"));
+        mvc.perform(get("/api/v1/points").header("X-USER-ID", "1")).andExpect(jsonPath("$.data.balance").value(10000));
         mvc.perform(get("/api/v1/orders").header("X-USER-ID", "2")).andExpect(jsonPath("$.data").isEmpty());
         mvc.perform(get("/api-admin/v1/orders").param("userId", "1").with(user("admin").roles("ADMIN")))
-            .andExpect(status().isOk()).andExpect(jsonPath("$.data[0].id").value(id));
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data[0].id").value(id))
+            .andExpect(jsonPath("$.data[0].paymentMethod").value("PG"));
         mvc.perform(get("/api-admin/v1/orders/{id}", id).with(user("customer").roles("USER")))
             .andExpect(status().isForbidden());
-        mvc.perform(post("/api/v1/orders/{id}/confirm", id).header("X-USER-ID", "1")).andExpect(status().isConflict());
+        mvc.perform(confirm(id, attemptKey)).andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("CONFIRMED"));
+        mvc.perform(confirm(id, UUID.randomUUID().toString())).andExpect(status().isConflict());
         assertThat(products.getAdminProduct(first).stock()).isEqualTo(3);
-        assertThat(points.balance(1)).isEqualTo(3000);
+        assertThat(server.createCalls()).isEqualTo(1);
+        assertThat(points.balance(1)).isEqualTo(10000);
+    }
+
+    private MockHttpServletRequestBuilder confirm(long id, String attemptKey) {
+        return post("/api/v1/orders/{id}/confirm", id).header("X-USER-ID", "1").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"paymentAttemptKey\":\"" + attemptKey + "\",\"cardType\":\"" + TestPgFixture.CARD_TYPE
+                + "\",\"cardNo\":\"" + TestPgFixture.CARD_NO + "\"}");
     }
 
     @Test
-    @DisplayName("잔액 부족으로 확정이 실패하면 먼저 차감한 모든 상품 재고와 주문 상태가 롤백된다")
+    @DisplayName("뒤 품목 상품이 삭제돼 확정이 실패하면 먼저 확보한 앞 품목 재고와 주문 상태가 롤백되고 PG를 부르지 않는다")
     void rollsBackAfterStockChanges() {
         var order = orders.create(1, items());
         points.charge(1, 100);
-        assertThatThrownBy(() -> orders.confirm(1, order.id())).isInstanceOf(RuleViolationException.class);
+        products.delete(second);
+        assertThatThrownBy(() -> orders.confirm(1, order.id(), TestPgFixture.command()))
+            .isInstanceOf(com.loopers.application.product.ProductNotFoundException.class);
         assertThat(products.getAdminProduct(first).stock()).isEqualTo(5);
         assertThat(products.getAdminProduct(second).stock()).isEqualTo(5);
+        assertThat(server.createCalls()).isZero();
         assertThat(points.balance(1)).isEqualTo(100);
         assertThat(orders.getMyOrder(1, order.id()).status()).isEqualTo("DRAFT");
+        assertThat(jdbc.queryForObject("select count(*) from payment_records", Long.class)).isZero();
     }
 
     @Test
@@ -130,21 +171,24 @@ class OrderApiIntegrationTest {
         var order = orders.create(1, items());
         points.charge(1, 10000);
         products.setStock(second, 0);
-        assertThatThrownBy(() -> orders.confirm(2, order.id())).isInstanceOf(OrderNotFoundException.class);
-        assertThatThrownBy(() -> orders.confirm(1, order.id())).isInstanceOf(RuleViolationException.class);
+        assertThatThrownBy(() -> orders.confirm(2, order.id(), TestPgFixture.command()))
+            .isInstanceOf(OrderNotFoundException.class);
+        assertThatThrownBy(() -> orders.confirm(1, order.id(), TestPgFixture.command()))
+            .isInstanceOf(RuleViolationException.class);
         assertThat(products.getAdminProduct(first).stock()).isEqualTo(5);
+        assertThat(server.createCalls()).isZero();
         assertThat(points.balance(1)).isEqualTo(10000);
         assertThat(orders.getMyOrder(1, order.id()).status()).isEqualTo("DRAFT");
     }
 
     @Test
-    @DisplayName("같은 주문의 동시 확정은 한 번만 성공하고 재고와 포인트를 한 번만 차감한다")
+    @DisplayName("같은 주문을 서로 다른 시도 키로 동시에 확정하면 한 번만 결제를 시작하고 재고를 한 번만 확보하며 포인트는 쓰지 않는다")
     void confirmsOnceConcurrently() throws Exception {
         var order = orders.create(1, items());
         points.charge(1, 20000);
         try (var pool = Executors.newFixedThreadPool(2)) {
             java.util.concurrent.Callable<Boolean> task = () -> {
-                try { orders.confirm(1, order.id()); return true; }
+                try { orders.confirm(1, order.id(), TestPgFixture.command()); return true; }
                 catch (RuleViolationException e) { return false; }
             };
             var a = pool.submit(task);
@@ -152,8 +196,9 @@ class OrderApiIntegrationTest {
             assertThat(List.of(a.get(20, TimeUnit.SECONDS), b.get(20, TimeUnit.SECONDS)))
                 .containsExactlyInAnyOrder(true, false);
         }
-        assertThat(points.balance(1)).isEqualTo(13000);
+        assertThat(points.balance(1)).isEqualTo(20000);
         assertThat(products.getAdminProduct(first).stock()).isEqualTo(3);
+        assertThat(server.createCalls()).isEqualTo(1);
     }
 
     @Test

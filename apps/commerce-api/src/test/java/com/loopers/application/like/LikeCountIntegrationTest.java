@@ -6,6 +6,7 @@ import com.loopers.application.order.OrderResult;
 import com.loopers.application.point.PointApplicationService;
 import com.loopers.application.product.ProductApplicationService;
 import com.loopers.domain.common.RuleViolationException;
+import com.loopers.support.pg.TestPgFixture;
 import com.loopers.utils.DatabaseCleanUp;
 import java.util.ArrayList;
 import java.util.List;
@@ -39,17 +40,20 @@ class LikeCountIntegrationTest {
     @Autowired private OrderApplicationService orderApplicationService;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private DatabaseCleanUp databaseCleanUp;
+    @Autowired private TestPgFixture testPgFixture;
 
     private long productId;
 
     @BeforeEach
     void prepare() {
+        testPgFixture.start();
         long brandId = brandApplicationService.create("브랜드").id().value();
         productId = productApplicationService.create(brandId, "상품", 1000, 10).id();
     }
 
     @AfterEach
-    void clean() {
+    void clean() throws InterruptedException {
+        testPgFixture.close();
         jdbcTemplate.update("delete from order_items");
         databaseCleanUp.truncateAllTables();
     }
@@ -100,7 +104,7 @@ class LikeCountIntegrationTest {
         productApplicationService.setStock(productId, 5);
         pointApplicationService.charge(1, 10000);
         OrderResult draft = orderApplicationService.create(1, List.of(new OrderApplicationService.ItemRequest(productId, 1)));
-        orderApplicationService.confirm(1, draft.id());
+        orderApplicationService.confirm(1, draft.id(), TestPgFixture.command());
 
         assertThat(productApplicationService.getAdminProduct(productId).stock()).isEqualTo(4);
         assertThat(relationCount()).isEqualTo(2);

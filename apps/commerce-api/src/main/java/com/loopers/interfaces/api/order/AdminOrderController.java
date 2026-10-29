@@ -6,11 +6,12 @@ import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.RequestValues;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
+import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import java.util.List;
 
 @RestController
 public class AdminOrderController {
@@ -18,6 +19,12 @@ public class AdminOrderController {
     public AdminOrderController(OrderApplicationService service) { this.service = service; }
     @GetMapping("/api-admin/v1/orders/{id}")
     public ApiResponse<OrderResult> get(@PathVariable long id) { return ApiResponse.success(service.getAdminOrder(id)); }
+
+    @PostMapping("/api-admin/v1/orders/{id}/payment/reconcile")
+    public ApiResponse<OrderResult> reconcile(@PathVariable long id) {
+        return ApiResponse.success(service.reconcilePayment(id));
+    }
+
     @GetMapping("/api-admin/v1/orders")
     public ApiResponse<List<OrderResult>> list(@RequestParam(required = false) Long userId,
         @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {

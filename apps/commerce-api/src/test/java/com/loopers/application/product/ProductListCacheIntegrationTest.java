@@ -13,6 +13,7 @@ import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductId;
 import com.loopers.infrastructure.product.ProductPersistenceAdapter;
 import com.loopers.infrastructure.product.RedisProductListCache;
+import com.loopers.support.pg.TestPgFixture;
 import com.loopers.utils.DatabaseCleanUp;
 import jakarta.persistence.EntityManager;
 import java.util.Collection;
@@ -57,6 +58,7 @@ class ProductListCacheIntegrationTest {
     @Autowired private LikeApplicationService likeApplicationService;
     @Autowired private PointApplicationService pointApplicationService;
     @Autowired private OrderApplicationService orderApplicationService;
+    @Autowired private TestPgFixture testPgFixture;
     @Autowired private ProbingProductRepository productRepository;
     @Autowired private LatchedProductListCache productListCache;
     @Autowired @Qualifier(RedisConfig.REDIS_TEMPLATE_MASTER) private RedisTemplate<String, String> redisTemplate;
@@ -71,6 +73,7 @@ class ProductListCacheIntegrationTest {
 
     @BeforeEach
     void prepare() {
+        testPgFixture.start();
         brandA = brandApplicationService.create("브랜드A").id().value();
         brandB = brandApplicationService.create("브랜드B").id().value();
         first = productApplicationService.create(brandA, "첫 상품", 1000, 10).id();
@@ -80,7 +83,8 @@ class ProductListCacheIntegrationTest {
     }
 
     @AfterEach
-    void clean() {
+    void clean() throws InterruptedException {
+        testPgFixture.close();
         productRepository.resetProbes();
         productListCache.disarm();
         jdbcTemplate.update("delete from order_items");
@@ -208,7 +212,7 @@ class ProductListCacheIntegrationTest {
         productApplicationService.setStock(first, 8);
         pointApplicationService.charge(1, 10000);
         OrderResult draft = orderApplicationService.create(1, List.of(new OrderApplicationService.ItemRequest(first, 2)));
-        orderApplicationService.confirm(1, draft.id());
+        orderApplicationService.confirm(1, draft.id(), TestPgFixture.command());
         likeApplicationService.register(1, second);
         likeApplicationService.register(2, second);
         likeApplicationService.cancel(2, second);

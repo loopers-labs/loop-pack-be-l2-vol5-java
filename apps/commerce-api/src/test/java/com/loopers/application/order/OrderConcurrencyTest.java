@@ -4,10 +4,13 @@ import com.loopers.application.brand.BrandApplicationService;
 import com.loopers.application.point.PointApplicationService;
 import com.loopers.application.product.ProductApplicationService;
 import com.loopers.domain.common.RuleViolationException;
+import com.loopers.infrastructure.payment.TestPgServer;
+import com.loopers.support.pg.TestPgFixture;
 import com.loopers.utils.DatabaseCleanUp;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -15,6 +18,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -47,21 +51,28 @@ class OrderConcurrencyTest {
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
 
+    @Autowired
+    private TestPgFixture testPgFixture;
+
+    private TestPgServer server;
+
     private long brandId;
 
     @BeforeEach
     void prepare() {
+        server = testPgFixture.start();
         brandId = brandApplicationService.create("브랜드").id().value();
     }
 
     @AfterEach
-    void clean() {
+    void clean() throws InterruptedException {
+        testPgFixture.close();
         jdbcTemplate.update("delete from order_items");
         databaseCleanUp.truncateAllTables();
     }
 
     @Test
-    @DisplayName("재고 5개 상품을 서로 다른 8개 주문이 동시에 1개씩 확정하면 5건만 성공하고 3건은 재고 부족으로 거절되며 최종 재고는 0이다")
+    @DisplayName("재고 5개 상품을 서로 다른 8개 주문이 동시에 1개씩 확정하면 5건만 결제 대기가 되고 3건은 재고 부족으로 거절되며 최종 재고 0·create 5회·잔액 변화 0이다")
     void confirmsOnlyAvailableStockUnderContention() throws Exception {
         long productId = productApplicationService.create(brandId, "한정 상품", 1000, 5).id();
         List<OrderResult> drafts = new ArrayList<>();
@@ -72,7 +83,7 @@ class OrderConcurrencyTest {
 
         List<Outcome> outcomes = runConcurrently(drafts.stream()
             .map(draft -> (Callable<Void>) () -> {
-                orderApplicationService.confirm(draft.userId(), draft.id());
+                orderApplicationService.confirm(draft.userId(), draft.id(), TestPgFixture.command());
                 return null;
             })
             .toList());
@@ -88,73 +99,55 @@ class OrderConcurrencyTest {
         List<OrderResult> afterRace = drafts.stream()
             .map(draft -> orderApplicationService.getMyOrder(draft.userId(), draft.id()))
             .toList();
-        List<OrderResult> confirmed = afterRace.stream().filter(order -> order.status().equals("CONFIRMED")).toList();
-        int soldQuantity = confirmed.stream().mapToInt(order -> order.items().get(0).quantity()).sum();
-        long paidTotal = confirmed.stream().mapToLong(OrderResult::paidAmount).sum();
+        List<OrderResult> pending = afterRace.stream().filter(order -> order.status().equals("PAYMENT_PENDING")).toList();
+        int reservedQuantity = pending.stream().mapToInt(order -> order.items().get(0).quantity()).sum();
         long totalBalance = drafts.stream().mapToLong(draft -> pointApplicationService.balance(draft.userId())).sum();
 
-        assertThat(confirmed).hasSize(5);
-        assertThat(afterRace).filteredOn(order -> order.status().equals("DRAFT"))
-            .allSatisfy(order -> assertThat(order.paidAmount()).isZero());
-        assertThat(productApplicationService.getAdminProduct(productId).stock()).isEqualTo(5 - soldQuantity).isZero();
-        assertThat(totalBalance).isEqualTo(8 * 10000 - paidTotal).isEqualTo(75000);
+        assertThat(pending).hasSize(5);
+        assertThat(afterRace).filteredOn(order -> order.status().equals("DRAFT")).hasSize(3)
+            .allSatisfy(order -> assertThat(order.paymentMethod()).isNull());
+        assertThat(productApplicationService.getAdminProduct(productId).stock()).isEqualTo(5 - reservedQuantity).isZero();
+        assertThat(server.createCalls()).isEqualTo(pending.size()).isEqualTo(5);
+        assertThat(totalBalance).isEqualTo(8 * 10000);
     }
 
     @Test
-    @DisplayName("잔액 10,000원 사용자가 서로 다른 상품의 4,000원 주문 3건을 동시에 확정하면 2건만 결제되고 거절된 주문과 재고는 유지된다")
-    void protectsSameUserBalanceUnderContention() throws Exception {
+    @DisplayName("같은 사용자가 서로 다른 상품의 4,000원 주문 3건을 동시에 확정하면 confirm이 포인트를 쓰지 않으므로 3건 모두 결제되고 잔액은 10,000원 그대로다")
+    void confirmsSameUserOrdersWithoutTouchingBalance() throws Exception {
+        server.createBehavior(TestPgServer.CreateBehavior.ACCEPT_SUCCESS);
         pointApplicationService.charge(1, 10000);
         List<OrderResult> drafts = new ArrayList<>();
         for (int i = 0; i < 3; i++) {
-            // 상품 잠금에서 먼저 직렬화되지 않도록 주문마다 다른 상품을 사용해 같은 포인트 행에서 경쟁하게 한다.
             long productId = productApplicationService.create(brandId, "4천원 상품 " + i, 4000, 10).id();
             drafts.add(orderApplicationService.create(1, List.of(new OrderApplicationService.ItemRequest(productId, 1))));
         }
 
         List<Outcome> outcomes = runConcurrently(drafts.stream()
             .map(draft -> (Callable<Void>) () -> {
-                orderApplicationService.confirm(1, draft.id());
+                orderApplicationService.confirm(1, draft.id(), TestPgFixture.command());
                 return null;
             })
             .toList());
 
         Map<Result, Long> counts = count(outcomes);
-        assertThat(counts.get(Result.SUCCESS)).isEqualTo(2);
-        assertThat(counts.get(Result.BUSINESS_REJECTION)).isEqualTo(1);
-        assertThat(counts.get(Result.TECHNICAL_ERROR)).as(technicalErrors(outcomes)).isZero();
-        assertThat(outcomes).filteredOn(outcome -> outcome.result() == Result.BUSINESS_REJECTION)
-            .extracting(Outcome::message)
-            .containsOnly("잔액이 부족합니다.");
-
-        List<OrderResult> afterRace = drafts.stream()
-            .map(draft -> orderApplicationService.getMyOrder(1, draft.id()))
-            .toList();
-        // outcomes는 제출 순서를 유지하므로 요청 결과를 같은 순서의 주문·상품 DB 상태와 대조한다.
-        for (int i = 0; i < afterRace.size(); i++) {
-            OrderResult order = afterRace.get(i);
-            OrderResult.Item item = order.items().get(0);
-            if (outcomes.get(i).result() == Result.SUCCESS) {
-                assertThat(order.status()).isEqualTo("CONFIRMED");
-                assertThat(order.paymentResult()).isEqualTo("SUCCESS");
-                assertThat(order.paidAmount()).isEqualTo(4000);
-                assertThat(productApplicationService.getAdminProduct(item.productId()).stock())
-                    .isEqualTo(10 - item.quantity()).isEqualTo(9);
-            } else {
-                assertThat(order).isEqualTo(drafts.get(i));
-                assertThat(order.status()).isEqualTo("DRAFT");
-                assertThat(order.paymentResult()).isEqualTo("NOT_PAID");
-                assertThat(order.paidAmount()).isZero();
-                assertThat(productApplicationService.getAdminProduct(item.productId()).stock()).isEqualTo(10);
-            }
+        assertThat(counts.get(Result.SUCCESS)).as(technicalErrors(outcomes)).isEqualTo(3);
+        assertThat(counts.get(Result.BUSINESS_REJECTION)).isZero();
+        assertThat(counts.get(Result.TECHNICAL_ERROR)).isZero();
+        for (OrderResult draft : drafts) {
+            OrderResult order = orderApplicationService.getMyOrder(1, draft.id());
+            assertThat(order.status()).isEqualTo("CONFIRMED");
+            assertThat(order.paymentMethod()).isEqualTo("PG");
+            assertThat(order.paidAmount()).isEqualTo(4000);
+            assertThat(productApplicationService.getAdminProduct(order.items().get(0).productId()).stock()).isEqualTo(9);
         }
-        assertThat(afterRace).filteredOn(order -> order.status().equals("CONFIRMED")).hasSize(2);
-        long paidTotal = afterRace.stream().mapToLong(OrderResult::paidAmount).sum();
-        assertThat(pointApplicationService.balance(1)).isEqualTo(10000 - paidTotal).isEqualTo(2000);
+        assertThat(server.createCalls()).isEqualTo(3);
+        assertThat(pointApplicationService.balance(1)).isEqualTo(10000);
     }
 
     @Test
-    @DisplayName("잔액 10,000원에서 2,000원 충전과 7,000원 주문 확정을 동시에 실행하면 둘 다 성공하고 최종 잔액은 5,000원이다")
-    void appliesConcurrentChargeAndPayment() throws Exception {
+    @DisplayName("잔액 10,000원에서 2,000원 충전과 7,000원 주문 확정을 동시에 실행하면 둘 다 성공하고 확정이 포인트를 쓰지 않아 최종 잔액은 12,000원이다")
+    void appliesConcurrentChargeAndConfirm() throws Exception {
+        server.createBehavior(TestPgServer.CreateBehavior.ACCEPT_SUCCESS);
         long productId = productApplicationService.create(brandId, "7천원 상품", 7000, 10).id();
         pointApplicationService.charge(1, 10000);
         OrderResult draft = orderApplicationService.create(1, List.of(new OrderApplicationService.ItemRequest(productId, 1)));
@@ -165,16 +158,70 @@ class OrderConcurrencyTest {
                 return null;
             },
             () -> {
-                orderApplicationService.confirm(1, draft.id());
+                orderApplicationService.confirm(1, draft.id(), TestPgFixture.command());
                 return null;
             }));
 
         Map<Result, Long> counts = count(outcomes);
         assertThat(counts.get(Result.SUCCESS)).as(technicalErrors(outcomes)).isEqualTo(2);
         assertThat(counts.get(Result.TECHNICAL_ERROR)).isZero();
-        assertThat(pointApplicationService.balance(1)).isEqualTo(10000 + 2000 - 7000);
+        assertThat(pointApplicationService.balance(1)).isEqualTo(10000 + 2000);
         assertThat(orderApplicationService.getMyOrder(1, draft.id()).status()).isEqualTo("CONFIRMED");
         assertThat(productApplicationService.getAdminProduct(productId).stock()).isEqualTo(9);
+        assertThat(server.createCalls()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("같은 주문을 같은 시도 키로 8번 동시에 확정하면 모두 지금 상태를 받고 create 1회·재고 확보 1회·PG 거래 1건이다")
+    void confirmsOnceForConcurrentSameKey() throws Exception {
+        long productId = productApplicationService.create(brandId, "상품", 1000, 5).id();
+        OrderResult draft = orderApplicationService.create(1, List.of(new OrderApplicationService.ItemRequest(productId, 1)));
+        String attemptKey = UUID.randomUUID().toString();
+
+        List<Outcome> outcomes = runConcurrently(IntStream.range(0, 8)
+            .mapToObj(i -> (Callable<Void>) () -> {
+                orderApplicationService.confirm(1, draft.id(), TestPgFixture.command(attemptKey));
+                return null;
+            })
+            .toList());
+
+        Map<Result, Long> counts = count(outcomes);
+        assertThat(counts.get(Result.SUCCESS)).as(technicalErrors(outcomes)).isEqualTo(8);
+        assertThat(counts.get(Result.BUSINESS_REJECTION)).isZero();
+        assertThat(counts.get(Result.TECHNICAL_ERROR)).isZero();
+        assertSingleReservation(draft.id(), productId);
+    }
+
+    @Test
+    @DisplayName("같은 주문을 서로 다른 시도 키로 8번 동시에 확정하면 1건만 결제를 시작하고 7건은 거절되며 create 1회·재고 확보 1회다")
+    void confirmsOnceForConcurrentDifferentKeys() throws Exception {
+        long productId = productApplicationService.create(brandId, "상품", 1000, 5).id();
+        OrderResult draft = orderApplicationService.create(1, List.of(new OrderApplicationService.ItemRequest(productId, 1)));
+
+        List<Outcome> outcomes = runConcurrently(IntStream.range(0, 8)
+            .mapToObj(i -> (Callable<Void>) () -> {
+                orderApplicationService.confirm(1, draft.id(), TestPgFixture.command());
+                return null;
+            })
+            .toList());
+
+        Map<Result, Long> counts = count(outcomes);
+        assertThat(counts.get(Result.SUCCESS)).as(technicalErrors(outcomes)).isEqualTo(1);
+        assertThat(counts.get(Result.BUSINESS_REJECTION)).isEqualTo(7);
+        assertThat(counts.get(Result.TECHNICAL_ERROR)).isZero();
+        assertThat(outcomes).filteredOn(outcome -> outcome.result() == Result.BUSINESS_REJECTION)
+            .extracting(Outcome::message)
+            .containsOnly("이미 다른 결제가 진행되었거나 끝난 주문입니다.");
+        assertSingleReservation(draft.id(), productId);
+    }
+
+    private void assertSingleReservation(long orderId, long productId) {
+        assertThat(orderApplicationService.getMyOrder(1, orderId).status()).isEqualTo("PAYMENT_PENDING");
+        assertThat(productApplicationService.getAdminProduct(productId).stock()).isEqualTo(4);
+        assertThat(server.createCalls()).isEqualTo(1);
+        assertThat(server.transactions()).hasSize(1);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from payment_records where order_id = ?", Long.class, orderId))
+            .isEqualTo(1);
     }
 
     // 시작 시점만 맞추고 실제 서비스 경로에는 장벽·sleep을 넣지 않는다. 모든 요청 결과를 성공·업무 거절·기술 오류로 수집한다.

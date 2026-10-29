@@ -1,6 +1,7 @@
 package com.loopers.interfaces.api;
 
 import com.loopers.application.brand.BrandNotFoundException;
+import com.loopers.application.payment.PaymentLookupNotCalledException;
 import com.loopers.application.product.ProductNotFoundException;
 import com.loopers.domain.common.InvalidValueException;
 import com.loopers.domain.common.RuleViolationException;
@@ -33,6 +34,11 @@ public class CommerceExceptionAdvice {
     @ExceptionHandler(RuleViolationException.class)
     public ResponseEntity<ApiResponse<Object>> conflict(RuleViolationException exception) {
         return ResponseEntity.status(409).body(ApiResponse.fail("Conflict", exception.getMessage()));
+    }
+
+    @ExceptionHandler(PaymentLookupNotCalledException.class)
+    public ResponseEntity<ApiResponse<Object>> lookupNotCalled(PaymentLookupNotCalledException exception) {
+        return ResponseEntity.status(503).body(ApiResponse.fail("Service Unavailable", exception.getMessage()));
     }
 
     // 잠금 대기 시간 초과·교착은 업무 거절(409·404)이 아닌 일시적 기술 실패다. 원인은 로그로 남기고 응답에는 노출하지 않는다.

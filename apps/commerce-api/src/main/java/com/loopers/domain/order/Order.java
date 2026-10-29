@@ -6,17 +6,19 @@ import com.loopers.domain.common.RuleViolationException;
 import java.util.List;
 
 public final class Order {
-    public enum Status { DRAFT, CONFIRMED }
+    public enum Status { DRAFT, PAYMENT_PENDING, CONFIRMED, PAYMENT_FAILED }
+
+    public enum PaymentOutcome { SUCCEEDED, FAILED, UNKNOWN }
+
+    public enum PaymentTransition { CHANGED, UNCHANGED, CONFLICT, ANOMALY }
 
     private final Long id;
     private final long userId;
     private final List<OrderItem> items;
     private final Money total;
     private Status status;
-    private Money paidAmount;
-    private String paymentResult;
 
-    private Order(Long id, long userId, List<OrderItem> items, Status status, Money paidAmount, String paymentResult) {
+    private Order(Long id, long userId, List<OrderItem> items, Status status) {
         if (items == null || items.isEmpty() || items.size() > 100) {
             throw new InvalidValueException("주문 품목은 1~100개여야 합니다.");
         }
@@ -28,16 +30,14 @@ public final class Order {
         this.items = List.copyOf(items);
         this.total = items.stream().map(OrderItem::subtotal).reduce(new Money(0), Money::add);
         this.status = status;
-        this.paidAmount = paidAmount;
-        this.paymentResult = paymentResult;
     }
 
     public static Order create(long userId, List<OrderItem> items) {
-        return new Order(null, userId, items, Status.DRAFT, new Money(0), "NOT_PAID");
+        return new Order(null, userId, items, Status.DRAFT);
     }
 
-    public static Order restore(long id, long userId, List<OrderItem> items, Status status, Money paidAmount, String result) {
-        return new Order(id, userId, items, status, paidAmount, result);
+    public static Order restore(long id, long userId, List<OrderItem> items, Status status) {
+        return new Order(id, userId, items, status);
     }
 
     public void requireDraft() {
@@ -46,11 +46,29 @@ public final class Order {
         }
     }
 
-    public void confirm() {
+    public void startPayment() {
         requireDraft();
-        status = Status.CONFIRMED;
-        paidAmount = total;
-        paymentResult = "SUCCESS";
+        status = Status.PAYMENT_PENDING;
+    }
+
+    // 결제 대기만 결과로 바뀐다. 종결된 주문은 늦게 온 반대 결과로 덮어쓰지 않고 충돌로 알린다(설계 23절 상태 전이 표).
+    public PaymentTransition applyPaymentOutcome(PaymentOutcome outcome) {
+        return switch (status) {
+            case DRAFT -> PaymentTransition.ANOMALY;
+            case PAYMENT_PENDING -> switch (outcome) {
+                case SUCCEEDED -> {
+                    status = Status.CONFIRMED;
+                    yield PaymentTransition.CHANGED;
+                }
+                case FAILED -> {
+                    status = Status.PAYMENT_FAILED;
+                    yield PaymentTransition.CHANGED;
+                }
+                case UNKNOWN -> PaymentTransition.UNCHANGED;
+            };
+            case CONFIRMED -> outcome == PaymentOutcome.FAILED ? PaymentTransition.CONFLICT : PaymentTransition.UNCHANGED;
+            case PAYMENT_FAILED -> outcome == PaymentOutcome.SUCCEEDED ? PaymentTransition.CONFLICT : PaymentTransition.UNCHANGED;
+        };
     }
 
     public Long getId() {
@@ -71,13 +89,5 @@ public final class Order {
 
     public Status getStatus() {
         return status;
-    }
-
-    public Money getPaidAmount() {
-        return paidAmount;
-    }
-
-    public String getPaymentResult() {
-        return paymentResult;
     }
 }

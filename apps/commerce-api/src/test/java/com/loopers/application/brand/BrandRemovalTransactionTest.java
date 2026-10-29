@@ -15,6 +15,8 @@ import com.loopers.domain.product.ProductId;
 import com.loopers.infrastructure.product.ProductPersistenceAdapter;
 import com.loopers.infrastructure.user.UserJpaEntity;
 import com.loopers.infrastructure.user.UserJpaRepository;
+import com.loopers.infrastructure.payment.TestPgServer;
+import com.loopers.support.pg.TestPgFixture;
 import com.loopers.utils.DatabaseCleanUp;
 import jakarta.persistence.EntityManager;
 import java.util.Collection;
@@ -68,6 +70,9 @@ class BrandRemovalTransactionTest {
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
 
+    @Autowired
+    private TestPgFixture testPgFixture;
+
     private long brandId;
 
     private long stockedProductId;
@@ -80,6 +85,7 @@ class BrandRemovalTransactionTest {
 
     @BeforeEach
     void prepare() {
+        testPgFixture.start().createBehavior(TestPgServer.CreateBehavior.ACCEPT_SUCCESS);
         userJpaRepository.save(new UserJpaEntity(1));
         brandId = brandApplicationService.create("삭제 대상 브랜드").id().value();
         long otherBrandId = brandApplicationService.create("다른 브랜드").id().value();
@@ -88,11 +94,12 @@ class BrandRemovalTransactionTest {
         otherProductId = productApplicationService.create(otherBrandId, "다른 브랜드 상품", 1000, 5).id();
         pointApplicationService.charge(1, 10000);
         OrderResult draft = orderApplicationService.create(1, List.of(new OrderApplicationService.ItemRequest(stockedProductId, 1)));
-        pastOrder = orderApplicationService.confirm(1, draft.id());
+        pastOrder = orderApplicationService.confirm(1, draft.id(), TestPgFixture.command());
     }
 
     @AfterEach
-    void clean() {
+    void clean() throws InterruptedException {
+        testPgFixture.close();
         failingProductRepository.disarm();
         jdbcTemplate.update("delete from order_items");
         databaseCleanUp.truncateAllTables();
@@ -169,7 +176,7 @@ class BrandRemovalTransactionTest {
         assertThatThrownBy(() -> orderApplicationService.create(1,
             List.of(new OrderApplicationService.ItemRequest(stockedProductId, 1))))
             .isInstanceOf(ProductNotFoundException.class);
-        assertThatThrownBy(() -> orderApplicationService.confirm(1, draftBeforeDeletion.id()))
+        assertThatThrownBy(() -> orderApplicationService.confirm(1, draftBeforeDeletion.id(), TestPgFixture.command()))
             .isInstanceOf(ProductNotFoundException.class);
         assertThatThrownBy(() -> productApplicationService.change(stockedProductId, "변경", 1))
             .isInstanceOf(RuleViolationException.class);

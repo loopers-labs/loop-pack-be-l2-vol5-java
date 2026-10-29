@@ -76,4 +76,12 @@ class StockTest {
         assertThat(new Stock(Integer.MAX_VALUE).decrease(Integer.MAX_VALUE))
             .isEqualTo(new Stock(0));
     }
+
+    @Test
+    @DisplayName("재고 3개에 2개를 돌려주면 5개가 되고, 0 이하 수량과 표현 범위 초과는 거절한다")
+    void increasesStock() {
+        assertThat(new Stock(3).increase(2)).isEqualTo(new Stock(5));
+        assertThatThrownBy(() -> new Stock(3).increase(0)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new Stock(Integer.MAX_VALUE).increase(1)).isInstanceOf(ArithmeticException.class);
+    }
 }

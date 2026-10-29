@@ -67,6 +67,12 @@ public final class Product {
         stock = stock.decrease(quantity);
     }
 
+    // 결제 실패로 확보했던 재고를 돌려준다. 결제 대기 중 삭제된 상품도 주문을 마무리해야 하므로 삭제 여부를 보지 않는다.
+    // 삭제 상태는 그대로라 반환된 재고로 다시 노출되지 않는다.
+    public void returnStock(int quantity) {
+        stock = stock.increase(quantity);
+    }
+
     public void delete() {
         deleted = true;
     }
