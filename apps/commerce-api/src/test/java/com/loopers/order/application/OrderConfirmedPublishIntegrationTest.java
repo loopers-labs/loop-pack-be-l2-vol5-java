@@ -235,9 +235,9 @@ class OrderConfirmedPublishIntegrationTest {
             assertThat(payload.get("eventType").asText()).isEqualTo("OrderConfirmed");
             assertThat(payload.get("schemaVersion").asInt()).isEqualTo(1);
             assertThat(payload.get("orderId").asLong()).isEqualTo(info.orderId());
-            // 같은 순간인지 본다. 이벤트는 확정 TX 안의 시각(시스템 zone +09:00)으로, 다시 읽은 엔티티는 UTC(Z)로 표기된다.
+            // 같은 순간이고, 표기는 KST(+09:00)로 고정한다 — 다시 읽은 엔티티는 UTC(Z)로 나온다.
             assertThat(OffsetDateTime.parse(payload.get("confirmedAt").asText()).toInstant()).isEqualTo(order().getConfirmedAt().toInstant());
-            assertThat(payload.get("confirmedAt").asText()).matches("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}(Z|[+-]\\d{2}:\\d{2})");
+            assertThat(payload.get("confirmedAt").asText()).matches("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}\\+09:00");
             assertThat(payload.get("items")).hasSize(2);
             assertThat(payload.get("items").get(0).get("productId").asLong()).isEqualTo(airMax.getId());
             assertThat(payload.get("items").get(0).get("quantity").asInt()).isEqualTo(2);

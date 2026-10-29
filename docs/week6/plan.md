@@ -520,6 +520,7 @@ Red 단계는 둘 다 컴파일 오류가 아니라 assertion 실패였다 (S2 8
    - `apps/commerce-api/src/test/java/com/loopers/order/domain/OrderConfirmedTest.java` (8개)
    - `apps/commerce-streamer/src/test/java/com/loopers/purchase/domain/OrderConfirmedMessageTest.java` (12개) · `ConsumedOrderConfirmationTest.java` (4개)
 2. **confirmedAt 표기** — 이벤트는 확정 TX 안의 시각이라 `+09:00`(시스템 zone)으로, 같은 주문을 DB에서 다시 읽으면 `Z`(UTC)로 표기된다. 순간(Instant)은 같고 consumer fingerprint는 UTC로 정규화하므로 판정에는 문제가 없다. 다만 W7 relay가 다시 만들거나 사람이 비교할 때 헷갈릴 수 있다. **payload를 UTC(`...Z`)로 고정할지** — 계약 변경이라 정하지 않았다. 지금 테스트는 순간이 같은지로 확인한다.
+   - ✅ **10-29 학습자 결정: KST(`+09:00`)로 고정.** `OrderConfirmed.from`이 확정 시각을 `Asia/Seoul`로 바꿔 쓴다. consumer는 계속 어떤 offset이든 받고 fingerprint만 UTC로 정규화한다.
 3. **E-6** — `max.block.ms` 부하 측정은 학습자가 직접 돌린다 (incident-w6.md 절차·예측 표).
 4. **전체 흐름 실행** — PG 시뮬레이터(8082)가 필요해 돌리지 않았다. 런북은 incident-w6.md. C-1·C-9의 "이미 소비된 1건"을 이 실행으로 채운다.
 
@@ -530,6 +531,7 @@ Red 단계는 둘 다 컴파일 오류가 아니라 assertion 실패였다 (S2 8
 | DLT 이름 | 기본 recoverer 규칙(원래 topic + `.DLT`) | resolver로 `order-events.DLT` 명시 | Spring Kafka 3.3의 기본은 `-dlt`. 어긋나 DLT 발행이 86번 실패하는 동안 partition이 멈췄다 (유실은 없음) |
 | recover 뒤 commit | "ackAfterHandle 기본 true라 n+1 commit" | `commitRecovered=true` 명시 | MANUAL_IMMEDIATE에서는 이 값이 true일 때만 recover한 offset을 바로 commit한다. false면 다음 record ack 때 함께 넘어간다 |
 | 확정 시각 정밀도 | — | 결과 적용에서 `now().truncatedTo(MICROS)` | DB `datetime(6)`과 이벤트 confirmedAt이 같은 값이어야 한다 |
+| confirmedAt 표기 | ISO-8601 + offset (zone은 정하지 않음) | KST `+09:00` 고정 | 같은 순간이 확정 TX에서는 `+09:00`, DB에서 다시 읽으면 `Z`로 나왔다. 학습자 결정(10-29) |
 | eventId 생성 위치 | 응용 계층에서 만들어 `confirmPaid`에 넘김 | `OrderConfirmedRecorder`(order.application)가 만들어 발행 기록에 넣음 | 발행 테이블로 옮긴 결정(ADR-W6-03)을 따름. 도메인은 난수를 모른다 |
 | 발행 기록 결과 표시 | 엔티티 갱신 | `WHERE published_at IS NULL` 조건부 UPDATE | 콜백 스레드가 행 전체를 다시 쓰지 않게, 늦은 실패가 성공을 덮지 않게 |
 | 발행 기록은 TX 안에서만 | `fallbackExecution=false`로 드러냄 | `OutboxAppendService`를 `Propagation.MANDATORY`로 — TX 밖이면 예외 | 조용히 무시되기 전에 먼저 막는다 |

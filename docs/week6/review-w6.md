@@ -18,7 +18,7 @@
 | R-9 | 낮음 | 트랜잭션 위치가 ADR-11(서비스 공개 메서드) 밖이다 — JPA 리포지토리 `@Transactional`, 소비 쪽 `TransactionTemplate` | `EventOutboxJpaRepository`, `PurchaseActivityService` | ✅ 소비 쪽은 "rollback 뒤 새 TX 재판정" 때문에 programmatic이 합리적 | 변경 이력에 ADR-11 예외로 한 줄. `findExisting` readOnly |
 | R-10 | 낮음 | payment가 order의 구체 클래스 `OrderConfirmedRecorder`를 직접 부른다(선례 `StockReservationUseCase`는 port.in). 주문 쪽이 topic 이름을 안다 | `PaymentResultApplier`, `OrderConfirmedRecorder` | ✅ | 유지하면 선례로 적기. topic 라우팅은 W7 relay 때 옮길 후보 |
 | R-11 | Minor | NoEvent 테스트 이름의 "record 없음"은 broker를 읽지 않는다. rollback 테스트는 예약 RESERVED 유지를 보지 않는다 | `OrderConfirmedPublishIntegrationTest$NoEvent` | ✅ | broker 확인 또는 이름 수정, 예약 상태 단언 추가 |
-| R-12 | Minor | confirmedAt을 Instant로 비교하고 형식 정규식이 Z·offset 둘 다 허용 | 같은 파일 `payloadMatchesStoredFacts` | ✅ | plan 열린 질문 2(UTC 고정?)를 정한 뒤 리터럴로 좁히기 |
+| R-12 | Minor | confirmedAt을 Instant로 비교하고 형식 정규식이 Z·offset 둘 다 허용 | 같은 파일 `payloadMatchesStoredFacts` | ✅ | ✅ 반영(10-29) — KST `+09:00` 고정으로 정했고 정규식을 `+09:00`으로 좁혔다 |
 | R-13 | Minor | `carriesNoSensitiveOrExtraFields`는 record 구성 요소만 보는 변경 감지기 — 실제 보호는 api의 shape 테스트 | `OrderConfirmedTest` | ✅ Red에서 이미 통과 | 유지하되 C-3 근거는 shape 테스트로 |
 | R-14 | Minor | 거절 테스트 빈칸: 음수 수량, 형식 아닌 confirmedAt, productId null. `@DisplayName`에 규칙 ID·`// arrange·act·assert` 주석이 거의 없다 | streamer 도메인 테스트 | ✅ | 사례 추가, 관례 맞추기 |
 | R-15 | Minor | S13 1번의 `doNothing().doCallRealMethod()`는 "첫 publish 호출"에 걸린다 — 앞 장면의 늦은 비동기 publish가 stub을 가져가면 거짓 실패 | `S13PublishGapScenarioTest` | ✅ | `argThat`으로 eventId·aggregateId에 거는 stub |
