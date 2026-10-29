@@ -48,8 +48,3 @@ out/
 /docs/performance/product-listing/results/**/*.json
 # k6가 응답 검증에 읽는 입력 파일이라 저장소에 둔다.
 !/docs/performance/product-listing/results/baseline/response-canonical.json
-
-# 주문 확정 이벤트의 실행 결과와 로그는 로컬에 보관한다.
-/docs/verification/order-confirmed-event/observations.json
-/docs/verification/order-confirmed-event/results/
-/docs/verification/order-confirmed-event/*.log
