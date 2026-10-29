@@ -10,19 +10,19 @@
 
 ## 0. 체크리스트 — 모두 통과해야 한다
 
-| # | 체크리스트 (과제 원문 요약) | 증거 | 상태 (10-29 새벽) |
+| # | 체크리스트 (과제 원문 요약) | 증거 | 상태 (10-29 저녁) |
 |---|---|---|---|
-| C-1 | 실제 PG 확정 주문에서 stable 이벤트를 발행하고 구매 활동으로 저장한다 | api `OrderConfirmedPublishIntegrationTest`(PG 결과 적용 → 발행 기록 1건 · payload = DB 사실 · 견본과 같은 모양 · broker에 원문 그대로 · partition·offset 표시). streamer `OrderConfirmedListenerIntegrationTest#consumesTheSharedFixture`(견본 원문 → 활동 2행 · ack). 공유 견본 `modules/kafka` testFixtures `fixtures/order-confirmed-v1.json` | 🔧 자동 테스트 통과 · 두 앱을 잇는 전체 실행은 런북만 (incident-w6.md) |
-| C-2 | 대기·실패·rollback·중복 결과 적용에서 거짓 이벤트나 새 결제가 생기지 않는다 | `OrderConfirmedPublishIntegrationTest$NoEvent`: PENDING·FAILED·확정 TX rollback → 기록 0 · record 0, reconcile 두 번 → 기록 1 · record 1 · PG 생성 호출 그대로 | 🔧 통과 (검토 전) |
-| C-3 | 저장된 구매 사실을 이후 랭킹 입력으로 쓸 수 있고 민감정보를 보내지 않는다 | `OrderConfirmedTest#carriesNoSensitiveOrExtraFields`, `OrderConfirmedPublishIntegrationTest#payloadHasTheSameShapeAsTheSharedFixture`, `PurchaseActivityServiceIntegrationTest#sumsQuantityPerProductAcrossOrders`(주문 42·43 → 3행, 상품 7 합 5) | 🔧 통과 (검토 전) |
-| C-4 | partition 2개와 같은 group의 consumer 1→2→3 실제 배정을 확인했다 | E-1 `PartitionAssignmentExperimentTest` — [0,1] → [0]·[1] → [0]·[1]·[] | 🔧 통과 (검토 전) |
-| C-5 | 같은 record가 DB commit 뒤 미커밋 offset에서 재전달됨을 관찰했다 | E-2 `RedeliveryAfterDbCommitTest` — 같은 위치 2회 전달, committed 0 → 0 → 1, 활동 2행 불변 | 🔧 통과 (검토 전) |
-| C-6 | 중복 방지와 모든 품목 저장이 원자적이며 같은 사실·충돌을 구분한다 | `OrderConfirmedMessageTest`·`ConsumedOrderConfirmationTest`(TDD), `PurchaseActivityServiceIntegrationTest`(no-op · 충돌 2종 · 동시 중복 · 두 번째 품목 실패 전체 rollback), listener 충돌 → DLT | 🔧 통과 (검토 전) |
-| C-7 | 실제 listener의 DB 실패·error handler·ack·재시작 결과를 확인했다 | E-3 `OrderConfirmedListenerIntegrationTest#retriesThenDeadLettersAndReplaysOnce` — 1+3번 시도 → DLT · 원래 offset n+1 · 0행 → DLT 재생 1번 저장 → 재생 반복 no-op | 🔧 통과 (검토 전). 과제 예시(중단형)와 다른 DLT 정책이라 검증 순서를 바꿨다 (ADR-W6-06) |
-| C-8 | 직접 after-commit 발행의 누락 구간을 재현하고 주문 상태를 되돌리지 않는다 | E-4 `S13PublishGapScenarioTest` — send 직전 hook: CONFIRMED · CONSUMED · published_at null · record 없음 · 누락 조회에 잡힘. 전송 실패 주입: last_error · PG 재호출 없음 | 🔧 통과 (검토 전) |
-| C-9 | 미발행 1건·이미 소비된 1건의 재현 코드와 실제 사건 사실을 남기고 임시 DB는 정리했다 | E-4 + `docs/week6/incident-w6.md` 사건 표. 컨테이너는 Ryuk가 정리 | 🔧 미발행·정상 발행 사실은 기록. "이미 소비된 1건"은 streamer 쪽이 같은 실행이 아니다 — 전체 흐름 런북으로 채운다 |
-| C-10 | 실제 설정·broker 주소·broker 구성의 한계를 설명할 수 있다 (과제는 단일 broker, 이번 구성은 3대) | D-5 설정표, `KafkaClusterSettingsTest`(Kafka가 해석한 acks·idempotence·max.block.ms, topic RF·ISR·min.insync), E-5 `BrokerFailureReplicationTest`, incident-w6.md "증명하지 않은 것" | 🔧 E-6(`max.block.ms` 부하 측정)은 학습자 실험 대기 |
-| C-11 | 관련 회귀·lint·ArchUnit을 실행하고 테스트 자원을 정리했다 | `:apps:commerce-api:check` 473 · `:apps:commerce-streamer:check` 32 · 실패·skip 0 (10-29 새벽). 마지막 결과는 아래 "개발 진행" | 🔧 통과 (검토 전) |
+| C-1 | 실제 PG 확정 주문에서 stable 이벤트를 발행하고 구매 활동으로 저장한다 | api `OrderConfirmedPublishIntegrationTest`(PG 결과 적용 → 발행 기록 1건 · payload = DB 사실 · 견본과 같은 모양 · broker에 원문 그대로 · partition·offset 표시). streamer `OrderConfirmedListenerIntegrationTest#consumesTheSharedFixture`(견본 원문 → 활동 2행 · ack). 공유 견본 `modules/kafka` testFixtures `fixtures/order-confirmed-v1.json` | ✅ 자동 테스트 통과 + 전체 흐름 실행(10-29, 주문 2 → order-events-2@0 → 활동 2행, incident-w6.md) |
+| C-2 | 대기·실패·rollback·중복 결과 적용에서 거짓 이벤트나 새 결제가 생기지 않는다 | `OrderConfirmedPublishIntegrationTest$NoEvent`: PENDING·FAILED·확정 TX rollback → 기록 0 · record 0, reconcile 두 번 → 결제 단계(ALREADY_APPLIED)에서 막혀 기록 1 · record 1 · PG 생성 호출 그대로, **결제 PENDING인데 주문이 이미 CONFIRMED → 기록 0**(`if (changed)` 가드 — 가드를 지우면 실패함을 확인) | ✅ 통과 (R-5 반영) |
+| C-3 | 저장된 구매 사실을 이후 랭킹 입력으로 쓸 수 있고 민감정보를 보내지 않는다 | `OrderConfirmedTest#carriesNoSensitiveOrExtraFields`, `OrderConfirmedPublishIntegrationTest#payloadHasTheSameShapeAsTheSharedFixture`, `PurchaseActivityServiceIntegrationTest#sumsQuantityPerProductAcrossOrders`(주문 42·43 → 3행, 상품 7 합 5) | ✅ 통과 |
+| C-4 | partition 2개와 같은 group의 consumer 1→2→3 실제 배정을 확인했다 | E-1 `PartitionAssignmentExperimentTest` — [0,1] → [0]·[1] → [0]·[1]·[] | ✅ 통과 |
+| C-5 | 같은 record가 DB commit 뒤 미커밋 offset에서 재전달됨을 관찰했다 | E-2 `RedeliveryAfterDbCommitTest` — 같은 위치 2회 전달, committed 0 → 0 → 1, 활동 2행 불변. 전체 흐름 실행에서도 재투입 record no-op · committed 1 → 2 | ✅ 통과 |
+| C-6 | 중복 방지와 모든 품목 저장이 원자적이며 같은 사실·충돌을 구분한다 | `OrderConfirmedMessageTest`·`ConsumedOrderConfirmationTest`(TDD), `PurchaseActivityServiceIntegrationTest`(no-op · 충돌 2종 · **두 스레드가 모두 SELECT를 지난 뒤 INSERT하게 강제한** 동시 중복 — 1062 재판정을 지우면 실패 · 두 번째 품목 실패 전체 rollback), listener 충돌 → 1+3번 시도 → DLT, `OrderConfirmedMessageParserTest`(1.9 · 문자열 숫자 · 단일 객체 items 거절) | ✅ 통과 (R-4 · R-6 반영) |
+| C-7 | 실제 listener의 DB 실패·error handler·ack·재시작 결과를 확인했다 | E-3 `OrderConfirmedListenerIntegrationTest#retriesThenDeadLettersAndReplaysOnce` — 1+3번 시도(도중 committed offset ≤ n — 처리 전 ack로 바꾸면 실패) → DLT · 원래 offset n+1 · 0행 → DLT 재생 1번 저장 → 재생 반복 no-op. 계약 위반·충돌도 1+3번 뒤 DLT | ✅ 통과 (R-2 · R-3 반영). 과제 예시(중단형)와 다른 DLT 정책이라 검증 순서를 바꿨다 (ADR-W6-06) |
+| C-8 | 직접 after-commit 발행의 누락 구간을 재현하고 주문 상태를 되돌리지 않는다 | E-4 `S13PublishGapScenarioTest` — send 직전 hook: CONFIRMED · CONSUMED · published_at null · record 없음 · 누락 조회에 잡힘. 전송 실패 주입(비동기 실패 · **send() 동기 예외** 둘 다): last_error · PG 재호출 없음 | ✅ 통과 (R-1 반영) |
+| C-9 | 미발행 1건·이미 소비된 1건의 재현 코드와 실제 사건 사실을 남기고 임시 DB는 정리했다 | E-4 + `docs/week6/incident-w6.md` 사건 표. 컨테이너는 Ryuk가 정리 | ✅ 미발행 1건(E-4) · 이미 소비된 1건(전체 흐름 실행: 주문 2를 다시 넣어 no-op, committed 1 → 2)의 사실을 incident-w6.md에 기록. 실험 DB `loopers_w6`는 E-6용으로 남기고 seed로 비운다 |
+| C-10 | 실제 설정·broker 주소·broker 구성의 한계를 설명할 수 있다 (과제는 단일 broker, 이번 구성은 3대) | D-5 설정표, `KafkaClusterSettingsTest`(Kafka가 해석한 acks·idempotence·max.block.ms, topic RF·ISR·min.insync), E-5 `BrokerFailureReplicationTest`, incident-w6.md "증명하지 않은 것" | ✅ 설명 근거는 갖춤. E-6(`max.block.ms` 부하 측정)은 과제 밖 추가 실험 — 키트 `docs/week6/k6/` 준비, 학습자 실행 대기 |
+| C-11 | 관련 회귀·lint·ArchUnit을 실행하고 테스트 자원을 정리했다 | 10-29 밤: `:apps:commerce-api:check` 476 · `:apps:commerce-streamer:check` 37 · 실패·오류·skip 0, `check -x test` 통과 (Checkstyle·ArchitectureTest 포함). 앞선 api 실행 1건 실패(`ProductApiE2ETest` Redis timeout)는 다른 세션의 부하(load 345) 중이었고, 재실행에서 통과. 테스트 컨테이너는 Ryuk가 정리 | ✅ 통과 |
 
 ## D-1. 왜 이벤트로 나누나 — 경계와 실패 지점 ✅
 
@@ -425,8 +425,10 @@ handle(record):
 
 | 실패 | 예 | 처리 |
 |---|---|---|
-| 재시도로 나아질 수 있음 | DB 다운, lock timeout | 같은 자리에서 **3회 재시도**(backoff) → 그래도 실패면 `order-events.DLT` |
-| 재시도해도 같음 | 파싱 불가, **충돌** | 재시도 없이 바로 DLT (`addNotRetryableExceptions`) |
+| 모든 실패 | DB 다운, lock timeout, 파싱 불가·계약 위반(수량 0·1.9), **충돌**, 예상 못 한 예외(NPE 등) | 같은 자리에서 **3회 재시도**(1s·2s·4s) → 그래도 실패면 `order-events.DLT` |
+
+- 변경 (학습자, 10-29 저녁): 처음에는 "재시도해도 같은 실패(파싱 불가·충돌)는 `addNotRetryableExceptions`로 바로 DLT"였다. **모든 실패를 재시도 뒤 DLT**로 바꿨다 — 계약 위반이든 예상 못 한 오류든 같은 경로로 처리한다.
+- AI 반론 (기록): 계약 위반·충돌은 다시 읽어도 결과가 같아 재시도가 나아지게 하지 못한다. 그 7초 동안 그 partition의 뒤 주문이 멈춘다. Spring Kafka 기본값도 역직렬화·변환 실패는 재시도하지 않는다. 계약 위반이 몰려 들어오면 partition당 record 하나에 7초씩 밀린다.
 
 - 결정 (학습자, 10-29): 정책 횟수만큼 재시도해도 안 되면 DLT. DB 장애는 심각한 사건이라 사람이 확인하고 다시 넣는다.
 - AI 반론 (기록): DB 다운 중 들어온 record는 복구되면 성공할 record라 "멈추고 lag로 알림 → 자동 재개"도 가능하다. DLT를 택하면 재생 도구가 필요하고, 재생 전까지 구매 활동이 비어 있다.
@@ -511,7 +513,7 @@ handle(record):
 | S5 | `d75f3639` | 멱등 consumer, record listener, 재시도 3회 → DLT, E-3 |
 | S6 | `c6d0f912` | E-1 배정, E-2 재전달 |
 
-검사: `:apps:commerce-api:check` 473 · `:apps:commerce-streamer:check` 32, 실패·오류·skip 0 (Checkstyle·ArchitectureTest 포함).
+검사: `:apps:commerce-api:check` 473 · `:apps:commerce-streamer:check` 32, 실패·오류·skip 0 (Checkstyle·ArchitectureTest 포함). 10-29 밤 R-1 ~ R-6 반영 뒤: api 476 · streamer 37 · 실패·오류·skip 0, lint 통과.
 Red 단계는 둘 다 컴파일 오류가 아니라 assertion 실패였다 (S2 8개 중 7개 — 필드 목록 검사 1개는 뼈대 record 정의로 이미 통과, S4 16개 중 16개).
 
 ### 🤔 학습자 검토가 필요한 것 (아침)
@@ -530,6 +532,9 @@ Red 단계는 둘 다 컴파일 오류가 아니라 assertion 실패였다 (S2 8
 |---|---|---|---|
 | DLT 이름 | 기본 recoverer 규칙(원래 topic + `.DLT`) | resolver로 `order-events.DLT` 명시 | Spring Kafka 3.3의 기본은 `-dlt`. 어긋나 DLT 발행이 86번 실패하는 동안 partition이 멈췄다 (유실은 없음) |
 | recover 뒤 commit | "ackAfterHandle 기본 true라 n+1 commit" | `commitRecovered=true` 명시 | MANUAL_IMMEDIATE에서는 이 값이 true일 때만 recover한 offset을 바로 commit한다. false면 다음 record ack 때 함께 넘어간다 |
+| 재시도 범위 (ADR-W6-06) | 계약 위반·충돌은 재시도 없이 DLT | 모든 실패를 3회 재시도 뒤 DLT | 학습자 결정(10-29 저녁). 반론은 ADR에 기록 |
+| 동기 send 실패 기록 | catch에서 바로 `markFailed` | 결과 executor의 새 TX로 기록 | AFTER_COMMIT 단계에서는 commit된 TX에 합류해 `last_error`가 사라졌다 — 테스트로 확인(R-1) |
+| streamer 파싱 | 공용 ObjectMapper 그대로 | parser만 복사본을 엄격하게(실수·문자열 숫자·단일 객체 배열 변환 끔) | 수량 1.9가 1로 저장됐다(R-6). 공용 설정은 그대로 둔다 |
 | 확정 시각 정밀도 | — | 결과 적용에서 `now().truncatedTo(MICROS)` | DB `datetime(6)`과 이벤트 confirmedAt이 같은 값이어야 한다 |
 | confirmedAt 표기 | ISO-8601 + offset (zone은 정하지 않음) | KST `+09:00` 고정 | 같은 순간이 확정 TX에서는 `+09:00`, DB에서 다시 읽으면 `Z`로 나왔다. 학습자 결정(10-29) |
 | eventId 생성 위치 | 응용 계층에서 만들어 `confirmPaid`에 넘김 | `OrderConfirmedRecorder`(order.application)가 만들어 발행 기록에 넣음 | 발행 테이블로 옮긴 결정(ADR-W6-03)을 따름. 도메인은 난수를 모른다 |

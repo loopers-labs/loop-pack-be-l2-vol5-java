@@ -62,7 +62,8 @@ partition 2개인 실험 topic, 같은 group. 각 member는 자기 스레드에�
 
 - `saveAll`에 DB 장애를 넣으면 같은 자리에서 **1 + 3번** 시도(1s·2s·4s backoff) → `order-events.DLT`에 원문 그대로 기록(헤더: 원래 partition·offset·예외 메시지) → 원래 offset **n+1 commit** → 활동·완료 기록 0행.
 - 오류를 없앤 뒤 DLT record의 key·value를 그대로 `order-events`에 다시 넣으면(테스트 코드가 재생) 1번 저장되고, 한 번 더 넣으면 no-op이다.
-- 충돌(같은 eventId · 다른 수량)과 계약 위반(수량 0)은 재시도 없이 바로 DLT로 간다.
+- 충돌(같은 eventId · 다른 수량)과 계약 위반(수량 0 · 수량 1.9)도 같은 1 + 3번 시도한 뒤 DLT로 간다 (ADR-W6-06 변경, 10-29 학습자 결정). 시도 횟수는 파싱 호출 수로 단언한다.
+- 재시도 도중에는 committed offset이 n 이하로 남는다 — 처리 전에 ack하도록 코드를 바꾸면 이 테스트가 실패한다(10-29 확인).
 
 구현 중 드러난 사실 — 설계에 반영했다 (plan.md 변경 이력).
 
@@ -89,26 +90,29 @@ partition 2개인 실험 topic, 같은 group. 각 member는 자기 스레드에�
 
 ## E-6 · `max.block.ms`와 callback 스레드 (수동, 아직 안 함)
 
-학습자가 직접 돌린다. 예측 → 측정 → 차이를 표로 남긴다 (W5 블로그 형식).
-
-1. compose로 broker 3대를 띄우고 api를 local 프로필로 실행한다 (`docs/week6/schema.sql` 먼저).
-2. broker 3대를 모두 멈춘다: `docker compose -f docker/infra-compose.yml stop kafka-1 kafka-2 kafka-3`
-3. 결제 callback을 일정 TPS로 보낸다 (W5 k6 스크립트 응용). `max.block.ms`는 `docs/week6/` 아래 실험 설정 파일(additional-location)로 60s · 2s · 1s를 바꾼다 — `application.yml`에 두지 않는다.
-4. callback p99와 Tomcat busy 스레드를 잰다.
-
-| `max.block.ms` | 예측 (100 TPS) busy 스레드 | 측정 | 차이 |
-|---|---|---|---|
-| 60s | 200에서 포화 | | |
-| 2s | ~200 | | |
-| 1s | ~100 | | |
+키트와 절차는 `docs/week6/k6/README.md` 3절. 학습자가 직접 돌려 예측 → 측정 → 차이를 그 표에 채운다.
+장면을 둘로 나눈다 — A: 운영 중 broker 전부 정지(producer가 metadata를 이미 가짐), B: broker 정지 상태에서 api 기동(metadata 없음).
 
 ## 전체 흐름 런북 (두 앱을 이어 한 번 실행)
 
-자동 테스트는 broker record에서 나뉜다(D-9). 확정 → broker → streamer → 구매 활동을 한 번에 보려면:
+자동 테스트는 broker record에서 나뉜다(D-9). 확정 → broker → streamer → 구매 활동을 한 번에 본다. 명령은 `docs/week6/k6/README.md` 0 ~ 2절.
 
-1. `docker compose -f docker/infra-compose.yml down -v` (처음 한 번 — 단일 broker 볼륨 정리) → `up -d mysql redis-master redis-readonly kafka-1 kafka-2 kafka-3 kafka-ui`
-2. 로컬 DB `loopers`에 `docs/week6/schema.sql` 실행
-3. PG 시뮬레이터를 `localhost:8082`에 띄운다 (W5와 같은 방식)
-4. `./gradlew :apps:commerce-api:bootRun` (8080) · `./gradlew :apps:commerce-streamer:bootRun` (8085)
-5. `http/` 요청으로 주문 → 확정 → PG 승인 → callback
-6. 확인: `event_outbox`(published_at·offset), kafka-ui(`localhost:9099`)의 order-events record, `product_purchase_activity` 행, group `commerce-streamer.product-purchase-activity`의 committed offset
+1. compose(MySQL · Redis · broker 3대 · kafka-ui) → 실험 DB `loopers_w6`(W5 스키마 + W6 스키마 + example) → seed
+2. `pg-sim.py`(auto, 8082) → api(8080) · streamer(8085)를 `config-base.yml`로 실행
+3. 주문 → 확정 요청(202) → 가짜 PG가 1초 뒤 SUCCESS callback
+4. 확인: `event_outbox`(published_at · partition · offset), order-events record, `product_purchase_activity` 행, group의 committed offset
+5. 이미 소비된 record를 broker에 다시 넣어 no-op과 offset 진행을 본다
+
+### 실행 결과 (2026-10-29 19:14, `volume-6-claude` `a06bdcd5` 이후 + 키트)
+
+환경: compose broker 3대 · 실험 DB `loopers_w6` · `pg-sim.py`(auto) · api(8080, `max.block.ms` 1s) · streamer(8085). 키트 `docs/week6/k6/`.
+
+| 사례 | orderId | providerOrderId | transactionKey | eventId | confirmedAt (payload) | items | 주문 | 예약 | 발행 기록 | broker | 소비 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 정상 확정 → 소비 | 2 | LP-ORD-0000000002 | 20261029:TR:950df9d | 0304edaa-252b-439c-abe8-93af8ba9bb9e | 2026-10-29T19:14:14.246363+09:00 | [{1, 1}, {3, 2}] | CONFIRMED | CONSUMED ×2 | published_at 19:14:15.508 (KST), partition 2 · offset 0 | order-events-2@0 | 완료 기록 1 · 활동 2행 (상품 1×1, 상품 3×2) |
+
+- committed offset (group `commerce-streamer.product-purchase-activity`, order-events-2): 처음 `-`(없음) → 소비 뒤 **1** · LAG 0. 다른 partition은 record 없음.
+- **이미 소비된 1건 (C-9)**: 같은 payload를 key `2`로 broker에 다시 넣었다(order-events-2@1, 사람이 재발행한 상황). streamer 로그 `같은 사실의 재전달 — 변경 없이 완료(no-op)`, 완료 기록 1 · 활동 2행 그대로, committed offset **1 → 2**.
+- 소비 시각: 발행 기록 표시 19:14:15.508, 활동 저장 로그 19:14:15.813.
+- 같은 실행에서 우연히 남은 사실: 첫 주문(orderId 1)은 가짜 PG의 버그(chunked 본문을 못 읽어 생성 400)로 결제 FAILED · 주문 PAYMENT_FAILED · 예약 RELEASED가 됐고 **발행 기록·record는 0건**이었다 — 실패 주문에서 거짓 이벤트가 없다(C-2와 같은 결과). 버그는 고쳤다.
+- 정리: 실험 DB `loopers_w6`는 E-6에서 다시 쓰므로 남겨 두고, 매 실행 전 `seed.sql`로 비운다. 테스트 컨테이너는 Ryuk가 지운다.
