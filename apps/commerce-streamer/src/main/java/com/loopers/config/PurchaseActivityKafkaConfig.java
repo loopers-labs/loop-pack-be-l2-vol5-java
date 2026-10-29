@@ -1,8 +1,6 @@
 package com.loopers.config;
 
 import com.loopers.confg.kafka.KafkaConfig;
-import com.loopers.purchase.domain.ConflictingOrderConfirmationException;
-import com.loopers.purchase.domain.InvalidOrderConfirmedException;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.TopicPartition;
@@ -30,7 +28,7 @@ import java.util.Map;
  *   <li>record 하나 = DB 트랜잭션 하나 = ack 하나. MANUAL_IMMEDIATE — handler 정상 반환 직후 consumer 스레드에서 offset commit.</li>
  *   <li>auto.offset.reset=earliest — committed offset이 없는 새 group이 latest로 시작하면 그 전의 확정 이벤트를 건너뛴다 (D-1 ③).</li>
  *   <li>fetch는 Kafka 기본값(min 1 byte, 대기 500ms). batch factory의 1MiB·5s를 쓰지 않으므로 작은 테스트에서도 늦게 보이지 않는다.</li>
- *   <li>실패: 재시도로 나아질 수 있으면 같은 자리에서 3회(1s·2s·4s) 뒤 DLT, 계약 위반·충돌은 재시도 없이 바로 DLT.
+ *   <li>실패: 종류와 무관하게 같은 자리에서 3회(1s·2s·4s) 재시도한 뒤 DLT (학습자 결정 10-29 — 계약 위반·충돌·예상 못 한 예외 모두).
  *       DLT 발행이 성공하면(recover) 원래 record의 offset n+1을 바로 commit한다(commitRecovered=true). DLT 발행이 실패하면 commit하지 않고 다시 시도한다 —
  *       유실은 없지만 그동안 그 partition의 뒤 record도 멈춘다.</li>
  * </ul>
@@ -73,7 +71,6 @@ public class PurchaseActivityKafkaConfig {
         backOff.setMultiplier(2.0);
         backOff.setMaxInterval(4_000L);
         DefaultErrorHandler handler = new DefaultErrorHandler(recoverer, backOff);
-        handler.addNotRetryableExceptions(InvalidOrderConfirmedException.class, ConflictingOrderConfirmationException.class);
         // MANUAL_IMMEDIATE에서는 recover한 record의 offset을 이 값이 true일 때만 바로 commit한다(기본 false).
         // false면 같은 partition의 다음 record가 ack될 때 함께 넘어간다 — 그 전까지 committed offset이 n에 머문다.
         handler.setCommitRecovered(true);
