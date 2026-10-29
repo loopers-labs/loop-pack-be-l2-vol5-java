@@ -17,9 +17,9 @@ commerce-api
                        topic order-events (key = orderId)
                                    ▼
 commerce-streamer
-  record listener (purchase-activity group, MANUAL_IMMEDIATE)
-    handler TX: 처리 기록 + 품목별 구매 활동 insert → commit
-  ack (consumer 스레드)
+  record listener (purchase-activity group, ack mode BATCH)
+    handler TX: 처리 기록 + 품목별 구매 활동 insert → commit → 정상 반환
+  poll 묶음이 끝나면 컨테이너가 offset commit
 ```
 
 - **확정 TX 와 broker 는 하나로 묶이지 않는다.** commit 뒤에 보내므로 "commit 됐는데 record 가 없는" 구간이 남는다(`EVT-017` · `EXP-007`). 이 구간을 닫는 것은 W7 의 outbox 다.
@@ -61,7 +61,7 @@ producer 의 value 직렬화기는 `ByteArraySerializer` 이고, publisher 가 *
 ### 2.4 계약을 두 앱이 함께 지키는 법
 
 계약 예시 JSON 한 벌을 `modules:kafka` 의 testFixtures 에 두고, commerce-api 는 "만든 payload 가 이 예시와 같은 모양인가" 를, commerce-streamer 는 "이 예시를 해석해 기대한 활동을 만드는가" 를 각자 테스트한다.
-두 앱을 한 실행에 띄우지 않고도 계약이 한쪽에서만 바뀌는 것을 잡는다. 두 앱을 실제로 잇는 실행은 Q-4(7.1)다.
+두 앱을 한 실행에 띄우지 않고도 계약이 한쪽에서만 바뀌는 것을 잡는다. 두 앱을 실제로 잇는 실행은 누락 재현 스크립트(7.2)다.
 
 ## 3. 발행
 
@@ -242,17 +242,20 @@ commerce-api 와 같은 스키마를 쓰되 주문 · 상품 테이블을 읽지
 
 ```
 listener (consumer 스레드)
-  parse · 검증 ── 해석 불가(ACT-009) ──────────────→ hold TX → ack
-  handler TX: receipt insert + 품목별 activity insert → commit → ack
+  parse · 검증 ── 해석 불가(ACT-009) ──────────────→ hold TX → 정상 반환
+  handler TX: receipt insert + 품목별 activity insert → commit → 정상 반환
      └ 유일 제약 위반 → rollback
          제약 이름이 uk_receipt_event · uk_receipt_order 가 아니면 → 원래 예외(ACT-010)
          새 readOnly TX 에서 기존 receipt 를 읽는다
            uk_receipt_event 면 event_id 로, uk_receipt_order 면 order_id 로
            없음 → 원래 예외(ACT-010)
-           같은 사실 → no-op → ack
-           다른 사실 → hold TX → ack
-  hold TX 의 uk_hold_position 위반 → 이미 보류된 record → ack
-  그 밖의 예외 → ack 하지 않음 → error handler(4.4)
+           같은 사실 → no-op → 정상 반환
+           다른 사실 → hold TX → 정상 반환
+  hold TX 의 uk_hold_position 위반 → 이미 보류된 record → 정상 반환
+  그 밖의 예외 → 던짐 → error handler(4.4)
+
+정상 반환 = 처리 완료
+  poll 묶음이 끝나면 컨테이너가 정상 반환한 record 까지 offset 을 commit 한다
 ```
 
 - 보류한 뒤 ack 전에 죽으면 같은 record 가 다시 와서 hold insert 가 `uk_hold_position` 에 걸린다. 이것은 실패가 아니라 "이미 보류함" 이다. 이 분기가 없으면 위반이 error handler 로 가 컨테이너가 멈추고, 진행해야 할 재전달(`ACT-005`)에서 소비가 묶인다.
@@ -287,17 +290,70 @@ listener (consumer 스레드)
 | 설정 | 값 | 근거 |
 |---|---|---|
 | 리스너 형태 | record, concurrency 1 | record 마다 DB 경계와 ack 가 보인다. partition 수만큼 늘리는 것은 처리량 문제가 생긴 뒤 |
-| ack mode | `MANUAL_IMMEDIATE` | handler commit 뒤 consumer 스레드에서 바로 commit |
+| ack mode | `BATCH` (기본) | listener 가 정상 반환한 record 까지 poll 묶음 끝에 commit. 아래 "ack mode 를 고르는 기준" |
 | `enable.auto.commit` | `false` (Kafka 가 읽는 키) | 공유 설정의 `enable-auto-commit` 은 Kafka 가 읽지 않는 키다 |
 | value | `ByteArrayDeserializer` | 깨진 바이트를 문자열로 바꾸면(U+FFFD) 원본이 사라져 보류에 남길 수 없다 |
 | `auto.offset.reset` | `earliest` | 처음 배정되기 전에 쌓인 확정을 건너뛰지 않는다. 처리 기록이 재처리를 막는다 |
 | `allow.auto.create.topics` | `false` | 없는 topic 을 consumer 가 만들지 않는다 |
 | fetch | Kafka 기본(`1` byte · 500ms) | batch factory 의 `1MiB` · `5s` 는 그 factory 안에서만 넣는 값이라 물려받지 않는다 |
-| error handler | `CommonContainerStoppingErrorHandler` | 실패 record 를 건너뛰지 않고 컨테이너를 멈춘다 |
+| error handler | 짧은 재시도 뒤 멈춤 | 일시 오류만 1 초 간격 2 번 다시 시도, 그 밖은 바로 멈춤. 실패 record 를 commit 하지 않는다. 아래 "실패 처리" |
 
 - 멈춤의 판정은 `isRunning` 이 아니라 **실제 group 의 committed offset** 이다(`KAFKA-006`). 재시도 뒤 recover 하는 handler 는 `commitRecovered` · `ackAfterHandle` 에 따라 실패 record 를 commit 할 수 있어 고르지 않는다.
 - 멈춘 consumer 는 health 에 드러나지 않고 lag 로만 보인다. lag 지표에 알림을 건다.
-- **뒤집을 조건**: 일시 오류가 잦아 사람이 매번 재시작하는 비용이 커질 때 — 짧은 재시도 뒤 멈추는 handler 로 바꾸되, recover 가 commit 하지 않음을 committed offset 으로 확인한다.
+**유실 없음 · 효과 한 번을 지키는 것.** ack mode 가 아니라 세 장치다.
+
+| 장치 | 지키는 것 | 빠지면 |
+|---|---|---|
+| ① 실패를 **던진다** | 유실 없음 | 잡고 정상 반환하면 컨테이너는 처리 완료로 보고 offset 을 넘긴다 |
+| ② error handler 가 **멈춘다** | 유실 없음 | 재시도 끝에 "처리됨" 으로 치는 handler 는 던진 record 도 commit 하고 넘어간다 |
+| ③ 처리 기록 **멱등** | 효과 한 번 | ①② 때문에 같은 record 가 다시 오고, 두 번 반영된다 |
+
+- offset 은 **위치**다. 어떤 record 의 ack 를 건너뛰어도 뒤 record 의 commit 이 그 앞까지 처리 완료로 만든다. 그래서 "ack 를 안 부르면 안전하다" 는 성립하지 않고, ① ② 가 실제 방어선이다.
+
+**ack mode 를 고르는 기준.** commit 한 번의 비용과 재전달 한 번의 비용을 비교한다.
+
+| | record 마다 commit (`MANUAL_IMMEDIATE` · `RECORD`) | poll 묶음마다 commit (`BATCH` · `MANUAL`) |
+|---|---|---|
+| 정상일 때 | record 마다 broker 왕복 1 번 | poll 마다 1 번 |
+| 죽었을 때 다시 오는 record | 최대 1 개 | 최대 poll 묶음(`max.poll.records`) |
+
+- 우리 handler 는 listener 안에서 DB TX 하나를 동기로 끝낸다. 재전달은 처리 기록에 걸려 no-op 으로 끝나고 외부 효과가 없다. commit 왕복이 처리 비용의 큰 비율이므로 commit 을 poll 묶음에 맞추는 `BATCH` 를 고른다.
+- `MANUAL` 도 commit 횟수는 같다. 차이는 "처리 완료" 를 `ack.acknowledge()` 한 줄로 쓰느냐, 정상 반환으로 두느냐다. 기본값을 쓰면 설명할 손잡이가 하나 줄고, ack 를 빠뜨린 분기라는 실패 방식도 없다.
+- broker 에서 가져오는 단계는 ack mode 와 무관하게 묶음이다(fetch → 버퍼 → poll). record 단위로 남는 비용은 handler 의 DB TX 뿐이다.
+- 원문의 예시는 `MANUAL_IMMEDIATE` 다(원문 111). 원문이 요구하는 것은 "DB handler commit 성공 뒤 ack" 이고, `BATCH` 에서는 정상 반환이 그 뒤에만 일어나 같은 순서가 지켜진다(`KAFKA-005`).
+- **뒤집을 조건**: handler 가 외부 API 처럼 재전달이 비싸거나 멱등하지 않은 효과를 갖게 될 때 — record 마다 commit(`MANUAL_IMMEDIATE`)으로 바꾼다. 처리를 다른 스레드로 넘기거나 batch listener 로 묶어 쓰게 될 때 — commit 시점을 코드가 정해야 하므로 `MANUAL` 로 바꾼다.
+
+**실패 처리.** "다시 하면 결과가 바뀌는가" 와 "무엇이 바뀌어야 하는가" 로 나눈다.
+
+| 실패 | 바뀌려면 | 처리 |
+|---|---|---|
+| 잠금 대기 초과 · 데드락 · 커넥션 획득 실패 · 쿼리 시간 초과 | 시간만 지나면 | 1 초 간격 2 번 다시 시도 → 실패면 멈춤 |
+| 모르는 `schemaVersion` · 코드 버그 · 우리 것이 아닌 제약 위반 | 배포 · 수정 | 바로 멈춤 |
+| 충돌 · 해석 불가 | 바뀌지 않음 | 예외가 아니다 — 보류 뒤 정상 반환(4.3) |
+
+- 재시도 대상은 **허용 목록**으로 고른다. Spring 의 `TransientDataAccessException` 계층은 우리 기준과 다르다(커넥션 획득 실패는 그 계층 밖이다). 목록 밖은 모두 바로 멈춘다.
+- 분류가 틀려도 정확성은 같다. 재시도도 결국 실패하면 멈추므로, 잘못 고르면 몇 초를 더 쓰거나 사람이 한 번 더 재시작할 뿐이다.
+- 재시도 동안 consumer 스레드가 그 자리에 묶인다. 재시도 시간의 합(약 2 초)은 `max.poll.interval.ms`(5 분)보다 한참 짧다.
+- **뒤집을 조건**: 짧은 재시도로도 넘기지 못하는 일시 오류가 잦을 때 — consumer 를 pause 한 채 backoff 를 늘리는 방식으로 간다. 재시도를 늘리느라 poll 간격을 넘기지 않게 한다.
+
+**`order-events` 는 partition 3 · 복제 수 1 이다.** compose init 과 테스트 fixture 가 같은 값으로 만든다.
+
+- partition 수가 consumer 병렬의 상한이다. concurrency 1 로 시작하되 3 까지 늘릴 여지를 둔다.
+- partition 을 나중에 늘리면 key → partition 매핑이 바뀌어, 늘리는 순간 같은 주문의 앞뒤 이벤트가 다른 partition 에 놓여 순서가 깨질 수 있다. 줄이는 것은 불가능하다. 그래서 처음에 정한다.
+- 복제 수는 broker 가 하나라 1 이다(`EXP-004`).
+- **뒤집을 조건**: 3 개 스레드로도 lag 가 줄지 않을 때 — 그때는 아래 순서의 3 단계까지 해 본 뒤 늘린다.
+
+**처리량이 모자랄 때 푸는 순서.** record 마다 "DB TX → offset commit" 이 순서대로 돌아, 처리량의 상한은 대략 `1 초 / (DB TX + commit 왕복)` 이다. 병목은 Kafka 가 아니라 consumer 가 남기는 DB 효과다.
+
+| 순서 | 바꿀 것 | 대가 |
+|---|---|---|
+| 1 | concurrency 를 partition 수(3)까지 | 없음. key 순서는 partition 안에서 지켜진다 |
+| 2 | offset commit 을 비동기로(`syncCommits=false` + commit 콜백 지표) | commit 응답을 기다리지 않는다. 실패가 겹쳐 죽으면 재전달이 늘지만 처리 기록이 no-op 으로 거른다 |
+| 3 | batch listener · 묶음 insert | 묶음 중 하나가 실패할 때 어디까지 ack 할지 정해야 한다 |
+
+- ack mode 와 commit 방식은 정확성과 무관하다(위 세 장치). 그래서 2 단계로 내려가도 결과가 틀리지 않는다.
+- 지금 고를 수 있는 또 하나: offset 을 처리 기록과 같은 TX 에 저장하고 시작 · rebalance 때 그 위치로 seek 한다. DB 효과와 offset 이 원자적으로 움직이지만, 처리 기록이 이미 멱등을 주므로 seek 코드의 복잡도만 늘어난다.
+- **언제 푸나**: lag 가 따라잡지 못하고 **계속** 늘어날 때. 확정이 몰린 뒤 lag 가 쌓였다 줄어드는 것은 실시간이 아닌 집계에서 문제가 아니다.
 
 ### 4.5 DB 무응답 상한 (`ACT-010`)
 
@@ -332,33 +388,66 @@ listener 가 기다리는 DB 호출에 상한이 없으면 예외가 나지 않�
 | `EXP-005` 재전달 | target 앞에 준비용 record, 첫 consumer 는 commit 없이 bounded close, 둘째는 seek 없이 같은 group | committed offset 을 잃고 처음부터 읽으면 준비용 record 도 와서 실험이 실패한다. 활동은 행 ID · 수정 시각까지 비교한다 |
 | `EXP-006` listener 실패 | 둘째 품목만 거절하는 `CHECK` 제약을 잠시 건다(`product_id <> 8`) | 실제 DB 오류이고, 첫 품목이 들어간 뒤 실패해 `ACT-003` 의 전체 rollback 을 함께 본다. 멈춤은 컨테이너 정지 이벤트 뒤의 committed offset 으로 판정한다 |
 | `EVT-014` 막힘 | 자동 생성을 끈 broker 에 없는 topic 으로 발행 | metadata 를 얻을 수 없어 실제로 막힌다. broker 를 멈추는 것만으로는 metadata 캐시 때문에 막히지 않는다(T-4) |
-| `EXP-007` 첫째 | Q-6 (7.2) | |
+| `EXP-007` 첫째 | topic 의 `max.message.bytes=1` (7.2) | broker 가 실제로 거절한다 |
 
 각 실험은 실제 offset · partition · committed 값을 기록해 PR 에 옮긴다. 단일 broker 로 확인하지 못하는 것(leader 장애 · ISR 축소 · `min.insync.replicas`)은 설명으로 남긴다(`EXP-004`). 실제로 보는 것은 선택 심화(broker 3 대)다.
 
-## 7. 아직 고르지 않은 것
+## 7. 두 앱을 잇는 검증과 누락 재현
 
-### 7.1 Q-4 — 두 앱을 한 실행에서 잇기
+### 7.1 7 장 검증은 두 반쪽과 계약으로 (Q-4)
 
-| 지금 고를 수 있는 선택지 | 장점 | 비용 |
+원문 7 장의 "실제 PG 확정 → Kafka → streamer" 는 두 앱의 테스트로 나눠 증명한다. 원문의 검사 예시도 발행과 소비를 앱별로 나눈다.
+
+| 반쪽 | 테스트 | 증명하는 것 |
 |---|---|---|
-| ① 별도 sourceSet 에 streamer 출력을 넣어 한 JVM · 한 컨텍스트 | 가장 단순하다 | 두 앱의 Bean · 엔티티 · `com.loopers` 스캔이 한 컨텍스트에 섞여 실제 배포와 다르다 |
-| ② streamer `bootJar` 를 자식 JVM 으로 띄운다 | 실제 배포와 같은 격리. 부모 fixture 의 broker · DB 주소를 인자로 넘긴다 | Gradle 에 jar 입력을 등록하고 기동 · 종료(SIGTERM)를 관리한다 |
-| ③ 스크립트로 두 프로세스 | 가장 실제에 가깝다 | 테스트 실행 밖이라 결과를 따로 기록해야 한다 |
+| 발행 | commerce-api `OrderConfirmedPublicationTest` | 실제 주문 API · PG fixture · 결과 반영으로 확정한 뒤, **broker 에 실제로 쌓인 record** 를 읽어 저장된 품목 · 수량 · `confirmedAt` 과 비교한다. 같은 record 가 계약 예시(2.4)의 모양과 같다 |
+| 소비 | commerce-streamer `PurchaseActivityIntegrationTest` | 계약 예시와 같은 바이트를 실제 broker 에 보내 실제 listener 가 활동을 만든다 |
 
-계약 자체는 2.4 의 공유 예시로 각 앱에서 지킨다. ② 가 유력하지만 Gradle 설정을 시험해 본 뒤 고른다.
+- 이음새는 계약 예시 한 벌이다. 발행 쪽이 "내 record 가 예시와 같은 모양" 을, 소비 쪽이 "예시를 받으면 기대한 활동" 을 각자 지킨다. 실제 바이트가 같다는 것은 간접 증명이고, 직접 증명은 7.2 의 둘째 주문이다.
+- 지금 고를 수 있는 다른 방법:
+  - 한 JVM 에 두 앱을 넣는다(별도 sourceSet). 두 앱의 Bean · 엔티티 · `com.loopers` 스캔이 한 컨텍스트에 섞여, 실제 배포와 다른 조건에서 통과할 수 있다.
+  - streamer `bootJar` 를 자식 JVM 으로 띄우는 테스트. 실제와 같은 격리지만 Gradle 에 jar 입력을 엮고 기동 · 종료를 관리하는 비용이 `check` 에 붙는다.
+- **뒤집을 조건**: W7 이 이 실행을 outbox 경로로 매번 자동으로 다시 돌려야 할 때 — 자식 JVM 테스트로 옮긴다.
 
-### 7.2 Q-6 — `EXP-007` 첫째 주문의 누락 만들기
+### 7.2 누락 재현은 스크립트 한 실행으로 (`EXP-007` · `EXP-008` · Q-6)
 
-원문은 "commit 후 send 직전 hook 에서 멈춘다" 고 한다.
+누락 실험은 둘째 주문이 broker · consumer 를 지나 활동까지 가야 하므로 두 앱이 한 실행에서 돈다. 원문은 "재현 코드 · 실행 방법 · 관찰" 을 요구하고, 테스트 스위트 안을 요구하지 않는다.
+
+`docs/week6/gap/run.sh` 의 순서:
+
+```
+1. compose 의 broker · MySQL 과 PG 를 띄운다(PG 는 `pg.yml` 의 주소로 응답하는 로컬 서버 — W5 부하 실험에서 띄운 방식을 따르며, 스크립트를 쓸 때 확정한다). 실행마다 고유 suffix 의 topic · group 을 만든다
+2. commerce-api · commerce-streamer 를 그 topic · group · 고정 clock 으로 프로세스로 띄운다
+3. topic 의 max.message.bytes=1 → 주문 A 를 API 로 확정 → broker 가 거절
+4. max.message.bytes 를 되돌린다 → 주문 B 를 확정 → broker · streamer 까지 처리
+5. 관찰: 주문 · 예약(DB) · broker(kcat) · committed offset · 구매 활동(DB) · 발행 실패 지표(actuator)
+6. 결과를 docs/week6/gap/result.md 에 쓰고, 시작한 프로세스 · 그 실행의 topic 만 정리한다
+```
+
+**첫째 주문을 broker 거절로 만든다(Q-6).** 원문은 "commit 후 send 직전 hook 에서 멈춘다" 고 한다.
 
 | 지금 고를 수 있는 선택지 | 끝 상태 | 비용 |
 |---|---|---|
-| ① 테스트가 발행 hook 을 갈아 끼움 | record 0 · 흔적 없음 | 테스트 더블이다 |
-| ② main 코드에 발행 차단 스위치 | record 0 · 흔적 없음 | 시험용 장치가 운영 코드에 들어간다 |
-| ③ topic 의 `max.message.bytes=1` 로 broker 가 실제로 거절 | record 0 · **실패 지표 1** | 원문의 수단과 다르고 "흔적 있는 누락" 이다. 값을 되돌리면 둘째 주문은 정상 |
+| **topic 의 `max.message.bytes=1`** | 주문 `CONFIRMED` · 예약 소비 · record 0 · 활동 0 · **실패 지표 1** | 원문의 수단과 다르다 — "흔적 있는 누락" |
+| 테스트가 발행 hook 을 갈아 끼움 | 위와 같고 흔적 없음 | 테스트 더블이다 |
+| main 코드에 발행 차단 스위치 | 위와 같고 흔적 없음 | 시험용 장치가 운영 코드에 들어간다 |
+| 커밋 뒤 send 전에 프로세스 강제 종료 | 위와 같고 흔적 없음 | 그 순간을 맞추기 어렵다. 타이밍에 기대면 재현이 흔들린다 |
 
-③ 은 더블 없이 같은 끝 상태(주문 `CONFIRMED` · 예약 소비 · record 0 · 활동 0)를 만든다. 흔적 없는 누락이 W7 에서 꼭 필요한지가 기준이다.
+- 첫 줄을 고른다. 테스트 더블도 시험용 운영 코드도 없이 같은 끝 상태를 만든다. 원문의 수단과 다르고 실패 지표가 남는다는 점을 `result.md` 와 PR 에 밝힌다.
+- broker 의 거절은 재시도할 수 없는 오류라 `delivery.timeout.ms` 를 기다리지 않고 바로 실패 콜백이 온다(확인할 테스트 T-8).
+- **뒤집을 조건**: W7 이 "흔적 없는 누락"(지표에도 없는 것)을 outbox 가 복구함을 보여야 할 때 — 마지막 줄의 강제 종료 재현을 더한다.
+
+**broker 는 `kcat` 으로 관찰한다.** 우리 코드(publisher 의 로그 · 지표)가 아니라 독립된 도구로 broker 의 사실을 읽어야, 우리 코드가 틀렸을 때도 관찰이 맞다.
+
+| 확인 | 명령 |
+|---|---|
+| topic · partition · leader | `kcat -b $BROKER -L -t $TOPIC` |
+| 주문 A 의 record 가 없음 · 주문 B 의 record 위치 | `kcat -b $BROKER -C -t $TOPIC -o beginning -e -f '%p %o %k %s\n'` |
+| committed offset | `kafka-consumer-groups.sh --describe --group $GROUP` (kcat 은 group 의 committed offset 을 보여 주지 않는다) |
+
+`kcat` 은 compose 네트워크 안에서 컨테이너로 실행해 호스트 설치에 기대지 않는다. 이미지 버전은 스크립트에 고정한다.
+
+`result.md` 에는 `EXP-008` 의 값 — 실제 `orderId` · `providerOrderId` · `transactionKey` · `eventId` · `confirmedAt` · `items`, 주문 · 예약 · broker(kcat 출력) · 활동 상태, 실행한 commit · 명령 — 을 남긴다. 카드 값 · 비밀은 뺀다. W7 은 이 스크립트를 outbox 경로로 다시 돌려 주문 A 가 복구되는지 본다.
 
 ## 8. 알려진 한계 · 지금 고르지 않은 선택지
 
@@ -370,6 +459,7 @@ listener 가 기다리는 DB 호출에 상한이 없으면 예외가 나지 않�
 | Kafka 트랜잭션 | DB 와 broker 를 묶지 못한다(소비 쪽 DB 효과는 Kafka TX 밖) | — |
 | concurrency 3 | 처리량 문제가 아직 없다 | lag 가 꾸준히 쌓일 때 |
 | static membership · cooperative assignor | 재시작 중 재배정 비용이 아직 문제 아니다 | 배포 중 rebalance 가 측정될 때 |
+| producer `linger.ms` · `batch.size` · 압축 | 확정 하나에 record 하나라 batch 가 차지 않는다. `linger.ms` 를 늘리면 지연만 는다 | W7 relay 처럼 record 를 묶어 보낼 때(작업 단계 15 로 근거를 만든다) |
 
 ## 9. 코드 배치
 
@@ -407,6 +497,7 @@ modules:kafka
 | T-5 | JDBC 상한이 없으면 DB 무응답에서 listener 가 예외 없이 멈춘다 | 상한 없이 · 있이 DB 를 멈추고 error handler 호출 여부와 rebalance 를 본다 |
 | T-6 | AFTER_COMMIT listener 동안 커넥션이 반납되지 않는다 | `send()` 를 막아 둔 채 Hikari active 수 |
 | T-7 | 정상 종료 때 close 대기 안의 record 는 전송되거나 실패 콜백이 온다 | 버퍼에 record 를 둔 채 컨텍스트 종료 |
+| T-8 | `max.message.bytes` 거절은 재시도 없이 바로 실패 콜백으로 온다 | topic 값을 1 로 두고 발행 → 콜백까지 걸린 시간이 `delivery.timeout.ms` 보다 훨씬 짧다 |
 
 ## 11. 작업 단계
 
@@ -422,4 +513,12 @@ modules:kafka
 8. handler TX · 유일 제약 재분류(`ACT-003` · `ACT-007` · `ACT-008`), 동시 소비 2 건.
 9. record listener · error handler · ack(`KAFKA-004` ~ `KAFKA-008`), `socketTimeout` · T-5.
 10. 실험 `EXP-002` · `EXP-003` · `EXP-005` · `EXP-006`.
-11. Q-4 · Q-6 결정 뒤 `EXP-007` · `EXP-008`.
+11. 7 장 검증의 두 반쪽 — `OrderConfirmedPublicationTest` · `PurchaseActivityIntegrationTest` 와 계약 예시(7.1).
+12. 누락 재현 스크립트 `docs/week6/gap/run.sh` 와 `result.md`(7.2), T-8.
+13. (선택 심화) broker 3 대 — controller 1 대 · broker 3 대를 띄운 별도 compose(복제 수 3 · `min.insync.replicas=2`). 번호 붙은 record 를 보내며 broker 를 멈추고, 보낸 수 · ack 받은 수 · 실제로 읽힌 수와 leader · ISR 변화를 `kcat` · `kafka-topics.sh --describe` 로 기록한다.
+    - `acks=all` · 1 대 정지 → 계속 성공, 유실 0
+    - `acks=all` · 2 대 정지 → `NotEnoughReplicas` 로 거절, ack 받은 것 중 유실 0
+    - `acks=1` · 복제 전 leader 강제 종료 → ack 받았는데 읽히지 않는 record
+    - leader 교체 중 metadata 재확보가 `max.block.ms` 1 초 안에 끝나는가 — 3.7 의 뒤집을 조건을 실측으로 채운다
+14. (선택 심화) consumer 처리량 — 같은 양의 확정 이벤트를 쌓아 두고 concurrency(1 · 3) × ack mode(`BATCH` · `MANUAL_IMMEDIATE`) × commit(동기 · 비동기) × 저장(record 단위 · 묶음 insert)의 처리 시간 · DB TX 수 · lag 를 잰다. 4.4 의 "처리량이 모자랄 때 푸는 순서" 를 실측으로 채운다.
+15. (선택 심화) producer 배치 · 압축 — 몰아서 보낼 때와 드문드문 보낼 때 각각 `linger.ms` · `batch.size` · `compression.type`(none · lz4 · zstd)을 바꿔 `batch-size-avg` · `compression-rate-avg` · `request-latency-avg` 와 broker 에 저장된 바이트를 비교한다. 확정 하나에 record 하나인 지금은 batch 에 record 가 한 개씩만 들어가 효과가 거의 없을 것으로 본다. W7 relay 가 outbox 를 묶어 보낼 때의 설정 근거가 된다.
