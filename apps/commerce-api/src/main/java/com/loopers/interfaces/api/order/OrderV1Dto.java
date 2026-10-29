@@ -6,6 +6,8 @@ import com.loopers.application.order.OrderItemCommand;
 import java.util.List;
 
 public class OrderV1Dto {
+    public record ConfirmRequest(String paymentAttemptKey, String callbackUrl) {}
+
     public record CreateRequest(List<ItemRequest> items) {
         public List<OrderItemCommand> toCommands() {
             if (items == null) {

@@ -8,6 +8,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.ZonedDateTime;
 import java.util.List;
 
 @RequiredArgsConstructor
@@ -22,8 +23,27 @@ public class OrderService {
     }
 
     @Transactional(readOnly = true)
+    public OrderModel getOrderById(Long orderId) {
+        return orderRepository.findById(orderId)
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[id = " + orderId + "] 주문을 찾을 수 없습니다."));
+    }
+
+    @Transactional
+    public OrderModel getOrderByIdWithLock(Long orderId) {
+        return orderRepository.findByIdWithLock(orderId)
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[id = " + orderId + "] 주문을 찾을 수 없습니다."));
+    }
+
+    @Transactional(readOnly = true)
     public OrderModel getMyOrder(Long userId, Long orderId) {
         return orderRepository.findById(orderId)
+            .filter(order -> order.getUserId().equals(userId))
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[id = " + orderId + "] 주문을 찾을 수 없습니다."));
+    }
+
+    @Transactional
+    public OrderModel getMyOrderWithLock(Long userId, Long orderId) {
+        return orderRepository.findByIdWithLock(orderId)
             .filter(order -> order.getUserId().equals(userId))
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[id = " + orderId + "] 주문을 찾을 수 없습니다."));
     }
@@ -47,5 +67,17 @@ public class OrderService {
     @Transactional
     public OrderModel save(OrderModel order) {
         return orderRepository.save(order);
+    }
+
+    @Transactional(readOnly = true)
+    public List<OrderModel> findByStatus(OrderStatus status) {
+        return orderRepository.findByStatus(status);
+    }
+
+    @Transactional
+    public void expireDraftOrders() {
+        List<OrderModel> expired = orderRepository.findExpiredDrafts(ZonedDateTime.now());
+        expired.forEach(OrderModel::expire);
+        orderRepository.saveAll(expired);
     }
 }

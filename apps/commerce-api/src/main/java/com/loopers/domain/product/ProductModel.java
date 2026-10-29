@@ -29,6 +29,9 @@ public class ProductModel extends BaseEntity {
     @Column(name = "stock", nullable = false)
     private int stock;
 
+    @Column(name = "reserved_stock", nullable = false)
+    private int reservedStock;
+
     protected ProductModel() {
     }
 
@@ -43,6 +46,7 @@ public class ProductModel extends BaseEntity {
         this.name = validateName(name);
         this.price = validatePrice(price);
         this.stock = stock;
+        this.reservedStock = 0;
     }
 
     public Long getBrandId() {
@@ -61,16 +65,56 @@ public class ProductModel extends BaseEntity {
         return stock;
     }
 
+    public int getReservedStock() {
+        return reservedStock;
+    }
+
+    public int getAvailableStock() {
+        return stock - reservedStock;
+    }
+
     public void update(String name, Long price) {
         this.name = validateName(name);
         this.price = validatePrice(price);
     }
 
-    public void changeStock(int quantity) {
-        if (quantity < 0) {
-            throw new CoreException(ErrorType.BAD_REQUEST, "재고는 0 이상이어야 합니다. (요청: " + quantity + ")");
+    /** 관리자가 가용 재고를 직접 설정한다. 예약 수량은 유지된다. */
+    public void changeStock(int availableQuantity) {
+        if (availableQuantity < 0) {
+            throw new CoreException(ErrorType.BAD_REQUEST, "재고는 0 이상이어야 합니다. (요청: " + availableQuantity + ")");
         }
-        this.stock = quantity;
+        this.stock = availableQuantity + reservedStock;
+    }
+
+    /** PG 호출 전 재고를 예약한다. */
+    public void reserve(int quantity) {
+        if (quantity <= 0) {
+            throw new CoreException(ErrorType.BAD_REQUEST, "예약 수량은 양수여야 합니다.");
+        }
+        if (quantity > getAvailableStock()) {
+            throw new CoreException(
+                ErrorType.BAD_REQUEST,
+                "재고가 부족합니다. (가용: " + getAvailableStock() + ", 요청: " + quantity + ")"
+            );
+        }
+        this.reservedStock += quantity;
+    }
+
+    /** PG 성공 시 예약을 소비한다. 실제 재고도 함께 차감된다. */
+    public void consumeReservation(int quantity) {
+        if (quantity > reservedStock) {
+            throw new CoreException(ErrorType.BAD_REQUEST, "예약 수량이 부족합니다.");
+        }
+        this.stock -= quantity;
+        this.reservedStock -= quantity;
+    }
+
+    /** PG 실패·취소 시 예약을 반환한다. */
+    public void releaseReservation(int quantity) {
+        if (quantity > reservedStock) {
+            throw new CoreException(ErrorType.BAD_REQUEST, "예약 수량이 부족합니다.");
+        }
+        this.reservedStock -= quantity;
     }
 
     public void deductStock(int quantity) {
