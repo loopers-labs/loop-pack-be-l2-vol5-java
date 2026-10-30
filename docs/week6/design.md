@@ -363,7 +363,8 @@ listener (consumer 스레드)
 | 모르는 `schemaVersion` · 코드 버그 · 우리 것이 아닌 제약 위반 | 배포 · 수정 | 바로 멈춤 |
 | 충돌 · 해석 불가 | 바뀌지 않음 | 예외가 아니다 — 보류 뒤 정상 반환(4.3) |
 
-- **재시도를 error handler 가 아니라 listener 에 둔다.** `DefaultErrorHandler` 는 재시도가 끝나면 recoverer 를 부르는데, recoverer 가 성공하면 실패 record 를 처리됨으로 commit 하고(`KAFKA-006` 위반), recoverer 가 던지면 그 record 로 seek 해 재시도를 처음부터 다시 돈다 — 어느 쪽도 "멈춤" 이 아니다. 그래서 짧은 재시도는 listener 의 반복문(`TransientFailures` 허용 목록)이 하고, 끝내 던진 예외는 멈추는 handler 가 받는다. 정상 반환하지 않으므로 `KAFKA-005` 와 맞는다. 실측: 잠금을 4.5 초 쥔 채 보내면 MySQL 1205 → `attempt=1` 재시도 → 반영, 모르는 버전은 컨테이너가 멈추고 committed offset 이 그 record 를 지나지 않는다.
+- **재시도를 error handler 가 아니라 listener 의 handler 호출에 둔다.** `DefaultErrorHandler` 는 재시도가 끝나면 recoverer 를 부르는데, recoverer 가 성공하면 실패 record 를 처리됨으로 commit 하고(`KAFKA-006` 위반), recoverer 가 던지면 그 record 로 seek 해 재시도를 처음부터 다시 돈다 — 어느 쪽도 "멈춤" 이 아니다. 그래서 짧은 재시도는 `RetryTemplate`(허용 목록 · 1 초 · 최대 3 회, `config/PurchaseActivityListenerConfig`)이 `handler.handle` 호출만 감싸 하고, 끝내 던진 예외는 멈추는 handler 가 받는다. 읽기(파싱)는 다시 해도 결과가 같으므로 감싸지 않는다. 정상 반환하지 않으므로 `KAFKA-005` 와 맞는다. 실측: 잠금을 4.5 초 쥔 채 보내면 MySQL 1205 → `attempt=1` 로그 → 반영(EXP-009), CHECK 위반은 재시도 없이 멈춤(EXP-006), 모르는 버전은 컨테이너가 멈추고 committed offset 이 그 record 를 지나지 않는다.
+- 재시도 사이에는 consumer 스레드가 기다린다. `DefaultErrorHandler` 의 backoff 도 같은 방식이고, 같은 partition 의 다음 record 로 넘어가면 안 되므로 기다림이 본질이다. 대가는 스레드 하나(concurrency 1)가 맡은 **다른 partition 도 그동안 멈춘다**는 것이다(최대 2 초). 지금 고를 수 있는 다른 방법은 실패 record 로 seek 하고 그 partition 만 pause 했다가 resume 하는 것(`ContainerPausingBackOffHandler`)인데, "재시도 끝 → 멈춤" 을 기본 handler 가 지원하지 않아 시도 횟수 · seek · 멈춤 위임을 직접 짜야 한다. 실패 record 를 건너뛰지 않는다는 보장을 직접 짠 handler 에 맡기는 위험이 2 초 지연보다 크다. **뒤집을 조건**: 일시 오류가 잦아 다른 partition 의 lag 로 드러날 때 — partition 단위 pause 로 바꾸고 EXP-009 로 검증한다.
 - 재시도 대상은 **허용 목록**으로 고른다. Spring 의 `TransientDataAccessException` 계층은 우리 기준과 다르다(커넥션 획득 실패는 그 계층 밖이다). 목록 밖은 모두 바로 멈춘다.
 - 분류가 틀려도 정확성은 같다. 재시도도 결국 실패하면 멈추므로, 잘못 고르면 몇 초를 더 쓰거나 사람이 한 번 더 재시작할 뿐이다.
 - 재시도 동안 consumer 스레드가 그 자리에 묶인다. 재시도 시간의 합(약 2 초)은 `max.poll.interval.ms`(5 분)보다 한참 짧다.
@@ -449,7 +450,7 @@ listener 가 기다리는 DB 호출에 상한이 없으면 예외가 나지 않�
 `docs/week6/gap/run.sh` 의 순서:
 
 ```
-1. compose 의 broker · MySQL 과 PG 를 띄운다(PG 는 `pg.yml` 의 주소로 응답하는 로컬 서버 — W5 부하 실험에서 띄운 방식을 따르며, 스크립트를 쓸 때 확정한다). 실행마다 고유 suffix 의 topic · group 을 만든다
+1. compose 의 broker, 실행 전용 MySQL 컨테이너(13306, 끝나면 지운다), PG fixture 를 띄운다. 실행마다 고유 suffix 의 topic · group 을 만든다
 2. commerce-api · commerce-streamer 를 그 topic · group · 고정 clock 으로 프로세스로 띄운다
 3. topic 의 max.message.bytes=1 → 주문 A 를 API 로 확정 → broker 가 거절
 4. max.message.bytes 를 되돌린다 → 주문 B 를 확정 → broker · streamer 까지 처리
@@ -478,7 +479,14 @@ listener 가 기다리는 DB 호출에 상한이 없으면 예외가 나지 않�
 | 주문 A 의 record 가 없음 · 주문 B 의 record 위치 | `kcat -b $BROKER -C -t $TOPIC -o beginning -e -f '%p %o %k %s\n'` |
 | committed offset | `kafka-consumer-groups.sh --describe --group $GROUP` (kcat 은 group 의 committed offset 을 보여 주지 않는다) |
 
-`kcat` 은 compose 네트워크 안에서 컨테이너로 실행해 호스트 설치에 기대지 않는다. 이미지 버전은 스크립트에 고정한다.
+`kcat` 은 호스트에 설치한 것(1.7, `brew install kcat`)을 쓴다. committed offset 은 broker 컨테이너 안의 `kafka-consumer-groups.sh` 로 읽는다.
+
+**실행 환경에서 정한 것.**
+
+- PG fixture 는 W5 의 `PgFixture` 를 테스트 소스의 `PgFixtureServer` main 으로 띄운다. 스크립트가 "이 주문의 거래를 성공시키고 callback 을 보내라" 를 부를 수 있게 로컬 전용 제어 주소(`127.0.0.1:8091/approve?orderId=`)를 둔다. 테스트 소스에만 있어 운영 jar 에 들어가지 않는다. `pgFixtureJar` 는 apps 의 일반 jar 가 꺼져 있어 쓰지 않고, 컴파일된 테스트 클래스와 api jar 안의 Jackson 으로 띄운다.
+- MySQL 은 compose 가 아니라 실행 전용 컨테이너다. 호스트의 3306 을 다른 MySQL 이 쓰고 있을 수 있고, 두 앱의 `ddl-auto: create` 가 개발용 `loopers` DB 를 지우지 않게 한다.
+- 두 앱은 18080 · 18085, 관리 포트 18081 · 18082 로 띄운다. 8080 · 8081 은 다른 프로세스가 쓸 수 있다. admin API 는 로컬 전용 Basic 계정을 쓴다.
+- 확정 시각은 고정하지 않는다. 결제 API 가 `Instant.now()` 를 쓰고, 고정 clock 을 넣으려면 운영 코드에 시험용 장치가 필요하다. 결과는 실제 시각을 그대로 기록한다.
 
 `result.md` 에는 `EXP-008` 의 값 — 실제 `orderId` · `providerOrderId` · `transactionKey` · `eventId` · `confirmedAt` · `items`, 주문 · 예약 · broker(kcat 출력) · 활동 상태, 실행한 commit · 명령 — 을 남긴다. 카드 값 · 비밀은 뺀다. W7 은 이 스크립트를 outbox 경로로 다시 돌려 주문 A 가 복구되는지 본다.
 
@@ -506,14 +514,14 @@ commerce-api
   infrastructure/order/OrderEventsTopicWarmup        기동 시 metadata 확보
 
 commerce-streamer
-  domain/activity/…                      판정(같은 사실 · 충돌 · 해석 불가)
-  domain/activity/ConfirmedPurchase      읽기 판정 · 같은 사실 · 부딪힌 기록과의 판정
-  application/activity/PurchaseActivityHandler       TX 없음. 기록 → 재분류 → 보류 순서
-  application/activity/PurchaseActivityTransactions  record · collide(readOnly) · hold
-  infrastructure/activity/…              JPA 엔티티 · 저장소 (package-private)
+  domain/purchase/…                      판정(같은 사실 · 충돌 · 해석 불가)
+  domain/purchase/ConfirmedPurchase      읽기 판정 · 같은 사실 · 부딪힌 기록과의 판정
+  application/purchase/PurchaseActivityHandler       TX 없음. 기록 → 재분류 → 보류 순서
+  application/purchase/PurchaseActivityTransactions  record · collide(readOnly) · hold
+  infrastructure/purchase/…              JPA 엔티티 · 저장소 (package-private)
   interfaces/consumer/OrderEventPayloadReader   바이트 → 판정 (JSON · eventType · schemaVersion)
-  interfaces/consumer/OrderConfirmedListener    record listener · 일시 오류 짧은 재시도
-  config/PurchaseActivityListenerConfig        purchase-activity record factory · 멈추는 error handler
+  interfaces/consumer/OrderConfirmedListener    record listener. handler 호출을 재시도로 감싼다
+  config/PurchaseActivityListenerConfig        purchase-activity record factory · 멈추는 error handler · 재시도 정책
 
 modules:kafka
   KafkaConfig                            공용 producer · template(observation)
