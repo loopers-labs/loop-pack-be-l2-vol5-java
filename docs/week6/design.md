@@ -240,7 +240,6 @@ commerce-api 와 같은 스키마를 쓰되 주문 · 상품 테이블을 읽지
 | `event_id` | `uk_receipt_event` | 같은 사실의 재전달을 막는다 |
 | `order_id` | `uk_receipt_order` | 같은 주문에 다른 `eventId` 가 오는 충돌을 잡는다 |
 | `confirmed_at` · `items_digest` | | "같은 사실" 비교 값. `items_digest` 는 `productId` 오름차순 `7:2,8:1` |
-| `topic` · `partition_no` · `offset_no` · `received_at` | | 처음 반영한 record 의 위치 |
 
 **`purchase_activity` — 구매 활동**
 
@@ -256,6 +255,7 @@ commerce-api 와 같은 스키마를 쓰되 주문 · 상품 테이블을 읽지
 | `topic` · `partition_no` · `offset_no` | `uk_hold_position` | 같은 record 가 재전달돼도 한 줄 |
 | `reason` · `event_id` · `order_id` · `payload` · `held_at` | | 원본 바이트를 그대로 남긴다 |
 
+- 처리 기록은 **반영한 사실만** 담는다. 반영 시각은 `AuditEntity` 의 `created_at` 이다(처리 기록은 고치지 않는다). 어느 record 로 반영했는지(topic · partition · offset)는 남기지 않는다 — consumer 가 어디까지 읽었는지는 broker 의 committed offset 이 기억하고, 처리 기록의 위치는 조사 편의일 뿐이며 이긴 쪽은 `event_id` · `order_id` 로 kcat 에서 찾는다. 위치는 보류 기록에만 둔다. 거기서는 `uk_hold_position` 으로 같은 record 의 재전달을 한 줄로 만드는 데 쓴다. **뒤집을 조건**: 이긴 record 를 자주 찾아야 해 kcat 검색이 운영 부담이 될 때.
 - 처리 기록을 지우지 않는다(`ACT-014`). 늦은 중복(offset 되감기 · 재발행)은 언제든 올 수 있다. **뒤집을 조건**: 보관 기간이 정해지고, 그보다 오래된 record 를 다시 읽지 않는다는 운영 보장이 생길 때.
 - 활동을 `(order_id, product_id)` 로 유일하게 두는 것은 처리 기록과 별개의 두 번째 방어선이다. 처리 기록 없이 활동만 남는 버그가 생겨도 같은 품목이 두 번 쌓이지 않는다.
 

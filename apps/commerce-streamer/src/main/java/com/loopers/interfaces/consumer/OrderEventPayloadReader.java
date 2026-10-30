@@ -2,7 +2,6 @@ package com.loopers.interfaces.consumer;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.loopers.domain.activity.ConfirmedPurchase;
 import com.loopers.domain.activity.PurchaseReading;
 import com.loopers.domain.activity.UnreadableReason;
 import org.springframework.stereotype.Component;
@@ -12,8 +11,12 @@ import java.io.IOException;
 @Component
 class OrderEventPayloadReader {
 
+    private static final String EVENT_TYPE = "eventType";
+    private static final String SCHEMA_VERSION = "schemaVersion";
     private static final String CONFIRMED = "OrderConfirmed";
     private static final int SUPPORTED_VERSION = 1;
+    private static final OrderEventReading MALFORMED =
+        new OrderEventReading.Confirmed(new PurchaseReading.Unreadable(UnreadableReason.MALFORMED));
 
     private final ObjectMapper objectMapper;
 
@@ -22,46 +25,65 @@ class OrderEventPayloadReader {
     }
 
     OrderEventReading read(String key, byte[] value) {
-        JsonNode root;
         try {
-            root = objectMapper.readTree(value);
-        } catch (IOException e) {
-            return malformed();
+            JsonNode root = parse(value);
+            String eventType = requireText(root, EVENT_TYPE);
+            if (!CONFIRMED.equals(eventType)) {
+                return new OrderEventReading.NotHandled(eventType);
+            }
+            requireSupportedVersion(root);
+            return new OrderEventReading.Confirmed(bind(root).toReading(key));
+        } catch (MalformedRecord e) {
+            return MALFORMED;
         }
-        if (root == null || !root.isObject()) {
-            return malformed();
-        }
-
-        JsonNode eventType = root.get("eventType");
-        if (eventType == null || !eventType.isTextual()) {
-            return malformed();
-        }
-        if (!CONFIRMED.equals(eventType.asText())) {
-            return new OrderEventReading.NotHandled(eventType.asText());
-        }
-
-        JsonNode schemaVersion = root.get("schemaVersion");
-        if (schemaVersion == null || !schemaVersion.isInt()) {
-            return malformed();
-        }
-        if (schemaVersion.intValue() != SUPPORTED_VERSION) {
-            throw new UnsupportedSchemaVersionException(schemaVersion.intValue());
-        }
-
-        OrderConfirmedPayload payload;
-        try {
-            payload = objectMapper.treeToValue(root, OrderConfirmedPayload.class);
-        } catch (IOException | IllegalArgumentException e) {
-            return malformed();
-        }
-        if (payload.hasEmptyItem()) {
-            return malformed();
-        }
-        return new OrderEventReading.Confirmed(ConfirmedPurchase.read(
-            key, payload.eventId(), payload.orderId(), payload.confirmedAt(), payload.lines()));
     }
 
-    private static OrderEventReading malformed() {
-        return new OrderEventReading.Confirmed(new PurchaseReading.Unreadable(UnreadableReason.MALFORMED));
+    private JsonNode parse(byte[] value) {
+        try {
+            JsonNode root = objectMapper.readTree(value);
+            if (root == null || !root.isObject()) {
+                throw new MalformedRecord();
+            }
+            return root;
+        } catch (IOException e) {
+            throw new MalformedRecord();
+        }
+    }
+
+    private static String requireText(JsonNode root, String field) {
+        JsonNode node = root.get(field);
+        if (node == null || !node.isTextual()) {
+            throw new MalformedRecord();
+        }
+        return node.asText();
+    }
+
+    private static void requireSupportedVersion(JsonNode root) {
+        JsonNode node = root.get(SCHEMA_VERSION);
+        if (node == null || !node.isInt()) {
+            throw new MalformedRecord();
+        }
+        if (node.intValue() != SUPPORTED_VERSION) {
+            throw new UnsupportedSchemaVersionException(node.intValue());
+        }
+    }
+
+    private OrderConfirmedPayload bind(JsonNode root) {
+        try {
+            OrderConfirmedPayload payload = objectMapper.treeToValue(root, OrderConfirmedPayload.class);
+            if (payload.hasEmptyItem()) {
+                throw new MalformedRecord();
+            }
+            return payload;
+        } catch (IOException | IllegalArgumentException e) {
+            throw new MalformedRecord();
+        }
+    }
+
+    private static final class MalformedRecord extends RuntimeException {
+
+        private MalformedRecord() {
+            super(null, null, false, false);
+        }
     }
 }
