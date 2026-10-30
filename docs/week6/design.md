@@ -317,7 +317,7 @@ listener (consumer 스레드)
 
 ### 4.4 listener 설정 (`KAFKA-002` ~ `KAFKA-008`)
 
-구매 활동 전용 record factory 를 둔다. 기존 batch factory 는 그대로 둔다(demo 용).
+구매 활동 전용 record factory 를 streamer 의 `config/PurchaseActivityListenerConfig` 에 둔다. 재시도 판정이 DB 예외(Spring DAO · tx)를 알아야 해 공용 `modules:kafka` 가 아니라 앱에 둔다. 기존 batch factory 는 그대로 둔다(demo 용). group 은 `kafka.groups.purchase-activity`, topic 은 `kafka.topics.order-events` 설정에서 받는다. listener · factory 의 observation 을 켜 producer 가 실은 `traceparent` 를 이어 받는다.
 
 | 설정 | 값 | 근거 |
 |---|---|---|
@@ -328,7 +328,7 @@ listener (consumer 스레드)
 | `auto.offset.reset` | `earliest` | 처음 배정되기 전에 쌓인 확정을 건너뛰지 않는다. 처리 기록이 재처리를 막는다 |
 | `allow.auto.create.topics` | `false` | 없는 topic 을 consumer 가 만들지 않는다 |
 | fetch | Kafka 기본(`1` byte · 500ms) | batch factory 의 `1MiB` · `5s` 는 그 factory 안에서만 넣는 값이라 물려받지 않는다 |
-| error handler | 짧은 재시도 뒤 멈춤 | 일시 오류만 1 초 간격 2 번 다시 시도, 그 밖은 바로 멈춤. 실패 record 를 commit 하지 않는다. 아래 "실패 처리" |
+| 재시도 · error handler | listener 가 짧게 재시도, error handler 는 멈춤 | 일시 오류만 listener 가 1 초 간격 2 번 다시 시도하고 그래도 실패하면 던진다. error handler 는 `CommonContainerStoppingErrorHandler` 라 던진 record 를 commit 하지 않고 컨테이너를 멈춘다. 아래 "실패 처리" |
 
 - 멈춤의 판정은 `isRunning` 이 아니라 **실제 group 의 committed offset** 이다(`KAFKA-006`). 재시도 뒤 recover 하는 handler 는 `commitRecovered` · `ackAfterHandle` 에 따라 실패 record 를 commit 할 수 있어 고르지 않는다.
 - 멈춘 consumer 는 health 에 드러나지 않고 lag 로만 보인다. lag 지표에 알림을 건다.
@@ -363,6 +363,7 @@ listener (consumer 스레드)
 | 모르는 `schemaVersion` · 코드 버그 · 우리 것이 아닌 제약 위반 | 배포 · 수정 | 바로 멈춤 |
 | 충돌 · 해석 불가 | 바뀌지 않음 | 예외가 아니다 — 보류 뒤 정상 반환(4.3) |
 
+- **재시도를 error handler 가 아니라 listener 에 둔다.** `DefaultErrorHandler` 는 재시도가 끝나면 recoverer 를 부르는데, recoverer 가 성공하면 실패 record 를 처리됨으로 commit 하고(`KAFKA-006` 위반), recoverer 가 던지면 그 record 로 seek 해 재시도를 처음부터 다시 돈다 — 어느 쪽도 "멈춤" 이 아니다. 그래서 짧은 재시도는 listener 의 반복문(`TransientFailures` 허용 목록)이 하고, 끝내 던진 예외는 멈추는 handler 가 받는다. 정상 반환하지 않으므로 `KAFKA-005` 와 맞는다. 실측: 잠금을 4.5 초 쥔 채 보내면 MySQL 1205 → `attempt=1` 재시도 → 반영, 모르는 버전은 컨테이너가 멈추고 committed offset 이 그 record 를 지나지 않는다.
 - 재시도 대상은 **허용 목록**으로 고른다. Spring 의 `TransientDataAccessException` 계층은 우리 기준과 다르다(커넥션 획득 실패는 그 계층 밖이다). 목록 밖은 모두 바로 멈춘다.
 - 분류가 틀려도 정확성은 같다. 재시도도 결국 실패하면 멈추므로, 잘못 고르면 몇 초를 더 쓰거나 사람이 한 번 더 재시작할 뿐이다.
 - 재시도 동안 consumer 스레드가 그 자리에 묶인다. 재시도 시간의 합(약 2 초)은 `max.poll.interval.ms`(5 분)보다 한참 짧다.
@@ -511,10 +512,11 @@ commerce-streamer
   application/activity/PurchaseActivityTransactions  record · collide(readOnly) · hold
   infrastructure/activity/…              JPA 엔티티 · 저장소 (package-private)
   interfaces/consumer/OrderEventPayloadReader   바이트 → 판정 (JSON · eventType · schemaVersion)
-  interfaces/consumer/OrderConfirmedListener    record listener · ack
+  interfaces/consumer/OrderConfirmedListener    record listener · 일시 오류 짧은 재시도
+  config/PurchaseActivityListenerConfig        purchase-activity record factory · 멈추는 error handler
 
 modules:kafka
-  KafkaConfig                            purchase-activity record factory
+  KafkaConfig                            공용 producer · template(observation)
   testFixtures                           공유 Kafka 컨테이너 · 계약 예시 JSON
 ```
 

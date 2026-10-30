@@ -14,7 +14,7 @@ spring:
   main:
     web-application-type: servlet
   application:
-    name: commerce-api
+    name: commerce-streamer
   profiles:
     active: local
   config:
@@ -28,6 +28,16 @@ spring:
 demo-kafka:
   test:
     topic-name: demo.internal.topic-v1
+
+kafka:
+  groups:
+    purchase-activity: purchase-activity
+
+datasource:
+  mysql-jpa:
+    main:
+      data-source-properties:
+        socketTimeout: 10000
 
 ---
 spring:

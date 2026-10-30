@@ -29,7 +29,7 @@ public class PurchaseActivityHandler {
     private PurchaseOutcome record(ConfirmedPurchase purchase, ReceivedRecord record) {
         try {
             transactions.record(purchase);
-            metrics.handled(PurchaseOutcome.RECORDED);
+            metrics.recorded(purchase.confirmedAt());
             return PurchaseOutcome.RECORDED;
         } catch (FactAlreadyRecorded collided) {
             ReceiptCollision collision = transactions.collide(purchase);

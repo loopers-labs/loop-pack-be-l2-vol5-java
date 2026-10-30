@@ -332,6 +332,16 @@ class PurchaseActivityIntegrationTest {
             assertThat(outcomes("already_held", "EVENT_CONFLICT") - alreadyHeld).isEqualTo(1);
         }
 
+        @DisplayName("기록할 때 확정부터 반영까지 걸린 시간을 잰다")
+        @Test
+        void timesDelayFromConfirmation() {
+            long before = meterRegistry.timer("purchase.activity.delay").count();
+
+            handle(purchase(42L, line(7L, 2)), 10L);
+
+            assertThat(meterRegistry.timer("purchase.activity.delay").count() - before).isEqualTo(1);
+        }
+
         @DisplayName("읽을 수 없어 보류한 것은 그 이유로 센다")
         @Test
         void countsUnreadableByReason() {
