@@ -155,7 +155,7 @@ class PaymentCallbackIntegrationTest extends PaymentScenarioTestBase {
             assertThat(results).extracting(WorkerResult::outcome).containsOnly(Outcome.SUCCESS);
             assertThat(order().status()).isEqualTo(OrderStatus.PAYMENT_FAILED);
             assertThat(reservation()).isEqualTo(ReservationStatus.RELEASED);
-            assertThat(stock()).as("4번 반환했다면 13").isEqualTo(INITIAL_STOCK);
+            assertThat(stock()).as("확보 후 3에서 2개씩 4번 반환했다면 11").isEqualTo(INITIAL_STOCK);
         }
     }
 

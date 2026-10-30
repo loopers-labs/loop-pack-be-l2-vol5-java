@@ -1,5 +1,6 @@
 package com.loopers.application.payment;
 
+import com.loopers.domain.order.OrderEventPublisher;
 import com.loopers.domain.order.OrderStatus;
 import com.loopers.domain.order.ReservationStatus;
 import com.loopers.domain.order.StockReservationRepository;
@@ -51,6 +52,9 @@ class PaymentRecoveryIntegrationTest extends PaymentScenarioTestBase {
 
     @Autowired
     private PgProperties pgProperties;
+
+    @Autowired
+    private OrderEventPublisher orderEventPublisher;
 
     @Autowired
     private CircuitBreakerRegistry circuitBreakerRegistry;
@@ -132,7 +136,7 @@ class PaymentRecoveryIntegrationTest extends PaymentScenarioTestBase {
         // 재시작: 서비스·클라이언트를 새로 만들되 같은 DB와 같은 PG(외부 거래) 상태를 쓴다
         private PaymentFacade restartedFacade() {
             TestPgPaymentGateway newClient = new TestPgPaymentGateway(pgProperties, CircuitBreakerRegistry.ofDefaults());
-            return new PaymentFacade(paymentTransactions, newClient);
+            return new PaymentFacade(paymentTransactions, newClient, orderEventPublisher);
         }
 
         @DisplayName("실제 발송이 없었어도 저장된 시도·예약이 남고, 같은 요청도 조회도 create를 자동으로 다시 보내지 않는다.")

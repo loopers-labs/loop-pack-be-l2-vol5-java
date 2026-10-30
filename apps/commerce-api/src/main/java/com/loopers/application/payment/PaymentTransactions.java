@@ -1,6 +1,7 @@
 package com.loopers.application.payment;
 
 import com.loopers.application.order.OrderInfo;
+import com.loopers.domain.order.OrderConfirmedEvent;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.OrderModel;
 import com.loopers.domain.order.OrderService;
@@ -19,6 +20,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -44,6 +46,7 @@ public class PaymentTransactions {
     private final ProductRevisionService productRevisionService;
     private final PaymentAttemptService paymentAttemptService;
     private final StockReservationService stockReservationService;
+    private final Clock clock;
 
     /**
      * TX A의 결과. {@code sendRequired}가 참인 실행만 PG에 거래 생성을 요청한다. 이 트랜잭션을 commit한 실행이 발송 권한을 얻는다.
@@ -88,13 +91,21 @@ public class PaymentTransactions {
         return new Started(outcomeOf(order, attempt), true, attempt.getProviderOrderId(), attempt.getAmount());
     }
 
+    /**
+     * 관찰을 적용한 결과. {@code confirmedEvent}는 이번 적용이 주문을 <b>처음</b> CONFIRMED로 만든 경우에만 있다(그 밖에는 null).
+     * 이벤트는 트랜잭션 안에서 저장된 값으로 미리 만들어 두므로, commit 뒤에 호출자가 엔티티를 다시 읽지 않아도 된다.
+     * 이 값을 받았다면 트랜잭션은 이미 commit됐다.
+     */
+    public record Applied(PaymentOutcome outcome, OrderConfirmedEvent confirmedEvent) {
+    }
+
     @Transactional
-    public PaymentOutcome applyCreate(Long orderId, PgCreateResult result) {
+    public Applied applyCreate(Long orderId, PgCreateResult result) {
         return settle(orderId, attempt -> attempt.applyCreate(result));
     }
 
     @Transactional
-    public PaymentOutcome applyLookup(Long orderId, List<PgTransaction> transactions) {
+    public Applied applyLookup(Long orderId, List<PgTransaction> transactions) {
         return settle(orderId, attempt -> attempt.applyLookup(transactions));
     }
 
@@ -119,16 +130,18 @@ public class PaymentTransactions {
     }
 
     // 주문 → 결제 시도 → 재고 예약 순으로 잠근 뒤, 관찰을 적용하고 시도가 이번에 종결된 경우에만 주문·재고에 효과를 낸다
-    private PaymentOutcome settle(Long orderId, Function<PaymentAttemptModel, PaymentEffect> observation) {
+    private Applied settle(Long orderId, Function<PaymentAttemptModel, PaymentEffect> observation) {
         OrderModel order = orderService.getOrderForUpdate(orderId);
         PaymentAttemptModel attempt = paymentAttemptService.getByOrderIdForUpdate(orderId);
         StockReservationModel reservation = stockReservationService.getByOrderIdForUpdate(orderId);
 
+        OrderConfirmedEvent confirmedEvent = null;
         PaymentEffect effect = observation.apply(attempt);
         switch (effect) {
             case SUCCEEDED -> {
-                order.completePgPayment(attempt.getAmount());
+                order.completePgPayment(attempt.getAmount(), clock.instant());
                 reservation.consume();
+                confirmedEvent = OrderConfirmedEvent.from(order);
             }
             case FAILED -> {
                 order.failPgPayment();
@@ -139,7 +152,7 @@ public class PaymentTransactions {
             case NONE -> {
             }
         }
-        return outcomeOf(order, attempt);
+        return new Applied(outcomeOf(order, attempt), confirmedEvent);
     }
 
     // 확보했던 수량을 한 번 되돌린다. 품목은 상품 id 오름차순으로 잠그고, revision은 모두 처리한 뒤 올린다
