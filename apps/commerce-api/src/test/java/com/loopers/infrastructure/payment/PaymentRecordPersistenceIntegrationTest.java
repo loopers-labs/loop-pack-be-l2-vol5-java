@@ -4,6 +4,7 @@ import com.loopers.application.payment.port.PaymentRecordRepository;
 import com.loopers.domain.common.Money;
 import com.loopers.domain.payment.PaymentRecord;
 import com.loopers.utils.DatabaseCleanUp;
+import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -65,16 +66,18 @@ class PaymentRecordPersistenceIntegrationTest {
     }
 
     private static final String ATTEMPT_KEY = "6f1c2a7e-0b9d-4c55-9a51-3f0e8b2d7c11";
+    private static final Instant STARTED_AT = Instant.parse("2026-10-21T00:00:00Z");
 
     @Test
     @DisplayName("발송 시작 PG 결제 기록을 저장하고 PG 보고를 반영해 다시 저장하면 새 트랜잭션에서 시도 키로 읽은 값이 반영 결과와 같다")
     void savesAndUpdatesPgPayment() {
-        PaymentRecord started = paymentRecordRepository.save(PaymentRecord.pgStarted(42, new Money(7000), ATTEMPT_KEY, "test-pg"));
+        PaymentRecord started = paymentRecordRepository.save(PaymentRecord.pgStarted(42, new Money(7000), ATTEMPT_KEY, "test-pg", STARTED_AT));
         PaymentRecord reloadedStarted = paymentRecordRepository.findByAttemptKey(ATTEMPT_KEY).orElseThrow();
         assertThat(reloadedStarted.getProviderStatus()).isEqualTo(PaymentRecord.ProviderStatus.SEND_STARTED);
         assertThat(reloadedStarted.getProviderOrderId()).isEqualTo("LP-ORD-0000000042");
         assertThat(reloadedStarted.getProviderId()).isEqualTo("test-pg");
         assertThat(reloadedStarted.getResult()).isEqualTo(PaymentRecord.Result.PENDING);
+        assertThat(reloadedStarted.getStartedAt()).isEqualTo(STARTED_AT);
 
         reloadedStarted.applyProviderReport(PaymentRecord.ProviderStatus.SUCCESS, "TR-000001");
         paymentRecordRepository.save(reloadedStarted);
@@ -91,13 +94,29 @@ class PaymentRecordPersistenceIntegrationTest {
     }
 
     @Test
+    @DisplayName("만료 대상 조회는 기준 시각 이전에 시작한 결과 대기 PG 기록만 시작 시각·주문 ID 순으로 최대 건수만큼 돌려준다")
+    void findsExpirablePaymentsInStartOrder() {
+        paymentRecordRepository.save(PaymentRecord.pgStarted(3, new Money(1000), "key-3", "test-pg", STARTED_AT));
+        paymentRecordRepository.save(PaymentRecord.pgStarted(2, new Money(1000), "key-2", "test-pg", STARTED_AT));
+        paymentRecordRepository.save(PaymentRecord.pgStarted(1, new Money(1000), "key-1", "test-pg", STARTED_AT.plusSeconds(1)));
+        PaymentRecord closed = PaymentRecord.pgStarted(4, new Money(1000), "key-4", "test-pg", STARTED_AT);
+        closed.applyProviderReport(PaymentRecord.ProviderStatus.FAILED, null);
+        paymentRecordRepository.save(closed);
+        paymentRecordRepository.save(PaymentRecord.pgStarted(5, new Money(1000), "key-5", "test-pg", STARTED_AT.plusSeconds(2)));
+        paymentRecordRepository.save(PaymentRecord.point(6, new Money(1000)));
+
+        assertThat(paymentRecordRepository.findExpirable(STARTED_AT.plusSeconds(1), 10)).containsExactly(2L, 3L, 1L);
+        assertThat(paymentRecordRepository.findExpirable(STARTED_AT.plusSeconds(1), 2)).containsExactly(2L, 3L);
+    }
+
+    @Test
     @DisplayName("다른 주문에 같은 시도 키로 결제 기록을 저장하면 유일 제약으로 거절하고 포인트 기록은 시도 키 없이 여러 건 저장된다")
     void rejectsSameAttemptKeyForAnotherOrder() {
-        paymentRecordRepository.save(PaymentRecord.pgStarted(42, new Money(7000), ATTEMPT_KEY, "test-pg"));
+        paymentRecordRepository.save(PaymentRecord.pgStarted(42, new Money(7000), ATTEMPT_KEY, "test-pg", STARTED_AT));
         paymentRecordRepository.save(PaymentRecord.point(1, new Money(1000)));
         paymentRecordRepository.save(PaymentRecord.point(2, new Money(1000)));
 
-        assertThatThrownBy(() -> paymentRecordRepository.save(PaymentRecord.pgStarted(43, new Money(7000), ATTEMPT_KEY, "test-pg")))
+        assertThatThrownBy(() -> paymentRecordRepository.save(PaymentRecord.pgStarted(43, new Money(7000), ATTEMPT_KEY, "test-pg", STARTED_AT)))
             .isInstanceOf(DataIntegrityViolationException.class);
         assertThat(jdbcTemplate.queryForObject("select count(*) from payment_records", Long.class)).isEqualTo(3);
     }

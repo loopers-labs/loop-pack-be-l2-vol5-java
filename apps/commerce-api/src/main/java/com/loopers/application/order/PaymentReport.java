@@ -8,8 +8,9 @@ import com.loopers.domain.payment.PaymentRecord;
 // PG가 보고한 결과 하나. create 응답뿐 아니라 이후 조회·callback 결과도 이 모양으로 결과 반영 경계에 들어온다.
 public record PaymentReport(PaymentRecord.ProviderStatus status, String transactionKey) {
     public PaymentReport {
-        if (status == null || status == PaymentRecord.ProviderStatus.SEND_STARTED) {
-            throw new IllegalArgumentException("PG 보고에는 발송 시작이 아닌 PG 상태가 필요합니다.");
+        if (status == null || status == PaymentRecord.ProviderStatus.SEND_STARTED
+            || status == PaymentRecord.ProviderStatus.EXPIRED) {
+            throw new IllegalArgumentException("PG 보고에는 발송 시작·만료가 아닌 PG 상태가 필요합니다.");
         }
     }
 
@@ -36,7 +37,7 @@ public record PaymentReport(PaymentRecord.ProviderStatus status, String transact
         return switch (status) {
             case SUCCESS -> Order.PaymentOutcome.SUCCEEDED;
             case FAILED, REJECTED_NO_EFFECT, ALL_NOT_SENT -> Order.PaymentOutcome.FAILED;
-            case SEND_STARTED, NOT_SENT, PENDING, UNKNOWN, NEEDS_REVIEW -> Order.PaymentOutcome.UNKNOWN;
+            case SEND_STARTED, NOT_SENT, PENDING, UNKNOWN, NEEDS_REVIEW, EXPIRED -> Order.PaymentOutcome.UNKNOWN;
         };
     }
 }

@@ -1,6 +1,8 @@
 package com.loopers.application.order;
 
+import com.loopers.application.order.port.OrderConfirmedPublisher;
 import com.loopers.application.order.port.OrderRepository;
+import com.loopers.application.payment.PaymentExpiryPolicy;
 import com.loopers.application.payment.PaymentGatewayRegistry;
 import com.loopers.application.payment.PaymentLookupPolicy;
 import com.loopers.application.payment.port.PaymentAnomalyRepository;
@@ -45,6 +47,8 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 class PaymentVerificationTest {
+    private static final Instant STARTED_AT = Instant.parse("2026-10-21T00:00:00Z");
+
     private OrderApplicationService service;
     private PaymentGateway gateway;
     private PaymentAnomalyRepository anomalies;
@@ -61,8 +65,8 @@ class PaymentVerificationTest {
         gateway = mock(PaymentGateway.class);
         when(gateway.providerId()).thenReturn("fake");
         order = Order.restore(42, 1, List.of(new OrderItem(new ProductId(1), new Quantity(2), new Money(1000))),
-            Order.Status.PAYMENT_PENDING);
-        payment = PaymentRecord.pgStarted(42, new Money(2000), "attempt", "fake");
+            Order.Status.PAYMENT_PENDING, null);
+        payment = PaymentRecord.pgStarted(42, new Money(2000), "attempt", "fake", STARTED_AT);
         when(orders.findById(42)).thenReturn(Optional.of(order));
         when(orders.findByIdForUpdate(42)).thenReturn(Optional.of(order));
         when(orders.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -71,7 +75,9 @@ class PaymentVerificationTest {
         service = new OrderApplicationService(orders, products, payments,
             new PaymentGatewayRegistry(List.of(gateway), List.of("fake")), new TransactionTemplate(new LocalTransactions()),
             anomalies, Clock.fixed(Instant.EPOCH, ZoneOffset.UTC), mock(PaymentLookupScheduleRepository.class),
-            new PaymentLookupPolicy(new LookupBackoff(Duration.ofSeconds(5), 2, Duration.ofMinutes(1)), maximum -> maximum, 12, 100));
+            new PaymentLookupPolicy(new LookupBackoff(Duration.ofSeconds(5), 2, Duration.ofMinutes(1)), maximum -> maximum, 12, 100),
+            new PaymentExpiryPolicy(Duration.ofMinutes(2)), event -> { },
+            mock(OrderConfirmedPublisher.class));
         clearInvocations(gateway);
     }
 

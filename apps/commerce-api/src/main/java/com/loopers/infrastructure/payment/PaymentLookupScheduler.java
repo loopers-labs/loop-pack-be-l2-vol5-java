@@ -16,6 +16,7 @@ public class PaymentLookupScheduler {
 
     @Scheduled(fixedDelayString = "${payment.lookup.scheduler.fixed-delay:PT1S}")
     public void runOnce() {
+        orderApplicationService.expireOverduePayments();
         orderApplicationService.reconcileDuePayments();
     }
 }

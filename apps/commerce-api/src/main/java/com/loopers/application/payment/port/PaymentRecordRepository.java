@@ -1,6 +1,7 @@
 package com.loopers.application.payment.port;
 
 import com.loopers.domain.payment.PaymentRecord;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -15,4 +16,6 @@ public interface PaymentRecordRepository {
     Optional<PaymentRecord> findByProviderOrderId(String providerOrderId);
 
     Optional<PaymentRecord> findByAttemptKey(String attemptKey);
+
+    List<Long> findExpirable(Instant startedAtOrBefore, int limit);
 }

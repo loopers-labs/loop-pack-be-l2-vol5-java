@@ -1,6 +1,8 @@
 package com.loopers.application.order;
 
+import com.loopers.application.order.port.OrderConfirmedPublisher;
 import com.loopers.application.order.port.OrderRepository;
+import com.loopers.application.payment.PaymentExpiryPolicy;
 import com.loopers.application.payment.PaymentGatewayRegistry;
 import com.loopers.application.payment.PaymentLookupNotCalledException;
 import com.loopers.application.payment.PaymentLookupPolicy;
@@ -32,6 +34,7 @@ import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -51,11 +54,16 @@ public class OrderApplicationService {
     private final Clock clock;
     private final PaymentLookupScheduleRepository paymentLookupScheduleRepository;
     private final PaymentLookupPolicy paymentLookupPolicy;
+    private final PaymentExpiryPolicy paymentExpiryPolicy;
+    private final ApplicationEventPublisher applicationEventPublisher;
+    private final OrderConfirmedPublisher orderConfirmedPublisher;
 
     public OrderApplicationService(OrderRepository orderRepository, ProductRepository productRepository,
         PaymentRecordRepository paymentRecordRepository, PaymentGatewayRegistry paymentGatewayRegistry,
         TransactionTemplate transactionTemplate, PaymentAnomalyRepository paymentAnomalyRepository, Clock clock,
-        PaymentLookupScheduleRepository paymentLookupScheduleRepository, PaymentLookupPolicy paymentLookupPolicy) {
+        PaymentLookupScheduleRepository paymentLookupScheduleRepository, PaymentLookupPolicy paymentLookupPolicy,
+        PaymentExpiryPolicy paymentExpiryPolicy, ApplicationEventPublisher applicationEventPublisher,
+        OrderConfirmedPublisher orderConfirmedPublisher) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.paymentRecordRepository = paymentRecordRepository;
@@ -65,6 +73,9 @@ public class OrderApplicationService {
         this.clock = clock;
         this.paymentLookupScheduleRepository = paymentLookupScheduleRepository;
         this.paymentLookupPolicy = paymentLookupPolicy;
+        this.paymentExpiryPolicy = paymentExpiryPolicy;
+        this.applicationEventPublisher = applicationEventPublisher;
+        this.orderConfirmedPublisher = orderConfirmedPublisher;
     }
 
     public record ItemRequest(long productId, int quantity) { }
@@ -206,6 +217,36 @@ public class OrderApplicationService {
         }
     }
 
+    // 만료는 벽시계로만 판단한다. PG를 조회하지 않으므로 회로 열림·조회 실패와 무관하게 결제 대기에 상한을 둔다(설계 26절).
+    public void expireOverduePayments() {
+        Instant now = clock.instant();
+        List<Long> overdueOrders = paymentRecordRepository.findExpirable(now.minus(paymentExpiryPolicy.timeout()),
+            paymentLookupPolicy.batchSize());
+        for (long orderId : overdueOrders) {
+            try {
+                transactionTemplate.executeWithoutResult(status -> expireLocked(orderId, now));
+            } catch (RuntimeException e) {
+                log.error("결제 만료 처리 실패. orderId={}, causeType={}", orderId, e.getClass().getSimpleName());
+            }
+        }
+    }
+
+    // 결과 반영 경계와 같은 잠금 순서(주문 → 상품 ID 오름차순)다. 대상 조회 뒤 결과가 먼저 반영됐을 수 있어 잠금 아래 다시 판단한다.
+    private void expireLocked(long orderId, Instant now) {
+        Order order = orderRepository.findByIdForUpdate(orderId).orElseThrow(OrderNotFoundException::new);
+        PaymentRecord payment = paymentRecordRepository.findByOrderId(orderId).orElseThrow();
+        if (!payment.isExpiredAt(now, paymentExpiryPolicy.timeout()) || !order.expirePayment()) {
+            return;
+        }
+        returnReservedStock(order);
+        orderRepository.save(order);
+        payment.expire();
+        paymentRecordRepository.save(payment);
+        paymentAnomalyRepository.resolveTransient(orderId, now);
+        paymentLookupScheduleRepository.delete(orderId);
+        log.info("결제 대기 상한이 지나 주문을 결제 만료로 종결했습니다. orderId={}", orderId);
+    }
+
     private OrderResult verifyPayment(PaymentRecord requested, PaymentSource source, String callbackKey) {
         // callback 본문은 누구나 보낼 수 있는 신호다. 저장된 값으로 잠금·트랜잭션 밖에서 PG를 조회한다.
         PaymentTransactionsLookup lookup = paymentGatewayRegistry.get(requested.getProviderId())
@@ -312,13 +353,17 @@ public class OrderApplicationService {
             && (!source.canResolveReview() || report.outcome() == Order.PaymentOutcome.UNKNOWN)) {
             return OrderResult.from(order, found);
         }
-        Order.PaymentTransition transition = order.applyPaymentOutcome(report.outcome());
+        Order.PaymentTransition transition = order.applyPaymentOutcome(report.outcome(), clock.instant());
         switch (transition) {
             case CHANGED -> {
                 if (order.getStatus() == Order.Status.PAYMENT_FAILED) {
                     returnReservedStock(order);
                 }
-                orderRepository.save(order);
+                Order saved = orderRepository.save(order);
+                if (saved.getStatus() == Order.Status.CONFIRMED) {
+                    // 최초 확정 순간이다. payload는 이 트랜잭션 안에서 저장된 주문으로 만들고, send는 commit 뒤 listener가 한다(설계 27절 D72).
+                    applicationEventPublisher.publishEvent(OrderConfirmedPayloadFactory.create(saved));
+                }
                 payment.applyProviderReport(report.status(), report.transactionKey());
                 payment = paymentRecordRepository.save(payment);
                 paymentAnomalyRepository.resolveTransient(order.getId(), clock.instant());
@@ -363,14 +408,15 @@ public class OrderApplicationService {
         order.startPayment();
         orderRepository.save(order);
         String providerId = paymentGatewayRegistry.inPriorityOrder().get(0).providerId();
+        Instant now = clock.instant();
         PaymentRecord payment;
         try {
-            payment = paymentRecordRepository.save(PaymentRecord.pgStarted(orderId, order.getTotal(), attemptKey, providerId));
+            payment = paymentRecordRepository.save(
+                PaymentRecord.pgStarted(orderId, order.getTotal(), attemptKey, providerId, now));
         } catch (DataIntegrityViolationException e) {
             // 같은 시도 키를 다른 주문이 동시에 쓴 경쟁. 사전 확인을 통과했어도 유일 제약이 막는다.
             throw new RuleViolationException("다른 주문에 사용한 결제 시도 키입니다.", e);
         }
-        Instant now = clock.instant();
         paymentLookupScheduleRepository.save(new Schedule(orderId, paymentLookupPolicy.nextAt(now, 0), 0, now, now));
         return new PaymentStart(null, payment);
     }
@@ -398,6 +444,24 @@ public class OrderApplicationService {
         return order.getItems().stream()
             .sorted(Comparator.comparingLong(orderItem -> orderItem.productId().value()))
             .toList();
+    }
+
+    // 대사 명령을 그대로 믿지 않고 저장된 주문으로 다시 확인한다. 같은 팩토리로 만들어 처음 발행과 같은 eventId·payload다(설계 27절).
+    // 트랜잭션 없이 읽고 보낸다. broker 확인을 기다리는 동안 DB 연결을 잡고 있지 않기 위해서다.
+    public RepublishResult republishConfirmed(long orderId) {
+        Optional<Order> found = orderRepository.findById(orderId);
+        if (found.isEmpty()) {
+            return RepublishResult.ORDER_NOT_FOUND;
+        }
+        Order order = found.get();
+        if (order.getStatus() != Order.Status.CONFIRMED) {
+            return RepublishResult.NOT_CONFIRMED;
+        }
+        if (order.getConfirmedAt() == null) {
+            return RepublishResult.NO_CONFIRMED_AT;
+        }
+        orderConfirmedPublisher.republish(OrderConfirmedPayloadFactory.create(order));
+        return RepublishResult.REPUBLISHED;
     }
 
     @Transactional(readOnly = true)

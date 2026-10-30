@@ -86,13 +86,13 @@ class PaymentLookupScheduleIntegrationTest {
     }
 
     @Test
-    @DisplayName("트랜잭션 A 뒤 create 전 중단돼도 재조회 행과 5초 뒤 첫 시각이 저장된다")
+    @DisplayName("트랜잭션 A 뒤 create 전 중단돼도 재조회 행과 2초 뒤 첫 시각이 저장된다")
     void storesScheduleBeforeCreate() {
         pg.crashBeforeSend();
         assertThatThrownBy(() -> orders.confirm(1, orderId, TestPgFixture.command())).isInstanceOf(IllegalStateException.class);
         scene("PAYMENT_PENDING", 3, "SEND_STARTED", 0, 0);
         assertThat(schedules.findByOrderId(orderId)).contains(new PaymentLookupScheduleRepository.Schedule(
-            orderId, NOW.plusSeconds(5), 0, NOW, NOW));
+            orderId, NOW.plusSeconds(2), 0, NOW, NOW));
     }
 
     @ParameterizedTest(name = "즉시 종결 PG 응답={0}")
@@ -141,21 +141,21 @@ class PaymentLookupScheduleIntegrationTest {
     }
 
     @Test
-    @DisplayName("응답 유실 뒤 시각 전에는 조회하지 않고 PENDING은 10초 뒤 재조회하며 성공하면 스케줄을 지운다")
+    @DisplayName("응답 유실 뒤 시각 전에는 조회하지 않고 PENDING은 4초 뒤 재조회하며 성공하면 스케줄을 지운다")
     void retriesOnlyWhenDueThenConfirms() {
         server.createBehavior(CreateBehavior.DELAY_AFTER_CREATE);
         orders.confirm(1, orderId, TestPgFixture.command());
         orders.reconcileDuePayments();
         scene("PAYMENT_PENDING", 3, "UNKNOWN", 1, 0);
-        clock.advance(Duration.ofSeconds(5));
+        clock.advance(Duration.ofSeconds(2));
         orders.reconcileDuePayments();
         scene("PAYMENT_PENDING", 3, "PENDING", 1, 1);
         assertThat(schedules.findByOrderId(orderId)).contains(new PaymentLookupScheduleRepository.Schedule(
-            orderId, NOW.plusSeconds(15), 1, NOW, NOW.plusSeconds(5)));
+            orderId, NOW.plusSeconds(6), 1, NOW, NOW.plusSeconds(2)));
         orders.reconcileDuePayments();
         assertThat(server.lookupCalls()).isEqualTo(1);
         server.changeStatus(server.transactions().get(0).transactionKey(), "SUCCESS");
-        clock.advance(Duration.ofSeconds(10));
+        clock.advance(Duration.ofSeconds(4));
         orders.reconcileDuePayments();
         scene("CONFIRMED", 3, "SUCCESS", 1, 2);
         assertNoSchedule();
@@ -174,7 +174,7 @@ class PaymentLookupScheduleIntegrationTest {
             if (attempt < 12) {
                 assertThat(schedules.findByOrderId(orderId).orElseThrow().actualAttempts()).isEqualTo(attempt);
                 assertThat(schedules.findByOrderId(orderId).orElseThrow().nextLookupAt())
-                    .isEqualTo(clock.instant().plusSeconds(Math.min(60, 5L << attempt)));
+                    .isEqualTo(clock.instant().plusSeconds(Math.min(20, 2L << attempt)));
             }
         }
         scene("PAYMENT_PENDING", 3, "NEEDS_REVIEW", 1, 12);
@@ -196,7 +196,7 @@ class PaymentLookupScheduleIntegrationTest {
         } else {
             server.replaceTransaction(server.transactions().get(0).transactionKey(), providerOrderId(), 999, "SUCCESS");
         }
-        clock.advance(Duration.ofSeconds(5));
+        clock.advance(Duration.ofSeconds(2));
         orders.reconcileDuePayments();
         scene("PAYMENT_PENDING", 3, "NEEDS_REVIEW", 1, 1);
         assertNoSchedule();
@@ -211,7 +211,7 @@ class PaymentLookupScheduleIntegrationTest {
         pg.crashBeforeSend();
         assertThatThrownBy(() -> orders.confirm(1, orderId, TestPgFixture.command())).isInstanceOf(IllegalStateException.class);
         assertThat(schedules.findByOrderId(orderId)).isPresent();
-        clock.advance(Duration.ofSeconds(5));
+        clock.advance(Duration.ofSeconds(2));
         orders.reconcileDuePayments();
         scene("PAYMENT_PENDING", 3, "SEND_STARTED", 0, 1);
         assertThat(schedules.findByOrderId(orderId).orElseThrow().actualAttempts()).isEqualTo(1);
@@ -234,7 +234,7 @@ class PaymentLookupScheduleIntegrationTest {
         startPending();
         String key = server.transactions().stream().filter(t -> t.orderId().equals(providerOrderId())).findFirst().orElseThrow().transactionKey();
         server.changeStatus(key, "SUCCESS");
-        clock.advance(Duration.ofSeconds(5));
+        clock.advance(Duration.ofSeconds(2));
         orders.reconcileDuePayments();
         scene("CONFIRMED", 2, "SUCCESS", 2, 1);
         assertNoSchedule();
@@ -249,7 +249,7 @@ class PaymentLookupScheduleIntegrationTest {
         startPending();
         String key = server.transactions().get(0).transactionKey();
         server.changeStatus(key, "FAILED");
-        clock.advance(Duration.ofSeconds(5));
+        clock.advance(Duration.ofSeconds(2));
         ExecutorService executor = Executors.newFixedThreadPool(2);
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch go = new CountDownLatch(1);
@@ -322,7 +322,7 @@ class PaymentLookupScheduleIntegrationTest {
         long secondOrder = orderId;
         orderId = orders.create(1, List.of(new OrderApplicationService.ItemRequest(productId, 1))).id();
         startPending();
-        clock.advance(Duration.ofSeconds(5));
+        clock.advance(Duration.ofSeconds(2));
         assertThat(schedules.findDue(clock.instant(), 2)).containsExactly(firstOrder, secondOrder);
 
         orders.reconcileDuePayments();

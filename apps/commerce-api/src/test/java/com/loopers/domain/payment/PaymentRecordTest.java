@@ -1,6 +1,8 @@
 package com.loopers.domain.payment;
 
 import com.loopers.domain.common.Money;
+import java.time.Duration;
+import java.time.Instant;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -20,7 +22,7 @@ class PaymentRecordTest {
     }, nullValues = "null")
     @DisplayName("결제 기록이 조회 거래와 자신의 주문·금액·저장 키를 비교하며 상태는 변경하지 않는다")
     void comparesTransactionWithoutChangingPayment(String storedKey, String orderId, long amount, String key, boolean matches) {
-        PaymentRecord payment = PaymentRecord.pgStarted(42, new Money(7000), ATTEMPT_KEY, "test-pg");
+        PaymentRecord payment = PaymentRecord.pgStarted(42, new Money(7000), ATTEMPT_KEY, "test-pg", STARTED_AT);
         payment.applyProviderReport(PaymentRecord.ProviderStatus.PENDING, storedKey);
 
         PaymentRecord.TransactionMatch match = payment.compareTransaction(orderId, new Money(amount), key);
@@ -53,11 +55,13 @@ class PaymentRecordTest {
     }
 
     private static final String ATTEMPT_KEY = "6f1c2a7e-0b9d-4c55-9a51-3f0e8b2d7c11";
+    private static final Instant STARTED_AT = Instant.parse("2026-10-21T00:00:00Z");
+    private static final Duration TIMEOUT = Duration.ofMinutes(2);
 
     @Test
     @DisplayName("주문 42의 PG 결제를 시작하면 결과 PENDING·PG 상태 발송 시작·providerOrderId LP-ORD-0000000042인 결제 기록이 된다")
     void startsPgPayment() {
-        PaymentRecord payment = PaymentRecord.pgStarted(42, new Money(7000), ATTEMPT_KEY, "test-pg");
+        PaymentRecord payment = PaymentRecord.pgStarted(42, new Money(7000), ATTEMPT_KEY, "test-pg", STARTED_AT);
 
         assertThat(payment.getMethod()).isEqualTo(PaymentRecord.Method.PG);
         assertThat(payment.getResult()).isEqualTo(PaymentRecord.Result.PENDING);
@@ -67,14 +71,68 @@ class PaymentRecordTest {
         assertThat(payment.getProviderId()).isEqualTo("test-pg");
         assertThat(payment.getProviderOrderId()).isEqualTo("LP-ORD-0000000042");
         assertThat(payment.getTransactionKey()).isNull();
+        assertThat(payment.getStartedAt()).isEqualTo(STARTED_AT);
+    }
+
+    @ParameterizedTest(name = "시작 후 경과={0}초 → 만료 대상={1}")
+    @CsvSource({"0, false", "119, false", "120, true", "121, true"})
+    @DisplayName("결과 대기 중인 PG 결제는 시작 후 2분이 지난 때부터 만료 대상이다")
+    void becomesExpirableAfterTimeout(long elapsedSeconds, boolean expirable) {
+        PaymentRecord payment = PaymentRecord.pgStarted(42, new Money(7000), ATTEMPT_KEY, "test-pg", STARTED_AT);
+
+        assertThat(payment.isExpiredAt(STARTED_AT.plusSeconds(elapsedSeconds), TIMEOUT)).isEqualTo(expirable);
     }
 
     @Test
-    @DisplayName("시도 키나 providerId가 비어 있으면 PG 결제 기록을 만들지 않는다")
+    @DisplayName("확인 필요 PG 결제도 2분이 지나면 만료 대상이고 결과가 정해진 결제와 포인트 결제는 만료 대상이 아니다")
+    void onlyPendingPgPaymentIsExpirable() {
+        PaymentRecord review = PaymentRecord.pgStarted(42, new Money(7000), ATTEMPT_KEY, "test-pg", STARTED_AT);
+        review.requireReview();
+        PaymentRecord succeeded = PaymentRecord.pgStarted(43, new Money(7000), "other", "test-pg", STARTED_AT);
+        succeeded.applyProviderReport(PaymentRecord.ProviderStatus.SUCCESS, "TR-1");
+        PaymentRecord point = PaymentRecord.point(44, new Money(7000));
+        Instant later = STARTED_AT.plus(TIMEOUT);
+
+        assertThat(review.isExpiredAt(later, TIMEOUT)).isTrue();
+        assertThat(succeeded.isExpiredAt(later, TIMEOUT)).isFalse();
+        assertThat(point.isExpiredAt(later, TIMEOUT)).isFalse();
+    }
+
+    @Test
+    @DisplayName("결과 대기 중인 PG 결제를 만료하면 결과와 PG 상태가 만료가 되고 거래 키는 남는다")
+    void expiresPendingPayment() {
+        PaymentRecord payment = PaymentRecord.pgStarted(42, new Money(7000), ATTEMPT_KEY, "test-pg", STARTED_AT);
+        payment.applyProviderReport(PaymentRecord.ProviderStatus.PENDING, "TR-1");
+
+        payment.expire();
+
+        assertThat(payment.getResult()).isEqualTo(PaymentRecord.Result.EXPIRED);
+        assertThat(payment.getProviderStatus()).isEqualTo(PaymentRecord.ProviderStatus.EXPIRED);
+        assertThat(payment.getTransactionKey()).isEqualTo("TR-1");
+    }
+
+    @Test
+    @DisplayName("결과가 정해진 결제와 포인트 결제는 만료하지 않고 기존 결과를 유지한다")
+    void rejectsExpiringClosedPayment() {
+        PaymentRecord succeeded = PaymentRecord.pgStarted(42, new Money(7000), ATTEMPT_KEY, "test-pg", STARTED_AT);
+        succeeded.applyProviderReport(PaymentRecord.ProviderStatus.SUCCESS, "TR-1");
+        PaymentRecord point = PaymentRecord.point(43, new Money(7000));
+
+        assertThatThrownBy(succeeded::expire).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(point::expire).isInstanceOf(IllegalStateException.class);
+        assertThat(succeeded.getResult()).isEqualTo(PaymentRecord.Result.SUCCESS);
+        assertThat(succeeded.getProviderStatus()).isEqualTo(PaymentRecord.ProviderStatus.SUCCESS);
+        assertThat(point.getResult()).isEqualTo(PaymentRecord.Result.SUCCESS);
+    }
+
+    @Test
+    @DisplayName("시도 키·providerId·시작 시각이 비어 있으면 PG 결제 기록을 만들지 않는다")
     void rejectsPgPaymentWithoutKeyOrProvider() {
-        assertThatThrownBy(() -> PaymentRecord.pgStarted(42, new Money(7000), " ", "test-pg"))
+        assertThatThrownBy(() -> PaymentRecord.pgStarted(42, new Money(7000), " ", "test-pg", STARTED_AT))
             .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> PaymentRecord.pgStarted(42, new Money(7000), ATTEMPT_KEY, null))
+        assertThatThrownBy(() -> PaymentRecord.pgStarted(42, new Money(7000), ATTEMPT_KEY, null, STARTED_AT))
+            .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> PaymentRecord.pgStarted(42, new Money(7000), ATTEMPT_KEY, "test-pg", null))
             .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -89,7 +147,7 @@ class PaymentRecordTest {
     }, nullValues = "null")
     @DisplayName("결과 대기 중인 PG 결제 기록에 PG 보고를 반영하면 PG 상태·거래 키·결과가 보고대로 바뀐다")
     void appliesProviderReport(PaymentRecord.ProviderStatus status, String transactionKey, PaymentRecord.Result expected) {
-        PaymentRecord payment = PaymentRecord.pgStarted(42, new Money(7000), ATTEMPT_KEY, "test-pg");
+        PaymentRecord payment = PaymentRecord.pgStarted(42, new Money(7000), ATTEMPT_KEY, "test-pg", STARTED_AT);
 
         payment.applyProviderReport(status, transactionKey);
 
@@ -101,7 +159,7 @@ class PaymentRecordTest {
     @Test
     @DisplayName("거래 키를 받은 뒤 결과 모름 보고가 와도 거래 키는 남는다")
     void keepsTransactionKeyOnLaterUnknown() {
-        PaymentRecord payment = PaymentRecord.pgStarted(42, new Money(7000), ATTEMPT_KEY, "test-pg");
+        PaymentRecord payment = PaymentRecord.pgStarted(42, new Money(7000), ATTEMPT_KEY, "test-pg", STARTED_AT);
         payment.applyProviderReport(PaymentRecord.ProviderStatus.PENDING, "TR-1");
 
         payment.applyProviderReport(PaymentRecord.ProviderStatus.UNKNOWN, null);
@@ -113,7 +171,7 @@ class PaymentRecordTest {
     @Test
     @DisplayName("이미 성공한 결제 기록과 포인트 결제 기록에는 PG 보고를 덮어쓰지 않는다")
     void rejectsReportAfterClosed() {
-        PaymentRecord pg = PaymentRecord.pgStarted(42, new Money(7000), ATTEMPT_KEY, "test-pg");
+        PaymentRecord pg = PaymentRecord.pgStarted(42, new Money(7000), ATTEMPT_KEY, "test-pg", STARTED_AT);
         pg.applyProviderReport(PaymentRecord.ProviderStatus.SUCCESS, "TR-1");
         PaymentRecord point = PaymentRecord.point(43, new Money(7000));
 

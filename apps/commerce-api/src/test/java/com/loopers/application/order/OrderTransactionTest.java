@@ -1,7 +1,9 @@
 package com.loopers.application.order;
 
 import com.loopers.application.brand.BrandApplicationService;
+import com.loopers.application.order.port.OrderConfirmedPublisher;
 import com.loopers.application.order.port.OrderRepository;
+import com.loopers.application.payment.PaymentExpiryPolicy;
 import com.loopers.application.payment.PaymentGatewayRegistry;
 import com.loopers.application.payment.PaymentLookupPolicy;
 import com.loopers.application.payment.port.PaymentAnomalyRepository;
@@ -39,6 +41,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
@@ -74,6 +77,15 @@ class OrderTransactionTest {
 
     @Autowired
     private PaymentLookupPolicy paymentLookupPolicy;
+
+    @Autowired
+    private PaymentExpiryPolicy paymentExpiryPolicy;
+
+    @Autowired
+    private ApplicationEventPublisher applicationEventPublisher;
+
+    @Autowired
+    private OrderConfirmedPublisher orderConfirmedPublisher;
 
     @Autowired
     private PaymentLookupScheduleRepository paymentLookupScheduleRepository;
@@ -265,7 +277,8 @@ class OrderTransactionTest {
         OrderApplicationService restarted = new OrderApplicationService(failingOrderRepository, productRepository,
             failingPaymentRecordRepository,
             new PaymentGatewayRegistry(List.of(testPgFixture.newClient()), List.of(TestPgFixture.PROVIDER_ID)),
-            transactionTemplate, paymentAnomalyRepository, clock, paymentLookupScheduleRepository, paymentLookupPolicy);
+            transactionTemplate, paymentAnomalyRepository, clock, paymentLookupScheduleRepository, paymentLookupPolicy,
+            paymentExpiryPolicy, applicationEventPublisher, orderConfirmedPublisher);
         OrderResult afterRestart = restarted.confirm(1, orderId, TestPgFixture.command(attemptKey));
 
         assertThat(afterRestart.status()).isEqualTo("PAYMENT_PENDING");
@@ -488,6 +501,11 @@ class OrderTransactionTest {
         @Override
         public Optional<PaymentRecord> findByAttemptKey(String attemptKey) {
             return delegate.findByAttemptKey(attemptKey);
+        }
+
+        @Override
+        public List<Long> findExpirable(Instant startedAtOrBefore, int limit) {
+            return delegate.findExpirable(startedAtOrBefore, limit);
         }
     }
 }

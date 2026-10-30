@@ -146,7 +146,7 @@ class OrderPaymentFallbackIntegrationTest {
         sub.createBehavior(CreateBehavior.ACCEPT_PENDING);
         confirm().andExpect(status().isAccepted());
         sub.changeStatus(sub.transactions().get(0).transactionKey(), "SUCCESS");
-        clock.advance(Duration.ofSeconds(5));
+        clock.advance(Duration.ofSeconds(2));
 
         orders.reconcileDuePayments();
 

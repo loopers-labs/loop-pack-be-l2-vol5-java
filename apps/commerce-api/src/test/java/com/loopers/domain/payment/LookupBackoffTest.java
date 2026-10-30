@@ -9,10 +9,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class LookupBackoffTest {
     @ParameterizedTest(name = "실제 조회 횟수={0}, 명목 간격={1}초")
-    @CsvSource({"0,5", "1,10", "2,20", "3,40", "4,60", "5,60", "12,60"})
-    @DisplayName("명목 간격은 5초부터 두 배로 증가하고 60초에서 멈춘다")
+    @CsvSource({"0,2", "1,4", "2,8", "3,16", "4,20", "5,20", "11,20"})
+    @DisplayName("명목 간격은 2초부터 두 배로 증가하고 20초에서 멈춘다")
     void capsExponentialDelay(int attempts, int seconds) {
-        LookupBackoff backoff = new LookupBackoff(Duration.ofSeconds(5), 2, Duration.ofMinutes(1));
+        LookupBackoff backoff = new LookupBackoff(Duration.ofSeconds(2), 2, Duration.ofSeconds(20));
         assertThat(backoff.ceiling(attempts)).isEqualTo(Duration.ofSeconds(seconds));
     }
 }
