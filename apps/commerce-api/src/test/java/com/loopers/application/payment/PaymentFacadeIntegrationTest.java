@@ -344,7 +344,8 @@ class PaymentFacadeIntegrationTest {
             return new SpringApplicationBuilder(CommerceApiApplication.class)
                 .profiles("test")
                 .web(WebApplicationType.NONE)
-                .run("--spring.jpa.hibernate.ddl-auto=none", "--pg.base-url=" + PG.baseUrl());
+                .run("--spring.jpa.hibernate.ddl-auto=none", "--pg.base-url=" + PG.baseUrl(),
+                    "--management.server.port=0");
         }
 
         private Payment requestedOnly(Order order) {
