@@ -129,3 +129,22 @@ partition 2 개인 격리 topic 에, partition 0 으로 모르는 `schemaVersion
 - **`acks=1` 은 "ack 를 받았는데 사라지는" record 를 만든다(E4).** 우리가 `acks=all` 을 명시하는 이유다(`EVT-016`). producer 는 성공으로 세고 지표에도 남지 않으므로, 흔적 없는 누락이 하나 더 생기는 셈이다.
 - **정합성을 위해 가용성을 내준다(E6).** unclean 선출을 켜면 E6 에서 broker 2 나 3 이 leader 가 되어 쓰기는 이어지지만, E4 처럼 이미 ack 된 record 를 잃을 수 있다. 우리는 끈다.
 - **leader 교체는 `max.block.ms` 의 일이 아니다(E7, 설계 3.7 의 뒤집을 조건).** producer 는 metadata 를 이미 들고 있어 `send()` 는 막히지 않았고, record 가 버퍼에서 새 leader 를 기다렸다가 전부 전달됐다. 걸린 시간은 controller 가 죽은 broker 를 알아차리는 `broker.session.timeout.ms`(9 초)와 재시도가 겹친 22 초였다. 이 시간은 `delivery.timeout.ms`(우리는 기본 120 초) 안이라 실패하지 않는다. `max.block.ms` 1 초를 바꿀 근거는 나오지 않았다.
+
+## 처리량 (선택 심화 14)
+
+partition 3 개인 격리 topic 에 확정 이벤트 2,000 건을 미리 쌓고, 실제 reader 와 handler 를 붙인 컨테이너가 처리 기록 2,000 건을 남길 때까지의 시간과 offset commit 횟수를 잰다. 한 record 는 DB TX 하나(처리 기록 1 + 활동 2 insert)다. 300 건으로 한 번 데운 뒤 3 번 돌렸고, 표의 건/초는 세 번의 중앙값이다.
+
+| concurrency | commit 단위 | commit 응답 | 건/초 (세 번) | 중앙값 | offset commit |
+|---|---|---|---|---|---|
+| 1 | poll 묶음 (`BATCH`) | 동기 | 237 · 213 · 224 | **224** | 4 |
+| 3 | poll 묶음 (`BATCH`) | 동기 | 671 · 565 · 493 | **565** | 6 |
+| 1 | record 마다 (`RECORD`) | 동기 | 216 · 218 · 213 | **216** | 2,000 |
+| 3 | record 마다 (`RECORD`) | 동기 | 407 · 473 · 415 | **415** | 2,000 |
+| 1 | record 마다 (`RECORD`) | 비동기 | 259 · 155 · 253 | **253** | 2,000 |
+| 3 | record 마다 (`RECORD`) | 비동기 | 822 · 566 · 425 | **566** | 2,000 |
+
+- **concurrency 1 → 3 이 가장 크다.** `BATCH` 에서 224 → 565 건/초(약 2.5 배)다. 스레드가 partition 마다 하나라 DB TX 가 나란히 돈다. 지금 설정(concurrency 3)을 고른 이유는 재시도 격리였는데, 처리량에서도 이득이 확인됐다.
+- **commit 단위는 스레드가 많을수록 차이가 난다.** 스레드 1 개에서는 `BATCH` 224 와 `RECORD` 216 이 거의 같다 — 병목이 DB TX 라 commit 왕복이 묻힌다. 스레드 3 개에서는 565 대 415 로 `BATCH` 가 약 36 % 빠르다. commit 횟수는 6 대 2,000 이다.
+- **record 마다 commit 해도 응답을 기다리지 않으면(비동기) `BATCH` 와 비슷해진다**(566). 다만 세 번의 값이 425 ~ 822 로 가장 흔들렸다.
+- 설계 4.4 의 "처리량이 모자랄 때 푸는 순서"(concurrency → 비동기 commit → 묶음 insert)가 실측과 맞는다. 묶음 insert(batch listener)는 운영 코드를 바꿔야 해서 재지 않았다.
+- 2,000 건을 미리 쌓는 producer 는 실험 전용이고 멱등을 끈다. 새로 만든 topic 의 첫 batch 가 leader 가 정해지기 전에 도착해 `NOT_LEADER_OR_FOLLOWER` 를 받은 뒤, 멱등 producer 가 `OUT_OF_ORDER_SEQUENCE_NUMBER` 를 122 번 받으며 그 partition 에서 막혔다(Kafka 3.5 broker). 중복이 생겨도 처리 기록이 거르므로 측정에 영향이 없다. 운영 producer 는 멱등을 그대로 켜 두고, topic 을 미리 만들고 기동 때 metadata 를 받으므로 이 경우를 만나지 않는다.
