@@ -1,5 +1,8 @@
 package com.loopers.application.payment;
 
+import com.loopers.application.order.OrderConfirmedPayload;
+import com.loopers.application.order.OrderConfirmedPublication;
+import com.loopers.application.order.OrderConfirmedUnpublished;
 import com.loopers.application.product.ProductCacheInvalidator;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderItem;
@@ -31,6 +34,8 @@ import java.util.Optional;
  * - 락 순서: 주문 → 결제 시도 → 상품(id 오름차순)(D-002).
  * - 전이 판단은 PaymentAttempt가 하고, 여기서는 전이가 일어났을 때만 효과를 낸다(INV-002, D-001).
  * - PG 호출은 하지 않는다. 호출자가 트랜잭션 밖에서 조회한 결과를 넘긴다.
+ * - 처음 SUCCEEDED로 전이한 경우에만 OrderConfirmed 발행을 afterCommit에 등록한다(docs/week6/design.md INV-601, decisions.md D-2).
+ *   모든 결과 입구가 여기를 지나므로 발행 조건은 이 한 곳에 있다.
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -42,6 +47,8 @@ public class PaymentResultApplier {
     private final ProductService productService;
     private final ProductCacheInvalidator productCacheInvalidator;
     private final PaymentConflictRepository paymentConflictRepository;
+    private final OrderConfirmedPublication orderConfirmedPublication;
+    private final OrderConfirmedUnpublished orderConfirmedUnpublished;
 
     /** PG 권위 조회로 확인한 거래를 반영한다. 어긋나면 상태는 그대로 두고 충돌로 기록한다(INV-003, D-010). */
     @Transactional
@@ -132,7 +139,10 @@ public class PaymentResultApplier {
 
     private void applyEffect(Order order, PaymentAttempt attempt, ApplyResult result) {
         switch (result) {
-            case SUCCEEDED -> order.completePayment(attempt.getAmount());
+            case SUCCEEDED -> {
+                order.completePayment(attempt.getAmount());
+                registerOrderConfirmed(order);
+            }
             case FAILED -> {
                 order.failPayment();
                 // 예약 반환 — 지금 값에 더한다(INV-006), 삭제된 상품은 건너뛴다(D-019). 상품 락은 주문·시도 다음, id 오름차순.
@@ -146,6 +156,21 @@ public class PaymentResultApplier {
             case NO_EFFECT, CONFLICT -> {
                 // 상태를 바꾸지 않는다(INV-003).
             }
+        }
+    }
+
+    /**
+     * 확정 직후, 같은 트랜잭션 안에서 payload를 불변 객체로 만들어 등록한다(docs/week6/decisions.md D-5). 실제 발행은 commit 뒤다.
+     * 발행 준비가 실패해도 확정은 되돌리지 않는다(docs/week6/decisions.md D-26) — PG는 이미 SUCCESS라 롤백하면
+     * "결제됐는데 미확정"이 남고, 이 자리의 예외는 대부분 버그라 회복 작업이 재시도해도 매번 롤백된다. 잃는 건 주문 DB에서
+     * 다시 만들 수 있는 이벤트 하나다(D-1의 누락 쪽). 대신 미발행으로 기록하고 Counter(reason=register_failed)로 센다.
+     */
+    private void registerOrderConfirmed(Order order) {
+        try {
+            orderConfirmedPublication.register(OrderConfirmedPayload.from(order));
+        } catch (RuntimeException e) {
+            orderConfirmedUnpublished.record(OrderConfirmedUnpublished.Reason.REGISTER_FAILED,
+                order.getId(), OrderConfirmedPayload.eventIdOf(order.getId()), e);
         }
     }
 

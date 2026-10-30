@@ -21,6 +21,7 @@ spring:
     import:
       - jpa.yml
       - redis.yml
+      - kafka.yml
       - logging.yml
       - monitoring.yml
 
@@ -56,6 +57,17 @@ payment:
     interval: PT3M   # 회차 간격이자 수신함 재시도 간격 (recovery.md 3번)
     batch-size: 100            # 한 번에 모으는 시도 수 — 회차는 밀린 게 없을 때까지 묶음을 반복한다 (D-047)
     lookups-per-second: 20     # PG 조회 속도 상한 (D-047) — 측정 전 가정값
+
+# 주문 확정 이벤트 발행 (docs/week6/design.md 2번, decisions.md D-23)
+events:
+  order-confirmed:
+    topic: order-events
+    publish:
+      threads: 1             # 장애 때는 늘려도 같이 막힌다
+      queue-capacity: 1000   # 넘치면 "미발행"으로 기록하고 버린다 — 회복 장치가 아니라 메모리 상한
+      shutdown-await: 10s    # 정상 종료 때 남은 작업을 끝낼 때까지 — max-block 이상
+    producer:
+      max-block: 5s          # send()가 metadata를 기다리는 상한(max.block.ms) — 이 producer에만
 
 springdoc:
   use-fqn: true

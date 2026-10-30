@@ -1,0 +1,3 @@
+org.springframework.context.ApplicationContextInitializer=\
+com.loopers.testcontainers.RedisTestContainersInitializer,\
+com.loopers.testcontainers.KafkaTestContainersInitializer

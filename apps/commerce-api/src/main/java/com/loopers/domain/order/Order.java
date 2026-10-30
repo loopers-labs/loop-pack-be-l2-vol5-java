@@ -13,7 +13,9 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
 
+import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -100,7 +102,7 @@ public class Order extends BaseEntity {
         this.status = OrderStatus.CONFIRMED;
         this.paymentMethod = PaymentMethod.POINT;
         this.paidAmount = paidAmount;
-        this.confirmedAt = ZonedDateTime.now();
+        this.confirmedAt = confirmedNow();
     }
 
     /**
@@ -119,7 +121,7 @@ public class Order extends BaseEntity {
         assertPaymentPending();
         this.status = OrderStatus.CONFIRMED;
         this.paidAmount = paidAmount;
-        this.confirmedAt = ZonedDateTime.now();
+        this.confirmedAt = confirmedNow();
     }
 
     /**
@@ -128,6 +130,15 @@ public class Order extends BaseEntity {
     public void failPayment() {
         assertPaymentPending();
         this.status = OrderStatus.PAYMENT_FAILED;
+    }
+
+    /**
+     * 확정 시각은 정해지는 이 자리에서 DB가 담을 모양(UTC, 마이크로초 — 컬럼 datetime(6), NORMALIZE_UTC)으로 맞춘다
+     * (docs/week6/decisions.md D-6). 그래야 응답·이벤트·DB 재조회·재발행 어디로 흘러가도 글자 그대로 같다(INV-602).
+     * 이벤트가 나가지 않는 confirm()도 같은 이유로 맞춘다 — 근거가 "이벤트 경로"가 아니라 "확정 시각이 정해지는 자리"다.
+     */
+    private static ZonedDateTime confirmedNow() {
+        return ZonedDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS);
     }
 
     private void assertPaymentPending() {

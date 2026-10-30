@@ -14,7 +14,7 @@ spring:
   main:
     web-application-type: servlet
   application:
-    name: commerce-api
+    name: commerce-streamer
   profiles:
     active: local
   config:
@@ -25,9 +25,11 @@ spring:
       - logging.yml
       - monitoring.yml
 
-demo-kafka:
-  test:
-    topic-name: demo.internal.topic-v1
+# 주문 확정 이벤트 소비 → 구매 활동 (docs/week6/design.md 2번·7번)
+events:
+  order-confirmed:
+    topic: order-events
+    group-id: purchase-activity
 
 ---
 spring:

@@ -13,6 +13,7 @@ dependencies {
     // add-ons
     implementation(project(":modules:jpa"))
     implementation(project(":modules:redis"))
+    implementation(project(":modules:kafka"))
     implementation(project(":supports:jackson"))
     implementation(project(":supports:logging"))
     implementation(project(":supports:monitoring"))
@@ -45,7 +46,15 @@ dependencies {
     // 테스트 PG fixture (docs/week5/design.md D-033) — standalone은 내부 Jetty·Jackson을 감싸 Spring Boot와 충돌하지 않는다
     testImplementation("org.wiremock:wiremock-standalone:3.13.1")
 
+    // 주문 확정 이벤트 발행 테스트용 broker (docs/week6/decisions.md D-24) — 버전은 Spring Boot가 관리한다
+    testImplementation("org.testcontainers:kafka")
+
     // test-fixtures
     testImplementation(testFixtures(project(":modules:jpa")))
     testImplementation(testFixtures(project(":modules:redis")))
+}
+
+// api와 streamer가 같은 계약 JSON을 읽는다(docs/week6/decisions.md D-24). 테스트는 이 경로로 파일을 찾는다.
+tasks.test {
+    systemProperty("contract.dir", rootProject.file("docs/week6/contract").absolutePath)
 }

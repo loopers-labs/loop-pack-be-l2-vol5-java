@@ -1,0 +1,11 @@
+{
+  "eventType": "OrderConfirmed",
+  "schemaVersion": 1,
+  "eventId": "order-confirmed:v1:42",
+  "orderId": 42,
+  "confirmedAt": "2026-09-07T01:00:00.123456Z",
+  "items": [
+    {"productId": 7, "quantity": 2},
+    {"productId": 8, "quantity": 1}
+  ]
+}
