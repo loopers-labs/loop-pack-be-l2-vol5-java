@@ -190,7 +190,7 @@ try {
 - **Hikari 대기(3 초)보다 확실히 짧아야 한다.** 막힌 `send()` 가 커넥션을 쥐므로, 이 값이 3 초에 가까우면 장애 때 다른 요청이 커넥션을 기다리다 줄줄이 실패한다 — 발행 장애가 주문 API 장애로 번진다.
 - **PG 호출보다 길 이유가 없다.** 발행은 결제보다 덜 중요한 후속 작업이다.
 - 정상 broker 의 metadata 응답은 수 ms 다. 1 초를 넘기면 이미 장애다.
-- **반론: "기동 직후 첫 metadata 는 느릴 수 있으니 짧게 잡으면 정상 상황에서 포기한다."** 이 경우는 **기동 시 `order-events` 의 metadata 를 미리 받아**(`partitionsFor`) 없앤다. 시간 초과는 기동을 막지 않고 로그만 남기며(첫 발행 때 다시 받는다), 설정 오류(`ConfigException`)는 기동을 막는다.
+- **반론: "기동 직후 첫 metadata 는 느릴 수 있으니 짧게 잡으면 정상 상황에서 포기한다."** 이 경우는 **기동 시 `order-events` 의 metadata 를 미리 받아**(`partitionsFor`) 없앤다. 시간 초과는 기동을 막지 않고 로그만 남기며(첫 발행 때 다시 받는다), 설정 오류(`ConfigException`)는 기동을 막는다. 확보는 `OrderEventsTopicWarmup`(`ApplicationRunner`)이 `partitionsFor` 로 한다. producer 는 첫 send 에서 만들어지므로, 이 단계가 없으면 `acks: 1` 같은 충돌 설정을 넣어도 기동이 성공하고 첫 확정에서야 터진다 — `OrderEventsTopicWarmupTest` 가 확보 전 · 후를 모두 보았다.
 - 다른 선택지: 500ms 는 응답에 더 유리하지만 GC · leader 교체 같은 짧은 지연도 누락으로 만든다(재시도 없음). 2 ~ 3 초는 Hikari 대기에 가까워진다.
 - **뒤집을 조건**: 장애 실험에서 1 초 안에 metadata 를 못 받는 정상 상황(leader 교체 등)이 관찰될 때. Hikari 대기 시간을 바꿀 때.
 
@@ -502,7 +502,6 @@ modules:kafka
 |---|---|---|
 | T-1 | 결과 반영 TX 가 가장 바깥 TX 다 | 확정 경로 네 개에서 listener 가 `observe` 반환 전에 실행되는지 |
 | T-2 | TX 없이 `publishEvent` 하면 발행이 없다 | TX 밖에서 이벤트를 내고 broker record 0 |
-| T-3 | producer 는 첫 send 에서 만들어지므로, `ConfigException` 이 기동에서 나는 것은 metadata 확보 덕이다 | `acks: 1` 을 넣고 기동 실패. 확보 단계를 빼면 기동이 성공하는지도 본다 |
 | T-4 | metadata 가 캐시된 producer 는 broker 를 멈춰도 `send()` 가 막히지 않는다 | 발행 한 번 뒤 broker 정지 → 다음 `send()` 반환 시간 |
 | T-5 | JDBC 상한이 없으면 DB 무응답에서 listener 가 예외 없이 멈춘다 | 상한 없이 · 있이 DB 를 멈추고 error handler 호출 여부와 rebalance 를 본다 |
 | T-6 | AFTER_COMMIT listener 동안 커넥션이 반납되지 않는다 | `send()` 를 막아 둔 채 Hikari active 수 |
