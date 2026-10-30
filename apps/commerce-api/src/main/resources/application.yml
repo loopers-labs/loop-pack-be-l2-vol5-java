@@ -21,6 +21,7 @@ spring:
     import:
       - jpa.yml
       - redis.yml
+      - kafka.yml
       - logging.yml
       - monitoring.yml
 
@@ -44,6 +45,13 @@ pg:
     slow-call-rate-threshold: 50 # 3초 넘은 호출 비율(%)
     wait-duration-in-open-state: 10s
     permitted-number-of-calls-in-half-open-state: 3
+
+kafka:
+  topics:
+    order-events: # 주문 이벤트 (OrderConfirmed). key = orderId 문자열. commerce-api 가 만들고 쓴다
+      name: order-events
+      partitions: 3 # 같은 group 에서 최대 3개 consumer 가 나눠 읽을 여유. 늘리면 key → partition 매핑이 바뀐다
+      replicas: 1 # 로컬 단일 broker
 
 springdoc:
   use-fqn: true

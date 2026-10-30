@@ -7,9 +7,11 @@ import com.loopers.domain.product.ProductService;
 import com.loopers.domain.user.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.ZonedDateTime;
 import java.util.stream.Collectors;
 
@@ -24,6 +26,8 @@ public class OrderPaymentProcessor {
     private final UserService userService;
     private final OrderService orderService;
     private final ProductService productService;
+    private final ApplicationEventPublisher eventPublisher;
+    private final Clock clock;
 
     /** startPayment 결과. alreadyStarted 면 같은 결제 시도 키의 재요청이라 Facade 는 PG 를 부르지 않는다. */
     public record Started(OrderInfo order, boolean alreadyStarted) {
@@ -64,6 +68,7 @@ public class OrderPaymentProcessor {
     /**
      * 결제 결과 반영. 동기 응답·callback·결제 대기 해소 공용. 주문 행 락으로 직렬화하고, AWAITING_PAYMENT 가 아니면 아무것도 하지 않는다 (멱등).
      * SUCCESS → CONFIRMED (금액이 합계와 다르면 반영하지 않는다) / FAILED·NOT_SENT·ERROR → FAILED + 재고 반환 / PENDING·UNKNOWN → 거래 키만 기록.
+     * 최초 CONFIRMED 전이에서만 OrderConfirmedEvent 를 등록한다. 발행은 commit 뒤 (OrderConfirmedEventListener), rollback 이면 발행하지 않는다.
      */
     @Transactional
     public OrderInfo applyResult(Long orderId, PaymentGatewayResult result) {
@@ -86,7 +91,8 @@ public class OrderPaymentProcessor {
                     log.warn("PG 결제 금액 불일치, 확정 보류 [orderId = {}, total = {}, paid = {}]", orderId, order.getTotalAmount(), result.amount());
                     return OrderInfo.from(order);
                 }
-                order.confirm();
+                order.confirm(ZonedDateTime.now(clock));
+                eventPublisher.publishEvent(OrderConfirmedEvent.from(order));
             }
             case FAILED, NOT_SENT, ERROR -> failAndReleaseStocks(order);
             case PENDING, UNKNOWN -> {

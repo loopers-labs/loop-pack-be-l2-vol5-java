@@ -82,7 +82,7 @@ public class Fixtures {
         OrderModel order = orderRepository.save(OrderModel.create(userId,
             java.util.List.of(new OrderModel.Line(product.getId(), quantity, product.getPrice()))));
         order.startPayment("fixture-" + order.getId(), "SAMSUNG", "1234-5678-9814-1451");
-        order.confirm();
+        order.confirm(java.time.ZonedDateTime.now());
         return order;
     }
 
