@@ -1,0 +1,5 @@
+# All integration tests explicitly inject their owned DB/broker. Unit tests start neither.
+commerce.purchase-activity.auto-startup: false
+demo-kafka.test.enabled: false
+spring.kafka.bootstrap-servers: 127.0.0.1:1
+spring.kafka.admin.properties.bootstrap.servers: 127.0.0.1:1

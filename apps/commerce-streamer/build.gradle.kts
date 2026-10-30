@@ -16,8 +16,8 @@ dependencies {
     annotationProcessor("jakarta.persistence:jakarta.persistence-api")
     annotationProcessor("jakarta.annotation:jakarta.annotation-api")
 
-    // test-fixtures
-    testImplementation(testFixtures(project(":modules:jpa")))
-    testImplementation(testFixtures(project(":modules:redis")))
-    testImplementation(testFixtures(project(":modules:kafka")))
+    // Each integration test owns its DB/broker; do not component-scan shared test fixtures.
+    testImplementation("org.testcontainers:mysql")
+    testImplementation("org.testcontainers:kafka")
+    testImplementation("com.tngtech.archunit:archunit:1.5.0")
 }

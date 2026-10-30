@@ -1,0 +1,3 @@
+# Unrelated regressions must not publish to a developer's broker. W6 broker tests explicitly enable an owned broker.
+commerce.order-events.enabled: false
+spring.kafka.bootstrap-servers: 127.0.0.1:1

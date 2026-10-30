@@ -12,6 +12,18 @@ server:
   max-http-request-header-size: 8KB
 
 spring:
+  kafka:
+    bootstrap-servers: ${BOOTSTRAP_SERVERS:localhost:19092}
+    producer:
+      acks: all
+      retries: 3
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+        max.block.ms: 1000
+        request.timeout.ms: 3000
+        delivery.timeout.ms: 10000
+        linger.ms: 0
   main:
     web-application-type: servlet
   application:
@@ -36,6 +48,9 @@ datasource:
       connection-init-sql: SET SESSION innodb_lock_wait_timeout=3
 
 commerce:
+  order-events:
+    enabled: true
+    topic: order-events
   test-pg:
     # Customer confirm uses this local PG when enabled; no PG server is started here.
     # Disabled PG rejects new payment and external recovery with 503; saved terminal reads remain available.

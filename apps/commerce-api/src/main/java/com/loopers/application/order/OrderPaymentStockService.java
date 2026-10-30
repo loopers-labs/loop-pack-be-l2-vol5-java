@@ -6,6 +6,7 @@ import com.loopers.application.user.UserResolver;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.order.Order;
+import com.loopers.domain.order.OrderConfirmedEvent;
 import com.loopers.domain.order.OrderException;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.OrderPaymentMethod;
@@ -27,11 +28,13 @@ import com.loopers.domain.product.ProductListRevisionRepository;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.domain.user.UserRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.ZoneOffset;
+import java.time.Clock;
 import java.time.ZonedDateTime;
 import java.util.Map;
 import java.util.Set;
@@ -56,11 +59,14 @@ public class OrderPaymentStockService {
     private final PaymentAttemptRepository attempts;
     private final ProductListRevisionRepository revisions;
     private final PaymentRequestFingerprinter fingerprinter;
+    private final ApplicationEventPublisher events;
+    private final Clock orderPaymentClock;
 
     public OrderPaymentStockService(UserResolver userResolver, UserRepository users, OrderRepository orders,
                                     BrandRepository brands, ProductRepository products,
                                     PaymentAttemptRepository attempts, ProductListRevisionRepository revisions,
-                                    PaymentRequestFingerprinter fingerprinter) {
+                                    PaymentRequestFingerprinter fingerprinter, ApplicationEventPublisher events,
+                                    @Qualifier("orderPaymentClock") Clock orderPaymentClock) {
         this.userResolver = userResolver;
         this.users = users;
         this.orders = orders;
@@ -69,6 +75,8 @@ public class OrderPaymentStockService {
         this.attempts = attempts;
         this.revisions = revisions;
         this.fingerprinter = fingerprinter;
+        this.events = events;
+        this.orderPaymentClock = orderPaymentClock;
     }
 
     /**
@@ -184,7 +192,7 @@ public class OrderPaymentStockService {
         PaymentAttempt attempt = new PaymentAttempt(order.getId(), attemptKey, providerAccount, providerOrderId,
             order.getTotalAmount(), fingerprint);
         locked.forEach((id, product) -> product.deductStock(quantities.get(id)));
-        attempt.startDispatch(ZonedDateTime.now(ZoneOffset.UTC));
+        attempt.startDispatch(ZonedDateTime.now(orderPaymentClock));
         attempts.save(attempt);
         revisions.advance();
         return new PreparedPayment(order.getId(), attemptKey, providerAccount, providerOrderId, order.getTotalAmount());
@@ -300,7 +308,10 @@ public class OrderPaymentStockService {
     private void applyStockEffect(Order order, PaymentAttempt attempt, Map<Long, Integer> quantities,
                                   Map<Long, Product> locked) {
         if (attempt.getStatus() == PaymentAttemptStatus.SUCCESS) {
-            order.confirmPgPayment(ZonedDateTime.now(ZoneOffset.UTC));
+            if (order.confirmPgPayment(ZonedDateTime.now(orderPaymentClock))) {
+                // Build while the stored items are accessible; the listener sends only after the actual commit.
+                events.publishEvent(OrderConfirmedEvent.from(order));
+            }
         } else if (attempt.getStatus() == PaymentAttemptStatus.FAILED) {
             locked.forEach((id, product) -> product.validateReservedStockReturn(quantities.get(id)));
             if (order.failPgPayment()) {

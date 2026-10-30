@@ -10,6 +10,8 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
+    // API-specific producer; do not import the streamer's shared batch consumer configuration.
+    implementation("org.springframework.kafka:spring-kafka")
     implementation("org.apache.httpcomponents.client5:httpclient5")
     // Explicitly align core with circuitbreaker; the older Spring Cloud BOM otherwise manages core 2.2.0.
     implementation("io.github.resilience4j:resilience4j-circuitbreaker:2.3.0")
@@ -26,6 +28,7 @@ dependencies {
     testImplementation(testFixtures(project(":modules:redis")))
     testImplementation("org.springframework.security:spring-security-test")
     testImplementation("org.testcontainers:mysql")
+    testImplementation("org.testcontainers:kafka")
     testImplementation("com.tngtech.archunit:archunit:1.5.0")
 }
 
@@ -45,6 +48,21 @@ tasks.test {
     systemProperty("w4.startup.main-classpath", sourceSets.main.get().runtimeClasspath.asPath)
     useJUnitPlatform {
         excludeTags("ttl-measurement")
+    }
+}
+
+// Test-only process orchestration: keep the two apps off each other's runtime classpath.
+val streamerMain = project(":apps:commerce-streamer").extensions.getByType<SourceSetContainer>().named("main")
+tasks.test {
+    dependsOn(streamerMain.map { it.runtimeClasspath })
+    inputs.files(streamerMain.map { it.runtimeClasspath })
+        .withPropertyName("w6StreamerRuntimeClasspath").withNormalizer(ClasspathNormalizer::class.java)
+    inputs.file(rootProject.file("apps/commerce-streamer/src/main/resources/db/schema/001-purchase-activity.sql"))
+        .withPropertyName("w6StreamerSchema")
+    doFirst {
+        systemProperty("w6.streamer.main-classpath", streamerMain.get().runtimeClasspath.asPath)
+        systemProperty("w6.streamer.schema", rootProject.file(
+            "apps/commerce-streamer/src/main/resources/db/schema/001-purchase-activity.sql").absolutePath)
     }
 }
 

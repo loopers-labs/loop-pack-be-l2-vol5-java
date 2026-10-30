@@ -10,6 +10,22 @@
 
 **후속 승인 · 주문 재확정:** C10의 본인 CONFIRMED 주문 재요청은 `409 ORDER_ALREADY_CONFIRMED`로 거절하도록 변경했다. 사용자 승인 P16의 `W3-RECONFIRM-01..06` 구현·검증을 완료했으며, 실제 결과는 [재확정 실행 기록](../week3/order-reconfirmation-tdd-log.md)을 따른다. 이 오류는 W5 교체 후에도 **이전 POINT 확정 주문에 유지**하고, PG 동일 시도의 종결 결과 반환과 구분한다. 당시 재확정 증분은 W3의 8개 주문 재고 경쟁·3개 주문 포인트 경쟁·주문 내부 저장 경계 실패/롤백 검증·갱신 유실 대조군까지 포함한 완료 기록은 아니다.
 
+## W6 확정 이벤트와 기존 API의 경계
+
+**2026-10-29 W6 연결:** 기존 PG 최초 확정 뒤 Kafka 발행과 streamer의 구매 활동 저장·중복 처리를 연결했다. 실제 발행/소비 증분의 검사 범위와 PG→streamer 전체 실험은 구분한다. 고객이 임의의 `OrderConfirmed`를 발행하는 공개 endpoint, 구매 활동 조회·랭킹 API는 추가하지 않는다. 생산자 이벤트 계약은 [전체 설계](commerce-erd-draft.md#w6-주문-확정-이벤트와-구매-활동-설계), 선택한 결정적 eventId·after-commit listener는 [정책](commerce-policy-decisions.md#w6-이벤트-전달의-선택과-남은-결정)을 따른다.
+
+| 상황 | 유지할 API 계약 |
+| --- | --- |
+| 최초 PG 확정 commit 뒤 send 성공·실패 | 주문 응답은 DB에 저장된 CONFIRMED·PG 결과를 사용한다. 발행 실패로 주문을 PAYMENT_PENDING·UNKNOWN·FAILED로 바꾸거나 PG create를 재호출하지 않는다. W6-Q05 선택에 따라 Kafka 완료를 기다리지 않고 send future callback으로 성공/실패를 기록한다. metadata·buffer 접수 대기는 최대 1초 설정이며 전체 API 1초 보장은 아니다. 새 응답 필드는 추가하지 않는다. |
+| callback·reconcile·동일 시도 반복 | 기존 소유권·권위 조회·저장 결과·HTTP 상태·오류 계약 유지. 반복 결과 적용을 새로운 결제·확정 사실·자동 재발행 요청으로 해석하지 않는다. |
+| DRAFT·대기·실패·과거 POINT | 기존 200/202의 의미·payment 표현·이전 POINT 재확정 오류를 유지한다. W6 적용만으로 과거 POINT 이벤트를 소급 발행하지 않는다. |
+| 고객·관리자 조회 | 저장된 주문·결제수단·최초 확정 시각·품목 응답을 보존한다. 현재 상품 가격으로 과거 사실을 바꾸거나 삭제 상품을 재노출하지 않는다. GET은 발행·소비 완료를 강제로 만드는 기능이 아니다. |
+| streamer 소비 성공·중복·실패 | 내부 handler는 새 저장 `APPLIED`와 같은 사실 `DUPLICATE`를 구분한다. 둘은 DB 처리 종료 뒤 ack하며 별도 고객 HTTP 응답이 아니다. 식별자/내용 충돌·입력/DB 오류는 ack하지 않고 전용 listener를 중단한다. 이미 확정된 주문 응답·재고·PG 결과는 바꾸지 않는다. |
+
+**2026-10-30 공통 발행 구조 변경:** 주문 전용 listener·publisher를 공통 `DomainEventListener`·`DomainEventPublisher`·`KafkaDomainEventPublisher`와 명시적인 타입별 route로 바꿨다. 고객·관리자 endpoint, 요청·응답 DTO, HTTP 상태·오류 계약은 그대로다. `OrderConfirmedEvent`의 6개 JSON 필드·type header 없음·orderId 문자열 key·stable eventId·저장 최초 시각/품목과 기존 주문 topic/enabled 설정도 보존한다. 새 업무 이벤트·공개 발행 API는 추가하지 않았다. 실제 PG/Kafka·고정 Clock 전체 흐름 회귀에서도 기존 계약을 확인했으며 이번 검증 범위는 [공통 발행 TDD 기록](../week6/common-domain-event-publication-tdd-log.md)을 따른다.
+
+공통 PG 결과 적용의 최초 전이 → 실제 commit → listener → Kafka adapter를 연결했으며 HTTP controller·응답 DTO는 변경하지 않는다. 실제 confirm/callback/reconcile → Kafka 전송과 send 직전 누락·실제 metadata timeout에서도 저장 주문 응답을 보존함을 확인했다. 신규 발행 23개를 포함한 관련 862개 검사 범위는 [발행 TDD 기록](../week6/order-confirmed-publication-tdd-log.md)을 따른다. 소비 저장·실제 listener의 별도 증거는 [소비 TDD 기록](../week6/purchase-activity-consumer-tdd-log.md)에 남긴다. DB commit 뒤 offset 미커밋 재전달은 [후속 실험](../week6/purchase-activity-offset-redelivery-tdd-log.md)에서 구매 효과 불변을 확인했으며 고객 HTTP 계약을 변경하지 않는다. broker 수신 성공을 구매 활동 DB 저장 완료로 표현하지 않으며 포인트 충전·잔액 조회도 독립적으로 유지한다.
+
 ## W5 PG 결제 API 설계
 
 출처는 [W5 과제 원문](../week5/assignment-original.md)·[채점 기준](../week5/grading-criteria.md)이다. 아래에서 **과제 확정**은 원문의 요구이고 **제안·미정**은 구현 전에 선택할 세부 계약이다. 상태·TX 경계는 [W5 전체 설계](commerce-erd-draft.md#w5-pg-결제-설계), 질문과 선택 상태는 [W5 정책 검토](commerce-policy-decisions.md#w5-결제-교체의-선택과-질문)를 따른다.
