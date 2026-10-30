@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>PG 관찰 실험</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>PG 관찰 실험</h1>
+  <nav><a href="toss.html">Toss 결제위젯</a><a href="portone.html">PortOne V1</a></nav>
+  <p class="hint">테스트 키로 결제하므로 실제 돈은 빠져나가지 않는다. 서버가 PG에 보낸 요청과 응답, 받은 웹훅은 아래 로그와 <code>spike/pg/logs/events.jsonl</code>에 남는다.</p>
+  <h2>이벤트 로그 (최근 순)</h2>
+  <div id="logs"></div>
+  <script src="common.js"></script>
+</body>
+</html>

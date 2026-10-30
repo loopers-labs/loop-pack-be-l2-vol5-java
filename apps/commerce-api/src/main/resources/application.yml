@@ -24,6 +24,7 @@ spring:
       - redis.yml
       - logging.yml
       - monitoring.yml
+      - optional:classpath:application-secret.yml # PG 테스트 키(.gitignore). 견본은 application-secret.yml.example
 
 # W3 ADR-W3-04: 잠금 대기 상한. MySQL은 쿼리별 대기 시간 문법이 없어 커넥션마다 세션 변수로 둔다.
 # 넘기면 ERROR 1205 → CONCURRENCY_CONFLICT(409)로 응답한다. 확정 트랜잭션은 수십 ms라 3초는 붐빔의 신호다.
@@ -37,11 +38,80 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
 
+# W5 로컬 테스트 PG (plan.md 7장). base URL·callback URL은 로컬 설정에서만 온다. user-id는 과제 지정 가상 계정.
+# timeout (plan.md 6장 🔧): 생성은 읽기 3s·재시도 없음, 조회는 읽기 1s·재시도 있음.
+pg:
+  local:
+    base-url: http://localhost:8082
+    user-id: "135135"
+    callback-url: http://localhost:8080/api/v1/payments/callback
+    connect-timeout: 1s
+    create-read-timeout: 3s
+    lookup-read-timeout: 1s
+
+# W5 PG 회복 전략 (plan.md 6장 🔧). 어댑터가 레지스트리에서 이름으로 꺼내 코드로 감싼다 (LocalPgPaymentGatewayAdapter).
+# TimeLimiter는 쓰지 않는다 — read-timeout이 응답 전체 시간 제한이고, 넘으면 HTTP 요청 자체를 취소한다 (plan.md 6장).
+resilience4j:
+  circuitbreaker:
+    configs:
+      pg:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        slow-call-duration-threshold: 2s
+        slow-call-rate-threshold: 100
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 2
+        automatic-transition-from-open-to-half-open-enabled: false
+    instances:
+      pgCreate: # 생성 전용. OPEN이면 보내기 전에 막는다 → 효과 0건 (ADR-W5-03)
+        base-config: pg
+        ignore-exceptions: # 업무 거절(4xx)은 PG 장애가 아니다
+          - com.loopers.payment.application.port.out.PgRejectedException
+      pgLookup: # 조회 전용. 생성 회로와 따로 열린다
+        base-config: pg
+        ignore-exceptions: # 404가 아닌 4xx는 요청·설정 문제다
+          - com.loopers.payment.adapter.out.pg.PgLookupClientErrorException
+  retry:
+    instances:
+      pgLookup: # 조회만 재시도한다. 생성은 재시도 인스턴스가 없다
+        max-attempts: 3 # 1 + 재시도 2
+        wait-duration: 100ms # 100ms · 200ms (×2), 각 ±50% jitter
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        enable-randomized-wait: true
+        randomized-wait-factor: 0.5
+        retry-exceptions: # timeout·5xx·IO·해석 불가만. 4xx·회로 OPEN은 재시도하지 않는다
+          - com.loopers.payment.adapter.out.pg.PgLookupRetryableException
+
+# W5 결제 발송 풀 (ADR-W5-01·03, plan.md 0-1 🔧): 동시 PG 대기 100 TPS × 0.5s = 50. 대기열 0 — 넘치면 늦게 보내지 않고 바로 실패로 닫는다.
+payment:
+  dispatch:
+    pool-size: 50
+    queue-capacity: 0
+  # W5 정리(1분)·reconcile(5초)·만료(1분, P-14) 스케줄러 (plan.md 5-1). test 프로필은 끄고 테스트가 서비스를 직접 부른다.
+  scheduler:
+    enabled: true
+    close-delay: 60s
+    reconcile-delay: 5s
+    expire-delay: 60s
+
 ---
 spring:
   config:
     activate:
       on-profile: local, test
+
+---
+spring:
+  config:
+    activate:
+      on-profile: test
+
+payment:
+  scheduler:
+    enabled: false
 
 ---
 spring:

@@ -72,11 +72,6 @@ public class PointHistory {
         return new PointHistory(group.getUserId(), group.getId(), PointHistoryType.CHARGE, group.getAmount().amount(), null, occurredAt);
     }
 
-    public static PointHistory use(PointUsage usage, Long orderId, ZonedDateTime occurredAt) {
-        PointGroup group = usage.group();
-        return new PointHistory(group.getUserId(), group.getId(), PointHistoryType.USE, -usage.amount().amount(), orderId, occurredAt);
-    }
-
     public static PointHistory expire(PointGroup group, Money expired, ZonedDateTime occurredAt) {
         return new PointHistory(group.getUserId(), group.getId(), PointHistoryType.EXPIRE, -expired.amount(), null, occurredAt);
     }

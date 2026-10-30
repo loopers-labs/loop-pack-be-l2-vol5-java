@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>PortOne 실험</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.iamport.kr/v1/iamport.js"></script>
+</head>
+<body>
+  <nav><a href="./">← 로그</a><a href="toss.html">Toss 결제위젯</a></nav>
+  <h1>PortOne V1</h1>
+  <p class="hint" id="notice"></p>
+
+  <h2>1. 사전등록(prepare) → 결제창</h2>
+  pg <input id="pg" style="width:220px"> <span class="hint">V1 형식: {PG사 코드}.{상점ID} — 예: html5_inicis.INIpayTest</span><br>
+  금액 <input id="amount" type="number" value="1000">
+  <label><input id="tamper" type="checkbox" style="width:auto"> 결제창에는 금액 -100으로 보내기 (변조 흉내)</label><br>
+  <button id="pay">prepare 후 결제하기</button>
+  <pre id="payResult"></pre>
+
+  <h2>2. 조회</h2>
+  <button id="byImp">imp_uid로 조회</button>
+  <button id="byMerchant">merchant_uid로 조회</button>
+  <pre id="result"></pre>
+
+  <h2>이벤트 로그</h2>
+  <p class="hint">웹훅은 PortOne 서버가 notice_url로 보낸다. 서버는 받은 본문과, imp_uid로 다시 조회한 결과를 함께 남긴다.</p>
+  <div id="logs"></div>
+
+  <script src="common.js"></script>
+  <script>
+    let last = {};
+
+    (async () => {
+      const config = await api("GET", "/api/config");
+      window.config = config;
+      IMP.init(config.impCode);
+      document.getElementById("pg").value = config.portoneProvider;
+      show("notice", config.noticeUrl
+        ? `웹훅 notice_url: ${config.noticeUrl}`
+        : "PUBLIC_URL 없이 실행 중이라 웹훅은 오지 않는다 (결제창 콜백과 조회만 관찰).");
+    })();
+
+    document.getElementById("pay").addEventListener("click", async () => {
+      const amount = Number(document.getElementById("amount").value);
+      const tamper = document.getElementById("tamper").checked;
+      const merchantUid = newId("SPIKE-PO");
+      const prepare = await api("POST", "/api/portone/prepare", { merchantUid, amount });
+      show("payResult", { prepare: prepare.response });
+
+      const params = {
+        pg: document.getElementById("pg").value.trim(),
+        pay_method: "card",
+        merchant_uid: merchantUid,
+        name: "PG 관찰 실험",
+        amount: tamper ? amount - 100 : amount,
+        m_redirect_url: location.href,
+      };
+      if (config.noticeUrl) params.notice_url = config.noticeUrl;
+
+      IMP.request_pay(params, (rsp) => {
+        last = { impUid: rsp.imp_uid, merchantUid };
+        show("payResult", { prepare: prepare.response, 결제창_응답: rsp });
+        refreshLogs();
+      });
+      last = { merchantUid };
+    });
+
+    document.getElementById("byImp").addEventListener("click", async () => {
+      if (!last.impUid) return show("result", "imp_uid가 아직 없다");
+      show("result", (await api("GET", `/api/portone/payments/${last.impUid}`)).response);
+    });
+    document.getElementById("byMerchant").addEventListener("click", async () => {
+      if (!last.merchantUid) return show("result", "merchant_uid가 아직 없다");
+      show("result", (await api("GET", `/api/portone/find/${encodeURIComponent(last.merchantUid)}`)).response);
+    });
+  </script>
+</body>
+</html>

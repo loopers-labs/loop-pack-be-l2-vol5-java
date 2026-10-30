@@ -15,6 +15,10 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-security")
     testImplementation("org.springframework.security:spring-security-test")
 
+    // resilience (W5 PG 호출: timeout·retry·circuit breaker)
+    implementation("io.github.resilience4j:resilience4j-spring-boot3:${project.properties["resilience4jVersion"]}")
+    implementation("org.springframework.boot:spring-boot-starter-aop")
+
     // querydsl
     annotationProcessor("com.querydsl:querydsl-apt::jakarta")
     annotationProcessor("jakarta.persistence:jakarta.persistence-api")
@@ -23,6 +27,9 @@ dependencies {
     // test-fixtures
     testImplementation(testFixtures(project(":modules:jpa")))
     testImplementation(testFixtures(project(":modules:redis")))
+
+    // 비동기 결과를 기다려 확인 (W5 발송·결과 반영)
+    testImplementation("org.awaitility:awaitility")
 
     // architecture
     testImplementation("com.tngtech.archunit:archunit:1.5.0")

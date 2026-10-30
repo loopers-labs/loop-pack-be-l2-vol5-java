@@ -6,36 +6,62 @@ import com.loopers.order.application.OrderQueryService;
 import com.loopers.order.application.port.in.OrderCommandUseCase;
 import com.loopers.order.application.port.in.OrderInfo;
 import com.loopers.order.domain.OrderLines;
-import com.loopers.point.application.port.in.PointCommandUseCase;
+import com.loopers.payment.application.PaymentQueryService;
+import com.loopers.payment.application.port.in.PaymentReconcileUseCase;
+import com.loopers.payment.application.port.in.PaymentRequestCommand;
+import com.loopers.payment.application.port.in.PaymentRequestUseCase;
+import com.loopers.payment.domain.PaymentStatus;
 import com.loopers.product.application.port.in.ProductCommandUseCase;
 import com.loopers.product.application.port.in.ProductInfo;
 import com.loopers.product.domain.ProductSort;
 import com.loopers.support.persistence.SqlRecorder;
+import com.loopers.support.pg.LocalTestPgServer;
 import com.loopers.user.adapter.out.persistence.UserJpaRepository;
 import com.loopers.user.domain.UserModel;
 import com.loopers.utils.DatabaseCleanUp;
 import com.loopers.utils.RedisCleanUp;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 
+import java.time.Duration;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 import static org.assertj.core.api.Assertions.tuple;
 
 /**
  * W4 · 목록 캐시의 정상 경로: 실제 MySQL·Redis에서 miss → hit, 그리고 목록을 바꾸는 쓰기 뒤의 순차 조회.
  * 쓰기는 관리자·고객 API가 부르는 유스케이스를 그대로 호출한다 (캐시용 우회 서비스를 만들지 않는다).
  */
+// W5: PG fixture 주소(또는 발송 mock) 때문에 이 클래스만 쓰는 컨텍스트가 생긴다. 다른 클래스가 재사용하지 않으므로 끝나면 닫아
+// DB 커넥션을 돌려준다 — 캐시된 컨텍스트마다 Hikari 풀을 잡아 로컬 MySQL max_connections(151)를 넘기지 않게.
+@DirtiesContext
 @SpringBootTest(properties = "spring.jpa.properties.hibernate.session_factory.statement_inspector=com.loopers.support.persistence.SqlRecorder")
 class ProductListCacheIntegrationTest {
 
     private static final PageRequest FIRST_PAGE = PageRequest.of(0, 20);
+    /** W5: 확정 주문은 PG 결제로 만든다 (로컬 테스트 PG fixture → 성공 → reconcile 반영). */
+    private static final LocalTestPgServer PG = LocalTestPgServer.start();
+
+    @DynamicPropertySource
+    static void pgProperties(DynamicPropertyRegistry registry) {
+        registry.add("pg.local.base-url", PG::baseUrl);
+    }
+
+    @AfterAll
+    static void stopPg() {
+        PG.stop();
+    }
 
     @Autowired
     private ProductListQueryService productListQueryService;
@@ -56,7 +82,13 @@ class ProductListCacheIntegrationTest {
     private UserJpaRepository userJpaRepository;
 
     @Autowired
-    private PointCommandUseCase pointCommandUseCase;
+    private PaymentRequestUseCase paymentRequestUseCase;
+
+    @Autowired
+    private PaymentReconcileUseCase paymentReconcileUseCase;
+
+    @Autowired
+    private PaymentQueryService paymentQueryService;
 
     @Autowired
     private OrderCommandUseCase orderCommandUseCase;
@@ -86,6 +118,15 @@ class ProductListCacheIntegrationTest {
 
     private Page<ProductInfo> list(Long brandId, ProductSort sort) {
         return productListQueryService.getProducts(brandId, sort, FIRST_PAGE);
+    }
+
+    /** W5 확정: 결제 요청(TX A) → PG 거래 PENDING → fixture에서 SUCCESS → reconcile로 CONFIRMED. 포인트는 쓰지 않는다. */
+    private void confirmByPg(Long userId, Long orderId) {
+        paymentRequestUseCase.request(new PaymentRequestCommand(userId, orderId, "attempt-" + orderId, "SAMSUNG", "1234-5678-9814-1451"));
+        await().atMost(Duration.ofSeconds(5))
+            .until(() -> paymentQueryService.getMyPayment(userId, orderId).paymentStatus() == PaymentStatus.PENDING);
+        PG.complete(paymentQueryService.getMyPayment(userId, orderId).transactionKey(), "SUCCESS", null);
+        paymentReconcileUseCase.reconcile(userId, orderId);
     }
 
     private static List<Long> idsOf(Page<ProductInfo> page) {
@@ -171,9 +212,8 @@ class ProductListCacheIntegrationTest {
         Long brandId = brand("브랜드");
         Long productId = product(brandId, "A", 1_000);
         Long userId = userJpaRepository.save(new UserModel("고객")).getId();
-        pointCommandUseCase.charge(userId, 10_000);
         Long orderId = orderCommandUseCase.create(userId, List.of(new OrderLines.Line(productId, 2))).id();
-        orderCommandUseCase.confirm(userId, orderId);
+        confirmByPg(userId, orderId);
         list(brandId, ProductSort.PRICE_ASC);
 
         // act
@@ -215,9 +255,8 @@ class ProductListCacheIntegrationTest {
         Long deletedProduct = product(deletedBrand, "삭제될 상품", 1_000);
         Long otherProduct = product(otherBrand, "남을 상품", 2_000);
         Long userId = userJpaRepository.save(new UserModel("고객")).getId();
-        pointCommandUseCase.charge(userId, 10_000);
         Long orderId = orderCommandUseCase.create(userId, List.of(new OrderLines.Line(deletedProduct, 3))).id();
-        orderCommandUseCase.confirm(userId, orderId);
+        confirmByPg(userId, orderId);
         list(null, ProductSort.LATEST);
         list(deletedBrand, ProductSort.LATEST);
 
