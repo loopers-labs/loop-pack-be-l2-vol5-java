@@ -107,6 +107,25 @@ partition 2개인 실험 topic, 같은 group. 각 member는 자기 스레드에�
 - eager rebalance라 끄지 않은 프로세스의 partition도 잠깐 내려놓았다가 다시 받았다(로그의 revoked → assigned).
 - 한계: 1회 실행. 정상 종료 실행은 console producer의 기본 `linger.ms`(1s) 때문에 평소 지연이 약 1s로 보인다 — kill 실행에서는 `linger.ms=0`으로 고쳐 평소 지연이 0.0 ~ 0.3s다.
 
+## E-8 · 처리가 `max.poll.interval.ms`를 넘길 때 (10-30)
+
+**재현 코드** — `apps/commerce-streamer/src/test/java/com/loopers/kafka/PollIntervalExceededTest.java`. 실험 전용 topic(partition 1) · 같은 group에 consumer 두 개 · `max.poll.interval.ms` 10s(이 실험의 consumer만). 먼저 받은 쪽이 15초 동안 poll하지 않고(느린 처리) 그 뒤 실제 멱등 handler를 부른다.
+
+| t(s) | C-1 | C-2 |
+|---:|---|---|
+| 3.1 | partition 0 배정 | 배정 없음 (대기 member) |
+| 4.7 | offset 0 받음 → 처리 시작 (15초, poll 안 함) | |
+| 15.1 | (10.4초째 poll 없음 → client가 group을 떠남) | partition 0 배정 → **같은 offset 0** 받음 (committed offset부터) |
+| 15.3 | | handler **SAVED** → commit 성공 (committed 1) |
+| 19.7 | 처리 끝 → handler **DUPLICATE**(no-op) → commit 거절 `CommitFailedException` ("consumer was kicked out of the group") → partition **lost** | |
+
+- 결과: 전달 2회(C-1@0 · C-2@0) · 활동 2행 · 완료 기록 1 · committed 1.
+- heartbeat는 계속 보내고 있었다 — 빠진 이유는 `session.timeout.ms`가 아니라 poll 간격이다. 프로세스는 살아 있지만 "멈춘 consumer"로 취급된다.
+- 늦게 끝난 쪽은 DB 저장까지 했을 수 있다(여기서는 C-2가 먼저 저장해 no-op). 그래서 offset commit 거절은 "효과 없음"을 뜻하지 않는다 — **멱등 handler가 없었다면 활동이 두 벌**이다.
+- 예외가 아니라 "느림"이라 error handler·DLT와 무관하다. 매 처리가 10초를 넘기면 받는 consumer마다 같은 일이 반복돼 그 partition이 끝없이 돈다.
+- 우리 listener의 재시도 backoff(1 + 2 + 4 = 7s)는 기본 `max.poll.interval.ms`(5분)보다 훨씬 짧다.
+- 한계: 1회 실행. Spring listener 컨테이너가 아닌 KafkaConsumer로 봤다 — Spring이 거절된 ack를 어떻게 다루는지는 이 실험이 보지 않았다.
+
 ## E-6 · `max.block.ms`와 callback 스레드 (수동, 아직 안 함)
 
 키트와 절차는 `docs/week6/k6/README.md` 3절. 학습자가 직접 돌려 예측 → 측정 → 차이를 그 표에 채운다.
