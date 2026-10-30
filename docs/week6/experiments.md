@@ -98,7 +98,7 @@ partition 2 개인 격리 topic 에, partition 0 으로 모르는 `schemaVersion
 |---|---|---|---|
 | 주문 · 결제 | `CONFIRMED` · `TEST-TX-0001` `SUCCESS` | `CONFIRMED` · `TEST-TX-0002` `SUCCESS` | `CONFIRMED` · `TEST-TX-0003` `SUCCESS` |
 | 재고 | 코트 2 · 셔츠 1 소비 | 같음 | 같음 (100 → 94 · 97) |
-| broker (kcat) | **record 없음** | partition 2 · offset 0 · header 4 개 | **record 없음** |
+| broker (kcat) | **record 없음** | partition 2 · offset 0 · header 는 `traceparent` 하나 | **record 없음** |
 | committed offset | — | partition 2 → 1 (lag 0) | — |
 | 처리 기록 · 활동 | **없음** | 처리 기록 1 · 활동 2 행 | **없음** |
 | api 지표 | `order_event_publish_total{result="failure", cause="RecordTooLargeException"} 1` | `{result="success"} 1` | **지표 자체가 없다** — kill -9 직전에 읽었다 |
@@ -148,3 +148,16 @@ partition 3 개인 격리 topic 에 확정 이벤트 2,000 건을 미리 쌓고,
 - **record 마다 commit 해도 응답을 기다리지 않으면(비동기) `BATCH` 와 비슷해진다**(566). 다만 세 번의 값이 425 ~ 822 로 가장 흔들렸다.
 - 설계 4.4 의 "처리량이 모자랄 때 푸는 순서"(concurrency → 비동기 commit → 묶음 insert)가 실측과 맞는다. 묶음 insert(batch listener)는 운영 코드를 바꿔야 해서 재지 않았다.
 - 2,000 건을 미리 쌓는 producer 는 실험 전용이고 멱등을 끈다. 새로 만든 topic 의 첫 batch 가 leader 가 정해지기 전에 도착해 `NOT_LEADER_OR_FOLLOWER` 를 받은 뒤, 멱등 producer 가 `OUT_OF_ORDER_SEQUENCE_NUMBER` 를 122 번 받으며 그 partition 에서 막혔다(Kafka 3.5 broker). 중복이 생겨도 처리 기록이 거르므로 측정에 영향이 없다. 운영 producer 는 멱등을 그대로 켜 두고, topic 을 미리 만들고 기동 때 metadata 를 받으므로 이 경우를 만나지 않는다.
+
+## DB 무응답 (T-5) — `DbSilenceExperimentTest`
+
+실험 전용 MySQL 컨테이너에 붙인 streamer 컨텍스트에서, 그 MySQL 을 `docker pause` 로 멈춘 채 확정 이벤트를 보낸다. 공용 테스트 DB 는 건드리지 않는다.
+
+| 값 | 결과 |
+|---|---|
+| 멈춘 뒤 첫 실패까지 | 10.5 초 — `socketTimeout=10000` 이 예외를 만들었다 |
+| 원인 | `ConnectionIsClosedException` → 그 record 에서 다시 시도 |
+| 멈춘 동안 컨테이너 | 실행 중 |
+| DB 를 되살린 뒤 반영까지 | 1.2 초 — 사람 없이 이어졌다 |
+
+- 상한이 없으면 DB 호출이 예외 없이 멈춰 error handler 가 돌지 않고, `max.poll.interval.ms`(5 분) 뒤 group 에서 빠져 rebalance 만 난다. 상한이 있어야 무기한 재시도가 실제로 돈다.

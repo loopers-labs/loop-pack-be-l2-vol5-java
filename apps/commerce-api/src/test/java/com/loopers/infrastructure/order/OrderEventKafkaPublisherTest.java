@@ -2,8 +2,12 @@ package com.loopers.infrastructure.order;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.loopers.domain.order.Order;
+import com.loopers.domain.order.OrderItem;
+import com.loopers.domain.order.OrderQuantity;
 import com.loopers.domain.order.OrderRepository;
 import com.loopers.domain.order.OrderStatus;
+import com.loopers.domain.product.Price;
 import com.loopers.testcontainers.KafkaTestContainersConfig;
 import com.loopers.utils.DatabaseCleanUp;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -41,6 +45,7 @@ class OrderEventKafkaPublisherTest {
 
     private final OrderConfirmations orders;
     private final OrderEventPublishMetrics metrics;
+    private final ApplicationEventPublisher eventPublisher;
     private final KafkaTemplate<String, byte[]> kafkaTemplate;
     private final ObjectMapper objectMapper;
     private final DatabaseCleanUp databaseCleanUp;
@@ -51,6 +56,7 @@ class OrderEventKafkaPublisherTest {
                                  KafkaTemplate<String, byte[]> kafkaTemplate, ObjectMapper objectMapper,
                                  DatabaseCleanUp databaseCleanUp) {
         this.orders = new OrderConfirmations(orderRepository, transactionTemplate, eventPublisher);
+        this.eventPublisher = eventPublisher;
         this.metrics = new OrderEventPublishMetrics(meterRegistry);
         this.kafkaTemplate = kafkaTemplate;
         this.objectMapper = objectMapper;
@@ -135,6 +141,25 @@ class OrderEventKafkaPublisherTest {
         kafkaTemplate.flush();
 
         assertThat(metrics.successes() - successesBefore).isEqualTo(1);
+        assertThat(metrics.failures() - failuresBefore).isZero();
+    }
+
+    @DisplayName("T-2: TX 밖에서 확정 이벤트를 내면 AFTER_COMMIT listener 가 돌지 않아 아무 record 도 쌓이지 않는다")
+    @Test
+    void publishesNothingWithoutTransaction() {
+        Order draft = Order.draft(1L, List.of(OrderItem.of(7L, "코트", Price.of(3_000), OrderQuantity.of(2))),
+            Instant.parse("2026-10-30T00:00:00Z"));
+        Order pending = Order.restore(42L, 1L, draft.getItems(), draft.getTotalAmount(), draft.getPlacedAt(),
+            OrderStatus.PENDING, null, null);
+        pending.completePayment(Instant.parse("2026-10-30T01:02:03Z"));
+        double successesBefore = metrics.successes();
+        double failuresBefore = metrics.failures();
+
+        List<ConsumerRecord<String, byte[]>> records =
+            recordsDuring(() -> pending.pullEvents().forEach(eventPublisher::publishEvent));
+
+        assertThat(records).isEmpty();
+        assertThat(metrics.successes() - successesBefore).isZero();
         assertThat(metrics.failures() - failuresBefore).isZero();
     }
 }

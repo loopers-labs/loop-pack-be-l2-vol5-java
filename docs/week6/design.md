@@ -398,8 +398,69 @@ listener 가 기다리는 DB 호출에 상한이 없으면 예외가 나지 않�
 
 - streamer 의 JDBC URL 에 `socketTimeout=10000`(10 초)을 둔다. 정상 쿼리는 ms 단위이고, 행 잠금 대기(3 초)보다 길어 잠금 대기는 잠금 대기 예외로 먼저 끝난다. `max.poll.interval.ms` 보다 충분히 짧다.
 - commerce-api 에는 넣지 않는다. 공유 `jpa.yml` 이 아니라 streamer 의 설정에 둔다.
-- 확인할 테스트 T-5.
+- 실측(`DbSilenceExperimentTest`): 실험 전용 MySQL 을 `docker pause` 로 멈추자 10.5 초에 `ConnectionIsClosedException` 이 나 그 record 를 다시 시도했고, 컨테이너는 계속 돌았다. DB 를 되살리자 1.2 초 만에 사람 없이 반영됐다. 상한이 있어야 무기한 재시도(4.4)가 실제로 돈다.
 - **뒤집을 조건**: 정상 배치성 쿼리가 10 초를 넘게 될 때.
+
+### 4.6 운영 절차
+
+**알림.** 아래 넷을 본다. 앞의 둘은 사람이 손을 대야 할 수도 있는 신호다.
+
+| 지표 | 뜻 | 할 일 |
+|---|---|---|
+| `purchase_activity_retry_total` 이 5 분 넘게 오른다 | 한 record 에서 계속 다시 시도한다 — 그 partition 이 묶여 있다 | 아래 "partition 이 묶였을 때" |
+| `purchase_activity_total{outcome="held"}` 가 오른다 | 충돌이나 해석 불가로 보류했다 | 아래 "보류 건을 다시 넣을 때" |
+| `order_event_publish_total{result="failure"}` 가 오른다 | 확정은 됐는데 이벤트가 broker 에 닿지 않았다 | 아래 "발행 실패를 다시 보낼 때" |
+| consumer lag 이 계속 는다 | 처리량이 모자라거나 묶인 partition 이 있다 | 4.4 의 처리량 순서, 또는 첫 줄 |
+
+**partition 이 묶였을 때.**
+
+1. WARN 로그 `주문 이벤트 처리가 실패해 같은 record 를 다시 시도한다: position=order-events-P@OFFSET, attempt=…, cause=…` 에서 위치와 원인을 읽는다.
+2. 원인이 DB · 잠금 · 커넥션이면 기다린다. 풀리면 스스로 이어간다(EXP-006 · T-5).
+3. 모르는 `schemaVersion` 이거나 버그면 소비자를 고쳐 배포한다. 배포한 소비자가 그 record 부터 처리한다.
+4. 배포 전에 급히 풀어야 하면 그 record 를 손으로 보류하고 offset 을 하나 넘긴다. **이 순서를 바꾸지 않는다** — offset 을 먼저 넘기면 그 record 는 어디에도 남지 않는다.
+   ```bash
+   # 원본을 읽어 보류 기록으로 옮긴다 (key, header, 값을 그대로)
+   kcat -b $BROKER -C -t order-events -p P -o OFFSET -c 1 -f '%k
+%h
+%s
+'
+   #   → order_event_hold 에 reason='MANUAL_SKIP', topic, partition_no, offset_no, record_key, headers, payload 로 insert
+   # group 의 consumer 를 모두 멈춘 뒤 (활성 member 가 있으면 reset 이 거절된다)
+   kafka-consumer-groups.sh --bootstrap-server $BROKER --group purchase-activity \
+     --topic order-events:P --reset-offsets --to-offset $((OFFSET + 1)) --execute
+   # consumer 를 다시 띄운다
+   ```
+
+**보류 건을 다시 넣을 때.** 원인을 고친 뒤 원본을 같은 topic 에 다시 보낸다. 처리 기록이 중복을 거르므로 여러 번 보내도 효과는 한 번이다.
+
+```bash
+# select record_key, headers, payload from order_event_hold where id = ?;  payload 를 파일로 저장
+kcat -b $BROKER -P -t order-events -k "$RECORD_KEY" \
+  -H eventType=OrderConfirmed -H schemaVersion=1 -H eventId="$EVENT_ID" payload.json
+```
+
+- 충돌(`EVENT_CONFLICT` · `ORDER_CONFLICT`)은 그대로 다시 넣으면 다시 보류된다. 어느 쪽이 맞는 사실인지 먼저 정하고, 처리 기록 쪽이 틀렸다면 그 주문의 처리 기록과 활동을 지운 뒤 다시 넣는다.
+
+**발행 실패를 다시 보낼 때.** ERROR 로그 `주문 이벤트를 보내지 못했다. eventId 로 다시 보내야 한다: eventId=order-confirmed:v1:ID` 의 주문을 DB 에서 계약 모양으로 다시 만들어 보낸다. `eventId` 가 주문 id 에서 나오므로 소비자가 이미 받았더라도 중복으로 걸러진다.
+
+```sql
+select json_object(
+  'eventType', 'OrderConfirmed', 'schemaVersion', 1,
+  'eventId', concat('order-confirmed:v1:', o.id), 'orderId', o.id,
+  'confirmedAt', date_format(o.confirmed_at, '%Y-%m-%dT%H:%i:%s.%fZ'),
+  'items', (select json_arrayagg(json_object('productId', i.product_id, 'quantity', i.quantity))
+            from (select product_id, sum(quantity) quantity from order_item
+                  where order_id = o.id group by product_id) i))
+from orders o where o.id = ? and o.status = 'CONFIRMED';
+```
+
+```bash
+kcat -b $BROKER -P -t order-events -k "$ORDER_ID" \
+  -H eventType=OrderConfirmed -H schemaVersion=1 -H eventId="order-confirmed:v1:$ORDER_ID" payload.json
+```
+
+- 흔적 없는 누락(EXP-007 의 주문 C)은 이 로그도 없다. 찾으려면 "확정됐는데 처리 기록이 없는 주문" 을 두 DB 를 맞대어 봐야 하고, 이 대사는 W7 outbox 와 함께 정한다.
+- **뒤집을 조건**: 이 절차를 한 달에 여러 번 손으로 하게 되면 — 보류 재처리 · 재발행을 관리자 API 나 도구로 만든다.
 
 ## 5. 테스트 fixture (Q-5)
 
@@ -539,15 +600,13 @@ modules:kafka
 
 ## 10. 확인할 테스트 — 메커니즘에서 추론했고 아직 우리 테스트로 보지 않은 것
 
+T-2(TX 밖 발행은 버려진다)는 `OrderEventKafkaPublisherTest`, T-3 은 `OrderEventsTopicWarmupTest`, T-4(metadata 가 있으면 broker 장애에도 `send()` 가 막히지 않는다)는 broker 3 대 실험 E7, T-5(DB 무응답 상한)는 `DbSilenceExperimentTest`, T-8(`max.message.bytes` 거절은 바로 실패 콜백)은 `OrderEventRejectedPublishTest` 가 확인했다. 남은 것:
+
 | # | 주장 | 확인 방법 |
 |---|---|---|
 | T-1 | 결과 반영 TX 가 가장 바깥 TX 다 | 확정 경로 네 개에서 listener 가 `observe` 반환 전에 실행되는지 |
-| T-2 | TX 없이 `publishEvent` 하면 발행이 없다 | TX 밖에서 이벤트를 내고 broker record 0 |
-| T-4 | metadata 가 캐시된 producer 는 broker 를 멈춰도 `send()` 가 막히지 않는다 | 발행 한 번 뒤 broker 정지 → 다음 `send()` 반환 시간 |
-| T-5 | JDBC 상한이 없으면 DB 무응답에서 listener 가 예외 없이 멈춘다 | 상한 없이 · 있이 DB 를 멈추고 error handler 호출 여부와 rebalance 를 본다 |
 | T-6 | AFTER_COMMIT listener 동안 커넥션이 반납되지 않는다 | `send()` 를 막아 둔 채 Hikari active 수 |
 | T-7 | 정상 종료 때 close 대기 안의 record 는 전송되거나 실패 콜백이 온다 | 버퍼에 record 를 둔 채 컨텍스트 종료 |
-| T-8 | `max.message.bytes` 거절은 재시도 없이 바로 실패 콜백으로 온다 | topic 값을 1 로 두고 발행 → 콜백까지 걸린 시간이 `delivery.timeout.ms` 보다 훨씬 짧다 |
 
 ## 11. 작업 단계
 
