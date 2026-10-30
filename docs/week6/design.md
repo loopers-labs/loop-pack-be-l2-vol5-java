@@ -67,12 +67,16 @@ producer 의 value 직렬화기는 `ByteArraySerializer` 이고, publisher 가 *
 
 ### 3.1 어디서 — 결과 반영 경계 (`EVT-010` · `EVT-011`)
 
-`PaymentTransactions.apply` 의 `CONFIRM_ORDER` 분기 하나에서 이벤트를 만든다.
+`Order.completePayment` 가 확정과 함께 `OrderConfirmed` 를 자기 목록에 쌓고, `PaymentTransactions.apply` 의 `CONFIRM_ORDER` 분기가 주문을 저장한 뒤 `pullEvents()` 로 꺼내 `ApplicationEventPublisher` 에 넘긴다. 꺼내면 목록이 비어 같은 주문을 다시 저장해도 두 번 나가지 않는다.
 
-- 생성 응답 · callback · reconcile · sweeper 네 경로가 모두 이 경계를 지난다(W5 5장). 어느 경로가 먼저 와도 발행 조건이 같다.
-- `CONFIRM_ORDER` 효과는 `PENDING → CONFIRMED` 최초 전이에서만 나온다. 반복 반영은 효과 `NONE` 이라 이벤트가 생기지 않는다(`EVT-011`). 동시에 온 callback 과 reconcile 은 W5 의 잠금(주문 → 결제)으로 줄 서고, 늦은 쪽은 `NONE` 을 본다.
-- 이 분기에서 `OrderConfirmed.of(order)` 로 **값**을 만든다. 엔티티를 넘기지 않는다 — listener 는 정리 단계 직전에 돌고, `@Async` 나 다른 스레드로 넘기는 순간 영속성 컨텍스트가 없다.
-- 값을 만들거나 `publishEvent` 를 부르다 예외가 나면 **잡아서 발행 실패로 기록하고 확정은 commit 한다**(`EVT-012`). PG 는 이미 돈을 움직였으므로, 이벤트 하나 때문에 확정을 되돌리면 "결제됐는데 미확정" 이 된다.
+- 생성 응답 · callback · reconcile · sweeper 네 경로가 모두 이 경계를 지난다(W5 5장). 어느 경로가 먼저 와도 발행 조건이 같다. 그래서 테스트도 경로마다가 아니라 경계(`PaymentTransactions.observe`)에서 한 번 본다.
+- `CONFIRM_ORDER` 효과는 `PENDING → CONFIRMED` 최초 전이에서만 나온다. 반복 반영은 효과 `NONE` 이라 `completePayment` 가 불리지 않고 이벤트가 생기지 않는다(`EVT-011`). 동시에 온 callback 과 reconcile 은 W5 의 잠금(주문 → 결제)으로 줄 서고, 늦은 쪽은 `NONE` 을 본다.
+- **확정이 일어났다는 사실은 애그리거트가 안다.** 이벤트를 만드는 판단을 application 에 두면 "확정했는데 이벤트를 안 만든" 코드가 컴파일된다. 애그리거트가 확정과 같은 메서드에서 쌓으면 그 둘이 갈리지 않는다.
+- 이벤트는 엔티티가 아니라 **값**이다. listener 는 정리 단계 직전에 돌고, 다른 스레드로 넘기는 순간 영속성 컨텍스트가 없다.
+- **값 만들기와 직렬화를 나눈다(`EVT-012`).** 값은 메모리의 주문에서만 만들므로 실패하면 프로그래밍 오류이고, 확정과 함께 rollback 된다 — 도메인은 지표를 모르므로 거기서 잡지 않는다. 실제로 실패할 수 있는 직렬화 · 전송은 commit 뒤 publisher 가 잡아 실패로 기록한다(3.6).
+- **발행은 저장소가 아니라 application 이 한다.** 저장소가 `save` 에서 꺼내 발행하면(Spring Data `@DomainEvents` 방식) 빠뜨릴 수 없지만, 컬렉션처럼 보이는 객체가 부수효과를 갖고, `apply` 만 읽어서는 발행이 보이지 않으며, TX 가 있는지 모르는 곳에서 AFTER_COMMIT 예약을 하게 된다. 트랜잭션 경계와 순서를 `PaymentTransactions` 가 갖는다는 규칙에 맞춰 같은 자리에 둔다. `OrderService` 는 domain 이라 Spring 이벤트를 알게 하지 않는다.
+- 대가는 **이벤트를 쌓는 메서드를 부르는 곳마다 꺼내야 한다**는 것이다. 지금 `completePayment` 를 부르는 곳은 `apply` 하나다.
+- **뒤집을 조건**: 이벤트를 쌓는 저장 지점이 둘 이상이 될 때(확정 경로가 하나 더 생기거나 W7 에 다른 애그리거트가 이벤트를 낼 때) — 빠뜨릴 위험이 명시성보다 커지므로 저장소가 `save` 에서 꺼내 발행한다.
 
 **전제: 이 TX 가 가장 바깥 TX 다.** AFTER_COMMIT 은 가장 바깥 TX 가 commit 될 때 돈다. 지금 `PaymentFacade` · `PaymentSweeper` 에는 `@Transactional` 이 없어 `observe` 의 TX 가 가장 바깥이다.
 이 전제가 깨지면(누가 바깥에 TX 를 두르면) 발행이 바깥 commit 까지 미뤄지고, 바깥이 rollback 되면 발행되지 않는다. 확인할 테스트 T-1(10장).
@@ -191,7 +195,7 @@ try {
 | 누락 원인 | 실패 콜백 | 지표 · 알림이 잡나 |
 |---|---|---|
 | broker 장애 · 시간 초과 · 거절 · 직렬화 오류 | 온다 | 잡는다 |
-| payload 생성 · 등록 실패 | 직접 잡음(3.1) | 잡는다 |
+| 이벤트 값 만들기 실패 | 없음. 확정과 함께 rollback(3.1) | 확정이 실패한 요청으로 드러난다 |
 | 정상 종료 때 버퍼에 남은 record | close 대기를 넘기면 실패 콜백 | 잡는다 |
 | **커밋 뒤 send 전 · 버퍼 안에서 프로세스 강제 종료** | **안 온다** | **못 잡는다** |
 
@@ -465,9 +469,11 @@ listener 가 기다리는 DB 호출에 상한이 없으면 예외가 나지 않�
 
 ```
 commerce-api
+  domain/order/Order                     completePayment 가 OrderConfirmed 를 쌓고 pullEvents 로 비운다
   domain/order/OrderConfirmed            값 · 품목 합산 · 정렬 (EVT-007)
-  application/payment/PaymentTransactions  CONFIRM_ORDER 분기에서 publishEvent (EVT-010 · EVT-012)
+  application/payment/PaymentTransactions  CONFIRM_ORDER 분기에서 저장 뒤 꺼내 publishEvent (EVT-010 · EVT-011)
   application/order/OrderEventMetrics    발행 성공 · 실패 지표
+  infrastructure/order/OrderConfirmedMessage        계약 모양 · 시각 소수 6 자리 고정 (EVT-003)
   infrastructure/order/OrderConfirmedKafkaPublisher  @TransactionalEventListener(AFTER_COMMIT) · send · whenComplete
   infrastructure/order/OrderEventsTopicWarmup        기동 시 metadata 확보
 
