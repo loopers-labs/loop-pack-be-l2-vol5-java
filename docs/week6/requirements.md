@@ -82,6 +82,7 @@ W5 범위 밖의 "inbox 테이블" 은 PG callback 을 **받는 쪽**(commerce-a
 | `ACT-013` | 주문 42 가 상품 7 을 2 개 · 상품 8 을 1 개 → 활동 2 행. 같은 이벤트 재수신 → 여전히 2 행. 주문 43 이 상품 7 을 3 개 → 총 3 행, 상품 7 의 수량 합 5 | 원문 | — | 테스트의 기준 숫자 |
 | `ACT-014` | 처리 기록은 지우지 않는다. 늦은 중복(offset 되감기 · 재발행)이 언제 올지 모르기 때문이다 | 정함 | — | 뒤집을 조건은 설계 |
 | `ACT-015` | 멱등이 보장되는 효과는 **처리 기록과 같은 DB TX 에 든 쓰기**뿐이다. 다른 저장소의 효과(W9 의 Redis 등)는 이 사실에서 다시 만들 수 있게 하거나 자기 멱등 키를 따로 가진다 | 정함 | — | — |
+| `ACT-016` | `order-events` 에서 `OrderConfirmed` 가 아닌 record 는 이 소비자가 다루지 않는다. 활동 · 처리 기록 · 보류 기록을 남기지 않고 정상 완료한다. 종류는 payload 의 `eventType` 으로 가르고, 다른 종류의 `schemaVersion` 은 보지 않는다. JSON · 필드 타입이 깨졌거나 `eventType` 이 없으면 종류를 알 수 없으므로 `ACT-009` 의 해석 불가로 보류하고, `OrderConfirmed` 인데 `schemaVersion` 이 없어도 그렇다 | 정함 | `eventType` 이 `OrderCancelled` 인 payload | 활동 · 보류 0, 뒤 record 계속 소비 |
 
 ## KAFKA — 설정과 listener
 
@@ -150,3 +151,5 @@ Outbox · 발행 재시도(W7) · 랭킹 API(W9) · DLQ · Kafka 트랜잭션 ·
 - **broker 3 대** — controller 1 대 · broker 3 대를 띄운 별도 compose(복제 수 3, `min.insync.replicas=2`)에서 `acks=all` 로 보낸다. 한 대를 멈추면 계속 성공하는지, 두 대를 멈추면 `NotEnoughReplicas` 뒤 `delivery.timeout.ms` 에 실패하는지, leader 가 바뀌는 동안 producer 가 metadata 를 새로 받는지 — 그리고 그것이 `max.block.ms` 1 초(`EVT-014`) 안에 끝나는지 — 기록한다. `acks=1` 로 복제 전 leader 를 강제 종료해 ack 받은 record 가 사라지는 것도 비교한다(Q-3).
 - **consumer 처리량** — 같은 양의 확정 이벤트를 쌓아 두고 concurrency(1 · 3) × ack mode(`BATCH` · `MANUAL_IMMEDIATE`) × commit(동기 · 비동기) × 저장(record 단위 · 묶음 insert)의 처리 시간과 DB TX 수를 비교한다. 병목은 producer 가 아니라 consumer 의 DB 효과라서, 설계의 "처리량이 모자랄 때 푸는 순서" 를 실측으로 채운다.
 - **producer 배치 · 압축** — 몰아서 보낼 때와 드문드문 보낼 때 각각 `linger.ms` · `batch.size` · `compression.type`(none · lz4 · zstd)을 바꿔 producer 지표(`batch-size-avg` · `compression-rate-avg` · `request-latency-avg`)와 broker 에 저장된 바이트를 비교한다. 확정 하나에 record 하나(약 200 바이트)인 지금 패턴에서는 효과가 거의 없을 것으로 보고, 그것을 숫자로 확인한다. W7 relay 가 outbox 를 묶어 보낼 때 의미가 생긴다.
+- **DLT 비교** — 같은 실패를 spring-kafka `DefaultErrorHandler` + `DeadLetterPublishingRecoverer` 로 처리해 본다. DLT topic 은 broker 자동 생성이 꺼져 있어 직접 만든다. 해석 불가 · 충돌을 보류 테이블 대신 DLT 로 보냈을 때와, 기본 설정대로 DB 장애 · 모르는 `schemaVersion` 까지 DLT 로 넘어갈 때 구매 활동에서 무엇이 빠지는지 기록한다. `@RetryableTopic` 이 같은 key 의 순서를 어떻게 깨는지도 본다. 보류 테이블을 고른 근거(설계 8 장)를 실측으로 채운다.
+- **Share consumer(KIP-932)** — partition 하나를 여러 consumer 가 나눠 읽고 record 마다 승인(accept · release · reject)하며 전달 횟수를 broker 가 센다. broker · client 4.x 가 필요해 본 구현과 분리된 broker 컨테이너와 원시 `KafkaShareConsumer` 로 한다. 같은 주문 이벤트의 순서가 깨지는 것(Q-1 의 뒤집을 조건), record 단위 승인이 "뒤 record 가 앞까지 commit 한다" 를 없애는 것, 손으로 만든 "일시 오류는 멈춤 · 해석 불가는 보류" 를 전달 횟수와 reject 로 대신할 수 있는지를 비교한다.

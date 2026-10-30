@@ -50,6 +50,19 @@ commerce-streamer
 - `items` 는 저장된 주문 품목에서 만들고, 같은 상품은 합산해 하나로 둔다. `productId` 오름차순으로 정렬한다 — 의미는 없지만 같은 사실이 같은 바이트가 되어 로그 비교가 쉽다.
 - `userId` · 카드 · PG 식별자는 넣지 않는다. 구매 활동에 필요 없고, 이벤트는 저장 · 복제 · 재생되는 동안 지울 수 없다.
 
+**종류 · 버전 · `eventId` 는 payload 에만 싣는다.** 소비자는 payload 를 열어 `eventType` 으로 종류를 가른다(`ACT-016`).
+
+| 위치 | 얻는 것 | 잃는 것 |
+|---|---|---|
+| **payload 만** | record 하나로 무엇인지 안다. kcat · 로그 · 재처리 도구, header 를 버리는 중간 도구에서도 남는다. 계약 예시 JSON 하나가 계약 전부다 | 종류를 보려면 JSON 을 열어야 한다. 다른 종류의 깨진 JSON 도 우리 보류로 쌓인다 |
+| header 만 | 열지 않고 거른다 | payload 만 복사하는 도구에서 사라진다. 계약 예시 JSON 하나로 계약을 다 담지 못한다 |
+| 둘 다 | header 로 먼저 걸러, 다른 종류의 형식 문제가 이 소비자의 보류로 번지지 않는다 | 두 값이 어긋날 수 있어, 어긋남을 가르는 판정과 테스트가 하나 더 생긴다 |
+| 종류별 topic | 필요한 topic 만 구독한다 | 같은 주문의 확정 · 취소가 다른 partition 으로 가 순서가 깨진다(2.1 의 key 효과가 사라진다) |
+
+- "둘 다" 의 이득은 성능이 아니라 **격리**다. 200 바이트 JSON 을 여는 비용은 DB insert 에 비해 0 에 가깝다. 그런데 지금 `order-events` 에는 `OrderConfirmed` 한 종류만 들어오고 읽는 소비자도 하나라, 지킬 다른 종류가 없다. 없는 문제를 막으려고 어긋남이라는 새 실패를 만들지 않는다.
+- 버전도 header 에 두지 않는다. 버전이 header 에 있어야 하는 것은 payload 를 열기 전에 형식을 골라야 할 때(버전마다 직렬화 형식이 다를 때)다. 모든 버전이 JSON 이라 열고 나서 `schemaVersion` 을 보면 된다.
+- **뒤집을 조건**: `order-events` 에 다른 종류의 이벤트가 섞이거나 다른 팀이 이 topic 에 쓰게 될 때 — 종류를 header 에도 실어 열기 전에 거른다(둘 다). 기준은 payload 로 두고, header 이름은 조직의 규칙이나 CloudEvents 의 Kafka binary mode(`ce_type` · `ce_id`)를 따른다. 버전마다 payload 형식이 달라질 때 — 버전을 header 에 싣는다.
+
 ### 2.3 직렬화
 
 producer 의 value 직렬화기는 `ByteArraySerializer` 이고, publisher 가 **앱의 `ObjectMapper`** 로 바이트를 만든다.
@@ -281,6 +294,7 @@ listener (consumer 스레드)
 | 같은 사실 재전달 | 같다 | no-op, ack |
 | 충돌(같은 `eventId` 다른 사실 · 같은 `orderId` 다른 `eventId`) | 같다 | 보류, ack |
 | 해석 불가(JSON · key 불일치 · 빈 값 · 0 이하 수량 · 상품 중복) | 같다 | 보류, ack |
+| 다른 `eventType`(`OrderCancelled` 등) | 같다 | 다루지 않음, 기록 없이 ack (`ACT-016`) |
 | **모르는 `schemaVersion`** | **소비자를 배포하면 성공** | **멈춤** |
 | DB 연결 · 잠금 대기 · 무응답 | 성공할 수 있다 | 멈춤 |
 
@@ -288,6 +302,8 @@ listener (consumer 스레드)
 - 모르는 버전을 보류하면, 소비자를 고쳐 배포해도 그 record 는 이미 ack 돼 다시 오지 않는다. 멈추면 배포 뒤 재시작이 그 record 부터 읽는다.
 - `eventId` 의 형식은 검사하지 않는다. 형식 검사가 "같은 `orderId` 에 다른 `eventId`" 를 먼저 가로채 충돌이 보이지 않게 된다. 빈 값만 거른다.
 - `items` 안 같은 상품은 insert 전에 거른다. 거르지 않으면 `uk_activity_order_product` 위반이 4.2 의 재분류로 가는데, receipt 도 rollback 돼 비교할 기록이 없다.
+- `eventType` 을 `schemaVersion` 보다 먼저 본다. topic 은 주문 이벤트 여러 종류가 같은 key 로 쓰는 자리이고(9 장), 다른 종류의 버전은 이 소비자가 알 일이 아니다. 다른 종류를 보류하면 그 종류가 늘 때마다 보류가 쌓이고, 멈추면 다른 팀의 배포가 이 소비자를 세운다. **뒤집을 조건**: 이 소비자가 다른 종류(`OrderCancelled` 등)를 반영해야 할 때 — 그 종류의 판정을 더한다. 4.3 의 마지막 뒤집을 조건(key 단위 멈춤)과 함께 본다.
+- 바이트를 판정으로 바꾸는 `OrderEventPayloadReader` 는 `interfaces/consumer` 에 둔다. 컨트롤러가 요청 JSON 을 받는 것과 같은 입력 해석이고, listener(interfaces)가 infrastructure 를 부를 수 없다. JSON · 필드 타입 오류는 여기서 `MALFORMED` 로, 내용(key · 빈 값 · 수량 · 중복)은 도메인 `ConfirmedPurchase.read` 가 가른다.
 - 보류는 업무 완료가 아니다. 보류 건수를 지표로 내고 알림을 건다.
 - **뒤집을 조건**: 같은 key 의 뒤 이벤트(`OrderCancelled` 등)가 앞 이벤트의 반영을 전제하게 될 때. 보류된 앞 이벤트 위에 뒤 이벤트가 잘못 반영되므로 key 단위로 멈추는 장치를 둔다.
 
@@ -484,6 +500,7 @@ commerce-streamer
   domain/activity/…                      판정(같은 사실 · 충돌 · 해석 불가)
   application/activity/PurchaseActivityHandler  @Transactional handler
   infrastructure/activity/…              JPA 엔티티 · 저장소 (package-private)
+  interfaces/consumer/OrderEventPayloadReader   바이트 → 판정 (JSON · eventType · schemaVersion)
   interfaces/consumer/OrderConfirmedListener    record listener · ack
 
 modules:kafka
@@ -531,3 +548,5 @@ modules:kafka
     - leader 교체 중 metadata 재확보가 `max.block.ms` 1 초 안에 끝나는가 — 3.7 의 뒤집을 조건을 실측으로 채운다
 14. (선택 심화) consumer 처리량 — 같은 양의 확정 이벤트를 쌓아 두고 concurrency(1 · 3) × ack mode(`BATCH` · `MANUAL_IMMEDIATE`) × commit(동기 · 비동기) × 저장(record 단위 · 묶음 insert)의 처리 시간 · DB TX 수 · lag 를 잰다. 4.4 의 "처리량이 모자랄 때 푸는 순서" 를 실측으로 채운다.
 15. (선택 심화) producer 배치 · 압축 — 몰아서 보낼 때와 드문드문 보낼 때 각각 `linger.ms` · `batch.size` · `compression.type`(none · lz4 · zstd)을 바꿔 `batch-size-avg` · `compression-rate-avg` · `request-latency-avg` 와 broker 에 저장된 바이트를 비교한다. 확정 하나에 record 하나인 지금은 batch 에 record 가 한 개씩만 들어가 효과가 거의 없을 것으로 본다. W7 relay 가 outbox 를 묶어 보낼 때의 설정 근거가 된다.
+16. (선택 심화) DLT 비교 — 보류 테이블과 `DeadLetterPublishingRecoverer` 를 같은 실패(해석 불가 · 충돌 · DB 장애 · 모르는 버전)로 돌려 빠지는 활동을 센다. 8 장 DLT 줄의 근거.
+17. (선택 심화) Share consumer(KIP-932) — 4.x broker 컨테이너에서 원시 `KafkaShareConsumer` 로 순서 · 승인 · 전달 횟수를 본다.

@@ -86,7 +86,7 @@ class OrderEventKafkaPublisherTest {
         }
     }
 
-    @DisplayName("EVT-002, EVT-012: 확정 TX 가 commit 되면 order-events 에 주문 id 를 key 로 한 record 가 하나 쌓이고, 확정 시각은 DB 에 남은 값과 같다")
+    @DisplayName("EVT-002, EVT-003, EVT-012: 확정 TX 가 commit 되면 order-events 에 주문 id 를 key 로, 종류와 버전을 payload 에 담은 record 가 하나 쌓이고, 확정 시각은 DB 에 남은 값과 같다")
     @Test
     void publishesAfterCommit() throws Exception {
         Long orderId = orders.pendingOrderId();
@@ -97,6 +97,7 @@ class OrderEventKafkaPublisherTest {
         ConsumerRecord<String, byte[]> record = records.get(0);
         JsonNode value = objectMapper.readTree(record.value());
         assertThat(record.key()).isEqualTo(String.valueOf(orderId));
+        assertThat(value.get("eventType").asText()).isEqualTo("OrderConfirmed");
         assertThat(value.get("eventId").asText()).isEqualTo("order-confirmed:v1:" + orderId);
         assertThat(value.get("orderId").asLong()).isEqualTo(orderId);
         assertThat(Instant.parse(value.get("confirmedAt").asText())).isEqualTo(orders.stored(orderId).getConfirmedAt());
