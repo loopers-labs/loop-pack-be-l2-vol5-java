@@ -100,7 +100,7 @@ class OrderConfirmedListenerTest {
         }
     }
 
-    @DisplayName("KAFKA-002, KAFKA-004, KAFKA-007, KAFKA-008: 구매 활동 listener 는 purchase-activity group 의 record listener 하나이고, BATCH ack, earliest, 자동 topic 생성 꺼짐, Kafka 기본 fetch 다")
+    @DisplayName("KAFKA-002, KAFKA-004, KAFKA-007, KAFKA-008: 구매 활동 listener 는 purchase-activity group 의 record listener 이고 partition 수만큼 스레드 3 개이며, BATCH ack, earliest, 자동 topic 생성 꺼짐, Kafka 기본 fetch 다")
     @Test
     void listenerSettings() {
         ConcurrentMessageListenerContainer<?, ?> container = (ConcurrentMessageListenerContainer<?, ?>)
@@ -108,7 +108,7 @@ class OrderConfirmedListenerTest {
         ContainerProperties properties = container.getContainerProperties();
         Map<String, Object> consumer = factory.getConsumerFactory().getConfigurationProperties();
 
-        assertThat(container.getConcurrency()).isEqualTo(1);
+        assertThat(container.getConcurrency()).isEqualTo(3);
         assertThat(properties.getAckMode()).isEqualTo(ContainerProperties.AckMode.BATCH);
         assertThat(container.getGroupId()).isEqualTo("purchase-activity");
         assertThat(properties.isObservationEnabled()).isTrue();

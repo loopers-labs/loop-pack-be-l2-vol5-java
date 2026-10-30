@@ -289,10 +289,10 @@ listener (consumer 스레드)
 - 흐름은 W5 결제와 같은 두 Bean 으로 나눈다. `PurchaseActivityHandler` 는 TX 가 없고 순서 · 재분류를 맡는다. `PurchaseActivityTransactions` 는 `record` · `collide`(readOnly) · `hold` 세 TX 를 하나씩 갖는다. 같은 `@Transactional` 메서드 안에서는 "rollback 뒤 새 TX 에서 읽기" 를 할 수 없다.
 - 제약 이름은 infrastructure 저장소가 insert 직후 flush 해 그 자리에서 본다. `uk_receipt_*` 는 도메인 예외 `FactAlreadyRecorded`, `uk_hold_position` 은 `AlreadyHeld` 로 바꾸고, 그 밖의 위반은 원래 예외 그대로 던진다. MySQL 은 제약 이름을 `테이블.제약` 으로 보고하므로 점 뒤만 비교한다.
 - "같은 사실" 비교에 `confirmedAt` 을 쓴다(`ACT-006`, 원문). 중복 판정 자체는 `event_id` 유일 제약이 하고 시각은 부딪힌 뒤 같은지 가를 때만 본다. 비교가 틀리면 보류 · 알림으로 틀린다 — 두 번 세거나 빠뜨리지 않는다. 표현 차이(시간대 · 표기 · 정밀도)는 `Instant` 비교와 마이크로초 자르기로 막는다. record timestamp 는 쓰지 않는다. 보낸 시각이라 재발행마다 바뀌어 같은 사실이 충돌이 되고, 활동의 시각으로 쓰면 `ACT-012` 를 어긴다. **뒤집을 조건**: 확정 시각을 정정하는 기능이 생겨 같은 확정의 시각이 정당하게 바뀔 수 있을 때 — 시각을 비교에서 빼고 주문 · 품목만 본다.
-- **조회 먼저 하지 않고 insert 부터 한다.** 조회 뒤 insert 는 동시 소비에서 둘 다 "없음" 을 보고 둘 다 들어간다. 유일 제약이 판정의 근거고, 조회는 진 쪽의 사후 분류다(`ACT-007`).
+- **조회 먼저 하지 않고 insert 부터 한다.** 조회 뒤 insert 는 동시 소비에서 둘 다 "없음" 을 보고 둘 다 들어간다. 유일 제약이 판정의 근거고, 조회는 막힌 record 를 사후에 가르는 데만 쓴다(`ACT-007`).
 - 실패한 TX 안에서 예외를 삼키고 commit 하지 않는다. JPA 는 제약 위반 뒤 그 영속성 컨텍스트를 믿을 수 없게 둔다. rollback 뒤 **새 TX** 에서 읽는다.
 - 중복 판정은 **제약 이름**으로 한다. 예외 종류(`DataIntegrityViolationException`)만 보면 NOT NULL · CHECK 위반도 중복으로 바뀌어 실패가 ack 된다.
-- 다시 읽었는데 receipt 가 없으면 중복이 아니다. 예: 고아 활동 행과 `uk_activity_order_product` 가 부딪힌 경우 — 그대로 실패시켜 멈춘다.
+- 다시 읽었는데 receipt 가 없으면 중복이 아니다. 예: 고아 활동 행과 `uk_activity_order_product` 가 부딪힌 경우 — 그대로 실패시켜 그 record 에서 다시 시도한다(4.4).
 - handler 는 listener 와 다른 Bean 이다. 자기 호출로 `@Transactional` 프록시를 우회하지 않는다(`KAFKA-005`).
 
 ### 4.3 판정 — 진행할 것과 멈출 것 (Q-1)
@@ -303,11 +303,11 @@ listener (consumer 스레드)
 | 충돌(같은 `eventId` 다른 사실 · 같은 `orderId` 다른 `eventId`) | 같다 | 보류, ack |
 | 해석 불가(JSON · key 불일치 · 빈 값 · 0 이하 수량 · 상품 중복) | 같다 | 보류, ack |
 | 다른 `eventType`(`OrderCancelled` 등) | 같다 | 다루지 않음, 기록 없이 ack (`ACT-016`) |
-| **모르는 `schemaVersion`** | **소비자를 배포하면 성공** | **멈춤** |
-| DB 연결 · 잠금 대기 · 무응답 | 성공할 수 있다 | 멈춤 |
+| **모르는 `schemaVersion`** | **소비자를 배포하면 성공** | **그 partition 에서 다시 시도하며 기다림** |
+| DB 연결 · 잠금 대기 · 무응답 | 성공할 수 있다 | 그 partition 에서 다시 시도하며 기다림 |
 
-- 기준은 "다시 읽으면 결과가 바뀌는가" 다. 바뀌지 않는 것을 멈추면 사람이 offset 을 손으로 넘길 때까지 뒤의 모든 주문이 묶인다(poison pill).
-- 모르는 버전을 보류하면, 소비자를 고쳐 배포해도 그 record 는 이미 ack 돼 다시 오지 않는다. 멈추면 배포 뒤 재시작이 그 record 부터 읽는다.
+- 기준은 "다시 읽으면 결과가 바뀌는가" 다. 바뀌지 않는 것을 기다리게 하면 사람이 offset 을 손으로 넘길 때까지 그 partition 의 뒤 주문이 묶인다(poison pill).
+- 모르는 버전을 보류하면, 소비자를 고쳐 배포해도 그 record 는 이미 ack 돼 다시 오지 않는다. 그 record 에서 기다리면 배포한 소비자가 그 record 부터 읽는다.
 - `eventId` 의 형식은 검사하지 않는다. 형식 검사가 "같은 `orderId` 에 다른 `eventId`" 를 먼저 가로채 충돌이 보이지 않게 된다. 빈 값만 거른다.
 - `items` 안 같은 상품은 insert 전에 거른다. 거르지 않으면 `uk_activity_order_product` 위반이 4.2 의 재분류로 가는데, receipt 도 rollback 돼 비교할 기록이 없다.
 - `eventType` 을 `schemaVersion` 보다 먼저 본다. topic 은 주문 이벤트 여러 종류가 같은 key 로 쓰는 자리이고(9 장), 다른 종류의 버전은 이 소비자가 알 일이 아니다. 다른 종류를 보류하면 그 종류가 늘 때마다 보류가 쌓이고, 멈추면 다른 팀의 배포가 이 소비자를 세운다. **뒤집을 조건**: 이 소비자가 다른 종류(`OrderCancelled` 등)를 반영해야 할 때 — 그 종류의 판정을 더한다. 4.3 의 마지막 뒤집을 조건(key 단위 멈춤)과 함께 본다.
@@ -321,23 +321,23 @@ listener (consumer 스레드)
 
 | 설정 | 값 | 근거 |
 |---|---|---|
-| 리스너 형태 | record, concurrency 1 | record 마다 DB 경계와 ack 가 보인다. partition 수만큼 늘리는 것은 처리량 문제가 생긴 뒤 |
+| 리스너 형태 | record, concurrency 3 (partition 수) | record 마다 DB 경계와 ack 가 보인다. 스레드를 partition 마다 하나 두어, 한 partition 이 재시도로 기다리는 동안 다른 partition 이 묶이지 않는다 |
 | ack mode | `BATCH` (기본) | listener 가 정상 반환한 record 까지 poll 묶음 끝에 commit. 아래 "ack mode 를 고르는 기준" |
 | `enable.auto.commit` | `false` (Kafka 가 읽는 키) | 공유 설정의 `enable-auto-commit` 은 Kafka 가 읽지 않는 키다 |
 | value | `ByteArrayDeserializer` | 깨진 바이트를 문자열로 바꾸면(U+FFFD) 원본이 사라져 보류에 남길 수 없다 |
 | `auto.offset.reset` | `earliest` | 처음 배정되기 전에 쌓인 확정을 건너뛰지 않는다. 처리 기록이 재처리를 막는다 |
 | `allow.auto.create.topics` | `false` | 없는 topic 을 consumer 가 만들지 않는다 |
 | fetch | Kafka 기본(`1` byte · 500ms) | batch factory 의 `1MiB` · `5s` 는 그 factory 안에서만 넣는 값이라 물려받지 않는다 |
-| 재시도 · error handler | listener 가 짧게 재시도, error handler 는 멈춤 | 일시 오류만 listener 가 1 초 간격 2 번 다시 시도하고 그래도 실패하면 던진다. error handler 는 `CommonContainerStoppingErrorHandler` 라 던진 record 를 commit 하지 않고 컨테이너를 멈춘다. 아래 "실패 처리" |
+| error handler | `DefaultErrorHandler`, 무기한 재시도 | 보류 대상이 아닌 실패는 그 record 에서 1 초부터 2 배씩 최대 30 초 간격으로 횟수 제한 없이 다시 시도한다. 건너뛰지 않는다. 아래 "실패 처리" |
 
-- 멈춤의 판정은 `isRunning` 이 아니라 **실제 group 의 committed offset** 이다(`KAFKA-006`). 재시도 뒤 recover 하는 handler 는 `commitRecovered` · `ackAfterHandle` 에 따라 실패 record 를 commit 할 수 있어 고르지 않는다.
-- 멈춘 consumer 는 health 에 드러나지 않고 lag 로만 보인다. lag 지표에 알림을 건다.
+- 판정은 `isRunning` 이 아니라 **실제 group 의 committed offset** 이다(`KAFKA-006`). 실패 동안 그 partition 의 committed offset 이 실패 record 를 지나지 않아야 한다.
+- 재시도 중인 partition 은 health 에 드러나지 않는다. 재시도마다 `purchase.activity.retry{cause}` 를 세고 WARN 로그를 남기므로, 이 지표의 증가와 lag 에 알림을 건다.
 **유실 없음 · 효과 한 번을 지키는 것.** ack mode 가 아니라 세 장치다.
 
 | 장치 | 지키는 것 | 빠지면 |
 |---|---|---|
 | ① 실패를 **던진다** | 유실 없음 | 잡고 정상 반환하면 컨테이너는 처리 완료로 보고 offset 을 넘긴다 |
-| ② error handler 가 **멈춘다** | 유실 없음 | 재시도 끝에 "처리됨" 으로 치는 handler 는 던진 record 도 commit 하고 넘어간다 |
+| ② error handler 가 **건너뛰지 않는다** | 유실 없음 | 재시도 끝에 "처리됨" 으로 치는 handler 는 던진 record 도 commit 하고 넘어간다 |
 | ③ 처리 기록 **멱등** | 효과 한 번 | ①② 때문에 같은 record 가 다시 오고, 두 번 반영된다 |
 
 - offset 은 **위치**다. 어떤 record 의 ack 를 건너뛰어도 뒤 record 의 commit 이 그 앞까지 처리 완료로 만든다. 그래서 "ack 를 안 부르면 안전하다" 는 성립하지 않고, ① ② 가 실제 방어선이다.
@@ -355,24 +355,25 @@ listener (consumer 스레드)
 - 원문의 예시는 `MANUAL_IMMEDIATE` 다(원문 111). 원문이 요구하는 것은 "DB handler commit 성공 뒤 ack" 이고, `BATCH` 에서는 정상 반환이 그 뒤에만 일어나 같은 순서가 지켜진다(`KAFKA-005`).
 - **뒤집을 조건**: handler 가 외부 API 처럼 재전달이 비싸거나 멱등하지 않은 효과를 갖게 될 때 — record 마다 commit(`MANUAL_IMMEDIATE`)으로 바꾼다. 처리를 다른 스레드로 넘기거나 batch listener 로 묶어 쓰게 될 때 — commit 시점을 코드가 정해야 하므로 `MANUAL` 로 바꾼다.
 
-**실패 처리.** "다시 하면 결과가 바뀌는가" 와 "무엇이 바뀌어야 하는가" 로 나눈다.
+**실패 처리.** "다시 읽으면 결과가 바뀌는가" 와 "실패가 한 record 의 것인가, 모두의 것인가" 로 나눈다.
 
-| 실패 | 바뀌려면 | 처리 |
+| 실패 | 성질 | 처리 |
 |---|---|---|
-| 잠금 대기 초과 · 데드락 · 커넥션 획득 실패 · 쿼리 시간 초과 | 시간만 지나면 | 1 초 간격 2 번 다시 시도 → 실패면 멈춤 |
-| 모르는 `schemaVersion` · 코드 버그 · 우리 것이 아닌 제약 위반 | 배포 · 수정 | 바로 멈춤 |
-| 충돌 · 해석 불가 | 바뀌지 않음 | 예외가 아니다 — 보류 뒤 정상 반환(4.3) |
+| 충돌 · 해석 불가 | 그 record 만, 다시 읽어도 같다 | 예외가 아니다 — 보류 뒤 정상 반환(4.3) |
+| DB 장애 · 잠금 대기 초과 · 커넥션 획득 실패 · 쿼리 시간 초과 | 모든 record 가 같이 실패, 시간이 지나면 풀린다 | 그 record 에서 무기한 재시도. DB 가 돌아오면 사람 없이 이어서 처리 |
+| 모르는 `schemaVersion` · 코드 버그 · 우리 것이 아닌 제약 위반 | 배포 · 수정이 있어야 풀린다 | 같은 무기한 재시도. 배포하면 그 record 부터 처리 |
 
-- **재시도를 error handler 가 아니라 listener 의 handler 호출에 둔다.** `DefaultErrorHandler` 는 재시도가 끝나면 recoverer 를 부르는데, recoverer 가 성공하면 실패 record 를 처리됨으로 commit 하고(`KAFKA-006` 위반), recoverer 가 던지면 그 record 로 seek 해 재시도를 처음부터 다시 돈다 — 어느 쪽도 "멈춤" 이 아니다. 그래서 짧은 재시도는 `RetryTemplate`(허용 목록 · 1 초 · 최대 3 회, `config/PurchaseActivityListenerConfig`)이 `handler.handle` 호출만 감싸 하고, 끝내 던진 예외는 멈추는 handler 가 받는다. 읽기(파싱)는 다시 해도 결과가 같으므로 감싸지 않는다. 정상 반환하지 않으므로 `KAFKA-005` 와 맞는다. 실측: 잠금을 4.5 초 쥔 채 보내면 MySQL 1205 → `attempt=1` 로그 → 반영(EXP-009), CHECK 위반은 재시도 없이 멈춤(EXP-006), 모르는 버전은 컨테이너가 멈추고 committed offset 이 그 record 를 지나지 않는다.
-- 재시도 사이에는 consumer 스레드가 기다린다. `DefaultErrorHandler` 의 backoff 도 같은 방식이고, 같은 partition 의 다음 record 로 넘어가면 안 되므로 기다림이 본질이다. 대가는 스레드 하나(concurrency 1)가 맡은 **다른 partition 도 그동안 멈춘다**는 것이다(최대 2 초). 지금 고를 수 있는 다른 방법은 실패 record 로 seek 하고 그 partition 만 pause 했다가 resume 하는 것(`ContainerPausingBackOffHandler`)인데, "재시도 끝 → 멈춤" 을 기본 handler 가 지원하지 않아 시도 횟수 · seek · 멈춤 위임을 직접 짜야 한다. 실패 record 를 건너뛰지 않는다는 보장을 직접 짠 handler 에 맡기는 위험이 2 초 지연보다 크다. **뒤집을 조건**: 일시 오류가 잦아 다른 partition 의 lag 로 드러날 때 — partition 단위 pause 로 바꾸고 EXP-009 로 검증한다.
-- 재시도 대상은 **허용 목록**으로 고른다. Spring 의 `TransientDataAccessException` 계층은 우리 기준과 다르다(커넥션 획득 실패는 그 계층 밖이다). 목록 밖은 모두 바로 멈춘다.
-- 분류가 틀려도 정확성은 같다. 재시도도 결국 실패하면 멈추므로, 잘못 고르면 몇 초를 더 쓰거나 사람이 한 번 더 재시작할 뿐이다.
-- 재시도 동안 consumer 스레드가 그 자리에 묶인다. 재시도 시간의 합(약 2 초)은 `max.poll.interval.ms`(5 분)보다 한참 짧다.
-- **뒤집을 조건**: 짧은 재시도로도 넘기지 못하는 일시 오류가 잦을 때 — consumer 를 pause 한 채 backoff 를 늘리는 방식으로 간다. 재시도를 늘리느라 poll 간격을 넘기지 않게 한다.
+- **멈추지 않고 기다린다.** 컨테이너를 멈추면 DB 가 돌아와도 사람이 재시작할 때까지 소비가 서 있다. 그 record 에 머물며 다시 시도하면 원인이 풀리는 순간 스스로 이어간다. 실측: CHECK 위반 동안 처리 기록 · 활동 0, committed 정지, 컨테이너 실행 중 → 제약을 걷자 재시작 없이 2.1 초 만에 반영(EXP-006).
+- **실패의 피해를 그 partition 에 가둔다.** concurrency 를 partition 수(3)로 두어 스레드가 partition 마다 하나다. 재시도 간격 동안 그 스레드만 기다리고 다른 partition 은 진행한다. 실측: partition 0 의 모르는 버전에서 재시도하는 동안 partition 1 의 확정은 반영됐다(`OrderConfirmedListenerRetryTest`).
+- **버그도 보류하지 않고 기다린다.** 원문은 "그 밖의 오류는 ack 하지 않는다" 이다. 버그로 실패한 record 를 보류하고 넘기면 offset 이 지나가 고친 뒤 사람이 다시 넣어야 한다. 기다리면 고쳐 배포하는 순간 이어진다. 대가는 그 partition 의 뒤 record 가 배포까지 늦는 것이다.
+- **분류 목록이 없다.** 모든 실패를 같은 방식으로 다시 시도하므로, 일시 오류를 잘못 분류해 넘기는 일이 생기지 않는다. `DefaultErrorHandler` 의 기본 "재시도하지 않는 예외" 목록도 비운다(`setClassifications(Map.of(), true)`). recoverer 는 불리지 않지만, 불리면 던져서 건너뛰지 않게 막는다.
+- 간격은 1 초에서 2 배씩 최대 30 초다. 재시도 사이에 그 consumer 스레드가 기다리지만 30 초는 `max.poll.interval.ms`(5 분)보다 짧고, heartbeat 는 별도 스레드라 group 에서 빠지지 않는다.
+- `ContainerPausingBackOffHandler` 로 스레드 대신 partition 을 pause 하는 방법은 쓰지 않는다. spring-kafka 3.3.4 의 record 실패 경로(`FailedRecordTracker`)는 그 handler 의 컨테이너 전체 pause 쪽을 부른다(바이트코드로 확인). concurrency 를 partition 수에 맞추는 편이 단순하고 확실하다.
+- **뒤집을 조건**: partition 이 consumer 스레드보다 많아질 때(인스턴스를 줄이거나 partition 을 늘릴 때) — 한 스레드가 여러 partition 을 맡아 다시 함께 기다린다. 그때 partition 단위 pause 를 직접 붙이거나 concurrency 를 맞춘다. 재시도 지표가 오래 오르는데 원인이 배포로만 풀리는 일이 잦으면, 그 종류를 보류 대상으로 옮길지 다시 본다.
 
 **`order-events` 는 partition 3 · 복제 수 1 이다.** compose init 과 테스트 fixture 가 같은 값으로 만든다.
 
-- partition 수가 consumer 병렬의 상한이다. concurrency 1 로 시작하되 3 까지 늘릴 여지를 둔다.
+- partition 수가 consumer 병렬의 상한이다. concurrency 를 3 으로 두어 상한까지 쓴다.
 - partition 을 나중에 늘리면 key → partition 매핑이 바뀌어, 늘리는 순간 같은 주문의 앞뒤 이벤트가 다른 partition 에 놓여 순서가 깨질 수 있다. 줄이는 것은 불가능하다. 그래서 처음에 정한다.
 - 복제 수는 broker 가 하나라 1 이다(`EXP-004`).
 - **뒤집을 조건**: 3 개 스레드로도 lag 가 줄지 않을 때 — 그때는 아래 순서의 3 단계까지 해 본 뒤 늘린다.
@@ -420,7 +421,7 @@ listener 가 기다리는 DB 호출에 상한이 없으면 예외가 나지 않�
 | `EXP-002` 배정 | 격리 topic(partition 2) · 같은 group 의 consumer 1 → 2 → 3, `poll` 을 돌며 안정된 assignment 를 유한 대기 | consumer 객체 수가 아니라 broker 가 준 배정을 본다 |
 | `EXP-003` key 매핑 | 같은 key 두 번의 send metadata 비교 | 다른 key 가 다른 partition 이라는 assert 는 하지 않는다 |
 | `EXP-005` 재전달 | target 앞에 준비용 record, 첫 consumer 는 commit 없이 bounded close, 둘째는 seek 없이 같은 group | committed offset 을 잃고 처음부터 읽으면 준비용 record 도 와서 실험이 실패한다. 활동은 행 ID · 수정 시각까지 비교한다 |
-| `EXP-006` listener 실패 | 둘째 품목만 거절하는 `CHECK` 제약을 잠시 건다(`product_id <> 8`) | 실제 DB 오류이고, 첫 품목이 들어간 뒤 실패해 `ACT-003` 의 전체 rollback 을 함께 본다. 멈춤은 컨테이너 정지 이벤트 뒤의 committed offset 으로 판정한다 |
+| `EXP-006` listener 실패 | 둘째 품목만 거절하는 `CHECK` 제약을 잠시 건다(`product_id <> 8`) | 실제 DB 오류이고, 첫 품목이 들어간 뒤 실패해 `ACT-003` 의 전체 rollback 을 함께 본다. 실패 동안의 committed offset 으로 판정한다 |
 | `EVT-014` 막힘 | 자동 생성을 끈 broker 에 없는 topic 으로 발행 | metadata 를 얻을 수 없어 실제로 막힌다. broker 를 멈추는 것만으로는 metadata 캐시 때문에 막히지 않는다(T-4) |
 | `EXP-007` 첫째 | topic 의 `max.message.bytes=1` (7.2) | broker 가 실제로 거절한다 |
 
@@ -520,8 +521,8 @@ commerce-streamer
   application/purchase/PurchaseActivityTransactions  record · collide(readOnly) · hold
   infrastructure/purchase/…              JPA 엔티티 · 저장소 (package-private)
   interfaces/consumer/OrderEventPayloadReader   바이트 → 판정 (JSON · eventType · schemaVersion)
-  interfaces/consumer/OrderConfirmedListener    record listener. handler 호출을 재시도로 감싼다
-  config/PurchaseActivityListenerConfig        purchase-activity record factory · 멈추는 error handler · 재시도 정책
+  interfaces/consumer/OrderConfirmedListener    record listener
+  config/PurchaseActivityListenerConfig        purchase-activity record factory · 건너뛰지 않는 error handler · 재시도 지표
 
 modules:kafka
   KafkaConfig                            공용 producer · template(observation)

@@ -6,9 +6,7 @@ import com.loopers.domain.purchase.ReceivedRecord;
 import com.loopers.domain.purchase.RecordPosition;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.header.Header;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.kafka.annotation.KafkaListener;
-import org.springframework.retry.support.RetryTemplate;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -21,13 +19,10 @@ class OrderConfirmedListener {
 
     private final OrderEventPayloadReader reader;
     private final PurchaseActivityHandler handler;
-    private final RetryTemplate retry;
 
-    OrderConfirmedListener(OrderEventPayloadReader reader, PurchaseActivityHandler handler,
-                           @Qualifier(PurchaseActivityListenerConfig.RETRY) RetryTemplate retry) {
+    OrderConfirmedListener(OrderEventPayloadReader reader, PurchaseActivityHandler handler) {
         this.reader = reader;
         this.handler = handler;
-        this.retry = retry;
     }
 
     @KafkaListener(
@@ -38,7 +33,7 @@ class OrderConfirmedListener {
     )
     void onMessage(ConsumerRecord<String, byte[]> consumerRecord) {
         reader.read(consumerRecord.key(), consumerRecord.value())
-            .ifPresent(reading -> retry.execute(context -> handler.handle(reading, received(consumerRecord))));
+            .ifPresent(reading -> handler.handle(reading, received(consumerRecord)));
     }
 
     static ReceivedRecord received(ConsumerRecord<String, byte[]> consumerRecord) {

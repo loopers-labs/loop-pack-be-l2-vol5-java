@@ -4,6 +4,7 @@ import com.loopers.config.PurchaseActivityListenerConfig;
 import com.loopers.contract.OrderConfirmedContract;
 import com.loopers.testcontainers.KafkaTestContainersConfig;
 import com.loopers.utils.DatabaseCleanUp;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
@@ -16,18 +17,13 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.event.EventListener;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
 import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.kafka.event.ContainerStoppedEvent;
-import org.springframework.kafka.listener.MessageListenerContainer;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 
@@ -42,31 +38,20 @@ class ListenerFailureExperimentTest {
     static final String TOPIC = "exp-listener-failure";
     static final String GROUP = "exp-listener-failure";
     private static final TopicPartition PARTITION = new TopicPartition(TOPIC, 0);
-    private static volatile CountDownLatch stopped = new CountDownLatch(1);
-
-    @TestConfiguration
-    static class StopWatcher {
-
-        @EventListener
-        void onStopped(ContainerStoppedEvent event) {
-            if (PurchaseActivityListenerConfig.LISTENER_ID.equals(
-                    event.getContainer(MessageListenerContainer.class).getListenerId())) {
-                stopped.countDown();
-            }
-        }
-    }
-
     private final KafkaTemplate<String, byte[]> kafkaTemplate;
     private final KafkaListenerEndpointRegistry registry;
+    private final MeterRegistry meterRegistry;
     private final JdbcTemplate jdbcTemplate;
     private final DatabaseCleanUp databaseCleanUp;
     private boolean checkInjected;
 
     @Autowired
     ListenerFailureExperimentTest(KafkaTemplate<String, byte[]> kafkaTemplate, KafkaListenerEndpointRegistry registry,
-                                  JdbcTemplate jdbcTemplate, DatabaseCleanUp databaseCleanUp) {
+                                  MeterRegistry meterRegistry, JdbcTemplate jdbcTemplate,
+                                  DatabaseCleanUp databaseCleanUp) {
         this.kafkaTemplate = kafkaTemplate;
         this.registry = registry;
+        this.meterRegistry = meterRegistry;
         this.jdbcTemplate = jdbcTemplate;
         this.databaseCleanUp = databaseCleanUp;
     }
@@ -100,6 +85,12 @@ class ListenerFailureExperimentTest {
         }
     }
 
+    private double retries() {
+        return meterRegistry.find("purchase.activity.retry").counters().stream()
+            .mapToDouble(counter -> counter.count())
+            .sum();
+    }
+
     private int count(String table) {
         return jdbcTemplate.queryForObject("select count(*) from " + table, Integer.class);
     }
@@ -114,10 +105,10 @@ class ListenerFailureExperimentTest {
         }
     }
 
-    @DisplayName("EXP-006: 둘째 품목이 DB 에서 거절되면 처리 기록과 첫 품목까지 rollback 되고 컨테이너가 멈추며 committed offset 이 그 record 에 머문다. 원인을 걷고 재시작하면 같은 record 를 다시 받아 반영하고 넘어간다")
+    @DisplayName("EXP-006: 둘째 품목이 DB 에서 거절되면 처리 기록과 첫 품목까지 rollback 되고, 컨테이너는 멈추지 않은 채 그 record 를 다시 시도하며 committed offset 이 그 record 에 머문다. 원인을 걷어 내면 사람의 재시작 없이 반영하고 넘어간다")
     @Test
-    void stopsOnDbFailureAndResumesAfterFix() throws Exception {
-        stopped = new CountDownLatch(1);
+    void retriesDbFailureAndRecoversWithoutRestart() throws Exception {
+        double retriesBefore = retries();
         Long committedBefore = committed();
         jdbcTemplate.execute(
             "alter table purchase_activity add constraint ck_exp_reject_product_8 check (product_id <> 8)");
@@ -125,16 +116,19 @@ class ListenerFailureExperimentTest {
 
         RecordMetadata target = send();
 
-        assertThat(stopped.await(30, TimeUnit.SECONDS)).isTrue();
-        Long committedAtStop = committed();
-        int receiptsAtStop = count("order_confirmation_receipt");
-        int activitiesAtStop = count("purchase_activity");
+        eventually(() -> retries() - retriesBefore >= 2, Duration.ofSeconds(30));
+        Long committedWhileFailing = committed();
+        int receiptsWhileFailing = count("order_confirmation_receipt");
+        int activitiesWhileFailing = count("purchase_activity");
+        boolean runningWhileFailing =
+            registry.getListenerContainer(PurchaseActivityListenerConfig.LISTENER_ID).isRunning();
 
         jdbcTemplate.execute("alter table purchase_activity drop check ck_exp_reject_product_8");
         checkInjected = false;
-        registry.getListenerContainer(PurchaseActivityListenerConfig.LISTENER_ID).start();
+        long fixedAt = System.nanoTime();
 
-        eventually(() -> count("purchase_activity") == 2, Duration.ofSeconds(30));
+        eventually(() -> count("purchase_activity") == 2, Duration.ofSeconds(60));
+        Duration recoveredIn = Duration.ofNanos(System.nanoTime() - fixedAt);
         eventually(() -> {
             try {
                 Long offset = committed();
@@ -144,14 +138,15 @@ class ListenerFailureExperimentTest {
             }
         }, Duration.ofSeconds(30));
 
-        System.out.printf("EXP-006 target=%d, 보내기 전 committed=%s, 멈춘 뒤 committed=%s, 멈춘 뒤 처리 기록=%d 활동=%d, "
-                + "재시작 뒤 committed=%s 처리 기록=%d 활동=%d%n",
-            target.offset(), committedBefore, committedAtStop, receiptsAtStop, activitiesAtStop,
-            committed(), count("order_confirmation_receipt"), count("purchase_activity"));
-        assertThat(committedAtStop == null ? 0L : committedAtStop).isLessThanOrEqualTo(target.offset());
-        assertThat(receiptsAtStop).isZero();
-        assertThat(activitiesAtStop).isZero();
+        System.out.printf("EXP-006 target=%d, 보내기 전 committed=%s, 실패 중 committed=%s 처리 기록=%d 활동=%d 컨테이너 실행=%s "
+                + "재시도=%s, 원인 제거 뒤 반영까지=%s, committed=%s 처리 기록=%d 활동=%d%n",
+            target.offset(), committedBefore, committedWhileFailing, receiptsWhileFailing, activitiesWhileFailing,
+            runningWhileFailing, retries() - retriesBefore, recoveredIn, committed(),
+            count("order_confirmation_receipt"), count("purchase_activity"));
+        assertThat(committedWhileFailing == null ? 0L : committedWhileFailing).isLessThanOrEqualTo(target.offset());
+        assertThat(receiptsWhileFailing).isZero();
+        assertThat(activitiesWhileFailing).isZero();
+        assertThat(runningWhileFailing).isTrue();
         assertThat(count("order_confirmation_receipt")).isEqualTo(1);
-        assertThat(registry.getListenerContainer(PurchaseActivityListenerConfig.LISTENER_ID).isRunning()).isTrue();
     }
 }

@@ -46,19 +46,32 @@ partition 1 개인 격리 topic 에 준비용 확정(주문 41)과 target 확정
 - 그 재전달을 처리 기록의 `uk_receipt_event` 가 막아, 활동은 다시 쓰이지도(`updated_at` 불변) 더해지지도 않는다. 효과는 한 번이다.
 - 준비용 record 가 다시 오지 않은 것으로, 둘째 consumer 가 committed offset 을 이어받았고 처음부터 다시 읽은 것이 아님을 확인했다.
 
-## EXP-006 listener 실패 — `ListenerFailureExperimentTest.stopsOnDbFailureAndResumesAfterFix`
+## EXP-006 listener 실패 — `ListenerFailureExperimentTest.retriesDbFailureAndRecoversWithoutRestart`
 
-실제 Spring listener 컨테이너를 격리 topic · group(`exp-listener-failure`)에 붙이고, `purchase_activity` 에 `CHECK (product_id <> 8)` 을 걸어 확정(주문 42: 상품 7 × 2, 8 × 1)의 **둘째 품목만** DB 가 거절하게 한다. 멈춤은 컨테이너 정지 이벤트(`ContainerStoppedEvent`) 뒤의 committed offset 으로 판정한다.
+실제 Spring listener 컨테이너를 격리 topic · group(`exp-listener-failure`)에 붙이고, `purchase_activity` 에 `CHECK (product_id <> 8)` 을 걸어 확정(주문 42: 상품 7 × 2, 8 × 1)의 **둘째 품목만** DB 가 거절하게 한다.
 
-| 시점 | committed offset | 처리 기록 | 활동 |
-|---|---|---|---|
-| 보내기 전 | 없음 | 0 | 0 |
-| record offset 0 처리 → CHECK 위반 → 컨테이너 정지 | 없음 — 그 record 를 지나지 않았다 | 0 | **0** — 먼저 들어간 상품 7 까지 rollback |
-| 제약을 걷고 같은 group 으로 재시작 | 1 | 1 | 2 |
+| 시점 | committed offset | 처리 기록 | 활동 | 컨테이너 |
+|---|---|---|---|---|
+| 보내기 전 | 없음 | 0 | 0 | 실행 |
+| record offset 0 처리 → CHECK 위반 → 재시도 2 회 | 없음 — 그 record 를 지나지 않았다 | 0 | **0** — 먼저 들어간 상품 7 까지 rollback | **실행 중** |
+| 제약을 걷어 냄 | 1 | 1 | 2 | 실행 중 — **재시작하지 않았다** |
 
-- CHECK 위반은 일시 오류가 아니라 재시도 없이 바로 던졌고, 멈추는 error handler 가 컨테이너를 세웠다. 실패 record 를 처리됨으로 commit 하지 않았다(`KAFKA-006`).
 - 처리 기록 insert 뒤 활동 둘째 행에서 실패했는데 처리 기록 · 첫 활동이 모두 남지 않았다. 한 TX 다(`ACT-003`).
-- 원인을 고쳐 재시작하자 같은 record 부터 다시 받아 반영하고 offset 이 넘어갔다. 사람이 offset 을 손으로 넘기지 않았다.
+- 실패 동안 error handler 는 그 record 를 처리됨으로 commit 하지 않고 1 초, 2 초 간격으로 다시 시도했다(`purchase.activity.retry` 2).
+- 제약을 걷어 내자 **2.1 초 만에** 사람의 재시작 없이 같은 record 를 반영하고 offset 이 넘어갔다. 원인이 풀리면 스스로 이어간다.
+
+## partition 하나만 기다림 — `OrderConfirmedListenerRetryTest.parksOnlyTheFailingPartition`
+
+partition 2 개인 격리 topic 에, partition 0 으로 모르는 `schemaVersion`(2) 확정(주문 42)과 정상 확정(주문 44)을, partition 1 로 정상 확정(주문 43)을 보낸다.
+
+| | 결과 |
+|---|---|
+| partition 0 | 주문 42 에서 다시 시도(2 회 이상). committed 없음 — offset 0 을 지나지 않았다. 뒤의 주문 44 도 반영되지 않았다 |
+| partition 1 | 주문 43 반영 |
+| 보류 · 컨테이너 | 보류 0 · 실행 중 |
+
+- 모르는 버전은 보류하지 않고 기다린다. 소비자를 배포하면 그 record 부터 처리된다.
+- consumer 스레드가 partition 마다 하나(concurrency 3)라, 한 partition 이 기다리는 동안 다른 partition 은 진행한다.
 
 ## EXP-009 일시 오류 회복 — `OrderConfirmedListenerTest.retriesLockWaitTimeout`
 
