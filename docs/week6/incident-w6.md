@@ -1,6 +1,6 @@
 # W6 실험 결과와 사건 기록
 
-> `docs/week6/plan.md` D-8의 실험(E-1 ~ E-6)을 실제 broker로 돌린 결과다. 값은 2026-10-29 새벽 `volume-6-claude` 실행의 관찰값이다.
+> `docs/week6/plan.md` D-8의 실험(E-1 ~ E-6)을 실제 broker로 돌린 결과다. 값은 2026-10-29 ~ 30 실행의 관찰값이다.
 > 다시 돌리면 ID·offset은 달라진다 — 숫자를 맞추는 것이 아니라 같은 관계(누락·재전달·n → n → n+1)가 다시 나오는지 본다.
 >
 > 공통 환경 — 테스트는 Testcontainers broker 3대(KRaft, `apache/kafka:3.8.1`, RF 3, min.insync 2)와 compose MySQL의 `loopers_test` 스키마를 쓴다.
@@ -9,7 +9,7 @@
 ## E-4 · 직접 after-commit 발행의 누락 구간 (C-8, C-9)
 
 **재현 코드** — `apps/commerce-api/src/test/java/com/loopers/payment/scenario/S13PublishGapScenarioTest.java`
-**실행** — `./gradlew :apps:commerce-api:test --tests '*S13PublishGapScenarioTest'` (W6 커밋 `e776016f` 이후)
+**실행** — `./gradlew :apps:commerce-api:test --tests '*S13PublishGapScenarioTest'` (W6 커밋 `06ebe7a6` 이후)
 
 - 실제 주문 API → 확정 요청(202) → 로컬 PG fixture가 수락·승인 → **PG callback** → 결과 적용 경계(`PaymentResultApplier`)로 두 주문을 확정한다.
 - 첫 주문만 commit 뒤 send 직전에 멈춘다 — `OutboxPublishUseCase.publish`를 한 번 건너뛰는 **통제된 hook**이다. OS 강제 종료가 아니다. 결과(send 콜백 없음)는 프로세스 종료와 같다.
@@ -122,7 +122,7 @@ partition 2개인 실험 topic, 같은 group. 각 member는 자기 스레드에�
 4. 확인: `event_outbox`(published_at · partition · offset), order-events record, `product_purchase_activity` 행, group의 committed offset
 5. 이미 소비된 record를 broker에 다시 넣어 no-op과 offset 진행을 본다
 
-### 실행 결과 (2026-10-29 19:14, `volume-6-claude` `a06bdcd5` 이후 + 키트)
+### 실행 결과 (2026-10-29 19:14, `7b11fc96` 이후 + 키트)
 
 환경: compose broker 3대 · 실험 DB `loopers_w6` · `pg-sim.py`(auto) · api(8080, `max.block.ms` 1s) · streamer(8085). 키트 `docs/week6/k6/`.
 

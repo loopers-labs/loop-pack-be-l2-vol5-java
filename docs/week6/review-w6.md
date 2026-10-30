@@ -1,6 +1,6 @@
 # W6 코드 리뷰 요약 (10-29 새벽 리뷰 · 저녁 R-1 ~ R-6 · R-12 반영)
 
-> 범위 `44dfeab0..dd371591` (`volume-6-claude`). 리뷰어: domain · persistence · test (API 계약 변경이 없어 api-contract 제외).
+> 범위 `44dfeab0..33f13235` (`volume-6`). 리뷰어: domain · persistence · test (API 계약 변경이 없어 api-contract 제외).
 > 지적마다 코드로 사실을 확인했다. **아무것도 고치지 않았다** — 반영 여부는 학습자가 정한다 (review 스킬 4·5절).
 
 ## 지적
@@ -35,7 +35,7 @@
 
 1. **R-1 ~ R-6을 고칠지**, 고친다면 각 테스트의 기대값 (특히 R-6: 1.9 / "7" / 단일 객체 items를 DLT로 보낼지).
 2. **R-5의 경로** — "결제 APPLIED인데 주문은 이미 CONFIRMED"가 실제로 생길 수 있나? 없으면 `if (changed)`는 방어 코드로 두고 테스트 이름만 고친다.
-3. **`3eefc231` 확인** — E-5 테스트 producer만 `max.block.ms`를 1s → 15s로 늘렸다(새 topic metadata 대기). 거절 판단은 broker의 NotEnoughReplicas라 단언이 약해지지는 않았지만, 테스트 설정을 바꾼 것이므로 동의를 받는다 (과제 AI 규칙 4).
+3. **`be537c5e` 확인** — E-5 테스트 producer만 `max.block.ms`를 1s → 15s로 늘렸다(새 topic metadata 대기). 거절 판단은 broker의 NotEnoughReplicas라 단언이 약해지지는 않았지만, 테스트 설정을 바꾼 것이므로 동의를 받는다 (과제 AI 규칙 4).
 4. **plan 열린 질문 2** — payload confirmedAt을 UTC로 고정할지 (R-12와 연결).
 
 ## 참고

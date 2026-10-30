@@ -500,18 +500,18 @@ handle(record):
 - **Review Points** — 아래 후보에서 2개.
 - **Checklist** — 과제 묶음(📬 업무 연결 · 🔁 전달과 효과 · 🧪 경계와 검증)대로.
 
-## 개발 진행 (10-29 새벽, `volume-6-claude`)
+## 개발 진행 (10-29 새벽 ~ 10-30)
 
-학습자가 잠든 동안 S1 ~ S6를 진행했다. 커밋은 이 브랜치에만 있고 push는 막혀 있다.
+학습자가 잠든 동안 S1 ~ S6를 진행했다. 아래 커밋 해시는 이 브랜치(`volume-6`) 기준이다.
 
 | 조각 | 커밋 | 내용 |
 |---|---|---|
-| S1 | `89168164` `3eefc231` | broker 3대(compose·Testcontainers), producer·consumer 설정, order-events topic, E-5 |
-| S2 | `72ef0f30`(Red) → `79274aea`(Green) | `OrderConfirmed` — 신원·items 정렬·confirmedAt 형식·확정 아닌 주문 거절 |
-| S3 | `e776016f` | 범용 발행 기록, AFTER_COMMIT 비동기 send, 결과 표시, C-2, E-4(S-13) |
-| S4 | `c5526d7b`(Red) → `8af3e047`(Green) | `OrderConfirmedMessage` fingerprint·계약 검증, `ConsumedOrderConfirmation` 판정 |
-| S5 | `d75f3639` | 멱등 consumer, record listener, 재시도 3회 → DLT, E-3 |
-| S6 | `c6d0f912` | E-1 배정, E-2 재전달 |
+| S1 | `82ff10a8` `be537c5e` | broker 3대(compose·Testcontainers), producer·consumer 설정, order-events topic, E-5 |
+| S2 | `ee35ae99`(Red) → `003e355a`(Green) | `OrderConfirmed` — 신원·items 정렬·confirmedAt 형식·확정 아닌 주문 거절 |
+| S3 | `06ebe7a6` | 범용 발행 기록, AFTER_COMMIT 비동기 send, 결과 표시, C-2, E-4(S-13) |
+| S4 | `be425bb5`(Red) → `5e8758dc`(Green) | `OrderConfirmedMessage` fingerprint·계약 검증, `ConsumedOrderConfirmation` 판정 |
+| S5 | `ca4e0f8b` | 멱등 consumer, record listener, 재시도 3회 → DLT, E-3 |
+| S6 | `2632f0cf` | E-1 배정, E-2 재전달 |
 
 검사: `:apps:commerce-api:check` 473 · `:apps:commerce-streamer:check` 32, 실패·오류·skip 0 (Checkstyle·ArchitectureTest 포함). 10-29 밤 R-1 ~ R-6 반영 뒤: api 476 · streamer 37 · 실패·오류·skip 0, lint 통과. R-7 반영 뒤 streamer 38 · 실패 0.
 Red 단계는 둘 다 컴파일 오류가 아니라 assertion 실패였다 (S2 8개 중 7개 — 필드 목록 검사 1개는 뼈대 record 정의로 이미 통과, S4 16개 중 16개).
