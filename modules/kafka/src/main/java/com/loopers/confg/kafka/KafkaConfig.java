@@ -34,7 +34,7 @@ public class KafkaConfig {
     public static final int MAX_POLL_INTERVAL_MS = 2 * 60 * 1000; // max poll interval = 2m
 
     @Bean
-    public ProducerFactory<Object, Object> producerFactory(KafkaProperties kafkaProperties) {
+    public ProducerFactory<String, byte[]> producerFactory(KafkaProperties kafkaProperties) {
         Map<String, Object> props = new HashMap<>(kafkaProperties.buildProducerProperties());
         return new DefaultKafkaProducerFactory<>(props);
     }
@@ -46,7 +46,7 @@ public class KafkaConfig {
     }
 
     @Bean
-    public KafkaTemplate<Object, Object> kafkaTemplate(ProducerFactory<Object, Object> producerFactory) {
+    public KafkaTemplate<String, byte[]> kafkaTemplate(ProducerFactory<String, byte[]> producerFactory) {
         return new KafkaTemplate<>(producerFactory);
     }
 

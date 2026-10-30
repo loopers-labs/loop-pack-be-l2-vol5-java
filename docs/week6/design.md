@@ -10,7 +10,7 @@ commerce-api
   TX B (PaymentTransactions.observe → apply)
     CONFIRM_ORDER 효과 → Order.completePayment → OrderConfirmed 값 생성 → publishEvent (예약만)
   commit
-  afterCompletion(COMMITTED) → OrderConfirmedKafkaPublisher → KafkaTemplate.send() → 바로 반환
+  afterCompletion(COMMITTED) → OrderEventKafkaPublisher → KafkaTemplate.send() → 바로 반환
   cleanup (EntityManager 닫기 · 커넥션 반납) → 응답
                                    ┆ Sender 스레드: broker → ack → whenComplete(기록)
                                    ▼
@@ -56,6 +56,7 @@ producer 의 value 직렬화기는 `ByteArraySerializer` 이고, publisher 가 *
 
 - 공용 설정의 `JsonSerializer` 는 Spring 의 `ObjectMapper` 가 아니라 자기 것을 만들어 쓴다. 시각 형식 · 모듈 등록이 앱과 달라질 수 있고, `spring.json.add.type.headers` 같은 다른 축의 설정에 기대게 된다.
 - 지금 공용 `KafkaTemplate` 을 쓰는 코드가 없어서, 공용 직렬화기를 바꾸는 비용이 0 이다. 전용 template 을 하나 더 두면 같은 broker 에 producer 가 둘이 되고 설정이 두 곳에 생긴다.
+- 공용 producer 빈의 타입도 직렬화기와 같게 `ProducerFactory<String, byte[]>` · `KafkaTemplate<String, byte[]>` 로 둔다. `<Object, Object>` 면 객체를 그대로 넘기는 코드가 컴파일되고, 실행 중 `ByteArraySerializer` 의 `ClassCastException` 으로만 드러난다 — AFTER_COMMIT 안에서는 로그 한 줄로 삼켜질 수 있다. 타입이 맞으면 그 실수를 컴파일러가 막는다.
 - **뒤집을 조건**: 다른 코드가 객체를 그대로 보내는 공용 template 을 필요로 할 때. 그때 이벤트용 template 을 분리한다.
 
 ### 2.4 계약을 두 앱이 함께 지키는 법
@@ -474,7 +475,7 @@ commerce-api
   application/payment/PaymentTransactions  CONFIRM_ORDER 분기에서 저장 뒤 꺼내 publishEvent (EVT-010 · EVT-011)
   application/order/OrderEventMetrics    발행 성공 · 실패 지표
   infrastructure/order/OrderConfirmedMessage        계약 모양 · 시각 소수 6 자리 고정 (EVT-003)
-  infrastructure/order/OrderConfirmedKafkaPublisher  @TransactionalEventListener(AFTER_COMMIT) · send · whenComplete
+  infrastructure/order/OrderEventKafkaPublisher      order-events 로 내보낸다. 주문 이벤트 종류마다 @TransactionalEventListener(AFTER_COMMIT) 메서드 하나 · send · whenComplete
   infrastructure/order/OrderEventsTopicWarmup        기동 시 metadata 확보
 
 commerce-streamer
@@ -489,6 +490,7 @@ modules:kafka
 ```
 
 - application 은 infrastructure 를 모른다(ArchUnit). 그래서 이벤트 값은 domain 에, Kafka 를 아는 listener 는 infrastructure 에 둔다. infrastructure 가 domain 의 값을 받는다.
+- Kafka 로 내보내는 클래스는 **topic 하나에 하나**다(`OrderEventKafkaPublisher`). `order-events` 에는 주문 이벤트 여러 종류가 `eventType` 으로 구분되어 같은 key(`orderId`)로 들어가야 같은 주문 안의 순서가 지켜진다. 이벤트 종류마다 클래스를 두면 topic · key · 결과 기록 코드가 복사된다. **뒤집을 조건**: 이벤트 종류마다 결과 처리(지표 · 실패 대응)가 달라져 한 클래스가 갈래로 커질 때.
 - 판정은 DB 없이 테스트한다. 저장 · 동시성 · 재전달은 실제 DB · broker 통합 테스트로 본다.
 - streamer 에도 commerce-api 와 같은 Checkstyle · ArchUnit 을 붙인다.
 

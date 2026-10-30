@@ -17,7 +17,7 @@ class KafkaConnectionTest {
     private final ProducerConfig producer;
 
     @Autowired
-    KafkaConnectionTest(ProducerFactory<Object, Object> producerFactory) {
+    KafkaConnectionTest(ProducerFactory<String, byte[]> producerFactory) {
         this.producer = new ProducerConfig(producerFactory.getConfigurationProperties());
     }
 

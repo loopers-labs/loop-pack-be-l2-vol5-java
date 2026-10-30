@@ -27,11 +27,11 @@ class OrderEventsTopicTest {
 
     private static final String ORDER_EVENTS = KafkaTestContainersConfig.ORDER_EVENTS;
 
-    private final KafkaTemplate<Object, Object> kafkaTemplate;
+    private final KafkaTemplate<String, byte[]> kafkaTemplate;
     private final KafkaProperties kafkaProperties;
 
     @Autowired
-    OrderEventsTopicTest(KafkaTemplate<Object, Object> kafkaTemplate, KafkaProperties kafkaProperties) {
+    OrderEventsTopicTest(KafkaTemplate<String, byte[]> kafkaTemplate, KafkaProperties kafkaProperties) {
         this.kafkaTemplate = kafkaTemplate;
         this.kafkaProperties = kafkaProperties;
     }
