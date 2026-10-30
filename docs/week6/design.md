@@ -160,6 +160,9 @@ try {
 | `ProducerListener` | template 전체 | template 이 공용이라 다른 발행에도 걸리고, `eventId` 를 record 에서 다시 꺼내야 한다 |
 | Kafka `Callback` | 호출 하나 | `KafkaTemplate.send` 에 넘길 자리가 없다. 원시 producer 를 꺼내면 observation · 기본 topic 을 잃는다. 같은 순간 · 같은 스레드에 불리므로 얻는 것이 없다 |
 
+- 지표는 `order.event.publish{type, result=success|failure, cause}` 하나다. `cause` 는 Spring 이 감싼 `KafkaProducerException` 이 아니라 가장 안쪽 원인의 클래스 이름이다(`RecordTooLargeException` · `TimeoutException`). 메시지를 넣지 않아 값의 종류가 늘지 않는다. 성공에도 `cause=none` 을 붙여 태그 키를 같게 둔다. topic 이름은 `kafka.topics.order-events` 설정에서 받는다 — 키가 없으면 기동이 실패한다.
+- 지표는 publisher(infrastructure)가 직접 센다. application 은 infrastructure 를 모르므로 application 에 지표 클래스를 두면 publisher 가 부를 수 없다.
+- 테스트는 실패를 실제로 만든다: `max.message.bytes=1` topic(broker 거절)과 없는 topic(metadata 1 초 초과). 둘 다 `whenComplete` 로 들어온다. `try` 가 잡는 진짜 동기 예외(닫힌 producer 등)는 테스트 더블 없이 만들 수 없어 테스트로 보지 않는다.
 - 기본 `LoggingProducerListener` 는 실패를 ERROR 로 한 번 더 찍는다. 빈 `ProducerListener` 를 등록해 실패 기록을 한 곳에 모은다.
 - **뒤집을 조건**: 발행하는 이벤트 종류가 늘어 같은 기록 코드가 여러 `whenComplete` 에 복사될 때 — `ProducerListener` 하나로 모은다.
 - 원문은 "send 결과를 관찰해 성공 record 의 topic · partition · offset 과 오류를 구분" 하라고만 한다(원문 67). 방법은 `정함` 이다.
@@ -473,9 +476,8 @@ commerce-api
   domain/order/Order                     completePayment 가 OrderConfirmed 를 쌓고 pullEvents 로 비운다
   domain/order/OrderConfirmed            값 · 품목 합산 · 정렬 (EVT-007)
   application/payment/PaymentTransactions  CONFIRM_ORDER 분기에서 저장 뒤 꺼내 publishEvent (EVT-010 · EVT-011)
-  application/order/OrderEventMetrics    발행 성공 · 실패 지표
   infrastructure/order/OrderConfirmedMessage        계약 모양 · 시각 소수 6 자리 고정 (EVT-003)
-  infrastructure/order/OrderEventKafkaPublisher      order-events 로 내보낸다. 주문 이벤트 종류마다 @TransactionalEventListener(AFTER_COMMIT) 메서드 하나 · send · whenComplete
+  infrastructure/order/OrderEventKafkaPublisher      order-events 로 내보낸다. 주문 이벤트 종류마다 @TransactionalEventListener(AFTER_COMMIT) 메서드 하나 · send · whenComplete · 발행 지표
   infrastructure/order/OrderEventsTopicWarmup        기동 시 metadata 확보
 
 commerce-streamer

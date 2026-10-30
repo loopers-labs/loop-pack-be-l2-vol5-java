@@ -2,14 +2,11 @@ package com.loopers.infrastructure.order;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.loopers.domain.order.Order;
-import com.loopers.domain.order.OrderItem;
-import com.loopers.domain.order.OrderQuantity;
 import com.loopers.domain.order.OrderRepository;
 import com.loopers.domain.order.OrderStatus;
-import com.loopers.domain.product.Price;
 import com.loopers.testcontainers.KafkaTestContainersConfig;
 import com.loopers.utils.DatabaseCleanUp;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -37,24 +34,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 class OrderEventKafkaPublisherTest {
 
     private static final String TOPIC = KafkaTestContainersConfig.ORDER_EVENTS;
-    private static final Instant PLACED_AT = Instant.parse("2026-10-30T00:00:00Z");
-    private static final Instant CONFIRMED_AT = Instant.parse("2026-10-30T01:02:03.12Z");
 
-    private final OrderRepository orderRepository;
-    private final TransactionTemplate transactionTemplate;
-    private final ApplicationEventPublisher eventPublisher;
+    private final OrderConfirmations orders;
+    private final OrderEventPublishMetrics metrics;
     private final KafkaTemplate<String, byte[]> kafkaTemplate;
     private final ObjectMapper objectMapper;
     private final DatabaseCleanUp databaseCleanUp;
 
     @Autowired
     OrderEventKafkaPublisherTest(OrderRepository orderRepository, TransactionTemplate transactionTemplate,
-                                     ApplicationEventPublisher eventPublisher,
-                                     KafkaTemplate<String, byte[]> kafkaTemplate, ObjectMapper objectMapper,
-                                     DatabaseCleanUp databaseCleanUp) {
-        this.orderRepository = orderRepository;
-        this.transactionTemplate = transactionTemplate;
-        this.eventPublisher = eventPublisher;
+                                 ApplicationEventPublisher eventPublisher, MeterRegistry meterRegistry,
+                                 KafkaTemplate<String, byte[]> kafkaTemplate, ObjectMapper objectMapper,
+                                 DatabaseCleanUp databaseCleanUp) {
+        this.orders = new OrderConfirmations(orderRepository, transactionTemplate, eventPublisher);
+        this.metrics = new OrderEventPublishMetrics(meterRegistry);
         this.kafkaTemplate = kafkaTemplate;
         this.objectMapper = objectMapper;
         this.databaseCleanUp = databaseCleanUp;
@@ -64,21 +57,6 @@ class OrderEventKafkaPublisherTest {
     void tearDown() {
         kafkaTemplate.flush();
         databaseCleanUp.truncateAllTables();
-    }
-
-    private Long pendingOrderId() {
-        Order draft = Order.draft(1L, List.of(
-            OrderItem.of(8L, "셔츠", Price.of(1_000), OrderQuantity.of(1)),
-            OrderItem.of(7L, "코트", Price.of(3_000), OrderQuantity.of(2))), PLACED_AT);
-        draft.startPayment();
-        return orderRepository.save(draft).getId();
-    }
-
-    private void confirm(Long orderId) {
-        Order order = orderRepository.findById(orderId).orElseThrow();
-        order.completePayment(CONFIRMED_AT);
-        orderRepository.save(order);
-        order.pullEvents().forEach(eventPublisher::publishEvent);
     }
 
     private List<ConsumerRecord<String, byte[]>> recordsDuring(Runnable action) {
@@ -111,33 +89,41 @@ class OrderEventKafkaPublisherTest {
     @DisplayName("EVT-002, EVT-012: 확정 TX 가 commit 되면 order-events 에 주문 id 를 key 로 한 record 가 하나 쌓이고, 확정 시각은 DB 에 남은 값과 같다")
     @Test
     void publishesAfterCommit() throws Exception {
-        Long orderId = pendingOrderId();
+        Long orderId = orders.pendingOrderId();
 
-        List<ConsumerRecord<String, byte[]>> records = recordsDuring(() ->
-            transactionTemplate.executeWithoutResult(status -> confirm(orderId)));
+        List<ConsumerRecord<String, byte[]>> records = recordsDuring(() -> orders.commit(orderId));
 
         assertThat(records).hasSize(1);
         ConsumerRecord<String, byte[]> record = records.get(0);
         JsonNode value = objectMapper.readTree(record.value());
-        Order stored = orderRepository.findById(orderId).orElseThrow();
         assertThat(record.key()).isEqualTo(String.valueOf(orderId));
         assertThat(value.get("eventId").asText()).isEqualTo("order-confirmed:v1:" + orderId);
         assertThat(value.get("orderId").asLong()).isEqualTo(orderId);
-        assertThat(Instant.parse(value.get("confirmedAt").asText())).isEqualTo(stored.getConfirmedAt());
+        assertThat(Instant.parse(value.get("confirmedAt").asText())).isEqualTo(orders.stored(orderId).getConfirmedAt());
     }
 
     @DisplayName("EVT-012: 확정 TX 가 rollback 되면 아무 record 도 쌓이지 않고 주문은 PENDING 그대로다")
     @Test
     void publishesNothingOnRollback() {
-        Long orderId = pendingOrderId();
+        Long orderId = orders.pendingOrderId();
 
-        List<ConsumerRecord<String, byte[]>> records = recordsDuring(() ->
-            transactionTemplate.executeWithoutResult(status -> {
-                confirm(orderId);
-                status.setRollbackOnly();
-            }));
+        List<ConsumerRecord<String, byte[]>> records = recordsDuring(() -> orders.rollback(orderId));
 
         assertThat(records).isEmpty();
-        assertThat(orderRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.PENDING);
+        assertThat(orders.statusOf(orderId)).isEqualTo(OrderStatus.PENDING);
+    }
+
+    @DisplayName("EVT-015: broker 가 받으면 성공 지표가 하나 늘고 실패 지표는 그대로다")
+    @Test
+    void countsSuccess() {
+        Long orderId = orders.pendingOrderId();
+        double successesBefore = metrics.successes();
+        double failuresBefore = metrics.failures();
+
+        orders.commit(orderId);
+        kafkaTemplate.flush();
+
+        assertThat(metrics.successes() - successesBefore).isEqualTo(1);
+        assertThat(metrics.failures() - failuresBefore).isZero();
     }
 }

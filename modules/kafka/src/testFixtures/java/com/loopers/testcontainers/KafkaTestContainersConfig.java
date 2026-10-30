@@ -27,7 +27,7 @@ public class KafkaTestContainersConfig {
 
     static {
         kafkaContainer.start();
-        createTopic(ORDER_EVENTS, ORDER_EVENTS_PARTITIONS);
+        createTopic(ORDER_EVENTS, ORDER_EVENTS_PARTITIONS, Map.of());
         System.setProperty("spring.kafka.bootstrap-servers", kafkaContainer.getBootstrapServers());
     }
 
@@ -35,10 +35,10 @@ public class KafkaTestContainersConfig {
         return kafkaContainer.getBootstrapServers();
     }
 
-    private static void createTopic(String name, int partitions) {
+    public static void createTopic(String name, int partitions, Map<String, String> topicConfigs) {
         Map<String, Object> config = Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaContainer.getBootstrapServers());
         try (Admin admin = Admin.create(config)) {
-            admin.createTopics(List.of(new NewTopic(name, partitions, REPLICATION_FACTOR)))
+            admin.createTopics(List.of(new NewTopic(name, partitions, REPLICATION_FACTOR).configs(topicConfigs)))
                 .all()
                 .get(30, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
