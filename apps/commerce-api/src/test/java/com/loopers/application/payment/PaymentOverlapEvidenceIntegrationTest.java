@@ -1,9 +1,11 @@
 package com.loopers.application.payment;
 
+import com.loopers.domain.order.OrderEventPublisher;
 import com.loopers.domain.payment.ObservationSource;
 import com.loopers.domain.payment.PaymentObservation;
 import com.loopers.domain.payment.PgTransactionStatus;
 import com.loopers.fixture.SqlCapture;
+import com.loopers.testsupport.RecordingOrderEventPublisher;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,6 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.bean.override.convention.TestBean;
 
 import java.util.List;
 import java.util.Set;
@@ -29,6 +32,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Import(PaymentTxTestConfig.class)
 @Timeout(10)
 class PaymentOverlapEvidenceIntegrationTest {
+
+    @TestBean(name = "kafkaOrderEventPublisher", methodName = RecordingOrderEventPublisher.FACTORY, enforceOverride = true)
+    private OrderEventPublisher orderEventPublisher;
+
     @Autowired private PaymentTransactionService tx;
     @Autowired private PaymentTxFixture fixture;
     @Autowired private ControllableProbe probe;

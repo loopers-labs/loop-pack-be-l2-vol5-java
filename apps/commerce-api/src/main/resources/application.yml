@@ -1,5 +1,5 @@
 server:
-  shutdown: graceful
+  shutdown: graceful # 진행 중 HTTP 요청의 사건 등록·send 가 끝난 뒤 전용 producer 가 닫히게 한다(설계 2.11).
   tomcat:
     threads:
       max: 200 # 최대 워커 스레드 수 (default : 200)
@@ -17,10 +17,13 @@ spring:
     name: commerce-api
   profiles:
     active: local
+  lifecycle:
+    timeout-per-shutdown-phase: 30s # 각 lifecycle phase 의 대기. producer close(15초)와 더한 앱 전체 종료 보장이 아니다.
   config:
     import:
       - jpa.yml
       - redis.yml
+      - kafka.yml
       - logging.yml
       - monitoring.yml
 
@@ -39,6 +42,20 @@ commerce:
     product-detail:
       enabled: true # false 는 DB-only 비교 모드. 읽기·채움만 우회하고 commit 뒤 무효화는 유지한다.
       ttl: 5m # 저장할 때 정하는 고정 TTL. hit 에서 연장하지 않는다.
+  order-events:
+    topic: order-events # 테스트는 실행별 이름으로 바꾼다. 기본 topic 에 테스트 record 를 쓰지 않는다.
+    physical-close-timeout-seconds: 15 # 정상 종료 때 미완료 전송을 기다리는 시간. 30초 전달 예산 전체를 주지 않는다.
+    producer-properties: # 공통 spring.kafka.producer 위에 덮어쓰는 주문 발행 전용 초기값. 근거·한계는 설계 2.11
+      "[acks]": all
+      "[enable.idempotence]": true
+      "[max.in.flight.requests.per.connection]": 5
+      "[retry.backoff.ms]": 500
+      "[retry.backoff.max.ms]": 1000
+      "[max.block.ms]": 5000
+      "[request.timeout.ms]": 20000
+      "[delivery.timeout.ms]": 30000
+      "[linger.ms]": 0
+      "[spring.json.add.type.headers]": false
   pg:
     base-url: http://127.0.0.1:18080 # 로컬 PG 주소. 테스트는 fixture 의 임의 포트로 바꿔 주입한다.
     callback-url: http://127.0.0.1:8080/api/v1/payments/callback # 기동 때 한 번 바인딩. 고객 입력으로 바꾸지 않는다.

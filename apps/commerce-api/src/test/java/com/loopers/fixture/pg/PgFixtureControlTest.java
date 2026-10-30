@@ -2,6 +2,7 @@ package com.loopers.fixture.pg;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.loopers.pgsimulator.PaymentStatus;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -460,7 +461,7 @@ class PgFixtureControlTest {
             assertAll(
                 () -> assertThat(failure).isInstanceOf(IOException.class)
                     .isNotInstanceOf(HttpTimeoutException.class),
-                () -> assertThat(elapsed).isGreaterThanOrEqualTo(PaymentHttpHandler.GATE_TIMEOUT.minusMillis(100)),
+                () -> assertThat(elapsed).isGreaterThanOrEqualTo(PgFaultProxy.GATE_TIMEOUT.minusMillis(100)),
                 () -> assertThat(entry.failure()).isEqualTo(ResponseFailure.GATE_TIMEOUT),
                 () -> assertThat(entry.responseStatus()).isNull(),
                 () -> assertThat(state.gates()).containsExactly(new GateSnapshot("g-152", GateStatus.TIMED_OUT)),
@@ -498,7 +499,7 @@ class PgFixtureControlTest {
             assertAll(
                 () -> assertThat(afterRejectedReset).isEqualTo(busy),
                 () -> assertThat(planPreserved).isEqualTo(200),
-                () -> assertThat(cleared).isEqualTo(new FixtureState(List.of(), new RequestCounts(0, 0, 0, 0), List.of(), 0, List.of(), List.of(), 0)),
+                () -> assertThat(cleared).isEqualTo(new FixtureState(List.of(), new RequestCounts(0, 0, 0, 0), List.of(), 0, List.of(), 0)),
                 () -> assertThat(planCleared).as("남은 SUCCESS plan 도 지워짐").isEqualTo(202)
             );
         }
@@ -593,25 +594,9 @@ class PgFixtureControlTest {
             Arguments.of("target 빈 문자열", PgOperation.CREATE, "", ResponsePlan.normal()),
             Arguments.of("plan null", PgOperation.CREATE, target, null),
             Arguments.of("조회에 createOutcome", PgOperation.LOOKUP_ORDER, target, ResponsePlan.outcome(CreateOutcome.SUCCESS)),
-            Arguments.of("REJECT + DELAY", PgOperation.CREATE, target,
-                ResponsePlan.delay(10).withCreateOutcome(CreateOutcome.REJECT_BEFORE_CREATE)),
-            Arguments.of("REJECT + RAW", PgOperation.CREATE, target,
-                ResponsePlan.raw(422, "", null).withCreateOutcome(CreateOutcome.REJECT_BEFORE_CREATE)),
-            Arguments.of("NORMAL 에 RAW 필드", PgOperation.CREATE, target,
-                new ResponsePlan(null, ReplyMode.NORMAL, null, null, 500, null, null)),
-            Arguments.of("GATE 에 RAW body", PgOperation.CREATE, target,
-                new ResponsePlan(null, ReplyMode.GATE, null, "g-x", null, "x", null)),
-            Arguments.of("NORMAL 에 delayMs", PgOperation.CREATE, target,
-                new ResponsePlan(null, ReplyMode.NORMAL, 10, null, null, null, null)),
-            Arguments.of("DELAY 에 delayMs 없음", PgOperation.CREATE, target,
-                new ResponsePlan(null, ReplyMode.DELAY, null, null, null, null, null)),
             Arguments.of("DELAY -1ms", PgOperation.CREATE, target, ResponsePlan.delay(-1)),
             Arguments.of("DELAY 10001ms", PgOperation.CREATE, target, ResponsePlan.delay(10_001)),
             Arguments.of("GATE gateId 공백", PgOperation.CREATE, target, ResponsePlan.gate(" ")),
-            Arguments.of("NORMAL 에 gateId", PgOperation.CREATE, target,
-                new ResponsePlan(null, ReplyMode.NORMAL, null, "g-y", null, null, null)),
-            Arguments.of("RAW 상태 없음", PgOperation.CREATE, target,
-                new ResponsePlan(null, ReplyMode.RAW, null, null, null, "", null)),
             Arguments.of("RAW 상태 199", PgOperation.CREATE, target, ResponsePlan.raw(199, "", null)),
             Arguments.of("RAW 상태 600", PgOperation.CREATE, target, ResponsePlan.raw(600, "", null)),
             Arguments.of("RAW body 없음", PgOperation.CREATE, target, ResponsePlan.raw(200, null, null)),

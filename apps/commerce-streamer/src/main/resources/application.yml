@@ -14,7 +14,7 @@ spring:
   main:
     web-application-type: servlet
   application:
-    name: commerce-api
+    name: commerce-streamer
   profiles:
     active: local
   config:
@@ -28,6 +28,12 @@ spring:
 demo-kafka:
   test:
     topic-name: demo.internal.topic-v1
+
+commerce:
+  order-activity: # 구매 활동 listener(소비 설계 6절). 테스트는 실행별 topic·group 과 auto-startup=false 를 주입한다.
+    topic: order-events
+    group-id: purchase-activity
+    auto-startup: true
 
 ---
 spring:

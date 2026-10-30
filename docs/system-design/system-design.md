@@ -1,39 +1,50 @@
 # 시스템 설계
 
-이 문서는 `commerce-api` 구현의 기준이 되는 API 계약과 설계 원칙을 정의한다. 구현은 이 문서에 명시된 계약과 도메인 규칙을 따르며, 외부 동작에 영향을 주지 않는 세부사항은 구조와 의존성 원칙 안에서 결정한다. 문서에 없는 기능은 추가하지 않고, 구현에 필요한 외부 정책이 정해지지 않았으며 적용할 잠정 기준도 없다면 확인 후 반영한다. `[잠정]` 정책은 기획 결정에 따라 변경될 수 있지만, 결정 전까지는 문서에 적힌 현재 값을 구현과 테스트의 기준으로 사용한다.
+이 문서는 커머스 앱과 후속 이벤트 소비 구현의 기준이 되는 API 계약과 설계 원칙을 정의한다. 구현은 이 문서에 명시된 계약과 도메인 규칙을 따르며, 외부 동작에 영향을 주지 않는 세부사항은 구조와 의존성 원칙 안에서 결정한다. 문서에 없는 기능은 추가하지 않고, 구현에 필요한 외부 정책이 정해지지 않았으며 적용할 잠정 기준도 없다면 확인 후 반영한다. `[잠정]` 정책은 기획 결정에 따라 변경될 수 있지만, 결정 전까지는 문서에 적힌 현재 값을 구현과 테스트의 기준으로 사용한다.
 
 2주차 설계 원본인 [`docs/week2/system-design.md`](../week2/system-design.md)를 기반으로 생성했으며, 이후 주차에서 발생하는 설계 변경은 이 문서 세트에 반영한다. 2주차 당시의 설계 원본은 스냅샷으로 보존하고 수정하지 않는다.
 
-2026-10-06 브랜드 일괄 삭제에 이어 주문 확정·동시성 설계를 확정했다. Order·Point·Product의 비관적 잠금, 공통 변경 경로, 쿼리 선택 기준과 검증 기준·완료 근거는 [4.3](./sections/04-use-cases.md#43-주문-확정)에, 선택 이유와 비용은 [부록 A.3](./sections/appendix-decisions.md#a3-주문-확정의-포인트재고-처리-순서)에 둔다. 설계 문서 세트만으로 구현 기준을 확인할 수 있으며 별도 검토 노트에 의존하지 않는다.
+## 현재 상태
 
-2026-10-07 브랜드 일괄 삭제의 구현·검증을 완료했다. infrastructure의 native SQL bulk와 Brand 삭제를 하나의 트랜잭션에서 처리하며, 실제 bulk 이후 실패의 rollback, 삭제 후 사용 제한·과거 주문 보존·HTTP 접근 경계를 검증했다. 브랜드 인계 시점의 전체 검사 결과는 326건·실패/오류/skip 0이며 Checkstyle·ArchUnit도 통과했다. 브랜드 bulk의 인덱스 실행계획 확인 항목은 사용자 결정에 따라 실제 데이터의 bulk 동작 테스트, 단독 인덱스 생성·중복 없음, 빈 테이블 EXPLAIN을 근거로 인정했다. 데이터가 있는 조건의 실행계획·탐색 효율·성능과 브랜드 삭제의 동시 경쟁은 미검증이다. 삭제 Brand 아래 미삭제 Product가 남는 경우, 조회에서는 숨겨지지만 상품 ID 기반 명령에서 사용될 가능성은 남아 있다([4.1.4](./sections/04-use-cases.md#414-삭제-이후-사용-제한과-조회-방어)·[4.1.5](./sections/04-use-cases.md#415-동시성-범위와-향후-대안)). 실행계획 확인 범위와 한계는 [4.1.6](./sections/04-use-cases.md#416-인덱스와-설계-재검토-기준), 검증 기준과 완료 근거는 [4.1.7](./sections/04-use-cases.md#417-검증-계획)에 둔다.
-
-2026-10-07 주문 확정·동시성의 구현·검증을 완료했다. `Order → Point → Product` 순서의 비관적 쓰기 잠금을 적용하고, 포인트 충전과 상품 수정·삭제·최종 재고 설정도 같은 행 잠금에 참여한다. 최종 `cleanTest check`의 저장된 테스트 결과는 353건·실패/오류/skip 0이며 ArchUnit 3건이 통과했다. Checkstyle은 직전 검사 통과 이후 Java 소스 변경이 없어 최종 실행에서 UP-TO-DATE였다. 실제 SQL 이후 rollback, 경쟁 결과와 자원 정리의 완료 근거·미검증 한계는 [4.3.5](./sections/04-use-cases.md#435-구현-단계-검증-계획)에 둔다.
-
-2026-10-15 고객 상세의 상품명·Brand 이름·가격·재고만 JSON String cache-aside로 저장하고 좋아요 수는 DB 조회로 합성하기로 했다. 기본정보 영향 쓰기는 공통 afterCommit callback에서 commit 뒤 동기 DEL한다. TTL은 시험 10초/평시 5분의 고정값이며 hit에서 연장하지 않는다. 평시/일반 회귀는 cache on·필요한 캐시 비교만 DB-only, cold는 기본 miss+동시 miss 관측이다. 기존 master·초기 connect/command 200ms 실측·실패 로그/재시도 없음·기존 로컬 MySQL/Redis·loopers 공유를 사용하고 CPU 수집은 모두 제외한다. 구현된 SQL/포트/TX 경계와 확인한 데이터/표본은 [4.4 상품 조회](./sections/04-use-cases.md#44-상품-조회)와 연결된 실행 기록을 따른다.
-
-2026-10-15 상품 조회의 기능 구현·변경/실패/복구·회귀 검증을 완료했다. 목록 SQL은 유지하고 인덱스를 추가했으며(2026-10-16 라이팅 실험에서 고른 product `(brand_id, price)`·`(brand_id, created_at)`·`(brand_id, deleted_at)`, product_like `(product_id)`로 정리), 상세 기본정보 cache-aside와 영향 쓰기의 commit 뒤 DEL을 구현했다. 변경·rollback·DEL 실패·늦은 fill은 실제 Spring·MySQL·Redis 통합 테스트로, Redis 중단·재시작은 로컬 앱으로 확인했다. 최종 `cleanTest check`는 377건·fail/error/skip 0이다. 목록 전후 반복 지연·전체 응답 비교는 보완이 필요하고, 캐시의 전체 SQL 수·읽은 행 수 감소나 지연 향상은 입증되지 않았다. 글을 준비하며 SQL 실험과 남은 제출 근거를 보완한다. 2026-10-16 목록 전후 비교(E0)를 실제 API로 채웠고, 캐시 hit의 비싼 원본 호출 감소 조건은 미충족으로 판정해 정책을 유지했다. 구체 구성과 한계는 [4.4](./sections/04-use-cases.md#44-상품-조회)에 둔다.
-
-2026-10-23 현재 구현 상태: 최종 설계는 2026-10-22 사용자 승인을 받았으며 I1 fixture·I2 HTTP/회로 adapter·I3 저장/TX에 이어 I4 confirm/callback/reconcile·고객/관리자 응답을 구현했다. I4 전체 회귀 752건·실패/오류/skip 0, 캐시 준비 보강 후 관련 9건·위반 0을 확인했다. 상세 실행 경계·기존 POINT 테스트 전환·미검증 조건은 [4.5의 I4 근거](./sections/04-use-cases.md#i4-구현과-검증-근거--2026-10-23)를 따른다. 아래 문서 구성의 작성 당시 미구현·승인 대기 설명은 당시 이력이며, I5의 경쟁/회복/재시작 전체 검증과 I2·I3 Codex 일괄 검토를 완료로 뜻하지 않는다.
-
-2026-10-23 I5도 경쟁·장애 회복·DB/PG 유지 재시작과 관련 회귀를 완료했다. 저장 품목 정합성 검사 누락을 기존 계약대로 보완했으며 제품 정책/timeout/회로 값은 유지했다. 전체 회귀 805건과 최종 I5 보강 56건 및 별도 분류 검증 5건의 실행 범위·자원 종료·허용 한계는 [I5 검증 근거](./sections/04-use-cases.md#i5-경쟁장애-회복재시작-검증-근거--2026-10-23)를 따른다. 구현 종료 시에는 사용자 요청에 따라 스테이징하지 않았고, 이후 사용자의 추가 요청으로 I5 코드·테스트와 기준 설계의 검증 기록을 스테이징했다. 커밋은 사용자가 직접 수행한다. 아래 I4 시점의 I5 미검증 설명은 당시 이력이다.
-
-2026-10-23 후속 검토에서 저장 결제 금액 정합성 누락(F5)을 기존 계약대로 보완했고, Claude 검토의 유효한 테스트 공백·최종 Apache 설정의 재현 가능한 근거·낡은 현재 상태 문구도 정리했다. I5는 사용자가 715bd0e로 커밋한 상태이며 이 후속 변경은 미스테이징·미커밋이다. 최종 check 829건·실패/오류/skip 0, Checkstyle·ArchUnit 통과의 경계는 [F5·Claude 검토 보완 근거](./sections/04-use-cases.md#f5claude-검토-보완과-최종-회귀--2026-10-23)를 따른다. PR·기술 글 작성은 별도 미완료다.
+- 기존 커머스·PG 결제·PG 단독 실행 앱의 계약과 과거 검증 근거를 보존한다. 실행 범위·수량·한계는 아래 검증 기록을 따른다.
+- 주문 확정 이벤트의 **발행·소비 상세설계는 2026-10-29 사용자 최종 승인 기준**이다. 승인된 단위별로 발행 P1~P9·소비 C1~C10을 구현하고 관련 검증을 실행했다. 실제 관찰·재현 방법·회귀 결과와 미검증 한계는 [주문 이벤트 실행 기록](verification/order-events.md)을 따른다. Outbox·랭킹 API·자동 재발행은 현재 범위 밖이며 DLQ는 별도 설계·승인 대상이다.
+- 공통·기능별 설계·판단 근거·과거 기록으로 재편했다. 기존 절 번호와 A 식별자는 참조를 위해 유지한다. 각 계약의 원본은 아래 기준 문서 한 곳에 둔다.
 
 ## 문서 구성
 
-<details>
-<summary>설계 초안 작성 당시 기록 — 현재 상태는 위 구현·검증 기록을 따른다</summary>
-
-PG 결제 전환의 목표 흐름과 API 계약을 정리했다. 신규 DRAFT의 결제 시작에서 재고를 확보하고, 외부 호출 뒤 검증한 결과를 별도 로컬 TX에 반영한다. 즉시 성공 응답·콜백·대사는 동일한 결과 반영을 사용한다. PG 저장 모델·클래스·잠금·TX와 주요 메서드 의사코드를 반영했다. 2026-10-22 사용자 검토로 payment 한 행·고정 주문 품목으로 확보/반환을 관리하고 별도 예약 테이블은 제거했으며 충돌만 payment_conflict에 분리했다. payment unique는 세 개이고 외부 주문 ID는 일반 인덱스·고정 매핑 검증을 사용한다. 확인 순번을 제거하고 최근 확인/마지막 충돌은 DB에 마지막 반영한 관찰로 정의했다. 업무 종결 보호와 source/terminalAtStart 구분은 유지한다. 2026-10-22 Claude 지적 1 검토 후 격리 수준은 유지하고 Order 부모 잠금으로 결제/충돌 쓰기를 직렬화하며 자식 선행 잠금 조회를 제거하기로 승인했다. 콜백은 별도 스칼라 식별 읽기를 끝낸 뒤 새 업무 TX의 Order 잠금부터 시작하고 최신 읽기 검증은 미실행이다. RestClient·Apache HttpClient 5와 Resilience4j Boot 연동·명시적 회로 호출을 선택했다. 2026-10-22 생성 회로 추가와 TX A 전 차단의 DRAFT 유지·TX A 후 확실한 미발송의 재고 반환/PAYMENT_FAILED를 승인했다. 생성/조회 분리·생성 표본 분류·실패 원인 CIRCUIT_REJECTED 명칭도 승인했으며 YAML 공통 초기 수치의 독립 적용·HALF_OPEN 최대 대기 10초도 승인했다. 2.8~2.9·A.32에서 정책 승인과 구현/실측 미완료를 구분한다. Boot YAML·registry 빈의 연결 책임도 반영했다. 통신 오류 분류·HTTP 제한과 추가 보호 범위·회로 초기 가설·PG 제어/기동/재시작·필수 검증과 관찰 기준까지 전체 초안을 작성했다. 2026-10-22 PG는 테스트 내부 HTTP fixture로 축소했고 별도 모듈/main/단독 기동·데모 DB는 제외했다. 제어 HTTP도 fixture 메서드로 축소하고 실제 결제/콜백 HTTP와 구분했다. 즉시 성공·정상 PENDING 후 SUCCESS/FAILED 콜백·실제 HTTP·재시작/자원 정리 검증은 유지한다. 초기 수치는 적은 호출과 짧은 대기로 상태 전이를 재현·관찰하기 위한 가설이며 운영 적정값은 아니다. 사용자 전체 검토는 완료했고 Claude 교차 검토의 지적 처리와 사용자 최종 승인은 남아 있다. 현재 POINT 코드를 이 목표 설계로 전환해야 한다. 아래 문서의 PG 내용은 아직 구현·검증 완료를 뜻하지 않으며, `[미정]` 항목은 구현 기준으로 임의 채택하지 않는다. 현재 POINT 구현의 과거 검사 결과는 PG 연동 검증 근거로 사용하지 않는다.
-
-</details>
-
-|문서|담당 범위|
+| 범위 | 기준 문서 |
 |---|---|
-|[1. 버드뷰](./sections/01-overview.md)|시스템 개요, 구성과 기능 범위|
-|[2. 구조와 의존](./sections/02-architecture.md)|패키지·의존·Repository, PG Facade·로컬 TX 담당 객체, HTTP/회로 초기값·테스트 내부 PG 서버 책임|
-|[3. 도메인 관계](./sections/03-domain-model.md)|도메인 관계·상태·저장 필드와 제약, POINT 데이터 보존·삭제 정책|
-|[4. 대표 흐름](./sections/04-use-cases.md)|PG 시작·콜백·대사의 잠금·TX·메서드 의사코드, 이전 POINT 기록과 기존 기능|
-|[5. API 계약과 주요 규칙](./sections/05-api-contract.md)|공통 계약, 고객·관리자·콜백 API, 로컬 PG HTTP·fixture 메서드 제어/컨텍스트 재시작 계약과 대표 기대값|
-|[부록 A. 설계 대안과 선택 근거](./sections/appendix-decisions.md)|판단 근거·대안이 유리한 조건·숨은 비용·가정·재검토 조건. [PG 판단 색인](./sections/appendix-decisions.md#a29-pg-판단-근거-색인)|
+| 전체 개요·공통 원칙 | [개요](common/overview.md) · [계층·의존](common/architecture.md) · [모델 관계](common/domain-model.md) · [API 공통 규칙](common/api-contract.md) |
+| 브랜드·상품·좋아요 | [카탈로그](features/catalog.md) |
+| 포인트 충전·조회 | [포인트](features/points.md) |
+| 상품 상세·캐시 | [상품 조회·캐시](features/product-cache.md) |
+| 주문·PG 결제 | [읽기 안내](features/order-payment/README.md) · [상태·저장](features/order-payment/model.md) · [TX·처리](features/order-payment/processing.md) · [HTTP·회로](features/order-payment/pg-client.md) · [API](features/order-payment/api-contract.md) · [검증 기준](features/order-payment/verification.md) |
+| 로컬 PG·테스트 도구 | [앱·HTTP 계약](features/pg-simulator/README.md) · [테스트 래퍼·프록시](features/pg-simulator/fixture-contract.md) |
+| 주문 확정 이벤트 | [전체 경계·이벤트 계약](features/order-events/README.md) · [발행 상세설계](features/order-events/publication.md) · [소비 상세설계](features/order-events/consumption.md) |
+
+## 기능별 읽기 순서
+
+| 작업 | 읽는 순서 |
+|---|---|
+| 처음 참여 | 공통 개요 → 계층·의존 → 모델 관계 → 작업할 기능. API를 바꾸면 공통 API 규칙도 확인 |
+| 카탈로그·포인트 | 공통 모델/API → 해당 기능 → 관련 A 절 → 필요 시 과거 실행 기록 |
+| 상품 캐시 | 카탈로그 조회 계약 → 상품 조회·캐시 → 캐시 결정 → 기존 기능 실행 기록 |
+| 결제 구현·검토 | 결제 읽기 안내 → 상태·저장 → TX·처리 → 관련 HTTP/API → 검증 기준 → 필요한 결정·실행 기록 |
+| PG 앱·fixture | PG 앱·HTTP 계약 → 테스트 래퍼·프록시 → PG client → PG 결정·전환 검증 기준/기록 |
+| 이벤트 발행 | 이벤트 전체 경계·계약 → 결제의 최초 확정·종결 보호 관련 절 → 발행 상세설계 → 이벤트 결정 |
+| 이벤트 소비 | 이벤트 전체 경계·계약 → 소비 상세설계의 모델·동일 사실·TX/ack·중단/복구·C1~C10 → 관련 결정 |
+
+각 기능의 링크를 위 문서 구성 표에서 바로 연다. 모든 작업에 전체 설계 파일 읽기를 요구하지 않으며 필요한 공통/기능 계약과 관련 근거를 함께 읽는다.
+
+## 판단 근거와 실행 기록
+
+| 종류 | 문서 |
+|---|---|
+| 판단 이유·대안·비용·재검토 조건 | [공통 도메인·API A.1~A.15](decisions/domain-and-api.md) · [상품 캐시 A.16](decisions/product-cache.md) · [PG 결제 A.17~A.32](decisions/payment.md) · [PG 앱 A.33](decisions/pg-simulator.md) · [이벤트 A.34·A.35](decisions/order-events.md) |
+| 현재 검증 기준 | 기능별 검증 절. PG 전환 표처럼 기준/결과가 혼합된 기존 자료는 [PG 전환 기록](verification/pg-simulator.md)에서 함께 보존 |
+| 날짜별 실제 실행·한계 | [기존 기능](verification/core-features.md) · [PG 결제](verification/payment.md) · [PG 앱 전환](verification/pg-simulator.md) · [주문 이벤트](verification/order-events.md) |
+| 과거 계약·승인·진척 | [이전 POINT 설계·검증](verification/legacy-point.md) · [설계 변경 이력](verification/design-history.md) |
+
+과거 기록의 당시 미구현/미검증·검사 수량은 해당 시점의 설명이다. 현재 기능의 계약이나 이번 작업의 실행 결과로 대체하지 않는다. 삭제된 상품·과거 POINT 주문 등 여전히 유효한 보존 계약은 현재 기능 문서에서도 유지한다.
+
+`sections/`는 기존 경로·절 번호에서 새 원본 위치를 찾는 안내만 제공한다. 계약 본문은 중복 보관하지 않는다. 새 기준 문서는 기존 추적 설계의 이동 대상이며 Git 인덱스는 이번 작업에서 변경하지 않았다.

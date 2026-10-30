@@ -1,8 +1,8 @@
 package com.loopers.application.payment;
 
-import com.loopers.fixture.pg.PaymentStatus;
 import com.loopers.fixture.pg.PgOperation;
 import com.loopers.fixture.pg.ResponsePlan;
+import com.loopers.pgsimulator.PaymentStatus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;

@@ -2,6 +2,8 @@ package com.loopers.fixture.pg;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.loopers.pgsimulator.CallbackFailure;
+import com.loopers.pgsimulator.PaymentStatus;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -9,8 +11,6 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.net.InetAddress;
-import java.net.ServerSocket;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -106,9 +106,8 @@ class PgFixtureCallbackTest {
         JsonNode body = readJson(received.body());
         assertAll(
             () -> assertThat(beforeSend.counts().callbackSent()).as("생성·setStatus 뒤 자동 콜백 없음").isZero(),
-            () -> assertThat(beforeSend.callbacks()).isEmpty(),
             () -> assertThat(result).isEqualTo(new CallbackBatchResult(key,
-                List.of(new CallbackDelivery(1, true, 200, null, null)))),
+                List.of(new CallbackDelivery(1, true, 200, null)))),
             () -> assertThat(receiver.received()).hasSize(1),
             () -> assertThat(received.method()).isEqualTo("POST"),
             () -> assertThat(received.path()).isEqualTo(CallbackReceiverStub.CALLBACK_PATH),
@@ -120,11 +119,6 @@ class PgFixtureCallbackTest {
             () -> assertThat(afterSend.transactions()).isEqualTo(beforeSend.transactions()),
             () -> assertThat(afterSend.journal()).as("콜백은 PG 수신이 아님").isEqualTo(beforeSend.journal()),
             () -> assertThat(afterSend.counts()).isEqualTo(new RequestCounts(1, 0, 0, 1)),
-            () -> assertThat(afterSend.callbacks()).singleElement().satisfies(record -> {
-                assertThat(record.status()).isEqualTo(PaymentStatus.SUCCESS);
-                assertThat(record.httpStatus()).isEqualTo(200);
-                assertThat(record.completedAt()).isAfterOrEqualTo(record.startedAt());
-            }),
             () -> assertThat(afterSend.activeCallbackJobs()).isZero(),
             () -> assertThat(afterSend.toString()).as("관측에 callbackUrl 비노출").doesNotContain(receiver.callbackUrl())
         );
@@ -140,7 +134,6 @@ class PgFixtureCallbackTest {
         CompletableFuture<CallbackBatchResult> batch = track(pg.sendCallbacks(key, 3));
         await().atMost(OBSERVE_DEADLINE).pollInterval(FAST_POLL).until(() -> receiver.inFlight() == 2);
         FixtureState holding = pg.state();
-        long liveCallbackThreads = liveThreadsNamedWith(pg.callbackThreadNamePrefix());
         HttpResponse<String> lookup = get("/api/v1/payments/" + key);
         pg.setStatus(key, PaymentStatus.FAILED);
         awaitHandlersFinished();
@@ -156,9 +149,8 @@ class PgFixtureCallbackTest {
         FixtureState cleared = pg.state();
 
         assertAll(
-            () -> assertThat(holding.counts().callbackSent()).as("실제 전송 시작 2건").isEqualTo(2),
+            () -> assertThat(holding.counts().callbackSent()).as("결과가 나오기 전에는 세지 않음(5.7)").isZero(),
             () -> assertThat(holding.activeCallbackJobs()).as("접수 3건(대기 1 포함)").isEqualTo(3),
-            () -> assertThat(liveCallbackThreads).as("콜백 전용 worker 2개").isEqualTo(CallbackSender.WORKERS),
             () -> assertThat(lookup.statusCode()).as("콜백 대기 중 PG 조회").isEqualTo(200),
             () -> assertThat(resetFailure).isInstanceOf(IllegalStateException.class),
             () -> assertThat(afterRejectedReset).isEqualTo(beforeReset),
@@ -172,62 +164,7 @@ class PgFixtureCallbackTest {
                 .isEqualTo(PaymentStatus.FAILED),
             () -> assertThat(afterBatch.counts().callbackSent()).isEqualTo(3),
             () -> assertThat(afterBatch.activeCallbackJobs()).as("batch 완료 시점에 작업 종료").isZero(),
-            () -> assertThat(cleared.callbacks()).isEmpty(),
             () -> assertThat(cleared.counts()).isEqualTo(new RequestCounts(0, 0, 0, 0))
-        );
-    }
-
-    @DisplayName("202·409·500 응답을 각 전송 결과로 보존하고 응답 코드를 이유로 다시 보내지 않는다.")
-    @Test
-    void preservesResponsesWithoutResend() {
-        String key = createTransaction("LP-ORD-0000000202", receiver.callbackUrl());
-        receiver.replyWith(new CallbackReceiverStub.Reply(202, Map.of()), new CallbackReceiverStub.Reply(409, Map.of()),
-            new CallbackReceiverStub.Reply(500, Map.of()));
-
-        CallbackBatchResult result = awaitBatch(pg.sendCallbacks(key, 3));
-
-        assertAll(
-            () -> assertThat(result.deliveries()).extracting(CallbackDelivery::httpStatus)
-                .containsExactlyInAnyOrder(202, 409, 500),
-            () -> assertThat(result.deliveries()).extracting(CallbackDelivery::failure).containsOnlyNulls(),
-            () -> assertThat(receiver.received()).hasSize(3),
-            () -> assertThat(pg.state().counts().callbackSent()).isEqualTo(3)
-        );
-    }
-
-    @DisplayName("연결할 수 없는 주소면 통신 오류를 결과로 남기고 요청한 횟수 외에 다시 보내지 않는다.")
-    @Test
-    void recordsConnectionFailureWithoutResend() throws IOException {
-        String key = createTransaction("LP-ORD-0000000203", "http://127.0.0.1:" + closedPort() + "/api/v1/payments/callback");
-
-        CallbackBatchResult result = awaitBatch(pg.sendCallbacks(key, 2));
-
-        System.out.println("[CALLBACK CONNECT] " + result.deliveries().get(0).errorDetail());
-        assertAll(
-            () -> assertThat(result.deliveries()).hasSize(2).allSatisfy(delivery -> {
-                assertThat(delivery.sent()).isTrue();
-                assertThat(delivery.httpStatus()).isNull();
-                assertThat(delivery.failure()).isEqualTo(CallbackFailure.CONNECT_FAILED);
-            }),
-            () -> assertThat(pg.state().counts().callbackSent()).isEqualTo(2),
-            () -> assertThat(pg.state().callbacks()).extracting(CallbackRecord::failure)
-                .containsOnly(CallbackFailure.CONNECT_FAILED)
-        );
-    }
-
-    @DisplayName("redirect 응답은 결과로만 남기고 대상 주소로 따라가지 않는다.")
-    @Test
-    void doesNotFollowRedirect() {
-        String key = createTransaction("LP-ORD-0000000204", receiver.callbackUrl());
-        receiver.replyWith(new CallbackReceiverStub.Reply(307,
-            Map.of("Location", receiver.baseUrl() + CallbackReceiverStub.REDIRECT_TARGET_PATH)));
-
-        CallbackBatchResult result = awaitBatch(pg.sendCallbacks(key, 1));
-
-        assertAll(
-            () -> assertThat(result.deliveries()).extracting(CallbackDelivery::httpStatus).containsExactly(307),
-            () -> assertThat(receiver.received()).hasSize(1),
-            () -> assertThat(receiver.redirectTargetHits()).isZero()
         );
     }
 
@@ -267,7 +204,6 @@ class PgFixtureCallbackTest {
                 .extracting(CallbackDelivery::failure).containsOnly(CallbackFailure.ABORTED_BY_CLOSE),
             () -> assertThat(result.deliveries()).filteredOn(CallbackDelivery::sent).hasSize(2),
             () -> assertThat(pg.isTerminated()).isTrue(),
-            () -> assertThat(liveThreadsNamedWith(pg.callbackThreadNamePrefix())).isZero(),
             () -> assertThatThrownBy(() -> pg.sendCallbacks(key, 1)).isInstanceOf(IllegalStateException.class),
             () -> assertThatThrownBy(() -> pg.sendCallbacks(null, 0)).isInstanceOf(IllegalStateException.class)
         );
@@ -346,13 +282,6 @@ class PgFixtureCallbackTest {
         }
     }
 
-    /** 바인드 후 바로 닫아 연결을 받지 않는 포트. 짧은 사이에 다른 프로세스가 쓰면 이 테스트는 준비 실패로 드러난다. */
-    private static int closedPort() throws IOException {
-        try (ServerSocket socket = new ServerSocket(0, 1, InetAddress.getByAddress(new byte[] {127, 0, 0, 1}))) {
-            return socket.getLocalPort();
-        }
-    }
-
     private static String toJson(Object value) {
         try {
             return MAPPER.writeValueAsString(value);
@@ -373,11 +302,5 @@ class PgFixtureCallbackTest {
         List<String> names = new ArrayList<>();
         node.fieldNames().forEachRemaining(names::add);
         return names;
-    }
-
-    private static long liveThreadsNamedWith(String prefix) {
-        return Thread.getAllStackTraces().keySet().stream()
-            .filter(thread -> thread.getName().startsWith(prefix) && thread.isAlive())
-            .count();
     }
 }

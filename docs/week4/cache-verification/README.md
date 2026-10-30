@@ -1,6 +1,6 @@
 # 상품 상세 캐시 구현 검증
 
-4주차 구현 과제에서 고객 상품 상세에 붙인 Redis cache-aside의 검증 기록이다. 설계는 [상품 조회 설계 4.4](../../system-design/sections/04-use-cases.md#44-상품-조회)를 따른다.
+4주차 구현 과제에서 고객 상품 상세에 붙인 Redis cache-aside의 검증 기록이다. 설계는 [상품 조회 설계 4.4](../../system-design/features/product-cache.md#44-상품-조회)를 따른다.
 
 ## 구현 요약
 

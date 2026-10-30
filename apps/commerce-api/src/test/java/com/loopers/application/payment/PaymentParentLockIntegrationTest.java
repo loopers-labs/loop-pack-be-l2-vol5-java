@@ -1,5 +1,6 @@
 package com.loopers.application.payment;
 
+import com.loopers.domain.order.OrderEventPublisher;
 import com.loopers.domain.payment.ObservationSource;
 import com.loopers.domain.payment.PaymentCheckToken;
 import com.loopers.domain.payment.PaymentModel;
@@ -8,6 +9,7 @@ import com.loopers.domain.payment.PgTransactionStatus;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.fixture.SqlCapture;
 import com.loopers.support.persistence.ConstraintViolationClassifier;
+import com.loopers.testsupport.RecordingOrderEventPublisher;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,6 +19,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.test.context.bean.override.convention.TestBean;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -44,6 +47,9 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 @Import(PaymentTxTestConfig.class)
 @DisplayName("결제 TX 는 Order 잠금으로 같은 주문만 직렬화하고, 잠금을 기다린 TX 는 앞선 commit 결과를 읽는다.")
 class PaymentParentLockIntegrationTest {
+
+    @TestBean(name = "kafkaOrderEventPublisher", methodName = RecordingOrderEventPublisher.FACTORY, enforceOverride = true)
+    private OrderEventPublisher orderEventPublisher;
 
     private static final Long USER = 1L;
     private static final Duration WAIT = Duration.ofSeconds(10);

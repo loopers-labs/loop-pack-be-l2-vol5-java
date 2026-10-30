@@ -2,7 +2,7 @@ package com.loopers.application.payment;
 
 import com.loopers.application.product.ProductFacade;
 import com.loopers.domain.product.ProductDetailCache;
-import com.loopers.fixture.pg.PaymentStatus;
+import com.loopers.pgsimulator.PaymentStatus;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;

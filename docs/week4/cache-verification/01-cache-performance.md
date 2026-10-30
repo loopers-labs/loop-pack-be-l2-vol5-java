@@ -8,7 +8,7 @@
 
 ## 실행 전 고정 — 구현한 구성
 
-[상품 조회 설계 4.4](../../system-design/sections/04-use-cases.md#44-상품-조회)를 따른다.
+[상품 조회 설계 4.4](../../system-design/features/product-cache.md#44-상품-조회)를 따른다.
 
 |항목|구현|
 |---|---|

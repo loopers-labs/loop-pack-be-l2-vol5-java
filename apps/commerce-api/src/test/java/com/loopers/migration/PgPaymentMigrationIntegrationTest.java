@@ -26,6 +26,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -42,6 +43,9 @@ import static org.junit.jupiter.api.Assertions.assertAll;
  * 테스트 MySQL 컨테이너 안의 별도 스키마 두 개를 쓴다. FRESH 는 새 코드가 ddl-auto=create 로 만든 비교 기준이고,
  * LEGACY 는 과거 생성 DDL 의 orders·stock_history 와 FRESH 에서 복사한 나머지 테이블로 만든 전환 대상이다.
  * 이 재현의 통과는 로컬 loopers 등 실제 보존 대상 DB 의 전환 완료가 아니다.
+ *
+ * <p>FRESH 에는 6주차에 추가한 orders.confirmed_at 이 있다. 5주차 전환 SQL 과 보존 검증은 그대로 두고, 현재 스키마 비교와
+ * validate 기동 직전에만 별도 6주차 열 추가 SQL 을 적용한다. 그래서 이 두 검증은 5주차 전환만이 아니라 「5주차 전환 + 6주차 열 추가」의 결과를 본다.
  */
 @DisplayName("기존 POINT 데이터가 있는 스키마를 설계 3.6 순서로 전환하면 값이 보존되고 새 코드가 validate 로 기동한다.")
 class PgPaymentMigrationIntegrationTest {
@@ -49,6 +53,7 @@ class PgPaymentMigrationIntegrationTest {
     private static final String FRESH = "pg_migration_fresh";
     private static final String LEGACY = "pg_migration_legacy";
     private static final String LEGACY_DDL = "db/pg-migration/legacy-orders-stock-history.sql";
+    private static final String CONFIRMED_AT_SQL = "db/order-events/add-order-confirmed-at.sql";
     private static final Set<String> MIGRATED_TABLES = Set.of("orders", "stock_history", "payment", "payment_conflict");
     private static final String KEY = "123e4567-e89b-12d3-a456-426614174000";
 
@@ -98,7 +103,7 @@ class PgPaymentMigrationIntegrationTest {
         rootDataSource.destroy();
     }
 
-    @DisplayName("사전 확인을 통과한 뒤 전환하면 기존 행의 값·건수가 같고 과거 POINT 만 보정되며, 스키마가 새 코드의 생성 결과와 같다.")
+    @DisplayName("5주차 전환은 기존 행을 보존하고 과거 POINT 만 보정하며, 6주차 confirmed_at 추가 뒤에도 기존 행은 NULL·값 유지이고 스키마는 현재 코드와 같다.")
     @Test
     void migratesPreservingLegacyRows() throws SQLException {
         List<Map<String, Object>> ordersBefore = jdbc.queryForList("""
@@ -146,6 +151,17 @@ class PgPaymentMigrationIntegrationTest {
             () -> assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM payment_conflict", Long.class)).isZero()
         );
 
+        List<Map<String, Object>> ordersAfterWeek5 = jdbc.queryForList("SELECT * FROM orders ORDER BY id");
+        List<List<Map<String, Object>>> otherRowsAfterWeek5 = otherTableRows();
+        addConfirmedAtColumn();
+
+        assertAll("6주차 confirmed_at 열 추가",
+            () -> assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM orders WHERE confirmed_at IS NOT NULL", Long.class))
+                .as("backfill 없이 기존 행은 모두 NULL").isZero(),
+            () -> assertThat(withoutConfirmedAt(jdbc.queryForList("SELECT * FROM orders ORDER BY id")))
+                .as("기존 열 값·건수 유지").isEqualTo(ordersAfterWeek5),
+            () -> assertThat(otherTableRows()).isEqualTo(otherRowsAfterWeek5)
+        );
         assertThat(tables(LEGACY)).isEqualTo(tables(FRESH));
         for (String table : MIGRATED_TABLES) {
             assertAll(table,
@@ -242,10 +258,11 @@ class PgPaymentMigrationIntegrationTest {
             .hasMessageContaining("Schema-validation");
     }
 
-    @DisplayName("전환 뒤 새 코드는 validate 로 기동해 과거 POINT 주문을 보존한 채 읽고, 신규 PG 확인 시작을 저장한다.")
+    @DisplayName("5주차 전환과 6주차 confirmed_at 추가를 거친 스키마에서 현재 코드는 validate 로 기동해 과거 POINT 주문을 읽고 신규 PG 결제를 시작한다.")
     @Test
     void bootsNewCodeWithValidateAfterMigration() throws SQLException {
         assertThat(PgPaymentMigration.migrateIfPrecheckPasses(connection(), jdbc)).isEmpty();
+        addConfirmedAtColumn();
 
         try (ConfigurableApplicationContext context = boot(LEGACY, "validate")) {
             OrderFacade orderFacade = context.getBean(OrderFacade.class);
@@ -279,7 +296,9 @@ class PgPaymentMigrationIntegrationTest {
                     "verification_status", "NOT_CHECKED")),
             () -> assertThat(jdbc.queryForMap("SELECT status, payment_method, total_amount, point_amount, paid_amount FROM orders WHERE id = 1"))
                 .isEqualTo(Map.of("status", "CONFIRMED", "payment_method", "POINT", "total_amount", 2000L,
-                    "point_amount", 2000L, "paid_amount", 2000L))
+                    "point_amount", 2000L, "paid_amount", 2000L)),
+            () -> assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM orders WHERE confirmed_at IS NOT NULL", Long.class))
+                .as("POINT 확정·PG 대기 모두 확정 시각을 추정하지 않는다").isZero()
         );
     }
 
@@ -373,6 +392,27 @@ class PgPaymentMigrationIntegrationTest {
     private Set<String> tables(String schema) {
         return Set.copyOf(jdbc.queryForList(
             "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?", String.class, schema));
+    }
+
+    /** 5주차 전환과 별개인 6주차 열 추가 단계. */
+    private void addConfirmedAtColumn() throws SQLException {
+        ScriptUtils.executeSqlScript(connection(), new ClassPathResource(CONFIRMED_AT_SQL));
+    }
+
+    private static List<Map<String, Object>> withoutConfirmedAt(List<Map<String, Object>> rows) {
+        return rows.stream().map(row -> {
+            Map<String, Object> copy = new LinkedHashMap<>(row);
+            copy.remove("confirmed_at");
+            return copy;
+        }).toList();
+    }
+
+    private List<List<Map<String, Object>>> otherTableRows() {
+        return List.of(
+            jdbc.queryForList("SELECT * FROM order_item ORDER BY id"),
+            jdbc.queryForList("SELECT * FROM stock_history ORDER BY id"),
+            jdbc.queryForList("SELECT * FROM product ORDER BY id")
+        );
     }
 
     private Connection connection() throws SQLException {
