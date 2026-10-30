@@ -31,6 +31,10 @@ public class KafkaTestContainersConfig {
         System.setProperty("spring.kafka.bootstrap-servers", kafkaContainer.getBootstrapServers());
     }
 
+    public static String bootstrapServers() {
+        return kafkaContainer.getBootstrapServers();
+    }
+
     private static void createTopic(String name, int partitions) {
         Map<String, Object> config = Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaContainer.getBootstrapServers());
         try (Admin admin = Admin.create(config)) {
