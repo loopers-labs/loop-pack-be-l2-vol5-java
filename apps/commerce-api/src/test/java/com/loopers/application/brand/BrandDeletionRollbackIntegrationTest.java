@@ -82,7 +82,7 @@ class BrandDeletionRollbackIntegrationTest {
         // 이전 포인트 결제로 확정된 주문을 저장된 상태 그대로 둔다.
         OrderItem pastOrderItem = OrderItem.create(zeroStockProduct.getId(), zeroStockProduct.getName(), zeroStockProduct.getPrice(), 1);
         Order pastOrder = orderRepository.save(Order.reconstitute(null, user.getId(), OrderStatus.CONFIRMED,
-            pastOrderItem.getAmount(), pastOrderItem.getAmount(), PaymentResult.SUCCESS, PaymentMethod.POINT, List.of(pastOrderItem)));
+            pastOrderItem.getAmount(), pastOrderItem.getAmount(), PaymentResult.SUCCESS, PaymentMethod.POINT, null, List.of(pastOrderItem)));
 
         Timestamp brandUpdatedAtBefore = readUpdatedAt("brands", brand.getId());
         Timestamp zeroStockUpdatedAtBefore = readUpdatedAt("products", zeroStockProduct.getId());

@@ -1,10 +1,10 @@
 # 시스템 개요
 
-Commerce API의 시스템 경계, 코드 의존 방향과 계층별 책임을 정리한다. 개별 기능의 정책과 실행 흐름은 [유스케이스 설계](README.md#유스케이스)를 따른다.
+Commerce 시스템(`commerce-api`, `commerce-streamer`)의 경계, 코드 의존 방향과 계층별 책임을 정리한다. 개별 기능의 정책과 실행 흐름은 [유스케이스 설계](README.md#유스케이스)를 따른다.
 
 ## 시스템 경계
 
-고객·관리자 요청과 PG의 결과 알림은 `commerce-api`에서 수신한다.
+고객·관리자 요청과 PG의 결과 알림은 `commerce-api`에서 수신한다. 주문 확정 사실은 Kafka로 전달하고 `commerce-streamer`가 소비해 구매 활동을 저장한다.
 
 ```mermaid
 flowchart LR
@@ -15,8 +15,13 @@ flowchart LR
         API["commerce-api"]
         DB[("DB")]
         Redis[("Redis")]
+        Kafka[("Kafka")]
+        Streamer["commerce-streamer"]
         API <--> DB
         API <-->|"상품 목록 캐시"| Redis
+        API -->|"OrderConfirmed"| Kafka
+        Kafka -->|"구매 활동 소비"| Streamer
+        Streamer -->|"구매 활동"| DB
     end
 
     PG["테스트 PG"]
@@ -28,7 +33,8 @@ flowchart LR
 ```
 
 테스트 PG는 `apps:test-pg`의 별도 앱·컨테이너로 구성하며 Commerce와 HTTP로 통신한다.<br>
-PG와의 송수신 계약은 [PG 연동 설계](external-systems/payment-gateway.md), 실행 경계, 시나리오 제어와 후속 작업은 [로컬 테스트 PG](external-systems/test-payment-gateway.md)에서 관리한다.
+PG와의 송수신 계약은 [PG 연동 설계](external-systems/payment-gateway.md), 실행 경계, 시나리오 제어와 후속 작업은 [로컬 테스트 PG](external-systems/test-payment-gateway.md)에서 관리한다.<br>
+두 앱은 같은 MySQL을 쓰지만 서로의 테이블을 읽거나 쓰지 않는다. 이벤트 계약과 전달 보장은 [주문 확정 이벤트](use-cases/order-confirmed-event.md)를 따른다.
 
 ## 계층과 의존성
 
@@ -43,10 +49,12 @@ flowchart TB
 
 | 계층 | 책임 |
 | --- | --- |
-| `interfaces` | HTTP 입력을 검증하고 요청·응답을 변환하며 Application 유스케이스를 호출한다. |
+| `interfaces` | HTTP 입력이나 Kafka record를 검증하고 요청·응답을 변환하며 Application 유스케이스를 호출한다. |
 | `application` | 요청자를 확인하고 도메인 객체의 협력과 트랜잭션 경계를 조율한다. Repository와 외부 연동 계약을 사용한다. |
 | `domain` | 업무 규칙·불변식과 상태 전이를 관리하고, 필요한 조회·저장 계약을 정의한다. |
-| `infrastructure` | Domain·Application의 계약을 영속 기술과 외부 연동 기술로 구현한다. 모델 변환과 저장소·외부 시스템 연결을 담당한다. |
+| `infrastructure` | Domain·Application의 계약을 영속 기술과 외부 연동 기술로 구현한다. 모델 변환과 저장소·외부 시스템·메시지 broker 연결을 담당한다. |
+
+`commerce-streamer`도 같은 계층 구성을 따른다.
 
 저장 모델과의 매핑은 [영속성 매핑 설계](persistence-mapping.md), 업무 오류의 HTTP 응답 변환은 [오류 변환 설계](error-mapping.md)를 따른다.
 

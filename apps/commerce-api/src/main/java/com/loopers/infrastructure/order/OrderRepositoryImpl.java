@@ -38,16 +38,17 @@ public class OrderRepositoryImpl implements OrderRepository {
     }
 
     @Override
-    public int completePgPaymentIfPending(Long orderId, long paymentAmount, ZonedDateTime completedAt) {
+    public int completePgPaymentIfPending(Long orderId, long paymentAmount, ZonedDateTime confirmedAt) {
         return orderJpaRepository.terminatePgPaymentIfPending(
-            orderId, OrderStatus.PAYMENT_PENDING, OrderStatus.CONFIRMED, paymentAmount, PaymentResult.SUCCESS, completedAt
+            orderId, OrderStatus.PAYMENT_PENDING, OrderStatus.CONFIRMED, paymentAmount, PaymentResult.SUCCESS,
+            confirmedAt, confirmedAt
         );
     }
 
     @Override
     public int failPgPaymentIfPending(Long orderId, ZonedDateTime failedAt) {
         return orderJpaRepository.terminatePgPaymentIfPending(
-            orderId, OrderStatus.PAYMENT_PENDING, OrderStatus.PAYMENT_FAILED, null, PaymentResult.FAILED, failedAt
+            orderId, OrderStatus.PAYMENT_PENDING, OrderStatus.PAYMENT_FAILED, null, PaymentResult.FAILED, null, failedAt
         );
     }
 

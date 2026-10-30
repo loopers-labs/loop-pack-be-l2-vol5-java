@@ -1,6 +1,6 @@
 # PG 연동 설계
 
-> 주문 결제: [1. 결제 요청](../use-cases/order-payment-request.md) → **2. PG 연동** → [3. 결과 반영](../use-cases/order-payment-result.md)
+> 주문 결제: [1. 결제 요청](../use-cases/order-payment-request.md) → **2. PG 연동** → [3. 결과 반영](../use-cases/order-payment-result.md) → [4. 확정 이벤트](../use-cases/order-confirmed-event.md)
 
 로컬 테스트 PG와 Commerce 사이의 송수신 계약과 adapter 규칙을 정리한다.<br>
 요청 조율과 트랜잭션은 [결제 요청](../use-cases/order-payment-request.md), 시도·주문·재고 변경은 [결과 반영](../use-cases/order-payment-result.md)이 맡는다.

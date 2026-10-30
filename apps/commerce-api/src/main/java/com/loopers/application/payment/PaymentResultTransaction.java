@@ -1,5 +1,6 @@
 package com.loopers.application.payment;
 
+import com.loopers.application.order.event.OrderConfirmedEvent;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.OrderRepository;
@@ -12,10 +13,13 @@ import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.Optional;
 
@@ -27,6 +31,8 @@ public class PaymentResultTransaction {
     private final PaymentAttemptRepository paymentAttemptRepository;
     private final OrderRepository orderRepository;
     private final ProductRepository productRepository;
+    private final Clock clock;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
     // TX B: 시도·주문·품목을 다시 읽고 도메인 전이 검사와 DB 조건부 갱신을 함께 적용한다.
     // 시도를 종결한 요청만 주문을 종결하고, 실패면 같은 트랜잭션에서 재고를 반환한다.
@@ -104,7 +110,7 @@ public class PaymentResultTransaction {
         if (!attempt.observe(transactionKey, observedStatus)) {
             return PaymentReflectionOutcome.UNCHANGED;
         }
-        ZonedDateTime now = ZonedDateTime.now();
+        ZonedDateTime now = now();
         if (observedStatus == PaymentAttemptStatus.PENDING) {
             int updated = paymentAttemptRepository.markPending(attempt.getId(), transactionKey, now);
             return updated == 1 ? PaymentReflectionOutcome.APPLIED : PaymentReflectionOutcome.UNCHANGED;
@@ -121,14 +127,14 @@ public class PaymentResultTransaction {
     }
 
     private PaymentReflectionOutcome applyUnknown(PaymentAttempt attempt) {
-        if (!attempt.markUnknown() || paymentAttemptRepository.markUnknown(attempt.getId(), ZonedDateTime.now()) != 1) {
+        if (!attempt.markUnknown() || paymentAttemptRepository.markUnknown(attempt.getId(), now()) != 1) {
             return PaymentReflectionOutcome.UNCHANGED;
         }
         return PaymentReflectionOutcome.APPLIED;
     }
 
     private PaymentReflectionOutcome applyRejection(PaymentAttempt attempt, Order order) {
-        ZonedDateTime now = ZonedDateTime.now();
+        ZonedDateTime now = now();
         if (!attempt.rejectBeforeCreate() || paymentAttemptRepository.rejectBeforeCreate(attempt.getId(), now) != 1) {
             return PaymentReflectionOutcome.UNCHANGED;
         }
@@ -137,10 +143,11 @@ public class PaymentResultTransaction {
     }
 
     private void completeOrder(Order order, ZonedDateTime now) {
-        order.completePgPayment();
-        if (orderRepository.completePgPaymentIfPending(order.getId(), order.getPaymentAmount(), now) != 1) {
+        order.completePgPayment(now);
+        if (orderRepository.completePgPaymentIfPending(order.getId(), order.getPaymentAmount(), order.getConfirmedAt()) != 1) {
             throw integrityError("결제 대기 주문을 확정하지 못했습니다.");
         }
+        applicationEventPublisher.publishEvent(OrderConfirmedEvent.from(order));
     }
 
     // 결제 요청 이후 고정된 품목 스냅샷의 수량만큼 Product ID 오름차순으로 반환한다.
@@ -160,12 +167,17 @@ public class PaymentResultTransaction {
 
     // 처음 기록한 사유만 남는다. 이미 기록돼 있어도 이 관찰은 충돌로 처리한다.
     private PaymentReflectionOutcome recordConflict(PaymentAttempt attempt, PaymentConflictReason reason) {
-        ZonedDateTime now = ZonedDateTime.now();
+        ZonedDateTime now = now();
         if (attempt.recordConflict(reason, now) && paymentAttemptRepository.recordConflict(attempt.getId(), reason, now) == 1) {
             log.warn("결제 관찰 충돌을 기록했습니다. attemptId={}, orderId={}, reason={}",
                 attempt.getId(), attempt.getOrderId(), reason);
         }
         return PaymentReflectionOutcome.CONFLICT;
+    }
+
+    // DB는 마이크로초까지 저장한다. 확정 이벤트가 DB와 같은 확정 시각을 쓰도록 저장 전에 같은 정밀도로 자른다.
+    private ZonedDateTime now() {
+        return ZonedDateTime.now(clock).truncatedTo(ChronoUnit.MICROS);
     }
 
     private PaymentAttempt findAttempt(Long attemptId) {

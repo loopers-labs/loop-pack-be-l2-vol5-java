@@ -15,6 +15,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -39,26 +40,31 @@ public class OrderJpaEntity extends BaseEntity {
     @Enumerated(EnumType.STRING)
     private PaymentMethod paymentMethod;
 
+    private ZonedDateTime confirmedAt;
+
     @Getter(AccessLevel.NONE)
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
     @JoinColumn(name = "order_id", nullable = false)
     private List<OrderItemJpaEntity> items = new ArrayList<>();
 
     private OrderJpaEntity(Long userId, OrderStatus status, long totalAmount, Long paymentAmount,
-                           PaymentResult paymentResult, PaymentMethod paymentMethod, List<OrderItemJpaEntity> items) {
+                           PaymentResult paymentResult, PaymentMethod paymentMethod, ZonedDateTime confirmedAt,
+                           List<OrderItemJpaEntity> items) {
         this.userId = userId;
         this.status = status;
         this.totalAmount = totalAmount;
         this.paymentAmount = paymentAmount;
         this.paymentResult = paymentResult;
         this.paymentMethod = paymentMethod;
+        this.confirmedAt = confirmedAt;
         this.items.addAll(items);
     }
 
     public static OrderJpaEntity create(Long userId, OrderStatus status, long totalAmount, Long paymentAmount,
                                         PaymentResult paymentResult, PaymentMethod paymentMethod,
-                                        List<OrderItemJpaEntity> items) {
-        return new OrderJpaEntity(userId, status, totalAmount, paymentAmount, paymentResult, paymentMethod, items);
+                                        ZonedDateTime confirmedAt, List<OrderItemJpaEntity> items) {
+        return new OrderJpaEntity(userId, status, totalAmount, paymentAmount, paymentResult, paymentMethod, confirmedAt,
+            items);
     }
 
     public List<OrderItemJpaEntity> getItems() {
@@ -71,5 +77,6 @@ public class OrderJpaEntity extends BaseEntity {
         paymentAmount = order.getPaymentAmount();
         paymentResult = order.getPaymentResult();
         paymentMethod = order.getPaymentMethod();
+        confirmedAt = order.getConfirmedAt();
     }
 }

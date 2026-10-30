@@ -3,6 +3,7 @@ package com.loopers.domain.order;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -23,10 +24,13 @@ public class Order {
 
     private PaymentMethod paymentMethod;
 
+    private ZonedDateTime confirmedAt;
+
     private List<OrderItem> items = new ArrayList<>();
 
     private Order(Long id, Long userId, OrderStatus status, long totalAmount, Long paymentAmount,
-                  PaymentResult paymentResult, PaymentMethod paymentMethod, List<OrderItem> items) {
+                  PaymentResult paymentResult, PaymentMethod paymentMethod, ZonedDateTime confirmedAt,
+                  List<OrderItem> items) {
         this.id = id;
         this.userId = userId;
         this.status = status;
@@ -34,6 +38,7 @@ public class Order {
         this.paymentAmount = paymentAmount;
         this.paymentResult = paymentResult;
         this.paymentMethod = paymentMethod;
+        this.confirmedAt = confirmedAt;
         this.items = new ArrayList<>(items);
     }
 
@@ -41,18 +46,20 @@ public class Order {
         if (items == null || items.isEmpty()) {
             throw new CoreException(ErrorType.BAD_REQUEST, "주문 품목은 하나 이상이어야 합니다.");
         }
-        Order order = new Order(null, userId, OrderStatus.DRAFT, 0L, null, null, null, List.of());
+        Order order = new Order(null, userId, OrderStatus.DRAFT, 0L, null, null, null, null, List.of());
         items.forEach(order::addItem);
         return order;
     }
 
+    // 확정 시각을 저장하기 전에 확정한 주문은 확정 시각이 비어 있다. 다른 시각으로 추정해 채우지 않는다.
     public static Order reconstitute(Long id, Long userId, OrderStatus status, long totalAmount, Long paymentAmount,
-                                     PaymentResult paymentResult, PaymentMethod paymentMethod, List<OrderItem> items) {
+                                     PaymentResult paymentResult, PaymentMethod paymentMethod,
+                                     ZonedDateTime confirmedAt, List<OrderItem> items) {
         // 결제를 시작한 주문은 결제수단을 저장하므로, 없으면 상태로 추론하지 않고 데이터 정합성 오류로 본다.
         if (status != OrderStatus.DRAFT && paymentMethod == null) {
             throw new CoreException(ErrorType.INTERNAL_ERROR, "결제를 시작한 주문에 결제수단이 없습니다.");
         }
-        return new Order(id, userId, status, totalAmount, paymentAmount, paymentResult, paymentMethod, items);
+        return new Order(id, userId, status, totalAmount, paymentAmount, paymentResult, paymentMethod, confirmedAt, items);
     }
 
     private void addItem(OrderItem item) {
@@ -78,6 +85,7 @@ public class Order {
     public PaymentResult getPaymentResult() { return paymentResult; }
     public List<OrderItem> getItems() { return Collections.unmodifiableList(items); }
     public PaymentMethod getPaymentMethod() { return paymentMethod; }
+    public ZonedDateTime getConfirmedAt() { return confirmedAt; }
 
     public void requestPgPayment() {
         validateDraft();
@@ -85,11 +93,16 @@ public class Order {
         paymentMethod = PaymentMethod.PG;
     }
 
-    public void completePgPayment() {
+    // 확정 시각은 최초 확정 때 한 번 정한다. PAYMENT_PENDING 검사로 이미 확정한 주문은 다시 바꾸지 못한다.
+    public void completePgPayment(ZonedDateTime confirmedAt) {
         validatePaymentPending();
+        if (confirmedAt == null) {
+            throw new CoreException(ErrorType.INTERNAL_ERROR, "확정 시각 없이 주문을 확정할 수 없습니다.");
+        }
         status = OrderStatus.CONFIRMED;
         paymentAmount = totalAmount;
         paymentResult = PaymentResult.SUCCESS;
+        this.confirmedAt = confirmedAt;
     }
 
     public void failPgPayment() {
