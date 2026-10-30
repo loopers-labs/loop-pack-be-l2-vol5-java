@@ -54,6 +54,7 @@ public class OrderRepositoryImpl implements OrderRepository {
                         order.getStatus(),
                         order.getPaidAmount(),
                         order.getPaymentResult().name(),
+                        order.getConfirmedAt(),
                         ZonedDateTime.now());
         if (updated != 1) {
             throw new CoreException(ErrorType.INVALID_REQUEST);
@@ -74,7 +75,7 @@ public class OrderRepositoryImpl implements OrderRepository {
     public void confirmIfPaymentPending(Order order) {
         int updated = repository.confirmIfStatus(
                 order.getId(), order.getUserId(), OrderStatus.PAYMENT_PENDING, order.getStatus(),
-                order.getPaidAmount(), order.getPaymentResult().name(), ZonedDateTime.now());
+                order.getPaidAmount(), order.getPaymentResult().name(), order.getConfirmedAt(), ZonedDateTime.now());
         if (updated != 1) {
             throw new CoreException(ErrorType.CONFLICT);
         }

@@ -5,6 +5,7 @@ import com.loopers.support.error.ErrorType;
 
 import lombok.Getter;
 
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -18,6 +19,7 @@ public class Order {
     private OrderStatus status;
     private Long paidAmount;
     private PaymentResult paymentResult;
+    private Instant confirmedAt;
 
     private Order(
             Long id,
@@ -26,7 +28,8 @@ public class Order {
             long totalAmount,
             OrderStatus status,
             Long paidAmount,
-            PaymentResult paymentResult) {
+            PaymentResult paymentResult,
+            Instant confirmedAt) {
         this.id = id;
         this.userId = userId;
         this.items = List.copyOf(items);
@@ -34,6 +37,7 @@ public class Order {
         this.status = status;
         this.paidAmount = paidAmount;
         this.paymentResult = paymentResult;
+        this.confirmedAt = confirmedAt;
     }
 
     public record RequestedItem(long productId, int quantity, long unitPrice) {
@@ -81,7 +85,7 @@ public class Order {
         } catch (ArithmeticException exception) {
             throw new CoreException(ErrorType.ORDER_AMOUNT_OVERFLOW);
         }
-        return new Order(null, userId, items, total, OrderStatus.DRAFT, null, null);
+        return new Order(null, userId, items, total, OrderStatus.DRAFT, null, null, null);
     }
 
     public static Order restore(
@@ -91,8 +95,9 @@ public class Order {
             long total,
             OrderStatus status,
             Long paidAmount,
-            PaymentResult paymentResult) {
-        return new Order(id, userId, items, total, status, paidAmount, paymentResult);
+            PaymentResult paymentResult,
+            Instant confirmedAt) {
+        return new Order(id, userId, items, total, status, paidAmount, paymentResult, confirmedAt);
     }
 
     public void confirm() {
@@ -111,13 +116,17 @@ public class Order {
         status = OrderStatus.PAYMENT_PENDING;
     }
 
-    public void completePayment() {
+    public void completePayment(Instant confirmationTime) {
         if (status != OrderStatus.PAYMENT_PENDING) {
             throw new CoreException(ErrorType.CONFLICT);
+        }
+        if (confirmationTime == null) {
+            throw new CoreException(ErrorType.INVALID_REQUEST);
         }
         paidAmount = totalAmount;
         paymentResult = PaymentResult.SUCCESS;
         status = OrderStatus.CONFIRMED;
+        confirmedAt = confirmationTime;
     }
 
     public void failPayment() {

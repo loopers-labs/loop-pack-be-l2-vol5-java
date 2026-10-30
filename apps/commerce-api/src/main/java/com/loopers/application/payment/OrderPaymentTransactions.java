@@ -12,15 +12,19 @@ import com.loopers.domain.payment.PaymentStatus;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
+import com.loopers.kafka.event.OrderConfirmed;
 
 import lombok.RequiredArgsConstructor;
 
 import org.springframework.stereotype.Component;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Isolation;
 
 import java.util.Comparator;
 import java.util.UUID;
+import java.time.Clock;
+import java.time.temporal.ChronoUnit;
 
 @Component
 @RequiredArgsConstructor
@@ -31,6 +35,8 @@ public class OrderPaymentTransactions {
     private final ProductRepository products;
     private final PaymentRepository payments;
     private final StockReservationRepository reservations;
+    private final Clock orderConfirmationClock;
+    private final ApplicationEventPublisher events;
 
     // 주문 잠금을 기다린 실행도 직전 커밋의 결제 행을 읽어야 하므로 새 조회마다 커밋된 상태를 읽는다.
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -108,11 +114,16 @@ public class OrderPaymentTransactions {
         }
         Order order = orders.findById(orderId)
                 .orElseThrow(() -> new CoreException(ErrorType.ORDER_NOT_FOUND));
-        order.completePayment();
+        order.completePayment(orderConfirmationClock.instant().truncatedTo(ChronoUnit.MICROS));
         orders.confirmIfPaymentPending(order);
         // 가용 재고는 TX A에서 이미 차감했다. 성공 시에는 예약만 소비한다.
         reservations.consumeHeldForOrder(orderId, order.getItems().size());
-        return payments.save(completedPayment);
+        Payment savedPayment = payments.save(completedPayment);
+        events.publishEvent(OrderConfirmed.confirmed(orderId, order.getConfirmedAt(),
+                order.getItems().stream()
+                        .map(item -> new OrderConfirmed.Item(item.getProductId(), item.getQuantity()))
+                        .toList()));
+        return savedPayment;
     }
 
     public Payment recordRejection(long orderId, PaymentGateway.RejectedBeforeCreateException rejection) {

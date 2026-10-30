@@ -13,6 +13,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.ZonedDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -38,7 +39,7 @@ public interface OrderJpaRepository extends JpaRepository<OrderJpaEntity, Long> 
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query(
             "update OrderJpaEntity o set o.status = :confirmed, o.paidAmount = :paidAmount, "
-                    + "o.paymentResult = :paymentResult, o.updatedAt = :now "
+                    + "o.paymentResult = :paymentResult, o.confirmedAt = :confirmedAt, o.updatedAt = :now "
                     + "where o.id = :id and o.userId = :userId and o.status = :expectedStatus")
     int confirmIfStatus(
             @Param("id") long id,
@@ -47,6 +48,7 @@ public interface OrderJpaRepository extends JpaRepository<OrderJpaEntity, Long> 
             @Param("confirmed") OrderStatus confirmed,
             @Param("paidAmount") long paidAmount,
             @Param("paymentResult") String paymentResult,
+            @Param("confirmedAt") Instant confirmedAt,
             @Param("now") ZonedDateTime now);
 
     @Modifying(flushAutomatically = true, clearAutomatically = true)

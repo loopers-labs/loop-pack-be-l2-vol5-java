@@ -17,6 +17,7 @@ import jakarta.persistence.Table;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.time.Instant;
 
 @Entity
 @Table(name = "orders")
@@ -38,6 +39,7 @@ public class OrderJpaEntity extends BaseEntity {
 
     private Long paidAmount;
     private String paymentResult;
+    private Instant confirmedAt;
 
     protected OrderJpaEntity() {
     }
@@ -54,6 +56,7 @@ public class OrderJpaEntity extends BaseEntity {
         status = order.getStatus();
         paidAmount = order.getPaidAmount();
         paymentResult = order.getPaymentResult() == null ? null : order.getPaymentResult().name();
+        confirmedAt = order.getConfirmedAt();
     }
 
     public Order toDomain() {
@@ -64,6 +67,7 @@ public class OrderJpaEntity extends BaseEntity {
                 totalAmount,
                 status,
                 paidAmount,
-                paymentResult == null ? null : PaymentResult.valueOf(paymentResult));
+                paymentResult == null ? null : PaymentResult.valueOf(paymentResult),
+                confirmedAt);
     }
 }

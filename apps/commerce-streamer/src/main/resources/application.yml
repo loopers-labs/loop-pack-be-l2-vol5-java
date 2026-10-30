@@ -14,7 +14,7 @@ spring:
   main:
     web-application-type: servlet
   application:
-    name: commerce-api
+    name: commerce-streamer
   profiles:
     active: local
   config:
@@ -29,11 +29,44 @@ demo-kafka:
   test:
     topic-name: demo.internal.topic-v1
 
+order-events:
+  topic: order-events
+
+purchase-activity:
+  group-id: purchase-activity
+  concurrency: 1
+  auto-startup: true
+
 ---
 spring:
   config:
     activate:
       on-profile: local, test
+
+---
+spring:
+  config:
+    activate:
+      on-profile: local
+  jpa:
+    hibernate:
+      # 애플리케이션 재시작으로 완료 기록과 구매 활동이 지워지지 않게 유지한다.
+      ddl-auto: update
+
+server:
+  port: 8082
+
+management:
+  server:
+    port: 8083
+
+---
+spring.config.activate.on-profile: test
+
+purchase-activity:
+  fetch-min-bytes: 1
+  fetch-max-wait-ms: 100
+  poll-timeout-ms: 100
 
 ---
 spring:
