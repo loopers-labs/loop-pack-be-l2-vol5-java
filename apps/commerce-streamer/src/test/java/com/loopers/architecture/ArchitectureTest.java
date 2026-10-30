@@ -38,7 +38,7 @@ class ArchitectureTest {
     void importsRealClasses() {
         JavaClasses classes = productionClasses();
 
-        assertThat(nameCountIn(classes, ".domain.activity.")).isPositive();
+        assertThat(nameCountIn(classes, ".domain.purchase.")).isPositive();
         assertThat(nameCountIn(classes, ".interfaces.")).isPositive();
     }
 

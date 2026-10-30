@@ -1,8 +1,8 @@
 package com.loopers.interfaces.consumer;
 
-import com.loopers.domain.activity.ConfirmedPurchase;
-import com.loopers.domain.activity.PurchaseLine;
-import com.loopers.domain.activity.PurchaseReading;
+import com.loopers.domain.purchase.ConfirmedPurchase;
+import com.loopers.domain.purchase.PurchaseLine;
+import com.loopers.domain.purchase.PurchaseReading;
 
 import java.time.Instant;
 import java.util.List;

@@ -3,9 +3,9 @@ package com.loopers.interfaces.consumer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.loopers.contract.OrderConfirmedContract;
-import com.loopers.domain.activity.ConfirmedPurchase;
-import com.loopers.domain.activity.PurchaseReading;
-import com.loopers.domain.activity.UnreadableReason;
+import com.loopers.domain.purchase.ConfirmedPurchase;
+import com.loopers.domain.purchase.PurchaseReading;
+import com.loopers.domain.purchase.UnreadableReason;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,6 +16,7 @@ import org.springframework.context.annotation.Configuration;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -38,7 +39,7 @@ class OrderEventPayloadReaderTest {
         this.reader = new OrderEventPayloadReader(objectMapper);
     }
 
-    private OrderEventReading read(byte[] value) {
+    private Optional<PurchaseReading> read(byte[] value) {
         return reader.read("42", value);
     }
 
@@ -52,12 +53,12 @@ class OrderEventPayloadReaderTest {
         return objectMapper.writeValueAsBytes(node);
     }
 
-    private PurchaseReading confirmed(OrderEventReading reading) {
-        assertThat(reading).isInstanceOf(OrderEventReading.Confirmed.class);
-        return ((OrderEventReading.Confirmed) reading).reading();
+    private PurchaseReading confirmed(Optional<PurchaseReading> reading) {
+        assertThat(reading).isPresent();
+        return reading.get();
     }
 
-    private UnreadableReason unreadable(OrderEventReading reading) {
+    private UnreadableReason unreadable(Optional<PurchaseReading> reading) {
         PurchaseReading purchase = confirmed(reading);
         assertThat(purchase).isInstanceOf(PurchaseReading.Unreadable.class);
         return ((PurchaseReading.Unreadable) purchase).reason();
@@ -123,11 +124,11 @@ class OrderEventPayloadReaderTest {
     @DisplayName("ACT-016: payload 의 eventType 이 OrderConfirmed 가 아니면 다루지 않는다. 그 이벤트의 버전은 보지 않는다")
     @Test
     void otherEventTypeIsNotHandled() throws Exception {
-        OrderEventReading reading = read(variant(node -> {
+        Optional<PurchaseReading> reading = read(variant(node -> {
             node.put("eventType", "OrderCancelled");
             node.put("schemaVersion", 9);
         }));
 
-        assertThat(reading).isEqualTo(new OrderEventReading.NotHandled("OrderCancelled"));
+        assertThat(reading).isEmpty();
     }
 }

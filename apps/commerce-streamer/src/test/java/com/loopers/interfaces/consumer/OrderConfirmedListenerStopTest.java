@@ -65,8 +65,8 @@ class OrderConfirmedListenerStopTest {
     }
 
     private void send(byte[] value) throws Exception {
-        ProducerRecord<String, byte[]> record = new ProducerRecord<>(TOPIC, null, "42", value);
-        kafkaTemplate.send(record).get(10, TimeUnit.SECONDS);
+        ProducerRecord<String, byte[]> producerRecord = new ProducerRecord<>(TOPIC, null, "42", value);
+        kafkaTemplate.send(producerRecord).get(10, TimeUnit.SECONDS);
     }
 
     private OffsetAndMetadata committed() throws Exception {

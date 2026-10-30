@@ -5,8 +5,13 @@ import com.loopers.contract.OrderConfirmedContract;
 import com.loopers.testcontainers.KafkaTestContainersConfig;
 import com.loopers.utils.DatabaseCleanUp;
 import com.zaxxer.hikari.HikariDataSource;
+import org.apache.kafka.clients.admin.Admin;
+import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -63,9 +68,18 @@ class OrderConfirmedListenerTest {
         databaseCleanUp.truncateAllTables();
     }
 
-    private void send(String key, byte[] value) throws Exception {
-        ProducerRecord<String, byte[]> record = new ProducerRecord<>(TOPIC, key, value);
-        kafkaTemplate.send(record).get(10, TimeUnit.SECONDS);
+    private RecordMetadata send(String key, byte[] value) throws Exception {
+        ProducerRecord<String, byte[]> producerRecord = new ProducerRecord<>(TOPIC, key, value);
+        return kafkaTemplate.send(producerRecord).get(10, TimeUnit.SECONDS).getRecordMetadata();
+    }
+
+    private long committed(TopicPartition partition) throws Exception {
+        try (Admin admin = Admin.create(Map.of(
+                AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, KafkaTestContainersConfig.bootstrapServers()))) {
+            OffsetAndMetadata offset = admin.listConsumerGroupOffsets("purchase-activity")
+                .partitionsToOffsetAndMetadata().get(10, TimeUnit.SECONDS).get(partition);
+            return offset == null ? -1L : offset.offset();
+        }
     }
 
     private static byte[] example() {
@@ -142,7 +156,7 @@ class OrderConfirmedListenerTest {
             .isEqualTo("KEY_MISMATCH");
     }
 
-    @DisplayName("KAFKA-006, EXP-009: 잠금 대기 초과는 1 초 뒤 다시 시도해, 잠금이 풀리면 사람 없이 반영된다")
+    @DisplayName("KAFKA-006, EXP-009: 잠금 대기 초과는 1 초 뒤 다시 시도해, 잠금이 풀리면 사람 없이 반영되고, 컨테이너는 멈추지 않으며 committed offset 이 그 record 를 지난다")
     @Test
     void retriesLockWaitTimeout() throws Exception {
         CompletableFuture<Void> lockHolder = CompletableFuture.runAsync(() ->
@@ -156,11 +170,25 @@ class OrderConfirmedListenerTest {
         Thread.sleep(300);
         long startedAt = System.nanoTime();
 
-        send("42", example());
+        RecordMetadata sent = send("42", example());
+        TopicPartition partition = new TopicPartition(sent.topic(), sent.partition());
 
         eventually(() -> count("purchase_activity") == 2, Duration.ofSeconds(20));
-        assertThat(Duration.ofNanos(System.nanoTime() - startedAt)).isGreaterThan(Duration.ofSeconds(3));
+        Duration recoveredIn = Duration.ofNanos(System.nanoTime() - startedAt);
+        eventually(() -> {
+            try {
+                return committed(partition) > sent.offset();
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        }, Duration.ofSeconds(20));
         lockHolder.get(10, TimeUnit.SECONDS);
+
+        System.out.printf("EXP-009 record=%s@%d, 반영까지=%s, committed=%d%n",
+            partition, sent.offset(), recoveredIn, committed(partition));
+        assertThat(recoveredIn).isGreaterThan(Duration.ofSeconds(3));
+        assertThat(registry.getListenerContainer(PurchaseActivityListenerConfig.LISTENER_ID).isRunning()).isTrue();
+        assertThat(count("order_confirmation_receipt")).isEqualTo(1);
     }
 
     private static void sleep(Duration duration) {

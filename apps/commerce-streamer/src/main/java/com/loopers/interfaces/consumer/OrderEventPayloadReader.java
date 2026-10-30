@@ -2,11 +2,12 @@ package com.loopers.interfaces.consumer;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.loopers.domain.activity.PurchaseReading;
-import com.loopers.domain.activity.UnreadableReason;
+import com.loopers.domain.purchase.PurchaseReading;
+import com.loopers.domain.purchase.UnreadableReason;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.util.Optional;
 
 @Component
 class OrderEventPayloadReader {
@@ -15,8 +16,8 @@ class OrderEventPayloadReader {
     private static final String SCHEMA_VERSION = "schemaVersion";
     private static final String CONFIRMED = "OrderConfirmed";
     private static final int SUPPORTED_VERSION = 1;
-    private static final OrderEventReading MALFORMED =
-        new OrderEventReading.Confirmed(new PurchaseReading.Unreadable(UnreadableReason.MALFORMED));
+    private static final Optional<PurchaseReading> MALFORMED =
+        Optional.of(new PurchaseReading.Unreadable(UnreadableReason.MALFORMED));
 
     private final ObjectMapper objectMapper;
 
@@ -24,15 +25,15 @@ class OrderEventPayloadReader {
         this.objectMapper = objectMapper;
     }
 
-    OrderEventReading read(String key, byte[] value) {
+    Optional<PurchaseReading> read(String key, byte[] value) {
         try {
             JsonNode root = parse(value);
             String eventType = requireText(root, EVENT_TYPE);
             if (!CONFIRMED.equals(eventType)) {
-                return new OrderEventReading.NotHandled(eventType);
+                return Optional.empty();
             }
             requireSupportedVersion(root);
-            return new OrderEventReading.Confirmed(bind(root).toReading(key));
+            return Optional.of(bind(root).toReading(key));
         } catch (MalformedRecord e) {
             return MALFORMED;
         }
