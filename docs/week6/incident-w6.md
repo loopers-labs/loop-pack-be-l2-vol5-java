@@ -88,6 +88,25 @@ partition 2개인 실험 topic, 같은 group. 각 member는 자기 스레드에�
 - 강제 종료(kill)는 ISR이 `replica.lag.time.max.ms` 뒤에 줄어 결과가 다를 수 있다 — 이번 실험이 증명하지 않은 것.
 - 관찰: 방금 만든 topic에 바로 보내면 metadata가 퍼지기 전이라 `max.block.ms` 1s 안에 첫 send가 막힐 수 있다(`Topic not present in metadata after 1000 ms`). 앱의 topic은 기동 때 만들어지므로 평소 경로와는 다르다.
 
+## E-7 · consumer 프로세스가 group을 떠날 때 — 정상 종료 vs kill -9 (10-30)
+
+**재현 코드** — `docs/week6/rebalance/rebalance.py` (`--mode term` · `--mode kill`). compose broker 3대 · 실험 DB `loopers_w6` · 같은 streamer jar를 프로세스 두 개(S1 · S2)로 실행 → 같은 group에 member 6개, partition 3개.
+1초에 1건 record(key = 주문 ID)를 넣다가 10초에 partition을 가진 프로세스를 끈다. 기본값 그대로: `session.timeout.ms` 45s · heartbeat 3s · eager(Range) rebalance.
+
+| | 정상 종료 (SIGTERM) | kill -9 (SIGKILL) |
+|---|---|---|
+| 끈 프로세스가 가진 partition | S1 = [1] | S1 = [0] |
+| 그 partition을 다른 프로세스가 받기까지 | **1.7s** (t=10.0 revoke → t=11.7 assign) | **43.3s** (t=10.0 kill → t=53.3 rebalance 시작, 53.6 assign) |
+| 그동안 그 partition에 들어온 record | 1건, 1.7s 기다림 | 12건, 최대 **42.7s** 기다림 → 새 담당자가 1초 안에 몰아서 처리 |
+| 유실 · 중복 처리 | 0 · 0 (40건) | 0 · 0 (70건) |
+| 다른 partition | 남은 프로세스의 partition도 revoke → 다시 assign (eager) | 같음 — partition 1은 약 0.35s, partition 2는 약 0.02s 멈춤 |
+
+- 정상 종료는 consumer가 close하며 group을 떠난다고 알린다(LeaveGroup) → coordinator가 바로 rebalance.
+- kill -9는 아무도 알리지 않는다 → coordinator는 마지막 heartbeat 뒤 `session.timeout.ms`(45s)가 지나서야 member를 뺀다. 그 사이 partition 0은 **담당자는 있는데 아무도 읽지 않는** 상태였다. record는 broker에 그대로 있었고(유실 0) 순서대로 처리됐다.
+- 중복 처리가 없었던 것은 record마다 처리 직후 commit했기 때문이다. 죽은 순간이 "DB 저장 뒤 · commit 전"이면 그 1건이 다시 오고 no-op이 된다 — 그 장면은 E-2가 결정적으로 재현한다.
+- eager rebalance라 끄지 않은 프로세스의 partition도 잠깐 내려놓았다가 다시 받았다(로그의 revoked → assigned).
+- 한계: 1회 실행. 정상 종료 실행은 console producer의 기본 `linger.ms`(1s) 때문에 평소 지연이 약 1s로 보인다 — kill 실행에서는 `linger.ms=0`으로 고쳐 평소 지연이 0.0 ~ 0.3s다.
+
 ## E-6 · `max.block.ms`와 callback 스레드 (수동, 아직 안 함)
 
 키트와 절차는 `docs/week6/k6/README.md` 3절. 학습자가 직접 돌려 예측 → 측정 → 차이를 그 표에 채운다.
