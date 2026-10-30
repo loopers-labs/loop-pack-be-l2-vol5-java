@@ -22,8 +22,15 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -333,6 +340,75 @@ class PurchaseActivityIntegrationTest {
             handleUnreadable("42", 20L, "{broken");
 
             assertThat(outcomes("held", "MALFORMED") - before).isEqualTo(1);
+        }
+    }
+
+    @Nested
+    @DisplayName("ACT-007: 같은 이벤트를 동시에 소비해도 유일 제약이 하나만 남긴다")
+    class Concurrency {
+
+        private List<PurchaseOutcome> handleConcurrently(List<ConfirmedPurchase> purchases) throws Exception {
+            ExecutorService executor = Executors.newFixedThreadPool(purchases.size());
+            CountDownLatch start = new CountDownLatch(1);
+            try {
+                List<Future<PurchaseOutcome>> futures = new ArrayList<>();
+                for (int i = 0; i < purchases.size(); i++) {
+                    ConfirmedPurchase purchase = purchases.get(i);
+                    long offset = 100L + i;
+                    futures.add(executor.submit(() -> {
+                        start.await();
+                        return handle(purchase, offset);
+                    }));
+                }
+                start.countDown();
+                List<PurchaseOutcome> outcomes = new ArrayList<>();
+                for (Future<PurchaseOutcome> future : futures) {
+                    outcomes.add(future.get(30, TimeUnit.SECONDS));
+                }
+                return outcomes;
+            } finally {
+                executor.shutdownNow();
+            }
+        }
+
+        @DisplayName("같은 사실 2 건이 동시에 오면 하나는 기록, 하나는 같은 사실이고, 처리 기록 1, 활동 한 벌, 보류 0 이다")
+        @Test
+        void sameFactTwice() throws Exception {
+            ConfirmedPurchase purchase = purchase(42L, line(7L, 2), line(8L, 1));
+
+            List<PurchaseOutcome> outcomes = handleConcurrently(List.of(purchase, purchase));
+
+            assertThat(outcomes).containsExactlyInAnyOrder(PurchaseOutcome.RECORDED, PurchaseOutcome.SAME_FACT);
+            assertThat(count("order_confirmation_receipt")).isEqualTo(1);
+            assertThat(count("purchase_activity")).isEqualTo(2);
+            assertThat(count("order_event_hold")).isZero();
+        }
+
+        @DisplayName("같은 사실 10 건이 동시에 와도 기록은 1 건이고 나머지 9 건은 같은 사실이다")
+        @Test
+        void sameFactTenTimes() throws Exception {
+            ConfirmedPurchase purchase = purchase(42L, line(7L, 2), line(8L, 1));
+
+            List<PurchaseOutcome> outcomes = handleConcurrently(Collections.nCopies(10, purchase));
+
+            assertThat(outcomes).filteredOn(PurchaseOutcome.RECORDED::equals).hasSize(1);
+            assertThat(outcomes).filteredOn(PurchaseOutcome.SAME_FACT::equals).hasSize(9);
+            assertThat(count("order_confirmation_receipt")).isEqualTo(1);
+            assertThat(count("purchase_activity")).isEqualTo(2);
+        }
+
+        @DisplayName("같은 eventId 의 다른 사실 2 건이 동시에 오면 먼저 commit 한 쪽이 남고 다른 쪽은 보류된다")
+        @Test
+        void conflictingFactsAtOnce() throws Exception {
+            List<PurchaseOutcome> outcomes = handleConcurrently(List.of(
+                purchase(42L, line(7L, 2), line(8L, 1)),
+                purchase(42L, line(7L, 3), line(8L, 1))));
+
+            assertThat(outcomes).containsExactlyInAnyOrder(PurchaseOutcome.RECORDED, PurchaseOutcome.HELD);
+            assertThat(count("order_confirmation_receipt")).isEqualTo(1);
+            assertThat(count("purchase_activity")).isEqualTo(2);
+            assertThat(jdbcTemplate.queryForObject("select reason from order_event_hold", String.class))
+                .isEqualTo("EVENT_CONFLICT");
         }
     }
 }

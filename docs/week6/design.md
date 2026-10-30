@@ -255,7 +255,7 @@ commerce-api 와 같은 스키마를 쓰되 주문 · 상품 테이블을 읽지
 |---|---|---|
 | `topic` · `partition_no` · `offset_no` | `uk_hold_position` | 같은 record 가 재전달돼도 한 줄 |
 | `reason` · `event_id` · `order_id` | | 왜 보류했나. 해석 불가면 `event_id` · `order_id` 는 비어 있다 |
-| `record_key` · `headers` · `record_timestamp` · `payload` | | 받은 record 의 네 요소를 그대로 남긴다. `headers` 는 이름순 JSON 이다. `record_timestamp` 는 producer 가 보낸 시각이라, 확정 시각과의 차이로 재발행 · 수동 전송을 알아본다. `KEY_MISMATCH` 의 원인인 key, 원래 요청으로 거슬러 갈 `traceparent` 가 여기 있다. 보류 시각은 `created_at` 이다 |
+| `record_key` · `headers` · `record_timestamp` · `payload` | | 받은 record 의 네 요소를 그대로 남긴다. `payload` 는 `MEDIUMBLOB` 이다 — 보류되는 record 에는 JSON 이 아닌 것(`MALFORMED`)이 있어 `JSON` 컬럼은 insert 를 거절하고, `TEXT` 는 UTF-8 이 아닌 바이트를 바꾼다. 다시 처리하려면 Kafka 에 있던 바이트와 같아야 한다. 볼 때는 `convert(payload using utf8mb4)`. `headers` 는 이름순 JSON 이다. `record_timestamp` 는 producer 가 보낸 시각이라, 확정 시각과의 차이로 재발행 · 수동 전송을 알아본다. `KEY_MISMATCH` 의 원인인 key, 원래 요청으로 거슬러 갈 `traceparent` 가 여기 있다. 보류 시각은 `created_at` 이다 |
 
 - 처리 기록은 **반영한 사실만** 담는다. 반영 시각은 `AuditEntity` 의 `created_at` 이다(처리 기록은 고치지 않는다). 어느 record 로 반영했는지(topic · partition · offset)는 남기지 않는다 — consumer 가 어디까지 읽었는지는 broker 의 committed offset 이 기억하고, 처리 기록의 위치는 조사 편의일 뿐이며 이긴 쪽은 `event_id` · `order_id` 로 kcat 에서 찾는다. 위치는 보류 기록에만 둔다. 거기서는 `uk_hold_position` 으로 같은 record 의 재전달을 한 줄로 만드는 데 쓴다. **뒤집을 조건**: 이긴 record 를 자주 찾아야 해 kcat 검색이 운영 부담이 될 때.
 - 소비자는 `confirmedAt` 을 읽을 때 **마이크로초로 자른다.** `DATETIME(6)` 은 넘치는 자리를 반올림해 저장하므로, 자르지 않으면 같은 record 의 재전달이 "다시 읽은 기록과 시각이 다르다" 로 충돌 보류된다. 생산자도 자르지만(`EVT-006`) 소비자의 멱등이 생산자의 구현에 기대지 않게 한다 — 나노초 시각으로 재전달을 돌려 실제로 `HELD` 가 나오는 것을 보았다.
