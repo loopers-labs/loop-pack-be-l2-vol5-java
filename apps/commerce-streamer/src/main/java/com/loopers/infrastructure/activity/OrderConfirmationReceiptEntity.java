@@ -2,6 +2,7 @@ package com.loopers.infrastructure.activity;
 
 import com.loopers.domain.AuditEntity;
 import com.loopers.domain.activity.ConfirmedPurchase;
+import com.loopers.domain.activity.RecordedConfirmation;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
@@ -40,5 +41,9 @@ class OrderConfirmationReceiptEntity extends AuditEntity {
         entity.confirmedAt = purchase.confirmedAt();
         entity.itemsDigest = purchase.itemsDigest();
         return entity;
+    }
+
+    RecordedConfirmation toRecorded() {
+        return new RecordedConfirmation(eventId, orderId, confirmedAt, itemsDigest);
     }
 }

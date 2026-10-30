@@ -1,10 +1,12 @@
 package com.loopers.domain.activity;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -18,7 +20,7 @@ public final class ConfirmedPurchase {
     private ConfirmedPurchase(String eventId, Long orderId, Instant confirmedAt, List<PurchaseLine> items) {
         this.eventId = eventId;
         this.orderId = orderId;
-        this.confirmedAt = confirmedAt;
+        this.confirmedAt = confirmedAt.truncatedTo(ChronoUnit.MICROS);
         this.items = items.stream()
             .sorted(Comparator.comparing(PurchaseLine::productId))
             .toList();
@@ -69,6 +71,20 @@ public final class ConfirmedPurchase {
         return Objects.equals(orderId, storedOrderId)
             && Objects.equals(confirmedAt, storedConfirmedAt)
             && Objects.equals(itemsDigest(), storedItemsDigest);
+    }
+
+    public ReceiptCollision collideWith(Optional<RecordedConfirmation> sameEvent,
+                                        Optional<RecordedConfirmation> sameOrder) {
+        if (sameEvent.isPresent()) {
+            RecordedConfirmation recorded = sameEvent.get();
+            return isSameFactAs(recorded.orderId(), recorded.confirmedAt(), recorded.itemsDigest())
+                ? ReceiptCollision.SAME_FACT
+                : ReceiptCollision.EVENT_CONFLICT;
+        }
+        if (sameOrder.isPresent()) {
+            return ReceiptCollision.ORDER_CONFLICT;
+        }
+        return ReceiptCollision.NOT_RECORDED;
     }
 
     public String itemsDigest() {

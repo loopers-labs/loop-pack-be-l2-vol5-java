@@ -50,7 +50,7 @@ commerce-streamer
 - `items` 는 저장된 주문 품목에서 만들고, 같은 상품은 합산해 하나로 둔다. `productId` 오름차순으로 정렬한다 — 의미는 없지만 같은 사실이 같은 바이트가 되어 로그 비교가 쉽다.
 - `userId` · 카드 · PG 식별자는 넣지 않는다. 구매 활동에 필요 없고, 이벤트는 저장 · 복제 · 재생되는 동안 지울 수 없다.
 
-**종류 · 버전 · `eventId` 는 payload 에만 싣는다.** 소비자는 payload 를 열어 `eventType` 으로 종류를 가른다(`ACT-016`).
+**종류 · 버전 · `eventId` 는 payload 에만 싣는다.** record header 에는 producer observation 이 붙이는 `traceparent` 만 있다(아래). 소비자는 payload 를 열어 `eventType` 으로 종류를 가른다(`ACT-016`).
 
 | 위치 | 얻는 것 | 잃는 것 |
 |---|---|---|
@@ -61,6 +61,7 @@ commerce-streamer
 
 - "둘 다" 의 이득은 성능이 아니라 **격리**다. 200 바이트 JSON 을 여는 비용은 DB insert 에 비해 0 에 가깝다. 그런데 지금 `order-events` 에는 `OrderConfirmed` 한 종류만 들어오고 읽는 소비자도 하나라, 지킬 다른 종류가 없다. 없는 문제를 막으려고 어긋남이라는 새 실패를 만들지 않는다.
 - 버전도 header 에 두지 않는다. 버전이 header 에 있어야 하는 것은 payload 를 열기 전에 형식을 골라야 할 때(버전마다 직렬화 형식이 다를 때)다. 모든 버전이 JSON 이라 열고 나서 `schemaVersion` 을 보면 된다.
+- **추적.** 공용 `KafkaTemplate` 의 observation 을 켠다(`setObservationEnabled(true)`). template 을 직접 만들어 Boot 설정(`spring.kafka.template.observation-enabled`)이 닿지 않으므로 코드에서 켠다. 확정 요청의 trace 가 W3C `traceparent` header 로 record 에 실리고, streamer listener 도 observation 을 켜(9 단계) 같은 traceId 로 이어 받는다. 두 앱 모두 `micrometer-tracing-bridge-brave` 로 로그에 traceId 를 찍으므로, 수집 서버 없이도 traceId 하나로 확정 요청 로그와 소비 · 보류 로그를 잇는다. 추적은 샘플링되고(기본 10 %) 세지 않으므로 지표 · 알림을 대신하지 않는다. Spring Boot 는 테스트에서 추적을 끄므로 확인 테스트는 `@AutoConfigureObservability` 로 켠다.
 - **뒤집을 조건**: `order-events` 에 다른 종류의 이벤트가 섞이거나 다른 팀이 이 topic 에 쓰게 될 때 — 종류를 header 에도 실어 열기 전에 거른다(둘 다). 기준은 payload 로 두고, header 이름은 조직의 규칙이나 CloudEvents 의 Kafka binary mode(`ce_type` · `ce_id`)를 따른다. 버전마다 payload 형식이 달라질 때 — 버전을 header 에 싣는다.
 
 ### 2.3 직렬화
@@ -253,9 +254,11 @@ commerce-api 와 같은 스키마를 쓰되 주문 · 상품 테이블을 읽지
 | 컬럼 | 제약 | 뜻 |
 |---|---|---|
 | `topic` · `partition_no` · `offset_no` | `uk_hold_position` | 같은 record 가 재전달돼도 한 줄 |
-| `reason` · `event_id` · `order_id` · `payload` · `held_at` | | 원본 바이트를 그대로 남긴다 |
+| `reason` · `event_id` · `order_id` | | 왜 보류했나. 해석 불가면 `event_id` · `order_id` 는 비어 있다 |
+| `record_key` · `headers` · `record_timestamp` · `payload` | | 받은 record 의 네 요소를 그대로 남긴다. `headers` 는 이름순 JSON 이다. `record_timestamp` 는 producer 가 보낸 시각이라, 확정 시각과의 차이로 재발행 · 수동 전송을 알아본다. `KEY_MISMATCH` 의 원인인 key, 원래 요청으로 거슬러 갈 `traceparent` 가 여기 있다. 보류 시각은 `created_at` 이다 |
 
 - 처리 기록은 **반영한 사실만** 담는다. 반영 시각은 `AuditEntity` 의 `created_at` 이다(처리 기록은 고치지 않는다). 어느 record 로 반영했는지(topic · partition · offset)는 남기지 않는다 — consumer 가 어디까지 읽었는지는 broker 의 committed offset 이 기억하고, 처리 기록의 위치는 조사 편의일 뿐이며 이긴 쪽은 `event_id` · `order_id` 로 kcat 에서 찾는다. 위치는 보류 기록에만 둔다. 거기서는 `uk_hold_position` 으로 같은 record 의 재전달을 한 줄로 만드는 데 쓴다. **뒤집을 조건**: 이긴 record 를 자주 찾아야 해 kcat 검색이 운영 부담이 될 때.
+- 소비자는 `confirmedAt` 을 읽을 때 **마이크로초로 자른다.** `DATETIME(6)` 은 넘치는 자리를 반올림해 저장하므로, 자르지 않으면 같은 record 의 재전달이 "다시 읽은 기록과 시각이 다르다" 로 충돌 보류된다. 생산자도 자르지만(`EVT-006`) 소비자의 멱등이 생산자의 구현에 기대지 않게 한다 — 나노초 시각으로 재전달을 돌려 실제로 `HELD` 가 나오는 것을 보았다.
 - 처리 기록을 지우지 않는다(`ACT-014`). 늦은 중복(offset 되감기 · 재발행)은 언제든 올 수 있다. **뒤집을 조건**: 보관 기간이 정해지고, 그보다 오래된 record 를 다시 읽지 않는다는 운영 보장이 생길 때.
 - 활동을 `(order_id, product_id)` 로 유일하게 두는 것은 처리 기록과 별개의 두 번째 방어선이다. 처리 기록 없이 활동만 남는 버그가 생겨도 같은 품목이 두 번 쌓이지 않는다.
 
@@ -267,11 +270,12 @@ listener (consumer 스레드)
   handler TX: receipt insert + 품목별 activity insert → commit → 정상 반환
      └ 유일 제약 위반 → rollback
          제약 이름이 uk_receipt_event · uk_receipt_order 가 아니면 → 원래 예외(ACT-010)
-         새 readOnly TX 에서 기존 receipt 를 읽는다
-           uk_receipt_event 면 event_id 로, uk_receipt_order 면 order_id 로
-           없음 → 원래 예외(ACT-010)
-           같은 사실 → no-op → 정상 반환
-           다른 사실 → hold TX → 정상 반환
+         새 readOnly TX 에서 기존 receipt 를 event_id 로, order_id 로 각각 읽는다
+           event_id 로 있음 → 같은 사실이면 no-op, 다르면 eventId 충돌
+           event_id 로 없고 order_id 로 있음 → 주문 충돌
+           둘 다 없음 → 원래 예외(ACT-010)
+           no-op → 정상 반환
+           충돌 → hold TX → 정상 반환
   hold TX 의 uk_hold_position 위반 → 이미 보류된 record → 정상 반환
   그 밖의 예외 → 던짐 → error handler(4.4)
 
@@ -281,6 +285,10 @@ listener (consumer 스레드)
 
 - 보류한 뒤 ack 전에 죽으면 같은 record 가 다시 와서 hold insert 가 `uk_hold_position` 에 걸린다. 이것은 실패가 아니라 "이미 보류함" 이다. 이 분기가 없으면 위반이 error handler 로 가 컨테이너가 멈추고, 진행해야 할 재전달(`ACT-005`)에서 소비가 묶인다.
 
+- 어느 제약에 걸렸는지로 읽을 열을 고르지 않고 **둘 다 읽는다.** 같은 record 가 다시 오면 `event_id` · `order_id` 가 함께 겹치는데, MySQL 이 어느 유일 키를 먼저 보고하는지는 정해져 있지 않다. 제약 이름은 "이 경로를 탈 것인가" 만 정하고, 판정은 다시 읽은 기록으로 한다(`ConfirmedPurchase.collideWith`, DB 없이 테스트).
+- 흐름은 W5 결제와 같은 두 Bean 으로 나눈다. `PurchaseActivityHandler` 는 TX 가 없고 순서 · 재분류를 맡는다. `PurchaseActivityTransactions` 는 `record` · `collide`(readOnly) · `hold` 세 TX 를 하나씩 갖는다. 같은 `@Transactional` 메서드 안에서는 "rollback 뒤 새 TX 에서 읽기" 를 할 수 없다.
+- 제약 이름은 infrastructure 저장소가 insert 직후 flush 해 그 자리에서 본다. `uk_receipt_*` 는 도메인 예외 `FactAlreadyRecorded`, `uk_hold_position` 은 `AlreadyHeld` 로 바꾸고, 그 밖의 위반은 원래 예외 그대로 던진다. MySQL 은 제약 이름을 `테이블.제약` 으로 보고하므로 점 뒤만 비교한다.
+- "같은 사실" 비교에 `confirmedAt` 을 쓴다(`ACT-006`, 원문). 중복 판정 자체는 `event_id` 유일 제약이 하고 시각은 부딪힌 뒤 같은지 가를 때만 본다. 비교가 틀리면 보류 · 알림으로 틀린다 — 두 번 세거나 빠뜨리지 않는다. 표현 차이(시간대 · 표기 · 정밀도)는 `Instant` 비교와 마이크로초 자르기로 막는다. record timestamp 는 쓰지 않는다. 보낸 시각이라 재발행마다 바뀌어 같은 사실이 충돌이 되고, 활동의 시각으로 쓰면 `ACT-012` 를 어긴다. **뒤집을 조건**: 확정 시각을 정정하는 기능이 생겨 같은 확정의 시각이 정당하게 바뀔 수 있을 때 — 시각을 비교에서 빼고 주문 · 품목만 본다.
 - **조회 먼저 하지 않고 insert 부터 한다.** 조회 뒤 insert 는 동시 소비에서 둘 다 "없음" 을 보고 둘 다 들어간다. 유일 제약이 판정의 근거고, 조회는 진 쪽의 사후 분류다(`ACT-007`).
 - 실패한 TX 안에서 예외를 삼키고 commit 하지 않는다. JPA 는 제약 위반 뒤 그 영속성 컨텍스트를 믿을 수 없게 둔다. rollback 뒤 **새 TX** 에서 읽는다.
 - 중복 판정은 **제약 이름**으로 한다. 예외 종류(`DataIntegrityViolationException`)만 보면 NOT NULL · CHECK 위반도 중복으로 바뀌어 실패가 ack 된다.
@@ -304,7 +312,7 @@ listener (consumer 스레드)
 - `items` 안 같은 상품은 insert 전에 거른다. 거르지 않으면 `uk_activity_order_product` 위반이 4.2 의 재분류로 가는데, receipt 도 rollback 돼 비교할 기록이 없다.
 - `eventType` 을 `schemaVersion` 보다 먼저 본다. topic 은 주문 이벤트 여러 종류가 같은 key 로 쓰는 자리이고(9 장), 다른 종류의 버전은 이 소비자가 알 일이 아니다. 다른 종류를 보류하면 그 종류가 늘 때마다 보류가 쌓이고, 멈추면 다른 팀의 배포가 이 소비자를 세운다. **뒤집을 조건**: 이 소비자가 다른 종류(`OrderCancelled` 등)를 반영해야 할 때 — 그 종류의 판정을 더한다. 4.3 의 마지막 뒤집을 조건(key 단위 멈춤)과 함께 본다.
 - 바이트를 판정으로 바꾸는 `OrderEventPayloadReader` 는 `interfaces/consumer` 에 둔다. 컨트롤러가 요청 JSON 을 받는 것과 같은 입력 해석이고, listener(interfaces)가 infrastructure 를 부를 수 없다. JSON · 필드 타입 오류는 여기서 `MALFORMED` 로, 내용(key · 빈 값 · 수량 · 중복)은 도메인 `ConfirmedPurchase.read` 가 가른다.
-- 보류는 업무 완료가 아니다. 보류 건수를 지표로 내고 알림을 건다.
+- 보류는 업무 완료가 아니다. handler 가 결과마다 `purchase.activity{outcome=recorded|same_fact|held|already_held, reason}` 를 세고, 보류는 WARN 로그(이유 · eventId · 주문 · key · 위치)를 남긴다. 알림은 `outcome=held` 의 증가에 건다 — 추적은 샘플링되고 세지 않으므로 알림의 근거가 되지 못한다.
 - **뒤집을 조건**: 같은 key 의 뒤 이벤트(`OrderCancelled` 등)가 앞 이벤트의 반영을 전제하게 될 때. 보류된 앞 이벤트 위에 뒤 이벤트가 잘못 반영되므로 key 단위로 멈추는 장치를 둔다.
 
 ### 4.4 listener 설정 (`KAFKA-002` ~ `KAFKA-008`)
@@ -498,7 +506,9 @@ commerce-api
 
 commerce-streamer
   domain/activity/…                      판정(같은 사실 · 충돌 · 해석 불가)
-  application/activity/PurchaseActivityHandler  @Transactional handler
+  domain/activity/ConfirmedPurchase      읽기 판정 · 같은 사실 · 부딪힌 기록과의 판정
+  application/activity/PurchaseActivityHandler       TX 없음. 기록 → 재분류 → 보류 순서
+  application/activity/PurchaseActivityTransactions  record · collide(readOnly) · hold
   infrastructure/activity/…              JPA 엔티티 · 저장소 (package-private)
   interfaces/consumer/OrderEventPayloadReader   바이트 → 판정 (JSON · eventType · schemaVersion)
   interfaces/consumer/OrderConfirmedListener    record listener · ack

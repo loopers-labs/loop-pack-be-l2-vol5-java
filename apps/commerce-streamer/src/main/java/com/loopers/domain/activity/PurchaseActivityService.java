@@ -13,4 +13,14 @@ public class PurchaseActivityService {
         purchaseActivityRepository.saveReceipt(purchase);
         purchaseActivityRepository.saveActivities(purchase);
     }
+
+    public ReceiptCollision collide(ConfirmedPurchase purchase) {
+        return purchase.collideWith(
+            purchaseActivityRepository.findReceiptByEventId(purchase.eventId()),
+            purchaseActivityRepository.findReceiptByOrderId(purchase.orderId()));
+    }
+
+    public void hold(OrderEventHold hold) {
+        purchaseActivityRepository.saveHold(hold);
+    }
 }
