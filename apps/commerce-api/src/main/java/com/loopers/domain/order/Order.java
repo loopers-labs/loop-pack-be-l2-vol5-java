@@ -23,7 +23,7 @@ public class Order {
     private Money paidAmount;
     private Instant confirmedAt;
 
-    private final List<Object> events = new ArrayList<>();
+    private final List<OrderEvent> events = new ArrayList<>();
 
     private Order(Long id, Long userId, List<OrderItem> items, Money totalAmount, Instant placedAt,
                   OrderStatus status, Money paidAmount, Instant confirmedAt) {
@@ -71,8 +71,8 @@ public class Order {
         events.add(OrderConfirmed.of(this));
     }
 
-    public List<Object> pullEvents() {
-        List<Object> pulled = List.copyOf(events);
+    public List<OrderEvent> pullEvents() {
+        List<OrderEvent> pulled = List.copyOf(events);
         events.clear();
         return pulled;
     }

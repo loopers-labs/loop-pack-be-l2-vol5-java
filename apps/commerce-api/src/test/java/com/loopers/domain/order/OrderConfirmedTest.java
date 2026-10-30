@@ -27,7 +27,7 @@ class OrderConfirmedTest {
 
     private static OrderConfirmed confirm(Order order) {
         order.completePayment(CONFIRMED_AT);
-        List<Object> events = order.pullEvents();
+        List<OrderEvent> events = order.pullEvents();
         assertThat(events).hasSize(1);
         return (OrderConfirmed) events.get(0);
     }
@@ -78,8 +78,8 @@ class OrderConfirmedTest {
         Order order = pending(42L, item(7L, 2));
         order.completePayment(CONFIRMED_AT);
 
-        List<Object> first = order.pullEvents();
-        List<Object> second = order.pullEvents();
+        List<OrderEvent> first = order.pullEvents();
+        List<OrderEvent> second = order.pullEvents();
 
         assertThat(first).hasSize(1);
         assertThat(second).isEmpty();

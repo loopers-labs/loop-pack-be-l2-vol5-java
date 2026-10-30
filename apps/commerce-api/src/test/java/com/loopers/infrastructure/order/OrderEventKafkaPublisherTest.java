@@ -11,17 +11,20 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.actuate.observability.AutoConfigureObservability;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -31,6 +34,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest
+@AutoConfigureObservability
 class OrderEventKafkaPublisherTest {
 
     private static final String TOPIC = KafkaTestContainersConfig.ORDER_EVENTS;
@@ -86,7 +90,12 @@ class OrderEventKafkaPublisherTest {
         }
     }
 
-    @DisplayName("EVT-002, EVT-003, EVT-012: 확정 TX 가 commit 되면 order-events 에 주문 id 를 key 로, 종류와 버전을 payload 에 담은 record 가 하나 쌓이고, 확정 시각은 DB 에 남은 값과 같다")
+    private static String header(ConsumerRecord<String, byte[]> consumerRecord, String name) {
+        Header header = consumerRecord.headers().lastHeader(name);
+        return header == null ? null : new String(header.value(), StandardCharsets.UTF_8);
+    }
+
+    @DisplayName("EVT-002, EVT-003, EVT-012: 확정 TX 가 commit 되면 order-events 에 주문 id 를 key 로, 추적 문맥을 header 에 담은 record 가 하나 쌓이고, 확정 시각은 DB 에 남은 값과 같다")
     @Test
     void publishesAfterCommit() throws Exception {
         Long orderId = orders.pendingOrderId();
@@ -94,9 +103,10 @@ class OrderEventKafkaPublisherTest {
         List<ConsumerRecord<String, byte[]>> records = recordsDuring(() -> orders.commit(orderId));
 
         assertThat(records).hasSize(1);
-        ConsumerRecord<String, byte[]> record = records.get(0);
-        JsonNode value = objectMapper.readTree(record.value());
-        assertThat(record.key()).isEqualTo(String.valueOf(orderId));
+        ConsumerRecord<String, byte[]> published = records.get(0);
+        JsonNode value = objectMapper.readTree(published.value());
+        assertThat(published.key()).isEqualTo(String.valueOf(orderId));
+        assertThat(header(published, "traceparent")).matches("00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]");
         assertThat(value.get("eventType").asText()).isEqualTo("OrderConfirmed");
         assertThat(value.get("eventId").asText()).isEqualTo("order-confirmed:v1:" + orderId);
         assertThat(value.get("orderId").asLong()).isEqualTo(orderId);

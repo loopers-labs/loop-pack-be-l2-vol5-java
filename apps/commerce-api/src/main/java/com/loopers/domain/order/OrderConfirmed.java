@@ -4,7 +4,7 @@ import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 
-public final class OrderConfirmed {
+public final class OrderConfirmed implements OrderEvent {
 
     private static final String EVENT_ID_PREFIX = "order-confirmed:v1:";
 

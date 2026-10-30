@@ -51,6 +51,7 @@ public class KafkaConfig {
         KafkaTemplate<String, byte[]> kafkaTemplate = new KafkaTemplate<>(producerFactory);
         kafkaTemplate.setProducerListener(new ProducerListener<>() {
         });
+        kafkaTemplate.setObservationEnabled(true);
         return kafkaTemplate;
     }
 
