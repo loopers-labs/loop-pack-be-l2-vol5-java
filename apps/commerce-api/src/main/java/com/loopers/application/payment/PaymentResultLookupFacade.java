@@ -13,8 +13,10 @@ import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.util.Objects;
 import java.util.function.Supplier;
 
 /**
@@ -52,7 +54,7 @@ public class PaymentResultLookupFacade {
 
     /** 본인 주문의 결제 결과를 PG 에 다시 물어 반영한다(알림이 없거나 응답을 잃었을 때의 기본 복구 경로). create 는 다시 보내지 않는다. */
     public PaymentLookupInfo lookupMyPaymentResult(Long userId, Long orderId) {
-        PaymentAttemptInfo target = readOnlyTransaction.execute(status -> findMine(userId, orderId));
+        PaymentAttemptInfo target = executeRequired(readOnlyTransaction, status -> findMine(userId, orderId));
         return syncWithPg(target, () -> target.transactionKey() != null
             ? paymentGateway.lookupPaymentStatusByTransactionKey(target.transactionKey())
             : paymentGateway.lookupPaymentStatusByOrder(target.providerOrderId()));
@@ -60,7 +62,7 @@ public class PaymentResultLookupFacade {
 
     /** PG 의 결과 알림을 받는다. 알림은 신호일 뿐이라 본문의 상태는 쓰지 않고, 알림의 거래 키로 PG 를 조회해 확인한 사실만 반영한다. */
     public PaymentLookupInfo lookupPaymentResultOnPgCallback(String providerOrderId, String transactionKey) {
-        PaymentAttemptInfo target = readOnlyTransaction.execute(status -> findByProviderOrderId(providerOrderId));
+        PaymentAttemptInfo target = executeRequired(readOnlyTransaction, status -> findByProviderOrderId(providerOrderId));
         return syncWithPg(target, () -> paymentGateway.lookupPaymentStatusByTransactionKey(transactionKey));
     }
 
@@ -73,14 +75,20 @@ public class PaymentResultLookupFacade {
         if (lookupResult.outcome() == PgPaymentStatusLookupResult.Outcome.LOOKUP_UNAVAILABLE) {
             return new PaymentLookupInfo(target, true);
         }
-        PaymentStatusUpdateResult updated = writeTransaction.execute(
-            status -> paymentStatusUpdater.updateByStatusLookupResult(target.orderId(), lookupResult)
+        PaymentStatusUpdateResult updated = executeRequired(
+            writeTransaction, status -> paymentStatusUpdater.updateByStatusLookupResult(target.orderId(), lookupResult)
         );
         // execute 가 반환됐으면 commit 이 끝났다. 처음 확정한 반영만 알리고, 전송 실패가 확정을 되돌리지 않는다.
         if (updated.confirmed() != null) {
             orderEventPublisher.publish(updated.confirmed());
         }
         return new PaymentLookupInfo(updated.attempt(), false);
+    }
+
+    // TransactionTemplate.execute 는 null 을 돌려줄 수 있다고 선언돼 있다. 이 클래스의 콜백은 값을 돌려주거나 예외를 던지므로,
+    // 그 불변식을 한 곳에서 확인해 아래 코드가 null 을 역참조하지 않게 한다.
+    private <T> T executeRequired(TransactionTemplate template, TransactionCallback<T> callback) {
+        return Objects.requireNonNull(template.execute(callback), "트랜잭션 콜백은 null 을 돌려주지 않아야 합니다.");
     }
 
     // 없는 주문과 타인의 주문은 NOT_FOUND, 결제를 시작하지 않은 주문은 CONFLICT 다.
