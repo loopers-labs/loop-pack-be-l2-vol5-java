@@ -13,14 +13,18 @@ spring:
         use.latest.version: true
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer # 값은 호출한 쪽이 직렬화한 bytes 로 보낸다
       retries: 3
+      acks: all
+      properties:
+        enable.idempotence: true
+        # broker 에 닿지 못할 때 send 가 요청 스레드를 기본 60초 붙잡지 않도록 줄인다.
+        max.block.ms: 3000
     consumer:
       group-id: loopers-default-consumer
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-serializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
-      properties:
-        enable-auto-commit: false
+      value-deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+      enable-auto-commit: false
     listener:
       ack-mode: manual
 
@@ -30,9 +34,15 @@ spring.config.activate.on-profile: local, test
 spring:
   kafka:
     bootstrap-servers: localhost:19092
-    admin:
-      properties:
-        bootstrap.servers: kafka:9092
+
+---
+spring.config.activate.on-profile: test
+
+spring:
+  kafka:
+    consumer:
+      # 작은 테스트 메시지가 broker 의 fetch 대기에 가려 늦게 보이지 않도록 대기를 짧게 둔다.
+      fetch-max-wait: 100ms
 
 ---
 spring.config.activate.on-profile: dev

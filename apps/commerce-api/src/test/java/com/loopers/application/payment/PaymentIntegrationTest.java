@@ -2,6 +2,7 @@ package com.loopers.application.payment;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.application.order.OrderFacade;
+import com.loopers.application.order.event.OrderEventPublisher;
 import com.loopers.application.payment.dto.PaymentAttemptInfo;
 import com.loopers.application.payment.dto.PaymentLookupInfo;
 import com.loopers.application.payment.pg.PgPaymentRequestResult;
@@ -60,6 +61,9 @@ class PaymentIntegrationTest extends PaymentFlowTestSupport {
 
     @Autowired
     private PaymentAttemptService paymentAttemptService;
+
+    @Autowired
+    private OrderEventPublisher orderEventPublisher;
 
     @Autowired
     private PlatformTransactionManager transactionManager;
@@ -540,7 +544,7 @@ class PaymentIntegrationTest extends PaymentFlowTestSupport {
 
         private PaymentResultLookupFacade restartedFacade() {
             return new PaymentResultLookupFacade(
-                restartedGateway(), paymentStatusUpdater, orderService, paymentAttemptService, transactionManager
+                restartedGateway(), paymentStatusUpdater, orderService, paymentAttemptService, orderEventPublisher, transactionManager
             );
         }
 

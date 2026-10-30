@@ -7,6 +7,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -16,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class OrderTest {
 
     private static final long MAX_PRICE = 1_000_000_000L;
+    private static final ZonedDateTime CONFIRMED_AT = ZonedDateTime.parse("2026-09-07T01:00:00Z");
 
     private OrderProduct product(String name, long price) {
         return new OrderProduct(name, new Money(price));
@@ -218,7 +220,7 @@ class OrderTest {
         void rejectsStart_whenNotDraft() {
             // arrange
             Order confirmed = pendingOrder();
-            confirmed.completePayment(paid());
+            confirmed.completePayment(paid(), CONFIRMED_AT);
             Order pending = pendingOrder();
             Order failed = pendingOrder();
             failed.failPayment();
@@ -239,13 +241,27 @@ class OrderTest {
             Order order = pendingOrder();
 
             // act
-            order.completePayment(paid());
+            order.completePayment(paid(), CONFIRMED_AT);
 
             // assert
             assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
             assertThat(order.getPaymentResult()).isEqualTo(paid());
             assertThat(order.getTotalAmount()).isEqualTo(new Money(7_000));
             assertThat(order.getItems()).hasSize(2);
+        }
+
+        @DisplayName("확정 시각은 최초 전이에서 정해지고, 이후 거절된 시도로 바뀌지 않는다.")
+        @Test
+        void keepsConfirmedAt_fromFirstConfirmation() {
+            // arrange
+            Order order = pendingOrder();
+            order.completePayment(paid(), CONFIRMED_AT);
+
+            // act
+            assertErrorType(ErrorType.CONFLICT, () -> order.completePayment(paid(), CONFIRMED_AT.plusMinutes(5)));
+
+            // assert
+            assertThat(order.getConfirmedAt()).isEqualTo(CONFIRMED_AT);
         }
 
         @DisplayName("확정 실패를 반영하면 PAYMENT_FAILED 가 되고, 결제 결과는 없다.")
@@ -268,17 +284,17 @@ class OrderTest {
             // arrange
             Order draft = draftOrder();
             Order confirmed = pendingOrder();
-            confirmed.completePayment(paid());
+            confirmed.completePayment(paid(), CONFIRMED_AT);
             Order failed = pendingOrder();
             failed.failPayment();
             PaymentResult other = new PaymentResult(new Money(1));
 
             // act & assert
-            assertErrorType(ErrorType.CONFLICT, () -> draft.completePayment(paid()));
+            assertErrorType(ErrorType.CONFLICT, () -> draft.completePayment(paid(), CONFIRMED_AT));
             assertErrorType(ErrorType.CONFLICT, draft::failPayment);
-            assertErrorType(ErrorType.CONFLICT, () -> confirmed.completePayment(other));
+            assertErrorType(ErrorType.CONFLICT, () -> confirmed.completePayment(other, CONFIRMED_AT));
             assertErrorType(ErrorType.CONFLICT, confirmed::failPayment);
-            assertErrorType(ErrorType.CONFLICT, () -> failed.completePayment(paid()));
+            assertErrorType(ErrorType.CONFLICT, () -> failed.completePayment(paid(), CONFIRMED_AT));
             assertErrorType(ErrorType.CONFLICT, failed::failPayment);
             assertThat(draft.getStatus()).isEqualTo(OrderStatus.DRAFT);
             assertThat(confirmed.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
@@ -294,7 +310,7 @@ class OrderTest {
             Order order = pendingOrder();
 
             // act & assert
-            assertErrorType(ErrorType.INVALID_INPUT, () -> order.completePayment(null));
+            assertErrorType(ErrorType.INVALID_INPUT, () -> order.completePayment(null, CONFIRMED_AT));
             assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
             assertThat(order.getPaymentResult()).isNull();
         }

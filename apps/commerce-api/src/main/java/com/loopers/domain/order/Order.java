@@ -17,6 +17,7 @@ import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import lombok.Getter;
 
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -48,6 +49,10 @@ public class Order extends BaseEntity {
     @Embedded
     @AttributeOverride(name = "paidAmount.amount", column = @Column(name = "paid_amount"))
     private PaymentResult paymentResult;
+
+    // PG 성공으로 처음 CONFIRMED 가 된 시각. 이전 포인트 확정 주문과 확정 전 주문은 비어 있다.
+    @Column(name = "confirmed_at")
+    private ZonedDateTime confirmedAt;
 
     // 품목은 필요할 때만 읽는다. 트랜잭션 밖에서는 읽을 수 없으므로 application 이 Info 로 변환해 내보낸다.
     @OneToMany(fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
@@ -134,14 +139,18 @@ public class Order extends BaseEntity {
 
     /**
      * PG 성공을 확인해 결제 결과를 저장하고 CONFIRMED 로 바꾼다. PAYMENT_PENDING 에서만 가능하다. 재고는 시작할 때 이미
-     * 차감했으므로 건드리지 않는다. 거절되면 상태와 결제 결과는 그대로다.
+     * 차감했으므로 건드리지 않는다. 확정 시각은 이 최초 전이에서만 정해진다. 거절되면 상태와 결제 결과는 그대로다.
      */
-    public void completePayment(PaymentResult paymentResult) {
+    public void completePayment(PaymentResult paymentResult, ZonedDateTime confirmedAt) {
         requirePaymentPending();
         if (paymentResult == null) {
             throw new CoreException(ErrorType.INVALID_INPUT, "결제 결과는 필수입니다.");
         }
+        if (confirmedAt == null) {
+            throw new CoreException(ErrorType.INVALID_INPUT, "확정 시각은 필수입니다.");
+        }
         this.paymentResult = paymentResult;
+        this.confirmedAt = confirmedAt;
         this.status = OrderStatus.CONFIRMED;
     }
 
