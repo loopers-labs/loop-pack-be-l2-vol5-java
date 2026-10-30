@@ -28,6 +28,15 @@ spring:
 demo-kafka:
   test:
     topic-name: demo.internal.topic-v1
+  listener:
+    auto-startup: true
+
+purchase-activity:
+  kafka:
+    topic: order-events
+    group-id: purchase-activity
+    listener:
+      auto-startup: true
 
 ---
 spring:

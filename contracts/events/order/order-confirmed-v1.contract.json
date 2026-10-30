@@ -1,0 +1,8 @@
+{
+  "topic": "order-events",
+  "key": {
+    "field": "orderId",
+    "encoding": "string"
+  },
+  "payloadSchema": "order-confirmed-v1.schema.json"
+}
