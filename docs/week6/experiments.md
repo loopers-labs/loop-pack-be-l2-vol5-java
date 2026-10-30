@@ -109,3 +109,23 @@ partition 2 개인 격리 topic 에, partition 0 으로 모르는 `schemaVersion
 - **주문 C 는 흔적이 없는 누락이다.** record 가 producer 버퍼에서 broker 로 가기 전에 프로세스가 죽어, `whenComplete` 가 불리지 않았다. 성공도 실패도 세지 않았고 로그도 없다. 알림을 걸 수 없고, 다시 보낼 단서(`eventId`)도 남지 않는다. 지표로는 이 누락을 막을 수도 찾을 수도 없다.
 - 주문 C 의 `linger.ms=60000` 은 그 순간을 매번 같게 만드는 수단이다. 운영의 `linger.ms` 기본값(0 ~ 5 ms)에서도 commit 과 broker ack 사이에는 늘 이 창이 있다. 짧을 뿐 없어지지 않는다.
 - 세 주문의 차이는 코드가 아니라 broker 상태와 프로세스 종료 시점뿐이다. W7 은 이 스크립트를 outbox 경로로 다시 돌려 주문 A 와 C 가 복구되는지 본다.
+
+## 복제 (선택 심화 13, EXP-004 보강) — 단계별 출력은 `docs/week6/cluster/result.md`
+
+별도 compose 로 controller 1 대와 broker 3 대(Kafka 3.5.1 KRaft)를 띄운다. broker 는 `docker pause` 로 멈추고 `docker kill` 로 강제 종료한다. topic 은 partition 1 · 복제 수 3(broker 1 · 2 · 3, 선호 leader 1) · `min.insync.replicas=2` · unclean leader election 꺼짐이다. producer 는 broker 컨테이너 안의 `kafka-producer-perf-test.sh` 이고, 끝 offset 은 high watermark 로 읽는다. controller 를 broker 와 나눈 것은 broker 2 대를 멈춰도 controller 가 살아 있어야 ISR 축소와 `NOT_ENOUGH_REPLICAS` 를 볼 수 있어서다.
+
+| | 장애 | acks | 결과 |
+|---|---|---|---|
+| E1 | 없음 | all | 100 건 성공, 끝 offset 100, ISR 1 · 2 · 3 |
+| E2 | follower 1 대 정지 | all | 100 건 성공, ISR 1 · 2 — `min.insync.replicas=2` 를 채운다 |
+| E3 | follower 2 대 정지 | all | **20 건 모두 실패.** broker 가 `NOT_ENOUGH_REPLICAS` 로 97 번 거절했고, producer 는 재시도하다 `delivery.timeout.ms` 에 `TimeoutException` 으로 포기했다. 끝 offset 그대로 |
+| | | 1 | 20 건 성공, 끝 offset +20 — 복제본 하나뿐인데 ack 를 준다 |
+| E4 | follower 를 멈춰 복제를 막고 leader 강제 종료 | 1 | **ack 받은 50 건을 모두 잃었다.** 새 leader(2)에 없고, 돌아온 옛 leader 도 새 leader 에 맞춰 log 를 잘라 끝 offset 220 그대로 |
+| E5 | 같은 장애 | all | ack 받은 record 0 건 · 잃은 record 0 건 — 복제되지 않은 record 에는 ack 가 가지 않았다 |
+| E6 | follower 를 9 초보다 오래 멈춘 뒤 leader 강제 종료 | — | **leader 없음(offline).** controller 가 heartbeat 가 끊긴 follower 를 ISR 에서 빼(`broker.session.timeout.ms` 9 초) ISR 이 leader 하나뿐이었고, 그 leader 가 죽자 unclean 선출 없이는 고를 replica 가 없다 |
+| E7 | 20 건/초로 보내는 중 leader 강제 종료 | all | **200 건 모두 성공, 오류 0.** 최대 지연 22.4 초, 새 leader 2 |
+
+- **`acks=all` + `min.insync.replicas=2` 는 "ack 를 받았으면 잃지 않는다" 를 지킨다(E5).** 대가는 복제본이 모자랄 때 쓰기를 거절하는 것이다(E3).
+- **`acks=1` 은 "ack 를 받았는데 사라지는" record 를 만든다(E4).** 우리가 `acks=all` 을 명시하는 이유다(`EVT-016`). producer 는 성공으로 세고 지표에도 남지 않으므로, 흔적 없는 누락이 하나 더 생기는 셈이다.
+- **정합성을 위해 가용성을 내준다(E6).** unclean 선출을 켜면 E6 에서 broker 2 나 3 이 leader 가 되어 쓰기는 이어지지만, E4 처럼 이미 ack 된 record 를 잃을 수 있다. 우리는 끈다.
+- **leader 교체는 `max.block.ms` 의 일이 아니다(E7, 설계 3.7 의 뒤집을 조건).** producer 는 metadata 를 이미 들고 있어 `send()` 는 막히지 않았고, record 가 버퍼에서 새 leader 를 기다렸다가 전부 전달됐다. 걸린 시간은 controller 가 죽은 broker 를 알아차리는 `broker.session.timeout.ms`(9 초)와 재시도가 겹친 22 초였다. 이 시간은 `delivery.timeout.ms`(우리는 기본 120 초) 안이라 실패하지 않는다. `max.block.ms` 1 초를 바꿀 근거는 나오지 않았다.

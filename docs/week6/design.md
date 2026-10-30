@@ -207,6 +207,7 @@ try {
 - **반론: "기동 직후 첫 metadata 는 느릴 수 있으니 짧게 잡으면 정상 상황에서 포기한다."** 이 경우는 **기동 시 `order-events` 의 metadata 를 미리 받아**(`partitionsFor`) 없앤다. 시간 초과는 기동을 막지 않고 로그만 남기며(첫 발행 때 다시 받는다), 설정 오류(`ConfigException`)는 기동을 막는다. 확보는 `OrderEventsTopicWarmup`(`ApplicationRunner`)이 `partitionsFor` 로 한다. producer 는 첫 send 에서 만들어지므로, 이 단계가 없으면 `acks: 1` 같은 충돌 설정을 넣어도 기동이 성공하고 첫 확정에서야 터진다 — `OrderEventsTopicWarmupTest` 가 확보 전 · 후를 모두 보았다.
 - 다른 선택지: 500ms 는 응답에 더 유리하지만 GC · leader 교체 같은 짧은 지연도 누락으로 만든다(재시도 없음). 2 ~ 3 초는 Hikari 대기에 가까워진다.
 - **뒤집을 조건**: 장애 실험에서 1 초 안에 metadata 를 못 받는 정상 상황(leader 교체 등)이 관찰될 때. Hikari 대기 시간을 바꿀 때.
+- broker 3 대 실험(experiments.md 의 "복제" E7)에서 전송 중 leader 를 강제 종료했다. metadata 를 이미 들고 있어 `send()` 는 막히지 않았고, 200 건이 22 초 안에 모두 전달됐다. leader 교체는 `max.block.ms` 가 아니라 `delivery.timeout.ms` 의 범위다.
 
 ### 3.8 실패 · 누락 · 알림 (`EVT-013` · `EVT-015` · `EVT-017`)
 
