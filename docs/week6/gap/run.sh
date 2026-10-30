@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# EXP-007 · EXP-008: 확정은 commit 됐는데 이벤트가 broker 에 닿지 않는 누락을 두 앱 프로세스로 재현한다.
+# EXP-007 · EXP-008: 확정은 commit 됐는데 이벤트가 broker 에 닿지 않는 누락 두 종류를 두 앱 프로세스로 재현한다.
+# 주문 A: broker 거절(흔적 있는 누락), 주문 B: 정상, 주문 C: 버퍼에 있는 동안 api 강제 종료(흔적 없는 누락)
 # 실행: 저장소 루트에서 `bash docs/week6/gap/run.sh`
 # 필요: docker(compose 의 kafka), 로컬 redis(6379), kcat, jq, JDK 21. MySQL 은 이 실행만의 컨테이너를 13306 에 띄우고 지운다
 set -euo pipefail
@@ -93,17 +94,23 @@ COMMON=(
   --kafka.topics.order-events="${TOPIC}"
   --spring.jpa.show-sql=false
 )
-java -jar "${API_JAR}" "${COMMON[@]}" \
-  --server.port=18080 --management.server.port=18081 \
-  --pg.callback-url="${API}/api/v1/payments/callback" \
-  --pg.ssl-bundle=pg \
-  --spring.ssl.bundle.jks.pg.truststore.location="file:${ROOT}/apps/commerce-api/src/test/resources/pg-fixture-truststore.p12" \
-  --spring.ssl.bundle.jks.pg.truststore.password=local-only-not-a-secret \
-  --spring.ssl.bundle.jks.pg.truststore.type=PKCS12 \
-  --payment.sweeper.enabled=false --payment.unresolved-metrics.enabled=false \
-  >"${WORK}/api.log" 2>&1 &
-PIDS+=($!)
-wait_up "${API_ADMIN}" api
+start_api() {
+  local log="$1"
+  shift
+  java -jar "${API_JAR}" "${COMMON[@]}" \
+    --server.port=18080 --management.server.port=18081 \
+    --pg.callback-url="${API}/api/v1/payments/callback" \
+    --pg.ssl-bundle=pg \
+    --spring.ssl.bundle.jks.pg.truststore.location="file:${ROOT}/apps/commerce-api/src/test/resources/pg-fixture-truststore.p12" \
+    --spring.ssl.bundle.jks.pg.truststore.password=local-only-not-a-secret \
+    --spring.ssl.bundle.jks.pg.truststore.type=PKCS12 \
+    --payment.sweeper.enabled=false --payment.unresolved-metrics.enabled=false \
+    "$@" >"${WORK}/${log}" 2>&1 &
+  API_PID=$!
+  PIDS+=("${API_PID}")
+  wait_up "${API_ADMIN}" api
+}
+start_api api.log
 java -jar "${STREAMER_JAR}" "${COMMON[@]}" \
   --server.port=18085 --management.server.port=18082 \
   --kafka.groups.purchase-activity="${GROUP}" \
@@ -161,21 +168,32 @@ ORDER_B=$(confirm_order)
 wait_for "주문 B 의 구매 활동" \
   "[ \"\$(sql \"select count(*) from purchase_activity where order_id = ${ORDER_B}\" | tail -1)\" = 2 ]"
 sleep 3
+API_METRICS=$(curl -sf "${API_ADMIN}/actuator/prometheus" | grep '^order_event_publish_total' || true)
+API_FAILURE_LOG=$(grep -h "주문 이벤트를 보내지 못했다" "${WORK}/api.log" | head -1 | cut -c1-400 || true)
+
+step "주문 C: linger.ms=60s 로 api 를 다시 띄워 record 를 버퍼에 둔 채 kill -9"
+kill "${API_PID}"
+wait "${API_PID}" 2>/dev/null || true
+start_api api-c.log --spring.kafka.producer.properties.linger.ms=60000 --spring.jpa.hibernate.ddl-auto=none
+ORDER_C=$(confirm_order)
+API_C_METRICS_BEFORE_KILL=$(curl -sf "${API_ADMIN}/actuator/prometheus" | grep '^order_event_publish_total' || echo "(order_event_publish_total 없음 — 성공도 실패도 세지 않았다)")
+kill -9 "${API_PID}"
+KILLED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+sleep 5
+API_C_PUBLISH_LOG=$(grep -h "주문 이벤트를 보냈다\|주문 이벤트를 보내지 못했다" "${WORK}/api-c.log" | cut -c1-300 || true)
 
 step "관찰"
 KCAT=$(kcat -b "${BROKER}" -C -t "${TOPIC}" -o beginning -e -q -f 'partition=%p offset=%o key=%k headers=%h\n%s\n')
 GROUP_OFFSETS=$(kafka kafka-consumer-groups.sh --bootstrap-server localhost:9092 --describe --group "${GROUP}" 2>/dev/null \
   | awk 'NR>1 && NF {print $2, $3, $4, $5, $6}')
-ORDERS=$(sql "select id, status, total_amount, paid_amount, date_format(confirmed_at, '%Y-%m-%dT%H:%i:%s.%fZ') confirmed_at from orders where id in (${ORDER_A}, ${ORDER_B}) order by id")
-PAYMENTS=$(sql "select order_id, status, provider_order_id, transaction_key from payment where order_id in (${ORDER_A}, ${ORDER_B}) order by order_id")
+ORDERS=$(sql "select id, status, total_amount, paid_amount, date_format(confirmed_at, '%Y-%m-%dT%H:%i:%s.%fZ') confirmed_at from orders where id in (${ORDER_A}, ${ORDER_B}, ${ORDER_C}) order by id")
+PAYMENTS=$(sql "select order_id, status, provider_order_id, transaction_key from payment where order_id in (${ORDER_A}, ${ORDER_B}, ${ORDER_C}) order by order_id")
 STOCKS=$(sql "select id, name, quantity from product where id in (${COAT}, ${SHIRT}) order by id")
 RECEIPTS=$(docker exec "${MYSQL}" mysql --default-character-set=utf8mb4 -uroot -proot "${DB}" -e \
   "select event_id, order_id, date_format(confirmed_at, '%Y-%m-%dT%H:%i:%s.%fZ') confirmed_at, items_digest from order_confirmation_receipt order by order_id" 2>/dev/null)
 ACTIVITIES=$(sql "select order_id, product_id, quantity from purchase_activity order by order_id, product_id")
 HOLDS=$(sql "select count(*) holds from order_event_hold")
-API_METRICS=$(curl -sf "${API_ADMIN}/actuator/prometheus" | grep '^order_event_publish_total' || true)
 STREAMER_METRICS=$(curl -sf "${STREAMER_ADMIN}/actuator/prometheus" | grep '^purchase_activity_total' || true)
-API_FAILURE_LOG=$(grep -h "주문 이벤트를 보내지 못했다" "${WORK}/api.log" | head -1 | cut -c1-400 || true)
 COMMIT=$(cd "${ROOT}" && git rev-parse --short HEAD 2>/dev/null || echo unknown)
 
 cat >"${RESULT}" <<MD
@@ -183,11 +201,11 @@ cat >"${RESULT}" <<MD
 
 - 실행: \`bash docs/week6/gap/run.sh\` · commit \`${COMMIT}\` · $(date -u +%Y-%m-%dT%H:%M:%SZ)
 - topic \`${TOPIC}\`(partition 3) · group \`${GROUP}\` · MySQL 컨테이너 \`${MYSQL}\` — 실행마다 새로 만들고 실행 끝에 지운다
-- 두 앱과 PG fixture 를 프로세스로 띄웠다. 주문 A 는 topic 의 \`max.message.bytes=1\` 로 broker 가 거절하게 하고, 되돌린 뒤 주문 B 를 확정했다
+- 두 앱과 PG fixture 를 프로세스로 띄웠다. 주문 A 는 topic 의 \`max.message.bytes=1\` 로 broker 가 거절하게 하고, 되돌린 뒤 주문 B 를 확정했다. 주문 C 는 api 를 \`linger.ms=60000\` 으로 다시 띄워 확정한 뒤, record 가 producer 버퍼에 있는 동안 \`kill -9\` 로 api 를 죽였다(${KILLED_AT})
 - 주문은 코트(3,000) × 2 · 셔츠(1,000) × 1 이다. 확정 시각은 고정하지 않은 실제 시각이다 — 결제 API 가 \`Instant.now()\` 를 쓴다
 - broker 는 우리 코드가 아니라 \`kcat\` 으로 읽었다. committed offset 은 \`kafka-consumer-groups.sh\` 로 읽었다(kcat 은 group offset 을 보여 주지 않는다)
 
-## 주문 A (${ORDER_A}) · 주문 B (${ORDER_B})
+## 주문 A (${ORDER_A}) · 주문 B (${ORDER_B}) · 주문 C (${ORDER_C})
 
 \`\`\`
 ${ORDERS}
@@ -199,7 +217,7 @@ ${ORDERS}
 ${PAYMENTS}
 \`\`\`
 
-재고(100 에서 시작, 두 주문이 각각 코트 2 · 셔츠 1 을 소비)
+재고(100 에서 시작, 세 주문이 각각 코트 2 · 셔츠 1 을 소비)
 
 \`\`\`
 ${STOCKS}
@@ -242,6 +260,20 @@ ${STREAMER_METRICS}
 
 \`\`\`
 ${API_FAILURE_LOG}
+\`\`\`
+
+## 주문 C — 흔적 없는 누락
+
+kill -9 직전, 다시 띄운 api 의 발행 지표
+
+\`\`\`
+${API_C_METRICS_BEFORE_KILL}
+\`\`\`
+
+다시 띄운 api 의 발행 로그(성공 · 실패)
+
+\`\`\`
+${API_C_PUBLISH_LOG:-(없음)}
 \`\`\`
 MD
 

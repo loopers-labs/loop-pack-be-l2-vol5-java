@@ -88,20 +88,24 @@ partition 2 개인 격리 topic 에, partition 0 으로 모르는 `schemaVersion
 
 ## EXP-007 · EXP-008 발행 누락 — `docs/week6/gap/run.sh` → `docs/week6/gap/result.md`
 
-두 앱과 PG fixture 를 프로세스로 띄우고 실제 주문 · 결제 API 로 두 주문을 확정한다. 주문 A 는 topic 의 `max.message.bytes=1` 로 broker 가 거절하게 하고, 되돌린 뒤 주문 B 를 확정한다. broker 는 `kcat`, committed offset 은 `kafka-consumer-groups.sh` 로 읽는다. 아래 값은 마지막 실행의 것이다(전문은 `result.md`).
+두 앱과 PG fixture 를 프로세스로 띄우고 실제 주문 · 결제 API 로 세 주문을 확정한다. broker 는 `kcat`, committed offset 은 `kafka-consumer-groups.sh` 로 읽는다. 아래 값은 마지막 실행의 것이다(전문은 `result.md`).
 
-| | 주문 A (1) | 주문 B (2) |
-|---|---|---|
-| 주문 | `CONFIRMED` · 결제액 7,000 | `CONFIRMED` · 결제액 7,000 |
-| PG 거래 | `TEST-TX-0001` `SUCCESS` | `TEST-TX-0002` `SUCCESS` |
-| 재고 | 코트 2 · 셔츠 1 소비 | 코트 2 · 셔츠 1 소비 (100 → 96 · 98) |
-| broker (kcat) | **record 없음** | partition 2 · offset 0 · key `2` · header `eventType`, `schemaVersion`, `eventId`, `traceparent` |
-| committed offset | — | partition 2 → 1 (lag 0) |
-| 처리 기록 · 활동 | **없음** | `order-confirmed:v1:2` · `1:2,2:1` · 활동 2 행 |
-| 지표 | `order_event_publish_total{result="failure", cause="RecordTooLargeException"} 1` | `{result="success"} 1` · streamer `purchase_activity_total{outcome="recorded"} 1` |
-| 로그 | `주문 이벤트를 보내지 못했다. eventId 로 다시 보내야 한다: eventId=order-confirmed:v1:1` | — |
+- 주문 A: topic 의 `max.message.bytes=1` 로 broker 가 거절하게 한다
+- 주문 B: 설정을 되돌리고 확정한다
+- 주문 C: api 를 `linger.ms=60000` 으로 다시 띄워 확정한 뒤, record 가 producer 버퍼에 있는 동안 `kill -9` 로 api 를 죽인다
 
-- **주문 A 는 결제됐고 확정됐는데 구매 활동이 영영 생기지 않는다.** 확정 TX 는 commit 됐고, broker 는 record 를 받지 않았고, consumer 가 읽을 것이 없다. 이것이 commit 뒤 발행(AFTER_COMMIT)의 누락 구간이다.
-- 이번 누락은 **흔적이 남는 누락**이다. 실패 지표와 `eventId` 가 든 ERROR 로그가 남아 알림을 걸 수 있고 사람이 다시 보낼 수 있다. 원문의 "commit 뒤 send 직전에서 멈춤" 과 달리, 수단이 broker 거절이라 흔적이 남는다(설계 7.2).
-- **흔적이 없는 누락**(commit 뒤 send 전 · 버퍼 안에서 프로세스 강제 종료)은 지표에도 로그에도 남지 않는다. 이 스크립트로 만들지 않았고, W7 outbox 가 막을 구간이다.
-- 주문 A 와 B 의 차이는 확정 시점의 topic 설정 하나뿐이다. 같은 코드 · 같은 경로에서 broker 상태만으로 누락이 생긴다. W7 은 이 스크립트를 outbox 경로로 다시 돌려 주문 A 가 복구되는지 본다.
+| | 주문 A (1) | 주문 B (2) | 주문 C (3) |
+|---|---|---|---|
+| 주문 · 결제 | `CONFIRMED` · `TEST-TX-0001` `SUCCESS` | `CONFIRMED` · `TEST-TX-0002` `SUCCESS` | `CONFIRMED` · `TEST-TX-0003` `SUCCESS` |
+| 재고 | 코트 2 · 셔츠 1 소비 | 같음 | 같음 (100 → 94 · 97) |
+| broker (kcat) | **record 없음** | partition 2 · offset 0 · header 4 개 | **record 없음** |
+| committed offset | — | partition 2 → 1 (lag 0) | — |
+| 처리 기록 · 활동 | **없음** | 처리 기록 1 · 활동 2 행 | **없음** |
+| api 지표 | `order_event_publish_total{result="failure", cause="RecordTooLargeException"} 1` | `{result="success"} 1` | **지표 자체가 없다** — kill -9 직전에 읽었다 |
+| api 로그 | `주문 이벤트를 보내지 못했다. eventId 로 다시 보내야 한다: eventId=order-confirmed:v1:1` | — | **발행 로그 없음** |
+
+- **세 주문 모두 결제됐고 확정됐다. 그런데 A 와 C 는 구매 활동이 영영 생기지 않는다.** 확정 TX 는 commit 됐고 broker 에 record 가 없어 consumer 가 읽을 것이 없다. 이것이 commit 뒤 발행(AFTER_COMMIT)의 누락 구간이다.
+- **주문 A 는 흔적이 남는 누락이다.** 실패 지표와 `eventId` 가 든 ERROR 로그가 남아 알림을 걸 수 있고 사람이 다시 보낼 수 있다.
+- **주문 C 는 흔적이 없는 누락이다.** record 가 producer 버퍼에서 broker 로 가기 전에 프로세스가 죽어, `whenComplete` 가 불리지 않았다. 성공도 실패도 세지 않았고 로그도 없다. 알림을 걸 수 없고, 다시 보낼 단서(`eventId`)도 남지 않는다. 지표로는 이 누락을 막을 수도 찾을 수도 없다.
+- 주문 C 의 `linger.ms=60000` 은 그 순간을 매번 같게 만드는 수단이다. 운영의 `linger.ms` 기본값(0 ~ 5 ms)에서도 commit 과 broker ack 사이에는 늘 이 창이 있다. 짧을 뿐 없어지지 않는다.
+- 세 주문의 차이는 코드가 아니라 broker 상태와 프로세스 종료 시점뿐이다. W7 은 이 스크립트를 outbox 경로로 다시 돌려 주문 A 와 C 가 복구되는지 본다.

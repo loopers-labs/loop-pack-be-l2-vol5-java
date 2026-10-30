@@ -455,6 +455,7 @@ listener 가 기다리는 DB 호출에 상한이 없으면 예외가 나지 않�
 2. commerce-api · commerce-streamer 를 그 topic · group · 고정 clock 으로 프로세스로 띄운다
 3. topic 의 max.message.bytes=1 → 주문 A 를 API 로 확정 → broker 가 거절
 4. max.message.bytes 를 되돌린다 → 주문 B 를 확정 → broker · streamer 까지 처리
+4-1. api 를 linger.ms=60000 · ddl-auto=none 으로 다시 띄운다 → 주문 C 를 확정 → 지표를 읽고 kill -9
 5. 관찰: 주문 · 예약(DB) · broker(kcat) · committed offset · 구매 활동(DB) · 발행 실패 지표(actuator)
 6. 결과를 docs/week6/gap/result.md 에 쓰고, 시작한 프로세스 · 그 실행의 topic 만 정리한다
 ```
@@ -469,8 +470,8 @@ listener 가 기다리는 DB 호출에 상한이 없으면 예외가 나지 않�
 | 커밋 뒤 send 전에 프로세스 강제 종료 | 위와 같고 흔적 없음 | 그 순간을 맞추기 어렵다. 타이밍에 기대면 재현이 흔들린다 |
 
 - 첫 줄을 고른다. 테스트 더블도 시험용 운영 코드도 없이 같은 끝 상태를 만든다. 원문의 수단과 다르고 실패 지표가 남는다는 점을 `result.md` 와 PR 에 밝힌다.
+- **흔적 없는 누락은 주문 C 로 따로 재현한다.** 마지막 줄(강제 종료)의 "순간을 맞추기 어렵다" 는 `linger.ms` 를 60 초로 늘려 푼다. record 가 producer 버퍼에 60 초 머무는 동안 `kill -9` 하면 매번 같은 결과가 나온다. 설정은 그 실행의 명령행에서만 바꾸고 `kafka.yml` 은 건드리지 않는다. 죽이기 전에 지표를 읽어 둔다 — 다시 띄운 프로세스의 지표는 0 부터라 그 뒤의 "실패 0" 은 아무것도 증명하지 않는다.
 - broker 의 거절은 재시도할 수 없는 오류라 `delivery.timeout.ms` 를 기다리지 않고 바로 실패 콜백이 온다(확인할 테스트 T-8).
-- **뒤집을 조건**: W7 이 "흔적 없는 누락"(지표에도 없는 것)을 outbox 가 복구함을 보여야 할 때 — 마지막 줄의 강제 종료 재현을 더한다.
 
 **broker 는 `kcat` 으로 관찰한다.** 우리 코드(publisher 의 로그 · 지표)가 아니라 독립된 도구로 broker 의 사실을 읽어야, 우리 코드가 틀렸을 때도 관찰이 맞다.
 
