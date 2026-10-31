@@ -5,11 +5,17 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.domain.order.OrderConfirmed;
 import com.loopers.domain.order.OrderEvent;
 import com.loopers.domain.order.OrderEventOutbox;
+import com.loopers.domain.order.PendingOrderEvent;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Repository;
 
+import java.time.Duration;
+import java.util.List;
+
 @Repository
 class OrderEventOutboxImpl implements OrderEventOutbox {
+
+    private static final int ERROR_LENGTH = 1000;
 
     private final OrderEventOutboxJpaRepository outboxJpaRepository;
     private final ObjectMapper objectMapper;
@@ -38,5 +44,31 @@ class OrderEventOutboxImpl implements OrderEventOutbox {
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("주문 이벤트를 직렬화하지 못했다: eventId=" + message.eventId(), e);
         }
+    }
+
+    @Override
+    public List<PendingOrderEvent> due(int limit) {
+        return outboxJpaRepository.findDue(limit).stream().map(OrderEventOutboxEntity::toPending).toList();
+    }
+
+    @Override
+    public void markPublished(List<Long> ids) {
+        if (!ids.isEmpty()) {
+            outboxJpaRepository.markPublished(ids);
+        }
+    }
+
+    @Override
+    public void markBlocked(Long id, String error) {
+        outboxJpaRepository.markBlocked(id, truncate(error));
+    }
+
+    @Override
+    public void retryLater(Long id, Duration delay, String error) {
+        outboxJpaRepository.retryLater(id, delay.toNanos() / 1_000, truncate(error));
+    }
+
+    private static String truncate(String error) {
+        return error.length() <= ERROR_LENGTH ? error : error.substring(0, ERROR_LENGTH);
     }
 }

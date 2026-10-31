@@ -1,6 +1,7 @@
 package com.loopers.infrastructure.order;
 
 import com.loopers.domain.AuditEntity;
+import com.loopers.domain.order.PendingOrderEvent;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -71,5 +72,9 @@ class OrderEventOutboxEntity extends AuditEntity {
         entity.status = OrderEventOutboxStatus.PENDING;
         entity.attemptCount = 0;
         return entity;
+    }
+
+    PendingOrderEvent toPending() {
+        return new PendingOrderEvent(getId(), eventId, topic, recordKey, payload, attemptCount);
     }
 }
