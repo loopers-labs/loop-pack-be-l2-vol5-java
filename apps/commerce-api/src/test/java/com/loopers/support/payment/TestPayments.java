@@ -43,7 +43,14 @@ public class TestPayments {
 
     public Payment startAndSucceed(Long userId, Long orderId, Instant now) {
         start(userId, orderId, now);
-        Payment payment = paymentRepository.findByOrderId(orderId).orElseThrow();
+        return succeed(started(orderId), now);
+    }
+
+    public Payment started(Long orderId) {
+        return paymentRepository.findByOrderId(orderId).orElseThrow();
+    }
+
+    public Payment succeed(Payment payment, Instant now) {
         return paymentTransactions.observe(payment.getId(), new LookupResult.Found(List.of(new PgTransaction(
                 payment.getTransactionKey(), payment.getProviderOrderId(), payment.getAmount(), PgTransaction.Status.SUCCESS))),
             PaymentDiscrepancy.Source.LOOKUP, now);
