@@ -73,7 +73,10 @@ class PaymentChaosTest {
     static void properties(DynamicPropertyRegistry registry) {
         registry.add("commerce.payment.pg.base-url", PG::baseUrl);
         // DB가 멈췄을 때 요청이 무한정 걸리지 않도록 이 테스트에서만 소켓 대기 한도를 둔다.
-        registry.add("datasource.mysql-jpa.main.jdbc-url", () -> mySqlUrl() + "?socketTimeout=3000&connectTimeout=2000");
+        registry.add("datasource.mysql-jpa.main.jdbc-url", PaymentChaosTest::mySqlUrl);
+        // 앱 기본 드라이버 timeout(10초·3초)보다 짧게 두어 DB 정지를 빨리 드러낸다. 같은 키로 덮어써야 앱 설정보다 우선한다.
+        registry.add("datasource.mysql-jpa.main.data-source-properties.socketTimeout", () -> "3000");
+        registry.add("datasource.mysql-jpa.main.data-source-properties.connectTimeout", () -> "2000");
     }
 
     @Autowired private MockMvc mvc;

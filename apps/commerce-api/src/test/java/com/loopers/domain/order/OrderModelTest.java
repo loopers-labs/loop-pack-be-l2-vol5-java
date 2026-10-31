@@ -3,6 +3,7 @@ package com.loopers.domain.order;
 import com.loopers.support.error.CoreException;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -21,6 +22,7 @@ class OrderModelTest {
         assertThat(order.getTotalAmount()).isEqualTo(7_000L);
         assertThat(order.getPaidAmount()).isZero();
         assertThat(order.getItems()).hasSize(2);
+        assertThat(order.getConfirmedAt()).isNull();
     }
 
     @Test
@@ -48,6 +50,7 @@ class OrderModelTest {
 
         assertThat(order.getPaymentMethod()).isNull();
         assertThat(order.getReservationStatus()).isNull();
+        assertThat(order.getConfirmedAt()).isNull();
     }
 
     @Test
@@ -58,6 +61,7 @@ class OrderModelTest {
 
         assertThat(order.getPaymentMethod()).isEqualTo(PaymentMethod.POINT);
         assertThat(order.getReservationStatus()).isNull();
+        assertThat(order.getConfirmedAt()).isNull();
     }
 
     @Test
@@ -77,11 +81,41 @@ class OrderModelTest {
         OrderModel order = new OrderModel(1L, List.of(new OrderItem(10L, "티셔츠", 2_000L, 2)));
         order.startPaymentWithReservedStock();
 
-        order.completePayment();
+        Instant confirmedAt = Instant.parse("2026-10-25T01:00:00.123456Z");
+        order.completePayment(confirmedAt);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
         assertThat(order.getReservationStatus()).isEqualTo(ReservationStatus.CONSUMED);
         assertThat(order.getPaidAmount()).isEqualTo(4_000L);
+        assertThat(order.getConfirmedAt()).isEqualTo(confirmedAt);
+    }
+
+    @Test
+    void repeatedPgCompletionCannotChangeFirstConfirmationTime() {
+        OrderModel order = new OrderModel(1L, List.of(new OrderItem(10L, "티셔츠", 2_000L, 2)));
+        order.startPaymentWithReservedStock();
+        Instant first = Instant.parse("2026-10-25T01:00:00Z");
+        order.completePayment(first);
+
+        assertThatThrownBy(() -> order.completePayment(first.plusSeconds(60)))
+            .isInstanceOf(CoreException.class);
+
+        assertThat(order.getConfirmedAt()).isEqualTo(first);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(order.getReservationStatus()).isEqualTo(ReservationStatus.CONSUMED);
+    }
+
+    @Test
+    void pgCompletionNeedsConfirmationTimeBeforeChangingState() {
+        OrderModel order = new OrderModel(1L, List.of(new OrderItem(10L, "티셔츠", 2_000L, 2)));
+        order.startPaymentWithReservedStock();
+
+        assertThatThrownBy(() -> order.completePayment(null)).isInstanceOf(IllegalArgumentException.class);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+        assertThat(order.getReservationStatus()).isEqualTo(ReservationStatus.RESERVED);
+        assertThat(order.getPaidAmount()).isZero();
+        assertThat(order.getConfirmedAt()).isNull();
     }
 
     @Test
@@ -94,6 +128,7 @@ class OrderModelTest {
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED);
         assertThat(order.getReservationStatus()).isEqualTo(ReservationStatus.RELEASED);
         assertThat(order.getPaidAmount()).isZero();
+        assertThat(order.getConfirmedAt()).isNull();
     }
 
     @Test
@@ -103,7 +138,8 @@ class OrderModelTest {
         failed.startPaymentWithReservedStock();
         failed.failPaymentWithReleasedStock();
 
-        assertThatThrownBy(draft::completePayment).isInstanceOf(CoreException.class);
+        assertThatThrownBy(() -> draft.completePayment(Instant.parse("2026-10-25T01:00:00Z")))
+            .isInstanceOf(CoreException.class);
         assertThatThrownBy(failed::failPaymentWithReleasedStock).isInstanceOf(CoreException.class);
         assertThatThrownBy(failed::startPaymentWithReservedStock).isInstanceOf(CoreException.class);
         assertThat(failed.getReservationStatus()).isEqualTo(ReservationStatus.RELEASED);

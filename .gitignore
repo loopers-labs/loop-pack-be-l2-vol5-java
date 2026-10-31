@@ -44,5 +44,25 @@ out/
 
 ### Local planning notes ###
 /docs/week4/plan.md
+/docs/week5/plan.md
+/docs/week5/pg-learning-handoff.md
 /docs/**/assignment.md
 /docs/**/assignmentnote.md
+/docs/week5/resilience-experiment-cases.md
+/docs/week5/velog*.md
+/docs/week5/pg-flow-study.md
+/docs/week5/velog.md
+/docs/week5/measurements/
+
+### Week 6 local learning material ###
+/docs/week6/images/
+/docs/week6/kafka-flow*.excalidraw*
+/docs/week6/kafka-lecture-guide.md
+/docs/week6/plan.md
+/docs/week6/kafka-basics.md
+/docs/week6/kafka-key-lab.md
+/docs/week6/study.md
+/docs/week6/blog-draft.md
+/docs/week6/follow-up.md
+/docs/week6/kafka-flow.md
+/docs/week6/kafka_설정_선택_사고흐름.md

@@ -3,6 +3,8 @@
 Status: Accepted — 결과 저장·주문 반영 경계는 [ADR 0032](0032-persist-payment-result-before-order-application.md)로 변경
 Related: [ADR 0010](0010-point-balance-locks-before-ledger-read.md), [ADR 0011](0011-order-confirmation-locks-order-row.md), [ADR 0012](0012-stock-decrement-locks-product-row.md), [ADR 0028](0028-test-pg-http-boundary-and-no-create-retry.md), [ADR 0029](0029-order-payment-switches-to-pg-with-reservation-on-order.md)
 
+Follow-up: 최초 PG 확정 시각과 커밋 후 이벤트 전달은 [ADR 0035](0035-publish-order-confirmation-after-db-commit.md)에서 확장한다. 아래 본문은 당시 결정·메서드 형태·검증 기록을 보존한다.
+
 ## Context
 
 PG 호출은 DB 트랜잭션에 참여하지 않는다. 한 트랜잭션 안에서 PG를 부르면 PG를 기다리는 동안 주문·상품 행 잠금과 DB 연결을 잡고 있고, PG 성공 뒤 DB가 롤백돼도 외부 결제는 남는다. 결과는 생성 응답, 고객 reconcile, callback, 배치 등 여러 경로로 늦거나 중복해 들어올 수 있으므로 한 번만 반영해야 한다. 테스트 PG는 호출자 멱등 키를 받지 않는다.

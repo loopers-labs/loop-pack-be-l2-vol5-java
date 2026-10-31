@@ -14,26 +14,56 @@ spring:
   main:
     web-application-type: servlet
   application:
-    name: commerce-api
+    name: commerce-streamer
   profiles:
     active: local
   config:
     import:
-      - jpa.yml
-      - redis.yml
-      - kafka.yml
-      - logging.yml
-      - monitoring.yml
+      - classpath:jpa.yml
+      - classpath:redis.yml
+      - classpath:kafka.yml
+      - classpath:logging.yml
+      - classpath:monitoring.yml
+
+# 응답 없는 DB에서 스레드·커넥션이 무한정 묶이지 않게 MySQL 드라이버가 포기하는 시간 (기본: 무한).
+# 공통 jpa.yml이 아니라 앱마다 둬서 긴 작업이 있는 batch에는 적용하지 않는다.
+datasource:
+  mysql-jpa:
+    main:
+      data-source-properties:
+        connectTimeout: 3000 # 연결 맺기 (Hikari connection-timeout과 같은 3초)
+        socketTimeout: 10000 # 쿼리 응답 대기. 이 앱의 조회·저장·짧은 락 대기보다 충분히 길게 둔다
 
 demo-kafka:
+  enabled: false # 실제 소비 설정을 선택하기 전에는 demo도 자동 구독하지 않는다.
   test:
     topic-name: demo.internal.topic-v1
+
+commerce:
+  order-events:
+    topic: order-events
+    consumer:
+      enabled: false # 기본은 끈다. local profile에서만 켠다(아래).
+      # 메시지 문제가 아닌 실패(DB 등)의 재시도. 이 시간 안에 풀리면 스스로 이어 가고, 넘기면 listener를 멈춘다.
+      retry:
+        initial-interval: 1s
+        multiplier: 2
+        max-interval: 30s
+        max-elapsed-time: 5m # 간격의 합. DB failover(보통 수십 초~2분)보다 넉넉하게
 
 ---
 spring:
   config:
     activate:
       on-profile: local, test
+
+---
+spring.config.activate.on-profile: local
+
+# 로컬은 앱 1대이므로 concurrency 3이 group 전체 consumer 3개(ADR 0044)다.
+commerce.order-events.consumer:
+  enabled: true
+  concurrency: 3
 
 ---
 spring:

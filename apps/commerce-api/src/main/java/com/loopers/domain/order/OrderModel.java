@@ -12,6 +12,7 @@ import jakarta.persistence.Table;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -31,6 +32,8 @@ public class OrderModel extends BaseEntity {
     private PaymentMethod paymentMethod;
     @Enumerated(EnumType.STRING)
     private ReservationStatus reservationStatus;
+    @Column(name = "confirmed_at")
+    private Instant confirmedAt;
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
     @JoinColumn(name = "order_id")
     private List<OrderItem> items = new ArrayList<>();
@@ -53,6 +56,7 @@ public class OrderModel extends BaseEntity {
     public long getPaidAmount() { return paidAmount; }
     public PaymentMethod getPaymentMethod() { return paymentMethod; }
     public ReservationStatus getReservationStatus() { return reservationStatus; }
+    public Instant getConfirmedAt() { return confirmedAt; }
     public List<OrderItem> getItems() { return List.copyOf(items); }
     public boolean isOwnedBy(Long userId) { return this.userId.equals(userId); }
 
@@ -76,11 +80,15 @@ public class OrderModel extends BaseEntity {
         status = OrderStatus.PAYMENT_PENDING;
     }
 
-    public void completePayment() {
+    public void completePayment(Instant confirmedAt) {
         validatePaymentPending();
+        if (confirmedAt == null) {
+            throw new IllegalArgumentException("주문 확정 시각이 필요합니다.");
+        }
         paidAmount = totalAmount;
         reservationStatus = ReservationStatus.CONSUMED;
         status = OrderStatus.CONFIRMED;
+        this.confirmedAt = confirmedAt;
     }
 
     public void failPaymentWithReleasedStock() {
