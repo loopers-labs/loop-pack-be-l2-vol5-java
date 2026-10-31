@@ -17,6 +17,8 @@ import com.loopers.domain.product.StockRestoration;
 import com.loopers.support.error.DomainError;
 import com.loopers.support.error.DomainException;
 import lombok.RequiredArgsConstructor;
+
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,6 +48,7 @@ public class PaymentTransactions {
     private final StockDeduction stockDeduction;
     private final StockRestoration stockRestoration;
     private final PaymentMetrics paymentMetrics;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public Begin begin(Long userId, Long orderId, PaymentAttemptKey attemptKey, CardType cardType,
@@ -111,6 +114,7 @@ public class PaymentTransactions {
             case CONFIRM_ORDER -> {
                 order.completePayment(now);
                 orderService.save(order);
+                order.pullEvents().forEach(eventPublisher::publishEvent);
             }
             case FAIL_ORDER -> {
                 order.failPayment();

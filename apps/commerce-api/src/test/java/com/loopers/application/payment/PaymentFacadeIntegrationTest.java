@@ -7,6 +7,7 @@ import com.loopers.application.order.OrderFacade;
 import com.loopers.application.product.ProductFacade;
 import com.loopers.domain.common.Quantity;
 import com.loopers.domain.order.Order;
+import com.loopers.domain.order.OrderConfirmed;
 import com.loopers.domain.order.OrderQuantity;
 import com.loopers.domain.order.OrderStatus;
 import com.loopers.domain.payment.CardNumber;
@@ -66,10 +67,14 @@ import com.loopers.domain.payment.PaymentDiscrepancy;
 import com.loopers.domain.payment.PgTransaction;
 import com.loopers.domain.payment.TransactionKey;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.event.ApplicationEvents;
+import org.springframework.test.context.event.RecordApplicationEvents;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
+@RecordApplicationEvents
 class PaymentFacadeIntegrationTest {
 
     private static final PgFixture PG = PgFixture.start();
@@ -339,7 +344,8 @@ class PaymentFacadeIntegrationTest {
             return new SpringApplicationBuilder(CommerceApiApplication.class)
                 .profiles("test")
                 .web(WebApplicationType.NONE)
-                .run("--spring.jpa.hibernate.ddl-auto=none", "--pg.base-url=" + PG.baseUrl());
+                .run("--spring.jpa.hibernate.ddl-auto=none", "--pg.base-url=" + PG.baseUrl(),
+                    "--management.server.port=0");
         }
 
         private Payment requestedOnly(Order order) {
@@ -1036,6 +1042,8 @@ class PaymentFacadeIntegrationTest {
                 "select count(*) from payment_discrepancy where payment_id = ?", Integer.class, payment.getId());
         }
 
+
+
         @Nested
         @DisplayName("PG-005, PG-010, PG-011, PG-015: 생성 결과를 반영한다")
         class CreateResult {
@@ -1080,6 +1088,41 @@ class PaymentFacadeIntegrationTest {
                 assertThat(result.getStatus()).isEqualTo(PaymentStatus.UNKNOWN);
                 assertThat(storedOrder().getStatus()).isEqualTo(OrderStatus.PENDING);
                 assertThat(stock()).isEqualTo(Quantity.of(8));
+            }
+        }
+
+        @Nested
+        @DisplayName("EVT-010, EVT-011: 결과 반영 경계는 주문이 처음 확정될 때만 OrderConfirmed 를 낸다")
+        class Confirmation {
+
+            private List<OrderConfirmed> confirmed(ApplicationEvents events) {
+                return events.stream(OrderConfirmed.class).toList();
+            }
+
+            @DisplayName("성공 결과를 반영해 주문이 확정되면 그 주문의 OrderConfirmed 가 하나 나간다")
+            @Test
+            void confirmsOnce(ApplicationEvents events) {
+                lookup(PgTransaction.Status.SUCCESS);
+
+                assertThat(confirmed(events)).extracting(OrderConfirmed::orderId).containsExactly(order.getId());
+            }
+
+            @DisplayName("같은 성공 결과가 다시 와도 더 나가지 않는다. 반복 반영은 효과가 없다")
+            @Test
+            void repeatedSuccessAddsNothing(ApplicationEvents events) {
+                lookup(PgTransaction.Status.SUCCESS);
+                lookup(PgTransaction.Status.SUCCESS);
+
+                assertThat(confirmed(events)).hasSize(1);
+            }
+
+            @DisplayName("접수나 실패를 반영할 때는 나가지 않는다")
+            @Test
+            void notOnAcceptOrFailure(ApplicationEvents events) {
+                observe(new CreateObservation.Accepted(TX_KEY));
+                lookup(PgTransaction.Status.FAILED);
+
+                assertThat(confirmed(events)).isEmpty();
             }
         }
 

@@ -20,4 +20,6 @@ dependencies {
     testImplementation(testFixtures(project(":modules:jpa")))
     testImplementation(testFixtures(project(":modules:redis")))
     testImplementation(testFixtures(project(":modules:kafka")))
+    testImplementation("org.testcontainers:mysql")
+    testImplementation("com.tngtech.archunit:archunit-junit5:${project.properties["archUnitVersion"]}")
 }

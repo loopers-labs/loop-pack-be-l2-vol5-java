@@ -70,9 +70,9 @@
 ./gradlew :apps:commerce-api:test --tests '*ArchitectureTest'
 ```
 
-이 환경에서는 gradle 을 직접 실행할 수 없다(네트워크 제한). **빌드·테스트는 사용자가 실행**하고,
-결과를 보고 다음으로 간다.
+gradle 은 `--offline` 으로 직접 실행한다(`./gradlew --offline :apps:commerce-api:check`).
+테스트는 한 번에 한 실행만 돌린다 — PG fixture 가 고정 포트(8090)를 써서 동시에 돌리면 부딪힌다.
 
-**git 은 실행하지 않는다.** 이 환경에서 돌리면 `.git/index.lock` 이 남고 마운트가 그것을 지우지 못한다.
-커밋·삭제가 필요하면 **명령을 만들어 사용자에게 건네고**, 사용자가 자기 셸에서 실행한다.
-파일 삭제도 같다 — 마운트에서 `rm` 이 막혀 있다.
+**git 은 사용자가 요청할 때 실행한다.** 상태를 볼 때는 index 를 건드리지 않게
+`git --no-optional-locks status` 를 쓰고, 커밋 뒤 `.git/index.lock` 이 남지 않았는지 확인한다.
+요청이 없으면 커밋 명령을 만들어 건넨다.
