@@ -12,6 +12,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,6 +51,7 @@ import static org.mockito.Mockito.doAnswer;
  * <p>실행: {@code ./gradlew :apps:commerce-api:test --tests '*OrderConfirmedPublicationGapTest'}. 시계는 2026-09-07T01:00:00Z 로
  * 고정한다. 실제 주문·결제 시도 ID 는 실행마다 새로 생기며 {@code [W6-OBSERVATION]} 로그로 남긴다.
  */
+@Tag("experiment")
 class OrderConfirmedPublicationGapTest extends PaymentFlowTestSupport {
 
     private static final Logger log = LoggerFactory.getLogger(OrderConfirmedPublicationGapTest.class);

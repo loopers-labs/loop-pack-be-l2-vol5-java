@@ -9,6 +9,27 @@ tasks.named<GenerateAvroJavaTask>("generateAvroJava") {
     source(rootProject.file("contracts/avro"))
 }
 
+// 학습용 실험 테스트는 기본 test/check 에서 빼고 experimentTest 로만 돌린다.
+tasks.test {
+    useJUnitPlatform {
+        excludeTags("experiment")
+    }
+}
+
+tasks.register<Test>("experimentTest") {
+    description = "@Tag(\"experiment\") 실험 테스트만 실행한다."
+    group = "verification"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    maxParallelForks = 1
+    useJUnitPlatform {
+        includeTags("experiment")
+    }
+    systemProperty("user.timezone", "Asia/Seoul")
+    systemProperty("spring.profiles.active", "test")
+    jvmArgs("-Xshare:off")
+}
+
 dependencies {
     // add-ons
     implementation(project(":modules:jpa"))

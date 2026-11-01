@@ -158,13 +158,7 @@ public final class ExperimentTopic {
 
     /** group 이 재시작 시 이어 갈 위치. commit 한 적이 없으면 null 이다. */
     public Long committedOffset(TopicPartition partition) {
-        try (AdminClient admin = admin()) {
-            OffsetAndMetadata committed = admin.listConsumerGroupOffsets(group).partitionsToOffsetAndMetadata()
-                .get(10, TimeUnit.SECONDS).get(partition);
-            return committed == null ? null : committed.offset();
-        } catch (Exception e) {
-            throw new IllegalStateException("committed offset 을 조회하지 못했습니다.", e);
-        }
+        return CommittedOffsets.of(group, partition);
     }
 
     private static AdminClient admin() {

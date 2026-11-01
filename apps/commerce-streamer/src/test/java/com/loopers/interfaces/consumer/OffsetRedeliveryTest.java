@@ -11,6 +11,7 @@ import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,6 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * commit 만 보류한다. 보이는 것: DB 효과 뒤 offset 이 비어 있으면 같은 record 가 같은 위치에서 다시 온다. 보이지 않는 것:
  * OS 강제 종료·broker 장애·네트워크 분할. 관찰값은 {@code [W6-OBSERVATION]} 로그로 남긴다.
  */
+@Tag("experiment")
 @SpringBootTest
 class OffsetRedeliveryTest {
 

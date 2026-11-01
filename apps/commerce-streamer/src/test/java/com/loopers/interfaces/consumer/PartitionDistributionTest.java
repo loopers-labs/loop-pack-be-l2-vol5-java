@@ -4,6 +4,7 @@ import com.loopers.support.kafka.ExperimentTopic;
 import com.loopers.support.kafka.GroupAssignment;
 import com.loopers.support.kafka.GroupMember;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,6 +27,7 @@ import static org.awaitility.Awaitility.await;
  * 서로 다른 key 가 다른 partition 으로 간다는 것, 여러 프로세스·여러 broker 에서의 동작. 관찰값은
  * {@code [W6-OBSERVATION]} 로그로 남긴다.
  */
+@Tag("experiment")
 class PartitionDistributionTest {
 
     private static final Logger log = LoggerFactory.getLogger(PartitionDistributionTest.class);

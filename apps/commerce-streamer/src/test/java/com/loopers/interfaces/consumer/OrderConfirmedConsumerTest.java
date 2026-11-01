@@ -1,9 +1,8 @@
 package com.loopers.interfaces.consumer;
 
+import com.loopers.support.kafka.CommittedOffsets;
 import com.loopers.support.kafka.OrderConfirmedMessages;
 import com.loopers.utils.DatabaseCleanUp;
-import org.apache.kafka.clients.admin.AdminClient;
-import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -11,7 +10,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.kafka.core.KafkaAdmin;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -41,9 +39,6 @@ class OrderConfirmedConsumerTest {
     private KafkaTemplate<Object, Object> kafkaTemplate;
 
     @Autowired
-    private KafkaAdmin kafkaAdmin;
-
-    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @Autowired
@@ -59,12 +54,8 @@ class OrderConfirmedConsumerTest {
             .get(10, TimeUnit.SECONDS).getRecordMetadata().offset();
     }
 
-    private Long committedOffset() throws Exception {
-        try (AdminClient admin = AdminClient.create(kafkaAdmin.getConfigurationProperties())) {
-            OffsetAndMetadata committed = admin.listConsumerGroupOffsets(GROUP).partitionsToOffsetAndMetadata()
-                .get(10, TimeUnit.SECONDS).get(new TopicPartition(TOPIC, 0));
-            return committed == null ? null : committed.offset();
-        }
+    private Long committedOffset() {
+        return CommittedOffsets.of(GROUP, new TopicPartition(TOPIC, 0));
     }
 
     private long activityRows() {
