@@ -5,7 +5,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.loopers.application.purchase.PurchaseActivityHandler;
-import com.loopers.confg.kafka.KafkaConfig;
+import com.loopers.config.kafka.KafkaConfig;
 import com.loopers.domain.purchase.OrderConfirmation;
 import com.loopers.domain.purchase.ProductPurchaseActivity;
 import com.loopers.domain.purchase.PurchaseActivityRepository;
@@ -72,7 +72,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 
-@SpringBootTest(properties = "order.confirmed-event.auto-startup=false")
+@SpringBootTest(properties = {
+    "order.confirmed-event.auto-startup=false",
+    "kafka.batch-listener.max-poll-records=701",
+    "kafka.batch-listener.fetch-min-size=2MB",
+    "kafka.batch-listener.fetch-max-wait=3s",
+    "kafka.batch-listener.heartbeat-interval=15s",
+    "kafka.batch-listener.session-timeout=45s",
+    "kafka.batch-listener.max-poll-interval=90s",
+    "spring.kafka.listener.concurrency=2",
+    "spring.kafka.listener.ack-mode=manual_immediate"
+})
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class PurchaseActivityListenerIntegrationTest {
     private static final org.slf4j.Logger log = LoggerFactory.getLogger(PurchaseActivityListenerIntegrationTest.class);
@@ -215,18 +225,34 @@ class PurchaseActivityListenerIntegrationTest {
         assertThat(consumer.getInt(ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG)).isEqualTo(100);
     }
 
-    @DisplayName("기존 demo batch factory의 batch·concurrency 3·MANUAL·1MiB와 5초 fetch 설정을 유지한다.")
+    @DisplayName("구매 활동 consumer는 batch factory의 poll·session 설정을 물려받지 않고 Kafka 기본값을 쓴다.")
     @Test
-    void preservesExistingBatchFactory() {
+    void doesNotInheritBatchPollSettings() {
+        ConsumerConfig consumer = consumerConfig();
+
+        assertThat(consumer.originals()).doesNotContainKeys(
+            ConsumerConfig.MAX_POLL_RECORDS_CONFIG,
+            ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG,
+            ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG,
+            ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG);
+    }
+
+    @DisplayName("batch factory가 YAML의 Kafka polling·fetch·listener 설정을 반영한다.")
+    @Test
+    void appliesBatchFactorySettingsFromConfiguration() {
         var container = batchFactory.createContainer("configuration-probe");
         ConsumerConfig consumer = new ConsumerConfig(batchFactory.getConsumerFactory().getConfigurationProperties());
 
         assertThat(batchFactory.isBatchListener()).isTrue();
         assertThat(batchFactory.getConsumerFactory()).isNotSameAs(recordFactory.getConsumerFactory());
-        assertThat(container.getConcurrency()).isEqualTo(3);
-        assertThat(container.getContainerProperties().getAckMode()).isEqualTo(ContainerProperties.AckMode.MANUAL);
-        assertThat(consumer.getInt(ConsumerConfig.FETCH_MIN_BYTES_CONFIG)).isEqualTo(1_048_576);
-        assertThat(consumer.getInt(ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG)).isEqualTo(5_000);
+        assertThat(container.getConcurrency()).isEqualTo(2);
+        assertThat(container.getContainerProperties().getAckMode()).isEqualTo(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
+        assertThat(consumer.getInt(ConsumerConfig.MAX_POLL_RECORDS_CONFIG)).isEqualTo(701);
+        assertThat(consumer.getInt(ConsumerConfig.FETCH_MIN_BYTES_CONFIG)).isEqualTo(2_097_152);
+        assertThat(consumer.getInt(ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG)).isEqualTo(3_000);
+        assertThat(consumer.getInt(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG)).isEqualTo(45_000);
+        assertThat(consumer.getInt(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG)).isEqualTo(15_000);
+        assertThat(consumer.getInt(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG)).isEqualTo(90_000);
     }
 
     @DisplayName("실제 listener의 DB 실패는 전체 rollback·offset 유지·중단되고, 같은 group 재시작 후 DB commit이 끝나야 ack한다.")

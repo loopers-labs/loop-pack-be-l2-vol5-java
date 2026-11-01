@@ -25,6 +25,17 @@ spring:
       enable-auto-commit: false
     listener:
       ack-mode: manual
+      concurrency: 3
+
+# BATCH_LISTENER_DEFAULT factory에만 적용한다. 별도 factory를 쓰는 listener는 이 값을 물려받지 않는다.
+kafka:
+  batch-listener:
+    max-poll-records: 3000
+    fetch-min-size: 1MB
+    fetch-max-wait: 5s
+    session-timeout: 60s
+    heartbeat-interval: 20s
+    max-poll-interval: 2m
 
 ---
 spring.config.activate.on-profile: local, test

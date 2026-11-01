@@ -1,5 +1,6 @@
 package com.loopers;
 
+import com.loopers.config.kafka.KafkaConfig;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -10,7 +11,9 @@ import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.config.TopicBuilder;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.KafkaAdmin;
@@ -37,6 +40,10 @@ class KafkaClientConfigTest {
     private ConsumerFactory<Object, Object> consumerFactory;
 
     @Autowired
+    @Qualifier(KafkaConfig.BATCH_LISTENER)
+    private ConcurrentKafkaListenerContainerFactory<Object, Object> batchFactory;
+
+    @Autowired
     private ProducerFactory<Object, Object> producerFactory;
 
     @Autowired
@@ -53,6 +60,19 @@ class KafkaClientConfigTest {
         assertThat(config.getClass(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG)).isEqualTo(ByteArrayDeserializer.class);
         assertThat(config.getBoolean(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG)).isFalse();
         assertThat(config.originals()).doesNotContainKey("enable-auto-commit");
+    }
+
+    @DisplayName("kafka.yml의 batch 전용 polling·fetch 설정이 batch factory의 Kafka client에 적용된다.")
+    @Test
+    void batchTuningComesFromBatchListenerConfiguration() {
+        ConsumerConfig config = new ConsumerConfig(batchFactory.getConsumerFactory().getConfigurationProperties());
+
+        assertThat(config.getInt(ConsumerConfig.MAX_POLL_RECORDS_CONFIG)).isEqualTo(3000);
+        assertThat(config.getInt(ConsumerConfig.FETCH_MIN_BYTES_CONFIG)).isEqualTo(1_048_576);
+        assertThat(config.getInt(ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG)).isEqualTo(5_000);
+        assertThat(config.getInt(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG)).isEqualTo(60_000);
+        assertThat(config.getInt(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG)).isEqualTo(20_000);
+        assertThat(config.getInt(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG)).isEqualTo(120_000);
     }
 
     // 기본값에 기대지 않고 명시해야 충돌하는 producer 설정이 멱등성을 조용히 끄지 못하고 기동 시 실패한다.
