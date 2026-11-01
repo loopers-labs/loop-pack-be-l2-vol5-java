@@ -1,4 +1,4 @@
-package com.loopers.infrastructure.order;
+package com.loopers.support.kafka;
 
 import com.loopers.testcontainers.KafkaTestContainersConfig;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -13,14 +13,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-final class TopicRecords {
+public final class TopicRecords {
 
     private static final Duration READ_DEADLINE = Duration.ofSeconds(10);
 
     private TopicRecords() {
     }
 
-    static List<ConsumerRecord<String, byte[]>> during(String topic, Runnable action) {
+    public static List<ConsumerRecord<String, byte[]>> during(String topic, Runnable action) {
         try (KafkaConsumer<String, byte[]> consumer = new KafkaConsumer<>(Map.of(
                 ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, KafkaTestContainersConfig.bootstrapServers(),
                 ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false),
