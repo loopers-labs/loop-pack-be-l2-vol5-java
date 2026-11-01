@@ -92,6 +92,11 @@ Loopers 에서 제공하는 Spring Boot(Java 21) 멀티 모듈 커머스 템플�
 - API E2E 테스트는 `@SpringBootTest(webEnvironment = RANDOM_PORT)` + `TestRestTemplate`로 실제 HTTP 요청을 보내고, 응답을 공통 `ApiResponse<T>`로 역직렬화해 검증합니다.
 - MySQL/Redis가 필요한 테스트는 각 모듈의 testFixtures에 있는 Testcontainers 설정(`MySqlTestContainersConfig`, `RedisTestContainersConfig`)을 사용합니다(Docker 필요). Kafka는 위에서 설명한 대로 testFixtures가 아직 구현되어 있지 않으므로 필요 시 직접 구성해야 합니다.
 - `*Test.java` 파일은 `.editorconfig`에서 `max_line_length` 제한이 해제되어 있습니다.
+- api(발행)와 streamer(소비)는 독립 앱이라 "발행 → 소비"를 한 테스트로 잇지 않습니다. 메시지 계약은 공유 스키마(IDL)로 보장한다고 보고, 각자 쪼개 검증합니다.
+  - producer: 이벤트가 계약한 모양으로 만들어지는지(단위)
+  - consumer: 계약한 메시지를 받으면 처리되는지, 잘못된 값은 거르는지(단위)
+  - 중복 처리(같은 이벤트 두 번 → 효과 한 번): Facade 통합 테스트로 검증하며 Kafka는 쓰지 않음
+  - 실패 시 미ack·재전달: Kafka를 띄우는 대표 테스트 1개만
 
 ## 개발 규칙 (lint · ArchUnit)
 
@@ -101,7 +106,7 @@ Loopers 에서 제공하는 Spring Boot(Java 21) 멀티 모듈 커머스 템플�
 ## AI 작업 규칙
 
 - 합의한 계약·기대값·패키지 의존을 따른다. 미정 정책은 먼저 질문한다.
-- 이번 기능에서 변경할 책임·파일·관련 테스트를 먼저 제안한다.
+- 이번 기능에서 변경할 책임·파일과 테스트 검증 목록(테스트 이름)을 먼저 제안하고, 합의한 뒤 구현한다.
 - 작은 기능을 구현하고 diff와 관련 테스트·lint·ArchUnit 결과를 확인한다.
 - 검사를 통과시키기 위한 테스트·기대값·규칙 삭제나 완화는 하지 않는다. 단, 사용자가 요청한 테스트 정리는 예외다.
 - 정책·검사 기준 변경이나 범위 밖 개편은 이유와 영향을 설명하고 확인을 받는다.
