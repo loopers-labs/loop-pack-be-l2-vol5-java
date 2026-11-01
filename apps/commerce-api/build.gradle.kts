@@ -1,5 +1,18 @@
+import com.github.davidmc24.gradle.plugin.avro.GenerateAvroJavaTask
+
 plugins {
     checkstyle
+    id("com.github.davidmc24.gradle.plugin.avro")
+}
+
+// 앱 간 메시지 계약 원본(루트)에서 클래스를 생성한다.
+tasks.named<GenerateAvroJavaTask>("generateAvroJava") {
+    source(rootProject.file("contracts/avro"))
+}
+
+// 생성 코드는 lint 대상이 아니다.
+tasks.withType<Checkstyle> {
+    exclude("**/com/loopers/contract/**")
 }
 
 checkstyle {
@@ -17,6 +30,9 @@ dependencies {
     implementation(project(":supports:jackson"))
     implementation(project(":supports:logging"))
     implementation(project(":supports:monitoring"))
+
+    // 메시지 계약(Avro)
+    implementation("org.apache.avro:avro:${project.properties["avroVersion"]}")
 
     // web
     implementation("org.springframework.boot:spring-boot-starter-web")
