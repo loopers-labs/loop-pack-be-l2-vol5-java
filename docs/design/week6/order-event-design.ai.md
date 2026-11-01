@@ -28,17 +28,14 @@
 |---|---|
 | topic | `order-events` (테스트는 고유 suffix) |
 | key | `String.valueOf(orderId)`. payload `orderId`와 일치해야 한다 |
-| value | JSON bytes (`byte[]`) |
-| eventType / schemaVersion | `OrderConfirmed` / `1` |
+| value | Avro single-object encoding bytes (`byte[]`). 스키마 원본은 `contracts/avro/order-confirmed.avsc` |
 | eventId | `order-confirmed:v1:{orderId}` (유도값, 재발행·재전달에서 불변) |
-| confirmedAt | `Order.confirmedAt` (UTC ISO-8601) |
+| confirmedAt | `Order.confirmedAt` (`timestamp-micros`, `Instant`) |
 | items | `[{productId, quantity}]`, quantity ≥ 1, productId 중복 없음 |
 
-```json
-{"eventType":"OrderConfirmed","schemaVersion":1,"eventId":"order-confirmed:v1:42",
- "orderId":42,"confirmedAt":"2026-09-07T01:00:00Z",
- "items":[{"productId":7,"quantity":2},{"productId":8,"quantity":1}]}
-```
+- 스키마가 필드 이름·타입·존재를 보장한다. 스키마로 표현할 수 없는 규칙(key와 orderId 일치, eventId 형식, items 비어 있지 않음, quantity ≥ 1)은 consumer parser가 확인한다.
+- 이벤트 종류와 버전은 필드가 아니라 record 이름과 스키마 fingerprint(헤더)가 맡는다. 다른 스키마로 쓴 메시지는 디코드에서 거절된다. 계약이 바뀌면 eventId를 `v2`로 하고 새 스키마를 쓴다.
+- 배포는 앱마다 따로 하므로 스키마를 바꿀 때는 consumer를 먼저 배포하고 필드는 기본값을 둔 추가만 한다. 자동 호환성 검사는 하지 않는다.
 
 - 카드·PG 비밀·사용자 개인정보를 넣지 않는다. 고객이 호출하는 발행 endpoint를 만들지 않는다.
 - 사실 비교는 속성 순서와 items 순서를 무시한다. items를 productId 오름차순으로 정규화(같은 productId는 합산)해 비교한다.
@@ -57,7 +54,7 @@
 
 - 발행 흐름: `updateByStatusLookupResult`가 호출 전후 주문 상태를 비교해 최초 확정일 때 TX 안에서 payload를 만들고 `PaymentAttemptInfo`와 함께(없을 수 있음) 돌려주고 → Facade가 `writeTransaction.execute` 반환 뒤 payload가 있으면 `OrderEventPublisher.publish`를 부른다.
 - Spring 이벤트·`@TransactionalEventListener`는 쓰지 않는다. 재조회 없이 트랜잭션 안에서 만든 payload만 쓴다.
-- 공용 `KafkaTemplate<Object,Object>`로 계약 JSON bytes를 보낸다. `kafka.yml`의 producer 값 직렬화기를 `ByteArraySerializer`로 바꿔, 직렬화를 publisher가 앱의 `ObjectMapper`로 직접 한다(시각 형식 UTC `Z`를 보장). 계약 record(`OrderConfirmedMessage`)의 `confirmedAt`은 `Instant`다.
+- 공용 `KafkaTemplate<Object,Object>`로 계약 Avro bytes를 보낸다. `kafka.yml`의 producer 값 직렬화기가 `ByteArraySerializer`라, publisher가 생성된 `OrderConfirmed`를 `toByteBuffer()`로 직접 직렬화한다.
 - send 실패(동기 예외, 비동기 콜백 오류)는 로그로 남기고 삼킨다. 주문 상태를 바꾸지 않고 PG create를 다시 부르지 않는다. 성공 콜백에서는 topic·partition·offset을 로그로 남긴다.
 
 ## 4. commerce-api 변경
@@ -71,7 +68,7 @@
 | `PaymentStatusUpdater` | `succeed`가 `Clock`으로 `confirmedAt`을 설정(마이크로초로 맞춤). `updateByStatusLookupResult`는 `PaymentAttemptInfo`와 payload를 담은 `PaymentStatusUpdateResult`(`application.payment.dto`)를 반환 |
 | `PaymentResultLookupFacade` | `syncWithPg`가 `execute` 반환 뒤 payload가 있으면 포트를 호출. callback·reconcile이 모두 이 메서드를 지난다 |
 | application | payload 타입 `OrderConfirmedInfo`(`application.order.dto`), 포트 `OrderEventPublisher`(`application.order.event`) |
-| infrastructure | `OrderEventKafkaPublisher`(포트 구현. 직렬화·key·결과 콜백을 숨긴다), `OrderConfirmedMessage`(계약 record) |
+| infrastructure | `OrderEventKafkaPublisher`(포트 구현. 직렬화·key·결과 콜백을 숨긴다), 생성된 Avro 계약 클래스 `OrderConfirmed`를 사용 |
 
 - ArchUnit: `infrastructure → application`은 application 포트 구현에 한해 허용된다(기존 `ProductListRedisCache`와 같다).
 - 반환 타입이 바뀌므로 `updateByStatusLookupResult`를 부르는 기존 테스트(`PaymentIntegrationTest` 등)를 먼저 세어 보고, 10곳을 넘으면 고치기 전에 알린다.
@@ -91,7 +88,7 @@
 
 ### 소비 검사 순서
 
-1. 파싱·검증: JSON 형식, `eventType=OrderConfirmed`, `schemaVersion=1`, `quantity ≥ 1`, items 비어 있지 않음, key == `String.valueOf(orderId)`, eventId 형식 `order-confirmed:v1:{orderId}`. 위반이면 예외 → 중단.
+1. 파싱·검증: Avro 디코드(형식·스키마 불일치는 여기서 실패), `quantity ≥ 1`, items 비어 있지 않음, key == `String.valueOf(orderId)`, eventId 형식 `order-confirmed:v1:{orderId}`. 위반이면 예외 → 중단.
 2. items 정규화(productId 정렬·합산).
 3. DB TX:
    1. eventId 또는 orderId의 완료 기록을 조회한다.

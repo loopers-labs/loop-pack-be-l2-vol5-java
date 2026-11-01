@@ -32,6 +32,7 @@ PG로 확정된 주문을 `OrderConfirmed` 이벤트로 `commerce-streamer`에 �
 | 결정 | 이유 |
 |---|---|
 | `PaymentStatusUpdater`가 최초 확정일 때만 payload를 만들어 결과로 돌려주고, `PaymentResultLookupFacade`가 **트랜잭션이 끝난 뒤 명시적으로** 발행 포트를 부른다 | 최초 확정은 `succeed` 한 곳뿐이라 callback·reconcile 어느 쪽이 먼저 와도 같다. `writeTransaction.execute`가 반환되면 commit이 끝났고, rollback이면 예외로 발행 줄에 닿지 않는다. 발행 위치가 Facade 코드에 한 줄로 보여 commit~send 구간을 읽고 실험하기 쉽다. OSIV가 꺼져 있어 commit 뒤에는 LAZY 품목을 못 읽으므로 payload는 트랜잭션 안에서 만든다. 비용은 잠금 중 품목 조회 1회 |
+| 메시지 계약은 루트 `contracts/avro/order-confirmed.avsc` 한 파일로 정의하고, 두 앱이 각자 이 파일에서 클래스를 생성한다. 값은 Avro single-object encoding으로 보낸다 | 앱끼리 코드를 공유하지 않으면서 계약 원본은 하나로 둔다. 필드 이름·타입이 어긋나면 컴파일이 깨지고, 다른 스키마의 메시지는 디코드에서 거절된다 |
 | `eventId`는 `order-confirmed:v1:{orderId}`로 유도하고 key는 orderId 문자열 | 한 주문의 확정은 한 번뿐이라 따로 저장하지 않아도 재발행·재전달에서 같다 |
 | `Order`에 `confirmedAt`을 추가하고 `Clock`으로 최초 전이 때 한 번만 설정 | payload 시각과 DB 사실을 맞추고, 중복 callback이 바꾸지 못하게 한다 |
 | send가 실패해도 주문을 되돌리거나 PG를 다시 부르지 않고, 실패를 로그로 드러낸다 | 확정은 이미 일어난 사실이다. 누락은 다음 주 Outbox로 해결한다 |
@@ -121,7 +122,7 @@ consumer를 3개로 늘려도 일하는 member는 partition 수인 2개다. 같�
 | 구매 활동 | 소비할 record가 없어 생길 수 없음 | streamer `OrderConfirmedConsumerTest`가 같은 계약의 record를 소비해 저장함을 확인 |
 
 - hook 시점(commit 뒤, send 전)에 DB를 새로 읽으면 이미 `CONFIRMED`이고 재고도 차감돼 있다(`CONFIRMED/shoes=7/socks=9`, 두 주문의 차감 합). 그래도 broker에는 A의 이벤트가 없다. DB와 broker가 원자적으로 연결되지 않았다는 관찰이다.
-- 실행: `./gradlew :apps:commerce-api:test --tests '*OrderConfirmedPublicationGapTest'`. W6 revision은 이 테스트가 처음 추가된 커밋이다(`git log --diff-filter=A --format=%h -1 -- apps/commerce-api/src/test/java/com/loopers/application/payment/OrderConfirmedPublicationGapTest.java`).
+- 실행: `./gradlew :apps:commerce-api:experimentTest --tests '*OrderConfirmedPublicationGapTest'`(실험 테스트는 `experiment` 태그라 기본 `test`에서 빠진다). W6 revision은 이 테스트가 처음 추가된 커밋이다(`git log --diff-filter=A --format=%h -1 -- apps/commerce-api/src/test/java/com/loopers/application/payment/OrderConfirmedPublicationGapTest.java`).
 - hook은 전송 호출을 건너뛴 것이지 프로세스를 강제 종료한 것이 아니다. 두 앱은 서로 의존하지 않아, A의 "구매 활동 없음"은 DB 관찰이 아니라 "record가 없다"는 사실에서 설명하고, api에서 streamer까지를 한 번의 실행으로 잇지는 않는다.
 
 ## 알려진 한계
@@ -131,4 +132,5 @@ consumer를 3개로 늘려도 일하는 member는 partition 수인 2개다. 같�
 - 중단형 error handler라 충돌 record 하나가 그 partition의 소비를 멈춘다. 대신 업무 사실이 조용히 사라지지 않는다.
 - 확정 경로가 하나 더 생기면 그 Facade도 발행을 직접 불러야 한다. 빠뜨리지 않도록 callback과 reconcile 경로 각각에 "실제 확정 → 발행" 테스트를 둔다.
 - 이전 POINT 확정 주문은 이번 변경으로 소급 발행하지 않는다.
+- 스키마 호환성은 자동으로 검사하지 않는다. 스키마를 바꿀 때는 consumer를 먼저 배포하고 기본값이 있는 필드만 추가한다.
 - 통제된 consumer 종료로 재전달을 관찰하며, OS 강제 종료·broker 장애·네트워크 분할을 시험한 것은 아니다.
