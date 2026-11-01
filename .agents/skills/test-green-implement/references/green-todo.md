@@ -371,3 +371,14 @@ Green 에이전트가 Red 전체를 실행하고 실패를 분석한 뒤, produc
   - 선행 작업: PaymentGateway의 paymentKey 조회 포트와 PAYMENT_CANCELLATION_PENDING 오류 매핑이 존재함.
   - 테스트 명령: `./gradlew :apps:commerce-api:test --tests 'com.loopers.order.application.OrderPaymentFlowIntegrationTest*' --tests 'com.loopers.order.interfaces.OrderPaymentHttpTest' --tests 'com.loopers.order.infrastructure.payment.toss.TossPaymentAdapterTest'`
   - 완료 조건: UNKNOWN 조회 성공·최종 FAILED·3회 미확정 통합 테스트, 기존 HTTP 및 어댑터 테스트가 Green이고 테스트 파일과 기대값이 구현 전 해시와 같다. 이 조건은 충족했다. 전체 검증에서는 기존 `INV-PAYMENT-50` 표시명 매핑 1건과 테스트 파일 미사용 import Checkstyle 10건이 별도로 실패했다.
+
+## Week 6 OrderConfirmed 실제 Kafka 계약 Red
+
+- [x] 37. OrderConfirmed의 `confirmedAt`을 계약된 ISO-8601 문자열로 Kafka에 발행
+  - 요구사항 ID: `OrderConfirmed v1` 이벤트 계약 (`contracts/events/order/order-confirmed-v1.contract.json`, `order-confirmed-v1.schema.json`)
+  - 관찰한 Red와 실패 원인: `:apps:commerce-api:week6E2eTest`에서 실제 Kafka에 저장된 `confirmedAt`이 JSON 문자열이 아니라 숫자 epoch (`1.793125239907347E9`)이다. streamer의 DB 저장과 target offset `n+1` commit까지는 진행하지만, 계약 스키마의 `date-time` 문자열 검사에서 실패한다. Kafka `JsonSerializer`의 기본 mapper가 app의 이벤트 wire 형식을 보장하지 않는다.
+  - 필요한 최소 동작: infrastructure 경계에서 `OrderConfirmedEvent.confirmedAt`을 `Instant.toString()`으로 ISO-8601 문자열을 가진 Kafka payload로 변환한다. application 이벤트의 `Instant` 타입과 consumer 저장 동작은 유지한다.
+  - 변경할 production 파일: 신규 `apps/commerce-api/src/main/java/com/loopers/order/infrastructure/kafka/OrderConfirmedKafkaMessage.java`, `apps/commerce-api/src/main/java/com/loopers/order/infrastructure/kafka/OrderConfirmedKafkaPublisher.java`
+  - 선행 작업: 없음. `OrderConfirmed v1` JSON Schema의 `confirmedAt`은 `string` / `date-time`이다.
+  - 테스트 명령: `./gradlew :apps:commerce-api:week6E2eTest :apps:commerce-api:checkstyleWeek6E2eTest`
+  - 완료 조건: E2E가 실제 broker payload의 `confirmedAt`을 ISO string으로 읽고 DB 확정 시각과 일치함을 확인하며, 구매 활동 저장·committed offset `n+1` 확인도 통과한다. 테스트 파일 목록과 SHA-256은 구현 전 기록과 동일해야 한다.

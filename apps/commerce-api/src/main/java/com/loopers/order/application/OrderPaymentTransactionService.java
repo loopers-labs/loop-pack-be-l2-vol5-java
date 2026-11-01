@@ -3,6 +3,7 @@ package com.loopers.order.application;
 import com.loopers.order.domain.Order;
 import com.loopers.order.domain.OrderItem;
 import com.loopers.order.domain.OrderRepository;
+import com.loopers.order.application.event.OrderConfirmedEvent;
 import com.loopers.order.domain.Payment;
 import com.loopers.order.domain.PaymentGateway;
 import com.loopers.order.domain.PaymentGateway.CancellationResult;
@@ -16,6 +17,7 @@ import com.loopers.product.domain.StockRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorCode;
 import jakarta.persistence.EntityManager;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,17 +32,20 @@ public class OrderPaymentTransactionService {
     private final ProductRepository productRepository;
     private final StockRepository stockRepository;
     private final EntityManager entityManager;
+    private final ApplicationEventPublisher eventPublisher;
 
     public OrderPaymentTransactionService(
         OrderRepository orderRepository,
         ProductRepository productRepository,
         StockRepository stockRepository,
-        EntityManager entityManager
+        EntityManager entityManager,
+        ApplicationEventPublisher eventPublisher
     ) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.stockRepository = stockRepository;
         this.entityManager = entityManager;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -109,7 +114,7 @@ public class OrderPaymentTransactionService {
 
         if (result instanceof PaymentGateway.Approved approved) {
             order.consumeStockReservation();
-            order.confirm(approved.amount(), approved.paidAt().toZonedDateTime());
+            order.confirm(approved.amount(), approved.paidAt().toZonedDateTime(), ZonedDateTime.now());
         } else if (result instanceof PaymentGateway.ProviderError || result instanceof DispatchRejected) {
             restoreReservedStock(order);
             order.releaseStockReservation();
@@ -117,6 +122,10 @@ public class OrderPaymentTransactionService {
 
         orderRepository.save(order);
         entityManager.flush();
+        if (result instanceof PaymentGateway.Approved) {
+            entityManager.refresh(order);
+            eventPublisher.publishEvent(OrderConfirmedEvent.from(order));
+        }
         return order;
     }
 

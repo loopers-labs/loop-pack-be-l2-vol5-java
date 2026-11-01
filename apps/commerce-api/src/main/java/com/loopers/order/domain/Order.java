@@ -3,6 +3,7 @@ package com.loopers.order.domain;
 import com.loopers.domain.BaseEntity;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorCode;
+import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Embedded;
 import jakarta.persistence.EnumType;
@@ -15,6 +16,7 @@ import jakarta.persistence.OneToOne;
 import jakarta.persistence.Version;
 
 import java.time.ZonedDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -28,6 +30,8 @@ public class Order extends BaseEntity {
     @ElementCollection(fetch = FetchType.EAGER)
     private List<OrderItem> items;
     private OrderStatus status;
+    @Column(name = "confirmed_at")
+    private ZonedDateTime confirmedAt;
     @Enumerated(EnumType.STRING)
     private StockReservationStatus stockReservationStatus;
     @Embedded
@@ -63,6 +67,10 @@ public class Order extends BaseEntity {
 
     public OrderStatus getStatus() {
         return status;
+    }
+
+    public ZonedDateTime getConfirmedAt() {
+        return confirmedAt;
     }
 
     public StockReservationStatus getStockReservationStatus() {
@@ -102,10 +110,15 @@ public class Order extends BaseEntity {
     }
 
     public void confirm(long paymentAmount, ZonedDateTime paidAt) {
+        confirm(paymentAmount, paidAt, paidAt);
+    }
+
+    public void confirm(long paymentAmount, ZonedDateTime paidAt, ZonedDateTime confirmedAt) {
         ensureDraft();
         PaymentResult result = new PaymentResult(paymentAmount, paidAt);
         this.paymentResult = result;
         this.status = OrderStatus.CONFIRMED;
+        this.confirmedAt = confirmedAt.withZoneSameInstant(ZoneOffset.UTC);
     }
 
     public void cancel() {
