@@ -38,17 +38,18 @@ class ArchitectureTest {
                         "com.loopers.domain.like",
                         "com.loopers.domain.point",
                         "com.loopers.domain.order",
+                        "com.loopers.domain.payment",
                         "com.loopers.domain.user");
 
         noClasses().that().resideInAnyPackage(
                             "..domain.brand..", "..domain.product..", "..domain.like..",
-                            "..domain.point..", "..domain.order..", "..domain.user..")
+                            "..domain.point..", "..domain.order..", "..domain.payment..", "..domain.user..")
                    .should().dependOnClassesThat().resideInAPackage("jakarta.persistence..")
                    .check(classes);
 
         noClasses().that().resideInAnyPackage(
                             "..domain.brand..", "..domain.product..", "..domain.like..",
-                            "..domain.point..", "..domain.order..", "..domain.user..")
+                            "..domain.point..", "..domain.order..", "..domain.payment..", "..domain.user..")
                    .should().dependOnClassesThat().haveFullyQualifiedName("com.loopers.domain.BaseEntity")
                    .check(classes);
     }
