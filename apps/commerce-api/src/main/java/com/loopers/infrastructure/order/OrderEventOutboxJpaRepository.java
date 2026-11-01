@@ -5,8 +5,11 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 
 import java.util.List;
+import java.util.Optional;
 
 interface OrderEventOutboxJpaRepository extends JpaRepository<OrderEventOutboxEntity, Long> {
+
+    Optional<OrderEventOutboxEntity> findByEventId(String eventId);
 
     @Query(value = """
         select * from order_event_outbox

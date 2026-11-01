@@ -6,11 +6,15 @@ import com.loopers.domain.order.OrderConfirmed;
 import com.loopers.domain.order.OrderEvent;
 import com.loopers.domain.order.OrderEventOutbox;
 import com.loopers.domain.order.PendingOrderEvent;
+import com.loopers.support.error.DomainError;
+import com.loopers.support.error.DomainException;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Repository;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 class OrderEventOutboxImpl implements OrderEventOutbox {
@@ -30,12 +34,21 @@ class OrderEventOutboxImpl implements OrderEventOutbox {
 
     @Override
     public void append(OrderEvent event) {
-        switch (event) {
-            case OrderConfirmed confirmed -> {
-                OrderConfirmedMessage message = OrderConfirmedMessage.from(confirmed);
-                outboxJpaRepository.save(OrderEventOutboxEntity.pending(message, topic, serialize(message)));
-            }
+        outboxJpaRepository.save(pending(event));
+    }
+
+    @Override
+    public boolean appendIfAbsent(OrderEvent event) {
+        OrderEventOutboxEntity candidate = pending(event);
+        Optional<OrderEventOutboxEntity> stored = outboxJpaRepository.findByEventId(candidate.eventId());
+        if (stored.isEmpty()) {
+            outboxJpaRepository.save(candidate);
+            return true;
         }
+        if (!stored.get().sameRecordAs(candidate)) {
+            throw new DomainException(DomainError.ORDER_EVENT_CONFLICT);
+        }
+        return false;
     }
 
     private byte[] serialize(OrderConfirmedMessage message) {
@@ -70,5 +83,14 @@ class OrderEventOutboxImpl implements OrderEventOutbox {
 
     private static String truncate(String error) {
         return error.length() <= ERROR_LENGTH ? error : error.substring(0, ERROR_LENGTH);
+    }
+
+    private OrderEventOutboxEntity pending(OrderEvent event) {
+        return switch (event) {
+            case OrderConfirmed confirmed -> {
+                OrderConfirmedMessage message = OrderConfirmedMessage.from(confirmed);
+                yield OrderEventOutboxEntity.pending(message, topic, serialize(message));
+            }
+        };
     }
 }

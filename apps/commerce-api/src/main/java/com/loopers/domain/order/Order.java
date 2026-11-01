@@ -77,6 +77,16 @@ public class Order {
         return pulled;
     }
 
+    public OrderConfirmed confirmedEvent() {
+        if (status != OrderStatus.CONFIRMED) {
+            throw new DomainException(DomainError.ORDER_NOT_CONFIRMED);
+        }
+        if (confirmedAt == null) {
+            throw new IllegalStateException("확정 시각이 없는 확정 주문입니다: " + id);
+        }
+        return OrderConfirmed.of(this);
+    }
+
     public void failPayment() {
         requirePending();
         this.status = OrderStatus.FAILED;

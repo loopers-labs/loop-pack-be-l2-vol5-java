@@ -11,6 +11,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
 import java.time.Instant;
+import java.util.Arrays;
 
 @Entity
 @Table(
@@ -76,5 +77,14 @@ class OrderEventOutboxEntity extends AuditEntity {
 
     PendingOrderEvent toPending() {
         return new PendingOrderEvent(getId(), eventId, topic, recordKey, payload, attemptCount);
+    }
+
+    String eventId() {
+        return eventId;
+    }
+
+    boolean sameRecordAs(OrderEventOutboxEntity other) {
+        return eventType.equals(other.eventType) && schemaVersion == other.schemaVersion
+            && recordKey.equals(other.recordKey) && Arrays.equals(payload, other.payload);
     }
 }

@@ -7,6 +7,8 @@ public interface OrderEventOutbox {
 
     void append(OrderEvent event);
 
+    boolean appendIfAbsent(OrderEvent event);
+
     List<PendingOrderEvent> due(int limit);
 
     void markPublished(List<Long> ids);
