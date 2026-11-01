@@ -21,8 +21,12 @@ spring:
     import:
       - jpa.yml
       - redis.yml
+      - kafka.yml
       - logging.yml
       - monitoring.yml
+
+order-event:
+  topic: order-events # 주문 확정 이벤트를 보내는 topic
 
 product:
   list-cache:

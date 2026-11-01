@@ -1,12 +1,15 @@
 package com.loopers.application.payment;
 
+import com.loopers.application.order.dto.OrderConfirmedInfo;
 import com.loopers.application.payment.dto.PaymentAttemptInfo;
+import com.loopers.application.payment.dto.PaymentStatusUpdateResult;
 import com.loopers.application.payment.pg.PgPaymentRequestResult;
 import com.loopers.application.payment.pg.PgPaymentStatusLookupResult;
 import com.loopers.application.payment.pg.PgStatus;
 import com.loopers.application.payment.pg.PgTransactionInfo;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderService;
+import com.loopers.domain.order.OrderStatus;
 import com.loopers.domain.order.OrderStockService;
 import com.loopers.domain.order.PaymentResult;
 import com.loopers.domain.payment.PaymentAnomaly;
@@ -16,6 +19,9 @@ import com.loopers.domain.payment.PaymentAttemptStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.time.Clock;
+import java.time.temporal.ChronoUnit;
+import java.time.ZonedDateTime;
 import java.util.List;
 
 /**
@@ -30,6 +36,7 @@ public class PaymentStatusUpdater {
     private final OrderService orderService;
     private final PaymentAttemptService paymentAttemptService;
     private final OrderStockService orderStockService;
+    private final Clock clock;
 
     /** 결제 생성 요청의 결과를 반영한다. */
     public PaymentAttemptInfo updateByPaymentRequestResult(Long orderId, PgPaymentRequestResult result) {
@@ -82,16 +89,21 @@ public class PaymentStatusUpdater {
      * PG 에 물어 확인한 사실을 반영한다. confirm 직후·고객의 확인·PG 의 알림이 모두 여기를 거치므로 입구의 순서가 바뀌어도
      * 같은 결과로 수렴한다.
      */
-    public PaymentAttemptInfo updateByStatusLookupResult(Long orderId, PgPaymentStatusLookupResult lookupResult) {
+    public PaymentStatusUpdateResult updateByStatusLookupResult(Long orderId, PgPaymentStatusLookupResult lookupResult) {
         Order order = orderService.getForUpdate(orderId);
         PaymentAttempt attempt = paymentAttemptService.getByOrderId(orderId);
+        boolean wasConfirmed = order.getStatus() == OrderStatus.CONFIRMED;
         switch (lookupResult.outcome()) {
             case KEY_NOT_FOUND -> recordUnlessTerminated(attempt, PaymentAnomaly.TRANSACTION_NOT_FOUND);
             case ANSWERED -> applyAnswer(order, attempt, lookupResult.transactions());
             // 묻지 못한 것은 아무것도 알려 주지 않는다. 상태도 재고도 그대로다.
             case LOOKUP_UNAVAILABLE -> { }
         }
-        return PaymentAttemptInfo.of(order, attempt);
+        // 품목은 LAZY 라 트랜잭션 안에서 payload 를 만들어 둔다.
+        OrderConfirmedInfo confirmed = !wasConfirmed && order.getStatus() == OrderStatus.CONFIRMED
+            ? OrderConfirmedInfo.from(order)
+            : null;
+        return new PaymentStatusUpdateResult(PaymentAttemptInfo.of(order, attempt), confirmed);
     }
 
     // 거래가 0건이면 아직 안 보이는 것일 수 있어 아무것도 정하지 않는다. 여러 건이면 하나를 임의로 고르지 않는다.
@@ -158,7 +170,9 @@ public class PaymentStatusUpdater {
     // 재고는 시작할 때 이미 차감했다. 다시 차감하지 않는다.
     private void succeed(Order order, PaymentAttempt attempt, String transactionKey) {
         attempt.markSucceeded(transactionKey);
-        order.completePayment(new PaymentResult(order.getTotalAmount()));
+        // DB 가 저장하는 마이크로초로 맞춰 두면 이벤트의 확정 시각이 저장된 값과 같다.
+        ZonedDateTime confirmedAt = ZonedDateTime.now(clock).truncatedTo(ChronoUnit.MICROS);
+        order.completePayment(new PaymentResult(order.getTotalAmount()), confirmedAt);
     }
 
     // 시도 FAILED 와 주문 PAYMENT_FAILED 전이가 같이 일어나는 한 곳에서만 재고를 한 번 돌려준다.

@@ -1,0 +1,25 @@
+{
+  "type": "record",
+  "name": "OrderConfirmed",
+  "namespace": "com.loopers.contract.order",
+  "doc": "주문이 확정되었음을 알리는 이벤트. 토픽 order-events, key는 orderId 문자열.",
+  "fields": [
+    {"name": "eventId", "type": "string", "doc": "order-confirmed:v1:{orderId}"},
+    {"name": "orderId", "type": "long"},
+    {"name": "confirmedAt", "type": {"type": "long", "logicalType": "timestamp-micros"}},
+    {
+      "name": "items",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "record",
+          "name": "OrderConfirmedItem",
+          "fields": [
+            {"name": "productId", "type": "long"},
+            {"name": "quantity", "type": "int"}
+          ]
+        }
+      }
+    }
+  ]
+}

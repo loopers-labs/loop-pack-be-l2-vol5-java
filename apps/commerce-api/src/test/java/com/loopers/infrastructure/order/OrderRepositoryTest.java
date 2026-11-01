@@ -21,6 +21,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -154,7 +155,7 @@ class OrderRepositoryTest {
             // arrange
             Order paid = newOrder(7L);
             paid.markPaymentPending();
-            paid.completePayment(new PaymentResult(new Money(7_000)));
+            paid.completePayment(new PaymentResult(new Money(7_000)), ZonedDateTime.now());
             Order pending = newOrder(7L);
             pending.markPaymentPending();
             Order failed = newOrder(7L);

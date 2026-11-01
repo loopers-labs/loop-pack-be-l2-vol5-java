@@ -18,6 +18,7 @@ Loopers 에서 제공하는 Spring Boot(Java 21) 멀티 모듈 커머스 템플�
 
 ## 빌드 및 테스트 명령어
 
+- 학습용 실험 테스트(`@Tag("experiment")`)는 기본 `test`/`check`에서 빠지며 `./gradlew :apps:commerce-streamer:experimentTest`(api도 동일)로 실행합니다.
 - 특정 테스트 클래스만 실행: `./gradlew :apps:commerce-api:test --tests "com.loopers.interfaces.api.ErrorTypeHttpStatusMapperTest"`
 - 특정 테스트 메소드만 실행: `./gradlew :apps:commerce-api:test --tests "com.loopers.interfaces.api.ErrorTypeHttpStatusMapperTest.<메소드명>"`
 - 최종 검사(Checkstyle + 테스트): `./gradlew :apps:commerce-api:check`
@@ -35,6 +36,10 @@ Loopers 에서 제공하는 Spring Boot(Java 21) 멀티 모듈 커머스 템플�
 - `apps` 하위 모듈만 `BootJar`가 활성화되고(실행 가능한 jar), `modules`/`supports`는 일반 `Jar`로 라이브러리처럼 소비됩니다.
 - 각 `apps` 모듈은 필요한 `modules`/`supports`를 `build.gradle.kts`의 `dependencies`에서 명시적으로 `implementation(project(":modules:..."))`로 선언합니다. 새 앱이나 도메인 기능을 추가할 때 어떤 모듈이 필요한지는 이 패턴을 따라 판단하면 됩니다.
 - `annotationProcessor`(QueryDSL Q-타입 생성 등) 설정은 모듈 간에 전이(transitive)되지 않습니다. `modules:jpa`가 자신을 위해 선언한 `querydsl-apt`/`jakarta.persistence-api`/`jakarta.annotation-api` annotationProcessor는 이를 사용하는 `apps` 모듈에 자동으로 전파되지 않으므로, 자체 엔티티를 갖는 앱(`commerce-api`, `commerce-batch`, `commerce-streamer` 모두 해당)은 동일한 3줄을 자신의 `build.gradle.kts`에도 반복 선언해야 합니다. 단, `commerce-api`는 예외입니다. `querydsl-apt` 5.1.0이 `@Embeddable` record를 처리하지 못해(`Illegal type`) 이 3줄을 두지 않고 값 객체를 `@Embedded` record로 매핑합니다. `commerce-api`에서 QueryDSL 쿼리가 필요해지면 record를 지원하는 OpenFeign 포크(`io.github.openfeign.querydsl`)로 교체하는 것을 먼저 검토합니다.
+
+### 앱 간 메시지 계약
+
+앱 사이에 오가는 Kafka 메시지의 계약은 루트 `contracts/avro/*.avsc` 스키마 파일 하나로 정의합니다. 코드는 공유하지 않고, 송수신하는 각 앱이 Avro 플러그인(`com.github.davidmc24.gradle.plugin.avro`)으로 이 파일에서 클래스를 생성합니다. 스키마로 표현할 수 없는 업무 규칙은 각 앱이 따로 검증합니다. 스키마를 바꿀 때는 consumer를 먼저 배포하고 기본값이 있는 필드만 추가합니다(`docs/design/week6/order-event-design.ai.md` 2장).
 
 ### 앱 실행과 포트
 
@@ -92,6 +97,12 @@ Loopers 에서 제공하는 Spring Boot(Java 21) 멀티 모듈 커머스 템플�
 - API E2E 테스트는 `@SpringBootTest(webEnvironment = RANDOM_PORT)` + `TestRestTemplate`로 실제 HTTP 요청을 보내고, 응답을 공통 `ApiResponse<T>`로 역직렬화해 검증합니다.
 - MySQL/Redis가 필요한 테스트는 각 모듈의 testFixtures에 있는 Testcontainers 설정(`MySqlTestContainersConfig`, `RedisTestContainersConfig`)을 사용합니다(Docker 필요). Kafka는 위에서 설명한 대로 testFixtures가 아직 구현되어 있지 않으므로 필요 시 직접 구성해야 합니다.
 - `*Test.java` 파일은 `.editorconfig`에서 `max_line_length` 제한이 해제되어 있습니다.
+- api(발행)와 streamer(소비)는 독립 앱이라 "발행 → 소비"를 한 테스트로 잇지 않습니다. 메시지 계약은 공유 스키마(IDL)로 보장한다고 보고, 각자 쪼개 검증합니다.
+  - producer: 이벤트가 계약한 모양으로 만들어지는지(단위)
+  - consumer: 계약한 메시지를 받으면 처리되는지, 잘못된 값은 거르는지(단위)
+  - 중복 처리(같은 이벤트 두 번 → 효과 한 번): Facade 통합 테스트로 검증하며 Kafka는 쓰지 않음
+  - 실패 시 미ack·재전달: Kafka를 띄우는 대표 테스트 1개만
+  - Kafka 동작 자체를 알아보는 학습용 실험 테스트는 `@Tag("experiment")`를 달아 `experimentTest`로만 실행합니다.
 
 ## 개발 규칙 (lint · ArchUnit)
 
@@ -101,7 +112,7 @@ Loopers 에서 제공하는 Spring Boot(Java 21) 멀티 모듈 커머스 템플�
 ## AI 작업 규칙
 
 - 합의한 계약·기대값·패키지 의존을 따른다. 미정 정책은 먼저 질문한다.
-- 이번 기능에서 변경할 책임·파일·관련 테스트를 먼저 제안한다.
+- 이번 기능에서 변경할 책임·파일과 테스트 검증 목록(테스트 이름)을 먼저 제안하고, 합의한 뒤 구현한다.
 - 작은 기능을 구현하고 diff와 관련 테스트·lint·ArchUnit 결과를 확인한다.
 - 검사를 통과시키기 위한 테스트·기대값·규칙 삭제나 완화는 하지 않는다. 단, 사용자가 요청한 테스트 정리는 예외다.
 - 정책·검사 기준 변경이나 범위 밖 개편은 이유와 영향을 설명하고 확인을 받는다.
