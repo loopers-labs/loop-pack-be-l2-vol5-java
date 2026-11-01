@@ -7,8 +7,6 @@ import java.time.Instant;
 import java.util.List;
 
 public record OrderConfirmedEvent(
-    String eventType,
-    int schemaVersion,
     String eventId,
     Long orderId,
     Instant confirmedAt,
@@ -24,8 +22,6 @@ public record OrderConfirmedEvent(
             .map(OrderConfirmedEvent::toItem)
             .toList();
         return new OrderConfirmedEvent(
-            "OrderConfirmed",
-            1,
             "order-confirmed:" + order.getId(),
             order.getId(),
             order.getConfirmedAt().toInstant(),

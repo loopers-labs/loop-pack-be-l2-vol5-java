@@ -16,9 +16,6 @@ import java.util.stream.Collectors;
 @Service
 public class PurchaseActivityHandler {
 
-    private static final String EVENT_TYPE = "OrderConfirmed";
-    private static final int SCHEMA_VERSION = 1;
-
     private final ProcessedOrderConfirmationRepository processedOrderConfirmationRepository;
     private final ProductPurchaseActivityRepository productPurchaseActivityRepository;
 
@@ -59,8 +56,6 @@ public class PurchaseActivityHandler {
 
     private void validate(OrderConfirmedEvent event) {
         if (event == null
-            || !EVENT_TYPE.equals(event.eventType())
-            || event.schemaVersion() != SCHEMA_VERSION
             || event.eventId() == null
             || event.eventId().isBlank()
             || event.orderId() == null

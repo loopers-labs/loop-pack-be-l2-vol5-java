@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.CommerceApiApplication;
 import com.loopers.order.application.OrderUseCase;
-import com.loopers.order.infrastructure.kafka.OrderConfirmedContract;
 import com.loopers.order.domain.Order;
 import com.loopers.order.domain.OrderItem;
 import com.loopers.order.domain.OrderStatus;
@@ -84,7 +83,6 @@ class OrderConfirmationToPurchaseActivityE2eTest {
     @Autowired private ObjectMapper objectMapper;
     @Autowired private KafkaListenerEndpointRegistry listenerRegistry;
     @MockitoBean private PaymentGateway paymentGateway;
-    @MockitoBean private OrderConfirmedContract orderConfirmedContract;
 
     private MessageListenerContainer listenerContainer;
 
@@ -94,11 +92,11 @@ class OrderConfirmationToPurchaseActivityE2eTest {
         registry.add("spring.kafka.bootstrap-servers", OrderConfirmationToPurchaseActivityE2eTest::bootstrapServers);
         registry.add("purchase-activity.kafka.group-id", () -> GROUP_ID);
         registry.add("purchase-activity.kafka.topic", () -> TOPIC);
+        registry.add("order-confirmed.kafka.topic", () -> TOPIC);
     }
 
     @BeforeEach
     void waitForPurchaseConsumerAssignment() throws Exception {
-        when(orderConfirmedContract.topic()).thenReturn(TOPIC);
         int partitionCount = topicPartitionCount(TOPIC);
         listenerContainer = listenerRegistry.getListenerContainer("order-confirmed-consumer");
         assertThat(listenerContainer).as("OrderConfirmed Kafka listener").isNotNull();

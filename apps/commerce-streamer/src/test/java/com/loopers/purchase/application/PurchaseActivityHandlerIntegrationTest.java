@@ -130,8 +130,6 @@ class PurchaseActivityHandlerIntegrationTest {
         int secondQuantity
     ) {
         return new OrderConfirmedEvent(
-            "OrderConfirmed",
-            1,
             eventId,
             orderId,
             CONFIRMED_AT,

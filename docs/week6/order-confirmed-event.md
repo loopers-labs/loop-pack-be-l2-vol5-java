@@ -2,7 +2,7 @@
 key: "42" # orderId
 ```
 
-topic·key·payload schema 경로는 [OrderConfirmed v1 계약](../../contracts/events/order/order-confirmed-v1.contract.json)에, payload 형식은 계약에서 참조하는 JSON Schema에 정의한다. Kafka record key는 payload와 별도다.
+payload 형식은 [OrderConfirmed v1 JSON Schema](../../event-contracts/schemas/order/order-confirmed.v1.schema.json)에 정의한다. Kafka topic과 record key는 각 Kafka 어댑터 설정·발행 코드에서 관리하며, record key는 payload와 별도다.
 
 ```json
 {

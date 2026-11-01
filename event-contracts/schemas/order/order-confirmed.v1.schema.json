@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:loopers:contracts:events:order:order-confirmed:v1",
-  "title": "OrderConfirmed v1",
+  "title": "OrderConfirmedMessage",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -14,9 +14,11 @@
   ],
   "properties": {
     "eventType": {
+      "type": "string",
       "const": "OrderConfirmed"
     },
     "schemaVersion": {
+      "type": "integer",
       "const": 1
     },
     "eventId": {

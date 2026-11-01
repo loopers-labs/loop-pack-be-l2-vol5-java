@@ -1,6 +1,8 @@
 package com.loopers.purchase.application;
 
 import com.loopers.purchase.application.event.OrderConfirmedEvent;
+import com.loopers.purchase.infrastructure.kafka.contract.orderconfirmed.Item;
+import com.loopers.purchase.infrastructure.kafka.contract.orderconfirmed.OrderConfirmedMessage;
 import com.loopers.testcontainers.MySqlTestContainersConfig;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
@@ -91,7 +93,7 @@ class OrderConfirmedKafkaConsumerIntegrationTest {
         OrderConfirmedEvent event = confirmedOrder("event-42", 42L, 7L, 2, 8L, 1);
 
         SendResult<Object, Object> sent = kafkaTemplate.send(
-            ORDER_EVENTS_TOPIC, "42", event).get(WAIT_TIMEOUT.toSeconds(), TimeUnit.SECONDS);
+            ORDER_EVENTS_TOPIC, "42", toContractMessage(event)).get(WAIT_TIMEOUT.toSeconds(), TimeUnit.SECONDS);
         TopicPartition partition = new TopicPartition(ORDER_EVENTS_TOPIC,
             sent.getRecordMetadata().partition());
         long expectedCommittedOffset = sent.getRecordMetadata().offset() + 1;
@@ -117,7 +119,7 @@ class OrderConfirmedKafkaConsumerIntegrationTest {
             """);
         OrderConfirmedEvent event = confirmedOrder("event-43", 43L, 7L, 2, 8L, 1);
         SendResult<Object, Object> sent = kafkaTemplate.send(
-            ORDER_EVENTS_TOPIC, "43", event).get(WAIT_TIMEOUT.toSeconds(), TimeUnit.SECONDS);
+            ORDER_EVENTS_TOPIC, "43", toContractMessage(event)).get(WAIT_TIMEOUT.toSeconds(), TimeUnit.SECONDS);
         TopicPartition partition = new TopicPartition(ORDER_EVENTS_TOPIC,
             sent.getRecordMetadata().partition());
 
@@ -137,8 +139,6 @@ class OrderConfirmedKafkaConsumerIntegrationTest {
         int secondQuantity
     ) {
         return new OrderConfirmedEvent(
-            "OrderConfirmed",
-            1,
             eventId,
             orderId,
             CONFIRMED_AT,
@@ -147,6 +147,22 @@ class OrderConfirmedKafkaConsumerIntegrationTest {
                 new OrderConfirmedEvent.Item(secondProductId, secondQuantity)
             )
         );
+    }
+
+    private OrderConfirmedMessage toContractMessage(OrderConfirmedEvent event) {
+        OrderConfirmedMessage message = new OrderConfirmedMessage();
+        message.setEventType("OrderConfirmed");
+        message.setSchemaVersion(1L);
+        message.setEventId(event.eventId());
+        message.setOrderId(event.orderId());
+        message.setConfirmedAt(event.confirmedAt().toString());
+        message.setItems(event.items().stream().map(item -> {
+            Item contractItem = new Item();
+            contractItem.setProductId(item.productId());
+            contractItem.setQuantity((long) item.quantity());
+            return contractItem;
+        }).toList());
+        return message;
     }
 
     private List<PurchaseActivityRow> readActivities(Long orderId) {

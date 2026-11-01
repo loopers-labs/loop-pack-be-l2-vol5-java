@@ -98,14 +98,14 @@ class OrderConfirmedPublicationIntegrationTest {
     @Autowired private ObjectMapper objectMapper;
     @MockitoBean private PaymentGateway paymentGateway;
     @MockitoBean private KafkaTemplate<Object, Object> kafkaTemplate;
-    private JsonNode orderConfirmedContract;
+    private JsonNode orderConfirmedSchema;
 
     @BeforeEach
     void returnsSuccessfulSendMetadata() throws IOException {
-        InputStream contract = getClass().getClassLoader()
-            .getResourceAsStream("events/order/order-confirmed-v1.contract.json");
-        assertThat(contract).as("OrderConfirmed v1 event contract resource").isNotNull();
-        orderConfirmedContract = objectMapper.readTree(contract);
+        InputStream schema = getClass().getClassLoader()
+            .getResourceAsStream("schemas/order/order-confirmed.v1.schema.json");
+        assertThat(schema).as("OrderConfirmed v1 JSON Schema resource").isNotNull();
+        orderConfirmedSchema = objectMapper.readTree(schema);
 
         when(kafkaTemplate.send(anyString(), anyString(), any()))
             .thenReturn(CompletableFuture.completedFuture(successfulSendResult()));
@@ -396,19 +396,15 @@ class OrderConfirmedPublicationIntegrationTest {
     }
 
     private Schema orderConfirmedSchema() {
-        String schemaPath = orderConfirmedContract.path("payloadSchema").asText();
-        InputStream schema = getClass().getClassLoader()
-            .getResourceAsStream("events/order/" + schemaPath);
-        assertThat(schema).as("OrderConfirmed v1 JSON Schema resource").isNotNull();
         SchemaRegistry registry = SchemaRegistry.withDefaultDialect(
             SpecificationVersion.DRAFT_2020_12,
             builder -> builder.schemaRegistryConfig(
                 SchemaRegistryConfig.builder().formatAssertionsEnabled(true).build()));
-        return registry.getSchema(schema);
+        return registry.getSchema(orderConfirmedSchema);
     }
 
     private String orderEventTopic() {
-        return orderConfirmedContract.path("topic").asText();
+        return "order-events";
     }
 
     private void ensureTopicExists(String topic) throws Exception {
