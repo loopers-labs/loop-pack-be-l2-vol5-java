@@ -3,6 +3,7 @@ package com.loopers.interfaces.consumer;
 import com.loopers.domain.purchase.ProductPurchaseActivity;
 import com.loopers.domain.purchase.ProductPurchaseActivityRepository;
 import com.loopers.domain.purchase.PurchaseLine;
+import com.loopers.support.kafka.OrderConfirmedMessages;
 import com.loopers.utils.DatabaseCleanUp;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
@@ -20,7 +21,6 @@ import org.springframework.kafka.listener.MessageListenerContainer;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.List;
@@ -86,14 +86,10 @@ class OrderConfirmedConsumerFailureTest {
         activityRepository.saveAllAndFlush(List.of(
             new ProductPurchaseActivity(42L, new PurchaseLine(8L, 1), ZonedDateTime.parse("2026-09-07T01:00:00Z"))
         ));
-        String json = """
-            {"eventType":"OrderConfirmed","schemaVersion":1,"eventId":"order-confirmed:v1:42",
-             "orderId":42,"confirmedAt":"2026-09-07T01:00:00Z",
-             "items":[{"productId":7,"quantity":2},{"productId":8,"quantity":1}]}""";
         MessageListenerContainer container = registry.getListenerContainer(OrderConfirmedConsumer.LISTENER_ID);
 
         // act 1: 실패하는 record 를 받는다
-        long offset = kafkaTemplate.send(TOPIC, "42", json.getBytes(StandardCharsets.UTF_8))
+        long offset = kafkaTemplate.send(TOPIC, "42", OrderConfirmedMessages.validBytes(42L))
             .get(10, TimeUnit.SECONDS).getRecordMetadata().offset();
 
         // assert 1: 컨테이너가 멈추고, 아무것도 저장·ack 되지 않았다(미리 넣은 행만 남는다)

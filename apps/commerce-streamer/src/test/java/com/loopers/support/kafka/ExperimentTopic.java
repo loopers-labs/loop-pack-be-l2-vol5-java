@@ -75,6 +75,10 @@ public final class ExperimentTopic {
     }
 
     /** partition 을 명시해 보낸다. */
+    public RecordMetadata send(String key, byte[] value) {
+        return send(new ProducerRecord<>(name, key, value));
+    }
+
     public RecordMetadata send(int partition, String key, String value) {
         return send(new ProducerRecord<>(name, partition, key, bytes(value)));
     }

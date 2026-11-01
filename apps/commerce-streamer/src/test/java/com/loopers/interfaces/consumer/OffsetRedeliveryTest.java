@@ -4,6 +4,7 @@ import com.loopers.application.purchase.PurchaseActivityFacade;
 import com.loopers.application.purchase.dto.PurchaseSaveResult;
 import com.loopers.support.kafka.ControlledConsumer;
 import com.loopers.support.kafka.ExperimentTopic;
+import com.loopers.support.kafka.OrderConfirmedMessages;
 import com.loopers.utils.DatabaseCleanUp;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
@@ -17,7 +18,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,10 +35,7 @@ class OffsetRedeliveryTest {
 
     private static final Logger log = LoggerFactory.getLogger(OffsetRedeliveryTest.class);
 
-    private static final String ORDER_CONFIRMED = """
-        {"eventType":"OrderConfirmed","schemaVersion":1,"eventId":"order-confirmed:v1:42",
-         "orderId":42,"confirmedAt":"2026-09-07T01:00:00Z",
-         "items":[{"productId":7,"quantity":2},{"productId":8,"quantity":1}]}""";
+    private static final byte[] ORDER_CONFIRMED = OrderConfirmedMessages.validBytes(42L);
 
     @Autowired
     private OrderConfirmedMessageParser parser;
@@ -102,7 +99,7 @@ class OffsetRedeliveryTest {
             // assert 2: 같은 partition·offset 의 같은 record 가 다시 왔고, 구매 효과는 늘지 않는다
             assertThat(redelivered.partition()).isEqualTo(partition.partition());
             assertThat(redelivered.offset()).isEqualTo(n);
-            assertThat(new String(redelivered.value(), StandardCharsets.UTF_8)).isEqualTo(ORDER_CONFIRMED);
+            assertThat(redelivered.value()).isEqualTo(ORDER_CONFIRMED);
             assertThat(facade.save(parser.parse(redelivered))).isEqualTo(PurchaseSaveResult.DUPLICATE);
             assertThat(purchaseActivities()).containsExactly("7x2", "8x1");
 

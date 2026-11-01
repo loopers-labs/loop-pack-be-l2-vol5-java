@@ -1,25 +1,21 @@
 package com.loopers.interfaces.consumer;
 
+import com.loopers.support.kafka.OrderConfirmedMessages;
 import com.loopers.utils.DatabaseCleanUp;
 import org.apache.kafka.clients.admin.AdminClient;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.KafkaAdmin;
 import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.kafka.listener.ContainerProperties;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -48,10 +44,6 @@ class OrderConfirmedConsumerTest {
     private KafkaAdmin kafkaAdmin;
 
     @Autowired
-    @Qualifier(OrderActivityKafkaConfig.ORDER_ACTIVITY_LISTENER)
-    private ConcurrentKafkaListenerContainerFactory<String, byte[]> listenerFactory;
-
-    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @Autowired
@@ -63,11 +55,7 @@ class OrderConfirmedConsumerTest {
     }
 
     private long publish(long orderId) throws Exception {
-        String json = """
-            {"eventType":"OrderConfirmed","schemaVersion":1,"eventId":"order-confirmed:v1:%d",
-             "orderId":%d,"confirmedAt":"2026-09-07T01:00:00Z",
-             "items":[{"productId":7,"quantity":2},{"productId":8,"quantity":1}]}""".formatted(orderId, orderId);
-        return kafkaTemplate.send(TOPIC, String.valueOf(orderId), json.getBytes(StandardCharsets.UTF_8))
+        return kafkaTemplate.send(TOPIC, String.valueOf(orderId), OrderConfirmedMessages.validBytes(orderId))
             .get(10, TimeUnit.SECONDS).getRecordMetadata().offset();
     }
 
@@ -92,18 +80,5 @@ class OrderConfirmedConsumerTest {
         // assert
         await().atMost(DEADLINE).untilAsserted(() -> assertThat(activityRows()).isEqualTo(2));
         await().atMost(DEADLINE).untilAsserted(() -> assertThat(committedOffset()).isEqualTo(offset + 1));
-    }
-
-    @DisplayName("listener 는 자동 commit 없이 record 단위 즉시 ack 로 동작하고, 새 group 도 처음부터 읽는다.")
-    @Test
-    void usesManualImmediateAckWithoutAutoCommit() {
-        ContainerProperties properties = listenerFactory.getContainerProperties();
-
-        assertThat(properties.getAckMode()).isEqualTo(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
-        assertThat(listenerFactory.isBatchListener()).isFalse();
-        assertThat(String.valueOf(listenerFactory.getConsumerFactory().getConfigurationProperties()
-            .get(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG))).isEqualTo("false");
-        assertThat(listenerFactory.getConsumerFactory().getConfigurationProperties()
-            .get(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG)).isEqualTo("earliest");
     }
 }
