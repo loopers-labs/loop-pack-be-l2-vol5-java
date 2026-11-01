@@ -1,8 +1,7 @@
 package com.loopers.application.payment;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.application.order.dto.OrderItemCommand;
+import com.loopers.contract.order.OrderConfirmed;
 import com.loopers.domain.order.OrderService;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.user.User;
@@ -78,9 +77,6 @@ class OrderConfirmedPublicationGapTest extends PaymentFlowTestSupport {
     private OrderService orderService;
 
     @Autowired
-    private ObjectMapper objectMapper;
-
-    @Autowired
     private KafkaTemplate<Object, Object> kafkaTemplate;
 
     private TopicReader reader;
@@ -145,11 +141,11 @@ class OrderConfirmedPublicationGapTest extends PaymentFlowTestSupport {
         // assert B: 이벤트는 B 의 것 한 건뿐이다. 필드는 고정 시계와 저장된 품목을 따른다
         List<ConsumerRecord<String, byte[]>> records = reader.awaitRecords(1, AWAIT);
         assertThat(records).hasSize(1);
-        JsonNode body = objectMapper.readTree(records.get(0).value());
+        OrderConfirmed body = OrderConfirmed.getDecoder().decode(records.get(0).value());
         assertThat(records.get(0).key()).isEqualTo(String.valueOf(orderB));
-        assertThat(body.get("eventId").asText()).isEqualTo("order-confirmed:v1:" + orderB);
-        assertThat(body.get("confirmedAt").asText()).isEqualTo("2026-09-07T01:00:00Z");
-        assertThat(body.get("items")).hasSize(1);
+        assertThat(body.getEventId()).isEqualTo("order-confirmed:v1:" + orderB);
+        assertThat(body.getConfirmedAt()).isEqualTo(Instant.parse("2026-09-07T01:00:00Z"));
+        assertThat(body.getItems()).hasSize(1);
         kafkaTemplate.flush();
         assertThat(reader.recordsSinceOpen()).isEqualTo(1);
 
