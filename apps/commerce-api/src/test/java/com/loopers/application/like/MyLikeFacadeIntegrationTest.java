@@ -1,5 +1,6 @@
 package com.loopers.application.like;
 
+import com.loopers.support.time.TestTimes;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.like.Like;
 import com.loopers.domain.like.LikeRepository;
@@ -53,7 +54,7 @@ class MyLikeFacadeIntegrationTest {
         Brand brand = brandRepository.save(Brand.create("Nike"));
         Product active = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
         Product deleted = productRepository.save(Product.create(brand.getId(), "Pegasus", 90_000L));
-        deleted.delete();
+        deleted.delete(TestTimes.DELETED_AT);
         productRepository.save(deleted);
         likeRepository.insertIfAbsent(Like.create(user.getId(), active.getId()));
         likeRepository.insertIfAbsent(Like.create(user.getId(), deleted.getId()));

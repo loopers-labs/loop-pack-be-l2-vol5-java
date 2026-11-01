@@ -1,5 +1,6 @@
 package com.loopers.application.brand;
 
+import com.loopers.support.time.TestTimes;
 import com.loopers.application.product.ProductFacade;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
@@ -91,7 +92,7 @@ class BrandFacadeIntegrationTest {
         void throwsException_whenNameMatchesDeletedBrand() {
             // arrange
             Brand deletedBrand = brandRepository.save(Brand.create("Nike"));
-            deletedBrand.delete();
+            deletedBrand.delete(TestTimes.DELETED_AT);
             brandRepository.save(deletedBrand);
             entityManager.clear();
 
@@ -130,7 +131,7 @@ class BrandFacadeIntegrationTest {
         void returnsDeletedBrandInfo_whenBrandIsDeleted() {
             // arrange
             Brand brand = brandRepository.save(Brand.create("Nike"));
-            brand.delete();
+            brand.delete(TestTimes.DELETED_AT);
             brandRepository.save(brand);
             entityManager.clear();
 
@@ -184,7 +185,7 @@ class BrandFacadeIntegrationTest {
         void throwsException_whenBrandIsDeleted() {
             // arrange
             Brand brand = brandRepository.save(Brand.create("Nike"));
-            brand.delete();
+            brand.delete(TestTimes.DELETED_AT);
             brandRepository.save(brand);
             entityManager.clear();
 
@@ -203,7 +204,7 @@ class BrandFacadeIntegrationTest {
             // arrange
             Brand brand = brandRepository.save(Brand.create("Nike"));
             Brand deletedBrand = brandRepository.save(Brand.create("Adidas"));
-            deletedBrand.delete();
+            deletedBrand.delete(TestTimes.DELETED_AT);
             brandRepository.save(deletedBrand);
             entityManager.clear();
 
@@ -240,7 +241,7 @@ class BrandFacadeIntegrationTest {
         void deletesBrand_whenOnlyDeletedProductsExist() {
             Brand brand = brandRepository.save(Brand.create("Nike"));
             Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
-            product.delete();
+            product.delete(TestTimes.DELETED_AT);
             productRepository.save(product);
 
             brandFacade.delete(brand.getId());
@@ -261,7 +262,7 @@ class BrandFacadeIntegrationTest {
 
             Product previouslyDeletedProduct = Product.create(brand.getId(), "Retired", 80_000L);
             previouslyDeletedProduct.changeStockTo(3L);
-            previouslyDeletedProduct.delete();
+            previouslyDeletedProduct.delete(TestTimes.DELETED_AT);
             previouslyDeletedProduct = productRepository.save(previouslyDeletedProduct);
 
             Brand otherBrand = brandRepository.save(Brand.create("Adidas"));
@@ -346,7 +347,7 @@ class BrandFacadeIntegrationTest {
             // arrange
             Brand activeBrand = brandRepository.save(Brand.create("Nike"));
             Brand deletedBrand = brandRepository.save(Brand.create("Adidas"));
-            deletedBrand.delete();
+            deletedBrand.delete(TestTimes.DELETED_AT);
             brandRepository.save(deletedBrand);
 
             // act
@@ -363,7 +364,7 @@ class BrandFacadeIntegrationTest {
             // arrange
             Brand activeBrand = brandRepository.save(Brand.create("Nike"));
             Brand deletedBrand = brandRepository.save(Brand.create("Adidas"));
-            deletedBrand.delete();
+            deletedBrand.delete(TestTimes.DELETED_AT);
             brandRepository.save(deletedBrand);
 
             // act
@@ -379,7 +380,7 @@ class BrandFacadeIntegrationTest {
             // arrange
             Brand activeBrand = brandRepository.save(Brand.create("Nike"));
             Brand deletedBrand = brandRepository.save(Brand.create("Adidas"));
-            deletedBrand.delete();
+            deletedBrand.delete(TestTimes.DELETED_AT);
             brandRepository.save(deletedBrand);
 
             // act
@@ -415,7 +416,7 @@ class BrandFacadeIntegrationTest {
         void throwsException_whenBrandIsDeleted() {
             // arrange
             Brand brand = brandRepository.save(Brand.create("Nike"));
-            brand.delete();
+            brand.delete(TestTimes.DELETED_AT);
             brandRepository.save(brand);
             entityManager.clear();
 

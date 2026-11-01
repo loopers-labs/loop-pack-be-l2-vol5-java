@@ -6,6 +6,7 @@ import com.loopers.domain.like.LikeRepository;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.domain.product.ProductSort;
+import com.loopers.application.time.ApplicationTime;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
@@ -14,7 +15,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Propagation;
 
-import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalLong;
@@ -31,6 +31,7 @@ public class ProductFacade {
     private final ProductListCache productListCache;
     private final ProductListCacheInvalidator productListCacheInvalidator;
     private final ProductStockTransaction productStockTransaction;
+    private final ApplicationTime applicationTime;
 
     @Transactional(readOnly = true)
     public ProductInfo getDetail(Long productId) {
@@ -143,7 +144,7 @@ public class ProductFacade {
         Product product = findActiveProductById(productId);
         product.updateDetails(name, price);
 
-        if (productRepository.updateActiveDetails(productId, name, price, ZonedDateTime.now()) == 0) {
+        if (productRepository.updateActiveDetails(productId, name, price, applicationTime.now()) == 0) {
             throw new CoreException(ErrorType.NOT_FOUND, "상품을 찾을 수 없습니다.");
         }
         productListCacheInvalidator.invalidateAfterCommit(product.getBrandId());
@@ -153,7 +154,7 @@ public class ProductFacade {
     @Transactional
     public void delete(Long productId) {
         Product product = findActiveProductById(productId);
-        product.delete();
+        product.delete(applicationTime.now());
         if (productRepository.softDeleteActiveById(productId, product.getDeletedAt()) == 0) {
             throw new CoreException(ErrorType.NOT_FOUND, "상품을 찾을 수 없습니다.");
         }

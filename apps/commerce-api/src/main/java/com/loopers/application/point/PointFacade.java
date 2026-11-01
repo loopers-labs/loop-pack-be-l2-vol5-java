@@ -4,13 +4,12 @@ import com.loopers.domain.point.Point;
 import com.loopers.domain.point.PointBalance;
 import com.loopers.domain.point.PointRepository;
 import com.loopers.application.user.UserValidator;
+import com.loopers.application.time.ApplicationTime;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.time.ZonedDateTime;
 
 @RequiredArgsConstructor
 @Component
@@ -18,6 +17,7 @@ public class PointFacade {
 
     private final PointRepository pointRepository;
     private final UserValidator userValidator;
+    private final ApplicationTime applicationTime;
 
     @Transactional(readOnly = true)
     public PointInfo getBalance(Long userId) {
@@ -32,7 +32,7 @@ public class PointFacade {
         PointBalance.validateChargeAmount(amount);
 
         int updatedRows = pointRepository.increaseBalanceIfWithinMaximum(
-            userId, amount, Long.MAX_VALUE, ZonedDateTime.now()
+            userId, amount, Long.MAX_VALUE, applicationTime.now()
         );
         if (updatedRows == 0) {
             findPointByUserId(userId);

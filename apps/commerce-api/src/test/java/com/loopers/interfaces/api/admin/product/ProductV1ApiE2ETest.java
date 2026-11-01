@@ -1,5 +1,6 @@
 package com.loopers.interfaces.api.admin.product;
 
+import com.loopers.support.time.TestTimes;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.product.Product;
@@ -130,7 +131,7 @@ class ProductV1ApiE2ETest {
         void returnsNotFound_whenBrandIsDeleted() {
             // arrange
             Brand brand = brandRepository.save(Brand.create("Nike"));
-            brand.delete();
+            brand.delete(TestTimes.DELETED_AT);
             brandRepository.save(brand);
             HttpEntity<ProductV1Dto.CreateRequest> request = new HttpEntity<>(
                 new ProductV1Dto.CreateRequest(brand.getId(), "Air Max", 100_000L)
@@ -241,7 +242,7 @@ class ProductV1ApiE2ETest {
             // arrange
             Brand brand = brandRepository.save(Brand.create("Nike"));
             Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
-            product.delete();
+            product.delete(TestTimes.DELETED_AT);
             productRepository.save(product);
             HttpEntity<ProductV1Dto.StockUpdateRequest> request = new HttpEntity<>(
                 new ProductV1Dto.StockUpdateRequest(5L)
@@ -300,7 +301,7 @@ class ProductV1ApiE2ETest {
             // arrange
             Brand brand = brandRepository.save(Brand.create("Nike"));
             Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
-            product.delete();
+            product.delete(TestTimes.DELETED_AT);
             productRepository.save(product);
             HttpEntity<Void> request = new HttpEntity<>(null);
 
@@ -403,7 +404,7 @@ class ProductV1ApiE2ETest {
             // arrange
             Brand brand = brandRepository.save(Brand.create("Nike"));
             Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
-            product.delete();
+            product.delete(TestTimes.DELETED_AT);
             productRepository.save(product);
             HttpEntity<ProductV1Dto.UpdateRequest> request = new HttpEntity<>(
                 new ProductV1Dto.UpdateRequest("Air Force", 120_000L)
@@ -477,7 +478,7 @@ class ProductV1ApiE2ETest {
             Brand brand = brandRepository.save(Brand.create("Nike"));
             Product activeProduct = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
             Product deletedProduct = productRepository.save(Product.create(brand.getId(), "Air Force", 120_000L));
-            deletedProduct.delete();
+            deletedProduct.delete(TestTimes.DELETED_AT);
             productRepository.save(deletedProduct);
 
             // act
@@ -502,7 +503,7 @@ class ProductV1ApiE2ETest {
             Brand brand = brandRepository.save(Brand.create("Nike"));
             Product activeProduct = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
             Product deletedProduct = productRepository.save(Product.create(brand.getId(), "Air Force", 120_000L));
-            deletedProduct.delete();
+            deletedProduct.delete(TestTimes.DELETED_AT);
             productRepository.save(deletedProduct);
 
             // act

@@ -1,5 +1,6 @@
 package com.loopers.application.product;
 
+import com.loopers.support.time.TestTimes;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.like.Like;
 import com.loopers.domain.like.LikeRepository;
@@ -60,7 +61,7 @@ class CustomerProductFacadeIntegrationTest {
     void rejectsDeletedProduct() {
         Brand brand = brandRepository.save(Brand.create("Nike"));
         Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
-        product.delete();
+        product.delete(TestTimes.DELETED_AT);
         productRepository.save(product);
 
         assertThatThrownBy(() -> productFacade.getCustomerDetail(product.getId()))

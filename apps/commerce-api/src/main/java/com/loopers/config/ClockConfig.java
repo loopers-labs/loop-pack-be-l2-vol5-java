@@ -5,7 +5,7 @@ import org.springframework.context.annotation.Configuration;
 
 import java.time.Clock;
 
-// 결과 반영처럼 업무 시각을 정하는 곳에 주입해, 테스트가 시각을 고정할 수 있게 한다.
+// 업무 시각을 한 곳에서 제공하고 테스트가 고정할 수 있게 한다.
 @Configuration
 public class ClockConfig {
 

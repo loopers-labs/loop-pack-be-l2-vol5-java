@@ -1,5 +1,6 @@
 package com.loopers.application.like;
 
+import com.loopers.support.time.TestTimes;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.like.LikeRepository;
@@ -100,7 +101,7 @@ class LikeFacadeIntegrationTest {
         void throwsException_whenProductIsDeleted() {
             // arrange
             Product product = saveProduct();
-            product.delete();
+            product.delete(TestTimes.DELETED_AT);
             productRepository.save(product);
 
             // act
@@ -122,7 +123,7 @@ class LikeFacadeIntegrationTest {
             // arrange
             Product product = saveProduct();
             likeFacade.add(user.getId(), product.getId());
-            product.delete();
+            product.delete(TestTimes.DELETED_AT);
             productRepository.save(product);
 
             // act

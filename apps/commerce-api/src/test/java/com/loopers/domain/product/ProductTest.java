@@ -14,6 +14,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ProductTest {
 
+    private static final ZonedDateTime DELETED_AT = ZonedDateTime.parse("2026-01-01T00:00:00Z");
+
     @DisplayName("Product를 만들 때,")
     @Nested
     class Create {
@@ -122,7 +124,7 @@ class ProductTest {
         void keepsStock_whenProductIsDeleted() {
             Product product = Product.create(42L, "Air Max", 100_000L);
             product.changeStockTo(5L);
-            product.delete();
+            product.delete(DELETED_AT);
             ZonedDateTime deletedAt = product.getDeletedAt();
 
             CoreException result = assertThrows(CoreException.class, () -> product.changeStockTo(10L));
@@ -155,7 +157,7 @@ class ProductTest {
         void keepsStock_whenProductIsDeleted() {
             Product product = Product.create(42L, "Air Max", 100_000L);
             product.changeStockTo(5L);
-            product.delete();
+            product.delete(DELETED_AT);
             ZonedDateTime deletedAt = product.getDeletedAt();
 
             CoreException result = assertThrows(CoreException.class, () -> product.decreaseStock(2));
@@ -211,7 +213,7 @@ class ProductTest {
         @Test
         void keepsDetails_whenProductIsDeleted() {
             Product product = Product.create(42L, "Air Max", 100_000L);
-            product.delete();
+            product.delete(DELETED_AT);
             ZonedDateTime deletedAt = product.getDeletedAt();
 
             CoreException result = assertThrows(CoreException.class,
@@ -225,5 +227,16 @@ class ProductTest {
                 () -> assertThat(product.getDeletedAt()).isEqualTo(deletedAt)
             );
         }
+    }
+
+    @DisplayName("Product를 삭제할 때, 전달한 시각을 처음 한 번만 기록한다.")
+    @Test
+    void recordsProvidedDeletionTimeOnlyOnce() {
+        Product product = Product.create(42L, "Air Max", 100_000L);
+
+        product.delete(DELETED_AT);
+        product.delete(DELETED_AT.plusMinutes(1));
+
+        assertThat(product.getDeletedAt()).isEqualTo(DELETED_AT);
     }
 }

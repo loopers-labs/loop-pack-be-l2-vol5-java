@@ -8,6 +8,7 @@ import com.loopers.domain.payment.PaymentAttempt;
 import com.loopers.domain.payment.PaymentAttemptRepository;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
+import com.loopers.application.time.ApplicationTime;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +31,7 @@ public class PaymentRequestTransaction {
     private final BrandRepository brandRepository;
     private final PaymentAttemptRepository paymentAttemptRepository;
     private final ProviderOrderSuffixGenerator providerOrderSuffixGenerator;
+    private final ApplicationTime applicationTime;
 
     // TX A: 주문 전이·재고 차감·시도 생성을 함께 commit한다. 하나라도 실패하면 전체를 되돌리고 PG를 호출하지 않는다.
     // 같은 키의 재전송이나 주문 전이 경쟁에서 진 요청은 재고를 차감하기 전에 멈추고 저장된 시도로 응답하게 한다.
@@ -44,7 +46,7 @@ public class PaymentRequestTransaction {
         order.requestPgPayment();
         lockActiveBrands(order);
 
-        ZonedDateTime now = ZonedDateTime.now();
+        ZonedDateTime now = applicationTime.now();
         if (orderRepository.requestPgPaymentIfDraft(orderId, userId, now) == 0) {
             return new PaymentReservation.AlreadyRequested();
         }

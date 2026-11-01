@@ -93,8 +93,8 @@ classDiagram
 
 - [관계와 경계] Brand는 독립된 애그리게이트다. 하나의 Brand에 여러 Product가 연결된다.
 - [관계 표현] Brand는 Product 컬렉션을 보유하지 않는다.
-- [도메인 책임] Brand는 자신의 이름과 삭제 상태를 관리하며, `delete()`는 자신의 삭제 상태를 변경한다.
-- [도메인 책임] `BrandDeletionPolicy`는 이미 삭제된 Brand의 삭제를 거절하고 `Brand.delete()`를 호출한다. 연결 Product의 삭제와 Repository 조회·저장은 수행하지 않는다.
+- [도메인 책임] Brand는 자신의 이름과 삭제 상태를 관리하며, `delete(deletedAt)`는 호출자가 정한 삭제 시각을 처음 한 번만 기록한다.
+- [도메인 책임] `BrandDeletionPolicy`는 이미 삭제된 Brand의 삭제를 거절하고 `Brand.delete(deletedAt)`를 호출한다. 연결 Product의 삭제와 Repository 조회·저장은 수행하지 않는다.
 - [도메인 규칙] Brand 삭제는 기존 참조를 유지하며 `deletedAt`에 삭제 시각을 기록하는 논리 삭제를 사용한다.
 - [불변식] Brand 이름은 공백만으로 구성될 수 없고, 1자 이상 100자 이하여야 한다.
 - [불변식] 삭제 여부와 관계없이 Brand 이름은 유일해야 한다.
@@ -114,7 +114,7 @@ classDiagram
 
 - [관계와 경계] Product는 Brand와 별도 애그리게이트이며, StockQuantity VO를 내부에 보유한다.
 - [관계 표현] Product는 Brand 객체를 포함하지 않고 `brandId`로 Brand를 참조한다. 재고 수량은 StockQuantity VO로 표현한다.
-- [도메인 책임] Product는 자신의 이름, 가격, 재고, 삭제 상태를 관리한다. 상품 수정과 재고 설정 및 차감 전에 자신의 삭제 상태를 검사하며, `delete()`는 자신의 삭제 상태를 변경한다.
+- [도메인 책임] Product는 자신의 이름, 가격, 재고, 삭제 상태를 관리한다. 상품 수정과 재고 설정 및 차감 전에 자신의 삭제 상태를 검사하며, `delete(deletedAt)`는 호출자가 정한 삭제 시각을 처음 한 번만 기록한다.
 - [도메인 책임] Product 삭제는 별도 Policy를 두지 않는다. 이미 삭제된 Product의 거절은 활성 상품 조회와 미삭제 조건부 갱신이 맡는다.
 - [도메인 규칙] 상품 등록 시 존재하고 삭제되지 않은 Brand가 필요하다.
 - [도메인 규칙] Product 수정 시 기존 Brand는 변경하지 않는다.

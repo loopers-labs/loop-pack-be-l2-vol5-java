@@ -1,5 +1,6 @@
 package com.loopers.application.product;
 
+import com.loopers.support.time.TestTimes;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.brand.BrandRepository;
@@ -90,7 +91,7 @@ class ProductFacadeIntegrationTest {
         void throwsException_whenBrandIsDeleted() {
             // arrange
             Brand brand = brandRepository.save(Brand.create("Nike"));
-            brand.delete();
+            brand.delete(TestTimes.DELETED_AT);
             brandRepository.save(brand);
             entityManager.clear();
 
@@ -147,7 +148,7 @@ class ProductFacadeIntegrationTest {
             // arrange
             Brand brand = brandRepository.save(Brand.create("Nike"));
             Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
-            product.delete();
+            product.delete(TestTimes.DELETED_AT);
             productRepository.save(product);
             entityManager.clear();
 
@@ -193,7 +194,7 @@ class ProductFacadeIntegrationTest {
             // arrange
             Brand brand = brandRepository.save(Brand.create("Nike"));
             Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
-            product.delete();
+            product.delete(TestTimes.DELETED_AT);
             productRepository.save(product);
             entityManager.clear();
 
@@ -248,7 +249,7 @@ class ProductFacadeIntegrationTest {
             // arrange
             Brand brand = brandRepository.save(Brand.create("Nike"));
             Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
-            product.delete();
+            product.delete(TestTimes.DELETED_AT);
             productRepository.save(product);
             entityManager.clear();
 
@@ -299,7 +300,7 @@ class ProductFacadeIntegrationTest {
             // arrange
             Brand brand = brandRepository.save(Brand.create("Nike"));
             Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
-            product.delete();
+            product.delete(TestTimes.DELETED_AT);
             productRepository.save(product);
             entityManager.clear();
 
@@ -323,7 +324,7 @@ class ProductFacadeIntegrationTest {
             Brand brand = brandRepository.save(Brand.create("Nike"));
             Product activeProduct = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
             Product deletedProduct = productRepository.save(Product.create(brand.getId(), "Air Force", 120_000L));
-            deletedProduct.delete();
+            deletedProduct.delete(TestTimes.DELETED_AT);
             productRepository.save(deletedProduct);
 
             // act
@@ -341,7 +342,7 @@ class ProductFacadeIntegrationTest {
             Brand brand = brandRepository.save(Brand.create("Nike"));
             Product activeProduct = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
             Product deletedProduct = productRepository.save(Product.create(brand.getId(), "Air Force", 120_000L));
-            deletedProduct.delete();
+            deletedProduct.delete(TestTimes.DELETED_AT);
             productRepository.save(deletedProduct);
 
             // act
@@ -358,7 +359,7 @@ class ProductFacadeIntegrationTest {
             Brand brand = brandRepository.save(Brand.create("Nike"));
             Product activeProduct = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
             Product deletedProduct = productRepository.save(Product.create(brand.getId(), "Air Force", 120_000L));
-            deletedProduct.delete();
+            deletedProduct.delete(TestTimes.DELETED_AT);
             productRepository.save(deletedProduct);
 
             // act

@@ -1,6 +1,7 @@
 package com.loopers.application.brand;
 
 import com.loopers.application.product.ProductListCacheInvalidator;
+import com.loopers.application.time.ApplicationTime;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandDeletionPolicy;
 import com.loopers.domain.brand.BrandRepository;
@@ -21,6 +22,7 @@ public class BrandFacade {
     private final BrandRepository brandRepository;
     private final ProductRepository productRepository;
     private final ProductListCacheInvalidator productListCacheInvalidator;
+    private final ApplicationTime applicationTime;
     private final BrandDeletionPolicy brandDeletionPolicy = new BrandDeletionPolicy();
 
     @Transactional(readOnly = true)
@@ -54,7 +56,7 @@ public class BrandFacade {
         }
 
         brand.rename(validName);
-        int updatedRows = brandRepository.updateActiveName(brandId, validName, ZonedDateTime.now());
+        int updatedRows = brandRepository.updateActiveName(brandId, validName, applicationTime.now());
         if (updatedRows == 0) {
             throw new CoreException(ErrorType.NOT_FOUND, "브랜드를 찾을 수 없습니다.");
         }
@@ -77,8 +79,8 @@ public class BrandFacade {
     public void delete(Long brandId) {
         Brand brand = brandRepository.findActiveByIdWithExclusiveLock(brandId)
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "브랜드를 찾을 수 없습니다."));
-        brandDeletionPolicy.delete(brand);
-        ZonedDateTime deletedAt = brand.getDeletedAt();
+        ZonedDateTime deletedAt = applicationTime.now();
+        brandDeletionPolicy.delete(brand, deletedAt);
         productRepository.softDeleteActiveByBrandId(brandId, deletedAt);
 
         if (brandRepository.softDeleteActiveById(brandId, deletedAt) == 0) {

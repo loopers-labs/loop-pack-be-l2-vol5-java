@@ -1,5 +1,6 @@
 package com.loopers.interfaces.api.brand;
 
+import com.loopers.support.time.TestTimes;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
 import com.loopers.interfaces.api.ApiResponse;
@@ -65,7 +66,7 @@ class BrandV1ApiE2ETest {
         void returnsNotFound_whenBrandIsDeleted() {
             // arrange
             Brand brand = brandRepository.save(Brand.create("Nike"));
-            brand.delete();
+            brand.delete(TestTimes.DELETED_AT);
             brandRepository.save(brand);
 
             // act

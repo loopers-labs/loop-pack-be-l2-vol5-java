@@ -4,6 +4,8 @@ import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
 import org.junit.jupiter.api.Test;
 
+import java.time.ZonedDateTime;
+
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 class ArchitectureTest {
@@ -51,6 +53,28 @@ class ArchitectureTest {
                             "..domain.brand..", "..domain.product..", "..domain.like..",
                             "..domain.point..", "..domain.order..", "..domain.payment..", "..domain.user..")
                    .should().dependOnClassesThat().haveFullyQualifiedName("com.loopers.domain.BaseEntity")
+                   .check(classes);
+    }
+
+    @Test
+    void businessTimeIsReadThroughApplicationTime() {
+        var classes = new ClassFileImporter()
+                .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
+                .importPackages(
+                        "com.loopers.application.brand",
+                        "com.loopers.application.payment",
+                        "com.loopers.application.point",
+                        "com.loopers.application.product",
+                        "com.loopers.domain.brand",
+                        "com.loopers.domain.payment",
+                        "com.loopers.domain.point",
+                        "com.loopers.domain.product");
+
+        noClasses().that().resideInAnyPackage(
+                            "..application.brand..", "..application.payment..", "..application.point..",
+                            "..application.product..", "..domain.brand..", "..domain.payment..",
+                            "..domain.point..", "..domain.product..")
+                   .should().callMethod(ZonedDateTime.class, "now", new Class<?>[0])
                    .check(classes);
     }
 }
