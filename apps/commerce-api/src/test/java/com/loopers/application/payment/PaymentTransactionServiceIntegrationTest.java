@@ -1,6 +1,7 @@
 package com.loopers.application.payment;
 
 import com.loopers.application.order.OrderInfo;
+import com.loopers.domain.order.OrderEventPublisher;
 import com.loopers.domain.payment.ConflictEvidence;
 import com.loopers.domain.payment.LocalNotDispatchedReason;
 import com.loopers.domain.payment.ObservationSource;
@@ -14,6 +15,7 @@ import com.loopers.fixture.ProductFixture;
 import com.loopers.fixture.SqlCapture;
 import com.loopers.support.error.ErrorType;
 import com.loopers.support.persistence.ConstraintViolationClassifier;
+import com.loopers.testsupport.RecordingOrderEventPublisher;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -24,6 +26,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.bean.override.convention.TestBean;
 
 import java.util.List;
 import java.util.Map;
@@ -41,6 +44,9 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 @Import(PaymentTxTestConfig.class)
 @DisplayName("결제 TX 서비스는 짧은 TX 마다 주문·결제·재고·충돌 요약을 함께 commit 하거나 함께 rollback 한다.")
 class PaymentTransactionServiceIntegrationTest {
+
+    @TestBean(name = "kafkaOrderEventPublisher", methodName = RecordingOrderEventPublisher.FACTORY, enforceOverride = true)
+    private OrderEventPublisher orderEventPublisher;
 
     private static final Long USER = 1L;
     private static final Long OTHER_USER = 2L;

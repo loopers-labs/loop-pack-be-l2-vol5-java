@@ -19,6 +19,8 @@ import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import lombok.Getter;
 
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -54,6 +56,13 @@ public class OrderModel extends BaseEntity {
     @Embedded
     @AttributeOverride(name = "won", column = @Column(name = "paid_amount"))
     private Money paidAmount;
+
+    /**
+     * 최초 PG 확정 전이에서 한 번 기록하는 내부 확정 시각. PG 승인 시각이나 commit 시각이 아니다.
+     * 확정 전 PG 주문과 기존 POINT 주문은 null 이다. 확정 UPDATE 로 처음 기록하므로 updatable=false 를 쓰지 않는다.
+     */
+    @Column(name = "confirmed_at", columnDefinition = "DATETIME(6)")
+    private ZonedDateTime confirmedAt;
 
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @JoinColumn(name = "order_id", nullable = false)
@@ -140,7 +149,7 @@ public class OrderModel extends BaseEntity {
     /** DRAFT 의 결제 정보가 비어 있을 때만 PG 결제를 시작한다. 신규 PG 결제의 포인트 사용액은 0 이다. */
     public void startPgPayment() {
         requireConfirmable();
-        if (paymentMethod != null || pointAmount != null || paidAmount != null) {
+        if (paymentMethod != null || pointAmount != null || paidAmount != null || confirmedAt != null) {
             throw new CoreException(ErrorType.INTERNAL_ERROR, "DRAFT 주문에 결제 정보가 이미 있습니다.");
         }
         this.paymentMethod = PaymentMethod.PG;
@@ -148,14 +157,21 @@ public class OrderModel extends BaseEntity {
         this.status = OrderStatus.PAYMENT_PENDING;
     }
 
-    /** 검증한 PG 성공 금액이 주문 총액과 같을 때만 확정한다. 결과 반영 TX 의 상태 검사 뒤에 호출한다. */
-    public void confirmPg(Money amount) {
+    /**
+     * 검증한 PG 성공 금액이 주문 총액과 같을 때만 확정하고 확정 시각을 함께 기록한다. 결과 반영 TX 의 상태 검사 뒤에 호출한다.
+     * 시각은 호출자가 정규화해 넘긴다. 형식이 다르면 보정하지 않고 거절하며, 모든 검사를 통과한 뒤에만 값을 바꾼다.
+     */
+    public void confirmPg(Money amount, ZonedDateTime confirmedAt) {
         requirePgPending();
         if (amount == null || !amount.equals(totalAmount)) {
             throw new CoreException(ErrorType.INTERNAL_ERROR, "PG 성공 금액이 주문 총액과 다릅니다.");
         }
+        if (!isUtcMicros(confirmedAt)) {
+            throw new CoreException(ErrorType.INTERNAL_ERROR, "PG 확정 시각이 UTC·마이크로초 값이 아닙니다.");
+        }
         this.paidAmount = amount;
         this.status = OrderStatus.CONFIRMED;
+        this.confirmedAt = confirmedAt;
     }
 
     public void failPg() {
@@ -164,15 +180,29 @@ public class OrderModel extends BaseEntity {
         this.status = OrderStatus.PAYMENT_FAILED;
     }
 
+    /**
+     * 확정 시각이 고정 UTC·마이크로초 값인지 본다. 겨울의 Europe/London 처럼 지금 offset 만 0 인 지역 zone 은
+     * 정규화해도 UTC 가 아니므로 거절한다. null 은 false 이며, 상태에 따라 null 이어야 하는지는 호출자가 따로 본다.
+     */
+    public static boolean isUtcMicros(ZonedDateTime value) {
+        return value != null
+            && value.getZone().normalized().equals(ZoneOffset.UTC)
+            && value.getNano() % 1_000 == 0;
+    }
+
     public static class PaymentMethodConverter extends EnumNameConverter<PaymentMethod> {
         public PaymentMethodConverter() {
             super(PaymentMethod.class);
         }
     }
 
+    /** 확정 시각이 남은 PG 대기 주문은 손상된 저장 상태로 보고 전이하지 않는다. */
     private void requirePgPending() {
         if (status != OrderStatus.PAYMENT_PENDING || paymentMethod != PaymentMethod.PG) {
             throw new CoreException(ErrorType.INTERNAL_ERROR, "PG 결제 대기 주문이 아닙니다. [status = " + status + "]");
+        }
+        if (confirmedAt != null) {
+            throw new CoreException(ErrorType.INTERNAL_ERROR, "확정 전 PG 주문에 확정 시각이 있습니다.");
         }
     }
 }

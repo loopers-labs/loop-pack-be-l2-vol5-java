@@ -1,16 +1,17 @@
 package com.loopers.application.payment;
 
+import com.loopers.testsupport.OrderEventRecordingInitializer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.loopers.CommerceApiApplication;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.fixture.PgCommands;
 import com.loopers.fixture.ProductFixture;
 import com.loopers.fixture.UserFixture;
-import com.loopers.fixture.pg.PaymentStatus;
 import com.loopers.fixture.pg.PgFixtureServer;
 import com.loopers.fixture.pg.PgOperation;
 import com.loopers.fixture.pg.ResponsePlan;
 import com.loopers.infrastructure.payment.PgHttpProperties;
+import com.loopers.pgsimulator.PaymentStatus;
 import com.zaxxer.hikari.HikariDataSource;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
@@ -140,7 +141,8 @@ class PaymentRestartIntegrationTest {
         try (ServerSocket socket = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
             port = socket.getLocalPort();
         }
-        ConfigurableApplicationContext context = new SpringApplicationBuilder(CommerceApiApplication.class).profiles("test").run(
+        ConfigurableApplicationContext context = new SpringApplicationBuilder(CommerceApiApplication.class).profiles("test")
+            .initializers(new OrderEventRecordingInitializer()).run(
             "--server.port=" + port, "--management.server.port=0", "--spring.jpa.hibernate.ddl-auto=" + ddl,
             "--datasource.mysql-jpa.main.jdbc-url=" + server + "/" + SCHEMA,
             "--commerce.pg.base-url=" + pg.baseUrl(),

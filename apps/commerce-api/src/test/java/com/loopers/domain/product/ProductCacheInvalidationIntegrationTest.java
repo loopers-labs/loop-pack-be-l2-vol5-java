@@ -1,6 +1,7 @@
 package com.loopers.domain.product;
 
 import org.springframework.test.context.ContextConfiguration;
+import com.loopers.domain.order.OrderEventPublisher;
 import com.loopers.fixture.PgFixtureContextInitializer;
 import com.loopers.fixture.PgCommands;
 import com.loopers.application.order.OrderInfo;
@@ -12,9 +13,11 @@ import com.loopers.domain.order.OrderModel;
 import com.loopers.domain.user.UserModel;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
+import com.loopers.testsupport.RecordingOrderEventPublisher;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.context.bean.override.convention.TestBean;
 
 import java.util.List;
 
@@ -33,6 +36,9 @@ import static org.mockito.Mockito.verify;
 @ContextConfiguration(initializers = PgFixtureContextInitializer.class)
 @DisplayName("상품 상세 기본정보에 영향을 주는 쓰기는 commit 뒤 해당 기본정보를 삭제하고, 좋아요 쓰기는 캐시를 건드리지 않는다.")
 class ProductCacheInvalidationIntegrationTest extends ProductCacheTestSupport {
+
+    @TestBean(name = "kafkaOrderEventPublisher", methodName = RecordingOrderEventPublisher.FACTORY, enforceOverride = true)
+    private OrderEventPublisher orderEventPublisher;
 
     @org.springframework.beans.factory.annotation.Autowired
     private com.loopers.fixture.pg.PgFixtureServer pg;

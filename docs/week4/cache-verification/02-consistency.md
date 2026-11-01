@@ -4,7 +4,7 @@
 
 ## 적용할 계약
 
-[상품 조회 설계](../../system-design/sections/04-use-cases.md#44-상품-조회)를 따른다. 상품명·Brand 이름·가격·재고만 JSON String cache-aside, 좋아요 수는 DB 조회다. 기본정보는 공통 afterCommit callback의 commit 뒤 동기 DEL이고 TTL은 시험 10초/평시 5분 고정값·hit 비연장이다. 별도 count key/증감·캐시 이벤트/AOP·hit 연장은 없다.
+[상품 조회 설계](../../system-design/features/product-cache.md#44-상품-조회)를 따른다. 상품명·Brand 이름·가격·재고만 JSON String cache-aside, 좋아요 수는 DB 조회다. 기본정보는 공통 afterCommit callback의 commit 뒤 동기 DEL이고 TTL은 시험 10초/평시 5분 고정값·hit 비연장이다. 별도 count key/증감·캐시 이벤트/AOP·hit 연장은 없다.
 
 cache 오류는 DB 성공 유지·로그만/재시도 없음, JSON 형식 오류는 miss·DB 정상 재채움·로그다. 삭제 비노출·소유권·주문 금액/재고/포인트·과거 주문 보호는 유지한다. 일반 업무 회귀는 cache on이며 필요한 캐시 경로 비교만 off다.
 

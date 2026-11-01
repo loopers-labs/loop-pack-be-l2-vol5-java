@@ -1,6 +1,6 @@
 package com.loopers.fixture.pg;
 
-public enum ReplyMode {
+enum ReplyMode {
     NORMAL,
     RAW,
     DELAY,
