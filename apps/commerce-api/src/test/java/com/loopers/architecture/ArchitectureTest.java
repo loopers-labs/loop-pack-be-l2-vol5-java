@@ -31,7 +31,7 @@ class ArchitectureTest {
     }
 
     @Test
-    void commerceDomainsDoNotDependOnJpa() {
+    void commerceDomainsDoNotDependOnJpaOrLombok() {
         var classes = new ClassFileImporter()
                 .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
                 .importPackages(
@@ -53,6 +53,12 @@ class ArchitectureTest {
                             "..domain.brand..", "..domain.product..", "..domain.like..",
                             "..domain.point..", "..domain.order..", "..domain.payment..", "..domain.user..")
                    .should().dependOnClassesThat().haveFullyQualifiedName("com.loopers.domain.BaseEntity")
+                   .check(classes);
+
+        noClasses().that().resideInAnyPackage(
+                            "..domain.brand..", "..domain.product..", "..domain.like..",
+                            "..domain.point..", "..domain.order..", "..domain.payment..", "..domain.user..")
+                   .should().dependOnClassesThat().resideInAPackage("lombok..")
                    .check(classes);
     }
 
