@@ -330,6 +330,65 @@ class OrderTest {
         }
     }
 
+    @DisplayName("확정 시각을 남길 때, (6주차 D-71 · D-82)")
+    @Nested
+    class ConfirmedAt {
+        // 나노초까지 있는 시각을 넣어 DB 정밀도(마이크로초)로 잘리는지 봄
+        private final ZonedDateTime at = CREATED_AT.plusMinutes(1).plusNanos(123_456_789);
+        private final ZonedDateTime stored = CREATED_AT.plusMinutes(1).plusNanos(123_456_000);
+
+        @DisplayName("PG 반영 · 0원 확정 · 이전 POINT 확정 모두 마이크로초로 자른 같은 값을 결제 시각과 확정 시각에 남긴다.")
+        @Test
+        void storesSameTruncatedValue_onEveryConfirmPath() {
+            // arrange
+            Order paid = draft(List.of(line(1L, 7_000L, 1)));
+            paid.startPayment(CREATED_AT.plusSeconds(30));
+            Order free = draft(List.of(line(1L, 0L, 1)));
+            Order point = draft(List.of(line(1L, 7_000L, 1)));
+
+            // act
+            paid.confirmPaid(7_000L, at);
+            free.confirmWithoutPayment(at);
+            point.confirmWithPoint(7_000L, at);
+
+            // assert
+            assertThat(List.of(paid, free, point)).allSatisfy(order -> assertAll(
+                () -> assertThat(order.getConfirmedAt()).isEqualTo(stored),
+                () -> assertThat(order.getPaidAt()).isEqualTo(stored)
+            ));
+        }
+
+        @DisplayName("DRAFT · 결제 대기 · 결제 실패에서는 비어 있다.")
+        @Test
+        void isEmpty_beforeConfirmation() {
+            // arrange
+            Order draft = draft(List.of(line(1L, 7_000L, 1)));
+            Order pending = draft(List.of(line(1L, 7_000L, 1)));
+            pending.startPayment(CREATED_AT.plusMinutes(1));
+            Order failed = draft(List.of(line(1L, 7_000L, 1)));
+            failed.startPayment(CREATED_AT.plusMinutes(1));
+            failed.failPayment();
+
+            // assert
+            assertThat(List.of(draft, pending, failed)).allSatisfy(order -> assertThat(order.getConfirmedAt()).isNull());
+        }
+
+        @DisplayName("확정된 주문에 다시 반영해도 바뀌지 않는다.")
+        @Test
+        void keepsFirstValue_whenAppliedAgain() {
+            // arrange
+            Order order = draft(List.of(line(1L, 7_000L, 1)));
+            order.startPayment(CREATED_AT.plusSeconds(30));
+            order.confirmPaid(7_000L, at);
+
+            // act
+            assertThrows(IllegalStateException.class, () -> order.confirmPaid(7_000L, at.plusHours(1)));
+
+            // assert
+            assertThat(order.getConfirmedAt()).isEqualTo(stored);
+        }
+    }
+
     @DisplayName("확정할 수 있는지 검사할 때, 생성 시각 + 30분 직전이면 통과하고 30분부터는 ORDER_EXPIRED 예외가 발생한다. (ORD-08)")
     @Test
     void rejectsFromThirtyMinutes() {

@@ -22,14 +22,27 @@ spring:
     import:
       - jpa.yml
       - redis.yml
+      - kafka.yml
       - logging.yml
       - monitoring.yml
+  kafka:
+    producer:
+      properties:
+        # 발행은 commit 뒤 요청 스레드에서 하므로 broker 장애 때 응답과 DB 커넥션이 이만큼 묶임.
+        # 너무 짧으면 첫 연결이 느린 순간의 정상 이벤트를 잃음(Outbox 전이라 재전송 없음). 측정 근거 docs/week6/experiment-delivery.md (D-75, D-93)
+        max.block.ms: 500
 
 # 행 잠금 대기 한도 3초. 공통 jpa.yml 은 배치 · 스트리머도 쓰므로 commerce-api 에서만 정함 (3주차 설계 4.5)
 datasource:
   mysql-jpa:
     main:
       connection-init-sql: SET SESSION innodb_lock_wait_timeout = 3
+      # 응답 없는 DB 에서 요청이 스레드 · 커넥션을 쥔 채 무기한 기다려 다른 API 까지 멈추지 않게 함 (6주차 D-99).
+      # 잠금 대기 3s · 최장 쿼리 약 1s 보다 길게 둠. COMMIT 이 끊기면 결과가 모호하지만 같은 시도 키 재요청 · reconcile 이 저장 상태로 이어 감
+      data-source-properties:
+        socketTimeout: 10000
+        # Hikari connection-timeout(3s)보다 오래 연결을 시도해도 기다리는 쪽이 없음
+        connectTimeout: 3000
 
 # 로컬 테스트 PG 계약 (5주차 설계 3.1, 5). 실제 PG · 카드 · 외부 주소는 쓰지 않음
 payment:
@@ -50,6 +63,10 @@ payment:
       failure-rate-threshold: 50 # 최근 시도 중 실패가 50% 이상이면 OPEN
       open-wait: 10s # open 후 10초 동안은 대기
       half-open-calls: 2 # half_open 되었을 경우 2회 요청 보내봄
+
+# 주문 확정 이벤트 (6주차 설계 2). topic 은 인프라가 만듦 (D-90)
+order-event:
+  topic: order-events
 
 springdoc:
   use-fqn: true

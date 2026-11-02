@@ -14,7 +14,7 @@ spring:
   main:
     web-application-type: servlet
   application:
-    name: commerce-api
+    name: commerce-streamer
   profiles:
     active: local
   config:
@@ -28,6 +28,27 @@ spring:
 demo-kafka:
   test:
     topic-name: demo.internal.topic-v1
+
+# 주문 확정 이벤트 소비 (6주차 설계 5). topic 은 인프라가 만듦 (D-90)
+order-event:
+  topic: order-events
+  consumer-group: purchase-activity
+  # 일시적 오류: pause 한 채 1s 부터 2배씩, 간격 최대 30s, 간격 합 5분 넘으면 중단. 실제 장애 실험 · 운영 failover 문헌값으로 확인 (D-87)
+  retry:
+    initial-interval: 1s
+    multiplier: 2
+    max-interval: 30s
+    max-elapsed: 5m
+
+# 응답 없는 DB 에서 listener 가 예외 없이 무기한 기다리면 재시도 · 상한이 동작하지 않아 드라이버에 상한을 둠 (6주차 D-98).
+# 문장이 ms 단위라 정상 처리는 끊지 않음. 끊긴 COMMIT 의 결과가 모호해도 재전달을 멱등 처리로 흡수함. 공용 jpa.yml 이 아니라 앱마다 둬 batch 는 건드리지 않음
+datasource:
+  mysql-jpa:
+    main:
+      data-source-properties:
+        socketTimeout: 10000
+        # Hikari connection-timeout(3s)보다 오래 연결을 시도해도 기다리는 쪽이 없음
+        connectTimeout: 3000
 
 ---
 spring:

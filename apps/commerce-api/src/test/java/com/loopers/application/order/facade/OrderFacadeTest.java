@@ -54,7 +54,7 @@ class OrderFacadeTest {
         pointService = new PointService(new FakePointRepository());
         Clock clock = Clock.fixed(CREATED_AT.toInstant(), CREATED_AT.getZone());
         ProductService productService = new ProductService(productRepository, new FakeProductLikeCountRepository(), clock);
-        orderFacade = new OrderFacade(new OrderService(orderRepository, clock), productService, new PaymentService(new FakePaymentRepository(), clock));
+        orderFacade = new OrderFacade(new OrderService(orderRepository, clock, event -> { }), productService, new PaymentService(new FakePaymentRepository(), clock));
         brand = brandRepository.save(new Brand("브랜드", null));
     }
 

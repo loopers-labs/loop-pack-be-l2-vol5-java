@@ -4,10 +4,12 @@ import com.loopers.domain.order.entity.Order;
 import com.loopers.domain.order.enums.OrderErrorCode;
 import com.loopers.domain.order.enums.OrderStatus;
 import com.loopers.domain.order.repository.OrderRepository;
+import com.loopers.domain.order.vo.OrderConfirmed;
 import com.loopers.domain.order.vo.OrderLine;
 import com.loopers.domain.order.vo.OrderSummary;
 import com.loopers.support.error.CoreException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
@@ -24,6 +26,7 @@ public class OrderService {
     private final OrderRepository orderRepository;
     /** 시각을 정하는 곳을 한 곳에 둠 (설계 2.3) */
     private final Clock clock;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public Order create(Long userId, List<OrderLine> lines) {
@@ -53,15 +56,18 @@ public class OrderService {
         order.startPayment(ZonedDateTime.now(clock));
     }
 
+    /** 확정 사실은 상태 전이 바로 옆에서 냄. 보내는 시점(commit 뒤)은 listener 가 정함 (6주차 D-70, D-72) */
     @Transactional
     public void confirmWithoutPayment(Order order) {
         order.confirmWithoutPayment(ZonedDateTime.now(clock));
+        eventPublisher.publishEvent(OrderConfirmed.from(order));
     }
 
-    /** 결제 시각은 PG 승인 시각이 아니라 내부 반영 시각임 */
+    /** 결제 시각은 PG 승인 시각이 아니라 내부 반영 시각임. 결제 대기에서만 통과하므로 반복 적용은 확정 사실을 다시 내지 않음 */
     @Transactional
     public void confirmPaid(Order order, long paymentAmount) {
         order.confirmPaid(paymentAmount, ZonedDateTime.now(clock));
+        eventPublisher.publishEvent(OrderConfirmed.from(order));
     }
 
     @Transactional
