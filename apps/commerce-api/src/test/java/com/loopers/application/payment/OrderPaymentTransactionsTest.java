@@ -22,16 +22,18 @@ import com.navercorp.fixturemonkey.ArbitraryBuilder;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.Optional;
 import java.util.UUID;
+import java.time.Clock;
 
 class OrderPaymentTransactionsTest {
     private final PaymentRepository payments = mock(PaymentRepository.class);
     private final OrderRepository orders = mock(OrderRepository.class);
     private final OrderPaymentTransactions paymentTransactions = new OrderPaymentTransactions(
             mock(IdentifyUser.class), orders, mock(ProductRepository.class),
-            payments, mock(StockReservationRepository.class));
+            payments, mock(StockReservationRepository.class), Clock.systemUTC(), mock(ApplicationEventPublisher.class));
 
     private Payment storedPayment;
     private ArbitraryBuilder<PaymentGateway.CreatedPayment> acceptanceBuilder;
