@@ -1,12 +1,12 @@
 package com.loopers.config;
 
-import com.loopers.application.payment.PaymentExpiryPolicy;
-import com.loopers.application.payment.PaymentLookupPolicy;
-import com.loopers.application.payment.port.LookupJitter;
-import com.loopers.domain.payment.LookupBackoff;
-import com.loopers.infrastructure.payment.FullLookupJitter;
-import com.loopers.infrastructure.payment.PaymentCircuitBreakers;
-import com.loopers.infrastructure.payment.PaymentLookupCircuitProperties;
+import com.loopers.payment.app.PaymentExpiryPolicy;
+import com.loopers.payment.app.PaymentLookupPolicy;
+import com.loopers.payment.app.port.LookupJitter;
+import com.loopers.payment.domain.LookupBackoff;
+import com.loopers.payment.out.FullLookupJitter;
+import com.loopers.payment.out.PaymentCircuitBreakers;
+import com.loopers.payment.out.PaymentLookupCircuitProperties;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.concurrent.ThreadLocalRandom;

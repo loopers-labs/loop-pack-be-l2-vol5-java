@@ -1,12 +1,12 @@
 package com.loopers.config;
 
-import com.loopers.application.payment.PaymentGatewayRegistry;
-import com.loopers.application.payment.port.PaymentCreateCommand;
-import com.loopers.application.payment.port.PaymentCreateResult;
-import com.loopers.application.payment.port.PaymentGateway;
-import com.loopers.application.payment.port.PaymentTransactionsLookup;
-import com.loopers.infrastructure.payment.PaymentCircuitBreakers;
-import com.loopers.infrastructure.payment.PaymentLookupCircuitProperties;
+import com.loopers.payment.app.PaymentGatewayRegistry;
+import com.loopers.payment.app.port.PaymentCreateCommand;
+import com.loopers.payment.app.port.PaymentCreateResult;
+import com.loopers.payment.app.port.PaymentGateway;
+import com.loopers.payment.app.port.PaymentTransactionsLookup;
+import com.loopers.payment.out.PaymentCircuitBreakers;
+import com.loopers.payment.out.PaymentLookupCircuitProperties;
 import java.time.Clock;
 import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
