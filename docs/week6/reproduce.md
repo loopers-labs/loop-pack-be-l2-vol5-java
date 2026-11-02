@@ -46,14 +46,16 @@ apps/commerce-streamer/build/reports/week6/direct-publication-cases.json
 
 ## A 정책에서 무엇을 재시작하는가
 
-오류 때문에 멈춘 것은 `purchase-activity` listener 컨테이너다. 컴퓨터·Kafka·MySQL을 모두 재부팅할 필요는 없다.
+오류 때문에 멈춘 것은 `purchase-activity` listener 컨테이너다. 컴퓨터·Kafka·MySQL을 모두 재부팅할 필요는 없다. 기본 `concurrency: 1`에서 이 consumer가 두 파티션을 모두 맡고 있다면 한 record의 실패로 양쪽 후속 처리가 멈춘다. 같은 그룹에 다른 consumer가 있으면 재배정될 수 있다.
 
-- 먼저 DB 연결 문제나 잘못된 이벤트 등 실제 원인을 해결한다.
+- DB 연결·저장 장애라면 원인을 해결하고 저장이 가능한지 확인한다. 잘못된 payload라면 재시작만으로 고쳐지지 않으므로 원인과 별도 처리 방침을 먼저 확인한다.
 - 실행 중인 앱 내부에서 `registry.getListenerContainer("purchase-activity").start()`로 listener를 시작하거나 commerce-streamer 애플리케이션을 재실행한다.
 - `purchase-activity.group-id`를 유지한다. 복구 전에 offset을 앞으로 옮기지 않는다.
 - 같은 메시지가 다시 와서 DB commit과 ack까지 성공했는지 확인한다.
 
 `KafkaDeliveryTest`가 첫 방법을 실제로 검증한다. 이 메서드를 공개 관리 API로 제공하지 않는다. payload 자체가 잘못된 경우에는 DB를 다시 켜는 것만으로 해결되지 않는다. offset을 건너뛰거나 DLQ에 보내는 정책은 이번 A 구현에 추가하지 않았다.
+
+복구 전 토픽의 retention과 남은 record를 확인한다. 메시지가 이미 삭제됐다면 같은 record의 재전달은 보장되지 않는다. 운영용 `ConsumerStoppedEvent`·consumer group lag 알림은 아직 구성되지 않았으므로, 별도의 모니터링 구성이 필요하다.
 
 ## 별도 앱을 로컬에서 실행할 때
 

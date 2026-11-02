@@ -12,6 +12,8 @@ import java.util.List;
 
 @Repository
 public class JpaProcessedOrderConfirmationRepository implements ProcessedOrderConfirmationRepository {
+    private static final int MYSQL_DUPLICATE_KEY_ERROR_CODE = 1062;
+
     private final ProcessedOrderConfirmationJpaRepository repository;
 
     public JpaProcessedOrderConfirmationRepository(ProcessedOrderConfirmationJpaRepository repository) {
@@ -38,7 +40,7 @@ public class JpaProcessedOrderConfirmationRepository implements ProcessedOrderCo
 
     private boolean isDuplicateKey(Throwable failure) {
         for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
-            if (cause instanceof SQLException sql && sql.getErrorCode() == 1062) {
+            if (cause instanceof SQLException sql && sql.getErrorCode() == MYSQL_DUPLICATE_KEY_ERROR_CODE) {
                 return true;
             }
         }

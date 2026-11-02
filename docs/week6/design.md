@@ -107,6 +107,12 @@ flowchart TD
 
 이 정책은 자동 재시도나 DLQ가 아니다. 원인을 고치기 전 다시 실행하면 같은 오류로 또 멈춘다. 중단된 컨테이너가 맡은 후속 메시지도 기다린다. 다른 컨테이너/그룹 전체를 일괄 중단시키는 분산 제어는 포함하지 않는다. 메시지가 retention으로 삭제되기 전에 복구해야 Kafka에서 재전달할 수 있다.
 
+현재 `purchase-activity.concurrency: 1`은 앱 인스턴스당 consumer 하나다. 예를 들어 같은 그룹에 이 인스턴스만 있고 토픽에 파티션이 두 개라면 둘 다 이 consumer가 맡는다. 어느 한 파티션의 record에서 실패해 listener가 멈추면 다른 파티션의 후속 record도 그 인스턴스에서 처리되지 않는다. 같은 그룹에 다른 consumer가 있으면 리밸런싱으로 파티션이 재배정될 수 있으며, 실패 record가 그대로면 새 consumer도 같은 오류로 멈출 수 있다. 두 파티션을 맡은 listener의 중단 영향까지 실측한 테스트는 없다.
+
+DB 일시 장애는 연결과 저장 가능 상태를 복구한 뒤 같은 그룹으로 다시 시작한다. 반면 계약을 어기는 payload는 DB 복구나 재시작만으로 해결되지 않는다. 원인을 조사하고 별도의 처리 방침을 정해야 한다. 현재 구현에는 잘못된 record를 건너뛰거나 DLQ로 옮기는 기능이 없으며, 실패 record의 offset을 임의로 앞으로 옮기지 않는다. 복구 전에 메시지가 retention으로 삭제되면 같은 record를 Kafka에서 재전달받을 수 없다.
+
+중단과 적체를 놓치지 않도록 `ConsumerStoppedEvent`와 consumer group lag를 운영 알림에 연결해야 한다. 현재 저장소에는 이 알림이 구성돼 있지 않다. 테스트의 `ConsumerStoppedEvent` 수집은 중단 확인용이며 운영 알림이 아니다.
+
 ## 테스트 범위와 남은 한계
 
 실제 Kafka·MySQL을 Docker Testcontainers로 시작한다. host의 mapped bootstrap 주소를 producer·consumer·admin에 동일하게 주입한다. 기존 사용자의 localhost broker/DB를 테스트 대상으로 쓰지 않는다. 테스트에서 사용하는 API 클래스와 PG fixture는 테스트 전용 artifact로만 streamer에 연결되며, production 앱 간 의존은 추가하지 않는다.
