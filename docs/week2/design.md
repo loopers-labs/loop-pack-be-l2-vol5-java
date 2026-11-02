@@ -2,7 +2,7 @@
 
 입력: 요구사항 정의서 (5장 정합성 검사 통과 상태)
 작성 기준: 「설계 문서 작성 가이드」
-진행 상태: **1~5장·부록 작성 완료. 코드 구현 완료, 5-8 완료 조건 검사 완료.** 요구사항 정의서에 설계 피드백 반영 완료(requirements.md). 구현 중 확정한 판단은 DR-23~28.
+진행 상태: **1~5장·부록 작성 완료. W6 주문 확정 이벤트·구매 활동은 6장, DR-39~45. 코드 구현 완료, 5-8 완료 조건 검사 완료.** 요구사항 정의서에 설계 피드백 반영 완료(requirements.md). 구현 중 확정한 판단은 DR-23~28.
 사전 확정: 모든 테이블의 식별자는 Long 자동 증가, 공통 컬럼 `created_at`·`updated_at`·`deleted_at` (DR-01, DR-16)
 
 ---
@@ -1302,6 +1302,136 @@ Facade·Reader public 메서드 ↔ FR (28:28)
 
 ---
 
+## 6. 주문 확정 이벤트와 상품 구매 활동 (W6)
+
+PG 로 확정된 주문의 구매 사실을 Kafka 로 전달해 `commerce-streamer` 가 상품 구매 활동으로 저장한다. 주문·재고·결제 규칙은 바꾸지 않고, 소비자는 결제·재고 차감을 다시 하지 않는다. 구매 활동은 이후 주간 랭킹의 입력이다. 이번 범위에 랭킹 API·Outbox 는 없다.
+
+### 6-1. 흐름과 경계
+
+```
+[commerce-api]  applyResult TX (주문 행 락)
+                  검증된 PG SUCCESS, 금액 = 합계 → OrderModel.confirm(now) → OrderConfirmedEvent 등록
+                COMMIT ────────────────────────────── ① 여기서 멈추면 주문은 CONFIRMED, 이벤트는 없다 (누락)
+                AFTER_COMMIT listener → OrderConfirmedPublisher.publish (비동기 send)
+                  ② send 실패(재시도·delivery.timeout 소진): 로그 + order.confirmed.publish{result=failure}. 주문은 그대로
+[Kafka]         order-events (key = orderId 문자열, partition 3) ─ acks=all 확인 = 기록 위치(topic·partition·offset)
+[commerce-streamer] OrderConfirmedConsumer (group purchase-activity, record listener, concurrency 1)
+                  parse·계약 검증 → PurchaseActivityFacade
+                  DB TX: 완료 기록 + 품목별 활동 → COMMIT ── ③ 여기서 멈추면 DB 효과는 있고 offset 은 n (재전달 → no-op)
+                  ack (MANUAL_IMMEDIATE) → committed offset n+1
+```
+
+| 경계 | 원자성 | 실패 시 결과 | 다루는 곳 |
+|---|---|---|---|
+| 주문 확정 TX ↔ broker 기록 (①②) | 없음. DB commit 과 send 는 따로 | 확정 주문은 남고 이벤트가 빠질 수 있다. 주문을 되돌리거나 PG 를 다시 부르지 않는다 | 이번 주는 관찰만(로그·메트릭·누락 재현 테스트). W7 Outbox 로 개선 |
+| broker ↔ 구매 활동 DB (③) | 없음. at-least-once (DB 저장 → offset commit) | 재전달된다. 같은 사실은 no-op | 완료 기록 유일 제약 + 같은 TX (6-4) |
+| 구매 활동 DB TX 내부 | 있음 | 품목 하나라도 실패하면 완료 기록·앞선 품목까지 rollback | `PurchaseActivityProcessor.record` |
+
+- 이벤트가 필요한 이유: 주문 확정이 구매 활동·통계·알림을 직접 부르면 그 기능의 지연·장애가 이미 성공한 결제 응답을 바꾼다. 확정은 사실(OrderConfirmed)만 남기고, 후속 기능은 각자 group 으로 읽는다.
+- 발행 조건: `applyResult` 안에서 `confirm()` 이 실행된 경우에만 이벤트를 등록한다. 동기 응답·callback·결제 대기 해소가 같은 경계를 쓰므로 어느 경로가 먼저 와도 같다. 이미 종결된 주문의 반복 적용, PENDING·UNKNOWN·FAILED·NOT_SENT·ERROR·금액 불일치, 확정 TX rollback 에서는 발행하지 않는다. 이전 POINT 확정 주문은 소급 발행하지 않는다.
+- payload 는 확정 TX 안에서 저장된 품목·수량·확정 시각으로 미리 만든다(lazy 엔티티를 commit 뒤에 읽지 않는다). 소비 시점에 상품을 다시 조회하지 않는다.
+- AFTER_COMMIT listener 의 예외는 삼키고 로그만 남긴다. 올려 보내면 commit 한 호출자에게 전달돼 이미 확정된 주문의 응답이 실패가 된다.
+
+### 6-2. 이벤트 계약 (OrderConfirmed v1)
+
+| 항목 | 값 |
+|---|---|
+| topic | `order-events` (설정 `kafka.topics.order-events.name`). 테스트는 클래스별 이름 |
+| key | 내부 orderId 의 문자열. payload `orderId` 와 같아야 한다 (소비자가 확인) |
+| eventType / schemaVersion | `OrderConfirmed` / `1` |
+| eventId | `order-confirmed:v1:{orderId}`. 주문당 확정은 한 번이라 orderId 에서 유도. 재발행·재전달에도 같다. 시도 횟수·현재 시각·UUID 를 넣지 않는다 |
+| orderId | 확정 주문 ID |
+| confirmedAt | 최초 확정 시각. `orders.confirmed_at` 과 같은 값. UTC ISO-8601 문자열(`...Z`). 확정 때 마이크로초로 잘라 저장하므로 DB(datetime(6))와 메모리 값이 같다 |
+| items | `[{productId, quantity}]`. 같은 상품은 주문 생성 때 합산돼 하나(INV-08), 수량 > 0, productId 오름차순 |
+| 넣지 않는 것 | 카드·PG 거래 정보·사용자 정보·가격 |
+
+- 비교 규칙: JSON 속성 순서·items 순서는 의미가 없다. 소비자는 eventId·orderId·confirmedAt(Instant)·정규화한 items 로 SHA-256 지문을 만들어 비교한다.
+- 공개 발행 endpoint 는 없다. 합성 이벤트는 테스트 코드에서만 broker 에 직접 보낸다.
+
+### 6-3. 발행 설정 (producer)
+
+| 설정 | 값 | 의미와 한계 |
+|---|---|---|
+| `acks` | all | 현재 ISR 의 기록 확인. 로컬은 broker 1대·replica 1 이라 복제 장애 내구성은 확인하지 못한다 |
+| `enable.idempotence` | true | 전송 재시도 중 broker 쪽 중복 기록 방지. 애플리케이션이 같은 업무를 새로 send 하는 중복은 막지 않는다 (소비자 멱등이 필요한 이유) |
+| `max.block.ms` | 5000 | broker 에 못 붙을 때 `send()` 호출 자체가 막히는 최대 시간 (기본 60s). AFTER_COMMIT 은 요청 스레드에서 돌아 응답 지연이 된다 |
+| `delivery.timeout.ms` | 30000 | 재시도 포함 최종 실패까지 (기본 120s) |
+| send 방식 | 비동기 | 결과는 콜백에서 관찰: 성공은 topic·partition·offset 로그 + `order.confirmed.publish{result=success}`, 최종 실패는 예외 로그 + `{result=failure}`. 발행 상태를 DB 에 남기지 않는다 (남기려면 확정 TX 안에 써야 하고 그것이 W7 Outbox) |
+| topic | commerce-api 의 `NewTopic` (partition 3, replica 1) | broker 자동 생성(partition 1)에 맡기지 않는다. partition 을 늘리면 key → partition 매핑이 바뀐다 |
+
+### 6-4. 소비와 DB 정합성 (commerce-streamer)
+
+#### TB-12 `processed_order_confirmation`
+
+- 소비 완료한 주문 확정 사실 (중복 방지 기록). 구매 활동과 같은 TX 에서 저장한다
+- 고유 제약: `event_id`, `order_id` 각각
+
+| 컬럼 | 타입 | NULL | 제약 | 의미 |
+|---|---|---|---|---|
+| `id` | bigint | N | PK | |
+| `event_id` | varchar(100) | N | UNIQUE | 확정 사실 ID |
+| `order_id` | bigint | N | UNIQUE | 같은 주문을 다른 eventId 로 보내도 새 구매가 되지 않는다 |
+| `confirmed_at` | datetime(6) | N | | 최초 확정 시각 (소비 시각 아님) |
+| `fingerprint` | varchar(64) | N | | 고정 payload 의 SHA-256 (6-2 비교 규칙) |
+| `created_at`·`updated_at`·`deleted_at` | | | | 공통 (DR-01) |
+
+#### TB-13 `product_purchase_activity`
+
+- 확정 주문 하나의 상품별 구매 수량. 주간 랭킹 입력
+- 고유 제약: (`order_id`, `product_id`)
+- productId 는 과거 주문의 식별자로 보존한다. 상품 행의 존재·현재 가격에 의존하지 않고, 삭제·비노출 상품을 다시 노출하지 않는다 (상품을 읽지 않는다)
+
+| 컬럼 | 타입 | NULL | 제약 | 의미 |
+|---|---|---|---|---|
+| `id` | bigint | N | PK | |
+| `order_id` | bigint | N | (`order_id`,`product_id`) UNIQUE | 확정 주문 |
+| `product_id` | bigint | N | | 구매 상품 |
+| `quantity` | int | N | > 0 | 구매 수량 |
+| `confirmed_at` | datetime(6) | N | | 주문 확정 시각 |
+| `created_at`·`updated_at`·`deleted_at` | | | | 공통 |
+
+예) 주문 42 (상품 7×2, 8×1) → 활동 2행. 같은 이벤트 재전달 → 여전히 2행. 주문 43 (상품 7×3) → 총 3행, 상품 7 수량 합 5.
+
+#### 처리 순서
+
+| 단계 | 담당 | 실패 표현 |
+|---|---|---|
+| 메시지 계약: JSON, eventType, schemaVersion=1, key = orderId, confirmedAt 형식 | `OrderConfirmedMessageParser` (interfaces) | `InvalidOrderConfirmedMessageException` (재시도 안 함) |
+| 사실 계약: eventId = `order-confirmed:v1:{orderId}`, 품목 1개 이상·상품 중복 없음·수량 > 0, 정규화 | `OrderConfirmation` (domain) | `OrderConfirmationContractException` (재시도 안 함) |
+| TX1: eventId 또는 orderId 로 완료 기록 조회 → 같은 사실이면 no-op(ALREADY_PROCESSED), 다르면 계약 위반, 없으면 완료 기록 + 품목별 활동 저장(flush) | `PurchaseActivityProcessor.record` → `PurchaseActivityService` | 유일 제약 위반(`DataIntegrityViolationException`)은 TX1 rollback 뒤 Facade 로 |
+| 유일 제약 경쟁: 새 읽기 TX 에서 다시 조회 → 같으면 ALREADY_PROCESSED, 다르면 계약 위반, 기록이 없으면 원래 예외 (다른 무결성 오류를 중복으로 바꾸지 않는다) | `PurchaseActivityFacade` | |
+| ack | `OrderConfirmedConsumer` | Facade 가 반환한 뒤에만 (= DB commit 뒤) |
+
+- 중복 판단은 조회만으로 하지 않는다. 조회는 빠른 길이고, 동시 소비의 최종 보호는 DB 유일 제약이다. 유일 제약 예외가 난 TX 를 삼키고 commit 하지 않는다.
+
+### 6-5. listener 설정
+
+| 설정 | 값 | 확인 |
+|---|---|---|
+| factory | `orderActivityKafkaListenerContainerFactory` (record listener, concurrency 1, `MANUAL_IMMEDIATE`). 기존 batch factory 는 그대로 | |
+| `enable.auto.commit` | false (공용 kafka.yml `consumer.enable-auto-commit`) | `KafkaClientConfigTest` 가 Kafka `ConsumerConfig` 파싱값으로 확인 |
+| value 역직렬화 | `ByteArrayDeserializer` (공용 kafka.yml 의 `value-serializer` 오타를 `value-deserializer` 로 수정) | 같은 테스트 |
+| `auto.offset.reset` | earliest (이 listener 만) | 새 group 이 붙기 전에 발행된 확정을 건너뛰지 않는다 |
+| error handler | `RetryThenStopErrorHandler`: DefaultErrorHandler 로 1초 간격 2회 재시도 → 소진(계약 위반·형식 오류는 바로) 시 컨테이너 중단. recoverer 는 record 를 건너뛰지 않으므로 offset 이 진행하지 않는다. `commitRecovered=false`, `ackAfterHandle=false` | `OrderConfirmedConsumerTest`, `OrderConfirmedConsumerContractViolationTest` 가 실제 committed offset 으로 확인 |
+| fetch | Kafka 기본값 (`fetch.min.bytes=1`, `fetch.max.wait.ms=500`) | batch factory 의 1MiB·5s 대기를 쓰지 않아 작은 메시지가 바로 읽힌다. 테스트 profile override 불필요 |
+| 복구 | 원인 제거 후 같은 group 으로 컨테이너 재시작 → committed offset(실패 record)부터 다시 읽는다 | |
+
+### 6-6. 테스트와 실험
+
+| 검증 | 테스트 | 기대 결과 |
+|---|---|---|
+| PG 확정 → broker record | `OrderConfirmedPublicationTest` (api) | key·payload 가 저장된 주문의 품목·수량·confirmedAt 과 같다. 성공 메트릭 +1 |
+| 대기·UNKNOWN·실패·금액 불일치·rollback | 같은 클래스 | 발행 없음, log end offset 불변 |
+| 중복 callback·reconcile | 같은 클래스 | 이벤트 1건, 재고·원장 변화 없음 |
+| commit 후 send 직전 중단 (누락 사례) | 같은 클래스 | 주문 CONFIRMED·재고 예약 유지, broker record 없음, 확정 응답은 성공 |
+| 구매 활동 저장·재전달 no-op·충돌·동시 중복·유일 제약 경쟁·품목 중간 실패 | `PurchaseActivityIntegrationTest` (streamer) | 6-4 |
+| listener ack·DB 오류 재시도·중단·재시작 | `OrderConfirmedConsumerTest` | committed offset n → n → n+1, 시도 3회 + 재시작 후 1회 |
+| 계약 위반 즉시 중단 | `OrderConfirmedConsumerContractViolationTest` | 1회 시도, offset 진행 없음, 활동 불변 |
+| 배정 1→2→3, 명시 partition, key 매핑, DB commit 뒤 offset 미커밋 재전달 | `KafkaDeliveryTest` | 관찰값은 `docs/week6/kafka-observations.md` |
+| 계층 규칙 | streamer `ArchitectureTest` | domain·application 은 Kafka 를 모른다 |
+
+한계: 단일 broker(Testcontainers, replica 1)·통제된 종료(close·컨테이너 stop)만 다룬다. OS 강제 종료·broker 장애·네트워크 분할은 시험하지 않았다. 누락 실험은 hook 에서 send 직전에 예외를 던진 것이지 프로세스 강제 종료가 아니다.
+
 ## 부록 A. 설계 판단 기록과 열린 질문
 
 ### A-1. 결정
@@ -1347,6 +1477,13 @@ Facade·Reader public 메서드 ↔ FR (28:28)
 | DR-36 | 2, 3, 4, 5 | 좋아요 수, INV-05, AG-04, TB-08, IX-02, IX-10~12, FR-PRODUCT-01/02, FR-LIKE-01/02, FR-ADMIN-PRODUCT-01/02/03/05, FR-ADMIN-BRAND-05, DR-02, DR-15, DR-31, DR-33, DR-34 | 좋아요 수를 관계에서 세지 않고 저장한다. 저장 위치는 TB-03이 아니라 상품당 한 행인 별도 테이블 TB-08 `product_stat`(AG-04 포함 개념)이다. TB-08은 정렬·필터용으로 TB-03의 `brand_id`·`deleted_at` 사본을 든다. (1) 행은 상품 생성 트랜잭션에서 `like_count` 0으로 만든다. (2) 등록은 관계를 새로 저장했을 때만, 취소는 쌍 조건 삭제의 지운 행 수가 1일 때만 같은 트랜잭션에서 `like_count = like_count ± 1` 원자적 갱신을 한다. (3) 상품 삭제·브랜드 삭제는 같은 트랜잭션에서 TB-08.`deleted_at`도 채운다. TB-08은 만든 뒤 엔티티로 읽어 고치지 않고 조건 갱신(`UPDATE ... WHERE product_id = ?` / `brand_id = ?`)으로만 바꾼다. 변경 감지로 저장하면 행 전체를 쓰므로 그 사이 반영된 좋아요 수를 읽은 시점 값으로 덮는다. (4) 고객·관리자의 좋아요 수 조회와 `likes_desc` 정렬 모두 TB-08에서 읽는다. `likes_desc`는 TB-08만으로 페이지를 먼저 고르고 그 상품에만 조인한다. (5) TB-04 `product_id` 인덱스(IX-02)는 지운다. Repository는 늘리지 않고 `ProductLikeRepository`가 TB-08을 함께 맡는다 | (a) 그대로 관계 개수를 집계 (b) TB-03에 `like_count` 컬럼 (c) 첫 좋아요 때 행 생성 (d) 엔티티를 읽어 값을 바꾸는 갱신, 또는 비관적 잠금 (e) 이벤트·배치로 비동기 갱신 (f) 정렬에만 저장값을 쓰고 표시는 집계 유지 (g) 불일치 보정 배치 | (a)는 정렬 키가 집계값이라 대상 상품 전부를 집계한 뒤에야 정렬·페이징할 수 있다. 상품 500만·좋아요 760만에서 전체 목록이 수십 초였다(week4 `product-list-performance.md` 7장). (b)는 등록·취소마다 상품 행과 상품 인덱스 4개를 갱신하게 되고 재고 잠금(DR-34)과 같은 행을 두고 다툰다. 자주 바뀌는 값을 따로 떼어(수직 분할) 상품 쓰기와 분리한다. 사본 컬럼은 둘 다 상품 삭제 외에는 바뀌지 않는다(`brand_id`는 INV-11로 불변). (c)는 좋아요 0인 상품의 행이 없어 `likes_desc` 목록에서 빠지거나 TB-03과 다시 조인해야 한다. (d)는 동시 등록에서 갱신이 유실되거나 잠금 대기가 생긴다. 검증할 규칙이 없는 증감이라 DR-34 (b)를 버린 이유(검증이 SQL로 나감)가 해당하지 않는다. (e)는 정렬값과 관계 수가 한동안 어긋난다. (f)는 같은 화면에서 정렬 순서와 표시값이 어긋날 수 있다. (g)는 정상 경로에서 어긋날 곳이 없어 두지 않는다. 남는 경로는 DB 직접 수정뿐이다 | 인기 상품 한 행에 갱신이 몰려 대기가 문제되면 (e) 또는 행 분할 카운터로 간다. 좋아요 수 외의 상품 통계가 생기면 TB-08에 컬럼을 더한다 | 용어집 좋아요 수, FR-LIKE-01/02 결과에 `(설계 결정 DR-36)` |
 | DR-37 | 2, 3, 5 | FR-PRODUCT-01/02, FR-ADMIN-PRODUCT-02/04/05/06, FR-ADMIN-BRAND-04/05, FR-ORDER-02, FR-LIKE-01/02, TB-02, TB-03, TB-09, AG-03, DR-22, DR-31, DR-34, DR-36 | 고객 상품 상세와 고객 목록의 latest 첫 페이지(brandId 없음, page 0, size 20, `totalCount` 포함)를 Redis에 revision 기반으로 캐시한다. 좋아요 수는 캐시에 담지 않고 읽을 때 TB-08에서 붙인다. (1) revision은 DB에 둔다. 상세 키는 `product:detail:v1:{상품 id}:{TB-03.revision}:{TB-02.revision}`, 목록 키는 `product:list:latest:v1:s20:{TB-09.revision}`이다. `v1`은 캐시 값의 모양 버전이다. (2) 상품 `revision`은 이름·가격 수정과 삭제, 브랜드 `revision`은 이름 수정과 삭제가 엔티티 메서드 안에서 올린다. 목록 revision은 상품 생성·수정·삭제, 브랜드 수정·삭제 Facade가 같은 트랜잭션의 마지막에 조건 갱신으로 올린다. 첫 페이지에 실제로 영향이 있는지는 따지지 않는다. 재고 변경·주문 확정·좋아요·브랜드 생성은 어떤 revision도 올리지 않는다. (3) 독자는 매번 DB에서 현재 revision을 읽고 그 키만 읽는다(상세는 상품·브랜드 revision과 좋아요 수를 쿼리 하나로). revision 자체는 캐시하지 않는다. (4) miss는 `ProductCacheLoader`가 한 읽기 전용 트랜잭션에서 revision을 다시 읽은 뒤 결과를 읽어, 그 revision의 키에 쓴다. (5) 쓰기는 캐시를 지우지 않는다. 옛 키는 TTL(상세 30분, 목록 10분)로 정리된다. (6) Redis 장애는 던지지 않는다. 읽기는 miss, 쓰기는 무시다. 명령 대기 상한은 `datasource.redis.timeout` 300ms다. GET은 replica 우선, SET은 master로 보낸다 | (a) 쓰기 커밋 뒤 키 삭제(cache-aside 무효화) (b) 카탈로그 전체에 revision 하나 (c) 상품 `@Version`을 revision으로 사용 (d) 브랜드 수정 때 소속 상품 revision 일괄 갱신 (e) 좋아요 수까지 캐시 (f) 현재 revision도 Redis에 캐시 (g) 스탬피드 방지(단일 실행·분산 락) (h) 404 캐시 (i) 목록 revision 갱신 전 명시적 flush | (a)는 커밋과 삭제 사이, 삭제 실패, 늦게 끝난 이전 조회의 재삽입에서 옛 값이 남는다. revision 키는 한 번 쓰면 내용이 바뀌지 않아 이 경우가 모두 "옛 키에 남은 값"이 되고 새 독자는 그 키를 읽지 않는다. (b)는 관리자 쓰기 한 번에 모든 상세 캐시가 깨진다. (c)는 재고 차감마다 올라가 주문이 몰리는 상품일수록 상세 캐시가 깨진다. (d)는 브랜드 수정이 소속 상품 행을 잠그는데, 그 순서가 주문 확정의 상품 id 오름차순 잠금(DR-34)과 달라 교착 위험이 생긴다. 브랜드 revision을 키에 넣으면 상품 행을 건드리지 않는다. (e)는 좋아요마다 revision이 올라 hit가 거의 없다. (f)는 Redis의 revision이 DB와 어긋나면 옛 키를 계속 읽는다. (g)는 revision이 올라간 직후 miss가 몰리면 count(MySQL 약 0.86초, week4 `product-list-performance.md` 4-2)가 겹쳐 돌지만, 관리자 쓰기가 드물어 측정 전에는 두지 않는다. (h)는 삭제가 revision을 올려 바로 404가 되므로 이득이 적다. (i)는 실제 잠금 순서를 코드 순서와 맞추지만, 관리자 쓰기끼리는 TB-09에서 먼저 줄을 서고 주문 확정·좋아요는 TB-09를 잠그지 않아 지금 순서로도 교착이 없다(3-6). 검증은 `ProductCacheIntegrationTest`(DB-only·miss·hit 일치와 hit의 결과 조회 0회, 쓰기별 반영, 롤백, 늦은 채움, miss 스냅샷), `ProductCacheRedisOutageTest`(Redis 일시정지·복구), Facade 통합 테스트의 revision 증가 표 | 관리자 쓰기 직후 count 동시 실행이 측정으로 문제가 되면 (g). 캐시 대상이 늘면 TB-09에 행을, 상세 캐시 값이 다른 테이블의 값을 담게 되면 키에 그 revision을 더한다. PostgreSQL로 운영하면 miss 트랜잭션에 REPEATABLE READ를 명시해야 한다(기본 READ COMMITTED는 문장마다 스냅샷) (갱신: DR-38로 옛 `stock` 컬럼을 지운 뒤에는 재고 차감이 상품 행을 바꾸지 않아 (c)의 근거가 사라졌다. revision을 `@Version`으로 바꿀 이유도 없어 그대로 둔다) | FR-PRODUCT-01/02 비기능에 `(설계 결정 DR-37)` |
 | DR-38 | 2, 3, 5 | 재고, INV-03, AG-03, TB-03, TB-10, TB-11, IX-13, IX-14, FR-ORDER-02, FR-ADMIN-PRODUCT-01/02/03/06, DR-03, DR-08, DR-34, DR-36 | 주문 구조 변경에 대비해 재고에 변동 종류(상태)를 남긴다. AG는 그대로(DR-03) 두고 저장만 둘로 나눈다. (1) TB-11 `product_stock_ledger`는 재고의 진실인 append-only 원장이다. 행 종류는 `ADJUSTMENT`(관리자 설정·상품 생성·기존 재고 이관에서 차이만큼, 같은 수량이면 행 없음) / `RESERVE`(주문 확정의 품목별 차감, 음수) / `RELEASE`(주문 취소의 반환, 양수. 취소 FR이 없어 아직 쓰지 않는다). (`order_id`, `product_id`, `type`) 고유. (2) TB-10 `product_stock`은 상품당 한 행인 현재 값 `available` 하나다. 상품별 원장 합과 같고, 원장 행을 남기는 트랜잭션이 함께 바꾼다. INV-03은 `available ≥ 0`으로 `ProductStockModel`이 지킨다. (3) 잠금: 확정은 재고 행 쓰기 잠금(`product_id` 오름차순) → 상품 행 읽기 잠금(`FOR SHARE`, 식별자 오름차순) → 포인트. 재고 변경도 재고 행을 쓰기 잠금으로 읽는다. (4) 옛 TB-03.`stock` 컬럼의 값은 이관 스크립트 `docs/week5/product-stock.sql`(`-pg.sql`)이 TB-10·TB-11로 옮기고, 검증이 맞을 때만 컬럼을 지운다. 앱은 이 컬럼을 읽지도 쓰지도 않는다 | (a) 재고를 별도 AG로 (b) 원장 행에 상태 컬럼을 두고 갱신(예약 → 확정/해제) (c) 원장만 두고 매번 합산 (d) TB-10에 `on_hand`·`reserved` 두 값 (e) 상품 생성·이관 전용 행 종류(`INITIAL`·`OPENING`) (f) 원장 고유 키를 (`order_id`, `type`)로 (g) 확정이 상품 행만 쓰기 잠금(DR-34 그대로) (h) 상품 행을 잠그지 않음 (i) 옛 컬럼을 엔티티 변경 감지로 함께 씀 (j) 옛 컬럼을 바로 버림(NULL 허용 후 갱신 중단) | (a)는 원장이 늘어도 재고를 참조하는 FR이 전부 상품 ID로 들어오고 확정의 변경 AG만 늘어난다(DR-03). (b)는 원장이 이력이 아니라 상태가 되어 지난 변동을 잃는다. (c)는 확정마다 원장을 합산하고, 잠글 행이 없다. (d)는 지금 흐름(확정 = 즉시 차감)에서 `reserved`를 쓰는 곳이 없다. (e)는 0에서 시작해 차이만큼 맞춘 것으로 보면 `ADJUSTMENT` 하나로 같은 원장 합이 나온다. (f)는 상품이 둘 이상인 주문의 두 번째 `RESERVE`가 고유 제약에 걸린다. (g)는 재고가 상품 행 밖으로 나갔는데 상품 행으로 줄을 세우면, 옛 컬럼을 지운 뒤에도 재고 변경과 상품 수정이 같은 행에서 다툰다. (h)는 확정이 상품 삭제 여부를 읽은 직후 상품이 삭제될 수 있는 창이 새로 생긴다(DR-34가 막던 것). (i)는 `@DynamicUpdate`가 없어 행 전체를 쓰므로, 확정이 읽은 뒤 삭제된 상품의 `deleted_at`을 NULL로 되돌리고, 관리자 수정이 옛 재고로 덮는다(분리 전에도 있던 덮어쓰기다). (j)는 컬럼을 지우기 전까지 이관 결과를 옛 값과 맞춰 보고 되돌릴 수 있게 값을 맞춰 둔다 | 주문 생성 시 예약·결제 후 확정 같은 흐름이 들어오면 `RESERVE`·`RELEASE`의 시점과 (d)를 다시 본다. 옛 컬럼을 지우면 (4)와 `ProductModel` 생성자의 재고 검증, 이관 스크립트 안내를 걷어 내고 3-6 메모의 잠금 상향 문단을 지운다 (갱신: 옛 컬럼을 지웠다. 이관 기간에 함께 쓰던 사본은 확정의 상품 행 읽기 잠금을 쓰기 잠금으로 올려 재고 변경·확정이 상품 수정과 같은 행에서 다투게 했고, 되돌릴 운영 데이터가 없어 남겨 둘 이유가 작았다. (4)를 바꾸고 생성자의 재고 검증과 잠금 상향 문단을 걷어 냈다. 이관 스크립트는 검증이 맞을 때만 컬럼을 지운다) | 없음 |
+| DR-39 | 6 | OrderConfirmed, TB-06, FR-ORDER-02 | 주문 확정 사실을 commit 뒤 Kafka `order-events` 로 직접 발행한다. 발행 위치는 `applyResult` 의 최초 `confirm()` 에서 등록한 이벤트의 AFTER_COMMIT listener | (a) 같은 TX 안에서 send (b) 각 Facade 경로에서 send (c) 이번 주에 Outbox | (a)는 rollback 된 확정의 이벤트를 남긴다. (b)는 "최초 전이" 여부를 경로마다 다시 판단해야 한다. listener 는 rollback 시 불리지 않고 최초 전이 조건이 한 곳에 있다. 남는 누락 구간은 관찰 대상으로 남긴다 | W7 Outbox 로 확정 TX 안에 발행할 사실을 기록할 때 | 없음 |
+| DR-40 | 6 | OrderConfirmed | eventId 를 `order-confirmed:v1:{orderId}` 로 유도하고 컬럼을 두지 않는다. 확정 시각은 Clock 으로 받아 마이크로초로 잘라 저장한다 | (a) 확정 때 UUID 를 저장 (b) 발행 때마다 UUID | 주문당 확정은 한 번이라 orderId 로 충분히 고정된다. (b)는 재발행마다 새 사건이 된다. 자르지 않으면 메모리 나노초와 DB 값이 달라 payload 가 DB 사실과 어긋난다 | 한 주문에 확정이 여러 번 생기는 업무(부분 확정 등)가 생기면 | 없음 |
+| DR-41 | 6 | OrderConfirmed | send 는 비동기, 결과는 로그·메트릭으로만 남긴다. producer 는 acks=all·idempotence, `max.block.ms`=5s·`delivery.timeout.ms`=30s | (a) 동기 대기 (b) 발행 상태를 DB 에 기록 | 재시도는 producer 가 한다. 최종 실패에 할 수 있는 일(주문 유지, 실패 표시)은 비동기 콜백과 같고, 동기 대기는 확정 응답을 broker 지연만큼 늦춘다. (b)를 빈틈 없이 하면 Outbox 다 | W7 Outbox relay 는 ack 를 기다린 뒤 발행 완료를 기록한다 | 없음 |
+| DR-42 | 6 | TB-12, TB-13 | 구매 활동은 완료 기록(eventId·orderId 각각 UNIQUE + 지문)과 품목별 활동((order_id, product_id) UNIQUE)을 같은 TX 에 저장한다. 유일 제약 위반은 rollback 뒤 새 TX 에서 같은 사실인지 비교한다 | (a) 메모리 Set·조회만으로 중복 판단 (b) `INSERT IGNORE` (c) 완료 기록을 별도 TX | (a)는 동시 소비·재시작에 무력하다. (b)는 같은 ID 의 다른 수량(계약 위반)을 숨긴다. (c)는 둘 사이에서 멈추면 누락 또는 중복이 생긴다 | 없음 | 없음 |
+| DR-43 | 6 | OrderConfirmedConsumer | 구매 활동 listener 는 별도 record factory(concurrency 1, MANUAL_IMMEDIATE)로 DB commit 뒤 ack 한다. 일시 오류는 1초 간격 2회 재시도 후, 계약 위반·형식 오류는 바로 컨테이너를 멈추고 offset 을 넘기지 않는다 | (a) 기존 batch factory 전역 변경 (b) DefaultErrorHandler 기본 recoverer (c) DLQ | (a)는 다른 listener 에 영향. (b)는 로그만 남기고 건너뛰어 offset 이 진행한다. (c)는 DLQ 이후 처리 책임이 아직 없다 | 처리량 요구로 concurrency 를 늘릴 때, DLQ 처리 주체가 생길 때 | 없음 |
+| DR-44 | 6 | kafka.yml | 공용 kafka.yml 의 consumer `value-serializer` 오타를 `value-deserializer` 로, `properties.enable-auto-commit` 을 Spring 속성 `enable-auto-commit` 으로 고치고, local·test 의 admin 주소를 bootstrap 과 통일한다. client 에 효과 없는 `auto.create.topics.enable`·schema registry 항목은 그대로 둔다 | 이번 factory 에서만 덮어쓰기 | 오타·잘못된 키는 조용히 무시돼 value 가 String, auto commit 이 Kafka 기본(true)이 된다. low-level consumer 실험에서 그대로 드러난다 | 없음 | 없음 |
+| DR-45 | 6 | commerce-streamer | streamer 에도 Checkstyle·ArchUnit(계층 규칙, 업무 계층의 Kafka 비의존)을 적용한다 | 적용하지 않음 | 새 업무 코드가 생겼다 | 없음 | 없음 |
 
 ### A-2. 열린 질문
 

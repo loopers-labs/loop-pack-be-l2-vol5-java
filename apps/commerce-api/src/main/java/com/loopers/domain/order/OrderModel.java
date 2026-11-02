@@ -13,6 +13,7 @@ import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 
 import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -171,11 +172,14 @@ public class OrderModel extends BaseEntity {
         return "****-****-****-" + cardNo.substring(cardNo.length() - 4);
     }
 
-    /** ST-03 AWAITING_PAYMENT → CONFIRMED (결제 성공). 결제액 = 합계 (INV-09), 결제 결과 = 확정 시각 (ASM-13). 결과 반영이 주문 행 락 안에서 호출한다. */
-    public void confirm() {
+    /**
+     * ST-03 AWAITING_PAYMENT → CONFIRMED (결제 성공). 결제액 = 합계 (INV-09), 결제 결과 = 확정 시각 (ASM-13). 결과 반영이 주문 행 락 안에서 호출한다.
+     * 확정 시각은 DB 정밀도(datetime(6))로 잘라 저장한다. 메모리 값과 저장 값이 같아야 확정 이벤트의 confirmedAt 이 DB 사실과 일치한다.
+     */
+    public void confirm(ZonedDateTime confirmedAt) {
         ensureAwaitingPayment();
         this.paidAmount = this.totalAmount;
-        this.confirmedAt = ZonedDateTime.now();
+        this.confirmedAt = confirmedAt.truncatedTo(ChronoUnit.MICROS);
         this.status = OrderStatus.CONFIRMED;
     }
 

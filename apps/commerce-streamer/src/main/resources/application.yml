@@ -29,6 +29,14 @@ demo-kafka:
   test:
     topic-name: demo.internal.topic-v1
 
+kafka:
+  topics:
+    order-events:
+      name: order-events # commerce-api 가 만들고 쓰는 주문 이벤트 topic
+  consumers:
+    purchase-activity:
+      group-id: purchase-activity # OrderConfirmed → 상품 구매 활동 저장
+
 ---
 spring:
   config:
