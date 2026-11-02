@@ -15,7 +15,7 @@ HTTP 입력과 오류는 [API 계약](../api-contracts.md), 애그리게이트 �
 
 | 규칙 | 주어진 상태와 입력 | 기대값 |
 |---|---|---|
-| 정상 처리와 보존 | 연결 상품 있음(재고 0과 기삭제 상품 포함), 상품 없음, 기삭제 상품만 있음의 각 사례. 다른 Brand와 Product, 기존 Like와 확정 Order도 준비 | `200 OK`, Brand와 연결된 미삭제 Product 전체 삭제, 보존 대상 유지 |
+| 정상 처리와 보존 | 연결 상품 있음(재고 0과 기삭제 상품 포함), 상품 없음, 기삭제 상품만 있음의 각 사례. 다른 Brand와 Product, 기존 Like와 확정 Order도 준비 | `200 OK`, Brand와 연결된 미삭제 Product 전체 삭제, 이번 요청이 삭제한 Brand·Product의 삭제 시각은 같은 값, 보존 대상 유지 |
 | 없는 대상 | 없거나 이미 삭제된 Brand 삭제 요청 | `404 Not Found`, Brand와 Product 변경 없음 |
 | 중간 실패 | 미삭제 Product가 있는 Brand를 준비하고 Product UPDATE 후 Brand 갱신 경계에서 예외 발생, 또는 두 UPDATE 후 commit 전에 예외 발생 | 요청 실패, 이번 요청의 삭제 상태와 수정 시각 전체 롤백, 다른 요청의 commit 보존 |
 | 동일 Brand 삭제 경쟁 | 같은 Brand에 두 삭제 요청 실행, 한 요청이 commit | `200` 한 건, 다른 요청은 배타 잠금 대기 후 활성 Brand 조회 결과가 없어 `404`, 기존 삭제 시각 유지 |
@@ -47,17 +47,17 @@ Admin Controller: 관리자 접근 확인
   → BrandFacade 프록시: REQUIRED 트랜잭션 시작
     → 활성 Brand 조회와 배타 잠금 (PESSIMISTIC_WRITE)
        없으면 기존 404
+    → 삭제 시각을 한 번 정함
     → Brand에 연결된 미삭제 Product 전체를 조건부 갱신
        영향 행 수 0은 정상
     → Brand를 미삭제 조건으로 논리 삭제
        영향 행 수 1이어야 정상
+    → commit 뒤 상품 목록 캐시 버전 증가 예약 (실패해도 응답 유지)
   ← 전체 성공이면 commit, 업무 예외 또는 처리·flush 실패면 rollback
 ← Controller 성공 응답 / ApiControllerAdvice 오류 응답
 ```
 
 Brand 배타 잠금은 Product 갱신과 Brand 갱신을 마치고 트랜잭션이 끝날 때까지 유지한다.
-Product 갱신, Brand 갱신 또는 commit 전 flush에서 RuntimeException이 발생하면 Facade 밖으로 전달해 이번 요청의 변경을 모두 rollback한다.
-상품마다 별도 트랜잭션을 만들거나 예외를 삼켜 부분 성공으로 반환하지 않는다.
 
 ## 동시성 보호 전략
 
@@ -82,7 +82,7 @@ Product 갱신, Brand 갱신 또는 commit 전 flush에서 RuntimeException이 �
 Brand 잠금 조회와 후속 저장은 **같은 트랜잭션**에서 수행하고, 잠금은 트랜잭션 종료까지 유지한다.
 결제 요청은 주문 상태 변경과 재고 차감을 저장하는 트랜잭션을 commit해 Brand 공유 잠금을 해제한 뒤 PG를 호출한다.<br>
 상세 경계는 [주문 결제 요청](order-payment-request.md#책임과-단계)을 따른다.<br>
-여러 Brand는 ID 오름차순으로 잠근 뒤 Product도 ID 오름차순으로 갱신한다. 결제 요청은 재고 UPDATE에서도 현재 미삭제 상태와 충분한 수량을 검사한다.
+결제 요청은 주문의 여러 Brand를 ID 오름차순으로 공유 잠금하고, 일괄 삭제와 결제 요청 모두 Product를 ID 오름차순으로 갱신한다. 결제 요청은 재고 UPDATE에서도 현재 미삭제 상태와 충분한 수량을 검사한다.
 
 일반 조회는 쓰기 잠금에 대기하지 않고 트랜잭션의 스냅샷을 읽는다. 그래서 DRAFT 생성과 좋아요 등록은 삭제와 겹쳐도 성공할 수 있고, 각 요청의 결과는 [기대값](#관리자-접근과-연결-api의-동작-확인)을 따른다.
 
@@ -90,16 +90,13 @@ Brand 잠금 조회와 후속 저장은 **같은 트랜잭션**에서 수행하�
 
 | 결과 | 처리 |
 |---|---|
-| 활성 Brand 잠금 조회 결과 없음 | 변경 없이 기존 없는 Brand 오류 |
+| 활성 Brand 잠금 조회 결과 없음 | 변경 없이 기존 없는 Brand 오류. 반복해도 조건이 같아 재시도하지 않음 |
 | Product 갱신 영향 행 수 0 | 정상; 활성 Product가 없거나 모두 이미 삭제됨 |
 | Brand 조건부 갱신 영향 행 수 0 | 없는 Brand 업무 예외를 Facade 밖으로 전달해 Product 변경도 rollback |
-| Product 갱신 뒤 Brand 갱신 또는 commit 전 flush 실패 | Brand와 Product 변경 전체 rollback |
-| 잠금 시간 초과·교착 등 저장 기술 오류 | 전체 rollback 후 기술 오류 처리; 업무상 없는 대상 오류로 바꾸지 않음 |
-| commit 자체의 오류 | 기술 오류 처리; commit 응답을 확인하지 못한 경우 확정 여부가 불명확할 수 있으므로 rollback 완료로 단정하지 않음 |
+| Product 갱신 뒤 Brand 갱신 또는 commit 전 flush 실패 | 예외를 Facade 밖으로 전달해 Brand·Product 변경 전체 rollback. 상품별 트랜잭션이나 예외 삼킴으로 부분 성공을 만들지 않음 |
+| 잠금 시간 초과·교착 등 저장 기술 오류 | 전체 rollback 후 기술 오류 처리; 업무상 없는 대상 오류로 바꾸지 않음. 자동 재시도 없음 |
+| commit 자체의 오류 | 기술 오류 처리; commit 응답을 확인하지 못한 경우 확정 여부가 불명확할 수 있으므로 rollback 완료로 단정하지 않음. 자동 재시도 없음 |
 | 관리자 접근 거절 | 기존 접근 규칙으로 거절하고 DB 변경 없음 |
-
-잠금 조회 결과 Brand가 없거나 삭제된 상태면 반복해도 현재 요청의 업무 조건은 바뀌지 않으므로 기존 오류로 종료한다.
-잠금 시간 초과와 교착은 현재 시도를 rollback하고 기술 오류로 처리하며, 자동 재시도는 하지 않는다. commit 오류도 자동 재시도하지 않는다.
 
 ## 검증 기준
 
