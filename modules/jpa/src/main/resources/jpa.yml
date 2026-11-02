@@ -21,12 +21,12 @@ datasource:
       pool-name: mysql-main-pool
       maximum-pool-size: 40
       minimum-idle: 30
-      connection-timeout: 3000 # 커넥션 획득 대기시간(ms) ( default: 3000 = 3sec )
+      connection-timeout: 3000 # 커넥션 획득 대기시간(ms) ( default: 30000 = 30sec )
       validation-timeout: 5000 # 커넥션 유효성 검사시간(ms) ( default: 5000 = 5sec )
-      keepalive-time: 0 # 커넥션 최대 생존시간(ms) ( default: 0 )
+      keepalive-time: 0 # 유휴 커넥션 생존 확인 주기(ms) ( default: 0 = 비활성화 )
       max-lifetime: 1800000 # 커넥션 최대 생존시간(ms) ( default: 1800000 = 30min )
       leak-detection-threshold: 0  # 커넥션 누수 감지 (주어진 ms 내에 반환 안 하면 로그 경고) ( default: 0 = 비활성화 )
-      initialization-fail-timeout: 1  # DB 연결 실패 시 즉시 예외 발생 ( default: -1 = 무한대기 )
+      initialization-fail-timeout: 1  # DB 연결 실패 시 즉시 예외 발생 ( default: 1, 음수면 첫 연결 확인 없이 시작 )
       data-source-properties:
         rewriteBatchedStatements: true
 
