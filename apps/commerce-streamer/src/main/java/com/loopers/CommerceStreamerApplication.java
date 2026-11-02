@@ -12,7 +12,7 @@ import java.util.TimeZone;
 public class CommerceStreamerApplication {
     @PostConstruct
     public void started() {
-        // set timezone
+        // JVM 기본 시간대를 Asia/Seoul로 맞춘다.
         TimeZone.setDefault(TimeZone.getTimeZone("Asia/Seoul"));
     }
 
