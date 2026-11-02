@@ -86,7 +86,7 @@ commerce-streamer는 주문·상품·결제·포인트 테이블을 읽거나 �
 
 | 항목 | 계약 |
 | --- | --- |
-| topic | `order-events`. 테스트는 실행마다 고유 suffix를 붙인 topic을 쓴다. |
+| topic | `order-events`. broker를 쓰는 테스트는 실행마다 고유한 이름의 topic을 쓴다. |
 | key | 내부 `orderId`의 10진 문자열 (`"42"`). payload의 `orderId`와 같아야 한다. |
 | value | UTF-8 JSON. 현재 payload는 아래 필드로 구성한다. |
 | `eventType` / `schemaVersion` | `"OrderConfirmed"` / `1`. schemaVersion은 payload의 구조와 의미를 해석하는 계약의 버전이며, 변경 정책은 아래를 따른다. |
@@ -113,10 +113,9 @@ commerce-streamer는 주문·상품·결제·포인트 테이블을 읽거나 �
 
 ### 이벤트의 신원과 불변 값
 
-- 한 주문의 최초 확정 사실은 하나다. `eventId`는 `order-confirmed:v1:{orderId}`로 유도하며, 재발행·재전달에도 바꾸지 않는다. 전송 시도 횟수, 현재 시각, 매번 새 UUID를 넣지 않는다.
+- 한 주문의 최초 확정 사실은 하나다. `eventId`는 재발행·재전달에도 바꾸지 않으며 전송 시도 횟수, 현재 시각, 새 UUID를 넣지 않는다.
 - `eventId`의 `v1`은 ID 형식의 버전이다. payload의 `schemaVersion`이 바뀌어도 같은 확정 사실은 같은 `eventId`를 유지한다. Consumer는 eventId를 불투명한 식별자로 다루고 형식에서 orderId를 추출하지 않는다.
-- `confirmedAt`은 주문 상태와 같은 DB 트랜잭션에서 저장한 최초 확정 시각이다. 발행·소비 시각으로 바꾸지 않으며 UTC·마이크로초 정밀도를 유지한다.
-- `items`는 저장된 주문 품목 스냅샷이다. Producer는 상품별 수량이 합산된 품목을 상품 ID 오름차순으로 보낸다.
+- `confirmedAt`은 주문 상태와 같은 DB 트랜잭션에서 저장한 값이며 발행·소비 시각으로 바꾸지 않는다.
 - 카드 정보, PG 거래 키, 사용자 식별자, 금액처럼 구매 활동에 필요 없는 값은 담지 않는다. 고객이나 관리자가 임의로 이벤트를 발행하는 공개 HTTP endpoint는 두지 않는다. 합성 이벤트 주입은 테스트 코드에서만 한다.
 
 ### 사실의 비교
@@ -143,7 +142,7 @@ commerce-streamer는 주문·상품·결제·포인트 테이블을 읽거나 �
 
 같은 주문의 이벤트를 같은 partition에 모으도록 orderId를 key로 사용한다. 한 이벤트가 여러 상품을 포함하므로 품목마다 주문 확정 이벤트를 쪼개지 않는다. 현재 주문당 최초 확정 이벤트는 하나이며, 주문 단위 순서 연결은 이후 취소·환불 같은 사건이 추가될 때도 사용할 수 있다.
 
-같은 partitioner·직렬화·partition 수에서 같은 key는 같은 partition에 연결된다. partition 수나 분배 방식을 바꾸면 매핑도 바뀔 수 있다. 해시 분산은 정확한 균등 분포를 보장하지 않는다. 순서·분산과 partition 설정의 관계는 [Broker 설계](../../../modules/kafka/docs/broker.md#topic과-partition)를 따른다.
+같은 key가 같은 partition으로 가는 조건과 partition 수 변경·해시 분산의 한계는 [Broker 설계](../../../modules/kafka/docs/broker.md#topic과-partition)를 따른다.
 
 ## 전달 보장
 
@@ -175,7 +174,7 @@ Kafka transaction의 exactly-once는 Kafka record와 offset을 함께 다루는 
 | listener 설정 | 실제 consumer 설정 | `enable.auto.commit=false`, 역직렬화기, ack mode. batch 전용 poll·fetch·session 설정은 물려받지 않음 |
 | listener 실패 | 소비 TX commit 전 오류 주입 | 전체 rollback, committed offset이 실패 record를 넘지 않음, 컨테이너 중단. 오류 제거 뒤 재시작하면 재전달·저장·ack |
 | 재전달 | 소비 TX commit 뒤 offset을 commit하지 않고 종료, 같은 group의 새 consumer | 같은 partition·offset `n`을 다시 읽음, 활동 불변, committed offset `n → n → n+1` |
-| partition 배정 | partition 2개 topic에 같은 group의 consumer 1 → 2 → 3개 | 각 partition은 한 member에만 배정, 3개면 하나 이상 배정 없음 |
+| partition 배정 | partition 2개 topic에 같은 group의 consumer 1 → 2 → 3개 | 각 partition은 한 member에만 배정, 3개면 적어도 한 member는 배정 없음 |
 | key 매핑 | partition 수를 고정하고 같은 key 반복 전송 | 같은 partition |
 | 전체 연결 | API·streamer·테스트 PG를 함께 띄운 로컬 실행 ([절차](order-confirmed-event-verification.md#로컬-전체-흐름-관찰)) | 확정 주문의 품목·수량·확정 시각과 같은 구매 활동, group committed offset 진행 |
 | 로컬 앱 재시작 | 같은 DB·broker·topic·group으로 streamer 프로세스 재시작 | local의 `ddl-auto=validate`로 완료 기록 행 수, 활동의 행 ID·내용·생성/수정 시각과 committed offset 유지 |

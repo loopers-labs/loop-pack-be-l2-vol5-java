@@ -10,11 +10,11 @@
 
 ## 이벤트 구성
 
-Producer는 저장된 주문 사실을 일정한 형태로 구성한다. 정상 발행과 재발행에서 같은 확정 사실은 같은 `eventId`, 구매 내용, 품목 순서를 유지한다.
+Producer는 저장된 주문 사실로 메시지를 구성한다. 값의 정의는 [공통 이벤트 계약](../../../docs/system-design/use-cases/order-confirmed-event.md#이벤트-계약)을 따르며, 정상 발행과 이후 재발행 기능에서 같은 확정 사실은 같은 eventId·구매 내용·품목 순서를 유지한다.
 
-1. `eventId`는 `order-confirmed:v1:{orderId}`로 계산한다. 한 주문의 최초 확정 사실은 하나이므로 producer에 별도 eventId 컬럼을 두지 않아도 같은 ID를 재구성할 수 있다.
-2. `confirmedAt`은 최초 PG 성공으로 주문을 확정할 때 주문 상태와 같은 DB 트랜잭션에서 저장한다. 기존 코드의 마이크로초 절삭과 DB의 `DATETIME(6)` 기준을 유지한다. 중복 callback·reconcile에서 바꾸지 않으며, 발행·재발행 모두 저장된 값을 같은 순간의 UTC 문자열로 표현한다. producer의 발행 시각이나 consumer의 처리 시각을 넣지 않는다.
-3. `items`는 저장된 주문 품목 스냅샷으로 구성한다. 같은 상품의 수량은 주문 생성 시 합산되어 있으므로 이를 재사용하고, producer가 `productId` 오름차순으로 정렬해서 발행한다. 재발행도 같은 구성 규칙을 사용한다.
+1. `eventId`는 orderId에서 계산하므로 producer에 별도 eventId 컬럼 없이 같은 ID를 재구성한다.
+2. `confirmedAt`은 최초 PG 성공 TX B에서 마이크로초로 자른 시각을 주문 상태와 함께 저장하고, 중복 callback·reconcile에서 바꾸지 않는다. 발행·처리 시각을 넣지 않는다.
+3. `items`는 주문 생성 때 상품별로 합산된 스냅샷을 `productId` 오름차순으로 정렬한다.
 
 `OrderConfirmedEvent`는 application 계층의 내부 이벤트이며, infrastructure의 `OrderConfirmedMessageV1`이 발행할 JSON을 구성한다. V2 명세가 생기면 별도 DTO를 추가한다. 다른 앱의 DTO를 import하거나 비즈니스 DTO를 공통 Kafka 모듈로 옮기지 않는다.
 
@@ -33,23 +33,16 @@ Producer는 저장된 주문 사실을 일정한 형태로 구성한다. 정상 
 
 ## 발행 위치
 
-TX B는 조건부 갱신 1행을 확인한 뒤 같은 트랜잭션 안에서 이벤트를 만들어 Spring application event로 등록한다. 전송은 `@TransactionalEventListener(AFTER_COMMIT)` listener가 TX B commit 뒤에 수행한다.
+`PaymentResultTransaction.completeOrder`(TX B)는 조건부 갱신 1행을 확인한 뒤, TX B에서 읽은 품목 스냅샷과 저장한 확정 시각으로 `OrderConfirmedEvent`를 만들어 Spring application event로 등록한다. `@TransactionalEventListener(AFTER_COMMIT)`인 `OrderConfirmedKafkaPublisher.onConfirmed`가 commit 뒤 메시지 변환과 send를 맡고, DB나 지연 로딩에 접근하지 않는다. TX B 메서드 끝에서 직접 send하면 commit 전이라 rollback된 확정의 이벤트가 나갈 수 있어 택하지 않는다.
 
-`PaymentResultTransaction.completeOrder`에서 `OrderConfirmedEvent`를 등록하고, `OrderConfirmedKafkaPublisher.onConfirmed`가 commit 뒤 메시지 변환과 전송을 담당한다.
-
-- callback·reconcile이 공통으로 사용하는 결과 반영 TX에서 최초 확정 이벤트를 등록하고, Kafka 전송 책임은 after-commit listener에 둔다.
-- listener에는 `@Async`를 붙이지 않고 애플리케이션의 별도 executor를 추가하지 않는다. Kafka Producer의 내부 I/O 스레드가 실제 네트워크 전송을 비동기로 처리하는 구조를 사용한다.
-- TX B 메서드 끝에서 직접 send하지 않는다. 메서드가 끝나도 commit 전이므로 rollback된 확정의 이벤트가 나갈 수 있다.
-- 이벤트는 TX B에서 읽은 `Order`의 품목 스냅샷과 저장한 확정 시각으로 미리 만든다. listener는 DB나 지연 로딩에 접근하지 않는다.
-- listener는 TX B를 commit한 스레드에서 send를 호출한다. send 호출 자체에는 metadata 조회·buffer 할당 대기가 있을 수 있다. `max.block.ms`는 별도 지정하지 않고 Kafka client 기본값을 사용한다.
-
-이벤트 구성 실패는 commit 전의 오류이므로 TX B를 rollback한다. commit 이후 메시지 변환·전송 실패는 listener에서 로그로 드러내며 주문을 되돌리지 않는다. 별도 executor를 두지 않는 선택은 실행 경로를 단순하게 하지만, send 진입의 대기까지 요청 경로에서 분리하는 선택은 아니다.
+- 이벤트 구성 실패는 commit 전 오류라 TX B를 rollback한다. commit 이후 메시지 변환·전송 실패는 listener에서 로그로 드러내며 주문을 되돌리지 않는다.
+- listener에 `@Async`나 별도 executor를 두지 않는다. TX B를 commit한 스레드가 send를 호출하고, 실제 네트워크 전송은 Kafka Producer의 I/O 스레드가 비동기로 처리한다. 실행 경로는 단순하지만 send 진입의 metadata 조회·buffer 할당 대기(`max.block.ms`, client 기본값)는 요청 경로에 남는다. broker 장애 시 확정 응답의 상태는 DB로 정해지지만 응답은 늦어질 수 있다.
 
 ## 전송 결과와 실패
 
-현재 단계의 전송 결과 관찰 수단은 완료 콜백으로 정한다. `KafkaTemplate.send(...)`가 반환하는 `CompletableFuture`에 콜백을 등록해 전송 결과를 비동기로 확인한다. 결과를 받기 위한 별도 조회를 반복하거나 요청 스레드에서 `get()`·`join()`으로 기다리지 않는다. 비동기 전송 결과와 send 호출 자체의 metadata·buffer 할당 대기는 구분한다.
+현재 단계의 전송 결과 관찰 수단은 완료 콜백으로 정한다. `KafkaTemplate.send(...)`가 반환하는 `CompletableFuture`에 콜백을 등록해 전송 결과를 비동기로 확인한다. 결과를 받기 위한 별도 조회를 반복하거나 요청 스레드에서 `get()`·`join()`으로 기다리지 않는다.
 
-이 콜백은 Kafka producer의 전송 완료 통지다. PG가 HTTP로 보내는 결제 결과 callback과는 별개다. `acks=all`은 producer가 broker의 현재 ISR 기록을 확인하는 기준이며, 주문 확정이나 구매 활동 저장의 완료 조건이 아니다. 주문 확정은 send 전에 TX B commit으로 끝나고, 구매 활동 저장은 consumer의 별도 트랜잭션에서 끝난다.
+이 콜백은 Kafka producer의 전송 완료 통지다. PG가 HTTP로 보내는 결제 결과 callback과는 별개다.
 
 | 결과 | 처리 |
 | --- | --- |
@@ -58,10 +51,10 @@ TX B는 조건부 갱신 1행을 확인한 뒤 같은 트랜잭션 안에서 이
 | send 호출에서 즉시 발생한 예외 | 호출 경계에서 같은 식별자와 원인을 error 로그로 남긴다. 완료 콜백에만 실패 처리를 맡기지 않는다. |
 
 - 전송이 실패하거나 listener에서 예외가 나도 이미 commit된 주문을 실패·미확인으로 되돌리지 않고, PG 생성·조회를 다시 호출하지 않는다. 결과 반영의 응답은 저장된 주문 상태로 정한다.
-- 전송 실패는 send 호출 경계의 예외 처리와 완료 콜백의 두 경로에서 error 로그로 관찰하며, 애플리케이션의 자동 재발행은 추가하지 않는다. Kafka producer의 설정에 따른 내부 재시도는 유지하고 애플리케이션의 새 발행과 구분한다.
+- 애플리케이션의 자동 재발행은 추가하지 않으며, Kafka producer 설정에 따른 내부 재시도와 구분한다.
 - 로그는 전송 결과를 관찰한 기록이며, 주문과 함께 commit되는 영속 발행 이력이 아니다. 성공 로그를 생략해도 `acks=all`의 broker 확인은 유지된다.
 
-broker 장애는 비동기 전송 실패뿐 아니라 send 진입의 대기로도 드러날 수 있다. 확정 응답의 상태는 DB로 결정하지만 응답 지연은 영향을 받을 수 있다. 완료 콜백은 응답 전후 어느 시점에도 실행될 수 있으며, API 응답 시점에 전송 결과를 확정했다고 가정하지 않는다.
+완료 콜백은 응답 전후 어느 시점에도 실행될 수 있으며, API 응답 시점에 전송 결과를 확정했다고 가정하지 않는다.
 
 ## 발행 누락 구간
 
@@ -69,7 +62,7 @@ TX B commit과 broker 기록은 하나의 원자적 작업이 아니다. commit 
 
 send 이후 오류나 timeout을 관찰한 경우에는 broker 기록 여부가 불명확할 수 있다. broker가 기록했지만 producer가 성공 응답을 확인하지 못했을 가능성도 있으므로, 전송 실패 로그만으로 record와 구매 활동이 없다고 단정하지 않는다.
 
-commit 전에 보내면 rollback된 확정의 이벤트가 남으므로 택하지 않는다. `@Async`나 after-commit listener는 실행 시점만 바꿀 뿐 이 구간을 없애지 않는다.
+`@Async`나 after-commit listener는 실행 시점만 바꿀 뿐 이 구간을 없애지 않는다.
 
 완료 콜백은 전송 결과를 관찰하는 수단이고, Outbox는 주문 확정과 발행할 사실의 DB 기록을 같은 트랜잭션에 묶는 방식이다. 두 방식은 역할이 다르며, 콜백으로 이 누락 구간을 없앨 수 없다. Outbox를 도입해도 전송 결과는 콜백으로 확인할 수 있고, 발행 대상과 처리 상태의 영속화 정책은 그 단계에서 설계한다. 다음 단계에서 Outbox로 개선하고, 이번 단계는 [발행 누락 사례](../../../docs/system-design/use-cases/order-confirmed-event-verification.md#발행-누락-사례)를 테스트로 확인한다.
 
@@ -97,7 +90,7 @@ commit 전에 보내면 rollback된 확정의 이벤트가 남으므로 택하�
 
 | 설정 | 값 | 의미와 한계 |
 | --- | --- | --- |
-| `acks` | `all` | 현재 ISR의 기록을 확인한 뒤 성공으로 본다. 로컬과 테스트는 broker 1대, 복제 1이라 복제 장애의 내구성은 확인하지 못한다. |
+| `acks` | `all` | 현재 ISR의 기록을 확인한 뒤 성공으로 본다. 단일 broker의 한계는 [Broker 설계](../../../modules/kafka/docs/broker.md#보존과-복제의-한계)를 따른다. |
 | `enable.idempotence` | `true` | 같은 producer 세션의 내부 전송 재시도로 생기는 중복을 막는다. 애플리케이션 재전송·세션 재생성 뒤의 업무 중복과 소비 DB 효과는 보호하지 않는다. |
 | `retries` | `3` (공통 설정에서 명시) | 재시도 가능한 오류에 대한 producer 내부 재시도 상한이다. delivery timeout이나 재시도 불가능한 오류로 더 일찍 실패할 수 있다. 업무 요구에서 산정한 횟수는 아니다. |
 | `request.timeout.ms` / `retry.backoff.ms` | `20000` / `500` (공통 설정에서 명시) | 개별 broker 요청의 응답 대기와 재시도 간 대기다. 주문 확정 또는 구매 활동 저장의 제한 시간이 아니다. |
@@ -108,6 +101,6 @@ commit 전에 보내면 rollback된 확정의 이벤트가 남으므로 택하�
 
 ## 검증
 
-발행 조건·rollback·동시 확정은 `OrderConfirmedPublicationTest`, payload는 `OrderConfirmedEventTest`·`OrderConfirmedMessageV1Test`, 호출 예외·비동기 오류 로그는 `OrderConfirmedKafkaPublisherTest`로 검증한다. 실제 주문 API·테스트 PG·broker 기록과 send 직전 누락은 `OrderConfirmedKafkaDeliveryIntegrationTest`로 확인한다. 세부 방법은 [공통 검증 문서](../../../docs/system-design/use-cases/order-confirmed-event-verification.md)를 따른다.
+테스트 위치·방법·기대값은 [공통 검증 문서](../../../docs/system-design/use-cases/order-confirmed-event-verification.md)를 따른다.
 
 주요 구현은 [PaymentResultTransaction](../src/main/java/com/loopers/application/payment/PaymentResultTransaction.java), [OrderConfirmedEvent](../src/main/java/com/loopers/application/order/event/OrderConfirmedEvent.java), [OrderConfirmedKafkaPublisher](../src/main/java/com/loopers/infrastructure/order/event/OrderConfirmedKafkaPublisher.java)다.
