@@ -1,12 +1,13 @@
-package com.loopers.interfaces.api;
+package com.loopers.common.in;
 
-import com.loopers.common.in.ApiResponse;
-import com.loopers.domain.example.ExampleModel;
-import com.loopers.infrastructure.example.ExampleJpaRepository;
-import com.loopers.interfaces.api.example.ExampleV1Dto;
+import com.loopers.brand.app.BrandApplicationService;
+import com.loopers.brand.in.BrandController;
 import com.loopers.support.error.ErrorType;
+import com.loopers.user.out.UserJpaEntity;
+import com.loopers.user.out.UserJpaRepository;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -15,6 +16,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -28,21 +30,30 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class ContractClassificationTest {
 
-    private static final Function<Object, String> ENDPOINT_GET = id -> "/api/v1/examples/" + id;
+    private static final Function<Object, String> ENDPOINT_GET = id -> "/api/v1/brands/" + id;
 
     private final TestRestTemplate testRestTemplate;
-    private final ExampleJpaRepository exampleJpaRepository;
+    private final BrandApplicationService brandApplicationService;
+    private final UserJpaRepository userJpaRepository;
     private final DatabaseCleanUp databaseCleanUp;
 
     @Autowired
     public ContractClassificationTest(
             TestRestTemplate testRestTemplate,
-            ExampleJpaRepository exampleJpaRepository,
+            BrandApplicationService brandApplicationService,
+            UserJpaRepository userJpaRepository,
             DatabaseCleanUp databaseCleanUp
     ) {
         this.testRestTemplate = testRestTemplate;
-        this.exampleJpaRepository = exampleJpaRepository;
+        this.brandApplicationService = brandApplicationService;
+        this.userJpaRepository = userJpaRepository;
         this.databaseCleanUp = databaseCleanUp;
+    }
+
+    // 브랜드 상세는 식별된 고객만 조회하므로, 오류 분류만 보도록 존재하는 사용자로 요청한다.
+    @BeforeEach
+    void setUp() {
+        userJpaRepository.save(new UserJpaEntity(1L));
     }
 
     @AfterEach
@@ -50,7 +61,7 @@ class ContractClassificationTest {
         databaseCleanUp.truncateAllTables();
     }
 
-    @DisplayName("GET /api/v1/examples/{id}")
+    @DisplayName("GET /api/v1/brands/{brandId}")
     @Nested
     class Get {
 
@@ -58,14 +69,14 @@ class ContractClassificationTest {
         @Test
         void whenValidNumericIdProvided() {
             // arrange
-            ExampleModel saved = exampleJpaRepository.save(new ExampleModel("예시 제목", "예시 설명"));
-            String requestUrl = ENDPOINT_GET.apply(saved.getId());
+            long brandId = brandApplicationService.create("브랜드").id().value();
+            String requestUrl = ENDPOINT_GET.apply(brandId);
 
             // act
-            ParameterizedTypeReference<ApiResponse<ExampleV1Dto.ExampleResponse>> responseType = new ParameterizedTypeReference<>() {
+            ParameterizedTypeReference<ApiResponse<BrandController.DetailResponse>> responseType = new ParameterizedTypeReference<>() {
             };
-            ResponseEntity<ApiResponse<ExampleV1Dto.ExampleResponse>> response =
-                    testRestTemplate.exchange(requestUrl, HttpMethod.GET, new HttpEntity<>(null), responseType);
+            ResponseEntity<ApiResponse<BrandController.DetailResponse>> response =
+                    testRestTemplate.exchange(requestUrl, HttpMethod.GET, new HttpEntity<>(customerHeaders()), responseType);
 
             // assert
             assertAll(
@@ -75,9 +86,8 @@ class ContractClassificationTest {
                     () -> assertThat(response.getBody().meta().result()).isEqualTo(ApiResponse.Metadata.Result.SUCCESS),
                     () -> assertThat(response.getBody().meta().errorCode()).isNull(),
                     () -> assertThat(response.getBody().data()).isNotNull(),
-                    () -> assertThat(response.getBody().data().id()).isEqualTo(saved.getId()),
-                    () -> assertThat(response.getBody().data().name()).isEqualTo(saved.getName()),
-                    () -> assertThat(response.getBody().data().description()).isEqualTo(saved.getDescription())
+                    () -> assertThat(response.getBody().data().id()).isEqualTo(brandId),
+                    () -> assertThat(response.getBody().data().name()).isEqualTo("브랜드")
             );
         }
 
@@ -88,10 +98,10 @@ class ContractClassificationTest {
             String requestUrl = ENDPOINT_GET.apply("abc");
 
             // act
-            ParameterizedTypeReference<ApiResponse<ExampleV1Dto.ExampleResponse>> responseType = new ParameterizedTypeReference<>() {
+            ParameterizedTypeReference<ApiResponse<BrandController.DetailResponse>> responseType = new ParameterizedTypeReference<>() {
             };
-            ResponseEntity<ApiResponse<ExampleV1Dto.ExampleResponse>> response =
-                    testRestTemplate.exchange(requestUrl, HttpMethod.GET, new HttpEntity<>(null), responseType);
+            ResponseEntity<ApiResponse<BrandController.DetailResponse>> response =
+                    testRestTemplate.exchange(requestUrl, HttpMethod.GET, new HttpEntity<>(customerHeaders()), responseType);
 
             // assert
             assertAll(
@@ -112,10 +122,10 @@ class ContractClassificationTest {
             String requestUrl = ENDPOINT_GET.apply(nonExistentId);
 
             // act
-            ParameterizedTypeReference<ApiResponse<ExampleV1Dto.ExampleResponse>> responseType = new ParameterizedTypeReference<>() {
+            ParameterizedTypeReference<ApiResponse<BrandController.DetailResponse>> responseType = new ParameterizedTypeReference<>() {
             };
-            ResponseEntity<ApiResponse<ExampleV1Dto.ExampleResponse>> response =
-                    testRestTemplate.exchange(requestUrl, HttpMethod.GET, new HttpEntity<>(null), responseType);
+            ResponseEntity<ApiResponse<BrandController.DetailResponse>> response =
+                    testRestTemplate.exchange(requestUrl, HttpMethod.GET, new HttpEntity<>(customerHeaders()), responseType);
 
             // assert
             assertAll(
@@ -132,13 +142,13 @@ class ContractClassificationTest {
         @Test
         void whenUnmappedUrlProvided() {
             // arrange
-            String requestUrl = "/api/v2/examples/1";
+            String requestUrl = "/api/v2/brands/1";
 
             // act
-            ParameterizedTypeReference<ApiResponse<ExampleV1Dto.ExampleResponse>> responseType = new ParameterizedTypeReference<>() {
+            ParameterizedTypeReference<ApiResponse<BrandController.DetailResponse>> responseType = new ParameterizedTypeReference<>() {
             };
-            ResponseEntity<ApiResponse<ExampleV1Dto.ExampleResponse>> response =
-                    testRestTemplate.exchange(requestUrl, HttpMethod.GET, new HttpEntity<>(null), responseType);
+            ResponseEntity<ApiResponse<BrandController.DetailResponse>> response =
+                    testRestTemplate.exchange(requestUrl, HttpMethod.GET, new HttpEntity<>(customerHeaders()), responseType);
 
             // assert
             assertAll(
@@ -150,5 +160,11 @@ class ContractClassificationTest {
                     () -> assertThat(response.getBody().data()).isNull()
             );
         }
+    }
+
+    private static HttpHeaders customerHeaders() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-USER-ID", "1");
+        return headers;
     }
 }
