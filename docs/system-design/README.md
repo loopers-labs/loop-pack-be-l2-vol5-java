@@ -67,10 +67,9 @@ Commerce 시스템(`commerce-api`, `commerce-streamer`)의 설계를 책임별�
 
 ## 문서 갱신 기준
 
-- 앱·모듈 한 곳이 책임지는 설계는 소유자의 `apps/<app>/docs/` 또는 `modules/<module>/docs/`에 둔다. Producer·Consumer는 소유 앱에, Broker는 Kafka 모듈에 두는 현재 구조처럼 문서 종류보다 책임 소유자를 기준으로 한다. 공유 계약과 전체 시스템 경계는 이 문서에서 관리한다.
+- 앱·모듈 한 곳이 책임지는 상세 설계는 문서 종류가 아니라 책임 소유자 기준으로 `apps/<app>/docs/`·`modules/<module>/docs/`에 둔다(예: Producer·Consumer는 소유 앱, Broker는 Kafka 모듈). 공유 문서는 `docs/system-design/`에 두며, 시스템·도메인·API·영속성·오류는 루트, 외부 연동 계약은 `external-systems/`, 유스케이스는 `use-cases/`에 둔다.
 - `docs/system-design/README.md`는 각 위치의 설계 문서를 한곳에서 찾는 색인이다. 문서를 옮기면 이 색인과 문서 간 링크도 함께 갱신한다.
 - 규칙의 기준 문서는 책임에 맞는 한 곳에 두고, 다른 문서에서는 요약과 링크로 연결한다. 여러 문서에 걸친 흐름은 각 문서 상단의 안내로 연결한다.
-- 공유 시스템·도메인·API·영속성·오류 문서는 `docs/system-design/` 루트에, 공유 외부 연동 계약은 `external-systems/`, 유스케이스는 `use-cases/`에 둔다. 앱 또는 모듈 한 곳에 귀속된 상세 설계는 소유 디렉터리에 두고 이 README에서 링크한다.
 - 구현 진행 중인 설계는 상태를 명시한다. 구현된 동작은 해당 설계 문서와 관련 테스트를 기준으로 확인한다.
 - 유스케이스 정책이나 애그리게이트 불변식이 바뀌면 해당 문서와 검증 기대값을 함께 갱신한다.
 - 측정한 성능 수치와 실행 원본은 설계 계약과 분리해 [상품 목록 성능 기록](../performance/product-listing/README.md), [정상 PG 결제 기록](../performance/payment-normal/README.md), [PG 조회 회복 기록](../performance/payment-lookup/README.md)에 둔다.

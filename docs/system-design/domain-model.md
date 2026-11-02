@@ -62,13 +62,13 @@ classDiagram
     Product "N" ..> "1" Brand : brandId (required FK)
     Product "1" *-- "1" StockQuantity
 
-    Like "N" --> "1" User
-    Like "N" --> "1" Product
+    Like "N" ..> "1" User : userId (no FK)
+    Like "N" ..> "1" Product : productId (no FK)
 
-    Point "1" --> "1" User
+    Point "1" ..> "1" User : userId (no FK)
     Point "1" *-- "1" PointBalance
 
-    Order "N" --> "1" User
+    Order "N" ..> "1" User : userId (no FK)
     Order "1" *-- "N" OrderItem
     OrderItem "N" ..> "1" Product : productId (ID reference, no FK)
 
@@ -123,7 +123,7 @@ classDiagram
 - [도메인 규칙] Product의 재고 차감은 주문 수량이 양수이고 재고가 충분할 때만 허용한다. 결제 요청은 이 규칙을 미삭제·재고 충분 조건의 조건부 갱신으로 적용한다.
 - [도메인 규칙] `stock`은 결제 요청에서 차감한 수량을 제외한 가용 재고다. 관리자 재고 설정 값도 가용 재고다.
 - [불변식] 가용 수량과 미완료 PG 주문 품목의 예약 수량 합은 `Long.MAX_VALUE` 이하다. 범위를 넘는 관리자 설정은 `400`으로 거절한다. 예약 집계는 별도로 저장하지 않는다.
-- [도메인 규칙] PG 결제의 확정 실패를 처음 반영할 때 저장된 주문 품목의 수량만큼 재고를 반환한다. 논리 삭제된 상품도 실패 보상으로 재고를 반환할 수 있으며 삭제 상태는 유지한다.
+- [도메인 규칙] PG 결제의 재고 차감·보상은 [결제 재고 보상](#결제-재고-보상)을 따른다. 논리 삭제된 상품도 실패 보상으로 재고를 반환하며 삭제 상태는 유지한다.
 - [불변식] Product 이름은 공백만으로 구성될 수 없고, 1자 이상 100자 이하여야 한다.
 - [불변식] Product 가격은 1원 이상 100,000,000원 이하의 정수여야 한다.
 
@@ -215,8 +215,7 @@ classDiagram
 
 #### 결제 재고 보상
 
-- [도메인 규칙] PG 결제 성공은 결제 요청에서 차감한 재고를 그대로 유지한다. 추가 차감은 없다.
-- [도메인 규칙] PG 결제의 확정 실패는 저장된 `OrderItem`의 상품 ID·수량을 기준으로 주문 전체의 재고를 한 번만 반환한다. 처리 중·결과 미확인은 차감 상태를 유지한다.
+- [도메인 규칙] 결제 요청에서 차감한 재고는 성공 종결과 처리 중·결과 미확인·충돌 동안 그대로 유지한다(추가 차감 없음). 확정 실패를 처음 반영할 때만 저장된 `OrderItem`의 상품 ID·수량만큼 주문 전체를 한 번 반환한다.
 - [불변식] 하나의 결제 시도에서 실패 보상은 최대 한 번 반영한다. 종결 상태와 재고 반환은 함께 commit되어야 한다. 동시성·rollback의 보장 방식은 [결과 반영 설계](use-cases/order-payment-result.md#재고-보상-트랜잭션)를 따른다.
 - [불변식] 다른 재고 조정이 없는 구간에서 `현재 가용 재고 = 구간 시작 재고 - commit된 결제 요청의 차감 수량 합 + commit된 실패 보상 수량 합`이다. 결제 성공은 이 값을 바꾸지 않는다.
 
@@ -228,13 +227,12 @@ classDiagram
 | --- | --- |
 | 예약 확보 | 가용 재고를 주문 품목 수량만큼 차감 |
 | 주문별 확보 수량 | `OrderItem`의 상품 ID·수량 스냅샷. 결제 요청 이후 바뀌지 않는다. |
-| 예약 상태 | 주문 `PAYMENT_PENDING`·미종결 시도는 예약 유지, `CONFIRMED`·`SUCCEEDED`는 소비, `PAYMENT_FAILED`·`FAILED`는 반환 완료 |
-| 예약 유지 | 처리 중·결과 미확인·충돌에서 `stock`을 바꾸지 않음 |
-| 예약 소비 | 성공 종결. 이미 차감했으므로 `stock`을 바꾸지 않는다. |
-| 예약 반환 | 실패 종결과 함께 주문 품목 수량만큼 한 번 반환 |
+| 예약 유지 | 주문 `PAYMENT_PENDING`·미종결 시도(처리 중·결과 미확인·충돌). `stock`을 바꾸지 않음 |
+| 예약 소비 | 주문 `CONFIRMED`·시도 `SUCCEEDED`. 이미 차감했으므로 `stock`을 바꾸지 않음 |
+| 예약 반환 | 주문 `PAYMENT_FAILED`·시도 `FAILED`. 실패 종결과 함께 주문 품목 수량만큼 한 번 반환 |
 | 예약을 제외한 가용 수량 | Product의 가용 재고 값. 관리자 재고 설정도 이 값을 설정한다. |
 
-결과를 모르는 동안 주문은 `PAYMENT_PENDING`이고 예약을 유지한다. PG 관찰별 시도 상태는 [결과별 효과](use-cases/order-payment-result.md#결과별-효과), 화면 표시는 [결제 진행 표시](api-contracts.md#결제-진행-표시)를 따른다.
+PG 관찰별 시도 상태는 [결과별 효과](use-cases/order-payment-result.md#결과별-효과), 화면 표시는 [결제 진행 표시](api-contracts.md#결제-진행-표시)를 따른다.
 
 #### OrderItem VO
 
