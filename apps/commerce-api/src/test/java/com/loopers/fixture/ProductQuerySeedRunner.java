@@ -1,14 +1,17 @@
 package com.loopers.fixture;
 
+import com.loopers.CommerceApiApplication;
 import com.loopers.config.jpa.JpaConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.boot.autoconfigure.domain.EntityScan;
 import org.springframework.boot.builder.SpringApplicationBuilder;
-import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Profile;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 public final class ProductQuerySeedRunner {
@@ -73,7 +76,9 @@ public final class ProductQuerySeedRunner {
 
     @Configuration(proxyBeanMethods = false)
     @EnableAutoConfiguration
-    @ComponentScan(basePackageClasses = JpaConfig.class)
+    @Import(JpaConfig.class)
+    @EntityScan(basePackageClasses = CommerceApiApplication.class)
+    @EnableJpaRepositories(basePackageClasses = CommerceApiApplication.class)
     @Profile("product-query-seed")
     static class SeedConfiguration {
     }
