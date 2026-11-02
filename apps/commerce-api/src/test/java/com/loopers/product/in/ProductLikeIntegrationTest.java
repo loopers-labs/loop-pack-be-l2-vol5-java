@@ -1,8 +1,8 @@
 package com.loopers.product.in;
 
 import com.loopers.brand.app.BrandApplicationService;
-import com.loopers.product.app.ProductApplicationService;
 import com.loopers.like.app.LikeApplicationService;
+import com.loopers.product.app.ProductApplicationService;
 import com.loopers.user.out.UserJpaEntity;
 import com.loopers.user.out.UserJpaRepository;
 import com.loopers.utils.DatabaseCleanUp;
@@ -15,9 +15,9 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 

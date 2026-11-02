@@ -1,22 +1,22 @@
 package com.loopers.brand.app;
 
+import com.loopers.brand.domain.BrandId;
+import com.loopers.common.error.RuleViolationException;
 import com.loopers.like.app.LikeApplicationService;
 import com.loopers.order.app.OrderApplicationService;
 import com.loopers.order.app.OrderResult;
+import com.loopers.payment.out.TestPgServer;
 import com.loopers.point.app.PointApplicationService;
 import com.loopers.product.app.CustomerProductResult;
 import com.loopers.product.app.ProductApplicationService;
 import com.loopers.product.app.ProductNotFoundException;
 import com.loopers.product.app.port.ProductRepository;
-import com.loopers.brand.domain.BrandId;
-import com.loopers.common.error.RuleViolationException;
 import com.loopers.product.domain.Product;
 import com.loopers.product.domain.ProductId;
 import com.loopers.product.out.ProductPersistenceAdapter;
+import com.loopers.support.pg.TestPgFixture;
 import com.loopers.user.out.UserJpaEntity;
 import com.loopers.user.out.UserJpaRepository;
-import com.loopers.payment.out.TestPgServer;
-import com.loopers.support.pg.TestPgFixture;
 import com.loopers.utils.DatabaseCleanUp;
 import jakarta.persistence.EntityManager;
 import java.util.Collection;
