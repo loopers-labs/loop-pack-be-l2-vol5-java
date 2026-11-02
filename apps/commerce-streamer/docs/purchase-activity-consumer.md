@@ -127,7 +127,7 @@ listener는 별도 executor로 품목 처리를 넘기지 않는다. 같은 part
 - 실패 partition에서 해당 record와 그 뒤 미처리 record는 ack하지 않는다. 재시작한 consumer는 그 partition의 committed offset부터 다시 읽는다. 이미 ack한 record의 commit까지 되돌리는 정책은 아니다.
 - 한 record의 실패는 그 앱 인스턴스의 구매 활동 listener 컨테이너 전체를 중단시킨다. 다른 partition에서 진행 중이던 처리는 중단 완료 전 commit·ack될 수 있으므로 group 전체가 같은 offset에서 멈춘다고 보지 않는다. 다른 인스턴스로 rebalance되면 그 인스턴스도 같은 실패 record에서 멈출 수 있다. 앱 프로세스나 기존 demo listener 전체를 종료시키는 정책은 아니다.
 
-중단형 handler의 manual ack 처리 기준은 [Spring Kafka 3.3 오류 처리 계약](https://docs.spring.io/spring-kafka/reference/3.3/kafka/annotation-error-handling.html)을 따른다. 사용하는 3.3.5 구현은 [CommonContainerStoppingErrorHandler](https://github.com/spring-projects/spring-kafka/blob/v3.3.5/spring-kafka/src/main/java/org/springframework/kafka/listener/CommonContainerStoppingErrorHandler.java)에서 확인한다.
+중단형 handler와 manual ack의 위 동작은 사용하는 Spring Kafka 3.3.5의 `CommonContainerStoppingErrorHandler` 구현을 기준으로 한다.
 
 ## 원인 확인과 재시작
 

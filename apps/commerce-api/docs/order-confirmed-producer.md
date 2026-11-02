@@ -104,7 +104,7 @@ commit 전에 보내면 rollback된 확정의 이벤트가 남으므로 택하�
 | `max.block.ms` | 미지정, client 3.8.1 기본 `60000` | send 진입의 metadata·buffer 대기 상한이다. 호출 스레드의 응답 예산과 측정 결과에 따라 조정 여부를 정한다. |
 | `delivery.timeout.ms` | 미지정, client 3.8.1 기본 `120000` | send 반환 뒤 전송 성공·실패를 보고하는 시간 상한이다. HTTP 응답 시간과 구분한다. |
 
-이 값들로 API 응답 시간이나 복구 시간을 보장한다고 해석하지 않는다. 멱등 producer는 `acks=all`, 양수 retries, 허용되는 in-flight 수의 조합을 요구한다. 현재 in-flight 수는 client 기본값 5를 사용한다. 시간 제한과 호환 조건은 [Kafka 3.8 producer 설정](https://kafka.apache.org/38/generated/producer_config.html), 세션과 애플리케이션 재전송의 경계는 [KafkaProducer 계약](https://kafka.apache.org/38/javadoc/org/apache/kafka/clients/producer/KafkaProducer.html)을 따른다.
+이 값들로 API 응답 시간이나 복구 시간을 보장한다고 해석하지 않는다. 멱등 producer는 `acks=all`, 양수 retries, 허용되는 in-flight 수의 조합을 요구한다. 현재 in-flight 수는 client 기본값 5를 사용한다.
 
 ## 검증
 

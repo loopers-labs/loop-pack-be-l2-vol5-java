@@ -39,7 +39,7 @@ concurrency를 바꾸는 것으로 partition 수가 바뀌지 않는다. 기존 
 
 초기화는 API의 `ApplicationRunner`에서 실행한다. 생성 응답을 최대 5초 기다리고 AdminClient는 유한하게 닫는다. 이미 존재한다는 응답은 허용하며, 기존 partition 수·복제 수·보존 설정을 검증하거나 변경하지 않는다. 그 밖의 실패는 error 로그에 남기고 앱 시작을 계속하므로, API가 실행 중이라는 사실만으로 topic 준비 성공을 판단할 수 없다.
 
-기동 순서는 broker와 DB 스키마 준비 → 업무 topic 준비 → 구매 활동 소비 확인 순으로 잡는다. streamer가 먼저 시작한 경우에도 consumer 수나 자동 생성에 topic 구성을 맡기지 않는다. Kafka의 topic 생성 성공 뒤에도 metadata 반영에는 시간이 걸릴 수 있으므로 실험은 기한 내 실제 topic 조회와 assignment로 준비 상태를 확인한다. [Admin API 계약](https://kafka.apache.org/38/javadoc/org/apache/kafka/clients/admin/Admin.html#createTopics(java.util.Collection,org.apache.kafka.clients.admin.CreateTopicsOptions))
+기동 순서는 broker와 DB 스키마 준비 → 업무 topic 준비 → 구매 활동 소비 확인 순으로 잡는다. streamer가 먼저 시작한 경우에도 consumer 수나 자동 생성에 topic 구성을 맡기지 않는다. Kafka의 topic 생성 성공 뒤에도 metadata 반영에는 시간이 걸릴 수 있으므로 실험은 기한 내 실제 topic 조회와 assignment로 준비 상태를 확인한다.
 
 `auto.create.topics.enable`은 broker 설정이다. 이 이름을 client properties에 넣어도 broker의 자동 생성은 꺼지지 않는다. 구매 활동 consumer는 `allow.auto.create.topics=false`로 존재하지 않는 업무 topic의 자동 생성을 요청하지 않는다. 운영 topic 생성과 partition 변경은 이번 학습 범위에 넣지 않는다.
 
@@ -52,7 +52,7 @@ concurrency를 바꾸는 것으로 partition 수가 바뀌지 않는다. 기존 
 | `cleanup.policy` | topic override 없음. key별 최신 상태를 위한 compaction 정책을 추가하지 않음 |
 | `min.insync.replicas` | 업무 topic override 없음. broker 설정 상속 |
 
-record는 소비 직후 삭제되지 않는다. topic override가 없다는 뜻은 무제한 보존이 아니라 broker 값을 사용한다는 뜻이다. 실제 환경에서는 상속된 값까지 확인하며, 이미지 기본값을 업무 복구 기간의 보장으로 해석하지 않는다. 보존 시간·용량을 업무 기준으로 산정한 값은 아직 없다. [Kafka topic 설정](https://kafka.apache.org/38/generated/topic_config.html)
+record는 소비 직후 삭제되지 않는다. topic override가 없다는 뜻은 무제한 보존이 아니라 broker 값을 사용한다는 뜻이다. 실제 환경에서는 상속된 값까지 확인하며, 이미지 기본값을 업무 복구 기간의 보장으로 해석하지 않는다. 보존 시간·용량을 업무 기준으로 산정한 값은 아직 없다.
 
 consumer가 멈춰도 보존 정책은 계속 적용된다. 재시작 시 필요한 offset의 record가 이미 삭제됐다면 단순 재전달로 누락을 복구할 수 없다. `earliest`는 남아 있는 로그의 처음부터 읽는 정책이며 삭제된 구매 사실까지 복구하지 않는다. 구매 활동 DB를 로그에서 재구축할 때도 필요한 전체 기간의 record가 남아 있는지 먼저 확인해야 한다.
 
