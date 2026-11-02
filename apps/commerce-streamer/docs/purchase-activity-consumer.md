@@ -139,7 +139,7 @@ listener는 별도 executor로 품목 처리를 넘기지 않는다. 같은 part
 
 ## 로컬 DB와 검증
 
-local 프로필은 `ddl-auto=validate`로 준비된 스키마를 확인한다. 기존 DB에는 `docker/mysql/purchase-activity-migration.sql`을, 새 DB에는 `init.sql`을 적용한다. 앱 재시작으로 완료 기록·구매 활동을 다시 만들지 않는다. test 프로필의 격리 DB는 공통 `create` 설정을 유지한다. 전체 저장 모델과 이관 순서는 [영속성 매핑 설계](../../../docs/system-design/persistence-mapping.md)를 따른다.
+local 프로필은 `ddl-auto=validate`로 준비된 스키마를 확인한다. 기존 DB에는 `docker/mysql/purchase-activity-migration.sql`을, 새 DB에는 `init.sql`을 적용한다. 앱 재시작으로 완료 기록·구매 활동을 다시 만들지 않는다. test 프로필의 격리 DB는 공통 `create` 설정을 유지한다. 전체 저장 모델과 이관 순서는 [영속성 매핑 설계의 DB 전환 순서](../../../docs/system-design/persistence-mapping.md#db-전환-순서)를 따른다.
 
 DB 정합성은 `PurchaseActivityIntegrationTest`, 실제 소비는 `PurchaseActivityKafkaIntegrationTest`, listener 실패·ack·재시작은 `PurchaseActivityListenerIntegrationTest`, 같은 record의 offset 미커밋 재전달은 `PurchaseActivityRedeliveryIntegrationTest`로 확인한다. 방법·기대값은 [공통 검증 문서](../../../docs/system-design/use-cases/order-confirmed-event-verification.md), 실제 앱 프로세스 재시작 검증은 [로컬 검증 절차](../../../docs/verification/order-confirmed-event/README.md)를 따른다.
 

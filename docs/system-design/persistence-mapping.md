@@ -36,34 +36,41 @@ Commerce 도메인 모델과 JPA 엔티티를 분리해 업무 규칙이 JPA 프
 
 ## 저장 모델과 데이터 전환
 
-기존 `order_items`의 상품 ID·수량 스냅샷을 재고 차감과 실패 보상의 기준으로 그대로 쓰며, 결제 요청 이후 품목·수량은 바꾸지 않는다. 카드 입력은 저장하지 않는다.
-
 | 저장 모델 | 변경 | 제약과 복원 규칙 |
 | --- | --- | --- |
 | `orders` | `payment_method` 추가. 상태에 `PAYMENT_PENDING`·`PAYMENT_FAILED`, 결제 결과에 `FAILED` 허용 | `payment_method`는 DRAFT에서 NULL, 결제 시작 이후 `POINT` 또는 `PG`다. |
 | `orders` 확정 시각 | nullable `confirmed_at` `DATETIME(6)` 추가 | `PAYMENT_PENDING → CONFIRMED` 조건부 갱신이 같은 UPDATE에서 기록한다. 이후 바꾸지 않는다. `ApplicationTime`이 마이크로초로 자른 시각을 저장하므로 이벤트의 `confirmedAt`과 같은 값이다. |
 | `processed_order_confirmation` (신규, streamer) | ID, `event_id`, `order_id`, `BaseEntity` 공통 시각 | `event_id`와 `order_id`는 각각 유일하고 필수다. 저장 뒤 바꾸지 않는다. 이미 처리한 이벤트인지만 표시하며 확정 시각과 품목은 갖지 않는다. 같은 사실인지는 [사실의 비교](use-cases/order-confirmed-event.md#사실의-비교)에 따라 구매 활동과 비교한다. |
 | `product_purchase_activity` (신규, streamer) | ID, `order_id`, `product_id`, `quantity`, `confirmed_at`, `BaseEntity` 공통 시각 | `(order_id, product_id)`는 유일하고 수량은 양수다. 같은 이벤트의 소비 완료 기록과 한 트랜잭션에서 저장한다. `confirmed_at`은 주문 단위 값을 품목 행마다 두는 [의도한 반정규화](#구매-활동의-확정-시각)다. 랭킹 조회용 인덱스는 랭킹 설계에서 정한다. |
-| `payment_attempts` (신규) | ID, `payment_attempt_key`(소문자 UUID 36자), `order_id`, `provider_order_id`, `amount`, `status`, nullable `transaction_key`, nullable `conflict_reason`·`conflict_detected_at`·`last_checked_at`, `BaseEntity` 공통 시각 | 시도 키, 주문 ID와 providerOrderId는 각각 유일하고 필수다. 금액·상태도 필수이며 금액은 저장된 주문 총액과 같다. 충돌 사유는 TX A에서 NULL로 저장하고 [충돌 기록](use-cases/order-payment-result.md#충돌-기록) 규칙으로만 채운다. [주기 조회](use-cases/order-payment-recovery.md#주기-조회)를 위해 `(status, last_checked_at)` 인덱스를 둔다. 미종결 시도가 전체 시도보다 훨씬 적다는 전제다. |
+| `payment_attempts` (신규) | ID, `payment_attempt_key`(소문자 UUID 36자), `order_id`, `provider_order_id`, `amount`, `status`, nullable `transaction_key`, nullable `conflict_reason`·`conflict_detected_at`·`last_checked_at`, `BaseEntity` 공통 시각 | 시도 키, 주문 ID와 providerOrderId는 각각 유일하고 필수다. 금액·상태도 필수이며 금액은 저장된 주문 총액과 같다. 충돌 사유는 TX A에서 NULL로 저장하고 [충돌 기록](use-cases/order-payment-result.md#충돌-기록) 규칙으로만 채운다. [주기 조회](use-cases/order-payment-recovery.md#주기-조회)를 위해 `(status, last_checked_at)` 인덱스를 둔다. 미종결 시도가 전체 시도보다 훨씬 적다는 전제다. 카드 입력은 저장하지 않는다. |
+
+### DB 전환 순서
+
+전환 SQL은 애플리케이션 쓰기를 멈추고, 해당 기능을 포함한 앱을 기동하기 전에 한 번 적용한다. 빈 DB는 모든 변경이 반영된 `docker/mysql/init.sql`만 쓴다. local 프로필은 `ddl-auto=validate`라서 스키마가 맞지 않으면 앱이 기동하지 않는다.
+
+| 기존 DB 상태 | 적용 순서 (`docker/mysql/`) |
+| --- | --- |
+| POINT 전용 | `pg-payment-migration.sql` → `pg-payment-safety-migration.sql` → `order-confirmed-at-migration.sql` → `purchase-activity-migration.sql` |
+| PG 스키마 | `pg-payment-safety-migration.sql` → `order-confirmed-at-migration.sql` → `purchase-activity-migration.sql`. 충돌 사유 ENUM이 2개뿐이면 먼저 `pg-payment-conflict-migration.sql` |
 
 ### 결제수단과 과거 주문 전환
 
-PG 결제를 켜기 전에 변경 SQL로 상태·결제 결과의 ENUM 확장, `payment_method` 추가, `payment_attempts` 생성과 기존 `CONFIRMED` 주문의 `payment_method = POINT` 채우기를 한 번에 적용하고, `docker/mysql/init.sql`도 같은 스키마로 갱신한다. 기존 주문의 결제액·결제 결과·품목은 바꾸지 않고, DRAFT의 결제수단은 NULL로 둔다.<br>
+`pg-payment-migration.sql`은 상태·결제 결과의 ENUM 확장, `payment_method` 추가, `payment_attempts` 생성과 기존 `CONFIRMED` 주문의 `payment_method = POINT` 채우기를 한 번에 적용한다. 기존 주문의 결제액·결제 결과·품목은 바꾸지 않고, DRAFT의 결제수단은 NULL로 둔다.<br>
 이후 새 결제는 TX A에서 `PG`를 저장한다. 복원은 저장된 `payment_method`를 그대로 쓰며, DRAFT가 아닌데 결제수단이 없는 주문은 데이터 정합성 오류로 본다.
 
 예약 수량은 기존 주문·품목을 합산하고 별도 집계 컬럼은 두지 않는다. `order_items(product_id)` 인덱스로 해당 상품의 품목을 좁혀 조회하며, 관리자 설정의 잠금과 격리 수준은 [결제 요청의 관리자 재고 규칙](use-cases/order-payment-request.md#관리자-재고-설정과의-기대값)을 따른다.
 
-이미 PG 스키마를 쓰는 DB는 모든 쓰기를 멈춘 뒤 `docker/mysql/pg-payment-safety-migration.sql`을 한 번 적용한다. POINT 전용 기존 DB는 `pg-payment-migration.sql` 다음에 적용하고, 새 DB는 갱신된 `init.sql`을 사용한다. `order_items(product_id)` 인덱스를 추가하며 기존 가용 수량과 과거 주문·결제 사실은 변경하지 않는다. 용량 불변식에 위배되는 기존 값은 전환 전에 확인하고, 이 데이터 확인을 생략한 채 기동하지 않는다.
+`pg-payment-safety-migration.sql`은 `order_items(product_id)` 인덱스를 추가하며 기존 가용 수량과 과거 주문·결제 사실은 변경하지 않는다. 용량 불변식에 위배되는 기존 값은 전환 전에 확인하고, 이 데이터 확인을 생략한 채 기동하지 않는다.
 
 ### 주문 확정 시각과 구매 활동 테이블 전환
 
-확정 이벤트를 켜기 전에 애플리케이션 쓰기를 멈추고 `docker/mysql/order-confirmed-at-migration.sql`로 `orders.confirmed_at`을 추가한다. 구매 활동 소비를 켜기 전에는 `docker/mysql/purchase-activity-migration.sql`로 streamer의 두 테이블을 만든다. 새 DB는 같은 컬럼과 구매 활동 테이블을 포함한 `init.sql`을 사용한다.
+`order-confirmed-at-migration.sql`은 `orders.confirmed_at`을 추가하고, `purchase-activity-migration.sql`은 streamer의 두 테이블을 만든다.
 
 이미 확정한 주문(POINT·PG)의 `confirmed_at`은 NULL로 둔다. `updated_at` 등 다른 시각으로 추정해 채우지 않으며, 이 주문들의 확정 이벤트를 소급 발행하지 않는다.
 
 구매 활동 테이블은 `commerce-streamer`가 소유하며 템플릿 구성에 따라 같은 MySQL schema에 둔다. 서비스별로 DB를 나누더라도 두 앱이 서로의 테이블을 읽지 않는 경계는 같다.
 
-API와 streamer의 local 프로필은 `ddl-auto=validate`로 준비된 스키마를 확인한다. streamer를 재시작해도 완료 기록과 구매 활동을 삭제하지 않는다. test 프로필의 격리 DB는 공통 설정의 `create`를 사용한다. 로컬 DB가 비어 있으면 먼저 `init.sql`을, 기존 DB라면 필요한 변경 SQL을 적용한다.
+API와 streamer의 local 프로필은 `ddl-auto=validate`로 준비된 스키마를 확인한다. streamer를 재시작해도 완료 기록과 구매 활동을 삭제하지 않는다. test 프로필의 격리 DB는 공통 설정의 `create`를 사용한다.
 
 구매 활동 Entity에는 MySQL DDL 문자열을 넣지 않는다. 확정 시각의 소수초 정밀도는 `@FractionalSeconds(6)`으로 선언하고 SQL 타입은 Hibernate dialect가 정한다.
 
@@ -79,7 +86,7 @@ API와 streamer의 local 프로필은 `ddl-auto=validate`로 준비된 스키마
 
 현재 `PaymentConflictReason`은 `MULTIPLE_TRANSACTIONS`, `TRANSACTION_MISMATCH`, `RESULT_CONTRADICTION`을 지원한다. 과거 버전에서 저장한 `MULTIPLE_TRANSACTIONS`도 그대로 복원하며 기존 기록을 삭제하거나 다른 사유로 치환하지 않는다.
 
-충돌 사유를 두 개만 허용하는 기존 PG DB에는 애플리케이션 쓰기를 멈추고 신규 코드 기동 전에 [충돌 사유 확장 SQL](../../docker/mysql/pg-payment-conflict-migration.sql)을 적용한다. 기존 사유·감지 시각·상태·거래 키는 유지하면서 DB ENUM에 `MULTIPLE_TRANSACTIONS`를 허용한다. 현재 `init.sql` 또는 `pg-payment-migration.sql`로 새로 만든 테이블에는 이미 세 사유가 포함돼 있으므로 추가 적용이 필요하지 않다. 생성 SQL을 수정하는 것만으로 기존 테이블의 ENUM이 확장되지는 않는다.
+충돌 사유를 두 개만 허용하는 기존 PG DB에는 [충돌 사유 확장 SQL](../../docker/mysql/pg-payment-conflict-migration.sql)을 적용한다. 기존 사유·감지 시각·상태·거래 키는 유지하면서 DB ENUM에 `MULTIPLE_TRANSACTIONS`를 허용한다. 현재 `init.sql` 또는 `pg-payment-migration.sql`로 새로 만든 테이블에는 이미 세 사유가 포함돼 있으므로 추가 적용이 필요하지 않다. 생성 SQL을 수정하는 것만으로 기존 테이블의 ENUM이 확장되지는 않는다.
 
 기존 PG DB를 재사용한다면 다음 읽기 전용 조회로 현재 enum이 지원하지 않는 충돌 사유를 확인한다.
 
@@ -90,9 +97,7 @@ WHERE conflict_reason IS NOT NULL
   AND conflict_reason NOT IN ('MULTIPLE_TRANSACTIONS', 'TRANSACTION_MISMATCH', 'RESULT_CONTRADICTION');
 ```
 
-결과가 없으면 지원하지 않는 충돌 사유는 없다. 이는 데이터 확인이며 DB ENUM 확장 여부는 별도로 확인한다. 결과가 있다면 신규 코드로 기동하기 전에 해당 기록의 보존·전환 방식을 정해야 한다. 알 수 없는 사유의 자동 삭제나 다른 충돌 사유로의 치환은 수행하지 않는다.
-
-초기화한 로컬 DB나 새 DB에 현재 `init.sql`을 적용하는 경우에는 과거 값이 없으므로 이 데이터 전환이 필요하지 않다. 이 안내의 조회는 확인용이며 데이터나 스키마를 변경하지 않는다.
+결과가 없으면 지원하지 않는 사유는 없다. 이 조회는 데이터만 확인하며 ENUM 확장 여부는 별도로 확인한다. 결과가 있다면 신규 코드로 기동하기 전에 해당 기록의 보존·전환 방식을 정하고, 알 수 없는 사유를 자동 삭제하거나 다른 사유로 치환하지 않는다. 현재 `init.sql`로 만든 DB에는 과거 값이 없어 이 확인이 필요하지 않다.
 
 ### 검증 기준
 
