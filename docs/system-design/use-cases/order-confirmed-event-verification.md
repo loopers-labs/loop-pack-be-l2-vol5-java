@@ -2,7 +2,7 @@
 
 > [주문 확정 이벤트](order-confirmed-event.md)의 [검증 기준](order-confirmed-event.md#검증-기준)을 확인하는 테스트 위치와 실험 설계
 
-결과는 실제 broker와 MySQL에서 확인한다. 기대값은 설계 문서의 검증 기준을 따르고, 이 문서는 어떤 테스트가 그것을 어떻게 확인하는지 정리한다.
+기대값은 설계 문서의 검증 기준을 따르고, 이 문서는 어떤 테스트가 그것을 어떻게 확인하는지 정리한다.
 
 구현 정책은 [Producer](../../../apps/commerce-api/docs/order-confirmed-producer.md), [Broker](../../../modules/kafka/docs/broker.md), [Consumer](../../../apps/commerce-streamer/docs/purchase-activity-consumer.md)의 모듈 문서를 따른다.
 
@@ -40,7 +40,7 @@ commerce-api는 확정 시각 저장과 이벤트 구성·발행을, commerce-st
 
 ## 로컬 전체 흐름 관찰
 
-Producer와 Consumer의 자동화 검증을 한 테스트에 결합하지 않는다. 실제 PG 성공으로 시작한 주문이 broker를 거쳐 구매 활동 DB에 반영되는 연결은 로컬에서 관찰한다. [로컬 실행 절차](../../verification/order-confirmed-event/README.md)는 격리 환경에서 전송 실패 A·정상 소비 B의 주문·broker·구매 활동을 함께 확인하고, streamer 프로세스 재시작 뒤 행·offset 보존까지 확인한다. 원본 JSON·로그는 로컬에 보관하고 핵심 관찰값은 PR 또는 기술 글에 요약한다.
+실제 PG 성공으로 시작한 주문이 broker를 거쳐 구매 활동 DB에 반영되는 연결은 로컬에서 관찰한다. [로컬 실행 절차](../../verification/order-confirmed-event/README.md)는 격리 환경에서 전송 실패 A·정상 소비 B의 주문·broker·구매 활동을 함께 확인하고, streamer 프로세스 재시작 뒤 행·offset 보존까지 확인한다. 기대값은 topic 크기 제한에 거절된 A의 `CONFIRMED`·완료 기록 0행·활동 0행, 제한 복구 후 정상 전송한 B의 완료 기록 1행·활동 2행이다. 원본 JSON·로그는 로컬에 보관하고 핵심 관찰값은 PR 또는 기술 글에 요약한다.
 
 Compose 환경에서 직접 관찰할 때의 순서는 다음과 같다. 실행 도구는 같은 흐름을 고유한 topic·group과 별도 broker로 자동 실행한다.
 
@@ -50,13 +50,17 @@ Compose 환경에서 직접 관찰할 때의 순서는 다음과 같다. 실행 
 4. Kafka UI 또는 별도 읽기 전용 consumer group으로 broker record를 확인한다. key가 `orderId` 문자열이고, payload의 ID·확정 시각·상품별 수량이 주문 사실과 같은지, topic·partition·offset이 무엇인지 기록한다. 별도 consumer를 사용해도 `purchase-activity` group의 offset은 변경하지 않는다.
 5. streamer의 DB에서 해당 `eventId`·`orderId`의 처리 완료 기록과 품목별 구매 활동을 조회한다. 구매 활동의 상품 집합·수량·`confirmedAt`이 주문과 일치하는지 확인하고, 대상 record의 partition에 대해 group committed offset이 `n + 1` 이상인지 확인한다.
 
-소비와 DB 반영은 비동기이므로 정한 deadline까지 기다린다. deadline 안에 구매 활동이 보이지 않으면 broker record, consumer group 상태와 offset, DB 저장 오류를 차례로 확인한다. 짧은 대기 한 번이나 lag 0만으로 유실을 판정하지 않는다. 이 관찰은 실제 앱 연결을 확인하는 로컬 smoke check이며, 두 애플리케이션을 묶은 자동화 테스트를 추가하는 것은 아니다.
+소비와 DB 반영은 비동기이므로 정한 deadline까지 기다린다. deadline 안에 구매 활동이 보이지 않으면 broker record, consumer group 상태와 offset, DB 저장 오류를 차례로 확인한다. 짧은 대기 한 번이나 lag 0만으로 유실을 판정하지 않는다. 이 관찰은 실제 앱 연결을 확인하는 로컬 smoke check다.
 
 ## listener 실패·복구 검증
 
-`PurchaseActivityListenerIntegrationTest`는 실제 등록된 listener와 factory의 설정을 확인한다. 정상 record 완료 뒤 실패 record와 그 다음 record를 같은 partition에 발행하고, 두 번째 품목 저장 오류로 전체 rollback·소비 중단·실패 offset 유지가 되는지 확인한다. 오류 제거 후 같은 container/group을 재시작해 같은 topic·partition·offset을 다시 받고, DB commit 뒤 ack 직전에도 offset이 유지되는지 통제된 대기로 관찰한다. 이후 ack와 뒤 record의 정상 처리까지 확인한다. 이는 DB 실패 복구 검증이며, DB 성공 뒤 offset 미커밋 종료는 아래 재전달 설계에서 따로 검증한다.
+`PurchaseActivityListenerIntegrationTest`는 실제 등록된 listener·factory 설정을 확인하고 DB 실패 복구를 검증한다. 정상 record 완료 뒤 실패 record와 그 다음 record를 같은 partition에 발행하고, 실패 offset을 `n`이라 할 때 실제 broker·DB에서 다음을 확인한다.
 
-이 검증은 handler를 실제 호출하는 listener 스레드와 handler 반환 후의 스레드가 같은지, 반환 시 활성 DB 트랜잭션이 없고 새 조회에는 구매 활동이 보이는지도 확인한다. 실패 지점의 offset을 `n`이라고 할 때 소비 종료 뒤 `n`, 재시작 후 DB commit 뒤 ack 직전에도 `n`, ack 뒤 `n+1`이라는 값을 실제 broker에서 비교한다. 다음 record 진입도 잠시 제어해 이전 record의 ack 결과를 따로 관찰한다.
+- 두 번째 품목 저장 오류: 전체 rollback, 소비 중단, committed offset `n`
+- 오류 제거 후 같은 container/group 재시작: 같은 topic·partition·offset 재수신, DB commit 뒤 ack 직전(통제된 대기)에도 `n`, ack 뒤 `n+1`. 다음 record 진입을 잠시 막아 앞 record의 ack 결과를 따로 관찰한 뒤 정상 처리
+- handler 반환: handler를 호출한 listener 스레드와 같은 스레드, 활성 DB 트랜잭션 없음, 새 조회에 구매 활동이 보임
+
+DB commit 뒤 offset 미커밋 종료는 아래 [재전달 설계](#db-commit-뒤-offset-미커밋-재전달-설계)에서 따로 검증한다.
 
 ## DB commit 뒤 offset 미커밋 재전달 설계
 
@@ -68,7 +72,7 @@ Compose 환경에서 직접 관찰할 때의 순서는 다음과 같다. 실행 
 - 새 consumer는 일반 subscribe·poll만 한다. seek·offset reset 없이 처음 받은 record가 target의 같은 topic·partition·offset인지 검증한다. 시작 위치를 잃어 `earliest`로 돌아갔다면 준비용 record 때문에 이 검증이 실패한다.
 - 두 번째 처리도 실제 handler를 호출한다. 별도 DB 트랜잭션의 flush·clear 뒤 완료 기록과 활동의 행 ID·내용·생성/수정 시각이 첫 처리 뒤와 같은지 비교한다. 그 뒤에만 `n+1`을 commit한다.
 
-기대값은 target 전달 2회, 완료 기록 1행·활동 2행 유지, committed offset `n → n → n+1`이다. 테스트에서 계약에 맞게 준비한 OrderConfirmed record를 실제 broker에 발행하고, 실제 parser·handler·DB로 재전달을 검증한다. PG 주문 생성·확정부터 producer 발행까지의 경로는 별도 테스트에서 검증한다. 통제된 close를 사용하므로 OS 강제 종료나 broker 장애를 시험했다고 표현하지 않는다. DB commit 전 오류·전체 rollback·실제 Spring listener 중단·같은 group 재시작은 [listener 실패·복구 검증](#listener-실패복구-검증)에서 검증한다.
+기대값은 target 전달 2회, 완료 기록 1행·활동 2행 유지, committed offset `n → n → n+1`이다. 통제된 close를 사용하므로 OS 강제 종료나 broker 장애를 시험했다고 표현하지 않는다.
 
 ```bash
 ./gradlew :apps:commerce-streamer:test --tests '*PurchaseActivityRedeliveryIntegrationTest' --tests '*PurchaseActivityListenerIntegrationTest'
@@ -86,7 +90,7 @@ Compose 환경에서 직접 관찰할 때의 순서는 다음과 같다. 실행 
 - key 실험은 별도 topic에서 partition 인자를 생략한 producer send를 사용한다. 고정된 partition 수에서 같은 key의 metadata partition이 같은지 확인하고, 다른 key 간 partition의 차이는 요구하지 않는다.
 - 테스트는 만든 client·consumer 스레드·topic·group을 정리한다. 공유 Kafka 컨테이너는 test fixture/JVM과 Testcontainers가 수명과 최종 정리를 맡으며, 테스트 하나가 다른 테스트의 공유 broker를 중간에 내리지 않는다.
 
-실험 producer는 `acks=all`과 producer 멱등성을 사용한다. 단일 broker·복제 1에서는 현재 ISR이 한 개이므로 다중 replica의 기록, leader 장애의 인계, `min.insync.replicas` 미달 쓰기 거절을 증명하지 않는다. group 배정과 key 매핑 검증은 복제 장애 실험과 구분한다.
+실험 producer는 `acks=all`·멱등성을 쓰지만 이 실험은 group 배정과 key 매핑만 확인한다. 복제 장애의 한계는 [Broker 설계](../../../modules/kafka/docs/broker.md#보존과-복제의-한계)를 따른다.
 
 ```bash
 ./gradlew :apps:commerce-streamer:test --tests '*KafkaPartitionGroupExperimentTest'
@@ -106,4 +110,4 @@ Compose 환경에서 직접 관찰할 때의 순서는 다음과 같다. 실행 
 - `OrderConfirmedKafkaDeliveryIntegrationTest`는 실제 주문 API·테스트 PG·reconcile 경로에서 send 직전 실패와 정상 발행을 확인한다. 미발행 사례는 새 DB 트랜잭션에서 주문 확정이 남았음을 확인한 뒤 테스트 spy가 send 진입을 차단한다. 정상 사례는 broker metadata와 payload를 검증한다.
 - send 직전 실패 주입은 프로세스 강제 종료가 아니다. DB와 broker가 원자적으로 묶이지 않은 경계를 보여주며, send timeout 뒤 broker에 기록됐는지까지 증명하지 않는다.
 
-동일 두 주문의 구매 활동 결과는 [격리 로컬 실행](../../verification/order-confirmed-event/README.md)에서 추가로 확인한다. 기대값은 topic 크기 제한에 거절된 A의 CONFIRMED·완료 기록 0행·활동 0행, 제한 복구 후 정상 전송한 B의 완료 기록 1행·활동 2행이다. 이 실행의 broker 거절과 위 테스트의 send 직전 차단은 서로 다른 실패 주입이다.
+같은 두 사례의 구매 활동 결과는 [로컬 전체 흐름 관찰](#로컬-전체-흐름-관찰)의 실행 도구로 확인한다. 그 실행의 broker 거절과 위 테스트의 send 직전 차단은 서로 다른 실패 주입이다.
