@@ -6,7 +6,7 @@
 
 broker는 partition별 로그와 consumer group의 offset을 보관한다. 주문이 확정됐는지, 구매 활동이 DB에 저장됐는지는 판단하지 않는다. broker의 전송 성공과 consumer의 offset 진행만으로 전체 업무의 완료를 판정하지 않는다.
 
-업무 topic의 신규 생성값은 partition 3개·복제 1개다. partition 3개는 현재 구매 활동 consumer 3개가 분담할 단위이며, 부하 측정으로 산정한 처리 용량은 아니다. 단일 broker·복제 1은 로컬 구성의 선택으로, broker 장애 중 가용성이나 복제 내구성의 근거로 사용하지 않는다.
+업무 topic의 신규 생성값은 partition 3개·복제 1개다. partition 3개는 현재 구매 활동 consumer 3개가 분담할 단위이며, 부하 측정으로 산정한 처리 용량은 아니다. 단일 broker·복제 1은 로컬 구성의 선택이다([한계](#보존과-복제의-한계)).
 
 ## 로컬·테스트 환경
 
@@ -35,13 +35,11 @@ concurrency를 바꾸는 것으로 partition 수가 바뀌지 않는다. 기존 
 
 ## topic 준비
 
-로컬·테스트에서는 commerce-api의 `OrderConfirmedKafkaConfig`가 AdminClient로 없는 업무 topic을 partition 3개·복제 1개로 만든다. 이미 있으면 partition 수를 유지한다. 구체적인 앱 발행 경로는 [Producer 설계](../../../apps/commerce-api/docs/order-confirmed-producer.md)에서 관리한다. 테스트는 직접 만든 고유 topic·group을 준비하고 정리한다.
-
-초기화는 API의 `ApplicationRunner`에서 실행한다. 생성 응답을 최대 5초 기다리고 AdminClient는 유한하게 닫는다. 이미 존재한다는 응답은 허용하며, 기존 partition 수·복제 수·보존 설정을 검증하거나 변경하지 않는다. 그 밖의 실패는 error 로그에 남기고 앱 시작을 계속하므로, API가 실행 중이라는 사실만으로 topic 준비 성공을 판단할 수 없다.
+로컬·테스트에서는 commerce-api의 `OrderConfirmedKafkaConfig`(`ApplicationRunner`)가 AdminClient로 없는 업무 topic을 partition 3개·복제 1개로 만든다. 생성 응답을 최대 5초 기다리고 AdminClient는 유한하게 닫는다. 이미 있으면 partition 수·복제 수·보존 설정을 검증하거나 변경하지 않는다. 그 밖의 실패는 error 로그만 남기고 앱 시작을 계속하므로, API가 실행 중이라는 사실만으로 topic 준비 성공을 판단할 수 없다. 테스트는 직접 만든 고유 topic·group을 준비하고 정리한다. 구체적인 앱 발행 경로는 [Producer 설계](../../../apps/commerce-api/docs/order-confirmed-producer.md)에서 관리한다.
 
 기동 순서는 broker와 DB 스키마 준비 → 업무 topic 준비 → 구매 활동 소비 확인 순으로 잡는다. streamer가 먼저 시작한 경우에도 consumer 수나 자동 생성에 topic 구성을 맡기지 않는다. Kafka의 topic 생성 성공 뒤에도 metadata 반영에는 시간이 걸릴 수 있으므로 실험은 기한 내 실제 topic 조회와 assignment로 준비 상태를 확인한다.
 
-`auto.create.topics.enable`은 broker 설정이다. 이 이름을 client properties에 넣어도 broker의 자동 생성은 꺼지지 않는다. 구매 활동 consumer는 `allow.auto.create.topics=false`로 존재하지 않는 업무 topic의 자동 생성을 요청하지 않는다. 운영 topic 생성과 partition 변경은 이번 학습 범위에 넣지 않는다.
+공통 kafka.yml의 `spring.kafka.properties`에 있는 `auto.create.topics.enable=false`는 broker 설정 이름이라 client에서는 효과가 없고, broker의 자동 생성을 끄지 않는다. 구매 활동 consumer는 `allow.auto.create.topics=false`로 존재하지 않는 업무 topic의 자동 생성을 요청하지 않는다. 운영 topic 생성과 partition 변경은 이번 학습 범위에 넣지 않는다.
 
 ## 보존과 복제의 한계
 

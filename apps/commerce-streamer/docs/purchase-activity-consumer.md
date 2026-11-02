@@ -83,7 +83,7 @@ listener는 별도 executor로 품목 처리를 넘기지 않는다. 같은 part
 
 완료 기록을 `saveAndFlush`하는 저장 경계에서 Hibernate `ConstraintViolationException`의 종류가 `UNIQUE`이고, 제약 이름이 `uk_processed_confirmation_event` 또는 `uk_processed_confirmation_order`인 경우에만 `DuplicateOrderConfirmationException`으로 변환한다. 제약 이름의 schema·table 한정자는 제외하고 대소문자를 구분하지 않아 비교한다. MySQL 오류 번호나 SQLState로 중복을 판정하지 않는다. 제약 이름을 알 수 없는 경우, 다른 제약 위반과 구매 활동의 저장 오류는 원래 예외를 전달한다.
 
-제약 이름은 Entity의 유일 제약 선언과 Repository 판정에서 같은 상수를 사용한다. DB별 오류 해석은 Hibernate dialect에 맡기며, DB를 교체할 때는 해당 dialect가 제약 종류와 이름을 추출하는지 실제 DB에서 검증해야 한다. `PurchaseActivityHandler`는 기존 트랜잭션 참여를 금지하고, 별도 Bean의 `REQUIRES_NEW` 메서드가 rollback을 마친 뒤 새 트랜잭션의 비교 메서드를 호출한다.
+제약 이름은 Entity의 유일 제약 선언과 Repository 판정에서 같은 상수를 사용한다. DB별 오류 해석은 Hibernate dialect에 맡기며, DB를 교체할 때는 해당 dialect가 제약 종류와 이름을 추출하는지 실제 DB에서 검증해야 한다. `PurchaseActivityHandler`는 기존 트랜잭션 참여를 금지(`NEVER`)하고, 별도 Bean `PurchaseActivityTransaction`의 `REQUIRES_NEW` 저장이 중복으로 rollback되면 새 트랜잭션의 비교 메서드를 호출한다.
 
 완료 기록은 구매 활동이 commit됐다는 판정 근거이므로 활동과 별개로 지우지 않는다. 현재 두 테이블의 자동 삭제 기능은 없다. 이후 보관·재구축 정책을 추가할 때는 같은 record의 재처리 범위와 함께 정한다.
 
@@ -119,8 +119,6 @@ listener는 별도 executor로 품목 처리를 넘기지 않는다. 같은 part
 | DB commit 뒤 offset commit 실패·결과 불명 | DB 효과 유지. broker의 commit 반영 여부는 별도 확인 필요 | 같은 group의 실제 committed offset을 확인. 재전달되면 같은 사실로 판정한 뒤 ack |
 | rebalance 중 동시 처리 | DB 유일 제약이 한 저장만 통과 | rollback 뒤 새 TX에서 같은 사실인지 판정 |
 
-실패한 record는 건너뛰지 않고 컨테이너를 멈춘다.
-
 선택한 `CommonContainerStoppingErrorHandler`는 중단 후 원래 오류를 감싼 예외를 던진다. 정상 recover/skip으로 반환하는 정책이 아니며 `DefaultErrorHandler`의 `commitRecovered` 설정으로 이 동작을 대신하지 않는다. 테스트는 단순히 `isRunning=false`가 된 순간이 아니라 해당 컨테이너의 `ConsumerStoppedEvent` 이후 실제 group committed offset을 확인한다. 종료가 시작된 것과 consumer 종료가 끝난 것을 구분한다.
 
 - 건너뛰면 구매 활동이 조용히 빠진다. 빠른 재시도를 반복하면 같은 오류를 키운다.
@@ -139,10 +137,8 @@ listener는 별도 executor로 품목 처리를 넘기지 않는다. 같은 part
 
 ## 로컬 DB와 검증
 
-local 프로필은 `ddl-auto=validate`로 준비된 스키마를 확인한다. 기존 DB에는 `docker/mysql/purchase-activity-migration.sql`을, 새 DB에는 `init.sql`을 적용한다. 앱 재시작으로 완료 기록·구매 활동을 다시 만들지 않는다. test 프로필의 격리 DB는 공통 `create` 설정을 유지한다. 전체 저장 모델과 이관 순서는 [영속성 매핑 설계의 DB 전환 순서](../../../docs/system-design/persistence-mapping.md#db-전환-순서)를 따른다.
+local 프로필은 `ddl-auto=validate`로 준비된 스키마를 확인하며, 필요한 SQL과 순서는 [영속성 매핑 설계의 DB 전환 순서](../../../docs/system-design/persistence-mapping.md#db-전환-순서)를 따른다. 앱 재시작으로 완료 기록·구매 활동을 다시 만들지 않는다. test 프로필의 격리 DB는 공통 `create` 설정을 유지한다.
 
-DB 정합성은 `PurchaseActivityIntegrationTest`, 실제 소비는 `PurchaseActivityKafkaIntegrationTest`, listener 실패·ack·재시작은 `PurchaseActivityListenerIntegrationTest`, 같은 record의 offset 미커밋 재전달은 `PurchaseActivityRedeliveryIntegrationTest`로 확인한다. 방법·기대값은 [공통 검증 문서](../../../docs/system-design/use-cases/order-confirmed-event-verification.md), 실제 앱 프로세스 재시작 검증은 [로컬 검증 절차](../../../docs/verification/order-confirmed-event/README.md)를 따른다.
-
-미지원 버전의 handler·ack 미호출은 `OrderConfirmedVersionDispatchTest`가 listener 메서드를 직접 호출해 검증한다. Spring 컨테이너 중단과 실제 committed offset 검증은 DB 오류를 주입하는 별도 listener 통합 테스트의 범위다.
+테스트 위치·방법·기대값은 [공통 검증 문서](../../../docs/system-design/use-cases/order-confirmed-event-verification.md), 실제 앱 프로세스 재시작 검증은 [로컬 검증 절차](../../../docs/verification/order-confirmed-event/README.md)를 따른다.
 
 주요 구현은 [OrderConfirmedConsumer](../src/main/java/com/loopers/interfaces/consumer/OrderConfirmedConsumer.java), [PurchaseActivityHandler](../src/main/java/com/loopers/application/purchase/PurchaseActivityHandler.java), [PurchaseActivityTransaction](../src/main/java/com/loopers/application/purchase/PurchaseActivityTransaction.java), [PurchaseActivityKafkaConfig](../src/main/java/com/loopers/infrastructure/purchase/PurchaseActivityKafkaConfig.java)다.
