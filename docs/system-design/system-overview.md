@@ -50,7 +50,7 @@ flowchart TB
 | 계층 | 책임 |
 | --- | --- |
 | `interfaces` | HTTP 입력이나 Kafka record를 검증하고 요청·응답을 변환하며 Application 유스케이스를 호출한다. |
-| `application` | 요청자를 확인하고 도메인 객체의 협력과 트랜잭션 경계를 조율한다. Repository와 외부 연동 계약을 사용한다. |
+| `application` | 요청자를 확인하고 도메인 객체의 협력과 트랜잭션 경계를 조율한다. Repository와 외부 연동 계약을 사용한다. `commerce-api`의 업무 시각은 주입한 `Clock`을 감싼 `ApplicationTime`(마이크로초 절삭)에서 읽어 도메인과 저장 계약에 넘긴다. |
 | `domain` | 업무 규칙·불변식과 상태 전이를 관리하고, 필요한 조회·저장 계약을 정의한다. |
 | `infrastructure` | Domain·Application의 계약을 영속 기술과 외부 연동 기술로 구현한다. 모델 변환과 저장소·외부 시스템·메시지 broker 연결을 담당한다. |
 

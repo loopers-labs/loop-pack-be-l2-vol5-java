@@ -105,7 +105,7 @@ listener는 별도 executor로 품목 처리를 넘기지 않는다. 같은 part
 | `allow.auto.create.topics` | `order.confirmed-event.consumer.allow-auto-create-topics=false` | streamer가 먼저 시작해도 업무 topic을 broker 기본 partition 수로 자동 생성하지 않는다. topic 준비는 API의 로컬 초기화나 테스트 AdminClient가 맡는다. |
 | error handler | `CommonContainerStoppingErrorHandler` | [실패와 중단](#실패와-중단) |
 
-공통 consumer의 역직렬화기와 `enable-auto-commit=false`는 [kafka.yml](../../../modules/kafka/src/main/resources/kafka.yml)에서 읽는다. 앱의 YAML 값은 `PurchaseActivityConsumerProperties`로 주입하고, 전용 factory는 이를 실제 ConsumerConfig와 컨테이너 설정에 반영한다.
+공통 consumer의 역직렬화기와 `enable-auto-commit=false`는 [kafka.yml](../../../modules/kafka/src/main/resources/kafka.yml)에서 읽는다. 앱의 YAML 값은 `PurchaseActivityConsumerProperties`로 주입하고, 전용 factory는 이를 실제 ConsumerConfig와 컨테이너 설정에 반영한다. batch 전용 `kafka.batch-listener.*`와 `spring.kafka.listener.*`는 이 factory에 적용하지 않으므로 `max.poll.records`·`session.timeout.ms`·`heartbeat.interval.ms`·`max.poll.interval.ms`는 Kafka client 기본값을 쓴다.
 
 애플리케이션 이름은 `commerce-streamer`이며 공통 Kafka client ID도 이 이름에서 정한다. producer 앱과 로그·client 식별자를 구분한다.
 

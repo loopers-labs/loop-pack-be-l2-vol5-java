@@ -9,7 +9,7 @@ Commerce 도메인 모델과 JPA 저장 모델의 경계를 정리한다.<br>
 | --- | --- | --- |
 | 상품과 브랜드 관계 | `Product`가 `brandId` 보유 | `ProductJpaEntity`가 `BrandJpaEntity`와 외래 키 연관관계 보유 |
 | 주문 품목 | `Order` 내부의 식별자 없는 `OrderItem` 값 | `OrderItemJpaEntity`가 테이블 행의 DB 식별자 보유. 상품 ID는 DB FK로 설정하지 않음 |
-| 영속성 매핑 | Commerce 도메인 객체는 JPA 어노테이션과 공통 JPA `BaseEntity`에 의존하지 않음 | JPA 엔티티가 테이블·연관관계를 매핑하고, 해당 엔티티의 공통 생성·수정·삭제 필드에는 `BaseEntity` 사용 |
+| 영속성 매핑 | Commerce 도메인 객체는 JPA 어노테이션과 공통 JPA `BaseEntity`에 의존하지 않음 | JPA 엔티티가 테이블·연관관계를 매핑하고, 해당 엔티티의 공통 생성·수정·삭제 필드에는 `BaseEntity` 사용. 생성·수정 시각은 `BaseEntity`가 저장 시 채우고, 삭제 시각과 조건부 갱신의 수정 시각은 Application이 정한 업무 시각을 쓴다 |
 | 객체 변환 | Repository 인터페이스로 조회·저장 계약 제공 | Repository 구현체와 Mapper가 도메인 객체와 JPA 엔티티 변환 |
 | 결제 시도 | `PaymentAttempt`가 주문을 `orderId`로 참조 | `payment_attempts` 테이블과 시도 키·주문 ID·`providerOrderId` 유일 제약을 두고 Repository에서 변환. 저장 모델은 [아래 결제 저장 설계](#저장-모델과-데이터-전환) |
 | 결제 실패의 재고 보상 기준 | `OrderItem`의 상품 ID·수량 스냅샷 | 기존 `order_items`의 저장 값을 사용한다. 결제 요청 이후 품목·수량은 갱신하지 않는다. 시도 종결과 재고 반환의 원자성은 [결과 반영 설계](use-cases/order-payment-result.md#재고-보상-트랜잭션)를 따른다 |
@@ -41,7 +41,7 @@ Commerce 도메인 모델과 JPA 엔티티를 분리해 업무 규칙이 JPA 프
 | 저장 모델 | 변경 | 제약과 복원 규칙 |
 | --- | --- | --- |
 | `orders` | `payment_method` 추가. 상태에 `PAYMENT_PENDING`·`PAYMENT_FAILED`, 결제 결과에 `FAILED` 허용 | `payment_method`는 DRAFT에서 NULL, 결제 시작 이후 `POINT` 또는 `PG`다. |
-| `orders` 확정 시각 | nullable `confirmed_at` `DATETIME(6)` 추가 | `PAYMENT_PENDING → CONFIRMED` 조건부 갱신이 같은 UPDATE에서 기록한다. 이후 바꾸지 않는다. 이벤트의 `confirmedAt`과 같은 값이 되도록 마이크로초로 자른 시각을 저장한다. |
+| `orders` 확정 시각 | nullable `confirmed_at` `DATETIME(6)` 추가 | `PAYMENT_PENDING → CONFIRMED` 조건부 갱신이 같은 UPDATE에서 기록한다. 이후 바꾸지 않는다. `ApplicationTime`이 마이크로초로 자른 시각을 저장하므로 이벤트의 `confirmedAt`과 같은 값이다. |
 | `processed_order_confirmation` (신규, streamer) | ID, `event_id`, `order_id`, `BaseEntity` 공통 시각 | `event_id`와 `order_id`는 각각 유일하고 필수다. 저장 뒤 바꾸지 않는다. 이미 처리한 이벤트인지만 표시하며 확정 시각과 품목은 갖지 않는다. 같은 사실인지는 [사실의 비교](use-cases/order-confirmed-event.md#사실의-비교)에 따라 구매 활동과 비교한다. |
 | `product_purchase_activity` (신규, streamer) | ID, `order_id`, `product_id`, `quantity`, `confirmed_at`, `BaseEntity` 공통 시각 | `(order_id, product_id)`는 유일하고 수량은 양수다. 같은 이벤트의 소비 완료 기록과 한 트랜잭션에서 저장한다. `confirmed_at`은 주문 단위 값을 품목 행마다 두는 [의도한 반정규화](#구매-활동의-확정-시각)다. 랭킹 조회용 인덱스는 랭킹 설계에서 정한다. |
 | `payment_attempts` (신규) | ID, `payment_attempt_key`(소문자 UUID 36자), `order_id`, `provider_order_id`, `amount`, `status`, nullable `transaction_key`, nullable `conflict_reason`·`conflict_detected_at`·`last_checked_at`, `BaseEntity` 공통 시각 | 시도 키, 주문 ID와 providerOrderId는 각각 유일하고 필수다. 금액·상태도 필수이며 금액은 저장된 주문 총액과 같다. 충돌 사유는 TX A에서 NULL로 저장하고 [충돌 기록](use-cases/order-payment-result.md#충돌-기록) 규칙으로만 채운다. [주기 조회](use-cases/order-payment-recovery.md#주기-조회)를 위해 `(status, last_checked_at)` 인덱스를 둔다. 미종결 시도가 전체 시도보다 훨씬 적다는 전제다. |

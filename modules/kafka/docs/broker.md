@@ -60,7 +60,8 @@ Producer의 `acks=all`은 현재 ISR의 기록을 확인한다. 단일 broker·�
 
 ## client 공통 설정과 검증
 
-공통 consumer는 `StringDeserializer`, `ByteArrayDeserializer`, `enable-auto-commit=false`를 지정한다. 구매 활동 listener의 factory·ack·fetch 설정은 앱에서 소유한다. 공통 batch factory의 fetch·poll·session 설정은 `kafka.batch-listener`에 따로 두어 구매 활동 record factory에 적용하지 않는다.
+`spring.kafka.consumer`에는 모든 consumer factory가 공유하는 값(`StringDeserializer`, `ByteArrayDeserializer`, `enable-auto-commit=false`, 기본 group `loopers-default-consumer`)만 둔다. 공통 batch factory(`KafkaConfig.BATCH_LISTENER`)는 여기에 `kafka.batch-listener.*`의 poll·fetch·session 값과 `spring.kafka.listener`의 ack mode·concurrency를 더한다. 구매 활동 listener의 factory·ack·fetch 설정은 앱에서 소유하며 batch 전용 값을 물려받지 않는다.<br>
+실제 Kafka client에 들어간 값은 `KafkaClientConfigTest`와 `PurchaseActivityListenerIntegrationTest`가 확인한다.
 
 ## 상태 확인
 

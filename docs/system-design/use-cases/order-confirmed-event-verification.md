@@ -27,9 +27,9 @@ commerce-api는 확정 시각 저장과 이벤트 구성·발행을, commerce-st
 | `OrderConfirmedVersionDispatchTest` | 여러 해석기의 버전별 선택·기존 버전 유지, 미지원 버전과 중복 등록 거절. listener 메서드를 직접 호출해 미지원 버전의 handler·ack 미호출을 확인하는 단위 테스트. 실제 컨테이너 중단·broker offset의 통합 검증과 구분. 추가 버전 선택은 테스트 대역으로 검증하며 실제 V2 명세를 정의한 것은 아님 |
 | `PurchaseActivityIntegrationTest` | 실제 MySQL의 행·수량·마이크로초 확정 시각, ID·payload 충돌, 중간 품목 오류의 전체 rollback, 각 유일 제약과 동시 경쟁 뒤 새 TX 판정. 저장 뒤 flush·clear한 새 조회와 별도 SQL로 확인 |
 | `PurchaseActivityRepositoryTest` | DB 오류 코드에 의존하지 않고 완료 기록의 알려진 유일 제약만 중복으로 변환. 한정자·대소문자 처리, 미상·다른 제약과 비유일성 오류의 원래 예외 유지 |
-| `KafkaClientConfigTest` | consumer의 byte 배열 값과 auto commit off, producer의 `acks=all`·멱등성, producer·consumer·admin의 같은 broker 주소와 fixture broker 왕복 |
+| `KafkaClientConfigTest` | consumer의 byte 배열 값과 auto commit off, batch factory의 `kafka.batch-listener` 값 적용, producer의 `acks=all`·멱등성, producer·consumer·admin의 같은 broker 주소와 fixture broker 왕복 |
 | `PurchaseActivityKafkaIntegrationTest` | 실제 broker의 JSON record를 실제 Spring listener로 저장한 뒤 group committed offset 확인. 같은 사실을 새 record로 다시 보내도 완료 기록 1행·활동 2행 유지. 같은 record의 재전달 실험을 대체하지 않음 |
-| `PurchaseActivityListenerIntegrationTest` | 실제 listener 설정과 [실패·복구](#listener-실패복구-검증) |
+| `PurchaseActivityListenerIntegrationTest` | 실제 listener·record factory 설정(batch 전용 poll·session 설정 비상속, batch factory의 YAML 반영 포함)과 [실패·복구](#listener-실패복구-검증) |
 | `PurchaseActivityRedeliveryIntegrationTest` | [DB commit 뒤 offset 미커밋 재전달](#db-commit-뒤-offset-미커밋-재전달-설계) |
 | `KafkaPartitionGroupExperimentTest` | [partition·group 배정과 key 매핑](#partitiongroup-실험-설계) |
 | `ArchitectureTest` | 계층 의존과 순수 도메인의 JPA·Lombok 의존 금지. Java import 규칙은 Checkstyle이 검사 |
