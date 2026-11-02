@@ -10,11 +10,11 @@ PG의 관찰을 결제 시도·주문에 한 번만 반영하고 확정 실패�
 | 경로 | 시작 조건 | PG 조회 |
 | --- | --- | --- |
 | 생성 응답 | 결제 요청이 PG 생성 응답을 관찰 결과로 넘김 (`ACCEPTED`, `UNKNOWN`, `REJECTED_NO_EFFECT`) | 하지 않음. 생성 응답을 그대로 반영한다. |
-| callback | `POST /api/v1/payments/callback` 수신 | 알림의 거래를 조회한다. 본문은 신호로만 쓴다. |
+| callback | `POST /api/v1/payments/callback` 수신 | 본문의 `providerOrderId`로 시도를 찾아 reconcile과 같은 방식으로 기존 거래를 조회한다. 본문의 `transactionKey`·`status`는 결과로 쓰지 않는다. |
 | [결제 결과 재확인 (reconcile)](order-payment-recovery.md#결제-결과-재확인) | 고객의 `POST /api/v1/orders/{orderId}/payment/reconcile` | 본인 미종결 시도의 기존 거래를 PG에 조회한다. |
 | [주기 조회](order-payment-recovery.md#주기-조회) | 스케줄러가 일정 시간 이상 미종결인 시도를 찾음 | reconcile과 같은 방식으로 기존 거래를 조회한다. |
 
-모든 경로가 같은 결과 반영 경계(TX B)를 사용한다. 이미 종결한 시도는 PG 조회 없이 저장된 결과를 반환한다.<br>
+모든 경로가 같은 결과 반영 서비스를 거친다. 생성 응답과 거래를 1건 이상 찾은 조회만 결과 반영 경계(TX B)를 열고, 거래 0건·`NOT_FOUND`·`UNAVAILABLE`은 TX B 없이 저장 상태를 새로 읽어 반환한다. 이미 종결한 시도는 PG 조회 없이 저장된 결과를 반환한다.<br>
 수동 재확인·주기 조회의 실행 정책과 복구 한계는 [결제 회복](order-payment-recovery.md)을 따른다.
 
 ## 결과별 효과
@@ -62,17 +62,21 @@ sequenceDiagram
         Adapter-->>Service: FOUND(거래 목록) / NOT_FOUND / UNAVAILABLE
     end
 
-    rect rgba(128, 128, 128, 0.12)
-        Note over Service,DB: TX B 결과 반영
-        Service->>DB: 시도·주문·품목 스냅샷 다시 읽기
-        Service->>DB: 관찰 반영 규칙의 조건으로 시도 조건부 갱신<br/>(PENDING·UNKNOWN 기록, 종결과 거래 키, 충돌 사유)
-        opt 종결 갱신 1행
-            Service->>DB: 주문 PAYMENT_PENDING → CONFIRMED(확정 시각) / PAYMENT_FAILED<br/>실패면 주문 품목 수량만큼 재고 증가 (Product ID 오름차순)
+    alt 생성 응답 또는 FOUND 거래 1건 이상
+        rect rgba(128, 128, 128, 0.12)
+            Note over Service,DB: TX B 결과 반영
+            Service->>DB: 시도·주문·품목 스냅샷 다시 읽기
+            Service->>DB: 관찰 반영 규칙의 조건으로 시도 조건부 갱신<br/>(PENDING·UNKNOWN 기록, 종결과 거래 키, 충돌 사유)
+            opt 종결 갱신 1행
+                Service->>DB: 주문 PAYMENT_PENDING → CONFIRMED(확정 시각) / PAYMENT_FAILED<br/>실패면 주문 품목 수량만큼 재고 증가 (Product ID 오름차순)
+            end
+            Note over Service,DB: TX B 종료, 잠금 해제
         end
-        Note over Service,DB: TX B 종료, 잠금 해제
-    end
-    opt 성공 확정 commit
-        Note over Service: OrderConfirmed 발행 (확정 이벤트 설계)
+        opt 성공 확정 commit
+            Note over Service: OrderConfirmed 발행 (확정 이벤트 설계)
+        end
+    else 거래 0건, NOT_FOUND, UNAVAILABLE
+        Note over Service,DB: 상태를 바꿀 근거가 없어 TX B를 열지 않음
     end
     Service->>DB: 새 조회 경계에서 저장된 결과 확인<br/>조건부 갱신 0행은 중복·늦은 관찰·충돌 판정
     Service-->>Trigger: 반영 뒤 주문·시도 상태

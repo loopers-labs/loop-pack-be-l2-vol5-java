@@ -62,7 +62,7 @@ Commerce의 adapter·결과 반영 통합 테스트는 Testcontainers로 test-pg
 | `SUCCESS` (기본) | 거래를 `PENDING`으로 만들고, 처리 시 `SUCCESS` 저장 후 callback 한 번 | callback·조회가 같은 성공 결과를 제공 |
 | `FAIL` | 처리 시 `FAILED` 저장 후 callback 한 번 | callback·조회가 같은 실패 결과를 제공 |
 | `REJECT_BEFORE_CREATE` | [생성 전 확정 거절](../../../docs/system-design/external-systems/payment-gateway.md#생성-전-확정-거절) 응답. 거래·예약 작업을 만들지 않는다. | 거래 0건, 후속 처리 없음 |
-| `DROP_RESPONSE` | 거래를 저장·예약한 뒤 생성 응답을 설정한 지연보다 늦게 보내 호출자의 timeout을 만든다. | 주문 ID 조회로 거래를 찾을 수 있음 |
+| `DROP_RESPONSE` | 거래를 저장·예약한 뒤 생성 응답을 설정한 지연(`TEST_PG_DROP_RESPONSE_DELAY`, 기본 3초)만큼 늦게 보내, 그보다 짧은 호출자의 응답 timeout을 넘기게 한다. | 주문 ID 조회로 거래를 찾을 수 있음 |
 | `SKIP_CALLBACK` | 결과는 저장하고 callback을 보내지 않는다. | 조회만으로 결과 확인 |
 | `DUPLICATE_CALLBACK` | 결과 저장 후 같은 callback을 두 번 보낸다. | 중복 반영 방지 |
 | `CREATE_RESPONSE_OVERRIDE` | 지정한 HTTP 상태·원문 본문으로 생성 응답을 대체한다. 거래 생성 여부도 함께 지정한다. 본문 없는 422, 다른 code, 문자열 `"false"`, 필드 누락, 잘못된 JSON, `orderId`·`amount` 불일치를 만든다. | adapter가 거절 조건을 하나라도 어긴 응답을 `UNKNOWN`으로 판정 |

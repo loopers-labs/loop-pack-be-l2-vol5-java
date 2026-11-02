@@ -34,7 +34,7 @@ flowchart LR
 
 테스트 PG는 `apps:test-pg`의 별도 앱·컨테이너로 구성하며 Commerce와 HTTP로 통신한다.<br>
 PG와의 송수신 계약은 [PG 연동 설계](external-systems/payment-gateway.md), 실행 경계, 시나리오 제어와 후속 작업은 [로컬 테스트 PG 앱 설계](../../apps/test-pg/docs/test-payment-gateway.md)에서 관리한다.<br>
-두 앱은 같은 MySQL을 쓰지만 서로의 테이블을 읽거나 쓰지 않는다. 이벤트 계약과 전달 보장은 [주문 확정 이벤트](use-cases/order-confirmed-event.md)를 따른다.
+`commerce-api`와 `commerce-streamer`는 같은 MySQL을 쓰지만 서로의 테이블을 읽거나 쓰지 않는다. 이벤트 계약과 전달 보장은 [주문 확정 이벤트](use-cases/order-confirmed-event.md)를 따른다.
 
 ## 계층과 의존성
 
@@ -54,7 +54,7 @@ flowchart TB
 | `domain` | 업무 규칙·불변식과 상태 전이를 관리하고, 필요한 조회·저장 계약을 정의한다. |
 | `infrastructure` | Domain·Application의 계약을 영속 기술과 외부 연동 기술로 구현한다. 모델 변환과 저장소·외부 시스템·메시지 broker 연결을 담당한다. |
 
-`commerce-streamer`도 같은 계층 구성을 따른다.
+`commerce-streamer`도 같은 계층 구성을 따르되, Kafka record 해석기(`interfaces`)가 record를 도메인 값 `OrderConfirmation`으로 바로 변환한다.
 
 저장 모델과의 매핑은 [영속성 매핑 설계](persistence-mapping.md), 업무 오류의 HTTP 응답 변환은 [오류 변환 설계](error-mapping.md)를 따른다.
 

@@ -49,7 +49,7 @@ Commerce 도메인 모델과 JPA 엔티티를 분리해 업무 규칙이 JPA 프
 ### 결제수단과 과거 주문 전환
 
 PG 결제를 켜기 전에 변경 SQL로 상태·결제 결과의 ENUM 확장, `payment_method` 추가, `payment_attempts` 생성과 기존 `CONFIRMED` 주문의 `payment_method = POINT` 채우기를 한 번에 적용하고, `docker/mysql/init.sql`도 같은 스키마로 갱신한다. 기존 주문의 결제액·결제 결과·품목은 바꾸지 않고, DRAFT의 결제수단은 NULL로 둔다.<br>
-이후 새 결제는 TX A에서 `PG`를 저장한다. 복원은 저장된 `payment_method`를 그대로 쓰며, 결제수단이 없는 확정 주문은 데이터 정합성 오류로 본다.
+이후 새 결제는 TX A에서 `PG`를 저장한다. 복원은 저장된 `payment_method`를 그대로 쓰며, DRAFT가 아닌데 결제수단이 없는 주문은 데이터 정합성 오류로 본다.
 
 예약 수량은 기존 주문·품목을 합산하고 별도 집계 컬럼은 두지 않는다. `order_items(product_id)` 인덱스로 해당 상품의 품목을 좁혀 조회하며, 관리자 설정의 잠금과 격리 수준은 [결제 요청의 관리자 재고 규칙](use-cases/order-payment-request.md#관리자-재고-설정과의-기대값)을 따른다.
 
