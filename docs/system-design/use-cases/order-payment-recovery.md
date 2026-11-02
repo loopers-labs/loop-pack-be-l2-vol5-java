@@ -81,7 +81,7 @@ callback 유실, 생성 응답 유실, 결과 반영 실패와 프로세스 재�
 
 ## 검증 기준
 
-실제 adapter와 [로컬 테스트 PG](../external-systems/test-payment-gateway.md)를 연결한다.
+실제 adapter와 [로컬 테스트 PG](../../../apps/test-pg/docs/test-payment-gateway.md)를 연결한다.
 재고는 초기 10·주문 수량 2를 기준으로 하며, 트랜잭션 종료 뒤 새 조회 경계에서 상태와 효과를 확인한다.
 
 | 영역 | 상황 | 기대값 |

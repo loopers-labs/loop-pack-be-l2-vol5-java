@@ -170,4 +170,4 @@ HTTP 계약 테스트는 별도 HTTP 수신 서버로 실제 웹훅을 검증하
 
 PG 프로세스·컨테이너를 재시작하면 거래·시나리오·호출 수와 대기 중 작업이 초기화된다. Commerce만 재시작하면 PG 거래는 유지된다. Commerce의 결제 요청·callback 수신·reconcile·주기 조회를 이 PG에 연결했다.
 
-설계 책임과 후속 검증은 [로컬 테스트 PG 설계](../../docs/system-design/external-systems/test-payment-gateway.md)를 따른다.
+설계 책임과 후속 검증은 [로컬 테스트 PG 설계](docs/test-payment-gateway.md)를 따른다.

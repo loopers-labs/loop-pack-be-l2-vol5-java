@@ -33,7 +33,7 @@ flowchart LR
 ```
 
 테스트 PG는 `apps:test-pg`의 별도 앱·컨테이너로 구성하며 Commerce와 HTTP로 통신한다.<br>
-PG와의 송수신 계약은 [PG 연동 설계](external-systems/payment-gateway.md), 실행 경계, 시나리오 제어와 후속 작업은 [로컬 테스트 PG](external-systems/test-payment-gateway.md)에서 관리한다.<br>
+PG와의 송수신 계약은 [PG 연동 설계](external-systems/payment-gateway.md), 실행 경계, 시나리오 제어와 후속 작업은 [로컬 테스트 PG 앱 설계](../../apps/test-pg/docs/test-payment-gateway.md)에서 관리한다.<br>
 두 앱은 같은 MySQL을 쓰지만 서로의 테이블을 읽거나 쓰지 않는다. 이벤트 계약과 전달 보장은 [주문 확정 이벤트](use-cases/order-confirmed-event.md)를 따른다.
 
 ## 계층과 의존성

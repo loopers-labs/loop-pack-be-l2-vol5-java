@@ -185,7 +185,7 @@ TX B commit 뒤 응답용 재조회나 응답 전송에 실패한 경우는 roll
 ## 검증 기준
 
 결과는 모든 트랜잭션과 요청이 끝난 뒤 새 조회 경계(`flush/clear` 포함)에서 확인한다.<br>
-재고는 초기 10·주문 수량 2를 기준으로 하며, PG 연동 검증은 실제 adapter와 [로컬 테스트 PG](../external-systems/test-payment-gateway.md)를 연결한다.
+재고는 초기 10·주문 수량 2를 기준으로 하며, PG 연동 검증은 실제 adapter와 [로컬 테스트 PG](../../../apps/test-pg/docs/test-payment-gateway.md)를 연결한다.
 
 | 영역 | 상황 | 기대값 |
 | --- | --- | --- |

@@ -5,9 +5,9 @@
 로컬 테스트 PG와 Commerce 사이의 송수신 계약과 adapter 규칙을 정리한다.<br>
 요청 조율과 트랜잭션은 [결제 요청](../use-cases/order-payment-request.md), 시도·주문·재고 변경은 [결과 반영](../use-cases/order-payment-result.md)이 맡는다.
 
-PG 자체의 독립 실행과 거래 처리·시나리오는 [로컬 테스트 PG](test-payment-gateway.md)에 둔다.
+PG 자체의 독립 실행과 거래 처리·시나리오는 [로컬 테스트 PG 앱 설계](../../../apps/test-pg/docs/test-payment-gateway.md)에 둔다.
 
-로컬 서버는 정상 생성·조회·자동 처리·웹훅 발송과 확정 실패·생성 전 확정 거절·응답 유실 등의 [시나리오](test-payment-gateway.md#시나리오-제어)를 구현했다.<br>
+로컬 서버는 정상 생성·조회·자동 처리·웹훅 발송과 확정 실패·생성 전 확정 거절·응답 유실 등의 [시나리오](../../../apps/test-pg/docs/test-payment-gateway.md#시나리오-제어)를 구현했다.<br>
 Commerce는 adapter의 생성·조회와 관찰 결과 판정, 결과 반영(TX B), 결제 요청(confirm), callback 수신, 고객 reconcile과 주기 조회까지 연결했다. 조회 CircuitBreaker, Retry, RateLimiter, TimeLimiter는 단계별 실험 프로필에 구현했다. 기본 프로필에서는 비활성화하며 [조회 회복 정책과 실행 프로필](../use-cases/order-payment-recovery.md#조회-회복-정책), [실험 절차와 관측 자료](../../performance/payment-lookup/README.md)를 따른다.
 
 ## 테스트 PG 계약
@@ -122,7 +122,7 @@ PG는 **10초 안에 받은 `200`만 성공**으로 본다. 그 밖의 응답이
 - 서명 검증 같은 callback 인증은 이번 범위에서 두지 않는다. 위조 알림도 PG 조회와 검증을 통과한 실제 결과의 반영을 유발할 수 있지만, 본문의 `status`만으로 임의의 결제 결과를 반영하지는 못한다.
 - 다른 경로와 비교한 응답 변환 방식은 [결제 경로의 응답 변환](../error-mapping.md#결제-경로의-응답-변환)을 따른다.
 - 오류 응답이나 timeout만으로 DB 반영 여부를 판단하지 않는다. commit 뒤 재조회·응답 실패와 중복 수신의 처리는 [결과 반영의 실패 처리](../use-cases/order-payment-result.md#실패-처리)를 따른다.
-- `200`이 아닌 응답과 timeout은 재전송 대상이다. 형식 오류·시도 없음·정합성 오류는 같은 원인이 남아 있으면 재전송만으로 해결되지 않는다. 현재 테스트 PG는 한 번만 보내므로 일시 장애의 복구는 주기 조회와 reconcile이 맡고, 재전송은 [후속 작업](test-payment-gateway.md#후속-작업)이다.
+- `200`이 아닌 응답과 timeout은 재전송 대상이다. 형식 오류·시도 없음·정합성 오류는 같은 원인이 남아 있으면 재전송만으로 해결되지 않는다. 현재 테스트 PG는 한 번만 보내므로 일시 장애의 복구는 주기 조회와 reconcile이 맡고, 재전송은 [후속 작업](../../../apps/test-pg/docs/test-payment-gateway.md#후속-작업)이다.
 
 ## 설정과 민감 정보
 
@@ -135,7 +135,7 @@ PG는 **10초 안에 받은 `200`만 성공**으로 본다. 그 밖의 응답이
 
 ## 검증 기준
 
-[로컬 테스트 PG](test-payment-gateway.md)는 별도 프로세스로 실행한다. Commerce 테스트는 [Testcontainers로 같은 이미지](test-payment-gateway.md#commerce-테스트의-pg-실행)를 시작·종료하고, 시나리오·처리 시점·호출 수는 [시나리오 제어](test-payment-gateway.md#시나리오-제어)로 다룬다.<br>
+[로컬 테스트 PG](../../../apps/test-pg/docs/test-payment-gateway.md)는 별도 프로세스로 실행한다. Commerce 테스트는 [Testcontainers로 같은 이미지](../../../apps/test-pg/docs/test-payment-gateway.md#commerce-테스트의-pg-실행)를 시작·종료하고, 시나리오·처리 시점·호출 수는 [시나리오 제어](../../../apps/test-pg/docs/test-payment-gateway.md#시나리오-제어)로 다룬다.<br>
 정상 형식 확인에는 무작위 지연이나 성공 확률을 넣지 않는다.
 
 | 영역 | 상황 | 기대값 |
