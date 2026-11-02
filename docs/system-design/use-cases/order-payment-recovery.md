@@ -6,23 +6,13 @@ PG 조회는 트랜잭션 밖에서 수행하고, 확인한 관찰은 [결과 �
 
 ## 결제 결과 재확인
 
-reconcile은 본인 주문의 기존 결제 결과를 PG에 다시 조회하고, 확인한 결과를 반영하는 수동 API다.<br>
-웹훅(callback) 누락, 생성 응답 유실 또는 이전 결과 반영 실패로 미완료 상태가 남았을 때 사용한다.
-
-Commerce가 PG 조회 API를 호출한다. 저장된 `transactionKey`가 있으면 단건 조회하고, 없으면 `providerOrderId`로 거래 목록을 조회한다.<br>
-PG 조회는 TX 밖에서 수행하며, 조회 결과의 검증과 상태·재고 변경은 [공통 결과 반영 규칙](order-payment-result.md#관찰-반영-규칙)을 따른다.<br>
-새 결제 시도를 만들거나 PG 생성 요청을 다시 보내지 않는다.
-
-일반 주문 상세 조회는 저장된 상태를 반환한다. reconcile은 PG를 조회한 뒤 결과를 저장에 반영할 수 있으므로 `POST`로 제공한다.<br>
-응답은 [고객 API 계약](../api-contracts.md#포인트주문)을 따른다. 이 API는 주문 한 건을 재확인하는 경로다.<br>
-미종결 시도의 자동 확인은 [주기 조회](#주기-조회)가 맡고, 정산 파일 대사는 포함하지 않는다.
-
-reconcile은 저장된 상태와 이번 조회의 불가 여부를 함께 반환한다. `lookupUnavailable: true`는 timeout, 네트워크 오류, 회로 차단, 호출 제한, 전체 조회 시간 초과 등으로 이번 조회를 완료하지 못했다는 뜻이다. 마지막으로 확인한 `PENDING`을 `UNKNOWN`이나 `FAILED`로 바꾸거나 예약을 반환하지 않는다.
-`false`는 조회 불가를 관찰하지 않았다는 뜻이며 결제 성공을 뜻하지 않는다. 거래 없음, 결과 반영 rollback, 종결된 시도의 조회 생략도 포함한다.
+reconcile은 고객이 본인 주문 한 건의 기존 결제 결과를 PG에 다시 조회해 반영하는 수동 API다. 웹훅(callback) 누락, 생성 응답 유실 또는 이전 결과 반영 실패로 미완료 상태가 남았을 때 사용한다. 주문 상세 조회와 달리 결과를 저장에 반영할 수 있어 `POST`로 둔다.<br>
+저장된 `transactionKey`가 있으면 단건, 없으면 `providerOrderId`로 거래 목록을 조회하고, 검증과 상태·재고 변경은 [공통 결과 반영 규칙](order-payment-result.md#관찰-반영-규칙)을 따른다. 미종결 시도의 자동 확인은 [주기 조회](#주기-조회)가 맡는다.<br>
+응답과 `lookupUnavailable`의 의미는 [결제 상태 객체](../api-contracts.md#결제-상태-객체)를 따른다. 조회 불가(timeout, 네트워크 오류, 회로 차단, 호출 제한, 전체 조회 시간 초과)여도 마지막으로 확인한 `PENDING`을 `UNKNOWN`·`FAILED`로 바꾸거나 예약을 반환하지 않는다.
 
 ## 조회 회복 정책
 
-조회 정책은 구현과 비교 실험을 마쳤다. 아래 값은 로컬 실험값이며 운영 임계값으로 확정하지 않았다. 기본 `local`과 `test`에서는 비활성화하고, 조회 회복 정책 네 가지 전체는 `local,pg-time-limit-experiment` 프로필로 실행한다. 모든 실험 프로필은 주기 조회를 끄고 수동 reconcile을 사용한다. 재시작 뒤 주기 조회로 종결하는 검증은 별도의 [주기 조회](#주기-조회) 설정과 테스트를 따른다.
+조회 정책은 구현과 비교 실험을 마쳤다. 아래 값은 로컬 실험값이며 운영 임계값으로 확정하지 않았다. 기본 `local`과 `test`에서는 비활성화하고, 조회 회복 정책 네 가지 전체는 `local,pg-time-limit-experiment` 프로필로 실행한다. 모든 실험 프로필은 추가 표본이 섞이지 않도록 주기 조회를 끄고 수동 reconcile을 사용한다. 재시작 뒤 주기 조회로 종결하는 검증은 별도의 [주기 조회](#주기-조회) 설정과 테스트를 따른다.
 설정은 `src/main/resources/pg-test/*.yml`에 모으고 `application.yml`에서 import한다. [실험 절차와 원본](../../performance/payment-lookup/README.md)을 함께 확인한다.
 
 | 프로필 | 적용 정책 |
@@ -41,7 +31,7 @@ reconcile은 저장된 상태와 이번 조회의 불가 여부를 함께 반환
 | TimeLimiter | 재시도와 대기를 포함한 논리적 조회 전체 900ms. Future 취소와 하위 HTTP 중단을 요청하고, 취소 후 추가 조회를 막는다. 외부 거래를 취소하거나 DB 결과 반영 시간을 제한하는 장치는 아니다. |
 | Fallback | 저장된 주문, 결제, 재고를 유지한다. reconcile은 `lookupUnavailable: true`, callback은 기존 `503`으로 조회 불가를 표현한다. 가짜 성공, 포인트 대체, 재고 반환, 새 결제를 만들지 않는다. |
 
-중첩 순서는 `CircuitBreaker → TimeLimiter → Retry → RateLimiter → HTTP`다. create는 모든 조회 정책을 우회하며 자동 재발송하지 않는다. 실험 프로필은 주기 조회를 꺼 추가 표본이 섞이지 않게 한다.
+중첩 순서는 `CircuitBreaker → TimeLimiter → Retry → RateLimiter → HTTP`다. create는 모든 조회 정책을 우회하며 자동 재발송하지 않는다.
 
 TimeLimiter 활성화 여부와 무관하게 Retry backoff 중 호출자가 interrupt되면 `CANCELLED` 관찰로 반환하고 interrupt 상태를 보존한다. 추가 HTTP 조회를 보내지 않으며 회로의 성공·실패 표본 모두에서 제외한다. [취소 경계 검증](../../performance/payment-lookup/runs/interrupt-20261023/summary.md)
 

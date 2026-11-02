@@ -97,32 +97,31 @@ PG가 결과 알림을 보내는 Commerce의 수신 API다.
 
 | 기능 | Method | Path | 입력 | 성공 | 대표 오류 |
 |---|---|---|---|---|---|
-| PG 결과 알림 | `POST` | `/api/v1/payments/callback` | JSON: `providerOrderId`(필수), `transactionKey`, `status` | `200 OK`<br/>알림을 처리함 (아래 응답 규칙) | `400 Bad Request`<br/>본문 형식 오류<br/>`404 Not Found`<br/>해당 시도 없음<br/>`503 Service Unavailable`<br/>PG 조회 불가, 결과 반영 저장 오류<br/>`500 Internal Server Error`<br/>결과 반영 중 정합성 오류, 저장 상태 재조회 실패 |
+| PG 결과 알림 | `POST` | `/api/v1/payments/callback` | JSON: `providerOrderId`(필수), `transactionKey`, `status` | `200 OK`<br/>알림을 처리함 (아래 응답 규칙) | `400`·`404`·`503`·`500`. 조건은 [응답 규칙](#응답-규칙) |
 
 - 경로는 로컬 설정의 callback URL과 같고, 생성 요청의 `callbackUrl`로 PG에 전달한다. 고객이 바꿀 수 없다.
 - PG가 호출하므로 고객 인증(`X-USER-ID`)을 쓰지 않는다.
 - 본문은 위조·중복·지연될 수 있으므로 결과로 쓰지 않는다. 시도를 찾을 식별자만 꺼내 결과 반영 유스케이스를 호출한다. 결제 결과는 PG 조회로 확인한다.
-- callback의 `providerOrderId`는 생성·조회 계약의 `orderId`와 같은 값이다. `status`는 알림이며 최종 결과의 근거로 쓰지 않는다.
+- callback의 `providerOrderId`는 생성·조회 계약의 `orderId`와 같은 값이다.
 
 ### 응답 규칙
 
-PG는 **10초 안에 받은 `200`만 성공**으로 본다. 그 밖의 응답이나 timeout은 실패이며, 재전송하는 PG는 같은 알림을 다시 보낸다.<br>
+계약상 PG는 **10초 안에 받은 `200`만 성공**으로 보고, 그 밖의 응답·timeout이면 같은 알림을 재전송한다. 현재 테스트 PG는 응답을 2초만 기다리고 재전송하지 않으므로, 일시 장애의 복구는 주기 조회와 reconcile이 맡는다([후속 작업](../../../apps/test-pg/docs/test-payment-gateway.md#후속-작업)).<br>
 응답은 처리 결과를 PG에 알리는 용도이며, 본문은 기존 `ApiResponse` 형식을 사용한다.
 
 | 처리 결과 | 응답 | 이유 |
 | --- | --- | --- |
 | 결과 반영, 이미 종결된 시도(조회 없이 저장 결과 확인), 중복·늦은 관찰, 충돌 기록, 미확인 유지(`PENDING`, 거래 0건, 단건 `404`) | `200` | 알림을 정상 처리했다. 다시 받아도 판정이 같으며, 남은 미확인은 [주기 조회](../use-cases/order-payment-recovery.md#주기-조회)와 reconcile이 확인한다. |
 | PG 조회 불가(`UNAVAILABLE`), 결과 반영 저장 오류로 TX B rollback | `503` | 일시 장애다. 재전송되면 같은 경로로 다시 조회·반영할 수 있다. |
-| 결과 반영 중 [정합성 오류](../use-cases/order-payment-result.md#실패-처리), 저장 상태 재조회 실패 | `500` | 정합성 오류는 TX B를 rollback한다. 재조회 실패는 저장된 결과를 응답할 수 없다는 뜻이며, 이미 commit된 결과를 되돌리지 않는다. |
+| 결과 반영 중 [정합성 오류](../use-cases/order-payment-result.md#실패-처리), 저장 상태 재조회 실패 | `500` | 정합성 오류는 TX B를 rollback하며, 같은 원인이 남으면 재전송으로 해결되지 않는다. 재조회 실패는 저장된 결과를 응답할 수 없다는 뜻이며, 이미 commit된 결과를 되돌리지 않는다. |
 | JSON 형식 오류, `providerOrderId` 누락·[주문번호 규칙](#테스트-pg-계약) 위반 | `400` | 기존 입력 오류 계약을 따른다. 재전송해도 결과가 같다. |
-| `providerOrderId`에 해당하는 시도 없음 | `404` | 기존 조회 실패 계약을 따른다. 시도는 PG 호출 전에 저장되므로 정상 PG 알림에서는 생기지 않는다. |
+| `providerOrderId`에 해당하는 시도 없음 | `404` | 기존 조회 실패 계약을 따른다. 시도는 PG 호출 전에 저장되므로 정상 PG 알림에서는 생기지 않으며, 재전송해도 결과가 같다. |
 
 - `transactionKey`·`status`는 결과 판단에 쓰지 않으므로 누락돼도 거절하지 않는다.
-- PG 조회와 TX B를 요청 안에서 동기로 처리한다. PG의 10초 수신 예산을 고려해 조회 대기를 제한한다. 기본 응답 timeout은 3초, 전체 정책 실험의 조회 예산은 900ms이며 TX B와 응답 전송 시간은 별도다. 10초 이내 완료를 이 설정만으로 보장하지 않는다. [조회 회복 정책](../use-cases/order-payment-recovery.md#조회-회복-정책)을 따른다.
+- PG 조회와 TX B를 요청 안에서 동기로 처리한다. PG의 10초 수신 예산을 고려해 조회 대기는 [설정](#설정과-민감-정보)의 응답 timeout과 [조회 회복 정책](../use-cases/order-payment-recovery.md#조회-회복-정책)으로 제한한다. TX B와 응답 전송 시간은 별도라 이 설정만으로 10초 이내 완료를 보장하지 않는다.
 - 서명 검증 같은 callback 인증은 이번 범위에서 두지 않는다. 위조 알림도 PG 조회와 검증을 통과한 실제 결과의 반영을 유발할 수 있지만, 본문의 `status`만으로 임의의 결제 결과를 반영하지는 못한다.
 - 다른 경로와 비교한 응답 변환 방식은 [결제 경로의 응답 변환](../error-mapping.md#결제-경로의-응답-변환)을 따른다.
 - 오류 응답이나 timeout만으로 DB 반영 여부를 판단하지 않는다. commit 뒤 재조회·응답 실패와 중복 수신의 처리는 [결과 반영의 실패 처리](../use-cases/order-payment-result.md#실패-처리)를 따른다.
-- `200`이 아닌 응답과 timeout은 재전송 대상이다. 형식 오류·시도 없음·정합성 오류는 같은 원인이 남아 있으면 재전송만으로 해결되지 않는다. 현재 테스트 PG는 한 번만 보내므로 일시 장애의 복구는 주기 조회와 reconcile이 맡고, 재전송은 [후속 작업](../../../apps/test-pg/docs/test-payment-gateway.md#후속-작업)이다.
 
 ## 설정과 민감 정보
 
@@ -150,4 +149,4 @@ PG는 **10초 안에 받은 `200`만 성공**으로 본다. 그 밖의 응답이
 
 ## 정하지 않은 것
 
-- 운영 활성화와 임계값 조정, 장기 미확인 알림 등은 [결제 회복의 미정 사항](../use-cases/order-payment-recovery.md#미정-사항)에서 관리한다. 실험 프로필의 timeout, 조회 재시도, 회로, fallback은 이미 구현했다.
+- 운영 활성화와 임계값 조정, 장기 미확인 알림 등은 [결제 회복의 미정 사항](../use-cases/order-payment-recovery.md#미정-사항)에서 관리한다.
