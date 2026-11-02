@@ -5,7 +5,7 @@ import com.loopers.application.payment.port.PaymentCreateCommand;
 import com.loopers.application.payment.port.PaymentCreateResult;
 import com.loopers.application.payment.port.PaymentGateway;
 import com.loopers.application.payment.port.PaymentTransactionsLookup;
-import com.loopers.domain.common.Money;
+import com.loopers.common.domain.Money;
 import com.loopers.support.pg.MutablePaymentClock;
 import java.time.Duration;
 import java.time.Instant;

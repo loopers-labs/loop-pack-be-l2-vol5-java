@@ -1,7 +1,7 @@
 package com.loopers.domain.product;
 
+import com.loopers.common.domain.Money;
 import com.loopers.domain.brand.BrandId;
-import com.loopers.domain.common.Money;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

@@ -2,8 +2,8 @@ package com.loopers.interfaces.api.order;
 
 import com.loopers.application.order.OrderApplicationService;
 import com.loopers.application.order.OrderResult;
-import com.loopers.interfaces.api.ApiResponse;
-import com.loopers.interfaces.api.RequestValues;
+import com.loopers.common.in.ApiResponse;
+import com.loopers.common.in.RequestValues;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import java.util.List;

@@ -1,8 +1,8 @@
 package com.loopers.infrastructure.product;
 
 import com.loopers.application.product.port.ProductRepository;
+import com.loopers.common.domain.Money;
 import com.loopers.domain.brand.BrandId;
-import com.loopers.domain.common.Money;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductId;
 import com.loopers.domain.product.Stock;

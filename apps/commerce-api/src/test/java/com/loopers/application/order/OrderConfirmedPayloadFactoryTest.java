@@ -1,6 +1,6 @@
 package com.loopers.application.order;
 
-import com.loopers.domain.common.Money;
+import com.loopers.common.domain.Money;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.Quantity;

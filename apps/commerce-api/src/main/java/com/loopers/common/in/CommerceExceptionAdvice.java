@@ -1,10 +1,10 @@
-package com.loopers.interfaces.api;
+package com.loopers.common.in;
 
 import com.loopers.application.brand.BrandNotFoundException;
 import com.loopers.application.payment.PaymentLookupNotCalledException;
 import com.loopers.application.product.ProductNotFoundException;
-import com.loopers.domain.common.InvalidValueException;
-import com.loopers.domain.common.RuleViolationException;
+import com.loopers.common.error.InvalidValueException;
+import com.loopers.common.error.RuleViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.annotation.Order;
 import org.springframework.dao.PessimisticLockingFailureException;

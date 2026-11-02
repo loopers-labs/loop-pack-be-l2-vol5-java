@@ -1,7 +1,7 @@
 package com.loopers.application.product;
 
 import com.loopers.application.brand.BrandApplicationService;
-import com.loopers.domain.common.RuleViolationException;
+import com.loopers.common.error.RuleViolationException;
 import com.loopers.utils.DatabaseCleanUp;
 import java.sql.Connection;
 import java.sql.DriverManager;

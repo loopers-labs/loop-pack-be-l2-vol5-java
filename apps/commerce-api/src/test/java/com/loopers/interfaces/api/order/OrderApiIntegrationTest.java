@@ -6,7 +6,7 @@ import com.loopers.application.product.ProductApplicationService;
 import com.loopers.application.point.PointApplicationService;
 import com.loopers.application.order.OrderApplicationService;
 import com.loopers.application.order.OrderNotFoundException;
-import com.loopers.domain.common.RuleViolationException;
+import com.loopers.common.error.RuleViolationException;
 import com.loopers.infrastructure.payment.TestPgServer;
 import com.loopers.infrastructure.user.UserJpaEntity;
 import com.loopers.infrastructure.user.UserJpaRepository;

@@ -1,9 +1,9 @@
 package com.loopers.domain.product;
 
+import com.loopers.common.domain.Money;
+import com.loopers.common.error.InvalidValueException;
+import com.loopers.common.error.RuleViolationException;
 import com.loopers.domain.brand.BrandId;
-import com.loopers.domain.common.InvalidValueException;
-import com.loopers.domain.common.Money;
-import com.loopers.domain.common.RuleViolationException;
 import java.util.Objects;
 
 public final class Product {

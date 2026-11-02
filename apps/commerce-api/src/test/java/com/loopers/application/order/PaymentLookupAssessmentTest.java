@@ -4,7 +4,7 @@ import com.loopers.application.payment.port.PaymentAnomalyRepository.Kind;
 import com.loopers.application.payment.port.PaymentTransaction;
 import com.loopers.application.payment.port.PaymentTransactionStatus;
 import com.loopers.application.payment.port.PaymentTransactionsLookup;
-import com.loopers.domain.common.Money;
+import com.loopers.common.domain.Money;
 import com.loopers.domain.payment.PaymentRecord;
 import java.time.Instant;
 import java.util.List;

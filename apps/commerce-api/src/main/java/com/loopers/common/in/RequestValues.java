@@ -1,4 +1,4 @@
-package com.loopers.interfaces.api;
+package com.loopers.common.in;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.loopers.support.error.CoreException;

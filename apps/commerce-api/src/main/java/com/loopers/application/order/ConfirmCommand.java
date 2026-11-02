@@ -1,6 +1,6 @@
 package com.loopers.application.order;
 
-import com.loopers.domain.common.InvalidValueException;
+import com.loopers.common.error.InvalidValueException;
 
 // 카드 정보는 PG create에만 쓰고 저장하지 않는다. toString·예외 메시지에 카드 번호를 남기지 않는다(설계 21절).
 public record ConfirmCommand(String attemptKey, String cardType, String cardNo) {

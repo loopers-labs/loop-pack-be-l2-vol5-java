@@ -1,6 +1,6 @@
 package com.loopers.domain.payment;
 
-import com.loopers.domain.common.Money;
+import com.loopers.common.domain.Money;
 import java.time.Duration;
 import java.time.Instant;
 import org.junit.jupiter.api.DisplayName;

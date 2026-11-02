@@ -3,7 +3,7 @@ package com.loopers.interfaces.api.brand;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.loopers.application.brand.BrandApplicationService;
 import com.loopers.application.brand.BrandResult;
-import com.loopers.interfaces.api.ApiResponse;
+import com.loopers.common.in.ApiResponse;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import org.springframework.http.HttpStatus;
@@ -33,7 +33,7 @@ public class AdminBrandController {
     public ApiResponse<java.util.List<com.loopers.application.brand.AdminBrandResult>> list(
         @org.springframework.web.bind.annotation.RequestParam(defaultValue = "0") int page,
         @org.springframework.web.bind.annotation.RequestParam(defaultValue = "20") int size) {
-        com.loopers.interfaces.api.RequestValues.page(page, size);
+        com.loopers.common.in.RequestValues.page(page, size);
         return ApiResponse.success(service.list(page, size));
     }
 

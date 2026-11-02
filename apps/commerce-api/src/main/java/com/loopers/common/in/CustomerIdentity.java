@@ -1,4 +1,4 @@
-package com.loopers.interfaces.api;
+package com.loopers.common.in;
 
 import com.loopers.application.user.UserIdentificationService;
 import com.loopers.support.error.CoreException;

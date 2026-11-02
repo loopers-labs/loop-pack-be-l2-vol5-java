@@ -1,7 +1,7 @@
 package com.loopers.domain.product;
 
-import com.loopers.domain.common.InvalidValueException;
-import com.loopers.domain.common.RuleViolationException;
+import com.loopers.common.error.InvalidValueException;
+import com.loopers.common.error.RuleViolationException;
 
 public record Stock(int value) {
     public Stock {

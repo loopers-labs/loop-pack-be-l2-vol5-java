@@ -13,7 +13,7 @@ import com.loopers.application.payment.port.PaymentTransaction;
 import com.loopers.application.payment.port.PaymentTransactionStatus;
 import com.loopers.application.payment.port.PaymentTransactionsLookup;
 import com.loopers.application.product.port.ProductRepository;
-import com.loopers.domain.common.Money;
+import com.loopers.common.domain.Money;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.Quantity;

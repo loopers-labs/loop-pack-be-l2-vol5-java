@@ -12,7 +12,7 @@ import com.loopers.application.payment.port.PaymentTransaction;
 import com.loopers.application.payment.port.PaymentTransactionLookup;
 import com.loopers.application.payment.port.PaymentTransactionStatus;
 import com.loopers.application.payment.port.PaymentTransactionsLookup;
-import com.loopers.domain.common.Money;
+import com.loopers.common.domain.Money;
 import com.loopers.infrastructure.payment.TestPgServer.CreateBehavior;
 import com.loopers.infrastructure.payment.TestPgServer.LookupBehavior;
 import com.loopers.infrastructure.payment.TestPgServer.RecordedRequest;

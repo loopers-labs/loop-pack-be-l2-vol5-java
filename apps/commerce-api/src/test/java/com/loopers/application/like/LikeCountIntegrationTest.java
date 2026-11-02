@@ -5,7 +5,7 @@ import com.loopers.application.order.OrderApplicationService;
 import com.loopers.application.order.OrderResult;
 import com.loopers.application.point.PointApplicationService;
 import com.loopers.application.product.ProductApplicationService;
-import com.loopers.domain.common.RuleViolationException;
+import com.loopers.common.error.RuleViolationException;
 import com.loopers.support.pg.TestPgFixture;
 import com.loopers.utils.DatabaseCleanUp;
 import java.util.ArrayList;

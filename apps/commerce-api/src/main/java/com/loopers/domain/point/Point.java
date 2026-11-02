@@ -1,7 +1,7 @@
 package com.loopers.domain.point;
 
-import com.loopers.domain.common.InvalidValueException;
-import com.loopers.domain.common.Money;
+import com.loopers.common.domain.Money;
+import com.loopers.common.error.InvalidValueException;
 import java.util.Objects;
 
 public final class Point {

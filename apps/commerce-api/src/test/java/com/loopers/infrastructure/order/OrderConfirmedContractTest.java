@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.loopers.application.order.OrderConfirmedPayload;
 import com.loopers.application.order.OrderConfirmedPayloadFactory;
-import com.loopers.domain.common.Money;
+import com.loopers.common.domain.Money;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.Quantity;

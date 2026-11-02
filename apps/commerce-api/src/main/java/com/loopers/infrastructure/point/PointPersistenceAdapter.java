@@ -1,7 +1,7 @@
 package com.loopers.infrastructure.point;
 
 import com.loopers.application.point.port.PointRepository;
-import com.loopers.domain.common.Money;
+import com.loopers.common.domain.Money;
 import com.loopers.domain.point.Point;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;

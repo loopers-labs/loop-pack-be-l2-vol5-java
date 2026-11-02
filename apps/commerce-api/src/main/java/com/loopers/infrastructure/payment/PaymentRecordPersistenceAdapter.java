@@ -1,7 +1,7 @@
 package com.loopers.infrastructure.payment;
 
 import com.loopers.application.payment.port.PaymentRecordRepository;
-import com.loopers.domain.common.Money;
+import com.loopers.common.domain.Money;
 import com.loopers.domain.payment.PaymentRecord;
 import java.time.Instant;
 import java.util.Collection;

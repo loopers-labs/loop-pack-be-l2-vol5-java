@@ -1,6 +1,6 @@
 package com.loopers.application.payment.port;
 
-import com.loopers.domain.common.Money;
+import com.loopers.common.domain.Money;
 
 // 카드 번호는 toString·예외 메시지에 남기지 않는다(설계 21절).
 public record PaymentCreateCommand(String providerOrderId, String cardType, String cardNo, Money amount) {

@@ -1,6 +1,6 @@
 package com.loopers.domain.order;
 
-import com.loopers.domain.common.InvalidValueException;
+import com.loopers.common.error.InvalidValueException;
 
 public record Quantity(int value) {
     public Quantity {

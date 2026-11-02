@@ -9,7 +9,7 @@ import com.loopers.application.product.ProductApplicationService;
 import com.loopers.application.product.ProductNotFoundException;
 import com.loopers.application.product.port.ProductRepository;
 import com.loopers.domain.brand.BrandId;
-import com.loopers.domain.common.RuleViolationException;
+import com.loopers.common.error.RuleViolationException;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductId;
 import com.loopers.infrastructure.product.ProductPersistenceAdapter;

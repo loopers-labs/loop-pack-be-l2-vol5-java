@@ -1,8 +1,8 @@
 package com.loopers.domain.payment;
 
-import com.loopers.domain.common.InvalidValueException;
-import com.loopers.domain.common.Money;
-import com.loopers.domain.common.RuleViolationException;
+import com.loopers.common.domain.Money;
+import com.loopers.common.error.InvalidValueException;
+import com.loopers.common.error.RuleViolationException;
 import java.time.Duration;
 import java.time.Instant;
 

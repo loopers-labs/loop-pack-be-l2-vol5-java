@@ -1,5 +1,6 @@
 package com.loopers.interfaces.api;
 
+import com.loopers.common.in.ApiResponse;
 import com.loopers.domain.example.ExampleModel;
 import com.loopers.infrastructure.example.ExampleJpaRepository;
 import com.loopers.interfaces.api.example.ExampleV1Dto;

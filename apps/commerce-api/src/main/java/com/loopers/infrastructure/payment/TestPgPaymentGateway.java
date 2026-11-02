@@ -10,7 +10,7 @@ import com.loopers.application.payment.port.PaymentTransaction;
 import com.loopers.application.payment.port.PaymentTransactionLookup;
 import com.loopers.application.payment.port.PaymentTransactionStatus;
 import com.loopers.application.payment.port.PaymentTransactionsLookup;
-import com.loopers.domain.common.Money;
+import com.loopers.common.domain.Money;
 import java.io.IOException;
 import java.net.ConnectException;
 import java.net.http.HttpClient;

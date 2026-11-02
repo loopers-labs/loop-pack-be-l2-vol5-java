@@ -1,6 +1,6 @@
 package com.loopers.application.payment.port;
 
-import com.loopers.domain.common.Money;
+import com.loopers.common.domain.Money;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;

@@ -1,4 +1,4 @@
-package com.loopers.domain.common;
+package com.loopers.common.domain;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

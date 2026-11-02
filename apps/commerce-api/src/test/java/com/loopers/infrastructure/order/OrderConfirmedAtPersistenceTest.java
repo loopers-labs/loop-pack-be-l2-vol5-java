@@ -2,7 +2,7 @@ package com.loopers.infrastructure.order;
 
 import com.loopers.application.order.OrderConfirmedPayloadFactory;
 import com.loopers.application.order.port.OrderRepository;
-import com.loopers.domain.common.Money;
+import com.loopers.common.domain.Money;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.Quantity;

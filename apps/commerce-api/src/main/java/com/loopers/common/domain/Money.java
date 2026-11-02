@@ -1,4 +1,7 @@
-package com.loopers.domain.common;
+package com.loopers.common.domain;
+
+import com.loopers.common.error.InvalidValueException;
+import com.loopers.common.error.RuleViolationException;
 
 public record Money(long value) {
     public Money {
