@@ -178,7 +178,7 @@ Kafka transaction의 exactly-once는 Kafka record와 offset을 함께 다루는 
 | partition 배정 | partition 2개 topic에 같은 group의 consumer 1 → 2 → 3개 | 각 partition은 한 member에만 배정, 3개면 하나 이상 배정 없음 |
 | key 매핑 | partition 수를 고정하고 같은 key 반복 전송 | 같은 partition |
 | 전체 연결 | API·streamer·테스트 PG를 함께 띄운 로컬 실행 ([절차](order-confirmed-event-verification.md#로컬-전체-흐름-관찰)) | 확정 주문의 품목·수량·확정 시각과 같은 구매 활동, group committed offset 진행 |
-| 로컬 앱 재시작 | 같은 DB·broker·topic·group으로 streamer 프로세스 재시작 | local의 `ddl-auto=validate`로 완료 기록·활동의 행 ID·내용·생성/수정 시각과 committed offset 유지 |
+| 로컬 앱 재시작 | 같은 DB·broker·topic·group으로 streamer 프로세스 재시작 | local의 `ddl-auto=validate`로 완료 기록 행 수, 활동의 행 ID·내용·생성/수정 시각과 committed offset 유지 |
 
 ## 범위 밖
 

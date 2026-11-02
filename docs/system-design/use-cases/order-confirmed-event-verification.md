@@ -42,6 +42,8 @@ commerce-api는 확정 시각 저장과 이벤트 구성·발행을, commerce-st
 
 Producer와 Consumer의 자동화 검증을 한 테스트에 결합하지 않는다. 실제 PG 성공으로 시작한 주문이 broker를 거쳐 구매 활동 DB에 반영되는 연결은 로컬에서 관찰한다. [로컬 실행 절차](../../verification/order-confirmed-event/README.md)는 격리 환경에서 전송 실패 A·정상 소비 B의 주문·broker·구매 활동을 함께 확인하고, streamer 프로세스 재시작 뒤 행·offset 보존까지 확인한다. 원본 JSON·로그는 로컬에 보관하고 핵심 관찰값은 PR 또는 기술 글에 요약한다.
 
+Compose 환경에서 직접 관찰할 때의 순서는 다음과 같다. 실행 도구는 같은 흐름을 고유한 topic·group과 별도 broker로 자동 실행한다.
+
 1. 로컬 Kafka·MySQL·테스트 PG를 준비하고 `commerce-api`와 `commerce-streamer`를 실행한다. 두 애플리케이션이 같은 로컬 Kafka를 사용하고, streamer가 `order-events`를 구독 중인지 확인한다.
 2. 기존 주문·결제 API와 테스트 PG 성공 결과 적용 경로로 새 주문을 확정한다. 이벤트를 직접 주입하거나 DB를 직접 수정하지 않는다.
 3. 주문 저장 결과에서 `orderId`, 최초 `confirmedAt`, 저장 품목·수량을 기록하고, 계약에 따라 `eventId`를 계산한다.
