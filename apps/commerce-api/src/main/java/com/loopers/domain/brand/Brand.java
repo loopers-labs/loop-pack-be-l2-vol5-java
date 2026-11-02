@@ -4,6 +4,7 @@ import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 
 import java.time.ZonedDateTime;
+import java.util.Objects;
 
 public class Brand {
 
@@ -49,9 +50,9 @@ public class Brand {
         this.name = validateName(name);
     }
 
-    public void delete() {
-        if (deletedAt == null) {
-            deletedAt = ZonedDateTime.now();
+    public void delete(ZonedDateTime deletedAt) {
+        if (this.deletedAt == null) {
+            this.deletedAt = Objects.requireNonNull(deletedAt, "deletedAt");
         }
     }
 

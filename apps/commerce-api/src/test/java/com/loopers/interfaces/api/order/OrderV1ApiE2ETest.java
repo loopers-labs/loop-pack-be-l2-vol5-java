@@ -413,7 +413,7 @@ class OrderV1ApiE2ETest {
         points.save(Point.create(user.getId(), new PointBalance(1_000L)));
         Product product = saveProduct(100L, 5L);
         Order order = orders.save(Order.reconstitute(null, user.getId(), OrderStatus.CONFIRMED, 200L, 200L,
-            PaymentResult.SUCCESS, PaymentMethod.POINT, List.of(
+            PaymentResult.SUCCESS, PaymentMethod.POINT, null, List.of(
                 OrderItem.create(product.getId(), "구매 당시 상품명", 100L, 2))));
         JsonNode before = detail(user, order.getId());
 
@@ -573,7 +573,7 @@ class OrderV1ApiE2ETest {
     void showsLegacyPointOrderAsCompleted() throws Exception {
         User user = saveUser();
         Order pointOrder = orders.save(Order.reconstitute(null, user.getId(), OrderStatus.CONFIRMED, 300L, 300L,
-            PaymentResult.SUCCESS, PaymentMethod.POINT, List.of(OrderItem.create(7L, "Pegasus", 150L, 2))));
+            PaymentResult.SUCCESS, PaymentMethod.POINT, null, List.of(OrderItem.create(7L, "Pegasus", 150L, 2))));
 
         JsonNode detail = detail(user, pointOrder.getId());
         JsonNode payment = detail.path("payment");
@@ -672,7 +672,7 @@ class OrderV1ApiE2ETest {
         User confirmedOrderUser = saveUser();
         Order draft = orders.save(Order.create(draftOrderUser.getId(), List.of(OrderItem.create(1L, "Air Max", 100L, 1))));
         Order confirmed = orders.save(Order.reconstitute(null, confirmedOrderUser.getId(), OrderStatus.CONFIRMED, 200L, 200L,
-            PaymentResult.SUCCESS, PaymentMethod.POINT, List.of(OrderItem.create(2L, "Pegasus", 200L, 1))));
+            PaymentResult.SUCCESS, PaymentMethod.POINT, null, List.of(OrderItem.create(2L, "Pegasus", 200L, 1))));
 
         ResponseEntity<ApiResponse<List<OrderAdminV1Dto.OrderResponse>>> listResponse = adminClient.exchange(
             "/api-admin/v1/orders", org.springframework.http.HttpMethod.GET,

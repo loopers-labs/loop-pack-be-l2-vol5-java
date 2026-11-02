@@ -4,6 +4,8 @@
 PG와 주고받는 HTTP 계약은 callback 수신을 포함해 [PG 연동 설계](external-systems/payment-gateway.md)를 기준으로 한다.<br>
 애그리게이트 규칙은 [도메인 모델](domain-model.md), 복잡한 상태 변경 흐름은 각 유스케이스 설계를, 공통 오류 변환 방식은 [오류 변환 설계](error-mapping.md)를 기준으로 한다.
 
+정수 Body 필드(상품 `brandId`·`price`, 재고 `quantity`, 주문 `productId`·`quantity`, 포인트 `amount`)는 누락·null, 소수 부분이 있는 값, 입력 범위 초과를 `400 Bad Request`로 거절하고 데이터를 저장하거나 바꾸지 않는다. 범위 안의 `100.0`, `1e2`처럼 값이 정수인 표기는 허용한다.
+
 ## 관리자 API
 
 공통 Prefix: `/api-admin/v1`<br>
@@ -30,9 +32,6 @@ PG와 주고받는 HTTP 계약은 callback 수신을 포함해 [PG 연동 설계
 | 상품 삭제 | `DELETE` | `/products/{productId}` | Path: `productId` | `200 OK`<br/>Product 논리 삭제<br/>재고·기존 Like·주문 정보는 유지 | `404 Not Found`<br/>없거나 이미 삭제된 Product |
 | 상품 재고 변경 | `PUT` | `/products/{productId}/stock` | Path: `productId`<br/>Body: `quantity`(필수, 0 이상의 64비트 정수인 최종 재고 수량) | `200 OK`<br/>변경된 재고 수량 | `400 Bad Request`<br/>재고 수량 입력 오류<br/>`404 Not Found`<br/>없거나 삭제된 Product |
 
-상품 등록·수정과 재고 변경의 Body 숫자 필드는 누락·null, 소수 부분이 있는 값이나 입력 범위 초과를 `400 Bad Request`로 거절하고 기존 데이터를 유지한다.<br>
-각 입력 범위 내에서 `100.0`, `1e2`처럼 값이 정수인 표기는 허용한다.
-
 관리자 재고 설정값은 이미 확보한 PG 예약 수량을 제외한 가용 수량의 최종 값이다. 미완료 PG 예약 수량과 설정값의 합이 `Long.MAX_VALUE`를 넘으면 `400 Bad Request`로 거절하고 기존 가용·예약 수량을 유지한다. 예약이 없으면 기존 64비트 비음수 범위를 모두 허용한다.
 
 브랜드 이름, 상품 이름·가격이나 재고를 현재와 같은 값으로 설정해도 `200 OK`로 처리한다.<br>
@@ -49,7 +48,8 @@ PG와 주고받는 HTTP 계약은 callback 수신을 포함해 [PG 연동 설계
 ## 고객 API
 
 공통 Prefix: `/api/v1`<br>
-사용자 식별: Header `X-USER-ID` (좋아요·포인트·주문 API)
+사용자 식별: Header `X-USER-ID` (좋아요·포인트·주문 API)<br>
+`X-USER-ID` 누락·숫자가 아닌 값은 `400 Bad Request`, 존재하지 않는 User는 `404 Not Found`로 거절하고 데이터를 바꾸지 않는다. 아래 표의 대표 오류는 이 공통 오류를 제외한다.
 
 ### 브랜드·상품
 
@@ -65,7 +65,7 @@ PG와 주고받는 HTTP 계약은 callback 수신을 포함해 [PG 연동 설계
 |---|---|---|---|---|---|
 | 좋아요 등록 | `POST` | `/products/{productId}/likes` | Path: `productId` | `200 OK`<br/>좋아요 상태 보장<br/>이후 Brand·Product가 삭제돼도 저장된 Like 관계 보존 | `404 Not Found`<br/>상품 조회 시 없거나 삭제된 Product |
 | 좋아요 취소 | `DELETE` | `/products/{productId}/likes` | Path: `productId` | `200 OK`<br/>좋아요 취소 상태 보장 | 기능별 대표 오류 없음 |
-| 내 좋아요 목록 조회 | `GET` | `/users/{userId}/likes` | Path: `userId` (`X-USER-ID`와 일치) | `200 OK`<br/>삭제된 Product를 제외한 내 좋아요 상품 목록 | `400 Bad Request`<br/>`X-USER-ID` 누락 또는 Path `userId`와 불일치<br/>`404 Not Found`<br/>존재하지 않는 User |
+| 내 좋아요 목록 조회 | `GET` | `/users/{userId}/likes` | Path: `userId` (`X-USER-ID`와 일치) | `200 OK`<br/>삭제된 Product를 제외한 내 좋아요 상품 목록 | `400 Bad Request`<br/>Path `userId`와 `X-USER-ID` 불일치 |
 
 같은 사용자·상품의 좋아요를 동시에 등록해도 각 요청은 `200 OK`와 좋아요 상태를 반환하고 관계는 1건만 저장한다.
 
@@ -78,12 +78,10 @@ PG와 주고받는 HTTP 계약은 callback 수신을 포함해 [PG 연동 설계
 | 포인트 충전 | `POST` | `/points/charge` | Body: `amount`(필수, 64비트 양의 정수) | `200 OK`<br/>충전 후 잔액 | `400 Bad Request`<br/>누락·null·잘못된 타입·입력 범위 초과·양의 정수가 아닌 `amount`, 충전 후 잔액 범위 초과 |
 | 내 포인트 잔액 조회 | `GET` | `/points` | - | `200 OK`<br/>저장된 포인트 잔액 | 기능별 대표 오류 없음 |
 | 주문 생성 | `POST` | `/orders` | Body: `items`(필수, 비어 있지 않은 품목 목록)<br/>품목별 `productId`(필수, 64비트 정수), `quantity`(필수, 32비트 양의 정수) | `201 Created`<br/>중복 품목을 합산해 품목, 수량, 단가와 합계를 저장한 `DRAFT` Order 반환<br/>재고 미차감<br/>이후 Brand·Product가 삭제돼도 저장된 DRAFT 보존 | `400 Bad Request`<br/>주문 품목 누락·빈 목록·null 품목, 상품 ID·수량 입력 오류<br/>`404 Not Found`<br/>상품 조회 시 없거나 삭제된 Product |
-| 주문 결제 요청 | `POST` | `/orders/{orderId}/confirm` | Path: `orderId`<br/>Body: `paymentAttemptKey`(필수, UUID 문자열), `cardType`·`cardNo`(필수, 합성 카드 입력 문자열) | `202 Accepted`<br/>미종결 시도의 [결제 상태 객체](#결제-상태-객체)<br/>`200 OK`<br/>종결된 결제 상태 객체 | `400 Bad Request`<br/>입력 오류<br/>`404 Not Found`<br/>주문이 없거나 타인 소유<br/>`409 Conflict`<br/>시도 키 충돌, 이전 POINT 확정 주문, 상품 사용 불가, 재고 부족 |
+| 주문 결제 요청 | `POST` | `/orders/{orderId}/confirm` | Path: `orderId`<br/>Body: `paymentAttemptKey`(필수, UUID 문자열), `cardType`·`cardNo`(필수, 합성 카드 입력 문자열) | `202 Accepted`<br/>미종결 시도의 [결제 상태 객체](#결제-상태-객체). 이미 생성된 시도의 결과 반영에 실패해도 저장 상태를 읽을 수 있으면 그 상태로 응답<br/>`200 OK`<br/>종결된 결제 상태 객체 | `400 Bad Request`<br/>입력 오류<br/>`404 Not Found`<br/>주문이 없거나 타인 소유<br/>`409 Conflict`<br/>시도 키 충돌, 이전 POINT 확정 주문, 상품 사용 불가, 재고 부족<br/>`500 Internal Server Error`<br/>결과 반영 실패 뒤 저장 상태 재조회 실패 |
 | 주문 결제 결과 재확인·반영 | `POST` | `/orders/{orderId}/payment/reconcile` | Path: `orderId` | `202 Accepted`<br/>미종결 시도의 [결제 상태 객체](#결제-상태-객체). PG 조회 불가·결과 반영 저장 오류도 저장 상태를 읽을 수 있으면 그 상태로 응답<br/>`200 OK`<br/>종결된 결제 상태 객체 | `400 Bad Request`<br/>입력 오류<br/>`404 Not Found`<br/>주문이 없거나 타인 소유, 시도 없음<br/>`500 Internal Server Error`<br/>결과 반영 중 정합성 오류, 저장 상태 재조회 실패 |
 | 내 주문 목록 조회 | `GET` | `/orders` | - | `200 OK`<br/>내 주문의 품목·수량·금액·상태와 주문별 [결제 상태 객체](#결제-상태-객체)(`payment`) 목록 | 기능별 대표 오류 없음 |
 | 내 주문 상세 조회 | `GET` | `/orders/{orderId}` | Path: `orderId` | `200 OK`<br/>내 주문의 품목·수량·금액·상태와 [결제 상태 객체](#결제-상태-객체)(`payment`). 결제 요청을 만들지 않음 | `404 Not Found`<br/>조회할 수 없는 Order |
-
-결제 요청 API는 이미 생성된 시도의 결과 반영에 실패해도 저장 상태를 다시 읽을 수 있으면 그 상태로 응답한다. 결제 요청·재확인 API에서 저장 상태도 읽을 수 없으면 기존 내부 오류 응답(`500`)으로 끝낸다.
 
 결제 요청의 `paymentAttemptKey`는 표준 UUID 텍스트(`8-4-4-4-12` 형식의 16진수 36자)만 허용한다.<br>
 대소문자는 구분하지 않고 소문자로 바꿔 저장·비교한다.<br>
@@ -93,9 +91,6 @@ PG와 주고받는 HTTP 계약은 callback 수신을 포함해 [PG 연동 설계
 `cardType`·`cardNo`는 공백만으로 이루어지지 않은 필수 문자열이어야 한다.<br>
 누락·null·문자열이 아닌 값·공백 문자열은 재고 확보 전에 `400 Bad Request`로 거절하고 주문·재고·시도를 변경하지 않는다.<br>
 형식·길이·카드번호 유효성은 검사하지 않는다. 검사 범위의 기준은 [PG 연동의 설정과 민감 정보](external-systems/payment-gateway.md#설정과-민감-정보)를 따른다.
-
-주문 생성의 `productId`·`quantity`는 누락·null, 소수 부분이 있는 값이나 표현 범위 초과를 `400 Bad Request`로 거절하고 주문을 생성하지 않는다.<br>
-각 입력 범위 내에서 `100.0`, `1e2`처럼 값이 정수인 표기는 허용한다.
 
 #### 결제 상태 객체
 
@@ -157,8 +152,6 @@ confirm·reconcile은 이 객체를 응답 본문으로 반환하고, 고객 주
 | `FAILED` | 결제 실패 | 주문 `PAYMENT_FAILED` |
 
 종결된 주문은 충돌 사유가 있어도 저장된 최종 결과로 표시한다.
-
-결제 요청의 처리 정책은 [주문 결제 요청](use-cases/order-payment-request.md#멱등성과-재요청-정책)을 따른다.
 
 ## 포인트 충전 기대값
 

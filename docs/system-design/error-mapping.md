@@ -1,10 +1,10 @@
 # 도메인 오류와 HTTP 오류 변환
 
-Commerce 도메인 오류를 표현하고 API 응답으로 변환하는 현재 방식을 정리한다. 엔드포인트별 성공·오류 계약은 [API 계약](api-contracts.md)을 참고한다.
+`commerce-api`의 도메인 오류를 표현하고 API 응답으로 변환하는 현재 방식을 정리한다. 엔드포인트별 성공·오류 계약은 [API 계약](api-contracts.md)을 참고한다. HTTP 응답이 없는 `commerce-streamer`의 소비 오류는 [구매 활동 Consumer의 실패와 중단](../../apps/commerce-streamer/docs/purchase-activity-consumer.md#실패와-중단)을 따른다.
 
 ## 현재 방식
 
-- Commerce Domain은 업무 규칙 위반을 `CoreException`과 `ErrorType`으로 표현한다.
+- `commerce-api`의 Domain은 업무 규칙 위반을 `CoreException`과 `ErrorType`으로 표현한다.
 - `ErrorType`은 HTTP 상태, 오류 코드와 기본 메시지를 보유한다. 따라서 Domain은 오류 표현을 통해 HTTP 상태에 결합되어 있다.
 - interfaces의 `ApiControllerAdvice`가 `CoreException`을 받아 HTTP 상태와 `ApiResponse` 오류 응답으로 변환한다.
 
@@ -30,7 +30,7 @@ Commerce 도메인 오류를 표현하고 API 응답으로 변환하는 현재 �
 - 업무 규칙 위반은 기존처럼 `CoreException`으로 표현하고 `ApiControllerAdvice`가 변환한다.
 - PG 조회 불가는 예외가 아니라 adapter의 관찰 결과다. 결과 반영 서비스는 상태를 바꾸지 않고 처리 결과를 반환한다.
 - reconcile은 이 결과를 버리지 않고 `lookupUnavailable: true`와 저장된 상태를 함께 응답한다. 마지막으로 확인한 `PENDING`을 실패로 바꾸지 않는다. 정상 조회, 종결로 인한 조회 생략, 결과 반영 저장 오류의 fallback은 `false`이며 결제 성공을 뜻하지 않는다.
-- callback의 일시 장애 응답은 업무 오류가 아니라 PG에 재전송을 요청하는 응답이다. `ErrorType`에 추가하지 않는다. callback 컨트롤러가 반영됨·나중에 재시도와 같은 처리 결과를 HTTP 응답으로 바꾸고, TX B 저장 오류도 rollback 뒤 이 경계에서 처리한다.
+- callback의 일시 장애 응답은 업무 오류가 아니라 PG에 재전송을 요청하는 응답이다. `ErrorType`에 추가하지 않는다. callback Facade가 PG 조회 불가와 TX B rollback을 '나중에 재시도' 처리 결과로 돌려주고, callback 컨트롤러가 이를 재전송 요청 응답(`503`)으로 바꾼다.
 - confirm은 TX A가 이미 commit됐으므로 결과 반영이 실패하면 새 조회 경계에서 결제 상태를 확인한다. 저장 상태를 읽을 수 있으면 그 상태로 응답하고, 다른 경로가 먼저 종결했다면 종결된 상태를 반환한다. reconcile의 저장 오류도 같은 방식으로 처리한다. 두 경우 모두 서버 로그에 오류를 남긴다.
 - 저장 상태 재조회에도 실패하면 기존 내부 오류 응답으로 끝낸다. 응답 실패를 이유로 이미 commit된 결과를 되돌리거나 PG 생성 요청을 다시 보내지 않는다.
 - 정합성 오류는 `CoreException(INTERNAL_ERROR)`으로 표현한다. confirm의 위 처리 외에는 기존 `ApiControllerAdvice`가 내부 오류 응답으로 변환한다.

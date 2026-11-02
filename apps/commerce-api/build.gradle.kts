@@ -28,6 +28,7 @@ dependencies {
     // add-ons
     implementation(project(":modules:jpa"))
     implementation(project(":modules:redis"))
+    implementation(project(":modules:kafka"))
     implementation(project(":supports:jackson"))
     implementation(project(":supports:logging"))
     implementation(project(":supports:monitoring"))
@@ -51,6 +52,7 @@ dependencies {
     // test-fixtures
     testImplementation(testFixtures(project(":modules:jpa")))
     testImplementation(testFixtures(project(":modules:redis")))
+    testImplementation(testFixtures(project(":modules:kafka")))
     testImplementation("com.tngtech.archunit:archunit:1.5.0")
     testImplementation("org.springframework.security:spring-security-test")
     testImplementation("org.testcontainers:mysql")
@@ -64,9 +66,11 @@ tasks.test {
     val fixtureJar = rootProject.file("apps/test-pg/build/libs/test-pg.jar")
     val safetyMigration = rootProject.file("docker/mysql/pg-payment-safety-migration.sql")
     val conflictMigration = rootProject.file("docker/mysql/pg-payment-conflict-migration.sql")
+    val confirmedAtMigration = rootProject.file("docker/mysql/order-confirmed-at-migration.sql")
     systemProperty("test-pg.dockerfile", fixtureDockerfile.absolutePath)
     systemProperty("test-pg.jar", fixtureJar.absolutePath)
     systemProperty("payment.safety-migration", safetyMigration.absolutePath)
     systemProperty("payment.conflict-migration", conflictMigration.absolutePath)
-    inputs.files(fixtureDockerfile, fixtureJar, safetyMigration, conflictMigration)
+    systemProperty("order.confirmed-at-migration", confirmedAtMigration.absolutePath)
+    inputs.files(fixtureDockerfile, fixtureJar, safetyMigration, conflictMigration, confirmedAtMigration)
 }

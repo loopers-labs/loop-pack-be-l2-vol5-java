@@ -1,5 +1,6 @@
 package com.loopers.application.payment;
 
+import com.loopers.application.time.ApplicationTime;
 import com.loopers.domain.payment.PaymentAttempt;
 import com.loopers.domain.payment.PaymentAttemptRepository;
 import lombok.RequiredArgsConstructor;
@@ -21,11 +22,12 @@ public class PaymentPeriodicCheck {
     private final PaymentAttemptRepository paymentAttemptRepository;
     private final PaymentResultTransaction paymentResultTransaction;
     private final PaymentResultService paymentResultService;
+    private final ApplicationTime applicationTime;
 
     // 마지막 상태 변경 뒤 기준 시간이 지났고 조회 대상 기간 안의 미종결 시도를, 확인 시각이 오래된 순서로 정해진 건수만 조회한다.
     @Transactional(propagation = Propagation.NEVER)
     public int checkDue() {
-        ZonedDateTime now = ZonedDateTime.now();
+        ZonedDateTime now = applicationTime.now();
         List<PaymentAttempt> due = paymentAttemptRepository.findDueForCheck(
             now.minus(properties.idleThreshold()), now.minus(properties.lookupWindow()), properties.batchSize()
         );

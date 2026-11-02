@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS likes (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS orders (
+    confirmed_at DATETIME(6) DEFAULT NULL,
     created_at DATETIME(6) NOT NULL,
     deleted_at DATETIME(6) DEFAULT NULL,
     id BIGINT NOT NULL AUTO_INCREMENT,
@@ -116,4 +117,30 @@ CREATE TABLE IF NOT EXISTS example (
     description VARCHAR(255) DEFAULT NULL,
     name VARCHAR(255) DEFAULT NULL,
     PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- 아래 두 테이블은 commerce-streamer가 소유한다. commerce-api는 읽거나 쓰지 않는다.
+CREATE TABLE IF NOT EXISTS processed_order_confirmation (
+    created_at DATETIME(6) NOT NULL,
+    deleted_at DATETIME(6) DEFAULT NULL,
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    order_id BIGINT NOT NULL,
+    updated_at DATETIME(6) NOT NULL,
+    event_id VARCHAR(255) NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_processed_confirmation_event (event_id),
+    UNIQUE KEY uk_processed_confirmation_order (order_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS product_purchase_activity (
+    quantity INT NOT NULL,
+    confirmed_at DATETIME(6) NOT NULL,
+    created_at DATETIME(6) NOT NULL,
+    deleted_at DATETIME(6) DEFAULT NULL,
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    order_id BIGINT NOT NULL,
+    product_id BIGINT NOT NULL,
+    updated_at DATETIME(6) NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_purchase_activity_order_product (order_id, product_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

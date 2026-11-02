@@ -38,6 +38,7 @@ classDiagram
         결제수단: POINT | PG
         결제액
         결제결과
+        확정시각
     }
     class PaymentAttempt {
         시도 키
@@ -46,6 +47,10 @@ classDiagram
         금액
         상태
         충돌 사유
+    }
+    class ProductPurchaseActivity {
+        수량: 양수
+        확정시각
     }
     class OrderItem {
         <<VO>>
@@ -57,17 +62,20 @@ classDiagram
     Product "N" ..> "1" Brand : brandId (required FK)
     Product "1" *-- "1" StockQuantity
 
-    Like "N" --> "1" User
-    Like "N" --> "1" Product
+    Like "N" ..> "1" User : userId (no FK)
+    Like "N" ..> "1" Product : productId (no FK)
 
-    Point "1" --> "1" User
+    Point "1" ..> "1" User : userId (no FK)
     Point "1" *-- "1" PointBalance
 
-    Order "N" --> "1" User
+    Order "N" ..> "1" User : userId (no FK)
     Order "1" *-- "N" OrderItem
     OrderItem "N" ..> "1" Product : productId (ID reference, no FK)
 
     PaymentAttempt "0..1" ..> "1" Order : orderId
+
+    ProductPurchaseActivity "N" ..> "1" Order : orderId (event fact, no FK)
+    ProductPurchaseActivity "N" ..> "1" Product : productId (event fact, no FK)
 ```
 
 ### User
@@ -85,8 +93,8 @@ classDiagram
 
 - [관계와 경계] Brand는 독립된 애그리게이트다. 하나의 Brand에 여러 Product가 연결된다.
 - [관계 표현] Brand는 Product 컬렉션을 보유하지 않는다.
-- [도메인 책임] Brand는 자신의 이름과 삭제 상태를 관리하며, `delete()`는 자신의 삭제 상태를 변경한다.
-- [도메인 책임] `BrandDeletionPolicy`는 이미 삭제된 Brand의 삭제를 거절하고 `Brand.delete()`를 호출한다. 연결 Product의 삭제와 Repository 조회·저장은 수행하지 않는다.
+- [도메인 책임] Brand는 자신의 이름과 삭제 상태를 관리하며, `delete(deletedAt)`는 호출자가 정한 삭제 시각을 처음 한 번만 기록한다.
+- [도메인 책임] `BrandDeletionPolicy`는 이미 삭제된 Brand의 삭제를 거절하고 `Brand.delete(deletedAt)`를 호출한다. 연결 Product의 삭제와 Repository 조회·저장은 수행하지 않는다.
 - [도메인 규칙] Brand 삭제는 기존 참조를 유지하며 `deletedAt`에 삭제 시각을 기록하는 논리 삭제를 사용한다.
 - [불변식] Brand 이름은 공백만으로 구성될 수 없고, 1자 이상 100자 이하여야 한다.
 - [불변식] 삭제 여부와 관계없이 Brand 이름은 유일해야 한다.
@@ -106,16 +114,16 @@ classDiagram
 
 - [관계와 경계] Product는 Brand와 별도 애그리게이트이며, StockQuantity VO를 내부에 보유한다.
 - [관계 표현] Product는 Brand 객체를 포함하지 않고 `brandId`로 Brand를 참조한다. 재고 수량은 StockQuantity VO로 표현한다.
-- [도메인 책임] Product는 자신의 이름, 가격, 재고, 삭제 상태를 관리한다. 상품 수정과 재고 설정 및 차감 전에 자신의 삭제 상태를 검사하며, `delete()`는 자신의 삭제 상태를 변경한다.
+- [도메인 책임] Product는 자신의 이름, 가격, 재고, 삭제 상태를 관리한다. 상품 수정과 재고 설정 및 차감 전에 자신의 삭제 상태를 검사하며, `delete(deletedAt)`는 호출자가 정한 삭제 시각을 처음 한 번만 기록한다.
 - [도메인 책임] Product 삭제는 별도 Policy를 두지 않는다. 이미 삭제된 Product의 거절은 활성 상품 조회와 미삭제 조건부 갱신이 맡는다.
 - [도메인 규칙] 상품 등록 시 존재하고 삭제되지 않은 Brand가 필요하다.
 - [도메인 규칙] Product 수정 시 기존 Brand는 변경하지 않는다.
 - [도메인 규칙] 새 좋아요와 주문 생성은 상품 조회 시 없거나 삭제된 Product를 거절한다. 삭제된 상품은 상품 수정과 재고 변경에 사용할 수 없다.
 - [도메인 규칙] 관리자는 Product 재고를 0 이상인 최종 수량으로 설정할 수 있다.
-- [도메인 규칙] Product의 재고 차감은 주문 수량이 양수이고 재고가 충분할 때만 허용한다.
+- [도메인 규칙] Product의 재고 차감은 주문 수량이 양수이고 재고가 충분할 때만 허용한다. 결제 요청은 이 규칙을 미삭제·재고 충분 조건의 조건부 갱신으로 적용한다.
 - [도메인 규칙] `stock`은 결제 요청에서 차감한 수량을 제외한 가용 재고다. 관리자 재고 설정 값도 가용 재고다.
 - [불변식] 가용 수량과 미완료 PG 주문 품목의 예약 수량 합은 `Long.MAX_VALUE` 이하다. 범위를 넘는 관리자 설정은 `400`으로 거절한다. 예약 집계는 별도로 저장하지 않는다.
-- [도메인 규칙] PG 결제의 확정 실패를 처음 반영할 때 저장된 주문 품목의 수량만큼 재고를 반환한다. 논리 삭제된 상품도 실패 보상으로 재고를 반환할 수 있으며 삭제 상태는 유지한다.
+- [도메인 규칙] PG 결제의 재고 차감·보상은 [결제 재고 보상](#결제-재고-보상)을 따른다. 논리 삭제된 상품도 실패 보상으로 재고를 반환하며 삭제 상태는 유지한다.
 - [불변식] Product 이름은 공백만으로 구성될 수 없고, 1자 이상 100자 이하여야 한다.
 - [불변식] Product 가격은 1원 이상 100,000,000원 이하의 정수여야 한다.
 
@@ -135,7 +143,7 @@ classDiagram
 - [관계와 경계] StockQuantity는 Product 내부에서 재고 수량을 표현하는 VO다. 독립된 도메인 식별자와 생명주기를 갖지 않는다.
 - [관계 표현] 재고 수량을 `amount` 값 하나로 표현한다.
 - [값 동등성] 재고 수량이 같으면 같은 값으로 판단한다.
-- [도메인 책임] StockQuantity는 재고 수량의 검증과 차감 결과 계산을 담당한다.
+- [도메인 책임] StockQuantity는 재고 수량의 검증, 차감 결과 계산과 예약 수량과의 합 범위 검증을 담당한다.
 - [도메인 규칙] StockQuantity는 불변 값으로 다룬다. 차감 시 기존 값을 변경하지 않고, 기존 수량에서 차감 수량을 뺀 새 StockQuantity를 반환한다.
 - [도메인 규칙] 차감 수량은 양수여야 하며, 0과 음수는 거절한다.
 - [도메인 규칙] 차감 수량이 현재 재고보다 크면 재고 부족으로 거절한다.
@@ -161,7 +169,7 @@ classDiagram
 
 - [관계와 경계] Point는 User와 별도 애그리게이트이며, PointBalance VO를 내부에 보유한다. 하나의 User에 하나의 Point가 연결된다.
 - [관계 표현] Point는 `userId`로 User를 참조하며 User 객체를 포함하지 않는다. 잔액은 PointBalance VO로 표현한다.
-- [도메인 책임] Point는 사용자별 잔액 상태를 관리하고 충전을 수행한다. 금액 검증과 계산은 PointBalance에 맡기고, 반환된 새 값으로 자신의 잔액을 갱신한다.
+- [도메인 책임] Point는 사용자별 잔액 상태를 관리한다. 충전액 검증은 PointBalance가 맡고, 동시 충전이 서로를 덮지 않도록 잔액 증가는 저장소의 조건부 원자 갱신(`잔액 ≤ Long.MAX_VALUE − 충전액`일 때만)으로 반영한다.
 - [도메인 규칙] 주문 결제는 PG를 사용하며 Point를 조회하거나 차감하지 않는다. 이전 포인트 결제 주문의 결제 사실은 Order에 남아 있다.
 - [도메인 규칙] 1포인트는 1원이다.
 - [도메인 규칙] 새 Point의 잔액은 0포인트로 시작한다.
@@ -184,8 +192,8 @@ classDiagram
 
 - [관계와 경계] Order는 User와 별도 애그리게이트이며, OrderItem VO를 내부에 보유하는 애그리게이트 루트다.
 - [관계 표현] Order는 `userId`로 User를 참조하며 User 객체를 포함하지 않는다. OrderItem 컬렉션은 직접 보유한다.
-- [도메인 책임] Order는 자신의 소유자 정보, 품목 구성과 총액, 결제 상태 전이, 결제수단·결제액과 결제 결과를 관리한다.
-- [도메인 규칙] Order 생성 시 여러 OrderItem의 수량·단가·합계와 DRAFT 상태를 저장한다.
+- [도메인 책임] Order는 자신의 소유자 정보, 품목 구성과 총액, 결제 상태 전이, 결제수단·결제액·결제 결과와 확정 시각을 관리한다.
+- [도메인 규칙] Order 생성 시 OrderItem의 상품 ID·상품명·단가·수량 스냅샷, 주문 총액과 DRAFT 상태를 저장한다. 품목 금액은 단가와 수량으로 계산하며 따로 저장하지 않는다.
 - [도메인 규칙] Order 생성 시 같은 `productId`의 품목은 수량을 합산해 하나의 OrderItem으로 저장한다.
 - [도메인 규칙] Order 생성 시 재고는 차감하지 않는다.
 - [도메인 규칙] 주문 생성 시 상품 조회에서 존재하고 삭제되지 않은 Product와 양수 수량을 확인한다.
@@ -193,7 +201,7 @@ classDiagram
 - [도메인 규칙] User는 자신의 DRAFT Order만 결제를 요청할 수 있다.
 - [도메인 규칙] 결제 요청 시 상품 사용 가능 여부를 다시 검사하고 각 Product의 합산된 총수량으로 재고를 확보한다. 삭제된 상품이 포함되거나 재고가 부족하면 요청을 거절한다.
 - [도메인 규칙] Order 상태는 `DRAFT → PAYMENT_PENDING → CONFIRMED` 또는 `PAYMENT_PENDING → PAYMENT_FAILED`로만 바뀐다. 처리 중과 결과 미확인은 모두 `PAYMENT_PENDING`이고, 구분은 PaymentAttempt가 맡는다.
-- [도메인 규칙] 결제 요청은 결제수단을 `PG`로 기록한다. PG 성공이 확인되면 결제액(주문 총액)과 결제 결과 `SUCCESS`를 저장하고 `CONFIRMED`로 바꾼다. PG 실패가 확인되면 결제 결과 `FAILED`를 저장하고 `PAYMENT_FAILED`로 바꾸며, 결제액은 비워 둔다. 외부 `PENDING`을 `CONFIRMED`로 바꾸지 않는다.
+- [도메인 규칙] 결제 요청은 결제수단을 `PG`로 기록한다. PG 성공이 확인되면 결제액(주문 총액), 결제 결과 `SUCCESS`와 확정 시각을 저장하고 `CONFIRMED`로 바꾼다. PG 실패가 확인되면 결제 결과 `FAILED`를 저장하고 `PAYMENT_FAILED`로 바꾸며, 결제액은 비워 둔다. 외부 `PENDING`을 `CONFIRMED`로 바꾸지 않는다.
 - [도메인 규칙] DRAFT가 아닌 주문의 결제 요청은 `409`로 거절한다. 같은 시도 키의 재전송은 이 전이 전에 [멱등성과 재요청 정책](use-cases/order-payment-request.md#멱등성과-재요청-정책)이 저장된 상태로 응답한다.
 - [도메인 규칙] `PAYMENT_PENDING`이 아닌 주문의 결과 반영은 업무 충돌이 아니라 정합성 오류다. 미종결 시도는 `PAYMENT_PENDING` 주문에만 존재하므로 불변식이 깨진 경우에만 생긴다. 결과 반영 전체를 rollback하고 내부 오류로 처리한다. 경로별 응답은 [결과 반영의 실패 처리](use-cases/order-payment-result.md#실패-처리)를 따른다.
 - [도메인 규칙] 재고를 차감한 `PAYMENT_PENDING` 주문은 이후 상품이 삭제돼도 저장된 품목·금액으로 결과를 마무리한다.
@@ -201,13 +209,13 @@ classDiagram
 - [불변식] 하나의 Order는 같은 `productId`의 OrderItem을 중복으로 보유하지 않는다.
 - [불변식] Order 총액은 각 OrderItem의 품목 금액 합과 일치해야 하며 `long`으로 표현 가능한 범위 안이어야 한다. 합산 결과가 `Long.MAX_VALUE`를 초과하면 주문 생성을 `400 Bad Request`로 거절한다.
 - [불변식] 하나의 Order에서 결제 결과는 한 번만 반영한다.
-- [불변식] CONFIRMED 상태의 Order에는 결제수단, 결제액과 결제 결과가 저장되어야 한다. 이전 포인트 결제 주문의 결제수단은 `POINT`다.
-- [복원 규칙] 결제수단은 저장된 값을 복원한다. 과거 POINT 주문의 데이터 전환과 새 PG 주문의 저장 규칙은 [영속성 매핑 설계](persistence-mapping.md#결제수단과-과거-주문-전환)를 따른다. CONFIRMED 상태만으로 결제수단을 추론하지 않는다.
+- [불변식] DRAFT가 아닌 Order에는 결제수단이 저장되어야 하고, CONFIRMED에는 결제액과 결제 결과도 저장되어야 한다. 이전 포인트 결제 주문의 결제수단은 `POINT`다.
+- [불변식] 확정 시각은 최초 확정 때 한 번 저장하고 바꾸지 않는다. 확정 시각을 저장하기 전에 확정한 주문(POINT·PG)은 비어 있을 수 있으며, 다른 시각으로 추정해 채우지 않는다.
+- [복원 규칙] 결제수단은 저장된 값을 복원한다. 과거 POINT 주문의 데이터 전환과 새 PG 주문의 저장 규칙은 [영속성 매핑 설계](persistence-mapping.md#결제수단과-과거-주문-전환)를 따른다. 주문 상태로 결제수단을 추론하지 않으며, DRAFT가 아닌데 결제수단이 없으면 데이터 정합성 오류로 본다.
 
 #### 결제 재고 보상
 
-- [도메인 규칙] PG 결제 성공은 결제 요청에서 차감한 재고를 그대로 유지한다. 추가 차감은 없다.
-- [도메인 규칙] PG 결제의 확정 실패는 저장된 `OrderItem`의 상품 ID·수량을 기준으로 주문 전체의 재고를 한 번만 반환한다. 처리 중·결과 미확인은 차감 상태를 유지한다.
+- [도메인 규칙] 결제 요청에서 차감한 재고는 성공 종결과 처리 중·결과 미확인·충돌 동안 그대로 유지한다(추가 차감 없음). 확정 실패를 처음 반영할 때만 저장된 `OrderItem`의 상품 ID·수량만큼 주문 전체를 한 번 반환한다.
 - [불변식] 하나의 결제 시도에서 실패 보상은 최대 한 번 반영한다. 종결 상태와 재고 반환은 함께 commit되어야 한다. 동시성·rollback의 보장 방식은 [결과 반영 설계](use-cases/order-payment-result.md#재고-보상-트랜잭션)를 따른다.
 - [불변식] 다른 재고 조정이 없는 구간에서 `현재 가용 재고 = 구간 시작 재고 - commit된 결제 요청의 차감 수량 합 + commit된 실패 보상 수량 합`이다. 결제 성공은 이 값을 바꾸지 않는다.
 
@@ -219,13 +227,12 @@ classDiagram
 | --- | --- |
 | 예약 확보 | 가용 재고를 주문 품목 수량만큼 차감 |
 | 주문별 확보 수량 | `OrderItem`의 상품 ID·수량 스냅샷. 결제 요청 이후 바뀌지 않는다. |
-| 예약 상태 | 주문 `PAYMENT_PENDING`·미종결 시도는 예약 유지, `CONFIRMED`·`SUCCEEDED`는 소비, `PAYMENT_FAILED`·`FAILED`는 반환 완료 |
-| 예약 유지 | 처리 중·결과 미확인·충돌에서 `stock`을 바꾸지 않음 |
-| 예약 소비 | 성공 종결. 이미 차감했으므로 `stock`을 바꾸지 않는다. |
-| 예약 반환 | 실패 종결과 함께 주문 품목 수량만큼 한 번 반환 |
+| 예약 유지 | 주문 `PAYMENT_PENDING`·미종결 시도(처리 중·결과 미확인·충돌). `stock`을 바꾸지 않음 |
+| 예약 소비 | 주문 `CONFIRMED`·시도 `SUCCEEDED`. 이미 차감했으므로 `stock`을 바꾸지 않음 |
+| 예약 반환 | 주문 `PAYMENT_FAILED`·시도 `FAILED`. 실패 종결과 함께 주문 품목 수량만큼 한 번 반환 |
 | 예약을 제외한 가용 수량 | Product의 가용 재고 값. 관리자 재고 설정도 이 값을 설정한다. |
 
-결과를 모르는 동안 주문은 `PAYMENT_PENDING`이고 예약을 유지한다. PG 관찰별 시도 상태는 [결과별 효과](use-cases/order-payment-result.md#결과별-효과), 화면 표시는 [결제 진행 표시](api-contracts.md#결제-진행-표시)를 따른다.
+PG 관찰별 시도 상태는 [결과별 효과](use-cases/order-payment-result.md#결과별-효과), 화면 표시는 [결제 진행 표시](api-contracts.md#결제-진행-표시)를 따른다.
 
 #### OrderItem VO
 
@@ -258,3 +265,12 @@ classDiagram
 - [도메인 규칙] 복수 거래나 결과를 판정할 수 없는 모순 관찰은 충돌 사유(`MULTIPLE_TRANSACTIONS`, `TRANSACTION_MISMATCH`, `RESULT_CONTRADICTION`)로 보존한다. 처음 기록한 사유와 시각을 유지하고 지우거나 덮어쓰지 않으며, 충돌 기록은 시도 상태·거래 키·주문·재고를 바꾸지 않는다. 기록 규칙은 [충돌 기록](use-cases/order-payment-result.md#충돌-기록)을 따른다.
 - [불변식] 카드 정보는 저장하지 않는다.
 
+### ProductPurchaseActivity
+
+- [관계와 경계] 상품 구매 활동은 `commerce-streamer`가 소유하는 별도 사실이다. Order·Product 애그리게이트를 참조하지 않고 `orderId`, `productId` 값만 보존한다.
+- [도메인 책임] 확정 주문에서 상품별로 구매한 수량과 최초 확정 시각을 보존한다. 이후 주간 상품 랭킹의 입력이다.
+- [도메인 규칙] 구매 활동은 `OrderConfirmed` 이벤트로만 만든다. 상품의 존재·삭제 여부와 현재 가격을 다시 조회하지 않으며, 결제·재고를 다시 처리하지 않는다.
+- [도메인 규칙] 같은 확정 사실을 다시 받으면 활동을 추가하지 않는다. 같은 이벤트 ID나 주문에 다른 사실이 오면 충돌로 드러내고 저장하지 않는다.
+- [불변식] 한 주문의 같은 상품 활동은 하나이며 수량은 양수다.
+- [불변식] 확정 시각은 이벤트의 최초 확정 시각이며 저장 뒤 바뀌지 않는다. 소비 시각이 아니다.
+- [불변식] 한 주문의 구매 활동은 모든 품목이 함께 있거나 하나도 없다.

@@ -20,10 +20,11 @@ sequenceDiagram
 
     C->>CAC: 상품 상세 조회 요청
     CAC->>APP: 상품 상세 조회 유스케이스 호출
-    APP->>PR: 삭제되지 않은 Product 조회
+    APP->>PR: Product 조회
     PR->>DB: 상품 조회
     DB-->>PR: Product
     PR-->>APP: Product
+    Note over APP: 삭제된 Product면 404
     APP->>BR: 활성 Brand 조회
     BR->>DB: 일반 조회 (잠금 없음)
     DB-->>BR: Brand
@@ -38,8 +39,6 @@ sequenceDiagram
 
 ## 결과 조합 책임
 
-상품 상세 조회는 각 도메인의 조회 결과를 Application에서 조합한다.
-
 | 단계 | 담당 | 결과 |
 | --- | --- | --- |
 | 상품 조회 | `ProductRepository` | `Product` |
@@ -48,8 +47,4 @@ sequenceDiagram
 | 결과 조합 | `ProductFacade` | `CustomerProductInfo` |
 | API 응답 변환 | interfaces | 응답 DTO |
 
-`ProductFacade`는 활성 `Product`와 `Brand`, 해당 상품의 좋아요 수로 `CustomerProductInfo`를 만든다. interfaces 계층은 이를 API 응답 DTO로 변환한다.
-
-각 도메인 모델은 자신의 상태와 규칙을 맡고, Repository는 해당 도메인의 조회·저장 계약을 제공한다. 고객 응답에 필요한 조합은 Application에 두므로, 응답 필드가 바뀌면 `CustomerProductInfo`와 응답 DTO를 갱신한다. 브랜드 로고처럼 Brand 자체의 상태를 추가할 때는 Brand 모델도 함께 변경한다.
-
-여러 Repository를 호출하고 Application에서 결과를 조합하는 비용을 감수한다.
+`ProductFacade`가 활성 `Product`·`Brand`와 좋아요 수로 `CustomerProductInfo`를 만들고, interfaces가 응답 DTO로 변환한다. 도메인 모델은 자기 상태와 규칙을, Repository는 해당 도메인의 조회·저장 계약을 맡는다. 여러 Repository 호출과 조합 비용을 감수하는 대신 응답 필드 변경은 `CustomerProductInfo`와 응답 DTO에서 끝나고, 브랜드 로고처럼 Brand 자체 상태를 추가할 때만 Brand 모델을 함께 바꾼다. `CustomerProductInfo`는 목록·내 좋아요와 공유하고 목록 캐시에 그대로 저장되므로, 필드를 바꾸면 [상품 목록 캐시](product-list-cache.md#키-설계)의 저장 형식 버전도 올린다.

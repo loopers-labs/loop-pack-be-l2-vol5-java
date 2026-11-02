@@ -12,7 +12,7 @@ import java.time.ZonedDateTime;
 import java.util.Objects;
 
 /**
- * 생성/수정/삭제 정보를 자동으로 관리해준다.
+ * ID와 생성·수정 시각은 자동으로 채우고, 삭제 시각은 도메인이 정한 값을 반영한다.
  * 재사용성을 위해 이 외의 컬럼이나 동작은 추가하지 않는다.
  */
 @MappedSuperclass
@@ -21,7 +21,7 @@ public abstract class BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private final Long id = 0L;
+    private Long id;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private ZonedDateTime createdAt;
@@ -55,13 +55,6 @@ public abstract class BaseEntity {
     }
 
     /**
-     * delete 연산은 멱등하게 동작할 수 있도록 한다. (삭제된 엔티티를 다시 삭제해도 동일한 결과가 나오도록)
-     */
-    public void delete() {
-        delete(ZonedDateTime.now());
-    }
-
-    /**
      * 이미 결정된 도메인 삭제 시각을 영속성 모델에도 동일하게 반영한다.
      */
     public void delete(ZonedDateTime deletedAt) {
@@ -70,12 +63,4 @@ public abstract class BaseEntity {
         }
     }
 
-    /**
-     * restore 연산은 멱등하게 동작할 수 있도록 한다. (삭제되지 않은 엔티티를 복원해도 동일한 결과가 나오도록)
-     */
-    public void restore() {
-        if (this.deletedAt != null) {
-            this.deletedAt = null;
-        }
-    }
 }

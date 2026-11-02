@@ -1,5 +1,6 @@
 package com.loopers.interfaces.api.product;
 
+import com.loopers.support.time.TestTimes;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.like.Like;
 import com.loopers.domain.like.LikeRepository;
@@ -71,7 +72,7 @@ class ProductCustomerV1ApiE2ETest {
     void returnsNotFoundForDeletedProduct() {
         Brand brand = brandRepository.save(Brand.create("Nike"));
         Product product = productRepository.save(Product.create(brand.getId(), "Air Max", 100_000L));
-        product.delete();
+        product.delete(TestTimes.DELETED_AT);
         productRepository.save(product);
 
         ResponseEntity<ApiResponse<Object>> response = testRestTemplate.exchange(

@@ -6,7 +6,7 @@ import java.util.Locale;
 
 public record ProductListCacheKey(Long brandId, ProductSort sort, int page, int size, long version) {
 
-    // 응답 필드가 바뀌면 형식 버전을 올려 이전 형식의 캐시를 읽지 않는다.
+    // 저장하는 CustomerProductInfo 필드가 바뀌면 형식 버전을 올려 이전 형식의 캐시를 읽지 않는다.
     private static final String FORMAT_VERSION = "v1";
 
     public String value() {

@@ -1,8 +1,8 @@
 # 주문 결제 결과 반영
 
-> 주문 결제: [1. 결제 요청](order-payment-request.md) → [2. PG 연동](../external-systems/payment-gateway.md) → **3. 결과 반영**
+> 주문 결제: [1. 결제 요청](order-payment-request.md) → [2. PG 연동](../external-systems/payment-gateway.md) → **3. 결과 반영** → [4. 확정 이벤트](order-confirmed-event.md)
 
-PG의 관찰을 결제 시도·주문에 한 번만 반영하고 확정 실패의 재고를 반환한다.<br>
+PG의 관찰을 결제 시도·주문에 한 번만 반영하고 확정 실패의 재고를 반환한다. 최초 성공 확정은 commit 뒤 [주문 확정 이벤트](order-confirmed-event.md)로 발행한다.<br>
 상태와 불변식은 [도메인 모델](../domain-model.md), HTTP 계약과 관찰 결과는 [PG 연동 설계](../external-systems/payment-gateway.md)를 따른다.
 
 ## 시작하는 경로
@@ -10,11 +10,11 @@ PG의 관찰을 결제 시도·주문에 한 번만 반영하고 확정 실패�
 | 경로 | 시작 조건 | PG 조회 |
 | --- | --- | --- |
 | 생성 응답 | 결제 요청이 PG 생성 응답을 관찰 결과로 넘김 (`ACCEPTED`, `UNKNOWN`, `REJECTED_NO_EFFECT`) | 하지 않음. 생성 응답을 그대로 반영한다. |
-| callback | `POST /api/v1/payments/callback` 수신 | 알림의 거래를 조회한다. 본문은 신호로만 쓴다. |
+| callback | `POST /api/v1/payments/callback` 수신 | 본문의 `providerOrderId`로 시도를 찾아 reconcile과 같은 방식으로 기존 거래를 조회한다. 본문의 `transactionKey`·`status`는 결과로 쓰지 않는다. |
 | [결제 결과 재확인 (reconcile)](order-payment-recovery.md#결제-결과-재확인) | 고객의 `POST /api/v1/orders/{orderId}/payment/reconcile` | 본인 미종결 시도의 기존 거래를 PG에 조회한다. |
 | [주기 조회](order-payment-recovery.md#주기-조회) | 스케줄러가 일정 시간 이상 미종결인 시도를 찾음 | reconcile과 같은 방식으로 기존 거래를 조회한다. |
 
-모든 경로가 같은 결과 반영 경계(TX B)를 사용한다. 이미 종결한 시도는 PG 조회 없이 저장된 결과를 반환한다.<br>
+모든 경로가 같은 결과 반영 서비스를 거친다. 생성 응답과 거래를 1건 이상 찾은 조회만 결과 반영 경계(TX B)를 열고, 거래 0건·`NOT_FOUND`·`UNAVAILABLE`은 TX B 없이 저장 상태를 새로 읽어 반환한다. 이미 종결한 시도는 PG 조회 없이 저장된 결과를 반환한다.<br>
 수동 재확인·주기 조회의 실행 정책과 복구 한계는 [결제 회복](order-payment-recovery.md)을 따른다.
 
 ## 결과별 효과
@@ -24,8 +24,8 @@ PG의 관찰을 결제 시도·주문에 한 번만 반영하고 확정 실패�
 | 판정 | 시도 | 주문 | 재고 |
 | --- | --- | --- | --- |
 | 처리 중 | `PENDING` | `PAYMENT_PENDING` | 차감 상태 유지 |
-| 미확인 | 마지막 저장 상태 유지 (`REQUESTED`의 생성 응답 유실은 `UNKNOWN`). 조회 불가도 상태를 바꾸지 않으므로 `REQUESTED`·`UNKNOWN`은 결과 미확인, PG가 접수를 확인한 `PENDING`은 결제 대기로 표시 | `PAYMENT_PENDING` | 차감 상태 유지 |
-| 성공 | `SUCCEEDED` | `CONFIRMED`, `PG`, 결제액, `SUCCESS` | 추가 차감 없음 |
+| 미확인 | 마지막 저장 상태 유지 (`REQUESTED`의 생성 응답 유실은 `UNKNOWN`). 조회 불가도 상태를 바꾸지 않는다. 표시는 [결제 진행 표시](../api-contracts.md#결제-진행-표시) | `PAYMENT_PENDING` | 차감 상태 유지 |
+| 성공 | `SUCCEEDED` | `CONFIRMED`, `PG`, 결제액, `SUCCESS`, 확정 시각. commit 뒤 [확정 이벤트](../../../apps/commerce-api/docs/order-confirmed-producer.md#발행-조건) 발행 | 추가 차감 없음 |
 | 실패 | `FAILED` | `PAYMENT_FAILED`, `PG`, 결제 결과 `FAILED` | 주문 품목 수량만큼 한 번 반환 |
 | 충돌 | 미종결 유지, [충돌 사유 기록](#충돌-기록) | `PAYMENT_PENDING` (결과 미확인 표시) | 임의 반환 없음 |
 
@@ -62,14 +62,21 @@ sequenceDiagram
         Adapter-->>Service: FOUND(거래 목록) / NOT_FOUND / UNAVAILABLE
     end
 
-    rect rgba(128, 128, 128, 0.12)
-        Note over Service,DB: TX B 결과 반영
-        Service->>DB: 시도·주문·품목 스냅샷 다시 읽기
-        Service->>DB: 관찰 반영 규칙의 조건으로 시도 조건부 갱신<br/>(PENDING·UNKNOWN 기록, 종결과 거래 키, 충돌 사유)
-        opt 종결 갱신 1행
-            Service->>DB: 주문 PAYMENT_PENDING → CONFIRMED / PAYMENT_FAILED<br/>실패면 주문 품목 수량만큼 재고 증가 (Product ID 오름차순)
+    alt 생성 응답 또는 FOUND 거래 1건 이상
+        rect rgba(128, 128, 128, 0.12)
+            Note over Service,DB: TX B 결과 반영
+            Service->>DB: 시도·주문·품목 스냅샷 다시 읽기
+            Service->>DB: 관찰 반영 규칙의 조건으로 시도 조건부 갱신<br/>(PENDING·UNKNOWN 기록, 종결과 거래 키, 충돌 사유)
+            opt 종결 갱신 1행
+                Service->>DB: 주문 PAYMENT_PENDING → CONFIRMED(확정 시각) / PAYMENT_FAILED<br/>실패면 주문 품목 수량만큼 재고 증가 (Product ID 오름차순)
+            end
+            Note over Service,DB: TX B 종료, 잠금 해제
         end
-        Note over Service,DB: TX B 종료, 잠금 해제
+        opt 성공 확정 commit
+            Note over Service: OrderConfirmed 발행 (확정 이벤트 설계)
+        end
+    else 거래 0건, NOT_FOUND, UNAVAILABLE
+        Note over Service,DB: 상태를 바꿀 근거가 없어 TX B를 열지 않음
     end
     Service->>DB: 새 조회 경계에서 저장된 결과 확인<br/>조건부 갱신 0행은 중복·늦은 관찰·충돌 판정
     Service-->>Trigger: 반영 뒤 주문·시도 상태
@@ -92,40 +99,30 @@ PG 조회는 TX 밖에서 수행하고 시도·주문·재고 변경은 TX B에�
 | `FOUND`, 거래 1건, 주문·금액·거래 키 검증 통과, `FAILED` | 실패 | `REQUESTED`·`PENDING`·`UNKNOWN` / NULL 또는 관찰과 같은 키 | 검증한 `transactionKey`를 종결 상태와 함께 저장하고 실패 반영 |
 | `FOUND`, 거래 1건, 주문·금액·거래 키 검증 통과, `PENDING` | 처리 중 | `REQUESTED`·`UNKNOWN` / NULL 또는 관찰과 같은 키 | `PENDING`과 `transactionKey` 기록. 같은 키의 `PENDING`은 중복이다. 주문·재고 유지 |
 | `FOUND`, 거래 1건이지만 `orderId`·`amount`가 시도와 다르거나, 저장된 `transactionKey`와 다름 | 충돌 | 상태 갱신 없음 | 미종결 유지, 충돌 기록 |
-| `FOUND`, 거래 2건 이상 | 충돌 | 상태 갱신 없음 | 거래를 선택하지 않고 `MULTIPLE_TRANSACTIONS` 기록. 시도·거래 키·주문·재고 유지 |
+| `FOUND`, 거래 2건 이상 | 충돌 | 상태 갱신 없음 | 거래를 선택하지 않고(모두 같은 결과여도) `MULTIPLE_TRANSACTIONS` 기록. 시도·거래 키·주문·재고 유지, 재발송 없음 |
 | `FOUND`, 거래 0건 | 미확인 | 상태 갱신 없음 | 미종결 유지 |
 | `NOT_FOUND`, `UNAVAILABLE` | 미확인 | 상태 갱신 없음 | 미종결 유지 |
 
 0건, `404`, 조회 불가는 종결 전이와 재고 반환의 근거가 아니다.
-
-결과 반영은 검증된 단일 거래만 대상으로 한다. 거래가 2건 이상이면 모두 같은 결과여도 첫 거래를 고르지 않고 충돌 기록 규칙에 따라 `MULTIPLE_TRANSACTIONS`를 남긴다. 반복 조회에서도 처음 충돌 사유와 감지 시각을 유지하며 생성 재발송이나 재고 반환은 하지 않는다. 복수 거래의 해소·수동 종결 절차는 이번 범위에 포함하지 않는다.
 
 ## 중복 방지
 
 시도의 모든 갱신에 시도 ID와 [관찰 반영 규칙](#관찰-반영-규칙) 표의 갱신 조건을 둔다. 상태와 거래 키는 같은 UPDATE로 저장하며 기록한 키를 바꾸거나 지우지 않는다.<br>
 조건부 갱신 뒤 이전 JPA 엔티티를 다시 저장하지 않는다.
 
-조회로 확인한 거래 키는 비어 있지 않은 값이어야 한다. 종결 갱신이 1행인 요청만 같은 TX B에서 주문을 `PAYMENT_PENDING` 조건으로 종결한다.<br>
-주문 전이가 1행이 아니면 [정합성 오류](#실패-처리)로 전체 rollback한다. 실패 종결에 성공한 요청만 아래 재고 보상을 수행한다.
+조회로 확인한 거래 키는 비어 있지 않은 값이어야 한다. 종결 갱신이 1행인 요청만 같은 TX B에서 주문을 `PAYMENT_PENDING` 조건으로 종결하고, 0행인 요청은 주문·재고를 건드리지 않는다.<br>
+성공 확정은 같은 UPDATE에서 확정 시각을 기록한다. 조건이 `PAYMENT_PENDING`이므로 이후 중복 callback·reconcile은 확정 시각을 바꾸지 못하며, 확정 이벤트도 이 1행 요청만 만든다. 성공 종결은 재고를 바꾸지 않는다.
 
 ### 재고 보상 트랜잭션
 
 TX A에서 차감한 상품 ID·수량은 저장된 `OrderItem` 스냅샷에 있다. 결제 요청 이후 품목·수량은 고정되며, 보상 수량을 현재 상품 정보에서 다시 계산하지 않는다.<br>
-시도의 실패 종결에 성공한 요청이 같은 TX B에서 다음 변경을 수행한다.
+실패 종결에 성공한 요청은 같은 TX B에서 다음을 수행하고 함께 commit한다.
 
-1. 주문을 `PAYMENT_PENDING → PAYMENT_FAILED`로 조건부 전이한다. 1행이 아니면 정합성 오류로 전체 rollback한다.
-2. 저장된 주문 품목을 Product ID 오름차순으로 순회해 각 상품의 `stock`을 스냅샷 수량만큼 증가시킨다.
-3. 시도 실패·주문 실패·모든 품목의 재고 반환을 함께 commit한다.
+1. 주문을 `PAYMENT_PENDING → PAYMENT_FAILED`로 조건부 전이한다.
+2. 저장된 주문 품목을 Product ID 오름차순으로 순회해 `stock = stock + :quantity`로 반환한다. 이전에 읽은 재고에 더해 덮어쓰지 않는다. 논리 삭제된 상품도 대상이라 `deleted_at IS NULL` 조건을 두지 않고 삭제 상태도 바꾸지 않는다.
 
-재고 반환은 `stock = stock + :quantity` 갱신으로 수행한다. 이전에 읽은 재고에 수량을 더해 덮어쓰지 않는다.<br>
-논리 삭제된 상품도 반환 대상이므로 `deleted_at IS NULL` 조건을 두지 않으며, 상품의 삭제 상태는 바꾸지 않는다.
-
-상품 행이 없거나 갱신 행 수가 1이 아니면 정합성 오류로 TX B 전체를 rollback한다.<br>
-여러 품목 중 일부를 반환한 뒤 실패해도 앞선 재고 증가와 시도·주문 종결이 모두 취소된다. 다음 결과 반영은 같은 스냅샷으로 전체 보상을 다시 실행할 수 있다.
-
-종결 갱신이 0행인 요청은 재고 반환을 실행하지 않는다.<br>
-시도의 실패 종결이 commit되었다는 것은 재고 보상도 함께 commit되었다는 뜻이며, 프로세스가 재시작되거나 같은 실패 관찰이 반복돼도 이 DB 조건으로 중복 반환을 막는다.<br>
-성공 종결은 재고를 추가로 변경하지 않는다.
+주문 전이나 상품 반환 중 하나라도 1행이 아니면(상품 행 없음 포함) [정합성 오류](#실패-처리)로 TX B 전체를 rollback한다. 앞선 반환과 시도·주문 종결도 함께 취소되므로 다음 결과 반영은 같은 스냅샷으로 전체 보상을 다시 실행한다.<br>
+실패 종결이 commit됐다면 보상도 함께 commit된 것이므로, 재시작이나 같은 실패 관찰이 반복돼도 종결 갱신 0행으로 끝나 중복 반환하지 않는다.
 
 ### 조건부 갱신 0행의 판정
 
@@ -139,7 +136,6 @@ TX A에서 차감한 상품 ID·수량은 저장된 `OrderItem` 스냅샷에 있
 - 시도가 없거나 위 규칙으로 설명되지 않으면 정합성 오류로 남긴다. 0행이라는 이유만으로 결과를 확정하거나 PG를 재발송하지 않는다.
 
 조건부 갱신 후 응답용 상태도 TX B 종료 뒤 새 조회 경계에서 가져온다.<br>
-이 판정에서 찾은 충돌은 새 경계의 짧은 쓰기 트랜잭션에서 기록하며 주문·재고를 변경하지 않는다.<br>
 새 조회에 필요한 스냅샷 규칙은 [결제 요청의 재조회](order-payment-request.md#경쟁에서-진-요청의-재조회)와 같다.
 
 ### 충돌 기록
@@ -176,16 +172,16 @@ TX B에서 상품 활성 여부를 다시 확인하거나 Brand 잠금을 얻지
 
 저장 오류와 정합성 오류의 경로별 응답은 [결제 경로의 응답 변환](../error-mapping.md#결제-경로의-응답-변환)을 따른다. TX B rollback이 확인된 경우 해당 요청이 수행한 상태·재고 변경은 취소된다.
 
-TX B commit 뒤 응답용 재조회나 응답 전송에 실패한 경우는 rollback과 구분한다. 오류 응답이나 timeout만으로 DB 반영 여부를 단정하지 않으며, 이미 commit된 종결 상태와 재고 효과는 유지한다. 이후 같은 callback·reconcile은 저장된 결과를 확인하고 추가 확정·반환을 하지 않는다.
+TX B commit 뒤 응답용 재조회나 응답 전송에 실패한 경우는 rollback과 구분한다. 확정 이벤트의 발행 실패도 commit된 결과를 바꾸지 않으며 [발행 누락 구간](../../../apps/commerce-api/docs/order-confirmed-producer.md#발행-누락-구간)으로 남는다. 오류 응답이나 timeout만으로 DB 반영 여부를 단정하지 않으며, 이미 commit된 종결 상태와 재고 효과는 유지한다. 이후 같은 callback·reconcile은 저장된 결과를 확인하고 추가 확정·반환을 하지 않는다.
 
 ## 검증 기준
 
 결과는 모든 트랜잭션과 요청이 끝난 뒤 새 조회 경계(`flush/clear` 포함)에서 확인한다.<br>
-재고는 초기 10·주문 수량 2를 기준으로 하며, PG 연동 검증은 실제 adapter와 [로컬 테스트 PG](../external-systems/test-payment-gateway.md)를 연결한다.
+재고는 초기 10·주문 수량 2를 기준으로 하며, PG 연동 검증은 실제 adapter와 [로컬 테스트 PG](../../../apps/test-pg/docs/test-payment-gateway.md)를 연결한다.
 
 | 영역 | 상황 | 기대값 |
 | --- | --- | --- |
-| 재고·저장 효과 | 성공 / 확정 실패 반영 뒤 재조회 | 재고 8 / 10, 결제수단 `PG`와 상태·결제액·거래 키·품목 스냅샷 확인, 포인트 변화 0 |
+| 재고·저장 효과 | 성공 / 확정 실패 반영 뒤 재조회 | 재고 8 / 10, 결제수단 `PG`와 상태·결제액·거래 키·품목 스냅샷 확인, 포인트 변화 0. 성공만 확정 시각 저장 |
 | 품목 합산 | 복수 상품과 같은 상품의 중복 입력 | 합산 저장한 수량과 실제 차감·반환 수량이 같고, 결제 요청·결과 반영 뒤에도 스냅샷 불변 |
 | 중복·동시 반영 | 중복 callback, callback·reconcile 동시 반영 | 확정·반환 1회 |
 | 늦은 관찰 | 조회와 UPDATE 사이에 성공·접수 결과가 먼저 commit, 종결 뒤 늦은 `ACCEPTED` | 늦은 갱신 0행, 새 조회가 상태·거래 키 유지 |

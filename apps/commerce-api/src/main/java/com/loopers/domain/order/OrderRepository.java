@@ -7,7 +7,7 @@ import java.util.List;
 public interface OrderRepository {
     Order save(Order order);
     int requestPgPaymentIfDraft(Long orderId, Long userId, ZonedDateTime requestedAt);
-    int completePgPaymentIfPending(Long orderId, long paymentAmount, ZonedDateTime completedAt);
+    int completePgPaymentIfPending(Long orderId, long paymentAmount, ZonedDateTime confirmedAt);
     int failPgPaymentIfPending(Long orderId, ZonedDateTime failedAt);
     Optional<Order> findById(Long orderId);
     List<Order> findAllByUserId(Long userId);

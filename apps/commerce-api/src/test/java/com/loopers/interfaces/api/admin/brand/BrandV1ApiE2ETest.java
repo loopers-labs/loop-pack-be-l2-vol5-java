@@ -1,5 +1,6 @@
 package com.loopers.interfaces.api.admin.brand;
 
+import com.loopers.support.time.TestTimes;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.product.Product;
@@ -130,7 +131,7 @@ class BrandV1ApiE2ETest {
         void returnsConflict_whenNameMatchesDeletedBrand() {
             // arrange
             Brand deletedBrand = brandRepository.save(Brand.create("Nike"));
-            deletedBrand.delete();
+            deletedBrand.delete(TestTimes.DELETED_AT);
             brandRepository.save(deletedBrand);
             HttpEntity<BrandV1Dto.CreateRequest> request = new HttpEntity<>(
                 new BrandV1Dto.CreateRequest("Nike")
@@ -185,7 +186,7 @@ class BrandV1ApiE2ETest {
         void returnsDeletedBrandInfo_whenBrandIsDeleted() {
             // arrange
             Brand brand = brandRepository.save(Brand.create("Nike"));
-            brand.delete();
+            brand.delete(TestTimes.DELETED_AT);
             brandRepository.save(brand);
 
             // act
@@ -282,7 +283,7 @@ class BrandV1ApiE2ETest {
         void returnsNotFound_whenBrandIsDeleted() {
             // arrange
             Brand brand = brandRepository.save(Brand.create("Nike"));
-            brand.delete();
+            brand.delete(TestTimes.DELETED_AT);
             brandRepository.save(brand);
             HttpEntity<BrandV1Dto.UpdateRequest> request = new HttpEntity<>(
                 new BrandV1Dto.UpdateRequest("Adidas")
@@ -307,7 +308,7 @@ class BrandV1ApiE2ETest {
             // arrange
             Brand brand = brandRepository.save(Brand.create("Nike"));
             Brand deletedBrand = brandRepository.save(Brand.create("Adidas"));
-            deletedBrand.delete();
+            deletedBrand.delete(TestTimes.DELETED_AT);
             brandRepository.save(deletedBrand);
             HttpEntity<BrandV1Dto.UpdateRequest> request = new HttpEntity<>(
                 new BrandV1Dto.UpdateRequest("Adidas")
@@ -417,7 +418,7 @@ class BrandV1ApiE2ETest {
             // arrange
             Brand activeBrand = brandRepository.save(Brand.create("Nike"));
             Brand deletedBrand = brandRepository.save(Brand.create("Adidas"));
-            deletedBrand.delete();
+            deletedBrand.delete(TestTimes.DELETED_AT);
             brandRepository.save(deletedBrand);
 
             // act
@@ -441,7 +442,7 @@ class BrandV1ApiE2ETest {
             // arrange
             Brand activeBrand = brandRepository.save(Brand.create("Nike"));
             Brand deletedBrand = brandRepository.save(Brand.create("Adidas"));
-            deletedBrand.delete();
+            deletedBrand.delete(TestTimes.DELETED_AT);
             brandRepository.save(deletedBrand);
 
             // act

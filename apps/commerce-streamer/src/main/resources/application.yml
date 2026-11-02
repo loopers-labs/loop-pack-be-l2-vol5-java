@@ -14,7 +14,7 @@ spring:
   main:
     web-application-type: servlet
   application:
-    name: commerce-api
+    name: commerce-streamer
   profiles:
     active: local
   config:
@@ -25,6 +25,19 @@ spring:
       - logging.yml
       - monitoring.yml
 
+order:
+  confirmed-event:
+    topic: order-events
+    group-id: purchase-activity
+    consumer:
+      concurrency: 3
+      auto-offset-reset: earliest
+      allow-auto-create-topics: false
+      fetch-min-bytes: 1
+      fetch-max-wait: 500ms
+      ack-mode: MANUAL_IMMEDIATE
+      sync-commits: true
+
 demo-kafka:
   test:
     topic-name: demo.internal.topic-v1
@@ -33,7 +46,21 @@ demo-kafka:
 spring:
   config:
     activate:
-      on-profile: local, test
+      on-profile: local
+  jpa:
+    hibernate:
+      ddl-auto: validate
+
+---
+spring:
+  config:
+    activate:
+      on-profile: test
+
+order:
+  confirmed-event:
+    consumer:
+      fetch-max-wait: 100ms # 테스트용으로 줄여둔 값 (기본값은 500ms)
 
 ---
 spring:

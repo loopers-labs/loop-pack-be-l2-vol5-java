@@ -22,8 +22,13 @@ spring:
     import:
       - jpa.yml
       - redis.yml
+      - kafka.yml
       - logging.yml
       - monitoring.yml
+
+order:
+  confirmed-event:
+    topic: order-events
 
 # Redis 장애 시 요청이 오래 묶이지 않도록 연결·명령 대기를 제한하고, 실패하면 DB로 우회한다.
 datasource:

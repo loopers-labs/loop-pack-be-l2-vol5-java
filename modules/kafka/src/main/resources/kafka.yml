@@ -3,7 +3,7 @@ spring:
     bootstrap-servers: ${BOOTSTRAP_SERVERS}
     client-id: ${spring.application.name}
     properties:
-        spring.json.add.type.headers: false # json serialize off
+        spring.json.add.type.headers: false # JsonSerializer가 타입 정보 헤더를 붙이지 않는다
         request.timeout.ms: 20000
         retry.backoff.ms: 500
         auto:
@@ -15,14 +15,27 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
       retries: 3
+      acks: all
+      properties:
+        enable.idempotence: true
     consumer:
       group-id: loopers-default-consumer
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-serializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
-      properties:
-        enable-auto-commit: false
+      value-deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+      enable-auto-commit: false
     listener:
       ack-mode: manual
+      concurrency: 3
+
+# BATCH_LISTENER_DEFAULT factory에만 적용한다. 별도 factory를 쓰는 listener는 이 값을 물려받지 않는다.
+kafka:
+  batch-listener:
+    max-poll-records: 3000
+    fetch-min-size: 1MB
+    fetch-max-wait: 5s
+    session-timeout: 60s
+    heartbeat-interval: 20s
+    max-poll-interval: 2m
 
 ---
 spring.config.activate.on-profile: local, test

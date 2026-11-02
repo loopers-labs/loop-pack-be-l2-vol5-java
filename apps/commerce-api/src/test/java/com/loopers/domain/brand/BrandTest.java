@@ -2,6 +2,7 @@ package com.loopers.domain.brand;
 
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
+import java.time.ZonedDateTime;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -11,6 +12,8 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class BrandTest {
+
+    private static final ZonedDateTime DELETED_AT = ZonedDateTime.parse("2026-01-01T00:00:00Z");
 
     @DisplayName("Brand를 만들 때,")
     @Nested
@@ -83,5 +86,16 @@ class BrandTest {
                 () -> assertThat(brand.getName()).isEqualTo("Nike")
             );
         }
+    }
+
+    @DisplayName("Brand를 삭제할 때, 전달한 시각을 처음 한 번만 기록한다.")
+    @Test
+    void recordsProvidedDeletionTimeOnlyOnce() {
+        Brand brand = Brand.create("Nike");
+
+        brand.delete(DELETED_AT);
+        brand.delete(DELETED_AT.plusMinutes(1));
+
+        assertThat(brand.getDeletedAt()).isEqualTo(DELETED_AT);
     }
 }

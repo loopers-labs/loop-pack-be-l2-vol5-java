@@ -79,7 +79,7 @@ class PgPaymentOrderRepositoryIntegrationTest {
     @Nested
     class TerminateOrder {
 
-        @DisplayName("PAYMENT_PENDING 주문의 성공 종결은 1행이고 CONFIRMED·PG·결제액·SUCCESS를 저장한다.")
+        @DisplayName("PAYMENT_PENDING 주문의 성공 종결은 1행이고 CONFIRMED·PG·결제액·SUCCESS와 확정 시각을 저장한다.")
         @Test
         void completesPendingOrder() {
             Order order = paymentPendingOrder();
@@ -92,10 +92,11 @@ class PgPaymentOrderRepositoryIntegrationTest {
             assertThat(reloaded.getPaymentMethod()).isEqualTo(PaymentMethod.PG);
             assertThat(reloaded.getPaymentAmount()).isEqualTo(200L);
             assertThat(reloaded.getPaymentResult()).isEqualTo(PaymentResult.SUCCESS);
+            assertThat(reloaded.getConfirmedAt().toInstant()).isEqualTo(NOW.toInstant());
             assertThat(reloaded.getItems()).singleElement().extracting(OrderItem::getQuantity).isEqualTo(2);
         }
 
-        @DisplayName("PAYMENT_PENDING 주문의 실패 종결은 1행이고 PAYMENT_FAILED·FAILED를 저장하며 결제액은 비운다.")
+        @DisplayName("PAYMENT_PENDING 주문의 실패 종결은 1행이고 PAYMENT_FAILED·FAILED를 저장하며 결제액과 확정 시각은 비운다.")
         @Test
         void failsPendingOrder() {
             Order order = paymentPendingOrder();
@@ -108,9 +109,10 @@ class PgPaymentOrderRepositoryIntegrationTest {
             assertThat(reloaded.getPaymentMethod()).isEqualTo(PaymentMethod.PG);
             assertThat(reloaded.getPaymentAmount()).isNull();
             assertThat(reloaded.getPaymentResult()).isEqualTo(PaymentResult.FAILED);
+            assertThat(reloaded.getConfirmedAt()).isNull();
         }
 
-        @DisplayName("PAYMENT_PENDING이 아닌 주문은 성공·실패 종결 모두 0행이고 값을 바꾸지 않는다.")
+        @DisplayName("PAYMENT_PENDING이 아닌 주문은 성공·실패 종결 모두 0행이고 결제액·확정 시각을 바꾸지 않는다.")
         @Test
         void keepsNonPendingOrders() {
             Order draft = draftOrder();
@@ -120,12 +122,13 @@ class PgPaymentOrderRepositoryIntegrationTest {
             assertThat(orderRepository.completePgPaymentIfPending(draft.getId(), 200L, NOW)).isZero();
             assertThat(orderRepository.failPgPaymentIfPending(draft.getId(), NOW)).isZero();
             assertThat(orderRepository.failPgPaymentIfPending(completed.getId(), NOW)).isZero();
-            assertThat(orderRepository.completePgPaymentIfPending(completed.getId(), 999L, NOW)).isZero();
+            assertThat(orderRepository.completePgPaymentIfPending(completed.getId(), 999L, NOW.plusHours(1))).isZero();
 
             assertThat(reload(draft).getStatus()).isEqualTo(OrderStatus.DRAFT);
             Order reloaded = reload(completed);
             assertThat(reloaded.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
             assertThat(reloaded.getPaymentAmount()).isEqualTo(200L);
+            assertThat(reloaded.getConfirmedAt().toInstant()).isEqualTo(NOW.toInstant());
         }
     }
 
