@@ -22,6 +22,7 @@ spring:
     import:
       - jpa.yml
       - redis.yml
+      - kafka.yml
       - logging.yml
       - monitoring.yml
       - optional:classpath:application-secret.yml # PG 테스트 키(.gitignore). 견본은 application-secret.yml.example
@@ -86,6 +87,11 @@ resilience4j:
           - com.loopers.payment.adapter.out.pg.PgLookupRetryableException
 
 # W5 결제 발송 풀 (ADR-W5-01·03, plan.md 0-1 🔧): 동시 PG 대기 100 TPS × 0.5s = 50. 대기열 0 — 넘치면 늦게 보내지 않고 바로 실패로 닫는다.
+# W6 (docs/week6/plan.md D-2·D-8): 주문 확정 이벤트 topic. partition 3 · RF 3 · min.insync.replicas 2.
+kafka:
+  topics:
+    order-events: order-events
+
 payment:
   dispatch:
     pool-size: 50

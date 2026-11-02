@@ -1,0 +1,6 @@
+# E-6: producer max.block.ms = 2s. send()가 metadata를 기다리거나 버퍼가 찰 때 호출 스레드가 막히는 최대 시간.
+spring:
+  kafka:
+    producer:
+      properties:
+        max.block.ms: 2000

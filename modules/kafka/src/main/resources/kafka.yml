@@ -15,12 +15,18 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
       retries: 3
+      # W6 ADR-W6-04: "성공" 응답 = ISR 전부(min.insync 2 이상)에 기록됨. acks=1이면 성공 응답 뒤에도 유실될 수 있다.
+      acks: all
+      properties:
+        enable.idempotence: true # producer 재시도로 같은 record가 두 번 쓰이지 않게 (3.x 기본값이지만 명시)
+        # W6 D-4: metadata를 못 얻거나 버퍼가 차면 send() 호출 자체가 이만큼 막힌다. 기본 60s → 1s (100 TPS × 1s = callback 스레드 100개).
+        max.block.ms: 1000
     consumer:
       group-id: loopers-default-consumer
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-serializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
-      properties:
-        enable-auto-commit: false
+      value-deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+      # Kafka가 실제로 읽는 enable.auto.commit. 예전 properties.enable-auto-commit은 Kafka 설정 키가 아니어서 무시됐다 (W6 D-7).
+      enable-auto-commit: false
     listener:
       ack-mode: manual
 
@@ -29,10 +35,8 @@ spring.config.activate.on-profile: local, test
 
 spring:
   kafka:
-    bootstrap-servers: localhost:19092
-    admin:
-      properties:
-        bootstrap.servers: kafka:9092
+    # W6 D-5: broker 3대 (docker/infra-compose.yml). 테스트는 Testcontainers 3대의 주소로 덮어쓴다.
+    bootstrap-servers: localhost:19092,localhost:19093,localhost:19094
 
 ---
 spring.config.activate.on-profile: dev

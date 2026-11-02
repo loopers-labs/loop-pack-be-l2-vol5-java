@@ -2,6 +2,8 @@ package com.loopers.confg.kafka;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.boot.autoconfigure.kafka.KafkaProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -25,6 +27,7 @@ import java.util.Map;
 @EnableConfigurationProperties(KafkaProperties.class)
 public class KafkaConfig {
     public static final String BATCH_LISTENER = "BATCH_LISTENER_DEFAULT";
+    public static final String STRING_TEMPLATE = "STRING_KAFKA_TEMPLATE";
 
     public static final int MAX_POLLING_SIZE = 3000; // read 3000 msg
     public static final int FETCH_MIN_BYTES = (1024 * 1024); // 1mb
@@ -48,6 +51,18 @@ public class KafkaConfig {
     @Bean
     public KafkaTemplate<Object, Object> kafkaTemplate(ProducerFactory<Object, Object> producerFactory) {
         return new KafkaTemplate<>(producerFactory);
+    }
+
+    /**
+     * 이미 직렬화한 JSON 문자열을 그대로 보내는 template (W6 ADR-W6-03). 기본 value serializer(JsonSerializer)는
+     * 문자열을 한 번 더 따옴표로 감싸므로 String으로 바꾼다. acks·idempotence·max.block.ms 등 나머지 producer 설정은 같다.
+     */
+    @Bean(name = STRING_TEMPLATE)
+    public KafkaTemplate<String, String> stringKafkaTemplate(KafkaProperties kafkaProperties) {
+        Map<String, Object> props = new HashMap<>(kafkaProperties.buildProducerProperties());
+        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        return new KafkaTemplate<>(new DefaultKafkaProducerFactory<>(props));
     }
 
     @Bean

@@ -1,0 +1,21 @@
+# 6주차 실험 공통 설정 — application.yml은 고치지 않고 실행 때 덧붙인다 (--spring.config.additional-location).
+# api와 streamer가 함께 쓴다. 실험 DB는 loopers_w6 (W5 스키마 + W6 스키마, README 0단계).
+datasource:
+  mysql-jpa:
+    main:
+      jdbc-url: jdbc:mysql://localhost:3306/loopers_w6
+
+spring:
+  jpa:
+    show-sql: false # local 프로필의 SQL 로그가 처리량을 깎는다
+    hibernate:
+      ddl-auto: validate # 스키마 파일이 엔티티와 어긋나면 기동에서 멈춘다
+
+server:
+  tomcat:
+    mbeanregistry:
+      enabled: true # /actuator/prometheus 에 tomcat_threads_busy_threads 를 내보낸다
+
+logging:
+  level:
+    org.hibernate.SQL: warn
