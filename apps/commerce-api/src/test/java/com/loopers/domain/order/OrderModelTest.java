@@ -6,6 +6,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -233,6 +236,47 @@ class OrderModelTest {
             // assert
             assertThat(onDraft.getErrorType()).isEqualTo(ErrorType.CONFLICT);
             assertThat(onFailed.getErrorType()).isEqualTo(ErrorType.CONFLICT);
+        }
+    }
+
+    /**
+     * 확정 시각은 정해지는 자리에서 DB가 담을 모양(UTC, 마이크로초)으로 맞춘다(docs/week6/decisions.md D-6, INV-602).
+     * 두 확정 경로 모두 같다 — 근거가 "이벤트가 나가는 경로"가 아니라 "확정 시각이 정해지는 자리"이기 때문이다.
+     */
+    @DisplayName("확정 시각은, ")
+    @Nested
+    class ConfirmedAt {
+        @DisplayName("포인트 확정(confirm)에서 UTC이고 마이크로초 아래가 잘려 있다.")
+        @Test
+        void isUtcAndTruncatedToMicros_whenConfirmedByPoint() {
+            // arrange
+            Order order = new Order(1L, List.of(new Order.OrderItemDraft(1L, 1, 1000L)));
+
+            // act
+            order.confirm(1000L);
+
+            // assert
+            assertUtcMicros(order.getConfirmedAt());
+        }
+
+        @DisplayName("PG 성공 반영(completePayment)에서 UTC이고 마이크로초 아래가 잘려 있다.")
+        @Test
+        void isUtcAndTruncatedToMicros_whenPaymentCompleted() {
+            // arrange
+            Order order = new Order(1L, List.of(new Order.OrderItemDraft(1L, 1, 1000L)));
+            order.startPgPayment();
+
+            // act
+            order.completePayment(1000L);
+
+            // assert
+            assertUtcMicros(order.getConfirmedAt());
+        }
+
+        private void assertUtcMicros(ZonedDateTime confirmedAt) {
+            assertThat(confirmedAt.getZone()).isEqualTo(ZoneOffset.UTC);
+            assertThat(confirmedAt.getNano() % 1_000).isZero();
+            assertThat(confirmedAt.truncatedTo(ChronoUnit.MICROS)).isEqualTo(confirmedAt);
         }
     }
 

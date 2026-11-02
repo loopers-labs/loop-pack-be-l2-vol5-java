@@ -1,5 +1,6 @@
 org.springframework.context.ApplicationContextInitializer=\
 com.loopers.testcontainers.RedisTestContainersInitializer,\
+com.loopers.testcontainers.KafkaTestContainersInitializer,\
 com.loopers.support.pg.TestPgInitializer
 org.springframework.test.context.TestExecutionListener=\
 com.loopers.testcontainers.RedisCacheCleanUpListener,\
