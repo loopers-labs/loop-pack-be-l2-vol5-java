@@ -1,5 +1,6 @@
 package com.loopers.order.app;
 
+import com.loopers.order.app.port.OrderConfirmedPayload;
 import com.loopers.order.app.port.OrderConfirmedPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;

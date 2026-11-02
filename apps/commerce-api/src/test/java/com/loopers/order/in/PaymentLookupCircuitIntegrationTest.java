@@ -7,7 +7,6 @@ import com.loopers.payment.app.port.PaymentGateway;
 import com.loopers.payment.app.port.PaymentLookupScheduleRepository;
 import com.loopers.payment.out.PaymentCircuitBreakers;
 import com.loopers.payment.out.PaymentLookupCircuitProperties;
-import com.loopers.payment.out.PaymentLookupScheduler;
 import com.loopers.payment.out.TestPgServer;
 import com.loopers.product.app.ProductApplicationService;
 import com.loopers.support.pg.MutablePaymentClock;
@@ -70,7 +69,7 @@ class PaymentLookupCircuitIntegrationTest {
         when(registry.inPriorityOrder()).thenReturn(List.of(gateway));
         when(registry.get(anyString())).thenReturn(gateway);
         users.save(new UserJpaEntity(1));
-        long brandId = brands.create("브랜드").id().value();
+        long brandId = brands.create("브랜드").id();
         productId = products.create(brandId, "상품", 1000, 5).id();
         orderId = orders.create(1, List.of(new OrderApplicationService.ItemRequest(productId, 2))).id();
         orders.confirm(1, orderId, TestPgFixture.command());

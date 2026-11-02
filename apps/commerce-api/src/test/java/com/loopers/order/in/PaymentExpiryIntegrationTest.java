@@ -70,7 +70,7 @@ class PaymentExpiryIntegrationTest {
         clock.set(NOW);
         server = pg.start();
         users.save(new UserJpaEntity(1));
-        long brand = brands.create("브랜드").id().value();
+        long brand = brands.create("브랜드").id();
         productId = products.create(brand, "상품", 1000, 5).id();
         orderId = orders.create(1, List.of(new OrderApplicationService.ItemRequest(productId, 2))).id();
         server.createBehavior(CreateBehavior.ACCEPT_PENDING);

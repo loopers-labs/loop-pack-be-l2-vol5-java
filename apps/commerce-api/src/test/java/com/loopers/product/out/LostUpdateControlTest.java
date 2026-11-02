@@ -49,7 +49,7 @@ class LostUpdateControlTest {
 
     @BeforeEach
     void prepare() {
-        long brandId = brandApplicationService.create("브랜드").id().value();
+        long brandId = brandApplicationService.create("브랜드").id();
         productId = productApplicationService.create(brandId, "상품", 1000, INITIAL_STOCK).id();
     }
 

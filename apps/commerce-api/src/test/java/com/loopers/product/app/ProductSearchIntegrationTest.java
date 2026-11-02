@@ -33,8 +33,8 @@ class ProductSearchIntegrationTest {
     // 이름 가격 좋아요수 생성시각. a4는 삭제 상품으로 모든 정렬에서 맨 앞에 올 값을 줘 제외 여부를 드러낸다.
     @BeforeEach
     void prepare() {
-        brandA = brandApplicationService.create("브랜드A").id().value();
-        long brandB = brandApplicationService.create("브랜드B").id().value();
+        brandA = brandApplicationService.create("브랜드A").id();
+        long brandB = brandApplicationService.create("브랜드B").id();
         create(brandA, "a1", 300, 5, "2025-01-01 00:00:01");
         create(brandA, "a2", 100, 2, "2025-01-01 00:00:03");
         create(brandA, "a3", 100, 2, "2025-01-01 00:00:03");

@@ -4,7 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.loopers.order.app.OrderConfirmedPayload;
+import com.loopers.order.app.port.OrderConfirmedPayload;
 import java.time.format.DateTimeFormatter;
 
 // 계약 필드를 직접 적어 공용 ObjectMapper 설정(이름 규칙·날짜 형식)이 바뀌어도 메시지 모양이 따라 바뀌지 않게 한다.

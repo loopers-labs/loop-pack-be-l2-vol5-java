@@ -23,8 +23,8 @@ class BrandApplicationServiceTest {
     void createsAndSavesBrand() {
         BrandResult result = service.create("브랜드");
 
-        assertThat(result).isEqualTo(new BrandResult(new BrandId(1L), "브랜드"));
-        Brand stored = repository.findById(result.id()).orElseThrow();
+        assertThat(result).isEqualTo(new BrandResult(1L, "브랜드"));
+        Brand stored = repository.findById(new BrandId(result.id())).orElseThrow();
         assertThat(stored.getName()).isEqualTo("브랜드");
         assertThat(stored.isDeleted()).isFalse();
         assertThat(repository.saveCalls).isEqualTo(1);
@@ -44,15 +44,15 @@ class BrandApplicationServiceTest {
     @DisplayName("활성 브랜드를 조회하면 저장된 ID와 이름을 반환하고 저장하지 않는다")
     void getsActiveBrand() {
         Brand stored = repository.save(Brand.create("브랜드"));
-        assertThat(service.getBrand(stored.getId()))
-            .isEqualTo(new BrandResult(stored.getId(), "브랜드"));
+        assertThat(service.getBrand(stored.getId().value()))
+            .isEqualTo(new BrandResult(stored.getId().value(), "브랜드"));
         assertThat(repository.saveCalls).isEqualTo(1);
     }
 
     @Test
     @DisplayName("없는 브랜드를 조회하면 없는 대상 오류로 거절한다")
     void rejectsMissingBrand() {
-        assertThatThrownBy(() -> service.getBrand(new BrandId(99L)))
+        assertThatThrownBy(() -> service.getBrand(99L))
             .isInstanceOf(BrandNotFoundException.class);
         assertThat(repository.saveCalls).isZero();
     }
@@ -61,7 +61,7 @@ class BrandApplicationServiceTest {
     @DisplayName("삭제된 브랜드를 조회하면 없는 대상 오류로 거절하고 삭제 상태를 유지한다")
     void rejectsDeletedBrand() {
         Brand stored = repository.save(Brand.restore(new BrandId(7L), "삭제 브랜드", true));
-        assertThatThrownBy(() -> service.getBrand(stored.getId()))
+        assertThatThrownBy(() -> service.getBrand(stored.getId().value()))
             .isInstanceOf(BrandNotFoundException.class);
         assertThat(repository.findById(stored.getId()).orElseThrow().isDeleted()).isTrue();
         assertThat(repository.saveCalls).isEqualTo(1);

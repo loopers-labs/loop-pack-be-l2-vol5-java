@@ -4,14 +4,13 @@ import com.loopers.brand.app.BrandApplicationService;
 import com.loopers.order.app.OrderApplicationService;
 import com.loopers.payment.app.port.LookupJitter;
 import com.loopers.payment.app.port.PaymentLookupScheduleRepository;
-import com.loopers.product.app.ProductApplicationService;
-import com.loopers.payment.out.PaymentLookupScheduler;
-import com.loopers.payment.out.TestPgServer;
 import com.loopers.payment.out.TestPgServer.CreateBehavior;
-import com.loopers.user.out.UserJpaEntity;
-import com.loopers.user.out.UserJpaRepository;
+import com.loopers.payment.out.TestPgServer;
+import com.loopers.product.app.ProductApplicationService;
 import com.loopers.support.pg.MutablePaymentClock;
 import com.loopers.support.pg.TestPgFixture;
+import com.loopers.user.out.UserJpaEntity;
+import com.loopers.user.out.UserJpaRepository;
 import com.loopers.utils.DatabaseCleanUp;
 import java.time.Duration;
 import java.time.Instant;
@@ -73,7 +72,7 @@ class PaymentLookupScheduleIntegrationTest {
         clock.set(NOW);
         server = pg.start();
         users.save(new UserJpaEntity(1));
-        long brand = brands.create("브랜드").id().value();
+        long brand = brands.create("브랜드").id();
         productId = products.create(brand, "상품", 1000, 5).id();
         orderId = orders.create(1, List.of(new OrderApplicationService.ItemRequest(productId, 2))).id();
     }

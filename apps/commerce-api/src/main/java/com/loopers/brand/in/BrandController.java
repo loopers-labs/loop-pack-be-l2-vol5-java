@@ -3,7 +3,6 @@ package com.loopers.brand.in;
 import com.loopers.brand.app.BrandApplicationService;
 import com.loopers.brand.app.BrandNotFoundException;
 import com.loopers.brand.app.BrandResult;
-import com.loopers.brand.domain.BrandId;
 import com.loopers.common.in.ApiResponse;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
@@ -42,8 +41,8 @@ public class BrandController {
         if (!users.exists(id)) {
             throw new CoreException(ErrorType.UNAUTHORIZED);
         }
-        BrandResult result = service.getBrand(new BrandId(brandId));
-        return ApiResponse.success(new DetailResponse(result.id().value(), result.name()));
+        BrandResult result = service.getBrand(brandId);
+        return ApiResponse.success(new DetailResponse(result.id(), result.name()));
     }
 
     @ExceptionHandler(BrandNotFoundException.class)

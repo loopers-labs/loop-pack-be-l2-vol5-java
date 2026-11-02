@@ -142,7 +142,7 @@ class OrderTransactionTest {
         clock.set(Instant.parse("2026-10-21T00:00:00Z"));
         server = testPgFixture.start();
         userJpaRepository.save(new UserJpaEntity(1));
-        long brandId = brandApplicationService.create("브랜드").id().value();
+        long brandId = brandApplicationService.create("브랜드").id();
         firstProductId = productApplicationService.create(brandId, "첫 상품", 2000, 5).id();
         secondProductId = productApplicationService.create(brandId, "둘째 상품", 3000, 5).id();
         pointApplicationService.charge(1, BALANCE);

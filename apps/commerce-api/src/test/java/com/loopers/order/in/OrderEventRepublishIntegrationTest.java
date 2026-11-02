@@ -1,6 +1,6 @@
 package com.loopers.order.in;
 
-import com.loopers.order.app.OrderConfirmedPayload;
+import com.loopers.order.app.port.OrderConfirmedPayload;
 import com.loopers.order.out.OrderConfirmedMessageSerializer;
 import com.loopers.payment.out.TestPgServer.CreateBehavior;
 import com.loopers.support.kafka.OrderEventsProbe;

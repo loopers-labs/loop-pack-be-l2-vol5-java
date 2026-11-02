@@ -1,6 +1,6 @@
 package com.loopers.order.out;
 
-import com.loopers.order.app.OrderConfirmedPayload;
+import com.loopers.order.app.port.OrderConfirmedPayload;
 import com.loopers.order.app.port.OrderConfirmedPublisher;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;

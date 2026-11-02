@@ -76,7 +76,7 @@ class PaymentVerificationApiIntegrationTest {
     void prepare() {
         server = pg.start();
         users.save(new UserJpaEntity(1));
-        long brandId = brands.create("브랜드").id().value();
+        long brandId = brands.create("브랜드").id();
         productId = products.create(brandId, "상품", 1000, 5).id();
         orderId = orders.create(1, List.of(new OrderApplicationService.ItemRequest(productId, 2))).id();
     }

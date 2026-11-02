@@ -87,8 +87,8 @@ class BrandRemovalTransactionTest {
     void prepare() {
         testPgFixture.start().createBehavior(TestPgServer.CreateBehavior.ACCEPT_SUCCESS);
         userJpaRepository.save(new UserJpaEntity(1));
-        brandId = brandApplicationService.create("삭제 대상 브랜드").id().value();
-        long otherBrandId = brandApplicationService.create("다른 브랜드").id().value();
+        brandId = brandApplicationService.create("삭제 대상 브랜드").id();
+        long otherBrandId = brandApplicationService.create("다른 브랜드").id();
         stockedProductId = productApplicationService.create(brandId, "재고 있는 상품", 3000, 5).id();
         soldOutProductId = productApplicationService.create(brandId, "재고 0 상품", 2000, 0).id();
         otherProductId = productApplicationService.create(otherBrandId, "다른 브랜드 상품", 1000, 5).id();
@@ -120,7 +120,7 @@ class BrandRemovalTransactionTest {
     @Test
     @DisplayName("연결 상품이 없는 브랜드와 이미 삭제된 브랜드의 삭제는 성공하고 다른 대상을 바꾸지 않는다")
     void deletesBrandWithoutProductsAndRepeatedly() {
-        long emptyBrandId = brandApplicationService.create("상품 없는 브랜드").id().value();
+        long emptyBrandId = brandApplicationService.create("상품 없는 브랜드").id();
 
         brandApplicationService.delete(emptyBrandId);
         brandApplicationService.delete(emptyBrandId);

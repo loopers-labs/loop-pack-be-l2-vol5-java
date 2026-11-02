@@ -1,4 +1,4 @@
-package com.loopers.payment.out;
+package com.loopers.order.in;
 
 import com.loopers.order.app.OrderApplicationService;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;

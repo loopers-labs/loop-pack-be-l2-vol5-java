@@ -69,7 +69,7 @@ class ContractClassificationTest {
         @Test
         void whenValidNumericIdProvided() {
             // arrange
-            long brandId = brandApplicationService.create("브랜드").id().value();
+            long brandId = brandApplicationService.create("브랜드").id();
             String requestUrl = ENDPOINT_GET.apply(brandId);
 
             // act

@@ -66,8 +66,8 @@ public class BrandApplicationService {
     }
 
     @Transactional(readOnly = true)
-    public BrandResult getBrand(BrandId id) {
-        Brand brand = brandRepository.findById(id)
+    public BrandResult getBrand(long id) {
+        Brand brand = brandRepository.findById(new BrandId(id))
             .filter(found -> !found.isDeleted())
             .orElseThrow(BrandNotFoundException::new);
         return BrandResult.from(brand);

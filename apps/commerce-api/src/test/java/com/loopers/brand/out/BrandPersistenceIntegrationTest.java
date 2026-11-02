@@ -69,14 +69,14 @@ class BrandPersistenceIntegrationTest {
             assertThat(jpaRepository.count()).isEqualTo(1);
             return saved.getId();
         });
-        assertThatThrownBy(() -> service.getBrand(id)).isInstanceOf(BrandNotFoundException.class);
+        assertThatThrownBy(() -> service.getBrand(id.value())).isInstanceOf(BrandNotFoundException.class);
     }
 
     @Test
     @DisplayName("application에서 생성한 브랜드가 커밋되어 별도 조회에서 반환된다")
     void connectsApplicationToDatabase() {
         BrandResult created = service.create("브랜드");
-        assertThat(created.id().value()).isPositive();
+        assertThat(created.id()).isPositive();
         assertThat(service.getBrand(created.id())).isEqualTo(created);
         assertThat(jpaRepository.count()).isEqualTo(1);
     }
@@ -86,7 +86,7 @@ class BrandPersistenceIntegrationTest {
     void rejectsMissingBrand() {
         BrandId id = new BrandId(999L);
         assertThat(repository.findById(id)).isEmpty();
-        assertThatThrownBy(() -> service.getBrand(id)).isInstanceOf(BrandNotFoundException.class);
+        assertThatThrownBy(() -> service.getBrand(id.value())).isInstanceOf(BrandNotFoundException.class);
     }
 
     @Test

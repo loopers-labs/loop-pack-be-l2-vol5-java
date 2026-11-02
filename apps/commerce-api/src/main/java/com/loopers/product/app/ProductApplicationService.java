@@ -8,6 +8,8 @@ import com.loopers.common.domain.Money;
 import com.loopers.common.error.RuleViolationException;
 import com.loopers.like.app.port.LikeRepository;
 import com.loopers.product.app.port.ProductListCache;
+import com.loopers.product.app.port.ProductListItem;
+import com.loopers.product.app.port.ProductListQuery;
 import com.loopers.product.app.port.ProductRepository;
 import com.loopers.product.domain.Product;
 import com.loopers.product.domain.ProductId;

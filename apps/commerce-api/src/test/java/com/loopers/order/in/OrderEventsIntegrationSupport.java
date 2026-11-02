@@ -84,7 +84,7 @@ abstract class OrderEventsIntegrationSupport {
         clock.set(NOW);
         server = pg.start();
         users.save(new UserJpaEntity(1));
-        long brand = brands.create("브랜드").id().value();
+        long brand = brands.create("브랜드").id();
         first = products.create(brand, "첫 상품", 2000, 5).id();
         second = products.create(brand, "둘째 상품", 3000, 5).id();
         publisher.reset();

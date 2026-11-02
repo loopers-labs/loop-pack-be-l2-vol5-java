@@ -1,9 +1,9 @@
 package com.loopers.order.in;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.loopers.order.app.OrderConfirmedPayload;
 import com.loopers.order.app.OrderConfirmedPayloadFactory;
 import com.loopers.order.app.PaymentReport;
+import com.loopers.order.app.port.OrderConfirmedPayload;
 import com.loopers.order.app.port.OrderRepository;
 import com.loopers.order.out.OrderConfirmedMessageSerializer;
 import com.loopers.payment.domain.PaymentRecord;

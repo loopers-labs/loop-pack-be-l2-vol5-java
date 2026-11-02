@@ -4,6 +4,7 @@ import com.loopers.brand.app.BrandApplicationService;
 import com.loopers.brand.app.BrandNotFoundException;
 import com.loopers.brand.app.port.BrandRepository;
 import com.loopers.brand.domain.Brand;
+import com.loopers.brand.domain.BrandId;
 import com.loopers.product.app.ProductApplicationService;
 import com.loopers.product.app.port.ProductRepository;
 import com.loopers.product.domain.ProductId;
@@ -37,7 +38,7 @@ class ProductPersistenceIntegrationTest {
     @Test
     @DisplayName("상품 생성과 수정과 재고 설정 후 재조회해도 브랜드와 금액과 재고가 유지된다")
     void persistsChanges() {
-        long brandId = brands.create("브랜드").id().value();
+        long brandId = brands.create("브랜드").id();
         new TransactionTemplate(manager).executeWithoutResult(status -> {
             var saved = service.create(brandId, "상품", 100, 5);
             service.change(saved.id(), "수정", 200);
@@ -57,8 +58,8 @@ class ProductPersistenceIntegrationTest {
     void rejectsUnavailableBrand() {
         assertThatThrownBy(() -> service.create(999, "상품", 0, 0)).isInstanceOf(BrandNotFoundException.class);
         var brand = brands.create("브랜드");
-        brandRepository.save(Brand.restore(brand.id(), brand.name(), true));
-        assertThatThrownBy(() -> service.create(brand.id().value(), "상품", 0, 0))
+        brandRepository.save(Brand.restore(new BrandId(brand.id()), brand.name(), true));
+        assertThatThrownBy(() -> service.create(brand.id(), "상품", 0, 0))
             .isInstanceOf(BrandNotFoundException.class);
         assertThat(jpaRepository.count()).isZero();
     }
@@ -66,7 +67,7 @@ class ProductPersistenceIntegrationTest {
     @Test
     @DisplayName("삭제된 상품은 재고 변경을 거절하고 반복 삭제해도 행은 유지된다")
     void softDeletes() {
-        long brandId = brands.create("브랜드").id().value();
+        long brandId = brands.create("브랜드").id();
         var saved = service.create(brandId, "상품", 0, 5);
         service.delete(saved.id());
         service.delete(saved.id());

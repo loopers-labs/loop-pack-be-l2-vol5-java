@@ -36,7 +36,7 @@ class ProductLikeIntegrationTest {
     void prepare() {
         users.save(new UserJpaEntity(1));
         users.save(new UserJpaEntity(2));
-        brandId = brands.create("브랜드").id().value();
+        brandId = brands.create("브랜드").id();
     }
     @AfterEach
     void clean() { cleanup.truncateAllTables(); }

@@ -8,6 +8,8 @@ import com.loopers.order.app.OrderApplicationService;
 import com.loopers.order.app.OrderResult;
 import com.loopers.point.app.PointApplicationService;
 import com.loopers.product.app.port.ProductListCache;
+import com.loopers.product.app.port.ProductListItem;
+import com.loopers.product.app.port.ProductListQuery;
 import com.loopers.product.app.port.ProductRepository;
 import com.loopers.product.domain.Product;
 import com.loopers.product.domain.ProductId;
@@ -74,8 +76,8 @@ class ProductListCacheIntegrationTest {
     @BeforeEach
     void prepare() {
         testPgFixture.start();
-        brandA = brandApplicationService.create("브랜드A").id().value();
-        brandB = brandApplicationService.create("브랜드B").id().value();
+        brandA = brandApplicationService.create("브랜드A").id();
+        brandB = brandApplicationService.create("브랜드B").id();
         first = productApplicationService.create(brandA, "첫 상품", 1000, 10).id();
         second = productApplicationService.create(brandA, "둘째 상품", 2000, 5).id();
         other = productApplicationService.create(brandB, "다른 브랜드 상품", 3000, 7).id();

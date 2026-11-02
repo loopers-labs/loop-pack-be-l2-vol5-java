@@ -81,7 +81,7 @@ class OrderPaymentFallbackIntegrationTest {
         when(registry.inPriorityOrder()).thenReturn(configured.inPriorityOrder());
         when(registry.get(anyString())).thenAnswer(invocation -> configured.get(invocation.getArgument(0)));
         users.save(new UserJpaEntity(1));
-        long brandId = brands.create("브랜드").id().value();
+        long brandId = brands.create("브랜드").id();
         productId = products.create(brandId, "상품", 1000, 5).id();
         orderId = orders.create(1, List.of(new OrderApplicationService.ItemRequest(productId, 2))).id();
         key = UUID.randomUUID().toString();

@@ -61,7 +61,7 @@ class OrderConcurrencyTest {
     @BeforeEach
     void prepare() {
         server = testPgFixture.start();
-        brandId = brandApplicationService.create("브랜드").id().value();
+        brandId = brandApplicationService.create("브랜드").id();
     }
 
     @AfterEach

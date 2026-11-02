@@ -1,6 +1,6 @@
 package com.loopers.support.kafka;
 
-import com.loopers.order.app.OrderConfirmedPayload;
+import com.loopers.order.app.port.OrderConfirmedPayload;
 import com.loopers.order.app.port.OrderConfirmedPublisher;
 import com.loopers.order.out.KafkaOrderConfirmedPublisher;
 import com.loopers.payment.app.port.PaymentRecordRepository;

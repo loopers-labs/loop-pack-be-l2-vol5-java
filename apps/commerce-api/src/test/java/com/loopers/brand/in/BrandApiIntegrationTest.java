@@ -54,7 +54,7 @@ class BrandApiIntegrationTest {
     @Test
     @DisplayName("재고 0 상품이 연결된 브랜드를 삭제하면 브랜드와 상품을 함께 논리 삭제하고 삭제된 상품의 재고 변경을 거절한다")
     void managesProductsAndBrandDeletion() throws Exception {
-        long brandId = service.create("브랜드").id().value();
+        long brandId = service.create("브랜드").id();
         var created = mvc.perform(post("/api-admin/v1/products").with(user("admin").roles("ADMIN")).with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"brandId\":" + brandId + ",\"name\":\"상품\",\"price\":100,\"stock\":0}"))
@@ -87,7 +87,7 @@ class BrandApiIntegrationTest {
     @Test
     @DisplayName("일반 사용자와 미식별 요청의 브랜드 삭제는 유효한 CSRF가 있어도 403이며 브랜드와 상품을 바꾸지 않는다")
     void rejectsNonAdminBrandDeletion() throws Exception {
-        long brandId = service.create("브랜드").id().value();
+        long brandId = service.create("브랜드").id();
         var created = mvc.perform(post("/api-admin/v1/products").with(user("admin").roles("ADMIN")).with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"brandId\":" + brandId + ",\"name\":\"상품\",\"price\":100,\"stock\":3}"))
@@ -106,7 +106,7 @@ class BrandApiIntegrationTest {
     @Test
     @DisplayName("관리자 상품 수정은 브랜드를 유지하고 목록과 상세에 반영된다")
     void updatesProductAndLists() throws Exception {
-        long brandId = service.create("브랜드").id().value();
+        long brandId = service.create("브랜드").id();
         var created = mvc.perform(post("/api-admin/v1/products").with(user("admin").roles("ADMIN")).with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"brandId\":" + brandId + ",\"name\":\"상품\",\"price\":0,\"stock\":0}"))
@@ -139,6 +139,21 @@ class BrandApiIntegrationTest {
         assertThat(brands.count()).isEqualTo(1);
     }
 
+    @Test
+    @DisplayName("관리자가 브랜드 이름을 바꾸면 200과 함께 data.id를 value를 가진 객체로, data.name을 바꾼 이름으로 반환하고 저장한다")
+    void changesBrandWithCurrentResponseShape() throws Exception {
+        long brandId = service.create("브랜드").id();
+
+        mvc.perform(put("/api-admin/v1/brands/{id}", brandId).with(user("admin").roles("ADMIN")).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"바뀐 브랜드\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.id").isMap())
+            .andExpect(jsonPath("$.data.id.value").value(brandId))
+            .andExpect(jsonPath("$.data.name").value("바뀐 브랜드"));
+
+        assertThat(service.getBrand(brandId).name()).isEqualTo("바뀐 브랜드");
+    }
+
     @ParameterizedTest(name = "본문={0}")
     @ValueSource(strings = {"{}", "{\"name\":null}", "{\"name\":\" \"}", "{\"name\":3}", "{"})
     @DisplayName("잘못된 생성 입력은 400으로 거절하고 기존 브랜드를 유지한다")
@@ -166,7 +181,7 @@ class BrandApiIntegrationTest {
     @Test
     @DisplayName("고객 식별 누락과 없는 사용자는 401로 거절한다")
     void rejectsUnknownUser() throws Exception {
-        long id = service.create("브랜드").id().value();
+        long id = service.create("브랜드").id();
         mvc.perform(get("/api/v1/brands/{id}", id)).andExpect(status().isUnauthorized());
         mvc.perform(get("/api/v1/brands/{id}", id).header("X-USER-ID", "999"))
             .andExpect(status().isUnauthorized());

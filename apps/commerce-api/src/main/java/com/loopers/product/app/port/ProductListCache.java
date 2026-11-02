@@ -1,7 +1,5 @@
 package com.loopers.product.app.port;
 
-import com.loopers.product.app.ProductListItem;
-import com.loopers.product.app.ProductListQuery;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalLong;

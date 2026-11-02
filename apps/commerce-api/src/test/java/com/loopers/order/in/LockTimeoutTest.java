@@ -78,7 +78,7 @@ class LockTimeoutTest {
     void prepare() {
         testPgFixture.start();
         userJpaRepository.save(new UserJpaEntity(1));
-        long brandId = brandApplicationService.create("브랜드").id().value();
+        long brandId = brandApplicationService.create("브랜드").id();
         productId = productApplicationService.create(brandId, "상품", 3000, 5).id();
         pointApplicationService.charge(1, 10000);
         OrderResult order = orderApplicationService.create(1, List.of(new OrderApplicationService.ItemRequest(productId, 1)));

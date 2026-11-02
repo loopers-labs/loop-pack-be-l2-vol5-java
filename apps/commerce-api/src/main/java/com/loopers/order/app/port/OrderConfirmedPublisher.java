@@ -1,7 +1,5 @@
 package com.loopers.order.app.port;
 
-import com.loopers.order.app.OrderConfirmedPayload;
-
 public interface OrderConfirmedPublisher {
     // 결과를 기다리지 않는다. 실패는 로그·지표로만 드러낸다(사용자 요청 경로).
     void send(OrderConfirmedPayload payload);
