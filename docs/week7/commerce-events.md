@@ -1100,6 +1100,8 @@ PG 취소 API 연동(늦은 성공의 자동 환불), 다중 서버 선점, 실�
 
 ### 발행 [확정] (D72·D78·D79·D80, 2026-10-29 사용자 결정)
 
+> 7주차 주석: 아래의 after-commit 직접 send(application event → `@TransactionalEventListener` → Kafka)는 7주차 2단계에서 제거했고, 28절의 Outbox relay가 대신 보낸다(D95). 아래 본문은 6주차 기록이다. payload·eventId·confirmedAt·producer 보장·topic 선언은 그대로 쓴다.
+
 - **발행 위치(D72):** 결과 반영 경계(`applyLocked`)의 `CHANGED` 분기에서 바뀐 상태가 `CONFIRMED`일 때, 즉 최초 확정 순간에 같은 트랜잭션 안에서 저장된 주문으로 payload를 만들어 Spring application event로 발행한다. 별도 Bean의 `@TransactionalEventListener(phase = AFTER_COMMIT)`가 Kafka로 send한다. rollback이면 listener가 실행되지 않는다. listener 시점에 주문을 다시 읽지 않고(lazy 로딩 금지), listener 안에서 DB에 쓰지 않는다.
 - **confirmedAt(D78):** 주문(`orders.confirmed_at`)에 저장한다. 주문 도메인이 처음 `CONFIRMED`로 바뀔 때 주입한 `Clock`으로 한 번만 기록하고 이후 바꾸지 않는다(중복 callback·재조회가 바꾸지 못함). 이미 `CONFIRMED`인 옛 주문(과거 포인트 결제, 이전 PG 확정)은 null로 두고 소급 발행하지 않는다. ddl-auto를 쓰지 않는 환경은 배포 전에 `src/main/resources/sql/add-order-confirmed-at.sql`을 실행한다(열·인덱스 `(status, confirmed_at)`이 없을 때만 추가, 다시 실행해도 안전, 값을 채우지 않음). 주문 조회 응답에는 노출하지 않는다(기존 API 계약 유지).
 - **confirmedAt 정밀도 [확정] (2026-10-29 사용자 승인):** 밀리초로 자른다. 같은 확정을 저장된 주문에서 다시 만들어도(3b 재발행) payload가 같아야 하는데, 시스템 Clock의 나노초는 DB `DATETIME(6)`에 반올림되어 들어가 메모리 값과 달라질 수 있기 때문이다.
@@ -1130,13 +1132,13 @@ PG 취소 API 연동(늦은 성공의 자동 환불), 다중 서버 선점, 실�
 
 ### 목적
 
-6주차 실험 ④ 사례 A(`docs/week6/order-event-gap-cases.md`)에서는 주문 확정 commit과 Kafka send 사이에 원자성이 없었다. 그래서 확정은 남았는데 OrderConfirmed가 broker에 없고 로그·지표도 남지 않는 상태가 생겼다. 7주차는 이 구간을 대사로 사후에 찾는 데서 그치지 않고 구조로 막는다. 확정과 같은 DB 트랜잭션에 "보낼 메시지"를 한 행 기록하고, 보내는 일은 나중에 relay가 그 행을 읽어서 한다. 이 절의 1단계는 기록과 로컬 원자성까지다.
+6주차 실험 ④ 사례 A(`docs/week6/order-event-gap-cases.md`)에서는 주문 확정 commit과 Kafka send 사이에 원자성이 없었다. 그래서 확정은 남았는데 OrderConfirmed가 broker에 없고 로그·지표도 남지 않는 상태가 생겼다. 7주차는 이 구간을 대사로 사후에 찾는 데서 그치지 않고 구조로 막는다. 확정과 같은 DB 트랜잭션에 "보낼 메시지"를 한 행 기록하고, 보내는 일은 나중에 relay가 그 행을 읽어서 한다. 1단계는 기록과 로컬 원자성, 2단계는 그 행을 broker에 전달하는 단일 polling relay와 재시도다.
 
 ### 기록 위치와 원자성 [확정] (2026-11-01 사용자 결정)
 
 - 결과 반영 경계(`applyLocked`)의 `CHANGED` 분기에서 저장한 주문이 처음 `CONFIRMED`가 된 지점(27절 D72의 발행 위치)에서 기록한다.
   - payload는 저장된 주문으로 한 번 만든다.
-  - 순서는 Outbox 포트 `OrderConfirmedOutbox.append(payload)` → 기존 application event 발행이다.
+  - 1단계 순서는 Outbox 포트 `OrderConfirmedOutbox.append(payload)` → 기존 application event 발행이었다. 2단계에서 application event 발행을 지워 지금은 `append`만 한다(D95).
 - 같은 트랜잭션에서 `PENDING` 행을 insert한다. 확정과 기록은 함께 commit되거나 함께 rollback된다.
   - `REQUIRES_NEW`(별도 트랜잭션) insert와 after-commit insert는 금지한다. 둘 다 확정과 기록이 따로 남을 수 있다.
 - 어댑터는 insert 직후 flush한다. `event_id` 유일 제약 위반과 DB 오류가 commit 때가 아니라 그 호출에서 드러나게 하기 위해서다. 예외는 잡지 않고 올린다.
@@ -1161,18 +1163,19 @@ PG 취소 API 연동(늦은 성공의 자동 환불), 다중 서버 선점, 실�
 | `schema_version` | INT NOT NULL | `1` |
 | `message_key` | VARCHAR(50) NOT NULL | 6주차 send의 record key와 같은 값(`String.valueOf(orderId)`) |
 | `payload` | TEXT NOT NULL | 6주차 send와 같은 직렬화 결과 문자열 그대로 |
-| `status` | VARCHAR(20) NOT NULL | 최초 `PENDING`. `PUBLISHED` 전이는 relay 단계에서 정한다 |
-| `attempt_count` | INT NOT NULL | 최초 0 |
+| `status` | VARCHAR(20) NOT NULL | 최초 `PENDING`. relay가 `PUBLISHED`(broker 확인 뒤) 또는 `BLOCKED`(행 탓 실패 5회)로 바꾼다(2단계) |
+| `attempt_count` | INT NOT NULL | 최초 0. broker 수준·행 수준 실패 모두 1씩 센다(관찰용) |
+| `row_failure_count` | INT NOT NULL DEFAULT 0 | 2단계 추가. 행 수준 실패만 센다(BLOCKED 판단용) |
 | `next_attempt_at` | DATETIME(6) NOT NULL | 최초 `created_at`과 같은 값 |
 | `last_error` | VARCHAR(500) NULL | 최초 null |
 | `created_at` | DATETIME(6) NOT NULL | 기록 시각(주입한 `Clock`) |
-| `published_at` | DATETIME(6) NULL | 발행 확인 저장 시각. 1단계에서는 null |
+| `published_at` | DATETIME(6) NULL | broker 확인을 기록한 시각(주입한 `Clock`). PUBLISHED 전에는 null |
 
 - **payload는 TEXT:** MySQL `JSON` 타입은 저장할 때 키 순서·공백을 다시 쓴다. 그러면 relay가 저장된 문자열을 그대로 보낸다는 보장과 "6주차 send와 같은 문자열"이라는 확인이 약해진다. TEXT는 넣은 바이트를 그대로 돌려준다. 메시지는 수백 바이트라 TEXT(64KB)로 충분하다.
 - **`next_attempt_at` = `created_at`, NOT NULL:** relay 조회 조건이 `next_attempt_at <= 지금` 하나로 끝나서 아래 인덱스를 그대로 탄다. null을 허용하면 `is null or <=` 조건이 되어 인덱스를 잘 쓰지 못한다.
 - **`event_id` UNIQUE:** 같은 확정이 두 번 기록되지 않게 하는 최종 방어선은 코드의 상태 판단이 아니라 DB 제약이다.
-- **인덱스 `(status, next_attempt_at, id)`:** relay가 `status = 'PENDING' and next_attempt_at <= ? order by next_attempt_at, id limit ?`로 고르는 조건과 정렬을 덮는다. relay 단계에서 조회 모양이 바뀌면 그때 조정한다.
-- **생성 뒤 바꾸지 않는 열:** `event_id`, `order_id`, `event_type`, `schema_version`, `message_key`, `payload`, `created_at`. 보낼 내용과 기록 사실은 한 번 정하면 바뀌지 않는다. 상태·시도 관련 열(`status`, `attempt_count`, `next_attempt_at`, `last_error`, `published_at`)만 relay가 바꾼다.
+- **인덱스 `(status, next_attempt_at, id)`:** relay가 `status = 'PENDING' and next_attempt_at <= ? order by next_attempt_at, id limit ?`로 고르는 조건과 정렬을 덮는다. 2단계 relay의 조회(`findDue`)가 이 모양 그대로다.
+- **생성 뒤 바꾸지 않는 열:** `event_id`, `order_id`, `event_type`, `schema_version`, `message_key`, `payload`, `created_at`. 보낼 내용과 기록 사실은 한 번 정하면 바뀌지 않는다. 상태·시도 관련 열(`status`, `attempt_count`, `row_failure_count`, `next_attempt_at`, `last_error`, `published_at`)만 relay가 바꾼다.
 
 ### payload 생성은 한 곳 (27절 D79 유지)
 
@@ -1186,23 +1189,99 @@ PG 취소 API 연동(늦은 성공의 자동 환불), 다중 서버 선점, 실�
 
 ### 운영 스키마
 
-- ddl-auto를 쓰지 않는 환경은 Outbox 기록 코드를 배포하기 전에 `apps/commerce-api/src/main/resources/sql/create-order-outbox.sql`을 실행한다.
-- `CREATE TABLE IF NOT EXISTS`라 다시 실행해도 결과가 같고, 이미 기록된 행을 지우지 않는다. 열·유일 제약·인덱스 모양은 엔티티와 같다.
-- `OrderOutboxDdlTest`가 이것을 확인한다. 테이블을 지운 뒤 실행해 엔티티와 비교하고, 다시 실행해도 같고 행이 남는지 본다.
+- ddl-auto를 쓰지 않는 환경은 Outbox 기록·relay 코드를 배포하기 전에 `apps/commerce-api/src/main/resources/sql/create-order-outbox.sql`을 실행한다. 다시 실행해도 결과가 같다.
+  - `order_outbox`: `CREATE TABLE IF NOT EXISTS`. 이미 기록된 행을 지우지 않는다. 열·유일 제약·인덱스 모양은 엔티티와 같다.
+  - `row_failure_count`(2단계): 1단계 스크립트로 만든 테이블에 열이 없을 때만 추가한다(MySQL 8에 `ADD COLUMN IF NOT EXISTS`가 없어 information_schema로 확인). 기존 행은 0이 된다.
+  - `BLOCKED`: `status`가 VARCHAR라 스키마 변경 없이 값만 늘었다.
+  - `outbox_relay_settings`(2단계): `CREATE TABLE IF NOT EXISTS`, 기본 행(id 1, 100건, 10000ms, 켜짐)은 없을 때만 넣는다. 다시 실행해도 사람이 바꾼 값을 덮지 않는다.
+- `OrderOutboxDdlTest`가 이것을 확인한다. 테이블을 지운 뒤 실행해 엔티티와 비교하고, 다시 실행해도 같고 행·바꾼 설정이 남는지, 1단계 모양 테이블에 열이 추가되는지 본다.
 
-### 6주차 직접 send 유지 [확정] (D95, 2026-11-01 사용자 결정)
+### 6주차 직접 send: 1단계 유지, 2단계 제거 [확정] (D95, 2026-11-01 사용자 결정)
 
-- 1단계에서는 6주차 직접 send(`OrderConfirmedEventListener` AFTER_COMMIT → `KafkaOrderConfirmedPublisher.send`)를 그대로 둔다. 그래서 27절 "발행"은 이 단계에서도 유효하고, 6주차 발행 테스트가 그대로 통과해야 한다.
-- 2단계에서 relay를 넣을 때 직접 send를 함께 제거하고, 깨지는 6주차 발행 테스트를 relay 테스트로 대체한다.
+- 1단계에서는 6주차 직접 send(`OrderConfirmedEventListener` AFTER_COMMIT → `KafkaOrderConfirmedPublisher.send`)를 그대로 두었다.
+- 2단계에서 relay를 넣으며 제거했다: `applyLocked`의 `publishEvent(payload)`, `OrderConfirmedEventListener`, 포트·어댑터의 `send`, send 전용 실패 지표(`commerce.order.events.publish.failed`)·로그. 대사 재발행(`republish`)은 그대로다.
+- 깨지는 6주차 발행 테스트는 지우지 않고 relay 기준으로 대체했다(확정만 하면 broker에 없고, relay 한 회차 뒤 1건이며 payload가 Outbox payload와 같다).
+
+### relay 책임 [확정] (2026-11-03 사용자 결정)
+
+- relay는 DB에 남은 보낼 사실을 broker에 전달하고, broker 확인을 그 행에 기록한다.
+- relay가 하지 않는 일:
+  - 무엇을 보낼지 정하기(확정 트랜잭션이 행으로 정한다)
+  - payload 만들기(저장된 key·payload를 그대로 보낸다. 새 eventId를 만들지 않는다)
+  - 소비 확인(streamer의 멱등 소비 몫)
+  - 행 삭제
+  - 끝에서 끝까지 누락 찾기(3b 대사의 몫)
+- 클래스 배치(2절 규칙 안):
+  - 트리거 `domains.order.in.OrderOutboxRelayScheduler`
+  - 한 회차 유즈케이스 `domains.order.app.OrderOutboxRelay.runOnce()`
+  - 포트 `app.port`: `OrderConfirmedOutbox`(조회·상태 기록), `OrderConfirmedMessageSender`(전송, 결과 `Published`/`BrokerFailure`/`RowFailure`), `OutboxRelaySettings`
+  - 어댑터 `domains.order.out`: `KafkaOrderConfirmedMessageSender`, `OrderConfirmedOutboxPersistenceAdapter`, `OutboxRelaySettingsPersistenceAdapter`
+
+### 순서 [확정] (D112)
+
+- 조회 → 저장된 key·payload 그대로 send → broker 확인(future 성공) → 별도 짧은 트랜잭션에서 `PUBLISHED`·`published_at`을 기록한다.
+- 조회와 send는 트랜잭션 밖이고, 상태 기록은 행마다 `TransactionTemplate` 한 번이다.
+- timeout·실패면 `PENDING`을 유지하고 시도 정보를 기록한 뒤 `next_attempt_at`을 미룬다.
+- 거꾸로(PUBLISHED 먼저, send 나중) 하면 send가 실패했을 때 "PUBLISHED인데 broker에 없음"이 남고, relay는 PUBLISHED를 다시 보지 않아 영영 누락된다. 지금 순서에서 생길 수 있는 것은 "broker에 있는데 PENDING"(다음 회차 재전송)뿐이고, 이 중복은 streamer 멱등 소비가 흡수한다.
+
+### 회차 중단과 행만 미루기 [확정] (D113·D114, relay-1 2026-11-03 사용자 결정)
+
+- **broker 수준 실패:** 그 행에 시도를 기록하고 회차를 즉시 끝낸다. 나머지 행은 손대지 않고 다음 회차에 본다(D113). 서킷 브레이커 라이브러리는 쓰지 않는다. 행 탓 실패로 세지 않으므로 broker 장애가 오래 이어져도 `BLOCKED`가 되지 않는다.
+- **행 수준 실패:** 그 행만 미루고 행 탓 실패를 1 올린 뒤 다음 행을 계속 보낸다. 5번째 행 탓 실패에서 `BLOCKED`.
+- **분류 기준은 예외 이름이 아니라 영향 범위다(relay-1).** 모든 행에 해당하는 실패(broker·연결·metadata·topic)는 broker 수준이고, 그 행 내용 때문에 생긴 실패만 행 수준이다. 예외는 원인 사슬을 따라 찾고, 동기로 던져진 예외도 같은 규칙을 따른다. 기록하는 오류 문자열은 원인 예외의 이름과 메시지다.
+
+| 예외(kafka-clients 3.8.1, 원인 사슬에서 찾음) | 상위 | 분류 |
+| --- | --- | --- |
+| `TimeoutException`(delivery timeout, metadata 대기 `max.block` — 실패한 future로 돌아옴) | `RetriableException` | broker 수준 |
+| `NotEnoughReplicasException`, `DisconnectException` | `RetriableException` | broker 수준 |
+| `NetworkException`, `NotLeaderOrFollowerException`, `UnknownTopicOrPartitionException`(없는 topic) | `InvalidMetadataException` → `RetriableException` | broker 수준 |
+| relay 로컬 대기 초과 `java.util.concurrent.TimeoutException` | — | broker 수준 |
+| `RecordTooLargeException`, `RecordBatchTooLargeException`, `InvalidTopicException`, `SerializationException`, 그 밖의 예외 | `ApiException`·`KafkaException` | 행 수준 |
+
+- **인터럽트:** broker 확인을 기다리다 `InterruptedException`을 받으면 인터럽트 플래그를 되살리고 행 수준으로 세지 않는다(전송 결과는 `BrokerFailure`). relay는 send 직후 DB를 부르기 전에 플래그를 보고, 서 있으면 그 행을 기록하지 않은 채 회차를 끝낸다. 플래그가 선 채로 커넥션 풀을 부르면 연결을 얻다 실패할 수 있기 때문이다. 그 행은 `PENDING`으로 남아 다음 회차에 다시 보낸다.
+
+### 상태를 쓰는 쪽은 relay 하나 [확정] (D115)
+
+- send callback으로 상태를 바꾸지 않는다. 상태는 relay가 broker 결과를 받은 뒤에만 쓴다.
+- 모든 상태 갱신은 `WHERE id = ? AND status = 'PENDING'` 조건부 update이고 영향 행 수를 돌려준다. `PUBLISHED`·`BLOCKED`는 relay가 되돌리지 않는다.
+- producer `delivery.timeout.ms` 30초(`commerce.kafka.producer.delivery-timeout`) < relay 대기 35초(`commerce.outbox.relay.send-timeout`) `[임시]`. producer가 먼저 포기해 broker 결과(성공·실패)가 relay 대기 안에 온다. Kafka 조건 `delivery.timeout.ms ≥ linger.ms(0) + request.timeout.ms(20초)`도 만족한다.
+- 이 producer는 3b 대사 재발행(`republish`)도 쓴다. `delivery.timeout`이 30초로 줄어도 재발행 대기(10초)보다 길어 재발행 동작은 그대로다.
+
+### 수치와 라이브 조절 [임시] (D116·D117, relay-4)
+
+- **backoff:** 실패 뒤 `next_attempt_at = 지금 + min(1초 × 2^(attempt_count−1), 60초)`. 갱신 뒤의 `attempt_count`로 계산한다(1·2·4·8·16·32·60·60…초). jitter 없음.
+- **BLOCKED:** 행 탓 실패 5회.
+- **실행:** `@Scheduled(fixedDelay = 1초)`라 앞 회차가 끝난 뒤에 다음 회차가 시작되고 같은 작업은 겹치지 않는다.
+- **회차 안 반복:** 묶음을 조회해 행마다 직렬로 보낸다. 묶음이 꽉 찼고 회차 시작 뒤 경과 시간이 회차 최대 시간 미만이면 쉬지 않고 다음 묶음으로 간다. 덜 찼거나 최대 시간에 닿으면 끝낸다. 최대 시간은 다음 묶음을 시작할지만 정하고 진행 중인 send를 끊지 않는다.
+- **설정 행 `outbox_relay_settings`(한 줄, 손잡이 3개):** 묶음 크기 기본 100(1~1000), 회차 최대 시간 기본 10초(1~30초), 켜기 기본 켜짐. relay가 회차마다 읽으므로 사람이 SQL로 바꾸면 재시작 없이 다음 회차부터 적용된다. 공개 API는 없다.
+  - 범위를 벗어난 필드만 그 필드의 기본값으로 바꾸고 나머지는 그대로 쓴다(필드별 대체, relay-4). 사람이 끈 relay가 다른 필드의 잘못된 값 때문에 켜지면 안 되기 때문이다. 행이 없으면 전체를 기본값으로 쓴다. 바꿀 때 경고 로그에 값과 이유를 남긴다.
+- **두 켜기의 관계:** 설정 파일 `commerce.outbox.relay.enabled`는 "이 인스턴스에서 스케줄러를 띄우나"를 정한다(여러 인스턴스면 한 대만 true, 테스트 프로필은 false). DB `enabled`는 "지금 보낼까"를 정한다. 끄면 회차를 건너뛰고 `PENDING`은 쌓이기만 한다. 스케줄러가 없으면 DB 값과 상관없이 보내지 않는다.
+- **스케줄러 풀 2(`spring.task.scheduling.pool.size`):** Boot 기본값은 스레드 1개라, relay가 broker 대기로 최대 35초 막히면 결제 재조회·만료 작업도 함께 밀린다. 2로 두어 결제 작업이 relay에 막히지 않게 한다.
+
+### 묶음 크기 근거
+
+- 전송이 직렬이라 처리량은 대략 1 / 한 건 왕복 시간이고, 묶음 크기와 거의 무관하다. 꽉 차면 쉬지 않고 다음 묶음으로 가기 때문이다.
+- 묶음 크기는 한 번 조회하는 행 수이자, 장애 한 번(broker 확인 뒤 기록 전 중단 등)에 중복이 생길 수 있는 최대 건수다.
+- 묶음을 바꿀 신호: `PENDING` 수, 가장 오래 기다린 행의 나이, 회차 시간.
+- 측정(2026-11-03): 테스트 broker(Testcontainers 단일 broker, 로컬)에서 send → broker 확인 왕복 20회는 중앙값 4.16ms, 최소 1.69ms, 최대 19.27ms였다. 운영값이 아니며 운영 broker·네트워크에서는 다시 재야 한다.
 
 ### 범위 밖과 다음 단계
 
-- 범위 밖(다음 단계): polling relay, `PUBLISHED` 전이와 재시도 규칙(`attempt_count`·`next_attempt_at`·`last_error` 갱신), 직접 send 제거, 대사 경로 변경.
+- 2단계에서 한 것: 단일 polling relay, `PUBLISHED`·`BLOCKED` 전이와 재시도 규칙(`attempt_count`·`row_failure_count`·`next_attempt_at`·`last_error` 갱신), 직접 send 제거.
+- 다음 단계:
+  - 3단계: 중단 실험(확정 commit 뒤 relay 전, broker 확인 뒤 저장 전).
+  - 4단계: 끝에서 끝까지(E2E) 확인.
+  - 5단계: 6주차 누락 장면 재현·복구.
+  - 나중 단계(운영 경계): `BLOCKED` 행을 다시 `PENDING`으로 돌리는 재개 진입점. 지금은 `BLOCKED`가 되는 것까지다.
+- 범위 밖: 대사 경로 변경.
 - 3b 대사(27절 "대사와 재발행")는 Outbox 뒤에도 끝에서 끝까지 비교하는 안전망으로 남는다.
 
 ### 한계
 
-- 1단계는 broker와 무관하다. 기록된 행이 실제로 broker에 가는지는 relay 단계에서 확인한다.
+- 1단계는 broker와 무관하다. 기록된 행이 실제로 broker에 가는지는 2단계 relay 테스트(실제 MySQL·Kafka 컨테이너)에서 확인했다.
+- relay는 실행 하나를 전제한다(스케줄러 켜기 설정을 한 인스턴스만 true). 분산 잠금이 아니므로 여러 인스턴스를 켜면 같은 행을 중복으로 보낼 수 있다(streamer 멱등 소비가 흡수하지만 보장 장치는 아니다).
+- 종료된 producer(`IllegalStateException` 등)·권한 오류(`AuthorizationException` 계열)는 지금 표에서 행 수준으로 분류된다. 실제로는 모든 행에 해당하는 실패라 영향 범위 기준으로는 broker 수준에 가깝다. 다시 검토할 안건으로 남긴다(QA 의견).
+- 실패 분류 단위 테스트는 예외 모양을 만들어 넣은 것이다. 실제 broker가 각 예외를 내는 조건은 없는 topic(R11) 외에는 확인하지 않았다.
 - 원자성은 예외 경로의 rollback으로 확인했다(테스트 설정에서 Outbox 포트 대역으로 실패를 주입하고, 운영 코드에는 분기를 두지 않음). 프로세스 강제 종료·DB 연결 끊김은 흉내 내지 않았다.
 - after-commit insert가 아니라는 점은 테스트로 증명되지 않고 코드 리뷰로만 확인한다. after-commit으로 기록하면 rollback 장면에서는 기록 자체가 실행되지 않아 0행이 되고, 정상 장면에서는 commit 뒤 1행이 되어 두 테스트를 모두 통과하기 때문이다. 별도 트랜잭션(`REQUIRES_NEW`)은 변이 확인으로 잡는다.
 - 직렬화 실패 테스트는 대역이 예외를 던지는 장면이다. 운영 직렬화기 자체의 실패를 시험한 것은 아니다.
