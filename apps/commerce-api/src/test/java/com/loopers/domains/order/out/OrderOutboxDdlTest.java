@@ -51,13 +51,18 @@ class OrderOutboxDdlTest {
     }
 
     @Test
-    @DisplayName("스크립트를 두 번 실행해도 오류 없이 한 번 실행한 결과와 같다")
+    @DisplayName("스크립트를 두 번 실행해도 오류 없이 한 번 실행한 결과와 같고 이미 있던 Outbox 행을 지우지 않는다")
     void rerunKeepsSameResult() {
         run();
+        jdbcTemplate.update("insert into order_outbox(event_id, order_id, event_type, schema_version, message_key, payload, status,"
+            + " attempt_count, next_attempt_at, created_at) values ('order-confirmed:v1:1', 1, 'OrderConfirmed', 1, '1', '{}',"
+            + " 'PENDING', 0, '2026-10-29 01:00:00', '2026-10-29 01:00:00')");
 
         run();
 
         assertSameAsEntity();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from order_outbox where event_id = 'order-confirmed:v1:1'",
+            Long.class)).isEqualTo(1);
     }
 
     private void assertSameAsEntity() {

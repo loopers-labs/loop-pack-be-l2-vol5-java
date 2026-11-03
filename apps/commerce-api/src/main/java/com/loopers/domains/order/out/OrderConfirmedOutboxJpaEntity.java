@@ -46,4 +46,21 @@ public class OrderConfirmedOutboxJpaEntity {
 
     protected OrderConfirmedOutboxJpaEntity() {
     }
+
+    // 처음 기록할 때는 바로 relay 대상이 되도록 다음 시도 시각을 기록 시각과 같게 둔다.
+    static OrderConfirmedOutboxJpaEntity pending(String eventId, long orderId, String eventType, int schemaVersion,
+        String messageKey, String payload, Instant now) {
+        OrderConfirmedOutboxJpaEntity entity = new OrderConfirmedOutboxJpaEntity();
+        entity.eventId = eventId;
+        entity.orderId = orderId;
+        entity.eventType = eventType;
+        entity.schemaVersion = schemaVersion;
+        entity.messageKey = messageKey;
+        entity.payload = payload;
+        entity.status = "PENDING";
+        entity.attemptCount = 0;
+        entity.nextAttemptAt = now;
+        entity.createdAt = now;
+        return entity;
+    }
 }

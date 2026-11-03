@@ -1,6 +1,7 @@
 package com.loopers.domains.order.app;
 
 import com.loopers.common.domain.Money;
+import com.loopers.domains.order.app.port.OrderConfirmedOutbox;
 import com.loopers.domains.order.app.port.OrderConfirmedPublisher;
 import com.loopers.domains.order.app.port.OrderRepository;
 import com.loopers.domains.order.domain.Order;
@@ -77,7 +78,7 @@ class PaymentVerificationTest {
             anomalies, Clock.fixed(Instant.EPOCH, ZoneOffset.UTC), mock(PaymentLookupScheduleRepository.class),
             new PaymentLookupPolicy(new LookupBackoff(Duration.ofSeconds(5), 2, Duration.ofMinutes(1)), maximum -> maximum, 12, 100),
             new PaymentExpiryPolicy(Duration.ofMinutes(2)), event -> { },
-            mock(OrderConfirmedPublisher.class));
+            mock(OrderConfirmedPublisher.class), mock(OrderConfirmedOutbox.class));
         clearInvocations(gateway);
     }
 
