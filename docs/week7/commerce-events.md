@@ -1,6 +1,6 @@
 # Week 7 — 커머스 설계 (업무 먼저 패키지 구조)
 
-이 문서는 `docs/week6/commerce-events.md`를 복사해 7주차 작업을 반영한 현재 설계 기준이다. 6주차 문서는 제출 당시 기록으로 그대로 둔다. 7주차에는 먼저 commerce-api 패키지를 업무 먼저 구조로 옮겨 2절(과 3절 패키지 경로)을 고쳤고, 나머지 1~27절은 6주차 설계를 그대로 이어받았다. 7주차 Transactional Outbox는 28절로 이어서 추가한다.
+이 문서는 `docs/week6/commerce-events.md`를 복사해 7주차 작업을 반영한 현재 설계 기준이다. 6주차 문서는 제출 당시 기록으로 그대로 둔다. 7주차에는 먼저 commerce-api 패키지를 업무 먼저 구조로 옮겨 2절(과 3절 패키지 경로)을 고쳤고, 나머지 1~27절은 6주차 설계를 그대로 이어받았다. 7주차 Transactional Outbox는 28절에 추가했다.
 
 > **표시 규칙** — `[확정]`: 승인 없이 변경하지 않는 합의. `[임시]`: 연속 구현 중 사용자 승인으로 정한 현재 기준이며, 변경은 제안·승인 후 이 문서와 구현·테스트에 함께 반영한다. `[미결]`: 아직 정하지 않은 항목이며, 사용자 결정 전에는 구현하지 않는다. 하위 절은 상위 절의 표시를 따르며, 하위 절에 별도 표시가 있으면 그 표시를 따른다. 구체적인 HTTP 계약과 잠금 전략은 6절의 구현 정책과 8~13절의 3주차 설계와 15~20절의 4주차 설계와 21~26절의 5주차 설계와 27절의 6주차 설계와 2절·28절부터의 7주차 설계를 따른다. 작업 방식은 `AGENTS.md`를 따른다.
 
@@ -1064,7 +1064,7 @@ PG 취소 API 연동(늦은 성공의 자동 환불), 다중 서버 선점, 실�
 ### 범위 [확정]
 
 - 포함: 주문 확정 이벤트 발행과 commerce-streamer의 구매 활동 소비.
-- 제외: Transactional Outbox, 랭킹 API.
+- 제외: 랭킹 API. (Transactional Outbox는 6주차 범위 밖이었고 7주차에 28절로 추가했다.)
 
 ### 1단계 테스트 기반 [확정]
 
@@ -1125,3 +1125,85 @@ PG 취소 API 연동(늦은 성공의 자동 환불), 다중 서버 선점, 실�
 - **설정과 실행:** 유예·겹침·청크 크기는 batch 설정 속성(`commerce.reconcile.*`, 환경변수로 덮어쓰기 가능)이다. 실행 주기는 바깥 스케줄러(cron 등) 몫이고 batch는 실행마다 Job(`orderEventReconcileJob`) 한 번이다. "지금 바로 보기"는 같은 Job을 즉시 실행하는 것이며 정기 실행과 같고 워터마크도 같이 움직인다. Job 끝에 요약 한 줄을 남긴다: 구간, 확인한 확정 주문 수, 누락 orderId, 명령 send 결과, 워터마크 전후.
 - **경계 메모(D75):** batch가 `orders`와 `processed_order_confirmation`을 함께 읽는 것은 운영 도구인 대사의 권한으로 허용한다. batch는 api·streamer의 엔티티 클래스에 의존하지 않고 JDBC로 읽는다. api·streamer는 서로의 테이블을 읽지 않는다. 지금은 같은 MySQL이라 SQL `NOT EXISTS`로 읽지만, DB가 나뉘면 양쪽을 따로 읽어 비교하는 방식으로 바뀌어야 한다.
 - **한계:** 과거 구간 재훑기·특정 orderId 지정 재발행은 없다. 재발행은 7주차 Outbox relay와 역할이 겹치는 부분이 있다.
+
+## 28. Transactional Outbox
+
+### 목적
+
+6주차 실험 ④ 사례 A(`docs/week6/order-event-gap-cases.md`)에서는 주문 확정 commit과 Kafka send 사이에 원자성이 없었다. 그래서 확정은 남았는데 OrderConfirmed가 broker에 없고 로그·지표도 남지 않는 상태가 생겼다. 7주차는 이 구간을 대사로 사후에 찾는 데서 그치지 않고 구조로 막는다. 확정과 같은 DB 트랜잭션에 "보낼 메시지"를 한 행 기록하고, 보내는 일은 나중에 relay가 그 행을 읽어서 한다. 이 절의 1단계는 기록과 로컬 원자성까지다.
+
+### 기록 위치와 원자성 [확정] (2026-11-01 사용자 결정)
+
+- 결과 반영 경계(`applyLocked`)의 `CHANGED` 분기에서 저장한 주문이 처음 `CONFIRMED`가 된 지점(27절 D72의 발행 위치)에서 기록한다.
+  - payload는 저장된 주문으로 한 번 만든다.
+  - 순서는 Outbox 포트 `OrderConfirmedOutbox.append(payload)` → 기존 application event 발행이다.
+- 같은 트랜잭션에서 `PENDING` 행을 insert한다. 확정과 기록은 함께 commit되거나 함께 rollback된다.
+  - `REQUIRES_NEW`(별도 트랜잭션) insert와 after-commit insert는 금지한다. 둘 다 확정과 기록이 따로 남을 수 있다.
+- 어댑터는 insert 직후 flush한다. `event_id` 유일 제약 위반과 DB 오류가 commit 때가 아니라 그 호출에서 드러나게 하기 위해서다. 예외는 잡지 않고 올린다.
+- 직렬화 실패도 같은 트랜잭션의 실패로 다룬다. 확정까지 rollback되고, 빈 payload로 저장하거나 예외를 삼키지 않는다.
+- 최초 확정이 아닌 경우에는 기록하지 않는다. 대상은 다음과 같다.
+  - `UNCHANGED`·`CONFLICT` 분기
+  - DRAFT 결과
+  - 결제 대기(PENDING·결과 모름)
+  - 결제 실패
+  - 만료 뒤 늦은 성공
+  - 이관된 과거 POINT 확정 주문
+- 같은 거래의 성공이 여러 경로로 반복돼도(create 응답·callback·reconcile·같은 키 confirm) 행은 처음 기록한 하나다.
+
+### 테이블 `order_outbox` [확정] (2026-11-01 사용자 결정)
+
+| 열 | 타입 | 규칙 |
+| --- | --- | --- |
+| `id` | BIGINT PK auto | relay의 안정된 정렬 키 |
+| `event_id` | VARCHAR(100) NOT NULL, UNIQUE | 27절 D79의 `order-confirmed:v1:{orderId}` |
+| `order_id` | BIGINT NOT NULL | 원본 주문 |
+| `event_type` | VARCHAR(50) NOT NULL | `OrderConfirmed` |
+| `schema_version` | INT NOT NULL | `1` |
+| `message_key` | VARCHAR(50) NOT NULL | 6주차 send의 record key와 같은 값(`String.valueOf(orderId)`) |
+| `payload` | TEXT NOT NULL | 6주차 send와 같은 직렬화 결과 문자열 그대로 |
+| `status` | VARCHAR(20) NOT NULL | 최초 `PENDING`. `PUBLISHED` 전이는 relay 단계에서 정한다 |
+| `attempt_count` | INT NOT NULL | 최초 0 |
+| `next_attempt_at` | DATETIME(6) NOT NULL | 최초 `created_at`과 같은 값 |
+| `last_error` | VARCHAR(500) NULL | 최초 null |
+| `created_at` | DATETIME(6) NOT NULL | 기록 시각(주입한 `Clock`) |
+| `published_at` | DATETIME(6) NULL | 발행 확인 저장 시각. 1단계에서는 null |
+
+- **payload는 TEXT:** MySQL `JSON` 타입은 저장할 때 키 순서·공백을 다시 쓴다. 그러면 relay가 저장된 문자열을 그대로 보낸다는 보장과 "6주차 send와 같은 문자열"이라는 확인이 약해진다. TEXT는 넣은 바이트를 그대로 돌려준다. 메시지는 수백 바이트라 TEXT(64KB)로 충분하다.
+- **`next_attempt_at` = `created_at`, NOT NULL:** relay 조회 조건이 `next_attempt_at <= 지금` 하나로 끝나서 아래 인덱스를 그대로 탄다. null을 허용하면 `is null or <=` 조건이 되어 인덱스를 잘 쓰지 못한다.
+- **`event_id` UNIQUE:** 같은 확정이 두 번 기록되지 않게 하는 최종 방어선은 코드의 상태 판단이 아니라 DB 제약이다.
+- **인덱스 `(status, next_attempt_at, id)`:** relay가 `status = 'PENDING' and next_attempt_at <= ? order by next_attempt_at, id limit ?`로 고르는 조건과 정렬을 덮는다. relay 단계에서 조회 모양이 바뀌면 그때 조정한다.
+- **생성 뒤 바꾸지 않는 열:** `event_id`, `order_id`, `event_type`, `schema_version`, `message_key`, `payload`, `created_at`. 보낼 내용과 기록 사실은 한 번 정하면 바뀌지 않는다. 상태·시도 관련 열(`status`, `attempt_count`, `next_attempt_at`, `last_error`, `published_at`)만 relay가 바꾼다.
+
+### payload 생성은 한 곳 (27절 D79 유지)
+
+- 6주차 `OrderConfirmedPayloadFactory.create(저장된 주문)`와 `OrderConfirmedMessageSerializer.serialize`를 그대로 쓴다. Outbox를 위해 규칙을 새로 만들지 않는다. 그래서 Outbox payload, 6주차 직접 send, 3b 재발행이 같은 값을 만든다.
+- app은 payload(값 객체)만 포트에 넘긴다. 직렬화는 out 어댑터(`OrderConfirmedOutboxPersistenceAdapter`)가 한다. 근거는 2절의 ArchUnit 규칙 3("app은 in·out에 의존하지 않는다")과 기술 규칙("app·domain·common.domain·common.error는 HTTP 클라이언트·네트워크·JSON·Resilience4j 타입에 의존하지 않는다")이다. 어댑터는 규칙 5("out은 app 중 app.port만 쓴다")대로 `app.port`의 포트와 `OrderConfirmedPayload`만 쓴다.
+- 클래스 배치:
+  - 포트 `domains.order.app.port.OrderConfirmedOutbox`
+  - 어댑터·엔티티·JPA 리포지토리 `domains.order.out.OrderConfirmedOutboxPersistenceAdapter`·`OrderConfirmedOutboxJpaEntity`·`OrderConfirmedOutboxJpaRepository`
+  - ArchitectureTest가 이 클래스들이 계층 검사 대상에 들어가는지 확인한다.
+- **Outbox는 주문 전용이다(D111, 2026-11-03 사용자 결정).** 지금 Outbox로 보내는 이벤트는 주문 확정 하나뿐이라 `common.outbox`로 빼지 않고 주문 업무 안에 둔다.
+
+### 운영 스키마
+
+- ddl-auto를 쓰지 않는 환경은 Outbox 기록 코드를 배포하기 전에 `apps/commerce-api/src/main/resources/sql/create-order-outbox.sql`을 실행한다.
+- `CREATE TABLE IF NOT EXISTS`라 다시 실행해도 결과가 같고, 이미 기록된 행을 지우지 않는다. 열·유일 제약·인덱스 모양은 엔티티와 같다.
+- `OrderOutboxDdlTest`가 이것을 확인한다. 테이블을 지운 뒤 실행해 엔티티와 비교하고, 다시 실행해도 같고 행이 남는지 본다.
+
+### 6주차 직접 send 유지 [확정] (D95, 2026-11-01 사용자 결정)
+
+- 1단계에서는 6주차 직접 send(`OrderConfirmedEventListener` AFTER_COMMIT → `KafkaOrderConfirmedPublisher.send`)를 그대로 둔다. 그래서 27절 "발행"은 이 단계에서도 유효하고, 6주차 발행 테스트가 그대로 통과해야 한다.
+- 2단계에서 relay를 넣을 때 직접 send를 함께 제거하고, 깨지는 6주차 발행 테스트를 relay 테스트로 대체한다.
+
+### 범위 밖과 다음 단계
+
+- 범위 밖(다음 단계): polling relay, `PUBLISHED` 전이와 재시도 규칙(`attempt_count`·`next_attempt_at`·`last_error` 갱신), 직접 send 제거, 대사 경로 변경.
+- 3b 대사(27절 "대사와 재발행")는 Outbox 뒤에도 끝에서 끝까지 비교하는 안전망으로 남는다.
+
+### 한계
+
+- 1단계는 broker와 무관하다. 기록된 행이 실제로 broker에 가는지는 relay 단계에서 확인한다.
+- 원자성은 예외 경로의 rollback으로 확인했다(테스트 설정에서 Outbox 포트 대역으로 실패를 주입하고, 운영 코드에는 분기를 두지 않음). 프로세스 강제 종료·DB 연결 끊김은 흉내 내지 않았다.
+- after-commit insert가 아니라는 점은 테스트로 증명되지 않고 코드 리뷰로만 확인한다. after-commit으로 기록하면 rollback 장면에서는 기록 자체가 실행되지 않아 0행이 되고, 정상 장면에서는 commit 뒤 1행이 되어 두 테스트를 모두 통과하기 때문이다. 별도 트랜잭션(`REQUIRES_NEW`)은 변이 확인으로 잡는다.
+- 직렬화 실패 테스트는 대역이 예외를 던지는 장면이다. 운영 직렬화기 자체의 실패를 시험한 것은 아니다.
+- 테스트 스키마는 엔티티로 만든다. 운영 SQL 파일은 별도 테스트로 엔티티와 비교한다.
