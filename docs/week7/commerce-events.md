@@ -137,8 +137,8 @@ flowchart LR
   - `ProductListQuery`·`ProductListItem`을 `product.app.port`로 옮겼다. 목록 캐시 포트의 인자·결과다(규칙 5).
   - `PaymentLookupScheduler`를 `order.in`으로 옮겼다. 주문 서비스를 부르는 입력 쪽이다(규칙 5).
   - `BrandApplicationService.getBrand`가 `BrandId` 대신 `long`을 받는다(규칙 2).
-- `BrandResult.id`를 domain 타입 `BrandId`에서 `long`으로 바꿨다(규칙 2 위반 2건 해소). `PUT /api-admin/v1/brands/{id}` 응답은 그동안 `BrandId`가 그대로 직렬화되어 `data.id = {"value":N}`이었다. 동작 불변을 위해 `AdminBrandController.ChangedResponse`로 이 모양을 그대로 유지하고, 모양을 고정하는 테스트를 두었다.
-- [미결] 이 응답의 `data.id`를 다른 브랜드 응답처럼 숫자로 바꿀지는 사용자 결정을 기다린다(공개 응답 변경).
+- `BrandResult.id`를 domain 타입 `BrandId`에서 `long`으로 바꿨다(규칙 2 위반 2건 해소). `PUT /api-admin/v1/brands/{id}` 응답은 그동안 `BrandId`가 그대로 직렬화되어 `data.id = {"value":N}`이었다.
+- PUT 응답 `data.id`를 숫자로 바로잡았다(공개 응답 변경, 사용자 승인 2026-11-03, D108). 이제 다른 브랜드 응답처럼 `data.id = N`이고, `BrandApiIntegrationTest`가 이 모양을 확인한다.
 
 ### JPA 리포지토리 스캔
 

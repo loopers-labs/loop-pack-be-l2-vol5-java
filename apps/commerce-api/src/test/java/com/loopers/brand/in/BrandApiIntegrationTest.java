@@ -140,15 +140,15 @@ class BrandApiIntegrationTest {
     }
 
     @Test
-    @DisplayName("관리자가 브랜드 이름을 바꾸면 200과 함께 data.id를 value를 가진 객체로, data.name을 바꾼 이름으로 반환하고 저장한다")
-    void changesBrandWithCurrentResponseShape() throws Exception {
+    @DisplayName("관리자가 브랜드 이름을 바꾸면 200과 함께 다른 브랜드 응답처럼 숫자 data.id와 바꾼 이름을 반환하고 저장한다")
+    void changesBrandWithNumericId() throws Exception {
         long brandId = service.create("브랜드").id();
 
         mvc.perform(put("/api-admin/v1/brands/{id}", brandId).with(user("admin").roles("ADMIN")).with(csrf())
                 .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"바뀐 브랜드\"}"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.id").isMap())
-            .andExpect(jsonPath("$.data.id.value").value(brandId))
+            .andExpect(jsonPath("$.data.id").isNumber())
+            .andExpect(jsonPath("$.data.id").value(brandId))
             .andExpect(jsonPath("$.data.name").value("바뀐 브랜드"));
 
         assertThat(service.getBrand(brandId).name()).isEqualTo("바뀐 브랜드");

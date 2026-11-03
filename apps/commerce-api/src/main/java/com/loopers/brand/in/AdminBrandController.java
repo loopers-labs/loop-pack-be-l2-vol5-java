@@ -44,9 +44,9 @@ public class AdminBrandController {
     }
 
     @org.springframework.web.bind.annotation.PutMapping("/{id}")
-    public ApiResponse<ChangedResponse> change(@org.springframework.web.bind.annotation.PathVariable long id,
+    public ApiResponse<BrandResult> change(@org.springframework.web.bind.annotation.PathVariable long id,
         @RequestBody CreateRequest request) {
-        return ApiResponse.success(ChangedResponse.from(service.change(id, request.validatedName())));
+        return ApiResponse.success(service.change(id, request.validatedName()));
     }
 
     @org.springframework.web.bind.annotation.DeleteMapping("/{id}")
@@ -66,15 +66,5 @@ public class AdminBrandController {
     }
 
     public record CreatedResponse(long id) {
-    }
-
-    // 도메인 타입이 새던 시절의 모양을 일부러 유지. refactor-4 사용자 결정 대기
-    public record ChangedResponse(Id id, String name) {
-        static ChangedResponse from(BrandResult result) {
-            return new ChangedResponse(new Id(result.id()), result.name());
-        }
-
-        public record Id(long value) {
-        }
     }
 }
