@@ -161,6 +161,7 @@ class OrderConfirmedPublishIntegrationTest extends OrderEventsIntegrationSupport
         assertThat(publisher.sent()).isEmpty();
         assertThat(orderStatus(orderId)).isEqualTo("PAYMENT_PENDING");
         assertThat(jdbc.queryForObject("select confirmed_at from orders where id = ?", LocalDateTime.class, orderId)).isNull();
+        assertThat(jdbc.queryForObject("select count(*) from order_outbox where order_id = ?", Long.class, orderId)).isZero();
         assertNoEvent(orderId);
     }
 

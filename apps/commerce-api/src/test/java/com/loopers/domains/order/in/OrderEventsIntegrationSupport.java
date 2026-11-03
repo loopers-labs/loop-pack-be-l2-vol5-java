@@ -10,6 +10,7 @@ import com.loopers.domains.user.out.UserJpaRepository;
 import com.loopers.support.kafka.OrderEventsProbe;
 import com.loopers.support.kafka.OrderEventsTestConfig.ControllableOrderConfirmedPublisher;
 import com.loopers.support.kafka.OrderEventsTestConfig.FailingKafkaTemplate;
+import com.loopers.support.kafka.OrderEventsTestConfig.FailingOrderConfirmedOutbox;
 import com.loopers.support.kafka.OrderEventsTestConfig.FailingPaymentRecordRepository;
 import com.loopers.support.kafka.OrderEventsTestConfig.PublishedOrderEvents;
 import com.loopers.support.kafka.OrderEventsTestConfig;
@@ -63,6 +64,7 @@ abstract class OrderEventsIntegrationSupport {
     @Autowired PublishedOrderEvents publishedEvents;
     @Autowired FailingPaymentRecordRepository failingPayments;
     @Autowired FailingKafkaTemplate failingKafka;
+    @Autowired FailingOrderConfirmedOutbox failingOutbox;
 
     TestPgServer server;
     OrderEventsProbe probe;
@@ -90,6 +92,7 @@ abstract class OrderEventsIntegrationSupport {
         publisher.reset();
         publishedEvents.reset();
         failingPayments.disarm();
+        failingOutbox.disarm();
         failingKafka.fail(FailingKafkaTemplate.Failure.NONE);
         probe = new OrderEventsProbe(bootstrapServers, TOPIC);
         from = probe.mark();
@@ -100,6 +103,7 @@ abstract class OrderEventsIntegrationSupport {
         probe.close();
         pg.close();
         failingPayments.disarm();
+        failingOutbox.disarm();
         failingKafka.fail(FailingKafkaTemplate.Failure.NONE);
         publisher.reset();
         jdbc.update("delete from order_items");

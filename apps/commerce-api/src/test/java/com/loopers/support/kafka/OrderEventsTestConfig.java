@@ -1,8 +1,10 @@
 package com.loopers.support.kafka;
 
+import com.loopers.domains.order.app.port.OrderConfirmedOutbox;
 import com.loopers.domains.order.app.port.OrderConfirmedPayload;
 import com.loopers.domains.order.app.port.OrderConfirmedPublisher;
 import com.loopers.domains.order.out.KafkaOrderConfirmedPublisher;
+import com.loopers.domains.order.out.OrderConfirmedOutboxPersistenceAdapter;
 import com.loopers.domains.payment.app.port.PaymentRecordRepository;
 import com.loopers.domains.payment.domain.PaymentRecord;
 import com.loopers.domains.payment.out.PaymentRecordPersistenceAdapter;
@@ -51,6 +53,13 @@ public class OrderEventsTestConfig {
     FailingPaymentRecordRepository failingPaymentRecordRepository(PaymentRecordPersistenceAdapter delegate,
         EntityManager entityManager) {
         return new FailingPaymentRecordRepository(delegate, entityManager);
+    }
+
+    @Bean
+    @Primary
+    FailingOrderConfirmedOutbox failingOrderConfirmedOutbox(OrderConfirmedOutboxPersistenceAdapter delegate,
+        EntityManager entityManager) {
+        return new FailingOrderConfirmedOutbox(delegate, entityManager);
     }
 
     // after-commit listener가 부르는 publisher. 멈춤을 걸면 commit 뒤 send 직전에서 멈춘 것처럼 payload만 남기고 보내지 않는다.
@@ -195,6 +204,52 @@ public class OrderEventsTestConfig {
         @Override
         public List<Long> findExpirable(Instant startedAtOrBefore, int limit) {
             return delegate.findExpirable(startedAtOrBefore, limit);
+        }
+    }
+
+    // 무장하면 다음 append 한 번을 실패시킨다. 앞선 주문 변경은 DB로 보낸 뒤 실패해 rollback이 실제 SQL을 되돌리게 한다.
+    // FAIL_AFTER_INSERT는 실제 어댑터로 insert까지 한 뒤 같은 트랜잭션에서 실패한다. 어댑터의 트랜잭션 경계가 바뀌면 행이 남아 드러난다.
+    public static class FailingOrderConfirmedOutbox implements OrderConfirmedOutbox {
+        public static final String INJECTED_FAILURE = "주입된 Outbox 저장 실패";
+        public static final String INJECTED_SERIALIZE_FAILURE = "주입된 주문 확정 메시지 직렬화 실패";
+
+        public enum Failure { NONE, FAIL_BEFORE_INSERT, FAIL_AFTER_INSERT, FAIL_SERIALIZE }
+
+        private final OrderConfirmedOutbox delegate;
+        private final EntityManager entityManager;
+        private final AtomicReference<Failure> failure = new AtomicReference<Failure>(Failure.NONE);
+
+        FailingOrderConfirmedOutbox(OrderConfirmedOutbox delegate, EntityManager entityManager) {
+            this.delegate = delegate;
+            this.entityManager = entityManager;
+        }
+
+        public void failOnNextAppend(Failure next) {
+            failure.set(next);
+        }
+
+        public void disarm() {
+            failure.set(Failure.NONE);
+        }
+
+        @Override
+        public void append(OrderConfirmedPayload payload) {
+            switch (failure.getAndSet(Failure.NONE)) {
+                case FAIL_BEFORE_INSERT -> {
+                    entityManager.flush();
+                    throw new IllegalStateException(INJECTED_FAILURE);
+                }
+                case FAIL_AFTER_INSERT -> {
+                    delegate.append(payload);
+                    entityManager.flush();
+                    throw new IllegalStateException(INJECTED_FAILURE);
+                }
+                case FAIL_SERIALIZE -> {
+                    entityManager.flush();
+                    throw new IllegalStateException(INJECTED_SERIALIZE_FAILURE);
+                }
+                case NONE -> delegate.append(payload);
+            }
         }
     }
 }
