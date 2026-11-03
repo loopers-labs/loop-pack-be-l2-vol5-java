@@ -58,7 +58,7 @@ Codex는 이 파일을, Claude는 `CLAUDE.md`의 `@AGENTS.md`로 같은 내용�
 
 - 통과한 검사는 새 변경·실패·미해결 우려가 없으면 다시 돌리지 않는다. 환경 때문에 못 돌린 검사는 미검증으로, 부분 통과는 부분 통과로 보고한다.
 - 검사 실패 시: 환경 문제(Docker·네트워크·DB 연결 등)는 고치려 하지 않고 미검증으로 보고한다. 의존성 충돌은 `[승인 요청]`으로 넘긴다. 범위 안의 코드 오류는 스스로 고치되, 같은 원인으로 2회 연속 실패하면 멈추고 시도한 내용과 원인을 보고한다.
-- ArchUnit은 설계 문서의 구조·의존 제약을 검사하며, 신규 클래스가 검사 대상에 실제 포함되는지 확인한다. commerce-api는 `com.loopers.{context}.{in,app,domain,out}` 계층 규칙(설계 문서 2절)을 예외 목록 없이 적용한다. 신규 커머스 도메인은 기존 JPA `BaseEntity`를 상속하지 않는다.
+- ArchUnit은 설계 문서의 구조·의존 제약을 검사하며, 신규 클래스가 검사 대상에 실제 포함되는지 확인한다. commerce-api는 `com.loopers.domains.{context}.{in,app,domain,out,config}`와 `com.loopers.common` 계층 규칙(설계 문서 2절)을 예외 목록 없이 적용한다. 신규 커머스 도메인은 기존 JPA `BaseEntity`를 상속하지 않는다.
 - Java 21과 기존 Gradle·Spring Boot 버전을 유지한다. lint는 Checkstyle, 의존 검사는 표준 ArchUnit을 쓰며, 새 검사 기준·외부 서비스 도입은 승인 후 한다.
 
 ## 4. 기록·커밋·보고

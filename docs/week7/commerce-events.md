@@ -44,61 +44,72 @@ flowchart LR
 
 ## 2. 구조와 의존 [확정]
 
-순수 도메인과 JPA 모델을 분리한 헥사고날 구조를 사용한다. **Controller → ApplicationService → Entity·VO / 출력 포트 → JPA 어댑터**를 기본 구성으로 한다. 7주차부터 commerce-api 패키지는 계층 먼저(`interfaces/application/domain/infrastructure` 아래 각 업무)가 아니라 **업무 먼저** `com.loopers.{context}.{in,app,domain,out}`로 나눈다(D99, 2026-11-03 사용자 결정). 바뀐 것은 패키지 배치와 계층 규칙이고 동작·API·테이블은 그대로다(D102).
+순수 도메인과 JPA 모델을 분리한 헥사고날 구조를 사용한다. **Controller → ApplicationService → Entity·VO / 출력 포트 → JPA 어댑터**를 기본 구성으로 한다. 7주차부터 commerce-api 패키지는 계층 먼저(`interfaces/application/domain/infrastructure` 아래 각 업무)가 아니라 **업무 먼저**로 나눈다(D99). 업무는 `com.loopers.domains.{context}.{in,app,domain,out}`에 묶고, 여러 업무가 함께 쓰는 것은 `com.loopers.common`에 둔다(D109, 2026-11-03 사용자 결정). 바뀐 것은 패키지 배치와 계층 규칙이고 동작·테이블은 그대로다(D102). 공개 응답은 브랜드 변경 PUT 한 곳만 바로잡았다(D108, 아래).
 
-### 패키지 구조 (D99·D104, 2026-11-03)
+### 패키지 구조 (D99·D104·D109, 2026-11-03)
 
 | 패키지 | 역할 | 허용하는 주요 의존 |
 | --- | --- | --- |
-| `{context}.in` | 고객·관리자 HTTP 입력·응답, 식별 정보 전달, 오류 매핑. Kafka 명령 listener·스케줄러처럼 app을 부르는 입력도 여기 둔다 | app(같은·다른 컨텍스트), `common.in`, `common.error`, `support.error` |
-| `{context}.app` | 도메인별 ApplicationService에서 실행 순서·소유권·트랜잭션 조율, 입력·조회 결과 모델 | domain, `app.port`, `common.domain`, `common.error`, Spring 트랜잭션. 다른 컨텍스트의 app·app.port·domain(예: order.app → payment.app·app.port·domain, product.app → brand.app.port, 아래 "컨텍스트 사이 의존" 표) |
-| `{context}.app.port` | 출력 포트(Repository·외부 연결 인터페이스)와 그 인자·결과 타입 | domain, `common.domain` |
-| `{context}.domain` | Entity·VO의 상태와 업무 규칙 | Java, 필요한 도메인 타입, `common.domain`, `common.error` |
-| `{context}.out` | 출력 포트 구현, JPA 저장·조회, 외부 연결, 도메인 모델 변환 | `app.port`, domain, JPA·외부 클라이언트 |
+| `domains.{context}.in` | 고객·관리자 HTTP 입력·응답, 식별 정보 전달, 오류 매핑. Kafka 명령 listener·스케줄러처럼 app을 부르는 입력도 여기 둔다 | app(같은·다른 컨텍스트), 다른 컨텍스트의 in(고객 식별 `user.in.CustomerIdentity`), `common.in`, `common.in.error`, `common.error` |
+| `domains.{context}.app` | 도메인별 ApplicationService에서 실행 순서·소유권·트랜잭션 조율, 입력·조회 결과 모델 | domain, `app.port`, `common.domain`, `common.error`, Spring 트랜잭션. 다른 컨텍스트의 app·app.port·domain(예: order.app → payment.app·app.port·domain, product.app → brand.app.port, 아래 "컨텍스트 사이 의존" 표) |
+| `domains.{context}.app.port` | 출력 포트(Repository·외부 연결 인터페이스)와 그 인자·결과 타입 | domain, `common.domain` |
+| `domains.{context}.domain` | Entity·VO의 상태와 업무 규칙 | Java, 필요한 도메인 타입, `common.domain`, `common.error` |
+| `domains.{context}.out` | 출력 포트 구현, JPA 저장·조회, 외부 연결, 도메인 모델 변환 | `app.port`, domain, JPA·외부 클라이언트 |
+| `domains.{context}.config` | 그 업무 하나만 쓰는 Bean 조립·설정 속성(업무의 배치도) | 자기 업무의 모든 계층. 다른 업무는 모른다 |
 | `common.domain` | 여러 업무가 함께 쓰는 값(`Money`) | Java, `common.error` |
-| `common.error` | 여러 계층이 함께 쓰는 규칙 위반 신호(`InvalidValueException`, `RuleViolationException`) | Java |
-| `common.in` | 여러 업무가 함께 쓰는 HTTP 공통(`ApiResponse`, `ApiControllerAdvice`, `CommerceExceptionAdvice`, `CustomerIdentity`, `RequestValues`) | `common.error`, `support.error`, Spring web, 각 컨텍스트의 app(예외 매핑의 `BrandNotFoundException`·`ProductNotFoundException`·`OrderNotFoundException`·`PaymentLookupNotCalledException`, 고객 식별의 `UserIdentificationService`) |
-| `config` | 여러 업무의 Bean을 조립하는 설정. 계층 밖 조립 위치라 계층 규칙 1~5를 적용하지 않는다 | 필요한 계층 전부 |
-| `support.error` | starter의 HTTP 응답용 `CoreException`·`ErrorType` | Java |
+| `common.error` | 여러 계층이 함께 쓰는 업무 신호: 규칙 위반(`InvalidValueException`, `RuleViolationException`)과 상태별 공통 상위 예외(`NotFoundException`, `TemporarilyUnavailableException`) | Java |
+| `common.in` | 여러 업무가 함께 쓰는 HTTP 공통(`ApiResponse`, `ApiControllerAdvice`, `CommerceExceptionAdvice`, `RequestValues`) | `common.error`, `common.in.error`, Spring web. 업무(`domains`)는 모른다 |
+| `common.in.error` | HTTP 응답용 `CoreException`·`ErrorType`(옛 starter `support.error`) | Java, Spring http |
+| `common.config` | 앱 전체 설정(`AdminBoundaryConfig`, `CommerceJpaRepositoriesConfig`) | Spring. 업무 클래스는 모른다 |
 
 - 컨텍스트는 brand, like, user, point, product, payment, order 일곱이다. 실제로 있는 계층은 다음과 같다.
 
 | 컨텍스트 | 계층 |
 | --- | --- |
-| brand · point · product · payment · order | in, app, domain, out |
-| like | app, domain, out (좋아요 HTTP는 `product.in`에 있다) |
-| user | app, out (도메인 규칙이 없다) |
+| brand · point · product | in, app, domain, out |
+| payment · order | in, app, domain, out, config |
+| like | app, domain, out (좋아요 HTTP는 `domains.product.in`에 있다) |
+| user | in, app, out (도메인 규칙이 없다. in에는 여러 업무가 쓰는 고객 식별 `CustomerIdentity`가 있다) |
 
-- `config`·`support`와 `CommerceApiApplication`은 최상위에 그대로 둔다(D104). starter `example` 패키지는 지웠다(D104).
-- domain과 JPA 엔티티는 지금처럼 분리를 유지한다(D101). JPA 엔티티는 `{context}.out`에 있고 domain은 JPA를 모른다.
+- 최상위 `config`·`support` 패키지는 없어졌다(D109). `CommerceApiApplication`은 컴포넌트·설정 속성 스캔 기준이라 `com.loopers`에 그대로 둔다. starter `example` 패키지는 지웠다(D104).
+- **config 자리(D109):** 한 업무만 쓰는 설정은 그 업무의 조립 지점(`domains.{context}.config`)에 둔다. 결제는 `PaymentGatewayConfig`·`PaymentLookupConfig`·`PaymentClockConfig`·`PaymentProvidersProperties`, 주문은 `OrderEventsKafkaConfig`다. 이 설정들은 app(비포트)·domain·out을 함께 엮으므로 in·out 안에 두면 규칙 2·5에 걸린다. 앱 전체 설정은 `common.config`에 둔다.
+- `PaymentClockConfig`의 `Clock` Bean은 결제 쪽(`PaymentLookupConfig`, `PaymentCircuitBreakers`)과 주문 서비스(`OrderApplicationService`)가 함께 주입받는다. 타입으로 주입하므로 주문이 결제 config를 import하지 않는다.
+- domain과 JPA 엔티티는 지금처럼 분리를 유지한다(D101). JPA 엔티티는 `domains.{context}.out`에 있고 domain은 JPA를 모른다.
 - streamer·batch·modules는 이 구조 변경의 범위 밖이다(`modules/jpa`의 `com.loopers.domain.BaseEntity` 포함).
 
 ```mermaid
 flowchart LR
-    subgraph In["{context}.in"]
-        Controller["고객·관리자 Controller<br/>HTTP DTO · listener · 스케줄러"]
-    end
-    subgraph App["{context}.app"]
-        Service["도메인별 ApplicationService<br/>공개 메서드가 입력 포트 역할"]
-        Result["입력·조회 결과 모델"]
-        subgraph Port["{context}.app.port"]
-            Ports["출력 포트<br/>Repository · 외부 연결<br/>인자·결과 타입"]
+    subgraph Ctx["domains.{context}"]
+        subgraph In["in"]
+            Controller["고객·관리자 Controller<br/>HTTP DTO · listener · 스케줄러"]
         end
-        Service --> Ports
-        Service --> Result
-    end
-    subgraph DomainLayer["{context}.domain"]
-        Domain["순수 Entity·VO"]
-    end
-    subgraph Out["{context}.out"]
-        Adapter["도메인별 PersistenceAdapter<br/>외부 연결 어댑터"]
-        Jpa["Spring Data JPA · JPA Entity"]
-        Adapter --> Jpa
+        subgraph App["app"]
+            Service["도메인별 ApplicationService<br/>공개 메서드가 입력 포트 역할"]
+            Result["입력·조회 결과 모델"]
+            subgraph Port["app.port"]
+                Ports["출력 포트<br/>Repository · 외부 연결<br/>인자·결과 타입"]
+            end
+            Service --> Ports
+            Service --> Result
+        end
+        subgraph DomainLayer["domain"]
+            Domain["순수 Entity·VO"]
+        end
+        subgraph Out["out"]
+            Adapter["도메인별 PersistenceAdapter<br/>외부 연결 어댑터"]
+            Jpa["Spring Data JPA · JPA Entity"]
+            Adapter --> Jpa
+        end
+        subgraph Config["config (payment·order)"]
+            Assembly["업무 Bean 조립"]
+        end
     end
     subgraph Common["common"]
         CommonIn["common.in<br/>응답 형식·오류 매핑"]
+        CommonInError["common.in.error<br/>CoreException·ErrorType"]
         CommonDomain["common.domain<br/>Money"]
-        CommonError["common.error<br/>규칙 위반 신호"]
+        CommonError["common.error<br/>규칙 위반·공통 상위 예외"]
+        CommonConfig["common.config<br/>앱 전체 설정"]
     end
     Controller --> Service
     Controller --> Result
@@ -107,16 +118,19 @@ flowchart LR
     Ports -->|도메인 타입 사용| Domain
     Adapter -->|인터페이스 구현| Ports
     Adapter -->|도메인 변환| Domain
+    Assembly -->|자기 업무 계층 조립| Service
+    Assembly --> Adapter
     Domain --> CommonDomain
     Domain --> CommonError
     CommonIn --> CommonError
+    CommonIn --> CommonInError
 ```
 
-이 그림은 소스의 의존 방향이다. out이 app의 출력 포트를 구현한다. app은 out·in에, domain은 다른 계층·Spring·JPA·HTTP에 의존하지 않는다. in은 domain·out을 직접 쓰지 않고 app만 부른다.
+이 그림은 소스의 의존 방향이다. out이 app의 출력 포트를 구현한다. app은 out·in에, domain은 다른 계층·Spring·JPA·HTTP에 의존하지 않는다. in은 domain·out을 직접 쓰지 않고 app만 부른다. config는 자기 업무 계층을 조립하지만 계층은 config를 모른다. common은 업무를 모른다.
 
 ### 계층 규칙 (ArchUnit, 2026-11-03)
 
-`ArchitectureTest`가 아래 규칙을 컴파일된 클래스(바이트코드)로 검사한다. 계층은 패키지 패턴 `com.loopers.(*).{in,app,domain,out}..`로 가린다. `(*)`에는 `common`도 들어가므로 `common.in`·`common.domain`도 같은 규칙을 받는다. freeze·ignore·예외 목록은 두지 않고, 위반은 코드를 옮겨 고친다.
+`ArchitectureTest`가 아래 규칙을 컴파일된 클래스(바이트코드)로 검사한다. 업무 계층은 패키지 패턴 `com.loopers.domains.(*).{in,app,domain,out,config}..`로 가린다. common은 이 패턴에 들지 않으므로 규칙 8과 common 규칙으로 따로 검사한다. freeze·ignore·예외 목록은 두지 않고, 위반은 코드를 옮겨 고친다.
 
 | 규칙 | 내용 | 이유 |
 | --- | --- | --- |
@@ -125,28 +139,43 @@ flowchart LR
 | 3 | app은 in·out을 모른다 | 포트로만 바깥과 연결해, 입력 방식·저장 구현이 바뀌어도 app은 그대로다 |
 | 4 | out은 in을 모른다 | 바깥끼리 엉켜 app을 거치지 않는 흐름이 생기는 것을 막는다 |
 | 5 | out은 app 중 `app.port`만 쓴다 | 구현은 포트(인터페이스와 그 인자·결과)만 알아, 서비스를 바꿔도 구현이 같이 깨지지 않는다 |
-| 6 | 컨텍스트마다 있는 계층의 클래스가 실제로 비어 있지 않고 1~5의 패턴에 들어간다 | 패키지 이름이 틀리면 그 클래스는 1~5에 걸리지 않고 조용히 통과한다. `allowEmptyShould(true)`는 쓰지 않는다 |
+| 6 | 컨텍스트마다 있는 계층, payment·order의 config, common 하위(domain·error·in·in.error·config)의 클래스가 실제로 비어 있지 않고 규칙 패턴에 들어간다 | 패키지 이름이 틀리면 그 클래스는 규칙에 걸리지 않고 조용히 통과한다. 패턴 상수의 오타도 막는다. `allowEmptyShould(true)`는 쓰지 않는다 |
+| 7(a) | 업무 config는 자기 업무 밖의 `domains` 패키지를 모른다 | 다른 업무를 엮으면 업무 사이 결합이 조립 지점에 숨어 경계 정리 때 보이지 않는다. 업무는 패키지 이름에서 읽어 새 업무의 config도 자동으로 검사한다 |
+| 7(b) | in·app·domain·out은 업무 config와 `common.config`를 모른다 | 조립은 바깥에서 한다. 계층이 config를 알면 조립 방식이 바뀔 때 업무 코드가 따라 바뀐다 |
+| 8 | `common`은 `domains`를 모른다 | common은 여러 업무가 함께 쓰는 바닥이다. 특정 업무를 알면 업무를 추가·삭제할 때 common이 따라 바뀐다 |
+| common 내부 | `common.domain`·`common.error`는 `common.in`·`common.config`를 모른다 | 공통 값·예외가 HTTP 공통·조립을 알면 domain이 그것을 거쳐 HTTP·조립을 알게 된다 |
 
-- 기술 의존 규칙(기존 의미 유지)
-  - domain(`common.domain` 포함)은 Spring·JPA(`jakarta.persistence`·`javax.persistence`)·servlet·`java.net.http`·`support.error`를 모른다.
-  - app·domain은 `java.net`·Spring web/http·Jackson·Resilience4j를 모른다. HTTP 클라이언트·JSON·서킷 브레이커는 out의 구현 세부다.
-- **`common.error`와 `support.error`의 차이:** `common.error`는 여러 계층이 함께 쓰는 규칙 위반 신호라 domain도 쓸 수 있다. `support.error`는 starter의 HTTP 응답용 `CoreException`이라 domain에서 쓰지 않는다.
-- 규칙 1~6과 기술 의존 규칙은 하나씩 일부러 위반을 넣어 실패하는 것을 확인했다(작업 사본, 원복).
-- 규칙이 처음 들어올 때 고친 위반은 다음과 같다. 모두 패키지 이동이나 인자 타입 변경으로 고쳤고 동작은 그대로다.
+- 기술 의존 규칙
+  - 업무 domain과 `common.domain`은 Spring·JPA(`jakarta.persistence`·`javax.persistence`)·servlet·`java.net.http`·`common.in.error`를 모른다.
+  - app·domain과 `common.domain`·`common.error`는 `java.net`·Spring web/http·Jackson·Resilience4j를 모른다. HTTP 클라이언트·JSON·서킷 브레이커는 out의 구현 세부다.
+- **`common.error`와 `common.in.error`의 차이:** `common.error`는 여러 계층이 함께 쓰는 순수 Java 업무 신호라 domain도 쓸 수 있다. `common.in.error`는 HTTP 응답용 `CoreException`·`ErrorType`(옛 starter `support.error`)이라 domain에서 쓰지 않는다.
+- **공통 상위 예외와 응답 매핑(D109·r2-1, 2026-11-03):** 업무 예외는 `common.error`의 공통 타입을 상속하고, `common.in.CommerceExceptionAdvice`는 공통 타입만 처리한다. HTTP 상태로 바꾸는 일은 advice에만 있다. 응답 상태·본문은 바꾸기 전과 같다.
+
+| 공통 타입(`common.error`) | 상속하는 업무 예외 | 응답 |
+| --- | --- | --- |
+| `NotFoundException` | `BrandNotFoundException`, `ProductNotFoundException`, `OrderNotFoundException` | 404 `Not Found` |
+| `TemporarilyUnavailableException` | `PaymentLookupNotCalledException` | 503 `Service Unavailable` |
+| `InvalidValueException` | (직접 사용) | 400 `Bad Request` |
+| `RuleViolationException` | (직접 사용) | 409 `Conflict` |
+
+- 모든 규칙은 하나씩 일부러 위반을 넣어 해당 규칙만 실패하는 것을 확인했다(작업 사본, 원복).
+- 규칙이 들어올 때 고친 위반은 다음과 같다. 모두 패키지 이동이나 타입 변경으로 고쳤고 동작은 그대로다.
   - `OrderConfirmedPayload`를 `order.app.port`로 옮겼다. 발행 포트의 인자다(규칙 5).
   - `ProductListQuery`·`ProductListItem`을 `product.app.port`로 옮겼다. 목록 캐시 포트의 인자·결과다(규칙 5).
   - `PaymentLookupScheduler`를 `order.in`으로 옮겼다. 주문 서비스를 부르는 입력 쪽이다(규칙 5).
   - `BrandApplicationService.getBrand`가 `BrandId` 대신 `long`을 받는다(규칙 2).
-- `BrandResult.id`를 domain 타입 `BrandId`에서 `long`으로 바꿨다(규칙 2 위반 2건 해소). `PUT /api-admin/v1/brands/{id}` 응답은 그동안 `BrandId`가 그대로 직렬화되어 `data.id = {"value":N}`이었다.
-- PUT 응답 `data.id`를 숫자로 바로잡았다(공개 응답 변경, 사용자 승인 2026-11-03, D108). 이제 다른 브랜드 응답처럼 `data.id = N`이고, `BrandApiIntegrationTest`가 이 모양을 확인한다.
+  - `BrandResult.id`를 domain 타입 `BrandId`에서 `long`으로 바꿨다(규칙 2).
+  - 업무 예외 4개가 `common.error`의 공통 타입을 상속하고, advice는 공통 타입만 처리한다(규칙 8).
+  - `CustomerIdentity`를 `common.in`에서 `domains.user.in`으로 옮겼다(규칙 8).
+- `PUT /api-admin/v1/brands/{id}` 응답은 그동안 `BrandId`가 그대로 직렬화되어 `data.id = {"value":N}`이었다. 이것을 숫자로 바로잡았다(공개 응답 변경, 사용자 승인 2026-11-03, D108). 이제 다른 브랜드 응답처럼 `data.id = N`이고, `BrandApiIntegrationTest`가 이 모양을 확인한다.
 
 ### JPA 리포지토리 스캔
 
-`modules/jpa`의 `JpaConfig`는 `@EnableJpaRepositories("com.loopers.infrastructure")`만 스캔한다(streamer가 쓴다). commerce-api는 `config/CommerceJpaRepositoriesConfig`가 `com.loopers.{brand,like,user,point,product,payment,order}.out` 일곱 패키지를 명시해 리포지토리를 등록한다. 두 범위는 겹치지 않아 중복 등록이 없다. **새 컨텍스트가 생기면 이 목록에 추가해야 한다.** 빠뜨리면 그 컨텍스트의 리포지토리 Bean이 없어 컨텍스트가 뜨지 않는다. 엔티티 스캔은 `@EntityScan("com.loopers")`라 따로 할 일이 없다.
+`modules/jpa`의 `JpaConfig`는 `@EnableJpaRepositories("com.loopers.infrastructure")`만 스캔한다(streamer가 쓴다). commerce-api는 `common.config.CommerceJpaRepositoriesConfig`가 `@EnableJpaRepositories("com.loopers.domains")` 한 줄로 업무 아래 리포지토리를 등록한다. 새 업무가 생겨도 목록을 관리할 필요가 없다. 리포지토리 인터페이스는 각 업무의 out에만 둔다. 두 스캔 범위는 겹치지 않아 중복 등록이 없다. 엔티티 스캔은 `@EntityScan("com.loopers")`라 따로 할 일이 없다.
 
 ### 컨텍스트 사이 의존 (제출 뒤 작업의 출발점)
 
-규칙 1~6은 컨텍스트 안의 계층 방향만 본다. 컨텍스트 사이 경계 규칙(규칙 15~17)과 주문·결제 포트 분리(D100)는 이번 범위 밖이다(D102). 대신 지금 의존을 남긴다. 아래 수는 commerce-api main 코드에서 파일마다 다른 컨텍스트 클래스를 참조하는 (파일, 클래스) 쌍의 수다(2026-11-03, `common`·`config` 제외).
+규칙 1~8은 컨텍스트 안의 계층 방향과 config·common의 경계만 본다. 컨텍스트 사이 경계 규칙(규칙 15~17)과 주문·결제 포트 분리(D100)는 이번 범위 밖이다(D102). 대신 지금 의존을 남긴다. 아래 수는 commerce-api main 코드에서 파일마다 다른 컨텍스트 클래스를 참조하는 (파일, 클래스) 쌍의 수다(2026-11-03 R2 뒤, `common` 제외).
 
 | 방향 | 수 | 참조하는 계층 → 대상 | 주된 이유 |
 | --- | --- | --- | --- |
@@ -157,10 +186,13 @@ flowchart LR
 | brand → product | 3 | app → product.app·app.port·domain | 브랜드 일괄 삭제 때 연결 상품 처리, 목록 캐시 무효화 이벤트 |
 | product → like | 2 | in·app → like.app·app.port | 상품 쪽 좋아요 HTTP, 내가 좋아요한 상품 목록 조회 |
 | payment → order | 1 | in → order.app | PG callback이 주문 서비스의 결과 반영을 부른다 |
-| brand → user | 1 | in → user.app | 고객 식별 |
+| brand → user | 1 | in → user.app | 고객 식별(`UserIdentificationService`) |
+| order → user | 1 | in → user.in | 고객 식별(`CustomerIdentity`) |
+| point → user | 1 | in → user.in | 고객 식별(`CustomerIdentity`) |
+| product → user | 1 | in → user.in | 고객 식별(`CustomerIdentity`) |
 
-- 다른 컨텍스트의 domain 타입(`BrandId`·`ProductId` 등)을 직접 쓰는 곳과 다른 컨텍스트의 app 서비스를 부르는 곳(`payment.in` → `OrderApplicationService`, `product.in` → `LikeApplicationService`)이 경계 규칙을 넣을 때 정리할 대상이다.
-- 여러 컨텍스트가 쓰는 고객 식별(`CustomerIdentity`)은 `common.in`에 있어 위 표에 들어가지 않는다.
+- 다른 컨텍스트의 domain 타입(`BrandId`·`ProductId` 등)을 직접 쓰는 곳, 다른 컨텍스트의 app 서비스를 부르는 곳(`payment.in` → `OrderApplicationService`, `product.in` → `LikeApplicationService`), 다른 컨텍스트의 in을 쓰는 곳(order·point·product의 in → `user.in.CustomerIdentity`)이 경계 규칙을 넣을 때 정리할 대상이다.
+- 업무 config(payment·order)는 규칙 7(a)로 자기 업무만 알아 위 표에 들어가는 것이 없다.
 
 ### 필요한 구성만 유지
 
@@ -181,7 +213,7 @@ flowchart LR
 
 ### 조회·변경 경계
 
-CQRS를 적용하지 않는다. 도메인별 ApplicationService와 Repository가 조회·변경을 함께 처리한다. 별도 조회 전용 포트·서비스를 두지 않는다. 포트는 해당 컨텍스트의 `{context}.app.port` 패키지에 두며, 도메인 타입이나 같은 `app.port`의 인자·결과 타입을 사용한다. JPA Entity·Spring Data `Page`·HTTP DTO는 노출하지 않는다.
+CQRS를 적용하지 않는다. 도메인별 ApplicationService와 Repository가 조회·변경을 함께 처리한다. 별도 조회 전용 포트·서비스를 두지 않는다. 포트는 해당 컨텍스트의 `domains.{context}.app.port` 패키지에 두며, 도메인 타입이나 같은 `app.port`의 인자·결과 타입을 사용한다. JPA Entity·Spring Data `Page`·HTTP DTO는 노출하지 않는다.
 
 고객 상품 목록·상세와 변경 대상은 **ProductRepository**에서 Product로 조회한다. 상품 변경은 Product의 행동을 호출한 뒤 저장한다. 조회 결과 조합은 **ProductApplicationService**에서 수행한다.
 
@@ -213,11 +245,11 @@ Brand·Product·Like·Point·Order의 도메인과 Entity·VO 역할은 유지�
 
 | 패키지 | 소속 타입 |
 | --- | --- |
-| brand.domain | Brand, BrandId |
-| product.domain | Product, ProductId, Stock |
-| like.domain | Like |
-| point.domain | Point |
-| order.domain | Order, OrderItem, Quantity |
+| domains.brand.domain | Brand, BrandId |
+| domains.product.domain | Product, ProductId, Stock |
+| domains.like.domain | Like |
+| domains.point.domain | Point |
+| domains.order.domain | Order, OrderItem, Quantity |
 
 공유 금액 VO는 `common.domain.Money`에 둔다. long의 0 이상 범위를 사용하고 연산 범위 초과를 거절한다.
 
