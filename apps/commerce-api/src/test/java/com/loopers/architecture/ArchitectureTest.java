@@ -133,7 +133,7 @@ class ArchitectureTest {
         Map<String, List<String>> layers = Map.of(
             "brand", List.of("in", "app", "domain", "out"),
             "like", List.of("app", "domain", "out"),
-            "user", List.of("app", "out"),
+            "user", List.of("in", "app", "out"),
             "point", List.of("in", "app", "domain", "out"),
             "product", List.of("in", "app", "domain", "out"),
             "payment", List.of("in", "app", "domain", "out"),
