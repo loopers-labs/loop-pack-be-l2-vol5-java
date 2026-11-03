@@ -1,8 +1,11 @@
 package com.loopers.domain.order.service;
 
 import com.loopers.domain.order.entity.Order;
+import com.loopers.domain.order.entity.OrderConfirmedOutbox;
 import com.loopers.domain.order.enums.OrderErrorCode;
 import com.loopers.domain.order.enums.OrderStatus;
+import com.loopers.domain.order.gateway.OrderConfirmedSerializer;
+import com.loopers.domain.order.repository.OrderConfirmedOutboxRepository;
 import com.loopers.domain.order.repository.OrderRepository;
 import com.loopers.domain.order.vo.OrderConfirmed;
 import com.loopers.domain.order.vo.OrderLine;
@@ -27,6 +30,8 @@ public class OrderService {
     /** 시각을 정하는 곳을 한 곳에 둠 (설계 2.3) */
     private final Clock clock;
     private final ApplicationEventPublisher eventPublisher;
+    private final OrderConfirmedOutboxRepository outboxRepository;
+    private final OrderConfirmedSerializer serializer;
 
     @Transactional
     public Order create(Long userId, List<OrderLine> lines) {
@@ -56,18 +61,27 @@ public class OrderService {
         order.startPayment(ZonedDateTime.now(clock));
     }
 
-    /** 확정 사실은 상태 전이 바로 옆에서 냄. 보내는 시점(commit 뒤)은 listener 가 정함 (6주차 D-70, D-72) */
+    /** 확정 사실은 상태 전이 바로 옆에서 남김 (6주차 D-70, 7주차 D-101) */
     @Transactional
     public void confirmWithoutPayment(Order order) {
-        order.confirmWithoutPayment(ZonedDateTime.now(clock));
-        eventPublisher.publishEvent(OrderConfirmed.from(order));
+        ZonedDateTime now = ZonedDateTime.now(clock);
+        order.confirmWithoutPayment(now);
+        recordConfirmed(order, now);
     }
 
-    /** 결제 시각은 PG 승인 시각이 아니라 내부 반영 시각임. 결제 대기에서만 통과하므로 반복 적용은 확정 사실을 다시 내지 않음 */
+    /** 결제 시각은 PG 승인 시각이 아니라 내부 반영 시각임. 결제 대기에서만 통과하므로 반복 적용은 확정 사실을 다시 남기지 않음 */
     @Transactional
     public void confirmPaid(Order order, long paymentAmount) {
-        order.confirmPaid(paymentAmount, ZonedDateTime.now(clock));
-        eventPublisher.publishEvent(OrderConfirmed.from(order));
+        ZonedDateTime now = ZonedDateTime.now(clock);
+        order.confirmPaid(paymentAmount, now);
+        recordConfirmed(order, now);
+    }
+
+    /** Outbox 는 확정과 같은 TX 에 남김. 직접 발행은 relay 로 바꿀 때 제거함 (7주차 설계 9장 구현 순서) */
+    private void recordConfirmed(Order order, ZonedDateTime now) {
+        OrderConfirmed event = OrderConfirmed.from(order);
+        outboxRepository.save(OrderConfirmedOutbox.pending(event, serializer.serialize(event), now));
+        eventPublisher.publishEvent(event);
     }
 
     @Transactional

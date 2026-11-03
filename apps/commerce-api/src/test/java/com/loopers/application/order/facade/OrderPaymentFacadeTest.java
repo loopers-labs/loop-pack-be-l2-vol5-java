@@ -4,6 +4,7 @@ import com.loopers.application.order.facade.OrderFacade.OrderRequestLine;
 import com.loopers.application.order.facade.OrderPaymentFacade.ConfirmCommand;
 import com.loopers.domain.brand.entity.Brand;
 import com.loopers.domain.brand.repository.FakeBrandRepository;
+import com.loopers.domain.order.repository.FakeOrderConfirmedOutboxRepository;
 import com.loopers.domain.order.repository.FakeOrderRepository;
 import com.loopers.domain.order.entity.Order;
 import com.loopers.domain.order.enums.OrderErrorCode;
@@ -113,7 +114,7 @@ class OrderPaymentFacadeTest {
         productListCache = new FakeProductListCache();
         productDetailCache = new FakeProductDetailCache();
         clock = new MutableClock(CREATED_AT);
-        OrderService orderService = new OrderService(orderRepository, clock, event -> { });
+        OrderService orderService = new OrderService(orderRepository, clock, event -> { }, new FakeOrderConfirmedOutboxRepository(), event -> "{}");
         ProductService productService = new ProductService(productRepository, new FakeProductLikeCountRepository(), clock);
         PaymentService paymentService = new PaymentService(paymentRepository, clock);
         OrderPaymentSteps steps = new OrderPaymentSteps(orderService, productService, paymentService);
