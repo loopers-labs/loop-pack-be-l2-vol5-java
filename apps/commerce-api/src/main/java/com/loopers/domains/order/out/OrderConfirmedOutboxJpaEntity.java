@@ -36,6 +36,9 @@ public class OrderConfirmedOutboxJpaEntity {
     private String status;
     @Column(nullable = false)
     private int attemptCount;
+    // 행 내용 때문에 생긴 실패만 센다. broker 수준 실패는 attempt_count만 늘리고 여기엔 세지 않는다(D114).
+    @Column(nullable = false)
+    private int rowFailureCount;
     @Column(nullable = false)
     private Instant nextAttemptAt;
     @Column(length = 500)
@@ -59,6 +62,7 @@ public class OrderConfirmedOutboxJpaEntity {
         entity.payload = payload;
         entity.status = "PENDING";
         entity.attemptCount = 0;
+        entity.rowFailureCount = 0;
         entity.nextAttemptAt = now;
         entity.createdAt = now;
         return entity;

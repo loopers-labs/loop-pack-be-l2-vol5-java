@@ -15,8 +15,8 @@ import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-// 테스트 스키마는 엔티티로 만들어 order_outbox가 이미 있다. 운영 DB처럼 테이블이 없는 상태를 만들려고 지운 뒤 스크립트를 실행하고,
-// 결과를 엔티티가 만든 모양과 비교한다. 같은 컨텍스트의 다른 테스트가 원래 스키마를 보도록 끝나면 엔티티가 만든 DDL로 되돌린다.
+// 테스트 스키마는 엔티티로 만들어 order_outbox·outbox_relay_settings가 이미 있다. 운영 DB처럼 테이블이 없는 상태를 만들려고 지운 뒤
+// 스크립트를 실행하고, 결과를 엔티티가 만든 모양과 비교한다. 같은 컨텍스트의 다른 테스트가 원래 스키마를 보도록 끝나면 엔티티가 만든 DDL로 되돌린다.
 @SpringBootTest
 class OrderOutboxDdlTest {
     private static final String SCRIPT = "sql/create-order-outbox.sql";
@@ -27,19 +27,27 @@ class OrderOutboxDdlTest {
     @Autowired private JdbcTemplate jdbcTemplate;
     private String entityDdl;
     private List<Map<String, Object>> entityColumns;
+    private String settingsEntityDdl;
+    private List<Map<String, Object>> settingsEntityColumns;
 
     @BeforeEach
     void dropEntityTable() {
         entityDdl = jdbcTemplate.queryForMap("show create table order_outbox").get("Create Table").toString();
-        entityColumns = columns();
+        entityColumns = columns("order_outbox");
         assertThat(entityColumns).isNotEmpty();
+        settingsEntityDdl = jdbcTemplate.queryForMap("show create table outbox_relay_settings").get("Create Table").toString();
+        settingsEntityColumns = columns("outbox_relay_settings");
+        assertThat(settingsEntityColumns).isNotEmpty();
         jdbcTemplate.execute("drop table order_outbox");
+        jdbcTemplate.execute("drop table outbox_relay_settings");
     }
 
     @AfterEach
     void restoreEntityTable() {
         jdbcTemplate.execute("drop table if exists order_outbox");
         jdbcTemplate.execute(entityDdl);
+        jdbcTemplate.execute("drop table if exists outbox_relay_settings");
+        jdbcTemplate.execute(settingsEntityDdl);
     }
 
     @Test
@@ -65,8 +73,50 @@ class OrderOutboxDdlTest {
             Long.class)).isEqualTo(1);
     }
 
+    @Test
+    @DisplayName("1단계 모양(row_failure_count 없음)의 테이블에 스크립트를 실행하면 열이 0 기본값으로 추가되어 엔티티와 같아지고 기존 행은 남는다")
+    void addsRowFailureCountToStageOneTable() {
+        jdbcTemplate.execute(entityDdl);
+        jdbcTemplate.execute("alter table order_outbox drop column row_failure_count");
+        jdbcTemplate.update("insert into order_outbox(event_id, order_id, event_type, schema_version, message_key, payload, status,"
+            + " attempt_count, next_attempt_at, created_at) values ('order-confirmed:v1:1', 1, 'OrderConfirmed', 1, '1', '{}',"
+            + " 'PENDING', 0, '2026-10-29 01:00:00', '2026-10-29 01:00:00')");
+
+        run();
+
+        assertSameAsEntity();
+        assertThat(jdbcTemplate.queryForObject("select row_failure_count from order_outbox where event_id = 'order-confirmed:v1:1'",
+            Integer.class)).isZero();
+    }
+
+    @Test
+    @DisplayName("S6: 스크립트는 엔티티와 같은 outbox_relay_settings와 기본 행 1개(묶음 100·최대 10초·켜짐)를 만든다")
+    void createsRelaySettingsWithDefaultRow() {
+        run();
+
+        assertThat(columns("outbox_relay_settings")).isEqualTo(settingsEntityColumns);
+        assertThat(jdbcTemplate.queryForList("select id, batch_size, max_round_millis, enabled from outbox_relay_settings"))
+            .singleElement().satisfies(row -> assertThat(row)
+                .containsEntry("id", 1L)
+                .containsEntry("batch_size", 100)
+                .containsEntry("max_round_millis", 10_000)
+                .containsEntry("enabled", true));
+    }
+
+    @Test
+    @DisplayName("S6: 사람이 바꾼 relay 설정 값은 스크립트를 다시 실행해도 기본값으로 덮이지 않고 행은 1개다")
+    void rerunKeepsChangedRelaySettings() {
+        run();
+        assertThat(columns("outbox_relay_settings")).isEqualTo(settingsEntityColumns);
+        jdbcTemplate.update("update outbox_relay_settings set batch_size = 7 where id = 1");
+
+        run();
+
+        assertThat(jdbcTemplate.queryForList("select batch_size from outbox_relay_settings", Integer.class)).containsExactly(7);
+    }
+
     private void assertSameAsEntity() {
-        assertThat(columns()).isEqualTo(entityColumns);
+        assertThat(columns("order_outbox")).isEqualTo(entityColumns);
         assertThat(column("payload")).containsEntry("column_type", "text").containsEntry("is_nullable", "NO");
         assertThat(column("next_attempt_at")).containsEntry("column_type", "datetime(6)").containsEntry("is_nullable", "NO");
         assertThat(indexColumns(UNIQUE, 0)).containsExactly("event_id");
@@ -77,14 +127,13 @@ class OrderOutboxDdlTest {
         new ResourceDatabasePopulator(new ClassPathResource(SCRIPT)).execute(dataSource);
     }
 
-    private List<Map<String, Object>> columns() {
+    private List<Map<String, Object>> columns(String table) {
         return jdbcTemplate.queryForList("select column_name, column_type, is_nullable, column_key, extra"
-            + " from information_schema.columns where table_schema = database() and table_name = 'order_outbox'"
-            + " order by column_name");
+            + " from information_schema.columns where table_schema = database() and table_name = ? order by column_name", table);
     }
 
     private Map<String, Object> column(String name) {
-        return columns().stream().filter(column -> name.equals(column.get("column_name"))).findFirst().orElse(Map.of());
+        return columns("order_outbox").stream().filter(column -> name.equals(column.get("column_name"))).findFirst().orElse(Map.of());
     }
 
     private List<String> indexColumns(String index, int nonUnique) {

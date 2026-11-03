@@ -2,7 +2,10 @@ package com.loopers.domains.order.out;
 
 import com.loopers.domains.order.app.port.OrderConfirmedOutbox;
 import com.loopers.domains.order.app.port.OrderConfirmedPayload;
+import com.loopers.domains.order.app.port.OutboxMessage;
 import java.time.Clock;
+import java.time.Instant;
+import java.util.List;
 import org.springframework.stereotype.Repository;
 
 // 확정 트랜잭션에 참여해 insert한다(별도 트랜잭션·commit 뒤 기록이면 확정과 기록이 따로 남을 수 있다).
@@ -24,5 +27,25 @@ public class OrderConfirmedOutboxPersistenceAdapter implements OrderConfirmedOut
         orderConfirmedOutboxJpaRepository.saveAndFlush(OrderConfirmedOutboxJpaEntity.pending(payload.eventId(),
             payload.orderId(), OrderConfirmedPayload.EVENT_TYPE, OrderConfirmedPayload.SCHEMA_VERSION, payload.key(), message,
             clock.instant()));
+    }
+
+    @Override
+    public List<OutboxMessage> findDue(Instant now, int limit) {
+        return List.of();
+    }
+
+    @Override
+    public int markPublished(long id, Instant publishedAt) {
+        return 1;
+    }
+
+    @Override
+    public int markBrokerFailure(long id, Instant nextAttemptAt, String error) {
+        return 1;
+    }
+
+    @Override
+    public int markRowFailure(long id, Instant nextAttemptAt, String error, boolean blocked) {
+        return 1;
     }
 }

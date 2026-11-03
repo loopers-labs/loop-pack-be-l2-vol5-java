@@ -40,4 +40,6 @@ dependencies {
     testImplementation(testFixtures(project(":modules:jpa")))
     testImplementation(testFixtures(project(":modules:redis")))
     testImplementation(testFixtures(project(":modules:kafka")))
+    // relay 테스트 하나(없는 topic)가 topic 자동 생성을 끈 전용 broker를 띄운다. 버전은 BOM을 따른다.
+    testImplementation("org.testcontainers:kafka")
 }

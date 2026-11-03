@@ -1,8 +1,12 @@
 package com.loopers.support.kafka;
 
+import com.loopers.domains.order.app.port.OrderConfirmedMessageSender;
 import com.loopers.domains.order.app.port.OrderConfirmedOutbox;
 import com.loopers.domains.order.app.port.OrderConfirmedPayload;
 import com.loopers.domains.order.app.port.OrderConfirmedPublisher;
+import com.loopers.domains.order.app.port.OutboxMessage;
+import com.loopers.domains.order.app.port.SendOutcome;
+import com.loopers.domains.order.out.KafkaOrderConfirmedMessageSender;
 import com.loopers.domains.order.out.KafkaOrderConfirmedPublisher;
 import com.loopers.domains.order.out.OrderConfirmedOutboxPersistenceAdapter;
 import com.loopers.domains.payment.app.port.PaymentRecordRepository;
@@ -11,13 +15,17 @@ import com.loopers.domains.payment.out.PaymentRecordPersistenceAdapter;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.util.Collection;
+import java.util.Deque;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-import org.apache.kafka.common.KafkaException;
+import org.apache.kafka.common.errors.TimeoutException;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -57,34 +65,28 @@ public class OrderEventsTestConfig {
 
     @Bean
     @Primary
+    ScriptedMessageSender scriptedMessageSender(KafkaOrderConfirmedMessageSender kafkaOrderConfirmedMessageSender) {
+        return new ScriptedMessageSender(kafkaOrderConfirmedMessageSender);
+    }
+
+    @Bean
+    @Primary
     FailingOrderConfirmedOutbox failingOrderConfirmedOutbox(OrderConfirmedOutboxPersistenceAdapter delegate,
         EntityManager entityManager) {
         return new FailingOrderConfirmedOutbox(delegate, entityManager);
     }
 
-    // after-commit listener가 부르는 publisher. 멈춤을 걸면 commit 뒤 send 직전에서 멈춘 것처럼 payload만 남기고 보내지 않는다.
+    // after-commit listener가 부르는 publisher. 보낸 payload를 기록한다.
     public static class ControllableOrderConfirmedPublisher implements OrderConfirmedPublisher {
         private final OrderConfirmedPublisher delegate;
-        private final AtomicBoolean haltBeforeSend = new AtomicBoolean();
-        private final List<OrderConfirmedPayload> halted = new CopyOnWriteArrayList<OrderConfirmedPayload>();
         private final List<OrderConfirmedPayload> sent = new CopyOnWriteArrayList<OrderConfirmedPayload>();
 
         ControllableOrderConfirmedPublisher(OrderConfirmedPublisher delegate) {
             this.delegate = delegate;
         }
 
-        public void haltBeforeSend() {
-            haltBeforeSend.set(true);
-        }
-
         public void reset() {
-            haltBeforeSend.set(false);
-            halted.clear();
             sent.clear();
-        }
-
-        public List<OrderConfirmedPayload> halted() {
-            return List.copyOf(halted);
         }
 
         public List<OrderConfirmedPayload> sent() {
@@ -93,10 +95,6 @@ public class OrderEventsTestConfig {
 
         @Override
         public void send(OrderConfirmedPayload payload) {
-            if (haltBeforeSend.get()) {
-                halted.add(payload);
-                return;
-            }
             sent.add(payload);
             delegate.send(payload);
         }
@@ -107,7 +105,7 @@ public class OrderEventsTestConfig {
         }
     }
 
-    // 실제 producer factory로 보내다가, 무장하면 send를 실패시킨다. 운영 publisher의 실패 처리(로그·지표)는 그대로 거친다.
+    // 실제 producer factory로 보내다가, 무장하면 send를 실패시킨다. 주입 예외는 broker 수준(Kafka TimeoutException)이다.
     public static class FailingKafkaTemplate extends KafkaTemplate<String, String> {
         public static final String INJECTED_FAILURE = "주입된 Kafka send 실패";
 
@@ -126,8 +124,8 @@ public class OrderEventsTestConfig {
         @Override
         public CompletableFuture<SendResult<String, String>> send(String topic, String key, String data) {
             return switch (failure.get()) {
-                case SYNC_THROW -> throw new KafkaException(INJECTED_FAILURE);
-                case ASYNC_FAILED -> CompletableFuture.failedFuture(new KafkaException(INJECTED_FAILURE));
+                case SYNC_THROW -> throw new TimeoutException(INJECTED_FAILURE);
+                case ASYNC_FAILED -> CompletableFuture.failedFuture(new TimeoutException(INJECTED_FAILURE));
                 case NONE -> super.send(topic, key, data);
             };
         }
@@ -218,6 +216,7 @@ public class OrderEventsTestConfig {
         private final OrderConfirmedOutbox delegate;
         private final EntityManager entityManager;
         private final AtomicReference<Failure> failure = new AtomicReference<Failure>(Failure.NONE);
+        private final List<Integer> findDueLimits = new CopyOnWriteArrayList<Integer>();
 
         FailingOrderConfirmedOutbox(OrderConfirmedOutbox delegate, EntityManager entityManager) {
             this.delegate = delegate;
@@ -230,6 +229,12 @@ public class OrderEventsTestConfig {
 
         public void disarm() {
             failure.set(Failure.NONE);
+            findDueLimits.clear();
+        }
+
+        // relay가 회차마다 묶음을 몇 개, 어떤 크기로 조회했는지 본다.
+        public List<Integer> findDueLimits() {
+            return List.copyOf(findDueLimits);
         }
 
         @Override
@@ -250,6 +255,92 @@ public class OrderEventsTestConfig {
                 }
                 case NONE -> delegate.append(payload);
             }
+        }
+
+        @Override
+        public List<OutboxMessage> findDue(Instant now, int limit) {
+            findDueLimits.add(limit);
+            return delegate.findDue(now, limit);
+        }
+
+        @Override
+        public int markPublished(long id, Instant publishedAt) {
+            return delegate.markPublished(id, publishedAt);
+        }
+
+        @Override
+        public int markBrokerFailure(long id, Instant nextAttemptAt, String error) {
+            return delegate.markBrokerFailure(id, nextAttemptAt, error);
+        }
+
+        @Override
+        public int markRowFailure(long id, Instant nextAttemptAt, String error, boolean blocked) {
+            return delegate.markRowFailure(id, nextAttemptAt, error, blocked);
+        }
+    }
+
+    // relay가 쓰는 전송 포트 대역. key별로 결과를 지정하지 않으면 실제 Kafka sender로 보낸다.
+    // 보낸 순서를 기록하고, 보낼 때마다 실행할 동작(시계 앞당기기·막기)을 걸 수 있다. 운영 sender의 분류 규칙은 거치지 않는다.
+    public static class ScriptedMessageSender implements OrderConfirmedMessageSender {
+        private final OrderConfirmedMessageSender delegate;
+        private final Map<String, Deque<SendOutcome>> scripted = new ConcurrentHashMap<String, Deque<SendOutcome>>();
+        private final Map<String, SendOutcome> always = new ConcurrentHashMap<String, SendOutcome>();
+        private final List<String> sentKeys = new CopyOnWriteArrayList<String>();
+        private final AtomicReference<Runnable> onSend = new AtomicReference<Runnable>(() -> { });
+        private final AtomicBoolean publishWithoutBroker = new AtomicBoolean();
+
+        ScriptedMessageSender(OrderConfirmedMessageSender delegate) {
+            this.delegate = delegate;
+        }
+
+        public void script(String key, SendOutcome... outcomes) {
+            scripted.computeIfAbsent(key, ignored -> new ConcurrentLinkedDeque<SendOutcome>()).addAll(List.of(outcomes));
+        }
+
+        public void always(String key, SendOutcome outcome) {
+            always.put(key, outcome);
+        }
+
+        // 지정하지 않은 key도 broker에 보내지 않고 성공으로 돌려준다(순서·건수만 보는 장면).
+        public void publishWithoutBroker() {
+            publishWithoutBroker.set(true);
+        }
+
+        public void onSend(Runnable action) {
+            onSend.set(action);
+        }
+
+        public List<String> sentKeys() {
+            return List.copyOf(sentKeys);
+        }
+
+        public long sendCount(String key) {
+            return sentKeys.stream().filter(key::equals).count();
+        }
+
+        public void reset() {
+            scripted.clear();
+            always.clear();
+            sentKeys.clear();
+            onSend.set(() -> { });
+            publishWithoutBroker.set(false);
+        }
+
+        @Override
+        public SendOutcome send(String key, String payload) {
+            sentKeys.add(key);
+            onSend.get().run();
+            Deque<SendOutcome> queued = scripted.get(key);
+            if (queued != null && !queued.isEmpty()) {
+                return queued.poll();
+            }
+            if (always.containsKey(key)) {
+                return always.get(key);
+            }
+            if (publishWithoutBroker.get()) {
+                return new SendOutcome.Published();
+            }
+            return delegate.send(key, payload);
         }
     }
 }

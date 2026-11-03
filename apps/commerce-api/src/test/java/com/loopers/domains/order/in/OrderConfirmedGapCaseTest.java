@@ -1,7 +1,6 @@
 package com.loopers.domains.order.in;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.loopers.domains.order.app.port.OrderConfirmedPayload;
 import com.loopers.domains.payment.out.TestPgServer.CreateBehavior;
 import com.loopers.support.kafka.OrderEventsProbe;
 import java.io.IOException;
@@ -25,37 +24,38 @@ class OrderConfirmedGapCaseTest extends OrderEventsIntegrationSupport {
     private static final String CASE_B_FIXTURE = "contracts/order-confirmed-gap-case-b.json";
     private static final String CASE_B_KEY = "1";
 
+    // 7주차 2단계(relay-2 ①): send는 relay가 하므로 "commit 뒤 send 전"은 relay가 아직 회차를 돌리지 않은 상태다.
+    // 6주차 원래 장면(직접 send 직전 멈춤)은 5단계에서 6주차 revision으로 다시 재현한다.
     @Test
-    @DisplayName("사례 A: commit 뒤 send 직전에 멈추면 주문은 CONFIRMED·예약 소비로 남지만 그 eventId의 record는 broker에 없다")
+    @DisplayName("사례 A: 확정 commit 뒤 relay가 아직 보내지 않았으면 주문은 CONFIRMED·예약 소비로 남고 Outbox는 PENDING 1행이며 그 eventId의 record는 broker에 없다")
     void caseAConfirmedButNotPublished() throws Exception {
         long orderId = newOrder();
         server.createBehavior(CreateBehavior.ACCEPT_SUCCESS);
-        publisher.haltBeforeSend();
 
         confirm(orderId, UUID.randomUUID().toString()).andExpect(status().isOk());
 
-        assertThat(publisher.halted()).extracting(OrderConfirmedPayload::eventId).containsExactly(eventId(orderId));
-        assertThat(publisher.sent()).isEmpty();
         Map<String, Object> state = state(orderId);
         assertThat(state).containsEntry("status", "CONFIRMED").containsEntry("result", "SUCCESS");
         assertThat(stock(first)).isEqualTo(3);
         assertThat(stock(second)).isEqualTo(4);
-        publisher.reset();
-        List<String> eventIds = eventIdsThroughBoundary();
+        assertThat(jdbc.queryForObject("select count(*) from order_outbox where order_id = ?", Long.class, orderId)).isEqualTo(1);
+        assertThat(outboxRow(orderId)).containsEntry("status", "PENDING");
+        List<String> eventIds = eventIdsOnBroker();
         assertThat(eventIds).doesNotContain(eventId(orderId));
 
         System.out.println("[실험④ 사례 A] " + describe(orderId)
-            + ", 재고(첫/둘째)=3/4, send 직전 멈춘 payload=" + eventId(orderId) + ", 경계까지 읽은 eventId=" + eventIds
+            + ", 재고(첫/둘째)=3/4, Outbox=PENDING 1행(relay 회차 전), 끝 위치까지 읽은 eventId=" + eventIds
             + ", broker 상태=해당 eventId record 없음");
     }
 
     @Test
-    @DisplayName("사례 B: 같은 방식으로 확정하고 broker까지 보내면 그 eventId의 record가 (topic, partition, offset)에 1건 있다")
+    @DisplayName("사례 B: 같은 방식으로 확정하고 relay 회차가 broker까지 보내면 그 eventId의 record가 (topic, partition, offset)에 1건 있다")
     void caseBConfirmedAndPublished() throws Exception {
         long orderId = newOrder();
         server.createBehavior(CreateBehavior.ACCEPT_SUCCESS);
 
         confirm(orderId, UUID.randomUUID().toString()).andExpect(status().isOk());
+        relay.runOnce();
 
         ConsumerRecord<String, String> record = probe.awaitEvent(from, eventId(orderId));
         JsonNode message = OrderEventsProbe.json(record);

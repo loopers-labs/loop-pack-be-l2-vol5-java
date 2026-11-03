@@ -75,10 +75,12 @@ class OrderConfirmedOutboxIntegrationTest extends OrderEventsIntegrationSupport 
         String payload = (String) row.get("payload");
         OrderConfirmedPayload stored = OrderConfirmedPayloadFactory.create(orderRepository.findById(orderId).orElseThrow());
         assertThat(payload).isEqualTo(OrderConfirmedMessageSerializer.serialize(stored));
-        // D95로 6주차 직접 send가 아직 살아 있어 broker record와 비교한다. 2단계에서 직접 send를 없애면 relay가 보낸 record와의 비교로 바뀐다.
+        // 2단계(D95): 직접 send가 없어졌으므로 relay가 보낸 record와 비교한다. relay는 저장된 문자열을 그대로 보낸다.
+        relay.runOnce();
         ConsumerRecord<String, String> record = probe.awaitEvent(from, eventId(orderId));
-        assertThat(OrderEventsProbe.json(payload)).isEqualTo(OrderEventsProbe.json(record));
+        assertThat(record.value()).isEqualTo(payload);
         assertThat(OrderEventsProbe.json(payload)).isEqualTo(contractFixtureFor(orderId));
+        assertThat(outboxRow(orderId)).containsEntry("status", "PUBLISHED");
     }
 
     @ParameterizedTest(name = "Outbox 대역 {0}")
