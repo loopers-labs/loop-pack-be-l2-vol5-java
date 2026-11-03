@@ -1,8 +1,8 @@
 package com.loopers.config;
 
-import com.loopers.payment.app.PaymentGatewayRegistry;
-import com.loopers.payment.app.port.PaymentGateway;
-import com.loopers.payment.out.PaymentCircuitBreakers;
+import com.loopers.domains.payment.app.PaymentGatewayRegistry;
+import com.loopers.domains.payment.app.port.PaymentGateway;
+import com.loopers.domains.payment.out.PaymentCircuitBreakers;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;

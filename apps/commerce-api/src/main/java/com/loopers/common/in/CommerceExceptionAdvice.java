@@ -1,10 +1,10 @@
 package com.loopers.common.in;
 
-import com.loopers.brand.app.BrandNotFoundException;
 import com.loopers.common.error.InvalidValueException;
 import com.loopers.common.error.RuleViolationException;
-import com.loopers.payment.app.PaymentLookupNotCalledException;
-import com.loopers.product.app.ProductNotFoundException;
+import com.loopers.domains.brand.app.BrandNotFoundException;
+import com.loopers.domains.payment.app.PaymentLookupNotCalledException;
+import com.loopers.domains.product.app.ProductNotFoundException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.annotation.Order;
 import org.springframework.dao.PessimisticLockingFailureException;
@@ -14,9 +14,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @Slf4j
 @Order(-1)
-@RestControllerAdvice(basePackages = {"com.loopers.brand.in", "com.loopers.product.in", "com.loopers.point.in", "com.loopers.order.in"})
+@RestControllerAdvice(basePackages = {"com.loopers.domains.brand.in", "com.loopers.domains.product.in", "com.loopers.domains.point.in", "com.loopers.domains.order.in"})
 public class CommerceExceptionAdvice {
-    @ExceptionHandler({BrandNotFoundException.class, ProductNotFoundException.class, com.loopers.order.app.OrderNotFoundException.class})
+    @ExceptionHandler({BrandNotFoundException.class, ProductNotFoundException.class, com.loopers.domains.order.app.OrderNotFoundException.class})
     public ResponseEntity<ApiResponse<Object>> notFound(RuntimeException exception) {
         return ResponseEntity.status(404).body(ApiResponse.fail("Not Found", exception.getMessage()));
     }

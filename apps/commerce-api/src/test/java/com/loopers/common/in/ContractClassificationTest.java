@@ -1,11 +1,12 @@
 package com.loopers.common.in;
 
-import com.loopers.brand.app.BrandApplicationService;
-import com.loopers.brand.in.BrandController;
+import com.loopers.domains.brand.app.BrandApplicationService;
+import com.loopers.domains.brand.in.BrandController;
+import com.loopers.domains.user.out.UserJpaEntity;
+import com.loopers.domains.user.out.UserJpaRepository;
 import com.loopers.support.error.ErrorType;
-import com.loopers.user.out.UserJpaEntity;
-import com.loopers.user.out.UserJpaRepository;
 import com.loopers.utils.DatabaseCleanUp;
+import java.util.function.Function;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -20,8 +21,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-
-import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;

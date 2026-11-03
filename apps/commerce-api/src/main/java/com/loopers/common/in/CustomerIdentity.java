@@ -1,8 +1,8 @@
 package com.loopers.common.in;
 
+import com.loopers.domains.user.app.UserIdentificationService;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
-import com.loopers.user.app.UserIdentificationService;
 import org.springframework.stereotype.Component;
 
 @Component

@@ -1,23 +1,23 @@
 package com.loopers.architecture;
 
-import com.loopers.order.app.PaymentLookupAssessment;
-import com.loopers.order.in.PaymentLookupScheduler;
-import com.loopers.payment.app.PaymentGatewayRegistry;
-import com.loopers.payment.app.PaymentLookupPolicy;
-import com.loopers.payment.app.port.PaymentAnomalyRepository;
-import com.loopers.payment.app.port.PaymentCreateResult;
-import com.loopers.payment.app.port.PaymentGateway;
-import com.loopers.payment.app.port.PaymentLookupScheduleRepository;
-import com.loopers.payment.app.port.PaymentTransactionsLookup;
-import com.loopers.payment.domain.LookupBackoff;
-import com.loopers.payment.domain.PaymentRecord;
-import com.loopers.payment.in.PaymentCallbackController;
-import com.loopers.payment.out.CircuitBreakingPaymentGateway;
-import com.loopers.payment.out.PaymentAnomalyJpaEntity;
-import com.loopers.payment.out.PaymentAnomalyPersistenceAdapter;
-import com.loopers.payment.out.PaymentCircuitBreakers;
-import com.loopers.payment.out.PaymentLookupScheduleJpaEntity;
-import com.loopers.payment.out.TestPgPaymentGateway;
+import com.loopers.domains.order.app.PaymentLookupAssessment;
+import com.loopers.domains.order.in.PaymentLookupScheduler;
+import com.loopers.domains.payment.app.PaymentGatewayRegistry;
+import com.loopers.domains.payment.app.PaymentLookupPolicy;
+import com.loopers.domains.payment.app.port.PaymentAnomalyRepository;
+import com.loopers.domains.payment.app.port.PaymentCreateResult;
+import com.loopers.domains.payment.app.port.PaymentGateway;
+import com.loopers.domains.payment.app.port.PaymentLookupScheduleRepository;
+import com.loopers.domains.payment.app.port.PaymentTransactionsLookup;
+import com.loopers.domains.payment.domain.LookupBackoff;
+import com.loopers.domains.payment.domain.PaymentRecord;
+import com.loopers.domains.payment.in.PaymentCallbackController;
+import com.loopers.domains.payment.out.CircuitBreakingPaymentGateway;
+import com.loopers.domains.payment.out.PaymentAnomalyJpaEntity;
+import com.loopers.domains.payment.out.PaymentAnomalyPersistenceAdapter;
+import com.loopers.domains.payment.out.PaymentCircuitBreakers;
+import com.loopers.domains.payment.out.PaymentLookupScheduleJpaEntity;
+import com.loopers.domains.payment.out.TestPgPaymentGateway;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
@@ -31,19 +31,19 @@ import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPac
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static org.assertj.core.api.Assertions.assertThat;
 
-// 패키지는 업무 먼저 com.loopers.{context}.{in,app,domain,out}이다. (*)에는 common도 들어가 common.in·common.domain이 같은 규칙을 받는다.
+// 업무 패키지는 com.loopers.domains.{context}.{in,app,domain,out}이다. common은 이 패턴에 들지 않아 규칙 1~5와 기술 규칙을 받지 않는다(common 규칙은 따로 둔다).
 // 규칙은 패키지 이름 패턴으로 계층을 가리므로, 이름이 틀린 클래스는 조용히 빠진다. 그래서 규칙 6이 검사 대상이 실제로 있는지 따로 본다.
-// com.loopers.domain.BaseEntity(modules/jpa)는 패턴 com.loopers.(*).domain..과 맞지 않아 따로 제외할 필요가 없다.
+// com.loopers.domain.BaseEntity(modules/jpa)는 패턴 com.loopers.domains.(*).domain..과 맞지 않아 따로 제외할 필요가 없다.
 class ArchitectureTest {
     private static final JavaClasses CLASSES = new ClassFileImporter()
         .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
         .importPackages("com.loopers");
 
-    private static final String IN = "com.loopers.(*).in..";
-    private static final String APP = "com.loopers.(*).app..";
-    private static final String APP_PORT = "com.loopers.(*).app.port..";
-    private static final String DOMAIN = "com.loopers.(*).domain..";
-    private static final String OUT = "com.loopers.(*).out..";
+    private static final String IN = "com.loopers.domains.(*).in..";
+    private static final String APP = "com.loopers.domains.(*).app..";
+    private static final String APP_PORT = "com.loopers.domains.(*).app.port..";
+    private static final String DOMAIN = "com.loopers.domains.(*).domain..";
+    private static final String OUT = "com.loopers.domains.(*).out..";
 
     // 규칙 1: 업무 규칙이 입출력·저장 방식에 끌려 바뀌지 않게 domain은 바깥 계층을 모른다.
     @Test
@@ -127,7 +127,7 @@ class ArchitectureTest {
             "order", List.of("in", "app", "domain", "out"));
 
         layers.forEach((context, contextLayers) -> contextLayers.forEach(layer -> {
-            String layerPackage = "com.loopers." + context + "." + layer + "..";
+            String layerPackage = "com.loopers.domains." + context + "." + layer + "..";
             String rulePattern = switch (layer) {
                 case "in" -> IN;
                 case "app" -> APP;
