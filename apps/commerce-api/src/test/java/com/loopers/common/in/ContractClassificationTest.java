@@ -1,10 +1,10 @@
 package com.loopers.common.in;
 
+import com.loopers.common.in.error.ErrorType;
 import com.loopers.domains.brand.app.BrandApplicationService;
 import com.loopers.domains.brand.in.BrandController;
 import com.loopers.domains.user.out.UserJpaEntity;
 import com.loopers.domains.user.out.UserJpaRepository;
-import com.loopers.support.error.ErrorType;
 import com.loopers.utils.DatabaseCleanUp;
 import java.util.function.Function;
 import org.junit.jupiter.api.AfterEach;

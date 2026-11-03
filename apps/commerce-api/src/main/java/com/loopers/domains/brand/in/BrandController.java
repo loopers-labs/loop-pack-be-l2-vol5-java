@@ -1,12 +1,12 @@
 package com.loopers.domains.brand.in;
 
 import com.loopers.common.in.ApiResponse;
+import com.loopers.common.in.error.CoreException;
+import com.loopers.common.in.error.ErrorType;
 import com.loopers.domains.brand.app.BrandApplicationService;
 import com.loopers.domains.brand.app.BrandNotFoundException;
 import com.loopers.domains.brand.app.BrandResult;
 import com.loopers.domains.user.app.UserIdentificationService;
-import com.loopers.support.error.CoreException;
-import com.loopers.support.error.ErrorType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;

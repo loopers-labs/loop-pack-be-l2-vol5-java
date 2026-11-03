@@ -1,8 +1,8 @@
 package com.loopers.common.in;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.loopers.support.error.CoreException;
-import com.loopers.support.error.ErrorType;
+import com.loopers.common.in.error.CoreException;
+import com.loopers.common.in.error.ErrorType;
 
 public final class RequestValues {
     private RequestValues() { }

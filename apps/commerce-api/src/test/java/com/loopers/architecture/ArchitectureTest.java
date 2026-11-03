@@ -91,14 +91,14 @@ class ArchitectureTest {
     }
 
     // domain은 순수 Java로 둔다. common.error는 여러 계층이 함께 쓰는 규칙 위반 신호라 허용하고,
-    // support.error는 starter의 HTTP 응답용 CoreException이라 domain에서 쓰지 않는다.
+    // common.in.error는 HTTP 응답용 CoreException(옛 starter support.error)이라 domain에서 쓰지 않는다.
     @Test
-    @DisplayName("domain은 Spring·JPA·HTTP·servlet·support.error에 의존하지 않는다")
+    @DisplayName("domain은 Spring·JPA·HTTP·servlet·common.in.error에 의존하지 않는다")
     void domainRemainsIndependent() {
         noClasses().that().resideInAPackage(DOMAIN)
             .should().dependOnClassesThat()
             .resideInAnyPackage("org.springframework..", "jakarta.persistence..", "javax.persistence..",
-                "jakarta.servlet..", "java.net.http..", "com.loopers.support.error..")
+                "jakarta.servlet..", "java.net.http..", "com.loopers.common.in.error..")
             .check(CLASSES);
     }
 
