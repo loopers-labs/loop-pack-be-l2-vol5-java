@@ -2,13 +2,13 @@ package com.loopers.domains.order.in;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.loopers.common.in.ApiResponse;
-import com.loopers.common.in.CustomerIdentity;
 import com.loopers.common.in.RequestValues;
 import com.loopers.common.in.error.CoreException;
 import com.loopers.common.in.error.ErrorType;
 import com.loopers.domains.order.app.ConfirmCommand;
 import com.loopers.domains.order.app.OrderApplicationService;
 import com.loopers.domains.order.app.OrderResult;
+import com.loopers.domains.user.in.CustomerIdentity;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;

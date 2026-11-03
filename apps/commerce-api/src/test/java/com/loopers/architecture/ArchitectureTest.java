@@ -18,9 +18,13 @@ import com.loopers.domains.payment.out.PaymentAnomalyPersistenceAdapter;
 import com.loopers.domains.payment.out.PaymentCircuitBreakers;
 import com.loopers.domains.payment.out.PaymentLookupScheduleJpaEntity;
 import com.loopers.domains.payment.out.TestPgPaymentGateway;
+import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
+import com.tngtech.archunit.lang.ArchCondition;
+import com.tngtech.archunit.lang.ConditionEvents;
+import com.tngtech.archunit.lang.SimpleConditionEvent;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
@@ -28,10 +32,12 @@ import org.junit.jupiter.api.Test;
 
 import static com.tngtech.archunit.base.DescribedPredicate.not;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static org.assertj.core.api.Assertions.assertThat;
 
-// 업무 패키지는 com.loopers.domains.{context}.{in,app,domain,out}이다. common은 이 패턴에 들지 않아 규칙 1~5와 기술 규칙을 받지 않는다(common 규칙은 따로 둔다).
+// 업무 패키지는 com.loopers.domains.{context}.{in,app,domain,out,config}이다. common은 이 패턴에 들지 않아 규칙 1~5를 받지 않고,
+// 규칙 8과 common 규칙으로 따로 검사한다.
 // 규칙은 패키지 이름 패턴으로 계층을 가리므로, 이름이 틀린 클래스는 조용히 빠진다. 그래서 규칙 6이 검사 대상이 실제로 있는지 따로 본다.
 // com.loopers.domain.BaseEntity(modules/jpa)는 패턴 com.loopers.domains.(*).domain..과 맞지 않아 따로 제외할 필요가 없다.
 class ArchitectureTest {
@@ -44,6 +50,13 @@ class ArchitectureTest {
     private static final String APP_PORT = "com.loopers.domains.(*).app.port..";
     private static final String DOMAIN = "com.loopers.domains.(*).domain..";
     private static final String OUT = "com.loopers.domains.(*).out..";
+    private static final String CONFIG = "com.loopers.domains.(*).config..";
+    private static final String DOMAINS = "com.loopers.domains..";
+    private static final String COMMON = "com.loopers.common..";
+    private static final String COMMON_DOMAIN = "com.loopers.common.domain..";
+    private static final String COMMON_ERROR = "com.loopers.common.error..";
+    private static final String COMMON_IN = "com.loopers.common.in..";
+    private static final String COMMON_CONFIG = "com.loopers.common.config..";
 
     // 규칙 1: 업무 규칙이 입출력·저장 방식에 끌려 바뀌지 않게 domain은 바깥 계층을 모른다.
     @Test
@@ -90,23 +103,23 @@ class ArchitectureTest {
             .check(CLASSES);
     }
 
-    // domain은 순수 Java로 둔다. common.error는 여러 계층이 함께 쓰는 규칙 위반 신호라 허용하고,
+    // domain(업무 domain과 common.domain)은 순수 Java로 둔다. common.error는 여러 계층이 함께 쓰는 규칙 위반 신호라 허용하고,
     // common.in.error는 HTTP 응답용 CoreException(옛 starter support.error)이라 domain에서 쓰지 않는다.
     @Test
-    @DisplayName("domain은 Spring·JPA·HTTP·servlet·common.in.error에 의존하지 않는다")
+    @DisplayName("domain과 common.domain은 Spring·JPA·HTTP·servlet·common.in.error에 의존하지 않는다")
     void domainRemainsIndependent() {
-        noClasses().that().resideInAPackage(DOMAIN)
+        noClasses().that().resideInAnyPackage(DOMAIN, COMMON_DOMAIN)
             .should().dependOnClassesThat()
             .resideInAnyPackage("org.springframework..", "jakarta.persistence..", "javax.persistence..",
                 "jakarta.servlet..", "java.net.http..", "com.loopers.common.in.error..")
             .check(CLASSES);
     }
 
-    // HTTP 클라이언트·JSON·서킷 브레이커는 out의 구현 세부다. app·domain에 새면 외부 연동 방식이 업무 코드로 번진다.
+    // HTTP 클라이언트·JSON·서킷 브레이커는 out의 구현 세부다. app·domain과 공통 값·예외(common.domain·common.error)에 새면 외부 연동 방식이 업무 코드로 번진다.
     @Test
-    @DisplayName("app과 domain은 HTTP 클라이언트·네트워크·JSON·Resilience4j 타입에 의존하지 않는다")
+    @DisplayName("app·domain·common.domain·common.error는 HTTP 클라이언트·네트워크·JSON·Resilience4j 타입에 의존하지 않는다")
     void coreLayersDoNotUseHttpClients() {
-        noClasses().that().resideInAnyPackage(APP, DOMAIN)
+        noClasses().that().resideInAnyPackage(APP, DOMAIN, COMMON_DOMAIN, COMMON_ERROR)
             .should().dependOnClassesThat()
             .resideInAnyPackage("java.net..", "org.springframework.web..", "org.springframework.http..",
                 "com.fasterxml.jackson..", "io.github.resilience4j..")
@@ -139,6 +152,54 @@ class ArchitectureTest {
             // 규칙 1~5가 쓰는 패턴 상수의 오타를 막는다. 패턴이 틀리면 이 계층 클래스가 규칙에서 빠져 크기가 달라진다.
             assertThat(found.that(resideInAPackage(rulePattern))).as(layerPackage + " → " + rulePattern).hasSameSizeAs(found);
         }));
+        for (String context : List.of("payment", "order")) {
+            String configPackage = "com.loopers.domains." + context + ".config..";
+            JavaClasses found = CLASSES.that(resideInAPackage(configPackage));
+            assertThat(found).as(configPackage + " 클래스").isNotEmpty();
+            assertThat(found.that(resideInAPackage(CONFIG))).as(configPackage + " → " + CONFIG).hasSameSizeAs(found);
+        }
+        for (String commonPackage : List.of(COMMON_DOMAIN, COMMON_ERROR, COMMON_IN, "com.loopers.common.in.error..", COMMON_CONFIG)) {
+            JavaClasses found = CLASSES.that(resideInAPackage(commonPackage));
+            assertThat(found).as(commonPackage + " 클래스").isNotEmpty();
+            assertThat(found.that(resideInAPackage(COMMON))).as(commonPackage + " → " + COMMON).hasSameSizeAs(found);
+        }
+    }
+
+    // 규칙 7(a): 업무 config는 그 업무의 배치도다. 다른 업무의 클래스를 엮으면 업무 사이 결합이 조립 지점에 숨어 경계 정리 때 보이지 않는다.
+    // 업무 목록을 따로 두지 않고 패키지 이름에서 업무를 읽어, 새 업무의 config도 자동으로 검사한다.
+    @Test
+    @DisplayName("업무 config는 자기 업무 밖의 domains 패키지에 의존하지 않는다")
+    void configKnowsOwnContextOnly() {
+        classes().that().resideInAPackage(CONFIG)
+            .should(dependOnOwnContextOnly())
+            .check(CLASSES);
+    }
+
+    // 규칙 7(b): 조립은 바깥에서 한다. in·app·domain·out이 config를 알면 조립 방식이 바뀔 때 업무 코드가 따라 바뀐다.
+    @Test
+    @DisplayName("in·app·domain·out은 업무 config와 common.config에 의존하지 않는다")
+    void layersDoNotKnowConfig() {
+        noClasses().that().resideInAnyPackage(IN, APP, DOMAIN, OUT)
+            .should().dependOnClassesThat().resideInAnyPackage(CONFIG, COMMON_CONFIG)
+            .check(CLASSES);
+    }
+
+    // 규칙 8: common은 여러 업무가 함께 쓰는 바닥이다. common이 특정 업무를 알면 업무를 추가·삭제할 때 common이 따라 바뀐다.
+    @Test
+    @DisplayName("common은 domains에 의존하지 않는다")
+    void commonDoesNotKnowDomains() {
+        noClasses().that().resideInAPackage(COMMON)
+            .should().dependOnClassesThat().resideInAPackage(DOMAINS)
+            .check(CLASSES);
+    }
+
+    // 공통 값·예외는 HTTP 공통과 조립보다 아래에 있다. common.domain·common.error가 common.in·common.config를 알면 domain이 그것을 통해 HTTP·조립을 알게 된다.
+    @Test
+    @DisplayName("common.domain과 common.error는 common.in과 common.config에 의존하지 않는다")
+    void commonCoreDoesNotKnowCommonAdapters() {
+        noClasses().that().resideInAnyPackage(COMMON_DOMAIN, COMMON_ERROR)
+            .should().dependOnClassesThat().resideInAnyPackage(COMMON_IN, COMMON_CONFIG)
+            .check(CLASSES);
     }
 
     @Test
@@ -168,5 +229,24 @@ class ArchitectureTest {
         assertThat(out.contain(CircuitBreakingPaymentGateway.class)).isTrue();
         assertThat(out.contain(PaymentCircuitBreakers.class)).isTrue();
         assertThat(app.contain(PaymentTransactionsLookup.NotCalled.class)).isTrue();
+    }
+
+    private static ArchCondition<JavaClass> dependOnOwnContextOnly() {
+        return new ArchCondition<JavaClass>("자기 업무 밖의 domains 패키지에 의존하지 않는다") {
+            @Override
+            public void check(JavaClass item, ConditionEvents events) {
+                String owner = contextOf(item.getPackageName());
+                item.getDirectDependenciesFromSelf().forEach(dependency -> {
+                    String target = dependency.getTargetClass().getPackageName();
+                    if (target.startsWith("com.loopers.domains.") && !contextOf(target).equals(owner)) {
+                        events.add(SimpleConditionEvent.violated(dependency, dependency.getDescription()));
+                    }
+                });
+            }
+        };
+    }
+
+    private static String contextOf(String packageName) {
+        return packageName.split("\\.")[3];
     }
 }

@@ -1,13 +1,13 @@
 package com.loopers.domains.product.in;
 
 import com.loopers.common.in.ApiResponse;
-import com.loopers.common.in.CustomerIdentity;
 import com.loopers.common.in.RequestValues;
 import com.loopers.common.in.error.CoreException;
 import com.loopers.common.in.error.ErrorType;
 import com.loopers.domains.like.app.LikeApplicationService;
 import com.loopers.domains.product.app.CustomerProductResult;
 import com.loopers.domains.product.app.ProductApplicationService;
+import com.loopers.domains.user.in.CustomerIdentity;
 import java.util.List;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;

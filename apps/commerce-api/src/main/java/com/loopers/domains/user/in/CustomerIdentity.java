@@ -1,4 +1,4 @@
-package com.loopers.common.in;
+package com.loopers.domains.user.in;
 
 import com.loopers.common.in.error.CoreException;
 import com.loopers.common.in.error.ErrorType;

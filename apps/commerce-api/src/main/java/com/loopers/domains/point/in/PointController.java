@@ -2,9 +2,9 @@ package com.loopers.domains.point.in;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.loopers.common.in.ApiResponse;
-import com.loopers.common.in.CustomerIdentity;
 import com.loopers.common.in.RequestValues;
 import com.loopers.domains.point.app.PointApplicationService;
+import com.loopers.domains.user.in.CustomerIdentity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;

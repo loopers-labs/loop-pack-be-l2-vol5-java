@@ -1,10 +1,9 @@
 package com.loopers.common.in;
 
 import com.loopers.common.error.InvalidValueException;
+import com.loopers.common.error.NotFoundException;
 import com.loopers.common.error.RuleViolationException;
-import com.loopers.domains.brand.app.BrandNotFoundException;
-import com.loopers.domains.payment.app.PaymentLookupNotCalledException;
-import com.loopers.domains.product.app.ProductNotFoundException;
+import com.loopers.common.error.TemporarilyUnavailableException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.annotation.Order;
 import org.springframework.dao.PessimisticLockingFailureException;
@@ -16,8 +15,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @Order(-1)
 @RestControllerAdvice(basePackages = {"com.loopers.domains.brand.in", "com.loopers.domains.product.in", "com.loopers.domains.point.in", "com.loopers.domains.order.in"})
 public class CommerceExceptionAdvice {
-    @ExceptionHandler({BrandNotFoundException.class, ProductNotFoundException.class, com.loopers.domains.order.app.OrderNotFoundException.class})
-    public ResponseEntity<ApiResponse<Object>> notFound(RuntimeException exception) {
+    @ExceptionHandler(NotFoundException.class)
+    public ResponseEntity<ApiResponse<Object>> notFound(NotFoundException exception) {
         return ResponseEntity.status(404).body(ApiResponse.fail("Not Found", exception.getMessage()));
     }
 
@@ -36,8 +35,8 @@ public class CommerceExceptionAdvice {
         return ResponseEntity.status(409).body(ApiResponse.fail("Conflict", exception.getMessage()));
     }
 
-    @ExceptionHandler(PaymentLookupNotCalledException.class)
-    public ResponseEntity<ApiResponse<Object>> lookupNotCalled(PaymentLookupNotCalledException exception) {
+    @ExceptionHandler(TemporarilyUnavailableException.class)
+    public ResponseEntity<ApiResponse<Object>> unavailable(TemporarilyUnavailableException exception) {
         return ResponseEntity.status(503).body(ApiResponse.fail("Service Unavailable", exception.getMessage()));
     }
 
