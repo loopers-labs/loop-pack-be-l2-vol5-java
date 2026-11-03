@@ -1,4 +1,4 @@
-package com.loopers.config;
+package com.loopers.domains.order.config;
 
 import java.lang.management.ManagementFactory;
 import java.util.concurrent.atomic.AtomicReference;

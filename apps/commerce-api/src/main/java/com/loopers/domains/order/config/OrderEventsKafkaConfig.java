@@ -1,4 +1,4 @@
-package com.loopers.config;
+package com.loopers.domains.order.config;
 
 import com.loopers.confg.kafka.KafkaConfig;
 import java.time.Duration;

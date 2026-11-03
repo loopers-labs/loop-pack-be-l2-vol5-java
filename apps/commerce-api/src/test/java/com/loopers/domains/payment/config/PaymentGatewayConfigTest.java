@@ -1,4 +1,4 @@
-package com.loopers.config;
+package com.loopers.domains.payment.config;
 
 import com.loopers.domains.payment.app.PaymentGatewayRegistry;
 import com.loopers.domains.payment.app.port.PaymentCreateCommand;
