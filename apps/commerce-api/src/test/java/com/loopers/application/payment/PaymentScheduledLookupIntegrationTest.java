@@ -67,6 +67,7 @@ class PaymentScheduledLookupIntegrationTest {
     private final OrderService orderService;
     private final PaymentAttemptRepository paymentAttemptRepository;
     private final PaymentLookupProperties lookupProperties;
+    private final OrderConfirmedPublisher orderConfirmedPublisher;
     private final UserJpaRepository userJpaRepository;
     private final ProductJpaRepository productJpaRepository;
     private final OrderJpaRepository orderJpaRepository;
@@ -87,6 +88,7 @@ class PaymentScheduledLookupIntegrationTest {
         OrderService orderService,
         PaymentAttemptRepository paymentAttemptRepository,
         PaymentLookupProperties lookupProperties,
+        OrderConfirmedPublisher orderConfirmedPublisher,
         UserJpaRepository userJpaRepository,
         ProductJpaRepository productJpaRepository,
         OrderJpaRepository orderJpaRepository,
@@ -95,6 +97,7 @@ class PaymentScheduledLookupIntegrationTest {
         JdbcTemplate jdbcTemplate,
         DatabaseCleanUp databaseCleanUp
     ) {
+        this.orderConfirmedPublisher = orderConfirmedPublisher;
         this.paymentFacade = paymentFacade;
         this.orderFacade = orderFacade;
         this.paymentResultService = paymentResultService;
@@ -387,7 +390,8 @@ class PaymentScheduledLookupIntegrationTest {
         PaymentLookupProperties properties = new PaymentLookupProperties(
             false, Duration.ofSeconds(30), minAge, initialInterval, multiplier, maxInterval, maxLookups);
         return new PaymentFacade(
-            userRepository, orderService, paymentAttemptRepository, paymentResultService, fakePaymentGateway, properties, clock);
+            userRepository, orderService, paymentAttemptRepository, paymentResultService, fakePaymentGateway, properties, clock,
+            orderConfirmedPublisher);
     }
 
     private Long saveUser() {

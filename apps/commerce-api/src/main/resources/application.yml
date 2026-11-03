@@ -21,6 +21,7 @@ spring:
     import:
       - jpa.yml
       - redis.yml
+      - kafka.yml
       - logging.yml
       - monitoring.yml
 
@@ -55,6 +56,11 @@ payment:
       failure-rate-threshold: 50                    # 절반이 실패하면 PG 장애로 본다 (%)
       wait-duration-in-open-state: PT10S            # 스케줄러 주기(30초)보다 짧아 다음 주기에 HALF_OPEN 시험이 가능하다
       permitted-number-of-calls-in-half-open-state: 2  # 한 번의 운으로 닫히지 않게 한다
+
+# 주문 최초 확정 이벤트 발행 (6주차 설계 D6·D7). topic 은 앱이 만들지 않는다 (운영자 생성, 테스트는 AdminClient 로 직접 생성).
+order-events:
+  topic: order-events
+  send-timeout-ms: 3000  # broker 저장 확인(acks=all) 대기 상한. 넘으면 발행 실패로 기록하고 주문 상태는 그대로 둔다
 
 ---
 spring:

@@ -15,12 +15,13 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
       retries: 3
+      acks: all # 결제 확정 이벤트는 유실 방지 우선. 기본값 의존 대신 명시 (6주차 설계 D8)
     consumer:
       group-id: loopers-default-consumer
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-serializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
       properties:
-        enable-auto-commit: false
+        enable.auto.commit: false # Kafka 가 읽는 키 표기. 하이픈 표기는 ConsumerConfig 에 전달되지 않는다
     listener:
       ack-mode: manual
 

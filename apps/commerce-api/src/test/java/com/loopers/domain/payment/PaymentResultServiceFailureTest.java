@@ -122,10 +122,11 @@ class PaymentResultServiceFailureTest {
         assertThat(fakePaymentGateway.createCount()).isZero();
 
         // act 2 - 같은 결과를 다시 적용한다 (create 재발송 없음)
-        boolean applied = paymentResultService.applyFinal(attemptId, success);
+        PaymentApplyResult applied = paymentResultService.applyFinal(attemptId, success);
 
-        // assert 2
-        assertThat(applied).isTrue();
+        // assert 2 - 첫 시도가 전부 되돌아갔으므로 이번이 주문의 최초 확정이다
+        assertThat(applied.applied()).isTrue();
+        assertThat(applied.isFirstConfirmation()).isTrue();
         Order order = orderJpaRepository.findById(orderId).orElseThrow();
         assertThat(order.getStatus()).isEqualTo(Order.OrderStatus.CONFIRMED);
         assertThat(order.getPaidAmount()).isEqualTo(2000L);

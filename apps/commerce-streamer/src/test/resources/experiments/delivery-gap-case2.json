@@ -1,0 +1,20 @@
+{
+  "description": "W6 누락 구간 실험 사례 2(정상 발행)의 실제 broker record. commerce-api OrderConfirmedDeliveryGapTest 가 build/delivery-gap/observation.json 에 남긴 role=delivered 값을 그대로 옮겼다. 고정 clock 2026-09-07T01:00:00.123Z, 품목 상품 1 × 2·상품 2 × 1.",
+  "recordedFrom": {
+    "test": "apps/commerce-api OrderConfirmedDeliveryGapTest.recordsMissingAndDeliveredCases",
+    "topic": "order-events-OrderConfirmedDeliveryGapTest",
+    "partition": 0,
+    "offset": 0
+  },
+  "orderId": 2,
+  "providerOrderId": "LP-ORD-0000000002",
+  "transactionKey": "FAKE-TX-000002",
+  "eventId": "order-confirmed:v1:2",
+  "confirmedAt": "2026-09-07T01:00:00.123Z",
+  "items": [
+    { "productId": 1, "quantity": 2 },
+    { "productId": 2, "quantity": 1 }
+  ],
+  "key": "2",
+  "value": "{\"eventType\":\"OrderConfirmed\",\"schemaVersion\":1,\"eventId\":\"order-confirmed:v1:2\",\"orderId\":2,\"confirmedAt\":\"2026-09-07T01:00:00.123Z\",\"items\":[{\"productId\":1,\"quantity\":2},{\"productId\":2,\"quantity\":1}]}"
+}
