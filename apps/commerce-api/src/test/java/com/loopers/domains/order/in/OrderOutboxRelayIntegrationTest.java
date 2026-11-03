@@ -88,9 +88,9 @@ class OrderOutboxRelayIntegrationTest extends OrderEventsIntegrationSupport {
     }
 
     @Test
-    @DisplayName("R12: send 중 인터럽트를 받아 인터럽트 플래그가 선 채로 돌아오면 relay는 그 플래그를 지우지 않고 회차를 멈춰 다음 행을 보내지 않는다")
+    @DisplayName("R12: send 중 인터럽트를 받아 인터럽트 플래그가 선 채로 돌아오면 relay는 그 플래그를 지우지 않고 그 행을 기록하지 않은 채(PENDING) 회차를 멈춰 다음 행을 보내지 않는다")
     void interruptStopsRoundAndKeepsFlag() {
-        insertPending(1101, NOW.minusSeconds(2));
+        long interrupted = insertPending(1101, NOW.minusSeconds(2));
         long next = insertPending(1102, NOW.minusSeconds(1));
         sender.publishWithoutBroker();
         sender.onSend(() -> Thread.currentThread().interrupt());
@@ -102,6 +102,7 @@ class OrderOutboxRelayIntegrationTest extends OrderEventsIntegrationSupport {
         }
 
         assertThat(interruptedAfterRound).isTrue();
+        assertThat(row(interrupted)).containsEntry("status", "PENDING").containsEntry("attempt_count", 0);
         assertThat(sender.sendCount("1102")).isZero();
         assertThat(row(next)).containsEntry("status", "PENDING").containsEntry("attempt_count", 0);
     }
