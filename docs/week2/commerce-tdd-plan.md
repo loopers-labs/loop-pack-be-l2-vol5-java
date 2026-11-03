@@ -4,6 +4,127 @@
 
 재고·사용자 식별·브랜드·주문 수량 규칙과 API-01~24의 기대값, 작은 기능의 구현 순서를 다룬다. 각 절은 도메인 단위 검증, application·실제 DB 연결, HTTP 완료를 구분한다. 최신 완료 증거와 전체 검사 결과는 [전체 완료 체크리스트](commerce-completion-checklist.md)에 모으고, 실제 Red·Green·Refactor는 기능별 실행 기록에 남긴다. 기존 응답·금액·잠금 정책은 후속 추천 묶음 승인(P08·P12·P13)으로 확정한 선행 계약이다. W5에서 명시한 결제 경계의 변경은 아래 W5 계획을 우선하고, 변경 대상이 아닌 계약은 유지한다.
 
+## W6 주문 확정 이벤트와 구매 활동 TDD 계획
+
+**2026-10-29 첫 모델 증분 당시 범위:** 사용자가 선택한 결정적 eventId(W6-Q01)·after-commit listener(W6-Q02)를 [전체 설계](commerce-erd-draft.md#w6-주문-확정-이벤트와-구매-활동-설계)와 [정책](commerce-policy-decisions.md#w6-이벤트-전달의-선택과-남은-결정)에 반영한다. 이번 증분은 `apps/commerce-api/src/main/java/com/loopers/domain/order/OrderConfirmedEvent.java`와 대응하는 `src/test/java/com/loopers/domain/order/OrderConfirmedEventTest.java`의 순수 모델·단위 검증 범위다. 코드 존재·실행 통과·실제 broker/DB 증거는 각각 구분하며 아래 표는 통과 기록이 아니다.
+
+**같은 날 첫 증분 결과:** [실행 기록](../week6/order-confirmed-event-tdd-log.md)에 Red 1 컴파일 실패, 첫 Green 5개, Red 2의 40개 중 33개 실패, Green 2의 40개 통과와 최종 관련 183개·API Checkstyle 통과를 남겼다. 다음 기대값 표와 후속 통합 실험은 이 실행 범위를 넘겨 완료 처리하지 않는다.
+
+### 첫 순수 이벤트 모델의 기대값
+
+| 사례 | Red에서 고정할 기대값 | 이 검사로 증명하지 않는 것 |
+| --- | --- | --- |
+| 고정 메타데이터·식별 | eventType `OrderConfirmed`, schemaVersion1, 저장 orderId42이면 eventId `order-confirmed:v1:42`, key `42`. 같은 사실 재구성은 동일 식별, 다른 주문은 다른 식별. 생산자 모델 생성 인자의 고정 종류·버전·eventId 불일치 거절 | 수신 parser의 검증·저장 사실과의 충돌 판단, broker 직렬화·partition 배정·send 성공 |
+| 최초 시각 보존 | 저장된 `ZonedDateTime`과 같은 `Instant`, 다른 zone 표현이어도 같은 시점. 모델 생성 때의 clock이나 소비 시각으로 바꾸지 않음 | 실제 TX commit 후 조회한 DB 시각·정밀도와 wire 표현의 일치 |
+| 품목 정규화 | 중복 productId 수량 합산·productId 오름차순·입력 순서 독립, 별도 상품 수량 보존 | 소비자가 임의 순서 JSON을 파싱하고 저장 사실과 비교하는 동작 |
+| 입력 경계 | null/빈 품목·null 원소·최초 시각 누락·양수가 아닌 주문/상품 ID·quantity 거절. 수량 `Integer.MAX_VALUE` 허용, 같은 상품 합산 초과 거절 | 수신 JSON의 잘못된 eventType/schemaVersion·key/payload 불일치 검증 |
+| 불변 스냅샷 | 원본 목록 변경이 이벤트에 영향 없음, 반환 목록 변경 불가, 각 품목 값 불변. 필요한 상품 ID·수량 외 카드·PG 비밀·HMAC·사용자 개인정보 없음 | Kafka JSON 필드·로그의 실제 민감정보 비노출 |
+| 주문에서의 생성 | 저장 식별자를 가진 PG CONFIRMED 주문의 저장 시각·품목을 사용. DRAFT·대기·실패·POINT·미저장 주문과 확정 금액/예약 소비가 일관되지 않은 상태 거절 | PG SUCCESS 권위 조회·최초 전이 판단·한 번만 등록·실제 commit |
+| 상태 보존 | 모델 생성으로 원본 주문·예약·금액·confirmedAt을 바꾸지 않음. 기존 품목의 상품 ID 접근만 사용하고 현재 상품 상세·가격·삭제 상태를 재조회하지 않음 | 실제 DB 조회 수, 삭제 상품을 포함한 consumer 저장·공개 API 비노출 회귀 |
+
+실패 기대값을 먼저 고정하고 최소 구현 뒤 정규화·불변성의 중복을 정리한다. 이 모델은 API 생산자용이므로 외부 이벤트의 임의 eventId·버전·key를 받는 parser를 이번 테스트에 억지로 포함하지 않는다. 관련 주문/예약 모델 회귀·API ArchUnit·Checkstyle을 실행한 실제 명령·건수·실패/오류/skip·종료 결과는 실행 기록에 남긴다. 단위 테스트가 통과해도 W6-C01~03·06의 전체 충족으로 표시하지 않는다.
+
+### after-commit 발행 연결 증분
+
+사용자는 Q05의 완료를 기다리지 않는 future callback 관찰을 선택했다. 실제 MySQL의 REQUIRED 참여·flush 후 rollback·동시 성공·비성공/POINT 제외·발행 포트 실패 보존 **12개를 먼저 검증**했다. Kafka adapter의 즉시/완료 후 실패·뒤늦은 성공 metadata 관찰, 실제 로컬 PG HTTP 세 진입점 → DB commit → 격리 broker의 key/JSON/metadata, 통제된 send 직전 누락과 실효 producer 설정·없는 topic의 실제 metadata timeout까지 검증했다. 선택 이유·timeout 초기값·비교 대안은 [Q05/Q06 정책](commerce-policy-decisions.md#w6-q05--응답-대기와-전송-결과-관찰), 실제 Red/Green과 당시 **47개 스위트·862개 통과**(발행 증분 신규 23개 포함, 실패·오류·skip 0), API Checkstyle main/test 위반 0을 [발행 기록](../week6/order-confirmed-publication-tdd-log.md)에 남긴다.
+
+API producer에만 `spring-kafka`를 연결하며 기존 streamer batch factory를 전역 변경하지 않는다. 일반 회귀는 테스트 설정으로 발행을 끄고, W6 실제 broker 테스트는 자신의 컨테이너·topic·group·bootstrap으로 명시적으로 켠다. 이 증분은 소비 완료 DB·실제 offset 재전달·group assignment·W7 소비완료 사례를 대신하지 않는다.
+
+### 공통 DomainEvent 발행 TDD 증분
+
+2026-10-30 사용자 요청은 주문 전용 listener·포트를 공통화하면서 기존 W6 계약을 보존하는 리팩터링이다. 먼저 공통 경로와 두 번째 합성 이벤트의 실패 기대값을 추가하고, 최소 구현 후 기존 주문 통합 테스트를 공통 포트·adapter로 옮겼다. 구현 범위는 `domain/event`의 `DomainEvent`·`DomainEventPublisher`, `OrderConfirmedEvent`의 계약 구현, `application/event/DomainEventListener`, `infrastructure/event`의 공통 publisher·설정·타입별 route다.
+
+공통 클래스 미존재의 컴파일 실패 뒤, 이름만 공통화하고 listener 인자를 주문 타입으로 남겼을 때 합성 이벤트가 발행되지 않아 테스트 2개가 실패했다. `DomainEvent` 수신으로 바꾼 뒤 공통 검사 20개가 통과했다. 이 중 기존 adapter 5개를 이관했으므로 순증 신규는 15개다. 실제 Red/Green·수정 파일·실행 명령·관련 검사 건수는 [공통 발행 TDD 기록](../week6/common-domain-event-publication-tdd-log.md)에 남겼으며 선행 862개를 이번 통과 수로 재사용하지 않는다.
+
+| 범위 | 유지·추가하여 확인한 기대값 |
+| --- | --- |
+| 공통 commit 경계 | 주문 이벤트와 두 번째 합성 `DomainEvent`가 같은 listener를 통과한다. commit 전·rollback·TX 없음은 발행 0, 실제 commit 뒤 1회. 표시하지 않은 로컬 이벤트는 외부 발행 0 |
+| 발행 대상·route | 정확한 이벤트 타입에 등록한 topic·enabled만 사용. 두 이벤트의 목적지 구분, 비활성 send 0, 미등록 타입의 send 0·실패 노출, 중복 타입 등록 거절 |
+| 반환·오류 관찰 | 미완료 future에서 기다리지 않고 반환한 뒤 성공 metadata/실패 종류 기록. 동기 send·포트 예외도 확정 결과 보존. payload·예외 원문 비노출·추가 send 0 |
+| 주문 wire·설정 회귀 | 실제 serializer/broker의 기존 6개 JSON 필드·ISO 시각·type header 없음·key/eventId/품목 보존. 기존 topic/enabled와 producer 초기값 유지 |
+| PG·구매 활동 회귀 | confirm/callback/reconcile 최초 전이·반복 미발행, SQL 후 rollback·POINT 보존. 고정 Clock 정상 소비·send 직전 누락의 실제 broker/별도 streamer DB·재요청 불변 유지 |
+| 의존·정적 검사 | API/streamer ArchUnit과 영향 범위 Checkstyle의 실제 결과 기록. 기존 검사·기대값을 삭제하거나 완화하지 않음 |
+
+합성 두 번째 이벤트는 공통 경로의 확장 검증용이다. 회원가입 등 업무 구현·추가 DDL·Outbox·랭킹은 포함하지 않는다. 공통 검사와 실제 PG/DB/Kafka·고정 Clock 회귀를 각각 실행했고 양 앱 ArchUnit·관련 Checkstyle도 확인했다. 공통 검사만으로 전체 흐름 통과를 대신하지 않는다.
+
+### 구매 활동 소비 TDD 증분
+
+사용자는 Q03의 두 테이블·필드 비교와 Q04의 실패 중단·같은 group 재시작을 선택했다. parser/모델 → 실제 MySQL 공동 저장 → listener/실제 Kafka 실패·재시작 순으로 Red/Green을 기록한다. 사용자 DB에 접속하지 않고 전용 Testcontainers MySQL에 수동 DDL을 적용한 뒤 JPA validate로 검사한다. 명령·실행 건수·결과는 [구매 활동 소비 TDD 기록](../week6/purchase-activity-consumer-tdd-log.md)이 기준이다.
+
+| 범위 | 기대값·확인 방법 |
+| --- | --- |
+| 수신 모델·parser | 종류/버전·양수 ID/수량·정수 타입/범위·key/orderId 일치, JSON 중복 키·뒤따르는 문서 거절. 품목 순서·중복 productId 정규화, Instant nano·eventId 문자 보존. 예외/로그에 원문 미포함 |
+| 실제 저장·중복/충돌 | 완료 1건·모든 상품별 활동, 같은 사실 재전달 시 불변, 다른 주문은 별도 누적. 같은 eventId/orderId의 다른 사실·나노초 차이는 충돌. 실제 독립 연결 동시 중복은 한 효과 |
+| 실패와 TX 경계 | 첫 품목 SQL 뒤 실패를 주입해 완료/전체 활동 rollback, 오류 제거 후 재처리 성공. 완료 유일 제약만 rollback 후 별도 TX로 비교하고 다른 DB 오류는 전파. 외부 TX에서 handler 호출 거절 |
+| 실제 listener·offset | 정상/중복은 DB 완료 뒤 ack. 저장 실패는 실제 error handler로 중단·offset 미진행, 같은 group 재시작으로 같은 record 재처리·저장·ack. mock ack 검사는 이 실험을 대신하지 않음 |
+| 실행 설정·자원 | 전용 record factory의 실효 auto commit/ack·동기 commit·fetch, 동일 bootstrap·local ddl validate 확인. streamer 자체 ArchUnit·Checkstyle, 유한 대기와 소유한 자원 정리 |
+
+이 소비 증분의 DB 실패 후 재시작은 C07이다. **DB 저장은 성공했지만 ack 전에 종료되는 C05**는 [후속 재전달 TDD 기록](../week6/purchase-activity-offset-redelivery-tdd-log.md)에서 별도로 검증했다. 실제 parser·handler의 APPLIED 뒤 첫 consumer를 닫고 같은 broker/topic/group/DB의 새 consumer가 seek/reset 없이 같은 record를 받는다. DUPLICATE 뒤 두 테이블의 PK·전체 필드가 그대로이며 실제 committed offset은 n→n→n+1이다. 첫 배정 poll이 메시지를 받아 버리지 않도록 pause 후 준비하고, 새 물리 JDBC 연결로 commit된 결과를 확인한다. 생산 코드는 변경하지 않았다. 당시 후속이었던 Kafka 배정·정상 PG→streamer 전체 경로·발행 누락의 소비 DB 대조·고정 Clock 재현은 아래 증분으로 검증했다. 당시 커밋 금지로 남았던 C09의 실제 W6 구현 commit 연결은 [2026-10-30 재검증](../week6/fixed-clock-w7-reproduction.md#2026-10-30-c09-revision-연결과-재검증)으로 완료했다.
+
+### Kafka 배정·key 매핑 검증 증분
+
+DB·Spring 없이 전용 Testcontainers Kafka의 고유 probe topic/group을 쓰는 `KafkaGroupAssignmentIntegrationTest`를 추가했다. consumer별 단일 worker가 계속 poll하고, broker STABLE/member 수·실제 배정과 worker의 member ID·generation·배정이 연속 일치하며 poll 횟수가 증가한 뒤 단계별 probe를 보낸다. 각 partition의 담당은 한 명이고 consumer 3명일 때 한 명은 무배정이다. 매 단계 두 partition의 실제 수신자·위치·내용·committed offset을 확인하고, 별도 key 실험에서는 partition을 producer가 고르게 하여 같은 key의 metadata를 비교한다. 운영 코드·설정은 변경하지 않았으며 실제 결과와 테스트 먼저 작성한 과정·검사 범위·자원 정리는 [배정 TDD 기록](../week6/kafka-group-assignment-tdd-log.md)을 따른다. 선행 전체 회귀 수와 이번 검사를 합산하거나 재실행한 것으로 표시하지 않는다.
+
+### 정상 PG→구매 활동 전체 흐름 증분
+
+`PgOrderPurchaseActivityEndToEndTest`는 실제 주문 생성·confirm HTTP, 로컬 PG fixture, API DB commit, Kafka, 별도 production streamer JVM의 listener와 전용 MySQL을 한 경로로 검증한다. 두 앱의 JPA/설정 스캔을 섞지 않고 테스트 실행 설정으로만 streamer main classpath·원본 DDL 경로를 전달한다. 실제 Red/Green·명령·검사 건수·사건 값·자원 정리는 [정상 전체 흐름 기록](../week6/normal-pg-purchase-activity-e2e-tdd-log.md)을 따른다.
+
+| 경계 | 기대값·실제 대조 |
+| --- | --- |
+| HTTP·PG·API DB | 주문 생성 201/DRAFT → confirm 200/SUCCESS·PG SUCCESS. PG create/거래 1건, 주문 CONFIRMED·예약 CONSUMED, 정확한 재고 감소·포인트 불변 |
+| Kafka 전달 | 실제 send 위치와 wire의 key·stable eventId·최초 저장 시각·정규화 상품 수량을 확인. 카드·HMAC·불필요한 결제 식별 정보 제외 |
+| 실제 streamer 저장·ack | 별도 JVM이 실제 group에 참여해 두 partition을 배정받음. 완료 1건·활동 2건의 주문/상품/수량/시각이 API 저장 사실과 일치하고 실제 committed offset은 record offset+1 |
+| 같은 confirm 재요청 | 저장 응답·구매 활동 PK/전체 필드·재고/포인트 불변, PG create/거래 1건·broker record 1건 유지 |
+
+이 정상 경로 실험의 범위를 후속 발행 누락·고정 Clock 실험과 구분한다. 이 정상 증분에서는 운영 코드·사용자 DB·기존 topic/group을 변경하지 않았다. 최신 C09 준비 상태는 아래 고정 Clock 증분을 따른다.
+
+### commit 뒤 send 직전 누락 전체 흐름 증분
+
+`PgOrderPurchaseActivityEndToEndTest`의 정상 양성 대조와 기존 기대값을 유지한 채 두 번째 주문의 발행 실패 경로를 추가했다. 정상 소비가 확인된 같은 Kafka·별도 production streamer JVM/DB를 계속 사용하고, 두 번째 주문만 실제 commit 후 publisher의 send 직전에 예외를 주입한다. 실제 실행 명령·검사 범위·사건 값·한계는 [발행 누락 전체 흐름 기록](../week6/pre-send-failure-e2e-tdd-log.md)을 따른다.
+
+| 경계 | 기대값·실제 대조 |
+| --- | --- |
+| 실패 주입 시점 | 발행 호출 안에서 `REQUIRES_NEW`로 새 DB 연결을 열어 CONFIRMED·CONSUMED와 최초 confirmedAt을 조회. 원래 확정 연결과 다른 connection ID로 commit 이후임을 확인 |
+| 주문·재고·포인트 | confirm은 저장된 성공 결과를 반환. 실패 직전 snapshot과 이후 조회에서 확정·예약·품목·재고·포인트·최초 시각 일치 |
+| broker·실제 streamer DB | endOffsets 불변·누락 대상 record/완료/활동 0. 실제 streamer 생존과 앞선 정상 주문의 완료/활동 PK·필드·committed offset 불변을 함께 확인 |
+| confirm·callback·reconcile 재요청 | 기존 결과·snapshot 유지, 누락 대상의 PG create 최초 1회 유지·추가 발행 0. 누락 복구를 위해 결제를 다시 만들거나 주문을 FAILED/UNKNOWN으로 바꾸지 않음 |
+
+C08의 통제된 send 직전 누락을 검증했으며, 일반 send 오류나 OS 강제 종료의 모든 결과로 확대하지 않는다. 이 누락 증분에서는 생산 코드·TX·락을 변경하지 않았다. 이후 고정 Clock 연결은 다음 증분으로 구분한다.
+
+### 고정 Clock·W7 두 사례 재현 증분
+
+정상 소비·누락 사례의 저장 시각을 반복 실행마다 같게 대조하도록 E2E에서 전용 `orderPaymentClock`을 `Clock.fixed`로 바꾸는 기대값을 먼저 추가했다. 고정 시각이 저장되지 않는 실패를 확인한 뒤, 운영 기본 `Clock.systemUTC()` bean과 주문 결제 서비스의 생성자 주입을 연결했다. 적용은 발송 시작과 PG 최초 확정의 시각 생성 두 곳으로 제한한다. Red/Green·관련 회귀·검사 건수·실제 두 사례·재현 명령·정리 방법은 [고정 Clock·W7 재현 가이드](../week6/fixed-clock-w7-reproduction.md)를 따른다.
+
+| 확인할 것 | 기대값·대조 |
+| --- | --- |
+| 정상 소비의 시각 | 발송 시작·최초 확정이 `2026-10-29T00:00:00.123456Z`. 저장된 confirmedAt과 Kafka 이벤트·streamer 구매 활동의 시각 일치 |
+| 누락 사례의 시각 | 같은 고정 시각으로 발송·확정되고, send 직전 실패와 confirm/callback/reconcile 재요청 뒤에도 시각·상태·재고·포인트 불변 |
+| 기존 전달 경계 | 정상 완료/활동·ack, 누락 대상 record/완료/활동 0과 추가 PG 생성/발행 0 등 기존 기대값 유지 |
+| 시계 적용 범위 | 저장용 전용 Clock만 주입. PG timeout·대기 예산·회로·단조 시간·JPA 감사 시각·로그·Kafka 시계와 TX·락 유지 |
+
+고정 Clock·두 사례의 재현 코드/명령·실제 사건 값을 준비한 뒤, 2026-10-30 기존 W6 구현 commit `dd86f49a9edf7a7ccdfc672be3f708f0f4a3ddd1`을 연결했다. 실행 HEAD와 구현·테스트·실행 설정이 동일함을 확인하고 두 사례 E2E 1개를 다시 실행했다(실패·오류·skip 0). [C09 재검증 기록](../week6/fixed-clock-w7-reproduction.md#2026-10-30-c09-revision-연결과-재검증)에 새 사건 값·명령·정리를 남겨 인계를 완료했다. 선행 미커밋 실행과 이번 실행의 증거는 구분하며, C11 최종 정합성 대조와 제출은 후속이다.
+
+### 연결 경계별 검증과 남은 실험
+
+생산자 관찰·fixture는 W6-Q05/Q06, 소비 저장과 listener는 선택한 Q03/Q04를 따른다. 아래는 단계별 기대값을 보존한 표이며 각 항목의 현재 실행 상태는 W6 체크리스트와 증분 기록으로 확인한다.
+
+| 범위·영향 파일 | 별도 실제 증거 | 공식 항목 |
+| --- | --- | --- |
+| Kafka fixture·producer/consumer/admin 설정·parser | 같은 실제 bootstrap, String key와 payload 직렬화 호환, 실효 auto commit false, 잘못된 버전/타입·key와 payload orderId 불일치 거절. bounded 준비·종료 | C03·10·11 |
+| 공통 PG 결과 적용·after-commit listener·발행 adapter | 실제 최초 commit 뒤 send, SQL 실행 후 rollback에서는 send0, 대기/실패/중복 callback·reconcile/POINT의 새 발행0. 저장 최초 시각·품목과 payload 일치 | C01~03 |
+| 발행 누락 hook·send 실패 | 실제 확정 commit 후 전송 전 hook 중단 또는 broker 미기록이 확인되는 실패로 누락을 재현하고 CONFIRMED·CONSUMED 보존·record/활동 없음 확인. 일반 send 오류만으로 미기록을 단정하지 않음. 주문 저장 응답 유지·PG create 추가0 | C08 |
+| streamer 완료 기록·구매 활동 handler·저장소·DDL | 같은 사실 no-op, 같은 eventId의 다른 주문/수량/시각 및 같은 orderId의 다른 eventId/사실 충돌. 실제 DB 유일 제약의 동시 소비·중간 품목 SQL 실패 시 전체 rollback | C03·06 |
+| 실제 partition/group 실험 | partition2에서 consumer1→2→3의 안정된 assignment, 두 partition 읽기, 고정 partition 수에서 같은 key의 send metadata 비교. 다른 key가 반드시 다른 partition이라는 기대값은 두지 않음 | C04·10 |
+| DB commit 뒤 offset 공백 실험 | 실제 target offset n 확보 → committed n → DB commit → n+1 미요청 종료 → 같은 group 새 consumer에서 seek/reset 없이 동일 n 재전달 → 같은 효과 유지·n+1 commit | C05 |
+| 실제 Spring listener 실패·재시작 | DB commit 전 오류로 완료 기록·모든 품목 rollback, 실패 record를 지나가지 않은 실제 committed offset·오류 노출, 원인 제거 후 같은 group 재시작·재전달·저장·ack | C07 |
+| W7 인계 두 사례·관련 회귀 | 기존 주문 API/PG 경로의 미발행1·정상 소비1의 실제 사건 ID·시각·품목·결과와 사용 W6 revision/재현 코드, 자원 정리. PG/POINT·예약·권한·삭제 회귀와 두 앱의 실제 lint·계층 검사 범위 | C09·11 |
+
+mock ack 횟수나 handler 두 번 호출은 실제 offset 재전달·Spring listener 실험을 대신하지 않는다. position과 committed offset, broker send 성공과 DB 효과를 따로 관찰한다. 실패 handler의 재시도 소진·recover·ackAfterHandle 등 최종 동작까지 확인하며 `commitRecovered=false` 하나를 전체 commit 차단 증거로 삼지 않는다. API ArchUnit의 통과를 별도 streamer 검사로 이어받지 않는다.
+
+발행 누락·정상 소비 두 사례는 W6 직접 발행 경로로 만들고 카드·비밀을 제외한 실제 사건 사실을 남긴다. W7의 Outbox 실행 뒤 행을 지워 누락을 만들지 않고 임시 DB를 계속 유지하지 않는다. 테스트가 만든 consumer·컨테이너·topic/group만 정리하며 사용자 DB·다른 실행의 자원은 삭제하지 않는다. 원문의 AI 반례 검토인 commit 전 중단·예외 삼킴·같은 ID의 다른 수량은 위 DB 원자성·실제 listener·충돌 사례에 연결한다.
+
+최종 진행 판정은 [W6 구현·검증 체크리스트](../week6/implementation-checklist.md)의 새 11개 항목에 실행 증거를 연결한다. 아래 W5·W2~W4 기록은 회귀 근거로 보존하며 W6 실행 성공 수로 재사용하지 않는다.
+
 ## W5 PG 결제 TDD 계획
 
 **2026-10-23 현재 상태: 고객 confirm·주문 조회의 PG 연결과 최초 요청의 제한 조회·조회 회로 연결.** 고객 confirm은 신규 지문 공동 저장·동일 재요청 비교에 이어 TX A → TX 밖 PG → TX B를 사용하고, 고객·관리자 조회는 저장된 주문·결제 상태를 함께 읽는다. 최초 발송 실행만 요청 진입부터 180초 목표/175초 외부 예산·최대 12회 조회를 사용하며 동일 재요청은 긴 루프를 만들지 않는다. **callback·수동 reconcile HTTP도 연결했으며, 실제 요청의 180초 하드 상한이나 5초 내 DB 커밋 보장을 주장하지 않는다.** 이번 검증 결과와 한계는 [복구 API TDD 기록](../week5/payment-recovery-api-tdd-log.md)을 따른다. [고객 결제 API TDD 기록](../week5/customer-payment-api-tdd-log.md)은 선행 confirm·조회 증거로 보존한다.

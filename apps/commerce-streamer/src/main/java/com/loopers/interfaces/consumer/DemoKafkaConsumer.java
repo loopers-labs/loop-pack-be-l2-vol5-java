@@ -12,7 +12,8 @@ import java.util.List;
 public class DemoKafkaConsumer {
     @KafkaListener(
         topics = {"${demo-kafka.test.topic-name}"},
-        containerFactory = KafkaConfig.BATCH_LISTENER
+        containerFactory = KafkaConfig.BATCH_LISTENER,
+        autoStartup = "${demo-kafka.test.enabled:true}"
     )
     public void demoListener(
         List<ConsumerRecord<Object,Object>> messages,

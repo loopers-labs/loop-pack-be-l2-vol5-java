@@ -1,0 +1,16 @@
+# Import after jpa.yml/kafka.yml: restart must preserve the completion/activity records.
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  kafka:
+    bootstrap-servers: ${BOOTSTRAP_SERVERS:localhost:19092}
+    admin:
+      properties:
+        bootstrap.servers: ${spring.kafka.bootstrap-servers}
+
+commerce:
+  purchase-activity:
+    topic: order-events
+    group-id: purchase-activity
+    auto-startup: true

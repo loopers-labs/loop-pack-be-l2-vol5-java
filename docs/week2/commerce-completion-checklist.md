@@ -2,7 +2,29 @@
 
 [전체 설계](commerce-erd-draft.md) · [API 계약](commerce-api-contract.md) · [정책 선택](commerce-policy-decisions.md) · [TDD 계획](commerce-tdd-plan.md)
 
-W2~W4의 목표는 고객 12개·관리자 13개 API와 관련 도메인·저장·권한·동시성·운영 DDL을 끝까지 연결하고 검증하는 것이었다. 이 문서는 그 완료 증거와 W5 전환의 신규 검증 상태를 구분하며 새 업무 정책을 정하지 않는다. 계약의 상세 기대값은 연결한 원문을 따른다.
+W2~W4의 목표는 고객 12개·관리자 13개 API와 관련 도메인·저장·권한·동시성·운영 DDL을 끝까지 연결하고 검증하는 것이었다. 이 문서는 그 완료 증거와 W5 PG 전환·W6 이벤트 전달의 신규 검증 상태를 구분하며 새 업무 정책을 정하지 않는다. 계약의 상세 기대값은 연결한 원문을 따른다.
+
+## W6 새 점검 기준
+
+**2026-10-27:** 이번 주 과제는 PG 최초 확정 commit 뒤 OrderConfirmed를 Kafka로 직접 발행하고, commerce-streamer에서 상품 구매 활동을 한 번만 저장하는 것이다. [W6 과제 원문](../week6/assignment-original.md)·[학습 원문](../week6/learning-original.md)·[공식 11개 채점 기준](../week6/grading-criteria.md)·[새 구현·검증 체크리스트](../week6/implementation-checklist.md)로 별도 추적한다.
+
+**2026-10-29 08:54 KST 첫 모델 증분:** 사용자가 결정적 eventId와 after-commit listener를 선택했고 기존 전체 설계·정책·API·TDD에 W6를 확장했다. 순수 `OrderConfirmedEvent`와 신규 40개 테스트를 구현해, 주문 모델 회귀·API ArchUnit 포함 **6개 스위트·183개 통과**, 실패·오류·skip 0, API Checkstyle main/test 위반 0을 확인했다. [이벤트 모델 TDD 기록](../week6/order-confirmed-event-tdd-log.md)에 범위·Red/Green·실행 명령을 남긴다.
+
+**2026-10-29 후속 발행 증분:** Q05의 Kafka 완료를 기다리지 않는 callback 관찰을 선택하고 공통 최초 확정 hook·after-commit listener·발행 포트·Kafka adapter를 연결했다. **2026-10-29 09:48 KST 관련 검사: 47개 스위트·862개 통과, 실패·오류·skip 0, API ArchUnit 포함·Checkstyle main/test 위반 0, BUILD SUCCESSFUL·1분 52초·종료 0.** 신규 발행 23개(실제 DB 경계 12·adapter 5·실제 Kafka 6)는 이 합계에 포함한다. 실제 confirm/callback/reconcile·send 직전 누락·실제 metadata timeout·설정 검증과 격리 컨테이너 종료 증거는 [발행 TDD 기록](../week6/order-confirmed-publication-tdd-log.md)을 따른다. 앞선 모델 40개/관련 183개와 단순 합산하지 않으며 전체 check·streamer 검사를 실행한 것으로 표현하지 않는다.
+
+**2026-10-29 후속 소비 증분:** Q03의 두 테이블·필드 비교와 Q04의 실패 중단·같은 group 재시작을 선택했다. streamer 수신 검증·완료/활동 공동 TX·유일 제약 경합·충돌 판별·전용 listener/ack·수동 DDL/validate를 연결했다. 실제 검사 건수·명령·결과는 [구매 활동 소비 TDD 기록](../week6/purchase-activity-consumer-tdd-log.md)에서 확인한다. 당시 후속이었던 DB commit 뒤 offset 공백(C05)·1→2→3 배정·정상 PG→streamer 전체 경로는 아래 증분에서 검증했다. 직접 발행 누락의 소비 DB 대조도 아래 증분에서 검증했다. 당시 후속이었던 W7 두 사례 정식 인계는 아래 C09 기록에 연결하며 W6 전체 완료를 주장하지 않는다. 사용자 DB는 건드리지 않고 W5 결제·예약·POINT·소유권·삭제 계약을 보존한다. Outbox·랭킹 API는 이번에 구현하지 않는다.
+
+**2026-10-29 offset 공백 재전달 증분:** 실제 DB commit 뒤 완료 위치를 넘기지 않고 첫 consumer를 종료한 다음, 같은 broker·topic·group·DB에서 새 consumer가 동일 record를 다시 처리하도록 검증했다. APPLIED→DUPLICATE, 완료 1건·활동 2건의 PK·전체 필드 불변, 실제 committed offset n→n→n+1을 확인했다. [재전달 TDD 기록](../week6/purchase-activity-offset-redelivery-tdd-log.md)에 검사 범위·실제 위치·결과를 보존한다. 생산 코드·사용자 DB는 변경하지 않았고 C07의 DB 실패 실험이나 OS 강제 종료 실험과 구분한다.
+
+**2026-10-29 Kafka 배정 증분:** DB 없는 전용 Kafka probe topic/group에서 consumer 1→2→3의 실제 배정·두 partition의 단계별 수신과 완료 위치를 검증했다. 별도 동일 key 실험은 producer가 선택한 metadata를 비교했다. 운영 코드·설정·사용자 DB·기존 topic/group은 변경하지 않았고, 선행 전체 회귀를 반복하거나 건수를 합산하지 않는다. 이번 신규 실험·ArchUnit·Checkstyle의 실제 실행 결과와 단일 broker 한계·자원 정리는 [Kafka 배정·key 매핑 TDD 기록](../week6/kafka-group-assignment-tdd-log.md)을 따른다. 당시 후속이었던 정상 전체 경로는 다음 증분으로 검증했다.
+
+**2026-10-29 정상 전체 흐름 증분:** 실제 주문 생성·confirm HTTP→로컬 PG 성공→주문 commit→Kafka→별도 production streamer JVM의 구매 활동 DB/ack까지 검증했다. 같은 confirm 재요청에서 결제·발행·재고 효과와 구매 활동 PK/필드가 늘지 않았다. 운영 로직을 바꾸지 않고 테스트 실행 설정만 확장했으며, 최신 관련 회귀·양 앱 ArchUnit·Checkstyle과 실제 사건 값·자원 종료는 [정상 전체 흐름 TDD 기록](../week6/normal-pg-purchase-activity-e2e-tdd-log.md)에 연결한다. 당시 후속이었던 C08 누락 사례의 소비 DB 대조는 다음 증분에서 검증했다. 당시 후속이었던 고정 Clock·재현 준비는 아래 증분으로 연결했다. 당시 남았던 실제 W6 구현 commit 연결은 아래 C09 기록에서 완료했고 최종 대조는 후속이다. 과거 전체 검사 건수와 이번 관련 검사 건수를 합산하지 않는다.
+
+**2026-10-29 commit 뒤 발행 누락 증분:** 정상 소비 양성 대조를 유지하면서 별도 주문의 실제 확정 commit을 독립 DB 연결로 확인한 뒤 send 직전 예외를 주입했다. 확정·예약·재고·포인트·최초 시각 보존, broker endOffsets 불변과 대상 record/완료/활동 0, 실제 streamer 생존·정상 소비 기록 불변을 검증했다. confirm·callback·reconcile을 다시 요청해도 추가 PG 생성·발행과 저장 결과 변경이 없었다. 테스트만 확장했고 실행/UP-TO-DATE를 구분한 관련 검사 범위·실제 사건 사실·자원 종료는 [발행 누락 전체 흐름 TDD 기록](../week6/pre-send-failure-e2e-tdd-log.md)에 연결한다. C08을 검증한 당시 기록이며 이후 고정 Clock·재현 준비는 다음 증분으로 구분한다.
+
+**2026-10-29 고정 Clock·W7 재현 준비 증분:** 주문 결제의 발송 시작·PG 최초 확정에 전용 `orderPaymentClock`을 주입했다. 운영 기본은 `Clock.systemUTC()`이고 E2E는 `2026-10-29T00:00:00.123456Z`로 고정해 정상 소비·발행 누락 두 사례와 기존 재요청 불변을 재검증했다. PG 대기/회로·단조 시간·감사 시각·로그·Kafka 시계와 TX·락은 변경하지 않았다. 실제 검사 범위·실행/UP-TO-DATE 구분과 두 사례의 코드·명령·사건 값·정리는 [고정 Clock·W7 재현 가이드](../week6/fixed-clock-w7-reproduction.md)를 따른다. 당시 C09에서 남은 것은 실제 W6 구현 commit 해시 연결이었으며 사용자 요청에 따라 커밋하지 않았다. 이후 연결은 아래 C09 기록을 따른다. C11 최종 정합성 대조와 제출은 후속이다.
+
+**2026-10-30 C09 revision 연결 완료:** 기존 W6 구현 commit `dd86f49a9edf7a7ccdfc672be3f708f0f4a3ddd1`과 현재 실행 HEAD의 구현·테스트·실행 설정이 동일함을 확인했다. **16:14 KST 정상 소비·발행 누락 두 사례 E2E 1개 통과, 실패·오류·skip 0, BUILD SUCCESSFUL·36초·종료 0**이다. 코드 commit을 새로 만들지 않고 기존 revision을 재사용하며 이번 변경은 문서뿐이다. 새 사건 값·명령·자원 정리를 [C09 재검증 기록](../week6/fixed-clock-w7-reproduction.md#2026-10-30-c09-revision-연결과-재검증)에 연결했다. 선행 검사 건수를 이번 실행으로 합산하지 않으며 C11 최종 대조·PR·기술 글·제출은 별도다.
 
 ## W5 설계 선택과 구현 상태
 

@@ -4,7 +4,7 @@
 
 ## 제공 범위와 적용 순서
 
-W2의 `001`~`006`은 커머스의 6개 업무 테이블을 빈 MySQL 8 데이터베이스에 수동으로 최초 생성하는 SQL이다. W4는 조회 인덱스 `007`과 목록 캐시 버전 메타데이터 `008`을 추가했다. W5는 주문·품목의 전진 이행 `009`, 결제 시도 테이블 `010`, 요청 지문 컬럼의 전진 이행 `011`을 제공한다. 011을 위해 기존 001~010을 수정하지 않는다. 현재 신규 설치는 **11개 스크립트·업무 7개 + 메타데이터 1개, 총 8개 테이블**이다. [인덱스 기록](../week4/product-query-optimization.md)·[캐시 기록](../week4/product-list-cache-tdd-log.md)·[선행 W5 저장 연결 기록](../week5/order-payment-persistence-tdd-log.md)과 [지문 저장 증분](../week5/payment-request-fingerprint-persistence-tdd-log.md)을 구분한다.
+W2의 `001`~`006`은 커머스의 6개 업무 테이블을 빈 MySQL 8 데이터베이스에 수동으로 최초 생성하는 SQL이다. W4는 조회 인덱스 `007`과 목록 캐시 버전 메타데이터 `008`을 추가했다. W5는 주문·품목의 전진 이행 `009`, 결제 시도 테이블 `010`, 요청 지문 컬럼의 전진 이행 `011`을 제공한다. 011을 위해 기존 001~010을 수정하지 않는다. 현재 **API 신규 설치는 11개 스크립트·업무 7개 + 메타데이터 1개, 총 8개 테이블**이다. W6 streamer의 별도 001·두 테이블은 아래 소비 저장 절에서 다룬다. [인덱스 기록](../week4/product-query-optimization.md)·[캐시 기록](../week4/product-list-cache-tdd-log.md)·[선행 W5 저장 연결 기록](../week5/order-payment-persistence-tdd-log.md)과 [지문 저장 증분](../week5/payment-request-fingerprint-persistence-tdd-log.md)을 구분한다.
 
 | 순서·파일 | 역할·주요 제약 |
 | --- | --- |
@@ -21,6 +21,22 @@ W2의 `001`~`006`은 커머스의 6개 업무 테이블을 빈 MySQL 8 데이터
 | [011-payment-request-fingerprint.sql](../../apps/commerce-api/src/main/resources/db/schema/011-payment-request-fingerprint.sql) | 기존 payment_attempt에 nullable VARBINARY(32) 지문·INT 형식/키 버전 추가. 전체 NULL 또는 정확히 32바이트·양수 두 버전만 허용하는 CHECK. 기존 행 재작성·지문 소급 생성 없음 |
 
 SQL 파일은 애플리케이션 시작 시 자동 실행되지 않는다. 새 마이그레이션 프레임워크나 자동 스키마 적용 프로파일을 추가하지 않았다. 파일의 번호는 수동 적용 순서다. 기존 예시 API의 ExampleModel 테이블은 이 8개 커머스 테이블 범위에 포함하지 않는다.
+
+## W6 streamer 구매 활동 DDL
+
+[001-purchase-activity.sql](../../apps/commerce-streamer/src/main/resources/db/schema/001-purchase-activity.sql)은 **streamer가 소유하는 두 테이블의 최초 생성 파일**이다. API의 001~011을 수정하거나 API 012로 연결하지 않는다. 사용자 DB에는 실행하지 않았고 실제 적용·검사는 격리 DB에서만 수행하며 [소비 TDD 기록](../week6/purchase-activity-consumer-tdd-log.md)에 남긴다.
+
+| 테이블·컬럼 | 보호할 사실 |
+| --- | --- |
+| `processed_order_confirmation` | eventId·orderId 각각 유일, 고정 eventType/schemaVersion·최초 confirmedAt |
+| `product_purchase_activity` | `(orderId, productId)` 유일, 양수 quantity·최초 confirmedAt. 완료 기록과 모든 품목을 같은 TX에 저장 |
+| `confirmed_at_second` + `confirmed_at_nano` | BIGINT 초와 INT 나노초(0~999,999,999)로 Instant를 손실 없이 보존. DATETIME(6) 절삭으로 서로 다른 사실을 같다고 판단하지 않음 |
+| `event_id VARCHAR(255) COLLATE utf8mb4_0900_bin` | 대소문자와 끝 공백을 구분하는 유일성. 초과 길이는 저장 오류로 전파하며 자르거나 중복 성공으로 바꾸지 않음 |
+| FK | 활동의 order_id → 완료 기록의 order_id만 참조. API의 현재 주문·상품 테이블 FK나 조회 의존 없음 |
+
+실행할 streamer DB를 확인한 뒤 두 테이블이 없는 경우에만 이 파일을 한 번 수동 적용한다. 기존 테이블이 있으면 구조를 대조하고 재실행·삭제·초기화로 대체하지 않는다. DDL은 자동 실행되지 않으며 여러 CREATE가 전체 원자적으로 rollback된다고 가정하지 않는다.
+
+streamer는 [purchase-activity.yml](../../apps/commerce-streamer/src/main/resources/purchase-activity.yml)을 마지막에 import해 `spring.jpa.hibernate.ddl-auto=validate`를 적용한다. 공유 jpa.yml의 local `create`가 재시작 때 완료 기록을 지우지 않도록 한 설정이다. 아직 테이블이 없으면 시작이 실패하므로 먼저 위 수동 준비가 필요하다. producer·consumer·admin에는 같은 실제 broker 주소를 사용하며 테스트는 고유 topic/group·전용 DB에서 검증한다. API DB 설정·기존 데이터는 이번 증분에서 변경하지 않는다.
 
 ## W5 설계와 현재 DDL의 경계
 

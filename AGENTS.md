@@ -14,7 +14,20 @@
 
 | 문서 | 역할 |
 | --- | --- |
-| [W5 채점 기준](docs/week5/grading-criteria.md) | 이번 주 테스트 PG 결제 교체·결과 복구 과제의 9개 평가 항목, 필수 증거와 선택 사항 |
+| [W6 채점 기준](docs/week6/grading-criteria.md) | 이번 주 주문 확정 이벤트·Kafka·상품 구매 활동 과제의 11개 평가 항목, 필수 실험·W7 인계 증거·제외 범위 |
+| [W6 과제 원문](docs/week6/assignment-original.md) | 2026-10-27 제공된 구현·검증·제출 요구 원문 보존. 직접 after-commit 발행과 구매 활동 소비, Outbox·랭킹 구현 제외 |
+| [W6 학습 자료 원문](docs/week6/learning-original.md) | 이벤트·Kafka 배정/offset·전달 보장·DB 중복 방지·발행 누락의 개념 근거 |
+| [W6 구현·검증 체크리스트](docs/week6/implementation-checklist.md) | W6 공식 11항목의 새 상태, 기존 코드 출발점·영향 파일·미정 선택·진행 순서. 문서 작성과 구현/실행 완료를 구분 |
+| [W6 주문 확정 이벤트 모델 TDD 기록](docs/week6/order-confirmed-event-tdd-log.md) | 사용자 선택 Q01/Q02, 생산자 불변 이벤트 모델의 신규 40개·관련 183개와 API Checkstyle 검증. 당시 after-commit·Kafka·소비 DB는 미연결이며 후속 발행 증거는 다음 기록 참조. 사용자 DB 미접근 |
+| [W6 구매 활동 소비 TDD 기록](docs/week6/purchase-activity-consumer-tdd-log.md) | Q03의 두 테이블·필드 비교와 Q04의 실패 중단·같은 group 재시작 선택. streamer parser·공동 DB TX·유일 제약/충돌·실제 listener/ack와 전용 설정의 증분. 당시 후속이었던 DB commit 뒤 offset 공백은 다음 기록 참조. 사용자 DB 미접근 |
+| [W6 offset 공백 재전달 TDD 기록](docs/week6/purchase-activity-offset-redelivery-tdd-log.md) | 실제 DB commit 뒤 offset 미커밋 종료·같은 group 새 consumer의 동일 record 재전달. 실제 committed offset n→n→n+1, 두 테이블의 PK·필드 불변을 검증. C07 listener DB 실패와 구분하며 생산 코드·사용자 DB 미변경 |
+| [W6 Kafka 배정·key 매핑 TDD 기록](docs/week6/kafka-group-assignment-tdd-log.md) | DB 없는 전용 Kafka probe에서 partition 2개·consumer 1→2→3의 실제 배정/수신과 동일 key metadata를 검증. 운영 설정·사용자 DB·기존 topic/group 미변경, 단일 broker 보장 한계 구분 |
+| [W6 정상 PG→구매 활동 전체 흐름 TDD 기록](docs/week6/normal-pg-purchase-activity-e2e-tdd-log.md) | 실제 주문 생성·확정 HTTP와 로컬 PG·Kafka, 별도 production streamer JVM/DB의 정상 저장·ack·동일 confirm 재요청 불변을 연결 검증. 당시 후속이었던 직접 발행 누락의 소비 DB 대조는 다음 기록 참조 |
+| [W6 commit 뒤 발행 누락 전체 흐름 TDD 기록](docs/week6/pre-send-failure-e2e-tdd-log.md) | 정상 소비 양성 대조 뒤 별도 주문의 commit을 독립 DB 연결로 확인하고 send 직전 실패를 주입. 확정·재고·포인트 보존, 대상 broker record·구매 활동 0, confirm/callback/reconcile의 추가 PG 생성·발행 0을 검증. 당시 후속이었던 고정 Clock·재현 준비는 다음 기록 참조 |
+| [W6 고정 Clock·W7 두 사례 재현 가이드](docs/week6/fixed-clock-w7-reproduction.md) | 주문 결제의 저장 시각에 전용 Clock을 주입하고 정상 소비·발행 누락 두 사례를 같은 고정 시각으로 재검증. 기존 W6 구현 commit `dd86f49`와 동일 코드의 2026-10-30 재실행·실제 사건 값·정리를 연결해 C09 완료. 최종 대조·제출은 후속 |
+| [W6 after-commit 발행 TDD 기록](docs/week6/order-confirmed-publication-tdd-log.md) | 공통 최초 확정·AFTER_COMMIT·Kafka callback 관찰의 신규 23개, 관련 47개 스위트·862개와 API ArchUnit/Checkstyle 검증. 실제 격리 PG HTTP·DB·broker 증거이며 소비 DB·offset 재전달·W7 두 사례 완료와 구분 |
+| [W6 공통 도메인 이벤트 발행 TDD 기록](docs/week6/common-domain-event-publication-tdd-log.md) | 주문 전용 listener·publisher를 순수 DomainEvent/발행 포트·공통 AFTER_COMMIT listener·Kafka publisher·명시적 타입별 route로 일반화한 TDD 증분. 기존 주문 wire·실패 경계·고정 Clock 회귀와 양 앱 ArchUnit·Checkstyle의 실제 검사 범위를 기록. 선행 실행 기록과 구분하며 사용자 DB·커밋은 제외 |
+| [W5 채점 기준](docs/week5/grading-criteria.md) | 이전 주 테스트 PG 결제 교체·결과 복구 과제의 9개 평가 항목과 유지할 회귀 기준 |
 | [W5 과제 원문](docs/week5/assignment-original.md) | 2026-10-18 제공된 구현·검증·제출 요구 원문 보존 |
 | [W5 학습 자료 원문](docs/week5/learning-original.md) | 외부 결과의 불확실성·멱등성·트랜잭션·회복 전략의 개념 근거 |
 | [W5 예약 상태 TDD 실행 기록](docs/week5/order-reservation-state-tdd-log.md) | 예약 상태 전이 12개 조합의 첫 Red·Green·Refactor 증거. 순수 enum만 구현했으며 영속화·실제 재고·PG·동시성은 미완료 |
@@ -59,7 +72,11 @@
 
 기능 작업 시 전체 설계와 해당 기능의 API 계약·정책 선택·TDD 기대값을 함께 확인한다. 제안이나 미정 정책은 문서 분리만으로 확정되지 않는다.
 
-현재 채점은 W5 원문을 우선한다. 미확정 주문의 PG 결제 교체, 포인트 차감 분리, 재고 예약·결과 적용, PG 동일 시도 재요청처럼 이번 과제에서 명시한 변경은 이전 결제 계약과 구분한다. 이전 POINT 주문의 사실·기존 오류와 변경 대상이 아닌 업무 계약은 보존한다. 채점 기준 저장만으로 구현·설계 갱신이 완료된 것으로 보지 않는다.
+현재 채점은 W6 원문을 우선한다. W5의 PG 결제·예약·결과 복구에서 출발하여 최초 PG 확정 commit 뒤 OrderConfirmed를 Kafka로 직접 발행하고 commerce-streamer가 구매 활동을 저장하도록 확장한다. W5의 포인트 차감 분리·재요청·TX/락, 이전 POINT 사실·기존 오류·소유권·삭제 비노출 등 변경 대상이 아닌 계약은 보존한다. 기존 통과 기록을 W6 충족으로 이어받지 않으며, 새 11개 항목의 코드·실제 broker/DB·실행 증거를 따로 확인한다. 채점 기준 저장만으로 기능 구현·설계 갱신이 완료된 것으로 보지 않는다.
+
+W6에서는 stable eventId·orderId key·저장된 최초 confirmedAt/품목을 사용한다. 발행 실패로 확정 주문을 되돌리거나 PG 결제를 다시 만들지 않는다. 소비 완료 기록과 모든 품목의 구매 활동은 같은 DB TX로 보호하고 commit 성공 후 ack한다. 같은 사실의 재전달과 식별자/payload 충돌을 구분하며 메모리 중복 검사·producer idempotence만으로 DB 효과를 보호했다고 보지 않는다. 실제 offset 재전달과 실제 Spring listener 실패/재시작은 각각 검증한다.
+
+Outbox·랭킹 API는 이번 구현 범위가 아니다. 직접 발행의 누락과 정상 소비 두 사례는 W6 직접 경로의 재현 코드·실제 사건 사실·사용 revision으로 남기고 테스트 자원은 정리한다. W7을 위해 임시 DB를 계속 켜두거나 Outbox 실행 뒤 행을 지워 누락을 꾸미지 않는다. 미정 구현 선택은 기존 원칙대로 질문하며 사용자 DB·다른 실행의 topic/group·볼륨을 삭제하지 않는다.
 
 ## 설계 문서 작성 지침
 
@@ -67,14 +84,15 @@
 
 | 표현할 것 | 반드시 담을 내용 |
 | --- | --- |
-| 버드뷰 | 고객·관리자, API 서버, DB와 로컬 테스트 PG의 관계, 생성·조회·callback의 요청 방향 |
+| 버드뷰 | 고객·관리자, API 서버, DB와 로컬 테스트 PG의 관계, 생성·조회·callback의 요청 방향. W6에서는 API 생산자 → Kafka → commerce-streamer → 구매 활동 DB와 발행/소비 실패 경계도 함께 표현 |
 | 구조와 의존 | `interfaces` / `application` / `domain` / `infrastructure`의 역할과 허용하는 코드 의존 방향 |
-| 도메인 관계 | `Brand–Product`, `User–Like–Product`, `Order–OrderItem`의 관계와 재고·포인트의 책임. W5의 결제 시도·예약·외부 거래 식별 관계도 함께 표현 |
-| 대표 흐름 | 관리자 변경 → 고객 조회, 좋아요 등록·취소, 주문 결제의 **세 가지 흐름 모두**. W2의 포인트 충전 → 주문 확정은 과거 흐름으로 구분하고, W5의 포인트 충전·조회 분리와 PG 시도 → 결과 확인 → 주문·예약 반영을 현재 흐름으로 갱신 |
+| 도메인 관계 | `Brand–Product`, `User–Like–Product`, `Order–OrderItem`의 관계와 재고·포인트의 책임. W5 결제 시도·예약·외부 거래 식별과 W6 확정 이벤트·소비 완료·상품 구매 활동의 식별/유일성·원자성도 함께 표현 |
+| 대표 흐름 | 관리자 변경 → 고객 조회, 좋아요 등록·취소, 주문 결제의 **세 가지 흐름 모두**. W2 POINT 결제는 과거 흐름으로 구분하고, W5 PG 시도 → 결과 확인 → 주문·예약 반영에 W6 최초 확정 commit → 직접 발행 → 구매 활동 저장 → ack를 확장. 포인트 충전·조회는 독립 유지 |
 
 - 초안의 확정된 업무 규칙을 유지하고, 설계 제안과 미정 정책은 구분하여 표시한다. 제안이나 미정 정책을 임의로 확정하지 않는다.
 - 각 흐름에는 요청 주체, 처리 순서, 상태·데이터 변경, 성공·실패 결과와 책임 주체를 드러낸다.
 - 버드뷰의 요청 방향, 계층 간 코드 의존 방향, 실행 시 호출 순서를 혼동하지 않도록 구분한다.
 - 포인트 충전 흐름만을 근거로 외부 결제 연동이나 이력 테이블을 추가하지 않는다. W5에서 명시한 로컬 테스트 PG 교체는 해당 과제 범위로 다루며, 실제 PG·환불·정산 등으로 확대하지 않는다. 미정 사항은 먼저 질문한다.
+- W6 계약·전달/DB 경계는 기존 전체 설계에 확장하고 API·정책·TDD 문서와 연결한다. after-commit과 broker 발행의 원자성, broker 수신과 소비 DB 완료, position과 committed offset을 구분한다. 원문 예시의 테이블명·eventId 생성법·listener factory·error handler를 유일한 정답으로 강제하지 않는다.
 - 설계한 내용과 실제 구현된 내용을 구분한다. 문서 작성 요청만으로 코드를 구현하지 않는다.
 - 관계와 흐름은 표·다이어그램으로 읽기 쉽게 표현하고, 같은 내용을 불필요하게 반복하지 않는다.
