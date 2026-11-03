@@ -50,6 +50,26 @@ public class OrderConfirmedOutboxJpaEntity {
     protected OrderConfirmedOutboxJpaEntity() {
     }
 
+    long id() {
+        return id;
+    }
+
+    String messageKey() {
+        return messageKey;
+    }
+
+    String payload() {
+        return payload;
+    }
+
+    int attemptCount() {
+        return attemptCount;
+    }
+
+    int rowFailureCount() {
+        return rowFailureCount;
+    }
+
     // 처음 기록할 때는 바로 relay 대상이 되도록 다음 시도 시각을 기록 시각과 같게 둔다.
     static OrderConfirmedOutboxJpaEntity pending(String eventId, long orderId, String eventType, int schemaVersion,
         String messageKey, String payload, Instant now) {

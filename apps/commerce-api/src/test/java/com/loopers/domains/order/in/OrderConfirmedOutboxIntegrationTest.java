@@ -262,7 +262,7 @@ class OrderConfirmedOutboxIntegrationTest extends OrderEventsIntegrationSupport 
         assertThat(stock(second)).isEqualTo(4);
         assertThat(outboxRows(orderId)).isEmpty();
         assertThat(server.createCalls()).isEqualTo(createCallsBefore);
-        assertThat(publisher.sent()).isEmpty();
+        assertThat(eventIdsAfterRelay()).doesNotContain(eventId(orderId));
     }
 
     private List<Map<String, Object>> outboxRows(long orderId) {

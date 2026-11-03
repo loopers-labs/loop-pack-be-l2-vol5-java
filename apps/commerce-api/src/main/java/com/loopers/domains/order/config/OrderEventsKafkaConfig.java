@@ -19,9 +19,11 @@ import org.springframework.kafka.core.ProducerFactory;
 public class OrderEventsKafkaConfig {
     @Bean
     ProducerFactory<String, String> orderEventsProducerFactory(KafkaProperties kafkaProperties,
-        @Value("${commerce.kafka.producer.max-block}") Duration maxBlock) {
+        @Value("${commerce.kafka.producer.max-block}") Duration maxBlock,
+        @Value("${commerce.kafka.producer.delivery-timeout}") Duration deliveryTimeout) {
         Map<String, Object> props = KafkaConfig.stringProducerProperties(kafkaProperties);
         props.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, maxBlock.toMillis());
+        props.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, Math.toIntExact(deliveryTimeout.toMillis()));
         return new DefaultKafkaProducerFactory<>(props);
     }
 

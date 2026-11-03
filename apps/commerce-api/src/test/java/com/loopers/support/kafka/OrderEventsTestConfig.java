@@ -3,11 +3,9 @@ package com.loopers.support.kafka;
 import com.loopers.domains.order.app.port.OrderConfirmedMessageSender;
 import com.loopers.domains.order.app.port.OrderConfirmedOutbox;
 import com.loopers.domains.order.app.port.OrderConfirmedPayload;
-import com.loopers.domains.order.app.port.OrderConfirmedPublisher;
 import com.loopers.domains.order.app.port.OutboxMessage;
 import com.loopers.domains.order.app.port.SendOutcome;
 import com.loopers.domains.order.out.KafkaOrderConfirmedMessageSender;
-import com.loopers.domains.order.out.KafkaOrderConfirmedPublisher;
 import com.loopers.domains.order.out.OrderConfirmedOutboxPersistenceAdapter;
 import com.loopers.domains.payment.app.port.PaymentRecordRepository;
 import com.loopers.domains.payment.domain.PaymentRecord;
@@ -39,13 +37,6 @@ import org.springframework.kafka.support.SendResult;
 public class OrderEventsTestConfig {
     @Bean
     @Primary
-    ControllableOrderConfirmedPublisher controllableOrderConfirmedPublisher(
-        KafkaOrderConfirmedPublisher kafkaOrderConfirmedPublisher) {
-        return new ControllableOrderConfirmedPublisher(kafkaOrderConfirmedPublisher);
-    }
-
-    @Bean
-    @Primary
     FailingKafkaTemplate failingKafkaTemplate(
         @Qualifier("orderEventsKafkaTemplate") KafkaTemplate<String, String> orderEventsKafkaTemplate) {
         return new FailingKafkaTemplate(orderEventsKafkaTemplate);
@@ -74,35 +65,6 @@ public class OrderEventsTestConfig {
     FailingOrderConfirmedOutbox failingOrderConfirmedOutbox(OrderConfirmedOutboxPersistenceAdapter delegate,
         EntityManager entityManager) {
         return new FailingOrderConfirmedOutbox(delegate, entityManager);
-    }
-
-    // after-commit listener가 부르는 publisher. 보낸 payload를 기록한다.
-    public static class ControllableOrderConfirmedPublisher implements OrderConfirmedPublisher {
-        private final OrderConfirmedPublisher delegate;
-        private final List<OrderConfirmedPayload> sent = new CopyOnWriteArrayList<OrderConfirmedPayload>();
-
-        ControllableOrderConfirmedPublisher(OrderConfirmedPublisher delegate) {
-            this.delegate = delegate;
-        }
-
-        public void reset() {
-            sent.clear();
-        }
-
-        public List<OrderConfirmedPayload> sent() {
-            return List.copyOf(sent);
-        }
-
-        @Override
-        public void send(OrderConfirmedPayload payload) {
-            sent.add(payload);
-            delegate.send(payload);
-        }
-
-        @Override
-        public void republish(OrderConfirmedPayload payload) {
-            delegate.republish(payload);
-        }
     }
 
     // 실제 producer factory로 보내다가, 무장하면 send를 실패시킨다. 주입 예외는 broker 수준(Kafka TimeoutException)이다.

@@ -8,7 +8,6 @@ import com.loopers.domains.product.app.ProductApplicationService;
 import com.loopers.domains.user.out.UserJpaEntity;
 import com.loopers.domains.user.out.UserJpaRepository;
 import com.loopers.support.kafka.OrderEventsProbe;
-import com.loopers.support.kafka.OrderEventsTestConfig.ControllableOrderConfirmedPublisher;
 import com.loopers.support.kafka.OrderEventsTestConfig.FailingKafkaTemplate;
 import com.loopers.support.kafka.OrderEventsTestConfig.FailingOrderConfirmedOutbox;
 import com.loopers.support.kafka.OrderEventsTestConfig.FailingPaymentRecordRepository;
@@ -60,7 +59,6 @@ abstract class OrderEventsIntegrationSupport {
     @Autowired MutablePaymentClock clock;
     @Autowired JdbcTemplate jdbc;
     @Autowired DatabaseCleanUp cleanup;
-    @Autowired ControllableOrderConfirmedPublisher publisher;
     @Autowired PublishedOrderEvents publishedEvents;
     @Autowired FailingPaymentRecordRepository failingPayments;
     @Autowired FailingKafkaTemplate failingKafka;
@@ -91,7 +89,6 @@ abstract class OrderEventsIntegrationSupport {
         long brand = brands.create("브랜드").id();
         first = products.create(brand, "첫 상품", 2000, 5).id();
         second = products.create(brand, "둘째 상품", 3000, 5).id();
-        publisher.reset();
         publishedEvents.reset();
         failingPayments.disarm();
         failingOutbox.disarm();
@@ -109,7 +106,6 @@ abstract class OrderEventsIntegrationSupport {
         failingOutbox.disarm();
         sender.reset();
         failingKafka.fail(FailingKafkaTemplate.Failure.NONE);
-        publisher.reset();
         jdbc.update("delete from order_items");
         cleanup.truncateAllTables();
     }

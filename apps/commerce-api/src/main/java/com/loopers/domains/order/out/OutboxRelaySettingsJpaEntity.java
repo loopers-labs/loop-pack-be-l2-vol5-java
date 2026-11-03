@@ -23,4 +23,16 @@ public class OutboxRelaySettingsJpaEntity {
 
     protected OutboxRelaySettingsJpaEntity() {
     }
+
+    int batchSize() {
+        return batchSize;
+    }
+
+    int maxRoundMillis() {
+        return maxRoundMillis;
+    }
+
+    boolean enabled() {
+        return enabled;
+    }
 }
