@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 
 /**
  * 전용 producer factory 의 조립 규칙과 기동 거절을 최소 컨텍스트로 확인한다. producer 를 만들거나 broker 에 연결하지 않는다.
- * 앱 YAML 이 실제로 적용된 값은 {@link OrderEventKafkaContextTest} 가 전체 컨텍스트에서 확인한다.
+ * 앱 YAML 이 W6 factory 에 실제로 적용된 값은 W6PreparationContextIntegrationTest 가 W6 준비 컨텍스트에서 확인한다.
  */
 @DisplayName("주문 확정 전용 producer 는 공통 retries 를 물려받지 않고, 트랜잭션 설정·호환되지 않는 값이면 기동을 거절한다.")
 class OrderEventKafkaConfigTest {

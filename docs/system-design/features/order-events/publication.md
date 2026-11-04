@@ -559,6 +559,16 @@ Outbox 모델의 requireDeliveryState는 PK·상태·카운터·운영 시각·�
 
 안전 오류 코드는 INVALID_OUTBOX_MESSAGE, UNSUPPORTED_SCHEMA, OUTBOX_FACT_MISMATCH, SEND_CALL_FAILED, SEND_COMPLETION_FAILED, SEND_WAIT_TIMEOUT, ATTEMPT_LIMIT_EXHAUSTED, UNCONFIRMED_ATTEMPT_LIMIT이다. 필요할 때 예외 클래스명만 붙이고 원문 message·stacktrace·payload·카드·비밀은 저장/서비스 로그에 복사하지 않는다. Kafka 인증/설정 등 추가 전송 예외를 임의로 영구 오류로 분류하지 않으며 현재는 전송 실패 예산 안에서 다룬다. DB 상태 오류와 전송 오류는 분리한다.
 
+**본문 검증 code 배정 — 2026-11-04 사용자 확인:** 구현 03 검토에서 형식/버전/사실 오류별 code 배정을 명시하고, 사용자가 추천안을 승인했다. 내부적으로 성립하지 않는 저장 메시지, 지원 밖의 계약, 유효하지만 다른 사건을 구분해 조사 원인을 드러낸다. 이를 모두 같은 code로 묶는 대안보다 진단 정보는 많지만 분류 기준을 유지해야 하는 비용을 받아들인다. 세 경우 모두 자동 수정하지 않는 명확한 메시지 오류이며 relay의 즉시 BLOCKED 원칙은 동일하다.
+
+|조건|code·경계|
+|---|---|
+|필수 값 누락/null·JSON/필드 타입·숫자/시각/품목 범위 위반·정규 key/유도 ID 위반·저장 메타데이터와 본문 ID/key의 내부 불일치|INVALID_OUTBOX_MESSAGE. type/version 값 자체의 누락/null·타입 오류도 여기에 포함|
+|문자열 eventType 또는 정수 schemaVersion은 읽었지만 OrderConfirmed v1이 아님|UNSUPPORTED_SCHEMA. 메타데이터와 본문 각각에서 지원 여부를 검사하며 지원 밖 본문을 v1 필드로 추측해 해석하지 않음|
+|저장 메시지는 위 검증을 통과했지만 requireSameFact의 기대 사건과 주문 identity·최초 순간·정규화 품목이 다름|OUTBOX_FACT_MISMATCH. 유효한 원문과 기대 사건의 비교에서만 사용|
+
+호출자 입력 객체 자체의 null이나 기대 사건 쪽 계산 오류 같은 예상 밖 프로그램 오류를 위 code로 일괄 변환하지 않는다. 이 배정은 기존 구현 03을 확정하는 명확화이며 새 schema·자동 복구·전송 정책을 추가하지 않는다.
+
 ### W7.3-4. 주요 처리 의사코드
 
 모든 now는 outboxRecordClock에서 UTC·마이크로초로 얻는다. 사건 confirmedAt·기존 감사 시각은 바꾸지 않는다. 개별 상태 변경 TX는 행 잠금 후 현재 status·누적 attemptNo를 확인한다. 이미 PUBLISHED는 변경 없는 결과, 시도 번호 불일치는 STALE_ATTEMPT로 변경 없음, 예상 밖 전이는 정합성 오류다. 이 방어가 다중 프로세스 소유권 보장은 아니다.

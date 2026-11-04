@@ -1,6 +1,7 @@
 package com.loopers.infrastructure.order.support;
 
 import com.loopers.application.order.OrderConfirmedRecorder;
+import com.loopers.config.OrderOutboxKafkaConfig;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.annotation.AnnotatedGenericBeanDefinition;
 import org.springframework.beans.factory.config.BeanDefinition;
@@ -23,13 +24,15 @@ import java.util.Set;
  * <ol>
  *   <li>refresh 전: 53f912b 의 관리 타입만 허용하는 filter, W6 설정 두 개(@Bean lite 설정), 아래 Replacer 를 bean 정의로 등록한다.</li>
  *   <li>CCPP(PriorityOrdered): 일반 앱 설정·repository 와 W6 설정의 @Bean 정의를 해석한다.</li>
- *   <li>Replacer(순서 없는 BDRPP, CCPP 뒤): W7 Outbox repository·구현·제품 recorder 정의를 이름으로 제거한다. 없으면 기동 실패다.</li>
+ *   <li>Replacer(순서 없는 BDRPP, CCPP 뒤): W7 Outbox repository·구현·제품 recorder·전송 sender·전용 Kafka 설정 정의를 이름으로
+ *   제거하고, 그 설정이 factory 로 만든 producer factory·template 정의도 factoryBeanName 으로 뺀다. 없으면 기동 실패다.</li>
  *   <li>singleton 생성 전: recorder 는 W6 하나, 발행 포트는 W6 adapter 하나인지 확인한다.</li>
  * </ol>
  *
  * <p>Replacer 를 context.addBeanFactoryPostProcessor 로 넣으면 CCPP 보다 먼저 실행돼 repository 정의가 아직 없다. 그래서 bean 정의로 등록한다.
- * 전역 override 허용·@Primary·이름 접두사 일괄 삭제는 쓰지 않는다. relay·sender·scheduler·복구 서비스·W7 Kafka 설정은 아직 제품에 없다.
- * 후속 단위가 그 정의를 추가하면 {@link #W7_DEFINITIONS} 에 이름을 더하고, 남은 W7 정의는 기동 뒤 부재 단언으로 드러난다.
+ * 전역 override 허용·@Primary·이름 접두사 일괄 삭제는 쓰지 않는다. 순수 encoder·verifier 는 전송을 하지 않으므로 남긴다.
+ * relay·scheduler·복구 서비스는 아직 제품에 없다. 후속 단위가 그 정의를 추가하면 {@link #W7_DEFINITIONS} 에 이름을 더하고,
+ * 남은 W7 정의는 기동 뒤 부재 단언으로 드러난다.
  */
 public class W6PreparationContextInitializer implements ApplicationContextInitializer<ConfigurableApplicationContext> {
 
@@ -55,7 +58,14 @@ public class W6PreparationContextInitializer implements ApplicationContextInitia
     public static final List<String> W7_DEFINITIONS = List.of(
         "orderConfirmedOutboxJpaRepository",
         "orderConfirmedOutboxRepositoryImpl",
-        "orderOutboxRecordingService");
+        "orderOutboxRecordingService",
+        "kafkaOrderOutboxSender",
+        "orderOutboxKafkaConfig");
+
+    /** 위 설정의 @Bean 이 만든 정의. factoryBeanName 연계로 제거되어야 하며, 남거나 이름이 바뀌면 기동을 거절한다. */
+    public static final List<String> W7_PRODUCED_DEFINITIONS = List.of(
+        OrderOutboxKafkaConfig.ORDER_OUTBOX_PRODUCER_FACTORY,
+        OrderOutboxKafkaConfig.ORDER_OUTBOX_KAFKA_TEMPLATE);
 
     static final String FILTER = "w6ManagedClassNameFilter";
     static final String TEST_CONFIGURATION = "w6OrderEventTestConfiguration";
@@ -84,7 +94,7 @@ public class W6PreparationContextInitializer implements ApplicationContextInitia
             for (String name : W7_DEFINITIONS) {
                 registry.removeBeanDefinition(name);
             }
-            // 제거한 bean 을 factory 로 쓰던 @Bean 정의도 함께 뺀다(현재는 없음). 남겨 두면 생성 시 실패로 드러난다.
+            // 제거한 bean 을 factory 로 쓰던 @Bean 정의도 함께 뺀다. 남겨 두면 생성 시 실패로 드러난다.
             List<String> produced = new ArrayList<>();
             for (String name : registry.getBeanDefinitionNames()) {
                 BeanDefinition definition = registry.getBeanDefinition(name);
@@ -93,6 +103,9 @@ public class W6PreparationContextInitializer implements ApplicationContextInitia
                 }
             }
             produced.forEach(registry::removeBeanDefinition);
+            if (!produced.stream().sorted().toList().equals(W7_PRODUCED_DEFINITIONS.stream().sorted().toList())) {
+                throw new IllegalStateException("W7 설정이 만든 정의가 예상과 다릅니다. [removed = " + produced + "]");
+            }
         }
 
         @Override
