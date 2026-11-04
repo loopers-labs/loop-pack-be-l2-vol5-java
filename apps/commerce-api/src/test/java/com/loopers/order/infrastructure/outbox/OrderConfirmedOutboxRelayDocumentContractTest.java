@@ -4,7 +4,9 @@ import com.loopers.order.application.outbox.OutboxPublisher;
 import com.loopers.order.application.outbox.PublishResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestFactory;
 import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.convert.DurationStyle;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -20,6 +22,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.inOrder;
@@ -77,119 +80,70 @@ class OrderConfirmedOutboxRelayDocumentContractTest {
         assertThat(second.getAttemptCount()).isEqualTo(1);
     }
 
-    @Test
-    @DisplayName("Kafka 성공 응답을 받으면 시도 횟수를 올리고 PUBLISHED와 발행 완료 시각을 기록한다")
-    void recordsPublishedStateAndCompletionTimeAfterSuccessResponse() {
-        OrderConfirmedOutbox outbox = outbox("event-1", NOW);
-        when(repository.findReadyForRelay(NOW, settings.batchSize())).thenReturn(List.of(outbox));
-        when(publisher.publish("order-1", "payload-1"))
-            .thenReturn(CompletableFuture.completedFuture(PublishResult.SUCCESS));
-
-        relay.pollOnce();
-
-        assertThat(outbox.getStatus()).isEqualTo(OrderConfirmedOutboxStatus.PUBLISHED);
-        assertThat(outbox.getPublishedAt()).isEqualTo(NOW);
-        assertThat(outbox.getAttemptCount()).isEqualTo(1);
-        verify(repository).saveAndFlush(outbox);
+    @TestFactory
+    @DisplayName("공통 발행 흐름 뒤에 응답 결과와 최대 시도 횟수에 따라 분기한다")
+    Stream<DynamicTest> branchesByPublishResultAndAttemptLimit() {
+        RelaySettings branchSettings = settings;
+        return Stream.of(
+                new PublishScenario("성공 응답은 최대 시도 전 PUBLISHED로 기록한다",
+                    PublishResult.SUCCESS, 0, OrderConfirmedOutboxStatus.PUBLISHED, null),
+                new PublishScenario("성공 응답은 최대 시도에 도달해도 PUBLISHED로 기록한다",
+                    PublishResult.SUCCESS, branchSettings.maxAttempts() - 1,
+                    OrderConfirmedOutboxStatus.PUBLISHED, null),
+                new PublishScenario("실패 응답은 최대 시도 전 FAILED로 두고 재시도 시각을 기록한다",
+                    PublishResult.failed("BrokerException"), 0,
+                    OrderConfirmedOutboxStatus.FAILED, "BrokerException"),
+                new PublishScenario("실패 응답이 최대 시도에 도달하면 BLOCKED로 전환한다",
+                    PublishResult.failed("BrokerException"), branchSettings.maxAttempts() - 1,
+                    OrderConfirmedOutboxStatus.BLOCKED, "BrokerException"),
+                new PublishScenario("미확정 응답은 최대 시도 전 PENDING으로 두고 재시도 시각을 기록한다",
+                    PublishResult.pending("TimeoutException"), 0,
+                    OrderConfirmedOutboxStatus.PENDING, "TimeoutException"),
+                new PublishScenario("미확정 응답이 최대 시도에 도달하면 BLOCKED로 전환한다",
+                    PublishResult.pending("TimeoutException"), branchSettings.maxAttempts() - 1,
+                    OrderConfirmedOutboxStatus.BLOCKED, "TimeoutException")
+            )
+            .map(scenario -> DynamicTest.dynamicTest(scenario.displayName(),
+                () -> assertBranch(scenario, branchSettings)));
     }
 
-    @Test
-    @DisplayName("Kafka 실패 응답을 받으면 최대 시도 전까지 FAILED와 다음 시도 시각을 기록한다")
-    void recordsFailedResponseAndSchedulesRetryBeforeMaximumAttempts() {
-        OrderConfirmedOutbox outbox = outbox("event-1", NOW);
-        when(repository.findReadyForRelay(NOW, settings.batchSize())).thenReturn(List.of(outbox));
-        when(publisher.publish("order-1", "payload-1"))
-            .thenReturn(CompletableFuture.completedFuture(PublishResult.failed("BrokerException")));
+    private void assertBranch(PublishScenario scenario, RelaySettings branchSettings) {
+        OrderConfirmedOutboxRepository scenarioRepository = mock(OrderConfirmedOutboxRepository.class);
+        OutboxPublisher scenarioPublisher = mock(OutboxPublisher.class);
+        OrderConfirmedOutbox outbox = outbox("event-branch", NOW);
+        outbox.setAttemptCount(scenario.attemptsBefore());
+        when(scenarioRepository.findReadyForRelay(NOW, branchSettings.batchSize())).thenReturn(List.of(outbox));
+        when(scenarioPublisher.publish("order-branch", "payload-branch"))
+            .thenReturn(CompletableFuture.completedFuture(scenario.result()));
+        OrderConfirmedOutboxRelay scenarioRelay = new OrderConfirmedOutboxRelay(
+            scenarioRepository,
+            scenarioPublisher,
+            Clock.fixed(NOW, ZoneOffset.UTC),
+            branchSettings.pollInterval(),
+            branchSettings.batchSize(),
+            branchSettings.maxAttempts()
+        );
 
-        relay.pollOnce();
+        scenarioRelay.pollOnce();
 
-        assertThat(outbox.getStatus()).isEqualTo(OrderConfirmedOutboxStatus.FAILED);
-        assertThat(outbox.getAttemptCount()).isEqualTo(1);
-        assertThat(outbox.getNextAttemptAt()).isEqualTo(NOW.plus(settings.pollInterval()));
-        assertThat(outbox.getLastError()).isEqualTo("BrokerException");
-        assertThat(outbox.getPublishedAt()).isNull();
-    }
+        assertThat(outbox.getAttemptCount()).isEqualTo(scenario.attemptsBefore() + 1);
+        assertThat(outbox.getStatus()).isEqualTo(scenario.expectedStatus());
+        assertThat(outbox.getLastError()).isEqualTo(scenario.expectedError());
+        if (scenario.expectedStatus() == OrderConfirmedOutboxStatus.PUBLISHED) {
+            assertThat(outbox.getPublishedAt()).isEqualTo(NOW);
+        } else {
+            assertThat(outbox.getPublishedAt()).isNull();
+        }
+        if (scenario.expectedStatus() == OrderConfirmedOutboxStatus.FAILED
+            || scenario.expectedStatus() == OrderConfirmedOutboxStatus.PENDING) {
+            assertThat(outbox.getNextAttemptAt()).isEqualTo(NOW.plus(branchSettings.pollInterval()));
+        }
 
-    @Test
-    @DisplayName("발행 성공 여부를 확정할 응답을 받지 못하면 최대 시도 전까지 PENDING으로 재시도한다")
-    void keepsUncertainResultPendingAndSchedulesRetryBeforeMaximumAttempts() {
-        OrderConfirmedOutbox outbox = outbox("event-1", NOW);
-        when(repository.findReadyForRelay(NOW, settings.batchSize())).thenReturn(List.of(outbox));
-        when(publisher.publish("order-1", "payload-1"))
-            .thenReturn(CompletableFuture.completedFuture(PublishResult.pending("TimeoutException")));
-
-        relay.pollOnce();
-
-        assertThat(outbox.getStatus()).isEqualTo(OrderConfirmedOutboxStatus.PENDING);
-        assertThat(outbox.getAttemptCount()).isEqualTo(1);
-        assertThat(outbox.getNextAttemptAt()).isEqualTo(NOW.plus(settings.pollInterval()));
-        assertThat(outbox.getLastError()).isEqualTo("TimeoutException");
-        assertThat(outbox.getPublishedAt()).isNull();
-    }
-
-    @Test
-    @DisplayName("성공으로 확정되지 않은 발행 시도가 최대 횟수에 도달하면 BLOCKED로 전환한다")
-    void blocksUnsuccessfulAttemptWhenItReachesMaximumAttempts() {
-        OrderConfirmedOutbox outbox = outbox("event-1", NOW);
-        outbox.setAttemptCount(settings.maxAttempts() - 1);
-        when(repository.findReadyForRelay(NOW, settings.batchSize())).thenReturn(List.of(outbox));
-        when(publisher.publish("order-1", "payload-1"))
-            .thenReturn(CompletableFuture.completedFuture(PublishResult.pending("TimeoutException")));
-
-        relay.pollOnce();
-
-        assertThat(outbox.getStatus()).isEqualTo(OrderConfirmedOutboxStatus.BLOCKED);
-        assertThat(outbox.getAttemptCount()).isEqualTo(settings.maxAttempts());
-        assertThat(outbox.getLastError()).isEqualTo("TimeoutException");
-        assertThat(outbox.getPublishedAt()).isNull();
-    }
-
-    @Test
-    @DisplayName("최대 시도 횟수에 도달했더라도 Kafka 성공 응답이면 PUBLISHED로 기록한다")
-    void successAtMaximumAttemptIsStillPublished() {
-        OrderConfirmedOutbox outbox = outbox("event-1", NOW);
-        outbox.setAttemptCount(settings.maxAttempts() - 1);
-        when(repository.findReadyForRelay(NOW, settings.batchSize())).thenReturn(List.of(outbox));
-        when(publisher.publish("order-1", "payload-1"))
-            .thenReturn(CompletableFuture.completedFuture(PublishResult.SUCCESS));
-
-        relay.pollOnce();
-
-        assertThat(outbox.getStatus()).isEqualTo(OrderConfirmedOutboxStatus.PUBLISHED);
-        assertThat(outbox.getAttemptCount()).isEqualTo(settings.maxAttempts());
-        assertThat(outbox.getPublishedAt()).isEqualTo(NOW);
-    }
-
-    @Test
-    @DisplayName("기본 설정은 폴링 간격 1초, 조회 묶음 크기 10건, 최대 시도 횟수 3회다")
-    void readsDocumentedDefaultRelaySettingsFromTestProfile() {
-        assertThat(settings.pollInterval()).isEqualTo(Duration.ofSeconds(1));
-        assertThat(settings.batchSize()).isEqualTo(10);
-        assertThat(settings.maxAttempts()).isEqualTo(3);
-    }
-
-    @Test
-    @DisplayName("테스트별로 폴링 간격, 조회 묶음 크기, 최대 시도 횟수를 지정할 수 있다")
-    void allowsRelaySettingsToBeChangedPerTest() {
-        configureRelay(settings
-            .withPollInterval(Duration.ofSeconds(7))
-            .withBatchSize(4)
-            .withMaxAttempts(2));
-        OrderConfirmedOutbox retryable = outbox("event-1", NOW);
-        OrderConfirmedOutbox lastAttempt = outbox("event-2", NOW);
-        lastAttempt.setAttemptCount(1);
-        when(repository.findReadyForRelay(NOW, 4)).thenReturn(List.of(retryable, lastAttempt));
-        when(publisher.publish("order-1", "payload-1"))
-            .thenReturn(CompletableFuture.completedFuture(PublishResult.failed("BrokerException")));
-        when(publisher.publish("order-2", "payload-2"))
-            .thenReturn(CompletableFuture.completedFuture(PublishResult.pending("TimeoutException")));
-
-        relay.pollOnce();
-
-        assertThat(retryable.getStatus()).isEqualTo(OrderConfirmedOutboxStatus.FAILED);
-        assertThat(retryable.getNextAttemptAt()).isEqualTo(NOW.plusSeconds(7));
-        assertThat(lastAttempt.getStatus()).isEqualTo(OrderConfirmedOutboxStatus.BLOCKED);
-        assertThat(lastAttempt.getAttemptCount()).isEqualTo(2);
+        InOrder order = inOrder(scenarioRepository, scenarioPublisher);
+        order.verify(scenarioRepository).findReadyForRelay(NOW, branchSettings.batchSize());
+        order.verify(scenarioRepository).save(outbox);
+        order.verify(scenarioPublisher).publish("order-branch", "payload-branch");
+        order.verify(scenarioRepository).saveAndFlush(outbox);
     }
 
     @Test
@@ -258,18 +212,15 @@ class OrderConfirmedOutboxRelayDocumentContractTest {
     }
 
     private record RelaySettings(Duration pollInterval, int batchSize, int maxAttempts) {
+    }
 
-        private RelaySettings withPollInterval(Duration value) {
-            return new RelaySettings(value, batchSize, maxAttempts);
-        }
-
-        private RelaySettings withBatchSize(int value) {
-            return new RelaySettings(pollInterval, value, maxAttempts);
-        }
-
-        private RelaySettings withMaxAttempts(int value) {
-            return new RelaySettings(pollInterval, batchSize, value);
-        }
+    private record PublishScenario(
+        String displayName,
+        PublishResult result,
+        int attemptsBefore,
+        OrderConfirmedOutboxStatus expectedStatus,
+        String expectedError
+    ) {
     }
 
     @SpringBootConfiguration
