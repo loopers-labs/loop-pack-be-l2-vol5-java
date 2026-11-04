@@ -27,5 +27,5 @@ Kafka 토픽은 `order-events-6724aec69c`, consumer group은 `purchase-6724aec69
 
 - Commerce API 494건, Streamer 22건, 테스트 PG 25건, Kafka 1건으로 전체 `check` 542건이 통과했다. 실패·오류·건너뛰기는 0건이었다. Checkstyle과 ArchUnit을 포함한다.
 - 잘못된 복구 프로필 조합은 실행 파일에서 DataSource 시작 전에 거절되는 것을 확인했다. MySQL 검사에서는 UUID 불일치, 기존 수량·UUID 충돌 거절, JSON 필드 순서와 공백 차이를 허용하는 재실행을 확인했다.
-- 이 실험은 중단 위치를 디버거로 제어한 뒤 해당 프로세스를 종료했다. PG callback은 실험 옵션으로 생략하고 주문 대사 API를 사용했다. PG 거래 ID, Kafka 원문과 위치, DB 행 식별자는 로컬 실행의 [evidence.json](../../../build/r03-lab/6724aec69c/evidence.json)에 남겼다.
+- 이 실험은 중단 위치를 디버거로 제어한 뒤 해당 프로세스를 종료했다. PG callback은 실험 옵션으로 생략하고 주문 대사 API를 사용했다. 실험 스크립트를 실행하면 PG 거래 ID, Kafka 원문과 위치, DB 행 식별자가 로컬 `build/r03-lab/<실행ID>/evidence.json`에 기록된다.
 - [재현·운영 절차](operations.md)와 [전달 경계 기술 정리](technical-note.md)를 참고한다.

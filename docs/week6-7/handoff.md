@@ -43,7 +43,7 @@ R02 브랜치의 집중 검사 45건과 Checkstyle을 통과했다. 격리 Kafka
 API에서는 Outbox 직렬화 실패와 insert 직후 실패의 원자적 rollback, 재시도 시각과 BLOCKED·재개,
 브로커 확인 뒤 상태 갱신 실패를 주입한 뒤 새 Relay가 보낸 같은 key·payload의 실제 두 Kafka offset을 확인했다.
 `000`~`011`을 적용한 별도 MySQL에서 재개 프로필의 시작·스키마 검사·대상 한 행 갱신·종료도 확인했다.
-commerce-api·commerce-streamer·modules/kafka 전체 `check`는 515건을 통과했다. 실패·오류·건너뛰기는 0건이다.
+commerce-api 493건, commerce-streamer 22건, modules/kafka 1건으로 전체 `check` 516건이 통과했다. 실패·오류·건너뛰기는 0건이다.
 
 ## R03
 
