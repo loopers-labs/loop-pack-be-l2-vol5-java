@@ -32,6 +32,7 @@ public class ApplyOrderPaymentService {
     private final StockAdjustmentRepository adjustments;
     private final PaymentRecoveryTaskRepository tasks;
     private final ProductService products;
+    private final OrderConfirmationRecordFactory confirmationRecords;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Optional<ApplyOrderPaymentResult> apply(String key) {
@@ -62,7 +63,7 @@ public class ApplyOrderPaymentService {
         }
         boolean success = attempt.getOutcome() == PaymentAttempt.Outcome.SUCCESS;
         OrderStatus target = success ? OrderStatus.CONFIRMED : OrderStatus.PAYMENT_FAILED;
-        OrderRecord record = success ? OrderRecord.paidByPg(order.getUserId(), attempt.getAmount()) : null;
+        OrderRecord record = success ? confirmationRecords.create(order.getUserId(), attempt.getAmount()) : null;
         if (!orders.completePgIfPending(order.getId(), target, record)) {
             return Optional.empty();
         }

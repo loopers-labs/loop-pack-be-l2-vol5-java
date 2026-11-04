@@ -25,6 +25,7 @@ import com.loopers.domain.mall.repository.ProductRepository;
 import com.loopers.domain.mall.repository.StockAdjustmentRepository;
 import com.loopers.domain.ordering.model.Order;
 import com.loopers.domain.ordering.model.OrderItem;
+import com.loopers.domain.ordering.model.OrderRecord;
 import com.loopers.domain.ordering.model.OrderStatus;
 import com.loopers.domain.ordering.model.PaymentMethod;
 import com.loopers.domain.ordering.repository.OrderRepository;
@@ -57,6 +58,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.mockito.ArgumentCaptor;
 import org.springframework.aop.support.AopUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.InvalidDataAccessApiUsageException;
@@ -112,7 +114,13 @@ class ApplyOrderPaymentIntegrationTest {
 
         Order order = orders.findById(attempt.getOrderId()).orElseThrow();
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
-        assertThat(order.getRecord().orElseThrow().getPaymentMethod()).isEqualTo(PaymentMethod.PG);
+        var persisted = order.getRecord().orElseThrow();
+        var candidate = ArgumentCaptor.forClass(OrderRecord.class);
+        verify(orders, times(1)).completePgIfPending(eq(order.getId()), eq(OrderStatus.CONFIRMED), candidate.capture());
+        assertThat(persisted.getPaymentMethod()).isEqualTo(PaymentMethod.PG);
+        assertThat(persisted.getConfirmationEventId()).isNotNull().isEqualTo(candidate.getValue().getConfirmationEventId());
+        assertThat(persisted.getCreatedAt()).isEqualTo(candidate.getValue().getCreatedAt());
+        assertThat(persisted.getCreatedAt().getNano() % 1000).isZero();
         assertThat(probe.countPaidOrderRecords(order.getId())).isEqualTo(1L);
         assertThat(probe.countUsePointBills(1L, order.getId())).isZero();
         assertThat(products.findById(productId).orElseThrow().getStock()).isEqualTo(3);
@@ -122,7 +130,9 @@ class ApplyOrderPaymentIntegrationTest {
         ApplyOrderPaymentResult late = apply.execute(attempt.getAttemptKey());
         assertThat(late.state()).isEqualTo(ApplyOrderPaymentResult.State.APPLIED);
         assertThat(late.attentionRequired()).isTrue();
-        assertThat(orders.findById(order.getId()).orElseThrow().getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        var reapplied = orders.findById(order.getId()).orElseThrow().getRecord().orElseThrow();
+        assertThat(reapplied.getConfirmationEventId()).isEqualTo(persisted.getConfirmationEventId());
+        assertThat(reapplied.getCreatedAt()).isEqualTo(persisted.getCreatedAt());
         assertThat(attempt(attempt).getOutcome()).isEqualTo(PaymentAttempt.Outcome.SUCCESS);
     }
 

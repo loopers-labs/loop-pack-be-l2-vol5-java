@@ -12,13 +12,15 @@ Get-Content -Raw -Encoding utf8 docker/payment-lab/001-pg-schema.sql |
     docker compose -f docker/infra-compose.yml exec -T mysql mysql -uroot -proot --default-character-set=utf8mb4
 ```
 
-앱은 SQL을 자동 실행하지 않는다. PG에는 `001` → `002`, 기존 commerce에는 `003` → `004` → `005` → `006` → `007`을 적용한다.
+앱은 SQL을 자동 실행하지 않는다. PG에는 `001` → `002`, commerce에는 현재 적용된 버전 이후의 SQL을 `003`부터 `008`까지 순서대로 적용한다.
 `005`는 복구 작업, `006`은 주문별 차감 기록과 품목 테이블, `007`은 주문의 PG 결제 대기/실패 상태 추가다.
-R01까지 준비한 DB에는 `007-order-pg-status.sql`만 한 번 적용한다. 기존 주문·POINT 기록은 보존한다.
+`006`까지 적용한 5주차 DB에는 먼저 `007-order-pg-status.sql`을 한 번 적용한다.
+`007`까지 적용한 5주차 DB에서 6~7주차 R01을 실행하려면 `008-order-confirmation-event-id.sql`을 한 번 적용한다.
+기존 주문 기록에는 NULL이 들어가며 신규 PG 확정부터 UUID가 저장된다.
 
 commerce 테이블이 전혀 없는 **새 학습 DB**라면 먼저 `000-commerce-baseline.sql`을 적용한다.
 이 파일은 4주차의 테이블 구조를 만들며, 기존 DB를 고치거나 예전 버전에서 자동 업그레이드하는 용도가 아니다.
-이어서 `003`~`007`을 적용한다. 기존 데이터가 있는 DB에는 `000`을 실행하지 않는다.
+이어서 `003`~`008`을 적용한다. `000`은 새 학습 DB를 초기화하는 데 사용한다.
 
 PG 거래 테이블은 스키마 준비 다음에 적용한다.
 
@@ -86,5 +88,5 @@ PG 자체 재시작은 처리 지연을 15초, 생성 응답을 NORMAL, callback
 이 실험에서 실행한 PG 프로세스만 강제 종료하고 DB의 PENDING을 확인한다. 같은 DB로 PG를 다시 실행한 뒤 같은 거래 키가
 SUCCESS가 되는지, 앞서 완료한 거래도 같은 결과로 조회되는지 확인한다. 테이블이나 볼륨은 재시작 사이에 초기화하지 않는다.
 
-POINT 증분 호환은 `000` 직후 `orders`/`order_records`에 기존 PAID 행을 넣고 `003`~`006`을 적용해 확인한다.
+POINT 증분 호환은 `000` 직후 `orders`/`order_records`에 기존 PAID 행을 넣고 `003`~`008`을 적용해 확인한다.
 `payment_method=POINT`가 채워지고 기존 amount/status/created_at이 보존되어야 한다. `payment-lab` validate 기동도 확인한다.

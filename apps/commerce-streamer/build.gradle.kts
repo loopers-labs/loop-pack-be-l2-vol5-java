@@ -1,3 +1,7 @@
+sourceSets.test {
+    resources.srcDir(rootProject.file("docs/week6-7/r01-order-events-inbox/fixtures"))
+}
+
 dependencies {
     // add-ons
     implementation(project(":modules:jpa"))
