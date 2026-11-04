@@ -3,6 +3,8 @@
 Status: Accepted
 Related: [ADR 0007](0007-order-item-keeps-order-time-snapshot.md), [ADR 0012](0012-stock-decrement-locks-product-row.md), [ADR 0028](0028-test-pg-http-boundary-and-no-create-retry.md), [ADR 0030](0030-pg-payment-split-transactions-and-apply-once.md)
 
+Follow-up: 최초 PG 확정 시각과 커밋 후 이벤트 전달은 [ADR 0035](0035-publish-order-confirmation-after-db-commit.md)에서 확장한다. 아래 본문은 당시 결정·메서드 형태·검증 기록을 보존한다.
+
 ## Context
 
 3주차 주문 확정은 한 DB 트랜잭션에서 재고 차감, 포인트 차감, 2% 적립, CONFIRMED를 처리했다. 5주차 과제는 새 결제를 테스트 PG로 바꾸고, 과거 POINT 주문의 결제 사실은 그대로 조회하게 한다. PG 결과는 나중에 확인되므로, 결과를 기다리는 동안 이 주문 몫의 재고를 잡고 있다는 사실을 DB에 남겨야 한다.

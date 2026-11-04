@@ -1,6 +1,7 @@
 package com.loopers.application.order;
 
 import com.loopers.domain.order.OrderItem;
+import com.loopers.domain.order.OrderConfirmed;
 import com.loopers.domain.order.OrderModel;
 import com.loopers.domain.order.OrderService;
 import com.loopers.domain.payment.PaymentAttempt;
@@ -18,9 +19,12 @@ import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -39,6 +43,8 @@ public class OrderPaymentTransactions {
     private final ProductService productService;
     private final PaymentAttemptRepository paymentAttemptRepository;
     private final PaymentEventRepository paymentEventRepository;
+    private final Clock clock;
+    private final ApplicationEventPublisher events;
 
     @Transactional
     public PaymentStart start(Long userId, Long orderId, String attemptKey, String cardType, String cardNo) {
@@ -121,7 +127,9 @@ public class OrderPaymentTransactions {
         }
 
         if (attempt.getStatus() == PaymentAttemptStatus.SUCCESS) {
-            order.completePayment();
+            order.completePayment(clock.instant().truncatedTo(ChronoUnit.MICROS));
+            events.publishEvent(new OrderConfirmed(order.getId(), order.getConfirmedAt(), order.getItems().stream()
+                .map(item -> new OrderConfirmed.Item(item.getProductId(), item.getQuantity())).toList()));
         } else {
             failWithReleasedStock(order);
         }

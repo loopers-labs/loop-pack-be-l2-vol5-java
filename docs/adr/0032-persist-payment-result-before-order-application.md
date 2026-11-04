@@ -3,6 +3,8 @@
 Status: Accepted
 Related: [ADR 0029](0029-order-payment-switches-to-pg-with-reservation-on-order.md), [ADR 0030](0030-pg-payment-split-transactions-and-apply-once.md), [ADR 0031](0031-pg-lookup-retry-circuit-breaker-and-fallback.md)
 
+Follow-up: TX C의 최초 확정 시각 저장·내부 이벤트 준비와 커밋 후 발행 연결은 [ADR 0035](0035-publish-order-confirmation-after-db-commit.md)에서 확장한다. 아래 본문은 당시 결정·검증 기록을 보존한다.
+
 ## Context
 
 기존 TX B는 PG 결과 저장과 주문·예약·재고 처리를 함께 커밋했다. 주문 처리에 실패하면 이미 확인한 결제 결과와 이력도 롤백되어, 복구할 때 PG를 다시 조회해야 했다. 어느 구조든 미완료 주문을 다시 처리할 경로는 필요하다. 이번 변경은 확인한 결과를 DB에 보존하고, 그 결과를 주문에 반영하는 작업을 독립적으로 복구하기 위한 선택이다.

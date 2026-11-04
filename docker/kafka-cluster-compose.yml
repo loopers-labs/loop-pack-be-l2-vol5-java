@@ -1,0 +1,106 @@
+name: week6-kafka
+
+x-kafka-environment: &kafka-environment
+  KAFKA_KRAFT_CLUSTER_ID: qZYvnMj7TQWEzWrswnJt1A
+  KAFKA_ENABLE_KRAFT: "yes"
+  ALLOW_PLAINTEXT_LISTENER: "yes"
+  KAFKA_CFG_PROCESS_ROLES: broker,controller
+  KAFKA_CFG_LISTENERS: INTERNAL://:9092,EXTERNAL://:19092,CONTROLLER://:9093
+  KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+  KAFKA_CFG_INTER_BROKER_LISTENER_NAME: INTERNAL
+  KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+  KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka-1:9093,2@kafka-2:9093,3@kafka-3:9093
+  # 오타 topic이나 생성 전 order-events가 기본값(partition 1·복제 1)으로 조용히 생기지 않게 한다.
+  KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "false"
+  # consumer group의 committed offset 저장소. bitnami 이미지 기본값 1을 Kafka 원래 기본값 3으로 되돌린다.
+  # 처음 만들어질 때만 적용되므로, 이미 만든 클러스터라면 volume을 지우고 다시 만들어야 한다.
+  KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: "3"
+
+x-kafka-service: &kafka-service
+  image: bitnamilegacy/kafka:3.5.1
+  healthcheck:
+    test: ["CMD", "bash", "-c", "kafka-topics.sh --bootstrap-server localhost:9092 --list"]
+    interval: 10s
+    timeout: 5s
+    retries: 12
+    start_period: 30s
+
+services:
+  kafka-1:
+    <<: *kafka-service
+    container_name: week6-kafka-1
+    environment:
+      <<: *kafka-environment
+      KAFKA_CFG_NODE_ID: "1"
+      KAFKA_CFG_ADVERTISED_LISTENERS: INTERNAL://kafka-1:9092,EXTERNAL://localhost:19092
+    ports:
+      - "127.0.0.1:19092:19092"
+    volumes:
+      - kafka-1-data:/bitnami/kafka
+
+  kafka-2:
+    <<: *kafka-service
+    container_name: week6-kafka-2
+    environment:
+      <<: *kafka-environment
+      KAFKA_CFG_NODE_ID: "2"
+      KAFKA_CFG_ADVERTISED_LISTENERS: INTERNAL://kafka-2:9092,EXTERNAL://localhost:29092
+    ports:
+      - "127.0.0.1:29092:19092"
+    volumes:
+      - kafka-2-data:/bitnami/kafka
+
+  kafka-3:
+    <<: *kafka-service
+    container_name: week6-kafka-3
+    environment:
+      <<: *kafka-environment
+      KAFKA_CFG_NODE_ID: "3"
+      KAFKA_CFG_ADVERTISED_LISTENERS: INTERNAL://kafka-3:9092,EXTERNAL://localhost:39092
+    ports:
+      - "127.0.0.1:39092:19092"
+    volumes:
+      - kafka-3-data:/bitnami/kafka
+
+  # 업무 topic을 한 번 만들고 끝난다. 이미 있으면 건너뛴다(설정을 바꾸지는 않는다).
+  kafka-init:
+    image: bitnamilegacy/kafka:3.5.1
+    container_name: week6-kafka-init
+    depends_on:
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        kafka-topics.sh --bootstrap-server kafka-1:9092 --create --if-not-exists --topic order-events \
+          --partitions 3 --replication-factor 3 --config min.insync.replicas=2
+        kafka-topics.sh --bootstrap-server kafka-1:9092 --create --if-not-exists --topic order-events-dlt \
+          --partitions 1 --replication-factor 3 --config min.insync.replicas=2
+        kafka-topics.sh --bootstrap-server kafka-1:9092 --describe --topic order-events,order-events-dlt
+    restart: "no"
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: week6-kafka-ui
+    depends_on:
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:9099:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: week6
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-1:9092,kafka-2:9092,kafka-3:9092
+
+volumes:
+  kafka-1-data:
+  kafka-2-data:
+  kafka-3-data:
