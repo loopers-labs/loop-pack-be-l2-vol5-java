@@ -16,7 +16,7 @@ import com.loopers.domain.payment.PaymentModel;
 import com.loopers.domain.payment.PaymentObservation;
 import com.loopers.domain.payment.PaymentRepository;
 import com.loopers.domain.payment.PaymentRequest;
-import com.loopers.domain.payment.PaymentStatus;
+import com.loopers.domain.payment.PgOrderConsistency;
 import com.loopers.domain.product.ProductDetailCache;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.product.ProductRepository;
@@ -292,30 +292,9 @@ public class PaymentTransactionService {
         }
     }
 
-    /** 주문·결제의 저장 연결과 상태 결합을 검사한다(설계 3.6 TX B 검사). 어긋나면 임의로 처리하지 않는다. */
+    /** 주문·결제의 저장 연결과 상태 결합을 검사한다(설계 3.6 TX B 검사). 검사 본문은 PgOrderConsistency 로 옮겼다(W7.3-2). */
     private void requireConsistent(OrderModel order, PaymentModel payment) {
-        order.requireStoredItemsConsistent();
-        boolean linked = payment.getOrderId().equals(order.getId())
-            && PaymentModel.PROVIDER.equals(payment.getProvider())
-            && providerAccount.equals(payment.getProviderAccount())
-            && PaymentModel.providerOrderIdOf(order.getId()).equals(payment.getProviderOrderId())
-            && payment.getAmount().equals(order.getTotalAmount())
-            && order.getPaymentMethod() == PaymentMethod.PG
-            && Long.valueOf(0L).equals(order.getPointAmount());
-        // POINT 주문은 linked 에서 이미 걸러지므로 아래 확정 시각 조건은 PG 주문에만 적용된다.
-        boolean statusMatches = switch (order.getStatus()) {
-            case PAYMENT_PENDING -> (payment.getStatus() == PaymentStatus.UNKNOWN || payment.getStatus() == PaymentStatus.PENDING)
-                && order.getPaidAmount() == null && order.getConfirmedAt() == null;
-            case CONFIRMED -> payment.getStatus() == PaymentStatus.SUCCESS && payment.getAmount().equals(order.getPaidAmount())
-                && OrderModel.isUtcMicros(order.getConfirmedAt());
-            case PAYMENT_FAILED -> payment.getStatus() == PaymentStatus.FAILED && order.getPaidAmount() == null
-                && order.getConfirmedAt() == null;
-            case DRAFT -> false;
-        };
-        if (!linked || !statusMatches) {
-            throw new CoreException(ErrorType.INTERNAL_ERROR, "주문과 결제 시도의 저장 상태가 맞지 않습니다. [orderId = "
-                + order.getId() + "]");
-        }
+        PgOrderConsistency.requireConsistent(order, payment, providerAccount);
     }
 
     private PaymentModel loadTokenPayment(OrderModel order, PaymentCheckToken token) {
