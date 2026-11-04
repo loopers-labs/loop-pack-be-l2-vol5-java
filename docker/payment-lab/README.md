@@ -17,6 +17,9 @@ Get-Content -Raw -Encoding utf8 docker/payment-lab/001-pg-schema.sql |
 `006`까지 적용한 5주차 DB에는 먼저 `007-order-pg-status.sql`을 한 번 적용한다.
 `007`까지 적용한 5주차 DB에서 6~7주차 R01을 실행하려면 `008-order-confirmation-event-id.sql`을 한 번 적용한다.
 기존 주문 기록에는 NULL이 들어가며 신규 PG 확정부터 UUID가 저장된다.
+기존 DB에서 Streamer의 Inbox와 구매 활동 스키마를 준비할 때는 `009-purchase-activity.sql`을 한 번 적용한다.
+Streamer의 `local` 프로필은 `ddl-auto=none`으로 시작한다. 저장 기능을 사용하려면 먼저 `009`를 적용한다.
+Streamer 저장 통합 테스트는 별도 MySQL 컨테이너에 `009`를 적용한 뒤 Hibernate `validate`로 매핑을 확인한다.
 
 commerce 테이블이 전혀 없는 **새 학습 DB**라면 먼저 `000-commerce-baseline.sql`을 적용한다.
 이 파일은 4주차의 테이블 구조를 만들며, 기존 DB를 고치거나 예전 버전에서 자동 업그레이드하는 용도가 아니다.

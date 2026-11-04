@@ -175,7 +175,8 @@ Kafka transaction manager로 DB와 offset을 원자화했다고 표현하지 않
 - runtime 타입 추측을 피하고 모든 신규 factory/template 주입에 명시적인 이름을 사용한다.
 - streamer 이름은 commerce-streamer, 웹 포트는 8083, 관리 포트는 8084로 정한다.
 - 보존 실험은 API의 payment-lab+event-lab, streamer의 event-lab에서 validate·명시 SQL을 사용한다.
-- event-lab에는 DB/Kafka 및 기존에 로드되는 Redis 설정도 명시한다. local의 ddl-auto=create와 섞지 않는다.
+- event-lab에는 DB/Kafka 및 기존에 로드되는 Redis 설정도 명시한다. API의 local은 `ddl-auto=create`를 사용한다.
+- Streamer의 local은 사용자 선택으로 `ddl-auto=none`을 사용하며 `009` SQL로 테이블을 준비한다.
 
 Spring 문서에서 manual 모드 중단 시 이미 ack한 offset은 commit될 수 있다.
 실패 record의 offset은 별도 오류 처리 경로에서 DB 실패 기록 commit을 확인한 뒤 진행한다.
