@@ -10,12 +10,13 @@
 | 통합 기준 브랜치 | `volume-6-7/main` |
 | 사용자 확정 | 6~7주차를 함께 진행하고 consumer Inbox까지 적용 |
 | 최종 구조 | 주문 확정과 Outbox 원자적 저장 → 단일 relay → Kafka → Inbox와 구매 활동 원자적 저장 |
-| 현재 상태 | 초기 준비와 R01 상세 설계 문서 완료. 업무 기능은 미구현 |
+| 현재 상태 | 초기 준비 완료. R01 설계는 사용자 트레이드오프 논의 전 초안이며 업무 기능은 미구현 |
 
 기존 5주차 PG·예약(선차감 기록)·callback/reconcile·소유권·이전 POINT·상품 삭제/비노출 규칙을 보존한다.
 로컬 출발 커밋은 사용자의 과거 인계 문서 삭제를 포함한다. 해당 삭제와 사용자 JMeter 수정은 보존한다.
 준비·현재 검증은 [실행 환경](environment.md)과 [준비 결과](initial-setup.md), 순서는 [개발 계획](development-plan.md)을 따른다.
-R01의 구체 계약·저장·실행 설정과 검증은 [상세 설계](r01-order-events-inbox/plan.md)를 따른다.
+R01의 구체 계약·저장·실행 설정과 검증은 [상세 설계 초안](r01-order-events-inbox/plan.md)에 제안했다.
+[트레이드오프와 질문](r01-order-events-inbox/trade-offs.md)의 사용자 선택을 반영한 뒤 확정한다.
 
 원문: [W6 학습](reference/week6-learning.md) · [W6 과제](reference/week6-implementation-quest.md) ·
 [W7 학습](reference/week7-learning.md) · [W7 과제](reference/week7-implementation-quest.md).

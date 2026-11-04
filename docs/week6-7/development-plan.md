@@ -51,14 +51,14 @@ R01 재현 경로는 테스트 구성 또는 보존 revision으로 유지한다.
 
 ## R01 상세 설계
 
-2026-11-04 사용자 요청으로 [R01 상세 설계](r01-order-events-inbox/plan.md)를 작성했다.
-공유 계약은 순수 Java `contracts:commerce-events`, eventId는 주문에서 안정적 유도,
-confirmedAt은 기존 OrderRecord.createdAt의 UTC·마이크로초 값으로 정한다.
-streamer ordering context의 Inbox와 모든 품목을 단일 TX로 저장하고 유일 제약 경쟁은 rollback 뒤 새 TX에서 검증한다.
+2026-11-04 사용자 요청으로 [R01 상세 설계 초안](r01-order-events-inbox/plan.md)을 작성했다.
+추천안을 확정처럼 기록했던 점을 사용자 지적에 따라 바로잡고 [트레이드오프 논의](r01-order-events-inbox/trade-offs.md)를 시작했다.
+공유 계약 모듈·시각 저장 위치·Inbox 비교 근거 등은 사용자 미확정이다.
+Inbox와 모든 품목의 단일 TX 등 원문의 고정 조건은 유지하며 추천 세부는 답변 후 수정한다.
 필드/정규화는 [계약](r01-order-events-inbox/event-contract.md),
 제약/DDL/경합은 [저장 설계](r01-order-events-inbox/persistence.md),
 설정/실험은 상세 설계와 [검증 계획](r01-order-events-inbox/verification.md)을 따른다.
-이는 문서 설계 완료이며 모듈/테이블/설정/업무 기능은 아직 구현하지 않았다.
+현재는 논의 전 초안이며 모듈/테이블/설정/업무 기능은 아직 구현하지 않았다.
 Outbox relay의 구체 간격·회차 처리량·재시도 정책은 R02에서 설계한다.
 
 기능 동작을 바꾸는 구현은 저장소의 비즈니스·사용자 경험·기술 세 관점 리뷰 규칙을 따른다.

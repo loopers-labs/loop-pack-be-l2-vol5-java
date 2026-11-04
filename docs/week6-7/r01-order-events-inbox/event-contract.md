@@ -1,6 +1,7 @@
 # R01 이벤트 계약 · OrderConfirmed v1
 
-이 문서는 [상세 설계](plan.md)의 wire/identity 규칙이다. 아직 runtime에 연결한 계약 구현은 없다.
+이 문서는 [상세 설계](plan.md)의 추천안을 풀어 쓴 wire/identity 초안이다. 아직 runtime에 연결한 계약 구현은 없다.
+공유 위치·eventId 생성·시각 저장·호환성 선택은 [트레이드오프 논의](trade-offs.md) 후 확정한다.
 
 ## 형식
 
