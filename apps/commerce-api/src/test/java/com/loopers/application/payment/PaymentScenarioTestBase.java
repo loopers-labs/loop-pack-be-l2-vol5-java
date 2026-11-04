@@ -6,6 +6,7 @@ import com.loopers.application.product.ProductFacade;
 import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.OrderModel;
+import com.loopers.domain.order.OrderOutboxModel;
 import com.loopers.domain.order.ReservationStatus;
 import com.loopers.domain.payment.PaymentAttemptModel;
 import com.loopers.domain.payment.ProviderOrderId;
@@ -13,6 +14,7 @@ import com.loopers.domain.point.PointModel;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.infrastructure.brand.BrandJpaRepository;
 import com.loopers.infrastructure.order.OrderJpaRepository;
+import com.loopers.infrastructure.order.OrderOutboxJpaRepository;
 import com.loopers.infrastructure.order.StockReservationJpaRepository;
 import com.loopers.infrastructure.payment.PaymentAttemptJpaRepository;
 import com.loopers.infrastructure.point.PointJpaRepository;
@@ -90,6 +92,9 @@ abstract class PaymentScenarioTestBase {
 
     @Autowired
     protected StockReservationJpaRepository stockReservationJpaRepository;
+
+    @Autowired
+    protected OrderOutboxJpaRepository orderOutboxJpaRepository;
 
     @Autowired
     protected JdbcTemplate jdbcTemplate;
@@ -195,6 +200,11 @@ abstract class PaymentScenarioTestBase {
 
     protected PaymentAttemptModel attempt() {
         return paymentAttemptJpaRepository.findByOrderId(orderId).orElseThrow();
+    }
+
+    /** 이 주문의 Outbox 행. 테스트는 트랜잭션 밖에서 부르므로 매번 DB에서 새로 읽는다. */
+    protected List<OrderOutboxModel> outboxRows() {
+        return orderOutboxJpaRepository.findAllByOrderId(orderId);
     }
 
     protected OrderAdminInfo order() {
