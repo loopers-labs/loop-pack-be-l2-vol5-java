@@ -1,5 +1,7 @@
 # 공통 구조와 의존
 
+**W7 승인 설계 연결(2026-11-04):** 아래 계층·포트·TX 원칙은 유지한다. Outbox 기록·relay/복구 조율은 commerce-api의 application, 불변 사실·상태 모델/저장·전송 포트는 domain, JPA·Jackson·Kafka 구현은 infrastructure, scheduler 진입점은 interfaces에 둔다. 상세 계약은 [발행 W7.2~W7.4](../features/order-events/publication.md)가 원본이다. 현재 코드의 구현 완료를 뜻하지 않는다.
+
 기존 절을 기능별 기준 문서로 이동했다. 절 번호·계약·승인/검증 상태는 보존하며, 이동 자체는 새 설계 승인이나 실행 검증을 뜻하지 않는다.
 
 ## 2.1 적용 범위와 패키지 구조
@@ -40,6 +42,10 @@ feature-first는 한 기능과 관련된 코드를 가까운 위치에 모을 �
 |support|공통 오류 처리 등 애플리케이션 전반에서 사용하는 지원 코드를 제공한다.|공통 예외, 오류 타입|
 
 Domain Service는 기본적으로 Repository 조회·저장, API 처리 순서, 응답 조립과 트랜잭션 경계를 담당하지 않는다. 여러 도메인 객체의 정보가 필요한 업무 판단은 우선 Entity·Value Object에 둘 수 있는지 확인하고, 어느 하나가 책임지기 어려울 때만 Domain Service에 둔다. Repository 조회 자체가 도메인 판단의 일부이고 Facade가 객체나 값으로 준비해 전달하기 어려운 경우에는 비용과 대안을 먼저 검토한 뒤 예외를 둘 수 있지만, 현재 그런 예외는 없다. 현재 `OrderService`는 중복 주문 품목의 수량을 안전하게 합치고 Facade가 존재와 활성 상태를 확인한 상품의 가격으로 초안 주문을 만드는 규칙만 담당한다.
+
+W7 초안의 `PgOrderConsistency`는 Order·Payment를 인자로 받는 순수 저장 정합성 검사다. 현재 TX 담당 객체의 검사 조건을 유지해 확정/복구에서 공유하며 Repository·Clock·HTTP·상태 변경·TX를 맡지 않는다. 이는 위 Repository 예외를 추가하는 것이 아니다. relay/운영 객체는 상위 TX 없이 별도 TX bean 프록시를 호출하고, 외부 전송 대기는 TX 밖에서 수행한다.
+
+`PaymentTransactionService`는 최초 확정 사건의 기록만 application의 `OrderConfirmedRecorder`에 맡긴다. 제품의 유일 구현 `OrderOutboxRecordingService`는 MANDATORY로 기존 TX에 참여해 직렬화·Outbox 저장을 수행한다. 다른 Facade 호출·새 TX·외부 전송이 아니다. W6 재현 구현은 테스트 소스/특정 준비 컨텍스트에만 있으며 제품 설정으로 선택하는 런타임 대안을 제공하지 않는다.
 
 실습 템플릿으로 제공된 `example` 패키지는 현재 Commerce API의 설계·리팩터링 범위에서 제외한다. 아래 Facade와 트랜잭션 원칙은 브랜드·상품·좋아요·포인트·주문과 공통 요청자 식별 흐름에 적용한다.
 

@@ -1,5 +1,9 @@
 # 주문 확정 이벤트 계약과 전체 경계
 
+**현재 읽기 기준:** W7 승인 설계는 [발행 설계](publication.md)의 W7 이후 절이다. 아래 2026-10-29 상태·직접 발행 흐름은 W6 승인/구현 이력이며, 3.7 사건 값과 5.8 v1 wire 계약은 W7에서도 유지한다. W7은 세 차례 Claude 정적 검토/사용자 선택을 반영한 보완본이다. 신규 전달 O6→O7/O9와 별도 O11의 범위를 구분했으며 2026-11-04 사용자가 전체 설계를 최종 승인했다. 구현/검증은 미실행이며 구현 단위별 착수 허락은 별도다.
+
+W7 흐름은 검증된 PG 결과→최초 확정/예약 소비/PG 성공 사실과 Outbox의 같은 TX→API 내부 단일 relay→기존 broker/consumer다. broker 확인 뒤 PUBLISHED와 소비 완료를 구분하고, 명시한 W6 두 사건의 준비→복구 사이 같은 DB·PG·Kafka 상태를 유지한다. 상세 계약·수치·의사코드·검증 원본은 발행 W7.2~W7.4에 두며 여기서 중복 관리하지 않는다. 원문 요구와 달리 W6 당시 Outbox 제외를 W7 구현 제외로 해석하지 않는다.
+
 기존 절 번호 참조: [2.11](publication.md#211-주문-확정-이벤트-발행의-책임과-설정) · [4.6](publication.md#46-주문-확정-이벤트-발행) · [5.1](../../common/api-contract.md#51-공통-계약과-입력-정책).
 
 읽기: 공통 [구조](../../common/architecture.md)·[API](../../common/api-contract.md) → 아래 전체 경계/사건/이벤트 계약 → [발행 측 상세설계](publication.md) → [소비 측 상세설계](consumption.md) → [대안·선택 근거](../../decisions/order-events.md). 최초 PG 확정의 기존 계약은 [결제 모델](../order-payment/model.md)·[결과 적용](../order-payment/processing.md)을 함께 확인한다.

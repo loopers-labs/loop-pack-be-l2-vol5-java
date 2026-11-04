@@ -7,7 +7,8 @@
 ## 현재 상태
 
 - 기존 커머스·PG 결제·PG 단독 실행 앱의 계약과 과거 검증 근거를 보존한다. 실행 범위·수량·한계는 아래 검증 기록을 따른다.
-- 주문 확정 이벤트의 **발행·소비 상세설계는 2026-10-29 사용자 최종 승인 기준**이다. 승인된 단위별로 발행 P1~P9·소비 C1~C10을 구현하고 관련 검증을 실행했다. 실제 관찰·재현 방법·회귀 결과와 미검증 한계는 [주문 이벤트 실행 기록](verification/order-events.md)을 따른다. Outbox·랭킹 API·자동 재발행은 현재 범위 밖이며 DLQ는 별도 설계·승인 대상이다.
+- **현재 구현·과거 승인:** 주문 이벤트 W6의 2026-10-29 승인 설계에 따라 직접 발행 P1~P9·소비 C1~C10을 구현·검증했다. 실제 관찰·회귀 결과와 한계는 [주문 이벤트 실행 기록](verification/order-events.md)을 따른다. 그 기록의 Outbox·자동 재발행 제외는 W6 당시 경계이며 W7 요구를 제외한다는 뜻이 아니다.
+- **W7 승인 설계(2026-11-04):** [발행 설계](features/order-events/publication.md)의 W7~W7.4는 같은 확정 TX의 Outbox·API 내부 단일 scheduler/relay·BLOCKED/재개·명시 주문 복구를 정의한다. v1 사건·PG/HTTP·소비 정합성은 유지한다. W6 보존 구성·검증 기준·관련 문서의 통합 초안을 작성했다. 세 차례 Claude 정적 검토를 대조하고 사용자 선택/문서 보완 승인을 반영했다. 신규 전달 O6→O7/O9와 별도 W6 복구 O11의 자원/증거 범위를 정리했다. 2026-11-04 사용자가 최종 요약과 원문 부합 검토 뒤 설계 문서 스테이징 및 구현 검토 탭 인계를 요청해 전체 설계를 최종 승인했다. 구현/실행 검증은 미실행이며 구현 단위별 착수 허락은 별도다. 랭킹 API·DLQ는 추가하지 않는다.
 - 공통·기능별 설계·판단 근거·과거 기록으로 재편했다. 기존 절 번호와 A 식별자는 참조를 위해 유지한다. 각 계약의 원본은 아래 기준 문서 한 곳에 둔다.
 
 ## 문서 구성
@@ -31,7 +32,7 @@
 | 상품 캐시 | 카탈로그 조회 계약 → 상품 조회·캐시 → 캐시 결정 → 기존 기능 실행 기록 |
 | 결제 구현·검토 | 결제 읽기 안내 → 상태·저장 → TX·처리 → 관련 HTTP/API → 검증 기준 → 필요한 결정·실행 기록 |
 | PG 앱·fixture | PG 앱·HTTP 계약 → 테스트 래퍼·프록시 → PG client → PG 결정·전환 검증 기준/기록 |
-| 이벤트 발행 | 이벤트 전체 경계·계약 → 결제의 최초 확정·종결 보호 관련 절 → 발행 상세설계 → 이벤트 결정 |
+| 이벤트 발행/W7 구현 준비 | 이벤트 전체 경계·v1 계약 → 결제 최초 확정·종결 보호 → 발행 W7~W7.4의 검증/전환 → 이벤트 결정. 2.11·4.6은 보존한 W6 기준으로 구분 |
 | 이벤트 소비 | 이벤트 전체 경계·계약 → 소비 상세설계의 모델·동일 사실·TX/ack·중단/복구·C1~C10 → 관련 결정 |
 
 각 기능의 링크를 위 문서 구성 표에서 바로 연다. 모든 작업에 전체 설계 파일 읽기를 요구하지 않으며 필요한 공통/기능 계약과 관련 근거를 함께 읽는다.
@@ -40,7 +41,7 @@
 
 | 종류 | 문서 |
 |---|---|
-| 판단 이유·대안·비용·재검토 조건 | [공통 도메인·API A.1~A.15](decisions/domain-and-api.md) · [상품 캐시 A.16](decisions/product-cache.md) · [PG 결제 A.17~A.32](decisions/payment.md) · [PG 앱 A.33](decisions/pg-simulator.md) · [이벤트 A.34·A.35](decisions/order-events.md) |
+| 판단 이유·대안·비용·재검토 조건 | [공통 도메인·API A.1~A.15](decisions/domain-and-api.md) · [상품 캐시 A.16](decisions/product-cache.md) · [PG 결제 A.17~A.32](decisions/payment.md) · [PG 앱 A.33](decisions/pg-simulator.md) · [이벤트 W6 A.34·A.35/W7 A.36 이후](decisions/order-events.md) |
 | 현재 검증 기준 | 기능별 검증 절. PG 전환 표처럼 기준/결과가 혼합된 기존 자료는 [PG 전환 기록](verification/pg-simulator.md)에서 함께 보존 |
 | 날짜별 실제 실행·한계 | [기존 기능](verification/core-features.md) · [PG 결제](verification/payment.md) · [PG 앱 전환](verification/pg-simulator.md) · [주문 이벤트](verification/order-events.md) |
 | 과거 계약·승인·진척 | [이전 POINT 설계·검증](verification/legacy-point.md) · [설계 변경 이력](verification/design-history.md) |

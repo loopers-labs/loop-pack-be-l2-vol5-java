@@ -349,7 +349,9 @@ PaymentReconcileFacade.reconcile(userId, orderId):  // TX 없음
 
 ### applyObservation 내부 처리
 
-6주차 목표에서는 아래 PG 판정·예약 규칙을 유지하고 최초 확정·저장 뒤 사건 등록을 4.6으로 확장한다. 현재 코드의 1인자 confirmPg와 구분하며, 4.6의 2인자 계약·commit 전 등록 순서가 변경 후 기준이다.
+아래 PG 판정·예약 규칙과 2인자 confirmPg는 기존 W6 구현 계약이다. 4.6의 commit 전 Spring 이벤트 등록→AFTER_COMMIT 직접 발행은 보존한 W6 경로로 구분한다. W7 목표에서는 최초 확정 snapshot을 application의 OrderConfirmedRecorder에 넘기고 유일한 제품 구현 OrderOutboxRecordingService가 MANDATORY로 같은 TX에 v1 직렬화·Outbox insert를 수행한다. encoder/insert 오류는 TX B 실패로 전파한다. callback·reconcile·즉시 SUCCESS 모두 공통 applyObservation을 유지하며 다른 PG 판정/잠금/HTTP 계약은 변경하지 않는다. 세부 순서·분기·실패 처리의 W7 원본은 [발행 W7.2](../order-events/publication.md), 명시 대상 복구는 같은 문서 W7.3/4다. W6 준비 테스트만 보존한 이벤트 등록 구현을 연결하며 제품 우회 모드는 없다.
+
+W7의 flush는 Spring Data repository 프록시의 saveAndFlush로만 수행하며 같은 PC의 Order/Payment SQL도 앞당길 수 있다. uk_payment_transaction 위반은 commit 전에도 DataIntegrityViolationException으로 전파돼 전체 TX rollback 뒤 기존 PaymentObservationApplier의 명명 제약 분류·별도 충돌 기록 TX를 유지해야 한다. application의 직접 EntityManager.flush·모든 DB 오류의 결제 충돌 변환은 사용하지 않는다. 기존 “직접 flush 없음” 주석·시점 의존 테스트는 이 경계에 맞춰 갱신하고 실제 SQL/예외 사슬을 확인한다. 기존 SUCCESS/PENDING 거래 키 중복 회귀와 두 번째 주문 Outbox 0 검증의 원본은 발행 W7.2-6a다. 이 보완은 PG/HTTP 계약을 바꾸지 않는다.
 
 ```text
 TX B applyObservation(token, observation):

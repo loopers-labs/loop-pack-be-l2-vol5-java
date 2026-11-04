@@ -1,5 +1,20 @@
 # 주문 확정 이벤트 구현·실행 기록
 
+**W7 읽기 구분:** 아래 본문과 명령/관찰값은 W6 당시 revision·실행 조건의 이력이다. W7 전환 뒤에는 C10 파일을 O11의 준비/검증 지원 코드로 보존하고 독립 @Test를 옮기므로, 아래 C10 이름의 필터를 현재 W7 재현 명령으로 사용하지 않는다. 기존 broker 테스트도 W7 발행 전용 O5/O10으로 역할이 바뀐다. 과거 결과·수치·본문은 그대로 보존한다.
+
+W7 구현 후의 목표 재현 진입점은 다음과 같다. 현재 문서 작업에서 W7 구현/이 명령을 실행한 것은 아니며, 실제 클래스/작업 발견·0건/skip·연결/실행 결과를 별도로 확인해야 한다.
+
+~~~bash
+# 기본 테스트 DB·실제 streamer: 같은 주문 O6→O7, 별도 주문 O9
+./gradlew :apps:commerce-api:test --tests '*OrderOutboxDeliveryEndToEndIntegrationTest'
+# 발행 전용 임시 스키마: O5/O10
+./gradlew :apps:commerce-api:test --tests '*OrderEventKafkaBrokerIntegrationTest'
+# 새 worker·빈 DB의 W6 두 상태 준비 → 같은 상태의 W7 복구 O11
+./gradlew :apps:commerce-api:w6OutboxRecoveryTest
+~~~
+
+현재 계약·자원·증거 기준은 [발행 W7.4](../features/order-events/publication.md), 선택/보완 이유는 [A.40·A.41](../decisions/order-events.md)을 따른다. 위 목표 명령이나 이 안내를 이번 테스트 통과 근거로 삼지 않는다.
+
 2026-10-29 승인 설계의 구현과 단위별 실행 결과를 정리한다. 계약의 원본은 [이벤트 계약](../features/order-events/README.md)·[발행 설계](../features/order-events/publication.md)·[소비 설계](../features/order-events/consumption.md)이며, 이 문서는 실행 조건·관찰값·한계를 보존한다.
 
 ## 범위와 근거의 시점
