@@ -2,6 +2,11 @@ package com.loopers.infrastructure.order.support;
 
 import com.loopers.CommerceApiApplication;
 import com.loopers.application.order.OrderConfirmedRecorder;
+import com.loopers.application.order.OrderOutboxExecutionGate;
+import com.loopers.application.order.OrderOutboxOperations;
+import com.loopers.application.order.OrderOutboxRecoveryTransactionService;
+import com.loopers.application.order.OrderOutboxRelay;
+import com.loopers.application.order.OrderOutboxRelayTransactionService;
 import com.loopers.application.payment.PaymentTransactionService;
 import com.loopers.domain.order.OrderConfirmedMessageEncoder;
 import com.loopers.domain.order.OrderConfirmedOutboxModel;
@@ -44,7 +49,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
  * 구현 03 에서 OrderEventKafkaContextTest 를 W7 로 전환하며 이 테스트로 옮겼다.
  */
 @Timeout(120)
-@DisplayName("[W6 보존] W6 준비 컨텍스트는 W6 recorder·listener·JSON adapter 만 조립하고 Outbox 를 관리·생성하거나 W7 전송 bean 을 두지 않는다.")
+@DisplayName("[W6 보존] W6 준비 컨텍스트는 W6 recorder·listener·JSON adapter 만 조립하고 Outbox 를 관리·생성하거나 W7 전송·relay bean 을 두지 않는다.")
 class W6PreparationContextIntegrationTest {
 
     private static final String SCHEMA = "w6_preparation_check";
@@ -109,6 +114,10 @@ class W6PreparationContextIntegrationTest {
             () -> assertThat(W6PreparationContextInitializer.W7_PRODUCED_DEFINITIONS).allSatisfy(name ->
                 assertThat(context.containsBean(name)).as("W7 전용 template·factory 없음: " + name).isFalse()),
             () -> assertThat(context.containsBean("orderOutboxKafkaConfig")).isFalse(),
+            () -> assertThat(List.of(OrderOutboxRelay.class, OrderOutboxRelayTransactionService.class, OrderOutboxOperations.class,
+                OrderOutboxRecoveryTransactionService.class, OrderOutboxExecutionGate.class)).allSatisfy(type ->
+                assertThat(context.getBeansOfType(type)).as("W7 relay·운영 bean 없음: " + type.getSimpleName()).isEmpty()),
+            () -> assertThat(context.containsBean("orderOutboxRelayConfig")).isFalse(),
             () -> assertThat(ReflectionTestUtils.getField(port, "topic")).isEqualTo("order-events"),
             () -> assertThat(factory.getConfigurationProperties()).as("W6 JSON producer 의 앱 YAML 유효 값")
                 .doesNotContainKey(ProducerConfig.RETRIES_CONFIG)

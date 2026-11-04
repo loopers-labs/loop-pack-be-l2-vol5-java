@@ -24,14 +24,14 @@ import java.util.Set;
  * <ol>
  *   <li>refresh 전: 53f912b 의 관리 타입만 허용하는 filter, W6 설정 두 개(@Bean lite 설정), 아래 Replacer 를 bean 정의로 등록한다.</li>
  *   <li>CCPP(PriorityOrdered): 일반 앱 설정·repository 와 W6 설정의 @Bean 정의를 해석한다.</li>
- *   <li>Replacer(순서 없는 BDRPP, CCPP 뒤): W7 Outbox repository·구현·제품 recorder·전송 sender·전용 Kafka 설정 정의를 이름으로
+ *   <li>Replacer(순서 없는 BDRPP, CCPP 뒤): W7 Outbox repository·구현·제품 recorder·전송 sender·relay·운영·TX 서비스·전용 Kafka/relay 설정 정의를 이름으로
  *   제거하고, 그 설정이 factory 로 만든 producer factory·template 정의도 factoryBeanName 으로 뺀다. 없으면 기동 실패다.</li>
  *   <li>singleton 생성 전: recorder 는 W6 하나, 발행 포트는 W6 adapter 하나인지 확인한다.</li>
  * </ol>
  *
  * <p>Replacer 를 context.addBeanFactoryPostProcessor 로 넣으면 CCPP 보다 먼저 실행돼 repository 정의가 아직 없다. 그래서 bean 정의로 등록한다.
  * 전역 override 허용·@Primary·이름 접두사 일괄 삭제는 쓰지 않는다. 순수 encoder·verifier 는 전송을 하지 않으므로 남긴다.
- * relay·scheduler·복구 서비스는 아직 제품에 없다. 후속 단위가 그 정의를 추가하면 {@link #W7_DEFINITIONS} 에 이름을 더하고,
+ * scheduler·주문 복구는 아직 제품에 없다. relay 설정 값(OrderOutboxRelayProperties)은 전송·DB 동작이 없는 바인딩이라 남긴다. 후속 단위가 그 정의를 추가하면 {@link #W7_DEFINITIONS} 에 이름을 더하고,
  * 남은 W7 정의는 기동 뒤 부재 단언으로 드러난다.
  */
 public class W6PreparationContextInitializer implements ApplicationContextInitializer<ConfigurableApplicationContext> {
@@ -60,12 +60,20 @@ public class W6PreparationContextInitializer implements ApplicationContextInitia
         "orderConfirmedOutboxRepositoryImpl",
         "orderOutboxRecordingService",
         "kafkaOrderOutboxSender",
-        "orderOutboxKafkaConfig");
+        "orderOutboxKafkaConfig",
+        "orderOutboxRelay",
+        "orderOutboxRelayTransactionService",
+        "orderOutboxOperations",
+        "orderOutboxRecoveryTransactionService",
+        "orderOutboxRelayConfig");
 
     /** 위 설정의 @Bean 이 만든 정의. factoryBeanName 연계로 제거되어야 하며, 남거나 이름이 바뀌면 기동을 거절한다. */
     public static final List<String> W7_PRODUCED_DEFINITIONS = List.of(
         OrderOutboxKafkaConfig.ORDER_OUTBOX_PRODUCER_FACTORY,
-        OrderOutboxKafkaConfig.ORDER_OUTBOX_KAFKA_TEMPLATE);
+        OrderOutboxKafkaConfig.ORDER_OUTBOX_KAFKA_TEMPLATE,
+        "orderOutboxRetryPolicy",
+        "orderOutboxExecutionGate",
+        "orderOutboxRelayProbe");
 
     static final String FILTER = "w6ManagedClassNameFilter";
     static final String TEST_CONFIGURATION = "w6OrderEventTestConfiguration";

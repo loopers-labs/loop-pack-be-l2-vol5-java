@@ -22,4 +22,13 @@ public interface OrderConfirmedOutboxRepository {
      * 최대 limit 개 반환한다. limit 은 양수여야 한다. 이 순서는 commit 순서나 업무 이벤트의 발행 순서 보장이 아니다.
      */
     List<Long> findPendingDueIds(ZonedDateTime now, int limit);
+
+    /** 호출자 TX 안에서 Outbox 행만 배타 잠금으로 읽는다(설계 W7.3-2). TX 가 없으면 거절한다. */
+    Optional<OrderConfirmedOutboxModel> findForUpdateById(Long id);
+
+    /** 호출자 TX 안에서 명시 eventId 의 Outbox 행만 배타 잠금으로 읽는다. TX 가 없으면 거절한다. */
+    Optional<OrderConfirmedOutboxModel> findForUpdateByEventId(String eventId);
+
+    /** 호출자 TX 의 변경을 flush 해 제약·DB 오류를 commit 전에 드러낸다. TX 가 없으면 거절한다. flush 성공은 commit 성공이 아니다. */
+    OrderConfirmedOutboxModel saveAndFlush(OrderConfirmedOutboxModel outbox);
 }

@@ -49,4 +49,25 @@ public class OrderConfirmedOutboxRepositoryImpl implements OrderConfirmedOutboxR
         }
         return jpaRepository.findDueIds(OrderOutboxStatus.PENDING, now, Limit.of(limit));
     }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Optional<OrderConfirmedOutboxModel> findForUpdateById(Long id) {
+        return jpaRepository.findForUpdateById(id);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Optional<OrderConfirmedOutboxModel> findForUpdateByEventId(String eventId) {
+        return jpaRepository.findForUpdateByEventId(eventId);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public OrderConfirmedOutboxModel saveAndFlush(OrderConfirmedOutboxModel outbox) {
+        if (outbox == null) {
+            throw new CoreException(ErrorType.INTERNAL_ERROR, "저장할 Outbox 행이 없습니다.");
+        }
+        return jpaRepository.saveAndFlush(outbox);
+    }
 }

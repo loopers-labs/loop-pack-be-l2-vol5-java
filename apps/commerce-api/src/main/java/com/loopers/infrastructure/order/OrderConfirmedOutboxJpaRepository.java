@@ -2,8 +2,10 @@ package com.loopers.infrastructure.order;
 
 import com.loopers.domain.order.OrderConfirmedOutboxModel;
 import com.loopers.domain.order.OrderOutboxStatus;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -22,4 +24,12 @@ public interface OrderConfirmedOutboxJpaRepository extends JpaRepository<OrderCo
         order by o.nextAttemptAt asc, o.id asc
         """)
     List<Long> findDueIds(@Param("status") OrderOutboxStatus status, @Param("now") ZonedDateTime now, Limit limit);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select o from OrderConfirmedOutboxModel o where o.id = :id")
+    Optional<OrderConfirmedOutboxModel> findForUpdateById(@Param("id") Long id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select o from OrderConfirmedOutboxModel o where o.eventId = :eventId")
+    Optional<OrderConfirmedOutboxModel> findForUpdateByEventId(@Param("eventId") String eventId);
 }
