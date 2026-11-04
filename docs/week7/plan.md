@@ -33,7 +33,7 @@
 - 순서 ✅: 0 테이블 재설계 → 1 relay + 결과 기록 주체 → 2 after-commit 직접 발행 제거 → 3 재시도·BLOCKED → 4 relay 실행 방식(겹침 방지) → 5 중단 실험 두 개 → 6 누락 재현·복구·PG 호출 수 → 7 E2E → 8 운영(관찰·재개 진입점·보존·한계 문서) → 9 회귀 → 기술 글 → PR.
   - relay 생성과 "결과 기록 주체"를 한 단계로 합쳤다 — 기록 주체가 relay의 모양 자체라서 나누면 두 번 짠다.
   - 직접 발행 제거를 relay 뒤로 미뤘다 — 먼저 지우면 relay 전까지 발행이 0이 되고 W6 테스트가 깨진 채 남는다.
-- 역할 ✅ (C안): 핵심 로직은 학습자가 `volume-7`(`../loop-pack-be-l2-vol5-java-v7`)에서 직접 짜고, Claude는 리뷰한다. 테이블·설정·어댑터·테스트 초안·문서는 Claude가 `volume-7-claude`(`../loop-pack-be-l2-vol5-java-claude`, push 안 함)에서 쓰고 학습자가 cherry-pick한다.
+- 역할 ✅ (11-05 변경): 핵심 로직도 Claude가 `volume-7-claude`에서 TDD로 초안을 쓰고, 학습자가 리뷰한다(테스트는 엄격히). 처음 C안은 학습자가 직접 짜는 것이었다. 테이블·설정·어댑터·테스트 초안·문서는 Claude가 `volume-7-claude`(`../loop-pack-be-l2-vol5-java-claude`, push 안 함)에서 쓰고 학습자가 cherry-pick한다.
 - 핵심 로직 (학습자 담당, 테스트는 엄격히 본다):
   1. `OrderOutbox` 도메인의 상태 전이 — 어떤 상태에서 어디로만 가나, 거절 뒤 기존 값 유지
   2. relay 한 회차 — 고르기 → send → future 대기 → 결과(성공·명시적 실패·timeout·저장 실패)별 기록
@@ -106,7 +106,9 @@
 | 그 밖의 조합 (예: PUBLISHED → SENDING, PENDING에 성공 기록) | — | **예외**, 기존 값 유지 |
 
 - 🔧 backoff 지연(jitter 난수)은 `OrderOutbox` 밖의 정책 객체가 계산해 `delay`로 넘긴다 — 도메인 테스트에 난수가 들어오지 않는다 (핵심 3).
-- 🤔 학습자가 정할 것: 예외 타입, "기한이 지난 SENDING"을 도메인이 `now`로 직접 확인할지(조회 조건만 믿을지).
+- 🔧 예외 타입: `CoreException(ErrorType.CONFLICT)` — 프로젝트 도메인 관례이고, 재개 진입점이 그대로 "상태 충돌"로 응답할 수 있다. 메시지에 eventId·status·now를 남긴다 (리뷰에서 바꿀 수 있음).
+- 🔧 "기한이 지난 SENDING"은 도메인이 `now`로 직접 확인한다 — 조회 조건(`findDue`)과 같은 규칙을 한 번 더 지킨다. PENDING도 차례 전이면 거절한다. 기한과 같은 시각은 지난 것으로 본다(`findDue`의 `<=`와 맞춤).
+- 구현 (11-05, `volume-7-claude`): Red 20건 assertion 실패 → Green 20/0/0. 일부러 넣은 버그 6종(경계 `<`, BLOCKED `>`, 재개 시 attempt 유지, 성공 기록 상태 확인 제거, 맡기 상태 확인 제거, 원인 자르기 제거)을 모두 잡음.
 
 ## D-3. 재시도·BLOCKED (일부 먼저 정함)
 
@@ -178,4 +180,5 @@
 
 - 11-03: 문서 시작. 체크리스트·작업 방식·전제·D-0(테이블 분리, 컬럼, topic은 설정)·보존 정책·한계를 적었다. C-2에 UNKNOWN 테스트 4개 추가.
 - 11-03: D-0에 SENDING·lease(`next_attempt_at`) 추가, D-3(backoff + jitter, 3번 실패 → BLOCKED, 감지 수단), D-1 한 회차 정의.
-- 11-04: D-1 "실패하면 회차를 멈춘다"와 비교표, 순서 구분(다른 주문 vs 같은 주문)·한정 수량 공정성 답. 한계에 같은 주문 순서 세 겹·late-arriving data·DLT 재처리 TODO·broker 중복·테이블 증가·CDC 비교 추가. partition·offset 남김 ✅, 인덱스 🔧(D-0으로 옮김), backoff 숫자 ✅, lease 책임 나눔 🔧, BLOCKED = 보내는 쪽 DLT·재개 시 attempt 0·잘못된 전이는 예외 ✅, 핵심 1 기대값 표. 0단계 구현: order_outbox 엔티티 뼈대·포트·어댑터·schema.sql, 조회 테스트 4개. N=200·tick 1초(🔧), 직렬 처리 ✅, 대기(`delivery.timeout.ms` 30s · 대기 35s · lease 1분) ✅/🔧.
+- 11-04: D-1 "실패하면 회차를 멈춘다"와 비교표, 순서 구분(다른 주문 vs 같은 주문)·한정 수량 공정성 답. 한계에 같은 주문 순서 세 겹·late-arriving data·DLT 재처리 TODO·broker 중복·테이블 증가·CDC 비교 추가. partition·offset 남김 ✅, 인덱스 🔧(D-0으로 옮김), backoff 숫자 ✅, lease 책임 나눔 🔧, BLOCKED = 보내는 쪽 DLT·재개 시 attempt 0·잘못된 전이는 예외 ✅, 핵심 1 기대값 표. 0단계 구현: order_outbox 엔티티 뼈대·포트·어댑터·schema.sql, 조회 테스트 4개.
+- 11-05: 핵심 1 구현(Claude 초안 → 학습자 리뷰로 역할 변경). 예외 CONFLICT·도메인 기한 확인 🔧. N=200·tick 1초(🔧), 직렬 처리 ✅, 대기(`delivery.timeout.ms` 30s · 대기 35s · lease 1분) ✅/🔧.
