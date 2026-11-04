@@ -50,7 +50,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
  */
 @Timeout(120)
 @DisplayName("[W6 보존] W6 준비 컨텍스트는 W6 recorder·listener·JSON adapter 만 조립하고 Outbox 를 관리·생성하거나 W7 전송·relay bean 을 두지 않는다.")
-class W6PreparationContextIntegrationTest {
+public class W6PreparationContextIntegrationTest {
 
     private static final String SCHEMA = "w6_preparation_check";
 
@@ -68,7 +68,7 @@ class W6PreparationContextIntegrationTest {
             try {
                 assertThat(tables(admin)).as("기동 전 빈 스키마").isEmpty();
                 try (ConfigurableApplicationContext context = boot(server)) {
-                    assertAssembly(context);
+                    assertAssembly(context, "order-events");
                 }
                 List<String> tables = tables(admin);
                 System.out.println("[W6 PREP] tables=" + tables);
@@ -82,7 +82,8 @@ class W6PreparationContextIntegrationTest {
         }
     }
 
-    private static void assertAssembly(ConfigurableApplicationContext context) {
+    /** W6 준비 컨텍스트의 조립 단언. 이 테스트와 O11(C10 의 W6 준비 API, 실행 topic)이 같은 기대로 쓴다(구현 07). */
+    public static void assertAssembly(ConfigurableApplicationContext context, String expectedTopic) {
         Object recorder = context.getBean(OrderConfirmedRecorder.class);
         Object listener = context.getBean(W6OrderEventTestConfiguration.LISTENER);
         Object port = context.getBean(W6OrderEventTestConfiguration.PORT);
@@ -118,7 +119,7 @@ class W6PreparationContextIntegrationTest {
                 OrderOutboxRecoveryTransactionService.class, OrderOutboxExecutionGate.class)).allSatisfy(type ->
                 assertThat(context.getBeansOfType(type)).as("W7 relay·운영 bean 없음: " + type.getSimpleName()).isEmpty()),
             () -> assertThat(context.containsBean("orderOutboxRelayConfig")).isFalse(),
-            () -> assertThat(ReflectionTestUtils.getField(port, "topic")).isEqualTo("order-events"),
+            () -> assertThat(ReflectionTestUtils.getField(port, "topic")).isEqualTo(expectedTopic),
             () -> assertThat(factory.getConfigurationProperties()).as("W6 JSON producer 의 앱 YAML 유효 값")
                 .doesNotContainKey(ProducerConfig.RETRIES_CONFIG)
                 .doesNotContainKey(ProducerConfig.TRANSACTIONAL_ID_CONFIG)

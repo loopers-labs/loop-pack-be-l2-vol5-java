@@ -30,7 +30,12 @@ class OrderConfirmedOutboxSchemaIntegrationTest {
     @DisplayName("열은 표의 타입·길이·nullable·collation·DATETIME(6) 이고 열 집합에 추가 열이 없다.")
     @Test
     void columnsMatchDesignTable() {
-        Map<String, Column> columns = columns();
+        assertColumnsMatchDesignTable(jdbcTemplate);
+    }
+
+    /** 이 테스트와 O11(W6→W7 update 뒤 추가된 Outbox)이 같은 기대로 쓴다(구현 07). */
+    static void assertColumnsMatchDesignTable(JdbcTemplate jdbcTemplate) {
+        Map<String, Column> columns = columns(jdbcTemplate);
         System.out.println("[OUTBOX DDL] " + jdbcTemplate.queryForMap("SHOW CREATE TABLE " + TABLE).get("Create Table"));
 
         assertAll(
@@ -58,7 +63,12 @@ class OrderConfirmedOutboxSchemaIntegrationTest {
     @DisplayName("명명 unique·due 인덱스와 세 CHECK 만 있고, UNIQUE(order_id)·문자열 값 CHECK·물리 FK 는 없다.")
     @Test
     void namedConstraintsOnly() {
-        Map<String, String> indexes = indexes();
+        assertNamedConstraintsOnly(jdbcTemplate);
+    }
+
+    /** 이 테스트와 O11 이 같은 기대로 쓴다(구현 07). */
+    static void assertNamedConstraintsOnly(JdbcTemplate jdbcTemplate) {
+        Map<String, String> indexes = indexes(jdbcTemplate);
         Map<String, String> checks = new LinkedHashMap<>();
         jdbcTemplate.query("""
             SELECT tc.CONSTRAINT_NAME, cc.CHECK_CLAUSE FROM information_schema.TABLE_CONSTRAINTS tc
@@ -88,7 +98,7 @@ class OrderConfirmedOutboxSchemaIntegrationTest {
         );
     }
 
-    private Map<String, Column> columns() {
+    private static Map<String, Column> columns(JdbcTemplate jdbcTemplate) {
         Map<String, Column> columns = new LinkedHashMap<>();
         jdbcTemplate.query("""
             SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, CHARACTER_SET_NAME, COLLATION_NAME FROM information_schema.COLUMNS
@@ -100,7 +110,7 @@ class OrderConfirmedOutboxSchemaIntegrationTest {
     }
 
     /** 인덱스 이름 → "unique|index:열1,열2" (SEQ_IN_INDEX 순서). */
-    private Map<String, String> indexes() {
+    private static Map<String, String> indexes(JdbcTemplate jdbcTemplate) {
         Map<String, List<String>> columns = new LinkedHashMap<>();
         Map<String, Boolean> unique = new LinkedHashMap<>();
         jdbcTemplate.query("""

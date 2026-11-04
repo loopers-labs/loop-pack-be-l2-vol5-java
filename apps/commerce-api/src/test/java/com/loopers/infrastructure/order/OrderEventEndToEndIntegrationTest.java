@@ -17,19 +17,10 @@ import com.loopers.fixture.pg.CreateOutcome;
 import com.loopers.fixture.pg.PgFixtureServer;
 import com.loopers.fixture.pg.PgOperation;
 import com.loopers.fixture.pg.ResponsePlan;
-import com.loopers.infrastructure.order.OrderEventTestCleanup.Step;
 import com.loopers.testsupport.LocalKafkaTestSupport;
-import com.loopers.utils.DatabaseCleanUp;
-import com.loopers.utils.RedisCleanUp;
 import org.apache.kafka.clients.admin.ConsumerGroupDescription;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.TopicPartition;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
@@ -37,7 +28,6 @@ import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProce
 import org.springframework.beans.factory.support.RootBeanDefinition;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.test.system.CapturedOutput;
-import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.web.servlet.context.ServletWebServerApplicationContext;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.http.HttpEntity;
@@ -47,7 +37,6 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.web.client.RestTemplate;
 
@@ -86,10 +75,12 @@ import static org.junit.jupiter.api.Assertions.assertAll;
  * DB 는 기존 API 테스트 MySQL fixture 의 기본 DB 를 쓴다(발행 검증 전용 스키마 예외를 쓰지 않는다). 부모 API 가 먼저 create 로 스키마를
  * 준비하고, 자식 streamer 는 자기 두 테이블만 create 한다. 자식은 두 사건이 끝날 때까지 한 번만 띄운다.
  * 정리는 자식 JVM → API 컨텍스트(테스트 데이터 정리 포함) → PG fixture → 구매 테이블 → Kafka 소유 group·topic 순으로 모두 시도한다.
+ *
+ * <p>구현 07(설계 W7.4-4 C10 이관): 이 파일은 독립 JUnit 진입(@Test·@BeforeAll/@AfterAll)을 W6OutboxRecoveryEndToEndIntegrationTest(O11)로 옮긴
+ * 지원 코드다. W6 준비 API 기동·A/B 준비·관찰·assertUnpublished/assertConsumedOnce 의 기대는 그대로이며, O11 이 자원 수명을 소유하고
+ * 복구 전에 이 검사를 모두 실행한다. 바뀐 것은 진입점(attach·bootW6Api·startStreamerAndAssertReady·reproduceUnpublishedAndConsumedEvents)과
+ * 자식 기동의 소유 표시(05a 의 launchChild 사용)뿐이다. 과거 C10 실행 기록은 그 시점 결과다.
  */
-@Timeout(300)
-@ExtendWith(OutputCaptureExtension.class)
-@DisplayName("C10: 실제 PG 확정 → API commit → Kafka → 별도 JVM streamer listener → 구매 활동 DB 를 연결하고, commit 뒤 미발행과 정상 소비를 재현한다.")
 class OrderEventEndToEndIntegrationTest {
 
     private static final Duration DEADLINE = Duration.ofSeconds(60);
@@ -112,55 +103,28 @@ class OrderEventEndToEndIntegrationTest {
 
     private final RestTemplate http = client();
 
-    @BeforeAll
-    static void prepare() throws Exception {
-        kafka = LocalKafkaTestSupport.connect();
-        System.out.println("[C10 KAFKA] bootstrap=" + kafka.bootstrapServers() + " runId=" + kafka.runId() + " broker=" + kafka.brokerInfo());
-        topic = kafka.createTopic("order-events-c10");
-        group = kafka.ownGroup("purchase-activity-c10");
-        pg = PgFixtureServer.start();
+    /** O11 이 만든 소유 자원을 연결한다. 기존 @BeforeAll 의 연결·준비 순서는 O11 이 같은 의미로 수행한다. */
+    static void attach(LocalKafkaTestSupport ownedKafka, String ownedTopic, String ownedGroup, PgFixtureServer ownedPg,
+                       JdbcTemplate ownedFresh) {
+        kafka = ownedKafka;
+        topic = ownedTopic;
+        group = ownedGroup;
+        pg = ownedPg;
+        fresh = ownedFresh;
+    }
+
+    /** 기존 C10 의 W6 준비 API(W6 초기화기·고정 확정 Clock·beforeSend probe, ddl-auto=create)를 띄운다. */
+    static ConfigurableApplicationContext bootW6Api() throws Exception {
         api = bootApi();
-        String url = System.getProperty("datasource.mysql-jpa.main.jdbc-url");
-        fresh = new JdbcTemplate(new DriverManagerDataSource(url, System.getProperty("datasource.mysql-jpa.main.username"),
-            System.getProperty("datasource.mysql-jpa.main.password")));
+        return api;
     }
 
-    @AfterAll
-    static void releaseResources() {
-        OrderEventTestCleanup.runAll(List.of(
-            new Step("streamer 자식 JVM 종료", OrderEventEndToEndIntegrationTest::stopStreamer),
-            new Step("API 테스트 데이터 정리·컨텍스트 종료", () -> {
-                if (api != null) {
-                    try {
-                        api.getBean(DatabaseCleanUp.class).truncateAllTables();
-                        api.getBean(RedisCleanUp.class).truncateAll();
-                    } finally {
-                        api.close();
-                    }
-                }
-            }),
-            new Step("PG fixture 종료", () -> {
-                if (pg != null) {
-                    pg.close();
-                }
-            }),
-            // 자식이 같은 DB 에 만든 두 테이블을 지워 API 테스트 DB 를 API Entity 테이블만 남긴 상태로 돌린다.
-            new Step("구매 테이블 삭제", () -> {
-                if (fresh != null) {
-                    PURCHASE_TABLES.forEach(table -> fresh.execute("DROP TABLE IF EXISTS " + table));
-                }
-            }),
-            new Step("Kafka 소유 topic·group 정리", () -> {
-                if (kafka != null) {
-                    kafka.close();
-                }
-            })));
+    static OrderActivityStreamerChild streamer() {
+        return streamer;
     }
 
-    @DisplayName("한 streamer JVM 에서 미발행 사건(broker·구매 활동 없음)과 정상 사건(삭제 상품 포함, APPLIED·offset 진행)을 남긴다.")
-    @Test
-    void reproducesUnpublishedAndConsumedEvents(CapturedOutput output) throws Exception {
-        startStreamerAndAssertReady();
+    /** 원래 C10 @Test 본문에서 자식 기동을 뺀 나머지. 모든 기대를 실행한 뒤 O11 의 복구 기준을 돌려준다. */
+    C10Cases reproduceUnpublishedAndConsumedEvents(CapturedOutput output) throws Exception {
         warmUpProducer();
         UnpublishedCase missed = confirmWithFailureBeforeSend(output);
         ConsumedCase consumed = confirmWithProductDeletedBeforeSend();
@@ -172,6 +136,11 @@ class OrderEventEndToEndIntegrationTest {
             () -> assertUnpublished(output, missed, broker),
             () -> assertConsumedOnce(output, consumed, broker, purchase)
         );
+        return new C10Cases(missed.order(), consumed.order(), consumed.deletedProduct(), broker.record());
+    }
+
+    /** O11 이 복구 단계에 쓰는 C10 결과: 미발행 A·소비된 B·B 에서 삭제한 상품·B 의 최초 record. */
+    record C10Cases(Long unpublished, Long consumed, Long deletedProduct, ConsumerRecord<String, String> consumedRecord) {
     }
 
     /** A 처리 직후의 관찰. 고정 구간의 시작 offset 도 여기서 정한다. */
@@ -192,12 +161,24 @@ class OrderEventEndToEndIntegrationTest {
                                        Map<String, Object> facts) {
     }
 
-    /** API 스키마가 먼저 있고, 자식은 자기 두 테이블만 만든 뒤 listener 가 두 partition 을 배정받아야 주문을 시작한다. */
-    private static void startStreamerAndAssertReady() throws IOException {
+    /**
+     * API 스키마가 먼저 있고, 자식은 자기 두 테이블만 만든 뒤 listener 가 두 partition 을 배정받아야 주문을 시작한다.
+     * 구매 테이블 부재 확인과 소유 표시는 05a 의 launchChild 가 기동 전에 한다(기동·준비 실패에도 소유가 남음).
+     */
+    static void startStreamerAndAssertReady(OrderOutboxDeliveryEndToEndIntegrationTest.Ownership ownership) throws Exception {
         Map<String, String> apiTablesBefore = tableCreateTimes();
-        assertThat(apiTablesBefore.keySet()).as("자식 기동 전 구매 테이블 없음").doesNotContainAnyElementsOf(PURCHASE_TABLES);
-        startStreamer();
-        awaitStreamerReady();
+        OrderOutboxDeliveryEndToEndIntegrationTest.launchChild(ownership, apiTablesBefore.keySet(),
+            new OrderOutboxDeliveryEndToEndIntegrationTest.ChildLaunch() {
+                @Override
+                public void start() throws Exception {
+                    startStreamer();
+                }
+
+                @Override
+                public void awaitReady() {
+                    awaitStreamerReady();
+                }
+            });
         Map<String, String> tablesAfter = tableCreateTimes();
         Map<String, String> apiTablesAfter = tablesAfter.entrySet().stream().filter(entry -> !PURCHASE_TABLES.contains(entry.getKey()))
             .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
@@ -363,12 +344,6 @@ class OrderEventEndToEndIntegrationTest {
 
     private static ConsumerGroupDescription awaitListenerAssignment() {
         return streamer.awaitAssignment(DEADLINE);
-    }
-
-    private static void stopStreamer() throws InterruptedException {
-        if (streamer != null) {
-            streamer.stop("C10", DEADLINE);
-        }
     }
 
     private static String streamerOutput() {
