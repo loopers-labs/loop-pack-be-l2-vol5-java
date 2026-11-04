@@ -10,9 +10,9 @@
 | 통합 기준 브랜치 | `volume-6-7/main` |
 | 사용자 확정 | 6~7주차를 함께 진행하고 consumer Inbox까지 적용 |
 | R01 사용자 선택 | 앱별 DTO와 JSON 계약 검사, 기존 확정 기록 createdAt 재사용, 정규화 snapshot 필드 비교 |
-| R01 추가 선택 | 최초 UUID 생성·저장, 모르는 추가 필드 무시, 재시도 후 DLQ 확인·원본 offset 진행·DLQ 중복 허용 |
+| R01 추가 선택 | 최초 UUID 생성·저장, 모르는 추가 필드 무시, 개별 최종 실패의 DB 보관과 commit 뒤 offset 진행, 공통 DB 장애 시 리스너 중단·offset 유지 |
 | 최종 구조 | 주문 확정과 Outbox 원자적 저장 → 단일 relay → Kafka → Inbox와 구매 활동 원자적 저장 |
-| 현재 상태 | 초기 준비 완료. R01은 T01~T06 사용자 선택을 반영한 설계이며 업무 기능은 미구현 |
+| 현재 상태 | 초기 준비 완료. R01은 T01~T08 사용자 선택을 반영한 설계이며 업무 기능은 미구현 |
 
 기존 5주차 PG·예약(선차감 기록)·callback/reconcile·소유권·이전 POINT·상품 삭제/비노출 규칙을 보존한다.
 로컬 출발 커밋은 사용자의 과거 인계 문서 삭제를 포함한다. 해당 삭제와 사용자 JMeter 수정은 보존한다.
@@ -82,9 +82,9 @@ fingerprint는 정규화한 고정 필드에서 계산한다. 현재 상품 정�
 - DB TX commit 성공 또는 동일 사실의 기존 완료 확인 후 ack한다.
 - 실제 `ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG=false`와 key/value 역직렬화를 확인한다.
 - 기존 demo batch factory를 일괄 변경하지 않고 이 이벤트용 record factory를 선택할 수 있다.
-- 실패 record를 조용히 skip하지 않는다. 제한 재시도 후 DLQ broker 확인이 성공한 경우에만 원본 offset을 진행한다.
-- DLQ는 미해결 격리이며 Inbox 완료가 아니다. 전송 실패/timeout이면 원본 offset 유지·중단·원인 노출 후 재개한다.
-- DLQ 확인과 offset commit 사이 중단으로 생기는 중복 격리는 허용하고 같은 identity 재처리로 업무 효과를 보호한다.
+- 개별 이벤트의 최종 실패는 별도 DB 트랜잭션에 보관한다. 기록 commit을 확인하면 원본 offset을 진행한다.
+- 공통 DB 장애가 재시도 뒤에도 이어지거나 실패 기록 저장에 실패하면 리스너를 중단하고 원본 offset을 유지한다. 복구 후 같은 group에서 재개한다.
+- 실패 기록 commit과 offset commit 사이 중단에 대비해 group과 원본 record 위치를 유일 키로 보호한다. Inbox와 구매 활동으로 업무 완료를 판정한다.
 - ack mode·error handler·recover·ackAfterHandle과 실제 committed offset을 함께 본다.
 - producer·consumer·admin은 같은 실제 테스트 broker 주소를 쓴다. 테스트 fetch/대기에는 deadline을 둔다.
 - 격리 2-partition topic에서 같은 group consumer 1→2→3의 실제 안정된 assignment를 확인한다.
@@ -98,8 +98,8 @@ n+1 commit 요청·자동 commit·종료 callback 없이 유한하게 종료한�
 같은 group의 새 소비자는 seek/reset 없이 같은 topic·partition·offset n을 다시 읽고 no-op 후 n+1을 commit한다.
 position이나 handler 두 번 호출만으로 이를 증명하지 않는다.
 
-실제 Spring listener의 DB 실패는 별도 검증한다. Inbox·활동 rollback과 DLQ 확인 전 offset 미진행을 확인한다.
-DLQ 확인 후 격리/offset 진행, DLQ까지 실패한 경우 중단·같은 group 재시작·재전달도 검증한다.
+실제 Spring listener의 실패는 별도 검증한다. Inbox·활동 rollback과 실패 기록 commit 전 offset 유지를 확인한다.
+실패 기록 commit 후 offset 진행, 공통 DB 장애나 기록 실패 시 중단, 같은 group 재시작 후 원본 재전달도 검증한다.
 
 ## R02 · Transactional Outbox와 단일 polling relay
 
@@ -189,4 +189,4 @@ W6는 같은 offset의 재전달, W7은 같은 eventId의 별도 record 재발�
 - PR에 대표 주문 결과, assignment, 실제 offset 전후, 단일 relay 제약·재개 방법·실험 한계를 남긴다.
 
 랭킹 API·새 결제수단/상품 CRUD/주문 도메인·범용 Saga·CDC 플랫폼·다중 relay·새 모니터링 서버는 필수가 아니다.
-DLQ는 사용자 추가 선택으로 R01 범위에 포함한다. BLOCKED·실제 OS 강제 종료·별도 Inbox worker는 선택 사항이다.
+R01의 실패 보관 범위는 DB에 원문과 사유를 기록하는 단계까지다. BLOCKED·실제 OS 강제 종료·별도 Inbox worker는 선택 사항이다.

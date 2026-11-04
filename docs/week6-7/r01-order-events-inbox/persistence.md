@@ -5,10 +5,11 @@ snapshot 저장·필드 비교는 사용자 T03 선택으로 확정했다. 구�
 
 ## 저장 책임
 
-streamer의 `ordering` context가 두 사실을 소유한다.
+streamer의 `ordering` context가 처리 결과와 실패 기록을 소유한다.
 
 - OrderConfirmationInbox: 어떤 확정 사건을 구매 활동으로 반영했는지와 그 고정 사실.
 - ProductPurchaseActivity: 주문별·상품별 구매 수량과 최초 확정 시각.
+- OrderEventFailure: 원본 record 위치와 수신 원문, 실패 사유를 보관한 기록.
 
 consumer도 같은 commerce MySQL datasource를 사용하지만 주문/결제/상품/재고를 다시 변경하거나 조회해 보정하지 않는다.
 Inbox와 활동은 append-only 사실이며 정상 재수신은 기존 행을 수정하지 않는다.
@@ -85,13 +86,13 @@ CREATE TABLE product_purchase_activities (
       └─ rollback → 이번 TX의 Inbox/활동 모두 없음
 
 완료된 같은 사실 재수신 → no-op → ack 가능
-완료 기록과 다른 사실 수신 → 충돌 → listener ack 금지, DLQ 격리 경로
+완료 기록과 다른 사실 수신 → 충돌 → 별도 DB 실패 기록 → commit 뒤 recovered offset 진행
 ```
 
 commit 후 offset ack가 실패해도 DB 결과는 유지한다. 재수신에서 같은 완료 사실을 확인한 뒤 다시 ack한다.
 활동만 지우거나 Inbox만 지워 재처리를 준비하는 운영 도구는 만들지 않는다.
-실패 사건을 DLQ로 옮긴 뒤 원본 offset을 진행하는 것은 구매 완료 ack와 구분한다.
-DLQ만 전송된 사건에는 완료 Inbox/활동을 만들지 않는다. 세부는 [재시도·DLQ](retry-dlq.md)를 따른다.
+실패 사건은 업무 트랜잭션 밖에서 별도로 저장한다. 원본 topic·partition·offset과 consumer group의 조합을 유일 키로 사용한다.
+구매 완료는 Inbox와 활동의 commit으로 판정하고, 실패 기록은 오류 처리 경로에서 offset 진행의 근거로 사용한다. [재시도·DB 실패 기록](retry-failure-record.md)
 
 ## 신규·중복 처리 알고리즘
 
@@ -155,12 +156,12 @@ constraint 정보를 확인하지 못하거나 rollback이 실패했다면 성�
 | eventId와 orderId가 서로 다른 기존 행을 가리킴 | 충돌 |
 | payload 복원 불가/컬럼 불일치 | 저장 사실 손상으로 오류 |
 
-충돌은 새 구매가 아니다. 기존 snapshot/활동을 덮어쓰거나 보정하지 않고 DLQ로 격리해 원인을 노출한다.
-DLQ 발행 확인 전에는 원본 offset을 진행하지 않는다. 격리도 실패하면 해당 소비를 중단해 원본을 보존한다.
+충돌 원인과 원문을 별도 실패 기록에 보관한다. 기록이 commit되면 원본 offset을 진행한다.
+실패 기록 저장에 실패하면 리스너를 중단하고 원본 offset을 유지한다.
 
 ## 보존과 이후 복구
 
-이번 범위는 Inbox·미발행 Outbox·격리 사건을 자동 삭제하지 않는다.
+Inbox·미발행 Outbox·실패 사건의 보존 정책은 후속 운영 과제로 둔다.
 오래된 사건을 Kafka/Outbox에서 다시 보낼 수 있는 동안 Inbox와 활동의 중복 방지 근거를 함께 보존한다.
 보존/삭제 정책은 향후 별도 작업이며 Inbox만 먼저 지우지 않는다.
 

@@ -4,7 +4,8 @@
 이전 커밋에서 추천안을 확정처럼 기록한 점을 사용자 지적에 따라 바로잡는다.
 사용자가 확정한 항목과 아직 제안인 항목은 [트레이드오프와 질문](trade-offs.md)에서 구분한다.
 T01 앱별 DTO, T02 기존 createdAt, T03 snapshot 비교, T04 최초 UUID 저장,
-T05 추가 필드 무시, T06 제한 재시도·DLQ 확인 후 offset 진행·DLQ 중복 허용을 사용자와 확정했다.
+T05 추가 필드 무시, T06 제한 재시도와 보관 확인 뒤 offset 진행을 확정했다.
+T07 공통 DB 장애 시 리스너 중단·offset 유지, T08 개별 실패 이벤트의 DB 보관을 적용한다.
 구체 패키지/설정 숫자 등은 아래 구현 제안으로 구분하며 아직 업무 코드에 적용하지 않았다.
 기준 브랜치는 `volume-6-7/r01-order-events-inbox`, 출발 준비 커밋은 `00c2069`다.
 [통합 요구사항](../total_requirement.md)과 사용자의 Inbox 추가 조건을 따른다.
@@ -13,7 +14,7 @@ T05 추가 필드 무시, T06 제한 재시도·DLQ 확인 후 offset 진행·DL
 - [Inbox 저장 설계](persistence.md): 테이블·원자성·동시 중복·충돌
 - [검증 계획](verification.md): 기능별 검사와 W6 재현 자료
 - [트레이드오프와 질문](trade-offs.md): 요구사항의 고정 조건과 아직 합의하지 않은 설계 선택
-- [재시도·DLQ](retry-dlq.md): 실패 분류·격리 확인·offset·같은 사건 재처리
+- [재시도·DB 실패 기록](retry-failure-record.md)의 실패 분류, 저장 경계와 offset 진행 기준
 
 ## 1. 기존 코드에서 확인한 사실
 
@@ -45,9 +46,9 @@ T05 추가 필드 무시, T06 제한 재시도·DLQ 확인 후 offset 진행·DL
 | 동시 중복 | named DB 유일 제약, 실패 TX rollback 뒤 새 TX에서 기존 사실 검증 |
 | Listener | 전용 record factory, MANUAL_IMMEDIATE, concurrency 1, DB 완료 후 같은 스레드에서 ack |
 | 추가 필드 · T05 확정 | 같은 v1의 모르는 필드는 무시, 알려진 필수 계약은 엄격 검증 |
-| 오류 · T06 확정 | 제한 재시도 후 DLQ 확인 → 원본 offset 진행, DLQ 중복 허용, 업무 완료와 구분 |
+| 오류 · T06~T08 확정 | 개별 실패 기록 DB commit 뒤 offset 진행. 공통 DB 장애 또는 실패 기록 저장 실패에는 중단·offset 유지 |
 
-T01~T06은 사용자 확정 사항이다. 전용 factory·기술적 수치·클래스 배치 등은 구현 제안이다.
+T01~T08은 사용자 확정 사항이다. 전용 factory·기술적 수치·클래스 배치 등은 구현 제안이다.
 초기 제안값과 향후 실제 구현/검증 결과를 사용자 확정 사항과 혼동하지 않는다.
 
 ## 3. 모듈과 책임
@@ -156,7 +157,7 @@ AFTER_COMMIT listener
 | offset commit | syncCommits=true, syncCommitTimeout=5초 |
 | poll | max.poll.records=1, fetch.min.bytes=1, fetch.max.wait.ms=100, max.poll.interval.ms=120000 |
 | 최초 group 시작 | auto.offset.reset=earliest. 보존 범위 밖 데이터 복원 보장은 아님 |
-| 오류 | DefaultErrorHandler·확인형 DeadLetterPublishingRecoverer, 재시도 후 DLQ 성공일 때만 recovered offset 진행 |
+| 오류 | 제한 재시도와 DB 실패 기록 저장을 연결하는 error handler. 실패 기록 commit 확인 뒤 recovered offset 진행 |
 
 값은 R01 학습용 초기값이며 처리량 최적화 결과가 아니다. producer 대기 값의 합을 절대적인 전체 HTTP 제한이라고 표현하지 않는다.
 단일 broker에서 acks=all을 확인해도 다중 broker 내구성을 증명한 것은 아니다.
@@ -177,8 +178,8 @@ Kafka transaction manager로 DB와 offset을 원자화했다고 표현하지 않
 - event-lab에는 DB/Kafka 및 기존에 로드되는 Redis 설정도 명시한다. local의 ddl-auto=create와 섞지 않는다.
 
 Spring 문서에서 manual 모드 중단 시 이미 ack한 offset은 commit될 수 있다.
-listener는 실패 record를 ack하지 않는다. DLQ 격리 성공 뒤에는 별도의 recovered offset 경로로 진행할 수 있다.
-원본 위치/구매 활동/격리 결과와 실제 committed offset을 구분해 검증한다. 자세한 정책은 [재시도·DLQ](retry-dlq.md)를 따른다.
+실패 record의 offset은 별도 오류 처리 경로에서 DB 실패 기록 commit을 확인한 뒤 진행한다.
+원본 위치·구매 활동·실패 기록과 실제 committed offset을 구분해 검증한다. [재시도·DB 실패 기록](retry-failure-record.md)
 근거: [3.3 listener containers](https://docs.spring.io/spring-kafka/reference/3.3/kafka/receiving-messages/message-listener-container.html),
 [3.3 error handling](https://docs.spring.io/spring-kafka/reference/3.3/kafka/annotation-error-handling.html).
 온라인 3.3/6.2 문서는 해당 minor의 최신 patch를 보여 주므로 구현 시 현재 BOM의 실제 버전과 관련 테스트를 최종 기준으로 삼는다.
@@ -191,8 +192,8 @@ listener는 실패 record를 ack하지 않는다. DLQ 격리 성공 뒤에는 �
 - 소비는 같은 식별자·record 위치·CREATED/ALREADY_PROCESSED/충돌/실패를 구분한다.
 - parser 실패 로그는 원문 payload나 JSON 라이브러리의 입력 snippet/cause 메시지를 그대로 출력하지 않는다.
   검증된 식별자 또는 record 위치·사유 코드만 남긴다.
-- 오류 record는 제한 재시도 후 DLQ로 격리한다. DLQ 실패면 원본 offset을 유지하고 중단·원인 노출 후 재개한다.
-- 격리 사건은 미해결이다. 같은 UUID·key·payload를 유지해 명시적으로 재처리하며 정상 사건의 업무 중복은 Inbox가 막는다.
+- 개별 이벤트의 최종 실패는 원문과 원인을 별도 DB 트랜잭션에 보관한다. 정상 사건의 업무 중복은 Inbox가 막는다.
+- 공통 DB 장애가 이어지거나 실패 기록 저장에 실패하면 원본 offset을 유지하고 리스너를 중단한다. DB 복구 후 같은 group에서 재개한다.
 - 잘못된 사실을 같은 UUID의 다른 payload로 덮어써 해결하지 않는다. 임의 skip/offset 이동은 복구 절차에 없다.
 
 ## 7. 구현 순서와 다음 단계

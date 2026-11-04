@@ -11,8 +11,8 @@ PG로 확정된 주문의 구매 사실을 Kafka로 전달하고, 중단·재시
 | [현재 인계](handoff.md) | 준비 결과와 다음 작업 |
 | [준비 검증](initial-setup.md) | 실제 실행한 초기 검사와 제한 |
 | [R01 상세 설계 초안](r01-order-events-inbox/plan.md) | 최초 성공 전이·공유 계약·실행 설정·책임 경계 제안 |
-| [R01 트레이드오프와 질문](r01-order-events-inbox/trade-offs.md) | T01~T06 사용자 선택과 대안·비용·추천 이유 |
-| [R01 재시도·DLQ](r01-order-events-inbox/retry-dlq.md) | 제한 재시도·격리 확인·offset 진행과 같은 사건 재처리 |
+| [R01 트레이드오프와 질문](r01-order-events-inbox/trade-offs.md) | T01~T08 사용자 선택과 대안·비용·추천 이유 |
+| [R01 재시도·DB 실패 기록](r01-order-events-inbox/retry-failure-record.md) | 실패 분류, DB 보관, offset 진행과 재개 조건 |
 | [R01 이벤트 계약](r01-order-events-inbox/event-contract.md) | 고정 identity·시각·정규화·엄격한 wire 검증 |
 | [R01 Inbox 저장](r01-order-events-inbox/persistence.md) | 설계 DDL·전체 TX·경합 rollback·충돌 판정 |
 | [R01 검증 계획](r01-order-events-inbox/verification.md) | 실제 DB/Kafka·listener·W6 A/B 재현 검사 |

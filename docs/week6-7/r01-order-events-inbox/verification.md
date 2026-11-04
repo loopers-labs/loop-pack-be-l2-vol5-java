@@ -62,17 +62,17 @@ JPA 쓰기·새 TX 조회를 사용한다. 기존 규칙을 우회하는 JdbcCli
 
 ### PurchaseActivityListenerIntegrationTest
 
-실제 record factory·parser·Facade·DB·재시도/DLQ error handler를 사용한다.
+실제 record factory·parser·Facade·DB·실패 기록 error handler를 사용한다.
 target 처리 TX의 중간 품목에서 오류를 주입하고 이번 TX의 Inbox/활동 전체 rollback을 확인한다.
-DLQ 전송 확인 전에는 target 이후로 offset이 진행하지 않아야 한다.
+실패 기록 commit 전에는 target 이후로 offset이 진행하지 않아야 한다.
 
-- 오류가 제한 재시도 안에 해소되면 활동 한 번·정상 ack·DLQ 없음.
-- 소진 후 DLQ broker 확인이면 활동 미완료·DLQ 격리·원본 offset n+1·다음 정상 record 소비.
-- DLQ 전송도 실패하도록 주입하면 원본 offset 미진행·중단/원인 표시.
-- 그 오류를 제거하고 같은 group 재시작 시 같은 원본이 재전달돼 정상 저장/ack 또는 확인된 DLQ 격리.
+- 제한 재시도 안에 오류가 해소되면 활동 한 번·정상 ack·실패 기록 0행.
+- 개별 실패가 재시도를 소진하면 업무 rollback·별도 실패 기록 commit·원본 offset n+1·다음 정상 record 소비.
+- 공통 DB 장애가 이어지거나 실패 기록 저장에 실패하면 원본 offset 유지·리스너 중단·원인 표시.
+- 오류를 제거하고 같은 group에서 재개하면 같은 원본이 재전달된다. 업무가 성공하면 정상 ack, 개별 최종 실패면 DB 기록 commit 뒤 offset을 진행한다.
 
 별도 DB commit 후 ack 직전 오류도 검증해 DB 결과는 남고 재수신은 no-op임을 확인한다.
-DLQ 확인 후 원본 offset commit 전 중단·중복 격리·같은 UUID 재처리는 [DLQ 검증](retry-dlq.md)을 추가로 수행한다.
+실패 기록 commit 후 원본 offset commit 전 중단을 재현한다. 다시 받은 같은 원본이 재차 실패해도 실패 기록은 1행이다. [실패 기록 검증](retry-failure-record.md)
 
 ## 주문 확정·직접 발행
 
@@ -131,7 +131,7 @@ W6 revision과 테스트 bootstrap 실행 방법을 함께 고정해 R03에서�
 
 - root bootstrap 주소가 admin/producer/consumer에 동일하게 주입되는지 확인한다.
 - 실제 consumer config의 deserializer·enable.auto.commit·ack mode·error handler를 검사한다.
-- DLQ send-result 확인과 원본 offset의 연결, 격리 실패 시 미진행/중단을 실제 broker에서 검사한다.
+- 실패 기록 commit과 원본 offset의 연결, DB 장애나 기록 실패 시 offset 유지와 중단을 실제 DB·broker에서 검사한다.
 - API/streamer의 demo 비활성화와 전용 factory 선택, 앱 이름·포트·보존 프로필을 확인한다.
 - 계약 검사를 위해 앱 간 runtime 의존성이나 새 공통 Java 계약 모듈을 추가하지 않았는지 확인한다.
 - streamer에 Checkstyle·기존 계층/ordering domain 순수성 gate를 연결하고 실제 새 클래스를 검사한다.
