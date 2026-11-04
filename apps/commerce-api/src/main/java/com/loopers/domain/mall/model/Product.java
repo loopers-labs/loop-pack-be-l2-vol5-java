@@ -73,6 +73,11 @@ public final class Product {
         stock = stock.decrease(quantity);
     }
 
+    // 결제 실패에 따른 반환은 삭제 상품에도 허용하되 삭제를 해제하지 않는다.
+    public void restoreStock(int quantity) {
+        stock = stock.restore(quantity);
+    }
+
     // 상품 삭제 처리
     public void delete() {
         ensureActive();

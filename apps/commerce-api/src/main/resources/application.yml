@@ -33,6 +33,38 @@ scheduler:
   like-count:
     enabled: true
 
+pg:
+  client:
+    base-url: http://127.0.0.1:8081
+    callback-url: http://127.0.0.1:8080/api/v1/payments/callback
+
+resilience4j:
+  retry:
+    instances:
+      payment-auto-lookup:
+        max-attempts: 4
+        retry-exceptions:
+          - com.loopers.application.ordering.support.RepeatPaymentLookupException
+      payment-application:
+        max-attempts: 2
+        wait-duration: 100ms
+        retry-exceptions:
+          - com.loopers.application.ordering.support.RolledBackPaymentDeadlockException
+  circuitbreaker:
+    instances:
+      pg-lookup:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        slow-call-duration-threshold: 1s
+        slow-call-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        automatic-transition-from-open-to-half-open-enabled: false
+        permitted-number-of-calls-in-half-open-state: 2
+        max-wait-duration-in-half-open-state: 10s
+        register-health-indicator: false
+
 query:
   product-count-cache:
     ttl: 30s # 브랜드 필터 없는 상품 목록 전체 개수 캐시 TTL (0s면 끔)
@@ -49,6 +81,9 @@ spring:
 
 ---
 spring.config.activate.on-profile: test
+payment:
+  recovery:
+    auto-start-enabled: false
 
 scheduler:
   like-count:

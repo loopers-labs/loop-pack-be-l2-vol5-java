@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 // 주문 도메인 모델
@@ -27,10 +28,11 @@ public final class Order {
         if (items == null || items.isEmpty()) {
             throw new DomainException(DomainErrorCode.EMPTY_ORDER_ITEMS);
         }
+        Objects.requireNonNull(status, "주문 상태가 필요합니다.");
         if (status == OrderStatus.CONFIRMED && record == null) {
             throw new IllegalArgumentException("확정된 주문에는 주문 기록이 있어야 합니다.");
         }
-        if (status == OrderStatus.DRAFT && record != null) {
+        if (status != OrderStatus.CONFIRMED && record != null) {
             throw new IllegalArgumentException("확정되지 않은 주문에는 주문 기록이 있을 수 없습니다.");
         }
         this.id = id;
@@ -66,6 +68,9 @@ public final class Order {
         if (status == OrderStatus.CONFIRMED) {
             throw new DomainException(DomainErrorCode.ORDER_ALREADY_CONFIRMED);
         }
+        if (status != OrderStatus.DRAFT) {
+            throw new DomainException(DomainErrorCode.ORDER_PAYMENT_NOT_ALLOWED);
+        }
     }
 
     // DRAFT를 CONFIRMED로 전환하고 주문 기록을 만든다
@@ -73,6 +78,23 @@ public final class Order {
         ensureCanConfirm();
         status = OrderStatus.CONFIRMED;
         record = OrderRecord.paid(userId, totalAmount.getValue());
+    }
+
+    // 검증된 PG 결과의 업무 반영에만 사용한다. 저장 경쟁의 승자는 repository CAS로 정한다.
+    public void completePgPayment(OrderStatus terminalStatus, OrderRecord pgRecord) {
+        if (status != OrderStatus.PAYMENT_PENDING) {
+            throw new DomainException(DomainErrorCode.ORDER_PAYMENT_NOT_ALLOWED);
+        }
+        if (terminalStatus == OrderStatus.CONFIRMED) {
+            if (pgRecord == null || pgRecord.getId() != null || pgRecord.getPaymentMethod() != PaymentMethod.PG
+                || pgRecord.getUserId() != userId || pgRecord.getAmount() != totalAmount.getValue()) {
+                throw new IllegalArgumentException("주문과 일치하는 새 PG 결제 기록이 필요합니다.");
+            }
+        } else if (terminalStatus != OrderStatus.PAYMENT_FAILED || pgRecord != null) {
+            throw new IllegalArgumentException("PG 주문의 종결 상태와 기록이 올바르지 않습니다.");
+        }
+        status = terminalStatus;
+        record = pgRecord;
     }
 
     // 같은 상품 품목의 수량을 등장 순서대로 합산하고 초과 시 계산 초과 오류를 낸다

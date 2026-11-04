@@ -1,0 +1,23 @@
+server:
+  address: 127.0.0.1
+  port: 8081
+  shutdown: graceful
+
+spring:
+  application:
+    name: test-pg
+  profiles:
+    default: payment-lab
+  config:
+    import: jpa.yml
+  jpa:
+    show-sql: false
+
+pg:
+  callback-url: http://127.0.0.1:8080/api/v1/payments/callback
+
+# 요청 본문에는 합성 카드가 들어오므로 요청/바인딩 원문 로깅을 사용하지 않는다.
+logging:
+  level:
+    org.hibernate.orm.jdbc.bind: OFF
+    org.springframework.web: INFO

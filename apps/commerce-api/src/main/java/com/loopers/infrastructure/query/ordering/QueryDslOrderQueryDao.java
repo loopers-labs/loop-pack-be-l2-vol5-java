@@ -9,6 +9,11 @@ import com.loopers.application.ordering.query.OrderView;
 import com.loopers.infrastructure.persistence.ordering.entity.QOrderItemJpaEntity;
 import com.loopers.infrastructure.persistence.ordering.entity.QOrderJpaEntity;
 import com.loopers.infrastructure.persistence.ordering.entity.QOrderRecordJpaEntity;
+import com.loopers.infrastructure.persistence.pay.entity.QPaymentAttemptJpaEntity;
+import com.loopers.infrastructure.persistence.pay.entity.QPaymentRecoveryTaskJpaEntity;
+import com.loopers.domain.ordering.model.OrderStatus;
+import com.loopers.domain.pay.model.PaymentAttempt;
+import com.loopers.domain.pay.model.PaymentRecoveryTask;
 import com.querydsl.core.types.ConstructorExpression;
 import com.querydsl.core.types.Predicate;
 import com.querydsl.core.types.Projections;
@@ -29,6 +34,8 @@ public class QueryDslOrderQueryDao implements OrderQueryDao {
     private static final QOrderJpaEntity ORDER = QOrderJpaEntity.orderJpaEntity;
     private static final QOrderRecordJpaEntity RECORD = QOrderRecordJpaEntity.orderRecordJpaEntity;
     private static final QOrderItemJpaEntity ITEM = QOrderItemJpaEntity.orderItemJpaEntity;
+    private static final QPaymentAttemptJpaEntity ATTEMPT = QPaymentAttemptJpaEntity.paymentAttemptJpaEntity;
+    private static final QPaymentRecoveryTaskJpaEntity TASK = QPaymentRecoveryTaskJpaEntity.paymentRecoveryTaskJpaEntity;
 
     private final JPAQueryFactory queryFactory;
 
@@ -48,8 +55,9 @@ public class QueryDslOrderQueryDao implements OrderQueryDao {
     // 단건 주문 조회
     @Override
     @Transactional(readOnly = true)
-    public Optional<OrderView> findOrder(long orderId) {
-        return findHeader(orderId).map(header -> header.toView(findItemsByOrderId(orderId)));
+    public Optional<OrderView> findOrder(long userId, long orderId) {
+        return Optional.ofNullable(selectHeaders().where(ORDER.id.eq(orderId), ORDER.userId.eq(userId)).fetchOne())
+            .map(header -> header.toView(findItemsByOrderId(orderId)));
     }
 
     // 관리자용 전체 주문 페이지 조회
@@ -71,9 +79,22 @@ public class QueryDslOrderQueryDao implements OrderQueryDao {
         return findHeader(orderId).map(header -> header.toAdminView(findItemsByOrderId(orderId)));
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public PageResult<AdminOrderView> findIncompletePayments(PageCriteria criteria) {
+        Predicate incomplete = ORDER.status.eq(OrderStatus.PAYMENT_PENDING)
+            .or(TASK.state.eq(PaymentRecoveryTask.State.MANUAL_REQUIRED.name()))
+            .or(ATTEMPT.conflict.ne(PaymentAttempt.Conflict.NONE.name()));
+        List<OrderHeaderRow> headers = findHeaders(incomplete, criteria);
+        Map<Long, List<OrderItemView>> itemsByOrderId = findItemsByOrderIds(orderIdsOf(headers));
+        List<AdminOrderView> items = headers.stream()
+            .map(header -> header.toAdminView(itemsByOrderId.getOrDefault(header.orderId(), List.of())))
+            .toList();
+        return PageResult.of(items, criteria.page(), criteria.size(), countOrders(incomplete));
+    }
+
     private long countOrders(Predicate condition) {
-        Long count = queryFactory.select(ORDER.count())
-            .from(ORDER)
+        Long count = withPaymentJoins(queryFactory.select(ORDER.count()))
             .where(condition)
             .fetchOne();
         return count == null ? 0L : count;
@@ -96,10 +117,17 @@ public class QueryDslOrderQueryDao implements OrderQueryDao {
 
     private JPAQuery<OrderHeaderRow> selectHeaders() {
         ConstructorExpression<OrderHeaderRow> projection = Projections.constructor(OrderHeaderRow.class,
-            ORDER.id, ORDER.userId, ORDER.status, ORDER.totalAmount, RECORD.amount, RECORD.status, ORDER.createdAt);
-        return queryFactory.select(projection)
-            .from(ORDER)
-            .leftJoin(ORDER.record, RECORD);
+            ORDER.id, ORDER.userId, ORDER.status, ORDER.totalAmount, RECORD.amount, RECORD.status, ORDER.createdAt,
+            RECORD.paymentMethod, Projections.constructor(PaymentAttemptRow.class, ATTEMPT.attemptKey,
+                ATTEMPT.dispatchState, ATTEMPT.outcome, ATTEMPT.transactionKey, ATTEMPT.rejection, ATTEMPT.conflict,
+                TASK.state, TASK.usedRounds, TASK.lastCheckedAt, TASK.lastReason));
+        return withPaymentJoins(queryFactory.select(projection));
+    }
+
+    private <T> JPAQuery<T> withPaymentJoins(JPAQuery<T> query) {
+        return query.from(ORDER).leftJoin(ORDER.record, RECORD)
+            .leftJoin(ATTEMPT).on(ATTEMPT.orderId.eq(ORDER.id))
+            .leftJoin(TASK).on(TASK.attemptKey.eq(ATTEMPT.attemptKey));
     }
 
     // 단건 주문의 품목 조회

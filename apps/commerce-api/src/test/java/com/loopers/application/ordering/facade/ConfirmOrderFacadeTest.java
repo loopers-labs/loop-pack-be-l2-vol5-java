@@ -3,140 +3,92 @@ package com.loopers.application.ordering.facade;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
-import com.loopers.application.mall.service.ProductService;
 import com.loopers.application.ordering.command.ConfirmOrderCommand;
+import com.loopers.application.ordering.result.ApplyOrderPaymentResult;
 import com.loopers.application.ordering.result.ConfirmOrderResult;
-import com.loopers.application.ordering.service.OrderService;
-import com.loopers.application.pay.service.WalletService;
-import com.loopers.domain.ordering.model.Order;
-import com.loopers.domain.ordering.model.OrderItem;
-import com.loopers.domain.ordering.model.OrderRecordStatus;
-import com.loopers.domain.ordering.model.OrderStatus;
-import com.loopers.domain.pay.model.Wallet;
-import com.loopers.domain.support.error.DomainErrorCode;
-import com.loopers.domain.support.error.DomainException;
-import java.time.Instant;
-import java.util.List;
-import java.util.Map;
+import com.loopers.application.ordering.result.PrepareOrderPaymentResult;
+import com.loopers.application.ordering.service.OrderPaymentResultService;
+import com.loopers.application.ordering.usecase.ApplyOrderPaymentUseCase;
+import com.loopers.application.ordering.usecase.PrepareOrderPaymentUseCase;
+import com.loopers.application.ordering.usecase.StartAutomaticPaymentRecoveryUseCase;
+import com.loopers.application.pay.gateway.PaymentProviderGateway;
+import com.loopers.application.pay.gateway.PaymentProviderGateway.CardInput;
+import com.loopers.application.pay.usecase.RecordPaymentObservationUseCase;
+import com.loopers.domain.pay.model.PaymentAttempt;
+import com.loopers.domain.pay.model.PaymentObservation;
+import com.loopers.domain.pay.model.PaymentScenario;
+import com.loopers.domain.pay.model.ProviderPaymentStatus;
+import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.mockito.InOrder;
 
 class ConfirmOrderFacadeTest {
-    private final OrderService orderService = mock(OrderService.class);
-    private final WalletService walletService = mock(WalletService.class);
-    private final ProductService productService = mock(ProductService.class);
-    private final ConfirmOrderFacade facade = new ConfirmOrderFacade(orderService, walletService, productService);
+    private final PrepareOrderPaymentUseCase preparation = mock(PrepareOrderPaymentUseCase.class);
+    private final PaymentProviderGateway gateway = mock(PaymentProviderGateway.class);
+    private final RecordPaymentObservationUseCase observations = mock(RecordPaymentObservationUseCase.class);
+    private final ApplyOrderPaymentUseCase application = mock(ApplyOrderPaymentUseCase.class);
+    private final OrderPaymentResultService results = mock(OrderPaymentResultService.class);
+    private final StartAutomaticPaymentRecoveryUseCase automatic = mock(StartAutomaticPaymentRecoveryUseCase.class);
+    private final ConfirmOrderFacade facade = new ConfirmOrderFacade(preparation, gateway, observations, application, results, automatic);
+    private final ConfirmOrderCommand command = new ConfirmOrderCommand(1L, 1L, UUID.randomUUID().toString(),
+        new CardInput("TEST", "0000-0000-0000-0000"), PaymentScenario.resolve(null, null));
+    private final PaymentAttempt attempt = PaymentAttempt.create(1L, command.paymentAttemptKey(), 1_000L, command.scenario()).startDispatch();
 
-    @DisplayName("주문 확정")
-    @Nested
-    class Execute {
-        @DisplayName("주문 -> 지갑 -> 재고 -> 결제 -> 확정 순서로 호출하고 확정된 주문과 기록을 반환한다")
-        @Test
-        void callsStepsInOrder_andReturnsConfirmedOrderAndRecord() {
-            Order order = draftOrder();
-            Wallet wallet = Wallet.restore(1L, 10_000L);
-            given(orderService.lockForConfirm(1L)).willReturn(order);
-            given(walletService.lockByUserId(1L)).willReturn(wallet);
-            given(orderService.confirm(order)).willAnswer(invocation -> {
-                order.confirm();
-                return order;
-            });
+    @Test
+    @DisplayName("준비 commit 뒤 최초 생성·관찰 저장·공통 반영·최신 응답 순서로 조율한다")
+    void dispatchesAndRecordsBeforeApplication() {
+        given(preparation.execute(any())).willReturn(new PrepareOrderPaymentResult(attempt, true));
+        PaymentObservation pending = PaymentObservation.verified("tx", attempt.getProviderOrderId(), 1_000L, ProviderPaymentStatus.PENDING);
+        given(gateway.create(any(), any(), any())).willReturn(pending);
+        given(application.execute(attempt.getAttemptKey())).willReturn(new ApplyOrderPaymentResult(ApplyOrderPaymentResult.State.PENDING, false));
+        ConfirmOrderResult expected = mock(ConfirmOrderResult.class);
+        given(results.read(anyLong(), anyLong(), anyBoolean())).willReturn(expected);
 
-            ConfirmOrderResult result = facade.execute(new ConfirmOrderCommand(1L));
+        assertThat(facade.execute(command)).isSameAs(expected);
 
-            InOrder inOrder = inOrder(orderService, walletService, productService);
-            inOrder.verify(orderService).lockForConfirm(1L);
-            inOrder.verify(walletService).lockByUserId(1L);
-            inOrder.verify(productService).decreaseStocks(Map.of(10L, 3, 20L, 1));
-            inOrder.verify(walletService).pay(wallet, order);
-            inOrder.verify(orderService).confirm(order);
-            assertThat(result.order().status()).isEqualTo(OrderStatus.CONFIRMED);
-            assertThat(result.paymentAmount()).isEqualTo(3_500L);
-            assertThat(result.paymentStatus()).isEqualTo(OrderRecordStatus.PAID);
-        }
-
-        @DisplayName("재고 차감에는 품목 등장 순서를 유지한 상품별 합산 수량을 넘긴다")
-        @Test
-        void passesAggregatedQuantities_inItemAppearanceOrder() {
-            Order order = draftOrder();
-            given(orderService.lockForConfirm(1L)).willReturn(order);
-            given(walletService.lockByUserId(1L)).willReturn(Wallet.restore(1L, 10_000L));
-            given(orderService.confirm(order)).willAnswer(invocation -> {
-                order.confirm();
-                return order;
-            });
-
-            facade.execute(new ConfirmOrderCommand(1L));
-
-            verify(productService).decreaseStocks(order.quantitiesByProductId());
-            assertThat(order.quantitiesByProductId().keySet()).containsExactly(10L, 20L);
-        }
-
-        @DisplayName("주문 단계가 실패하면 지갑·상품·결제·확정을 호출하지 않는다")
-        @Test
-        void stopsAtOrderStep_whenLockForConfirmFails() {
-            given(orderService.lockForConfirm(1L)).willThrow(new DomainException(DomainErrorCode.ORDER_ALREADY_CONFIRMED));
-
-            assertThatThrownBy(() -> facade.execute(new ConfirmOrderCommand(1L)))
-                .isInstanceOf(DomainException.class)
-                .extracting("errorCode")
-                .isEqualTo(DomainErrorCode.ORDER_ALREADY_CONFIRMED);
-            verify(walletService, never()).lockByUserId(anyLong());
-            verify(productService, never()).decreaseStocks(anyMap());
-            verify(walletService, never()).pay(any(), any());
-            verify(orderService, never()).confirm(any());
-        }
-
-        @DisplayName("상품 단계가 실패하면 결제와 확정을 호출하지 않는다")
-        @Test
-        void stopsAtProductStep_whenDecreaseStocksFails() {
-            Order order = draftOrder();
-            given(orderService.lockForConfirm(1L)).willReturn(order);
-            given(walletService.lockByUserId(1L)).willReturn(Wallet.restore(1L, 10_000L));
-            willThrow(new DomainException(DomainErrorCode.INSUFFICIENT_STOCK))
-                .given(productService).decreaseStocks(anyMap());
-
-            assertThatThrownBy(() -> facade.execute(new ConfirmOrderCommand(1L)))
-                .isInstanceOf(DomainException.class)
-                .extracting("errorCode")
-                .isEqualTo(DomainErrorCode.INSUFFICIENT_STOCK);
-            verify(walletService, never()).pay(any(), any());
-            verify(orderService, never()).confirm(any());
-        }
-
-        @DisplayName("결제 단계가 실패하면 주문을 확정하지 않는다")
-        @Test
-        void stopsAtPayStep_whenPayFails() {
-            Order order = draftOrder();
-            Wallet wallet = Wallet.restore(1L, 100L);
-            given(orderService.lockForConfirm(1L)).willReturn(order);
-            given(walletService.lockByUserId(1L)).willReturn(wallet);
-            given(walletService.pay(wallet, order)).willThrow(new DomainException(DomainErrorCode.INSUFFICIENT_POINT));
-
-            assertThatThrownBy(() -> facade.execute(new ConfirmOrderCommand(1L)))
-                .isInstanceOf(DomainException.class)
-                .extracting("errorCode")
-                .isEqualTo(DomainErrorCode.INSUFFICIENT_POINT);
-            verify(orderService, never()).confirm(any());
-        }
+        var ordered = inOrder(preparation, gateway, observations, application, results, automatic);
+        ordered.verify(preparation).execute(command.preparation());
+        ordered.verify(gateway).create(any(), any(), any());
+        ordered.verify(observations).execute(attempt.getAttemptKey(), pending);
+        ordered.verify(application).execute(attempt.getAttemptKey());
+        ordered.verify(automatic).execute(attempt.getAttemptKey());
+        ordered.verify(results).read(1L, 1L, false);
     }
 
-    private Order draftOrder() {
-        return Order.restore(1L, 1L, OrderStatus.DRAFT, List.of(
-            OrderItem.restore(10L, "상품A", 1_000L, 2, 2_000L),
-            OrderItem.restore(20L, "상품B", 500L, 1, 500L),
-            OrderItem.restore(10L, "상품A", 1_000L, 1, 1_000L)
-        ), 3_500L, Instant.now(), null);
+    @Test
+    @DisplayName("기존 시도는 PG 생성 없이 저장 결과를 공통 반영하고 최신 상태를 읽는다")
+    void neverRedispatchesExistingAttempt() {
+        given(preparation.execute(any())).willReturn(new PrepareOrderPaymentResult(attempt, false));
+        given(application.execute(attempt.getAttemptKey())).willReturn(new ApplyOrderPaymentResult(ApplyOrderPaymentResult.State.APPLIED, true));
+
+        facade.execute(command);
+
+        verifyNoInteractions(gateway, observations, automatic);
+        verify(results).read(1L, 1L, true);
+    }
+
+    @Test
+    @DisplayName("소유권·재고 등 준비 실패는 PG 생성과 이후 반영을 시작하지 않는다")
+    void stopsAfterPreparationFailure() {
+        given(preparation.execute(any())).willThrow(new IllegalStateException("준비 실패"));
+        assertThatThrownBy(() -> facade.execute(command)).hasMessage("준비 실패");
+        verifyNoInteractions(gateway, observations, application, results, automatic);
+    }
+
+    @Test
+    @DisplayName("미완료 재요청도 놓친 READY 자동 작업을 다시 시작하지 않는다")
+    void neverStartsAutomaticRecoveryOnReplay() {
+        given(preparation.execute(any())).willReturn(new PrepareOrderPaymentResult(attempt, false));
+        given(application.execute(attempt.getAttemptKey())).willReturn(new ApplyOrderPaymentResult(ApplyOrderPaymentResult.State.PENDING, false));
+        facade.execute(command);
+        verifyNoInteractions(gateway, automatic);
     }
 }

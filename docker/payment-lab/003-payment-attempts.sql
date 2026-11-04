@@ -1,0 +1,25 @@
+USE loopers;
+CREATE TABLE IF NOT EXISTS payment_attempts (
+    attempt_key VARCHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL PRIMARY KEY,
+    order_id BIGINT NOT NULL,
+    amount BIGINT NOT NULL,
+    provider_order_id VARCHAR(100) NOT NULL,
+    dispatch_state VARCHAR(16) NOT NULL,
+    outcome VARCHAR(16) NOT NULL,
+    transaction_key VARCHAR(64) COLLATE utf8mb4_bin NULL,
+    rejection VARCHAR(16) NOT NULL,
+    conflict_reason VARCHAR(32) NOT NULL,
+    reject_before_create BIT NOT NULL,
+    final_status VARCHAR(16) NOT NULL,
+    processing_delay_ms BIGINT NOT NULL,
+    create_response_mode VARCHAR(16) NOT NULL,
+    create_response_delay_ms BIGINT NOT NULL,
+    lookup_response_mode VARCHAR(16) NOT NULL,
+    lookup_response_delay_ms BIGINT NOT NULL,
+    callback_mode VARCHAR(16) NOT NULL,
+    callback_delay_ms BIGINT NOT NULL,
+    version BIGINT NOT NULL DEFAULT 0,
+    created_at DATETIME(6) NOT NULL,
+    CONSTRAINT uk_payment_attempt_order UNIQUE (order_id),
+    CONSTRAINT uk_payment_attempt_transaction UNIQUE (transaction_key)
+) CHARACTER SET utf8mb4;

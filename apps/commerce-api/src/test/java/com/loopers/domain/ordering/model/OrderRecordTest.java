@@ -21,6 +21,8 @@ class OrderRecordTest {
             assertThat(orderRecord.getUserId()).isEqualTo(1L);
             assertThat(orderRecord.getAmount()).isEqualTo(7_000L);
             assertThat(orderRecord.getStatus()).isEqualTo(OrderRecordStatus.PAID);
+            assertThat(orderRecord.getPaymentMethod()).isEqualTo(PaymentMethod.POINT);
+            assertThat(OrderRecord.paidByPg(1L, 7000L).getPaymentMethod()).isEqualTo(PaymentMethod.PG);
         }
 
         @DisplayName("0 이하 결제액은 거절한다")
@@ -42,6 +44,7 @@ class OrderRecordTest {
 
             assertThat(orderRecord.getId()).isEqualTo(1L);
             assertThat(orderRecord.getCreatedAt()).isEqualTo(createdAt);
+            assertThat(orderRecord.getPaymentMethod()).isEqualTo(PaymentMethod.POINT);
         }
 
         @DisplayName("id가 없거나 생성 시각이 없으면 거절한다")

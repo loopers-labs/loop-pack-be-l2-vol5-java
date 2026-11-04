@@ -4,10 +4,12 @@ import com.loopers.application.common.PageCriteria;
 import com.loopers.application.common.PageResult;
 import com.loopers.application.ordering.query.AdminOrderView;
 import com.loopers.application.ordering.query.OrderQueryDao;
+import com.loopers.application.ordering.support.OrderAdminAccess;
 import com.loopers.application.support.error.ApplicationErrorCode;
 import com.loopers.application.support.error.ApplicationException;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.interfaces.api.support.RequestInputValidator;
+import com.loopers.interfaces.api.support.XUserId;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -25,15 +27,18 @@ public class AdminOrderQueryController {
     // 전체 주문 목록 페이지 조회
     @GetMapping
     public ApiResponse<PageResult<AdminOrderView>> findAll(
+        @XUserId long userId,
         @RequestParam(defaultValue = "0") int page,
         @RequestParam(defaultValue = "20") int size
     ) {
+        OrderAdminAccess.requireAdmin(userId);
         return ApiResponse.success(orderQueryDao.findAdminOrders(new PageCriteria(page, size)));
     }
 
     // 단건 주문 조회
     @GetMapping("/{orderId}")
-    public ApiResponse<AdminOrderView> find(@PathVariable long orderId) {
+    public ApiResponse<AdminOrderView> find(@XUserId long userId, @PathVariable long orderId) {
+        OrderAdminAccess.requireAdmin(userId);
         RequestInputValidator.requirePositiveId(orderId, "주문 ID");
         AdminOrderView order = orderQueryDao.findAdminOrder(orderId)
             .orElseThrow(() -> new ApplicationException(ApplicationErrorCode.ORDER_NOT_FOUND));

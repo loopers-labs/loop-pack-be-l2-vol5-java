@@ -2,6 +2,10 @@ package com.loopers.infrastructure.query.mall;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.reset;
 
 import com.loopers.application.mall.command.BrandCommand;
 import com.loopers.application.mall.command.ProductCommand;
@@ -12,8 +16,11 @@ import com.loopers.application.mall.usecase.DeleteProductUseCase;
 import com.loopers.application.mall.usecase.SetProductStockUseCase;
 import com.loopers.application.mall.usecase.UpdateBrandUseCase;
 import com.loopers.application.mall.usecase.UpdateProductUseCase;
-import com.loopers.application.ordering.command.ConfirmOrderCommand;
+import com.loopers.support.test.PgPaymentTestSupport;
 import com.loopers.application.ordering.usecase.ConfirmOrderUseCase;
+import com.loopers.application.ordering.result.ApplyOrderPaymentResult;
+import com.loopers.application.ordering.usecase.ApplyOrderPaymentUseCase;
+import com.loopers.application.pay.usecase.RecordPaymentObservationUseCase;
 import com.loopers.application.shopping.command.LikeCommand;
 import com.loopers.application.shopping.service.LikeCountDeltaBuffer;
 import com.loopers.application.shopping.usecase.CancelLikeUseCase;
@@ -22,25 +29,31 @@ import com.loopers.application.shopping.usecase.LikeCountAggregationUseCase;
 import com.loopers.application.shopping.usecase.RegisterLikeUseCase;
 import com.loopers.domain.mall.model.Brand;
 import com.loopers.domain.mall.model.Product;
+import com.loopers.domain.mall.model.StockAdjustment;
 import com.loopers.domain.mall.repository.BrandRepository;
 import com.loopers.domain.mall.repository.ProductRepository;
+import com.loopers.domain.mall.repository.StockAdjustmentRepository;
 import com.loopers.domain.ordering.model.Order;
 import com.loopers.domain.ordering.model.OrderItem;
 import com.loopers.domain.ordering.model.OrderStatus;
 import com.loopers.domain.ordering.repository.OrderRepository;
 import com.loopers.domain.pay.model.Wallet;
+import com.loopers.domain.pay.model.PaymentAttempt;
+import com.loopers.domain.pay.model.PaymentObservation;
+import com.loopers.domain.pay.model.PaymentRecoveryTask;
+import com.loopers.domain.pay.model.ProviderPaymentStatus;
+import com.loopers.domain.pay.repository.PaymentAttemptRepository;
 import com.loopers.domain.pay.repository.WalletRepository;
 import com.loopers.domain.shopping.model.Like;
 import com.loopers.domain.shopping.model.User;
 import com.loopers.domain.shopping.repository.LikeRepository;
 import com.loopers.domain.shopping.repository.UserRepository;
-import com.loopers.domain.support.error.DomainErrorCode;
-import com.loopers.domain.support.error.DomainException;
 import com.loopers.infrastructure.persistence.mall.entity.QProductJpaEntity;
 import com.loopers.support.test.IntegrationTest;
 import com.loopers.utils.DatabaseCleanUp;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -49,6 +62,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @IntegrationTest
 @TestPropertySource(properties = {
@@ -57,6 +72,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 })
 // 테스트 자체를 트랜잭션으로 감싸지 않고 실제 커밋 후 리스너와 캐시를 검증한다.
 class ProductDetailCacheInvalidationIntegrationTest {
+    @Autowired private com.loopers.domain.pay.repository.PaymentRecoveryTaskRepository recoveryTasks;
+    @Autowired private PgPaymentTestSupport pg;
+    @BeforeEach void stubPg() { pg.usePendingProvider(); }
     private static final QProductJpaEntity PRODUCT = QProductJpaEntity.productJpaEntity;
 
     @Autowired
@@ -86,6 +104,14 @@ class ProductDetailCacheInvalidationIntegrationTest {
     @Autowired
     private ConfirmOrderUseCase confirmOrder;
     @Autowired
+    private ApplyOrderPaymentUseCase applyPayment;
+    @Autowired
+    private RecordPaymentObservationUseCase observations;
+    @Autowired
+    private PaymentAttemptRepository paymentAttempts;
+    @Autowired
+    private StockAdjustmentRepository adjustments;
+    @Autowired
     private BrandRepository brandRepository;
     @Autowired
     private ProductRepository productRepository;
@@ -112,6 +138,7 @@ class ProductDetailCacheInvalidationIntegrationTest {
 
     @AfterEach
     void tearDown() {
+        reset(orderRepository);
         cache.invalidateAll();
         deltaBuffer.drain();
         databaseCleanUp.truncateAllTables();
@@ -415,42 +442,118 @@ class ProductDetailCacheInvalidationIntegrationTest {
             long second = createProduct(brand);
             long otherId = createProduct(brand);
             createWallet(10_000L);
-            Order order = orderRepository.save(Order.create(1L, List.of(
+            Order order = orderRepository.insert(Order.create(1L, List.of(
                 OrderItem.create(first, "상품", 1_000L, 2), OrderItem.create(second, "상품", 1_000L, 1))));
             ProductDetailView firstBefore = detail(first);
             ProductDetailView secondBefore = detail(second);
             ProductDetailView other = detail(otherId);
 
             // act
-            confirmOrder.execute(new ConfirmOrderCommand(order.getId()));
+            pg.confirmAndComplete(order);
 
             // assert
             assertThat(detail(first)).isNotSameAs(firstBefore).extracting(ProductDetailView::stock).isEqualTo(3);
             assertThat(detail(second)).isNotSameAs(secondBefore).extracting(ProductDetailView::stock).isEqualTo(4);
             assertThat(detail(otherId)).isSameAs(other);
             assertThat(orderRepository.findById(order.getId()).orElseThrow().getStatus()).isEqualTo(OrderStatus.CONFIRMED);
-            assertThat(walletRepository.findByUserId(1L).orElseThrow().getBalance()).isEqualTo(7_000L);
+            assertThat(walletRepository.findByUserId(1L).orElseThrow().getBalance()).isEqualTo(10_000L);
         }
 
-        @DisplayName("재고 변경 이벤트 발행 뒤 결제가 실패해도 롤백된 재고와 기존 캐시를 보존한다")
+        @DisplayName("차감 이벤트 뒤 준비 기록 저장이 실패하면 롤백된 재고와 기존 캐시를 보존한다")
         @Test
         void keepsCacheWhenPaymentFailsAfterStockDecrease() {
             // arrange
             long productId = createProduct(createBrand());
             createWallet(0L);
-            Order order = orderRepository.save(Order.create(1L,
+            Order order = orderRepository.insert(Order.create(1L,
                 List.of(OrderItem.create(productId, "상품", 1_000L, 2))));
             ProductDetailView before = detail(productId);
+            transactionTemplate.executeWithoutResult(status -> recoveryTasks.insert(
+                com.loopers.domain.pay.model.PaymentRecoveryTask.create(PgPaymentTestSupport.command(order).paymentAttemptKey())));
 
             // act & assert
-            assertThatThrownBy(() -> confirmOrder.execute(new ConfirmOrderCommand(order.getId())))
-                .isInstanceOf(DomainException.class).extracting("errorCode").isEqualTo(DomainErrorCode.INSUFFICIENT_POINT);
+            assertThatThrownBy(() -> pg.confirmAndComplete(order))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
             assertThat(detail(productId)).isSameAs(before);
             assertThat(detail(productId).stock()).isEqualTo(5);
             assertThat(productRepository.findById(productId).orElseThrow().getStock()).isEqualTo(5);
             assertThat(orderRepository.findById(order.getId()).orElseThrow().getStatus()).isEqualTo(OrderStatus.DRAFT);
             assertThat(walletRepository.findByUserId(1L).orElseThrow().getBalance()).isZero();
         }
+
+        @DisplayName("PG 실패 반환 commit 뒤 캐시도 재고 3에서 5로 갱신되고 무관한 캐시는 유지된다")
+        @Test
+        void reloadsRestoredStockAfterPaymentFailureCommit() {
+            Brand brand = createBrand();
+            long productId = createProduct(brand);
+            long otherId = createProduct(brand);
+            Order order = orderRepository.insert(Order.create(1L,
+                List.of(OrderItem.create(productId, "상품", 1_000L, 2))));
+            confirmOrder.execute(PgPaymentTestSupport.command(order));
+            ProductDetailView debited = detail(productId);
+            ProductDetailView other = detail(otherId);
+            assertThat(debited.stock()).isEqualTo(3);
+            PaymentAttempt attempt = recordFailedPayment(order);
+
+            assertThat(applyPayment.execute(attempt.getAttemptKey()).state()).isEqualTo(ApplyOrderPaymentResult.State.APPLIED);
+
+            assertThat(productRepository.findById(productId).orElseThrow().getStock()).isEqualTo(5);
+            assertThat(detail(productId)).isNotSameAs(debited).extracting(ProductDetailView::stock).isEqualTo(5);
+            assertThat(detail(otherId)).isSameAs(other);
+            assertThat(transactionTemplate.<StockAdjustment.State>execute(status -> adjustments.findByOrderId(order.getId()).orElseThrow().getState()))
+                .isEqualTo(StockAdjustment.State.RESTORED);
+            assertThat(orderRepository.findById(order.getId()).orElseThrow().getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED);
+        }
+
+        @DisplayName("PG 실패 반환 SQL·이벤트 뒤 rollback하면 DB와 캐시는 재고 3을 유지하고 실패 근거는 남는다")
+        @Test
+        void keepsDebitedCacheWhenStockRestorationRollsBack() {
+            long productId = createProduct(createBrand());
+            Order order = orderRepository.insert(Order.create(1L,
+                List.of(OrderItem.create(productId, "상품", 1_000L, 2))));
+            confirmOrder.execute(PgPaymentTestSupport.command(order));
+            ProductDetailView debited = detail(productId);
+            assertThat(debited.stock()).isEqualTo(3);
+            PaymentAttempt attempt = recordFailedPayment(order);
+            AtomicBoolean reachedRestoredSql = new AtomicBoolean();
+            transactionTemplate.executeWithoutResult(status -> doAnswer(invocation -> {
+                Object result = invocation.callRealMethod();
+                // 주문 CAS 뒤 등록하고, 반환 SQL·이벤트·기록 저장이 모두 끝난 commit 직전에 실패시킨다.
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void beforeCommit(boolean readOnly) {
+                        assertThat(queryFactory.select(PRODUCT.stock).from(PRODUCT)
+                            .where(PRODUCT.id.eq(productId)).fetchOne()).isEqualTo(5);
+                        assertThat(adjustments.findByOrderId(order.getId()).orElseThrow().getState())
+                            .isEqualTo(StockAdjustment.State.RESTORED);
+                        reachedRestoredSql.set(true);
+                        throw new IllegalStateException("재고 반환 SQL·이벤트 이후 업무 실패");
+                    }
+                });
+                return result;
+            }).when(orderRepository).completePgIfPending(eq(order.getId()), any(), any()));
+
+            assertThat(applyPayment.execute(attempt.getAttemptKey()).state())
+                .isEqualTo(ApplyOrderPaymentResult.State.APPLICATION_FAILED);
+
+            assertThat(reachedRestoredSql).isTrue();
+            assertThat(productRepository.findById(productId).orElseThrow().getStock()).isEqualTo(3);
+            assertThat(detail(productId)).isSameAs(debited).extracting(ProductDetailView::stock).isEqualTo(3);
+            assertThat(transactionTemplate.<StockAdjustment.State>execute(status -> adjustments.findByOrderId(order.getId()).orElseThrow().getState()))
+                .isEqualTo(StockAdjustment.State.DEDUCTED);
+            assertThat(transactionTemplate.<PaymentAttempt.Outcome>execute(status -> paymentAttempts.findByKey(attempt.getAttemptKey()).orElseThrow().getOutcome()))
+                .isEqualTo(PaymentAttempt.Outcome.FAILED);
+            assertThat(transactionTemplate.<PaymentRecoveryTask.State>execute(status -> recoveryTasks.findByKey(attempt.getAttemptKey()).orElseThrow().getState()))
+                .isEqualTo(PaymentRecoveryTask.State.MANUAL_REQUIRED);
+            assertThat(orderRepository.findById(order.getId()).orElseThrow().getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+        }
+    }
+
+    private PaymentAttempt recordFailedPayment(Order order) {
+        PaymentAttempt attempt = transactionTemplate.execute(status -> paymentAttempts.findByOrderId(order.getId()).orElseThrow());
+        observations.execute(attempt.getAttemptKey(), PaymentObservation.verified(attempt.getTransactionKey(),
+            attempt.getProviderOrderId(), attempt.getAmount(), ProviderPaymentStatus.FAILED));
+        return attempt;
     }
 
     private Brand createBrand() {

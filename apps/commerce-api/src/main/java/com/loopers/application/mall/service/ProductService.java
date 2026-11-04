@@ -97,6 +97,23 @@ public class ProductService implements CreateProductUseCase, UpdateProductUseCas
         }
     }
 
+    // 실패 결제의 고정 차감 수량을 현재 수량에 반환한다. 공통 업무 TX 안에서만 호출한다.
+    public void restoreStocks(Map<Long, Integer> quantityByProductId) {
+        Map<Long, Product> lockedProducts = new LinkedHashMap<>();
+        for (Long productId : new TreeSet<>(quantityByProductId.keySet())) {
+            lockedProducts.put(productId, findProduct(productId));
+        }
+        for (Map.Entry<Long, Integer> entry : quantityByProductId.entrySet()) {
+            lockedProducts.get(entry.getKey()).restoreStock(entry.getValue());
+        }
+        for (Product product : lockedProducts.values()) {
+            productRepository.save(product);
+        }
+        if (!lockedProducts.isEmpty()) {
+            eventPublisher.publishEvent(new ProductDetailsChangedEvent(lockedProducts.keySet()));
+        }
+    }
+
     private Product findProduct(long productId) {
         return productRepository.findByIdForUpdate(productId)
             .orElseThrow(() -> new ApplicationException(ApplicationErrorCode.PRODUCT_NOT_FOUND));

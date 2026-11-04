@@ -7,7 +7,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.reset;
 
-import com.loopers.application.ordering.command.ConfirmOrderCommand;
+import com.loopers.support.test.PgPaymentTestSupport;
+import com.loopers.infrastructure.persistence.mall.jpa.ProductJpaRepository;
+import com.loopers.infrastructure.persistence.mall.entity.ProductJpaEntity;
 import com.loopers.application.ordering.usecase.ConfirmOrderUseCase;
 import com.loopers.domain.mall.model.Brand;
 import com.loopers.domain.mall.model.Product;
@@ -57,13 +59,15 @@ class ConfirmOrderSqlRollbackIntegrationTest {
     private DatabaseCleanUp databaseCleanUp;
     @Autowired
     private OrderRepository orderRepository;
+    @Autowired
+    private ProductJpaRepository productJpaRepository;
 
     @AfterEach
     void tearDown() {
         databaseCleanUp.truncateAllTables();
     }
 
-    @DisplayName("재고·잔액·기록까지 실제 SQL로 반영된 뒤 마지막 저장 단계에서 실패해도 확정 전체가 롤백된다")
+    @DisplayName("준비 중 재고 차감 SQL 뒤 저장이 실패하면 준비 전체와 기존 포인트·다른 주문을 보존한다")
     @Test
     void rollsBackEverything_afterRealChangeSqlAlreadyApplied() {
         // arrange: 여러 품목, 기존 거래 기록(충전), 무관한 다른 주문을 먼저 커밋
@@ -83,19 +87,25 @@ class ConfirmOrderSqlRollbackIntegrationTest {
         ));
 
         AtomicInteger stockObservedDuringSave = new AtomicInteger(-1);
+        AtomicInteger writes = new AtomicInteger();
         doAnswer(invocation -> {
-            invocation.callRealMethod();
+            ProductJpaEntity saved = invocation.getArgument(0);
+            // mapper가 이미 관리 엔티티를 변경한 상태다. 실제 dirty-check SQL을 flush해 확인한다.
+            assertThat(entityManager.contains(saved)).isTrue();
             entityManager.flush();
             Number stock = (Number) entityManager.createNativeQuery("SELECT stock FROM products WHERE id = ?1")
                 .setParameter(1, productAId)
                 .getSingleResult();
             stockObservedDuringSave.set(stock.intValue());
-            throw new IllegalStateException("forced failure after real save SQL applied");
-        }).when(orderRepository).save(any());
+            if (writes.incrementAndGet() == 2) {
+                throw new IllegalStateException("forced failure after real save SQL applied");
+            }
+            return saved;
+        }).when(productJpaRepository).save(any(ProductJpaEntity.class));
 
         try {
             // act & assert
-            assertThatThrownBy(() -> confirmOrderUseCase.execute(new ConfirmOrderCommand(order.getId())))
+            assertThatThrownBy(() -> confirmOrderUseCase.execute(PgPaymentTestSupport.command(order)))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("forced failure after real save SQL applied");
 
@@ -114,7 +124,7 @@ class ConfirmOrderSqlRollbackIntegrationTest {
                 () -> assertThat(probe.chargeAmounts(1L)).containsExactly(10_000L)
             );
         } finally {
-            reset(orderRepository);
+            reset(productJpaRepository);
         }
     }
 
@@ -124,6 +134,6 @@ class ConfirmOrderSqlRollbackIntegrationTest {
     }
 
     private Order createOrder(long userId, List<OrderItem> items) {
-        return orderRepository.save(Order.create(userId, items));
+        return orderRepository.insert(Order.create(userId, items));
     }
 }
