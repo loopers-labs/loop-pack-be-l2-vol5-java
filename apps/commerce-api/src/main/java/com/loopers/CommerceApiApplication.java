@@ -24,7 +24,7 @@ public class CommerceApiApplication {
 
     public static void main(String[] args) {
         ConfigurableApplicationContext context = SpringApplication.run(CommerceApiApplication.class, args);
-        if (context.getEnvironment().acceptsProfiles(Profiles.of("benchmark-seed"))) {
+        if (context.getEnvironment().acceptsProfiles(Profiles.of("benchmark-seed", "outbox-resume"))) {
             context.close();
         }
     }

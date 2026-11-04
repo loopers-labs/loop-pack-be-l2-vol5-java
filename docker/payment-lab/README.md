@@ -12,7 +12,7 @@ Get-Content -Raw -Encoding utf8 docker/payment-lab/001-pg-schema.sql |
     docker compose -f docker/infra-compose.yml exec -T mysql mysql -uroot -proot --default-character-set=utf8mb4
 ```
 
-앱은 SQL을 자동 실행하지 않는다. PG에는 `001` → `002`, commerce에는 현재 적용된 버전 이후의 SQL을 `003`부터 `008`까지 순서대로 적용한다.
+앱은 SQL을 자동 실행하지 않는다. PG에는 `001` → `002`, commerce에는 현재 적용된 버전 이후의 SQL을 `003`부터 `011`까지 순서대로 적용한다.
 `005`는 복구 작업, `006`은 주문별 차감 기록과 품목 테이블, `007`은 주문의 PG 결제 대기/실패 상태 추가다.
 `006`까지 적용한 5주차 DB에는 먼저 `007-order-pg-status.sql`을 한 번 적용한다.
 `007`까지 적용한 5주차 DB에서 6~7주차 R01을 실행하려면 `008-order-confirmation-event-id.sql`을 한 번 적용한다.
@@ -27,7 +27,7 @@ Kafka 소비를 실행하기 전에 실패 보관 테이블 `010-order-event-fai
 
 commerce 테이블이 전혀 없는 **새 학습 DB**라면 먼저 `000-commerce-baseline.sql`을 적용한다.
 이 파일은 4주차의 테이블 구조를 만들며, 기존 DB를 고치거나 예전 버전에서 자동 업그레이드하는 용도가 아니다.
-이어서 `003`~`008`을 적용한다. `000`은 새 학습 DB를 초기화하는 데 사용한다.
+이어서 `003`~`011`을 적용한다. `000`은 새 학습 DB를 초기화하는 데 사용한다.
 
 PG 거래 테이블은 스키마 준비 다음에 적용한다.
 
@@ -52,6 +52,35 @@ commerce의 `payment-lab`에서 관리 포트를 분리해 두 앱을 함께 실
 PG에는 commerce 실행 클래스·Redis 의존성이 없다. PG는 기본으로 `payment-lab`을 사용한다.
 
 commerce의 `payment-lab` 실행은 기존 commerce 테이블이 준비되어 있어야 한다. `local`을 함께 활성화하지 않는다. 기존 `local`/`test`의 격리용 테이블 재생성 설정은 그대로 유지한다.
+
+## Outbox 전송과 재개
+
+`011-order-event-outbox.sql`을 적용한 뒤 commerce API를 `payment-lab`으로 시작한다.
+이 프로필에서 relay는 회차가 끝난 뒤 3초 간격으로, 회차당 최대 5건을 읽는다.
+같은 DB에 여러 API를 띄울 때는 relay 한 곳만 활성화하고 나머지에는 `ORDER_EVENTS_RELAY_ENABLED=false`를 지정한다.
+다른 프로필에서는 relay를 맡는 인스턴스에 `ORDER_EVENTS_RELAY_ENABLED=true`를 지정한다.
+
+최초 실패 후 지연은 3·6·12·24초이고 각각 ±20% 지터를 적용한다.
+최초 시도를 포함해 5회에 도달하면 `BLOCKED`가 된다. 전송 결과를 저장하기 전에 프로세스가 멈추면,
+커밋된 20초 시도 예약이 만료된 뒤 이어서 처리한다. 결과를 확인하지 못한 예약도 시도 횟수에 포함한다.
+브로커 확인 뒤 상태 커밋이 실패한 이벤트는 저장된 토픽·key·payload로 재발행될 수 있다.
+
+```sql
+SELECT COUNT(*) AS pending,
+       TIMESTAMPDIFF(SECOND, MIN(created_at), UTC_TIMESTAMP(6)) AS oldest_wait_seconds
+FROM order_event_outbox WHERE status = 'PENDING';
+
+SELECT event_id, order_id, attempts, next_attempt_at, last_error
+FROM order_event_outbox WHERE status = 'BLOCKED' ORDER BY created_at;
+```
+
+실패 원인을 해결한 뒤 해당 UUID 한 건만 다시 대기 상태로 돌린다. 아래 UUID는 조회한 값으로 바꾼다.
+
+```powershell
+./gradlew.bat :apps:commerce-api:bootRun --args='--spring.profiles.active=payment-lab,outbox-resume --order-events.relay.resume-id=00000000-0000-0000-0000-000000000000'
+```
+
+재개 명령은 기존 UUID·key·payload를 보존하고 시도 횟수를 초기화한다. 실행 중인 relay가 다음 회차부터 전송을 맡는다.
 
 ## 재시작과 초기화
 

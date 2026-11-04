@@ -3,6 +3,10 @@ management:
   server:
     port: 8082 # PG의 8081과 분리한다.
 
+order-events:
+  relay:
+    enabled: ${ORDER_EVENTS_RELAY_ENABLED:true}
+
 logging:
   config: classpath:logback-payment-lab.xml
 
