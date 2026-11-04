@@ -1,0 +1,5 @@
+outbox:
+  relay:
+    poll-interval: 1s
+    batch-size: 10
+    max-attempts: 3
