@@ -5,10 +5,10 @@ import com.loopers.order.application.outbox.OutboxPublisher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.Arguments;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -29,7 +29,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(org.mockito.junit.jupiter.MockitoExtension.class)
-@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @DisplayName("OrderConfirmed Outbox relay 상태 전이")
 class OrderConfirmedOutboxRelayTest {
 
@@ -117,29 +116,29 @@ class OrderConfirmedOutboxRelayTest {
         verify(repository).saveAndFlush(outbox);
     }
 
-    private Stream<org.junit.jupiter.params.provider.Arguments> publishResultTransitions() {
+    private static Stream<Arguments> publishResultTransitions() {
         return Stream.of(
-            org.junit.jupiter.params.provider.Arguments.of(
+            Arguments.of(
                 PublishResult.SUCCESS,
                 0,
                 OrderConfirmedOutboxStatus.PUBLISHED
             ),
-            org.junit.jupiter.params.provider.Arguments.of(
+            Arguments.of(
                 PublishResult.FAILED,
                 0,
                 OrderConfirmedOutboxStatus.FAILED
             ),
-            org.junit.jupiter.params.provider.Arguments.of(
+            Arguments.of(
                 PublishResult.PENDING,
                 0,
                 OrderConfirmedOutboxStatus.PENDING
             ),
-            org.junit.jupiter.params.provider.Arguments.of(
+            Arguments.of(
                 PublishResult.FAILED,
                 MAX_ATTEMPTS - 1,
                 OrderConfirmedOutboxStatus.BLOCKED
             ),
-            org.junit.jupiter.params.provider.Arguments.of(
+            Arguments.of(
                 PublishResult.PENDING,
                 MAX_ATTEMPTS - 1,
                 OrderConfirmedOutboxStatus.BLOCKED
