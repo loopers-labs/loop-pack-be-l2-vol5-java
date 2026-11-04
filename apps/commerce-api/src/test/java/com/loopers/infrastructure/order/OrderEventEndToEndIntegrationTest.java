@@ -22,9 +22,7 @@ import com.loopers.testsupport.LocalKafkaTestSupport;
 import com.loopers.utils.DatabaseCleanUp;
 import com.loopers.utils.RedisCleanUp;
 import org.apache.kafka.clients.admin.ConsumerGroupDescription;
-import org.apache.kafka.clients.admin.MemberDescription;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.common.ConsumerGroupState;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -56,9 +54,6 @@ import org.springframework.web.client.RestTemplate;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -107,8 +102,7 @@ class OrderEventEndToEndIntegrationTest {
     private static LocalKafkaTestSupport kafka;
     private static PgFixtureServer pg;
     private static ConfigurableApplicationContext api;
-    private static Process streamer;
-    private static Path streamerLog;
+    private static OrderActivityStreamerChild streamer;
     private static JdbcTemplate fresh;
     private static String topic;
     private static String group;
@@ -358,99 +352,31 @@ class OrderEventEndToEndIntegrationTest {
 
     // ---------------------------------------------------------------- 자식 streamer JVM
 
-    /**
-     * streamer bootJar 를 자식 JVM 으로 띄운다. 접속값은 부모 fixture 의 실제 값을 명시적으로 넘기고 개발 기본값으로 가지 않게 한다.
-     * DB 비밀번호는 명령줄 대신 환경 변수로 넘겨 명령 출력에 남기지 않는다. 출력은 파일로 받아 파이프가 막히지 않게 한다.
-     */
+    // 자식 JVM 의 기동 인자·기동 완료·배정·종료는 OrderActivityStreamerChild 로 옮겼다(구현 05 의 기계적 공유). 대기 한도는 기존 60초다.
     private static void startStreamer() throws IOException {
-        Path jar = Path.of(System.getProperty("c10.streamer.boot-jar", ""));
-        assertThat(Files.isRegularFile(jar)).as("streamer bootJar 준비(:apps:commerce-streamer:bootJar)").isTrue();
-        Path logDir = Path.of("build", "c10");
-        Files.createDirectories(logDir);
-        streamerLog = logDir.resolve("streamer-" + kafka.runId() + ".log");
-        List<String> args = List.of(
-            "--spring.profiles.active=test",
-            "--server.port=0",
-            "--management.server.port=0",
-            "--spring.jpa.hibernate.ddl-auto=create",
-            "--datasource.mysql-jpa.main.jdbc-url=" + System.getProperty("datasource.mysql-jpa.main.jdbc-url"),
-            "--datasource.mysql-jpa.main.username=" + System.getProperty("datasource.mysql-jpa.main.username"),
-            "--datasource.redis.database=" + System.getProperty("datasource.redis.database"),
-            "--datasource.redis.master.host=" + System.getProperty("datasource.redis.master.host"),
-            "--datasource.redis.master.port=" + System.getProperty("datasource.redis.master.port"),
-            "--datasource.redis.replicas[0].host=" + System.getProperty("datasource.redis.replicas[0].host"),
-            "--datasource.redis.replicas[0].port=" + System.getProperty("datasource.redis.replicas[0].port"),
-            "--spring.kafka.bootstrap-servers=" + kafka.bootstrapServers(),
-            "--spring.kafka.admin.properties.bootstrap.servers=" + kafka.bootstrapServers(),
-            "--commerce.order-activity.topic=" + topic,
-            "--commerce.order-activity.group-id=" + group,
-            "--demo-kafka.enabled=false");
-        assertThat(args).as("부모 fixture 접속값이 모두 있어야 한다").noneMatch(arg -> arg.endsWith("=null"));
-        List<String> command = new ArrayList<>(List.of(Path.of(System.getProperty("java.home"), "bin", "java").toString(), "-jar", jar.toString()));
-        command.addAll(args);
-        ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(streamerLog.toFile());
-        builder.environment().put("DATASOURCE_MYSQLJPA_MAIN_PASSWORD", System.getProperty("datasource.mysql-jpa.main.password"));
-        System.out.println("[C10 CHILD] jar=" + jar.getFileName() + " log=" + streamerLog.toAbsolutePath() + " args=" + args
-            + " env=[DATASOURCE_MYSQLJPA_MAIN_PASSWORD=(hidden)]");
-        streamer = builder.start();
+        streamer = OrderActivityStreamerChild.start(kafka, topic, group, "C10");
     }
 
-    /** Started 로그만 보지 않는다. 프로세스 생존·기동 완료를 본 뒤 listener 배정은 broker 에서 따로 확인한다. */
     private static void awaitStreamerReady() {
-        await("streamer 자식 기동 완료", () -> {
-            if (!streamer.isAlive()) {
-                throw new AssertionError("streamer 자식이 기동 중 종료됐습니다. exit=" + streamer.exitValue() + "\n" + tail(streamerOutput()));
-            }
-            return streamerOutput().contains("Started CommerceStreamerApplication");
-        });
+        streamer.awaitReady(DEADLINE);
     }
 
-    /** broker 가 본 group 이 STABLE 이고 자식의 listener member 하나가 업무 topic 의 두 partition 을 모두 배정받을 때까지 기다린다. */
     private static ConsumerGroupDescription awaitListenerAssignment() {
-        Set<TopicPartition> all = Set.of(new TopicPartition(topic, 0), new TopicPartition(topic, 1));
-        await("listener group 참여·partition 배정", () -> {
-            ConsumerGroupDescription description = kafka.describeGroup(group);
-            return description.state() == ConsumerGroupState.STABLE && description.members().size() == 1
-                && description.members().iterator().next().clientId().startsWith("commerce-streamer-")
-                && description.members().iterator().next().assignment().topicPartitions().equals(all);
-        });
-        return kafka.describeGroup(group);
+        return streamer.awaitAssignment(DEADLINE);
     }
 
-    /** SIGTERM 으로 정상 종료를 요청하고 기다린다. 시간 안에 끝나지 않을 때만 강제 종료하며 그 사실을 남긴다. */
     private static void stopStreamer() throws InterruptedException {
-        if (streamer == null) {
-            return;
+        if (streamer != null) {
+            streamer.stop("C10", DEADLINE);
         }
-        streamer.destroy();
-        boolean exited = streamer.waitFor(DEADLINE.toSeconds(), TimeUnit.SECONDS);
-        if (!exited) {
-            streamer.destroyForcibly();
-            streamer.waitFor(10, TimeUnit.SECONDS);
-        }
-        System.out.println("[C10 CHILD STOP] graceful=" + exited + " exit=" + (streamer.isAlive() ? "alive" : streamer.exitValue())
-            + " stoppedLog=" + streamerOutput().contains(group + ": Consumer stopped"));
-        if (!exited) {
-            throw new IllegalStateException("streamer 자식이 정상 종료 deadline 안에 끝나지 않아 강제 종료했습니다.");
-        }
-        await("자식 종료 뒤 group member 해제", () -> kafka.describeGroup(group).members().isEmpty());
     }
 
     private static String streamerOutput() {
-        try {
-            return streamerLog == null || !Files.exists(streamerLog) ? "" : Files.readString(streamerLog, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new IllegalStateException(e);
-        }
-    }
-
-    private static String tail(String text) {
-        return text.length() <= 4_000 ? text : text.substring(text.length() - 4_000);
+        return streamer == null ? "" : streamer.output();
     }
 
     private static String describe(ConsumerGroupDescription description) {
-        MemberDescription member = description.members().iterator().next();
-        return description.state() + " clientId=" + member.clientId() + " assignment=" + member.assignment().topicPartitions();
+        return OrderActivityStreamerChild.describe(description);
     }
 
     // ---------------------------------------------------------------- API 컨텍스트·입력
