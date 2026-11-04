@@ -24,6 +24,7 @@ import com.loopers.payment.application.port.out.PgPaymentRequest;
 import com.loopers.payment.application.port.out.PgTransaction;
 import com.loopers.payment.domain.Payment;
 import com.loopers.payment.domain.PaymentApplyOutcome;
+import com.loopers.payment.domain.PaymentStatus;
 import com.loopers.product.adapter.out.persistence.ProductJpaRepository;
 import com.loopers.product.application.port.in.StockReservationUseCase;
 import com.loopers.product.domain.ProductModel;
@@ -347,6 +348,105 @@ class OrderConfirmedPublishIntegrationTest {
 
             assertThat(outcome).isEqualTo(PaymentApplyOutcome.APPLIED);
             assertThat(outboxRows()).isEmpty();
+        }
+    }
+
+    /**
+     * W7 체크리스트 "UNKNOWN에서 거짓 이벤트나 추가 결제가 생기지 않는다". UNKNOWN은 PG에 보냈을 수 있으나 결과를 모르는 결제다 (W5 P-5).
+     * 조회로 SUCCESS가 밝혀질 때만 확정·발행 기록이 생기고, 어느 경우에도 PG 생성 요청을 다시 보내지 않는다.
+     */
+    @DisplayName("결제 결과를 모르면(UNKNOWN), ")
+    @Nested
+    class Unknown {
+
+        private PaymentInfo unknown;
+        private int createCallsBefore;
+
+        /**
+         * 에어맥스 1개 주문(1,000원)을 PG에 생성 요청까지 보냈지만 응답을 못 받아 UNKNOWN으로 둔다 — 거래 키를 모른다.
+         * PG에 거래가 실제로 생겼는지는 pgCreated로 정한다. 생겼으면 그 거래 키를 돌려준다.
+         */
+        private String arrangeUnknown(boolean pgCreated) {
+            Long userId = order().getUserId();
+            Long orderId = orderCommandUseCase.create(userId, List.of(new OrderLines.Line(airMax.getId(), 1))).id();
+            unknown = paymentRequestUseCase.request(new PaymentRequestCommand(userId, orderId, "attempt-unknown", "SAMSUNG", "1234-5678-9814-1451"));
+            Payment payment = paymentPort.findById(unknown.paymentId()).orElseThrow();
+            String key = null;
+            if (pgCreated) {
+                key = paymentGatewayPort.request(new PgPaymentRequest(payment.getProviderOrderId(), "SAMSUNG", "1234-5678-9814-1451", 1_000L)).transactionKey();
+            }
+            transactionTemplate.executeWithoutResult(status -> {
+                Payment locked = paymentPort.findByIdForUpdate(unknown.paymentId()).orElseThrow();
+                locked.markSending(ZonedDateTime.now());
+                paymentPort.save(locked);
+            });
+            paymentResultApplier.recordUnknown(unknown.paymentId());
+            createCallsBefore = PG.createCalls();
+            return key;
+        }
+
+        private OrderModel unknownOrder() {
+            return orderJpaRepository.findById(unknown.orderId()).orElseThrow();
+        }
+
+        private List<EventOutbox> unknownOutboxRows() {
+            return eventOutboxJpaRepository.findAll().stream()
+                .filter(row -> row.getAggregateId().equals(unknown.orderId()))
+                .toList();
+        }
+
+        @DisplayName("UNKNOWN이 된 것만으로는 주문이 PAYMENT_PENDING에 머물고 발행 기록이 없다.")
+        @Test
+        void unknownAloneRecordsNothing() {
+            arrangeUnknown(true);
+
+            assertThat(paymentPort.findById(unknown.paymentId()).orElseThrow().getStatus()).isEqualTo(PaymentStatus.UNKNOWN);
+            assertThat(unknownOrder().getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+            assertThat(unknownOutboxRows()).isEmpty();
+        }
+
+        @DisplayName("PG 조회가 실패하면(500) NOT_FINAL로 미루고, 주문 PAYMENT_PENDING · 발행 기록 0건 · PG 생성 요청 0회 추가다.")
+        @Test
+        void lookupUnavailableRecordsNothingAndDoesNotCreateAgain() {
+            arrangeUnknown(true);
+            PG.failNextLookups(10);
+
+            PaymentApplyOutcome outcome = paymentResultApplier.reconcile(unknown.paymentId());
+
+            assertThat(outcome).isEqualTo(PaymentApplyOutcome.NOT_FINAL);
+            assertThat(unknownOrder().getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+            assertThat(unknownOutboxRows()).isEmpty();
+            assertThat(PG.createCalls()).isEqualTo(createCallsBefore);
+        }
+
+        @DisplayName("PG에 거래가 없으면(조회 0건) 실패로 확정하지도 발행하지도 않는다 — 결제 UNKNOWN · 주문 PAYMENT_PENDING · 발행 기록 0건 · PG 생성 요청 0회 추가.")
+        @Test
+        void notFoundRecordsNothingAndDoesNotCreateAgain() {
+            arrangeUnknown(false);
+
+            PaymentApplyOutcome outcome = paymentResultApplier.reconcile(unknown.paymentId());
+
+            assertThat(outcome).isEqualTo(PaymentApplyOutcome.NOT_FINAL);
+            assertThat(paymentPort.findById(unknown.paymentId()).orElseThrow().getStatus()).isEqualTo(PaymentStatus.UNKNOWN);
+            assertThat(unknownOrder().getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+            assertThat(unknownOutboxRows()).isEmpty();
+            assertThat(PG.createCalls()).isEqualTo(createCallsBefore);
+        }
+
+        @DisplayName("조회로 SUCCESS가 밝혀지면 그때 처음 확정하고 발행 기록 1건을 남긴다. 한 번 더 조회해도 1건이고, PG 생성 요청은 0회 추가다.")
+        @Test
+        void successFoundLaterRecordsExactlyOnceWithoutCreatingAgain() {
+            String key = arrangeUnknown(true);
+            PG.complete(key, "SUCCESS", null);
+
+            PaymentApplyOutcome first = paymentResultApplier.reconcile(unknown.paymentId());
+            PaymentApplyOutcome second = paymentResultApplier.reconcile(unknown.paymentId());
+
+            assertThat(first).isEqualTo(PaymentApplyOutcome.APPLIED);
+            assertThat(second).isEqualTo(PaymentApplyOutcome.ALREADY_APPLIED);
+            assertThat(unknownOrder().getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+            assertThat(unknownOutboxRows()).hasSize(1);
+            assertThat(PG.createCalls()).isEqualTo(createCallsBefore);
         }
     }
 
