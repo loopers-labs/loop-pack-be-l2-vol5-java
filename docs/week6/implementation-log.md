@@ -218,7 +218,7 @@ curl --fail --silent --show-error --max-time 10 http://localhost:9099/api/cluste
 
 ## 6. 설정 키·접속 주소 정정과 실효 기본값 설명
 
-사용자가 리뷰 내용을 확인한 뒤 **consumer 설정 오타, 브로커 3개에 맞는 접속 주소, 문서의 기본값 설명만 먼저 수정**하도록 요청했다. 토픽 생성 정책·복제 수·offset 시작 위치·acks·timeout은 새로 선택하거나 변경하지 않았다.
+사용자가 **consumer 설정 오타, 브로커 3개에 맞는 접속 주소, 문서의 기본값 설명만 먼저 수정**하도록 요청했다. 토픽 생성 정책·복제 수·offset 시작 위치·acks·timeout은 새로 선택하거나 변경하지 않았다.
 
 ### 변경 범위
 
@@ -230,7 +230,7 @@ curl --fail --silent --show-error --max-time 10 http://localhost:9099/api/cluste
 | kafka.yml admin | 예전 `kafka:9092` override 제거. producer·consumer·admin이 공통 bootstrap을 사용하고 테스트의 공통 주소 override도 함께 따름 |
 | 문서·주석 | broker 기본값은 실제 동작 중인 값임을 명시. 클라이언트의 `auto.create.topics.enable=false`가 broker 자동 생성을 끄지 못한다는 주석 추가. 기존·새 Compose의 동시 실행 불가 설명 명시 |
 
-직전 리뷰에서는 broker 1·2·3 모두 `auto.create.topics.enable=true`, `num.partitions=1`, `default.replication.factor=1`, `min.insync.replicas=1`, `offsets.topic.replication.factor=1`을 확인했다. 이번 수정 중에도 broker 1을 읽기 전용으로 재조회해 동일 값을 확인했고, Compose나 실행 중인 broker 설정은 변경하지 않았다. 이 값들을 사용자 선택으로 간주하지 않도록 design.md에 출처·의미·남은 선택을 구분했다.
+수정 전에는 broker 1·2·3 모두 `auto.create.topics.enable=true`, `num.partitions=1`, `default.replication.factor=1`, `min.insync.replicas=1`, `offsets.topic.replication.factor=1`을 확인했다. 이번 수정 중에도 broker 1을 읽기 전용으로 재조회해 동일 값을 확인했고, Compose나 실행 중인 broker 설정은 변경하지 않았다. 이 값들을 사용자 선택으로 간주하지 않도록 design.md에 출처·의미·남은 선택을 구분했다.
 
 ### 실행 검증
 
@@ -632,7 +632,7 @@ API는 프로젝트 check가 정한 기능 테스트 전체를 실행했다. 별
 
 조건·각 단계의 실제 수치·코드 링크·한계는 [Kafka 설정 실험 5~8절](kafka-settings-experiments.md#selected-db-retry-experiment)에 모았다. 새 정책을 선택한 작업이 아니므로 새 ADR을 만들지 않았다. ADR 0041~0045는 결정 본문·당시 검증 기록을 보존하고 상단에 후속 검증 링크만 연결했다. 현재 설계의 상태도 실제 검증 범위와 맞춘다.
 
-commerce-change-review 기준으로 이번 테스트·fixture의 정상·실패·중단·재시작·TX/offset 경계와 현재 설계·ADR을 대조했다. 발견한 관찰 코드·테스트 자원 문제를 수정했으며 이번 변경 범위에서 추가 수정이 필요한 계약 위반은 발견하지 않았다. 미정 정책과 검증 한계는 아래에 유지한다.
+이번 테스트·fixture의 정상·실패·중단·재시작·TX/offset 경계와 현재 설계·ADR을 대조했다. 발견한 관찰 코드·테스트 자원 문제를 수정했으며 이번 변경 범위에서 추가 수정이 필요한 계약 위반은 발견하지 않았다. 미정 정책과 검증 한계는 아래에 유지한다.
 
 ### 검증 범위·남은 연결
 
@@ -671,7 +671,7 @@ JAVA_TOOL_OPTIONS=-Dapi.version=1.44 \
 
 조건·흐름·실제 수치는 [실험 9절](kafka-settings-experiments.md#manual-ack-experiment)에 모았다. 실제 DB 서버 중단·OS 강제 종료·처리량·지연 우위를 측정한 결과는 아니다. DB commit과 ack 사이의 틈은 그대로 있으므로 기존 DB 멱등 처리가 계속 필요하다. 기존 DLQ 실험은 RECORD 조건이며 MANUAL_IMMEDIATE와 DLQ recoverer의 원본 offset 진행을 결합한 검증은 후속이다.
 
-commerce-change-review 기준으로 새 테스트의 DB commit·ack·rollback·중단·동일 group 재시작·중복 no-op을 설계 및 ADR과 대조했다. 이번 테스트·문서 범위에서 추가 수정이 필요한 계약 위반은 발견하지 않았다. 상세 예외 분류·중단 범위·재시작 주체·DLQ 구성은 미정으로 유지한다.
+새 테스트의 DB commit·ack·rollback·중단·동일 group 재시작·중복 no-op을 설계 및 ADR과 대조했다. 이번 테스트·문서 범위에서 추가 수정이 필요한 계약 위반은 발견하지 않았다. 상세 예외 분류·중단 범위·재시작 주체·DLQ 구성은 미정으로 유지한다.
 
 <a id="conflicting-fact-comparison"></a>
 
@@ -699,7 +699,7 @@ JAVA_TOOL_OPTIONS=-Dapi.version=1.44 \
   :apps:commerce-streamer:checkstyleTest --offline
 ```
 
-조건·각 단계의 관찰 결과·선택 기준은 [실험 10절](kafka-settings-experiments.md#conflicting-fact-experiment)에 모았다. commerce-change-review 기준으로 실험 입력·기존 DB 보호·정상 ack와 recovery commit·중단/재시작 경계를 확인했다. 이번 범위에서 추가 수정이 필요한 계약 위반은 발견하지 않았다. DLQ 발행 실패·여러 partition·다른 충돌 조건·운영 재처리는 미검증으로 남겼다.
+조건·각 단계의 관찰 결과·선택 기준은 [실험 10절](kafka-settings-experiments.md#conflicting-fact-experiment)에 모았다. 실험 입력·기존 DB 보호·정상 ack와 recovery commit·중단/재시작 경계를 확인했다. 이번 범위에서 추가 수정이 필요한 계약 위반은 발견하지 않았다. DLQ 발행 실패·여러 partition·다른 충돌 조건·운영 재처리는 미검증으로 남겼다.
 
 AGENTS.md와 기존 ADR의 본문도 변경하지 않았다. 사용자의 업무용 선택 뒤 결정·근거·대안을 새 ADR로 남길 예정이다.
 
@@ -737,7 +737,7 @@ JAVA_TOOL_OPTIONS=-Dapi.version=1.44 \
 
 단위 테스트의 ack 실패는 대역 예외이고 Kafka 재전달은 DB commit 후 ack 전의 통제된 hook 예외다. 실제 broker offset commit 장애·OS 강제 종료를 새로 재현한 결과가 아니다. 이전 전체 598건과 다른 Kafka 실험은 이번에 재실행하지 않았다. 고유 topic/group의 격리 broker·MySQL을 사용했다.
 
-commerce-change-review 기준으로 정상·실패·no-op·commit/ack 경계·예외 전파·기존 한 인자 호출 호환성과 현재 주차 문서를 대조했다. 이번 변경 범위에서 추가 수정이 필요한 계약 위반은 발견하지 않았다. 실제 업무용 listener/factory 연결·오류 분류·DLQ 실패 대응·재시작 주체는 남겨 둔다.
+정상·실패·no-op·commit/ack 경계·예외 전파·기존 한 인자 호출 호환성과 현재 주차 문서를 대조했다. 이번 변경 범위에서 추가 수정이 필요한 계약 위반은 발견하지 않았다. 실제 업무용 listener/factory 연결·오류 분류·DLQ 실패 대응·재시작 주체는 남겨 둔다.
 
 <a id="order-listener-wiring"></a>
 
@@ -781,7 +781,7 @@ JAVA_TOOL_OPTIONS=-Dapi.version=1.44 \
 
 통합 검증의 오류 처리기는 테스트 전용 CommonContainerStoppingErrorHandler bean이다. 이 테스트는 정상·논리적 중복만 검증하며 해당 중단 handler를 업무용 정책으로 채택한 것은 아니다. 새 annotation listener의 동일 offset 재전달·업무용 retry/DLQ/중단 결합, 운영 3-consumer 배포는 아직 검증하지 않았다. 테스트의 동일 사실 두 번째 발행(offset 1)을 Kafka가 같은 record를 재전달한 것으로 표현하지 않는다. 이전 전체 598건과 다른 실험은 이번에 재실행하지 않았다.
 
-commerce-change-review 기준으로 새 설정의 default 비활성·전용 오류 처리기 요구·전용 consumer 설정·DB/ack 경계·기존 batch 보존·계층 의존을 검토했다. 이번 연결 범위에서 추가 수정이 필요한 계약 위반은 발견하지 않았다. DLQ 실패 시 중단/자동 재시도, 상세 오류 분류·중단 범위·재시작 주체·DLQ topic은 사용자 선택·연결 전이다.
+새 설정의 default 비활성·전용 오류 처리기 요구·전용 consumer 설정·DB/ack 경계·기존 batch 보존·계층 의존을 검토했다. 이번 연결 범위에서 추가 수정이 필요한 계약 위반은 발견하지 않았다. DLQ 실패 시 중단/자동 재시도, 상세 오류 분류·중단 범위·재시작 주체·DLQ topic은 사용자 선택·연결 전이다.
 
 <a id="conflicting-fact-adoption"></a>
 
@@ -1079,7 +1079,7 @@ ADR 0051의 5초가 실제로 무엇을 묶는지 측정했다. `ProducerMaxBloc
 | 기존 주문 42의 행·수량·시각·완료 snapshot | 유지 | 유지 |
 | Kafka 끝 offset | 3 | 3 |
 
-BATCH는 이미 저장된 주문 42를 다시 받지만 기존 동일 사실 no-op으로 추가 저장하지 않는다. 이번 조건에서 MI는 재전달 범위를 줄였고, DB 중복 효과를 막은 것은 기존 멱등 처리다. commit 호출 수·처리량·지연을 측정하지 않았으며 업무용 BATCH와 retry/DLQ를 결합한 검증도 아니다. 첫 listener 반환을 막는 hook이므로 OS 강제 종료로 표현하지 않는다. 조건·가로 흐름·선택 대기는 [실험 11절](kafka-settings-experiments.md#batch-ack-experiment)에 정리했고 blog-draft에도 같은 결과와 한계를 반영했다.
+BATCH는 이미 저장된 주문 42를 다시 받지만 기존 동일 사실 no-op으로 추가 저장하지 않는다. 이번 조건에서 MI는 재전달 범위를 줄였고, DB 중복 효과를 막은 것은 기존 멱등 처리다. commit 호출 수·처리량·지연을 측정하지 않았으며 업무용 BATCH와 retry/DLQ를 결합한 검증도 아니다. 첫 listener 반환을 막는 hook이므로 OS 강제 종료로 표현하지 않는다. 조건·가로 흐름·선택 대기는 [실험 11절](kafka-settings-experiments.md#batch-ack-experiment)에 정리했다.
 
 ### 실행 검증
 
@@ -1107,7 +1107,7 @@ env DOCKER_HOST=unix:///Users/johyeon-a/.docker/run/docker.sock \
 
 초기 실행도 8건·Checkstyle 통과(1분 31초)였다. 정적 검토에서 MI의 commit이 관찰 callback보다 먼저 보일 수 있는 경쟁을 찾아, 재시작 완료를 기다릴 때 최종 offset과 수신 목록을 함께 검사하도록 보강했다. 위 값은 그 최종 코드로 다시 실행한 결과다. 이전 전체 회귀 API 524·streamer 88·Kafka 모듈 7건은 이번에 재실행하지 않았다.
 
-commerce-change-review 기준으로 실제 poll의 크기, 정상 DB TX 완료·중단 hook·미커밋 재전달·같은 group 재시작·행 불변·저장 호출 수와 현재 주차 문서를 대조했다. 이번 비교 범위에서 추가 수정이 필요한 계약 위반은 발견하지 않았다. 업무용 값 변경을 채택하지 않았으므로 기존 ADR 본문·상태는 변경하지 않았다.
+실제 poll의 크기, 정상 DB TX 완료·중단 hook·미커밋 재전달·같은 group 재시작·행 불변·저장 호출 수와 현재 주차 문서를 대조했다. 이번 비교 범위에서 추가 수정이 필요한 계약 위반은 발견하지 않았다. 업무용 값 변경을 채택하지 않았으므로 기존 ADR 본문·상태는 변경하지 않았다.
 
 <a id="dlt-timeout-verification"></a>
 
@@ -1140,7 +1140,7 @@ env DOCKER_HOST=unix:///Users/johyeon-a/.docker/run/docker.sock \
 
 기존 코드의 “10초 상한”과 “주문용 poll 제한 2분” 주석을 현재 실제 동작에 맞게 정정했고, 현재 설계도 함께 고쳤다. 행동·YAML 값은 변경하지 않았다. 기존 ADR 0049·0053은 결정 본문을 보존하고 상단에 검증 결과와 현재 설명 링크만 추가했다. 시간 기준을 새로 채택한 것이 아니므로 새 ADR은 만들지 않았다.
 
-commerce-change-review 기준으로 즉시 거절과 producer 재시도 소진의 차이, 완료 전 원본 위치 보호, 중단 뒤 같은 group 재수신, producer 재생성의 복구 범위와 현재 주차 문서를 대조했다. 실제 오류가 정해진 값보다 오래 걸린 사실은 기록하되, 10초 상한을 새로 구현한 것으로 표현하지 않았다.
+즉시 거절과 producer 재시도 소진의 차이, 완료 전 원본 위치 보호, 중단 뒤 같은 group 재수신, producer 재생성의 복구 범위와 현재 주차 문서를 대조했다. 실제 오류가 정해진 값보다 오래 걸린 사실은 기록하되, 10초 상한을 새로 구현한 것으로 표현하지 않았다.
 
 주석 정정 뒤에는 ArchUnit 1건·main/test Checkstyle을 다시 실행해 모두 통과했다(BUILD SUCCESSFUL·13초). 행동이 달라지지 않은 주석 정정이므로 약 2분이 필요한 native timeout 실험을 반복하지 않았다.
 
@@ -1210,9 +1210,9 @@ env DOCKER_HOST=unix:///Users/johyeon-a/.docker/run/docker.sock \
 - main/test Checkstyle 모두 실행·위반 0. BUILD SUCCESSFUL·8분 35초.
 - API·Kafka 모듈 전체 검사와 두 앱 W6 외부 클러스터 사례는 이번 변경에서 재실행하지 않았다. 해당 검사는 과거 절의 당시 결과로 보존한다.
 
-commerce-change-review 기준으로 정상 반환 전 DB 완료, 동일 사실 no-op, BATCH와 DLT 복구 commit 연결, 재시도/중단 시 실패 offset 보호와 같은 group 복구를 호출 경로·실제 결과와 대조했다. 변경 범위에서 추가 결함은 발견하지 않았다. 여러 consumer에서 listener 전체 중단·rebalance 경쟁·운영 5분 값 그대로의 실행·처리량은 미검증이다. framework 기본 비재시도 예외 분류는 변경하지 않았으므로 모든 예외가 동일 기간 재시도된다고 일반화하지 않는다.
+정상 반환 전 DB 완료, 동일 사실 no-op, BATCH와 DLT 복구 commit 연결, 재시도/중단 시 실패 offset 보호와 같은 group 복구를 호출 경로·실제 결과와 대조했다. 변경 범위에서 추가 결함은 발견하지 않았다. 여러 consumer에서 listener 전체 중단·rebalance 경쟁·운영 5분 값 그대로의 실행·처리량은 미검증이다. framework 기본 비재시도 예외 분류는 변경하지 않았으므로 모든 예외가 동일 기간 재시도된다고 일반화하지 않는다.
 
-현재 설계·실험 상태 표·blog-draft의 선택과 멘토 질문을 BATCH에 맞췄다. study·설정 선택 노트의 현재 ack 표기도 갱신하고 기존 계획·학습 결과에는 당시 조건과 현재 결정의 연결 설명을 남겼다. 과거 비교 결과와 채택 ADR 본문은 보존했다. 블로그에는 구현 설명 대신 “다시 읽어도 구매가 늘지 않으므로 직접 완료 표시 대신 묶음 위치 기록을 선택했다”는 사고 흐름을 남겼고, 성능 우위를 측정했다고 적지 않았다.
+현재 설계와 실험 상태 표를 BATCH에 맞췄다. 과거 비교 결과와 채택 ADR 본문은 보존했다.
 
 <a id="dlt-wait-decision"></a>
 
@@ -1222,39 +1222,9 @@ commerce-change-review 기준으로 정상 반환 전 DB 완료, 동일 사실 n
 
 동작은 바뀌지 않는다. 코드는 주석의 참조만 고쳤고 새 테스트를 실행하지 않았다. ADR 0051은 본문을 보존하고 상단에 "10초" 문장의 정정을 표시했다. design.md와 실험 12절의 선택 대기 표기를 결정으로 맞췄다.
 
-<a id="volume5-base-integration"></a>
-
-## 39. 머지된 5주차 기준을 volume-6에 통합
-
-원본 저장소의 `hyeon-aa`에 [5주차 PR #76](https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/pull/76)이 병합된 `086f761`을 `volume-6`에 반영했다. 기존 6주차에는 빠져 있던 5주차 후속 커밋 `1dc9309`의 PG 조회 연결 부족 분류·호출/풀 획득 계측·관련 검증을 포함한다. [6주차 PR #106](https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/pull/106)은 기존처럼 원본 `hyeon-aa`를 기준으로 유지하며 PR 자체는 병합하지 않는다.
-
-### 통합 범위와 정적 대조
-
-- 38개 파일을 충돌 없이 병합했다. `apps/commerce-api/build.gradle.kts`는 자동 병합됐으며 6주차 Kafka 의존성·공유 test fixture와 5주차의 실험 전용 작업이 함께 남는 것을 확인했다.
-- PG 조회 후속 결정은 기존 ADR 0060~0062를 따른다. 새 Kafka 설정·재시도 정책·트랜잭션 경계를 채택한 변경은 아니다. 주문 최초 SUCCESS의 이벤트 준비와 `AFTER_COMMIT` 발행, streamer의 DB 저장 뒤 BATCH 위치 기록은 유지한다.
-- 병합 diff의 공백 검사(`git diff --check HEAD^1 HEAD`)는 통과했다. 기존 미추적 파일과 개인 학습·블로그 자료는 변경 범위에 넣지 않는다.
-
-### 실행 검증
-
-첫 `:apps:commerce-api:check :apps:commerce-streamer:check`는 Testcontainers의 Docker 연결이 HTTP 400으로 거절돼 API 통합 테스트의 컨텍스트 생성 단계에서 실패했다. Docker Desktop의 기존 API 호환 설정을 이번 실행 프로세스에만 적용해 같은 검사를 다시 실행했다. 이 환경 실패를 기능 회귀로 판정하지 않는다.
-
-```bash
-env DOCKER_HOST=unix:///Users/johyeon-a/.docker/run/docker.sock \
-  JAVA_TOOL_OPTIONS=-Dapi.version=1.44 \
-  JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home \
-  ./gradlew :apps:commerce-api:check :apps:commerce-streamer:check --offline --no-parallel
-```
-
-호환 설정을 적용한 재실행은 `BUILD SUCCESSFUL`·5분 25초였다.
-
-- commerce-api 정규 테스트 550건(ArchUnit 1건 포함)을 실제 실행했고 실패·오류·skip은 모두 0이다. API main/test Checkstyle은 첫 병합 검사에서 통과했으며 재실행에서는 UP-TO-DATE였다.
-- commerce-streamer의 `check`도 통과했다. main Checkstyle은 실행·위반 0, test Checkstyle과 정규 test는 UP-TO-DATE였다. 기존 XML의 90건(ArchUnit 포함)·실패/오류/skip 0은 이전 실행 결과이며, 이번 병합에서 streamer 테스트 90건을 새로 실행했다고 기록하지 않는다.
-- 두 앱의 `check`는 33개 작업 중 3개 실행·30개 UP-TO-DATE로 끝났다. 테스트 기대값·Checkstyle·ArchUnit 규칙이나 Kafka 설정은 바꾸지 않았다.
-- experiment 태그의 부하·장애·설정 비교 실험과 로컬 3대 클러스터의 두 앱 사례는 이번 기준 병합에서 실행하지 않았다.
-
 <a id="setting-behavior-verification"></a>
 
-## 40. 설명으로만 있던 설정의 동작 확인
+## 39. 설명으로만 있던 설정의 동작 확인
 
 `KafkaConsumerSettingsExperimentTest` 8건과 `KafkaAcksLevelExperimentTest` 2건을 추가했다. 결과는 [실험 14절](kafka-settings-experiments.md#setting-behavior-experiments)에 적었다. 주요 관찰은 auto commit이 처리 결과와 무관하게 3을 남기는 것, `kill -9`한 consumer가 session 6초 뒤 제외되는 것, poll이 멈춰도 heartbeat로 group에 남다가 poll 간격 초과로 떠나는 것, 기본 오류 처리기의 총 10번 시도, `acks=1`이 `min.insync.replicas=2`와 무관하게 성공 응답을 주고 20건을 잃는 장면, static member의 재시작에서 남은 consumer가 재배정되지 않는 것이다.
 
@@ -1264,5 +1234,5 @@ env DOCKER_HOST=unix:///Users/johyeon-a/.docker/run/docker.sock \
 
 - 운영 재시도 값(간격의 합 5분)을 그대로 쓴 실행, 실제 DB 서버 중단·failover
 - concurrency 3에서 listener 전체가 함께 멈추는 동작, 재시도 중 rebalance가 겹칠 때의 재시도 횟수
-- 업무 앱·Spring listener의 프로세스 강제 종료와 `session.timeout.ms` 동안의 partition 정체, 업무 listener의 처리 시간이 `max.poll.interval.ms`를 넘길 때의 재전달 (raw consumer 동작은 40절에서 확인)
+- 업무 앱·Spring listener의 프로세스 강제 종료와 `session.timeout.ms` 동안의 partition 정체, 업무 listener의 처리 시간이 `max.poll.interval.ms`를 넘길 때의 재전달 (raw consumer 동작은 39절에서 확인)
 - broker 중단에 의한 producer 2단계(비동기) 전송 실패

@@ -631,7 +631,7 @@ BATCH는 **offset commit 방식**이다. 이 실험의 두 listener 모두 recor
 
 이 중단은 **첫 record의 DB 처리 후 listener가 정상 반환하기 전**에 넣은 hook이다. OS 강제 종료나 실제 DB 장애는 아니다. 한 partition·consumer 1개·record 3개의 결과로 재전달 빈도·성능을 일반화하지 않는다. commit 호출 수·처리량·지연·DB 조회 비용은 측정하지 않았으므로 BATCH가 더 빠르다거나 MI의 비용이 더 크다고 실행 결과로 주장하지 않는다. 이 비교 자체는 업무용 BATCH와 retry/DLT 조합·rebalance·운영 부하를 검증하지 않았다. 후속 업무용 연결 검사는 13절과 구분한다.
 
-동작 비교는 [Spring Kafka commit 방식](https://docs.spring.io/spring-kafka/reference/3.3/kafka/receiving-messages/message-listener-container.html#committing-offsets)과 [중단 error handler](https://docs.spring.io/spring-kafka/reference/3.3/kafka/annotation-error-handling.html#container-stopping-error-handlers)를 참고했다. 실험 계기는 [강의 로그 파이프라인 개선기](https://velog.io/@seeun0210/%EC%96%B4%EB%8A%90-%EC%9D%B8%ED%84%B4%EC%9D%98-%EA%B0%95%EC%9D%98-%EB%A1%9C%EA%B7%B8-%ED%8C%8C%EC%9D%B4%ED%94%84%EB%9D%BC%EC%9D%B8-%EA%B0%9C%EC%84%A0%EA%B8%B0-feat.-Kafka)의 동기 처리·멱등성과 ack mode 선택이다. 해당 글의 운영 환경·수치를 이 과제의 결과로 사용하지 않았다.
+동작 비교는 [Spring Kafka commit 방식](https://docs.spring.io/spring-kafka/reference/3.3/kafka/receiving-messages/message-listener-container.html#committing-offsets)과 [중단 error handler](https://docs.spring.io/spring-kafka/reference/3.3/kafka/annotation-error-handling.html#container-stopping-error-handlers)를 참고했다.
 
 <a id="dlt-timeout-experiment"></a>
 
