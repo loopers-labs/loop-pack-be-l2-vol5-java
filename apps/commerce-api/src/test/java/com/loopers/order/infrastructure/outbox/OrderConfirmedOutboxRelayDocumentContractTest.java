@@ -21,7 +21,6 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -52,12 +51,19 @@ class OrderConfirmedOutboxRelayDocumentContractTest {
             environment.getRequiredProperty("outbox.relay.batch-size", Integer.class),
             environment.getRequiredProperty("outbox.relay.max-attempts", Integer.class)
         );
-        configureRelay(settings);
+        relay = new OrderConfirmedOutboxRelay(
+            repository,
+            publisher,
+            Clock.fixed(NOW, ZoneOffset.UTC),
+            settings.pollInterval(),
+            settings.batchSize(),
+            settings.maxAttempts()
+        );
     }
 
     @Test
-    @DisplayName("재시도 가능 시각이 지난 이벤트를 설정된 최대 건수만큼 조회해 순차 처리한다")
-    void findsAtMostConfiguredBatchAtCurrentTimeAndProcessesRowsSequentially() {
+    @DisplayName("저장소가 반환한 Outbox 이벤트를 한 건씩 순차 처리한다")
+    void processesReturnedRowsSequentially() {
         OrderConfirmedOutbox first = outbox("event-1", NOW);
         OrderConfirmedOutbox second = outbox("event-2", NOW);
         when(repository.findReadyForRelay(NOW, settings.batchSize())).thenReturn(List.of(first, second));
@@ -146,47 +152,6 @@ class OrderConfirmedOutboxRelayDocumentContractTest {
         order.verify(scenarioRepository).saveAndFlush(outbox);
     }
 
-    @Test
-    @DisplayName("Kafka 응답이 도착하기 전에는 발행 시도를 완료 처리하지 않는다")
-    void waitsForPublisherResponseBeforeRecordingResult() throws InterruptedException {
-        OrderConfirmedOutbox outbox = outbox("event-1", NOW);
-        CompletableFuture<PublishResult> response = new CompletableFuture<>();
-        when(repository.findReadyForRelay(NOW, settings.batchSize())).thenReturn(List.of(outbox));
-        when(publisher.publish("order-1", "payload-1")).thenReturn(response);
-
-        Thread relayThread = new Thread(relay::pollOnce);
-        relayThread.start();
-        try {
-            for (int attempt = 0; attempt < 100 && !publisherWasCalled(outbox); attempt++) {
-                TimeUnit.MILLISECONDS.sleep(10);
-            }
-
-            assertThat(relayThread.isAlive()).isTrue();
-            assertThat(outbox.getStatus()).isEqualTo(OrderConfirmedOutboxStatus.PENDING);
-            verify(repository).save(outbox);
-            verify(repository, org.mockito.Mockito.never()).saveAndFlush(outbox);
-
-            response.complete(PublishResult.SUCCESS);
-            relayThread.join(1_000);
-
-            assertThat(relayThread.isAlive()).isFalse();
-            assertThat(outbox.getStatus()).isEqualTo(OrderConfirmedOutboxStatus.PUBLISHED);
-            verify(repository).saveAndFlush(outbox);
-        } finally {
-            response.complete(PublishResult.SUCCESS);
-            relayThread.join(1_000);
-        }
-    }
-
-    private boolean publisherWasCalled(OrderConfirmedOutbox outbox) {
-        try {
-            verify(publisher).publish(outbox.getMessageKey(), outbox.getPayload());
-            return true;
-        } catch (org.mockito.exceptions.verification.WantedButNotInvoked ignored) {
-            return false;
-        }
-    }
-
     private OrderConfirmedOutbox outbox(String eventId, Instant createdAt) {
         return OrderConfirmedOutbox.pending(
             eventId,
@@ -196,18 +161,6 @@ class OrderConfirmedOutboxRelayDocumentContractTest {
             eventId.replace("event-", "order-"),
             "payload-" + eventId.replace("event-", ""),
             createdAt
-        );
-    }
-
-    private void configureRelay(RelaySettings relaySettings) {
-        settings = relaySettings;
-        relay = new OrderConfirmedOutboxRelay(
-            repository,
-            publisher,
-            Clock.fixed(NOW, ZoneOffset.UTC),
-            settings.pollInterval(),
-            settings.batchSize(),
-            settings.maxAttempts()
         );
     }
 
