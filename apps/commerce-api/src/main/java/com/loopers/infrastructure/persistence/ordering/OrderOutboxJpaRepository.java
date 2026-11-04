@@ -27,6 +27,17 @@ public class OrderOutboxJpaRepository implements OrderOutboxRepository {
     }
 
     @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public List<OrderOutboxEntry> findRecoveryCandidates(UUID eventId, long orderId, String eventType) {
+        return entityManager.createQuery("""
+                SELECT e FROM OrderOutboxJpaEntity e
+                WHERE e.eventId = :eventId OR (e.orderId = :orderId AND e.eventType = :eventType)
+                """, OrderOutboxJpaEntity.class)
+            .setParameter("eventId", eventId.toString()).setParameter("orderId", orderId).setParameter("eventType", eventType)
+            .setMaxResults(2).getResultList().stream().map(OrderOutboxJpaEntity::entry).toList();
+    }
+
+    @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
     public List<Candidate> due(Instant now, int limit) {
         return entityManager.createQuery("""

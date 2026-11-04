@@ -8,7 +8,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 @Component
-@Profile("!outbox-resume")
+@Profile("!outbox-resume & !outbox-recover")
 @ConditionalOnProperty(name = "order-events.relay.enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class OrderOutboxScheduler {

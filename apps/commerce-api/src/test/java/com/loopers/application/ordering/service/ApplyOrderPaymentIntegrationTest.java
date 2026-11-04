@@ -6,6 +6,7 @@ import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
@@ -120,9 +121,49 @@ class ApplyOrderPaymentIntegrationTest {
     @Autowired private EntityManagerFactory entityManagerFactory;
     @Autowired private EntityManager entityManager;
     @Autowired private OrderOutboxRelayService relay;
+    @Autowired private RecoverOrderOutboxService recovery;
     @MockitoBean private OrderEventTransport transport;
     @MockitoSpyBean private OrderOutboxRepository outbox;
     @MockitoSpyBean private OrderEventEncoder encoder;
+
+    @Test
+    @DisplayName("W6 확정 사실로 Outbox 한 행만 복구하고 기존 내용 충돌은 거절한다")
+    void recoversOnlyMatchingStoredConfirmation() {
+        PaymentAttempt attempt = prepared(5, 2);
+        observe(attempt, ProviderPaymentStatus.SUCCESS);
+        tx().executeWithoutResult(status -> doNothing().doCallRealMethod().when(outbox).insert(any()));
+        assertThat(apply.execute(attempt.getAttemptKey()).state()).isEqualTo(ApplyOrderPaymentResult.State.APPLIED);
+        var stored = orders.findById(attempt.getOrderId()).orElseThrow().getRecord().orElseThrow();
+        var eventId = stored.getConfirmationEventId();
+        assertThat(outboxCount()).isZero();
+
+        assertThatThrownBy(() -> recovery.execute(attempt.getOrderId(), UUID.randomUUID()))
+            .isInstanceOf(IllegalArgumentException.class);
+        assertThat(outboxCount()).isZero();
+        assertThat(recovery.execute(attempt.getOrderId(), eventId)).isEqualTo(RecoverOrderOutboxService.Result.CREATED);
+        tx().executeWithoutResult(status -> entityManager.createNativeQuery("""
+            UPDATE order_event_outbox SET payload = JSON_PRETTY(CAST(CONVERT(payload USING utf8mb4) AS JSON))
+            """).executeUpdate());
+        assertThat(recovery.execute(attempt.getOrderId(), eventId)).isEqualTo(RecoverOrderOutboxService.Result.ALREADY_PRESENT);
+        assertThat(outboxCount()).isEqualTo(1);
+        assertThat(outboxState()).isEqualTo("PENDING:0");
+        assertThat(adjustment(attempt).getState()).isEqualTo(StockAdjustment.State.CONSUMED);
+        assertThat(orders.findById(attempt.getOrderId()).orElseThrow().getRecord().orElseThrow().getCreatedAt())
+            .isEqualTo(stored.getCreatedAt());
+        verify(transport, never()).send(any(), any(), any());
+
+        tx().executeWithoutResult(status -> entityManager.createNativeQuery("""
+            UPDATE order_event_outbox SET payload = JSON_SET(CAST(CONVERT(payload USING utf8mb4) AS JSON), '$.items[0].quantity', 999)
+            """).executeUpdate());
+        assertThatThrownBy(() -> recovery.execute(attempt.getOrderId(), eventId))
+            .isInstanceOf(IllegalStateException.class);
+        tx().executeWithoutResult(status -> entityManager.createNativeQuery("""
+            UPDATE order_event_outbox SET event_id = :otherId
+            """).setParameter("otherId", UUID.randomUUID().toString()).executeUpdate());
+        assertThatThrownBy(() -> recovery.execute(attempt.getOrderId(), eventId))
+            .isInstanceOf(IllegalStateException.class);
+        assertThat(outboxCount()).isEqualTo(1);
+    }
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})

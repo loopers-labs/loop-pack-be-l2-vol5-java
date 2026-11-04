@@ -9,6 +9,8 @@ import java.util.UUID;
 public interface OrderOutboxRepository {
     void insert(OrderOutboxEntry entry);
 
+    List<OrderOutboxEntry> findRecoveryCandidates(UUID eventId, long orderId, String eventType);
+
     List<Candidate> due(Instant now, int limit);
 
     boolean reserve(Candidate candidate, Instant now, Instant nextAttemptAt);

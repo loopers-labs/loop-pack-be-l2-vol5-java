@@ -7,7 +7,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 @Configuration(proxyBeanMethods = false)
-@Profile("!outbox-resume")
+@Profile("!outbox-resume & !outbox-recover")
 @ConditionalOnProperty(name = "order-events.relay.enabled", havingValue = "true")
 public class OrderOutboxSchedulingConfig {
     @Bean

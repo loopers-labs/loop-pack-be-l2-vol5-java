@@ -65,4 +65,9 @@ public class OrderOutboxJpaEntity {
     public Candidate candidate() {
         return new Candidate(UUID.fromString(eventId), destinationTopic, messageKey, payload, attempts);
     }
+
+    public OrderOutboxEntry entry() {
+        return new OrderOutboxEntry(UUID.fromString(eventId), orderId, eventType, schemaVersion,
+            destinationTopic, messageKey, payload, createdAt);
+    }
 }
