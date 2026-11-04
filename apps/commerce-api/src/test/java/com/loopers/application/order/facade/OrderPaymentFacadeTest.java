@@ -114,7 +114,7 @@ class OrderPaymentFacadeTest {
         productListCache = new FakeProductListCache();
         productDetailCache = new FakeProductDetailCache();
         clock = new MutableClock(CREATED_AT);
-        OrderService orderService = new OrderService(orderRepository, clock, event -> { }, new FakeOrderConfirmedOutboxRepository(), event -> "{}");
+        OrderService orderService = new OrderService(orderRepository, clock, new FakeOrderConfirmedOutboxRepository(), event -> "{}");
         ProductService productService = new ProductService(productRepository, new FakeProductLikeCountRepository(), clock);
         PaymentService paymentService = new PaymentService(paymentRepository, clock);
         OrderPaymentSteps steps = new OrderPaymentSteps(orderService, productService, paymentService);

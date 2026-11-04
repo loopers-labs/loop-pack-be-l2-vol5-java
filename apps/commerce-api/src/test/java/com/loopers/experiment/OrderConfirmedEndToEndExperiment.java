@@ -39,7 +39,9 @@ import static org.assertj.core.api.Assertions.assertThat;
     "datasource.mysql-jpa.main.jdbc-url=${E2E_JDBC_URL:jdbc:mysql://localhost:3306/loopers}",
     // test profile 은 계정을 Testcontainers 가 넣으므로 compose 계정을 직접 줌
     "datasource.mysql-jpa.main.username=application",
-    "datasource.mysql-jpa.main.password=application"
+    "datasource.mysql-jpa.main.password=application",
+    // 6주차 직접 발행 대신 relay 가 보냄 (7주차 설계 4). test profile 은 꺼 두므로 켬
+    "order-outbox.relay.enabled=true"
 })
 class OrderConfirmedEndToEndExperiment {
 

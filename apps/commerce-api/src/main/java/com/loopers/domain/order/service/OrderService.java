@@ -12,7 +12,6 @@ import com.loopers.domain.order.vo.OrderLine;
 import com.loopers.domain.order.vo.OrderSummary;
 import com.loopers.support.error.CoreException;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
@@ -29,7 +28,6 @@ public class OrderService {
     private final OrderRepository orderRepository;
     /** 시각을 정하는 곳을 한 곳에 둠 (설계 2.3) */
     private final Clock clock;
-    private final ApplicationEventPublisher eventPublisher;
     private final OrderConfirmedOutboxRepository outboxRepository;
     private final OrderConfirmedSerializer serializer;
 
@@ -77,11 +75,10 @@ public class OrderService {
         recordConfirmed(order, now);
     }
 
-    /** Outbox 는 확정과 같은 TX 에 남김. 직접 발행은 relay 로 바꿀 때 제거함 (7주차 설계 9장 구현 순서) */
+    /** 확정과 같은 TX 에 남겨 commit 되면 relay 가 반드시 찾게 함 (7주차 D-101) */
     private void recordConfirmed(Order order, ZonedDateTime now) {
         OrderConfirmed event = OrderConfirmed.from(order);
         outboxRepository.save(OrderConfirmedOutbox.pending(event, serializer.serialize(event), now));
-        eventPublisher.publishEvent(event);
     }
 
     @Transactional

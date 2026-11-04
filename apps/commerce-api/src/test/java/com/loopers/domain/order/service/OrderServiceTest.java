@@ -33,17 +33,20 @@ class OrderServiceTest {
 
     private FakeOrderRepository orderRepository;
     private OrderService orderService;
-    private List<Object> events;
+    private List<OrderConfirmed> serialized;
     private FakeOrderConfirmedOutboxRepository outboxRepository;
     private OrderConfirmedSerializer serializer;
 
     @BeforeEach
     void setUp() {
         orderRepository = new FakeOrderRepository();
-        events = new ArrayList<>();
+        serialized = new ArrayList<>();
         outboxRepository = new FakeOrderConfirmedOutboxRepository();
-        serializer = event -> "payload:" + event.eventId();
-        orderService = new OrderService(orderRepository, Clock.fixed(NOW.toInstant(), NOW.getZone()), events::add,
+        serializer = event -> {
+            serialized.add(event);
+            return "payload:" + event.eventId();
+        };
+        orderService = new OrderService(orderRepository, Clock.fixed(NOW.toInstant(), NOW.getZone()),
             outboxRepository, event -> serializer.serialize(event));
     }
 
@@ -90,43 +93,43 @@ class OrderServiceTest {
         );
     }
 
-    @DisplayName("결제 결과로 처음 확정하면, 저장된 확정 시각 · 품목을 담은 확정 사실을 한 번 낸다. (6주차 D-70, D-72)")
+    @DisplayName("결제 결과로 처음 확정하면, 저장된 확정 시각 · 품목을 담은 확정 사실을 한 번 기록한다. (6주차 D-70, D-72)")
     @Test
-    void publishesConfirmed_whenPaid() {
+    void recordsConfirmed_whenPaid() {
         Order order = orderService.getMyOrderForUpdate(USER_ID, createDraft().getId());
         orderService.startPayment(order);
 
         orderService.confirmPaid(order, 2_000L);
 
-        assertThat(events).containsExactly(new OrderConfirmed(
+        assertThat(serialized).containsExactly(new OrderConfirmed(
             "order-confirmed:v1:" + order.getId(), order.getId(), order.getConfirmedAt(), List.of(new OrderConfirmed.Item(10L, 2))));
     }
 
-    @DisplayName("0원 주문을 결제 없이 확정해도, 확정 사실을 한 번 낸다. (6주차 D-70)")
+    @DisplayName("0원 주문을 결제 없이 확정해도, 확정 사실을 한 번 기록한다. (6주차 D-70)")
     @Test
-    void publishesConfirmed_whenConfirmedWithoutPayment() {
+    void recordsConfirmed_whenConfirmedWithoutPayment() {
         Order order = orderService.create(USER_ID, List.of(new OrderLine(10L, "0원 상품", 0L, 1)));
 
         orderService.confirmWithoutPayment(order);
 
-        assertThat(events).singleElement().isEqualTo(OrderConfirmed.from(order));
+        assertThat(serialized).singleElement().isEqualTo(OrderConfirmed.from(order));
     }
 
-    @DisplayName("결제 시작 · 실패 · 이미 확정된 주문의 재반영에서는 확정 사실을 내지 않는다.")
+    @DisplayName("결제 시작 · 실패 · 이미 확정된 주문의 재반영에서는 확정 사실을 기록하지 않는다.")
     @Test
-    void doesNotPublish_whenNotFirstConfirmation() {
+    void doesNotRecord_whenNotFirstConfirmation() {
         Order failed = orderService.getMyOrderForUpdate(USER_ID, createDraft().getId());
         orderService.startPayment(failed);
         orderService.failPayment(failed);
         Order confirmed = orderService.getMyOrderForUpdate(USER_ID, createDraft().getId());
         orderService.startPayment(confirmed);
         orderService.confirmPaid(confirmed, 2_000L);
-        events.clear();
+        serialized.clear();
 
         assertThrows(IllegalStateException.class, () -> orderService.confirmPaid(confirmed, 2_000L));
 
         assertAll(
-            () -> assertThat(events).isEmpty(),
+            () -> assertThat(serialized).isEmpty(),
             () -> assertThat(outboxRepository.findByOrderId(failed.getId())).isEmpty(),
             () -> assertThat(outboxRepository.findAll()).hasSize(1)
         );
@@ -176,9 +179,6 @@ class OrderServiceTest {
 
         assertThrows(IllegalStateException.class, () -> orderService.confirmPaid(order, 2_000L));
 
-        assertAll(
-            () -> assertThat(outboxRepository.findAll()).isEmpty(),
-            () -> assertThat(events).isEmpty()
-        );
+        assertThat(outboxRepository.findAll()).isEmpty();
     }
 }

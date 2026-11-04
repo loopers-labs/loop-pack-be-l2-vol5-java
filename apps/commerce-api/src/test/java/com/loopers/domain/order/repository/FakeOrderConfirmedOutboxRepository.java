@@ -3,7 +3,9 @@ package com.loopers.domain.order.repository;
 import com.loopers.domain.order.entity.OrderConfirmedOutbox;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,6 +27,20 @@ public class FakeOrderConfirmedOutboxRepository implements OrderConfirmedOutboxR
         }
         byOrderId.put(outbox.getOrderId(), outbox);
         return outbox;
+    }
+
+    @Override
+    public Optional<OrderConfirmedOutbox> findById(Long id) {
+        return byOrderId.values().stream().filter(outbox -> outbox.getId().equals(id)).findFirst();
+    }
+
+    @Override
+    public List<OrderConfirmedOutbox> findDue(ZonedDateTime now, int limit) {
+        return byOrderId.values().stream()
+            .filter(outbox -> outbox.isDue(now))
+            .sorted(Comparator.comparing(OrderConfirmedOutbox::getId))
+            .limit(limit)
+            .toList();
     }
 
     @Override
