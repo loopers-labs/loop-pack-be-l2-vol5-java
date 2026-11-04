@@ -82,6 +82,30 @@ FROM order_event_outbox WHERE status = 'BLOCKED' ORDER BY created_at;
 
 재개 명령은 기존 UUID·key·payload를 보존하고 시도 횟수를 초기화한다. 실행 중인 relay가 다음 회차부터 전송을 맡는다.
 
+### 직접 발행에서 누락된 주문 복구
+
+복구 전에 `011`을 적용하고, 주문 확정 기록에 UUID가 있으며 직접 발행이 누락된 대상을 확인한다.
+Inbox에 행이 없다는 관찰만으로는 소비 지연과 발행 누락을 구분할 수 없다. 직접 발행 당시의 로그와 브로커 기록을 함께 확인한다.
+
+```sql
+SELECT r.order_id, r.confirmation_event_id, r.created_at, o.status
+FROM order_records r
+LEFT JOIN order_event_outbox o ON o.event_id = r.confirmation_event_id
+WHERE r.order_id = 42 AND r.payment_method = 'PG';
+```
+
+확인한 주문 ID와 UUID를 한 쌍으로 지정한다. 복구 프로필은 `payment-lab`과 함께 사용하며 보존 설정을 검사한다.
+토픽을 바꾼 환경에서는 API와 Streamer가 쓰는 같은 `--order-events.topic`을 지정한다.
+
+```powershell
+./gradlew.bat :apps:commerce-api:bootRun --args='--spring.profiles.active=payment-lab,outbox-recover --order-events.recovery.order-id=42 --order-events.recovery.event-id=00000000-0000-0000-0000-000000000000'
+```
+
+`CREATED`이면 기존 확정 사실에서 PENDING 행을 추가한 것이다. `ALREADY_PRESENT`이면 기존 Outbox의 토픽·키·내용과 확정 사실이 일치한 것이다.
+원본이 없거나 내용이 충돌하면 명령이 실패한다. 실행 중인 relay가 전송을 맡으며 완료는 Kafka, Inbox, 구매 활동을 각각 확인한다.
+
+[R03 재현과 운영 안내](../../docs/week6-7/r03-delivery-recovery/operations.md)
+
 ## 재시작과 초기화
 
 두 앱의 `payment-lab`은 `ddl-auto=validate`를 사용한다. 재시작은 테이블을 지우거나 만들지 않고, 기존 스키마가 코드와 맞는지만 검사한다.

@@ -2,9 +2,10 @@
 
 ## 작업 기준
 
-- 사용자 요청: 6~7주차 통합 진행 + consumer Inbox. R01과 R02를 구현한 뒤 함께 확인한다.
+- 사용자 요청: 6~7주차 통합 진행 + consumer Inbox. R02까지 확인한 뒤 R03 단건 복구와 최종 연결을 진행한다.
 - 출발점: `volume-5/main`의 사용자 로컬 커밋 `b4e499d`를 포함한다.
 - 기준은 `volume-6-7/main`이다. R01 직접 발행을 `42d8ed8`에 보존하고 해당 커밋에서 로컬 R02 브랜치 `volume-6-7/r02-transactional-outbox`를 시작했다.
+- 현재 작업 브랜치는 검증된 R02 `3fd0e86`에서 시작한 `volume-6-7/r03-delivery-recovery`다.
 - 현재 checkout/실제 준비 결과는 `git status --short --branch`, `git log -3 --oneline`과
   [준비 검증](initial-setup.md)을 확인한다. 원격 게시/PR 생성은 하지 않는다.
 
@@ -44,9 +45,12 @@ API에서는 Outbox 직렬화 실패와 insert 직후 실패의 원자적 rollba
 `000`~`011`을 적용한 별도 MySQL에서 재개 프로필의 시작·스키마 검사·대상 한 행 갱신·종료도 확인했다.
 commerce-api·commerce-streamer·modules/kafka 전체 `check`는 515건을 통과했다. 실패·오류·건너뛰기는 0건이다.
 
-## 다음 작업
+## R03
 
-R03에서 R01 보존 커밋으로 W6 누락 A와 소비 완료 B를 준비하고, 같은 DB에서 A만 복구한다.
-기존 UUID·확정 시각·품목·구매 활동을 대조하고 실제 PG/API/Streamer의 최종 연결을 검증한다.
+복구 명령은 주문 ID와 저장된 UUID 한 쌍으로 실행한다. 확인된 PG 확정의 시각과 품목으로 Outbox를 복구하고,
+기존 행이 있으면 토픽·키·내용을 비교한다. 충돌이 있거나 스키마 보존 설정이 맞지 않으면 종료한다.
+API·Streamer·테스트 PG·Kafka 전체 `check` 542건을 통과했다.
+격리 실험 `6724aec69c`에서 A만 복구해도 PG·재고·B가 그대로였으며, B와 C를 재발행해도 구매 활동은 늘지 않았다.
+[검증 결과](r03-delivery-recovery/result.md), [단건 복구와 재현 절차](r03-delivery-recovery/operations.md), [전달 경계 기술 정리](r03-delivery-recovery/technical-note.md)를 참고한다.
 사용자의 `docs/week4/r01-product-list-index/jmeter/product-list-ui.jmx` 수정은 보존하고 staging하지 않는다.
 출발 커밋이 삭제한 과거 `docs/week5/handoff.md`도 복원하지 않는다. 이번 인계는 새로운 경로를 사용한다.
