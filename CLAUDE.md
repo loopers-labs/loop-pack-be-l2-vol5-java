@@ -2,6 +2,21 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Current work: combined Weeks 6–7 with consumer Inbox
+
+As of 2026-11-04, follow [requirements](docs/week6-7/total_requirement.md),
+[development plan](docs/week6-7/development-plan.md), [environment](docs/week6-7/environment.md)
+and [current handoff](docs/week6-7/handoff.md) before the historical Week-5 next-step notes below.
+Base: `volume-6-7/main`, starting from the user's local `volume-5/main` commit `b4e499d`.
+Create R01 `volume-6-7/r01-order-events-inbox`, then R02 `volume-6-7/r02-transactional-outbox`,
+then R03 `volume-6-7/r03-delivery-recovery` from the latest base as each phase starts.
+Final runtime uses transactional Outbox, a single polling relay and transactional consumer Inbox plus purchase activity.
+Preserve a real Week-6 direct-publication reproduction path for the missing and already-consumed cases.
+Do not treat preparation as feature completion. Keep the user's JMeter edits and deleted Week-5 handoff untouched.
+Keep existing package, layer, persistence, TDD, review and check rules; setup-only docs/build/tests need no feature review.
+The shared `KafkaTestFixture` owns no static container: each test explicitly starts/stops its own broker and injects
+`getBootstrapServers()` into producer, consumer and admin. See the environment guide for its focused smoke command.
+
 ## Working rules for `apps/commerce-api`
 
 Final Week-5 audit (2026-10-23): PR26 is merged at `b70d83b` on `volume-5/main`; that merge tree equals the verified `8e2e92f` tree. Read the [final audit](docs/week5/final-audit.md) before historical pending-PR/design notes below. Existing evidence is 509 full-check cases and 14 R03 independent-process experiments. The user then requested two missing direct cache integration cases for failed-payment stock restoration commit/rollback: both are implemented and passed with all16 cache cases,8 ArchUnit cases and test Checkstyle (24 related cases; zero failures/errors/skips). No feature changes were needed. Do not add these overlapping counts to the old full-check total. Audit documents and test additions were published on volume-5/main as e200e78. The user's JMeter change remains untouched and unstaged.

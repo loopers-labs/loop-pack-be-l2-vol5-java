@@ -1,0 +1,65 @@
+# 6~7주차 개발 계획
+
+[통합 요구사항](total_requirement.md)의 완료 조건을 세 단계로 나눈다. 아래 순서는 구현 제안이며 아직 기능 완료가 아니다.
+
+## 브랜치와 커밋
+
+- 기준: `volume-6-7/main`. 출발점은 사용자 로컬 커밋을 포함한 `b4e499d`다.
+- 초기 준비 문서와 공용 Kafka fixture를 기준 브랜치에서 독립 커밋으로 정리한다.
+- 준비 후 R01만 생성한다. R02/R03은 앞 단계 검증·병합 뒤 최신 기준에서 생성한다.
+- PR 대상은 `volume-6-7/main`이며 작업 브랜치끼리 직접 병합하지 않는다.
+- 명시적으로 관련 파일만 staging한다. 사용자 JMeter 변경은 커밋에 포함하지 않는다.
+- `type: 한글 요약`·관련 검사 Green 이후 작은 변경 단위를 유지한다.
+- 원격 push·PR 게시·병합은 별도 요청 범위다.
+
+## R01 · 이벤트와 Inbox 구매 활동
+
+브랜치: `volume-6-7/r01-order-events-inbox`
+
+1. 기존 공통 PG 결과 반영 TX와 최초 확정 시점/품목 snapshot을 확인한다.
+2. eventId·confirmedAt 저장/유도, 이벤트 DTO·정규화·동등성 계약과 소유 모듈을 설계한다.
+3. consumer Inbox·구매 활동 모델/제약과 원자적 저장을 구현한다.
+4. 주문 commit 이후 직접 발행과 실제 record listener를 연결한다.
+5. Kafka 2-partition/consumer 1→2→3 배정, key 매핑, offset 미커밋 재전달을 확인한다.
+6. 실제 listener 실패·rollback·offset 미진행·복구 재시작을 확인한다.
+7. 직접 발행 누락 A·정상 소비 B의 재현 구성과 실제 사건 기록을 보존한다.
+
+완료 시 같은 eventId의 중복은 no-op, 다른 사실은 충돌, 품목 실패는 Inbox까지 rollback이어야 한다.
+직접 발행 누락 구간은 R01에서 관찰할 대상이며 최종 보장으로 남겨두지 않는다.
+
+## R02 · Outbox와 단일 relay
+
+브랜치: `volume-6-7/r02-transactional-outbox`
+
+1. 기존 공통 확정 TX에 immutable Outbox insert를 포함하고 직접 발행 경로를 교체한다.
+2. 단일 polling relay·broker 확인 후 PUBLISHED·bounded retry/오류 노출을 구현한다.
+3. insert/serialization 실패의 로컬 원자성과 같은 거래 결과 재적용을 검증한다.
+4. commit 후 relay 전 중단과 broker 확인 후 상태 저장 전 중단을 검증한다.
+5. 새 relay가 기존 PENDING에서 재개하고 Inbox가 중복 효과를 막는지 확인한다.
+
+R01 재현 경로는 테스트 구성 또는 보존 revision으로 유지한다. 제품에 운영용 우회 스위치를 만들지 않는다.
+
+## R03 · 재현 상태 복구와 최종 연결
+
+브랜치: `volume-6-7/r03-delivery-recovery`
+
+1. 새 격리 실행에서 W6 직접 발행 A·B 상태를 실제 주문 API/로컬 PG로 준비한다.
+2. 같은 실행에서 고정 identity를 보존해 없는 Outbox만 복구한다.
+3. PG 추가 호출·외부 거래·재확정·예약 소비 없이 A만 보완되고 B는 불변인지 확인한다.
+4. 최종 E2E에서 실제 broker 재발행 2회 이상과 Inbox 1행/상품별 활동 불변을 확인한다.
+5. backlog·오류·재개·보존 정책, 관련 회귀/전체 check와 PR/기술 글을 정리한다.
+
+## 구현 착수 시 구체화할 설계
+
+요구사항의 고정 조건을 유지하면서 실제 코드에서 다음을 결정하고 근거를 기록한다.
+
+- 이벤트 계약의 소유/공유 위치: `modules:kafka`에 주문 업무 모델을 넣지 않는다.
+- 기존 confirmedAt/OrderRecord를 사용할지와 고정 eventId 저장 또는 안정적 유도 방식.
+- Inbox·구매 활동의 context/Entity/Mapper/Repository와 정규화 fingerprint 방식.
+- 기존 Kafka YAML의 value-deserializer·실효 자동 commit·호스트 admin 주소 보완과 별도 record factory.
+- streamer의 application name/동시 실행 포트·보존 프로필·필요한 SQL/인덱스.
+- W6 재현 코드 보존/실행 방식, Outbox relay 기본 간격·처리량·timeout.
+
+기능 동작을 바꾸는 구현은 저장소의 비즈니스·사용자 경험·기술 세 관점 리뷰 규칙을 따른다.
+중요 수정 확인은 기존 승인 범위와 실제 영향에 맞춰 적용한다. 문서·빌드·테스트 전용 준비는 별도 기능 리뷰하지 않는다.
+핵심 규칙은 TDD, 변경마다 관련 검사, 필수 전체 검사는 PR 마무리에 실행한다.
