@@ -7,6 +7,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import lombok.Getter;
@@ -20,7 +21,8 @@ import java.time.ZonedDateTime;
 @Entity
 @Table(
     name = "outbox",
-    uniqueConstraints = @UniqueConstraint(name = "uk_outbox_event_id", columnNames = "event_id")
+    uniqueConstraints = @UniqueConstraint(name = "uk_outbox_event_id", columnNames = "event_id"),
+    indexes = @Index(name = "idx_outbox_status_next_attempt_at", columnList = "status, next_attempt_at")
 )
 public class Outbox extends BaseEntity {
 
