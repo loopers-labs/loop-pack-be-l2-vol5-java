@@ -1,9 +1,7 @@
 package com.loopers.application.payment;
 
-import com.loopers.application.order.event.OrderEventPublisher;
 import com.loopers.application.payment.dto.PaymentAttemptInfo;
 import com.loopers.application.payment.dto.PaymentLookupInfo;
-import com.loopers.application.payment.dto.PaymentStatusUpdateResult;
 import com.loopers.application.payment.pg.PgPaymentStatusLookupResult;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderService;
@@ -30,7 +28,6 @@ public class PaymentResultLookupFacade {
     private final PaymentStatusUpdater paymentStatusUpdater;
     private final OrderService orderService;
     private final PaymentAttemptService paymentAttemptService;
-    private final OrderEventPublisher orderEventPublisher;
     private final TransactionTemplate readOnlyTransaction;
     private final TransactionTemplate writeTransaction;
 
@@ -39,14 +36,12 @@ public class PaymentResultLookupFacade {
         PaymentStatusUpdater paymentStatusUpdater,
         OrderService orderService,
         PaymentAttemptService paymentAttemptService,
-        OrderEventPublisher orderEventPublisher,
         PlatformTransactionManager transactionManager
     ) {
         this.paymentGateway = paymentGateway;
         this.paymentStatusUpdater = paymentStatusUpdater;
         this.orderService = orderService;
         this.paymentAttemptService = paymentAttemptService;
-        this.orderEventPublisher = orderEventPublisher;
         this.readOnlyTransaction = new TransactionTemplate(transactionManager);
         this.readOnlyTransaction.setReadOnly(true);
         this.writeTransaction = new TransactionTemplate(transactionManager);
@@ -75,14 +70,10 @@ public class PaymentResultLookupFacade {
         if (lookupResult.outcome() == PgPaymentStatusLookupResult.Outcome.LOOKUP_UNAVAILABLE) {
             return new PaymentLookupInfo(target, true);
         }
-        PaymentStatusUpdateResult updated = executeRequired(
+        PaymentAttemptInfo updated = executeRequired(
             writeTransaction, status -> paymentStatusUpdater.updateByStatusLookupResult(target.orderId(), lookupResult)
         );
-        // execute 가 반환됐으면 commit 이 끝났다. 처음 확정한 반영만 알리고, 전송 실패가 확정을 되돌리지 않는다.
-        if (updated.confirmed() != null) {
-            orderEventPublisher.publish(updated.confirmed());
-        }
-        return new PaymentLookupInfo(updated.attempt(), false);
+        return new PaymentLookupInfo(updated, false);
     }
 
     // TransactionTemplate.execute 는 null 을 돌려줄 수 있다고 선언돼 있다. 이 클래스의 콜백은 값을 돌려주거나 예외를 던지므로,

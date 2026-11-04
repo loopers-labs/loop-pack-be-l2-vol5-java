@@ -175,8 +175,8 @@ W7 코드에서는 확정 TX가 Outbox를 함께 쓰므로 같은 경로로는 �
 |---|---|---|---|
 | 1 | Outbox 모델 | 무엇을 저장할 것인가 | PENDING으로 생성된다 / 발행 확인하면 PUBLISHED와 publishedAt / 실패하면 PENDING 유지·다음 시각·오류 기록 / 이미 PUBLISHED는 변경 없음 |
 | 2 | 저장소·테이블 | 무엇을 저장할 것인가 | 같은 eventId는 두 번 저장되지 않는다 / 재시도 시각이 된 PENDING만 id 순으로 찾는다 |
-| 3 | payload 직렬화 | Immutable payload | 저장 payload를 계약대로 해석하면 eventId·orderId·confirmedAt·items가 같다 |
-| 4 | 확정 TX 편입, 직접 send 제거 | Transactional Outbox | 최초 SUCCESS는 CONFIRMED와 Outbox 1행 / 같은 거래 재적용은 Outbox 1행 / PENDING·FAILED는 Outbox 0 / Outbox 저장 실패면 주문·예약·시도가 직전 상태 |
+| 3 | (4단계에 합침) payload 직렬화는 별도 클래스 없이 `OrderConfirmedOutboxRecorder`가 맡는다 | Immutable payload | 4단계 첫 테스트에서 저장 payload를 계약으로 디코드해 확인한다 |
+| 4 | 확정 TX 편입, 직접 send 제거 | Transactional Outbox | 최초 SUCCESS는 CONFIRMED와 Outbox 1행 / 같은 거래 재적용은 Outbox 1행 / PENDING·FAILED는 Outbox 0 / Outbox 저장 실패면, 또는 Outbox 저장 뒤 다른 변경이 실패해도 주문·시도가 직전 상태이고 Outbox 0 |
 | 5 | W6 발행 테스트 정리 | | 제거·이관 대상 목록을 먼저 제안하고 승인받는다. 검사를 통과시키려고 지우지 않는다 |
 | 6 | Kafka 발행 어댑터 | Relay는 어디까지 | 저장된 key·payload 그대로 보낸다 / future 성공을 반환 / 실패·timeout을 구분해 반환 |
 | 7 | relay 1회 실행 | Relay는 어디까지 | 성공하면 PUBLISHED / 실패하면 PENDING·다음 시각 / 재시도 시각 전 행은 건드리지 않는다 |
