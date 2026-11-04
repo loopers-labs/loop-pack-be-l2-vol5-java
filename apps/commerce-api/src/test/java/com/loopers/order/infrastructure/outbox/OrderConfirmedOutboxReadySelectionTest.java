@@ -40,14 +40,15 @@ class OrderConfirmedOutboxReadySelectionTest {
 
 
     @Test
-    @DisplayName("재시도 시각이 지난 PENDING·FAILED 이벤트를 재시도 시각 순서로 설정된 최대 건수만큼 조회한다")
-    void ordersEligibleRowsByRetryTimeAndLimitsResultToConfiguredBatchSize() {
+    @DisplayName("재시도 시각이 지난 이벤트를 오래된 순서로 설정된 최대 건수만큼 조회한다")
+    void ordersEligibleRowsByCreationTimeAndLimitsResultToConfiguredBatchSize() {
         int batchSize = batchSize();
         List<OrderConfirmedOutbox> eligible = IntStream.rangeClosed(1, batchSize + 1)
             .mapToObj(index -> outbox(
                 "eligible-" + index,
                 index % 2 == 0 ? OrderConfirmedOutboxStatus.PENDING : OrderConfirmedOutboxStatus.FAILED,
-                NOW.minusSeconds(index)
+                NOW.minusSeconds(batchSize + 2L - index),
+                CREATED_AT.minusSeconds(index)
             ))
             .toList();
         List<OrderConfirmedOutbox> insertionOrder = new ArrayList<>(eligible);
@@ -60,7 +61,7 @@ class OrderConfirmedOutboxReadySelectionTest {
 
         List<OrderConfirmedOutbox> ready = repository.findReadyForRelay(NOW, batchSize);
         List<OrderConfirmedOutbox> expected = eligible.stream()
-            .sorted((left, right) -> left.getNextAttemptAt().compareTo(right.getNextAttemptAt()))
+            .sorted((left, right) -> left.getCreatedAt().compareTo(right.getCreatedAt()))
             .limit(batchSize)
             .toList();
 
@@ -77,6 +78,15 @@ class OrderConfirmedOutboxReadySelectionTest {
         OrderConfirmedOutboxStatus status,
         Instant nextAttemptAt
     ) {
+        return outbox(eventId, status, nextAttemptAt, CREATED_AT);
+    }
+
+    private OrderConfirmedOutbox outbox(
+        String eventId,
+        OrderConfirmedOutboxStatus status,
+        Instant nextAttemptAt,
+        Instant createdAt
+    ) {
         OrderConfirmedOutbox outbox = OrderConfirmedOutbox.pending(
             eventId,
             1L,
@@ -84,7 +94,7 @@ class OrderConfirmedOutboxReadySelectionTest {
             1,
             "order-" + eventId,
             "payload-" + eventId,
-            CREATED_AT
+            createdAt
         );
         outbox.setStatus(status);
         outbox.setNextAttemptAt(nextAttemptAt);
