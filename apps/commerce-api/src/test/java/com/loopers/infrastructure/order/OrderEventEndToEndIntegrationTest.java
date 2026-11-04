@@ -1,11 +1,13 @@
 package com.loopers.infrastructure.order;
 
+import com.loopers.infrastructure.order.support.W6PreparationContextInitializer;
+import com.loopers.infrastructure.order.support.W6OrderEventKafkaConfig;
+import com.loopers.infrastructure.order.support.W6OrderPublicationProbe;
+import com.loopers.config.OrderConfirmationClockConfig;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.CommerceApiApplication;
-import com.loopers.application.order.OrderPublicationProbe;
 import com.loopers.application.product.ProductFacade;
-import com.loopers.config.OrderEventKafkaConfig;
 import com.loopers.domain.order.OrderConfirmed;
 import com.loopers.domain.payment.PaymentModel;
 import com.loopers.fixture.PgCommands;
@@ -78,7 +80,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
 /**
- * C10: 실제 주문 API·로컬 PG fixture·결과 적용 TX·실제 Kafka adapter → 공유 로컬 Docker Kafka → 별도 JVM 의 streamer bootJar listener →
+ * W6 조립 연결(설계 W7.4-4). 제품에서 직접 발행 조립이 빠졌으므로 API 컨텍스트에 W6 준비 컨텍스트 초기화기를 붙여 원래 기대·자원 수명을
+ * 그대로 유지한다. 최종 전환(O5/O10 발행 전용, C10 의 O11 흡수)은 후속 단위이며 이 단위에서는 실행하지 않는다.
+ *
+ * <p>C10: 실제 주문 API·로컬 PG fixture·결과 적용 TX·실제 Kafka adapter → 공유 로컬 Docker Kafka → 별도 JVM 의 streamer bootJar listener →
  * 같은 테스트 MySQL 의 구매 테이블까지 연결한다(소비 설계 7절 「종단 검증의 앱 경계와 자료 보존」).
  *
  * <p>한 재현 안에서 두 사건을 남긴다. 미발행 사건은 commit 뒤 beforeSend 에 통제 실패를 주입한 것이며 OS 강제 종료가 아니다.
@@ -457,7 +462,7 @@ class OrderEventEndToEndIntegrationTest {
             port = socket.getLocalPort();
         }
         return new SpringApplicationBuilder(CommerceApiApplication.class).profiles("test")
-            .initializers(context -> ((BeanDefinitionRegistry) context.getBeanFactory()).registerBeanDefinition(
+            .initializers(new W6PreparationContextInitializer(), context -> ((BeanDefinitionRegistry) context.getBeanFactory()).registerBeanDefinition(
                 "orderEventEndToEndTestReplacer", new RootBeanDefinition(Replacer.class, Replacer::new)))
             .run("--server.port=" + port, "--management.server.port=0", "--spring.jpa.hibernate.ddl-auto=create",
                 "--commerce.pg.base-url=" + pg.baseUrl(),
@@ -472,8 +477,8 @@ class OrderEventEndToEndIntegrationTest {
 
         @Override
         public void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) throws BeansException {
-            replace(registry, OrderEventKafkaConfig.ORDER_CONFIRMATION_CLOCK, new RootBeanDefinition(Clock.class, () -> FIXED_CLOCK));
-            replace(registry, "noOpOrderPublicationProbe", new RootBeanDefinition(OrderPublicationProbe.class, () -> PROBE));
+            replace(registry, OrderConfirmationClockConfig.ORDER_CONFIRMATION_CLOCK, new RootBeanDefinition(Clock.class, () -> FIXED_CLOCK));
+            replace(registry, "noOpOrderPublicationProbe", new RootBeanDefinition(W6OrderPublicationProbe.class, () -> PROBE));
         }
 
         private static void replace(BeanDefinitionRegistry registry, String name, RootBeanDefinition definition) {
@@ -490,7 +495,7 @@ class OrderEventEndToEndIntegrationTest {
     }
 
     /** 미발행 대상은 beforeSend 에서 통제 실패, 정상 대상은 테스트가 풀 때까지 세운다. 다른 주문은 통과한다. */
-    private static final class C10Probe implements OrderPublicationProbe {
+    private static final class C10Probe implements W6OrderPublicationProbe {
 
         private final CountDownLatch reached = new CountDownLatch(1);
         private final CountDownLatch released = new CountDownLatch(1);
@@ -535,12 +540,12 @@ class OrderEventEndToEndIntegrationTest {
     private static void warmUpProducer() throws Exception {
         String prep = kafka.createTopic("order-events-c10-prep");
         KafkaTemplate<String, Object> template =
-            (KafkaTemplate<String, Object>) api.getBean(OrderEventKafkaConfig.ORDER_EVENT_KAFKA_TEMPLATE);
+            (KafkaTemplate<String, Object>) api.getBean(W6OrderEventKafkaConfig.ORDER_EVENT_KAFKA_TEMPLATE);
         assertThat(template.send(prep, "warm-up", "warm-up").get(30, TimeUnit.SECONDS).getRecordMetadata().topic()).isEqualTo(prep);
     }
 
     private static double sendTotal() {
-        KafkaTemplate<?, ?> template = (KafkaTemplate<?, ?>) api.getBean(OrderEventKafkaConfig.ORDER_EVENT_KAFKA_TEMPLATE);
+        KafkaTemplate<?, ?> template = (KafkaTemplate<?, ?>) api.getBean(W6OrderEventKafkaConfig.ORDER_EVENT_KAFKA_TEMPLATE);
         return template.metrics().entrySet().stream()
             .filter(entry -> entry.getKey().group().equals("producer-metrics") && entry.getKey().name().equals("record-send-total"))
             .mapToDouble(entry -> ((Number) entry.getValue().metricValue()).doubleValue())

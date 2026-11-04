@@ -1,7 +1,9 @@
 package com.loopers.application.order;
 
+import com.loopers.infrastructure.order.support.W6OrderConfirmedEventListener;
+import com.loopers.infrastructure.order.support.W6OrderEventPublisher;
+import com.loopers.infrastructure.order.support.W6OrderPublicationProbe;
 import com.loopers.domain.order.OrderConfirmed;
-import com.loopers.domain.order.OrderEventPublisher;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -31,9 +33,9 @@ class OrderConfirmedEventListenerTest {
     private static final OrderConfirmed EVENT = new OrderConfirmed(42L,
         ZonedDateTime.of(2026, 10, 28, 7, 0, 0, 0, ZoneOffset.UTC), List.of(new OrderConfirmed.Item(7L, 1L)));
 
-    private final OrderPublicationProbe probe = mock(OrderPublicationProbe.class);
-    private final OrderEventPublisher publisher = mock(OrderEventPublisher.class);
-    private final OrderConfirmedEventListener listener = new OrderConfirmedEventListener(probe, publisher, "order-events");
+    private final W6OrderPublicationProbe probe = mock(W6OrderPublicationProbe.class);
+    private final W6OrderEventPublisher publisher = mock(W6OrderEventPublisher.class);
+    private final W6OrderConfirmedEventListener listener = new W6OrderConfirmedEventListener(probe, publisher, "order-events");
 
     @DisplayName("probe 를 먼저 부른 뒤 포트를 한 번 부른다.")
     @Test

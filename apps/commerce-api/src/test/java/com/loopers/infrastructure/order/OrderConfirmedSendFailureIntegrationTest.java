@@ -1,12 +1,14 @@
 package com.loopers.infrastructure.order;
 
+import com.loopers.infrastructure.order.support.W6PreparationContextInitializer;
+import com.loopers.infrastructure.order.support.W6KafkaOrderEventPublisher;
+import com.loopers.infrastructure.order.support.W6OrderConfirmedEventListener;
+import com.loopers.infrastructure.order.support.W6OrderEventKafkaConfig;
+import com.loopers.infrastructure.order.support.W6OrderEventPublisher;
 import com.loopers.application.order.OrderConfirmFacade;
-import com.loopers.application.order.OrderConfirmedEventListener;
 import com.loopers.application.order.OrderFacade;
 import com.loopers.application.payment.PaymentApplyResult;
 import com.loopers.application.point.PointFacade;
-import com.loopers.config.OrderEventKafkaConfig;
-import com.loopers.domain.order.OrderEventPublisher;
 import com.loopers.domain.order.OrderItemCommand;
 import com.loopers.domain.payment.PaymentModel;
 import com.loopers.domain.product.ProductModel;
@@ -18,7 +20,7 @@ import com.loopers.fixture.pg.CreateOutcome;
 import com.loopers.fixture.pg.PgFixtureServer;
 import com.loopers.fixture.pg.PgOperation;
 import com.loopers.fixture.pg.ResponsePlan;
-import com.loopers.infrastructure.order.KafkaOrderEventPublisher.OrderConfirmedV1;
+import com.loopers.infrastructure.order.support.W6KafkaOrderEventPublisher.OrderConfirmedV1;
 import com.loopers.utils.DatabaseCleanUp;
 import org.apache.kafka.common.errors.TimeoutException;
 import org.junit.jupiter.api.AfterEach;
@@ -57,7 +59,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 실제 Spring TX·테스트 MySQL·로컬 PG fixture·실제 listener·실제 Kafka adapter 를 연결하고, 전용 KafkaTemplate 만 대역으로 바꿔
+ * W6 조립 연결(설계 W7.4-4). 제품에서 직접 발행 조립이 빠졌으므로 W6 준비 컨텍스트 초기화기로 원래 기대를 그대로 실행한다.
+ * relay 실패·PENDING/BLOCKED 저장으로의 최종 전환은 O8/O9 후속 단위다. 이 테스트를 W7 전송 실패 검증으로 기록하지 않는다.
+ *
+ * <p>실제 Spring TX·테스트 MySQL·로컬 PG fixture·실제 listener·실제 Kafka adapter 를 연결하고, 전용 KafkaTemplate 만 대역으로 바꿔
  * commit 뒤 send 호출 오류와 Future 실패를 통제한다(P5 오류 연결).
  *
  * <p>대역 template 은 producer 를 만들지 않으므로 broker 전송·record 부재의 근거가 아니며 P6·P7 검증도 아니다.
@@ -65,7 +70,7 @@ import static org.mockito.Mockito.when;
  * 기록용 fake 를 쓰지 않으므로 fake 회귀와 다른 Spring 컨텍스트로 뜬다.
  */
 @SpringBootTest
-@ContextConfiguration(initializers = PgFixtureContextInitializer.class)
+@ContextConfiguration(initializers = {PgFixtureContextInitializer.class, W6PreparationContextInitializer.class})
 @ExtendWith(OutputCaptureExtension.class)
 @DisplayName("실제 adapter 의 send 호출 오류와 Future 실패는 commit 된 최초 PG 확정을 바꾸지 않고, 단계별 안전 로그만 남긴다.")
 class OrderConfirmedSendFailureIntegrationTest {
@@ -77,13 +82,13 @@ class OrderConfirmedSendFailureIntegrationTest {
     private static final long QUANTITY = 2L;
     private static final Duration QUIET = Duration.ofMillis(500);
 
-    @MockitoBean(name = OrderEventKafkaConfig.ORDER_EVENT_KAFKA_TEMPLATE, enforceOverride = true)
+    @MockitoBean(name = W6OrderEventKafkaConfig.ORDER_EVENT_KAFKA_TEMPLATE, enforceOverride = true)
     private KafkaTemplate<String, Object> template;
 
     @Autowired private ApplicationContext context;
-    @Autowired private OrderEventPublisher port;
-    @Autowired private OrderConfirmedEventListener listener;
-    @Autowired @Qualifier(OrderEventKafkaConfig.ORDER_EVENT_KAFKA_TEMPLATE) private KafkaTemplate<String, Object> qualifiedTemplate;
+    @Autowired private W6OrderEventPublisher port;
+    @Autowired private W6OrderConfirmedEventListener listener;
+    @Autowired @Qualifier(W6OrderEventKafkaConfig.ORDER_EVENT_KAFKA_TEMPLATE) private KafkaTemplate<String, Object> qualifiedTemplate;
     @Autowired private PgFixtureServer pg;
     @Autowired private OrderFacade orders;
     @Autowired private OrderConfirmFacade confirmFacade;
@@ -167,8 +172,8 @@ class OrderConfirmedSendFailureIntegrationTest {
 
     private void assertWiredToRealAdapter() {
         assertAll(
-            () -> assertThat(context.getBeansOfType(OrderEventPublisher.class)).containsOnlyKeys("kafkaOrderEventPublisher"),
-            () -> assertThat(port).isInstanceOf(KafkaOrderEventPublisher.class),
+            () -> assertThat(context.getBeansOfType(W6OrderEventPublisher.class)).containsOnlyKeys("kafkaOrderEventPublisher"),
+            () -> assertThat(port).isInstanceOf(W6KafkaOrderEventPublisher.class),
             () -> assertThat(ReflectionTestUtils.getField(listener, "publisher")).isSameAs(port),
             () -> assertThat(qualifiedTemplate).isSameAs(template),
             () -> assertThat(ReflectionTestUtils.getField(port, "template")).isSameAs(template)

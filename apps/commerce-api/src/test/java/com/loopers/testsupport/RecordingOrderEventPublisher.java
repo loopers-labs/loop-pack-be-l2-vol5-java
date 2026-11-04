@@ -1,7 +1,7 @@
 package com.loopers.testsupport;
 
 import com.loopers.domain.order.OrderConfirmed;
-import com.loopers.domain.order.OrderEventPublisher;
+import com.loopers.infrastructure.order.support.W6OrderEventPublisher;
 
 import java.time.Duration;
 import java.util.List;
@@ -11,13 +11,16 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 /**
- * 실제 최초 PG 확정을 실행하는 회귀에만 명시적으로 넣는 기록용 발행 포트. producer 를 만들거나 broker 에 쓰지 않고 호출된 사건만 기록하므로
+ * W6 보존 조립(W6PreparationContextInitializer)의 회귀에만 명시적으로 넣는 기록용 발행 포트. W7 확정 성공의 대역으로 쓰지 않는다.
+ * 출처: 53f912b 같은 경로. 변경: 구현 포트를 W6 보존 타입으로 연결. 기록·hook·reset 동작은 같다.
+ *
+ * <p>실제 최초 PG 확정을 실행하는 회귀에만 명시적으로 넣는 기록용 발행 포트. producer 를 만들거나 broker 에 쓰지 않고 호출된 사건만 기록하므로
  * broker 저장 근거가 아니다. 관찰 hook 은 publish 안에서 동기로 실행되어, 포트가 불린 그 시점(AFTER_COMMIT)의 상태를 테스트가 확인할 수 있다.
  *
  * <p>각 테스트는 {@code @TestBean(name = "kafkaOrderEventPublisher", methodName = FACTORY, enforceOverride = true)} 로 실제 adapter 를 바꾼다.
  * factory 를 하나로 두면 같은 구성의 테스트끼리 Spring 컨텍스트 캐시를 함께 쓴다.
  */
-public class RecordingOrderEventPublisher implements OrderEventPublisher {
+public class RecordingOrderEventPublisher implements W6OrderEventPublisher {
 
     public static final String FACTORY = "com.loopers.testsupport.RecordingOrderEventPublisher#create";
 

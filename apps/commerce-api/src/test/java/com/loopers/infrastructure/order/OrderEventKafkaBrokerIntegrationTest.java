@@ -1,13 +1,16 @@
 package com.loopers.infrastructure.order;
 
+import com.loopers.infrastructure.order.support.W6PreparationContextInitializer;
+import com.loopers.infrastructure.order.support.W6KafkaOrderEventPublisher;
+import com.loopers.infrastructure.order.support.W6OrderConfirmedEventListener;
+import com.loopers.infrastructure.order.support.W6OrderEventKafkaConfig;
+import com.loopers.infrastructure.order.support.W6OrderEventPublisher;
+import com.loopers.infrastructure.order.support.W6OrderPublicationProbe;
+import com.loopers.config.OrderConfirmationClockConfig;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.CommerceApiApplication;
-import com.loopers.application.order.OrderConfirmedEventListener;
-import com.loopers.application.order.OrderPublicationProbe;
-import com.loopers.config.OrderEventKafkaConfig;
 import com.loopers.domain.order.OrderConfirmed;
-import com.loopers.domain.order.OrderEventPublisher;
 import com.loopers.domain.payment.PaymentModel;
 import com.loopers.fixture.PgCommands;
 import com.loopers.fixture.ProductFixture;
@@ -89,7 +92,10 @@ import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
 /**
- * 공유 로컬 Docker Kafka 에서 실제 주문 API·로컬 PG fixture·결과 적용 TX·실제 adapter·전용 producer 를 연결해 P4 wire·P6·P7·P8 을 관찰한다.
+ * W6 조립 연결(설계 W7.4-4). 제품에서 직접 발행 조립이 빠졌으므로 API 컨텍스트에 W6 준비 컨텍스트 초기화기를 붙여 원래 기대·자원 수명을
+ * 그대로 유지한다. 최종 전환(O5/O10 발행 전용, C10 의 O11 흡수)은 후속 단위이며 이 단위에서는 실행하지 않는다.
+ *
+ * <p>공유 로컬 Docker Kafka 에서 실제 주문 API·로컬 PG fixture·결과 적용 TX·실제 adapter·전용 producer 를 연결해 P4 wire·P6·P7·P8 을 관찰한다.
  *
  * <p>기록용 fake·template 대역을 쓰지 않는다. 각 시나리오는 실행 소유 topic 을 컨텍스트 기동 전에 준비하고, SpringApplicationBuilder 로
  * 직접 띄운 컨텍스트를 닫은 뒤에만 topic 을 삭제한다. 별도 schema 를 쓰므로 다른 테스트 컨텍스트의 DB 와 섞이지 않는다.
@@ -405,15 +411,15 @@ class OrderEventKafkaBrokerIntegrationTest {
     // ---------------------------------------------------------------- 연결·설정 확인
 
     private static void assertRealWiring(ConfigurableApplicationContext context, String topic) {
-        Object port = context.getBean(OrderEventPublisher.class);
-        KafkaTemplate<?, ?> template = (KafkaTemplate<?, ?>) context.getBean(OrderEventKafkaConfig.ORDER_EVENT_KAFKA_TEMPLATE);
+        Object port = context.getBean(W6OrderEventPublisher.class);
+        KafkaTemplate<?, ?> template = (KafkaTemplate<?, ?>) context.getBean(W6OrderEventKafkaConfig.ORDER_EVENT_KAFKA_TEMPLATE);
         DefaultKafkaProducerFactory<?, ?> factory =
-            (DefaultKafkaProducerFactory<?, ?>) context.getBean(OrderEventKafkaConfig.ORDER_EVENT_PRODUCER_FACTORY);
+            (DefaultKafkaProducerFactory<?, ?>) context.getBean(W6OrderEventKafkaConfig.ORDER_EVENT_PRODUCER_FACTORY);
         Map<String, Object> producer = factory.getConfigurationProperties();
         assertAll(
-            () -> assertThat(context.getBeansOfType(OrderEventPublisher.class)).containsOnlyKeys("kafkaOrderEventPublisher"),
-            () -> assertThat(port).isInstanceOf(KafkaOrderEventPublisher.class),
-            () -> assertThat(ReflectionTestUtils.getField(context.getBean(OrderConfirmedEventListener.class), "publisher")).isSameAs(port),
+            () -> assertThat(context.getBeansOfType(W6OrderEventPublisher.class)).containsOnlyKeys("kafkaOrderEventPublisher"),
+            () -> assertThat(port).isInstanceOf(W6KafkaOrderEventPublisher.class),
+            () -> assertThat(ReflectionTestUtils.getField(context.getBean(W6OrderConfirmedEventListener.class), "publisher")).isSameAs(port),
             () -> assertThat(ReflectionTestUtils.getField(port, "template")).isSameAs(template),
             () -> assertThat(ReflectionTestUtils.getField(port, "topic")).isEqualTo(topic),
             () -> assertThat(template.getProducerFactory()).isSameAs(factory),
@@ -426,13 +432,13 @@ class OrderEventKafkaBrokerIntegrationTest {
                 .get("bootstrap.servers"))).as("admin bootstrap").contains(kafka.bootstrapServers()).doesNotContain("kafka:9092"),
             () -> assertThat(context.getEnvironment().getProperty("spring.kafka.admin.properties.bootstrap.servers"))
                 .isEqualTo(kafka.bootstrapServers()),
-            () -> assertThat(context.getBean(OrderEventKafkaConfig.ORDER_CONFIRMATION_CLOCK, Clock.class)).isSameAs(FIXED_CLOCK)
+            () -> assertThat(context.getBean(OrderConfirmationClockConfig.ORDER_CONFIRMATION_CLOCK, Clock.class)).isSameAs(FIXED_CLOCK)
         );
     }
 
     private static void assertShutdownSettings(ConfigurableApplicationContext context) {
         DefaultKafkaProducerFactory<?, ?> factory =
-            (DefaultKafkaProducerFactory<?, ?>) context.getBean(OrderEventKafkaConfig.ORDER_EVENT_PRODUCER_FACTORY);
+            (DefaultKafkaProducerFactory<?, ?>) context.getBean(W6OrderEventKafkaConfig.ORDER_EVENT_PRODUCER_FACTORY);
         Object lifecycle = context.getBean("lifecycleProcessor");
         assertAll(
             () -> assertThat(ReflectionTestUtils.getField(factory, "physicalCloseTimeout")).isEqualTo(Duration.ofSeconds(15)),
@@ -447,13 +453,13 @@ class OrderEventKafkaBrokerIntegrationTest {
     private static void warmUp(ConfigurableApplicationContext context) throws Exception {
         String prep = kafka.createTopic("order-events-prep");
         KafkaTemplate<String, Object> template =
-            (KafkaTemplate<String, Object>) context.getBean(OrderEventKafkaConfig.ORDER_EVENT_KAFKA_TEMPLATE);
+            (KafkaTemplate<String, Object>) context.getBean(W6OrderEventKafkaConfig.ORDER_EVENT_KAFKA_TEMPLATE);
         SendResult<String, Object> result = template.send(prep, "warm-up", "warm-up").get(30, TimeUnit.SECONDS);
         assertThat(result.getRecordMetadata().topic()).isEqualTo(prep);
     }
 
     private static double sendTotal(ConfigurableApplicationContext context) {
-        KafkaTemplate<?, ?> template = (KafkaTemplate<?, ?>) context.getBean(OrderEventKafkaConfig.ORDER_EVENT_KAFKA_TEMPLATE);
+        KafkaTemplate<?, ?> template = (KafkaTemplate<?, ?>) context.getBean(W6OrderEventKafkaConfig.ORDER_EVENT_KAFKA_TEMPLATE);
         return template.metrics().entrySet().stream()
             .filter(entry -> entry.getKey().group().equals("producer-metrics") && entry.getKey().name().equals("record-send-total"))
             .mapToDouble(entry -> ((Number) entry.getValue().metricValue()).doubleValue())
@@ -472,7 +478,7 @@ class OrderEventKafkaBrokerIntegrationTest {
 
     private static String producerClientId(ConfigurableApplicationContext context) {
         DefaultKafkaProducerFactory<?, ?> factory =
-            (DefaultKafkaProducerFactory<?, ?>) context.getBean(OrderEventKafkaConfig.ORDER_EVENT_PRODUCER_FACTORY);
+            (DefaultKafkaProducerFactory<?, ?>) context.getBean(W6OrderEventKafkaConfig.ORDER_EVENT_PRODUCER_FACTORY);
         return String.valueOf(factory.getConfigurationProperties().get(ProducerConfig.CLIENT_ID_CONFIG));
     }
 
@@ -683,14 +689,14 @@ class OrderEventKafkaBrokerIntegrationTest {
      * 실제 adapter 를 그대로 둔 커머스 컨텍스트를 직접 띄운다. 일반·admin bootstrap·topic·전용 producer client.id 는 이 실행의 값으로 덮고,
      * 확정 시각 Clock 과(주어지면) beforeSend probe 만 같은 이름의 정의로 바꾼다.
      */
-    private static ConfigurableApplicationContext boot(String topic, String ddl, OrderPublicationProbe probe) throws Exception {
+    private static ConfigurableApplicationContext boot(String topic, String ddl, W6OrderPublicationProbe probe) throws Exception {
         int port;
         try (ServerSocket socket = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
             port = socket.getLocalPort();
         }
         String clientId = "order-event-kafka-test-" + kafka.runId() + "-" + BOOTS.incrementAndGet();
         return new SpringApplicationBuilder(CommerceApiApplication.class).profiles("test")
-            .initializers(new ReplaceBeans(probe)).run(
+            .initializers(new W6PreparationContextInitializer(), new ReplaceBeans(probe)).run(
                 "--server.port=" + port, "--management.server.port=0", "--spring.jpa.hibernate.ddl-auto=" + ddl,
                 "--datasource.mysql-jpa.main.jdbc-url=" + server + "/" + SCHEMA,
                 "--commerce.pg.base-url=" + pg.baseUrl(),
@@ -704,9 +710,9 @@ class OrderEventKafkaBrokerIntegrationTest {
     /** Clock·probe 정의를 같은 이름으로 바꾼다. bean 덮어쓰기 허용 설정은 쓰지 않는다. */
     private static final class ReplaceBeans implements ApplicationContextInitializer<ConfigurableApplicationContext> {
 
-        private final OrderPublicationProbe probe;
+        private final W6OrderPublicationProbe probe;
 
-        private ReplaceBeans(OrderPublicationProbe probe) {
+        private ReplaceBeans(W6OrderPublicationProbe probe) {
             this.probe = probe;
         }
 
@@ -719,17 +725,17 @@ class OrderEventKafkaBrokerIntegrationTest {
 
     private static final class Replacer implements BeanDefinitionRegistryPostProcessor {
 
-        private final OrderPublicationProbe probe;
+        private final W6OrderPublicationProbe probe;
 
-        private Replacer(OrderPublicationProbe probe) {
+        private Replacer(W6OrderPublicationProbe probe) {
             this.probe = probe;
         }
 
         @Override
         public void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) throws BeansException {
-            replace(registry, OrderEventKafkaConfig.ORDER_CONFIRMATION_CLOCK, new RootBeanDefinition(Clock.class, () -> FIXED_CLOCK));
+            replace(registry, OrderConfirmationClockConfig.ORDER_CONFIRMATION_CLOCK, new RootBeanDefinition(Clock.class, () -> FIXED_CLOCK));
             if (probe != null) {
-                replace(registry, "noOpOrderPublicationProbe", new RootBeanDefinition(OrderPublicationProbe.class, () -> probe));
+                replace(registry, "noOpOrderPublicationProbe", new RootBeanDefinition(W6OrderPublicationProbe.class, () -> probe));
             }
         }
 
@@ -747,7 +753,7 @@ class OrderEventKafkaBrokerIntegrationTest {
     }
 
     /** 대상 주문의 beforeSend 에서 테스트가 풀 때까지 멈추고, 설정에 따라 통제 실패를 던진다. 다른 주문은 그대로 통과한다. */
-    private static final class GateProbe implements OrderPublicationProbe {
+    private static final class GateProbe implements W6OrderPublicationProbe {
 
         private final boolean failAfterRelease;
         private final CountDownLatch reached = new CountDownLatch(1);

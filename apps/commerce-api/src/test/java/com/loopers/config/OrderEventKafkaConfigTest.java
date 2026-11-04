@@ -1,5 +1,6 @@
 package com.loopers.config;
 
+import com.loopers.infrastructure.order.support.W6OrderEventKafkaConfig;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.junit.jupiter.api.DisplayName;
@@ -26,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 class OrderEventKafkaConfigTest {
 
     private static final ApplicationContextRunner RUNNER = new ApplicationContextRunner()
-        .withUserConfiguration(Support.class, OrderEventKafkaConfig.class)
+        .withUserConfiguration(Support.class, W6OrderEventKafkaConfig.class)
         .withPropertyValues(
             "spring.kafka.bootstrap-servers=localhost:19092",
             "spring.kafka.producer.retries=3",
@@ -53,7 +54,7 @@ class OrderEventKafkaConfigTest {
     @Test
     void assemblesNonTransactionalFactoryWithoutInheritedRetries() {
         RUNNER.run(context -> {
-            DefaultKafkaProducerFactory<?, ?> factory = context.getBean(OrderEventKafkaConfig.ORDER_EVENT_PRODUCER_FACTORY,
+            DefaultKafkaProducerFactory<?, ?> factory = context.getBean(W6OrderEventKafkaConfig.ORDER_EVENT_PRODUCER_FACTORY,
                 DefaultKafkaProducerFactory.class);
             assertAll(
                 () -> assertThat(context).hasNotFailed(),

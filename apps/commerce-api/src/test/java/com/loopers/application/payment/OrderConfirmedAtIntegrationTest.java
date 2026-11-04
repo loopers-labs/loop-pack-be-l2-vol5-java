@@ -1,7 +1,6 @@
 package com.loopers.application.payment;
 
-import com.loopers.config.OrderEventKafkaConfig;
-import com.loopers.domain.order.OrderEventPublisher;
+import com.loopers.config.OrderConfirmationClockConfig;
 import com.loopers.domain.order.OrderModel;
 import com.loopers.domain.payment.ObservationSource;
 import com.loopers.domain.payment.PaymentCheckToken;
@@ -14,7 +13,6 @@ import com.loopers.infrastructure.order.OrderJpaRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import com.loopers.support.persistence.ConstraintViolationClassifier;
-import com.loopers.testsupport.RecordingOrderEventPublisher;
 import com.loopers.utils.DatabaseCleanUp;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
@@ -62,9 +60,6 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 @DisplayName("결제 TX 서비스는 최초 PG 확정 시각을 UTC 마이크로초로 한 번만 저장한다.")
 class OrderConfirmedAtIntegrationTest {
 
-    @TestBean(name = "kafkaOrderEventPublisher", methodName = RecordingOrderEventPublisher.FACTORY, enforceOverride = true)
-    private OrderEventPublisher orderEventPublisher;
-
     private static final Long USER = 1L;
     private static final Duration WAIT = Duration.ofSeconds(10);
     /** 나노초와 서울 zone 을 일부러 넣어 서비스의 UTC 정규화·마이크로초 절삭을 확인한다. */
@@ -75,7 +70,7 @@ class OrderConfirmedAtIntegrationTest {
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
     private static final SettableClock CLOCK = new SettableClock(FIRST_INPUT, SEOUL);
 
-    @TestBean(name = OrderEventKafkaConfig.ORDER_CONFIRMATION_CLOCK, methodName = "orderConfirmationClock")
+    @TestBean(name = OrderConfirmationClockConfig.ORDER_CONFIRMATION_CLOCK, methodName = "orderConfirmationClock")
     private Clock orderConfirmationClock;
 
     @Autowired
@@ -320,7 +315,7 @@ class OrderConfirmedAtIntegrationTest {
         );
     }
 
-    @DisplayName("다른 결제에 결합된 거래로 확정하면 commit 의 unique 위반으로 시각 없이 rollback 되고, 충돌 기록도 시각을 남기지 않는다.")
+    @DisplayName("다른 결제에 결합된 거래로 확정하면 같은 TX 의 Outbox 저장 flush 에서 드러난 unique 위반으로 시각·Outbox 없이 rollback 되고, 충돌 기록도 시각을 남기지 않는다.")
     @Test
     void commitConstraintFailureLeavesNoConfirmedAt() {
         ProductModel product = fixture.product(1_000L, 10L);
@@ -340,7 +335,11 @@ class OrderConfirmedAtIntegrationTest {
             () -> assertThat(afterRollback).containsEntry("status", "PAYMENT_PENDING").containsEntry("confirmed_at", null),
             () -> assertThat(recorded.outcome()).isEqualTo(PaymentApplyResult.Outcome.CONFLICT),
             () -> assertThat(orderRow(second)).containsEntry("status", "PAYMENT_PENDING").containsEntry("confirmed_at", null),
-            () -> assertThat(storedText(first)).isEqualTo("2026-10-28 07:00:00.123456")
+            () -> assertThat(storedText(first)).isEqualTo("2026-10-28 07:00:00.123456"),
+            // W7: 위반은 commit 이 아니라 recorder 의 Spring Data saveAndFlush 에서 변환된 예외로 드러난다(설계 W7.2-6a).
+            () -> assertThat(violation).hasStackTraceContaining("OrderConfirmedOutboxRepositoryImpl.insertAndFlush"),
+            () -> assertThat(jdbcTemplate.queryForList("SELECT order_id FROM order_confirmed_outbox", Long.class))
+                .as("첫 주문만 Outbox").containsExactly(first)
         );
     }
 
