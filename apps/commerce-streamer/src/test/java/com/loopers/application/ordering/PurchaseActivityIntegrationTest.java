@@ -32,12 +32,18 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.apache.kafka.clients.admin.Admin;
+import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -60,6 +66,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.context.jdbc.Sql;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionSystemException;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -89,7 +96,7 @@ class PurchaseActivityIntegrationTest {
         .withCommand("--log-bin-trust-function-creators=1")
         .withInitScript("009-purchase-activity.sql");
 
-    @Autowired private ConsumeOrderConfirmationUseCase consumer;
+    @MockitoSpyBean private ConsumeOrderConfirmationUseCase consumer;
     @Autowired private EntityManager entityManager;
     @Autowired private PlatformTransactionManager transactions;
     @Autowired private KafkaListenerEndpointRegistry listeners;
@@ -129,25 +136,122 @@ class PurchaseActivityIntegrationTest {
             for (byte[] value : List.of(payload, payload, conflict, new byte[]{42})) {
                 producer.send(new ProducerRecord<>(TOPIC, 0, "42", value)).get(15, TimeUnit.SECONDS);
             }
-            await().atMost(Duration.ofSeconds(25)).untilAsserted(() -> {
-                var offsets = admin.listConsumerGroupOffsets(GROUP).partitionsToOffsetAndMetadata().get(5, TimeUnit.SECONDS);
-                assertThat(offsets).containsKey(new TopicPartition(TOPIC, 0));
-                assertThat(offsets.get(new TopicPartition(TOPIC, 0)).offset()).isEqualTo(4);
-            });
-            sql("""
-                CREATE TRIGGER fail_order_event_archive BEFORE INSERT ON order_event_failures
-                FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'test archive failure'
-                """);
+            awaitOffset(admin, 4);
+            assertStored(event(UUID.fromString("e321d56a-59b3-4cf1-a7d0-6238451af280"), 42, CONFIRMED_AT, 2));
+            assertThat(entityManager.createNativeQuery("""
+                SELECT reason FROM order_event_failures ORDER BY source_offset
+                """, String.class).getResultList()).containsExactly("FACT_CONFLICT", "INVALID_CONTRACT");
+
+            failArchiveInserts();
             producer.send(new ProducerRecord<>(TOPIC, 0, "42", null)).get(15, TimeUnit.SECONDS);
-            await().atMost(Duration.ofSeconds(15)).until(() ->
-                !listeners.getListenerContainer(OrderConfirmedKafkaConsumer.LISTENER_ID).isRunning());
-            var offsets = admin.listConsumerGroupOffsets(GROUP).partitionsToOffsetAndMetadata().get(5, TimeUnit.SECONDS);
-            assertThat(offsets.get(new TopicPartition(TOPIC, 0)).offset()).isEqualTo(4);
+            awaitStopped(admin);
+            assertThat(committedOffset(admin)).isEqualTo(4);
+            sql("DROP TRIGGER fail_order_event_archive");
+            listeners.getListenerContainer(OrderConfirmedKafkaConsumer.LISTENER_ID).start();
+            awaitOffset(admin, 5);
+            assertThat(count("order_event_failures")).isEqualTo(3);
+
+            verifyRedeliveryAfterCommit(admin, producer, payload);
         }
-        assertStored(event(UUID.fromString("e321d56a-59b3-4cf1-a7d0-6238451af280"), 42, CONFIRMED_AT, 2));
-        assertThat(entityManager.createNativeQuery("""
-            SELECT reason FROM order_event_failures ORDER BY source_offset
-            """, String.class).getResultList()).containsExactly("FACT_CONFLICT", "INVALID_CONTRACT");
+    }
+
+    private void verifyRedeliveryAfterCommit(Admin admin, KafkaProducer<String, byte[]> producer, byte[] fixture) throws Exception {
+        String originalId = "e321d56a-59b3-4cf1-a7d0-6238451af280";
+        UUID eventId = UUID.randomUUID();
+        var confirmation = event(eventId, 43, CONFIRMED_AT, 2);
+        byte[] payload = new String(fixture, StandardCharsets.UTF_8)
+            .replace(originalId, eventId.toString()).replace("\"orderId\": 42", "\"orderId\": 43")
+            .getBytes(StandardCharsets.UTF_8);
+        failSecondItem();
+        failArchiveInserts();
+        var sent = producer.send(new ProducerRecord<>(TOPIC, 0, "43", payload)).get(15, TimeUnit.SECONDS);
+        awaitStopped(admin);
+        assertThat(committedOffset(admin)).isEqualTo(sent.offset());
+        assertThat(count("order_confirmation_inbox")).isEqualTo(1);
+        assertThat(count("product_purchase_activities")).isEqualTo(2);
+        assertThat(count("order_event_failures")).isEqualTo(3);
+        sql("DROP TRIGGER fail_second_purchase_item");
+        sql("DROP TRIGGER fail_order_event_archive");
+
+        var handled = new AtomicReference<Result>();
+        doAnswer(invocation -> {
+            Result result = (Result) invocation.callRealMethod();
+            if (handled.getAndSet(result) == null) {
+                throw new TransactionSystemException("controlled interruption after commit and before ack");
+            }
+            return result;
+        }).when(consumer).execute(confirmation);
+
+        listeners.getListenerContainer(OrderConfirmedKafkaConsumer.LISTENER_ID).start();
+        awaitStopped(admin);
+        assertThat(handled.get()).isEqualTo(Result.CREATED);
+        assertThat(committedOffset(admin)).isEqualTo(sent.offset());
+        assertThat(count("order_confirmation_inbox")).isEqualTo(2);
+        assertThat(count("product_purchase_activities")).isEqualTo(4);
+
+        listeners.getListenerContainer(OrderConfirmedKafkaConsumer.LISTENER_ID).start();
+        awaitOffset(admin, sent.offset() + 1);
+        assertThat(handled.get()).isEqualTo(Result.ALREADY_PROCESSED);
+        assertThat(count("order_confirmation_inbox")).isEqualTo(2);
+        assertThat(count("product_purchase_activities")).isEqualTo(4);
+    }
+
+    private void awaitStopped(Admin admin) {
+        await().atMost(Duration.ofSeconds(15)).until(() ->
+            !listeners.getListenerContainer(OrderConfirmedKafkaConsumer.LISTENER_ID).isRunning()
+                && admin.describeConsumerGroups(List.of(GROUP)).all().get(5, TimeUnit.SECONDS).get(GROUP).members().isEmpty());
+    }
+
+    private void awaitOffset(Admin admin, long expected) {
+        await().atMost(Duration.ofSeconds(25)).untilAsserted(() -> assertThat(committedOffset(admin)).isEqualTo(expected));
+    }
+
+    private long committedOffset(Admin admin) throws Exception {
+        var offsets = admin.listConsumerGroupOffsets(GROUP).partitionsToOffsetAndMetadata().get(5, TimeUnit.SECONDS);
+        assertThat(offsets).containsKey(new TopicPartition(TOPIC, 0));
+        return offsets.get(new TopicPartition(TOPIC, 0)).offset();
+    }
+
+    private void failArchiveInserts() {
+        sql("""
+            CREATE TRIGGER fail_order_event_archive BEFORE INSERT ON order_event_failures
+            FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'test archive failure'
+            """);
+    }
+
+    @Test
+    @DisplayName("2개 파티션을 같은 그룹의 소비자 1·2·3개에 실제 배정한다")
+    void assignsTwoPartitionsAcrossOneTwoAndThreeConsumers() throws Exception {
+        String topic = "order-events-assignment-test";
+        String group = "order-events-assignment-group";
+        var config = Map.<String, Object>of("bootstrap.servers", KAFKA.getBootstrapServers(),
+            "group.id", group, "enable.auto.commit", false);
+        var running = new AtomicBoolean(true);
+        try (var admin = Admin.create(config); var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            admin.createTopics(List.of(new NewTopic(topic, 2, (short) 1))).all().get(10, TimeUnit.SECONDS);
+            try {
+                for (var expected : List.of(List.of(2), List.of(1, 1), List.of(0, 1, 1))) {
+                    executor.submit(() -> {
+                        try (var records = new KafkaConsumer<>(config, new StringDeserializer(), new ByteArrayDeserializer())) {
+                            records.subscribe(List.of(topic));
+                            while (running.get()) {
+                                records.poll(Duration.ofMillis(200));
+                            }
+                        }
+                    });
+                    await().atMost(Duration.ofSeconds(25)).ignoreExceptions().untilAsserted(() -> {
+                        var members = admin.describeConsumerGroups(List.of(group)).all()
+                            .get(5, TimeUnit.SECONDS).get(group).members();
+                        assertThat(members.stream().map(member -> member.assignment().topicPartitions().size()).sorted().toList())
+                            .isEqualTo(expected);
+                        assertThat(members.stream().flatMap(member -> member.assignment().topicPartitions().stream()).toList())
+                            .containsExactlyInAnyOrder(new TopicPartition(topic, 0), new TopicPartition(topic, 1));
+                    });
+                }
+            } finally {
+                running.set(false);
+            }
+        }
     }
 
     @Test
@@ -224,6 +328,19 @@ class PurchaseActivityIntegrationTest {
     @DisplayName("첫 품목이 삽입된 뒤 두 번째 품목의 DB 오류가 발생하면 Inbox와 모든 품목이 롤백된다")
     void rollsBackInboxAndEarlierItem() {
         var event = event(UUID.randomUUID(), 42, CONFIRMED_AT, 2);
+        failSecondItem();
+
+        assertThatThrownBy(() -> consumer.execute(event))
+            .hasStackTraceContaining("first item inserted before second item failed");
+
+        assertThat(count("order_confirmation_inbox")).isZero();
+        assertThat(count("product_purchase_activities")).isZero();
+        sql("DROP TRIGGER fail_second_purchase_item");
+        assertThat(consumer.execute(event)).isEqualTo(Result.CREATED);
+        assertStored(event);
+    }
+
+    private void failSecondItem() {
         sql("""
             CREATE TRIGGER fail_second_purchase_item BEFORE INSERT ON product_purchase_activities FOR EACH ROW
             BEGIN
@@ -235,14 +352,6 @@ class PurchaseActivityIntegrationTest {
             END
             """);
 
-        assertThatThrownBy(() -> consumer.execute(event))
-            .hasStackTraceContaining("first item inserted before second item failed");
-
-        assertThat(count("order_confirmation_inbox")).isZero();
-        assertThat(count("product_purchase_activities")).isZero();
-        sql("DROP TRIGGER fail_second_purchase_item");
-        assertThat(consumer.execute(event)).isEqualTo(Result.CREATED);
-        assertStored(event);
     }
 
     private void synchronizeInitialReads() {
