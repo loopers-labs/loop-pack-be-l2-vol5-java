@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.Optional;
 
 @RequiredArgsConstructor
 @Component
@@ -18,6 +19,11 @@ public class OutboxRepositoryImpl implements OutboxRepository {
     @Override
     public Outbox save(Outbox outbox) {
         return outboxJpaRepository.save(outbox);
+    }
+
+    @Override
+    public Optional<Outbox> findById(Long id) {
+        return outboxJpaRepository.findById(id);
     }
 
     @Override
