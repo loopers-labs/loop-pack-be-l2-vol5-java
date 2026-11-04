@@ -28,6 +28,10 @@ spring:
 order-event:
   topic: order-events # 주문 확정 이벤트를 보내는 topic
 
+outbox:
+  relay:
+    send-timeout: 5s # 브로커 확인을 기다리는 최대 시간. 넘으면 같은 사건을 PENDING 으로 남긴다
+
 product:
   list-cache:
     ttl: 60s # 무효화가 실패했을 때 낡은 목록이 남는 상한
