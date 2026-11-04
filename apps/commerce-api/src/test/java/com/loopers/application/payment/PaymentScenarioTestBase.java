@@ -40,6 +40,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import java.util.List;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * 결제 시나리오 통합 테스트의 공통 기반 (design.md 9-9절). 실제 MySQL, 실제 controller, 실제 adapter → 테스트 PG fixture를 모두 거친다.
@@ -145,6 +146,14 @@ abstract class PaymentScenarioTestBase {
 
     protected ResultActions reconcile() throws Exception {
         return mvc.perform(post("/api/v1/orders/" + orderId + "/payment/reconcile").header("X-USER-ID", USER_ID));
+    }
+
+    /** 주문의 결제를 시작하고 PG가 성공으로 끝낸 뒤, 그 결과를 실제 callback 경로로 적용해 확정한다. Outbox에 PENDING 한 행이 생긴다. */
+    protected void confirmOrderThroughCallback(Long targetOrderId) throws Exception {
+        confirm(targetOrderId, USER_ID, PaymentTestSupport.attemptKeyOf(targetOrderId), PaymentTestSupport.CARD_TYPE)
+            .andExpect(status().isAccepted());
+        PaymentTestSupport.completeAt(pg, targetOrderId, TestPgStatus.SUCCESS);
+        callbackOf(PaymentTestSupport.onlyTransactionOf(pg, targetOrderId)).andExpect(status().isOk());
     }
 
     /** PG가 보내는 결과 알림. 고객 식별 헤더 없이 보낸다. */

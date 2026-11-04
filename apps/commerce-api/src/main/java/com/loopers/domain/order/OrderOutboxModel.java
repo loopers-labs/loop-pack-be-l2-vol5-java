@@ -30,6 +30,8 @@ import java.time.Instant;
 )
 public class OrderOutboxModel extends BaseEntity {
 
+    static final int MAX_ERROR_LENGTH = 500;
+
     @Column(name = "event_id", nullable = false, updatable = false, length = 100)
     private String eventId;
 
@@ -58,7 +60,7 @@ public class OrderOutboxModel extends BaseEntity {
     @Column(name = "next_attempt_at", nullable = false)
     private Instant nextAttemptAt;
 
-    @Column(name = "last_error", length = 500)
+    @Column(name = "last_error", length = MAX_ERROR_LENGTH)
     private String lastError;
 
     @Column(name = "published_at")
@@ -94,6 +96,51 @@ public class OrderOutboxModel extends BaseEntity {
             throw new IllegalArgumentException("Outbox 기록 시각이 없습니다. eventId=" + event.eventId());
         }
         return new OrderOutboxModel(event, payload, recordedAt);
+    }
+
+    /**
+     * relay가 이 행을 보내기 직전에 시도를 기록한다. 시도를 시작한 수라서 전송 전에 멈춘 시도도 센다.
+     * 이미 PUBLISHED면 아무것도 바꾸지 않고 false다.
+     */
+    public boolean startAttempt() {
+        if (status != OrderOutboxStatus.PENDING) {
+            return false;
+        }
+        attemptCount++;
+        return true;
+    }
+
+    /**
+     * broker 확인(producer future 성공)을 받은 뒤에만 부른다. 소비 완료가 아니라 "broker가 받았음을 저장했다"는 뜻이다.
+     * 이미 PUBLISHED면 처음 기록한 시각을 지키고 false다.
+     */
+    public boolean markPublished(Instant publishedAt) {
+        if (status != OrderOutboxStatus.PENDING) {
+            return false;
+        }
+        status = OrderOutboxStatus.PUBLISHED;
+        this.publishedAt = publishedAt;
+        return true;
+    }
+
+    /**
+     * 보내지 못했거나 broker 확인을 받지 못한 시도를 기록한다. 행은 PENDING으로 남아 {@code nextAttemptAt}부터 다시 relay 대상이 된다.
+     * 이 행의 마지막 시도가 아니거나(늦게 도착한 이전 시도의 결과) 이미 PUBLISHED면 아무것도 바꾸지 않고 false다.
+     */
+    public boolean recordFailure(int attempt, String error, Instant nextAttemptAt) {
+        if (status != OrderOutboxStatus.PENDING || attempt != attemptCount) {
+            return false;
+        }
+        this.lastError = truncate(error);
+        this.nextAttemptAt = nextAttemptAt;
+        return true;
+    }
+
+    private static String truncate(String error) {
+        if (error == null || error.length() <= MAX_ERROR_LENGTH) {
+            return error;
+        }
+        return error.substring(0, MAX_ERROR_LENGTH);
     }
 
     public String getEventId() {

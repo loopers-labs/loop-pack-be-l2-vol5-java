@@ -40,6 +40,16 @@ order-event:
   topic-name: order-events # 확정 주문 이벤트(OrderConfirmed v1)의 topic. 테스트는 고유 접미사를 붙여 덮어쓴다
   send-timeout: 5s # send 결과를 기다리는 상한. 넘으면 발행 실패로 기록하고 주문 결과는 그대로 돌려준다
 
+order-outbox:
+  relay: # 확정 주문 Outbox를 broker로 보내는 단일 relay (docs/week7/design.md 4절)
+    scheduling-enabled: true # 이 인스턴스에서 relay를 주기적으로 실행한다. 여러 인스턴스 중 한 곳에서만 켠다(분산 잠금이 없다)
+    fixed-delay: 1s # 한 회차가 끝난 뒤 다음 회차까지 쉬는 시간. 회차는 겹치지 않는다
+    batch-size: 50 # 한 회차에 고르는 최대 행 수
+    send-timeout: 5s # broker 확인을 기다리는 상한. 넘으면 수신 여부를 모르는 실패로 보고 같은 행을 다시 보낸다
+    initial-backoff: 1s # 첫 실패 뒤 다음 시도까지. 실패마다 backoff-multiplier배로 늘어난다
+    backoff-multiplier: 2
+    max-backoff: 5m # 영구 오류도 이 간격보다 자주 다시 보내지 않는다
+
 payment:
   pg:
     base-url: http://127.0.0.1:8082 # 로컬 테스트 PG 주소. 실제 PG 앱은 없어서 그냥 띄우면 연결 실패로 결과 미확인이 된다. 테스트는 fixture 주소로 덮어쓴다
@@ -64,6 +74,16 @@ spring:
   config:
     activate:
       on-profile: local, test
+
+---
+spring:
+  config:
+    activate:
+      on-profile: test
+
+order-outbox:
+  relay:
+    scheduling-enabled: false # 테스트는 relay를 직접 한 회차씩 부른다. 백그라운드 회차가 테스트의 Outbox 행을 바꾸지 않게 한다
 
 ---
 spring:

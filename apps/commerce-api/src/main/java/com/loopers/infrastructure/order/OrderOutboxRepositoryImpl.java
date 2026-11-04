@@ -2,9 +2,13 @@ package com.loopers.infrastructure.order;
 
 import com.loopers.domain.order.OrderOutboxModel;
 import com.loopers.domain.order.OrderOutboxRepository;
+import com.loopers.domain.order.OrderOutboxStatus;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 @RequiredArgsConstructor
@@ -20,5 +24,10 @@ public class OrderOutboxRepositoryImpl implements OrderOutboxRepository {
     @Override
     public Optional<OrderOutboxModel> findByEventId(String eventId) {
         return orderOutboxJpaRepository.findByEventId(eventId);
+    }
+
+    @Override
+    public List<String> findDuePendingEventIds(Instant now, int limit) {
+        return orderOutboxJpaRepository.findDueEventIds(OrderOutboxStatus.PENDING, now, Limit.of(limit));
     }
 }

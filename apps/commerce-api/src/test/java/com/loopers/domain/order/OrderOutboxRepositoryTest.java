@@ -7,6 +7,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
@@ -29,6 +30,9 @@ class OrderOutboxRepositoryTest {
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @AfterEach
     void tearDown() {
@@ -81,5 +85,43 @@ class OrderOutboxRepositoryTest {
             entityManager.flush();
         }).hasStackTraceContaining("uk_order_outbox_event");
         entityManager.clear();
+    }
+
+    @DisplayName("relay 대상은 재시도 시각이 된 PENDING만 (다음 시도 시각, id) 순으로 limit개까지다.")
+    @Test
+    void findsDuePendingInRelayOrder() {
+        // arrange
+        Instant now = Instant.parse("2026-09-07T02:00:00Z");
+        orderOutboxRepository.save(OrderOutboxModel.pending(eventOf(1L), "{}", now.minusSeconds(2)));
+        orderOutboxRepository.save(OrderOutboxModel.pending(eventOf(2L), "{}", now.minusSeconds(3)));
+        orderOutboxRepository.save(OrderOutboxModel.pending(eventOf(3L), "{}", now));
+        orderOutboxRepository.save(OrderOutboxModel.pending(eventOf(4L), "{}", now.plusSeconds(5)));
+        OrderOutboxModel published = orderOutboxRepository.save(OrderOutboxModel.pending(eventOf(5L), "{}", now.minusSeconds(10)));
+        published.markPublished(now);
+        entityManager.flush();
+        entityManager.clear();
+
+        // act
+        List<String> firstTwo = orderOutboxRepository.findDuePendingEventIds(now, 2);
+        List<String> all = orderOutboxRepository.findDuePendingEventIds(now, 10);
+
+        // assert
+        assertThat(firstTwo).containsExactly("order-confirmed:v1:2", "order-confirmed:v1:1");
+        assertThat(all).as("재시도 시각 전(4)과 PUBLISHED(5)는 고르지 않는다")
+            .containsExactly("order-confirmed:v1:2", "order-confirmed:v1:1", "order-confirmed:v1:3");
+    }
+
+    @DisplayName("relay 조회용 인덱스는 상태, 다음 시도 시각, id 순서의 열을 갖는다.")
+    @Test
+    void createsRelayIndexInStatusNextAttemptIdOrder() {
+        // act
+        List<String> columns = jdbcTemplate.queryForList(
+            "SELECT column_name FROM information_schema.statistics "
+                + "WHERE table_schema = DATABASE() AND table_name = 'order_outbox' AND index_name = 'idx_order_outbox_relay' ORDER BY seq_in_index",
+            String.class
+        );
+
+        // assert
+        assertThat(columns).containsExactly("status", "next_attempt_at", "id");
     }
 }

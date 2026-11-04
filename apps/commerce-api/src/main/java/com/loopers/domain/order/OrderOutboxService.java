@@ -6,6 +6,8 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
 
 @RequiredArgsConstructor
 @Component
@@ -24,5 +26,34 @@ public class OrderOutboxService {
     public OrderOutboxModel append(OrderConfirmedEvent event, Instant recordedAt) {
         String payload = orderEventSerializer.serialize(event);
         return orderOutboxRepository.save(OrderOutboxModel.pending(event, payload, recordedAt));
+    }
+
+    // ---- relay가 부르는 짧은 트랜잭션들 (W7 design.md 4절). 주문 확정 트랜잭션과 무관하고, broker를 기다리는 동안 열려 있지 않다 ----
+
+    @Transactional(readOnly = true)
+    public List<String> findDueEventIds(Instant now, int limit) {
+        return orderOutboxRepository.findDuePendingEventIds(now, limit);
+    }
+
+    /** PENDING이면 시도를 기록하고 보낼 한 건을 돌려준다. 없거나 이미 PUBLISHED면 비어 있다. */
+    @Transactional
+    public Optional<OrderOutboxMessage> startAttempt(String eventId) {
+        return orderOutboxRepository.findByEventId(eventId)
+            .filter(OrderOutboxModel::startAttempt)
+            .map(OrderOutboxMessage::of);
+    }
+
+    @Transactional
+    public boolean markPublished(String eventId, Instant publishedAt) {
+        return orderOutboxRepository.findByEventId(eventId)
+            .map(outbox -> outbox.markPublished(publishedAt))
+            .orElse(false);
+    }
+
+    @Transactional
+    public boolean recordFailure(String eventId, int attempt, String error, Instant nextAttemptAt) {
+        return orderOutboxRepository.findByEventId(eventId)
+            .map(outbox -> outbox.recordFailure(attempt, error, nextAttemptAt))
+            .orElse(false);
     }
 }
