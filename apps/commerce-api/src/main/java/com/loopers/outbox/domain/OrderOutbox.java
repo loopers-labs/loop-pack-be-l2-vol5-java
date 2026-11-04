@@ -1,6 +1,8 @@
 package com.loopers.outbox.domain;
 
 import com.loopers.domain.BaseEntity;
+import com.loopers.support.error.CoreException;
+import com.loopers.support.error.ErrorType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -113,16 +115,76 @@ public class OrderOutbox extends BaseEntity {
         return new OrderOutbox(eventId, orderId, eventType, schemaVersion, payload, now);
     }
 
+    /**
+     * relay가 이 행을 맡는다. 차례가 된 PENDING, 또는 기한(lease)이 지난 SENDING만 — 기한과 같은 시각은 지난 것으로 본다.
+     * 조회 조건(findDue)과 같은 규칙을 도메인이 한 번 더 지킨다: 기한이 남은 SENDING은 누가 보내는 중이다.
+     */
     public void startSending(ZonedDateTime now) {
+        if (status != OrderOutboxStatus.PENDING && status != OrderOutboxStatus.SENDING) {
+            throw conflict("PENDING·SENDING만 맡을 수 있습니다", now);
+        }
+        if (nextAttemptAt.isAfter(now)) {
+            throw conflict("아직 차례가 아닙니다 (next_attempt_at=" + nextAttemptAt + ")", now);
+        }
+        this.status = OrderOutboxStatus.SENDING;
+        this.nextAttemptAt = now.plus(LEASE);
     }
 
+    /**
+     * broker가 저장을 확인했다(ack). SENDING만 — 두 번째 기록이 처음 위치를 덮지 않는다.
+     */
     public void markPublished(int partition, long offset, ZonedDateTime now) {
+        requireSending("성공 기록", now);
+        this.status = OrderOutboxStatus.PUBLISHED;
+        this.publishedAt = now;
+        this.publishedPartition = partition;
+        this.publishedOffset = offset;
     }
 
+    /**
+     * send가 실패했다(예외·timeout). SENDING만. MAX_ATTEMPTS번째 실패면 BLOCKED, 아니면 delay 뒤에 다시 차례가 된다.
+     * delay(backoff·jitter)는 밖에서 계산해 넘긴다 — 도메인은 난수를 모른다.
+     */
     public void recordFailure(String error, ZonedDateTime now, Duration delay) {
+        requireSending("실패 기록", now);
+        this.attemptCount++;
+        this.lastError = truncate(error);
+        if (attemptCount >= MAX_ATTEMPTS) {
+            this.status = OrderOutboxStatus.BLOCKED;
+            return;
+        }
+        this.status = OrderOutboxStatus.PENDING;
+        this.nextAttemptAt = now.plus(delay);
     }
 
+    /**
+     * 사람이 원인을 고친 뒤 재개한다. BLOCKED만. 다시 MAX_ATTEMPTS번의 기회를 주고, 이전 원인은 진단용으로 남긴다.
+     */
     public void resume(ZonedDateTime now) {
+        if (status != OrderOutboxStatus.BLOCKED) {
+            throw conflict("BLOCKED만 재개할 수 있습니다", now);
+        }
+        this.status = OrderOutboxStatus.PENDING;
+        this.attemptCount = 0;
+        this.nextAttemptAt = now;
+    }
+
+    private void requireSending(String action, ZonedDateTime now) {
+        if (status != OrderOutboxStatus.SENDING) {
+            throw conflict(action + "은 SENDING에서만 할 수 있습니다", now);
+        }
+    }
+
+    private CoreException conflict(String reason, ZonedDateTime now) {
+        return new CoreException(ErrorType.CONFLICT,
+            reason + ". eventId=" + eventId + ", status=" + status + ", now=" + now);
+    }
+
+    private static String truncate(String error) {
+        if (error == null || error.length() <= LAST_ERROR_MAX_LENGTH) {
+            return error;
+        }
+        return error.substring(0, LAST_ERROR_MAX_LENGTH);
     }
 
     public String getEventId() {
