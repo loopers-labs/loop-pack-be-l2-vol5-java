@@ -6,6 +6,7 @@ sourceSets.test {
 
 tasks.processTestResources {
     from(rootProject.file("docker/payment-lab/009-purchase-activity.sql"))
+    from(rootProject.file("docker/payment-lab/010-order-event-failure.sql"))
 }
 
 dependencies {

@@ -2,11 +2,13 @@ package com.loopers.application.ordering;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doAnswer;
 
 import com.loopers.application.ordering.facade.ConsumeOrderConfirmationFacade;
+import com.loopers.application.ordering.service.RecordOrderEventFailureService;
 import com.loopers.application.ordering.service.RecordPurchaseActivityService;
 import com.loopers.application.ordering.service.VerifyProcessedOrderConfirmationService;
 import com.loopers.application.ordering.usecase.ConsumeOrderConfirmationUseCase;
@@ -14,16 +16,29 @@ import com.loopers.application.ordering.usecase.ConsumeOrderConfirmationUseCase.
 import com.loopers.domain.ordering.model.OrderConfirmation;
 import com.loopers.domain.ordering.model.OrderConfirmationConflictException;
 import com.loopers.infrastructure.persistence.ordering.PurchaseActivityJpaRepository;
+import com.loopers.infrastructure.persistence.ordering.OrderEventFailureJpaRepository;
 import com.loopers.infrastructure.persistence.ordering.entity.OrderConfirmationInboxJpaEntity;
+import com.loopers.infrastructure.messaging.ordering.OrderConfirmedKafkaConfiguration;
+import com.loopers.interfaces.consumer.ordering.OrderConfirmedKafkaConsumer;
+import com.loopers.testcontainers.KafkaTestFixture;
 import jakarta.persistence.EntityManager;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.apache.kafka.clients.admin.Admin;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.serialization.ByteArraySerializer;
+import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -31,15 +46,19 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfigurationPackage;
+import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.autoconfigure.domain.EntityScan;
+import org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.test.context.jdbc.Sql;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,14 +66,22 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.kafka.KafkaContainer;
 
 @Testcontainers
 @DataJpaTest(properties = {"spring.jpa.hibernate.ddl-auto=validate", "spring.jpa.show-sql=false"})
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ContextConfiguration(classes = PurchaseActivityIntegrationTest.Config.class)
+@ImportAutoConfiguration(KafkaAutoConfiguration.class)
+@Sql(scripts = "/010-order-event-failure.sql", executionPhase = Sql.ExecutionPhase.BEFORE_TEST_CLASS)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class PurchaseActivityIntegrationTest {
     private static final Instant CONFIRMED_AT = Instant.parse("2026-11-04T01:00:00.123456Z");
+    private static final String TOPIC = "order-events-test";
+    private static final String GROUP = "purchase-activity-test";
+
+    @Container
+    private static final KafkaContainer KAFKA = KafkaTestFixture.create();
 
     @Container
     private static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0")
@@ -65,6 +92,7 @@ class PurchaseActivityIntegrationTest {
     @Autowired private ConsumeOrderConfirmationUseCase consumer;
     @Autowired private EntityManager entityManager;
     @Autowired private PlatformTransactionManager transactions;
+    @Autowired private KafkaListenerEndpointRegistry listeners;
     @MockitoSpyBean private PurchaseActivityJpaRepository repository;
 
     @DynamicPropertySource
@@ -72,13 +100,54 @@ class PurchaseActivityIntegrationTest {
         registry.add("spring.datasource.url", MYSQL::getJdbcUrl);
         registry.add("spring.datasource.username", MYSQL::getUsername);
         registry.add("spring.datasource.password", MYSQL::getPassword);
+        registry.add("spring.kafka.bootstrap-servers", KAFKA::getBootstrapServers);
+        registry.add("order-events.topic", () -> TOPIC);
+        registry.add("order-events.group", () -> GROUP);
     }
 
     @AfterEach
     void cleanUp() {
         sql("DROP TRIGGER IF EXISTS fail_second_purchase_item");
+        sql("DROP TRIGGER IF EXISTS fail_order_event_archive");
         sql("DELETE FROM product_purchase_activities");
         sql("DELETE FROM order_confirmation_inbox");
+        sql("DELETE FROM order_event_failures");
+    }
+
+    @Test
+    @DisplayName("Kafka 재전달과 충돌·계약 오류를 처리하고 MySQL commit 뒤 offset을 진행한다")
+    void consumesKafkaWithInboxAndDatabaseFailureArchive() throws Exception {
+        var config = Map.<String, Object>of("bootstrap.servers", KAFKA.getBootstrapServers());
+        byte[] payload;
+        try (var fixture = getClass().getResourceAsStream("/order-confirmed-v1.json")) {
+            payload = fixture.readAllBytes();
+        }
+        byte[] conflict = new String(payload, StandardCharsets.UTF_8)
+            .replace("\"quantity\": 2", "\"quantity\": 3").getBytes(StandardCharsets.UTF_8);
+        try (var producer = new KafkaProducer<>(config, new StringSerializer(), new ByteArraySerializer());
+             var admin = Admin.create(config)) {
+            for (byte[] value : List.of(payload, payload, conflict, new byte[]{42})) {
+                producer.send(new ProducerRecord<>(TOPIC, 0, "42", value)).get(15, TimeUnit.SECONDS);
+            }
+            await().atMost(Duration.ofSeconds(25)).untilAsserted(() -> {
+                var offsets = admin.listConsumerGroupOffsets(GROUP).partitionsToOffsetAndMetadata().get(5, TimeUnit.SECONDS);
+                assertThat(offsets).containsKey(new TopicPartition(TOPIC, 0));
+                assertThat(offsets.get(new TopicPartition(TOPIC, 0)).offset()).isEqualTo(4);
+            });
+            sql("""
+                CREATE TRIGGER fail_order_event_archive BEFORE INSERT ON order_event_failures
+                FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'test archive failure'
+                """);
+            producer.send(new ProducerRecord<>(TOPIC, 0, "42", null)).get(15, TimeUnit.SECONDS);
+            await().atMost(Duration.ofSeconds(15)).until(() ->
+                !listeners.getListenerContainer(OrderConfirmedKafkaConsumer.LISTENER_ID).isRunning());
+            var offsets = admin.listConsumerGroupOffsets(GROUP).partitionsToOffsetAndMetadata().get(5, TimeUnit.SECONDS);
+            assertThat(offsets.get(new TopicPartition(TOPIC, 0)).offset()).isEqualTo(4);
+        }
+        assertStored(event(UUID.fromString("e321d56a-59b3-4cf1-a7d0-6238451af280"), 42, CONFIRMED_AT, 2));
+        assertThat(entityManager.createNativeQuery("""
+            SELECT reason FROM order_event_failures ORDER BY source_offset
+            """, String.class).getResultList()).containsExactly("FACT_CONFLICT", "INVALID_CONTRACT");
     }
 
     @Test
@@ -237,6 +306,8 @@ class PurchaseActivityIntegrationTest {
     @AutoConfigurationPackage(basePackageClasses = OrderConfirmationInboxJpaEntity.class)
     @EntityScan(basePackageClasses = OrderConfirmationInboxJpaEntity.class)
     @Import({ConsumeOrderConfirmationFacade.class, RecordPurchaseActivityService.class,
-        VerifyProcessedOrderConfirmationService.class, PurchaseActivityJpaRepository.class})
+        VerifyProcessedOrderConfirmationService.class, PurchaseActivityJpaRepository.class,
+        OrderConfirmedKafkaConfiguration.class, OrderConfirmedKafkaConsumer.class,
+        RecordOrderEventFailureService.class, OrderEventFailureJpaRepository.class})
     static class Config {}
 }

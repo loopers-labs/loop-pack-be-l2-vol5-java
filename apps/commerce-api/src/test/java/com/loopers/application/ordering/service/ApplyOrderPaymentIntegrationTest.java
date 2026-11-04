@@ -7,10 +7,12 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.never;
 
 import com.loopers.application.ordering.command.PrepareOrderPaymentCommand;
+import com.loopers.application.ordering.gateway.OrderEventTransport;
 import com.loopers.application.ordering.result.ApplyOrderPaymentResult;
 import com.loopers.application.ordering.usecase.ApplyOrderPaymentUseCase;
 import com.loopers.application.ordering.usecase.PrepareOrderPaymentUseCase;
@@ -36,8 +38,10 @@ import com.loopers.domain.pay.model.PaymentScenario;
 import com.loopers.domain.pay.model.ProviderPaymentStatus;
 import com.loopers.domain.pay.repository.PaymentAttemptRepository;
 import com.loopers.domain.pay.repository.PaymentRecoveryTaskRepository;
+import com.loopers.infrastructure.messaging.ordering.KafkaOrderEventTransport;
 import com.loopers.support.test.IntegrationTest;
 import com.loopers.support.test.OrderConfirmProbe;
+import com.loopers.testcontainers.KafkaTestFixture;
 import com.loopers.utils.DatabaseCleanUp;
 import io.github.resilience4j.retry.RetryRegistry;
 import io.github.resilience4j.core.functions.Either;
@@ -45,14 +49,25 @@ import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import jakarta.persistence.EntityManagerFactory;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.ArrayList;
+import org.apache.kafka.clients.admin.Admin;
+import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.serialization.ByteArrayDeserializer;
+import org.apache.kafka.common.serialization.ByteArraySerializer;
+import org.apache.kafka.common.serialization.StringDeserializer;
+import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -63,6 +78,8 @@ import org.springframework.aop.support.AopUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.InvalidDataAccessApiUsageException;
 import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.kafka.core.DefaultKafkaProducerFactory;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -89,6 +106,73 @@ class ApplyOrderPaymentIntegrationTest {
     @Autowired private CircuitBreakerRegistry circuits;
     @Autowired private PaymentProviderGateway provider;
     @Autowired private EntityManagerFactory entityManagerFactory;
+    @Autowired private OrderEventTransport transport;
+
+    @Test
+    @DisplayName("직접 발행 실패 뒤에도 PG 주문 확정과 최초 이벤트 UUID가 남는다")
+    void directPublicationCanBeLostAfterConfirmation() {
+        PaymentAttempt attempt = prepared(5, 2);
+        observe(attempt, ProviderPaymentStatus.SUCCESS);
+        when(transport.send(any(), any())).thenReturn(CompletableFuture.failedFuture(
+            new IllegalStateException("broker unavailable")));
+
+        assertThat(apply.execute(attempt.getAttemptKey()).state()).isEqualTo(ApplyOrderPaymentResult.State.APPLIED);
+        assertThat(apply.execute(attempt.getAttemptKey()).state()).isEqualTo(ApplyOrderPaymentResult.State.APPLIED);
+
+        Order order = orders.findById(attempt.getOrderId()).orElseThrow();
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(order.getRecord().orElseThrow().getConfirmationEventId()).isNotNull();
+        verify(transport, times(1)).send(eq(Long.toString(order.getId())), any());
+    }
+
+    @Test
+    @DisplayName("직접 발행은 확정 commit 뒤 실제 Kafka로 UUID를 전송한다")
+    void directlyPublishesToKafkaAfterCommit() throws Exception {
+        try (var kafka = KafkaTestFixture.create()) {
+            kafka.start();
+            var config = Map.<String, Object>of("bootstrap.servers", kafka.getBootstrapServers());
+            String topic = "direct-order-events";
+            try (var admin = Admin.create(config)) {
+                admin.createTopics(List.of(new NewTopic(topic, 2, (short) 1))).all().get(10, TimeUnit.SECONDS);
+            }
+            var factory = new DefaultKafkaProducerFactory<>(config, new StringSerializer(), new ByteArraySerializer());
+            try {
+                var realTransport = new KafkaOrderEventTransport(new KafkaTemplate<>(factory), topic);
+                var sent = new CompletableFuture<OrderEventTransport.Published>();
+                when(transport.send(any(), any())).thenAnswer(invocation -> {
+                    var committed = tx();
+                    committed.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+                    OrderStatus status = committed.execute(transaction ->
+                        orders.findById(Long.valueOf(invocation.getArgument(0, String.class))).orElseThrow().getStatus());
+                    assertThat(status).isEqualTo(OrderStatus.CONFIRMED);
+                    return realTransport.send(invocation.getArgument(0), invocation.getArgument(1))
+                        .whenComplete((delivery, failure) -> {
+                            if (failure == null) {
+                                sent.complete(delivery);
+                            } else {
+                                sent.completeExceptionally(failure);
+                            }
+                        });
+                });
+                PaymentAttempt attempt = prepared(5, 2);
+                observe(attempt, ProviderPaymentStatus.SUCCESS);
+                assertThat(apply.execute(attempt.getAttemptKey()).state()).isEqualTo(ApplyOrderPaymentResult.State.APPLIED);
+                var delivery = sent.get(10, TimeUnit.SECONDS);
+                try (var records = new KafkaConsumer<>(config, new StringDeserializer(), new ByteArrayDeserializer())) {
+                    var partition = new TopicPartition(topic, delivery.partition());
+                    records.assign(List.of(partition));
+                    records.seek(partition, delivery.offset());
+                    var record = records.poll(Duration.ofSeconds(10)).iterator().next();
+                    var order = orders.findById(attempt.getOrderId()).orElseThrow();
+                    assertThat(record.key()).isEqualTo(Long.toString(order.getId()));
+                    assertThat(new String(record.value(), java.nio.charset.StandardCharsets.UTF_8))
+                        .contains(order.getRecord().orElseThrow().getConfirmationEventId().toString());
+                }
+            } finally {
+                factory.destroy();
+            }
+        }
+    }
 
     @AfterEach
     void tearDown() {

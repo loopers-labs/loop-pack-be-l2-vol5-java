@@ -11,6 +11,8 @@ server:
   max-http-request-header-size: 8KB
 
 spring:
+  kafka:
+    bootstrap-servers: ${BOOTSTRAP_SERVERS:localhost:19092}
   main:
     web-application-type: servlet
   application:
