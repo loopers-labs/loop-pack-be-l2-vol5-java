@@ -10,6 +10,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import org.hibernate.annotations.Comment;
 
+import java.time.Duration;
 import java.time.ZonedDateTime;
 
 /**
@@ -19,8 +20,7 @@ import java.time.ZonedDateTime;
  * 바뀌는 것은 전달 상태(status·attemptCount·nextAttemptAt·lastError·published_*)뿐이다.
  * topic은 저장하지 않는다 — relay가 설정 {@code kafka.topics.order-events}에서 읽는다 (D-0).
  * <p>
- * TODO(학습자, 핵심 로직 1): 상태 전이 메서드 — startSending · markPublished · recordFailure · resume.
- * 기대값은 plan.md "핵심 1" 표. 잘못된 상태에서 부르면 예외, 거절 뒤 기존 값 유지.
+ * 상태 전이는 plan.md "핵심 1" 표를 따른다. 잘못된 상태에서 부르면 예외이고, 거절하면 아무 값도 바꾸지 않는다.
  */
 @Entity
 @Table(
@@ -32,6 +32,12 @@ import java.time.ZonedDateTime;
     }
 )
 public class OrderOutbox extends BaseEntity {
+
+    /** SENDING으로 맡는 기한. relay 대기(35초, D-1)보다 길어야 보내는 중인 행을 다시 고르지 않는다 */
+    public static final Duration LEASE = Duration.ofMinutes(1);
+    /** 이 횟수만큼 연속 실패하면 BLOCKED (D-3) */
+    public static final int MAX_ATTEMPTS = 3;
+    static final int LAST_ERROR_MAX_LENGTH = 1000;
 
     @Column(name = "event_id", nullable = false, length = 36)
     @Comment("이벤트 신원(UUID). 최초 확정 TX에서 한 번 만들고, 재발행해도 같은 값 (ADR-W6-01)")
@@ -105,6 +111,18 @@ public class OrderOutbox extends BaseEntity {
      */
     public static OrderOutbox pending(String eventId, Long orderId, String eventType, int schemaVersion, String payload, ZonedDateTime now) {
         return new OrderOutbox(eventId, orderId, eventType, schemaVersion, payload, now);
+    }
+
+    public void startSending(ZonedDateTime now) {
+    }
+
+    public void markPublished(int partition, long offset, ZonedDateTime now) {
+    }
+
+    public void recordFailure(String error, ZonedDateTime now, Duration delay) {
+    }
+
+    public void resume(ZonedDateTime now) {
     }
 
     public String getEventId() {
