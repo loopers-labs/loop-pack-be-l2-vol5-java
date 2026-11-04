@@ -10,6 +10,10 @@ PG로 확정된 주문의 구매 사실을 Kafka로 전달하고, 중단·재시
 | [실행 환경](environment.md) | 공용 Kafka fixture·연결 확인·로컬 주의사항 |
 | [현재 인계](handoff.md) | 준비 결과와 다음 작업 |
 | [준비 검증](initial-setup.md) | 실제 실행한 초기 검사와 제한 |
+| [R01 상세 설계](r01-order-events-inbox/plan.md) | 최초 성공 전이·공유 계약·실행 설정·책임 경계 |
+| [R01 이벤트 계약](r01-order-events-inbox/event-contract.md) | 고정 identity·시각·정규화·엄격한 wire 검증 |
+| [R01 Inbox 저장](r01-order-events-inbox/persistence.md) | 설계 DDL·전체 TX·경합 rollback·충돌 판정 |
+| [R01 검증 계획](r01-order-events-inbox/verification.md) | 실제 DB/Kafka·listener·W6 A/B 재현 검사 |
 
 원문은 [W6 학습](reference/week6-learning.md), [W6 과제](reference/week6-implementation-quest.md),
 [W7 학습](reference/week7-learning.md), [W7 과제](reference/week7-implementation-quest.md)에 그대로 보존한다.
