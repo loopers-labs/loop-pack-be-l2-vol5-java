@@ -1,7 +1,7 @@
 # R01 검증 계획
 
 [상세 설계](plan.md)의 예정 검사다. 아래 이름/검사 건수는 아직 구현·통과 결과가 아니다.
-사용자 설계 선택 전 초안이므로 [트레이드오프 논의](trade-offs.md)의 결과에 따라 검사 세부도 달라진다.
+[사용자 선택](trade-offs.md)을 반영했으며 재시도 수치 등 구현 초기값은 실제 구현 전에 유효성을 확인한다.
 공통 테스트 기반은 [초기 환경](../environment.md)을 사용한다. 각 변경의 관련 검사부터 실행한다.
 
 ## 계약·시각
@@ -10,10 +10,13 @@
 |---|---|
 | 앱별 OrderConfirmedContractTest | 같은 JSON fixture로 정수 범위/양수/빈 품목/불변 list, 합산과 overflow, 정렬 |
 | OrderConfirmedWireContractTest | 실제 producer bytes → 실제 parser → 같은 고정 사실 |
-| Parser 실패 | 누락/null/unknown/중복 JSON key·잘못된 숫자 타입·잘못된 key·지원 밖 type/version·세밀한 시각 거절 |
+| Parser 실패 | 누락/null/비표준 UUID/중복 JSON key·잘못된 숫자 타입·잘못된 key·지원 밖 type/version·세밀한 시각 거절 |
+| 추가 필드 호환 | 최상위/품목의 모르는 필드는 무시, 알려진 필드가 같으면 snapshot 불변 |
 | 이벤트 동등성 | 속성/품목 순서·중복 상품 합산·timezone 표현이 달라도 같은 사실 |
 | 확정 시각 저장 | 고정 Clock의 마이크로초 값을 DB에서 새로 읽어 event confirmedAt과 정확히 비교 |
 | 기존 사실 보존 | 중복 callback/reconcile과 이전 POINT의 기록·시각 불변 |
+| UUID 원자성 | 최초 확정 UUID 저장·재조회·재발행 일치, rollback/중복 결과 적용 시 추가 사건 없음 |
+| 기존 기록 보존 | POINT/과거 PG의 null UUID를 임의 채우거나 자동 소급하지 않음 |
 
 앱별 DTO·정규화는 코드가 공유되지 않으므로 두 codec을 같은 JSON fixture로 검사한다.
 실제 producer bytes를 실제 consumer parser가 읽는 검사를 별도로 유지해 양쪽 테스트가 따로 통과하는 것만으로 완료하지 않는다.
@@ -59,16 +62,23 @@ JPA 쓰기·새 TX 조회를 사용한다. 기존 규칙을 우회하는 JdbcCli
 
 ### PurchaseActivityListenerIntegrationTest
 
-실제 record factory·parser·Facade·DB를 사용한다. target 처리 TX의 중간 품목에서 오류를 주입한다.
-Inbox/활동 전체 rollback, target 이후 offset 미진행, 컨테이너 중단/원인 표시를 확인한다.
-오류 제거 후 같은 group으로 컨테이너를 재시작해 같은 record의 정상 저장과 ack를 확인한다.
+실제 record factory·parser·Facade·DB·재시도/DLQ error handler를 사용한다.
+target 처리 TX의 중간 품목에서 오류를 주입하고 이번 TX의 Inbox/활동 전체 rollback을 확인한다.
+DLQ 전송 확인 전에는 target 이후로 offset이 진행하지 않아야 한다.
+
+- 오류가 제한 재시도 안에 해소되면 활동 한 번·정상 ack·DLQ 없음.
+- 소진 후 DLQ broker 확인이면 활동 미완료·DLQ 격리·원본 offset n+1·다음 정상 record 소비.
+- DLQ 전송도 실패하도록 주입하면 원본 offset 미진행·중단/원인 표시.
+- 그 오류를 제거하고 같은 group 재시작 시 같은 원본이 재전달돼 정상 저장/ack 또는 확인된 DLQ 격리.
+
 별도 DB commit 후 ack 직전 오류도 검증해 DB 결과는 남고 재수신은 no-op임을 확인한다.
+DLQ 확인 후 원본 offset commit 전 중단·중복 격리·같은 UUID 재처리는 [DLQ 검증](retry-dlq.md)을 추가로 수행한다.
 
 ## 주문 확정·직접 발행
 
 ### OrderConfirmedPublicationTest
 
-- 최초 검증 PG SUCCESS의 업무 TX commit 뒤 실제 send이며 실패/UNKNOWN/rollback/중복 적용에서는 새 사건 없음.
+- 최초 검증 PG SUCCESS의 업무 TX에 UUID 저장 후 commit 뒤 실제 send이며 실패/UNKNOWN/rollback/중복 적용에서는 새 사건 없음.
 - APPLIED인 확정 실패에서도 발행 없음. 성공 CAS 경합 패배자/재시도 rollback에서도 거짓 발행 없음.
 - 별도 TX 조회로 commit을 확인한다. after-commit의 active 플래그만 보지 않는다.
 - 전송 호출 예외/future 실패 후에도 주문 CONFIRMED·예약 CONSUMED·PG 거래 수·기존 응답은 유지된다.
@@ -121,6 +131,7 @@ W6 revision과 테스트 bootstrap 실행 방법을 함께 고정해 R03에서�
 
 - root bootstrap 주소가 admin/producer/consumer에 동일하게 주입되는지 확인한다.
 - 실제 consumer config의 deserializer·enable.auto.commit·ack mode·error handler를 검사한다.
+- DLQ send-result 확인과 원본 offset의 연결, 격리 실패 시 미진행/중단을 실제 broker에서 검사한다.
 - API/streamer의 demo 비활성화와 전용 factory 선택, 앱 이름·포트·보존 프로필을 확인한다.
 - 계약 검사를 위해 앱 간 runtime 의존성이나 새 공통 Java 계약 모듈을 추가하지 않았는지 확인한다.
 - streamer에 Checkstyle·기존 계층/ordering domain 순수성 gate를 연결하고 실제 새 클래스를 검사한다.

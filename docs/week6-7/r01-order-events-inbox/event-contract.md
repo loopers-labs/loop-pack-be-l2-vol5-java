@@ -1,7 +1,7 @@
 # R01 이벤트 계약 · OrderConfirmed v1
 
 이 문서는 [상세 설계](plan.md)의 추천안을 풀어 쓴 wire/identity 초안이다. 아직 runtime에 연결한 계약 구현은 없다.
-사용자는 앱별 DTO·createdAt 재사용·snapshot 비교를 확정했다. eventId 생성·호환성 선택은 [트레이드오프 논의](trade-offs.md) 중이다.
+사용자는 앱별 DTO·createdAt 재사용·snapshot 비교·최초 UUID 저장·추가 필드 무시를 [확정](trade-offs.md)했다.
 
 ## 형식
 
@@ -14,7 +14,7 @@
 {
   "eventType": "OrderConfirmed",
   "schemaVersion": 1,
-  "eventId": "order-confirmed:v1:42",
+  "eventId": "e321d56a-59b3-4cf1-a7d0-6238451af280",
   "orderId": 42,
   "confirmedAt": "2026-11-04T01:00:00.123456Z",
   "items": [
@@ -32,24 +32,29 @@
 |---|---|
 | eventType | 정확히 OrderConfirmed |
 | schemaVersion | JSON 정수 1 |
-| eventId | 1~128자 ASCII 영숫자와 `:._-`만 허용. 앞뒤 공백을 보정하지 않음 |
+| eventId | 최초 확정 TX에 저장한 UUID의 소문자 표준 36자 표현. 공백/비표준 축약 표현을 보정하지 않음 |
 | orderId | JSON 정수 1~Long.MAX_VALUE. 문자열/소수/범위 밖/null 거절 |
 | confirmedAt | Z 또는 UTC offset이 있는 ISO-8601 문자열. UTC Instant로 비교. 마이크로초보다 작은 유효 값은 거절 |
 | items | 비어 있지 않은 JSON 배열. 각 요소는 productId·quantity를 가진 object |
 | productId | JSON 정수 1~Long.MAX_VALUE |
 | quantity | JSON 정수 1~Integer.MAX_VALUE. 같은 상품의 합산 결과도 int 범위 안이어야 함 |
 
-중복 JSON key·알 수 없는 필드·누락/null·암묵적인 숫자 변환·단일 object에서 배열로의 자동 변환을 거절한다.
+같은 v1의 알려지지 않은 추가 필드는 무시한다. 최상위와 품목 object에 같은 원칙을 적용한다.
+알려진 필드의 누락/null·잘못된 타입·중복 JSON key·암묵적 숫자 변환·단일 object의 배열 변환은 거절한다.
 올바른 type/version이 확인되지 않은 record를 기존 계약의 이벤트로 처리하지 않는다.
 
 ## 사건 ID와 시각
 
-producer는 최초 PG 확정 주문에서 `order-confirmed:v1:{orderId}`를 만든다.
-같은 DB의 한 주문은 확정 사건이 하나라는 기존 규칙을 이용하며 eventId 별도 컬럼은 추가하지 않는다.
-테스트·서로 다른 DB 환경은 topic/group도 격리한다. 독립 DB가 같은 topic에 같은 orderId를 발행하는 다중 원본은 이번 범위가 아니다.
+producer는 최초 PG 성공의 내부 확정 TX에서 UUID를 생성하고 order_records.confirmation_event_id에 저장한다.
+주문 CONFIRMED·예약 소비·확정 기록·UUID가 함께 commit/rollback된다. 생성기는 테스트에서 고정할 수 있게 분리한다.
+기존 완료 주문의 중복 callback/reconcile은 저장한 UUID를 그대로 사용하며 전송 시도 때 새로 만들지 않는다.
+확정 TX가 rollback한 미저장 후보 UUID는 사건이 아니다. 재시도 후 실제 commit된 UUID가 최초 사건 identity다.
+consumer도 eventId와 orderId의 유일성을 각각 보호해 같은 주문의 다른 UUID는 충돌로 처리한다.
+테스트·서로 다른 DB 환경은 topic/group을 격리한다. 독립 DB의 orderId 충돌은 UUID만으로 해결했다고 보지 않는다.
 
-consumer는 eventId가 이 문자열 공식과 같다는 가정으로 dedup하지 않는다.
-올바른 형식의 다른 eventId가 같은 orderId로 들어오면 Inbox의 업무 유일성과 충돌 비교에서 차단한다.
+기존 POINT와 과거 PG 기록을 보존하기 위해 새 컬럼은 nullable·unique로 추가한다.
+신규 PG 확정 생성 경로는 UUID를 필수로 요구한다. 과거 PG의 null을 현재 UUID로 임의 채우거나 자동 소급 발행하지 않는다.
+복구 시 저장 identity가 부족하면 새 UUID로 같은 과거 사건인 척하지 않고 원인과 대상을 드러낸다.
 
 confirmedAt은 외부 PG 완료/조회 시각이나 consumer 수신 시각이 아니라 최초 내부 CONFIRMED 전이의 저장 시각이다.
 기존 order_records.created_at을 재사용한다.
@@ -70,6 +75,7 @@ DB의 datetime(6)과 이벤트에 같은 값을 저장한다. 나노초 값 전�
 3. productId 오름차순으로 정렬하고 불변 list로 만든다.
 4. 시각은 UTC Instant로 표현한다. JSON 문자열의 Z/다른 offset 표현이 같은 Instant라면 같은 값이다.
 5. eventType·schemaVersion·eventId·orderId·confirmedAt·정규화 items를 모두 비교한다.
+6. 알려지지 않은 추가 필드는 소비 snapshot과 같은 사실 비교에 포함하지 않는다.
 
 JSON 속성/품목 순서와 공백은 사실의 identity가 아니다. raw bytes 비교나 원문 JSON 문자열 비교는 사용하지 않는다.
 Kafka topic/partition/offset·전송 시도·receivedAt·processedAt은 이 비교에서 제외한다.
@@ -79,6 +85,7 @@ Kafka topic/partition/offset·전송 시도·receivedAt·processedAt은 이 비�
 | 같은 envelope, 품목 순서만 다름 | 같은 사실 |
 | 상품 7×1 두 품목과 상품 7×2 한 품목 | 같은 사실 |
 | 다른 timezone 문자열, 같은 Instant | 같은 사실 |
+| 같은 알려진 필드에 모르는 메타데이터만 추가/변경 | 같은 소비 사실 |
 | 같은 eventId, 다른 주문/수량/시각 | 충돌 |
 | 같은 orderId, 다른 eventId | 충돌 |
 | 같은 상품, 서로 다른 orderId와 eventId | 서로 다른 정상 구매 |
@@ -92,5 +99,6 @@ HTTP 전역 ObjectMapper의 느슨한 설정을 수정하지 않고 이벤트 �
 parser는 엄격한 JSON tree 검증 후 계약 객체를 만든다. 저장 snapshot 복원도 같은 필수 조건을 확인한다.
 
 producer 직렬화 결과를 consumer parser에 넣는 wire 검증과 실제 broker 경로를 모두 둔다.
-v1의 필수 값·의미를 바꾸거나 필드를 추가할 때는 현재 unknown-field 거절 정책과 호환성을 먼저 검토한다.
+같은 v1의 모르는 추가 필드는 무시하되, 알려진 필드의 값/의미 변경을 추가 필드로 숨기지 않는다.
+새 필드를 구매 사실의 의미로 사용하려면 버전·기존 snapshot·호환성 정책을 함께 설계한다.
 이 과제에서는 v2를 자동 수용하지 않는다. 새 계약 지원 전에는 오류 record를 성공 처리하지 않는다.

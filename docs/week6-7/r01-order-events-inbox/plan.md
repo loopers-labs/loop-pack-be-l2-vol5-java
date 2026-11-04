@@ -3,7 +3,9 @@
 2026-11-04 (Asia/Seoul). 현재 단계는 **사용자와 선택을 논의 중인 설계 초안이며 업무 코드는 미구현**이다.
 이전 커밋에서 추천안을 확정처럼 기록한 점을 사용자 지적에 따라 바로잡는다.
 사용자가 확정한 항목과 아직 제안인 항목은 [트레이드오프와 질문](trade-offs.md)에서 구분한다.
-T01 앱별 DTO, T02 기존 createdAt 재사용, T03 snapshot 필드 비교를 확정했다. 나머지 주요 선택은 논의 중이다.
+T01 앱별 DTO, T02 기존 createdAt, T03 snapshot 비교, T04 최초 UUID 저장,
+T05 추가 필드 무시, T06 제한 재시도·DLQ 확인 후 offset 진행·DLQ 중복 허용을 사용자와 확정했다.
+구체 패키지/설정 숫자 등은 아래 구현 제안으로 구분하며 아직 업무 코드에 적용하지 않았다.
 기준 브랜치는 `volume-6-7/r01-order-events-inbox`, 출발 준비 커밋은 `00c2069`다.
 [통합 요구사항](../total_requirement.md)과 사용자의 Inbox 추가 조건을 따른다.
 
@@ -11,6 +13,7 @@ T01 앱별 DTO, T02 기존 createdAt 재사용, T03 snapshot 필드 비교를 �
 - [Inbox 저장 설계](persistence.md): 테이블·원자성·동시 중복·충돌
 - [검증 계획](verification.md): 기능별 검사와 W6 재현 자료
 - [트레이드오프와 질문](trade-offs.md): 요구사항의 고정 조건과 아직 합의하지 않은 설계 선택
+- [재시도·DLQ](retry-dlq.md): 실패 분류·격리 확인·offset·같은 사건 재처리
 
 ## 1. 기존 코드에서 확인한 사실
 
@@ -33,7 +36,7 @@ T01 앱별 DTO, T02 기존 createdAt 재사용, T03 snapshot 필드 비교를 �
 | 항목 | 선택 |
 |---|---|
 | 계약 코드 · T01 확정 | 앱별 독립 DTO와 정규화 코드. 공통 JSON fixture·wire 검사로 일치 보장 |
-| 사건 ID | `order-confirmed:v1:{orderId}`로 안정적 유도. 전송용 UUID/시각을 사용하지 않음 |
+| 사건 ID · T04 확정 | 최초 확정 TX에 UUID를 생성·저장하고 재발행/복구에서 재사용 |
 | confirmedAt · T02 확정 | PG 성공을 내부 확정한 order_records.created_at, UTC·마이크로초 정밀도 |
 | R01 발행 | 공통 업무 TX에서 immutable 사건 발행 등록 → AFTER_COMMIT 어댑터에서 Kafka send |
 | 소비 사실 소유 | streamer의 기존 `ordering` context에 Inbox·상품 구매 활동 배치 |
@@ -41,10 +44,11 @@ T01 앱별 DTO, T02 기존 createdAt 재사용, T03 snapshot 필드 비교를 �
 | 사실 비교 · T03 확정 | 정규화 snapshot의 필드 비교. hash-only 또는 별도 hash 컬럼을 추가하지 않음 |
 | 동시 중복 | named DB 유일 제약, 실패 TX rollback 뒤 새 TX에서 기존 사실 검증 |
 | Listener | 전용 record factory, MANUAL_IMMEDIATE, concurrency 1, DB 완료 후 같은 스레드에서 ack |
-| 오류 | 소비 중단·원인 노출·복구 후 같은 group 재시작. skip/DLQ 자동 완료 없음 |
+| 추가 필드 · T05 확정 | 같은 v1의 모르는 필드는 무시, 알려진 필수 계약은 엄격 검증 |
+| 오류 · T06 확정 | 제한 재시도 후 DLQ 확인 → 원본 offset 진행, DLQ 중복 허용, 업무 완료와 구분 |
 
-T01~T03만 사용자 확정 사항이다. 나머지 표의 값은 아직 추천안이며 하위 문서도 그 가정으로 작성한 초안이다.
-T04~T06 등의 선택지와 비용을 논의한 뒤 관련 문서와 검사 기대값을 확정한다.
+T01~T06은 사용자 확정 사항이다. 전용 factory·기술적 수치·클래스 배치 등은 구현 제안이다.
+초기 제안값과 향후 실제 구현/검증 결과를 사용자 확정 사항과 혼동하지 않는다.
 
 ## 3. 모듈과 책임
 
@@ -109,8 +113,9 @@ Inbox는 구매 활동 소비 전용이다. 미래의 다른 consumer가 같은 
 ApplyOrderPaymentService.apply [기존 업무 TX]
   기존 시도 잠금·상태 검사
   최초 SUCCESS인지 확인
+  사건 UUID 생성
   Clock으로 UTC·마이크로초 시각 결정
-  주문 CAS + PG OrderRecord 저장/flush
+  주문 CAS + PG OrderRecord(createdAt·사건 UUID) 저장/flush
   StockAdjustment 소비 + task APPLIED
   주문을 저장소에서 다시 읽어 고정 snapshot 구성
   ApplicationEventPublisher로 사건 등록
@@ -124,7 +129,8 @@ AFTER_COMMIT listener
 - completed 조기 반환·CAS 실패·PENDING/UNKNOWN·확정 실패에서는 사건을 등록하지 않는다.
 - TX 뒤늦은 실패/rollback이면 등록한 사건도 AFTER_COMMIT으로 전달되지 않아야 한다.
 - 새 Clock은 확정 사건 시각에만 사용한다. 기존 PG 재시도 시간 체계를 함께 리팩터링하지 않는다.
-- 기존 `paidByPg`에 시각을 명시하는 생성 경로와 Mapper 반영을 추가한다. POINT의 기존 생성/조회는 보존한다.
+- 기존 `paidByPg`에 시각·UUID를 명시하는 신규 생성 경로와 Mapper 반영을 추가한다. POINT의 기존 생성/조회는 보존한다.
+- UUID는 주문 확정 기록에 같은 TX로 저장한다. 과거 PG/POINT의 null을 자동 채우거나 소급 발행하지 않는다.
 - after-commit에서 lazy entity를 읽거나 DB로 완료 표식을 쓰지 않는다.
 - 발행 동기 예외/future 실패는 발행 결과로 노출하며 결제 상태·복구 작업·PG create에 전파하지 않는다.
 - send 호출은 metadata 준비로 잠깐 대기할 수 있다. R01은 이 응답 지연과 누락 구간을 허용·관찰한다.
@@ -150,7 +156,7 @@ AFTER_COMMIT listener
 | offset commit | syncCommits=true, syncCommitTimeout=5초 |
 | poll | max.poll.records=1, fetch.min.bytes=1, fetch.max.wait.ms=100, max.poll.interval.ms=120000 |
 | 최초 group 시작 | auto.offset.reset=earliest. 보존 범위 밖 데이터 복원 보장은 아님 |
-| 오류 | CommonContainerStoppingErrorHandler, 선택한 handler의 실제 ack/중단 결과 검사 |
+| 오류 | DefaultErrorHandler·확인형 DeadLetterPublishingRecoverer, 재시도 후 DLQ 성공일 때만 recovered offset 진행 |
 
 값은 R01 학습용 초기값이며 처리량 최적화 결과가 아니다. producer 대기 값의 합을 절대적인 전체 HTTP 제한이라고 표현하지 않는다.
 단일 broker에서 acks=all을 확인해도 다중 broker 내구성을 증명한 것은 아니다.
@@ -171,7 +177,8 @@ Kafka transaction manager로 DB와 offset을 원자화했다고 표현하지 않
 - event-lab에는 DB/Kafka 및 기존에 로드되는 Redis 설정도 명시한다. local의 ddl-auto=create와 섞지 않는다.
 
 Spring 문서에서 manual 모드 중단 시 이미 ack한 offset은 commit될 수 있다.
-실패 record와 뒤 record를 ack하지 않고 해당 partition의 실제 committed offset으로 검증한다.
+listener는 실패 record를 ack하지 않는다. DLQ 격리 성공 뒤에는 별도의 recovered offset 경로로 진행할 수 있다.
+원본 위치/구매 활동/격리 결과와 실제 committed offset을 구분해 검증한다. 자세한 정책은 [재시도·DLQ](retry-dlq.md)를 따른다.
 근거: [3.3 listener containers](https://docs.spring.io/spring-kafka/reference/3.3/kafka/receiving-messages/message-listener-container.html),
 [3.3 error handling](https://docs.spring.io/spring-kafka/reference/3.3/kafka/annotation-error-handling.html).
 온라인 3.3/6.2 문서는 해당 minor의 최신 patch를 보여 주므로 구현 시 현재 BOM의 실제 버전과 관련 테스트를 최종 기준으로 삼는다.
@@ -184,8 +191,9 @@ Spring 문서에서 manual 모드 중단 시 이미 ack한 offset은 commit될 �
 - 소비는 같은 식별자·record 위치·CREATED/ALREADY_PROCESSED/충돌/실패를 구분한다.
 - parser 실패 로그는 원문 payload나 JSON 라이브러리의 입력 snippet/cause 메시지를 그대로 출력하지 않는다.
   검증된 식별자 또는 record 위치·사유 코드만 남긴다.
-- 오류 record를 성공 처리하지 않는다. 소비 중단 뒤 원인 수정·같은 group 재시작을 안내한다.
-- 잘못된 사실을 같은 eventId의 다른 payload로 덮어써 해결하지 않는다. 임의 skip/offset 이동은 R01 복구 절차에 없다.
+- 오류 record는 제한 재시도 후 DLQ로 격리한다. DLQ 실패면 원본 offset을 유지하고 중단·원인 노출 후 재개한다.
+- 격리 사건은 미해결이다. 같은 UUID·key·payload를 유지해 명시적으로 재처리하며 정상 사건의 업무 중복은 Inbox가 막는다.
+- 잘못된 사실을 같은 UUID의 다른 payload로 덮어써 해결하지 않는다. 임의 skip/offset 이동은 복구 절차에 없다.
 
 ## 7. 구현 순서와 다음 단계
 

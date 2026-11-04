@@ -19,17 +19,18 @@
 
 ## 다음 작업
 
-사용자가 질문·트레이드오프 논의 누락을 지적했다. R01 문서는 추천 초안이며 확정안이 아니다.
-[트레이드오프와 질문](r01-order-events-inbox/trade-offs.md)의 T01~T03은 사용자 답변을 반영했다.
+사용자가 요청한 트레이드오프 논의를 진행했고 [T01~T06 답변](r01-order-events-inbox/trade-offs.md)을 설계에 반영했다.
 앱별 DTO/JSON 계약 검사·createdAt 재사용·snapshot 필드 비교이며 공통 계약 모듈은 제외한다.
-사건 ID·추가 필드 호환·오류 대응(T04~T06)은 두 번째 질문의 답변 대기다.
-답변 후 문서의 나머지 추천 가정을 정리한다. 미합의 선택에 의존한 구현은 진행하지 않는다.
+최초 UUID는 확정 TX의 OrderRecord에 저장하고 재발행/복구에서 재사용한다. 모르는 추가 필드는 무시한다.
+오류는 제한 재시도 후 DLQ 격리, 전송 확인 후 원본 offset 진행·DLQ 중복 허용이다.
+[재시도·DLQ 설계](r01-order-events-inbox/retry-dlq.md)의 수치/수동 재처리 도구는 구현 초기값 제안이다.
+다음 구현은 앱별 DTO·같은 JSON 계약 검사·UUID/시각 저장부터 시작한다. 중요한 추가 선택은 구현 전에 설명한다.
 업무 코드는 아직 구현하지 않았다. 구현에 들어가면 작은 기능 단위 TDD와 전체 TX/DB 제약 보호를 유지한다.
 기능 변경은 기존 세 관점 서브에이전트 리뷰 규칙을 따른다. 이번 문서 작업에는 해당 독립 리뷰를 실행하지 않았다.
 
 최종 구조는 Outbox지만 W6 직접 발행 A(누락)·B(소비 완료)의 실제 준비 경로를 보존해야 한다.
 제품 우회 스위치나 Outbox 삭제로 이 조건을 만들지 않는다.
 
-초기 fixture 연결 성공은 업무 기능 완료가 아니다. Inbox·Outbox·relay·실제 업무 listener와 W6/W7 실험은 남아 있다.
+초기 fixture 연결 성공은 업무 기능 완료가 아니다. Inbox·Outbox·relay·DLQ·실제 업무 listener와 W6/W7 실험은 남아 있다.
 사용자의 `docs/week4/r01-product-list-index/jmeter/product-list-ui.jmx` 수정은 보존하고 staging하지 않는다.
 출발 커밋이 삭제한 과거 `docs/week5/handoff.md`도 복원하지 않는다. 이번 인계는 새로운 경로를 사용한다.

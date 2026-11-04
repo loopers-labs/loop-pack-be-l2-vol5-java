@@ -15,10 +15,24 @@ Inbox와 활동은 append-only 사실이며 정상 재수신은 기존 행을 �
 
 ## 테이블과 제약
 
+### 원본 확정 사건 UUID · API 소유
+
+```sql
+ALTER TABLE order_records
+    ADD COLUMN confirmation_event_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
+    ADD CONSTRAINT uk_order_records_confirmation_event_id UNIQUE (confirmation_event_id);
+```
+
+기존 POINT/과거 PG 행은 null을 유지한다. 신규 PG 확정은 domain/application에서 UUID를 필수로 요구한다.
+모든 기존 행을 NOT NULL로 바꾸거나 기존 PG 사건의 identity를 새로 추측하지 않는다.
+OrderRecord·Entity·Mapper가 UUID를 생성 후 불변으로 보존한다. R02 Outbox도 이 저장 UUID를 그대로 사용한다.
+
+### 소비 사실 · Streamer 소유
+
 ```sql
 CREATE TABLE order_confirmation_inbox (
     id BIGINT NOT NULL AUTO_INCREMENT,
-    event_id VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    event_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     order_id BIGINT NOT NULL,
     event_type VARCHAR(40) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     schema_version INT NOT NULL,
@@ -48,9 +62,10 @@ CREATE TABLE product_purchase_activities (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
-- DB 유일 비교는 eventId의 대소문자까지 보존한다. 애플리케이션에서 trim/lowercase로 다른 ID를 합치지 않는다.
+- UUID는 표준 소문자 형식으로 생성/검증한다. 잘못된 표현을 임의 보정해 다른 입력과 합치지 않는다.
 - surrogate PK는 JPA insert/활동 연결에 쓰고 사건 identity는 event_id, 업무 identity는 order_id로 보호한다.
 - normalized_payload에는 정규화한 v1 snapshot을 저장한다. 복원한 필드를 비교하며 hash-only 판단을 하지 않는다.
+- snapshot에는 알려진 계약 필드만 포함한다. 추가 메타데이터가 달라도 동일한 소비 사실이면 no-op이다.
 - payload의 identity/시각과 중복 컬럼이 맞는지는 Mapper 복원/생성에서 검사한다. 불일치를 중복으로 숨기지 않는다.
 - processedAt은 처리 TX에서 정한 UTC·마이크로초 시각이다. DB의 정확한 commit 시각을 뜻하지 않는다.
 - order/product 원본 테이블에는 FK를 걸지 않는다. 삭제된 상품과 현재 원본 조회에 소비가 의존하지 않게 한다.
@@ -70,11 +85,13 @@ CREATE TABLE product_purchase_activities (
       └─ rollback → 이번 TX의 Inbox/활동 모두 없음
 
 완료된 같은 사실 재수신 → no-op → ack 가능
-완료 기록과 다른 사실 수신 → 충돌 → ack 금지
+완료 기록과 다른 사실 수신 → 충돌 → listener ack 금지, DLQ 격리 경로
 ```
 
 commit 후 offset ack가 실패해도 DB 결과는 유지한다. 재수신에서 같은 완료 사실을 확인한 뒤 다시 ack한다.
 활동만 지우거나 Inbox만 지워 재처리를 준비하는 운영 도구는 만들지 않는다.
+실패 사건을 DLQ로 옮긴 뒤 원본 offset을 진행하는 것은 구매 완료 ack와 구분한다.
+DLQ만 전송된 사건에는 완료 Inbox/활동을 만들지 않는다. 세부는 [재시도·DLQ](retry-dlq.md)를 따른다.
 
 ## 신규·중복 처리 알고리즘
 
@@ -138,7 +155,8 @@ constraint 정보를 확인하지 못하거나 rollback이 실패했다면 성�
 | eventId와 orderId가 서로 다른 기존 행을 가리킴 | 충돌 |
 | payload 복원 불가/컬럼 불일치 | 저장 사실 손상으로 오류 |
 
-충돌은 새 구매가 아니다. 기존 snapshot/활동을 덮어쓰거나 보정하지 않고 소비를 중단한다.
+충돌은 새 구매가 아니다. 기존 snapshot/활동을 덮어쓰거나 보정하지 않고 DLQ로 격리해 원인을 노출한다.
+DLQ 발행 확인 전에는 원본 offset을 진행하지 않는다. 격리도 실패하면 해당 소비를 중단해 원본을 보존한다.
 
 ## 보존과 이후 복구
 
