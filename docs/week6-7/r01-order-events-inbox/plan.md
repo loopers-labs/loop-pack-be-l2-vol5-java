@@ -1,8 +1,9 @@
 # R01 상세 설계 · 주문 확정 이벤트와 Consumer Inbox
 
-2026-11-04 (Asia/Seoul). 현재 단계는 **사용자 논의 전 설계 초안이며 업무 코드는 미구현**이다.
+2026-11-04 (Asia/Seoul). 현재 단계는 **사용자와 선택을 논의 중인 설계 초안이며 업무 코드는 미구현**이다.
 이전 커밋에서 추천안을 확정처럼 기록한 점을 사용자 지적에 따라 바로잡는다.
-아래 선택·값·DDL·구현 순서는 제안이며, [트레이드오프와 질문](trade-offs.md)에서 사용자 선택을 반영한 뒤 확정한다.
+사용자가 확정한 항목과 아직 제안인 항목은 [트레이드오프와 질문](trade-offs.md)에서 구분한다.
+T01 앱별 DTO, T02 기존 createdAt 재사용, T03 snapshot 필드 비교를 확정했다. 나머지 주요 선택은 논의 중이다.
 기준 브랜치는 `volume-6-7/r01-order-events-inbox`, 출발 준비 커밋은 `00c2069`다.
 [통합 요구사항](../total_requirement.md)과 사용자의 Inbox 추가 조건을 따른다.
 
@@ -27,49 +28,49 @@
 
 원문의 '예약 소비'는 기존 StockAdjustment.DEDUCTED → CONSUMED 전이다. 상품 재고를 새로 차감하는 작업이 아니다.
 
-## 2. 추천 설계안 · 사용자 미확정
+## 2. 사용자 선택과 나머지 추천안
 
 | 항목 | 선택 |
 |---|---|
-| 공유 계약 | 새 `contracts:commerce-events`의 순수 Java v1 record |
+| 계약 코드 · T01 확정 | 앱별 독립 DTO와 정규화 코드. 공통 JSON fixture·wire 검사로 일치 보장 |
 | 사건 ID | `order-confirmed:v1:{orderId}`로 안정적 유도. 전송용 UUID/시각을 사용하지 않음 |
-| confirmedAt | PG 성공을 내부 확정한 order_records.created_at, UTC·마이크로초 정밀도 |
+| confirmedAt · T02 확정 | PG 성공을 내부 확정한 order_records.created_at, UTC·마이크로초 정밀도 |
 | R01 발행 | 공통 업무 TX에서 immutable 사건 발행 등록 → AFTER_COMMIT 어댑터에서 Kafka send |
 | 소비 사실 소유 | streamer의 기존 `ordering` context에 Inbox·상품 구매 활동 배치 |
 | Inbox 상태 | commit된 행은 처리 완료. RECEIVED/PROCESSING 선행 저장 없음 |
-| 사실 비교 | 정규화 snapshot의 필드 비교. fingerprint는 필수로 추가하지 않음 |
+| 사실 비교 · T03 확정 | 정규화 snapshot의 필드 비교. hash-only 또는 별도 hash 컬럼을 추가하지 않음 |
 | 동시 중복 | named DB 유일 제약, 실패 TX rollback 뒤 새 TX에서 기존 사실 검증 |
 | Listener | 전용 record factory, MANUAL_IMMEDIATE, concurrency 1, DB 완료 후 같은 스레드에서 ack |
 | 오류 | 소비 중단·원인 노출·복구 후 같은 group 재시작. skip/DLQ 자동 완료 없음 |
 
-이 표는 작성자의 추천안이며 사용자 확정 사항이 아니다. 하위 문서도 같은 가정으로 작성한 초안이다.
-먼저 선택지의 비용을 설명하고 사용자와 논의한 뒤 이 문서와 관련 검사 기대값을 확정한다.
+T01~T03만 사용자 확정 사항이다. 나머지 표의 값은 아직 추천안이며 하위 문서도 그 가정으로 작성한 초안이다.
+T04~T06 등의 선택지와 비용을 논의한 뒤 관련 문서와 검사 기대값을 확정한다.
 
 ## 3. 모듈과 책임
 
 ```text
-contracts:commerce-events  ← commerce-api
-                          ← commerce-streamer
+commerce-api      [producer DTO·codec] → modules:kafka / modules:jpa
+                    ↓ JSON 계약과 broker
+commerce-streamer [consumer DTO·parser] → modules:kafka / modules:jpa
 
-commerce-api      → modules:kafka / modules:jpa
-commerce-streamer → modules:kafka / modules:jpa
+두 앱의 계약 검사 ← 같은 JSON fixture
 ```
 
 두 앱 사이 runtime 의존성은 만들지 않는다. `modules:kafka`에는 topic/key 전송 기술만 두고 주문 계약을 넣지 않는다.
 
-### 공통 계약
+### 앱별 계약 코드 · 사용자 T01 선택
 
-`contracts:commerce-events`는 OrderConfirmedV1·ItemV1, 고정 type/version과 계약 정규화 규칙을 소유한다.
-패키지는 `com.loopers.contracts.ordering`이며 Spring·JPA·Jackson·앱 domain에 의존하지 않는다.
-JSON codec은 각 앱의 경계 어댑터가 담당한다. collection은 방어 복사하며 계약 객체는 불변이다.
+공통 계약 모듈을 추가하지 않는다. root Gradle을 새 contracts 그룹에 맞춰 나누는 변경도 제외한다.
+API는 application.ordering.event에 OrderConfirmedEvent·Item을, streamer는 interfaces.consumer.ordering.dto에
+OrderConfirmedMessage·Item을 둔다. 두 앱의 DTO/정규화 코드는 독립적으로 관리한다.
+domain에는 wire DTO·Spring/Jackson 의존성을 넣지 않고 Command를 통해 순수 사실로 변환한다.
+infrastructure의 snapshot codec도 interfaces DTO를 참조하지 않고 domain 사실을 직접 저장/복원한다.
 
-현재 root Gradle은 모든 subproject에 Boot starter를 추가한다. 구현 시 contracts 그룹은 그 적용에서 제외하고
-Java 21/java-library와 테스트에 필요한 설정만 연결한다. 테스트 버전은 기존 Boot BOM을 test platform으로 재사용할 수 있다.
-실제 runtimeClasspath에 framework 의존성이 없는지도 검사한다. apps/modules/supports의 기존 설정은 유지한다.
-
-독립 DTO 두 벌은 새 모듈 변경을 줄이지만 producer/consumer 계약 드리프트를 늘린다.
-이번에는 같은 저장소에서 함께 변경하는 v1 계약 하나이므로 공통 계약을 선택한다.
-공유 DTO가 있다고 wire JSON·직렬화·호환성 검사를 생략하지 않는다.
+코드 공유가 줄어드는 대신 계약 불일치 위험을 테스트로 관리한다.
+R01의 `fixtures/` 아래 같은 JSON을 두 앱의 test resources로 연결해 classpath에서 읽는다.
+작업 디렉터리나 서로의 main 코드에 의존하지 않고 필드·숫자·시각·정규화 기대값을 대조하고,
+실제 producer bytes가 실제 streamer parser를 통과하는 broker 연결 검사도 수행한다.
+공통 JSON은 테스트 입력/계약 문서이며 앱 간 runtime 코드 의존성이 아니다.
 
 ### API 측
 
@@ -77,7 +78,7 @@ Java 21/java-library와 테스트에 필요한 설정만 연결한다. 테스트
 |---|---|
 | application.ordering.service.ApplyOrderPaymentService | 기존 최초 성공 확정 TX와 사건 등록 |
 | application.ordering.event.OrderConfirmationFactory | 저장된 CONFIRMED·PG 기록과 품목에서 v1 snapshot 생성 |
-| application.ordering.gateway.OrderConfirmationPublisher | CompletionStage 기반 전송 포트. 결과는 topic/partition/offset |
+| application.ordering.gateway.OrderConfirmationPublisher | API의 OrderConfirmedEvent를 받는 CompletionStage 전송 포트. 결과는 topic/partition/offset |
 | infrastructure.messaging.ordering.OrderConfirmedPublicationListener | AFTER_COMMIT 수신, 전송 호출·성공/실패 관찰 |
 | infrastructure.messaging.ordering.KafkaOrderConfirmationPublisher | 전용 String/byte[] template, JSON bytes와 broker future 연결 |
 
@@ -188,7 +189,7 @@ Spring 문서에서 manual 모드 중단 시 이미 ack한 offset은 commit될 �
 
 ## 7. 구현 순서와 다음 단계
 
-1. 공통 v1 계약·정규화·명시 확정 시각의 작은 단위 테스트부터 작성한다.
+1. 앱별 v1 DTO·정규화·공통 JSON 검사와 명시 확정 시각의 작은 단위 테스트부터 작성한다.
 2. Inbox·활동 domain/Entity/Repository와 실제 MySQL 원자성·경합 검사를 구현한다.
 3. UseCase/Facade와 record listener·정확한 오류/ack 설정을 연결한다.
 4. API의 최초 성공 사건 등록·AFTER_COMMIT producer와 PG 회귀를 연결한다.

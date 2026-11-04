@@ -1,7 +1,7 @@
 # R01 이벤트 계약 · OrderConfirmed v1
 
 이 문서는 [상세 설계](plan.md)의 추천안을 풀어 쓴 wire/identity 초안이다. 아직 runtime에 연결한 계약 구현은 없다.
-공유 위치·eventId 생성·시각 저장·호환성 선택은 [트레이드오프 논의](trade-offs.md) 후 확정한다.
+사용자는 앱별 DTO·createdAt 재사용·snapshot 비교를 확정했다. eventId 생성·호환성 선택은 [트레이드오프 논의](trade-offs.md) 중이다.
 
 ## 형식
 
@@ -86,7 +86,8 @@ Kafka topic/partition/offset·전송 시도·receivedAt·processedAt은 이 비�
 
 ## Codec와 스키마 변경
 
-공통 record는 순수 Java 구조와 정규화만 소유한다. API producer와 streamer parser가 JSON codec을 각각 가진다.
+사용자 T01 선택에 따라 API producer DTO와 streamer consumer DTO·정규화·codec을 독립적으로 둔다.
+공통 계약 Java 모듈은 만들지 않고 같은 JSON fixture와 wire 검증으로 두 앱의 계약을 맞춘다.
 HTTP 전역 ObjectMapper의 느슨한 설정을 수정하지 않고 이벤트 전용 codec을 사용한다.
 parser는 엄격한 JSON tree 검증 후 계약 객체를 만든다. 저장 snapshot 복원도 같은 필수 조건을 확인한다.
 

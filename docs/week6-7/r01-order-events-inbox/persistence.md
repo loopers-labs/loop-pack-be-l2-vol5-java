@@ -1,7 +1,7 @@
 # R01 Inbox·상품 구매 활동 저장 설계
 
 [상세 설계](plan.md) · [이벤트 계약](event-contract.md). 아래는 설계 DDL이며 DB에 적용하지 않았다.
-snapshot 저장·구체 컬럼·처리 정책은 [사용자 논의 전 추천안](trade-offs.md)이다. 확정된 DB 설계로 취급하지 않는다.
+snapshot 저장·필드 비교는 사용자 T03 선택으로 확정했다. 구체 컬럼·나머지 처리 정책은 [논의 중인 설계](trade-offs.md)다.
 
 ## 저장 책임
 

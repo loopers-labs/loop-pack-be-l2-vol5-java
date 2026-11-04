@@ -9,6 +9,7 @@
 | 원격 확인 | fetch 후 `origin/volume-5/main`은 `0e4005defb700197bd94bd95e066aa79a2218e9e` |
 | 통합 기준 브랜치 | `volume-6-7/main` |
 | 사용자 확정 | 6~7주차를 함께 진행하고 consumer Inbox까지 적용 |
+| R01 사용자 선택 | 앱별 DTO와 JSON 계약 검사, 기존 확정 기록 createdAt 재사용, 정규화 snapshot 필드 비교 |
 | 최종 구조 | 주문 확정과 Outbox 원자적 저장 → 단일 relay → Kafka → Inbox와 구매 활동 원자적 저장 |
 | 현재 상태 | 초기 준비 완료. R01 설계는 사용자 트레이드오프 논의 전 초안이며 업무 기능은 미구현 |
 

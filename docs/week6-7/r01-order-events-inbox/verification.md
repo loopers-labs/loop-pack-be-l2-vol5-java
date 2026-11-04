@@ -8,14 +8,15 @@
 
 | 예정 검사 | 핵심 기대 |
 |---|---|
-| OrderConfirmedContractTest | 정수 범위/양수/빈 품목/불변 list, 합산과 overflow, 정렬 |
+| 앱별 OrderConfirmedContractTest | 같은 JSON fixture로 정수 범위/양수/빈 품목/불변 list, 합산과 overflow, 정렬 |
 | OrderConfirmedWireContractTest | 실제 producer bytes → 실제 parser → 같은 고정 사실 |
 | Parser 실패 | 누락/null/unknown/중복 JSON key·잘못된 숫자 타입·잘못된 key·지원 밖 type/version·세밀한 시각 거절 |
 | 이벤트 동등성 | 속성/품목 순서·중복 상품 합산·timezone 표현이 달라도 같은 사실 |
 | 확정 시각 저장 | 고정 Clock의 마이크로초 값을 DB에서 새로 읽어 event confirmedAt과 정확히 비교 |
 | 기존 사실 보존 | 중복 callback/reconcile과 이전 POINT의 기록·시각 불변 |
 
-공통 계약을 공유해도 두 codec의 wire 검사를 생략하지 않는다. 공유 record 객체를 두 번 호출하는 검사로 대체하지 않는다.
+앱별 DTO·정규화는 코드가 공유되지 않으므로 두 codec을 같은 JSON fixture로 검사한다.
+실제 producer bytes를 실제 consumer parser가 읽는 검사를 별도로 유지해 양쪽 테스트가 따로 통과하는 것만으로 완료하지 않는다.
 
 ## Inbox·구매 활동
 
@@ -121,10 +122,10 @@ W6 revision과 테스트 bootstrap 실행 방법을 함께 고정해 R03에서�
 - root bootstrap 주소가 admin/producer/consumer에 동일하게 주입되는지 확인한다.
 - 실제 consumer config의 deserializer·enable.auto.commit·ack mode·error handler를 검사한다.
 - API/streamer의 demo 비활성화와 전용 factory 선택, 앱 이름·포트·보존 프로필을 확인한다.
-- contracts runtimeClasspath에 Spring/JPA/Jackson/앱 코드가 없는지 확인한다.
+- 계약 검사를 위해 앱 간 runtime 의존성이나 새 공통 Java 계약 모듈을 추가하지 않았는지 확인한다.
 - streamer에 Checkstyle·기존 계층/ordering domain 순수성 gate를 연결하고 실제 새 클래스를 검사한다.
 - 테스트 0건·skip·연결 실패를 성공으로 세지 않는다. 고유 자원·bounded 대기·자기 자원만 정리한다.
-- 기능별 관련 검사 후 PR 마무리에서 API/streamer/Kafka/contracts의 필요한 check를 실행한다.
+- 기능별 관련 검사 후 PR 마무리에서 API/streamer/Kafka의 필요한 check를 실행한다.
 - PR에는 Inbox 1행/품목별 활동·assignment·offset 전후·직접 발행 누락과 남은 한계를 기록한다.
 
 설계 문서만 변경한 현재 단계에서는 기능 테스트/DB SQL을 실행하지 않는다.

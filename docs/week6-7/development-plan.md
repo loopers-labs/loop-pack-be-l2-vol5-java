@@ -53,7 +53,8 @@ R01 재현 경로는 테스트 구성 또는 보존 revision으로 유지한다.
 
 2026-11-04 사용자 요청으로 [R01 상세 설계 초안](r01-order-events-inbox/plan.md)을 작성했다.
 추천안을 확정처럼 기록했던 점을 사용자 지적에 따라 바로잡고 [트레이드오프 논의](r01-order-events-inbox/trade-offs.md)를 시작했다.
-공유 계약 모듈·시각 저장 위치·Inbox 비교 근거 등은 사용자 미확정이다.
+사용자는 앱별 DTO/JSON 계약 테스트·기존 createdAt 재사용·정규화 snapshot 필드 비교를 확정했다.
+공통 Java 계약 모듈은 제외하며 사건 ID·추가 필드 호환·소비 오류 정책은 두 번째 질문의 답변을 기다린다.
 Inbox와 모든 품목의 단일 TX 등 원문의 고정 조건은 유지하며 추천 세부는 답변 후 수정한다.
 필드/정규화는 [계약](r01-order-events-inbox/event-contract.md),
 제약/DDL/경합은 [저장 설계](r01-order-events-inbox/persistence.md),
