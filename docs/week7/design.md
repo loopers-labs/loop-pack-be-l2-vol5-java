@@ -1,6 +1,6 @@
 # 주문 확정 Outbox와 단일 relay 설계 — Week 7
 
-> 상태: **구현 중 (2026-11-05)**. 1~4단계(바꿀 트랜잭션 표시, Outbox 모델, 확정 TX의 Outbox 기록, 로컬 원자성 검증)를 진행한다. relay·재시도·중단 실험·E2E·W6 누락 복구는 다음 단계다.
+> 상태: **구현 중 (2026-11-05)**. 1~6단계(바꿀 트랜잭션 표시, Outbox 모델, 확정 TX의 Outbox 기록, 로컬 원자성 검증, 단일 relay, 재시도·재개·관찰)를 진행했다. 중단 실험·E2E·W6 누락 복구는 다음 단계다.
 > W6의 이벤트 계약(`docs/week6/design.md` 2절)과 구매 활동 consumer는 바꾸지 않는다. 바꾸는 것은 "확정 뒤 직접 발행"을 "같은 TX의 Outbox 기록 + 단일 relay"로 교체하는 경계다.
 
 ## 0. 범위
@@ -107,6 +107,54 @@ TX 밖  : relay가 나중에 PENDING을 찾아 Kafka로 발행한다 (5단계)
 | `batch-size` | 50 | 한 회차에 고르는 작은 묶음 |
 | `send-timeout` | 5s | broker 확인 대기 상한. 넘으면 수신 여부를 모르는 실패로 기록 |
 | `initial-backoff` / `backoff-multiplier` / `max-backoff` | 1s / 2 / 5m | 실패 뒤 즉시 무한 반복하지 않는다. 영구 오류도 5분보다 자주 보내지 않는다 |
+| `alert-after-attempts` | 5 | 한 행이 이만큼 실패하면 반복 실패로 보고 ERROR로 드러낸다(첫 실패부터 약 15초 뒤) |
+
+### 4-1. 재시도·재개·관찰·보존 (6단계)
+
+**재시도.** 실패한 행마다 다음 시도 시각을 `backoff(attempt)`만큼 뒤로 민다. 회차는 (다음 시도 시각, id) 순으로 고르므로 실패한 행이 정상 행을 막지 않는다. broker 장애가 풀리면 쌓인 PENDING을 같은 행·같은 eventId로 다시 보낸다.
+
+**반복 실패.** 시도 수가 `alert-after-attempts` 이상이면 `eventId`·`orderId`·시도 수·다음 시도 시각·원인을 ERROR로 남기고, 회차 요약에 backlog(PENDING 수·가장 오래된 기록 시각·최대 시도 수)를 붙인다. 오류 문장에는 payload를 넣지 않고 500자까지만 저장한다.
+
+**BLOCKED 상태를 두지 않은 이유.** 이 이벤트의 payload는 우리 직렬화기가 확정 TX에서 만든 고정 값이다. 그래서 "데이터가 잘못돼 영원히 보낼 수 없는" 경우보다 broker·topic·권한 같은 환경 원인이 대부분이고, 원인을 고치면 같은 행이 그대로 나가야 한다. 행을 격리하지 않고 상한(5분) 간격으로 계속 시도하며, 반복 실패를 ERROR로 드러내고, 고친 뒤에는 재개로 바로 보낸다. 반복 실패 행은 완료가 아니라 미해결 작업이고 backlog에 계속 남는다. 계약을 어긴 record의 소비 쪽 처리는 W6의 중단형 error handler가 맡는다.
+
+**재개.** `OrderOutboxRelay.resume(eventId)`는 지정한 PENDING 한 건을 다음 시도 시각을 기다리지 않고 지금 보낸다. 회차와 같은 잠금을 쓰고, 없거나 이미 PUBLISHED면 보내지 않는다. 공개 관리자 API로 노출하지 않고 로컬의 운영 도구·테스트에서 직접 부른다.
+
+**관찰.** relay 로그와 SQL로 원본부터 결과까지 따라간다. 로그에는 늘 `eventId`·`orderId`가 있다.
+
+| 로그 | 수준 | 내용 |
+|---|---|---|
+| `Outbox 발행 확인` | INFO | eventId, orderId, attempt, broker의 topic·partition·offset |
+| `Outbox 발행 미확인` | WARN | eventId, orderId, attempt, nextAttemptAt, 원인 |
+| `Outbox 발행이 반복해서 실패한다` | ERROR | 위와 같음. `alert-after-attempts` 이상 |
+| `Outbox relay 회차` | INFO / WARN | 고른 수·발행·실패. 실패가 있으면 backlog를 함께 |
+
+```sql
+-- 상태별 수, 가장 오래 기다린 기록 시각, 최대 시도 수
+SELECT status, COUNT(*) AS cnt, MIN(created_at) AS oldest, MAX(attempt_count) AS max_attempt
+FROM order_outbox GROUP BY status;
+
+-- 오래 기다린 PENDING과 마지막 원인
+SELECT event_id, order_id, attempt_count, next_attempt_at, last_error, created_at
+FROM order_outbox WHERE status = 'PENDING' ORDER BY created_at LIMIT 20;
+
+-- 한 사건 추적: Outbox → (broker 위치는 relay 로그) → 소비 완료·구매 활동 (streamer DB)
+SELECT * FROM order_outbox WHERE event_id = 'order-confirmed:v1:42';
+SELECT * FROM processed_order_confirmation WHERE event_id = 'order-confirmed:v1:42';
+SELECT * FROM product_purchase_activity WHERE order_id = 42;
+```
+
+| 관찰값 | 알려 주는 것 | 혼자서 증명하지 못하는 것 |
+|---|---|---|
+| PENDING 수·가장 오래된 기록 시각 | 발행 backlog, 오래 미발행된 사건 | 소비 완료 |
+| 시도 수·마지막 원인 | relay 실패 경향 | broker에 실제로 쓰인 record 수 |
+| PUBLISHED·`published_at` | broker 확인을 저장했음 | consumer의 처리·구매 활동 |
+| 완료 기록·구매 활동 행 (streamer) | 실제 후속 결과 | 모든 주문에 누락이 없음 |
+
+**보존·정리.** 이번에는 어떤 Outbox 행도 자동으로 지우지 않는다. PENDING을 지우면 보낼 사실을 잃고, PUBLISHED를 바로 지우면 전달 이력과 재처리 근거를 잃는다. 나중에 정리 정책을 정할 때는 같은 사건이 다시 와도 소비 효과가 늘지 않도록 아래 관계를 지킨다.
+
+- Outbox PUBLISHED 행의 보존 기간 ≤ consumer 완료 기록(`processed_order_confirmation`)의 보존 기간
+- Kafka `order-events`의 retention ≤ consumer 완료 기록의 보존 기간
+- 완료 기록을 먼저 지우면, 남아 있는 Outbox 행이나 Kafka record의 재처리가 구매 활동을 한 번 더 만든다. 지금 W6 consumer는 완료 기록을 지우지 않는다.
 
 ## 5. 결정 사항
 
@@ -128,6 +176,7 @@ TX 밖  : relay가 나중에 PENDING을 찾아 Kafka로 발행한다 (5단계)
 | `KafkaOrderOutboxSenderTest` | 실제 broker에 저장 값을 감싸지 않고 그대로 보내고 broker 위치를 돌려줌, 닿지 않는 broker는 예외 없이 실패 |
 | `OrderOutboxRelayTest` | 실제 주문으로 만든 PENDING을 broker로 보내고 확인 뒤 PUBLISHED, 다음 회차 재발행 없음, broker 불통이면 PENDING·다음 시각·오류를 남기고 그 시각 전에는 고르지 않음, send하는 동안은 PENDING, 겹친 회차 건너뜀, batch-size·순서, 발행기 예외도 실패로 기록 |
 | `OrderOutboxRelaySchedulerTest` | 켜면 fixed-delay마다 회차 실행, 끄거나 없으면 scheduler 없음 |
+| `OrderOutboxRetryAndResumeTest` | broker 장애 동안 쌓인 PENDING 2건이 회복 뒤 같은 행으로 발행되고 backlog가 비워짐, 연속 실패의 대기 1s → 2s → 4s(상한) → 4s와 알림 기준부터 ERROR(eventId·원인), eventId를 지정한 재개가 다음 시도 시각 전에 보내고 PUBLISHED·없는 eventId는 보내지 않음 |
 | `OrderConfirmedOutboxTest` | 처음 확정에서 1행·저장 사실과 같은 payload, 중복 적용 무추가·payload 불변, 대기·실패·rollback 무기록, broker 불통에도 직접 send 0회 |
 | `OutboxAtomicityTest` | Outbox insert 전·후 실패와 직렬화 실패에서 TX B 전체 rollback(주문·시도·예약·재고 유지, Outbox 0, PG create 추가 0)과 같은 거래 재조회로 한 번 확정, UNKNOWN 무기록, 동시 중복 callback에서 1행, TX 밖 append 거부 |
 | `OrderConfirmedOmissionReproTest` | W6 기준선. `W6DirectPublishConfig`로 W6 경로를 재현해 기대값 그대로 실행 |
@@ -137,6 +186,7 @@ relay 없이 실제 MySQL에서 로컬 원자성을 먼저 확인한다. broker�
 ## 7. 알려진 한계 (현재 단계)
 
 - relay는 한 인스턴스에서만 켠다는 실행 설정에 기대고, 분산 잠금·claim은 없다.
+- 반복 실패 행을 자동으로 격리하지 않는다. 원인이 남아 있으면 상한 간격으로 계속 시도하고 ERROR를 남긴다. broker가 계속 꺼져 있으면 수렴하지 않는다.
 - timeout 뒤 같은 사건을 다시 보내므로 broker에는 같은 eventId의 record가 둘 이상 생길 수 있다. 소비 효과의 중복은 W6 consumer(eventId·주문 유일 제약)가 막는다.
 - W6의 `OrderEventPublisher`·`KafkaOrderEventPublisher`는 제품 경로에서 더 이상 부르지 않는다. W6 기준선 재현(`W6DirectPublishConfig`)만 쓴다.
 - `created_at`은 `BaseEntity`가 시스템 시계로 정한다. 확정 시각과 `next_attempt_at`은 주입한 `Clock`을 따른다.

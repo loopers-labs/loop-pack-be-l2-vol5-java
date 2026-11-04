@@ -13,6 +13,7 @@ import java.util.Objects;
  * @param batchSize         한 회차에 고르는 최대 행 수
  * @param initialBackoff    첫 실패 뒤 다음 시도까지의 대기. 이후 실패마다 {@code backoffMultiplier}배로 늘어난다
  * @param maxBackoff        대기의 상한. 영구 오류도 이 간격보다 자주 다시 보내지 않는다
+ * @param alertAfterAttempts 한 행이 이 수만큼 실패하면 반복 실패로 보고 원인과 eventId를 ERROR로 남긴다
  */
 @ConfigurationProperties("order-outbox.relay")
 public record OrderOutboxRelayProperties(
@@ -21,7 +22,8 @@ public record OrderOutboxRelayProperties(
     int batchSize,
     Duration initialBackoff,
     double backoffMultiplier,
-    Duration maxBackoff
+    Duration maxBackoff,
+    int alertAfterAttempts
 ) {
     public OrderOutboxRelayProperties {
         Objects.requireNonNull(fixedDelay, "order-outbox.relay.fixed-delay가 없다");
@@ -29,6 +31,9 @@ public record OrderOutboxRelayProperties(
         Objects.requireNonNull(maxBackoff, "order-outbox.relay.max-backoff가 없다");
         if (batchSize < 1) {
             throw new IllegalArgumentException("order-outbox.relay.batch-size는 1 이상이어야 한다");
+        }
+        if (alertAfterAttempts < 1) {
+            throw new IllegalArgumentException("order-outbox.relay.alert-after-attempts는 1 이상이어야 한다");
         }
         if (backoffMultiplier < 1.0) {
             throw new IllegalArgumentException("order-outbox.relay.backoff-multiplier는 1 이상이어야 한다");

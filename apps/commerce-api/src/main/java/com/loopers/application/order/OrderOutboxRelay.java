@@ -1,6 +1,7 @@
 package com.loopers.application.order;
 
 import com.loopers.domain.order.OrderEventPublication;
+import com.loopers.domain.order.OrderOutboxBacklog;
 import com.loopers.domain.order.OrderOutboxMessage;
 import com.loopers.domain.order.OrderOutboxSender;
 import com.loopers.domain.order.OrderOutboxService;
@@ -77,13 +78,45 @@ public class OrderOutboxRelay {
                     }
                 }
             }
-            if (!due.isEmpty()) {
+            if (failed > 0) {
+                OrderOutboxBacklog backlog = orderOutboxService.backlog();
+                log.warn("Outbox relay 회차: picked={}, published={}, failed={}, pending={}, oldestPendingCreatedAt={}, maxAttempt={}",
+                    due.size(), published, failed, backlog.pendingCount(), backlog.oldestPendingCreatedAt(), backlog.maxAttemptCount());
+            } else if (!due.isEmpty()) {
                 log.info("Outbox relay 회차: picked={}, published={}, failed={}", due.size(), published, failed);
             }
             return new Run(true, due.size(), published, failed);
         } finally {
             running.unlock();
         }
+    }
+
+    /**
+     * 운영 재개: eventId로 지정한 PENDING 한 건을 다음 시도 시각을 기다리지 않고 지금 보낸다. 반복 실패의 원인을 고친 뒤 쓴다.
+     * 공개 API로 노출하지 않는다. 로컬의 운영 도구·테스트가 직접 부른다. 회차 실행 중이면 기다리지 않고 건너뛴다.
+     * 없거나 이미 PUBLISHED인 행은 보내지 않는다.
+     */
+    public Run resume(String eventId) {
+        if (!running.tryLock()) {
+            log.info("Outbox 재개를 건너뜀: 다른 회차가 실행 중. eventId={}", eventId);
+            return Run.skipped();
+        }
+        try {
+            Outcome outcome = relay(eventId);
+            log.info("Outbox 재개: eventId={}, result={}", eventId, outcome);
+            return switch (outcome) {
+                case PUBLISHED -> new Run(true, 1, 1, 0);
+                case FAILED -> new Run(true, 1, 0, 1);
+                case NOT_PENDING -> new Run(true, 0, 0, 0);
+            };
+        } finally {
+            running.unlock();
+        }
+    }
+
+    /** 아직 broker 확인을 저장하지 못한 행의 수·가장 오래 기다린 기록 시각·최대 시도 수. 소비 완료 여부는 알려 주지 않는다. */
+    public OrderOutboxBacklog backlog() {
+        return orderOutboxService.backlog();
     }
 
     private Outcome relay(String eventId) {
@@ -103,8 +136,14 @@ public class OrderOutboxRelay {
             case OrderEventPublication.Failed failed -> {
                 Instant nextAttemptAt = clock.instant().plus(properties.backoffAfter(message.attempt()));
                 orderOutboxService.recordFailure(eventId, message.attempt(), failed.reason(), nextAttemptAt);
-                log.warn("Outbox 발행 미확인(같은 행을 다시 보낸다): eventId={}, orderId={}, attempt={}, nextAttemptAt={}, reason={}",
-                    eventId, message.orderId(), message.attempt(), nextAttemptAt, failed.reason());
+                if (message.attempt() >= properties.alertAfterAttempts()) {
+                    // 일시 장애가 아닐 수 있다. 행은 지우지 않고 상한 간격으로 계속 시도하며, 원인을 고친 뒤 resume(eventId)로 바로 보낼 수 있다
+                    log.error("Outbox 발행이 반복해서 실패한다(원인 확인 필요): eventId={}, orderId={}, attempt={}, nextAttemptAt={}, reason={}",
+                        eventId, message.orderId(), message.attempt(), nextAttemptAt, failed.reason());
+                } else {
+                    log.warn("Outbox 발행 미확인(같은 행을 다시 보낸다): eventId={}, orderId={}, attempt={}, nextAttemptAt={}, reason={}",
+                        eventId, message.orderId(), message.attempt(), nextAttemptAt, failed.reason());
+                }
                 yield Outcome.FAILED;
             }
         };

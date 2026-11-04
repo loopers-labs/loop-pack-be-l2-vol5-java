@@ -49,6 +49,7 @@ order-outbox:
     initial-backoff: 1s # 첫 실패 뒤 다음 시도까지. 실패마다 backoff-multiplier배로 늘어난다
     backoff-multiplier: 2
     max-backoff: 5m # 영구 오류도 이 간격보다 자주 다시 보내지 않는다
+    alert-after-attempts: 5 # 한 행이 이만큼 실패하면 반복 실패로 보고 원인과 eventId를 ERROR로 남긴다 (첫 대기 1s 기준 약 15초 뒤)
 
 payment:
   pg:

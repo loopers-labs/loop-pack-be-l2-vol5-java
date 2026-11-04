@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class OrderOutboxRelayPropertiesTest {
 
     private static OrderOutboxRelayProperties properties(Duration initial, double multiplier, Duration max) {
-        return new OrderOutboxRelayProperties(false, Duration.ofSeconds(1), 50, initial, multiplier, max);
+        return new OrderOutboxRelayProperties(false, Duration.ofSeconds(1), 50, initial, multiplier, max, 5);
     }
 
     @DisplayName("실패한 뒤 기다리는 시간은 첫 실패에 initial이고, 실패마다 배수로 늘다가 상한에서 멈춘다.")
@@ -34,7 +34,9 @@ class OrderOutboxRelayPropertiesTest {
     void rejectsSettingsThatRetryWithoutWaitingLonger() {
         assertThatThrownBy(() -> properties(Duration.ofSeconds(1), 0.5, Duration.ofSeconds(10))).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> properties(Duration.ofSeconds(10), 2.0, Duration.ofSeconds(1))).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new OrderOutboxRelayProperties(false, Duration.ofSeconds(1), 0, Duration.ofSeconds(1), 2.0, Duration.ofSeconds(10)))
+        assertThatThrownBy(() -> new OrderOutboxRelayProperties(false, Duration.ofSeconds(1), 0, Duration.ofSeconds(1), 2.0, Duration.ofSeconds(10), 5))
+            .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new OrderOutboxRelayProperties(false, Duration.ofSeconds(1), 50, Duration.ofSeconds(1), 2.0, Duration.ofSeconds(10), 0))
             .isInstanceOf(IllegalArgumentException.class);
     }
 }

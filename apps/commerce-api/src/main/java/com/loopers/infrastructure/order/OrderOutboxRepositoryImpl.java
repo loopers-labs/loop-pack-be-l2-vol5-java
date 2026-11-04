@@ -1,5 +1,6 @@
 package com.loopers.infrastructure.order;
 
+import com.loopers.domain.order.OrderOutboxBacklog;
 import com.loopers.domain.order.OrderOutboxModel;
 import com.loopers.domain.order.OrderOutboxRepository;
 import com.loopers.domain.order.OrderOutboxStatus;
@@ -29,5 +30,12 @@ public class OrderOutboxRepositoryImpl implements OrderOutboxRepository {
     @Override
     public List<String> findDuePendingEventIds(Instant now, int limit) {
         return orderOutboxJpaRepository.findDueEventIds(OrderOutboxStatus.PENDING, now, Limit.of(limit));
+    }
+
+    @Override
+    public OrderOutboxBacklog pendingBacklog() {
+        OrderOutboxJpaRepository.StatusSummary summary = orderOutboxJpaRepository.summarize(OrderOutboxStatus.PENDING);
+        Integer maxAttemptCount = summary.getMaxAttemptCount();
+        return new OrderOutboxBacklog(summary.getRowCount(), summary.getOldestCreatedAt(), maxAttemptCount == null ? 0 : maxAttemptCount);
     }
 }

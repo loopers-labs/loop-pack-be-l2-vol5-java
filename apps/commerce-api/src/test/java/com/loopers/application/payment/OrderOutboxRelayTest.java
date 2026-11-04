@@ -33,7 +33,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class OrderOutboxRelayTest extends PaymentScenarioTestBase {
 
     private static final OrderOutboxRelayProperties PROPERTIES =
-        new OrderOutboxRelayProperties(false, Duration.ofSeconds(1), 50, Duration.ofSeconds(1), 2.0, Duration.ofMinutes(5));
+        new OrderOutboxRelayProperties(false, Duration.ofSeconds(1), 50, Duration.ofSeconds(1), 2.0, Duration.ofMinutes(5), 5);
 
     @Autowired
     private OrderOutboxService orderOutboxService;
@@ -174,7 +174,7 @@ class OrderOutboxRelayTest extends PaymentScenarioTestBase {
         confirmOrderThroughCallback(orderId);
         confirmOrderThroughCallback(secondOrderId);
         OrderOutboxRelayProperties oneAtATime =
-            new OrderOutboxRelayProperties(false, Duration.ofSeconds(1), 1, Duration.ofSeconds(1), 2.0, Duration.ofMinutes(5));
+            new OrderOutboxRelayProperties(false, Duration.ofSeconds(1), 1, Duration.ofSeconds(1), 2.0, Duration.ofMinutes(5), 5);
         OrderOutboxRelay relay = relay(OutboxTestSenders.toBroker(topic), now(), oneAtATime);
 
         // act

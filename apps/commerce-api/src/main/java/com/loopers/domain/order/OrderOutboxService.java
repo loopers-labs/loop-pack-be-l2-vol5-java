@@ -56,4 +56,9 @@ public class OrderOutboxService {
             .map(outbox -> outbox.recordFailure(attempt, error, nextAttemptAt))
             .orElse(false);
     }
+
+    @Transactional(readOnly = true)
+    public OrderOutboxBacklog backlog() {
+        return orderOutboxRepository.pendingBacklog();
+    }
 }
