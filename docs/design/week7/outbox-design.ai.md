@@ -83,7 +83,7 @@ runOnce:
        실패·timeout → nextAttemptAt, lastError
 ```
 
-- 단일 실행: 스케줄러 `fixedDelay`(같은 작업은 fixedRate여도 겹치지 않는다. 회차가 끝난 뒤 쉬는 시간을 보장하려고 고른다) + `relayOnce`의 `tryLock`(같은 프로세스에서 수동 실행과 겹치면 건너뜀). 활성화 설정 `outbox.relay.enabled`는 기본 false이고 `local` 프로필만 true. 다중 인스턴스에서 동시에 켜지 않는 것은 실행 설정의 약속이며 메모리 flag로 해결했다고 주장하지 않는다.
+- 단일 실행: 스케줄러 `fixedDelay`(같은 작업은 fixedRate여도 겹치지 않는다. 회차가 끝난 뒤 쉬는 시간을 보장하려고 고른다). 같은 작업은 스케줄러가 동시에 실행하지 않으므로 회차 잠금은 두지 않는다(운영 코드에서 `relayOnce`를 부르는 곳은 스케줄러뿐). 활성화 설정 `outbox.relay.enabled`는 기본 false이고 `local` 프로필만 true. 다중 인스턴스에서 동시에 켜지 않는 것은 실행 설정의 약속이며 메모리 flag로 해결했다고 주장하지 않는다.
 - 전송 확인은 send 호출이 반환된 것이 아니라 producer future의 성공이다. `acks=all`, 멱등 유지(W6). 단일 broker 한계 유지.
 - timeout 뒤에도 하위 send가 나중에 성공할 수 있다. 같은 eventId를 유지하고 수신 0회라고 단정하지 않는다.
 - 설정값(초안, 3단계에서 확정): 묶음 크기, send 대기 시간, 재시도 간격(고정 또는 시도 수에 따른 증가), 최대 간격. 테스트는 `Clock`을 고정하거나 짧은 유한 대기를 쓴다.

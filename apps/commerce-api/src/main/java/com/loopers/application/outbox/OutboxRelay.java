@@ -12,7 +12,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.List;
-import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * 전송할 차례가 된 Outbox 를 브로커로 보내고 결과를 기록하는 한 회차를 실행한다. 메소드에 트랜잭션을 열지 않고 DB 구간만
@@ -29,7 +28,6 @@ public class OutboxRelay {
     private final int batchSize;
     private final Duration retryInterval;
     private final TransactionTemplate transaction;
-    private final ReentrantLock roundLock = new ReentrantLock();
 
     public OutboxRelay(
         OutboxService outboxService,
@@ -47,23 +45,8 @@ public class OutboxRelay {
         this.transaction = new TransactionTemplate(transactionManager);
     }
 
-    /**
-     * 한 회차를 실행한다. 같은 프로세스에서 이미 회차가 돌고 있으면 기다리지 않고 건너뛴다. 여러 인스턴스 사이의 겹침은
-     * 막지 못하므로 relay 는 한 인스턴스에서만 켠다.
-     */
+    /** 한 회차를 실행한다. 회차가 겹치지 않는 것은 스케줄러가 보장하므로 여러 스레드에서 동시에 부르지 않는다. */
     public void relayOnce() {
-        if (!roundLock.tryLock()) {
-            log.info("Outbox relay 회차 건너뜀. 이전 회차가 실행 중이다.");
-            return;
-        }
-        try {
-            relayDueOutboxes();
-        } finally {
-            roundLock.unlock();
-        }
-    }
-
-    private void relayDueOutboxes() {
         List<Outbox> targets = startAttempts();
         int published = 0;
         for (Outbox target : targets) {

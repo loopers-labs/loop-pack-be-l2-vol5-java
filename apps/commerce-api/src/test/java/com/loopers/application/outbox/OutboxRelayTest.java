@@ -19,12 +19,6 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -133,43 +127,5 @@ class OutboxRelayTest {
 
         // then
         assertThat(transactionActiveDuringPublish).containsExactly(false);
-    }
-
-    @DisplayName("이미 한 회차가 실행 중이면 다른 회차는 기다리지 않고 건너뛴다.")
-    @Test
-    void skipsRound_whenAnotherRoundIsRunning() throws Exception {
-        // given: 첫 회차의 전송이 풀어 줄 때까지 멈춰 있다.
-        Outbox saved = outboxService.save(
-            Outbox.record("event-A", 1L, "OrderConfirmed", "v1", "1", new byte[] {1}, DUE_SINCE)
-        );
-        AtomicInteger publishCalls = new AtomicInteger();
-        CountDownLatch publishStarted = new CountDownLatch(1);
-        CountDownLatch releasePublish = new CountDownLatch(1);
-        OutboxPublisher publisher = outbox -> {
-            publishCalls.incrementAndGet();
-            publishStarted.countDown();
-            try {
-                releasePublish.await(5, TimeUnit.SECONDS);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        };
-        OutboxRelay relay = new OutboxRelay(outboxService, publisher, transactionManager, CLOCK, 20, Duration.ofSeconds(30));
-        ExecutorService executor = Executors.newSingleThreadExecutor();
-        Future<?> firstRound = executor.submit(relay::relayOnce);
-        assertThat(publishStarted.await(5, TimeUnit.SECONDS)).isTrue();
-
-        // when: 첫 회차가 전송 중일 때 둘째 회차를 실행한다.
-        relay.relayOnce();
-
-        // then: 둘째 회차는 아무것도 보내지 않고 바로 끝난다.
-        assertThat(publishCalls.get()).isEqualTo(1);
-
-        releasePublish.countDown();
-        firstRound.get(5, TimeUnit.SECONDS);
-        executor.shutdown();
-        Outbox found = outboxService.get(saved.getId());
-        assertThat(found.getStatus()).isEqualTo(OutboxStatus.PUBLISHED);
-        assertThat(found.getAttemptCount()).isEqualTo(1);
     }
 }
