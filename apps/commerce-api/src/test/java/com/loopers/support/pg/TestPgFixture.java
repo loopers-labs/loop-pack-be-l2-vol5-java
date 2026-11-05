@@ -1,14 +1,14 @@
 package com.loopers.support.pg;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.loopers.application.order.ConfirmCommand;
-import com.loopers.application.payment.port.PaymentCreateCommand;
-import com.loopers.application.payment.port.PaymentCreateResult;
-import com.loopers.application.payment.port.PaymentGateway;
-import com.loopers.application.payment.port.PaymentTransactionsLookup;
-import com.loopers.infrastructure.payment.TestPgPaymentGateway;
-import com.loopers.infrastructure.payment.TestPgProperties;
-import com.loopers.infrastructure.payment.TestPgServer;
+import com.loopers.domains.order.app.ConfirmCommand;
+import com.loopers.domains.payment.app.port.PaymentCreateCommand;
+import com.loopers.domains.payment.app.port.PaymentCreateResult;
+import com.loopers.domains.payment.app.port.PaymentGateway;
+import com.loopers.domains.payment.app.port.PaymentTransactionsLookup;
+import com.loopers.domains.payment.out.TestPgPaymentGateway;
+import com.loopers.domains.payment.out.TestPgProperties;
+import com.loopers.domains.payment.out.TestPgServer;
 import java.io.IOException;
 import java.net.URI;
 import java.time.Duration;

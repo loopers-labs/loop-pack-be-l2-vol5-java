@@ -1,11 +1,11 @@
 package com.loopers.support.kafka;
 
-import com.loopers.application.order.OrderConfirmedPayload;
-import com.loopers.application.order.port.OrderConfirmedPublisher;
-import com.loopers.application.payment.port.PaymentRecordRepository;
-import com.loopers.domain.payment.PaymentRecord;
-import com.loopers.infrastructure.order.KafkaOrderConfirmedPublisher;
-import com.loopers.infrastructure.payment.PaymentRecordPersistenceAdapter;
+import com.loopers.domains.order.app.port.OrderConfirmedPayload;
+import com.loopers.domains.order.app.port.OrderConfirmedPublisher;
+import com.loopers.domains.order.out.KafkaOrderConfirmedPublisher;
+import com.loopers.domains.payment.app.port.PaymentRecordRepository;
+import com.loopers.domains.payment.domain.PaymentRecord;
+import com.loopers.domains.payment.out.PaymentRecordPersistenceAdapter;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.util.Collection;

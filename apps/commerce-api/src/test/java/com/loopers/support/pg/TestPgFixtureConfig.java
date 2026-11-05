@@ -1,7 +1,7 @@
 package com.loopers.support.pg;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.loopers.application.payment.PaymentGatewayRegistry;
+import com.loopers.domains.payment.app.PaymentGatewayRegistry;
 import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
