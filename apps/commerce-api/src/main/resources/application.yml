@@ -67,15 +67,15 @@ payment:
 order-event:
   topic: order-events
 
-# Outbox relay (7주차 설계 4). 간격 값은 측정 근거 없는 기본값으로, 실험 뒤 다시 정함 (D-108)
+# Outbox relay (7주차 설계 4). 값의 근거는 docs/week7/experiment-relay-interval.md (D-108)
 order-outbox:
   relay:
     enabled: false # 운영에서는 인스턴스 하나만 켬 (D-103)
     interval-ms: 1000
-    batch-size: 50
+    batch-size: 200 # 회차마다 쉬는 1s 가 처리량을 막아 backlog 소진이 느려짐
     lease: 30s # 로컬 대기(send-timeout)보다 길어야 보내는 중인 행을 다시 고르지 않음
     backoff-initial: 1s
-    backoff-max: 5m
+    backoff-max: 1m # 긴 장애 뒤 맨 앞 행이 회복 후에도 기다리는 시간을 묶음
     producer:
       request-timeout: 5s
       delivery-timeout: 10s # linger.ms + request-timeout 이상
