@@ -516,6 +516,9 @@ class OrderOutboxDeliveryEndToEndIntegrationTest {
             () -> assertThat(purchaseRowsOf(order)).containsExactly(0L, 0L)
         );
 
+        // O14: 보존 관련 topic 설정의 실제 유효 값·출처(읽기만). 이 실행 끝에 다시 읽어 바뀌지 않았음을 본다.
+        Map<String, String> retentionAtStart = retentionConfigs();
+
         // 실제 실패 1회: 이 실행이 만든 topic 만 min.insync.replicas 를 복제 계수(1)보다 크게 둔다.
         originalIsr = isrEntry();
         alterIsr(AlterConfigOp.OpType.SET, "2");
@@ -545,6 +548,15 @@ class OrderOutboxDeliveryEndToEndIntegrationTest {
                 .as("같은 producer 의 실제 record 오류").isEqualTo(1.0),
             () -> assertThat(probe.receipts).as("broker 성공 없음").isEmpty(),
             () -> assertFacts(pending, afterFailure)
+        );
+        // O14: 미해결 사건이 있는 시점의 운영 SQL. D 는 PUBLISHED, E 는 안전 code 와 다음 시각을 가진 가장 오래된 PENDING 이다.
+        OutboxObservation failedView = observeOutbox("E_FAILED");
+        assertAll(
+            () -> assertThat(failedView.counts()).isEqualTo(Map.of("PUBLISHED", 1L, "PENDING", 1L)),
+            () -> assertThat(failedView.oldestPending()).containsEntry("event_id", eventId).containsEntry("attempt_count", 1L)
+                .containsEntry("next_attempt_at", wall(recordedAt.plusSeconds(5))),
+            () -> assertThat((String) failedView.oldestPending().get("last_error")).startsWith("SEND_COMPLETION_FAILED:"),
+            () -> assertThat(failedView.blocked()).isEmpty()
         );
 
         // 원래 설정 복원 뒤 같은 행·같은 producer 로 회복한다.
@@ -585,7 +597,55 @@ class OrderOutboxDeliveryEndToEndIntegrationTest {
             + " eRecords=" + records.stream().map(record -> record.partition() + "@" + record.offset()).toList()
             + " handled=" + handledAtReceipt + " committed=" + kafka.committedOffsets(group) + " outbox=" + summary(publishedRow)
             + " isrRestored=" + isrEntry().value() + "/" + isrEntry().source());
+
+        // O14: 전달이 끝난 뒤에도 제품은 Outbox·소비 완료 행을 지우지 않는다. topic 보존 설정은 이 실행이 바꾸지 않았다.
+        OutboxObservation finalView = observeOutbox("FINAL");
+        Map<String, String> retentionAtEnd = retentionConfigs();
+        System.out.println("[" + LABEL + " O14 RETENTION] topic=" + topic + " start=" + retentionAtStart + " end=" + retentionAtEnd);
+        assertAll(
+            () -> assertThat(finalView.counts()).as("완료 행 보존").isEqualTo(Map.of("PUBLISHED", 2L)),
+            () -> assertThat(finalView.oldestPending()).isEmpty(),
+            () -> assertThat(purchaseRows()).as("dedup·활동 보존").containsExactly(2L, 4L),
+            () -> assertThat(retentionAtEnd).isEqualTo(retentionAtStart),
+            () -> assertThat(retentionAtStart).as("이 실행은 보존 설정 override 를 두지 않음").allSatisfy((name, valueAndSource) ->
+                assertThat(valueAndSource).doesNotEndWith("/" + ConfigEntry.ConfigSource.DYNAMIC_TOPIC_CONFIG))
+        );
         TIMES.put("orderEMs", elapsedMs(begin));
+    }
+
+    // ---------------------------------------------------------------- O14 관찰
+
+    /** 상태별 건수·가장 오래된 PENDING·BLOCKED 목록. payload 는 읽지 않는다. */
+    private record OutboxObservation(Map<String, Long> counts, Map<String, Object> oldestPending, List<Map<String, Object>> blocked) {
+    }
+
+    private static OutboxObservation observeOutbox(String stage) {
+        Map<String, Long> counts = new java.util.TreeMap<>();
+        fresh.query("SELECT status, COUNT(*) FROM order_confirmed_outbox GROUP BY status",
+            (java.sql.ResultSet rs) -> {
+                counts.put(rs.getString(1), rs.getLong(2));
+            });
+        List<Map<String, Object>> oldest = fresh.queryForList("SELECT id, event_id, created_at, next_attempt_at, attempt_count,"
+            + " cycle_attempt_count, last_error FROM order_confirmed_outbox WHERE status = 'PENDING' ORDER BY created_at, id LIMIT 1");
+        List<Map<String, Object>> blocked = fresh.queryForList("SELECT id, event_id, attempt_count, cycle_attempt_count, last_error"
+            + " FROM order_confirmed_outbox WHERE status = 'BLOCKED' ORDER BY id");
+        OutboxObservation observation = new OutboxObservation(counts, oldest.isEmpty() ? Map.of() : oldest.get(0), blocked);
+        System.out.println("[" + LABEL + " O14 " + stage + "] counts=" + counts + " oldestPending=" + observation.oldestPending()
+            + " blocked=" + blocked + " outboxClockNow=" + OUTBOX_CLOCK.instant() + " wallNow=" + Instant.now()
+            + " dbNow=" + fresh.queryForObject("SELECT UTC_TIMESTAMP(6)", String.class));
+        return observation;
+    }
+
+    /** 소유 topic 의 보존 관련 유효 설정을 "값/출처"로 읽는다. 변경하지 않는다. */
+    private static Map<String, String> retentionConfigs() throws Exception {
+        ConfigResource resource = new ConfigResource(ConfigResource.Type.TOPIC, topic);
+        var config = topicAdmin.describeConfigs(List.of(resource)).all().get(BROKER_READY.toSeconds(), TimeUnit.SECONDS).get(resource);
+        Map<String, String> values = new java.util.TreeMap<>();
+        for (String name : List.of("cleanup.policy", "retention.ms", "retention.bytes", "segment.ms")) {
+            ConfigEntry entry = config.get(name);
+            values.put(name, entry.value() + "/" + entry.source());
+        }
+        return values;
     }
 
     // ---------------------------------------------------------------- relay·probe

@@ -21,6 +21,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
@@ -296,6 +299,58 @@ class OrderOutboxRelayIntegrationTest {
             () -> assertThat(row(501L)).containsEntry("status", "BLOCKED").containsEntry("attempt_count", 1L)
                 .containsEntry("cycle_attempt_count", 1).containsEntry("last_error", "INVALID_OUTBOX_MESSAGE"),
             () -> assertThat(SENDER.calls).isEmpty()
+        );
+    }
+
+    /**
+     * O14(08-3): PUBLISHED·실패 PENDING·미시도 PENDING·BLOCKED 가 함께 있는 DB 에서 운영 SQL 과 구조화 로그로 상태를 추적한다.
+     * 통제 sender 의 receipt 는 실제 broker 위치가 아니다(실제 위치는 전달 E2E). created_at 은 감사 시각, next_attempt_at 은 Outbox Clock 이다.
+     */
+    @DisplayName("O14: 상태별 건수·가장 오래된 PENDING·BLOCKED 대상을 SQL 로 보고, 로그에는 안전 code·row PK 만 남기며 손상 본문은 복사하지 않는다.")
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    void observesStatesBySqlAndSafeLogs(CapturedOutput output) {
+        String marker = "o14-corrupt-marker";
+        record(701L);
+        record(702L);
+        record(703L);
+        jdbc.update("UPDATE order_confirmed_outbox SET payload = ? WHERE event_id = ?",
+            "{\"eventType\":\"OrderConfirmed\",\"schemaVersion\":1,\"note\":\"" + marker + "\"}", "order-confirmed:703");
+        SENDER.plan(attempt -> CompletableFuture.completedFuture(new OrderOutboxReceipt("order-events-test", 1, 41L)));
+        SENDER.plan(attempt -> CompletableFuture.failedFuture(new IllegalStateException("broker down " + marker)));
+        Result<List<RowResult>> round = relay.runDueBatch();
+        CLOCK.set(BASE.plusSeconds(30), ZoneOffset.UTC);
+        record(704L);
+
+        Map<String, Long> counts = new java.util.TreeMap<>();
+        jdbc.query("SELECT status, COUNT(*) FROM order_confirmed_outbox GROUP BY status", (java.sql.ResultSet rs) -> {
+            counts.put(rs.getString(1), rs.getLong(2));
+        });
+        Map<String, Object> oldestPending = jdbc.queryForMap("SELECT id, event_id, created_at, next_attempt_at, attempt_count, last_error"
+            + " FROM order_confirmed_outbox WHERE status = 'PENDING' ORDER BY created_at, id LIMIT 1");
+        List<Map<String, Object>> blocked = jdbc.queryForList("SELECT id, event_id, attempt_count, cycle_attempt_count, last_error"
+            + " FROM order_confirmed_outbox WHERE status = 'BLOCKED' ORDER BY id");
+        System.out.println("[O14 RELAY] counts=" + counts + " oldestPending=" + oldestPending + " blocked=" + blocked
+            + " outboxClockNow=" + CLOCK.instant() + " dbNow=" + jdbc.queryForObject("SELECT UTC_TIMESTAMP(6)", String.class));
+        long blockedId = id(row(703L));
+        long publishedId = id(row(701L));
+
+        assertAll(
+            () -> assertThat(round.value().orElseThrow()).extracting(RowResult::outcome)
+                .containsExactly(RowOutcome.PUBLISHED, RowOutcome.RETRY_SCHEDULED, RowOutcome.BLOCKED),
+            () -> assertThat(counts).isEqualTo(Map.of("PUBLISHED", 1L, "PENDING", 2L, "BLOCKED", 1L)),
+            () -> assertThat(oldestPending).as("먼저 기록된 실패 행이 가장 오래된 PENDING").containsEntry("event_id", "order-confirmed:702")
+                .containsEntry("attempt_count", 1L).containsEntry("next_attempt_at", wall(BASE.plusSeconds(5)))
+                .containsEntry("last_error", "SEND_COMPLETION_FAILED:java.lang.IllegalStateException"),
+            () -> assertThat(blocked).singleElement().satisfies(item -> assertThat(item).containsEntry("event_id", "order-confirmed:703")
+                .containsEntry("attempt_count", 1L).containsEntry("last_error", "INVALID_OUTBOX_MESSAGE")),
+            () -> assertThat(output.getAll()).contains("ORDER_OUTBOX_PUBLISHED outboxId=" + publishedId + " eventId=order-confirmed:701")
+                .contains("topic=order-events-test partition=1 offset=41")
+                .contains("ORDER_OUTBOX_SEND_FAILED outboxId=" + id(row(702L)) + " eventId=order-confirmed:702")
+                .contains("error=SEND_COMPLETION_FAILED:java.lang.IllegalStateException status=PENDING")
+                .contains("ORDER_OUTBOX_BLOCKED outboxId=" + blockedId + " attemptNo=1 cycleAttemptCount=1 code=INVALID_OUTBOX_MESSAGE"
+                    + " eventId=INVALID"),
+            () -> assertThat(output.getAll()).as("손상 본문·원인 message 를 로그에 복사하지 않음").doesNotContain(marker)
         );
     }
 

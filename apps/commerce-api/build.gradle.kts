@@ -58,6 +58,8 @@ tasks.test {
     })
     // 일반 test 에서는 O11 클래스 하나만 정확히 제외한다. 다른 테스트는 제외하지 않는다.
     filter { excludeTestsMatching(w6OutboxRecoveryClass) }
+    // 08-3: 한 worker 의 캐시된 Spring context(최대 32)가 기본 512m 를 넘겨 OutOfMemoryError 가 났다. 기대·시간 한도는 그대로다.
+    maxHeapSize = "1g"
 }
 
 val w6OutboxRecoveryTest = tasks.register<Test>("w6OutboxRecoveryTest") {
@@ -77,6 +79,7 @@ val w6OutboxRecoveryTest = tasks.register<Test>("w6OutboxRecoveryTest") {
     systemProperty("user.timezone", "Asia/Seoul")
     systemProperty("spring.profiles.active", "test")
     jvmArgs("-Xshare:off")
+    maxHeapSize = "1g"
     filter {
         includeTestsMatching(w6OutboxRecoveryClass)
         isFailOnNoMatchingTests = true

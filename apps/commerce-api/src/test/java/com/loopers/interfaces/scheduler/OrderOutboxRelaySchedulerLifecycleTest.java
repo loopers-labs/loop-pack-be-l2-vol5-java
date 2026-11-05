@@ -308,7 +308,128 @@ class OrderOutboxRelaySchedulerLifecycleTest {
         }
     }
 
+    /**
+     * 08-3: 전용 pool 의 회차가 phase 0 한도를 넘겨 남는 경로. send 호출 안에서 interrupt 를 무시하는 통제 작업이 실제 pool thread 와
+     * gate 를 쥔다. phase 0 은 한도 뒤 미완료를 기록하고, executor 가 아직 종료되지 않았으므로 phase -100 이 pool 의 stop(callback) 을
+     * 부른다. Spring 6.2.5 ExecutorLifecycleDelegate 는 실행 중 작업이 있으면 callback 을 afterExecute 까지 미룬다. 그 정지 호출(paused)을
+     * 실제로 확인한 뒤에 장벽을 푼다.
+     */
+    @DisplayName("회차가 phase 0 한도를 넘겨 남으면 pool 의 phase -100 정지가 그 회차의 종료를 기다리고, 그 안에 끝나면 대기 한도 전에 다음 phase 로 넘어간다.")
+    @Test
+    void poolPhaseWaitsForRoundLeftAfterPhaseZero(CapturedOutput output) throws Exception {
+        ControlledSender sender = new ControlledSender();
+        sender.stuck = new CountDownLatch(1);
+        OrderOutboxShutdownObserver observer = new OrderOutboxShutdownObserver();
+        ConfigurableApplicationContext context = boot(true, "3s", sender, observer);
+        try {
+            ThreadPoolTaskScheduler pool = (ThreadPoolTaskScheduler) context.getBean(OrderOutboxRelayConfig.RELAY_TASK_SCHEDULER);
+            long order = 9001L;
+            record(context, order);
+            assertThat(sender.entered.await(20, TimeUnit.SECONDS)).as("자동 회차가 send 에서 멈춤").isTrue();
+
+            // pool 의 phase -100 stop(callback) 이 호출된 것(paused)을 본 뒤에만 회차를 끝낸다. 한도는 유한하다.
+            Future<Boolean> releasedAfterPoolStop = worker.submit(() -> {
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+                while (System.nanoTime() < deadline) {
+                    if (poolPaused(pool)) {
+                        sender.stuck.countDown();
+                        return true;
+                    }
+                    Thread.sleep(5);
+                }
+                return false;
+            });
+            long started = System.nanoTime();
+            context.close();
+            long closeMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+            boolean released = releasedAfterPoolStop.get(10, TimeUnit.SECONDS);
+            await().atMost(Duration.ofSeconds(10)).until(() -> OrderOutboxShutdownObserver.relayThreadsAlive() == 0);
+            System.out.println("[POOL PHASE WAIT] closeMs=" + closeMs + " interruptedWhileStuck=" + sender.interruptedWhileStuck.get());
+
+            assertAll(
+                () -> assertThat(released).as("phase -100 의 pool 정지 호출 뒤 장벽 해제").isTrue(),
+                () -> assertThat(sender.interruptedWhileStuck).as("phase 0 이 회차 thread 에 interrupt 전달").isTrue(),
+                () -> assertThat(output.getAll()).contains("ORDER_OUTBOX_RELAY_STOP_INCOMPLETE gateIdle=false waitedMs=3000"),
+                // phase 0 대기를 넘긴 뒤에도 회차가 pool 에 남아 executor 는 종료되지 않았고 pool lifecycle 은 running 이다.
+                () -> assertThat(observer.at("phase-50")).satisfies(snapshot -> {
+                    assertThat(snapshot.poolShutdown()).as("early shutdown").isTrue();
+                    assertThat(snapshot.poolTerminated()).isFalse();
+                    assertThat(snapshot.poolLifecycleRunning()).as("phase -100 stop 대상").isTrue();
+                    assertThat(snapshot.gateIdle()).isFalse();
+                    assertThat(snapshot.relayThreadsAlive()).isEqualTo(1L);
+                }),
+                // callback 은 회차의 finally(gate 해제) 뒤 afterExecute 에서 실행되므로 다음 phase 에서는 gate 가 비어 있다.
+                // executor 종료·thread 소멸은 callback 과 원자적이지 않아 여기서 단언하지 않는다(close 뒤 유한 대기로 확인).
+                () -> assertThat(observer.at("phase-150")).satisfies(snapshot -> {
+                    assertThat(snapshot.gateIdle()).isTrue();
+                    assertThat(snapshot.producerFactoryRunning()).isTrue();
+                }),
+                () -> assertThat(output.getAll()).as("phase -100 은 대기 한도 전에 callback 으로 끝남")
+                    .doesNotContain("Shutdown phase -100 ends with"),
+                () -> assertThat(observer.at("destroy").producerFactoryRunning()).isFalse(),
+                () -> assertThat(outbox(order)).as("중단된 회차는 결과 TX 없음").containsEntry("status", "PENDING")
+                    .containsEntry("attempt_count", 1L).containsEntry("last_error", null).containsEntry("published_at", null)
+            );
+        } finally {
+            sender.stuck.countDown();
+            if (context.isActive()) {
+                context.close();
+            }
+        }
+    }
+
+    @DisplayName("phase -100 대기 한도 안에도 회차가 끝나지 않으면 Spring 이 그 pool 을 미완료로 기록하고 close 는 thread 가 남은 채 반환하며, 결과 TX 는 없다.")
+    @Test
+    void poolPhaseTimeoutLeavesRoundUnfinished(CapturedOutput output) throws Exception {
+        ControlledSender sender = new ControlledSender();
+        sender.stuck = new CountDownLatch(1);
+        OrderOutboxShutdownObserver observer = new OrderOutboxShutdownObserver();
+        ConfigurableApplicationContext context = boot(true, "1s", sender, observer);
+        try {
+            ThreadPoolTaskScheduler pool = (ThreadPoolTaskScheduler) context.getBean(OrderOutboxRelayConfig.RELAY_TASK_SCHEDULER);
+            long order = 9101L;
+            record(context, order);
+            assertThat(sender.entered.await(20, TimeUnit.SECONDS)).as("자동 회차가 send 에서 멈춤").isTrue();
+
+            context.close();
+            boolean pausedAfterClose = poolPaused(pool);
+            boolean terminatedAfterClose = pool.getScheduledExecutor().isTerminated();
+            long aliveAfterClose = OrderOutboxShutdownObserver.relayThreadsAlive();
+            sender.stuck.countDown();
+            await().atMost(Duration.ofSeconds(10)).until(() -> OrderOutboxShutdownObserver.relayThreadsAlive() == 0);
+
+            assertAll(
+                () -> assertThat(output.getAll()).contains("ORDER_OUTBOX_RELAY_STOP_INCOMPLETE gateIdle=false waitedMs=1000"),
+                () -> assertThat(observer.at("phase-50").poolLifecycleRunning()).isTrue(),
+                () -> assertThat(output.getAll()).as("Spring 의 phase -100 미완료 기록")
+                    .contains("Shutdown phase -100 ends with 1 bean still running after timeout of 1000ms: ["
+                        + OrderOutboxRelayConfig.RELAY_TASK_SCHEDULER + "]"),
+                () -> assertThat(observer.at("phase-150")).satisfies(snapshot -> {
+                    assertThat(snapshot.poolTerminated()).isFalse();
+                    assertThat(snapshot.gateIdle()).isFalse();
+                    assertThat(snapshot.relayThreadsAlive()).isEqualTo(1L);
+                }),
+                () -> assertThat(pausedAfterClose).as("phase -100 정지 호출은 있었음").isTrue(),
+                () -> assertThat(terminatedAfterClose).as("destroy 의 shutdownNow 는 기다리지 않음").isFalse(),
+                () -> assertThat(aliveAfterClose).as("close 반환 시 회차 thread 잔존").isEqualTo(1L),
+                () -> assertThat(outbox(order)).as("장벽 해제 뒤에도 결과 TX 없음").containsEntry("status", "PENDING")
+                    .containsEntry("attempt_count", 1L).containsEntry("last_error", null).containsEntry("published_at", null)
+            );
+        } finally {
+            sender.stuck.countDown();
+            if (context.isActive()) {
+                context.close();
+            }
+        }
+    }
+
     // ---------------------------------------------------------------- 도구
+
+    /** Spring 6.2.5 의 pool lifecycle 위임 객체가 stop/stop(callback) 으로 멈춤 표시를 했는지. 제품 상태를 바꾸지 않는 읽기다. */
+    private static boolean poolPaused(ThreadPoolTaskScheduler pool) {
+        Object delegate = ReflectionTestUtils.getField(pool, "lifecycleDelegate");
+        return Boolean.TRUE.equals(ReflectionTestUtils.getField(delegate, "paused"));
+    }
 
     private static ConfigurableApplicationContext boot(boolean enabled, String phaseTimeout, ControlledSender sender,
                                                        OrderOutboxShutdownObserver observer) {
@@ -391,6 +512,10 @@ class OrderOutboxRelaySchedulerLifecycleTest {
 
         final List<String> calls = new CopyOnWriteArrayList<>();
         final AtomicBoolean block = new AtomicBoolean();
+        /** 설정되면 send 호출 안에서 interrupt 를 무시하고 이 장벽(최대 60초)이 풀릴 때까지 머문다. */
+        volatile CountDownLatch stuck;
+        final CountDownLatch entered = new CountDownLatch(1);
+        final AtomicBoolean interruptedWhileStuck = new AtomicBoolean();
         private final List<Long> times = new CopyOnWriteArrayList<>();
         private final Semaphore sent = new Semaphore(0);
 
@@ -409,6 +534,23 @@ class OrderOutboxRelaySchedulerLifecycleTest {
         @Override
         public CompletionStage<OrderOutboxReceipt> send(OrderOutboxAttempt attempt) {
             calls.add(Thread.currentThread().getName());
+            CountDownLatch barrier = stuck;
+            if (barrier != null) {
+                entered.countDown();
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
+                while (barrier.getCount() > 0 && System.nanoTime() < deadline) {
+                    try {
+                        barrier.await(100, TimeUnit.MILLISECONDS);
+                    } catch (InterruptedException ignored) {
+                        interruptedWhileStuck.set(true);
+                    }
+                }
+                if (interruptedWhileStuck.get()) {
+                    // 무시했던 interrupt 를 복원해 relay 가 중단을 그대로 관측하게 한다.
+                    Thread.currentThread().interrupt();
+                }
+                return new CompletableFuture<>();
+            }
             if (!block.get()) {
                 times.add(System.nanoTime());
             }

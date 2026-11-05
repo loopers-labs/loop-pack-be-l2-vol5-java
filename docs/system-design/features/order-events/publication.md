@@ -4,7 +4,7 @@
 
 기존 문서의 계약·절 번호·승인/검증 상태를 보존해 이동했다. 재편 자체는 제품 계약 변경이나 새 실행 검증을 뜻하지 않는다.
 
-**W7 읽기 구분:** 아래 2.11·4.6과 기존 상태 설명은 W6 승인·구현 기준을 보존한 것이다. 문서 마지막의 W7·W7.2~W7.4는 변경 경계·저장/TX·relay/복구·검증의 기준이며, 2026-11-04 사용자가 전체 최종 승인했다. 단계 제목의 초안 표시는 작성 이력을 보존한 것이고 현재 계약은 보완본 전체다. 구현·실행 검증은 미실행이며 구현 단위별 착수 허락은 별도다.  직접 발행·Outbox 제외라는 W6 설명을 W7의 요구로 적용하지 않는다. 두 기준을 제품 runtime에서 병행한다는 뜻도 아니다.
+**W7 읽기 구분:** 아래 2.11·4.6과 기존 상태 설명은 W6 승인·구현 기준을 보존한 것이다. 문서 마지막의 W7·W7.2~W7.4는 변경 경계·저장/TX·relay/복구·검증의 기준이며, 2026-11-04 사용자가 전체 최종 승인했다. 단계 제목의 초안 표시는 작성 이력을 보존한 것이고 현재 계약은 보완본 전체다. 구현과 실행 검증은 2026-11-05까지 구현 단위 01~08-3에서 수행했다. 각 절 제목의 "미실행"은 설계 작성 시점의 상태이며, 실제 실행 결과와 남은 한계는 [검증 기록의 W7 절](../../verification/order-events.md#w7-outbox-실행-근거)에 둔다.  직접 발행·Outbox 제외라는 W6 설명을 W7의 요구로 적용하지 않는다. 두 기준을 제품 runtime에서 병행한다는 뜻도 아니다.
 
 **상태:** 2026-10-29 사용자 최종 승인 설계다. 발행·소비 전체 검토와 잔여 보완을 반영했고 승인된 단위별 구현·관련 실행 검증을 마쳤다. 관찰 결과와 한계는 [검증 기록](../../verification/order-events.md)에 둔다. 소비 측 상세설계는 [소비 상세설계](consumption.md)를 따른다. 각 구현 단위는 별도 착수 허락을 받는다.
 
@@ -633,7 +633,7 @@ W7의 orderOutboxProducerFactory·orderOutboxKafkaTemplate은 StringSerializer/S
 
 1. 전용 ThreadPoolTaskScheduler는 acceptTasksAfterContextClose=false·waitForTasksToCompleteOnShutdown=false로 early shutdown을 시작한다. continueExistingPeriodicTasksAfterShutdownPolicy=false·executeExistingDelayedTasksAfterShutdownPolicy=false를 명시해 주기/지연 작업을 종료 뒤 새로 실행하지 않는다. phase 값만으로 이 선행 이벤트를 생략해 설명하지 않는다.
 2. relay 진입 제어 lifecycle phase=0의 stop은 새 수동 진입을 STOPPING으로 막고 진행 thread에 interrupt를 전달한다. 실행 finally의 gate 해제/종료 통지를 기다리고, 주기 task 취소는 중복 호출에도 안전하게 처리한다.
-3. 전용 pool은 phase=-100 lifecycle이다. Spring은 running인 lifecycle만 정지시키므로, 1단계 early shutdown 뒤 2단계 gate finally 대기 중에 executor가 이미 종료됐다면 phase -100 pool stop은 호출되지 않을 수 있다(정상). 진행 작업이 phase 0 대기를 넘겨 남아 executor가 아직 running이면 phase -100 lifecycle 정지 경로가 그 작업의 종료를 기다린다. 그 뒤 producer factory는 기존 MIN_VALUE에서 정지·physical close한다. 2026-11-05 구현 08-1의 실제 context.close 관찰에서는 phase 0 뒤 executor 종료·relay thread 0이었고 producer factory는 pool 순서 뒤까지 running이었다. phase 0 한도를 넘겨 pool에 작업이 남는 경로는 미검증이다.
+3. 전용 pool은 phase=-100 lifecycle이다. Spring은 running인 lifecycle만 정지시키므로, 1단계 early shutdown 뒤 2단계 gate finally 대기 중에 executor가 이미 종료됐다면 phase -100 pool stop은 호출되지 않을 수 있다(정상). 진행 작업이 phase 0 대기를 넘겨 남아 executor가 아직 running이면 phase -100 lifecycle 정지 경로가 그 작업의 종료를 기다린다. 그 뒤 producer factory는 기존 MIN_VALUE에서 정지·physical close한다. 2026-11-05 구현 08-1의 실제 context.close 관찰에서는 phase 0 뒤 executor 종료·relay thread 0이었고 producer factory는 pool 순서 뒤까지 running이었다. phase 0 한도를 넘겨 pool에 작업이 남는 경로는 2026-11-05 구현 08-3에서 통제한 회차로 관찰했다. executor가 아직 running이면 phase -100에서 pool의 stop(callback)이 호출된다. Spring Context 6.2.5의 ExecutorLifecycleDelegate는 실행 중 작업이 있으면 callback을 그 작업의 afterExecute까지 미룬다. 작업이 phase 대기 안에 끝나면 다음 phase로 넘어간다. 끝나지 않으면 Spring이 그 pool을 미완료로 기록하고 destroy의 shutdownNow(대기 0)로 넘어가므로, close는 relay thread가 남은 채 반환될 수 있다. 이때도 relay는 STOPPING을 관측해 결과 TX를 시작하지 않는다. callback 실행과 executor 종료·thread 소멸은 원자적이지 않다.
 4. DB/라이브러리 정체로 기존 phase 대기 30초 안에 종료하지 못하면 timeout/미완료를 보고한다. producer physical close 15초를 더한 앱 전체 종료 보장을 주장하지 않는다. OS 강제 종료에서 callback/로그까지 보장하지 않는다.
 
 전용 pool bean은 autowireCandidate=false로 등록한다. 문제는 Boot 3.4.4가 Executor bean이 없을 때만 공통 applicationTaskExecutor를 만든다는 점이다(TaskExecutorConfigurations의 ConditionalOnMissingBean(Executor)). 평범한 ThreadPoolTaskScheduler bean을 더하면 다른 기능의 공통 실행기가 사라진다. 주입 후보가 아닌 bean은 이 조건에서 제외되므로 공통 실행기를 보존하면서, pool은 context bean으로 남아 ContextClosedEvent·lifecycle에 참여한다. pool을 bean이 아닌 내부 객체로 두면 위 1·3단계를 직접 흉내 내야 해서 택하지 않았다. scheduler는 config의 @Bean 메서드 호출로 pool을 받는다.
@@ -970,4 +970,4 @@ broker readiness 30초·consumer/group 준비와 결과 관찰 60초·전체 E2E
 
 계약·모델·클래스/메서드·내부 의사코드·오류/재개·W6 보존·검증 기준에 세 차례 Claude 검토 대조와 사용자 선택을 반영했다. 3차 정적 검토는 G1~G5 해결·구현 전 계약 결함 0·새 사용자 결정 없음으로 정리했고, 통제 예외 전파/복구 장벽의 위치를 마지막으로 명확히 했다. 현재 새 미정 정책은 발견하지 못했으며, 2026-11-04 사용자가 최종 요약 및 원문 부합 검토 뒤 전체 설계를 최종 승인했다. 구현/실행 검증과 구현 단위별 착수 허락은 남아 있다. 실제 누락/모순은 추측하지 않고 질문한다.
 
-현재 코드/설정은 여전히 W6다. W7 구현·컴파일·DDL/EXPLAIN·실제 broker/PG/E2E·회귀/Checkstyle/ArchUnit·종료 동작은 모두 미실행이다. 문서 정적 대조는 이 검증을 대신하지 않는다. 단일 API 프로세스의 relay·단일 broker·명시 대상 복구·자동 삭제 없음·immutable 원본 손상 자동 수리 없음이 현재 한계다. 제품의 별도 relay 실행물·분산 claim/lease·DLQ·관리 HTTP·전체 과거 주문 소급·새 성능 실험은 추가하지 않는다.
+설계 승인 시점(2026-11-04)에는 코드/설정이 W6였고, W7 구현·컴파일·DDL/EXPLAIN·실제 broker/PG/E2E·회귀/Checkstyle/ArchUnit·종료 동작은 모두 미실행이었다. 이후 구현 단위 01~08-3에서 W7 제품 경로와 검증을 구현·실행했다. 실제 결과·O-ID별 근거·미실행 범위는 [검증 기록의 W7 절](../../verification/order-events.md#w7-outbox-실행-근거)에 있다. 문서 정적 대조는 이 검증을 대신하지 않는다. 단일 API 프로세스의 relay·단일 broker·명시 대상 복구·자동 삭제 없음·immutable 원본 손상 자동 수리 없음이 현재 한계다. 제품의 별도 relay 실행물·분산 claim/lease·DLQ·관리 HTTP·전체 과거 주문 소급·새 성능 실험은 추가하지 않는다.
