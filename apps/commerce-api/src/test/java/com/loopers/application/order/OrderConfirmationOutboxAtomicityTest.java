@@ -168,11 +168,13 @@ class OrderConfirmationOutboxAtomicityTest {
     @ValueSource(strings = {"PENDING", "FAILED"})
     void nonSuccessResultCreatesNoOutbox(String result) {
         PG.changeStatus("TEST-TX-1", result);
+        int createsBefore = PG.createCalls();
 
         orders.reconcile(userId, orderId);
 
         assertThat(order().getConfirmedAt()).isNull();
         assertThat(outbox.count()).isZero();
+        assertThat(PG.createCalls()).as("확인 실패·대기 결과로 결제를 다시 만들지 않는다").isEqualTo(createsBefore);
     }
 
     @Test
@@ -180,11 +182,13 @@ class OrderConfirmationOutboxAtomicityTest {
         PG.replyNext(503, "{}");
         PG.replyNext(503, "{}");
         PG.replyNext(503, "{}");
+        int createsBefore = PG.createCalls();
 
         OrderPaymentInfo result = orders.reconcile(userId, orderId);
 
         assertThat(result.checked()).isFalse();
         assertUnconfirmedWithoutOutbox();
+        assertThat(PG.createCalls()).as("결과를 모를 때 결제를 다시 만들지 않는다").isEqualTo(createsBefore);
     }
 
     /** 직렬화 실패: TX C만 rollback되고, 저장해 둔 TX B 결과로 PG 호출 없이 다시 확정한다. */
