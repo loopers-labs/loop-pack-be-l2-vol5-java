@@ -1,7 +1,11 @@
 package com.loopers.architecture;
 
 import com.loopers.domains.order.app.PaymentLookupAssessment;
+import com.loopers.domains.order.app.port.OrderConfirmedOutbox;
 import com.loopers.domains.order.in.PaymentLookupScheduler;
+import com.loopers.domains.order.out.OrderConfirmedOutboxJpaEntity;
+import com.loopers.domains.order.out.OrderConfirmedOutboxJpaRepository;
+import com.loopers.domains.order.out.OrderConfirmedOutboxPersistenceAdapter;
 import com.loopers.domains.payment.app.PaymentGatewayRegistry;
 import com.loopers.domains.payment.app.PaymentLookupPolicy;
 import com.loopers.domains.payment.app.port.PaymentAnomalyRepository;
@@ -229,6 +233,18 @@ class ArchitectureTest {
         assertThat(out.contain(CircuitBreakingPaymentGateway.class)).isTrue();
         assertThat(out.contain(PaymentCircuitBreakers.class)).isTrue();
         assertThat(app.contain(PaymentTransactionsLookup.NotCalled.class)).isTrue();
+    }
+
+    @Test
+    @DisplayName("주문 확정 Outbox 포트는 domains.order.app.port에, 어댑터·엔티티·JPA 리포지토리는 domains.order.out에 있어 계층 검사 대상에 포함된다")
+    void orderOutboxClassesAreChecked() {
+        JavaClasses appPort = CLASSES.that(resideInAPackage(APP_PORT));
+        JavaClasses out = CLASSES.that(resideInAPackage(OUT));
+
+        assertThat(appPort.contain(OrderConfirmedOutbox.class)).isTrue();
+        assertThat(out.contain(OrderConfirmedOutboxPersistenceAdapter.class)).isTrue();
+        assertThat(out.contain(OrderConfirmedOutboxJpaEntity.class)).isTrue();
+        assertThat(out.contain(OrderConfirmedOutboxJpaRepository.class)).isTrue();
     }
 
     private static ArchCondition<JavaClass> dependOnOwnContextOnly() {

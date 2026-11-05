@@ -7,8 +7,7 @@ import java.util.List;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 // order-events topic을 eventId로 읽는다. 테스트마다 주문 ID가 다시 1부터 시작하므로
-// 장면 시작 전 끝 위치(mark)부터만 읽는다. "없음"은 같은 producer가 나중에 보낸 다른 주문의 record(경계)가 도착할 때까지
-// 읽은 뒤 판단한다. 한 partition 안에서는 보낸 순서대로 쌓이므로 경계보다 먼저 보낸 record는 경계 앞에 있다.
+// 장면 시작 전 끝 위치(mark)부터만 읽는다. "없음"은 보내는 쪽이 broker 확인을 받은 뒤 호출 시점의 끝 위치까지 읽어 판단한다.
 public class OrderEventsProbe implements AutoCloseable {
     private static final JsonMapper JSON = JsonMapper.builder().build();
 
@@ -35,11 +34,9 @@ public class OrderEventsProbe implements AutoCloseable {
         return records.stream().filter(record -> eventId.equals(eventId(record))).toList();
     }
 
-    // 경계 record까지 읽어 그 사이(경계 포함)의 record를 돌려준다.
-    public List<ConsumerRecord<String, String>> readThrough(long from, String boundaryEventId) {
-        List<ConsumerRecord<String, String>> records = reader.readUntil(from,
-            found -> indexOf(found, boundaryEventId) >= 0, "경계 eventId=" + boundaryEventId + " record 도착");
-        return records.subList(0, indexOf(records, boundaryEventId) + 1);
+    // 호출 시점의 끝 위치까지 읽는다.
+    public List<ConsumerRecord<String, String>> readThrough(long from) {
+        return reader.readThrough(from);
     }
 
     public static String eventId(ConsumerRecord<String, String> record) {

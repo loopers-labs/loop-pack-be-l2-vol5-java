@@ -2,6 +2,8 @@ package com.loopers.domains.order.app;
 
 import com.loopers.common.error.InvalidValueException;
 import com.loopers.common.error.RuleViolationException;
+import com.loopers.domains.order.app.port.OrderConfirmedOutbox;
+import com.loopers.domains.order.app.port.OrderConfirmedPayload;
 import com.loopers.domains.order.app.port.OrderConfirmedPublisher;
 import com.loopers.domains.order.app.port.OrderRepository;
 import com.loopers.domains.order.domain.Order;
@@ -34,7 +36,6 @@ import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -55,15 +56,15 @@ public class OrderApplicationService {
     private final PaymentLookupScheduleRepository paymentLookupScheduleRepository;
     private final PaymentLookupPolicy paymentLookupPolicy;
     private final PaymentExpiryPolicy paymentExpiryPolicy;
-    private final ApplicationEventPublisher applicationEventPublisher;
     private final OrderConfirmedPublisher orderConfirmedPublisher;
+    private final OrderConfirmedOutbox orderConfirmedOutbox;
 
     public OrderApplicationService(OrderRepository orderRepository, ProductRepository productRepository,
         PaymentRecordRepository paymentRecordRepository, PaymentGatewayRegistry paymentGatewayRegistry,
         TransactionTemplate transactionTemplate, PaymentAnomalyRepository paymentAnomalyRepository, Clock clock,
         PaymentLookupScheduleRepository paymentLookupScheduleRepository, PaymentLookupPolicy paymentLookupPolicy,
-        PaymentExpiryPolicy paymentExpiryPolicy, ApplicationEventPublisher applicationEventPublisher,
-        OrderConfirmedPublisher orderConfirmedPublisher) {
+        PaymentExpiryPolicy paymentExpiryPolicy, OrderConfirmedPublisher orderConfirmedPublisher,
+        OrderConfirmedOutbox orderConfirmedOutbox) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.paymentRecordRepository = paymentRecordRepository;
@@ -74,8 +75,8 @@ public class OrderApplicationService {
         this.paymentLookupScheduleRepository = paymentLookupScheduleRepository;
         this.paymentLookupPolicy = paymentLookupPolicy;
         this.paymentExpiryPolicy = paymentExpiryPolicy;
-        this.applicationEventPublisher = applicationEventPublisher;
         this.orderConfirmedPublisher = orderConfirmedPublisher;
+        this.orderConfirmedOutbox = orderConfirmedOutbox;
     }
 
     public record ItemRequest(long productId, int quantity) { }
@@ -361,8 +362,10 @@ public class OrderApplicationService {
                 }
                 Order saved = orderRepository.save(order);
                 if (saved.getStatus() == Order.Status.CONFIRMED) {
-                    // 최초 확정 순간이다. payload는 이 트랜잭션 안에서 저장된 주문으로 만들고, send는 commit 뒤 listener가 한다(설계 27절 D72).
-                    applicationEventPublisher.publishEvent(OrderConfirmedPayloadFactory.create(saved));
+                    // 최초 확정 순간이다. payload는 이 트랜잭션 안에서 저장된 주문으로 한 번 만든다(설계 27절 D72).
+                    // Outbox 기록은 확정과 같은 트랜잭션이라 함께 commit·rollback된다. broker 전송은 relay만 한다(D95).
+                    OrderConfirmedPayload payload = OrderConfirmedPayloadFactory.create(saved);
+                    orderConfirmedOutbox.append(payload);
                 }
                 payment.applyProviderReport(report.status(), report.transactionKey());
                 payment = paymentRecordRepository.save(payment);

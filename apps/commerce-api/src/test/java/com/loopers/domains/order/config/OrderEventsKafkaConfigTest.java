@@ -24,6 +24,7 @@ class OrderEventsKafkaConfigTest {
         .withBean(KafkaProperties.class, KafkaProperties::new)
         .withPropertyValues(
             "commerce.kafka.producer.max-block=2s",
+            "commerce.kafka.producer.delivery-timeout=30s",
             "commerce.kafka.topics.order-events=order-events",
             "commerce.kafka.topics.order-events-partitions=1",
             "commerce.kafka.topics.order-event-republish-requests=order-event-republish-requests",
