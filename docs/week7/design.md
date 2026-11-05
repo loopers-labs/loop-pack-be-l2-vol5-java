@@ -1,6 +1,6 @@
 # 주문 확정 Outbox와 단일 relay 설계 — Week 7
 
-> 상태: **구현 중 (2026-11-05)**. 1~6단계(바꿀 트랜잭션 표시, Outbox 모델, 확정 TX의 Outbox 기록, 로컬 원자성 검증, 단일 relay, 재시도·재개·관찰)를 진행했다. 중단 실험·E2E·W6 누락 복구는 다음 단계다.
+> 상태: **구현 중 (2026-11-05)**. 1~7단계(바꿀 트랜잭션 표시, Outbox 모델, 확정 TX의 Outbox 기록, 로컬 원자성 검증, 단일 relay, 재시도·재개·관찰, 두 중단 구간)를 진행했다. E2E·W6 누락 복구는 다음 단계다.
 > W6의 이벤트 계약(`docs/week6/design.md` 2절)과 구매 활동 consumer는 바꾸지 않는다. 바꾸는 것은 "확정 뒤 직접 발행"을 "같은 TX의 Outbox 기록 + 단일 relay"로 교체하는 경계다.
 
 ## 0. 범위
@@ -156,6 +156,24 @@ SELECT * FROM product_purchase_activity WHERE order_id = 42;
 - Kafka `order-events`의 retention ≤ consumer 완료 기록의 보존 기간
 - 완료 기록을 먼저 지우면, 남아 있는 Outbox 행이나 Kafka record의 재처리가 구매 활동을 한 번 더 만든다. 지금 W6 consumer는 완료 기록을 지우지 않는다.
 
+### 4-2. 두 중단 구간과 재시작 (7단계)
+
+relay 한 건의 흐름은 단계로 나뉜다. 어느 단계 사이에서 멈춰도 다음에 할 일은 DB의 행이 알려 준다.
+
+```
+[확정 TX commit] ─①─ [relay: 대상 조회] → [시도 기록] → [send → broker 확인] ─②─ [PUBLISHED 저장]
+```
+
+| 중단 지점 | 멈춘 직후 | 재시작 뒤 |
+|---|---|---|
+| ① commit 뒤 relay 실행 전 | 주문 CONFIRMED·예약 CONSUMED, Outbox PENDING(시도 0), broker record 0(구매 활동을 만들 것이 없다) | 새 relay가 저장된 행을 골라 저장된 key·payload 그대로 보낸다. 같은 행이 PUBLISHED(시도 1) |
+| ② broker 확인 뒤 PUBLISHED 저장 전 | broker에 record 1개(실제 send 성공 metadata의 offset), 같은 행이 PENDING(시도 1, `published_at`·`last_error` 없음, 다음 시도 시각 그대로) | 새 relay가 같은 행을 다시 보낸다. broker에 같은 eventId·같은 payload의 record가 **다른 offset**으로 2개, 같은 행이 PUBLISHED(시도 2) |
+
+- **중단 hook** (`RelayStopHook`, 테스트 전용). relay가 부르는 Outbox 단계를 실제 서비스 빈(트랜잭션 프록시)에 그대로 넘기다가, 멈출 단계에 이르면 그 단계를 수행하지 않고 예외로 회차 흐름을 끝낸다. 앞 단계는 실제로 끝났다. ②에서는 send가 돌려준 broker 위치(`RecordingOutboxSender`가 남긴 topic·partition·offset)와 broker에 실제로 쓰인 record를 함께 확인한 뒤 PUBLISHED 저장만 막는다. relay는 이 예외를 잡지 않으므로 실패 기록도 남지 않는다.
+- **OS 강제 종료가 아니다.** 예외로 relay의 실행 흐름을 끝낸 실험이다. 프로세스가 죽었을 때와 같은 점은 "다음 단계의 DB 기록이 일어나지 않았다"는 것뿐이고, JVM·커넥션·producer 버퍼의 상태까지 재현하지는 않는다.
+- **재시작**은 relay 객체와 producer를 새로 만들고 같은 MySQL·topic·eventId를 쓴다. 테스트는 Outbox 상태를 직접 PENDING으로 되돌리지 않는다. 재시작한 relay가 고르는 것은 중단 전에 남은 행 그대로다.
+- ②의 두 record는 W6의 "같은 offset 재전달"과 다르다. 같은 사건이 broker에 두 번 **기록**된 것이고, 소비 효과의 중복은 W6 consumer(eventId·주문 유일 제약)가 막는다. 소비까지 이어서 확인하는 것은 8단계 E2E다.
+
 ## 5. 결정 사항
 
 | 결정 | 선택 | 이유 | 상태 |
@@ -177,6 +195,7 @@ SELECT * FROM product_purchase_activity WHERE order_id = 42;
 | `OrderOutboxRelayTest` | 실제 주문으로 만든 PENDING을 broker로 보내고 확인 뒤 PUBLISHED, 다음 회차 재발행 없음, broker 불통이면 PENDING·다음 시각·오류를 남기고 그 시각 전에는 고르지 않음, send하는 동안은 PENDING, 겹친 회차 건너뜀, batch-size·순서, 발행기 예외도 실패로 기록 |
 | `OrderOutboxRelaySchedulerTest` | 켜면 fixed-delay마다 회차 실행, 끄거나 없으면 scheduler 없음 |
 | `OrderOutboxRetryAndResumeTest` | broker 장애 동안 쌓인 PENDING 2건이 회복 뒤 같은 행으로 발행되고 backlog가 비워짐, 연속 실패의 대기 1s → 2s → 4s(상한) → 4s와 알림 기준부터 ERROR(eventId·원인), eventId를 지정한 재개가 다음 시도 시각 전에 보내고 PUBLISHED·없는 eventId는 보내지 않음 |
+| `OrderOutboxInterruptionTest` | ① commit 뒤 relay 실행 전 중단: CONFIRMED·CONSUMED·PENDING(시도 0)·broker 0 → 새 relay가 저장 payload 그대로 1회 발행·PUBLISHED. ② broker 확인 뒤 PUBLISHED 저장 전 중단: send 성공 offset과 broker record 일치, 같은 행 PENDING(시도 1, 실패 기록 없음) → 새 relay가 같은 eventId를 다른 offset에 재발행, 같은 행 PUBLISHED(시도 2) |
 | `OrderConfirmedOutboxTest` | 처음 확정에서 1행·저장 사실과 같은 payload, 중복 적용 무추가·payload 불변, 대기·실패·rollback 무기록, broker 불통에도 직접 send 0회 |
 | `OutboxAtomicityTest` | Outbox insert 전·후 실패와 직렬화 실패에서 TX B 전체 rollback(주문·시도·예약·재고 유지, Outbox 0, PG create 추가 0)과 같은 거래 재조회로 한 번 확정, UNKNOWN 무기록, 동시 중복 callback에서 1행, TX 밖 append 거부 |
 | `OrderConfirmedOmissionReproTest` | W6 기준선. `W6DirectPublishConfig`로 W6 경로를 재현해 기대값 그대로 실행 |
