@@ -75,8 +75,11 @@ public final class OrderOutboxShutdownObserver implements ApplicationContextInit
             Thread.currentThread().interrupt();
             idle = false;
         }
-        snapshots.add(new Snapshot(point, pool.getScheduledExecutor().isShutdown(), pool.getScheduledExecutor().isTerminated(),
-            pool.isRunning(), gate.isStopping(), idle, producer.isRunning(), relayThreadsAlive()));
+        Snapshot snapshot = new Snapshot(point, pool.getScheduledExecutor().isShutdown(), pool.getScheduledExecutor().isTerminated(),
+            pool.isRunning(), gate.isStopping(), idle, producer.isRunning(), relayThreadsAlive());
+        snapshots.add(snapshot);
+        // 다른 종료 로그(graceful 등)와 실제 순서를 비교할 수 있게 같은 출력에 남긴다.
+        System.out.println("[SHUTDOWN OBSERVER] " + snapshot);
     }
 
     public static long relayThreadsAlive() {
