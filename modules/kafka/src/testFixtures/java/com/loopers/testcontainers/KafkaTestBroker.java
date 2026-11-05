@@ -49,6 +49,29 @@ public final class KafkaTestBroker implements AutoCloseable {
         return broker.getHost() + ":" + broker.getMappedPort(19092);
     }
 
+    /** broker 프로세스를 얼린다. 포트와 연결은 남지만 응답하지 않는다. 재시작과 달리 주소가 바뀌지 않는다. */
+    public void pause() {
+        DockerClientFactory.instance().client().pauseContainerCmd(broker.getContainerId()).exec();
+    }
+
+    /** {@link #pause()}로 얼린 broker를 다시 응답하게 한다. */
+    public void resume() {
+        DockerClientFactory.instance().client().unpauseContainerCmd(broker.getContainerId()).exec();
+    }
+
+    /**
+     * broker 프로세스를 내린다. {@link #pause()}와 달리 연결을 거부하므로, 보내던 요청이 broker에 남지 않는다.
+     * 컨테이너와 포트 지정은 그대로라 {@link #startAgain()} 뒤 같은 주소로 다시 붙는다.
+     */
+    public void stopProcess() {
+        DockerClientFactory.instance().client().stopContainerCmd(broker.getContainerId()).exec();
+    }
+
+    /** {@link #stopProcess()}로 내린 broker를 같은 컨테이너·주소로 다시 올린다. 준비 완료는 호출자가 확인한다. */
+    public void startAgain() {
+        DockerClientFactory.instance().client().startContainerCmd(broker.getContainerId()).exec();
+    }
+
     @Override
     public void close() {
         broker.stop();
