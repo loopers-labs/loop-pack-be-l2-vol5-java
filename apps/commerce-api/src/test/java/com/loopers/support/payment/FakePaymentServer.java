@@ -43,6 +43,7 @@ public class FakePaymentServer implements AutoCloseable {
     private final Queue<Duration> nextDelays = new ConcurrentLinkedQueue<>();
     private final AtomicReference<Duration> delayEveryResponse = new AtomicReference<>();
     private final AtomicReference<Runnable> beforeNextLookupReply = new AtomicReference<>();
+    private final AtomicReference<String> settleCreatedAs = new AtomicReference<>();
     private int delayedLookupEvery;
     private Duration patternedLookupDelay;
     private int patternLookupCalls;
@@ -115,6 +116,12 @@ public class FakePaymentServer implements AutoCloseable {
     /** 다음 조회 요청에 응답하기 직전에 한 번 실행한다. PG가 답한 직후 우리 쪽이 망가지는 장면에 쓴다. */
     public void beforeNextLookupReply(Runnable action) { beforeNextLookupReply.set(action); }
 
+    /**
+     * 생성 응답은 PENDING으로 주되, 저장한 거래는 지정한 결과로 바꿔 둔다. null이면 해제한다.
+     * 실제 PG처럼 결과는 조회·callback으로만 알 수 있게 해, 부하 실험에서 거래마다 상태를 바꾸지 않아도 되게 한다.
+     */
+    public void settleCreatedAs(String status) { settleCreatedAs.set(status); }
+
     public void dropNextCreateResponse() { dropNextCreateResponse.set(true); }
     public void holdNextCreateResponse() { holdNextCreateResponse.set(true); }
     /** 다음 요청 하나에 줄 응답을 대기열에 넣는다. 여러 번 부르면 요청 순서대로 하나씩 쓴다. */
@@ -145,6 +152,7 @@ public class FakePaymentServer implements AutoCloseable {
         nextDelays.clear();
         delayEveryResponse.set(null);
         beforeNextLookupReply.set(null);
+        settleCreatedAs.set(null);
         delayedLookupEvery = 0;
         patternedLookupDelay = null;
         patternLookupCalls = 0;
@@ -229,7 +237,8 @@ public class FakePaymentServer implements AutoCloseable {
                     .put("orderId", request.path("orderId").asText())
                     .put("amount", request.path("amount").asLong())
                     .put("status", "PENDING");
-                transactions.put(key, transaction);
+                String settled = settleCreatedAs.get();
+                transactions.put(key, settled == null ? transaction : ((ObjectNode) transaction.deepCopy()).put("status", settled));
                 if (dropNextCreateResponse.getAndSet(false)) {
                     return;
                 }

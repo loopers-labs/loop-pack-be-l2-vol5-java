@@ -1,102 +1,98 @@
 package com.loopers.infrastructure.order;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.loopers.application.order.OrderConfirmationListener;
-import com.loopers.domain.order.OrderConfirmed;
+import com.loopers.domain.order.OrderOutboxDelivery;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.springframework.boot.test.system.CapturedOutput;
-import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.kafka.core.KafkaProducerException;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
 
-import java.time.Instant;
-import java.util.List;
+import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-@ExtendWith(OutputCaptureExtension.class)
 class KafkaOrderConfirmedPublisherTest {
-    private static final OrderConfirmed EVENT = new OrderConfirmed(42L, Instant.parse("2026-10-25T01:00:00.123456Z"),
-        List.of(new OrderConfirmed.Item(7L, 2), new OrderConfirmed.Item(8L, 1)));
+    private static final OrderOutboxDelivery DELIVERY =
+        new OrderOutboxDelivery("order-confirmed:v1:42", "42", "{\"orderId\":42}");
     private KafkaTemplate<Object, Object> kafka;
     private KafkaOrderConfirmedPublisher publisher;
+    private final String payload = DELIVERY.payload();
 
     @BeforeEach
     @SuppressWarnings("unchecked")
     void setUp() {
         kafka = mock(KafkaTemplate.class);
-        publisher = new KafkaOrderConfirmedPublisher(kafka, "order-events");
+        publisher = new KafkaOrderConfirmedPublisher(kafka, "order-events", Duration.ofMillis(50));
     }
 
     @Test
-    void serializesExactVersionOneContractAndUsesOrderIdKey() throws Exception {
-        CompletableFuture<SendResult<Object, Object>> future = new CompletableFuture<>();
-        when(kafka.send(eq("order-events"), eq("42"), any(OrderConfirmedMessage.class))).thenReturn(future);
+    void completesOnlyAfterBrokerConfirmsStoredKeyAndPayload() {
+        var metadata = new RecordMetadata(new TopicPartition("order-events", 1), 7L, 0, 0L, 0, 0);
+        var record = new ProducerRecord<Object, Object>("order-events", "42", payload);
+        when(kafka.send("order-events", "42", payload))
+            .thenReturn(CompletableFuture.completedFuture(new SendResult<>(record, metadata)));
 
-        publisher.publish(EVENT);
+        assertThatCode(() -> publisher.publish(DELIVERY)).doesNotThrowAnyException();
 
-        var message = ArgumentCaptor.forClass(OrderConfirmedMessage.class);
-        verify(kafka).send(eq("order-events"), eq("42"), message.capture());
-        ObjectMapper mapper = new ObjectMapper();
-        JsonNode actual = mapper.readTree(mapper.writeValueAsString(message.getValue()));
-        assertThat(actual).isEqualTo(mapper.readTree("""
-            {
-              "eventType":"OrderConfirmed", "schemaVersion":1, "eventId":"order-confirmed:v1:42",
-              "orderId":42, "confirmedAt":"2026-10-25T01:00:00.123456Z",
-              "items":[{"productId":7,"quantity":2},{"productId":8,"quantity":1}]
-            }
-            """));
-        assertThat(future).isNotDone();
+        verify(kafka).send("order-events", "42", payload);
     }
 
     @Test
-    void recordsSuccessOnlyWhenSendFutureCompletesWithBrokerMetadata(CapturedOutput output) {
-        CompletableFuture<SendResult<Object, Object>> future = new CompletableFuture<>();
-        when(kafka.send(eq("order-events"), eq("42"), any(OrderConfirmedMessage.class))).thenReturn(future);
+    void sendFailureIsReportedWithEventIdAndCause() {
+        when(kafka.send("order-events", "42", payload))
+            .thenReturn(CompletableFuture.failedFuture(new IllegalArgumentException("broker rejected")));
 
-        publisher.publish(EVENT);
-        assertThat(output.getOut()).doesNotContain("Order event published:");
-        RecordMetadata metadata = new RecordMetadata(new TopicPartition("order-events", 1), 17, 0, 0L, 2, 100);
-        future.complete(new SendResult<>(new ProducerRecord<>("order-events", "42", "unused"), metadata));
-
-        assertThat(output.getAll()).contains("Order event published:", "eventId=order-confirmed:v1:42",
-            "topic=order-events", "partition=1", "offset=17");
+        assertThatThrownBy(() -> publisher.publish(DELIVERY)).isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("order-confirmed:v1:42").hasMessageContaining("broker rejected")
+            .hasMessageNotContaining("orderId");
     }
 
+    /** relay는 내용을 해석하지 않고 저장된 문자열을 그대로 보낸다. 읽을 수 없는 payload는 consumer가 DLT로 격리한다. */
     @Test
-    void recordsAsynchronousFailureWithEventIdentity(CapturedOutput output) {
-        CompletableFuture<SendResult<Object, Object>> future = new CompletableFuture<>();
-        when(kafka.send(eq("order-events"), eq("42"), any(OrderConfirmedMessage.class))).thenReturn(future);
+    void storedPayloadIsSentAsIsWithoutParsing() {
+        var unreadable = new OrderOutboxDelivery("order-confirmed:v1:42", "42", "not-json");
+        var metadata = new RecordMetadata(new TopicPartition("order-events", 1), 8L, 0, 0L, 0, 0);
+        var record = new ProducerRecord<Object, Object>("order-events", "42", "not-json");
+        when(kafka.send("order-events", "42", "not-json"))
+            .thenReturn(CompletableFuture.completedFuture(new SendResult<>(record, metadata)));
 
-        publisher.publish(EVENT);
-        future.completeExceptionally(new IllegalStateException("test: broker unavailable"));
+        assertThatCode(() -> publisher.publish(unreadable)).doesNotThrowAnyException();
 
-        assertThat(output.getAll()).contains("Order event publication failed:",
-            "eventId=order-confirmed:v1:42", "orderId=42", "test: broker unavailable");
-        assertThat(output.getAll()).doesNotContain("Order event published:");
+        verify(kafka).send("order-events", "42", "not-json");
     }
 
+    /** send() 호출에서 바로 던진 실패(크기 초과·metadata 대기 초과 등)도 eventId와 가장 안쪽 원인을 남긴다. */
     @Test
-    void synchronousSendFailureIsObservedByPostCommitListenerWithoutEscaping(CapturedOutput output) {
-        when(kafka.send(eq("order-events"), eq("42"), any(OrderConfirmedMessage.class)))
-            .thenThrow(new IllegalStateException("test: metadata unavailable"));
+    void immediateSendFailureIsReportedWithEventIdAndRootCause() {
+        var record = new ProducerRecord<Object, Object>("order-events", "42", payload);
+        when(kafka.send("order-events", "42", payload)).thenThrow(
+            new KafkaProducerException(record, "Send failed", new RecordTooLargeException("record is too large")));
 
-        new OrderConfirmationListener(publisher).onConfirmed(EVENT);
+        assertThatThrownBy(() -> publisher.publish(DELIVERY)).isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("order-confirmed:v1:42")
+            .hasMessageContaining("RecordTooLargeException")
+            .hasMessageContaining("record is too large");
+    }
 
-        assertThat(output.getAll()).contains("Order event publication failed after commit:",
-            "eventId=order-confirmed:v1:42", "test: metadata unavailable");
+    /** 대기가 끝나도 수신 여부는 모른다. 호출자가 PENDING으로 유지하도록 실패로 알린다. */
+    @Test
+    void unfinishedFutureAfterWaitIsReportedAsFailure() {
+        CompletableFuture<SendResult<Object, Object>> pending = new CompletableFuture<>();
+        when(kafka.send("order-events", "42", payload)).thenReturn(pending);
+
+        assertThatThrownBy(() -> publisher.publish(DELIVERY)).isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("TimeoutException");
+
+        assertThat(pending).isNotDone();
     }
 }

@@ -1,3 +1,8 @@
+// Outbox E2E·복구 시험이 실제 앱을 별도 프로세스로 띄울 때만 쓴다. 제품 코드의 의존성이 아니다.
+evaluationDependsOn(":apps:commerce-streamer")
+val streamerRuntimeClasspath = project(":apps:commerce-streamer")
+    .extensions.getByType<SourceSetContainer>()["main"].runtimeClasspath
+
 dependencies {
     implementation("com.github.ben-manes.caffeine:caffeine")
     // add-ons
@@ -26,12 +31,18 @@ dependencies {
     testImplementation(testFixtures(project(":modules:redis")))
     testImplementation(testFixtures(project(":modules:kafka")))
     testImplementation("com.tngtech.archunit:archunit-junit5:1.5.0")
+    testImplementation("org.testcontainers:mysql")
     testImplementation("io.micrometer:micrometer-registry-prometheus")
 }
 
 // 설정·장애 조건을 바꿔 결과를 비교하는 실험 테스트(@Tag("experiment"))는 기능 검증과 목적이 달라 평소 test·check에서 뺀다.
 // 연결 풀 실험처럼 수백 ms 차이에 결과가 걸린 것도 있어, 필요할 때 experimentTest로 따로 돌린다.
 tasks.test {
+    dependsOn(streamerRuntimeClasspath)
+    inputs.files(streamerRuntimeClasspath).withPropertyName("streamerRuntimeClasspath")
+    jvmArgumentProviders.add(CommandLineArgumentProvider {
+        listOf("-De2e.streamerClasspath=${streamerRuntimeClasspath.asPath}")
+    })
     useJUnitPlatform {
         excludeTags("experiment")
     }
@@ -47,6 +58,15 @@ tasks.register<Test>("experimentTest") {
     systemProperty("spring.profiles.active", "test")
     systemProperty("experiment.runtimeClasspath", sourceSets.test.get().runtimeClasspath.asPath)
     systemProperty("experiment.repositoryRoot", rootProject.projectDir.absolutePath)
+    // scripts/build-w6-revision.sh가 만든 W6 실행 jar. W6OutboxRecoveryExperimentTest가 쓴다.
+    systemProperty("w6.commerceApiJar", rootProject.file("build/w6-revision/commerce-api-w6.jar").path)
+    dependsOn(streamerRuntimeClasspath, sourceSets.main.get().runtimeClasspath)
+    jvmArgumentProviders.add(CommandLineArgumentProvider {
+        listOf(
+            "-De2e.streamerClasspath=${streamerRuntimeClasspath.asPath}",
+            "-De2e.apiClasspath=${sourceSets.main.get().runtimeClasspath.asPath}"
+        )
+    })
     jvmArgs("-Xshare:off")
     useJUnitPlatform {
         includeTags("experiment")
