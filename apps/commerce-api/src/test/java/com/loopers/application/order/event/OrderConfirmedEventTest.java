@@ -67,6 +67,15 @@ class OrderConfirmedEventTest {
         assertIntegrityError(order(OrderStatus.CONFIRMED, paymentMethod, null));
     }
 
+    @DisplayName("품목이 사라진 확정 주문으로는 복구 이벤트를 만들 수 없다.")
+    @Test
+    void rejectsConfirmedOrderWithoutItems() {
+        Order incomplete = Order.reconstitute(42L, 1L, OrderStatus.CONFIRMED, 400L, 400L,
+            PaymentResult.SUCCESS, PaymentMethod.PG, CONFIRMED_AT, List.of());
+
+        assertIntegrityError(incomplete);
+    }
+
     private Order order(OrderStatus status, PaymentMethod paymentMethod, ZonedDateTime confirmedAt) {
         boolean confirmed = status == OrderStatus.CONFIRMED;
         return Order.reconstitute(42L, 1L, status, 400L, confirmed ? 400L : null,
