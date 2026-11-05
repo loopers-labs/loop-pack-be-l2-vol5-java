@@ -181,4 +181,5 @@
 - 11-03: 문서 시작. 체크리스트·작업 방식·전제·D-0(테이블 분리, 컬럼, topic은 설정)·보존 정책·한계를 적었다. C-2에 UNKNOWN 테스트 4개 추가.
 - 11-03: D-0에 SENDING·lease(`next_attempt_at`) 추가, D-3(backoff + jitter, 3번 실패 → BLOCKED, 감지 수단), D-1 한 회차 정의.
 - 11-04: D-1 "실패하면 회차를 멈춘다"와 비교표, 순서 구분(다른 주문 vs 같은 주문)·한정 수량 공정성 답. 한계에 같은 주문 순서 세 겹·late-arriving data·DLT 재처리 TODO·broker 중복·테이블 증가·CDC 비교 추가. partition·offset 남김 ✅, 인덱스 🔧(D-0으로 옮김), backoff 숫자 ✅, lease 책임 나눔 🔧, BLOCKED = 보내는 쪽 DLT·재개 시 attempt 0·잘못된 전이는 예외 ✅, 핵심 1 기대값 표. 0단계 구현: order_outbox 엔티티 뼈대·포트·어댑터·schema.sql, 조회 테스트 4개.
+- 11-06: relay TX 나눔 ✅(TX1 SENDING / send는 TX 밖 / TX2 결과). 핵심 3 backoff(Red 6 → Green, 변이 3종 잡음), 핵심 2 relay 한 회차(Red 11 → Green, 변이 3종 잡음). 설정 batch-size 200·send-wait 35s·delivery.timeout.ms 30s, Clock·backoff 빈. 전체 521/0/0.
 - 11-05: 핵심 1 구현(Claude 초안 → 학습자 리뷰로 역할 변경). 예외 CONFLICT·도메인 기한 확인 🔧. N=200·tick 1초(🔧), 직렬 처리 ✅, 대기(`delivery.timeout.ms` 30s · 대기 35s · lease 1분) ✅/🔧.
