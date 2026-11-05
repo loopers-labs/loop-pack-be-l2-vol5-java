@@ -26,6 +26,22 @@ public class OrderOutboxBackoff {
      * @param failureNumber 이번이 몇 번째 연속 실패인가 (1부터)
      */
     public Duration delayAfter(int failureNumber) {
-        return Duration.ZERO;
+        if (failureNumber < 1) {
+            throw new IllegalArgumentException("실패 번호는 1부터입니다: " + failureNumber);
+        }
+        long capMillis = exponentialCapMillis(failureNumber);
+        return Duration.ofMillis((long) (capMillis * random.getAsDouble()));
+    }
+
+    /**
+     * min(상한, 기본 × 배수^(n-1)). 상한에 닿으면 곱하기를 멈춰 넘치지 않는다.
+     */
+    private static long exponentialCapMillis(int failureNumber) {
+        long millis = BASE.toMillis();
+        long cap = CAP.toMillis();
+        for (int i = 1; i < failureNumber && millis < cap; i++) {
+            millis *= MULTIPLIER;
+        }
+        return Math.min(millis, cap);
     }
 }
