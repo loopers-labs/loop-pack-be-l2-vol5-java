@@ -1,6 +1,6 @@
 # 주문 확정 Outbox와 단일 relay 설계 — Week 7
 
-> 상태: **구현 중 (2026-11-05)**. 1~7단계(바꿀 트랜잭션 표시, Outbox 모델, 확정 TX의 Outbox 기록, 로컬 원자성 검증, 단일 relay, 재시도·재개·관찰, 두 중단 구간)를 진행했다. E2E·W6 누락 복구는 다음 단계다.
+> 상태: **구현 중 (2026-11-05)**. 1~8단계(바꿀 트랜잭션 표시, Outbox 모델, 확정 TX의 Outbox 기록, 로컬 원자성 검증, 단일 relay, 재시도·재개·관찰, 두 중단 구간, 주문부터 구매 활동까지의 E2E)를 진행했다. W6 누락 복구는 다음 단계다.
 > W6의 이벤트 계약(`docs/week6/design.md` 2절)과 구매 활동 consumer는 바꾸지 않는다. 바꾸는 것은 "확정 뒤 직접 발행"을 "같은 TX의 Outbox 기록 + 단일 relay"로 교체하는 경계다.
 
 ## 0. 범위
@@ -174,12 +174,37 @@ relay 한 건의 흐름은 단계로 나뉜다. 어느 단계 사이에서 멈�
 - **재시작**은 relay 객체와 producer를 새로 만들고 같은 MySQL·topic·eventId를 쓴다. 테스트는 Outbox 상태를 직접 PENDING으로 되돌리지 않는다. 재시작한 relay가 고르는 것은 중단 전에 남은 행 그대로다.
 - ②의 두 record는 W6의 "같은 offset 재전달"과 다르다. 같은 사건이 broker에 두 번 **기록**된 것이고, 소비 효과의 중복은 W6 consumer(eventId·주문 유일 제약)가 막는다. 소비까지 이어서 확인하는 것은 8단계 E2E다.
 
+### 4-3. 주문부터 구매 활동까지 (8단계, `OutboxDeliveryE2ETest`)
+
+한 테스트 실행이 자원 준비 → consumer 시작 → API 호출 → relay 중단 → 재시작 → 결과 조회를 모두 소유한다.
+
+1. 합성 상품 둘(상품 7·8 역할)·사용자 포인트를 만들고, 실제 구매 활동 listener를 시작한다.
+2. 기존 주문 API로 주문(7×2, 8×1)을 만들고, 결제 시작 → PG fixture SUCCESS → callback으로 확정한다.
+3. 확정 주문·예약 소비·같은 eventId의 Outbox 한 행(PENDING)을 확인한다.
+4. relay가 첫 broker 확인 뒤 PUBLISHED 저장 전에 멈춘다(4-2절 ②). consumer는 이 record를 처리해 구매 활동을 만든다. Outbox는 아직 PENDING이다.
+5. 같은 Outbox에서 새 relay로 재시작해 다시 발행한다. consumer는 같은 사건을 다시 받고 이미 반영된 사실로 no-op 처리한다.
+
+| 관찰 | 기대 | 확인 방법 |
+|---|---|---|
+| 주문·PG 거래 | 같은 확정 주문, 외부 거래 1 | 주문 상태, PG fixture의 주문별 거래·create 수 |
+| Outbox | 같은 eventId 1행, 최종 PUBLISHED(시도 2) | `order_outbox` |
+| Kafka | 같은 eventId의 별도 record 2개(다른 offset) | broker를 처음부터 읽은 실제 record. send 호출 수를 세지 않는다 |
+| consumer | 같은 사건 수신 2회(RECORDED → ALREADY_PROCESSED) | listener 로그의 offset별 결과, group의 committed offset = 2 |
+| 완료 기록 | 같은 orderId·eventId로 1 | `processed_order_confirmation` |
+| 구매 활동 | 상품별 2행, 수량 2·1 유지 | `product_purchase_activity` |
+| 재고·포인트 | 예약 추가 소비·반환 없음, 포인트 차감 없음 | 재고 10→8·9 유지, 예약 CONSUMED, 잔액 그대로 |
+
+- **context 구성 (결정 B).** commerce-api 앱 context 하나에 streamer 클래스는 component scan에서 모두 빼고(`ExcludeStreamerFromScan`, `@TypeExcludeFilters`), 실제로 쓰는 listener factory(`OrderActivityKafkaConfig`)·parser·listener·handler·recorder·repository 구현만 `@Import`로 명시한다. streamer의 엔티티·JPA repository는 공통 `JpaConfig`의 패키지 scan으로 같은 MySQL fixture에 함께 올라온다.
+- **실제 commit.** 테스트 트랜잭션으로 감싸지 않는다. relay·consumer는 각자의 트랜잭션에서 commit된 행을 본다.
+- **격리와 정리.** topic·group·상품·사용자·주문은 이 테스트만 쓰는 값이다. DB를 일괄 초기화하지 않는다. 끝에는 자기가 시작한 listener와 만든 producer만 멈추고, PG fixture는 테스트 전후로 되돌린다. MySQL·Kafka 컨테이너는 `e2eTest` JVM의 fixture이고 Testcontainers가 JVM 종료 때 정리한다.
+- 상품 id는 DB가 정한다. 과제의 "상품 7×2, 8×1"은 새로 만든 두 상품의 수량 2·1로 확인한다.
+
 ## 5. 결정 사항
 
 | 결정 | 선택 | 이유 | 상태 |
 |---|---|---|---|
 | A. relay의 값 직렬화 | relay 전용 producer(value `StringSerializer`)로 저장된 payload를 그대로 보낸다 | 공통 template의 `JsonSerializer`에 문자열을 넘기면 JSON 문자열 리터럴로 한 번 더 감싸 consumer parser가 읽지 못한다 | 5단계에서 적용 (`KafkaOrderOutboxSender`) |
-| B. E2E에서 consumer 로딩 | 미정. apps 모듈은 plain jar가 꺼져 있어(`build.gradle.kts`) `testImplementation(project(":apps:commerce-streamer"))`가 그대로 동작하지 않는다 | 빌드 설정 변경이 필요하다 | 8단계 전에 확인 |
+| B. E2E에서 consumer 로딩 | commerce-api에 E2E 전용 source set `e2eTest`를 두고 그 classpath에만 commerce-streamer를 둔다. streamer는 plain jar(classifier `plain`, `application.yml` 제외)를 켠다. E2E context는 streamer 클래스를 component scan에서 빼고 consumer 부품만 `@Import`한다 | 두 앱의 `@SpringBootApplication`이 같은 패키지에 있어 일반 test classpath에 넣으면 기존 테스트의 설정 탐색·scan이 깨진다. 제품 runtime에는 commerce-api → commerce-streamer 의존이 생기지 않는다. 별도 E2E 모듈은 settings 변경과 테스트 지원 코드 이동이 더 크다 | 8단계에서 적용 (2026-11-05 확인). 실행: `./gradlew :apps:commerce-api:e2eTest` (`check`에 포함) |
 | C. W6 누락 상태 재현 | 보존한 W6 테스트 구성: 테스트 전용 `W6DirectPublishConfig`가 그 context에서만 Outbox 기록 자리를 "commit 뒤 직접 발행"으로 바꾼다 | W7 제품 코드에는 직접 발행이 없고, 운영용 우회 스위치는 만들지 않는다. W6 기준선 `OrderConfirmedOmissionReproTest`를 기대값 그대로 계속 실행한다 | 3단계에서 적용, 9단계에서 재사용 |
 | 기존 테스트 기대값 | `OrderConfirmedPublicationTest` → `OrderConfirmedOutboxTest`. "한 번 발행"을 "Outbox 1행 + 직접 발행 0회"로 바꾸고, W6의 "commit 뒤 발행 실패" 장면은 "broker 불통에도 확정 경로는 broker를 부르지 않는다"로 바꾼다 | 발행 위치가 바뀐 결과다. 같은 장면을 새 경계에서 확인하고 검사를 약하게 만들지 않는다 | 1~4단계 진행 요청에 따라 적용 (2026-11-05) |
 
@@ -196,6 +221,7 @@ relay 한 건의 흐름은 단계로 나뉜다. 어느 단계 사이에서 멈�
 | `OrderOutboxRelaySchedulerTest` | 켜면 fixed-delay마다 회차 실행, 끄거나 없으면 scheduler 없음 |
 | `OrderOutboxRetryAndResumeTest` | broker 장애 동안 쌓인 PENDING 2건이 회복 뒤 같은 행으로 발행되고 backlog가 비워짐, 연속 실패의 대기 1s → 2s → 4s(상한) → 4s와 알림 기준부터 ERROR(eventId·원인), eventId를 지정한 재개가 다음 시도 시각 전에 보내고 PUBLISHED·없는 eventId는 보내지 않음 |
 | `OrderOutboxInterruptionTest` | ① commit 뒤 relay 실행 전 중단: CONFIRMED·CONSUMED·PENDING(시도 0)·broker 0 → 새 relay가 저장 payload 그대로 1회 발행·PUBLISHED. ② broker 확인 뒤 PUBLISHED 저장 전 중단: send 성공 offset과 broker record 일치, 같은 행 PENDING(시도 1, 실패 기록 없음) → 새 relay가 같은 eventId를 다른 offset에 재발행, 같은 행 PUBLISHED(시도 2) |
+| `OutboxDeliveryE2ETest` (`e2eTest`) | 주문 API → PG 성공 callback → Outbox → relay(PUBLISHED 저장 전 중단·재시작) → Kafka 2 record → 실제 구매 활동 consumer. 4-3절 표의 기대값 전부 |
 | `OrderConfirmedOutboxTest` | 처음 확정에서 1행·저장 사실과 같은 payload, 중복 적용 무추가·payload 불변, 대기·실패·rollback 무기록, broker 불통에도 직접 send 0회 |
 | `OutboxAtomicityTest` | Outbox insert 전·후 실패와 직렬화 실패에서 TX B 전체 rollback(주문·시도·예약·재고 유지, Outbox 0, PG create 추가 0)과 같은 거래 재조회로 한 번 확정, UNKNOWN 무기록, 동시 중복 callback에서 1행, TX 밖 append 거부 |
 | `OrderConfirmedOmissionReproTest` | W6 기준선. `W6DirectPublishConfig`로 W6 경로를 재현해 기대값 그대로 실행 |
