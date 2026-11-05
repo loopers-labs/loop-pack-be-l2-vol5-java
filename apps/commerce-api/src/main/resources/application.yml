@@ -65,6 +65,18 @@ events:
     producer:
       max-block: 5s          # send()가 metadata를 기다리는 상한(max.block.ms) — 이 producer에만
 
+# Outbox relay (docs/week7/decisions.md D-2~D-4, D-15). 기본은 꺼 두고 한 인스턴스에서만 켠다(D-4)
+outbox:
+  relay:
+    enabled: false
+    fixed-delay: 1s        # 앞 회차가 끝난 뒤 다음 회차까지 — 첫 백오프(1초)보다 길지 않게 둔다
+    batch-size: 10         # 한 회차에 id 순서로 고르는 최대 행 수, 한 건씩 차례로 보낸다(D-15)
+    backoff:
+      initial: 1s          # 실패 뒤 다음 시도까지 1초부터 두 배씩(D-3)
+      max: 5m              # 백오프 상한(D-3)
+    block-after: 24h       # created_at부터 이 시간이 지나도 실패하면 BLOCKED(D-3, D-16)
+    lease-margin: 1m       # 임대 = producer 최대 전송 시간(max.block + delivery.timeout) + 이 여유(D-2, INV-704)
+
 springdoc:
   use-fqn: true
   swagger-ui:

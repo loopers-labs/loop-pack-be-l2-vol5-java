@@ -608,5 +608,31 @@ class OrderConfirmedOutboxAtomicityTest {
         public List<OutboxEvent> findAllByOrderId(Long orderId) {
             return delegate.findAllByOrderId(orderId);
         }
+
+        // relay용 조회·집기(batch 2)는 이 테스트의 관심 밖이다. 그대로 넘긴다.
+        @Override
+        public Optional<OutboxEvent> findById(Long id) {
+            return delegate.findById(id);
+        }
+
+        @Override
+        public List<Long> findDueIds(ZonedDateTime now, int limit) {
+            return delegate.findDueIds(now, limit);
+        }
+
+        @Override
+        public int claim(Long id, ZonedDateTime now, ZonedDateTime leaseUntil) {
+            return delegate.claim(id, now, leaseUntil);
+        }
+
+        @Override
+        public long countByStatus(OutboxStatus status) {
+            return delegate.countByStatus(status);
+        }
+
+        @Override
+        public Optional<ZonedDateTime> findOldestCreatedAt(OutboxStatus status) {
+            return delegate.findOldestCreatedAt(status);
+        }
     }
 }
