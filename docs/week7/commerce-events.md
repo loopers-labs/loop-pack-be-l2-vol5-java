@@ -1236,6 +1236,8 @@ PG 취소 API 연동(늦은 성공의 자동 환불), 다중 서버 선점, 실�
 | `NotEnoughReplicasException`, `DisconnectException` | `RetriableException` | broker 수준 |
 | `NetworkException`, `NotLeaderOrFollowerException`, `UnknownTopicOrPartitionException`(없는 topic) | `InvalidMetadataException` → `RetriableException` | broker 수준 |
 | relay 로컬 대기 초과 `java.util.concurrent.TimeoutException` | — | broker 수준 |
+| 종료된 producer에 send(`IllegalStateException`) | — | broker 수준(D119) |
+| `TopicAuthorizationException`·`ClusterAuthorizationException` 등 권한 오류, 인증 오류 | `AuthorizationException`·`AuthenticationException` | broker 수준(D119) |
 | `RecordTooLargeException`, `RecordBatchTooLargeException`, `InvalidTopicException`, `SerializationException`, 그 밖의 예외 | `ApiException`·`KafkaException` | 행 수준 |
 
 - **인터럽트:** broker 확인을 기다리다 `InterruptedException`을 받으면 인터럽트 플래그를 되살리고 행 수준으로 세지 않는다(전송 결과는 `BrokerFailure`). relay는 send 직후 DB를 부르기 전에 플래그를 보고, 서 있으면 그 행을 기록하지 않은 채 회차를 끝낸다. 플래그가 선 채로 커넥션 풀을 부르면 연결을 얻다 실패할 수 있기 때문이다. 그 행은 `PENDING`으로 남아 다음 회차에 다시 보낸다.
@@ -1280,7 +1282,6 @@ PG 취소 API 연동(늦은 성공의 자동 환불), 다중 서버 선점, 실�
 
 - 1단계는 broker와 무관하다. 기록된 행이 실제로 broker에 가는지는 2단계 relay 테스트(실제 MySQL·Kafka 컨테이너)에서 확인했다.
 - relay는 실행 하나를 전제한다(스케줄러 켜기 설정을 한 인스턴스만 true). 분산 잠금이 아니므로 여러 인스턴스를 켜면 같은 행을 중복으로 보낼 수 있다(streamer 멱등 소비가 흡수하지만 보장 장치는 아니다).
-- 종료된 producer(`IllegalStateException` 등)·권한 오류(`AuthorizationException` 계열)는 지금 표에서 행 수준으로 분류된다. 실제로는 모든 행에 해당하는 실패라 영향 범위 기준으로는 broker 수준에 가깝다. 다시 검토할 안건으로 남긴다(QA 의견).
 - 실패 분류 단위 테스트는 예외 모양을 만들어 넣은 것이다. 실제 broker가 각 예외를 내는 조건은 없는 topic(R11) 외에는 확인하지 않았다.
 - 원자성은 예외 경로의 rollback으로 확인했다(테스트 설정에서 Outbox 포트 대역으로 실패를 주입하고, 운영 코드에는 분기를 두지 않음). 프로세스 강제 종료·DB 연결 끊김은 흉내 내지 않았다.
 - after-commit insert가 아니라는 점은 테스트로 증명되지 않고 코드 리뷰로만 확인한다. after-commit으로 기록하면 rollback 장면에서는 기록 자체가 실행되지 않아 0행이 되고, 정상 장면에서는 commit 뒤 1행이 되어 두 테스트를 모두 통과하기 때문이다. 별도 트랜잭션(`REQUIRES_NEW`)은 변이 확인으로 잡는다.

@@ -5,6 +5,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.stream.Stream;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.KafkaException;
+import org.apache.kafka.common.errors.ClusterAuthorizationException;
 import org.apache.kafka.common.errors.DisconnectException;
 import org.apache.kafka.common.errors.InvalidTopicException;
 import org.apache.kafka.common.errors.NetworkException;
@@ -14,6 +15,7 @@ import org.apache.kafka.common.errors.RecordBatchTooLargeException;
 import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.apache.kafka.common.errors.SerializationException;
 import org.apache.kafka.common.errors.TimeoutException;
+import org.apache.kafka.common.errors.TopicAuthorizationException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -45,6 +47,12 @@ class KafkaOrderConfirmedMessageSenderClassifyTest {
             Arguments.of("없는 topic", new ExecutionException(new UnknownTopicOrPartitionException("unknown topic")), true),
             Arguments.of("relay 로컬 대기 초과", new java.util.concurrent.TimeoutException("35000 ms"), true),
             Arguments.of("KafkaException 안의 복제본 부족", new ExecutionException(new KafkaException(new NotEnoughReplicasException("x"))), true),
+            // D119: producer 종료·권한 오류는 그 행 내용과 무관하게 모든 행에 해당하므로 broker 수준이다(영향 범위 기준 D118).
+            Arguments.of("producer 종료 뒤 send",
+                new IllegalStateException("Cannot perform operation after producer has been closed"), true),
+            Arguments.of("topic 권한 없음", new ExecutionException(new TopicAuthorizationException("Not authorized to access topics")), true),
+            Arguments.of("cluster 권한 없음",
+                new ExecutionException(new ClusterAuthorizationException("Cluster authorization failed")), true),
             Arguments.of("메시지 너무 큼", new ExecutionException(new RecordTooLargeException("too large")), false),
             Arguments.of("묶음 너무 큼", new ExecutionException(new RecordBatchTooLargeException("batch too large")), false),
             Arguments.of("잘못된 topic 이름", new ExecutionException(new InvalidTopicException("invalid topic")), false),
