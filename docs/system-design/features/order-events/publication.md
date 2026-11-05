@@ -633,8 +633,10 @@ W7의 orderOutboxProducerFactory·orderOutboxKafkaTemplate은 StringSerializer/S
 
 1. 전용 ThreadPoolTaskScheduler는 acceptTasksAfterContextClose=false·waitForTasksToCompleteOnShutdown=false로 early shutdown을 시작한다. continueExistingPeriodicTasksAfterShutdownPolicy=false·executeExistingDelayedTasksAfterShutdownPolicy=false를 명시해 주기/지연 작업을 종료 뒤 새로 실행하지 않는다. phase 값만으로 이 선행 이벤트를 생략해 설명하지 않는다.
 2. relay 진입 제어 lifecycle phase=0의 stop은 새 수동 진입을 STOPPING으로 막고 진행 thread에 interrupt를 전달한다. 실행 finally의 gate 해제/종료 통지를 기다리고, 주기 task 취소는 중복 호출에도 안전하게 처리한다.
-3. 전용 pool의 phase=-100 lifecycle 정지 절차를 거쳐 진행 작업 종료를 확인하고, producer factory는 기존 MIN_VALUE에서 종료한다. 실제 bean 의존과 stop/destroy 순서는 O10에서 관찰한다.
+3. 전용 pool은 phase=-100 lifecycle이다. Spring은 running인 lifecycle만 정지시키므로, 1단계 early shutdown 뒤 2단계 gate finally 대기 중에 executor가 이미 종료됐다면 phase -100 pool stop은 호출되지 않을 수 있다(정상). 진행 작업이 phase 0 대기를 넘겨 남아 executor가 아직 running이면 phase -100 lifecycle 정지 경로가 그 작업의 종료를 기다린다. 그 뒤 producer factory는 기존 MIN_VALUE에서 정지·physical close한다. 2026-11-05 구현 08-1의 실제 context.close 관찰에서는 phase 0 뒤 executor 종료·relay thread 0이었고 producer factory는 pool 순서 뒤까지 running이었다. phase 0 한도를 넘겨 pool에 작업이 남는 경로는 미검증이다.
 4. DB/라이브러리 정체로 기존 phase 대기 30초 안에 종료하지 못하면 timeout/미완료를 보고한다. producer physical close 15초를 더한 앱 전체 종료 보장을 주장하지 않는다. OS 강제 종료에서 callback/로그까지 보장하지 않는다.
+
+전용 pool bean은 autowireCandidate=false로 등록한다. 문제는 Boot 3.4.4가 Executor bean이 없을 때만 공통 applicationTaskExecutor를 만든다는 점이다(TaskExecutorConfigurations의 ConditionalOnMissingBean(Executor)). 평범한 ThreadPoolTaskScheduler bean을 더하면 다른 기능의 공통 실행기가 사라진다. 주입 후보가 아닌 bean은 이 조건에서 제외되므로 공통 실행기를 보존하면서, pool은 context bean으로 남아 ContextClosedEvent·lifecycle에 참여한다. pool을 bean이 아닌 내부 객체로 두면 위 1·3단계를 직접 흉내 내야 해서 택하지 않았다. scheduler는 config의 @Bean 메서드 호출로 pool을 받는다.
 
 종료 설명의 순서를 맞추려고 waitForTasksToCompleteOnShutdown=true로 바꾸지 않는다. 이 값은 early/lifecycle 정지 대신 destroy 단계의 실행/대기 방식까지 바꾼다. 실제 broker 확인 뒤 STOPPING이면 기존 설계대로 새 상태 TX를 시작하지 않고 PENDING을 남긴다. 다음 실행의 중복 재발행은 소비 멱등성으로 수렴시키며, ACK를 받았다는 이유로 종료 중 DB 쓰기를 추가하는 선택적 변경은 하지 않는다.
 

@@ -11,6 +11,7 @@ import com.loopers.domain.order.OrderOutboxReceipt;
 import com.loopers.domain.order.OrderOutboxSender;
 import com.loopers.domain.order.OrderOutboxStoredMessage;
 import com.loopers.infrastructure.order.OrderEventTestCleanup.Step;
+import com.loopers.interfaces.scheduler.OrderOutboxShutdownObserver;
 import com.loopers.testsupport.LocalKafkaTestSupport;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -42,6 +43,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
 /**
@@ -156,6 +158,63 @@ class OrderOutboxKafkaWireIntegrationTest {
         }
     }
 
+    /**
+     * O10 실제 producer 종료(구현 08-1): 자동 회차가 실제 broker 로 보낸 뒤 context 를 닫으면, early shutdown·진입 정지·pool 정지 뒤
+     * 전용 producer factory 가 MIN_VALUE 에서 멈추고 실제 producer network thread 가 끝난다. 업무 consumer·PG 는 연결하지 않는다.
+     */
+    @Test
+    void autoRelayPublishesThenClosesRealProducer() throws Exception {
+        String topic = kafka.createTopic("order-outbox-auto");
+        String clientId = "order-outbox-wire-test-" + kafka.runId() + "-auto";
+        OrderConfirmed event = new OrderConfirmed(4343L, ZonedDateTime.of(2026, 11, 5, 2, 0, 0, 0, ZoneOffset.UTC),
+            List.of(new OrderConfirmed.Item(21L, 1L)));
+        OrderOutboxShutdownObserver observer = new OrderOutboxShutdownObserver();
+        ConfigurableApplicationContext context = boot(topic, clientId, observer, "--commerce.order-events.relay.enabled=true",
+            "--commerce.order-events.relay.fixed-delay=200ms");
+        Map<String, Object> published;
+        List<ConsumerRecord<String, String>> records;
+        boolean producerAliveBeforeClose;
+        try {
+            OrderConfirmedRecorder recorder = context.getBean(OrderConfirmedRecorder.class);
+            new TransactionTemplate(context.getBean(PlatformTransactionManager.class)).executeWithoutResult(status -> recorder.record(event));
+            await("자동 회차의 PUBLISHED 저장").atMost(OBSERVE).pollInterval(Duration.ofMillis(100))
+                .until(() -> "PUBLISHED".equals(row(event.eventId()).get("status")));
+            published = row(event.eventId());
+            records = kafka.readAll(topic);
+            producerAliveBeforeClose = producerThreadAlive(clientId);
+        } finally {
+            context.close();
+        }
+        // physical close 는 최대 15초다. 그 안에 끝나지 않으면 아래 단언이 실패로 드러낸다.
+        await("producer network thread 종료").atMost(Duration.ofSeconds(20)).pollInterval(Duration.ofMillis(100))
+            .until(() -> !producerThreadAlive(clientId));
+        Map<String, Object> finalRow = published;
+        System.out.println("[O10 PRODUCER] records=" + records.size() + " snapshots=" + observer.snapshots());
+
+        assertAll(
+            () -> assertThat(records).as("자동 회차가 보낸 실제 record").singleElement().satisfies(record -> {
+                assertThat(record.key()).isEqualTo("4343");
+                assertThat(record.value()).isEqualTo(finalRow.get("payload"));
+            }),
+            () -> assertThat(finalRow).containsEntry("attempt_count", 1L).containsEntry("last_error", null),
+            () -> assertThat(producerAliveBeforeClose).as("실제 producer network thread").isTrue(),
+            () -> assertThat(observer.at("phase1").poolShutdown()).as("ContextClosedEvent 의 early shutdown 이 먼저").isTrue(),
+            () -> assertThat(observer.at("phase-50").gateStopping()).isTrue(),
+            () -> assertThat(observer.at("phase-50").gateIdle()).isTrue(),
+            () -> assertThat(observer.at("phase-150").poolLifecycleRunning()).isFalse(),
+            () -> assertThat(observer.at("phase-150").producerFactoryRunning()).as("pool 정지 뒤에도 producer 는 아직").isTrue(),
+            () -> assertThat(observer.at("destroy").producerFactoryRunning()).as("MIN_VALUE 정지·physical close").isFalse(),
+            () -> assertThat(producerThreadAlive(clientId)).as("producer network thread 종료").isFalse(),
+            () -> assertThat(OrderOutboxShutdownObserver.relayThreadsAlive()).isZero()
+        );
+    }
+
+    /** Spring Kafka 는 설정한 client.id 뒤에 "-번호" 를 붙인 producer 를 만든다. */
+    private static boolean producerThreadAlive(String clientId) {
+        return Thread.getAllStackTraces().keySet().stream()
+            .anyMatch(thread -> thread.isAlive() && thread.getName().startsWith("kafka-producer-network-thread | " + clientId + "-"));
+    }
+
     /** receipt 위치의 record 를 group 없이 byte 그대로 읽는다. 관찰 예산 안에 읽지 못하면 실패다. */
     private static ConsumerRecord<byte[], byte[]> readAt(OrderOutboxReceipt receipt) {
         Map<String, Object> config = kafka.consumerConfig(null);
@@ -185,16 +244,27 @@ class OrderOutboxKafkaWireIntegrationTest {
 
     /** 정상 W7 컨텍스트. bootstrap·topic·전용 producer client.id 만 이 실행의 값으로 덮는다. W6 초기화기를 쓰지 않는다. */
     private static ConfigurableApplicationContext boot(String topic) throws Exception {
+        return boot(topic, "order-outbox-wire-test-" + kafka.runId(), null);
+    }
+
+    private static ConfigurableApplicationContext boot(String topic, String clientId, OrderOutboxShutdownObserver observer,
+                                                       String... extra) throws Exception {
         int port;
         try (ServerSocket socket = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
             port = socket.getLocalPort();
         }
-        return new SpringApplicationBuilder(CommerceApiApplication.class).profiles("test").run(
+        List<String> args = new java.util.ArrayList<>(List.of(
             "--server.port=" + port, "--management.server.port=0", "--spring.jpa.hibernate.ddl-auto=create",
             "--datasource.mysql-jpa.main.jdbc-url=" + server + "/" + SCHEMA,
             "--spring.kafka.bootstrap-servers=" + kafka.bootstrapServers(),
             "--spring.kafka.admin.properties.bootstrap.servers=" + kafka.bootstrapServers(),
             "--commerce.order-events.topic=" + topic,
-            "--commerce.order-events.producer-properties[client.id]=order-outbox-wire-test-" + kafka.runId());
+            "--commerce.order-events.producer-properties[client.id]=" + clientId));
+        args.addAll(Arrays.asList(extra));
+        SpringApplicationBuilder builder = new SpringApplicationBuilder(CommerceApiApplication.class).profiles("test");
+        if (observer != null) {
+            builder.initializers(observer);
+        }
+        return builder.run(args.toArray(String[]::new));
     }
 }

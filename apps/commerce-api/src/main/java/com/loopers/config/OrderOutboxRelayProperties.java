@@ -7,7 +7,7 @@ import java.time.Duration;
 
 /**
  * Outbox relay 설정(commerce.order-events.relay, 설계 W7.3-1). 값은 사용자가 고른 초기값이며 실측 적정값·SLA 가 아니다.
- * 잘못된 범위·관계는 기동 오류다. enabled·fixedDelay 는 자동 scheduler 용이며 현재 단위에서는 scheduler 를 조립하지 않는다.
+ * 잘못된 범위·관계는 기동 오류다. enabled·fixedDelay 는 자동 회차(OrderOutboxRelayScheduler)용이며 enabled=false 여도 종료 제어는 한다.
  */
 @ConfigurationProperties("commerce.order-events.relay")
 public record OrderOutboxRelayProperties(

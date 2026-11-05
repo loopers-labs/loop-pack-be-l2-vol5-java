@@ -1,5 +1,6 @@
 package com.loopers.config;
 
+import com.loopers.application.order.OrderOutboxRelay;
 import com.loopers.application.order.OrderOutboxRetryPolicy;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -7,12 +8,14 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.mockito.Mockito.mock;
 
 /** relay 설정 바인딩·기동 거절(설계 W7.3-1). 앱 YAML 의 실제 값은 OrderOutboxRelayIntegrationTest 가 본다. */
 @DisplayName("relay 설정은 승인된 기본값을 갖고, 0 이하·상한<초기·한도<1 이면 기동을 거절한다.")
@@ -24,6 +27,12 @@ class OrderOutboxRelayPropertiesTest {
     @Configuration
     @EnableConfigurationProperties(OrderOutboxRelayProperties.class)
     static class Support {
+
+        /** 구현 08-1 에서 relay 설정이 scheduler 도 조립한다. 이 테스트는 바인딩만 보므로 relay 는 호출되지 않는 대역이다(기본 enabled=false). */
+        @Bean
+        OrderOutboxRelay orderOutboxRelay() {
+            return mock(OrderOutboxRelay.class);
+        }
     }
 
     @DisplayName("설정이 없으면 enabled=false·1초·10건·35초·5초·60초·10회이고, policy 가 같은 값으로 조립된다.")
