@@ -31,3 +31,13 @@ CREATE TABLE `order_outbox` (
   KEY `idx_order_outbox_order` (`order_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
 ;
+
+-- W7 4단계: relay 작업 잠금 (ShedLock). 작업 이름마다 한 행 — "order-outbox-relay"를 얻은 실행만 relay를 돌린다.
+-- 엔티티가 아니라 ddl-auto가 만들지 않는다. 로컬 DB에 한 번 실행한다 (테스트는 scheduler 테스트가 직접 만든다).
+CREATE TABLE IF NOT EXISTS `shedlock` (
+  `name` varchar(64) NOT NULL COMMENT '작업 이름',
+  `lock_until` timestamp(3) NOT NULL COMMENT '이 시각까지 잠김. 정상 종료하면 끝난 시각으로 당겨진다',
+  `locked_at` timestamp(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '잠근 시각',
+  `locked_by` varchar(255) NOT NULL COMMENT '잠근 호스트',
+  PRIMARY KEY (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

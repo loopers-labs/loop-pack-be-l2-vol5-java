@@ -105,6 +105,10 @@ outbox:
   relay:
     batch-size: 200
     send-wait: 35s
+    # 4단계: 1초마다 한 회차. fixedDelay라 앞 회차가 끝나야 다음을 센다. ShedLock이 앱 여러 대 중 한 대만 돌린다.
+    tick: 1s
+    scheduler:
+      enabled: true
 
 payment:
   dispatch:
@@ -123,6 +127,16 @@ spring:
     activate:
       on-profile: local, test
 
+# W7 4단계: BLOCKED 재개 진입점(POST /actuator/outbox/{eventId})은 관리 포트에서 local·test에서만 노출한다. 운영 프로필에는 없다.
+management:
+  endpoints:
+    web:
+      exposure:
+        include:
+          - health
+          - prometheus
+          - outbox
+
 ---
 spring:
   config:
@@ -132,6 +146,12 @@ spring:
 payment:
   scheduler:
     enabled: false
+
+# 테스트는 relay를 직접 부른다 (scheduler 테스트만 켠다)
+outbox:
+  relay:
+    scheduler:
+      enabled: false
 
 ---
 spring:

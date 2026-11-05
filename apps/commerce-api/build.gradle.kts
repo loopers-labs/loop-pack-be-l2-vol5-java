@@ -20,6 +20,10 @@ dependencies {
     implementation("io.github.resilience4j:resilience4j-spring-boot3:${project.properties["resilience4jVersion"]}")
     implementation("org.springframework.boot:spring-boot-starter-aop")
 
+    // W7 relay를 앱 여러 대 중 한 대만 돌린다 (docs/week7/plan.md D-1 겹침 방지)
+    implementation("net.javacrumbs.shedlock:shedlock-spring:${project.properties["shedlockVersion"]}")
+    implementation("net.javacrumbs.shedlock:shedlock-provider-jdbc-template:${project.properties["shedlockVersion"]}")
+
     // querydsl
     annotationProcessor("com.querydsl:querydsl-apt::jakarta")
     annotationProcessor("jakarta.persistence:jakarta.persistence-api")
