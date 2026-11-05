@@ -49,6 +49,89 @@
 
 **6주차의 ②(commit 과 send 사이 멈춤 → 이벤트 없음)가 이 표에서는 "PENDING 이 남음"으로 바뀐다.** 대신 ④ 의 중복 발행을 정상으로 받아들인다.
 
+### 전체 흐름
+
+구현 기준으로 그린 그림이다. 확정 경로 두 곳과 운영 진입점(5.2)이 모두 Outbox 행에 모이고, Kafka 로 옮기는 것은 relay 하나다.
+
+```mermaid
+flowchart LR
+    subgraph API["commerce-api"]
+        PG["PG SUCCESS 반영<br/>reconcile · callback"]
+        ZERO["0원 주문 확정"]
+        TX["확정 TX<br/>주문 CONFIRMED · 예약 소비<br/>Outbox PENDING insert"]
+        OUTBOX[("order_confirmed_outbox")]
+        RELAY["OrderOutboxRelay<br/>fixedDelay + tryLock"]
+        OPS["로컬 진입점<br/>run-once · resume · backfill"]
+        LEGACY["6주차에 확정됐지만<br/>Outbox 가 없는 주문"]
+    end
+    subgraph KAFKA["Kafka"]
+        TOPIC["order-events"]
+    end
+    subgraph STREAMER["commerce-streamer (6주차 그대로)"]
+        CONSUMER["OrderConfirmedConsumer"]
+        DEDUP[("processed_order_confirmation<br/>eventId · orderId 유일")]
+        ACTIVITY[("product_purchase_activity")]
+    end
+
+    PG --> TX
+    ZERO --> TX
+    TX -- "같은 commit" --> OUTBOX
+    LEGACY -. "backfill: 저장된 확정 사실에서 PENDING 추가" .-> OUTBOX
+    OPS -. "resume: BLOCKED → PENDING" .-> OUTBOX
+    OPS -. "run-once" .-> RELAY
+    OUTBOX -- "PENDING · 차례인 행" --> RELAY
+    RELAY -- "저장된 key · payload, acks=all" --> TOPIC
+    RELAY -- "결과 저장" --> OUTBOX
+    TOPIC --> CONSUMER
+    CONSUMER --> DEDUP
+    CONSUMER --> ACTIVITY
+```
+
+**Outbox 상태.** 상태를 바꾸는 곳은 relay 회차와 resume 뿐이다. producer callback 은 상태를 바꾸지 않는다.
+
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING: 확정 TX commit<br/>또는 backfill
+    PENDING --> PENDING: 시도 시작<br/>attempt + 1, lease 만큼 미룸
+    PENDING --> PENDING: 일시적 오류 · 로컬 timeout<br/>backoff 뒤 다시
+    PENDING --> PENDING: send 중 · 확인 뒤 저장 전 중단<br/>lease 뒤 다시 (같은 eventId 재발행)
+    PENDING --> PUBLISHED: broker 확인 뒤 저장
+    PENDING --> BLOCKED: 영구 오류
+    BLOCKED --> PENDING: resume (사람이 원인을 고친 뒤)
+    PUBLISHED --> [*]
+```
+
+**relay 한 회차.** DB TX 는 짧게 끊고 send 대기는 TX 밖에서 한다(4.2).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as 스케줄 / run-once
+    participant R as OrderOutboxRelay
+    participant DB as MySQL (Outbox)
+    participant K as Kafka
+
+    S->>R: runOnce()
+    alt 이전 회차 진행 중 (tryLock 실패)
+        R-->>S: 건너뜀
+    else 잠금 획득
+        R->>DB: [TX] PENDING · next_attempt_at ≤ now, id 순 최대 50
+        loop 행마다 (직렬)
+            R->>DB: [TX] 다시 읽어 차례면 attempt + 1, next_attempt_at = now + lease
+            R->>K: send(key, payload).get(15s)  — TX 밖
+            alt Acked
+                R->>DB: [TX] PUBLISHED, published_at
+            else Permanent
+                R->>DB: [TX] BLOCKED, last_error
+            else Transient · timeout
+                R->>DB: [TX] next_attempt_at = now + backoff, last_error
+                Note over R: 남은 행은 손대지 않고 회차를 멈춤
+            end
+        end
+        R-->>S: 완료
+    end
+```
+
 ## 2. 이벤트 계약
 
 6주차 2장 그대로다. topic · key(`orderId` 문자열) · `eventType` · `schemaVersion` · `eventId`(`order-confirmed:v1:{orderId}`) · `confirmedAt` 형식 · `items` 를 바꾸지 않는다.
