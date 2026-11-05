@@ -33,6 +33,8 @@ outbox:
     send-timeout: 5s # 브로커 확인을 기다리는 최대 시간. 넘으면 같은 사건을 PENDING 으로 남긴다
     batch-size: 20 # 한 회차에 보내는 최대 건수
     retry-interval: 30s # 전송에 실패한 건을 다시 보내기까지의 간격
+    fixed-delay: 5s # 한 회차가 끝난 뒤 다음 회차까지 쉬는 시간
+    enabled: false # relay 스케줄러를 켤지. 여러 인스턴스 중 한 곳에서만 켠다
 
 product:
   list-cache:
@@ -83,6 +85,16 @@ spring:
   config:
     activate:
       on-profile: local, test
+
+---
+spring:
+  config:
+    activate:
+      on-profile: local
+
+outbox:
+  relay:
+    enabled: true
 
 ---
 spring:
