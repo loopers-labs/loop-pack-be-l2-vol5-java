@@ -42,7 +42,7 @@
 | PENDING | broker 성공 뒤 상태 TX 실패 | PENDING | 변경 없음. 다음 회차에 같은 사건 재발행 |
 | PUBLISHED | 어떤 사건이든 | PUBLISHED | 변경 없음 |
 
-- 결정 필요 항목: 영구 오류를 `BLOCKED`로 분리할지. 분리하면 정상 대상이 계속 진행되지만 BLOCKED는 "사람이 판단할 미해결 작업"으로 목록에 남기고 같은 행을 재개하는 경로가 필요하다. 3단계 골격 제안에서 정한다. 정하기 전에는 PENDING + attemptCount + lastError로 관찰한다.
+- `BLOCKED` 상태는 두지 않는다. payload는 확정 TX에서 Avro 계약으로 만든 bytes(상한 16KB)를 그대로 보내므로 특정 record만 영원히 실패할 여지가 거의 없고, 실패는 broker·topic·partition 단위로 함께 일어난다. 그런 장애에 행을 BLOCKED로 막으면 회복 뒤 사람이 모두 되살려야 해 자동 수렴이 깨진다. 장애는 회로 차단(10-2)으로 다루고, 반복 실패하는 행은 PENDING + attemptCount + lastError로 관찰한다.
 - 늦은 callback이 상태를 바꾸지 못하게, 상태 변경은 relay 루프 안의 상태 TX 한 곳에서만 한다. send의 `whenComplete` 콜백에서 DB를 바꾸지 않는다.
 
 ## 4. 확정 TX
@@ -86,7 +86,8 @@ runOnce:
 - 단일 실행: 스케줄러 `fixedDelay`(같은 작업은 fixedRate여도 겹치지 않는다. 회차가 끝난 뒤 쉬는 시간을 보장하려고 고른다). 같은 작업은 스케줄러가 동시에 실행하지 않으므로 회차 잠금은 두지 않는다(운영 코드에서 `relayOnce`를 부르는 곳은 스케줄러뿐). 활성화 설정 `outbox.relay.enabled`는 기본 false이고 `local` 프로필만 true. 다중 인스턴스에서 동시에 켜지 않는 것은 실행 설정의 약속이며 메모리 flag로 해결했다고 주장하지 않는다.
 - 전송 확인은 send 호출이 반환된 것이 아니라 producer future의 성공이다. `acks=all`, 멱등 유지(W6). 단일 broker 한계 유지.
 - timeout 뒤에도 하위 send가 나중에 성공할 수 있다. 같은 eventId를 유지하고 수신 0회라고 단정하지 않는다.
-- 설정값(초안, 3단계에서 확정): 묶음 크기, send 대기 시간, 재시도 간격(고정 또는 시도 수에 따른 증가), 최대 간격. 테스트는 `Clock`을 고정하거나 짧은 유한 대기를 쓴다.
+- 설정값: `batch-size` 20, `send-timeout` 5s, `retry-interval` 30s(고정), `fixed-delay` 5s. 한 회차는 최악 20 × 5초다. 테스트는 `Clock`을 고정하거나 짧은 유한 대기를 쓴다.
+- 재시도 간격은 시도 횟수에 따라 늘리지 않는다(지수 백오프 없음). 백오프는 행마다 간격을 늘리는 도구인데, 이 relay의 실패는 broker 단위라 장애 동안 모든 행의 간격이 상한까지 늘어나 회복 뒤 전송이 늦어지기만 한다. 장애 동안의 부하는 회로 차단이 줄인다.
 - 오류 메시지에는 예외 종류와 짧은 원인만 남긴다.
 
 ## 6. 중단 지점별 기대 상태
@@ -107,12 +108,25 @@ runOnce:
 
 | 항목 | 내용 |
 |---|---|
-| backlog | `status = PENDING`의 건수, `MIN(createdAt)`로 가장 오래 기다린 시각, `MAX(attemptCount)`, `lastError` 목록 (SQL) |
+| backlog | 아래 SQL로 미발행 규모, 가장 오래 기다린 사건, 반복 실패 중인 사건과 원인을 본다 |
 | 로그 | relay 회차마다 구조화 로그: 선택 건수, 성공·실패 건수. 건별 로그에 eventId·orderId·attemptCount |
-| 재개 | eventId를 지정해 relay 한 회차를 실행하는 로컬 전용 진입점(테스트 도구 또는 작은 내부 컴포넌트). 공개 관리자 API로 노출하지 않는다 |
+| 재개 | 기본 재개 경로는 자동 재시도다. 실패한 행은 `retry-interval` 뒤 정기 회차가 다시 보내고, broker가 회복되면 기존 PENDING이 그대로 흘러간다. 급하면 아래 SQL로 다음 시도 시각만 당긴다. 전송은 언제나 relay 하나가 하며, 재개용 전송 진입점이나 공개 관리자 API는 만들지 않는다 |
 | 추적 | eventId·orderId로 주문 → Outbox → broker(topic/partition/offset) → 구매 활동을 따라간다 |
 | 보존 | 미발행·격리 행은 자동 삭제하지 않는다. PUBLISHED도 즉시 삭제하지 않는다. Outbox 보존, Kafka retention, 소비 완료 기록(`processed_order_confirmation`) 보존 기간은 함께 정한다. 오래된 이벤트를 다시 보낼 수 있는데 dedup 기록만 먼저 지우면 중복 효과가 생긴다 |
 | 구분 | PUBLISHED를 소비 완료로 표시하지 않는다. consumer lag·오류·실제 구매 활동을 따로 본다 |
+
+```sql
+-- 미발행 규모와 가장 오래 기다린 사건
+select count(*) as pending, min(created_at) as oldest, max(attempt_count) as max_attempts
+from outbox where status = 'PENDING';
+
+-- 반복 실패 중인 사건과 원인
+select event_id, order_id, attempt_count, next_attempt_at, last_error
+from outbox where status = 'PENDING' and attempt_count >= 3 order by id;
+
+-- 재개: 지정한 사건을 다음 회차의 대상으로 당긴다 (PUBLISHED는 건드리지 않는다)
+update outbox set next_attempt_at = now(6) where event_id = ? and status = 'PENDING';
+```
 
 ## 8. W6 누락 재현·복구
 
@@ -182,7 +196,8 @@ W7 코드에서는 확정 TX가 Outbox를 함께 쓰므로 같은 경로로는 �
 | 7 | relay 1회 실행 | Relay는 어디까지 | 성공하면 PUBLISHED / 실패하면 PENDING·다음 시각 / 재시도 시각 전 행은 건드리지 않는다 |
 | 8 | 스케줄·단일 실행 | 단일 Relay 다음 | 실행이 겹치지 않는다 / 설정이 꺼져 있으면 돌지 않는다 |
 | 9 | 중단 실험 | 두 번 발행되는 것이 정상인 구간 | commit 후 relay 전 중단 → 새 relay가 발행 / broker 확인 후 PUBLISHED 저장 전 중단 → PENDING 유지, 재시작 후 다른 offset 재발행 (실제 Kafka) |
-| 10 | 재시도·재개 | 재시도와 재처리의 책임 | broker 복구 뒤 기존 PENDING이 처리된다 / 지정한 eventId 한 건만 재개 / backlog 조회 |
+| 10-1 | 재시도·재개 (문서만) | 재시도와 재처리의 책임 | 코드 없음. 자동 재시도가 재개 경로, backlog·재개 SQL, BLOCKED·백오프 미도입 이유, 보존 정책 |
+| 10-2 | broker 장애 회로 차단 | 재시도와 재처리의 책임 | 골격에서 확정 |
 | 11 | W6 복구 | 선택을 설명하기 | 8장 확인 표 |
 | 12 | E2E | 두 번 발행되는 것이 정상인 구간 | 9장 기대값 표 |
 | 13 | 회귀·제출 | | `check` 두 앱, PR 본문, 기술 글 |
@@ -199,3 +214,7 @@ W7 코드에서는 확정 TX가 Outbox를 함께 쓰므로 같은 경로로는 �
 | 다중 relay (claim/lock) | 소유권·만료·순서 문제가 추가된다. 이번에는 단일 relay와 실행 설정으로 제한한다 |
 | CDC (Debezium 등) | connector·offset·스키마 운영이 필요하다. 이번에는 도입 비교만 한다 |
 | 전체 이력을 쌓는 event sourcing | Outbox는 전달할 사건만 보존한다. 원본은 주문·결제 DB다 |
+| `BLOCKED` 상태로 영구 오류 격리 | 특정 record만 실패할 여지가 거의 없고, broker 장애에 쓰면 회복 뒤 수동으로 모두 되살려야 한다 |
+| 시도 횟수에 따른 지수 백오프 | 실패가 broker 단위라 장애 동안 모든 행의 간격이 늘어나 회복 뒤 전송만 늦어진다. 장애는 회로 차단으로 다룬다 |
+| 재개용 직접 전송 진입점 | 새 프로세스에서 보내면 relay 실행자가 둘이 되고, 자동 재시도로 줄일 대기는 최대 30초뿐이다 |
+| relay 회차 잠금 (`tryLock`) | 스케줄러가 같은 작업을 동시에 실행하지 않고 다른 호출자도 없어 막는 상황이 없다 |
