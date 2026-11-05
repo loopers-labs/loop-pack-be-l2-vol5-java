@@ -54,6 +54,14 @@ public class OrderConfirmedOutboxJpaEntity {
         return id;
     }
 
+    String eventId() {
+        return eventId;
+    }
+
+    long orderId() {
+        return orderId;
+    }
+
     String messageKey() {
         return messageKey;
     }

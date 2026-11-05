@@ -16,4 +16,7 @@ public interface OrderConfirmedOutbox {
     int markBrokerFailure(long id, Instant nextAttemptAt, String error);
 
     int markRowFailure(long id, Instant nextAttemptAt, String error, boolean blocked);
+
+    // 사람이 원인을 고친 뒤 BLOCKED 행 하나를 다시 보낼 차례로 돌린다. BLOCKED인 행에만 적용하고 영향 행 수를 돌려준다.
+    int resumeBlocked(String eventId, Instant now);
 }

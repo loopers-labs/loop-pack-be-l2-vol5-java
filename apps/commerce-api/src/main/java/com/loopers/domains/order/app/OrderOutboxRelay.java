@@ -10,12 +10,14 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 // relay 한 회차(D112~D117). DB에 남은 보낼 사실을 저장된 key·payload 그대로 broker에 보내고, broker 확인을 받은 행만 PUBLISHED로 적는다.
 // 전송은 직렬이고 조회·전송은 트랜잭션 밖, 상태 기록은 행마다 짧은 트랜잭션 하나다. 순서를 바꿔 PUBLISHED를 먼저 적으면
 // "PUBLISHED인데 broker에 없음"이 생겨 다시 보내지 않으므로, 지금 순서에서 생길 수 있는 것은 "broker에 있는데 PENDING"(다음 회차 재전송)뿐이다.
+@Slf4j
 @Service
 public class OrderOutboxRelay {
     private static final int ROW_FAILURES_TO_BLOCK = 5;
@@ -76,6 +78,7 @@ public class OrderOutboxRelay {
                 Instant next = now.plus(OutboxRetryPolicy.backoff(message.attemptCount() + 1));
                 transactionTemplate.executeWithoutResult(
                     status -> orderConfirmedOutbox.markBrokerFailure(message.id(), next, failure.error()));
+                logFailure(message, "BROKER", false, failure.error());
                 yield false;
             }
             case SendOutcome.RowFailure failure -> {
@@ -83,8 +86,15 @@ public class OrderOutboxRelay {
                 boolean blocked = message.rowFailureCount() + 1 >= ROW_FAILURES_TO_BLOCK;
                 transactionTemplate.executeWithoutResult(
                     status -> orderConfirmedOutbox.markRowFailure(message.id(), next, failure.error(), blocked));
+                logFailure(message, "ROW", blocked, failure.error());
                 yield true;
             }
         };
+    }
+
+    // 운영자가 행을 찾고 원인을 볼 수 있게 실패마다 한 줄을 남긴다. PUBLISHED는 양이 많아 남기지 않는다.
+    private void logFailure(OutboxMessage message, String classification, boolean blocked, String error) {
+        log.warn("Outbox 전송 실패 기록. eventId={}, orderId={}, attempt={}, classification={}, blocked={}, error={}",
+            message.eventId(), message.orderId(), message.attemptCount() + 1, classification, blocked, error);
     }
 }

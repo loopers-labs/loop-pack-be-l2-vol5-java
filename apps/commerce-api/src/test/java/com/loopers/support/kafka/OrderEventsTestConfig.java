@@ -264,6 +264,11 @@ public class OrderEventsTestConfig {
         public int markRowFailure(long id, Instant nextAttemptAt, String error, boolean blocked) {
             return delegate.markRowFailure(id, nextAttemptAt, error, blocked);
         }
+
+        @Override
+        public int resumeBlocked(String eventId, Instant now) {
+            return delegate.resumeBlocked(eventId, now);
+        }
     }
 
     // relay가 쓰는 전송 포트 대역. key별로 결과를 지정하지 않으면 실제 Kafka sender로 보낸다.

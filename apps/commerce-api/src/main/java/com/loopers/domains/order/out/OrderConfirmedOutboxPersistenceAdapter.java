@@ -38,8 +38,8 @@ public class OrderConfirmedOutboxPersistenceAdapter implements OrderConfirmedOut
     @Transactional(readOnly = true)
     public List<OutboxMessage> findDue(Instant now, int limit) {
         return orderConfirmedOutboxJpaRepository.findDue(now, PageRequest.of(0, limit)).stream()
-            .map(entity -> new OutboxMessage(entity.id(), entity.messageKey(), entity.payload(), entity.attemptCount(),
-                entity.rowFailureCount()))
+            .map(entity -> new OutboxMessage(entity.id(), entity.eventId(), entity.orderId(), entity.messageKey(),
+                entity.payload(), entity.attemptCount(), entity.rowFailureCount()))
             .toList();
     }
 
@@ -60,6 +60,12 @@ public class OrderConfirmedOutboxPersistenceAdapter implements OrderConfirmedOut
     public int markRowFailure(long id, Instant nextAttemptAt, String error, boolean blocked) {
         return orderConfirmedOutboxJpaRepository.markRowFailure(id, nextAttemptAt, truncate(error),
             blocked ? "BLOCKED" : "PENDING");
+    }
+
+    @Override
+    @Transactional
+    public int resumeBlocked(String eventId, Instant now) {
+        return orderConfirmedOutboxJpaRepository.resumeBlocked(eventId, now);
     }
 
     // last_error 열은 500자다. 원인 메시지가 길어도 상태 기록이 실패하지 않게 자른다.
