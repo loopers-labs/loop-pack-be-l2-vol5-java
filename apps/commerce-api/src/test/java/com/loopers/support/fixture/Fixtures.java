@@ -12,6 +12,7 @@ import com.loopers.domain.product.ProductStockLedgerModel;
 import com.loopers.domain.product.ProductStockModel;
 import com.loopers.domain.point.PointModel;
 import com.loopers.domain.point.PointRepository;
+import com.loopers.domain.order.OrderEventOutboxModel;
 import com.loopers.domain.order.OrderModel;
 import com.loopers.domain.order.OrderRepository;
 import com.loopers.domain.user.UserModel;
@@ -165,6 +166,14 @@ public class Fixtures {
         return entityManager.createQuery(
                 "select l from ProductStockLedgerModel l where l.productId = :productId order by l.id", ProductStockLedgerModel.class)
             .setParameter("productId", productId)
+            .getResultList();
+    }
+
+    /** TB-14 주문의 Outbox 행, 쌓인 순서대로. 새 영속성 컨텍스트에서 읽는다 (호출 쪽 트랜잭션이 없을 때). */
+    public java.util.List<OrderEventOutboxModel> outboxOf(Long orderId) {
+        return entityManager.createQuery(
+                "select o from OrderEventOutboxModel o where o.orderId = :orderId order by o.id", OrderEventOutboxModel.class)
+            .setParameter("orderId", orderId)
             .getResultList();
     }
 

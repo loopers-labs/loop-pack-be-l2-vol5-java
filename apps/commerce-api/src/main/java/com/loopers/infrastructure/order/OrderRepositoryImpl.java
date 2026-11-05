@@ -1,5 +1,6 @@
 package com.loopers.infrastructure.order;
 
+import com.loopers.domain.order.OrderEventOutboxModel;
 import com.loopers.domain.order.OrderModel;
 import com.loopers.domain.order.OrderRepository;
 import com.loopers.domain.order.OrderStatus;
@@ -13,6 +14,7 @@ import java.util.Optional;
 @Component
 public class OrderRepositoryImpl implements OrderRepository {
     private final OrderJpaRepository orderJpaRepository;
+    private final OrderEventOutboxJpaRepository orderEventOutboxJpaRepository;
 
     @Override
     public OrderModel save(OrderModel order) {
@@ -39,5 +41,15 @@ public class OrderRepositoryImpl implements OrderRepository {
     public Optional<OrderModel> findExpiredAwaitingForUpdate(ZonedDateTime startedBefore) {
         return orderJpaRepository.findFirstByStatusAndPaymentStartedAtLessThanEqualOrderByPaymentStartedAtAsc(
             OrderStatus.AWAITING_PAYMENT, startedBefore);
+    }
+
+    @Override
+    public OrderEventOutboxModel saveOutbox(OrderEventOutboxModel outbox) {
+        return orderEventOutboxJpaRepository.saveAndFlush(outbox);
+    }
+
+    @Override
+    public Optional<OrderEventOutboxModel> findOutboxByEventId(String eventId) {
+        return orderEventOutboxJpaRepository.findByEventId(eventId);
     }
 }

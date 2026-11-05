@@ -12,6 +12,7 @@ import com.loopers.infrastructure.order.KafkaOrderConfirmedPublisher;
 import com.loopers.support.FakePaymentGateway;
 import com.loopers.support.KafkaTestRecords;
 import com.loopers.support.fixture.Fixtures;
+import com.loopers.support.w6.W6DirectPublicationConfig;
 import com.loopers.utils.DatabaseCleanUp;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -51,13 +52,15 @@ import static org.assertj.core.api.Assertions.tuple;
 
 /**
  * W6 주문 확정 → OrderConfirmed 직접 발행 (commit 뒤). 실제 MySQL·Kafka broker, PG 는 FakePaymentGateway.
+ * W7 제품은 직접 발행 대신 Outbox 를 쓴다 (OutboxAtomicityTest). 이 테스트는 보존한 W6 경로(W6DirectPublicationConfig)가 W6 와 같이 동작하는지 지킨다.
+ * W6 누락 상태 재현(§5)이 이 경로를 쓴다.
  * 이 클래스만의 topic(order-events-publication-test)을 써서 다른 테스트의 발행과 섞이지 않는다.
  * 고정 clock: 2026-09-07T01:00:00.123456789Z → 확정 시각은 마이크로초로 잘려 2026-09-07T01:00:00.123456Z.
  * 고정 품목: 상품 A 2개(1,000원) + 상품 B 1개(500원), 각 재고 5.
  * 실행: ./gradlew :apps:commerce-api:test --tests '*OrderConfirmedPublicationTest' (Docker 필요, Testcontainers).
  */
 @SpringBootTest(properties = "kafka.topics.order-events.name=" + OrderConfirmedPublicationTest.TOPIC)
-@Import(OrderConfirmedPublicationTest.TestPublisherConfig.class)
+@Import({W6DirectPublicationConfig.class, OrderConfirmedPublicationTest.TestPublisherConfig.class})
 class OrderConfirmedPublicationTest {
     static final String TOPIC = "order-events-publication-test";
     private static final Instant FIXED_NOW = Instant.parse("2026-09-07T01:00:00.123456789Z");

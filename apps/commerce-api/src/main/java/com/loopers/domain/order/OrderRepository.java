@@ -16,4 +16,9 @@ public interface OrderRepository {
      * 다른 트랜잭션이 잠근 주문은 기다리지 않고 건너뛴다.
      */
     Optional<OrderModel> findExpiredAwaitingForUpdate(ZonedDateTime startedBefore);
+
+    /** TB-14 도 이 Repository 가 맡는다 (포함 개념, DR-36·38 과 같은 이유). 저장은 즉시 insert 한다: event_id 중복은 확정 트랜잭션 안에서 드러난다. */
+    OrderEventOutboxModel saveOutbox(OrderEventOutboxModel outbox);
+
+    Optional<OrderEventOutboxModel> findOutboxByEventId(String eventId);
 }
