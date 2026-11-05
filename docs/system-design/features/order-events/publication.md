@@ -492,7 +492,7 @@ BaseEntity의 IDENTITY 전략에서는 save 자체가 insert SQL을 앞당길 �
 
 ### W7.3-1. 실행·초기값·단일 실행 경계
 
-단일 polling relay를 commerce-api 내부 전용 스케줄러로 실행한다. 별도 relay 서버·앱은 추가하지 않는다. namespace는 commerce.order-events.relay이며 enabled는 자동 스케줄러 기동을 제어한다. 명시 수동 호출도 같은 프로세스 실행 경계를 사용하고, 다른 프로세스의 relay/수동 도구와 병행하지 않는다. 프로세스 내부 lock을 분산 소유권 보장으로 해석하지 않으며 claim/lease는 추가하지 않는다.
+단일 polling relay를 commerce-api 내부 전용 스케줄러로 실행한다. 별도 relay 서버·앱은 추가하지 않는다. namespace는 commerce.order-events.relay이며 enabled는 자동 스케줄러 기동을 제어한다. 명시 수동 호출도 같은 프로세스 실행 경계를 사용하고, 다른 프로세스의 relay/수동 도구와 병행하지 않는다. 프로세스 내부 lock을 분산 소유권 보장으로 해석하지 않으며 claim/lease는 추가하지 않는다. 단일/다중 polling과 CDC의 이점·운영 비용 및 재검토 조건은 [A.38 도입 비교](../../decisions/order-events.md#단일-polling다중-pollingcdc-도입-비교)에 둔다.
 
 |설정|사용자 선택한 초기값·의미|
 |---|---|
