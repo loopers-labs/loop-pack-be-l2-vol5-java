@@ -43,6 +43,7 @@ Commerce 도메인 모델과 JPA 엔티티를 분리해 업무 규칙이 JPA 프
 | `processed_order_confirmation` (신규, streamer) | ID, `event_id`, `order_id`, `BaseEntity` 공통 시각 | `event_id`와 `order_id`는 각각 유일하고 필수다. 저장 뒤 바꾸지 않는다. 이미 처리한 이벤트인지만 표시하며 확정 시각과 품목은 갖지 않는다. 같은 사실인지는 [사실의 비교](use-cases/order-confirmed-event.md#사실의-비교)에 따라 구매 활동과 비교한다. |
 | `product_purchase_activity` (신규, streamer) | ID, `order_id`, `product_id`, `quantity`, `confirmed_at`, `BaseEntity` 공통 시각 | `(order_id, product_id)`는 유일하고 수량은 양수다. 같은 이벤트의 소비 완료 기록과 한 트랜잭션에서 저장한다. `confirmed_at`은 주문 단위 값을 품목 행마다 두는 [의도한 반정규화](#구매-활동의-확정-시각)다. 랭킹 조회용 인덱스는 랭킹 설계에서 정한다. |
 | `payment_attempts` (신규) | ID, `payment_attempt_key`(소문자 UUID 36자), `order_id`, `provider_order_id`, `amount`, `status`, nullable `transaction_key`, nullable `conflict_reason`·`conflict_detected_at`·`last_checked_at`, `BaseEntity` 공통 시각 | 시도 키, 주문 ID와 providerOrderId는 각각 유일하고 필수다. 금액·상태도 필수이며 금액은 저장된 주문 총액과 같다. 충돌 사유는 TX A에서 NULL로 저장하고 [충돌 기록](use-cases/order-payment-result.md#충돌-기록) 규칙으로만 채운다. [주기 조회](use-cases/order-payment-recovery.md#주기-조회)를 위해 `(status, last_checked_at)` 인덱스를 둔다. 미종결 시도가 전체 시도보다 훨씬 적다는 전제다. 카드 입력은 저장하지 않는다. |
+| `order_confirmed_outbox` (신규, commerce-api) | ID, `event_id`, `order_id`, `event_type`, `schema_version`, `message_key`, JSON 문자열 `payload`, 전송 상태·시도 횟수·재시도 시각·오류, `BaseEntity` 공통 시각 | `event_id` 유일 제약으로 같은 확정 메시지의 Outbox 행을 하나로 제한한다. payload는 TEXT로 저장하며 메시지 생성 뒤 바꾸지 않는다. 주문 확정과 같은 로컬 TX에서 PENDING으로 기록하고 Relay가 broker 확인 뒤 전달 상태를 갱신한다. 주문 테이블과 FK를 두지 않아 보존 기간 동안 전송 기록을 유지한다. |
 
 ### DB 전환 순서
 
@@ -50,8 +51,8 @@ Commerce 도메인 모델과 JPA 엔티티를 분리해 업무 규칙이 JPA 프
 
 | 기존 DB 상태 | 적용 순서 (`docker/mysql/`) |
 | --- | --- |
-| POINT 전용 | `pg-payment-migration.sql` → `pg-payment-safety-migration.sql` → `order-confirmed-at-migration.sql` → `purchase-activity-migration.sql` |
-| PG 스키마 | `pg-payment-safety-migration.sql` → `order-confirmed-at-migration.sql` → `purchase-activity-migration.sql`. 충돌 사유 ENUM이 2개뿐이면 먼저 `pg-payment-conflict-migration.sql` |
+| POINT 전용 | `pg-payment-migration.sql` → `pg-payment-safety-migration.sql` → `order-confirmed-at-migration.sql` → `order-confirmed-outbox-migration.sql` → `purchase-activity-migration.sql` |
+| PG 스키마 | `pg-payment-safety-migration.sql` → `order-confirmed-at-migration.sql` → `order-confirmed-outbox-migration.sql` → `purchase-activity-migration.sql`. 충돌 사유 ENUM이 2개뿐이면 먼저 `pg-payment-conflict-migration.sql` |
 
 ### 결제수단과 과거 주문 전환
 
