@@ -1,0 +1,81 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: order-confirmed-outbox
+    folder: Commerce
+    interval: 10s
+    rules:
+      - uid: outbox-blocked-transition
+        title: 주문 확정 이벤트 전달이 BLOCKED 상태로 전환됨
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 60
+              to: 0
+            datasourceUid: loopers
+            model:
+              datasource:
+                type: prometheus
+                uid: loopers
+              editorMode: code
+              expr: increase(outbox_blocked_transitions_total[1m])
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          summary: 주문 확정 이벤트 전달이 BLOCKED 상태로 전환됐습니다
+          description: "재시도 한도에 도달한 Outbox 행이 BLOCKED 상태가 됐습니다. eventId·orderId·lastError를 확인하고 원인을 해결한 뒤 같은 행을 재개하세요."
+        labels:
+          component: order-confirmed-outbox
+          severity: critical
+        notification_settings:
+          receiver: Outbox Alerts
+          group_by:
+            - alertname
+            - grafana_folder
+          group_wait: 0s
+          group_interval: 1m
+          repeat_interval: 1h
