@@ -11,4 +11,9 @@ public interface OutboxPublisher {
      * @throws OutboxPublishException 전송에 실패했거나 제한 시간 안에 확인하지 못했을 때. 브로커가 이미 받았을 수도 있다.
      */
     void publish(Outbox outbox);
+
+    /** 지금 전송을 시도해도 되는지. 브로커 장애로 전송을 멈춘 동안에는 거짓이다. */
+    default boolean canPublish() {
+        return true;
+    }
 }

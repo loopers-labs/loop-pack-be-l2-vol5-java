@@ -74,6 +74,17 @@ resilience4j:
         permitted-number-of-calls-in-half-open-state: 2
         record-exceptions: # 404·빈 목록 같은 정상 응답은 예외가 아니므로 표본의 실패로 세지 않는다
           - com.loopers.infrastructure.payment.PgStatusLookupFailedException
+      outboxPublish:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 5
+        minimum-number-of-calls: 3
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 1
+        # relay 는 열린 회로에 전송을 시도하지 않으므로, 대기 시간이 지나면 스스로 반열림으로 넘어가야 다시 보낸다
+        automatic-transition-from-open-to-half-open-enabled: true
+        record-exceptions:
+          - com.loopers.application.outbox.OutboxPublishException
 
 springdoc:
   use-fqn: true

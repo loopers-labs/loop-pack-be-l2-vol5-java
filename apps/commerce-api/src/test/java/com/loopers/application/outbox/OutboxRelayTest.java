@@ -128,4 +128,37 @@ class OutboxRelayTest {
         // then
         assertThat(transactionActiveDuringPublish).containsExactly(false);
     }
+
+    @DisplayName("전송할 수 없는 상태(회로 열림)면 회차를 건너뛴다. 대상의 시도 횟수를 올리지 않고 보내지도 않는다.")
+    @Test
+    void skipsRound_whenPublisherUnavailable() {
+        // given: 전송할 차례가 된 Outbox 와, 지금은 전송할 수 없다고 답하는 publisher
+        Outbox saved = outboxService.save(
+            Outbox.record("event-A", 1L, "OrderConfirmed", "v1", "1", new byte[] {1}, DUE_SINCE)
+        );
+        List<String> publishedEventIds = new ArrayList<>();
+        OutboxPublisher unavailablePublisher = new OutboxPublisher() {
+            @Override
+            public void publish(Outbox outbox) {
+                publishedEventIds.add(outbox.getEventId());
+            }
+
+            @Override
+            public boolean canPublish() {
+                return false;
+            }
+        };
+        OutboxRelay relay = new OutboxRelay(
+            outboxService, unavailablePublisher, transactionManager, CLOCK, 20, Duration.ofSeconds(30)
+        );
+
+        // when
+        relay.relayOnce();
+
+        // then
+        assertThat(publishedEventIds).isEmpty();
+        Outbox found = outboxService.get(saved.getId());
+        assertThat(found.getStatus()).isEqualTo(OutboxStatus.PENDING);
+        assertThat(found.getAttemptCount()).isZero();
+    }
 }

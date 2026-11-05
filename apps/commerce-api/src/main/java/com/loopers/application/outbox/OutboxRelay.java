@@ -47,6 +47,11 @@ public class OutboxRelay {
 
     /** 한 회차를 실행한다. 회차가 겹치지 않는 것은 스케줄러가 보장하므로 여러 스레드에서 동시에 부르지 않는다. */
     public void relayOnce() {
+        // 장애 중에는 대상을 고르지 않아, 보내지도 못할 행의 시도 횟수를 올리거나 브로커를 기다리지 않는다.
+        if (!outboxPublisher.canPublish()) {
+            log.info("Outbox relay 회차 건너뜀. 브로커 장애로 전송을 멈춘 상태다.");
+            return;
+        }
         List<Outbox> targets = startAttempts();
         int published = 0;
         for (Outbox target : targets) {
