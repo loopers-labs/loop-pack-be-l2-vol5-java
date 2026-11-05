@@ -3,9 +3,11 @@ package com.loopers.infrastructure.payment;
 import com.loopers.application.payment.port.PaymentRecordRepository;
 import com.loopers.domain.common.Money;
 import com.loopers.domain.payment.PaymentRecord;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,7 +26,7 @@ public class PaymentRecordPersistenceAdapter implements PaymentRecordRepository 
         PaymentRecordJpaEntity entity;
         if (payment.getId() == null) {
             entity = new PaymentRecordJpaEntity(payment.getOrderId(), payment.getMethod().name(), payment.getAmount().value(),
-                payment.getAttemptKey(), payment.getProviderId(), payment.getProviderOrderId());
+                payment.getAttemptKey(), payment.getProviderId(), payment.getProviderOrderId(), payment.getStartedAt());
         } else {
             entity = paymentRecordJpaRepository.findById(payment.getId()).orElseThrow();
         }
@@ -56,12 +58,18 @@ public class PaymentRecordPersistenceAdapter implements PaymentRecordRepository 
         return paymentRecordJpaRepository.findByAttemptKey(attemptKey).map(this::toDomain);
     }
 
+    @Override
+    public List<Long> findExpirable(Instant startedAtOrBefore, int limit) {
+        return paymentRecordJpaRepository.findExpirable(startedAtOrBefore, PageRequest.of(0, limit));
+    }
+
     private PaymentRecord toDomain(PaymentRecordJpaEntity entity) {
         PaymentRecord.ProviderStatus providerStatus = entity.getProviderStatus() == null
             ? null
             : PaymentRecord.ProviderStatus.valueOf(entity.getProviderStatus());
         return PaymentRecord.restore(entity.getId(), entity.getOrderId(), PaymentRecord.Method.valueOf(entity.getMethod()),
             new Money(entity.getAmount()), PaymentRecord.Result.valueOf(entity.getResult()), entity.getAttemptKey(),
-            entity.getProviderId(), entity.getProviderOrderId(), entity.getTransactionKey(), providerStatus);
+            entity.getProviderId(), entity.getProviderOrderId(), entity.getTransactionKey(), providerStatus,
+            entity.getStartedAt());
     }
 }

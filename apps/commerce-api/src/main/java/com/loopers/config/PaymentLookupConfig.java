@@ -1,5 +1,6 @@
 package com.loopers.config;
 
+import com.loopers.application.payment.PaymentExpiryPolicy;
 import com.loopers.application.payment.PaymentLookupPolicy;
 import com.loopers.application.payment.port.LookupJitter;
 import com.loopers.domain.payment.LookupBackoff;
@@ -26,13 +27,18 @@ public class PaymentLookupConfig {
 
     @Bean
     PaymentLookupPolicy paymentLookupPolicy(LookupJitter lookupJitter,
-        @Value("${payment.lookup.initial-delay:5s}") Duration initialDelay,
+        @Value("${payment.lookup.initial-delay:2s}") Duration initialDelay,
         @Value("${payment.lookup.multiplier:2}") int multiplier,
-        @Value("${payment.lookup.max-delay:1m}") Duration maxDelay,
+        @Value("${payment.lookup.max-delay:20s}") Duration maxDelay,
         @Value("${payment.lookup.max-attempts:12}") int maxAttempts,
         @Value("${payment.lookup.batch-size:100}") int batchSize) {
         return new PaymentLookupPolicy(new LookupBackoff(initialDelay, multiplier, maxDelay),
             lookupJitter, maxAttempts, batchSize);
+    }
+
+    @Bean
+    PaymentExpiryPolicy paymentExpiryPolicy(@Value("${payment.expiry.timeout:2m}") Duration timeout) {
+        return new PaymentExpiryPolicy(timeout);
     }
 
     @Bean

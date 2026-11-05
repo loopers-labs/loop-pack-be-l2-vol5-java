@@ -9,6 +9,7 @@ spring:
     import:
       - jpa.yml
       - redis.yml
+      - kafka.yml
       - logging.yml
       - monitoring.yml
   batch:
@@ -16,6 +17,17 @@ spring:
       name: ${job.name:NONE}
     jdbc:
       initialize-schema: never
+
+# 설계 27절. 유예·겹침·청크 크기·send 확인 대기는 [임시] 수치이며 환경변수(COMMERCE_RECONCILE_GRACE 등)로 덮어쓸 수 있다.
+commerce:
+  reconcile:
+    grace: 5m
+    overlap: 1m
+    chunk-size: 100
+    send-timeout: 10s
+  kafka:
+    topics:
+      order-event-republish-requests: order-event-republish-requests
 
 management:
   health:
@@ -30,6 +42,10 @@ spring:
   batch:
     jdbc:
       initialize-schema: always
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:sql/create-reconcile-checkpoint.sql
 
 ---
 spring:

@@ -8,6 +8,7 @@ import com.loopers.application.payment.port.PaymentLookupScheduleRepository;
 import com.loopers.application.product.ProductApplicationService;
 import com.loopers.infrastructure.payment.PaymentCircuitBreakers;
 import com.loopers.infrastructure.payment.PaymentLookupCircuitProperties;
+import com.loopers.infrastructure.payment.PaymentLookupScheduler;
 import com.loopers.infrastructure.payment.TestPgServer;
 import com.loopers.infrastructure.user.UserJpaEntity;
 import com.loopers.infrastructure.user.UserJpaRepository;
@@ -118,14 +119,14 @@ class PaymentLookupCircuitIntegrationTest {
     @DisplayName("열린 회로의 자동 조회는 횟수·이상을 늘리지 않고 시각만 미루며 30초 뒤 실제 탐색을 집계한다")
     void schedulerDoesNotCountNotCalledAndProbesLater() {
         openCircuit();
-        clock.advance(Duration.ofSeconds(5));
+        clock.advance(Duration.ofSeconds(2));
         orders.reconcileDuePayments();
         scene(3, 1, 10, 5);
         assertThat(schedules.findByOrderId(orderId)).contains(new PaymentLookupScheduleRepository.Schedule(
-            orderId, NOW.plusSeconds(10), 0, NOW, NOW.plusSeconds(5)));
+            orderId, NOW.plusSeconds(4), 0, NOW, NOW.plusSeconds(2)));
         orders.reconcileDuePayments();
         scene(3, 1, 10, 5);
-        clock.advance(Duration.ofSeconds(5));
+        clock.advance(Duration.ofSeconds(2));
         orders.reconcileDuePayments();
         scene(3, 1, 10, 5);
         assertThat(schedules.findByOrderId(orderId).orElseThrow().actualAttempts()).isZero();
@@ -133,7 +134,7 @@ class PaymentLookupCircuitIntegrationTest {
         orders.reconcileDuePayments();
         scene(3, 1, 11, 6);
         assertThat(schedules.findByOrderId(orderId)).contains(new PaymentLookupScheduleRepository.Schedule(
-            orderId, NOW.plusSeconds(41), 1, NOW, NOW.plusSeconds(31)));
+            orderId, NOW.plusSeconds(35), 1, NOW, NOW.plusSeconds(31)));
     }
 
     @Test
@@ -159,6 +160,26 @@ class PaymentLookupCircuitIntegrationTest {
         assertThat(orders.confirm(1, orderId, TestPgFixture.command()).status()).isEqualTo("PAYMENT_PENDING");
         scene(2, 2, 10, 5);
         assertThat(schedules.findByOrderId(orderId).orElseThrow().actualAttempts()).isZero();
+    }
+
+    @Test
+    @DisplayName("조회 회로가 열려 있어도 시작 후 2분이 지나면 스케줄러 한 번 실행으로 PG 조회 없이 만료하고 재고를 반환한다")
+    void expiresWhileCircuitIsOpen() {
+        clock.set(NOW.plusSeconds(100));
+        openCircuit();
+        clock.set(NOW.plus(Duration.ofMinutes(2)));
+
+        new PaymentLookupScheduler(orders).runOnce();
+
+        assertThat(jdbc.queryForObject("select status from orders where id = ?", String.class, orderId)).isEqualTo("PAYMENT_EXPIRED");
+        assertThat(jdbc.queryForObject("select stock from products where id = ?", Integer.class, productId)).isEqualTo(5);
+        assertThat(jdbc.queryForObject("select provider_status from payment_records where order_id = ?", String.class, orderId))
+            .isEqualTo("EXPIRED");
+        assertThat(server.createCalls()).isEqualTo(1);
+        assertThat(server.lookupCalls()).isEqualTo(10);
+        assertThat(schedules.findByOrderId(orderId)).isEmpty();
+        assertThat(jdbc.queryForObject("select resolved_at is not null from payment_anomalies where kind = 'LOOKUP_FAILED'", Boolean.class))
+            .isTrue();
     }
 
     private void openCircuit() {

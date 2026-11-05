@@ -6,6 +6,7 @@ import com.loopers.application.payment.port.PaymentTransactionStatus;
 import com.loopers.application.payment.port.PaymentTransactionsLookup;
 import com.loopers.domain.common.Money;
 import com.loopers.domain.payment.PaymentRecord;
+import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,6 +19,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class PaymentLookupAssessmentTest {
+    private static final Instant STARTED_AT = Instant.parse("2026-10-21T00:00:00Z");
+
     @ParameterizedTest(name = "일치 단일 거래 상태={0}")
     @EnumSource(PaymentTransactionStatus.class)
     @DisplayName("일치하는 단일 거래는 보고와 callback 비교 키를 제공하고 결제 기록은 변경하지 않는다")
@@ -81,7 +84,7 @@ class PaymentLookupAssessmentTest {
     }
 
     private PaymentRecord payment(String key) {
-        PaymentRecord payment = PaymentRecord.pgStarted(42, new Money(7000), "attempt", "test-pg");
+        PaymentRecord payment = PaymentRecord.pgStarted(42, new Money(7000), "attempt", "test-pg", STARTED_AT);
         payment.applyProviderReport(PaymentRecord.ProviderStatus.PENDING, key);
         return payment;
     }
