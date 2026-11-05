@@ -23,6 +23,7 @@ import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.errors.TimeoutException;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -68,12 +69,14 @@ public class OrderEventsTestConfig {
     }
 
     // 실제 producer factory로 보내다가, 무장하면 send를 실패시킨다. 주입 예외는 broker 수준(Kafka TimeoutException)이다.
+    // 무장하지 않은 send는 producer가 받은 실제 broker 확인(partition·offset)을 모은다. 운영 전송 결과에는 metadata가 없어 여기서 본다.
     public static class FailingKafkaTemplate extends KafkaTemplate<String, String> {
         public static final String INJECTED_FAILURE = "주입된 Kafka send 실패";
 
         public enum Failure { NONE, SYNC_THROW, ASYNC_FAILED }
 
         private final AtomicReference<Failure> failure = new AtomicReference<Failure>(Failure.NONE);
+        private final List<RecordMetadata> acked = new CopyOnWriteArrayList<RecordMetadata>();
 
         FailingKafkaTemplate(KafkaTemplate<String, String> delegate) {
             super(delegate.getProducerFactory());
@@ -83,12 +86,23 @@ public class OrderEventsTestConfig {
             failure.set(next);
         }
 
+        public List<RecordMetadata> acked() {
+            return List.copyOf(acked);
+        }
+
+        public void resetAcked() {
+            acked.clear();
+        }
+
         @Override
         public CompletableFuture<SendResult<String, String>> send(String topic, String key, String data) {
             return switch (failure.get()) {
                 case SYNC_THROW -> throw new TimeoutException(INJECTED_FAILURE);
                 case ASYNC_FAILED -> CompletableFuture.failedFuture(new TimeoutException(INJECTED_FAILURE));
-                case NONE -> super.send(topic, key, data);
+                case NONE -> super.send(topic, key, data).thenApply(result -> {
+                    acked.add(result.getRecordMetadata());
+                    return result;
+                });
             };
         }
     }
@@ -172,6 +186,7 @@ public class OrderEventsTestConfig {
     public static class FailingOrderConfirmedOutbox implements OrderConfirmedOutbox {
         public static final String INJECTED_FAILURE = "주입된 Outbox 저장 실패";
         public static final String INJECTED_SERIALIZE_FAILURE = "주입된 주문 확정 메시지 직렬화 실패";
+        public static final String INJECTED_MARK_PUBLISHED_FAILURE = "주입된 PUBLISHED 기록 전 중단";
 
         public enum Failure { NONE, FAIL_BEFORE_INSERT, FAIL_AFTER_INSERT, FAIL_SERIALIZE }
 
@@ -179,6 +194,7 @@ public class OrderEventsTestConfig {
         private final EntityManager entityManager;
         private final AtomicReference<Failure> failure = new AtomicReference<Failure>(Failure.NONE);
         private final List<Integer> findDueLimits = new CopyOnWriteArrayList<Integer>();
+        private final AtomicBoolean failOnNextMarkPublished = new AtomicBoolean();
 
         FailingOrderConfirmedOutbox(OrderConfirmedOutbox delegate, EntityManager entityManager) {
             this.delegate = delegate;
@@ -189,8 +205,14 @@ public class OrderEventsTestConfig {
             failure.set(next);
         }
 
+        // broker 확인 뒤 PUBLISHED 기록 전에 예외로 회차를 끊어 재현한다. 실제 어댑터를 부르지 않으므로 행은 PENDING으로 남는다.
+        public void failOnNextMarkPublished() {
+            failOnNextMarkPublished.set(true);
+        }
+
         public void disarm() {
             failure.set(Failure.NONE);
+            failOnNextMarkPublished.set(false);
             findDueLimits.clear();
         }
 
@@ -227,6 +249,9 @@ public class OrderEventsTestConfig {
 
         @Override
         public int markPublished(long id, Instant publishedAt) {
+            if (failOnNextMarkPublished.getAndSet(false)) {
+                throw new IllegalStateException(INJECTED_MARK_PUBLISHED_FAILURE);
+            }
             return delegate.markPublished(id, publishedAt);
         }
 
