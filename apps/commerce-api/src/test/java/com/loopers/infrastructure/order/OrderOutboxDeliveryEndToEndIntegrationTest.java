@@ -29,7 +29,9 @@ import com.loopers.fixture.pg.PgFixtureServer;
 import com.loopers.fixture.pg.PgOperation;
 import com.loopers.fixture.pg.RequestCounts;
 import com.loopers.fixture.pg.ResponsePlan;
-import com.loopers.infrastructure.order.OrderEventTestCleanup.Step;
+import com.loopers.infrastructure.order.OrderOutboxE2eLifecycleSupport.ChildLaunch;
+import com.loopers.infrastructure.order.OrderOutboxE2eLifecycleSupport.CleanupSteps;
+import com.loopers.infrastructure.order.OrderOutboxE2eLifecycleSupport.Ownership;
 import com.loopers.testsupport.LocalKafkaTestSupport;
 import com.loopers.utils.DatabaseCleanUp;
 import com.loopers.utils.RedisCleanUp;
@@ -82,6 +84,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+import static com.loopers.infrastructure.order.OrderOutboxE2eLifecycleSupport.launchChild;
+import static com.loopers.infrastructure.order.OrderOutboxE2eLifecycleSupport.release;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
@@ -235,122 +239,6 @@ class OrderOutboxDeliveryEndToEndIntegrationTest {
             TIMES.put("cleanupMs", elapsedMs(begin));
             System.out.println("[" + LABEL + " TIME] " + TIMES + " totalMs=" + elapsedMs(STARTED));
         }
-    }
-
-    // ---------------------------------------------------------------- 소유권·정리 판단(정리 회귀 테스트가 같은 경로를 쓴다)
-
-    /** 이 실행이 소유한 구매 테이블. 시작 전 부재를 확인한 순간부터 이번 child 가 만들 테이블은 이 실행의 것이다. */
-    static final class Ownership {
-
-        private boolean purchaseTables;
-
-        /** 시작 전부터 구매 테이블이 있으면 소유하지 않고 실패한다. 그 테이블은 지우지 않고 원인을 볼 수 있게 남긴다. */
-        void claimPurchaseTables(Collection<String> existingTables) {
-            assertThat(existingTables).as("자식 기동 전 구매 테이블 없음(이전 실행 잔여면 지우지 않고 실패)")
-                .doesNotContainAnyElementsOf(PURCHASE_TABLES);
-            purchaseTables = true;
-        }
-
-        boolean ownsPurchaseTables() {
-            return purchaseTables;
-        }
-    }
-
-    /** child 를 띄우는 두 단계. 기동 뒤 준비 대기가 실패해도 child 참조와 소유권은 정리에 남는다. */
-    interface ChildLaunch {
-
-        void start() throws Exception;
-
-        void awaitReady();
-    }
-
-    /** 부재 확인 → 소유 → child 기동 → 준비 대기 순서. 소유 표시는 기동 전에 끝나므로 기동·준비 실패에도 이번 테이블을 정리할 수 있다. */
-    static void launchChild(Ownership ownership, Collection<String> existingTables, ChildLaunch launch) throws Exception {
-        ownership.claimPurchaseTables(existingTables);
-        launch.start();
-        launch.awaitReady();
-    }
-
-    /** 정리 단계의 실제 행동. 판단은 {@link #release} 가 한다. */
-    interface CleanupSteps {
-
-        void stopRelay() throws Exception;
-
-        void restoreTopicConfig() throws Exception;
-
-        void stopChild() throws Exception;
-
-        /** 실제 프로세스가 끝났는지. 정상 종료 여부와 별개로 지금 살아 있는지를 본다. */
-        boolean childExited();
-
-        void truncateApiData() throws Exception;
-
-        void closeApi() throws Exception;
-
-        void closePg() throws Exception;
-
-        void dropPurchaseTables() throws Exception;
-
-        void closeTopicAdmin() throws Exception;
-
-        void closeKafka() throws Exception;
-    }
-
-    /**
-     * 모든 단계를 시도하되, writer(relay·child) 종료가 확인되지 않으면 그 writer 가 쓰는 자원의 파괴적 정리를 건너뛴다.
-     * API 데이터 TRUNCATE·구매 테이블 DROP 은 relay idle 과 child 실제 종료가 모두 확인돼야 하고, topic·group 삭제는 child 종료가 필요하다.
-     * client·context·PG 종료는 독립적으로 계속한다. 첫 오류를 던지고 후속 오류와 남긴 자원을 suppressed 로 붙인다. 남긴 자원 목록을 반환한다.
-     */
-    static List<String> release(Ownership ownership, CleanupSteps steps) {
-        boolean[] relayIdle = {false};
-        List<String> kept = new ArrayList<>();
-        try {
-            OrderEventTestCleanup.runAll(List.of(
-                new Step("새 relay 진입 중단", () -> {
-                    steps.stopRelay();
-                    relayIdle[0] = true;
-                }),
-                new Step("소유 topic 의 min.insync.replicas 복원", steps::restoreTopicConfig),
-                new Step("streamer 자식 JVM 종료", steps::stopChild),
-                new Step("API 테스트 데이터 정리", () -> {
-                    if (relayIdle[0] && steps.childExited()) {
-                        steps.truncateApiData();
-                    } else {
-                        kept.add("API 테스트 데이터·Redis(relay idle=" + relayIdle[0] + ", child 종료=" + steps.childExited() + ")");
-                    }
-                }),
-                new Step("API 컨텍스트 종료", steps::closeApi),
-                new Step("PG fixture 종료", steps::closePg),
-                new Step("이 실행이 만든 구매 테이블 삭제", () -> {
-                    if (!ownership.ownsPurchaseTables()) {
-                        return;
-                    }
-                    if (relayIdle[0] && steps.childExited()) {
-                        steps.dropPurchaseTables();
-                    } else {
-                        kept.add("구매 테이블 두 개(relay idle=" + relayIdle[0] + ", child 종료=" + steps.childExited() + ")");
-                    }
-                }),
-                new Step("topic 관리 client 종료", steps::closeTopicAdmin),
-                new Step("Kafka 소유 topic·group 정리", () -> {
-                    if (steps.childExited()) {
-                        steps.closeKafka();
-                    } else {
-                        kept.add("Kafka 소유 topic·group·관리 client(child 생존)");
-                    }
-                })));
-        } catch (RuntimeException failure) {
-            if (!kept.isEmpty()) {
-                failure.addSuppressed(new IllegalStateException("writer 종료를 확인하지 못해 남긴 자원: " + kept));
-            }
-            throw failure;
-        } finally {
-            System.out.println("[" + LABEL + " CLEANUP] kept=" + kept);
-        }
-        if (!kept.isEmpty()) {
-            throw new IllegalStateException("writer 종료를 확인하지 못해 남긴 자원: " + kept);
-        }
-        return kept;
     }
 
     @DisplayName("D 의 첫 record 는 APPLIED·재발행 record 는 다른 offset 의 ALREADY_PROCESSED 이고, E 의 실제 send 실패는 PENDING 저장 뒤 같은 행 재전송으로 APPLIED 된다.")

@@ -165,10 +165,10 @@ class OrderEventEndToEndIntegrationTest {
      * API 스키마가 먼저 있고, 자식은 자기 두 테이블만 만든 뒤 listener 가 두 partition 을 배정받아야 주문을 시작한다.
      * 구매 테이블 부재 확인과 소유 표시는 05a 의 launchChild 가 기동 전에 한다(기동·준비 실패에도 소유가 남음).
      */
-    static void startStreamerAndAssertReady(OrderOutboxDeliveryEndToEndIntegrationTest.Ownership ownership) throws Exception {
+    static void startStreamerAndAssertReady(OrderOutboxE2eLifecycleSupport.Ownership ownership) throws Exception {
         Map<String, String> apiTablesBefore = tableCreateTimes();
-        OrderOutboxDeliveryEndToEndIntegrationTest.launchChild(ownership, apiTablesBefore.keySet(),
-            new OrderOutboxDeliveryEndToEndIntegrationTest.ChildLaunch() {
+        OrderOutboxE2eLifecycleSupport.launchChild(ownership, apiTablesBefore.keySet(),
+            new OrderOutboxE2eLifecycleSupport.ChildLaunch() {
                 @Override
                 public void start() throws Exception {
                     startStreamer();

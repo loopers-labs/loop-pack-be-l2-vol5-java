@@ -1,8 +1,8 @@
 package com.loopers.infrastructure.order;
 
-import com.loopers.infrastructure.order.OrderOutboxDeliveryEndToEndIntegrationTest.ChildLaunch;
-import com.loopers.infrastructure.order.OrderOutboxDeliveryEndToEndIntegrationTest.CleanupSteps;
-import com.loopers.infrastructure.order.OrderOutboxDeliveryEndToEndIntegrationTest.Ownership;
+import com.loopers.infrastructure.order.OrderOutboxE2eLifecycleSupport.ChildLaunch;
+import com.loopers.infrastructure.order.OrderOutboxE2eLifecycleSupport.CleanupSteps;
+import com.loopers.infrastructure.order.OrderOutboxE2eLifecycleSupport.Ownership;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -30,7 +30,7 @@ class OrderOutboxDeliveryCleanupTest {
         List<String> launched = new ArrayList<>();
         AssertionError notReady = new AssertionError("streamer 자식 기동 완료 가 deadline 안에 관찰되지 않았습니다.");
 
-        assertThatThrownBy(() -> OrderOutboxDeliveryEndToEndIntegrationTest.launchChild(ownership, API_TABLES, new ChildLaunch() {
+        assertThatThrownBy(() -> OrderOutboxE2eLifecycleSupport.launchChild(ownership, API_TABLES, new ChildLaunch() {
             @Override
             public void start() {
                 launched.add("start");
@@ -42,7 +42,7 @@ class OrderOutboxDeliveryCleanupTest {
             }
         })).isSameAs(notReady);
         RecordingSteps steps = new RecordingSteps();
-        List<String> kept = OrderOutboxDeliveryEndToEndIntegrationTest.release(ownership, steps);
+        List<String> kept = OrderOutboxE2eLifecycleSupport.release(ownership, steps);
 
         assertAll(
             () -> assertThat(launched).containsExactly("start"),
@@ -59,7 +59,7 @@ class OrderOutboxDeliveryCleanupTest {
         Ownership ownership = new Ownership();
         List<String> launched = new ArrayList<>();
 
-        assertThatThrownBy(() -> OrderOutboxDeliveryEndToEndIntegrationTest.launchChild(ownership,
+        assertThatThrownBy(() -> OrderOutboxE2eLifecycleSupport.launchChild(ownership,
             Set.of("orders", "processed_order_confirmation"), new ChildLaunch() {
                 @Override
                 public void start() {
@@ -72,7 +72,7 @@ class OrderOutboxDeliveryCleanupTest {
                 }
             })).isInstanceOf(AssertionError.class).hasMessageContaining("구매 테이블 없음");
         RecordingSteps steps = new RecordingSteps();
-        OrderOutboxDeliveryEndToEndIntegrationTest.release(ownership, steps);
+        OrderOutboxE2eLifecycleSupport.release(ownership, steps);
 
         assertAll(
             () -> assertThat(launched).isEmpty(),
@@ -90,7 +90,7 @@ class OrderOutboxDeliveryCleanupTest {
         steps.stopChildFailure = stopFailure;
         steps.childExited = false;
 
-        assertThatThrownBy(() -> OrderOutboxDeliveryEndToEndIntegrationTest.release(ownership, steps))
+        assertThatThrownBy(() -> OrderOutboxE2eLifecycleSupport.release(ownership, steps))
             .satisfies(failure -> {
                 assertThat(failure).hasMessageContaining("streamer 자식 JVM 종료").hasCause(stopFailure);
                 assertThat(failure.getSuppressed()).extracting(Throwable::getMessage).anySatisfy(message -> assertThat(message)
@@ -113,7 +113,7 @@ class OrderOutboxDeliveryCleanupTest {
         steps.stopChildFailure = forced;
         steps.childExited = true;
 
-        assertThatThrownBy(() -> OrderOutboxDeliveryEndToEndIntegrationTest.release(ownership, steps)).hasCause(forced);
+        assertThatThrownBy(() -> OrderOutboxE2eLifecycleSupport.release(ownership, steps)).hasCause(forced);
 
         assertThat(steps.calls).containsExactly("stopRelay", "restoreTopicConfig", "stopChild", "truncateApiData", "closeApi", "closePg",
             "dropPurchaseTables", "closeTopicAdmin", "closeKafka");
@@ -126,7 +126,7 @@ class OrderOutboxDeliveryCleanupTest {
         RecordingSteps steps = new RecordingSteps();
         steps.stopRelayFailure = new IllegalStateException("진행 중인 relay 가 10초 안에 끝나지 않았습니다.");
 
-        assertThatThrownBy(() -> OrderOutboxDeliveryEndToEndIntegrationTest.release(ownership, steps))
+        assertThatThrownBy(() -> OrderOutboxE2eLifecycleSupport.release(ownership, steps))
             .hasCause(steps.stopRelayFailure);
 
         assertThat(steps.calls).doesNotContain("truncateApiData", "dropPurchaseTables")

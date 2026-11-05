@@ -16,8 +16,8 @@ import com.loopers.fixture.pg.PgFixtureServer;
 import com.loopers.fixture.pg.RequestCounts;
 import com.loopers.fixture.pg.TransactionSnapshot;
 import com.loopers.infrastructure.order.OrderEventEndToEndIntegrationTest.C10Cases;
-import com.loopers.infrastructure.order.OrderOutboxDeliveryEndToEndIntegrationTest.CleanupSteps;
-import com.loopers.infrastructure.order.OrderOutboxDeliveryEndToEndIntegrationTest.Ownership;
+import com.loopers.infrastructure.order.OrderOutboxE2eLifecycleSupport.CleanupSteps;
+import com.loopers.infrastructure.order.OrderOutboxE2eLifecycleSupport.Ownership;
 import com.loopers.infrastructure.order.support.W6PreparationContextIntegrationTest;
 import com.loopers.testsupport.LocalKafkaTestSupport;
 import com.loopers.utils.DatabaseCleanUp;
@@ -113,7 +113,7 @@ class W6OutboxRecoveryEndToEndIntegrationTest {
     /** 05a 의 판단: relay idle·child 실제 종료가 확인돼야 TRUNCATE/DROP, child 종료가 확인돼야 topic/group 삭제. 남긴 자원은 보고한다. */
     @AfterAll
     static void releaseResources() {
-        OrderOutboxDeliveryEndToEndIntegrationTest.release(OWNERSHIP, new CleanupSteps() {
+        OrderOutboxE2eLifecycleSupport.release(OWNERSHIP, new CleanupSteps() {
             @Override
             public void stopRelay() throws InterruptedException {
                 if (w7Api != null && w7Api.isActive()) {

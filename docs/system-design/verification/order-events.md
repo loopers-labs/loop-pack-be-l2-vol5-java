@@ -234,10 +234,12 @@ API `check`는 일반 `test`, 전용 `w6OutboxRecoveryTest`(O11, 새 worker JVM�
 |commerce-streamer check|test 88건(XML 16개) skip·failure·error 0, ArchUnit 1, Checkstyle main 22·test 15 파일 오류 0|
 |commerce-api check|일반 test 1029건(XML 234개) + w6OutboxRecoveryTest 1건, 합계 1030건 skip·failure·error 0, ArchUnit 3, Checkstyle main 193·test 166 파일 오류 0. JaCoCo exec는 test·w6OutboxRecoveryTest 작업별로 분리|
 
+후속 테스트 지원 코드 리팩토링(09, 2026-11-05)은 `7b6437f`에 코드 이동을 더한 작업 트리에서 검증했다. 소유권/기동/정리 판단을 `OrderOutboxE2eLifecycleSupport`로 본문 변경 없이 옮겼고 제품 코드는 바꾸지 않았다. 정리 회귀 5·05 전달 E2E 1·ArchUnit 3·전용 O11 1, 합계 10건에서 skip·failure·error 0, test Checkstyle 167개 파일 오류 0과 두 E2E의 `kept=[]`를 확인했다. 위 전체 check는 08-3 시점 결과이며, 리팩토링 뒤 전체 check를 다시 실행한 것은 아니다.
+
 같은 날 첫 API 전체 실행은 실패했다. 실패 원인과 수정은 다음과 같다. 유효 기대·시간 한도는 바꾸지 않았다.
 
 - 테스트 간 간섭: BrandFacadeIntegrationTest가 실행 증거용으로 켠 `org.hibernate.orm.jdbc.bind=TRACE`가 Logback 전역에 남았다. 그 결과 뒤 클래스의 Outbox insert 바인딩 값(payload)이 출력돼, OrderConfirmedSendFailureIntegrationTest의 "로그에 payload 없음" 단언이 실패했다. 제품 relay 로그의 문제는 아니다. 해당 클래스가 끝나면 logger 수준을 기본으로 되돌리게 했다. TRACE 증거 로그와 SendFailure 단언은 그대로다.
-- 메모리: maxHeapSize가 없어 test worker heap이 512MB였다. 캐시된 Spring context(최대 32)로 OutOfMemoryError가 났고, 그 전 GC 지연으로 lifecycle ON 테스트의 20초 대기도 넘겼다. API `test`·`w6OutboxRecoveryTest`의 heap을 1g로 지정한 뒤 같은 기대·한도로 통과했다.
+- 메모리: maxHeapSize가 없어 test worker heap이 512MB였다. 같은 실행에서 OutOfMemoryError와 lifecycle ON의 20초 대기 초과를 관찰했다. 캐시된 Spring context(최대 32)의 메모리 부담과 GC 지연을 원인으로 추론했지만 heap dump·GC 분석으로 인과관계를 확정하지는 않았다. API `test`·`w6OutboxRecoveryTest`의 heap을 1g로 지정한 뒤 같은 기대·한도로 통과했다.
 
 ### 원문 요구별 근거(O1~O14)
 
