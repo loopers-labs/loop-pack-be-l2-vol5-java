@@ -81,7 +81,28 @@ Outbox는 broker가 영구적으로 접근 불가능한 상황, payload 호환�
 - Kafka record의 존재는 보존 범위 안에서 확인한다. retention으로 이미 삭제된 record가 현재 없다는 사실만으로 과거 미발행을 증명하지 않는다.
 - 원본 대조는 테스트와 검증용으로 수행한다. commerce-streamer의 정상 소비 경로에서 주문 테이블을 조회하지 않으며, 주기적 자동 대조와 보충 발행은 이번 범위에 넣지 않는다.
 
-현재 실패 로그를 보고 자동으로 재발행하거나, 확정 이벤트를 재발행하는 API·관리 도구는 없다. 이미 종결한 결제의 reconcile도 전송 복구 수단이 아니다. 별도 복구 기능을 설계할 때는 저장된 주문의 같은 eventId·품목·확정 시각을 재사용해야 하며, 기존 record의 존재가 불명확한 재전송은 중복 가능성을 전제로 한다.
+자동 대조나 임의 재발행은 하지 않는다. `BLOCKED` 행은 원인과 `eventId`를 확인한 담당자가 로컬 전용 재개 진입점으로 같은 Outbox 행을 다시 `PENDING`으로 열고 Relay를 한 번 실행한다. 이미 종결한 결제의 reconcile은 전송 복구 수단이 아니다. broker record가 남아 있을 가능성이 있으면 재개 뒤 중복 record가 생길 수 있고, Consumer Inbox가 같은 `eventId`의 중복 업무 효과를 막는다.
+
+### 운영 조회와 알림
+
+Relay는 `order_confirmed_outbox.pending`, `order_confirmed_outbox.blocked`, `order_confirmed_outbox.oldest_pending_age_seconds` gauge와 `outbox_blocked_transitions_total` counter를 제공한다. Grafana에서는 backlog와 장기 대기를 대시보드로 보고, 새로운 `BLOCKED` 전환과 장기 대기를 Slack 알림으로 연결한다. `BLOCKED` 현재 건수는 미해결 작업의 규모를 나타내며, 전환 counter는 새로 막힌 시점을 찾는 용도다. 애플리케이션이 Slack webhook을 직접 호출하지 않는다.
+
+SQL로 행과 오류를 확인할 때는 다음 조회를 사용한다.
+
+```sql
+SELECT status, COUNT(*) AS row_count
+FROM order_confirmed_outbox
+GROUP BY status;
+
+SELECT event_id, order_id, attempt_count, cycle_attempt_count,
+       next_attempt_at, last_error, created_at
+FROM order_confirmed_outbox
+WHERE status IN ('PENDING', 'BLOCKED')
+ORDER BY CASE status WHEN 'BLOCKED' THEN 0 ELSE 1 END,
+         next_attempt_at, id;
+```
+
+`attempt_count`는 실제 broker 수신 수가 아니라 Relay가 시작한 시도 수다. send 전에 프로세스가 멈춰도 증가할 수 있고, timeout 뒤 broker record가 남았을 수도 있다. Outbox와 Inbox는 자동 삭제하지 않는다. 정리 정책을 추가할 때는 Kafka에서 다시 읽을 수 있는 기간보다 Inbox의 중복 방지 기록을 짧게 보존해 중복 구매 효과가 생기지 않도록 함께 정한다.
 
 ## Producer 설정
 

@@ -2,6 +2,7 @@ package com.loopers.infrastructure.order.event;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.loopers.application.time.ApplicationTime;
 import com.loopers.application.payment.ProviderOrderSuffixGenerator;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
@@ -17,6 +18,7 @@ import com.loopers.domain.user.UserRepository;
 import com.loopers.infrastructure.order.outbox.OrderConfirmedOutboxAwaitMode;
 import com.loopers.infrastructure.order.outbox.OrderConfirmedOutboxAttempt;
 import com.loopers.infrastructure.order.outbox.OrderConfirmedOutboxRelay;
+import com.loopers.infrastructure.order.outbox.OrderConfirmedOutboxResumeRunner;
 import com.loopers.infrastructure.order.outbox.OrderConfirmedOutboxStateService;
 import com.loopers.support.testpg.TestPgControl;
 import com.loopers.support.time.MutableClock;
@@ -270,20 +272,9 @@ class OrderConfirmedKafkaDeliveryIntegrationTest {
         assertThat(meterRegistry.get("outbox_blocked_transitions_total").tag("reason", "ATTEMPTS_EXHAUSTED")
             .counter().count()).isEqualTo(1D);
 
-        OrderConfirmedOutboxStateService.ResumeResult resumed = outboxStateService.resumeBlocked(
-            blocked.eventId(), ZonedDateTime.ofInstant(clock.instant(), ZoneOffset.UTC));
-        assertThat(resumed.attemptCount()).isEqualTo(3);
-        assertThat(resumed.cycleAttemptCount()).isZero();
-        assertThat(outbox(fixture.orderId())).satisfies(row -> {
-            assertThat(row.status()).isEqualTo("PENDING");
-            assertThat(row.attemptCount()).isEqualTo(3);
-            assertThat(row.cycleAttemptCount()).isZero();
-            assertThat(row.eventId()).isEqualTo(initial.eventId());
-            assertThat(row.messageKey()).isEqualTo(initial.messageKey());
-            assertThat(row.payload()).isEqualTo(initial.payload());
-        });
-
-        outboxRelay.runDueBatch();
+        OrderConfirmedOutboxResumeRunner resumeRunner = new OrderConfirmedOutboxResumeRunner(
+            outboxStateService, new ApplicationTime(clock), outboxRelay, blocked.eventId());
+        resumeRunner.run(new DefaultApplicationArguments());
 
         assertThat(outbox(fixture.orderId())).satisfies(row -> {
             assertThat(row.status()).isEqualTo("PUBLISHED");

@@ -154,7 +154,7 @@ Consumer에서 같은 `eventId`의 처리를 확인해도 Outbox 상태는 바�
 
 `BLOCKED` 전환 TX가 commit되면 구조화 로그에 `eventId`·`orderId`·오류 유형을 남기고 `outbox_blocked_transitions_total` counter를 증가시킨다. label은 오류 유형처럼 값 종류가 적은 항목만 쓰고, 애플리케이션은 Slack을 직접 호출하지 않는다.
 
-Relay는 tick마다 한 번의 집계 쿼리로 `PENDING` 수, `BLOCKED` 수, 가장 오래된 `PENDING.createdAt`을 읽어 메모리에 둔다. Micrometer gauge는 이 값을 사용하므로 scrape 때 DB를 조회하지 않는다. 대기 시간은 scrape 시각에서 저장된 `createdAt`을 빼 계산한다. 따라서 Relay가 멈춰도 오래된 `PENDING`의 대기 시간은 계속 커진다. `PENDING`이 없으면 대기 시간은 0이다.
+Relay는 회차 시작·종료 때 집계 쿼리로 `PENDING` 수, `BLOCKED` 수, 가장 오래된 `PENDING.createdAt`을 읽어 메모리에 둔다. Micrometer gauge는 이 값을 사용하므로 scrape 때 DB를 조회하지 않는다. 대기 시간은 scrape 시각에서 저장된 `createdAt`을 빼 계산한다. 따라서 Relay가 멈춰도 오래된 `PENDING`의 대기 시간은 계속 커진다. `PENDING`이 없으면 대기 시간은 0이다.
 
 | 지표 | 알려 주는 것 |
 | --- | --- |
@@ -164,6 +164,23 @@ Relay는 tick마다 한 번의 집계 쿼리로 `PENDING` 수, `BLOCKED` 수, �
 | `outbox_blocked_transitions_total` 증가 | 새로 `BLOCKED`로 전환된 행이 있음. Grafana가 Slack 알림에 사용 |
 
 DB commit 뒤 counter를 갱신하기 전에 프로세스가 종료되면 Slack 알림은 빠질 수 있지만 `BLOCKED` 행은 남는다. 대시보드와 SQL 조회로 미해결 행을 확인한다.
+
+운영자가 직접 행을 확인할 때는 다음 SQL로 상태별 규모와 재개 대상을 본다.
+
+```sql
+SELECT status, COUNT(*) AS row_count
+FROM order_confirmed_outbox
+GROUP BY status;
+
+SELECT event_id, order_id, attempt_count, cycle_attempt_count,
+       next_attempt_at, last_error, created_at
+FROM order_confirmed_outbox
+WHERE status IN ('PENDING', 'BLOCKED')
+ORDER BY CASE status WHEN 'BLOCKED' THEN 0 ELSE 1 END,
+         next_attempt_at, id;
+```
+
+`attempt_count`는 Relay가 시작한 시도 횟수이지 broker에 기록된 record 수가 아니다. send 전에 프로세스가 중단돼도 증가할 수 있고, timeout 뒤 record가 남아 있을 수도 있다.
 
 ## 로컬 원자성 검증
 
@@ -316,17 +333,23 @@ Outbox와 Inbox는 자동 삭제하지 않고 보존한다. `PENDING`·`BLOCKED`
 
 ## 로컬 운영 명령
 
-BLOCKED 원인을 확인하고 해결한 뒤 같은 `eventId`로 재개한다. 새 Outbox 행은 만들지 않는다. 재개할 때 `cycleAttemptCount`를 0으로 초기화하고 `nextAttemptAt`을 현재 시각으로 설정한다. 누적 `attemptCount`와 메시지 identity·payload는 보존한다. 재개도 로컬 프로필 전용이며 공개 API는 두지 않는다.
+BLOCKED 원인을 확인하고 해결한 뒤 같은 `eventId`로 재개한다. 새 Outbox 행은 만들지 않는다. 재개할 때 `cycleAttemptCount`를 0으로 초기화하고 `nextAttemptAt`을 현재 시각으로 설정한다. 누적 `attemptCount`와 메시지 identity·payload는 보존한다. 로컬 전용 Runner는 지정한 행을 `PENDING`으로 바꾼 뒤 같은 Relay의 단일 대상 실행을 요청한다. Relay가 이미 실행 중이면 실행 가드를 따라 요청을 건너뛰며 행은 다음 tick에 처리된다. 재개도 로컬 프로필 전용이며 공개 API는 두지 않는다.
 
 ```text
 --order.confirmed-event.outbox.resume.event-ids=order-confirmed:v1:101
+```
+
+기존 로컬 Relay 인스턴스를 먼저 종료한 뒤, 재개용 인스턴스는 주기 polling을 끄고 실행할 수 있다.
+
+```bash
+./gradlew :apps:commerce-api:bootRun --args='--spring.profiles.active=local --order.confirmed-event.outbox.resume.event-ids=order-confirmed:v1:101'
 ```
 
 재개 뒤에도 같은 주기의 실패가 3회 누적되면 다시 `BLOCKED`가 된다. 새 `BLOCKED` 전환은 구조화 로그와 Micrometer counter로 관찰한다. Grafana 임계값과 Slack route는 운영 설정으로 둔다.
 
 ## 설계 상태와 구현 단계 후속 항목
 
-설계 단계는 완료로 본다. 주문 확정과 Outbox의 원자성, 메시지 계약, 단일 polling Relay, 재시도·차단 정책, Consumer 멱등성, 누락 이벤트 복구와 E2E 범위는 결정했다. 실제 Kafka 비교에서 `BOUNDED_WAIT`를 선택했고, 로컬 backfill·재개 진입점과 backlog gauge를 구현했다.
+설계 단계는 완료로 본다. 주문 확정과 Outbox의 원자성, 메시지 계약, 단일 polling Relay, 재시도·차단 정책, Consumer 멱등성, 누락 이벤트 복구와 E2E 범위는 결정했다. 실제 Kafka 비교에서 `BOUNDED_WAIT`를 선택했고, 로컬 backfill·대상 eventId 재개 진입점과 backlog gauge를 구현했다.
 
 | 단계 | 후속 항목 | 확정 방법 |
 | --- | --- | --- |

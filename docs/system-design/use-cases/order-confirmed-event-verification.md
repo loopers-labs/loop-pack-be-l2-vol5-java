@@ -17,7 +17,7 @@ commerce-api는 확정 시각 저장·Outbox 원자성·Relay 발행을, commerc
 | `PaymentConfirmedAtIntegrationTest` | 최초 PG 성공에 주입한 Clock 시각을 마이크로초로 잘라 저장. 중복 성공에도 처음 시각 유지, 실패 종결에는 확정 시각 없음 |
 | `OrderConfirmedAtMigrationIntegrationTest` | 컬럼 추가 뒤 기존 주문의 확정 시각은 비워 두고 상태·결제 값·수정 시각은 바꾸지 않음 |
 | `OrderConfirmedOutboxAtomicityTest` | 최초 성공 때 주문·시도·Outbox를 같은 TX에 저장. 비성공·중복 결과, 직렬화·유일 제약·commit 실패 rollback, 동시 성공에서 행 하나와 고정 payload 확인 |
-| `OrderConfirmedKafkaDeliveryIntegrationTest` | 실제 주문 API·테스트 PG·MySQL·Kafka에서 Relay의 저장 payload 재시도, BLOCKED 후 다음 행 진행, broker 기록 뒤 상태 저장 실패, 제한 대기·callback 비교와 producer 설정 확인 |
+| `OrderConfirmedKafkaDeliveryIntegrationTest` | 실제 주문 API·테스트 PG·MySQL·Kafka에서 Relay의 저장 payload 재시도, BLOCKED 후 다음 행 진행, 같은 eventId 수동 재개와 누적 시도 보존, broker 기록 뒤 상태 저장 실패, 제한 대기·callback 비교와 producer 설정 확인 |
 
 | commerce-streamer 테스트 | 검증 |
 | --- | --- |

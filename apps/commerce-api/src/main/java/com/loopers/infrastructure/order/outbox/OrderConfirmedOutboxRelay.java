@@ -72,22 +72,27 @@ public class OrderConfirmedOutboxRelay {
     }
 
     public boolean runDueBatch(OrderConfirmedOutboxAwaitMode mode) {
+        return run(mode, null);
+    }
+
+    public boolean runEventOnce(String eventId) {
+        return run(OrderConfirmedOutboxAwaitMode.BOUNDED_WAIT, List.of(eventId));
+    }
+
+    private boolean run(OrderConfirmedOutboxAwaitMode mode, List<String> requestedEventIds) {
         if (!running.compareAndSet(false, true)) {
             log.debug("주문 확정 Outbox relay 실행 중이라 이번 호출을 건너뜁니다.");
             return false;
         }
-        try {
-            outboxMetrics.refresh();
-        } catch (RuntimeException failure) {
-            log.warn("주문 확정 Outbox 집계 metric 갱신에 실패했습니다.", failure);
-        }
+        refreshMetrics();
         if (mode == OrderConfirmedOutboxAwaitMode.CALLBACK) {
             try {
-                List<String> dueEventIds = stateService.findDueEventIds(applicationTime.now(), batchSize);
-                processBatchAsync(dueEventIds, 0).whenComplete((ignored, failure) -> {
+                List<String> eventIds = eventIds(requestedEventIds);
+                processBatchAsync(eventIds, 0).whenComplete((ignored, failure) -> {
                     if (failure != null) {
                         log.error("주문 확정 Outbox callback relay 회차가 예기치 않게 끝났습니다.", unwrap(failure));
                     }
+                    refreshMetrics();
                     running.set(false);
                 });
                 return true;
@@ -97,15 +102,29 @@ public class OrderConfirmedOutboxRelay {
             }
         }
         try {
-            List<String> dueEventIds = stateService.findDueEventIds(applicationTime.now(), batchSize);
-            for (String eventId : dueEventIds) {
+            for (String eventId : eventIds(requestedEventIds)) {
                 if (!process(eventId)) {
                     return true;
                 }
             }
             return true;
         } finally {
+            refreshMetrics();
             running.set(false);
+        }
+    }
+
+    private List<String> eventIds(List<String> requestedEventIds) {
+        return requestedEventIds == null
+            ? stateService.findDueEventIds(applicationTime.now(), batchSize)
+            : requestedEventIds;
+    }
+
+    private void refreshMetrics() {
+        try {
+            outboxMetrics.refresh();
+        } catch (RuntimeException failure) {
+            log.warn("주문 확정 Outbox 집계 metric 갱신에 실패했습니다.", failure);
         }
     }
 
