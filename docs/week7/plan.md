@@ -12,13 +12,13 @@
 
 ## 0. 체크리스트 — 모두 통과해야 한다 (노션 과제 원문 요약)
 
-| # | 체크리스트 | 증거 | 상태 (11-03) |
+| # | 체크리스트 | 증거 | 상태 |
 |---|---|---|---|
-| C-1 | 최초 PG 확정·예약 소비·Outbox insert가 같은 TX에서 commit/rollback한다 | W6 `OrderConfirmedPublishIntegrationTest`(C-1·`rollbackPublishesNothing`). 테이블을 `order_outbox`로 바꾼 뒤 다시 확인 | 🔧 W6 통과, 테이블 교체 뒤 재확인 |
+| C-1 | 최초 PG 확정·예약 소비·Outbox insert가 같은 TX에서 commit/rollback한다 | `OrderConfirmedPublishIntegrationTest`(C-1 3건·`rollbackPublishesNothing`·`appendOutsideTransactionIsRejected`) — `order_outbox` 기준(2단계) | ✅ 11-06 |
 | C-2 | 중복 결과 적용·실패·UNKNOWN에서 거짓 이벤트나 추가 결제가 생기지 않는다 | `$NoEvent`(PENDING·FAILED·rollback·중복 적용·이미 CONFIRMED) + **`$Unknown` 4개(11-03 추가)** | ✅ 14/0/0. `$Unknown`은 버그 3종(M1~M3)을 일부러 넣어 실패함을 확인 |
 | C-3 | 기존 주문의 rollback 결과를 신규 주문 삭제와 혼동하지 않는다 | `rollbackPublishesNothing` — 주문 PAYMENT_PENDING 유지 | ✅ W6 통과 |
-| C-4 | 단일 relay가 저장된 identity·payload를 그대로 보내며 broker 확인 후 PUBLISHED로 바꾼다 | | 🤔 |
-| C-5 | commit 후 relay 전 중단과 broker 확인 후 상태 저장 전 중단을 검증했다 | | 🤔 |
+| C-4 | 단일 relay가 저장된 identity·payload를 그대로 보내며 broker 확인 후 PUBLISHED로 바꾼다 | `OrderOutboxRelayServiceIntegrationTest`(11건, 변이 3종) · `sendsTheStoredPayloadOnlyThroughRelayAndMarksPublished`(실제 broker) · 단일 실행은 ShedLock(`OrderOutboxRelaySchedulerIntegrationTest`) | ✅ 11-06 |
+| C-5 | commit 후 relay 전 중단과 broker 확인 후 상태 저장 전 중단을 검증했다 | `OutboxInterruptionIntegrationTest` ①·②(실제 확정 경로·실제 broker, 통제된 중단 지점). ②는 SENDING + lease 1분 뒤 같은 eventId 재전송 → broker 2건(과제 문구의 "PENDING 유지"와 다름, PR에 적음). 변이 2종(SENDING 재선택 제거·lease 0) 잡음 | ✅ 11-06 |
 | C-6 | 실제 broker·consumer에서 재발행돼도 상품별 구매 효과가 늘지 않는다 | | 🤔 |
 | C-7 | 새 격리 DB에서 W6 누락·소비 완료 상태를 재현하고 같은 실행의 사건으로 복구했다 | | 🤔 |
 | C-8 | 준비와 복구의 PG 호출 수를 나눠 기록했고 복구 중 PG 추가 호출·주문 재확정·예약 추가 소비가 없다 | | 🤔 |
@@ -181,6 +181,7 @@
 - 11-03: 문서 시작. 체크리스트·작업 방식·전제·D-0(테이블 분리, 컬럼, topic은 설정)·보존 정책·한계를 적었다. C-2에 UNKNOWN 테스트 4개 추가.
 - 11-03: D-0에 SENDING·lease(`next_attempt_at`) 추가, D-3(backoff + jitter, 3번 실패 → BLOCKED, 감지 수단), D-1 한 회차 정의.
 - 11-04: D-1 "실패하면 회차를 멈춘다"와 비교표, 순서 구분(다른 주문 vs 같은 주문)·한정 수량 공정성 답. 한계에 같은 주문 순서 세 겹·late-arriving data·DLT 재처리 TODO·broker 중복·테이블 증가·CDC 비교 추가. partition·offset 남김 ✅, 인덱스 🔧(D-0으로 옮김), backoff 숫자 ✅, lease 책임 나눔 🔧, BLOCKED = 보내는 쪽 DLT·재개 시 attempt 0·잘못된 전이는 예외 ✅, 핵심 1 기대값 표. 0단계 구현: order_outbox 엔티티 뼈대·포트·어댑터·schema.sql, 조회 테스트 4개.
+- 11-06: 5단계 C-5 — 실제 kill 대신 W6 E-4와 같은 통제된 중단 지점(Claude 기본값 🔧): ① relay를 부르지 않음 ② PUBLISHED 저장 TX를 한 번 실패시킴. 실제 확정 경로·broker로 확인.
 - 11-06: 4단계 — 재개 진입점은 관리 포트 actuator `POST /actuator/outbox/{eventId}`(local·test만 노출, 학습자 A안 "api"). 겹침 방지는 ShedLock(학습자, 확장성) — outbox 행이 아니라 작업 이름 `order-outbox-relay` 한 행의 잠금, DB 시각 기준, lockAtMostFor 5분, 못 얻으면 건너뜀. 재개는 행만 PENDING으로 돌리고 보내는 것은 scheduler(1초 fixedDelay) 한 길. 주의(운영 문서에): 앱이 도는 중 shedlock 행을 지우면 ShedLock이 UPDATE만 시도해 재시작 전까지 잠금을 못 얻는다 — 강제 해제는 lock_until을 과거로 UPDATE.
 - 11-06: 2단계 연결 전환 — 확정 TX는 order_outbox에 PENDING 행만 남기고, W6 after-commit 직접 발행(listener·콜백 기록·결과 스레드풀)과 event_outbox를 지웠다. W6 미발행 행은 옮기지 않고 버린다(학습자, "기존 데이터 날려요"). C-7은 새 격리 DB에 누락 상태를 직접 만들어 확인한다(6단계). W6 테스트는 확인 테이블·발행 시점만 바꿨다(A안, S-13은 W7 버전으로). relay 실패 원인 문자열에 가장 안쪽 원인을 덧붙였다 — S-13의 W6 단언("not present in metadata")을 약하게 하지 않으려고.
 - 11-06: relay TX 나눔 ✅(TX1 SENDING / send는 TX 밖 / TX2 결과). 핵심 3 backoff(Red 6 → Green, 변이 3종 잡음), 핵심 2 relay 한 회차(Red 11 → Green, 변이 3종 잡음). 설정 batch-size 200·send-wait 35s·delivery.timeout.ms 30s, Clock·backoff 빈. 전체 521/0/0.
