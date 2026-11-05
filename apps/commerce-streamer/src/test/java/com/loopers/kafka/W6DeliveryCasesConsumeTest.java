@@ -38,7 +38,7 @@ import java.util.stream.Collectors;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * W6 발행 사례 재현 2단계. commerce-api의 W6DeliveryCasesPublishTest가 로컬 브로커 3대의
+ * W6 발행 사례 재현 2단계. W6 revision(b0d84b4)에 있는 commerce-api의 W6DeliveryCasesPublishTest가 로컬 브로커 3대의
  * order-events-w6-cases에 남긴 record를 실제 주문 listener(group purchase-activity·concurrency 3·업무용 오류 처리기)로 소비한다.
  * 사례 B만 구매 활동이 생기고, send 직전에 멈춘 사례 A는 record가 없으므로 구매 활동도 없다.
  * 성공하면 사례 topic을 지운다. 실행: {@code ./gradlew :apps:commerce-streamer:experimentTest --tests '*W6DeliveryCasesConsumeTest'}
@@ -78,7 +78,7 @@ class W6DeliveryCasesConsumeTest {
     void storesPurchaseActivityOnlyForThePublishedCase() throws Exception {
         try (AdminClient admin = AdminClient.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, LOCAL_BROKERS))) {
             assertThat(admin.listTopics().names().get(10, TimeUnit.SECONDS))
-                .as("먼저 commerce-api의 W6DeliveryCasesPublishTest를 실행한다").contains(TOPIC);
+                .as("먼저 W6 revision(b0d84b4)의 W6DeliveryCasesPublishTest를 실행한다").contains(TOPIC);
             admin.alterConsumerGroupOffsets(GROUP, PARTITIONS.stream()
                 .collect(Collectors.toMap(partition -> partition, partition -> new OffsetAndMetadata(0L))))
                 .all().get(10, TimeUnit.SECONDS);

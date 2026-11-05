@@ -44,6 +44,14 @@ commerce:
   order-events:
     enabled: false
     topic: order-events
+    relay:
+      scheduling-enabled: false # 인스턴스 하나에서만 켠다
+      # 처리 한계 ≈ batch-size / (fixed-delay + batch-size × 행당 처리 시간). docs/week7/outbox-experiments.md 실험 3
+      fixed-delay-ms: 10000
+      batch-size: 200
+      send-wait: 130s # producer 기본 delivery.timeout.ms(120초)보다 길게 둔다
+      first-retry: 2s
+      max-retry: 60s
   payment:
     pg:
       base-url: http://127.0.0.1:18080
@@ -63,6 +71,14 @@ commerce:
         failure-rate-threshold: 50
         open-wait: 10s
         half-open-calls: 2
+
+---
+# import한 kafka.yml이 이 파일의 첫 문서보다 우선하므로, 덮어쓰는 값은 뒤 문서에 둔다.
+spring:
+  kafka:
+    producer:
+      # Outbox에 저장한 JSON 문자열을 그대로 보낸다. 공통 JsonSerializer는 문자열을 한 번 더 따옴표로 감싼다.
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
 
 ---
 spring:
@@ -121,6 +137,7 @@ commerce.cache.price.prefix: commerce:price-page:v3:local
 commerce.cache.popular.prefix: commerce:popular-page:v1:local
 # 로컬 3대 클러스터의 order-events(compose init이 생성)로 주문 확정 이벤트를 보낸다.
 commerce.order-events.enabled: true
+commerce.order-events.relay.scheduling-enabled: true
 
 ---
 spring.config.activate.on-profile: benchmark

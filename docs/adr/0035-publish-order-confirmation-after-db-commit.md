@@ -1,6 +1,6 @@
 # ADR 0035: 주문 최초 확정 DB commit 성공 후 OrderConfirmed를 전송한다
 
-Status: Accepted
+Status: Superseded by [ADR 0064](0064-deliver-order-events-with-single-polling-relay.md)
 Related: [ADR 0032](0032-persist-payment-result-before-order-application.md), [week6 설계](../week6/design.md#publish-after-commit)
 
 Follow-up: eventId 고정 생성은 [ADR 0036](0036-derive-order-confirmation-event-id-from-order-id.md)에서 결정했다. 아래 본문의 구현 상태·검증 건수는 이 결정 채택 당시의 기록이며, 현재 상태와 이후 Kafka 검증은 [week6 설계](../week6/design.md)·[구현 기록](../week6/implementation-log.md#kafka-producer)을 따른다.
@@ -8,6 +8,8 @@ Follow-up: eventId 고정 생성은 [ADR 0036](0036-derive-order-confirmation-ev
 Follow-up: 후속 구매 활동의 별도 DB 트랜잭션과 상품별 유일성은 [ADR 0038](0038-store-order-purchase-activities-in-one-db-transaction.md)에서 확장한다. 발행 순서에 대한 이 결정은 Accepted를 유지한다.
 
 Follow-up (producer): [ADR 0051](0051-limit-producer-metadata-wait-and-keep-default-retries.md)에서 `max.block.ms`를 5초로 줄이고 `retries`를 클라이언트 기본에 둔다. 발행 순서 결정은 Accepted를 유지한다.
+
+Follow-up (outbox): [ADR 0063](0063-record-order-confirmation-outbox-in-tx-c.md)에서 같은 TX C에 Outbox 기록을 추가했고, [ADR 0064](0064-deliver-order-events-with-single-polling-relay.md)에서 after-commit 직접 전송을 단일 relay로 대체했다. 아래 본문은 당시 결정·검증 기록을 보존한다.
 
 ## Context
 

@@ -1,6 +1,6 @@
 package com.loopers.domain.order;
 
-/** 주문 확정 사실을 외부로 전달한다. 전송 기술과 결과 관찰은 구현체가 담당한다. */
+/** 저장된 메시지를 전송하고 broker 확인까지 기다린다. 확인하지 못하면 예외를 던진다. */
 public interface OrderConfirmationPublisher {
-    void publish(OrderConfirmed event);
+    void publish(OrderOutboxDelivery delivery);
 }
