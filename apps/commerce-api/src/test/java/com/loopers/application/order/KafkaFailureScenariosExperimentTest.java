@@ -456,6 +456,155 @@ class KafkaFailureScenariosExperimentTest {
         return result;
     }
 
+    /**
+     * S11. 특정 주문 하나만 계속 실패하면? S10과 같은 두 정책을 비교한다.
+     * 메시지는 정상이고, 그 주문의 구매 활동 저장만 DB trigger로 항상 실패하게 한다(코드 버그를 흉내 낸 테스트 전용 조건).
+     * 메시지 문제로 분류되지 않으므로 consumer는 DB 장애와 같은 재시도 경로로 다룬다.
+     * 60초 관찰한 뒤 trigger를 지워 원인을 고치고, 다시 시작하지 않고 이어 가는지 본다.
+     */
+    @Test
+    void oneOrderKeepsFailingUnderBothPolicies() throws Exception {
+        Map<String, Object> stopping = consumerPoisonOrder("A_stop_after_budget", 12_000_000L, "3s");
+        Map<String, Object> retrying = consumerPoisonOrder("B_keep_retrying", 13_000_000L, "1h");
+        print(Map.<String, Object>of("scenario", "S11_one_order_keeps_failing", "A", stopping, "B", retrying));
+
+        assertThat((int) stopping.get("doneAtEnd")).isEqualTo(60);
+        assertThat((int) retrying.get("doneAtEnd")).isEqualTo(60);
+    }
+
+    private Map<String, Object> consumerPoisonOrder(String policy, long first, String retryBudget) throws Exception {
+        int count = 60;
+        long poison = first + 4;
+        List<String> arguments = List.of("--commerce.order-events.consumer.retry.max-elapsed-time=" + retryBudget);
+        if (streamer != null) {
+            streamer.close();
+        }
+        streamer = SpringAppProcess.streamer(SpringAppProcess.Database.fromSystemProperties(), BROKER.bootstrapServers(),
+            TOPIC, arguments);
+        awaitMillis(System.nanoTime(), this::consumerAssigned);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("policy", policy);
+        result.put("retryBudget", retryBudget);
+        try {
+            failPurchaseActivityOf(poison);
+            record(first, count);
+            for (int round = 0; round < 10 && pending(first, count) > 0; round++) {
+                relay.runOnce();
+            }
+            result.put("published", published(first, count));
+
+            Map<Long, TopicPartition> partitionOf = new LinkedHashMap<>();
+            Map<Long, Long> offsetOf = new LinkedHashMap<>();
+            locate(first, count, partitionOf, offsetOf);
+            TopicPartition poisonPartition = partitionOf.get(poison);
+            List<Long> behindPoison = partitionOf.keySet().stream()
+                .filter(order -> partitionOf.get(order).equals(poisonPartition) && offsetOf.get(order) > offsetOf.get(poison))
+                .toList();
+            List<Long> otherPartitions = partitionOf.keySet().stream()
+                .filter(order -> !partitionOf.get(order).equals(poisonPartition)).toList();
+            result.put("poisonPartition", poisonPartition.partition());
+            result.put("ordersBehindPoison", behindPoison.size());
+            result.put("ordersInOtherPartitions", otherPartitions.size());
+
+            long started = System.nanoTime();
+            Long otherPartitionsDoneMillis = null;
+            long deadline = started + Duration.ofSeconds(60).toNanos();
+            while (System.nanoTime() < deadline) {
+                if (otherPartitionsDoneMillis == null && done(otherPartitions) == otherPartitions.size()) {
+                    otherPartitionsDoneMillis = Duration.ofNanos(System.nanoTime() - started).toMillis();
+                }
+                Thread.sleep(500);
+            }
+            result.put("otherPartitionsDoneMillis", otherPartitionsDoneMillis);
+            result.put("doneInOtherPartitionsAfter60s", done(otherPartitions));
+            result.put("doneBehindPoisonAfter60s", done(behindPoison));
+            result.put("poisonDoneAfter60s", done(List.of(poison)));
+            result.put("lagAfter60s", lag());
+            result.put("listenerStopped", streamer.logContains("processing failed after retries"));
+        } finally {
+            allowPurchaseActivity();
+        }
+
+        // 원인을 고친 뒤 다시 시작하지 않고 이어 가는지 본다
+        long fixedAt = System.nanoTime();
+        long deadline = fixedAt + Duration.ofSeconds(90).toNanos();
+        Long caughtUpMillis = null;
+        while (System.nanoTime() < deadline) {
+            if (completions(first, count) == count) {
+                caughtUpMillis = Duration.ofNanos(System.nanoTime() - fixedAt).toMillis();
+                break;
+            }
+            Thread.sleep(500);
+        }
+        result.put("doneWithoutRestart", completions(first, count));
+        result.put("caughtUpWithoutRestartMillis", caughtUpMillis);
+        if (caughtUpMillis == null) {
+            long restarting = System.nanoTime();
+            streamer.close();
+            streamer = SpringAppProcess.streamer(SpringAppProcess.Database.fromSystemProperties(), BROKER.bootstrapServers(),
+                TOPIC, arguments);
+            result.put("caughtUpAfterRestartMillis", awaitMillis(restarting, () -> completions(first, count) == count));
+        }
+        result.put("doneAtEnd", completions(first, count));
+        result.put("activitiesAtEnd", activities(first, count));
+        streamer.close();
+        streamer = null;
+        return result;
+    }
+
+    /** 이 주문의 구매 활동 저장만 항상 실패하게 한다. trigger 생성에는 root 권한이 필요하다. */
+    private void failPurchaseActivityOf(long orderId) throws Exception {
+        try (var connection = rootConnection(); var statement = connection.createStatement()) {
+            statement.execute("DROP TRIGGER IF EXISTS experiment_fail_one_order");
+            statement.execute("""
+                CREATE TRIGGER experiment_fail_one_order BEFORE INSERT ON product_purchase_activity FOR EACH ROW
+                BEGIN
+                  IF NEW.order_id = %d THEN
+                    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'experiment: this order always fails';
+                  END IF;
+                END""".formatted(orderId));
+        }
+    }
+
+    private void allowPurchaseActivity() throws Exception {
+        try (var connection = rootConnection(); var statement = connection.createStatement()) {
+            statement.execute("DROP TRIGGER IF EXISTS experiment_fail_one_order");
+        }
+    }
+
+    private static java.sql.Connection rootConnection() throws Exception {
+        var database = SpringAppProcess.Database.fromSystemProperties();
+        return java.sql.DriverManager.getConnection(database.jdbcUrl(), "root", database.password());
+    }
+
+    private int done(List<Long> orderIds) {
+        if (orderIds.isEmpty()) {
+            return 0;
+        }
+        return jdbc.queryForObject("SELECT COUNT(*) FROM processed_order_confirmation WHERE order_id IN ("
+            + String.join(",", orderIds.stream().map(String::valueOf).toList()) + ")", Integer.class);
+    }
+
+    /** 이 범위의 주문이 Kafka의 어느 partition·offset에 기록됐는지 찾는다. 주문마다 첫 record만 본다. */
+    private void locate(long first, int count, Map<Long, TopicPartition> partitionOf, Map<Long, Long> offsetOf) {
+        List<TopicPartition> partitions = IntStream.range(0, PARTITIONS).mapToObj(p -> new TopicPartition(TOPIC, p)).toList();
+        try (var consumer = consumer()) {
+            consumer.assign(partitions);
+            consumer.seekToBeginning(partitions);
+            Map<TopicPartition, Long> end = consumer.endOffsets(partitions, Duration.ofSeconds(10));
+            while (partitions.stream().anyMatch(p -> consumer.position(p) < end.get(p))) {
+                for (var record : consumer.poll(Duration.ofMillis(300))) {
+                    long key = Long.parseLong(record.key());
+                    if (key >= first && key < first + count && !partitionOf.containsKey(key)) {
+                        partitionOf.put(key, new TopicPartition(record.topic(), record.partition()));
+                        offsetOf.put(key, record.offset());
+                    }
+                }
+            }
+        }
+    }
+
     private int activitiesQuietly(long first, int count) {
         try {
             return activities(first, count);
