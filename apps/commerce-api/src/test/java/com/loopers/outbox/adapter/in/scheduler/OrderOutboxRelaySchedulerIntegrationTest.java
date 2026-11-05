@@ -29,6 +29,9 @@ import static org.mockito.Mockito.when;
  * <p>
  * relay는 가짜(MockitoBean)로 바꿔 "회차가 몇 번 돌았나"만 센다. 자동 tick은 1시간 뒤로 미뤄 두고 tick()을 직접 부른다.
  * shedlock 테이블은 엔티티가 아니라 ddl-auto가 만들지 않으므로 여기서 만든다 (운영·로컬은 docs/week7/schema.sql).
+ * <p>
+ * 잠금 행은 지우지 않고 "기한이 지난 잠금"으로 되돌린다. ShedLock은 한 번 만든 잠금 행을 기억하고 그다음부터는 UPDATE만 하므로,
+ * 앱이 도는 중에 행을 지우면 잠금을 다시는 얻지 못한다(재시작 전까지). 시각은 ShedLock이 MySQL에서 쓰는 UTC_TIMESTAMP로 맞춘다.
  */
 @SpringBootTest(properties = {"outbox.relay.scheduler.enabled=true", "outbox.relay.tick=1h"})
 class OrderOutboxRelaySchedulerIntegrationTest {
@@ -51,14 +54,20 @@ class OrderOutboxRelaySchedulerIntegrationTest {
               name VARCHAR(64) NOT NULL, lock_until TIMESTAMP(3) NOT NULL,
               locked_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), locked_by VARCHAR(255) NOT NULL,
               PRIMARY KEY (name))""");
-        jdbcTemplate.update("DELETE FROM shedlock");
+        expireLock();
         when(relay.relayOnce()).thenReturn(new RelayResult(0, 0, null));
+    }
+
+    /** 잠금 행이 있게 하되 기한은 지났게 한다 — 아무도 쥐고 있지 않은 상태 */
+    private void expireLock() {
+        jdbcTemplate.update("INSERT INTO shedlock (name, lock_until, locked_at, locked_by) VALUES (?, UTC_TIMESTAMP(3) - INTERVAL 1 SECOND, UTC_TIMESTAMP(3), 'test-reset') "
+            + "ON DUPLICATE KEY UPDATE lock_until = UTC_TIMESTAMP(3) - INTERVAL 1 SECOND, locked_by = 'test-reset'", OrderOutboxRelayScheduler.LOCK_NAME);
     }
 
     @AfterEach
     void tearDown() {
         executor.shutdownNow();
-        jdbcTemplate.update("DELETE FROM shedlock");
+        expireLock();
     }
 
     @DisplayName("핵심 4 회차가 도는 중에 들어온 tick(수동 실행·다른 앱)은 기다리지 않고 건너뛴다 — relay는 한 번만 돈다.")
@@ -102,7 +111,7 @@ class OrderOutboxRelaySchedulerIntegrationTest {
     @Test
     void lockHeldByAnotherInstanceUntilItExpires() {
         // arrange: 다른 앱이 1시간 동안 잠금을 쥔 채 죽었다
-        jdbcTemplate.update("INSERT INTO shedlock (name, lock_until, locked_at, locked_by) VALUES (?, NOW(3) + INTERVAL 1 HOUR, NOW(3), 'dead-app')",
+        jdbcTemplate.update("UPDATE shedlock SET lock_until = UTC_TIMESTAMP(3) + INTERVAL 1 HOUR, locked_at = UTC_TIMESTAMP(3), locked_by = 'dead-app' WHERE name = ?",
             OrderOutboxRelayScheduler.LOCK_NAME);
 
         // act & assert: 기한 전에는 돌지 않는다
@@ -110,7 +119,7 @@ class OrderOutboxRelaySchedulerIntegrationTest {
         verify(relay, never()).relayOnce();
 
         // act & assert: 기한이 지나면(= lockAtMostFor 경과) 이 앱이 가져가 돈다
-        jdbcTemplate.update("UPDATE shedlock SET lock_until = NOW(3) - INTERVAL 1 SECOND WHERE name = ?", OrderOutboxRelayScheduler.LOCK_NAME);
+        jdbcTemplate.update("UPDATE shedlock SET lock_until = UTC_TIMESTAMP(3) - INTERVAL 1 SECOND WHERE name = ?", OrderOutboxRelayScheduler.LOCK_NAME);
         scheduler.tick();
         verify(relay, times(1)).relayOnce();
     }
