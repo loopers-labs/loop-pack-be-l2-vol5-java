@@ -26,7 +26,7 @@ jobs:
         shell: bash
         run: |
           domain_output=$(mktemp -d)
-          mapfile -d '' domain_sources < <(find apps/commerce-api/src/main/java/com/loopers/domain -name '*.java' ! -path '*/example/*' ! -name 'BaseEntity.java' -print0)
+          mapfile -d '' domain_sources < <(find apps/commerce-api/src/main/java/com/loopers \( -path '*/domains/*/domain/*' -o -path '*/common/domain/*' -o -path '*/common/error/*' \) -name '*.java' -print0)
           test "${#domain_sources[@]}" -gt 0
           javac --release 21 -proc:none -classpath "$domain_output" -sourcepath "$domain_output" -d "$domain_output" "${domain_sources[@]}"
       - name: Check Docker for integration tests
