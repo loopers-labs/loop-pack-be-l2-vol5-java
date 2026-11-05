@@ -13,6 +13,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 @Component
 public class OrderConfirmedOutboxRelay {
@@ -23,6 +25,7 @@ public class OrderConfirmedOutboxRelay {
     private final OutboxPublisher publisher;
     private final Clock clock;
     private final Duration retryInterval;
+    private final Duration publishTimeout;
     private final int batchSize;
     private final int maxAttempts;
 
@@ -33,8 +36,8 @@ public class OrderConfirmedOutboxRelay {
         Clock clock,
         OutboxRelayProperties properties
     ) {
-        this(repository, publisher, clock, properties.getPollInterval(), properties.getBatchSize(),
-            properties.getMaxAttempts());
+        this(repository, publisher, clock, properties.getPollInterval(), properties.getPublishTimeout(),
+            properties.getBatchSize(), properties.getMaxAttempts());
     }
 
     public OrderConfirmedOutboxRelay(
@@ -45,10 +48,23 @@ public class OrderConfirmedOutboxRelay {
         int batchSize,
         int maxAttempts
     ) {
+        this(repository, publisher, clock, retryInterval, Duration.ofSeconds(20), batchSize, maxAttempts);
+    }
+
+    public OrderConfirmedOutboxRelay(
+        OrderConfirmedOutboxRepository repository,
+        OutboxPublisher publisher,
+        Clock clock,
+        Duration retryInterval,
+        Duration publishTimeout,
+        int batchSize,
+        int maxAttempts
+    ) {
         this.repository = repository;
         this.publisher = publisher;
         this.clock = clock;
         this.retryInterval = retryInterval;
+        this.publishTimeout = publishTimeout;
         this.batchSize = batchSize;
         this.maxAttempts = maxAttempts;
     }
@@ -83,10 +99,13 @@ public class OrderConfirmedOutboxRelay {
 
     private PublishResult awaitPublishResult(OrderConfirmedOutbox outbox) {
         try {
-            return publisher.publish(outbox.getMessageKey(), outbox.getPayload()).get();
+            return publisher.publish(outbox.getMessageKey(), outbox.getPayload())
+                .get(publishTimeout.toMillis(), TimeUnit.MILLISECONDS);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             return PublishResult.pending(interrupted.getClass().getSimpleName());
+        } catch (TimeoutException timeout) {
+            return PublishResult.pending(timeout.getClass().getSimpleName());
         } catch (ExecutionException | CompletionException failure) {
             Throwable cause = unwrap(failure);
             return PublishResult.pending(cause.getClass().getSimpleName());

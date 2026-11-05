@@ -40,6 +40,7 @@ outbox:
   relay:
     enabled: ${OUTBOX_RELAY_ENABLED:true}
     poll-interval: ${OUTBOX_RELAY_POLL_INTERVAL:1s}
+    publish-timeout: ${OUTBOX_RELAY_PUBLISH_TIMEOUT:20s}
     batch-size: ${OUTBOX_RELAY_BATCH_SIZE:10}
     max-attempts: ${OUTBOX_RELAY_MAX_ATTEMPTS:3}
 

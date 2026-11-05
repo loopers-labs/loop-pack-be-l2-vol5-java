@@ -39,4 +39,18 @@ class KafkaOutboxPublisherTest {
 
         assertThat(publishResult.get(2, TimeUnit.SECONDS)).isEqualTo(PublishResult.SUCCESS);
     }
+
+    @Test
+    @DisplayName("Kafka Future가 실패하면 실제 Publisher가 Relay에 반환하는 Future를 FAILED로 완료한다")
+    void completesPublisherFutureAsFailed_whenKafkaFutureFails() throws Exception {
+        CompletableFuture<SendResult<Object, Object>> kafkaFuture = new CompletableFuture<>();
+        when(kafkaTemplate.send(TOPIC, MESSAGE_KEY, PAYLOAD)).thenReturn(kafkaFuture);
+        KafkaOutboxPublisher adapter = new KafkaOutboxPublisher(kafkaTemplate, TOPIC);
+
+        CompletableFuture<PublishResult> publishResult = adapter.publish(MESSAGE_KEY, PAYLOAD);
+        kafkaFuture.completeExceptionally(new IllegalStateException("broker rejected message"));
+
+        assertThat(publishResult.get(2, TimeUnit.SECONDS))
+            .isEqualTo(PublishResult.failed(IllegalStateException.class.getSimpleName()));
+    }
 }

@@ -13,7 +13,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 import org.springframework.test.context.ActiveProfiles;
-import org.mockito.InOrder;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -28,7 +27,7 @@ import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.inOrder;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -101,6 +100,36 @@ class OrderConfirmedOutboxRelayDocumentContractTest {
         } finally {
             publishResult.complete(PublishResult.SUCCESS);
             relayExecution.handle((result, failure) -> null).get(1, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
+    @DisplayName("Publisher Future가 미완료여도 Relay는 발행 제한 시간 안에 종료한다")
+    void shouldNotWaitForever() throws Exception {
+        OrderConfirmedOutbox outbox = outbox("event-no-response", NOW);
+        CompletableFuture<PublishResult> neverCompletes = new CompletableFuture<>();
+        when(repository.findReadyForRelay(NOW, settings.batchSize())).thenReturn(List.of(outbox));
+        when(publisher.publish(anyString(), anyString())).thenReturn(neverCompletes);
+        relay = new OrderConfirmedOutboxRelay(
+            repository,
+            publisher,
+            Clock.fixed(NOW, ZoneOffset.UTC),
+            settings.pollInterval(),
+            Duration.ofMillis(100),
+            settings.batchSize(),
+            settings.maxAttempts()
+        );
+
+        CompletableFuture<Void> execution = CompletableFuture.runAsync(relay::pollOnce);
+        try {
+            execution.get(1, TimeUnit.SECONDS);
+
+            assertThat(outbox.getStatus()).isEqualTo(OrderConfirmedOutboxStatus.PENDING);
+            assertThat(outbox.getLastError()).contains("Timeout");
+        } finally {
+            // 발행 제한 시간이 없는 구현으로 바뀌어도 테스트 스레드가 남지 않게 Future를 해제한다.
+            neverCompletes.complete(PublishResult.pending("test-cleanup"));
+            execution.handle((result, failure) -> null).get(1, TimeUnit.SECONDS);
         }
     }
 
