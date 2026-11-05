@@ -1,5 +1,7 @@
 package com.loopers.outbox.adapter.out.persistence;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.outbox.application.port.out.OrderOutboxPort;
 import com.loopers.outbox.domain.OrderOutbox;
 import com.loopers.outbox.domain.OrderOutboxStatus;
@@ -20,6 +22,12 @@ public class OrderOutboxPersistenceAdapter implements OrderOutboxPort {
     private static final EnumSet<OrderOutboxStatus> DUE_STATUSES = EnumSet.of(OrderOutboxStatus.PENDING, OrderOutboxStatus.SENDING);
 
     private final OrderOutboxJpaRepository orderOutboxJpaRepository;
+    private final ObjectMapper objectMapper;
+
+    @Override
+    public OrderOutbox append(String eventId, Long orderId, String eventType, int schemaVersion, Object payload, ZonedDateTime now) {
+        return orderOutboxJpaRepository.save(OrderOutbox.pending(eventId, orderId, eventType, schemaVersion, toJson(payload), now));
+    }
 
     @Override
     public OrderOutbox save(OrderOutbox outbox) {
@@ -34,5 +42,13 @@ public class OrderOutboxPersistenceAdapter implements OrderOutboxPort {
     @Override
     public List<OrderOutbox> findDue(ZonedDateTime now, int limit) {
         return orderOutboxJpaRepository.findDue(DUE_STATUSES, now, PageRequest.of(0, limit));
+    }
+
+    private String toJson(Object payload) {
+        try {
+            return objectMapper.writeValueAsString(payload);
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("이벤트 payload를 JSON으로 바꾸지 못했습니다: " + payload.getClass().getName(), e);
+        }
     }
 }

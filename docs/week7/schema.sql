@@ -2,6 +2,10 @@
 -- 출처: 테스트(ddl-auto: create)가 loopers_test에 만든 테이블의 SHOW CREATE TABLE (2026-11-04).
 -- 인덱스 확인 (11-04, 5만 행 중 PENDING 100): status IN ('PENDING','SENDING') AND next_attempt_at <= now ORDER BY id LIMIT 200
 --   → type=range, key=idx_order_outbox_due, rows=101, Using index condition; Using filesort (차례가 된 행만 정렬)
+--
+-- W6 event_outbox는 W7에서 쓰지 않는다 (2단계, 11-06). 남은 미발행 행을 order_outbox로 옮기지 않고 버리기로 했다(학습자 결정).
+-- 로컬 DB(loopers)에서 한 번 실행한다. 테스트 DB는 ddl-auto: create라 저절로 없어진다.
+DROP TABLE IF EXISTS `event_outbox`;
 
 CREATE TABLE `order_outbox` (
   `attempt_count` int NOT NULL COMMENT '연속 실패 횟수. 3이면 BLOCKED, 재개하면 0',

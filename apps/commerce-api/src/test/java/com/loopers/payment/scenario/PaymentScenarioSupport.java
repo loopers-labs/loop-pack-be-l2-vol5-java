@@ -6,7 +6,6 @@ import com.loopers.brand.domain.BrandModel;
 import com.loopers.order.adapter.out.persistence.OrderJpaRepository;
 import com.loopers.order.domain.OrderModel;
 import com.loopers.order.domain.OrderStatus;
-import com.loopers.outbox.application.port.in.OutboxPublishUseCase;
 import com.loopers.outbox.application.port.out.MessageSendPort;
 import com.loopers.payment.adapter.out.persistence.PaymentJpaRepository;
 import com.loopers.payment.application.PaymentResultApplier;
@@ -121,11 +120,7 @@ abstract class PaymentScenarioSupport {
     @MockitoSpyBean
     protected StockReservationUseCase stockReservationUseCase;
 
-    /** S-13 (W6 E-4): 확정 commit 뒤 send 직전에 멈춘 상황을 만든다. 장면 클래스마다 spy가 다르면 컨텍스트가 새로 떠 고정 포트가 겹치므로 여기 둔다. */
-    @MockitoSpyBean
-    protected OutboxPublishUseCase outboxPublishUseCase;
-
-    /** S-13 (W6 E-4): broker 응답 없음(send 실패)을 넣는다. */
+    /** S-13 (W7): relay의 send에 broker 응답 없음·호출 예외를 넣는다. 장면 클래스마다 spy가 다르면 컨텍스트가 새로 떠 고정 포트가 겹치므로 여기 둔다. */
     @MockitoSpyBean
     protected MessageSendPort messageSendPort;
 

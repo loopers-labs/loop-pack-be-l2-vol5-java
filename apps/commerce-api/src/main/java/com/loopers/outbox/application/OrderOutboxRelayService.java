@@ -151,10 +151,21 @@ public class OrderOutboxRelayService implements OrderOutboxRelayUseCase {
         return ZonedDateTime.now(clock);
     }
 
+    /**
+     * 진단용 원인 문자열. 감싼 예외(예: KafkaException "Send failed")만으로는 원인이 안 보이므로 가장 안쪽 원인을 덧붙인다.
+     */
     private static String describe(Throwable cause) {
         if (cause == null) {
             return "unknown";
         }
-        return cause.getClass().getSimpleName() + ": " + cause.getMessage();
+        String text = cause.getClass().getSimpleName() + ": " + cause.getMessage();
+        Throwable root = cause;
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
+        }
+        if (root != cause) {
+            text += " (원인 " + root.getClass().getSimpleName() + ": " + root.getMessage() + ")";
+        }
+        return text;
     }
 }

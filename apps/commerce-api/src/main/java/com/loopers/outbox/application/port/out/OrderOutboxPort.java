@@ -11,6 +11,11 @@ import java.util.Optional;
  */
 public interface OrderOutboxPort {
 
+    /**
+     * payload를 JSON으로 한 번 바꿔 PENDING 행으로 남긴다. 이 문자열이 이후 모든 재발행에서 그대로 나간다.
+     */
+    OrderOutbox append(String eventId, Long orderId, String eventType, int schemaVersion, Object payload, ZonedDateTime now);
+
     OrderOutbox save(OrderOutbox outbox);
 
     Optional<OrderOutbox> findByEventId(String eventId);
