@@ -8,11 +8,12 @@ import com.loopers.domain.order.OrderStatus;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.product.StockLedgerType;
 import com.loopers.domain.user.UserModel;
-import com.loopers.infrastructure.order.KafkaOrderConfirmedPublisher;
 import com.loopers.support.FakePaymentGateway;
 import com.loopers.support.KafkaTestRecords;
 import com.loopers.support.fixture.Fixtures;
 import com.loopers.support.w6.W6DirectPublicationConfig;
+import com.loopers.support.w6.W6KafkaOrderConfirmedPublisher;
+import com.loopers.support.w6.W6OrderConfirmedPublisher;
 import com.loopers.utils.DatabaseCleanUp;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -77,19 +78,19 @@ class OrderConfirmedPublicationTest {
 
         @Bean
         @Primary
-        RecordingPublisher recordingPublisher(KafkaOrderConfirmedPublisher kafkaPublisher) {
+        RecordingPublisher recordingPublisher(W6KafkaOrderConfirmedPublisher kafkaPublisher) {
             return new RecordingPublisher(kafkaPublisher);
         }
     }
 
     /** 실제 Kafka 발행 앞에서 호출을 기록한다. failBeforeSend 면 send 를 부르기 직전에 멈춘다 (commit 뒤·전송 전 중단의 통제된 hook). */
-    static class RecordingPublisher implements OrderConfirmedPublisher {
-        private final OrderConfirmedPublisher delegate;
+    static class RecordingPublisher implements W6OrderConfirmedPublisher {
+        private final W6OrderConfirmedPublisher delegate;
         private final List<OrderConfirmedEvent> events = new CopyOnWriteArrayList<>();
         private final List<CompletableFuture<Published>> results = new CopyOnWriteArrayList<>();
         private volatile boolean failBeforeSend;
 
-        RecordingPublisher(OrderConfirmedPublisher delegate) {
+        RecordingPublisher(W6OrderConfirmedPublisher delegate) {
             this.delegate = delegate;
         }
 
@@ -168,7 +169,7 @@ class OrderConfirmedPublicationTest {
         return order;
     }
 
-    private OrderConfirmedPublisher.Published awaitPublished(int index) throws Exception {
+    private W6OrderConfirmedPublisher.Published awaitPublished(int index) throws Exception {
         return publisher.results.get(index).get(10, TimeUnit.SECONDS);
     }
 
@@ -186,7 +187,7 @@ class OrderConfirmedPublicationTest {
 
         assertThat(confirmed.status()).isEqualTo(OrderStatus.CONFIRMED.name());
         assertThat(publisher.events).hasSize(1);
-        OrderConfirmedPublisher.Published published = awaitPublished(0);
+        W6OrderConfirmedPublisher.Published published = awaitPublished(0);
         assertThat(published.topic()).isEqualTo(TOPIC);
         assertThat(publishCount("success")).isEqualTo(successBefore + 1);
 
@@ -263,7 +264,7 @@ class OrderConfirmedPublicationTest {
         int ledgerA = fixtures.ledgerOf(productA.getId()).size();
 
         orderFacade.applyPaymentCallback(PgOrderId.of(order.id()), success(tx, order.totalAmount()));
-        OrderConfirmedPublisher.Published first = awaitPublished(0);
+        W6OrderConfirmedPublisher.Published first = awaitPublished(0);
         orderFacade.resolveAwaitingPayment(user.getId(), order.id());
         orderFacade.applyPaymentCallback(PgOrderId.of(order.id()), success(tx, order.totalAmount()));
         orderPaymentProcessor.applyResult(order.id(), success(tx, order.totalAmount()));

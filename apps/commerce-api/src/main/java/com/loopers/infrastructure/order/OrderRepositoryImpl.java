@@ -4,10 +4,13 @@ import com.loopers.domain.order.OrderEventOutboxModel;
 import com.loopers.domain.order.OrderModel;
 import com.loopers.domain.order.OrderRepository;
 import com.loopers.domain.order.OrderStatus;
+import com.loopers.domain.order.OutboxStatus;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 
 import java.time.ZonedDateTime;
+import java.util.List;
 import java.util.Optional;
 
 @RequiredArgsConstructor
@@ -51,5 +54,16 @@ public class OrderRepositoryImpl implements OrderRepository {
     @Override
     public Optional<OrderEventOutboxModel> findOutboxByEventId(String eventId) {
         return orderEventOutboxJpaRepository.findByEventId(eventId);
+    }
+
+    @Override
+    public Optional<OrderEventOutboxModel> findOutboxByEventIdForUpdate(String eventId) {
+        return orderEventOutboxJpaRepository.findByEventIdForUpdate(eventId);
+    }
+
+    @Override
+    public List<OrderEventOutboxModel> findDueOutbox(ZonedDateTime now, int limit) {
+        return orderEventOutboxJpaRepository.findByStatusAndNextAttemptAtLessThanEqualOrderByNextAttemptAtAscIdAsc(
+            OutboxStatus.PENDING, now, PageRequest.ofSize(limit));
     }
 }

@@ -1,6 +1,7 @@
 package com.loopers.domain.order;
 
 import java.time.ZonedDateTime;
+import java.util.List;
 import java.util.Optional;
 
 public interface OrderRepository {
@@ -21,4 +22,10 @@ public interface OrderRepository {
     OrderEventOutboxModel saveOutbox(OrderEventOutboxModel outbox);
 
     Optional<OrderEventOutboxModel> findOutboxByEventId(String eventId);
+
+    /** relay 상태 변경용: Outbox 행 쓰기 락 (SELECT ... FOR UPDATE). 재개와 relay 가 같은 행을 동시에 바꾸지 않게. */
+    Optional<OrderEventOutboxModel> findOutboxByEventIdForUpdate(String eventId);
+
+    /** relay 대상: now 까지 재시도 시각이 된 PENDING 을 (next_attempt_at, id) 순으로 limit 건 (IX-15). BLOCKED·PUBLISHED 는 고르지 않는다. */
+    List<OrderEventOutboxModel> findDueOutbox(ZonedDateTime now, int limit);
 }

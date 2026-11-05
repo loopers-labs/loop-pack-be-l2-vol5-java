@@ -54,6 +54,16 @@ public class OrderService {
         return orderRepository.findOutboxByEventId(eventId);
     }
 
+    /** relay·재개용: 잠근 Outbox 행. 없으면 IllegalArgumentException (운영자가 지정한 eventId 가 틀린 경우). */
+    public OrderEventOutboxModel getOutboxForUpdate(String eventId) {
+        return orderRepository.findOutboxByEventIdForUpdate(eventId)
+            .orElseThrow(() -> new IllegalArgumentException("Outbox 행이 없습니다. [eventId = " + eventId + "]"));
+    }
+
+    public List<OrderEventOutboxModel> findDueOutbox(ZonedDateTime now, int limit) {
+        return orderRepository.findDueOutbox(now, limit);
+    }
+
     /** 결제 시작용: 락을 잡은 요청자의 주문. 없으면 ER-05, 남의 것이면 ER-06 (getOwned 와 같은 순서). */
     public OrderModel getOwnedForUpdate(Long orderId, Long userId) {
         OrderModel order = getForUpdate(orderId);

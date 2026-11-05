@@ -1,7 +1,6 @@
 package com.loopers.support.w6;
 
 import com.loopers.application.order.OrderConfirmedEvent;
-import com.loopers.application.order.OrderConfirmedPublisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.transaction.event.TransactionPhase;
@@ -11,9 +10,9 @@ import org.springframework.transaction.event.TransactionalEventListener;
 public class W6OrderConfirmedEventListener {
     private static final Logger log = LoggerFactory.getLogger(W6OrderConfirmedEventListener.class);
 
-    private final OrderConfirmedPublisher orderConfirmedPublisher;
+    private final W6OrderConfirmedPublisher orderConfirmedPublisher;
 
-    W6OrderConfirmedEventListener(OrderConfirmedPublisher orderConfirmedPublisher) {
+    W6OrderConfirmedEventListener(W6OrderConfirmedPublisher orderConfirmedPublisher) {
         this.orderConfirmedPublisher = orderConfirmedPublisher;
     }
 
