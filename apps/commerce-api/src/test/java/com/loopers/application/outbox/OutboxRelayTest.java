@@ -51,13 +51,8 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
 import java.nio.charset.StandardCharsets;
-import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -66,7 +61,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.IntStream;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
@@ -562,7 +556,7 @@ class OutboxRelayTest {
     void haltAfterBrokerAck_beforePublished_isResentByNewRelay() throws Exception {
         // arrange
         Fixture fixture = confirmed();
-        ledger.mode(LedgerMode.HALT_ON_MARK_PUBLISHED);
+        ledger.mode(SwitchableLedger.Mode.HALT_ON_MARK_PUBLISHED);
         clock.catchUpToRealNow();
         ZonedDateTime claimedAt = now();
 
@@ -586,7 +580,7 @@ class OutboxRelayTest {
         );
 
         // act — 재시작: 같은 빈·DB·Kafka로 새 relay를 만든다. 임대 전에는 고르지 않고, 지나면 다시 보낸다
-        ledger.mode(LedgerMode.PASS);
+        ledger.mode(SwitchableLedger.Mode.PASS);
         OutboxRelay restarted = new OutboxRelay(outboxEventRepository, ledger, publisher, clock, batchSize, leaseMargin);
         assertThat(restarted.runOnce().due()).as("임대 중").isZero();
         clock.advanceTo(halted.getNextAttemptAt());
@@ -668,8 +662,6 @@ class OutboxRelayTest {
 
     enum PublisherMode { PASS, FAIL }
 
-    enum LedgerMode { PASS, HALT_ON_MARK_PUBLISHED }
-
     @TestConfiguration
     static class SeamConfig {
         @Bean
@@ -688,57 +680,6 @@ class OutboxRelayTest {
         @Primary
         SwitchableLedger switchableLedger(@Qualifier("outboxDeliveryLedger") OutboxDeliveryLedger outboxDeliveryLedger) {
             return new SwitchableLedger(outboxDeliveryLedger);
-        }
-    }
-
-    /**
-     * 실제 현재 시각에서 시작해 앞으로만 넘기는 시계(D-16). µs로 자른다 — DB 컬럼(datetime(6))과 같은 정밀도라 저장한 시각과
-     * 계산한 시각을 그대로 비교할 수 있다. {@link #restartAtRealNow()}는 DB를 비운 직후 장면 시작에만 부른다.
-     */
-    static class TestClock extends Clock {
-
-        private volatile Instant instant;
-
-        TestClock() {
-            restartAtRealNow();
-        }
-
-        void restartAtRealNow() {
-            instant = Instant.now().truncatedTo(ChronoUnit.MICROS);
-        }
-
-        /** 확정 TX가 JVM 시각으로 적은 첫 시도 시각을 따라잡는다. 실제 시각이 앞서 있을 때만 움직인다. */
-        void catchUpToRealNow() {
-            Instant real = Instant.now().truncatedTo(ChronoUnit.MICROS);
-            if (real.isAfter(instant)) {
-                instant = real;
-            }
-        }
-
-        void advance(Duration duration) {
-            assertThat(duration.isNegative()).as("시계는 앞으로만 간다").isFalse();
-            instant = instant.plus(duration);
-        }
-
-        void advanceTo(ZonedDateTime target) {
-            Instant to = target.toInstant();
-            assertThat(to).as("시계는 앞으로만 간다 (지금 %s)", instant).isAfterOrEqualTo(instant);
-            instant = to;
-        }
-
-        @Override
-        public ZoneId getZone() {
-            return ZoneOffset.UTC;
-        }
-
-        @Override
-        public Clock withZone(ZoneId zone) {
-            return Clock.fixed(instant, zone);
-        }
-
-        @Override
-        public Instant instant() {
-            return instant;
         }
     }
 
@@ -778,74 +719,6 @@ class OutboxRelayTest {
         @Override
         public Duration maxSendTime() {
             return delegate.maxSendTime();
-        }
-    }
-
-    /**
-     * 진짜 결과 기록 빈을 감싼다(D-11 이유 2). PASS면 그대로 넘기면서 PUBLISHED 저장에 넘어온 broker 위치를 적는다.
-     * HALT_ON_MARK_PUBLISHED면 broker 위치만 적고 진짜 빈에 넘기지 않는다 — broker 확인 뒤, PUBLISHED 저장 전에 멈춘 것과 같다.
-     * 다른 호출은 늘 그대로 넘긴다. 상속은 타입을 맞추려는 것뿐이고, 부모의 필드는 쓰지 않는다.
-     */
-    static class SwitchableLedger extends OutboxDeliveryLedger {
-
-        private final OutboxDeliveryLedger delegate;
-        private final Map<Long, List<SentRecord>> published = new ConcurrentHashMap<>();
-        private final List<Long> publishedIds = new CopyOnWriteArrayList<>();
-        private final List<SentRecord> halted = new CopyOnWriteArrayList<>();
-        private volatile LedgerMode mode = LedgerMode.PASS;
-
-        SwitchableLedger(OutboxDeliveryLedger delegate) {
-            super(null, null);
-            this.delegate = delegate;
-        }
-
-        public void reset() {
-            mode = LedgerMode.PASS;
-            published.clear();
-            publishedIds.clear();
-            halted.clear();
-        }
-
-        public void mode(LedgerMode mode) {
-            this.mode = mode;
-        }
-
-        public List<SentRecord> publishedFor(Long id) {
-            return List.copyOf(published.getOrDefault(id, List.of()));
-        }
-
-        public List<Long> publishedIds() {
-            return List.copyOf(publishedIds);
-        }
-
-        public List<SentRecord> halted() {
-            return List.copyOf(halted);
-        }
-
-        @Override
-        public Optional<ClaimedOutbox> claim(Long id, ZonedDateTime now, ZonedDateTime leaseUntil) {
-            return delegate.claim(id, now, leaseUntil);
-        }
-
-        @Override
-        public void markPublished(Long id, SentRecord sent, ZonedDateTime now) {
-            if (mode == LedgerMode.HALT_ON_MARK_PUBLISHED) {
-                halted.add(sent);
-                return;
-            }
-            delegate.markPublished(id, sent, now);
-            published.computeIfAbsent(id, key -> new CopyOnWriteArrayList<>()).add(sent);
-            publishedIds.add(id);
-        }
-
-        @Override
-        public FailureOutcome recordFailure(Long id, String error, ZonedDateTime now) {
-            return delegate.recordFailure(id, error, now);
-        }
-
-        @Override
-        public void resume(String eventId, ZonedDateTime now) {
-            delegate.resume(eventId, now);
         }
     }
 }

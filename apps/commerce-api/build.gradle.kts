@@ -54,7 +54,19 @@ dependencies {
     testImplementation(testFixtures(project(":modules:redis")))
 }
 
+// 배달 E2E가 consumer를 별도 프로세스로 띄울 streamer 실행 jar(docs/week7/decisions.md D-10, D-15).
+// 의존성으로 넣지 않는다 — streamer가 api 테스트 클래스패스에 들어오면 @EntityScan("com.loopers")로 모든 api 테스트가
+// streamer의 listener·엔티티까지 띄운다. jar 경로만 시스템 프로퍼티로 넘기고, 없으면 E2E가 건너뛰지 않고 실패한다.
+val streamerBootJar = project(":apps:commerce-streamer").tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar")
+val streamerBootJarFile = streamerBootJar.flatMap { it.archiveFile }
+
 // api와 streamer가 같은 계약 JSON을 읽는다(docs/week6/decisions.md D-24). 테스트는 이 경로로 파일을 찾는다.
 tasks.test {
     systemProperty("contract.dir", rootProject.file("docs/week6/contract").absolutePath)
+    dependsOn(streamerBootJar)
+    // jar가 바뀌면 테스트를 다시 돌린다. 경로는 컴퓨터마다 다르므로 내용만 본다.
+    inputs.file(streamerBootJarFile).withPropertyName("streamerBootJar").withPathSensitivity(PathSensitivity.NONE)
+    jvmArgumentProviders.add(CommandLineArgumentProvider {
+        listOf("-Dstreamer.bootJar=" + streamerBootJarFile.get().asFile.absolutePath)
+    })
 }
