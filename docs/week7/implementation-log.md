@@ -77,7 +77,7 @@
 - `OutboxDeliveryE2ETest`가 한 실행에서 HTTP 주문 API, 로컬 PG fixture, 실제 MySQL, 자신이 띄운 단일 broker, 실제 `commerce-streamer` 앱을 연결한다.
 - streamer는 `CommerceStreamerProcess`로 별도 JVM에서 띄운다. 같은 JVM에 올리면 `commerce-api` 전체 테스트의 component scan에 streamer 빈이 섞이기 때문이다. 제품 runtime 의존성은 없다.
 - `apps/commerce-api/build.gradle.kts`의 `test` 태스크에 streamer runtime classpath를 넘기고 입력으로 등록했다. 테스트 실행 전용 변경이다.
-- 테스트는 자신이 만든 streamer 프로세스·broker·PG와 해당 주문의 구매 활동 행만 정리한다. 공유 MySQL 컨테이너에는 streamer의 빈 테이블 두 개가 남는다.
+- 테스트는 자신이 만든 streamer 프로세스·broker·PG를 닫고, 해당 주문의 구매 활동 행을 지운 뒤 테스트 MySQL 컨테이너의 commerce-api 테이블을 비운다(`truncateAllTables`). streamer가 만든 빈 테이블 두 개는 컨테이너에 남는다.
 
 ### 관찰 결과
 
@@ -409,3 +409,20 @@ relay만 떼어 잰 처리량이 전체 경로에서도 맞는지, 주문 API부
 | Checkstyle | 세 모듈 모두 위반 0 |
 
 `BUILD SUCCESSFUL`(11분 18초). 12절보다 1건 늘어난 것은 13절의 publisher 단위 테스트다. `experiment` 태그의 실험은 포함되지 않으며 각 절의 실행 결과가 마지막 실행이다.
+
+## 21. 특정 주문 하나만 계속 실패하는 경우 (S11)
+
+S10에서 계속 재시도(B)의 약점으로 남긴 경우를 확인했다. 결과는 [실험 4](outbox-experiments.md#실험-4-kafka-흐름의-장애-상황)의 S11에 남겼다.
+
+- `KafkaFailureScenariosExperimentTest`에 `oneOrderKeepsFailingUnderBothPolicies`를 추가했다. 구매 활동 앱 코드는 바꾸지 않고, 테스트가 root 계정으로 `product_purchase_activity`에 BEFORE INSERT trigger를 만들어 한 주문의 저장만 실패하게 한다. 관찰이 끝나면 trigger를 지운다.
+- 1건 통과(약 5분). 두 정책 모두 실패 주문이 있는 partition의 뒤 주문은 0건 반영, 다른 partition은 모두 반영. 원인을 고친 뒤 A는 재시작이 필요했고(재시작 뒤 약 8초), B는 재시작 없이 약 30초 만에 60건을 반영했다.
+- 제품 정책(ADR 0053)은 바꾸지 않았다. 일반 `check`는 이 변경 뒤 다시 실행하지 않았다(실험 코드만 추가).
+
+## 22. 과제 체크리스트 대조와 보완
+
+과제의 체크리스트 11개를 코드·테스트·문서와 대조했다. “중복 결과 적용·실패·UNKNOWN에서 추가 결제가 생기지 않는다”는 중복 적용 테스트에서만 PG 결제 생성 수를 확인하고 있었다.
+
+- `OrderConfirmationOutboxAtomicityTest`의 PENDING·FAILED 결과 테스트와 UNKNOWN 조회 테스트에 PG 결제 생성 수가 그대로인지 검사를 더했다. 9건 통과, `commerce-api` test Checkstyle 위반 0.
+- 3절의 테스트 정리 범위 설명을 실제 동작(`truncateAllTables`)에 맞게 고쳤다.
+- 일반 `check` 전체는 이 변경 뒤 다시 실행하지 않았다. 마지막 전체 실행은 20절이다.
+
