@@ -18,7 +18,8 @@ import java.util.List;
 
 /**
  * 로컬에서 실행 인자로 Outbox 운영 동작을 한 번 부르고 끝냄. HTTP 로 노출하지 않음 (7주차 설계 5.2).
- * 예: --spring.main.web-application-type=none --order-outbox.command=backfill --order-outbox.order-ids=1,2
+ * 예: --server.port=0 --management.server.port=0 --order-outbox.command=backfill --order-outbox.order-ids=1,2
+ * 웹을 끄면(web-application-type=none) 관리자 경계의 HttpSecurity 가 없어 기동하지 못함
  */
 @Slf4j
 @Profile("local")

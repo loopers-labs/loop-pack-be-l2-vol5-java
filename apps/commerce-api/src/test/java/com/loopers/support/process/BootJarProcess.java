@@ -98,6 +98,32 @@ public final class BootJarProcess implements AutoCloseable {
         return String.join("\n", snapshot.subList(Math.max(0, snapshot.size() - TAIL_LINES), snapshot.size()));
     }
 
+    /** 스스로 끝나는 실행(명령 runner)을 기다려 종료 코드를 줌 */
+    public int awaitExit(Duration timeout) {
+        try {
+            if (!process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
+                throw new AssertionError(name + " 프로세스가 " + timeout + " 안에 끝나지 않음\n" + tail());
+            }
+            return process.exitValue();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("대기 중 interrupt", e);
+        }
+    }
+
+    /** 종료 절차 없이 끝냄. SIGTERM 이면 Spring 이 producer 를 닫으며 버퍼의 record 를 보내 버림 */
+    public void kill() {
+        try {
+            process.destroyForcibly().waitFor(10, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    public boolean isAlive() {
+        return process.isAlive();
+    }
+
     @Override
     public void close() {
         process.destroy();
