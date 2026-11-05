@@ -26,6 +26,12 @@ spring:
       - logging.yml
       - monitoring.yml
       - optional:classpath:application-secret.yml # PG 테스트 키(.gitignore). 견본은 application-secret.yml.example
+  # W7 D-1: 실패는 빨리 난다. 기본 120s → 30s. Kafka 규칙상 linger.ms + request.timeout.ms(20s) 이상이어야 한다.
+  # 공용 modules/kafka/kafka.yml은 streamer도 쓰므로 commerce-api에서만 덮어쓴다 (kafka.yml에 이 키가 없어 import가 덮지 않는다).
+  kafka:
+    producer:
+      properties:
+        delivery.timeout.ms: 30000
 
 # W3 ADR-W3-04: 잠금 대기 상한. MySQL은 쿼리별 대기 시간 문법이 없어 커넥션마다 세션 변수로 둔다.
 # 넘기면 ERROR 1205 → CONCURRENCY_CONFLICT(409)로 응답한다. 확정 트랜잭션은 수십 ms라 3초는 붐빔의 신호다.
@@ -91,6 +97,14 @@ resilience4j:
 kafka:
   topics:
     order-events: order-events
+
+# W7 relay 한 회차 (docs/week7/plan.md D-1): 한 번에 고르는 최대 행 수 · broker 응답(ack)을 기다리는 시간.
+# send-wait(35s)는 producer가 포기하는 delivery.timeout.ms(30s)보다 길어야 한다 — relay가 실패로 적은 행이 뒤늦게 성공하지 않게.
+# lease(1분, OrderOutbox.LEASE)는 send-wait보다 길어야 한다 — 보내는 중인 행을 다시 고르지 않게.
+outbox:
+  relay:
+    batch-size: 200
+    send-wait: 35s
 
 payment:
   dispatch:
