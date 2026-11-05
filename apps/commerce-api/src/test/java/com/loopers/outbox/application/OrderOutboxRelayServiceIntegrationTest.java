@@ -45,7 +45,11 @@ import static org.mockito.Mockito.when;
  * 가장 중요한 성질: <b>broker 응답(ack)을 받은 뒤에만 PUBLISHED</b>. 실패·timeout·ack 뒤 저장 실패에서 행은 PUBLISHED가 아니고,
  * 다시 골라져 같은 eventId·payload로 나간다 (누락 대신 중복 → consumer 멱등성이 거른다).
  * <p>
+ * <b>lease = SENDING 표시의 유효 기한.</b> 이 시각(맡은 시각 + 1분)까지 끝나지 않으면 relay가 멈춘 것으로 보고 다시 보낸다 ({@link AckButSaveFails}).
+ * <p>
  * 시각은 고정한 Clock, backoff 대기는 고정 10초. send-wait는 timeout 사례를 빨리 보려고 300ms로 줄인다.
+ * 가짜 broker: {@code ackFor}는 "그 주문을 보내면 성공으로 답한다", {@code failFor}는 "보낼 때마다 실패로 답한다"이고,
+ * 나중에 정한 것이 앞의 것을 덮어쓴다. {@code at}은 시계만 옮긴다 — 행을 다시 차례가 되게 할 뿐 성공·실패와는 무관하다.
  */
 @SpringBootTest(properties = {"outbox.relay.batch-size=2", "outbox.relay.send-wait=300ms"})
 class OrderOutboxRelayServiceIntegrationTest {

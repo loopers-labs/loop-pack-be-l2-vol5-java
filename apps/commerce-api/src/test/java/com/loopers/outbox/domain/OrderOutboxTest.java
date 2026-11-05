@@ -17,6 +17,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * 주문 Outbox 상태 전이 (docs/week7/plan.md "핵심 1"). 시각은 모두 고정한 리터럴이다.
  * 거절 사례는 예외(CONFLICT)와 함께 "아무 값도 바뀌지 않았다"를 전이 전 스냅샷과 비교해 확인한다.
+ * <p>
+ * <b>lease = SENDING 표시의 유효 기한.</b> 이 시각까지 끝나지 않으면 relay가 멈춘 것으로 보고 다시 보낸다.
+ * SENDING일 때의 {@code next_attempt_at}이고, 맡을 때 {@code now + OrderOutbox.LEASE(1분)}로 정한다.
+ * 실패 뒤의 재시도 시각(backoff)과 같은 컬럼을 쓰지만 원인이 다르다 — 그쪽은 "실패라는 답을 받았을 때", lease는 "답을 못 적고 멈췄을 때".
  */
 class OrderOutboxTest {
 
