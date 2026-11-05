@@ -1,5 +1,6 @@
 outbox:
   relay:
     poll-interval: 1s
+    retry-interval: 10s
     batch-size: 10
     max-attempts: 3

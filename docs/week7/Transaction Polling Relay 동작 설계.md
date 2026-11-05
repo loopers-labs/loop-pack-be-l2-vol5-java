@@ -14,6 +14,7 @@
 | 설정 항목    | 설정 키                         | 의미                                                       | 기본값 |
 | -------- | ---------------------------- | -------------------------------------------------------- | --- |
 | 폴링 간격    | `outbox.relay.poll-interval` | 한 번의 조회·발행 처리가 끝난 뒤 다음 실행까지 기다리는 시간(`fixedDelay`)        | 1초  |
+| 재시도 간격   | `outbox.relay.retry-interval` | 발행 실패 또는 결과 미확정 시 `next_attempt_at`까지 기다리는 시간             | 10초 |
 | 발행 대기 시간 | `outbox.relay.publish-timeout` | Kafka 발행 응답을 기다리는 최대 시간. 초과하면 결과 미확정으로 처리해 `PENDING`으로 재시도한다. | 20초 |
 | 조회 묶음 크기 | `outbox.relay.batch-size`    | 한 번의 실행에서 순차 처리할 최대 Outbox 행 수                           | 10  |
 | 최대 시도 횟수 | `outbox.relay.max-attempts`  | 발행 결과가 성공으로 확정되지 않은 행을 `BLOCKED`로 전환하기까지 허용할 전체 발행 시도 횟수 | 3   |

@@ -53,7 +53,7 @@ class OrderConfirmedOutboxRelayDocumentContractTest {
         repository = mock(OrderConfirmedOutboxRepository.class);
         publisher = mock(OutboxPublisher.class);
         settings = new RelaySettings(
-            DurationStyle.detectAndParse(environment.getRequiredProperty("outbox.relay.poll-interval")),
+            DurationStyle.detectAndParse(environment.getRequiredProperty("outbox.relay.retry-interval")),
             environment.getRequiredProperty("outbox.relay.batch-size", Integer.class),
             environment.getRequiredProperty("outbox.relay.max-attempts", Integer.class)
         );
@@ -61,7 +61,7 @@ class OrderConfirmedOutboxRelayDocumentContractTest {
             repository,
             publisher,
             Clock.fixed(NOW, ZoneOffset.UTC),
-            settings.pollInterval(),
+            settings.retryInterval(),
             settings.batchSize(),
             settings.maxAttempts()
         );
@@ -116,7 +116,7 @@ class OrderConfirmedOutboxRelayDocumentContractTest {
             repository,
             publisher,
             Clock.fixed(NOW, ZoneOffset.UTC),
-            settings.pollInterval(),
+            settings.retryInterval(),
             Duration.ofMillis(100),
             settings.batchSize(),
             settings.maxAttempts()
@@ -150,7 +150,7 @@ class OrderConfirmedOutboxRelayDocumentContractTest {
             payload,
             NOW
         );
-        Instant retryAt = NOW.plus(settings.pollInterval());
+        Instant retryAt = NOW.plus(settings.retryInterval());
         MutableClock clock = new MutableClock(NOW);
         when(repository.findReadyForRelay(org.mockito.ArgumentMatchers.any(Instant.class),
             org.mockito.ArgumentMatchers.eq(settings.batchSize())))
@@ -164,7 +164,7 @@ class OrderConfirmedOutboxRelayDocumentContractTest {
             repository,
             publisher,
             clock,
-            settings.pollInterval(),
+            settings.retryInterval(),
             settings.batchSize(),
             settings.maxAttempts()
         );
@@ -222,7 +222,7 @@ class OrderConfirmedOutboxRelayDocumentContractTest {
             scenarioRepository,
             scenarioPublisher,
             Clock.fixed(NOW, ZoneOffset.UTC),
-            scenarioSettings.pollInterval(),
+            scenarioSettings.retryInterval(),
             scenarioSettings.batchSize(),
             scenarioSettings.maxAttempts()
         );
@@ -239,7 +239,7 @@ class OrderConfirmedOutboxRelayDocumentContractTest {
         }
         if (scenario.expectedStatus() == OrderConfirmedOutboxStatus.FAILED
             || scenario.expectedStatus() == OrderConfirmedOutboxStatus.PENDING) {
-            assertThat(outbox.getNextAttemptAt()).isEqualTo(NOW.plus(scenarioSettings.pollInterval()));
+            assertThat(outbox.getNextAttemptAt()).isEqualTo(NOW.plus(scenarioSettings.retryInterval()));
         }
 
     }
@@ -256,7 +256,7 @@ class OrderConfirmedOutboxRelayDocumentContractTest {
         );
     }
 
-    private record RelaySettings(Duration pollInterval, int batchSize, int maxAttempts) {
+    private record RelaySettings(Duration retryInterval, int batchSize, int maxAttempts) {
     }
 
     private record PublishScenario(

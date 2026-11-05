@@ -35,6 +35,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
@@ -136,6 +138,64 @@ class OrderConfirmedOutboxReadySelectionTest {
 
     @Test
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    @DisplayName("발행 실패한 이벤트는 재시도 시각이 되면 다음 폴링에서 다시 발행한다")
+    void republishesFailedOutboxWhenRetryTimeArrives() {
+        String eventId = "retry-after-failure-" + UUID.randomUUID();
+        String messageKey = "order-" + eventId;
+        String payload = "payload-" + eventId;
+        Duration retryInterval = DurationStyle.detectAndParse(
+            environment.getRequiredProperty("outbox.relay.retry-interval")
+        );
+        Instant retryAt = NOW.plus(retryInterval);
+        MutableClock clock = new MutableClock(NOW);
+        OrderConfirmedOutbox outbox = outbox(
+            eventId, OrderConfirmedOutboxStatus.PENDING, NOW
+        );
+        OutboxPublisher publisher = mock(OutboxPublisher.class);
+        when(publisher.publish(messageKey, payload)).thenReturn(
+            CompletableFuture.completedFuture(PublishResult.failed("BrokerException")),
+            CompletableFuture.completedFuture(PublishResult.SUCCESS)
+        );
+        OrderConfirmedOutboxRelay relay = new OrderConfirmedOutboxRelay(
+            repository,
+            publisher,
+            clock,
+            retryInterval,
+            batchSize(),
+            environment.getRequiredProperty("outbox.relay.max-attempts", Integer.class)
+        );
+
+        try {
+            repository.saveAndFlush(outbox);
+
+            // 최초 발행 실패 후 실제 DB에 재시도 시각이 저장되는지 확인한다.
+            relay.pollOnce();
+            OrderConfirmedOutbox failed = repository.findByEventId(eventId).orElseThrow();
+            assertThat(failed.getStatus()).isEqualTo(OrderConfirmedOutboxStatus.FAILED);
+            assertThat(failed.getAttemptCount()).isEqualTo(1);
+            assertThat(failed.getNextAttemptAt()).isEqualTo(retryAt);
+
+            // 재시도 시각 직전에는 실제 Repository 조회에서 제외되어야 한다.
+            clock.setInstant(retryAt.minusMillis(1));
+            relay.pollOnce();
+            assertThat(repository.findByEventId(eventId).orElseThrow().getStatus())
+                .isEqualTo(OrderConfirmedOutboxStatus.FAILED);
+            verify(publisher, times(1)).publish(messageKey, payload);
+
+            // 경계 시각에 같은 이벤트가 다시 조회되어 발행 성공으로 기록되어야 한다.
+            clock.setInstant(retryAt);
+            relay.pollOnce();
+            OrderConfirmedOutbox published = repository.findByEventId(eventId).orElseThrow();
+            assertThat(published.getStatus()).isEqualTo(OrderConfirmedOutboxStatus.PUBLISHED);
+            assertThat(published.getAttemptCount()).isEqualTo(2);
+            verify(publisher, times(2)).publish(messageKey, payload);
+        } finally {
+            repository.findByEventId(eventId).ifPresent(repository::delete);
+        }
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     @DisplayName("폴링마다 현재 DB에서 오래된 처리 가능 이벤트를 배치 크기만큼 순차 발행한다")
     void publishesOldestCurrentlyEligibleRowsAcrossPolls() throws Exception {
         String prefix = "poll-sequence-" + UUID.randomUUID();
@@ -161,7 +221,7 @@ class OrderConfirmedOutboxReadySelectionTest {
         int batchSize = 2;
         MutableClock clock = new MutableClock(NOW);
         Duration retryInterval = DurationStyle.detectAndParse(
-            environment.getRequiredProperty("outbox.relay.poll-interval")
+            environment.getRequiredProperty("outbox.relay.retry-interval")
         );
         OrderConfirmedOutboxRelay relay = new OrderConfirmedOutboxRelay(
             repository,

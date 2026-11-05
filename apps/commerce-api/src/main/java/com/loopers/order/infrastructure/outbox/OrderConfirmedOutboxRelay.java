@@ -36,7 +36,7 @@ public class OrderConfirmedOutboxRelay {
         Clock clock,
         OutboxRelayProperties properties
     ) {
-        this(repository, publisher, clock, properties.getPollInterval(), properties.getPublishTimeout(),
+        this(repository, publisher, clock, properties.getRetryInterval(), properties.getPublishTimeout(),
             properties.getBatchSize(), properties.getMaxAttempts());
     }
 

@@ -5,6 +5,7 @@ import java.time.Duration;
 public class OutboxRelayProperties {
 
     private Duration pollInterval = Duration.ofSeconds(1);
+    private Duration retryInterval = Duration.ofSeconds(10);
     private Duration publishTimeout = Duration.ofSeconds(20);
     private int batchSize = 10;
     private int maxAttempts = 3;
@@ -15,6 +16,14 @@ public class OutboxRelayProperties {
 
     public void setPollInterval(Duration pollInterval) {
         this.pollInterval = pollInterval;
+    }
+
+    public Duration getRetryInterval() {
+        return retryInterval;
+    }
+
+    public void setRetryInterval(Duration retryInterval) {
+        this.retryInterval = retryInterval;
     }
 
     public Duration getPublishTimeout() {
