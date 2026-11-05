@@ -114,6 +114,15 @@ public class OrderConfirmedOutbox extends BaseEntity {
         this.lastError = truncate(error);
     }
 
+    /** 원인을 고친 뒤 같은 행을 다시 보냄. eventId · payload 는 바꾸지 않음 (7주차 D-106) */
+    public void resume(ZonedDateTime now) {
+        if (status != OrderOutboxStatus.BLOCKED) {
+            throw new IllegalStateException("BLOCKED 가 아닌 Outbox 는 재개할 수 없음. eventId=" + eventId + " status=" + status);
+        }
+        this.status = OrderOutboxStatus.PENDING;
+        this.nextAttemptAt = now.truncatedTo(ChronoUnit.MICROS);
+    }
+
     private void requirePending() {
         if (status != OrderOutboxStatus.PENDING) {
             throw new IllegalStateException("PENDING 이 아닌 Outbox 는 시도할 수 없음. eventId=" + eventId + " status=" + status);

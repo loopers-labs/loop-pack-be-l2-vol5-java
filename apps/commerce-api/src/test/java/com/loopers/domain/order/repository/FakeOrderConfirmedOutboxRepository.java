@@ -35,6 +35,11 @@ public class FakeOrderConfirmedOutboxRepository implements OrderConfirmedOutboxR
     }
 
     @Override
+    public Optional<OrderConfirmedOutbox> findByEventId(String eventId) {
+        return byOrderId.values().stream().filter(outbox -> outbox.getEventId().equals(eventId)).findFirst();
+    }
+
+    @Override
     public List<OrderConfirmedOutbox> findDue(ZonedDateTime now, int limit) {
         return byOrderId.values().stream()
             .filter(outbox -> outbox.isDue(now))

@@ -1,6 +1,7 @@
 package com.loopers.domain.order.service;
 
 import com.loopers.domain.order.entity.Order;
+import com.loopers.domain.order.enums.OrderBackfillResult;
 import com.loopers.domain.order.enums.OrderErrorCode;
 import com.loopers.domain.order.enums.OrderStatus;
 import com.loopers.domain.order.entity.OrderConfirmedOutbox;
@@ -180,5 +181,65 @@ class OrderServiceTest {
         assertThrows(IllegalStateException.class, () -> orderService.confirmPaid(order, 2_000L));
 
         assertThat(outboxRepository.findAll()).isEmpty();
+    }
+
+    @DisplayName("Outbox 없이 확정된 주문을 backfill 하면, 저장된 확정 사실에서 유도한 PENDING 한 행을 추가하고 주문은 바꾸지 않는다. (7주차 D-112)")
+    @Test
+    void backfillsMissingOutbox() {
+        Order order = confirmedWithoutOutbox();
+        serialized.clear();
+
+        OrderBackfillResult result = orderService.backfillConfirmed(order.getId());
+
+        OrderConfirmedOutbox outbox = outboxRepository.findByOrderId(order.getId()).orElseThrow();
+        assertAll(
+            () -> assertThat(result).isEqualTo(OrderBackfillResult.RECORDED),
+            () -> assertThat(serialized).containsExactly(OrderConfirmed.from(order)),
+            () -> assertThat(outbox.getEventId()).isEqualTo("order-confirmed:v1:" + order.getId()),
+            () -> assertThat(outbox.getPayload()).isEqualTo("payload:order-confirmed:v1:" + order.getId()),
+            () -> assertThat(outbox.getStatus()).isEqualTo(OrderOutboxStatus.PENDING),
+            () -> assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED)
+        );
+    }
+
+    @DisplayName("같은 확정 사실의 Outbox 가 이미 있으면 backfill 은 아무것도 더하지 않는다.")
+    @Test
+    void doesNotBackfillAgain_whenSameFactRecorded() {
+        Order order = confirmedWithoutOutbox();
+        orderService.backfillConfirmed(order.getId());
+
+        OrderBackfillResult result = orderService.backfillConfirmed(order.getId());
+
+        assertAll(
+            () -> assertThat(result).isEqualTo(OrderBackfillResult.ALREADY_RECORDED),
+            () -> assertThat(outboxRepository.findAll()).hasSize(1)
+        );
+    }
+
+    @DisplayName("저장된 Outbox 의 내용이 주문의 확정 사실과 다르면, 추측하지 않고 오류로 끝낸다.")
+    @Test
+    void rejectsBackfill_whenRecordedFactDiffers() {
+        Order order = confirmedWithoutOutbox();
+        outboxRepository.save(OrderConfirmedOutbox.pending(OrderConfirmed.from(order), "다른 payload", NOW));
+
+        assertThrows(IllegalStateException.class, () -> orderService.backfillConfirmed(order.getId()));
+        assertThat(outboxRepository.findByOrderId(order.getId())).get()
+            .extracting(OrderConfirmedOutbox::getPayload).isEqualTo("다른 payload");
+    }
+
+    @DisplayName("확정되지 않은 주문은 backfill 하지 않는다.")
+    @Test
+    void rejectsBackfill_whenNotConfirmed() {
+        Order draft = createDraft();
+
+        assertThrows(IllegalStateException.class, () -> orderService.backfillConfirmed(draft.getId()));
+        assertThat(outboxRepository.findAll()).isEmpty();
+    }
+
+    /** 6주차까지처럼 Outbox 없이 확정된 주문. 확정 메서드를 거치지 않는 POINT 확정으로 만듦 */
+    private Order confirmedWithoutOutbox() {
+        Order order = createDraft();
+        order.confirmWithPoint(2_000L, NOW);
+        return orderRepository.save(order);
     }
 }

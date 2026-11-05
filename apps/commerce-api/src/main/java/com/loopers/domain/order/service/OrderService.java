@@ -2,6 +2,7 @@ package com.loopers.domain.order.service;
 
 import com.loopers.domain.order.entity.Order;
 import com.loopers.domain.order.entity.OrderConfirmedOutbox;
+import com.loopers.domain.order.enums.OrderBackfillResult;
 import com.loopers.domain.order.enums.OrderErrorCode;
 import com.loopers.domain.order.enums.OrderStatus;
 import com.loopers.domain.order.gateway.OrderConfirmedSerializer;
@@ -20,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.Optional;
 
 @RequiredArgsConstructor
 @Component
@@ -79,6 +81,30 @@ public class OrderService {
     private void recordConfirmed(Order order, ZonedDateTime now) {
         OrderConfirmed event = OrderConfirmed.from(order);
         outboxRepository.save(OrderConfirmedOutbox.pending(event, serializer.serialize(event), now));
+    }
+
+    /**
+     * Outbox 이전에 확정됐지만 발행되지 못한 주문을 잇는 복구. 확정 · 결제 · 예약은 건드리지 않음 (7주차 D-112).
+     * identity 는 저장된 사실에서 다시 유도하므로 6주차가 보냈을 메시지와 같은 사건이 됨
+     */
+    @Transactional
+    public OrderBackfillResult backfillConfirmed(Long orderId) {
+        Order order = getOrder(orderId);
+        if (order.getStatus() != OrderStatus.CONFIRMED || order.getConfirmedAt() == null) {
+            throw new IllegalStateException("확정 사실이 없는 주문은 잇지 않음. orderId=" + orderId + " status=" + order.getStatus());
+        }
+        OrderConfirmed event = OrderConfirmed.from(order);
+        String payload = serializer.serialize(event);
+        Optional<OrderConfirmedOutbox> recorded = outboxRepository.findByOrderId(orderId);
+        if (recorded.isEmpty()) {
+            outboxRepository.save(OrderConfirmedOutbox.pending(event, payload, ZonedDateTime.now(clock)));
+            return OrderBackfillResult.RECORDED;
+        }
+        // payload 에 eventId · confirmedAt · items 가 모두 담겨 있어 한 번에 비교함
+        if (!recorded.get().getPayload().equals(payload)) {
+            throw new IllegalStateException("저장된 Outbox 와 주문의 확정 사실이 다름. orderId=" + orderId + " eventId=" + recorded.get().getEventId());
+        }
+        return OrderBackfillResult.ALREADY_RECORDED;
     }
 
     @Transactional

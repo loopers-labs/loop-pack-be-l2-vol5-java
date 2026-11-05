@@ -12,5 +12,7 @@ import java.util.Optional;
 public interface OrderConfirmedOutboxJpaRepository extends JpaRepository<OrderConfirmedOutbox, Long> {
     Optional<OrderConfirmedOutbox> findByOrderId(Long orderId);
 
+    Optional<OrderConfirmedOutbox> findByEventId(String eventId);
+
     List<OrderConfirmedOutbox> findByStatusAndNextAttemptAtLessThanEqualOrderByIdAsc(OrderOutboxStatus status, ZonedDateTime now, Limit limit);
 }

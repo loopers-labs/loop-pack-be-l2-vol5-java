@@ -126,4 +126,36 @@ class OrderConfirmedOutboxTest {
             () -> assertThrows(IllegalStateException.class, () -> outbox.block("e"))
         );
     }
+
+    @DisplayName("BLOCKED 를 재개하면 같은 eventId · payload 의 PENDING 으로 바로 차례가 되고, 시도 횟수와 마지막 오류는 남긴다. (D-106)")
+    @Test
+    void resumesBlocked() {
+        OrderConfirmedOutbox outbox = OrderConfirmedOutbox.pending(EVENT, "{\"a\":1}", NOW);
+        outbox.startAttempt(NOW, Duration.ofSeconds(30));
+        outbox.block("RecordTooLargeException: 너무 큼");
+
+        outbox.resume(NOW.plusHours(1));
+
+        assertAll(
+            () -> assertThat(outbox.getStatus()).isEqualTo(OrderOutboxStatus.PENDING),
+            () -> assertThat(outbox.isDue(NOW.plusHours(1))).isTrue(),
+            () -> assertThat(outbox.getEventId()).isEqualTo("order-confirmed:v1:42"),
+            () -> assertThat(outbox.getPayload()).isEqualTo("{\"a\":1}"),
+            () -> assertThat(outbox.getAttemptCount()).isEqualTo(1),
+            () -> assertThat(outbox.getLastError()).isEqualTo("RecordTooLargeException: 너무 큼")
+        );
+    }
+
+    @DisplayName("BLOCKED 가 아닌 행은 재개를 거절한다.")
+    @Test
+    void rejectsResume_whenNotBlocked() {
+        OrderConfirmedOutbox pending = OrderConfirmedOutbox.pending(EVENT, "{}", NOW);
+        OrderConfirmedOutbox published = OrderConfirmedOutbox.pending(EVENT, "{}", NOW);
+        published.markPublished(NOW);
+
+        assertAll(
+            () -> assertThrows(IllegalStateException.class, () -> pending.resume(NOW)),
+            () -> assertThrows(IllegalStateException.class, () -> published.resume(NOW))
+        );
+    }
 }

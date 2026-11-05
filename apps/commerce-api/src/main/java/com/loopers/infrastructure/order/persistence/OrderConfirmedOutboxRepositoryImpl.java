@@ -32,6 +32,11 @@ public class OrderConfirmedOutboxRepositoryImpl implements OrderConfirmedOutboxR
     }
 
     @Override
+    public Optional<OrderConfirmedOutbox> findByEventId(String eventId) {
+        return outboxJpaRepository.findByEventId(eventId);
+    }
+
+    @Override
     public List<OrderConfirmedOutbox> findDue(ZonedDateTime now, int limit) {
         return outboxJpaRepository.findByStatusAndNextAttemptAtLessThanEqualOrderByIdAsc(OrderOutboxStatus.PENDING, now, Limit.of(limit));
     }

@@ -13,6 +13,8 @@ public interface OrderConfirmedOutboxRepository {
 
     Optional<OrderConfirmedOutbox> findByOrderId(Long orderId);
 
+    Optional<OrderConfirmedOutbox> findByEventId(String eventId);
+
     /** PENDING 이고 다음 시도 시각이 지난 행을 id 순으로 (7주차 D-104) */
     List<OrderConfirmedOutbox> findDue(ZonedDateTime now, int limit);
 }
