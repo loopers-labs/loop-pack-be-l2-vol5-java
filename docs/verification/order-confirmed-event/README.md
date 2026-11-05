@@ -1,8 +1,13 @@
-# 주문 확정 이벤트의 로컬 검증 절차
+# 주문 확정 이벤트의 격리 검증 절차
 
-기존 [설계](../../system-design/use-cases/order-confirmed-event.md)의 발행 실패·정상 소비를 같은 로컬 환경에서 관찰하고, streamer 재시작 후 DB 사실과 offset이 유지되는지 확인한다. 자동화 회귀 테스트는 모듈별로 유지한다. 이 실행 도구는 두 애플리케이션을 별도 프로세스로 실행하며 Gradle의 `test`나 `check`에는 연결하지 않는다.
+이 도구는 별도 로컬 환경에서 두 가지 흐름을 관찰한다.
 
-## 재현
+1. 기존 after-commit 직접 발행이 send 전에 멈춰 생긴 누락을 재현하고, 저장된 주문 사실로 Outbox를 보충해 복구한다.
+2. 실제 주문 API부터 Outbox Relay와 구매 활동 Consumer까지 연결하고, broker 성공 뒤 Outbox 상태 저장이 실패했을 때 프로세스 재시작으로 같은 이벤트를 다시 전달한다.
+
+자동 회귀 테스트는 각 애플리케이션 모듈에 따로 유지한다. 이 도구는 두 애플리케이션을 별도 프로세스로 띄우는 격리 실행이며 Gradle `test`나 `check`에는 연결하지 않는다.
+
+## 실행
 
 Java 21, Python 3, Docker가 필요하다. 저장소 루트에서 실행한다.
 
@@ -10,38 +15,50 @@ Java 21, Python 3, Docker가 필요하다. 저장소 루트에서 실행한다.
 python3 docs/verification/order-confirmed-event/run.py
 ```
 
-실행 도구는 현재 소스의 API·streamer·테스트 PG JAR를 빌드한다. 고유 이름과 사용 가능한 loopback 포트로 MySQL 8.0·Redis 7.0·Kafka 3.8.1을 새로 띄우고, `init.sql`과 구매 활동 이관 SQL을 적용한다. 기존 로컬 컨테이너·DB·topic·group은 사용하지 않는다. 실행 로그와 `observations.json`은 출력된 임시 디렉터리에 남기며, 성공·실패 모두 시작한 앱과 컨테이너를 종료한다.
+실제 Kafka UI 화면을 보며 캡처할 때는 대화형 터미널에서 실행한다.
 
-품목은 상품 7×2·8×1로 고정하고 두 상품의 초기 재고는 각각 10이다. 테스트 PG는 AUTO 모드로 1초 뒤 성공 callback을 보내며, 확정 시각은 실제 실행 Clock의 값이다. 주문·거래·이벤트 ID는 생성 결과를 사용한다.
+```bash
+python3 docs/verification/order-confirmed-event/run.py --section7-captures-only
+```
 
-## 전송 실패와 정상 소비
+캡처 전용 옵션은 최종 E2E의 세 시점에서 입력을 기다린다. Kafka UI에서 격리 topic을 열고 `eventId`를 검색해 화면을 저장한 뒤 Enter를 누른다. 모든 복구 장면의 화면도 함께 캡처하려면 `--capture-ui`를 사용한다. 캡처 옵션은 각 단계에서 터미널 입력을 기다리므로 비대화형 실행을 지원하지 않는다.
 
-1. 전용 topic의 `max.message.bytes`를 1로 낮춘다. 기존 주문·결제 API와 테스트 PG를 통해 주문 A를 확정한다.
-2. API가 비동기 전송 오류를 관찰했는지, 주문·재고는 반영됐는지 확인한다. 해당 topic의 세 partition end offset이 모두 0이고 A의 완료 기록·구매 활동이 없는지 조회한다.
-3. 크기 제한을 1MiB로 복구하고 같은 API·PG 경로로 주문 B를 확정한다.
-4. 실제 broker record와 B의 저장 품목·수량·확정 시각을 대조한다. streamer의 완료 기록 1행·활동 2행과 group committed offset을 확인한다.
+## 격리 환경
 
-`max.message.bytes`는 broker가 받아들이는 record batch 크기의 제한이다. 이 실행은 broker가 batch를 거절한 전송 실패이며, `RecordTooLargeException`을 관찰한다. [Kafka 3.8 topic 설정](https://kafka.apache.org/38/generated/topic_config.html#max.message.bytes)
+실행 도구는 현재 소스의 API·streamer·테스트 PG JAR를 빌드한다. 직접 발행 누락 사례에는 `DIRECT_PUBLICATION_REVISION`에 고정된 기준 revision의 API를 임시 디렉터리에 추출·빌드하고, 그 복사본에만 send 직전 테스트 latch를 넣는다. 기준 revision·현재 앱·PG fixture의 입력과 상태는 실행별로 격리한다.
 
-기존 `OrderConfirmedKafkaDeliveryIntegrationTest`의 send 직전 spy 차단도 유지한다. 그 테스트는 호출 이전의 누락 경계를, 이 로컬 실행은 commit 이후 broker 거절과 실제 소비 DB 결과를 확인한다. 둘 다 프로세스 강제 종료나 응답을 잃은 timeout 실험으로 표현하지 않는다.
+고유 이름과 loopback 포트를 사용해 MySQL 8.0·Redis 7.0·Kafka 3.8.1·테스트 PG·필요한 경우 Kafka UI를 새로 띄운다. 기존 로컬 컨테이너·DB·topic·consumer group은 사용하지 않는다. 품목은 상품 7×2·8×1이고, 테스트 PG는 지정된 합성 주문에만 사용한다. 실행 로그와 `observations.json`은 출력된 임시 디렉터리에 남는다.
 
-## 재시작과 중복 reconcile
+성공·실패 모두 실행이 만든 앱 프로세스와 컨테이너만 종료한다. `observations.json`, 로그, 일회성 화면 캡처는 로컬 근거로 보관하고 Git 제출 대상에서 제외한다.
 
-streamer의 local 설정은 `ddl-auto=validate`다. 실행 도구는 이 속성을 덮어쓰지 않고 streamer 프로세스를 종료한 뒤 같은 DB·topic·group으로 다시 실행한다.
+broker 준비, 최초 Consumer 시작과 재시작 뒤 partition 0·1·2 배정, committed offset과 DB 결과에는 각각 유한한 deadline을 둔다. 배정은 실제 Consumer group의 `--describe --offsets` 결과에서 대상 topic·partition과 현재 Consumer 소유자를 함께 확인한다. 아직 commit된 offset이 없어도 소유자가 있으면 배정을 확인할 수 있다. deadline을 넘기면 단계명·마지막 조회 상태·마지막 오류를 출력하므로 배정 실패와 결과 저장 지연을 구분할 수 있다.
 
-- A는 완료 기록·활동 0행을 유지해야 한다.
-- B는 완료 기록 1행·활동 2행을 유지해야 한다. 활동의 행 ID·내용·생성/수정 시각을 재시작 전후로 비교한다.
-- group committed offset이 재시작 전과 같아야 한다.
-- A·B에 중복 reconcile을 호출해도 broker end offset·완료 기록·활동·재고가 변하지 않아야 한다. 누락 A의 자동 재발행도 없어야 한다.
+## 직접 발행 누락 재현과 복구
 
-이 검증은 단일 broker·복제 1과 정상 프로세스 종료·재시작을 사용한다. 복제 장애·네트워크 분할·OS 강제 종료에 대한 보장은 확인하지 않는다.
+첫 사례는 기준 revision의 `AFTER_COMMIT` listener를 event 생성 뒤 `KafkaTemplate.send()` 직전에 멈춘다. 주문 `CONFIRMED`, Kafka record·Inbox·구매 활동 0건을 같은 격리 실행의 실제 DB와 broker에서 확인한 다음 그 기준 프로세스를 끝낸다. 두 번째 주문은 기준 경로로 실제 발행·소비까지 마친 대조 사례다.
 
-## 실행 결과 보관
+현재 앱을 올려 두 주문에 저장된 `eventId`, `confirmedAt`, 품목으로 없는 Outbox만 보충한다. 같은 대상을 다시 보충해도 행과 효과가 늘지 않는지, PG create·조회·callback 수, 재고, 주문 상태, Inbox, 구매 활동, Kafka record 수를 다시 비교한다. PG SUCCESS나 Outbox 행을 테스트가 직접 삽입하지 않는다.
 
-실제 생성된 주문·거래·이벤트 ID, topic·group·접속 주소, DB 결과와 offset은 실행 도구가 출력하는 임시 디렉터리의 `observations.json`과 앱 로그에서 확인한다. JSON·로그와 일회성 관찰 보고서는 로컬에 보관하며 Git 제출 대상에서 제외한다. 저장소에는 실행 도구와 이 절차를 남기고, 제출할 핵심 결과는 PR 또는 기술 글에 요약한다.
+## 실제 주문 API → Outbox Relay → Kafka → Consumer
+
+마지막 E2E는 기존 주문 API와 테스트 PG, 격리 MySQL·Kafka, 실제 구매 활동 Consumer를 한 실행에서 연결한다.
+
+1. API를 Relay 비활성으로 시작해 합성 주문을 확정하고 `PENDING`, 시도 0, Kafka record 0, Inbox·구매 활동 0을 확인한다.
+2. 격리 MySQL에 테스트용 trigger를 추가한다. 이 trigger는 새 대상 주문의 최초 `PUBLISHED` 상태 변경만 거절한다.
+3. 실제 Relay를 시작한다. Kafka broker는 record를 성공 수신하지만 MySQL trigger가 상태 저장을 실패시킨다. 행은 `PENDING`, 시도 1로 남고 Consumer는 첫 record를 실제 처리한다.
+4. API 프로세스를 정상 종료하고 새 API·Relay 프로세스를 같은 MySQL·Kafka·Consumer group에 연결한다. Outbox 행을 직접 수정하지 않고 재발행과 최종 `PUBLISHED`를 확인한다.
+5. broker의 두 record와 Consumer group offset을 조회하고, Inbox·완료 행 1개, 상품별 구매 활동 2행·수량 2와 1, 재고·포인트·PG 호출 수가 유지되는지 확인한다.
+
+여기서 MySQL trigger는 실제 저장 경계에 실패를 주입하는 격리 테스트 장치다. 프로세스 재시작은 정상 종료 후 새 앱 프로세스를 시작하는 방식으로 재현한다. 이 결과를 OS 강제 종료나 임의 네트워크 장애 시험이라고 부르지 않는다.
 
 ## 관련 회귀 검증
 
+`OrderConfirmedKafkaDeliveryIntegrationTest`에는 PUBLISHED를 send 전에 commit하는 잘못된 순서의 반례도 있다. 실제 broker record가 없는데 정상 Relay 재실행도 해당 행을 고르지 못하는 것을 확인한다. 이 반례는 테스트에서만 실행하며 제품 흐름의 순서를 바꾸지 않는다.
+
 ```bash
+./gradlew :apps:commerce-api:test --tests '*OrderConfirmedOutboxAtomicityTest' \
+  --tests '*OrderConfirmedKafkaDeliveryIntegrationTest' \
+  --tests '*PaymentResultServiceIntegrationTest'
+./gradlew :apps:commerce-streamer:test --tests '*PurchaseActivityKafkaIntegrationTest'
 ./gradlew :apps:commerce-api:check :apps:commerce-streamer:check
 ```

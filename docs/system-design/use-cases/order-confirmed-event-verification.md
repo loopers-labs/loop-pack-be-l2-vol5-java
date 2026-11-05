@@ -12,12 +12,13 @@ commerce-api는 확정 시각 저장·Outbox 원자성·Relay 발행을, commerc
 
 | commerce-api 테스트 | 검증 |
 | --- | --- |
-| `OrderConfirmedEventTest` | 주문 ID로 유도한 eventId, 저장된 확정 시각, 상품 ID 오름차순 품목으로 이벤트 구성. 미확정 주문과 확정 시각이 없는 이전 확정 주문(POINT·PG)은 거절해 소급 발행하지 않음 |
+| `OrderConfirmedEventTest` | 주문 ID로 유도한 eventId, 저장된 확정 시각, 상품 ID 오름차순 품목으로 이벤트 구성. 미확정 주문, 확정 시각이나 원본 품목이 없는 주문은 거절 |
+| `OrderConfirmedOutboxBackfillServiceTest` | 원본 품목이 없으면 복구를 거절하고 Outbox 저장소를 호출하지 않음 |
 | `OrderConfirmedMessageV1Test` | 계약 필드만 담은 V1 JSON과 orderId 문자열 key. 다른 시간대의 확정 시각을 마이크로초까지 UTC로 표현 |
 | `PaymentConfirmedAtIntegrationTest` | 최초 PG 성공에 주입한 Clock 시각을 마이크로초로 잘라 저장. 중복 성공에도 처음 시각 유지, 실패 종결에는 확정 시각 없음 |
 | `OrderConfirmedAtMigrationIntegrationTest` | 컬럼 추가 뒤 기존 주문의 확정 시각은 비워 두고 상태·결제 값·수정 시각은 바꾸지 않음 |
 | `OrderConfirmedOutboxAtomicityTest` | 최초 성공 때 주문·시도·Outbox를 같은 TX에 저장. 비성공·중복 결과, 직렬화·유일 제약·commit 실패 rollback, 동시 성공에서 행 하나와 고정 payload 확인 |
-| `OrderConfirmedKafkaDeliveryIntegrationTest` | 실제 주문 API·테스트 PG·MySQL·Kafka에서 Relay의 저장 payload 재시도, BLOCKED 후 다음 행 진행, 같은 eventId 수동 재개와 누적 시도 보존, broker 기록 뒤 상태 저장 실패, 제한 대기·callback 비교와 producer 설정 확인 |
+| `OrderConfirmedKafkaDeliveryIntegrationTest` | 실제 주문 API·테스트 PG·MySQL·Kafka에서 Relay의 저장 payload 재시도, BLOCKED 후 다음 행 진행, 수동 재개와 누적 시도 보존, broker 기록 뒤 상태 저장 실패와 두 대기 방식 비교. 두 방식의 관찰 timeout 뒤 늦은 성공·종료 이벤트 뒤 producer 오류·같은 메시지 재발행, TX1만 세 번 commit한 뒤 네 번째 send 차단, PUBLISHED 선저장의 누락 반례도 확인 |
 
 | commerce-streamer 테스트 | 검증 |
 | --- | --- |
