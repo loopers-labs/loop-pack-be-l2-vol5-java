@@ -1,5 +1,6 @@
 package com.loopers.application.payment;
 
+import com.loopers.application.order.OrderConfirmedRecorder;
 import com.loopers.application.order.OrderInfo;
 import com.loopers.domain.order.OrderConfirmed;
 import com.loopers.domain.order.OrderItemModel;
@@ -15,7 +16,7 @@ import com.loopers.domain.payment.PaymentModel;
 import com.loopers.domain.payment.PaymentObservation;
 import com.loopers.domain.payment.PaymentRepository;
 import com.loopers.domain.payment.PaymentRequest;
-import com.loopers.domain.payment.PaymentStatus;
+import com.loopers.domain.payment.PgOrderConsistency;
 import com.loopers.domain.product.ProductDetailCache;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.product.ProductRepository;
@@ -27,7 +28,6 @@ import com.loopers.support.error.ErrorType;
 import com.loopers.support.transaction.AfterCommitRunner;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -65,7 +65,7 @@ public class PaymentTransactionService {
     private final AfterCommitRunner afterCommitRunner;
     private final PaymentTransactionProbe probe;
     private final Clock orderConfirmationClock;
-    private final ApplicationEventPublisher eventPublisher;
+    private final OrderConfirmedRecorder recorder;
     private final String providerAccount;
 
     public PaymentTransactionService(OrderRepository orderRepository, PaymentRepository paymentRepository,
@@ -74,7 +74,7 @@ public class PaymentTransactionService {
                                      ProductDetailCache productDetailCache, AfterCommitRunner afterCommitRunner,
                                      PaymentTransactionProbe probe,
                                      @Qualifier("orderConfirmationClock") Clock orderConfirmationClock,
-                                     ApplicationEventPublisher eventPublisher,
+                                     OrderConfirmedRecorder recorder,
                                      @Value("${commerce.pg.account-id}") String providerAccount) {
         this.orderRepository = orderRepository;
         this.paymentRepository = paymentRepository;
@@ -85,7 +85,7 @@ public class PaymentTransactionService {
         this.afterCommitRunner = afterCommitRunner;
         this.probe = probe;
         this.orderConfirmationClock = orderConfirmationClock;
-        this.eventPublisher = eventPublisher;
+        this.recorder = recorder;
         this.providerAccount = providerAccount;
     }
 
@@ -185,7 +185,8 @@ public class PaymentTransactionService {
     /**
      * TX B. 잠금 아래 처음 읽은 최신 결제에 관찰을 판정하고, 판정대로 주문 확정·실패 반환·충돌 요약을 같은 TX 에 commit 한다.
      * 실패 반환은 삭제 포함 상품을 ID 오름차순으로 잠가 고정 품목 수량을 현재 재고에 한 번 더한다.
-     * 요약 저장을 포함한 어떤 저장이 실패해도 전체 rollback 이며 성공으로 응답하지 않는다.
+     * 최초 CONFIRM 에서만 확정 사실을 recorder 로 같은 TX 에 기록한다. 같은 종결 반복(FINAL_UNCHANGED)·비성공 결과는 기록하지 않는다.
+     * 요약·확정 사실 기록을 포함한 어떤 저장이 실패해도 전체 rollback 이며 성공으로 응답하지 않는다.
      */
     @Transactional
     public PaymentApplyResult applyObservation(PaymentCheckToken token, PaymentObservation observation) {
@@ -217,8 +218,9 @@ public class PaymentTransactionService {
         orderRepository.save(order);
         paymentRepository.save(payment);
         if (confirmed != null) {
-            // 사건을 TX 안에 등록할 뿐 전송이 아니다. commit 전에 실패해 rollback 되면 listener 는 실행되지 않는다.
-            eventPublisher.publishEvent(confirmed);
+            // 같은 TX 에 확정 사실을 기록한다(제품은 Outbox PENDING insert·flush). 전송이 아니며, 오류는 삼키지 않아 TX 전체가 rollback 된다.
+            // flush 는 같은 PC 의 주문·결제 변경도 반영하므로 uk_payment_transaction 위반이 commit 이 아니라 여기서 드러날 수 있다.
+            recorder.record(confirmed);
         }
         reachBeforeCommit("applyObservation", order.getId());
         return new PaymentApplyResult(OrderInfo.from(order, payment), outcome);
@@ -290,30 +292,9 @@ public class PaymentTransactionService {
         }
     }
 
-    /** 주문·결제의 저장 연결과 상태 결합을 검사한다(설계 3.6 TX B 검사). 어긋나면 임의로 처리하지 않는다. */
+    /** 주문·결제의 저장 연결과 상태 결합을 검사한다(설계 3.6 TX B 검사). 검사 본문은 PgOrderConsistency 로 옮겼다(W7.3-2). */
     private void requireConsistent(OrderModel order, PaymentModel payment) {
-        order.requireStoredItemsConsistent();
-        boolean linked = payment.getOrderId().equals(order.getId())
-            && PaymentModel.PROVIDER.equals(payment.getProvider())
-            && providerAccount.equals(payment.getProviderAccount())
-            && PaymentModel.providerOrderIdOf(order.getId()).equals(payment.getProviderOrderId())
-            && payment.getAmount().equals(order.getTotalAmount())
-            && order.getPaymentMethod() == PaymentMethod.PG
-            && Long.valueOf(0L).equals(order.getPointAmount());
-        // POINT 주문은 linked 에서 이미 걸러지므로 아래 확정 시각 조건은 PG 주문에만 적용된다.
-        boolean statusMatches = switch (order.getStatus()) {
-            case PAYMENT_PENDING -> (payment.getStatus() == PaymentStatus.UNKNOWN || payment.getStatus() == PaymentStatus.PENDING)
-                && order.getPaidAmount() == null && order.getConfirmedAt() == null;
-            case CONFIRMED -> payment.getStatus() == PaymentStatus.SUCCESS && payment.getAmount().equals(order.getPaidAmount())
-                && OrderModel.isUtcMicros(order.getConfirmedAt());
-            case PAYMENT_FAILED -> payment.getStatus() == PaymentStatus.FAILED && order.getPaidAmount() == null
-                && order.getConfirmedAt() == null;
-            case DRAFT -> false;
-        };
-        if (!linked || !statusMatches) {
-            throw new CoreException(ErrorType.INTERNAL_ERROR, "주문과 결제 시도의 저장 상태가 맞지 않습니다. [orderId = "
-                + order.getId() + "]");
-        }
+        PgOrderConsistency.requireConsistent(order, payment, providerAccount);
     }
 
     private PaymentModel loadTokenPayment(OrderModel order, PaymentCheckToken token) {
@@ -388,8 +369,9 @@ public class PaymentTransactionService {
     }
 
     /**
-     * 직접 flush 하지 않는다. 제약 위반은 commit 때 Spring 이 DataIntegrityViolationException 으로 바꿔 호출자에게 전하므로,
-     * 여기서 flush 하면 같은 위반이 변환되지 않은 Hibernate 예외로 새어 나간다(I3-2 검증에서 확인).
+     * 이 서비스는 EntityManager 로 직접 flush 하지 않는다. 직접 flush 하면 제약 위반이 변환되지 않은 Hibernate 예외로 새어 나간다(I3-2 검증).
+     * 최초 확정의 recorder 는 Spring Data repository 프록시의 saveAndFlush 로만 flush 하므로, 그 단계의 위반도
+     * DataIntegrityViolationException 으로 변환되어 호출자에게 전해진다(설계 W7.2-6a). 그 밖의 경로의 위반은 commit 때 드러난다.
      */
     private void reachBeforeCommit(String operation, Long orderId) {
         probe.reach(PaymentTransactionProbe.Point.BEFORE_COMMIT, operation, orderId);

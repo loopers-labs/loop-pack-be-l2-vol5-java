@@ -1,10 +1,18 @@
 # 결제 검증 기준
 
+**W7 승인 검증 기준 연결(2026-11-04):** 아래 PG/예약/소유권/POINT·HTTP·잠금·재시작의 유효한 기준은 유지한다. [발행 W7.4](../order-events/publication.md)의 O1~O14가 같은 TX Outbox·두 relay 중단·실제 E2E·W6 두 사건 복구와 기존 회귀를 연결한다. W7.2/3의 의사코드와 함께 읽으며 W6의 포트 직접 호출 기대만 보존 테스트 구성으로 옮기고 W7은 실제 Outbox 원자성으로 대체한다. 현재 문서 통합은 실행 결과가 아니며 과거 통과·0건/skip·연결 실패를 이번 통과로 쓰지 않는다. 기존 실행 기록과 최종 승인 이력은 보존한다.
+
 기존 절 번호 참조: [2.8](pg-client.md#28-pg-http-도구와-테스트-서버의-구성) · [3.5](model.md#35-pg-결제의-상태와-불변조건) · [3.6](model.md#36-pg-저장-모델과-제약) · [4.3](processing.md#43-주문-확정) · [5.7](../pg-simulator/fixture-contract.md#57-테스트-pg-제어와-상태-보존).
 
 기존 문서의 계약·절 번호·승인/검증 상태를 보존해 이동했다. 재편 자체는 제품 계약 변경이나 새 실행 검증을 뜻하지 않는다.
 
 ## 4.3 결제 구현 검증 기준
+
+### W7 보완의 연결 — 미실행
+
+- 발행 W7.4-4의 파일별 전환표를 따라 기존 PG/예약/소유권/POINT·캐시·HTTP 회귀의 유효 기대를 보존한다. 공통 PgTestSupport의 발행 fake를 정상 W7의 실제 Outbox/자동 relay OFF로 전환하고 상속된 HTTP/주문 테스트까지 확인한다. 33개 영향 파일은 실행 건수가 아니다.
+- 기존 OrderConfirmedAtIntegrationTest/OrderConfirmedPublicationIntegrationTest의 SUCCESS 거래 키 unique와 PaymentTransactionServiceIntegrationTest의 PENDING unique 회귀를 유지한다. Spring Data Outbox flush 시점에 드러나는 uk_payment_transaction이 원래 충돌 경계로 전파되고, 두 번째 주문의 확정/시각/결제/Outbox가 rollback되며 별도 충돌 요약만 남는지 확인한다. 첫 주문의 기존 확정/Outbox는 보존한다.
+- INSERT 뒤 실패·flush 실패·commit 응답 불명은 실제 SQL/예외/새 DB 조회로 구분한다. 서비스 직접 flush·가짜 recorder 정상 반환·과거 통과로 W7 원자성을 대체하지 않는다. 실행 후 기존 시점 표현/주석과 유효 기대의 대응을 기록한다.
 
 ### 구현 검증 기준
 

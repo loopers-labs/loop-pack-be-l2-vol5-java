@@ -1,5 +1,6 @@
 package com.loopers.infrastructure.order;
 
+import com.loopers.infrastructure.order.support.W6KafkaOrderEventPublisher;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.config.OrderEventKafkaProperties;
@@ -49,8 +50,8 @@ class KafkaOrderEventPublisherTest {
 
     @SuppressWarnings("unchecked")
     private final KafkaTemplate<String, Object> template = mock(KafkaTemplate.class);
-    private final KafkaOrderEventPublisher publisher =
-        new KafkaOrderEventPublisher(template, new OrderEventKafkaProperties(TOPIC, Map.of(), 15));
+    private final W6KafkaOrderEventPublisher publisher =
+        new W6KafkaOrderEventPublisher(template, new OrderEventKafkaProperties(TOPIC, Map.of(), 15));
 
     private static String failureLine(CapturedOutput output) {
         return output.getOut().lines().filter(line -> line.contains("ORDER_CONFIRMED_SEND_FAILURE")).findFirst().orElse("");
@@ -68,7 +69,7 @@ class KafkaOrderEventPublisherTest {
         verifyNoMoreInteractions(template);
         JsonNode json = new ObjectMapper().valueToTree(payload.getValue());
         assertAll(
-            () -> assertThat(payload.getValue()).isInstanceOf(KafkaOrderEventPublisher.OrderConfirmedV1.class),
+            () -> assertThat(payload.getValue()).isInstanceOf(W6KafkaOrderEventPublisher.OrderConfirmedV1.class),
             () -> assertThat(json.fieldNames()).toIterable()
                 .containsExactlyInAnyOrder("eventType", "schemaVersion", "eventId", "orderId", "confirmedAt", "items"),
             () -> assertThat(json.path("eventType").asText()).isEqualTo("OrderConfirmed"),

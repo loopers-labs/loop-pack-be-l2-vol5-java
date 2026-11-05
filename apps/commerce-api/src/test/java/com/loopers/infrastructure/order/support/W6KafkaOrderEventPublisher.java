@@ -1,39 +1,42 @@
-package com.loopers.infrastructure.order;
+package com.loopers.infrastructure.order.support;
 
-import com.loopers.config.OrderEventKafkaConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.loopers.config.OrderEventKafkaProperties;
 import com.loopers.domain.order.OrderConfirmed;
-import com.loopers.domain.order.OrderEventPublisher;
-import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
-import org.springframework.stereotype.Component;
 
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * 주문 확정 사건을 OrderConfirmed v1 wire 계약으로 바꿔 전용 template 으로 보낸다. key 는 주문 ID 이고 partition 은 producer 가 고른다.
+ * W6 보존(설계 W7.4-1). 출처: 53f912b apps/commerce-api/src/main/java/com/loopers/infrastructure/order/KafkaOrderEventPublisher.java.
+ * 허용 변경: package·타입 이름, 테스트 소스에 Lombok 처리가 없어 @Slf4j 를 같은 SLF4J Logger 필드로 풀어 씀, 포트·qualifier 상수를 W6 보존 타입으로 연결, {@code @Component} 제거(W6 조립이 bean
+ * kafkaOrderEventPublisher 로 명시 등록), 패키지 이동으로 다른 패키지 테스트가 쓰는 v1 DTO·상수를 public 으로 노출.
+ * wire 필드·표현·비동기 send·오류 로그는 원본 그대로다.
+ *
+ * <p>주문 확정 사건을 OrderConfirmed v1 wire 계약으로 바꿔 전용 template 으로 보낸다. key 는 주문 ID 이고 partition 은 producer 가 고른다.
  *
  * <p>Future 의 완료는 기다리지 않고 결과만 로그로 관측한다. 성공 로그는 설정한 acks 조건의 broker 확인이며 소비 완료가 아니고,
  * 실패·timeout 은 broker 미기록의 증거가 아니다. 자체 재시도·flush 는 하지 않는다. 오류는 여기서 기록하고 정상 반환해
  * listener 가 같은 오류를 다시 기록하지 않게 한다. 로그에는 원문 예외 메시지·stacktrace·payload 를 남기지 않는다.
  */
-@Slf4j
-@Component
-public class KafkaOrderEventPublisher implements OrderEventPublisher {
+public class W6KafkaOrderEventPublisher implements W6OrderEventPublisher {
 
-    static final String EVENT_TYPE = "OrderConfirmed";
-    static final int SCHEMA_VERSION = 1;
+    private static final Logger log = LoggerFactory.getLogger(W6KafkaOrderEventPublisher.class);
+
+    public static final String EVENT_TYPE = "OrderConfirmed";
+    public static final int SCHEMA_VERSION = 1;
 
     private final KafkaTemplate<String, Object> template;
     private final String topic;
 
-    public KafkaOrderEventPublisher(
-        @Qualifier(OrderEventKafkaConfig.ORDER_EVENT_KAFKA_TEMPLATE) KafkaTemplate<String, Object> template,
+    public W6KafkaOrderEventPublisher(
+        @Qualifier(W6OrderEventKafkaConfig.ORDER_EVENT_KAFKA_TEMPLATE) KafkaTemplate<String, Object> template,
         OrderEventKafkaProperties properties) {
         this.template = template;
         this.topic = properties.topic();
@@ -68,16 +71,16 @@ public class KafkaOrderEventPublisher implements OrderEventPublisher {
     }
 
     /** OrderConfirmed v1 wire 계약. 내부 사건과 분리해 외부 JSON 버전이 domain 에 결합되지 않게 한다. */
-    record OrderConfirmedV1(String eventType, int schemaVersion, String eventId, long orderId, String confirmedAt,
+    public record OrderConfirmedV1(String eventType, int schemaVersion, String eventId, long orderId, String confirmedAt,
                             List<Item> items) {
 
-        static OrderConfirmedV1 from(OrderConfirmed event) {
+        public static OrderConfirmedV1 from(OrderConfirmed event) {
             return new OrderConfirmedV1(EVENT_TYPE, SCHEMA_VERSION, event.eventId(), event.orderId(),
                 DateTimeFormatter.ISO_INSTANT.format(event.confirmedAt().toInstant()),
                 event.items().stream().map(item -> new Item(item.productId(), item.quantity())).toList());
         }
 
-        record Item(long productId, long quantity) {
+        public record Item(long productId, long quantity) {
         }
     }
 }

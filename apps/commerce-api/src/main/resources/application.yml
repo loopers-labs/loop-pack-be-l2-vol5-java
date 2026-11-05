@@ -56,6 +56,14 @@ commerce:
       "[delivery.timeout.ms]": 30000
       "[linger.ms]": 0
       "[spring.json.add.type.headers]": false
+    relay: # Outbox relay 초기값. 실측 적정값·SLA 가 아니다. 근거·한계는 설계 W7.3-1
+      enabled: false # 자동 회차만 제어한다. false 여도 종료 때 relay gate 정지·진행 작업 정리는 한다(설계 W7.3-5). 로컬 API 한 인스턴스에서만 true
+      fixed-delay: 1s
+      batch-size: 10
+      send-wait-timeout: 35s # send Future 의 로컬 완료 대기. metadata·buffer 대기·DB 시간은 포함하지 않는다.
+      initial-retry-delay: 5s
+      max-retry-delay: 60s
+      max-cycle-attempts: 10 # 최초 포함, 수동 재개 이후의 자동 시도 예산
   pg:
     base-url: http://127.0.0.1:18080 # 로컬 PG 주소. 테스트는 fixture 의 임의 포트로 바꿔 주입한다.
     callback-url: http://127.0.0.1:8080/api/v1/payments/callback # 기동 때 한 번 바인딩. 고객 입력으로 바꾸지 않는다.

@@ -1,39 +1,35 @@
-package com.loopers.config;
+package com.loopers.infrastructure.order.support;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.loopers.config.OrderEventKafkaProperties;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.kafka.KafkaProperties;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.core.ProducerFactory;
 import org.springframework.kafka.support.serializer.JsonSerializer;
 
-import java.time.Clock;
 import java.util.HashMap;
 import java.util.Map;
 
 /**
- * 주문 확정 이벤트 발행에 쓰는 bean 을 조립한다. 공통 producerFactory·kafkaTemplate 은 바꾸지 않고 이름 붙인 전용 bean 을 따로 둔다.
+ * W6 보존(설계 W7.4-1). 출처: 53f912b apps/commerce-api/src/main/java/com/loopers/config/OrderEventKafkaConfig.java.
+ * 허용 변경: package·타입 이름, {@code @Configuration} 제거(전역 scan 방지, W6 준비 컨텍스트가 명시 등록하는 lite 설정),
+ * orderConfirmationClock 조립을 제품 OrderConfirmationClockConfig 로 이동. JsonSerializer 전용 producer·template·설정 검사·close 계약은
+ * 원본 그대로다.
+ *
+ * <p>주문 확정 이벤트 발행에 쓰는 bean 을 조립한다. 공통 producerFactory·kafkaTemplate 은 바꾸지 않고 이름 붙인 전용 bean 을 따로 둔다.
  * 전용 bean 을 @Primary 로 두지 않으며, 주문 발행 adapter 만 qualifier 로 전용 template 을 쓴다.
  */
-@Configuration
-public class OrderEventKafkaConfig {
+public class W6OrderEventKafkaConfig {
 
-    public static final String ORDER_CONFIRMATION_CLOCK = "orderConfirmationClock";
     public static final String ORDER_EVENT_PRODUCER_FACTORY = "orderEventProducerFactory";
     public static final String ORDER_EVENT_KAFKA_TEMPLATE = "orderEventKafkaTemplate";
 
     private static final String ADD_TYPE_HEADERS = JsonSerializer.ADD_TYPE_INFO_HEADERS;
-
-    /** 최초 PG 확정 시각 전용 Clock. 테스트는 이 bean 만 고정 Clock 으로 바꾸며, 다른 생성·감사 시각은 이 Clock 을 쓰지 않는다. */
-    @Bean(ORDER_CONFIRMATION_CLOCK)
-    Clock orderConfirmationClock() {
-        return Clock.systemUTC();
-    }
 
     /**
      * 공통 producer map 을 복사한 뒤 retries=3 상속을 지워 전달 제한 시간 안의 client 기본 재시도를 쓰고, 전용 값을 덮어쓴다.

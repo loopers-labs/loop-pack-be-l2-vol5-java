@@ -1,6 +1,5 @@
 package com.loopers.application.payment;
 
-import com.loopers.testsupport.OrderEventRecordingInitializer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.loopers.CommerceApiApplication;
 import com.loopers.domain.product.ProductModel;
@@ -123,6 +122,9 @@ class PaymentRestartIntegrationTest {
                         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM stock_history WHERE cause = 'ORDER_RESERVATION'", Long.class)).isEqualTo(1);
                         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM stock_history WHERE cause = 'ORDER_RELEASE'", Long.class)).isZero();
                         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM point_history", Long.class)).isZero();
+                        // W7: 재기동 뒤 최초 확정만 같은 TX 에 Outbox 한 행을 남긴다. 발행 포트 대역은 두지 않는다.
+                        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM order_confirmed_outbox WHERE order_id = ?", Long.class, order))
+                            .isEqualTo(transactionExists ? 1 : 0);
                         await().atMost(Duration.ofSeconds(5)).until(() -> pg.state().activeRequests() == 0);
                     }
                 } finally {
@@ -141,8 +143,7 @@ class PaymentRestartIntegrationTest {
         try (ServerSocket socket = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
             port = socket.getLocalPort();
         }
-        ConfigurableApplicationContext context = new SpringApplicationBuilder(CommerceApiApplication.class).profiles("test")
-            .initializers(new OrderEventRecordingInitializer()).run(
+        ConfigurableApplicationContext context = new SpringApplicationBuilder(CommerceApiApplication.class).profiles("test").run(
             "--server.port=" + port, "--management.server.port=0", "--spring.jpa.hibernate.ddl-auto=" + ddl,
             "--datasource.mysql-jpa.main.jdbc-url=" + server + "/" + SCHEMA,
             "--commerce.pg.base-url=" + pg.baseUrl(),
