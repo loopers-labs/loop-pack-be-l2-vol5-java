@@ -12,7 +12,6 @@ import java.util.Map;
 import java.util.UUID;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,11 +28,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class OrderOutboxInterruptionIntegrationTest extends OrderEventsIntegrationSupport {
     @Autowired private OutboxRelaySettings outboxRelaySettings;
     @Autowired private TransactionTemplate transactionTemplate;
-
-    @BeforeEach
-    void resetAcked() {
-        failingKafka.resetAcked();
-    }
 
     @Test
     @DisplayName("주문 확정 commit 뒤 relay가 돌기 전에 끊기면 Outbox는 PENDING·broker는 0건이고, 새로 만든 relay 한 회차가 저장된 key·payload 그대로 1건 보내 PUBLISHED로 바꾼다")
@@ -90,6 +84,7 @@ class OrderOutboxInterruptionIntegrationTest extends OrderEventsIntegrationSuppo
         assertThat(records).hasSize(2);
         assertThat(records.get(0).offset()).isEqualTo(firstAck.offset());
         assertThat(records.get(1).offset()).isNotEqualTo(records.get(0).offset());
+        assertThat(records.get(1).partition()).isEqualTo(records.get(0).partition());
         assertThat(records).extracting(ConsumerRecord::value).containsOnly((String) pending.get("payload"));
         assertThat(outboxRow(orderId))
             .containsEntry("status", "PUBLISHED")

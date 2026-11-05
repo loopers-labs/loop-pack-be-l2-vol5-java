@@ -94,6 +94,7 @@ abstract class OrderEventsIntegrationSupport {
         failingOutbox.disarm();
         sender.reset();
         failingKafka.fail(FailingKafkaTemplate.Failure.NONE);
+        failingKafka.resetAcked();
         probe = new OrderEventsProbe(bootstrapServers, TOPIC);
         from = probe.mark();
     }
@@ -106,6 +107,7 @@ abstract class OrderEventsIntegrationSupport {
         failingOutbox.disarm();
         sender.reset();
         failingKafka.fail(FailingKafkaTemplate.Failure.NONE);
+        failingKafka.resetAcked();
         jdbc.update("delete from order_items");
         cleanup.truncateAllTables();
     }
