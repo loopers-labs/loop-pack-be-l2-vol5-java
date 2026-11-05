@@ -93,6 +93,9 @@ subprojects {
             }
         }
         jvmArgs("-Xshare:off")
+        // Testcontainers는 공개 이미지만 써서 인증이 필요 없다. 사용자 ~/.docker/config.json의 자격 증명 도우미(credsStore)를
+        // 거치면 macOS가 매번 다른 앱 데이터 접근 확인 창을 띄우므로, 테스트에서는 빈 설정 폴더를 쓴다.
+        environment("DOCKER_CONFIG", rootProject.file("gradle/testcontainers-docker-config").absolutePath)
     }
 
     tasks.withType<JacocoReport> {
