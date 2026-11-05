@@ -19,4 +19,9 @@ public interface OrderConfirmedOutbox {
 
     // 사람이 원인을 고친 뒤 BLOCKED 행 하나를 다시 보낼 차례로 돌린다. BLOCKED인 행에만 적용하고 영향 행 수를 돌려준다.
     int resumeBlocked(String eventId, Instant now);
+
+    // 같은 eventId의 행이 있는지, 있다면 저장된 payload가 이 payload를 직렬화한 값과 같은지 본다. 복구 도구가 쓴다.
+    StoredComparison compare(OrderConfirmedPayload payload);
+
+    enum StoredComparison { ABSENT, SAME, DIFFERENT }
 }

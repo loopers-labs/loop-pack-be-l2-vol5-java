@@ -195,6 +195,7 @@ public class OrderEventsTestConfig {
         private final AtomicReference<Failure> failure = new AtomicReference<Failure>(Failure.NONE);
         private final List<Integer> findDueLimits = new CopyOnWriteArrayList<Integer>();
         private final AtomicBoolean failOnNextMarkPublished = new AtomicBoolean();
+        private final AtomicBoolean skipAppends = new AtomicBoolean();
 
         FailingOrderConfirmedOutbox(OrderConfirmedOutbox delegate, EntityManager entityManager) {
             this.delegate = delegate;
@@ -210,9 +211,16 @@ public class OrderEventsTestConfig {
             failOnNextMarkPublished.set(true);
         }
 
+        // 켜 두는 동안 append를 아무것도 하지 않게 해 "확정은 commit됐는데 Outbox 기록이 없는" 6주차와 같은 상태를 만든다.
+        // 실제 6주차 실행물이 아니라 Outbox 기록을 비운 대역이다. disarm()으로 끈다.
+        public void skipAppends() {
+            skipAppends.set(true);
+        }
+
         public void disarm() {
             failure.set(Failure.NONE);
             failOnNextMarkPublished.set(false);
+            skipAppends.set(false);
             findDueLimits.clear();
         }
 
@@ -223,6 +231,9 @@ public class OrderEventsTestConfig {
 
         @Override
         public void append(OrderConfirmedPayload payload) {
+            if (skipAppends.get()) {
+                return;
+            }
             switch (failure.getAndSet(Failure.NONE)) {
                 case FAIL_BEFORE_INSERT -> {
                     entityManager.flush();
@@ -268,6 +279,11 @@ public class OrderEventsTestConfig {
         @Override
         public int resumeBlocked(String eventId, Instant now) {
             return delegate.resumeBlocked(eventId, now);
+        }
+
+        @Override
+        public StoredComparison compare(OrderConfirmedPayload payload) {
+            return delegate.compare(payload);
         }
     }
 

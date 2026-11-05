@@ -96,6 +96,11 @@ class OrderOutboxRelayFailureLogTest {
         public int resumeBlocked(String eventId, Instant now) {
             return 0;
         }
+
+        @Override
+        public StoredComparison compare(OrderConfirmedPayload payload) {
+            return StoredComparison.ABSENT;
+        }
     }
 
     private static class LocalTransactions implements PlatformTransactionManager {

@@ -68,6 +68,17 @@ public class OrderConfirmedOutboxPersistenceAdapter implements OrderConfirmedOut
         return orderConfirmedOutboxJpaRepository.resumeBlocked(eventId, now);
     }
 
+    // 비교는 저장된 문자열 그대로다. 1단계와 같은 직렬화기로 만든 값이 한 글자라도 다르면 DIFFERENT다.
+    @Override
+    @Transactional(readOnly = true)
+    public StoredComparison compare(OrderConfirmedPayload payload) {
+        return orderConfirmedOutboxJpaRepository.findByEventId(payload.eventId())
+            .map(entity -> entity.payload().equals(OrderConfirmedMessageSerializer.serialize(payload))
+                ? StoredComparison.SAME
+                : StoredComparison.DIFFERENT)
+            .orElse(StoredComparison.ABSENT);
+    }
+
     // last_error 열은 500자다. 원인 메시지가 길어도 상태 기록이 실패하지 않게 자른다.
     private static String truncate(String error) {
         if (error == null || error.length() <= LAST_ERROR_LENGTH) {
