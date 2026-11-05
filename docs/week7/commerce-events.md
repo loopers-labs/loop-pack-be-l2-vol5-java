@@ -1242,13 +1242,14 @@ PG 취소 API 연동(늦은 성공의 자동 환불), 다중 서버 선점, 실�
 
 - **인터럽트:** broker 확인을 기다리다 `InterruptedException`을 받으면 인터럽트 플래그를 되살리고 행 수준으로 세지 않는다(전송 결과는 `BrokerFailure`). relay는 send 직후 DB를 부르기 전에 플래그를 보고, 서 있으면 그 행을 기록하지 않은 채 회차를 끝낸다. 플래그가 선 채로 커넥션 풀을 부르면 연결을 얻다 실패할 수 있기 때문이다. 그 행은 `PENDING`으로 남아 다음 회차에 다시 보낸다.
 
-### 상태를 쓰는 쪽은 relay 하나 [확정] (D115)
+### 상태 전이마다 쓰는 쪽은 하나 [확정] (D115·D122)
 
 - send callback으로 상태를 바꾸지 않는다. 상태는 relay가 broker 결과를 받은 뒤에만 쓴다.
-- 모든 상태 갱신은 `WHERE id = ? AND status = 'PENDING'` 조건부 update이고 영향 행 수를 돌려준다. `PUBLISHED`·`BLOCKED`는 relay가 되돌리지 않는다.
+- 상태 전이마다 쓰는 쪽은 하나: `PENDING`→`PUBLISHED`·`BLOCKED` = relay, `BLOCKED`→`PENDING` = 사람의 재개 도구(`WHERE status='BLOCKED'`). 두 쪽이 같은 상태의 행을 동시에 쓰지 않아 경쟁이 없다(D122).
+- relay의 상태 갱신은 모두 `WHERE id = ? AND status = 'PENDING'` 조건부 update이고 영향 행 수를 돌려준다. relay는 `PUBLISHED`·`BLOCKED`를 되돌리지 않는다.
 - producer `delivery.timeout.ms` 30초(`commerce.kafka.producer.delivery-timeout`) < relay 대기 35초(`commerce.outbox.relay.send-timeout`) `[임시]`. producer가 먼저 포기해 broker 결과(성공·실패)가 relay 대기 안에 온다. Kafka 조건 `delivery.timeout.ms ≥ linger.ms(0) + request.timeout.ms(20초)`도 만족한다.
 - 이 producer는 3b 대사 재발행(`republish`)도 쓴다. `delivery.timeout`이 30초로 줄어도 재발행 대기(10초)보다 길어 재발행 동작은 그대로다.
-- D115의 예외: 사람이 쓰는 로컬 도구(`OrderOutboxLocalTools`)만 `BLOCKED`→`PENDING`을 바꿀 수 있고, 조건은 `status='BLOCKED'`다(운영 경계 지시문으로 추가). 아래 "운영 경계" 참고.
+- 재개 도구는 아래 "운영 경계" 참고.
 
 ### 수치와 라이브 조절 [임시] (D116·D117, relay-4)
 
@@ -1272,7 +1273,7 @@ PG 취소 API 연동(늦은 성공의 자동 환불), 다중 서버 선점, 실�
 
 - **BLOCKED 재개(로컬 전용, 공개 API 없음):** 원인(메시지 크기 등)을 고친 뒤 local 프로필로 앱을 띄우며 `--outbox.resume=<eventId>`를 준다(`domains.order.in.OrderOutboxLocalTools`, `@Profile("local")` `ApplicationRunner`). 여러 개면 인자를 반복한다.
   - `OrderOutboxResume.resume(eventId)`가 짧은 트랜잭션에서 `update … set status='PENDING', row_failure_count=0, next_attempt_at=지금 where event_id=? and status='BLOCKED'`를 실행한다. 결과는 `RESUMED` 또는 `NOT_BLOCKED`(행이 없거나 BLOCKED가 아님)이다.
-  - D115의 예외: 사람이 쓰는 로컬 도구(`OrderOutboxLocalTools`)만 `BLOCKED`→`PENDING`을 바꿀 수 있고, 조건은 `status='BLOCKED'`다(운영 경계 지시문으로 추가). PENDING·PUBLISHED 행은 바뀌지 않는다.
+  - 조건이 `status='BLOCKED'`라 PENDING·PUBLISHED 행은 바뀌지 않는다. 위 "상태 전이마다 쓰는 쪽은 하나"(D115·D122) 참고.
   - `attempt_count`·`last_error`는 이력이라 그대로 둔다. BLOCKED 판단에 쓰는 `row_failure_count`만 0으로 되돌린다.
   - 재개한 행은 relay의 다음 회차가 저장된 key·payload 그대로 같은 eventId로 보낸다.
   - 원인을 고치지 않고 재개하면 행 탓 실패가 다시 5회 쌓여 BLOCKED로 돌아간다.
@@ -1293,13 +1294,34 @@ PG 취소 API 연동(늦은 성공의 자동 환불), 다중 서버 선점, 실�
   - 원칙: 소비 영수증 보존 기간 ≥ 같은 eventId가 다시 올 수 있는 기간. 그 기간은 Kafka topic retention(재전달), PUBLISHED 행 보존, 대사 재발행 도구를 쓸 수 있는 기간 중 가장 긴 것이다. 영수증이 먼저 지워지면 다시 온 같은 eventId를 처음 보는 사건으로 처리해 구매 활동이 중복된다.
   - PUBLISHED 행 정리는 나중에 "N일 지난 PUBLISHED 행을 묶음으로 삭제"를 후보로 둔다. N은 위 원칙과 대사 범위에 맞춰 정한다.
 
+### 6주차 누락 상태 재현과 복구 (5단계, D120·D121, 축소판)
+
+- **복구 메서드(D121):** `OrderOutboxBackfill.ensure(주문 ID 목록)`. 로컬 진입점 `--outbox.backfill=41,42`(`OrderOutboxLocalTools`, local 프로필). 주문마다 짧은 트랜잭션 하나이고 주문별 결과를 돌려준다.
+  - CONFIRMED이고 확정 시각·품목이 있으면 1단계와 같은 팩토리(`OrderConfirmedPayloadFactory`)로 같은 eventId `order-confirmed:v1:{orderId}`의 payload를 만든다.
+  - Outbox 행이 없으면 PENDING으로 추가(`ADDED`). 있으면 저장된 문자열이 같은 직렬화 결과인지 확인만 한다: 같으면 `ALREADY_SAME`, 다르면 덮어쓰지 않고 `PAYLOAD_MISMATCH`.
+  - CONFIRMED 아님(`NOT_CONFIRMED`)·확정 사실 부족(`MISSING_FACT`)·주문 없음(`ORDER_NOT_FOUND`)은 추측해 채우지 않고 결과로 드러낸다.
+  - PG를 부르지 않고 주문·예약·결제 기록을 바꾸지 않는다. 보내는 일은 relay의 다음 회차가 한다.
+- **재현 방식(③ 대역, 과제 문구와 다른 점):** 과제는 6주차 실행물로 누락 상태를 만드는 것이지만, 이번 재현은 **실제 6주차 실행물이 아니라 Outbox 기록을 비운 대역으로 만든 같은 상태**다(사용자 결정, D120 구체안).
+  - 테스트 설정에서 `OrderConfirmedOutbox.append`를 아무것도 하지 않는 대역으로 바꾼 채 주문 API로 A·B를 확정한다. 운영 코드에는 분기가 없고, SUCCESS 직접 삽입·Outbox 행 삭제는 하지 않았다.
+  - B는 6주차 AFTER_COMMIT send를 흉내 내, 테스트가 1단계와 같은 팩토리·직렬화기로 만든 메시지를 `KafkaTemplate`으로 한 번 직접 보낸다. A는 보내지 않는다("send 실패로 broker에 없는 상태"와 같은 결과).
+  - 잃는 것: 6주차 코드 경로(after-commit listener)가 실제로 실패하는 모습은 재현하지 않는다. 같은 JVM·같은 컨텍스트라 프로세스 교체(6주차 → 7주차 배포)도 흉내 내지 않는다.
+- **이번 재현 실행의 사건(`OrderOutboxRecoveryE2ETest`, e2eTest 1회 실행 값):**
+  - 아래 실행 값(주문 ID, TR 번호, offset, C·T)은 이번 1회 실행의 관찰값이다. 테스트는 값 자체가 아니라 증가 0·불변을 단언한다.
+  - 주문 A = 1, B = 2. 둘 다 첫 상품 2·둘째 상품 1, `confirmed_at` 2026-10-29T01:00(주입 시계). PG 거래 `TR-000001`(A)·`TR-000002`(B), 둘 다 SUCCESS.
+  - 재현 직후: A = CONFIRMED·Outbox 없음·broker 0·구매 활동 없음. B = CONFIRMED·Outbox 없음·broker 1(`0@0`)·구매 활동 2행(수신 `RECORDED`). 첫 상품 재고 1·둘째 상품 재고 3.
+  - 복구 1회차: `[A ADDED, B ADDED]` → relay 한 회차 → A record `0@1`(`RECORDED`, 구매 활동 2행 새로 생김), B 재발행 record `0@2`(`ALREADY_PROCESSED`, 구매 활동 그대로). 두 행 모두 PUBLISHED.
+  - 복구 2회차: `[A ALREADY_SAME, B ALREADY_SAME]` → relay가 보낼 행 없음. Outbox·broker record 수·구매 활동 그대로.
+  - PG create 누적 C = 2 → 2, 외부 거래 수 T = 2 → 2, PG 조회 0 → 0. callback은 테스트가 보내지 않았다. callback 추가 0은 직접 세지 않고, 결제 기록(id·result·provider_status·attempt_key)이 복구 전후 같다는 단언으로 간접 확인한다. 주문(상태·확정 시각)·결제 기록·재고는 복구 전후 같다.
+- 판별력: 복구 메서드의 "이미 있으면 확인만" 분기를 빼고 항상 추가하게 하면 2회차에서 `Duplicate entry 'order-confirmed:v1:1' for key 'order_outbox.uk_order_outbox_event_id'`로 실패한다.
+- `docs/week6/order-event-gap-cases.md`는 6주차 기록이라 고치지 않았다.
+
 ### 범위 밖과 다음 단계
 
 - 2단계에서 한 것: 단일 polling relay, `PUBLISHED`·`BLOCKED` 전이와 재시도 규칙(`attempt_count`·`row_failure_count`·`next_attempt_at`·`last_error` 갱신), 직접 send 제거.
 - 다음 단계:
-  - 3단계: 중단 실험(확정 commit 뒤 relay 전, broker 확인 뒤 저장 전).
-  - 4단계: 끝에서 끝까지(E2E) 확인.
-  - 5단계: 6주차 누락 장면 재현·복구.
+  - 3단계(한 일): 중단 실험(확정 commit 뒤 relay 전, broker 확인 뒤 저장 전)을 예외로 회차를 끊어 재현했다.
+  - 4단계(한 일): 끝에서 끝까지(E2E) 확인. e2eTest의 정리(그 JVM의 DB 전체 truncate)는 별도 JVM·별도 컨테이너·테스트 1개이고 streamer 컨텍스트를 먼저 닫으므로 다른 실행과 경쟁하지 않는다.
+  - 5단계(한 일): 6주차 누락 상태 재현·복구(위 "6주차 누락 상태 재현과 복구").
   - 운영 경계: `BLOCKED` 재개 로컬 진입점, 구조화 로그, 관찰 SQL을 더했다(위 "운영 경계").
 - 범위 밖: 대사 경로 변경.
 - 3b 대사(27절 "대사와 재발행")는 Outbox 뒤에도 끝에서 끝까지 비교하는 안전망으로 남는다.
@@ -1316,4 +1338,18 @@ PG 취소 API 연동(늦은 성공의 자동 환불), 다중 서버 선점, 실�
 - **단일 relay:** 처리량은 한 건 왕복 시간에 묶인다(직렬 전송). 인스턴스 하나가 멈추면 다른 인스턴스가 이어받지 않는다(켜기 설정을 사람이 옮긴다).
 - **재시도:** broker 수준 실패는 BLOCKED가 되지 않고 1초부터 두 배씩 늘려 최대 60초 간격으로 계속 재시도한다. 오래가는 장애는 로그·`pending_count`·`oldest_pending_age`로 사람이 알아채야 한다. 재개는 eventId 하나씩이고 일괄 재개는 없다.
 - **보존:** 자동 삭제가 없어 Outbox·영수증 테이블이 계속 자란다. 보존 기간과 정리 작업은 정하지 않았다.
+- **대사 재발행은 Outbox 장부에 남지 않는다:** 3b 대사 재발행(`republish`)은 Outbox를 거치지 않고 broker에 바로 보낸다. 그래서 재발행 사실은 `order_outbox`에 남지 않고, 관찰 SQL로도 보이지 않는다.
 - **관찰 SQL 검증 범위:** 테스트는 같은 DB에서 실행했다. 영수증 테이블은 api 테스트 스키마에 없어, 테스트가 조회에 쓰는 열만 가진 테이블을 만들어 확인했다. DB가 나뉜 운영 구성과 운영 로그 수집기의 필드 파싱은 확인하지 않았다.
+
+### Relay 설계 점검
+
+| 질문 | 지금 설계 | 근거 | 상태 |
+| --- | --- | --- | --- |
+| Offset은 누가 관리하나 | 보내는 쪽은 관리하지 않는다(broker가 정하고 ack metadata는 저장하지 않음). 받는 쪽은 DB commit 뒤 수동 ack, auto commit 끔, `purchase-activity` group은 earliest | D69, 27절 "1단계 테스트 기반"·"소비 실패 정책" | ✔ |
+| 발송이 실패하면 | PENDING 유지·backoff, broker 수준이면 회차 중단, 행 탓 5회면 BLOCKED, 사람이 재개 | D112~D119·D122, 이 절 | ✔ |
+| 소비가 실패하면 | 고칠 수 없는 record는 이상 기록 뒤 ack, 일시 실패는 재시도 뒤 멈춤, 모르는 버전은 멈춤 | D68~D70, 27절 "소비 실패 정책" | ✔ |
+| DLQ | DLQ topic은 없다. 고칠 수 없는 record는 이상 기록(`order_event_anomaly`) 뒤 ack하고, 일시 실패·모르는 버전은 컨테이너를 멈춘다 | 27절 "소비 실패 정책"(D68~D70: DLQ 대신 이상 기록·멈춤). DLQ는 결정 기록 없이 범위 밖 | ✖ |
+| 순서 | key = orderId라 같은 주문은 한 partition. 주문당 이벤트가 하나라 문제없다. 같은 주문에 이벤트가 여러 개 생기면 버전·오래된 버전 무시 규칙이 필요하다 | 27절 "발행"(record key) | △ |
+| broker의 같은 eventId 중복 | broker는 걸러 주지 않는다(idempotent producer는 한 세션 안 재시도 중복만 막음). consumer 영수증이 막는다 | D67, 27절 "구매 활동 저장" | ✔ |
+| DB에 많이 쌓이면 | PENDING은 꽉 차면 쉬지 않고 이어 가고, 묶음 크기를 라이브로 바꾸며, 관찰 SQL로 본다. PUBLISHED는 자동 삭제 없이 보존 원칙만 있다 | D117, 이 절 "운영 경계" | △ |
+| 스냅샷·파티셔닝 | payload 스냅샷은 TEXT로 고정한다. Kafka partition 3·replication 1은 6주차에 정한 [임시] 값(소비자 3개까지 늘릴 수 있게, 로컬 단일 broker 기준)이고 운영 수치로는 따지지 않았다. DB 테이블 범위 파티셔닝은 없다. 기준 후보: Kafka는 처리량·consumer 동시성·key 분포, DB는 정리 단위(날짜) | 28절 "테이블 `order_outbox`"(payload TEXT 이유), 27절 "발행"의 topic 선언 [임시](partition 3·replication 1) | ✔ / ✖ |
