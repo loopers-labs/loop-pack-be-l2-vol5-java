@@ -17,6 +17,7 @@ import org.springframework.test.context.ActiveProfiles;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -30,6 +31,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -133,6 +135,54 @@ class OrderConfirmedOutboxRelayDocumentContractTest {
         }
     }
 
+    @Test
+    @DisplayName("재시도해도 동일한 messageKey와 payload를 발행한다")
+    void preservesMessageKeyAndPayloadAcrossRetries() {
+        String eventId = "event-retry";
+        String messageKey = "order-retry";
+        String payload = "{\"eventId\":\"event-retry\",\"orderId\":42}";
+        OrderConfirmedOutbox outbox = OrderConfirmedOutbox.pending(
+            eventId,
+            42L,
+            "OrderConfirmed",
+            1,
+            messageKey,
+            payload,
+            NOW
+        );
+        Instant retryAt = NOW.plus(settings.pollInterval());
+        MutableClock clock = new MutableClock(NOW);
+        when(repository.findReadyForRelay(org.mockito.ArgumentMatchers.any(Instant.class),
+            org.mockito.ArgumentMatchers.eq(settings.batchSize())))
+            .thenReturn(List.of(outbox), List.of(outbox));
+        when(publisher.publish(anyString(), anyString()))
+            .thenReturn(
+                CompletableFuture.completedFuture(PublishResult.failed("BrokerException")),
+                CompletableFuture.completedFuture(PublishResult.SUCCESS)
+            );
+        relay = new OrderConfirmedOutboxRelay(
+            repository,
+            publisher,
+            clock,
+            settings.pollInterval(),
+            settings.batchSize(),
+            settings.maxAttempts()
+        );
+
+        // 최초 발행 → 실패
+        relay.pollOnce();
+        assertThat(outbox.getStatus()).isEqualTo(OrderConfirmedOutboxStatus.FAILED);
+
+        // 재시도 시각으로 이동
+        clock.setInstant(retryAt);
+
+        // 동일한 Relay로 재시도 → 성공
+        relay.pollOnce();
+
+        assertThat(outbox.getStatus()).isEqualTo(OrderConfirmedOutboxStatus.PUBLISHED);
+        verify(publisher, times(2)).publish(messageKey, payload);
+    }
+
     @TestFactory
     @DisplayName("공통 발행 흐름 뒤에 응답 결과와 최대 시도 횟수에 따라 분기한다")
     Stream<DynamicTest> branchesByPublishResultAndAttemptLimit() {
@@ -220,5 +270,33 @@ class OrderConfirmedOutboxRelayDocumentContractTest {
 
     @SpringBootConfiguration
     static class TestConfiguration {
+    }
+
+    private static class MutableClock extends Clock {
+
+        private Instant instant;
+
+        private MutableClock(Instant instant) {
+            this.instant = instant;
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return new MutableClock(instant);
+        }
+
+        @Override
+        public Instant instant() {
+            return instant;
+        }
+
+        private void setInstant(Instant instant) {
+            this.instant = instant;
+        }
     }
 }
