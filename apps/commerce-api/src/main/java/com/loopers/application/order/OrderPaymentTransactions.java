@@ -1,8 +1,8 @@
 package com.loopers.application.order;
 
 import com.loopers.domain.order.OrderItem;
-import com.loopers.domain.order.OrderConfirmed;
 import com.loopers.domain.order.OrderModel;
+import com.loopers.domain.order.OrderOutboxRecorder;
 import com.loopers.domain.order.OrderService;
 import com.loopers.domain.payment.PaymentAttempt;
 import com.loopers.domain.payment.PaymentAttemptRepository;
@@ -19,7 +19,6 @@ import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,8 +42,8 @@ public class OrderPaymentTransactions {
     private final ProductService productService;
     private final PaymentAttemptRepository paymentAttemptRepository;
     private final PaymentEventRepository paymentEventRepository;
+    private final OrderOutboxRecorder orderOutboxRecorder;
     private final Clock clock;
-    private final ApplicationEventPublisher events;
 
     @Transactional
     public PaymentStart start(Long userId, Long orderId, String attemptKey, String cardType, String cardNo) {
@@ -128,8 +127,7 @@ public class OrderPaymentTransactions {
 
         if (attempt.getStatus() == PaymentAttemptStatus.SUCCESS) {
             order.completePayment(clock.instant().truncatedTo(ChronoUnit.MICROS));
-            events.publishEvent(new OrderConfirmed(order.getId(), order.getConfirmedAt(), order.getItems().stream()
-                .map(item -> new OrderConfirmed.Item(item.getProductId(), item.getQuantity())).toList()));
+            orderOutboxRecorder.record(order.toConfirmedFact());
         } else {
             failWithReleasedStock(order);
         }

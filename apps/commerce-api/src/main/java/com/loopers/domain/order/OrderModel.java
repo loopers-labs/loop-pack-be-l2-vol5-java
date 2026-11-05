@@ -80,6 +80,12 @@ public class OrderModel extends BaseEntity {
         status = OrderStatus.PAYMENT_PENDING;
     }
 
+    /** 저장된 값만으로 주문 확정 사실을 만든다. 현재 상품 정보는 읽지 않는다. */
+    public OrderConfirmed toConfirmedFact() {
+        return new OrderConfirmed(getId(), confirmedAt, items.stream()
+            .map(item -> new OrderConfirmed.Item(item.getProductId(), item.getQuantity())).toList());
+    }
+
     public void completePayment(Instant confirmedAt) {
         validatePaymentPending();
         if (confirmedAt == null) {
