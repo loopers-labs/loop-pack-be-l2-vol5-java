@@ -138,6 +138,7 @@
 - **운영 의존성은 만들지 않는다**: `implementation`으로 streamer를 넣으면 api 서버 안에 consumer가 같이 떠서, 따로 배포하려고 나눈 두 앱이 한 덩어리가 된다.
 - **바로잡은 것 — 테스트 의존성도 쓰지 않는다**: 처음에는 `testImplementation(project(":apps:commerce-streamer"))`로 consumer를 불러오려 했다. 그런데 두 앱 모두 `com.loopers` 아래를 통째로 훑고, 공용 `JpaConfig`도 `@EntityScan("com.loopers")`다(`modules/*`라 수정 불가). 그래서 streamer가 api 테스트 클래스패스에 들어오면 api의 모든 테스트가 streamer의 listener·엔티티·저장소까지 띄운다. `apps/*`는 일반 jar 빌드도 꺼져 있다. 실행 jar로 따로 띄우면 클래스패스를 건드리지 않고, 운영처럼 두 서버가 따로 뜬다. D-13의 jar 실행 장치를 함께 쓴다.
 - **DB를 지우지 않게 — 첫 서버만 `create`**: 테스트 환경은 `ddl-auto: create`라서 서버가 켜질 때 자기 테이블을 지우고 새로 만든다. 그대로 두면 6주차 2회차가 A를, 7주차 연결이 A·B를 지운다. 첫 6주차 서버만 `create`로 띄우고, 이후의 6주차 서버·streamer·7주차 연결은 실행 설정으로 `update`를 준다. `update`는 데이터를 두고 없는 테이블(Outbox)만 더한다. 과제의 "복구가 끝날 때까지 DB를 초기화하지 않는다"와 같은 이유다.
+- **구현하며 바꾼 것 — 기초 데이터는 DB에 넣는다**: 사용자·브랜드·상품은 테스트가 DB에 직접 넣는다. 6주차에는 사용자 생성 API가 없고, 상품 생성 관리자 API는 인증 수단이 없어 실제 서버로 부를 수 없다. 주문 생성 → 결제 시작 → PG 성공 → 확정은 전부 6주차 실제 HTTP로 탄다. 과제가 막은 것은 SUCCESS·CONFIRMED 같은 결과 상태의 직접 삽입이라, 기초 데이터는 그 조건에 걸리지 않는다. PR에 적는다.
 
 ## relay 테스트 이음매
 

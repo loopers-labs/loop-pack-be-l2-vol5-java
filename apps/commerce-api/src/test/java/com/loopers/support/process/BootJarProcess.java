@@ -13,6 +13,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.MatchResult;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -109,6 +111,31 @@ public final class BootJarProcess implements AutoCloseable {
                 // 강제 종료도 기다리지 못했다. 더 할 수 있는 일이 없다.
             }
         });
+    }
+
+    /**
+     * 출력에 pattern이 나올 때까지 상한을 두고 기다리고, 처음 맞은 자리를 돌려준다(예: 실제 포트 줄, 미발행 로그 줄).
+     * 그 전에 프로세스가 끝나거나 상한이 지나면 로그 끝부분과 함께 실패한다. 프로세스는 끄지 않는다 — 정리는 호출자가 한다.
+     */
+    public MatchResult awaitLog(Pattern pattern, Duration timeout) {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        while (System.nanoTime() < deadline) {
+            Matcher matcher = pattern.matcher(readLog());
+            if (matcher.find()) {
+                return matcher.toMatchResult();
+            }
+            if (!process.isAlive()) {
+                throw new IllegalStateException("[" + name + "] /" + pattern + "/ 이 나오기 전에 프로세스가 끝났다 (exit="
+                    + process.exitValue() + ", log=" + logFile + ")\n" + tail());
+            }
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("[" + name + "] 로그를 기다리다 중단됐다", e);
+            }
+        }
+        throw new IllegalStateException("[" + name + "] " + timeout + " 안에 /" + pattern + "/ 이 나오지 않았다 (log=" + logFile + ")\n" + tail());
     }
 
     private void awaitReady(Pattern readyLine, Duration timeout) {
