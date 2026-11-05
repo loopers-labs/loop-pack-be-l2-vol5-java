@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # C-7·C-8 — 새 격리 실행에서 W6 누락 상태를 재현하고(1막, W6 revision) 같은 실행 안에서 W7으로 복구한다(2막).
+# C-6 — 같은 환경에서 W7 코드만으로 한 주문(상품 7×2, 8×1)을 확정하고, ack 뒤 저장 전에 relay를 멈춘 뒤(3막 E-1)
+#        새 JVM으로 relay를 재시작해 같은 사건을 다시 보낸다(3막 E-2). 실제 broker 기록·consumer 수신·DB를 본다.
 #
 # 이 스크립트가 격리 자원의 수명주기를 소유한다: MySQL 1 · Kafka 3대 · pg-sim · W6 streamer · W6 revision worktree.
 # 1막과 2막 사이에는 DB·broker·PG를 초기화하지 않는다. 모든 확인이 끝난 뒤에만 자신이 만든 자원을 지운다.
 # 실패하면 조사할 수 있게 자원을 남기고, 지우는 명령을 출력한다.
 #
 # 실행: 저장소 루트(W7 코드)에서  bash docs/week7/c7/run.sh
-# 결과: docs/week7/c7/results/<실행 ID>/{facts.json, result.json}
+# 결과: docs/week7/c7/results/<실행 ID>/{facts.json, result.json, e2e-interrupt.json, e2e-resume.json}
 set -euo pipefail
 
 REPO="$(git rev-parse --show-toplevel)"
@@ -25,6 +27,8 @@ export C7_BOOTSTRAP="localhost:${KAFKA_PORTS[0]},localhost:${KAFKA_PORTS[1]},loc
 export C7_PG_URL="$PG_URL"
 export C7_FACTS="$OUT/facts.json"
 export C7_RESULT="$OUT/result.json"
+export C7_E2E="$OUT/e2e-interrupt.json"
+export C7_E2E_RESULT="$OUT/e2e-resume.json"
 export C7_W6_REVISION="$(git -C "$REPO" rev-parse "$W6_REVISION")"
 
 PIDS=()
@@ -112,8 +116,18 @@ echo "[c7] W7 테이블 추가 (order_outbox · shedlock)"
 
 # ---- 2막: W7 코드로 같은 사건 복구 ----
 echo "[c7] 2막 — W7 복구 도구 + relay, 기존 streamer가 소비"
-(cd "$REPO" && ./gradlew :apps:commerce-api:c7Recovery -q)
+(cd "$REPO" && ./gradlew :apps:commerce-api:isolatedRun --tests '*W6GapRecoveryRun' -q)
 test -s "$C7_RESULT"
+
+# ---- 3막: C-6 E2E (W7 코드만) ----
+export C7_STREAMER_LOG="$WORK/streamer.log"
+echo "[c7] 3막 E-1 — 상품 7×2·8×1 주문 확정 → relay가 ack 뒤 PUBLISHED 저장 전에 멈춤 (JVM 종료)"
+(cd "$REPO" && ./gradlew :apps:commerce-api:isolatedRun --tests '*OutboxE2EInterruptRun' -q)
+test -s "$C7_E2E"
+echo "[c7] 3막 E-2 — relay 재시작(새 JVM), lease가 지나면 같은 사건 재발행"
+(cd "$REPO" && ./gradlew :apps:commerce-api:isolatedRun --tests '*OutboxE2EResumeRun' -q)
+test -s "$C7_E2E_RESULT"
+grep -E "eventId=$(python3 -c "import json;print(json.load(open('$C7_E2E'))['eventId'])")" "$WORK/streamer.log" | grep -E "구매 활동 저장|no-op" > "$OUT/e2e-streamer-receipts.log" || true
 
 echo "[c7] 확인 끝 — 결과 $OUT"
 cleanup

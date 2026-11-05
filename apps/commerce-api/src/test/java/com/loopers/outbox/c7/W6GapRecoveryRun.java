@@ -32,7 +32,7 @@ import static org.awaitility.Awaitility.await;
 
 /**
  * C-7·C-8 2막 — 1막(W6 revision)이 남긴 같은 DB·broker·PG 위에 W7 코드를 띄워 W6 누락을 같은 사건으로 복구한다.
- * docs/week7/c7/run.sh가 {@code ./gradlew :apps:commerce-api:c7Recovery}로 실행한다. 보통 test 작업에서는 제외된다(@Tag c7).
+ * docs/week7/c7/run.sh가 {@code ./gradlew :apps:commerce-api:isolatedRun --tests '*W6GapRecoveryRun'}로 실행한다. 보통 test 작업에서는 제외된다(@Tag isolated).
  * <p>
  * 확인 (과제 원문 5절):
  * <ul>
@@ -43,7 +43,7 @@ import static org.awaitility.Awaitility.await;
  * </ul>
  * 정리를 하지 않는다 — 자원 정리는 모든 확인 뒤 스크립트가 한다.
  */
-@Tag("c7")
+@Tag("isolated")
 @SpringBootTest(properties = {"spring.jpa.hibernate.ddl-auto=none", "spring.jpa.show-sql=false"})
 class W6GapRecoveryRun {
 

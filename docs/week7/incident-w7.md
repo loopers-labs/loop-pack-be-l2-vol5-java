@@ -1,4 +1,4 @@
-# 7주차 사건 기록 — W6 누락의 재현과 W7 복구 (C-7·C-8)
+# 7주차 사건 기록 — W6 누락의 재현과 W7 복구 (C-7·C-8) · relay 재시작 E2E (C-6)
 
 > 실행: `bash docs/week7/c7/run.sh` (2026-11-06 02:29 KST, 실행 ID `c7-20261106-022901`). 원본 결과: `docs/week7/c7/results/c7-20261106-022901/{facts.json, result.json}`.
 > W6 기록(`docs/week6/incident-w6.md` E-4)과는 별개인, **이번 재현 실행의 사건**이다. 역사적 원본 행의 복원이 아니다.
@@ -65,3 +65,30 @@
 - 원본 W6 DB의 복원이 아니다. W6 임시 DB는 남아 있지 않아, 같은 경로로 누락 상태를 새로 만들었다.
 - A의 "send 직전 중단"은 OS 강제 종료가 아니라 publish를 한 번 건너뛰는 통제된 지점이다(W6 E-4와 같음).
 - 대상은 두 주문뿐이다. 이전 주문 전체를 자동 소급하지 않는다.
+
+---
+
+# C-6 — 실제 broker·consumer에서 재발행돼도 상품별 구매 효과가 늘지 않는다
+
+> 실행: `bash docs/week7/c7/run.sh` 3막 (2026-11-06 02:45 KST, 실행 ID `c7-20261106-024330`). 원본: `docs/week7/c7/results/c7-20261106-024330/{e2e-interrupt.json, e2e-resume.json, e2e-streamer-receipts.log}`.
+> 같은 실행의 1·2막(C-7)도 다시 통과했다 — A 활동 0 → 상품 1×2·2×1, B 1×1 그대로, 복구 중 PG 호출 0.
+
+W7 코드만 쓴다. 환경은 1·2막과 같은 격리 MySQL·Kafka 3대·pg-sim·streamer(1막부터 계속 실행).
+
+| 단계 | 한 일 |
+|---|---|
+| E-1 (JVM 1) | 상품 7·8(재고 5) · 포인트 10,000 충전한 고객 → 주문 API로 **상품 7×2, 상품 8×1** 주문 → 결제 요청 202 → pg-sim 1초 뒤 SUCCESS callback → 확정(Outbox PENDING 1행) → relay 한 회차: **broker 확인(ack) 뒤 PUBLISHED 저장 TX를 한 번 실패**시킴(통제된 중단) → 테스트 종료 = JVM 종료 |
+| E-2 (JVM 2 = relay 재시작) | 행이 SENDING인 것을 확인 → 2초마다 relay 회차 → **lease가 실제 시각으로 지난 뒤(42.7초 대기)** 같은 행을 다시 맡아 보냄 → 관찰 |
+
+| 과제 표의 기대 | 관찰 |
+|---|---|
+| 주문·PG 거래 각 1 | 주문 3 1건 · 결제 1건(transactionKey 20261106:TR:30f400b). PG 호출 확정 뒤 생성 3·조회 3·callback 3 → 재발행 뒤 **그대로 3·3·3** |
+| Outbox 동일 eventId 1행, 최종 PUBLISHED | eventId 347939d7-a5f4-4314-9cc3-44e1862910c4 **1행**, PUBLISHED, 시도 0, partition 2 · offset 3 |
+| Kafka 같은 eventId의 별도 record 2개 이상 | **partition 2 · offset 2** (첫 발행, E-1) · **partition 2 · offset 3** (재발행, E-2). 둘 다 key 3, 값은 저장한 payload 원문 |
+| consumer 같은 사건 수신 2회 이상 | streamer 로그 2줄: 02:45:10 `구매 활동 저장` → 02:46:11 `같은 사실의 재전달 — 변경 없이 완료(no-op)` |
+| 완료 기록 1 | `consumed_order_confirmation` (주문 3, 같은 eventId) **1건** |
+| 구매 활동 상품별 2행, 수량 2·1 유지 | **상품 7×2, 상품 8×1** — 첫 수신 뒤와 재발행 뒤가 같다 |
+| 예약 추가 소비·반환 없음, 포인트 추가 차감 없음 | 확정 직후와 재발행 뒤의 스냅샷이 같다: 예약 7×2·8×1 CONSUMED, 재고 7→3·8→4, 포인트 그룹 remaining 10,000, 포인트 이력 1건(충전) |
+
+- W6의 "같은 offset 재전달"(consumer 재시작)과 달리, 여기서는 relay가 다시 send해서 **같은 eventId가 별도 offset(2와 3)으로** 기록됐다. 중복을 막은 것은 broker가 아니라 consumer의 eventId 완료 기록이다.
+- 이 실험이 증명하지 않은 것: 중단은 OS 강제 종료가 아니라 PUBLISHED 저장 TX를 한 번 실패시킨 통제된 지점이다(다만 그 뒤 프로세스는 실제로 끝나고 새 JVM이 재시작한다). 1회 실행.

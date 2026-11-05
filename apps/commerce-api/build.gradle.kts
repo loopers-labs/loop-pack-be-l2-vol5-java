@@ -41,20 +41,20 @@ dependencies {
     testImplementation("com.tngtech.archunit:archunit:1.5.0")
 }
 
-// W7 C-7·C-8 (docs/week7/c7/run.sh): W6 누락 복구 2막. 격리 환경(스크립트가 띄움)이 있어야 하므로 보통 test에서는 뺀다.
+// W7 격리 실행 (docs/week7/c7/run.sh): C-7·C-8 W6 누락 복구 2막, C-6 E2E 3막. 스크립트가 띄운 격리 환경이 있어야 하므로 보통 test에서는 뺀다.
 tasks.test {
     useJUnitPlatform {
-        excludeTags("c7")
+        excludeTags("isolated")
     }
 }
 
-tasks.register<Test>("c7Recovery") {
-    description = "C-7 2막: 1막(W6)이 남긴 격리 DB·broker 위에서 W7 복구를 확인한다 (run.sh가 실행)"
+tasks.register<Test>("isolatedRun") {
+    description = "W7 격리 실행 — run.sh가 --tests로 막마다 부른다 (C-7 2막, C-6 3막)"
     group = "verification"
     testClassesDirs = sourceSets["test"].output.classesDirs
     classpath = sourceSets["test"].runtimeClasspath
     useJUnitPlatform {
-        includeTags("c7")
+        includeTags("isolated")
     }
     systemProperty("user.timezone", "Asia/Seoul")
     systemProperty("spring.profiles.active", "test")
