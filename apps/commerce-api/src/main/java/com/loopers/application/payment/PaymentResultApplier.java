@@ -1,12 +1,11 @@
 package com.loopers.application.payment;
 
-import com.loopers.application.order.OrderConfirmedPayload;
-import com.loopers.application.order.OrderConfirmedPublication;
-import com.loopers.application.order.OrderConfirmedUnpublished;
+import com.loopers.application.order.OrderConfirmedOutbox;
 import com.loopers.application.product.ProductCacheInvalidator;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.OrderService;
+import com.loopers.domain.outbox.OutboxEventRepository;
 import com.loopers.domain.payment.ApplyResult;
 import com.loopers.domain.payment.PaymentAttempt;
 import com.loopers.domain.payment.PaymentAttemptRepository;
@@ -34,8 +33,8 @@ import java.util.Optional;
  * - 락 순서: 주문 → 결제 시도 → 상품(id 오름차순)(D-002).
  * - 전이 판단은 PaymentAttempt가 하고, 여기서는 전이가 일어났을 때만 효과를 낸다(INV-002, D-001).
  * - PG 호출은 하지 않는다. 호출자가 트랜잭션 밖에서 조회한 결과를 넘긴다.
- * - 처음 SUCCEEDED로 전이한 경우에만 OrderConfirmed 발행을 afterCommit에 등록한다(docs/week6/design.md INV-601, decisions.md D-2).
- *   모든 결과 입구가 여기를 지나므로 발행 조건은 이 한 곳에 있다.
+ * - 처음 SUCCEEDED로 전이한 경우에만, 같은 트랜잭션에서 OrderConfirmed Outbox 행을 저장한다(docs/week7/decisions.md D-6,
+ *   INV-701). 모든 결과 입구가 여기를 지나므로 "보낼 사실"을 남기는 조건은 이 한 곳에 있다. 실제 전송은 relay가 한다.
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -47,8 +46,8 @@ public class PaymentResultApplier {
     private final ProductService productService;
     private final ProductCacheInvalidator productCacheInvalidator;
     private final PaymentConflictRepository paymentConflictRepository;
-    private final OrderConfirmedPublication orderConfirmedPublication;
-    private final OrderConfirmedUnpublished orderConfirmedUnpublished;
+    private final OrderConfirmedOutbox orderConfirmedOutbox;
+    private final OutboxEventRepository outboxEventRepository;
 
     /** PG 권위 조회로 확인한 거래를 반영한다. 어긋나면 상태는 그대로 두고 충돌로 기록한다(INV-003, D-010). */
     @Transactional
@@ -141,7 +140,7 @@ public class PaymentResultApplier {
         switch (result) {
             case SUCCEEDED -> {
                 order.completePayment(attempt.getAmount());
-                registerOrderConfirmed(order);
+                saveOrderConfirmed(order);
             }
             case FAILED -> {
                 order.failPayment();
@@ -160,18 +159,17 @@ public class PaymentResultApplier {
     }
 
     /**
-     * 확정 직후, 같은 트랜잭션 안에서 payload를 불변 객체로 만들어 등록한다(docs/week6/decisions.md D-5). 실제 발행은 commit 뒤다.
-     * 발행 준비가 실패해도 확정은 되돌리지 않는다(docs/week6/decisions.md D-26) — PG는 이미 SUCCESS라 롤백하면
-     * "결제됐는데 미확정"이 남고, 이 자리의 예외는 대부분 버그라 회복 작업이 재시도해도 매번 롤백된다. 잃는 건 주문 DB에서
-     * 다시 만들 수 있는 이벤트 하나다(D-1의 누락 쪽). 대신 미발행으로 기록하고 Counter(reason=register_failed)로 센다.
+     * 확정 직후, 같은 트랜잭션 안에서 Outbox 행을 저장한다(docs/week7/decisions.md D-6, INV-701). 확정과 "보낼 사실"은
+     * 함께 commit되거나 함께 rollback된다 — 그래서 직렬화·저장 실패를 잡지 않는다. 예외는 그대로 올라가 확정까지 rollback한다.
+     *
+     * - 6주차 D-26(발행 준비가 실패해도 확정 유지, 미발행으로 기록)을 뒤집었다. 그 판단은 "이벤트는 빠질 수 있다"는 전제 위에
+     *   있었고, Outbox가 그 전제를 없앴다. "PG 성공을 잃지 않는다"는 원칙은 그대로다 — 주문은 결제 진행 중으로 남고,
+     *   5주차 "같은 거래 조회 → 결과 적용" 경로가 다시 확정한다.
+     * - 이미 SUCCESS인 결제에 같은 결과가 다시 오면 NO_EFFECT라 여기에 오지 않는다. event_id unique가 마지막 방어선이다.
+     * - 첫 시도 시각은 지금이다. applier에는 시계가 없고, 이 값은 payload에 들어가지 않는다(D-16).
      */
-    private void registerOrderConfirmed(Order order) {
-        try {
-            orderConfirmedPublication.register(OrderConfirmedPayload.from(order));
-        } catch (RuntimeException e) {
-            orderConfirmedUnpublished.record(OrderConfirmedUnpublished.Reason.REGISTER_FAILED,
-                order.getId(), OrderConfirmedPayload.eventIdOf(order.getId()), e);
-        }
+    private void saveOrderConfirmed(Order order) {
+        outboxEventRepository.save(orderConfirmedOutbox.create(order, ZonedDateTime.now()));
     }
 
     /**

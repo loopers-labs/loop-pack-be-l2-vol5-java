@@ -1,157 +1,189 @@
 package com.loopers.infrastructure.order;
 
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.loopers.application.order.OrderConfirmedPayload;
-import com.loopers.application.order.OrderConfirmedUnpublished;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import com.loopers.application.order.OrderConfirmedSendException;
+import com.loopers.application.order.SentRecord;
+import com.loopers.testcontainers.KafkaTestContainers;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.serialization.ByteArrayDeserializer;
+import org.apache.kafka.common.serialization.StringSerializer;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
-import org.slf4j.LoggerFactory;
+import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
-import java.time.ZonedDateTime;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * api는 "이 JSON을 만든다"를 검증한다(docs/week6/decisions.md D-24). 계약 파일은 streamer도 같은 것을 읽는다 —
- * 어긋나면 둘 중 하나가 깨진다. 경로는 build.gradle.kts의 contract.dir 시스템 프로퍼티로 받는다.
+ * 확인 지점 ② — Kafka에 실린 record의 key는 넘긴 message_key이고, value는 넘긴 payload와 바이트까지 같다
+ * (docs/week7/decisions.md D-1, D-9, INV-702). 실제 broker(테스트 컨테이너)에 보내고 바이트로 다시 읽는다.
+ *
+ * <p>JSON 모양(계약 JSON과 같은지)은 7주차부터 OrderConfirmedJsonContractTest가 본다 — 전송은 JSON을 만들지 않는다.
+ * producer 설정(StringSerializer·acks=all·max.block)은 OrderEventProducerConfigTest가 본다. 여기서는 같은 직렬화로 만든
+ * template에 구현을 붙여 "받은 문자열을 바꾸지 않고 보내고, broker가 준 위치를 돌려주고, 실패는 예외로 올린다"만 본다.
  */
 class KafkaOrderConfirmedPublisherContractTest {
 
-    private static final String TOPIC = "order-events-contract";
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final String TOPIC = "order-events-contract-" + UUID.randomUUID();
+    private static final Duration WAIT = Duration.ofSeconds(20);
 
-    private static JsonNode contract() throws IOException {
+    private static DefaultKafkaProducerFactory<String, String> producerFactory;
+    private static KafkaOrderConfirmedPublisher publisher;
+
+    @BeforeAll
+    static void setUp() {
+        KafkaTestContainers.createTopic(TOPIC);
+        producerFactory = new DefaultKafkaProducerFactory<>(Map.of(
+            ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, KafkaTestContainers.bootstrapServers(),
+            ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class,
+            ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class,
+            ProducerConfig.ACKS_CONFIG, "all"));
+        publisher = new KafkaOrderConfirmedPublisher(new KafkaTemplate<>(producerFactory), TOPIC);
+    }
+
+    @AfterAll
+    static void tearDown() {
+        producerFactory.destroy();
+    }
+
+    /** 계약 파일을 글자 그대로 쓴다 — 줄바꿈·공백이 다시 만든 JSON과 다르므로, 중간에 다시 만들었다면 바이트가 달라진다. */
+    private static String contractText() throws IOException {
         String dir = System.getProperty("contract.dir");
         assertThat(dir).as("contract.dir 시스템 프로퍼티(build.gradle.kts tasks.test)").isNotBlank();
-        return MAPPER.readTree(Files.readString(Path.of(dir, "order-confirmed.v1.json")));
+        return Files.readString(Path.of(dir, "order-confirmed.v1.json"));
     }
 
-    private static OrderConfirmedPayload payload42(ZonedDateTime confirmedAt) {
-        return new OrderConfirmedPayload(OrderConfirmedPayload.EVENT_TYPE, OrderConfirmedPayload.SCHEMA_VERSION,
-            OrderConfirmedPayload.eventIdOf(42L), 42L, confirmedAt,
-            List.of(new OrderConfirmedPayload.Item(7L, 2), new OrderConfirmedPayload.Item(8L, 1)));
+    private static ConsumerRecord<byte[], byte[]> readAt(SentRecord sent) {
+        try (KafkaConsumer<byte[], byte[]> consumer = new KafkaConsumer<>(Map.of(
+            ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, KafkaTestContainers.bootstrapServers(),
+            ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class,
+            ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class,
+            ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false))) {
+            TopicPartition partition = new TopicPartition(sent.topic(), sent.partition());
+            consumer.assign(List.of(partition));
+            consumer.seek(partition, sent.offset());
+            List<ConsumerRecord<byte[], byte[]>> records = new ArrayList<>();
+            long deadline = System.nanoTime() + WAIT.toNanos();
+            while (records.isEmpty() && System.nanoTime() < deadline) {
+                consumer.poll(Duration.ofMillis(200)).forEach(records::add);
+            }
+            assertThat(records).as("돌려받은 위치에서 record 읽기").isNotEmpty();
+            return records.get(0);
+        }
     }
 
-    @SuppressWarnings("unchecked")
-    private static Sent publish(OrderConfirmedPayload payload) {
-        KafkaTemplate<String, String> template = mock(KafkaTemplate.class);
-        when(template.send(anyString(), anyString(), anyString())).thenReturn(new CompletableFuture<>());
-        new KafkaOrderConfirmedPublisher(template, TOPIC, new OrderConfirmedUnpublished(new SimpleMeterRegistry())).publish(payload);
-        ArgumentCaptor<String> key = ArgumentCaptor.forClass(String.class);
-        ArgumentCaptor<String> value = ArgumentCaptor.forClass(String.class);
-        verify(template).send(eq(TOPIC), key.capture(), value.capture());
-        return new Sent(key.getValue(), value.getValue());
-    }
-
-    private record Sent(String key, String value) {}
-
-    @DisplayName("계약 예시(주문 42)를 보내면, key는 \"42\"이고 value는 계약 JSON과 같으며 confirmedAt은 글자 그대로 같다.")
+    @DisplayName("key와 JSON 문자열을 보내면, 돌려받은 위치의 record는 key가 같고 value가 바이트까지 같다.")
     @Test
-    void producesContractJson() throws IOException {
+    void sendsKeyAndPayloadUnchanged() throws IOException {
         // arrange
-        JsonNode contract = contract();
-        ZonedDateTime confirmedAt = ZonedDateTime.of(2026, 9, 7, 1, 0, 0, 123_456_000, ZoneOffset.UTC);
+        String payload = contractText();
 
         // act
-        Sent sent = publish(payload42(confirmedAt));
+        SentRecord sent = publisher.send("42", payload);
 
         // assert
-        JsonNode actual = MAPPER.readTree(sent.value());
-        assertThat(sent.key()).isEqualTo("42");
-        assertThat(actual).isEqualTo(contract);
-        assertThat(actual.get("confirmedAt").asText()).isEqualTo(contract.get("confirmedAt").asText());
-        assertThat(actual.get("orderId").asText()).isEqualTo(sent.key());
+        ConsumerRecord<byte[], byte[]> record = readAt(sent);
+        System.out.printf("[OrderConfirmed 전송 계약] topic=%s, partition=%d, offset=%d%n",
+            sent.topic(), sent.partition(), sent.offset());
+        assertThat(sent.topic()).isEqualTo(TOPIC);
+        assertThat(record.partition()).isEqualTo(sent.partition());
+        assertThat(record.offset()).isEqualTo(sent.offset());
+        assertThat(record.key()).isEqualTo("42".getBytes(StandardCharsets.UTF_8));
+        assertThat(record.value()).isEqualTo(payload.getBytes(StandardCharsets.UTF_8));
     }
 
-    @DisplayName("confirmedAt 끝자리가 0이어도 소수 6자리를 그대로 쓴다. (.120000)")
+    @DisplayName("같은 key·payload를 다시 보내면 같은 partition의 새 offset에 같은 바이트가 실린다. (재발행은 새 record)")
     @Test
-    void keepsTrailingZeros() throws IOException {
-        // act
-        Sent sent = publish(payload42(ZonedDateTime.of(2026, 9, 7, 1, 0, 0, 120_000_000, ZoneOffset.UTC)));
-
-        // assert
-        assertThat(MAPPER.readTree(sent.value()).get("confirmedAt").asText()).isEqualTo("2026-09-07T01:00:00.120000Z");
-    }
-
-    @DisplayName("confirmedAt 소수가 0이어도 .000000을 쓴다.")
-    @Test
-    void keepsZeroFraction() throws IOException {
-        // act
-        Sent sent = publish(payload42(ZonedDateTime.of(2026, 9, 7, 1, 0, 0, 0, ZoneOffset.UTC)));
-
-        // assert
-        assertThat(MAPPER.readTree(sent.value()).get("confirmedAt").asText()).isEqualTo("2026-09-07T01:00:00.000000Z");
-    }
-
-    @DisplayName("다른 시간대로 들어온 같은 순간도 UTC(Z)로 쓴다.")
-    @Test
-    void writesInUtc() throws IOException {
+    void resendGoesToSamePartitionNewOffset() throws IOException {
         // arrange
-        ZonedDateTime seoul = ZonedDateTime.of(2026, 9, 7, 10, 0, 0, 123_456_000, ZoneId.of("Asia/Seoul"));
+        String payload = contractText();
 
         // act
-        Sent sent = publish(payload42(seoul));
+        SentRecord first = publisher.send("43", payload);
+        SentRecord second = publisher.send("43", payload);
 
         // assert
-        assertThat(MAPPER.readTree(sent.value()).get("confirmedAt").asText()).isEqualTo("2026-09-07T01:00:00.123456Z");
+        assertThat(second.partition()).isEqualTo(first.partition());
+        assertThat(second.offset()).isGreaterThan(first.offset());
+        assertThat(readAt(second).value()).isEqualTo(readAt(first).value());
     }
 
-    @DisplayName("전송 결과가 실패로 돌아오면 기다리지 않고 콜백에서 미발행(send_failed)으로 센다. 로그에는 orderId·eventId·topic이 남는다.")
+    @DisplayName("broker 응답이 실패로 돌아오면 원인을 담은 OrderConfirmedSendException이 올라온다. 메시지에 payload는 없다.")
     @Test
     @SuppressWarnings("unchecked")
-    void countsSendFailure() {
+    void sendFailureSurfacesAsException() {
         // arrange
-        ListAppender<ILoggingEvent> logs = new ListAppender<>();
-        Logger logger = (Logger) LoggerFactory.getLogger(OrderConfirmedUnpublished.class);
-        logs.start();
-        logger.addAppender(logs);
-        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         KafkaTemplate<String, String> template = mock(KafkaTemplate.class);
         CompletableFuture<SendResult<String, String>> future = new CompletableFuture<>();
+        IllegalStateException brokerFailure = new IllegalStateException("주입된 broker 실패");
+        future.completeExceptionally(brokerFailure);
         when(template.send(anyString(), anyString(), anyString())).thenReturn(future);
-        KafkaOrderConfirmedPublisher publisher =
-            new KafkaOrderConfirmedPublisher(template, TOPIC, new OrderConfirmedUnpublished(meterRegistry));
 
-        // act — publish는 결과를 기다리지 않고 돌아온다. 그 뒤에 실패가 도착한다.
-        publisher.publish(payload42(ZonedDateTime.of(2026, 9, 7, 1, 0, 0, 0, ZoneOffset.UTC)));
-        double beforeFailure = sendFailed(meterRegistry);
-        future.completeExceptionally(new IllegalStateException("주입된 broker 실패"));
-        logger.detachAppender(logs);
+        // act
+        OrderConfirmedSendException exception = assertThrows(OrderConfirmedSendException.class,
+            () -> new KafkaOrderConfirmedPublisher(template, TOPIC).send("42", "{\"body\":\"payload-body\"}"));
 
         // assert
-        assertThat(beforeFailure).isZero();
-        assertThat(sendFailed(meterRegistry)).isEqualTo(1.0);
-        assertThat(logs.list).singleElement().satisfies(event -> {
-            assertThat(event.getLevel()).isEqualTo(Level.ERROR);
-            assertThat(event.getFormattedMessage())
-                .contains("orderId=42", "eventId=order-confirmed:v1:42", "topic=" + TOPIC);
-        });
+        assertThat(exception.getCause()).isSameAs(brokerFailure);
+        assertThat(exception.getMessage()).contains("topic=" + TOPIC, "key=42").doesNotContain("payload-body");
     }
 
-    private static double sendFailed(SimpleMeterRegistry meterRegistry) {
-        return meterRegistry.get(OrderConfirmedUnpublished.METRIC)
-            .tag(OrderConfirmedUnpublished.REASON_TAG, OrderConfirmedUnpublished.Reason.SEND_FAILED.tagValue())
-            .counter().count();
+    @DisplayName("send() 자체가 던져도(예: max.block 초과) 같은 예외로 올라온다.")
+    @Test
+    @SuppressWarnings("unchecked")
+    void synchronousFailureSurfacesAsException() {
+        // arrange
+        KafkaTemplate<String, String> template = mock(KafkaTemplate.class);
+        RuntimeException blocked = new RuntimeException("metadata 대기 초과");
+        when(template.send(anyString(), anyString(), anyString())).thenThrow(blocked);
+
+        // act
+        OrderConfirmedSendException exception = assertThrows(OrderConfirmedSendException.class,
+            () -> new KafkaOrderConfirmedPublisher(template, TOPIC).send("42", "{}"));
+
+        // assert
+        assertThat(exception.getCause()).isSameAs(blocked);
+    }
+
+    @DisplayName("기다리는 중 인터럽트되면 인터럽트 표시를 되살리고 예외로 올라온다.")
+    @Test
+    @SuppressWarnings("unchecked")
+    void interruptRestoresFlag() {
+        // arrange
+        KafkaTemplate<String, String> template = mock(KafkaTemplate.class);
+        when(template.send(anyString(), anyString(), anyString())).thenReturn(new CompletableFuture<>());
+        Thread.currentThread().interrupt();
+
+        try {
+            // act
+            assertThrows(OrderConfirmedSendException.class,
+                () -> new KafkaOrderConfirmedPublisher(template, TOPIC).send("42", "{}"));
+
+            // assert
+            assertThat(Thread.currentThread().isInterrupted()).isTrue();
+        } finally {
+            Thread.interrupted();
+        }
     }
 }

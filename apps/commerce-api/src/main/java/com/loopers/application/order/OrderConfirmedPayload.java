@@ -13,8 +13,8 @@ import java.util.Objects;
  * OrderConfirmed 이벤트에 실을 사실(docs/week6/design.md 2번 이벤트 계약). 결과 반영 트랜잭션 안에서 처음 확정 직후
  * 만든다 — 같은 트랜잭션이라 이 값이 곧 commit될 값이다(docs/week6/decisions.md D-5, INV-602).
  *
- * - 불변 객체다. afterCommit과 발행 스레드에는 이 객체만 넘기고 entity는 넘기지 않는다 — 발행의 정확성이 다른 파일의
- *   fetch 설정에 달리지 않게 한다.
+ * - 불변 객체다. 7주차부터는 확정 TX 안에서 바로 계약 JSON 문자열로 바꿔 Outbox payload에 저장하고, 그 뒤로는 다시
+ *   만들지 않는다(docs/week7/decisions.md D-1, INV-702). 만드는 곳은 OrderConfirmedOutbox 하나다(D-5, INV-706).
  * - eventId는 orderId로만 정한다(`order-confirmed:v1:{orderId}`). 재발행·재전달에도 그대로다(D-18).
  * - 카드·PG·개인정보는 담지 않는다.
  */
