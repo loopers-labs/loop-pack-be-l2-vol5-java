@@ -15,8 +15,12 @@ import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.domain.user.User;
 import com.loopers.domain.user.UserRepository;
-import com.loopers.infrastructure.order.outbox.OrderConfirmedOutboxAwaitMode;
+import com.loopers.infrastructure.order.outbox.OrderConfirmedOutboxRelayExperiment;
+import com.loopers.infrastructure.order.outbox.OrderConfirmedOutboxRelayExperiment.AwaitMode;
 import com.loopers.infrastructure.order.outbox.OrderConfirmedOutboxAttempt;
+import com.loopers.infrastructure.order.outbox.OrderConfirmedOutboxFailureClassifier;
+import com.loopers.infrastructure.order.outbox.OrderConfirmedKafkaSender;
+import com.loopers.infrastructure.order.outbox.OrderConfirmedOutboxMetrics;
 import com.loopers.infrastructure.order.outbox.OrderConfirmedOutboxRelay;
 import com.loopers.infrastructure.order.outbox.OrderConfirmedOutboxResumeRunner;
 import com.loopers.infrastructure.order.outbox.OrderConfirmedOutboxStateService;
@@ -28,20 +32,26 @@ import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.DefaultApplicationArguments;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
+import org.springframework.context.support.GenericApplicationContext;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -52,6 +62,7 @@ import org.springframework.kafka.config.TopicBuilder;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.KafkaAdmin;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.core.KafkaProducerException;
 import org.springframework.kafka.support.SendResult;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
@@ -62,6 +73,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.ZonedDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -69,8 +81,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -79,6 +97,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -105,6 +124,15 @@ class OrderConfirmedKafkaDeliveryIntegrationTest {
         MutableClock reproductionClock() {
             return new MutableClock(CONFIRMED_AT, ZoneOffset.UTC);
         }
+
+        @Bean(name = "orderConfirmedOutboxCallbackExecutor", destroyMethod = "shutdown")
+        ExecutorService comparisonCallbackExecutor() {
+            return Executors.newSingleThreadExecutor(task -> {
+                Thread thread = new Thread(task, "order-confirmed-outbox-callback-experiment");
+                thread.setDaemon(true);
+                return thread;
+            });
+        }
     }
 
     @Autowired private TestRestTemplate rest;
@@ -119,8 +147,18 @@ class OrderConfirmedKafkaDeliveryIntegrationTest {
     @Autowired private KafkaAdmin kafkaAdmin;
     @Autowired private ConsumerFactory<Object, Object> consumerFactory;
     @Autowired private OrderConfirmedOutboxRelay outboxRelay;
+    @Autowired private OrderConfirmedKafkaSender kafkaSender;
+    @Autowired private OrderConfirmedOutboxFailureClassifier failureClassifier;
+    @Autowired private ApplicationTime applicationTime;
+    @Autowired @Qualifier("orderConfirmedOutboxCallbackExecutor") private Executor callbackExecutor;
+    @Autowired private OrderConfirmedOutboxMetrics outboxMetrics;
     @Autowired private MeterRegistry meterRegistry;
     @Autowired private JdbcTemplate jdbcTemplate;
+    @Value("${order.confirmed-event.relay.batch-size}") private int relayBatchSize;
+    @Value("${order.confirmed-event.relay.max-attempts}") private int relayMaxAttempts;
+    @Value("${order.confirmed-event.relay.retry-interval}") private Duration relayRetryInterval;
+    @Value("${order.confirmed-event.relay.max-block-time}") private Duration relayMaxBlockTime;
+    @Value("${order.confirmed-event.relay.future-timeout}") private Duration relayFutureTimeout;
     @MockitoSpyBean(name = "orderConfirmedOutboxKafkaTemplate")
     private KafkaTemplate<Object, Object> kafkaTemplate;
     @MockitoSpyBean private OrderConfirmedOutboxStateService outboxStateService;
@@ -161,7 +199,8 @@ class OrderConfirmedKafkaDeliveryIntegrationTest {
             String key = invocation.getArgument(1, String.class);
             if (first.orderId().toString().equals(key) && temporaryFailures.getAndIncrement() == 0) {
                 return CompletableFuture.failedFuture(
-                    new org.apache.kafka.common.errors.TimeoutException("통제된 broker 전송 timeout"));
+                    new KafkaProducerException(new ProducerRecord<>(TOPIC, key, invocation.getArgument(2)),
+                        "Failed to send", new org.apache.kafka.common.errors.TimeoutException("통제된 broker 전송 timeout")));
             }
             CompletableFuture<?> future = (CompletableFuture<?>) invocation.callRealMethod();
             sendFutures.put(key, future);
@@ -226,7 +265,8 @@ class OrderConfirmedKafkaDeliveryIntegrationTest {
             sends.incrementAndGet();
             if (fixture.orderId().toString().equals(key) && retryableFailures.getAndDecrement() > 0) {
                 return CompletableFuture.failedFuture(
-                    new org.apache.kafka.common.errors.TimeoutException("통제된 반복 전송 timeout"));
+                    new KafkaProducerException(new ProducerRecord<>(TOPIC, key, invocation.getArgument(2)),
+                        "Failed to send", new org.apache.kafka.common.errors.TimeoutException("통제된 반복 전송 timeout")));
             }
             CompletableFuture<?> future = (CompletableFuture<?>) invocation.callRealMethod();
             successfulSends.put(key, future);
@@ -292,13 +332,59 @@ class OrderConfirmedKafkaDeliveryIntegrationTest {
         assertThat(meterRegistry.get("order_confirmed_outbox.blocked").gauge().value()).isZero();
     }
 
-    @DisplayName("broker 기록 뒤 PUBLISHED 저장이 실패하면 재시작 시 같은 메시지를 다시 발행한다.")
+    @DisplayName("PENDING 대기 시간은 UTC로 저장된 DB 시각 기준으로 계산된다.")
+    @Test
+    void calculatesPendingAgeFromUtcStoredTimestamp() throws Exception {
+        Fixture fixture = requestedOrder();
+        assertThat(TestPgControl.complete(fixture.providerOrderId())).isEqualTo(1);
+        assertThat(reconcile(fixture).getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        outboxMetrics.refresh();
+
+        assertThat(meterRegistry.get("order_confirmed_outbox.pending").gauge().value()).isEqualTo(1D);
+        assertThat(meterRegistry.get("order_confirmed_outbox.oldest_pending_age_seconds").gauge().value())
+            .isBetween(0D, 120D);
+    }
+
+    @DisplayName("KafkaTemplate이 감싼 영구 오류도 원인과 BLOCKED 사유를 구분해 저장한다.")
+    @Test
+    void recordsWrappedPermanentCauseInsteadOfKafkaTemplateWrapper() throws Exception {
+        Fixture fixture = requestedOrder();
+        assertThat(TestPgControl.complete(fixture.providerOrderId())).isEqualTo(1);
+        assertThat(reconcile(fixture).getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<TopicPartition, Long> before = logEnds();
+        doAnswer(invocation -> CompletableFuture.failedFuture(new KafkaProducerException(
+            new ProducerRecord<>(TOPIC, fixture.orderId().toString(), invocation.getArgument(2)), "Failed to send",
+            new org.apache.kafka.common.errors.RecordTooLargeException("controlled broker record limit"))))
+            .when(kafkaTemplate).send(eq(TOPIC), eq(fixture.orderId().toString()), any());
+
+        outboxRelay.runDueBatch();
+
+        assertThat(outbox(fixture.orderId())).satisfies(row -> {
+            assertThat(row.status()).isEqualTo("BLOCKED");
+            assertThat(row.attemptCount()).isEqualTo(1);
+            assertThat(row.lastError()).isEqualTo("RecordTooLargeException: controlled broker record limit");
+        });
+        assertThat(meterRegistry.get("outbox_blocked_transitions_total")
+            .tag("reason", "RecordTooLargeException").counter().count()).isEqualTo(1D);
+        assertThat(logEnds()).isEqualTo(before);
+    }
+
+    @DisplayName("broker 확인 뒤 PUBLISHED 저장이 실패하면 새 Relay 인스턴스가 같은 메시지를 다시 발행한다.")
     @Test
     void republishesSameMessageWhenPublishedStateCommitFails() throws Exception {
         Fixture fixture = requestedOrder();
         assertThat(TestPgControl.complete(fixture.providerOrderId())).isEqualTo(1);
         assertThat(reconcile(fixture).getStatusCode()).isEqualTo(HttpStatus.OK);
         Map<TopicPartition, Long> initialOffsets = logEnds();
+        assertConfirmedWithReservedStock(fixture);
+        OutboxSnapshot originalOutbox = outbox(fixture.orderId());
+        assertThat(originalOutbox).satisfies(row -> {
+            assertThat(row.status()).isEqualTo("PENDING");
+            assertThat(row.attemptCount()).isZero();
+            assertThat(row.cycleAttemptCount()).isZero();
+        });
+        assertThat(logEnds()).isEqualTo(initialOffsets);
         AtomicInteger stateFailures = new AtomicInteger(1);
         List<CompletableFuture<?>> sends = new ArrayList<>();
 
@@ -314,25 +400,35 @@ class OrderConfirmedKafkaDeliveryIntegrationTest {
             return invocation.callRealMethod();
         }).when(outboxStateService).markPublished(any(), any(ZonedDateTime.class));
 
-        outboxRelay.runDueBatch();
+        OrderConfirmedOutboxRelay firstRelay = newRelay();
+        assertThat(firstRelay).isNotSameAs(outboxRelay);
+        firstRelay.runDueBatch();
 
         RecordMetadata firstMetadata = metadata(sends.getFirst());
         assertThat(outbox(fixture.orderId())).satisfies(row -> {
             assertThat(row.status()).isEqualTo("PENDING");
             assertThat(row.attemptCount()).isEqualTo(1);
             assertThat(row.lastError()).isNull();
+            assertThat(row.eventId()).isEqualTo(originalOutbox.eventId());
+            assertThat(row.messageKey()).isEqualTo(originalOutbox.messageKey());
+            assertThat(row.payload()).isEqualTo(originalOutbox.payload());
         });
         assertRecord(fixture, firstMetadata);
         assertThat(logEnds()).containsEntry(new TopicPartition(TOPIC, firstMetadata.partition()), firstMetadata.offset() + 1);
 
         clock.set(CONFIRMED_AT.plusSeconds(7));
-        outboxRelay.runDueBatch();
+        OrderConfirmedOutboxRelay restartedRelay = newRelay();
+        assertThat(restartedRelay).isNotSameAs(firstRelay);
+        restartedRelay.runDueBatch();
 
         RecordMetadata secondMetadata = metadata(sends.getLast());
         assertThat(outbox(fixture.orderId())).satisfies(row -> {
             assertThat(row.status()).isEqualTo("PUBLISHED");
             assertThat(row.attemptCount()).isEqualTo(2);
             assertThat(row.cycleAttemptCount()).isEqualTo(2);
+            assertThat(row.eventId()).isEqualTo(originalOutbox.eventId());
+            assertThat(row.messageKey()).isEqualTo(originalOutbox.messageKey());
+            assertThat(row.payload()).isEqualTo(originalOutbox.payload());
         });
         assertRecord(fixture, secondMetadata);
         assertThat(secondMetadata.offset()).isGreaterThan(firstMetadata.offset());
@@ -340,8 +436,186 @@ class OrderConfirmedKafkaDeliveryIntegrationTest {
         assertThat(sends).hasSize(2);
         assertThat(logEnds().values().stream().mapToLong(Long::longValue).sum()
             - initialOffsets.values().stream().mapToLong(Long::longValue).sum()).isEqualTo(2L);
+        assertThat(TestPgControl.stats(fixture.providerOrderId()).createRequests()).isEqualTo(1);
         logObservation("published-state-retry-first", fixture, firstMetadata);
         logObservation("published-state-retry-second", fixture, secondMetadata);
+    }
+
+    private OrderConfirmedOutboxRelay newRelay() {
+        return newRelay(relayFutureTimeout);
+    }
+
+    private OrderConfirmedOutboxRelay newRelay(Duration futureTimeout) {
+        return new OrderConfirmedOutboxRelay(
+            outboxStateService,
+            kafkaSender,
+            failureClassifier,
+            applicationTime,
+            meterRegistry,
+            outboxMetrics,
+            relayBatchSize,
+            relayMaxAttempts,
+            relayRetryInterval,
+            relayMaxBlockTime,
+            futureTimeout
+        );
+    }
+
+    private OrderConfirmedOutboxRelayExperiment newComparisonRelay(Duration timeout) {
+        return new OrderConfirmedOutboxRelayExperiment(
+            newRelay(timeout), outboxStateService, kafkaSender, failureClassifier, applicationTime,
+            meterRegistry, outboxMetrics, callbackExecutor, relayBatchSize, relayMaxAttempts,
+            relayRetryInterval, relayMaxBlockTime, timeout
+        );
+    }
+
+    @DisplayName("관찰 timeout 뒤 늦게 성공해도 상태를 바꾸지 않고 같은 메시지를 재발행한다.")
+    @ParameterizedTest
+    @EnumSource(AwaitMode.class)
+    void ignoresLateCompletionAfterObservationTimeout(AwaitMode mode) throws Exception {
+        Fixture fixture = requestedOrder();
+        assertThat(TestPgControl.complete(fixture.providerOrderId())).isEqualTo(1);
+        assertThat(reconcile(fixture).getStatusCode()).isEqualTo(HttpStatus.OK);
+        OutboxSnapshot original = outbox(fixture.orderId());
+        List<CompletableFuture<?>> actualSends = new CopyOnWriteArrayList<>();
+        CompletableFuture<SendResult<Object, Object>> heldResult = new CompletableFuture<>();
+        doAnswer(invocation -> {
+            CompletableFuture<?> actual = (CompletableFuture<?>) invocation.callRealMethod();
+            actualSends.add(actual);
+            return actualSends.size() == 1 ? heldResult : actual;
+        }).when(kafkaTemplate).send(eq(TOPIC), eq(fixture.orderId().toString()), any());
+
+        newComparisonRelay(Duration.ofMillis(150)).runDueBatch(mode);
+        awaitOutboxFailure(fixture.orderId());
+        RecordMetadata firstMetadata = metadata(actualSends.getFirst());
+        assertRecord(fixture, firstMetadata);
+        OutboxSnapshot timedOut = outbox(fixture.orderId());
+        assertThat(timedOut.status()).isEqualTo("PENDING");
+        assertThat(timedOut.attemptCount()).isEqualTo(1);
+        assertThat(timedOut.lastError()).contains("TimeoutException");
+
+        @SuppressWarnings("unchecked")
+        SendResult<Object, Object> lateResult = (SendResult<Object, Object>) actualSends.getFirst()
+            .get(DEADLINE.toSeconds(), TimeUnit.SECONDS);
+        heldResult.complete(lateResult);
+        CompletableFuture.runAsync(() -> {}, callbackExecutor).get(DEADLINE.toSeconds(), TimeUnit.SECONDS);
+        assertThat(outbox(fixture.orderId())).isEqualTo(timedOut);
+
+        clock.set(nextAttemptAt(fixture.orderId()).toInstant());
+        newComparisonRelay(relayFutureTimeout).runDueBatch(mode);
+        awaitOutboxStatus(fixture.orderId(), "PUBLISHED");
+        RecordMetadata secondMetadata = metadata(actualSends.getLast());
+        assertRecord(fixture, secondMetadata);
+        assertThat(secondMetadata.partition()).isEqualTo(firstMetadata.partition());
+        assertThat(secondMetadata.offset()).isGreaterThan(firstMetadata.offset());
+        assertThat(actualSends).hasSize(2);
+        assertThat(outbox(fixture.orderId())).satisfies(row -> {
+            assertThat(row.attemptCount()).isEqualTo(2);
+            assertThat(row.eventId()).isEqualTo(original.eventId());
+            assertThat(row.messageKey()).isEqualTo(original.messageKey());
+            assertThat(row.payload()).isEqualTo(original.payload());
+        });
+        log.info("OUTBOX_LATE_ACK mode={} firstOffset={} secondOffset={} eventId={}",
+            mode, firstMetadata.offset(), secondMetadata.offset(), original.eventId());
+    }
+
+    @DisplayName("종료 신호 뒤 producer 오류는 PENDING을 보존하고 새 Relay가 다시 발행한다.")
+    @ParameterizedTest
+    @EnumSource(AwaitMode.class)
+    void keepsPendingWhenProducerFailsDuringShutdown(AwaitMode mode) throws Exception {
+        Fixture fixture = requestedOrder();
+        assertThat(TestPgControl.complete(fixture.providerOrderId())).isEqualTo(1);
+        assertThat(reconcile(fixture).getStatusCode()).isEqualTo(HttpStatus.OK);
+        List<CompletableFuture<?>> actualSends = new CopyOnWriteArrayList<>();
+        CountDownLatch sendStarted = new CountDownLatch(1);
+        CompletableFuture<SendResult<Object, Object>> heldResult = new CompletableFuture<>();
+        doAnswer(invocation -> {
+            CompletableFuture<?> actual = (CompletableFuture<?>) invocation.callRealMethod();
+            actualSends.add(actual);
+            sendStarted.countDown();
+            return actualSends.size() == 1 ? heldResult : actual;
+        }).when(kafkaTemplate).send(eq(TOPIC), eq(fixture.orderId().toString()), any());
+        OrderConfirmedOutboxRelayExperiment firstRelay = newComparisonRelay(relayFutureTimeout);
+        RecordMetadata firstMetadata;
+        try (GenericApplicationContext lifecycle = new GenericApplicationContext();
+             ExecutorService execution = Executors.newSingleThreadExecutor()) {
+            lifecycle.registerBean(OrderConfirmedOutboxRelayExperiment.class, () -> firstRelay);
+            lifecycle.refresh();
+            Future<Boolean> invocation = execution.submit(() -> firstRelay.runDueBatch(mode));
+            assertThat(sendStarted.await(DEADLINE.toSeconds(), TimeUnit.SECONDS)).isTrue();
+            firstMetadata = metadata(actualSends.getFirst());
+            assertRecord(fixture, firstMetadata);
+            lifecycle.close();
+            heldResult.completeExceptionally(new IllegalStateException(
+                "Cannot perform operation after producer has been closed"));
+            assertThat(invocation.get(DEADLINE.toSeconds(), TimeUnit.SECONDS)).isTrue();
+            CompletableFuture.runAsync(() -> {}, callbackExecutor).get(DEADLINE.toSeconds(), TimeUnit.SECONDS);
+            assertThat(outbox(fixture.orderId())).satisfies(row -> {
+                assertThat(row.status()).isEqualTo("PENDING");
+                assertThat(row.attemptCount()).isEqualTo(1);
+                assertThat(row.lastError()).isNull();
+            });
+            assertThat(firstRelay.runDueBatch(mode)).isFalse();
+        }
+
+        clock.set(nextAttemptAt(fixture.orderId()).toInstant());
+        newComparisonRelay(relayFutureTimeout).runDueBatch(mode);
+        awaitOutboxStatus(fixture.orderId(), "PUBLISHED");
+        RecordMetadata secondMetadata = metadata(actualSends.getLast());
+        assertRecord(fixture, secondMetadata);
+        assertThat(secondMetadata.partition()).isEqualTo(firstMetadata.partition());
+        assertThat(secondMetadata.offset()).isGreaterThan(firstMetadata.offset());
+        assertThat(outbox(fixture.orderId()).attemptCount()).isEqualTo(2);
+    }
+
+    @DisplayName("TX1 commit 뒤 send 전 중단이 세 번 누적되면 네 번째 send 없이 BLOCKED가 된다.")
+    @Test
+    void blocksAfterThreeCommittedAttemptsStoppedBeforeSend() throws Exception {
+        Fixture fixture = requestedOrder();
+        assertThat(TestPgControl.complete(fixture.providerOrderId())).isEqualTo(1);
+        assertThat(reconcile(fixture).getStatusCode()).isEqualTo(HttpStatus.OK);
+        String eventId = outbox(fixture.orderId()).eventId();
+        Map<TopicPartition, Long> before = logEnds();
+        for (int count = 1; count <= 3; count++) {
+            var started = outboxStateService.beginAttempt(eventId, applicationTime.now(),
+                relayMaxBlockTime.plus(relayFutureTimeout), relayMaxAttempts);
+            assertThat(started.kind()).isEqualTo(OrderConfirmedOutboxStateService.BeginAttemptKind.STARTED);
+            assertThat(outbox(fixture.orderId()).attemptCount()).isEqualTo(count);
+            assertThat(outbox(fixture.orderId()).status()).isEqualTo("PENDING");
+            clock.set(nextAttemptAt(fixture.orderId()).toInstant());
+        }
+
+        newRelay().runDueBatch();
+
+        assertThat(outbox(fixture.orderId())).satisfies(row -> {
+            assertThat(row.status()).isEqualTo("BLOCKED");
+            assertThat(row.attemptCount()).isEqualTo(3);
+            assertThat(row.cycleAttemptCount()).isEqualTo(3);
+        });
+        verify(kafkaTemplate, never()).send(eq(TOPIC), eq(fixture.orderId().toString()), any());
+        assertThat(logEnds()).isEqualTo(before);
+    }
+
+    @DisplayName("반례: send 전에 PUBLISHED를 저장하면 재실행해도 누락 record를 발행하지 못한다.")
+    @Test
+    void showsMissingRecordWhenPublishedIsStoredBeforeSend() throws Exception {
+        Fixture fixture = requestedOrder();
+        assertThat(TestPgControl.complete(fixture.providerOrderId())).isEqualTo(1);
+        assertThat(reconcile(fixture).getStatusCode()).isEqualTo(HttpStatus.OK);
+        String eventId = outbox(fixture.orderId()).eventId();
+        Map<TopicPartition, Long> before = logEnds();
+        var started = outboxStateService.beginAttempt(eventId, applicationTime.now(),
+            relayMaxBlockTime.plus(relayFutureTimeout), relayMaxAttempts);
+
+        // 잘못된 순서를 테스트 안에서만 실행한다. broker 전송 없이 상태부터 commit하고 다음 send를 생략한다.
+        assertThat(outboxStateService.markPublished(started.attempt(), applicationTime.now())).isTrue();
+        newRelay().runDueBatch();
+
+        assertThat(outbox(fixture.orderId()).status()).isEqualTo("PUBLISHED");
+        verify(kafkaTemplate, never()).send(eq(TOPIC), eq(fixture.orderId().toString()), any());
+        assertThat(logEnds()).isEqualTo(before);
+        assertThat(TestPgControl.stats(fixture.providerOrderId()).createRequests()).isEqualTo(1);
+        log.info("OUTBOX_WRONG_ORDER eventId={} outbox=PUBLISHED newBrokerRecords=0 relayRecovery=false", eventId);
     }
 
     @DisplayName("제한 시간 대기와 callback은 같은 broker 결과를 PUBLISHED로 반영한다.")
@@ -366,7 +640,7 @@ class OrderConfirmedKafkaDeliveryIntegrationTest {
             return actual;
         }).when(kafkaTemplate).send(eq(TOPIC), anyString(), any());
 
-        assertThat(outboxRelay.runDueBatch(OrderConfirmedOutboxAwaitMode.BOUNDED_WAIT)).isTrue();
+        assertThat(outboxRelay.runDueBatch()).isTrue();
         RecordMetadata boundedMetadata = metadata(actualSends.getFirst());
         assertThat(outbox(boundedWaitFixture.orderId()).status()).isEqualTo("PUBLISHED");
         assertRecord(boundedWaitFixture, boundedMetadata);
@@ -384,9 +658,10 @@ class OrderConfirmedKafkaDeliveryIntegrationTest {
             return invocation.callRealMethod();
         }).when(outboxStateService).markPublished(any(), any(ZonedDateTime.class));
 
-        assertThat(outboxRelay.runDueBatch(OrderConfirmedOutboxAwaitMode.CALLBACK)).isTrue();
+        OrderConfirmedOutboxRelayExperiment callbackRelay = newComparisonRelay(relayFutureTimeout);
+        assertThat(callbackRelay.runDueBatch(AwaitMode.CALLBACK)).isTrue();
         assertThat(outbox(callbackFixture.orderId()).status()).isEqualTo("PENDING");
-        assertThat(outboxRelay.runDueBatch(OrderConfirmedOutboxAwaitMode.CALLBACK)).isFalse();
+        assertThat(callbackRelay.runDueBatch(AwaitMode.CALLBACK)).isFalse();
 
         SendResult<Object, Object> callbackResult = heldAcknowledgement.get().get(DEADLINE.toSeconds(), TimeUnit.SECONDS);
         deferred.complete(callbackResult);
@@ -543,6 +818,22 @@ class OrderConfirmedKafkaDeliveryIntegrationTest {
             Thread.sleep(25L);
         }
         assertThat(outbox(orderId).status()).isEqualTo(expectedStatus);
+    }
+
+    private void awaitOutboxFailure(Long orderId) throws InterruptedException {
+        long deadline = System.nanoTime() + DEADLINE.toNanos();
+        while (System.nanoTime() < deadline) {
+            if (outbox(orderId).lastError() != null) {
+                return;
+            }
+            Thread.sleep(25L);
+        }
+        assertThat(outbox(orderId).lastError()).isNotNull();
+    }
+
+    private ZonedDateTime nextAttemptAt(Long orderId) {
+        return jdbcTemplate.queryForObject("SELECT next_attempt_at FROM order_confirmed_outbox WHERE order_id = ?",
+            (row, index) -> row.getObject("next_attempt_at", LocalDateTime.class).atZone(ZoneOffset.UTC), orderId);
     }
 
     private Map<TopicPartition, Long> logEnds() {

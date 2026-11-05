@@ -16,6 +16,8 @@ TX B는 주문 확정과 전달할 메시지를 Outbox에 함께 저장한다. R
 2. `confirmedAt`은 최초 PG 성공 TX B에서 마이크로초로 자른 시각을 주문 상태와 함께 저장하고, 중복 callback·reconcile에서 바꾸지 않는다. 발행·처리 시각을 넣지 않는다.
 3. `items`는 주문 생성 때 상품별로 합산된 스냅샷을 `productId` 오름차순으로 정렬한다.
 
+저장된 품목이 하나도 없는 주문은 복구할 원본 사실이 부족한 것으로 처리한다. 이벤트 생성 단계에서 거절해 빈 품목 메시지가 Outbox와 broker로 넘어가지 않게 한다.
+
 `OrderConfirmedMessageV1`은 application 계층에서 구성하는 내부 메시지 계약이다. V2 명세가 생기면 별도 DTO와 serializer 경로를 추가한다. 다른 앱의 DTO를 import하거나 비즈니스 DTO를 공통 Kafka 모듈로 옮기지 않는다.
 
 ## 발행 조건
@@ -39,9 +41,9 @@ Relay는 짧은 DB TX로 기한이 된 행을 조회하고 시도 횟수를 기�
 
 ## 전송 결과와 실패
 
-Relay는 Kafka `send()`가 반환하는 `CompletableFuture`의 성공으로 broker 확인을 판단한다. 현재 기본 모드는 제한 시간 동안 결과를 기다리는 `BOUNDED_WAIT`다. 전송 worker 안에서 결과를 확인하고 성공 상태를 갱신하므로 처리 흐름과 실패 전이를 따라가기 쉽다.
+Relay는 KafkaTemplate `send()`가 반환하는 `CompletableFuture`의 성공으로 broker 확인을 판단한다. 제품은 제한 시간 동안 결과를 기다리는 `BOUNDED_WAIT`만 사용한다. 전송 worker 안에서 결과를 확인하고 성공 상태를 갱신하므로 처리 흐름과 실패 전이를 따라가기 쉽다.
 
-`CALLBACK` 비교 모드도 구현한다. Future 완료 뒤 상태 저장을 전용 단일 executor로 넘기고, 완료까지 Relay 실행 표시를 유지해 스케줄러 tick이 겹쳐도 중복 실행을 시작하지 않는다. 같은 직렬 Relay에서 callback은 다음 메시지를 병렬로 보내지 않으므로 처리량 이득이 없고 생명주기 처리가 늘어난다. 비교 테스트는 callback Future를 통제해 반환 순서를 확인하며 실제 네트워크 지연 성능 비교로 해석하지 않는다.
+`CALLBACK` 비교 구현은 테스트 전용 `OrderConfirmedOutboxRelayExperiment`에 보존한다. Future 완료 뒤 상태 저장을 전용 단일 executor로 넘기고, 완료까지 실행 표시를 유지한다. 제품에는 callback executor나 await-mode 설정을 두지 않는다. 비교 테스트의 BOUNDED_WAIT는 실제 제품 Relay를 사용하며, 통제된 Future의 반환 순서를 실제 네트워크 지연 성능 비교로 해석하지 않는다.
 
 | 결과 | Outbox 처리 |
 | --- | --- |
@@ -49,8 +51,11 @@ Relay는 Kafka `send()`가 반환하는 `CompletableFuture`의 성공으로 brok
 | 일시 전송 실패·timeout | 같은 행을 `PENDING`으로 유지하고 오류·다음 시각 기록. 결과가 불확실하면 broker에 record가 남았을 수도 있음 |
 | broker 성공 뒤 상태 TX 실패 | `PENDING`이 남으면 같은 메시지를 재발행할 수 있음 |
 | 지원하지 않는 형식 등 영구 오류 | `BLOCKED`로 남기고 자동 전송을 멈춤. 다른 행 처리는 계속한다. |
+| 애플리케이션 종료 신호 뒤 도착한 성공·실패 결과 | TX1의 `PENDING`을 보존하고 새 프로세스가 같은 행을 다시 처리. 종료 중에는 새 Relay 실행·send를 시작하지 않음 |
 
-- 첫 send가 시도 1회다. 현재 설정은 한 재시도 주기에서 총 세 번 시도한 뒤 `BLOCKED`로 전환한다. 담당자가 원인을 해결하면 같은 행을 수동 재개하고, 누적 attemptCount는 유지하되 주기 횟수만 초기화한다.
+종료 여부는 `ContextClosedEvent`로 판단한다. producer 종료가 일반 `IllegalStateException`으로 전달돼도 종료 중인 시도는 `BLOCKED`로 격리하지 않는다. 종료 신호가 없는 예외에는 기존 분류를 적용한다.
+
+- TX1에서 발행 시도를 시작할 때 1회를 기록하므로 send 전 중단도 횟수에 포함된다. 현재 설정은 한 재시도 주기에서 총 세 번 시도한 뒤 `BLOCKED`로 전환한다. 담당자가 원인을 해결하면 같은 행을 수동 재개하고, 누적 attemptCount는 유지하되 주기 횟수만 초기화한다.
 - 일시 실패 행은 재시도 시각 전까지 대기한다. 세 번째 실패로 `BLOCKED`가 되면 같은 묶음의 다음 이벤트를 처리한다. 제한 대기 중인 행은 현재 회차를 끝내고 다음 tick에서 다시 처리한다.
 - 실패나 timeout만으로 broker record의 부재를 단정하지 않는다. PUBLISHED는 broker 성공을 Relay가 확인하고 DB에 기록했다는 뜻이며, Consumer의 구매 활동 완료를 뜻하지 않는다.
 - 주문·Outbox의 일관성을 잃지 않도록 Relay 재시도는 새 eventId를 만들지 않는다. 기록된 payload·key를 그대로 사용한다.
@@ -85,7 +90,7 @@ Outbox는 broker가 영구적으로 접근 불가능한 상황, payload 호환�
 
 ### 운영 조회와 알림
 
-Relay는 `order_confirmed_outbox.pending`, `order_confirmed_outbox.blocked`, `order_confirmed_outbox.oldest_pending_age_seconds` gauge와 `outbox_blocked_transitions_total` counter를 제공한다. Grafana에서는 backlog와 장기 대기를 대시보드로 보고, 새로운 `BLOCKED` 전환과 장기 대기를 Slack 알림으로 연결한다. `BLOCKED` 현재 건수는 미해결 작업의 규모를 나타내며, 전환 counter는 새로 막힌 시점을 찾는 용도다. 애플리케이션이 Slack webhook을 직접 호출하지 않는다.
+Relay는 `order_confirmed_outbox.pending`, `order_confirmed_outbox.blocked`, `order_confirmed_outbox.oldest_pending_age_seconds` gauge와 `outbox_blocked_transitions_total` counter를 제공한다. Grafana 대시보드에서는 대기 중인 행·가장 오래 기다린 시간·현재 `BLOCKED` 행을 확인하고, 새 `BLOCKED` 전환만 Slack 알림으로 보낸다. `BLOCKED` 현재 건수는 미해결 작업의 규모를 나타내며, 전환 counter는 새로 막힌 시점을 찾는 용도다. 장기 대기는 대시보드와 SQL로 확인한다. 애플리케이션이 Slack webhook을 직접 호출하지 않는다.
 
 SQL로 행과 오류를 확인할 때는 다음 조회를 사용한다.
 

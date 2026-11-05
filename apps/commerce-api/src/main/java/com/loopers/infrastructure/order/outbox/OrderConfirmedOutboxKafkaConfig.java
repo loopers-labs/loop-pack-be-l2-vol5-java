@@ -28,6 +28,6 @@ public class OrderConfirmedOutboxKafkaConfig {
         overrides.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, Math.toIntExact(requestTimeout.toMillis()));
         overrides.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, Math.toIntExact(deliveryTimeout.toMillis()));
         overrides.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, Math.toIntExact(maxBlockTime.toMillis()));
-        return new KafkaTemplate<>(sharedProducerFactory.copyWithConfigurationOverride(overrides));
+        return new KafkaTemplate<>(sharedProducerFactory, overrides);
     }
 }

@@ -43,6 +43,8 @@ Outbox `payload`는 MySQL `TEXT`에 JSON 문자열로 저장한다. 최대 크�
 
 전용 `KafkaTemplate`은 공통 `ProducerFactory`를 기반으로 만들고, 템플릿별 ProducerConfig override에 `StringSerializer`와 Relay timeout을 지정한다. `acks=all`·멱등성·재시도·broker 주소는 공통 설정을 따르고, 별도 `ProducerFactory` bean은 등록하지 않는다. Kafka client 멱등성은 producer 내부 재시도의 중복을 줄이지만 Relay가 다시 `send()`하거나 producer가 재시작된 뒤 재발행한 record까지 합치지 않는다. Consumer Inbox는 계속 필요하다.
 
+factory를 밖에서 복사해 넘기지 않고 `new KafkaTemplate<>(sharedProducerFactory, overrides)`를 사용한다. Template이 전용 복사본의 소유권을 가져 종료 시 정리하고, 공통 factory는 정리하지 않는다. 종료 소유권은 별도 테스트로 확인한다.
+
 테스트에서는 실제 Kafka record value가 wrapper 문자열 없이 JSON 객체 바이트로 저장되는지, `acks`·멱등성·serializer·timeout 설정이 적용되는지 확인한다.
 
 ## 확정 트랜잭션
@@ -82,7 +84,7 @@ flowchart LR
 
 Relay는 현재 주문·상품을 다시 조회하지 않는다. 재발행 때도 저장된 `messageKey`와 `payload`를 그대로 쓴다.
 
-`lastError`에는 예외 유형과 정제된 메시지만 저장하고 500자로 제한한다. payload·key·헤더·민감정보는 넣지 않는다. 전체 stack trace는 애플리케이션 로그에만 남긴다.
+`lastError`에는 원인 체인의 가장 안쪽 예외 유형과 정제된 메시지만 저장하고 500자로 제한한다. KafkaTemplate의 `KafkaProducerException` wrapper 메시지로 원인을 대체하지 않는다. 영구 오류의 BLOCKED reason도 같은 원인 유형을 사용하며, 시도 소진으로 차단한 reason은 `ATTEMPTS_EXHAUSTED`를 유지한다. payload·key·헤더·민감정보는 넣지 않는다. 전체 stack trace는 애플리케이션 로그에만 남긴다.
 
 ## Relay 실행 방식
 
@@ -115,13 +117,17 @@ TX1은 먼저 현재 주기 시도가 이미 3회인지 확인해, 결과 저장
 
 두 방식 모두 해당 행의 상태 갱신이 끝날 때까지 Relay 실행 가드를 유지한다. `whenComplete` 등록 메서드가 반환되는 즉시 가드를 풀면 다음 실행이 같은 행을 선택할 수 있으므로 callback 완료와 다음 실행의 순서를 시험한다.
 
-비교 테스트에서는 `PUBLISHED` 저장 시점, timeout 뒤 재발행 identity, send 대기 중 DB 트랜잭션 유무, 실제 broker record와 Consumer 업무 결과를 확인한다.
+비교 테스트에서는 `PUBLISHED` 저장 시점, timeout 뒤 재발행 identity, send 대기 중 DB 트랜잭션 유무와 실제 broker record를 확인한다. Consumer 업무 결과는 별도 책임 테스트와 실제 주문 API부터 연결한 E2E에서 확인한다.
+
+늦은 완료 시험은 실제 Kafka send 결과와 Relay가 관찰하는 Future를 분리한다. broker record는 실제로 저장하되 Relay 관찰 Future를 보류해 150ms의 테스트 제한 시간을 넘긴다. 두 방식 모두 `PENDING`·시도 1을 남기고, 뒤늦게 완료시켜도 상태가 바뀌지 않아야 한다. 새 Relay가 저장된 다음 시도 시각부터 같은 key·payload를 다시 보내면 별도 offset과 최종 `PUBLISHED`·시도 2를 확인한다. 이 실험은 관찰 지연을 제어하며 네트워크 지연을 재현하지 않는다.
 
 결과 대기 후보는 `request.timeout.ms=2초`, `delivery.timeout.ms=5초`, `max.block.ms=1초`, Future 관찰 시간 6초다. 비교용 값이며 운영 값은 아니다. `delivery.timeout.ms >= request.timeout.ms + linger.ms`를 만족해야 한다. 한 번의 최대 대기 예산은 `max.block.ms`와 Future 관찰 시간을 합해 계산하고, TX1의 `nextAttemptAt`도 그 이후로 둔다.
 
-두 방식을 실제 Kafka 통합 테스트에서 비교했다. 제한 대기 방식은 broker ack와 `PUBLISHED` 저장 뒤 호출을 반환했다. callback 방식은 ack 전에 호출을 반환했지만 실행 가드는 callback 완료까지 유지해야 했고, 이후 send와 상태 갱신도 같은 직렬 흐름에 묶였다. 단일 Relay에서는 처리량 이득이 확인되지 않았다.
+두 방식을 실제 Kafka 통합 테스트에서 비교했다. 제한 대기 방식은 broker 결과와 `PUBLISHED` 저장 뒤 호출을 반환했다. callback 경로는 Relay가 관찰하는 Future를 보류해 호출이 먼저 반환되는 것을 확인했다. 실제 broker ack의 네트워크 지연을 측정한 것은 아니다. 실행 가드는 callback 완료까지 유지해야 했고, 이후 send와 상태 갱신도 같은 직렬 흐름에 묶였다. 이 비교로 단일 Relay의 처리량 이득을 주장하지 않는다.
 
-기본 방식은 `BOUNDED_WAIT`로 정했다. Relay 스케줄러에서 제한 시간만 기다린 뒤 같은 실행 흐름에서 상태 TX를 처리하므로 순서가 분명하고, Kafka 완료 callback에 DB 갱신을 연결하는 실행 관리가 필요 없다. `future-timeout`은 6초, `max-block-time`은 1초이며 TX1은 두 값을 더한 최대 대기 예산 뒤로 `nextAttemptAt`을 둔다. 이 값은 현재 로컬 설정과 테스트 기준이다. 운영 환경에서는 broker 지연과 Relay 주기를 관찰해 조정한다.
+제품 Relay는 `BOUNDED_WAIT`만 사용한다. CALLBACK 실행 코드·executor·await-mode 제품 설정은 제거하고, 비교 구현은 `src/test/java`의 `OrderConfirmedOutboxRelayExperiment`에 둔다. 비교 테스트의 BOUNDED_WAIT 경로는 실제 제품 Relay에 위임하므로 두 방식의 반환 순서·늦은 완료·종료 검증을 유지한다.
+
+Relay 스케줄러에서 제한 시간만 기다린 뒤 같은 실행 흐름에서 상태 TX를 처리하므로 순서가 분명하고, Kafka 완료 callback에 DB 갱신을 연결하는 제품 실행 관리가 필요 없다. `future-timeout`은 6초, `max-block-time`은 1초이며 TX1은 두 값을 더한 최대 대기 예산 뒤로 `nextAttemptAt`을 둔다. 이 값은 현재 로컬 설정과 테스트 기준이다. 운영 환경에서는 broker 지연과 Relay 주기를 관찰해 조정한다.
 
 ## 재시도·운영 재개 정책
 
@@ -144,6 +150,8 @@ stateDiagram-v2
 | Kafka send·결과 대기 중 원인을 분류할 수 없는 예외 | 안전하게 재시도 가능하다고 가정하지 않고 즉시 `BLOCKED`로 바꾼다. 원인은 `lastError`에 남긴다. |
 | 종료 중 발생한 interrupt 또는 producer 종료 오류 | `BLOCKED`로 분류하지 않는다. 행은 `PENDING`에 두고 TX1에서 정한 시각 이후 다시 처리한다. |
 
+Relay는 Spring `ContextClosedEvent`를 받으면 새 실행·다음 send를 시작하지 않는다. 이미 시작한 send의 성공·실패가 종료 신호 뒤 도착하면 상태 저장을 시도하지 않고 TX1의 `PENDING`을 보존한다. 따라서 producer 종료가 `IllegalStateException`으로 전달돼도 미해결 영구 오류로 격리하지 않는다. 종료 신호가 없는 일반 예외에는 기존 오류 분류를 적용한다. 두 결과 대기 방식에서 종료 이벤트 → producer 종료 오류 → 새 Relay 재발행을 검증한다.
+
 Outbox 상태 저장 TX 자체가 실패하면 상태 전이는 commit되지 않는다. 기존 `PENDING`을 유지하고 로그로 오류를 남긴 뒤, 저장된 `nextAttemptAt` 이후 다시 조회한다. 이는 Kafka send 결과의 오류 분류와 별개다.
 
 재시도 간격은 초기값 5초로 두고 점증시키지 않는다. 테스트와 운영 설정은 분리한다. `BLOCKED`는 완료가 아니라 운영 확인이 필요한 미해결 전달이다. 원인을 해결한 담당자가 같은 행을 재개하면 상태는 `PENDING`, `nextAttemptAt`은 현재 시각, `cycleAttemptCount`는 0이 된다. 전체 `attemptCount`와 `eventId`·key·payload는 유지한다. 재개 시각과 직전 오류는 로그로 추적한다. 재개는 대상 `eventId` 목록을 받아 여러 행을 한 번에 처리할 수 있다.
@@ -156,10 +164,12 @@ Consumer에서 같은 `eventId`의 처리를 확인해도 Outbox 상태는 바�
 
 Relay는 회차 시작·종료 때 집계 쿼리로 `PENDING` 수, `BLOCKED` 수, 가장 오래된 `PENDING.createdAt`을 읽어 메모리에 둔다. Micrometer gauge는 이 값을 사용하므로 scrape 때 DB를 조회하지 않는다. 대기 시간은 scrape 시각에서 저장된 `createdAt`을 빼 계산한다. 따라서 Relay가 멈춰도 오래된 `PENDING`의 대기 시간은 계속 커진다. `PENDING`이 없으면 대기 시간은 0이다.
 
+집계에는 `WHERE status IN ('PENDING', 'BLOCKED')`를 적용해 보존 중인 PUBLISHED 행을 대상에서 제외한다. 기존 `(status, next_attempt_at)` 인덱스의 상태 조건을 활용할 수 있으며, 실제 MySQL 테스트에서 발행 완료 이력과 소수 미해결 행을 함께 두고 실행 계획과 지표 값을 확인한다. 미해결 행이 없으면 수와 대기 시간 모두 0이다.
+
 | 지표 | 알려 주는 것 |
 | --- | --- |
 | `PENDING` 수 (gauge) | 발행 backlog |
-| 가장 오래된 `PENDING`의 대기 시간 (gauge, `createdAt` 기준) | 장기 미발행. 임계값을 넘으면 Grafana가 Slack 알림에 사용 |
+| 가장 오래된 `PENDING`의 대기 시간 (gauge, `createdAt` 기준) | 장기 미발행. Grafana 대시보드에서 지연을 확인하고 SQL로 원인을 조회 |
 | `BLOCKED` 수 (gauge) | 담당자 확인이 필요한 현재 행 수. 대시보드·운영 조회용 |
 | `outbox_blocked_transitions_total` 증가 | 새로 `BLOCKED`로 전환된 행이 있음. Grafana가 Slack 알림에 사용 |
 
@@ -262,7 +272,7 @@ Relay의 대상 조회와 시도 시각 계산에는 같은 주입 Clock을 사�
 
 실제 Consumer는 `commerce-streamer` bootJar를 자식 프로세스로 띄운다. 두 앱을 한 클래스패스에 합치지 않아 component scan·설정 충돌을 피하고, commerce-api에서 commerce-streamer로 제품 의존성을 추가하지 않는다. fixture 주소·topic·group은 실행 인자로 전달한다.
 
-테스트는 `AdminClient`로 업무 Consumer group의 partition 배정을 확인하고 committed offset으로 소비 완료를 판단한다. commerce-api는 테스트 안에서 실행해 Relay 회차와 중단 hook을 제어한다. 준비·복구·재실행·결과 확인은 같은 테스트에서 이어가며, 그 사이 DB·Kafka·PG를 초기화하지 않는다. Relay는 새 실행 흐름으로 재생성하되 같은 DB·Kafka를 사용한다. 모든 확인이 끝난 뒤 테스트가 시작한 프로세스와 fixture만 정리한다.
+격리 실행 도구는 Kafka CLI로 실제 broker record·partition·offset과 업무 Consumer group의 committed offset을 조회한다. API·Consumer 모두 별도 앱 프로세스이고, 실행 인자로 fixture와 topic·group을 연결한다. 준비·복구·재실행·결과 확인은 한 실행에서 이어가며, 그 사이 DB·Kafka·PG를 초기화하지 않는다. 모든 확인이 끝난 뒤 자신이 시작한 프로세스와 fixture만 정리한다.
 
 ## 누락 이벤트 복구 검증
 
@@ -284,17 +294,17 @@ flowchart LR
   FACTS --> BACKFILL --> RELAY --> KAFKA --> CONSUMER --> RESULT
 ```
 
-준비에는 Outbox가 없는 기준 커밋 `c0806007aca993de80c7e2c70a6ec2b87b3b8089`의 `commerce-api` bootJar를 사용한다. 이 버전은 주문 확정 뒤 `@TransactionalEventListener(AFTER_COMMIT)`에서 직접 발행한다. 기준 버전이나 제품 코드에 우회 스위치는 추가하지 않는다.
+준비에는 Outbox가 없는 기준 커밋 `c0806007aca993de80c7e2c70a6ec2b87b3b8089`을 임시 디렉터리에 추출해 빌드한 `commerce-api` bootJar를 사용한다. 이 버전은 주문 확정 뒤 `@TransactionalEventListener(AFTER_COMMIT)`에서 직접 발행한다. 임시 복사본에만 테스트 latch를 넣고 제품 코드에는 중단 스위치를 추가하지 않는다.
 
-1. 격리 topic의 `max.message.bytes`를 1바이트로 설정하고 준비용 앱에서 주문 A를 확정한다. broker가 발행을 거절해도 주문은 `CONFIRMED`이며 Kafka record·Inbox·구매 활동은 0건이어야 한다. 이 재현은 프로세스 강제 종료가 아니라 commit 이후의 발행 실패를 만든다.
-2. topic 제한을 정상 크기로 복구하고 같은 앱에서 주문 B를 확정해 실제 발행과 Consumer 처리를 완료한다.
-3. 준비용 앱을 종료하고 새 DB 조회로 두 주문이 `CONFIRMED`·예약 소비·Outbox 없음이고 A만 구매 활동이 없는지 확인한다. `orderId`, `eventId`, `confirmedAt`, 품목, PG create 수와 외부 거래 수를 기록한다.
+1. 주문 A의 확정 commit과 이벤트 생성 뒤 `KafkaTemplate.send()` 직전에 테스트 latch로 대기한다. 새 DB·broker 조회로 `CONFIRMED`, Outbox·Kafka record·Inbox·구매 활동 0건을 확인한 뒤 해당 API 프로세스를 종료한다. 정상 종료 제한 5초를 넘으면 그 격리 프로세스만 강제 종료하며 실제 종료 방식을 관찰값에 남긴다.
+2. 같은 DB·broker·PG에서 latch를 활성화하지 않은 기준 앱을 다시 띄워 주문 B의 발행과 Consumer 처리를 완료한다.
+3. 준비용 앱을 종료하고 두 주문의 `orderId`, `eventId`, `confirmedAt`, 품목, PG create 수와 외부 거래 수를 기록한다. 지정된 send 직전 경계에서 제어한 종료이며 임의 OS 장애·네트워크 유실 시험으로 표현하지 않는다.
 4. 같은 자원에서 A·B를 대상으로 Outbox 복구를 실행한다.
 
 복구는 대상 `orderId` 목록을 받는 로컬 운영 경로다. 주문별로 짧은 TX에서 저장된 확정 사실을 확인하고, 확정 당시와 같은 Application 코드로 `eventId`·`confirmedAt`·품목을 구성한다.
 
 - 주문이 `CONFIRMED`가 아니거나 `confirmedAt`·품목이 없으면 해당 주문은 오류로 남긴다.
-- 같은 `eventId`의 Outbox가 없으면 `PENDING`으로 추가한다. 이미 있으면 key·payload가 같은지 확인하고, 다르면 충돌로 처리한다. 동시 insert가 유일 제약에 걸리면 트랜잭션이 rollback된 뒤 같은 대상의 복구를 다시 실행해 기존 행의 내용을 확인한다.
+- 같은 `eventId`의 Outbox가 없으면 `PENDING`으로 추가한다. 이미 있으면 key·payload가 같은지 확인하고, 다르면 충돌로 처리한다. 동시 insert의 유일 제약 충돌은 자동 재시도하지 않고 해당 실행을 실패시킨다. 담당자는 rollback을 확인한 뒤 같은 대상을 수동 재실행해 기존 행의 내용을 확인한다.
 - 복구는 주문·결제·예약을 변경하지 않는다. PG create·조회·callback도 추가 호출하지 않는다.
 - Relay와 실제 Consumer를 실행해 A의 구매 활동이 생기고 B의 활동은 변하지 않는지 확인한다. 같은 복구를 다시 실행해도 Outbox와 구매 활동은 늘지 않아야 한다.
 
@@ -311,8 +321,8 @@ Producer와 Consumer의 책임 테스트는 앱별로 둔다. `commerce-api` 통
 전체 흐름 E2E는 실제 주문 API, 로컬 PG, MySQL, Kafka, 구매 활동 Consumer를 연결한 한 시나리오로 검증한다.
 
 1. 상품 7 수량 2개, 상품 8 수량 1개인 주문을 확정하고 Outbox 한 행을 확인한다.
-2. 첫 broker 성공 확인 뒤 `PUBLISHED` 저장 전에 Relay를 멈춘다. Consumer가 첫 record를 처리하고 committed offset이 `첫 offset + 1`에 도달한 뒤 구매 활동을 기록한다.
-3. 저장된 `nextAttemptAt` 이상으로 테스트 시각을 이동한 뒤, 같은 DB·Kafka에서 Relay를 재생성해 같은 Outbox를 재발행한다. 두 번째 record의 committed offset이 `두 번째 offset + 1`에 도달한 뒤 결과를 다시 읽는다.
+2. 격리 MySQL trigger로 대상 주문의 첫 `PUBLISHED` UPDATE만 거절한다. 실제 broker record와 상태 저장 실패 로그를 확보하고 첫 API 프로세스를 정상 종료한다. Consumer의 committed offset이 `첫 offset + 1`에 도달한 뒤 구매 활동을 기록한다.
+3. 같은 DB·Kafka에 새 API·Relay 프로세스를 연결한다. 이 실행은 실제 Clock을 사용하므로 저장된 `nextAttemptAt`까지 유한한 deadline 안에서 기다린다. 같은 Outbox 재발행과 두 번째 record의 committed offset이 `두 번째 offset + 1`에 도달한 뒤 결과를 다시 읽는다. 별도 Relay 통합 테스트는 `MutableClock`으로 같은 시각 경계를 제어한다.
 
 기대값은 다음과 같다.
 
@@ -342,7 +352,7 @@ BLOCKED 원인을 확인하고 해결한 뒤 같은 `eventId`로 재개한다. �
 기존 로컬 Relay 인스턴스를 먼저 종료한 뒤, 재개용 인스턴스는 주기 polling을 끄고 실행할 수 있다.
 
 ```bash
-./gradlew :apps:commerce-api:bootRun --args='--spring.profiles.active=local --order.confirmed-event.outbox.resume.event-ids=order-confirmed:v1:101'
+./gradlew :apps:commerce-api:bootRun --args='--spring.profiles.active=local --order.confirmed-event.relay.enabled=false --order.confirmed-event.outbox.resume.event-ids=order-confirmed:v1:101'
 ```
 
 재개 뒤에도 같은 주기의 실패가 3회 누적되면 다시 `BLOCKED`가 된다. 새 `BLOCKED` 전환은 구조화 로그와 Micrometer counter로 관찰한다. Grafana 임계값과 Slack route는 운영 설정으로 둔다.

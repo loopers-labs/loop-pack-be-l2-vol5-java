@@ -3,22 +3,22 @@ package com.loopers.infrastructure.order.outbox;
 import com.loopers.application.time.ApplicationTime;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationListener;
+import org.springframework.context.event.ContextClosedEvent;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
 @Component
-public class OrderConfirmedOutboxRelay {
+public class OrderConfirmedOutboxRelay implements ApplicationListener<ContextClosedEvent> {
 
     private static final String BLOCKED_TRANSITIONS_METRIC = "outbox_blocked_transitions_total";
 
@@ -28,14 +28,13 @@ public class OrderConfirmedOutboxRelay {
     private final ApplicationTime applicationTime;
     private final MeterRegistry meterRegistry;
     private final OrderConfirmedOutboxMetrics outboxMetrics;
-    private final Executor callbackExecutor;
     private final int batchSize;
     private final int maxAttempts;
     private final Duration retryInterval;
     private final Duration maximumWait;
     private final Duration futureTimeout;
-    private final OrderConfirmedOutboxAwaitMode awaitMode;
     private final AtomicBoolean running = new AtomicBoolean();
+    private final AtomicBoolean shuttingDown = new AtomicBoolean();
 
     public OrderConfirmedOutboxRelay(
         OrderConfirmedOutboxStateService stateService,
@@ -44,13 +43,11 @@ public class OrderConfirmedOutboxRelay {
         ApplicationTime applicationTime,
         MeterRegistry meterRegistry,
         OrderConfirmedOutboxMetrics outboxMetrics,
-        @Qualifier("orderConfirmedOutboxCallbackExecutor") Executor callbackExecutor,
         @Value("${order.confirmed-event.relay.batch-size}") int batchSize,
         @Value("${order.confirmed-event.relay.max-attempts}") int maxAttempts,
         @Value("${order.confirmed-event.relay.retry-interval}") Duration retryInterval,
         @Value("${order.confirmed-event.relay.max-block-time}") Duration maxBlockTime,
-        @Value("${order.confirmed-event.relay.future-timeout}") Duration futureTimeout,
-        @Value("${order.confirmed-event.relay.await-mode}") OrderConfirmedOutboxAwaitMode awaitMode
+        @Value("${order.confirmed-event.relay.future-timeout}") Duration futureTimeout
     ) {
         this.stateService = stateService;
         this.kafkaSender = kafkaSender;
@@ -58,49 +55,35 @@ public class OrderConfirmedOutboxRelay {
         this.applicationTime = applicationTime;
         this.meterRegistry = meterRegistry;
         this.outboxMetrics = outboxMetrics;
-        this.callbackExecutor = callbackExecutor;
         this.batchSize = batchSize;
         this.maxAttempts = maxAttempts;
         this.retryInterval = retryInterval;
         this.maximumWait = maxBlockTime.plus(futureTimeout);
         this.futureTimeout = futureTimeout;
-        this.awaitMode = awaitMode;
     }
 
     public boolean runDueBatch() {
-        return runDueBatch(awaitMode);
-    }
-
-    public boolean runDueBatch(OrderConfirmedOutboxAwaitMode mode) {
-        return run(mode, null);
+        return run(null);
     }
 
     public boolean runEventOnce(String eventId) {
-        return run(OrderConfirmedOutboxAwaitMode.BOUNDED_WAIT, List.of(eventId));
+        return run(List.of(eventId));
     }
 
-    private boolean run(OrderConfirmedOutboxAwaitMode mode, List<String> requestedEventIds) {
+    @Override
+    public void onApplicationEvent(ContextClosedEvent event) {
+        shuttingDown.set(true);
+    }
+
+    private boolean run(List<String> requestedEventIds) {
+        if (shuttingDown.get()) {
+            return false;
+        }
         if (!running.compareAndSet(false, true)) {
             log.debug("주문 확정 Outbox relay 실행 중이라 이번 호출을 건너뜁니다.");
             return false;
         }
         refreshMetrics();
-        if (mode == OrderConfirmedOutboxAwaitMode.CALLBACK) {
-            try {
-                List<String> eventIds = eventIds(requestedEventIds);
-                processBatchAsync(eventIds, 0).whenComplete((ignored, failure) -> {
-                    if (failure != null) {
-                        log.error("주문 확정 Outbox callback relay 회차가 예기치 않게 끝났습니다.", unwrap(failure));
-                    }
-                    refreshMetrics();
-                    running.set(false);
-                });
-                return true;
-            } catch (RuntimeException failure) {
-                running.set(false);
-                throw failure;
-            }
-        }
         try {
             for (String eventId : eventIds(requestedEventIds)) {
                 if (!process(eventId)) {
@@ -128,47 +111,10 @@ public class OrderConfirmedOutboxRelay {
         }
     }
 
-    private java.util.concurrent.CompletableFuture<Void> processBatchAsync(List<String> eventIds, int index) {
-        if (index >= eventIds.size()) {
-            return java.util.concurrent.CompletableFuture.completedFuture(null);
-        }
-
-        OrderConfirmedOutboxStateService.BeginAttemptResult start;
-        try {
-            start = stateService.beginAttempt(eventIds.get(index), applicationTime.now(), maximumWait, maxAttempts);
-        } catch (RuntimeException failure) {
-            log.error("주문 확정 Outbox 시도를 저장하지 못했습니다. eventId={}", eventIds.get(index), failure);
-            return java.util.concurrent.CompletableFuture.completedFuture(null);
-        }
-
-        if (start.kind() == OrderConfirmedOutboxStateService.BeginAttemptKind.SKIPPED) {
-            return processBatchAsync(eventIds, index + 1);
-        }
-        if (start.kind() == OrderConfirmedOutboxStateService.BeginAttemptKind.BLOCKED) {
-            recordBlocked(start.eventId(), start.orderId(), start.reason(), null);
-            return processBatchAsync(eventIds, index + 1);
-        }
-
-        OrderConfirmedOutboxAttempt attempt = start.attempt();
-        java.util.concurrent.CompletableFuture<org.springframework.kafka.support.SendResult<Object, Object>> future;
-        try {
-            future = kafkaSender.send(attempt.messageKey(), attempt.payload());
-        } catch (RuntimeException failure) {
-            boolean continueBatch = handleFailure(attempt, unwrap(failure));
-            return continueBatch ? processBatchAsync(eventIds, index + 1)
-                : java.util.concurrent.CompletableFuture.completedFuture(null);
-        }
-
-        return future.orTimeout(futureTimeout.toMillis(), TimeUnit.MILLISECONDS)
-            .handleAsync((result, failure) -> failure == null
-                ? handlePublished(attempt, result)
-                : handleFailure(attempt, unwrap(failure), false), callbackExecutor)
-            .thenCompose(continueBatch -> continueBatch
-                ? processBatchAsync(eventIds, index + 1)
-                : java.util.concurrent.CompletableFuture.completedFuture(null));
-    }
-
     private boolean process(String eventId) {
+        if (shuttingDown.get()) {
+            return false;
+        }
         OrderConfirmedOutboxStateService.BeginAttemptResult start = stateService.beginAttempt(
             eventId, applicationTime.now(), maximumWait, maxAttempts);
         if (start.kind() == OrderConfirmedOutboxStateService.BeginAttemptKind.SKIPPED) {
@@ -180,6 +126,9 @@ public class OrderConfirmedOutboxRelay {
         }
 
         OrderConfirmedOutboxAttempt attempt = start.attempt();
+        if (retainPendingDuringShutdown(attempt)) {
+            return false;
+        }
         java.util.concurrent.CompletableFuture<org.springframework.kafka.support.SendResult<Object, Object>> future;
         org.springframework.kafka.support.SendResult<Object, Object> result;
         try {
@@ -200,6 +149,9 @@ public class OrderConfirmedOutboxRelay {
 
     private boolean handlePublished(OrderConfirmedOutboxAttempt attempt,
                                     org.springframework.kafka.support.SendResult<Object, Object> result) {
+        if (retainPendingDuringShutdown(attempt)) {
+            return false;
+        }
         try {
             if (!stateService.markPublished(attempt, applicationTime.now())) {
                 log.warn("오래된 주문 확정 Outbox 전송 결과를 적용하지 않았습니다. eventId={}, orderId={}, attempt={}",
@@ -218,15 +170,12 @@ public class OrderConfirmedOutboxRelay {
     }
 
     private boolean handleFailure(OrderConfirmedOutboxAttempt attempt, Throwable failure) {
-        return handleFailure(attempt, failure, true);
-    }
-
-    private boolean handleFailure(OrderConfirmedOutboxAttempt attempt, Throwable failure, boolean restoreInterrupt) {
+        if (retainPendingDuringShutdown(attempt)) {
+            return false;
+        }
         OrderConfirmedOutboxFailureClassifier.FailureKind kind = failureClassifier.classify(failure);
         if (kind == OrderConfirmedOutboxFailureClassifier.FailureKind.INTERRUPTED) {
-            if (restoreInterrupt) {
-                Thread.currentThread().interrupt();
-            }
+            Thread.currentThread().interrupt();
             log.warn("주문 확정 Outbox 전송이 종료 신호로 중단됐습니다. eventId={}, orderId={}",
                 attempt.eventId(), attempt.orderId(), failure);
             return false;
@@ -248,7 +197,7 @@ public class OrderConfirmedOutboxRelay {
             }
 
             OrderConfirmedOutboxStateService.FailureResult result = stateService.markBlocked(
-                attempt, applicationTime.now(), safeError, failure.getClass().getSimpleName());
+                attempt, applicationTime.now(), safeError, failureClassifier.reason(failure));
             if (result.kind() == OrderConfirmedOutboxStateService.FailureKind.BLOCKED) {
                 recordBlocked(result.eventId(), result.orderId(), result.reason(), failure);
             }
@@ -269,6 +218,15 @@ public class OrderConfirmedOutboxRelay {
             log.error("주문 확정 Outbox가 BLOCKED 상태가 됐습니다. eventId={}, orderId={}, reason={}",
                 eventId, orderId, reason, failure);
         }
+    }
+
+    private boolean retainPendingDuringShutdown(OrderConfirmedOutboxAttempt attempt) {
+        if (!shuttingDown.get()) {
+            return false;
+        }
+        log.warn("종료 중인 주문 확정 Outbox 시도는 PENDING으로 보존합니다. eventId={}, orderId={}, attempt={}",
+            attempt.eventId(), attempt.orderId(), attempt.attemptNumber());
+        return true;
     }
 
     private Throwable unwrap(Throwable failure) {

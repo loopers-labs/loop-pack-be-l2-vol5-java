@@ -43,7 +43,6 @@ order:
       delivery-timeout: 5s
       max-block-time: 1s
       future-timeout: 6s
-      await-mode: BOUNDED_WAIT
 
 # Redis 장애 시 요청이 오래 묶이지 않도록 연결·명령 대기를 제한하고, 실패하면 DB로 우회한다.
 datasource:
