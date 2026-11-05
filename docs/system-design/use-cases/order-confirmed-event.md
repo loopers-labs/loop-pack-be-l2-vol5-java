@@ -1,11 +1,11 @@
 # 주문 확정 이벤트 공통 계약
 
-> 주문 결제: [1. 결제 요청](order-payment-request.md) → [2. PG 연동](../external-systems/payment-gateway.md) → [3. 결과 반영](order-payment-result.md) → **4. 확정 이벤트**
+> 주문 결제: [1. 결제 요청](order-payment-request.md) → [2. PG 연동](../external-systems/payment-gateway.md) → [3. 결과 반영](order-payment-result.md) → **4. 확정 이벤트와 전달 기록**
 
-> 발행은 TX B commit 뒤 직접 발행이며, DB와 broker 사이의 누락 구간은 다음 단계의 Outbox에서 개선한다.
+> 주문 확정과 Kafka에 전달할 메시지는 같은 DB 트랜잭션에 기록한다. Relay는 commit된 Outbox를 읽어 Kafka에 발행한다.
 
-PG 성공으로 처음 확정된 주문의 사실을 `OrderConfirmed` 이벤트로 Kafka에 발행하고, `commerce-streamer`가 상품별 구매 활동으로 한 번만 저장한다.<br>
-구매 활동은 이후 주간 상품 랭킹의 입력이다. 이번 범위에서 랭킹 조회와 Outbox는 만들지 않는다.
+PG 성공으로 처음 확정된 주문의 사실을 `OrderConfirmed` Outbox에 기록하고, Relay가 Kafka에 발행한다. `commerce-streamer`는 이벤트를 상품별 구매 활동으로 한 번만 저장한다.<br>
+구매 활동은 이후 상품 랭킹의 입력이다. 이 문서는 주문 확정·전달 계약과 Consumer의 업무 효과를 정의하며, 랭킹 조회는 다루지 않는다.
 
 ## 설계 문서의 책임
 
@@ -13,7 +13,7 @@ PG 성공으로 처음 확정된 주문의 사실을 `OrderConfirmed` 이벤트�
 
 | 문서 | 책임 |
 | --- | --- |
-| [Producer 설계](../../../apps/commerce-api/docs/order-confirmed-producer.md) | 최초 확정 조건, 이벤트 구성, after-commit 전송과 실패 처리 |
+| [Producer 설계](../../../apps/commerce-api/docs/order-confirmed-producer.md) | 최초 확정 조건, Outbox 기록, Relay의 전송 상태와 재시도 |
 | [Broker 설계](../../../modules/kafka/docs/broker.md) | 단일 broker·topic·partition·복제·보존 설정과 연결 주소 |
 | [Consumer 설계](../../../apps/commerce-streamer/docs/purchase-activity-consumer.md) | 버전 해석, 구매 활동 저장·멱등성, listener·ack·복구 |
 | [검증 방법](order-confirmed-event-verification.md) | 모듈별 테스트와 broker·DB·offset 실험 |
@@ -43,7 +43,8 @@ PG 성공으로 처음 확정된 주문의 사실을 `OrderConfirmed` 이벤트�
 sequenceDiagram
     participant Result as 결과 반영 (commerce-api)
     participant DB as Commerce DB
-    participant Publisher as 확정 이벤트 발행 (after-commit)
+    participant Outbox as Outbox 기록
+    participant Relay as 단일 polling relay
     participant Kafka as Kafka order-events
     participant Listener as 구매 활동 listener (commerce-streamer)
     participant ADB as 구매 활동 저장
@@ -51,13 +52,21 @@ sequenceDiagram
     rect rgba(128, 128, 128, 0.12)
         Note over Result,DB: TX B
         Result->>DB: 시도 SUCCEEDED, 주문 CONFIRMED와 확정 시각 (조건부 갱신 1행)
-        Result->>Result: 저장한 품목·확정 시각으로 이벤트 구성, 발행 대기 등록
+        Result->>Outbox: 저장한 품목·확정 시각으로 PENDING 메시지 insert
         Result->>DB: commit
         DB-->>Result: commit 성공
     end
-    Note over Result,Publisher: ① commit과 send 사이 누락 구간
-    Publisher->>Kafka: send (key = orderId)
-    Kafka-->>Publisher: 비동기 전송 완료 콜백 (metadata 또는 오류)
+    loop 재시도 시각이 된 행 조회
+        Relay->>Outbox: PENDING 조회 (nextAttemptAt, 순서, batch limit)
+        Outbox-->>Relay: 고정 key·payload
+        Relay->>Kafka: send (key = orderId)
+        Kafka-->>Relay: Future 성공(metadata) 또는 실패
+        alt broker 성공 확인
+            Relay->>Outbox: 별도 TX에서 PUBLISHED 저장
+        else 실패·응답 불확실
+            Relay->>Outbox: PENDING 유지, 다음 시각·오류 저장
+        end
+    end
     Listener->>Kafka: fetch (다음 읽을 위치)
     Kafka-->>Listener: record (partition, offset n)
     rect rgba(128, 128, 128, 0.12)
@@ -74,8 +83,9 @@ sequenceDiagram
 
 | 경계 | 소유 | 함께 commit되는 것 | 함께 묶이지 않는 것 |
 | --- | --- | --- | --- |
-| TX B | commerce-api | 시도 종결, 주문 확정과 확정 시각, 예약 소비(재고 유지) | Kafka 전송 |
-| producer 전송 | commerce-api | broker 기록. producer 재시도의 중복은 broker가 거른다. | 주문 commit |
+| TX B | commerce-api | 시도 종결, 주문 확정과 확정 시각, Outbox PENDING, 예약 상태 유지 | Kafka 전송 |
+| Relay 발행 | commerce-api | broker record. 상태 확인이 불확실하면 같은 Outbox 메시지를 재발행할 수 있음 | 주문 확정 TX |
+| Outbox 상태 갱신 | commerce-api | broker 성공 확인 뒤 별도 TX로 PUBLISHED | Consumer 구매 활동 저장 |
 | 소비 TX | commerce-streamer | 소비 완료 기록과 모든 품목의 구매 활동 | offset commit |
 | offset commit | commerce-streamer | group이 다음에 읽을 위치 | 소비 TX |
 
@@ -148,9 +158,10 @@ commerce-streamer는 주문·상품·결제·포인트 테이블을 읽거나 �
 
 | 구간 | 보장 | 근거 |
 | --- | --- | --- |
-| 주문 확정 → broker | commit 뒤 직접 전송. 발행 누락 가능 | 전송 단계까지 실행되면 send 1회 시도, 애플리케이션 재발행 없음 |
-| producer → broker | 같은 producer 세션의 내부 재시도 중복 제거 | idempotent producer, `acks=all`. 애플리케이션 재전송의 업무 중복은 별도 |
-| broker → 구매 활동 | 재전달을 허용하고 같은 사실의 구매 효과는 한 번 | record 보존과 원인 제거 후 소비 재개를 전제로, 소비 TX commit 뒤 ack·완료 기록·유일 제약 |
+| 주문 확정 → 전달 대상 | 로컬 DB 원자성 | 주문·시도 결과와 같은 eventId의 Outbox PENDING이 한 TX에서 함께 commit 또는 rollback |
+| Outbox → broker | at-least-once 지향. 중복 record 가능 | broker 성공 뒤 상태 저장 실패나 응답 유실이면 같은 eventId·key·payload를 다시 발행할 수 있음 |
+| producer → broker 내부 재시도 | 같은 producer 세션의 내부 재시도 중복 제거 | idempotent producer, `acks=all`. Relay가 다시 호출한 send의 업무 중복은 별도 |
+| broker → 구매 활동 | 재전달을 허용하고 같은 사실의 구매 효과는 한 번 | record 보존과 원인 제거 후 소비 재개를 전제로, 소비 TX commit 뒤 ack·Inbox 완료 기록·유일 제약 |
 
 Kafka transaction의 exactly-once는 Kafka record와 offset을 함께 다루는 보장이며 MySQL의 구매 활동 저장은 포함하지 않는다. 그래서 소비 쪽 중복 판정을 Kafka 설정에 맡기지 않는다.<br>
 단일 broker 실험으로는 복제, leader 장애, `min.insync.replicas`, 네트워크 분할에서의 보장을 확인하지 못한다.
@@ -161,12 +172,13 @@ Kafka transaction의 exactly-once는 Kafka record와 offset을 함께 다루는 
 
 | 영역 | 상황 | 기대값 |
 | --- | --- | --- |
-| 발행 | 실제 주문 API와 테스트 PG로 최초 성공 확정 | record 1건. key는 `orderId`, payload의 품목·수량·확정 시각이 저장된 주문과 같다. |
-| 발행 결과 관찰 | 정상 전송 완료 | 성공 결과의 topic·partition·offset으로 실제 record 확인. 건별 성공 로그·별도 DB 발행 이력은 요구하지 않음 |
-| 미발행 | 처리 중, `UNKNOWN`, 확정 실패, TX B rollback | 해당 `eventId`의 record 없음 |
-| 중복 반영 | 중복 callback, callback 뒤 reconcile | 새 record와 재고 변경 없음 |
-| 발행 실패 | send 직전 실패 주입 | 주문 `CONFIRMED`와 재고 차감 유지, record 없음, 응답은 저장된 상태 |
-| 전송 오류 | send 호출 예외 또는 비동기 완료 실패 | `eventId`·`orderId`·원인 error 로그, 확정 주문·재고 유지. 실패 로그만으로 record 부재를 단정하지 않음 |
+| 확정·기록 | 실제 주문 API와 테스트 PG로 최초 성공 확정 | 주문은 `CONFIRMED`, Outbox는 동일 eventId의 `PENDING` 한 행. key는 `orderId`, payload는 저장된 주문 사실과 같다. |
+| Relay 발행 | 정상 전송 완료 | broker 성공 결과의 topic·partition·offset 확인 뒤 Outbox `PUBLISHED` 저장 |
+| 소비 전 대기 | 주문 TX commit 뒤 Relay 미실행 | 주문과 Outbox `PENDING`은 있고, 구매 활동은 아직 없을 수 있음 |
+| 미기록 | 처리 중, `UNKNOWN`, 확정 실패, TX B rollback | 해당 `eventId`의 Outbox 없음 |
+| 중복 callback | 같은 PG 성공 결과 재적용 | 주문 확정과 Outbox 행은 각각 한 번, eventId·key·payload 유지 |
+| 전송 실패 | send 호출 예외, timeout, broker 응답 확인 불가 | 같은 Outbox를 PENDING으로 유지하고 재시도. 실패 로그만으로 broker record 부재를 단정하지 않음 |
+| broker 성공 뒤 DB 실패 | broker는 record 저장, PUBLISHED TX 실패 | Outbox PENDING일 수 있고 재발행될 수 있음. 같은 eventId와 Consumer Inbox로 중복 효과를 막음 |
 | 소비 | 주문 42(7×2, 8×1), 같은 이벤트 재수신, 주문 43(7×3) | 2행 → 2행 → 3행, 상품 7 합계 5 |
 | 충돌 | 같은 `eventId`에 다른 수량·확정 시각, 같은 `orderId`에 다른 `eventId` | 추가 행 없음, 오류 노출 |
 | 원자성 | 중간 품목 저장 실패 | 완료 기록과 앞선 품목 모두 없음 |

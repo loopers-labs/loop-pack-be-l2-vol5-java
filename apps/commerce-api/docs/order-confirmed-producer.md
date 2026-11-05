@@ -1,30 +1,30 @@
 # 주문 확정 이벤트 Producer 설계
 
-`commerce-api`는 PG 성공을 최초 주문 확정으로 반영하고, DB commit 뒤 OrderConfirmed를 발행한다. payload·key·eventId·버전 정책은 [공통 이벤트 계약](../../../docs/system-design/use-cases/order-confirmed-event.md#이벤트-계약)을 따른다. Kafka topic과 연결 주소는 [Broker 설계](../../../modules/kafka/docs/broker.md)를 따른다.
+`commerce-api`는 검증된 PG 성공을 최초 주문 확정으로 반영하고, 같은 DB 트랜잭션에서 `OrderConfirmed` Outbox를 기록한다. 단일 polling Relay가 저장된 key·payload를 Kafka에 발행한다. payload·key·eventId·버전 정책은 [공통 이벤트 계약](../../../docs/system-design/use-cases/order-confirmed-event.md#이벤트-계약)을 따른다. Kafka topic과 연결 주소는 [Broker 설계](../../../modules/kafka/docs/broker.md)를 따른다.
 
 ## 책임과 완료 기준
 
-주문 확정과 이벤트 전달의 완료 기준을 분리한다. 주문 확정의 기준은 TX B의 DB commit이고, producer 전송의 기준은 broker의 성공 응답이다. consumer의 구매 활동 저장은 이 앱의 완료 조건에 포함하지 않는다.
+주문 확정과 이벤트 전달의 완료 기준을 분리한다. 주문 확정의 기준은 TX B의 DB commit이고, Relay 발행의 기준은 broker 성공 응답과 그 결과를 기록한 Outbox 상태 TX다. Consumer의 구매 활동 저장은 이 앱의 완료 조건에 포함하지 않는다.
 
-선택한 방식은 **최초 확정 commit 뒤 한 번 전송을 시도하는 직접 발행**이다. Outbox와 애플리케이션 재발행 기능은 없다. 주문 확정은 유지하면서 후속 저장 책임을 분리하지만, 발행 누락을 자동 복구하는 보장은 제공하지 않는다.
+TX B는 주문 확정과 전달할 메시지를 Outbox에 함께 저장한다. Relay는 `PENDING` 행을 찾아 broker에 보내고 성공 확인 뒤 `PUBLISHED`를 기록한다. 발행 결과가 불확실하거나 상태 저장에 실패하면 같은 메시지를 다시 보낼 수 있으므로 중복 record를 허용한다.
 
 ## 이벤트 구성
 
-Producer는 저장된 주문 사실로 메시지를 구성한다. 값의 정의는 [공통 이벤트 계약](../../../docs/system-design/use-cases/order-confirmed-event.md#이벤트-계약)을 따르며, 정상 발행과 이후 재발행 기능에서 같은 확정 사실은 같은 eventId·구매 내용·품목 순서를 유지한다.
+애플리케이션 계층은 저장된 주문 사실로 메시지를 구성하고 JSON 문자열로 직렬화해 Outbox에 저장한다. 값의 정의는 [공통 이벤트 계약](../../../docs/system-design/use-cases/order-confirmed-event.md#이벤트-계약)을 따른다. Relay는 현재 상품 정보를 다시 조회하지 않고 저장된 eventId·key·payload를 그대로 발행한다.
 
 1. `eventId`는 orderId에서 계산하므로 producer에 별도 eventId 컬럼 없이 같은 ID를 재구성한다.
 2. `confirmedAt`은 최초 PG 성공 TX B에서 마이크로초로 자른 시각을 주문 상태와 함께 저장하고, 중복 callback·reconcile에서 바꾸지 않는다. 발행·처리 시각을 넣지 않는다.
 3. `items`는 주문 생성 때 상품별로 합산된 스냅샷을 `productId` 오름차순으로 정렬한다.
 
-`OrderConfirmedEvent`는 application 계층의 내부 이벤트이며, infrastructure의 `OrderConfirmedMessageV1`이 발행할 JSON을 구성한다. V2 명세가 생기면 별도 DTO를 추가한다. 다른 앱의 DTO를 import하거나 비즈니스 DTO를 공통 Kafka 모듈로 옮기지 않는다.
+`OrderConfirmedMessageV1`은 application 계층에서 구성하는 내부 메시지 계약이다. V2 명세가 생기면 별도 DTO와 serializer 경로를 추가한다. 다른 앱의 DTO를 import하거나 비즈니스 DTO를 공통 Kafka 모듈로 옮기지 않는다.
 
 ## 발행 조건
 
 결과 반영에서 시도를 `SUCCEEDED`로 종결하고 주문을 `PAYMENT_PENDING → CONFIRMED`로 바꾼 조건부 갱신이 1행인 요청만 이벤트를 만든다. 생성 응답, callback, reconcile, 주기 조회가 모두 같은 TX B를 지나므로 경로와 관계없이 같은 조건이다.
 
-| 상황 | 이벤트 등록·전송 시도 |
+| 상황 | Outbox 기록 |
 | --- | --- |
-| 최초 PG 성공 확정, TX B commit | TX B에서 내부 이벤트 등록. commit 후 전송 단계까지 실행되면 send 1회 시도 |
+| 최초 PG 성공 확정 | TX B에서 OrderConfirmed Outbox PENDING 한 행을 함께 commit |
 | 처리 중·결과 미확인(`PENDING`·`UNKNOWN`), 충돌 | 없음 |
 | 확정 실패(`PAYMENT_FAILED`) | 없음 |
 | 최초 확정 TX B rollback | 없음 |
@@ -33,38 +33,37 @@ Producer는 저장된 주문 사실로 메시지를 구성한다. 값의 정의�
 
 ## 발행 위치
 
-`PaymentResultTransaction.completeOrder`(TX B)는 조건부 갱신 1행을 확인한 뒤, TX B에서 읽은 품목 스냅샷과 저장한 확정 시각으로 `OrderConfirmedEvent`를 만들어 Spring application event로 등록한다. `@TransactionalEventListener(AFTER_COMMIT)`인 `OrderConfirmedKafkaPublisher.onConfirmed`가 commit 뒤 메시지 변환과 send를 맡고, DB나 지연 로딩에 접근하지 않는다. TX B 메서드 끝에서 직접 send하면 commit 전이라 rollback된 확정의 이벤트가 나갈 수 있어 택하지 않는다.
+`PaymentResultTransaction.completeOrder`(TX B)는 최초 성공 조건을 확인한 뒤, 저장한 품목 스냅샷과 확정 시각으로 `OrderConfirmedMessageV1`과 JSON payload를 구성한다. Outbox insert는 주문·결제 시도 결과와 같은 데이터 소스의 같은 로컬 TX에 참여한다. serialization이나 Outbox 저장에 실패하면 주문 확정도 rollback한다. commit 뒤에는 Scheduler가 Relay를 호출하므로 주문 확정 요청 스레드에서 Kafka send를 기다리지 않는다.
 
-- 이벤트 구성 실패는 commit 전 오류라 TX B를 rollback한다. commit 이후 메시지 변환·전송 실패는 listener에서 로그로 드러내며 주문을 되돌리지 않는다.
-- listener에 `@Async`나 별도 executor를 두지 않는다. TX B를 commit한 스레드가 send를 호출하고, 실제 네트워크 전송은 Kafka Producer의 I/O 스레드가 비동기로 처리한다. 실행 경로는 단순하지만 send 진입의 metadata 조회·buffer 할당 대기(`max.block.ms`, client 기본값)는 요청 경로에 남는다. broker 장애 시 확정 응답의 상태는 DB로 정해지지만 응답은 늦어질 수 있다.
+Relay는 짧은 DB TX로 기한이 된 행을 조회하고 시도 횟수를 기록한 다음, DB 트랜잭션 밖에서 Kafka에 보낸다. broker 성공 Future가 완료되면 별도 DB TX에서 `PUBLISHED`와 `publishedAt`을 저장한다. 조회·시도·상태 저장의 TX와 외부 전송 대기를 분리한다.
 
 ## 전송 결과와 실패
 
-현재 단계의 전송 결과 관찰 수단은 완료 콜백으로 정한다. `KafkaTemplate.send(...)`가 반환하는 `CompletableFuture`에 콜백을 등록해 전송 결과를 비동기로 확인한다. 결과를 받기 위한 별도 조회를 반복하거나 요청 스레드에서 `get()`·`join()`으로 기다리지 않는다.
+Relay는 Kafka `send()`가 반환하는 `CompletableFuture`의 성공으로 broker 확인을 판단한다. 현재 기본 모드는 제한 시간 동안 결과를 기다리는 `BOUNDED_WAIT`다. 전송 worker 안에서 결과를 확인하고 성공 상태를 갱신하므로 처리 흐름과 실패 전이를 따라가기 쉽다.
 
-이 콜백은 Kafka producer의 전송 완료 통지다. PG가 HTTP로 보내는 결제 결과 callback과는 별개다.
+`CALLBACK` 비교 모드도 구현한다. Future 완료 뒤 상태 저장을 전용 단일 executor로 넘기고, 완료까지 Relay 실행 표시를 유지해 스케줄러 tick이 겹쳐도 중복 실행을 시작하지 않는다. 같은 직렬 Relay에서 callback은 다음 메시지를 병렬로 보내지 않으므로 처리량 이득이 없고 생명주기 처리가 늘어난다. 비교 테스트는 callback Future를 통제해 반환 순서를 확인하며 실제 네트워크 지연 성능 비교로 해석하지 않는다.
 
-| 결과 | 처리 |
+| 결과 | Outbox 처리 |
 | --- | --- |
-| 전송 성공 | 건별 성공 로그나 별도 DB 발행 이력을 남기지 않는다. 테스트에서는 성공 결과의 topic·partition·offset과 실제 record를 확인한다. |
-| 비동기 전송 실패 | 완료 콜백에서 `eventId`, `orderId`와 원인을 애플리케이션의 error 로그로 남긴다. |
-| send 호출에서 즉시 발생한 예외 | 호출 경계에서 같은 식별자와 원인을 error 로그로 남긴다. 완료 콜백에만 실패 처리를 맡기지 않는다. |
+| broker 성공 확인 + 상태 TX 성공 | `PUBLISHED`와 `publishedAt` 저장. 로그에 topic·partition·offset 기록 |
+| 일시 전송 실패·timeout | 같은 행을 `PENDING`으로 유지하고 오류·다음 시각 기록. 결과가 불확실하면 broker에 record가 남았을 수도 있음 |
+| broker 성공 뒤 상태 TX 실패 | `PENDING`이 남으면 같은 메시지를 재발행할 수 있음 |
+| 지원하지 않는 형식 등 영구 오류 | `BLOCKED`로 남기고 자동 전송을 멈춤. 다른 행 처리는 계속한다. |
 
-- 전송이 실패하거나 listener에서 예외가 나도 이미 commit된 주문을 실패·미확인으로 되돌리지 않고, PG 생성·조회를 다시 호출하지 않는다. 결과 반영의 응답은 저장된 주문 상태로 정한다.
-- 애플리케이션의 자동 재발행은 추가하지 않으며, Kafka producer 설정에 따른 내부 재시도와 구분한다.
-- 로그는 전송 결과를 관찰한 기록이며, 주문과 함께 commit되는 영속 발행 이력이 아니다. 성공 로그를 생략해도 `acks=all`의 broker 확인은 유지된다.
+- 첫 send가 시도 1회다. 현재 설정은 한 재시도 주기에서 총 세 번 시도한 뒤 `BLOCKED`로 전환한다. 담당자가 원인을 해결하면 같은 행을 수동 재개하고, 누적 attemptCount는 유지하되 주기 횟수만 초기화한다.
+- 일시 실패 행은 재시도 시각 전까지 대기한다. 세 번째 실패로 `BLOCKED`가 되면 같은 묶음의 다음 이벤트를 처리한다. 제한 대기 중인 행은 현재 회차를 끝내고 다음 tick에서 다시 처리한다.
+- 실패나 timeout만으로 broker record의 부재를 단정하지 않는다. PUBLISHED는 broker 성공을 Relay가 확인하고 DB에 기록했다는 뜻이며, Consumer의 구매 활동 완료를 뜻하지 않는다.
+- 주문·Outbox의 일관성을 잃지 않도록 Relay 재시도는 새 eventId를 만들지 않는다. 기록된 payload·key를 그대로 사용한다.
 
-완료 콜백은 응답 전후 어느 시점에도 실행될 수 있으며, API 응답 시점에 전송 결과를 확정했다고 가정하지 않는다.
+`BOUNDED_WAIT`는 제한 시간 동안 Relay worker를 점유한다. 현재 직렬 처리량에서는 단순한 완료 흐름을 우선했으며, batch·timeout·backlog를 관찰해야 한다. callback은 별도 처리량이 필요해질 때 전용 executor와 상태 생명주기를 포함해 다시 평가한다.
 
 ## 발행 누락 구간
 
-TX B commit과 broker 기록은 하나의 원자적 작업이 아니다. commit 뒤 send 전에 프로세스가 멈추면 주문은 `CONFIRMED`이고 예약은 소비됐지만, 해당 `eventId`의 record와 구매 활동은 없다. 이때는 전송 요청 자체가 없어 실패 콜백도 실행되지 않으며, 프로세스 중단을 애플리케이션 error 로그로 남긴다는 보장도 없다.
+주문·Outbox 기록과 broker 기록은 같은 원자적 작업이 아니다. TX B commit 뒤 Relay 실행 전 프로세스가 멈춰도 주문과 `PENDING` Outbox는 DB에 남고, Relay 재시작 뒤 대상을 다시 찾을 수 있다.
 
-send 이후 오류나 timeout을 관찰한 경우에는 broker 기록 여부가 불명확할 수 있다. broker가 기록했지만 producer가 성공 응답을 확인하지 못했을 가능성도 있으므로, 전송 실패 로그만으로 record와 구매 활동이 없다고 단정하지 않는다.
+send 이후 오류·timeout을 관찰하거나 broker 성공 뒤 상태 저장이 실패하면 broker 기록 여부가 불명확할 수 있다. Relay는 같은 행을 재발행할 수 있으므로 Kafka에 중복 record가 생길 수 있고, Consumer Inbox가 업무 중복 효과를 막는다.
 
-`@Async`나 after-commit listener는 실행 시점만 바꿀 뿐 이 구간을 없애지 않는다.
-
-완료 콜백은 전송 결과를 관찰하는 수단이고, Outbox는 주문 확정과 발행할 사실의 DB 기록을 같은 트랜잭션에 묶는 방식이다. 두 방식은 역할이 다르며, 콜백으로 이 누락 구간을 없앨 수 없다. Outbox를 도입해도 전송 결과는 콜백으로 확인할 수 있고, 발행 대상과 처리 상태의 영속화 정책은 그 단계에서 설계한다. 다음 단계에서 Outbox로 개선하고, 이번 단계는 [발행 누락 사례](../../../docs/system-design/use-cases/order-confirmed-event-verification.md#발행-누락-사례)를 테스트로 확인한다.
+Outbox는 broker가 영구적으로 접근 불가능한 상황, payload 호환성 오류, Outbox 저장소 손실, 행의 임의 삭제를 자동으로 복구하지 않는다. `BLOCKED` 작업은 원인을 확인할 담당자와 재개 절차가 필요하다.
 
 ## 누락 판단과 관찰 범위
 
@@ -91,11 +90,12 @@ send 이후 오류나 timeout을 관찰한 경우에는 broker 기록 여부가 
 | 설정 | 값 | 의미와 한계 |
 | --- | --- | --- |
 | `acks` | `all` | 현재 ISR의 기록을 확인한 뒤 성공으로 본다. 단일 broker의 한계는 [Broker 설계](../../../modules/kafka/docs/broker.md#보존과-복제의-한계)를 따른다. |
-| `enable.idempotence` | `true` | 같은 producer 세션의 내부 전송 재시도로 생기는 중복을 막는다. 애플리케이션 재전송·세션 재생성 뒤의 업무 중복과 소비 DB 효과는 보호하지 않는다. |
-| `retries` | `3` (공통 설정에서 명시) | 재시도 가능한 오류에 대한 producer 내부 재시도 상한이다. delivery timeout이나 재시도 불가능한 오류로 더 일찍 실패할 수 있다. 업무 요구에서 산정한 횟수는 아니다. |
-| `request.timeout.ms` / `retry.backoff.ms` | `20000` / `500` (공통 설정에서 명시) | 개별 broker 요청의 응답 대기와 재시도 간 대기다. 주문 확정 또는 구매 활동 저장의 제한 시간이 아니다. |
-| `max.block.ms` | 미지정, client 3.8.1 기본 `60000` | send 진입의 metadata·buffer 대기 상한이다. 호출 스레드의 응답 예산과 측정 결과에 따라 조정 여부를 정한다. |
-| `delivery.timeout.ms` | 미지정, client 3.8.1 기본 `120000` | send 반환 뒤 전송 성공·실패를 보고하는 시간 상한이다. HTTP 응답 시간과 구분한다. |
+| `enable.idempotence` | `true` | 같은 producer 세션의 내부 전송 재시도로 생기는 중복을 막는다. Relay가 의도적으로 다시 보낸 동일 메시지는 합치지 않는다. |
+| key/value serializer | `StringSerializer` / `StringSerializer` | Outbox에 저장한 key와 JSON 문자열을 변경 없이 전송한다. |
+| `request.timeout.ms` / `delivery.timeout.ms` | `2000` / `5000` | broker 요청과 producer 전달 시도의 timeout이다. Relay의 Future 대기 설정과 별도로 관찰한다. |
+| `max.block.ms` | `1000` | metadata·buffer 확보를 위한 동기 send 진입 대기 상한이다. 주문 확정 TX가 아닌 Relay 흐름에서 대기한다. |
+| Future timeout | `6000` | Relay가 완료 응답을 기다리는 제한 시간이다. timeout이어도 broker에 record가 없었다고 단정하지 않는다. |
+| batch / poll / retry interval | `10` / `1s` / `5s` | 한 회차의 조회 크기와 polling·재시도 주기. 운영 처리량에 맞춰 조정할 설정값이다. |
 
 이 값들로 API 응답 시간이나 복구 시간을 보장한다고 해석하지 않는다. 멱등 producer는 `acks=all`, 양수 retries, 허용되는 in-flight 수의 조합을 요구한다. 현재 in-flight 수는 client 기본값 5를 사용한다.
 
@@ -103,4 +103,4 @@ send 이후 오류나 timeout을 관찰한 경우에는 broker 기록 여부가 
 
 테스트 위치·방법·기대값은 [공통 검증 문서](../../../docs/system-design/use-cases/order-confirmed-event-verification.md)를 따른다.
 
-주요 구현은 [PaymentResultTransaction](../src/main/java/com/loopers/application/payment/PaymentResultTransaction.java), [OrderConfirmedEvent](../src/main/java/com/loopers/application/order/event/OrderConfirmedEvent.java), [OrderConfirmedKafkaPublisher](../src/main/java/com/loopers/infrastructure/order/event/OrderConfirmedKafkaPublisher.java)다.
+주요 구현은 [PaymentResultTransaction](../src/main/java/com/loopers/application/payment/PaymentResultTransaction.java), [OrderConfirmedOutboxJpaEntity](../src/main/java/com/loopers/infrastructure/order/outbox/OrderConfirmedOutboxJpaEntity.java), [OrderConfirmedOutboxRelay](../src/main/java/com/loopers/infrastructure/order/outbox/OrderConfirmedOutboxRelay.java), [OrderConfirmedKafkaSender](../src/main/java/com/loopers/infrastructure/order/outbox/OrderConfirmedKafkaSender.java)다.
