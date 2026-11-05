@@ -12,10 +12,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
-import java.util.Random;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -38,34 +35,78 @@ class OrderConfirmedOutboxReadySelectionTest {
     @Autowired
     private Environment environment;
 
+    @Test
+    @DisplayName("재시도 시각이 도래한 PENDING·FAILED 이벤트만 조회한다")
+    void selectsOnlyDuePendingAndFailedRows() {
+        OrderConfirmedOutbox pendingBeforeNow = outbox(
+            "pending-before-now", OrderConfirmedOutboxStatus.PENDING, NOW.minusMillis(1)
+        );
+        OrderConfirmedOutbox failedAtNow = outbox(
+            "failed-at-now", OrderConfirmedOutboxStatus.FAILED, NOW
+        );
+        OrderConfirmedOutbox pendingAfterNow = outbox(
+            "pending-after-now", OrderConfirmedOutboxStatus.PENDING, NOW.plusMillis(1)
+        );
+        OrderConfirmedOutbox failedAfterNow = outbox(
+            "failed-after-now", OrderConfirmedOutboxStatus.FAILED, NOW.plusMillis(1)
+        );
+        OrderConfirmedOutbox blockedBeforeNow = outbox(
+            "blocked-before-now", OrderConfirmedOutboxStatus.BLOCKED, NOW.minusMillis(1)
+        );
+        OrderConfirmedOutbox publishedBeforeNow = outbox(
+            "published-before-now", OrderConfirmedOutboxStatus.PUBLISHED, NOW.minusMillis(1)
+        );
+        repository.saveAllAndFlush(List.of(
+            pendingAfterNow,
+            blockedBeforeNow,
+            failedAtNow,
+            publishedBeforeNow,
+            failedAfterNow,
+            pendingBeforeNow
+        ));
+
+        List<OrderConfirmedOutbox> ready = repository.findReadyForRelay(NOW, batchSize());
+
+        assertThat(ready).containsExactlyInAnyOrder(pendingBeforeNow, failedAtNow);
+    }
 
     @Test
-    @DisplayName("재시도 시각이 지난 이벤트를 오래된 순서로 설정된 최대 건수만큼 조회한다")
-    void ordersEligibleRowsByCreationTimeAndLimitsResultToConfiguredBatchSize() {
+    @DisplayName("조회 결과는 생성 시각이 오래된 순서로 정렬되어 있어야 한다")
+    void ordersEligibleRowsByOldestCreationTime() {
+        OrderConfirmedOutbox oldest = outbox(
+            "oldest", OrderConfirmedOutboxStatus.PENDING,
+            NOW.minusSeconds(1), CREATED_AT.minusSeconds(30)
+        );
+        OrderConfirmedOutbox middle = outbox(
+            "middle", OrderConfirmedOutboxStatus.FAILED,
+            NOW.minusSeconds(3), CREATED_AT.minusSeconds(20)
+        );
+        OrderConfirmedOutbox newest = outbox(
+            "newest", OrderConfirmedOutboxStatus.PENDING,
+            NOW.minusSeconds(5), CREATED_AT.minusSeconds(10)
+        );
+        repository.saveAllAndFlush(List.of(newest, oldest, middle));
+
+        List<OrderConfirmedOutbox> ready = repository.findReadyForRelay(NOW, batchSize());
+
+        assertThat(ready).containsExactly(oldest, middle, newest);
+    }
+
+    @Test
+    @DisplayName("조회 결과는 application-test.yml의 batch-size를 넘지 않는다")
+    void limitsResultToConfiguredBatchSize() {
         int batchSize = batchSize();
-        List<OrderConfirmedOutbox> eligible = IntStream.rangeClosed(1, batchSize + 1)
+        List<OrderConfirmedOutbox> eligible = IntStream.range(0, batchSize + 2)
             .mapToObj(index -> outbox(
                 "eligible-" + index,
                 index % 2 == 0 ? OrderConfirmedOutboxStatus.PENDING : OrderConfirmedOutboxStatus.FAILED,
-                NOW.minusSeconds(batchSize + 2L - index),
-                CREATED_AT.minusSeconds(index)
+                NOW.minusMillis(1)
             ))
             .toList();
-        List<OrderConfirmedOutbox> insertionOrder = new ArrayList<>(eligible);
-        Collections.shuffle(insertionOrder, new Random(21));
-        insertionOrder.add(outbox("blocked", OrderConfirmedOutboxStatus.BLOCKED, NOW.minusSeconds(100)));
-        insertionOrder.add(outbox("published", OrderConfirmedOutboxStatus.PUBLISHED, NOW.minusSeconds(101)));
-        insertionOrder.add(outbox("pending-future", OrderConfirmedOutboxStatus.PENDING, NOW.plusMillis(1)));
-        insertionOrder.add(outbox("failed-future", OrderConfirmedOutboxStatus.FAILED, NOW.plusMillis(1)));
-        repository.saveAllAndFlush(insertionOrder);
+        repository.saveAllAndFlush(eligible);
 
         List<OrderConfirmedOutbox> ready = repository.findReadyForRelay(NOW, batchSize);
-        List<OrderConfirmedOutbox> expected = eligible.stream()
-            .sorted((left, right) -> left.getCreatedAt().compareTo(right.getCreatedAt()))
-            .limit(batchSize)
-            .toList();
 
-        assertThat(ready).containsExactlyElementsOf(expected);
         assertThat(ready).hasSize(batchSize);
     }
 
