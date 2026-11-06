@@ -32,6 +32,9 @@ dependencies {
     testImplementation(testFixtures(project(":modules:jpa")))
     testImplementation(testFixtures(project(":modules:redis")))
 
+    // circuit breaker
+    implementation("org.springframework.cloud:spring-cloud-starter-circuitbreaker-resilience4j")
+
     // architecture test
     testImplementation("com.tngtech.archunit:archunit:1.5.0")
 

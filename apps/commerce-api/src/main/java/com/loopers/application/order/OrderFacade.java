@@ -1,33 +1,37 @@
 package com.loopers.application.order;
 
+import com.loopers.application.payment.PaymentProcessingService;
+import com.loopers.application.payment.PgPaymentPort;
+import com.loopers.application.payment.PgPaymentRequest;
+import com.loopers.application.payment.PgPaymentResult;
 import com.loopers.domain.order.OrderItemModel;
-import com.loopers.domain.order.OrderModel;
 import com.loopers.domain.order.OrderService;
-import com.loopers.domain.point.PointService;
+import com.loopers.domain.payment.PaymentAttemptModel;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.product.ProductService;
 import com.loopers.domain.user.UserService;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+@Slf4j
 @RequiredArgsConstructor
 @Component
 public class OrderFacade {
 
     private final UserService userService;
     private final ProductService productService;
-    private final PointService pointService;
     private final OrderService orderService;
+    private final PaymentProcessingService paymentProcessingService;
+    private final PgPaymentPort pgPaymentPort;
 
     public OrderInfo createOrder(Long userId, List<OrderItemCommand> commands) {
         userService.getUser(userId);
@@ -58,19 +62,32 @@ public class OrderFacade {
         return OrderInfo.from(orderService.create(userId, items));
     }
 
-    @Transactional
-    public OrderInfo confirmOrder(Long userId, Long orderId) {
+    /**
+     * PG 3-phase 결제 시작. TX A 완료 후 PG HTTP 호출(트랜잭션 밖), 그 후 TX B로 결과 적용.
+     * cardType/cardNo는 LocalPg 테스트 시나리오용이며 실제 PG POST body에는 포함하지 않는다.
+     */
+    public OrderInfo confirmOrder(Long userId, Long orderId, String paymentAttemptKey, String callbackUrl) {
         userService.getUser(userId);
-        OrderModel order = orderService.getMyOrder(userId, orderId);
-        order.requireDraft();
 
-        order.getItems().stream()
-            .sorted(Comparator.comparingLong(OrderItemModel::getProductId))
-            .forEach(item -> productService.deductStock(item.getProductId(), item.getQuantity()));
-        pointService.use(userId, order.getTotalAmount());
+        PaymentAttemptModel attempt = paymentProcessingService.initiatePayment(userId, orderId, paymentAttemptKey);
 
-        order.confirm();
-        return OrderInfo.from(orderService.save(order));
+        PgPaymentRequest pgRequest = PgPaymentRequest.of(
+            attempt.getProviderOrderId(),
+            attempt.getAmount(),
+            callbackUrl
+        );
+
+        PgPaymentResult pgResult;
+        try {
+            pgResult = pgPaymentPort.pay(pgRequest);
+        } catch (Exception e) {
+            log.error("PG 호출 예외 발생: orderId={}", orderId, e);
+            pgResult = new PgPaymentResult(null, attempt.getProviderOrderId(), attempt.getAmount(), PgPaymentResult.PgStatus.UNKNOWN);
+        }
+
+        paymentProcessingService.applyPaymentResult(orderId, pgResult);
+
+        return OrderInfo.from(orderService.getOrderById(orderId));
     }
 
     public OrderInfo getMyOrder(Long userId, Long orderId) {

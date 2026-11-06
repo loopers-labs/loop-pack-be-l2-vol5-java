@@ -64,6 +64,31 @@ public class ProductService {
     }
 
     @Transactional
+    public ProductModel reserveStock(Long id, int quantity) {
+        ProductModel product = productRepository.findActiveByIdWithLock(id)
+            .orElseThrow(() -> new CoreException(ErrorType.BAD_REQUEST,
+                "[id = " + id + "] 삭제되었거나 존재하지 않는 상품은 주문할 수 없습니다."));
+        product.reserve(quantity);
+        return productRepository.save(product);
+    }
+
+    @Transactional
+    public ProductModel consumeReservation(Long id, int quantity) {
+        ProductModel product = productRepository.findActiveByIdWithLock(id)
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[id = " + id + "] 상품을 찾을 수 없습니다."));
+        product.consumeReservation(quantity);
+        return productRepository.save(product);
+    }
+
+    @Transactional
+    public ProductModel releaseReservation(Long id, int quantity) {
+        ProductModel product = productRepository.findByIdWithLock(id)
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[id = " + id + "] 상품을 찾을 수 없습니다."));
+        product.releaseReservation(quantity);
+        return productRepository.save(product);
+    }
+
+    @Transactional
     public ProductModel deductStock(Long id, int quantity) {
         ProductModel product = productRepository.findActiveByIdWithLock(id)
             .orElseThrow(() -> new CoreException(ErrorType.BAD_REQUEST,

@@ -35,10 +35,16 @@ public class OrderV1Controller {
     @PostMapping("/{orderId}/confirm")
     public ApiResponse<OrderV1Dto.OrderResponse> confirmOrder(
         @RequestHeader(value = USER_ID_HEADER, required = false) Long userId,
-        @PathVariable(value = "orderId") Long orderId
+        @PathVariable(value = "orderId") Long orderId,
+        @RequestBody OrderV1Dto.ConfirmRequest request
     ) {
         return ApiResponse.success(OrderV1Dto.OrderResponse.from(
-            orderFacade.confirmOrder(requireUserId(userId), orderId)
+            orderFacade.confirmOrder(
+                requireUserId(userId),
+                orderId,
+                request.paymentAttemptKey(),
+                request.callbackUrl()
+            )
         ));
     }
 
