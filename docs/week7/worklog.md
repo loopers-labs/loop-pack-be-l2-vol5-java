@@ -18,6 +18,7 @@
 | 7 E2E | 11-06 | `run.sh` 3막 — ack 뒤 저장 전 중단(JVM 1) → relay 재시작(JVM 2) | C-6 | `bd06dae4` |
 | 8 운영 문서 | 11-06 | `operations.md` — 관찰 SQL·로그·재개·보존·한계 | C-9 · C-10 | |
 | 9 회귀 | 11-06 | commerce-api 532/0/0 · streamer 39/0/0 · lint 통과 · 남은 자원 0. 간헐 실패 테스트 원인 수정 | C-11 | |
+| 추가 rebalance | 11-06 | 학습자 요청: 구매 활동 consumer를 CooperativeStickyAssignor로. Red(eager에서 기존 member가 0·1·2를 모두 내려놓음) → Green(옮겨 간 partition 2만 내려놓음). kill -9 감지 시간(session.timeout)은 그대로 | — | |
 
 (3단계 재시도·BLOCKED는 핵심 3과 relay 한 회차에 함께 들어갔다.)
 
@@ -35,6 +36,7 @@
 | 6단계 | 성공 `c7-20261106-022901` | — | 7단계에서 1~3막을 한 번에 다시 돌린 `c7-20261106-024330`을 최종 근거로 삼고 022901 결과는 지움 |
 | 8단계 | 관찰 SQL O-6이 "Illegal mix of collations"로 실패 | `schema.sql`을 loopers_test(utf8mb4_general_ci)에서 옮겨 collation이 고정됨. 로컬 loopers 기본은 utf8mb4_0900_ai_ci라 consumer 테이블과 JOIN이 안 됨 | `schema.sql`에서 문자셋·collation을 빼 DB 기본값을 따르게 함. verify.sh는 서버 기본값(로컬과 같음)으로 실행 |
 | 8단계 | relay 주기를 실제로 잰 적이 없음 (학습자 질문) | 기존 scheduler 테스트는 자동 tick을 1시간으로 미루고 tick()을 직접 불렀음 | `OrderOutboxRelayTickIntegrationTest` 추가 — 실제 scheduler로 1.02초 간격, 1.5초 회차면 2.53초. fixedRate·tick 3초 변이 모두 실패 |
+| 추가 rebalance | streamer 전체 실행에서 `PartitionAssignmentExperimentTest` 간헐 실패 | commerce-api와 같은 원인 — 새 topic을 만들고 바로 send | `KafkaTestSupport.awaitProducerMetadata`를 만들어 topic을 만든 뒤 send하는 streamer 테스트 3개에 넣음. 40/0/0 |
 | 9단계 | `KafkaClusterSettingsTest` 간헐 실패 (W6부터 있던 테스트. 고치기 전 전체 실행 5번 중 3번 실패) | 새로 만든 probe topic의 metadata가 broker 3대에 퍼지기 전에 앱 producer(max.block.ms 1s)가 첫 send → `UNKNOWN_TOPIC_OR_PARTITION` → 1초 timeout | 첫 시도 "leader·ISR 3을 기다림"은 **효과 없음**(ISR은 생성 때부터 3) — 다시 실패. 앱 producer의 `partitionsFor`가 성공할 때까지 기다리도록 고침. 다음 전체 실행에서 같은 metadata 오류가 1번 났지만 대기가 받아 통과. 단언·앱 설정은 그대로 |
 
 ## 작업 방식
