@@ -231,6 +231,18 @@ relay 한 건의 흐름은 단계로 나뉜다. 어느 단계 사이에서 멈�
 - 실제 W6 원본 DB를 보존한 것이 아니므로 이것은 "원본 사건의 복구"가 아니다. 원본 DB가 있었다면 준비를 다시 하지 않고, 보존한 사건 사실을 확인한 뒤 같은 `backfill`을 적용한다.
 - 복구 경로의 경계 사례(원본 사실 부족·충돌·이미 보낸 행·재복구)는 `OrderOutboxBackfillTest`가 따로 확인한다.
 
+### 4-5. 반례: "PUBLISHED를 먼저 저장하면 중복을 줄일 수 있다" (`PublishedFirstCounterexampleTest`)
+
+제안한 순서는 `시도 기록 → PUBLISHED 저장 → send`다. 같은 지점(DB 기록과 broker 사이)에서 멈추면 두 순서의 결과가 갈린다.
+
+| 순서 | 멈춘 직후 | 재시작한 relay 뒤 (1시간 뒤 회차까지) | 결과 |
+|---|---|---|---|
+| 제안: PUBLISHED 먼저 → [멈춤] → send | 행 PUBLISHED, broker record 0, backlog에 안 보임 | 고르지 않음. broker record 끝까지 0 | **영구 누락**. 모든 관찰값이 "다 보냈다"를 가리킨다 |
+| W7: send → broker 확인 → [멈춤] → PUBLISHED | 행 PENDING, broker record 1, backlog 1 | 같은 사건을 다시 보냄. broker record 2, 행 PUBLISHED | 중복 1회. consumer의 eventId 유일 제약이 흡수한다 |
+
+- 제안은 "다시 보내지 않으니 중복이 준다"는 점만 보고, 그 대가로 send 전·send 실패 뒤의 중단을 되찾을 근거를 지운다. PUBLISHED는 "broker가 받았다"를 저장한 뒤에만 참이어야 한다.
+- 제안한 순서는 테스트 안에서 서비스 단계를 직접 불러 조립했다. 제품 relay에는 이 순서가 없다.
+
 ## 5. 결정 사항
 
 | 결정 | 선택 | 이유 | 상태 |
@@ -254,6 +266,7 @@ relay 한 건의 흐름은 단계로 나뉜다. 어느 단계 사이에서 멈�
 | `OrderOutboxRetryAndResumeTest` | broker 장애 동안 쌓인 PENDING 2건이 회복 뒤 같은 행으로 발행되고 backlog가 비워짐, 연속 실패의 대기 1s → 2s → 4s(상한) → 4s와 알림 기준부터 ERROR(eventId·원인), eventId를 지정한 재개가 다음 시도 시각 전에 보내고 PUBLISHED·없는 eventId는 보내지 않음 |
 | `OrderOutboxInterruptionTest` | ① commit 뒤 relay 실행 전 중단: CONFIRMED·CONSUMED·PENDING(시도 0)·broker 0 → 새 relay가 저장 payload 그대로 1회 발행·PUBLISHED. ② broker 확인 뒤 PUBLISHED 저장 전 중단: send 성공 offset과 broker record 일치, 같은 행 PENDING(시도 1, 실패 기록 없음) → 새 relay가 같은 eventId를 다른 offset에 재발행, 같은 행 PUBLISHED(시도 2) |
 | `OutboxDeliveryE2ETest` (`e2eTest`) | 주문 API → PG 성공 callback → Outbox → relay(PUBLISHED 저장 전 중단·재시작) → Kafka 2 record → 실제 구매 활동 consumer. 4-3절 표의 기대값 전부 |
+| `PublishedFirstCounterexampleTest` | 4-5절 반례: PUBLISHED를 먼저 저장하고 send 전에 멈춘 사건은 재시작·1시간 뒤 회차에도 broker 0·backlog 0(영구 누락), W7 순서는 같은 지점에서 멈춰도 재발행(broker 2) |
 | `OrderOutboxBackfillTest` | W6 경로로 확정된 주문에 저장된 사실 그대로 PENDING 1행(W6가 보내려던 값과 같은 바이트, 확정 시각 보존, PG·재고 불변), 재복구 무추가·PUBLISHED 유지, 없는·미확정 주문 거부와 다른 대상 처리, 충돌 행 거부·미변경 |
 | `W6OmissionRecoveryE2ETest` (`e2eTest`) | 4-4절 표 전부: W6 경로 준비(A 미발행·B 소비), C=2·T=2 기록, 복구로 A 구매 활동 생성·B 불변, 2차 복구 무변화, 복구 중 PG·주문·예약·직접 발행 증가 0 |
 | `OrderConfirmedOutboxTest` | 처음 확정에서 1행·저장 사실과 같은 payload, 중복 적용 무추가·payload 불변, 대기·실패·rollback 무기록, broker 불통에도 직접 send 0회 |
