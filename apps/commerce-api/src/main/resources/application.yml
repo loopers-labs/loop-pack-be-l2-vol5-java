@@ -58,16 +58,24 @@ payment:
     batch-size: 100            # 한 번에 모으는 시도 수 — 회차는 밀린 게 없을 때까지 묶음을 반복한다 (D-047)
     lookups-per-second: 20     # PG 조회 속도 상한 (D-047) — 측정 전 가정값
 
-# 주문 확정 이벤트 발행 (docs/week6/design.md 2번, decisions.md D-23)
+# 주문 확정 이벤트 발행 (docs/week6/design.md 2번, decisions.md D-23). 6주차 메모리 큐 설정(publish.*)은 Outbox로 대체됐다(docs/week7/decisions.md D-9)
 events:
   order-confirmed:
     topic: order-events
-    publish:
-      threads: 1             # 장애 때는 늘려도 같이 막힌다
-      queue-capacity: 1000   # 넘치면 "미발행"으로 기록하고 버린다 — 회복 장치가 아니라 메모리 상한
-      shutdown-await: 10s    # 정상 종료 때 남은 작업을 끝낼 때까지 — max-block 이상
     producer:
       max-block: 5s          # send()가 metadata를 기다리는 상한(max.block.ms) — 이 producer에만
+
+# Outbox relay (docs/week7/decisions.md D-2~D-4, D-15). 기본은 꺼 두고 한 인스턴스에서만 켠다(D-4)
+outbox:
+  relay:
+    enabled: false
+    fixed-delay: 1s        # 앞 회차가 끝난 뒤 다음 회차까지 — 첫 백오프(1초)보다 길지 않게 둔다
+    batch-size: 10         # 한 회차에 id 순서로 고르는 최대 행 수, 한 건씩 차례로 보낸다(D-15)
+    backoff:
+      initial: 1s          # 실패 뒤 다음 시도까지 1초부터 두 배씩(D-3)
+      max: 5m              # 백오프 상한(D-3)
+    block-after: 24h       # created_at부터 이 시간이 지나도 실패하면 BLOCKED(D-3, D-16)
+    lease-margin: 1m       # 임대 = producer 최대 전송 시간(max.block + delivery.timeout) + 이 여유(D-2, INV-704)
 
 springdoc:
   use-fqn: true
