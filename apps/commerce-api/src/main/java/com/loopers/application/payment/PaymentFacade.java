@@ -3,9 +3,7 @@ package com.loopers.application.payment;
 import com.loopers.application.order.OrderConfirmInfo;
 import com.loopers.application.order.OrderInfo;
 import com.loopers.domain.order.Order;
-import com.loopers.domain.order.OrderConfirmedEvent;
 import com.loopers.domain.order.OrderService;
-import com.loopers.domain.payment.PaymentApplyResult;
 import com.loopers.domain.payment.PaymentAttempt;
 import com.loopers.domain.payment.PaymentAttemptRepository;
 import com.loopers.domain.payment.PaymentFinalResult;
@@ -30,6 +28,7 @@ import java.util.Optional;
  * callback·reconcile·스케줄러의 조율 (설계 6장). 세 입구 모두 "PG 권위 조회 → 네 항목 대조 → TX B(PaymentResultService) 전달"을 공유한다.
  * OrderFacade 와 서로 호출하지 않는다. 이 클래스의 메서드는 트랜잭션을 갖지 않는다. PG 조회 동안 DB 트랜잭션을 보유하지 않기 위해서다.
  * 어떤 경로에서도 create 는 다시 보내지 않는다.
+ * 7주차: 확정 뒤 Kafka 직접 발행(W6 D4)은 제거했다. OrderConfirmed 는 applyFinal 이 같은 TX 에 넣는 Outbox 를 relay 가 발행한다 (7주차 설계 D17).
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -43,7 +42,6 @@ public class PaymentFacade {
     private final PaymentGateway paymentGateway;
     private final PaymentLookupProperties lookupProperties;
     private final Clock clock;
-    private final OrderConfirmedPublisher orderConfirmedPublisher;
 
     /**
      * POST /api/v1/payments/callback (설계 7-5 결정 ⑲·⑬).
@@ -221,39 +219,16 @@ public class PaymentFacade {
 
     /**
      * 검증된 거래 1건을 TX B 에 넘긴다. SUCCESS·FAILED 는 ⑥⑦⑧, PENDING 은 PENDING 전이 + key 저장(결정 ⑪)만 한다.
-     * SUCCESS 가 주문을 처음 CONFIRMED 로 만들었으면, applyFinal 이 리턴한 뒤(= TX B commit 뒤) OrderConfirmed 를 발행한다 (6주차 설계 D4).
-     * applyFinal 의 예외는 그대로 전파된다. 발행만 감싼다.
+     * SUCCESS 가 주문을 처음 CONFIRMED 로 만들었으면 applyFinal 이 같은 TX 에 OrderConfirmed Outbox 를 남긴다. 여기서 발행하지 않는다 (7주차 설계 D10·D17).
+     * applyFinal 의 예외는 그대로 전파된다.
      */
     private void apply(PaymentAttempt attempt, PaymentTransaction transaction) {
         switch (transaction.status()) {
-            case SUCCESS -> {
-                PaymentApplyResult applied = paymentResultService.applyFinal(
-                    attempt.getId(), PaymentFinalResult.success(transaction.transactionKey()));
-                if (applied.isFirstConfirmation()) {
-                    publishAfterCommit(applied.firstConfirmation());
-                }
-            }
+            case SUCCESS -> paymentResultService.applyFinal(
+                attempt.getId(), PaymentFinalResult.success(transaction.transactionKey()));
             case FAILED -> paymentResultService.applyFinal(
                 attempt.getId(), PaymentFinalResult.failed(PaymentAttempt.FailureReason.PG_FAILED, transaction.transactionKey()));
             case PENDING -> paymentResultService.recordPending(attempt.getId(), transaction.transactionKey());
-        }
-    }
-
-    /**
-     * 이 Facade 에는 TX 가 없으므로 여기 도달한 시점은 확정 TX 가 이미 commit 된 뒤다.
-     * 발행 실패 확정·미확인·예상 못한 오류는 ERROR 로그로만 드러내고 밖으로 던지지 않는다. 주문 상태를 되돌리거나 PG 를 재호출하지 않는다 (D7).
-     * commit 뒤 ~ 발행 사이의 누락은 이 구조로는 막을 수 없다 → W7 Outbox.
-     */
-    private void publishAfterCommit(OrderConfirmedEvent event) {
-        try {
-            orderConfirmedPublisher.publish(event);
-        } catch (OrderConfirmedPublishException e) {
-            log.error("OrderConfirmed 발행 {}. outcome={}, eventId={}, orderId={}. 주문은 CONFIRMED 로 유지한다.",
-                e.getOutcome() == OrderConfirmedPublishException.Outcome.FAILED ? "실패 확정" : "결과 미확인",
-                e.getOutcome(), e.getEventId(), e.getOrderId(), e);
-        } catch (RuntimeException e) {
-            log.error("OrderConfirmed 발행 중 예상 못한 오류. eventId={}, orderId={}. 주문은 CONFIRMED 로 유지한다.",
-                event.eventId(), event.orderId(), e);
         }
     }
 

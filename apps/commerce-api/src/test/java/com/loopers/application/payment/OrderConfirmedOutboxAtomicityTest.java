@@ -1,10 +1,16 @@
 package com.loopers.application.payment;
 
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.databind.JsonMappingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.application.order.OrderCommand;
 import com.loopers.application.order.OrderConfirmInfo;
 import com.loopers.application.order.OrderFacade;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderConfirmedEvent;
+import com.loopers.domain.order.OrderConfirmedOutbox;
+import com.loopers.domain.order.OrderConfirmedOutboxRepository;
 import com.loopers.domain.payment.PaymentAttempt;
 import com.loopers.domain.product.Price;
 import com.loopers.domain.product.Product;
@@ -12,14 +18,13 @@ import com.loopers.domain.product.StockReservation;
 import com.loopers.domain.product.StockReservationRepository;
 import com.loopers.domain.user.User;
 import com.loopers.infrastructure.order.OrderJpaRepository;
-import com.loopers.infrastructure.payment.FakeOrderConfirmedPublisher;
-import com.loopers.infrastructure.payment.FakeOrderConfirmedPublisherConfig;
 import com.loopers.infrastructure.payment.FakePaymentGateway;
 import com.loopers.infrastructure.payment.FakePaymentGatewayConfig;
 import com.loopers.infrastructure.payment.PaymentAttemptJpaRepository;
 import com.loopers.infrastructure.product.ProductJpaRepository;
 import com.loopers.infrastructure.product.StockReservationJpaRepository;
 import com.loopers.infrastructure.user.UserJpaRepository;
+import com.loopers.support.error.CoreException;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,31 +38,37 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doThrow;
 
 /**
- * "검증된 PG SUCCESS 를 처음 CONFIRMED 로 반영해 commit 된 경우에만 발행한다"(과제 2절, 설계 D3·D4·D7)를
- * 실제 MySQL·가짜 PG·가짜 발행기로 검증한다. 발행은 callback·reconcile 이 공유하는 PaymentFacade.apply 에서만 일어난다.
+ * "검증된 PG SUCCESS 를 처음 CONFIRMED 로 반영하는 같은 TX 에서만 OrderConfirmed Outbox 가 PENDING 으로 생긴다"
+ * (7주차 과제 2절 📄 p.2, 설계 D10·D13·D16)를 실제 MySQL·가짜 PG 로 검증한다.
+ * Outbox insert 는 callback·reconcile·스케줄러가 공유하는 PaymentResultService.applyFinal 에서만 일어난다.
+ * 전환 전 테스트(OrderConfirmedPublicationTest)와의 대응은 설계 문서 D20 표에 있다.
  */
 @SpringBootTest
-@Import({FakePaymentGatewayConfig.class, FakeOrderConfirmedPublisherConfig.class})
-class OrderConfirmedPublicationTest {
+@Import(FakePaymentGatewayConfig.class)
+class OrderConfirmedOutboxAtomicityTest {
 
     private static final String CARD_TYPE = "TEST";
     private static final String CARD_NO = "0000-0000-0000-0000";
 
     @MockitoSpyBean
     private StockReservationRepository stockReservationRepository;
+    @MockitoSpyBean
+    private OrderConfirmedOutboxRepository outboxRepository;
+    @MockitoSpyBean
+    private ObjectMapper objectMapper;
 
     private final PaymentFacade paymentFacade;
     private final OrderFacade orderFacade;
     private final FakePaymentGateway fakePaymentGateway;
-    private final FakeOrderConfirmedPublisher fakePublisher;
     private final UserJpaRepository userJpaRepository;
     private final ProductJpaRepository productJpaRepository;
     private final OrderJpaRepository orderJpaRepository;
@@ -67,11 +78,10 @@ class OrderConfirmedPublicationTest {
     private final DatabaseCleanUp databaseCleanUp;
 
     @Autowired
-    OrderConfirmedPublicationTest(
+    OrderConfirmedOutboxAtomicityTest(
         PaymentFacade paymentFacade,
         OrderFacade orderFacade,
         FakePaymentGateway fakePaymentGateway,
-        FakeOrderConfirmedPublisher fakePublisher,
         UserJpaRepository userJpaRepository,
         ProductJpaRepository productJpaRepository,
         OrderJpaRepository orderJpaRepository,
@@ -83,7 +93,6 @@ class OrderConfirmedPublicationTest {
         this.paymentFacade = paymentFacade;
         this.orderFacade = orderFacade;
         this.fakePaymentGateway = fakePaymentGateway;
-        this.fakePublisher = fakePublisher;
         this.userJpaRepository = userJpaRepository;
         this.productJpaRepository = productJpaRepository;
         this.orderJpaRepository = orderJpaRepository;
@@ -96,7 +105,6 @@ class OrderConfirmedPublicationTest {
     @BeforeEach
     void setUp() {
         fakePaymentGateway.reset();
-        fakePublisher.reset();
     }
 
     @AfterEach
@@ -107,39 +115,52 @@ class OrderConfirmedPublicationTest {
     @DisplayName("PG SUCCESS 를 처음 반영하면, ")
     @Nested
     class FirstConfirmation {
-        @DisplayName("저장된 품목·확정 시각으로 만든 이벤트를 1건 발행하고, 발행 시점에는 활성 TX 가 없으며 별도 연결로 읽은 주문이 이미 CONFIRMED 다.")
+        @DisplayName("Outbox 1행이 PENDING 으로 생기고 payload 는 저장 품목·확정 시각으로 만든 W6 계약 JSON 이며, 별도 연결로 읽어도 주문 CONFIRMED 와 Outbox 가 함께 보인다.")
         @Test
-        void publishesOnce_afterCommit() {
+        void insertsOutboxOnce_inSameTransaction() throws Exception {
             // arrange
             Long userId = saveUser();
             Long productId = saveProduct(1000L, 5);
             Long orderId = createOrder(userId, productId, 2);
             PaymentAttempt attempt = startPayment(userId, orderId, "k1");
             fakePaymentGateway.markSuccess(attempt.getTransactionKey());
-            // send 직전에 다른 연결(JdbcTemplate, TX 없음)로 주문 상태를 읽어 commit 여부를 본다. 같은 영속성 컨텍스트가 아니다.
-            List<String> statusAtPublish = new CopyOnWriteArrayList<>();
-            fakePublisher.beforeSend(event -> statusAtPublish.add(
-                jdbcTemplate.queryForObject("SELECT status FROM orders WHERE id = ?", String.class, event.orderId())));
 
             // act
             OrderConfirmInfo info = paymentFacade.applyCallback(attempt.getProviderOrderId(), attempt.getTransactionKey());
 
-            // assert
+            // assert - Outbox 행
             assertThat(info.settled()).isTrue();
-            assertThat(fakePublisher.published()).hasSize(1);
-            OrderConfirmedEvent event = fakePublisher.published().get(0);
-            assertThat(event.eventId()).isEqualTo("order-confirmed:v1:" + orderId);
-            assertThat(event.orderId()).isEqualTo(orderId);
-            assertThat(event.key()).isEqualTo(String.valueOf(orderId));
-            assertThat(event.confirmedAt()).isEqualTo(orderOf(orderId).getConfirmedAt().toInstant());
-            assertThat(event.items()).containsExactly(new OrderConfirmedEvent.Item(productId, 2));
-            assertThat(fakePublisher.publishedInsideTransaction()).as("발행 시점에 활성 DB 트랜잭션이 없어야 한다").isFalse();
-            assertThat(statusAtPublish).containsExactly("CONFIRMED");
+            OrderConfirmedOutbox outbox = outboxOf(orderId).orElseThrow();
+            assertThat(outbox.getEventId()).isEqualTo("order-confirmed:v1:" + orderId);
+            assertThat(outbox.getOrderId()).isEqualTo(orderId);
+            assertThat(outbox.getMessageKey()).isEqualTo(String.valueOf(orderId));
+            assertThat(outbox.getEventType()).isEqualTo(OrderConfirmedEvent.EVENT_TYPE);
+            assertThat(outbox.getSchemaVersion()).isEqualTo(OrderConfirmedEvent.SCHEMA_VERSION);
+            assertThat(outbox.getStatus()).isEqualTo(OrderConfirmedOutbox.Status.PENDING);
+            assertThat(outbox.getPublishedAt()).isNull();
+            assertThat(outbox.getAttemptCount()).isZero();
+            assertThat(outbox.getLastError()).isNull();
+            assertThat(outbox.getNextAttemptAt().toInstant()).isEqualTo(orderOf(orderId).getConfirmedAt().toInstant());
+
+            // assert - payload 는 W6 계약 JSON (eventType, schemaVersion, eventId, orderId, confirmedAt ISO 문자열, items)
+            JsonNode payload = objectMapper.readTree(outbox.getPayload());
+            assertThat(payload.get("eventType").asText()).isEqualTo("OrderConfirmed");
+            assertThat(payload.get("schemaVersion").asInt()).isEqualTo(1);
+            assertThat(payload.get("eventId").asText()).isEqualTo(outbox.getEventId());
+            assertThat(payload.get("orderId").asLong()).isEqualTo(orderId);
+            assertThat(payload.get("confirmedAt").asText()).isEqualTo(orderOf(orderId).getConfirmedAt().toInstant().toString());
+            assertThat(payload.get("items")).hasSize(1);
+            assertThat(payload.get("items").get(0).get("productId").asLong()).isEqualTo(productId);
+            assertThat(payload.get("items").get(0).get("quantity").asInt()).isEqualTo(2);
+
+            // assert - 다른 연결(JdbcTemplate, TX 없음)로 읽어도 둘 다 commit 돼 있다
+            assertThat(jdbcTemplate.queryForObject("SELECT status FROM orders WHERE id = ?", String.class, orderId)).isEqualTo("CONFIRMED");
+            assertThat(outboxRowCount(orderId)).isEqualTo(1);
         }
 
-        @DisplayName("같은 callback 이 두 번 오고 reconcile 까지 와도 이벤트는 1건, 재고 차감도 한 번이다.")
+        @DisplayName("같은 callback 이 두 번 오고 reconcile 까지 와도 Outbox 는 1행, 재고 차감도 한 번이다.")
         @Test
-        void publishesOnlyOnce_whenCallbackAndReconcileRepeat() {
+        void insertsOnlyOnce_whenCallbackAndReconcileRepeat() {
             // arrange
             Long userId = saveUser();
             Long productId = saveProduct(1000L, 5);
@@ -153,17 +174,17 @@ class OrderConfirmedPublicationTest {
             paymentFacade.reconcile(userId, orderId);
 
             // assert
-            assertThat(fakePublisher.published()).hasSize(1);
-            assertThat(fakePublisher.published().get(0).eventId()).isEqualTo("order-confirmed:v1:" + orderId);
+            assertThat(outboxRowCount(orderId)).isEqualTo(1);
+            assertThat(outboxOf(orderId).orElseThrow().getEventId()).isEqualTo("order-confirmed:v1:" + orderId);
             assertThat(stockOf(productId)).isEqualTo(3);
             assertThat(fakePaymentGateway.createCount()).isEqualTo(1);
         }
     }
 
-    @DisplayName("확정이 아니면 발행하지 않는다: ")
+    @DisplayName("확정이 아니면 Outbox 를 만들지 않는다: ")
     @Nested
-    class NoPublication {
-        @DisplayName("PG 가 아직 PENDING(대기)이면 발행 없음, 주문은 PAYMENT_PENDING.")
+    class NoOutbox {
+        @DisplayName("PG 가 아직 PENDING(대기)이면 Outbox 없음, 주문은 PAYMENT_PENDING.")
         @Test
         void nothing_whenPending() {
             Long userId = saveUser();
@@ -174,11 +195,11 @@ class OrderConfirmedPublicationTest {
             paymentFacade.applyCallback(attempt.getProviderOrderId(), attempt.getTransactionKey());
             paymentFacade.reconcile(userId, orderId);
 
-            assertThat(fakePublisher.publishCallCount()).isZero();
+            assertThat(outboxRowCount(orderId)).isZero();
             assertThat(orderOf(orderId).getStatus()).isEqualTo(Order.OrderStatus.PAYMENT_PENDING);
         }
 
-        @DisplayName("시도가 UNKNOWN(응답 유실)이고 조회 결과도 PENDING 이면 발행 없음.")
+        @DisplayName("시도가 UNKNOWN(응답 유실)이고 조회 결과도 PENDING 이면 Outbox 없음.")
         @Test
         void nothing_whenUnknown() {
             Long userId = saveUser();
@@ -191,12 +212,12 @@ class OrderConfirmedPublicationTest {
 
             paymentFacade.reconcile(userId, orderId);
 
-            assertThat(fakePublisher.publishCallCount()).isZero();
+            assertThat(outboxRowCount(orderId)).isZero();
             assertThat(attemptOf(orderId).getStatus()).isEqualTo(PaymentAttempt.Status.PENDING);
             assertThat(orderOf(orderId).getStatus()).isEqualTo(Order.OrderStatus.PAYMENT_PENDING);
         }
 
-        @DisplayName("PG FAILED 와 생성 전 거절(확정 실패)은 발행 없음, 주문은 PAYMENT_FAILED.")
+        @DisplayName("PG FAILED 와 생성 전 거절(확정 실패)은 Outbox 없음, 주문은 PAYMENT_FAILED.")
         @Test
         void nothing_whenFailed() {
             Long userId = saveUser();
@@ -210,13 +231,14 @@ class OrderConfirmedPublicationTest {
             paymentFacade.applyCallback(attempt.getProviderOrderId(), attempt.getTransactionKey());
             orderFacade.confirmOrder(userId, rejectedOrderId, new OrderCommand.Confirm("k2", CARD_TYPE, CARD_NO));
 
-            assertThat(fakePublisher.publishCallCount()).isZero();
+            assertThat(outboxRowCount(failedOrderId)).isZero();
+            assertThat(outboxRowCount(rejectedOrderId)).isZero();
             assertThat(orderOf(failedOrderId).getStatus()).isEqualTo(Order.OrderStatus.PAYMENT_FAILED);
             assertThat(orderOf(rejectedOrderId).getStatus()).isEqualTo(Order.OrderStatus.PAYMENT_FAILED);
             assertThat(orderOf(failedOrderId).getConfirmedAt()).isNull();
         }
 
-        @DisplayName("확정 TX 가 rollback 되면(applyFinal 예외) 발행 없이 예외가 Facade 밖으로 그대로 전파되고, 재시도에서 1건 발행된다.")
+        @DisplayName("확정 TX 가 rollback 되면(예약 갱신 예외) Outbox 도 없고 예외가 Facade 밖으로 그대로 전파되며, 재시도에서 Outbox 1행이 생긴다.")
         @Test
         void nothing_whenConfirmationRollsBack_andExceptionPropagates() {
             // arrange
@@ -229,13 +251,13 @@ class OrderConfirmedPublicationTest {
                 .doCallRealMethod()
                 .when(stockReservationRepository).consumeIfReserved(anyLong());
 
-            // act 1 - applyFinal 안(⑧)에서 예외. 발행 catch 에 삼켜지지 않는다
+            // act 1 - applyFinal 안(⑧)에서 예외
             IllegalStateException failure = assertThrows(IllegalStateException.class,
                 () -> paymentFacade.applyCallback(attempt.getProviderOrderId(), attempt.getTransactionKey()));
 
             // assert 1
             assertThat(failure.getMessage()).isEqualTo("테스트: 예약 갱신 실패");
-            assertThat(fakePublisher.publishCallCount()).isZero();
+            assertThat(outboxRowCount(orderId)).isZero();
             assertThat(orderOf(orderId).getStatus()).isEqualTo(Order.OrderStatus.PAYMENT_PENDING);
             assertThat(orderOf(orderId).getConfirmedAt()).isNull();
 
@@ -243,48 +265,64 @@ class OrderConfirmedPublicationTest {
             paymentFacade.applyCallback(attempt.getProviderOrderId(), attempt.getTransactionKey());
 
             // assert 2
-            assertThat(fakePublisher.published()).hasSize(1);
+            assertThat(outboxRowCount(orderId)).isEqualTo(1);
             assertThat(orderOf(orderId).getStatus()).isEqualTo(Order.OrderStatus.CONFIRMED);
             assertThat(fakePaymentGateway.createCount()).isEqualTo(1);
         }
     }
 
-    @DisplayName("발행이 성공하지 못해도, ")
+    @DisplayName("Outbox 저장에 실패하면 확정 TX 전체가 rollback 된다: ")
     @Nested
-    class PublishFailure {
-        @DisplayName("실패 확정(FAILED)이면 예외 없이 저장 결과로 응답하고 주문 CONFIRMED·예약 CONSUMED 는 그대로이며 PG create 를 다시 보내지 않는다.")
+    class OutboxFailure {
+        @DisplayName("payload 직렬화 실패(OrderConfirmedEvent 직렬화에만 주입)면 주문 PAYMENT_PENDING·예약 RESERVED·재고 미차감·Outbox 0행으로 남고 PG create 는 추가되지 않으며, 재시도에서 확정·Outbox 1행이 된다.")
         @Test
-        void keepsOrder_whenPublishFails() {
-            assertOrderKept_whenPublishEndsWith(OrderConfirmedPublishException.Outcome.FAILED);
+        void rollsBackConfirmation_whenSerializationFails() throws Exception {
+            doThrow(JsonMappingException.from((JsonGenerator) null, "테스트: 직렬화 실패"))
+                .doCallRealMethod()
+                .when(objectMapper).writeValueAsString(any(OrderConfirmedEvent.class));
+
+            assertRolledBack_thenRetrySucceeds(CoreException.class);
         }
 
-        @DisplayName("결과 미확인(UNKNOWN)이어도 같다.")
+        @DisplayName("Outbox insert 실패여도 같다.")
         @Test
-        void keepsOrder_whenPublishUnknown() {
-            assertOrderKept_whenPublishEndsWith(OrderConfirmedPublishException.Outcome.UNKNOWN);
+        void rollsBackConfirmation_whenOutboxInsertFails() {
+            doThrow(new IllegalStateException("테스트: Outbox 저장 실패"))
+                .doCallRealMethod()
+                .when(outboxRepository).save(any(OrderConfirmedOutbox.class));
+
+            assertRolledBack_thenRetrySucceeds(IllegalStateException.class);
         }
 
-        private void assertOrderKept_whenPublishEndsWith(OrderConfirmedPublishException.Outcome outcome) {
+        private void assertRolledBack_thenRetrySucceeds(Class<? extends RuntimeException> expected) {
             // arrange
             Long userId = saveUser();
             Long productId = saveProduct(1000L, 5);
             Long orderId = createOrder(userId, productId, 2);
             PaymentAttempt attempt = startPayment(userId, orderId, "k1");
             fakePaymentGateway.markSuccess(attempt.getTransactionKey());
-            fakePublisher.willFailWith(outcome);
 
-            // act
+            // act 1 - 같은 TX 안의 Outbox 실패. 예외는 밖으로 전파된다
+            assertThrows(expected, () -> paymentFacade.applyCallback(attempt.getProviderOrderId(), attempt.getTransactionKey()));
+
+            // assert 1 - 기존 주문·시도·예약은 TX 직전 상태 그대로 (주문 행이 사라지는 것이 아니다). 외부 PG 거래는 그대로 1건
+            assertThat(outboxRowCount(orderId)).isZero();
+            assertThat(orderOf(orderId).getStatus()).isEqualTo(Order.OrderStatus.PAYMENT_PENDING);
+            assertThat(orderOf(orderId).getConfirmedAt()).isNull();
+            assertThat(attemptOf(orderId).getStatus()).isEqualTo(PaymentAttempt.Status.PENDING);
+            assertThat(reservationStatusesOf(orderId)).containsExactly(StockReservation.Status.RESERVED);
+            assertThat(stockOf(productId)).isEqualTo(3);
+            assertThat(fakePaymentGateway.createCount()).isEqualTo(1);
+
+            // act 2 - 같은 거래 재조회로 다시 적용 (create 없음)
             OrderConfirmInfo info = paymentFacade.applyCallback(attempt.getProviderOrderId(), attempt.getTransactionKey());
 
-            // assert
+            // assert 2
             assertThat(info.settled()).isTrue();
-            assertThat(info.attemptStatus()).isEqualTo("SUCCESS");
-            assertThat(fakePublisher.publishCallCount()).isEqualTo(1);
-            assertThat(fakePublisher.published()).isEmpty();
+            assertThat(outboxRowCount(orderId)).isEqualTo(1);
+            assertThat(outboxOf(orderId).orElseThrow().getStatus()).isEqualTo(OrderConfirmedOutbox.Status.PENDING);
             assertThat(orderOf(orderId).getStatus()).isEqualTo(Order.OrderStatus.CONFIRMED);
-            assertThat(orderOf(orderId).getConfirmedAt()).isNotNull();
             assertThat(reservationStatusesOf(orderId)).containsExactly(StockReservation.Status.CONSUMED);
-            assertThat(stockOf(productId)).isEqualTo(3);
             assertThat(fakePaymentGateway.createCount()).isEqualTo(1);
         }
     }
@@ -315,6 +353,16 @@ class OrderConfirmedPublicationTest {
 
     private PaymentAttempt attemptOf(Long orderId) {
         return paymentAttemptJpaRepository.findByOrderId(orderId).orElseThrow();
+    }
+
+    private Optional<OrderConfirmedOutbox> outboxOf(Long orderId) {
+        return outboxRepository.findByOrderId(orderId);
+    }
+
+    /** 별도 연결(TX 없음)로 세는 Outbox 행 수. */
+    private int outboxRowCount(Long orderId) {
+        Integer count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM order_confirmed_outbox WHERE order_id = ?", Integer.class, orderId);
+        return count == null ? 0 : count;
     }
 
     private List<StockReservation.Status> reservationStatusesOf(Long orderId) {

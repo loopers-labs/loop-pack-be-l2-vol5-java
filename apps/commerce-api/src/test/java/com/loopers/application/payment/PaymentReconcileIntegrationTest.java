@@ -69,7 +69,6 @@ class PaymentReconcileIntegrationTest {
     private final PaymentAttemptRepository paymentAttemptRepository;
     private final PaymentLookupProperties lookupProperties;
     private final Clock clock;
-    private final OrderConfirmedPublisher orderConfirmedPublisher;
     private final UserJpaRepository userJpaRepository;
     private final ProductJpaRepository productJpaRepository;
     private final OrderJpaRepository orderJpaRepository;
@@ -89,7 +88,6 @@ class PaymentReconcileIntegrationTest {
         PaymentAttemptRepository paymentAttemptRepository,
         PaymentLookupProperties lookupProperties,
         Clock clock,
-        OrderConfirmedPublisher orderConfirmedPublisher,
         UserJpaRepository userJpaRepository,
         ProductJpaRepository productJpaRepository,
         OrderJpaRepository orderJpaRepository,
@@ -107,7 +105,6 @@ class PaymentReconcileIntegrationTest {
         this.paymentAttemptRepository = paymentAttemptRepository;
         this.lookupProperties = lookupProperties;
         this.clock = clock;
-        this.orderConfirmedPublisher = orderConfirmedPublisher;
         this.userJpaRepository = userJpaRepository;
         this.productJpaRepository = productJpaRepository;
         this.orderJpaRepository = orderJpaRepository;
@@ -414,8 +411,7 @@ class PaymentReconcileIntegrationTest {
             fakePaymentGateway.create(new PaymentCreateCommand(providerOrderId, CARD_TYPE, CARD_NO, 2000L));
             int createsBeforeRestart = fakePaymentGateway.createCount();
             PaymentFacade restarted = new PaymentFacade(
-                userRepository, orderService, paymentAttemptRepository, paymentResultService, fakePaymentGateway, lookupProperties, clock,
-                orderConfirmedPublisher);
+                userRepository, orderService, paymentAttemptRepository, paymentResultService, fakePaymentGateway, lookupProperties, clock);
 
             // act
             OrderConfirmInfo info = restarted.reconcile(userId, orderId);
