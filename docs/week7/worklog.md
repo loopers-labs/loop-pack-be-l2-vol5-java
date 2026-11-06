@@ -19,6 +19,8 @@
 | 8 운영 문서 | 11-06 | `operations.md` — 관찰 SQL·로그·재개·보존·한계 | C-9 · C-10 | |
 | 9 회귀 | 11-06 | commerce-api 532/0/0 · streamer 39/0/0 · lint 통과 · 남은 자원 0. 간헐 실패 테스트 원인 수정 | C-11 | |
 | 추가 rebalance | 11-06 | 학습자 요청: 구매 활동 consumer를 CooperativeStickyAssignor로. Red(eager에서 기존 member가 0·1·2를 모두 내려놓음) → Green(옮겨 간 partition 2만 내려놓음). kill -9 감지 시간(session.timeout)은 그대로 | — | |
+| 최종 재확인 | 11-06 | `schema.sql` collation 수정 뒤 `run.sh` 재실행 `c7-20261106-143221` — 1~3막 모두 같은 결과(A 0 → 1×2·2×1, B 그대로, PG 2·2·2 그대로, C-6 offset 2·3 · 저장 → no-op · 활동 7×2·8×1). `incident-w7.md`의 근거는 `024330` 그대로 둔다 | C-6~C-8 | |
+| relay 처리량 | 11-06 | 실측(M1 쉬는 비용 9문장/초 · 7.7ms/초, M2 초당 56건, M3 100건 유입 backlog 1,119) → 학습자 "지금 고치죠" → 묶어 보내기 + 꽉 찬 회차면 이어 돌기. Red 4(묶어 보내기 · 실패 뒤 행 · 저장 실패 뒤 행 · 쉬지 않기) → Green. 다시 재서 초당 112건, 100건 유입 backlog 351 · 대기 3.0초. api 536/0/0 | C-4 · C-9 | |
 
 (3단계 재시도·BLOCKED는 핵심 3과 relay 한 회차에 함께 들어갔다.)
 
