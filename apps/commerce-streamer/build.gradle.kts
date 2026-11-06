@@ -35,6 +35,8 @@ dependencies {
     testImplementation("org.testcontainers:kafka")
     // 실험 C-3 전용 MySQL 컨테이너(docs/week6/decisions.md D-21). 공용 픽스처의 mysql 의존은 compile classpath에 오지 않는다
     testImplementation("org.testcontainers:mysql")
+    // 멱등 producer 실험(docs/study/blog-idempotent-producer.md) — broker 응답만 늦추는 네트워크 프록시
+    testImplementation("org.testcontainers:toxiproxy")
 
     // test-fixtures
     testImplementation(testFixtures(project(":modules:jpa")))
