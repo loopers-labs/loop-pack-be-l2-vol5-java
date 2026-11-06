@@ -1,5 +1,6 @@
 package com.loopers.application.payment;
 
+import com.loopers.application.order.event.OrderConfirmedOutboxWriter;
 import com.loopers.domain.brand.Brand;
 import com.loopers.domain.brand.BrandRepository;
 import com.loopers.domain.order.Order;
@@ -75,6 +76,9 @@ class PaymentResultServiceIntegrationTest {
 
     @MockitoSpyBean
     private OrderRepository orderRepository;
+
+    @MockitoSpyBean
+    private OrderConfirmedOutboxWriter outboxWriter;
 
     @MockitoSpyBean
     private ProductRepository productRepository;
@@ -563,6 +567,74 @@ class PaymentResultServiceIntegrationTest {
             assertThat(stats.createRequests()).isEqualTo(1);
             assertThat(stats.transactions()).isEqualTo(1);
             assertThat(stats.lookupRequests()).isEqualTo(2);
+        }
+
+        @DisplayName("PG 성공 뒤 Outbox insert가 실패하면 확정을 되돌리고, 같은 PG 거래 재조회로 한 번 저장한다.")
+        @Test
+        void recoversPgSuccessAfterOutboxRollbackWithoutCreatingAgain() {
+            Fixture fixture = fixture(1);
+            Point point = Point.create(USER_ID);
+            point.charge(100_000L);
+            pointRepository.save(point);
+            PaymentCreateObservation created = paymentGateway.create(command(fixture, fixture.amount()));
+            assertThat(created).isInstanceOf(PaymentCreateObservation.Accepted.class);
+            String transactionKey = ((PaymentCreateObservation.Accepted) created).transactionKey();
+            assertThat(TestPgControl.complete(fixture.providerOrderId())).isEqualTo(1);
+            AtomicInteger outboxWrites = new AtomicInteger();
+            doAnswer(invocation -> {
+                invocation.callRealMethod();
+                if (outboxWrites.incrementAndGet() == 1) {
+                    throw new DataAccessResourceFailureException("Outbox insert 뒤 로컬 TX 실패 주입");
+                }
+                return null;
+            }).when(outboxWriter).record(any());
+
+            assertThatThrownBy(() -> paymentResultService.check(fixture.attemptId()))
+                .isInstanceOf(PaymentReflectionRolledBackException.class)
+                .hasCauseInstanceOf(DataAccessResourceFailureException.class);
+
+            new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+                entityManager.flush();
+                entityManager.clear();
+                assertThat(attempt(fixture).getStatus()).isEqualTo(PaymentAttemptStatus.REQUESTED);
+                assertThat(attempt(fixture).getTransactionKey()).isNull();
+                assertThat(order(fixture).getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+                assertThat(stocks(fixture)).containsExactly(8L);
+                assertThat(pointRepository.findByUserId(USER_ID).orElseThrow().getBalance().amount())
+                    .isEqualTo(100_000L);
+                assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM order_confirmed_outbox WHERE order_id = ?", Integer.class, fixture.orderId()))
+                    .isZero();
+            });
+            TestPgControl.Stats afterRollback = TestPgControl.stats(fixture.providerOrderId());
+            assertThat(afterRollback.createRequests()).isEqualTo(1);
+            assertThat(afterRollback.transactions()).isEqualTo(1);
+            assertThat(afterRollback.lookupRequests()).isEqualTo(1);
+
+            PaymentReflection retried = paymentResultService.check(fixture.attemptId());
+            PaymentReflection duplicate = paymentResultService.check(fixture.attemptId());
+
+            assertThat(retried.outcome()).isEqualTo(PaymentReflectionOutcome.APPLIED);
+            assertThat(retried.payment().orderStatus()).isEqualTo(OrderStatus.CONFIRMED);
+            assertThat(retried.payment().transactionKey()).isEqualTo(transactionKey);
+            assertThat(duplicate.outcome()).isEqualTo(PaymentReflectionOutcome.UNCHANGED);
+            assertThat(outboxWrites).hasValue(2);
+            new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+                entityManager.flush();
+                entityManager.clear();
+                assertThat(attempt(fixture).getStatus()).isEqualTo(PaymentAttemptStatus.SUCCEEDED);
+                assertThat(order(fixture).getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+                assertThat(stocks(fixture)).containsExactly(8L);
+                assertThat(pointRepository.findByUserId(USER_ID).orElseThrow().getBalance().amount())
+                    .isEqualTo(100_000L);
+                assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM order_confirmed_outbox WHERE order_id = ?", Integer.class, fixture.orderId()))
+                    .isEqualTo(1);
+            });
+            TestPgControl.Stats afterRetry = TestPgControl.stats(fixture.providerOrderId());
+            assertThat(afterRetry.createRequests()).isEqualTo(1);
+            assertThat(afterRetry.transactions()).isEqualTo(1);
+            assertThat(afterRetry.lookupRequests()).isEqualTo(2);
         }
 
         @DisplayName("여러 상품 중 일부를 반환한 뒤 실패하면 TX B 전체를 되돌리고, 다음 확인에서 한 번 반영한다.")

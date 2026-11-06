@@ -26,8 +26,8 @@ public final class OrderConfirmedEvent {
     }
 
     public static OrderConfirmedEvent from(Order order) {
-        if (order.getStatus() != OrderStatus.CONFIRMED || order.getConfirmedAt() == null) {
-            throw new CoreException(ErrorType.INTERNAL_ERROR, "확정 시각이 있는 확정 주문만 확정 이벤트를 만들 수 있습니다.");
+        if (order.getStatus() != OrderStatus.CONFIRMED || order.getConfirmedAt() == null || order.getItems().isEmpty()) {
+            throw new CoreException(ErrorType.INTERNAL_ERROR, "확정 시각과 품목이 있는 확정 주문만 확정 이벤트를 만들 수 있습니다.");
         }
         List<Item> items = order.getItems().stream()
             .sorted(Comparator.comparing(OrderItem::getProductId))

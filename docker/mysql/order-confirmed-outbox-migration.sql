@@ -1,0 +1,21 @@
+CREATE TABLE IF NOT EXISTS order_confirmed_outbox (
+    created_at DATETIME(6) NOT NULL,
+    deleted_at DATETIME(6) DEFAULT NULL,
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    updated_at DATETIME(6) NOT NULL,
+    event_id VARCHAR(255) NOT NULL,
+    order_id BIGINT NOT NULL,
+    event_type VARCHAR(100) NOT NULL,
+    schema_version INT NOT NULL,
+    message_key VARCHAR(255) NOT NULL,
+    payload TEXT NOT NULL,
+    status VARCHAR(16) NOT NULL,
+    attempt_count INT NOT NULL DEFAULT 0,
+    cycle_attempt_count INT NOT NULL DEFAULT 0,
+    next_attempt_at DATETIME(6) NOT NULL,
+    published_at DATETIME(6) DEFAULT NULL,
+    last_error VARCHAR(500) DEFAULT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_order_confirmed_outbox_event_id (event_id),
+    KEY idx_order_confirmed_outbox_due (status, next_attempt_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

@@ -14,6 +14,10 @@ server:
 spring:
   main:
     web-application-type: servlet
+  task:
+    scheduling:
+      pool:
+        size: 2
   application:
     name: commerce-api
   profiles:
@@ -29,6 +33,16 @@ spring:
 order:
   confirmed-event:
     topic: order-events
+    relay:
+      enabled: false
+      interval: 1s
+      batch-size: 10
+      max-attempts: 3
+      retry-interval: 5s
+      request-timeout: 2s
+      delivery-timeout: 5s
+      max-block-time: 1s
+      future-timeout: 6s
 
 # Redis 장애 시 요청이 오래 묶이지 않도록 연결·명령 대기를 제한하고, 실패하면 DB로 우회한다.
 datasource:
@@ -76,6 +90,11 @@ spring:
     hibernate:
       ddl-auto: validate
 
+order:
+  confirmed-event:
+    relay:
+      enabled: true
+
 ---
 spring:
   config:
@@ -95,6 +114,11 @@ payment:
     read-timeout: 1s
   periodic-check:
     enabled: false
+
+order:
+  confirmed-event:
+    relay:
+      enabled: false
 
 ---
 spring:

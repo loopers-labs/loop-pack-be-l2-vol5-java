@@ -10,11 +10,14 @@ docker-compose -f ./docker/infra-compose.yml up
 ```
 ### Monitoring
 `local` 환경에서 모니터링을 할 수 있도록, `docker-compose` 를 통해 `prometheus` 와 `grafana` 를 제공합니다.
+선택적 환경 파일을 지원하는 Docker Compose 2.24 이상을 사용합니다.
 
 애플리케이션 실행 이후, **http://localhost:3000** 로 접속해, admin/admin 계정으로 로그인하여 확인하실 수 있습니다.
 ```shell
-docker-compose -f ./docker/monitoring-compose.yml up
+docker compose -f ./docker/monitoring-compose.yml up
 ```
+
+Slack 알림은 선택 사항입니다. 사용하려면 `docker/grafana/slack.env.example`을 같은 디렉터리의 `slack.env`로 복사하고 `SLACK_WEBHOOK_URI`를 설정합니다. 실제 웹훅은 Git에 올리지 않습니다. 파일이 없거나 URL이 비어 있으면 Outbox Slack 연락처와 알림 규칙을 제외하고 모니터링 스택을 시작합니다. 시작 스크립트는 컨테이너의 임시 복사본을 사용하므로 저장소의 provisioning 파일은 바꾸지 않습니다.
 
 ## About Multi-Module Project
 본 프로젝트는 멀티 모듈 프로젝트로 구성되어 있습니다. 각 모듈의 위계 및 역할을 분명히 하고, 아래와 같은 규칙을 적용합니다.

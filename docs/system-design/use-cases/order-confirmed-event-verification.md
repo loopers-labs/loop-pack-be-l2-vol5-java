@@ -8,17 +8,17 @@
 
 ## 검증 위치
 
-commerce-api는 확정 시각 저장과 이벤트 구성·발행을, commerce-streamer는 계약 해석과 구매 활동 소비를 각자의 테스트로 검증한다. 두 앱을 한 테스트에 묶지 않는다. 이벤트 계약은 [JSON 예시](order-confirmed-event.md#이벤트-계약)를 기준으로 producer는 생성 결과를, consumer는 해석 결과를 검증하고, 확정부터 구매 활동까지의 전체 연결은 실제 앱을 함께 띄운 로컬 실행으로 확인한다.
+commerce-api는 확정 시각 저장·Outbox 원자성·Relay 발행을, commerce-streamer는 계약 해석과 구매 활동 소비를 각자의 테스트로 검증한다. 두 앱을 한 테스트에 묶지 않는다. 이벤트 계약은 [JSON 예시](order-confirmed-event.md#이벤트-계약)를 기준으로 producer는 생성 결과를, consumer는 해석 결과를 검증하고, 확정부터 구매 활동까지의 전체 연결은 실제 앱을 함께 띄운 로컬 실행으로 확인한다.
 
 | commerce-api 테스트 | 검증 |
 | --- | --- |
-| `OrderConfirmedEventTest` | 주문 ID로 유도한 eventId, 저장된 확정 시각, 상품 ID 오름차순 품목으로 이벤트 구성. 미확정 주문과 확정 시각이 없는 이전 확정 주문(POINT·PG)은 거절해 소급 발행하지 않음 |
+| `OrderConfirmedEventTest` | 주문 ID로 유도한 eventId, 저장된 확정 시각, 상품 ID 오름차순 품목으로 이벤트 구성. 미확정 주문, 확정 시각이나 원본 품목이 없는 주문은 거절 |
+| `OrderConfirmedOutboxBackfillServiceTest` | 원본 품목이 없으면 복구를 거절하고 Outbox 저장소를 호출하지 않음 |
 | `OrderConfirmedMessageV1Test` | 계약 필드만 담은 V1 JSON과 orderId 문자열 key. 다른 시간대의 확정 시각을 마이크로초까지 UTC로 표현 |
 | `PaymentConfirmedAtIntegrationTest` | 최초 PG 성공에 주입한 Clock 시각을 마이크로초로 잘라 저장. 중복 성공에도 처음 시각 유지, 실패 종결에는 확정 시각 없음 |
 | `OrderConfirmedAtMigrationIntegrationTest` | 컬럼 추가 뒤 기존 주문의 확정 시각은 비워 두고 상태·결제 값·수정 시각은 바꾸지 않음 |
-| `OrderConfirmedPublicationTest` | 최초 성공 commit 뒤 한 번 통지. 같은 성공 재반영, 처리 중·실패·`UNKNOWN`, commit 실패, 동시 반영에서 추가 통지 없음 |
-| `OrderConfirmedKafkaPublisherTest` | send 호출 예외, 이미 실패한 future, listener 반환 뒤 실패한 future를 각각 확인. `eventId`·`orderId`·원인을 error 로그로 남기고 전파하지 않음 |
-| `OrderConfirmedKafkaDeliveryIntegrationTest` | 실제 주문 API·테스트 PG·reconcile·Kafka로 [발행 누락 사례](#발행-누락-사례). producer 설정과 로컬·테스트 topic 초기화 |
+| `OrderConfirmedOutboxAtomicityTest` | 최초 성공 때 주문·시도·Outbox를 같은 TX에 저장. 비성공·중복 결과, 직렬화·유일 제약·commit 실패 rollback, 동시 성공에서 행 하나와 고정 payload 확인 |
+| `OrderConfirmedKafkaDeliveryIntegrationTest` | 실제 주문 API·테스트 PG·MySQL·Kafka에서 Relay의 저장 payload 재시도, BLOCKED 후 다음 행 진행, 수동 재개와 누적 시도 보존, broker 기록 뒤 상태 저장 실패와 두 대기 방식 비교. 두 방식의 관찰 timeout 뒤 늦은 성공·종료 이벤트 뒤 producer 오류·같은 메시지 재발행, TX1만 세 번 commit한 뒤 네 번째 send 차단, PUBLISHED 선저장의 누락 반례도 확인 |
 
 | commerce-streamer 테스트 | 검증 |
 | --- | --- |
@@ -40,9 +40,9 @@ commerce-api는 확정 시각 저장과 이벤트 구성·발행을, commerce-st
 
 ## 로컬 전체 흐름 관찰
 
-실제 PG 성공으로 시작한 주문이 broker를 거쳐 구매 활동 DB에 반영되는 연결은 로컬에서 관찰한다. [로컬 실행 절차](../../verification/order-confirmed-event/README.md)는 격리 환경에서 전송 실패 A·정상 소비 B의 주문·broker·구매 활동을 함께 확인하고, streamer 프로세스 재시작 뒤 행·offset 보존까지 확인한다. 기대값은 topic 크기 제한에 거절된 A의 `CONFIRMED`·완료 기록 0행·활동 0행, 제한 복구 후 정상 전송한 B의 완료 기록 1행·활동 2행이다. 원본 JSON·로그는 로컬에 보관하고 핵심 관찰값은 PR 또는 기술 글에 요약한다.
+실제 PG 성공으로 시작한 주문이 Outbox와 Relay를 거쳐 Kafka·구매 활동 DB에 반영되는 연결은 로컬에서 관찰한다. [로컬 실행 절차](../../verification/order-confirmed-event/README.md)는 격리 환경에서 직접 발행의 누락 상태를 재현하고, 저장된 주문 사실로 Outbox를 보충한 뒤 Relay와 Consumer 결과를 확인한다. 실패한 대상의 `CONFIRMED` 상태·재고 예약은 유지되고, 구매 활동이 누락 주문에는 생성되며 이미 반영된 주문에는 중복 효과가 생기지 않는지 확인한다. 원본 JSON·로그는 로컬에 보관하고 핵심 관찰값은 PR 또는 기술 글에 요약한다.
 
-Compose 환경에서 직접 관찰할 때의 순서는 다음과 같다. 실행 도구는 같은 흐름을 고유한 topic·group과 별도 broker로 자동 실행한다.
+Compose 환경에서 현재 정상 흐름을 직접 관찰할 때의 순서는 다음과 같다. 누락 상태 재현·복구는 위 실행 도구가 고유한 topic·group과 격리 broker를 사용해 별도로 실행한다.
 
 1. 로컬 Kafka·MySQL·테스트 PG를 준비하고 `commerce-api`와 `commerce-streamer`를 실행한다. 두 애플리케이션이 같은 로컬 Kafka를 사용하고, streamer가 `order-events`를 구독 중인지 확인한다.
 2. 기존 주문·결제 API와 테스트 PG 성공 결과 적용 경로로 새 주문을 확정한다. 이벤트를 직접 주입하거나 DB를 직접 수정하지 않는다.
@@ -96,9 +96,9 @@ DB commit 뒤 offset 미커밋 종료는 아래 [재전달 설계](#db-commit-�
 ./gradlew :apps:commerce-streamer:test --tests '*KafkaPartitionGroupExperimentTest'
 ```
 
-## 발행 누락 사례
+## 직접 발행에서 관찰한 누락 기준선
 
-두 사례로 주문 DB commit과 Kafka 발행 사이의 누락 구간을 확인한다. 다음 단계에서는 Outbox로 이 경계를 개선한다.
+이 절은 Outbox 도입 전 직접 발행 흐름에서 관찰한 누락 상태를 기준선으로 보존한다. 현재 경로는 주문 확정과 Outbox 기록을 같은 TX에 넣고 Relay가 발행한다. 아래 사례는 누락 경계를 재현하거나 원래 직접 발행 구현을 비교할 때 사용한다.
 
 | 사례 | 처리 | 완료 시 남길 관찰 |
 | --- | --- | --- |
@@ -107,7 +107,8 @@ DB commit 뒤 offset 미커밋 종료는 아래 [재전달 설계](#db-commit-�
 
 - 고정 Clock과 품목·수량으로 두 주문을 만들고 주문·예약 상태와 broker record를 대조한다. 카드 정보와 비밀 값은 기록하지 않는다.
 - 미발행 확인은 고유 topic의 partition별 end offset을 기준으로 정해진 기한 안에 대상 `eventId`가 없는지 확인한다. 짧은 poll 한 번이나 lag 0만으로 판정하지 않는다.
-- `OrderConfirmedKafkaDeliveryIntegrationTest`는 실제 주문 API·테스트 PG·reconcile 경로에서 send 직전 실패와 정상 발행을 확인한다. 미발행 사례는 새 DB 트랜잭션에서 주문 확정이 남았음을 확인한 뒤 테스트 spy가 send 진입을 차단한다. 정상 사례는 broker metadata와 payload를 검증한다.
+- 직접 발행 경로의 미발행 사례는 [검증 실행 도구](../../verification/order-confirmed-event/run.py)로 재현한다. 테스트는 주문 API·테스트 PG로 실제 주문을 확정하고, broker 발행 전 실패 사례와 정상 발행 사례의 DB·Kafka 상태를 대조한다.
+- 현재 Relay의 재시도·broker 기록 뒤 상태 저장 실패·Future 대기 방식 비교는 `OrderConfirmedKafkaDeliveryIntegrationTest`가 검증한다. 이 통합 테스트는 로컬 DB 전체를 정리하므로 격리된 MySQL에서만 실행한다.
 - send 직전 실패 주입은 프로세스 강제 종료가 아니다. DB와 broker가 원자적으로 묶이지 않은 경계를 보여주며, send timeout 뒤 broker에 기록됐는지까지 증명하지 않는다.
 
 같은 두 사례의 구매 활동 결과는 [로컬 전체 흐름 관찰](#로컬-전체-흐름-관찰)의 실행 도구로 확인한다. 그 실행의 broker 거절과 위 테스트의 send 직전 차단은 서로 다른 실패 주입이다.
