@@ -1,5 +1,21 @@
+import org.springframework.boot.gradle.tasks.bundling.BootJar
+
 plugins {
     checkstyle
+}
+
+// E2E 가 실제 streamer 실행물을 프로세스로 띄우므로 그 bootJar 를 먼저 만듦 (7주차 설계 10장)
+evaluationDependsOn(":apps:commerce-streamer")
+val streamerBootJar = project(":apps:commerce-streamer").tasks.named<BootJar>("bootJar")
+
+// 6주차 누락 복구 실험이 7주차 운영 진입점을 실행물로 부르고, 6주차 revision 을 worktree 로 빌드함 (7주차 설계 6장)
+val apiBootJar = tasks.named<BootJar>("bootJar")
+
+tasks.test {
+    dependsOn(streamerBootJar, apiBootJar)
+    systemProperty("commerce-streamer.boot-jar", streamerBootJar.get().archiveFile.get().asFile.absolutePath)
+    systemProperty("commerce-api.boot-jar", apiBootJar.get().archiveFile.get().asFile.absolutePath)
+    systemProperty("project.root-dir", rootDir.absolutePath)
 }
 
 checkstyle {

@@ -20,7 +20,7 @@ public record OrderConfirmedMessage(
 ) {
 
     static final String EVENT_TYPE = "OrderConfirmed";
-    static final int SCHEMA_VERSION = 1;
+    static final int SCHEMA_VERSION = OrderConfirmed.SCHEMA_VERSION;
     private static final DateTimeFormatter CONFIRMED_AT_FORMAT = DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss.SSSSSS'Z'");
 
     public record Item(Long productId, int quantity) {}

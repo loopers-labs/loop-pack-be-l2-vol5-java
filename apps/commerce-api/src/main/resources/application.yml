@@ -28,8 +28,7 @@ spring:
   kafka:
     producer:
       properties:
-        # 발행은 commit 뒤 요청 스레드에서 하므로 broker 장애 때 응답과 DB 커넥션이 이만큼 묶임.
-        # 너무 짧으면 첫 연결이 느린 순간의 정상 이벤트를 잃음(Outbox 전이라 재전송 없음). 측정 근거 docs/week6/experiment-delivery.md (D-75, D-93)
+        # 6주차 직접 발행의 값(D-75, D-93). 주문 확정 발행은 relay 전용 producer(order-outbox.relay.producer)로 옮겨 이 값을 쓰지 않음
         max.block.ms: 500
 
 # 행 잠금 대기 한도 3초. 공통 jpa.yml 은 배치 · 스트리머도 쓰므로 commerce-api 에서만 정함 (3주차 설계 4.5)
@@ -68,6 +67,21 @@ payment:
 order-event:
   topic: order-events
 
+# Outbox relay (7주차 설계 4). 값의 근거는 docs/week7/experiment-relay-interval.md (D-108)
+order-outbox:
+  relay:
+    enabled: false # 운영에서는 인스턴스 하나만 켬 (D-103)
+    interval-ms: 1000
+    batch-size: 200 # 회차마다 쉬는 1s 가 처리량을 막아 backlog 소진이 느려짐
+    lease: 30s # 로컬 대기(send-timeout)보다 길어야 보내는 중인 행을 다시 고르지 않음
+    backoff-initial: 1s
+    backoff-max: 1m # 긴 장애 뒤 맨 앞 행이 회복 후에도 기다리는 시간을 묶음
+    producer:
+      request-timeout: 5s
+      delivery-timeout: 10s # linger.ms + request-timeout 이상
+      send-timeout: 15s
+      max-block: 500ms
+
 springdoc:
   use-fqn: true
   swagger-ui:
@@ -78,6 +92,17 @@ spring:
   config:
     activate:
       on-profile: local, test
+
+---
+spring:
+  config:
+    activate:
+      on-profile: local
+
+# 로컬 실행에서는 6주차처럼 확정 뒤 발행되게 켬. test 는 회차를 직접 부름
+order-outbox:
+  relay:
+    enabled: true
 
 ---
 spring:

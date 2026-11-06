@@ -1,8 +1,13 @@
 package com.loopers.domain.order.service;
 
 import com.loopers.domain.order.entity.Order;
+import com.loopers.domain.order.enums.OrderBackfillResult;
 import com.loopers.domain.order.enums.OrderErrorCode;
 import com.loopers.domain.order.enums.OrderStatus;
+import com.loopers.domain.order.entity.OrderConfirmedOutbox;
+import com.loopers.domain.order.enums.OrderOutboxStatus;
+import com.loopers.domain.order.gateway.OrderConfirmedSerializer;
+import com.loopers.domain.order.repository.FakeOrderConfirmedOutboxRepository;
 import com.loopers.domain.order.repository.FakeOrderRepository;
 import com.loopers.domain.order.vo.OrderConfirmed;
 import com.loopers.domain.order.vo.OrderLine;
@@ -29,13 +34,21 @@ class OrderServiceTest {
 
     private FakeOrderRepository orderRepository;
     private OrderService orderService;
-    private List<Object> events;
+    private List<OrderConfirmed> serialized;
+    private FakeOrderConfirmedOutboxRepository outboxRepository;
+    private OrderConfirmedSerializer serializer;
 
     @BeforeEach
     void setUp() {
         orderRepository = new FakeOrderRepository();
-        events = new ArrayList<>();
-        orderService = new OrderService(orderRepository, Clock.fixed(NOW.toInstant(), NOW.getZone()), events::add);
+        serialized = new ArrayList<>();
+        outboxRepository = new FakeOrderConfirmedOutboxRepository();
+        serializer = event -> {
+            serialized.add(event);
+            return "payload:" + event.eventId();
+        };
+        orderService = new OrderService(orderRepository, Clock.fixed(NOW.toInstant(), NOW.getZone()),
+            outboxRepository, event -> serializer.serialize(event));
     }
 
     private Order createDraft() {
@@ -81,41 +94,152 @@ class OrderServiceTest {
         );
     }
 
-    @DisplayName("결제 결과로 처음 확정하면, 저장된 확정 시각 · 품목을 담은 확정 사실을 한 번 낸다. (6주차 D-70, D-72)")
+    @DisplayName("결제 결과로 처음 확정하면, 저장된 확정 시각 · 품목을 담은 확정 사실을 한 번 기록한다. (6주차 D-70, D-72)")
     @Test
-    void publishesConfirmed_whenPaid() {
+    void recordsConfirmed_whenPaid() {
         Order order = orderService.getMyOrderForUpdate(USER_ID, createDraft().getId());
         orderService.startPayment(order);
 
         orderService.confirmPaid(order, 2_000L);
 
-        assertThat(events).containsExactly(new OrderConfirmed(
+        assertThat(serialized).containsExactly(new OrderConfirmed(
             "order-confirmed:v1:" + order.getId(), order.getId(), order.getConfirmedAt(), List.of(new OrderConfirmed.Item(10L, 2))));
     }
 
-    @DisplayName("0원 주문을 결제 없이 확정해도, 확정 사실을 한 번 낸다. (6주차 D-70)")
+    @DisplayName("0원 주문을 결제 없이 확정해도, 확정 사실을 한 번 기록한다. (6주차 D-70)")
     @Test
-    void publishesConfirmed_whenConfirmedWithoutPayment() {
+    void recordsConfirmed_whenConfirmedWithoutPayment() {
         Order order = orderService.create(USER_ID, List.of(new OrderLine(10L, "0원 상품", 0L, 1)));
 
         orderService.confirmWithoutPayment(order);
 
-        assertThat(events).singleElement().isEqualTo(OrderConfirmed.from(order));
+        assertThat(serialized).singleElement().isEqualTo(OrderConfirmed.from(order));
     }
 
-    @DisplayName("결제 시작 · 실패 · 이미 확정된 주문의 재반영에서는 확정 사실을 내지 않는다.")
+    @DisplayName("결제 시작 · 실패 · 이미 확정된 주문의 재반영에서는 확정 사실을 기록하지 않는다.")
     @Test
-    void doesNotPublish_whenNotFirstConfirmation() {
+    void doesNotRecord_whenNotFirstConfirmation() {
         Order failed = orderService.getMyOrderForUpdate(USER_ID, createDraft().getId());
         orderService.startPayment(failed);
         orderService.failPayment(failed);
         Order confirmed = orderService.getMyOrderForUpdate(USER_ID, createDraft().getId());
         orderService.startPayment(confirmed);
         orderService.confirmPaid(confirmed, 2_000L);
-        events.clear();
+        serialized.clear();
 
         assertThrows(IllegalStateException.class, () -> orderService.confirmPaid(confirmed, 2_000L));
 
-        assertThat(events).isEmpty();
+        assertAll(
+            () -> assertThat(serialized).isEmpty(),
+            () -> assertThat(outboxRepository.findByOrderId(failed.getId())).isEmpty(),
+            () -> assertThat(outboxRepository.findAll()).hasSize(1)
+        );
+    }
+
+    @DisplayName("결제 결과로 처음 확정하면, 확정 사실과 같은 identity · key 의 PENDING Outbox 를 한 행 남긴다. (7주차 D-100, D-101)")
+    @Test
+    void recordsPendingOutbox_whenPaid() {
+        Order order = orderService.getMyOrderForUpdate(USER_ID, createDraft().getId());
+        orderService.startPayment(order);
+
+        orderService.confirmPaid(order, 2_000L);
+
+        OrderConfirmedOutbox outbox = outboxRepository.findByOrderId(order.getId()).orElseThrow();
+        assertAll(
+            () -> assertThat(outboxRepository.findAll()).hasSize(1),
+            () -> assertThat(outbox.getEventId()).isEqualTo("order-confirmed:v1:" + order.getId()),
+            () -> assertThat(outbox.getMessageKey()).isEqualTo(String.valueOf(order.getId())),
+            () -> assertThat(outbox.getSchemaVersion()).isEqualTo(1),
+            () -> assertThat(outbox.getPayload()).isEqualTo("payload:order-confirmed:v1:" + order.getId()),
+            () -> assertThat(outbox.getStatus()).isEqualTo(OrderOutboxStatus.PENDING),
+            () -> assertThat(outbox.getAttemptCount()).isZero(),
+            () -> assertThat(outbox.getNextAttemptAt()).isEqualTo(NOW),
+            () -> assertThat(outbox.getPublishedAt()).isNull()
+        );
+    }
+
+    @DisplayName("0원 주문을 결제 없이 확정해도, PENDING Outbox 를 한 행 남긴다. (6주차 D-70)")
+    @Test
+    void recordsPendingOutbox_whenConfirmedWithoutPayment() {
+        Order order = orderService.create(USER_ID, List.of(new OrderLine(10L, "0원 상품", 0L, 1)));
+
+        orderService.confirmWithoutPayment(order);
+
+        assertThat(outboxRepository.findByOrderId(order.getId())).get()
+            .extracting(OrderConfirmedOutbox::getEventId).isEqualTo(OrderConfirmed.from(order).eventId());
+    }
+
+    @DisplayName("payload 직렬화가 실패하면 예외가 그대로 전파되어 Outbox 를 남기지 않는다. (7주차 D-102)")
+    @Test
+    void propagatesFailure_whenSerializationFails() {
+        Order order = orderService.getMyOrderForUpdate(USER_ID, createDraft().getId());
+        orderService.startPayment(order);
+        serializer = event -> {
+            throw new IllegalStateException("테스트에서 주입한 직렬화 실패");
+        };
+
+        assertThrows(IllegalStateException.class, () -> orderService.confirmPaid(order, 2_000L));
+
+        assertThat(outboxRepository.findAll()).isEmpty();
+    }
+
+    @DisplayName("Outbox 없이 확정된 주문을 backfill 하면, 저장된 확정 사실에서 유도한 PENDING 한 행을 추가하고 주문은 바꾸지 않는다. (7주차 D-112)")
+    @Test
+    void backfillsMissingOutbox() {
+        Order order = confirmedWithoutOutbox();
+        serialized.clear();
+
+        OrderBackfillResult result = orderService.backfillConfirmed(order.getId());
+
+        OrderConfirmedOutbox outbox = outboxRepository.findByOrderId(order.getId()).orElseThrow();
+        assertAll(
+            () -> assertThat(result).isEqualTo(OrderBackfillResult.RECORDED),
+            () -> assertThat(serialized).containsExactly(OrderConfirmed.from(order)),
+            () -> assertThat(outbox.getEventId()).isEqualTo("order-confirmed:v1:" + order.getId()),
+            () -> assertThat(outbox.getPayload()).isEqualTo("payload:order-confirmed:v1:" + order.getId()),
+            () -> assertThat(outbox.getStatus()).isEqualTo(OrderOutboxStatus.PENDING),
+            () -> assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED)
+        );
+    }
+
+    @DisplayName("같은 확정 사실의 Outbox 가 이미 있으면 backfill 은 아무것도 더하지 않는다.")
+    @Test
+    void doesNotBackfillAgain_whenSameFactRecorded() {
+        Order order = confirmedWithoutOutbox();
+        orderService.backfillConfirmed(order.getId());
+
+        OrderBackfillResult result = orderService.backfillConfirmed(order.getId());
+
+        assertAll(
+            () -> assertThat(result).isEqualTo(OrderBackfillResult.ALREADY_RECORDED),
+            () -> assertThat(outboxRepository.findAll()).hasSize(1)
+        );
+    }
+
+    @DisplayName("저장된 Outbox 의 내용이 주문의 확정 사실과 다르면, 추측하지 않고 오류로 끝낸다.")
+    @Test
+    void rejectsBackfill_whenRecordedFactDiffers() {
+        Order order = confirmedWithoutOutbox();
+        outboxRepository.save(OrderConfirmedOutbox.pending(OrderConfirmed.from(order), "다른 payload", NOW));
+
+        assertThrows(IllegalStateException.class, () -> orderService.backfillConfirmed(order.getId()));
+        assertThat(outboxRepository.findByOrderId(order.getId())).get()
+            .extracting(OrderConfirmedOutbox::getPayload).isEqualTo("다른 payload");
+    }
+
+    @DisplayName("확정되지 않은 주문은 backfill 하지 않는다.")
+    @Test
+    void rejectsBackfill_whenNotConfirmed() {
+        Order draft = createDraft();
+
+        assertThrows(IllegalStateException.class, () -> orderService.backfillConfirmed(draft.getId()));
+        assertThat(outboxRepository.findAll()).isEmpty();
+    }
+
+    /** 6주차까지처럼 Outbox 없이 확정된 주문. 확정 메서드를 거치지 않는 POINT 확정으로 만듦 */
+    private Order confirmedWithoutOutbox() {
+        Order order = createDraft();
+        order.confirmWithPoint(2_000L, NOW);
+        return orderRepository.save(order);
     }
 }

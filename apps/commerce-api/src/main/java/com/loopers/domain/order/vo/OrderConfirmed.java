@@ -11,7 +11,8 @@ import java.util.List;
  */
 public record OrderConfirmed(String eventId, Long orderId, ZonedDateTime confirmedAt, List<Item> items) {
 
-    private static final String EVENT_ID_PREFIX = "order-confirmed:v1:";
+    public static final int SCHEMA_VERSION = 1;
+    private static final String EVENT_ID_PREFIX = "order-confirmed:v" + SCHEMA_VERSION + ":";
 
     public record Item(Long productId, int quantity) {}
 
