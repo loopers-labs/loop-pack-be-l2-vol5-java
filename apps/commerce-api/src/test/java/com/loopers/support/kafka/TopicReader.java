@@ -6,6 +6,7 @@ import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -63,6 +64,18 @@ public class TopicReader implements AutoCloseable {
             consumer.poll(POLL).forEach(records::add);
         }
         return records;
+    }
+
+    /** consumer group 이 partition 0 에 commit 한 offset. 아직 commit 하지 않았으면 0 이다. */
+    public static long committedOffset(String bootstrapServers, String topic, String consumerGroup) {
+        try (AdminClient admin = AdminClient.create(Map.<String, Object>of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers))) {
+            OffsetAndMetadata committed = admin.listConsumerGroupOffsets(consumerGroup)
+                .partitionsToOffsetAndMetadata().get()
+                .get(new TopicPartition(topic, 0));
+            return committed == null ? 0 : committed.offset();
+        } catch (Exception e) {
+            throw new IllegalStateException("consumer group offset 을 읽지 못했습니다: " + consumerGroup, e);
+        }
     }
 
     /** reader 가 열린 뒤 topic 에 쓰인 record 수. */
