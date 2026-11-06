@@ -44,7 +44,8 @@ public class TopicReader implements AutoCloseable {
         consumer.seek(partition, startOffset);
     }
 
-    private static void createTopic(String bootstrapServers, String topic) {
+    /** partition 1개짜리 topic 을 만든다. 이미 있으면 그대로 둔다. */
+    public static void createTopic(String bootstrapServers, String topic) {
         try (AdminClient admin = AdminClient.create(Map.<String, Object>of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers))) {
             if (!admin.listTopics().names().get().contains(topic)) {
                 admin.createTopics(List.of(new NewTopic(topic, 1, (short) 1))).all().get();

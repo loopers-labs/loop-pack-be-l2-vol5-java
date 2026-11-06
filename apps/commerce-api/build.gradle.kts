@@ -23,9 +23,15 @@ checkstyle {
 }
 
 // 학습용 실험 테스트는 기본 test/check 에서 빼고 experimentTest 로만 돌린다.
+// E2E 테스트는 streamer 를 별도 프로세스로 띄우므로 실행 jar 를 먼저 만든다. 제품 runtime 의존은 만들지 않는다.
 tasks.test {
     useJUnitPlatform {
         excludeTags("experiment")
+    }
+    dependsOn(":apps:commerce-streamer:bootJar")
+    doFirst {
+        val streamerJar = project(":apps:commerce-streamer").tasks.getByName("bootJar").outputs.files.singleFile
+        systemProperty("streamer.jar", streamerJar.absolutePath)
     }
 }
 
