@@ -64,7 +64,7 @@ Redis 오류 시 제한된 대기 뒤 DB로 우회하고, 복구 후 현재 revi
 - Single Flight는 서버 내부 범위이며, 여러 인스턴스의 합산 DB 부하를 제한하지 않는다. Bulkhead 한도·초과 요청 정책과 Redis 메모리 한도·제거 정책의 운영 설정은 후속 검토 대상이다.
 - 변경과 겹쳐 이미 진행 중인 조회는 그 조회 시점의 결과를 반환할 수 있다. 현재 설계의 혼합 읽기·쓰기 부하 성능은 별도 측정이 필요하다.
 - `catalog-cache` 프로필로 활성화하며 기존 고정 데이터 실험 캐시와 동시 사용하지 않는다. Write Invalidate 비교 경로는 `experiment` 프로필과 `experiment.catalog-write-invalidate.enabled=true`를 명시할 때만 사용한다.
-- 배포 전 쓰기를 멈추고 [revision 테이블 SQL](migrations/05-add-read-cache-revision.sql)을 적용해 catalog 토큰을 갱신한다. 이전 인스턴스와 혼합 쓰기를 하지 않는다. 이전 고정 v4 키는 재사용하지 않는다. 이번 revision 복원은 로컬 검증까지이며 배포·운영 DB 변경은 하지 않았다.
+- 배포 전 쓰기를 멈추고 [revision 테이블 SQL](../../db/migrations/week4/05-add-read-cache-revision.sql)을 적용해 catalog 토큰을 갱신한다. 이전 인스턴스와 혼합 쓰기를 하지 않는다. 이전 고정 v4 키는 재사용하지 않는다. 이번 revision 복원은 로컬 검증까지이며 배포·운영 DB 변경은 하지 않았다.
 
 ## 검증 결과
 

@@ -29,7 +29,7 @@
 
 ```bash
 MYSQL_HOST=127.0.0.1 MYSQL_PORT=3306 MYSQL_USER=application MYSQL_PWD=application \
-  docs/week4/migrations/apply-catalog-constraints.sh loopers
+  db/migrations/week4/apply-catalog-constraints.sh loopers
 ```
 
 앱의 쓰기를 중지한 상태에서 적용한다. 위반 데이터가 있으면 자동 삭제·수정하지 않고 중단한다. 기존에 같은 이름의 제약이 있어도 정의가 다르면 중단한다. DDL은 문장별로 commit되므로 실패 시 전체 rollback을 가정하지 않으며, 원인을 해결한 뒤 같은 명령으로 남은 변경을 적용한다.
@@ -48,4 +48,4 @@ MYSQL_HOST=127.0.0.1 MYSQL_PORT=3306 MYSQL_USER=application MYSQL_PWD=applicatio
 
 ## 조회 캐시 revision
 
-`05-add-read-cache-revision.sql`은 조회 캐시용 revision 테이블을 만들고 catalog revision을 갱신한다. 캐시 활성화·재활성화 전에 쓰기를 중지한 상태에서 별도로 적용한다. 기존 데이터·인덱스는 삭제하지 않는다. [캐시 ADR](../ADR.md)의 적용 조건을 따른다.
+`05-add-read-cache-revision.sql`은 조회 캐시용 revision 테이블을 만들고 catalog revision을 갱신한다. 캐시 활성화·재활성화 전에 쓰기를 중지한 상태에서 별도로 적용한다. 기존 데이터·인덱스는 삭제하지 않는다. [캐시 ADR](../../../docs/week4/ADR.md)의 적용 조건을 따른다.
