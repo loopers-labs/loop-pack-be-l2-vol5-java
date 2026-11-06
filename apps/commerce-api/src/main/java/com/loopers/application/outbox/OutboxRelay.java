@@ -74,6 +74,9 @@ public class OutboxRelay {
     private boolean publish(Outbox target) {
         try {
             outboxPublisher.publish(target);
+        } catch (OutboxMessageRejectedException e) {
+            recordBlocked(target, e);
+            return false;
         } catch (OutboxPublishException e) {
             recordFailure(target, e);
             return false;
@@ -84,6 +87,12 @@ public class OutboxRelay {
 
     private void recordPublished(Outbox target) {
         transaction.executeWithoutResult(status -> outboxService.get(target.getId()).markPublished(ZonedDateTime.now(clock)));
+    }
+
+    private void recordBlocked(Outbox target, OutboxMessageRejectedException error) {
+        log.warn("Outbox 격리. 다시 보내도 거절될 메시지다. eventId={}, orderId={}, error={}",
+            target.getEventId(), target.getOrderId(), error.getMessage());
+        transaction.executeWithoutResult(status -> outboxService.get(target.getId()).block(error.getMessage()));
     }
 
     private void recordFailure(Outbox target, OutboxPublishException error) {

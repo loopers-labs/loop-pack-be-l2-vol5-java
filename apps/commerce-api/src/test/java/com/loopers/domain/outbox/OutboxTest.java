@@ -134,5 +134,25 @@ class OutboxTest {
             assertThat(outbox.getNextAttemptAt()).isEqualTo(recordedAt);
             assertThat(outbox.getLastError()).isNull();
         }
+
+        @DisplayName("다시 보내도 거절될 메시지면 BLOCKED 로 격리되고, 원인이 남는다.")
+        @Test
+        void becomesBlocked_whenRejected() {
+            // given
+            ZonedDateTime recordedAt = ZonedDateTime.parse("2026-11-04T10:00:00+09:00[Asia/Seoul]");
+            Outbox outbox = Outbox.record(
+                "order-confirmed:v1:42", 42L, "OrderConfirmed", "v1", "42", new byte[] {1, 2, 3}, recordedAt
+            );
+            outbox.startAttempt();
+
+            // when
+            outbox.block("record too large");
+
+            // then
+            assertThat(outbox.getStatus()).isEqualTo(OutboxStatus.BLOCKED);
+            assertThat(outbox.getLastError()).isEqualTo("record too large");
+            assertThat(outbox.getAttemptCount()).isEqualTo(1);
+            assertThat(outbox.getPublishedAt()).isNull();
+        }
     }
 }

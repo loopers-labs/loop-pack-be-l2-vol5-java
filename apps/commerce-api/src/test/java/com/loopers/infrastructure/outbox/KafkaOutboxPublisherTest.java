@@ -1,5 +1,6 @@
 package com.loopers.infrastructure.outbox;
 
+import com.loopers.application.outbox.OutboxMessageRejectedException;
 import com.loopers.application.outbox.OutboxPublishException;
 import com.loopers.domain.outbox.Outbox;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
@@ -9,11 +10,15 @@ import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.apache.kafka.common.errors.TimeoutException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.kafka.core.KafkaTemplate;
 
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -134,5 +139,37 @@ class KafkaOutboxPublisherTest {
         assertThat(publisher.canPublish()).isTrue();
         assertThrows(OutboxPublishException.class, () -> publisher.publish(outbox));
         verify(kafkaTemplate, times(3)).send(any(String.class), any(), any());
+    }
+
+    /** send 가 실패한 원인 → 어댑터가 알려야 하는 예외 타입 */
+    static Stream<Arguments> failureCauses() {
+        return Stream.of(
+            Arguments.of(new TimeoutException("broker down"), BrokerUnavailableException.class),
+            Arguments.of(new RecordTooLargeException("record too large"), OutboxMessageRejectedException.class),
+            Arguments.of(new RuntimeException("unknown"), OutboxPublishException.class)
+        );
+    }
+
+    @DisplayName("실패 원인에 따라 broker 장애, 다시 보내도 거절될 메시지, 그 밖의 실패로 나눠 알린다.")
+    @ParameterizedTest(name = "{0} → {1}")
+    @MethodSource("failureCauses")
+    void classifiesFailureByCause(Exception cause, Class<? extends OutboxPublishException> expected) {
+        // given
+        @SuppressWarnings("unchecked")
+        KafkaTemplate<Object, Object> kafkaTemplate = mock(KafkaTemplate.class);
+        when(kafkaTemplate.send(any(String.class), any(), any())).thenReturn(CompletableFuture.failedFuture(cause));
+        KafkaOutboxPublisher publisher = new KafkaOutboxPublisher(
+            kafkaTemplate, "order-events", Duration.ofSeconds(1), CircuitBreaker.ofDefaults("outbox-publish-test")
+        );
+        Outbox outbox = Outbox.record(
+            "order-confirmed:v1:42", 42L, "OrderConfirmed", "v1", "42", new byte[] {1, 2, 3},
+            ZonedDateTime.parse("2026-11-04T10:00:00+09:00[Asia/Seoul]")
+        );
+
+        // when
+        OutboxPublishException exception = assertThrows(OutboxPublishException.class, () -> publisher.publish(outbox));
+
+        // then: 하위 타입까지 정확히 같아야 한다.
+        assertThat(exception).isExactlyInstanceOf(expected);
     }
 }

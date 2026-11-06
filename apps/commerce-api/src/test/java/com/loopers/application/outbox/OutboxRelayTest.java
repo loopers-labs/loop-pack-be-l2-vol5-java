@@ -161,4 +161,30 @@ class OutboxRelayTest {
         assertThat(found.getStatus()).isEqualTo(OutboxStatus.PENDING);
         assertThat(found.getAttemptCount()).isZero();
     }
+
+    @DisplayName("다시 보내도 거절될 메시지면 BLOCKED 로 격리하고, 다음 회차부터 보내지 않는다.")
+    @Test
+    void blocksAndStopsRetrying_whenMessageIsRejected() {
+        // given: 보낼 때마다 메시지가 너무 크다고 거절되는 사건
+        Outbox saved = outboxService.save(
+            Outbox.record("event-A", 1L, "OrderConfirmed", "v1", "1", new byte[] {1}, DUE_SINCE)
+        );
+        List<String> publishedEventIds = new ArrayList<>();
+        OutboxPublisher publisher = outbox -> {
+            publishedEventIds.add(outbox.getEventId());
+            throw new OutboxMessageRejectedException("전송 실패: RecordTooLargeException: record too large", new RuntimeException());
+        };
+        OutboxRelay relay = new OutboxRelay(outboxService, publisher, transactionManager, CLOCK, 20, Duration.ofSeconds(30));
+
+        // when: 회차를 두 번 실행한다.
+        relay.relayOnce();
+        relay.relayOnce();
+
+        // then: 첫 회차에서 한 번만 보내고 격리된다. 다음 회차는 보내지 않는다.
+        assertThat(publishedEventIds).containsExactly("event-A");
+        Outbox found = outboxService.get(saved.getId());
+        assertThat(found.getStatus()).isEqualTo(OutboxStatus.BLOCKED);
+        assertThat(found.getAttemptCount()).isEqualTo(1);
+        assertThat(found.getLastError()).contains("record too large");
+    }
 }

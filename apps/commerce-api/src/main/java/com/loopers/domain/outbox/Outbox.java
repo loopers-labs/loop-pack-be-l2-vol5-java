@@ -121,6 +121,19 @@ public class Outbox extends BaseEntity {
             return;
         }
         this.nextAttemptAt = nextAttemptAt;
-        this.lastError = error.length() > MAX_LAST_ERROR_LENGTH ? error.substring(0, MAX_LAST_ERROR_LENGTH) : error;
+        this.lastError = truncate(error);
+    }
+
+    /** 다시 보내도 거절될 메시지라 격리한다. relay 는 PENDING 만 고르므로 다시 보내지 않는다. 이미 발행된 건은 바꾸지 않는다. */
+    public void block(String error) {
+        if (status != OutboxStatus.PENDING) {
+            return;
+        }
+        this.status = OutboxStatus.BLOCKED;
+        this.lastError = truncate(error);
+    }
+
+    private static String truncate(String error) {
+        return error.length() > MAX_LAST_ERROR_LENGTH ? error.substring(0, MAX_LAST_ERROR_LENGTH) : error;
     }
 }

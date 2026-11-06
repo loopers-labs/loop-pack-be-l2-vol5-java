@@ -1,5 +1,6 @@
 package com.loopers.infrastructure.outbox;
 
+import com.loopers.application.outbox.OutboxMessageRejectedException;
 import com.loopers.application.outbox.OutboxPublishException;
 import com.loopers.application.outbox.OutboxPublisher;
 import com.loopers.domain.outbox.Outbox;
@@ -8,7 +9,9 @@ import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.errors.RetriableException;
+import org.apache.kafka.common.errors.SerializationException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -95,8 +98,15 @@ public class KafkaOutboxPublisher implements OutboxPublisher {
         }
     }
 
+    // 원인을 모르는 실패는 격리하지 않고 재시도한다. 일시적인 오류를 잘못 막아 수동 작업을 만들지 않기 위해서다.
     private static OutboxPublishException failure(String message, Throwable error) {
-        return isBrokerUnavailable(error) ? new BrokerUnavailableException(message, error) : new OutboxPublishException(message, error);
+        if (isBrokerUnavailable(error)) {
+            return new BrokerUnavailableException(message, error);
+        }
+        if (isRejectedMessage(error)) {
+            return new OutboxMessageRejectedException(message, error);
+        }
+        return new OutboxPublishException(message, error);
     }
 
     // Kafka 는 브로커 쪽 일시 실패(연결·시간 초과·리더 변경 등)를 RetriableException 으로 나타낸다.
@@ -104,6 +114,16 @@ public class KafkaOutboxPublisher implements OutboxPublisher {
     private static boolean isBrokerUnavailable(Throwable error) {
         for (Throwable cause = error; cause != null; cause = cause.getCause()) {
             if (cause instanceof RetriableException || cause instanceof TimeoutException) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // 재시도 대상이 아닌 Kafka 오류(크기 초과·권한 등)와 직렬화 오류는 다시 보내도 같은 결과다.
+    private static boolean isRejectedMessage(Throwable error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if ((cause instanceof ApiException && !(cause instanceof RetriableException)) || cause instanceof SerializationException) {
                 return true;
             }
         }

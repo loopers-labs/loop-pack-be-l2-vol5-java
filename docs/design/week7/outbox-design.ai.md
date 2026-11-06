@@ -40,9 +40,11 @@
 | PENDING | broker 성공 확인 + 상태 TX 성공 | PUBLISHED | publishedAt |
 | PENDING | 전송 실패·timeout | PENDING | nextAttemptAt = now + 간격, lastError |
 | PENDING | broker 성공 뒤 상태 TX 실패 | PENDING | 변경 없음. 다음 회차에 같은 사건 재발행 |
+| PENDING | 다시 보내도 거절될 메시지(재시도 불가 Kafka 오류) | BLOCKED | lastError. 다시 보내지 않음 |
+| BLOCKED | 사람이 원인을 고친 뒤 SQL로 되살림 | PENDING | nextAttemptAt = now |
 | PUBLISHED | 어떤 사건이든 | PUBLISHED | 변경 없음 |
 
-- `BLOCKED` 상태는 두지 않는다. payload는 확정 TX에서 Avro 계약으로 만든 bytes(상한 16KB)를 그대로 보내므로 특정 record만 영원히 실패할 여지가 거의 없고, 실패는 broker·topic·partition 단위로 함께 일어난다. 그런 장애에 행을 BLOCKED로 막으면 회복 뒤 사람이 모두 되살려야 해 자동 수렴이 깨진다. 장애는 회로 차단(10-2)으로 다루고, 반복 실패하는 행은 PENDING + attemptCount + lastError로 관찰한다.
+- `BLOCKED`는 **다시 보내도 거절될 메시지에만** 쓴다. 어댑터가 원인 사슬에 재시도 대상이 아닌 Kafka 오류(`RetriableException`이 아닌 `ApiException`: 크기 초과·권한 등)나 `SerializationException`이 있으면 `OutboxMessageRejectedException`을 던지고, relay는 그 행을 BLOCKED로 격리해 다시 보내지 않는다. broker 장애(Kafka `RetriableException`·대기 초과)와 원인 불명 실패는 격리하지 않고 PENDING으로 재시도한다. 장애 동안 쌓인 행을 막으면 회복 뒤 자동으로 이어지지 않고, 일시 오류를 잘못 막으면 수동 작업만 늘기 때문이다. BLOCKED는 완료가 아니라 사람이 원인을 고친 뒤 되살릴 미해결 작업이다(되살리기 SQL은 7장).
 - 늦은 callback이 상태를 바꾸지 못하게, 상태 변경은 relay 루프 안의 상태 TX 한 곳에서만 한다. send의 `whenComplete` 콜백에서 DB를 바꾸지 않는다.
 
 ## 4. 확정 TX
@@ -128,6 +130,12 @@ from outbox where status = 'PENDING';
 select event_id, order_id, attempt_count, next_attempt_at, last_error
 from outbox where status = 'PENDING' and attempt_count >= 3 order by id;
 
+-- 격리된 사건(미해결 작업)과 원인
+select event_id, order_id, attempt_count, last_error from outbox where status = 'BLOCKED' order by id;
+
+-- 되살리기: 원인을 고친 뒤 격리된 사건을 다시 흘려보낸다 (topic 전체가 막혔던 경우 event_id 조건 없이)
+update outbox set status = 'PENDING', next_attempt_at = now(6) where event_id = ? and status = 'BLOCKED';
+
 -- 재개: 지정한 사건을 다음 회차의 대상으로 당긴다 (PUBLISHED는 건드리지 않는다)
 update outbox set next_attempt_at = now(6) where event_id = ? and status = 'PENDING';
 ```
@@ -205,6 +213,7 @@ W7 코드에서는 확정 TX가 Outbox를 함께 쓰므로 같은 경로로는 �
 | 8 | 스케줄·단일 실행 | 단일 Relay 다음 | 실행이 겹치지 않는다 / 설정이 꺼져 있으면 돌지 않는다 |
 | 9 | 중단 실험 | 두 번 발행되는 것이 정상인 구간 | commit 후 relay 전 중단 → 새 relay가 발행 / broker 확인 후 PUBLISHED 저장 전 중단 → PENDING 유지, 재시작 후 다른 offset 재발행 (실제 Kafka) |
 | 10-1 | 재시도·재개 (문서만) | 재시도와 재처리의 책임 | 코드 없음. 자동 재시도가 재개 경로, backlog·재개 SQL, BLOCKED·백오프 미도입 이유, 보존 정책 |
+| 10-3 | 재시도 불가 실패 격리 | 재시도와 재처리의 책임 | 거절된 메시지는 BLOCKED로 격리하고 다음 회차부터 보내지 않는다 / 실패 원인별로 broker 장애·거절·그 밖으로 나눈다 |
 | 10-2 | broker 장애 회로 차단 | 재시도와 재처리의 책임 | 회로가 열리면 relay가 회차를 건너뛰어 시도 횟수를 올리지 않는다 / 실패가 이어지면 회로가 열려 broker에 보내지 않고 거절한다 |
 | 11-1 | W6 누락 재현·복구 도구 | 선택을 설명하기 | 누락 주문에 저장된 사실 그대로 Outbox를 채우고 PG·주문·재고를 건드리지 않는다 / 두 번 복구해도 효과 없음 / 확정되지 않은 주문은 거절 |
 | 11-2 | 복구 뒤 구매 활동 확인 | 선택을 설명하기 | 8장 확인 표 (12단계 consumer 배선 뒤) |
@@ -223,7 +232,7 @@ W7 코드에서는 확정 TX가 Outbox를 함께 쓰므로 같은 경로로는 �
 | 다중 relay (claim/lock) | 소유권·만료·순서 문제가 추가된다. 이번에는 단일 relay와 실행 설정으로 제한한다 |
 | CDC (Debezium 등) | connector·offset·스키마 운영이 필요하다. 이번에는 도입 비교만 한다 |
 | 전체 이력을 쌓는 event sourcing | Outbox는 전달할 사건만 보존한다. 원본은 주문·결제 DB다 |
-| `BLOCKED` 상태로 영구 오류 격리 | 특정 record만 실패할 여지가 거의 없고, broker 장애에 쓰면 회복 뒤 수동으로 모두 되살려야 한다 |
+| 반복 실패한 행을 모두 `BLOCKED`로 격리 | broker 장애에 쓰면 회복 뒤 수동으로 모두 되살려야 한다. 격리는 재시도 불가 실패에만 쓰고, broker 장애·원인 불명은 재시도한다 |
 | 시도 횟수에 따른 지수 백오프 | 실패가 broker 단위라 장애 동안 모든 행의 간격이 늘어나 회복 뒤 전송만 늦어진다. 장애는 회로 차단으로 다룬다 |
 | 재개용 직접 전송 진입점 | 새 프로세스에서 보내면 relay 실행자가 둘이 되고, 자동 재시도로 줄일 대기는 최대 30초뿐이다 |
 | relay 회차 잠금 (`tryLock`) | 스케줄러가 같은 작업을 동시에 실행하지 않고 다른 호출자도 없어 막는 상황이 없다 |
