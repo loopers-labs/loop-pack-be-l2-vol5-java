@@ -103,16 +103,130 @@
 
 ---
 
-## 2. Outbox 모델·relay·복구 결정 (미정, 다음 단계)
+## 2. 과제 1~2절 결정 · 바꿀 트랜잭션 표시와 Outbox 모델·로컬 원자성
 
-과제 2절(Outbox 모델과 로컬 원자성), 3절(단일 relay), 4절(재시도·운영 재개), 5-4~5-6(복구)을 구현하기 전에 여기에 D10 부터 이어서 적는다.
+이 절의 범위는 과제 1절(바꿀 트랜잭션)·2절(Outbox 모델·같은 TX)과 그에 따른 직접 발행 제거까지다. relay(과제 3절)·재시도·운영 재개(4절)·복구(5-4~5-6)는 3절 이후에 따로 정한다.
+
+### D10. 바꿀 트랜잭션 → `PaymentResultService.applyFinal` 의 `confirmedRows == 1` 블록
+- 세 입구(`applyCallback`·`reconcile`·`runScheduledLookups`)가 모두 `PaymentFacade.apply` → `applyFinal` 로 모이므로 여기 한 곳에 Outbox insert 를 두면 세 경로가 같은 동작을 한다.
+  > 📄 p.1 "기존 PG 결과 적용 경계에서 최초 SUCCESS의 내부 확정을 찾습니다. 새 주문을 insert하는 코드가 아니라 기존 미완료 주문을 확정하는 코드입니다."
+  > 📄 p.1 "callback·reconcile은 계속 같은 결과 적용 경계를 사용합니다."
+- 정확한 자리는 `finishIfPaymentPending` 이 1행을 바꾼 뒤 품목을 읽어 `OrderConfirmedEvent.of(...)` 를 만든 직후다. 예약 소비 루프와 같은 메서드 안이라 같은 `@Transactional`(REQUIRED) 로 commit·rollback 된다. 데이터소스는 `modules/jpa` 의 `mySqlMainDataSource` 하나, 트랜잭션 관리자도 하나다.
+  > 📄 p.2 "Outbox insert와 주문 확정·예약 소비·PG 성공 사실 저장은 같은 데이터 소스의 같은 로컬 TX에 둡니다. 별도 REQUIRES_NEW 나 after-commit insert로 나누지 않습니다."
+- PENDING(`recordPending`)·UNKNOWN(`recordUnknown`)·충돌(`recordConflict`)은 `applyFinal` 을 거치지 않고, FAILED 는 실패 분기라 이 블록에 들어오지 않는다. 중복 callback 은 `settleIfOpen` 0행으로 먼저 반환된다. 현재 구조 그대로 아래 조건을 만족한다.
+  > 📄 p.2 "PENDING·UNKNOWN·확정 FAILED는 OrderConfirmed Outbox를 만들지 않습니다. 같은 거래의 중복 callback·reconcile은 Outbox도 하나만 남깁니다."
+
+### D11. Outbox 위치·이름 → `domain/order/OrderConfirmedOutbox` + `OrderConfirmedOutboxRepository`, 구현 `infrastructure/order`, 테이블 `order_confirmed_outbox`
+- `PaymentResultService`(domain) 가 저장을 호출하므로 ArchUnit 규칙("domain 은 infrastructure 에 의존하지 않는다")상 엔티티와 리포지터리 인터페이스는 domain, JPA 구현은 infrastructure 에 둔다. 기존 `PaymentAttempt` / `PaymentAttemptRepository` / `PaymentAttemptRepositoryImpl`·`PaymentAttemptJpaRepository` 관례와 같다.
+  > 📄 p.2 "클래스·테이블·패키지 이름은 기존 설계와 ArchUnit 규칙에 맞게 정합니다."
+- payload 계약인 `OrderConfirmedEvent` 가 이미 `domain/order` 에 있어 같은 자리에 둔다. 이벤트가 하나뿐이라 범용 `outbox` 패키지·`eventType` 분기 테이블은 만들지 않는다 (W6 D9 와 같은 "필요 이상 묶지 않기").
+- 엔티티는 `BaseEntity` 를 상속해 id·created_at·updated_at 을 그대로 쓴다. 컬럼은 과제 p.2 데이터 규칙을 그대로 옮긴다.
+
+| 컬럼 | 값 | 비고 |
+|---|---|---|
+| event_id | `order-confirmed:v1:{orderId}` | UNIQUE (D13) |
+| order_id | 주문 ID | UNIQUE (D13) |
+| event_type / schema_version | `OrderConfirmed` / `1` | W6 계약 그대로 |
+| message_key | orderId 문자열 | Kafka key |
+| payload | JSON 문자열 | TEXT, 생성 뒤 변경 금지 (D12) |
+| status | PENDING / PUBLISHED | VARCHAR (D14) |
+| created_at | BaseEntity | 기록 시각 (D15) |
+| published_at | null → broker 확인 뒤 | 발행 확인 저장 시각 (D15) |
+| attempt_count / next_attempt_at / last_error | 0 / 저장 시각(Clock) / null | 갱신은 relay 단계에서 (D15) |
+
+  > 📄 p.2 "eventId W6의 동일 확정 사건 ID, DB 유일 제약 / orderId·eventType·schemaVersion 원본 주문과 계약 연결 / messageKey·payload W6와 동일, 생성 뒤 변경 금지 / status 최초 PENDING, broker 확인 후 PUBLISHED / createdAt·publishedAt 기록 시각과 발행 확인 저장 시각 구분 / attemptCount·nextAttemptAt·lastError 재시도·지연·실패 관찰"
+
+### D12. payload → JSON 문자열을 TEXT 계열(utf8mb4) 컬럼에, 확정 TX 안에서 한 번만 직렬화
+- `KafkaOrderConfirmedPublisher` 가 쓰는 것과 같은 `ObjectMapper` 로 `OrderConfirmedEvent` 를 직렬화해 문자열로 저장한다. relay 는 저장된 문자열을 UTF-8 bytes 로 바꿔 그대로 보내므로 W6 D6 의 "우리가 만든 JSON bytes 그대로" 계약과 일치하고, 현재 상품을 다시 읽어 payload 를 만들지 않는다.
+  > 📄 p.2 "messageKey·payload W6와 동일, 생성 뒤 변경 금지"
+  > 📄 p.3 "relay가 현재 상품 정보를 재조회해 payload를 다시 만들지 않습니다."
+- MySQL `JSON` 타입은 저장 시 정규화돼 공백·키 순서가 바뀔 수 있어 "생성 뒤 변경 금지" 와 충돌할 수 있다. 그래서 `TEXT`(`columnDefinition = "TEXT"`, 서버 기본 문자셋 utf8mb4)로 둔다. 품목 몇 개짜리 JSON 이라 64KB 상한은 충분하다.
+- bytes(`VARBINARY`/`BLOB`) 저장은 SQL 로 바로 읽기 어려워 과제 4절의 "SQL 로 확인" 과 덜 맞아 택하지 않았다.
+
+### D13. eventId → W6 계산식 그대로, `event_id`·`order_id` 각각 UNIQUE
+- eventId 는 `OrderConfirmedEvent.eventIdOf(orderId)` = `order-confirmed:v1:{orderId}` 를 그대로 쓴다. W6 소비자 장부(`uk_poc_event_id`)·녹화 record 와 같은 값이고, 복구 5-5 에서 저장된 주문만으로 같은 eventId 를 다시 만들 수 있다. UUID 를 새로 발급하면 이것이 불가능하다.
+  > 📄 p.2 "eventId W6의 동일 확정 사건 ID, DB 유일 제약"
+- 유일성은 `finishIfPaymentPending` 의 `WHERE status = PAYMENT_PENDING` 가드가 먼저 보장하고, UNIQUE 는 최후 방어다 (W6 D11 과 같은 태도). `order_id` UNIQUE 는 소비자 장부(`uk_poc_order_id`)와 대칭이 되도록 함께 둔다.
+
+### D14. status → `PENDING`, `PUBLISHED` 두 값, `@Enumerated(STRING)` + VARCHAR
+- 과제 2절이 요구하는 최소 두 값만 둔다. 영구 오류 분리(`BLOCKED`)는 relay·재시도 설계(과제 4절) 때 정하며, 문자열 컬럼이라 값이 늘어도 스키마 변경이 없다.
+  > 📄 p.2 "status 최초 PENDING, broker 확인 후 PUBLISHED"
+  > 📄 p.4 "별도 BLOCKED 상태로 분리했다면 미해결 상태로 목록에 남기고 복구 후 같은 행을 재개하는 경로를 둡니다."
+
+### D15. 시각 → `createdAt` 은 `BaseEntity`(`@PrePersist`), `publishedAt`·`nextAttemptAt` 은 relay 가 `Clock` 빈으로 채움
+- `BaseEntity` 는 "이 외의 컬럼이나 동작은 추가하지 않는다" 고 못 박고 있어 건드리지 않는다. created_at 은 시스템 시계라 고정 Clock 과 어긋날 수 있지만, 사건 시각 자체는 payload 안 confirmedAt(Clock 값)에 있으므로 테스트 단언에 지장이 없다.
+- "기록 시각" 과 "발행 확인 저장 시각" 은 별도 컬럼이어야 하므로 `published_at` 을 따로 둔다.
+  > 📄 p.2 "createdAt·publishedAt 기록 시각과 발행 확인 저장 시각 구분"
+- relay 용 컬럼 `attempt_count`·`next_attempt_at`·`last_error` 는 과제 2절의 "최소 모델" 표에 포함되므로 지금 선언한다. 초기값은 `attemptCount = 0`, `lastError = null`, **`nextAttemptAt = 저장 시각(Clock 빈)`** 이다. 처음부터 다음 시각이 채워져 있으면 relay 가 "`status = PENDING` 이고 `next_attempt_at <= now`" 한 조건만으로 대상을 찾을 수 있고, "null 이면 즉시" 같은 특례 분기가 필요 없다. 값을 갱신하는 책임(시도 수 증가·다음 시각·오류 기록)은 relay 설계에서 정한다.
+  > 📄 p.2 "다음 의미를 담는 최소 모델을 만듭니다. … attemptCount·nextAttemptAt·lastError 재시도·지연·실패 관찰"
+  > 📄 p.3 "재시도 시간이 된 PENDING을 작은 묶음으로 안정된 순서에서 찾습니다."
+
+### D16. 직렬화 실패 → 런타임 예외로 감싸 같은 TX rollback, `ObjectMapper` 는 주입
+- `applyFinal` 안에서 직렬화하고 `JsonProcessingException` 을 런타임 예외(`CoreException`)로 바꿔 던진다. `@Transactional` 기본 규칙이 런타임 예외에 rollback 하므로 주문 CONFIRMED·예약 소비·Outbox 가 함께 되돌아간다. 체크 예외를 그대로 던지면 rollback 되지 않으니 반드시 감싼다.
+  > 📄 p.3 "Outbox 저장에 필요한 serialization이 실패한 경우도 같은 TX의 실패로 다룹니다."
+  > 📄 p.2 "Outbox 실패가 발생하면 최초 성공 반영·예약 소비도 rollback합니다. 원래 미완료 주문·이전 시도·예약은 TX 직전 상태로 남습니다. 기존 주문 행을 0개로 만드는 것이 기대 결과가 아닙니다."
+- rollback 뒤 외부 PG 는 SUCCESS 그대로이므로 기존 reconcile·스케줄러의 같은 거래 재조회 경로로 다시 적용되며 create 는 추가되지 않는다 (D20 의 전환 테스트로 확인).
+  > 📄 p.2 "외부 PG SUCCESS는 로컬 rollback과 무관하게 남을 수 있습니다. 같은 거래 재조회로 성공 반영을 재시도하고 create는 추가하지 않습니다."
+- `ObjectMapper` 는 `PaymentResultService` 생성자로 주입받아 테스트에서 실패를 주입할 수 있게 한다. domain 이 Jackson 라이브러리에 의존하게 되지만 ArchUnit 규칙은 패키지 기준(interfaces·application·infrastructure)이라 위반이 아니다.
+
+### D17. 직접 발행 제거 → `PaymentFacade` 에서 `OrderConfirmedPublisher` 의존·`publishAfterCommit` 삭제, `PaymentApplyResult.firstConfirmation` 은 유지
+- 제품 코드에서 발행기를 부르는 곳은 `PaymentFacade` 한 곳이다. 필드·생성자 인자·`publishAfterCommit`·`isFirstConfirmation()` 분기를 지우면 제품 경로에서 직접 send 가 사라진다.
+  > 📄 p.1 "W6의 after-commit 직접 send를 제거하거나 이 경로에서 호출되지 않게 교체합니다. 직접 send와 relay를 의도치 않게 병행하지 않습니다."
+- `applyFinal` 의 반환값 `PaymentApplyResult.firstConfirmation` 은 그대로 둔다. 단위 테스트(`PaymentResultServiceTest` 등 6곳)가 이 값으로 "처음 확정" 을 확인하고 있고, Outbox 에 넣은 payload 와 같은 객체라 검증에도 쓸 수 있다.
+- 생성자가 바뀌므로 `new PaymentFacade(...)` 를 직접 만드는 `PaymentReconcileIntegrationTest`·`PaymentScheduledLookupIntegrationTest` 의 인자 목록을 맞춘다. `PaymentResultServiceTest`(순수 단위)는 새 협력자(`OrderConfirmedOutboxRepository`, `ObjectMapper`)의 `@Mock` 추가까지만 한다.
+
+### D18. `KafkaOrderConfirmedPublisher`·`OrderConfirmedPublisher`·`OrderConfirmedPublishException` → 이번엔 그대로 둠
+- 제품 경로에서는 호출자가 없어지지만 클래스는 유지하고, 클래스 주석에 "W7 제품 경로 미사용, relay 설계(3절)에서 재결정" 을 명시한다. relay 가 "저장된 key·payload 를 그대로 보내는 전송기" 를 새로 가질지 이 발행기를 바꿀지는 3절에서 정한다.
+  > 📄 p.3 "주문 확정 TX 밖에서 같은 topic·key·payload를 send합니다."
+- 유지하는 이유: `KafkaOrderConfirmedPublisherTest`(계약 JSON·send 결과 분류)와 crossAppTest 의 W6 보존 경로가 이 발행기에 위임하고 있어, 지금 바꾸면 이번 범위 밖의 수정이 함께 들어간다.
+
+### D19. `OrderConfirmedDeliveryGapTest` → `W6GapReproductionAndRecoveryTest` 로 흡수하고 삭제
+- 삭제 사유는 "검사가 실패하니까" 가 아니다. 이 테스트가 검증하던 대상(Facade 의 commit 뒤 직접 발행)이 과제 요구(D17)로 제품 코드에서 사라지기 때문이다. 그 테스트가 증명하던 사실 중 아직 유효한 것은 아래처럼 새 테스트가 같은 단언으로 이어받는다. W6 관찰값은 W6 설계 문서 8절과 streamer 의 녹화본(`experiments/delivery-gap-case2.json`, `OrderConfirmedReplayTest`)에 그대로 남는다.
+- `@Disabled` 유지는 택하지 않았다. Facade 생성자가 바뀌어 어차피 손을 대야 하고, 실행되지 않는 테스트가 남는 것은 과제 p.7 의 태도와 거리가 있다.
+  > 📄 p.7 "테스트 0건·skip·연결 실패를 통과로 세지 않습니다."
+
+| 기존 `OrderConfirmedDeliveryGapTest` 의 단언·기록 | 새 테스트에서 |
+|---|---|
+| 사례 1: 주문 CONFIRMED·confirmedAt 고정값·예약 CONSUMED·시도 SUCCESS | 있음 (`assertConfirmed`) |
+| 사례 1: `publishCallCount()==1`, `published()` 비어 있음, broker 에 해당 key 없음 | 있음 |
+| 사례 2: broker record 1건, key = orderId, eventId·confirmedAt 일치 | 있음 |
+| 사례 2: value JSON 의 `orderId`, `items[0]`=상품A×2, `items[1]`=상품B×1 | **이번에 옮김** |
+| 사례 2: 예약 CONSUMED, `createCount()==2` | 있음 |
+| 응답 `settled()` | W6 보존본은 응답 DTO 를 만들지 않으므로 주문 CONFIRMED 단언으로 대체 |
+| `build/delivery-gap/observation.json` 기록 | `build/w7-recovery/observation.json` 으로 대체. W6 기록·녹화본은 그대로 |
+| "Facade 가 commit 뒤 발행한다" | W7 에서 의도적으로 사라지는 사실. 대신 D20 의 "Outbox 가 같은 TX 에 생긴다" 가 들어옴 |
+
+### D20. `OrderConfirmedPublicationTest` 7개 → `OrderConfirmedOutboxAtomicityTest` 로 이름을 바꾸고 "Outbox 가 생긴다/안 생긴다" 단언으로 전환
+- 새 이름은 과제 p.7 의 검사 예시와 맞춘다. 내용이 "발행" 이 아니라 "확정 TX 와 Outbox 의 로컬 원자성" 이 되므로 옛 이름은 어색하다.
+  > 📄 p.7 "./gradlew :apps:commerce-api:test --tests '*OutboxAtomicityTest'"
+- git 이 rename 으로 추적하도록 **이름만 바꾸는 변경과 내용을 바꾸는 변경을 분리**해 작업한다(커밋도 둘로 나눌 수 있게). 이름 변경 단계에서는 클래스 이름과 파일 이름만 바꾸고 단언은 그대로 둔다.
+- 발행 여부 대신 Outbox 행의 존재·내용·상태를 단언한다. 가짜 발행기(`FakeOrderConfirmedPublisherConfig`) import 는 빼고, Outbox 리포지터리와 별도 연결(`JdbcTemplate`)로 읽는다. 클래스 주석은 과제 2절 기준으로 고친다.
+- 실패 주입은 기존 테스트가 `StockReservationRepository` 에 쓰는 것과 같은 `@MockitoSpyBean` 방식이다. 직렬화 실패는 `ObjectMapper` spy 에서, **`OrderConfirmedEvent` 인스턴스를 직렬화할 때만**(`writeValueAsString(any(OrderConfirmedEvent.class))`) 예외를 던지게 인자 조건을 좁힌다. `ObjectMapper` 는 웹 응답·Kafka 발행기 등 다른 곳에서도 쓰이므로 조건 없이 던지면 테스트가 다른 경로에서 먼저 깨진다. 저장 실패는 `OrderConfirmedOutboxRepository` spy 의 `save` 에서 던진다.
+
+| 기존 테스트 | 기존 단언 | 전환 후 단언 |
+|---|---|---|
+| `publishesOnce_afterCommit` | 이벤트 1건 발행, 발행 시점 활성 TX 없음, 별도 연결로 읽은 주문 CONFIRMED | Outbox 1행: eventId·orderId·messageKey·eventType·schemaVersion·status PENDING·publishedAt null, payload JSON 이 저장 품목·confirmedAt(ISO 문자열)과 일치. 별도 연결로 읽어도 주문 CONFIRMED 와 Outbox 1행이 함께 보인다 |
+| `publishesOnlyOnce_whenCallbackAndReconcileRepeat` | 중복 callback·reconcile 에도 이벤트 1건, 재고 차감 1회, create 1회 | Outbox 1행 유지, 재고·create 단언 그대로 |
+| `nothing_whenPending` | 발행 0회, 주문 PAYMENT_PENDING | Outbox 0행, 주문 PAYMENT_PENDING |
+| `nothing_whenUnknown` | 발행 0회, 시도 PENDING, 주문 PAYMENT_PENDING | Outbox 0행, 나머지 그대로 |
+| `nothing_whenFailed` | 발행 0회, 두 주문 PAYMENT_FAILED, confirmedAt null | Outbox 0행, 나머지 그대로 |
+| `nothing_whenConfirmationRollsBack_andExceptionPropagates` | 예약 갱신 예외 → 발행 0, 주문 PAYMENT_PENDING, 재시도 후 발행 1건 | 예약 갱신 예외 → Outbox 0행, 주문 PAYMENT_PENDING, 재시도 후 Outbox 1행, create 1회 |
+| `keepsOrder_whenPublishFails` (FAILED) | 발행 실패에도 주문 CONFIRMED·예약 CONSUMED 유지 | **직렬화 실패 주입**(`ObjectMapper` spy) → 확정 TX 전체 rollback: 주문 PAYMENT_PENDING·confirmedAt null, 예약 RESERVED, 재고 미차감, Outbox 0행, 예외 전파, create 추가 없음. 주입 해제 뒤 재시도 → CONFIRMED·CONSUMED·Outbox 1행 |
+| `keepsOrder_whenPublishUnknown` (UNKNOWN) | 같음 | **Outbox 저장 실패 주입**(리포지터리 spy) → 같은 rollback 결과와 재시도 성공 |
+
+- 마지막 두 테스트의 의미가 바뀌는 이유: W7 제품 경로에는 "발행 실패" 장면이 없고, 대신 과제 2절이 요구하는 "Outbox 실패 시 확정도 rollback" 과 "기존 주문 행을 0개로 만들지 않는다(PAYMENT_PENDING 으로 남는다)" 를 같은 자리에서 검증한다.
+  > 📄 p.2 "Outbox 실패가 발생하면 최초 성공 반영·예약 소비도 rollback합니다. 원래 미완료 주문·이전 시도·예약은 TX 직전 상태로 남습니다."
+
+### D21. W6 보존본(`W6DirectPublishPath`) → 수정 없음, 새 테스트의 "Outbox 없음" TODO 를 리포지터리 조회로 채움
+- 보존본은 `PaymentFacade`·`PaymentResultService` 를 호출하지 않고 리포지터리 인터페이스·PG·발행기·Clock·트랜잭션 관리자만 쓴다. D17 의 Facade 변경과 D10 의 `applyFinal` 변경 모두 보존본에 닿지 않으며, 보존본은 Outbox 를 쓰지 않으므로 "확정은 됐지만 Outbox 는 없는" W6 상태를 계속 만든다. D18 로 발행기도 그대로라 위임 경로도 불변이다.
+- 새 테스트의 TODO 는 `OrderConfirmedOutboxRepository` 로 두 주문의 Outbox 가 없음을 새 DB 조회로 확인하는 단언으로 채운다. `DatabaseCleanUp` 은 메타모델 기준이라 Outbox 테이블도 테스트 끝 정리에 자동 포함된다.
+  > 📄 p.4 5-2 "두 주문 모두 CONFIRMED·예약 소비가 있고 Outbox는 아직 없으며, 첫 주문의 구매 활동만 0인지 새 DB 조회로 확인합니다."
 
 ---
 
-## 3. 열린 질문
+## 3. relay·재시도·복구 결정 (미정, 다음 단계)
 
-- 기존 `OrderConfirmedDeliveryGapTest`: W7 에서 Facade 의 직접 발행이 사라지면 그대로는 깨진다. 삭제·`W6GapReproductionAndRecoveryTest` 로 흡수·W6 기록용 `@Disabled` 유지 중 선택이 필요하다. 검사 통과를 위한 삭제가 아니라는 이유를 남겨야 한다.
-- `KafkaOrderConfirmedPublisher`: relay 가 재사용하면 보존 경로도 그대로 위임할 수 있다. relay 가 자체 send 를 갖고 이 클래스를 지우면 보존 경로와 `FakeOrderConfirmedPublisherConfig` 를 손봐야 한다.
+과제 3절(단일 relay), 4절(재시도·운영 재개), 5-4~5-6(복구)을 구현하기 전에 여기에 D22 부터 이어서 적는다. D18 에서 미뤄 둔 "저장된 key·payload 를 보내는 전송기를 새로 둘지, 기존 발행기를 바꿀지" 도 여기서 정한다.
 
 ---
 
