@@ -53,6 +53,10 @@ class OrderEventOutboxEntity extends AuditEntity {
         columnDefinition = "DATETIME(6) NOT NULL DEFAULT (UTC_TIMESTAMP(6))")
     private Instant nextAttemptAt;
 
+    @Column(name = "retry_since", insertable = false, updatable = false,
+        columnDefinition = "DATETIME(6) NOT NULL DEFAULT (UTC_TIMESTAMP(6))")
+    private Instant retrySince;
+
     @Column(name = "last_error", length = 1000)
     private String lastError;
 

@@ -3,7 +3,7 @@ package com.loopers.application.order;
 import com.loopers.domain.order.OrderEventDelivery;
 import com.loopers.domain.order.OrderEventOutbox;
 import com.loopers.domain.order.PendingOrderEvent;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -12,7 +12,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Component
-@RequiredArgsConstructor
 public class OrderEventRelayTransactions {
 
     private static final Duration FIRST_BACKOFF = Duration.ofSeconds(1);
@@ -20,6 +19,13 @@ public class OrderEventRelayTransactions {
     private static final int MAX_DOUBLINGS = 6;
 
     private final OrderEventOutbox outbox;
+    private final Duration giveUpAfter;
+
+    public OrderEventRelayTransactions(OrderEventOutbox outbox,
+                                       @Value("${outbox.relay.give-up-after:24h}") Duration giveUpAfter) {
+        this.outbox = outbox;
+        this.giveUpAfter = giveUpAfter;
+    }
 
     @Transactional(readOnly = true)
     public List<PendingOrderEvent> due(int limit) {
@@ -36,7 +42,7 @@ public class OrderEventRelayTransactions {
                     outbox.markBlocked(rejected.event().id(), rejected.error());
                 case OrderEventDelivery.Unconfirmed unconfirmed ->
                     outbox.retryLater(unconfirmed.event().id(), backoff(unconfirmed.event().attemptCount()),
-                        unconfirmed.error());
+                        giveUpAfter, unconfirmed.error());
             }
         }
         outbox.markPublished(published);

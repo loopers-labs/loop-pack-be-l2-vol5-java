@@ -35,6 +35,7 @@ W6 에서 `ApplicationEventPublisher` 로 넘기던 자리와 같다. 애그리�
 | `topic`, `record_key`, `payload` | 생성할 때 정하고 `updatable = false`. payload 는 W6 과 같은 바이트(`MEDIUMBLOB`) |
 | `status` | `PENDING`, `PUBLISHED`, `BLOCKED` |
 | `attempt_count`, `next_attempt_at`, `last_error` | 재시도 관찰용. `next_attempt_at` 은 DB 기본값 `UTC_TIMESTAMP(6)` 으로 들어간다(`OBX-005`) |
+| `retry_since` | 재시도를 시작한 시각. insert 때 DB 기본값 `UTC_TIMESTAMP(6)` 으로 들어가고, 재개하면 그 시각으로 바뀐다. 시간 상한(3.5)의 기준이다 |
 | `published_at` | relay 가 DB 시각으로 채운다 |
 | `created_at`, `updated_at` | `AuditEntity` |
 
@@ -86,7 +87,7 @@ broker 를 기다리는 동안에는 DB 커넥션도 잠금도 쥐지 않는다(
 |---|---|---|
 | future 성공 | `Published` | `PUBLISHED`, `published_at` |
 | `RecordTooLargeException`, `InvalidTopicException` | `Rejected`. 같은 record 를 다시 보내도 결과가 같다 | `BLOCKED`, `last_error` (`RLY-005`) |
-| 그 밖의 실패, timeout, interrupt, send 시작 실패 | `Unconfirmed`. broker 에 닿았는지 모른다 | `PENDING`, 다음 시각, `last_error` (`RLY-004`) |
+| 그 밖의 실패, timeout, interrupt, send 시작 실패 | `Unconfirmed`. broker 에 닿았는지 모른다 | `PENDING`, 다음 시각, `last_error` (`RLY-004`). 시간 상한을 넘겼으면 `BLOCKED` (3.5, `RLY-009`) |
 
 - 거절은 record 의 내용이나 목적지 때문에 broker 가 받을 수 없는 경우로 좁힌다. 인증이나 권한 오류는 설정을 고치면 같은 record 가 나가므로 `Unconfirmed` 로 둔다. 고친 뒤 사람이 손대지 않아도 나간다.
 - `last_error` 에는 `예외 종류: 메시지` 를 1000 자까지 남긴다. payload 는 담지 않는다(`RLY-008`).
@@ -99,17 +100,23 @@ broker 가 거절한 record 는 DLQ topic 도 같은 크기 제한과 같은 bro
 
 ### 3.5 다시 시도하는 간격
 
-`Unconfirmed` 의 다음 시각은 `1 초 × 2^attempt_count` 이고 상한은 1 분이다. 시도 횟수에는 상한을 두지 않아서, broker 장애가 길어도 회복되면 같은 행이 나간다(원문 4 장).
-1 분 상한 덕분에 broker 가 회복되면 늦어도 1 분 안에 다시 시도한다. 반복 실패는 `attempt_count` 와 `last_error` 로 드러난다(7 장).
+`Unconfirmed` 의 다음 시각은 `1 초 × 2^attempt_count` 이고 상한은 1 분이다. 1 분 상한 덕분에 broker 가 회복되면 늦어도 1 분 안에 다시 시도한다.
 
-시도 횟수로 `BLOCKED` 를 정하지 않는 이유는, 일시 장애로 `BLOCKED` 가 되면 장애가 끝난 뒤에도 사람이 재개해야 하기 때문이다. 같은 record 로 반드시 실패하는 경우는 3.4 의 거절이 이미 거른다.
-**뒤집을 조건**: 거절로 분류하지 못한 영구 오류가 `PENDING` 에 오래 머무는 것이 운영에서 보일 때.
+재시도에는 횟수 상한 대신 시간 상한을 둔다. `retry_since` 부터 `outbox.relay.give-up-after`(기본 24 시간)가 지난 행이 또 `Unconfirmed` 로 끝나면 `PENDING` 대신 `BLOCKED` 로 옮긴다.
+판정은 `retryLater` 의 update 안에서 DB 시각으로 한다(`OBX-005` 와 같은 이유).
+
+- 3.4 의 거절 분류는 확실히 다시 해도 안 되는 경우를 바로 격리하고, 시간 상한은 분류가 놓친 영구 오류(끝내 풀리지 않는 권한 오류 등)를 걸러 사람에게 넘긴다. 분류만 두면 그런 행이 1 분 간격으로 끝없이 `PENDING` 에 남는다.
+- 횟수로 자르지 않는 이유는 일시 장애로 `BLOCKED` 가 되면 장애가 끝난 뒤에도 사람이 재개해야 하기 때문이다. 백오프가 1 분에서 멈추므로 횟수 상한은 결국 시간 상한과 같은 효과이면서 뜻이 덜 분명하다.
+- 24 시간은 대부분의 broker 장애보다 길고 다음 근무일 안에 드러나는 길이다. 측정해서 정한 값은 아니다.
+- 기준을 생성 시각이 아닌 `retry_since` 로 두는 이유는 재개 때문이다. 생성 시각으로 재면 재개한 행이 한 번만 실패해도 곧바로 다시 `BLOCKED` 가 된다. 재개가 `retry_since` 를 지금으로 바꿔서 재개한 행도 같은 시간을 다시 받는다.
+
+**뒤집을 조건**: broker 장애가 24 시간보다 자주 길어져 회복 뒤 사람이 재개해야 하는 행이 쌓일 때(상한을 늘린다), 또는 영구 오류를 하루보다 빨리 알아야 할 때(PENDING 최장 대기 시간에 알림을 건다).
 
 ### 3.6 시도 수
 
 `attempt_count` 는 결과를 기록한 시도의 수다. 결과 TX(`markPublished`, `markBlocked`, `retryLater`)에서 1 을 더한다.
 send 뒤 결과를 기록하기 전에 멈춘 시도는 세지 않고, broker 가 받은 횟수와도 다르다. 그 횟수는 broker 의 record 로만 알 수 있다.
-이 값은 다음 시각 계산에만 쓰므로(3.5) 세지 못한 시도가 있어도 판단이 틀어지지 않는다.
+이 값은 다음 시각 계산에만 쓰고 `BLOCKED` 판단에는 쓰지 않으므로(3.5) 세지 못한 시도가 있어도 판단이 틀어지지 않는다.
 
 ### 3.7 상태 전이와 쓰는 쪽
 
@@ -144,7 +151,7 @@ send 뒤 결과를 기록하기 전에 멈춘 시도는 세지 않고, broker �
 java -jar commerce-api.jar … --outbox.resume.event-ids=order-confirmed:v1:41,order-confirmed:v1:42
 ```
 
-- 기동할 때 ApplicationRunner 가 각 `eventId` 를 `BLOCKED` 에서 `PENDING` 으로, `next_attempt_at` 을 `utc_timestamp(6)` 으로 바꾸고 결과를 로그로 남긴다. `attempt_count` 와 `last_error` 는 그대로 둬서 몇 번 실패했던 행인지 남긴다.
+- 기동할 때 ApplicationRunner 가 각 `eventId` 를 `BLOCKED` 에서 `PENDING` 으로, `next_attempt_at` 과 `retry_since` 를 `utc_timestamp(6)` 으로 바꾸고 결과를 로그로 남긴다. `attempt_count` 와 `last_error` 는 그대로 둬서 몇 번 실패했던 행인지 남긴다.
 - 실제로 보내는 일은 relay 가 한다. 재개는 상태만 바꾸므로 relay 와 실행 흐름이 겹치지 않는다. relay 가 꺼진 인스턴스에서 재개하면 relay 를 켠 인스턴스가 보낸다.
 - `BLOCKED` 가 아닌 `eventId`(없는 것, `PENDING`, `PUBLISHED`)는 바꾸지 않고 로그로 알린다. 기동은 막지 않는다. 재개 대상을 잘못 적었다고 앱이 뜨지 않으면 다른 기능까지 멈추기 때문이다.
 - 진입점을 기동 인자로 둔 이유는 requirements Q-1 에 있다.
@@ -240,7 +247,8 @@ outbox 조회 API 는 두지 않는다. 위 SQL 로 원문의 확인 요구를 �
 | `PENDING` 이 쌓이고 `last_error` 가 broker 연결 실패나 timeout | 할 일 없음. broker 가 돌아오면 1 분 안에 같은 행이 나간다 |
 | `PENDING` 에 연결 외의 같은 `last_error` 가 반복 | 원인(권한, 설정)을 고치면 같은 행이 나간다. payload 는 고치지 않는다 |
 | PENDING 최장 대기 시간이 늘어나는데 `attempt_count` 가 0 | relay 가 돌지 않는 상태다. `outbox.relay.enabled` 를 켠 인스턴스가 떠 있는지 본다 |
-| `BLOCKED` | 원인(record 크기, topic)을 고친 뒤 5 장의 재개 |
+| `BLOCKED` 이고 `last_error` 가 거절(`RecordTooLargeException`, `InvalidTopicException`) | 원인(record 크기, topic)을 고친 뒤 5 장의 재개 |
+| `BLOCKED` 이고 `last_error` 가 그 밖의 오류 | 시간 상한(3.5)으로 옮겨진 행이다. 24 시간 넘게 풀리지 않은 원인을 찾아 고친 뒤 5 장의 재개 |
 | `PUBLISHED` 인데 처리 기록 없음 | consumer lag, 보류(`order_event_hold`), 멈춘 listener 를 본다(W6 4.6). outbox 는 되돌리지 않는다 |
 | 확정 주문인데 outbox 행이 없음 | 4 장의 복구 |
 
@@ -274,6 +282,7 @@ outbox 조회 API 는 두지 않는다. 위 SQL 로 원문의 확인 요구를 �
 | 2 | 단일 relay, 결과 분류, backoff | `RLY-*`, `EXP-011`, `EXP-012` | 완료 |
 | 3 | 복구 관리자 API | `RCV-001` ~ `RCV-003` | 완료 |
 | 4 | `BLOCKED` 재개 | `RCV-004` | 완료(`OrderEventResumeTest`) |
+| 4-1 | 재시도 시간 상한 | `RLY-009` | 완료(`OrderEventRelayGiveUpTest`) |
 | 5 | rollback 뒤 재고와 PG create 확인 보강 | `OBX-007`, `EXP-010` | |
 | 6 | 주문부터 구매 활동까지 | `EXP-013` | |
 | 7 | W6 누락 재현과 복구, 운영 SQL 실행 결과 | `EXP-014`, `OPS-001` | |

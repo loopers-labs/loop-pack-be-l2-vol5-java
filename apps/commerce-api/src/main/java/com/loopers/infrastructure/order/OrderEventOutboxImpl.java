@@ -77,8 +77,8 @@ class OrderEventOutboxImpl implements OrderEventOutbox {
     }
 
     @Override
-    public void retryLater(Long id, Duration delay, String error) {
-        outboxJpaRepository.retryLater(id, delay.toNanos() / 1_000, truncate(error));
+    public void retryLater(Long id, Duration delay, Duration giveUpAfter, String error) {
+        outboxJpaRepository.retryLater(id, delay.toNanos() / 1_000, giveUpAfter.toNanos() / 1_000, truncate(error));
     }
 
     @Override

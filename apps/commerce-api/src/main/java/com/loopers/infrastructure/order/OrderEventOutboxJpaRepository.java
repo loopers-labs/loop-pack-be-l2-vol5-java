@@ -40,17 +40,22 @@ interface OrderEventOutboxJpaRepository extends JpaRepository<OrderEventOutboxEn
     @Modifying
     @Query(value = """
         update order_event_outbox
-        set attempt_count = attempt_count + 1,
+        set status = case
+                when retry_since <= utc_timestamp(6) - interval :giveUpMicros microsecond then 'BLOCKED'
+                else 'PENDING'
+            end,
+            attempt_count = attempt_count + 1,
             next_attempt_at = utc_timestamp(6) + interval :delayMicros microsecond,
             last_error = :error, updated_at = utc_timestamp(6)
         where id = :id and status = 'PENDING'
         """, nativeQuery = true)
-    int retryLater(Long id, long delayMicros, String error);
+    int retryLater(Long id, long delayMicros, long giveUpMicros, String error);
 
     @Modifying
     @Query(value = """
         update order_event_outbox
-        set status = 'PENDING', next_attempt_at = utc_timestamp(6), updated_at = utc_timestamp(6)
+        set status = 'PENDING', next_attempt_at = utc_timestamp(6), retry_since = utc_timestamp(6),
+            updated_at = utc_timestamp(6)
         where event_id = :eventId and status = 'BLOCKED'
         """, nativeQuery = true)
     int resume(String eventId);
