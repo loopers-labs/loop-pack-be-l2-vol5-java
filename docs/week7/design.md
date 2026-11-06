@@ -39,6 +39,7 @@ W6 에서 `ApplicationEventPublisher` 로 넘기던 자리 그대로다. 애그�
 
 인덱스 `idx_outbox_due(status, next_attempt_at, id)` 는 relay 의 고르기 조건 · 정렬과 같다(`RLY-002`).
 
+- **payload 를 `MEDIUMBLOB` 으로 두는 이유**: payload 를 읽는 쪽 대부분이 바이트 동일성에 기댄다 — relay 는 저장된 바이트를 `ByteArraySerializer` 로 그대로 보내고, 복구는 다시 만든 사건과 바이트로 비교하며(4 장), 계약은 공유 예시와 바이트까지 같다(W6 `EVT-003`). `JSON` 타입은 키 순서 · 공백을 정규화해 이것을 깨고, `TEXT` 는 JDBC 의 문자열 왕복을 거친다. 사람은 `convert(payload using utf8mb4)` 로 읽는다(7.1). **뒤집을 조건**: 사람이 payload 를 자주 직접 읽어야 하거나, 복구 판정을 바이트가 아닌 필드 비교로 바꿀 때 — `TEXT`(utf8mb4, `_bin` collation)로 바꾼다.
 - **시각을 DB 에 맡기는 이유**: 고르기(`next_attempt_at <= utc_timestamp(6)`)와 다음 시각 계산이 같은 시계를 본다. 앱 시계로 쓰면 앱 서버와 DB 의 시계 차만큼 행이 일찍 · 늦게 고려진다. **뒤집을 조건**: 고르기를 DB 밖(예: 메모리 큐)에서 하게 될 때.
 
 ### 2.3 직렬화는 TX 안에서
@@ -82,6 +83,9 @@ broker 를 기다리는 동안 DB 커넥션 · 잠금을 쥐지 않는다(`RLY-0
 - 거절은 **record 의 내용 · 목적지 때문에 broker 가 받을 수 없는 경우**로 좁힌다. 인증 · 권한 오류는 설정을 고치면 같은 record 가 나가므로 `Unconfirmed` 로 둔다 — 고친 뒤 사람이 손대지 않아도 나간다.
 - `last_error` 는 `예외 종류: 메시지` 를 1000 자로 자른 것이다. payload 를 담지 않는다(`RLY-008`).
 - **뒤집을 조건**: 거절로 볼 예외가 더 생길 때(예: schema registry 의 호환성 거절) — 같은 집합에 더한다.
+- **Kafka DLQ topic 을 두지 않는다.** 송신 쪽의 dead letter 는 outbox 의 `BLOCKED` 행이다. broker 가 거절한 record 는 DLQ topic 에도 같은 크기 제한 · 같은 broker 장애를 겪어 들어가지 못할 수 있고,
+  DB 에 남은 행은 broker 상태와 무관하게 확정 당시의 바이트를 지닌다. 재처리는 재개(5 장)다. 수신 쪽의 dead letter 는 W6 의 보류 테이블(`order_event_hold`)이다 — 두 쪽 모두 DB 에 둔다.
+  **뒤집을 조건**: 송신 실패를 다른 시스템이 구독해 처리해야 할 때.
 
 ### 3.5 다시 시도하는 간격
 
@@ -201,6 +205,11 @@ order by created_at limit 20;
 select event_id, order_id, attempt_count, last_error, updated_at
 from order_event_outbox where status = 'BLOCKED' order by id;
 
+-- payload 읽기 — BLOB 이라 그대로 조회하면 16 진수로 보인다
+select event_id, status, convert(payload using utf8mb4) payload_json,
+       json_extract(convert(payload using utf8mb4), '$.confirmedAt') confirmed_at
+from order_event_outbox where order_id = ?;
+
 -- PUBLISHED 인데 소비 처리 기록이 없는 사건 (1 분 넘게) — PUBLISHED 는 소비 완료가 아니다(OPS-002)
 select o.event_id, o.published_at
 from order_event_outbox o
@@ -250,7 +259,7 @@ where o.status = 'PUBLISHED' and r.event_id is null
 | 1 | 같은 TX 기록 · rollback | `OBX-*` · `EXP-010` | 완료 |
 | 2 | 단일 relay · 결과 분류 · backoff | `RLY-*` · `EXP-011` · `EXP-012` | 완료 |
 | 3 | 복구 관리자 API | `RCV-001` ~ `RCV-003` | 완료 |
-| 4 | `BLOCKED` 재개 | `RCV-004` | |
+| 4 | `BLOCKED` 재개 | `RCV-004` | 완료 — `OrderEventResumeTest` |
 | 5 | rollback 뒤 재고 · PG create 확인 보강 | `OBX-007` · `EXP-010` | |
 | 6 | 주문부터 구매 활동까지 | `EXP-013` | |
 | 7 | W6 누락 재현 → 복구 · 운영 SQL 실행 결과 | `EXP-014` · `OPS-001` | |

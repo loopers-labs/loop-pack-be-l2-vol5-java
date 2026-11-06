@@ -16,4 +16,6 @@ public interface OrderEventOutbox {
     void markBlocked(Long id, String error);
 
     void retryLater(Long id, Duration delay, String error);
+
+    boolean resume(String eventId);
 }

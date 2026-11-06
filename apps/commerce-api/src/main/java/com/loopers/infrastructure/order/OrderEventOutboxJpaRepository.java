@@ -46,4 +46,12 @@ interface OrderEventOutboxJpaRepository extends JpaRepository<OrderEventOutboxEn
         where id = :id and status = 'PENDING'
         """, nativeQuery = true)
     int retryLater(Long id, long delayMicros, String error);
+
+    @Modifying
+    @Query(value = """
+        update order_event_outbox
+        set status = 'PENDING', next_attempt_at = utc_timestamp(6), updated_at = utc_timestamp(6)
+        where event_id = :eventId and status = 'BLOCKED'
+        """, nativeQuery = true)
+    int resume(String eventId);
 }

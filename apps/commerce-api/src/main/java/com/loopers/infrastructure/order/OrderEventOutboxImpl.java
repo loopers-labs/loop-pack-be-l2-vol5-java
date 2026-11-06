@@ -81,6 +81,11 @@ class OrderEventOutboxImpl implements OrderEventOutbox {
         outboxJpaRepository.retryLater(id, delay.toNanos() / 1_000, truncate(error));
     }
 
+    @Override
+    public boolean resume(String eventId) {
+        return outboxJpaRepository.resume(eventId) == 1;
+    }
+
     private static String truncate(String error) {
         return error.length() <= ERROR_LENGTH ? error : error.substring(0, ERROR_LENGTH);
     }
