@@ -1,0 +1,226 @@
+{
+  "firstRecovery" : {
+    "B" : "CREATED",
+    "relay" : {
+      "selected" : 2,
+      "published" : 2
+    },
+    "A" : "CREATED"
+  },
+  "secondRecovery" : {
+    "B" : "ALREADY_PRESENT",
+    "relay" : {
+      "selected" : 0,
+      "published" : 0
+    },
+    "A" : "ALREADY_PRESENT"
+  },
+  "outbox" : [ {
+    "eventId" : "f4adc72d-788f-4822-b643-919b73a5f5dd",
+    "orderId" : 1,
+    "status" : "PUBLISHED",
+    "attempts" : 0,
+    "publishedPartition" : 0,
+    "publishedOffset" : 0
+  }, {
+    "eventId" : "3034f9ea-aec6-48ce-a088-deca8f43d34e",
+    "orderId" : 2,
+    "status" : "PUBLISHED",
+    "attempts" : 0,
+    "publishedPartition" : 2,
+    "publishedOffset" : 1
+  } ],
+  "before" : {
+    "orders" : [ {
+      "id" : 1,
+      "status" : "CONFIRMED",
+      "confirmedAt" : "2026-11-06 06:18:22.607222"
+    }, {
+      "id" : 2,
+      "status" : "CONFIRMED",
+      "confirmedAt" : "2026-11-06 06:18:23.745076"
+    } ],
+    "payments" : [ {
+      "orderId" : 1,
+      "status" : "SUCCESS",
+      "transactionKey" : "20261106:TR:2642333"
+    }, {
+      "orderId" : 2,
+      "status" : "SUCCESS",
+      "transactionKey" : "20261106:TR:04e34a6"
+    } ],
+    "reservations" : [ {
+      "orderId" : 1,
+      "productId" : 1,
+      "quantity" : 2,
+      "status" : "CONSUMED"
+    }, {
+      "orderId" : 1,
+      "productId" : 2,
+      "quantity" : 1,
+      "status" : "CONSUMED"
+    }, {
+      "orderId" : 2,
+      "productId" : 1,
+      "quantity" : 1,
+      "status" : "CONSUMED"
+    } ],
+    "reservationsQuantitiesA" : [ {
+      "productId" : 1,
+      "quantity" : 2
+    }, {
+      "productId" : 2,
+      "quantity" : 1
+    } ],
+    "activityA" : [ ],
+    "activityB" : [ {
+      "productId" : 1,
+      "quantity" : 1
+    } ],
+    "consumed" : [ "3034f9ea-aec6-48ce-a088-deca8f43d34e" ]
+  },
+  "afterFirst" : {
+    "orders" : [ {
+      "id" : 1,
+      "status" : "CONFIRMED",
+      "confirmedAt" : "2026-11-06 06:18:22.607222"
+    }, {
+      "id" : 2,
+      "status" : "CONFIRMED",
+      "confirmedAt" : "2026-11-06 06:18:23.745076"
+    } ],
+    "payments" : [ {
+      "orderId" : 1,
+      "status" : "SUCCESS",
+      "transactionKey" : "20261106:TR:2642333"
+    }, {
+      "orderId" : 2,
+      "status" : "SUCCESS",
+      "transactionKey" : "20261106:TR:04e34a6"
+    } ],
+    "reservations" : [ {
+      "orderId" : 1,
+      "productId" : 1,
+      "quantity" : 2,
+      "status" : "CONSUMED"
+    }, {
+      "orderId" : 1,
+      "productId" : 2,
+      "quantity" : 1,
+      "status" : "CONSUMED"
+    }, {
+      "orderId" : 2,
+      "productId" : 1,
+      "quantity" : 1,
+      "status" : "CONSUMED"
+    } ],
+    "reservationsQuantitiesA" : [ {
+      "productId" : 1,
+      "quantity" : 2
+    }, {
+      "productId" : 2,
+      "quantity" : 1
+    } ],
+    "activityA" : [ {
+      "productId" : 1,
+      "quantity" : 2
+    }, {
+      "productId" : 2,
+      "quantity" : 1
+    } ],
+    "activityB" : [ {
+      "productId" : 1,
+      "quantity" : 1
+    } ],
+    "consumed" : [ "3034f9ea-aec6-48ce-a088-deca8f43d34e", "f4adc72d-788f-4822-b643-919b73a5f5dd" ]
+  },
+  "afterSecond" : {
+    "orders" : [ {
+      "id" : 1,
+      "status" : "CONFIRMED",
+      "confirmedAt" : "2026-11-06 06:18:22.607222"
+    }, {
+      "id" : 2,
+      "status" : "CONFIRMED",
+      "confirmedAt" : "2026-11-06 06:18:23.745076"
+    } ],
+    "payments" : [ {
+      "orderId" : 1,
+      "status" : "SUCCESS",
+      "transactionKey" : "20261106:TR:2642333"
+    }, {
+      "orderId" : 2,
+      "status" : "SUCCESS",
+      "transactionKey" : "20261106:TR:04e34a6"
+    } ],
+    "reservations" : [ {
+      "orderId" : 1,
+      "productId" : 1,
+      "quantity" : 2,
+      "status" : "CONSUMED"
+    }, {
+      "orderId" : 1,
+      "productId" : 2,
+      "quantity" : 1,
+      "status" : "CONSUMED"
+    }, {
+      "orderId" : 2,
+      "productId" : 1,
+      "quantity" : 1,
+      "status" : "CONSUMED"
+    } ],
+    "reservationsQuantitiesA" : [ {
+      "productId" : 1,
+      "quantity" : 2
+    }, {
+      "productId" : 2,
+      "quantity" : 1
+    } ],
+    "activityA" : [ {
+      "productId" : 1,
+      "quantity" : 2
+    }, {
+      "productId" : 2,
+      "quantity" : 1
+    } ],
+    "activityB" : [ {
+      "productId" : 1,
+      "quantity" : 1
+    } ],
+    "consumed" : [ "3034f9ea-aec6-48ce-a088-deca8f43d34e", "f4adc72d-788f-4822-b643-919b73a5f5dd" ]
+  },
+  "pg" : {
+    "beforePreparation" : {
+      "create" : 0,
+      "lookup" : 0,
+      "callback_sent" : 0,
+      "callback_failed" : 0,
+      "mode" : "auto",
+      "transactions" : 0
+    },
+    "afterRecovery" : {
+      "create" : 2,
+      "lookup" : 2,
+      "callback_sent" : 2,
+      "callback_failed" : 0,
+      "mode" : "auto",
+      "transactions" : 2
+    },
+    "afterPreparation" : {
+      "create" : 2,
+      "lookup" : 2,
+      "callback_sent" : 2,
+      "callback_failed" : 0,
+      "mode" : "auto",
+      "transactions" : 2
+    },
+    "beforeRecovery" : {
+      "create" : 2,
+      "lookup" : 2,
+      "callback_sent" : 2,
+      "callback_failed" : 0,
+      "mode" : "auto",
+      "transactions" : 2
+    }
+  }
+}

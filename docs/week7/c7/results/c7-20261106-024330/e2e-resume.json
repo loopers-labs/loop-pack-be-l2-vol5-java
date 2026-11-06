@@ -1,0 +1,104 @@
+{
+  "resent" : {
+    "selected" : 1,
+    "published" : 1
+  },
+  "waitedMillisForLease" : 42653,
+  "records" : [ {
+    "key" : "3",
+    "offset" : 2,
+    "partition" : 2
+  }, {
+    "key" : "3",
+    "offset" : 3,
+    "partition" : 2
+  } ],
+  "consumerReceipts" : [ "2026-11-06T02:45:10.360+09:00  INFO 50975 --- [commerce-streamer] [-activity-2-C-1] [                                                 ] c.l.p.a.PurchaseActivityService          : 구매 활동 저장. eventId=347939d7-a5f4-4314-9cc3-44e1862910c4, orderId=3, items=2", "2026-11-06T02:46:11.091+09:00  INFO 50975 --- [commerce-streamer] [-activity-2-C-1] [                                                 ] c.l.p.a.PurchaseActivityService          : 같은 사실의 재전달 — 변경 없이 완료(no-op). eventId=347939d7-a5f4-4314-9cc3-44e1862910c4, orderId=3" ],
+  "outbox" : {
+    "status" : "PUBLISHED",
+    "attempts" : 0,
+    "publishedPartition" : 2,
+    "publishedOffset" : 3
+  },
+  "outboxRowsForOrder" : 1,
+  "completed" : 1,
+  "activity" : [ {
+    "productId" : 7,
+    "quantity" : 2
+  }, {
+    "productId" : 8,
+    "quantity" : 1
+  } ],
+  "businessAfterConfirm" : {
+    "order" : {
+      "status" : "CONFIRMED",
+      "confirmedAt" : "2026-11-05 17:45:09.638329"
+    },
+    "payments" : [ {
+      "status" : "SUCCESS",
+      "transactionKey" : "20261106:TR:30f400b"
+    } ],
+    "reservations" : [ {
+      "productId" : 7,
+      "quantity" : 2,
+      "status" : "CONSUMED"
+    }, {
+      "productId" : 8,
+      "quantity" : 1,
+      "status" : "CONSUMED"
+    } ],
+    "stock" : [ {
+      "id" : 7,
+      "stock" : 3
+    }, {
+      "id" : 8,
+      "stock" : 4
+    } ],
+    "pointGroups" : [ {
+      "id" : 1,
+      "remaining" : 10000
+    } ],
+    "pointHistories" : 1
+  },
+  "businessNow" : {
+    "order" : {
+      "status" : "CONFIRMED",
+      "confirmedAt" : "2026-11-05 17:45:09.638329"
+    },
+    "payments" : [ {
+      "status" : "SUCCESS",
+      "transactionKey" : "20261106:TR:30f400b"
+    } ],
+    "reservations" : [ {
+      "productId" : 7,
+      "quantity" : 2,
+      "status" : "CONSUMED"
+    }, {
+      "productId" : 8,
+      "quantity" : 1,
+      "status" : "CONSUMED"
+    } ],
+    "stock" : [ {
+      "id" : 7,
+      "stock" : 3
+    }, {
+      "id" : 8,
+      "stock" : 4
+    } ],
+    "pointGroups" : [ {
+      "id" : 1,
+      "remaining" : 10000
+    } ],
+    "pointHistories" : 1
+  },
+  "pgAfterConfirm" : {
+    "create" : 3,
+    "lookup" : 3,
+    "callback_sent" : 3
+  },
+  "pgNow" : {
+    "callback_sent" : 3,
+    "create" : 3,
+    "lookup" : 3
+  }
+}

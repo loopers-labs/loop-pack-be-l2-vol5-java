@@ -1,0 +1,104 @@
+{
+ "at": "2026-11-06T14:53:16+09:00",
+ "tick": "fixedDelay 1s",
+ "batch": 200,
+ "m2_burst": {
+  "rows": 2000,
+  "insert_seconds": 0.42,
+  "drain_seconds": 35.69,
+  "rows_per_sec": 56.0,
+  "rounds": 10,
+  "round_selected": [
+   200,
+   200,
+   200,
+   200,
+   200,
+   200,
+   200,
+   200,
+   200,
+   200
+  ],
+  "round_published": 2000,
+  "round_start_gap_seconds": [
+   3.836,
+   3.753,
+   3.554,
+   3.37,
+   3.445,
+   3.428,
+   3.144,
+   3.188,
+   3.157
+  ],
+  "full_round_seconds_estimate": 2.431,
+  "per_row_ms_estimate": 12.15,
+  "backlog_samples": [
+   {
+    "t": 0.5,
+    "backlog": 2000
+   },
+   {
+    "t": 2.8,
+    "backlog": 1910
+   },
+   {
+    "t": 5.1,
+    "backlog": 1800
+   },
+   {
+    "t": 7.4,
+    "backlog": 1662
+   },
+   {
+    "t": 9.7,
+    "backlog": 1567
+   },
+   {
+    "t": 12.0,
+    "backlog": 1401
+   },
+   {
+    "t": 14.4,
+    "backlog": 1293
+   },
+   {
+    "t": 16.7,
+    "backlog": 1195
+   },
+   {
+    "t": 19.0,
+    "backlog": 1000
+   },
+   {
+    "t": 21.3,
+    "backlog": 888
+   },
+   {
+    "t": 23.6,
+    "backlog": 787
+   },
+   {
+    "t": 25.9,
+    "backlog": 600
+   },
+   {
+    "t": 28.2,
+    "backlog": 467
+   },
+   {
+    "t": 30.5,
+    "backlog": 352
+   },
+   {
+    "t": 32.8,
+    "backlog": 200
+   },
+   {
+    "t": 35.1,
+    "backlog": 22
+   }
+  ]
+ }
+}

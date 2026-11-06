@@ -3,6 +3,7 @@ package com.loopers.config;
 import com.loopers.confg.kafka.KafkaConfig;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.CooperativeStickyAssignor;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -20,6 +21,7 @@ import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.support.ExponentialBackOffWithMaxRetries;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -52,6 +54,11 @@ public class PurchaseActivityKafkaConfig {
         consumerConfig.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         consumerConfig.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
         consumerConfig.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        // rebalance를 cooperative로 (W7, 학습자 요청 11-06). 기본 RangeAssignor(eager)는 member가 들고 날 때마다 모든 member가 partition을
+        // 전부 내려놓아 group 전체가 멈춘다. CooperativeStickyAssignor는 옮겨 갈 partition만 내려놓고 나머지는 계속 처리한다 (CooperativeRebalanceTest).
+        // 운영 중인 group을 eager에서 바꿀 때는 두 번 배포한다: [Cooperative, Range] → [Cooperative]. 한 번에 바꾸면 섞인 member끼리 group에 못 들어간다.
+        // kill -9된 member를 알아채는 시간(session.timeout.ms)은 assignor와 무관하다.
+        consumerConfig.put(ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG, List.of(CooperativeStickyAssignor.class.getName()));
 
         ConcurrentKafkaListenerContainerFactory<String, String> factory = new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(new DefaultKafkaConsumerFactory<>(consumerConfig));

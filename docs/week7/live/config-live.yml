@@ -1,0 +1,18 @@
+# 7주차 눈으로 보기 — application.yml은 고치지 않고 실행 때 덧붙인다 (--spring.config.additional-location). api·streamer 공통.
+# DB는 로컬 MySQL(docker-mysql-1)의 loopers_w7, Kafka는 이 키트가 띄운 broker 3대(29092~29094).
+datasource:
+  mysql-jpa:
+    main:
+      jdbc-url: jdbc:mysql://localhost:3306/loopers_w7
+
+spring:
+  kafka:
+    bootstrap-servers: localhost:29092,localhost:29093,localhost:29094
+  jpa:
+    show-sql: false
+    hibernate:
+      ddl-auto: validate # 스키마 파일이 엔티티와 어긋나면 기동에서 멈춘다
+
+logging:
+  level:
+    org.hibernate.SQL: warn

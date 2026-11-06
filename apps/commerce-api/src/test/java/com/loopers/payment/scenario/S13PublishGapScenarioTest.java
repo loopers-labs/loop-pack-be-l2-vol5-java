@@ -1,8 +1,10 @@
 package com.loopers.payment.scenario;
 
 import com.loopers.order.domain.OrderStatus;
-import com.loopers.outbox.adapter.out.persistence.EventOutboxJpaRepository;
-import com.loopers.outbox.domain.EventOutbox;
+import com.loopers.outbox.adapter.out.persistence.OrderOutboxJpaRepository;
+import com.loopers.outbox.application.port.in.OrderOutboxRelayUseCase;
+import com.loopers.outbox.domain.OrderOutbox;
+import com.loopers.outbox.domain.OrderOutboxStatus;
 import com.loopers.payment.domain.Payment;
 import com.loopers.payment.domain.PaymentStatus;
 import com.loopers.testcontainers.KafkaTestContainersConfig;
@@ -16,79 +18,83 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.KafkaException;
 
 import java.time.Duration;
-import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 
 /**
- * S-13 · E-4 (W6 plan.md D-8, C-8·C-9) — 직접 after-commit 발행의 누락 구간.
- * 주문 확정 TX와 broker 기록은 원자적으로 묶이지 않는다. commit 뒤 send 전에 멈추면(통제된 hook) 주문은 확정으로 남고 이벤트만 빠진다.
- * 주문을 되돌리지 않고 PG를 다시 부르지 않으며, 빠진 것은 발행 기록의 published_at null로 드러난다 — W7 Outbox relay의 출발점.
+ * S-13 (W6 E-4 → W7) — 확정 commit 뒤 발행 전에 멈추는 구간을 실제 API·로컬 PG callback으로 다시 본다.
  * <p>
- * "send 전 중단"은 OS 강제 종료가 아니라 publish 호출을 한 번 건너뛰는 통제된 hook이다. 프로세스 종료와 같은 결과(send 콜백 없음)를 만든다.
- * 실행 결과의 사건 사실은 표준 출력의 [E-4] 줄로 남기고 docs/week6/incident-w6.md에 옮긴다.
+ * W6에서는 commit 직후 listener의 send를 건너뛰면 주문은 확정인데 이벤트가 사라졌다(docs/week6/incident-w6.md E-4).
+ * W7에서는 확정 TX가 order_outbox 행만 남기고, Kafka로 보내는 것은 relay다. 그래서 같은 장면에서 "relay가 아직 돌지 않음"이 곧
+ * "commit 뒤 발행 전 중단"이고(C-5 첫 번째 중단 지점), 행이 PENDING으로 남아 있다가 relay가 같은 eventId로 보낸다.
+ * relay의 send가 실패해도 주문·결제·예약은 되돌아가지 않고 PG를 다시 부르지 않는다.
+ * <p>
+ * 이 클래스에서는 scheduler가 없다(4단계 전) — relay는 테스트가 직접 부른다. 실행 사실은 표준 출력의 [S-13] 줄로 남긴다.
  */
 class S13PublishGapScenarioTest extends PaymentScenarioSupport {
 
     @Autowired
-    private EventOutboxJpaRepository eventOutboxJpaRepository;
+    private OrderOutboxJpaRepository orderOutboxJpaRepository;
+
+    @Autowired
+    private OrderOutboxRelayUseCase relay;
 
     @Value("${kafka.topics.order-events}")
     private String orderEventsTopic;
 
-    @DisplayName("S-13 E-4 두 주문을 실제 API·로컬 PG callback으로 확정한다. 첫 주문은 commit 뒤 send 직전에 멈춰 CONFIRMED·예약 CONSUMED이지만 record가 없고 미발행으로 조회된다. 둘째 주문은 broker까지 간다.")
+    @DisplayName("S-13 C-5 확정 commit 뒤 relay가 돌기 전에는 주문 CONFIRMED·예약 CONSUMED이고 행은 PENDING, record는 없다. relay가 돌면 같은 eventId·payload로 1건 나가고 PUBLISHED가 된다 — PG는 다시 부르지 않는다.")
     @Test
-    void confirmedOrderStaysButEventIsMissingWhenStoppedBeforeSend() throws Exception {
-        // arrange: 첫 publish 한 번만 건너뛴다 (commit 뒤 send 직전 중단). 그다음부터는 실제로 보낸다.
-        doNothing().doCallRealMethod().when(outboxPublishUseCase).publish(any());
+    void confirmedOrderWaitsAsPendingUntilRelaySendsIt() throws Exception {
+        // arrange: 실제 결제·callback 경로로 확정 (relay는 아직 안 돎 = commit 뒤 발행 전 중단)
+        Long orderId = confirmByCallback(2, "attempt-a");
+        int createCalls = PG.createCalls();
 
-        // act: 주문 A(에어맥스 2) → 주문 B(에어맥스 1) 순서로 실제 결제·callback 경로를 탄다
-        Long missing = confirmByCallback(2, "attempt-a");
-        Long published = confirmByCallback(1, "attempt-b");
+        // assert: 확정·예약 소비는 끝났고, 보낼 사실은 PENDING으로 남아 있다. 아직 broker에는 없다
+        OrderOutbox waiting = outboxOf(orderId);
+        assertThat(orderStatusOf(orderId)).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(reservationsOf(orderId)).containsExactly("CONSUMED");
+        assertThat(waiting.getStatus()).isEqualTo(OrderOutboxStatus.PENDING);
+        assertThat(recordsOf(waiting.getEventId(), Duration.ofSeconds(3))).isEmpty();
 
-        // assert: 주문 A — 확정·예약 소비는 남고, 이벤트만 빠졌다
-        EventOutbox missingRow = outboxOf(missing);
-        assertThat(orderStatusOf(missing)).isEqualTo(OrderStatus.CONFIRMED);
-        assertThat(reservationsOf(missing)).containsExactly("CONSUMED");
-        assertThat(missingRow.getPublishedAt()).isNull();
-        assertThat(missingRow.getLastError()).isNull(); // send 콜백조차 오지 않았다
-        assertThat(recordsOf(missingRow.getEventId(), Duration.ofSeconds(3))).isEmpty();
+        // act: relay 한 회차
+        relay.relayOnce();
 
-        // assert: 주문 B — broker에 기록되고 성공 표시가 남는다
-        EventOutbox publishedRow = await().atMost(WAIT).until(() -> outboxOf(published), row -> row.getPublishedAt() != null);
-        List<ConsumerRecord<String, String>> publishedRecords = recordsOf(publishedRow.getEventId(), Duration.ofSeconds(10));
-        assertThat(publishedRecords).hasSize(1);
+        // assert: 저장된 원문 그대로 1건, 행은 broker가 알려 준 위치로 PUBLISHED. 주문·PG는 그대로
+        List<ConsumerRecord<String, String>> records = recordsOf(waiting.getEventId(), Duration.ofSeconds(10));
+        OrderOutbox sent = outboxOf(orderId);
+        assertThat(records).singleElement().satisfies(record -> {
+            assertThat(record.key()).isEqualTo(String.valueOf(orderId));
+            assertThat(record.value()).isEqualTo(waiting.getPayload());
+        });
+        assertThat(sent.getStatus()).isEqualTo(OrderOutboxStatus.PUBLISHED);
+        assertThat(sent.getPublishedPartition()).isEqualTo(records.get(0).partition());
+        assertThat(sent.getPublishedOffset()).isEqualTo(records.get(0).offset());
+        assertThat(orderStatusOf(orderId)).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(PG.createCalls()).isEqualTo(createCalls);
 
-        // assert: 누락 조회(ADR-W6-03)는 A만 찾는다
-        List<String> unpublished = eventOutboxJpaRepository.findUnpublishedCreatedBefore(ZonedDateTime.now().plusMinutes(1)).stream()
-            .map(EventOutbox::getEventId).toList();
-        assertThat(unpublished).containsExactly(missingRow.getEventId());
-        assertThat(PG.createCalls()).isEqualTo(2);
-
-        printFacts("미발행", missing, missingRow, List.of());
-        printFacts("정상 발행", published, publishedRow, publishedRecords);
+        printFacts("relay 전 PENDING → relay 뒤 PUBLISHED", orderId, sent, records);
     }
 
-    @DisplayName("S-13 send가 실패하면(broker 응답 없음 주입) 주문은 CONFIRMED로 두고 PG를 다시 부르지 않으며, 발행 기록에 실패 원인만 남는다 — published_at은 null.")
+    @DisplayName("S-13 relay의 send가 실패하면(broker 응답 없음 주입) 행은 PENDING·시도 1·원인으로 남고, 주문 CONFIRMED·결제 SUCCESS·예약 CONSUMED는 그대로이며 PG를 다시 부르지 않는다.")
     @Test
-    void sendFailureKeepsConfirmationAndRecordsTheCause() throws Exception {
+    void sendFailureKeepsConfirmationAndWaitsForRetry() throws Exception {
         // arrange
         doReturn(CompletableFuture.failedFuture(new TimeoutException("broker 응답 없음 (주입)")))
             .when(messageSendPort).send(anyString(), anyString(), anyString());
-
-        // act
         Long orderId = confirmByCallback(2, "attempt-1");
 
+        // act
+        relay.relayOnce();
+
         // assert
-        EventOutbox row = await().atMost(WAIT).until(() -> outboxOf(orderId), r -> r.getLastError() != null);
+        OrderOutbox row = outboxOf(orderId);
+        assertThat(row.getStatus()).isEqualTo(OrderOutboxStatus.PENDING);
+        assertThat(row.getAttemptCount()).isEqualTo(1);
         assertThat(row.getLastError()).contains("TimeoutException").contains("broker 응답 없음 (주입)");
         assertThat(row.getPublishedAt()).isNull();
         assertThat(orderStatusOf(orderId)).isEqualTo(OrderStatus.CONFIRMED);
@@ -98,20 +104,22 @@ class S13PublishGapScenarioTest extends PaymentScenarioSupport {
         assertThat(recordsOf(row.getEventId(), Duration.ofSeconds(3))).isEmpty();
     }
 
-    @DisplayName("S-13 send 호출이 바로 예외를 던져도(broker 전부 장애 → metadata 대기가 max.block.ms를 넘김) 발행 기록에 실패 원인이 남는다 — published_at은 null.")
+    @DisplayName("S-13 send 호출이 바로 예외를 던져도(broker 전부 장애 → metadata 대기가 max.block.ms를 넘김) 행은 PENDING·시도 1·원인으로 남고 주문 CONFIRMED, PG 재호출 없음.")
     @Test
-    void synchronousSendFailureAlsoRecordsTheCause() throws Exception {
+    void synchronousSendFailureAlsoWaitsForRetry() throws Exception {
         // arrange: KafkaTemplate은 metadata timeout을 future가 아니라 send() 호출의 예외로 던진다
         doThrow(new KafkaException("Send failed", new TimeoutException("Topic order-events not present in metadata after 1000 ms. (주입)")))
             .when(messageSendPort).send(anyString(), anyString(), anyString());
-
-        // act
         Long orderId = confirmByCallback(2, "attempt-1");
 
+        // act
+        relay.relayOnce();
+
         // assert
-        EventOutbox row = await().atMost(WAIT).until(() -> outboxOf(orderId), r -> r.getLastError() != null);
+        OrderOutbox row = outboxOf(orderId);
+        assertThat(row.getStatus()).isEqualTo(OrderOutboxStatus.PENDING);
+        assertThat(row.getAttemptCount()).isEqualTo(1);
         assertThat(row.getLastError()).contains("TimeoutException").contains("not present in metadata");
-        assertThat(row.getPublishedAt()).isNull();
         assertThat(orderStatusOf(orderId)).isEqualTo(OrderStatus.CONFIRMED);
         assertThat(PG.createCalls()).isEqualTo(1);
     }
@@ -127,9 +135,9 @@ class S13PublishGapScenarioTest extends PaymentScenarioSupport {
         return orderId;
     }
 
-    private EventOutbox outboxOf(Long orderId) {
-        return eventOutboxJpaRepository.findAll().stream()
-            .filter(row -> row.getAggregateId().equals(orderId))
+    private OrderOutbox outboxOf(Long orderId) {
+        return orderOutboxJpaRepository.findAll().stream()
+            .filter(row -> row.getOrderId().equals(orderId))
             .findFirst().orElseThrow();
     }
 
@@ -138,13 +146,12 @@ class S13PublishGapScenarioTest extends PaymentScenarioSupport {
             record -> record.value().contains("\"eventId\":\"" + eventId + "\""), 1, wait);
     }
 
-    private void printFacts(String label, Long orderId, EventOutbox row, List<ConsumerRecord<String, String>> records) {
+    private void printFacts(String label, Long orderId, OrderOutbox row, List<ConsumerRecord<String, String>> records) {
         Payment payment = paymentOf(orderId);
-        EventOutbox latest = outboxOf(orderId);
         String broker = records.isEmpty() ? "record 없음"
             : "partition " + records.get(0).partition() + " · offset " + records.get(0).offset();
-        System.out.printf("[E-4] %s | orderId=%d | providerOrderId=%s | transactionKey=%s | eventId=%s | payload=%s | 주문=%s | 예약=%s | published_at=%s | last_error=%s | broker=%s%n",
+        System.out.printf("[S-13] %s | orderId=%d | providerOrderId=%s | transactionKey=%s | eventId=%s | payload=%s | 주문=%s | 예약=%s | status=%s | broker=%s%n",
             label, orderId, payment.getProviderOrderId(), payment.getTransactionKey(), row.getEventId(), row.getPayload(),
-            orderStatusOf(orderId), reservationsOf(orderId), latest.getPublishedAt(), latest.getLastError(), broker);
+            orderStatusOf(orderId), reservationsOf(orderId), row.getStatus(), broker);
     }
 }

@@ -13,6 +13,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.config.TopicConfig;
@@ -86,6 +87,11 @@ class KafkaClusterSettingsTest {
         try (Admin admin = Admin.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, KafkaTestContainersConfig.bootstrapServers()))) {
             admin.createTopics(List.of(new NewTopic(probeTopic, 1, (short) 3))).all().get(10, TimeUnit.SECONDS);
         }
+        // 방금 만든 topic은 metadata가 broker 3대에 퍼지기 전이라, 앱 producer(max.block.ms 1s)의 첫 send가
+        // UNKNOWN_TOPIC_OR_PARTITION → "not present in metadata after 1000 ms"로 막힐 수 있다 (전체 실행에서 간헐 실패, 11-06).
+        // ISR은 topic을 만들 때부터 3이라 admin의 describe로는 퍼졌는지 알 수 없다 — 앱 producer 자신이 metadata를 받을 때까지 기다린다.
+        // 앱 설정(max.block.ms)은 이 테스트가 확인하는 값이라 바꾸지 않는다.
+        awaitProducerMetadata(probeTopic);
 
         SendResult<String, String> sent = stringKafkaTemplate.send(new ProducerRecord<>(probeTopic, "probe", json)).get(10, TimeUnit.SECONDS);
 
@@ -101,5 +107,20 @@ class KafkaClusterSettingsTest {
             assertThat(records.count()).isEqualTo(1);
             assertThat(new String(records.iterator().next().value(), StandardCharsets.UTF_8)).isEqualTo(json);
         }
+    }
+
+    private void awaitProducerMetadata(String topic) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 30_000;
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                if (!stringKafkaTemplate.partitionsFor(topic).isEmpty()) {
+                    return;
+                }
+            } catch (KafkaException notYet) {
+                // 아직 이 producer의 metadata에 topic이 없다 (max.block.ms 1s마다 다시 묻는다)
+            }
+            Thread.sleep(200);
+        }
+        throw new IllegalStateException(topic + "의 metadata를 producer가 받지 못했습니다");
     }
 }

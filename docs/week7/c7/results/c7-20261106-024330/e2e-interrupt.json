@@ -1,0 +1,54 @@
+{
+  "orderId" : 3,
+  "userId" : 2,
+  "eventId" : "347939d7-a5f4-4314-9cc3-44e1862910c4",
+  "payload" : "{\"eventId\":\"347939d7-a5f4-4314-9cc3-44e1862910c4\",\"eventType\":\"OrderConfirmed\",\"schemaVersion\":1,\"orderId\":3,\"confirmedAt\":\"2026-11-06T02:45:09.638329+09:00\",\"items\":[{\"productId\":7,\"quantity\":2},{\"productId\":8,\"quantity\":1}]}",
+  "leaseUntil" : "2026-11-05T17:46:09.732123Z",
+  "firstRecord" : {
+    "partition" : 2,
+    "offset" : 2
+  },
+  "businessAfterConfirm" : {
+    "order" : {
+      "status" : "CONFIRMED",
+      "confirmedAt" : "2026-11-05 17:45:09.638329"
+    },
+    "payments" : [ {
+      "status" : "SUCCESS",
+      "transactionKey" : "20261106:TR:30f400b"
+    } ],
+    "reservations" : [ {
+      "productId" : 7,
+      "quantity" : 2,
+      "status" : "CONSUMED"
+    }, {
+      "productId" : 8,
+      "quantity" : 1,
+      "status" : "CONSUMED"
+    } ],
+    "stock" : [ {
+      "id" : 7,
+      "stock" : 3
+    }, {
+      "id" : 8,
+      "stock" : 4
+    } ],
+    "pointGroups" : [ {
+      "id" : 1,
+      "remaining" : 10000
+    } ],
+    "pointHistories" : 1
+  },
+  "pgAfterConfirm" : {
+    "create" : 3,
+    "lookup" : 3,
+    "callback_sent" : 3
+  },
+  "activityAfterFirst" : [ {
+    "productId" : 7,
+    "quantity" : 2
+  }, {
+    "productId" : 8,
+    "quantity" : 1
+  } ]
+}
