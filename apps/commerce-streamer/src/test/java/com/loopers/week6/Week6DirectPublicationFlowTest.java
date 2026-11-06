@@ -3,7 +3,11 @@ package com.loopers.week6;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.CommerceStreamerApplication;
-import com.loopers.application.order.OrderConfirmedPublisher;
+import com.loopers.application.order.fixture.OrderConfirmedPublisher;
+import com.loopers.application.order.OrderConfirmedOutbox;
+import com.loopers.application.order.OrderOutboxRelay;
+import com.loopers.application.order.RecoverOrderConfirmedOutbox;
+import com.loopers.application.order.fixture.LegacyWeek6Publication;
 import com.loopers.application.payment.fixture.OrderPaymentFixture;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderRepository;
@@ -40,6 +44,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -68,6 +73,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.reset;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -86,7 +93,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "order-events.partitions=2"
 })
 @AutoConfigureMockMvc
-@Import(Week6DirectPublicationFlowTest.FixedConfirmationClock.class)
+@Import({Week6DirectPublicationFlowTest.FixedConfirmationClock.class, LegacyWeek6Publication.class})
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class Week6DirectPublicationFlowTest {
     private static final Instant CONFIRMED_AT = Instant.parse("2026-10-29T01:00:00.123456Z");
@@ -105,7 +112,11 @@ class Week6DirectPublicationFlowTest {
     @Autowired private KafkaListenerEndpointRegistry listeners;
     @Autowired private DatabaseCleanUp cleanUp;
     @Autowired private PlatformTransactionManager transactionManager;
+    @Autowired private RecoverOrderConfirmedOutbox recovery;
+    @Autowired private OrderOutboxRelay relay;
+    @Autowired private JdbcTemplate jdbc;
     @MockitoSpyBean private OrderConfirmedPublisher publisher;
+    @MockitoSpyBean private OrderConfirmedOutbox historicalOutbox;
     private AdminClient admin;
 
     @DynamicPropertySource
@@ -122,6 +133,7 @@ class Week6DirectPublicationFlowTest {
     @BeforeEach
     void prepare() {
         PG.reset();
+        doNothing().when(historicalOutbox).record(any(OrderConfirmed.class));
         admin = AdminClient.create(Map.of("bootstrap.servers", KafkaTestContainersConfig.bootstrapServers()));
     }
 
@@ -192,6 +204,45 @@ class Week6DirectPublicationFlowTest {
                 assertThat(committedOffset(record.partition())).isEqualTo(record.offset() + 1));
         assertThat(PG.createRequestCount()).isEqualTo(2);
         writeObservedCases(미발행주문, 정상주문, record);
+
+        assertThat(jdbc.queryForObject("select count(*) from order_outbox", Long.class)).isZero();
+        int createCount = PG.createRequestCount();
+        int lookupCount = PG.lookupRequestCount();
+        int transactionCount = PG.transactions().size();
+        reset(historicalOutbox);
+        assertThat(recovery.recover(미발행주문.orderId())).isTrue();
+        assertThat(recovery.recover(정상주문.orderId())).isTrue();
+        for (var prepared : List.of(미발행주문, 정상주문)) {
+            String payload = jdbc.queryForObject("select payload from order_outbox where order_id = ?",
+                    String.class, prepared.orderId());
+            assertThat(mapper.readValue(payload, OrderConfirmed.class))
+                    .isEqualTo(OrderConfirmed.confirmed(prepared.orderId(), CONFIRMED_AT, prepared.items()));
+        }
+        relay.runOnce();
+
+        await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
+            assertThat(storedActivities(미발행주문)).containsExactlyElementsOf(expectedActivities(미발행주문));
+            assertThat(storedActivities(정상주문)).containsExactlyElementsOf(expectedActivities(정상주문));
+            assertThat(receipts.findByOrderId(미발행주문.orderId())).isPresent();
+            assertThat(receipts.findByOrderId(정상주문.orderId())).isPresent();
+            assertThat(brokerRecordCount()).isEqualTo(3);
+            for (int partition = 0; partition < 2; partition++) {
+                var latest = admin.listOffsets(Map.of(new TopicPartition(TOPIC, partition), OffsetSpec.latest()))
+                        .all().get(5, TimeUnit.SECONDS).get(new TopicPartition(TOPIC, partition)).offset();
+                if (latest > 0) {
+                    assertThat(committedOffset(partition)).isEqualTo(latest);
+                }
+            }
+        });
+        assertThat(recovery.recover(미발행주문.orderId())).isFalse();
+        assertThat(recovery.recover(정상주문.orderId())).isFalse();
+        assertThat(jdbc.queryForObject("select count(*) from order_outbox where status = 'PUBLISHED'",
+                Long.class)).isEqualTo(2);
+        assertThat(PG.createRequestCount()).isEqualTo(createCount);
+        assertThat(PG.lookupRequestCount()).isEqualTo(lookupCount);
+        assertThat(PG.transactions()).hasSize(transactionCount);
+        assertConfirmedWithConsumedReservations(미발행주문);
+        assertConfirmedWithConsumedReservations(정상주문);
     }
 
     private PreparedOrder prepareThroughOrderApi(String attemptKey) throws Exception {

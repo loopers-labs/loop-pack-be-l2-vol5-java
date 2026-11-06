@@ -1,4 +1,4 @@
-package com.loopers.application.order;
+package com.loopers.application.order.fixture;
 
 import com.loopers.kafka.event.OrderConfirmed;
 
