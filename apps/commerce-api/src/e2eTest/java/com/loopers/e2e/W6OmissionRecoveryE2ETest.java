@@ -63,7 +63,6 @@ import java.util.stream.StreamSupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
-import static org.awaitility.Awaitility.await;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -202,7 +201,7 @@ class W6OmissionRecoveryE2ETest {
         w6Publisher.delegateTo(w6KafkaPublisher);
         MessageListenerContainer consumer = listenerRegistry.getListenerContainer(OrderConfirmedListener.LISTENER_ID);
         consumer.start();
-        await().atMost(DEADLINE).until(consumer::isRunning);
+        E2eSupport.awaitAssigned(consumer, DEADLINE);
 
         Long orderA = E2eSupport.createOrder(mvc, USER_ID, Map.of(product.getId(), ORDER_QUANTITY));
         Long orderB = E2eSupport.createOrder(mvc, USER_ID, Map.of(product.getId(), ORDER_QUANTITY));
@@ -213,7 +212,7 @@ class W6OmissionRecoveryE2ETest {
         // 사례 B: 같은 경로로 확정하고 실제 broker로 발행한다
         w6Publisher.failWith(null);
         TestPgTransaction transactionB = confirmThroughCallback(orderB);
-        await().atMost(DEADLINE).untilAsserted(() -> assertThat(E2eSupport.committedOffset(GROUP, TOPIC)).as("B 소비 완료").isEqualTo(1L));
+        E2eSupport.awaitCommittedOffset(GROUP, TOPIC, 1L, DEADLINE, () -> E2eSupport.describe(GROUP, TOPIC, consumer, jdbcTemplate, List.of(orderA, orderB)));
 
         // 준비 결과(새 DB 조회): 두 주문 모두 확정·예약 소비, Outbox 없음, A만 구매 활동 0
         for (Long id : List.of(orderA, orderB)) {
@@ -262,7 +261,7 @@ class W6OmissionRecoveryE2ETest {
 
         // relay와 기존 consumer를 실행한다
         assertThat(relay.runOnce()).isEqualTo(new OrderOutboxRelay.Run(true, 2, 2, 0));
-        await().atMost(DEADLINE).untilAsserted(() -> assertThat(E2eSupport.committedOffset(GROUP, TOPIC)).isEqualTo(3L));
+        E2eSupport.awaitCommittedOffset(GROUP, TOPIC, 3L, DEADLINE, () -> E2eSupport.describe(GROUP, TOPIC, consumer, jdbcTemplate, List.of(orderA, orderB)));
 
         // A: 빠졌던 구매 활동이 생긴다. B: 재발행이 와도 활동 행·수량이 늘지 않는다
         assertThat(E2eSupport.purchaseActivities(jdbcTemplate, orderA)).containsExactly(tuple(product.getId(), ORDER_QUANTITY));

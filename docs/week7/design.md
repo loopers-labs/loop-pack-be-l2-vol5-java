@@ -275,6 +275,8 @@ relay 한 건의 흐름은 단계로 나뉜다. 어느 단계 사이에서 멈�
 
 relay 없이 실제 MySQL에서 로컬 원자성을 먼저 확인한다. broker·consumer 연결은 5단계 이후다.
 
+E2E의 consumer 배정·결과 대기에는 시한(60초)을 둔다. 넘기면 통과로 세지 않고, 그 순간의 consumer 배정·committed offset·broker record·Outbox 행·소비 완료·구매 활동을 실패 메시지에 남긴다(`E2eSupport.awaitAssigned`·`awaitCommittedOffset`·`describe`). broker 준비(topic 생성)와 record 읽기도 시한을 넘기면 topic 이름과 함께 실패한다.
+
 ## 7. 알려진 한계 (현재 단계)
 
 - relay는 한 인스턴스에서만 켠다는 실행 설정에 기대고, 분산 잠금·claim은 없다.

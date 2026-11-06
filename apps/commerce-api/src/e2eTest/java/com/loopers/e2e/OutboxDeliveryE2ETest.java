@@ -65,7 +65,6 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
-import static org.awaitility.Awaitility.await;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -180,7 +179,7 @@ class OutboxDeliveryE2ETest {
         pointJpaRepository.save(point);
         MessageListenerContainer consumer = listenerRegistry.getListenerContainer(OrderConfirmedListener.LISTENER_ID);
         consumer.start();
-        await().atMost(DEADLINE).until(consumer::isRunning);
+        E2eSupport.awaitAssigned(consumer, DEADLINE);
 
         // 1. 기존 API로 주문을 만들고, PG SUCCESS를 callback 경로(내부 확정 경로)에 적용한다
         Map<Long, Integer> items = new LinkedHashMap<>();
@@ -210,7 +209,8 @@ class OutboxDeliveryE2ETest {
         assertThat(onlyOutboxRow(orderId).getStatus()).as("broker는 받았지만 PUBLISHED는 저장하지 않았다").isEqualTo(OrderOutboxStatus.PENDING);
 
         // consumer는 첫 record를 처리한다. Outbox가 아직 PENDING이어도 구매 활동은 생긴다(PUBLISHED는 소비 완료와 무관하다)
-        await().atMost(DEADLINE).untilAsserted(() -> assertThat(E2eSupport.committedOffset(GROUP, TOPIC)).isEqualTo(firstAck.offset() + 1));
+        E2eSupport.awaitCommittedOffset(GROUP, TOPIC, firstAck.offset() + 1, DEADLINE,
+            () -> E2eSupport.describe(GROUP, TOPIC, consumer, jdbcTemplate, List.of(orderId)));
         assertThat(E2eSupport.purchaseActivities(jdbcTemplate, orderId)).containsExactly(tuple(productA.getId(), 2), tuple(productB.getId(), 1));
 
         // 4. 같은 Outbox에서 relay를 재시작한다. 새 relay 객체·새 producer, 같은 DB·topic·eventId. Outbox 상태는 직접 고치지 않는다
@@ -220,7 +220,8 @@ class OutboxDeliveryE2ETest {
         OrderEventPublication.Sent secondAck = onlySent(restartedSender);
 
         // 5. consumer가 같은 사건을 다시 처리한 뒤(두 번째 record까지 ack) DB의 상품별 구매 사실을 확인한다
-        await().atMost(DEADLINE).untilAsserted(() -> assertThat(E2eSupport.committedOffset(GROUP, TOPIC)).isEqualTo(secondAck.offset() + 1));
+        E2eSupport.awaitCommittedOffset(GROUP, TOPIC, secondAck.offset() + 1, DEADLINE,
+            () -> E2eSupport.describe(GROUP, TOPIC, consumer, jdbcTemplate, List.of(orderId)));
 
         // 주문·PG 거래: 같은 확정 주문, 외부 거래 1
         assertThat(orderJpaRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.CONFIRMED);

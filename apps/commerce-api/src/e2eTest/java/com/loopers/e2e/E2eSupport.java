@@ -2,6 +2,7 @@ package com.loopers.e2e;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.loopers.support.kafka.BrokerRecords;
 import com.loopers.support.pg.PaymentTestSupport;
 import com.loopers.support.pg.TestPgTransaction;
 import com.loopers.testcontainers.KafkaBrokerFixture;
@@ -10,22 +11,30 @@ import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.assertj.core.groups.Tuple;
+import org.awaitility.core.ConditionTimeoutException;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.kafka.listener.MessageListenerContainer;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.StringJoiner;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
+import static org.awaitility.Awaitility.await;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/** E2E 테스트가 함께 쓰는 단계: 실제 controller 호출, consumer group의 commit 위치, 구매 활동 쪽 DB 조회. */
+/**
+ * E2E 테스트가 함께 쓰는 단계: 실제 controller 호출, 시한이 있는 consumer 배정·결과 대기, consumer group의 commit 위치, 구매 활동 쪽 DB 조회.
+ * 대기는 시한을 넘기면 통과로 세지 않고, 그 순간의 실제 상태(consumer·broker·Outbox·구매 활동)를 실패 메시지에 남긴다 (W7 과제 8절).
+ */
 final class E2eSupport {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -63,6 +72,60 @@ final class E2eSupport {
         String body = "{\"transactionKey\":\"" + transaction.transactionKey() + "\",\"orderId\":\"" + transaction.orderId()
             + "\",\"status\":\"" + transaction.status().name() + "\"}";
         return mvc.perform(post("/api/v1/payments/callback").contentType(MediaType.APPLICATION_JSON).content(body));
+    }
+
+    // ---- 시한이 있는 대기: 넘기면 그 순간의 실제 상태를 남기고 실패한다 ----
+
+    /** consumer가 topic partition을 배정받을 때까지 기다린다. */
+    static void awaitAssigned(MessageListenerContainer consumer, Duration deadline) {
+        try {
+            await().atMost(deadline).until(() -> consumer.isRunning()
+                && consumer.getAssignedPartitions() != null && !consumer.getAssignedPartitions().isEmpty());
+        } catch (ConditionTimeoutException e) {
+            throw new AssertionError("시한(" + deadline + ") 안에 consumer가 partition을 배정받지 못했습니다. running="
+                + consumer.isRunning() + ", assigned=" + consumer.getAssignedPartitions(), e);
+        }
+    }
+
+    /** consumer group의 commit 위치가 {@code expected}가 될 때까지 기다린다. 넘기면 {@code state}가 만든 실제 상태를 남긴다. */
+    static void awaitCommittedOffset(String group, String topic, long expected, Duration deadline, Supplier<String> state) {
+        try {
+            await().atMost(deadline).untilAsserted(() -> assertThat(committedOffset(group, topic)).isEqualTo(expected));
+        } catch (ConditionTimeoutException e) {
+            throw new AssertionError("시한(" + deadline + ") 안에 consumer가 offset " + expected + "까지 처리하지 못했습니다.\n" + state.get(), e);
+        }
+    }
+
+    /** 실패한 단계의 실제 상태: consumer·broker·Outbox·소비 완료·구매 활동. 조회 하나가 실패해도 나머지를 남긴다. */
+    static String describe(String group, String topic, MessageListenerContainer consumer, JdbcTemplate jdbcTemplate, List<Long> orderIds) {
+        StringBuilder state = new StringBuilder("[실제 상태]");
+        line(state, "consumer", () -> "running=" + consumer.isRunning() + ", assigned=" + consumer.getAssignedPartitions());
+        line(state, "committed offset", () -> String.valueOf(committedOffset(group, topic)));
+        line(state, "broker records", () -> BrokerRecords.readAll(topic).stream()
+            .map(r -> "offset=" + r.offset() + " key=" + r.key())
+            .toList()
+            .toString());
+        for (Long orderId : orderIds) {
+            line(state, "order " + orderId + " outbox", () -> jdbcTemplate.queryForList(
+                "select event_id, status, attempt_count, last_error from order_outbox where order_id = ?", orderId).toString());
+            line(state, "order " + orderId + " processed", () -> processedEventIds(jdbcTemplate, orderId).toString());
+            line(state, "order " + orderId + " activities", () -> purchaseActivities(jdbcTemplate, orderId).toString());
+        }
+        return state.toString();
+    }
+
+    private interface Probe {
+        String read() throws Exception;
+    }
+
+    private static void line(StringBuilder state, String label, Probe probe) {
+        String value;
+        try {
+            value = probe.read();
+        } catch (Exception e) {
+            value = "조회 실패: " + e.getClass().getSimpleName() + ": " + e.getMessage();
+        }
+        state.append("\n  ").append(label).append(": ").append(value);
     }
 
     // ---- broker ----
