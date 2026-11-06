@@ -80,6 +80,7 @@ class PollIntervalExceededTest extends StreamerIntegrationTestSupport {
         String topic = "w6-poll-interval-" + suffix;
         String group = "w6-poll-interval-group-" + suffix;
         KafkaTestSupport.ensureTopic(topic, 1);
+        KafkaTestSupport.awaitProducerMetadata(kafkaTemplate, topic);
         TopicPartition partition = new TopicPartition(topic, 0);
         t0 = System.currentTimeMillis();
 

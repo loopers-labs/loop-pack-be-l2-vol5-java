@@ -60,6 +60,7 @@ class RedeliveryAfterDbCommitTest extends StreamerIntegrationTestSupport {
         String topic = "w6-redelivery-" + suffix;
         String group = "w6-redelivery-group-" + suffix;
         KafkaTestSupport.ensureTopic(topic, 1);
+        KafkaTestSupport.awaitProducerMetadata(kafkaTemplate, topic);
         String json = orderConfirmedJson(UUID.randomUUID().toString(), 42L, AT, new long[][]{{7, 2}, {8, 1}});
 
         // 준비: target 발행 → broker가 정한 위치 n
