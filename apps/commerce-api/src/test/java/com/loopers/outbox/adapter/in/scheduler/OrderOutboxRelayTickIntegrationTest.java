@@ -83,6 +83,28 @@ class OrderOutboxRelayTickIntegrationTest {
         assertThat(relay.maxConcurrent()).isEqualTo(1);
     }
 
+    @DisplayName("밀린 행이 있으면 쉬지 않는다 — 회차가 꽉 차면(고른 수 = 묶음 200) 1초를 기다리지 않고 바로 다음 회차를 돈다. 덜 차면 다시 1초 쉰다.")
+    @Test
+    void fullRoundRunsNextRoundImmediately() {
+        // arrange: 꽉 찬 회차 3번 뒤 빈 회차
+        relay.reset(Duration.ZERO, List.of(full(), full(), full()));
+
+        // act
+        await().atMost(Duration.ofSeconds(10)).until(() -> relay.starts().size() >= 6);
+
+        // assert: 꽉 찬 회차 뒤의 간격은 짧고(1초 대기 없음), 빈 회차 뒤에는 1초
+        List<Long> starts = relay.starts();
+        int firstFull = relay.firstScriptedIndex();
+        for (int i = firstFull + 1; i <= firstFull + 3; i++) {
+            assertThat(Duration.ofNanos(starts.get(i) - starts.get(i - 1))).isLessThan(Duration.ofMillis(300));
+        }
+        assertThat(Duration.ofNanos(starts.get(firstFull + 4) - starts.get(firstFull + 3))).isBetween(TICK, TICK.plus(JITTER));
+    }
+
+    private static RelayResult full() {
+        return new RelayResult(200, 200, null);
+    }
+
     /** 첫 기록은 reset 직전에 시작된 회차일 수 있어 버리고, 그 뒤 연속한 시작 사이 간격만 본다 */
     private static List<Duration> gaps(List<Long> starts) {
         List<Duration> gaps = new ArrayList<>();
@@ -104,13 +126,23 @@ class OrderOutboxRelayTickIntegrationTest {
     /** 시작 시각을 적고, 정한 시간만큼 걸린 뒤 "고른 행 0"으로 끝나는 가짜 relay */
     static class TimedRelay implements OrderOutboxRelayUseCase {
         private final List<Long> starts = new CopyOnWriteArrayList<>();
+        private final java.util.Deque<RelayResult> scripted = new java.util.concurrent.ConcurrentLinkedDeque<>();
+        private volatile int firstScriptedIndex = -1;
         private volatile Duration work = Duration.ZERO;
         private int running;
         private int maxConcurrent;
 
         void reset(Duration work) {
+            reset(work, List.of());
+        }
+
+        /** 다음 회차들이 차례로 돌려줄 결과. 다 쓰면 "고른 행 0" */
+        void reset(Duration work, List<RelayResult> results) {
             this.work = work;
+            scripted.clear();
+            firstScriptedIndex = -1;
             starts.clear();
+            scripted.addAll(results);
             synchronized (this) {
                 maxConcurrent = 0;
             }
@@ -120,6 +152,10 @@ class OrderOutboxRelayTickIntegrationTest {
             return List.copyOf(starts);
         }
 
+        int firstScriptedIndex() {
+            return firstScriptedIndex;
+        }
+
         synchronized int maxConcurrent() {
             return maxConcurrent;
         }
@@ -127,6 +163,10 @@ class OrderOutboxRelayTickIntegrationTest {
         @Override
         public RelayResult relayOnce() {
             starts.add(System.nanoTime());
+            RelayResult next = scripted.poll();
+            if (next != null && firstScriptedIndex < 0) {
+                firstScriptedIndex = starts.size() - 1;
+            }
             synchronized (this) {
                 maxConcurrent = Math.max(maxConcurrent, ++running);
             }
@@ -139,7 +179,7 @@ class OrderOutboxRelayTickIntegrationTest {
                     running--;
                 }
             }
-            return new RelayResult(0, 0, null);
+            return next != null ? next : new RelayResult(0, 0, null);
         }
     }
 }
