@@ -60,6 +60,10 @@ spring:
       # 재실행해도 확정 주문과 confirmedAt을 보존한다.
       ddl-auto: update
 
+order-events:
+  outbox:
+    enabled: true
+
 ---
 spring:
   config:
