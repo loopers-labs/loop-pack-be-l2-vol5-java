@@ -1,0 +1,11 @@
+package com.loopers.domain.point;
+
+import java.util.Optional;
+
+public interface PointRepository {
+    PointModel save(PointModel point);
+
+    Optional<PointModel> findByUserId(Long userId);
+
+    Optional<PointModel> findByUserIdForUpdate(Long userId);
+}

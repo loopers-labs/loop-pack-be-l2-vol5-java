@@ -1,0 +1,55 @@
+# 4주차 조회 성능 실습 전용 MySQL·Redis — 로컬 공용 DB(3306 등)·Redis와 분리한 격리 환경
+#
+# 시작   : docker compose -f ./docker/perf-compose.yml up -d
+# 정리   : docker compose -f ./docker/perf-compose.yml down -v   (이 파일이 만든 컨테이너·볼륨만 삭제)
+#
+# 앱 연결: local 프로필에 아래 인자를 더해 실행한다.
+#   --datasource.mysql-jpa.main.jdbc-url=jdbc:mysql://localhost:3309/loopers_perf
+#   --datasource.redis.master.port=6389 --datasource.redis.replicas[0].host=localhost --datasource.redis.replicas[0].port=6389
+#   (replicas는 목록이라 명령줄에서 일부만 주면 목록 전체가 바뀐다 — host와 port를 함께 준다)
+#   local 프로필은 ddl-auto=create 라서, 테이블을 만든 뒤의 측정 실행에는
+#   --spring.jpa.hibernate.ddl-auto=none 을 함께 줘야 시드 데이터가 지워지지 않는다.
+name: loopers-perf
+services:
+  mysql-perf:
+    image: mysql:8.0 # 테스트(Testcontainers)·infra-compose와 같은 이미지
+    container_name: loopers-perf-mysql
+    ports:
+      - "127.0.0.1:3309:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_USER=application
+      - MYSQL_PASSWORD=application
+      - MYSQL_DATABASE=loopers_perf
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+      - --skip-character-set-client-handshake
+      - --innodb-buffer-pool-size=1G # 시드 전체(약 500만 행)와 추가 인덱스가 메모리에 들어가 디스크 I/O가 측정에 섞이지 않게 한다
+    volumes:
+      - mysql-perf-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis-perf:
+    image: redis:latest # 테스트(Testcontainers)와 같은 이미지
+    container_name: loopers-perf-redis
+    ports:
+      - "127.0.0.1:6389:6379"
+    command:
+      [
+        "redis-server",
+        "--save", "", # 영속화하지 않는다 — 재시작하면 빈 캐시로 시작한다
+        "--appendonly", "no",
+      ]
+    healthcheck:
+      test: ["CMD", "redis-cli", "PING"]
+      interval: 5s
+      timeout: 2s
+      retries: 10
+
+volumes:
+  mysql-perf-data:

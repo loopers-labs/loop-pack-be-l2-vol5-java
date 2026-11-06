@@ -1,0 +1,29 @@
+package com.loopers.application.product;
+
+import com.loopers.domain.product.ProductModel;
+
+public record ProductInfo(Long id, Long brandId, String brandName, String name, Long price, int stock, long likeCount) {
+    public static ProductInfo from(ProductModel model, String brandName, long likeCount) {
+        return new ProductInfo(
+            model.getId(),
+            model.getBrandId(),
+            brandName,
+            model.getName(),
+            model.getPrice(),
+            model.getStock(),
+            likeCount
+        );
+    }
+
+    public static ProductInfo from(ProductSnapshot snapshot, String brandName) {
+        return new ProductInfo(
+            snapshot.id(),
+            snapshot.brandId(),
+            brandName,
+            snapshot.name(),
+            snapshot.price(),
+            snapshot.stock(),
+            snapshot.likeCount()
+        );
+    }
+}

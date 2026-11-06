@@ -21,6 +21,7 @@ spring:
     import:
       - jpa.yml
       - redis.yml
+      - kafka.yml
       - logging.yml
       - monitoring.yml
 
@@ -29,11 +30,61 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
 
+datasource:
+  redis:
+    command-timeout: 300ms # 연결된 뒤 Redis 응답을 기다리는 상한. 넘으면 캐시 오류로 보고 DB에서 조회한다
+    connect-timeout: 1s # 연결 수립(초기 핸드셰이크 포함)의 상한. JVM의 첫 연결은 300ms를 넘을 수 있다
+    reject-commands-when-disconnected: true # 연결이 끊긴 동안은 재연결을 기다리지 않고 바로 실패한다
+
+order-event:
+  topic-name: order-events # 확정 주문 이벤트(OrderConfirmed v1)의 topic. 테스트는 고유 접미사를 붙여 덮어쓴다
+  send-timeout: 5s # send 결과를 기다리는 상한. 넘으면 발행 실패로 기록하고 주문 결과는 그대로 돌려준다
+
+order-outbox:
+  relay: # 확정 주문 Outbox를 broker로 보내는 단일 relay (docs/week7/design.md 4절)
+    scheduling-enabled: true # 이 인스턴스에서 relay를 주기적으로 실행한다. 여러 인스턴스 중 한 곳에서만 켠다(분산 잠금이 없다)
+    fixed-delay: 1s # 한 회차가 끝난 뒤 다음 회차까지 쉬는 시간. 회차는 겹치지 않는다
+    batch-size: 50 # 한 회차에 고르는 최대 행 수
+    send-timeout: 5s # broker 확인을 기다리는 상한. 넘으면 수신 여부를 모르는 실패로 보고 같은 행을 다시 보낸다
+    initial-backoff: 1s # 첫 실패 뒤 다음 시도까지. 실패마다 backoff-multiplier배로 늘어난다
+    backoff-multiplier: 2
+    max-backoff: 5m # 영구 오류도 이 간격보다 자주 다시 보내지 않는다
+    alert-after-attempts: 5 # 한 행이 이만큼 실패하면 반복 실패로 보고 원인과 eventId를 ERROR로 남긴다 (첫 대기 1s 기준 약 15초 뒤)
+
+payment:
+  pg:
+    base-url: http://127.0.0.1:8082 # 로컬 테스트 PG 주소. 실제 PG 앱은 없어서 그냥 띄우면 연결 실패로 결과 미확인이 된다. 테스트는 fixture 주소로 덮어쓴다
+    callback-url: http://127.0.0.1:8080/api/v1/payments/callback # PG가 결과를 알릴 주소. 고객 입력으로 바꿀 수 없다
+    provider-user-id: "135135" # PG로 보내는 합성 제공자 계정(X-USER-ID). 고객 식별과 관계가 없다
+    connect-timeout: 500ms
+    create-read-timeout: 3s # create timeout은 결과 미확인을 만들므로 조회보다 길게 기다린다
+    lookup-read-timeout: 1s # 조회는 다시 물어도 안전하므로 짧게 끊는다
+    lookup-retry: # 조회에만 적용한다. create는 어떤 층에서도 다시 보내지 않는다
+      max-attempts: 3 # 첫 호출 포함. 최악 대기는 3 x 1s + 100ms + 200ms = 약 3.3초
+      initial-wait: 100ms
+      multiplier: 2
+    lookup-circuit-breaker: # 조회 한 경로에만 둔다. 열려도 결제를 실패로 정하지 않는다
+      sliding-window-size: 10 # 호출 수 기준 창
+      minimum-number-of-calls: 5 # 한두 번의 실패로 열리지 않게 한다
+      failure-rate-threshold: 50
+      wait-duration-in-open-state: 10s
+      permitted-calls-in-half-open-state: 2 # 2건 모두 성공해야 닫힌다
+
 ---
 spring:
   config:
     activate:
       on-profile: local, test
+
+---
+spring:
+  config:
+    activate:
+      on-profile: test
+
+order-outbox:
+  relay:
+    scheduling-enabled: false # 테스트는 relay를 직접 한 회차씩 부른다. 백그라운드 회차가 테스트의 Outbox 행을 바꾸지 않게 한다
 
 ---
 spring:
