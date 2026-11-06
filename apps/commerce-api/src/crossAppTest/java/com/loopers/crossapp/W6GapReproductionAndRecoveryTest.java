@@ -6,6 +6,7 @@ import com.loopers.application.order.OrderCommand;
 import com.loopers.application.order.OrderFacade;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderConfirmedEvent;
+import com.loopers.domain.order.OrderConfirmedOutboxRepository;
 import com.loopers.domain.payment.PaymentAttempt;
 import com.loopers.domain.payment.PaymentTransaction;
 import com.loopers.domain.product.Price;
@@ -122,6 +123,8 @@ class W6GapReproductionAndRecoveryTest {
     @Autowired
     private PurchaseActivityRepository purchaseActivityRepository;
     @Autowired
+    private OrderConfirmedOutboxRepository outboxRepository;
+    @Autowired
     private ObjectMapper objectMapper;
     @Autowired
     private UserJpaRepository userJpaRepository;
@@ -188,7 +191,13 @@ class W6GapReproductionAndRecoveryTest {
         assertThat(recordB.key()).isEqualTo(String.valueOf(orderBId));
         JsonNode valueB = objectMapper.readTree(recordB.value());
         assertThat(valueB.get("eventId").asText()).isEqualTo(eventB.eventId());
+        assertThat(valueB.get("orderId").asLong()).isEqualTo(orderBId);
         assertThat(valueB.get("confirmedAt").asText()).isEqualTo(CONFIRMED_AT.toString());
+        assertThat(valueB.get("items")).hasSize(2);
+        assertThat(valueB.get("items").get(0).get("productId").asLong()).isEqualTo(productA);
+        assertThat(valueB.get("items").get(0).get("quantity").asInt()).isEqualTo(2);
+        assertThat(valueB.get("items").get(1).get("productId").asLong()).isEqualTo(productB);
+        assertThat(valueB.get("items").get(1).get("quantity").asInt()).isEqualTo(1);
 
         // 실제 listener 가 B 를 처리해 ack(committed offset 전진)할 때까지 deadline 안에서 기다린다
         awaitConsumed(recordB.offset() + 1);
@@ -212,7 +221,11 @@ class W6GapReproductionAndRecoveryTest {
         assertThat(pgCreateCount).isEqualTo(2);
         assertThat(pgTransactions).hasSize(2);
 
-        // TODO(W7 Outbox 생성 후): 두 주문 모두 Outbox 행이 아직 없는지 새 DB 조회로 확인 (📄 p.4 5-2 "Outbox는 아직 없으며")
+        // W6 경로는 Outbox 를 쓰지 않으므로 두 주문 모두 Outbox 행이 아직 없다 - 새 DB 조회 (📄 p.4 5-2 "Outbox는 아직 없으며")
+        assertThat(outboxRepository.findByOrderId(orderAId)).isEmpty();
+        assertThat(outboxRepository.findByOrderId(orderBId)).isEmpty();
+        assertThat(outboxRepository.findByEventId(eventA.eventId())).isEmpty();
+        assertThat(outboxRepository.findByEventId(eventB.eventId())).isEmpty();
 
         // 이번 실행의 사실 기록 (W6 기록과 별도)
         Map<String, Object> observation = new LinkedHashMap<>();
@@ -287,6 +300,7 @@ class W6GapReproductionAndRecoveryTest {
             "topic", record.topic(), "partition", record.partition(), "offset", record.offset(),
             "key", record.key(), "value", new String(record.value(), StandardCharsets.UTF_8)));
         observation.put("purchaseActivityRows", activityRows);
+        observation.put("outboxRows", outboxRepository.findByOrderId(orderId).isPresent() ? 1 : 0);
         return observation;
     }
 
