@@ -4,7 +4,93 @@
 
 재고·사용자 식별·브랜드·주문 수량 규칙과 API-01~24의 기대값, 작은 기능의 구현 순서를 다룬다. 각 절은 도메인 단위 검증, application·실제 DB 연결, HTTP 완료를 구분한다. 최신 완료 증거와 전체 검사 결과는 [전체 완료 체크리스트](commerce-completion-checklist.md)에 모으고, 실제 Red·Green·Refactor는 기능별 실행 기록에 남긴다. 기존 응답·금액·잠금 정책은 후속 추천 묶음 승인(P08·P12·P13)으로 확정한 선행 계약이다. W5에서 명시한 결제 경계의 변경은 아래 W5 계획을 우선하고, 변경 대상이 아닌 계약은 유지한다.
 
+## W7 Outbox 원자성과 복구 TDD 계획
+
+**2026-11-04 설계 후 첫 저장 증분을 구현했다.** [W7 과제 원문](../week7/assignment-original.md)과 [공식 11항목](../week7/grading-criteria.md)을 기준으로 [전체 설계](commerce-erd-draft.md#w7-outbox와-단일-relay-설계), [정책·질문](commerce-policy-decisions.md#w7-outbox-설계의-선택과-질문), [API 계약](commerce-api-contract.md)에 아래 기대값을 연결한다. 아래 표는 기대값 계획이며 실제 Outbox·공동 TX 구현과 검사 결과는 [원자성 TDD 기록](../week7/outbox-atomicity-tdd-log.md)에 분리한다. 후속 2단계에서 W7-TDD-12~16의 relay를 구현하고 [relay TDD 기록](../week7/outbox-relay-tdd-log.md)에 실제 DB·Kafka 검증을 남겼다. 후속 3단계에서 W7-TDD-17~19의 [중단·재발행 전체 E2E](../week7/outbox-republication-e2e-tdd-log.md)를 검증했다. 후속 4단계에서 W7-TDD-20~23의 [W6 보충·복구](../week7/w6-outbox-backfill-tdd-log.md)를 같은 자원으로 검증했다. 최종 전체 대조는 별도로 남긴다. 실제 구현·실행 상태는 [W7 체크리스트](../week7/implementation-checklist.md)에서 별도로 추적한다. `W7-TDD` 번호는 기대값을 식별하며 테스트 개수·추가 채점 항목을 뜻하지 않는다.
+
+W6의 stable eventId·orderId key·최초 confirmedAt·저장 품목, 구매 활동의 완료 기록·전체 품목 공동 TX·commit 뒤 ack와 중복/충돌 판정을 유지한다. W7에서 바꾸는 책임은 **최초 PG 성공 반영·예약 소비와 같은 TX의 Outbox 저장 → 단일 relay의 broker 확인 → 별도 상태 TX의 PUBLISHED 저장**이다. 아래 W6의 직접 발행·after-commit 검사와 실행 수는 당시 계약·준비 기반의 증거로 보존하며 W7 성공 증거로 승계하지 않는다.
+
+### 구현 전 책임·영향 파일과 검증 순서
+
+첫 구현 증분은 relay 없이 Outbox 기록과 실제 DB 원자성에 한정한다. 아래 신규 책임의 물리 파일·테이블 이름은 정책 선택과 기존 계층 규칙에 맞춰 구현 전에 정한다. 원문의 `OutboxAtomicityTest`·`OutboxDeliveryE2ETest`는 예시 이름이며 필수 파일명이 아니다.
+
+| 증분 | 변경하거나 보존할 책임·출발 파일 | 관련 검증과 다음 단계 조건 |
+| --- | --- | --- |
+| 1. 불변 사실·저장 경계 | [OrderConfirmedEvent](../../apps/commerce-api/src/main/java/com/loopers/domain/order/OrderConfirmedEvent.java)의 계약을 재사용하는 공통 Outbox 모델·저장 포트·영속 adapter. [schema 디렉터리](../../apps/commerce-api/src/main/resources/db/schema)의 추가 DDL과 JPA 매핑 | W7-TDD-01~02. 선택한 Q01의 완성 JSON 문자열 저장과 메타데이터·불변 payload·실제 DDL/JPA·eventId 유일 제약. 물리 이름·SQL 매핑은 구현 전에 구체화 |
+| 2. 공통 최초 성공 TX 연결 | [OrderPaymentStockService](../../apps/commerce-api/src/main/java/com/loopers/application/order/OrderPaymentStockService.java), [DomainEventListener](../../apps/commerce-api/src/main/java/com/loopers/application/event/DomainEventListener.java)의 W7 기록 경계. [OrderConfirmedPublicationIntegrationTest](../../apps/commerce-api/src/test/java/com/loopers/application/order/OrderConfirmedPublicationIntegrationTest.java)·[OrderPaymentStockRollbackTest](../../apps/commerce-api/src/test/java/com/loopers/application/order/OrderPaymentStockRollbackTest.java)·[PaymentRecoveryConcurrencyIntegrationTest](../../apps/commerce-api/src/test/java/com/loopers/application/order/PaymentRecoveryConcurrencyIntegrationTest.java)의 기존 계약과 연결 | W7-TDD-03~11. 선택한 Q02의 공통 BEFORE_COMMIT listener가 같은 TX에 동기적으로 기록하고 오류를 전파하는지 검증. 실제 SQL 후 rollback·비성공·중복/경합·같은 거래 재조회 재적용 포함. 기존 W6 직접 발행 기대값은 과거 증거로 보존하고 W7 경로의 저장·relay 책임에 맞춰 검증을 전환 |
+| 3. 단일 relay·전송 결과 | 신규 polling·상태 TX·로컬 재개 책임, [DomainEventPublisher](../../apps/commerce-api/src/main/java/com/loopers/domain/event/DomainEventPublisher.java)·[KafkaDomainEventPublisher](../../apps/commerce-api/src/main/java/com/loopers/infrastructure/event/KafkaDomainEventPublisher.java)·[DomainEventKafkaConfiguration](../../apps/commerce-api/src/main/java/com/loopers/infrastructure/event/DomainEventKafkaConfiguration.java)의 broker 결과·저장 payload 전송 경계 | W7-TDD-12~16. 원자성 통과 뒤 실제 broker 전송을 연결. Q03~05에 따라 실행 설정·시도 증가 시점·유한 대기·재시도 간격·영구 오류 재개를 구체화 |
+| 4. 중단·중복 발행 E2E | [PgOrderPurchaseActivityEndToEndTest](../../apps/commerce-api/src/test/java/com/loopers/application/order/PgOrderPurchaseActivityEndToEndTest.java)와 [OwnedStreamerProcess](../../apps/commerce-api/src/test/java/com/loopers/support/kafka/OwnedStreamerProcess.java)를 출발점으로 실제 주문 API·PG·DB·Kafka·streamer를 연결 | W7-TDD-17~19. 앞 단계 완료 후 다음 단계가 실행되지 않는 hook, 새 relay 실행 흐름, 실제 별도 record·consumer 수신과 DB 효과를 관찰 |
+| 5. W6 준비→같은 실행 복구·운영 관찰 | [W6 준비 코드·revision 근거](../week6/fixed-clock-w7-reproduction.md), 대상 확정 사실의 누락 Outbox 보충·일치 검사, 로컬 재개·관찰·보존 책임 | W7-TDD-20~25. Q06의 준비 연결 방식을 선택하고 마지막 검증까지 DB·broker·PG를 유지. 실제 사건·호출 기준값·2회 복구 불변과 관련 회귀·정적 검사·소유 자원 정리를 기록 |
+
+### 첫 증분: relay 없는 Outbox와 실제 DB 원자성
+
+아래는 첫 증분의 기대값이다. W7-TDD-01~10의 저장·중복·실패·복구 검증과 W7-TDD-11의 직접 발행 포트 미호출을 구현했다. 실제 broker/activity 0 관찰을 포함하는 relay 경계 검증은 후속이다. 실제 MySQL에 수동 추가 DDL을 적용하고 JPA 매핑을 검증하는 격리 테스트를 계획한다. 자동 생성 스키마나 mock 저장 호출만으로 유일 제약·commit/rollback을 입증하지 않는다. 테스트 전체를 자동 rollback으로 감싸지 않고 독립 연결에서 commit된 전후 상태를 비교한다. 사용자 DB에는 접근하거나 DDL을 적용하지 않는다.
+
+| ID | 입력·경계 | Red에서 고정할 결과·관찰 | 공식 항목 |
+| --- | --- | --- | --- |
+| W7-TDD-01 | 최초 확정의 Outbox 사실 생성·조회 | W6와 같은 eventId·orderId·eventType·schemaVersion, orderId 문자열 messageKey, 최초 confirmedAt·정규화 품목을 보존. 공통 Outbox에 완성 JSON 문자열을 저장하며 생성한 key/payload는 원본 목록·현재 상품의 변경이나 이후 전송 상태 변경에 따라 바뀌지 않음. status 최초 PENDING, createdAt·publishedAt과 주문 confirmedAt의 의미 분리, attemptCount·nextAttemptAt·lastError의 저장·관찰 의미 확인. 카드·비밀·불필요한 개인정보 제외 | C01·04 |
+| W7-TDD-02 | 실제 추가 DDL·JPA 저장/재조회·같은 eventId 저장 경합 | 필요한 메타데이터·key/완성 JSON 문자열·상태/시각/시도 정보가 왕복 보존되고 eventId DB 유일 제약이 실제 SQL에서 작동. 실패 TX 뒤 독립 연결로 기존 행·불변 사실 보존을 확인. 공통 Outbox의 SQL 타입·테이블 이름은 구현 전에 정하며 애플리케이션 사전 조회만으로 유일성을 대신하지 않음 | C01·02 |
+| W7-TDD-03 | 검증된 PG SUCCESS의 최초 내부 반영 | 공통 BEFORE_COMMIT listener가 같은 확정 TX에 동기적으로 참여. 기존 미완료 주문 CONFIRMED·시도 SUCCESS·예약 CONSUMED와 같은 eventId의 Outbox PENDING 1행이 같은 데이터 소스·같은 로컬 TX에서 함께 commit. 최초 confirmedAt·품목 일치, 예약 소비 한 번·PG 포인트 차감 0. Outbox만 REQUIRES_NEW·비동기 기록 또는 after-commit insert로 분리하지 않음 | C01·03 |
+| W7-TDD-04 | PENDING·UNKNOWN·권위 확인한 FAILED, 과거 POINT 경로 | 새 OrderConfirmed Outbox 0. W5의 각 결과별 주문·시도·예약·재고 처리와 과거 POINT 사실을 보존하며 거짓 CONFIRMED·새 결제 생성 없음 | C02·11 |
+| W7-TDD-05 | 같은 거래의 confirm·callback·reconcile 반복 결과 적용 | 최초 성공·예약 소비·동일 eventId Outbox 각 한 번. 기존 confirmedAt·key/payload·주문/시도/예약 사실 불변, 추가 PG create 0. HTTP 계약을 새로 바꾸거나 모든 계층에서 같은 입력 조합을 중복 작성하지 않음 | C02 |
+| W7-TDD-06 | 같은 거래 SUCCESS가 독립 TX에서 경합 | 기존 잠금·최초 전이 판정과 실제 유일 제약 아래 확정·예약 소비·Outbox 1행으로 수렴. 다른 요청의 성공 효과를 보존하고 실패 요청의 추가 효과·새 PG create 없음 | C02 |
+| W7-TDD-07 | 공통 BEFORE_COMMIT listener의 Outbox payload serialization 실패 | listener가 오류를 확정 TX 밖까지 전파. 시도·주문·예약이 TX 직전 저장 상태로 남고 새 Outbox 0. 확정 변경 SQL을 먼저 실행한 사례도 rollback되는지 독립 DB 조회로 확인. 이벤트만 생략하고 확정 commit하지 않음 | C01·03 |
+| W7-TDD-08 | 주문·시도·예약 변경 SQL 실행 뒤 Outbox insert 직전 실패 또는 insert 자체 실패 | 기존 주문·시도·예약·재고·포인트 snapshot 보존, 새 Outbox 0. 기존 주문 행 수가 0이 되는 것을 기대하지 않으며 실제 SQL이 실행된 실패 지점을 기록 | C01·03 |
+| W7-TDD-09 | Outbox insert까지 실제 flush된 뒤 확정 TX 실패 | 같은 TX 안에서 주문/시도/예약 변경과 Outbox INSERT가 실행된 사실을 확인한 뒤 실패를 주입. TX 종료 후 독립 연결에서는 기존 미완료 상태·예약을 보존하고 새 Outbox 0. 실패를 삼키거나 Outbox만 commit하는 경로 없음 | C01·03 |
+| W7-TDD-10 | 위 실패 후 외부 PG SUCCESS가 남은 동일 거래 재조회·재적용 | PG fixture의 기존 거래 SUCCESS와 거래 식별자 유지. 실패 원인 제거 후 같은 거래 조회를 허용하고 공통 결과 적용으로 CONFIRMED·CONSUMED·Outbox 1행에 수렴. 준비 이후 PG create 증가 0·외부 거래 추가 0. 로컬 rollback이 외부 결제를 취소했다고 가정하지 않음 | C02·03 |
+| W7-TDD-11 | W7 최초 확정 commit부터 relay를 실행하기 전 | Outbox PENDING은 보이지만 기존 after-commit 직접 send는 호출되지 않음. broker에 대상 record·구매 활동이 없고 relay와 직접 발행이 병행되지 않음. W6 직접 발행 경로는 후속 준비 구성/revision에서 별도 보존 | C01·04·05 |
+
+W7-TDD-07~09는 실패 경계와 실제 SQL 증거가 서로 다르다. 의미 있는 격리 테스트에서 이 결과를 입증하며 각 계층에 같은 실패 주입을 복제하지 않는다. W7-TDD-10의 PG 재조회는 **로컬 확정이 rollback된 거래의 복구**다. 이미 확정된 W6 전달 누락을 보충하는 W7-TDD-20~23에는 PG 재조회·callback도 추가하지 않는다.
+
+### relay 구현과 후속 두 중단·실제 재발행
+
+| ID | 입력·경계 | 기대값·필수 관찰 | 공식 항목 |
+| --- | --- | --- | --- |
+| W7-TDD-12 | due PENDING 조회·한 회차 처리 | 아직 시간이 안 된 행·PUBLISHED 제외, 제한된 묶음과 안정된 순서. 상태·nextAttemptAt·정렬 조건에 맞는 인덱스를 검토. 같은 eventId/key/payload·기존 topic을 전송하며 현재 상품을 재조회해 사실을 재생성하지 않음. 실제 wire에서 JSON 이중 인코딩 등 계약 변형 없음 | C04·09 |
+| W7-TDD-13 | producer future 미완료·성공·상태 TX | send가 future를 반환한 것만으로 PUBLISHED를 저장하지 않음. DB 조회/상태 변경 TX 밖에서 유한하게 전송 결과를 기다리고 실제 broker 성공 metadata 후 별도 TX로 PUBLISHED·publishedAt 저장. PUBLISHED와 consumer 완료는 별도이며 어느 저장이 먼저 끝날지 강제하지 않음 | C04·09 |
+| W7-TDD-14 | send 실패·로컬 timeout·broker 성공 후 상태 TX 실패 | 같은 사건·payload가 재시도 대상으로 남음. 다음 시각·안전한 오류 관찰, 즉시 무한 반복 없음. timeout은 broker 수신 0의 증거가 아니며 상태 TX 실패도 재발행 가능. 원인 제거 후 기존 행으로 재개 | C04·09 |
+| W7-TDD-15 | timeout된 이전 send의 성공/실패 callback이 다음 시도 뒤 도착 | 늦은 callback이 새 시도의 status·시도/다음 시각·오류·publishedAt을 임의로 덮어쓰지 않음. 상태 변경은 relay의 정한 한 경계가 담당. 통제 가능한 future·시간을 사용해 순서를 재현하고 구현 방식은 Q03~05 선택에 맞춤 | C04·09 |
+| W7-TDD-16 | scheduler·수동 실행 또는 같은 실행 진입의 중첩 | 한 relay 흐름만 직렬 실행. 선택한 활성화 설정·중첩 방지를 확인하고 무제한 future·tick 겹침 없음. 다른 인스턴스에서 relay를 동시에 켜지 않는 로컬 운영 제약을 명시하며 메모리 flag를 분산 잠금으로 판정하지 않음 | C04·10 |
+| W7-TDD-17 | 확정 TX commit 뒤 relay 실행 전 중단 | 독립 DB 조회에서 CONFIRMED·CONSUMED·Outbox PENDING, 대상 broker record·구매 활동 0. 같은 DB/Kafka의 새 relay가 저장 행을 찾아 발행하고 실제 consumer의 구매 활동에 도달. 중단 뒤 상태 덮어쓰기·Outbox 삭제로 조건을 만들지 않음 | C05 |
+| W7-TDD-18 | 실제 broker 성공 확인 뒤 PUBLISHED 저장 전 중단 | 첫 성공 metadata와 broker record를 확보하고 상태 저장을 실행하지 않아 같은 Outbox가 PENDING으로 남음. 같은 DB/Kafka/eventId를 유지한 새 relay가 같은 key/payload를 재발행하고 최종 PUBLISHED. hook 예외·객체 재생성을 OS 강제 종료라고 표현하지 않음 | C05·06 |
+| W7-TDD-19 | 기존 주문 API→로컬 PG→실제 DB/Kafka→실제 streamer의 중단·재발행 E2E | 한 실행에서 W7-TDD-18을 포함. 같은 eventId의 **별도 broker record 2개 이상·consumer 수신 2회 이상**, 완료 기록 1·Outbox 1행. 상품 7×2·8×1이라면 활동 2행·수량 2·1과 기존 PK/필드 유지. 같은 확정 주문·외부 거래 각 1, 재고 예약 추가 소비/반환·PG 포인트 추가 차감 0. 실제 listener factory·parser·handler·commit 뒤 ack 사용 | C05·06·11 |
+
+**2026-11-04 relay 증분:** W7-TDD-12~16은 기한순 10건·전송 예산 12초·5→60초 backoff·기본 OFF인 전용 scheduler로 구현했다. 실제 DB+Kafka 정상 전달, 통제 future의 timeout/늦은 완료, 실제 DB 상태 저장 rollback, 동일 인스턴스 중첩 방지와 자동 실행을 검증했다. 이 relay 증분 당시에는 실제 consumer 중복 효과를 확인하지 않았으며, 다음 3단계의 [중단·재발행 E2E 기록](../week7/outbox-republication-e2e-tdd-log.md)에서 W7-TDD-17~19를 검증했다. 실행 증거는 [relay 기록](../week7/outbox-relay-tdd-log.md)을 따른다.
+
+시도 횟수·send 호출 수·broker record 수·consumer 수신 횟수·구매 활동 행 수를 각각 기록한다. W6의 같은 topic/partition/offset 재전달 실험은 W7의 같은 eventId가 별도 record로 저장되는 재발행 증거를 대신하지 않는다. PUBLISHED를 먼저 저장한 뒤 send 전에 중단하면 누락을 완료로 숨긴다는 반례를 W7-TDD-13·18의 기대값과 대조한다. at-least-once 발행과 소비 DB 중복 방지를 end-to-end exactly-once로 표현하지 않는다.
+
+### 후속 증분: W6 두 사례의 같은 실행 복구와 회귀
+
+| ID | 입력·경계 | 기대값·필수 관찰 | 공식 항목 |
+| --- | --- | --- | --- |
+| W7-TDD-20 | 새 격리 환경의 W6 실제 직접 발행 경로로 누락·정상 소비 두 사례 준비 | 보존한 W6 구성 또는 `dd86f49` revision 실행물을 사용. 기존 주문 API·PG의 실제 SUCCESS를 내부 확정해 둘 다 CONFIRMED·CONSUMED, Outbox 없음. 한 사건만 commit 뒤 send 전에 중단하여 활동 0, 다른 사건은 실제 소비 완료. 이번 실행의 orderId/eventId/confirmedAt/items·PG 거래 식별자와 준비 종료 시 create 누적 C·거래 T를 기록 | C07·08 |
+| W7-TDD-21 | 직접 발행 중단 뒤 같은 DB에 W7 구조·복구 연결 | 준비부터 복구 종료까지 DB·broker·PG 유지. 대상 확정 사실의 원래 eventId·confirmedAt·품목으로 없는 Outbox만 추가하고 기존 행은 내용 일치 검사. 원본 사실 부족·충돌에는 오류를 드러내며 추측하거나 덮어쓰지 않음. SUCCESS 직접 insert·W7 Outbox 삭제·운영용 우회 스위치로 준비하지 않음 | C07 |
+| W7-TDD-22 | 두 사건 relay·consumer 실행 뒤 같은 대상 2회 복구 | 누락 사건에 완료·품목별 활동이 생기고 이미 소비된 사건은 재발행 수신에도 기존 PK·필드·수량 불변. 두 번째 복구에서도 사건별 Outbox 1행·구매 효과 불변. 초기화·`@AfterEach` 정리는 모든 복구 관찰 이후에만 수행 | C07 |
+| W7-TDD-23 | 복구 직전 기준값과 복구 종료 상태 비교 | PG create 증가 0·PG 조회/callback 추가 호출 0·외부 거래 T 유지, 주문 재확정·예약 추가 소비/반환 0·재고/포인트 불변. 최소 준비 C=2/T=2를 고정 의무로 삼지 않고 실제 기준값 이후 증가 0을 확인. 준비의 실제 PG 호출을 복구의 추가 호출로 세지 않음 | C08 |
+| W7-TDD-24 | broker 장애 회복·반복 영구 오류·상태 관찰·보존 | 기존 미발행 행 재개, 시도 수·PENDING 수·최고 대기 시각·eventId/원인 관찰. PUBLISHED와 consumer lag/오류/활동을 따로 확인. 미발행·격리 행 자동 삭제 없음. 선택적으로 BLOCKED를 쓰면 원인 제거 후 같은 행을 재개. Outbox·Kafka·dedup 보존 관계와 단일 실행/단일 broker의 한계를 설명 | C09·10 |
+| W7-TDD-25 | 영향 범위 회귀·정적 검사·자원 종료 | W5 결과 적용/재요청·예약/잠금·소유권/삭제·과거 POINT, W6 소비 공동 TX/중복/충돌·commit 뒤 ack/실패 중단을 보호. 실제 영향에 맞춘 테스트와 양 앱 ArchUnit·Checkstyle 범위·명령·건수·실패/오류/skip·종료 결과를 기록. 테스트 0건·skip·연결 실패를 통과로 세지 않음 | C11 |
+
+**2026-11-04 4단계 실행:** 사용자 선택 Q06의 보존된 W6 테스트 구성으로 W7-TDD-20~23을 검증했다. 실제 정상/누락 두 사건의 Outbox 0에서 보충하고, 같은 DB·broker·PG를 유지해 누락 활동 생성·기소비 PK/필드 보존·두 번째 복구 불변·PG/업무 추가 효과 0을 확인했다. [W6 복구 TDD 기록](../week7/w6-outbox-backfill-tdd-log.md)에 새 단위/DB/E2E 42개와 관련 검사 범위를 기록한다.
+
+**2026-11-06 장애 관찰·재개 증분:** W7-TDD-24의 실제 broker 응답 불능·backlog SQL·같은 행 복구를 [Kafka 장애 TDD 기록](../week7/outbox-kafka-outage-tdd-log.md)에서 검증했다. 소유 Kafka 컨테이너 pause 동안 실제 전송 실패 두 번과 PENDING·시도 1→2·오류·5→10초 재시도를 확인하고, unpause 뒤 새 relay가 기존 행을 PUBLISHED·시도 3으로 바꿨다. 실제 업무 record 2개와 성공 metadata를 대조했으며 과거 전송의 늦은 도착을 허용한다. 이는 네트워크 패킷 차단·OS 강제 종료나 모든 영구 오류 유형의 검증이 아니다. 기한 전 추가 send 0·불변 사실 보존·실제 SQL COUNT/MIN 관찰을 포함한다. 생산 코드는 유지하고 테스트 전용 request/delivery timeout만 1초/3초로 단축했다.
+
+최종 관련 22개 스위트·143개는 신규 1개와 기존 중단·W6 복구 E2E, API ArchUnit을 포함해 통과했다. test Checkstyle은 실제 실행·위반 0, main은 UP-TO-DATE이며 streamer 전체 check는 이번 범위가 아니다. ACK 뒤 상태 저장을 생략하는 임시 변이의 assertion 실패를 확인하고 생산 파일을 원본으로 복원했다. W7-TDD-24의 보존·소비 관찰 최종 대조와 W7-TDD-25의 전체 검사·11항목 판정은 별도로 남긴다.
+
+**2026-11-06 후속 문서 정리:** W7-TDD-24의 실행·재개·소비 관찰 및 보존 관계를 [운영 안내](../week7/outbox-operations-retention.md)에 현재 코드와 대조해 정리했다. 같은 DB/행·group을 보존하는 재개, 단일 relay 인계, 자동 정리 없음, Kafka 실효 보존값 미확인, Kafka 만료 뒤 PUBLISHED 자동 재발행 부재를 명시했다. 새 테스트 실행·환경 적용·보존 일수 결정은 없으며, 다음은 W7-TDD-25의 양 앱 전체 검사·공식 11항목 최종 대조다.
+
+실제 W6 원본 DB를 보존한 경우에만 보존 근거·사건 사실을 확인한 뒤 W7-TDD-20의 새 준비를 생략할 수 있다. 새 격리 실행은 역사적 원본 사건 복구로 부르지 않는다. 기존 W6 revision 연결 완료는 준비 기반의 증거이며 W7-TDD-20~23 실행 완료로 바꾸지 않는다. 대상 두 사례를 넘어 과거 POINT 주문을 자동 소급하지 않는다.
+
+각 실제 broker 실험에는 고유 topic/group·합성 주문, 같은 bootstrap, broker 준비·consumer 배정·결과 대기의 deadline과 실패 단계별 상태 출력을 둔다. 자동 rollback으로 commit을 숨기거나 가짜 handler로 구매 활동 완료를 대신하지 않는다. API 제품 runtime에 streamer 의존성을 추가하지 않고 테스트 구성을 통해 연결하며, 자신이 만든 consumer·HTTP fixture·컨테이너·topic/group만 마지막에 정리한다.
+
+### 미정 선택과 실행 기록의 구분
+
+2026-11-04 사용자는 W7-Q01의 **공통 Outbox·완성 JSON 문자열 저장**, W7-Q02의 **공통 listener가 커밋 전 같은 TX에 기록**을 선택했다. 두 선택에 topic 공동 보관을 추가해 첫 저장 증분을 구현했다. 실행 상태는 [기록](../week7/outbox-atomicity-tdd-log.md)을 따른다. 첫 증분에서 BEFORE_COMMIT 동기 참여·예외 전파·실제 SQL 후 공동 rollback·확정 뒤 기존 직접 send 0을 확인한다. 당시 미정이었던 Q03~05의 단일 실행·시간/건수·PENDING 재시도는 2단계에서 선택·구현했고, Q06의 보존된 W6 준비 구성은 사용자가 선택해 4단계 복구에서 검증했다. 구체 실행 수와 남은 최종 대조는 각 기록을 따른다. 후속 기대값은 그 선택과 무관한 원문 요구만 고정하며 BLOCKED·특정 재시도 수치·파일명을 필수로 만들지 않는다.
+
+각 증분에서는 관련 ID·변경 책임/파일·첫 Red의 의도한 실패·최소 Green·Refactor·diff·실제 검사 결과와 남은 범위를 새 W7 실행 기록에 남긴다. 기존 검사가 이미 통과하면 새로운 Red로 만들지 않고 회귀로 기록한다. 최종 관련 `:apps:commerce-api:check`·`:apps:commerce-streamer:check`는 실제 변경 범위와 작성한 테스트에 맞춰 실행할 계획이며 계획 자체를 통과 결과로 보지 않는다. 첫 저장 증분에서 실제 실행한 범위·건수는 새 실행 기록을 따른다. 구현·필수 실험과 PR·기술 글·제출 기록의 완료를 따로 보고한다.
+
 ## W6 주문 확정 이벤트와 구매 활동 TDD 계획
+
+이 절은 W6 당시의 계약·실행 증거다. W7의 새 기대값과 현재 진행 판정은 위 계획·W7 체크리스트를 따르며 아래 기록의 통과 수나 직접 발행 책임을 W7에 그대로 적용하지 않는다.
 
 **2026-10-29 첫 모델 증분 당시 범위:** 사용자가 선택한 결정적 eventId(W6-Q01)·after-commit listener(W6-Q02)를 [전체 설계](commerce-erd-draft.md#w6-주문-확정-이벤트와-구매-활동-설계)와 [정책](commerce-policy-decisions.md#w6-이벤트-전달의-선택과-남은-결정)에 반영한다. 이번 증분은 `apps/commerce-api/src/main/java/com/loopers/domain/order/OrderConfirmedEvent.java`와 대응하는 `src/test/java/com/loopers/domain/order/OrderConfirmedEventTest.java`의 순수 모델·단위 검증 범위다. 코드 존재·실행 통과·실제 broker/DB 증거는 각각 구분하며 아래 표는 통과 기록이 아니다.
 

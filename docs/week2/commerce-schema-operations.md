@@ -4,7 +4,7 @@
 
 ## 제공 범위와 적용 순서
 
-W2의 `001`~`006`은 커머스의 6개 업무 테이블을 빈 MySQL 8 데이터베이스에 수동으로 최초 생성하는 SQL이다. W4는 조회 인덱스 `007`과 목록 캐시 버전 메타데이터 `008`을 추가했다. W5는 주문·품목의 전진 이행 `009`, 결제 시도 테이블 `010`, 요청 지문 컬럼의 전진 이행 `011`을 제공한다. 011을 위해 기존 001~010을 수정하지 않는다. 현재 **API 신규 설치는 11개 스크립트·업무 7개 + 메타데이터 1개, 총 8개 테이블**이다. W6 streamer의 별도 001·두 테이블은 아래 소비 저장 절에서 다룬다. [인덱스 기록](../week4/product-query-optimization.md)·[캐시 기록](../week4/product-list-cache-tdd-log.md)·[선행 W5 저장 연결 기록](../week5/order-payment-persistence-tdd-log.md)과 [지문 저장 증분](../week5/payment-request-fingerprint-persistence-tdd-log.md)을 구분한다.
+W2의 `001`~`006`은 커머스의 6개 업무 테이블을 빈 MySQL 8 데이터베이스에 수동으로 최초 생성하는 SQL이다. W4는 조회 인덱스 `007`과 목록 캐시 버전 메타데이터 `008`을 추가했다. W5는 주문·품목의 전진 이행 `009`, 결제 시도 테이블 `010`, 요청 지문 컬럼의 전진 이행 `011`을 제공한다. W7은 공통 Outbox 테이블 `012`를 추가하며 기존 001~011을 수정하지 않는다. 현재 **API 신규 설치는 12개 스크립트·업무 7개 + 캐시 메타데이터 1개 + Outbox 1개, 총 9개 테이블**이다. W6 streamer의 별도 001·두 테이블은 아래 소비 저장 절에서 다룬다. [인덱스 기록](../week4/product-query-optimization.md)·[캐시 기록](../week4/product-list-cache-tdd-log.md)·[선행 W5 저장 연결 기록](../week5/order-payment-persistence-tdd-log.md)과 [지문 저장 증분](../week5/payment-request-fingerprint-persistence-tdd-log.md)을 구분한다.
 
 | 순서·파일 | 역할·주요 제약 |
 | --- | --- |
@@ -19,12 +19,45 @@ W2의 `001`~`006`은 커머스의 6개 업무 테이블을 빈 MySQL 8 데이터
 | [009-order-payment-state.sql](../../apps/commerce-api/src/main/resources/db/schema/009-order-payment-state.sql) | 주문 상태 확장·nullable 결제수단 추가, 기존 CONFIRMED만 POINT 이행, 상태 CHECK 교체, 품목 예약 상태 NOT_RESERVED 추가 |
 | [010-payment-attempt.sql](../../apps/commerce-api/src/main/resources/db/schema/010-payment-attempt.sql) | 별도 payment_attempt. 주문 FK·주문/UUID/외부 식별 유일 제약, 비음수 금액·관찰 상태 CHECK, 영속 발송 시작 시각 |
 | [011-payment-request-fingerprint.sql](../../apps/commerce-api/src/main/resources/db/schema/011-payment-request-fingerprint.sql) | 기존 payment_attempt에 nullable VARBINARY(32) 지문·INT 형식/키 버전 추가. 전체 NULL 또는 정확히 32바이트·양수 두 버전만 허용하는 CHECK. 기존 행 재작성·지문 소급 생성 없음 |
+| [012-outbox.sql](../../apps/commerce-api/src/main/resources/db/schema/012-outbox.sql) | 공통 outbox_message 추가. eventId 유일성·완성 JSON 문자열·목적지·불변 사실, PENDING/PUBLISHED·시도/시간 정보. 기존 주문·결제·재고·소비 DB 변경이나 과거 사건 소급 생성 없음 |
 
-SQL 파일은 애플리케이션 시작 시 자동 실행되지 않는다. 새 마이그레이션 프레임워크나 자동 스키마 적용 프로파일을 추가하지 않았다. 파일의 번호는 수동 적용 순서다. 기존 예시 API의 ExampleModel 테이블은 이 8개 커머스 테이블 범위에 포함하지 않는다.
+SQL 파일은 애플리케이션 시작 시 자동 실행되지 않는다. 새 마이그레이션 프레임워크나 자동 스키마 적용 프로파일을 추가하지 않았다. 파일의 번호는 수동 적용 순서다. 기존 예시 API의 ExampleModel 테이블은 이 9개 테이블 범위에 포함하지 않는다.
+
+## W7 Outbox의 추가 DDL과 배포 순서
+
+**2026-11-04 저장 증분:** `012-outbox.sql`과 JPA 모델을 추가했다. 아래는 수동 적용 절차이며 **사용자 DB에 적용한 기록이 아니다.** 실제 수동 DDL·JPA 왕복·유일 제약·rollback을 다루는 전용 MySQL 컨테이너의 [OutboxSchemaIntegrationTest](../../apps/commerce-api/src/test/java/com/loopers/infrastructure/outbox/OutboxSchemaIntegrationTest.java)의 5개 테스트가 모두 통과했다. 실제 명령·범위·전체 rollback 결과는 [W7 원자성 기록](../week7/outbox-atomicity-tdd-log.md)을 따른다. 현재 진행 상태는 [W7 체크리스트](../week7/implementation-checklist.md)와 구분한다.
+
+| 저장 항목 | 타입·제약·이유 |
+| --- | --- |
+| `id` · `event_id` | BIGINT 자동 생성 PK, VARCHAR(255) 사건 ID에 `uq_outbox_event_id` 유일 제약. 한 사건을 여러 전송 시도로 나누어 새 행을 만들지 않음 |
+| `aggregate_type` · `aggregate_id` | VARCHAR(100)·VARCHAR(128). 현재 주문 사건은 `Order`·주문 ID 문자열. 공통 테이블이므로 특정 주문 FK를 두지 않으며 주문의 적격성·사실 구성은 주문 책임에서 검증 |
+| `event_type` · `schema_version` | VARCHAR(100)·양수 INT. W6 `OrderConfirmed`·버전 1의 계약 보존 |
+| `topic` · `message_key` · `payload` | VARCHAR(249)·VARCHAR(255)·LONGTEXT. 사용자 선택대로 목적지까지 함께 저장. JSON_VALID CHECK로 완성 JSON인지 검사하고, 원문 문자열은 변환 없이 보존. 이미 저장된 사건은 이후 topic 설정이나 현재 상품 정보로 재작성하지 않음 |
+| `status` · `published_at` | PENDING/PUBLISHED enum·nullable DATETIME(6). PENDING이면 published_at NULL, PUBLISHED이면 필수. PUBLISHED는 broker 확인 기록이며 소비 완료가 아님 |
+| `created_at` · `next_attempt_at` · `attempt_count` · `last_error` | DATETIME(6)·DATETIME(6)·비음수 INT·nullable VARCHAR(1000). 최초 PENDING·시도 0·다음 시각=기록 시각·오류 NULL. confirmedAt은 payload의 원래 사건 시각으로 별도 보존. relay는 전송 전 시도 수·재시도 가능 시각을 먼저 commit하고 결과에 따라 전달 상태만 갱신. 세부는 [relay 기록](../week7/outbox-relay-tdd-log.md) 참조 |
+| 인덱스·문자 비교 | `idx_outbox_due(status, next_attempt_at, id)`는 due 조회와 안정된 정렬을 위한 기반. 문자열은 `utf8mb4_0900_bin`으로 대소문자·끝 공백을 구분. relay의 실제 due 조회·제한·정렬은 격리 DB에서 검증. 대규모 실행 계획·처리량 측정은 이번 증분에 포함하지 않음 |
+
+1. 대상이 기존 001~011까지의 스키마인지 확인한다. 이 테이블은 **주문·PaymentAttempt·예약과 같은 데이터 소스/DB**에 둔다. 별도 Outbox DB나 streamer DB에 만들면 요구한 로컬 원자성을 보장하지 못한다.
+2. W7의 커밋 전 기록 코드로 전환하기 **전에 012를 한 번 수동 적용**한다. 기존 테이블이 있으면 구조를 먼저 대조하고 삭제·재생성하거나 CREATE 재실행으로 차이를 숨기지 않는다.
+3. 012에는 기존 업무 데이터의 UPDATE/DELETE나 과거 사건 backfill이 없다. 기존 주문·결제·재고와 과거 POINT 사실을 보존한다. W6 누락 복구는 별도 절차이며 이 DDL 실행만으로 완료되지 않는다.
+4. 저장 구조를 확인한 뒤 자동 재생성을 끈 상태로 W7 코드를 시작한다. relay를 아직 실행하지 않거나 전송 설정을 꺼도 Outbox **기록은 필요**하므로 012를 생략하지 않는다. 누적 PENDING을 삭제하거나 과거 직접 발행 경로를 병행하는 것으로 대체하지 않는다.
+
+```sql
+SELECT DATABASE(), VERSION(), @@SESSION.sql_mode;
+SOURCE apps/commerce-api/src/main/resources/db/schema/012-outbox.sql;
+SHOW CREATE TABLE outbox_message;
+SHOW INDEX FROM outbox_message;
+```
+
+012는 InnoDB 테이블을 추가하는 DDL이며, **DDL 적용 자체**를 주문 트랜잭션의 commit/rollback에 넣는다는 뜻은 아니다. 이후 신규 확정 요청에서 수행하는 Outbox INSERT가 기존 주문 확정과 같은 로컬 TX에 참여한다. JPA의 불변 필드는 `updatable=false`이고 공개 변경 메서드를 제공하지 않는다. 수동 SQL·운영 권한까지 불변성을 강제하는 DB trigger는 추가하지 않았다. 자동 생성 스키마만으로 CHECK·collation을 보장했다고 간주하지 않으며 실제 012로 따로 검증한다.
+
+### 기존 데이터로 relay를 실행·재개할 때
+
+현재 설정의 명령 예시·관찰 SQL·장애별 재개 방법은 [W7 운영·보존 안내](../week7/outbox-operations-retention.md)에 모았다. API의 local 프로파일은 공유 jpa.yml에서 `ddl-auto=create`를 사용하므로, **기존 주문·Outbox를 이어 사용하는 실행은 기동 인자 `--spring.jpa.hibernate.ddl-auto=none` 등 명시적인 재정의가 필요하다.** relay를 켜기 전에 같은 API DB와 준비된 스키마를 확인한다. 재시작 때 012를 다시 적용하거나 DB·볼륨을 초기화하지 않는다. 이 문서 작업에서는 사용자 DB·실행 설정을 변경하지 않았다.
 
 ## W6 streamer 구매 활동 DDL
 
-[001-purchase-activity.sql](../../apps/commerce-streamer/src/main/resources/db/schema/001-purchase-activity.sql)은 **streamer가 소유하는 두 테이블의 최초 생성 파일**이다. API의 001~011을 수정하거나 API 012로 연결하지 않는다. 사용자 DB에는 실행하지 않았고 실제 적용·검사는 격리 DB에서만 수행하며 [소비 TDD 기록](../week6/purchase-activity-consumer-tdd-log.md)에 남긴다.
+[001-purchase-activity.sql](../../apps/commerce-streamer/src/main/resources/db/schema/001-purchase-activity.sql)은 **streamer가 소유하는 두 테이블의 최초 생성 파일**이다. API의 001~012와는 별도의 데이터 소스·적용 경로다. 사용자 DB에는 실행하지 않았고 실제 적용·검사는 격리 DB에서만 수행하며 [소비 TDD 기록](../week6/purchase-activity-consumer-tdd-log.md)에 남긴다.
 
 | 테이블·컬럼 | 보호할 사실 |
 | --- | --- |
@@ -37,6 +70,8 @@ SQL 파일은 애플리케이션 시작 시 자동 실행되지 않는다. 새 �
 실행할 streamer DB를 확인한 뒤 두 테이블이 없는 경우에만 이 파일을 한 번 수동 적용한다. 기존 테이블이 있으면 구조를 대조하고 재실행·삭제·초기화로 대체하지 않는다. DDL은 자동 실행되지 않으며 여러 CREATE가 전체 원자적으로 rollback된다고 가정하지 않는다.
 
 streamer는 [purchase-activity.yml](../../apps/commerce-streamer/src/main/resources/purchase-activity.yml)을 마지막에 import해 `spring.jpa.hibernate.ddl-auto=validate`를 적용한다. 공유 jpa.yml의 local `create`가 재시작 때 완료 기록을 지우지 않도록 한 설정이다. 아직 테이블이 없으면 시작이 실패하므로 먼저 위 수동 준비가 필요하다. producer·consumer·admin에는 같은 실제 broker 주소를 사용하며 테스트는 고유 topic/group·전용 DB에서 검증한다. API DB 설정·기존 데이터는 이번 증분에서 변경하지 않는다.
+
+현재 완료·활동 테이블에는 자동 삭제 기능이 없다. 활동은 완료 기록을 `ON DELETE RESTRICT`로 참조하며, consumer는 두 테이블로 원래 사건 전체를 비교하므로 완료 기록만 TTL 캐시처럼 지우거나 활동만 정리하지 않는다. Outbox·Kafka·두 소비 테이블을 함께 보는 [보존 관계](../week7/outbox-operations-retention.md)를 따른다. 구체 삭제 일수·정리 기능·영구 보존 SLA는 이번 문서에서 새로 확정하지 않았다.
 
 ## W5 설계와 현재 DDL의 경계
 
@@ -79,9 +114,10 @@ SOURCE apps/commerce-api/src/main/resources/db/schema/008-product-list-revision.
 SOURCE apps/commerce-api/src/main/resources/db/schema/009-order-payment-state.sql;
 SOURCE apps/commerce-api/src/main/resources/db/schema/010-payment-attempt.sql;
 SOURCE apps/commerce-api/src/main/resources/db/schema/011-payment-request-fingerprint.sql;
+SOURCE apps/commerce-api/src/main/resources/db/schema/012-outbox.sql;
 ```
 
-`001`~`006`은 각각 한 테이블의 CREATE TABLE이고 `007`은 CREATE INDEX, `008`은 메타데이터 CREATE와 초기 INSERT다. `009`는 기존 주문·품목의 ALTER와 POINT 식별 UPDATE, `010`은 결제 시도 CREATE, `011`은 지문 세 컬럼·CHECK의 ALTER다. MySQL DDL의 암묵적 커밋 때문에 전체가 하나의 트랜잭션으로 취소되지는 않는다. 중간 실패 시 실제 상태를 확인하며 기존 테이블을 삭제하고 처음부터 다시 실행하지 않는다.
+`001`~`006`은 각각 한 테이블의 CREATE TABLE이고 `007`은 CREATE INDEX, `008`은 메타데이터 CREATE와 초기 INSERT다. `009`는 기존 주문·품목의 ALTER와 POINT 식별 UPDATE, `010`은 결제 시도 CREATE, `011`은 지문 세 컬럼·CHECK의 ALTER, `012`는 Outbox CREATE다. MySQL DDL의 암묵적 커밋 때문에 전체가 하나의 트랜잭션으로 취소되지는 않는다. 중간 실패 시 실제 상태를 확인하며 기존 테이블을 삭제하고 처음부터 다시 실행하지 않는다.
 
 이미 대상 테이블이 있으면 해당 CREATE가 실패한다. 기존 데이터를 지우거나 `IF NOT EXISTS`로 구조 차이를 숨기지 않는다. 이전에 브랜드 SQL만 적용했다면 기존 brand 구조가 검증한 001과 같은지 확인한 후 002부터 진행한다. 운영 중인 다른 스키마를 변경·교체하는 마이그레이션은 이번 최초 생성 파일의 역할이 아니다.
 
@@ -93,7 +129,7 @@ SOURCE apps/commerce-api/src/main/resources/db/schema/011-payment-request-finger
 2. 기존 앱과 관리 작업의 **쓰기를 중지**하고 진행 중 트랜잭션을 정리한다. 변경 전 스키마·데이터의 백업과 복구 가능 여부를 확인한다. 무중단·무잠금 이행을 보장하지 않는다.
 3. 다음 세 파일을 순서대로, 앞 파일의 성공과 결과를 확인한 뒤 실행한다. 오류·연결 중단이 나면 다음 파일로 진행하지 않는다.
 4. 기존 행·금액·확정/감사 시각·품목·잔액·재고·삭제 시각·revision을 백업/사전 확인값과 비교한다. 기존 CONFIRMED=POINT, DRAFT=null, 기존 품목=NOT_RESERVED, 새 payment_attempt=0건을 확인한다.
-5. 최신 코드와 전체 구조를 확인하고 `ddl-auto=none`으로 실행한다. ExampleModel까지 준비된 환경에서만 앱 전체 `validate`를 사용할 수 있다. 확인이 끝난 뒤 쓰기를 재개한다.
+5. W5 코드와 전체 구조를 확인하고 `ddl-auto=none`으로 실행한다. W7 코드로 시작할 때는 위 Outbox 배포 절의 012도 먼저 적용한다. ExampleModel까지 준비된 환경에서만 앱 전체 `validate`를 사용할 수 있다. 확인이 끝난 뒤 쓰기를 재개한다.
 
 ```sql
 SELECT DATABASE(), VERSION(), @@SESSION.sql_mode;
@@ -162,19 +198,19 @@ SHOW INDEX FROM product;
 
 기존 DB에는 새 코드 배포 전에 `008`을 적용하고 `SELECT * FROM product_list_revision`으로 `(1,0)`을 확인한다. **캐시 OFF도 쓰기의 버전 증가를 생략하지 않으므로 008이 필요하다.** CREATE 성공 후 INSERT만 실패했다면 트래픽을 막고 실제 행 상태부터 확인한다. 이미 존재하는 버전을 0으로 덮어쓰지 않는다. 빈 메타데이터의 동시 최초 INSERT는 교착이 발생할 수 있어 초기화를 사용자 요청에 맡기지 않는다.
 
-로컬은 사용자 선택으로 캐시 기본 OFF다. 기존 local `ddl-auto=create`는 앱 재시작 시 DB를 재생성하기 때문이다. 현재 코드로 로컬 캐시를 실험하려면 먼저 수동 스키마·011까지 준비하고 다음처럼 자동 재생성을 끄고 활성화한다. `experiment-1`은 이 DB 수명에만 사용하는 예시 구분값이다.
+로컬은 사용자 선택으로 캐시 기본 OFF다. 기존 local `ddl-auto=create`는 앱 재시작 시 DB를 재생성하기 때문이다. 현재 W7 코드로 로컬 캐시를 실험하려면 먼저 수동 스키마·012까지 준비하고 다음처럼 자동 재생성을 끄고 활성화한다. `experiment-1`은 이 DB 수명에만 사용하는 예시 구분값이다.
 
 ```shell
 ./gradlew :apps:commerce-api:bootRun --args='--spring.jpa.hibernate.ddl-auto=none --commerce.product-list-cache.enabled=true --commerce.product-list-cache.namespace=commerce:local:experiment-1:products:v1'
 ```
 
-앱 전체에 `validate`를 사용하려면 위 커머스 SQL에 포함되지 않은 기존 `ExampleModel` 테이블까지 준비되어 있어야 한다. 커머스 전용 스키마 테스트의 **8개 엔티티** validate와 앱 전체 validate는 범위가 다르다. validate만으로 FK·유일·CHECK·collation·인덱스까지 모두 검증했다고 간주하지 않는다.
+앱 전체에 `validate`를 사용하려면 위 커머스 SQL에 포함되지 않은 기존 `ExampleModel` 테이블까지 준비되어 있어야 한다. 선행 W5 커머스 전용 스키마 테스트의 **8개 엔티티**, W7 Outbox 전용 검증, 앱 전체 validate는 범위가 다르다. validate만으로 FK·유일·CHECK·collation·인덱스까지 모두 검증했다고 간주하지 않는다.
 
 DB를 초기화·복원하거나 버전을 되돌릴 때는 **모든 앱의 namespace를 새 값으로 전환**하고 진행 중 이전 앱 요청을 정리한 후 트래픽을 재개한다. 이전 Redis 키와 재사용된 버전이 충돌하지 않게 하기 위한 조건이다. 운영 중 메타데이터 삭제·reset은 지원하지 않는다. 직접 SQL로 업무 데이터를 바꾸는 운영 작업도 같은 트랜잭션의 버전 증가 또는 트래픽 중단·namespace 교체 절차가 필요하다. 공유 Redis FLUSHALL을 복구 방법으로 사용하지 않는다.
 
 ### 업무 테이블
 
-모든 테이블은 InnoDB·기본 utf8mb4_general_ci를 사용한다. **결제 시도의 외부 식별자 3개 컬럼만 utf8mb4_0900_bin**으로 대소문자·후행 공백을 구분한다. ID·가격·금액·잔액은 signed BIGINT, 재고·수량은 signed INT다. 업무 테이블에서 user ID만 애플리케이션 fixture가 지정하며 나머지 업무 ID는 AUTO_INCREMENT다. 별도 메타데이터 product_list_revision은 id=1 singleton이다. 브랜드·상품명과 주문 상품명 스냅샷은 VARCHAR(100)이고 이름에 유일 제약을 추가하지 않는다.
+기존 업무·캐시 버전 테이블은 InnoDB·기본 utf8mb4_general_ci를 사용한다. **결제 시도의 외부 식별자 3개 컬럼은 utf8mb4_0900_bin**으로 대소문자·후행 공백을 구분한다. W7 Outbox는 위 절의 별도 binary collation을 사용한다. ID·가격·금액·잔액은 signed BIGINT, 재고·수량은 signed INT다. 업무 테이블에서 user ID만 애플리케이션 fixture가 지정하며 나머지 업무 ID는 AUTO_INCREMENT다. 별도 메타데이터 product_list_revision은 id=1 singleton이다. 브랜드·상품명과 주문 상품명 스냅샷은 VARCHAR(100)이고 이름에 유일 제약을 추가하지 않는다.
 
 기존 6개와 payment_attempt→order를 더한 **7개 FK**는 모두 필수이며 참조 행의 물리 삭제를 RESTRICT한다. 상품·브랜드 논리 삭제는 deleted_at만 갱신하므로 주문항목·좋아요를 보존한다. 좋아요 취소는 좋아요 관계 행만 물리 삭제한다. 기존 복합 유일 제약은 사용자별 동일 상품 좋아요 한 건, 주문별 동일 상품 항목 한 건을 보장하며 각 단일 컬럼을 유일하게 만들지 않는다.
 
@@ -240,11 +276,14 @@ SELECT id, point_balance FROM `user` ORDER BY id;
   --tests 'com.loopers.infrastructure.schema.W5PaymentSchemaIntegrationTest' \
   --tests 'com.loopers.infrastructure.payment.PaymentAttemptPersistenceIntegrationTest' \
   --tests 'com.loopers.infrastructure.payment.PaymentAttemptFingerprintPersistenceIntegrationTest' \
+  --tests 'com.loopers.infrastructure.outbox.OutboxSchemaIntegrationTest' \
   --tests 'com.loopers.infrastructure.brand.BrandSchemaIntegrationTest' \
   --console=plain -q
 ```
 
-전체 스키마 테스트는 전용 임시 MySQL 컨테이너에서 `001`~`011` 수동 SQL을 적용하고 **업무 7개 + 버전 메타데이터, 총 8개 엔티티**를 Hibernate `validate`로 검사한다. 기존 FK·유일·수치·Unicode·시각·singleton·revision 보존 검사를 유지한다. DDL 재실행 실패가 기존 버전 42를 0으로 초기화하지 않는지도 확인한다. `007` 인덱스는 별도 assertion으로 검사한다. 테스트 소유 DB만 사용한다.
+선행 전체 스키마 테스트는 전용 임시 MySQL 컨테이너에서 `001`~`011` 수동 SQL을 적용하고 **업무 7개 + 버전 메타데이터, 총 8개 엔티티**를 Hibernate `validate`로 검사한다. 기존 FK·유일·수치·Unicode·시각·singleton·revision 보존 검사를 유지한다. DDL 재실행 실패가 기존 버전 42를 0으로 초기화하지 않는지도 확인한다. `007` 인덱스는 별도 assertion으로 검사한다. 테스트 소유 DB만 사용한다.
+
+W7 `OutboxSchemaIntegrationTest`는 별도 소유 MySQL에 **수동 012만 적용**해 Outbox 매핑 validate, 완성 문자열·메타데이터·시각의 왕복, 실제 INSERT 뒤 rollback, 동시 eventId 충돌, binary 식별·JSON/상태 CHECK를 검증한다. 이 저장 구조 검사만으로 주문·Outbox 공동 TX나 실제 relay·broker·consumer를 검증했다고 보지 않는다. 공동 TX는 [원자성 기록](../week7/outbox-atomicity-tdd-log.md), 실제 DB·broker 연결은 [relay 기록](../week7/outbox-relay-tdd-log.md)으로 구분한다. 2단계 relay에 추가 DDL은 없으며 사용자 DB에 적용하지 않았다.
 
 W5PaymentSchemaIntegrationTest는 **빈 DB에 전체 SQL 적용**, **001~008의 POINT·DRAFT fixture에 009~011 적용**, **001~010의 기존 PG fixture에 011만 적용**을 구분한다. 기존 컬럼 보존·지문 전체 NULL 보존·32바이트/양수 버전/부분 NULL 제약과 기존 상태 CHECK·FK·유일성 등을 검증한다. PaymentAttemptPersistenceIntegrationTest의 기존 식별·상태·rollback 검증에 PaymentAttemptFingerprintPersistenceIntegrationTest의 지문 왕복·별도 재조회·불변성과 실제 flush 후 rollback을 연결한다. 선행 [W5 저장 기록](../week5/order-payment-persistence-tdd-log.md)은 당시 증거로 보존하고 지문 저장 당시의 실행 결과는 [지문 저장 기록](../week5/payment-request-fingerprint-persistence-tdd-log.md), 내부 서비스 연결은 [주문 HMAC 연결 기록](../week5/order-payment-fingerprint-connection-tdd-log.md)을 따른다. 문서의 실행 명령이나 검사 계획 자체를 통과 증거로 세지 않는다.
 

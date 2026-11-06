@@ -14,7 +14,18 @@
 
 | 문서 | 역할 |
 | --- | --- |
-| [W6 채점 기준](docs/week6/grading-criteria.md) | 이번 주 주문 확정 이벤트·Kafka·상품 구매 활동 과제의 11개 평가 항목, 필수 실험·W7 인계 증거·제외 범위 |
+| [W7 채점 기준](docs/week7/grading-criteria.md) | 이번 주 Transactional Outbox·단일 relay·W6 누락 복구 과제의 공식 11항목, 필수 중단/E2E 실험·제출과 선택 범위 |
+| [W7 과제 원문](docs/week7/assignment-original.md) | 2026-11-03 제공된 구현·검증·제출 요구 원문 보존. 확정 TX의 Outbox 공동 저장, 실제 broker 중복 발행과 같은 실행의 두 사례 복구 |
+| [W7 학습 자료 원문](docs/week7/learning-original.md) | 로컬 원자성·불변 payload·relay·at-least-once·재개·관찰·보존의 개념 근거 |
+| [W7 구현 체크리스트](docs/week7/implementation-checklist.md) | W7 11항목의 새 상태, 현재 W6 코드 출발점·영향 책임·미정 선택·진행 순서. 문서 저장과 실제 구현/검사를 구분 |
+| [W7 전체 검사·증거 보완](docs/week7/final-verification.md) | 이전 전체 검사의 연결 한도 실패와 API 테스트 context cache 조정, 양 앱 전체 회귀·정적 검사와 W6 실제 사건 식별자 보완의 최신 실행 범위·결과 |
+| [W7 단일 relay TDD 기록](docs/week7/outbox-relay-tdd-log.md) | API 내부 기본 OFF·순차 10건·12초 예산·5→60초 재시도, 짧은 Outbox 상태 TX와 실제 DB/Kafka 전달 검증. 두 중단/consumer 재발행 전체 E2E와 W6 보충은 후속으로 구분 |
+| [W7 Kafka 통신 장애·재개 TDD 기록](docs/week7/outbox-kafka-outage-tdd-log.md) | 소유한 broker pause/unpause의 실제 전송 실패·SQL backlog 관찰·동일 PENDING 재개를 검증한다. 준비용 probe와 실제 사건, 시도 횟수와 broker record 수, 생산 코드와 테스트 전용 설정을 구분하며 최종 전체 검사는 별도 |
+| [W7 relay 운영·보존 안내](docs/week7/outbox-operations-retention.md) | 현재 설정의 단일 relay 실행·장애 후 같은 행 재개, 소비 실패 재시작·관찰, Outbox/Kafka/소비 기록의 보존 관계와 자동 복구 한계를 정리한다. 운영 명령은 실행 증거가 아니며 보존 일수·삭제 정책을 새로 확정하지 않음 |
+| [W7 중단·재발행 E2E 기록](docs/week7/outbox-republication-e2e-tdd-log.md) | 실제 주문 HTTP·PG·Outbox·Kafka·별도 streamer JVM/DB의 두 중단 후 새 relay 재개, 실제 별도 offset 재발행과 APPLIED/DUPLICATE·PK/수량 불변. 생산 코드 미변경이며 W6 과거 누락 보충은 후속 |
+| [W7 W6 누락 Outbox 보충·복구 기록](docs/week7/w6-outbox-backfill-tdd-log.md) | 사용자 Q06 선택의 실제 W6 직접 발행 정상/누락 준비를 같은 DB·broker·PG로 이어 복구. 내부 명시 주문 보충·기존 행 비교/보존·실제 rollback/경합·누락 생성·기소비 PK 보존·PG/업무 추가 효과 0·두 번째 복구 불변을 검증. 최종 W7 전체 대조는 별도 |
+| [W7 Outbox 공동 저장 TDD 기록](docs/week7/outbox-atomicity-tdd-log.md) | 공통 BEFORE_COMMIT·MANDATORY 기록, 불변 topic/JSON·추가 DDL·실제 SQL 후 전체 rollback·기존 PG GET 복구의 첫 저장 증분. relay·중단 재발행·W6 backfill은 후속이며 사용자 DB 미변경 |
+| [W6 채점 기준](docs/week6/grading-criteria.md) | 이전 주 주문 확정 이벤트·Kafka·상품 구매 활동 과제의 11개 평가 항목, 회귀와 W7 재현 준비의 근거 |
 | [W6 과제 원문](docs/week6/assignment-original.md) | 2026-10-27 제공된 구현·검증·제출 요구 원문 보존. 직접 after-commit 발행과 구매 활동 소비, Outbox·랭킹 구현 제외 |
 | [W6 학습 자료 원문](docs/week6/learning-original.md) | 이벤트·Kafka 배정/offset·전달 보장·DB 중복 방지·발행 누락의 개념 근거 |
 | [W6 구현·검증 체크리스트](docs/week6/implementation-checklist.md) | W6 공식 11항목의 새 상태, 기존 코드 출발점·영향 파일·미정 선택·진행 순서. 문서 작성과 구현/실행 완료를 구분 |
@@ -72,11 +83,15 @@
 
 기능 작업 시 전체 설계와 해당 기능의 API 계약·정책 선택·TDD 기대값을 함께 확인한다. 제안이나 미정 정책은 문서 분리만으로 확정되지 않는다.
 
-현재 채점은 W6 원문을 우선한다. W5의 PG 결제·예약·결과 복구에서 출발하여 최초 PG 확정 commit 뒤 OrderConfirmed를 Kafka로 직접 발행하고 commerce-streamer가 구매 활동을 저장하도록 확장한다. W5의 포인트 차감 분리·재요청·TX/락, 이전 POINT 사실·기존 오류·소유권·삭제 비노출 등 변경 대상이 아닌 계약은 보존한다. 기존 통과 기록을 W6 충족으로 이어받지 않으며, 새 11개 항목의 코드·실제 broker/DB·실행 증거를 따로 확인한다. 채점 기준 저장만으로 기능 구현·설계 갱신이 완료된 것으로 보지 않는다.
+현재 채점은 W7 원문을 우선한다. W6의 PG 결과 적용·OrderConfirmed 계약·Kafka·구매 활동 consumer에서 출발해 주문 확정 후 직접 발행을 같은 확정 TX의 Outbox 저장과 단일 polling relay로 교체한다. W5의 포인트 차감 분리·재요청·TX/락, 과거 POINT·소유권·삭제 비노출 및 W6 소비 중복 방지·실패 정책은 보존한다. 이전 통과 기록을 W7 충족으로 이어받지 않으며 새 11항목의 코드·실제 DB/broker·실행 증거를 확인한다. 기준 문서 갱신과 기능 구현·설계 완료를 구분하고, 제출 기록을 기능 결함처럼 표현하지 않는다.
 
-W6에서는 stable eventId·orderId key·저장된 최초 confirmedAt/품목을 사용한다. 발행 실패로 확정 주문을 되돌리거나 PG 결제를 다시 만들지 않는다. 소비 완료 기록과 모든 품목의 구매 활동은 같은 DB TX로 보호하고 commit 성공 후 ack한다. 같은 사실의 재전달과 식별자/payload 충돌을 구분하며 메모리 중복 검사·producer idempotence만으로 DB 효과를 보호했다고 보지 않는다. 실제 offset 재전달과 실제 Spring listener 실패/재시작은 각각 검증한다.
+최초 PG 성공 반영·주문 확정·예약 소비와 Outbox insert는 같은 데이터 소스의 같은 로컬 TX에서 함께 commit/rollback한다. serialization 실패도 전파하며 Outbox만 REQUIRES_NEW 또는 after-commit insert로 분리하지 않는다. rollback 시 기존 미완료 주문·시도·예약은 TX 직전 상태로 남는다. 외부 PG SUCCESS가 남아 있으면 같은 거래 재조회로 결과 적용을 다시 시도하고 새 결제를 만들지 않는다. W7 주문 경로에서 기존 직접 send와 relay를 의도치 않게 병행하지 않는다.
 
-Outbox·랭킹 API는 이번 구현 범위가 아니다. 직접 발행의 누락과 정상 소비 두 사례는 W6 직접 경로의 재현 코드·실제 사건 사실·사용 revision으로 남기고 테스트 자원은 정리한다. W7을 위해 임시 DB를 계속 켜두거나 Outbox 실행 뒤 행을 지워 누락을 꾸미지 않는다. 미정 구현 선택은 기존 원칙대로 질문하며 사용자 DB·다른 실행의 topic/group·볼륨을 삭제하지 않는다.
+Outbox는 W6의 stable eventId·orderId key·최초 confirmedAt·품목과 불변 payload를 저장한다. 단일 relay는 DB TX 밖에서 저장 사실을 보내고 producer future의 broker 성공 확인 뒤 별도 상태 TX에서 PUBLISHED로 바꾼다. 실패·timeout·broker 성공 후 상태 저장 실패는 같은 사건의 재시도 대상으로 유지한다. 늦은 callback이 새 시도의 상태를 임의 변경하지 않게 한다. PUBLISHED와 소비 완료, 시도 횟수와 실제 broker record 수, W6의 같은 offset 재전달과 W7의 같은 eventId 재발행을 구분한다. 소비 완료 기록·전체 품목 공동 TX·commit 뒤 ack·중복/충돌 판정은 유지한다.
+
+W6 두 사례는 보존한 W6 테스트 구성 또는 revision 실행물로 실제 직접 발행 경로를 새 격리 실행에서 준비한다. 구현 revision `dd86f49`는 그 근거이며 특정 준비 방식만 강제하지 않는다. 실제 원본 DB를 보존했다면 보존 근거·사건 사실을 확인하고 준비 재현을 생략할 수 있다. 준비부터 복구 완료까지 같은 DB·broker·PG 상태를 유지하고 원본 사실의 eventId·confirmedAt·품목으로 없는 Outbox만 추가한다. 기존 행은 일치를 확인하고 부족한 사실·충돌을 추측하지 않는다. 준비와 복구의 PG 호출 기준을 분리하고 복구 중 create·조회·callback 추가 호출, 주문 재확정·예약 추가 소비는 모두 없어야 한다. SUCCESS 직접 insert·W7 Outbox 삭제·중간 정리·제품 운영용 우회 스위치로 누락을 꾸미지 않는다. W6 revision 연결은 완료된 기반이며 W7 복구 완료로 승계하지 않는다.
+
+이번 필수 구현은 Outbox와 단일 polling relay다. 다중 relay·CDC 플랫폼·범용 saga·새 결제수단·랭킹 API·공개 복구 관리자 API로 확대하지 않는다. 미발행·격리 행은 자동 삭제하지 않고 재개·보존·단일 실행의 한계를 설명한다. 미정 구현 선택은 먼저 질문하되 원문이 이미 정한 요구를 미정 정책으로 되돌리지 않는다. 자신이 만든 테스트 자원만 마지막에 정리하며 사용자 DB·다른 실행의 topic/group·볼륨을 삭제하지 않는다.
 
 ## 설계 문서 작성 지침
 
@@ -84,15 +99,15 @@ Outbox·랭킹 API는 이번 구현 범위가 아니다. 직접 발행의 누락
 
 | 표현할 것 | 반드시 담을 내용 |
 | --- | --- |
-| 버드뷰 | 고객·관리자, API 서버, DB와 로컬 테스트 PG의 관계, 생성·조회·callback의 요청 방향. W6에서는 API 생산자 → Kafka → commerce-streamer → 구매 활동 DB와 발행/소비 실패 경계도 함께 표현 |
+| 버드뷰 | 고객·관리자, API 서버, DB와 로컬 테스트 PG의 관계, 생성·조회·callback의 요청 방향. W7에서는 API의 확정·Outbox 공동 DB TX → 단일 relay → Kafka → commerce-streamer → 구매 활동 DB와 두 중단 경계를 표현 |
 | 구조와 의존 | `interfaces` / `application` / `domain` / `infrastructure`의 역할과 허용하는 코드 의존 방향 |
-| 도메인 관계 | `Brand–Product`, `User–Like–Product`, `Order–OrderItem`의 관계와 재고·포인트의 책임. W5 결제 시도·예약·외부 거래 식별과 W6 확정 이벤트·소비 완료·상품 구매 활동의 식별/유일성·원자성도 함께 표현 |
-| 대표 흐름 | 관리자 변경 → 고객 조회, 좋아요 등록·취소, 주문 결제의 **세 가지 흐름 모두**. W2 POINT 결제는 과거 흐름으로 구분하고, W5 PG 시도 → 결과 확인 → 주문·예약 반영에 W6 최초 확정 commit → 직접 발행 → 구매 활동 저장 → ack를 확장. 포인트 충전·조회는 독립 유지 |
+| 도메인 관계 | `Brand–Product`, `User–Like–Product`, `Order–OrderItem`과 재고·포인트 책임. W5 결제 시도·예약, W6 확정 이벤트·소비 완료·활동의 식별/유일성에 W7 Outbox의 불변 key/payload·상태·시도·시간·원자성을 확장 |
+| 대표 흐름 | 관리자 변경 → 고객 조회, 좋아요 등록·취소, 주문 결제의 **세 가지 흐름 모두**. W2 POINT와 W6 직접 발행은 과거 흐름으로 구분하고 W7은 PG 결과 → 확정·예약·Outbox 공동 commit → relay 발행 뒤, relay의 broker 확인·PUBLISHED 저장과 consumer의 구매 활동·ack를 각각 표현. PUBLISHED 저장과 소비 완료의 선후는 보장하지 않음. 포인트 충전·조회는 독립 유지 |
 
 - 초안의 확정된 업무 규칙을 유지하고, 설계 제안과 미정 정책은 구분하여 표시한다. 제안이나 미정 정책을 임의로 확정하지 않는다.
 - 각 흐름에는 요청 주체, 처리 순서, 상태·데이터 변경, 성공·실패 결과와 책임 주체를 드러낸다.
 - 버드뷰의 요청 방향, 계층 간 코드 의존 방향, 실행 시 호출 순서를 혼동하지 않도록 구분한다.
 - 포인트 충전 흐름만을 근거로 외부 결제 연동이나 이력 테이블을 추가하지 않는다. W5에서 명시한 로컬 테스트 PG 교체는 해당 과제 범위로 다루며, 실제 PG·환불·정산 등으로 확대하지 않는다. 미정 사항은 먼저 질문한다.
-- W6 계약·전달/DB 경계는 기존 전체 설계에 확장하고 API·정책·TDD 문서와 연결한다. after-commit과 broker 발행의 원자성, broker 수신과 소비 DB 완료, position과 committed offset을 구분한다. 원문 예시의 테이블명·eventId 생성법·listener factory·error handler를 유일한 정답으로 강제하지 않는다.
+- W7 계약·Outbox/relay/소비 DB 경계는 기존 전체 설계에 확장하고 API·정책·TDD 문서와 연결한다. 주문·Outbox의 로컬 원자성과 Kafka 발행, broker 확인과 PUBLISHED 저장 및 소비 완료, 재발행과 동일 offset 재전달을 구분한다. 원문의 테이블·테스트 이름과 재시도 수치·선택적 BLOCKED를 유일한 정답으로 강제하지 않는다. 전체 설계 확장은 후속 구현 선택과 실제 변경에 맞춰 수행한다.
 - 설계한 내용과 실제 구현된 내용을 구분한다. 문서 작성 요청만으로 코드를 구현하지 않는다.
 - 관계와 흐름은 표·다이어그램으로 읽기 쉽게 표현하고, 같은 내용을 불필요하게 반복하지 않는다.

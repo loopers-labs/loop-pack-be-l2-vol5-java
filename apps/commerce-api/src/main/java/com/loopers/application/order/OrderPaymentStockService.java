@@ -309,7 +309,7 @@ public class OrderPaymentStockService {
                                   Map<Long, Product> locked) {
         if (attempt.getStatus() == PaymentAttemptStatus.SUCCESS) {
             if (order.confirmPgPayment(ZonedDateTime.now(orderPaymentClock))) {
-                // Build while the stored items are accessible; the listener sends only after the actual commit.
+                // Snapshot stored facts now; the common listener records Outbox before this transaction commits.
                 events.publishEvent(OrderConfirmedEvent.from(order));
             }
         } else if (attempt.getStatus() == PaymentAttemptStatus.FAILED) {

@@ -1,3 +1,4 @@
-# Unrelated regressions must not publish to a developer's broker. W6 broker tests explicitly enable an owned broker.
+# Disable transport to developer brokers, not W7 Outbox recording. W6 fixtures enable an owned broker explicitly.
 commerce.order-events.enabled: false
+commerce.outbox-relay.enabled: false
 spring.kafka.bootstrap-servers: 127.0.0.1:1

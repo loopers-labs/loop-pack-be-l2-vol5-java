@@ -2,6 +2,8 @@
 
 [전체 설계](commerce-erd-draft.md) · [정책 선택과 설계 검토](commerce-policy-decisions.md) · [TDD 계획](commerce-tdd-plan.md)
 
+**2026-11-04 W7 저장·relay·W6 복구 구현:** 공통 Outbox에 완성 JSON·topic·key를 저장하고 공통 BEFORE_COMMIT listener를 최초 확정 TX에 연결했다. 기존 HTTP 입출력은 유지한다. 현재 주문 경로는 Outbox PENDING까지 저장하며 Kafka 직접 발행을 호출하지 않는다. 후속 2단계에서 기본 OFF인 단일 relay를 연결했다. 저장 payload를 전송하고 broker 확인 뒤 별도 TX로 PUBLISHED를 기록한다. 후속 [중단·재발행 E2E](../week7/outbox-republication-e2e-tdd-log.md)에서 실제 주문 확정 HTTP·PG·Kafka·streamer를 연결해 두 중단 구간과 재개 뒤 구매 활동 불변을 확인했다. 후속 [W6 Outbox 보충·복구 기록](../week7/w6-outbox-backfill-tdd-log.md)에서는 같은 격리 실행의 누락·기소비 두 사건을 복구했다. 내부 보충 서비스만 추가했고 공개 HTTP 계약은 바꾸지 않았다. [relay TDD 기록](../week7/outbox-relay-tdd-log.md)에 이번 검증을 구분한다. 실제 결과와 범위는 [Outbox 원자성 TDD 기록](../week7/outbox-atomicity-tdd-log.md)에 남긴다. 사용자 DB에는 DDL을 적용하지 않았다.
+
 고객 계약 C01~C12와 관리자 계약 A01~A13의 입력·응답·오류와 W5의 결제 교체 계약을 정리한다. 업무 규칙과 세 대표 흐름은 전체 설계를 참조한다. **2026-10-23 현재 내부 startNew·startOrReuse·단건 refreshOnce에서 실제 PG HTTP, HMAC 저장/비교와 주문·재고 TX A/B를 연결했다. 고객 confirm·고객/관리자 주문 조회·최초 요청 제한 조회·PG 조회 회로를 연결했다. callback/reconcile HTTP도 연결했으며 이번 검증 결과는 [복구 API TDD 기록](../week5/payment-recovery-api-tdd-log.md)을 따른다. confirm·조회·제한 조회의 선행 증거는 [고객 결제 API TDD 기록](../week5/customer-payment-api-tdd-log.md)으로 보존한다.** HTTP·재고의 선행 결과는 [HTTP·주문·재고 연결 기록](../week5/order-payment-http-connection-tdd-log.md), 후속 지문 공동 저장·내부 동일 재요청은 [주문 HMAC 연결 기록](../week5/order-payment-fingerprint-connection-tdd-log.md)을 따른다. [재고 확보·반환 기록](../week5/order-stock-reservation-tdd-log.md), [PG HTTP 기록](../week5/local-test-pg-http-tdd-log.md), [주문·결제 기록](../week5/order-payment-persistence-tdd-log.md), [예약 상태 기록](../week5/order-reservation-state-tdd-log.md)과 [결제 시도 기록](../week5/payment-attempt-state-tdd-log.md)은 선행 증거로 보존한다. 고객 confirm API는 이제 PG 방식이며 관리자 status 필터는 승인된 DRAFT·CONFIRMED·PAYMENT_PENDING·PAYMENT_FAILED를 허용한다. 이전 POINT의 저장 사실과 본문 없는 재확정 오류는 보존한다. 최초 요청의 제한 조회·시간/회로 초기값과 저장 A안, 후속 UUID 키·테스트 PG 규격 카드 입력·호출 전 DB 상태 전이로 최초 발송을 보호하는 사용자 선택은 유지한다. 아래 W5 고객 confirm·조회와 callback/reconcile 계약은 현재 코드에 연결했다. 선행 관리자 재고 상한 응답은 구현돼 있다. `기본 API 계약` 이하의 기존 표는 W2~W4 구현과 POINT 결제의 기준을 보존하며 변경 대상이 아닌 계약은 계속 유지한다.
 
 2026-09-18 추천 묶음 승인은 기존 입력·응답·정렬·오류 계약에 대한 것이다. 기존 “제안” 절 제목은 연결된 앵커를 보존하기 위한 이름이며 당시 확정 범위를 가리킨다. **W5의 신규 필드·오류 코드·기술 제안까지 승인된 것으로 해석하지 않는다.**
@@ -10,9 +12,40 @@
 
 **후속 승인 · 주문 재확정:** C10의 본인 CONFIRMED 주문 재요청은 `409 ORDER_ALREADY_CONFIRMED`로 거절하도록 변경했다. 사용자 승인 P16의 `W3-RECONFIRM-01..06` 구현·검증을 완료했으며, 실제 결과는 [재확정 실행 기록](../week3/order-reconfirmation-tdd-log.md)을 따른다. 이 오류는 W5 교체 후에도 **이전 POINT 확정 주문에 유지**하고, PG 동일 시도의 종결 결과 반환과 구분한다. 당시 재확정 증분은 W3의 8개 주문 재고 경쟁·3개 주문 포인트 경쟁·주문 내부 저장 경계 실패/롤백 검증·갱신 유실 대조군까지 포함한 완료 기록은 아니다.
 
+## W7 Outbox와 기존 API의 기대 계약
+
+[W7 과제 원문](../week7/assignment-original.md)·[전체 설계](commerce-erd-draft.md#w7-outbox와-단일-relay-설계)에 따른 계약이다. **공동 Outbox 저장·단일 relay·중단/재발행 E2E와 W6 기존 누락 Outbox 보충·복구를 구현·검증했다.** 최종 전체 검사와 W7 채점 대조는 별도로 남아 있다. [W7 정책 선택](commerce-policy-decisions.md#w7-outbox-설계의-선택과-질문)과 [W7 TDD 기대값](commerce-tdd-plan.md#w7-outbox-원자성과-복구-tdd-계획)에 연결한다. 고객·관리자의 endpoint·요청/응답 DTO·기존 소유권·삭제 비노출·200/202 의미·오류 계약을 유지한다. Outbox 상태·relay 시도 수·소비 완료를 주문 응답에 새 필드로 추가하지 않는다.
+
+| 상황 | W7 기대 계약·보존할 결과 |
+| --- | --- |
+| 최초 PG SUCCESS의 내부 확정 | 기존 confirm·callback·reconcile이 공통 결과 적용 TX를 사용한다. 검증된 PG 성공·주문 CONFIRMED·예약 소비·최초 confirmedAt과 같은 사건의 Outbox PENDING이 함께 commit한 뒤 성공 결과를 반환한다. |
+| serialization·Outbox insert 또는 공동 commit 실패 | 오류를 성공으로 숨기지 않고 기존 내부 오류 변환 경계로 전파한다. 새 오류 코드·응답 모양은 추가하지 않는다. TX 직전의 미완료 주문·시도·예약을 보존하고 새 Outbox는 0이다. 외부 PG SUCCESS가 남았다고 로컬 주문을 임의 성공/실패로 표시하지 않는다. |
+| 공동 commit 뒤 relay 지연·장애 | 저장된 CONFIRMED·PG 결과를 그대로 응답한다. 고객 요청에서 broker/consumer 완료를 기다리지 않으며 PENDING Outbox 때문에 결제를 PAYMENT_PENDING·UNKNOWN·FAILED로 바꾸거나 새 create를 호출하지 않는다. |
+| 같은 시도·중복 callback·reconcile | 기존 요청 비교·권위 검증·종결 결과 재반환 계약을 유지한다. 같은 최초 확정에는 Outbox 한 행이며 재요청을 별도 사건·Outbox 추가·직접 send 지시로 사용하지 않는다. |
+| DRAFT·대기·UNKNOWN·확정 FAILED·과거 POINT | 비성공 결과에는 OrderConfirmed Outbox 0. 기존 200/202·payment 표현·과거 POINT의 조회/재확정 오류를 보존하고 POINT 전체를 자동 소급하지 않는다. |
+| 고객·관리자 GET | 기존 저장 상태·최초 확정 시각·주문 품목을 반환한다. PG 호출·Outbox 보충·relay 강제 실행·소비 완료를 GET의 부수 효과로 추가하지 않는다. |
+| broker 확인·PUBLISHED·소비 완료 | producer future 성공과 별도 상태 TX를 거친 PUBLISHED는 내부 전달 상태다. 소비 DB commit·ack와 선후를 보장하지 않으며 고객에게 구매 활동 완료로 표현하지 않는다. 소비 실패는 기존 listener 정책으로 처리하고 주문·재고·포인트 결과를 다시 적용하지 않는다. |
+
+W6 `OrderConfirmed`의 여섯 JSON 필드·stable eventId·orderId 문자열 key·최초 confirmedAt·저장 items와 기존 topic/consumer group 계약을 유지한다. 사용자 선택에 따라 완성 JSON과 목적지 topic·key를 `outbox_message`에 불변 보관한다. 공통 listener → MANDATORY recorder → JPA 저장이 같은 TX에 참여하며 serialization/저장 오류를 전파한다. relay는 전용 StringSerializer로 저장 내용을 그대로 전송한다. 현재 상품·바뀐 topic 설정으로 재구성하지 않으며 주문 경로의 직접 send와 병행하지 않는다. 자동 실행은 `commerce.outbox-relay.enabled=false`가 기본이며, OFF여도 확정 TX의 Outbox 기록은 유지한다. 새 공개 수동 실행 API는 추가하지 않는다.
+
+실제 중단 검증에서는 HTTP 확정 commit 후 전송을 시작하지 않은 경우와, Kafka 성공 metadata를 받은 뒤 상태 저장 본문 직전에 테스트 전용 예외를 낸 경우를 대조했다. 같은 DB·broker에서 새 relay 객체로 재개해 후자는 동일 사건의 별도 record 두 건으로 전달됐지만 구매 활동은 한 번만 남았다. 이는 OS 강제 종료 검증이 아니며 API 응답·생산 코드 변경도 없다. 실행 근거는 [중단·재발행 기록](../week7/outbox-republication-e2e-tdd-log.md)을 따른다.
+
+복구의 두 의미를 구분한다.
+
+| 복구 대상 | 허용되는 경로 | 추가 효과의 기대값 |
+| --- | --- | --- |
+| W7 최초 확정 TX가 rollback한 기존 미완료 주문 | 기존 거래의 PG 재조회 → 같은 결과 적용 TX 재시도 | 추가 create 0. 최초 성공 반영·예약 소비·Outbox가 함께 한 번 완료된다. 기존 confirm 동일 재요청은 원래의 저장 결과 반환 계약을 유지한다. |
+| 이미 확정된 W6 누락·기소비 두 사례 | 같은 격리 실행의 저장된 원본 사실 확인 → 없는 Outbox만 추가 → 단일 relay·기존 consumer | 복구 시작 후 PG create·조회·callback 추가 호출 0, 주문 재확정·예약 추가 소비 0. 누락 활동 생성·기소비 활동 불변·두 번째 복구 불변이다. |
+
+W6 준비 때 수행한 기존 주문 API·PG 호출은 복구 직전 기준값과 분리한다. 보존한 `W6DirectPublicationTestConfiguration`으로 실제 두 주문을 준비한 뒤 같은 DB·broker·PG·streamer를 유지한 [W6 복구 E2E](../week7/w6-outbox-backfill-tdd-log.md)에서 누락 활동 생성·기소비 활동 불변·두 번째 복구 불변을 확인했다. 제품 설정으로 옛 직접 발행 경로를 켜지 않는다.
+
+내부 `OrderOutboxBackfillService.backfill(orderId)`는 지정한 PG 확정 주문과 저장된 SUCCESS 시도의 일관성을 검증하고 원래 eventId·confirmedAt·품목으로 없는 Outbox만 추가한다. `CREATED`·`ALREADY_PRESENT`는 내부 반환값이며 HTTP 상태나 새로운 고객 오류 계약이 아니다. 기존 행의 불변 metadata·JSON 사실이 다르거나 원본 사실이 부족하면 거절하고 기존 상태를 보존한다. 현재 mapping과 저장 topic이 다르면 원래 목적지를 덮어쓰지 않는다. 새 행의 생성 시각만 복구 시각이며 사건 시각은 그대로다.
+
+이 서비스는 **공개 복구 관리자 API·고객 이벤트 발행 API·구매 활동 조회·랭킹 API나 자동 대상 검색을 추가하지 않는다.** 고객 confirm·reconcile·callback·GET을 전달 복구의 진입점으로 사용하지 않는다. 준비 선택과 일치 비교의 상세 경계는 [W7-Q06](commerce-policy-decisions.md#w7-q06--보존한-w6-준비-구성과-명시적-outbox-보충), relay 실행·재시도는 Q03~Q05를 따른다.
+
 ## W6 확정 이벤트와 기존 API의 경계
 
-**2026-10-29 W6 연결:** 기존 PG 최초 확정 뒤 Kafka 발행과 streamer의 구매 활동 저장·중복 처리를 연결했다. 실제 발행/소비 증분의 검사 범위와 PG→streamer 전체 실험은 구분한다. 고객이 임의의 `OrderConfirmed`를 발행하는 공개 endpoint, 구매 활동 조회·랭킹 API는 추가하지 않는다. 생산자 이벤트 계약은 [전체 설계](commerce-erd-draft.md#w6-주문-확정-이벤트와-구매-활동-설계), 선택한 결정적 eventId·after-commit listener는 [정책](commerce-policy-decisions.md#w6-이벤트-전달의-선택과-남은-결정)을 따른다.
+**2026-10-29 W6 연결:** 아래는 교체 전 구현·실험의 계약 기록이다. 기존 PG 최초 확정 뒤 Kafka 발행과 streamer의 구매 활동 저장·중복 처리를 연결했다. 실제 발행/소비 증분의 검사 범위와 PG→streamer 전체 실험은 구분한다. 고객이 임의의 `OrderConfirmed`를 발행하는 공개 endpoint, 구매 활동 조회·랭킹 API는 추가하지 않는다. 생산자 이벤트 계약은 [전체 설계](commerce-erd-draft.md#w6-주문-확정-이벤트와-구매-활동-설계), 당시 선택한 결정적 eventId·after-commit listener는 [정책](commerce-policy-decisions.md#w6-이벤트-전달의-선택과-남은-결정)을 따른다. 현재 공동 Outbox 저장·relay·중단 재개 검증의 범위는 위 W7 절을 따르며 아래 기록은 W6 테스트 전용 구성으로 보존한다.
 
 | 상황 | 유지할 API 계약 |
 | --- | --- |

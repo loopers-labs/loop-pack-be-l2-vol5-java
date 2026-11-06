@@ -3,6 +3,7 @@ package com.loopers.application.event;
 import com.loopers.domain.event.DomainEvent;
 import com.loopers.domain.event.DomainEventPublisher;
 import com.loopers.domain.order.OrderConfirmedEvent;
+import com.loopers.support.event.W6DomainEventListener;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,9 +34,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 
-/** Real Spring event synchronization without a DB. Real SQL rollback is covered by the order integration test. */
+/** Preserved W6 AFTER_COMMIT contract; W7 common recording has its own tests and failure expectations. */
 @ExtendWith(OutputCaptureExtension.class)
-class DomainEventListenerTest {
+class W6DomainEventListenerTest {
     private final OrderConfirmedEvent order = new OrderConfirmedEvent("OrderConfirmed", 1,
         "order-confirmed:v1:42", 42L, Instant.parse("2026-10-29T00:00:00.123456Z"),
         List.of(new OrderConfirmedEvent.Item(7L, 2)));
@@ -147,7 +148,7 @@ class DomainEventListenerTest {
 
     @Configuration(proxyBeanMethods = false)
     @EnableTransactionManagement
-    @Import(DomainEventListener.class)
+    @Import(W6DomainEventListener.class)
     static class TestConfiguration {
         @Bean
         DomainEventPublisher domainEventPublisher() {

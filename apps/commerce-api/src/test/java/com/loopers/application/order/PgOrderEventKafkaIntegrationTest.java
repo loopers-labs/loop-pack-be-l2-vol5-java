@@ -15,6 +15,7 @@ import com.loopers.infrastructure.event.KafkaDomainEventPublisher;
 import com.loopers.infrastructure.event.KafkaEventRoute;
 import com.loopers.infrastructure.payment.support.LocalTestPg;
 import com.loopers.infrastructure.user.FixtureUserInitializer;
+import com.loopers.support.event.W6DirectPublicationTestConfiguration;
 import com.loopers.utils.DatabaseCleanUp;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
@@ -40,6 +41,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -75,8 +77,9 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
-/** Real PG HTTP, committed MySQL and Kafka wire records; this is not the streamer/offset-redelivery experiment. */
+/** Preserved W6 direct publication using real PG HTTP, committed MySQL and Kafka wire records. */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import(W6DirectPublicationTestConfiguration.class)
 @Testcontainers
 @ExtendWith(OutputCaptureExtension.class)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
@@ -325,6 +328,7 @@ class PgOrderEventKafkaIntegrationTest {
     }
 
     private void assertCommitted(Fixture fixture) {
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM outbox_message", Long.class)).isZero();
         assertThat(jdbc.queryForObject("SELECT status FROM `order` WHERE id=?", String.class, fixture.orderId()))
             .isEqualTo("CONFIRMED");
         assertThat(jdbc.queryForObject("SELECT status FROM payment_attempt WHERE order_id=?", String.class, fixture.orderId()))
