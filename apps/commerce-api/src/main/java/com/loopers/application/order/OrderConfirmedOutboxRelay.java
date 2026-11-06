@@ -12,6 +12,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -72,7 +73,7 @@ public class OrderConfirmedOutboxRelay {
      * 추측하지 않고 오류를 드러낸다: 없는 eventId 는 NOT_FOUND, 있지만 BLOCKED 가 아닌 행은 CONFLICT.
      */
     public OutboxRelayResult resume(String eventId) {
-        ZonedDateTime now = ZonedDateTime.now(clock);
+        ZonedDateTime now = now();
         int resumed = transactionTemplate.execute(status -> {
             OrderConfirmedOutbox outbox = repository.findByEventId(eventId)
                 .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[eventId = " + eventId + "] Outbox 행이 없습니다."));
@@ -89,8 +90,13 @@ public class OrderConfirmedOutboxRelay {
         return runOnce();
     }
 
+    /** 저장 시각은 확정 경로와 같은 규칙으로 밀리초까지만 쓴다 (W6 D2). */
+    private ZonedDateTime now() {
+        return ZonedDateTime.now(clock).truncatedTo(ChronoUnit.MILLIS);
+    }
+
     private OutboxRelayResult runRound() {
-        ZonedDateTime now = ZonedDateTime.now(clock);
+        ZonedDateTime now = now();
         // ① 조회 TX (읽기만). 재시도 시간이 된 PENDING 을 안정된 순서로 묶음 크기만큼
         List<OrderConfirmedOutbox> batch = transactionTemplate.execute(status ->
             repository.findPendingDue(now, properties.batchSize()));
@@ -119,7 +125,7 @@ public class OrderConfirmedOutboxRelay {
             // ④ 결과 TX. 모두 WHERE status = PENDING 조건부 UPDATE (D25)
             switch (result.outcome()) {
                 case PUBLISHED -> {
-                    ZonedDateTime publishedAt = ZonedDateTime.now(clock);
+                    ZonedDateTime publishedAt = now();
                     transactionTemplate.execute(status -> repository.markPublished(row.getId(), publishedAt));
                     published++;
                     log.info("outbox 발행 성공. eventId={}, orderId={}, attempt={}, topic={}, partition={}, offset={}",
@@ -132,7 +138,7 @@ public class OrderConfirmedOutboxRelay {
                         row.getEventId(), row.getOrderId(), attemptCount, result.detail());
                 }
                 case RETRY -> {
-                    ZonedDateTime nextAttemptAt = ZonedDateTime.now(clock).plus(backoffAfter(attemptCount));
+                    ZonedDateTime nextAttemptAt = now().plus(backoffAfter(attemptCount));
                     transactionTemplate.execute(status -> repository.scheduleRetry(row.getId(), nextAttemptAt, result.detail()));
                     retried++;
                     log.warn("outbox 전송 실패·미확인 → 재시도 예약. broker 불가로 이번 회차를 끝낸다. eventId={}, orderId={}, attempt={}, nextAttemptAt={}, cause={}",

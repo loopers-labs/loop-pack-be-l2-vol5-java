@@ -3,9 +3,13 @@ package com.loopers.crossapp;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.application.order.OrderCommand;
+import com.loopers.application.order.OrderConfirmedOutboxBackfill;
+import com.loopers.application.order.OrderConfirmedOutboxRelay;
 import com.loopers.application.order.OrderFacade;
+import com.loopers.application.order.OutboxRelayResult;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderConfirmedEvent;
+import com.loopers.domain.order.OrderConfirmedOutbox;
 import com.loopers.domain.order.OrderConfirmedOutboxRepository;
 import com.loopers.domain.payment.PaymentAttempt;
 import com.loopers.domain.payment.PaymentTransaction;
@@ -41,6 +45,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -60,10 +65,15 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mockingDetails;
 
 /**
  * 7주차 과제 5절 "새 격리 실행에서 W6 누락 상태를 재현하고 복구하기" (📄 p.4~5).
- * 이번 커밋은 준비 5-1 ~ 5-3 까지다. 복구 5-4 ~ 5-6 은 W7 Outbox·relay 가 생긴 뒤 같은 테스트 메서드 안에 이어 붙인다.
+ * 준비 5-1 ~ 5-3 과 복구 5-4 ~ 5-6 을 한 테스트 메서드에서 이어서 실행한다. 사이에 DB·broker·PG 초기화가 없다.
+ *
+ * <p>복구 (설계 D34~D36): 같은 DB 에서 A·B 의 저장된 확정 사실로 Outbox 를 backfill → 단일 relay 한 회차 → 기존 consumer.
+ * A 는 빠졌던 구매 활동이 생기고, B 는 재발행이 와도 장부·활동 불변. 두 번째 복구는 Outbox·구매 효과를 늘리지 않는다.
+ * 복구 중 PG create·조회·callback 추가 호출 0, 주문 재확정·예약 추가 소비 0 을 기준값과 비교한다.
  *
  * <p>준비 (W6 직접 발행 경로 {@link W6DirectPublishPath} 로 두 합성 주문을 확정):
  * <ul>
@@ -120,10 +130,15 @@ class W6GapReproductionAndRecoveryTest {
     private FakeOrderConfirmedPublisher fakePublisher;
     @Autowired
     private KafkaOrderConfirmedPublisher kafkaPublisher;
-    @Autowired
+    /** streamer 장부 저장소. spy 로 두어 consumer 가 장부를 새로 저장한 횟수를 센다 (D36). */
+    @MockitoSpyBean
     private PurchaseActivityRepository purchaseActivityRepository;
     @Autowired
     private OrderConfirmedOutboxRepository outboxRepository;
+    @Autowired
+    private OrderConfirmedOutboxBackfill backfill;
+    @Autowired
+    private OrderConfirmedOutboxRelay relay;
     @Autowired
     private ObjectMapper objectMapper;
     @Autowired
@@ -147,7 +162,7 @@ class W6GapReproductionAndRecoveryTest {
         given(clock.getZone()).willReturn(ZoneId.of("Asia/Seoul"));
     }
 
-    @DisplayName("준비: W6 직접 발행 경로로 주문 A 는 commit 뒤 send 직전에 멈추고(구매 활동 0), 주문 B 는 실제 발행·소비까지 끝난다. PG create C=2, 외부 거래 T=2.")
+    @DisplayName("준비: W6 경로로 A 는 commit 뒤 send 직전 중단(구매 활동 0), B 는 발행·소비 완료, C=2·T=2. 복구: backfill → relay → consumer 로 A 의 활동이 생기고 B 는 불변, 두 번째 복구는 효과 0, PG 추가 호출 0.")
     @Test
     void reproducesW6GapState_thenRecovers() throws IOException {
         // ======================= 준비 5-1 ~ 5-3 (📄 p.4) =======================
@@ -227,30 +242,215 @@ class W6GapReproductionAndRecoveryTest {
         assertThat(outboxRepository.findByEventId(eventA.eventId())).isEmpty();
         assertThat(outboxRepository.findByEventId(eventB.eventId())).isEmpty();
 
-        // 이번 실행의 사실 기록 (W6 기록과 별도)
-        Map<String, Object> observation = new LinkedHashMap<>();
-        observation.put("phase", "prepare (5-1 ~ 5-3)");
-        observation.put("fixedClock", NOW.toString());
-        observation.put("topic", TOPIC);
-        observation.put("consumerGroup", GROUP);
-        observation.put("orders", List.of(
+        // 준비 기록 (W6 기록과 별도). 파일은 복구까지 끝난 뒤 한 번 쓴다 (D41)
+        Map<String, Object> prepare = new LinkedHashMap<>();
+        prepare.put("phase", "prepare (5-1 ~ 5-3)");
+        prepare.put("fixedClock", NOW.toString());
+        prepare.put("topic", TOPIC);
+        prepare.put("consumerGroup", GROUP);
+        prepare.put("orders", List.of(
             observe("A: commit 후 send 전 중단", orderAId, eventA, null, 0),
             observe("B: 발행·소비 완료", orderBId, eventB, recordB, activitiesB.size())));
-        observation.put("pgCreateCount", pgCreateCount);
-        observation.put("pgTransactionCount", pgTransactions.size());
-        observation.put("pgTransactionKeys", pgTransactions.stream().map(PaymentTransaction::transactionKey).toList());
+        prepare.put("pgCreateCount", pgCreateCount);
+        prepare.put("pgTransactionCount", pgTransactions.size());
+        prepare.put("pgTransactionKeys", pgTransactions.stream().map(PaymentTransaction::transactionKey).toList());
+
+        // ======================= 복구 5-4 ~ 5-6 (📄 p.4~5, 설계 D34~D36) =======================
+        // 5-4: 제품 경로의 직접 발행은 이미 제거됐다(D17). 같은 DB·broker·PG 를 그대로 둔 채 W7 의 Outbox·backfill·relay 를 연결한다.
+        //      SUCCESS 직접 삽입·Outbox 삭제·우회 스위치 없음. DB·broker·PG 초기화 없음.
+        // 복구 직전 기준값 (📄 p.5 "복구 시작 직전 기준값을 기록하고 이후 증가가 0인지 확인합니다")
+        int pgCreateBefore = fakePaymentGateway.createCount();
+        int pgLookupBefore = fakePaymentGateway.lookupCallCount();
+        int pgTxBefore = fakePaymentGateway.transactions().size();
+        long committedBefore = committedOffset();
+        long savedBefore = saveProcessedCalls();
+        Order orderABefore = orderJpaRepository.findById(orderAId).orElseThrow();
+        Order orderBBefore = orderJpaRepository.findById(orderBId).orElseThrow();
+        int stockABefore = stockOf(productA);
+        int stockBBefore = stockOf(productB);
+        ProcessedOrderConfirmation ledgerBBefore = purchaseActivityRepository.findProcessedByOrderId(orderBId).orElseThrow();
+        List<Long> activityBIdsBefore = activitiesB.stream().map(ProductPurchaseActivity::getId).toList();
+
+        // 5-5: 저장된 확정 사실로 Outbox 가 없을 때만 한 행씩 추가 (📄 p.4 5-5)
+        assertThat(backfill.backfill(orderAId)).isEqualTo(OrderConfirmedOutboxBackfill.Result.CREATED);
+        assertThat(backfill.backfill(orderBId)).isEqualTo(OrderConfirmedOutboxBackfill.Result.CREATED);
+        OrderConfirmedOutbox outboxA = outboxRepository.findByOrderId(orderAId).orElseThrow();
+        OrderConfirmedOutbox outboxB = outboxRepository.findByOrderId(orderBId).orElseThrow();
+        // backfill 이 다시 만든 payload 는 W6 경로가 발행했던 이벤트 객체(eventA·eventB)를 그대로 직렬화한 것과 같다
+        assertThat(outboxA.getEventId()).isEqualTo(eventA.eventId());
+        assertThat(outboxA.getPayload()).isEqualTo(objectMapper.writeValueAsString(eventA));
+        assertThat(outboxA.getStatus()).isEqualTo(OrderConfirmedOutbox.Status.PENDING);
+        assertThat(outboxB.getEventId()).isEqualTo(eventB.eventId());
+        assertThat(outboxB.getPayload()).isEqualTo(objectMapper.writeValueAsString(eventB));
+        assertThat(new String(recordB.value(), StandardCharsets.UTF_8)).isEqualTo(outboxB.getPayload()); // W6 가 보낸 bytes 와도 같다
+        assertThat(outboxB.getStatus()).isEqualTo(OrderConfirmedOutbox.Status.PENDING);
+
+        // 5-6: relay + 기존 consumer (📄 p.4 5-6)
+        OutboxRelayResult recoveryRun = relay.runOnce();
+        assertThat(recoveryRun.reason()).isEqualTo(OutboxRelayResult.Reason.COMPLETED);
+        assertThat(recoveryRun.picked()).isEqualTo(2);
+        assertThat(recoveryRun.published()).isEqualTo(2);
+        assertThat(recoveryRun.skippedStale()).isZero();
+        outboxA = outboxRepository.findByOrderId(orderAId).orElseThrow();
+        outboxB = outboxRepository.findByOrderId(orderBId).orElseThrow();
+        assertThat(outboxA.getStatus()).isEqualTo(OrderConfirmedOutbox.Status.PUBLISHED);
+        assertThat(outboxB.getStatus()).isEqualTo(OrderConfirmedOutbox.Status.PUBLISHED);
+        assertThat(outboxA.getAttemptCount()).isEqualTo(1);
+        assertThat(outboxB.getAttemptCount()).isEqualTo(1);
+
+        // broker: A 의 eventId record 1개(처음 발행), B 의 eventId record 2개(W6 발행 + 재발행, 다른 offset, 같은 bytes)
+        List<ConsumerRecord<String, byte[]>> afterRecovery = readAll();
+        List<ConsumerRecord<String, byte[]>> recordsA = recordsOf(afterRecovery, orderAId);
+        List<ConsumerRecord<String, byte[]>> recordsBAll = recordsOf(afterRecovery, orderBId);
+        assertThat(afterRecovery).hasSize(3);
+        assertThat(recordsA).hasSize(1);
+        assertThat(new String(recordsA.get(0).value(), StandardCharsets.UTF_8)).isEqualTo(outboxA.getPayload());
+        assertThat(recordsBAll).hasSize(2);
+        assertThat(recordsBAll.get(0).offset()).isEqualTo(recordB.offset());
+        assertThat(recordsBAll.get(1).offset()).isGreaterThan(recordB.offset());
+        assertThat(recordsBAll.get(1).value()).isEqualTo(recordB.value());
+        long lastOffset = afterRecovery.get(afterRecovery.size() - 1).offset();
+        awaitConsumed(lastOffset + 1);
+
+        // A: 빠졌던 구매 활동이 생긴다. B: 재발행이 와도 장부·활동 행·수량 불변
+        ProcessedOrderConfirmation processedA = purchaseActivityRepository.findProcessedByOrderId(orderAId).orElseThrow();
+        assertThat(processedA.getEventId()).isEqualTo(eventA.eventId());
+        List<ProductPurchaseActivity> activitiesA = purchaseActivityRepository.findActivitiesByOrderId(orderAId);
+        assertThat(activitiesA).hasSize(2);
+        assertThat(activitiesA.get(0).getProductId()).isEqualTo(productA);
+        assertThat(activitiesA.get(0).getQuantity()).isEqualTo(2);
+        assertThat(activitiesA.get(1).getProductId()).isEqualTo(productB);
+        assertThat(activitiesA.get(1).getQuantity()).isEqualTo(1);
+        assertActivitiesUnchanged(orderBId, ledgerBBefore, activityBIdsBefore);
+        assertThat(saveProcessedCalls()).isEqualTo(savedBefore + 1); // A 의 장부 1건만 새로 저장, B 는 no-op
+
+        // 복구 중 PG 호출·재확정·예약 추가 소비 0 (📄 p.5 "PG create = C, PG 조회·callback 추가 호출 = 0 / 외부 거래 수 = T, 주문 재확정·예약 추가 소비 = 0")
+        assertThat(fakePaymentGateway.createCount()).isEqualTo(pgCreateBefore).isEqualTo(pgCreateCount);
+        assertThat(fakePaymentGateway.lookupCallCount()).isEqualTo(pgLookupBefore);
+        assertThat(fakePaymentGateway.transactions()).hasSize(pgTxBefore).hasSize(pgTransactions.size());
+        assertOrderUntouched(orderAId, orderABefore);
+        assertOrderUntouched(orderBId, orderBBefore);
+        assertThat(stockOf(productA)).isEqualTo(stockABefore);
+        assertThat(stockOf(productB)).isEqualTo(stockBBefore);
+
+        // 같은 대상의 두 번째 복구: Outbox·구매 효과를 늘리지 않는다 (📄 p.4 5-6)
+        long committedAfterFirst = committedOffset();
+        long savedAfterFirst = saveProcessedCalls();
+        assertThat(backfill.backfill(orderAId)).isEqualTo(OrderConfirmedOutboxBackfill.Result.ALREADY_PRESENT);
+        assertThat(backfill.backfill(orderBId)).isEqualTo(OrderConfirmedOutboxBackfill.Result.ALREADY_PRESENT);
+        OutboxRelayResult secondRun = relay.runOnce();
+        assertThat(secondRun.picked()).isZero();
+        assertThat(secondRun.remainingPending()).isZero();
+        assertThat(outboxRepository.findByOrderId(orderAId).orElseThrow().getStatus()).isEqualTo(OrderConfirmedOutbox.Status.PUBLISHED);
+        assertThat(outboxRepository.findByOrderId(orderBId).orElseThrow().getPayload()).isEqualTo(outboxB.getPayload());
+        assertThat(readAll()).hasSize(3);
+        assertThat(committedOffset()).isEqualTo(committedAfterFirst);
+        assertThat(saveProcessedCalls()).isEqualTo(savedAfterFirst);
+        assertActivitiesUnchanged(orderBId, ledgerBBefore, activityBIdsBefore);
+        assertThat(purchaseActivityRepository.findActivitiesByOrderId(orderAId)).hasSize(2);
+        assertThat(fakePaymentGateway.createCount()).isEqualTo(pgCreateBefore);
+        assertThat(fakePaymentGateway.transactions()).hasSize(pgTxBefore);
+
+        // 복구 기록 (D41)
+        Map<String, Object> recovery = new LinkedHashMap<>();
+        recovery.put("phase", "recovery (5-4 ~ 5-6)");
+        recovery.put("baseline", Map.of(
+            "pgCreateCount", pgCreateBefore, "pgLookupCallCount", pgLookupBefore, "pgTransactionCount", pgTxBefore,
+            "consumerCommittedOffset", committedBefore, "ledgerSaveCalls", savedBefore));
+        recovery.put("backfill", Map.of("A", "CREATED", "B", "CREATED"));
+        recovery.put("relayRun", relayResultOf(recoveryRun));
+        recovery.put("outbox", List.of(outboxObservation(outboxA, recordsA.get(0)), outboxObservation(outboxB, recordsBAll.get(1))));
+        recovery.put("brokerRecordsByOrder", Map.of(
+            "A", recordsA.stream().map(ConsumerRecord::offset).toList(),
+            "B", recordsBAll.stream().map(ConsumerRecord::offset).toList()));
+        recovery.put("consumer", Map.of(
+            "committedOffsetAfter", committedAfterFirst, "ledgerSaveCallsAfter", savedAfterFirst,
+            "purchaseActivityRowsA", activitiesA.size(), "purchaseActivityRowsB", activityBIdsBefore.size()));
+        recovery.put("after", Map.of(
+            "pgCreateCount", fakePaymentGateway.createCount(), "pgLookupCallCount", fakePaymentGateway.lookupCallCount(),
+            "pgTransactionCount", fakePaymentGateway.transactions().size()));
+        recovery.put("secondRecovery", Map.of(
+            "backfill", Map.of("A", "ALREADY_PRESENT", "B", "ALREADY_PRESENT"),
+            "relayRun", relayResultOf(secondRun),
+            "committedOffset", committedOffset(), "ledgerSaveCalls", saveProcessedCalls(), "brokerRecords", 3));
+
+        Map<String, Object> observation = new LinkedHashMap<>();
+        observation.put("prepare", prepare);
+        observation.put("recovery", recovery);
         Files.createDirectories(OBSERVATION.getParent());
         objectMapper.writerWithDefaultPrettyPrinter().writeValue(OBSERVATION.toFile(), observation);
 
-        // ======================= TODO 7단계: 복구 5-4 ~ 5-6 (📄 p.4~5) =======================
-        // 같은 DB·broker·PG 를 그대로 둔 채, W7 Outbox 저장 구조·복구 경로·단일 relay 를 여기서 이어 붙인다.
-        // - 5-4: 직접 발행 중단. SUCCESS 직접 삽입·Outbox 행 삭제·운영용 우회 스위치 없이
-        // - 5-5: A·B 의 저장된 확정 사실(eventId·confirmedAt·items)로 Outbox 가 없을 때만 한 행씩 추가, 있으면 내용 일치 확인
-        // - 5-6: relay + 기존 consumer 실행 → A 의 구매 활동 생성 / B 의 활동 행·수량 불변 / 두 번째 복구도 Outbox·구매 효과 불변
-        // - 복구 중 PG create = pgCreateCount(C), 외부 거래 수 = pgTransactionCount(T), 조회·callback 추가 호출 0, 재확정·예약 추가 소비 0
-
         // ======================= 정리 (복구까지 모두 끝난 뒤에만) =======================
         cleanUpOwnResources();
+    }
+
+    private void assertOrderUntouched(Long orderId, Order before) {
+        Order after = orderJpaRepository.findById(orderId).orElseThrow();
+        assertThat(after.getStatus()).isEqualTo(Order.OrderStatus.CONFIRMED);
+        assertThat(after.getConfirmedAt()).isEqualTo(before.getConfirmedAt());
+        assertThat(after.getUpdatedAt()).isEqualTo(before.getUpdatedAt());
+        assertThat(attemptOf(orderId).getStatus()).isEqualTo(PaymentAttempt.Status.SUCCESS);
+        assertThat(reservationStatusesOf(orderId)).containsOnly(StockReservation.Status.CONSUMED);
+    }
+
+    private void assertActivitiesUnchanged(Long orderId, ProcessedOrderConfirmation ledgerBefore, List<Long> activityIdsBefore) {
+        ProcessedOrderConfirmation ledger = purchaseActivityRepository.findProcessedByOrderId(orderId).orElseThrow();
+        assertThat(ledger.getId()).isEqualTo(ledgerBefore.getId());
+        assertThat(ledger.getProcessedAt()).isEqualTo(ledgerBefore.getProcessedAt());
+        List<ProductPurchaseActivity> activities = purchaseActivityRepository.findActivitiesByOrderId(orderId);
+        assertThat(activities.stream().map(ProductPurchaseActivity::getId).toList()).isEqualTo(activityIdsBefore);
+        assertThat(activities.get(0).getQuantity()).isEqualTo(2);
+        assertThat(activities.get(1).getQuantity()).isEqualTo(1);
+    }
+
+    private static List<ConsumerRecord<String, byte[]>> recordsOf(List<ConsumerRecord<String, byte[]>> records, Long orderId) {
+        return records.stream().filter(r -> String.valueOf(orderId).equals(r.key())).toList();
+    }
+
+    private long committedOffset() {
+        try (AdminClient admin = AdminClient.create(
+            Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, KafkaTestContainersConfig.bootstrapServers()))) {
+            OffsetAndMetadata committed = admin.listConsumerGroupOffsets(GROUP)
+                .partitionsToOffsetAndMetadata().get(10, TimeUnit.SECONDS).get(PARTITION);
+            return committed == null ? -1 : committed.offset();
+        } catch (Exception e) {
+            throw new IllegalStateException("committed offset 조회 실패", e);
+        }
+    }
+
+    /** streamer 장부 저장(saveProcessed) 호출 수. consumer 가 새 사건을 저장했는지 세는 데 쓴다. */
+    private long saveProcessedCalls() {
+        return mockingDetails(purchaseActivityRepository).getInvocations().stream()
+            .filter(invocation -> invocation.getMethod().getName().equals("saveProcessed"))
+            .count();
+    }
+
+    private int stockOf(Long productId) {
+        return productJpaRepository.findById(productId).orElseThrow().getStock().getQuantity();
+    }
+
+    private static Map<String, Object> relayResultOf(OutboxRelayResult result) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("reason", result.reason().name());
+        map.put("picked", result.picked());
+        map.put("published", result.published());
+        map.put("retried", result.retried());
+        map.put("blocked", result.blocked());
+        map.put("skippedStale", result.skippedStale());
+        map.put("deferred", result.deferred());
+        map.put("remainingPending", result.remainingPending());
+        return map;
+    }
+
+    private static Map<String, Object> outboxObservation(OrderConfirmedOutbox outbox, ConsumerRecord<String, byte[]> relayRecord) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("eventId", outbox.getEventId());
+        map.put("orderId", outbox.getOrderId());
+        map.put("status", outbox.getStatus().name());
+        map.put("attemptCount", outbox.getAttemptCount());
+        map.put("publishedAt", outbox.getPublishedAt() == null ? null : outbox.getPublishedAt().toInstant().toString());
+        map.put("relayRecord", Map.of("topic", relayRecord.topic(), "partition", relayRecord.partition(), "offset", relayRecord.offset()));
+        return map;
     }
 
     /** 자신이 만든 DB 행만 정리한다. 중간에 끼우지 않고 테스트 맨 끝에서만 호출한다 (📄 p.4 5-3, p.5 "모든 확인 뒤에만"). */
