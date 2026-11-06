@@ -268,5 +268,50 @@ class PaymentTransactionTest extends PaymentFlowTestSupport {
             assertThat(stockOf(socks)).isEqualTo(5);
             assertThat(pg.createCalls()).isEqualTo(1);
         }
+
+        @DisplayName("성공을 반영하는 중 Outbox 저장이 실패하면 주문은 확정되지 않고 Outbox 도 남지 않는다.")
+        @Test
+        void rollsBackConfirmation_whenOutboxInsertFails() {
+            // given: 3,000 x 1. 결제를 시작해 PENDING 이고 PG 는 SUCCESS 가 되었다.
+            User user = saveUser(USER_BALANCE);
+            Product shirt = saveProduct("티셔츠", 3_000, 10);
+            Long orderId = orderFacade.create(user.getId(), List.of(new OrderItemCommand(shirt.getId(), 1))).id();
+            orderFacade.confirm(command(user, orderId, "attempt-1"));
+            pg.setStatus(pgKeyOf(orderId), "SUCCESS");
+            FailingStatementInspector.arm("insert into outbox", 1);
+
+            // when: insert 는 저장하는 순간 DB 로 나가므로 주입한 예외가 감싸이지 않고 그대로 전달된다.
+            assertThatThrownBy(() -> paymentResultLookupFacade.lookupMyPaymentResult(user.getId(), orderId))
+                .isInstanceOf(InjectedFailureException.class);
+
+            // then
+            FailingStatementInspector.disarm();
+            assertThat(orderStatusOf(orderId)).isEqualTo("PAYMENT_PENDING");
+            assertThat(attemptOf(orderId)).containsEntry("status", "PENDING");
+            assertThat(jdbcTemplate.queryForObject("select count(*) from outbox", Long.class)).isZero();
+        }
+
+        @DisplayName("Outbox 저장이 DB 로 나간 뒤 다른 변경이 실패하면 저장된 Outbox 도 함께 취소된다.")
+        @Test
+        void rollsBackOutbox_whenLaterStatementFails() {
+            // given: 3,000 x 1. 결제를 시작해 PENDING 이고 PG 는 SUCCESS 가 되었다.
+            User user = saveUser(USER_BALANCE);
+            Product shirt = saveProduct("티셔츠", 3_000, 10);
+            Long orderId = orderFacade.create(user.getId(), List.of(new OrderItemCommand(shirt.getId(), 1))).id();
+            orderFacade.confirm(command(user, orderId, "attempt-1"));
+            pg.setStatus(pgKeyOf(orderId), "SUCCESS");
+            FailingStatementInspector.arm("update payment_attempts", 1);
+
+            // when
+            assertThatThrownBy(() -> paymentResultLookupFacade.lookupMyPaymentResult(user.getId(), orderId))
+                .hasRootCauseInstanceOf(InjectedFailureException.class);
+
+            // then: 실패 전에 Outbox insert 가 실제로 DB 로 나갔어야 rollback 검증이 의미를 가진다.
+            List<String> mutations = FailingStatementInspector.mutations();
+            assertThat(mutations.subList(0, mutations.size() - 1)).anyMatch(sql -> sql.startsWith("insert into outbox"));
+            FailingStatementInspector.disarm();
+            assertThat(orderStatusOf(orderId)).isEqualTo("PAYMENT_PENDING");
+            assertThat(jdbcTemplate.queryForObject("select count(*) from outbox", Long.class)).isZero();
+        }
     }
 }

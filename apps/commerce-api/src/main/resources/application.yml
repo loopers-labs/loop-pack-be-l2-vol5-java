@@ -28,6 +28,14 @@ spring:
 order-event:
   topic: order-events # 주문 확정 이벤트를 보내는 topic
 
+outbox:
+  relay:
+    send-timeout: 5s # 브로커 확인을 기다리는 최대 시간. 넘으면 같은 사건을 PENDING 으로 남긴다
+    batch-size: 20 # 한 회차에 보내는 최대 건수
+    retry-interval: 30s # 전송에 실패한 건을 다시 보내기까지의 간격
+    fixed-delay: 5s # 한 회차가 끝난 뒤 다음 회차까지 쉬는 시간
+    enabled: false # relay 스케줄러를 켤지. 여러 인스턴스 중 한 곳에서만 켠다
+
 product:
   list-cache:
     ttl: 60s # 무효화가 실패했을 때 낡은 목록이 남는 상한
@@ -66,6 +74,17 @@ resilience4j:
         permitted-number-of-calls-in-half-open-state: 2
         record-exceptions: # 404·빈 목록 같은 정상 응답은 예외가 아니므로 표본의 실패로 세지 않는다
           - com.loopers.infrastructure.payment.PgStatusLookupFailedException
+      outboxPublish:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 5
+        minimum-number-of-calls: 3
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 1
+        # relay 는 열린 회로에 전송을 시도하지 않으므로, 대기 시간이 지나면 스스로 반열림으로 넘어가야 다시 보낸다
+        automatic-transition-from-open-to-half-open-enabled: true
+        record-exceptions:
+          - com.loopers.infrastructure.outbox.BrokerUnavailableException # 메시지 하나만의 문제는 세지 않는다
 
 springdoc:
   use-fqn: true
@@ -77,6 +96,16 @@ spring:
   config:
     activate:
       on-profile: local, test
+
+---
+spring:
+  config:
+    activate:
+      on-profile: local
+
+outbox:
+  relay:
+    enabled: true
 
 ---
 spring:
