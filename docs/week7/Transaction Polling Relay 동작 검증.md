@@ -20,6 +20,19 @@
 
 # Mutation Testing
 
+## 기본 테스트 시나리오
+
+| 시나리오 | 기대 결과 | 관련 테스트 |
+| --- | --- | --- |
+| 발행 가능한 이벤트 조회 | 현재 시각까지 재시도 시각이 도래한 `PENDING`·`FAILED`만 조회한다. | `selectsOnlyDuePendingAndFailedRows` |
+| 오래된 이벤트 우선 처리와 배치 제한 | 생성 시각 순으로 정렬하고 설정된 최대 건수까지만 조회한다. | `ordersEligibleRowsByOldestCreationTime`, `limitsResultToConfiguredBatchSize` |
+| Kafka 성공 응답 처리 | 응답 확인 후 시도 횟수를 기록하고 `PUBLISHED`와 완료 시각을 저장한다. | `branchesByPublishResultAndAttemptLimit`, `completesPublishResultOnlyAfterKafkaSendCompletes` |
+| 실패·미확정 결과 처리 | 실패는 `FAILED`, 미확정 결과는 `PENDING`으로 기록하고 재시도 시각을 설정한다. 상한에 도달하면 `BLOCKED`로 전환한다. | `branchesByPublishResultAndAttemptLimit` |
+| 재시도 시각 도래 후 재발행 | 재시도 시각 전에는 제외하고, 시각이 되면 다시 발행한다. | `republishesFailedOutboxWhenRetryTimeArrives` |
+| 재시도 메시지 identity 유지 | 같은 이벤트를 재발행할 때 `messageKey`와 payload의 `eventId`를 유지한다. | `preservesMessageKeyAndPayloadAcrossRetries`, `republishesWithSameMessageKeyAndEventId` |
+
+## 결함 주입 시나리오
+
 
 
 
