@@ -1,5 +1,7 @@
 package com.loopers.application.payment;
 
+import com.loopers.application.order.OrderConfirmedEvent;
+import com.loopers.application.order.OrderEventPublisher;
 import com.loopers.domain.order.OrderModel;
 import com.loopers.domain.order.OrderService;
 import com.loopers.domain.payment.PaymentAttemptModel;
@@ -9,6 +11,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -18,6 +22,7 @@ public class PaymentProcessingService {
     private final OrderService orderService;
     private final ProductService productService;
     private final PaymentAttemptService paymentAttemptService;
+    private final OrderEventPublisher orderEventPublisher;
 
     /**
      * TX A: 재고 예약 + 결제 시도 생성 + 주문 PAYMENT_PENDING 전이를 한 트랜잭션으로 처리.
@@ -65,6 +70,13 @@ public class PaymentProcessingService {
                 );
                 attempt.success(pgResult.transactionKey());
                 order.confirmPayment();
+                OrderConfirmedEvent event = OrderConfirmedEvent.from(order);
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        orderEventPublisher.publishOrderConfirmed(event);
+                    }
+                });
             }
             case FAILED, REJECTED -> {
                 order.getItems().forEach(item ->

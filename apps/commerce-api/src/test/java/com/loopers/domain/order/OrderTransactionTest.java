@@ -1,5 +1,6 @@
 package com.loopers.domain.order;
 
+import com.loopers.application.order.OrderEventPublisher;
 import com.loopers.application.order.OrderFacade;
 import com.loopers.application.order.OrderInfo;
 import com.loopers.application.order.OrderItemCommand;
@@ -38,6 +39,7 @@ class OrderTransactionTest {
     @Autowired OrderFacade orderFacade;
 
     @MockBean PgPaymentPort pgPaymentPort;
+    @MockBean OrderEventPublisher orderEventPublisher;
 
     @Autowired DatabaseCleanUp databaseCleanUp;
 

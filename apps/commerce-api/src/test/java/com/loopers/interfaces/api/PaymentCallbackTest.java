@@ -1,6 +1,7 @@
 package com.loopers.interfaces.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.loopers.application.order.OrderEventPublisher;
 import com.loopers.application.order.OrderFacade;
 import com.loopers.application.order.OrderItemCommand;
 import com.loopers.application.payment.PgPaymentPort;
@@ -52,6 +53,7 @@ class PaymentCallbackTest {
     @Autowired DatabaseCleanUp databaseCleanUp;
 
     @MockBean PgPaymentPort pgPaymentPort;
+    @MockBean OrderEventPublisher orderEventPublisher;
 
     @AfterEach
     void tearDown() {

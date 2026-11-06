@@ -1,5 +1,6 @@
 package com.loopers.interfaces.api;
 
+import com.loopers.application.order.OrderEventPublisher;
 import com.loopers.application.payment.PgPaymentPort;
 import com.loopers.application.payment.PgPaymentResult;
 import com.loopers.domain.brand.BrandModel;
@@ -55,6 +56,9 @@ class OrderV1ApiE2ETest {
 
     @MockBean
     PgPaymentPort pgPaymentPort;
+
+    @MockBean
+    OrderEventPublisher orderEventPublisher;
 
     @Autowired
     PointJpaRepository pointJpaRepository;

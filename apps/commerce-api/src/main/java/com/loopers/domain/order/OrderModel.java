@@ -36,6 +36,9 @@ public class OrderModel extends BaseEntity {
     @Column(name = "expired_at", nullable = false)
     private ZonedDateTime expiredAt;
 
+    @Column(name = "confirmed_at")
+    private ZonedDateTime confirmedAt;
+
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     @JoinColumn(name = "order_id", nullable = false)
     private List<OrderItemModel> items;
@@ -107,6 +110,13 @@ public class OrderModel extends BaseEntity {
         }
         this.paidAmount = totalAmount;
         this.status = OrderStatus.CONFIRMED;
+        if (this.confirmedAt == null) {
+            this.confirmedAt = ZonedDateTime.now();
+        }
+    }
+
+    public ZonedDateTime getConfirmedAt() {
+        return confirmedAt;
     }
 
     public void failPayment() {

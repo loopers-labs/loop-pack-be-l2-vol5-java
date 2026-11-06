@@ -1,5 +1,6 @@
 package com.loopers.domain.order;
 
+import com.loopers.application.order.OrderEventPublisher;
 import com.loopers.application.order.OrderFacade;
 import com.loopers.application.payment.PgPaymentPort;
 import com.loopers.application.payment.PgPaymentResult;
@@ -46,6 +47,7 @@ class OrderConcurrencyTest {
     @Autowired PlatformTransactionManager transactionManager;
 
     @MockBean PgPaymentPort pgPaymentPort;
+    @MockBean OrderEventPublisher orderEventPublisher;
 
     @Autowired DatabaseCleanUp databaseCleanUp;
 

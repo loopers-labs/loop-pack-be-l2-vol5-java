@@ -1,5 +1,6 @@
 package com.loopers.application.payment;
 
+import com.loopers.application.order.OrderEventPublisher;
 import com.loopers.application.order.OrderFacade;
 import com.loopers.application.order.OrderItemCommand;
 import com.loopers.domain.brand.BrandModel;
@@ -47,6 +48,7 @@ class PaymentReconciliationSchedulerTest {
     @Autowired DatabaseCleanUp databaseCleanUp;
 
     @MockBean PgPaymentPort pgPaymentPort;
+    @MockBean OrderEventPublisher orderEventPublisher;
 
     @AfterEach
     void tearDown() {
