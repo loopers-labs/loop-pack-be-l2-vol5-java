@@ -48,6 +48,14 @@ datasource:
       connection-init-sql: SET SESSION innodb_lock_wait_timeout=3
 
 commerce:
+  outbox-relay:
+    # Enable on exactly one API instance. This does not disable transactional Outbox recording.
+    enabled: ${OUTBOX_RELAY_ENABLED:false}
+    batch-size: 10
+    fixed-delay: 1s
+    send-budget: 12s
+    retry-initial: 5s
+    retry-max: 60s
   order-events:
     enabled: true
     topic: order-events
