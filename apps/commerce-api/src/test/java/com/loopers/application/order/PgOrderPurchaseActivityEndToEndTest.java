@@ -11,6 +11,7 @@ import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.infrastructure.payment.support.LocalTestPg;
 import com.loopers.infrastructure.user.FixtureUserInitializer;
+import com.loopers.support.event.W6DirectPublicationTestConfiguration;
 import com.loopers.support.kafka.OwnedStreamerProcess;
 import com.loopers.utils.DatabaseCleanUp;
 import org.apache.kafka.clients.admin.AdminClient;
@@ -34,6 +35,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.context.annotation.Import;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -79,8 +81,9 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
-/** Real API HTTP/PG/Kafka and a separate production streamer JVM with its own MySQL. */
+/** Preserved W6 direct publication with real HTTP/PG/Kafka and a separate production streamer JVM/DB. */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import(W6DirectPublicationTestConfiguration.class)
 @Testcontainers
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @ExtendWith(OutputCaptureExtension.class)
@@ -392,6 +395,7 @@ class PgOrderPurchaseActivityEndToEndTest {
     }
 
     private void assertApiFacts(Fixture fixture) {
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM outbox_message", Long.class)).isZero();
         assertThat(jdbc.queryForObject("SELECT status FROM `order` WHERE id=?", String.class, fixture.orderId())).isEqualTo("CONFIRMED");
         assertThat(jdbc.queryForObject("SELECT status FROM payment_attempt WHERE order_id=?", String.class, fixture.orderId())).isEqualTo("SUCCESS");
         assertThat(jdbc.queryForObject("SELECT send_started_at FROM payment_attempt WHERE order_id=?", LocalDateTime.class, fixture.orderId()))
