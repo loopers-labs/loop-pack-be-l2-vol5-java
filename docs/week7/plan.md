@@ -8,7 +8,7 @@
 >
 > **표기** — ✅ 합의 · 🔧 AI 기본값 · 🤔 결정 필요.
 >
-> **진행 방식** — 설계 항목을 하나씩 학습자와 정한다. 아직 다루지 않은 항목은 비워 둔다. 역할은 아래 "작업 방식"을 따른다.
+> **진행 방식** — 설계 항목을 하나씩 학습자와 정한다. 작업 경과는 `worklog.md`, 실행 결과는 `incident-w7.md`, 운영 방법은 `operations.md`.
 
 ## 0. 체크리스트 — 모두 통과해야 한다 (노션 과제 원문 요약)
 
@@ -22,23 +22,15 @@
 | C-6 | 실제 broker·consumer에서 재발행돼도 상품별 구매 효과가 늘지 않는다 | `run.sh` 3막 — 상품 7×2·8×1 주문, ack 뒤 저장 전 중단(JVM 1) → relay 재시작(JVM 2), lease 뒤 재발행. broker 같은 eventId offset 2·3, consumer 수신 2회(저장 → no-op), 완료 기록 1, 활동 7×2·8×1 유지, 예약·재고·포인트·PG 호출 수 그대로. `incident-w7.md` C-6 | ✅ 11-06 |
 | C-7 | 새 격리 DB에서 W6 누락·소비 완료 상태를 재현하고 같은 실행의 사건으로 복구했다 | `docs/week7/c7/run.sh` — 1막 W6 revision `388bc941`로 A(send 직전 중단)·B(발행·소비) → 2막 같은 DB에서 W7 + 테스트 전용 복구 도구 + relay. A 활동 0 → 상품 1×2·2×1, B 1×1 그대로, 두 번째 복구 변화 없음. `docs/week7/incident-w7.md` | ✅ 11-06 |
 | C-8 | 준비와 복구의 PG 호출 수를 나눠 기록했고 복구 중 PG 추가 호출·주문 재확정·예약 추가 소비가 없다 | pg-sim `/_stats`: 준비 0 → 생성 2·조회 2·callback 2, 복구 전후 2·2·2. 주문·결제·예약 스냅샷 복구 전후 동일. `incident-w7.md` | ✅ 11-06 |
-| C-9 | PENDING·PUBLISHED·소비 완료를 구분하고 실패·backlog·재개 방법을 확인했다 | | 🤔 |
-| C-10 | 미발행 사실을 삭제하지 않으며 단일 relay·보존·재시도의 한계를 설명한다 | | 🤔 |
-| C-11 | 관련 회귀·lint·ArchUnit을 실행하고 자신이 만든 테스트 자원만 정리했다 | | 🤔 |
+| C-9 | PENDING·PUBLISHED·소비 완료를 구분하고 실패·backlog·재개 방법을 확인했다 | `operations.md` 0~3절 — 관찰 SQL O-1~O-8(`ops/verify.sh`로 상태별 11행에 실행, 결과 `ops/results/`), 로그 태그, relay 주기 실측(`OrderOutboxRelayTickIntegrationTest`, 변이 2종 잡음), 재개 actuator(`OrderOutboxEndpointIntegrationTest` 4건) | ✅ 11-06 |
+| C-10 | 미발행 사실을 삭제하지 않으며 단일 relay·보존·재시도의 한계를 설명한다 | `operations.md` 4·6절 — 보존 SQL은 PUBLISHED 7일만 지움(verify.sh: 8일 된 BLOCKED·PENDING 남음), 한계 10개 | ✅ 11-06 |
+| C-11 | 관련 회귀·lint·ArchUnit을 실행하고 자신이 만든 테스트 자원만 정리했다 | `:apps:commerce-api:check` 532/0/0(ArchitectureTest 3 포함) · `:apps:commerce-streamer:check` 39/0/0 · `./gradlew check -x test` 통과. 격리 실행(`run.sh`·`ops/verify.sh`)은 자기가 만든 컨테이너·네트워크·worktree만 지우고, Testcontainers는 Ryuk가 지움 — 실행 뒤 남은 컨테이너·c7 worktree 0. 간헐 실패하던 `KafkaClusterSettingsTest`는 원인(새 topic metadata 전파 전 send)을 고침 | ✅ 11-06 |
 | T-1 | 기술 글 — Outbox가 새로 보장한 것과 소비자가 계속 책임지는 것 | | 🤔 |
 | P-1 | PR — 같은 eventId의 주문→Outbox→broker→구매 활동 결과, 단일 relay 제약, 미해결 오류의 재개 방법 | | 🤔 |
 
-## 작업 방식 ✅ (11-03)
+## 작업 방식
 
-- 순서 ✅: 0 테이블 재설계 → 1 relay + 결과 기록 주체 → 2 after-commit 직접 발행 제거 → 3 재시도·BLOCKED → 4 relay 실행 방식(겹침 방지) → 5 중단 실험 두 개 → 6 누락 재현·복구·PG 호출 수 → 7 E2E → 8 운영(관찰·재개 진입점·보존·한계 문서) → 9 회귀 → 기술 글 → PR.
-  - relay 생성과 "결과 기록 주체"를 한 단계로 합쳤다 — 기록 주체가 relay의 모양 자체라서 나누면 두 번 짠다.
-  - 직접 발행 제거를 relay 뒤로 미뤘다 — 먼저 지우면 relay 전까지 발행이 0이 되고 W6 테스트가 깨진 채 남는다.
-- 역할 ✅ (11-05 변경): 핵심 로직도 Claude가 `volume-7-claude`에서 TDD로 초안을 쓰고, 학습자가 리뷰한다(테스트는 엄격히). 처음 C안은 학습자가 직접 짜는 것이었다. 테이블·설정·어댑터·테스트 초안·문서는 Claude가 `volume-7-claude`(`../loop-pack-be-l2-vol5-java-claude`, push 안 함)에서 쓰고 학습자가 cherry-pick한다.
-- 핵심 로직 (학습자 담당, 테스트는 엄격히 본다):
-  1. `OrderOutbox` 도메인의 상태 전이 — 어떤 상태에서 어디로만 가나, 거절 뒤 기존 값 유지
-  2. relay 한 회차 — 고르기 → send → future 대기 → 결과(성공·명시적 실패·timeout·저장 실패)별 기록
-  3. backoff·BLOCKED 판단 — 시간을 고정한 리터럴 기대값
-  4. 겹침 방지 — tick과 수동 실행이 동시에 들어올 때 send는 한 번
+- 진행 순서·역할·단계별 경과·실패와 수정은 `docs/week7/worklog.md`에 있다. 이 문서는 설계와 체크리스트만 갖는다.
 
 ## 이미 정해진 전제 (W6·멘토링에서)
 
@@ -108,7 +100,6 @@
 - 🔧 backoff 지연(jitter 난수)은 `OrderOutbox` 밖의 정책 객체가 계산해 `delay`로 넘긴다 — 도메인 테스트에 난수가 들어오지 않는다 (핵심 3).
 - 🔧 예외 타입: `CoreException(ErrorType.CONFLICT)` — 프로젝트 도메인 관례이고, 재개 진입점이 그대로 "상태 충돌"로 응답할 수 있다. 메시지에 eventId·status·now를 남긴다 (리뷰에서 바꿀 수 있음).
 - 🔧 "기한이 지난 SENDING"은 도메인이 `now`로 직접 확인한다 — 조회 조건(`findDue`)과 같은 규칙을 한 번 더 지킨다. PENDING도 차례 전이면 거절한다. 기한과 같은 시각은 지난 것으로 본다(`findDue`의 `<=`와 맞춤).
-- 구현 (11-05, `volume-7-claude`): Red 20건 assertion 실패 → Green 20/0/0. 일부러 넣은 버그 6종(경계 `<`, BLOCKED `>`, 재개 시 attempt 유지, 성공 기록 상태 확인 제거, 맡기 상태 확인 제거, 원인 자르기 제거)을 모두 잡음.
 
 ## D-3. 재시도·BLOCKED (일부 먼저 정함)
 
@@ -160,7 +151,7 @@
   - 먼저 주문한 사용자의 결제가 PG 재시도·UNKNOWN 중이어도 예약은 유지되므로, 뒤 주문이 그 재고를 가져가지 못한다. 이것은 W5 재고 예약의 책임이고 W7 relay의 책임이 아니다.
   - 남는 영향은 늦게 도착한 구매 활동이 이미 닫힌 랭킹 구간에 빠지는 것(late-arriving data)이다. 이번 주에는 랭킹이 없어 한계로만 적는다.
 
-## 보존 정책 ✅ (학습자, 11-02 — 문서는 8단계에서)
+## 보존 정책 ✅ (학습자, 11-02 — 운영 절차는 `operations.md` 4절)
 
 - Outbox 행과 Kafka retention 모두 7일.
 - 🔧 Outbox에서 7일 뒤 지우는 대상은 PUBLISHED만이다. PENDING·BLOCKED는 미해결이라 자동 삭제하지 않는다 (과제). 이번 과제에서는 삭제 작업 자체를 만들지 않는다.
@@ -178,13 +169,4 @@
 
 ## 변경 이력
 
-- 11-03: 문서 시작. 체크리스트·작업 방식·전제·D-0(테이블 분리, 컬럼, topic은 설정)·보존 정책·한계를 적었다. C-2에 UNKNOWN 테스트 4개 추가.
-- 11-03: D-0에 SENDING·lease(`next_attempt_at`) 추가, D-3(backoff + jitter, 3번 실패 → BLOCKED, 감지 수단), D-1 한 회차 정의.
-- 11-04: D-1 "실패하면 회차를 멈춘다"와 비교표, 순서 구분(다른 주문 vs 같은 주문)·한정 수량 공정성 답. 한계에 같은 주문 순서 세 겹·late-arriving data·DLT 재처리 TODO·broker 중복·테이블 증가·CDC 비교 추가. partition·offset 남김 ✅, 인덱스 🔧(D-0으로 옮김), backoff 숫자 ✅, lease 책임 나눔 🔧, BLOCKED = 보내는 쪽 DLT·재개 시 attempt 0·잘못된 전이는 예외 ✅, 핵심 1 기대값 표. 0단계 구현: order_outbox 엔티티 뼈대·포트·어댑터·schema.sql, 조회 테스트 4개.
-- 11-06: 7단계 C-6 — 같은 run.sh 3막. relay 재시작은 실제 새 JVM(E-2)이고 lease 경과도 실제 시각. consumer 수신은 streamer 로그(저장/no-op 줄)로, Kafka 기록은 broker를 직접 읽어 본다(send 호출 수만 세지 않음 — 과제).
-- 11-06: 6단계 C-7·C-8 — 복구는 테스트 도구로만(학습자: 운영 코드는 W7 기준, W6 데이터용 코드를 제품에 넣지 않음). 스크립트가 격리 MySQL·Kafka 3대·pg-sim·W6 streamer를 소유, 1막 W6 revision → 2막 같은 DB에서 W7 복구. 2막 테스트는 `@Tag("isolated")`로 보통 test에서 빼고 `isolatedRun` 작업으로만 실행(처음엔 c7 태그·c7Recovery였고 7단계에서 이름을 바꿈). 첫 실행은 복구 도구의 JSON 비교 버그·결과 SQL 예약어로 실패해 처음부터 다시 실행(incident-w7.md).
-- 11-06: 5단계 C-5 — 실제 kill 대신 W6 E-4와 같은 통제된 중단 지점(Claude 기본값 🔧): ① relay를 부르지 않음 ② PUBLISHED 저장 TX를 한 번 실패시킴. 실제 확정 경로·broker로 확인.
-- 11-06: 4단계 — 재개 진입점은 관리 포트 actuator `POST /actuator/outbox/{eventId}`(local·test만 노출, 학습자 A안 "api"). 겹침 방지는 ShedLock(학습자, 확장성) — outbox 행이 아니라 작업 이름 `order-outbox-relay` 한 행의 잠금, DB 시각 기준, lockAtMostFor 5분, 못 얻으면 건너뜀. 재개는 행만 PENDING으로 돌리고 보내는 것은 scheduler(1초 fixedDelay) 한 길. 주의(운영 문서에): 앱이 도는 중 shedlock 행을 지우면 ShedLock이 UPDATE만 시도해 재시작 전까지 잠금을 못 얻는다 — 강제 해제는 lock_until을 과거로 UPDATE.
-- 11-06: 2단계 연결 전환 — 확정 TX는 order_outbox에 PENDING 행만 남기고, W6 after-commit 직접 발행(listener·콜백 기록·결과 스레드풀)과 event_outbox를 지웠다. W6 미발행 행은 옮기지 않고 버린다(학습자, "기존 데이터 날려요"). C-7은 새 격리 DB에 누락 상태를 직접 만들어 확인한다(6단계). W6 테스트는 확인 테이블·발행 시점만 바꿨다(A안, S-13은 W7 버전으로). relay 실패 원인 문자열에 가장 안쪽 원인을 덧붙였다 — S-13의 W6 단언("not present in metadata")을 약하게 하지 않으려고.
-- 11-06: relay TX 나눔 ✅(TX1 SENDING / send는 TX 밖 / TX2 결과). 핵심 3 backoff(Red 6 → Green, 변이 3종 잡음), 핵심 2 relay 한 회차(Red 11 → Green, 변이 3종 잡음). 설정 batch-size 200·send-wait 35s·delivery.timeout.ms 30s, Clock·backoff 빈. 전체 521/0/0.
-- 11-05: 핵심 1 구현(Claude 초안 → 학습자 리뷰로 역할 변경). 예외 CONFLICT·도메인 기한 확인 🔧. N=200·tick 1초(🔧), 직렬 처리 ✅, 대기(`delivery.timeout.ms` 30s · 대기 35s · lease 1분) ✅/🔧.
+- 설계 판단이 바뀐 날짜와 이유는 `docs/week7/worklog.md` "결정 기록"에 있다.

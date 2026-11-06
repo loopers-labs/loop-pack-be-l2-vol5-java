@@ -1,6 +1,8 @@
 # 7주차 사건 기록 — W6 누락의 재현과 W7 복구 (C-7·C-8) · relay 재시작 E2E (C-6)
 
-> 실행: `bash docs/week7/c7/run.sh` (2026-11-06 02:29 KST, 실행 ID `c7-20261106-022901`). 원본 결과: `docs/week7/c7/results/c7-20261106-022901/{facts.json, result.json}`.
+> **결과만 적는다.** 진행 경과·실패와 수정은 `worklog.md`.
+>
+> 실행: `bash docs/week7/c7/run.sh` 한 번 (2026-11-06 02:43~02:47 KST, 실행 ID **`c7-20261106-024330`**) — 1막·2막(C-7·C-8)과 3막(C-6)이 같은 실행이다. 원본 결과: `docs/week7/c7/results/c7-20261106-024330/`.
 > W6 기록(`docs/week6/incident-w6.md` E-4)과는 별개인, **이번 재현 실행의 사건**이다. 역사적 원본 행의 복원이 아니다.
 
 ## 환경 — 스크립트가 수명주기를 소유
@@ -22,8 +24,8 @@
 
 | 사례 | orderId | providerOrderId | transactionKey | eventId | confirmedAt (DB, UTC) | items | 주문 | 예약 | W6 발행 기록 | 구매 활동 |
 |---|---|---|---|---|---|---|---|---|---|---|
-| A send 직전 중단 | 1 | LP-ORD-0000000001 | 20261106:TR:6675d20 | bd8e55f5-871a-41af-86e3-b6a316b0e83e | 2026-11-05T17:29:51.588598 | 상품 1×2, 상품 2×1 | CONFIRMED | CONSUMED ×2 | published_at **null** | **0행** |
-| B 발행·소비 완료 | 2 | LP-ORD-0000000002 | 20261106:TR:f4aeaf3 | 2389854c-81c5-43b2-b3b6-65d7411369e8 | 2026-11-05T17:29:52.817626 | 상품 1×1 | CONFIRMED | CONSUMED ×1 | published_at 17:29:53.436687 | 1행 (상품 1×1) |
+| A send 직전 중단 | 1 | LP-ORD-0000000001 | 20261106:TR:6b90f9d | 8453cef6-8dc2-4ad3-b952-dcb70aa76c15 | 2026-11-05T17:44:19.504404 | 상품 1×2, 상품 2×1 | CONFIRMED | CONSUMED ×2 | published_at **null** | **0행** |
+| B 발행·소비 완료 | 2 | LP-ORD-0000000002 | 20261106:TR:c00e99e | dda6d05d-826f-4b13-b43d-9c0d793c1242 | 2026-11-05T17:44:20.680929 | 상품 1×1 | CONFIRMED | CONSUMED ×1 | published_at 17:44:21.835041 | 1행 (상품 1×1) |
 
 - W7 Outbox(`order_outbox`)는 이 시점에 테이블 자체가 없었다(information_schema로 확인).
 - 소비 완료 기록(`consumed_order_confirmation`): B의 eventId 1건.
@@ -55,11 +57,6 @@
 
 **복구 중 PG 추가 호출 0.** 주문 상태·확정 시각, 결제 상태·거래 키, 예약 상태·수량도 복구 전과 같다(재확정·예약 추가 소비 없음 — `W6GapRecoveryRun` 단언).
 
-## 처음 실행에서 겪은 것 (같은 날, 기록으로 남김)
-
-- 1차 실행(`c7-20261106-022623`): 1막 성공, 2막에서 **복구 도구의 비교 버그**로 실패 — `valueToTree`(Long → LongNode)와 `readTree`(작은 수 → IntNode)가 같은 JSON을 다르다고 봤다. 복구 TX가 rollback돼 DB에는 쓰지 않았다. 비교를 "문자열로 직렬화 → 다시 읽기"로 고쳤다.
-- 같은 환경에서 2막만 다시 실행: 복구·relay·두 번째 복구는 끝까지 됐고(A 활동 생김, B 그대로) **결과 기록 SQL**이 MySQL 예약어(`partition`)로 실패했다. 첫 복구가 이미 일어나 "첫 복구"를 다시 볼 수 없으므로 그 환경을 정리하고 처음부터 다시 실행했다 → 위 기록(`c7-20261106-022901`)이다.
-
 ## 이 실험이 증명하지 않은 것
 
 - 원본 W6 DB의 복원이 아니다. W6 임시 DB는 남아 있지 않아, 같은 경로로 누락 상태를 새로 만들었다.
@@ -70,8 +67,7 @@
 
 # C-6 — 실제 broker·consumer에서 재발행돼도 상품별 구매 효과가 늘지 않는다
 
-> 실행: `bash docs/week7/c7/run.sh` 3막 (2026-11-06 02:45 KST, 실행 ID `c7-20261106-024330`). 원본: `docs/week7/c7/results/c7-20261106-024330/{e2e-interrupt.json, e2e-resume.json, e2e-streamer-receipts.log}`.
-> 같은 실행의 1·2막(C-7)도 다시 통과했다 — A 활동 0 → 상품 1×2·2×1, B 1×1 그대로, 복구 중 PG 호출 0.
+> 같은 실행 `c7-20261106-024330`의 3막 (02:45 KST). 원본: `e2e-interrupt.json`, `e2e-resume.json`, `e2e-streamer-receipts.log`.
 
 W7 코드만 쓴다. 환경은 1·2막과 같은 격리 MySQL·Kafka 3대·pg-sim·streamer(1막부터 계속 실행).
 
