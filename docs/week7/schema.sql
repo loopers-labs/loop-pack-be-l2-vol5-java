@@ -1,5 +1,7 @@
 -- W7 새 테이블 DDL (docs/week7/plan.md D-0). local 프로필은 ddl-auto: none이라 로컬 DB(loopers)에 한 번 실행한다.
 -- 출처: 테스트(ddl-auto: create)가 loopers_test에 만든 테이블의 SHOW CREATE TABLE (2026-11-04).
+-- 문자셋·collation은 적지 않는다 — 실행하는 DB의 기본값을 따른다. 처음엔 loopers_test(utf8mb4_general_ci)의 값을 그대로 옮겨
+--   로컬 loopers(기본 utf8mb4_0900_ai_ci)의 다른 테이블과 달라졌고, 관찰 SQL의 consumer 테이블 JOIN이 "Illegal mix of collations"로 실패했다 (8단계, 11-06).
 -- 인덱스 확인 (11-04, 5만 행 중 PENDING 100): status IN ('PENDING','SENDING') AND next_attempt_at <= now ORDER BY id LIMIT 200
 --   → type=range, key=idx_order_outbox_due, rows=101, Using index condition; Using filesort (차례가 된 행만 정렬)
 --
@@ -19,17 +21,17 @@ CREATE TABLE `order_outbox` (
   `published_at` datetime(6) DEFAULT NULL COMMENT 'broker 확인(ack)을 기록한 시각',
   `published_offset` bigint DEFAULT NULL COMMENT 'broker가 알려 준 offset — 재발행되면 마지막 값',
   `updated_at` datetime(6) NOT NULL,
-  `event_id` varchar(36) COLLATE utf8mb4_general_ci NOT NULL COMMENT '이벤트 신원(UUID). 최초 확정 TX에서 한 번 만들고, 재발행해도 같은 값 (ADR-W6-01)',
-  `event_type` varchar(100) COLLATE utf8mb4_general_ci NOT NULL COMMENT '이벤트 종류 — OrderConfirmed',
-  `message_key` varchar(200) COLLATE utf8mb4_general_ci NOT NULL COMMENT 'partition을 고르는 key — 주문 ID 문자열. 같은 주문은 같은 partition',
-  `last_error` varchar(1000) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT '마지막 send 실패 원인 — 진단용. 재개해도 지우지 않는다',
-  `payload` text COLLATE utf8mb4_general_ci NOT NULL COMMENT '보낼 JSON 원문. 생성 뒤 바꾸지 않는다. MySQL JSON 타입은 키 순서·공백을 다시 만들어 원문이 보존되지 않아 TEXT',
-  `status` enum('BLOCKED','PENDING','PUBLISHED','SENDING') COLLATE utf8mb4_general_ci NOT NULL COMMENT 'PENDING → SENDING → PUBLISHED | (실패) PENDING · 3번째 실패 BLOCKED → (재개) PENDING',
+  `event_id` varchar(36) NOT NULL COMMENT '이벤트 신원(UUID). 최초 확정 TX에서 한 번 만들고, 재발행해도 같은 값 (ADR-W6-01)',
+  `event_type` varchar(100) NOT NULL COMMENT '이벤트 종류 — OrderConfirmed',
+  `message_key` varchar(200) NOT NULL COMMENT 'partition을 고르는 key — 주문 ID 문자열. 같은 주문은 같은 partition',
+  `last_error` varchar(1000) DEFAULT NULL COMMENT '마지막 send 실패 원인 — 진단용. 재개해도 지우지 않는다',
+  `payload` text NOT NULL COMMENT '보낼 JSON 원문. 생성 뒤 바꾸지 않는다. MySQL JSON 타입은 키 순서·공백을 다시 만들어 원문이 보존되지 않아 TEXT',
+  `status` enum('BLOCKED','PENDING','PUBLISHED','SENDING') NOT NULL COMMENT 'PENDING → SENDING → PUBLISHED | (실패) PENDING · 3번째 실패 BLOCKED → (재개) PENDING',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_order_outbox_event_id` (`event_id`),
   KEY `idx_order_outbox_due` (`status`,`next_attempt_at`,`id`),
   KEY `idx_order_outbox_order` (`order_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+) ENGINE=InnoDB
 ;
 
 -- W7 4단계: relay 작업 잠금 (ShedLock). 작업 이름마다 한 행 — "order-outbox-relay"를 얻은 실행만 relay를 돌린다.
@@ -40,4 +42,4 @@ CREATE TABLE IF NOT EXISTS `shedlock` (
   `locked_at` timestamp(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '잠근 시각',
   `locked_by` varchar(255) NOT NULL COMMENT '잠근 호스트',
   PRIMARY KEY (`name`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB;
