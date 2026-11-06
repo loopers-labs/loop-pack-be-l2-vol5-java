@@ -4,6 +4,7 @@ import com.loopers.domain.ordering.model.Order;
 import com.loopers.domain.ordering.model.OrderItem;
 import com.loopers.domain.ordering.model.OrderRecord;
 import java.util.List;
+import java.util.UUID;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -41,12 +42,15 @@ public class OrderEntityMapper {
 
     // 주문 기록 엔티티를 도메인으로 변환
     private OrderRecord toRecordDomain(OrderRecordJpaEntity entity) {
+        String eventId = entity.getConfirmationEventId();
         return OrderRecord.restore(entity.getId(), entity.getUserId(), entity.getAmount(), entity.getStatus(),
-            entity.getCreatedAt(), entity.getPaymentMethod());
+            entity.getCreatedAt(), entity.getPaymentMethod(), eventId == null ? null : UUID.fromString(eventId));
     }
 
     // 주문 기록 도메인을 신규 엔티티로 변환
     private OrderRecordJpaEntity toNewRecordEntity(OrderRecord record) {
-        return new OrderRecordJpaEntity(record.getUserId(), record.getAmount(), record.getStatus(), record.getPaymentMethod());
+        UUID eventId = record.getConfirmationEventId();
+        return new OrderRecordJpaEntity(record.getUserId(), record.getAmount(), record.getStatus(), record.getPaymentMethod(),
+            record.getCreatedAt(), eventId == null ? null : eventId.toString());
     }
 }

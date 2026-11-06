@@ -49,16 +49,21 @@ R01 재현 경로는 테스트 구성 또는 보존 revision으로 유지한다.
 4. 최종 E2E에서 실제 broker 재발행 2회 이상과 Inbox 1행/상품별 활동 불변을 확인한다.
 5. backlog·오류·재개·보존 정책, 관련 회귀/전체 check와 PR/기술 글을 정리한다.
 
-## 구현 착수 시 구체화할 설계
+## R01 상세 설계
 
-요구사항의 고정 조건을 유지하면서 실제 코드에서 다음을 결정하고 근거를 기록한다.
-
-- 이벤트 계약의 소유/공유 위치: `modules:kafka`에 주문 업무 모델을 넣지 않는다.
-- 기존 confirmedAt/OrderRecord를 사용할지와 고정 eventId 저장 또는 안정적 유도 방식.
-- Inbox·구매 활동의 context/Entity/Mapper/Repository와 정규화 fingerprint 방식.
-- 기존 Kafka YAML의 value-deserializer·실효 자동 commit·호스트 admin 주소 보완과 별도 record factory.
-- streamer의 application name/동시 실행 포트·보존 프로필·필요한 SQL/인덱스.
-- W6 재현 코드 보존/실행 방식, Outbox relay 기본 간격·처리량·timeout.
+2026-11-04 사용자 요청으로 [R01 상세 설계 초안](r01-order-events-inbox/plan.md)을 작성했다.
+추천안을 확정처럼 기록했던 점을 사용자 지적에 따라 바로잡고 [트레이드오프 논의](r01-order-events-inbox/trade-offs.md)를 시작했다.
+사용자는 앱별 DTO/JSON 계약 테스트·기존 createdAt 재사용·정규화 snapshot 필드 비교를 확정했다.
+추가 답변으로 최초 UUID 생성·저장, 추가 필드 무시·필수 계약 검증을 확정했다.
+개별 이벤트의 최종 실패는 DB에 보관하고 기록 commit 뒤 원본 offset을 진행한다.
+공통 DB 장애가 재시도 뒤에도 이어지거나 실패 기록 저장에 실패하면 원본 offset을 유지하고 리스너를 중단한다.
+계약 DTO는 앱별로 둔다. 재시도 수치와 저장 필드는 구현 초기값 제안으로 구분한다.
+Inbox와 모든 품목의 단일 TX 등 원문의 고정 조건은 유지하며 추천 세부는 답변 후 수정한다.
+필드/정규화는 [계약](r01-order-events-inbox/event-contract.md),
+제약/DDL/경합은 [저장 설계](r01-order-events-inbox/persistence.md),
+설정/실험은 상세 설계와 [검증 계획](r01-order-events-inbox/verification.md)을 따른다.
+T01~T08 사용자 선택을 반영한 설계이며 구체 기술 설정은 구현 제안이다.
+Outbox relay의 구체 간격·회차 처리량·재시도 정책은 R02에서 설계한다.
 
 기능 동작을 바꾸는 구현은 저장소의 비즈니스·사용자 경험·기술 세 관점 리뷰 규칙을 따른다.
 중요 수정 확인은 기존 승인 범위와 실제 영향에 맞춰 적용한다. 문서·빌드·테스트 전용 준비는 별도 기능 리뷰하지 않는다.

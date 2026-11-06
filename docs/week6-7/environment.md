@@ -36,7 +36,8 @@ Docker 29와 기존 docker-java의 API 협상 문제를 피해야 하는 로컬 
 api.version=1.44
 ```
 
-필요하면 기존 API의 같은 로컬 파일에서 복사한다. Docker Desktop 자체가 꺼진 상태는 API 설정으로 해결되지 않는다.
+필요하면 기존 API의 같은 로컬 파일에서 복사한다. Streamer의 실제 MySQL 검사에는
+`apps/commerce-streamer/src/test/resources/docker-java.properties`에 같은 로컬 설정을 둘 수 있다.
 
 ## 기존 실행 설정의 후속 작업
 
@@ -50,7 +51,8 @@ api.version=1.44
 - streamer의 `spring.application.name=commerce-api` 및 API와 동시 실행 시 포트 분리.
 - 새 Inbox·활동·Outbox Entity와 명시 SQL/인덱스 및 데이터 보존 프로필 연결.
 
-기존 `local` JPA 프로필은 `ddl-auto=create`다. 보존 중인 결제 실험 DB에 무심코 실행하지 않는다.
+commerce-api의 `local` JPA 프로필은 `ddl-auto=create`다. Streamer의 `local` 프로필은 `ddl-auto=none`을 사용하므로
+저장 기능을 사용하기 전에 [009 SQL](../../docker/payment-lab/009-purchase-activity.sql)로 스키마를 준비한다.
 5주차 독립 PG·payment-lab의 보존 프로필과 명시 SQL은 기존 안내를 따른다.
 새 통합 검증은 격리 MySQL·Kafka·로컬 PG를 소유하고 준비부터 복구까지 같은 상태를 유지한다.
 

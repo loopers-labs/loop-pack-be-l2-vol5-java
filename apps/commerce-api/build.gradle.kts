@@ -1,5 +1,9 @@
 import org.gradle.api.plugins.quality.CheckstyleExtension
 
+sourceSets.test {
+    resources.srcDir(rootProject.file("docs/week6-7/r01-order-events-inbox/fixtures"))
+}
+
 dependencyManagement {
     imports {
         mavenBom("io.github.resilience4j:resilience4j-bom:2.3.0")
@@ -13,6 +17,7 @@ dependencies {
     implementation(project(":supports:jackson"))
     implementation(project(":supports:logging"))
     implementation(project(":supports:monitoring"))
+    implementation("org.springframework.kafka:spring-kafka")
 
     // web
     implementation("org.springframework.boot:spring-boot-starter-web")
@@ -31,6 +36,7 @@ dependencies {
 
     // test-fixtures
     testImplementation(testFixtures(project(":modules:jpa")))
+    testImplementation(testFixtures(project(":modules:kafka")))
     testImplementation("com.tngtech.archunit:archunit-junit5:${project.properties["archUnitVersion"]}")
 }
 

@@ -11,6 +11,8 @@ server:
   max-http-request-header-size: 8KB
 
 spring:
+  kafka:
+    bootstrap-servers: ${BOOTSTRAP_SERVERS:localhost:19092}
   main:
     web-application-type: servlet
   application:
@@ -32,6 +34,10 @@ springdoc:
 scheduler:
   like-count:
     enabled: true
+
+order-events:
+  relay:
+    enabled: ${ORDER_EVENTS_RELAY_ENABLED:false}
 
 pg:
   client:
@@ -81,6 +87,10 @@ spring:
 
 ---
 spring.config.activate.on-profile: test
+order-events:
+  relay:
+    enabled: false
+
 payment:
   recovery:
     auto-start-enabled: false

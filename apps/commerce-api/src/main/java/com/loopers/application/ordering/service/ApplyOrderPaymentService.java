@@ -1,6 +1,7 @@
 package com.loopers.application.ordering.service;
 
 import com.loopers.application.mall.service.ProductService;
+import com.loopers.application.ordering.event.OrderConfirmedEvent;
 import com.loopers.application.ordering.result.ApplyOrderPaymentResult;
 import com.loopers.application.ordering.support.PaymentApplicationTransaction;
 import com.loopers.application.support.error.ApplicationErrorCode;
@@ -32,6 +33,8 @@ public class ApplyOrderPaymentService {
     private final StockAdjustmentRepository adjustments;
     private final PaymentRecoveryTaskRepository tasks;
     private final ProductService products;
+    private final OrderConfirmationRecordFactory confirmationRecords;
+    private final AppendOrderOutboxService outbox;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Optional<ApplyOrderPaymentResult> apply(String key) {
@@ -62,7 +65,7 @@ public class ApplyOrderPaymentService {
         }
         boolean success = attempt.getOutcome() == PaymentAttempt.Outcome.SUCCESS;
         OrderStatus target = success ? OrderStatus.CONFIRMED : OrderStatus.PAYMENT_FAILED;
-        OrderRecord record = success ? OrderRecord.paidByPg(order.getUserId(), attempt.getAmount()) : null;
+        OrderRecord record = success ? confirmationRecords.create(order.getUserId(), attempt.getAmount()) : null;
         if (!orders.completePgIfPending(order.getId(), target, record)) {
             return Optional.empty();
         }
@@ -82,6 +85,9 @@ public class ApplyOrderPaymentService {
         adjustments.save(adjustment);
         if (!tasks.markApplied(key, Instant.now())) {
             throw new IllegalStateException("복구 작업의 업무 반영 완료를 저장할 수 없습니다.");
+        }
+        if (success) {
+            outbox.execute(OrderConfirmedEvent.from(order(attempt)));
         }
         return Optional.of(result(ApplyOrderPaymentResult.State.APPLIED, attempt));
     }
