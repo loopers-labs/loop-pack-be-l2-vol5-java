@@ -20,16 +20,19 @@
 
 # Mutation Testing
 
-## 기본 테스트 시나리오
+## 전체 테스트 시나리오
 
 | 시나리오 | 기대 결과 | 관련 테스트 |
 | --- | --- | --- |
-| 발행 가능한 이벤트 조회 | 현재 시각까지 재시도 시각이 도래한 `PENDING`·`FAILED`만 조회한다. | `selectsOnlyDuePendingAndFailedRows` |
-| 오래된 이벤트 우선 처리와 배치 제한 | 생성 시각 순으로 정렬하고 설정된 최대 건수까지만 조회한다. | `ordersEligibleRowsByOldestCreationTime`, `limitsResultToConfiguredBatchSize` |
-| Kafka 성공 응답 처리 | 응답 확인 후 시도 횟수를 기록하고 `PUBLISHED`와 완료 시각을 저장한다. | `branchesByPublishResultAndAttemptLimit`, `completesPublishResultOnlyAfterKafkaSendCompletes` |
-| 실패·미확정 결과 처리 | 실패는 `FAILED`, 미확정 결과는 `PENDING`으로 기록하고 재시도 시각을 설정한다. 상한에 도달하면 `BLOCKED`로 전환한다. | `branchesByPublishResultAndAttemptLimit` |
-| 재시도 시각 도래 후 재발행 | 재시도 시각 전에는 제외하고, 시각이 되면 다시 발행한다. | `republishesFailedOutboxWhenRetryTimeArrives` |
-| 재시도 메시지 identity 유지 | 같은 이벤트를 재발행할 때 `messageKey`와 payload의 `eventId`를 유지한다. | `preservesMessageKeyAndPayloadAcrossRetries`, `republishesWithSameMessageKeyAndEventId` |
+| 발행 대상 조회 | 재시도 시각이 도래한 `PENDING`·`FAILED`만 조회하고 `PUBLISHED`·`BLOCKED` 및 미래 재시도 건은 제외한다. 경계 시각은 포함한다. | `selectsOnlyDuePendingAndFailedRows` |
+| 조회 순서·배치 제한 | 생성 시각이 오래된 이벤트부터 정렬하고 설정된 최대 건수만 가져온다. | `ordersEligibleRowsByOldestCreationTime`, `limitsResultToConfiguredBatchSize` |
+| 순차 발행 및 폴링 간 누락 방지 | 한 배치의 이벤트를 순서대로 발행하고, 이전 폴링 뒤 커밋된 더 작은 ID의 이벤트도 다음 폴링에서 조회한다. | `publishesOldestCurrentlyEligibleRowsAcrossPolls` |
+| 발행 시도 횟수 | 발행 시도마다 `attempt_count`를 증가시키고, 재시도 후 DB에 누적된 횟수를 기록한다. | `branchesByPublishResultAndAttemptLimit`, `republishesFailedOutboxWhenRetryTimeArrives` |
+| 성공 응답 처리 | Kafka Future 완료 전에는 발행 완료로 저장하지 않고, 성공 응답 후 `PUBLISHED`와 `published_at`을 기록한다. | `waitsForAckBeforeCompletingAttempt`, `completesPublishResultOnlyAfterKafkaSendCompletes`, `branchesByPublishResultAndAttemptLimit` |
+| 실패 응답 처리 | 실패가 확인되면 `FAILED`와 다음 재시도 시각·오류 종류를 저장한다. 최대 시도에 도달하면 `BLOCKED`로 전환한다. | `branchesByPublishResultAndAttemptLimit`, `republishesFailedOutboxWhenRetryTimeArrives` |
+| 결과 미확정·대기 제한 | 응답이 미확정이면 `PENDING`으로 재시도 시각을 저장하고, Publisher Future가 미완료여도 Relay는 제한 시간 안에 종료한다. 최대 시도 도달 시 `BLOCKED`로 전환한다. | `branchesByPublishResultAndAttemptLimit`, `shouldNotWaitForever` |
+| Kafka 전송 실패 전파 | Kafka Future가 예외로 끝나면 Publisher Future가 실패 결과로 완료된다. | `completesPublisherFutureAsFailed_whenKafkaFutureFails` |
+| 재시도 시 메시지 identity 유지 | 같은 이벤트를 다시 발행할 때 `messageKey`와 payload의 `eventId`를 유지한다. | `preservesMessageKeyAndPayloadAcrossRetries`, `republishesWithSameMessageKeyAndEventId` |
 
 ## 결함 주입 시나리오
 
