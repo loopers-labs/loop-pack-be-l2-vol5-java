@@ -1,14 +1,9 @@
 package com.loopers.e2e;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.CommerceApiApplication;
 import com.loopers.CommerceStreamerApplication;
 import com.loopers.application.order.OrderOutboxRelay;
 import com.loopers.application.order.OrderOutboxRelayProperties;
-import com.loopers.application.purchase.PurchaseActivityHandler;
-import com.loopers.application.purchase.PurchaseActivityRecorder;
-import com.loopers.config.kafka.OrderActivityKafkaConfig;
 import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.order.OrderConfirmedEvent;
 import com.loopers.domain.order.OrderEventPublication;
@@ -27,10 +22,8 @@ import com.loopers.infrastructure.order.OrderOutboxJpaRepository;
 import com.loopers.infrastructure.order.StockReservationJpaRepository;
 import com.loopers.infrastructure.point.PointJpaRepository;
 import com.loopers.infrastructure.product.ProductJpaRepository;
-import com.loopers.infrastructure.purchase.PurchaseActivityRepositoryImpl;
 import com.loopers.interfaces.consumer.DemoKafkaConsumer;
 import com.loopers.interfaces.consumer.OrderConfirmedListener;
-import com.loopers.interfaces.consumer.OrderConfirmedParser;
 import com.loopers.support.kafka.BrokerRecords;
 import com.loopers.support.outbox.RecordingOutboxSender;
 import com.loopers.support.outbox.RelayStopHook;
@@ -38,13 +31,7 @@ import com.loopers.support.pg.PaymentTestSupport;
 import com.loopers.support.pg.TestPgResetExtension;
 import com.loopers.support.pg.TestPgServer;
 import com.loopers.support.pg.TestPgStatus;
-import com.loopers.support.pg.TestPgTransaction;
 import com.loopers.testcontainers.KafkaBrokerFixture;
-import org.apache.kafka.clients.admin.AdminClient;
-import org.apache.kafka.clients.admin.AdminClientConfig;
-import org.apache.kafka.clients.consumer.OffsetAndMetadata;
-import org.apache.kafka.common.TopicPartition;
-import org.assertj.core.groups.Tuple;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -61,27 +48,24 @@ import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Import;
-import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
 import org.springframework.kafka.listener.MessageListenerContainer;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.ResultActions;
 
 import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.awaitility.Awaitility.await;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -92,7 +76,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 같은 Outbox에서 새 relay로 재시작한다.
  *
  * <p>context 구성 (결정 B): commerce-api 앱 하나의 context에서 streamer 클래스는 component scan에서 모두 빼고({@link ExcludeStreamerFromScan}),
- * 실제로 쓰는 consumer 부품만 {@code @Import}로 명시한다. streamer는 이 source set의 classpath에만 있고 제품 runtime 의존성이 아니다.
+ * 실제로 쓰는 consumer 부품만 {@link PurchaseActivityConsumerConfig}로 명시한다. streamer는 이 source set의 classpath에만 있고 제품 runtime 의존성이 아니다.
  *
  * <p>자원: 이 테스트만 쓰는 topic·group·상품·사용자·주문을 만든다. 모든 단계를 실제 commit으로 진행하고(테스트 트랜잭션 없음),
  * DB를 일괄 초기화하지 않는다. 끝에는 자기가 시작한 consumer와 만든 producer만 멈춘다(PG fixture는 {@link TestPgResetExtension}이 되돌린다).
@@ -100,14 +84,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest(classes = CommerceApiApplication.class)
 @AutoConfigureMockMvc
 @TypeExcludeFilters(ExcludeStreamerFromScan.class)
-@Import({
-    OrderActivityKafkaConfig.class,
-    OrderConfirmedParser.class,
-    OrderConfirmedListener.class,
-    PurchaseActivityHandler.class,
-    PurchaseActivityRecorder.class,
-    PurchaseActivityRepositoryImpl.class
-})
+@Import(PurchaseActivityConsumerConfig.class)
 @ExtendWith({TestPgResetExtension.class, OutputCaptureExtension.class})
 class OutboxDeliveryE2ETest {
 
@@ -115,7 +92,6 @@ class OutboxDeliveryE2ETest {
     private static final String TOPIC = KafkaBrokerFixture.createTopic("order-events-e2e", 1);
     private static final String GROUP = KafkaBrokerFixture.uniqueName("purchase-activity-e2e");
     private static final Duration DEADLINE = Duration.ofSeconds(60);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private static final long USER_ID = 70_001L;
     private static final long INITIAL_BALANCE = 100_000L;
@@ -207,10 +183,13 @@ class OutboxDeliveryE2ETest {
         await().atMost(DEADLINE).until(consumer::isRunning);
 
         // 1. 기존 API로 주문을 만들고, PG SUCCESS를 callback 경로(내부 확정 경로)에 적용한다
-        Long orderId = createOrder(productA.getId(), 2, productB.getId(), 1);
-        confirm(orderId).andExpect(status().isAccepted());
+        Map<Long, Integer> items = new LinkedHashMap<>();
+        items.put(productA.getId(), 2);
+        items.put(productB.getId(), 1);
+        Long orderId = E2eSupport.createOrder(mvc, USER_ID, items);
+        E2eSupport.confirm(mvc, USER_ID, orderId).andExpect(status().isAccepted());
         PaymentTestSupport.completeAt(pg, orderId, TestPgStatus.SUCCESS);
-        callbackOf(PaymentTestSupport.onlyTransactionOf(pg, orderId)).andExpect(status().isOk());
+        E2eSupport.callbackOf(mvc, PaymentTestSupport.onlyTransactionOf(pg, orderId)).andExpect(status().isOk());
 
         // 2. 확정 주문·예약 소비·같은 eventId의 Outbox 한 행
         String eventId = OrderConfirmedEvent.eventIdOf(orderId);
@@ -231,8 +210,8 @@ class OutboxDeliveryE2ETest {
         assertThat(onlyOutboxRow(orderId).getStatus()).as("broker는 받았지만 PUBLISHED는 저장하지 않았다").isEqualTo(OrderOutboxStatus.PENDING);
 
         // consumer는 첫 record를 처리한다. Outbox가 아직 PENDING이어도 구매 활동은 생긴다(PUBLISHED는 소비 완료와 무관하다)
-        await().atMost(DEADLINE).untilAsserted(() -> assertThat(committedOffset()).isEqualTo(firstAck.offset() + 1));
-        assertThat(purchaseActivities(orderId)).containsExactly(tuple(productA.getId(), 2), tuple(productB.getId(), 1));
+        await().atMost(DEADLINE).untilAsserted(() -> assertThat(E2eSupport.committedOffset(GROUP, TOPIC)).isEqualTo(firstAck.offset() + 1));
+        assertThat(E2eSupport.purchaseActivities(jdbcTemplate, orderId)).containsExactly(tuple(productA.getId(), 2), tuple(productB.getId(), 1));
 
         // 4. 같은 Outbox에서 relay를 재시작한다. 새 relay 객체·새 producer, 같은 DB·topic·eventId. Outbox 상태는 직접 고치지 않는다
         RecordingOutboxSender restartedSender = RecordingOutboxSender.of(newProducer());
@@ -241,7 +220,7 @@ class OutboxDeliveryE2ETest {
         OrderEventPublication.Sent secondAck = onlySent(restartedSender);
 
         // 5. consumer가 같은 사건을 다시 처리한 뒤(두 번째 record까지 ack) DB의 상품별 구매 사실을 확인한다
-        await().atMost(DEADLINE).untilAsserted(() -> assertThat(committedOffset()).isEqualTo(secondAck.offset() + 1));
+        await().atMost(DEADLINE).untilAsserted(() -> assertThat(E2eSupport.committedOffset(GROUP, TOPIC)).isEqualTo(secondAck.offset() + 1));
 
         // 주문·PG 거래: 같은 확정 주문, 외부 거래 1
         assertThat(orderJpaRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.CONFIRMED);
@@ -261,7 +240,7 @@ class OutboxDeliveryE2ETest {
         assertThat(records).allSatisfy(record -> {
             assertThat(record.key()).isEqualTo(String.valueOf(orderId));
             assertThat(record.value()).isEqualTo(recorded.getPayload());
-            assertThat(MAPPER.readTree(record.value()).get("eventId").asText()).isEqualTo(eventId);
+            assertThat(E2eSupport.eventIdIn(record.value())).isEqualTo(eventId);
         });
 
         // consumer: 같은 사건을 두 번 받았다. 처음은 반영, 다음은 이미 반영된 사실로 no-op
@@ -270,13 +249,10 @@ class OutboxDeliveryE2ETest {
             .contains("result=ALREADY_PROCESSED, eventId=" + eventId + ", orderId=" + orderId + ", partition=0, offset=" + secondAck.offset());
 
         // 완료 기록: 같은 orderId·eventId로 1
-        assertThat(jdbcTemplate.queryForObject(
-            "select count(*) from processed_order_confirmation where order_id = ?", Long.class, orderId)).isEqualTo(1L);
-        assertThat(jdbcTemplate.queryForObject(
-            "select event_id from processed_order_confirmation where order_id = ?", String.class, orderId)).isEqualTo(eventId);
+        assertThat(E2eSupport.processedEventIds(jdbcTemplate, orderId)).containsExactly(eventId);
 
         // 구매 활동: 상품별 2행, 수량 2·1 유지
-        assertThat(purchaseActivities(orderId)).containsExactly(tuple(productA.getId(), 2), tuple(productB.getId(), 1));
+        assertThat(E2eSupport.purchaseActivities(jdbcTemplate, orderId)).containsExactly(tuple(productA.getId(), 2), tuple(productB.getId(), 1));
 
         // 재고·포인트: 예약 추가 소비·반환 없음, PG 주문이라 포인트 차감 없음
         assertThat(stockReservationJpaRepository.findByOrderId(orderId).orElseThrow().getStatus()).isEqualTo(ReservationStatus.CONSUMED);
@@ -287,39 +263,8 @@ class OutboxDeliveryE2ETest {
         log.info("[W7 E2E] topic={} group={} orderId={} eventId={} | 첫 발행 offset={}(PUBLISHED 저장 전 중단) → 재발행 offset={} | "
                 + "Outbox={}(시도 {}) | 완료 기록 1 | 구매 활동 {}",
             TOPIC, GROUP, orderId, eventId, firstAck.offset(), secondAck.offset(),
-            published.getStatus(), published.getAttemptCount(), purchaseActivities(orderId));
+            published.getStatus(), published.getAttemptCount(), E2eSupport.purchaseActivities(jdbcTemplate, orderId));
     }
-
-    // ---- HTTP (실제 controller) ----
-
-    private Long createOrder(Long firstProductId, int firstQuantity, Long secondProductId, int secondQuantity) throws Exception {
-        String body = "{\"items\":[{\"productId\":" + firstProductId + ",\"quantity\":" + firstQuantity + "},"
-            + "{\"productId\":" + secondProductId + ",\"quantity\":" + secondQuantity + "}]}";
-        String response = mvc.perform(post("/api/v1/orders")
-                .header("X-USER-ID", USER_ID)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body))
-            .andExpect(status().isOk())
-            .andReturn().getResponse().getContentAsString();
-        JsonNode id = MAPPER.readTree(response).path("data").path("id");
-        assertThat(id.isNumber()).as("주문 생성 응답의 id: %s", response).isTrue();
-        return id.asLong();
-    }
-
-    private ResultActions confirm(Long orderId) throws Exception {
-        return mvc.perform(post("/api/v1/orders/" + orderId + "/confirm")
-            .header("X-USER-ID", USER_ID)
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(PaymentTestSupport.confirmBodyOf(orderId)));
-    }
-
-    private ResultActions callbackOf(TestPgTransaction transaction) throws Exception {
-        String body = "{\"transactionKey\":\"" + transaction.transactionKey() + "\",\"orderId\":\"" + transaction.orderId()
-            + "\",\"status\":\"" + transaction.status().name() + "\"}";
-        return mvc.perform(post("/api/v1/payments/callback").contentType(MediaType.APPLICATION_JSON).content(body));
-    }
-
-    // ---- relay·broker ----
 
     /** 운영 설정(KafkaProperties·topic·send-timeout)으로 만든 relay 전용 producer. 재시작마다 새로 만든다. */
     private KafkaOrderOutboxSender newProducer() {
@@ -335,19 +280,6 @@ class OutboxDeliveryE2ETest {
         return (OrderEventPublication.Sent) results.get(0);
     }
 
-    /** consumer group이 이 topic의 partition 0에 commit한 offset. listener는 DB commit 뒤에만 ack하므로 처리 완료한 record 수와 같다. */
-    private static Long committedOffset() throws Exception {
-        try (AdminClient admin = AdminClient.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, KafkaBrokerFixture.bootstrapServers()))) {
-            Map<TopicPartition, OffsetAndMetadata> offsets = admin.listConsumerGroupOffsets(GROUP)
-                .partitionsToOffsetAndMetadata()
-                .get(30, TimeUnit.SECONDS);
-            OffsetAndMetadata committed = offsets.get(new TopicPartition(TOPIC, 0));
-            return committed == null ? null : committed.offset();
-        }
-    }
-
-    // ---- DB ----
-
     private OrderOutboxModel onlyOutboxRow(Long orderId) {
         List<OrderOutboxModel> rows = orderOutboxJpaRepository.findAllByOrderId(orderId);
         assertThat(rows).hasSize(1);
@@ -356,13 +288,5 @@ class OutboxDeliveryE2ETest {
 
     private int stockOf(ProductModel product) {
         return productJpaRepository.findById(product.getId()).orElseThrow().getStock();
-    }
-
-    private List<Tuple> purchaseActivities(Long orderId) {
-        return jdbcTemplate.query(
-            "select product_id, quantity from product_purchase_activity where order_id = ? order by product_id",
-            (rs, rowNum) -> tuple(rs.getLong("product_id"), rs.getInt("quantity")),
-            orderId
-        );
     }
 }

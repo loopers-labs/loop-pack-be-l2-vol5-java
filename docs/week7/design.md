@@ -1,6 +1,6 @@
 # 주문 확정 Outbox와 단일 relay 설계 — Week 7
 
-> 상태: **구현 중 (2026-11-05)**. 1~8단계(바꿀 트랜잭션 표시, Outbox 모델, 확정 TX의 Outbox 기록, 로컬 원자성 검증, 단일 relay, 재시도·재개·관찰, 두 중단 구간, 주문부터 구매 활동까지의 E2E)를 진행했다. W6 누락 복구는 다음 단계다.
+> 상태: **구현 중 (2026-11-05)**. 1~9단계(바꿀 트랜잭션 표시, Outbox 모델, 확정 TX의 Outbox 기록, 로컬 원자성 검증, 단일 relay, 재시도·재개·관찰, 두 중단 구간, 주문부터 구매 활동까지의 E2E, W6 누락 재현·복구)를 진행했다. 회귀·제출은 다음 단계다.
 > W6의 이벤트 계약(`docs/week6/design.md` 2절)과 구매 활동 consumer는 바꾸지 않는다. 바꾸는 것은 "확정 뒤 직접 발행"을 "같은 TX의 Outbox 기록 + 단일 relay"로 교체하는 경계다.
 
 ## 0. 범위
@@ -199,13 +199,45 @@ relay 한 건의 흐름은 단계로 나뉜다. 어느 단계 사이에서 멈�
 - **격리와 정리.** topic·group·상품·사용자·주문은 이 테스트만 쓰는 값이다. DB를 일괄 초기화하지 않는다. 끝에는 자기가 시작한 listener와 만든 producer만 멈추고, PG fixture는 테스트 전후로 되돌린다. MySQL·Kafka 컨테이너는 `e2eTest` JVM의 fixture이고 Testcontainers가 JVM 종료 때 정리한다.
 - 상품 id는 DB가 정한다. 과제의 "상품 7×2, 8×1"은 새로 만든 두 상품의 수량 2·1로 확인한다.
 
+### 4-4. W6 누락 상태의 재현과 복구 (9단계, `W6OmissionRecoveryE2ETest`)
+
+역사적 원본 행의 복원이 아니라 **새 격리 실행에서 W6 누락 상태를 재현하고 같은 실행 안에서 복구**한다. W6의 임시 DB 없이 시작하고, 사건은 이번 실행의 것이다(W6 기록과 별개).
+
+**복구 경로 (제품 코드).** `OrderOutboxBackfill.backfill(orderIds)` → 주문마다 `OrderOutboxService.backfill(orderId, recordedAt)` (별도 트랜잭션).
+
+| 대상 상태 | 결과 | 쓰는 것 |
+|---|---|---|
+| 확정 주문, Outbox 없음 | `ADDED` | 저장된 주문에서 확정 경로와 같은 방식으로 만든 이벤트(eventId·confirmedAt·품목)의 PENDING 한 행. `next_attempt_at` = 복구 시각 |
+| 같은 사실의 행이 이미 있음 | `ALREADY_PRESENT` | 없음. 이미 PUBLISHED여도 다시 PENDING으로 돌리지 않는다 |
+| 주문 없음 / 미확정·확정 시각 없음 (원본 사실 부족) | `REJECTED` + 이유 | 없음 |
+| 같은 eventId에 다른 사실의 행 (충돌) | `REJECTED` + 이유 | 없음. 기존 행을 고치거나 덮어쓰지 않는다 |
+
+- 대상은 **명시한 주문뿐**이다. 이전 POINT 주문 전체를 자동으로 소급하지 않는다. 한 대상이 거부돼도 다른 대상은 처리하고, 거부는 ERROR 로그와 결과로 드러낸다.
+- 주문·결제·예약은 읽기만 한다. PG를 부르지 않고, 주문을 다시 확정하지 않는다. 보내는 것은 단일 relay다.
+- 공개 API로 노출하지 않는다. 로컬의 운영 도구·테스트가 부른다(재개 `resume(eventId)`와 같은 경계).
+
+**재현 → 복구 순서 (한 테스트 실행, 사이에 DB·broker·PG 초기화나 `@AfterEach` 없음).**
+
+| 단계 | 하는 일 | 확인 |
+|---|---|---|
+| 준비 (W6 경로) | 보존한 W6 테스트 구성(`W6DirectPublishConfig`)으로 주문 API → PG SUCCESS → callback 확정 → commit 뒤 직접 발행. W6 고정 입력(확정 시각 2026-09-07T01:00:00Z, 단가 7,000원·재고 5, 주문마다 수량 2) | A: send 직전 중단(주입) → broker record 없음. B: W6 실제 발행기로 발행 → 실제 consumer 소비. 두 주문 CONFIRMED·예약 CONSUMED, Outbox 0, **A만 구매 활동 0** |
+| 기록 | A·B의 orderId·eventId·confirmedAt·items·PG 거래 key, PG 누적 호출 수 | **C = 2, T = 2** (조회·요청 수도 함께) |
+| 전환 | W6 직접 발행을 멈추고(테스트 구성의 전환, 제품 스위치 아님) 같은 DB에 W7 복구 경로·relay를 잇는다. 시각을 복구 시점(+3일)으로 옮긴다 | — |
+| 1차 복구 | `backfill([A, B])` → relay 한 회차 | 두 행 `ADDED`. payload의 confirmedAt은 복구 시각이 아니라 W6 확정 시각, B의 payload는 W6가 broker에 보낸 값과 같은 바이트. relay 2건 발행. **A 구매 활동 생성**, B는 재발행을 `ALREADY_PROCESSED`로 받아 **활동 행·수량 불변** |
+| 2차 복구 | 같은 대상으로 다시 `backfill` → relay | 두 행 `ALREADY_PRESENT`, relay 0건, Outbox 2행·broker record 3개·구매 활동 그대로 |
+| 마무리 확인 | PG·주문·예약·포인트 | PG create = C, 외부 거래 = T, 조회·요청 증가 0, 확정 시각 그대로(재확정 0), 예약 CONSUMED·재고 그대로(추가 소비 0), 복구 중 직접 발행 0 |
+
+- 준비 상태를 만들려고 SUCCESS를 직접 넣거나 W7 Outbox 행을 지우지 않는다. W6 경로가 처음부터 Outbox를 쓰지 않아 누락이 생긴다.
+- 실제 W6 원본 DB를 보존한 것이 아니므로 이것은 "원본 사건의 복구"가 아니다. 원본 DB가 있었다면 준비를 다시 하지 않고, 보존한 사건 사실을 확인한 뒤 같은 `backfill`을 적용한다.
+- 복구 경로의 경계 사례(원본 사실 부족·충돌·이미 보낸 행·재복구)는 `OrderOutboxBackfillTest`가 따로 확인한다.
+
 ## 5. 결정 사항
 
 | 결정 | 선택 | 이유 | 상태 |
 |---|---|---|---|
 | A. relay의 값 직렬화 | relay 전용 producer(value `StringSerializer`)로 저장된 payload를 그대로 보낸다 | 공통 template의 `JsonSerializer`에 문자열을 넘기면 JSON 문자열 리터럴로 한 번 더 감싸 consumer parser가 읽지 못한다 | 5단계에서 적용 (`KafkaOrderOutboxSender`) |
 | B. E2E에서 consumer 로딩 | commerce-api에 E2E 전용 source set `e2eTest`를 두고 그 classpath에만 commerce-streamer를 둔다. streamer는 plain jar(classifier `plain`, `application.yml` 제외)를 켠다. E2E context는 streamer 클래스를 component scan에서 빼고 consumer 부품만 `@Import`한다 | 두 앱의 `@SpringBootApplication`이 같은 패키지에 있어 일반 test classpath에 넣으면 기존 테스트의 설정 탐색·scan이 깨진다. 제품 runtime에는 commerce-api → commerce-streamer 의존이 생기지 않는다. 별도 E2E 모듈은 settings 변경과 테스트 지원 코드 이동이 더 크다 | 8단계에서 적용 (2026-11-05 확인). 실행: `./gradlew :apps:commerce-api:e2eTest` (`check`에 포함) |
-| C. W6 누락 상태 재현 | 보존한 W6 테스트 구성: 테스트 전용 `W6DirectPublishConfig`가 그 context에서만 Outbox 기록 자리를 "commit 뒤 직접 발행"으로 바꾼다 | W7 제품 코드에는 직접 발행이 없고, 운영용 우회 스위치는 만들지 않는다. W6 기준선 `OrderConfirmedOmissionReproTest`를 기대값 그대로 계속 실행한다 | 3단계에서 적용, 9단계에서 재사용 |
+| C. W6 누락 상태 재현 | 보존한 W6 테스트 구성: 테스트 전용 `W6DirectPublishConfig`가 그 context에서만 Outbox 기록 자리를 "commit 뒤 직접 발행"으로 바꾼다. 복구 E2E는 같은 context에서 `stopDirectPublishing()`으로 W7 기록으로 되돌린다 | W7 제품 코드에는 직접 발행이 없고, 운영용 우회 스위치는 만들지 않는다. W6 기준선 `OrderConfirmedOmissionReproTest`를 기대값 그대로 계속 실행한다 | 3단계에서 적용, 9단계에서 재사용 |
 | 기존 테스트 기대값 | `OrderConfirmedPublicationTest` → `OrderConfirmedOutboxTest`. "한 번 발행"을 "Outbox 1행 + 직접 발행 0회"로 바꾸고, W6의 "commit 뒤 발행 실패" 장면은 "broker 불통에도 확정 경로는 broker를 부르지 않는다"로 바꾼다 | 발행 위치가 바뀐 결과다. 같은 장면을 새 경계에서 확인하고 검사를 약하게 만들지 않는다 | 1~4단계 진행 요청에 따라 적용 (2026-11-05) |
 
 ## 6. 테스트
@@ -222,6 +254,8 @@ relay 한 건의 흐름은 단계로 나뉜다. 어느 단계 사이에서 멈�
 | `OrderOutboxRetryAndResumeTest` | broker 장애 동안 쌓인 PENDING 2건이 회복 뒤 같은 행으로 발행되고 backlog가 비워짐, 연속 실패의 대기 1s → 2s → 4s(상한) → 4s와 알림 기준부터 ERROR(eventId·원인), eventId를 지정한 재개가 다음 시도 시각 전에 보내고 PUBLISHED·없는 eventId는 보내지 않음 |
 | `OrderOutboxInterruptionTest` | ① commit 뒤 relay 실행 전 중단: CONFIRMED·CONSUMED·PENDING(시도 0)·broker 0 → 새 relay가 저장 payload 그대로 1회 발행·PUBLISHED. ② broker 확인 뒤 PUBLISHED 저장 전 중단: send 성공 offset과 broker record 일치, 같은 행 PENDING(시도 1, 실패 기록 없음) → 새 relay가 같은 eventId를 다른 offset에 재발행, 같은 행 PUBLISHED(시도 2) |
 | `OutboxDeliveryE2ETest` (`e2eTest`) | 주문 API → PG 성공 callback → Outbox → relay(PUBLISHED 저장 전 중단·재시작) → Kafka 2 record → 실제 구매 활동 consumer. 4-3절 표의 기대값 전부 |
+| `OrderOutboxBackfillTest` | W6 경로로 확정된 주문에 저장된 사실 그대로 PENDING 1행(W6가 보내려던 값과 같은 바이트, 확정 시각 보존, PG·재고 불변), 재복구 무추가·PUBLISHED 유지, 없는·미확정 주문 거부와 다른 대상 처리, 충돌 행 거부·미변경 |
+| `W6OmissionRecoveryE2ETest` (`e2eTest`) | 4-4절 표 전부: W6 경로 준비(A 미발행·B 소비), C=2·T=2 기록, 복구로 A 구매 활동 생성·B 불변, 2차 복구 무변화, 복구 중 PG·주문·예약·직접 발행 증가 0 |
 | `OrderConfirmedOutboxTest` | 처음 확정에서 1행·저장 사실과 같은 payload, 중복 적용 무추가·payload 불변, 대기·실패·rollback 무기록, broker 불통에도 직접 send 0회 |
 | `OutboxAtomicityTest` | Outbox insert 전·후 실패와 직렬화 실패에서 TX B 전체 rollback(주문·시도·예약·재고 유지, Outbox 0, PG create 추가 0)과 같은 거래 재조회로 한 번 확정, UNKNOWN 무기록, 동시 중복 callback에서 1행, TX 밖 append 거부 |
 | `OrderConfirmedOmissionReproTest` | W6 기준선. `W6DirectPublishConfig`로 W6 경로를 재현해 기대값 그대로 실행 |
@@ -235,4 +269,5 @@ relay 없이 실제 MySQL에서 로컬 원자성을 먼저 확인한다. broker�
 - timeout 뒤 같은 사건을 다시 보내므로 broker에는 같은 eventId의 record가 둘 이상 생길 수 있다. 소비 효과의 중복은 W6 consumer(eventId·주문 유일 제약)가 막는다.
 - W6의 `OrderEventPublisher`·`KafkaOrderEventPublisher`는 제품 경로에서 더 이상 부르지 않는다. W6 기준선 재현(`W6DirectPublishConfig`)만 쓴다.
 - `created_at`은 `BaseEntity`가 시스템 시계로 정한다. 확정 시각과 `next_attempt_at`은 주입한 `Clock`을 따른다.
-- `OrderConfirmedOmissionReproTest`가 실행하는 W6 경로는 테스트 구성으로 재현한 것이다. 원래 W6 코드의 실행은 커밋 `389b6d4`·`666e515`에 남아 있다.
+- `OrderConfirmedOmissionReproTest`·`W6OmissionRecoveryE2ETest`가 실행하는 W6 경로는 테스트 구성으로 재현한 것이다. 원래 W6 코드의 실행은 커밋 `389b6d4`·`666e515`에 남아 있다.
+- 누락 복구는 대상 주문을 사람이 정한다. 어떤 주문이 누락됐는지 자동으로 찾지 않는다(확정 주문 중 Outbox·완료 기록이 없는 것을 조회해 후보를 고르는 것은 운영자 몫이다).
