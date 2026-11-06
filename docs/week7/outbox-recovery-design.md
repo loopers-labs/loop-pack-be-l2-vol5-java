@@ -31,7 +31,7 @@
 | Kafka topic·소비 group·구매 활동 | 단일 polling relay·전송 상태 |
 | 소비 중복 방지·DB TX·ack | 발행 중단·재시작·기존 누락 복구 검증 |
 
-작업 순서: **1단계 = 과제 5절 준비(5-1~5-3)** 를 W6 경로로 먼저 만들어 누락 상태를 재현한다 (이 문서 1절). 그 뒤 Outbox 모델·relay·복구(과제 2~4절, 5-4~5-6)를 같은 테스트 메서드에 이어 붙인다 (2절, 미정).
+작업 순서: **1단계 = 과제 5절 준비(5-1~5-3)** 를 W6 경로로 먼저 만들어 누락 상태를 재현한다 (이 문서 1절). **2단계 = 과제 1~2절** Outbox 모델·같은 TX·직접 발행 제거 (이 문서 2절). **3단계 = 과제 3~4절** 단일 relay·재시도 (이 문서 3절). 그 뒤 복구(5-4~5-6)·중단 실험(6절)·E2E(7절)를 같은 테스트 메서드에 이어 붙인다 (이 문서 4절, 미정). 실험 관찰값은 5절에 모은다.
 
 ---
 
@@ -81,7 +81,7 @@
 - 이번 재현 실행의 orderId·eventId·confirmedAt·items·PG 거래 ID·C·T 를 `apps/commerce-api/build/w7-recovery/observation.json` 에 남기고, 같은 값을 테스트 안에서도 단언한다. 기록은 전부 새 DB 조회값이다(확정 전에 들고 있던 엔티티 객체를 쓰지 않는다).
   > 📄 p.4 5-3 "두 주문의 실제 orderId, eventId, confirmedAt, items와 PG 거래 식별자를 기록합니다. W6 기록과는 별도인 이번 재현 실행의 사건입니다."
 - W6 기록(`build/delivery-gap/`, W6 설계 문서 8절)과 섞지 않고 W6 설계 문서는 수정하지 않는다.
-- `build/` 는 `.gitignore` 대상이라 저장소에 들어가지 않는다. 제출용 수치는 이 문서 4절에 옮긴다.
+- `build/` 는 `.gitignore` 대상이라 저장소에 들어가지 않는다. 제출용 수치는 이 문서 5절에 옮긴다.
 
 ### D7. 고정 clock → `2026-11-07T01:00:00.123456789Z` (밀리초 절단 `…00.123Z`)
 - W6 값(`2026-09-07…`)과 다르게 두어 "이번 실행의 사건" 임이 값만 봐도 구분된다. 두 앱 모두의 `Clock` 빈을 scan 에서 빼고 테스트가 `@MockitoBean` 으로 고정값을 넣는다.
@@ -105,7 +105,7 @@
 
 ## 2. 과제 1~2절 결정 · 바꿀 트랜잭션 표시와 Outbox 모델·로컬 원자성
 
-이 절의 범위는 과제 1절(바꿀 트랜잭션)·2절(Outbox 모델·같은 TX)과 그에 따른 직접 발행 제거까지다. relay(과제 3절)·재시도·운영 재개(4절)·복구(5-4~5-6)는 3절 이후에 따로 정한다.
+이 절의 범위는 과제 1절(바꿀 트랜잭션)·2절(Outbox 모델·같은 TX)과 그에 따른 직접 발행 제거까지다. relay(과제 3절)·재시도·운영 재개(과제 4절)는 이 문서 3절, 복구(과제 5-4~5-6)는 이 문서 4절에서 따로 정한다.
 
 ### D10. 바꿀 트랜잭션 → `PaymentResultService.applyFinal` 의 `confirmedRows == 1` 블록
 - 세 입구(`applyCallback`·`reconcile`·`runScheduledLookups`)가 모두 `PaymentFacade.apply` → `applyFinal` 로 모이므로 여기 한 곳에 Outbox insert 를 두면 세 경로가 같은 동작을 한다.
@@ -148,10 +148,11 @@
   > 📄 p.2 "eventId W6의 동일 확정 사건 ID, DB 유일 제약"
 - 유일성은 `finishIfPaymentPending` 의 `WHERE status = PAYMENT_PENDING` 가드가 먼저 보장하고, UNIQUE 는 최후 방어다 (W6 D11 과 같은 태도). `order_id` UNIQUE 는 소비자 장부(`uk_poc_order_id`)와 대칭이 되도록 함께 둔다.
 
-### D14. status → `PENDING`, `PUBLISHED` 두 값, `@Enumerated(STRING)` + VARCHAR
-- 과제 2절이 요구하는 최소 두 값만 둔다. 영구 오류 분리(`BLOCKED`)는 relay·재시도 설계(과제 4절) 때 정하며, 문자열 컬럼이라 값이 늘어도 스키마 변경이 없다.
+### D14. status → `PENDING`, `PUBLISHED`, `BLOCKED` 세 값, `@Enumerated(STRING)` + VARCHAR
+- 과제 2절 구현(1~2절 단계)에서는 `PENDING`·`PUBLISHED` 두 값으로 시작했고, relay·재시도 설계(D29)에서 영구 오류 분리용 `BLOCKED` 를 추가했다. 문자열 컬럼이라 값 추가에 스키마 변경이 없다.
   > 📄 p.2 "status 최초 PENDING, broker 확인 후 PUBLISHED"
   > 📄 p.4 "별도 BLOCKED 상태로 분리했다면 미해결 상태로 목록에 남기고 복구 후 같은 행을 재개하는 경로를 둡니다."
+- `BLOCKED` 는 완료가 아니라 사람이 다시 판단해야 할 미해결 작업이다. 전이 규칙과 재개 경로는 D29.
 
 ### D15. 시각 → `createdAt` 은 `BaseEntity`(`@PrePersist`), `publishedAt`·`nextAttemptAt` 은 relay 가 `Clock` 빈으로 채움
 - `BaseEntity` 는 "이 외의 컬럼이나 동작은 추가하지 않는다" 고 못 박고 있어 건드리지 않는다. created_at 은 시스템 시계라 고정 Clock 과 어긋날 수 있지만, 사건 시각 자체는 payload 안 confirmedAt(Clock 값)에 있으므로 테스트 단언에 지장이 없다.
@@ -179,6 +180,7 @@
 - 제품 경로에서는 호출자가 없어지지만 클래스는 유지하고, 클래스 주석에 "W7 제품 경로 미사용, relay 설계(3절)에서 재결정" 을 명시한다. relay 가 "저장된 key·payload 를 그대로 보내는 전송기" 를 새로 가질지 이 발행기를 바꿀지는 3절에서 정한다.
   > 📄 p.3 "주문 확정 TX 밖에서 같은 topic·key·payload를 send합니다."
 - 유지하는 이유: `KafkaOrderConfirmedPublisherTest`(계약 JSON·send 결과 분류)와 crossAppTest 의 W6 보존 경로가 이 발행기에 위임하고 있어, 지금 바꾸면 이번 범위 밖의 수정이 함께 들어간다.
+- relay 설계에서의 결론(D27): 저장된 key·payload 를 보내는 전송기를 **새로** 두고, 이 발행기는 계속 그대로 둔다.
 
 ### D19. `OrderConfirmedDeliveryGapTest` → `W6GapReproductionAndRecoveryTest` 로 흡수하고 삭제
 - 삭제 사유는 "검사가 실패하니까" 가 아니다. 이 테스트가 검증하던 대상(Facade 의 commit 뒤 직접 발행)이 과제 요구(D17)로 제품 코드에서 사라지기 때문이다. 그 테스트가 증명하던 사실 중 아직 유효한 것은 아래처럼 새 테스트가 같은 단언으로 이어받는다. W6 관찰값은 W6 설계 문서 8절과 streamer 의 녹화본(`experiments/delivery-gap-case2.json`, `OrderConfirmedReplayTest`)에 그대로 남는다.
@@ -224,15 +226,123 @@
 
 ---
 
-## 3. relay·재시도·복구 결정 (미정, 다음 단계)
+## 3. 과제 3~4절 결정 · 단일 relay 와 재시도·운영 재개
 
-과제 3절(단일 relay), 4절(재시도·운영 재개), 5-4~5-6(복구)을 구현하기 전에 여기에 D22 부터 이어서 적는다. D18 에서 미뤄 둔 "저장된 key·payload 를 보내는 전송기를 새로 둘지, 기존 발행기를 바꿀지" 도 여기서 정한다.
+이 절의 범위는 과제 3절(단일 relay)·4절(재시도·운영 재개)이다. 복구(과제 5-4~5-6)와 과제 6절 중단 실험은 이 문서 4절에서 따로 정한다.
+
+클래스 배치(기존 계층 관례와 ArchUnit 규칙에 맞춤):
+- `application/order/OrderConfirmedOutboxRelay` — 한 회차(`runOnce()`)·재개(`resume(eventId)`) 로직. 트랜잭션은 리포지터리 호출 단위로 짧게 연다
+- `application/order/OutboxMessageSender` — "저장된 key·payload 를 그대로 보내는 전송기" 인터페이스 (D27)
+- `application/order/OutboxRelayProperties` — `outbox.relay.*` 설정 (D28)
+- `infrastructure/order/KafkaOutboxMessageSender` — Kafka 구현
+- `interfaces/scheduler/OutboxRelayScheduler` — 주기 진입점 (D22). 기존 `PaymentReconcileScheduler` 와 같은 모양
+- `OrderConfirmedOutboxRepository` 에 relay 용 메서드 추가: PENDING 묶음 조회, 시도 시작·발행 완료·재시도 예약·BLOCKED 전이·재개의 조건부 UPDATE (D23·D25·D29)
+
+### D22. 실행 방식 → `@Scheduled(fixedDelay)` + relay 전용 단일 스레드 `TaskScheduler` + `outbox.relay.enabled` + 프로세스 안 `tryLock`
+- 기존 `PaymentReconcileScheduler` 와 같은 모양으로 `interfaces/scheduler` 에 진입점을 두고, `enabled=false` 면 빈은 만들되 실행만 건너뛴다. test 프로파일은 `enabled=false` 로 두고 테스트가 `runOnce()` 를 직접 호출한다.
+- Spring 기본 스케줄러는 스레드 1개를 모든 `@Scheduled` 가 나눠 쓰므로 결제 조회 스케줄러와 relay 가 서로를 지연시킬 수 있다. relay 전용 단일 스레드 `TaskScheduler` 빈을 만들어 `@Scheduled(scheduler = …)` 로 지정한다. `fixedDelay` 는 앞 실행이 끝난 뒤 간격을 세므로 같은 tick 은 겹치지 않는다.
+- `TaskScheduler` 빈을 하나라도 정의하면 Boot 의 기본 `taskScheduler` 자동 설정이 꺼지므로, 기본 스케줄러도 같은 `ThreadPoolTaskSchedulerBuilder` 로 다시 만들고 `@Primary` 를 붙인다. `scheduler` 를 지정하지 않은 기존 `@Scheduled`(결제 조회)는 계속 기본 스케줄러를 쓰고 `spring.task.scheduling.*` 설정도 그대로 적용된다.
+- 스케줄 tick 과 수동 실행(`resume`·테스트의 `runOnce`)이 한 프로세스 안에서 겹치지 않게 relay 안에 `ReentrantLock.tryLock()` 을 둔다. 잡지 못하면 그 회차는 "이미 실행 중" 로그를 남기고 돌아간다.
+- `runOnce()` 는 회차 결과(`OutboxRelayResult`)를 값으로 돌려준다: 집은 행 수(`picked`), 발행 성공(`published`), 재시도 예약(`retried`), BLOCKED(`blocked`), 종료 사유(`reason`: COMPLETED / BROKER_UNAVAILABLE / ALREADY_RUNNING), 그리고 건너뜀을 둘로 나눈 값. **`skippedStale`** = 시도 직전에 상태가 이미 바뀌어 보내지 않은 행(단일 relay 에서는 0 이어야 하며, 0 이 아니면 다른 실행자가 있다는 이상 신호라 WARN 로그로 드러낸다). **`deferred`** = broker 불가로 회차를 일찍 끝내 다음 회차로 미룬 행(정상). `remainingPending` 은 회차 끝의 PENDING 수이며, ALREADY_RUNNING 일 때는 집지도 세지도 않았다는 뜻으로 **-1** 이다. 테스트 단언과 D31 의 요약 로그가 **같은 값**을 쓴다.
+  > 📄 p.3 "한 번에 한 relay 실행 흐름만 활성화합니다. scheduler·수동 실행이 겹치지 않게 하고, 다른 인스턴스에서 같은 relay를 동시에 켜지 않는 로컬 실행 설정을 정합니다. 여러 프로세스의 소유권 문제를 메모리 flag로 해결했다고 주장하지 않습니다."
+- **명시:** 메모리 잠금은 한 프로세스 안의 보호일 뿐이다. 여러 인스턴스가 같은 relay 를 동시에 켜지 않는 것은 인스턴스별 `outbox.relay.enabled` 설정으로만 막는다. 분산 잠금을 구현했다고 주장하지 않는다.
+  > 📘 학습 p.6 "단일 relay에도 여러 scheduler tick이 겹치면 실행자가 둘인 것처럼 동작합니다. 한 번에 한 루프만 돌게 하고, 다중 인스턴스에서 동시에 켜지지 않도록 실행 설정을 정합니다. 이를 다중 relay 환경의 분산 잠금 보장이라고 주장하지 않습니다."
+
+### D23. 한 회차 구조 → 조회 TX → 행마다 [시도 시작 TX → TX 밖 send 대기 → 결과 TX]
+- 과제 3절의 1~5 단계와 1:1 로 맞춘다. ① 조회 TX: `status = PENDING AND next_attempt_at <= now` 를 `next_attempt_at, id` 순으로 묶음 크기만큼 읽는다(읽기만). ② 행마다 시도 시작 TX: `attempt_count + 1` (조건 `status = PENDING`). ③ TX 밖: 저장된 messageKey·payload 를 그대로 send 하고 결과를 기다린다. ④ 결과 TX: 성공이면 `PUBLISHED`·`publishedAt`, 일시 실패·timeout 이면 `nextAttemptAt`·`lastError`, 영구 오류면 `BLOCKED`·`lastError`.
+  > 📄 p.3 "1. 재시도 시간이 된 PENDING을 작은 묶음으로 안정된 순서에서 찾습니다. 2. 대상 eventId와 저장 payload로 시도를 시작하고 필요한 시도 정보를 남깁니다. 3. 주문 확정 TX 밖에서 같은 topic·key·payload를 send합니다. 4. 실제 broker 성공 확인 뒤 별도 DB TX에서 해당 행을 PUBLISHED로 바꿉니다. 5. 실패·timeout이면 동일 행을 재시도 대상으로 유지하고 다음 시각·오류를 기록합니다."
+- 전송 대기 중에는 DB 커넥션·행을 붙잡지 않는다. 묶음 전체를 한 TX 로 묶는 방식은 이 원칙에 어긋나 택하지 않았다. 시도 시작 TX 를 생략하는 방식은 전송 중 중단 때 흔적이 남지 않아 과제 2단계와 어긋난다.
+  > 📄 p.3 "DB 조회·상태 변경 TX와 외부 전송 대기를 분리합니다. 단일 relay의 직렬 실행을 기본으로 두고, 무제한 future 병렬 생성이나 tick 중첩으로 범위를 넓히지 않습니다."
+- `attemptCount` 는 "시도를 시작한 횟수" 다. broker 수신 수가 아니다.
+  > 📘 학습 p.3 "attemptCount 가 '실제 broker 수신 수'는 아닙니다. 시도를 시작할 때 올리면 전송 전에 중단될 수도 있습니다."
+
+### D24. 일시 오류(broker 불가) → 그 회차 종료, 영구 오류 → 그 행만 BLOCKED 처리 후 다음 행 계속
+- send 가 전송 실패(FAILED)나 timeout(UNKNOWN) 으로 끝나면 broker 가 지금 응답하지 않는다는 뜻이므로, 그 행의 결과 TX(재시도 예약)만 기록하고 **그 회차를 끝낸다.** 남은 PENDING 은 다음 tick 에 다시 집는다. 묶음 크기만큼 타임아웃을 연속으로 기다리는 일(20건 × 3초)을 피한다. 기존 결제 조회가 "서킷이 열리면 이번 주기를 중단" 하는 태도와 같다.
+- 특정 행만의 영구 오류(D29 의 즉시 BLOCKED 목록)는 broker 상태와 무관하므로 그 행을 BLOCKED 로 바꾸고 **다음 행을 계속** 처리한다.
+  > 📄 p.3~4 "실패 뒤 즉시 무한 반복하지 않도록 전송 대기 시간·한 번의 처리 개수·재시도 간격을 정합니다." "broker 장애가 회복되면 기존 PENDING을 다시 처리합니다."
+
+### D25. "처리 중" 표시(lease) 없음, 늦은 callback 은 등록하지 않음, 상태 UPDATE 는 모두 `status = PENDING` 조건
+- 단일 relay 가 직렬로 돌므로 같은 행을 동시에 집는 실행자가 없다. lease 컬럼·`PUBLISHING` 상태는 두지 않는다 (다중 relay 로 갈 때 claim 설계를 새로 해야 한다는 점을 한계로 남긴다).
+- 늦은 callback 차단: producer future 에 콜백(`whenComplete` 등)을 달지 않는다. relay 는 `get(대기 상한)` 의 결과만 해석하고, 상태 변경은 relay 의 결과 TX 한 곳에서만 한다. 대기를 넘긴 send 가 뒤에서 성공해도 상태를 건드릴 코드 경로가 없다.
+  > 📄 p.3 "로컬 대기를 중단해도 하위 send가 나중에 성공할 수 있습니다. 늦은 callback이 상태를 임의 변경하지 않게 하고, 상태 변경 책임을 relay의 한 경계에 둡니다."
+- 공통 규칙 두 가지. (1) 결과 TX 의 UPDATE 는 모두 `WHERE id = ? AND status = 'PENDING'` 조건을 단다. 이미 PUBLISHED·BLOCKED 가 된 행을 늦게 덮어쓰지 못한다. (2) timeout(UNKNOWN) 은 "수신 0회" 로 단정하지 않는다. PENDING 으로 남겨 같은 eventId 가 재발행될 수 있음을 받아들이고, 중복은 W6 소비자의 장부가 막는다.
+  > 📄 p.3 표 "timeout·응답 유실 같은 사건 → PENDING, 수신 0회라고 단정하지 않음 / broker 성공 뒤 상태 TX 실패 → PENDING이 남아 같은 사건 재발행 가능"
+  > 📘 학습 p.4 "타임아웃마다 새 eventId를 만들면 같은 사건의 중복 처리가 깨집니다."
+
+### D26. send 대기 → 동기 `future.get(대기 상한)` 유지 (W6 D7 재검토 결론)
+- W6 D7 은 "W7 Outbox relay 설계 시 비동기 재검토" 를 남겼다. 재검토 결론은 **동기 유지**다. 이유: 전송 확인은 future 의 성공이어야 하고, 결과 분류(성공/실패/미확인)를 행마다 바로 결과 TX 에 반영해야 D25 의 "상태 변경 책임 한 곳" 이 지켜진다. 과제 6절의 "broker 확인 뒤 PUBLISHED 저장 전 중단" hook 도 동기 흐름에서 자연스럽다.
+  > 📄 p.3 "전송 확인은 send 호출이 예외 없이 반환했다는 뜻이 아니라 producer future의 성공입니다. acks 는 broker 확인을 받을 수 있는 설정을 선택하고 W6의 단일 broker 한계를 유지합니다."
+- 묶음을 한꺼번에 보내고 future 들을 모아 기다리는 방식은 과제가 경고한 "무제한 future 병렬 생성" 에 가깝고 중단 실험의 경계가 흐려져 택하지 않았다. 완전 비동기 콜백은 D25 와 정면 충돌한다.
+- **한계:** 행마다 최대 대기 상한만큼 기다리므로 처리량이 낮다(묶음 20 × 3초 = 회차 최대 60초). 이번 과제 규모(주문당 이벤트 1건, 로컬 단일 broker)에서는 문제가 아니며, 처리량이 중요해지면 제한된 병렬·여러 relay 와 함께 claim 설계를 다시 해야 한다.
+
+### D27. 전송기 → 새 인터페이스 `OutboxMessageSender(messageKey, payload)` + `KafkaOutboxMessageSender`, 기존 발행기는 그대로
+- relay 는 Outbox 행의 `messageKey` 와 `payload` 문자열을 UTF-8 bytes 로 바꿔 그대로 보낸다. `OrderConfirmedEvent` 객체를 다시 만들지 않고 현재 상품도 조회하지 않는다. 입력 모양이 "객체" 인 기존 `KafkaOrderConfirmedPublisher` 와 다르므로 전송기를 새로 둔다. topic·`KafkaTemplate<String, byte[]>`(`orderEventKafkaTemplate`) 는 기존 것을 함께 쓴다.
+  > 📄 p.3 "주문 확정 TX 밖에서 같은 topic·key·payload를 send합니다." "relay가 현재 상품 정보를 재조회해 payload를 다시 만들지 않습니다."
+- 결과는 W6 D7 과 같은 세 가지(성공 metadata / FAILED / UNKNOWN)로 분류한다. 분류 로직의 공통화는 **기존 발행기의 동작과 테스트가 바뀌지 않는 범위에서만** 한다. 공통화가 기존 클래스 수정을 요구하면 중복을 두는 쪽을 택한다.
+- 기존 발행기를 바꾸거나 지우는 안은 계약 테스트와 crossAppTest 의 W6 보존 경로 수정을 끌고 와 택하지 않았다 (D18).
+
+### D28. 시작값 → 대기 3초 · 묶음 20 · 회차 간격 10초 · backoff 10초 × 2배, 상한 5분. test 는 짧게
+- **측정 없이 정한 시작값**이다. 기존 설정과 Kafka 기본값에서 끌어냈고, 측정 실험은 이번 범위 밖이다.
+
+| 설정 (`outbox.relay.*`) | 운영 시작값 | test 프로파일 | 근거 |
+|---|---|---|---|
+| `send-timeout` | 3초 | 1초 | 기존 `order-events.send-timeout-ms` 와 같게. `max.block.ms` 도 같은 값이어야 metadata 대기가 같은 상한에 걸린다 (W6 D7). **test 에서만 다르다:** 전송기가 기존 `orderEventKafkaTemplate` 을 쓰므로 `max.block.ms` 는 `order-events.send-timeout-ms`(3초)에 묶여 있고, relay 대기만 1초다. 운영값은 둘 다 3초라 원칙과 맞고, test 의 "닿지 않는 broker" 는 500ms 짜리 별도 템플릿을 써서 영향이 없다 |
+| `batch-size` | 20 | 10 | 직렬 실행이라 "묶음 × 대기 상한" 이 회차 최대 길이. 20 × 3초 = 60초 |
+| `fixed-delay` | 10초 | (자동 실행 꺼짐) | 정상 상황에서 PENDING 이 머무는 시간. 결제 조회(30초)보다 짧게 둬 발행 지연을 줄인다 |
+| `initial-backoff` / `multiplier` / `max-backoff` | 10초 / 2 / 5분 | 0초 / 1 / 0초 | 아래 |
+| `enabled` | true | false | test 는 `runOnce()` 직접 호출 |
+
+- backoff 상한을 5분으로 **짧게** 둔 이유: broker 장애가 길어져 간격이 상한까지 늘어난 행도, broker 가 회복되면 최대 5분 안에 다시 시도되어 기존 PENDING 재처리가 오래 지연되지 않는다. 결제 조회의 30분 상한을 그대로 쓰면 회복 뒤에도 최대 30분 동안 발행이 멈춘 것처럼 보인다.
+  > 📄 p.4 "broker 장애가 회복되면 기존 PENDING을 다시 처리합니다."
+- test 값이 운영과 다른 이유:
+  > 📄 p.3~4 "테스트에서는 시간을 통제하거나 짧은 유한 대기로 검증하고 운영 값을 무조건 같은 수준으로 두지 않습니다."
+- 기존 `payment.lookup` 이 test 에서 `PT0S`·배수 1 을 쓰는 것과 같은 방식이다.
+- **예외 하나:** backoff 계산 규칙 자체를 검증하는 테스트 하나는 test 값이 아니라 **운영 시작값(초기 10초 × 2배, 상한 5분)** 을 명시해 쓰고, 고정 `Clock` 으로 시각을 통제해 `nextAttemptAt` 이 `now + 10초 → 20초 → 40초 → … → 5분 상한` 으로 늘어나는지 정확히 단언한다. 시간을 통제하므로 실제로 기다리지 않는다.
+  > 📄 p.3~4 "테스트에서는 시간을 통제하거나 짧은 유한 대기로 검증하고 운영 값을 무조건 같은 수준으로 두지 않습니다."
+
+### D29. 영구 오류 → `BLOCKED` 도입. 즉시 BLOCKED 는 네 계열만, 일시 오류는 상한 없이 backoff 재시도, 재개는 BLOCKED → PENDING + 한 회차
+- **즉시 BLOCKED (다시 보내도 같은 결과인 오류):** `RecordTooLargeException`, `SerializationException`, `InvalidTopicException`, `AuthorizationException` 계열. 그 행만 `BLOCKED`·`lastError` 로 바꾸고 다음 행을 계속한다 (D24). ERROR 로그에 원인과 eventId 를 남긴다.
+  > 📄 p.4 "반복되는 영구 오류는 원인과 eventId를 노출합니다. 별도 BLOCKED 상태로 분리했다면 미해결 상태로 목록에 남기고 복구 후 같은 행을 재개하는 경로를 둡니다."
+- **일시 오류 (`TimeoutException`, `NotEnoughReplicasException`, `NetworkException`, 그 밖의 `KafkaException`, 그리고 `UnknownTopicOrPartitionException`):** `nextAttemptAt` 을 backoff 로 미루고 PENDING 유지. **시도 상한으로 BLOCKED 하지 않는다.** 이유: 상한에 닿아 BLOCKED 가 되면 broker 장기 장애 뒤 사람이 재개하지 않는 한 자동 재처리가 안 되어 과제 p.4 "broker 장애가 회복되면 기존 PENDING을 다시 처리합니다" 와 어긋난다. `UnknownTopicOrPartition` 은 topic 미생성·메타데이터 지연 같은 운영 상황이 풀리면 해결되므로 일시 쪽에 둔다.
+  > 📘 학습 p.5 표 "broker 일시 장애 → 간격을 둔 제한된 시도, 이후 재개 / 피할 행동: 빠른 무한 루프" "DB 상태 갱신 오류 → PENDING 유지·같은 사건 재발행 / 피할 행동: 새 eventId로 회피"
+- **재개 경로:** `resume(eventId)` 가 해당 행을 `BLOCKED → PENDING`(`nextAttemptAt = now`, 조건 `status = BLOCKED`)으로 되돌린 뒤 한 회차(`runOnce()`)를 실행한다. 추측하지 않고 오류로 드러낸다: 없는 eventId 는 `NOT_FOUND`, 있지만 BLOCKED 가 아닌 행(PENDING·PUBLISHED)은 `CONFLICT`. 어느 쪽도 상태를 바꾸지 않는다.
+- BLOCKED·PENDING 행을 자동 삭제하지 않는다. 보존·정리 정책은 소비자 장부(`processed_order_confirmation`) 보존 기간과 함께 정해야 하며, 이번 과제에서는 "삭제 없음" 으로 둔다.
+  > 📄 p.4 "이번 과제에서는 미발행·격리 행을 자동 삭제하지 않습니다. 보존·정리 정책과 dedup 기록 보존의 관계를 짧게 정리합니다."
+  > 📘 학습 p.6 "영구 오류를 BLOCKED 등으로 분리하면 정상 대상이 계속 진행할 수 있지만, 그 행은 완료가 아니라 사람이 다시 판단해야 할 미해결 작업입니다."
+- `PUBLISHED` 는 broker 확인을 저장했다는 뜻이고 소비 완료가 아니다.
+  > 📄 p.4 "PUBLISHED를 소비 완료로 표시하지 않습니다. consumer lag·오류·실제 구매 활동을 따로 확인합니다."
+
+### D30. 로컬 운영 진입점 → 테스트 도구만. 제품 진입점 없음
+- relay 서비스의 `runOnce()`·`resume(eventId)` 를 crossAppTest·통합 테스트가 직접 호출한다. HTTP 엔드포인트·`ApplicationRunner`·batch 앱 진입점은 만들지 않는다.
+  > 📄 p.4 "재개는 로컬에서 대상 eventId를 명시해 relay 한 회차를 실행하는 작은 운영 진입점이나 테스트 도구로 충분합니다. 이 진입점은 로컬에서만 사용하며 공개 관리자 API로 노출하지 않습니다."
+- `/api-admin/**` 아래 노출은 과제가 금지해 택하지 않았다. 실행 인자 방식은 웹 앱에 "실행 후 종료" 모드를 더해 설정 분기가 늘어 택하지 않았다.
+
+### D31. 관찰 → SQL 조회문 + 회차 요약 로그 1줄
+- 설계 문서에 조회문을 남긴다: PENDING 수·가장 오래 기다린 시각·최대 시도 수는 `SELECT COUNT(*), MIN(created_at), MAX(attempt_count) FROM order_confirmed_outbox WHERE status = 'PENDING'`, BLOCKED 목록은 `SELECT event_id, attempt_count, last_error FROM order_confirmed_outbox WHERE status = 'BLOCKED'`.
+- relay 는 회차 끝에 요약 로그 1줄을 `key=value` 로 남긴다: `reason`·`picked`·`published`·`retried`·`blocked`·`skippedStale`(이상 신호)·`deferred`(미룸)·`pendingRemaining`. 이 값들은 `runOnce()` 가 돌려주는 회차 결과 객체(D22)에서 그대로 가져오므로 테스트가 단언하는 값과 로그 값이 같다. `skippedStale` 이 0 이 아닌 회차는 WARN 로그가 함께 남는다. local·test 는 평문 콘솔, dev 이상은 기존 logstash JSON 콘솔에 그대로 실린다. 새 모니터링 서버·Micrometer 지표는 두지 않는다.
+  > 📄 p.4 "전송 횟수·PENDING 수·가장 오래 기다린 시각을 SQL이나 간단한 구조화 로그로 확인합니다. 새 모니터링 서버는 필수가 아닙니다."
+
+### D32. PENDING 조회 인덱스 → `(status, next_attempt_at, id)`
+- 조회가 `WHERE status = 'PENDING' AND next_attempt_at <= ? ORDER BY next_attempt_at, id LIMIT n` 이므로 같은 순서의 복합 인덱스를 `@Table(indexes = @Index(name = "idx_order_confirmed_outbox_status_next_attempt", columnList = "status, next_attempt_at, id"))` 로 선언한다. 기존 `Like`·`Product` 의 `@Index` 관례와 같고 test 의 `ddl-auto: create` 가 만든다.
+  > 📄 p.3 "PENDING 조회에는 상태·다음 시각·정렬 조건에 맞는 인덱스를 검토합니다."
+- 한계: PUBLISHED 가 쌓이면 인덱스도 커진다. 보존 정책(D29)과 함께 봐야 한다.
+
+### D33. 오류 메시지 → 예외 클래스·요약 메시지·eventId·orderId·attemptCount 만, payload·접속 정보 제외
+- `lastError` 와 로그에는 예외 클래스 이름 + 메시지 요약 + eventId·orderId·attemptCount(성공 시 topic·partition·offset)만 남긴다. payload 전체는 적지 않는다(DB 에 이미 있다). 메시지에 bootstrap 주소·인증 설정 같은 접속 정보가 섞여 오면 제거하고, 컬럼 길이(1000자)에 맞춰 자른다.
+  > 📄 p.3 "오류 메시지에는 카드·비밀·불필요한 전체 payload를 남기지 않습니다."
+- payload 자체에 카드 번호는 없다(`OrderConfirmedEvent` 는 eventId·orderId·confirmedAt·items 만). 그래도 "불필요한 전체 payload" 를 로그에 복사하지 않는 원칙은 지킨다.
 
 ---
 
-## 4. 실험 관찰
+## 4. 복구·중단 실험 결정 (미정, 다음 단계)
 
-### 4-1. 준비(5-1~5-3) 실행 (2026-11-06)
+과제 5-4~5-6(복구)과 6절(두 중단 구간 검증)·7절(E2E)을 구현하기 전에 여기에 D34 부터 이어서 적는다.
+
+---
+
+## 5. 실험 관찰
+
+### 5-1. 준비(5-1~5-3) 실행 (2026-11-06)
 
 Testcontainers MySQL 8.0·Kafka 3.8.1, 격리 topic `order-events-W6GapReproductionAndRecoveryTest`, group `purchase-activity-W6GapReproductionAndRecoveryTest`.
 
@@ -252,6 +362,8 @@ PG create C = 2, 외부 거래 T = 2. 복구 단계는 이 값에서 증가 0 �
 검증: `./gradlew :apps:commerce-api:crossAppTest` 1건 통과. `./gradlew :apps:commerce-api:test --rerun` 453건(skip 0, 실패 0, `@SpringBootTest` 36개 클래스 포함), `./gradlew :apps:commerce-streamer:check` 43건 통과. Checkstyle·ArchUnit 포함.
 > 📄 p.7 "테스트 0건·skip·연결 실패를 통과로 세지 않습니다."
 
-### 4-2. 복구(5-4~5-6) 실행 (미정)
+### 5-2. relay·재시도(과제 3~4절) 실행 (미정)
 
-### 4-3. 두 중단 구간 검증 · E2E (과제 6·7절, 미정)
+### 5-3. 복구(5-4~5-6) 실행 (미정)
+
+### 5-4. 두 중단 구간 검증 · E2E (과제 6·7절, 미정)
