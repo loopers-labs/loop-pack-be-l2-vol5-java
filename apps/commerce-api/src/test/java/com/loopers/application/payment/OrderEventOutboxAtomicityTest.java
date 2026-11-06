@@ -129,24 +129,61 @@ class OrderEventOutboxAtomicityTest {
         assertThat(outboxRows(orderId)).isEqualTo(1);
     }
 
-    @Test
-    @DisplayName("outbox insert 가 실패하면 확정이 rollback 되어 주문은 PENDING, outbox 는 미리 있던 한 행으로 남는다")
-    void outboxFailureRollsBackConfirmation() {
-        Long orderId = placeOrder();
-        payments.start(USER, orderId, NOW);
+    private int stockOf(Long productId) {
+        return jdbcTemplate.queryForObject("select quantity from product where id = ?", Integer.class, productId);
+    }
+
+    private void occupyEventId(Long orderId) {
         jdbcTemplate.update("""
             insert into order_event_outbox
               (event_id, order_id, event_type, schema_version, topic, record_key, payload,
                status, attempt_count, created_at, updated_at)
             values (?, ?, 'OrderConfirmed', 1, 'order-events', ?, x'7B7D', 'PENDING', 0, now(6), now(6))
             """, "order-confirmed:v1:" + orderId, orderId, String.valueOf(orderId));
+    }
+
+    @Test
+    @DisplayName("outbox insert 가 실패하면 확정이 rollback 되어 주문은 PENDING, 결제 상태와 예약한 재고는 그대로이고, outbox 는 미리 있던 한 행이며, PG 결제 생성은 늘지 않는다")
+    void outboxFailureRollsBackConfirmation() {
+        Long orderId = placeOrder();
+        payments.start(USER, orderId, NOW);
+        occupyEventId(orderId);
         Payment payment = payments.started(orderId);
+        int reservedStock = stockOf(coat);
+        int pgCreates = PG.createCount();
 
         assertThatThrownBy(() -> payments.succeed(payment, NOW))
             .isInstanceOf(DataIntegrityViolationException.class);
 
         assertThat(orderStatus(orderId)).isEqualTo("PENDING");
         assertThat(payments.started(orderId).getStatus()).isEqualTo(payment.getStatus());
+        assertThat(stockOf(coat)).isEqualTo(reservedStock);
         assertThat(outboxRows(orderId)).isEqualTo(1);
+        assertThat(PG.createCount()).isEqualTo(pgCreates);
+    }
+
+    @Test
+    @DisplayName("rollback 뒤 같은 거래의 성공을 다시 반영하면 주문이 CONFIRMED 가 되고, 재고는 한 번만 소비되며, outbox 는 한 행이고, PG 결제 생성은 늘지 않는다")
+    void reapplyAfterRollbackConfirmsOnce() {
+        Long orderId = placeOrder();
+        payments.start(USER, orderId, NOW);
+        occupyEventId(orderId);
+        Payment payment = payments.started(orderId);
+        int reservedStock = stockOf(coat);
+        int pgCreates = PG.createCount();
+        assertThatThrownBy(() -> payments.succeed(payment, NOW))
+            .isInstanceOf(DataIntegrityViolationException.class);
+        jdbcTemplate.update("delete from order_event_outbox where order_id = ?", orderId);
+
+        payments.succeed(payment, NOW);
+
+        Map<String, Object> row = jdbcTemplate.queryForMap(
+            "select status, convert(payload using utf8mb4) payload from order_event_outbox where order_id = ?", orderId);
+        assertThat(orderStatus(orderId)).isEqualTo("CONFIRMED");
+        assertThat(stockOf(coat)).isEqualTo(reservedStock);
+        assertThat(outboxRows(orderId)).isEqualTo(1);
+        assertThat(row.get("status")).isEqualTo("PENDING");
+        assertThat((String) row.get("payload")).contains("\"orderId\":" + orderId);
+        assertThat(PG.createCount()).isEqualTo(pgCreates);
     }
 }

@@ -164,7 +164,8 @@ java -jar commerce-api.jar … --outbox.resume.event-ids=order-confirmed:v1:41,o
 |---|---|
 | 같은 TX 기록, DB 시각 | `OrderEventOutboxAtomicityTest.confirmAppendsPendingOutbox` |
 | 같은 거래를 다시 반영해도 한 행 | `OrderEventOutboxAtomicityTest.repeatedSuccessKeepsOneRow` |
-| outbox insert 실패로 확정 rollback | `OrderEventOutboxAtomicityTest.outboxFailureRollsBackConfirmation`. 같은 `eventId` 행을 미리 넣어 실제 유일 제약 위반을 만든다 |
+| outbox insert 실패로 확정 rollback. 주문 `PENDING`, 결제 상태와 예약한 재고 그대로, PG 결제 생성 증가 없음 | `OrderEventOutboxAtomicityTest.outboxFailureRollsBackConfirmation`. 같은 `eventId` 행을 미리 넣어 실제 유일 제약 위반을 만든다 |
+| rollback 뒤 같은 거래를 다시 반영하면 확정, 재고 한 번 소비, outbox 한 행, PG 결제 생성 증가 없음 | `OrderEventOutboxAtomicityTest.reapplyAfterRollbackConfirmsOnce` |
 | commit 뒤 relay 전에서 relay 실행 | `OrderEventFlowE2ETest.confirmationReachesTopicOnlyThroughRelay` |
 | broker 확인 뒤 기록 전 중단, 새 relay | `OrderEventRelayTest.resendsAfterStopBeforeRecord` |
 
@@ -283,6 +284,6 @@ outbox 조회 API 는 두지 않는다. 위 SQL 로 원문의 확인 요구를 �
 | 3 | 복구 관리자 API | `RCV-001` ~ `RCV-003` | 완료 |
 | 4 | `BLOCKED` 재개 | `RCV-004` | 완료(`OrderEventResumeTest`) |
 | 4-1 | 재시도 시간 상한 | `RLY-009` | 완료(`OrderEventRelayGiveUpTest`) |
-| 5 | rollback 뒤 재고와 PG create 확인 보강 | `OBX-007`, `EXP-010` | |
+| 5 | rollback 뒤 재고와 PG create 확인 보강 | `OBX-007`, `EXP-010` | 완료(`OrderEventOutboxAtomicityTest`) |
 | 6 | 주문부터 구매 활동까지 | `EXP-013` | |
 | 7 | W6 누락 재현과 복구, 운영 SQL 실행 결과 | `EXP-014`, `OPS-001` | |
