@@ -2,15 +2,22 @@ package com.loopers.application.ordering.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.never;
 
 import com.loopers.application.ordering.command.PrepareOrderPaymentCommand;
+import com.loopers.application.ordering.gateway.OrderEventEncoder;
+import com.loopers.application.ordering.gateway.OrderEventTransport;
+import com.loopers.application.ordering.gateway.OrderOutboxRepository;
 import com.loopers.application.ordering.result.ApplyOrderPaymentResult;
 import com.loopers.application.ordering.usecase.ApplyOrderPaymentUseCase;
 import com.loopers.application.ordering.usecase.PrepareOrderPaymentUseCase;
@@ -25,6 +32,7 @@ import com.loopers.domain.mall.repository.ProductRepository;
 import com.loopers.domain.mall.repository.StockAdjustmentRepository;
 import com.loopers.domain.ordering.model.Order;
 import com.loopers.domain.ordering.model.OrderItem;
+import com.loopers.domain.ordering.model.OrderRecord;
 import com.loopers.domain.ordering.model.OrderStatus;
 import com.loopers.domain.ordering.model.PaymentMethod;
 import com.loopers.domain.ordering.repository.OrderRepository;
@@ -35,38 +43,62 @@ import com.loopers.domain.pay.model.PaymentScenario;
 import com.loopers.domain.pay.model.ProviderPaymentStatus;
 import com.loopers.domain.pay.repository.PaymentAttemptRepository;
 import com.loopers.domain.pay.repository.PaymentRecoveryTaskRepository;
+import com.loopers.infrastructure.messaging.ordering.KafkaOrderEventTransport;
 import com.loopers.support.test.IntegrationTest;
 import com.loopers.support.test.OrderConfirmProbe;
+import com.loopers.testcontainers.KafkaTestFixture;
 import com.loopers.utils.DatabaseCleanUp;
 import io.github.resilience4j.retry.RetryRegistry;
 import io.github.resilience4j.core.functions.Either;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import jakarta.persistence.EntityManagerFactory;
+import jakarta.persistence.EntityManager;
+import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.ArrayList;
+import org.apache.kafka.clients.admin.Admin;
+import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.serialization.ByteArrayDeserializer;
+import org.apache.kafka.common.serialization.ByteArraySerializer;
+import org.apache.kafka.common.serialization.StringDeserializer;
+import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
 import org.springframework.aop.support.AopUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.InvalidDataAccessApiUsageException;
 import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.kafka.core.DefaultKafkaProducerFactory;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @IntegrationTest
+@TestPropertySource(properties = "order-events.topic=outbox-order-events")
 class ApplyOrderPaymentIntegrationTest {
     @Autowired private ApplyOrderPaymentUseCase apply;
     @Autowired private ApplyOrderPaymentService application;
@@ -87,6 +119,202 @@ class ApplyOrderPaymentIntegrationTest {
     @Autowired private CircuitBreakerRegistry circuits;
     @Autowired private PaymentProviderGateway provider;
     @Autowired private EntityManagerFactory entityManagerFactory;
+    @Autowired private EntityManager entityManager;
+    @Autowired private OrderOutboxRelayService relay;
+    @Autowired private RecoverOrderOutboxService recovery;
+    @MockitoBean private OrderEventTransport transport;
+    @MockitoSpyBean private OrderOutboxRepository outbox;
+    @MockitoSpyBean private OrderEventEncoder encoder;
+
+    @Test
+    @DisplayName("W6 확정 사실로 Outbox 한 행만 복구하고 기존 내용 충돌은 거절한다")
+    void recoversOnlyMatchingStoredConfirmation() {
+        PaymentAttempt attempt = prepared(5, 2);
+        observe(attempt, ProviderPaymentStatus.SUCCESS);
+        tx().executeWithoutResult(status -> doNothing().doCallRealMethod().when(outbox).insert(any()));
+        assertThat(apply.execute(attempt.getAttemptKey()).state()).isEqualTo(ApplyOrderPaymentResult.State.APPLIED);
+        var stored = orders.findById(attempt.getOrderId()).orElseThrow().getRecord().orElseThrow();
+        var eventId = stored.getConfirmationEventId();
+        assertThat(outboxCount()).isZero();
+
+        assertThatThrownBy(() -> recovery.execute(attempt.getOrderId(), UUID.randomUUID()))
+            .isInstanceOf(IllegalArgumentException.class);
+        assertThat(outboxCount()).isZero();
+        assertThat(recovery.execute(attempt.getOrderId(), eventId)).isEqualTo(RecoverOrderOutboxService.Result.CREATED);
+        tx().executeWithoutResult(status -> entityManager.createNativeQuery("""
+            UPDATE order_event_outbox SET payload = JSON_PRETTY(CAST(CONVERT(payload USING utf8mb4) AS JSON))
+            """).executeUpdate());
+        assertThat(recovery.execute(attempt.getOrderId(), eventId)).isEqualTo(RecoverOrderOutboxService.Result.ALREADY_PRESENT);
+        assertThat(outboxCount()).isEqualTo(1);
+        assertThat(outboxState()).isEqualTo("PENDING:0");
+        assertThat(adjustment(attempt).getState()).isEqualTo(StockAdjustment.State.CONSUMED);
+        assertThat(orders.findById(attempt.getOrderId()).orElseThrow().getRecord().orElseThrow().getCreatedAt())
+            .isEqualTo(stored.getCreatedAt());
+        verify(transport, never()).send(any(), any(), any());
+
+        tx().executeWithoutResult(status -> entityManager.createNativeQuery("""
+            UPDATE order_event_outbox SET payload = JSON_SET(CAST(CONVERT(payload USING utf8mb4) AS JSON), '$.items[0].quantity', 999)
+            """).executeUpdate());
+        assertThatThrownBy(() -> recovery.execute(attempt.getOrderId(), eventId))
+            .isInstanceOf(IllegalStateException.class);
+        tx().executeWithoutResult(status -> entityManager.createNativeQuery("""
+            UPDATE order_event_outbox SET event_id = :otherId
+            """).setParameter("otherId", UUID.randomUUID().toString()).executeUpdate());
+        assertThatThrownBy(() -> recovery.execute(attempt.getOrderId(), eventId))
+            .isInstanceOf(IllegalStateException.class);
+        assertThat(outboxCount()).isEqualTo(1);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @DisplayName("Outbox JSON 직렬화 실패와 실제 insert 직후 실패 모두 주문·재고·복구 작업을 rollback한다")
+    void rollsBackConfirmationWhenOutboxCannotBeStored(boolean failAfterInsert) {
+        PaymentAttempt attempt = prepared(5, 2);
+        observe(attempt, ProviderPaymentStatus.SUCCESS);
+        if (failAfterInsert) {
+            tx().executeWithoutResult(status -> doAnswer(invocation -> {
+                invocation.callRealMethod();
+                throw new IllegalStateException("failure after outbox insert");
+            }).when(outbox).insert(any()));
+        } else {
+            doThrow(new IllegalStateException("encoding failed")).when(encoder).encodePayload(any());
+        }
+
+        assertThat(apply.execute(attempt.getAttemptKey()).state()).isEqualTo(ApplyOrderPaymentResult.State.APPLICATION_FAILED);
+        var order = orders.findById(attempt.getOrderId()).orElseThrow();
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+        assertThat(order.getRecord()).isEmpty();
+        assertThat(adjustment(attempt).getState()).isEqualTo(StockAdjustment.State.DEDUCTED);
+        assertThat(task(attempt).getState()).isNotEqualTo(PaymentRecoveryTask.State.APPLIED);
+        assertThat(outboxCount()).isZero();
+        verify(transport, never()).send(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("5회 실패 뒤 BLOCKED, 대상 UUID를 재개하면 같은 bytes를 보낸다")
+    void blocksAfterFiveFailuresAndResumesSameEvent() {
+        PaymentAttempt attempt = prepared(5, 2);
+        observe(attempt, ProviderPaymentStatus.SUCCESS);
+        assertThat(apply.execute(attempt.getAttemptKey()).state()).isEqualTo(ApplyOrderPaymentResult.State.APPLIED);
+        assertThat(apply.execute(attempt.getAttemptKey()).state()).isEqualTo(ApplyOrderPaymentResult.State.APPLIED);
+        var eventId = orders.findById(attempt.getOrderId()).orElseThrow().getRecord().orElseThrow().getConfirmationEventId();
+        assertThat(outboxCount()).isEqualTo(1);
+        verify(transport, never()).send(any(), any(), any());
+        when(transport.send(any(), any(), any())).thenReturn(CompletableFuture.failedFuture(
+            new IllegalStateException("broker unavailable")));
+
+        for (int number = 1; number <= 5; number++) {
+            Instant before = Instant.now();
+            relay.poll();
+            Instant after = Instant.now();
+            assertThat(outboxState()).isEqualTo(number == 5 ? "BLOCKED:5" : "PENDING:" + number);
+            relay.poll();
+            verify(transport, times(number)).send(any(), any(), any());
+            if (number < 5) {
+                long base = 3_000L << (number - 1);
+                Instant next = Instant.parse(sqlValue("""
+                    SELECT DATE_FORMAT(next_attempt_at, '%Y-%m-%dT%H:%i:%s.%fZ') FROM order_event_outbox
+                    """).toString());
+                assertThat(next).isBetween(before.plusMillis(base * 4 / 5).minusMillis(1), after.plusMillis(base * 6 / 5));
+                forceOutboxDue();
+            }
+        }
+
+        assertThat(outbox.resume(eventId, Instant.now())).isTrue();
+        assertThat(outbox.resume(eventId, Instant.now())).isFalse();
+        assertThat(outboxState()).isEqualTo("PENDING:0");
+        when(transport.send(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(
+            new OrderEventTransport.Published("outbox-order-events", 0, 10)));
+        relay.poll();
+        assertThat(outboxState()).isEqualTo("PUBLISHED:1");
+
+        var values = ArgumentCaptor.forClass(byte[].class);
+        verify(transport, times(6)).send(eq("outbox-order-events"), eq(Long.toString(attempt.getOrderId())), values.capture());
+        assertThat(values.getAllValues()).allSatisfy(value -> assertThat(value).isEqualTo(values.getValue()));
+    }
+
+    @Test
+    @DisplayName("확정 뒤와 Kafka ack 뒤 중단을 재현하고 새 Relay가 같은 UUID와 bytes를 재발행한다")
+    void newRelayRecoversCommittedOutboxAndRepeatsAfterAck() throws Exception {
+        try (var kafka = KafkaTestFixture.create()) {
+            kafka.start();
+            var config = Map.<String, Object>of("bootstrap.servers", kafka.getBootstrapServers());
+            String topic = "outbox-order-events";
+            try (var admin = Admin.create(config)) {
+                admin.createTopics(List.of(new NewTopic(topic, 2, (short) 1))).all().get(10, TimeUnit.SECONDS);
+            }
+            var factory = new DefaultKafkaProducerFactory<>(config, new StringSerializer(), new ByteArraySerializer());
+            try {
+                var realTransport = new KafkaOrderEventTransport(new KafkaTemplate<>(factory));
+                when(transport.send(any(), any(), any())).thenAnswer(invocation ->
+                    realTransport.send(invocation.getArgument(0), invocation.getArgument(1), invocation.getArgument(2)));
+                PaymentAttempt attempt = prepared(5, 2);
+                observe(attempt, ProviderPaymentStatus.SUCCESS);
+                assertThat(apply.execute(attempt.getAttemptKey()).state()).isEqualTo(ApplyOrderPaymentResult.State.APPLIED);
+                assertThat(outboxState()).isEqualTo("PENDING:0");
+                verify(transport, never()).send(any(), any(), any());
+
+                doThrow(new IllegalStateException("stopped after broker ack")).doCallRealMethod()
+                    .when(outbox).publish(any(), any(), any());
+                var firstProcess = new OrderOutboxRelayService(outbox, transport);
+                assertThatThrownBy(firstProcess::poll).hasMessage("stopped after broker ack");
+                assertThat(outboxState()).isEqualTo("PENDING:1");
+                var restartedProcess = new OrderOutboxRelayService(outbox, transport);
+                restartedProcess.poll();
+                verify(transport, times(1)).send(any(), any(), any());
+                await().pollInterval(Duration.ofSeconds(1)).atMost(Duration.ofSeconds(25)).untilAsserted(() -> {
+                    restartedProcess.poll();
+                    assertThat(outboxState()).isEqualTo("PUBLISHED:2");
+                });
+
+                var deliveries = ArgumentCaptor.forClass(OrderEventTransport.Published.class);
+                verify(outbox, times(2)).publish(any(), any(), deliveries.capture());
+                var first = deliveries.getAllValues().getFirst();
+                var last = deliveries.getValue();
+                assertThat(last.partition()).isEqualTo(first.partition());
+                assertThat(last.offset()).isEqualTo(first.offset() + 1);
+                assertThat(sqlValue("""
+                    SELECT CONCAT(published_topic, ':', published_partition, ':', published_offset) FROM order_event_outbox
+                    """)).isEqualTo(topic + ":" + last.partition() + ":" + last.offset());
+                try (var records = new KafkaConsumer<>(config, new StringDeserializer(), new ByteArrayDeserializer())) {
+                    var partition = new TopicPartition(topic, first.partition());
+                    records.assign(List.of(partition));
+                    records.seek(partition, first.offset());
+                    var received = new ArrayList<ConsumerRecord<String, byte[]>>();
+                    await().atMost(Duration.ofSeconds(10)).until(() -> {
+                        records.poll(Duration.ofMillis(200)).forEach(received::add);
+                        return received.size() == 2;
+                    });
+                    var order = orders.findById(attempt.getOrderId()).orElseThrow();
+                    assertThat(received).allSatisfy(record -> {
+                        assertThat(record.key()).isEqualTo(Long.toString(order.getId()));
+                        assertThat(record.value()).isEqualTo(received.getFirst().value());
+                    });
+                    assertThat(new String(received.getFirst().value(), StandardCharsets.UTF_8))
+                        .contains(order.getRecord().orElseThrow().getConfirmationEventId().toString());
+                }
+            } finally {
+                factory.destroy();
+            }
+        }
+    }
+
+    private String outboxState() {
+        return sqlValue("SELECT CONCAT(status, ':', attempts) FROM order_event_outbox").toString();
+    }
+
+    private long outboxCount() {
+        return ((Number) sqlValue("SELECT COUNT(*) FROM order_event_outbox")).longValue();
+    }
+
+    private Object sqlValue(String sql) {
+        return tx().execute(status -> entityManager.createNativeQuery(sql).getSingleResult());
+    }
+
+    private void forceOutboxDue() {
+        tx().executeWithoutResult(status ->
+            entityManager.createNativeQuery("UPDATE order_event_outbox SET next_attempt_at = '2000-01-01'").executeUpdate());
+    }
 
     @AfterEach
     void tearDown() {
@@ -112,7 +340,13 @@ class ApplyOrderPaymentIntegrationTest {
 
         Order order = orders.findById(attempt.getOrderId()).orElseThrow();
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
-        assertThat(order.getRecord().orElseThrow().getPaymentMethod()).isEqualTo(PaymentMethod.PG);
+        var persisted = order.getRecord().orElseThrow();
+        var candidate = ArgumentCaptor.forClass(OrderRecord.class);
+        verify(orders, times(1)).completePgIfPending(eq(order.getId()), eq(OrderStatus.CONFIRMED), candidate.capture());
+        assertThat(persisted.getPaymentMethod()).isEqualTo(PaymentMethod.PG);
+        assertThat(persisted.getConfirmationEventId()).isNotNull().isEqualTo(candidate.getValue().getConfirmationEventId());
+        assertThat(persisted.getCreatedAt()).isEqualTo(candidate.getValue().getCreatedAt());
+        assertThat(persisted.getCreatedAt().getNano() % 1000).isZero();
         assertThat(probe.countPaidOrderRecords(order.getId())).isEqualTo(1L);
         assertThat(probe.countUsePointBills(1L, order.getId())).isZero();
         assertThat(products.findById(productId).orElseThrow().getStock()).isEqualTo(3);
@@ -122,7 +356,9 @@ class ApplyOrderPaymentIntegrationTest {
         ApplyOrderPaymentResult late = apply.execute(attempt.getAttemptKey());
         assertThat(late.state()).isEqualTo(ApplyOrderPaymentResult.State.APPLIED);
         assertThat(late.attentionRequired()).isTrue();
-        assertThat(orders.findById(order.getId()).orElseThrow().getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        var reapplied = orders.findById(order.getId()).orElseThrow().getRecord().orElseThrow();
+        assertThat(reapplied.getConfirmationEventId()).isEqualTo(persisted.getConfirmationEventId());
+        assertThat(reapplied.getCreatedAt()).isEqualTo(persisted.getCreatedAt());
         assertThat(attempt(attempt).getOutcome()).isEqualTo(PaymentAttempt.Outcome.SUCCESS);
     }
 

@@ -13,6 +13,8 @@ import com.loopers.support.test.IntegrationTest;
 import com.loopers.support.test.OrderConfirmProbe;
 import com.loopers.utils.DatabaseCleanUp;
 import java.util.List;
+import java.time.Instant;
+import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -54,7 +56,7 @@ class OrderPaymentCasRepositoryTest {
             .containsExactlyInAnyOrder(true, false);
         assertThat(tx.execute(status -> repository.findById(id).orElseThrow()).getRecord()).isEmpty();
         assertThat(race(() -> tx.execute(status -> repository.completePgIfPending(id, OrderStatus.CONFIRMED,
-            OrderRecord.paidByPg(1L, 2_000L))))).containsExactlyInAnyOrder(true, false);
+            pgRecord(1L, 2_000L))))).containsExactlyInAnyOrder(true, false);
 
         Order completed = tx.execute(status -> repository.findById(id).orElseThrow());
         assertThat(completed.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
@@ -76,7 +78,7 @@ class OrderPaymentCasRepositoryTest {
         assertThat(tx.execute(status -> repository.findById(id).orElseThrow()).getStatus()).isEqualTo(OrderStatus.DRAFT);
         tx.executeWithoutResult(status -> assertThat(repository.prepareIfDraft(id, 1L)).isTrue());
         tx.executeWithoutResult(status -> {
-            assertThat(repository.completePgIfPending(id, OrderStatus.CONFIRMED, OrderRecord.paidByPg(1L, 2_000L))).isTrue();
+            assertThat(repository.completePgIfPending(id, OrderStatus.CONFIRMED, pgRecord(1L, 2_000L))).isTrue();
             status.setRollbackOnly();
         });
         Order pending = tx.execute(status -> repository.findById(id).orElseThrow());
@@ -99,8 +101,7 @@ class OrderPaymentCasRepositoryTest {
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
         long id = tx.execute(status -> repository.insert(newOrder())).getId();
         tx.executeWithoutResult(status -> repository.prepareIfDraft(id, 1L));
-        for (OrderRecord record : List.of(OrderRecord.paid(1L, 2_000L), OrderRecord.paidByPg(2L, 2_000L),
-            OrderRecord.paidByPg(1L, 1_999L))) {
+        for (OrderRecord record : List.of(OrderRecord.paid(1L, 2_000L), pgRecord(2L, 2_000L), pgRecord(1L, 1_999L))) {
             assertThatThrownBy(() -> tx.execute(status -> repository.completePgIfPending(id, OrderStatus.CONFIRMED, record)))
                 .isInstanceOf(InvalidDataAccessApiUsageException.class).hasRootCauseInstanceOf(IllegalArgumentException.class);
         }
@@ -109,13 +110,17 @@ class OrderPaymentCasRepositoryTest {
         assertThatThrownBy(() -> tx.execute(status -> repository.completePgIfPending(id, OrderStatus.DRAFT, null)))
             .isInstanceOf(InvalidDataAccessApiUsageException.class).hasRootCauseInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> tx.execute(status -> repository.completePgIfPending(id, OrderStatus.PAYMENT_FAILED,
-            OrderRecord.paidByPg(1L, 2_000L)))).isInstanceOf(InvalidDataAccessApiUsageException.class).hasRootCauseInstanceOf(IllegalArgumentException.class);
+            pgRecord(1L, 2_000L)))).isInstanceOf(InvalidDataAccessApiUsageException.class).hasRootCauseInstanceOf(IllegalArgumentException.class);
         assertThat(tx.execute(status -> repository.findById(id).orElseThrow()).getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
         assertThat(probe.countPaidOrderRecords(id)).isZero();
     }
 
     private Order newOrder() {
         return Order.create(1L, List.of(OrderItem.create(1L, "주문 당시 상품", 1_000L, 2)));
+    }
+
+    private OrderRecord pgRecord(long userId, long amount) {
+        return OrderRecord.paidByPg(userId, amount, Instant.parse("2026-11-04T01:00:00Z"), UUID.randomUUID());
     }
 
     private List<Boolean> race(Callable<Boolean> action) throws Exception {

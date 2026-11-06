@@ -19,9 +19,10 @@ import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
 
 @Entity
-@Table(name = "order_records", uniqueConstraints = @UniqueConstraint(
-    name = "uk_order_records_order_id", columnNames = "order_id"
-))
+@Table(name = "order_records", uniqueConstraints = {
+    @UniqueConstraint(name = "uk_order_records_order_id", columnNames = "order_id"),
+    @UniqueConstraint(name = "uk_order_records_confirmation_event_id", columnNames = "confirmation_event_id")
+})
 // 주문 기록 JPA 엔티티
 public class OrderRecordJpaEntity {
     @Id
@@ -42,18 +43,19 @@ public class OrderRecordJpaEntity {
     private PaymentMethod paymentMethod;
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
+    @Column(name = "confirmation_event_id", columnDefinition = "char(36)", updatable = false)
+    private String confirmationEventId;
 
     protected OrderRecordJpaEntity() {}
 
-    OrderRecordJpaEntity(long userId, long amount, OrderRecordStatus status) {
-        this(userId, amount, status, PaymentMethod.POINT);
-    }
-
-    OrderRecordJpaEntity(long userId, long amount, OrderRecordStatus status, PaymentMethod paymentMethod) {
+    OrderRecordJpaEntity(long userId, long amount, OrderRecordStatus status, PaymentMethod paymentMethod,
+                         Instant createdAt, String confirmationEventId) {
         this.userId = userId;
         this.amount = amount;
         this.status = status;
         this.paymentMethod = paymentMethod;
+        this.createdAt = createdAt;
+        this.confirmationEventId = confirmationEventId;
     }
 
     void assignOrder(OrderJpaEntity order) {
@@ -88,8 +90,14 @@ public class OrderRecordJpaEntity {
         return createdAt;
     }
 
+    public String getConfirmationEventId() {
+        return confirmationEventId;
+    }
+
     @PrePersist
     void prePersist() {
-        createdAt = Instant.now();
+        if (createdAt == null) {
+            createdAt = Instant.now();
+        }
     }
 }
