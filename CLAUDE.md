@@ -88,6 +88,10 @@ AI와 함께 이 저장소에서 기능을 구현할 때 따르는 규칙입니�
 
 파일 수가 적어(Controller · ApiSpec · Dto) 나누지 않는다.
 
+### interfaces/runner/
+
+HTTP 가 아닌 실행 인자로 부르는 로컬 운영 진입점(`~CommandRunner`)을 둔다. 예: `OrderOutboxCommandRunner`
+
 ## Lombok
 
 - 엔티티 · 값 객체는 클래스에 `@Getter` 를 단다.

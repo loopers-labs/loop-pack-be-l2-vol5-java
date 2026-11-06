@@ -432,13 +432,26 @@ relay runOnce → streamer(6주차와 같은 코드) 소비
 
 | 대상 | 변경 |
 |---|---|
-| `OrderService` | `publishEvent` 대신 `OrderConfirmedOutbox.append` |
-| `domain/order` | entity `OrderConfirmedOutbox`(이름은 포트와 겹치지 않게 구현 때 정함), enum 상태, repository, gateway 포트(기록 · 전송) |
-| `application/order` | relay 회차 · TX 단계 · 재개 · backfill |
-| `infrastructure/order` | 기록 구현(JSON + JPA), relay producer 와 전송 구현 |
+| `OrderService` | `publishEvent` 대신 `OrderConfirmedOutbox.pending(...)` 을 저장 |
+| `domain/order` | entity `OrderConfirmedOutbox`, enum `OrderOutboxStatus` · `OrderBackfillResult`, vo `OrderConfirmed` · `OrderConfirmedSendResult`, repository `OrderConfirmedOutboxRepository`, gateway `OrderConfirmedSerializer` · `OrderConfirmedSender` |
+| `application/order` | facade `OrderOutboxRelay`(회차) · `OrderOutboxRelaySteps`(TX 단계) · `OrderOutboxRelayScheduler` · `OrderOutboxOperations`(재개 · backfill) · `OrderOutboxRelayProperties`, dto `OrderOutboxResumeInfo` · `OrderBackfillInfo` |
+| `infrastructure/order` | messaging `JsonOrderConfirmedSerializer` · `KafkaOrderConfirmedSender` · `OrderOutboxRelayProducerProperties`, persistence JPA 구현 |
+| `interfaces/runner` | `OrderOutboxCommandRunner`(5.2 로컬 진입점) |
 | 제거 | `OrderConfirmedListener`, `OrderEventPublisher`, `KafkaOrderEventPublisher` |
 | commerce-api 설정 | `order-outbox.relay.*`, 6주차 `max.block.ms` 주석 갱신 |
 | commerce-streamer | 없음 |
+
+### 구현에서 설계와 달라진 점
+
+| 대상 | 설계 · 규칙 | 구현 | 이유 |
+|---|---|---|---|
+| Outbox 생성 메서드 | `append` | `pending` | 만들어지는 상태를 이름에 드러냄 |
+| `OrderOutboxRelayProperties` 위치 | 설정 타입의 자리가 패키지 표에 없음 | `application/order/facade` | relay 회차가 쓰는 값이라 쓰는 쪽에 둠. producer 설정은 infrastructure 에 따로 둠 |
+| 로컬 진입점 패키지 | 패키지 표에 없음 | `interfaces/runner` | HTTP 가 아닌 실행 인자 입구라 `interfaces/api` 와 나눔 |
+| 전송 결과 분기 | - | sealed `OrderConfirmedSendResult` 를 `instanceof` 로 Acked · Permanent 순서로 보고 나머지를 Transient 로 캐스트 | 동작은 같다. 다만 결과 타입이 늘어도 컴파일러가 알려주지 않으므로 pattern `switch` 로 바꿀 후보다 |
+| E2E 상품 | 상품 7 · 8 | 테스트가 상품 두 개를 새로 만들어 씀 | id 를 고정하면 다른 데이터에 기대게 됨. 수량 2 · 1 기대는 같음 |
+| payload 컬럼 | TEXT | TEXT | MySQL TEXT 는 64KB 까지라 품목이 아주 많은 주문은 확정이 실패함. 현재 계약 크기로는 여유가 큼 |
+| local profile | - | 스케줄러가 켜져 있음 | 6주차처럼 확정 뒤 발행되게 함. 진입점(run-once 등)을 쓸 때는 `order-outbox.relay.enabled=false` 를 함께 줘야 두 경로가 섞이지 않음 |
 
 ### 구현 순서
 
@@ -463,13 +476,15 @@ relay runOnce → streamer(6주차와 같은 코드) 소비
 | `OrderConfirmedPublishFailureTest` | send 실패가 주문을 바꾸지 않음 | `OrderOutboxRelayTest`(전송 실패 → PENDING, 주문 불변) |
 | `OrderConfirmedPublicationGapTest` | commit 뒤 발행 누락 관찰 | 6.1 준비 단계(6주차 revision)로 옮김 |
 | `OrderConfirmedMessageTest` | 메시지 계약 | 유지 |
-| `OrderConfirmedEndToEndExperiment`, `OrderEventPublishExperiment` | 6주차 실험 기록 | 구현 때 직접 send 의존 여부를 보고 유지 · 갱신 결정 |
+| `OrderConfirmedEndToEndExperiment`, `OrderEventPublishExperiment` | 6주차 실험 기록 | E2E 실험은 relay 를 켜도록 갱신. 발행 측정 실험은 6주차 기록으로 유지(7주차에서는 확정이 Kafka 를 부르지 않아 정지 장면도 정상과 같게 나옴) |
 
 ## 10. 구현 제안 때 정할 것
 
-- **E2E 에서 streamer consumer 를 띄우는 방법.** 루트 빌드가 apps 의 plain `jar` 를 끄고 있어 `testImplementation(project(":apps:commerce-streamer"))` 가 그대로는 안 된다. 후보: streamer 의 plain jar 만 켬(빌드 설정 변경) / streamer bootJar 를 테스트가 프로세스로 띄움(6.1 과 같은 방식). 두 앱이 같은 기본 패키지(`com.loopers`)라 같은 JVM 에 올리면 component scan 을 명시적으로 좁혀야 한다.
-- **6.1 의 A 중단 방법.** proxy 로 연결을 끊는 방식이 Kafka advertised listener 와 맞물리는지 확인한다. 안 되면 다른 방법을 비교해 다시 제안한다.
-- **entity · 포트 이름.** 테이블 `order_confirmed_outbox` 는 정했다.
+구현하며 모두 정했다.
+
+- **E2E 에서 streamer consumer 를 띄우는 방법.** 루트 빌드가 apps 의 plain `jar` 를 끄고 있어 `testImplementation(project(":apps:commerce-streamer"))` 가 그대로는 안 된다. 후보: streamer 의 plain jar 만 켬(빌드 설정 변경) / streamer bootJar 를 테스트가 프로세스로 띄움(6.1 과 같은 방식). 두 앱이 같은 기본 패키지(`com.loopers`)라 같은 JVM 에 올리면 component scan 을 명시적으로 좁혀야 한다. → streamer bootJar 를 테스트가 프로세스로 띄운다(`BootJarProcess`). 빌드 설정과 scan 을 건드리지 않는다.
+- **6.1 의 A 중단 방법.** proxy 로 연결을 끊는 방식이 Kafka advertised listener 와 맞물리는지 확인한다. 안 되면 다른 방법을 비교해 다시 제안한다. → proxy 는 client 가 advertised 주소로 직접 붙어 우회된다. 6주차 api 를 `linger.ms=30000` 으로 띄우고 확정 직후 강제 종료했다. [복구 실험](experiment-recovery.md)
+- **entity · 포트 이름.** 테이블 `order_confirmed_outbox` 는 정했다. → 9장 표.
 - **간격 값(D-108) 재결정.** 기본값으로 구현한 뒤 실험으로 다시 정한다. → 정함. [relay 간격 실험](experiment-relay-interval.md)
 
 ## 11. 결정 요약
