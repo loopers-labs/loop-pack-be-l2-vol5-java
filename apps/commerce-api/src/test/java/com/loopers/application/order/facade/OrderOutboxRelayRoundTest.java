@@ -27,7 +27,7 @@ class OrderOutboxRelayRoundTest {
 
     private static final ZonedDateTime NOW = ZonedDateTime.parse("2026-11-04T10:00:00+09:00[Asia/Seoul]");
     private static final OrderOutboxRelayProperties PROPERTIES =
-        new OrderOutboxRelayProperties(50, Duration.ofSeconds(30), Duration.ofSeconds(1), Duration.ofMinutes(5));
+        new OrderOutboxRelayProperties(200, Duration.ofSeconds(30), Duration.ofSeconds(1), Duration.ofMinutes(1));
 
     private FakeOrderConfirmedOutboxRepository outboxRepository;
     private MutableClock clock;
@@ -112,15 +112,15 @@ class OrderOutboxRelayRoundTest {
         );
     }
 
-    @DisplayName("backoff 는 1s 에서 두 배씩 늘고 상한 5분을 넘지 않으며, 시도 횟수가 커도 넘치지 않는다. (D-106, D-108)")
+    @DisplayName("backoff 는 1s 에서 두 배씩 늘고 상한 1분을 넘지 않으며, 시도 횟수가 커도 넘치지 않는다. (D-106, D-108)")
     @Test
     void capsBackoff() {
         assertAll(
             () -> assertThat(relay.backoff(1)).isEqualTo(Duration.ofSeconds(1)),
             () -> assertThat(relay.backoff(2)).isEqualTo(Duration.ofSeconds(2)),
-            () -> assertThat(relay.backoff(9)).isEqualTo(Duration.ofSeconds(256)),
-            () -> assertThat(relay.backoff(10)).isEqualTo(Duration.ofMinutes(5)),
-            () -> assertThat(relay.backoff(10_000)).isEqualTo(Duration.ofMinutes(5))
+            () -> assertThat(relay.backoff(6)).isEqualTo(Duration.ofSeconds(32)),
+            () -> assertThat(relay.backoff(7)).isEqualTo(Duration.ofMinutes(1)),
+            () -> assertThat(relay.backoff(10_000)).isEqualTo(Duration.ofMinutes(1))
         );
     }
 
