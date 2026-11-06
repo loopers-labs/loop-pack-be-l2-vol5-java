@@ -172,20 +172,22 @@ java -jar commerce-api.jar … --outbox.resume.event-ids=order-confirmed:v1:41,o
 중단은 보내고 기록하지 않는 방식으로 만든다. relay 의 회차는 `sendDue`(고르기, 보내기, 기다리기)와 `record`(결과 TX)로 나뉘어 있어서,
 테스트는 `sendDue` 만 부르고 결과를 버린 뒤 새 relay 객체로 회차를 돌린다. 행을 직접 덮어쓰지 않고, 이것을 프로세스 강제 종료라고 부르지 않는다(`EXP-012`).
 
-### 6.2 주문부터 구매 활동까지 (`EXP-013`)
+### 6.2 재발행이 구매 활동을 늘리지 않음 (`EXP-013`)
 
-commerce-api 의 JUnit 테스트 하나가 실행 전체를 맡는다.
+발행 쪽과 소비 쪽을 각자의 테스트로 확인하고, 둘을 공유 계약(`modules/kafka` testFixtures 의 `order-confirmed-v1.json`)으로 잇는다.
+두 앱을 한 테스트에서 함께 띄우지 않는다. 이유는 requirements Q-3 에 있다.
 
-1. 공유 MySQL, Kafka 컨테이너에 이 실행만 쓰는 topic 과 group 을 만든다.
-2. streamer `bootJar` 를 자식 JVM 으로 띄운다. MySQL 과 broker 는 같고 topic 과 group 은 1 에서 만든 것을 쓴다. 준비는 actuator health 로 기다린다.
-3. 기존 주문 API 와 PG fixture 로 두 품목(수량 2, 1) 주문을 확정한다.
-4. relay 의 `sendDue` 만 부르고 결과를 버린다. broker 확인 뒤 기록 전에 멈춘 상태다.
-5. 새 relay 로 회차를 돌린다. 같은 행이 다시 나가고 `PUBLISHED` 가 된다.
-6. broker 를 직접 읽어 같은 `eventId` 의 record 2 개(서로 다른 offset)를 확인하고, DB 에서 처리 기록 1 건, 구매 활동 2 행(수량 2, 1), 재고와 결제가 그대로인지 확인한다.
-7. 자식 JVM 과 topic 을 정리한다.
+| 고리 | 확인하는 것 | 테스트 |
+|---|---|---|
+| 1 | 앱이 만든 payload 가 공유 계약 예시와 필드, 값, 시각 표기까지 같다 | commerce-api `OrderConfirmedMessageTest.matchesContractExample` |
+| 2 | relay 가 broker 확인 뒤 기록 전에 멈췄다가 다시 돌면, 저장된 같은 바이트가 같은 key 로 다른 offset 에 두 번 나간다 | commerce-api `OrderEventRelayTest.resendsAfterStopBeforeRecord` |
+| 3 | 공유 계약 예시가 같은 key 로 다른 offset 에 두 번 와도 처리 기록 1 건, 구매 활동 2 행(수량 2, 1)이고, committed offset 은 두 record 를 모두 지난다 | commerce-streamer `OrderConfirmedListenerTest.resentEventAtNewOffsetIsNoOp` |
 
-- `test` task 가 `:apps:commerce-streamer:bootJar` 에 의존하고 jar 경로를 system property 로 넘긴다. 제품 runtime 의존은 생기지 않는다.
-- streamer 의 테이블은 공유 스키마에 streamer 가 만든다(W6 Q-2). 다른 테스트가 남긴 행과 섞이지 않도록 이 실행의 `eventId`, `orderId` 로 걸러서 판정한다.
+1 과 2 로 relay 가 계약 예시와 같은 바이트를 두 번 보낸다는 것이, 3 으로 그 두 번이 효과를 한 번만 남긴다는 것이 확인된다.
+3 은 W6 의 같은 offset 재전달(`EXP-005`)과 다른 장면이다. relay 의 재발행은 commit 되지 않은 위치를 다시 읽는 것이 아니라 새 offset 의 새 record 라서 따로 확인한다.
+
+두 앱을 함께 띄우는 테스트로 확인할 때보다 놓치는 것은 배선이다. topic 이름, group, 직렬화 설정이 두 앱에서 어긋나면 위 세 고리는 모두 통과해도 실제로는 이어지지 않는다.
+이 배선은 `EXP-014` 의 재현 스크립트가 두 앱을 프로세스로 띄워 한 번 확인한다.
 
 ### 6.3 W6 누락 재현과 복구 (`EXP-014`)
 
@@ -285,5 +287,5 @@ outbox 조회 API 는 두지 않는다. 위 SQL 로 원문의 확인 요구를 �
 | 4 | `BLOCKED` 재개 | `RCV-004` | 완료(`OrderEventResumeTest`) |
 | 4-1 | 재시도 시간 상한 | `RLY-009` | 완료(`OrderEventRelayGiveUpTest`) |
 | 5 | rollback 뒤 재고와 PG create 확인 보강 | `OBX-007`, `EXP-010` | 완료(`OrderEventOutboxAtomicityTest`) |
-| 6 | 주문부터 구매 활동까지 | `EXP-013` | |
+| 6 | 재발행이 구매 활동을 늘리지 않음 | `EXP-013` | 완료(6.2 의 세 고리) |
 | 7 | W6 누락 재현과 복구, 운영 SQL 실행 결과 | `EXP-014`, `OPS-001` | |

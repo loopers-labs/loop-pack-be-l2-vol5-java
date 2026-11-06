@@ -134,6 +134,30 @@ class OrderConfirmedListenerTest {
         assertThat(count("order_confirmation_receipt")).isEqualTo(1);
     }
 
+    @DisplayName("ACT-004: relay 가 같은 사건을 다시 보내 다른 offset 의 record 로 두 번 와도 처리 기록 1 건, 구매 활동 2 행 그대로이고 보류는 없으며, committed offset 은 두 record 를 모두 지난다")
+    @Test
+    void resentEventAtNewOffsetIsNoOp() throws Exception {
+        RecordMetadata first = send("42", example());
+        RecordMetadata second = send("42", example());
+        TopicPartition partition = new TopicPartition(TOPIC, second.partition());
+
+        eventually(() -> {
+            try {
+                return committed(partition) >= second.offset() + 1;
+            } catch (Exception e) {
+                return false;
+            }
+        }, Duration.ofSeconds(15));
+
+        assertThat(second.partition()).isEqualTo(first.partition());
+        assertThat(second.offset()).isGreaterThan(first.offset());
+        assertThat(count("order_confirmation_receipt")).isEqualTo(1);
+        assertThat(count("purchase_activity")).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject(
+            "select sum(quantity) from purchase_activity where order_id = 42", Integer.class)).isEqualTo(3);
+        assertThat(count("order_event_hold")).isZero();
+    }
+
     @DisplayName("ACT-016: 다루지 않는 종류는 기록 없이 넘기고, 뒤의 확정 이벤트를 이어서 처리한다")
     @Test
     void skipsOtherEventTypes() throws Exception {
