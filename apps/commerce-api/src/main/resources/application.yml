@@ -21,6 +21,7 @@ spring:
     import:
       - jpa.yml
       - redis.yml
+      - kafka.yml
       - logging.yml
       - monitoring.yml
 
@@ -34,6 +35,10 @@ datasource:
     command-timeout: 300ms # 연결된 뒤 Redis 응답을 기다리는 상한. 넘으면 캐시 오류로 보고 DB에서 조회한다
     connect-timeout: 1s # 연결 수립(초기 핸드셰이크 포함)의 상한. JVM의 첫 연결은 300ms를 넘을 수 있다
     reject-commands-when-disconnected: true # 연결이 끊긴 동안은 재연결을 기다리지 않고 바로 실패한다
+
+order-event:
+  topic-name: order-events # 확정 주문 이벤트(OrderConfirmed v1)의 topic. 테스트는 고유 접미사를 붙여 덮어쓴다
+  send-timeout: 5s # send 결과를 기다리는 상한. 넘으면 발행 실패로 기록하고 주문 결과는 그대로 돌려준다
 
 payment:
   pg:
