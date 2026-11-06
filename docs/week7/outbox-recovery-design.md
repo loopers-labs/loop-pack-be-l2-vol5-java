@@ -161,6 +161,7 @@
 - relay 용 컬럼 `attempt_count`·`next_attempt_at`·`last_error` 는 과제 2절의 "최소 모델" 표에 포함되므로 지금 선언한다. 초기값은 `attemptCount = 0`, `lastError = null`, **`nextAttemptAt = 저장 시각(Clock 빈)`** 이다. 처음부터 다음 시각이 채워져 있으면 relay 가 "`status = PENDING` 이고 `next_attempt_at <= now`" 한 조건만으로 대상을 찾을 수 있고, "null 이면 즉시" 같은 특례 분기가 필요 없다. 값을 갱신하는 책임(시도 수 증가·다음 시각·오류 기록)은 relay 설계에서 정한다.
   > 📄 p.2 "다음 의미를 담는 최소 모델을 만듭니다. … attemptCount·nextAttemptAt·lastError 재시도·지연·실패 관찰"
   > 📄 p.3 "재시도 시간이 된 PENDING을 작은 묶음으로 안정된 순서에서 찾습니다."
+- **구현 중 추가한 제품 변경(결정에 없던 것, 사후 승인):** relay 가 쓰는 `publishedAt`·`nextAttemptAt`·재개 시각과 backfill 의 `nextAttemptAt` 은 모두 **밀리초로 자른다**. 이유: 확정 경로(`applyFinal`, W6 D2)가 이미 밀리초 절단을 쓰고 있어 같은 규칙으로 맞추고, DB 컬럼(`datetime(6)`)이 나노초 고정 Clock 값을 마이크로초로 반올림해 저장하기 때문에 자르지 않으면 테스트의 고정 Clock 값과 저장값이 어긋난다(E2E 에서 `…00.123456789Z` 기대 ↔ `…00.123457Z` 저장으로 발견).
 
 ### D16. 직렬화 실패 → 런타임 예외로 감싸 같은 TX rollback, `ObjectMapper` 는 주입
 - `applyFinal` 안에서 직렬화하고 `JsonProcessingException` 을 런타임 예외(`CoreException`)로 바꿔 던진다. `@Transactional` 기본 규칙이 런타임 예외에 rollback 하므로 주문 CONFIRMED·예약 소비·Outbox 가 함께 되돌아간다. 체크 예외를 그대로 던지면 rollback 되지 않으니 반드시 감싼다.
@@ -306,8 +307,12 @@
 - **일시 오류 (`TimeoutException`, `NotEnoughReplicasException`, `NetworkException`, 그 밖의 `KafkaException`, 그리고 `UnknownTopicOrPartitionException`):** `nextAttemptAt` 을 backoff 로 미루고 PENDING 유지. **시도 상한으로 BLOCKED 하지 않는다.** 이유: 상한에 닿아 BLOCKED 가 되면 broker 장기 장애 뒤 사람이 재개하지 않는 한 자동 재처리가 안 되어 과제 p.4 "broker 장애가 회복되면 기존 PENDING을 다시 처리합니다" 와 어긋난다. `UnknownTopicOrPartition` 은 topic 미생성·메타데이터 지연 같은 운영 상황이 풀리면 해결되므로 일시 쪽에 둔다.
   > 📘 학습 p.5 표 "broker 일시 장애 → 간격을 둔 제한된 시도, 이후 재개 / 피할 행동: 빠른 무한 루프" "DB 상태 갱신 오류 → PENDING 유지·같은 사건 재발행 / 피할 행동: 새 eventId로 회피"
 - **재개 경로:** `resume(eventId)` 가 해당 행을 `BLOCKED → PENDING`(`nextAttemptAt = now`, 조건 `status = BLOCKED`)으로 되돌린 뒤 한 회차(`runOnce()`)를 실행한다. 추측하지 않고 오류로 드러낸다: 없는 eventId 는 `NOT_FOUND`, 있지만 BLOCKED 가 아닌 행(PENDING·PUBLISHED)은 `CONFLICT`. 어느 쪽도 상태를 바꾸지 않는다.
-- BLOCKED·PENDING 행을 자동 삭제하지 않는다. 보존·정리 정책은 소비자 장부(`processed_order_confirmation`) 보존 기간과 함께 정해야 하며, 이번 과제에서는 "삭제 없음" 으로 둔다.
+- **보존·정리 정책과 dedup 기록의 관계 (짧게):**
+  - 이번 과제에서는 Outbox 행(PENDING·PUBLISHED·BLOCKED)을 **자동 삭제하지 않는다.** PENDING·BLOCKED 는 아직 전달이 끝나지 않은 사실이고, PUBLISHED 를 즉시 지우면 "언제 어느 offset 으로 보냈는가" 라는 재처리·추적 근거를 잃는다.
+  - 정리 정책을 정할 때는 세 보존 기간을 **함께** 정해야 한다: Outbox 보존 기간, Kafka topic retention, 소비자 dedup 기록(`processed_order_confirmation`) 보존 기간. dedup 기록을 Outbox·Kafka retention 보다 **먼저** 지우면, 아직 재발행·재전달될 수 있는 사건이 다시 와도 "처음 보는 사건" 으로 보여 구매 활동이 두 번 생긴다. 따라서 dedup 기록은 그 사건을 다시 받을 가능성이 있는 기간(Outbox + Kafka retention 중 긴 쪽) 이상 남겨야 한다.
+  - 이 제약을 지키는 범위에서 PUBLISHED 행의 보관 기간 축소나 BLOCKED 행의 수동 정리는 운영 판단이며, 이번 범위에서는 구현하지 않는다.
   > 📄 p.4 "이번 과제에서는 미발행·격리 행을 자동 삭제하지 않습니다. 보존·정리 정책과 dedup 기록 보존의 관계를 짧게 정리합니다."
+  > 📘 학습 p.6 "PUBLISHED 행을 즉시 삭제하면 전달 이력과 재처리 근거를 잃습니다. Outbox 보존 기간, Kafka retention, 소비 중복 방지 기록의 보존 기간은 함께 정해야 합니다. 오래된 이벤트를 다시 보낼 수 있는데 dedup 기록만 먼저 지우면 중복 효과가 생길 수 있습니다."
   > 📘 학습 p.6 "영구 오류를 BLOCKED 등으로 분리하면 정상 대상이 계속 진행할 수 있지만, 그 행은 완료가 아니라 사람이 다시 판단해야 할 미해결 작업입니다."
 - `PUBLISHED` 는 broker 확인을 저장했다는 뜻이고 소비 완료가 아니다.
   > 📄 p.4 "PUBLISHED를 소비 완료로 표시하지 않습니다. consumer lag·오류·실제 구매 활동을 따로 확인합니다."
@@ -316,6 +321,7 @@
 - relay 서비스의 `runOnce()`·`resume(eventId)` 를 crossAppTest·통합 테스트가 직접 호출한다. HTTP 엔드포인트·`ApplicationRunner`·batch 앱 진입점은 만들지 않는다.
   > 📄 p.4 "재개는 로컬에서 대상 eventId를 명시해 relay 한 회차를 실행하는 작은 운영 진입점이나 테스트 도구로 충분합니다. 이 진입점은 로컬에서만 사용하며 공개 관리자 API로 노출하지 않습니다."
 - `/api-admin/**` 아래 노출은 과제가 금지해 택하지 않았다. 실행 인자 방식은 웹 앱에 "실행 후 종료" 모드를 더해 설정 분기가 늘어 택하지 않았다.
+- **복구 로직은 제품, 진입점은 테스트** (D34 와 함께): 누락 Outbox 를 보충하는 backfill 규칙은 제품 서비스에 두되, 그것을 부르는 입구는 테스트 도구만이다.
 
 ### D31. 관찰 → SQL 조회문 + 회차 요약 로그 1줄
 - 설계 문서에 조회문을 남긴다: PENDING 수·가장 오래 기다린 시각·최대 시도 수는 `SELECT COUNT(*), MIN(created_at), MAX(attempt_count) FROM order_confirmed_outbox WHERE status = 'PENDING'`, BLOCKED 목록은 `SELECT event_id, attempt_count, last_error FROM order_confirmed_outbox WHERE status = 'BLOCKED'`.
@@ -334,9 +340,73 @@
 
 ---
 
-## 4. 복구·중단 실험 결정 (미정, 다음 단계)
+## 4. 과제 5-4~5-6·6절·7절 결정 · W6 누락 복구, 두 중단 구간 검증, E2E
 
-과제 5-4~5-6(복구)과 6절(두 중단 구간 검증)·7절(E2E)을 구현하기 전에 여기에 D34 부터 이어서 적는다.
+이 절의 범위는 과제 5-4~5-6(새 격리 실행의 W6 누락 상태 복구), 6절(두 중단 구간 검증), 7절(E2E)이다. 실행 명령:
+
+```bash
+./gradlew :apps:commerce-api:crossAppTest                       # W6GapReproductionAndRecoveryTest + OutboxDeliveryE2ETest
+./gradlew :apps:commerce-api:test --tests '*OutboxBackfillTest'  # backfill 규칙 (src/test)
+```
+
+### D34. backfill 위치 → 제품 서비스 `application/order/OrderConfirmedOutboxBackfill.backfill(orderId)`, 호출은 테스트만
+- "기존 누락 연결 방법" 은 제출물이므로 규칙을 제품 코드에 둔다. 단 입구(HTTP·Runner)는 만들지 않고 테스트가 직접 부른다 (D30 보강).
+  > 📄 p.4 5-4 "직접 발행을 중단하고 같은 DB에 W7의 Outbox 저장 구조·복구 경로·단일 relay를 연결합니다. 준비 상태를 만들려고 SUCCESS를 직접 삽입하거나 W7 Outbox 행을 삭제하지 않으며, 제품의 운영용 우회 스위치도 만들지 않습니다."
+  > 📄 p.8 제출 "Outbox·relay 교체 코드, 로컬 원자성·중단·E2E 테스트, 기존 누락 연결 방법, PR과 기술 글."
+- 5-4 의 "우회 스위치" 는 준비 상태를 만들기 위해 제품 경로를 비켜 가는 장치(SUCCESS 직접 삽입, Outbox 삭제, Outbox 생략 플래그)다. backfill 은 반대로 **이미 확정된 주문의 저장 사실로 Outbox 만 보충하는 복구 경로**이며 확정 경로를 건너뛰는 스위치가 아니다. 클래스 주석에 이 문장을 그대로 적는다.
+
+### D35. backfill 규칙 → orderId 명시, 저장 사실 그대로 재생성, 있으면 문자열 비교, 부족·충돌은 각각 오류
+- 대상은 `backfill(orderId)` 로 한 건씩 명시한다. "CONFIRMED 인데 Outbox 없는 주문 전체" 를 훑는 자동 소급은 하지 않는다.
+  > 📄 p.4 5-5 "대상 두 주문의 저장된 확정 사실에서 기존 eventId·confirmedAt·품목 그대로 Outbox가 없을 때만 한 행씩 추가합니다. 이미 있으면 내용 일치를 확인합니다. 원본 사실 부족·충돌에는 추측하지 않고 오류를 드러냅니다."
+  > 📄 p.5 "두 방식 모두 이전 POINT 주문 전체를 자동 소급하지 않고, 대상 두 사례만 확인합니다."
+- payload 는 확정 때와 **같은 코드**로 다시 만든다: `OrderConfirmedEvent.of(orderId, order.getConfirmedAt(), order.getItems())` + 같은 `ObjectMapper.writeValueAsString`. 같은 입력·같은 코드라 문자열이 바이트까지 같다. 현재 상품을 다시 읽지 않고 소비자 장부 fingerprint 와 교차 확인도 하지 않는다.
+- 원본 사실 부족은 각각 다른 메시지의 오류로 드러낸다: 주문 없음(`NOT_FOUND`), CONFIRMED 가 아님, `confirmedAt` null(이전 POINT 확정 주문), 품목 0개(세 가지 모두 `CONFLICT`). 추측(임의 시각·현재 상품)은 하지 않는다.
+- 이미 Outbox 가 있으면 eventId·orderId·messageKey·payload 문자열이 모두 같을 때만 "이미 있음·일치" 로 돌려주고, 하나라도 다르면 `CONFLICT`. 상태(PENDING/PUBLISHED/BLOCKED)는 비교하지 않는다.
+- 한 건 = 짧은 TX 하나(주문·품목 읽기 → Outbox insert). `nextAttemptAt` 초기값은 backfill 시각(Clock)이라 relay 가 바로 집는다. UNIQUE 위반(동시 복구)은 예외 그대로 드러낸다.
+
+### D36. 복구 검증 → 두 번째 복구는 효과 0, 복구 중 PG 호출 0, consumer 쪽은 committed offset 과 저장 호출 수 둘 다
+- 복구 직전에 기준값을 기록한다: PG `createCount`(C)·`lookupCallCount`·`transactions().size()`(T), 주문 상태·`confirmedAt`·`updatedAt`, 예약 상태·재고, consumer group 의 committed offset, 장부 저장(`saveProcessed`) 호출 수(spy).
+  > 📄 p.5 "복구 시작 직전 기준값을 기록하고 이후 증가가 0인지 확인합니다. 복구를 위해 새 결제를 만드는 것은 허용하지 않습니다." "PG create = C, PG 조회·callback 추가 호출 = 0 / 외부 거래 수 = T, 주문 재확정·예약 추가 소비 = 0 / A의 구매 활동 정상 생성 / B의 구매 활동 불변"
+- 1차 복구: `backfill(A)`·`backfill(B)` → 둘 다 생성(PENDING), relay 한 회차 → 둘 다 PUBLISHED, consumer 가 A 의 활동 2행을 만들고 B 는 장부 조회로 no-op(활동 2행 불변). broker 에는 A 의 eventId record 1개, B 의 eventId record 2개(W6 발행 + 재발행, 다른 offset).
+- 2차 복구: `backfill(A)`·`backfill(B)` → "이미 있음·일치", Outbox 2행 그대로(PUBLISHED), relay `picked = 0`, 활동·장부 불변, committed offset 미전진, `saveProcessed` 호출 수 불변. PG 세 값·주문·예약·재고 모두 기준값과 같다.
+  > 📄 p.4 5-6 "relay와 기존 consumer를 실행합니다. 미발행 사례에는 빠졌던 구매 활동이 생기고, 이미 소비된 사례에는 재발행이 와도 활동 행·수량이 늘지 않는지 확인합니다. 같은 대상의 두 번째 복구도 Outbox·구매 효과를 늘리지 않아야 합니다."
+
+### D37. 6절 중단 hook → 테스트가 전송기를 감싸 broker 확인(metadata) 뒤 예외로 중단. 제품 코드 무수정
+- "commit 후 relay 실행 전 중단" 은 장치가 필요 없다. test 는 `outbox.relay.enabled=false` 라 확정 commit 뒤 relay 가 돌지 않아 Outbox PENDING 만 남고, 그 뒤 새 relay 객체로 한 회차를 돌린다.
+- "broker 확인 뒤 PUBLISHED 저장 전 중단" 은 `OutboxMessageSender` 를 구현한 **테스트 전용 래퍼**가 실제 `KafkaOutboxMessageSender` 에 위임해 PUBLISHED metadata(topic·partition·offset)를 받아 기록한 뒤 예외를 던진다. relay 는 send 를 try 로 감싸지 않으므로 결과 TX(`markPublished`)에 도달하지 못하고 회차가 중단된다. W6 가짜 발행기와 같은 "포트 경계" 방식이라 제품 코드를 바꾸지 않는다.
+  > 📄 p.5 "중단 hook은 그 단계가 완료된 뒤 다음 단계를 못 가게 둡니다. 예를 들어 broker 확인 뒤 중단 실험에서는 실제 send 성공 metadata를 확보하고 PUBLISHED 저장을 수행하지 않습니다. 예외를 던진 테스트를 OS 강제 종료 시험으로 표현하지 않습니다."
+- **명시:** 이 예외는 통제된 중단이며 OS 강제 종료·프로세스 재기동이 아니다. 테스트 이름·주석·이 문서에 그렇게 적는다.
+- 기각: 리포지터리 spy 로 `markPublished` 에서 예외(저장 "시도" 는 하므로 과제 문장과 어긋나고 metadata 를 테스트가 못 봄), 제품 relay 에 hook 인터페이스(운영에서 쓸 일 없는 이음새).
+
+### D38. 재시작 → `new OrderConfirmedOutboxRelay(...)` 로 새 객체, 같은 DB·Kafka·eventId. Outbox 를 직접 PENDING 으로 덮어쓰지 않음
+- 중단에 쓴 래퍼를 버리고 실제 전송기를 넣은 **새 relay 객체**를 만들어 `runOnce()` 한다. 생성자가 public 이라 바로 가능하며 기존 스케줄러 테스트의 `facadeWith(...)` 관례와 같다. 컨텍스트 빈을 다시 부르는 방식은 "객체·실행 흐름을 새로" 라는 문장과 어긋나 택하지 않았다.
+  > 📄 p.6 "재시작은 relay 객체·실행 흐름을 새로 만들되 같은 DB·Kafka·eventId를 유지합니다. 중단 뒤 테스트가 Outbox 상태를 직접 PENDING으로 덮어써 복구 조건을 만들어서는 안 됩니다."
+- D37 방식이면 `markPublished` 가 실행되지 않아 행은 저절로 PENDING·`attemptCount = 1`·`publishedAt = null` 이다. 테스트는 재시작 전에 이 상태를 **단언으로 확인만** 하고 UPDATE 로 만들지 않는다. `nextAttemptAt` 은 시도 시작 TX 가 바꾸지 않으므로 바로 다시 집힌다.
+
+### D39. 7절 E2E → 실제 생성 ID 두 상품에 수량 2·1, broker record 2개 이상·consumer 수신 2회 이상은 두 방법으로
+- 주문은 기존 API(`createOrder` → `confirmOrder` → 가짜 PG SUCCESS → `applyCallback`)로 만들어 W7 제품 경로(`applyFinal` 의 Outbox insert)를 탄다. 가짜 handler 로 업무 완료를 대신하지 않는다.
+  > 📄 p.6 "한 E2E 실행에서 기존 주문 API와 로컬 PG fixture, 실제 DB·Kafka, 실제 구매 활동 consumer를 연결합니다. 별도의 가짜 handler로 업무 완료를 대신하지 않습니다."
+- 상품 7×2·8×1 은 과제의 예시 ID 로 보고, 실제 생성된 상품 ID 두 개에 수량 2·1 을 주며 실제 ID 를 기록한다 (W6 관찰과 같은 방식). JDBC 로 id 7·8 을 강제 삽입하는 방식은 테스트가 DB 를 직접 조작하므로 택하지 않았다.
+- broker record 2개 이상: raw consumer 로 topic 전체를 읽어 같은 eventId 의 record 를 모아 개수 ≥ 2, offset 서로 다름, bytes 동일을 단언한다. 첫 발행 offset 은 D37 래퍼가 받은 metadata 와 같아야 한다. 애플리케이션의 send 호출 수만 세지 않는다.
+  > 📄 p.6 "중단 실험에서는 첫 발행과 재발행의 실제 broker 기록을 관찰해 두 번을 확인합니다. 애플리케이션의 send 호출 횟수만 세지 않습니다. W6의 동일 offset 재전달과 달리, 여기서는 같은 eventId가 별도 offset으로 기록될 수 있습니다."
+- consumer 수신 2회 이상: (a) `@MockitoSpyBean PurchaseActivityRepository` 의 장부 조회(`findProcessedByEventId`) 호출 ≥ 2 와 저장(`saveProcessed`) 호출 = 1, (b) committed offset 이 재발행 record offset + 1 까지 전진. 둘 다 확인한다.
+- **"수신 횟수" 의 정의:** 이 문서에서 consumer 수신 횟수는 (a) 장부 조회 `findProcessedByEventId` 호출 수와 (b) committed offset 전진의 두 증거를 함께 가리킨다. `consume` 은 record 하나마다 장부 조회를 반드시 먼저 하므로 조회 수 = 처리한 record 수이고, committed offset 은 broker 가 기록한 처리 위치다. `@KafkaListener` 빈 자체를 spy 로 바꾸는 방식은 컨테이너 등록과 얽혀 피했다.
+- 기대 결과: 주문·PG 거래 각 1, Outbox 같은 eventId 1행·최종 PUBLISHED, 장부 1행, 활동 2행(수량 2·1) 유지, 재고·예약·포인트 잔액이 확정 직후 기준값과 같음(PG 주문이라 포인트 차감 자체가 없음).
+  > 📄 p.6 표 "주문·PG 거래 같은 확정 주문·외부 거래 각각 1 / Outbox 동일 eventId 1행, 최종 PUBLISHED / Kafka 같은 eventId의 별도 record 2개 이상 관찰 가능 / consumer 같은 사건의 수신 2회 이상 / 완료 이벤트 같은 orderId·eventId의 완료 기록 1 / 구매 활동 상품별 2행, 수량 2·1 유지 / 재고·포인트 예약 추가 소비·반환 없음, PG 주문 포인트 추가 차감 없음"
+- 대기는 Awaitility + deadline, 실패 시 실제 상태를 메시지에 담는다. 테스트 자동 rollback 안에 넣지 않고 실제 commit 을 확인한다.
+  > 📄 p.7 "테스트 자동 rollback 안에 모든 절차를 넣지 않습니다. relay·consumer가 다른 TX에서 볼 수 있도록 실제 commit을 확인합니다. 고유 topic·group·합성 주문을 사용하고, 실행 중인 consumer와 경쟁하며 DB를 초기화하지 않습니다."
+
+### D40. 테스트 배치 → 복구는 `W6GapReproductionAndRecoveryTest` 의 TODO 자리, 6절 중단 + 7절 E2E 는 crossAppTest 의 `OutboxDeliveryE2ETest`
+- 복구(5-4~5-6)는 준비와 같은 테스트 메서드 안에 이어 붙인다(D8: 사이에 정리가 끼지 않는다). 6절 "commit 후 relay 전 중단"·"broker 확인 뒤 PUBLISHED 저장 전 중단" 과 7절 E2E 는 새 합성 주문으로 `OutboxDeliveryE2ETest` 에 둔다. 둘 다 실제 consumer 가 필요해 crossAppTest 소스셋이다.
+  > 📄 p.7 예시 "./gradlew :apps:commerce-api:test --tests '*OutboxDeliveryE2ETest'"
+- 과제 예시는 `:apps:commerce-api:test` 를 가리키지만 이 저장소에서는 consumer 를 같은 context 에 올리는 소스셋이 따로 있어 `./gradlew :apps:commerce-api:crossAppTest` 로 실행한다 (D4). backfill 규칙 자체는 consumer 가 필요 없어 `src/test` 의 `OrderConfirmedOutboxBackfillTest` 로 검증한다.
+- 6절 첫 문장 "relay 없이 실제 DB 의 로컬 원자성" 은 2단계의 `OrderConfirmedOutboxAtomicityTest` 가 이미 맡는다.
+  > 📄 p.5 "먼저 relay 없이 실제 DB의 로컬 원자성을 확인한 뒤 실제 broker·consumer를 연결합니다."
+
+### D41. 기록 → `observation.json` 에 `recovery` 구간 추가, E2E 는 `build/w7-recovery/e2e.json`
+- 준비 기록 파일(`apps/commerce-api/build/w7-recovery/observation.json`)에 `recovery` 구간을 추가한다: 복구 직전 기준값(C·T·조회 수·committed offset·저장 호출 수), backfill 결과(A·B 생성), relay 회차 결과, A·B 의 Outbox 상태·broker offset, 활동 행 수, 2차 복구 결과(이미 있음·회차 picked 0·불변). 파일은 준비 끝이 아니라 **복구까지 끝난 뒤** 한 번 쓴다.
+- E2E 는 `build/w7-recovery/e2e.json`: 주문·eventId·실제 상품 ID, 첫 발행 offset(중단 직전 metadata)·재발행 offset, consumer 수신 횟수·저장 횟수, 장부·활동 행, 재고·포인트·PG 기준값과 결과.
+- 설계 문서 5-3(복구)·5-4(E2E) 표에는 사용자가 정한 대로 마지막에 한 번에 옮긴다.
 
 ---
 
@@ -362,8 +432,54 @@ PG create C = 2, 외부 거래 T = 2. 복구 단계는 이 값에서 증가 0 �
 검증: `./gradlew :apps:commerce-api:crossAppTest` 1건 통과. `./gradlew :apps:commerce-api:test --rerun` 453건(skip 0, 실패 0, `@SpringBootTest` 36개 클래스 포함), `./gradlew :apps:commerce-streamer:check` 43건 통과. Checkstyle·ArchUnit 포함.
 > 📄 p.7 "테스트 0건·skip·연결 실패를 통과로 세지 않습니다."
 
-### 5-2. relay·재시도(과제 3~4절) 실행 (미정)
+### 5-2. Outbox 원자성 · relay·재시도(과제 1~4절) 실행 (2026-11-06)
 
-### 5-3. 복구(5-4~5-6) 실행 (미정)
+실제 MySQL·Testcontainers broker. 전송기 분류와 relay 규칙은 `src/test`, 숫자는 그 실행의 관찰값이다.
 
-### 5-4. 두 중단 구간 검증 · E2E (과제 6·7절, 미정)
+| 장면 | 관찰값 | 근거 테스트 |
+|---|---|---|
+| 확정 TX 와 Outbox | PG SUCCESS 처음 반영 → Outbox 1행 PENDING, payload 가 저장 품목·confirmedAt 과 일치, 별도 연결에서 주문 CONFIRMED 와 함께 보임. 중복 callback·reconcile 에도 1행. PENDING·UNKNOWN·FAILED 는 0행 | `OrderConfirmedOutboxAtomicityTest` 8건 |
+| Outbox 실패 → rollback | payload 직렬화 실패·insert 실패 주입 → 주문 PAYMENT_PENDING·예약 RESERVED·재고 미차감·Outbox 0행, 예외 전파, PG create 추가 없음. 재시도에서 CONFIRMED·Outbox 1행 | 같은 테스트 |
+| 전송기 분류 (실제 broker) | 저장 key·payload 그대로 → PUBLISHED(partition 0, offset 채움, record bytes = 입력). 1.1MB payload → BLOCKED(`RecordTooLargeException`, detail 에 payload 없음). `localhost:1` 전송기 → 5초 안에 RETRY, detail 에 호스트:포트 없음 | `KafkaOutboxMessageSenderTest` 4건 |
+| relay 한 회차 | 기한 된 PENDING 2행 → 둘 다 PUBLISHED·publishedAt = 고정 Clock·attemptCount 1. 기한 전·PUBLISHED 행은 집지 않음. 끝난 행에 대한 상태 UPDATE 는 0행 | `OrderConfirmedOutboxRelayTest` 9건 |
+| broker 불가 | 첫 행 RETRY → PENDING 유지·lastError 기록·회차 조기 종료(`BROKER_UNAVAILABLE`), 둘째 행 `deferred` 1·미접촉 | 같은 테스트 |
+| backoff (운영값·고정 Clock) | 연속 실패 시 nextAttemptAt 간격 10 → 20 → 40 → 80 → 160 → 300 → 300초 | 같은 테스트 |
+| 영구 오류·재개 | BLOCKED 는 그 행만, 다음 행은 PUBLISHED. relay 가 BLOCKED 를 집지 않음. `resume` → PENDING → 발행(attemptCount 2). 없는 eventId NOT_FOUND, PENDING·PUBLISHED 행 CONFLICT | 같은 테스트 |
+| 겹침 | 첫 회차가 send 안에 멈춘 동안 둘째 `runOnce` 는 `ALREADY_RUNNING`·picked 0 | 같은 테스트 |
+| 스케줄러 | relay `run` 이 fixedDelay 10초 작업으로 등록, 기본 `taskScheduler` 와 relay 전용 단일 스레드(`outbox-relay-`) 분리, test 는 `enabled=false` 라 미호출 | `OutboxRelaySchedulerTest` 3건 |
+
+### 5-3. 복구(5-4~5-6) 실행 (2026-11-06)
+
+5-1 의 준비(주문 A·B)에서 이어진 같은 실행. 중간에 DB·broker·PG 초기화 없음. `build/w7-recovery/observation.json` 의 `recovery` 구간.
+
+| 항목 | 관찰값 |
+|---|---|
+| 복구 직전 기준값 | PG create 2 · 조회 2 · 외부 거래 2, consumer committed offset 1, 장부 저장 호출 1 |
+| backfill | A `CREATED`, B `CREATED`. 두 payload 모두 W6 경로가 발행한 이벤트 객체의 직렬화 문자열과 같음. B 는 W6 가 보낸 record bytes 와도 같음 |
+| relay 회차 | `COMPLETED`, picked 2, published 2, skippedStale 0, deferred 0, PENDING 잔여 0 |
+| broker | A: offset 1 (처음 발행). B: offset 0 (W6) + offset 2 (재발행), 두 record bytes 동일. topic 전체 3개 |
+| consumer | committed offset 3. 장부 저장 호출 2 (= 기준 1 + A 1건). A 활동 2행(상품 1 × 2, 상품 2 × 1) 생성. B 장부 id·processedAt·활동 id·수량 불변 |
+| 복구 중 PG | create 2 · 조회 2 · 외부 거래 2 그대로 (증가 0). 주문 A·B 의 상태·confirmedAt·updatedAt 불변, 예약 CONSUMED 그대로, 재고 불변 |
+| 두 번째 복구 | backfill A·B `ALREADY_PRESENT`, relay picked 0, broker 3개 그대로, committed offset 3·장부 저장 2 그대로, 활동 불변 |
+
+### 5-4. 두 중단 구간 검증 · E2E (과제 6·7절, 2026-11-06)
+
+`OutboxDeliveryE2ETest`, 격리 topic `order-events-OutboxDeliveryE2ETest`. `build/w7-recovery/e2e.json`.
+
+| 항목 | 관찰값 |
+|---|---|
+| 합성 주문 | 주문 1, 상품 1 × 2 · 상품 2 × 1 (과제의 7·8 은 예시 ID), PG 거래 1건. 확정 직후 Outbox 1행 PENDING·attemptCount 0, broker record 0개 = "commit 후 relay 실행 전 중단" 상태 |
+| 첫 발행 뒤 중단 | 래퍼가 실제 send 성공 metadata(offset 0)를 받은 뒤 예외 → Outbox PENDING 유지·attemptCount 1·publishedAt null. 통제된 중단이며 OS 종료가 아님 |
+| 재시작 | 새 relay 객체 → picked 1·published 1 → Outbox PUBLISHED·attemptCount 2. broker 에 같은 eventId record 2개(offset 0, 1), bytes 동일 |
+| consumer | committed offset 2 (두 record 모두 처리). 장부 조회 2회 = 수신 2회, 장부 저장 1회. 장부 1행, 활동 2행(수량 2·1) |
+| 불변 | 재고 8·9(확정 직후와 같음), 예약 CONSUMED 2건 그대로, 포인트 10,000 그대로(PG 주문이라 차감 없음), PG create 1·외부 거래 1 |
+
+### 5-5. 최종 검증 (2026-11-06)
+
+```bash
+./gradlew :apps:commerce-api:test --rerun          # 185개 클래스, 476건, skip 0, 실패 0 (Checkstyle main·test 포함)
+./gradlew :apps:commerce-api:crossAppTest --rerun  # 2개 클래스, 2건, skip 0, 실패 0 (checkstyleCrossAppTest 포함)
+./gradlew :apps:commerce-streamer:test --rerun :apps:commerce-streamer:check   # 43건, skip 0, 실패 0
+```
+
+476건 = W6 종료 시점 453건 − 흡수·삭제한 `OrderConfirmedDeliveryGapTest` 1건 + 전송기 4 + relay 9(resume 테스트 분리 포함) + 스케줄러 3 + backfill 8. ArchUnit 3건 포함. 테스트 0건·skip·연결 실패를 통과로 세지 않았다 (📄 p.7).
