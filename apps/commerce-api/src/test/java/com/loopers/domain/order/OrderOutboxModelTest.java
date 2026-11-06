@@ -140,4 +140,36 @@ class OrderOutboxModelTest {
             assertThat(outbox.getLastError()).hasSize(OrderOutboxModel.MAX_ERROR_LENGTH);
         }
     }
+
+    @DisplayName("누락 복구가 기존 행을 확인할 때, ")
+    @Nested
+    class SameFact {
+
+        @DisplayName("식별 정보와 payload가 모두 같으면 같은 사실이다. 상태·시도 수는 보지 않는다.")
+        @Test
+        void sameFact_regardlessOfRelayState() {
+            // arrange
+            OrderOutboxModel outbox = OrderOutboxModel.pending(event(), PAYLOAD, RECORDED_AT);
+            outbox.startAttempt();
+            outbox.markPublished(RECORDED_AT.plusSeconds(1));
+
+            // act & assert
+            assertThat(outbox.holdsSameFact(event(), PAYLOAD)).isTrue();
+        }
+
+        @DisplayName("payload나 사건 식별이 하나라도 다르면 같은 사실이 아니다.")
+        @Test
+        void differentFact_whenPayloadOrIdentityDiffers() {
+            // arrange
+            OrderOutboxModel outbox = OrderOutboxModel.pending(event(), PAYLOAD, RECORDED_AT);
+            OrderConfirmedEvent otherOrder = new OrderConfirmedEvent(
+                OrderConfirmedEvent.EVENT_TYPE, OrderConfirmedEvent.SCHEMA_VERSION, OrderConfirmedEvent.eventIdOf(43L), 43L,
+                "2026-09-07T01:00:00Z", event().items()
+            );
+
+            // act & assert
+            assertThat(outbox.holdsSameFact(event(), "{\"eventId\":\"order-confirmed:v1:42\",\"items\":[]}")).isFalse();
+            assertThat(outbox.holdsSameFact(otherOrder, PAYLOAD)).isFalse();
+        }
+    }
 }

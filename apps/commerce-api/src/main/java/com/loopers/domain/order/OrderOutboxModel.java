@@ -136,6 +136,19 @@ public class OrderOutboxModel extends BaseEntity {
         return true;
     }
 
+    /**
+     * 이 행이 주어진 확정 사실과 같은 사건을 담고 있는지 본다 (누락 복구에서 기존 행을 확인할 때, W7 design.md 4-4절).
+     * 식별 정보와 저장된 payload가 모두 같아야 한다. 상태·시도 수는 보지 않는다(이미 보냈어도 같은 사건이다).
+     */
+    public boolean holdsSameFact(OrderConfirmedEvent event, String payload) {
+        return eventId.equals(event.eventId())
+            && orderId.equals(event.orderId())
+            && eventType.equals(event.eventType())
+            && schemaVersion == event.schemaVersion()
+            && messageKey.equals(event.key())
+            && this.payload.equals(payload);
+    }
+
     private static String truncate(String error) {
         if (error == null || error.length() <= MAX_ERROR_LENGTH) {
             return error;

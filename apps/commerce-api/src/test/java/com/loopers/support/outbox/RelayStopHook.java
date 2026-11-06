@@ -44,7 +44,7 @@ public final class RelayStopHook extends OrderOutboxService {
 
     private RelayStopHook(Stage stopAt, OrderOutboxService delegate) {
         // 저장소·직렬화기를 직접 쓰지 않는다. 모든 단계는 delegate(트랜잭션 프록시)로 넘긴다
-        super(null, null);
+        super(null, null, null);
         this.stopAt = stopAt;
         this.delegate = delegate;
     }
@@ -62,6 +62,11 @@ public final class RelayStopHook extends OrderOutboxService {
     @Override
     public OrderOutboxModel append(OrderConfirmedEvent event, Instant recordedAt) {
         throw new UnsupportedOperationException("relay hook은 주문 확정 경로에 쓰지 않는다");
+    }
+
+    @Override
+    public BackfillResult backfill(Long orderId, Instant recordedAt) {
+        throw new UnsupportedOperationException("relay hook은 누락 복구 경로에 쓰지 않는다");
     }
 
     @Override
