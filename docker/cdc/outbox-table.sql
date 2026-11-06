@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS order_event_outbox (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    created_at DATETIME(6) NOT NULL,
+    updated_at DATETIME(6) NOT NULL,
+    event_id VARCHAR(255) NOT NULL,
+    order_id BIGINT NOT NULL,
+    event_type VARCHAR(50) NOT NULL,
+    schema_version INT NOT NULL,
+    topic VARCHAR(255) NOT NULL,
+    record_key VARCHAR(255) NOT NULL,
+    payload MEDIUMBLOB NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    attempt_count INT NOT NULL,
+    next_attempt_at DATETIME(6) NOT NULL DEFAULT (UTC_TIMESTAMP(6)),
+    last_error VARCHAR(1000),
+    published_at DATETIME(6),
+    PRIMARY KEY (id),
+    CONSTRAINT uk_outbox_event_id UNIQUE (event_id),
+    INDEX idx_outbox_due (status, next_attempt_at, id)
+);
