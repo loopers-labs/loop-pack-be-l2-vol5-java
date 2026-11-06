@@ -8,6 +8,7 @@ import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.errors.RetriableException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -23,6 +24,7 @@ import java.util.concurrent.TimeoutException;
  * 제한 시간 뒤에 늦게 끝나는 전송이 상태를 바꾸지 못한다.
  *
  * <p>전송은 회로를 거친다. 브로커 장애로 실패가 이어지면 회로가 열려, 그동안의 전송은 브로커를 두드리지 않고 바로 거절된다.
+ * 회로는 브로커 쪽 실패({@link BrokerUnavailableException})만 센다. 메시지 하나만의 문제로 정상 메시지까지 막지 않기 위해서다.
  */
 @Slf4j
 @Component
@@ -81,15 +83,31 @@ public class KafkaOutboxPublisher implements OutboxPublisher {
                 .get(sendTimeout.toMillis(), TimeUnit.MILLISECONDS)
                 .getRecordMetadata();
         } catch (ExecutionException e) {
-            throw new OutboxPublishException("전송 실패: " + describe(e.getCause()), e);
+            throw failure("전송 실패: " + describe(e.getCause()), e);
         } catch (TimeoutException e) {
-            throw new OutboxPublishException("브로커 확인 대기 시간 초과 (" + sendTimeout + ")", e);
+            throw new BrokerUnavailableException("브로커 확인 대기 시간 초과 (" + sendTimeout + ")", e);
         } catch (InterruptedException e) {
+            // 앱 종료 등 이 스레드의 사정이라 브로커 상태로 세지 않는다.
             Thread.currentThread().interrupt();
             throw new OutboxPublishException("전송 확인 대기 중 중단됨", e);
         } catch (RuntimeException e) {
-            throw new OutboxPublishException("전송 요청 실패: " + describe(e), e);
+            throw failure("전송 요청 실패: " + describe(e), e);
         }
+    }
+
+    private static OutboxPublishException failure(String message, Throwable error) {
+        return isBrokerUnavailable(error) ? new BrokerUnavailableException(message, error) : new OutboxPublishException(message, error);
+    }
+
+    // Kafka 는 브로커 쪽 일시 실패(연결·시간 초과·리더 변경 등)를 RetriableException 으로 나타낸다.
+    // 크기 초과·직렬화·권한 같은 메시지·설정 문제는 여기에 속하지 않는다.
+    private static boolean isBrokerUnavailable(Throwable error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (cause instanceof RetriableException || cause instanceof TimeoutException) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String describe(Throwable error) {

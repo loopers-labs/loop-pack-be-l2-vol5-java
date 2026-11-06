@@ -84,7 +84,7 @@ resilience4j:
         # relay 는 열린 회로에 전송을 시도하지 않으므로, 대기 시간이 지나면 스스로 반열림으로 넘어가야 다시 보낸다
         automatic-transition-from-open-to-half-open-enabled: true
         record-exceptions:
-          - com.loopers.application.outbox.OutboxPublishException
+          - com.loopers.infrastructure.outbox.BrokerUnavailableException # 메시지 하나만의 문제는 세지 않는다
 
 springdoc:
   use-fqn: true
