@@ -134,6 +134,10 @@ public final class PgFixture implements AutoCloseable {
             .toList();
     }
 
+    public int transactionCount() {
+        return transactions.size();
+    }
+
     public int lookupCount() {
         return lookupCount.get();
     }

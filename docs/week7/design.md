@@ -201,7 +201,10 @@ java -jar commerce-api.jar … --outbox.resume.event-ids=order-confirmed:v1:41,o
 6. W7 api 를 같은 DB 에 `ddl-auto=update` 로 띄우고 relay 를 켠다. outbox 테이블만 추가되고 기존 행은 그대로다. streamer 는 소비 계약이 같으므로 W6 것을 그대로 둔다.
 7. 관리자 API 로 A 와 B 를 복구하고 relay 가 보내게 한다.
 8. A 의 구매 활동이 생기고, B 의 활동은 그대로이며, 두 번째 복구도 아무것도 바꾸지 않는지 확인한다. PG create 는 C 그대로, 조회와 callback 은 늘지 않고, 외부 거래 수는 T 그대로여야 한다. 7 장의 운영 SQL 결과와 함께 `docs/week7/recovery/result.md` 에 쓴다.
-9. 이 실행이 만든 프로세스, 컨테이너, topic, worktree 만 지운다.
+9. 이 실행이 만든 프로세스, 컨테이너, topic, worktree 만 지운다. compose 의 kafka 는 실행 전에 꺼져 있었을 때만 멈춘다.
+
+B 를 A 보다 먼저 만든다. A 를 만들 때 W6 api 를 `kill -9` 하므로, B 를 먼저 끝내야 W6 api 를 한 번만 다시 띄우면 된다.
+실행 결과에서 B 의 두 record(W6 가 보낸 것과 W7 이 복구해서 보낸 것)는 바이트까지 같았다. 저장된 사실로 다시 만든 payload 가 W6 가 보낸 것과 같다는 뜻이다.
 
 ## 7. 운영 절차 (`OPS-*`)
 
@@ -288,4 +291,4 @@ outbox 조회 API 는 두지 않는다. 위 SQL 로 원문의 확인 요구를 �
 | 4-1 | 재시도 시간 상한 | `RLY-009` | 완료(`OrderEventRelayGiveUpTest`) |
 | 5 | rollback 뒤 재고와 PG create 확인 보강 | `OBX-007`, `EXP-010` | 완료(`OrderEventOutboxAtomicityTest`) |
 | 6 | 재발행이 구매 활동을 늘리지 않음 | `EXP-013` | 완료(6.2 의 세 고리) |
-| 7 | W6 누락 재현과 복구, 운영 SQL 실행 결과 | `EXP-014`, `OPS-001` | |
+| 7 | W6 누락 재현과 복구, 운영 SQL 실행 결과 | `EXP-014`, `OPS-001` | 완료(`docs/week7/recovery/result.md`) |
