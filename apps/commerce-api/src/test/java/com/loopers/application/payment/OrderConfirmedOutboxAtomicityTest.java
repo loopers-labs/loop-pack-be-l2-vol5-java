@@ -46,7 +46,7 @@ import static org.mockito.Mockito.doThrow;
  */
 @SpringBootTest
 @Import({FakePaymentGatewayConfig.class, FakeOrderConfirmedPublisherConfig.class})
-class OrderConfirmedPublicationTest {
+class OrderConfirmedOutboxAtomicityTest {
 
     private static final String CARD_TYPE = "TEST";
     private static final String CARD_NO = "0000-0000-0000-0000";
@@ -67,7 +67,7 @@ class OrderConfirmedPublicationTest {
     private final DatabaseCleanUp databaseCleanUp;
 
     @Autowired
-    OrderConfirmedPublicationTest(
+    OrderConfirmedOutboxAtomicityTest(
         PaymentFacade paymentFacade,
         OrderFacade orderFacade,
         FakePaymentGateway fakePaymentGateway,
