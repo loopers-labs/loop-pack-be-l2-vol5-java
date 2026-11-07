@@ -35,4 +35,7 @@ public class OrderAdminV1Dto {
                 base.paymentMethod(), base.paymentStatus());
         }
     }
+
+    public record EventRecoveryResponse(Long orderId, String result) {
+    }
 }

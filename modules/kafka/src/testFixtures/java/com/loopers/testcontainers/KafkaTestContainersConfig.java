@@ -2,7 +2,10 @@ package com.loopers.testcontainers;
 
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.AlterConfigOp;
+import org.apache.kafka.clients.admin.ConfigEntry;
 import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.common.config.ConfigResource;
 import org.springframework.context.annotation.Configuration;
 import org.testcontainers.kafka.ConfluentKafkaContainer;
 import org.testcontainers.utility.DockerImageName;
@@ -33,6 +36,30 @@ public class KafkaTestContainersConfig {
 
     public static String bootstrapServers() {
         return kafkaContainer.getBootstrapServers();
+    }
+
+    public static void deleteTopicConfig(String name, String key) {
+        Map<String, Object> config = Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaContainer.getBootstrapServers());
+        ConfigResource topic = new ConfigResource(ConfigResource.Type.TOPIC, name);
+        try (Admin admin = Admin.create(config)) {
+            admin.incrementalAlterConfigs(Map.of(topic,
+                    List.of(new AlterConfigOp(new ConfigEntry(key, ""), AlterConfigOp.OpType.DELETE))))
+                .all()
+                .get(30, TimeUnit.SECONDS);
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+            while (admin.describeConfigs(List.of(topic)).all().get(30, TimeUnit.SECONDS)
+                .get(topic).get(key).source() == ConfigEntry.ConfigSource.DYNAMIC_TOPIC_CONFIG) {
+                if (System.nanoTime() > deadline) {
+                    throw new IllegalStateException(name + " 의 " + key + " 가 30 초 안에 풀리지 않았다");
+                }
+                Thread.sleep(100);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("테스트 broker 의 " + name + " 설정을 바꾸다 중단됐다", e);
+        } catch (ExecutionException | TimeoutException e) {
+            throw new IllegalStateException("테스트 broker 의 " + name + " 설정을 바꾸지 못했다", e);
+        }
     }
 
     public static void createTopic(String name, int partitions, Map<String, String> topicConfigs) {

@@ -1,12 +1,12 @@
 package com.loopers.infrastructure.order;
 
 import com.loopers.domain.order.Order;
+import com.loopers.domain.order.OrderEventOutbox;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.OrderQuantity;
 import com.loopers.domain.order.OrderRepository;
 import com.loopers.domain.order.OrderStatus;
 import com.loopers.domain.product.Price;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
@@ -19,13 +19,13 @@ final class OrderConfirmations {
 
     private final OrderRepository orderRepository;
     private final TransactionTemplate transactionTemplate;
-    private final ApplicationEventPublisher eventPublisher;
+    private final OrderEventOutbox outbox;
 
     OrderConfirmations(OrderRepository orderRepository, TransactionTemplate transactionTemplate,
-                       ApplicationEventPublisher eventPublisher) {
+                       OrderEventOutbox outbox) {
         this.orderRepository = orderRepository;
         this.transactionTemplate = transactionTemplate;
-        this.eventPublisher = eventPublisher;
+        this.outbox = outbox;
     }
 
     Long pendingOrderId() {
@@ -59,6 +59,6 @@ final class OrderConfirmations {
         Order order = orderRepository.findById(orderId).orElseThrow();
         order.completePayment(CONFIRMED_AT);
         orderRepository.save(order);
-        order.pullEvents().forEach(eventPublisher::publishEvent);
+        order.pullEvents().forEach(outbox::append);
     }
 }

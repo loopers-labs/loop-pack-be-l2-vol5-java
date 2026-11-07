@@ -7,7 +7,6 @@ import com.loopers.application.order.OrderFacade;
 import com.loopers.application.product.ProductFacade;
 import com.loopers.domain.common.Quantity;
 import com.loopers.domain.order.Order;
-import com.loopers.domain.order.OrderConfirmed;
 import com.loopers.domain.order.OrderQuantity;
 import com.loopers.domain.order.OrderStatus;
 import com.loopers.domain.payment.CardNumber;
@@ -67,14 +66,11 @@ import com.loopers.domain.payment.PaymentDiscrepancy;
 import com.loopers.domain.payment.PgTransaction;
 import com.loopers.domain.payment.TransactionKey;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.event.ApplicationEvents;
-import org.springframework.test.context.event.RecordApplicationEvents;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
-@RecordApplicationEvents
 class PaymentFacadeIntegrationTest {
 
     private static final PgFixture PG = PgFixture.start();
@@ -1092,37 +1088,38 @@ class PaymentFacadeIntegrationTest {
         }
 
         @Nested
-        @DisplayName("EVT-010, EVT-011: 결과 반영 경계는 주문이 처음 확정될 때만 OrderConfirmed 를 낸다")
+        @DisplayName("EVT-010, EVT-011: 결과 반영 경계는 주문이 처음 확정될 때만 OrderConfirmed 를 outbox 에 남긴다")
         class Confirmation {
 
-            private List<OrderConfirmed> confirmed(ApplicationEvents events) {
-                return events.stream(OrderConfirmed.class).toList();
+            private List<String> outboxEventIds() {
+                return jdbcTemplate.queryForList(
+                    "select event_id from order_event_outbox where order_id = ?", String.class, order.getId());
             }
 
-            @DisplayName("성공 결과를 반영해 주문이 확정되면 그 주문의 OrderConfirmed 가 하나 나간다")
+            @DisplayName("성공 결과를 반영해 주문이 확정되면 그 주문의 OrderConfirmed 가 outbox 에 하나 남는다")
             @Test
-            void confirmsOnce(ApplicationEvents events) {
+            void confirmsOnce() {
                 lookup(PgTransaction.Status.SUCCESS);
 
-                assertThat(confirmed(events)).extracting(OrderConfirmed::orderId).containsExactly(order.getId());
+                assertThat(outboxEventIds()).containsExactly("order-confirmed:v1:" + order.getId());
             }
 
-            @DisplayName("같은 성공 결과가 다시 와도 더 나가지 않는다. 반복 반영은 효과가 없다")
+            @DisplayName("같은 성공 결과가 다시 와도 더 남지 않는다. 반복 반영은 효과가 없다")
             @Test
-            void repeatedSuccessAddsNothing(ApplicationEvents events) {
+            void repeatedSuccessAddsNothing() {
                 lookup(PgTransaction.Status.SUCCESS);
                 lookup(PgTransaction.Status.SUCCESS);
 
-                assertThat(confirmed(events)).hasSize(1);
+                assertThat(outboxEventIds()).hasSize(1);
             }
 
-            @DisplayName("접수나 실패를 반영할 때는 나가지 않는다")
+            @DisplayName("접수나 실패를 반영할 때는 남지 않는다")
             @Test
-            void notOnAcceptOrFailure(ApplicationEvents events) {
+            void notOnAcceptOrFailure() {
                 observe(new CreateObservation.Accepted(TX_KEY));
                 lookup(PgTransaction.Status.FAILED);
 
-                assertThat(confirmed(events)).isEmpty();
+                assertThat(outboxEventIds()).isEmpty();
             }
         }
 

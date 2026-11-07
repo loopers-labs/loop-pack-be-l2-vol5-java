@@ -1,5 +1,6 @@
 package com.loopers.interfaces.api.order;
 
+import com.loopers.application.order.OrderEventRecovery;
 import com.loopers.application.order.OrderFacade;
 import com.loopers.domain.common.PageNumber;
 import com.loopers.domain.common.PageSize;
@@ -9,6 +10,7 @@ import com.loopers.interfaces.api.PageResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -19,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class OrderAdminV1Controller {
 
     private final OrderFacade orderFacade;
+    private final OrderEventRecovery orderEventRecovery;
 
     @GetMapping
     public ApiResponse<PageResponse<OrderAdminV1Dto.AdminOrderResponse>> findPage(
@@ -36,5 +39,11 @@ public class OrderAdminV1Controller {
     public ApiResponse<OrderAdminV1Dto.AdminOrderResponse> get(@PathVariable Long orderId) {
         return ApiResponse.success(
             OrderAdminV1Dto.AdminOrderResponse.from(orderFacade.getDetailForAdmin(orderId)));
+    }
+
+    @PostMapping("/{orderId}/confirmed-event/recovery")
+    public ApiResponse<OrderAdminV1Dto.EventRecoveryResponse> recoverConfirmedEvent(@PathVariable Long orderId) {
+        return ApiResponse.success(new OrderAdminV1Dto.EventRecoveryResponse(orderId,
+            orderEventRecovery.recover(orderId).name()));
     }
 }

@@ -16,6 +16,7 @@ spring:
       properties:
         enable.idempotence: true
         max.block.ms: 1000
+        delivery.timeout.ms: 30000
     consumer:
       group-id: loopers-default-consumer
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer

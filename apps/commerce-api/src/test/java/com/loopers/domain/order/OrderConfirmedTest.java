@@ -1,6 +1,7 @@
 package com.loopers.domain.order;
 
 import com.loopers.domain.product.Price;
+import com.loopers.support.error.DomainError;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -8,6 +9,7 @@ import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class OrderConfirmedTest {
 
@@ -83,5 +85,30 @@ class OrderConfirmedTest {
 
         assertThat(first).hasSize(1);
         assertThat(second).isEmpty();
+    }
+
+    @DisplayName("저장된 확정 주문에서 다시 만든 이벤트는 확정 때 만든 이벤트와 같다")
+    @Test
+    void rebuildsSameEventFromStoredConfirmation() {
+        Order order = pending(42L, item(8L, 1), item(7L, 2));
+        OrderConfirmed raised = confirm(order);
+        Order stored = Order.restore(42L, USER, order.getItems(), order.getTotalAmount(), PLACED_AT,
+            OrderStatus.CONFIRMED, order.getPaidAmount(), order.getConfirmedAt());
+
+        OrderConfirmed rebuilt = stored.confirmedEvent();
+
+        assertThat(rebuilt).usingRecursiveComparison().isEqualTo(raised);
+    }
+
+    @DisplayName("확정되지 않은 주문에서는 확정 이벤트를 만들지 않는다")
+    @Test
+    void refusesUnconfirmedOrder() {
+        Order failed = pending(43L, item(7L, 2));
+        failed.failPayment();
+
+        assertThatThrownBy(() -> pending(42L, item(7L, 2)).confirmedEvent())
+            .hasFieldOrPropertyWithValue("error", DomainError.ORDER_NOT_CONFIRMED);
+        assertThatThrownBy(failed::confirmedEvent)
+            .hasFieldOrPropertyWithValue("error", DomainError.ORDER_NOT_CONFIRMED);
     }
 }
