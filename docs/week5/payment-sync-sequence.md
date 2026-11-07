@@ -6,6 +6,8 @@ sequenceDiagram
     participant App as 주문 결제 유즈케이스
     participant DB as DB
     participant PG as 테스트 PG
+    participant Relay as Polling Relay
+    participant Kafka as Kafka Broker
 
     Client->>App: 주문 결제 요청
     rect rgb(235, 245, 255)
@@ -24,6 +26,7 @@ sequenceDiagram
         rect rgb(235, 245, 255)
             Note over App,DB: TX B
             App->>DB: 결제 성공 기록 + 주문 확정 + 재고 예약 소비
+            App->>DB: OrderConfirmed Outbox PENDING 저장 (동일 TX)
             App->>DB: COMMIT
         end
         App-->>Client: 200 결제 성공
@@ -51,6 +54,7 @@ sequenceDiagram
                     rect rgb(235, 245, 255)
                         Note over App,DB: 결과 반영 TX
                         App->>DB: 결제 성공 기록 + 주문 확정 + 재고 예약 소비
+                        App->>DB: OrderConfirmed Outbox PENDING 저장 (동일 TX)
                         App->>DB: COMMIT
                     end
                 else 조회 결과 FAILED
@@ -93,6 +97,7 @@ sequenceDiagram
                 Note over App,DB: 추가 변경 없음 (상충하는 결과는 충돌 처리)
             else SUCCESS
                 App->>DB: 결제 성공 기록 + 주문 확정 + 재고 예약 소비
+                App->>DB: OrderConfirmed Outbox PENDING 저장 (동일 TX)
             else FAILED
                 App->>DB: 결제 실패 기록 + 재고 예약 반환
             else 조회 결과 PENDING
@@ -102,4 +107,19 @@ sequenceDiagram
         end
     end
     Note over App,PG: PENDING·UNKNOWN은 주기적인 대사 배치에서 기존 거래 조회
+
+    opt 발행 가능한 Outbox 이벤트가 있는 경우 (주문 TX 밖)
+        loop Polling Relay 실행
+            Relay->>DB: 발행 가능한 PENDING·FAILED 조회
+            DB-->>Relay: 저장된 messageKey·payload
+            Relay->>Kafka: 설정된 topic으로 이벤트 발행
+            alt broker ACK 확인
+                Kafka-->>Relay: 성공 응답
+                Relay->>DB: PUBLISHED·publishedAt 저장
+            else 발행 실패 또는 결과 미확정
+                Kafka-->>Relay: 실패 또는 timeout
+                Relay->>DB: FAILED 또는 PENDING·재시도 시각 저장
+            end
+        end
+    end
 ```

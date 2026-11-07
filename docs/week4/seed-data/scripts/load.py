@@ -10,7 +10,7 @@ import tempfile
 import uuid
 
 from validate import TABLES, validate, require
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'migrations'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / 'db' / 'migrations' / 'week4'))
 from apply_catalog_constraints import MySQL, apply
 
 

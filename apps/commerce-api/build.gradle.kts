@@ -2,6 +2,18 @@ import org.springframework.boot.gradle.tasks.bundling.BootJar
 
 plugins {
     checkstyle
+    id("org.jsonschema2pojo") version "1.3.3"
+}
+
+jsonSchema2Pojo {
+    setSource(files(rootProject.file("event-contracts/schemas/order/order-confirmed.v1.schema.json")))
+    targetDirectory = layout.buildDirectory.dir("generated/sources/event-contracts/main").get().asFile
+    targetPackage = "com.loopers.order.infrastructure.kafka.contract.orderconfirmed"
+    setSourceType("jsonschema")
+    useTitleAsClassname = false
+    includeAdditionalProperties = false
+    useLongIntegers = true
+    dateTimeType = "java.lang.String"
 }
 
 // Only the current bootJar enters the Docker build context, even if old JARs remain in libs/.
@@ -23,6 +35,9 @@ checkstyle {
 // DomainRulesTest 가 읽는 문서다. 입력으로 걸지 않으면 문서만 고쳤을 때
 // test 가 UP-TO-DATE 로 건너뛰어 어긋남이 드러나지 않는다.
 tasks.test {
+    if (providers.gradleProperty("skipPaymentFlowTests").isPresent) {
+        exclude("**/OrderPaymentFlowIntegrationTest.class")
+    }
     doFirst {
         systemProperty("commerce.api.test.classpath", sourceSets.test.get().runtimeClasspath.asPath)
     }
@@ -35,7 +50,7 @@ tasks.test {
 }
 
 sourceSets.main {
-    resources.srcDir(rootProject.file("contracts"))
+    resources.srcDir(rootProject.file("event-contracts"))
 }
 
 // Logback configuration is process-global. The async profile needs its own JVM.

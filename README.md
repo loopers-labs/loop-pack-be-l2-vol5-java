@@ -5,6 +5,7 @@ Loopers 에서 제공하는 스프링 자바 템플릿 프로젝트입니다.
 현재 프로젝트 안정성 및 유지보수성 등을 위해 아래와 같은 장치를 운용하고 있습니다. 이에 아래 명령어를 통해 프로젝트의 기반을 설치해주세요.
 ### Environment
 `local` 프로필로 동작할 수 있도록, 필요 인프라를 `docker-compose` 로 제공합니다.
+로컬 MySQL은 호스트 포트 `13308`에서 실행합니다.
 ```shell
 docker-compose -f ./docker/infra-compose.yml up
 ```

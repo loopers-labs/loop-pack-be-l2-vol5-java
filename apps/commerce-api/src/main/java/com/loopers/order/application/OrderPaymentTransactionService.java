@@ -4,6 +4,7 @@ import com.loopers.order.domain.Order;
 import com.loopers.order.domain.OrderItem;
 import com.loopers.order.domain.OrderRepository;
 import com.loopers.order.application.event.OrderConfirmedEvent;
+import com.loopers.order.application.outbox.OrderConfirmedOutboxWriter;
 import com.loopers.order.domain.Payment;
 import com.loopers.order.domain.PaymentGateway;
 import com.loopers.order.domain.PaymentGateway.CancellationResult;
@@ -17,7 +18,6 @@ import com.loopers.product.domain.StockRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorCode;
 import jakarta.persistence.EntityManager;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,20 +32,20 @@ public class OrderPaymentTransactionService {
     private final ProductRepository productRepository;
     private final StockRepository stockRepository;
     private final EntityManager entityManager;
-    private final ApplicationEventPublisher eventPublisher;
+    private final OrderConfirmedOutboxWriter outboxWriter;
 
     public OrderPaymentTransactionService(
         OrderRepository orderRepository,
         ProductRepository productRepository,
         StockRepository stockRepository,
         EntityManager entityManager,
-        ApplicationEventPublisher eventPublisher
+        OrderConfirmedOutboxWriter outboxWriter
     ) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.stockRepository = stockRepository;
         this.entityManager = entityManager;
-        this.eventPublisher = eventPublisher;
+        this.outboxWriter = outboxWriter;
     }
 
     @Transactional
@@ -124,7 +124,7 @@ public class OrderPaymentTransactionService {
         entityManager.flush();
         if (result instanceof PaymentGateway.Approved) {
             entityManager.refresh(order);
-            eventPublisher.publishEvent(OrderConfirmedEvent.from(order));
+            outboxWriter.write(OrderConfirmedEvent.from(order));
         }
         return order;
     }

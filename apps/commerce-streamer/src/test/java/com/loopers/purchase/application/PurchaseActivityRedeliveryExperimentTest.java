@@ -2,6 +2,8 @@ package com.loopers.purchase.application;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.purchase.application.event.OrderConfirmedEvent;
+import com.loopers.purchase.infrastructure.kafka.contract.orderconfirmed.Item;
+import com.loopers.purchase.infrastructure.kafka.contract.orderconfirmed.OrderConfirmedMessage;
 import com.loopers.testcontainers.MySqlTestContainersConfig;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
@@ -86,7 +88,7 @@ class PurchaseActivityRedeliveryExperimentTest {
             RecordMetadata sent = producer.send(new ProducerRecord<>(
                     topic,
                     event.orderId().toString(),
-                    objectMapper.writeValueAsBytes(event)))
+                    objectMapper.writeValueAsBytes(toContractMessage(event))))
                 .get(WAIT_TIMEOUT.toSeconds(), TimeUnit.SECONDS);
             targetPartition = new TopicPartition(topic, sent.partition());
             long targetOffset = sent.offset();
@@ -184,8 +186,6 @@ class PurchaseActivityRedeliveryExperimentTest {
 
     private OrderConfirmedEvent confirmedOrder(String eventId, Long orderId) {
         return new OrderConfirmedEvent(
-            "OrderConfirmed",
-            1,
             eventId,
             orderId,
             CONFIRMED_AT,
@@ -256,9 +256,32 @@ class PurchaseActivityRedeliveryExperimentTest {
     }
 
     private OrderConfirmedEvent parse(ConsumerRecord<String, byte[]> record) throws Exception {
-        OrderConfirmedEvent event = objectMapper.readValue(record.value(), OrderConfirmedEvent.class);
-        assertThat(record.key()).isEqualTo(event.orderId().toString());
-        return event;
+        OrderConfirmedMessage message = objectMapper.readValue(record.value(), OrderConfirmedMessage.class);
+        assertThat(record.key()).isEqualTo(message.getOrderId().toString());
+        return new OrderConfirmedEvent(
+            message.getEventId(),
+            message.getOrderId(),
+            java.time.OffsetDateTime.parse(message.getConfirmedAt()).toInstant(),
+            message.getItems().stream()
+                .map(item -> new OrderConfirmedEvent.Item(item.getProductId(), Math.toIntExact(item.getQuantity())))
+                .toList()
+        );
+    }
+
+    private OrderConfirmedMessage toContractMessage(OrderConfirmedEvent event) {
+        OrderConfirmedMessage message = new OrderConfirmedMessage();
+        message.setEventType("OrderConfirmed");
+        message.setSchemaVersion(1L);
+        message.setEventId(event.eventId());
+        message.setOrderId(event.orderId());
+        message.setConfirmedAt(event.confirmedAt().toString());
+        message.setItems(event.items().stream().map(item -> {
+            Item contractItem = new Item();
+            contractItem.setProductId(item.productId());
+            contractItem.setQuantity((long) item.quantity());
+            return contractItem;
+        }).toList());
+        return message;
     }
 
     private Delivery delivery(ConsumerRecord<String, byte[]> record) {
