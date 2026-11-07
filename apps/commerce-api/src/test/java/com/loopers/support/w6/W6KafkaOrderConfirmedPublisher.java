@@ -1,31 +1,31 @@
-package com.loopers.infrastructure.order;
+package com.loopers.support.w6;
 
 import com.loopers.application.order.OrderConfirmedEvent;
-import com.loopers.application.order.OrderConfirmedPublisher;
+import com.loopers.infrastructure.order.OrderConfirmedMessage;
 import io.micrometer.core.instrument.MeterRegistry;
-import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.stereotype.Component;
 
 import java.util.concurrent.CompletableFuture;
 
 /**
+ * W6 직접 발행 (revision 6f7aac1 의 KafkaOrderConfirmedPublisher 그대로). 공용 KafkaTemplate(JsonSerializer)으로 OrderConfirmedMessage 객체를 보낸다.
  * OrderConfirmed 를 order-events 로 비동기 전송한다. key = orderId 문자열 (같은 주문은 같은 partition).
  * broker 확인(acks=all)·전송 재시도는 producer 가 한다 (kafka.yml). 여기서는 최종 결과만 관찰한다:
  * 성공은 topic·partition·offset 을, 최종 실패는 예외를 로그로 남기고 order.confirmed.publish{result} 를 센다.
  */
-@Slf4j
-@Component
-public class KafkaOrderConfirmedPublisher implements OrderConfirmedPublisher {
+public class W6KafkaOrderConfirmedPublisher implements W6OrderConfirmedPublisher {
+    private static final Logger log = LoggerFactory.getLogger(W6KafkaOrderConfirmedPublisher.class);
     static final String METRIC = "order.confirmed.publish";
 
     private final KafkaTemplate<Object, Object> kafkaTemplate;
     private final MeterRegistry meterRegistry;
     private final String topic;
 
-    public KafkaOrderConfirmedPublisher(
+    public W6KafkaOrderConfirmedPublisher(
         KafkaTemplate<Object, Object> kafkaTemplate,
         MeterRegistry meterRegistry,
         @Value("${kafka.topics.order-events.name}") String topic

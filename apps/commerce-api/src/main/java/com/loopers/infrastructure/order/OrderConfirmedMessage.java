@@ -17,8 +17,8 @@ public record OrderConfirmedMessage(
     String confirmedAt,
     List<Item> items
 ) {
-    public static final String EVENT_TYPE = "OrderConfirmed";
-    public static final int SCHEMA_VERSION = 1;
+    public static final String EVENT_TYPE = OrderConfirmedEvent.EVENT_TYPE;
+    public static final int SCHEMA_VERSION = OrderConfirmedEvent.SCHEMA_VERSION;
 
     public record Item(Long productId, Integer quantity) {
     }

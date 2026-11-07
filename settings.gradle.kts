@@ -10,6 +10,7 @@ include(
     ":supports:jackson",
     ":supports:logging",
     ":supports:monitoring",
+    ":tests:commerce-e2e",
 )
 
 // configurations

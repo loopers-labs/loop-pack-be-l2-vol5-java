@@ -53,6 +53,16 @@ kafka:
       partitions: 3 # 같은 group 에서 최대 3개 consumer 가 나눠 읽을 여유. 늘리면 key → partition 매핑이 바뀐다
       replicas: 1 # 로컬 단일 broker
 
+outbox:
+  relay: # 주문 이벤트 Outbox relay. 한 relay 만 돈다: enabled 는 인스턴스 하나에서만 true (프로세스 사이 소유권은 보장하지 않는다)
+    enabled: true
+    interval: 1s # 회차가 끝난 뒤 다음 회차까지
+    batch-size: 20 # 한 회차에 고르는 최대 행 수. 한 건씩 보낸다
+    send-timeout: 35s # broker 확인 대기. producer delivery.timeout.ms(30s) 보다 길게 둬 producer 가 먼저 결론낸다
+    retry-backoff: 1s # 첫 실패 뒤 재시도 간격, 연속 실패마다 두 배
+    max-retry-backoff: 60s
+    max-failures: 3 # 연속 실패(예외·대기 초과 구분 없음) 3회면 BLOCKED. eventId 로 재개해야 다시 보낸다
+
 springdoc:
   use-fqn: true
   swagger-ui:
@@ -76,6 +86,11 @@ pg:
   circuit-breaker: # 컨텍스트를 같이 쓰는 테스트들의 실패 결과가 쌓여 서킷이 열리지 않게. 서킷은 PaymentRequestGuardTest 가 본다
     sliding-window-size: 10000
     minimum-number-of-calls: 10000
+
+outbox:
+  relay:
+    enabled: false # 주기 relay 가 테스트의 Outbox 행을 먼저 보내지 않게. 테스트는 OrderEventRelay 를 직접 부른다
+    send-timeout: 2s # 대기 초과 실험이 오래 걸리지 않게
 
 ---
 spring:

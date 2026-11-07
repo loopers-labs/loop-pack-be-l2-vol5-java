@@ -10,6 +10,7 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -50,6 +51,29 @@ public final class KafkaTestRecords {
                 .toList();
             return consumer.endOffsets(partitions, TIMEOUT);
         }
+    }
+
+    /** topic 의 지금 기록된 record 전부 (각 partition 의 처음부터 log end 까지). partition·offset 순. */
+    public static List<ConsumerRecord<String, String>> readAll(String topic) {
+        Map<TopicPartition, Long> end = endOffsets(topic);
+        List<ConsumerRecord<String, String>> records = new ArrayList<>();
+        try (KafkaConsumer<String, String> consumer = consumer()) {
+            consumer.assign(end.keySet());
+            consumer.seekToBeginning(end.keySet());
+            Instant deadline = Instant.now().plus(TIMEOUT);
+            while (end.entrySet().stream().anyMatch(e -> consumer.position(e.getKey()) < e.getValue())) {
+                if (Instant.now().isAfter(deadline)) {
+                    throw new AssertionError("record 를 끝까지 읽지 못함 [topic = " + topic + ", end = " + end + "]");
+                }
+                for (ConsumerRecord<String, String> record : consumer.poll(Duration.ofMillis(200))) {
+                    if (record.offset() < end.get(new TopicPartition(record.topic(), record.partition()))) {
+                        records.add(record);
+                    }
+                }
+            }
+        }
+        records.sort((a, b) -> a.partition() != b.partition() ? Integer.compare(a.partition(), b.partition()) : Long.compare(a.offset(), b.offset()));
+        return records;
     }
 
     private static KafkaConsumer<String, String> consumer() {
