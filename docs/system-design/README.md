@@ -42,7 +42,8 @@ Commerce 시스템(`commerce-api`, `commerce-streamer`)의 설계를 책임별�
 | [주문 결제 결과 반영](use-cases/order-payment-result.md) | 결과 판정, 중복 반영 방지, 충돌 기록, 주문 품목 스냅샷 기반 재고 보상 |
 | [주문 결제 회복](use-cases/order-payment-recovery.md) | 수동 재확인·주기 조회, 조회 회복 정책과 실행 프로필, 재시작 후 확인과 복구 한계 |
 | [주문 확정 이벤트 공통 계약](use-cases/order-confirmed-event.md) | payload·신원·버전, 전체 경계와 전달 보장 |
-| [주문 확정 Producer](../../apps/commerce-api/docs/order-confirmed-producer.md) | 최초 확정·이벤트 구성, after-commit 발행·전송 실패 |
+| [주문 확정 Producer](../../apps/commerce-api/docs/order-confirmed-producer.md) | 최초 확정 조건·이벤트 구성, Outbox 기록과 전달 경계 |
+| [주문 확정 Outbox·Relay](../../apps/commerce-api/docs/order-confirmed-outbox-design.md) | 같은 TX의 Outbox 저장, 인스턴스별 polling Relay·전송 상태, 재시도·차단·수동 재시도·누락 복구 |
 | [Kafka Broker](../../modules/kafka/docs/broker.md) | broker 주소, topic·partition·복제·보존과 단일 broker 한계 |
 | [구매 활동 Consumer](../../apps/commerce-streamer/docs/purchase-activity-consumer.md) | 계약 해석, DB 멱등성·트랜잭션, listener·ack·복구 |
 | [주문 확정 이벤트 검증](use-cases/order-confirmed-event-verification.md) | 모듈별 테스트 위치, listener 실패·복구, offset 미커밋 재전달, partition·group 실험, 발행 누락 사례 |

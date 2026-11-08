@@ -1,0 +1,57 @@
+rule_files: []
+evaluation_interval: 10s
+
+# Grafana 규칙의 for 1m 유지 조건은 promtool 쿼리 테스트 범위 밖이다. 여기서는 쿼리와 임계값만 검증한다.
+tests:
+  - name: 한 인스턴스라도 5분을 넘긴 PENDING을 보고하면 감지한다
+    interval: 10s
+    input_series:
+      - series: 'order_confirmed_outbox_oldest_pending_age_seconds{instance="api-1"}'
+        values: '0+0x6'
+      - series: 'order_confirmed_outbox_oldest_pending_age_seconds{instance="api-2"}'
+        values: '301+10x6'
+    promql_expr_test:
+      - expr: __OUTBOX_DELAY_EXPR__
+        eval_time: 0s
+        exp_samples:
+          - labels: '{}'
+            value: 1
+
+  - name: 5분 이하는 알리지 않는다
+    interval: 10s
+    input_series:
+      - series: 'order_confirmed_outbox_oldest_pending_age_seconds{instance="api-1"}'
+        values: '300+0x6'
+      - series: 'order_confirmed_outbox_oldest_pending_age_seconds{instance="api-2"}'
+        values: '120+0x6'
+    promql_expr_test:
+      - expr: __OUTBOX_DELAY_EXPR__
+        eval_time: 30s
+        exp_samples:
+          - labels: '{}'
+            value: 0
+
+  - name: 오래된 PENDING이 발행되면 해제된다
+    interval: 10s
+    input_series:
+      - series: 'order_confirmed_outbox_oldest_pending_age_seconds{instance="api-1"}'
+        values: '400 410 0 0 0'
+    promql_expr_test:
+      - expr: __OUTBOX_DELAY_EXPR__
+        eval_time: 10s
+        exp_samples:
+          - labels: '{}'
+            value: 1
+      - expr: __OUTBOX_DELAY_EXPR__
+        eval_time: 30s
+        exp_samples:
+          - labels: '{}'
+            value: 0
+
+  - name: metric 자체가 없으면 0으로 위장하지 않는다
+    interval: 10s
+    input_series: []
+    promql_expr_test:
+      - expr: __OUTBOX_DELAY_EXPR__
+        eval_time: 1m
+        exp_samples: []

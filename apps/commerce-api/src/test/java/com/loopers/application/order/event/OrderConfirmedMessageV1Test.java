@@ -1,8 +1,7 @@
-package com.loopers.infrastructure.order.event;
+package com.loopers.application.order.event;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.loopers.application.order.event.OrderConfirmedEvent;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.OrderStatus;
@@ -20,10 +19,11 @@ class OrderConfirmedMessageV1Test {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @DisplayName("주문 42의 확정 이벤트를 계약 필드만 담은 JSON과 orderId 문자열 key로 만든다.")
+    @DisplayName("주문 확정 메시지는 계약 필드와 orderId 문자열 key를 유지한다.")
     @Test
     void writesContractFieldsAndOrderIdKey() throws Exception {
-        OrderConfirmedMessageV1 message = OrderConfirmedMessageV1.from(event(ZonedDateTime.parse("2026-09-07T10:00:00+09:00")));
+        OrderConfirmedMessageV1 message = OrderConfirmedMessageV1.from(
+            event(ZonedDateTime.parse("2026-09-07T10:00:00+09:00")));
 
         JsonNode actual = objectMapper.readTree(objectMapper.writeValueAsString(message));
 
@@ -40,10 +40,10 @@ class OrderConfirmedMessageV1Test {
               ]
             }
             """));
-        assertThat(message.key()).isEqualTo("42").isEqualTo(actual.get("orderId").asText());
+        assertThat(message.key()).isEqualTo("42");
     }
 
-    @DisplayName("다른 시간대의 확정 시각을 UTC로 바꾸고 마이크로초가 있으면 그대로 남긴다.")
+    @DisplayName("확정 시각은 UTC로 바꾸고 마이크로초 정밀도를 보존한다.")
     @Test
     void writesConfirmedAtInUtcKeepingMicros() {
         OrderConfirmedMessageV1 message = OrderConfirmedMessageV1.from(

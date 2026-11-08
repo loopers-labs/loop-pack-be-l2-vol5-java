@@ -9,13 +9,20 @@ services:
 
   grafana:
     image: grafana/grafana
+    entrypoint: ["/bin/sh", "/usr/local/bin/start-grafana.sh"]
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     volumes:
-      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/start.sh:/usr/local/bin/start-grafana.sh:ro
+    # Slack 알림을 사용할 때만 예제를 slack.env로 복사하고 웹훅 URL을 로컬에 보관합니다.
+    env_file:
+      - path: ./grafana/slack.env
+        required: false
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SERVER_ROOT_URL=http://localhost:3000/
 
 networks:
   default:

@@ -4,21 +4,30 @@
 
 기대값은 설계 문서의 검증 기준을 따르고, 이 문서는 어떤 테스트가 그것을 어떻게 확인하는지 정리한다.
 
-구현 정책은 [Producer](../../../apps/commerce-api/docs/order-confirmed-producer.md), [Broker](../../../modules/kafka/docs/broker.md), [Consumer](../../../apps/commerce-streamer/docs/purchase-activity-consumer.md)의 모듈 문서를 따른다.
+구현 정책은 [Producer](../../../apps/commerce-api/docs/order-confirmed-producer.md), [Outbox·Relay](../../../apps/commerce-api/docs/order-confirmed-outbox-design.md), [Broker](../../../modules/kafka/docs/broker.md), [Consumer](../../../apps/commerce-streamer/docs/purchase-activity-consumer.md)의 모듈 문서를 따른다.
 
 ## 검증 위치
 
-commerce-api는 확정 시각 저장과 이벤트 구성·발행을, commerce-streamer는 계약 해석과 구매 활동 소비를 각자의 테스트로 검증한다. 두 앱을 한 테스트에 묶지 않는다. 이벤트 계약은 [JSON 예시](order-confirmed-event.md#이벤트-계약)를 기준으로 producer는 생성 결과를, consumer는 해석 결과를 검증하고, 확정부터 구매 활동까지의 전체 연결은 실제 앱을 함께 띄운 로컬 실행으로 확인한다.
+commerce-api는 확정 시각 저장·Outbox 원자성·Relay 발행을, commerce-streamer는 계약 해석과 구매 활동 소비를 각자의 테스트로 검증한다. 두 앱을 한 테스트에 묶지 않는다. 이벤트 계약은 [JSON 예시](order-confirmed-event.md#이벤트-계약)를 기준으로 producer는 생성 결과를, consumer는 해석 결과를 검증하고, 확정부터 구매 활동까지의 전체 연결은 실제 앱을 함께 띄운 로컬 실행으로 확인한다.
 
 | commerce-api 테스트 | 검증 |
 | --- | --- |
-| `OrderConfirmedEventTest` | 주문 ID로 유도한 eventId, 저장된 확정 시각, 상품 ID 오름차순 품목으로 이벤트 구성. 미확정 주문과 확정 시각이 없는 이전 확정 주문(POINT·PG)은 거절해 소급 발행하지 않음 |
+| `OrderConfirmedEventTest` | 주문 ID로 유도한 eventId, 저장된 확정 시각, 상품 ID 오름차순 품목으로 이벤트 구성. 미확정 주문, 확정 시각이나 원본 품목이 없는 주문은 거절 |
+| `OrderConfirmedOutboxBackfillServiceTest` | 원본 품목이 없으면 복구를 거절하고 Outbox 저장소를 호출하지 않음 |
+| `OrderConfirmedOutboxBackfillRunnerTest` | 대상 목록 중 첫 오류에서 실행을 멈추고 뒤의 주문은 보충하지 않음 |
 | `OrderConfirmedMessageV1Test` | 계약 필드만 담은 V1 JSON과 orderId 문자열 key. 다른 시간대의 확정 시각을 마이크로초까지 UTC로 표현 |
 | `PaymentConfirmedAtIntegrationTest` | 최초 PG 성공에 주입한 Clock 시각을 마이크로초로 잘라 저장. 중복 성공에도 처음 시각 유지, 실패 종결에는 확정 시각 없음 |
 | `OrderConfirmedAtMigrationIntegrationTest` | 컬럼 추가 뒤 기존 주문의 확정 시각은 비워 두고 상태·결제 값·수정 시각은 바꾸지 않음 |
-| `OrderConfirmedPublicationTest` | 최초 성공 commit 뒤 한 번 통지. 같은 성공 재반영, 처리 중·실패·`UNKNOWN`, commit 실패, 동시 반영에서 추가 통지 없음 |
-| `OrderConfirmedKafkaPublisherTest` | send 호출 예외, 이미 실패한 future, listener 반환 뒤 실패한 future를 각각 확인. `eventId`·`orderId`·원인을 error 로그로 남기고 전파하지 않음 |
-| `OrderConfirmedKafkaDeliveryIntegrationTest` | 실제 주문 API·테스트 PG·reconcile·Kafka로 [발행 누락 사례](#발행-누락-사례). producer 설정과 로컬·테스트 topic 초기화 |
+| `OrderConfirmedOutboxAtomicityTest` | 최초 성공 때 주문·시도·Outbox를 같은 TX에 저장. 비성공·중복 결과, 직렬화·유일 제약·commit 실패 rollback, 동시 성공에서 행 하나와 고정 payload 확인 |
+| `OrderConfirmedOutboxStateServiceIntegrationTest` | 실제 MySQL에서 이전 값을 읽은 실행의 시도 시작·결과 저장이 다른 실행의 commit을 덮지 않음(조건부 갱신 0행). 최대 대기 시간 전 재선택 없음, 수동 재시도 뒤 새 주기 3회째 재차단과 누적 시도 수 |
+| `OrderConfirmedOutboxRelayTest` | 시도를 시작할 때 다음 선택 시각을 결과 대기 예산에 재시도 간격을 더한 만큼 뒤로 둠 |
+| `OrderConfirmedOutboxFailureClassifierTest` | KafkaTemplate이 감싼 원인을 꺼내 재시도 불가(크기 초과)·재시도 가능(timeout)·종료 interrupt를 구분. `lastError`에는 가장 안쪽 원인의 유형과 메시지만 500자 이내로 남기고 record payload는 넣지 않음 |
+| `OrderConfirmedOutboxMultiRelayIntegrationTest` | 실제 MySQL에서 Relay 두 개가 같은 대기 행들을 동시에 처리해도 행마다 send 1회, 모든 행 `PUBLISHED`, 두 Relay가 모두 발행에 참여 |
+| `OrderConfirmedOutboxScheduleSettingsTest` | `application.yml`에서 Relay·지표 갱신 스케줄이 기본으로 켜지고 운영 프로필은 끄지 않으며 `test` 프로필만 끔 |
+| `OrderConfirmedOutboxMetricsIntegrationTest` | 실제 MySQL에서 PUBLISHED 이력이 쌓여도 상태 인덱스 range 조회로 미해결 행만 집계. PENDING·BLOCKED 수와 가장 오래된 PENDING 대기 시간, 미해결 행이 없으면 모두 0 |
+| `OrderConfirmedOutboxMetricsSchedulerIntegrationTest` | Relay를 끈 상태에서도 지표 갱신 스케줄이 미해결 Outbox 수와 가장 오래된 대기 시간을 반영 |
+| `OrderConfirmedOutboxKafkaConfigTest` | 전용 KafkaTemplate이 복사한 factory만 종료하고 공통 factory는 유지. 기본 설정의 producer 전달 timeout이 Relay의 Future 관찰 시간보다 짧음 |
+| `OrderConfirmedKafkaDeliveryIntegrationTest` | 실제 주문 API·테스트 PG·MySQL·Kafka에서 Relay의 저장 payload 재시도, BLOCKED 후 다음 행 진행, 수동 재시도와 누적 시도 보존, broker 기록 뒤 상태 저장 실패와 두 대기 방식 비교. 두 방식의 관찰 timeout 뒤 늦은 성공·종료 이벤트 뒤 producer 오류·같은 메시지 재발행, TX1만 세 번 commit한 뒤 네 번째 send 차단, PUBLISHED 선저장의 누락 반례도 확인 |
 
 | commerce-streamer 테스트 | 검증 |
 | --- | --- |
@@ -38,11 +47,35 @@ commerce-api는 확정 시각 저장과 이벤트 구성·발행을, commerce-st
 ./gradlew :apps:commerce-api:check :apps:commerce-streamer:check
 ```
 
+Grafana의 BLOCKED 전환·발행 지연 알림 쿼리는 [별도 회귀 테스트](../../../docker/grafana/tests/verify_outbox_alerts.py)로 확인한다. provisioning 파일의 실제 쿼리와 `gt` 임계값을 읽는다. BLOCKED 전환은 첫 관측값 1, 새 오류 유형, 기존 counter 증가·유지와 초기화, 한 번의 수집 실패, 재시작 공백 뒤 첫 전환을, 발행 지연은 여러 인스턴스 값의 최댓값, 5분 경계, 해제, metric 부재를 검증한다. Grafana 규칙의 `for` 유지 조건과 provisioning 적재는 promtool 범위 밖이다. 실행 중인 Grafana·Prometheus와 Slack에는 접속하지 않는다. 이 검증은 알림 조건의 회귀 테스트이며 Slack 수신 검증을 대신하지 않는다.
+
+```bash
+python3 docker/grafana/tests/verify_outbox_alerts.py
+```
+
+## Outbox·Relay 테스트 방법
+
+기대값은 [Outbox·Relay 설계의 검증 기준](../../../apps/commerce-api/docs/order-confirmed-outbox-design.md#검증-기준)을 따른다. 이 절은 commerce-api 테스트가 그 기대값을 어떤 조건에서 확인하는지 정리한다.
+
+- 확정 TX 원자성: Relay를 실행하지 않는 실제 MySQL 통합 테스트에서 확정 결과 적용 전의 주문·결제 시도·예약 상태를 기록한다. rollback 뒤에는 영속성 컨텍스트를 비우고 새 TX에서 재조회하며, PG create 누적 횟수가 기준값에서 늘지 않았는지 확인한다.
+- 재시도·차단: 실제 상태 저장과 제어된 send 결과를 사용한다. 각 시도 사이에는 저장된 `nextAttemptAt`까지 `MutableClock`을 전진시킨다.
+- 전달 중단: 자동 polling을 끄고 테스트가 Relay 회차를 직접 실행해 중단과 재시작을 제어한다. 주문 확정 TX의 commit을 새 DB 조회로 확인한 뒤 시작한다. broker 성공 뒤의 중단 hook은 실제 성공 metadata를 확보한 다음 `PUBLISHED` 저장 TX 전에 둔다. 중단 뒤 Outbox 상태를 테스트가 직접 덮어쓰지 않으며, 제어된 실행 중단을 OS 강제 종료 시험으로 표현하지 않는다.
+- 시각 제어: Relay의 대상 조회와 시도 시각 계산에는 같은 주입 Clock을 사용한다. 재시작·재발행 테스트는 첫 시도에서 저장한 `nextAttemptAt`을 읽고, `MutableClock`을 그 시각 이상으로 전진시킨 뒤 새 Relay를 실행한다. Outbox의 `status`나 `nextAttemptAt`을 직접 바꿔 재시도 조건을 만들지 않는다. Kafka 응답과 Consumer 처리 완료는 실제 경과 시간 기준의 유한한 deadline으로 기다린다.
+
+### 결과 대기 방식 비교
+
+`OrderConfirmedKafkaDeliveryIntegrationTest`는 `BOUNDED_WAIT`와 callback 방식을 같은 broker에서 비교한다. callback 비교 구현은 `src/test/java`의 `OrderConfirmedOutboxRelayExperiment`에 있고, BOUNDED_WAIT 경로는 실제 제품 Relay에 위임하므로 두 방식의 반환 순서·늦은 완료·종료 검증을 함께 유지한다.
+
+- callback 완료와 다음 실행의 순서를 시험해, 두 방식 모두 상태 갱신이 끝날 때까지 실행 가드를 유지하는지 확인한다.
+- `PUBLISHED` 저장 시점, timeout 뒤 재발행 identity, send 대기 중 DB 트랜잭션 유무와 실제 broker record를 확인한다. Consumer 업무 결과는 별도 책임 테스트와 E2E에서 확인한다.
+- 늦은 완료 시험은 실제 Kafka send 결과와 Relay가 관찰하는 Future를 분리한다. broker record는 실제로 저장하되 관찰 Future를 보류해 150ms의 테스트 제한 시간을 넘긴다. 두 방식 모두 `PENDING`·시도 1을 남기고, 뒤늦게 완료시켜도 상태가 바뀌지 않아야 한다. 새 Relay가 저장된 다음 시도 시각부터 같은 key·payload를 다시 보내면 별도 offset과 최종 `PUBLISHED`·시도 2를 확인한다.
+- 제한 대기 방식은 broker 결과와 `PUBLISHED` 저장 뒤 호출을 반환했고, callback 경로는 관찰 Future를 보류해 호출이 먼저 반환되는 것을 확인했다. 이 실험은 관찰 지연을 제어할 뿐 네트워크 지연이나 실제 broker ack 지연을 측정하지 않으므로 처리량 비교로 해석하지 않는다.
+
 ## 로컬 전체 흐름 관찰
 
-실제 PG 성공으로 시작한 주문이 broker를 거쳐 구매 활동 DB에 반영되는 연결은 로컬에서 관찰한다. [로컬 실행 절차](../../verification/order-confirmed-event/README.md)는 격리 환경에서 전송 실패 A·정상 소비 B의 주문·broker·구매 활동을 함께 확인하고, streamer 프로세스 재시작 뒤 행·offset 보존까지 확인한다. 기대값은 topic 크기 제한에 거절된 A의 `CONFIRMED`·완료 기록 0행·활동 0행, 제한 복구 후 정상 전송한 B의 완료 기록 1행·활동 2행이다. 원본 JSON·로그는 로컬에 보관하고 핵심 관찰값은 PR 또는 기술 글에 요약한다.
+실제 PG 성공으로 시작한 주문이 Outbox와 Relay를 거쳐 Kafka·구매 활동 DB에 반영되는 연결은 로컬에서 관찰한다. [로컬 실행 절차](../../verification/order-confirmed-event/README.md)는 격리 환경에서 직접 발행의 누락 상태를 재현하고, 저장된 주문 사실로 Outbox를 보충한 뒤 Relay와 Consumer 결과를 확인한다. 실패한 대상의 `CONFIRMED` 상태·재고 예약은 유지되고, 구매 활동이 누락 주문에는 생성되며 이미 반영된 주문에는 중복 효과가 생기지 않는지 확인한다. 원본 JSON·로그는 로컬에 보관하고 핵심 관찰값은 PR 또는 기술 글에 요약한다.
 
-Compose 환경에서 직접 관찰할 때의 순서는 다음과 같다. 실행 도구는 같은 흐름을 고유한 topic·group과 별도 broker로 자동 실행한다.
+Compose 환경에서 현재 정상 흐름을 직접 관찰할 때의 순서는 다음과 같다. 누락 상태 재현·복구는 위 실행 도구가 고유한 topic·group과 격리 broker를 사용해 별도로 실행한다.
 
 1. 로컬 Kafka·MySQL·테스트 PG를 준비하고 `commerce-api`와 `commerce-streamer`를 실행한다. 두 애플리케이션이 같은 로컬 Kafka를 사용하고, streamer가 `order-events`를 구독 중인지 확인한다.
 2. 기존 주문·결제 API와 테스트 PG 성공 결과 적용 경로로 새 주문을 확정한다. 이벤트를 직접 주입하거나 DB를 직접 수정하지 않는다.
@@ -96,18 +129,37 @@ DB commit 뒤 offset 미커밋 종료는 아래 [재전달 설계](#db-commit-�
 ./gradlew :apps:commerce-streamer:test --tests '*KafkaPartitionGroupExperimentTest'
 ```
 
-## 발행 누락 사례
+## 직접 발행에서 관찰한 누락 기준선
 
-두 사례로 주문 DB commit과 Kafka 발행 사이의 누락 구간을 확인한다. 다음 단계에서는 Outbox로 이 경계를 개선한다.
+이 절은 Outbox 도입 전 직접 발행 흐름에서 관찰한 누락 상태를 기준선으로 보존한다. 현재 경로는 주문 확정과 Outbox 기록을 같은 TX에 넣고 Relay가 발행한다. 아래 사례는 누락 경계를 재현하거나 원래 직접 발행 구현을 비교할 때 사용한다.
 
 | 사례 | 처리 | 완료 시 남길 관찰 |
 | --- | --- | --- |
-| 누락 | 확정 commit 뒤 send 직전에 실패를 주입 | 주문 `CONFIRMED`와 예약 소비(재고 유지), 해당 `eventId`의 broker record 없음 |
+| 누락 | 확정 commit 뒤 send 직전에 일시 정지하고 기준 API 프로세스를 종료 | 주문 `CONFIRMED`와 예약 소비(재고 유지), 해당 `eventId`의 broker record 없음 |
 | 정상 | 발행 성공 확인 | 원본 주문·예약 상태, record의 topic·partition·offset·payload |
 
-- 고정 Clock과 품목·수량으로 두 주문을 만들고 주문·예약 상태와 broker record를 대조한다. 카드 정보와 비밀 값은 기록하지 않는다.
+- 고정된 품목·수량으로 두 합성 주문을 만들고, 이번 실행에서 저장한 실제 확정 시각·주문·예약 상태와 broker record를 대조한다. 카드 정보와 비밀 값은 기록하지 않는다.
 - 미발행 확인은 고유 topic의 partition별 end offset을 기준으로 정해진 기한 안에 대상 `eventId`가 없는지 확인한다. 짧은 poll 한 번이나 lag 0만으로 판정하지 않는다.
-- `OrderConfirmedKafkaDeliveryIntegrationTest`는 실제 주문 API·테스트 PG·reconcile 경로에서 send 직전 실패와 정상 발행을 확인한다. 미발행 사례는 새 DB 트랜잭션에서 주문 확정이 남았음을 확인한 뒤 테스트 spy가 send 진입을 차단한다. 정상 사례는 broker metadata와 payload를 검증한다.
-- send 직전 실패 주입은 프로세스 강제 종료가 아니다. DB와 broker가 원자적으로 묶이지 않은 경계를 보여주며, send timeout 뒤 broker에 기록됐는지까지 증명하지 않는다.
+- 직접 발행 경로의 미발행 사례는 [검증 실행 도구](../../verification/order-confirmed-event/run.py)로 재현한다. 기준 revision의 API 복사본에만 테스트용 latch를 넣어 이벤트 생성 뒤 `KafkaTemplate.send()` 직전에서 멈춘다. 실제 주문 API·테스트 PG로 확정한 주문과 미발행 상태를 확인한 다음, 기준 API 프로세스를 종료한다. latch에 걸린 요청 때문에 정상 종료가 5초 안에 끝나지 않으면 해당 프로세스만 강제 종료하고 그 여부를 관찰 기록에 남긴다.
+- 현재 Relay의 재시도·broker 기록 뒤 상태 저장 실패·Future 대기 방식 비교는 `OrderConfirmedKafkaDeliveryIntegrationTest`가 검증한다. 이 통합 테스트는 끝날 때 DB 전체를 정리하지만, 테스트는 Testcontainers로 띄운 전용 MySQL을 쓰므로 로컬 개발 DB에는 영향이 없다.
+- 기준 사례는 send 전에 멈추므로 broker 거절이나 send timeout을 주입한 실험이 아니다. Relay 통합 테스트에서 예외나 제어된 Future를 사용한 검증도 OS 강제 종료 시험과 구분한다.
 
-같은 두 사례의 구매 활동 결과는 [로컬 전체 흐름 관찰](#로컬-전체-흐름-관찰)의 실행 도구로 확인한다. 그 실행의 broker 거절과 위 테스트의 send 직전 차단은 서로 다른 실패 주입이다.
+같은 격리 DB·broker를 유지한 채 두 주문의 저장된 확정 사실로 없는 Outbox를 보충하고, 누락된 구매 활동의 생성과 이미 소비한 주문의 중복 방지를 확인한다.
+
+```mermaid
+flowchart LR
+  A["주문 A<br/>확정됨 · Kafka 전달 누락<br/>구매 활동 없음"]
+  B["주문 B<br/>확정됨 · Kafka 전달·구매 활동 완료"]
+  FACTS["저장된 주문 사실 읽기<br/>orderId · confirmedAt · items"]
+  BACKFILL["없는 Outbox만 보충<br/>eventId · key · payload를<br/>확정 때와 같게 구성"]
+  RELAY["Outbox Relay 발행"]
+  KAFKA[("Kafka")]
+  CONSUMER["기존 Consumer Inbox"]
+  RESULT["A는 활동 생성<br/>B는 기존 활동 유지"]
+
+  A --> FACTS
+  B --> FACTS
+  FACTS --> BACKFILL --> RELAY --> KAFKA --> CONSUMER --> RESULT
+```
+
+같은 실행의 마지막 E2E에서는 별도 주문의 첫 `PUBLISHED` 갱신만 MySQL trigger로 거절한다. 실제 broker 기록과 `PENDING` 유지를 확인한 뒤 API를 종료하고 새 Relay로 재발행한다. 정상 종료와 강제 종료 여부는 각각의 관찰 기록으로 구분하며, 행을 직접 `PENDING`으로 덮어쓰지 않는다.

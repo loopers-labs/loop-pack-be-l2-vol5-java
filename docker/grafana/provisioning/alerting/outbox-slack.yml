@@ -1,0 +1,27 @@
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: Outbox Alerts
+    receivers:
+      - uid: outbox-slack
+        type: slack
+        disableResolveMessage: true
+        settings:
+          url: $SLACK_WEBHOOK_URI
+          username: Outbox Relay
+          # BLOCKED 전환 감지는 일회성 사건이라 해결 메시지를 보내지 않으므로 발생 표시만 둡니다.
+          title: '[발생] {{ .CommonAnnotations.summary }}'
+          text: '{{ .CommonAnnotations.description }}'
+  - orgId: 1
+    name: Outbox Delay Alerts
+    receivers:
+      - uid: outbox-delay-slack
+        type: slack
+        # 발행 지연은 조건이 풀려야 해결되는 상태형 알림이라 복구 소식도 보냅니다.
+        disableResolveMessage: false
+        settings:
+          url: $SLACK_WEBHOOK_URI
+          username: Outbox Relay
+          title: '{{ if eq .Status "firing" }}[발생]{{ else }}[해결]{{ end }} {{ .CommonAnnotations.summary }}'
+          text: '{{ if eq .Status "firing" }}{{ .CommonAnnotations.description }}{{ else }}가장 오래된 PENDING Outbox가 다시 5분 이내로 돌아왔습니다.{{ end }}'

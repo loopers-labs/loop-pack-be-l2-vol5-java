@@ -39,6 +39,9 @@ out/
 # Local DDD/OOP study guide
 /docs/ddd-oop-guide.html
 
+# Grafana 알림용 Slack 웹훅은 로컬에만 보관
+/docker/grafana/slack.env
+
 ### Kotlin ###
 .kotlin
 
