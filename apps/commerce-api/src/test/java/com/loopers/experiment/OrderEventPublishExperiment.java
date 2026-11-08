@@ -53,6 +53,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>broker 정지(docker pause): metadata 가 캐시된 producer 와, 재시작처럼 producer 를 새로 만든 경우의 reconcile 응답 시간</li>
  *   <li>그 동안 Hikari active 커넥션 최댓값: AFTER_COMMIT listener 가 막히는 동안 DB 커넥션을 쥐고 있는지</li>
  * </ul>
+ * 6주차 기록으로 남김. 7주차부터 확정이 Kafka 를 부르지 않아 broker 정지 장면도 정상과 같게 나옴 (7주차 설계 9장).
  * 시간 값은 매번 달라 assertion 은 걸지 않음. 결과는 build/experiment/order-event-publish.md 에 표로 남김.
  * 실행: RUN_EXPERIMENT=true ./gradlew :apps:commerce-api:test --tests '*OrderEventPublishExperiment'
  */
