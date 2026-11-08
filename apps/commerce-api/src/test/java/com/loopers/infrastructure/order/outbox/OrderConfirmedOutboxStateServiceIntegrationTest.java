@@ -48,11 +48,13 @@ class OrderConfirmedOutboxStateServiceIntegrationTest {
     @Test
     void skipsAttemptAlreadyStartedByAnotherRelay() {
         insertPending(CREATED_AT);
+        // 늦은 실행의 시각이 저장된 기한 이후여도(TX1 지연·인스턴스 시계 차이) 시도 번호 조건만으로 막혀야 한다.
+        ZonedDateTime lateNow = CREATED_AT.plus(MAX_WAIT);
 
         OrderConfirmedOutboxStateService.BeginAttemptResult late = writeAfterOtherRelayCommits(
             () -> assertThat(stateService.beginAttempt(EVENT_ID, CREATED_AT, MAX_WAIT, MAX_ATTEMPTS).kind())
                 .isEqualTo(OrderConfirmedOutboxStateService.BeginAttemptKind.STARTED),
-            () -> stateService.beginAttempt(EVENT_ID, CREATED_AT, MAX_WAIT, MAX_ATTEMPTS));
+            () -> stateService.beginAttempt(EVENT_ID, lateNow, MAX_WAIT, MAX_ATTEMPTS));
 
         assertThat(late.kind()).isEqualTo(OrderConfirmedOutboxStateService.BeginAttemptKind.SKIPPED);
         assertThat(row()).isEqualTo(new RowState(
