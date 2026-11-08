@@ -1,0 +1,129 @@
+rule_files: []
+evaluation_interval: 10s
+
+tests:
+  - name: 첫 관측값이 1이면 이전 0 표본 없이도 감지한다
+    interval: 10s
+    input_series:
+      - series: 'outbox_blocked_transitions_total{reason="ATTEMPTS_EXHAUSTED"}'
+        values: '_ _ 1+0x10'
+    promql_expr_test:
+      - expr: __OUTBOX_BLOCKED_EXPR__
+        eval_time: 20s
+        exp_samples:
+          - labels: '{reason="ATTEMPTS_EXHAUSTED"}'
+            value: 1
+      - expr: __OUTBOX_BLOCKED_EXPR__
+        eval_time: 30s
+        exp_samples:
+          - labels: '{reason="ATTEMPTS_EXHAUSTED"}'
+            value: 1
+      - expr: __OUTBOX_BLOCKED_EXPR__
+        eval_time: 80s
+        exp_samples:
+          - labels: '{reason="ATTEMPTS_EXHAUSTED"}'
+            value: 0
+
+  - name: 0으로 유지되는 counter는 알리지 않는다
+    interval: 10s
+    input_series:
+      - series: 'outbox_blocked_transitions_total{reason="ATTEMPTS_EXHAUSTED"}'
+        values: '0+0x12'
+    promql_expr_test:
+      - expr: __OUTBOX_BLOCKED_EXPR__
+        eval_time: 0s
+        exp_samples:
+          - labels: '{reason="ATTEMPTS_EXHAUSTED"}'
+            value: 0
+      - expr: __OUTBOX_BLOCKED_EXPR__
+        eval_time: 1m
+        exp_samples:
+          - labels: '{reason="ATTEMPTS_EXHAUSTED"}'
+            value: 0
+
+  - name: 기존 counter의 증가를 감지하고 증가가 없으면 알림을 끝낸다
+    interval: 10s
+    input_series:
+      - series: 'outbox_blocked_transitions_total{reason="ATTEMPTS_EXHAUSTED"}'
+        values: '0+0x6 1+0x3 2+0x8'
+    promql_expr_test:
+      - expr: __OUTBOX_BLOCKED_EXPR__
+        eval_time: 80s
+        exp_samples:
+          - labels: '{reason="ATTEMPTS_EXHAUSTED"}'
+            value: 1
+      - expr: __OUTBOX_BLOCKED_EXPR__
+        eval_time: 120s
+        exp_samples:
+          - labels: '{reason="ATTEMPTS_EXHAUSTED"}'
+            value: 1
+      - expr: __OUTBOX_BLOCKED_EXPR__
+        eval_time: 180s
+        exp_samples:
+          - labels: '{reason="ATTEMPTS_EXHAUSTED"}'
+            value: 0
+
+  - name: 새 오류 유형의 첫 전환도 기존 오류 유형과 구분해 감지한다
+    interval: 10s
+    input_series:
+      - series: 'outbox_blocked_transitions_total{reason="ATTEMPTS_EXHAUSTED"}'
+        values: '4+0x24'
+      - series: 'outbox_blocked_transitions_total{reason="RecordTooLargeException"}'
+        values: '_ _ _ _ _ _ _ _ _ _ _ _ _ 1+0x11'
+    promql_expr_test:
+      - expr: __OUTBOX_BLOCKED_EXPR__
+        eval_time: 140s
+        exp_samples:
+          - labels: '{reason="ATTEMPTS_EXHAUSTED"}'
+            value: 0
+          - labels: '{reason="RecordTooLargeException"}'
+            value: 1
+      - expr: __OUTBOX_BLOCKED_EXPR__
+        eval_time: 200s
+        exp_samples:
+          - labels: '{reason="ATTEMPTS_EXHAUSTED"}'
+            value: 0
+          - labels: '{reason="RecordTooLargeException"}'
+            value: 0
+
+  - name: 앱 재시작 뒤 이전보다 작아진 counter의 전환을 감지한다
+    interval: 10s
+    input_series:
+      - series: 'outbox_blocked_transitions_total{reason="ATTEMPTS_EXHAUSTED"}'
+        values: '5+0x12 1+0x11'
+    promql_expr_test:
+      - expr: __OUTBOX_BLOCKED_EXPR__
+        eval_time: 120s
+        exp_samples:
+          - labels: '{reason="ATTEMPTS_EXHAUSTED"}'
+            value: 0
+      - expr: __OUTBOX_BLOCKED_EXPR__
+        eval_time: 140s
+        exp_samples:
+          - labels: '{reason="ATTEMPTS_EXHAUSTED"}'
+            value: 1
+
+  - name: 수집을 처음 시작했을 때 양수인 값도 알리고 계속 반복하지 않는다
+    interval: 10s
+    input_series:
+      - series: 'outbox_blocked_transitions_total{reason="ATTEMPTS_EXHAUSTED"}'
+        values: '7+0x12'
+    promql_expr_test:
+      - expr: __OUTBOX_BLOCKED_EXPR__
+        eval_time: 0s
+        exp_samples:
+          - labels: '{reason="ATTEMPTS_EXHAUSTED"}'
+            value: 1
+      - expr: __OUTBOX_BLOCKED_EXPR__
+        eval_time: 1m
+        exp_samples:
+          - labels: '{reason="ATTEMPTS_EXHAUSTED"}'
+            value: 0
+
+  - name: metric 자체가 없으면 0으로 위장하지 않는다
+    interval: 10s
+    input_series: []
+    promql_expr_test:
+      - expr: __OUTBOX_BLOCKED_EXPR__
+        eval_time: 1m
+        exp_samples: []

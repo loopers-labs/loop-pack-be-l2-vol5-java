@@ -7,7 +7,7 @@ groups:
     interval: 10s
     rules:
       - uid: outbox-blocked-transition
-        title: 주문 확정 이벤트 전달이 BLOCKED 상태로 전환됨
+        title: 주문 확정 이벤트 전달의 BLOCKED 전환 감지
         condition: C
         data:
           - refId: A
@@ -20,7 +20,8 @@ groups:
                 type: prometheus
                 uid: loopers
               editorMode: code
-              expr: increase(outbox_blocked_transitions_total[1m])
+              # 첫 수집부터 양수인 오류 유형도 감지하고, 증가 없는 기존 시계열은 0으로 반환합니다.
+              expr: (increase(outbox_blocked_transitions_total[1m]) > 0) or ((outbox_blocked_transitions_total unless outbox_blocked_transitions_total offset 1m) * 1) or (outbox_blocked_transitions_total * 0)
               instant: true
               intervalMs: 1000
               maxDataPoints: 43200
@@ -66,8 +67,8 @@ groups:
         execErrState: Error
         for: 0s
         annotations:
-          summary: 주문 확정 이벤트 전달이 BLOCKED 상태로 전환됐습니다
-          description: "재시도 한도에 도달한 Outbox 행이 BLOCKED 상태가 됐습니다. eventId·orderId·lastError를 확인하고 원인을 해결한 뒤 같은 행을 재개하세요."
+          summary: 주문 확정 이벤트 전달에서 BLOCKED 전환이 감지됐습니다
+          description: "재시도 한도에 도달했거나 자동 재시도가 어려운 오류로 Outbox 행이 BLOCKED 상태가 됐습니다. eventId, orderId, lastError를 확인하고 원인을 해결한 뒤 같은 행을 수동 재시도하세요."
         labels:
           component: order-confirmed-outbox
           severity: critical
