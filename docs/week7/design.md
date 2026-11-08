@@ -39,7 +39,23 @@ W6 에서 `ApplicationEventPublisher` 로 넘기던 자리와 같다. 애그리�
 | `published_at` | relay 가 DB 시각으로 채운다 |
 | `created_at`, `updated_at` | `AuditEntity` |
 
-인덱스 `idx_outbox_due(status, next_attempt_at, id)` 는 relay 가 고르는 조건, 정렬과 같다(`RLY-002`).
+인덱스 `idx_outbox_due(status, id, next_attempt_at)` 는 relay 가 고르는 쿼리(`status = 'PENDING' and next_attempt_at <= now order by id limit n`)에 맞춘다(`RLY-002`).
+`status` 를 같다로 거른 뒤 `id` 순서대로 읽으므로 정렬 없이 `limit` 에서 멈추고, `next_attempt_at` 은 인덱스 안에서 걸러져(index condition pushdown) 행을 읽지 않는다.
+읽는 양은 이미 보낸 행이 몇이든 상관없이, 고를 묶음과 그 앞에서 아직 시각이 되지 않은 `PENDING` 만큼이다.
+
+정렬 기준은 `id` 다. `RLY-002`(원문)가 순서가 바뀌지 않는 기준을 요구하고, `next_attempt_at` 은 재시도마다 바뀐다.
+
+| 선택지 | 결과(`due-scan/result.md`, PUBLISHED 100 만 행 뒤 PENDING 10 만 행) | 대가 |
+|---|---|---|
+| `(status, id, next_attempt_at)` | 모든 시나리오에서 페이지 접근 400 이하. 10 만 건이 밀렸을 때 0.3 ms | 앞쪽 PENDING 이 모두 backoff 중이면 그 항목을 건너뛰느라 11 ~ 14 ms. 기록이 아니라 backoff 중인 `PENDING` 수에 비례한다 |
+| `(status, next_attempt_at, id)` | 범위 조건(`next_attempt_at`) 뒤의 `id` 는 정렬에 못 쓴다. 보낼 행이 많으면 옵티마이저가 정렬을 피하려 PK 를 처음부터 훑어, 10 만 건이 밀렸을 때 페이지 109 만 · 1.1 s. 회차마다 되풀이되고 기록이 쌓일수록 커진다 | backoff 가 많을 때는 0.05 ~ 1.3 ms 로 더 빠르다 |
+| `order by next_attempt_at, id` + `(status, next_attempt_at, id)` | 인덱스 순서 그대로 읽어 묶음만큼만 읽는다 | 재시도할 때마다 기준이 바뀌어 `RLY-002` 와 맞지 않는다 |
+
+두 인덱스는 컬럼이 같아 insert · 상태 변경 · 재시도 때 고치는 항목도 같다. 인덱스를 바꿔도 쓰기 비용은 그대로다.
+운영 DB(`ddl-auto: none`)에는 새 인덱스를 먼저 만들고 옛 인덱스를 지운다. 반대 순서면 relay 가 인덱스 없이 고르는 구간이 생긴다.
+측정은 `bash docs/week7/due-scan/run.sh` 로 다시 낸다.
+**뒤집을 조건**: backoff 중인 `PENDING` 이 수십만 건 쌓여 건너뛰는 비용이 회차 주기에 가까워질 때, 또는 시각 순서로 읽는 조회(예: 가장 오래 밀린 행의 나이)가 생길 때.
+그때는 `RLY-002` 의 순서 요구를 다시 확인하고 `(status, next_attempt_at, id)` 를 함께 둘지 쓰기 비용과 견준다.
 
 payload 를 `MEDIUMBLOB` 으로 두는 이유는 payload 를 읽는 쪽 대부분이 바이트가 그대로라는 데 기대기 때문이다.
 relay 는 저장된 바이트를 `ByteArraySerializer` 로 보내고, 복구는 다시 만든 사건과 바이트로 비교하며(4 장), 계약은 공유 예시와 바이트까지 같다(W6 `EVT-003`).

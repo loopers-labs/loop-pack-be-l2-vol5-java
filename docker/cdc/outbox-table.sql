@@ -16,5 +16,5 @@ CREATE TABLE IF NOT EXISTS order_event_outbox (
     published_at DATETIME(6),
     PRIMARY KEY (id),
     CONSTRAINT uk_outbox_event_id UNIQUE (event_id),
-    INDEX idx_outbox_due (status, next_attempt_at, id)
+    INDEX idx_outbox_due (status, id, next_attempt_at)
 );

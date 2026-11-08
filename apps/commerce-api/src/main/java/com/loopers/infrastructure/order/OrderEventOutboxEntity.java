@@ -17,7 +17,7 @@ import java.util.Arrays;
 @Table(
     name = "order_event_outbox",
     uniqueConstraints = @UniqueConstraint(name = "uk_outbox_event_id", columnNames = "event_id"),
-    indexes = @Index(name = "idx_outbox_due", columnList = "status, next_attempt_at, id")
+    indexes = @Index(name = "idx_outbox_due", columnList = "status, id, next_attempt_at")
 )
 class OrderEventOutboxEntity extends AuditEntity {
 
