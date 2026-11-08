@@ -21,8 +21,10 @@ commerce-api는 확정 시각 저장·Outbox 원자성·Relay 발행을, commerc
 | `OrderConfirmedOutboxAtomicityTest` | 최초 성공 때 주문·시도·Outbox를 같은 TX에 저장. 비성공·중복 결과, 직렬화·유일 제약·commit 실패 rollback, 동시 성공에서 행 하나와 고정 payload 확인 |
 | `OrderConfirmedOutboxStateServiceIntegrationTest` | 실제 MySQL에서 이전 값을 읽은 실행의 시도 시작·결과 저장이 다른 실행의 commit을 덮지 않음(조건부 갱신 0행). 최대 대기 시간 전 재선택 없음, 수동 재시도 뒤 새 주기 3회째 재차단과 누적 시도 수 |
 | `OrderConfirmedOutboxRelayTest` | 시도를 시작할 때 다음 선택 시각을 결과 대기 예산에 재시도 간격을 더한 만큼 뒤로 둠 |
+| `OrderConfirmedOutboxFailureClassifierTest` | KafkaTemplate이 감싼 원인을 꺼내 재시도 불가(크기 초과)·재시도 가능(timeout)·종료 interrupt를 구분. `lastError`에는 가장 안쪽 원인의 유형과 메시지만 500자 이내로 남기고 record payload는 넣지 않음 |
 | `OrderConfirmedOutboxMultiRelayIntegrationTest` | 실제 MySQL에서 Relay 두 개가 같은 대기 행들을 동시에 처리해도 행마다 send 1회, 모든 행 `PUBLISHED`, 두 Relay가 모두 발행에 참여 |
 | `OrderConfirmedOutboxScheduleSettingsTest` | `application.yml`에서 Relay·지표 갱신 스케줄이 기본으로 켜지고 운영 프로필은 끄지 않으며 `test` 프로필만 끔 |
+| `OrderConfirmedOutboxMetricsIntegrationTest` | 실제 MySQL에서 PUBLISHED 이력이 쌓여도 상태 인덱스 range 조회로 미해결 행만 집계. PENDING·BLOCKED 수와 가장 오래된 PENDING 대기 시간, 미해결 행이 없으면 모두 0 |
 | `OrderConfirmedOutboxMetricsSchedulerIntegrationTest` | Relay를 끈 상태에서도 지표 갱신 스케줄이 미해결 Outbox 수와 가장 오래된 대기 시간을 반영 |
 | `OrderConfirmedOutboxKafkaConfigTest` | 전용 KafkaTemplate이 복사한 factory만 종료하고 공통 factory는 유지. 기본 설정의 producer 전달 timeout이 Relay의 Future 관찰 시간보다 짧음 |
 | `OrderConfirmedKafkaDeliveryIntegrationTest` | 실제 주문 API·테스트 PG·MySQL·Kafka에서 Relay의 저장 payload 재시도, BLOCKED 후 다음 행 진행, 수동 재시도와 누적 시도 보존, broker 기록 뒤 상태 저장 실패와 두 대기 방식 비교. 두 방식의 관찰 timeout 뒤 늦은 성공·종료 이벤트 뒤 producer 오류·같은 메시지 재발행, TX1만 세 번 commit한 뒤 네 번째 send 차단, PUBLISHED 선저장의 누락 반례도 확인 |
@@ -139,7 +141,7 @@ DB commit 뒤 offset 미커밋 종료는 아래 [재전달 설계](#db-commit-�
 - 고정된 품목·수량으로 두 합성 주문을 만들고, 이번 실행에서 저장한 실제 확정 시각·주문·예약 상태와 broker record를 대조한다. 카드 정보와 비밀 값은 기록하지 않는다.
 - 미발행 확인은 고유 topic의 partition별 end offset을 기준으로 정해진 기한 안에 대상 `eventId`가 없는지 확인한다. 짧은 poll 한 번이나 lag 0만으로 판정하지 않는다.
 - 직접 발행 경로의 미발행 사례는 [검증 실행 도구](../../verification/order-confirmed-event/run.py)로 재현한다. 기준 revision의 API 복사본에만 테스트용 latch를 넣어 이벤트 생성 뒤 `KafkaTemplate.send()` 직전에서 멈춘다. 실제 주문 API·테스트 PG로 확정한 주문과 미발행 상태를 확인한 다음, 기준 API 프로세스를 종료한다. latch에 걸린 요청 때문에 정상 종료가 5초 안에 끝나지 않으면 해당 프로세스만 강제 종료하고 그 여부를 관찰 기록에 남긴다.
-- 현재 Relay의 재시도·broker 기록 뒤 상태 저장 실패·Future 대기 방식 비교는 `OrderConfirmedKafkaDeliveryIntegrationTest`가 검증한다. 이 통합 테스트는 로컬 DB 전체를 정리하므로 격리된 MySQL에서만 실행한다.
+- 현재 Relay의 재시도·broker 기록 뒤 상태 저장 실패·Future 대기 방식 비교는 `OrderConfirmedKafkaDeliveryIntegrationTest`가 검증한다. 이 통합 테스트는 끝날 때 DB 전체를 정리하지만, 테스트는 Testcontainers로 띄운 전용 MySQL을 쓰므로 로컬 개발 DB에는 영향이 없다.
 - 기준 사례는 send 전에 멈추므로 broker 거절이나 send timeout을 주입한 실험이 아니다. Relay 통합 테스트에서 예외나 제어된 Future를 사용한 검증도 OS 강제 종료 시험과 구분한다.
 
 같은 격리 DB·broker를 유지한 채 두 주문의 저장된 확정 사실로 없는 Outbox를 보충하고, 누락된 구매 활동의 생성과 이미 소비한 주문의 중복 방지를 확인한다.
