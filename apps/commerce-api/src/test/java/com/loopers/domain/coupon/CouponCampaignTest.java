@@ -16,7 +16,7 @@ class CouponCampaignTest {
     private static final Instant NOW = Instant.parse("2026-11-08T00:00:00Z");
 
     private static CouponCampaign campaign(boolean active) {
-        return CouponCampaign.restore(7L, CampaignName.of("가을 할인"), DiscountAmount.of(5_000),
+        return CouponCampaign.restore(7L, CampaignName.of("블프 쿠폰"), DiscountAmount.of(5_000),
             IssueQuota.of(100), 3, active);
     }
 
@@ -24,10 +24,10 @@ class CouponCampaignTest {
     @Test
     void opensWithZeroIssued() {
         CouponCampaign campaign = CouponCampaign.open(
-            CampaignName.of("가을 할인"), DiscountAmount.of(5_000), IssueQuota.of(100), true);
+            CampaignName.of("블프 쿠폰"), DiscountAmount.of(5_000), IssueQuota.of(100), true);
 
         assertThat(campaign.getIssuedCount()).isZero();
-        assertThat(campaign.getName()).isEqualTo(CampaignName.of("가을 할인"));
+        assertThat(campaign.getName()).isEqualTo(CampaignName.of("블프 쿠폰"));
         assertThat(campaign.getDiscountAmount()).isEqualTo(DiscountAmount.of(5_000));
         assertThat(campaign.getTotalQuota()).isEqualTo(IssueQuota.of(100));
         assertThat(campaign.isActive()).isTrue();

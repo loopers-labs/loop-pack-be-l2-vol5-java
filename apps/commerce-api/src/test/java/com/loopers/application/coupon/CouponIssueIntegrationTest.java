@@ -51,7 +51,7 @@ class CouponIssueIntegrationTest {
     }
 
     private Long openCampaign(int quota, boolean active) {
-        return couponFacade.openCampaign(CampaignName.of("가을 할인"), DiscountAmount.of(5_000),
+        return couponFacade.openCampaign(CampaignName.of("블프 쿠폰"), DiscountAmount.of(5_000),
             IssueQuota.of(quota), active).getId();
     }
 
@@ -185,13 +185,13 @@ class CouponIssueIntegrationTest {
     @DisplayName("CPN-007: 보유 목록은 본인 쿠폰만 최신순으로 보여 준다")
     @Test
     void listsOwnCouponsNewestFirst() {
-        Long autumn = openCampaign(5, true);
-        Long winter = openCampaign(5, true);
-        Long spring = openCampaign(5, true);
-        Coupon older = couponFacade.issue(autumn, 42L, NOW).coupon();
-        Coupon sameTimeFirst = couponFacade.issue(winter, 42L, NOW.plusSeconds(60)).coupon();
-        Coupon sameTimeSecond = couponFacade.issue(spring, 42L, NOW.plusSeconds(60)).coupon();
-        couponFacade.issue(autumn, 7L, NOW.plusSeconds(120));
+        Long blackFriday = openCampaign(5, true);
+        Long cyberMonday = openCampaign(5, true);
+        Long yearEnd = openCampaign(5, true);
+        Coupon older = couponFacade.issue(blackFriday, 42L, NOW).coupon();
+        Coupon sameTimeFirst = couponFacade.issue(cyberMonday, 42L, NOW.plusSeconds(60)).coupon();
+        Coupon sameTimeSecond = couponFacade.issue(yearEnd, 42L, NOW.plusSeconds(60)).coupon();
+        couponFacade.issue(blackFriday, 7L, NOW.plusSeconds(120));
 
         assertThat(couponFacade.findMine(42L)).extracting(Coupon::id)
             .containsExactly(sameTimeSecond.id(), sameTimeFirst.id(), older.id());
