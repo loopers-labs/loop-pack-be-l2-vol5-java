@@ -20,7 +20,7 @@ class CouponCampaignTest {
             IssueQuota.of(100), 3, active);
     }
 
-    @DisplayName("열면 발급 수가 0 이고 받은 이름, 혜택, 한도, 발급 가능 여부를 그대로 갖는다.")
+    @DisplayName("열면 발급 수가 0 이다")
     @Test
     void opensWithZeroIssued() {
         CouponCampaign campaign = CouponCampaign.open(
@@ -34,10 +34,10 @@ class CouponCampaignTest {
     }
 
     @Nested
-    @DisplayName("사용자에게 발급하면")
+    @DisplayName("발급하면")
     class IssueTo {
 
-        @DisplayName("캠페인의 혜택을 옮겨 적은 쿠폰이 나온다. 쿠폰은 나중에 캠페인이 바뀌어도 그대로다.")
+        @DisplayName("캠페인의 할인 금액을 쿠폰에 옮겨 적는다")
         @Test
         void copiesBenefitIntoCoupon() {
             Coupon coupon = campaign(true).issueTo(42L, NOW);
@@ -49,7 +49,7 @@ class CouponCampaignTest {
             assertThat(coupon.issuedAt()).isEqualTo(NOW);
         }
 
-        @DisplayName("발급 가능하지 않은 캠페인이면 비활성으로 거절한다.")
+        @DisplayName("비활성 캠페인이면 거절한다")
         @Test
         void rejectsInactiveCampaign() {
             assertThatThrownBy(() -> campaign(false).issueTo(42L, NOW))
@@ -58,14 +58,14 @@ class CouponCampaignTest {
         }
     }
 
-    @DisplayName("총 발급 한도와 할인 금액은 0 이하로 만들 수 없다.")
+    @DisplayName("한도와 할인 금액은 0 이하일 수 없다")
     @Test
     void quotaAndDiscountMustBePositive() {
         assertThatThrownBy(() -> IssueQuota.of(0)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> DiscountAmount.of(0)).isInstanceOf(IllegalArgumentException.class);
     }
 
-    @DisplayName("캠페인 이름은 비어 있을 수 없다.")
+    @DisplayName("캠페인 이름은 비어 있을 수 없다")
     @Test
     void nameMustNotBeBlank() {
         assertThatThrownBy(() -> CampaignName.of(" ")).isInstanceOf(IllegalArgumentException.class);
