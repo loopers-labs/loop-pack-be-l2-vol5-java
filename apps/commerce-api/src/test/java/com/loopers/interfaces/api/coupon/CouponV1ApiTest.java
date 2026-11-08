@@ -8,16 +8,20 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -28,6 +32,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest
 @AutoConfigureMockMvc
+@ExtendWith(OutputCaptureExtension.class)
 class CouponV1ApiTest {
 
     private final MockMvc mvc;
@@ -160,6 +165,18 @@ class CouponV1ApiTest {
                 .andExpect(jsonPath("$.meta.errorCode").value("COUPON_BUSY"));
             mvc.perform(get("/api/v1/coupons").header("X-USER-ID", 42L))
                 .andExpect(jsonPath("$.data", hasSize(0)));
+        }
+
+        @DisplayName("자리 없음 거절은 로그에 스택 트레이스를 남기지 않는다")
+        @Test
+        void logsRejectionWithoutStackTrace(CapturedOutput output) throws Exception {
+            long campaignId = openCampaign(5, true);
+            redis.opsForSet().add("coupon:issue:admission:v1", "held-1", "held-2", "held-3");
+
+            issue(campaignId, 42L).andExpect(status().isTooManyRequests());
+
+            assertThat(output.getAll()).contains("code=COUPON_BUSY");
+            assertThat(output.getAll()).doesNotContain("com.loopers.support.error.CoreException:");
         }
 
         @DisplayName("CPN-006: 없는 캠페인은 404 다")
