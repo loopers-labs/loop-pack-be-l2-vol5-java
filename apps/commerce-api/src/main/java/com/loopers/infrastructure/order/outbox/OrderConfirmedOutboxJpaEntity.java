@@ -81,14 +81,14 @@ public class OrderConfirmedOutboxJpaEntity extends BaseEntity {
         return new OrderConfirmedOutboxJpaEntity(message, payload, nextAttemptAt);
     }
 
-    // 시도 시작·결과 저장은 저장소의 조건부 갱신이 맡고, 엔티티는 기한 판단과 수동 재개만 표현한다.
+    // 시도 시작·결과 저장은 저장소의 조건부 갱신이 맡고, 엔티티는 기한 판단과 수동 재시도만 표현한다.
     public boolean isDue(ZonedDateTime now) {
         return status == OrderConfirmedOutboxStatus.PENDING && !nextAttemptAt.isAfter(now);
     }
 
     public void resumeBlocked(ZonedDateTime resumedAt) {
         if (status != OrderConfirmedOutboxStatus.BLOCKED) {
-            throw new IllegalStateException("BLOCKED Outbox만 수동 재개할 수 있습니다.");
+            throw new IllegalStateException("BLOCKED Outbox만 수동 재시도할 수 있습니다.");
         }
         status = OrderConfirmedOutboxStatus.PENDING;
         cycleAttemptCount = 0;

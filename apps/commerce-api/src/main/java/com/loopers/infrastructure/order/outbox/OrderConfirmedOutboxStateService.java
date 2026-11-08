@@ -75,7 +75,7 @@ public class OrderConfirmedOutboxStateService {
     @Transactional
     public ResumeResult resumeBlocked(String eventId, ZonedDateTime resumedAt) {
         OrderConfirmedOutboxJpaEntity row = repository.findByEventId(eventId)
-            .orElseThrow(() -> new IllegalStateException("재개할 Outbox를 찾을 수 없습니다. eventId=" + eventId));
+            .orElseThrow(() -> new IllegalStateException("수동 재시도할 Outbox를 찾을 수 없습니다. eventId=" + eventId));
         row.resumeBlocked(resumedAt);
         repository.saveAndFlush(row);
         return new ResumeResult(row.getEventId(), row.getOrderId(), row.getAttemptCount(), row.getCycleAttemptCount());

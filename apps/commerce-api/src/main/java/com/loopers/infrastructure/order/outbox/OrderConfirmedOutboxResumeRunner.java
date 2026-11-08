@@ -42,16 +42,16 @@ public class OrderConfirmedOutboxResumeRunner implements ApplicationRunner {
             .distinct()
             .toList();
         if (targets.isEmpty() || targets.stream().anyMatch(String::isBlank)) {
-            throw new IllegalArgumentException("Outbox 재개 대상은 비어 있지 않은 eventId 목록이어야 합니다.");
+            throw new IllegalArgumentException("Outbox 수동 재시도 대상은 비어 있지 않은 eventId 목록이어야 합니다.");
         }
         for (String eventId : targets) {
             OrderConfirmedOutboxStateService.ResumeResult result = stateService.resumeBlocked(
                 eventId, applicationTime.now());
-            log.warn("주문 확정 Outbox를 담당자 요청으로 재개했습니다. eventId={}, orderId={}, attemptCount={}, "
+            log.warn("주문 확정 Outbox를 담당자 요청으로 수동 재시도했습니다. eventId={}, orderId={}, attemptCount={}, "
                     + "cycleAttemptCount={}", result.eventId(), result.orderId(), result.attemptCount(),
                 result.cycleAttemptCount());
             if (!relay.runEventOnce(eventId)) {
-                log.warn("주문 확정 Outbox Relay가 이미 실행 중이라 재개한 행은 PENDING으로 남았습니다. eventId={}",
+                log.warn("주문 확정 Outbox Relay가 이미 실행 중이라 수동 재시도한 행은 PENDING으로 남았습니다. eventId={}",
                     eventId);
             }
         }

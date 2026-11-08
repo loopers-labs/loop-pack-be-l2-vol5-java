@@ -27,6 +27,7 @@ class OrderConfirmedOutboxStateServiceIntegrationTest {
     private static final String EVENT_ID = "order-confirmed:v1:1";
     private static final ZonedDateTime CREATED_AT = ZonedDateTime.of(2026, 11, 8, 1, 0, 0, 0, ZoneOffset.UTC);
     private static final Duration MAX_WAIT = Duration.ofSeconds(7);
+    private static final Duration RETRY_INTERVAL = Duration.ofSeconds(5);
     private static final int MAX_ATTEMPTS = 3;
 
     @Autowired private OrderConfirmedOutboxStateService stateService;
@@ -76,6 +77,58 @@ class OrderConfirmedOutboxStateServiceIntegrationTest {
             "PENDING", 2, 2, utc(nextDue.plus(MAX_WAIT)), null, utc(nextDue)));
     }
 
+    @DisplayName("시도를 시작하면 최대 대기 시간이 지나기 전에는 같은 행을 다시 조회하거나 시작하지 않는다.")
+    @Test
+    void doesNotReselectRowUntilMaximumWaitElapses() {
+        insertPending(CREATED_AT);
+        assertThat(stateService.beginAttempt(EVENT_ID, CREATED_AT, MAX_WAIT, MAX_ATTEMPTS).kind())
+            .isEqualTo(OrderConfirmedOutboxStateService.BeginAttemptKind.STARTED);
+        ZonedDateTime waitEnds = CREATED_AT.plus(MAX_WAIT);
+        ZonedDateTime justBefore = waitEnds.minusNanos(1_000);
+
+        assertThat(stateService.findDueEventIds(justBefore, 10)).isEmpty();
+        assertThat(stateService.beginAttempt(EVENT_ID, justBefore, MAX_WAIT, MAX_ATTEMPTS).kind())
+            .isEqualTo(OrderConfirmedOutboxStateService.BeginAttemptKind.SKIPPED);
+        assertThat(row().attemptCount()).isEqualTo(1);
+
+        assertThat(stateService.findDueEventIds(waitEnds, 10)).containsExactly(EVENT_ID);
+        OrderConfirmedOutboxStateService.BeginAttemptResult second = stateService.beginAttempt(
+            EVENT_ID, waitEnds, MAX_WAIT, MAX_ATTEMPTS);
+        assertThat(second.kind()).isEqualTo(OrderConfirmedOutboxStateService.BeginAttemptKind.STARTED);
+        assertThat(second.attempt().attemptNumber()).isEqualTo(2);
+    }
+
+    @DisplayName("수동 재시도 뒤 원인이 남아 있으면 새 주기의 세 번째 실패에서 다시 BLOCKED가 되고 누적 시도 수는 이어진다.")
+    @Test
+    void blocksAgainOnThirdFailureOfNewCycleAfterManualRetry() {
+        insertRow("BLOCKED", 3, 3, CREATED_AT);
+        ZonedDateTime now = CREATED_AT.plusMinutes(10);
+
+        OrderConfirmedOutboxStateService.ResumeResult resumed = stateService.resumeBlocked(EVENT_ID, now);
+        assertThat(resumed.attemptCount()).isEqualTo(3);
+        assertThat(resumed.cycleAttemptCount()).isZero();
+
+        for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            if (attempt > 1) {
+                now = now.plus(RETRY_INTERVAL);
+            }
+            OrderConfirmedOutboxStateService.BeginAttemptResult start = stateService.beginAttempt(
+                EVENT_ID, now, MAX_WAIT, MAX_ATTEMPTS);
+            assertThat(start.kind()).isEqualTo(OrderConfirmedOutboxStateService.BeginAttemptKind.STARTED);
+            assertThat(start.attempt().attemptNumber()).isEqualTo(attempt);
+
+            OrderConfirmedOutboxStateService.FailureResult failure = stateService.markRetryableFailure(
+                start.attempt(), now, RETRY_INTERVAL, MAX_ATTEMPTS, "TimeoutException");
+            assertThat(failure.kind()).isEqualTo(attempt < MAX_ATTEMPTS
+                ? OrderConfirmedOutboxStateService.FailureKind.PENDING
+                : OrderConfirmedOutboxStateService.FailureKind.BLOCKED);
+        }
+
+        assertThat(row()).isEqualTo(new RowState("BLOCKED", 6, 3, utc(now), null, utc(now)));
+        assertThat(stateService.beginAttempt(EVENT_ID, now.plusMinutes(1), MAX_WAIT, MAX_ATTEMPTS).kind())
+            .isEqualTo(OrderConfirmedOutboxStateService.BeginAttemptKind.SKIPPED);
+    }
+
     // 늦은 실행이 행을 먼저 읽고, 다른 실행이 갱신을 commit한 뒤, 늦은 실행이 같은 TX에서 갱신하는 순서를 만든다.
     private <T> T writeAfterOtherRelayCommits(Runnable otherRelayCommit, Callable<T> lateWrite) {
         return new TransactionTemplate(transactionManager).execute(status -> {
@@ -90,13 +143,17 @@ class OrderConfirmedOutboxStateServiceIntegrationTest {
     }
 
     private void insertPending(ZonedDateTime nextAttemptAt) {
+        insertRow("PENDING", 0, 0, nextAttemptAt);
+    }
+
+    private void insertRow(String status, int attemptCount, int cycleAttemptCount, ZonedDateTime nextAttemptAt) {
         LocalDateTime createdAt = utc(CREATED_AT.minusMinutes(1));
         jdbcTemplate.update("""
             INSERT INTO order_confirmed_outbox
               (event_id, order_id, event_type, schema_version, message_key, payload, status,
                attempt_count, cycle_attempt_count, next_attempt_at, created_at, updated_at)
-            VALUES (?, 1, 'OrderConfirmed', 1, '1', '{}', 'PENDING', 0, 0, ?, ?, ?)
-            """, EVENT_ID, utc(nextAttemptAt), createdAt, createdAt);
+            VALUES (?, 1, 'OrderConfirmed', 1, '1', '{}', ?, ?, ?, ?, ?, ?)
+            """, EVENT_ID, status, attemptCount, cycleAttemptCount, utc(nextAttemptAt), createdAt, createdAt);
     }
 
     private RowState row() {
