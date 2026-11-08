@@ -34,8 +34,9 @@ spring:
 order:
   confirmed-event:
     topic: order-events
+    # 모든 인스턴스에서 실행한다. 같은 행은 조건부 갱신으로 한 실행만 시도한다.
     relay:
-      enabled: false
+      enabled: true
       interval: 1s
       batch-size: 10
       max-attempts: 3
@@ -44,7 +45,7 @@ order:
       delivery-timeout: 5s
       max-block-time: 1s
       future-timeout: 6s
-    # 읽기 전용 집계라 Relay와 달리 모든 인스턴스에서 켠다. 값은 DB 전체 기준이다.
+    # Relay 설정과 관계없이 모든 인스턴스에서 켠다. 값은 DB 전체 기준이다.
     outbox:
       metrics:
         enabled: true
@@ -95,11 +96,6 @@ spring:
   jpa:
     hibernate:
       ddl-auto: validate
-
-order:
-  confirmed-event:
-    relay:
-      enabled: true
 
 ---
 spring:
