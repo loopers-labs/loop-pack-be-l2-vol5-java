@@ -27,65 +27,49 @@ public class OrderConfirmedOutboxStateService {
             .toList();
     }
 
+    // 읽은 행의 시도 번호와 기한이 DB에 그대로일 때만 시작한다. 다른 실행이 먼저 시작했으면 건너뛴다.
     @Transactional
     public BeginAttemptResult beginAttempt(String eventId, ZonedDateTime now, Duration maxWait, int maxAttempts) {
         Optional<OrderConfirmedOutboxJpaEntity> found = repository.findByEventId(eventId);
-        if (found.isEmpty()) {
+        if (found.isEmpty() || !found.get().isDue(now)) {
             return BeginAttemptResult.skipped();
         }
         OrderConfirmedOutboxJpaEntity row = found.get();
-        if (!row.isDue(now)) {
-            return BeginAttemptResult.skipped();
-        }
-        if (row.getCycleAttemptCount() >= maxAttempts) {
-            row.markBlocked(now, EXHAUSTED_ATTEMPTS);
-            repository.saveAndFlush(row);
+        int currentAttempt = row.getCycleAttemptCount();
+        if (currentAttempt >= maxAttempts) {
+            if (repository.markBlocked(eventId, currentAttempt, EXHAUSTED_ATTEMPTS, now) != 1) {
+                return BeginAttemptResult.skipped();
+            }
             return BeginAttemptResult.blocked(row.getEventId(), row.getOrderId(), "ATTEMPTS_EXHAUSTED");
         }
-        row.beginAttempt(now, maxWait, maxAttempts);
-        repository.saveAndFlush(row);
+        if (repository.beginAttempt(eventId, currentAttempt, now.plus(maxWait), now) != 1) {
+            return BeginAttemptResult.skipped();
+        }
         return BeginAttemptResult.started(new OrderConfirmedOutboxAttempt(
-            row.getEventId(), row.getOrderId(), row.getMessageKey(), row.getPayload(), row.getCycleAttemptCount()));
+            row.getEventId(), row.getOrderId(), row.getMessageKey(), row.getPayload(), currentAttempt + 1));
     }
 
+    // 결과 저장은 PENDING이고 같은 시도 번호일 때만 적용해 늦은 결과가 다음 시도를 덮지 않게 한다.
     @Transactional
     public boolean markPublished(OrderConfirmedOutboxAttempt attempt, ZonedDateTime publishedAt) {
-        Optional<OrderConfirmedOutboxJpaEntity> found = repository.findByEventId(attempt.eventId());
-        if (found.isEmpty() || !matchesCurrentAttempt(found.get(), attempt)) {
-            return false;
-        }
-        OrderConfirmedOutboxJpaEntity row = found.get();
-        row.markPublished(publishedAt);
-        repository.saveAndFlush(row);
-        return true;
+        return repository.markPublished(attempt.eventId(), attempt.attemptNumber(), publishedAt) == 1;
     }
 
     @Transactional
     public FailureResult markRetryableFailure(OrderConfirmedOutboxAttempt attempt, ZonedDateTime failedAt,
                                                Duration retryInterval, int maxAttempts, String error) {
-        Optional<OrderConfirmedOutboxJpaEntity> found = repository.findByEventId(attempt.eventId());
-        if (found.isEmpty() || !matchesCurrentAttempt(found.get(), attempt)) {
-            return FailureResult.stale();
+        if (attempt.attemptNumber() >= maxAttempts) {
+            return blockCurrentAttempt(attempt, failedAt, error, "ATTEMPTS_EXHAUSTED");
         }
-        OrderConfirmedOutboxJpaEntity row = found.get();
-        boolean blocked = row.scheduleRetryOrBlock(failedAt, retryInterval, maxAttempts, error);
-        repository.saveAndFlush(row);
-        return blocked
-            ? FailureResult.blocked(row.getEventId(), row.getOrderId(), "ATTEMPTS_EXHAUSTED")
-            : FailureResult.pending();
+        int updated = repository.scheduleRetry(
+            attempt.eventId(), attempt.attemptNumber(), failedAt.plus(retryInterval), error, failedAt);
+        return updated == 1 ? FailureResult.pending() : FailureResult.stale();
     }
 
     @Transactional
     public FailureResult markBlocked(OrderConfirmedOutboxAttempt attempt, ZonedDateTime blockedAt, String error,
                                      String reason) {
-        Optional<OrderConfirmedOutboxJpaEntity> found = repository.findByEventId(attempt.eventId());
-        if (found.isEmpty() || !matchesCurrentAttempt(found.get(), attempt)) {
-            return FailureResult.stale();
-        }
-        OrderConfirmedOutboxJpaEntity row = found.get();
-        row.markBlocked(blockedAt, error);
-        repository.saveAndFlush(row);
-        return FailureResult.blocked(row.getEventId(), row.getOrderId(), reason);
+        return blockCurrentAttempt(attempt, blockedAt, error, reason);
     }
 
     @Transactional
@@ -97,9 +81,12 @@ public class OrderConfirmedOutboxStateService {
         return new ResumeResult(row.getEventId(), row.getOrderId(), row.getAttemptCount(), row.getCycleAttemptCount());
     }
 
-    private boolean matchesCurrentAttempt(OrderConfirmedOutboxJpaEntity row, OrderConfirmedOutboxAttempt attempt) {
-        return row.getStatus() == OrderConfirmedOutboxStatus.PENDING
-            && row.getCycleAttemptCount() == attempt.attemptNumber();
+    private FailureResult blockCurrentAttempt(OrderConfirmedOutboxAttempt attempt, ZonedDateTime blockedAt,
+                                              String error, String reason) {
+        if (repository.markBlocked(attempt.eventId(), attempt.attemptNumber(), error, blockedAt) != 1) {
+            return FailureResult.stale();
+        }
+        return FailureResult.blocked(attempt.eventId(), attempt.orderId(), reason);
     }
 
     public record BeginAttemptResult(BeginAttemptKind kind, OrderConfirmedOutboxAttempt attempt,

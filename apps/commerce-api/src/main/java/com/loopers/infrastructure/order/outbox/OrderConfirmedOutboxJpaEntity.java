@@ -14,7 +14,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.ZonedDateTime;
-import java.time.Duration;
 
 @Entity
 @Getter
@@ -82,41 +81,9 @@ public class OrderConfirmedOutboxJpaEntity extends BaseEntity {
         return new OrderConfirmedOutboxJpaEntity(message, payload, nextAttemptAt);
     }
 
+    // 시도 시작·결과 저장은 저장소의 조건부 갱신이 맡고, 엔티티는 기한 판단과 수동 재개만 표현한다.
     public boolean isDue(ZonedDateTime now) {
         return status == OrderConfirmedOutboxStatus.PENDING && !nextAttemptAt.isAfter(now);
-    }
-
-    public void beginAttempt(ZonedDateTime now, Duration maxWait, int maxAttempts) {
-        if (!isDue(now) || cycleAttemptCount >= maxAttempts) {
-            throw new IllegalStateException("Outbox 행이 전송 시도를 시작할 수 있는 상태가 아닙니다.");
-        }
-        attemptCount++;
-        cycleAttemptCount++;
-        nextAttemptAt = now.plus(maxWait);
-    }
-
-    public void markPublished(ZonedDateTime publishedAt) {
-        status = OrderConfirmedOutboxStatus.PUBLISHED;
-        this.publishedAt = publishedAt;
-        lastError = null;
-        nextAttemptAt = publishedAt;
-    }
-
-    public boolean scheduleRetryOrBlock(ZonedDateTime failedAt, Duration retryInterval, int maxAttempts, String error) {
-        lastError = error;
-        if (cycleAttemptCount >= maxAttempts) {
-            markBlocked(failedAt, error);
-            return true;
-        }
-        status = OrderConfirmedOutboxStatus.PENDING;
-        nextAttemptAt = failedAt.plus(retryInterval);
-        return false;
-    }
-
-    public void markBlocked(ZonedDateTime blockedAt, String error) {
-        status = OrderConfirmedOutboxStatus.BLOCKED;
-        nextAttemptAt = blockedAt;
-        lastError = error;
     }
 
     public void resumeBlocked(ZonedDateTime resumedAt) {

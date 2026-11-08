@@ -9,6 +9,7 @@ import org.springframework.context.event.ContextClosedEvent;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
@@ -141,8 +142,7 @@ public class OrderConfirmedOutboxRelay implements ApplicationListener<ContextClo
         }
         try {
             if (!stateService.markPublished(attempt, applicationTime.now())) {
-                log.warn("오래된 주문 확정 Outbox 전송 결과를 적용하지 않았습니다. eventId={}, orderId={}, attempt={}",
-                    attempt.eventId(), attempt.orderId(), attempt.attemptNumber());
+                logStaleResult(attempt);
                 return false;
             }
             log.info("주문 확정 Outbox 발행을 broker가 확인했습니다. eventId={}, orderId={}, topic={}, partition={}, offset={}",
@@ -170,23 +170,27 @@ public class OrderConfirmedOutboxRelay implements ApplicationListener<ContextClo
 
         String safeError = failureClassifier.safeMessage(failure);
         try {
+            ZonedDateTime failedAt = applicationTime.now();
             if (kind == OrderConfirmedOutboxFailureClassifier.FailureKind.RETRYABLE) {
                 OrderConfirmedOutboxStateService.FailureResult result = stateService.markRetryableFailure(
-                    attempt, applicationTime.now(), retryInterval, maxAttempts, safeError);
-                if (result.kind() == OrderConfirmedOutboxStateService.FailureKind.BLOCKED) {
-                    recordBlocked(result.eventId(), result.orderId(), result.reason(), failure);
-                } else {
-                    log.warn("주문 확정 Outbox 발행을 재시도합니다. eventId={}, orderId={}, attempt={}, nextAttemptAt={}, error={}",
+                    attempt, failedAt, retryInterval, maxAttempts, safeError);
+                switch (result.kind()) {
+                    case BLOCKED -> recordBlocked(result.eventId(), result.orderId(), result.reason(), failure);
+                    case PENDING -> log.warn(
+                        "주문 확정 Outbox 발행을 재시도합니다. eventId={}, orderId={}, attempt={}, nextAttemptAt={}, error={}",
                         attempt.eventId(), attempt.orderId(), attempt.attemptNumber(),
-                        applicationTime.now().plus(retryInterval), safeError);
+                        failedAt.plus(retryInterval), safeError);
+                    case STALE -> logStaleResult(attempt);
                 }
                 return result.kind() == OrderConfirmedOutboxStateService.FailureKind.BLOCKED;
             }
 
             OrderConfirmedOutboxStateService.FailureResult result = stateService.markBlocked(
-                attempt, applicationTime.now(), safeError, failureClassifier.reason(failure));
+                attempt, failedAt, safeError, failureClassifier.reason(failure));
             if (result.kind() == OrderConfirmedOutboxStateService.FailureKind.BLOCKED) {
                 recordBlocked(result.eventId(), result.orderId(), result.reason(), failure);
+            } else {
+                logStaleResult(attempt);
             }
             return true;
         } catch (RuntimeException stateFailure) {
@@ -194,6 +198,12 @@ public class OrderConfirmedOutboxRelay implements ApplicationListener<ContextClo
                 attempt.eventId(), attempt.orderId(), safeError, stateFailure);
             return false;
         }
+    }
+
+    // 다른 실행이 먼저 시작했거나 갱신해 이 시도의 결과는 적용하지 않았다.
+    private void logStaleResult(OrderConfirmedOutboxAttempt attempt) {
+        log.warn("오래된 주문 확정 Outbox 전송 결과를 적용하지 않았습니다. eventId={}, orderId={}, attempt={}",
+            attempt.eventId(), attempt.orderId(), attempt.attemptNumber());
     }
 
     private void recordBlocked(String eventId, Long orderId, String reason, Throwable failure) {
