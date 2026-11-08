@@ -45,6 +45,8 @@ checkstyle {
 
 // 기동 직후 측정의 자식 JVM에는 운영 의존성과 격리한 관측 클래스만 전달한다.
 tasks.test {
+    // Bound retained connection pools for the shared test MySQL; keep each pool's concurrency unchanged.
+    systemProperty("spring.test.context.cache.maxSize", "8")
     systemProperty("w4.startup.main-classpath", sourceSets.main.get().runtimeClasspath.asPath)
     useJUnitPlatform {
         excludeTags("ttl-measurement")

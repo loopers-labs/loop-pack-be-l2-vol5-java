@@ -12,6 +12,7 @@ import com.loopers.domain.payment.PaymentTransaction;
 import com.loopers.domain.product.Product;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.infrastructure.user.FixtureUserInitializer;
+import com.loopers.support.event.W6DirectPublicationTestConfiguration;
 import com.loopers.utils.DatabaseCleanUp;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.AfterEach;
@@ -24,6 +25,7 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -49,8 +51,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 
-/** Real isolated MySQL and Spring transaction synchronization; the Kafka boundary is replaced with a mock. */
+/** Preserved W6 direct publication: real MySQL and synchronization, with the Kafka boundary mocked. */
 @SpringBootTest
+@Import(W6DirectPublicationTestConfiguration.class)
 @Timeout(30)
 class OrderConfirmedPublicationIntegrationTest {
     private static final String ACCOUNT = "135135";
@@ -77,7 +80,11 @@ class OrderConfirmedPublicationIntegrationTest {
 
     @AfterEach
     void tearDown() {
-        cleanUp.truncateAllTables();
+        try {
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM outbox_message", Long.class)).isZero();
+        } finally {
+            cleanUp.truncateAllTables();
+        }
     }
 
     @Test

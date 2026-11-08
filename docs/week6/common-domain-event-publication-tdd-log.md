@@ -54,7 +54,7 @@ flowchart LR
 
 | 테스트 | 검증 내용 |
 | --- | --- |
-| [DomainEventListenerTest](../../apps/commerce-api/src/test/java/com/loopers/application/event/DomainEventListenerTest.java) · 6개 | 실제 Spring 이벤트 동기화에서 주문/합성 이벤트의 commit 뒤 전달, 예외 rollback·rollbackOnly, TX 없음, 일반 로컬 이벤트 제외, 발행 예외 격리 후 다른 이벤트 전달. DB 없는 transaction manager이며 실제 SQL 검증과 구분한다. |
+| [W6DomainEventListenerTest](../../apps/commerce-api/src/test/java/com/loopers/application/event/W6DomainEventListenerTest.java) · 6개 | 실제 Spring 이벤트 동기화에서 주문/합성 이벤트의 commit 뒤 전달, 예외 rollback·rollbackOnly, TX 없음, 일반 로컬 이벤트 제외, 발행 예외 격리 후 다른 이벤트 전달. DB 없는 transaction manager이며 실제 SQL 검증과 구분한다. |
 | [KafkaDomainEventPublisherTest](../../apps/commerce-api/src/test/java/com/loopers/infrastructure/event/KafkaDomainEventPublisherTest.java) · 10개 | 기존 즉시/지연 성공·실패·비노출·추가 send 금지 5개 유지. 추가로 두 타입의 다른 topic, 미등록·비활성 send 0, 중복 route·빈 topic 거절 검증. |
 | [DomainEventKafkaConfigurationTest](../../apps/commerce-api/src/test/java/com/loopers/infrastructure/event/DomainEventKafkaConfigurationTest.java) · 4개 | 실제 설정 serializer의 정확한 주문 JSON·시각·문자열 key·header 없음, 두 번째 타입 고유 필드 보존, 공통 빈 연결, 기존 topic/비활성 설정 반영. broker·DB 연결 없이 실행. |
 | [OrderConfirmedPublicationIntegrationTest](../../apps/commerce-api/src/test/java/com/loopers/application/order/OrderConfirmedPublicationIntegrationTest.java) · 12개 | 기존 실제 SQL 후 rollback, 외부 TX commit·독립 연결 가시성, 중복/경합, 실패/미확정/POINT 비발행. 공통 포트로 대역만 교체하고 기대값 유지. |
@@ -127,3 +127,5 @@ API DB는 기존 MySqlTestContainersConfig가 만든 임시 MySQL이다. 테스�
 2026-10-30 공통 경로의 실제 호출 순서와 확장 영향을 다시 점검했다. 현재 구조와 주요 설계·정책·API·TDD 문서가 일치하고, AGENTS·week2·week6의 38개 문서에서 깨진 파일 링크는 발견하지 않았다. 과거 주문 전용 클래스명·로그·측정값은 당시 실행 증거로 보존한다.
 
 [전체 설계의 새 이벤트 작성 안내](../week2/commerce-erd-draft.md#다른-외부-이벤트를-추가할-때의-작성-위치와-영향)에 업무 TX 안의 로컬 발행, 정확한 클래스 route, 별도 topic 준비·소비 계약을 보완했다. 현재 streamer는 주문 확정 전용이므로 다른 사건을 같은 topic에 보낼 때의 검증 오류·listener 중단 영향을 명시했다. 이는 문서 보완이며 새 이벤트·소비자·운영 설정을 구현한 작업이 아니다. 이 후속 점검에서는 테스트를 재실행하지 않았고 위 359개는 선행 리팩터링 검증 결과다.
+
+2026-11-04 W7 저장 증분에서 위 단위 테스트는 `W6DomainEventListenerTest`로 이동했다. 당시 실행 명령·결과는 보존하며, 현재 W6 직접 발행 검증은 명시적인 테스트 전용 `W6DirectPublicationTestConfiguration`을 사용한다. W7 운영 경로는 BEFORE_COMMIT Outbox 기록이며 자세한 변경·재검사는 [W7 원자성 기록](../week7/outbox-atomicity-tdd-log.md)을 따른다.
