@@ -6,7 +6,9 @@
 
 기존 머리말의 목표 설계/POINT 전환 표현은 작성 당시 설명을 보존한 것이다. 현재 구현·검증 상태는 [설계 진입점](../../system-design.md)과 실행 기록을 따른다.
 
-PG 상태 규칙은 [3.5](#35-pg-결제의-상태와-불변조건), 저장 필드와 제약은 [3.6](#36-pg-저장-모델과-제약)을 따른다. 아래 내용은 목표 설계이며 기존 POINT 구현에서 전환해야 한다. 과거 POINT 주문은 별도 PG 시도를 만들지 않고 보존한다.
+PG 상태 규칙은 [3.5](#35-pg-결제의-상태와-불변조건), 저장 필드와 제약은 [3.6](#36-pg-저장-모델과-제약)을 따른다. POINT에서 PG로의 전환 표현은 과거 작성 맥락이며 현재 PG 구현/과거 검증과 W7 목표 초안을 구분한다. 과거 POINT 주문은 별도 PG 시도를 만들지 않고 보존한다.
+
+**W7 연결:** 기존 주문·결제 상태/저장 불변조건과 최초 confirmedAt 계약은 유지한다. Outbox는 주문/결제의 새 상태나 연관 Entity가 아니라 별도 scalar orderId를 가진 전달 모델이다. 최초 확정 TX에 함께 저장하며, 상세 필드/상태·복구 검증은 [발행 W7.2~W7.4](../order-events/publication.md)를 따른다. 기존 저장 정합성 검사는 순수 PgOrderConsistency로 추출해 확정과 명시 복구에 동일하게 적용한다. W7 전체 설계는 2026-11-04 사용자 최종 승인을 받았으며 구현/검증은 미실행이다.
 
 ## 3.5 PG 결제의 상태와 불변조건
 
@@ -195,7 +197,7 @@ TX B는 Order 잠금 후 처음 일반 조회한 최신 결제 상태와 잠근 
 |모델·메서드|사전 조건과 결과|
 |---|---|
 |`OrderModel.startPgPayment()`|DRAFT·결제 방식/사용액/성공액 null. PG·pointAmount=0·PAYMENT_PENDING으로 변경|
-|`OrderModel.confirmPg(amount, confirmedAt)`|PG·PAYMENT_PENDING, amount=total_amount. paid_amount·CONFIRMED·최초 시각 함께 기록. 6주차 목표 확장은 3.7이며 구현 전|
+|`OrderModel.confirmPg(amount, confirmedAt)`|PG·PAYMENT_PENDING, amount=total_amount. paid_amount·CONFIRMED·최초 시각 함께 기록. 기존 W6 구현 계약은 3.7이며 W7에서도 유지|
 |`OrderModel.failPg()`|PG·PAYMENT_PENDING. paid_amount=null·PAYMENT_FAILED|
 |`PaymentModel.bindTransaction(key)`|미결합이면 검증한 키 결합, 같은 키면 변경 없음. 다른 키는 recordObservation이 결합 전에 IDENTITY_MISMATCH로 판정하므로(금액 불일치보다 우선) 결합·교체하지 않음. DB unique 위반은 TX 경계에서 처리|
 |`PaymentModel.recordObservation(...)`|식별·금액·종결 판정 결과 반환. 위 복수 거래 → 거래 식별 → 금액 → 종결 판정 순서를 따름. 결제·확인 정보만 변경하고 충돌 근거를 TX 조율자에 반환|

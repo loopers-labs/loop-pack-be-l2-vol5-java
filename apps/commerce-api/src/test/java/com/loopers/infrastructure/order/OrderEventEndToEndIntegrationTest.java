@@ -1,11 +1,13 @@
 package com.loopers.infrastructure.order;
 
+import com.loopers.infrastructure.order.support.W6PreparationContextInitializer;
+import com.loopers.infrastructure.order.support.W6OrderEventKafkaConfig;
+import com.loopers.infrastructure.order.support.W6OrderPublicationProbe;
+import com.loopers.config.OrderConfirmationClockConfig;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.CommerceApiApplication;
-import com.loopers.application.order.OrderPublicationProbe;
 import com.loopers.application.product.ProductFacade;
-import com.loopers.config.OrderEventKafkaConfig;
 import com.loopers.domain.order.OrderConfirmed;
 import com.loopers.domain.payment.PaymentModel;
 import com.loopers.fixture.PgCommands;
@@ -15,21 +17,10 @@ import com.loopers.fixture.pg.CreateOutcome;
 import com.loopers.fixture.pg.PgFixtureServer;
 import com.loopers.fixture.pg.PgOperation;
 import com.loopers.fixture.pg.ResponsePlan;
-import com.loopers.infrastructure.order.OrderEventTestCleanup.Step;
 import com.loopers.testsupport.LocalKafkaTestSupport;
-import com.loopers.utils.DatabaseCleanUp;
-import com.loopers.utils.RedisCleanUp;
 import org.apache.kafka.clients.admin.ConsumerGroupDescription;
-import org.apache.kafka.clients.admin.MemberDescription;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.common.ConsumerGroupState;
 import org.apache.kafka.common.TopicPartition;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
@@ -37,7 +28,6 @@ import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProce
 import org.springframework.beans.factory.support.RootBeanDefinition;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.test.system.CapturedOutput;
-import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.web.servlet.context.ServletWebServerApplicationContext;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.http.HttpEntity;
@@ -47,16 +37,12 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.web.client.RestTemplate;
 
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -78,7 +64,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
 /**
- * C10: 실제 주문 API·로컬 PG fixture·결과 적용 TX·실제 Kafka adapter → 공유 로컬 Docker Kafka → 별도 JVM 의 streamer bootJar listener →
+ * W6 조립 연결(설계 W7.4-4). 제품에서 직접 발행 조립이 빠졌으므로 API 컨텍스트에 W6 준비 컨텍스트 초기화기를 붙여 원래 기대·자원 수명을
+ * 그대로 유지한다. 최종 전환(O5/O10 발행 전용, C10 의 O11 흡수)은 후속 단위이며 이 단위에서는 실행하지 않는다.
+ *
+ * <p>C10: 실제 주문 API·로컬 PG fixture·결과 적용 TX·실제 Kafka adapter → 공유 로컬 Docker Kafka → 별도 JVM 의 streamer bootJar listener →
  * 같은 테스트 MySQL 의 구매 테이블까지 연결한다(소비 설계 7절 「종단 검증의 앱 경계와 자료 보존」).
  *
  * <p>한 재현 안에서 두 사건을 남긴다. 미발행 사건은 commit 뒤 beforeSend 에 통제 실패를 주입한 것이며 OS 강제 종료가 아니다.
@@ -86,10 +75,12 @@ import static org.junit.jupiter.api.Assertions.assertAll;
  * DB 는 기존 API 테스트 MySQL fixture 의 기본 DB 를 쓴다(발행 검증 전용 스키마 예외를 쓰지 않는다). 부모 API 가 먼저 create 로 스키마를
  * 준비하고, 자식 streamer 는 자기 두 테이블만 create 한다. 자식은 두 사건이 끝날 때까지 한 번만 띄운다.
  * 정리는 자식 JVM → API 컨텍스트(테스트 데이터 정리 포함) → PG fixture → 구매 테이블 → Kafka 소유 group·topic 순으로 모두 시도한다.
+ *
+ * <p>구현 07(설계 W7.4-4 C10 이관): 이 파일은 독립 JUnit 진입(@Test·@BeforeAll/@AfterAll)을 W6OutboxRecoveryEndToEndIntegrationTest(O11)로 옮긴
+ * 지원 코드다. W6 준비 API 기동·A/B 준비·관찰·assertUnpublished/assertConsumedOnce 의 기대는 그대로이며, O11 이 자원 수명을 소유하고
+ * 복구 전에 이 검사를 모두 실행한다. 바뀐 것은 진입점(attach·bootW6Api·startStreamerAndAssertReady·reproduceUnpublishedAndConsumedEvents)과
+ * 자식 기동의 소유 표시(05a 의 launchChild 사용)뿐이다. 과거 C10 실행 기록은 그 시점 결과다.
  */
-@Timeout(300)
-@ExtendWith(OutputCaptureExtension.class)
-@DisplayName("C10: 실제 PG 확정 → API commit → Kafka → 별도 JVM streamer listener → 구매 활동 DB 를 연결하고, commit 뒤 미발행과 정상 소비를 재현한다.")
 class OrderEventEndToEndIntegrationTest {
 
     private static final Duration DEADLINE = Duration.ofSeconds(60);
@@ -102,8 +93,7 @@ class OrderEventEndToEndIntegrationTest {
     private static LocalKafkaTestSupport kafka;
     private static PgFixtureServer pg;
     private static ConfigurableApplicationContext api;
-    private static Process streamer;
-    private static Path streamerLog;
+    private static OrderActivityStreamerChild streamer;
     private static JdbcTemplate fresh;
     private static String topic;
     private static String group;
@@ -113,55 +103,28 @@ class OrderEventEndToEndIntegrationTest {
 
     private final RestTemplate http = client();
 
-    @BeforeAll
-    static void prepare() throws Exception {
-        kafka = LocalKafkaTestSupport.connect();
-        System.out.println("[C10 KAFKA] bootstrap=" + kafka.bootstrapServers() + " runId=" + kafka.runId() + " broker=" + kafka.brokerInfo());
-        topic = kafka.createTopic("order-events-c10");
-        group = kafka.ownGroup("purchase-activity-c10");
-        pg = PgFixtureServer.start();
+    /** O11 이 만든 소유 자원을 연결한다. 기존 @BeforeAll 의 연결·준비 순서는 O11 이 같은 의미로 수행한다. */
+    static void attach(LocalKafkaTestSupport ownedKafka, String ownedTopic, String ownedGroup, PgFixtureServer ownedPg,
+                       JdbcTemplate ownedFresh) {
+        kafka = ownedKafka;
+        topic = ownedTopic;
+        group = ownedGroup;
+        pg = ownedPg;
+        fresh = ownedFresh;
+    }
+
+    /** 기존 C10 의 W6 준비 API(W6 초기화기·고정 확정 Clock·beforeSend probe, ddl-auto=create)를 띄운다. */
+    static ConfigurableApplicationContext bootW6Api() throws Exception {
         api = bootApi();
-        String url = System.getProperty("datasource.mysql-jpa.main.jdbc-url");
-        fresh = new JdbcTemplate(new DriverManagerDataSource(url, System.getProperty("datasource.mysql-jpa.main.username"),
-            System.getProperty("datasource.mysql-jpa.main.password")));
+        return api;
     }
 
-    @AfterAll
-    static void releaseResources() {
-        OrderEventTestCleanup.runAll(List.of(
-            new Step("streamer 자식 JVM 종료", OrderEventEndToEndIntegrationTest::stopStreamer),
-            new Step("API 테스트 데이터 정리·컨텍스트 종료", () -> {
-                if (api != null) {
-                    try {
-                        api.getBean(DatabaseCleanUp.class).truncateAllTables();
-                        api.getBean(RedisCleanUp.class).truncateAll();
-                    } finally {
-                        api.close();
-                    }
-                }
-            }),
-            new Step("PG fixture 종료", () -> {
-                if (pg != null) {
-                    pg.close();
-                }
-            }),
-            // 자식이 같은 DB 에 만든 두 테이블을 지워 API 테스트 DB 를 API Entity 테이블만 남긴 상태로 돌린다.
-            new Step("구매 테이블 삭제", () -> {
-                if (fresh != null) {
-                    PURCHASE_TABLES.forEach(table -> fresh.execute("DROP TABLE IF EXISTS " + table));
-                }
-            }),
-            new Step("Kafka 소유 topic·group 정리", () -> {
-                if (kafka != null) {
-                    kafka.close();
-                }
-            })));
+    static OrderActivityStreamerChild streamer() {
+        return streamer;
     }
 
-    @DisplayName("한 streamer JVM 에서 미발행 사건(broker·구매 활동 없음)과 정상 사건(삭제 상품 포함, APPLIED·offset 진행)을 남긴다.")
-    @Test
-    void reproducesUnpublishedAndConsumedEvents(CapturedOutput output) throws Exception {
-        startStreamerAndAssertReady();
+    /** 원래 C10 @Test 본문에서 자식 기동을 뺀 나머지. 모든 기대를 실행한 뒤 O11 의 복구 기준을 돌려준다. */
+    C10Cases reproduceUnpublishedAndConsumedEvents(CapturedOutput output) throws Exception {
         warmUpProducer();
         UnpublishedCase missed = confirmWithFailureBeforeSend(output);
         ConsumedCase consumed = confirmWithProductDeletedBeforeSend();
@@ -173,6 +136,11 @@ class OrderEventEndToEndIntegrationTest {
             () -> assertUnpublished(output, missed, broker),
             () -> assertConsumedOnce(output, consumed, broker, purchase)
         );
+        return new C10Cases(missed.order(), consumed.order(), consumed.deletedProduct(), broker.record());
+    }
+
+    /** O11 이 복구 단계에 쓰는 C10 결과: 미발행 A·소비된 B·B 에서 삭제한 상품·B 의 최초 record. */
+    record C10Cases(Long unpublished, Long consumed, Long deletedProduct, ConsumerRecord<String, String> consumedRecord) {
     }
 
     /** A 처리 직후의 관찰. 고정 구간의 시작 offset 도 여기서 정한다. */
@@ -193,12 +161,24 @@ class OrderEventEndToEndIntegrationTest {
                                        Map<String, Object> facts) {
     }
 
-    /** API 스키마가 먼저 있고, 자식은 자기 두 테이블만 만든 뒤 listener 가 두 partition 을 배정받아야 주문을 시작한다. */
-    private static void startStreamerAndAssertReady() throws IOException {
+    /**
+     * API 스키마가 먼저 있고, 자식은 자기 두 테이블만 만든 뒤 listener 가 두 partition 을 배정받아야 주문을 시작한다.
+     * 구매 테이블 부재 확인과 소유 표시는 05a 의 launchChild 가 기동 전에 한다(기동·준비 실패에도 소유가 남음).
+     */
+    static void startStreamerAndAssertReady(OrderOutboxE2eLifecycleSupport.Ownership ownership) throws Exception {
         Map<String, String> apiTablesBefore = tableCreateTimes();
-        assertThat(apiTablesBefore.keySet()).as("자식 기동 전 구매 테이블 없음").doesNotContainAnyElementsOf(PURCHASE_TABLES);
-        startStreamer();
-        awaitStreamerReady();
+        OrderOutboxE2eLifecycleSupport.launchChild(ownership, apiTablesBefore.keySet(),
+            new OrderOutboxE2eLifecycleSupport.ChildLaunch() {
+                @Override
+                public void start() throws Exception {
+                    startStreamer();
+                }
+
+                @Override
+                public void awaitReady() {
+                    awaitStreamerReady();
+                }
+            });
         Map<String, String> tablesAfter = tableCreateTimes();
         Map<String, String> apiTablesAfter = tablesAfter.entrySet().stream().filter(entry -> !PURCHASE_TABLES.contains(entry.getKey()))
             .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
@@ -353,99 +333,25 @@ class OrderEventEndToEndIntegrationTest {
 
     // ---------------------------------------------------------------- 자식 streamer JVM
 
-    /**
-     * streamer bootJar 를 자식 JVM 으로 띄운다. 접속값은 부모 fixture 의 실제 값을 명시적으로 넘기고 개발 기본값으로 가지 않게 한다.
-     * DB 비밀번호는 명령줄 대신 환경 변수로 넘겨 명령 출력에 남기지 않는다. 출력은 파일로 받아 파이프가 막히지 않게 한다.
-     */
+    // 자식 JVM 의 기동 인자·기동 완료·배정·종료는 OrderActivityStreamerChild 로 옮겼다(구현 05 의 기계적 공유). 대기 한도는 기존 60초다.
     private static void startStreamer() throws IOException {
-        Path jar = Path.of(System.getProperty("c10.streamer.boot-jar", ""));
-        assertThat(Files.isRegularFile(jar)).as("streamer bootJar 준비(:apps:commerce-streamer:bootJar)").isTrue();
-        Path logDir = Path.of("build", "c10");
-        Files.createDirectories(logDir);
-        streamerLog = logDir.resolve("streamer-" + kafka.runId() + ".log");
-        List<String> args = List.of(
-            "--spring.profiles.active=test",
-            "--server.port=0",
-            "--management.server.port=0",
-            "--spring.jpa.hibernate.ddl-auto=create",
-            "--datasource.mysql-jpa.main.jdbc-url=" + System.getProperty("datasource.mysql-jpa.main.jdbc-url"),
-            "--datasource.mysql-jpa.main.username=" + System.getProperty("datasource.mysql-jpa.main.username"),
-            "--datasource.redis.database=" + System.getProperty("datasource.redis.database"),
-            "--datasource.redis.master.host=" + System.getProperty("datasource.redis.master.host"),
-            "--datasource.redis.master.port=" + System.getProperty("datasource.redis.master.port"),
-            "--datasource.redis.replicas[0].host=" + System.getProperty("datasource.redis.replicas[0].host"),
-            "--datasource.redis.replicas[0].port=" + System.getProperty("datasource.redis.replicas[0].port"),
-            "--spring.kafka.bootstrap-servers=" + kafka.bootstrapServers(),
-            "--spring.kafka.admin.properties.bootstrap.servers=" + kafka.bootstrapServers(),
-            "--commerce.order-activity.topic=" + topic,
-            "--commerce.order-activity.group-id=" + group,
-            "--demo-kafka.enabled=false");
-        assertThat(args).as("부모 fixture 접속값이 모두 있어야 한다").noneMatch(arg -> arg.endsWith("=null"));
-        List<String> command = new ArrayList<>(List.of(Path.of(System.getProperty("java.home"), "bin", "java").toString(), "-jar", jar.toString()));
-        command.addAll(args);
-        ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(streamerLog.toFile());
-        builder.environment().put("DATASOURCE_MYSQLJPA_MAIN_PASSWORD", System.getProperty("datasource.mysql-jpa.main.password"));
-        System.out.println("[C10 CHILD] jar=" + jar.getFileName() + " log=" + streamerLog.toAbsolutePath() + " args=" + args
-            + " env=[DATASOURCE_MYSQLJPA_MAIN_PASSWORD=(hidden)]");
-        streamer = builder.start();
+        streamer = OrderActivityStreamerChild.start(kafka, topic, group, "C10");
     }
 
-    /** Started 로그만 보지 않는다. 프로세스 생존·기동 완료를 본 뒤 listener 배정은 broker 에서 따로 확인한다. */
     private static void awaitStreamerReady() {
-        await("streamer 자식 기동 완료", () -> {
-            if (!streamer.isAlive()) {
-                throw new AssertionError("streamer 자식이 기동 중 종료됐습니다. exit=" + streamer.exitValue() + "\n" + tail(streamerOutput()));
-            }
-            return streamerOutput().contains("Started CommerceStreamerApplication");
-        });
+        streamer.awaitReady(DEADLINE);
     }
 
-    /** broker 가 본 group 이 STABLE 이고 자식의 listener member 하나가 업무 topic 의 두 partition 을 모두 배정받을 때까지 기다린다. */
     private static ConsumerGroupDescription awaitListenerAssignment() {
-        Set<TopicPartition> all = Set.of(new TopicPartition(topic, 0), new TopicPartition(topic, 1));
-        await("listener group 참여·partition 배정", () -> {
-            ConsumerGroupDescription description = kafka.describeGroup(group);
-            return description.state() == ConsumerGroupState.STABLE && description.members().size() == 1
-                && description.members().iterator().next().clientId().startsWith("commerce-streamer-")
-                && description.members().iterator().next().assignment().topicPartitions().equals(all);
-        });
-        return kafka.describeGroup(group);
-    }
-
-    /** SIGTERM 으로 정상 종료를 요청하고 기다린다. 시간 안에 끝나지 않을 때만 강제 종료하며 그 사실을 남긴다. */
-    private static void stopStreamer() throws InterruptedException {
-        if (streamer == null) {
-            return;
-        }
-        streamer.destroy();
-        boolean exited = streamer.waitFor(DEADLINE.toSeconds(), TimeUnit.SECONDS);
-        if (!exited) {
-            streamer.destroyForcibly();
-            streamer.waitFor(10, TimeUnit.SECONDS);
-        }
-        System.out.println("[C10 CHILD STOP] graceful=" + exited + " exit=" + (streamer.isAlive() ? "alive" : streamer.exitValue())
-            + " stoppedLog=" + streamerOutput().contains(group + ": Consumer stopped"));
-        if (!exited) {
-            throw new IllegalStateException("streamer 자식이 정상 종료 deadline 안에 끝나지 않아 강제 종료했습니다.");
-        }
-        await("자식 종료 뒤 group member 해제", () -> kafka.describeGroup(group).members().isEmpty());
+        return streamer.awaitAssignment(DEADLINE);
     }
 
     private static String streamerOutput() {
-        try {
-            return streamerLog == null || !Files.exists(streamerLog) ? "" : Files.readString(streamerLog, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new IllegalStateException(e);
-        }
-    }
-
-    private static String tail(String text) {
-        return text.length() <= 4_000 ? text : text.substring(text.length() - 4_000);
+        return streamer == null ? "" : streamer.output();
     }
 
     private static String describe(ConsumerGroupDescription description) {
-        MemberDescription member = description.members().iterator().next();
-        return description.state() + " clientId=" + member.clientId() + " assignment=" + member.assignment().topicPartitions();
+        return OrderActivityStreamerChild.describe(description);
     }
 
     // ---------------------------------------------------------------- API 컨텍스트·입력
@@ -457,7 +363,7 @@ class OrderEventEndToEndIntegrationTest {
             port = socket.getLocalPort();
         }
         return new SpringApplicationBuilder(CommerceApiApplication.class).profiles("test")
-            .initializers(context -> ((BeanDefinitionRegistry) context.getBeanFactory()).registerBeanDefinition(
+            .initializers(new W6PreparationContextInitializer(), context -> ((BeanDefinitionRegistry) context.getBeanFactory()).registerBeanDefinition(
                 "orderEventEndToEndTestReplacer", new RootBeanDefinition(Replacer.class, Replacer::new)))
             .run("--server.port=" + port, "--management.server.port=0", "--spring.jpa.hibernate.ddl-auto=create",
                 "--commerce.pg.base-url=" + pg.baseUrl(),
@@ -472,8 +378,8 @@ class OrderEventEndToEndIntegrationTest {
 
         @Override
         public void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) throws BeansException {
-            replace(registry, OrderEventKafkaConfig.ORDER_CONFIRMATION_CLOCK, new RootBeanDefinition(Clock.class, () -> FIXED_CLOCK));
-            replace(registry, "noOpOrderPublicationProbe", new RootBeanDefinition(OrderPublicationProbe.class, () -> PROBE));
+            replace(registry, OrderConfirmationClockConfig.ORDER_CONFIRMATION_CLOCK, new RootBeanDefinition(Clock.class, () -> FIXED_CLOCK));
+            replace(registry, "noOpOrderPublicationProbe", new RootBeanDefinition(W6OrderPublicationProbe.class, () -> PROBE));
         }
 
         private static void replace(BeanDefinitionRegistry registry, String name, RootBeanDefinition definition) {
@@ -490,7 +396,7 @@ class OrderEventEndToEndIntegrationTest {
     }
 
     /** 미발행 대상은 beforeSend 에서 통제 실패, 정상 대상은 테스트가 풀 때까지 세운다. 다른 주문은 통과한다. */
-    private static final class C10Probe implements OrderPublicationProbe {
+    private static final class C10Probe implements W6OrderPublicationProbe {
 
         private final CountDownLatch reached = new CountDownLatch(1);
         private final CountDownLatch released = new CountDownLatch(1);
@@ -535,12 +441,12 @@ class OrderEventEndToEndIntegrationTest {
     private static void warmUpProducer() throws Exception {
         String prep = kafka.createTopic("order-events-c10-prep");
         KafkaTemplate<String, Object> template =
-            (KafkaTemplate<String, Object>) api.getBean(OrderEventKafkaConfig.ORDER_EVENT_KAFKA_TEMPLATE);
+            (KafkaTemplate<String, Object>) api.getBean(W6OrderEventKafkaConfig.ORDER_EVENT_KAFKA_TEMPLATE);
         assertThat(template.send(prep, "warm-up", "warm-up").get(30, TimeUnit.SECONDS).getRecordMetadata().topic()).isEqualTo(prep);
     }
 
     private static double sendTotal() {
-        KafkaTemplate<?, ?> template = (KafkaTemplate<?, ?>) api.getBean(OrderEventKafkaConfig.ORDER_EVENT_KAFKA_TEMPLATE);
+        KafkaTemplate<?, ?> template = (KafkaTemplate<?, ?>) api.getBean(W6OrderEventKafkaConfig.ORDER_EVENT_KAFKA_TEMPLATE);
         return template.metrics().entrySet().stream()
             .filter(entry -> entry.getKey().group().equals("producer-metrics") && entry.getKey().name().equals("record-send-total"))
             .mapToDouble(entry -> ((Number) entry.getValue().metricValue()).doubleValue())

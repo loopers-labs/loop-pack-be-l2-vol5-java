@@ -196,6 +196,8 @@ class PaymentRecoveryFlowIntegrationTest extends PaymentHttpTestSupport {
             assertThat(jdbc.queryForMap("SELECT code, payment_id FROM payment_conflict"))
                 .containsEntry("code", "TRANSACTION_ALREADY_BOUND").containsEntry("payment_id", payment(other).get("id"));
             assertThat(histories(other, "ORDER_RELEASE")).isZero();
+            // W7: 이긴 주문만 같은 TX 에 Outbox 한 행을 남긴다. 진 주문의 unique 위반은 rollback 뒤 별도 충돌 기록 TX 이며 Outbox 를 만들지 않는다.
+            assertThat(jdbc.queryForList("SELECT order_id FROM order_confirmed_outbox", Long.class)).containsExactly(order);
         } finally {
             release.countDown();
         }

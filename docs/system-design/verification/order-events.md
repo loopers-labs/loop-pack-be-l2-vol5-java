@@ -1,5 +1,20 @@
 # 주문 확정 이벤트 구현·실행 기록
 
+**W7 읽기 구분:** 아래 본문과 명령/관찰값은 W6 당시 revision·실행 조건의 이력이다. W7 전환 뒤에는 C10 파일을 O11의 준비/검증 지원 코드로 보존하고 독립 @Test를 옮기므로, 아래 C10 이름의 필터를 현재 W7 재현 명령으로 사용하지 않는다. 기존 broker 테스트도 W7 발행 전용 O5/O10으로 역할이 바뀐다. 과거 결과·수치·본문은 그대로 보존한다.
+
+W7 재현 진입점은 다음과 같다. 2026-11-05 최종 실행 결과·O-ID별 근거·한계는 문서 끝 [W7 Outbox 실행 근거](#w7-outbox-실행-근거)에 있다.
+
+~~~bash
+# 기본 테스트 DB·실제 streamer: 같은 주문 O6→O7, 별도 주문 O9
+./gradlew :apps:commerce-api:test --tests '*OrderOutboxDeliveryEndToEndIntegrationTest'
+# 발행 전용 임시 스키마: O5/O10
+./gradlew :apps:commerce-api:test --tests '*OrderEventKafkaBrokerIntegrationTest'
+# 새 worker·빈 DB의 W6 두 상태 준비 → 같은 상태의 W7 복구 O11
+./gradlew :apps:commerce-api:w6OutboxRecoveryTest
+~~~
+
+현재 계약·자원·증거 기준은 [발행 W7.4](../features/order-events/publication.md), 선택/보완 이유는 [A.40·A.41](../decisions/order-events.md)을 따른다. 위 명령 자체나 이 안내는 통과 근거가 아니며, 실행 근거는 W7 절의 기록이다.
+
 2026-10-29 승인 설계의 구현과 단위별 실행 결과를 정리한다. 계약의 원본은 [이벤트 계약](../features/order-events/README.md)·[발행 설계](../features/order-events/publication.md)·[소비 설계](../features/order-events/consumption.md)이며, 이 문서는 실행 조건·관찰값·한계를 보존한다.
 
 ## 범위와 근거의 시점
@@ -196,3 +211,97 @@ API test는 streamer bootJar 준비에 의존하고 실제 산출물 경로를 �
 - rebalance 중 commit 보류, ACK 반환 뒤 재전달, commit 결과 불명, 실제 deadlock·연결 장애는 재현하지 않았다. `uk_poc_order` 경쟁도 실제 관찰 없이 분류기 단위 검증만 있다.
 - 전체 streamer 앱의 test 프로필·demo off 기동은 C10에서 확인했다. 일반 프로필에서 demo on으로 전체 앱을 기동한 결과는 없다(기본 bean 등록 조건만 별도 단위 검증).
 - 직접 발행의 DB→broker 공백은 남아 있고 미발행 A를 자동 복구하지 않는다. Outbox·랭킹 API·자동 재발행·DLQ는 이번 구현에 추가하지 않았다.
+
+## W7 Outbox 실행 근거
+
+이 절은 W7 Transactional Outbox 구현(2026-11-03~05)의 현재 실행 근거다. 위 W6 절의 과거 결과·수치는 그대로 두며, 여기의 수치는 아래 명시한 최종 실행에서만 나온 값이다. 계약·자원·증거 기준은 [발행 W7.2~W7.4](../features/order-events/publication.md)를 따른다.
+
+### 실행 환경과 명령
+
+- 코드: `volume-7` HEAD `cb6c39c`에 최종 검증 보강(테스트 4개 파일·API test heap 설정)을 더한 커밋 전 작업 트리에서 실행했다. 이미 커밋된 revision을 새로 checkout해 실행한 결과로 표현하지 않는다.
+- JDK 21.0.12, Gradle 8.13, Spring Boot 3.4.4·Spring Context 6.2.5·Spring Kafka 3.3.4·Kafka clients 3.8.1·Hibernate ORM 6.6.11.
+- 자원: 기존 MySQL 8.0·Redis Testcontainers fixture, 공유 로컬 Kafka(`localhost:19092`, broker 1대, `min.insync.replicas=1`, 기본 복제 계수 1). 실행별 topic·group·임시 스키마만 만들고 정리한다. 개발 DB와 broker 전역 설정은 사용·변경하지 않는다.
+
+~~~bash
+./gradlew :apps:commerce-streamer:check --rerun-tasks --max-workers=1
+./gradlew :apps:commerce-api:check --rerun-tasks --max-workers=1
+~~~
+
+API `check`는 일반 `test`, 전용 `w6OutboxRecoveryTest`(O11, 새 worker JVM·빈 fixture DB), Checkstyle main/test를 실행한다. 일반 `test`는 O11 클래스 하나만 제외하며 O11을 일반 test filter로 찾지 않는다. `--rerun-tasks`로 모든 작업을 실제 실행했고 두 실행은 직렬이다.
+
+|대상|결과(2026-11-05)|
+|---|---|
+|commerce-streamer check|test 88건(XML 16개) skip·failure·error 0, ArchUnit 1, Checkstyle main 22·test 15 파일 오류 0|
+|commerce-api check|일반 test 1029건(XML 234개) + w6OutboxRecoveryTest 1건, 합계 1030건 skip·failure·error 0, ArchUnit 3, Checkstyle main 193·test 166 파일 오류 0. JaCoCo exec는 test·w6OutboxRecoveryTest 작업별로 분리|
+
+후속 테스트 지원 코드 리팩토링(09, 2026-11-05)은 `7b6437f`에 코드 이동을 더한 작업 트리에서 검증했다. 소유권/기동/정리 판단을 `OrderOutboxE2eLifecycleSupport`로 본문 변경 없이 옮겼고 제품 코드는 바꾸지 않았다. 정리 회귀 5·05 전달 E2E 1·ArchUnit 3·전용 O11 1, 합계 10건에서 skip·failure·error 0, test Checkstyle 167개 파일 오류 0과 두 E2E의 `kept=[]`를 확인했다. 위 전체 check는 08-3 시점 결과이며, 리팩토링 뒤 전체 check를 다시 실행한 것은 아니다.
+
+같은 날 첫 API 전체 실행은 실패했다. 실패 원인과 수정은 다음과 같다. 유효 기대·시간 한도는 바꾸지 않았다.
+
+- 테스트 간 간섭: BrandFacadeIntegrationTest가 실행 증거용으로 켠 `org.hibernate.orm.jdbc.bind=TRACE`가 Logback 전역에 남았다. 그 결과 뒤 클래스의 Outbox insert 바인딩 값(payload)이 출력돼, OrderConfirmedSendFailureIntegrationTest의 "로그에 payload 없음" 단언이 실패했다. 제품 relay 로그의 문제는 아니다. 해당 클래스가 끝나면 logger 수준을 기본으로 되돌리게 했다. TRACE 증거 로그와 SendFailure 단언은 그대로다.
+- 메모리: maxHeapSize가 없어 test worker heap이 512MB였다. 같은 실행에서 OutOfMemoryError와 lifecycle ON의 20초 대기 초과를 관찰했다. 캐시된 Spring context(최대 32)의 메모리 부담과 GC 지연을 원인으로 추론했지만 heap dump·GC 분석으로 인과관계를 확정하지는 않았다. API `test`·`w6OutboxRecoveryTest`의 heap을 1g로 지정한 뒤 같은 기대·한도로 통과했다.
+
+### 원문 요구별 근거(O1~O14)
+
+테스트 파일 기준 경로는 `apps/commerce-api/src/test/java/com/loopers/`다. 모든 테스트는 위 최종 실행에 포함됐다.
+
+|ID|대표 테스트|확인한 경계|
+|---|---|---|
+|O1|domain/order/OrderOutboxMessageTest·OrderConfirmedOutboxModelTest, infrastructure/order/JacksonOrderConfirmedMessageEncoderTest·JacksonOrderOutboxMessageVerifierTest|불변 identity·v1 JSON·UTC 마이크로초·엄격한 verifier, 거절 문구에 payload 없음|
+|O2|infrastructure/order/OrderConfirmedOutboxSchemaIntegrationTest·OrderConfirmedOutboxRepositoryIntegrationTest|실제 DDL·명명 unique/CHECK·due 경계·EXPLAIN·uk_oco_event 중복 insert 실패|
+|O3·O4|application/payment/OrderOutboxAtomicityIntegrationTest·OrderConfirmedPublicationHttpIntegrationTest·OrderConfirmedPublicationIntegrationTest 등|최초 확정+예약+Outbox 같은 TX, 실패 시 TX B 전체 rollback, 중복 callback/reconcile에 Outbox 1·비성공 0|
+|O5|config/OrderOutboxKafkaConfigTest·OrderEventKafkaContextTest, infrastructure/order/KafkaOrderOutboxSenderTest·OrderOutboxKafkaWireIntegrationTest|String serializer·비트랜잭션 producer, 실제 broker value=저장 원문 UTF-8, 실제 KafkaAdmin bootstrap|
+|O6·O7·O9 실제|infrastructure/order/OrderOutboxDeliveryEndToEndIntegrationTest|아래 대표 사건|
+|O8·O9 통제|application/order/OrderOutboxRelayIntegrationTest·OrderOutboxRetryPolicyTest|timeout 뒤 늦은 완료 불변, 상태 저장 SQL 실패, 5→10→20→40→60초·10회 BLOCKED·재개|
+|O10|application/order/OrderOutboxExecutionGateTest·OrderOutboxRelayIntegrationTest·OrderOutboxRecoveryIntegrationTest, interfaces/scheduler/OrderOutboxRelaySchedulerLifecycleTest, infrastructure/order/OrderOutboxKafkaWireIntegrationTest·OrderEventKafkaBrokerIntegrationTest|BUSY·STOPPING·interrupt, 실제 context.close의 early shutdown→phase 0→pool -100→producer 순서, phase -100 대기, graceful 중 진행 HTTP 확정, producer close 15초 예산|
+|O11|infrastructure/order/W6OutboxRecoveryEndToEndIntegrationTest|아래 대표 사건|
+|O12|application/order/OrderOutboxRecoveryIntegrationTest|원본 부족·충돌·의미 비교·기존 상태 불변·부분 commit/미시도·입력/gate|
+|O13|API·streamer 전체 check|기존 W5/W6 회귀·Checkstyle·ArchUnit|
+|O14|OrderOutboxRelayIntegrationTest·OrderOutboxDeliveryEndToEndIntegrationTest|아래 O14 절|
+
+### 대표 실제 사건
+
+**신규 전달(O6→O7·O9)** — runId `1105130816-80d19fe0`, 소유 topic `order-outbox-e2e-test-1105130816-80d19fe0-1`(2 partition), 실제 API·로컬 PG fixture·streamer 자식 JVM, 자동 relay OFF.
+
+- D(order 1, `order-confirmed:1`): 확정 commit 뒤 Outbox PENDING 0회. 새 relay R1이 실제 broker에 1@0을 보냈고 성공 metadata 뒤 one-shot probe로 PUBLISHED 저장 전에 멈췄다(PENDING 유지). consumer 결과는 1@0 `APPLIED`, 완료 1·품목 활동 2행이다. 다음 시각 뒤 새 relay R2가 같은 원문을 1@1로 재발행했고 결과는 `ALREADY_PROCESSED`, 구매 효과는 그대로다. 최종 PUBLISHED 시도 2, group committed partition 1=2. PG create 1·조회 0·callback 0.
+- E(order 2, `order-confirmed:2`): 소유 topic의 `min.insync.replicas`를 2로 바꿔 실제 send Future 실패를 1회 만들었다(30,014ms, `SEND_COMPLETION_FAILED:org.springframework.kafka.core.KafkaProducerException`). PENDING·시도 1·다음 시각 +5초, 끝 offset은 그대로였다. 설정 복원(1/DEFAULT_CONFIG) 뒤 같은 행이 0@0으로 전달돼 `APPLIED`, committed partition 0=1이다.
+- 정리 뒤 남긴 자원 없음(`kept=[]`), 전체 44.9초.
+
+**W6 준비 → W7 복구(O11)** — 전용 작업의 새 worker(시작 테이블 0, 테스트 컨테이너 DB), runId `1105131051-97de3d2a`.
+
+- W6 준비: A(order 1)는 확정 commit 뒤 beforeSend 통제 실패로 send 증가 0, broker에 record 없음. B(order 2)는 0@0 `APPLIED`이며 전송 전 상품 3을 삭제했다.
+- 같은 DB·PG·streamer로 W7 API를 update 기동했다. Outbox 테이블만 추가됐다. 명시 복구로 두 행을 만든 뒤 relay가 A를 1@0(`APPLIED`), B를 0@1(`ALREADY_PROCESSED`, 최초 0@0과 다른 위치)로 전달했다.
+- committed partition 0=2·1=1. 복구·전달 동안 PG create 2·조회 0·callback 0 불변. 두 번째 복구는 EXISTS로 아무것도 바꾸지 않았다. 자식 JVM 정상 종료(exit 143).
+
+**종료(O10)**
+
+- 진행 중 HTTP 확정을 결제 TX commit 직전에 세운 채 실제 context.close를 시작했다. HTTP 200 CONFIRMED, close 뒤 새 연결에서 CONFIRMED·SUCCESS·Outbox 1행(PENDING 0회)이었다. 순서는 graceful 완료 → relay 정지 → producer factory 정지다.
+- 실제 broker의 진행 전송 중 close: producer close 15초 예산 소진(15,035ms), 행은 PENDING 시도 1·오류 없음.
+- phase 0 한도를 넘겨 회차가 pool에 남는 통제 장면:
+  - executor가 running이면 phase -100에서 pool의 stop(callback)이 호출되고, 회차가 끝날 때까지 callback이 미뤄진다.
+  - 대기 안에 끝나면 다음 phase로 넘어간다(close 3,030ms, phase 한도 3초).
+  - 끝나지 않으면 Spring이 `Shutdown phase -100 ends with 1 bean still running after timeout of 1000ms: [orderOutboxRelayTaskScheduler]`를 남긴다. close는 relay thread가 남은 채 반환된다.
+  - 두 경우 모두 결과 TX는 없다(PENDING 시도 1).
+
+### O14 보존·관찰
+
+- 운영 SQL은 상태별 건수(`GROUP BY status`), `status='PENDING' ORDER BY created_at, id`의 첫 행, BLOCKED 목록으로 본다. payload는 읽지 않는다.
+- 통제 sender 장면(한 DB): `{BLOCKED=1, PENDING=2, PUBLISHED=1}`.
+  - 가장 오래된 PENDING은 `order-confirmed:702`다. 시도 1, `SEND_COMPLETION_FAILED:java.lang.IllegalStateException`, next_attempt_at은 Outbox Clock 기준 2026-11-04T01:00:05.000001이다. created_at은 감사 시각 2026-11-05T04:04:02.109644다.
+  - BLOCKED는 `order-confirmed:703`(INVALID_OUTBOX_MESSAGE, 시도 1)이다. 로그는 `ORDER_OUTBOX_BLOCKED outboxId=… code=INVALID_OUTBOX_MESSAGE eventId=INVALID`이고, 손상 본문과 원인 message는 출력되지 않았다.
+- 실제 전달 E2E:
+  - E 실패 시점은 `{PENDING=1, PUBLISHED=1}`이고 가장 오래된 PENDING은 `order-confirmed:2`다.
+  - 최종은 `{PUBLISHED=2}`이며 소비 완료 2행·활동 4행이 그대로 남았다.
+  - 시각은 셋으로 구분한다. 사건 confirmedAt, Outbox Clock(next_attempt_at·published_at), 감사 시각(created_at)이다. 실제 경과 시간은 별도로 기록했다.
+- Kafka 보존(실행 소유 topic, Admin describeConfigs 읽기, 시작과 끝 동일): `cleanup.policy=delete`, `retention.ms=604800000`(7일), `retention.bytes=-1`, `segment.ms=604800000`, 출처 모두 DEFAULT_CONFIG. retention을 바꾸거나 만료 실험을 하지 않았다.
+- 제품은 PENDING·BLOCKED·PUBLISHED Outbox 행과 소비 완료(dedup)·활동 행을 자동 삭제하지 않는다. API의 Outbox·relay·복구 코드와 streamer main에 삭제·purge·정리 스케줄이 없고, 앱 설정에 retention 지정도 없다. 테스트의 DROP·TRUNCATE·topic 삭제는 소유 자원 정리다. retention 밖 record·무한 보존 용량은 W7.3-7대로 자동 해결하지 않는다.
+- broker ACK·PUBLISHED(receipt 위치), consumer 처리 로그, group committed offset, DB 효과는 각각 따로 관찰한 근거다.
+
+### 남은 한계
+
+- 실행하지 않은 장애: 복구의 RECOVERY_DB_FAILURE 경로, commit 응답 불명(결과를 모른 채 끊긴 commit), 실제 deadlock·연결 장애. 분류 코드만 구현했고, 응답 불명을 rollback으로 단정하지 않는다.
+- phase -100 장면은 통제 sender가 interrupt를 무시하게 만든 것이다. 실제 client의 정체 조건을 재현하지 않았고 앱 전체 종료 시간을 보장하지 않는다.
+- 단일 broker·복제 계수 1이라 acks=all이 복제 장애 내구성을 입증하지 않는다. relay 단일 실행은 한 API 프로세스 안의 gate만 보장한다.
+- BLOCKED 재개는 유지된 context를 소유한 테스트 도구로만 호출할 수 있다(공개 관리 HTTP·CLI 없음).
+- heap 1g는 현재 테스트 수에서 통과한 값이다. 실행 시간은 1회 관찰이며 성능 근거가 아니다.
+- PR·기술 글·WIL·제출은 이 기록의 범위가 아니다.

@@ -1,114 +1,95 @@
 package com.loopers.application.payment;
 
-import com.loopers.application.order.OrderConfirmedEventListener;
-import com.loopers.domain.order.OrderConfirmed;
-import com.loopers.domain.order.OrderEventPublisher;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.pgsimulator.PaymentStatus;
-import com.loopers.testsupport.CommittedOrderObserver;
-import com.loopers.testsupport.RecordingOrderEventPublisher;
-import jakarta.persistence.EntityManager;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.ApplicationContext;
 import org.springframework.http.ResponseEntity;
-import org.springframework.test.util.ReflectionTestUtils;
-import org.springframework.transaction.PlatformTransactionManager;
 
-import java.util.concurrent.atomic.AtomicLong;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Map;
 import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
 /**
- * 실제 HTTP 요청·로컬 PG fixture·결과 적용 TX 를 거친 최초 확정 뒤의 포트 호출을 확인한다(P2 의 HTTP 경로).
- * 포트는 기록용 fake 이므로 broker 기록 근거가 아니며, 관찰은 포트 호출 시점에 다른 스레드·연결의 새 TX 로 한다.
+ * W7 전환(설계 W7.4-4, O3 의 HTTP 경로). 실제 HTTP 요청·로컬 PG fixture·결과 적용 TX 를 거친 최초 확정 뒤, 응답 이후 새 연결의 SQL 로
+ * 주문 확정과 같은 사건의 Outbox PENDING 한 행이 commit 됐는지 확인한다. 자동 relay 는 아직 없으며 broker 기록 근거가 아니다.
  */
 @Timeout(20)
-@DisplayName("주문 확정·콜백·대사 HTTP 로 처음 확정하면 commit 뒤 발행 포트가 한 번 불리고 그때 다른 연결에서 확정이 보인다.")
+@DisplayName("주문 확정·콜백·대사 HTTP 로 처음 확정하면 확정과 Outbox 한 행이 함께 commit 되고, 반복 요청은 둘을 바꾸지 않는다.")
 class OrderConfirmedPublicationHttpIntegrationTest extends PaymentHttpTestSupport {
 
-    @Autowired private PlatformTransactionManager transactionManager;
-    @Autowired private EntityManager entityManager;
-    @Autowired private ApplicationContext applicationContext;
-    @Autowired private OrderConfirmedEventListener listener;
+    @Autowired private ObjectMapper objectMapper;
 
-    private CommittedOrderObserver observer;
-    private final AtomicLong originalConnection = new AtomicLong(-1);
-
-    @BeforeEach
-    void observePublication() {
-        observer = new CommittedOrderObserver(transactionManager, entityManager);
-        recordedOrderEvents().onPublish(observer::observe);
-        probe.on(PaymentTransactionProbe.Point.BEFORE_COMMIT, "applyObservation", order,
-            () -> originalConnection.set(CommittedOrderObserver.currentConnectionId(entityManager)));
+    private List<Map<String, Object>> outbox() {
+        return jdbc.queryForList("SELECT * FROM order_confirmed_outbox ORDER BY id");
     }
 
-    @AfterEach
-    void closeObserver() throws InterruptedException {
-        observer.close();
+    private Instant storedConfirmedAt() {
+        String text = jdbc.queryForObject(
+            "SELECT DATE_FORMAT(confirmed_at, '%Y-%m-%dT%H:%i:%s.%f') FROM orders WHERE id = ?", String.class, order);
+        return LocalDateTime.parse(text).toInstant(ZoneOffset.UTC);
     }
 
-    private void assertPublishedOnceAfterCommit(ResponseEntity<?> response) {
-        OrderConfirmed event = recordedOrderEvents().published().get(0);
-        CommittedOrderObserver.Observation seen = observer.observations().get(0);
+    private void assertRecordedOnceWithConfirmation(ResponseEntity<?> response, Supplier<ResponseEntity<?>> repeat)
+        throws Exception {
+        List<Map<String, Object>> rows = outbox();
+        JsonNode payload = objectMapper.readTree((String) rows.get(0).get("payload"));
+        Instant confirmedAt = storedConfirmedAt();
+        ResponseEntity<?> repeated = repeat.get();
         assertAll(
             () -> assertThat(response.getStatusCode().value()).isEqualTo(200),
             () -> assertThat(detail(order).path("status").asText()).isEqualTo("CONFIRMED"),
-            () -> assertThat(recordedOrderEvents().published()).hasSize(1),
-            () -> assertThat(event.orderId()).isEqualTo(order),
-            () -> assertThat(event.items()).singleElement().satisfies(item -> {
-                assertThat(item.productId()).isEqualTo(product.getId());
-                assertThat(item.quantity()).isEqualTo(2L);
-            }),
-            () -> assertThat(observer.failures()).isEmpty(),
-            () -> assertThat(seen.orderStatus()).isEqualTo("CONFIRMED"),
-            () -> assertThat(seen.confirmedAt().toInstant()).isEqualTo(event.confirmedAt().toInstant()),
-            () -> assertThat(originalConnection.get()).isPositive(),
-            () -> assertThat(seen.connectionId()).isNotEqualTo(originalConnection.get()),
-            () -> assertThat(seen.observerThread()).isNotEqualTo(seen.callerThread())
+            () -> assertThat(rows).hasSize(1),
+            () -> assertThat(rows.get(0)).containsEntry("event_id", "order-confirmed:" + order)
+                .containsEntry("message_key", Long.toString(order)).containsEntry("status", "PENDING"),
+            () -> assertThat(payload.path("orderId").asLong()).isEqualTo(order),
+            () -> assertThat(Instant.parse(payload.path("confirmedAt").asText())).isEqualTo(confirmedAt),
+            () -> assertThat(payload.path("items").toString())
+                .isEqualTo("[{\"productId\":" + product.getId() + ",\"quantity\":2}]"),
+            () -> assertThat(histories(order, "ORDER_RESERVATION")).isEqualTo(1L),
+            () -> assertThat(repeated.getStatusCode().value()).as("같은 거래 재확인").isEqualTo(200),
+            () -> assertThat(outbox()).as("반복 뒤 Outbox 불변").isEqualTo(rows),
+            () -> assertThat(storedConfirmedAt()).as("반복 뒤 확정 시각 불변").isEqualTo(confirmedAt),
+            () -> assertThat(pg.state().counts().createReceived()).as("PG create 1회").isEqualTo(1)
         );
+        noPointEffect();
     }
 
     private ResponseEntity<?> afterPending(Supplier<ResponseEntity<?>> apply) {
         assertThat(confirm(order).getStatusCode().value()).isEqualTo(202);
         awaitPgIdle();
-        assertThat(recordedOrderEvents().published()).as("대기 중에는 포트 호출 없음").isEmpty();
+        assertThat(outbox()).as("대기 중에는 Outbox 없음").isEmpty();
         pg.setStatus(key(order), PaymentStatus.SUCCESS);
         return apply.get();
     }
 
-    @DisplayName("이 컨텍스트의 발행 포트는 기록용 fake 하나이고, commit 뒤 listener 도 그 fake 를 부른다.")
-    @Test
-    void portIsSingleRecordingFake() {
-        assertAll(
-            () -> assertThat(applicationContext.getBeansOfType(OrderEventPublisher.class)).containsOnlyKeys("kafkaOrderEventPublisher"),
-            () -> assertThat(recordedOrderEvents()).isInstanceOf(RecordingOrderEventPublisher.class),
-            () -> assertThat(ReflectionTestUtils.getField(listener, "publisher")).isSameAs(recordedOrderEvents())
-        );
-    }
-
     @DisplayName("주문 확정 요청이 즉시 SUCCESS 를 받으면")
     @Test
-    void immediateSuccess() {
+    void immediateSuccess() throws Exception {
         success(order);
 
-        assertPublishedOnceAfterCommit(confirm(order));
+        assertRecordedOnceWithConfirmation(confirm(order), () -> reconcile(order));
     }
 
     @DisplayName("대기 뒤 콜백이 권위 조회로 SUCCESS 를 확인하면")
     @Test
-    void callbackSuccess() {
-        assertPublishedOnceAfterCommit(afterPending(() -> callback(order, key(order), "SUCCESS")));
+    void callbackSuccess() throws Exception {
+        assertRecordedOnceWithConfirmation(afterPending(() -> callback(order, key(order), "SUCCESS")),
+            () -> callback(order, key(order), "SUCCESS"));
     }
 
     @DisplayName("대기 뒤 대사가 SUCCESS 를 확인하면")
     @Test
-    void reconcileSuccess() {
-        assertPublishedOnceAfterCommit(afterPending(() -> reconcile(order)));
+    void reconcileSuccess() throws Exception {
+        assertRecordedOnceWithConfirmation(afterPending(() -> reconcile(order)), () -> reconcile(order));
     }
 }

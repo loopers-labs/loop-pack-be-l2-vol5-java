@@ -41,11 +41,13 @@ import com.loopers.utils.DatabaseCleanUp;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.logging.LoggingSystem;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -66,11 +68,21 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 /**
  * 브랜드 일괄 삭제의 실제 bulk SQL 과 바인딩 값을 실행 근거로 남기기 위해
  * 이 테스트 클래스에만 Hibernate 바인딩 로그를 켠다.
+ *
+ * <p>Logback 의 logger 수준은 JVM 전역이라, context 기동 때 켠 TRACE 가 같은 test JVM 의 뒤 클래스에도 남는다(08-3 전체 check 에서
+ * 뒤 테스트의 로그에 Outbox payload 가 바인딩 값으로 찍혔다). 클래스가 끝나면 이 logger 수준을 기본(상속)으로 되돌린다.
  */
 @DisplayName("BrandFacade 는 브랜드를 등록·조회·수정·삭제한다.")
 @ContextConfiguration(initializers = PgFixtureContextInitializer.class)
 @SpringBootTest(properties = "logging.level.org.hibernate.orm.jdbc.bind=TRACE")
 class BrandFacadeIntegrationTest {
+
+    private static final String BIND_LOGGER = "org.hibernate.orm.jdbc.bind";
+
+    @AfterAll
+    static void restoreBindLogLevel() {
+        LoggingSystem.get(BrandFacadeIntegrationTest.class.getClassLoader()).setLogLevel(BIND_LOGGER, null);
+    }
 
     @Autowired
     private PastPointOrderFixture pastPointOrders;

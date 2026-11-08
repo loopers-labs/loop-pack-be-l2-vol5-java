@@ -78,6 +78,11 @@ public class PaymentTxFixture {
             """, orderId);
     }
 
+    /** W7: 이 주문의 Outbox 행 수. 새 연결의 SQL 로 센다. */
+    public long outboxCount(Long orderId) {
+        return jdbcTemplate.queryForObject("SELECT COUNT(*) FROM order_confirmed_outbox WHERE order_id = ?", Long.class, orderId);
+    }
+
     public long stock(Long productId) {
         return jdbcTemplate.queryForObject("SELECT stock_quantity FROM product WHERE id = ?", Long.class, productId);
     }
