@@ -30,6 +30,10 @@ spring:
       - monitoring.yml
       - pg.yml
 
+coupon:
+  admission:
+    capacity: 4 # EXP-015 로컬 측정에서 최대 처리량의 90% 에 처음 닿은 동시 수
+
 springdoc:
   use-fqn: true
   swagger-ui:
@@ -70,3 +74,12 @@ spring:
 springdoc:
   api-docs:
     enabled: false
+---
+spring:
+  config:
+    activate:
+      on-profile: test
+
+coupon:
+  admission:
+    capacity: 3 # EXP-017 은 원문이 C=3 으로 정한 실험이다

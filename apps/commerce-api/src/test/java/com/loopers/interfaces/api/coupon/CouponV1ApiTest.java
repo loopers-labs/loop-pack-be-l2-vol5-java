@@ -1,14 +1,19 @@
 package com.loopers.interfaces.api.coupon;
 
 import com.jayway.jsonpath.JsonPath;
+import com.loopers.config.redis.RedisConfig;
 import com.loopers.utils.DatabaseCleanUp;
+import com.loopers.utils.RedisCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
@@ -17,6 +22,7 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -25,17 +31,23 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class CouponV1ApiTest {
 
     private final MockMvc mvc;
+    private final RedisTemplate<String, String> redis;
     private final DatabaseCleanUp databaseCleanUp;
+    private final RedisCleanUp redisCleanUp;
 
     @Autowired
-    CouponV1ApiTest(MockMvc mvc, DatabaseCleanUp databaseCleanUp) {
+    CouponV1ApiTest(MockMvc mvc, @Qualifier(RedisConfig.REDIS_TEMPLATE_MASTER) RedisTemplate<String, String> redis,
+                    DatabaseCleanUp databaseCleanUp, RedisCleanUp redisCleanUp) {
         this.mvc = mvc;
+        this.redis = redis;
         this.databaseCleanUp = databaseCleanUp;
+        this.redisCleanUp = redisCleanUp;
     }
 
     @AfterEach
     void tearDown() {
         databaseCleanUp.truncateAllTables();
+        redisCleanUp.truncateAll();
     }
 
     private ResultActions openCampaign(String body) throws Exception {
@@ -134,6 +146,20 @@ class CouponV1ApiTest {
             issue(campaignId, 42L)
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.meta.errorCode").value("COUPON_CAMPAIGN_INACTIVE"));
+        }
+
+        @DisplayName("ADM-005: 자리가 없으면 429 와 Retry-After 를 주고 쿠폰을 만들지 않는다")
+        @Test
+        void rejectsWhenNoSlot() throws Exception {
+            long campaignId = openCampaign(5, true);
+            redis.opsForSet().add("coupon:issue:admission:v1", "held-1", "held-2", "held-3");
+
+            issue(campaignId, 42L)
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().exists(HttpHeaders.RETRY_AFTER))
+                .andExpect(jsonPath("$.meta.errorCode").value("COUPON_BUSY"));
+            mvc.perform(get("/api/v1/coupons").header("X-USER-ID", 42L))
+                .andExpect(jsonPath("$.data", hasSize(0)));
         }
 
         @DisplayName("CPN-006: 없는 캠페인은 404 다")

@@ -13,7 +13,9 @@ public enum ErrorType {
     NOT_FOUND(HttpStatus.NOT_FOUND, HttpStatus.NOT_FOUND.getReasonPhrase(), "존재하지 않는 요청입니다."),
     CONFLICT(HttpStatus.CONFLICT, HttpStatus.CONFLICT.getReasonPhrase(), "이미 존재하는 리소스입니다."),
     LOCK_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "LOCK_UNAVAILABLE", "요청이 몰려 처리하지 못했습니다. 잠시 후 다시 시도해 주세요."),
-    PAYMENT_BUSY(HttpStatus.SERVICE_UNAVAILABLE, "PAYMENT_BUSY", "결제 요청이 몰려 받지 못했습니다. 잠시 후 다시 시도해 주세요.");
+    PAYMENT_BUSY(HttpStatus.SERVICE_UNAVAILABLE, "PAYMENT_BUSY", "결제 요청이 몰려 받지 못했습니다. 잠시 후 다시 시도해 주세요."),
+    COUPON_BUSY(HttpStatus.TOO_MANY_REQUESTS, "COUPON_BUSY", "쿠폰 발급 요청이 몰려 받지 못했습니다. 잠시 후 다시 시도해 주세요."),
+    COUPON_ADMISSION_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "COUPON_ADMISSION_UNAVAILABLE", "지금은 쿠폰을 발급할 수 없습니다. 잠시 후 다시 시도해 주세요.");
 
     private final HttpStatus status;
     private final String code;

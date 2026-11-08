@@ -35,12 +35,15 @@ class CouponIssueIntegrationTest {
     private static final long TIMEOUT_SECONDS = 10;
 
     private final CouponFacade couponFacade;
+    private final CouponTransactions couponTransactions;
     private final JdbcTemplate jdbcTemplate;
     private final DatabaseCleanUp databaseCleanUp;
 
     @Autowired
-    CouponIssueIntegrationTest(CouponFacade couponFacade, JdbcTemplate jdbcTemplate, DatabaseCleanUp databaseCleanUp) {
+    CouponIssueIntegrationTest(CouponFacade couponFacade, CouponTransactions couponTransactions,
+                               JdbcTemplate jdbcTemplate, DatabaseCleanUp databaseCleanUp) {
         this.couponFacade = couponFacade;
+        this.couponTransactions = couponTransactions;
         this.jdbcTemplate = jdbcTemplate;
         this.databaseCleanUp = databaseCleanUp;
     }
@@ -90,22 +93,23 @@ class CouponIssueIntegrationTest {
         }
     }
 
-    private String outcome(Long campaignId, Long userId) {
+    private String issueInDb(Long campaignId, Long userId) {
         try {
-            return couponFacade.issue(campaignId, userId, NOW).newlyIssued() ? "ISSUED" : "EXISTING";
+            couponTransactions.issue(campaignId, userId, NOW);
+            return "ISSUED";
         } catch (DomainException e) {
             return e.error().name();
         }
     }
 
-    @DisplayName("EXP-019: 한도 5 에 8 명이 동시에 발급하면 5 명이 받고 3 명은 품절이다")
+    @DisplayName("EXP-019: 한도 5 에 8 명이 동시에 DB 발급에 들어가면 5 명이 받고 3 명은 품절이다")
     @Test
     void quotaHoldsUnderRace() throws Exception {
         Long campaignId = openCampaign(5, true);
         List<Callable<String>> tasks = new ArrayList<>();
         for (long user = 1; user <= 8; user++) {
             long userId = user;
-            tasks.add(() -> outcome(campaignId, userId));
+            tasks.add(() -> issueInDb(campaignId, userId));
         }
 
         List<String> outcomes = runTogether(tasks);

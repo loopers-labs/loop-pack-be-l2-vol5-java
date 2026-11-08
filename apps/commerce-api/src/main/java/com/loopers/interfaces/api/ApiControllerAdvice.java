@@ -164,7 +164,8 @@ public class ApiControllerAdvice {
 
     private ResponseEntity<ApiResponse<?>> failureResponse(ErrorType errorType, String errorMessage) {
         ResponseEntity.BodyBuilder response = ResponseEntity.status(errorType.getStatus());
-        if (errorType.getStatus() == HttpStatus.SERVICE_UNAVAILABLE) {
+        if (errorType.getStatus() == HttpStatus.SERVICE_UNAVAILABLE
+            || errorType.getStatus() == HttpStatus.TOO_MANY_REQUESTS) {
             response.header(HttpHeaders.RETRY_AFTER, RETRY_AFTER_SECONDS);
         }
         return response.body(ApiResponse.fail(errorType.getCode(), errorMessage != null ? errorMessage : errorType.getMessage()));
