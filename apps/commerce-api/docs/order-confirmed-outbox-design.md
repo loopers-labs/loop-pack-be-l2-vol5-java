@@ -104,9 +104,9 @@ TX2  broker 성공 확인 → PUBLISHED
      실패 결과 → PENDING 또는 BLOCKED
 ```
 
-TX1은 먼저 현재 주기 시도가 이미 3회인지 확인해, 결과 저장에 실패했거나 send 전에 중단된 세 번째 시도 뒤에 네 번째 send를 시작하지 않는다. 그다음 시도 횟수를 올리고 `nextAttemptAt`을 최대 대기 예산 이후로 설정한다. 이로써 결과를 기다리는 동안 같은 행을 다시 고르지 않는다. timeout 뒤에도 이전 send가 성공할 수 있으므로 다음 시도는 같은 `eventId`·key·payload를 쓴다. TX2는 `status = PENDING`이고 현재 시도 번호가 일치할 때만 상태를 갱신해 늦은 callback이 다음 시도 결과를 덮지 않게 한다. 늦은 성공 결과가 버려지면 재발행될 수 있다.
+TX1은 먼저 현재 주기 시도가 이미 3회인지 확인해, 결과 저장에 실패했거나 send 전에 중단된 세 번째 시도 뒤에 네 번째 send를 시작하지 않는다. 그다음 시도 횟수를 올리고 `nextAttemptAt`을 최대 대기 예산에 재시도 간격을 더한 시각으로 설정한다. 이로써 결과를 기다리는 동안 같은 행을 다시 고르지 않는다. timeout 뒤에도 이전 send가 성공할 수 있으므로 다음 시도는 같은 `eventId`·key·payload를 쓴다. TX2는 `status = PENDING`이고 현재 시도 번호가 일치할 때만 상태를 갱신해 늦은 callback이 다음 시도 결과를 덮지 않게 한다. 늦은 성공 결과가 버려지면 재발행될 수 있다.
 
-TX1·TX2의 전이는 읽은 엔티티를 저장하지 않고 조건부 UPDATE로 적용한다. 조건은 `status = PENDING`과 읽은 `cycleAttemptCount`이며, TX1은 `nextAttemptAt <= now`도 확인한다. 확인과 갱신 사이에 다른 실행이 먼저 시작하거나 갱신했으면 0행이 되고, TX1은 시도를 시작하지 않으며 TX2는 결과를 적용하지 않는다. bulk UPDATE는 엔티티 수명주기 callback을 거치지 않으므로 `updatedAt`도 쿼리에서 함께 갱신한다. 수동 재시도는 한 번 실행하는 운영 경로라 엔티티 갱신을 유지한다.
+TX1·TX2의 전이는 읽은 엔티티를 저장하지 않고 조건부 UPDATE로 적용한다. 조건은 `status = PENDING`과 읽은 `cycleAttemptCount`이며, 시도 시작은 `nextAttemptAt <= now`도 확인한다. 시도 소진으로 차단하는 경로는 기한이 된 행을 읽은 뒤 시도 번호만 확인한다. 확인과 갱신 사이에 다른 실행이 먼저 시작하거나 갱신했으면 0행이 되고, TX1은 시도를 시작하지 않으며 TX2는 결과를 적용하지 않는다. bulk UPDATE는 엔티티 수명주기 callback을 거치지 않으므로 `updatedAt`도 쿼리에서 함께 갱신한다. 수동 재시도는 한 번 실행하는 운영 경로라 엔티티 갱신을 유지한다.
 
 재시도 가능한 실패가 발생하면 해당 tick의 남은 발행을 멈춘다. 실패 행은 재시도 간격만큼 뒤로 밀리므로 다음 tick에서 다른 대기 행이 먼저 처리된다. 즉시 `BLOCKED`가 된 행은 건너뛰고 다음 대상을 계속 처리한다.
 
@@ -123,7 +123,7 @@ TX1·TX2의 전이는 읽은 엔티티를 저장하지 않고 조건부 UPDATE�
 
 제품 Relay는 제한 시간 동안 결과를 기다리는 `BOUNDED_WAIT`만 사용한다. 실제 Kafka 비교 테스트에서 callback 방식도 실행 가드를 callback 완료까지 유지해야 했고, 이후 send와 상태 갱신이 같은 직렬 흐름에 묶였다. 따라서 한 인스턴스의 Relay에서 callback이 처리량 이득을 준다고 보지 않는다. 제한 대기는 같은 실행 흐름에서 상태 TX를 처리하므로 순서가 분명하고, Kafka 완료 callback에 DB 갱신을 연결하는 제품 실행 관리가 필요 없다. 비교 방법은 [Outbox·Relay 테스트 방법](../../../docs/system-design/use-cases/order-confirmed-event-verification.md#outboxrelay-테스트-방법)을 따른다.
 
-현재 설정은 `request.timeout.ms=2초`, `delivery.timeout.ms=5초`, `max.block.ms=1초`, Future 관찰 시간 6초다. `delivery.timeout.ms >= request.timeout.ms + linger.ms`를 만족해야 하고, producer가 실제 결과를 먼저 알리도록 Future 관찰 시간은 `delivery.timeout.ms`보다 길게 둔다. 한 번의 최대 대기 예산은 `max.block.ms`와 Future 관찰 시간을 더한 7초이며, TX1은 `nextAttemptAt`을 그 이후로 둔다. 이 값은 로컬 설정과 테스트 기준이며, 운영 환경에서는 broker 지연과 Relay 주기를 관찰해 조정한다.
+현재 설정은 `request.timeout.ms=2초`, `delivery.timeout.ms=5초`, `max.block.ms=1초`, Future 관찰 시간 6초다. `delivery.timeout.ms >= request.timeout.ms + linger.ms`를 만족해야 하고, producer가 실제 결과를 먼저 알리도록 Future 관찰 시간은 `delivery.timeout.ms`보다 길게 둔다. 한 번의 최대 대기 예산은 `max.block.ms`와 Future 관찰 시간을 더한 7초다. TX1은 `nextAttemptAt`을 여기에 재시도 간격 5초를 더한 12초 뒤로 둔다. 결과를 기록하지 못하고 멈춘 시도도 대기 끝에 실패를 기록한 경우와 같은 간격 뒤에 다시 고르며, TX1 지연과 인스턴스 사이 시계 차이를 재시도 간격만큼 흡수한다. 실패를 기록하면 TX2가 다음 시각을 다시 정하므로 재시도 속도는 바뀌지 않는다. 이 값은 로컬 설정과 테스트 기준이며, 운영 환경에서는 broker 지연과 Relay 주기를 관찰해 조정한다.
 
 ## 재시도·차단 정책
 
@@ -258,7 +258,7 @@ BLOCKED 원인을 확인하고 해결한 뒤 같은 `eventId`로 수동 재시�
 | 재시도 가능 실패 반복 | 1·2회째는 `PENDING`, 실패 확인 시각 + 5초 뒤 시도 가능. 3회째는 `BLOCKED`; `attemptCount`와 `cycleAttemptCount`가 각각 3 |
 | 재시도 불가 Kafka 오류, 분류할 수 없는 예외 | 첫 실패에서 `BLOCKED`, 추가 send 없음 |
 | 다른 Outbox가 함께 대기 | 한 행이 `BLOCKED`되면 같은 tick의 다음 행을 계속 처리. 재시도 가능 실패면 그 tick의 남은 행은 send하지 않고, 다음 tick에서 실패 행보다 먼저 처리 |
-| 최대 대기 예산 | producer가 Future 관찰 시간보다 먼저 실패를 알림, TX1 뒤 최대 대기 예산 동안 같은 행을 다시 선택하지 않음 |
+| 최대 대기 예산 | producer가 Future 관찰 시간보다 먼저 실패를 알림, TX1 뒤 최대 대기 예산에 재시도 간격을 더한 시각까지 같은 행을 다시 선택하지 않음 |
 | `BLOCKED` 수동 재시도 | `PENDING`, `nextAttemptAt` = 수동 재시도 시각, `cycleAttemptCount = 0`, 누적 `attemptCount`·`eventId`·key·payload 유지. 원인이 남아 있으면 새 주기 3회째에 다시 `BLOCKED` |
 | 같은 주기에서 TX1 commit 뒤 send 전에 3회 중단 | 세 시도 모두 시도 수에 포함, Kafka record 0건. 재시작 뒤 추가 send 없이 `BLOCKED` 전환 |
 | 앱 종료로 결과 대기 중단 | 오류로 분류하지 않고 `PENDING` 유지, `BLOCKED` 전환 없음 |

@@ -20,6 +20,7 @@ commerce-api는 확정 시각 저장·Outbox 원자성·Relay 발행을, commerc
 | `OrderConfirmedAtMigrationIntegrationTest` | 컬럼 추가 뒤 기존 주문의 확정 시각은 비워 두고 상태·결제 값·수정 시각은 바꾸지 않음 |
 | `OrderConfirmedOutboxAtomicityTest` | 최초 성공 때 주문·시도·Outbox를 같은 TX에 저장. 비성공·중복 결과, 직렬화·유일 제약·commit 실패 rollback, 동시 성공에서 행 하나와 고정 payload 확인 |
 | `OrderConfirmedOutboxStateServiceIntegrationTest` | 실제 MySQL에서 이전 값을 읽은 실행의 시도 시작·결과 저장이 다른 실행의 commit을 덮지 않음(조건부 갱신 0행). 최대 대기 시간 전 재선택 없음, 수동 재시도 뒤 새 주기 3회째 재차단과 누적 시도 수 |
+| `OrderConfirmedOutboxRelayTest` | 시도를 시작할 때 다음 선택 시각을 결과 대기 예산에 재시도 간격을 더한 만큼 뒤로 둠 |
 | `OrderConfirmedOutboxMultiRelayIntegrationTest` | 실제 MySQL에서 Relay 두 개가 같은 대기 행들을 동시에 처리해도 행마다 send 1회, 모든 행 `PUBLISHED`, 두 Relay가 모두 발행에 참여 |
 | `OrderConfirmedOutboxScheduleSettingsTest` | `application.yml`에서 Relay·지표 갱신 스케줄이 기본으로 켜지고 운영 프로필은 끄지 않으며 `test` 프로필만 끔 |
 | `OrderConfirmedOutboxMetricsSchedulerIntegrationTest` | Relay를 끈 상태에서도 지표 갱신 스케줄이 미해결 Outbox 수와 가장 오래된 대기 시간을 반영 |

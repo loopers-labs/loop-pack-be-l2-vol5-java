@@ -417,7 +417,7 @@ class OrderConfirmedKafkaDeliveryIntegrationTest {
         assertRecord(fixture, firstMetadata);
         assertThat(logEnds()).containsEntry(new TopicPartition(TOPIC, firstMetadata.partition()), firstMetadata.offset() + 1);
 
-        clock.set(CONFIRMED_AT.plusSeconds(7));
+        clock.set(nextAttemptAt(fixture.orderId()).toInstant());
         OrderConfirmedOutboxRelay restartedRelay = newRelay();
         assertThat(restartedRelay).isNotSameAs(firstRelay);
         restartedRelay.runDueBatch();

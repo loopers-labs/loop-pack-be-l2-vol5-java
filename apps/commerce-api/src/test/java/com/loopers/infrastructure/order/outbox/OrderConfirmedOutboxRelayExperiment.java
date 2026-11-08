@@ -32,7 +32,7 @@ public class OrderConfirmedOutboxRelayExperiment implements ApplicationListener<
     private final int batchSize;
     private final int maxAttempts;
     private final Duration retryInterval;
-    private final Duration maximumWait;
+    private final Duration nextAttemptDelay;
     private final Duration futureTimeout;
     private final AtomicBoolean running = new AtomicBoolean();
     private final AtomicBoolean shuttingDown = new AtomicBoolean();
@@ -61,7 +61,7 @@ public class OrderConfirmedOutboxRelayExperiment implements ApplicationListener<
         this.batchSize = batchSize;
         this.maxAttempts = maxAttempts;
         this.retryInterval = retryInterval;
-        this.maximumWait = maxBlockTime.plus(futureTimeout);
+        this.nextAttemptDelay = maxBlockTime.plus(futureTimeout).plus(retryInterval);
         this.futureTimeout = futureTimeout;
     }
 
@@ -118,7 +118,7 @@ public class OrderConfirmedOutboxRelayExperiment implements ApplicationListener<
 
         OrderConfirmedOutboxStateService.BeginAttemptResult start;
         try {
-            start = stateService.beginAttempt(eventIds.get(index), applicationTime.now(), maximumWait, maxAttempts);
+            start = stateService.beginAttempt(eventIds.get(index), applicationTime.now(), nextAttemptDelay, maxAttempts);
         } catch (RuntimeException failure) {
             log.error("주문 확정 Outbox 시도를 저장하지 못했습니다. eventId={}", eventIds.get(index), failure);
             return java.util.concurrent.CompletableFuture.completedFuture(null);

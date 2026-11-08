@@ -29,7 +29,7 @@ public class OrderConfirmedOutboxStateService {
 
     // 읽은 행의 시도 번호와 기한이 DB에 그대로일 때만 시작한다. 다른 실행이 먼저 시작했으면 건너뛴다.
     @Transactional
-    public BeginAttemptResult beginAttempt(String eventId, ZonedDateTime now, Duration maxWait, int maxAttempts) {
+    public BeginAttemptResult beginAttempt(String eventId, ZonedDateTime now, Duration nextAttemptDelay, int maxAttempts) {
         Optional<OrderConfirmedOutboxJpaEntity> found = repository.findByEventId(eventId);
         if (found.isEmpty() || !found.get().isDue(now)) {
             return BeginAttemptResult.skipped();
@@ -42,7 +42,7 @@ public class OrderConfirmedOutboxStateService {
             }
             return BeginAttemptResult.blocked(row.getEventId(), row.getOrderId(), "ATTEMPTS_EXHAUSTED");
         }
-        if (repository.beginAttempt(eventId, currentAttempt, now.plus(maxWait), now) != 1) {
+        if (repository.beginAttempt(eventId, currentAttempt, now.plus(nextAttemptDelay), now) != 1) {
             return BeginAttemptResult.skipped();
         }
         return BeginAttemptResult.started(new OrderConfirmedOutboxAttempt(

@@ -31,7 +31,7 @@ public class OrderConfirmedOutboxRelay implements ApplicationListener<ContextClo
     private final int batchSize;
     private final int maxAttempts;
     private final Duration retryInterval;
-    private final Duration maximumWait;
+    private final Duration nextAttemptDelay;
     private final Duration futureTimeout;
     private final AtomicBoolean running = new AtomicBoolean();
     private final AtomicBoolean shuttingDown = new AtomicBoolean();
@@ -56,7 +56,9 @@ public class OrderConfirmedOutboxRelay implements ApplicationListener<ContextClo
         this.batchSize = batchSize;
         this.maxAttempts = maxAttempts;
         this.retryInterval = retryInterval;
-        this.maximumWait = maxBlockTime.plus(futureTimeout);
+        // 결과를 기록하지 못하고 멈춘 시도도 대기 끝에 실패를 기록한 경우와 같은 간격 뒤에 다시 고른다.
+        // 재시도 간격만큼의 여유가 TX1 지연과 인스턴스 사이 시계 차이를 흡수한다.
+        this.nextAttemptDelay = maxBlockTime.plus(futureTimeout).plus(retryInterval);
         this.futureTimeout = futureTimeout;
     }
 
@@ -104,7 +106,7 @@ public class OrderConfirmedOutboxRelay implements ApplicationListener<ContextClo
             return false;
         }
         OrderConfirmedOutboxStateService.BeginAttemptResult start = stateService.beginAttempt(
-            eventId, applicationTime.now(), maximumWait, maxAttempts);
+            eventId, applicationTime.now(), nextAttemptDelay, maxAttempts);
         if (start.kind() == OrderConfirmedOutboxStateService.BeginAttemptKind.SKIPPED) {
             return true;
         }
