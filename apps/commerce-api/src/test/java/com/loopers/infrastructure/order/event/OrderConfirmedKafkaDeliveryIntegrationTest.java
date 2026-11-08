@@ -307,6 +307,7 @@ class OrderConfirmedKafkaDeliveryIntegrationTest {
         assertThat(blocked.eventId()).isEqualTo(initial.eventId());
         assertThat(blocked.messageKey()).isEqualTo(initial.messageKey());
         assertThat(blocked.payload()).isEqualTo(initial.payload());
+        outboxMetrics.refresh();
         assertThat(meterRegistry.get("order_confirmed_outbox.pending").gauge().value()).isZero();
         assertThat(meterRegistry.get("order_confirmed_outbox.blocked").gauge().value()).isEqualTo(1D);
         assertThat(meterRegistry.get("outbox_blocked_transitions_total").tag("reason", "ATTEMPTS_EXHAUSTED")
@@ -327,7 +328,7 @@ class OrderConfirmedKafkaDeliveryIntegrationTest {
         assertThat(sends).hasValue(5);
         assertThat(logEnds().values().stream().mapToLong(Long::longValue).sum()
             - initialOffsets.values().stream().mapToLong(Long::longValue).sum()).isEqualTo(2L);
-        outboxRelay.runDueBatch();
+        outboxMetrics.refresh();
         assertThat(meterRegistry.get("order_confirmed_outbox.pending").gauge().value()).isZero();
         assertThat(meterRegistry.get("order_confirmed_outbox.blocked").gauge().value()).isZero();
     }
@@ -452,7 +453,6 @@ class OrderConfirmedKafkaDeliveryIntegrationTest {
             failureClassifier,
             applicationTime,
             meterRegistry,
-            outboxMetrics,
             relayBatchSize,
             relayMaxAttempts,
             relayRetryInterval,
@@ -464,7 +464,7 @@ class OrderConfirmedKafkaDeliveryIntegrationTest {
     private OrderConfirmedOutboxRelayExperiment newComparisonRelay(Duration timeout) {
         return new OrderConfirmedOutboxRelayExperiment(
             newRelay(timeout), outboxStateService, kafkaSender, failureClassifier, applicationTime,
-            meterRegistry, outboxMetrics, callbackExecutor, relayBatchSize, relayMaxAttempts,
+            meterRegistry, callbackExecutor, relayBatchSize, relayMaxAttempts,
             relayRetryInterval, relayMaxBlockTime, timeout
         );
     }

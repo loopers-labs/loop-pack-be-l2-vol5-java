@@ -28,7 +28,6 @@ public class OrderConfirmedOutboxRelayExperiment implements ApplicationListener<
     private final OrderConfirmedOutboxFailureClassifier failureClassifier;
     private final ApplicationTime applicationTime;
     private final MeterRegistry meterRegistry;
-    private final OrderConfirmedOutboxMetrics outboxMetrics;
     private final Executor callbackExecutor;
     private final int batchSize;
     private final int maxAttempts;
@@ -45,7 +44,6 @@ public class OrderConfirmedOutboxRelayExperiment implements ApplicationListener<
         OrderConfirmedOutboxFailureClassifier failureClassifier,
         ApplicationTime applicationTime,
         MeterRegistry meterRegistry,
-        OrderConfirmedOutboxMetrics outboxMetrics,
         Executor callbackExecutor,
         int batchSize,
         int maxAttempts,
@@ -59,7 +57,6 @@ public class OrderConfirmedOutboxRelayExperiment implements ApplicationListener<
         this.failureClassifier = failureClassifier;
         this.applicationTime = applicationTime;
         this.meterRegistry = meterRegistry;
-        this.outboxMetrics = outboxMetrics;
         this.callbackExecutor = callbackExecutor;
         this.batchSize = batchSize;
         this.maxAttempts = maxAttempts;
@@ -86,7 +83,6 @@ public class OrderConfirmedOutboxRelayExperiment implements ApplicationListener<
             log.debug("주문 확정 Outbox relay 실행 중이라 이번 호출을 건너뜁니다.");
             return false;
         }
-        refreshMetrics();
         if (mode == AwaitMode.CALLBACK) {
             try {
                 List<String> eventIds = eventIds(requestedEventIds);
@@ -94,7 +90,6 @@ public class OrderConfirmedOutboxRelayExperiment implements ApplicationListener<
                     if (failure != null) {
                         log.error("주문 확정 Outbox callback relay 회차가 예기치 않게 끝났습니다.", unwrap(failure));
                     }
-                    refreshMetrics();
                     running.set(false);
                 });
                 return true;
@@ -106,7 +101,6 @@ public class OrderConfirmedOutboxRelayExperiment implements ApplicationListener<
         try {
             return boundedRelay.runDueBatch();
         } finally {
-            refreshMetrics();
             running.set(false);
         }
     }
@@ -115,14 +109,6 @@ public class OrderConfirmedOutboxRelayExperiment implements ApplicationListener<
         return requestedEventIds == null
             ? stateService.findDueEventIds(applicationTime.now(), batchSize)
             : requestedEventIds;
-    }
-
-    private void refreshMetrics() {
-        try {
-            outboxMetrics.refresh();
-        } catch (RuntimeException failure) {
-            log.warn("주문 확정 Outbox 집계 metric 갱신에 실패했습니다.", failure);
-        }
     }
 
     private java.util.concurrent.CompletableFuture<Void> processBatchAsync(List<String> eventIds, int index) {

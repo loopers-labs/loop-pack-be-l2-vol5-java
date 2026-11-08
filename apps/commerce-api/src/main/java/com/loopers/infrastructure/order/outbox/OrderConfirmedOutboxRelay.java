@@ -27,7 +27,6 @@ public class OrderConfirmedOutboxRelay implements ApplicationListener<ContextClo
     private final OrderConfirmedOutboxFailureClassifier failureClassifier;
     private final ApplicationTime applicationTime;
     private final MeterRegistry meterRegistry;
-    private final OrderConfirmedOutboxMetrics outboxMetrics;
     private final int batchSize;
     private final int maxAttempts;
     private final Duration retryInterval;
@@ -42,7 +41,6 @@ public class OrderConfirmedOutboxRelay implements ApplicationListener<ContextClo
         OrderConfirmedOutboxFailureClassifier failureClassifier,
         ApplicationTime applicationTime,
         MeterRegistry meterRegistry,
-        OrderConfirmedOutboxMetrics outboxMetrics,
         @Value("${order.confirmed-event.relay.batch-size}") int batchSize,
         @Value("${order.confirmed-event.relay.max-attempts}") int maxAttempts,
         @Value("${order.confirmed-event.relay.retry-interval}") Duration retryInterval,
@@ -54,7 +52,6 @@ public class OrderConfirmedOutboxRelay implements ApplicationListener<ContextClo
         this.failureClassifier = failureClassifier;
         this.applicationTime = applicationTime;
         this.meterRegistry = meterRegistry;
-        this.outboxMetrics = outboxMetrics;
         this.batchSize = batchSize;
         this.maxAttempts = maxAttempts;
         this.retryInterval = retryInterval;
@@ -83,7 +80,6 @@ public class OrderConfirmedOutboxRelay implements ApplicationListener<ContextClo
             log.debug("주문 확정 Outbox relay 실행 중이라 이번 호출을 건너뜁니다.");
             return false;
         }
-        refreshMetrics();
         try {
             for (String eventId : eventIds(requestedEventIds)) {
                 if (!process(eventId)) {
@@ -92,7 +88,6 @@ public class OrderConfirmedOutboxRelay implements ApplicationListener<ContextClo
             }
             return true;
         } finally {
-            refreshMetrics();
             running.set(false);
         }
     }
@@ -101,14 +96,6 @@ public class OrderConfirmedOutboxRelay implements ApplicationListener<ContextClo
         return requestedEventIds == null
             ? stateService.findDueEventIds(applicationTime.now(), batchSize)
             : requestedEventIds;
-    }
-
-    private void refreshMetrics() {
-        try {
-            outboxMetrics.refresh();
-        } catch (RuntimeException failure) {
-            log.warn("주문 확정 Outbox 집계 metric 갱신에 실패했습니다.", failure);
-        }
     }
 
     private boolean process(String eventId) {

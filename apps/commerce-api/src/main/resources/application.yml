@@ -14,10 +14,11 @@ server:
 spring:
   main:
     web-application-type: servlet
+  # Relay·결제 주기 조회·Outbox 지표 갱신이 서로의 긴 대기에 밀리지 않도록 작업마다 스레드를 둔다.
   task:
     scheduling:
       pool:
-        size: 2
+        size: 3
   application:
     name: commerce-api
   profiles:
@@ -43,6 +44,11 @@ order:
       delivery-timeout: 5s
       max-block-time: 1s
       future-timeout: 6s
+    # 읽기 전용 집계라 Relay와 달리 모든 인스턴스에서 켠다. 값은 DB 전체 기준이다.
+    outbox:
+      metrics:
+        enabled: true
+        interval: 10s
 
 # Redis 장애 시 요청이 오래 묶이지 않도록 연결·명령 대기를 제한하고, 실패하면 DB로 우회한다.
 datasource:
@@ -115,10 +121,14 @@ payment:
   periodic-check:
     enabled: false
 
+# Relay와 지표 갱신 스케줄을 끄고 테스트가 직접 호출해 시점을 정한다.
 order:
   confirmed-event:
     relay:
       enabled: false
+    outbox:
+      metrics:
+        enabled: false
 
 ---
 spring:
