@@ -1,6 +1,8 @@
 # 주문 확정 이벤트 Producer 설계
 
-`commerce-api`는 검증된 PG 성공을 최초 주문 확정으로 반영하고, 같은 DB 트랜잭션에서 `OrderConfirmed` Outbox를 기록한다. 단일 polling Relay가 저장된 key·payload를 Kafka에 발행한다. payload·key·eventId·버전 정책은 [공통 이벤트 계약](../../../docs/system-design/use-cases/order-confirmed-event.md#이벤트-계약)을 따른다. Kafka topic과 연결 주소는 [Broker 설계](../../../modules/kafka/docs/broker.md)를 따른다.
+`commerce-api`는 검증된 PG 성공을 최초 주문 확정으로 반영하고, 같은 DB 트랜잭션에서 `OrderConfirmed` Outbox를 기록한다. 각 API 인스턴스의 polling Relay가 저장된 key·payload를 Kafka에 발행한다. payload·key·eventId·버전 정책은 [공통 이벤트 계약](../../../docs/system-design/use-cases/order-confirmed-event.md#이벤트-계약)을 따른다. Kafka topic과 연결 주소는 [Broker 설계](../../../modules/kafka/docs/broker.md)를 따른다.
+
+이 문서는 최초 확정과 이벤트 구성, 전달 경계를 요약한다. 저장 모델, Relay의 실행·재시도·차단·수동 재시도와 누락 복구의 상세 기준은 [Outbox·Relay 설계](order-confirmed-outbox-design.md)에서 관리한다.
 
 ## 책임과 완료 기준
 
@@ -31,13 +33,14 @@ TX B는 주문 확정과 전달할 메시지를 Outbox에 함께 저장한다. R
 | 확정 실패(`PAYMENT_FAILED`) | 없음 |
 | 최초 확정 TX B rollback | 없음 |
 | 이미 종결된 시도에 같은 결과 반복 (중복 callback, reconcile, 주기 조회) | 없음. 조건부 갱신 0행 |
-| 이전 POINT 확정 주문, 이번 변경 전 PG 확정 주문 | 없음. 소급 발행하지 않는다. |
+| `confirmed_at` 도입 전에 확정된 주문(POINT·PG) | 없음. 확정 시각이 없으므로 [소급 발행하지 않는다](../../../docs/system-design/persistence-mapping.md#주문-확정-시각과-구매-활동-테이블-전환). |
+| Outbox 도입 전 직접 발행 경로에서 확정된 주문 | 자동 기록 없음. 발행 누락이 확인된 주문만 담당자가 [누락 이벤트 복구](order-confirmed-outbox-design.md#누락-이벤트-복구)로 보충한다. |
 
 ## 발행 위치
 
 `PaymentResultTransaction.completeOrder`(TX B)는 최초 성공 조건을 확인한 뒤, 저장한 품목 스냅샷과 확정 시각으로 `OrderConfirmedMessageV1`과 JSON payload를 구성한다. Outbox insert는 주문·결제 시도 결과와 같은 데이터 소스의 같은 로컬 TX에 참여한다. serialization이나 Outbox 저장에 실패하면 주문 확정도 rollback한다. commit 뒤에는 Scheduler가 Relay를 호출하므로 주문 확정 요청 스레드에서 Kafka send를 기다리지 않는다.
 
-Relay는 짧은 DB TX로 기한이 된 행을 조회하고 시도 횟수를 기록한 다음, DB 트랜잭션 밖에서 Kafka에 보낸다. broker 성공 Future가 완료되면 별도 DB TX에서 `PUBLISHED`와 `publishedAt`을 저장한다. 조회·시도·상태 저장의 TX와 외부 전송 대기를 분리한다.
+Relay는 짧은 DB TX로 기한이 된 행을 조회하고 시도 횟수를 기록한 다음, DB 트랜잭션 밖에서 Kafka에 보낸다. broker 성공 Future가 완료되면 별도 DB TX에서 `PUBLISHED`와 `publishedAt`을 저장한다. 조회·시도·상태 저장의 TX와 외부 전송 대기를 분리한다. 시도 시작과 결과 저장은 현재 시도 번호를 조건으로 한 갱신이라 겹친 실행이나 늦은 결과가 상태를 덮지 않는다.
 
 ## 전송 결과와 실패
 
@@ -53,9 +56,9 @@ Relay는 KafkaTemplate `send()`가 반환하는 `CompletableFuture`의 성공으
 | 지원하지 않는 형식 등 영구 오류 | `BLOCKED`로 남기고 자동 전송을 멈춤. 다른 행 처리는 계속한다. |
 | 애플리케이션 종료 신호 뒤 도착한 성공·실패 결과 | TX1의 `PENDING`을 보존하고 새 프로세스가 같은 행을 다시 처리. 종료 중에는 새 Relay 실행·send를 시작하지 않음 |
 
-종료 여부는 `ContextClosedEvent`로 판단한다. producer 종료가 일반 `IllegalStateException`으로 전달돼도 종료 중인 시도는 `BLOCKED`로 격리하지 않는다. 종료 신호가 없는 예외에는 기존 분류를 적용한다.
+종료 여부는 `ContextClosedEvent`로 판단한다. producer 종료가 일반 `IllegalStateException`으로 전달돼도 종료 중인 시도는 `BLOCKED`로 격리하지 않는다. broker 성공도 저장하지 않아 종료하는 인스턴스마다 최대 1건이 재발행될 수 있으며, 이유는 [Outbox·Relay 설계](order-confirmed-outbox-design.md#재시도차단-정책)를 따른다. 종료 신호가 없는 예외에는 기존 분류를 적용한다.
 
-- TX1에서 발행 시도를 시작할 때 1회를 기록하므로 send 전 중단도 횟수에 포함된다. 현재 설정은 한 재시도 주기에서 총 세 번 시도한 뒤 `BLOCKED`로 전환한다. 담당자가 원인을 해결하면 같은 행을 수동 재개하고, 누적 attemptCount는 유지하되 주기 횟수만 초기화한다.
+- TX1에서 발행 시도를 시작할 때 1회를 기록하므로 send 전 중단도 횟수에 포함된다. 현재 설정은 한 재시도 주기에서 총 세 번 시도한 뒤 `BLOCKED`로 전환한다. 담당자가 원인을 해결하면 같은 행을 수동 재시도하고, 누적 attemptCount는 유지하되 주기 횟수만 초기화한다.
 - 일시 실패 행은 재시도 시각 전까지 대기한다. 세 번째 실패로 `BLOCKED`가 되면 같은 묶음의 다음 이벤트를 처리한다. 제한 대기 중인 행은 현재 회차를 끝내고 다음 tick에서 다시 처리한다.
 - 실패나 timeout만으로 broker record의 부재를 단정하지 않는다. PUBLISHED는 broker 성공을 Relay가 확인하고 DB에 기록했다는 뜻이며, Consumer의 구매 활동 완료를 뜻하지 않는다.
 - 주문·Outbox의 일관성을 잃지 않도록 Relay 재시도는 새 eventId를 만들지 않는다. 기록된 payload·key를 그대로 사용한다.
@@ -68,11 +71,11 @@ Relay는 KafkaTemplate `send()`가 반환하는 `CompletableFuture`의 성공으
 
 send 이후 오류·timeout을 관찰하거나 broker 성공 뒤 상태 저장이 실패하면 broker 기록 여부가 불명확할 수 있다. Relay는 같은 행을 재발행할 수 있으므로 Kafka에 중복 record가 생길 수 있고, Consumer Inbox가 업무 중복 효과를 막는다.
 
-Outbox는 broker가 영구적으로 접근 불가능한 상황, payload 호환성 오류, Outbox 저장소 손실, 행의 임의 삭제를 자동으로 복구하지 않는다. `BLOCKED` 작업은 원인을 확인할 담당자와 재개 절차가 필요하다.
+Outbox는 broker가 영구적으로 접근 불가능한 상황, payload 호환성 오류, Outbox 저장소 손실, 행의 임의 삭제를 자동으로 복구하지 않는다. `BLOCKED` 작업은 원인을 확인할 담당자와 수동 재시도 절차가 필요하다.
 
 ## 누락 판단과 관찰 범위
 
-검증은 [발행 조건](#발행-조건)에 해당하는 확정 주문에서 출발해 Kafka record와 소비 완료 기록·구매 활동을 대조한다. 소급 발행하지 않는 이전 확정 주문은 대상에서 제외한다. 구매 활동은 주문당 한 행이 아니라 품목별 행이므로, 행 수만 비교하지 않고 상품 집합·수량·확정 시각까지 원본과 비교한다.
+검증은 [발행 조건](#발행-조건)에 해당하는 확정 주문에서 출발해 Kafka record와 소비 완료 기록·구매 활동을 대조한다. `confirmed_at` 도입 전에 확정된 주문은 소급 발행하지 않으므로 대상에서 제외한다. 구매 활동은 주문당 한 행이 아니라 품목별 행이므로, 행 수만 비교하지 않고 상품 집합·수량·확정 시각까지 원본과 비교한다.
 
 | 관찰 | 판단 |
 | --- | --- |
@@ -86,11 +89,11 @@ Outbox는 broker가 영구적으로 접근 불가능한 상황, payload 호환�
 - Kafka record의 존재는 보존 범위 안에서 확인한다. retention으로 이미 삭제된 record가 현재 없다는 사실만으로 과거 미발행을 증명하지 않는다.
 - 원본 대조는 테스트와 검증용으로 수행한다. commerce-streamer의 정상 소비 경로에서 주문 테이블을 조회하지 않으며, 주기적 자동 대조와 보충 발행은 이번 범위에 넣지 않는다.
 
-자동 대조나 임의 재발행은 하지 않는다. `BLOCKED` 행은 원인과 `eventId`를 확인한 담당자가 로컬 전용 재개 진입점으로 같은 Outbox 행을 다시 `PENDING`으로 열고 Relay를 한 번 실행한다. 이미 종결한 결제의 reconcile은 전송 복구 수단이 아니다. broker record가 남아 있을 가능성이 있으면 재개 뒤 중복 record가 생길 수 있고, Consumer Inbox가 같은 `eventId`의 중복 업무 효과를 막는다.
+자동 대조나 임의 재발행은 하지 않는다. `BLOCKED` 행은 원인과 `eventId`를 확인한 담당자가 로컬 전용 수동 재시도 진입점으로 같은 Outbox 행을 다시 `PENDING`으로 열고 Relay를 한 번 실행한다. 이미 종결한 결제의 reconcile은 전송 복구 수단이 아니다. broker record가 남아 있을 가능성이 있으면 수동 재시도 뒤 중복 record가 생길 수 있고, Consumer Inbox가 같은 `eventId`의 중복 업무 효과를 막는다.
 
 ### 운영 조회와 알림
 
-Relay는 `order_confirmed_outbox.pending`, `order_confirmed_outbox.blocked`, `order_confirmed_outbox.oldest_pending_age_seconds` gauge와 `outbox_blocked_transitions_total` counter를 제공한다. Grafana 대시보드에서는 대기 중인 행·가장 오래 기다린 시간·현재 `BLOCKED` 행을 확인하고, 새 `BLOCKED` 전환만 Slack 알림으로 보낸다. `BLOCKED` 현재 건수는 미해결 작업의 규모를 나타내며, 전환 counter는 새로 막힌 시점을 찾는 용도다. 장기 대기는 대시보드와 SQL로 확인한다. 애플리케이션이 Slack webhook을 직접 호출하지 않는다.
+Relay와 분리된 지표 갱신 스케줄이 10초마다 `order_confirmed_outbox.pending`, `order_confirmed_outbox.blocked`, `order_confirmed_outbox.oldest_pending_age_seconds` gauge를 갱신하므로 Relay가 꺼져 있거나 멈춰도 backlog가 보인다. Relay는 `BLOCKED` 전환 때 `outbox_blocked_transitions_total` counter를 증가시킨다. Grafana 대시보드에서는 대기 중인 행·가장 오래 기다린 시간·현재 `BLOCKED` 행을 확인한다. Slack 알림은 두 가지다. BLOCKED 전환 알림은 최근 전환 counter 증가와 새 시계열의 첫 양수 관측을 감지한다. 발행 지연 알림은 가장 오래된 `PENDING`이 5분을 넘긴 상태가 1분 이어지면 보내고, 풀리면 해결 메시지를 보낸다. 기존 양수 값이 유지되기만 하면 다시 발생시키지 않는다. 최초 관측값은 과거 전환을 포함할 수 있으므로 현재 행과 원인을 DB에서 확인한다. 관측 창과 수집 중단의 한계, 회귀 검증은 [관찰과 알림](order-confirmed-outbox-design.md#관찰과-알림)을 따른다. 애플리케이션이 Slack webhook을 직접 호출하지 않는다.
 
 SQL로 행과 오류를 확인할 때는 다음 조회를 사용한다.
 
@@ -107,7 +110,7 @@ ORDER BY CASE status WHEN 'BLOCKED' THEN 0 ELSE 1 END,
          next_attempt_at, id;
 ```
 
-`attempt_count`는 실제 broker 수신 수가 아니라 Relay가 시작한 시도 수다. send 전에 프로세스가 멈춰도 증가할 수 있고, timeout 뒤 broker record가 남았을 수도 있다. Outbox와 Inbox는 자동 삭제하지 않는다. 정리 정책을 추가할 때는 Kafka에서 다시 읽을 수 있는 기간보다 Inbox의 중복 방지 기록을 짧게 보존해 중복 구매 효과가 생기지 않도록 함께 정한다.
+`attempt_count`는 실제 broker 수신 수가 아니라 Relay가 시작한 시도 수다. send 전에 프로세스가 멈춰도 증가할 수 있고, timeout 뒤 broker record가 남았을 수도 있다. Outbox와 Inbox는 자동 삭제하지 않는다. 정리 정책을 추가할 때는 Inbox의 중복 방지 기록을 Kafka에서 다시 읽을 수 있는 기간 이상 보존한다. 먼저 지우면 다시 읽은 과거 이벤트를 새 이벤트로 처리해 구매 효과가 중복된다. 상세 기준은 [보존과 정리](order-confirmed-outbox-design.md#보존과-정리)를 따른다.
 
 ## Producer 설정
 

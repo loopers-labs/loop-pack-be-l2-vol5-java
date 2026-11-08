@@ -25,9 +25,11 @@ python3 docs/verification/order-confirmed-event/run.py --section7-captures-only
 
 ## 격리 환경
 
-실행 도구는 현재 소스의 API·streamer·테스트 PG JAR를 빌드한다. 직접 발행 누락 사례에는 `DIRECT_PUBLICATION_REVISION`에 고정된 기준 revision의 API를 임시 디렉터리에 추출·빌드하고, 그 복사본에만 send 직전 테스트 latch를 넣는다. 기준 revision·현재 앱·PG fixture의 입력과 상태는 실행별로 격리한다.
+실행 도구는 현재 소스의 API·streamer·테스트 PG JAR를 빌드한다. 직접 발행 누락 사례에는 `DIRECT_PUBLICATION_REVISION`에 고정된 기준 revision의 API를 임시 디렉터리에 추출·빌드하고, 그 복사본에만 send 직전 테스트 latch를 넣는다. 기준 revision·현재 앱·PG fixture의 입력과 상태는 실행별로 격리한다. 기준 revision은 `git archive`로 꺼내므로, 이 커밋이 없는 shallow clone(CI 등)에서는 실행 전에 해당 revision을 fetch해야 한다.
 
 고유 이름과 loopback 포트를 사용해 MySQL 8.0·Redis 7.0·Kafka 3.8.1·테스트 PG·필요한 경우 Kafka UI를 새로 띄운다. 기존 로컬 컨테이너·DB·topic·consumer group은 사용하지 않는다. 품목은 상품 7×2·8×1이고, 테스트 PG는 지정된 합성 주문에만 사용한다. 실행 로그와 `observations.json`은 출력된 임시 디렉터리에 남는다.
+
+fixture는 한 번 준비해 API·Consumer·Kafka 조회에 같은 주소를 제공한다. 테이블은 시작할 때 한 번 만들고 앱 프로세스는 `ddl-auto=validate`로 실행해 준비 데이터를 보존한다. 실제 Consumer는 `commerce-streamer` bootJar를 별도 프로세스로 띄운다. 두 앱을 한 클래스패스에 합치지 않아 component scan·설정 충돌을 피하고, commerce-api가 commerce-streamer에 제품 의존성을 갖지 않게 한다. fixture 주소·topic·group은 실행 인자로 전달하고, broker record·partition·offset과 업무 Consumer group의 committed offset은 Kafka CLI로 조회한다. 준비·복구·재실행·결과 확인은 한 실행에서 이어가며, 그 사이 DB·Kafka·PG를 초기화하지 않는다.
 
 성공·실패 모두 실행이 만든 앱 프로세스와 컨테이너만 종료한다. `observations.json`, 로그, 일회성 화면 캡처는 로컬 근거로 보관하고 Git 제출 대상에서 제외한다.
 
@@ -37,6 +39,8 @@ broker 준비, 최초 Consumer 시작과 재시작 뒤 partition 0·1·2 배정,
 
 첫 사례는 기준 revision의 `AFTER_COMMIT` listener를 event 생성 뒤 `KafkaTemplate.send()` 직전에 멈춘다. 주문 `CONFIRMED`, Kafka record·Inbox·구매 활동 0건을 같은 격리 실행의 실제 DB와 broker에서 확인한 다음 그 기준 프로세스를 끝낸다. 두 번째 주문은 기준 경로로 실제 발행·소비까지 마친 대조 사례다.
 
+latch에 걸린 요청 때문에 정상 종료가 5초 안에 끝나지 않으면 그 기준 API 프로세스만 강제 종료한다. 강제 종료 여부는 `observations.json`에 기록한다. 이 사례는 send 전에 멈추며 broker 거절이나 send timeout을 주입하지 않는다.
+
 현재 앱을 올려 두 주문에 저장된 `eventId`, `confirmedAt`, 품목으로 없는 Outbox만 보충한다. 같은 대상을 다시 보충해도 행과 효과가 늘지 않는지, PG create·조회·callback 수, 재고, 주문 상태, Inbox, 구매 활동, Kafka record 수를 다시 비교한다. PG SUCCESS나 Outbox 행을 테스트가 직접 삽입하지 않는다.
 
 ## 실제 주문 API → Outbox Relay → Kafka → Consumer
@@ -45,9 +49,9 @@ broker 준비, 최초 Consumer 시작과 재시작 뒤 partition 0·1·2 배정,
 
 1. API를 Relay 비활성으로 시작해 합성 주문을 확정하고 `PENDING`, 시도 0, Kafka record 0, Inbox·구매 활동 0을 확인한다.
 2. 격리 MySQL에 테스트용 trigger를 추가한다. 이 trigger는 새 대상 주문의 최초 `PUBLISHED` 상태 변경만 거절한다.
-3. 실제 Relay를 시작한다. Kafka broker는 record를 성공 수신하지만 MySQL trigger가 상태 저장을 실패시킨다. 행은 `PENDING`, 시도 1로 남고 Consumer는 첫 record를 실제 처리한다.
-4. API 프로세스를 정상 종료하고 새 API·Relay 프로세스를 같은 MySQL·Kafka·Consumer group에 연결한다. Outbox 행을 직접 수정하지 않고 재발행과 최종 `PUBLISHED`를 확인한다.
-5. broker의 두 record와 Consumer group offset을 조회하고, Inbox·완료 행 1개, 상품별 구매 활동 2행·수량 2와 1, 재고·포인트·PG 호출 수가 유지되는지 확인한다.
+3. 실제 Relay를 시작한다. Kafka broker는 record를 성공 수신하지만 MySQL trigger가 상태 저장을 실패시킨다. 행은 `PENDING`, 시도 1로 남고 Consumer는 첫 record를 실제 처리한다. 구매 활동은 Consumer의 committed offset이 첫 offset + 1에 도달한 뒤 기록한다.
+4. API 프로세스를 정상 종료하고 새 API·Relay 프로세스를 같은 MySQL·Kafka·Consumer group에 연결한다. Outbox 행을 직접 수정하지 않고 재발행과 최종 `PUBLISHED`를 확인한다. 새 프로세스는 실제 Clock을 쓰므로 저장된 `nextAttemptAt`까지 유한한 deadline 안에서 기다린다. 같은 시각 경계를 `MutableClock`으로 제어하는 검증은 Relay 통합 테스트가 맡는다.
+5. 두 번째 record의 committed offset이 두 번째 offset + 1에 도달한 뒤 broker의 두 record와 Consumer group offset을 조회하고, Inbox·완료 행 1개, 상품별 구매 활동 2행·수량 2와 1, 재고·포인트·PG 호출 수가 유지되는지 확인한다.
 
 여기서 MySQL trigger는 실제 저장 경계에 실패를 주입하는 격리 테스트 장치다. 프로세스 재시작은 정상 종료 후 새 앱 프로세스를 시작하는 방식으로 재현한다. 이 결과를 OS 강제 종료나 임의 네트워크 장애 시험이라고 부르지 않는다.
 

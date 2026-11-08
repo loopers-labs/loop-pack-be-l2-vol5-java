@@ -13,7 +13,8 @@ PG 성공으로 처음 확정된 주문의 사실을 `OrderConfirmed` Outbox에 
 
 | 문서 | 책임 |
 | --- | --- |
-| [Producer 설계](../../../apps/commerce-api/docs/order-confirmed-producer.md) | 최초 확정 조건, Outbox 기록, Relay의 전송 상태와 재시도 |
+| [Producer 설계](../../../apps/commerce-api/docs/order-confirmed-producer.md) | 최초 확정 조건, 이벤트 구성, Outbox 기록과 전달 경계 |
+| [Outbox·Relay 설계](../../../apps/commerce-api/docs/order-confirmed-outbox-design.md) | Outbox 저장 모델, Relay 실행과 전송 상태, 재시도·차단·누락 복구·관찰 정책 |
 | [Broker 설계](../../../modules/kafka/docs/broker.md) | 단일 broker·topic·partition·복제·보존 설정과 연결 주소 |
 | [Consumer 설계](../../../apps/commerce-streamer/docs/purchase-activity-consumer.md) | 버전 해석, 구매 활동 저장·멱등성, listener·ack·복구 |
 | [검증 방법](order-confirmed-event-verification.md) | 모듈별 테스트와 broker·DB·offset 실험 |
@@ -44,7 +45,7 @@ sequenceDiagram
     participant Result as 결과 반영 (commerce-api)
     participant DB as Commerce DB
     participant Outbox as Outbox 기록
-    participant Relay as 단일 polling relay
+    participant Relay as polling Relay
     participant Kafka as Kafka order-events
     participant Listener as 구매 활동 listener (commerce-streamer)
     participant ADB as 구매 활동 저장

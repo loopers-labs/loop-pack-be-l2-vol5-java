@@ -2,7 +2,7 @@
 
 > 주문 결제: [1. 결제 요청](order-payment-request.md) → [2. PG 연동](../external-systems/payment-gateway.md) → **3. 결과 반영** → [4. 확정 이벤트](order-confirmed-event.md)
 
-PG의 관찰을 결제 시도·주문에 한 번만 반영하고 확정 실패의 재고를 반환한다. 최초 성공 확정은 commit 뒤 [주문 확정 이벤트](order-confirmed-event.md)로 발행한다.<br>
+PG의 관찰을 결제 시도·주문에 한 번만 반영하고 확정 실패의 재고를 반환한다. 최초 성공 확정과 [주문 확정 이벤트](order-confirmed-event.md)의 Outbox 기록을 같은 TX B에서 commit하고, 별도 Relay가 저장된 메시지를 발행한다.<br>
 상태와 불변식은 [도메인 모델](../domain-model.md), HTTP 계약과 관찰 결과는 [PG 연동 설계](../external-systems/payment-gateway.md)를 따른다.
 
 ## 시작하는 경로
@@ -25,7 +25,7 @@ PG의 관찰을 결제 시도·주문에 한 번만 반영하고 확정 실패�
 | --- | --- | --- | --- |
 | 처리 중 | `PENDING` | `PAYMENT_PENDING` | 차감 상태 유지 |
 | 미확인 | 마지막 저장 상태 유지 (`REQUESTED`의 생성 응답 유실은 `UNKNOWN`). 조회 불가도 상태를 바꾸지 않는다. 표시는 [결제 진행 표시](../api-contracts.md#결제-진행-표시) | `PAYMENT_PENDING` | 차감 상태 유지 |
-| 성공 | `SUCCEEDED` | `CONFIRMED`, `PG`, 결제액, `SUCCESS`, 확정 시각. commit 뒤 [확정 이벤트](../../../apps/commerce-api/docs/order-confirmed-producer.md#발행-조건) 발행 | 추가 차감 없음 |
+| 성공 | `SUCCEEDED` | `CONFIRMED`, `PG`, 결제액, `SUCCESS`, 확정 시각. 같은 TX B에서 [확정 이벤트 Outbox](../../../apps/commerce-api/docs/order-confirmed-producer.md#발행-조건) 기록 | 추가 차감 없음 |
 | 실패 | `FAILED` | `PAYMENT_FAILED`, `PG`, 결제 결과 `FAILED` | 주문 품목 수량만큼 한 번 반환 |
 | 충돌 | 미종결 유지, [충돌 사유 기록](#충돌-기록) | `PAYMENT_PENDING` (결과 미확인 표시) | 임의 반환 없음 |
 
@@ -69,11 +69,14 @@ sequenceDiagram
             Service->>DB: 관찰 반영 규칙의 조건으로 시도 조건부 갱신<br/>(PENDING·UNKNOWN 기록, 종결과 거래 키, 충돌 사유)
             opt 종결 갱신 1행
                 Service->>DB: 주문 PAYMENT_PENDING → CONFIRMED(확정 시각) / PAYMENT_FAILED<br/>실패면 주문 품목 수량만큼 재고 증가 (Product ID 오름차순)
+                opt 최초 성공 확정
+                    Service->>DB: 저장된 품목·확정 시각으로 메시지 직렬화<br/>같은 TX B에 OrderConfirmed Outbox PENDING insert
+                end
             end
             Note over Service,DB: TX B 종료, 잠금 해제
         end
         opt 성공 확정 commit
-            Note over Service: OrderConfirmed 발행 (확정 이벤트 설계)
+            Note over Service,DB: commit된 Outbox는 별도 Relay가 발행<br/>주문 확정 요청은 Kafka 전송을 기다리지 않음
         end
     else 거래 0건, NOT_FOUND, UNAVAILABLE
         Note over Service,DB: 상태를 바꿀 근거가 없어 TX B를 열지 않음
@@ -82,7 +85,7 @@ sequenceDiagram
     Service-->>Trigger: 반영 뒤 주문·시도 상태
 ```
 
-PG 조회는 TX 밖에서 수행하고 시도·주문·재고 변경은 TX B에서 함께 commit한다. 결과는 [고객 API 계약](../api-contracts.md#결제-상태-객체)과 [PG callback 응답 규칙](../external-systems/payment-gateway.md#응답-규칙)에 맞춰 반환한다. reconcile은 생성 요청을 보내지 않는다.
+PG 조회는 TX 밖에서 수행하고 시도·주문·재고 변경과 최초 성공의 Outbox 기록은 같은 데이터 소스의 TX B에서 함께 commit한다. 메시지 직렬화나 Outbox insert가 실패하면 최초 성공 반영도 rollback한다. Relay의 Kafka 전송과 `PUBLISHED` 저장은 TX B 밖의 별도 흐름이다. 상세 경계는 [Outbox·Relay 설계](../../../apps/commerce-api/docs/order-confirmed-outbox-design.md#확정-트랜잭션)를 따른다. 결과는 [고객 API 계약](../api-contracts.md#결제-상태-객체)과 [PG callback 응답 규칙](../external-systems/payment-gateway.md#응답-규칙)에 맞춰 반환한다. reconcile은 생성 요청을 보내지 않는다.
 
 ### 관찰 반영 규칙
 
@@ -165,14 +168,14 @@ TX B에서 상품 활성 여부를 다시 확인하거나 Brand 잠금을 얻지
 
 | 결과 | 처리 |
 | --- | --- |
-| PG 거래 관찰 반영 중 저장 오류 | TX B 전체 rollback. 호출 경계의 처리는 [결제 경로의 응답 변환](../error-mapping.md#결제-경로의-응답-변환)을 따른다. 테스트 PG는 웹훅을 재전송하지 않으므로 주기 조회나 고객 reconcile이 해당 거래를 다시 조회해 반영한다. |
+| PG 거래 관찰 반영 중 저장 오류, 최초 성공 메시지의 직렬화·Outbox 저장 오류 | TX B 전체 rollback. 기존 미완료 주문과 예약 상태, 이전 결제 시도 상태를 유지하며 새 Outbox는 없다. 호출 경계의 처리는 [결제 경로의 응답 변환](../error-mapping.md#결제-경로의-응답-변환)을 따른다. 테스트 PG는 웹훅을 재전송하지 않으므로 주기 조회나 고객 reconcile이 해당 거래를 다시 조회해 반영한다. |
 | 생성 전 확정 거절 반영 중 저장 오류 | TX B 전체 rollback. 관찰 보유 여부에 따른 재적용과 복구 한계는 [결제 회복](order-payment-recovery.md#생성-전-거절의-복구-한계)을 따른다. |
 | reconcile의 소유권·입력 오류 | [고객 API 계약](../api-contracts.md#포인트주문)으로 거절, 변경 없음 |
 | 정합성 오류: 시도 종결 뒤 주문 전이 0행, 재고 반환 행 수가 1이 아님 | TX B 전체 rollback. 업무 충돌(`409`)이 아니라 불변식이 깨진 상태이므로 내부 오류(`INTERNAL_ERROR`)로 처리하고, 시도·주문 ID와 함께 error 로그를 남긴다. 자동 보정하지 않는다. |
 
 저장 오류와 정합성 오류의 경로별 응답은 [결제 경로의 응답 변환](../error-mapping.md#결제-경로의-응답-변환)을 따른다. TX B rollback이 확인된 경우 해당 요청이 수행한 상태·재고 변경은 취소된다.
 
-TX B commit 뒤 응답용 재조회나 응답 전송에 실패한 경우는 rollback과 구분한다. 확정 이벤트의 발행 실패도 commit된 결과를 바꾸지 않으며 [발행 누락 구간](../../../apps/commerce-api/docs/order-confirmed-producer.md#발행-누락-구간)으로 남는다. 오류 응답이나 timeout만으로 DB 반영 여부를 단정하지 않으며, 이미 commit된 종결 상태와 재고 효과는 유지한다. 이후 같은 callback·reconcile은 저장된 결과를 확인하고 추가 확정·반환을 하지 않는다.
+TX B commit 뒤 응답용 재조회나 응답 전송에 실패한 경우는 rollback과 구분한다. Relay의 Kafka 전송이나 전송 상태 저장 실패도 commit된 주문·결제 시도·Outbox를 되돌리지 않는다. 미해결 전달은 기존 Outbox에서 재시도하며, 경계와 한계는 [발행 누락 구간](../../../apps/commerce-api/docs/order-confirmed-producer.md#발행-누락-구간)을 따른다. 오류 응답이나 timeout만으로 DB 반영 여부를 단정하지 않으며, 이미 commit된 종결 상태와 재고 효과는 유지한다. 이후 같은 callback·reconcile은 저장된 결과를 확인하고 추가 확정·반환을 하지 않는다.
 
 ## 검증 기준
 
