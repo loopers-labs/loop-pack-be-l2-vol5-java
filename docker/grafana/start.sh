@@ -8,7 +8,8 @@ cp -R /etc/grafana/provisioning/. "$provisioning_directory/"
 # 웹훅이 없으면 Outbox Slack 연락처와 해당 연락처를 사용하는 규칙을 함께 제외합니다.
 if [ -z "${SLACK_WEBHOOK_URI:-}" ]; then
   rm -f "$provisioning_directory/alerting/outbox-slack.yml" \
-    "$provisioning_directory/alerting/outbox-blocked-rule.yml"
+    "$provisioning_directory/alerting/outbox-blocked-rule.yml" \
+    "$provisioning_directory/alerting/outbox-delay-rule.yml"
 fi
 
 export GF_PATHS_PROVISIONING="$provisioning_directory"

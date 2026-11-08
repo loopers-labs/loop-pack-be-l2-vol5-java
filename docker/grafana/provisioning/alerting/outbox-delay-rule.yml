@@ -1,0 +1,84 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: order-confirmed-outbox-delay
+    folder: Commerce
+    interval: 10s
+    rules:
+      - uid: outbox-publication-delay
+        title: 주문 확정 이벤트 발행 지연
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 60
+              to: 0
+            datasourceUid: loopers
+            model:
+              datasource:
+                type: prometheus
+                uid: loopers
+              editorMode: code
+              # 인스턴스마다 DB 전체 기준의 같은 값을 보고하므로 최댓값으로 묶습니다.
+              expr: max(order_confirmed_outbox_oldest_pending_age_seconds)
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              # 정상 발행은 수 초, 재시도 실패는 약 31초 안에 BLOCKED가 되므로 5분은 진행이 멈춘 상태로 봅니다.
+              conditions:
+                - evaluator:
+                    params:
+                      - 300
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        noDataState: OK
+        execErrState: Error
+        # DB 집계가 잠깐 실패해 남은 오래된 값은 거르고, 실제 지연은 약 6분 안에 알립니다.
+        for: 1m
+        annotations:
+          summary: 주문 확정 이벤트 발행이 지연되고 있습니다
+          description: "가장 오래된 PENDING Outbox가 5분 넘게 발행되지 않았습니다. 각 인스턴스의 Relay 실행 상태와 broker 연결, BLOCKED 알림 여부를 확인하세요."
+        labels:
+          component: order-confirmed-outbox
+          severity: critical
+        notification_settings:
+          receiver: Outbox Delay Alerts
+          group_by:
+            - alertname
+            - grafana_folder
+          group_wait: 0s
+          group_interval: 1m
+          repeat_interval: 1h
