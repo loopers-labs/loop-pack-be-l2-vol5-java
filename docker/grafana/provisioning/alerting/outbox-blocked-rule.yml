@@ -20,8 +20,9 @@ groups:
                 type: prometheus
                 uid: loopers
               editorMode: code
-              # 첫 수집부터 양수인 오류 유형도 감지하고, 증가 없는 기존 시계열은 0으로 반환합니다.
-              expr: (increase(outbox_blocked_transitions_total[1m]) > 0) or ((outbox_blocked_transitions_total unless outbox_blocked_transitions_total offset 1m) * 1) or (outbox_blocked_transitions_total * 0)
+              # 증가, 새 시계열의 첫 양수, 재시작 뒤 값 변화를 감지하고 증가 없는 기존 시계열은 0으로 반환합니다.
+              # 1분 전 존재 여부와 값은 5분 구간으로 확인해 한 번의 수집 실패(stale)를 새 시계열로 보지 않습니다.
+              expr: (increase(outbox_blocked_transitions_total[1m]) > 0) or ((outbox_blocked_transitions_total unless max_over_time(outbox_blocked_transitions_total[5m] offset 1m)) * 1) or ((outbox_blocked_transitions_total != last_over_time(outbox_blocked_transitions_total[5m] offset 1m)) * 1) or (outbox_blocked_transitions_total * 0)
               instant: true
               intervalMs: 1000
               maxDataPoints: 43200

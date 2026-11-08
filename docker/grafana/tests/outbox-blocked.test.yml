@@ -103,6 +103,45 @@ tests:
           - labels: '{reason="ATTEMPTS_EXHAUSTED"}'
             value: 1
 
+  - name: 한 번의 수집 실패로 생긴 stale 표시를 새 시계열로 보지 않는다
+    interval: 5s
+    input_series:
+      - series: 'outbox_blocked_transitions_total{reason="ATTEMPTS_EXHAUSTED"}'
+        values: '3+0x5 stale 3+0x30'
+    promql_expr_test:
+      - expr: __OUTBOX_BLOCKED_EXPR__
+        eval_time: 85s
+        exp_samples:
+          - labels: '{reason="ATTEMPTS_EXHAUSTED"}'
+            value: 0
+      - expr: __OUTBOX_BLOCKED_EXPR__
+        eval_time: 90s
+        exp_samples:
+          - labels: '{reason="ATTEMPTS_EXHAUSTED"}'
+            value: 0
+      - expr: __OUTBOX_BLOCKED_EXPR__
+        eval_time: 95s
+        exp_samples:
+          - labels: '{reason="ATTEMPTS_EXHAUSTED"}'
+            value: 0
+
+  - name: 재시작 뒤 1분 넘는 공백 후 작아진 counter의 첫 전환을 감지한다
+    interval: 5s
+    input_series:
+      - series: 'outbox_blocked_transitions_total{reason="ATTEMPTS_EXHAUSTED"}'
+        values: '5+0x5 stale _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 1+0x20'
+    promql_expr_test:
+      - expr: __OUTBOX_BLOCKED_EXPR__
+        eval_time: 125s
+        exp_samples:
+          - labels: '{reason="ATTEMPTS_EXHAUSTED"}'
+            value: 1
+      - expr: __OUTBOX_BLOCKED_EXPR__
+        eval_time: 140s
+        exp_samples:
+          - labels: '{reason="ATTEMPTS_EXHAUSTED"}'
+            value: 1
+
   - name: 수집을 처음 시작했을 때 양수인 값도 알리고 계속 반복하지 않는다
     interval: 10s
     input_series:

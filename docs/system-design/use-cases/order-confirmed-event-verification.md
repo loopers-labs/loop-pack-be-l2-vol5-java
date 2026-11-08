@@ -44,7 +44,7 @@ commerce-api는 확정 시각 저장·Outbox 원자성·Relay 발행을, commerc
 ./gradlew :apps:commerce-api:check :apps:commerce-streamer:check
 ```
 
-Grafana의 BLOCKED 전환·발행 지연 알림 쿼리는 [별도 회귀 테스트](../../../docker/grafana/tests/verify_outbox_alerts.py)로 확인한다. provisioning 파일의 실제 쿼리와 `gt` 임계값을 읽는다. BLOCKED 전환은 첫 관측값 1, 새 오류 유형, 기존 counter 증가·유지와 초기화를, 발행 지연은 여러 인스턴스 값의 최댓값, 5분 경계, 해제, metric 부재를 검증한다. Grafana 규칙의 `for` 유지 조건과 provisioning 적재는 promtool 범위 밖이다. 실행 중인 Grafana·Prometheus와 Slack에는 접속하지 않는다. 이 검증은 알림 조건의 회귀 테스트이며 Slack 수신 검증을 대신하지 않는다.
+Grafana의 BLOCKED 전환·발행 지연 알림 쿼리는 [별도 회귀 테스트](../../../docker/grafana/tests/verify_outbox_alerts.py)로 확인한다. provisioning 파일의 실제 쿼리와 `gt` 임계값을 읽는다. BLOCKED 전환은 첫 관측값 1, 새 오류 유형, 기존 counter 증가·유지와 초기화, 한 번의 수집 실패, 재시작 공백 뒤 첫 전환을, 발행 지연은 여러 인스턴스 값의 최댓값, 5분 경계, 해제, metric 부재를 검증한다. Grafana 규칙의 `for` 유지 조건과 provisioning 적재는 promtool 범위 밖이다. 실행 중인 Grafana·Prometheus와 Slack에는 접속하지 않는다. 이 검증은 알림 조건의 회귀 테스트이며 Slack 수신 검증을 대신하지 않는다.
 
 ```bash
 python3 docker/grafana/tests/verify_outbox_alerts.py

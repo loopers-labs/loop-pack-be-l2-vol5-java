@@ -158,9 +158,9 @@ Consumer에서 같은 `eventId`의 처리를 확인해도 Outbox 상태는 바�
 
 `BLOCKED` 전환 TX가 commit되면 구조화 로그에 `eventId`·`orderId`·오류 유형을 남기고 `outbox_blocked_transitions_total` counter를 증가시킨다. label은 오류 유형처럼 값 종류가 적은 항목만 쓰고, 애플리케이션은 Slack을 직접 호출하지 않는다.
 
-Grafana 알림은 최근 1분의 counter 증가를 확인하고, 1분 전에는 없던 시계열이 현재 양수인 경우도 감지한다. counter가 첫 실패 때 등록되면 첫 수집값부터 1이어서 `increase()`만으로는 그 전환을 잡지 못하기 때문이다. 새 오류 유형의 첫 전환도 같은 조건으로 확인한다. 증가가 없는 기존 시계열은 0을 반환하므로 BLOCKED 행이 남아 있다는 이유만으로 전환 알림을 반복하지 않는다.
+Grafana 알림은 최근 1분의 counter 증가를 확인하고, 1분 전까지 5분 동안 표본이 없던 시계열이 현재 양수인 경우도 감지한다. counter가 첫 실패 때 등록되면 첫 수집값부터 1이어서 `increase()`만으로는 그 전환을 잡지 못하기 때문이다. 새 오류 유형의 첫 전환도 같은 조건으로 확인한다. 존재 여부를 순간 조회가 아니라 5분 구간으로 확인하므로, 수집이 한 번 실패해 남은 stale 표시를 새 시계열로 오인하지 않는다. 앱이 재시작돼 counter가 1분 넘는 공백 뒤 다시 시작되면, 그 구간의 마지막 값과 현재 값이 달라지는 것으로 감지한다. 증가가 없는 기존 시계열은 0을 반환하므로 BLOCKED 행이 남아 있다는 이유만으로 전환 알림을 반복하지 않는다.
 
-첫 양수 관측은 정확한 전환 시각을 증명하지 않는다. 수집을 새로 시작했거나 오랫동안 중단했다면 기존 누적값으로도 알림이 생길 수 있으므로 현재 `BLOCKED` 행과 `lastError`를 확인한다. 실제 provisioning 쿼리를 사용하는 [알림 회귀 테스트](../../../docker/grafana/tests/verify_outbox_alerts.py)는 첫 양수 관측, 기존 값의 증가·유지, 새 reason, counter 초기화, metric 부재를 격리된 promtool로 검증한다. 실행 방법은 루트 [모니터링 안내](../../../README.md#monitoring)를 따른다.
+첫 양수 관측은 정확한 전환 시각을 증명하지 않는다. 수집을 새로 시작했거나 오랫동안 중단했다면 기존 누적값으로도 알림이 생길 수 있으므로 현재 `BLOCKED` 행과 `lastError`를 확인한다. 실제 provisioning 쿼리를 사용하는 [알림 회귀 테스트](../../../docker/grafana/tests/verify_outbox_alerts.py)는 첫 양수 관측, 기존 값의 증가·유지, 새 reason, counter 초기화, 한 번의 수집 실패, 재시작 공백 뒤 첫 전환, metric 부재를 격리된 promtool로 검증한다. 실행 방법은 루트 [모니터링 안내](../../../README.md#monitoring)를 따른다.
 
 Relay와 분리한 지표 갱신 스케줄이 기동 직후 한 번, 이후 이전 갱신 완료 10초 뒤마다 집계 쿼리로 `PENDING` 수, `BLOCKED` 수, 가장 오래된 `PENDING.createdAt`을 읽어 메모리에 둔다. 읽기 전용이므로 Relay 설정과 관계없이 모든 인스턴스에서 실행한다. 따라서 Relay가 꺼져 있거나 멈춰도 쌓인 `PENDING`이 지표에 드러난다. 값은 인스턴스별이 아니라 DB 전체 기준이므로 여러 인스턴스의 값은 합계가 아니라 최댓값으로 본다. `test` 프로필은 갱신 스케줄을 끄고 테스트가 갱신 시점을 정한다.
 
