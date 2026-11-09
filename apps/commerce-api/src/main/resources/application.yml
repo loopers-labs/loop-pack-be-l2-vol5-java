@@ -8,6 +8,8 @@ server:
     max-connections: 8192 # 최대 동시 연결 수 (default : 8192)
     accept-count: 100 # 대기 큐 크기 (default : 100)
     keep-alive-timeout: 60s # 60s
+    mbeanregistry:
+      enabled: true # tomcat_threads_busy/current/config_max 지표를 내보낸다 (W8 부하 테스트 모니터링)
   max-http-request-header-size: 8KB
 
 spring:
