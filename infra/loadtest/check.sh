@@ -16,3 +16,16 @@ echo "== app-1 → MySQL·Redis"
 ssh_to "$APP_1_PUBLIC" "timeout 2 bash -c '</dev/tcp/$MYSQL_PRIVATE/3306' && echo mysql ok"
 ssh_to "$APP_1_PUBLIC" "timeout 2 bash -c '</dev/tcp/$REDIS_PRIVATE/6379' && echo redis ok"
 ssh_to "$REDIS_PUBLIC" "sudo docker exec redis redis-cli ping"
+
+echo "== Prometheus 수집 대상 (job: up 개수/전체)"
+ssh_to "$MONITOR_PUBLIC" "curl -s localhost:9090/api/v1/targets | jq -r '.data.activeTargets | group_by(.labels.job)[] | \"\\(.[0].labels.job): \\(map(select(.health==\"up\")) | length)/\\(length)\"'"
+
+echo "== 지표가 들어오는지 (값이 있는 시계열 수)"
+for q in tomcat_threads_busy_threads hikaricp_connections_active jvm_memory_used_bytes mysql_global_status_threads_connected node_memory_MemAvailable_bytes; do
+  n=$(ssh_to "$MONITOR_PUBLIC" "curl -s 'localhost:9090/api/v1/query?query=$q' | jq '.data.result | length'")
+  echo "$q: $n"
+done
+
+echo "== Grafana (이 PC 에서)"
+curl -s -o /dev/null -w "http://$MONITOR_PUBLIC:3000/api/health -> %{http_code}\n" "http://$MONITOR_PUBLIC:3000/api/health"
+ssh_to "$MONITOR_PUBLIC" "ls /opt/monitor/grafana/dashboards"

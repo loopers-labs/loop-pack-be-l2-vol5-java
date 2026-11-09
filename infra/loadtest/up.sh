@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# 키 페어·보안 그룹·EC2 6대를 만든다. 결과 IP 는 .state/hosts.env 에 남긴다.
+# 키 페어·보안 그룹·EC2 7대(app 3, mysql, redis, k6, monitor)를 만든다. 결과 IP 는 .state/hosts.env 에,
+# Grafana 관리자 비밀번호는 .state/grafana-password 에 남긴다.
 source "$(dirname "$0")/common.sh"
 
 if [[ -f "$HOSTS" ]]; then
@@ -17,6 +18,9 @@ AMI=$(aws ec2 describe-images --owners amazon \
   --query 'sort_by(Images,&CreationDate)[-1].ImageId' --output text)
 echo "vpc=$VPC subnet=$SUBNET ami=$AMI ssh-from=$MY_IP/32"
 
+GRAFANA_PASSWORD=$(openssl rand -hex 12)
+echo "$GRAFANA_PASSWORD" > "$STATE/grafana-password"
+
 aws ec2 create-key-pair --key-name "$PREFIX" --key-type ed25519 \
   --tag-specifications "ResourceType=key-pair,Tags=[{Key=Project,Value=$PREFIX}]" \
   --query KeyMaterial --output text > "$KEY"
@@ -25,17 +29,34 @@ chmod 400 "$KEY"
 SG=$(aws ec2 create-security-group --group-name "$PREFIX" --description "$PREFIX" --vpc-id "$VPC" \
   --tag-specifications "ResourceType=security-group,Tags=[{Key=Project,Value=$PREFIX}]" \
   --query GroupId --output text)
-# 22 는 지금 이 PC 의 공인 IP 에서만. 나머지는 같은 보안 그룹 안에서만.
+# 22 는 지금 이 PC 의 공인 IP 에서만, Grafana 3000 은 전체(잠시 보는 용도, 관리자 비밀번호는 무작위).
+# 나머지(앱·DB·Redis·exporter·Prometheus)는 같은 보안 그룹 안에서만.
 aws ec2 authorize-security-group-ingress --group-id "$SG" --ip-permissions \
   "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=$MY_IP/32}]" \
+  "IpProtocol=tcp,FromPort=3000,ToPort=3000,IpRanges=[{CidrIp=0.0.0.0/0}]" \
   "IpProtocol=tcp,FromPort=8080,ToPort=8081,UserIdGroupPairs=[{GroupId=$SG}]" \
   "IpProtocol=tcp,FromPort=3306,ToPort=3306,UserIdGroupPairs=[{GroupId=$SG}]" \
-  "IpProtocol=tcp,FromPort=6379,ToPort=6379,UserIdGroupPairs=[{GroupId=$SG}]" > /dev/null
+  "IpProtocol=tcp,FromPort=6379,ToPort=6379,UserIdGroupPairs=[{GroupId=$SG}]" \
+  "IpProtocol=tcp,FromPort=9090,ToPort=9090,UserIdGroupPairs=[{GroupId=$SG}]" \
+  "IpProtocol=tcp,FromPort=9100,ToPort=9100,UserIdGroupPairs=[{GroupId=$SG}]" \
+  "IpProtocol=tcp,FromPort=9104,ToPort=9104,UserIdGroupPairs=[{GroupId=$SG}]" > /dev/null
+
+# 역할별 user-data = 비밀번호 변수 + node_exporter 공통 + 역할 스크립트
+userdata() { # role-script
+  local out="$STATE/userdata-$1"
+  {
+    echo '#!/bin/bash'
+    echo "GRAFANA_PASSWORD='$GRAFANA_PASSWORD'"
+    tail -n +2 "$HERE/userdata/node-exporter.sh"
+    tail -n +2 "$HERE/userdata/$1"
+  } > "$out"
+  echo "$out"
+}
 
 launch() { # name type userdata volume-gb
   aws ec2 run-instances --image-id "$AMI" --instance-type "$2" --key-name "$PREFIX" \
     --security-group-ids "$SG" --subnet-id "$SUBNET" \
-    --user-data "file://$HERE/userdata/$3" \
+    --user-data "file://$(userdata "$3")" \
     --block-device-mappings "DeviceName=/dev/xvda,Ebs={VolumeSize=$4,VolumeType=gp3,DeleteOnTermination=true}" \
     --tag-specifications \
       "ResourceType=instance,Tags=[{Key=Name,Value=$PREFIX-$1},{Key=Project,Value=$PREFIX},{Key=Role,Value=$1}]" \
@@ -50,6 +71,7 @@ IDS+=("$(launch app-1 c7i.large app.sh 30)")
 IDS+=("$(launch app-2 c7i.large app.sh 30)")
 IDS+=("$(launch app-3 c7i.large app.sh 30)")
 IDS+=("$(launch k6 c7i.xlarge k6.sh 30)")
+IDS+=("$(launch monitor t3.medium monitor.sh 30)")
 echo "instances: ${IDS[*]}"
 
 aws ec2 wait instance-running --instance-ids "${IDS[@]}"
@@ -66,4 +88,4 @@ aws ec2 wait instance-running --instance-ids "${IDS[@]}"
 } > "$HOSTS"
 
 cat "$HOSTS"
-echo "다음: deploy.sh (user-data 설치가 끝날 때까지 기다린 뒤 앱을 올린다)"
+echo "다음: deploy.sh (user-data 설치가 끝날 때까지 기다린 뒤 앱을 올리고 수집 대상을 채운다)"
