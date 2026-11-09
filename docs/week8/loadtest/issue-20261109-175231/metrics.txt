@@ -1,0 +1,42 @@
+tomcat 사용 중 스레드 최대
+  app-1	200
+  app-2	200
+  app-3	200
+hikari active 최대
+  app-1	40
+  app-2	40
+  app-3	40
+hikari pending(연결 대기) 최대
+  app-1	161
+  app-2	161
+  app-3	161
+CPU 사용률 최대(%)
+  app-1	92
+  app-2	85.75
+  app-3	92.5
+  k6	22.49
+  monitor	40.88
+  mysql	41.98
+  redis	41.95
+메모리 사용률 최대(%)
+  app-1	65.66
+  app-2	49.08
+  app-3	62.21
+  k6	17.91
+  monitor	17.77
+  mysql	19.28
+  redis	14.11
+JVM 힙 사용 최대(MB)
+  app-1	1580.37
+  app-2	825
+  app-3	1231
+MySQL 실행 중 스레드 최대
+  mysql	122
+MySQL 연결 최대
+  mysql	121
+InnoDB 행 잠금 대기 횟수
+  mysql	11517.21
+InnoDB 행 잠금 대기 시간 합(ms)
+  mysql	2575434.5
+InnoDB 행 잠금 대기 최대(ms)
+  mysql	638
