@@ -22,7 +22,8 @@ class ArchitectureTest {
             "user", List.of("user"),
             "catalog", List.of("brand", "product", "productlike"),
             "point", List.of("point"),
-            "order", List.of("order")
+            "order", List.of("order"),
+            "promotion", List.of("promotion")
     );
     private static final List<String> AGGREGATES = AGGREGATES_BY_BC.values().stream().flatMap(List::stream).toList();
 
