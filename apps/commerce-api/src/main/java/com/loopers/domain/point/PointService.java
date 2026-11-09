@@ -11,8 +11,13 @@ public class PointService {
 
     private final PointRepository pointRepository;
 
+    /** 잔액 0 인 포인트 계정을 연다. 사용자 생성과 같은 TX 에서만 부른다 (DR-12). */
+    public PointModel openAccount(Long userId) {
+        return pointRepository.save(new PointModel(userId, 0L));
+    }
+
     /**
-     * 사용자의 포인트 계정. fixture 가 사용자와 함께 준비한다 (DR-12).
+     * 사용자의 포인트 계정. 사용자 생성 TX 가 함께 만든다 (DR-12).
      * 사용자는 있는데 계정이 없는 것은 데이터 정합성 문제라 매핑되지 않은 예외(500)로 둔다 (4-4 메모).
      */
     public PointModel getByUserId(Long userId) {
