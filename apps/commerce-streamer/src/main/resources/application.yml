@@ -29,6 +29,11 @@ demo-kafka:
   test:
     topic-name: demo.internal.topic-v1
 
+order-event:
+  topic-name: order-events # 확정 주문 이벤트(OrderConfirmed v1)의 topic. commerce-api의 같은 이름 설정과 같은 값이어야 한다. 테스트는 고유 접미사로 덮어쓴다
+  consumer-group: purchase-activity # 구매 활동 소비 group. 테스트는 고유 이름으로 덮어쓴다
+  listener-auto-startup: true # DB만 확인하는 테스트는 false로 끈다
+
 ---
 spring:
   config:

@@ -1,0 +1,1 @@
+{"eventType":"OrderConfirmed","schemaVersion":1,"eventId":"order-confirmed:v1:2","orderId":2,"confirmedAt":"2026-09-07T01:00:00Z","items":[{"productId":1,"quantity":2}]}
