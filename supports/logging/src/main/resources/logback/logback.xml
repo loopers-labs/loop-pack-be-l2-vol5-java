@@ -36,8 +36,11 @@
 
     <springProfile name="prd">
         <include resource="appenders/json-console-appender.xml"/>
+        <!-- Slack 알림을 켤 때 아래 두 include 와 ASYNC-SLACK 을 함께 되살린다.
+             properties/slack-log-prd.xml 의 값이 비어 있으면 Logback 설정 오류로 기동이 실패한다.
         <include resource="appenders/slack-appender.xml"/>
         <include resource="properties/slack-log-prd.xml"/>
+        -->
         <logger name="com.loopers" level="INFO"/>
         <root level="INFO">
             <appender-ref ref="CONSOLE"/>
