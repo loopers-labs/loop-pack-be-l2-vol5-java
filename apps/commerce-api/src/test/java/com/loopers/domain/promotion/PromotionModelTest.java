@@ -1,5 +1,6 @@
 package com.loopers.domain.promotion;
 
+import com.loopers.support.error.ErrorType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -9,6 +10,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import java.time.ZonedDateTime;
 import java.util.function.Consumer;
 
+import static com.loopers.support.ErrorAssertions.assertThrowsErrorType;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -49,41 +51,34 @@ class PromotionModelTest {
         assertThat(promotion.isActive()).isFalse();
     }
 
-    @DisplayName("이름이 비어 있으면 만들지 않는다.")
+    @DisplayName("이름이 비어 있으면 INVALID_PROMOTION 으로 만들지 않는다.")
     @ParameterizedTest
     @NullAndEmptySource
     @ValueSource(strings = " ")
     void create_rejectsBlankName(String blank) {
-        assertThatThrownBy(() -> PromotionModel.create(blank, PromotionType.COUPON_ISSUE, STARTS_AT, ENDS_AT))
-            .isInstanceOf(IllegalArgumentException.class);
+        assertThrowsErrorType(() -> PromotionModel.create(blank, PromotionType.COUPON_ISSUE, STARTS_AT, ENDS_AT), ErrorType.INVALID_PROMOTION);
     }
 
     @DisplayName("이름은 100자까지 받고, 101자면 만들지 않는다.")
     @Test
     void create_rejectsTooLongName() {
         assertThat(PromotionModel.create("a".repeat(100), PromotionType.COUPON_ISSUE, STARTS_AT, ENDS_AT).getName()).hasSize(100);
-        assertThatThrownBy(() -> PromotionModel.create("a".repeat(101), PromotionType.COUPON_ISSUE, STARTS_AT, ENDS_AT))
-            .isInstanceOf(IllegalArgumentException.class);
+        assertThrowsErrorType(() -> PromotionModel.create("a".repeat(101), PromotionType.COUPON_ISSUE, STARTS_AT, ENDS_AT), ErrorType.INVALID_PROMOTION);
     }
 
     @DisplayName("종류·시작 시각·종료 시각이 없으면 만들지 않는다.")
     @Test
     void create_rejectsMissingTypeOrPeriod() {
-        assertThatThrownBy(() -> PromotionModel.create("p", null, STARTS_AT, ENDS_AT))
-            .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> PromotionModel.create("p", PromotionType.COUPON_ISSUE, null, ENDS_AT))
-            .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> PromotionModel.create("p", PromotionType.COUPON_ISSUE, STARTS_AT, null))
-            .isInstanceOf(IllegalArgumentException.class);
+        assertThrowsErrorType(() -> PromotionModel.create("p", null, STARTS_AT, ENDS_AT), ErrorType.INVALID_PROMOTION);
+        assertThrowsErrorType(() -> PromotionModel.create("p", PromotionType.COUPON_ISSUE, null, ENDS_AT), ErrorType.INVALID_PROMOTION);
+        assertThrowsErrorType(() -> PromotionModel.create("p", PromotionType.COUPON_ISSUE, STARTS_AT, null), ErrorType.INVALID_PROMOTION);
     }
 
     @DisplayName("시작 시각이 종료 시각과 같거나 뒤면 만들지 않는다.")
     @Test
     void create_rejectsStartNotBeforeEnd() {
-        assertThatThrownBy(() -> PromotionModel.create("p", PromotionType.COUPON_ISSUE, STARTS_AT, STARTS_AT))
-            .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> PromotionModel.create("p", PromotionType.COUPON_ISSUE, ENDS_AT, STARTS_AT))
-            .isInstanceOf(IllegalArgumentException.class);
+        assertThrowsErrorType(() -> PromotionModel.create("p", PromotionType.COUPON_ISSUE, STARTS_AT, STARTS_AT), ErrorType.INVALID_PROMOTION);
+        assertThrowsErrorType(() -> PromotionModel.create("p", PromotionType.COUPON_ISSUE, ENDS_AT, STARTS_AT), ErrorType.INVALID_PROMOTION);
     }
 
     @DisplayName("READY 를 열면 ACTIVE 이고 참여할 수 있다.")

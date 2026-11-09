@@ -1,6 +1,8 @@
 package com.loopers.domain.promotion;
 
 import com.loopers.domain.BaseEntity;
+import com.loopers.support.error.CoreException;
+import com.loopers.support.error.ErrorType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
@@ -15,7 +17,7 @@ import java.util.Map;
 /**
  * AG-07 포함 개념 선착순 쿠폰 발급 설정 (TB-16 coupon_issue_promotion). promotion 과 1:1 이다.
  * promotion_id 는 ID 만 들고 FK 는 두지 않는다. coupon_spec 은 발급할 쿠폰의 동적 속성이며 키를 해석하지 않는다.
- * 수량 규칙: totalQuantity ≥ 1, 1 ≤ perUserLimit ≤ totalQuantity.
+ * 수량 규칙: totalQuantity ≥ 1, perUserLimit = 1 (발급 내역이 사용자·프로모션당 한 행이다, DR-57). 검증 실패는 INVALID_PROMOTION.
  */
 @Entity
 @Table(name = "coupon_issue_promotion",
@@ -49,17 +51,16 @@ public class CouponIssuePromotionModel extends BaseEntity {
 
     public static CouponIssuePromotionModel create(Long promotionId, int totalQuantity, int perUserLimit, Map<String, Object> couponSpec) {
         if (promotionId == null) {
-            throw new IllegalArgumentException("쿠폰 발급 프로모션의 promotionId 가 없습니다.");
+            throw new CoreException(ErrorType.INVALID_PROMOTION, "쿠폰 발급 프로모션의 promotionId 가 없습니다.");
         }
         if (totalQuantity < 1) {
-            throw new IllegalArgumentException("발급 한도는 1 이상이어야 합니다. [totalQuantity = " + totalQuantity + "]");
+            throw new CoreException(ErrorType.INVALID_PROMOTION, "발급 한도는 1 이상이어야 합니다. [totalQuantity = " + totalQuantity + "]");
         }
-        if (perUserLimit < 1 || perUserLimit > totalQuantity) {
-            throw new IllegalArgumentException(
-                "1인당 한도는 1 이상, 발급 한도 이하여야 합니다. [perUserLimit = " + perUserLimit + ", totalQuantity = " + totalQuantity + "]");
+        if (perUserLimit != 1) {
+            throw new CoreException(ErrorType.INVALID_PROMOTION, "1인당 한도는 1 이어야 합니다. [perUserLimit = " + perUserLimit + "]");
         }
         if (couponSpec == null || couponSpec.isEmpty()) {
-            throw new IllegalArgumentException("발급할 쿠폰 속성(couponSpec)이 비어 있습니다.");
+            throw new CoreException(ErrorType.INVALID_PROMOTION, "발급할 쿠폰 속성(couponSpec)이 비어 있습니다.");
         }
         return new CouponIssuePromotionModel(promotionId, totalQuantity, perUserLimit, new LinkedHashMap<>(couponSpec));
     }

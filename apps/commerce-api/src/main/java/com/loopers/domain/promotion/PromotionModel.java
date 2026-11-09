@@ -1,6 +1,8 @@
 package com.loopers.domain.promotion;
 
 import com.loopers.domain.BaseEntity;
+import com.loopers.support.error.CoreException;
+import com.loopers.support.error.ErrorType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -46,16 +48,16 @@ public class PromotionModel extends BaseEntity {
         this.endsAt = endsAt;
     }
 
-    /** 새 프로모션. READY 로 시작한다. */
+    /** 새 프로모션. READY 로 시작한다. 검증 실패는 INVALID_PROMOTION. */
     public static PromotionModel create(String name, PromotionType type, ZonedDateTime startsAt, ZonedDateTime endsAt) {
         if (name == null || name.isBlank() || name.length() > NAME_MAX_LENGTH) {
-            throw new IllegalArgumentException("프로모션 이름은 1~" + NAME_MAX_LENGTH + "자여야 합니다.");
+            throw new CoreException(ErrorType.INVALID_PROMOTION, "프로모션 이름은 1~" + NAME_MAX_LENGTH + "자여야 합니다.");
         }
         if (type == null || startsAt == null || endsAt == null) {
-            throw new IllegalArgumentException("프로모션의 type·startsAt·endsAt 이 없습니다.");
+            throw new CoreException(ErrorType.INVALID_PROMOTION, "프로모션의 type·startsAt·endsAt 이 없습니다.");
         }
         if (!startsAt.isBefore(endsAt)) {
-            throw new IllegalArgumentException("프로모션 시작 시각은 종료 시각보다 앞이어야 합니다.");
+            throw new CoreException(ErrorType.INVALID_PROMOTION, "프로모션 시작 시각은 종료 시각보다 앞이어야 합니다.");
         }
         return new PromotionModel(name, type, startsAt, endsAt);
     }
