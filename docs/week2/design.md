@@ -21,18 +21,19 @@ flowchart LR
     C["BC-02 카탈로그<br/>브랜드 · 상품 · 재고 · 좋아요"]
     P["BC-03 포인트<br/>잔액 · 충전 · 환불"]
     O["BC-04 주문<br/>주문 · 주문 품목 · 결제"]
-    PR["BC-05 프로모션<br/>프로모션 · 쿠폰 발급 설정"]
+    PR["BC-05 프로모션<br/>프로모션 · 쿠폰 발급 · 발급 쿠폰"]
 
     U -->|존재 · 관리자 여부| C
     U -->|존재 · 관리자 여부| P
     U -->|존재 · 관리자 여부| O
+    U -->|존재 · 관리자 여부| PR
     C -->|존재 · 삭제 여부 · 현재 가격| O
     C ==>|재고 차감| O
     P ==>|잔액 차감| O
 ```
 
 순환 없음. BC-04 주문이 유일한 하류 종점이고, 재고·잔액을 바꾸는 쓰기 의존은 주문 확정(FR-ORDER-02) 한 곳에서만 일어난다.
-BC-05 프로모션은 W8 에서 추가했고 아직 다른 BC 와 의존이 없다 (8장).
+BC-05 프로모션은 W8 에서 추가했고 BC-01 만 조회한다 (8장).
 
 ### 0-2. 계층 지도
 
@@ -1566,9 +1567,9 @@ BLOCKED ─resume(eventId)→ PENDING (failure 0, next_attempt_at = now. attempt
 
 ---
 
-## 8. 프로모션 메타데이터 (W8)
+## 8. 프로모션과 선착순 쿠폰 발급 (W8)
 
-선착순 쿠폰 발급의 첫 단계로, 프로모션(이벤트)을 나타내는 범용 메타데이터와 종류별 설정을 둔다. 발급 처리(선착순 수량 차감·동시성)·보유 쿠폰·주문 적용은 이 장의 범위 밖이다.
+프로모션(이벤트)을 나타내는 범용 메타데이터와 종류별 설정을 두고, 첫 종류인 선착순 쿠폰 발급을 만든다. 발급된 쿠폰의 사용(주문 적용)·만료는 이 장의 범위 밖이다.
 
 ### 8-1. BC-05 프로모션 (promotion)
 
@@ -1576,64 +1577,132 @@ BLOCKED ─resume(eventId)→ PENDING (failure 0, next_attempt_at = now. attempt
 |---|---|
 | 프로모션 | 이름·종류·진행 상태·기간을 가진 이벤트. 종류별 설정은 종류별 테이블에 둔다 (DR-52) |
 | 진행 상태 | READY · ACTIVE · PAUSED · ENDED. 참여 가능 여부는 이것만 본다 (DR-53) |
-| 쿠폰 발급 설정 | 종류 COUPON_ISSUE 의 설정. 발급 한도·1인당 한도·발급할 쿠폰 속성 |
+| 쿠폰 발급 설정 | 종류 COUPON_ISSUE 의 설정. 발급 한도·1인당 한도(1)·발급할 쿠폰 속성 |
+| 남은 발급 수량 | 쿠폰 발급 프로모션당 하나. 발급 한도에서 시작해 발급마다 1 줄고 0 아래로 내려가지 않는다 (DR-58) |
+| 발급 쿠폰 | 사용자가 받은 쿠폰. 발급 내역이 곧 사용자의 쿠폰이다. 사용자·프로모션당 한 장 (DR-57) |
 
-- 참조 개념: 없음. 발급 기능에서 사용자(BC-01)를 ID 로 참조하게 된다.
-- AG-07 프로모션: 루트 `PromotionModel`, 포함 개념 `CouponIssuePromotionModel`. `PromotionRepository` 가 TB-15·16 을 함께 맡는다.
+- 참조 개념: 사용자(BC-01). 요청자 확인·관리자 판정, 발급 쿠폰의 주인(ID 만).
+- AG-07 프로모션: 루트 `PromotionModel`, 포함 개념 `CouponIssuePromotionModel`·`CouponIssueStockModel`·`IssuedCouponModel`. `PromotionRepository` 가 TB-15~18 을 함께 맡고, 규칙은 `PromotionService` 가 지킨다.
 - ArchUnit: `AGGREGATES_BY_BC` 에 `"promotion" → ["promotion"]`.
 
-### 8-2. TB-15 `promotion`
+### 8-2. 테이블
 
-- 생성 SQL: `docs/week8/promotion.sql`(`-pg.sql`)
-- 검증 (`PromotionModel.create`): 이름 1~100자, 종류·기간 필수, 시작 < 종료
+생성 SQL: `docs/week8/promotion.sql`(`-pg.sql`). 네 테이블 모두 FK 없이 ID 만 든다. 공통 컬럼 `created_at`·`updated_at`·`deleted_at` 은 표에서 뺀다 (DR-01).
+
+#### TB-15 `promotion`
+
+검증 (`PromotionModel.create`): 이름 1~100자, 종류·기간 필수, 시작 < 종료
 
 | 컬럼 | 타입 | NULL | 변경 | 의미 |
 |---|---|---|---|---|
 | `id` | bigint | N | | PK |
 | `name` | varchar(100) | N | | 프로모션 이름 |
 | `type` | varchar(30) | N | 불변 | COUPON_ISSUE. 종류별 설정 테이블을 정한다 |
-| `status` | varchar(20) | N | | READY · ACTIVE · PAUSED · ENDED (8-4) |
+| `status` | varchar(20) | N | | READY · ACTIVE · PAUSED · ENDED (8-3) |
 | `starts_at` / `ends_at` | datetime(6) | N | | 진행 기간. 메타데이터이고 참여 판단에 쓰지 않는다 (DR-53) |
-| `created_at`·`updated_at`·`deleted_at` | | | | 공통 (DR-01) |
 
-### 8-3. TB-16 `coupon_issue_promotion`
+#### TB-16 `coupon_issue_promotion`
 
-- TB-15 와 1:1. 고유 제약: `promotion_id`. FK 는 두지 않고 ID 만 든다
-- 생성 SQL: `docs/week8/promotion.sql`(`-pg.sql`)
-- 검증 (`CouponIssuePromotionModel.create`): `total_quantity` ≥ 1, 1 ≤ `per_user_limit` ≤ `total_quantity`, `coupon_spec` 은 null·빈 객체가 아님 (키는 해석하지 않는다, DR-54)
+TB-15 와 1:1 (`promotion_id` UNIQUE). 검증 (`CouponIssuePromotionModel.create`): `total_quantity` ≥ 1, `per_user_limit` = 1 (DR-57), `coupon_spec` 은 null·빈 객체가 아님 (키는 해석하지 않는다, DR-54)
 
 | 컬럼 | 타입 | NULL | 변경 | 의미 |
 |---|---|---|---|---|
 | `id` | bigint | N | | PK |
 | `promotion_id` | bigint | N | 불변 | TB-15 `id`. UNIQUE |
 | `total_quantity` | int | N | | 선착순 발급 한도 |
-| `per_user_limit` | int | N | | 1인당 발급 한도 |
+| `per_user_limit` | int | N | | 1인당 발급 한도. 지금은 1 만 받는다 |
 | `coupon_spec` | JSON (PG `jsonb`) | N | | 발급할 쿠폰의 속성. 구조로 읽고 쓴다 (DR-54) |
-| `created_at`·`updated_at`·`deleted_at` | | | | 공통 (DR-01) |
 
-### 8-4. 상태와 전이
+#### TB-17 `coupon_issue_stock`
+
+TB-16 과 1:1 (`promotion_id` UNIQUE). 생성 TX 에서 `remaining = total_quantity` 로 만들고, 발급 TX 의 조건 갱신만 줄인다 (DR-58)
+
+| 컬럼 | 타입 | NULL | 변경 | 의미 |
+|---|---|---|---|---|
+| `id` | bigint | N | | PK |
+| `promotion_id` | bigint | N | 불변 | TB-15 `id`. UNIQUE |
+| `remaining` | int | N | | 남은 발급 수량. ≥ 0 |
+
+#### TB-18 `issued_coupon`
+
+고유 제약 (`user_id`, `promotion_id`): 사용자·프로모션당 한 장. 선두가 `user_id` 라 내 쿠폰 조회도 이 인덱스를 쓴다. 쿠폰 내용은 복사하지 않고 조회 때 TB-16 `coupon_spec` 을 함께 읽는다 (DR-57)
+
+| 컬럼 | 타입 | NULL | 변경 | 의미 |
+|---|---|---|---|---|
+| `id` | bigint | N | | PK. 응답의 `couponId` |
+| `user_id` | bigint | N | 불변 | 받은 사용자 (BC-01) |
+| `promotion_id` | bigint | N | 불변 | TB-15 `id` |
+| `created_at` | datetime(6) | N | 불변 | 발급 시각. 응답의 `issuedAt` |
+
+### 8-3. 상태와 전이
 
 ```
-READY ─activate→ ACTIVE ─pause→ PAUSED ─resume→ ACTIVE
+(생성) → READY ─activate→ ACTIVE ─pause→ PAUSED ─resume→ ACTIVE
 READY · ACTIVE · PAUSED ─end→ ENDED (끝)
 ```
 
-허용되지 않은 전이는 `IllegalStateException` 이고 상태는 그대로다 (DR-55).
+- 생성 API 는 만든 뒤 같은 TX 에서 바로 activate 해 ACTIVE 로 돌려준다 (DR-56). READY 를 거치는 경로와 pause·resume·end 를 부르는 API 는 아직 없다.
+- 허용되지 않은 전이는 `IllegalStateException` 이고 상태는 그대로다. API 가 없어 사용자 응답 코드가 없다 (DR-55).
 
-### 8-5. 테스트
+### 8-4. 발급 흐름과 동시성
+
+```
+PromotionFacade.issue  @Transactional
+  사용자 확인 (USER_NOT_FOUND)
+  promotion 조회, 잠금 없음 ─ 없음·종류 다름 → PROMOTION_NOT_FOUND / ACTIVE 아님 → PROMOTION_NOT_ACTIVE
+  ① INSERT issued_coupon (user_id, promotion_id) ─ saveAndFlush, UNIQUE 위반 → COUPON_ALREADY_ISSUED
+  ② UPDATE coupon_issue_stock SET remaining = remaining - 1
+       WHERE promotion_id = ? AND remaining > 0 ─ 0 행 → COUPON_SOLD_OUT (①도 rollback)
+COMMIT
+```
+
+| 경합 | 막는 것 | 결과 |
+|---|---|---|
+| 서로 다른 사용자가 마지막 수량을 동시에 요청 | ② 의 행 잠금 + 조건. 기다린 쪽은 커밋된 최신 `remaining` 으로 조건을 다시 본다 (MySQL REPEATABLE READ·PG READ COMMITTED 모두) | 한도만큼만 성공, 나머지 SOLD_OUT. `remaining` 은 0 아래로 가지 않는다 |
+| 같은 사용자의 동시 요청 | ① 의 고유 제약. 뒤 요청은 앞 TX 가 끝날 때까지 기다린다 | 한 장. 앞 TX 가 소진으로 rollback 되면 뒤 요청이 다시 시도할 수 있다 |
+| 발급과 중지(pause·end)가 겹침 | 막지 않는다 (상태를 잠그지 않음, DR-53) | 중지 커밋 직전에 상태를 읽은 요청은 발급될 수 있다 |
+
+- 순서: 모든 요청이 몰리는 수량 행을 마지막에 갱신해 그 행 잠금을 commit 직전까지로 줄이고, 중복 요청은 수량 행을 건드리지 않고 실패한다 (DR-58).
+- ① 의 UNIQUE 위반 뒤 TX 는 rollback 전용이다. Service 는 바로 예외로 끝낸다.
+
+### 8-5. 엔드포인트
+
+| 메서드·경로 | 요청자 | 요청 | 응답 `data` | 실패 |
+|---|---|---|---|---|
+| POST `/api-admin/v1/promotions` | 관리자 | `name`, `type`("COUPON_ISSUE"), `startsAt`, `endsAt`, `couponIssue{totalQuantity, perUserLimit, couponSpec}` | `promotionId`, `name`, `type`, `status`("ACTIVE"), `startsAt`, `endsAt`, `totalQuantity`, `perUserLimit`, `couponSpec` | 400 `INVALID_PROMOTION`, 400 `BAD_REQUEST`(JSON 형식), 403 `NOT_ADMIN`, 404 `USER_NOT_FOUND` |
+| POST `/api/v1/promotions/{promotionId}/issues` | 사용자 | 없음 | `couponId`, `promotionId`, `issuedAt` | 404 `USER_NOT_FOUND`·`PROMOTION_NOT_FOUND`, 409 `PROMOTION_NOT_ACTIVE`·`COUPON_ALREADY_ISSUED`·`COUPON_SOLD_OUT` |
+| GET `/api/v1/coupons` | 사용자 | 없음 | 배열 `[{couponId, promotionId, promotionName, couponSpec, issuedAt}]`. 최근 발급 순(id 내림차순), 페이지 없음 | 404 `USER_NOT_FOUND` |
+
+| ErrorType | HTTP | 언제 |
+|---|---|---|
+| `INVALID_PROMOTION` | 400 | 이름·종류·기간·한도·1인당 한도·쿠폰 속성 검증 실패, 쿠폰 발급 설정 없음 |
+| `PROMOTION_NOT_FOUND` | 404 | 없는 프로모션, 또는 종류가 COUPON_ISSUE 가 아님 |
+| `PROMOTION_NOT_ACTIVE` | 409 | 상태가 ACTIVE 가 아님 |
+| `COUPON_ALREADY_ISSUED` | 409 | 같은 사용자가 같은 프로모션에서 이미 받음 |
+| `COUPON_SOLD_OUT` | 409 | 남은 수량 0 |
+
+- 요청·응답의 `type`·`status` 는 문자열이다. interfaces 는 domain enum 을 참조하지 않는다 (ArchUnit).
+- 조회는 `CouponReader` → `CouponQueryRepository` 가 TB-18·15·16 을 조인해 `CouponView.MyCoupon` 으로 돌려준다 (DR-31).
+
+### 8-6. 테스트
 
 | 테스트 | 확인 |
 |---|---|
-| `PromotionModelTest` | 생성 검증, 허용·거부 전이, `isActive` |
-| `CouponIssuePromotionModelTest` | 수량·한도 경계, spec 비어 있음, spec 복사·읽기 전용 |
+| `PromotionModelTest` | 생성 검증(INVALID_PROMOTION), 허용·거부 전이, `isActive` |
+| `CouponIssuePromotionModelTest` | 한도 경계, 1인당 한도 1 만, spec 비어 있음, spec 복사·읽기 전용 |
+| `CouponIssueStockModelTest` | 남은 수량 = 한도로 시작, 검증 |
 | `PromotionRepositoryIntegrationTest` | 실제 MySQL 저장·조회, JSON 왕복(중첩 객체·배열·숫자·문자열·불리언), `promotion_id` UNIQUE |
-| `ArchitectureTest` | BC-05 의존 규칙 |
+| `PromotionServiceIntegrationTest` | 생성 즉시 ACTIVE·수량 행, 설정 오류 시 promotion 도 rollback, 발급 성공·NOT_FOUND·NOT_ACTIVE·ALREADY_ISSUED·SOLD_OUT(먼저 넣은 발급 내역 rollback) |
+| `CouponIssueConcurrencyTest` | 한도 10 에 서로 다른 사용자 20 명 동시 → 성공 10·SOLD_OUT 10·남은 수량 0. 같은 사용자 20 번 동시 → 성공 1·ALREADY_ISSUED 19·남은 수량 9 |
+| `PromotionV1ApiE2ETest` | 세 엔드포인트의 성공 응답과 실패 코드(400·403·404·409) |
+| `ArchitectureTest` | BC-05 의존 규칙, interfaces 의 domain 비의존 |
 
-### 8-6. 아직 정하지 않은 것
+### 8-7. 아직 정하지 않은 것
 
-- 선착순 발급 수 집계 위치 (Redis·별도 행·발급 내역 등)
-- 보유 쿠폰을 BC-05 에 둘지 별도 BC 로 뺄지
-- 프로모션 API 가 생길 때 예외를 ErrorType 으로 바꾸는 것 (DR-55)
+- 1인당 한도 2 이상: 지금 고유 제약으로는 표현할 수 없다. 필요해지면 사용자별 발급 수 행의 조건 갱신 등으로 바꾼다 (DR-57)
+- 쿠폰 사용·만료 상태와 주문 적용, 그때 쿠폰 내용을 발급 행에 복사할지 (DR-57)
+- 상태 변경(pause·resume·end) API, 그때 전이 위반의 ErrorType (DR-55)
+- 발급 쿠폰을 BC-05 에 계속 둘지, 쿠폰 사용이 생길 때 별도 BC 로 뺄지
 
 ## 부록 A. 설계 판단 기록과 열린 질문
 
@@ -1696,7 +1765,10 @@ READY · ACTIVE · PAUSED ─end→ ENDED (끝)
 | DR-52 | 8 | BC-05, AG-07, TB-15, TB-16 | 프로모션을 BC-05 로 새로 두고, 범용 메타데이터(TB-15)와 종류별 설정(TB-16, 1:1, FK 없음)을 한 AG(AG-07)로 묶는다. ArchUnit BC 매핑에 `promotion` 을 더한다 | (a) 기존 BC 에 넣기 (b) 쿠폰 전용 테이블 하나 (c) promotion 의 JSON config 컬럼 하나로 종류별 설정 | (a) 프로모션·진행 상태·발급 한도는 기존 BC 의 언어에 없고, 넣으면 그 BC 의 규칙이 바뀐다. (b) 쿠폰 외 프로모션이 생기면 테이블을 다시 나눠야 한다. (c) 종류별 제약·검증을 DB·엔티티에 걸 수 없다 | 종류별 테이블이 많아져 관리 부담이 커지면 (c) | 없음 |
 | DR-53 | 8 | TB-15 | 참여 가능 여부는 `status` 만 본다. `starts_at`·`ends_at` 은 메타데이터이고 필수·시작 < 종료 검증만 한다 | (a) status 와 기간을 함께 (b) 기간만 | 사용자 결정. 운영자가 상태로 직접 열고 닫는다. 기간과 상태가 어긋나도 상태가 기준이다 | 기간 기반 자동 오픈·종료가 필요해지면 | 없음 |
 | DR-54 | 8 | TB-16, DR-47 | 발급할 쿠폰 속성은 JSON 컬럼(MySQL `JSON`, PG `jsonb`) 하나로 두고 `Map<String, Object>` + `@JdbcTypeCode(SqlTypes.JSON)` 으로 매핑한다. 엔티티는 null·빈 객체만 거절하고 키를 해석하지 않는다 | (a) 속성별 컬럼(할인 방식·값·만료) (b) 별도 coupon_template 테이블 (c) TEXT 문자열 | 사용자 결정. 쿠폰 속성이 동적이다. DR-47 이 JSON 을 버린 이유(저장 바이트가 바뀜)는 해당하지 않는다. 바이트가 아니라 구조로 읽으므로 키 순서·공백 정규화가 상관없다 | 속성이 고정되고 DB 제약·조회 조건이 필요해지면 (a)(b) | 없음 |
-| DR-55 | 8 | TB-15, TB-16 | 수량·전이 위반은 엔티티 생성·전이 메서드에서 `IllegalArgumentException`·`IllegalStateException` 으로 막는다. ErrorType·DB CHECK 는 두지 않는다 | (a) ErrorType 추가·CoreException (b) DB CHECK 제약 | 프로모션 생성·변경 API 가 아직 없어 사용자 응답 계약이 없다. 검증은 어느 경로로 만들어도 빠지지 않도록 엔티티 한 곳에 둔다 | 프로모션 생성·변경 API 가 생기면 (a) | 없음 |
+| DR-55 | 8 | TB-15, TB-16, TB-17 | 생성·수량 검증 위반은 엔티티 생성 메서드에서 막는다. DB CHECK 는 두지 않는다. 처음에는 API 가 없어 `IllegalArgumentException` 으로 두었고, 생성 API 를 만들며 `INVALID_PROMOTION`(400) 으로 바꿨다 (되돌릴 조건 도달). 상태 전이 위반은 부르는 API 가 아직 없어 `IllegalStateException` 그대로다 | (a) 처음부터 ErrorType (b) DB CHECK 제약 | 사용자 응답 계약이 생긴 시점에 코드를 붙인다. 검증은 어느 경로로 만들어도 빠지지 않도록 엔티티 한 곳에 둔다 | 상태 변경 API 가 생기면 전이 위반에도 ErrorType | 없음 |
+| DR-56 | 8 | TB-15, DR-53 | 생성 API 는 promotion·쿠폰 발급 설정·남은 수량을 한 TX 에서 만들고 같은 TX 에서 바로 ACTIVE 로 연다. 모델은 READY 로 시작하는 그대로 둔다 | (a) READY 로 만들고 상태 변경 API 로 연다 (b) 모델이 처음부터 ACTIVE | 사용자 결정. 상태 변경 API 없이도 발급할 수 있어야 한다. (b)는 READY 의 의미를 지운다 | 예약 오픈(READY 대기)이 필요해지면 (a) | 없음 |
+| DR-57 | 8 | TB-16, TB-18 | 발급 내역이 곧 사용자의 쿠폰이다. (user_id, promotion_id) 고유 제약으로 사용자당 한 장이고, 그래서 `per_user_limit` 은 1 만 받는다. 쿠폰 내용(coupon_spec)은 발급 행에 복사하지 않고 조회 때 TB-16 과 조인한다 | (a) 사용자 쿠폰 테이블을 발급 내역과 따로 (b) `per_user_limit` 컬럼 제거 (c) seq 로 여러 장 (d) 발급 시 spec 복사 | 사용자 결정. (b)는 다시 늘릴 때 스키마가 바뀐다. (c)는 몇 번째인지 계산하는 곳에서 다시 경합한다. (d)는 지금 설정을 바꾸는 경로가 없어 복사할 이유가 없다 | 2 장 이상이 필요하면 사용자별 발급 수 조건 갱신으로. 설정 변경·쿠폰 사용이 생기면 (d) | 없음 |
+| DR-58 | 8 | TB-17, TB-18, DR-38 | 남은 수량은 별도 테이블(TB-17)에 두고 조건 갱신(`remaining > 0` 일 때만 -1)으로만 줄인다. 발급 TX 는 발급 내역 insert(즉시 flush) → 수량 조건 갱신 순서이고, 0 행이면 예외로 전체를 rollback 한다 | (a) 수량 행을 `SELECT … FOR UPDATE` 로 읽고 검사 (b) TB-16 에 남은 수량 컬럼 (c) 발급 수 count 로 판정 (d) 수량 갱신을 먼저 | 조건 갱신 한 문장이 잠금·검사·감소를 함께 해 읽고 쓰는 사이의 틈이 없다. (b)는 자주 바뀌는 값과 설정이 한 행에 섞인다 (DR-38 재고 분리와 같은 이유). (c)는 count 와 insert 사이에 경합이 남는다. (d)는 중복 요청도 몰리는 수량 행을 잠그고, 잠금 시간이 insert 만큼 길어진다 | 수량 행 한 곳의 잠금 대기가 처리량을 막으면 Redis 등 DB 밖 선점으로 | 없음 |
 
 ### A-2. 열린 질문
 

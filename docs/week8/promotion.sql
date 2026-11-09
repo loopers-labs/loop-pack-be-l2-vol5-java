@@ -1,7 +1,8 @@
 -- =====================================================================
--- 프로모션 메타데이터 테이블 (MySQL, TB-15·TB-16)
+-- 프로모션·쿠폰 발급 테이블 (MySQL, TB-15~TB-18)
 --
--- promotion(범용 프로모션)과 coupon_issue_promotion(선착순 쿠폰 발급 설정, promotion 과 1:1)을 만든다. 행은 넣지 않는다.
+-- promotion(범용 프로모션), coupon_issue_promotion(선착순 쿠폰 발급 설정, promotion 과 1:1),
+-- coupon_issue_stock(남은 발급 수량, 1:1), issued_coupon(발급된 쿠폰 = 사용자 쿠폰)을 만든다. 행은 넣지 않는다.
 --
 -- 순서
 --   운영(ddl-auto: none)은 새 앱(프로모션 엔티티)을 배포하기 전에 실행한다.
@@ -41,4 +42,29 @@ CREATE TABLE IF NOT EXISTS coupon_issue_promotion (
     deleted_at      DATETIME(6) NULL,
     PRIMARY KEY (id),
     CONSTRAINT ux_coupon_issue_promotion_promotion UNIQUE (promotion_id)
+);
+
+-- 엔티티(CouponIssueStockModel)와 같은 이름·컬럼. 발급 TX 의 조건 갱신(remaining > 0 일 때만 -1)만 줄인다.
+CREATE TABLE IF NOT EXISTS coupon_issue_stock (
+    id            BIGINT      NOT NULL AUTO_INCREMENT,
+    promotion_id  BIGINT      NOT NULL,
+    remaining     INT         NOT NULL,
+    created_at    DATETIME(6) NOT NULL,
+    updated_at    DATETIME(6) NOT NULL,
+    deleted_at    DATETIME(6) NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT ux_coupon_issue_stock_promotion UNIQUE (promotion_id)
+);
+
+-- 엔티티(IssuedCouponModel)와 같은 이름·컬럼. (user_id, promotion_id) 고유: 사용자당 한 장.
+-- 고유 인덱스의 선두가 user_id 라 내 쿠폰 조회(user_id 조건)도 이 인덱스를 쓴다.
+CREATE TABLE IF NOT EXISTS issued_coupon (
+    id            BIGINT      NOT NULL AUTO_INCREMENT,
+    user_id       BIGINT      NOT NULL,
+    promotion_id  BIGINT      NOT NULL,
+    created_at    DATETIME(6) NOT NULL,
+    updated_at    DATETIME(6) NOT NULL,
+    deleted_at    DATETIME(6) NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT ux_issued_coupon_user_promotion UNIQUE (user_id, promotion_id)
 );
