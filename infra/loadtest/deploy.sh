@@ -50,7 +50,7 @@ node_target() { # name private-ip
   printf '      - targets: ["%s:9100"]\n        labels: {host: "%s"}\n' "$2" "$1"
 }
 PROM_CONFIG="global:
-  scrape_interval: 5s
+  scrape_interval: 1s # 20초 안팎의 짧은 테스트를 초 단위로 보려고
 scrape_configs:
   - job_name: app
     metrics_path: /actuator/prometheus
@@ -81,6 +81,7 @@ ssh_to "$MONITOR_PUBLIC" "curl -sf -X POST localhost:9090/-/reload"
 ssh_to "$K6_PUBLIC" "sudo tee /etc/profile.d/k6-prometheus.sh > /dev/null" <<EOF
 export K6_PROMETHEUS_RW_SERVER_URL=http://$MONITOR_PRIVATE:9090/api/v1/write
 export K6_PROMETHEUS_RW_TREND_STATS="p(95),p(99),avg,max"
+export K6_PROMETHEUS_RW_PUSH_INTERVAL=1s
 EOF
 
 echo "Grafana: http://$MONITOR_PUBLIC:3000  (admin / $(cat "$STATE/grafana-password"))"
