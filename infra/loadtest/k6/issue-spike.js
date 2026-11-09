@@ -23,8 +23,9 @@ export const options = {
       rate: RATE,
       timeUnit: '1s',
       duration: DURATION,
-      preAllocatedVUs: 1000,
-      maxVUs: 10000, // 응답이 수 초까지 늘어도 초당 RATE 를 채우도록 (필요 VU ≈ RATE × 응답 시간)
+      // 필요 VU ≈ RATE × 응답 시간. 실행 중 VU 생성은 느려 요청을 흘리므로 시작 전에 전부 만들어 둔다.
+      preAllocatedVUs: 10000,
+      maxVUs: 10000,
     },
   },
   summaryTrendStats: ['avg', 'min', 'med', 'p(90)', 'p(95)', 'p(99)', 'max'],
