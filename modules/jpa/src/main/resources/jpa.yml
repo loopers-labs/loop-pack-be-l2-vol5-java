@@ -109,6 +109,11 @@ datasource:
 ---
 spring.config.activate.on-profile: prd
 
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: update # W8 부하 테스트 환경. 엔티티 기준으로 테이블을 만든다 (docs/week8 SQL 을 따로 돌리지 않는다)
+
 datasource:
   mysql-jpa:
     main:
