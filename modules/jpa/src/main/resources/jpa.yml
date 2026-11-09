@@ -120,3 +120,4 @@ datasource:
       jdbc-url: jdbc:mysql://localhost:3306/loopers
       username: application
       password: application
+      maximum-pool-size: 100 # W8 부하 테스트: 앱 3대 × 100 = 300 < MySQL max_connections 500
