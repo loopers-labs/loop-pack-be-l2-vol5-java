@@ -13,7 +13,7 @@
 
 ### 0-1. 도메인 지도
 
-바운디드 컨텍스트 4개와 의존 방향. 실선은 조회, 굵은 선은 상태 변경. 표는 2-3, 컨텍스트 정의는 2-1.
+바운디드 컨텍스트 5개와 의존 방향. 실선은 조회, 굵은 선은 상태 변경. 표는 2-3, 컨텍스트 정의는 2-1 (BC-05 는 8-1).
 
 ```mermaid
 flowchart LR
@@ -21,6 +21,7 @@ flowchart LR
     C["BC-02 카탈로그<br/>브랜드 · 상품 · 재고 · 좋아요"]
     P["BC-03 포인트<br/>잔액 · 충전 · 환불"]
     O["BC-04 주문<br/>주문 · 주문 품목 · 결제"]
+    PR["BC-05 프로모션<br/>프로모션 · 쿠폰 발급 설정"]
 
     U -->|존재 · 관리자 여부| C
     U -->|존재 · 관리자 여부| P
@@ -31,6 +32,7 @@ flowchart LR
 ```
 
 순환 없음. BC-04 주문이 유일한 하류 종점이고, 재고·잔액을 바꾸는 쓰기 의존은 주문 확정(FR-ORDER-02) 한 곳에서만 일어난다.
+BC-05 프로모션은 W8 에서 추가했고 아직 다른 BC 와 의존이 없다 (8장).
 
 ### 0-2. 계층 지도
 
@@ -1562,6 +1564,77 @@ BLOCKED ─resume(eventId)→ PENDING (failure 0, next_attempt_at = now. attempt
 
 한계: 단일 broker·통제된 중단만 다룬다. "중단"은 hook 이 그 단계 뒤에 예외를 던져 다음 단계로 못 가게 한 것이고, "재시작"은 relay 객체를 새로 만든 것이다. OS 강제 종료·broker 장애 주입·다중 인스턴스 relay 는 시험하지 않았다.
 
+---
+
+## 8. 프로모션 메타데이터 (W8)
+
+선착순 쿠폰 발급의 첫 단계로, 프로모션(이벤트)을 나타내는 범용 메타데이터와 종류별 설정을 둔다. 발급 처리(선착순 수량 차감·동시성)·보유 쿠폰·주문 적용은 이 장의 범위 밖이다.
+
+### 8-1. BC-05 프로모션 (promotion)
+
+| 소유 개념 | 정의 |
+|---|---|
+| 프로모션 | 이름·종류·진행 상태·기간을 가진 이벤트. 종류별 설정은 종류별 테이블에 둔다 (DR-52) |
+| 진행 상태 | READY · ACTIVE · PAUSED · ENDED. 참여 가능 여부는 이것만 본다 (DR-53) |
+| 쿠폰 발급 설정 | 종류 COUPON_ISSUE 의 설정. 발급 한도·1인당 한도·발급할 쿠폰 속성 |
+
+- 참조 개념: 없음. 발급 기능에서 사용자(BC-01)를 ID 로 참조하게 된다.
+- AG-07 프로모션: 루트 `PromotionModel`, 포함 개념 `CouponIssuePromotionModel`. `PromotionRepository` 가 TB-15·16 을 함께 맡는다.
+- ArchUnit: `AGGREGATES_BY_BC` 에 `"promotion" → ["promotion"]`.
+
+### 8-2. TB-15 `promotion`
+
+- 생성 SQL: `docs/week8/promotion.sql`(`-pg.sql`)
+- 검증 (`PromotionModel.create`): 이름 1~100자, 종류·기간 필수, 시작 < 종료
+
+| 컬럼 | 타입 | NULL | 변경 | 의미 |
+|---|---|---|---|---|
+| `id` | bigint | N | | PK |
+| `name` | varchar(100) | N | | 프로모션 이름 |
+| `type` | varchar(30) | N | 불변 | COUPON_ISSUE. 종류별 설정 테이블을 정한다 |
+| `status` | varchar(20) | N | | READY · ACTIVE · PAUSED · ENDED (8-4) |
+| `starts_at` / `ends_at` | datetime(6) | N | | 진행 기간. 메타데이터이고 참여 판단에 쓰지 않는다 (DR-53) |
+| `created_at`·`updated_at`·`deleted_at` | | | | 공통 (DR-01) |
+
+### 8-3. TB-16 `coupon_issue_promotion`
+
+- TB-15 와 1:1. 고유 제약: `promotion_id`. FK 는 두지 않고 ID 만 든다
+- 생성 SQL: `docs/week8/promotion.sql`(`-pg.sql`)
+- 검증 (`CouponIssuePromotionModel.create`): `total_quantity` ≥ 1, 1 ≤ `per_user_limit` ≤ `total_quantity`, `coupon_spec` 은 null·빈 객체가 아님 (키는 해석하지 않는다, DR-54)
+
+| 컬럼 | 타입 | NULL | 변경 | 의미 |
+|---|---|---|---|---|
+| `id` | bigint | N | | PK |
+| `promotion_id` | bigint | N | 불변 | TB-15 `id`. UNIQUE |
+| `total_quantity` | int | N | | 선착순 발급 한도 |
+| `per_user_limit` | int | N | | 1인당 발급 한도 |
+| `coupon_spec` | JSON (PG `jsonb`) | N | | 발급할 쿠폰의 속성. 구조로 읽고 쓴다 (DR-54) |
+| `created_at`·`updated_at`·`deleted_at` | | | | 공통 (DR-01) |
+
+### 8-4. 상태와 전이
+
+```
+READY ─activate→ ACTIVE ─pause→ PAUSED ─resume→ ACTIVE
+READY · ACTIVE · PAUSED ─end→ ENDED (끝)
+```
+
+허용되지 않은 전이는 `IllegalStateException` 이고 상태는 그대로다 (DR-55).
+
+### 8-5. 테스트
+
+| 테스트 | 확인 |
+|---|---|
+| `PromotionModelTest` | 생성 검증, 허용·거부 전이, `isActive` |
+| `CouponIssuePromotionModelTest` | 수량·한도 경계, spec 비어 있음, spec 복사·읽기 전용 |
+| `PromotionRepositoryIntegrationTest` | 실제 MySQL 저장·조회, JSON 왕복(중첩 객체·배열·숫자·문자열·불리언), `promotion_id` UNIQUE |
+| `ArchitectureTest` | BC-05 의존 규칙 |
+
+### 8-6. 아직 정하지 않은 것
+
+- 선착순 발급 수 집계 위치 (Redis·별도 행·발급 내역 등)
+- 보유 쿠폰을 BC-05 에 둘지 별도 BC 로 뺄지
+- 프로모션 API 가 생길 때 예외를 ErrorType 으로 바꾸는 것 (DR-55)
+
 ## 부록 A. 설계 판단 기록과 열린 질문
 
 ### A-1. 결정
@@ -1620,6 +1693,10 @@ BLOCKED ─resume(eventId)→ PENDING (failure 0, next_attempt_at = now. attempt
 | DR-49 | 7 | TB-14, OutboxStatus | 연속 전송 실패 3회(예외·확인 대기 초과 구분 없음)면 BLOCKED 로 분리한다. 재시도 간격은 1s 에서 두 배씩, 상한 60s. BLOCKED 는 eventId 를 지정한 재개로만 같은 행이 PENDING 으로 돌아가고(연속 실패만 0, 누적 시도·마지막 오류 유지) 바로 한 번 보낸다 | (a) 일시 오류(Kafka `RetriableException`)는 세지 않고 영구 오류만 3회로 셈 (b) BLOCKED 없이 무한 재시도 (c) 실패 행 삭제·DLQ | 사용자 결정. (a)는 broker 장애 회복 뒤 자동 재개가 되지만 실패 분류를 Kafka 예외 계층에 기대야 한다. 지금 결정에서는 broker 장애가 1s·2s 백오프보다 길면 그동안의 행이 BLOCKED 가 되어 회복 후 운영자가 재개해야 한다 (7-3). (b)는 영구 오류가 원인과 함께 드러나지 않는다. (c)는 미발행 사실을 잃는다 | broker 일시 장애로 인한 BLOCKED 재개가 운영 부담이 되면 (a) | 없음 |
 | DR-50 | 7 | TB-14, OrderConfirmedBackfill, DR-40 | W6 직접 발행에서 빠진 확정은 운영자가 지정한 주문만, 저장된 확정 사실로 확정 TX 와 같은 팩토리를 거쳐 Outbox 에 넣는다. 이미 있으면 내용이 같을 때만 그대로 둔다. 실행은 local 프로필 runner 의 기동 인자로만 한다 | (a) SQL 로 Outbox 행 생성 (b) 이전 CONFIRMED 주문 전체 소급 (c) 관리자 HTTP API (d) 행이 있으면 덮어씀 | (a)는 계약 JSON·eventId 규칙을 SQL 에 다시 써야 해 확정 TX 의 payload 와 어긋날 수 있다. (b)는 이미 소비된 다수 사건을 다시 흘리고 대상 확인 없이 범위가 커진다 (6-1 의 소급 안 함과 같다). (c)는 공개 표면이 생긴다. (d)는 원본 사실과 다른 행을 추측으로 고친다 | 운영 환경에서 복구가 반복되면 인증된 운영 도구로 | 없음 |
 | DR-51 | 7 | tests/commerce-e2e, DR-45 | 주문 API → Outbox → Kafka → 구매 활동 E2E 와 W6 누락 재현은 테스트 전용 모듈 `tests/commerce-e2e` 에 둔다. 두 앱의 컴파일 출력(api 는 test 출력 포함)에 직접 의존하고, 두 context 를 각각 명시 구성(api: streamer 패키지 제외 scan / streamer: 구매 활동 패키지만 scan)으로 띄운다. application.yml 은 이름을 바꿔 복사해 `spring.config.name` 으로 고른다. 테스트 클래스마다 JVM 을 새로 띄운다. root build 에는 `tests` 컨테이너 프로젝트의 task 를 끄는 한 줄만 더한다 | (a) api 에 streamer 를 `testImplementation` (b) 앱의 일반 jar 를 켜서 project 의존 (c) 가짜 handler 로 소비 대체 | (a)는 streamer main 클래스가 같은 `com.loopers` 로 api ArchUnit 가져오기에 섞여 규칙 범위를 바꿔야 한다. (b)는 모든 앱의 빌드 산출물이 바뀐다. (c)는 실제 consumer 의 멱등·ack 를 확인하지 못한다 | 앱 사이 공용 test fixture 모듈이 생기면 그쪽으로 | 없음 |
+| DR-52 | 8 | BC-05, AG-07, TB-15, TB-16 | 프로모션을 BC-05 로 새로 두고, 범용 메타데이터(TB-15)와 종류별 설정(TB-16, 1:1, FK 없음)을 한 AG(AG-07)로 묶는다. ArchUnit BC 매핑에 `promotion` 을 더한다 | (a) 기존 BC 에 넣기 (b) 쿠폰 전용 테이블 하나 (c) promotion 의 JSON config 컬럼 하나로 종류별 설정 | (a) 프로모션·진행 상태·발급 한도는 기존 BC 의 언어에 없고, 넣으면 그 BC 의 규칙이 바뀐다. (b) 쿠폰 외 프로모션이 생기면 테이블을 다시 나눠야 한다. (c) 종류별 제약·검증을 DB·엔티티에 걸 수 없다 | 종류별 테이블이 많아져 관리 부담이 커지면 (c) | 없음 |
+| DR-53 | 8 | TB-15 | 참여 가능 여부는 `status` 만 본다. `starts_at`·`ends_at` 은 메타데이터이고 필수·시작 < 종료 검증만 한다 | (a) status 와 기간을 함께 (b) 기간만 | 사용자 결정. 운영자가 상태로 직접 열고 닫는다. 기간과 상태가 어긋나도 상태가 기준이다 | 기간 기반 자동 오픈·종료가 필요해지면 | 없음 |
+| DR-54 | 8 | TB-16, DR-47 | 발급할 쿠폰 속성은 JSON 컬럼(MySQL `JSON`, PG `jsonb`) 하나로 두고 `Map<String, Object>` + `@JdbcTypeCode(SqlTypes.JSON)` 으로 매핑한다. 엔티티는 null·빈 객체만 거절하고 키를 해석하지 않는다 | (a) 속성별 컬럼(할인 방식·값·만료) (b) 별도 coupon_template 테이블 (c) TEXT 문자열 | 사용자 결정. 쿠폰 속성이 동적이다. DR-47 이 JSON 을 버린 이유(저장 바이트가 바뀜)는 해당하지 않는다. 바이트가 아니라 구조로 읽으므로 키 순서·공백 정규화가 상관없다 | 속성이 고정되고 DB 제약·조회 조건이 필요해지면 (a)(b) | 없음 |
+| DR-55 | 8 | TB-15, TB-16 | 수량·전이 위반은 엔티티 생성·전이 메서드에서 `IllegalArgumentException`·`IllegalStateException` 으로 막는다. ErrorType·DB CHECK 는 두지 않는다 | (a) ErrorType 추가·CoreException (b) DB CHECK 제약 | 프로모션 생성·변경 API 가 아직 없어 사용자 응답 계약이 없다. 검증은 어느 경로로 만들어도 빠지지 않도록 엔티티 한 곳에 둔다 | 프로모션 생성·변경 API 가 생기면 (a) | 없음 |
 
 ### A-2. 열린 질문
 
