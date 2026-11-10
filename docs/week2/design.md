@@ -1650,12 +1650,23 @@ READY · ACTIVE · PAUSED ─end→ ENDED (끝)
 PromotionFacade.issue  (TX 없음)
   사용자 확인 (USER_NOT_FOUND)
   PromotionService.getIssuable: promotion 조회, 잠금 없음 ─ 없음·종류 다름 → PROMOTION_NOT_FOUND / ACTIVE 아님 → PROMOTION_NOT_ACTIVE
-  CouponIssueProcessor.issue  @Transactional
-    ① INSERT issued_coupon (user_id, promotion_id) ─ saveAndFlush, UNIQUE 위반 → COUPON_ALREADY_ISSUED
-    ② UPDATE coupon_issue_stock SET remaining = remaining - 1
-         WHERE promotion_id = ? AND remaining > 0 ─ 0 행 → COUPON_SOLD_OUT (①도 rollback)
-  COMMIT
+  PromotionService.checkNotIssued: 발급 내역 존재 조회, 잠금 없음 ─ 있음 → COUPON_ALREADY_ISSUED
+  CouponIssueLimiter.run  ─ 허가 시도, 실패면 300ms 뒤 한 번 더, 그래도 없으면 → COUPON_ISSUE_BUSY (DR-60)
+    CouponIssueProcessor.issue  @Transactional
+      ① INSERT issued_coupon (user_id, promotion_id) ─ saveAndFlush, UNIQUE 위반 → COUPON_ALREADY_ISSUED
+      ② UPDATE coupon_issue_stock SET remaining = remaining - 1
+           WHERE promotion_id = ? AND remaining > 0 ─ 0 행 → COUPON_SOLD_OUT (①도 rollback)
+    COMMIT
+  허가 반납 (finally: 커밋·롤백·예외 모두)
 ```
+
+- 발급 리미터 (DR-60): 발급 TX 하나만 Redis 세마포어 허가 안에서 실행한다. 허가는 TX 를 시작하기 전(커넥션을 잡기 전)에 얻는다.
+  - 프로모션마다 ZSET `coupon-issue:semaphore:{promotionId}` 하나. member 는 허가마다 새 토큰(UUID), score 는 만료 시각(ms).
+  - 획득은 Lua 하나: Redis `TIME` 으로 지금 시각 → 만료 토큰 제거 → 개수가 `permits` 미만이면 토큰 추가·키 만료를 lease 로. 반납은 자기 토큰만 `ZREM`.
+  - 설정 `coupon-issue.limiter.*`: `permits` 200 (앱 3대 × 커넥션 풀 100 = 300 보다 작게), `lease` 200ms, `retry-delay` 300ms.
+  - Redis 오류는 획득 실패로 본다 (fail-closed). 반납 오류는 로그만 남기고, 그 허가는 lease 가 지나면 회수된다.
+  - 발급이 lease 보다 오래 걸리면 실행 중인 허가가 만료돼 동시 실행이 `permits` 를 넘을 수 있다. 커넥션 풀이 마지막 상한이다.
+- 이미 받은 사용자는 허가를 얻기 전에 `checkNotIssued` 에서 돌려보낸다. 같은 사용자의 동시 요청이 함께 통과하면 ① 의 UNIQUE 가 막는다.
 
 - TX 범위: ①② 두 문장만 묶는다. 사용자·상태 확인은 TX 밖에서 각각 읽어 발급 TX 가 커넥션을 쥐는 시간을 줄인다 (DR-58).
 
@@ -1673,7 +1684,7 @@ PromotionFacade.issue  (TX 없음)
 | 메서드·경로 | 요청자 | 요청 | 응답 `data` | 실패 |
 |---|---|---|---|---|
 | POST `/api-admin/v1/promotions` | 관리자 | `name`, `type`("COUPON_ISSUE"), `startsAt`, `endsAt`, `couponIssue{totalQuantity, perUserLimit, couponSpec}` | `promotionId`, `name`, `type`, `status`("ACTIVE"), `startsAt`, `endsAt`, `totalQuantity`, `perUserLimit`, `couponSpec` | 400 `INVALID_PROMOTION`, 400 `BAD_REQUEST`(JSON 형식), 403 `NOT_ADMIN`, 404 `USER_NOT_FOUND` |
-| POST `/api/v1/promotions/{promotionId}/issues` | 사용자 | 없음 | `couponId`, `promotionId`, `issuedAt` | 404 `USER_NOT_FOUND`·`PROMOTION_NOT_FOUND`, 409 `PROMOTION_NOT_ACTIVE`·`COUPON_ALREADY_ISSUED`·`COUPON_SOLD_OUT` |
+| POST `/api/v1/promotions/{promotionId}/issues` | 사용자 | 없음 | `couponId`, `promotionId`, `issuedAt` | 404 `USER_NOT_FOUND`·`PROMOTION_NOT_FOUND`, 409 `PROMOTION_NOT_ACTIVE`·`COUPON_ALREADY_ISSUED`·`COUPON_SOLD_OUT`, 503 `COUPON_ISSUE_BUSY` |
 | GET `/api/v1/coupons` | 사용자 | 없음 | 배열 `[{couponId, promotionId, promotionName, couponSpec, issuedAt}]`. 최근 발급 순(id 내림차순), 페이지 없음 | 404 `USER_NOT_FOUND` |
 
 | ErrorType | HTTP | 언제 |
@@ -1683,6 +1694,7 @@ PromotionFacade.issue  (TX 없음)
 | `PROMOTION_NOT_ACTIVE` | 409 | 상태가 ACTIVE 가 아님 |
 | `COUPON_ALREADY_ISSUED` | 409 | 같은 사용자가 같은 프로모션에서 이미 받음 |
 | `COUPON_SOLD_OUT` | 409 | 남은 수량 0 |
+| `COUPON_ISSUE_BUSY` | 503 | 발급 허가를 재시도까지 얻지 못함, 또는 Redis 오류 (DR-60) |
 
 - 요청·응답의 `type`·`status` 는 문자열이다. interfaces 는 domain enum 을 참조하지 않는다 (ArchUnit).
 - 조회는 `CouponReader` → `CouponQueryRepository` 가 TB-18·15·16 을 조인해 `CouponView.MyCoupon` 으로 돌려준다 (DR-31).
@@ -1694,10 +1706,12 @@ PromotionFacade.issue  (TX 없음)
 | `PromotionModelTest` | 생성 검증(INVALID_PROMOTION), 허용·거부 전이, `isActive` |
 | `CouponIssuePromotionModelTest` | 한도 경계, 1인당 한도 1 만, spec 비어 있음, spec 복사·읽기 전용 |
 | `CouponIssueStockModelTest` | 남은 수량 = 한도로 시작, 검증 |
-| `PromotionRepositoryIntegrationTest` | 실제 MySQL 저장·조회, JSON 왕복(중첩 객체·배열·숫자·문자열·불리언), `promotion_id` UNIQUE |
-| `PromotionServiceIntegrationTest` | 생성 즉시 ACTIVE·수량 행, 설정 오류 시 promotion 도 rollback, 발급 성공·NOT_FOUND·NOT_ACTIVE·ALREADY_ISSUED·SOLD_OUT(먼저 넣은 발급 내역 rollback) |
+| `PromotionRepositoryIntegrationTest` | 실제 MySQL 저장·조회, JSON 왕복(중첩 객체·배열·숫자·문자열·불리언), `promotion_id` UNIQUE, 발급 내역 존재 조회 |
+| `PromotionServiceIntegrationTest` | 생성 즉시 ACTIVE·수량 행, 설정 오류 시 promotion 도 rollback, 발급 성공·NOT_FOUND·NOT_ACTIVE·ALREADY_ISSUED·SOLD_OUT(먼저 넣은 발급 내역 rollback), 발급 전 확인 `checkNotIssued` |
+| `CouponIssueLimiterTest` | 첫 시도 성공·반납, 실패 뒤 retry-delay 만큼 기다려 재시도, 두 번 실패면 BUSY(작업·반납 없음), 작업 예외에도 반납 |
+| `RedisCouponIssueSemaphoreTest` | 실제 Redis. permit 수까지만 획득, 반납 뒤 재획득, 남의 토큰 반납은 무효, lease 지난 허가 회수, 프로모션별 계수, 50 스레드 동시 획득 시 정확히 permit 수, Redis 오류 시 획득 실패·반납 예외 없음 |
 | `CouponIssueConcurrencyTest` | 한도 10 에 서로 다른 사용자 20 명 동시 → 성공 10·SOLD_OUT 10·남은 수량 0. 같은 사용자 20 번 동시 → 성공 1·ALREADY_ISSUED 19·남은 수량 9 |
-| `PromotionV1ApiE2ETest` | 세 엔드포인트의 성공 응답과 실패 코드(400·403·404·409) |
+| `PromotionV1ApiE2ETest` | 세 엔드포인트의 성공 응답과 실패 코드(400·403·404·409·503). 허가가 모두 차 있으면 503·발급 없음, 이미 받은 사용자는 허가가 차 있어도 409 |
 | `ArchitectureTest` | BC-05 의존 규칙, interfaces 의 domain 비의존 |
 
 ### 8-7. 아직 정하지 않은 것
@@ -1785,6 +1799,7 @@ PromotionFacade.issue  (TX 없음)
 | DR-57 | 8 | TB-16, TB-18 | 발급 내역이 곧 사용자의 쿠폰이다. (user_id, promotion_id) 고유 제약으로 사용자당 한 장이고, 그래서 `per_user_limit` 은 1 만 받는다. 쿠폰 내용(coupon_spec)은 발급 행에 복사하지 않고 조회 때 TB-16 과 조인한다 | (a) 사용자 쿠폰 테이블을 발급 내역과 따로 (b) `per_user_limit` 컬럼 제거 (c) seq 로 여러 장 (d) 발급 시 spec 복사 | 사용자 결정. (b)는 다시 늘릴 때 스키마가 바뀐다. (c)는 몇 번째인지 계산하는 곳에서 다시 경합한다. (d)는 지금 설정을 바꾸는 경로가 없어 복사할 이유가 없다 | 2 장 이상이 필요하면 사용자별 발급 수 조건 갱신으로. 설정 변경·쿠폰 사용이 생기면 (d) | 없음 |
 | DR-58 | 8 | TB-17, TB-18, DR-38 | 남은 수량은 별도 테이블(TB-17)에 두고 조건 갱신(`remaining > 0` 일 때만 -1)으로만 줄인다. 발급 TX 는 발급 내역 insert(즉시 flush) → 수량 조건 갱신 두 문장만 묶고(사용자·상태 확인은 TX 밖), 0 행이면 예외로 둘 다 rollback 한다 | (a) 수량 행을 `SELECT … FOR UPDATE` 로 읽고 검사 (b) TB-16 에 남은 수량 컬럼 (c) 발급 수 count 로 판정 (d) 수량 갱신을 먼저 | 조건 갱신 한 문장이 잠금·검사·감소를 함께 해 읽고 쓰는 사이의 틈이 없다. (b)는 자주 바뀌는 값과 설정이 한 행에 섞인다 (DR-38 재고 분리와 같은 이유). (c)는 count 와 insert 사이에 경합이 남는다. (d)는 중복 요청도 몰리는 수량 행을 잠그고, 잠금 시간이 insert 만큼 길어진다 | 수량 행 한 곳의 잠금 대기가 처리량을 막으면 Redis 등 DB 밖 선점으로 | 없음 |
 | DR-59 | 9 | TB-01, TB-05, DR-12 | 테스트용 사용자 생성 API `POST /api/v1/users` 를 둔다. 헤더 없이 누구나 부르고, 본문의 `admin` 으로 관리자도 만든다. 포인트 계정을 같은 TX 에서 함께 만든다 | (a) 공개 API 는 일반 사용자만, 관리자는 관리자 API + 첫 관리자는 SQL (b) bulk 생성 API (c) 부하 테스트 데이터를 SQL 로만 | 사용자 결정. 부하 테스트 준비를 API 하나로 끝낸다. 누구나 관리자가 될 수 있는 구멍은 테스트 전용이라 받아들인다. (b)는 1 만 명 정도는 한 명씩 불러도 충분하다 | 실제 가입·인증 요구가 생기면 (a) 로 나누고 관리자 지정은 관리자 API 로만 | 없음 |
+| DR-60 | 8 | TB-17, TB-18, DR-58 | 발급 TX(`CouponIssueProcessor.issue`) 하나만 Redis 세마포어 허가 안에서 실행해 워커 스레드·커넥션을 보호한다. 프로모션마다 ZSET(토큰, 만료 시각) 을 Lua 로 원자 획득하고, 시각은 Redis `TIME` 이다. 대기열 없이 시도하고 실패하면 300ms 뒤 한 번 재시도, 그래도 없으면 503 `COUPON_ISSUE_BUSY`. 허가는 TX 전에 얻고 끝나면 항상 반납한다. permit 200·lease 200ms. 이미 받은 사용자는 허가 전에 발급 내역 조회로 409. Redis 오류는 fail-closed | (a) 숫자 하나 INCR/DECR (b) 프로모션 구분 없는 전역 키 하나 (c) 사용자·상태 확인까지 허가 안에 (d) TX 메서드 안에서 허가 (e) Redis 장애 시 허가 없이 발급(fail-open) | 사용자 결정. (a)는 허가를 쥔 채 서버가 죽으면 영영 돌아오지 않는다. (c)는 허가 보유 시간이 늘고, 허가가 필요한 건 커넥션을 오래 쥐는 발급 TX 뿐이다. (d)는 커넥션을 이미 잡은 뒤라 보호가 안 된다. lease 200ms 는 관측된 잠금 대기(최대 1.6초)보다 짧아 동시 실행이 permit 을 넘을 수 있음을 알고 고른 값이며 부하 테스트로 확인한다 | 부하 테스트에서 동시 실행이 permit 을 크게 넘거나 거절이 과하면 lease·permit·재시도 간격을 바꾼다. 비교할 다른 방식(Redisson·fair 대기열·bulkhead)은 docs/week8/coupon-issue-limiter-plan.md | 없음 |
 
 ### A-2. 열린 질문
 

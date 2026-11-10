@@ -27,6 +27,8 @@
 
 ## 1번 — 레디스 직접 구현 세마포어
 
+구현됨: `CouponIssueLimiter`, `RedisCouponIssueSemaphore`. 설계 기록은 [design.md 8-4, DR-60](../week2/design.md).
+
 - 범위: 프로모션마다 키 하나, `coupon-issue:semaphore:{promotionId}`.
 - 자료구조: ZSET. member 는 permit 마다 새로 만든 토큰, score 는 만료 시각.
   - 획득 (Lua 하나로 원자 실행): 만료된 토큰 제거 → 남은 개수가 permit 수 미만이면 내 토큰 추가 → 성공 / 아니면 실패.
@@ -43,6 +45,8 @@
   - 사용자 조회·프로모션 확인·발급 이력 조회는 리미터 밖이다.
 - 거절 (재시도까지 실패): 새 `ErrorType.COUPON_ISSUE_BUSY`, HTTP 503 Service Unavailable.
 - 이미 발급: 기존 `ErrorType.COUPON_ALREADY_ISSUED` (409).
+- Redis 오류: 획득 실패로 본다 (fail-closed). 재시도도 실패하면 503. 반납 오류는 로그만 남긴다.
+- lease 시각 기준: Lua 안에서 Redis `TIME`. 앱 서버 시계와 무관하다.
 
 ## 미정 항목
 
