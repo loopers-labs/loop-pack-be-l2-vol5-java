@@ -3,7 +3,8 @@
 #   1) 사용자 준비: MySQL 에 직접 (관리자 1 + 일반 USERS 명, 이미 있으면 그대로)
 #   2) 프로모션 생성: 관리자 API, 쿠폰 COUPONS 장, 바로 ACTIVE
 #   3) k6: open model, 초당 RATE 건 DURATION 동안, 요청마다 다른 사용자
-#   4) 검증: DB 의 발급 수·남은 수량, Prometheus 의 서버·DB 최댓값과 1초 간격 시간 흐름
+#   4) 검증: DB 의 발급 수·남은 수량, 받은 사람 목록으로 서버별 공정성(fairness.py),
+#      Prometheus 의 서버·DB 최댓값과 1초 간격 시간 흐름
 # 결과는 .state/results/<run-id>/ 에 남는다.
 # 실행: infra/loadtest/k6/run-issue-spike.sh   (COUPONS=3000 USERS=20000 RATE=1000 DURATION=20s 가 기본)
 source "$(dirname "$0")/../common.sh"
@@ -57,6 +58,8 @@ sleep 5 # 마지막 수집이 들어오도록
                       ' span_ms=', ROUND(TIMESTAMPDIFF(MICROSECOND, MIN(created_at), MAX(created_at)) / 1000))
         FROM issued_coupon WHERE promotion_id = $PROMOTION_ID;" | mysql_q
 } | tee "$OUT/db.txt"
+echo "SELECT id, user_id FROM issued_coupon WHERE promotion_id = $PROMOTION_ID ORDER BY id;" | mysql_q > "$OUT/winners.tsv"
+python3 "$HERE/k6/fairness.py" "$OUT/winners.tsv" "$USER_START" "$NEED" 3 | tee "$OUT/fairness.txt"
 ssh_to "$MONITOR_PUBLIC" "WINDOW=2m bash -s" < "$HERE/k6/prom-snapshot.sh" | tee "$OUT/metrics.txt"
 ssh_to "$MONITOR_PUBLIC" "python3 - $START $END" < "$HERE/k6/prom-timeline.py" | tee "$OUT/timeline.tsv"
 
