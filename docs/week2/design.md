@@ -1647,14 +1647,17 @@ READY · ACTIVE · PAUSED ─end→ ENDED (끝)
 ### 8-4. 발급 흐름과 동시성
 
 ```
-PromotionFacade.issue  @Transactional
+PromotionFacade.issue  (TX 없음)
   사용자 확인 (USER_NOT_FOUND)
-  promotion 조회, 잠금 없음 ─ 없음·종류 다름 → PROMOTION_NOT_FOUND / ACTIVE 아님 → PROMOTION_NOT_ACTIVE
-  ① INSERT issued_coupon (user_id, promotion_id) ─ saveAndFlush, UNIQUE 위반 → COUPON_ALREADY_ISSUED
-  ② UPDATE coupon_issue_stock SET remaining = remaining - 1
-       WHERE promotion_id = ? AND remaining > 0 ─ 0 행 → COUPON_SOLD_OUT (①도 rollback)
-COMMIT
+  PromotionService.getIssuable: promotion 조회, 잠금 없음 ─ 없음·종류 다름 → PROMOTION_NOT_FOUND / ACTIVE 아님 → PROMOTION_NOT_ACTIVE
+  CouponIssueProcessor.issue  @Transactional
+    ① INSERT issued_coupon (user_id, promotion_id) ─ saveAndFlush, UNIQUE 위반 → COUPON_ALREADY_ISSUED
+    ② UPDATE coupon_issue_stock SET remaining = remaining - 1
+         WHERE promotion_id = ? AND remaining > 0 ─ 0 행 → COUPON_SOLD_OUT (①도 rollback)
+  COMMIT
 ```
+
+- TX 범위: ①② 두 문장만 묶는다. 사용자·상태 확인은 TX 밖에서 각각 읽어 발급 TX 가 커넥션을 쥐는 시간을 줄인다 (DR-58).
 
 | 경합 | 막는 것 | 결과 |
 |---|---|---|
@@ -1780,7 +1783,7 @@ COMMIT
 | DR-55 | 8 | TB-15, TB-16, TB-17 | 생성·수량 검증 위반은 엔티티 생성 메서드에서 막는다. DB CHECK 는 두지 않는다. 처음에는 API 가 없어 `IllegalArgumentException` 으로 두었고, 생성 API 를 만들며 `INVALID_PROMOTION`(400) 으로 바꿨다 (되돌릴 조건 도달). 상태 전이 위반은 부르는 API 가 아직 없어 `IllegalStateException` 그대로다 | (a) 처음부터 ErrorType (b) DB CHECK 제약 | 사용자 응답 계약이 생긴 시점에 코드를 붙인다. 검증은 어느 경로로 만들어도 빠지지 않도록 엔티티 한 곳에 둔다 | 상태 변경 API 가 생기면 전이 위반에도 ErrorType | 없음 |
 | DR-56 | 8 | TB-15, DR-53 | 생성 API 는 promotion·쿠폰 발급 설정·남은 수량을 한 TX 에서 만들고 같은 TX 에서 바로 ACTIVE 로 연다. 모델은 READY 로 시작하는 그대로 둔다 | (a) READY 로 만들고 상태 변경 API 로 연다 (b) 모델이 처음부터 ACTIVE | 사용자 결정. 상태 변경 API 없이도 발급할 수 있어야 한다. (b)는 READY 의 의미를 지운다 | 예약 오픈(READY 대기)이 필요해지면 (a) | 없음 |
 | DR-57 | 8 | TB-16, TB-18 | 발급 내역이 곧 사용자의 쿠폰이다. (user_id, promotion_id) 고유 제약으로 사용자당 한 장이고, 그래서 `per_user_limit` 은 1 만 받는다. 쿠폰 내용(coupon_spec)은 발급 행에 복사하지 않고 조회 때 TB-16 과 조인한다 | (a) 사용자 쿠폰 테이블을 발급 내역과 따로 (b) `per_user_limit` 컬럼 제거 (c) seq 로 여러 장 (d) 발급 시 spec 복사 | 사용자 결정. (b)는 다시 늘릴 때 스키마가 바뀐다. (c)는 몇 번째인지 계산하는 곳에서 다시 경합한다. (d)는 지금 설정을 바꾸는 경로가 없어 복사할 이유가 없다 | 2 장 이상이 필요하면 사용자별 발급 수 조건 갱신으로. 설정 변경·쿠폰 사용이 생기면 (d) | 없음 |
-| DR-58 | 8 | TB-17, TB-18, DR-38 | 남은 수량은 별도 테이블(TB-17)에 두고 조건 갱신(`remaining > 0` 일 때만 -1)으로만 줄인다. 발급 TX 는 발급 내역 insert(즉시 flush) → 수량 조건 갱신 순서이고, 0 행이면 예외로 전체를 rollback 한다 | (a) 수량 행을 `SELECT … FOR UPDATE` 로 읽고 검사 (b) TB-16 에 남은 수량 컬럼 (c) 발급 수 count 로 판정 (d) 수량 갱신을 먼저 | 조건 갱신 한 문장이 잠금·검사·감소를 함께 해 읽고 쓰는 사이의 틈이 없다. (b)는 자주 바뀌는 값과 설정이 한 행에 섞인다 (DR-38 재고 분리와 같은 이유). (c)는 count 와 insert 사이에 경합이 남는다. (d)는 중복 요청도 몰리는 수량 행을 잠그고, 잠금 시간이 insert 만큼 길어진다 | 수량 행 한 곳의 잠금 대기가 처리량을 막으면 Redis 등 DB 밖 선점으로 | 없음 |
+| DR-58 | 8 | TB-17, TB-18, DR-38 | 남은 수량은 별도 테이블(TB-17)에 두고 조건 갱신(`remaining > 0` 일 때만 -1)으로만 줄인다. 발급 TX 는 발급 내역 insert(즉시 flush) → 수량 조건 갱신 두 문장만 묶고(사용자·상태 확인은 TX 밖), 0 행이면 예외로 둘 다 rollback 한다 | (a) 수량 행을 `SELECT … FOR UPDATE` 로 읽고 검사 (b) TB-16 에 남은 수량 컬럼 (c) 발급 수 count 로 판정 (d) 수량 갱신을 먼저 | 조건 갱신 한 문장이 잠금·검사·감소를 함께 해 읽고 쓰는 사이의 틈이 없다. (b)는 자주 바뀌는 값과 설정이 한 행에 섞인다 (DR-38 재고 분리와 같은 이유). (c)는 count 와 insert 사이에 경합이 남는다. (d)는 중복 요청도 몰리는 수량 행을 잠그고, 잠금 시간이 insert 만큼 길어진다 | 수량 행 한 곳의 잠금 대기가 처리량을 막으면 Redis 등 DB 밖 선점으로 | 없음 |
 | DR-59 | 9 | TB-01, TB-05, DR-12 | 테스트용 사용자 생성 API `POST /api/v1/users` 를 둔다. 헤더 없이 누구나 부르고, 본문의 `admin` 으로 관리자도 만든다. 포인트 계정을 같은 TX 에서 함께 만든다 | (a) 공개 API 는 일반 사용자만, 관리자는 관리자 API + 첫 관리자는 SQL (b) bulk 생성 API (c) 부하 테스트 데이터를 SQL 로만 | 사용자 결정. 부하 테스트 준비를 API 하나로 끝낸다. 누구나 관리자가 될 수 있는 구멍은 테스트 전용이라 받아들인다. (b)는 1 만 명 정도는 한 명씩 불러도 충분하다 | 실제 가입·인증 요구가 생기면 (a) 로 나누고 관리자 지정은 관리자 API 로만 | 없음 |
 
 ### A-2. 열린 질문
