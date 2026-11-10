@@ -15,6 +15,7 @@ public class PromotionFacade {
     private final UserService userService;
     private final PromotionService promotionService;
     private final CouponIssueProcessor couponIssueProcessor;
+    private final CouponIssueLimiter couponIssueLimiter;
 
     /** 관리자 프로모션 생성. 지금 종류는 COUPON_ISSUE 하나이고, 만들면 바로 ACTIVE 다 (DR-56). */
     @Transactional
@@ -35,10 +36,13 @@ public class PromotionFacade {
     /**
      * 선착순 쿠폰 발급. 사용자·프로모션 상태 확인은 TX 없이 읽고,
      * 발급 내역 insert → 남은 수량 조건 갱신 두 문장만 CouponIssueProcessor 의 TX 로 묶는다 (DR-58).
+     * 이미 받은 사용자는 허가를 얻기 전에 돌려보내고, 발급 TX 만 세마포어 허가 안에서 실행한다 (DR-60).
      */
     public PromotionInfo.Issued issue(Long requesterId, Long promotionId) {
         userService.getUser(requesterId);
         promotionService.getIssuable(promotionId);
-        return PromotionInfo.Issued.from(couponIssueProcessor.issue(requesterId, promotionId));
+        promotionService.checkNotIssued(requesterId, promotionId);
+        return PromotionInfo.Issued.from(
+            couponIssueLimiter.run(promotionId, () -> couponIssueProcessor.issue(requesterId, promotionId)));
     }
 }

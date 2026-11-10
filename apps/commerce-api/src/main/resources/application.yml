@@ -48,6 +48,12 @@ pg:
     wait-duration-in-open-state: 10s
     permitted-number-of-calls-in-half-open-state: 3
 
+coupon-issue:
+  limiter: # 쿠폰 발급 TX(CouponIssueProcessor.issue) 동시 실행 제한. Redis ZSET 세마포어, 프로모션마다 따로 센다 (DR-60)
+    permits: 200 # 프로모션 하나의 동시 발급 TX 수 (앱 전체 합). 앱 3대 × 커넥션 풀 100 = 300 보다 작게
+    lease: 200ms # 허가 보유 상한. 지나면 반납하지 않아도 다음 획득 때 회수된다
+    retry-delay: 300ms # 첫 획득 실패 뒤 한 번 재시도하기 전 대기. 재시도도 실패하면 503 COUPON_ISSUE_BUSY
+
 kafka:
   topics:
     order-events: # 주문 이벤트 (OrderConfirmed). key = orderId 문자열. commerce-api 가 만들고 쓴다

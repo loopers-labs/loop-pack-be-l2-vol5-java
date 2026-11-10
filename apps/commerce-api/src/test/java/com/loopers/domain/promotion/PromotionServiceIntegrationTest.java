@@ -122,6 +122,19 @@ class PromotionServiceIntegrationTest {
         assertThat(remainingOf(promotionId)).isEqualTo(10);
     }
 
+    @DisplayName("[DR-60] 발급 전 확인: 받은 적 없으면 통과하고, 이미 받았으면 COUPON_ALREADY_ISSUED 다. 다른 프로모션은 따로 본다.")
+    @Test
+    void checkNotIssued_rejectsOnlyAlreadyIssuedUser() {
+        Long promotionId = createPromotion(10);
+        Long otherPromotionId = createPromotion(10);
+        promotionService.checkNotIssued(7L, promotionId);
+        issue(7L, promotionId);
+
+        assertThrowsErrorType(() -> promotionService.checkNotIssued(7L, promotionId), ErrorType.COUPON_ALREADY_ISSUED);
+        promotionService.checkNotIssued(8L, promotionId);
+        promotionService.checkNotIssued(7L, otherPromotionId);
+    }
+
     @DisplayName("같은 사용자가 다시 받으면 COUPON_ALREADY_ISSUED 이고 수량은 처음 한 번만 줄어 있다.")
     @Test
     void issue_rejectsSecondIssueForSameUser() {

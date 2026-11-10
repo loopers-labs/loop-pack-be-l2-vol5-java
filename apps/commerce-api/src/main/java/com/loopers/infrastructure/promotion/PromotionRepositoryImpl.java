@@ -76,4 +76,10 @@ public class PromotionRepositoryImpl implements PromotionRepository {
             return Optional.empty();
         }
     }
+
+    /** (user_id, promotion_id) 고유 인덱스로 찾는다. */
+    @Override
+    public boolean existsIssuedCoupon(Long userId, Long promotionId) {
+        return issuedCouponJpaRepository.existsByUserIdAndPromotionId(userId, promotionId);
+    }
 }

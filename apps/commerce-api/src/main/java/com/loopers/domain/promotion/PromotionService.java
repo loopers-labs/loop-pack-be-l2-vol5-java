@@ -45,6 +45,17 @@ public class PromotionService {
     }
 
     /**
+     * 발급 전 확인. 이미 받은 사용자면 COUPON_ALREADY_ISSUED. TX·잠금 없이 읽는다 (DR-60).
+     * 동시에 들어온 같은 사용자 요청은 여기를 함께 통과할 수 있고, 그때는 {@link #issue} 의 고유 제약이 막는다.
+     */
+    public void checkNotIssued(Long userId, Long promotionId) {
+        if (promotionRepository.existsIssuedCoupon(userId, promotionId)) {
+            throw new CoreException(ErrorType.COUPON_ALREADY_ISSUED,
+                "[userId = " + userId + ", promotionId = " + promotionId + "] 이미 발급받았습니다.");
+        }
+    }
+
+    /**
      * 선착순 쿠폰 한 장 발급. 발급 TX 는 이 두 문장만 감싼다 (DR-58). 상태 확인은 호출자가 먼저 {@link #getIssuable} 로 한다.
      * 발급 내역 insert(중복 확인)를 먼저, 모든 요청이 몰리는 수량 조건 갱신을 마지막에 해 수량 행 잠금을 commit 직전까지로 줄인다.
      * 소진이면 예외로 TX 를 rollback 해 먼저 넣은 발급 내역도 지운다.

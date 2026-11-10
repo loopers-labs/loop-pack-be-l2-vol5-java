@@ -1,6 +1,7 @@
 package com.loopers.infrastructure.promotion;
 
 import com.loopers.domain.promotion.CouponIssuePromotionModel;
+import com.loopers.domain.promotion.IssuedCouponModel;
 import com.loopers.domain.promotion.PromotionModel;
 import com.loopers.domain.promotion.PromotionRepository;
 import com.loopers.domain.promotion.PromotionStatus;
@@ -85,6 +86,17 @@ class PromotionRepositoryIntegrationTest {
     void findCouponIssue_emptyWhenAbsent() {
         assertThat(promotionRepository.findCouponIssue(999L)).isEmpty();
         assertThat(promotionRepository.findCouponIssue(null)).isEmpty();
+    }
+
+    @DisplayName("발급 내역이 있는 (사용자, 프로모션) 만 existsIssuedCoupon 이 참이다.")
+    @Test
+    void existsIssuedCoupon_matchesUserAndPromotion() {
+        PromotionModel promotion = savedPromotion();
+        promotionRepository.insertIssuedCoupon(IssuedCouponModel.create(7L, promotion.getId())).orElseThrow();
+
+        assertThat(promotionRepository.existsIssuedCoupon(7L, promotion.getId())).isTrue();
+        assertThat(promotionRepository.existsIssuedCoupon(8L, promotion.getId())).isFalse();
+        assertThat(promotionRepository.existsIssuedCoupon(7L, promotion.getId() + 1)).isFalse();
     }
 
     @DisplayName("한 프로모션에 쿠폰 발급 설정은 하나다. 같은 promotionId 로 두 번 저장하면 거절된다.")
