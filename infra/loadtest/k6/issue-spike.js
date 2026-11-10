@@ -14,7 +14,7 @@ const DURATION = __ENV.DURATION || '20s';
 
 // 응답 결과별 건수. thresholds 는 실패 조건이 아니라 결과별 건수를 요약에 드러내려고 둔다.
 const outcomes = new Counter('issue_outcomes');
-const OUTCOMES = ['SUCCESS', 'COUPON_SOLD_OUT', 'COUPON_ALREADY_ISSUED', 'USER_NOT_FOUND', 'PROMOTION_NOT_ACTIVE', 'OTHER'];
+const OUTCOMES = ['SUCCESS', 'COUPON_SOLD_OUT', 'COUPON_ALREADY_ISSUED', 'COUPON_ISSUE_BUSY', 'USER_NOT_FOUND', 'PROMOTION_NOT_ACTIVE', 'OTHER'];
 
 export const options = {
   scenarios: {
