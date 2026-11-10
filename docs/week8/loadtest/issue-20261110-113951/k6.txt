@@ -1,0 +1,156 @@
+
+         /\      Grafana   /‾‾/  
+    /\  /  \     |\  __   /  /   
+   /  \/    \    | |/ /  /   ‾‾\ 
+  /          \   |   (  |  (‾)  |
+ / __________ \  |_|\_\  \_____/ 
+
+
+     execution: local
+        script: issue-spike.js
+ web dashboard: http://127.0.0.1:5665
+        output: Prometheus remote write (http://172.31.10.195:9090/api/v1/write)
+
+     scenarios: (100.00%) 1 scenario, 10000 max VUs, 50s max duration (incl. graceful stop):
+              * issue: 700.00 iterations/s for 20s (maxVUs: 10000, gracefulStop: 30s)
+
+
+Init    [  55% ] 05510/10000 VUs initialized
+issue   [   0% ]
+
+running (00.2s), 00099/10000 VUs, 0 complete and 0 interrupted iterations
+issue   [   1% ] 00099/10000 VUs  00.2s/20s  700.00 iters/s
+
+running (01.2s), 00602/10000 VUs, 224 complete and 0 interrupted iterations
+issue   [   6% ] 00603/10000 VUs  01.2s/20s  700.00 iters/s
+
+running (02.2s), 01072/10000 VUs, 454 complete and 0 interrupted iterations
+issue   [  11% ] 01073/10000 VUs  02.2s/20s  700.00 iters/s
+
+running (03.2s), 01541/10000 VUs, 686 complete and 0 interrupted iterations
+issue   [  16% ] 01541/10000 VUs  03.2s/20s  700.00 iters/s
+
+running (04.2s), 02009/10000 VUs, 918 complete and 0 interrupted iterations
+issue   [  21% ] 02009/10000 VUs  04.2s/20s  700.00 iters/s
+
+running (05.2s), 02476/10000 VUs, 1150 complete and 0 interrupted iterations
+issue   [  26% ] 02476/10000 VUs  05.2s/20s  700.00 iters/s
+
+running (06.2s), 02947/10000 VUs, 1380 complete and 0 interrupted iterations
+issue   [  31% ] 02947/10000 VUs  06.2s/20s  700.00 iters/s
+
+running (07.2s), 03414/10000 VUs, 1613 complete and 0 interrupted iterations
+issue   [  36% ] 03414/10000 VUs  07.2s/20s  700.00 iters/s
+
+running (08.2s), 03885/10000 VUs, 1842 complete and 0 interrupted iterations
+issue   [  41% ] 03885/10000 VUs  08.2s/20s  700.00 iters/s
+
+running (09.2s), 04353/10000 VUs, 2074 complete and 0 interrupted iterations
+issue   [  46% ] 04353/10000 VUs  09.2s/20s  700.00 iters/s
+
+running (10.2s), 04830/10000 VUs, 2296 complete and 0 interrupted iterations
+issue   [  51% ] 04831/10000 VUs  10.2s/20s  700.00 iters/s
+
+running (11.2s), 05292/10000 VUs, 2535 complete and 0 interrupted iterations
+issue   [  56% ] 05292/10000 VUs  11.2s/20s  700.00 iters/s
+
+running (12.2s), 05763/10000 VUs, 2764 complete and 0 interrupted iterations
+issue   [  61% ] 05763/10000 VUs  12.2s/20s  700.00 iters/s
+
+running (13.2s), 06232/10000 VUs, 2995 complete and 0 interrupted iterations
+issue   [  66% ] 06232/10000 VUs  13.2s/20s  700.00 iters/s
+
+running (14.2s), 05895/10000 VUs, 4032 complete and 0 interrupted iterations
+issue   [  71% ] 05895/10000 VUs  14.2s/20s  700.00 iters/s
+
+running (15.2s), 05606/10000 VUs, 5021 complete and 0 interrupted iterations
+issue   [  76% ] 05606/10000 VUs  15.2s/20s  700.00 iters/s
+
+running (16.2s), 05353/10000 VUs, 5974 complete and 0 interrupted iterations
+issue   [  81% ] 05353/10000 VUs  16.2s/20s  700.00 iters/s
+
+running (17.2s), 05129/10000 VUs, 6898 complete and 0 interrupted iterations
+issue   [  86% ] 05129/10000 VUs  17.2s/20s  700.00 iters/s
+
+running (18.2s), 04834/10000 VUs, 7893 complete and 0 interrupted iterations
+issue   [  91% ] 04834/10000 VUs  18.2s/20s  700.00 iters/s
+
+running (19.2s), 04570/10000 VUs, 8856 complete and 0 interrupted iterations
+issue   [  96% ] 04570/10000 VUs  19.2s/20s  700.00 iters/s
+
+running (20.2s), 04201/10000 VUs, 9800 complete and 0 interrupted iterations
+issue ↓ [ 100% ] 04384/10000 VUs  20s  700.00 iters/s
+
+running (21.2s), 03263/10000 VUs, 10738 complete and 0 interrupted iterations
+issue ↓ [ 100% ] 04384/10000 VUs  20s  700.00 iters/s
+
+running (22.2s), 02341/10000 VUs, 11660 complete and 0 interrupted iterations
+issue ↓ [ 100% ] 04384/10000 VUs  20s  700.00 iters/s
+
+running (23.2s), 01396/10000 VUs, 12605 complete and 0 interrupted iterations
+issue ↓ [ 100% ] 04384/10000 VUs  20s  700.00 iters/s
+
+running (24.2s), 00454/10000 VUs, 13547 complete and 0 interrupted iterations
+issue ↓ [ 100% ] 04384/10000 VUs  20s  700.00 iters/s
+
+
+  █ THRESHOLDS 
+
+    issue_outcomes{outcome:COUPON_ALREADY_ISSUED}
+    ✓ 'count>=0' count=0
+
+    issue_outcomes{outcome:COUPON_SOLD_OUT}
+    ✓ 'count>=0' count=11000
+
+    issue_outcomes{outcome:OTHER}
+    ✓ 'count>=0' count=1
+
+    issue_outcomes{outcome:PROMOTION_NOT_ACTIVE}
+    ✓ 'count>=0' count=0
+
+    issue_outcomes{outcome:SUCCESS}
+    ✓ 'count>=0' count=3000
+
+    issue_outcomes{outcome:USER_NOT_FOUND}
+    ✓ 'count>=0' count=0
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 14001  569.242678/s
+    checks_succeeded...: 99.99% 14000 out of 14001
+    checks_failed......: 0.00%  1 out of 14001
+
+    ✗ no 5xx
+      ↳  99% — ✓ 14000 / ✗ 1
+
+    CUSTOM
+    issue_outcomes........................: 14001  569.242678/s
+      { outcome:COUPON_ALREADY_ISSUED }...: 0      0/s
+      { outcome:COUPON_SOLD_OUT }.........: 11000  447.230159/s
+      { outcome:OTHER }...................: 1      0.040657/s
+      { outcome:PROMOTION_NOT_ACTIVE }....: 0      0/s
+      { outcome:SUCCESS }.................: 3000   121.971862/s
+      { outcome:USER_NOT_FOUND }..........: 0      0/s
+
+    HTTP
+    http_req_duration.....................: avg=6.24s min=57.03ms med=6.41s p(90)=8.36s p(95)=8.77s p(99)=9.23s max=11.09s
+      { expected_response:true }..........: avg=4.55s min=57.03ms med=4.53s p(90)=8.03s p(95)=8.45s p(99)=8.87s max=9.16s 
+    http_req_failed.......................: 78.57% 11001 out of 14001
+    http_reqs.............................: 14001  569.242678/s
+
+    EXECUTION
+    iteration_duration....................: avg=6.24s min=60.32ms med=6.42s p(90)=8.36s p(95)=8.77s p(99)=9.23s max=11.09s
+    iterations............................: 14001  569.242678/s
+    vus...................................: 452    min=0              max=6232 
+    vus_max...............................: 10000  min=5522           max=10000
+
+    NETWORK
+    data_received.........................: 3.5 MB 142 kB/s
+    data_sent.............................: 1.9 MB 78 kB/s
+
+
+
+
+running (24.6s), 00000/10000 VUs, 14001 complete and 0 interrupted iterations
+issue ✓ [ 100% ] 00000/10000 VUs  20s  700.00 iters/s
