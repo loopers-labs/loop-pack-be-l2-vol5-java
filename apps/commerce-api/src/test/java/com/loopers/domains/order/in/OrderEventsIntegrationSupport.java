@@ -2,24 +2,25 @@ package com.loopers.domains.order.in;
 
 import com.loopers.domains.brand.app.BrandApplicationService;
 import com.loopers.domains.order.app.OrderApplicationService;
-import com.loopers.domains.payment.out.TestPgServer.CreateBehavior;
+import com.loopers.domains.order.app.OrderOutboxRelay;
 import com.loopers.domains.payment.out.TestPgServer;
 import com.loopers.domains.product.app.ProductApplicationService;
 import com.loopers.domains.user.out.UserJpaEntity;
 import com.loopers.domains.user.out.UserJpaRepository;
 import com.loopers.support.kafka.OrderEventsProbe;
-import com.loopers.support.kafka.OrderEventsTestConfig.ControllableOrderConfirmedPublisher;
 import com.loopers.support.kafka.OrderEventsTestConfig.FailingKafkaTemplate;
+import com.loopers.support.kafka.OrderEventsTestConfig.FailingOrderConfirmedOutbox;
 import com.loopers.support.kafka.OrderEventsTestConfig.FailingPaymentRecordRepository;
 import com.loopers.support.kafka.OrderEventsTestConfig.PublishedOrderEvents;
+import com.loopers.support.kafka.OrderEventsTestConfig.ScriptedMessageSender;
 import com.loopers.support.kafka.OrderEventsTestConfig;
 import com.loopers.support.pg.MutablePaymentClock;
 import com.loopers.support.pg.TestPgFixture;
 import com.loopers.utils.DatabaseCleanUp;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,7 +37,6 @@ import org.springframework.test.web.servlet.ResultActions;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 // 주문 확정 이벤트 통합 테스트가 같은 컨텍스트를 쓰도록 설정·topic을 이 부모 하나에 둔다(같은 DynamicPropertySource면 컨텍스트 재사용).
 // 실제 주문 API → 테스트 PG 서버 → 결과 반영 경로로 확정하고, 단일 partition 고유 topic을 broker에서 직접 읽는다.
@@ -59,10 +59,12 @@ abstract class OrderEventsIntegrationSupport {
     @Autowired MutablePaymentClock clock;
     @Autowired JdbcTemplate jdbc;
     @Autowired DatabaseCleanUp cleanup;
-    @Autowired ControllableOrderConfirmedPublisher publisher;
     @Autowired PublishedOrderEvents publishedEvents;
     @Autowired FailingPaymentRecordRepository failingPayments;
     @Autowired FailingKafkaTemplate failingKafka;
+    @Autowired FailingOrderConfirmedOutbox failingOutbox;
+    @Autowired ScriptedMessageSender sender;
+    @Autowired OrderOutboxRelay relay;
 
     TestPgServer server;
     OrderEventsProbe probe;
@@ -87,10 +89,12 @@ abstract class OrderEventsIntegrationSupport {
         long brand = brands.create("브랜드").id();
         first = products.create(brand, "첫 상품", 2000, 5).id();
         second = products.create(brand, "둘째 상품", 3000, 5).id();
-        publisher.reset();
         publishedEvents.reset();
         failingPayments.disarm();
+        failingOutbox.disarm();
+        sender.reset();
         failingKafka.fail(FailingKafkaTemplate.Failure.NONE);
+        failingKafka.resetAcked();
         probe = new OrderEventsProbe(bootstrapServers, TOPIC);
         from = probe.mark();
     }
@@ -100,8 +104,10 @@ abstract class OrderEventsIntegrationSupport {
         probe.close();
         pg.close();
         failingPayments.disarm();
+        failingOutbox.disarm();
+        sender.reset();
         failingKafka.fail(FailingKafkaTemplate.Failure.NONE);
-        publisher.reset();
+        failingKafka.resetAcked();
         jdbc.update("delete from order_items");
         cleanup.truncateAllTables();
     }
@@ -143,21 +149,26 @@ abstract class OrderEventsIntegrationSupport {
         return "order-confirmed:v1:" + orderId;
     }
 
-    // 다른 주문을 실제 경로로 확정해 같은 producer·같은 partition에 경계 record를 남긴다.
-    String confirmBoundaryOrder() throws Exception {
-        long boundary = newOrder();
-        server.createBehavior(CreateBehavior.ACCEPT_SUCCESS);
-        confirm(boundary, UUID.randomUUID().toString()).andExpect(status().isOk());
-        return eventId(boundary);
+    // 확정 경로는 broker에 직접 보내지 않고 relay가 보낸다(D95). relay 회차를 한 번 돌린 뒤 broker를 읽는다.
+    List<String> eventIdsAfterRelay() {
+        relay.runOnce();
+        return eventIdsOnBroker();
     }
 
-    List<String> eventIdsThroughBoundary() throws Exception {
-        List<ConsumerRecord<String, String>> records = probe.readThrough(from, confirmBoundaryOrder());
-        return records.stream().map(OrderEventsProbe::eventId).toList();
+    // producer에 남은 비동기 send를 flush로 끝낸 뒤 지금 끝 위치까지 읽는다. relay는 broker 확인까지 기다리므로
+    // 그 뒤에 보내는 쪽이 없어 "없음"을 판단할 수 있다.
+    List<String> eventIdsOnBroker() {
+        failingKafka.flush();
+        return probe.readThrough(from).stream().map(OrderEventsProbe::eventId).toList();
     }
 
-    void assertNoEvent(long orderId) throws Exception {
-        assertThat(eventIdsThroughBoundary()).doesNotContain(eventId(orderId));
+    void assertNoEvent(long orderId) {
+        assertThat(eventIdsAfterRelay()).doesNotContain(eventId(orderId));
+    }
+
+    Map<String, Object> outboxRow(long orderId) {
+        return jdbc.queryForMap("select id, status, attempt_count, row_failure_count, last_error, next_attempt_at, published_at,"
+            + " message_key, payload from order_outbox where order_id = ?", orderId);
     }
 
     String orderStatus(long orderId) {

@@ -18,6 +18,10 @@ spring:
     name: commerce-api
   profiles:
     active: local
+  task:
+    scheduling:
+      pool:
+        size: 2 # 결제 조회와 Outbox relay 스케줄러가 서로의 긴 회차에 밀리지 않게 한다
   config:
     import:
       - jpa.yml
@@ -46,6 +50,13 @@ commerce:
     producer:
       max-block: 2s # broker 장애 때 metadata 대기로 요청 스레드가 묶이는 상한 (Kafka 기본 60초)
       republish-timeout: 10s # 재발행 명령 처리에서 OrderConfirmed send 확인을 기다리는 상한
+      delivery-timeout: 30s # producer가 한 건 전송을 포기하는 상한. relay send-timeout(35s)보다 짧아 broker 결과가 먼저 온다
+  # 설계 28절 2단계. 수치는 [임시]다. enabled는 이 인스턴스에서 relay 스케줄러를 띄울지 정한다(여러 인스턴스면 한 대만 true).
+  outbox:
+    relay:
+      enabled: true
+      fixed-delay: PT1S
+      send-timeout: 35s # relay가 broker 확인을 기다리는 상한
 
 # 설계 21절. PG 우선순위와 연결 설정. 타임아웃은 [임시] 수치이며 측정 후 조정한다.
 payment:
@@ -118,4 +129,8 @@ spring:
 payment:
   lookup:
     scheduler:
+      enabled: false
+commerce:
+  outbox:
+    relay:
       enabled: false

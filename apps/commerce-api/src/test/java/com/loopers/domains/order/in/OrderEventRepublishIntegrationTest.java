@@ -1,7 +1,5 @@
 package com.loopers.domains.order.in;
 
-import com.loopers.domains.order.app.port.OrderConfirmedPayload;
-import com.loopers.domains.order.out.OrderConfirmedMessageSerializer;
 import com.loopers.domains.payment.out.TestPgServer.CreateBehavior;
 import com.loopers.support.kafka.OrderEventsProbe;
 import com.loopers.support.kafka.OrderEventsTestConfig.FailingKafkaTemplate;
@@ -79,6 +77,7 @@ class OrderEventRepublishIntegrationTest extends OrderEventsIntegrationSupport {
         long orderId = newOrder();
         server.createBehavior(CreateBehavior.ACCEPT_SUCCESS);
         confirm(orderId, UUID.randomUUID().toString()).andExpect(status().isOk());
+        relay.runOnce();
         ConsumerRecord<String, String> first = probe.awaitEvent(from, eventId(orderId));
 
         long n = request(orderId);
@@ -90,25 +89,24 @@ class OrderEventRepublishIntegrationTest extends OrderEventsIntegrationSupport {
         assertThat(OrderEventsProbe.json(republished)).isEqualTo(OrderEventsProbe.json(first));
     }
 
+    // 7주차 2단계(relay-2 ①): 사례 A는 "확정 commit 뒤 relay가 아직 보내지 않음"이다. relay를 돌리지 않은 채 대사 재발행으로 복구한다.
     @Test
-    @DisplayName("사례 A 복구(실험 ④): commit 뒤 send 직전에 멈춰 broker에 없던 확정을 대사 명령으로 재발행하면 처음 발행됐어야 할 payload 그대로 1건이 나간다")
+    @DisplayName("사례 A 복구(실험 ④): 확정 뒤 relay가 아직 보내지 않아 broker에 없던 확정을 대사 명령으로 재발행하면 Outbox에 남은 payload 그대로 1건이 나간다")
     void caseAIsRecoveredByRepublishRequest() throws Exception {
         long orderId = newOrder();
         server.createBehavior(CreateBehavior.ACCEPT_SUCCESS);
-        publisher.haltBeforeSend();
         confirm(orderId, UUID.randomUUID().toString()).andExpect(status().isOk());
-        OrderConfirmedPayload halted = publisher.halted().getFirst();
-        publisher.reset();
+        String expected = (String) outboxRow(orderId).get("payload");
+        assertThat(eventIdsOnBroker()).doesNotContain(eventId(orderId));
 
         long n = request(orderId);
 
         awaitCommitted(n + 1);
         ConsumerRecord<String, String> recovered = probe.awaitEvent(from, eventId(orderId));
-        assertThat(recovered.key()).isEqualTo(halted.key());
-        assertThat(OrderEventsProbe.json(recovered))
-            .isEqualTo(OrderEventsProbe.json(OrderConfirmedMessageSerializer.serialize(halted)));
-        assertThat(probe.awaitEvents(from, eventId(orderId), 1)).hasSize(1);
-        System.out.println("[실험④ 3b 사례 A 복구·api] orderId=" + orderId + ", eventId=" + halted.eventId()
+        assertThat(recovered.key()).isEqualTo(String.valueOf(orderId));
+        assertThat(OrderEventsProbe.json(recovered)).isEqualTo(OrderEventsProbe.json(expected));
+        assertThat(eventIdsOnBroker().stream().filter(eventId(orderId)::equals)).hasSize(1);
+        System.out.println("[실험④ 3b 사례 A 복구·api] orderId=" + orderId + ", eventId=" + eventId(orderId)
             + ", 명령 record=(topic=" + REQUEST_TOPIC + ", partition=0, offset=" + n + ") → committed=" + committed()
             + ", OrderConfirmed record=(topic=" + recovered.topic() + ", partition=" + recovered.partition() + ", offset="
             + recovered.offset() + ", key=" + recovered.key() + "), value=" + recovered.value());
@@ -128,7 +126,7 @@ class OrderEventRepublishIntegrationTest extends OrderEventsIntegrationSupport {
         long last = request(legacy);
 
         awaitCommitted(last + 1);
-        assertThat(eventIdsThroughBoundary()).doesNotContain(eventId(999_999), eventId(pending), eventId(legacy));
+        assertThat(eventIdsAfterRelay()).doesNotContain(eventId(999_999), eventId(pending), eventId(legacy));
     }
 
     @Test
@@ -136,9 +134,7 @@ class OrderEventRepublishIntegrationTest extends OrderEventsIntegrationSupport {
     void failedRepublishRetriesThenStopsAndResumes() throws Exception {
         long orderId = newOrder();
         server.createBehavior(CreateBehavior.ACCEPT_SUCCESS);
-        publisher.haltBeforeSend();
         confirm(orderId, UUID.randomUUID().toString()).andExpect(status().isOk());
-        publisher.reset();
         failingKafka.fail(FailingKafkaTemplate.Failure.ASYNC_FAILED);
         Long committedBefore = committed();
 

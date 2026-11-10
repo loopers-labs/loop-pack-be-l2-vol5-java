@@ -2,82 +2,67 @@ package com.loopers.domains.order.in;
 
 import com.loopers.domains.payment.out.TestPgServer.CreateBehavior;
 import com.loopers.support.kafka.OrderEventsTestConfig.FailingKafkaTemplate;
-import io.micrometer.core.instrument.Counter;
-import io.micrometer.core.instrument.MeterRegistry;
-import java.time.Duration;
-import java.time.Instant;
+import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.system.CapturedOutput;
-import org.springframework.boot.test.system.OutputCaptureExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@ExtendWith(OutputCaptureExtension.class)
+// 7주차 2단계(D95): send는 확정 경로가 아니라 relay가 한다. 실제 KafkaTemplate으로 broker 수준 실패(Kafka TimeoutException)를 주입한다.
 class OrderConfirmedPublishFailureTest extends OrderEventsIntegrationSupport {
-    private static final String FAILURE_METRIC = "commerce.order.events.publish.failed";
-
-    @Autowired private MeterRegistry meterRegistry;
 
     @Test
-    @DisplayName("send 결과가 실패로 끝나도 confirm은 저장된 결과 200·CONFIRMED이고 예약 재고는 소비된 채이며 실패 로그·지표가 1 늘고 record는 없다")
-    void asyncSendFailureKeepsConfirmedOrder(CapturedOutput output) throws Exception {
+    @DisplayName("relay의 send 결과가 broker 수준 실패로 끝나도 주문은 CONFIRMED·예약 소비 그대로이고 Outbox 행은 PENDING으로 남아 시도 1회·다음 시도 1초 뒤가 기록된다")
+    void asyncSendFailureKeepsConfirmedOrder() throws Exception {
         long orderId = newOrder();
-        double before = failures();
         server.createBehavior(CreateBehavior.ACCEPT_SUCCESS);
-        failingKafka.fail(FailingKafkaTemplate.Failure.ASYNC_FAILED);
-
         confirm(orderId, UUID.randomUUID().toString()).andExpect(status().isOk())
             .andExpect(jsonPath("$.data.status").value("CONFIRMED"))
             .andExpect(jsonPath("$.data.paymentResult").value("SUCCESS"));
+        failingKafka.fail(FailingKafkaTemplate.Failure.ASYNC_FAILED);
 
-        awaitFailures(before + 1);
+        relay.runOnce();
+
         assertThat(orderStatus(orderId)).isEqualTo("CONFIRMED");
         assertThat(stock(first)).isEqualTo(3);
         assertThat(stock(second)).isEqualTo(4);
         assertThat(server.createCalls()).isEqualTo(1);
-        assertThat(output.getAll()).contains("주문 확정 이벤트 발행 실패").contains("eventId=" + eventId(orderId));
+        assertBrokerFailureRecorded(orderId);
         failingKafka.fail(FailingKafkaTemplate.Failure.NONE);
-        assertNoEvent(orderId);
+        assertThat(eventIdsOnBroker()).doesNotContain(eventId(orderId));
     }
 
     @Test
-    @DisplayName("callback으로 확정하는 중 send가 바로 예외를 던져도 callback은 200이고 주문은 CONFIRMED로 남으며 실패 지표가 1 는다")
+    @DisplayName("callback으로 확정한 뒤 relay의 send가 바로 예외를 던져도 주문은 CONFIRMED·결제 SUCCESS로 남고 Outbox 행은 PENDING·시도 1회다")
     void syncSendFailureKeepsCallbackConfirmation() throws Exception {
         long orderId = newOrder();
         server.createBehavior(CreateBehavior.ACCEPT_PENDING);
         confirm(orderId, UUID.randomUUID().toString()).andExpect(status().isAccepted());
         server.changeStatus(transactionKey(orderId), "SUCCESS");
-        double before = failures();
+        callback(orderId, "SUCCESS").andExpect(status().isOk());
         failingKafka.fail(FailingKafkaTemplate.Failure.SYNC_THROW);
 
-        callback(orderId, "SUCCESS").andExpect(status().isOk());
+        relay.runOnce();
 
-        assertThat(failures()).isEqualTo(before + 1);
         assertThat(orderStatus(orderId)).isEqualTo("CONFIRMED");
         assertThat(stock(first)).isEqualTo(3);
         assertThat(jdbc.queryForObject("select result from payment_records where order_id = ?", String.class, orderId))
             .isEqualTo("SUCCESS");
+        assertBrokerFailureRecorded(orderId);
     }
 
-    private double failures() {
-        Counter counter = meterRegistry.find(FAILURE_METRIC).tag("eventType", "OrderConfirmed").counter();
-        return counter == null ? 0 : counter.count();
-    }
-
-    private void awaitFailures(double expected) {
-        Instant deadline = Instant.now().plus(Duration.ofSeconds(10));
-        while (Instant.now().isBefore(deadline)) {
-            if (failures() >= expected) {
-                return;
-            }
-            Thread.onSpinWait();
-        }
-        assertThat(failures()).isEqualTo(expected);
+    private void assertBrokerFailureRecorded(long orderId) {
+        Map<String, Object> row = outboxRow(orderId);
+        assertThat(row)
+            .containsEntry("status", "PENDING")
+            .containsEntry("attempt_count", 1)
+            .containsEntry("row_failure_count", 0)
+            .containsEntry("next_attempt_at", LocalDateTime.parse("2026-10-29T01:00:01"))
+            .containsEntry("published_at", null);
+        assertThat((String) row.get("last_error")).contains(FailingKafkaTemplate.INJECTED_FAILURE);
     }
 }

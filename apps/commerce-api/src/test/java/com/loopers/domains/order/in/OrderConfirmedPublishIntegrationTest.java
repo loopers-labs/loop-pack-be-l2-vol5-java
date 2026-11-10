@@ -12,7 +12,6 @@ import com.loopers.support.kafka.OrderEventsProbe;
 import com.loopers.support.kafka.OrderEventsTestConfig.FailingPaymentRecordRepository;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.UUID;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.DisplayName;
@@ -20,19 +19,18 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.ApplicationEventPublisher;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+// 7주차 2단계(D95): 확정 경로는 broker에 직접 보내지 않는다. Outbox에 남긴 행을 relay 회차가 보낸다.
 class OrderConfirmedPublishIntegrationTest extends OrderEventsIntegrationSupport {
     @Autowired private OrderRepository orderRepository;
-    @Autowired private ApplicationEventPublisher applicationEventPublisher;
 
     @Test
-    @DisplayName("PG 성공으로 처음 확정하면 broker에 key=주문 ID인 OrderConfirmed 1건이 오고 payload가 저장된 주문(품목·수량·확정 시각)과 같다")
+    @DisplayName("PG 성공으로 처음 확정하면 확정 직후 broker에는 record가 없고, relay 한 회차 뒤 key=주문 ID인 OrderConfirmed 1건이 Outbox payload 그대로 온다")
     void firstConfirmationPublishesStoredOrder() throws Exception {
         long orderId = newOrder();
         server.createBehavior(CreateBehavior.ACCEPT_SUCCESS);
@@ -40,8 +38,11 @@ class OrderConfirmedPublishIntegrationTest extends OrderEventsIntegrationSupport
         confirm(orderId, UUID.randomUUID().toString()).andExpect(status().isOk())
             .andExpect(jsonPath("$.data.status").value("CONFIRMED"));
 
+        assertThat(eventIdsOnBroker()).doesNotContain(eventId(orderId));
+        relay.runOnce();
         ConsumerRecord<String, String> record = probe.awaitEvent(from, eventId(orderId));
         assertThat(record.key()).isEqualTo(String.valueOf(orderId));
+        assertThat(record.value()).isEqualTo(outboxRow(orderId).get("payload"));
         JsonNode message = OrderEventsProbe.json(record);
         assertThat(message.path("eventType").asText()).isEqualTo("OrderConfirmed");
         assertThat(message.path("schemaVersion").asInt()).isEqualTo(1);
@@ -53,10 +54,11 @@ class OrderConfirmedPublishIntegrationTest extends OrderEventsIntegrationSupport
             .isEqualTo(LocalDateTime.parse("2026-10-29T01:00:00"));
         OrderConfirmedPayload stored = OrderConfirmedPayloadFactory.create(orderRepository.findById(orderId).orElseThrow());
         assertThat(message).isEqualTo(OrderEventsProbe.json(OrderConfirmedMessageSerializer.serialize(stored)));
+        assertThat(outboxRow(orderId)).containsEntry("status", "PUBLISHED");
     }
 
     @Test
-    @DisplayName("create는 결제 대기였고 callback으로 처음 확정되면 그때 OrderConfirmed 1건을 보낸다")
+    @DisplayName("create는 결제 대기였고 callback으로 처음 확정되면 확정 직후 broker에는 없고 relay 회차 뒤 OrderConfirmed 1건이 온다")
     void firstConfirmationByCallbackPublishes() throws Exception {
         long orderId = newOrder();
         server.createBehavior(CreateBehavior.ACCEPT_PENDING);
@@ -66,13 +68,15 @@ class OrderConfirmedPublishIntegrationTest extends OrderEventsIntegrationSupport
 
         callback(orderId, "SUCCESS").andExpect(status().isOk());
 
+        assertThat(eventIdsOnBroker()).doesNotContain(eventId(orderId));
+        relay.runOnce();
         ConsumerRecord<String, String> record = probe.awaitEvent(from, eventId(orderId));
         assertThat(OrderEventsProbe.json(record).path("confirmedAt").asText()).isEqualTo("2026-10-29T01:00:05Z");
         assertThat(orderStatus(orderId)).isEqualTo("CONFIRMED");
     }
 
     @Test
-    @DisplayName("같은 주문의 성공이 create 응답 → callback → 고객 reconcile → 같은 키 confirm으로 반복돼도 record는 1건이고 재고를 더 차감하지 않는다")
+    @DisplayName("같은 주문의 성공이 create 응답 → callback → 고객 reconcile → 같은 키 confirm으로 반복돼도 relay 회차 전에는 broker에 없고, 회차 뒤 record는 1건이며 재고를 더 차감하지 않는다")
     void repeatedSuccessPublishesOnce() throws Exception {
         long orderId = newOrder();
         String attemptKey = UUID.randomUUID().toString();
@@ -85,14 +89,14 @@ class OrderConfirmedPublishIntegrationTest extends OrderEventsIntegrationSupport
 
         assertThat(stock(first)).isEqualTo(3);
         assertThat(stock(second)).isEqualTo(4);
-        List<String> eventIds = eventIdsThroughBoundary();
-        assertThat(eventIds.stream().filter(eventId(orderId)::equals)).hasSize(1);
-        assertThat(publishedEvents.published().stream().filter(payload -> payload.orderId() == orderId)).hasSize(1);
+        assertThat(eventIdsOnBroker()).doesNotContain(eventId(orderId));
+        assertThat(eventIdsAfterRelay().stream().filter(eventId(orderId)::equals)).hasSize(1);
+        assertThat(jdbc.queryForObject("select count(*) from order_outbox where order_id = ?", Long.class, orderId)).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("결제를 시작하지 않은 DRAFT 주문에 성공 결과가 들어오면 DRAFT 그대로이고 이벤트를 보내지 않는다")
-    void draftResultPublishesNothing() throws Exception {
+    @DisplayName("결제를 시작하지 않은 DRAFT 주문에 성공 결과가 들어오면 DRAFT 그대로이고 relay 회차 뒤에도 이벤트가 없다")
+    void draftResultPublishesNothing() {
         long orderId = newOrder();
 
         orders.applyPaymentResult(orderId, new PaymentReport(PaymentRecord.ProviderStatus.SUCCESS, "TR-DRAFT"));
@@ -103,7 +107,7 @@ class OrderConfirmedPublishIntegrationTest extends OrderEventsIntegrationSupport
 
     @ParameterizedTest(name = "create {0} → PG 상태 {1}")
     @CsvSource({"ACCEPT_PENDING, PENDING", "DELAY_AFTER_CREATE, UNKNOWN"})
-    @DisplayName("결제 대기(PENDING·결과 모름)로 끝난 confirm은 이벤트를 보내지 않는다")
+    @DisplayName("결제 대기(PENDING·결과 모름)로 끝난 confirm은 relay 회차 뒤에도 이벤트가 없다")
     void pendingPublishesNothing(CreateBehavior behavior, String providerStatus) throws Exception {
         long orderId = newOrder();
         server.createBehavior(behavior);
@@ -116,7 +120,7 @@ class OrderConfirmedPublishIntegrationTest extends OrderEventsIntegrationSupport
     }
 
     @Test
-    @DisplayName("PG 실패로 결제 실패가 된 주문은 이벤트를 보내지 않는다")
+    @DisplayName("PG 실패로 결제 실패가 된 주문은 relay 회차 뒤에도 이벤트가 없다")
     void failedPublishesNothing() throws Exception {
         long orderId = newOrder();
         server.createBehavior(CreateBehavior.ACCEPT_FAILED);
@@ -128,7 +132,7 @@ class OrderConfirmedPublishIntegrationTest extends OrderEventsIntegrationSupport
     }
 
     @Test
-    @DisplayName("결제 만료 뒤 늦게 성공한 callback은 충돌 기록만 남기고 결제 만료 그대로이며 이벤트를 보내지 않는다")
+    @DisplayName("결제 만료 뒤 늦게 성공한 callback은 충돌 기록만 남기고 결제 만료 그대로이며 relay 회차 뒤에도 이벤트가 없다")
     void lateSuccessAfterExpiryPublishesNothing() throws Exception {
         long orderId = newOrder();
         server.createBehavior(CreateBehavior.ACCEPT_PENDING);
@@ -146,7 +150,7 @@ class OrderConfirmedPublishIntegrationTest extends OrderEventsIntegrationSupport
     }
 
     @Test
-    @DisplayName("결과 반영 트랜잭션이 확정 이벤트 발행 뒤 rollback되면 주문은 결제 대기 그대로이고 broker로 보내지 않는다")
+    @DisplayName("결과 반영 트랜잭션이 rollback되면 주문은 결제 대기 그대로이고 Spring 이벤트·Outbox 행이 없으며 relay 회차 뒤에도 broker로 보내지 않는다")
     void rolledBackConfirmationPublishesNothing() throws Exception {
         long orderId = newOrder();
         server.createBehavior(CreateBehavior.ACCEPT_PENDING);
@@ -157,15 +161,15 @@ class OrderConfirmedPublishIntegrationTest extends OrderEventsIntegrationSupport
             new PaymentReport(PaymentRecord.ProviderStatus.SUCCESS, transactionKey(orderId))))
             .hasMessage(FailingPaymentRecordRepository.INJECTED_FAILURE);
 
-        assertThat(publishedEvents.published()).extracting(OrderConfirmedPayload::orderId).containsExactly(orderId);
-        assertThat(publisher.sent()).isEmpty();
+        assertThat(publishedEvents.published()).isEmpty();
         assertThat(orderStatus(orderId)).isEqualTo("PAYMENT_PENDING");
         assertThat(jdbc.queryForObject("select confirmed_at from orders where id = ?", LocalDateTime.class, orderId)).isNull();
+        assertThat(jdbc.queryForObject("select count(*) from order_outbox where order_id = ?", Long.class, orderId)).isZero();
         assertNoEvent(orderId);
     }
 
     @Test
-    @DisplayName("이관된 과거 POINT 확정 주문은 성공 결과·reconcile이 와도 이벤트를 보내지 않는다(소급 발행 없음)")
+    @DisplayName("이관된 과거 POINT 확정 주문은 성공 결과·reconcile이 와도 relay 회차 뒤에 이벤트가 없다(소급 발행 없음)")
     void legacyPointConfirmedOrderPublishesNothing() throws Exception {
         long orderId = newOrder();
         jdbc.update("update orders set status = 'CONFIRMED' where id = ?", orderId);
@@ -178,15 +182,16 @@ class OrderConfirmedPublishIntegrationTest extends OrderEventsIntegrationSupport
         assertNoEvent(orderId);
     }
 
+    // 6주차에는 after-commit listener가 트랜잭션 밖 이벤트를 건너뛰는지 봤다. listener가 없어졌으므로 확정 경로가 Spring 이벤트를 쓰지 않는지 본다.
     @Test
-    @DisplayName("트랜잭션 밖에서 발행한 확정 이벤트는 after-commit listener가 조용히 건너뛰므로 발행은 결과 반영 트랜잭션 안에서만 한다")
-    void eventOutsideTransactionIsSilentlySkipped() {
-        OrderConfirmedPayload payload = new OrderConfirmedPayload("99", eventId(99), 99, NOW,
-            List.of(new OrderConfirmedPayload.Item(first, 1)));
+    @DisplayName("PG 성공으로 처음 확정해도 확정 경로는 Spring 이벤트를 발행하지 않는다(보낼 사실은 Outbox에만 남는다)")
+    void confirmationPublishesNoSpringEvent() throws Exception {
+        long orderId = newOrder();
+        server.createBehavior(CreateBehavior.ACCEPT_SUCCESS);
 
-        applicationEventPublisher.publishEvent(payload);
+        confirm(orderId, UUID.randomUUID().toString()).andExpect(status().isOk());
 
-        assertThat(publishedEvents.published()).containsExactly(payload);
-        assertThat(publisher.sent()).isEmpty();
+        assertThat(publishedEvents.published()).isEmpty();
+        assertThat(outboxRow(orderId)).containsEntry("status", "PENDING");
     }
 }
