@@ -1,0 +1,2 @@
+2026-11-06T15:19:06.036+09:00  INFO 42762 --- [commerce-streamer] [-activity-2-C-1] [                                                 ] c.l.p.a.PurchaseActivityService          : 구매 활동 저장. eventId=4a1ded8a-2881-4e7c-b9c2-aa4baf5ed89c, orderId=3, items=2
+2026-11-06T15:20:08.127+09:00  INFO 42762 --- [commerce-streamer] [-activity-2-C-1] [                                                 ] c.l.p.a.PurchaseActivityService          : 같은 사실의 재전달 — 변경 없이 완료(no-op). eventId=4a1ded8a-2881-4e7c-b9c2-aa4baf5ed89c, orderId=3

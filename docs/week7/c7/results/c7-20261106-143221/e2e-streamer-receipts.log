@@ -1,0 +1,2 @@
+2026-11-06T14:33:48.558+09:00  INFO 12148 --- [commerce-streamer] [-activity-2-C-1] [                                                 ] c.l.p.a.PurchaseActivityService          : 구매 활동 저장. eventId=ab3b1b66-ad5c-4f6b-97f4-bf1c4da1e1e9, orderId=3, items=2
+2026-11-06T14:34:48.875+09:00  INFO 12148 --- [commerce-streamer] [-activity-2-C-1] [                                                 ] c.l.p.a.PurchaseActivityService          : 같은 사실의 재전달 — 변경 없이 완료(no-op). eventId=ab3b1b66-ad5c-4f6b-97f4-bf1c4da1e1e9, orderId=3

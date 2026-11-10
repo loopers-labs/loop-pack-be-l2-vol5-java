@@ -57,6 +57,7 @@ class PartitionAssignmentExperimentTest extends StreamerIntegrationTestSupport {
         String topic = "w6-assign-" + suffix;
         String group = "w6-assign-group-" + suffix;
         KafkaTestSupport.ensureTopic(topic, 2);
+        KafkaTestSupport.awaitProducerMetadata(kafkaTemplate, topic);
         List<Member> members = new ArrayList<>();
         List<String> table = new ArrayList<>();
         try {
@@ -97,6 +98,7 @@ class PartitionAssignmentExperimentTest extends StreamerIntegrationTestSupport {
     void sameKeyGoesToSamePartition() throws Exception {
         String topic = "w6-keymap-" + UUID.randomUUID().toString().substring(0, 8);
         KafkaTestSupport.ensureTopic(topic, 2);
+        KafkaTestSupport.awaitProducerMetadata(kafkaTemplate, topic);
 
         List<Integer> sameKey = new ArrayList<>();
         for (int i = 0; i < 3; i++) {

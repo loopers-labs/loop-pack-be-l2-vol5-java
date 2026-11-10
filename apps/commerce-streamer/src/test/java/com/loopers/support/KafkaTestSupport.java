@@ -5,8 +5,10 @@ import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.TopicExistsException;
+import org.springframework.kafka.core.KafkaTemplate;
 
 import java.util.List;
 import java.util.Map;
@@ -35,6 +37,31 @@ public final class KafkaTestSupport {
         } catch (Exception e) {
             throw new IllegalStateException(e);
         }
+    }
+
+    /**
+     * 방금 만든 topic의 metadata를 이 producer가 받을 때까지 기다린다. metadata가 broker 3대에 퍼지기 전에 첫 send를 하면
+     * 앱 producer(max.block.ms 1s)가 UNKNOWN_TOPIC_OR_PARTITION → "not present in metadata after 1000 ms"로 실패한다 (간헐, 11-06).
+     * 앱 설정은 바꾸지 않는다 — commerce-api KafkaClusterSettingsTest와 같은 대기.
+     */
+    public static void awaitProducerMetadata(KafkaTemplate<?, ?> template, String topic) {
+        long deadline = System.currentTimeMillis() + 30_000;
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                if (!template.partitionsFor(topic).isEmpty()) {
+                    return;
+                }
+            } catch (KafkaException notYet) {
+                // 아직 이 producer의 metadata에 topic이 없다
+            }
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(e);
+            }
+        }
+        throw new IllegalStateException(topic + "의 metadata를 producer가 받지 못했습니다");
     }
 
     /**

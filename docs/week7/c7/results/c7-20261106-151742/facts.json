@@ -1,0 +1,65 @@
+{
+  "revision" : "388bc941e19dd89c4d11384e1a2c29a13fe3c8e2",
+  "pgBefore" : {
+    "create" : 0,
+    "lookup" : 0,
+    "callback_sent" : 0,
+    "callback_failed" : 0,
+    "mode" : "auto",
+    "transactions" : 0
+  },
+  "pgAfterPreparation" : {
+    "create" : 2,
+    "lookup" : 2,
+    "callback_sent" : 2,
+    "callback_failed" : 0,
+    "mode" : "auto",
+    "transactions" : 2
+  },
+  "A" : {
+    "scenario" : "commit 뒤 send 직전 중단",
+    "orderId" : 1,
+    "eventId" : "f4adc72d-788f-4822-b643-919b73a5f5dd",
+    "payload" : "{\"eventId\":\"f4adc72d-788f-4822-b643-919b73a5f5dd\",\"eventType\":\"OrderConfirmed\",\"schemaVersion\":1,\"orderId\":1,\"confirmedAt\":\"2026-11-06T15:18:22.607222+09:00\",\"items\":[{\"productId\":1,\"quantity\":2},{\"productId\":2,\"quantity\":1}]}",
+    "orderStatus" : "CONFIRMED",
+    "confirmedAt" : "2026-11-06T06:18:22.607222",
+    "payment" : {
+      "providerOrderId" : "LP-ORD-0000000001",
+      "transactionKey" : "20261106:TR:2642333",
+      "status" : "SUCCESS"
+    },
+    "reservations" : [ {
+      "productId" : 1,
+      "quantity" : 2,
+      "status" : "CONSUMED"
+    }, {
+      "productId" : 2,
+      "quantity" : 1,
+      "status" : "CONSUMED"
+    } ],
+    "activity" : [ ]
+  },
+  "B" : {
+    "scenario" : "발행·소비 완료",
+    "orderId" : 2,
+    "eventId" : "3034f9ea-aec6-48ce-a088-deca8f43d34e",
+    "publishedAt" : "2026-11-06T06:18:24.348491",
+    "payload" : "{\"eventId\":\"3034f9ea-aec6-48ce-a088-deca8f43d34e\",\"eventType\":\"OrderConfirmed\",\"schemaVersion\":1,\"orderId\":2,\"confirmedAt\":\"2026-11-06T15:18:23.745076+09:00\",\"items\":[{\"productId\":1,\"quantity\":1}]}",
+    "orderStatus" : "CONFIRMED",
+    "confirmedAt" : "2026-11-06T06:18:23.745076",
+    "payment" : {
+      "providerOrderId" : "LP-ORD-0000000002",
+      "transactionKey" : "20261106:TR:04e34a6",
+      "status" : "SUCCESS"
+    },
+    "reservations" : [ {
+      "productId" : 1,
+      "quantity" : 1,
+      "status" : "CONSUMED"
+    } ],
+    "activity" : [ {
+      "productId" : 1,
+      "quantity" : 1
+    } ]
+  }
+}

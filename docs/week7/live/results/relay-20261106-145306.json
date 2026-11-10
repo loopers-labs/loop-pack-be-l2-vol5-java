@@ -1,0 +1,59 @@
+{
+ "at": "2026-11-06T14:52:06+09:00",
+ "tick": "fixedDelay 1s",
+ "batch": 200,
+ "m1_idle": {
+  "seconds": 60,
+  "statements": 546,
+  "statements_per_sec": 9.1,
+  "db_time_ms_total": 462.74,
+  "db_time_ms_per_sec": 7.712,
+  "by_statement": {
+   "SET `autocommit` = ?": {
+    "count": 236,
+    "per_sec": 3.93,
+    "total_ms": 27.8
+   },
+   "COMMIT": {
+    "count": 118,
+    "per_sec": 1.97,
+    "total_ms": 348.0
+   },
+   "SELECT `oo1_0` . `id` , `oo1_0` . `attempt_count` , `oo1_0` . `created_at` , `oo1_0` . `deleted_at` , `oo1_0` ": {
+    "count": 59,
+    "per_sec": 0.98,
+    "total_ms": 25.43
+   },
+   "UPDATE `shedlock` SET `lock_until` = IF ( TIMESTAMPADD ( MICROSECOND , ? , `locked_at` ) > UTC_TIMESTAMP (?) ,": {
+    "count": 59,
+    "per_sec": 0.98,
+    "total_ms": 21.04
+   },
+   "UPDATE `shedlock` SET `lock_until` = TIMESTAMPADD ( MICROSECOND , ? , UTC_TIMESTAMP (?) ) , `locked_at` = UTC_": {
+    "count": 59,
+    "per_sec": 0.98,
+    "total_ms": 31.32
+   },
+   "SELECT `p1_0` . `id` , `p1_0` . `amount` , `p1_0` . `attempt_key` , `p1_0` . `check_count` , `p1_0` . `complet": {
+    "count": 12,
+    "per_sec": 0.2,
+    "total_ms": 7.89
+   },
+   "SELECT `po1_0` . `payment_id` FROM `payment_outbox` `po1_0` WHERE `po1_0` . `status` = ? AND `po1_0` . `create": {
+    "count": 1,
+    "per_sec": 0.02,
+    "total_ms": 0.67
+   },
+   "SELECT `po1_0` . `payment_id` FROM `payment_outbox` `po1_0` WHERE `po1_0` . `status` = ? AND `po1_0` . `claime": {
+    "count": 1,
+    "per_sec": 0.02,
+    "total_ms": 0.3
+   },
+   "SELECT `p1_0` . `id` FROM `payments` `p1_0` WHERE `p1_0` . `status` IN (...) AND `p1_0` . `sent_at` < ? ORDER ": {
+    "count": 1,
+    "per_sec": 0.02,
+    "total_ms": 0.29
+   }
+  }
+ }
+}
