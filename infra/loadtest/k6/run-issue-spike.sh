@@ -40,9 +40,10 @@ echo "promotion=$PROMOTION_ID"
 echo "== 3) k6 (초당 $RATE 건 × $DURATION, open model)"
 START=$(( $(date +%s) - 3 ))
 scp "${SSH_OPTS[@]}" "$HERE/k6/issue-spike.js" "ec2-user@$K6_PUBLIC:/home/ec2-user/issue-spike.js"
-ssh_to "$K6_PUBLIC" "source /etc/profile.d/k6-prometheus.sh && k6 run --no-color -o experimental-prometheus-rw --tag testid=$RUN_ID \
+ssh_to "$K6_PUBLIC" "source /etc/profile.d/k6-prometheus.sh && K6_WEB_DASHBOARD=true K6_WEB_DASHBOARD_PERIOD=1s K6_WEB_DASHBOARD_EXPORT=k6-report.html k6 run --no-color -o experimental-prometheus-rw --tag testid=$RUN_ID \
   -e APPS=$APPS -e PROMOTION_ID=$PROMOTION_ID -e USER_START=$USER_START -e RATE=$RATE -e DURATION=$DURATION \
   issue-spike.js" | tee "$OUT/k6.txt"
+scp "${SSH_OPTS[@]}" "ec2-user@$K6_PUBLIC:/home/ec2-user/k6-report.html" "$OUT/k6-report.html"
 
 END=$(( $(date +%s) + 3 ))
 
