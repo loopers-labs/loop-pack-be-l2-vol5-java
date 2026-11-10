@@ -102,13 +102,13 @@ class PromotionServiceIntegrationTest {
 
     @DisplayName("없는 프로모션은 PROMOTION_NOT_FOUND 다.")
     @Test
-    void issue_rejectsUnknownPromotion() {
-        assertThrowsErrorType(() -> issue(7L, 999L), ErrorType.PROMOTION_NOT_FOUND);
+    void getIssuable_rejectsUnknownPromotion() {
+        assertThrowsErrorType(() -> promotionService.getIssuable(999L), ErrorType.PROMOTION_NOT_FOUND);
     }
 
     @DisplayName("ACTIVE 가 아니면 PROMOTION_NOT_ACTIVE 이고 발급 내역·수량이 그대로다.")
     @Test
-    void issue_rejectsNotActivePromotion() {
+    void getIssuable_rejectsNotActivePromotion() {
         Long promotionId = createPromotion(10);
         transactionTemplate.executeWithoutResult(s -> {
             PromotionModel promotion = promotionRepository.find(promotionId).orElseThrow();
@@ -116,7 +116,7 @@ class PromotionServiceIntegrationTest {
             promotionRepository.save(promotion);
         });
 
-        assertThrowsErrorType(() -> issue(7L, promotionId), ErrorType.PROMOTION_NOT_ACTIVE);
+        assertThrowsErrorType(() -> promotionService.getIssuable(promotionId), ErrorType.PROMOTION_NOT_ACTIVE);
 
         assertThat(issuedCount(promotionId)).isZero();
         assertThat(remainingOf(promotionId)).isEqualTo(10);

@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class PromotionFacade {
     private final UserService userService;
     private final PromotionService promotionService;
+    private final CouponIssueProcessor couponIssueProcessor;
 
     /** 관리자 프로모션 생성. 지금 종류는 COUPON_ISSUE 하나이고, 만들면 바로 ACTIVE 다 (DR-56). */
     @Transactional
@@ -31,10 +32,13 @@ public class PromotionFacade {
             couponIssue.totalQuantity(), couponIssue.perUserLimit(), couponIssue.couponSpec()));
     }
 
-    /** 선착순 쿠폰 발급. 한 TX 안에서 발급 내역 insert → 남은 수량 조건 갱신 (DR-58). */
-    @Transactional
+    /**
+     * 선착순 쿠폰 발급. 사용자·프로모션 상태 확인은 TX 없이 읽고,
+     * 발급 내역 insert → 남은 수량 조건 갱신 두 문장만 CouponIssueProcessor 의 TX 로 묶는다 (DR-58).
+     */
     public PromotionInfo.Issued issue(Long requesterId, Long promotionId) {
         userService.getUser(requesterId);
-        return PromotionInfo.Issued.from(promotionService.issue(requesterId, promotionId));
+        promotionService.getIssuable(promotionId);
+        return PromotionInfo.Issued.from(couponIssueProcessor.issue(requesterId, promotionId));
     }
 }

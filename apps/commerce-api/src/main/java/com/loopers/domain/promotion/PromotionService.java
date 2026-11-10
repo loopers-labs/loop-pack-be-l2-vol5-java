@@ -31,11 +31,9 @@ public class PromotionService {
     }
 
     /**
-     * 선착순 쿠폰 한 장 발급. 상태는 잠금 없이 읽는다 (DR-53, 중지와 겹친 요청은 발급될 수 있다).
-     * 발급 내역 insert(중복 확인)를 먼저, 모든 요청이 몰리는 수량 조건 갱신을 마지막에 해 수량 행 잠금을 commit 직전까지로 줄인다.
-     * 소진이면 예외로 TX 를 rollback 해 먼저 넣은 발급 내역도 지운다.
+     * 발급 전 확인. 쿠폰 발급 프로모션이 있고 ACTIVE 인지 본다. 발급 TX 밖에서 잠금 없이 읽는다 (DR-53, 중지와 겹친 요청은 발급될 수 있다).
      */
-    public IssuedCouponModel issue(Long userId, Long promotionId) {
+    public PromotionModel getIssuable(Long promotionId) {
         PromotionModel promotion = promotionRepository.find(promotionId)
             .filter(p -> p.getType() == PromotionType.COUPON_ISSUE)
             .orElseThrow(() -> new CoreException(ErrorType.PROMOTION_NOT_FOUND, "[promotionId = " + promotionId + "] 프로모션이 없습니다."));
@@ -43,6 +41,15 @@ public class PromotionService {
             throw new CoreException(ErrorType.PROMOTION_NOT_ACTIVE,
                 "[promotionId = " + promotionId + ", status = " + promotion.getStatus() + "] 진행 중이 아닙니다.");
         }
+        return promotion;
+    }
+
+    /**
+     * 선착순 쿠폰 한 장 발급. 발급 TX 는 이 두 문장만 감싼다 (DR-58). 상태 확인은 호출자가 먼저 {@link #getIssuable} 로 한다.
+     * 발급 내역 insert(중복 확인)를 먼저, 모든 요청이 몰리는 수량 조건 갱신을 마지막에 해 수량 행 잠금을 commit 직전까지로 줄인다.
+     * 소진이면 예외로 TX 를 rollback 해 먼저 넣은 발급 내역도 지운다.
+     */
+    public IssuedCouponModel issue(Long userId, Long promotionId) {
         IssuedCouponModel issued = promotionRepository.insertIssuedCoupon(IssuedCouponModel.create(userId, promotionId))
             .orElseThrow(() -> new CoreException(ErrorType.COUPON_ALREADY_ISSUED,
                 "[userId = " + userId + ", promotionId = " + promotionId + "] 이미 발급받았습니다."));
