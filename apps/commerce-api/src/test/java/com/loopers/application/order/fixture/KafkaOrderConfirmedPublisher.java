@@ -1,19 +1,16 @@
-package com.loopers.infrastructure.order;
+package com.loopers.application.order.fixture;
 
-import com.loopers.application.order.OrderConfirmedPublisher;
 import com.loopers.kafka.event.OrderConfirmed;
 
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
-@Component
 public class KafkaOrderConfirmedPublisher implements OrderConfirmedPublisher {
     private final KafkaTemplate<String, OrderConfirmed> kafka;
     private final String topic;

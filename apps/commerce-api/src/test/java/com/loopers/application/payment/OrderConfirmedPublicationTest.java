@@ -4,12 +4,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.application.order.fixture.OrderFixture;
-import com.loopers.application.order.OrderConfirmedPublisher;
+import com.loopers.application.order.fixture.OrderConfirmedPublisher;
+import com.loopers.application.order.OrderConfirmedOutbox;
+import com.loopers.application.order.fixture.LegacyWeek6Publication;
 import com.loopers.application.payment.fixture.OrderPaymentFixture;
 import com.loopers.domain.order.OrderStatus;
 import com.loopers.domain.order.Order;
@@ -38,6 +41,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -63,6 +67,7 @@ import java.util.concurrent.TimeUnit;
 
 @SpringBootTest
 @ExtendWith(OutputCaptureExtension.class)
+@Import(LegacyWeek6Publication.class)
 class OrderConfirmedPublicationTest {
     private static final LocalPgServer PG = LocalPgServer.start();
     private static final String TOPIC = "order-events-publication-" + UUID.randomUUID();
@@ -84,6 +89,7 @@ class OrderConfirmedPublicationTest {
     @Autowired private StockReservationJpaRepository reservations;
     @MockitoBean(name = "orderConfirmationClock") private Clock confirmationClock;
     @MockitoSpyBean private OrderConfirmedPublisher publisher;
+    @MockitoSpyBean private OrderConfirmedOutbox historicalOutbox;
 
     private AdminClient admin;
     private Map<TopicPartition, Long> offsetsBefore;
@@ -97,6 +103,7 @@ class OrderConfirmedPublicationTest {
     @BeforeEach
     void prepare() throws Exception {
         PG.reset();
+        doNothing().when(historicalOutbox).record(any(OrderConfirmed.class));
         when(confirmationClock.instant()).thenReturn(CLOCK_TIME);
         admin = AdminClient.create(Map.of("bootstrap.servers", KafkaTestContainersConfig.bootstrapServers()));
         if (!admin.listTopics().names().get(10, TimeUnit.SECONDS).contains(TOPIC)) {
