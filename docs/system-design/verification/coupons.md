@@ -455,3 +455,62 @@ Codex 검토 뒤 사용자가 요청한 두 보완이다. 제품 코드와 격�
   - 원시 보고서: 로컬 `docs/week8/verification/runs/2026-11-11-stage3-fix2/targeted/`.
 - **재실행 범위의 근거**: 제품 코드·`CouponBeanIsolation`·공통 fixture가 그대로이고, 바뀐 test 코드는 위 두 클래스만 사용한다. 그래서 전체 회귀·O11·`CouponFacadeIntegrationTest`(Q13 포함, 이번 변경과 무관)는 다시 돌리지 않았다.
 - **한계**: 실제 HTTP 연결 실패로 E2E 컨텍스트가 보류 상태에 들어가는 장면은 재현하지 않았다. 판단과 유지는 대역 단위 테스트로, E2E 연결은 정상 경로 12건으로 확인했다. 보류된 컨텍스트가 닫힌 뒤 남은 서버 작업의 종료는 이 장치의 범위가 아니다.
+
+## 구현 4단계 — 직접 실행용 준비 코드 (2026-11-11)
+
+### 범위
+
+- main `config/CouponLocalFixtureConfig`: 클래스 수준 `@ConditionalOnProperty(name = "commerce.coupon.fixture.enabled", havingValue = "true")`.
+  - 옵션을 생략하거나 false로 두면 구성 자체가 등록되지 않는다. 그래서 `CouponBeanIsolation`에 더할 이름이 없다.
+- `ApplicationRunner` 하나가 `TransactionTemplate` 한 TX 안에서 다음을 저장한다.
+  - 사용자 8명과 각 사용자의 잔액 0 Point(save 반환 ID 사용)
+  - ACTIVE 캠페인 `로컬 쿠폰 캠페인`(totalQuota 5, issuedCount 0, FIXED_AMOUNT 5000)
+- commit 뒤 캠페인 ID·사용자 ID·요청 예시를 로그 한 줄로 남긴다.
+- 하지 않는 것: 쿠폰 생성, Redis 접근, 수용 열기, 이름으로 기존 캠페인 조회·재사용, 기존 데이터 수정.
+- 준비 예외는 그대로 전파돼 앱 기동이 실패한다.
+- 공통 `ddl-auto`(local/test create)와 프로필 설정은 바꾸지 않았다. test 소스의 fixture는 참조하지 않는다.
+
+### 검증 구성
+
+- `CouponLocalFixtureConfigIntegrationTest`(2건)는 test에서 `SpringApplicationBuilder`로 실제 앱을 여러 번 시작·종료한다(test 프로필, fixture MySQL, fixture Redis 주소 지정).
+- `ddl-auto`는 시작 인자로 고른다. 첫 시작만 create로 빈 스키마를 만들고, 이후는 update로 같은 DB를 보존한다.
+- 사례가 끝나면 한 번 더 시작해 `DatabaseCleanUp`으로 이 테스트가 남긴 행을 비운다. 같은 JVM의 다른 테스트 컨텍스트와 공유하는 DB이기 때문이다.
+
+### 실제 관찰
+
+| 확인 | 결과 |
+|---|---|
+| 옵션 생략(create) | Runner·구성 bean 없음, 사용자/Point/캠페인/쿠폰 0/0/0/0 |
+| 명시 false(update) | Runner·구성 bean 없음, 0/0/0/0 |
+| true(update) 첫 시작 | Runner 있음. 8/8/1/0. 캠페인 `로컬 쿠폰 캠페인`·ACTIVE·총량 5·발급 수 0·FIXED_AMOUNT·5000. Point 8개가 모두 잔액 0이고 user_id는 8명 모두 다름. 수용 닫힘 |
+| 같은 시작에서 기존 효과 생성 | fixture Redis 대상 확인 뒤 Facade로 열고 첫 사용자 발급(created), 닫음. 전용 키 비어 있음 |
+| 같은 DB 재시작(true, update) | 16/16/2/1. 기존 캠페인 발급 수 1·ACTIVE·5000 유지, 새 캠페인 발급 수 0. 기존 쿠폰 행(id·user·campaign·혜택·created_at)과 기존 사용자 8명 그대로. Point 모두 0. 수용 닫힘. 기존 사용자·캠페인 ID로 발급이 created(발급 수 2) |
+| 같은 컨텍스트 Runner 재호출 | 24/24/3/2. 기존 캠페인 발급 수 2 유지. 재시작 근거와 별개인 반복 호출 관찰이다. |
+| 준비 TX 중간 실패 | test 소스의 BeanPostProcessor가 캠페인 저장 직전에 실패를 주입했다. 실패 직전 같은 TX 연결에서 본 행은 8/8/0/0(사용자·Point INSERT 진행)이었다. 기동은 주입한 예외로 실패했고, 다음 시작(update)에서 확인한 DB는 0/0/0/0(rollback)이었다. |
+
+### 실행
+
+- 개발 중 1차(16:04:00~16:04:21)는 BUILD FAILED, 2건 실패. 원인은 둘 다 test 코드 오류였다.
+  - master template을 bean 이름으로 조회한 오류(qualifier 조회로 수정).
+  - 기동 실패 예외를 root cause 단언으로 확인한 오류. 실제로는 주입 예외가 감싸지지 않고 그대로 전달됐다. 원인 사슬에 주입 예외가 포함됐는지로 단언을 바꿨다.
+  - 제품 코드는 바꾸지 않았다.
+- 2차(16:04:44~16:05:07): 5건 통과(준비 2, ArchUnit 3).
+- 정리 단계(`@AfterEach`)를 더한 뒤 전체 회귀를 시작했지만, 사용자 요청("이번 구현에 해당하는 테스트만")으로 도중에 중단했다. 결과가 없으므로 통과로도 실패로도 기록하지 않는다(`runs/2026-11-11-stage4/full/STOPPED.txt`).
+- 최종: `./gradlew -Dorg.gradle.java.home="$JAVA_HOME" :apps:commerce-api:checkstyleMain :apps:commerce-api:checkstyleTest :apps:commerce-api:test --tests '*CouponLocalFixtureConfigIntegrationTest' --tests '*ArchitectureTest' --rerun --no-build-cache`
+  - 2026-11-11 17:03:52~17:04:17 KST, `BUILD SUCCESSFUL`.
+  - 5건 실행·실패 0·오류 0·skip 0. Checkstyle main/test 오류 0. 관찰값은 위 표와 같았다.
+  - 원시 보고서: 로컬 `docs/week8/verification/runs/2026-11-11-stage4/targeted-3/`. 개발 중 실행은 `targeted/`·`targeted-2/`.
+- 실행하지 않은 것:
+  - 전체 일반 회귀(사용자 결정).
+  - O11: 별도 DB를 쓰는 작업이고, 옵션이 꺼지면 새 bean이 없어 격리 목록이 바뀌지 않는다.
+
+### Q15 준비 옵션 부분
+
+- 충족: 옵션 기본 off(생략·false에서 미등록·데이터 증가 없음), on에서 8명·5장 캠페인 생성, 보존 DB 재실행 시 새 데이터만 추가하고 기존 효과 불변, 준비 후 수용 닫힘.
+- Q15의 나머지(응답·정렬·모델 경계·C 설정)는 앞 단계 기록과 같다.
+
+### 한계
+
+- 전체 회귀를 돌리지 않았다. 이 테스트는 같은 JVM의 다른 테스트와 공유하는 fixture MySQL에서 create로 스키마를 다시 만들고 데이터를 넣었다가 사례 끝에 비운다. 다른 테스트 클래스와의 실행 순서에 따른 상호작용은 확인하지 않았다.
+- 실제 로컬 앱(`bootRun`, local 프로필, 로컬 MySQL)에서 준비 옵션을 켜고 시작하는 수동 확인은 하지 않았다. 검증은 test 프로필·fixture DB에서 앱을 직접 시작한 결과다.
+- update를 쓴 재시작 검증은 운영 마이그레이션이나 장애 복구를 보장한다는 뜻이 아니다.
