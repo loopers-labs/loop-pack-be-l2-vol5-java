@@ -1,6 +1,8 @@
 package com.loopers.domains.coupon.app;
 
 import com.loopers.common.error.RuleViolationException;
+import com.loopers.domains.coupon.app.port.CouponAdmission;
+import com.loopers.domains.coupon.app.port.CouponAdmissionSettings;
 import com.loopers.domains.coupon.app.port.CouponIssueLookup;
 import com.loopers.domains.coupon.app.port.CouponRepository;
 import com.loopers.domains.coupon.app.port.DuplicateIssueException;
@@ -21,11 +23,16 @@ public class CouponIssueService {
     public record IssueResult(IssuedCouponView coupon, boolean newlyIssued) { }
 
     private final CouponRepository couponRepository;
+    private final CouponAdmission couponAdmission;
+    private final CouponAdmissionSettings couponAdmissionSettings;
     private final TransactionTemplate transactionTemplate;
     private final Clock clock;
 
-    public CouponIssueService(CouponRepository couponRepository, TransactionTemplate transactionTemplate, Clock clock) {
+    public CouponIssueService(CouponRepository couponRepository, CouponAdmission couponAdmission,
+        CouponAdmissionSettings couponAdmissionSettings, TransactionTemplate transactionTemplate, Clock clock) {
         this.couponRepository = couponRepository;
+        this.couponAdmission = couponAdmission;
+        this.couponAdmissionSettings = couponAdmissionSettings;
         this.transactionTemplate = transactionTemplate;
         this.clock = clock;
     }

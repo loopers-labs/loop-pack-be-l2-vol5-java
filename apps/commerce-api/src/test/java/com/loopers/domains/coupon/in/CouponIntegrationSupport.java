@@ -1,20 +1,25 @@
 package com.loopers.domains.coupon.in;
 
+import com.loopers.domains.coupon.out.RedisCouponAdmission;
 import com.loopers.domains.user.out.UserJpaEntity;
 import com.loopers.domains.user.out.UserJpaRepository;
 import com.loopers.support.coupon.CouponTestConfig;
 import com.loopers.support.coupon.CouponTestConfig.FailingCouponRepository;
+import com.loopers.support.coupon.CouponTestConfig.RecordingCouponAdmission;
 import com.loopers.support.pg.MutablePaymentClock;
 import com.loopers.utils.DatabaseCleanUp;
 import java.sql.PreparedStatement;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
@@ -38,17 +43,40 @@ abstract class CouponIntegrationSupport {
     @Autowired UserJpaRepository users;
     @Autowired MutablePaymentClock clock;
     @Autowired FailingCouponRepository failingCoupons;
+    @Autowired RecordingCouponAdmission admission;
+    @Autowired @Qualifier("couponAdmissionRedisTemplate") RedisTemplate<String, String> admissionRedis;
 
+    // 1단계 발급 테스트도 수용을 지나므로, 열려 있고 자리가 넉넉한 설정 행을 기본으로 둔다(단언은 1단계 그대로).
     @BeforeEach
     void prepareCoupons() {
         clock.set(NOW);
         failingCoupons.disarm();
+        admission.disarm();
+        admissionRedis.delete(RedisCouponAdmission.KEY);
+        admissionSettings(1000, true);
     }
 
     @AfterEach
     void cleanCoupons() {
         failingCoupons.disarm();
+        admission.disarm();
+        admissionRedis.delete(RedisCouponAdmission.KEY);
         cleanup.truncateAllTables();
+    }
+
+    void admissionSettings(int capacity, boolean open) {
+        jdbc.update("insert into coupon_admission_settings(id, capacity, open, updated_at) values (1, ?, ?, ?)"
+            + " on duplicate key update capacity = values(capacity), open = values(open), closed_reason = null, closed_at = null",
+            capacity, open, LocalDateTime.parse("2026-11-01T00:00:00"));
+    }
+
+    Map<String, Object> admissionRow() {
+        return jdbc.queryForMap("select capacity, open, closed_reason, closed_at from coupon_admission_settings where id = 1");
+    }
+
+    long permits() {
+        Long size = admissionRedis.opsForSet().size(RedisCouponAdmission.KEY);
+        return size == null ? 0 : size;
     }
 
     void user(long id) {
