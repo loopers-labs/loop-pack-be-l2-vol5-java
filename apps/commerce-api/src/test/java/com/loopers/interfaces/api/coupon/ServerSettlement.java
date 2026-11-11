@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
@@ -34,6 +35,7 @@ final class ServerSettlement {
     private final Set<String> testTokens = ConcurrentHashMap.newKeySet();
     private final List<String> unconfirmedRequests = Collections.synchronizedList(new ArrayList<>());
     private final List<String> withheld = Collections.synchronizedList(new ArrayList<>());
+    private final Map<String, String> pendingRaw = new ConcurrentHashMap<>();
 
     ServerSettlement(HoldingAdmissionRepository holding) {
         this.holding = holding;
@@ -41,6 +43,30 @@ final class ServerSettlement {
 
     void markTestToken(String token) {
         testTokens.add(token);
+    }
+
+    /**
+     * 응답을 읽지 않는 raw 요청을 전송 전에 미확인으로 등록한다. 전송 실패·timeout·RST 는 해소 근거가 아니다.
+     * {@link #settleRaw} 로 이 요청의 token 반환이 관찰됐을 때만 해소된다. 해소되지 않으면 정리 판단에서 사유로 남는다.
+     */
+    String registerRaw(String label) {
+        String key = label + " #" + (pendingRaw.size() + 1);
+        pendingRaw.put(key, "raw 요청 전송 전 등록, 서버 종료 근거 없음");
+        return key;
+    }
+
+    /**
+     * raw 요청의 서버 종료 근거를 연결한다. 그 요청이 획득한 token 의 반환(Facade 의 마지막 단계)이 decorator 에 관찰돼야 해소한다.
+     * 근거가 없으면 미확인을 유지하고 예외를 던진다.
+     */
+    void settleRaw(String key, String token) {
+        if (!pendingRaw.containsKey(key)) {
+            throw new IllegalStateException("등록되지 않은 raw 요청: " + key);
+        }
+        if (token == null || !holding.releasedTokens().contains(token)) {
+            throw new IllegalStateException("raw 요청의 서버 종료 근거(token 반환 관찰)가 없다: " + key + " token=" + token);
+        }
+        pendingRaw.remove(key);
     }
 
     /** 응답을 받지 못하면 미확인을 남기고 원래 예외를 그대로 던진다. */
@@ -73,6 +99,7 @@ final class ServerSettlement {
         synchronized (unconfirmedRequests) {
             reasons.addAll(unconfirmedRequests);
         }
+        pendingRaw.forEach((key, state) -> reasons.add(key + ": " + state));
         unsettled.forEach(token -> reasons.add("서버 실행 종료 미관찰 token " + token));
         return reasons;
     }
@@ -114,6 +141,7 @@ final class ServerSettlement {
         requireNotWithheld();
         testTokens.clear();
         unconfirmedRequests.clear();
+        pendingRaw.clear();
     }
 
     private Set<String> serverUnsettled() {

@@ -30,6 +30,7 @@ public class HoldingAdmissionRepository implements CouponAdmissionRepository {
     private final List<String> releasedTokens = Collections.synchronizedList(new ArrayList<>());
     private final Map<String, String> acquireOutcomes = new ConcurrentHashMap<>();
     private volatile Hold hold;
+    private volatile Hold releaseHold;
 
     public HoldingAdmissionRepository(CouponAdmissionRepository delegate) {
         this.delegate = delegate;
@@ -57,6 +58,10 @@ public class HoldingAdmissionRepository implements CouponAdmissionRepository {
     @Override
     public long release(String token) {
         sentTokens.add(token);
+        Hold currentRelease = releaseHold;
+        if (currentRelease != null) {
+            currentRelease.maybeHold(token); // 반환은 commit 확인 뒤·응답 전 단계다.
+        }
         long removed = delegate.release(token);
         releasedTokens.add(token);
         return removed;
@@ -80,12 +85,34 @@ public class HoldingAdmissionRepository implements CouponAdmissionRepository {
         hold.permits.release(count);
     }
 
+    /** 이후 반환 중 처음 limit 개를 반환 명령 위임 전에 붙잡는다. 이 지점은 쓰기 TX 종료 확인 뒤·HTTP 응답 전이다. */
+    public void holdNextReleases(int limit, Duration deadline) {
+        releaseHold = new Hold(limit, deadline);
+    }
+
+    public boolean awaitReleaseHeld(Duration deadline) throws InterruptedException {
+        return releaseHold.reached.await(deadline.toMillis(), TimeUnit.MILLISECONDS);
+    }
+
+    public List<String> releaseHeldTokens() {
+        return List.copyOf(releaseHold.held);
+    }
+
+    public void letReleasesThrough(int count) {
+        releaseHold.permits.release(count);
+    }
+
     /** 붙잡기를 끝내고 남은 실행을 모두 놓는다. 실패 경로에서도 호출한다. */
     public void stopHolding() {
         Hold current = hold;
         hold = null;
         if (current != null) {
             current.permits.release(Integer.MAX_VALUE / 2);
+        }
+        Hold currentRelease = releaseHold;
+        releaseHold = null;
+        if (currentRelease != null) {
+            currentRelease.permits.release(Integer.MAX_VALUE / 2);
         }
     }
 

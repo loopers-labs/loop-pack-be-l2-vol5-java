@@ -239,6 +239,33 @@ class ServerSettlementTest {
         freshContext.requireNotWithheld();
     }
 
+    @DisplayName("raw 요청은 전송 전 등록되면 아직 token 이 없어도 정리를 막고, 다른 요청이 끝나도 풀리지 않는다.")
+    @Test
+    void rawRequestBlocksUntilItsOwnReleaseIsObserved() {
+        String key = settlement.registerRaw("raw POST issue");
+        holding.tryAcquire("other", 3);
+        holding.release("other");
+
+        assertThatThrownBy(() -> settlement.confirmCleanupOrWithhold(true, SHORT))
+            .hasMessageContaining("raw POST issue");
+        assertThatThrownBy(settlement::requireNotWithheld).hasMessageContaining("raw POST issue");
+    }
+
+    @DisplayName("raw 요청은 그 요청 token 의 반환이 관찰돼야만 해소되고, 근거 없는 해소 시도는 거절된다.")
+    @Test
+    void rawRequestSettlesOnlyWithReleaseEvidence() {
+        String key = settlement.registerRaw("raw POST issue");
+        holding.tryAcquire("raw-token", 3);
+
+        assertThatThrownBy(() -> settlement.settleRaw(key, "raw-token")).hasMessageContaining("근거");
+        assertThatThrownBy(() -> settlement.settleRaw(key, null)).hasMessageContaining("근거");
+        holding.release("raw-token");
+        settlement.settleRaw(key, "raw-token");
+
+        settlement.confirmCleanupOrWithhold(true, SHORT);
+        settlement.requireNotWithheld();
+    }
+
     private static void sleep(long millis) {
         try {
             Thread.sleep(millis);
