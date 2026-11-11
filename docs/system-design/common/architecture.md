@@ -1,5 +1,7 @@
 # 공통 구조와 의존
 
+**쿠폰 승인 설계(2026-11-11):** [쿠폰 상세설계의 §5~§6](../features/coupons.md)는 같은 계층·포트·Facade 간 호출 금지 규칙을 유지하며, 상위 TX 없는 CouponFacade의 읽기/쓰기 TransactionTemplate로 사전 조회 TX → Redis → 발급 TX를 조율한다. 별도 CouponTransactionService·Control·단순 전달용 운영 Facade는 추가하지 않는다. Redis 포트는 CouponAdmissionRepository, 구현은 CouponAdmissionRedisRepository, 수용 조율은 CouponAdmissionService다. 요청 내부의 콜백 진입·완료 관찰로 업무 미시작과 실제 종료 불명을 구분하고 COMMITTED 뒤 예외에서도 확보한 응답 결과를 우선한다. 전체 실행 Map·전역 진행 수/불명 표시·재개용 Java 잠금은 제외한다. 직접 실행용 준비는 main의 config/CouponLocalFixtureConfig에서 명시 옵션으로 ApplicationRunner를 등록하며, 준비 구성의 JPA 접근 때문에 application이 infrastructure에 의존하게 만들지 않는다. 장애 재개는 수동 절차이며 자동 전역 종료 보증이 아니다. 기존 PG·캐시 구조와 다른 기능의 승인/검증 상태는 바꾸지 않는다. 쿠폰 설계는 사용자 최종 승인을 받았으며 구현/실행 검증은 미완료다. 구현 단위별 착수 승인은 별도다.
+
 **W7 승인 설계 연결(2026-11-04):** 아래 계층·포트·TX 원칙은 유지한다. Outbox 기록·relay/복구 조율은 commerce-api의 application, 불변 사실·상태 모델/저장·전송 포트는 domain, JPA·Jackson·Kafka 구현은 infrastructure, scheduler 진입점은 interfaces에 둔다. 상세 계약은 [발행 W7.2~W7.4](../features/order-events/publication.md)가 원본이다. 현재 코드의 구현 완료를 뜻하지 않는다.
 
 기존 절을 기능별 기준 문서로 이동했다. 절 번호·계약·승인/검증 상태는 보존하며, 이동 자체는 새 설계 승인이나 실행 검증을 뜻하지 않는다.
