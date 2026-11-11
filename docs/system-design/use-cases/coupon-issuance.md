@@ -1,6 +1,6 @@
 # 쿠폰 발급
 
-> 설계 상태: 구현 전. 이 문서는 계약·처리 흐름·검증을, [결정 기록](coupon-issuance-decisions.md)은 선택 배경·대안·영향을 다룬다. Java 구현 세부는 구현 단계에서 정한다.
+> 구현 상태: 캠페인·쿠폰 도메인과 저장소, 조건부 카운터·쿠폰 배정 SQL, 로컬 seed runner, 발급 애플리케이션 흐름, Redis primary Lua permit, HTTP API를 구현했다. 로컬·통합 검증은 아래 시나리오에 정리했다. 이 문서는 계약·처리 흐름·검증을, [결정 기록](coupon-issuance-decisions.md)은 선택 배경·대안·영향을 다룬다.
 
 쿠폰 발급은 캠페인에 정해진 혜택을 사용자에게 한 번 부여하고, 본인 보유 목록에서 확인할 수 있게 하는 기능이다. 쿠폰 사용·주문 할인 적용·환불은 범위에 포함하지 않는다.
 
@@ -458,7 +458,8 @@ Set이 비었다는 사실만으로 기존 DB 작업 종료를 대신 확인하�
 | 발급 총량 경합 | Redis 용량을 충분히 두거나 DB handler를 실제 병렬 호출해 DB 불변식만 검증 |
 | 장애 대상 | 실제 application endpoint; 테스트가 만든 자원만 정리 |
 | 테스트 판정 | 0건·skip·연결 실패는 통과가 아님; 기존 MySQL·Redis fixture 우선 사용 |
-| 실행 시점 | 구현 후 관련 기능 테스트와 `:apps:commerce-api:check` 실행; 현재 설계 단계에서는 미실행 |
+| 실행 시점 | 발급 facade 12건·DB 트랜잭션 2건·설정 3건·수용 시작 runner 5건(단위 4·실제 Redis 1)·HTTP E2E 8건·Redis 장애/스크립트/반환 실패 E2E 4건·Redis 오류 분류 4건을 검증했다. 실제 Redis와 barrier로 수용량 3, 한 permit 반환 중 재수용, 마지막 한 장의 동일 사용자 경합, 시작 시 Set 확인, Redis 중단 후 기존 결과 조회, 활성 permit의 무TTL을 확인했다. |
+| 전체 회귀 | `./gradlew :apps:commerce-api:check` 통과: 857건, 실패·오류·skip 0. |
 
 ## 관련 결정 기록
 
