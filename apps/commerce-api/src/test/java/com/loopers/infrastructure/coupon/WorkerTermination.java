@@ -12,18 +12,18 @@ import java.util.concurrent.TimeUnit;
  * 시간 초과·대기 중 interrupt 는 미확인을 영구히 남긴다. 이후 다른 executor 의 종료 확인이 앞선 미확인을 지우지 않는다.
  * shutdownNow 는 중단 요청일 뿐 worker 안의 DB 작업이 끝났다는 증거가 아니다.
  */
-final class WorkerTermination {
+public final class WorkerTermination {
 
     private int open;
     private boolean unconfirmed;
 
-    synchronized ExecutorService start(int threads) {
+    public synchronized ExecutorService start(int threads) {
         open++;
         return Executors.newFixedThreadPool(threads);
     }
 
     /** barrier 해제는 호출자가 먼저 한다. 종료를 확인하지 못하면 미확인을 남기고 예외를 던진다. */
-    void close(ExecutorService executor, Duration deadline) {
+    public void close(ExecutorService executor, Duration deadline) {
         executor.shutdown();
         boolean terminated;
         try {
@@ -42,7 +42,7 @@ final class WorkerTermination {
         }
     }
 
-    synchronized boolean safeToClean() {
+    public synchronized boolean safeToClean() {
         return open == 0 && !unconfirmed;
     }
 

@@ -5,10 +5,10 @@ import com.loopers.config.CouponAdmissionProperties;
 import com.loopers.config.redis.RedisConfig;
 import com.loopers.config.redis.RedisProperties;
 import com.loopers.domain.coupon.CouponAdmissionRepository.Acquisition;
+import com.loopers.fixture.CouponRedisTarget;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import com.loopers.testcontainers.RedisTestContainersConfig;
-import io.lettuce.core.ReadFrom;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -16,9 +16,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.connection.DataType;
-import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -53,6 +53,8 @@ import static org.junit.jupiter.api.Assertions.assertAll;
  * 끝나면 이 테스트가 만든 token 만 SREM 한다.
  */
 @SpringBootTest
+// fixture Redis 주소 주입 등으로 이 클래스만의 컨텍스트가 생긴다. 끝나면 닫아 MySQL 연결 풀을 반납한다(누적 시 Too many connections).
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @DisplayName("수용 Lua 는 fixture Redis 컨테이너에서 C 를 넘기지 않고, SREM 은 자기 token 만 제거하며, 점유는 시간 경과로 사라지지 않는다.")
 class CouponAdmissionRedisIntegrationTest {
 
@@ -79,17 +81,13 @@ class CouponAdmissionRedisIntegrationTest {
 
     @DynamicPropertySource
     static void pinToFixtureContainer(DynamicPropertyRegistry registry) {
-        registry.add("datasource.redis.database", () -> "0");
-        registry.add("datasource.redis.master.host", RedisTestContainersConfig::host);
-        registry.add("datasource.redis.master.port", RedisTestContainersConfig::port);
-        registry.add("datasource.redis.replicas[0].host", RedisTestContainersConfig::host);
-        registry.add("datasource.redis.replicas[0].port", RedisTestContainersConfig::port);
+        CouponRedisTarget.register(registry);
     }
 
     @BeforeEach
     void requireFixtureContainerAndEmptyKey() {
         service.close();
-        verifyTarget();
+        CouponRedisTarget.verify(redisProperties, master);
         targetVerified = true;
         assertThat(master.type(KEY))
             .as("시작 전 전용 키가 비어 있어야 한다. 남은 값은 다른 실행의 점유일 수 있어 지우지 않는다.")
@@ -109,36 +107,6 @@ class CouponAdmissionRedisIntegrationTest {
             master.opsForSet().remove(KEY, ownTokens.toArray());
         }
         assertThat(master.type(KEY)).as("자기 token 정리 뒤 전용 키가 비어야 한다").isEqualTo(DataType.NONE);
-    }
-
-    /**
-     * 바인딩 값·template 의 연결 팩토리 설정이 fixture 컨테이너와 같고, 그 연결로 받은 run_id 가 컨테이너 안에서 직접 읽은 run_id 와
-     * 같으며, 서버 역할이 master 인지 확인한다. 포트 번호나 role 만으로 대신하지 않는다.
-     */
-    private void verifyTarget() {
-        String host = RedisTestContainersConfig.host();
-        int port = RedisTestContainersConfig.port();
-        if (!host.equals(redisProperties.master().host()) || port != redisProperties.master().port()
-            || redisProperties.database() != 0 || redisProperties.replicas().size() != 1
-            || !host.equals(redisProperties.replicas().get(0).host()) || port != redisProperties.replicas().get(0).port()) {
-            throw new IllegalStateException("바인딩된 Redis 주소가 fixture 컨테이너와 다릅니다. [container = " + host + ":" + port
-                + ", bound = " + redisProperties + "]");
-        }
-        // 정적 master/replica 팩토리는 노드 목록 getter 가 없어 주소는 위 바인딩 값과 아래 run_id 로 대조한다.
-        if (!(master.getConnectionFactory() instanceof LettuceConnectionFactory factory)
-            || !factory.getClientConfiguration().getReadFrom().map(ReadFrom.MASTER::equals).orElse(false)
-            || factory.getDatabase() != 0) {
-            throw new IllegalStateException("master template 의 연결 팩토리가 MASTER 읽기·database 0 이 아닙니다.");
-        }
-        String containerRunId = RedisTestContainersConfig.serverRunId();
-        Properties server = master.execute((RedisCallback<Properties>) c -> c.serverCommands().info("server"));
-        Properties replication = master.execute((RedisCallback<Properties>) c -> c.serverCommands().info("replication"));
-        String connectedRunId = server == null ? null : server.getProperty("run_id");
-        String role = replication == null ? null : replication.getProperty("role");
-        if (!containerRunId.equals(connectedRunId) || !"master".equals(role)) {
-            throw new IllegalStateException("master template 이 fixture 컨테이너 서버에 연결되지 않았습니다. [containerRunId = "
-                + containerRunId + ", connectedRunId = " + connectedRunId + ", role = " + role + "]");
-        }
     }
 
     private String newToken() {

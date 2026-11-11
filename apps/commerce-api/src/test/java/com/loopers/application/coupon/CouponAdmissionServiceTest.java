@@ -178,7 +178,7 @@ class CouponAdmissionServiceTest {
         void removedOne(CapturedOutput output) {
             when(repository.release(TOKEN)).thenReturn(1L);
 
-            service.release(TOKEN);
+            assertThat(service.release(TOKEN)).isTrue();
 
             assertThat(service.status()).isTrue();
             assertThat(output).doesNotContain("수용을 닫습니다");
@@ -189,7 +189,7 @@ class CouponAdmissionServiceTest {
         void removedZeroCloses(CapturedOutput output) {
             when(repository.release(TOKEN)).thenReturn(0L);
 
-            service.release(TOKEN);
+            assertThat(service.release(TOKEN)).isFalse();
 
             assertAll(
                 () -> assertThat(service.status()).isFalse(),
@@ -203,7 +203,7 @@ class CouponAdmissionServiceTest {
         void failureClosesWithoutThrowing(RuntimeException failure, CapturedOutput output) {
             when(repository.release(TOKEN)).thenThrow(failure);
 
-            service.release(TOKEN);
+            assertThat(service.release(TOKEN)).isFalse();
 
             assertAll(
                 () -> assertThat(service.status()).isFalse(),

@@ -7,7 +7,7 @@ import java.util.List;
 /**
  * 주문 이벤트 재현 컨텍스트(W6 준비·O11 의 W7 기동)에서 쿠폰 bean 정의를 정확한 이름으로 뺀다(발행 W7.4-1·W7.4-2).
  * 두 컨텍스트는 쿠폰 도입 전 관리 타입만 허용하므로 쿠폰 repository 가 남으면 기동에 실패한다.
- * 수용 저장소·서비스는 기동을 깨지 않지만 쿠폰 동작을 가진 bean 이므로 같은 목록으로 빼서 "쿠폰 bean 없음" 단언을 유지한다.
+ * 수용 저장소·서비스·Facade·Controller 는 기동을 깨지 않지만 쿠폰 동작을 가진 bean 이므로 같은 목록으로 빼서 "쿠폰 bean 없음" 단언을 유지한다.
  * 동작 없는 설정 바인딩(CouponAdmissionProperties)은 제외 대상이 아니다.
  * 일반 테스트·제품 컨텍스트에는 적용하지 않는다. 이름 접두사·패키지 일괄 제거는 쓰지 않으며, 쿠폰 bean 이 늘면 이 목록에 더한다.
  */
@@ -21,6 +21,9 @@ public final class CouponBeanIsolation {
         "couponQueryRepositoryImpl",
         "couponAdmissionRedisRepository",
         "couponAdmissionService",
+        "couponFacade",
+        "couponV1Controller",
+        "couponAdmissionController",
         "couponFixture");
 
     private CouponBeanIsolation() {}

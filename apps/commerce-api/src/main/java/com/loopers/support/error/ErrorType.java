@@ -55,6 +55,11 @@ public enum ErrorType {
     PAYMENT_RESULT_CONFLICT(HttpStatus.CONFLICT, "PAYMENT_RESULT_CONFLICT", "결제 확인 결과가 저장된 정보와 충돌합니다."),
     PG_CREATE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "PG_CREATE_UNAVAILABLE", "지금은 결제를 시작할 수 없습니다."),
 
+    /** 쿠폰 */
+    COUPON_CAMPAIGN_NOT_FOUND(HttpStatus.NOT_FOUND, "COUPON_CAMPAIGN_NOT_FOUND", "존재하지 않는 쿠폰 캠페인입니다."),
+    COUPON_CAMPAIGN_INACTIVE(HttpStatus.CONFLICT, "COUPON_CAMPAIGN_INACTIVE", "발급이 중단된 쿠폰 캠페인입니다."),
+    COUPON_CAMPAIGN_SOLD_OUT(HttpStatus.CONFLICT, "COUPON_CAMPAIGN_SOLD_OUT", "쿠폰이 모두 발급됐습니다."),
+
     /** 쿠폰 신규 발급 수용 */
     COUPON_ADMISSION_FULL(HttpStatus.TOO_MANY_REQUESTS, "COUPON_ADMISSION_FULL", "지금은 쿠폰 발급 요청을 더 받을 수 없습니다. 잠시 후 다시 시도해 주세요."),
     COUPON_ADMISSION_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "COUPON_ADMISSION_UNAVAILABLE", "지금은 쿠폰 신규 발급을 받을 수 없습니다."),

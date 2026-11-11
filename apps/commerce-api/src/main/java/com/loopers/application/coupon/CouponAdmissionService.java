@@ -58,18 +58,21 @@ public class CouponAdmissionService {
     /**
      * ACQUIRED 를 확인한 실행의 첫 반환. 업무 결과가 정해진 뒤 호출되므로 예외를 던지지 않는다.
      * 1 이 아니면(0 = 있어야 할 점유가 없음, 예외 = 반환 여부 불명) 로그를 남기고 닫는다. 업무 결과는 호출자가 그대로 유지한다.
+     * 반환값은 정상 반환(1) 여부이며, 호출자가 사용자·캠페인·업무 결과를 같은 token 으로 이어 기록할 때 쓴다.
      */
-    public void release(String token) {
+    public boolean release(String token) {
         long removed;
         try {
             removed = repository.release(token);
         } catch (RuntimeException e) {
             closeAfterFailure("반환", token, "반환 여부 불명", e);
-            return;
+            return false;
         }
         if (removed != 1) {
             closeAfterFailure("반환", token, "정상 첫 반환에서 점유 없음(removed " + removed + ")", null);
+            return false;
         }
+        return true;
     }
 
     public boolean status() {
