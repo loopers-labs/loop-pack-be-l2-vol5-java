@@ -1,7 +1,9 @@
 package com.loopers.domain.payment;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderConfirmedEvent;
+import com.loopers.domain.order.OrderConfirmedOutboxRepository;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.OrderRepository;
 import com.loopers.domain.product.ProductRepository;
@@ -61,6 +63,13 @@ class PaymentResultServiceTest {
 
     @Mock
     private ProductRepository productRepository;
+
+    /** 7주차 Outbox 협력자. 이 단위 테스트는 ⑥⑦⑧ 규칙만 보므로 mock 으로만 둔다 (Outbox 내용은 OrderConfirmedOutboxAtomicityTest 가 MySQL 로 검증). */
+    @Mock
+    private OrderConfirmedOutboxRepository orderConfirmedOutboxRepository;
+
+    @Mock
+    private ObjectMapper objectMapper;
 
     @InjectMocks
     private PaymentResultService paymentResultService;

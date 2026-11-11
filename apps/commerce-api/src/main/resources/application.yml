@@ -62,6 +62,17 @@ order-events:
   topic: order-events
   send-timeout-ms: 3000  # broker 저장 확인(acks=all) 대기 상한. 넘으면 발행 실패로 기록하고 주문 상태는 그대로 둔다
 
+# Outbox 단일 relay (7주차 설계 D22·D28). 측정 없이 정한 시작값. enabled 는 인스턴스별 로컬 설정이며 분산 잠금이 아니다.
+outbox:
+  relay:
+    enabled: true
+    fixed-delay: PT10S        # 회차 간격. 정상 상황에서 Outbox 가 PENDING 으로 머무는 시간
+    batch-size: 20            # 한 회차 묶음. 직렬 실행이라 "묶음 × send-timeout" 이 회차 최대 길이 (20 × 3초 = 60초)
+    send-timeout: PT3S        # broker 확인 대기 상한. order-events.send-timeout-ms(max.block.ms) 와 같게 둔다
+    initial-backoff: PT10S    # 일시 실패 뒤 다음 시도까지. 시도마다 multiplier 배
+    multiplier: 2
+    max-backoff: PT5M         # 상한을 짧게 둬 broker 회복 뒤 기존 PENDING 재처리가 오래 밀리지 않게 한다
+
 ---
 spring:
   config:
@@ -85,6 +96,16 @@ payment:
     max-lookups: 2
   pg:
     enabled: false         # 가짜 PG 를 @Import 하지 않은 테스트가 실제 HTTP 를 보내면 조용히 UNKNOWN 이 되는 대신 크게 실패한다
+
+# relay 도 자동 실행을 끄고 runOnce() 를 직접 호출한다. 대기·묶음·backoff 는 짧게 (운영 값과 같게 두지 않는다, 설계 D28)
+outbox:
+  relay:
+    enabled: false
+    batch-size: 10
+    send-timeout: PT1S
+    initial-backoff: PT0S
+    multiplier: 1
+    max-backoff: PT0S
 
 ---
 server:

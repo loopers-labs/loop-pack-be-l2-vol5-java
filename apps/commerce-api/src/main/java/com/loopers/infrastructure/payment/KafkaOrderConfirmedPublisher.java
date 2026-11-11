@@ -26,6 +26,10 @@ import java.util.concurrent.TimeoutException;
  *   성공: metadata 수신, INFO 로그 / 실패 확정(FAILED): producer 가 포기해 future 가 예외로 끝남 /
  *   미확인(UNKNOWN): 상한 안에 future 가 끝나지 않음. record 는 버퍼에 남아 delivery.timeout.ms 동안 재시도되므로 실제로는 발행될 수 있다
  * - 실패·미확인은 outcome 을 담은 OrderConfirmedPublishException 으로 올린다. 주문 상태를 되돌리거나 PG 를 재호출하지 않는 것은 호출자의 책임이다
+ *
+ * 7주차: W7 제품 경로 미사용. PaymentFacade 의 commit 뒤 직접 발행이 Outbox 로 바뀌어 제품 코드에서 이 클래스를 부르는 곳이 없다.
+ * 저장된 key·payload 를 그대로 보내는 relay 전송기를 새로 둘지 이 클래스를 바꿀지는 relay 설계(7주차 설계 3절)에서 재결정한다 (D18).
+ * 그때까지는 계약 테스트(KafkaOrderConfirmedPublisherTest)와 crossAppTest 의 W6 보존 경로가 이 클래스를 쓴다.
  */
 @Slf4j
 @Component

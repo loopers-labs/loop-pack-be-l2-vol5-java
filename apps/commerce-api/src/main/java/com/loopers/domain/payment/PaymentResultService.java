@@ -1,7 +1,11 @@
 package com.loopers.domain.payment;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.domain.order.Order;
 import com.loopers.domain.order.OrderConfirmedEvent;
+import com.loopers.domain.order.OrderConfirmedOutbox;
+import com.loopers.domain.order.OrderConfirmedOutboxRepository;
 import com.loopers.domain.order.OrderRepository;
 import com.loopers.domain.product.ProductRepository;
 import com.loopers.domain.product.StockReservation;
@@ -20,6 +24,7 @@ import java.time.temporal.ChronoUnit;
  * 로컬 TX B. create 응답·callback·reconcile 세 입구가 공유하며, 검증된 PG 결과를 시도·주문·예약에 한 번만 반영한다.
  * ⑥ 결제 시도 문지기(미종결일 때만 종결) → ⑦ 주문 상태(WHERE PAYMENT_PENDING) → ⑧ 예약(WHERE RESERVED, 실패면 재고 1회 복원)
  * 세 단계는 반드시 하나의 트랜잭션 안에 있어야 한다 (설계 5-2).
+ * 7주차: ⑦ 이 주문을 처음 CONFIRMED 로 만들었으면 같은 TX 에 OrderConfirmed Outbox 를 PENDING 으로 insert 한다 (7주차 설계 D10·D16).
  */
 @RequiredArgsConstructor
 @Component
@@ -29,6 +34,8 @@ public class PaymentResultService {
     private final OrderRepository orderRepository;
     private final StockReservationRepository stockReservationRepository;
     private final ProductRepository productRepository;
+    private final OrderConfirmedOutboxRepository orderConfirmedOutboxRepository;
+    private final ObjectMapper objectMapper;
     private final Clock clock;
 
     /**
@@ -60,6 +67,10 @@ public class PaymentResultService {
                 Order order = orderRepository.findByIdWithItems(attempt.getOrderId())
                     .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[id = " + attempt.getOrderId() + "] 주문을 찾을 수 없습니다."));
                 firstConfirmation = OrderConfirmedEvent.of(attempt.getOrderId(), at, order.getItems());
+                // 같은 TX 에 Outbox PENDING insert. payload 는 여기서 한 번만 직렬화해 저장하고 relay 는 그대로 보낸다 (D12).
+                // 직렬화·저장 실패는 런타임 예외로 올려 ⑥⑦⑧ 과 함께 rollback 된다 (D16). 기존 주문·시도·예약은 TX 직전 상태로 남는다.
+                orderConfirmedOutboxRepository.save(
+                    OrderConfirmedOutbox.pending(firstConfirmation, serialize(firstConfirmation), at));
             }
         } else {
             orderRepository.finishIfPaymentPending(attempt.getOrderId(), Order.OrderStatus.PAYMENT_FAILED, 0L, at);
@@ -73,6 +84,18 @@ public class PaymentResultService {
             }
         }
         return PaymentApplyResult.applied(firstConfirmation);
+    }
+
+    /**
+     * Outbox payload 직렬화. 체크 예외를 그대로 두면 @Transactional 이 rollback 하지 않으므로 런타임 예외로 바꾼다 (D16).
+     */
+    private String serialize(OrderConfirmedEvent event) {
+        try {
+            return objectMapper.writeValueAsString(event);
+        } catch (JsonProcessingException e) {
+            throw new CoreException(ErrorType.INTERNAL_ERROR,
+                "[eventId = " + event.eventId() + "] OrderConfirmed Outbox payload 직렬화에 실패해 확정을 취소합니다.");
+        }
     }
 
     /**
