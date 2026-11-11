@@ -21,6 +21,7 @@
 1. 발급 이력 테이블에서 이 사용자가 이미 발급받았는지 조회한다.
 2. 이미 있으면 중복 오류로 리턴한다.
 3. 없으면 세마포어 획득을 시도한다. 1번은 실패하면 600ms 뒤 한 번 재시도, 2번은 재시도 없이 최대 600ms 기다린다 (Redisson waitTime).
+   3번은 먼저 시도하지 않고 대기열 뒤에 서서 차례를 최대 600ms 기다린다.
 4. 그래도 실패하면 리턴한다.
 5. 획득하면 발급 로직을 실행한다.
 6. 발급 로직이 성공하든 실패하든(예외 포함) permit 을 반납한다.
@@ -52,7 +53,7 @@
 
 ## 2번 — Redisson 세마포어
 
-구현됨: `CouponIssueLimiter`, `RedissonCouponIssueSemaphore`, `RedissonConfig`(modules/redis). 설계 기록은 [design.md 8-4, DR-61](../week2/design.md).
+구현했다가 3번으로 교체: `RedissonCouponIssueSemaphore` 는 커밋 e2f0c9e 에 남아 있다. `RedissonConfig`(modules/redis, `@Lazy`)와 의존성은 남겼다. 설계 기록은 [design.md DR-61](../week2/design.md).
 
 - 범위: 프로모션마다 `RPermitExpirableSemaphore` 하나, `coupon-issue:semaphore:{promotionId}` (1번과 같은 키 이름).
 - 획득: `trySetPermits(200)` (키가 없을 때만 설정) → `tryAcquire(waitTime 600ms, lease 2s)`.
@@ -65,8 +66,29 @@
 - Redisson 버전: 3.52.0. 4.x 는 netty 4.2 를 요구하는데 Spring Boot 3.4.4 가 netty 를 4.1.119 로 고정해 3.x 마지막 버전을 쓴다.
 - Redis 오류·인터럽트: 획득 실패로 본다 (fail-closed). 반납 오류는 로그만 남긴다.
 
+## 3번 — 직접 구현 fair 세마포어
+
+구현됨: `RedisFairCouponIssueSemaphore`, `RedisConfig` 의 pub/sub 연결·리스너 컨테이너(modules/redis). 설계 기록은 [design.md 8-4, DR-62](../week2/design.md).
+
+- 범위: 프로모션마다 ZSET 두 개.
+  - `coupon-issue:fair-semaphore:{promotionId}:holders`: member 는 허가 토큰, score 는 lease 만료 시각(µs). 1번과 같은 토큰 채우기.
+  - `coupon-issue:fair-semaphore:{promotionId}:queue`: member 는 `serverId:토큰`, score 는 대기 마감 시각(µs) = 도착 시각 + wait-time.
+    wait-time 이 모두 같아 score 순서가 곧 도착 순서다. 마감 지난 대기자(서버가 죽어 남은 대기자 포함)는 score 로 한 번에 지운다.
+- 획득 (Lua 하나): 만료 허가·마감 지난 대기자 제거 → **먼저 시도하지 않고** 큐 뒤에 추가 → 빈 자리만큼 큐 앞을 holders 로 옮기고 각자 서버 채널로 PUBLISH → 나까지 옮겨졌으면 바로 성공.
+- 반납 (Lua 하나): 만료 정리 → 내 큐 항목·토큰 제거 → 빈 자리만큼 큐 앞을 옮기고 PUBLISH.
+  - 하나만 꺼내지 않는다. lease 만료로 여러 자리가 비면 그만큼 채운다.
+- 깨우기: 서버마다 시작할 때 `coupon-issue:fair-semaphore:wake:{serverId}` 하나만 구독한다. 메시지는 토큰이다.
+  - 대기 스레드는 토큰별 future 로 기다린다. future 는 획득 Lua 전에 등록해, 큐에 넣고 구독하기 전에 알림이 오는 경쟁이 없다.
+  - 구독은 master 단독 연결로 한다. Spring Data Redis 는 master/replica 연결에서 pub/sub 을 지원하지 않는다.
+- 타임아웃 (wait-time 600ms): 로컬에서 끝내고 503. 큐 항목은 Redis 마감도 이미 지나 다음 Lua 에서 지워진다.
+  - 끝내기 전에 반납을 부른다. 마감 직전에 옮겨졌는데 알림이 유실·지연됐으면 그 허가를 다음 대기자에게 넘기고, 빈 자리도 채운다.
+- permit 200, lease 2s, wait-time 600ms (2번과 같음). 큐 길이 상한 없음.
+- 시각은 Redis `TIME`. Lua 숫자는 %.14g 로 바뀌어 µs 시각이 잘리므로 score 는 %.0f 문자열로 넘긴다.
+- Redis 오류·인터럽트: 획득 실패 (fail-closed). 반납을 불러 마감 전인 큐 항목과 받은 허가를 지운다. 반납 오류는 로그만 남긴다.
+
 ## 미정 항목
 
 - 1번 부하 테스트 조건과 비교 지표 — 나중에 정한다.
 - 2번 부하 테스트 (1번과 같은 조건으로 비교).
-- 3·4번은 2번을 마친 뒤 다룬다.
+- 3번 테스트 (단위·통합, `PromotionV1ApiE2ETest` 의 허가 채우기) 와 부하 테스트.
+- 4번은 3번을 마친 뒤 다룬다.

@@ -1651,7 +1651,7 @@ PromotionFacade.issue  (TX 없음)
   사용자 확인 (USER_NOT_FOUND)
   PromotionService.getIssuable: promotion 조회, 잠금 없음 ─ 없음·종류 다름 → PROMOTION_NOT_FOUND / ACTIVE 아님 → PROMOTION_NOT_ACTIVE
   PromotionService.checkNotIssued: 발급 내역 존재 조회, 잠금 없음 ─ 있음 → COUPON_ALREADY_ISSUED
-  CouponIssueLimiter.run  ─ 허가 시도, 없으면 최대 600ms 기다림, 그래도 없으면 → COUPON_ISSUE_BUSY (DR-61)
+  CouponIssueLimiter.run  ─ 대기열 뒤에 서서 차례를 최대 600ms 기다림, 그래도 없으면 → COUPON_ISSUE_BUSY (DR-62)
     CouponIssueProcessor.issue  @Transactional
       ① INSERT issued_coupon (user_id, promotion_id) ─ saveAndFlush, UNIQUE 위반 → COUPON_ALREADY_ISSUED
       ② UPDATE coupon_issue_stock SET remaining = remaining - 1
@@ -1660,13 +1660,18 @@ PromotionFacade.issue  (TX 없음)
   허가 반납 (finally: 커밋·롤백·예외 모두)
 ```
 
-- 발급 리미터 (DR-61, 처음 구현은 DR-60): 발급 TX 하나만 Redisson `RPermitExpirableSemaphore` 허가 안에서 실행한다. 허가는 TX 를 시작하기 전(커넥션을 잡기 전)에 얻는다.
-  - 프로모션마다 세마포어 `coupon-issue:semaphore:{promotionId}` 하나. 획득마다 `trySetPermits(permits)` (키가 없을 때만 설정) 뒤 `tryAcquire(wait-time, lease)`.
-  - 허가가 없으면 `wait-time` 까지 기다린다. 반납·lease 만료로 허가가 돌아오면 pub/sub 알림으로 바로 다시 시도한다. 그래도 없으면 재시도 없이 503.
-  - 반납은 자기 permitId 만 `tryRelease`. 만료된 lease 는 다음 획득 때 회수된다. 만료 시각은 앱 서버 시계(`System.currentTimeMillis`) 기준이다.
-  - 설정 `coupon-issue.limiter.*`: `permits` 200 (앱 3대 × 커넥션 풀 100 = 300 보다 작게), `lease` 2s, `wait-time` 600ms.
-  - Redisson 클라이언트는 `datasource.redis.*` 를 그대로 쓰고 읽기도 master 로 보낸다 (`RedissonConfig`, `@Lazy`).
-  - Redis 오류·인터럽트는 획득 실패로 본다 (fail-closed). 반납 오류는 로그만 남기고, 그 허가는 lease 가 지나면 회수된다.
+- 발급 리미터 (DR-62, 앞선 구현은 DR-60·DR-61): 발급 TX 하나만 Redis fair 세마포어 허가 안에서 실행한다. 허가는 TX 를 시작하기 전(커넥션을 잡기 전)에 얻는다.
+  - 프로모션마다 ZSET 두 개. `coupon-issue:fair-semaphore:{promotionId}:holders` 는 (토큰, lease 만료 시각 µs),
+    `…:queue` 는 (`serverId:토큰`, 대기 마감 시각 µs = 도착 시각 + `wait-time`). 마감 순서가 곧 도착 순서다.
+  - 획득은 먼저 시도하지 않고 항상 큐 뒤에 선다. Lua 하나로 만료된 허가·마감 지난 대기자 제거 → 큐 뒤에 추가 → 빈 자리만큼 큐 앞을 holders 로 옮긴다.
+    옮겨진 대기자에게는 그 서버의 채널 `coupon-issue:fair-semaphore:wake:{serverId}` 로 토큰을 PUBLISH 한다. 나까지 옮겨졌으면 바로 얻는다.
+  - 반납은 Lua 하나로 자기 큐 항목·토큰을 지우고 같은 방식으로 큐 앞을 채운다.
+  - 서버는 시작할 때 자기 채널 하나만 구독한다. 대기 스레드는 토큰별 future 로 기다리고, future 는 획득 Lua 전에 등록해 알림을 놓치지 않는다.
+  - `wait-time` 안에 알림이 없으면 로컬에서 끝내고 503. 큐 항목은 마감이 지나 다음 Lua 에서 지워진다.
+    끝내기 전에 반납을 불러, 마감 직전에 옮겨졌는데 알림이 유실·지연된 허가를 바로 다음 대기자에게 넘기고 빈 자리를 채운다.
+  - 시각은 Redis `TIME`. 명령은 master 템플릿, 구독은 master 단독 연결(`RedisConfig.pubSubRedisConnectionFactory`)로 한다. Spring Data Redis 는 master/replica 연결에서 pub/sub 을 지원하지 않는다.
+  - 설정 `coupon-issue.limiter.*`: `permits` 200 (앱 3대 × 커넥션 풀 100 = 300 보다 작게), `lease` 2s, `wait-time` 600ms. 큐 길이 상한은 없다.
+  - Redis 오류·인터럽트는 획득 실패로 본다 (fail-closed). 이때도 반납을 불러 마감 전인 큐 항목과 받은 허가를 지운다. 반납 오류는 로그만 남기고, 그 허가는 lease 가 지나면 회수된다.
   - 발급이 lease 보다 오래 걸리면 실행 중인 허가가 만료돼 동시 실행이 `permits` 를 넘을 수 있다. 커넥션 풀이 마지막 상한이다.
     lease 200ms·400ms 는 실제로 이렇게 되어 MySQL 동시 실행이 300 까지 올랐다. 2s 는 행 잠금 대기 최대(약 1.5초)보다 길다 (docs/week8/loadtest).
 - 이미 받은 사용자는 허가를 얻기 전에 `checkNotIssued` 에서 돌려보낸다. 같은 사용자의 동시 요청이 함께 통과하면 ① 의 UNIQUE 가 막는다.
@@ -1697,7 +1702,7 @@ PromotionFacade.issue  (TX 없음)
 | `PROMOTION_NOT_ACTIVE` | 409 | 상태가 ACTIVE 가 아님 |
 | `COUPON_ALREADY_ISSUED` | 409 | 같은 사용자가 같은 프로모션에서 이미 받음 |
 | `COUPON_SOLD_OUT` | 409 | 남은 수량 0 |
-| `COUPON_ISSUE_BUSY` | 503 | 발급 허가를 wait-time 안에 얻지 못함, 또는 Redis 오류 (DR-61) |
+| `COUPON_ISSUE_BUSY` | 503 | 발급 허가를 wait-time 안에 얻지 못함, 또는 Redis 오류 (DR-62) |
 
 - 요청·응답의 `type`·`status` 는 문자열이다. interfaces 는 domain enum 을 참조하지 않는다 (ArchUnit).
 - 조회는 `CouponReader` → `CouponQueryRepository` 가 TB-18·15·16 을 조인해 `CouponView.MyCoupon` 으로 돌려준다 (DR-31).
@@ -1804,6 +1809,7 @@ PromotionFacade.issue  (TX 없음)
 | DR-59 | 9 | TB-01, TB-05, DR-12 | 테스트용 사용자 생성 API `POST /api/v1/users` 를 둔다. 헤더 없이 누구나 부르고, 본문의 `admin` 으로 관리자도 만든다. 포인트 계정을 같은 TX 에서 함께 만든다 | (a) 공개 API 는 일반 사용자만, 관리자는 관리자 API + 첫 관리자는 SQL (b) bulk 생성 API (c) 부하 테스트 데이터를 SQL 로만 | 사용자 결정. 부하 테스트 준비를 API 하나로 끝낸다. 누구나 관리자가 될 수 있는 구멍은 테스트 전용이라 받아들인다. (b)는 1 만 명 정도는 한 명씩 불러도 충분하다 | 실제 가입·인증 요구가 생기면 (a) 로 나누고 관리자 지정은 관리자 API 로만 | 없음 |
 | DR-60 | 8 | TB-17, TB-18, DR-58 | 발급 TX(`CouponIssueProcessor.issue`) 하나만 Redis 세마포어 허가 안에서 실행해 워커 스레드·커넥션을 보호한다. 프로모션마다 ZSET(토큰, 만료 시각) 을 Lua 로 원자 획득하고, 시각은 Redis `TIME` 이다. 대기열 없이 시도하고 실패하면 600ms 뒤 한 번 재시도, 그래도 없으면 503 `COUPON_ISSUE_BUSY`. 허가는 TX 전에 얻고 끝나면 항상 반납한다. permit 200·lease 2s. 이미 받은 사용자는 허가 전에 발급 내역 조회로 409. Redis 오류는 fail-closed | (a) 숫자 하나 INCR/DECR (b) 프로모션 구분 없는 전역 키 하나 (c) 사용자·상태 확인까지 허가 안에 (d) TX 메서드 안에서 허가 (e) Redis 장애 시 허가 없이 발급(fail-open) | 사용자 결정. (a)는 허가를 쥔 채 서버가 죽으면 영영 돌아오지 않는다. (c)는 허가 보유 시간이 늘고, 허가가 필요한 건 커넥션을 오래 쥐는 발급 TX 뿐이다. (d)는 커넥션을 이미 잡은 뒤라 보호가 안 된다. lease 는 처음 200ms(재시도 300ms)로 시작했으나 부하 테스트에서 permit 보유 시간(잠금 대기 최대 약 1.5초)보다 짧아 동시 실행이 300 까지 올라, 사용자 결정으로 2s(재시도 600ms)로 바꿨다. 2s 에서 300~600 rps 동시 실행이 permit 근처(MySQL 실행 중 스레드 최대 203)에 머물렀다 (docs/week8/loadtest) | 부하 테스트에서 동시 실행이 permit 을 크게 넘거나 거절이 과하면 lease·permit·재시도 간격을 바꾼다. 비교할 다른 방식(Redisson·fair 대기열·bulkhead)은 docs/week8/coupon-issue-limiter-plan.md | 없음 |
 | DR-61 | 8 | DR-60 | 발급 리미터의 세마포어를 직접 구현(ZSET + Lua)에서 Redisson `RPermitExpirableSemaphore` 로 바꾼다. 프로모션마다 하나, permit 200·lease 2s 는 그대로. 허가가 없으면 `wait-time` 600ms 까지 기다리고(반납·lease 만료 시 pub/sub 으로 깨어남), 그래도 없으면 재시도 없이 503 `COUPON_ISSUE_BUSY`. 획득마다 `trySetPermits`. Redis 오류는 fail-closed. 1번 구현은 코드에서 지우고 커밋 577ed5c 에 남긴다 | (a) 설정값(`type`)으로 두 구현을 골라 쓰기 (b) 1번처럼 즉시 시도 → 1초 sleep → 한 번 재시도 (c) 앱 시작 때 한 번만 permit 설정 | 사용자 결정. 네 방식을 차례로 비교하는 중이라 전환은 코드 교체로 한다 ((a) 는 하지 않음). (b) 는 저장소만 바뀌어 비교 의미가 작다. 기다리는 동안 반납되면 바로 얻는 것이 Redisson 의 차이다. (c) 는 키가 사라지면(FLUSH·재시작) permit 이 0 이 되어 영영 못 얻는다. 매번 `trySetPermits` 는 왕복 하나가 늘지만 키가 없을 때만 설정해 안전하다 | 대기 중 스레드가 워커 스레드를 600ms 까지 잡는다. 부하 테스트에서 대기 스레드로 톰캣 스레드가 마르면 wait-time 을 줄인다. lease 만료가 앱 서버 시계 기준이라 서버 간 시계 차이가 크면 lease 를 늘린다 | 없음 |
+| DR-62 | 8 | DR-60, DR-61 | 발급 리미터를 도착 순서대로 주는 직접 구현 fair 세마포어로 바꾼다. 프로모션마다 holders ZSET(토큰, lease 만료)과 queue ZSET(`serverId:토큰`, 대기 마감 = 도착 + wait-time). 획득은 먼저 시도하지 않고 항상 큐 뒤에 선 뒤 빈 자리만큼 큐 앞을 holders 로 옮긴다(Lua). 반납도 같은 방식으로 큐 앞을 채운다. 옮겨진 대기자는 서버별 채널 PUBLISH 로 깨운다. 서버는 시작할 때 자기 채널만 구독하고 토큰별 future 로 기다린다. wait-time 이 지나면 로컬에서 끝내고 503, 끝내기 전에 반납을 불러 혹시 받은 허가를 다음 대기자에게 넘긴다. permit 200·lease 2s·wait-time 600ms 그대로, 큐 길이 상한 없음. Redisson 구현은 코드에서 지우고 커밋 e2f0c9e 에 남긴다. Redisson 의존성과 `RedissonConfig`(`@Lazy`)는 남긴다 | (a) 먼저 한 번 시도하고 실패하면 큐에 (b) 반납 때 하나만 꺼내기 (c) 요청마다 subscribe (d) 타임아웃 때 취소 Lua 로 확인해 이미 옮겨졌으면 발급 (e) 큐 길이 상한 (f) 큐 score 에 도착 순번(INCR)을 두고 마감은 따로 | 사용자 결정 (a)(d)(e). (a) 는 기다리는 사람보다 새로 온 요청이 먼저 얻어 순서가 깨진다. (b) 는 lease 만료로 여러 자리가 빌 때 허가가 남는데도 대기자가 기다린다. (c) 는 큐에 넣은 뒤 구독이 걸리기 전에 알림이 오면 잃는다. (d) 는 처음 정했다가 바꿨다. 로컬 타임아웃 때면 Redis 마감도 이미 지나 큐에서 뺄 일이 없고, 남는 경우는 알림 유실뿐이라 스크립트 하나를 더 둘 이유가 작다. 반납 하나로 그 허가와 빈 자리를 다음 대기자에게 넘긴다. (e) 는 대기자가 마감으로 스스로 빠지므로 우선 두지 않는다. (f) 는 wait-time 이 모두 같아 마감 순서가 곧 도착 순서이고, 마감 score 하나로 서버가 죽어 남은 대기자까지 지운다. 구독은 master/replica 연결이 pub/sub 을 지원하지 않아 master 단독 연결을 따로 둔다. Lua 숫자는 %.14g 로 바뀌어 µs 시각이 잘리므로 score 는 %.0f 문자열로 넘긴다 | 큐가 길어져 대부분 wait-time 을 다 채우고 503 이 되면 큐 길이 상한(넘으면 바로 503)을 둔다. 큐 앞 대기자가 몰린 서버의 알림이 늦어 허가 사용이 늦어지면 lease 를 다시 본다. 획득·반납이 끊긴 채 lease 가 만료되면 대기자가 마감까지 못 깨어난다(다음 획득·반납, 대기자의 타임아웃 반납 때 채움). 트래픽이 없을 때 이게 문제되면 주기적 채움을 둔다 | 없음 |
 
 ### A-2. 열린 질문
 
