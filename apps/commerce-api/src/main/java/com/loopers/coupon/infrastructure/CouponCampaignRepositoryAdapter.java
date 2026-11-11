@@ -16,6 +16,11 @@ public class CouponCampaignRepositoryAdapter implements CouponCampaignRepository
     }
 
     @Override
+    public Optional<CouponCampaign> findById(Long campaignId) {
+        return jpaRepository.findById(campaignId);
+    }
+
+    @Override
     public Optional<CouponCampaign> findForIssueById(Long campaignId) {
         return jpaRepository.findForIssueById(campaignId);
     }

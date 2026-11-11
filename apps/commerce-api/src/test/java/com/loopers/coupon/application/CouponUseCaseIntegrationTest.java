@@ -4,6 +4,7 @@ import com.loopers.coupon.domain.CouponCampaign;
 import com.loopers.support.fixture.CommerceFixture;
 import com.loopers.support.fixture.CouponTestFixture;
 import com.loopers.testcontainers.MySqlTestContainersConfig;
+import com.loopers.testcontainers.RedisTestContainersConfig;
 import com.loopers.user.domain.User;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.AfterEach;
@@ -25,7 +26,7 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest
-@Import(MySqlTestContainersConfig.class)
+@Import({MySqlTestContainersConfig.class, RedisTestContainersConfig.class})
 class CouponUseCaseIntegrationTest {
 
     @Autowired
