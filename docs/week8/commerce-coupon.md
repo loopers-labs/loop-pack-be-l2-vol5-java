@@ -1432,6 +1432,7 @@ PG 취소 API 연동(늦은 성공의 자동 환불), 다중 서버 선점, 실�
 - **Redis 명령 timeout 500ms는 수용 전용 연결에만 둔다(D135·D137).** 공용 Redis 설정(`datasource.redis.command-timeout: 1s`)은 상품 목록 캐시도 쓰므로 바꾸지 않고, 같은 master 호스트를 가리키는 쿠폰 전용 연결·template(`domains.coupon.config`)을 둔다. 캐시의 장애 계약은 그대로다.
 - **Redis·Spring 예외는 app으로 새지 않는다(D123).** 어댑터가 업무 의미 예외(`AdmissionUnavailableException`)로 바꾼다.
 - Lua는 입력을 검사한다(capacity ≥ 1 정수, token 비어 있지 않음). 틀리면 오류 응답이고 Set은 바뀌지 않는다.
+- 열린 행의 capacity가 0 이하이면 Lua 검사 오류 → 닫기 → 503이다(닫히는 쪽으로 실패).
 
 | 상태 | 응답 | 헤더 | 뜻 |
 | --- | --- | --- | --- |
