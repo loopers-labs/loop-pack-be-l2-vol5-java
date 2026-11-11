@@ -20,7 +20,7 @@
 
 1. 발급 이력 테이블에서 이 사용자가 이미 발급받았는지 조회한다.
 2. 이미 있으면 중복 오류로 리턴한다.
-3. 없으면 세마포어 획득을 시도한다. 1번은 실패하면 600ms 뒤 한 번 재시도, 2번은 재시도 없이 최대 1초 기다린다 (Redisson waitTime).
+3. 없으면 세마포어 획득을 시도한다. 1번은 실패하면 600ms 뒤 한 번 재시도, 2번은 재시도 없이 최대 600ms 기다린다 (Redisson waitTime).
 4. 그래도 실패하면 리턴한다.
 5. 획득하면 발급 로직을 실행한다.
 6. 발급 로직이 성공하든 실패하든(예외 포함) permit 을 반납한다.
@@ -55,12 +55,12 @@
 구현됨: `CouponIssueLimiter`, `RedissonCouponIssueSemaphore`, `RedissonConfig`(modules/redis). 설계 기록은 [design.md 8-4, DR-61](../week2/design.md).
 
 - 범위: 프로모션마다 `RPermitExpirableSemaphore` 하나, `coupon-issue:semaphore:{promotionId}` (1번과 같은 키 이름).
-- 획득: `trySetPermits(200)` (키가 없을 때만 설정) → `tryAcquire(waitTime 1s, lease 2s)`.
-  - 허가가 없으면 1초까지 기다린다. 반납되거나 가장 빠른 lease 가 만료되면 깨어나 다시 시도한다. 그래도 없으면 재시도 없이 503.
+- 획득: `trySetPermits(200)` (키가 없을 때만 설정) → `tryAcquire(waitTime 600ms, lease 2s)`.
+  - 허가가 없으면 600ms 까지 기다린다. 반납되거나 가장 빠른 lease 가 만료되면 깨어나 다시 시도한다. 그래도 없으면 재시도 없이 503.
   - 대기열 순서는 보장하지 않는다 (깨어난 스레드끼리 경쟁).
 - 반납: 내 permitId 만 `tryRelease`. 이미 만료됐으면 false 이고 예외는 없다.
 - lease: 2s. 1번에서 정한 값. 만료 시각은 Redis `TIME` 이 아니라 앱 서버 시계(`System.currentTimeMillis`) 기준이다 (1번과 다름).
-- 대기하는 동안 워커 스레드는 잡혀 있다 (최대 1초). 1번은 600ms sleep 으로 똑같이 잡혀 있었다.
+- 대기하는 동안 워커 스레드는 잡혀 있다 (최대 600ms). 1번은 600ms sleep 으로 똑같이 잡혀 있었다.
 - 명령은 master 로만 보낸다 (`ReadMode.MASTER`). 응답 timeout 은 `datasource.redis.timeout`(300ms).
 - Redisson 버전: 3.52.0. 4.x 는 netty 4.2 를 요구하는데 Spring Boot 3.4.4 가 netty 를 4.1.119 로 고정해 3.x 마지막 버전을 쓴다.
 - Redis 오류·인터럽트: 획득 실패로 본다 (fail-closed). 반납 오류는 로그만 남긴다.

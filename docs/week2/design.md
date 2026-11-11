@@ -1651,7 +1651,7 @@ PromotionFacade.issue  (TX 없음)
   사용자 확인 (USER_NOT_FOUND)
   PromotionService.getIssuable: promotion 조회, 잠금 없음 ─ 없음·종류 다름 → PROMOTION_NOT_FOUND / ACTIVE 아님 → PROMOTION_NOT_ACTIVE
   PromotionService.checkNotIssued: 발급 내역 존재 조회, 잠금 없음 ─ 있음 → COUPON_ALREADY_ISSUED
-  CouponIssueLimiter.run  ─ 허가 시도, 없으면 최대 1s 기다림, 그래도 없으면 → COUPON_ISSUE_BUSY (DR-61)
+  CouponIssueLimiter.run  ─ 허가 시도, 없으면 최대 600ms 기다림, 그래도 없으면 → COUPON_ISSUE_BUSY (DR-61)
     CouponIssueProcessor.issue  @Transactional
       ① INSERT issued_coupon (user_id, promotion_id) ─ saveAndFlush, UNIQUE 위반 → COUPON_ALREADY_ISSUED
       ② UPDATE coupon_issue_stock SET remaining = remaining - 1
@@ -1664,7 +1664,7 @@ PromotionFacade.issue  (TX 없음)
   - 프로모션마다 세마포어 `coupon-issue:semaphore:{promotionId}` 하나. 획득마다 `trySetPermits(permits)` (키가 없을 때만 설정) 뒤 `tryAcquire(wait-time, lease)`.
   - 허가가 없으면 `wait-time` 까지 기다린다. 반납·lease 만료로 허가가 돌아오면 pub/sub 알림으로 바로 다시 시도한다. 그래도 없으면 재시도 없이 503.
   - 반납은 자기 permitId 만 `tryRelease`. 만료된 lease 는 다음 획득 때 회수된다. 만료 시각은 앱 서버 시계(`System.currentTimeMillis`) 기준이다.
-  - 설정 `coupon-issue.limiter.*`: `permits` 200 (앱 3대 × 커넥션 풀 100 = 300 보다 작게), `lease` 2s, `wait-time` 1s.
+  - 설정 `coupon-issue.limiter.*`: `permits` 200 (앱 3대 × 커넥션 풀 100 = 300 보다 작게), `lease` 2s, `wait-time` 600ms.
   - Redisson 클라이언트는 `datasource.redis.*` 를 그대로 쓰고 읽기도 master 로 보낸다 (`RedissonConfig`, `@Lazy`).
   - Redis 오류·인터럽트는 획득 실패로 본다 (fail-closed). 반납 오류는 로그만 남기고, 그 허가는 lease 가 지나면 회수된다.
   - 발급이 lease 보다 오래 걸리면 실행 중인 허가가 만료돼 동시 실행이 `permits` 를 넘을 수 있다. 커넥션 풀이 마지막 상한이다.
@@ -1803,7 +1803,7 @@ PromotionFacade.issue  (TX 없음)
 | DR-58 | 8 | TB-17, TB-18, DR-38 | 남은 수량은 별도 테이블(TB-17)에 두고 조건 갱신(`remaining > 0` 일 때만 -1)으로만 줄인다. 발급 TX 는 발급 내역 insert(즉시 flush) → 수량 조건 갱신 두 문장만 묶고(사용자·상태 확인은 TX 밖), 0 행이면 예외로 둘 다 rollback 한다 | (a) 수량 행을 `SELECT … FOR UPDATE` 로 읽고 검사 (b) TB-16 에 남은 수량 컬럼 (c) 발급 수 count 로 판정 (d) 수량 갱신을 먼저 | 조건 갱신 한 문장이 잠금·검사·감소를 함께 해 읽고 쓰는 사이의 틈이 없다. (b)는 자주 바뀌는 값과 설정이 한 행에 섞인다 (DR-38 재고 분리와 같은 이유). (c)는 count 와 insert 사이에 경합이 남는다. (d)는 중복 요청도 몰리는 수량 행을 잠그고, 잠금 시간이 insert 만큼 길어진다 | 수량 행 한 곳의 잠금 대기가 처리량을 막으면 Redis 등 DB 밖 선점으로 | 없음 |
 | DR-59 | 9 | TB-01, TB-05, DR-12 | 테스트용 사용자 생성 API `POST /api/v1/users` 를 둔다. 헤더 없이 누구나 부르고, 본문의 `admin` 으로 관리자도 만든다. 포인트 계정을 같은 TX 에서 함께 만든다 | (a) 공개 API 는 일반 사용자만, 관리자는 관리자 API + 첫 관리자는 SQL (b) bulk 생성 API (c) 부하 테스트 데이터를 SQL 로만 | 사용자 결정. 부하 테스트 준비를 API 하나로 끝낸다. 누구나 관리자가 될 수 있는 구멍은 테스트 전용이라 받아들인다. (b)는 1 만 명 정도는 한 명씩 불러도 충분하다 | 실제 가입·인증 요구가 생기면 (a) 로 나누고 관리자 지정은 관리자 API 로만 | 없음 |
 | DR-60 | 8 | TB-17, TB-18, DR-58 | 발급 TX(`CouponIssueProcessor.issue`) 하나만 Redis 세마포어 허가 안에서 실행해 워커 스레드·커넥션을 보호한다. 프로모션마다 ZSET(토큰, 만료 시각) 을 Lua 로 원자 획득하고, 시각은 Redis `TIME` 이다. 대기열 없이 시도하고 실패하면 600ms 뒤 한 번 재시도, 그래도 없으면 503 `COUPON_ISSUE_BUSY`. 허가는 TX 전에 얻고 끝나면 항상 반납한다. permit 200·lease 2s. 이미 받은 사용자는 허가 전에 발급 내역 조회로 409. Redis 오류는 fail-closed | (a) 숫자 하나 INCR/DECR (b) 프로모션 구분 없는 전역 키 하나 (c) 사용자·상태 확인까지 허가 안에 (d) TX 메서드 안에서 허가 (e) Redis 장애 시 허가 없이 발급(fail-open) | 사용자 결정. (a)는 허가를 쥔 채 서버가 죽으면 영영 돌아오지 않는다. (c)는 허가 보유 시간이 늘고, 허가가 필요한 건 커넥션을 오래 쥐는 발급 TX 뿐이다. (d)는 커넥션을 이미 잡은 뒤라 보호가 안 된다. lease 는 처음 200ms(재시도 300ms)로 시작했으나 부하 테스트에서 permit 보유 시간(잠금 대기 최대 약 1.5초)보다 짧아 동시 실행이 300 까지 올라, 사용자 결정으로 2s(재시도 600ms)로 바꿨다. 2s 에서 300~600 rps 동시 실행이 permit 근처(MySQL 실행 중 스레드 최대 203)에 머물렀다 (docs/week8/loadtest) | 부하 테스트에서 동시 실행이 permit 을 크게 넘거나 거절이 과하면 lease·permit·재시도 간격을 바꾼다. 비교할 다른 방식(Redisson·fair 대기열·bulkhead)은 docs/week8/coupon-issue-limiter-plan.md | 없음 |
-| DR-61 | 8 | DR-60 | 발급 리미터의 세마포어를 직접 구현(ZSET + Lua)에서 Redisson `RPermitExpirableSemaphore` 로 바꾼다. 프로모션마다 하나, permit 200·lease 2s 는 그대로. 허가가 없으면 `wait-time` 1s 까지 기다리고(반납·lease 만료 시 pub/sub 으로 깨어남), 그래도 없으면 재시도 없이 503 `COUPON_ISSUE_BUSY`. 획득마다 `trySetPermits`. Redis 오류는 fail-closed. 1번 구현은 코드에서 지우고 커밋 577ed5c 에 남긴다 | (a) 설정값(`type`)으로 두 구현을 골라 쓰기 (b) 1번처럼 즉시 시도 → 1초 sleep → 한 번 재시도 (c) 앱 시작 때 한 번만 permit 설정 | 사용자 결정. 네 방식을 차례로 비교하는 중이라 전환은 코드 교체로 한다 ((a) 는 하지 않음). (b) 는 저장소만 바뀌어 비교 의미가 작다. 기다리는 동안 반납되면 바로 얻는 것이 Redisson 의 차이다. (c) 는 키가 사라지면(FLUSH·재시작) permit 이 0 이 되어 영영 못 얻는다. 매번 `trySetPermits` 는 왕복 하나가 늘지만 키가 없을 때만 설정해 안전하다 | 대기 중 스레드가 워커 스레드를 1s 까지 잡는다. 부하 테스트에서 대기 스레드로 톰캣 스레드가 마르면 wait-time 을 줄인다. lease 만료가 앱 서버 시계 기준이라 서버 간 시계 차이가 크면 lease 를 늘린다 | 없음 |
+| DR-61 | 8 | DR-60 | 발급 리미터의 세마포어를 직접 구현(ZSET + Lua)에서 Redisson `RPermitExpirableSemaphore` 로 바꾼다. 프로모션마다 하나, permit 200·lease 2s 는 그대로. 허가가 없으면 `wait-time` 600ms 까지 기다리고(반납·lease 만료 시 pub/sub 으로 깨어남), 그래도 없으면 재시도 없이 503 `COUPON_ISSUE_BUSY`. 획득마다 `trySetPermits`. Redis 오류는 fail-closed. 1번 구현은 코드에서 지우고 커밋 577ed5c 에 남긴다 | (a) 설정값(`type`)으로 두 구현을 골라 쓰기 (b) 1번처럼 즉시 시도 → 1초 sleep → 한 번 재시도 (c) 앱 시작 때 한 번만 permit 설정 | 사용자 결정. 네 방식을 차례로 비교하는 중이라 전환은 코드 교체로 한다 ((a) 는 하지 않음). (b) 는 저장소만 바뀌어 비교 의미가 작다. 기다리는 동안 반납되면 바로 얻는 것이 Redisson 의 차이다. (c) 는 키가 사라지면(FLUSH·재시작) permit 이 0 이 되어 영영 못 얻는다. 매번 `trySetPermits` 는 왕복 하나가 늘지만 키가 없을 때만 설정해 안전하다 | 대기 중 스레드가 워커 스레드를 600ms 까지 잡는다. 부하 테스트에서 대기 스레드로 톰캣 스레드가 마르면 wait-time 을 줄인다. lease 만료가 앱 서버 시계 기준이라 서버 간 시계 차이가 크면 lease 를 늘린다 | 없음 |
 
 ### A-2. 열린 질문
 
