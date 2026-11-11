@@ -6,4 +6,8 @@ public class AdmissionClosedException extends TemporarilyUnavailableException {
     public AdmissionClosedException(String message) {
         super(message);
     }
+
+    public AdmissionClosedException(String message, Throwable cause) {
+        super(message, cause);
+    }
 }

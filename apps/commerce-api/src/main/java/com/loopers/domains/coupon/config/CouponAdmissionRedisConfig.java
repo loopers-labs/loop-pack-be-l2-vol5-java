@@ -28,7 +28,8 @@ public class CouponAdmissionRedisConfig {
     }
 
     @Bean(name = "couponAdmissionRedisTemplate")
-    RedisTemplate<String, String> couponAdmissionRedisTemplate(@Qualifier(CONNECTION) LettuceConnectionFactory connectionFactory) {
+    RedisTemplate<String, String> couponAdmissionRedisTemplate(
+        @Qualifier(CONNECTION) LettuceConnectionFactory connectionFactory) {
         RedisTemplate<String, String> template = new RedisTemplate<String, String>();
         StringRedisSerializer serializer = new StringRedisSerializer();
         template.setKeySerializer(serializer);

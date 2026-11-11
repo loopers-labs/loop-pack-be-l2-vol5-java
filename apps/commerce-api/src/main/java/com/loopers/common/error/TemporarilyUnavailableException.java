@@ -5,4 +5,8 @@ public abstract class TemporarilyUnavailableException extends RuntimeException {
     protected TemporarilyUnavailableException(String message) {
         super(message);
     }
+
+    protected TemporarilyUnavailableException(String message, Throwable cause) {
+        super(message, cause);
+    }
 }
