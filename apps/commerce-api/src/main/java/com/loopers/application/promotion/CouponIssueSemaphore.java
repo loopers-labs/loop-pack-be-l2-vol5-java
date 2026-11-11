@@ -3,7 +3,7 @@ package com.loopers.application.promotion;
 import java.util.Optional;
 
 /**
- * 쿠폰 발급 TX 의 동시 실행 허가 (DR-61). 프로모션마다 따로 센다.
+ * 쿠폰 발급 TX 의 동시 실행 허가 (DR-62). 프로모션마다 따로 센다.
  * 허가는 lease 가 지나면 반납하지 않아도 회수된다.
  */
 public interface CouponIssueSemaphore {
