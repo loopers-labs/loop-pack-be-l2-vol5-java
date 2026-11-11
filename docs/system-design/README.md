@@ -32,6 +32,13 @@ Commerce 시스템(`commerce-api`, `commerce-streamer`)의 설계를 책임별�
 | [상품 목록 캐시](use-cases/product-list-cache.md) | 캐시 키·무효화·최신성, Redis 장애와 기동 시 동작 |
 | [브랜드와 연결 상품 일괄 삭제](use-cases/brand-deletion.md) | 삭제 계약, 트랜잭션, 경합, 롤백 |
 
+### 쿠폰
+
+| 문서 | 다루는 내용 |
+| --- | --- |
+| [쿠폰 발급 설계](use-cases/coupon-issuance.md) | 발급 API, 도메인·DB 규칙, Redis 수용·장애 처리, 검증 시나리오 |
+| [쿠폰 발급 결정 기록](use-cases/coupon-issuance-decisions.md) | D-01~D-23 선택의 맥락, 대안, 근거와 영향 |
+
 ### 주문·결제
 
 결제 요청·PG 연동·결과 반영과 callback·reconcile·주기 조회를 구현했다. 조회 CircuitBreaker, Retry, RateLimiter, TimeLimiter는 [회복 정책과 실험 프로필](use-cases/order-payment-recovery.md#조회-회복-정책)로 적용하며 기본 프로필에서는 비활성화한다. 운영 활성화 등 후속 결정은 같은 문서의 미정 사항으로 남긴다. PG 성공으로 확정한 주문은 Kafka 이벤트로 `commerce-streamer`에 전달해 상품 구매 활동으로 저장한다. 각 문서 상단의 안내에서 결제 흐름을 연결한다.
