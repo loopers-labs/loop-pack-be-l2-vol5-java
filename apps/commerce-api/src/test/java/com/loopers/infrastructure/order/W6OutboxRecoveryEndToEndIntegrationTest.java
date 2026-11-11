@@ -18,7 +18,9 @@ import com.loopers.fixture.pg.TransactionSnapshot;
 import com.loopers.infrastructure.order.OrderEventEndToEndIntegrationTest.C10Cases;
 import com.loopers.infrastructure.order.OrderOutboxE2eLifecycleSupport.CleanupSteps;
 import com.loopers.infrastructure.order.OrderOutboxE2eLifecycleSupport.Ownership;
+import com.loopers.infrastructure.order.support.CouponBeanIsolation;
 import com.loopers.infrastructure.order.support.W6PreparationContextIntegrationTest;
+import com.loopers.infrastructure.order.support.W7CouponIsolationInitializer;
 import com.loopers.testsupport.LocalKafkaTestSupport;
 import com.loopers.utils.DatabaseCleanUp;
 import com.loopers.utils.RedisCleanUp;
@@ -314,13 +316,17 @@ class W6OutboxRecoveryEndToEndIntegrationTest {
 
     // ---------------------------------------------------------------- W7 context
 
-    /** 정상 W7 API. 같은 DB/Redis/PG/topic, ddl-auto=update, 자동 relay OFF. 새 포트와 callback URL 은 기동 전에 함께 주입한다. */
+    /**
+     * 정상 W7 API. 같은 DB/Redis/PG/topic, ddl-auto=update, 자동 relay OFF. 새 포트와 callback URL 은 기동 전에 함께 주입한다.
+     * W7 이후 추가된 쿠폰 관리 타입·bean 만 {@link W7CouponIsolationInitializer} 로 빼서 전환이 Outbox 하나만 추가하는지 본다.
+     */
     private static ConfigurableApplicationContext bootW7Api() throws Exception {
         int port;
         try (ServerSocket socket = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
             port = socket.getLocalPort();
         }
         ConfigurableApplicationContext context = new SpringApplicationBuilder(CommerceApiApplication.class).profiles("test")
+            .initializers(new W7CouponIsolationInitializer())
             .run("--server.port=" + port, "--management.server.port=0", "--spring.jpa.hibernate.ddl-auto=update",
                 "--commerce.pg.base-url=" + pg.baseUrl(),
                 "--commerce.pg.callback-url=http://127.0.0.1:" + port + "/api/v1/payments/callback",
@@ -340,7 +346,12 @@ class W6OutboxRecoveryEndToEndIntegrationTest {
             () -> assertThat(context.containsBean("orderConfirmedEventListener")).as("W6 listener 없음").isFalse(),
             () -> assertThat(context.containsBean("kafkaOrderEventPublisher")).as("W6 adapter 없음").isFalse(),
             () -> assertThat(context.containsBean("orderEventKafkaTemplate")).isFalse(),
-            () -> assertThat(context.getEnvironment().getProperty("commerce.order-events.relay.enabled")).isEqualTo("false")
+            () -> assertThat(context.getEnvironment().getProperty("commerce.order-events.relay.enabled")).isEqualTo("false"),
+            () -> assertThat(context.getBean(jakarta.persistence.EntityManagerFactory.class).getMetamodel().getManagedTypes().stream()
+                .map(type -> type.getJavaType().getName()).collect(Collectors.toSet()))
+                .as("W6 관리 타입 + Outbox").isEqualTo(W7CouponIsolationInitializer.MANAGED_TYPES),
+            () -> assertThat(CouponBeanIsolation.COUPON_DEFINITIONS).allSatisfy(name ->
+                assertThat(context.containsBean(name)).as("쿠폰 bean 없음: " + name).isFalse())
         );
     }
 
