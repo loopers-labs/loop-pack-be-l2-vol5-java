@@ -10,24 +10,24 @@
 | # | 방식 | 대기열 |
 |---|---|---|
 | 1 | 레디스로 직접 구현한 세마포어 | 없음 |
-| 2 | Redisson 세마포어 | — |
+| 2 | Redisson 세마포어 (`RPermitExpirableSemaphore`) | 없음 (pub/sub 으로 깨어남, 순서 보장 없음) |
 | 3 | 직접 구현한 fair 세마포어 | 있음 (도착 순서대로) |
 | 4 | bulkhead | — |
 
 ## 발급 흐름 (큰 틀)
 
-네 방식 모두 아래 흐름 안에서 세마포어 자리만 바꾼다. 1번(fast-fail)도 재시도를 한 번 한다.
+네 방식 모두 아래 흐름 안에서 세마포어 자리만 바꾼다. 방식 전환은 설정이 아니라 코드 교체로 한다.
 
 1. 발급 이력 테이블에서 이 사용자가 이미 발급받았는지 조회한다.
 2. 이미 있으면 중복 오류로 리턴한다.
-3. 없으면 세마포어 획득을 시도한다. 실패하면 기다린 뒤 한 번 재시도한다. 대기는 1번 방식 600ms, 나머지 1초.
-4. 재시도도 실패하면 리턴한다.
+3. 없으면 세마포어 획득을 시도한다. 1번은 실패하면 600ms 뒤 한 번 재시도, 2번은 재시도 없이 최대 1초 기다린다 (Redisson waitTime).
+4. 그래도 실패하면 리턴한다.
 5. 획득하면 발급 로직을 실행한다.
 6. 발급 로직이 성공하든 실패하든(예외 포함) permit 을 반납한다.
 
 ## 1번 — 레디스 직접 구현 세마포어
 
-구현됨: `CouponIssueLimiter`, `RedisCouponIssueSemaphore`. 설계 기록은 [design.md 8-4, DR-60](../week2/design.md).
+구현했다가 2번으로 교체: `RedisCouponIssueSemaphore` 는 커밋 577ed5c 에 남아 있다. 설계 기록은 [design.md DR-60](../week2/design.md).
 
 - 범위: 프로모션마다 키 하나, `coupon-issue:semaphore:{promotionId}`.
 - 자료구조: ZSET. member 는 permit 마다 새로 만든 토큰, score 는 만료 시각.
@@ -50,7 +50,23 @@
 - Redis 오류: 획득 실패로 본다 (fail-closed). 재시도도 실패하면 503. 반납 오류는 로그만 남긴다.
 - lease 시각 기준: Lua 안에서 Redis `TIME`. 앱 서버 시계와 무관하다.
 
+## 2번 — Redisson 세마포어
+
+구현됨: `CouponIssueLimiter`, `RedissonCouponIssueSemaphore`, `RedissonConfig`(modules/redis). 설계 기록은 [design.md 8-4, DR-61](../week2/design.md).
+
+- 범위: 프로모션마다 `RPermitExpirableSemaphore` 하나, `coupon-issue:semaphore:{promotionId}` (1번과 같은 키 이름).
+- 획득: `trySetPermits(200)` (키가 없을 때만 설정) → `tryAcquire(waitTime 1s, lease 2s)`.
+  - 허가가 없으면 1초까지 기다린다. 반납되거나 가장 빠른 lease 가 만료되면 깨어나 다시 시도한다. 그래도 없으면 재시도 없이 503.
+  - 대기열 순서는 보장하지 않는다 (깨어난 스레드끼리 경쟁).
+- 반납: 내 permitId 만 `tryRelease`. 이미 만료됐으면 false 이고 예외는 없다.
+- lease: 2s. 1번에서 정한 값. 만료 시각은 Redis `TIME` 이 아니라 앱 서버 시계(`System.currentTimeMillis`) 기준이다 (1번과 다름).
+- 대기하는 동안 워커 스레드는 잡혀 있다 (최대 1초). 1번은 600ms sleep 으로 똑같이 잡혀 있었다.
+- 명령은 master 로만 보낸다 (`ReadMode.MASTER`). 응답 timeout 은 `datasource.redis.timeout`(300ms).
+- Redisson 버전: 3.52.0. 4.x 는 netty 4.2 를 요구하는데 Spring Boot 3.4.4 가 netty 를 4.1.119 로 고정해 3.x 마지막 버전을 쓴다.
+- Redis 오류·인터럽트: 획득 실패로 본다 (fail-closed). 반납 오류는 로그만 남긴다.
+
 ## 미정 항목
 
 - 1번 부하 테스트 조건과 비교 지표 — 나중에 정한다.
-- 2·3·4번은 1번을 마친 뒤 다룬다 (대기 타임아웃, permit 회수, 방식 전환 방법 포함).
+- 2번 부하 테스트 (1번과 같은 조건으로 비교).
+- 3·4번은 2번을 마친 뒤 다룬다.
