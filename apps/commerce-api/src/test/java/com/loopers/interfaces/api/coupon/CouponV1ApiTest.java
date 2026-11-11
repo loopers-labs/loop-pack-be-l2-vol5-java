@@ -1,6 +1,7 @@
 package com.loopers.interfaces.api.coupon;
 
 import com.jayway.jsonpath.JsonPath;
+import com.loopers.application.coupon.SoldOutCampaigns;
 import com.loopers.config.redis.RedisConfig;
 import com.loopers.utils.DatabaseCleanUp;
 import com.loopers.utils.RedisCleanUp;
@@ -39,20 +40,23 @@ class CouponV1ApiTest {
     private final RedisTemplate<String, String> redis;
     private final DatabaseCleanUp databaseCleanUp;
     private final RedisCleanUp redisCleanUp;
+    private final SoldOutCampaigns soldOutCampaigns;
 
     @Autowired
     CouponV1ApiTest(MockMvc mvc, @Qualifier(RedisConfig.REDIS_TEMPLATE_MASTER) RedisTemplate<String, String> redis,
-                    DatabaseCleanUp databaseCleanUp, RedisCleanUp redisCleanUp) {
+                    DatabaseCleanUp databaseCleanUp, RedisCleanUp redisCleanUp, SoldOutCampaigns soldOutCampaigns) {
         this.mvc = mvc;
         this.redis = redis;
         this.databaseCleanUp = databaseCleanUp;
         this.redisCleanUp = redisCleanUp;
+        this.soldOutCampaigns = soldOutCampaigns;
     }
 
     @AfterEach
     void tearDown() {
         databaseCleanUp.truncateAllTables();
         redisCleanUp.truncateAll();
+        soldOutCampaigns.clear();
     }
 
     private ResultActions openCampaign(String body) throws Exception {

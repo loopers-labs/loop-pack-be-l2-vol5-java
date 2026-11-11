@@ -25,6 +25,7 @@ public class CouponFacade {
     private final CouponService couponService;
     private final CouponTransactions couponTransactions;
     private final CouponAdmission couponAdmission;
+    private final SoldOutCampaigns soldOutCampaigns;
 
     public record Issued(Coupon coupon, boolean newlyIssued) {
     }
@@ -38,6 +39,9 @@ public class CouponFacade {
         Optional<Coupon> existing = couponService.findIssued(campaignId, userId);
         if (existing.isPresent()) {
             return new Issued(existing.get(), false);
+        }
+        if (soldOutCampaigns.contains(campaignId)) {
+            throw new DomainException(DomainError.COUPON_SOLD_OUT);
         }
         String token = switch (couponAdmission.tryAcquire()) {
             case CouponAdmission.Result.Admitted admitted -> admitted.token();
@@ -56,6 +60,9 @@ public class CouponFacade {
         try {
             return new Issued(couponTransactions.issue(campaignId, userId, now), true);
         } catch (DomainException e) {
+            if (e.error() == DomainError.COUPON_SOLD_OUT) {
+                soldOutCampaigns.mark(campaignId);
+            }
             if (e.error() != DomainError.COUPON_ALREADY_ISSUED) {
                 throw e;
             }

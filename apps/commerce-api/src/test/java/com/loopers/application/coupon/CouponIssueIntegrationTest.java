@@ -38,19 +38,23 @@ class CouponIssueIntegrationTest {
     private final CouponTransactions couponTransactions;
     private final JdbcTemplate jdbcTemplate;
     private final DatabaseCleanUp databaseCleanUp;
+    private final SoldOutCampaigns soldOutCampaigns;
 
     @Autowired
     CouponIssueIntegrationTest(CouponFacade couponFacade, CouponTransactions couponTransactions,
-                               JdbcTemplate jdbcTemplate, DatabaseCleanUp databaseCleanUp) {
+                               JdbcTemplate jdbcTemplate, DatabaseCleanUp databaseCleanUp,
+                               SoldOutCampaigns soldOutCampaigns) {
         this.couponFacade = couponFacade;
         this.couponTransactions = couponTransactions;
         this.jdbcTemplate = jdbcTemplate;
         this.databaseCleanUp = databaseCleanUp;
+        this.soldOutCampaigns = soldOutCampaigns;
     }
 
     @AfterEach
     void tearDown() {
         databaseCleanUp.truncateAllTables();
+        soldOutCampaigns.clear();
     }
 
     private Long openCampaign(int quota, boolean active) {
