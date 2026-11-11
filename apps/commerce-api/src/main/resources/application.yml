@@ -100,6 +100,19 @@ spring:
       on-profile: local, test
 
 ---
+# 로컬에서 쿠폰 발급을 해 볼 캠페인을 준비한다(29절). ddl-auto create로 테이블이 생긴 뒤 실행되도록 초기화를 미룬다. test 프로필에는 두지 않는다.
+spring:
+  config:
+    activate:
+      on-profile: local
+  sql:
+    init:
+      mode: always
+      data-locations: classpath:sql/local/seed-coupon-campaign.sql
+  jpa:
+    defer-datasource-initialization: true
+
+---
 spring:
   config:
     activate:

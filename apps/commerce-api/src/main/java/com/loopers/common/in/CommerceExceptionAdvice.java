@@ -13,7 +13,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @Slf4j
 @Order(-1)
-@RestControllerAdvice(basePackages = {"com.loopers.domains.brand.in", "com.loopers.domains.product.in", "com.loopers.domains.point.in", "com.loopers.domains.order.in"})
+@RestControllerAdvice(basePackages = {"com.loopers.domains.brand.in", "com.loopers.domains.product.in",
+    "com.loopers.domains.point.in", "com.loopers.domains.order.in", "com.loopers.domains.coupon.in"})
 public class CommerceExceptionAdvice {
     @ExceptionHandler(NotFoundException.class)
     public ResponseEntity<ApiResponse<Object>> notFound(NotFoundException exception) {
