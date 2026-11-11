@@ -3,7 +3,6 @@ package com.loopers.interfaces.api.promotion;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.application.promotion.CouponIssueLimiterProperties;
-import com.loopers.config.redis.RedisConfig;
 import com.loopers.domain.promotion.PromotionModel;
 import com.loopers.domain.promotion.PromotionRepository;
 import com.loopers.domain.user.UserModel;
@@ -16,17 +15,18 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.redisson.api.RPermitExpirableSemaphore;
+import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -52,8 +52,7 @@ class PromotionV1ApiE2ETest {
     @Autowired
     private RedisCleanUp redisCleanUp;
     @Autowired
-    @Qualifier(RedisConfig.REDIS_TEMPLATE_MASTER)
-    private RedisTemplate<String, String> masterRedisTemplate;
+    private RedissonClient redissonClient;
     @Autowired
     private CouponIssueLimiterProperties limiterProperties;
 
@@ -74,13 +73,11 @@ class PromotionV1ApiE2ETest {
         redisCleanUp.truncateAll();
     }
 
-    /** 발급 세마포어(DR-60)의 허가를 다른 요청이 모두 쥔 상태로 만든다. 1 분 뒤 만료. */
-    private void occupyAllPermits(long promotionId) {
-        String key = "coupon-issue:semaphore:" + promotionId;
-        long expiresAt = System.currentTimeMillis() + 60_000;
-        for (int i = 0; i < limiterProperties.permits(); i++) {
-            masterRedisTemplate.opsForZSet().add(key, "held-" + i, expiresAt);
-        }
+    /** 발급 세마포어(DR-61)의 허가를 다른 요청이 모두 쥔 상태로 만든다. 1 분 뒤 만료. */
+    private void occupyAllPermits(long promotionId) throws InterruptedException {
+        RPermitExpirableSemaphore semaphore = redissonClient.getPermitExpirableSemaphore("coupon-issue:semaphore:" + promotionId);
+        semaphore.trySetPermits(limiterProperties.permits());
+        assertThat(semaphore.tryAcquire(limiterProperties.permits(), 0, 60, TimeUnit.SECONDS)).hasSize(limiterProperties.permits());
     }
 
     private static Map<String, Object> createBody(String name, int totalQuantity, int perUserLimit, Map<String, Object> spec) {
@@ -174,9 +171,9 @@ class PromotionV1ApiE2ETest {
             api.post(issuePath(promotionId), user.getId(), null).assertError(HttpStatus.CONFLICT, "COUPON_ALREADY_ISSUED");
         }
 
-        @DisplayName("[COUPON_ISSUE_BUSY] 발급 허가가 모두 차 있으면 재시도 뒤 503 이고, 발급 내역·수량은 그대로다.")
+        @DisplayName("[COUPON_ISSUE_BUSY] 발급 허가가 모두 차 있으면 wait-time 동안 기다린 뒤 503 이고, 발급 내역·수량은 그대로다.")
         @Test
-        void busy() {
+        void busy() throws InterruptedException {
             long promotionId = createPromotion("선착순", 10);
             occupyAllPermits(promotionId);
 
@@ -188,7 +185,7 @@ class PromotionV1ApiE2ETest {
 
         @DisplayName("[COUPON_ALREADY_ISSUED] 이미 받은 사용자는 발급 허가가 모두 차 있어도 허가를 기다리지 않고 409 이다.")
         @Test
-        void alreadyIssued_beforeLimiter() {
+        void alreadyIssued_beforeLimiter() throws InterruptedException {
             long promotionId = createPromotion("선착순", 10);
             api.post(issuePath(promotionId), user.getId(), null).assertSuccess(HttpStatus.OK);
             occupyAllPermits(promotionId);

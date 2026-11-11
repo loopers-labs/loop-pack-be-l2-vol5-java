@@ -4,10 +4,7 @@ import com.loopers.support.error.ErrorType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.time.Duration;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Deque;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -16,26 +13,24 @@ import static com.loopers.support.ErrorAssertions.assertThrowsErrorType;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** DR-60 발급 리미터: 한 번 재시도, 허가 없으면 COUPON_ISSUE_BUSY, 작업 결과와 상관없이 반납. */
+/** DR-61 발급 리미터: 허가는 한 번만 시도(기다림은 세마포어 몫), 없으면 COUPON_ISSUE_BUSY, 작업 결과와 상관없이 반납. */
 class CouponIssueLimiterTest {
     private static final Long PROMOTION_ID = 3L;
-    private static final Duration RETRY_DELAY = Duration.ofMillis(100);
 
-    /** 미리 정한 결과를 차례로 돌려주고, 시도·반납을 기록한다. */
+    /** 정한 결과를 돌려주고, 시도·반납을 기록한다. */
     private static class FakeSemaphore implements CouponIssueSemaphore {
-        private final Deque<Optional<String>> results;
-        private final List<Long> attemptNanos = new ArrayList<>();
+        private final Optional<String> result;
+        private int attempts;
         private final List<String> released = new ArrayList<>();
 
-        @SafeVarargs
-        FakeSemaphore(Optional<String>... results) {
-            this.results = new ArrayDeque<>(List.of(results));
+        FakeSemaphore(Optional<String> result) {
+            this.result = result;
         }
 
         @Override
         public Optional<String> tryAcquire(Long promotionId) {
-            attemptNanos.add(System.nanoTime());
-            return results.isEmpty() ? Optional.empty() : results.poll();
+            attempts++;
+            return result;
         }
 
         @Override
@@ -44,46 +39,28 @@ class CouponIssueLimiterTest {
         }
     }
 
-    private static CouponIssueLimiter limiter(CouponIssueSemaphore semaphore) {
-        return new CouponIssueLimiter(semaphore, new CouponIssueLimiterProperties(200, Duration.ofMillis(200), RETRY_DELAY));
-    }
-
-    @DisplayName("첫 시도에 허가를 얻으면 작업을 실행해 결과를 돌려주고, 그 토큰을 반납한다.")
+    @DisplayName("허가를 얻으면 작업을 실행해 결과를 돌려주고, 그 토큰을 반납한다.")
     @Test
-    void firstAttempt_runsTaskAndReleases() {
+    void acquired_runsTaskAndReleases() {
         FakeSemaphore semaphore = new FakeSemaphore(Optional.of("t1"));
 
-        String result = limiter(semaphore).run(PROMOTION_ID, () -> "issued");
+        String result = new CouponIssueLimiter(semaphore).run(PROMOTION_ID, () -> "issued");
 
         assertThat(result).isEqualTo("issued");
-        assertThat(semaphore.attemptNanos).hasSize(1);
+        assertThat(semaphore.attempts).isEqualTo(1);
         assertThat(semaphore.released).containsExactly("t1");
     }
 
-    @DisplayName("첫 시도에 실패하면 retryDelay 뒤 한 번 더 시도하고, 얻으면 작업을 실행하고 반납한다.")
+    @DisplayName("[COUPON_ISSUE_BUSY] 허가를 얻지 못하면 재시도하지 않고, 작업을 실행하지 않으며 반납도 하지 않는다.")
     @Test
-    void retriesOnceAfterDelay() {
-        FakeSemaphore semaphore = new FakeSemaphore(Optional.empty(), Optional.of("t2"));
-
-        String result = limiter(semaphore).run(PROMOTION_ID, () -> "issued");
-
-        assertThat(result).isEqualTo("issued");
-        assertThat(semaphore.attemptNanos).hasSize(2);
-        long waitedNanos = semaphore.attemptNanos.get(1) - semaphore.attemptNanos.get(0);
-        assertThat(Duration.ofNanos(waitedNanos)).isGreaterThanOrEqualTo(RETRY_DELAY);
-        assertThat(semaphore.released).containsExactly("t2");
-    }
-
-    @DisplayName("[COUPON_ISSUE_BUSY] 재시도도 실패하면 작업을 실행하지 않고 반납도 하지 않는다. 시도는 두 번뿐이다.")
-    @Test
-    void bothAttemptsFail_throwsBusy() {
-        FakeSemaphore semaphore = new FakeSemaphore(Optional.empty(), Optional.empty());
+    void notAcquired_throwsBusyWithoutRetry() {
+        FakeSemaphore semaphore = new FakeSemaphore(Optional.empty());
         AtomicInteger runs = new AtomicInteger();
 
-        assertThrowsErrorType(() -> limiter(semaphore).run(PROMOTION_ID, runs::incrementAndGet), ErrorType.COUPON_ISSUE_BUSY);
+        assertThrowsErrorType(() -> new CouponIssueLimiter(semaphore).run(PROMOTION_ID, runs::incrementAndGet), ErrorType.COUPON_ISSUE_BUSY);
 
         assertThat(runs).hasValue(0);
-        assertThat(semaphore.attemptNanos).hasSize(2);
+        assertThat(semaphore.attempts).isEqualTo(1);
         assertThat(semaphore.released).isEmpty();
     }
 
@@ -92,7 +69,7 @@ class CouponIssueLimiterTest {
     void taskFailure_stillReleases() {
         FakeSemaphore semaphore = new FakeSemaphore(Optional.of("t3"));
 
-        assertThatThrownBy(() -> limiter(semaphore).run(PROMOTION_ID, () -> {
+        assertThatThrownBy(() -> new CouponIssueLimiter(semaphore).run(PROMOTION_ID, () -> {
             throw new IllegalStateException("rollback");
         })).isInstanceOf(IllegalStateException.class).hasMessage("rollback");
 
