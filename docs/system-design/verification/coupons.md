@@ -111,3 +111,150 @@ Q6~Q12·Q14는 이번 단계에서 검증하지 않았다.
 
 - Q16: 관련 기존 회귀·Checkstyle·ArchUnit·O11이 최종 코드에서 통과했고, 직접 DB 경쟁 worker는 종료 확인 뒤에만 테스트 DB를 정리한다. 1단계 범위의 Q16은 충족이며 후속 단계의 회귀는 각 단계에서 다시 확인한다.
 - Q1~Q5·Q13·Q15는 위 표의 DB 부분 근거만 확보했다. HTTP·Redis·Facade·응답 형식·TX 대역 분기와 Q6~Q12·Q14는 후속 단계다.
+
+## 구현 2단계 — Redis 수용 계층 (2026-11-11)
+
+### 범위
+
+- domain `CouponAdmissionRepository`(`tryAcquire(token, capacity)` → `Acquisition.ACQUIRED/FULL`, `release(token)` → 제거 수). Redis 오류·timeout·null·1/0 이외 응답은 결과값이 아니라 예외로 전달한다.
+- infrastructure `CouponAdmissionRedisRepository`: 기존 `redisTemplateMaster`(`RedisTemplate<String, String>`)를 qualifier로 주입한다. 키는 `commerce:coupon-admission:v1:permits` 하나이며 TTL을 두지 않는다. 획득은 `src/main/resources/redis/coupon-admission-acquire.lua`, 반환은 `SREM key token`이다.
+- Lua: 인자 수·빈 token·양의 정수 C를 검증하고, SISMEMBER → SCARD → SADD를 한 스크립트로 실행한다. 같은 token이면 1, `SCARD >= C`이면 0, 그 외 SADD 후 1이다. 입력·키 타입 오류는 첫 쓰기 전에 오류 응답이 된다.
+- application `CouponAdmissionService`: 공유 `AtomicBoolean accepting`(초기 false) 하나.
+  - `acquire`는 닫혀 있으면 저장소를 호출하지 않고 503을 반환한다. FULL은 429이며 수용을 닫지 않는다. 예외와 비정상 결과는 닫고 503이다.
+  - `release`(정상 실행의 첫 반환)는 예외를 던지지 않는다. 결과가 1이 아니거나 예외가 나면 로그를 남기고 닫는다.
+  - `status`·`close`·`open`을 제공한다.
+  - `cleanup(tokens)`는 열린 상태면 409를 반환하고, 입력 오류는 400 `INVALID_REQUEST`다. 지정 token을 차례로 SREM하고 제거 수를 합산한다. 도중 실패하면 닫고 503이며, 앞서 제거한 token은 되돌리지 않는다.
+  - 오류 로그에는 단계·token·확인된 결과(불명이면 불명)를 남긴다.
+- `ErrorType`: `COUPON_ADMISSION_FULL`(429), `COUPON_ADMISSION_UNAVAILABLE`(503), `COUPON_ADMISSION_OPERATION_REJECTED`(409).
+- 설정: `CouponAdmissionProperties`는 `commerce.coupon.admission.capacity`를 받는 record다(`@DefaultValue("3")`, 1 미만이면 기동 오류). `application.yml`에 공통 값 3을 명시했다. 기존 `@ConfigurationPropertiesScan`으로 등록된다.
+- 테스트 격리: test `CouponBeanIsolation` 목록에 `couponAdmissionRedisRepository`·`couponAdmissionService`를 더했다. 이 두 bean은 기동을 깨지 않지만 쿠폰 동작을 가진 bean이라 W6/O11 컨텍스트의 "쿠폰 bean 없음" 단언을 유지하기 위해 넣었다. 동작 없는 설정 바인딩은 제외 대상이 아니다. [발행 W7.4-1](../features/order-events/publication.md)의 목록 설명을 함께 고쳤다.
+- 제외: Facade·Controller·DTO·main 준비 코드·TTL·자동 재시도·우회·전체 실행 추적·Q9/Q10 로컬 Redis 장애 실험.
+
+### 실행 조건
+
+- JDK 21. 기존과 같이 명령에 `-Dorg.gradle.java.home="$JAVA_HOME"`을 붙였고, 전역 Gradle 설정은 바꾸지 않았다. Docker 29.7.2.
+- **실제 Redis endpoint:** 수용 통합 테스트는 실제 master template으로 `localhost:6379`, database 0, `redis_version` 7.0.15, `role:master`에 연결됐다. 이 주소는 Docker Compose 서비스 `redis-master`(image `redis:7.0`)의 기존 로컬 Redis다. 같은 JVM에서 `RedisTestContainersConfig`가 띄운 테스트 컨테이너는 이 컨텍스트에서 사용되지 않았다.
+  - 추정 원인: 이 fixture는 생성자에서 System property로 주소를 덮어쓰는데, `RedisProperties`가 그보다 먼저 바인딩되는 bean 생성 순서로 보인다. 실행으로 원인을 확인하지는 않았다.
+  - 상세설계 §7의 "테스트 fixture는 실제 생성한 컨테이너 주소로 덮어쓴다"는 문장과 다른 관찰이다. 기존 fixture라 이번 범위에서 수정하지 않았다.
+- 공유 로컬 Redis 보호:
+  - 각 테스트 시작 시 전용 키가 비어 있는지(`TYPE none`) 확인하고, 비어 있지 않으면 지우지 않고 실패하게 했다.
+  - 테스트가 만든 UUID token만 SREM했다. worker 종료를 확인하지 못하면 정리를 보류한다(`WorkerTermination`).
+  - 잘못된 키 타입 검증은 비어 있던 전용 키에 자기 marker 문자열을 쓰고, 값이 같을 때만 DEL했다.
+  - FLUSHALL·SCRIPT FLUSH·다른 키 삭제·pause는 하지 않았다.
+  - 실행 뒤 전용 키 `TYPE none`, `DBSIZE 0`, run_id `79b929f4…`를 확인했다. 수용 Lua 한 개가 서버 스크립트 캐시에 남는다.
+  - 테스트 중 8080 포트에 실행 중인 앱은 없었다.
+
+### 실제 관찰
+
+| 확인 | 결과 |
+|---|---|
+| 실제 Lua 실행 | 획득 뒤 스크립트 파일 SHA1(`a8c14a3e…`)에 대한 `SCRIPT EXISTS`가 true이고, Set에 해당 token이 생겼다. 반환은 실제 SREM 결과 1/0으로 확인했다. |
+| C=3 | 서로 다른 token 3개가 ACQUIRED, 4번째는 FULL이었다. 하나를 반환한 뒤 4번째가 ACQUIRED였다. |
+| 동시 경쟁 | 16개 token을 시작 신호로 동시 실행하는 회차를 5번 반복했다. 매 회차 ACQUIRED 3, FULL 13이었고, Set 구성원은 ACQUIRED token과 정확히 같았다. 회차마다 반환 후 키가 비었다. |
+| 같은 token | 재획득은 ACQUIRED이며 SCARD가 늘지 않았다. 가득 찬 상태에서도 자기 token은 ACQUIRED였다. |
+| 반환 반복 안전성 | 같은 token의 두 번째 반환과 없는 token 반환은 0이었고, 다른 활성 token 두 개는 남았다. |
+| TTL·시간 경과 | 키 TTL이 -1이었다. 2초 뒤에도 세 token이 유지됐고 새 token은 FULL이었다. |
+| Lua 입력 오류 | 빈 token, C=0, C=-1은 오류 응답이었고 키는 생기지 않았다. |
+| 잘못된 키 타입 | 실제 WRONGTYPE 오류로 서비스는 503을 반환하고 닫혔다. 키는 문자열 marker 그대로였다. |
+| 서비스(실제 Redis) | 기본 닫힘 상태에서는 Redis에 쓰지 않았다. 열린 상태에서 4번째 요청은 429였고 열림이 유지됐다. 반환 뒤 재획득이 됐고, 정상 첫 반환 1은 수용을 닫지 않았다. 외부에서 token을 제거한 뒤의 첫 반환 0은 닫았다. 닫힌 상태의 cleanup은 지정 token만 지웠고 반복 시 0이었으며 수용을 다시 열지 않았다. 열린 상태의 cleanup은 409였고 Set은 그대로였다. |
+| 서비스 분기(대역) | timeout(`QueryTimeoutException`), Redis 오류, 비정상 응답 예외, null 결과로 획득하면 503이고 닫히며 로그를 남겼다. 닫힌 뒤에는 저장소를 호출하지 않았다. 반환 0·예외는 예외 없이 로그를 남기고 닫았으며, 뒤늦은 반환 1은 수용을 다시 열지 않았다. cleanup은 열린 상태 거절이 입력 검증보다 먼저였다. null·빈 목록·null/빈/공백 token은 400이었다. 도중 실패하면 503이고 닫혔으며 뒤 token은 시도하지 않았다. |
+| 설정 | 생략하면 3, 1과 5는 그대로 바인딩됐다. 0, -1, 3.5, abc, 빈 값, 2147483648은 기동에 실패했다. 앱 YAML의 실제 값은 3이었다. |
+
+timeout과 불명 분기는 저장소 대역의 예외로 확인했다. 실제 Redis에서 관찰한 오류 경로는 WRONGTYPE과 Lua 입력 오류뿐이다. 실제 Redis 지연·timeout과 pause는 Q9·Q10 단계에서 다룬다.
+
+### 실행
+
+- 대상: `./gradlew -Dorg.gradle.java.home="$JAVA_HOME" :apps:commerce-api:test --tests '*CouponAdmission*' --rerun --no-build-cache`, 2026-11-11 14:43:09~14:43:27 KST. 서비스 단위 25, 설정 9, 실제 Redis 통합 14 — 48건 실행, 실패 0, skip 0.
+- O11: `./gradlew -Dorg.gradle.java.home="$JAVA_HOME" :apps:commerce-api:w6OutboxRecoveryTest --rerun --no-build-cache`, 14:44:10~14:44:38 KST, `BUILD SUCCESSFUL`. 작업이 실제 실행됐고 보고서 `apps/commerce-api/build/test-results/w6OutboxRecoveryTest/`에서 1건 실행, 실패 0, skip 0이었다. 격리 목록이 바뀌어 다시 실행했다.
+- 전체 일반 회귀 + Checkstyle: `./gradlew -Dorg.gradle.java.home="$JAVA_HOME" :apps:commerce-api:checkstyleMain :apps:commerce-api:checkstyleTest :apps:commerce-api:test --rerun --no-build-cache`, 14:44:48~14:52:29 KST.
+  - test 작업은 보고서 249개, 1114건 실행·실패 0·오류 0·skip 0이었다. `W6PreparationContextIntegrationTest` 1건과 `ArchitectureTest` 3건이 포함된다.
+  - **빌드 결과는 `BUILD FAILED`였다.** 원인은 `checkstyleMain`의 미사용 import 1건(`CouponAdmissionRedisRepository`의 `DefaultRedisScript`)이며, checkstyleTest 오류는 0이었다.
+  - import 한 줄을 지운 뒤 `checkstyleMain`·`checkstyleTest`와 `--tests '*CouponAdmission*' --tests '*ArchitectureTest'`를 `--rerun --no-build-cache`로 다시 실행했다(14:52:46~14:53:04 KST). Checkstyle main/test 오류 0, 51건 실행·실패 0·skip 0이었다.
+  - import 삭제는 바이트코드를 바꾸지 않으므로 1114건 전체 회귀는 다시 돌리지 않았다.
+
+### 설계 Q 대응 — 부분 근거
+
+| Q | 이번 근거 | 남은 검증 |
+|---|---|---|
+| Q7 | 실제 Redis에서 C=3 유지, 4번째 FULL, 반환 후 재획득, 동시 경쟁에서 한도 미초과를 확인했다. 수용 계층만의 부분 근거다. | 실제 발급 HTTP 요청, DB TX 전 barrier, 429의 DB 미진입, 쿠폰·발급 수, 최종 token 0 — Facade/API 단계 |
+| Q8 | 반복 반환·없는 token 반환·cleanup의 0이 정상이고 다른 token이 그대로임을 확인했다. 정상 첫 반환 0은 닫힘과 로그로 처리했다(실제 Redis와 대역 모두). | 업무 결과 유지, 사용자·캠페인과의 로그 연결 — Facade 단계 |
+| Q12 | TTL -1, 2초 경과 뒤에도 점유가 유지되고 새 token은 FULL이었다. | HTTP 경로의 시간 경과 확인은 후속 단계다. 이번 2초는 짧은 관찰이다. |
+| Q14 | 기본 닫힘, 닫힌 뒤 Redis 미호출, 열린 상태 cleanup 409, 반복 cleanup 안전성, 입력 검증 400, Redis 실패 후 닫힘 유지를 서비스 수준에서 확인했다. | 제어 API HTTP 경로, JSON 매핑 오류와의 구분, 진행 중 요청의 완료 확인 — API 단계 |
+| Q15 | C 생략 시 3, 잘못된 값의 기동 실패, 앱 YAML 값 3을 확인했다. | 준비 옵션 관련 항목 — 준비 코드 단계 |
+| Q16 | 전체 일반 회귀 1114건, O11, ArchUnit이 통과했고, 수정 뒤 Checkstyle 오류 0이다. 수용 테스트는 worker 종료를 확인한 뒤 자기 token만 정리했다. | 이후 단계마다 다시 확인 |
+
+Q9·Q10(로컬 Redis pause/unpause, 실제 앱 장애)은 이번에 수행하지 않았다. Q1~Q6·Q11·Q13은 이번 단계에서 새로 확인한 것이 없다.
+
+### 한계
+
+- 실제 Redis는 공유 로컬 master였다. 테스트 컨테이너 격리를 전제로 한 검증이 아니며, 같은 키를 쓰는 다른 프로세스가 없다는 것은 실행 시점의 관찰(8080 미사용, 시작 시 키 비어 있음)에 근거한다.
+- 서비스 로그에는 token·단계·결과만 있다. userId·campaignId·DB 결과와의 연결은 Facade 단계에서 추가하고 검증한다.
+- 동시 경쟁은 단일 JVM의 16개 스레드, 5회차다. C=3 이외의 용량이나 성능에 대한 주장이 아니다.
+
+## 구현 2단계 후속 — 수용 테스트의 Redis 연결 고정 (2026-11-11)
+
+위 2단계 실행은 공유 로컬 `redis-master`에서 실제로 관찰한 결과로 보존한다. 테스트 컨테이너 격리 검증으로는 취급하지 않는다. Codex 검토에 따라 아래와 같이 보완했다.
+
+### 원인 확인
+
+- 임시 관찰 테스트(실행 뒤 삭제)를 실제 컨텍스트에 넣고, BeanPostProcessor로 bean 초기화 순서와 그 시점의 System property를 기록했다.
+- 관찰 결과, `RedisProperties`가 `localhost:6379`로 바인딩되고 `redisConfig`, `masterRedisConnectionFactory`, `masterRedisTemplate`, `couponAdmissionRedisRepository`가 먼저 만들어졌다. 그때 `datasource.redis.master.port` System property는 비어 있었다.
+- 그 뒤에 `redisTestContainersConfig` 생성자가 실행되어 컨테이너 포트(관찰 시 57682)를 System property에 넣었지만, 이미 바인딩된 값은 바뀌지 않았다.
+- 컨테이너 자체는 static 초기화로 시작되지만 주소 덮어쓰기는 생성자에서 일어난다. 그래서 바인딩보다 늦은 경우 일반 컨텍스트는 test 프로필 값 localhost:6379를 쓴다. 비교하면 `MySqlTestContainersConfig`는 static 블록에서 System property를 설정한다.
+- 일반 컨텍스트에서 같은 순서가 늘 재현되는지는 이 한 번의 관찰로만 확인했다. 다른 Redis 사용 테스트의 연결 대상은 이번에 바꾸지 않았다.
+
+### 수정
+
+- `modules/redis` testFixtures의 `RedisTestContainersConfig`에 읽기용 static 메서드를 추가했다: `host()`, `port()`, `containerId()`, 그리고 컨테이너 안 `redis-cli INFO server`로 읽는 `serverRunId()`. 컨테이너 수명과 기존 생성자의 덮어쓰기 동작은 바꾸지 않았다.
+- `CouponAdmissionRedisIntegrationTest`:
+  - `@DynamicPropertySource`로 같은 fixture 컨테이너의 host·port를 master·replica 주소로 넣고, database는 0으로 넣는다. 새 컨테이너나 template은 만들지 않는다.
+  - 매 테스트의 첫 Redis 명령 전에 연결 대상을 확인한다.
+    - 바인딩된 master·replica 주소와 database가 컨테이너와 일치하는지
+    - master template의 팩토리가 `ReadFrom.MASTER`이고 database가 0인지
+    - template 연결로 받은 `run_id`가 컨테이너 안에서 직접 읽은 `run_id`와 같은지
+    - `role`이 master인지
+  - 정적 master/replica 팩토리는 노드 목록 getter가 없다. 그래서 주소는 바인딩 값으로, 실제 연결 서버는 `run_id`로 대조한다.
+  - 하나라도 다르면 Redis에 쓰지 않고 준비 실패(예외)로 끝난다. 로컬 대상으로 대체 연결하거나 skip하지 않는다.
+  - 대상 확인 전에 끝난 경우 `@AfterEach`는 어떤 Redis 명령도 보내지 않는다.
+- 주석과 표시 이름의 "실제 Redis(테스트 컨테이너)"를 실제 근거에 맞게 "fixture 컨테이너"로 고쳤다. 기존 검증 항목과 기대값은 바꾸지 않았다.
+
+### 실행
+
+- 명령:
+
+```sh
+./gradlew -Dorg.gradle.java.home="$JAVA_HOME" :apps:commerce-api:checkstyleMain :apps:commerce-api:checkstyleTest :apps:commerce-api:test \
+  --tests '*CouponAdmission*' --tests '*ProductCache*' --tests '*ProductFacadeIntegrationTest' --tests '*BrandFacadeIntegrationTest' \
+  --tests '*ProductV1ApiE2ETest' --tests '*LikeV1ApiE2ETest' --tests '*CustomerPurchaseFlowE2ETest' \
+  --tests '*AfterCommitRunnerIntegrationTest' --tests '*ArchitectureTest' --rerun --no-build-cache
+```
+
+- 결과: 2026-11-11 15:04:13~15:05:27 KST, `BUILD SUCCESSFUL`.
+  - 보고서 42개, 142건 실행·실패 0·오류 0·skip 0.
+  - 이 중 쿠폰 수용 테스트는 서비스 25, 설정 9, fixture Redis 14건이다.
+  - `ArchitectureTest` 3건 통과, Checkstyle main/test 오류 0.
+- 연결 근거(테스트 출력):
+  - `master=localhost:57778`, database 0
+  - 컨테이너 `24a8405421188473…`
+  - `containerRunId`와 `connectedRunId`가 모두 `917757b13e0068bde867b2d6405c0cb2dbdba824`로 같았다
+  - `redis_version` 8.10.1, `role` master
+  - 같은 시각 공유 로컬 `redis-master`의 run_id는 `79b929f4…`로 이와 다르다.
+- 공유 로컬 Redis 상태: 실행 뒤 run_id가 그대로였고, 전용 키는 none, DBSIZE 0이었다. 정리·중단·FLUSHALL·SCRIPT FLUSH는 하지 않았다.
+- 재실행 범위의 근거:
+  - fixture 변경은 읽기용 static 메서드 추가뿐이다. 다른 테스트의 컨텍스트 구성과 연결 대상은 바뀌지 않는다.
+  - 그래서 Redis를 쓰는 관련 테스트(상품 캐시·상품/브랜드 Facade·상품/좋아요/구매 E2E·AfterCommit)와 Checkstyle·ArchUnit만 다시 실행했다.
+  - 전체 일반 회귀는 2단계 실행(1114건, 실패 0)과 비교해 제품 코드 변화가 미사용 import 삭제뿐이라 다시 돌리지 않았다.
+  - O11은 이 fixture 메서드나 쿠폰 테스트를 사용하지 않아 다시 돌리지 않았다.
+- Checkstyle은 commerce-api에만 적용된다. `modules/redis` testFixtures의 변경은 Checkstyle 대상이 아니며, 컴파일과 위 실행으로만 확인했다.
+
+### 2단계 충족 범위 재판단
+
+- 수용 계층의 Q7·Q8·Q12 부분 근거는 이제 테스트 소유 컨테이너에서 확인됐다. 공유 로컬 Redis 결과에 의존하지 않는다.
+- Q16(2단계):
+  - 관련 Redis 회귀·Checkstyle·ArchUnit은 이번 실행으로 통과했다. 쿠폰 수용 테스트는 worker 종료 확인 뒤 자기 token만 정리했다.
+  - 전체 일반 회귀는 앞 실행의 1114건 통과를 근거로 한다. 그 보고서는 이후 필터 실행에 덮어써져 원본 XML이 남아 있지 않다. 집계와 시각은 위 2단계 절의 기록이다.
+  - 따라서 2단계 Q16은 "관련 범위 충족, 전체 회귀 원본 보고서 미보존"으로 판단한다.
+- 남은 점:
+  - 다른 일반 Redis 사용 테스트도 같은 순서로 공유 로컬 6379에 연결될 수 있다. 공통 fixture의 동작을 고치면 모든 테스트에 전역 영향이 있어 이번 범위에서 다루지 않았다.
+  - 상세설계 §7의 "테스트 fixture는 실제 생성한 컨테이너 주소로 덮어쓴다" 문장도 일반 컨텍스트에서는 관찰과 다르다.
+- 앞으로 실행별 요약·보고서는 로컬 `docs/week8/verification/runs/<날짜-단위>/`에 복사해 보존한다.

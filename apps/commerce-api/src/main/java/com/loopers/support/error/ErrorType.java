@@ -53,7 +53,12 @@ public enum ErrorType {
     /** 결제 */
     PAYMENT_ATTEMPT_CONFLICT(HttpStatus.CONFLICT, "PAYMENT_ATTEMPT_CONFLICT", "이미 다른 결제 요청에 사용됐거나 주문에 다른 결제 시도가 있습니다."),
     PAYMENT_RESULT_CONFLICT(HttpStatus.CONFLICT, "PAYMENT_RESULT_CONFLICT", "결제 확인 결과가 저장된 정보와 충돌합니다."),
-    PG_CREATE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "PG_CREATE_UNAVAILABLE", "지금은 결제를 시작할 수 없습니다.");
+    PG_CREATE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "PG_CREATE_UNAVAILABLE", "지금은 결제를 시작할 수 없습니다."),
+
+    /** 쿠폰 신규 발급 수용 */
+    COUPON_ADMISSION_FULL(HttpStatus.TOO_MANY_REQUESTS, "COUPON_ADMISSION_FULL", "지금은 쿠폰 발급 요청을 더 받을 수 없습니다. 잠시 후 다시 시도해 주세요."),
+    COUPON_ADMISSION_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "COUPON_ADMISSION_UNAVAILABLE", "지금은 쿠폰 신규 발급을 받을 수 없습니다."),
+    COUPON_ADMISSION_OPERATION_REJECTED(HttpStatus.CONFLICT, "COUPON_ADMISSION_OPERATION_REJECTED", "수용이 열린 상태에서는 점유를 정리할 수 없습니다.");
 
     private final HttpStatus status;
     private final String code;

@@ -309,7 +309,7 @@ resolveNotReserved(userId, campaignId):             // 이전 쓰기 TX 종료 �
 
 ## 7. Redis 수용·반환
 
-**코드 확인:** modules/redis는 기본 REPLICA_PREFERRED와 별도 MASTER 연결을 제공한다. `redisTemplateMaster`는 `RedisTemplate<String, String>`이고 key/value/hash serializer는 String이다. 앱의 connect/command timeout은 각각 200ms이며 실제 장애 시 대기 시간 실측값이나 HTTP 전체 deadline이 아니다. local 설정은 master localhost:6379·replica localhost:6380, 테스트 fixture는 실제 생성한 컨테이너 주소로 덮어쓴다.
+**코드 확인:** modules/redis는 기본 REPLICA_PREFERRED와 별도 MASTER 연결을 제공한다. `redisTemplateMaster`는 `RedisTemplate<String, String>`이고 key/value/hash serializer는 String이다. 앱의 connect/command timeout은 각각 200ms이며 실제 장애 시 대기 시간 실측값이나 HTTP 전체 deadline이 아니다. local 설정은 master localhost:6379·replica localhost:6380이다. 기존 Redis 테스트 fixture는 생성자에서 컨테이너 주소를 System property에 설정하지만, RedisProperties가 먼저 바인딩된 컨텍스트에는 반영되지 않을 수 있다. 쿠폰 수용 통합 테스트는 컨텍스트 생성 전 동적 속성으로 fixture 주소를 주입하고, 쓰기 전에 주소·DB·master 설정과 컨테이너/연결 서버의 run_id 일치를 확인한다. 일반 컨텍스트의 연결 대상을 fixture 존재만으로 추정하지 않는다. 실제 관찰과 한계는 [쿠폰 실행 기록](../verification/coupons.md)의 2단계 후속 기록을 따른다.
 
 기존 master template을 qualifier로 주입해 사용한다. 새 연결·template·공용 RedisConfig 안의 쿠폰 로직을 추가하지 않는다. unchecked cast를 사용하지 않는다. 전용 Set 키는 `commerce:coupon-admission:v1:permits`다. 같은 실행 환경의 신규 발급 경로는 캠페인과 무관하게 같은 키·같은 C를 사용한다. 고객·제어 API로 키를 받거나 변경하지 않는다. 공유 Redis를 사용하는 검증의 실행 격리·master 확인은 §10.1을 따른다.
 
