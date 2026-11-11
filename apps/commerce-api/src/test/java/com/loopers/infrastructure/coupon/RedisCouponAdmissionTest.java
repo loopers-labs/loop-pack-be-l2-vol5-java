@@ -4,6 +4,7 @@ import com.loopers.config.redis.RedisConfig;
 import com.loopers.domain.coupon.CouponAdmission;
 import com.loopers.utils.RedisCleanUp;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,8 +30,14 @@ class RedisCouponAdmissionTest {
         this.redisCleanUp = redisCleanUp;
     }
 
+    @BeforeEach
+    void setUp() {
+        admission.open();
+    }
+
     @AfterEach
     void tearDown() {
+        admission.close();
         redisCleanUp.truncateAll();
     }
 

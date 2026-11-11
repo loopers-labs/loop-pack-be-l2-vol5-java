@@ -1,6 +1,7 @@
 package com.loopers.application.coupon;
 
 import com.loopers.config.redis.RedisConfig;
+import com.loopers.domain.coupon.CouponAdmission;
 import com.loopers.domain.coupon.CampaignName;
 import com.loopers.domain.coupon.Coupon;
 import com.loopers.domain.coupon.DiscountAmount;
@@ -12,6 +13,7 @@ import com.loopers.support.error.ErrorType;
 import com.loopers.utils.DatabaseCleanUp;
 import com.loopers.utils.RedisCleanUp;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,7 +40,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class CouponAdmissionIntegrationTest {
 
     private static final Instant NOW = Instant.parse("2026-11-08T00:00:00Z");
-    private static final String ADMISSION_KEY = "coupon:issue:admission:v1";
+    private static final String couponAdmission_KEY = "coupon:issue:admission:v1";
     private static final long DEADLINE_MILLIS = 2_000;
 
     private final CouponFacade couponFacade;
@@ -47,10 +49,11 @@ class CouponAdmissionIntegrationTest {
     private final RedisTemplate<String, String> redis;
     private final DatabaseCleanUp databaseCleanUp;
     private final RedisCleanUp redisCleanUp;
+    private final CouponAdmission couponAdmission;
     private final SoldOutCampaigns soldOutCampaigns;
 
     @Autowired
-    CouponAdmissionIntegrationTest(CouponFacade couponFacade, DataSource dataSource, JdbcTemplate jdbcTemplate,
+    CouponAdmissionIntegrationTest(CouponAdmission couponAdmission, CouponFacade couponFacade, DataSource dataSource, JdbcTemplate jdbcTemplate,
                                    @Qualifier(RedisConfig.REDIS_TEMPLATE_MASTER) RedisTemplate<String, String> redis,
                                    DatabaseCleanUp databaseCleanUp, RedisCleanUp redisCleanUp,
                                    SoldOutCampaigns soldOutCampaigns) {
@@ -59,19 +62,26 @@ class CouponAdmissionIntegrationTest {
         this.jdbcTemplate = jdbcTemplate;
         this.redis = redis;
         this.databaseCleanUp = databaseCleanUp;
+        this.couponAdmission = couponAdmission;
         this.redisCleanUp = redisCleanUp;
         this.soldOutCampaigns = soldOutCampaigns;
     }
 
+    @BeforeEach
+    void setUp() {
+        couponAdmission.open();
+    }
+
     @AfterEach
     void tearDown() {
+        couponAdmission.close();
         databaseCleanUp.truncateAllTables();
         redisCleanUp.truncateAll();
         soldOutCampaigns.clear();
     }
 
     private long activeTokens() {
-        Long size = redis.opsForSet().size(ADMISSION_KEY);
+        Long size = redis.opsForSet().size(couponAdmission_KEY);
         return size == null ? 0 : size;
     }
 
@@ -143,7 +153,7 @@ class CouponAdmissionIntegrationTest {
         assertThatThrownBy(() -> couponFacade.issue(campaignId, 2L, NOW))
             .isInstanceOf(DomainException.class)
             .hasFieldOrPropertyWithValue("error", DomainError.COUPON_SOLD_OUT);
-        redis.opsForSet().add(ADMISSION_KEY, "held-1", "held-2", "held-3");
+        redis.opsForSet().add(couponAdmission_KEY, "held-1", "held-2", "held-3");
 
         assertThatThrownBy(() -> couponFacade.issue(campaignId, 3L, NOW))
             .isInstanceOf(DomainException.class)

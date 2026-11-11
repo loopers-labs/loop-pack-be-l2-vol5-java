@@ -14,7 +14,16 @@ public interface CouponAdmission {
         }
     }
 
+    record Opened(String epoch, int cleanedTokens) {
+    }
+
     Result tryAcquire();
 
     void release(String token);
+
+    Opened open();
+
+    void close();
+
+    boolean isOpen();
 }

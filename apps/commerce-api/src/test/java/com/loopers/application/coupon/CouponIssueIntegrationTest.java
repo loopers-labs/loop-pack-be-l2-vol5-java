@@ -2,12 +2,14 @@ package com.loopers.application.coupon;
 
 import com.loopers.domain.coupon.CampaignName;
 import com.loopers.domain.coupon.Coupon;
+import com.loopers.domain.coupon.CouponAdmission;
 import com.loopers.domain.coupon.DiscountAmount;
 import com.loopers.domain.coupon.IssueQuota;
 import com.loopers.support.error.DomainError;
 import com.loopers.support.error.DomainException;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -38,21 +40,29 @@ class CouponIssueIntegrationTest {
     private final CouponTransactions couponTransactions;
     private final JdbcTemplate jdbcTemplate;
     private final DatabaseCleanUp databaseCleanUp;
+    private final CouponAdmission couponAdmission;
     private final SoldOutCampaigns soldOutCampaigns;
 
     @Autowired
-    CouponIssueIntegrationTest(CouponFacade couponFacade, CouponTransactions couponTransactions,
+    CouponIssueIntegrationTest(CouponAdmission couponAdmission, CouponFacade couponFacade, CouponTransactions couponTransactions,
                                JdbcTemplate jdbcTemplate, DatabaseCleanUp databaseCleanUp,
                                SoldOutCampaigns soldOutCampaigns) {
         this.couponFacade = couponFacade;
         this.couponTransactions = couponTransactions;
         this.jdbcTemplate = jdbcTemplate;
         this.databaseCleanUp = databaseCleanUp;
+        this.couponAdmission = couponAdmission;
         this.soldOutCampaigns = soldOutCampaigns;
+    }
+
+    @BeforeEach
+    void setUp() {
+        couponAdmission.open();
     }
 
     @AfterEach
     void tearDown() {
+        couponAdmission.close();
         databaseCleanUp.truncateAllTables();
         soldOutCampaigns.clear();
     }

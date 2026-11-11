@@ -1,3 +1,6 @@
+if redis.call('GET', KEYS[2]) ~= ARGV[3] then
+  return -1
+end
 if redis.call('SISMEMBER', KEYS[1], ARGV[1]) == 1 then
   return 1
 end

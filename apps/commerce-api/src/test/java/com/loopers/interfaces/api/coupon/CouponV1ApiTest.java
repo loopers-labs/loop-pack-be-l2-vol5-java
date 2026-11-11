@@ -3,9 +3,11 @@ package com.loopers.interfaces.api.coupon;
 import com.jayway.jsonpath.JsonPath;
 import com.loopers.application.coupon.SoldOutCampaigns;
 import com.loopers.config.redis.RedisConfig;
+import com.loopers.domain.coupon.CouponAdmission;
 import com.loopers.utils.DatabaseCleanUp;
 import com.loopers.utils.RedisCleanUp;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -40,20 +42,28 @@ class CouponV1ApiTest {
     private final RedisTemplate<String, String> redis;
     private final DatabaseCleanUp databaseCleanUp;
     private final RedisCleanUp redisCleanUp;
+    private final CouponAdmission couponAdmission;
     private final SoldOutCampaigns soldOutCampaigns;
 
     @Autowired
-    CouponV1ApiTest(MockMvc mvc, @Qualifier(RedisConfig.REDIS_TEMPLATE_MASTER) RedisTemplate<String, String> redis,
+    CouponV1ApiTest(CouponAdmission couponAdmission, MockMvc mvc, @Qualifier(RedisConfig.REDIS_TEMPLATE_MASTER) RedisTemplate<String, String> redis,
                     DatabaseCleanUp databaseCleanUp, RedisCleanUp redisCleanUp, SoldOutCampaigns soldOutCampaigns) {
         this.mvc = mvc;
         this.redis = redis;
         this.databaseCleanUp = databaseCleanUp;
+        this.couponAdmission = couponAdmission;
         this.redisCleanUp = redisCleanUp;
         this.soldOutCampaigns = soldOutCampaigns;
     }
 
+    @BeforeEach
+    void setUp() {
+        couponAdmission.open();
+    }
+
     @AfterEach
     void tearDown() {
+        couponAdmission.close();
         databaseCleanUp.truncateAllTables();
         redisCleanUp.truncateAll();
         soldOutCampaigns.clear();
