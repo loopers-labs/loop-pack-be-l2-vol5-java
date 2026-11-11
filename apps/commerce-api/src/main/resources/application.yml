@@ -51,11 +51,17 @@ order:
         enabled: true
         interval: 10s
 
-# Redis 장애 시 요청이 오래 묶이지 않도록 연결·명령 대기를 제한하고, 실패하면 DB로 우회한다.
+# Redis 연결·명령 대기를 제한한다. 상품 캐시는 DB로 우회하고, 쿠폰 신규 발급은 fail-closed한다.
 datasource:
   redis:
     connect-timeout: 100ms
     command-timeout: 100ms
+
+coupon:
+  issue:
+    admission:
+      # 재시작만으로 수용을 자동 재개하지 않는다. 복구 확인 뒤 명시적으로 연다.
+      open-on-startup: false
 
 # 기동 시 정렬별 전체·활성 브랜드 목록의 첫 페이지를 캐시에 채운다.
 product:
@@ -97,11 +103,21 @@ spring:
     hibernate:
       ddl-auto: validate
 
+coupon:
+  issue:
+    capacity: 3
+  seed:
+    reset: false
+
 ---
 spring:
   config:
     activate:
       on-profile: test
+
+coupon:
+  issue:
+    capacity: 3
 
 # 테스트 컨텍스트가 빈 DB로 목록 캐시를 채워 다른 테스트에 남기지 않도록 끈다.
 product:
