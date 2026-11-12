@@ -1,6 +1,7 @@
 package com.loopers.verification.localredis;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.loopers.interfaces.scheduler.CouponWaitingScheduler;
 import com.loopers.CommerceApiApplication;
 import com.loopers.application.coupon.CouponFacade;
 import com.loopers.config.redis.RedisConfig;
@@ -17,6 +18,7 @@ import com.loopers.interfaces.api.coupon.CouponV1Dto;
 import com.loopers.testcontainers.RedisTestContainersConfig;
 import com.loopers.utils.DatabaseCleanUp;
 import io.lettuce.core.cluster.api.async.RedisClusterAsyncCommands;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -390,6 +392,10 @@ class CouponLocalRedisFaultIntegrationTest {
         }
         return new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
     }
+
+    /** 자동 입장 회차가 테스트의 수동 processAdmissions 와 경쟁하지 않게 이 컨텍스트에서만 대체한다(실제 회차는 CouponWaitingScheduler*Test). */
+    @MockitoBean
+    private CouponWaitingScheduler couponWaitingScheduler;
 
     @Autowired
     private TestRestTemplate rest;

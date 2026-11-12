@@ -1,5 +1,6 @@
 package com.loopers.interfaces.api.coupon;
 
+import com.loopers.interfaces.scheduler.CouponWaitingScheduler;
 import com.loopers.application.coupon.CouponFacade;
 import com.loopers.application.coupon.HoldingWaitingRepository;
 import com.loopers.domain.coupon.CouponAdmissionRepository.AdmissionProgress;
@@ -16,6 +17,7 @@ import com.loopers.infrastructure.coupon.CouponCampaignRepositoryImpl;
 import com.loopers.infrastructure.coupon.WorkerTermination;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.utils.DatabaseCleanUp;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -190,6 +192,10 @@ class CouponHttpFaultE2ETest {
             return delegate.findById(campaignId);
         }
     }
+
+    /** 자동 입장 회차가 테스트의 수동 processAdmissions 와 경쟁하지 않게 이 컨텍스트에서만 대체한다(실제 회차는 CouponWaitingScheduler*Test). */
+    @MockitoBean
+    private CouponWaitingScheduler couponWaitingScheduler;
 
     @LocalServerPort
     private int port;

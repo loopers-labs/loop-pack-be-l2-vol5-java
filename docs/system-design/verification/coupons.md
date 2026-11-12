@@ -782,3 +782,20 @@ Codex 최종 코드 검토에서 지적된 test 실패 처리 3곳만 고쳤다.
 - 보완 2: 발급 200/201/202의 생성 OpenAPI가 ApiResponse의 meta/data 구조와 각 data 타입을 표현하도록 수정했다. 실제 /v3/api-docs의 참조 스키마를 검사했다. 제품 wrapper 타입/실제 JSON은 추가·변경하지 않았다. Codex 재검토에서 두 지적의 해소와 추가 필수 수정 없음을 확인했다.
 - 원시 근거: 로컬 `docs/week8/verification/runs/20261112-unit4-http-ratelimit/a-related/`, `b-o11/`, `docs/week8/verification/runs/20261112-unit4-cleanup-schema-fix/`의 명령/로그·timing·XML/Checkstyle. 실제 Redis는 fixture 8.10.1 master/run_id를 대조했다. opt-in 로컬 Redis 장애 소스의 포트/키/관찰 대응은 컴파일만 확인했고 실제 pause/키 무효화/재개는 실행하지 않았다. 그 테스트 코드를 승인된 장애별 복구 절차/검증 근거로 사용하지 않는다.
 - 남은 범위: 5단위 자동 scheduler/실제 자동 주기·종료 검사와 scheduler bean의 W6/O11 격리, 이후 별도 전체 회귀가 남는다. 전체 check·부하/장애 실험은 이번에 수행하지 않았다. 현재 입장은 수동 processAdmissions에 의존한다.
+
+## 대기실 확장 5단위 — 내부 실행기 자동 입장·종료 (2026-11-12)
+
+- 기준: volume-8 / 02de22a(4단위 커밋). Claude Code가 구현/검사, Codex가 실제 코드·조립 diff·보존 XML/로그를 검토했다. Codex의 제품 검사 재실행은 없었다.
+- 신규 CouponWaitingScheduler는 SmartLifecycle의 기본 phase로 내부 단일 ScheduledExecutorService를 관리한다. 캠페인 미설정이면 실행기/예약이 없고, 설정됐으면 최초/회차 종료 후 schedulerDelay를 두고 Facade.processAdmissions만 호출한다. RuntimeException은 로그 후 다음 회차 유지, Error는 로그 후 재던짐으로 중단한다. stop은 cancel(false)·shutdown·기존 phase 종료 한도 내 대기 순서며 timeout/interrupt는 미완료로 기록한다. W7 실행기/설정·공통 scheduling 인프라는 변경하지 않았다.
+- 일반 HTTP/opt-in 컨텍스트는 test의 MockitoBean 대체, 직접 실행 준비 코드 컨텍스트는 test 전용 bean 정의 제거로 자동 회차를 통제했다. W6/O11 CouponBeanIsolation에는 실제 scheduler 이름 하나만 추가했다. 실제 자동 주기 전용 컨텍스트는 real scheduler를 사용했다.
+- WQ11 관찰: 최초 delay·회차 비중첩/fixed delay·단일 스레드·중복 start/stop·진행 회차 종료 대기/스레드 종료·timeout/interrupt·RuntimeException/Error, 닫힘에서 DB/Redis 업무0·open 뒤 처리·Redis 실패 뒤 닫힘/이후 업무0. 실제 fixture Redis/MySQL에서 수동 processAdmissions/GET 없이 4명 중 3명 승격·미사용 READY 회수/넷째 승격·PROCESSING 미회수·쿠폰/issuedCount 변화0을 확인했다.
+
+| 실행(KST) | 실제 결과와 범위 |
+|---|---|
+| 15:55:03~15:56:54 | 관련 23클래스 필터·Checkstyle main/test, XML 38개 합계 234건 실패/오류/skip 0·Checkstyle 오류 각 0. 34 actionable tasks executed |
+| 15:57:01~15:57:35 | 별도 O11 w6OutboxRecoveryTest 1건 실패/오류/skip 0. 32 actionable tasks executed |
+| 16:05:25~16:05:57 | 테스트 종료 확인 보완 뒤 scheduler lifecycle 11·자동 통합1·ArchUnit3, 총15건 실패/오류/skip 0·Checkstyle main/test 오류 각 0. 34 actionable tasks executed |
+
+- 모두 JDK21.0.12, `--rerun-tasks --no-build-cache`로 BUILD SUCCESSFUL이었다. 원시 명령·timing·XML/Checkstyle은 로컬 `docs/week8/verification/runs/20261112-unit5-scheduler/a-related/`, `b-o11/`, `docs/week8/verification/runs/20261112-unit5-settlement-fix/`에 보존했다. 보완 뒤 O11/다른 클래스를 재실행한 것으로 기록하지 않는다.
+- 보완: 자동 통합 테스트가 원래 실행기 참조를 보관하고 stop 반환 후 실제 종료가 확인돼야만 키/DB 정리를 실행한다. 참조 없음·timeout·interrupt는 실패/정리 보류이며 interrupt를 복원한다. 같은 test 내부 ExecutorSettlement를 실제 scheduler/latch 경계와 재사용해 실패 시 정리0·본문 선행 stop 후 원래 참조 유지·정상 종료 후 정리를 검사했다. 제품 scheduler/API와 별도 파일은 추가하지 않았다. Codex 재검토에서 지적 해소·추가 필수 수정 없음을 확인했다.
+- 실제 Redis는 fixture8.10.1 master/run_id 대조를 통과했다. 시작 전 자기 캠페인 키 공백/소유 확인, 종료 확인 뒤 자기 키 정리를 유지했다. WQ12의 이번 W6/O11 조립·기존 W7 lifecycle 검사는 통과했지만 전체 회귀/check는 아직 별도 실행 전이다. 로컬 Redis pause·부하·장애별 복구/재시작/다중 인스턴스는 이번 실행 근거가 아니다.

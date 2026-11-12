@@ -15,6 +15,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.BeanFactoryAnnotationUtils;
 import org.springframework.beans.factory.config.BeanPostProcessor;
+import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
+import org.springframework.beans.factory.support.BeanDefinitionRegistry;
+import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
+import org.springframework.beans.factory.support.RootBeanDefinition;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.DefaultApplicationArguments;
@@ -90,6 +94,26 @@ class CouponLocalFixtureConfigIntegrationTest {
         }
     }
 
+    /**
+     * 이 테스트가 직접 시작하는 컨텍스트에서만 자동 입장 회차 bean 정의를 뺀다. 입장은 테스트가 processAdmissions 를 직접 불러 진행한다.
+     * 스캔된 정의를 지우려면 CCPP 뒤에 실행돼야 하므로 W7CouponIsolationInitializer 처럼 bean 정의로 등록한 BDRPP 가 지운다.
+     */
+    private static final ApplicationContextInitializer<ConfigurableApplicationContext> NO_AUTO_ADMISSION = context ->
+        ((BeanDefinitionRegistry) context.getBeanFactory()).registerBeanDefinition("couponFixtureTestNoAutoAdmission",
+            new RootBeanDefinition(NoAutoAdmission.class, NoAutoAdmission::new));
+
+    static final class NoAutoAdmission implements BeanDefinitionRegistryPostProcessor {
+
+        @Override
+        public void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) {
+            registry.removeBeanDefinition("couponWaitingScheduler"); // 없으면 조립이 바뀐 것이므로 실패한다.
+        }
+
+        @Override
+        public void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory) {
+        }
+    }
+
     private static ConfigurableApplicationContext boot(List<ApplicationContextInitializer<ConfigurableApplicationContext>> initializers,
                                                        String... args) {
         List<String> all = new ArrayList<>(List.of(
@@ -101,6 +125,7 @@ class CouponLocalFixtureConfigIntegrationTest {
             "--datasource.redis.replicas[0].port=" + RedisTestContainersConfig.port()));
         all.addAll(List.of(args));
         SpringApplicationBuilder builder = new SpringApplicationBuilder(CommerceApiApplication.class).profiles("test");
+        builder.initializers(NO_AUTO_ADMISSION);
         initializers.forEach(builder::initializers);
         return builder.run(all.toArray(String[]::new));
     }
