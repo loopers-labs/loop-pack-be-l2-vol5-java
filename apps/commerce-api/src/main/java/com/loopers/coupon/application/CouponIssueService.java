@@ -21,7 +21,7 @@ import java.util.List;
 /**
  * 발급 (D-2 판정 순서, D-4-4 입장 키). API는 쿠폰 업무 표(user_coupon·coupon_campaign)에 쓰지 않고 당첨 기록(outbox)만 남긴다.
  * <ol>
- *   <li>열린 캠페인인가(404·409) → 서버 메모리 품절 표시(409)</li>
+ *   <li>열린 캠페인인가(404·409)</li>
  *   <li>Redis Lua 한 번: 상태 키 없음 503 · 이미 당첨 · 입장 전 409 · 품절 409 · 당첨(Set에 추가)</li>
  *   <li>당첨·이미 당첨이면 기록을 남긴다(없을 때만). 실패하면 Set에서 빼지 않고 503 — 다시 요청하면 이미 당첨에서 기록을 채운다 (앞으로 채우기)</li>
  *   <li>기록이 남은 뒤 입장 키를 지운다. 지우지 못해도 202 — 키는 TTL로 사라지고, 재요청은 이미 당첨에서 걸린다</li>
@@ -52,9 +52,8 @@ public class CouponIssueService implements CouponIssueUseCase {
     @Override
     public IssueOutcome issue(Long campaignId, Long userId) {
         CampaignSnapshot campaign = openCampaigns.require(campaignId);
-        if (soldOutFlags.isSoldOut(campaignId)) {
-            throw new CoreException(ErrorType.COUPON_SOLD_OUT);
-        }
+        // 서버 메모리 품절 표시로 먼저 끊지 않는다 — 품절 뒤 다시 요청하는 당첨자는 "이미 당첨"(200·202)을 받아야 한다.
+        // 발급 API는 입장한 사람만 부르므로 양이 적다. 품절 뒤 몰리는 새 요청은 등록(register)에서 품절 표시가 끊는다.
         IssueDecision decision = decide(campaign, userId);
         return switch (decision) {
             case UNKNOWN -> throw new CoreException(ErrorType.SERVICE_UNAVAILABLE, "발급 상태를 확인하는 중입니다. 잠시 후 다시 시도해 주세요.");

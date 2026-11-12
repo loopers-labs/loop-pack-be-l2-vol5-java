@@ -17,7 +17,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Supplier;
 
 /**
- * 대기열 등록·조회 (D-4). 판정은 Redis Lua 한 번이고, 품절이 켜진 서버는 Redis까지 가지 않는다 (D-4-6).
+ * 대기열 등록·조회 (D-4). 판정은 Redis Lua 한 번이다. 품절이 켜진 서버는 새 등록을 Redis까지 보내지 않는다 (D-4-6).
  */
 @Slf4j
 @Service
@@ -53,9 +53,8 @@ public class CouponQueueService implements CouponQueueUseCase {
     @Override
     public QueueStatusInfo status(Long campaignId, Long userId) {
         CampaignSnapshot campaign = openCampaigns.require(campaignId);
-        if (soldOutFlags.isSoldOut(campaignId)) {
-            return QueueStatusInfo.of(QueueStatus.SOLD_OUT);
-        }
+        // 조회는 품절 표시로 끊지 않는다 — 당첨자는 품절 뒤에도 ISSUED를 받아야 한다. 품절되면 줄이 지워져
+        // 기다리던 사람은 Lua에서 SOLD_OUT을 한 번 받고 조회를 멈추므로, 품절 뒤 조회가 계속 몰리지 않는다.
         return toInfo(campaignId, call(() -> gate.status(campaignId, userId, campaign.totalQuantity())));
     }
 

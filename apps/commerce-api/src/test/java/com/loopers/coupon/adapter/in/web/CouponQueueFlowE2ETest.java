@@ -194,14 +194,17 @@ class CouponQueueFlowE2ETest {
         assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM coupon_issue_outbox", Long.class)).isZero();
     }
 
-    @DisplayName("품절되면 등록은 SOLD_OUT(200)이고 발급은 409다. 줄이 가득 차면 등록은 429 + Retry-After다.")
+    @DisplayName("품절되면 새 등록은 SOLD_OUT(200)이지만 당첨자는 조회 ISSUED·발급 202다. 줄이 가득 차면 등록은 429 + Retry-After다.")
     @Test
     void soldOutAndQueueFull() throws Exception {
         CouponCampaign one = openCampaign(1, 1);
         Long winner = user();
         register(one, winner);
         call(post(base(one) + "/issues"), winner, 202);
-        assertThat(register(one, user()).path("status").asText()).isEqualTo("SOLD_OUT");
+        assertThat(register(one, user()).path("status").asText()).isEqualTo("SOLD_OUT"); // 이 서버의 품절 표시가 켜진다
+        // 품절 표시가 켜져도 당첨자는 당첨자다 (실제 앱 실행에서 발견: 409 SOLD_OUT으로 잘못 답했다)
+        assertThat(data(call(get(base(one) + "/queue"), winner, 200)).path("status").asText()).isEqualTo("ISSUED");
+        assertThat(data(call(post(base(one) + "/issues"), winner, 202)).path("status").asText()).isEqualTo("ACCEPTED");
 
         redisCleanUp.truncateAll();
         CouponCampaign full = openCampaign(1, 1);
