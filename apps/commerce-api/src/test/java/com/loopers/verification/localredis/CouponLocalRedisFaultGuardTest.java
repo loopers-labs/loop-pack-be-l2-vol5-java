@@ -1,8 +1,12 @@
 package com.loopers.verification.localredis;
 
 import com.loopers.domain.coupon.CouponAdmissionRepository;
+import com.loopers.domain.coupon.CouponBenefitType;
+import com.loopers.domain.coupon.CouponCacheRepository;
+import com.loopers.domain.coupon.CouponCacheRepository.IssuedCoupon;
 import com.loopers.domain.coupon.CouponWaitingSnapshot;
 import com.loopers.domain.coupon.CouponWaitingState;
+import com.loopers.verification.localredis.CouponCacheLocalRedisFaultIntegrationTest.RecordingCacheRepository;
 import com.loopers.verification.localredis.CouponLocalRedisFaultIntegrationTest.FaultLog;
 import com.loopers.verification.localredis.CouponLocalRedisFaultIntegrationTest.PauseGuard;
 import com.loopers.verification.localredis.CouponLocalRedisFaultIntegrationTest.RecordingAdmissionRepository;
@@ -19,6 +23,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
@@ -591,5 +596,83 @@ class CouponLocalRedisFaultGuardTest {
             restorer.join(10_000);
             workers.close(executor, elapsedLimit());
         }
+    }
+
+    // ------------------------------------------------------------------ 캐시 장애 opt-in 의 기록 decorator
+
+    /** 호출을 남기고 지정하면 put 을 실패시키는 메모리 캐시 대역. */
+    private static final class MemoryCache implements CouponCacheRepository {
+        final List<String> puts = Collections.synchronizedList(new ArrayList<>());
+        volatile boolean putFails;
+
+        @Override
+        public Optional<IssuedCoupon> findIssued(Long userId, Long campaignId) {
+            return Optional.empty();
+        }
+
+        @Override
+        public void putIssuedIfAbsent(Long userId, Long campaignId, IssuedCoupon value, long ttlMillis) {
+            if (putFails) {
+                throw new IllegalStateException("put timeout(대역)");
+            }
+            puts.add(userId + ":" + campaignId);
+        }
+
+        @Override
+        public OptionalLong findSoldOutTtl(Long campaignId) {
+            return OptionalLong.of(1_000L);
+        }
+
+        @Override
+        public void putSoldOutIfAbsent(Long campaignId, long ttlMillis) {
+        }
+    }
+
+    private static IssuedCoupon issued(long campaignId) {
+        return new IssuedCoupon(9L, campaignId, "가을", CouponBenefitType.FIXED_AMOUNT, 1_000L);
+    }
+
+    @DisplayName("캐시 기록 decorator 는 지정한 사용자·캠페인의 첫 기발급 put 직전에만 callback 을 한 번 실행하고, 위임 실패만 put 실패로 센다.")
+    @Test
+    void cacheRecorderRunsHookOnceAndCountsDelegateFailures() throws Exception {
+        MemoryCache memory = new MemoryCache();
+        RecordingCacheRepository cache = new RecordingCacheRepository(memory, log());
+        AtomicInteger hooks = new AtomicInteger();
+        cache.beforeFirstIssuedPut(2L, 7L, hooks::incrementAndGet);
+
+        cache.putIssuedIfAbsent(3L, 7L, issued(7L), 1_000L); // 다른 사용자
+        cache.putIssuedIfAbsent(2L, 7L, issued(7L), 1_000L);
+        memory.putFails = true;
+        assertThatThrownBy(() -> cache.putIssuedIfAbsent(2L, 7L, issued(7L), 1_000L)).hasMessageContaining("put timeout");
+        cache.findSoldOutTtl(7L);
+
+        assertAll(
+            () -> assertThat(hooks).as("첫 해당 put 에서만").hasValue(1),
+            () -> assertThat(memory.puts).containsExactly("3:7", "2:7"),
+            () -> assertThat(cache.calls("issued-put")).isEqualTo(3),
+            () -> assertThat(cache.failures("issued-put")).isEqualTo(1),
+            () -> assertThat(cache.calls("sold-out-get")).isEqualTo(1),
+            () -> assertThat(cache.lastSoldOutRemainingMillis()).isEqualTo(1_000L),
+            () -> assertThat(logText()).contains("cache issued-put-failed IllegalStateException (적용 여부 불명)")
+        );
+    }
+
+    @DisplayName("캐시 기록 decorator 의 callback 실패는 put 실패와 따로 기록하고 위임하지 않으며 put 실패로 세지 않는다.")
+    @Test
+    void cacheRecorderSeparatesCallbackFailure() throws Exception {
+        MemoryCache memory = new MemoryCache();
+        RecordingCacheRepository cache = new RecordingCacheRepository(memory, log());
+        cache.beforeFirstIssuedPut(2L, 7L, () -> {
+            throw new IllegalStateException("callback 실패(대역)");
+        });
+
+        assertThatThrownBy(() -> cache.putIssuedIfAbsent(2L, 7L, issued(7L), 1_000L)).hasMessageContaining("callback 실패");
+
+        assertAll(
+            () -> assertThat(memory.puts).isEmpty(),
+            () -> assertThat(cache.calls("issued-put")).isZero(),
+            () -> assertThat(cache.failures("issued-put")).isZero(),
+            () -> assertThat(logText()).contains("issued-put-callback-failed").doesNotContain("issued-put-failed")
+        );
     }
 }

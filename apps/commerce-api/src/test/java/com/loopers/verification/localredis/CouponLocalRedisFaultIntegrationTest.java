@@ -92,17 +92,17 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 @DisplayName("로컬 Redis 장애: 시작 실패는 503·닫힘·DB 미진입, 종료 기록 실패는 201 유지·닫힘이며, 같은 연결의 후속 응답과 종료 확인 뒤 자기 대기실 키만 정리한다.")
 class CouponLocalRedisFaultIntegrationTest {
 
-    private static final long OPERATING = 9_101L;
-    private static final String MASTER_HOST = env("COUPON_LOCAL_REDIS_MASTER_HOST", "localhost");
-    private static final int MASTER_PORT = Integer.parseInt(env("COUPON_LOCAL_REDIS_MASTER_PORT", "6379"));
-    private static final String REPLICA_HOST = env("COUPON_LOCAL_REDIS_REPLICA_HOST", "localhost");
-    private static final int REPLICA_PORT = Integer.parseInt(env("COUPON_LOCAL_REDIS_REPLICA_PORT", "6380"));
-    private static final int DATABASE = Integer.parseInt(env("COUPON_LOCAL_REDIS_DATABASE", "0"));
+    static final long OPERATING = 9_101L;
+    static final String MASTER_HOST = env("COUPON_LOCAL_REDIS_MASTER_HOST", "localhost");
+    static final int MASTER_PORT = Integer.parseInt(env("COUPON_LOCAL_REDIS_MASTER_PORT", "6379"));
+    static final String REPLICA_HOST = env("COUPON_LOCAL_REDIS_REPLICA_HOST", "localhost");
+    static final int REPLICA_PORT = Integer.parseInt(env("COUPON_LOCAL_REDIS_REPLICA_PORT", "6380"));
+    static final int DATABASE = Integer.parseInt(env("COUPON_LOCAL_REDIS_DATABASE", "0"));
     private static final long WAIT_SECONDS = 5;
 
-    private static final ParameterizedTypeReference<ApiResponse<CouponV1Dto.CouponResponse>> COUPON =
+    static final ParameterizedTypeReference<ApiResponse<CouponV1Dto.CouponResponse>> COUPON =
         new ParameterizedTypeReference<>() {};
-    private static final ParameterizedTypeReference<ApiResponse<CouponV1Dto.WaitingResponse>> WAITING =
+    static final ParameterizedTypeReference<ApiResponse<CouponV1Dto.WaitingResponse>> WAITING =
         new ParameterizedTypeReference<>() {};
     private static final ParameterizedTypeReference<ApiResponse<PageResponse<CouponV1Dto.OwnedCouponResponse>>> PAGE =
         new ParameterizedTypeReference<>() {};
@@ -580,7 +580,7 @@ class CouponLocalRedisFaultIntegrationTest {
     }
 
     /** docker CLI 실행. 유한 대기, 0 이 아닌 종료는 예외. */
-    private static String docker(String... args) throws Exception {
+    static String docker(String... args) throws Exception {
         List<String> command = new ArrayList<>();
         command.add("docker");
         command.addAll(Arrays.asList(args));
@@ -596,7 +596,7 @@ class CouponLocalRedisFaultIntegrationTest {
         return output;
     }
 
-    private static String run(String... command) throws Exception {
+    static String run(String... command) throws Exception {
         Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
         if (!process.waitFor(30, TimeUnit.SECONDS)) {
             process.destroyForcibly();
@@ -635,6 +635,13 @@ class CouponLocalRedisFaultIntegrationTest {
 
     /** 대상 앱 endpoint·database·컨테이너를 대조한다. 하나라도 다르면 장애 조작 없이 시작 조건 실패다. */
     private void verifyTarget(String testCase) throws Exception {
+        containerId = verifyTarget(testCase, redisProperties, master, applicationContext, recording.log());
+        pauseGuard.target(containerId);
+    }
+
+    /** 캐시 장애 opt-in 과 공유하는 대상 대조. 확인된 컨테이너 ID 를 돌려주며 대상 기록을 남긴다. */
+    static String verifyTarget(String testCase, RedisProperties redisProperties, RedisTemplate<String, String> master,
+                               ApplicationContext applicationContext, FaultLog log) throws Exception {
         PauseGuard.requireTimeoutBudget(redisProperties.commandTimeout());
         assertAll(
             () -> assertThat(applicationContext.getBeansOfType(RedisTestContainersConfig.class)).as("fixture Redis 구성 없음").isEmpty(),
@@ -652,7 +659,7 @@ class CouponLocalRedisFaultIntegrationTest {
                 + "{{index .Config.Labels \"com.docker.compose.service\"}}|{{(index (index .NetworkSettings.Ports \"6379/tcp\") 0).HostPort}}|{{.Config.Image}}");
         String[] parts = inspect.split("\\|");
         String containerRunId = runIdFromInfo(docker("exec", id, "redis-cli", "INFO", "server"));
-        String connectedRunId = runId();
+        String connectedRunId = runId(master);
         assertAll(
             () -> assertThat(parts[1]).isEqualTo("running"),
             () -> assertThat(parts[2]).isEqualTo("false"),
@@ -660,13 +667,11 @@ class CouponLocalRedisFaultIntegrationTest {
             () -> assertThat(parts[5]).isEqualTo(String.valueOf(MASTER_PORT)),
             () -> assertThat(connectedRunId).as("앱 master 연결이 이 컨테이너 서버").isEqualTo(containerRunId)
         );
-        containerId = parts[0];
-        pauseGuard.target(containerId);
         String serverInfo = docker("exec", id, "redis-cli", "INFO", "server");
         Map<String, Object> target = new LinkedHashMap<>();
         target.put("event", "target");
         target.put("case", testCase);
-        target.put("container", containerId);
+        target.put("container", parts[0]);
         target.put("project", parts[3]);
         target.put("service", parts[4]);
         target.put("image", parts[6]);
@@ -678,11 +683,12 @@ class CouponLocalRedisFaultIntegrationTest {
         target.put("mysql", mysqlEvidence());
         target.put("redisCommandTimeout", String.valueOf(redisProperties.commandTimeout()));
         target.put("httpRead", PauseGuard.HTTP_READ.toString());
-        recording.log().append(target);
+        log.append(target);
+        return parts[0];
     }
 
     /** MySQL 테스트 컨테이너는 호스트 포트가 임의라 포트 바인딩 문자열로 찾는다. 찾지 못하면 불명으로 남긴다. */
-    private String mysqlEvidence() {
+    private static String mysqlEvidence() {
         String url = System.getProperty("datasource.mysql-jpa.main.jdbc-url", "불명");
         String port = url.replaceAll(".*:(\\d+)/.*", "$1");
         try {
@@ -699,6 +705,10 @@ class CouponLocalRedisFaultIntegrationTest {
      * 서버의 NORMAL 클라이언트는 이 앱 연결과 같은 주소이거나 관찰용 redis-cli 여야 한다.
      */
     private void requireNoOtherClients(String testCase, long ownClientId) throws Exception {
+        requireNoOtherClients(testCase, containerId, ownClientId, recording.log());
+    }
+
+    static void requireNoOtherClients(String testCase, String containerId, long ownClientId, FaultLog log) throws Exception {
         long pid = ProcessHandle.current().pid();
         List<String> foreign = new ArrayList<>();
         for (String line : run("lsof", "-nP", "-iTCP:" + MASTER_PORT, "-sTCP:ESTABLISHED").lines().skip(1).toList()) {
@@ -719,12 +729,12 @@ class CouponLocalRedisFaultIntegrationTest {
                 foreign.add("redis client " + client);
             }
         }
-        recording.log().append(Map.of("event", "interference-check", "case", testCase, "jvmPid", pid, "ownClient", own,
+        log.append(Map.of("event", "interference-check", "case", testCase, "jvmPid", pid, "ownClient", own,
             "normalClients", normal, "foreign", foreign));
         assertThat(foreign).as("다른 프로세스·클라이언트가 있으면 pause 하지 않는다").isEmpty();
     }
 
-    private static String field(String clientLine, String name) {
+    static String field(String clientLine, String name) {
         for (String token : clientLine.split(" ")) {
             if (token.startsWith(name + "=")) {
                 return token.substring(name.length() + 1);
@@ -743,8 +753,16 @@ class CouponLocalRedisFaultIntegrationTest {
     }
 
     /** 앱의 master 공유 연결(비파이프라인·비트랜잭션)에서 CLIENT ID 를 유한 대기로 받는다. */
-    @SuppressWarnings("unchecked")
     private long clientId() {
+        return clientId(master);
+    }
+
+    private String runId() {
+        return runId(master);
+    }
+
+    @SuppressWarnings("unchecked")
+    static long clientId(RedisTemplate<String, String> master) {
         return master.execute((RedisCallback<Long>) connection -> {
             try {
                 return ((RedisClusterAsyncCommands<byte[], byte[]>) connection.getNativeConnection()).clientId()
@@ -756,7 +774,7 @@ class CouponLocalRedisFaultIntegrationTest {
     }
 
     @SuppressWarnings("unchecked")
-    private String runId() {
+    static String runId(RedisTemplate<String, String> master) {
         return master.execute((RedisCallback<String>) connection -> {
             try {
                 return runIdFromInfo(((RedisClusterAsyncCommands<byte[], byte[]>) connection.getNativeConnection()).info("server")
@@ -769,14 +787,23 @@ class CouponLocalRedisFaultIntegrationTest {
 
     /** 앱 연결의 마지막 명령을 바꾸지 않는 별도 관찰 연결(컨테이너 안 redis-cli)로 PROCESSING 점유 Set 을 본다. */
     private Set<String> observedMembers() throws Exception {
+        return observedMembers(containerId);
+    }
+
+    static Set<String> observedMembers(String containerId) throws Exception {
         String out = docker("exec", containerId, "redis-cli", "-n", String.valueOf(DATABASE), "SMEMBERS", "waiting:processing:v1:" + OPERATING);
         return out.isBlank() ? Set.of() : Set.copyOf(out.lines().map(String::trim).filter(s -> !s.isEmpty()).toList());
     }
 
     /** 같은 별도 관찰 연결로 이 운영 캠페인 대기실 키 수를 본다. */
     private long observedWaitingKeys() throws Exception {
+        return observedKeys(containerId, CouponAdmissionRedisRepository.waitingKeys(OPERATING));
+    }
+
+    /** 별도 관찰 연결로 주어진 키 중 존재하는 수를 본다. */
+    static long observedKeys(String containerId, List<String> keys) throws Exception {
         List<String> command = new ArrayList<>(List.of("exec", containerId, "redis-cli", "-n", String.valueOf(DATABASE), "EXISTS"));
-        command.addAll(CouponAdmissionRedisRepository.waitingKeys(OPERATING));
+        command.addAll(keys);
         return Long.parseLong(docker(command.toArray(String[]::new)).trim());
     }
 
@@ -823,6 +850,11 @@ class CouponLocalRedisFaultIntegrationTest {
     void reset() {
         finishedCleanly = false;
         pauseGuard = new PauseGuard(CouponLocalRedisFaultIntegrationTest::docker, recording.log());
+        limitHttpRead(rest);
+    }
+
+    /** test HTTP 클라이언트의 연결 5초·read 한도. 시간 초과는 관찰 실패이지 서버 요청 종료가 아니다. */
+    static void limitHttpRead(TestRestTemplate rest) {
         SimpleClientHttpRequestFactory http = new SimpleClientHttpRequestFactory();
         http.setConnectTimeout((int) Duration.ofSeconds(5).toMillis());
         http.setReadTimeout((int) PauseGuard.HTTP_READ.toMillis());
@@ -834,7 +866,7 @@ class CouponLocalRedisFaultIntegrationTest {
         endCase(pauseGuard, recording, finishedCleanly, couponFacade::close, databaseCleanUp::truncateAllTables);
     }
 
-    private HttpEntity<Object> as(Long userId) {
+    static HttpEntity<Object> as(Long userId) {
         HttpHeaders headers = new HttpHeaders();
         headers.set("X-USER-ID", String.valueOf(userId));
         return new HttpEntity<>(null, headers);

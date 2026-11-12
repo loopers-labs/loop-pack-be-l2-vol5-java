@@ -997,3 +997,15 @@ COUPON_LOCAL_REDIS_FAULT_TEST=true \
 - Q10: finish timeout에도201·쿠폰/발급1 보존·닫힘, 확인 후 무효화/명시 open·새 발급2, 미발급자 옛 ID404/효과0·새 등록/새 ID 발급·보유자200 우선까지 최종 발급3. 마지막 삭제 전 연결/run_id 단언과 정리 후 키0/processing0·DB3 보존 통과. JSONL87줄의 순서/결과와 불명·보류 event0을 대조했다.
 -21:16:57 독립 postrun은 target running/unpaused·동일 run_id/시작 시각·replica online, waiting5키0/processing0/db0=0, 자기 test JVM/worker/앱/test 컨테이너0을 확인했다. 공유 컨테이너7개는 유지했다. 이번 Q9/Q10 단위는 업무/복구/정리 근거까지 갖췄으며 추가 필수 보완은 없다.
 - 원시 근거: docs/week8/verification/runs/20261112-q9-q10/·20261112-q10-cleanup/·20261112-q10-order-recheck/. 과거 정리 미완료/단언 이동 전 결과와 최신 실행을 구분한다. 재연결/ID 불일치 차단은 실제 장애를 주입한 결과가 아니라 코드 순서의 정적 근거다. 같은 연결/알려진 로컬 요청 범위를 넘어 전역 종료·재시작 안전성을 주장하지 않는다. R4/R5·비교·전체 회귀/O11은 이번에 실행하지 않았다.
+
+## 실제 캐시 장애 R4/R5 test 준비·6사례 실행 검토 — 2026-11-12
+
+- 실행 코드: edc140b에 미커밋 test3파일(신규 CouponCacheLocalRedisFaultIntegrationTest·기존 opt-in helper 공유·GuardTest2건 추가)을 더한 상태다. 제품 변경 없음. 기존 Q9 본문부터 EOF까지 동일하며 새6사례는 실제 cache adapter/C1 미적용·사례별 새 local context/클래스 보류를 사용한다. Codex가 소스/정리·주입 gate 최소성과 실행 근거를 검토했고 추가 필수 보완은 없다.
+- 준비 실행21:30:32~21:32:51 KST: JDK21.0.12·쿠폰/격리 관련 필터/Checkstyle·34task 실제 실행, XML52개 총371 중363통과·실패/오류0·opt-in8미실행(새6+기존2)·Checkstyle0. Guard19/Architecture3·W6/W7 조립 통과. 별도O11 21:33:08~21:33:45는1건 통과·child graceful=true/exit143. 준비 skip은 실제 장애 통과가 아니다.
+- 실제 실행21:41:24~21:42:06 KST,32task 실제 실행/exit0. 대상은 로컬 Redis7.0.15 master6379/db0·replica6380, 기존과 같은 run_id/컨테이너다. 다른 클라이언트/host 연결·worker/앱 없음과 소유 waiting/sold-out/issued 키 공백을 확인했다. 기본 issued/sold-out30초·local5초·command200ms를 유지했다.
+- 원시 XML1개6건 모두 실행/통과·실패/오류/skip0. JSONL162줄에서 불명/보류/callback 실패0과6사례 최종 키0/processing0·DB 결과 보존을 대조했다. 실제 작업 트리3파일 SHA-256을 실행 뒤 postrun과 대조해 일치 확인했다.
+- R4-a cold: issued get 실제 실패 뒤 DB기존200/동일ID·쿠폰/발급1/수용유지, put 실패 뒤 unpause에 키/PTTL29966ms로 late put 적용 관찰. warm도 get 실패/DB200이며 기존 NX 키 유지/PTTL29279ms였다. warm hit 성공으로 해석하지 않는다.
+- R4-b: cache get 실패→DB없음→start 실패503/닫힘·신규DB효과0·put0. unpause 후 processing={1}의 late START를 관찰했다. R4-c는 finish APPLIED/TX 밖 조건 뒤 첫 put에서만 주입·실제 put 실패에도201/DB1/processing0·수용유지, 이후 late put/PTTL29926ms 관찰.
+- R5-a: 실제 Redis true/PTTL로 채운 local이 유효한 구간에서409·sold-out Redis get0/캠페인SQL0·선행 issued get실패1. hit→응답393ms/5초 미만과 명령/SQL을 함께 근거로 썼다. R5-b는 local 채움 응답 후5520ms/Redis키 유효 상태에서 get실패1→캠페인SQL1→put실패1→409·새 대기0으로 다른 경로를 확인했다.
+-21:42:49 독립 postrun: master running/unpaused·동일run_id/시작시각·replica online, db0/9101 waiting/sold-out/issued/processing0, 자기JVM/worker/앱/test컨테이너0·공유 컨테이너 유지. 이전 잔여 키와 같은 정리 공백은 이번 실행에서 없었다.
+- 로컬 원시 근거는 docs/week8/verification/runs/20261112-cache-fault-prep/와 20261112-cache-fault/의 명령/pre/postrun·로그/XML/JSONL/요약이다. 늦은 put/START 적용은 이번1회 관찰이며 전역 fence/재시작 안전성·전체 Redis 장애 가용성으로 확대하지 않는다. R5-a는 local 분기를 직접 계측하지 않았고 보수적 시각 상한과 저장소/SQL0이 근거다. 실제 Q9/Q10 재실행·전체 check·비교는 이번에 하지 않았다.
