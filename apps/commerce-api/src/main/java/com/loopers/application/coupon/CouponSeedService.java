@@ -28,6 +28,7 @@ public class CouponSeedService {
     private final CouponCampaignRepository campaigns;
     private final CouponRepository coupons;
     private final ApplicationTime time;
+    private final CouponIssueQueue queue;
 
     // 로컬 runner 전용이다. 여러 인스턴스의 동시 seed 초기화는 지원하지 않는다.
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -49,6 +50,7 @@ public class CouponSeedService {
             }
             return campaign;
         }
+        clearQueueBeforeReset(campaign.getId());
         Instant resetNow = time.now().toInstant();
         // 실제 발급과 같은 순서로 캠페인 잠금을 먼저 얻고, 쿠폰 할당을 함께 초기화한다.
         if (campaigns.resetSeedState(campaign.getId(), resetNow, resetNow.plus(ISSUANCE_PERIOD), resetNow) != 1) {
@@ -58,6 +60,23 @@ public class CouponSeedService {
             throw inconsistentSeed("로컬 seed 쿠폰을 모두 초기화할 수 없습니다.");
         }
         return campaigns.findById(campaign.getId()).orElseThrow(() -> inconsistentSeed("로컬 seed가 없습니다."));
+    }
+
+    /**
+     * DB를 바꾸기 전에 seed 캠페인의 대기열 정보를 먼저 지운다. 남은 실행이 있거나 Redis를 확인할 수 없으면
+     * DB를 바꾸지 않고 실패한다. Redis를 먼저 정리하면 DB 초기화가 실패해도 옛 성공 이력과 초기화된 DB가 함께 남지 않는다.
+     * 로컬 단일 인스턴스 시작 단계에서만 쓰므로 DB 트랜잭션 안에서 Redis를 호출한다.
+     */
+    private void clearQueueBeforeReset(Long campaignId) {
+        CouponIssueQueueCleanup cleanup;
+        try {
+            cleanup = queue.clearCampaign(campaignId);
+        } catch (CouponIssueQueueUnavailableException | CouponIssueQueueScriptException exception) {
+            throw inconsistentSeed("쿠폰 발급 대기열 상태를 확인할 수 없어 seed reset을 거절합니다.");
+        }
+        if (cleanup instanceof CouponIssueQueueCleanup.Blocked blocked) {
+            throw inconsistentSeed("남은 대기열 작업이나 실행 token이 있어 seed reset을 거절합니다. reason=" + blocked.reason());
+        }
     }
 
     private CouponCampaign createSeed() {

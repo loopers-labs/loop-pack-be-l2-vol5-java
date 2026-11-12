@@ -3,6 +3,7 @@ package com.loopers.infrastructure.coupon;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.application.coupon.CouponIssueQueue;
 import com.loopers.application.coupon.CouponIssueQueueClaim;
+import com.loopers.application.coupon.CouponIssueQueueCleanup;
 import com.loopers.application.coupon.CouponIssueQueueRecord;
 import com.loopers.application.coupon.CouponIssueQueueResubmission;
 import com.loopers.application.coupon.CouponIssueQueueScriptException;
@@ -44,6 +45,8 @@ public class RedisCouponIssueQueue implements CouponIssueQueue {
     private final DefaultRedisScript<List> recordScript;
     @SuppressWarnings("rawtypes")
     private final DefaultRedisScript<List> resubmitScript;
+    @SuppressWarnings("rawtypes")
+    private final DefaultRedisScript<List> clearCampaignScript;
 
     public RedisCouponIssueQueue(
         @Qualifier(RedisConfig.REDIS_TEMPLATE_MASTER) RedisTemplate<String, String> redisTemplate,
@@ -55,6 +58,7 @@ public class RedisCouponIssueQueue implements CouponIssueQueue {
         this.claimScript = listScript("redis/coupon-queue-claim.lua");
         this.recordScript = listScript("redis/coupon-queue-record.lua");
         this.resubmitScript = listScript("redis/coupon-queue-resubmit.lua");
+        this.clearCampaignScript = listScript("redis/coupon-queue-clear-campaign.lua");
     }
 
     @Override
@@ -180,6 +184,21 @@ public class RedisCouponIssueQueue implements CouponIssueQueue {
             case "CHANGED" -> new CouponIssueQueueResubmission.Changed(current);
             case "FULL" -> new CouponIssueQueueResubmission.Full(current);
             default -> throw new CouponIssueQueueScriptException("알 수 없는 대기열 재접수 응답입니다.", null);
+        };
+    }
+
+    @Override
+    public CouponIssueQueueCleanup clearCampaign(Long campaignId) {
+        List<?> result = redis(() -> redisTemplate.execute(clearCampaignScript,
+            List.of(REQUESTS_KEY, JOBS_KEY, WAITING_KEY, PROCESSING_KEY, RedisCouponIssuePermits.PERMITS_KEY),
+            campaignId == null ? "" : String.valueOf(campaignId)));
+        if (result == null || result.isEmpty()) {
+            throw new CouponIssueQueueScriptException("캠페인 대기열 정리 응답이 비어 있습니다.", null);
+        }
+        return switch (String.valueOf(result.get(0))) {
+            case "CLEARED" -> new CouponIssueQueueCleanup.Cleared(Integer.parseInt(stringAt(result, 1)));
+            case "BLOCKED" -> new CouponIssueQueueCleanup.Blocked(stringAt(result, 1));
+            default -> throw new CouponIssueQueueScriptException("알 수 없는 캠페인 대기열 정리 응답입니다.", null);
         };
     }
 

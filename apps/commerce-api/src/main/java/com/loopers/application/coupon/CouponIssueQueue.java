@@ -56,4 +56,10 @@ public interface CouponIssueQueue {
      */
     CouponIssueQueueResubmission markFailedSucceeded(String requestId, CouponIssueRequestReason expectedReason,
                                                      Long couponId);
+
+    /**
+     * seed reset 전에 캠페인의 작업 정보와 중복 접수 정보를 지운다. permit token이 남았거나
+     * 캠페인의 작업이 대기, 처리 중 List에 있으면 아무것도 지우지 않는다.
+     */
+    CouponIssueQueueCleanup clearCampaign(Long campaignId);
 }

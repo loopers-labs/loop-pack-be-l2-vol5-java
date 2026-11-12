@@ -3,9 +3,12 @@ package com.loopers.application.coupon;
 import com.loopers.domain.coupon.Coupon;
 import com.loopers.domain.coupon.CouponCampaign;
 import com.loopers.domain.coupon.CouponCampaignRepository;
+import com.loopers.domain.coupon.CouponIssueRequest;
 import com.loopers.domain.coupon.CouponRepository;
 import com.loopers.domain.user.User;
 import com.loopers.domain.user.UserRepository;
+import com.loopers.infrastructure.coupon.RedisCouponIssuePermits;
+import com.loopers.infrastructure.coupon.RedisCouponIssueQueue;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import com.loopers.support.time.MutableClock;
@@ -16,11 +19,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -60,6 +65,10 @@ class CouponSeedServiceIntegrationTest {
     @Autowired private MutableClock clock;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private PlatformTransactionManager transactionManager;
+    @Autowired private CouponIssueQueue queue;
+    @Autowired
+    @Qualifier("redisTemplateMaster")
+    private RedisTemplate<String, String> redisTemplate;
     @PersistenceContext private EntityManager entityManager;
 
     private final List<Long> campaignIds = new ArrayList<>();
@@ -68,10 +77,12 @@ class CouponSeedServiceIntegrationTest {
     @BeforeEach
     void setTime() {
         clock.set(FIRST_START);
+        cleanUpQueueKeys();
     }
 
     @AfterEach
     void cleanUpOwnData() {
+        cleanUpQueueKeys();
         for (Long campaignId : campaignIds) {
             jdbc.update("DELETE FROM coupons WHERE campaign_id = ?", campaignId);
             jdbc.update("DELETE FROM coupon_campaigns WHERE id = ?", campaignId);
@@ -154,6 +165,47 @@ class CouponSeedServiceIntegrationTest {
         assertThat(transact(() -> campaigns.findById(unrelated.getId()).orElseThrow()).getIssuedCount()).isEqualTo(1);
     }
 
+    @DisplayName("reset은 seed 캠페인의 완료된 대기열 작업과 중복 접수 정보를 지운 뒤 DB를 초기화한다.")
+    @Test
+    void clearsCompletedQueueRequestsOnReset() {
+        CouponCampaign campaign = prepareSeed();
+        CouponIssueRequest completed = completedQueueRequest(campaign.getId(), 77001L);
+
+        seed.prepare(true);
+
+        assertThat(queue.findById(completed.getRequestId())).isEmpty();
+        assertThat(queue.findByCampaignIdAndUserId(campaign.getId(), 77001L)).isEmpty();
+        CouponIssueRequest again = CouponIssueRequest.create(campaign.getId(), 77001L, FIRST_START);
+        assertThat(queue.submit(again, 20)).isInstanceOf(CouponIssueQueueSubmission.Created.class);
+        assertThat(again.getRequestId()).isNotEqualTo(completed.getRequestId());
+    }
+
+    @DisplayName("seed 캠페인의 미완료 대기열 작업이 남아 있으면 reset을 거절하고 DB와 대기열을 그대로 둔다.")
+    @Test
+    void rejectsResetWhenUnfinishedQueueRequestRemains() {
+        CouponCampaign campaign = prepareSeed();
+        issueOne(campaign.getId(), createUser(), FIRST_START.plusSeconds(1));
+        CouponIssueRequest waiting = CouponIssueRequest.create(campaign.getId(), 77002L, FIRST_START);
+        queue.submit(waiting, 20);
+
+        assertThatThrownBy(() -> seed.prepare(true)).isInstanceOfSatisfying(CoreException.class,
+            error -> assertThat(error.getErrorType()).isEqualTo(ErrorType.INTERNAL_ERROR));
+
+        assertThat(transact(() -> campaigns.findById(campaign.getId()).orElseThrow()).getIssuedCount()).isEqualTo(1);
+        assertThat(queue.findById(waiting.getRequestId())).isPresent();
+    }
+
+    @DisplayName("reset 없이 준비하면 대기열 정보를 건드리지 않는다.")
+    @Test
+    void keepsQueueRequestsWithoutReset() {
+        CouponCampaign campaign = prepareSeed();
+        CouponIssueRequest completed = completedQueueRequest(campaign.getId(), 77003L);
+
+        seed.prepare(false);
+
+        assertThat(queue.findById(completed.getRequestId())).isPresent();
+    }
+
     @DisplayName("재고 행 수가 한도와 다르면 자동 보충·reset하지 않고 기존 발급 결과를 보존한 채 실패한다.")
     @Test
     void rejectsStockCountMismatchBeforeReset() {
@@ -228,5 +280,18 @@ class CouponSeedServiceIntegrationTest {
             entityManager.clear();
             return result;
         });
+    }
+
+    private CouponIssueRequest completedQueueRequest(Long campaignId, Long userId) {
+        CouponIssueRequest request = CouponIssueRequest.create(campaignId, userId, FIRST_START);
+        queue.submit(request, 20);
+        queue.claim("seed-test-token-" + userId);
+        queue.recordSucceeded(request.getRequestId(), "seed-test-token-" + userId, userId);
+        return request;
+    }
+
+    private void cleanUpQueueKeys() {
+        redisTemplate.delete(List.of(RedisCouponIssuePermits.PERMITS_KEY, RedisCouponIssueQueue.WAITING_KEY,
+            RedisCouponIssueQueue.PROCESSING_KEY, RedisCouponIssueQueue.JOBS_KEY, RedisCouponIssueQueue.REQUESTS_KEY));
     }
 }
