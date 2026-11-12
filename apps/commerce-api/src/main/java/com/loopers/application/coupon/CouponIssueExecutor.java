@@ -62,6 +62,14 @@ public class CouponIssueExecutor {
         return false;
     }
 
+    /**
+     * 자기 token을 반환한다. 첫 반환 결과가 1이 아니거나 반환 중 오류가 나면 신규 수용을 닫는다.
+     * DB 작업이 없거나 끝난 것을 확인한 실행만 호출한다.
+     */
+    public void returnPermit(String token) {
+        returnPermitSafely(token);
+    }
+
     private void returnPermitSafely(String token) {
         try {
             if (permits.release(token) != 1) {
