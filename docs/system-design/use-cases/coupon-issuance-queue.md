@@ -237,8 +237,8 @@ worker가 만든 token과 이미 얻은 permit으로 기존 발급 실행의 DB 
 | 접수 | 사용자와 캠페인의 기존 requestId 확인, 미완료 개수 확인, 작업 정보와 중복 정보 생성, 대기 List 추가 |
 | 시스템 실패 재접수 | 현재 `FAILED`와 reasonCode 일치 확인, 미완료 개수 확인, `WAITING` 기록과 reasonCode·사유·이전 실행 token 정리, 대기 List에 `RPUSH`. 쿠폰이 이미 있으면 같은 상태 확인 뒤 `SUCCEEDED` 기록 |
 | 가져오기 | permit을 얻은 실행만 호출. 첫 대기 항목과 작업 상태 검사, 대기에서 처리 중 List로 이동, `PROCESSING`과 실행 token 기록. 대기 작업이 없으면 없음 응답 |
-| 완료 | 현재 `PROCESSING`과 실행 token 일치 확인, 결과 기록, 처리 중 List에서 해당 ID만 `LREM`으로 제거 |
-| 결과 불명 기록 | 현재 `PROCESSING`과 실행 token 일치 확인, `UNKNOWN`과 사유 기록, 처리 중 List 항목은 유지 |
+| 완료 | 현재 `PROCESSING`과 실행 token 일치 확인, 쓰기 전에 처리 중 List에 해당 ID가 있는지 `LPOS`로 확인, 결과 기록, 처리 중 List에서 해당 ID만 `LREM`으로 제거. 같은 실행의 같은 결과 반복은 이미 기록됨으로, token이나 상태가 다르면 거절로 응답 |
+| 결과 불명 기록 | 현재 `PROCESSING`과 실행 token 일치 확인, 처리 중 List 위치 확인, `UNKNOWN`과 사유 기록, 처리 중 List 항목은 유지 |
 | 수동 복구 | 이전 실행과 DB 작업 종료 확인 후, 예상한 기존 상태와 실행 token이 일치하는 작업만 완료 또는 재대기 처리. 처리 중 List에서 해당 ID를 `LREM`으로 지우고, 재대기면 대기 List에 `RPUSH` |
 
 `LMOVE`는 List의 맨 앞이나 맨 뒤 항목만 옮기므로 작업 가져오기에만 쓴다. 가져오기는 대기 List의 맨 앞을 처리 중 List로 `LMOVE`한다. 처리 중 List 가운데 있는 특정 작업의 완료, 재대기, 복구는 `LREM`으로 그 ID를 지우고, 다른 List로 옮겨야 하면 `RPUSH`로 넣는다. 상태와 실행 token 확인, 상태 기록은 같은 Lua 실행에서 처리한다. 미완료 한도가 20건이라 `LREM`이 List 전체를 훑어도 부담이 없다. worker는 처리 중 List에 이미 있는 항목을 자동으로 다시 가져가지 않는다. 재대기 작업은 대기 List의 오른쪽에 넣으며 처음 접수한 순서를 유지하는 선착순을 약속하지 않는다.

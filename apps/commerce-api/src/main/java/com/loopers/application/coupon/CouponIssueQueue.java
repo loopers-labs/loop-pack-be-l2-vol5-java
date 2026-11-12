@@ -1,6 +1,7 @@
 package com.loopers.application.coupon;
 
 import com.loopers.domain.coupon.CouponIssueRequest;
+import com.loopers.domain.coupon.CouponIssueRequestReason;
 
 import java.util.Optional;
 
@@ -28,4 +29,19 @@ public interface CouponIssueQueue {
      * permit을 이미 얻은 실행만 호출한다.
      */
     CouponIssueQueueClaim claim(String executionToken);
+
+    /**
+     * 처리 중인 작업을 성공으로 기록하고 처리 중 List에서 그 작업만 지운다. 실행 token은 남긴다.
+     */
+    CouponIssueQueueRecord recordSucceeded(String requestId, String executionToken, Long couponId);
+
+    /**
+     * 처리 중인 작업을 실패로 기록하고 처리 중 List에서 그 작업만 지운다. 실행 token은 남긴다.
+     */
+    CouponIssueQueueRecord recordFailed(String requestId, String executionToken, CouponIssueRequestReason reason);
+
+    /**
+     * DB 결과를 확인하지 못한 작업을 결과 불명으로 기록하고 처리 중 List에 남긴다.
+     */
+    CouponIssueQueueRecord recordUnknown(String requestId, String executionToken);
 }
