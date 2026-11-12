@@ -9,6 +9,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.TransactionException;
 
+import java.util.Optional;
+
 /**
  * 쿠폰 발급의 DB 규칙. Redis를 모르고, 이 클래스 자체는 트랜잭션을 열지 않는다(트랜잭션은 CouponIssueTransactions).
  *
@@ -26,6 +28,19 @@ import org.springframework.transaction.TransactionException;
 public class CouponIssueService {
 
     private final CouponIssueTransactions transactions;
+
+    /**
+     * 이미 받은 쿠폰을 조회한다. 자리(세마포어)를 차지하지 않는 가벼운 읽기이며, 있으면 호출자는 신규 발급 경로에 들어가지 않는다.
+     * 캠페인이 품절·비활성이 된 뒤에도 이미 받은 쿠폰은 같은 결과(created=false)로 돌려준다.
+     */
+    public Optional<CouponIssueResult> findExisting(Long campaignId, Long userId) {
+        try {
+            return transactions.findCoupon(campaignId, userId).map(coupon -> new CouponIssueResult(coupon.getId(), false));
+        } catch (DataAccessException | TransactionException e) {
+            log.error("기존 쿠폰 조회 중 DB 오류: campaignId={}, userId={}", campaignId, userId, e);
+            throw new CoreException(ErrorType.SERVICE_UNAVAILABLE);
+        }
+    }
 
     public CouponIssueResult issue(Long campaignId, Long userId) {
         try {

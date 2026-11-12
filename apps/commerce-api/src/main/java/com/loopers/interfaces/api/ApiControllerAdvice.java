@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MissingRequestHeaderException;
@@ -24,6 +25,9 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 @Slf4j
 public class ApiControllerAdvice {
+
+    private static final int NO_PERMIT_RETRY_AFTER_SECONDS = 1;
+
     @ExceptionHandler
     public ResponseEntity<ApiResponse<?>> handle(CoreException e) {
         log.warn("CoreException : {}", e.getCustomMessage() != null ? e.getCustomMessage() : e.getMessage(), e);
@@ -128,7 +132,11 @@ public class ApiControllerAdvice {
     }
 
     private ResponseEntity<ApiResponse<?>> failureResponse(ErrorType errorType, String errorMessage) {
-        return ResponseEntity.status(errorType.getStatus())
-            .body(ApiResponse.fail(errorType.getCode(), errorMessage != null ? errorMessage : errorType.getMessage()));
+        ResponseEntity.BodyBuilder builder = ResponseEntity.status(errorType.getStatus());
+        if (errorType == ErrorType.NO_PERMIT) {
+            // 재시도 시각 안내일 뿐 쿠폰을 확보했다는 뜻이 아니다.
+            builder.header(HttpHeaders.RETRY_AFTER, String.valueOf(NO_PERMIT_RETRY_AFTER_SECONDS));
+        }
+        return builder.body(ApiResponse.fail(errorType.getCode(), errorMessage != null ? errorMessage : errorType.getMessage()));
     }
 }
