@@ -53,36 +53,41 @@ public class CouponFacade {
         if (!campaign.isActive()) {
             throw new DomainException(DomainError.COUPON_CAMPAIGN_INACTIVE);
         }
+        CouponReservation.Result reserved = reserveWithinSlot(campaignId, userId, campaign, now);
+        return switch (reserved) {
+            case CouponReservation.Result.Reserved(int issueNumber) -> new IssueResult.Accepted(issueNumber);
+            case CouponReservation.Result.Existing(int issueNumber) -> couponService.findIssued(campaignId, userId)
+                .<IssueResult>map(coupon -> new IssueResult.Issued(issueNumber, coupon))
+                .orElseGet(() -> new IssueResult.Pending(issueNumber));
+            case CouponReservation.Result.SoldOut() -> throw new DomainException(DomainError.COUPON_SOLD_OUT);
+            case CouponReservation.Result.Lost() -> throw new CoreException(ErrorType.COUPON_ADMISSION_UNAVAILABLE);
+        };
+    }
+
+    private CouponReservation.Result reserveWithinSlot(Long campaignId, Long userId, CouponCampaign campaign,
+                                                       Instant now) {
         if (!couponPublishSlots.tryAcquire()) {
             throw new CoreException(ErrorType.COUPON_ISSUE_BUSY);
         }
         try {
             CouponReservation.Result reserved = couponReservation.reserve(campaignId, userId,
                 campaign.getTotalQuota(), campaign.getIssuedCount());
-            return switch (reserved) {
-                case CouponReservation.Result.Reserved accepted ->
-                    publish(campaignId, userId, accepted.issueNumber(), now);
-                case CouponReservation.Result.Existing existing -> couponService.findIssued(campaignId, userId)
-                    .<IssueResult>map(coupon -> new IssueResult.Issued(existing.issueNumber(), coupon))
-                    .orElseGet(() -> new IssueResult.Pending(existing.issueNumber()));
-                case CouponReservation.Result.SoldOut soldOut -> throw new DomainException(DomainError.COUPON_SOLD_OUT);
-                case CouponReservation.Result.Lost lost -> throw new CoreException(ErrorType.COUPON_ADMISSION_UNAVAILABLE);
-            };
+            if (reserved instanceof CouponReservation.Result.Reserved(int issueNumber)) {
+                publish(campaignId, userId, issueNumber, now);
+            }
+            return reserved;
         } finally {
             couponPublishSlots.release();
         }
     }
 
-    private IssueResult publish(Long campaignId, Long userId, int issueNumber, Instant reservedAt) {
+    private void publish(Long campaignId, Long userId, int issueNumber, Instant reservedAt) {
         CouponIssuePublisher.Outcome outcome = couponIssuePublisher.publish(
             new CouponIssuePublisher.CouponIssue(campaignId, userId, issueNumber, reservedAt));
-        return switch (outcome) {
-            case CouponIssuePublisher.Outcome.Published published -> new IssueResult.Accepted(issueNumber);
-            case CouponIssuePublisher.Outcome.Unconfirmed unconfirmed -> {
-                couponReservation.cancel(campaignId, userId);
-                throw new CoreException(ErrorType.COUPON_ADMISSION_UNAVAILABLE);
-            }
-        };
+        if (outcome instanceof CouponIssuePublisher.Outcome.Unconfirmed) {
+            couponReservation.cancel(campaignId, userId);
+            throw new CoreException(ErrorType.COUPON_ADMISSION_UNAVAILABLE);
+        }
     }
 
     public List<Coupon> findMine(Long userId) {
