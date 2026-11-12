@@ -7,6 +7,7 @@ import com.loopers.domain.coupon.CouponAdmissionRepository.AdmissionProgress;
 import com.loopers.domain.coupon.CouponAdmissionRepository.Registration;
 import com.loopers.domain.coupon.CouponAdmissionRepository.RegistrationOutcome;
 import com.loopers.domain.coupon.CouponAdmissionRepository.Start;
+import com.loopers.domain.coupon.CouponCacheRepository.IssuedCoupon;
 import com.loopers.domain.coupon.CouponCampaignIssueData;
 import com.loopers.domain.coupon.CouponCampaignModel;
 import com.loopers.domain.coupon.CouponCampaignRepository;
@@ -40,6 +41,10 @@ import java.util.function.Supplier;
  * 각 TX 호출은 콜백 진입과 afterCompletion 통지를 요청 안에서 관찰해 업무 미시작·commit·rollback·종료 불명을 가른다.
  * 예외 종류보다 이 종료 판정을 먼저 적용한다. 종료 불명이 하나라도 있으면 PROCESSING 점유를 남기고 신규 수용을 닫는다.
  * 그 밖에는 모든 DB 호출이 끝난 뒤 finish 를 한 번 호출하며, 종료 기록 실패는 이미 정해진 업무 결과를 바꾸지 않는다.
+ *
+ * <p>캐시(설계 §13.10): 등록·대기 조회·발급의 첫 기존 결과 확인만 기발급 캐시를 먼저 본다. 품절 캐시는 등록에만 쓴다.
+ * 캐시 저장은 항상 해당 DB TX 가 끝난 뒤(신규 발급은 finish 뒤) 확보한 결과로만 한다. TX 안에서는 캐시를 읽거나 쓰지 않는다.
+ * PROCESSING·ISSUED 관찰 뒤의 재확인은 캐시를 보지 않고 DB 를 직접 읽는다.
  */
 @Slf4j
 @Component
@@ -54,6 +59,7 @@ public class CouponFacade {
     private final CouponRepository couponRepository;
     private final ConstraintViolationClassifier classifier;
     private final CouponAdmissionService admission;
+    private final CouponCacheService cache;
 
     public CouponFacade(
         PlatformTransactionManager transactionManager,
@@ -61,7 +67,8 @@ public class CouponFacade {
         CouponCampaignRepository campaignRepository,
         CouponRepository couponRepository,
         ConstraintViolationClassifier classifier,
-        CouponAdmissionService admission
+        CouponAdmissionService admission,
+        CouponCacheService cache
     ) {
         this.readTemplate = new TransactionTemplate(transactionManager);
         this.readTemplate.setReadOnly(true);
@@ -71,6 +78,7 @@ public class CouponFacade {
         this.couponRepository = couponRepository;
         this.classifier = classifier;
         this.admission = admission;
+        this.cache = cache;
     }
 
     /**
@@ -78,9 +86,9 @@ public class CouponFacade {
      * PROCESSING·ISSUED 관찰은 그사이 commit 됐을 수 있어 DB 를 한 번 다시 읽는다(업무 재실행 아님).
      */
     public CouponIssueOutcome issue(Long userId, Long campaignId, String waitingId) {
-        Optional<OwnedCoupon> stored = findOwned(userId, campaignId);
+        Optional<CouponIssueResult> stored = findExisting(userId, campaignId);
         if (stored.isPresent()) {
-            return CouponIssueOutcome.issued(CouponIssueResult.stored(stored.get()));
+            return CouponIssueOutcome.issued(stored.get());
         }
         if (waitingId == null || waitingId.isBlank()) {
             throw new CoreException(ErrorType.COUPON_WAITING_ID_REQUIRED);
@@ -92,30 +100,41 @@ public class CouponFacade {
                 return CouponIssueOutcome.issued(issueStarted(userId, campaignId, waitingId));
             }
             case PROCESSING -> {
-                return findOwned(userId, campaignId)
-                    .map(owned -> CouponIssueOutcome.issued(CouponIssueResult.stored(owned)))
+                return findOwnedAndRemember(userId, campaignId)
+                    .map(CouponIssueOutcome::issued)
                     .orElseGet(() -> CouponIssueOutcome.inProgress(start.snapshot()));
             }
             case ISSUED -> {
-                OwnedCoupon owned = confirmIssued(userId, campaignId, waitingId, "발급 시작");
-                return CouponIssueOutcome.issued(CouponIssueResult.stored(owned));
+                return CouponIssueOutcome.issued(confirmIssued(userId, campaignId, waitingId, "발급 시작"));
             }
             default -> throw new IllegalStateException("시작 결과를 처리할 수 없습니다. [outcome = " + start.outcome() + "]");
         }
     }
 
-    /** 기존 쿠폰 → 운영 캠페인·열림 → 캠페인 없음 404/비활성·품절 409 → register. */
+    /**
+     * 기존 쿠폰 → 운영 캠페인·열림 → 품절 캐시 → 캠페인 없음 404/비활성·품절 409 → register.
+     * 품절 캐시 hit 이면 캠페인 DB 를 읽지 않고 409 다(그 뒤 INACTIVE 가 됐어도 품절 우선). DB 로 확인한 품절만 읽기 TX 종료 뒤 캐시에 쓴다.
+     */
     public CouponWaitingResult registerWaiting(Long userId, Long campaignId) {
-        Optional<OwnedCoupon> stored = findOwned(userId, campaignId);
+        Optional<CouponIssueResult> stored = findExisting(userId, campaignId);
         if (stored.isPresent()) {
             return new CouponWaitingResult(false, issuedSnapshot(campaignId, null, stored.get()));
         }
         admission.requireAdmitting(campaignId);
-        readTemplate.executeWithoutResult(status -> requireIssuable(campaignId));
+        if (cache.isSoldOut(campaignId)) {
+            throw new CoreException(ErrorType.COUPON_CAMPAIGN_SOLD_OUT);
+        }
+        CampaignCheck check = readTemplate.execute(status -> checkCampaign(campaignId));
+        if (check == CampaignCheck.SOLD_OUT) {
+            cache.rememberSoldOut(campaignId);
+        }
+        if (check.rejection != null) {
+            throw new CoreException(check.rejection);
+        }
         Registration registration = admission.register(campaignId, userId);
         CouponWaitingSnapshot snapshot = registration.snapshot();
         if (snapshot.status() == CouponWaitingState.ISSUED) {
-            OwnedCoupon owned = confirmIssued(userId, campaignId, snapshot.waitingId(), "등록");
+            CouponIssueResult owned = confirmIssued(userId, campaignId, snapshot.waitingId(), "등록");
             return new CouponWaitingResult(false, issuedSnapshot(campaignId, snapshot.waitingId(), owned));
         }
         return new CouponWaitingResult(registration.outcome() == RegistrationOutcome.CREATED, snapshot);
@@ -123,7 +142,7 @@ public class CouponFacade {
 
     /** 기존 쿠폰 → 운영 캠페인 일치(닫힘은 막지 않음) → find. 상태를 바꾸지 않는다. */
     public CouponWaitingResult getWaiting(Long userId, Long campaignId) {
-        Optional<OwnedCoupon> stored = findOwned(userId, campaignId);
+        Optional<CouponIssueResult> stored = findExisting(userId, campaignId);
         if (stored.isPresent()) {
             return new CouponWaitingResult(false, issuedSnapshot(campaignId, null, stored.get()));
         }
@@ -131,7 +150,7 @@ public class CouponFacade {
         CouponWaitingSnapshot snapshot = admission.find(campaignId, userId)
             .orElseThrow(() -> new CoreException(ErrorType.COUPON_WAITING_NOT_FOUND));
         if (snapshot.status() == CouponWaitingState.ISSUED) {
-            OwnedCoupon owned = confirmIssued(userId, campaignId, snapshot.waitingId(), "조회");
+            CouponIssueResult owned = confirmIssued(userId, campaignId, snapshot.waitingId(), "조회");
             return new CouponWaitingResult(false, issuedSnapshot(campaignId, snapshot.waitingId(), owned));
         }
         return new CouponWaitingResult(false, snapshot);
@@ -153,7 +172,10 @@ public class CouponFacade {
         return admission.processAdmissions(state.soldOut(), state.active() && !state.soldOut());
     }
 
-    /** STARTED 뒤의 DB 발급. 필요한 모든 DB 호출의 종료를 확인한 뒤에만 finish 한다. */
+    /**
+     * STARTED 뒤의 DB 발급. 필요한 모든 DB 호출의 종료를 확인한 뒤에만 finish 한다.
+     * 반환할 확정 결과가 있을 때만 finish 뒤에 캐시에 쓴다. 종료 불명·결과 미확보·오류에서는 쓰지 않고 캐시용 DB 재조회도 하지 않는다.
+     */
     private CouponIssueResult issueStarted(Long userId, Long campaignId, String waitingId) {
         boolean terminationUnknown = false;
         boolean writeCommitted = false;
@@ -226,6 +248,7 @@ public class CouponFacade {
         if (error != null) {
             throw error;
         }
+        cache.rememberIssued(userId, campaignId, result);
         return result;
     }
 
@@ -288,13 +311,28 @@ public class CouponFacade {
                 "유일 제약 충돌 뒤 기존 쿠폰을 찾지 못했습니다. [userId = " + userId + ", campaignId = " + campaignId + "]"));
     }
 
-    private Optional<OwnedCoupon> findOwned(Long userId, Long campaignId) {
-        return readTemplate.execute(status -> queryRepository.findOwned(userId, campaignId));
+    /** 첫 기존 결과 확인. 캐시 hit 이면 DB 를 읽지 않고, miss·캐시 오류면 DB 를 읽는다. 결과는 항상 created=false 다. */
+    private Optional<CouponIssueResult> findExisting(Long userId, Long campaignId) {
+        Optional<IssuedCoupon> cached = cache.findIssued(userId, campaignId);
+        if (cached.isPresent()) {
+            IssuedCoupon value = cached.get();
+            return Optional.of(new CouponIssueResult(value.couponId(), value.campaignId(), value.campaignName(),
+                value.benefitType(), value.benefitValue(), false));
+        }
+        return findOwnedAndRemember(userId, campaignId);
     }
 
-    /** Redis 의 ISSUED 를 DB 로 한 번 확인한다. 쿠폰이 없으면 설명할 수 없는 상태라 수용을 닫고 500 이다. */
-    private OwnedCoupon confirmIssued(Long userId, Long campaignId, String waitingId, String stage) {
-        Optional<OwnedCoupon> owned = findOwned(userId, campaignId);
+    /** DB 를 직접 읽고, 읽기 TX 가 정상 종료돼 쿠폰이 있을 때만 캐시에 쓴다. 없음·읽기 예외는 쓰지 않는다. */
+    private Optional<CouponIssueResult> findOwnedAndRemember(Long userId, Long campaignId) {
+        Optional<CouponIssueResult> owned = readTemplate.execute(status -> queryRepository.findOwned(userId, campaignId))
+            .map(CouponIssueResult::stored);
+        owned.ifPresent(result -> cache.rememberIssued(userId, campaignId, result));
+        return owned;
+    }
+
+    /** Redis 의 ISSUED 를 DB 로 한 번 확인한다(캐시 미사용). 쿠폰이 없으면 설명할 수 없는 상태라 수용을 닫고 500 이다. */
+    private CouponIssueResult confirmIssued(Long userId, Long campaignId, String waitingId, String stage) {
+        Optional<CouponIssueResult> owned = findOwnedAndRemember(userId, campaignId);
         if (owned.isPresent()) {
             return owned.get();
         }
@@ -302,19 +340,20 @@ public class CouponFacade {
         throw new CoreException(ErrorType.INTERNAL_ERROR, "대기 상태는 발급됨인데 쿠폰을 찾지 못했습니다.");
     }
 
-    /** 등록 전 캠페인 확인. 없음 404, 비활성·품절 409. */
-    private void requireIssuable(Long campaignId) {
-        CouponCampaignModel campaign = campaignRepository.findById(campaignId)
-            .orElseThrow(() -> new CoreException(ErrorType.COUPON_CAMPAIGN_NOT_FOUND));
+    /** 등록 전 캠페인 확인을 값으로 돌려준다. 판단 순서는 없음 → 비활성 → 품절이다. Entity 를 TX 밖으로 내보내지 않는다. */
+    private CampaignCheck checkCampaign(Long campaignId) {
+        Optional<CouponCampaignModel> found = campaignRepository.findById(campaignId);
+        if (found.isEmpty()) {
+            return CampaignCheck.MISSING;
+        }
+        CouponCampaignModel campaign = found.get();
         if (campaign.getStatus() == CouponCampaignStatus.INACTIVE) {
-            throw new CoreException(ErrorType.COUPON_CAMPAIGN_INACTIVE);
+            return CampaignCheck.INACTIVE;
         }
-        if (campaign.getIssuedCount() >= campaign.getTotalQuota()) {
-            throw new CoreException(ErrorType.COUPON_CAMPAIGN_SOLD_OUT);
-        }
+        return campaign.getIssuedCount() >= campaign.getTotalQuota() ? CampaignCheck.SOLD_OUT : CampaignCheck.ISSUABLE;
     }
 
-    private static CouponWaitingSnapshot issuedSnapshot(Long campaignId, String waitingId, OwnedCoupon owned) {
+    private static CouponWaitingSnapshot issuedSnapshot(Long campaignId, String waitingId, CouponIssueResult owned) {
         return new CouponWaitingSnapshot(campaignId, waitingId, CouponWaitingState.ISSUED, null, null, owned.couponId());
     }
 
@@ -390,6 +429,20 @@ public class CouponFacade {
 
         boolean rolledBack() {
             return !returned && entered && completion != null && completion == TransactionSynchronization.STATUS_ROLLED_BACK;
+        }
+    }
+
+    /** 등록 전 캠페인 확인 결과. ISSUABLE 만 거절 오류가 없다. */
+    private enum CampaignCheck {
+        MISSING(ErrorType.COUPON_CAMPAIGN_NOT_FOUND),
+        INACTIVE(ErrorType.COUPON_CAMPAIGN_INACTIVE),
+        SOLD_OUT(ErrorType.COUPON_CAMPAIGN_SOLD_OUT),
+        ISSUABLE(null);
+
+        private final ErrorType rejection;
+
+        CampaignCheck(ErrorType rejection) {
+            this.rejection = rejection;
         }
     }
 

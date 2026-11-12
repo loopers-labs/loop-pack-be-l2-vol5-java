@@ -833,3 +833,15 @@ Codex 최종 코드 검토에서 지적된 test 실패 처리 3곳만 고쳤다.
 - 로컬 원시 근거는 `docs/week8/verification/runs/20261112-final-check/`의 timing.txt·gradle.log·일반 test XML275·O11 XML1·Checkstyle·summary.md다. 제출 필수 결과는 이 절에 남긴다.
 - 후속/미검증: 실제 로컬 Redis pause·늦은 명령·장애별 수동 재개·재시작 복구·다중 인스턴스/다중 운영 캠페인·부하/최적 설정·캐시/Bulkhead/epoch. 기본 구현의 과거 장애 성공은 이번 확장 결과가 아니다. 제출/커밋 판단은 사용자 담당이다.
 - 이 커밋을 후속 캐시/격리 설계와 변경 전후 비교의 정상 구현 기준점으로 보존한다. 새 캐시/격리의 대상·정합성/장애 처리·비교 지표는 별도 설계/승인으로 정하며 이번 검사에 포함하지 않는다.
+
+
+## 캐시 A단위 Redis 구현·관련 검사 검토 — 2026-11-12
+
+- 구현 기준 volume-8/90b14c6. Redis 기발급/품절 positive 캐시·설정/포트/엄격 JSON adapter·읽기 Lua·cache 서비스·Facade 연결과 C1/W6/O11 조립을 검토했다. local B는 미구현이다. 서비스 내부에서 확정 CouponIssueResult를 IssuedCoupon으로 변환해 변환 실패도 캐시 저장 실패로만 처리한다.
+- 실행 A: JDK21.0.12, 18:00:01~18:02:01 KST. Checkstyle main/test·일반 test에 *Coupon*·ArchitectureTest·ServerSettlementTest·WorkerTerminationTest·W6 준비/직접 발행·W7 relay lifecycle 필터를 적용했고 --rerun-tasks --no-build-cache로34개 task 실제 실행. XML51개 총342건 중340건 통과·실패/오류0·opt-in Q9/Q10 skip2건이다. Checkstyle 오류0·ArchUnit3건 통과를 원시 보고서와 대조했다.
+- 실행 B: 18:02:30~18:03:05 KST, 별도 w6OutboxRecoveryTest32개 task 실제 실행·XML1개1건 통과/skip0. 자식 graceful=true·exit143 보고를 로그와 대조했다. 실제 Redis는 fixture master/DB0이며 대상 run_id 대조 기록이 있다. 공유 Redis pause는 하지 않았다.
+- 선행 A-attempt1은 unused import1건으로 checkstyleTest에서 실패해 test0건이었다. 실패 로그/보고서를 보존하고 해당 import 제거 후 A를 다시 실행했다. 이 실패를 통과로 집계하지 않는다.
+- 실제 DB/Redis 근거: 기존 결과 hit의 쿠폰 SQL0·miss 후 positive 채움, 신규 put 시 txActive=false/waiting=ISSUED, cached 품절의 캠페인 SQL0/INACTIVE보다 품절 우선, 이름 TTL 지연/만료 뒤 새 이름·목록 현재 이름, NX/TTL 비연장·손상/no-TTL DB fallback. TX 종료 불명/결과 미확보·finish/put 실패 분기는 대역 근거다.
+- 기존 HTTP/응답 유실 검사는 C1 miss/no-op 조립이며 실제 warm-cache HTTP 검사는 미실행이다. 공통 사용자 resolver는 변경하지 않았다. 전체 check·실제 장애·비교 실험·KQ7/local은 이번 완료 범위가 아니다.
+- Codex 검토 후 동시 채움 검사의 finally에 go.countDown() 한 줄을 추가했다. 준비 대기 실패에서도 worker latch를 먼저 해제하고 기존 종료 확인을 거치게 한다. 위 A/B 실행은 이 한 줄 수정 전 결과이며 수정 후 테스트는 아직 재실행하지 않았다. 문서/공백 정적 확인만 수행했다.
+- 로컬 원시 근거: docs/week8/verification/runs/20261112-cache-a/의 A-attempt1-checkstyle-fail·A·B와 summary.md. 종료/정리 보고는 실제 자원 및 대역 범위를 구분하며 새 장애/성능 통과를 주장하지 않는다.

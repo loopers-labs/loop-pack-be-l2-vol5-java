@@ -1,5 +1,6 @@
 package com.loopers.config;
 
+import com.loopers.fixture.CouponCacheMiss;
 import com.loopers.CommerceApiApplication;
 import com.loopers.application.coupon.CouponFacade;
 import com.loopers.application.coupon.CouponIssueResult;
@@ -124,7 +125,8 @@ class CouponLocalFixtureConfigIntegrationTest {
             "--datasource.redis.replicas[0].host=" + RedisTestContainersConfig.host(),
             "--datasource.redis.replicas[0].port=" + RedisTestContainersConfig.port()));
         all.addAll(List.of(args));
-        SpringApplicationBuilder builder = new SpringApplicationBuilder(CommerceApiApplication.class).profiles("test");
+        // 캐시 도입 전 계약 검사. 조회 miss·저장 no-op 대역을 명시 source 로 더한다(설계 §13.12 C1).
+        SpringApplicationBuilder builder = new SpringApplicationBuilder(CommerceApiApplication.class, CouponCacheMiss.class).profiles("test");
         builder.initializers(NO_AUTO_ADMISSION);
         initializers.forEach(builder::initializers);
         return builder.run(all.toArray(String[]::new));

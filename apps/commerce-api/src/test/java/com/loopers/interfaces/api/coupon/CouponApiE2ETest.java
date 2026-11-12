@@ -1,5 +1,7 @@
 package com.loopers.interfaces.api.coupon;
 
+import com.loopers.fixture.CouponCacheMiss;
+import org.springframework.context.annotation.Import;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.interfaces.scheduler.CouponWaitingScheduler;
@@ -72,6 +74,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
  * 실제 응답 유실·HTTP timeout 은 CouponHttpFaultE2ETest 가 본다.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import(CouponCacheMiss.class) // 캐시 도입 전 계약 검사. 조회 miss·저장 no-op(설계 §13.12 C1)
 // fixture Redis 주소 주입 등으로 이 클래스만의 컨텍스트가 생긴다. 끝나면 닫아 MySQL 연결 풀을 반납한다(누적 시 Too many connections).
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @DisplayName("쿠폰 API 는 대기 등록·입장 권한으로 최초 201·기존 200 을 같은 쿠폰으로 돌려주고, 진행 중 202·오류 표를 지키며, 제어 API 로 수용을 다룬다.")

@@ -1,5 +1,6 @@
 package com.loopers.interfaces.scheduler;
 
+import com.loopers.fixture.CouponCacheMiss;
 import com.loopers.application.coupon.CouponAdmissionService;
 import com.loopers.application.coupon.CouponFacade;
 import com.loopers.config.CouponAdmissionProperties;
@@ -297,7 +298,7 @@ class CouponWaitingSchedulerLifecycleTest {
         CouponWaitingProperties properties = new CouponWaitingProperties(CAMPAIGN, Duration.ofMillis(50), Duration.ofSeconds(30));
         CouponAdmissionService admission = new CouponAdmissionService(waiting, new CouponAdmissionProperties(3), properties);
         CouponFacade real = spy(new CouponFacade(mock(PlatformTransactionManager.class), mock(CouponQueryRepository.class), campaigns,
-            mock(CouponRepository.class), new ConstraintViolationClassifier(), admission));
+            mock(CouponRepository.class), new ConstraintViolationClassifier(), admission, CouponCacheMiss.service()));
         scheduler = new CouponWaitingScheduler(real, properties, "30s");
         scheduler.start();
 

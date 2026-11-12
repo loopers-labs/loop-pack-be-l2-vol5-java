@@ -2,12 +2,15 @@ package com.loopers.application.coupon;
 
 import com.loopers.application.coupon.ScriptedTransactionManager.Ending;
 import com.loopers.config.CouponAdmissionProperties;
+import com.loopers.config.CouponCacheProperties;
 import com.loopers.config.CouponWaitingProperties;
 import com.loopers.domain.coupon.CouponAdmissionRepository;
 import com.loopers.domain.coupon.CouponAdmissionRepository.FinishOutcome;
 import com.loopers.domain.coupon.CouponAdmissionRepository.Start;
 import com.loopers.domain.coupon.CouponAdmissionRepository.StartOutcome;
 import com.loopers.domain.coupon.CouponBenefitType;
+import com.loopers.domain.coupon.CouponCacheRepository;
+import com.loopers.domain.coupon.CouponCacheRepository.IssuedCoupon;
 import com.loopers.domain.coupon.CouponCampaignIssueData;
 import com.loopers.domain.coupon.CouponCampaignModel;
 import com.loopers.domain.coupon.CouponCampaignRepository;
@@ -27,6 +30,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -48,7 +52,9 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -76,6 +82,7 @@ class CouponFacadeTransactionOutcomeTest {
     private CouponRepository couponRepository;
     private CouponAdmissionRepository admissionRepository;
     private CouponAdmissionService admission;
+    private CouponCacheRepository cacheRepository;
     private CouponFacade facade;
 
     @BeforeEach
@@ -88,8 +95,10 @@ class CouponFacadeTransactionOutcomeTest {
         admission = new CouponAdmissionService(admissionRepository, new CouponAdmissionProperties(3),
             new CouponWaitingProperties(CAMPAIGN, Duration.ofSeconds(1), Duration.ofSeconds(30)));
         admission.open();
-        facade = new CouponFacade(tm, queryRepository, campaignRepository, couponRepository,
-            new ConstraintViolationClassifier(), admission);
+        // 기본 mock 은 조회 empty·저장 no-op 이라 캐시 도입 전 분기를 그대로 탄다(설계 §13.12 C1). 캐시 분기 검사만 stub 한다.
+        cacheRepository = mock(CouponCacheRepository.class);
+        facade = new CouponFacade(tm, queryRepository, campaignRepository, couponRepository, new ConstraintViolationClassifier(), admission,
+            new CouponCacheService(cacheRepository, new CouponCacheProperties(Duration.ofSeconds(30), Duration.ofSeconds(30))));
 
         when(queryRepository.findOwned(USER, CAMPAIGN)).thenReturn(Optional.empty());
         when(admissionRepository.start(CAMPAIGN, USER, WAITING_ID)).thenReturn(new Start(StartOutcome.STARTED, null));
@@ -364,6 +373,104 @@ class CouponFacadeTransactionOutcomeTest {
             assertThatThrownBy(() -> issue())
                 .satisfies(e -> assertThat(errorTypeOf(e)).isEqualTo(ErrorType.COUPON_CAMPAIGN_NOT_FOUND));
             assertThat(admission.status()).isFalse();
+        }
+    }
+
+    @Nested
+    @DisplayName("기발급 캐시 저장(설계 §13.10, KQ4 의 대역 부분)")
+    class CacheFill {
+
+        private final IssuedCoupon value = new IssuedCoupon(COUPON_ID, CAMPAIGN, "가을 캠페인", CouponBenefitType.FIXED_AMOUNT, 5_000L);
+
+        @DisplayName("신규 발급은 쓰기 TX 종료와 finish 뒤에 확보한 결과로 저장한다. 캐시용 DB 재조회는 없다.")
+        @Test
+        void createdRememberedAfterFinish() {
+            List<String> observed = new ArrayList<>();
+            doAnswer(invocation -> observed.add("sync=" + TransactionSynchronizationManager.isSynchronizationActive() + " begun=" + tm.begun()))
+                .when(cacheRepository).putIssuedIfAbsent(any(), any(), any(), anyLong());
+
+            CouponIssueResult result = issue();
+
+            InOrder order = inOrder(admissionRepository, cacheRepository);
+            order.verify(admissionRepository).finish(CAMPAIGN, USER, WAITING_ID, CouponWaitingState.ISSUED);
+            order.verify(cacheRepository).putIssuedIfAbsent(USER, CAMPAIGN, value, 30_000L);
+            assertAll(
+                () -> assertThat(result.created()).isTrue(),
+                () -> assertThat(observed).containsExactly("sync=false begun=2"),
+                () -> verify(queryRepository, times(1)).findOwned(USER, CAMPAIGN)
+            );
+        }
+
+        @DisplayName("COMMITTED 뒤 예외여도 결과를 확보했으면 저장하고, 유일 제약 뒤 후속 읽기 결과도 모든 TX·finish 뒤에 저장한다.")
+        @Test
+        void confirmedResultsAreRemembered() {
+            tm.then(Ending.NORMAL).then(Ending.COMMITTED_THEN_THROWS);
+            assertThat(issue().created()).isTrue();
+
+            doThrow((RuntimeException) uniqueViolation("coupon.uk_coupon_campaign_user")).when(couponRepository).save(any());
+            when(queryRepository.findOwned(USER, CAMPAIGN)).thenReturn(Optional.empty(), Optional.of(owned()));
+            assertThat(issue().created()).isFalse();
+
+            verify(cacheRepository, times(2)).putIssuedIfAbsent(USER, CAMPAIGN, value, 30_000L);
+        }
+
+        @DisplayName("종료 불명·commit 확인 뒤 결과 미확보·시작 실패·업무 거절은 저장하지 않고, 캐시를 채우려고 DB 를 다시 읽지 않는다.")
+        @Test
+        void unconfirmedResultsAreNotRemembered(CapturedOutput output) {
+            tm.then(Ending.NORMAL).then(Ending.COMMIT_UNKNOWN);
+            assertUnknownOutcome(output, "발급 쓰기 TX");
+
+            admission.open();
+            tm.then(Ending.NORMAL).then(Ending.ROLLBACK_REPORTS_COMMITTED);
+            doThrow(new IllegalStateException("결과 복사 실패(대역)")).when(couponRepository).save(any());
+            assertThatThrownBy(() -> issue()).satisfies(e -> assertThat(errorTypeOf(e)).isEqualTo(ErrorType.INTERNAL_ERROR));
+
+            tm.then(Ending.NORMAL).then(Ending.BEGIN_FAILS);
+            assertThatThrownBy(() -> issue()).isInstanceOf(CannotCreateTransactionException.class);
+
+            when(campaignRepository.reserveOne(any(), any())).thenReturn(0);
+            when(campaignRepository.findById(CAMPAIGN)).thenReturn(Optional.empty());
+            assertThatThrownBy(() -> issue()).satisfies(e -> assertThat(errorTypeOf(e)).isEqualTo(ErrorType.COUPON_CAMPAIGN_NOT_FOUND));
+
+            assertAll(
+                () -> verify(cacheRepository, never()).putIssuedIfAbsent(any(), any(), any(), anyLong()),
+                // 사전 읽기 4회 + 마지막 사례의 후속 읽기 1회. 결과 미확보 분기에 추가 조회가 없다.
+                () -> verify(queryRepository, times(5)).findOwned(USER, CAMPAIGN)
+            );
+        }
+
+        @DisplayName("finish 실패와 캐시 저장 실패는 서로의 결과를 바꾸지 않고, 확정된 CREATED 를 유지하며 저장을 다시 시도하지 않는다.")
+        @Test
+        void finishAndPutFailuresKeepCreated() {
+            when(admissionRepository.finish(CAMPAIGN, USER, WAITING_ID, CouponWaitingState.ISSUED))
+                .thenThrow(new QueryTimeoutException("finish timeout(대역)")).thenReturn(FinishOutcome.APPLIED);
+            doThrow(new QueryTimeoutException("캐시 저장 timeout(대역)")).when(cacheRepository).putIssuedIfAbsent(any(), any(), any(), anyLong());
+
+            CouponIssueResult afterFinishFailure = issue();
+            admission.open();
+            CouponIssueResult afterPutFailure = issue();
+
+            assertAll(
+                () -> assertThat(afterFinishFailure.created()).isTrue(),
+                () -> assertThat(afterPutFailure.created()).isTrue(),
+                () -> verify(cacheRepository, times(2)).putIssuedIfAbsent(USER, CAMPAIGN, value, 30_000L),
+                () -> assertThat(admission.status()).isTrue()
+            );
+        }
+
+        @DisplayName("응답 유실 뒤 재요청이 캐시 hit 이면 start·TX·finish 없이 기존 결과(created=false)라 추가 효과가 없다.")
+        @Test
+        void cachedRetryHasNoEffect() {
+            when(cacheRepository.findIssued(USER, CAMPAIGN)).thenReturn(Optional.of(value));
+
+            CouponIssueResult result = issue();
+
+            assertAll(
+                () -> assertThat(result).isEqualTo(new CouponIssueResult(COUPON_ID, CAMPAIGN, "가을 캠페인", CouponBenefitType.FIXED_AMOUNT, 5_000L, false)),
+                () -> assertThat(tm.begun()).isZero(),
+                () -> verify(admissionRepository, never()).start(any(), any(), any()),
+                () -> verify(admissionRepository, never()).finish(any(), any(), any(), any())
+            );
         }
     }
 

@@ -16,6 +16,7 @@ import com.loopers.domain.coupon.CouponQueryRepository;
 import com.loopers.domain.coupon.CouponRepository;
 import com.loopers.domain.coupon.CouponWaitingState;
 import com.loopers.domain.coupon.OwnedCoupon;
+import com.loopers.fixture.CouponCacheMiss;
 import com.loopers.fixture.CouponFixture;
 import com.loopers.fixture.CouponRedisTarget;
 import com.loopers.fixture.SqlCapture;
@@ -159,7 +160,8 @@ class CouponFacadeIntegrationTest {
 
     private CouponFacade facade(CouponQueryRepository query, CouponCampaignRepository campaigns,
                                 CouponRepository coupons, CouponAdmissionService admission) {
-        return new CouponFacade(transactionManager, query, campaigns, coupons, classifier, admission);
+        // 캐시 도입 전 계약 검사. 조회 miss·저장 no-op(설계 §13.12 C1). 실제 캐시는 CouponFacadeCacheIntegrationTest 가 본다.
+        return new CouponFacade(transactionManager, query, campaigns, coupons, classifier, admission, CouponCacheMiss.service());
     }
 
     private CouponFacade facade(CouponAdmissionService admission) {

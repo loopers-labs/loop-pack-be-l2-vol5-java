@@ -1,5 +1,6 @@
 package com.loopers.infrastructure.order;
 
+import com.loopers.domain.coupon.CouponCacheRepository;
 import com.loopers.CommerceApiApplication;
 import com.loopers.application.order.OrderConfirmedRecorder;
 import com.loopers.application.order.OrderOutboxExecutionGate;
@@ -351,7 +352,8 @@ class W6OutboxRecoveryEndToEndIntegrationTest {
                 .map(type -> type.getJavaType().getName()).collect(Collectors.toSet()))
                 .as("W6 관리 타입 + Outbox").isEqualTo(W7CouponIsolationInitializer.MANAGED_TYPES),
             () -> assertThat(CouponBeanIsolation.COUPON_DEFINITIONS).allSatisfy(name ->
-                assertThat(context.containsBean(name)).as("쿠폰 bean 없음: " + name).isFalse())
+                assertThat(context.containsBean(name)).as("쿠폰 bean 없음: " + name).isFalse()),
+            () -> assertThat(context.getBeanNamesForType(CouponCacheRepository.class)).as("실제·test 대역 캐시 저장소 모두 없음").isEmpty()
         );
     }
 

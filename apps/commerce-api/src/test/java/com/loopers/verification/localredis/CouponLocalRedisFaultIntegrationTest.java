@@ -1,5 +1,7 @@
 package com.loopers.verification.localredis;
 
+import com.loopers.fixture.CouponCacheMiss;
+import org.springframework.context.annotation.Import;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.interfaces.scheduler.CouponWaitingScheduler;
 import com.loopers.CommerceApiApplication;
@@ -110,6 +112,7 @@ class CouponLocalRedisFaultIntegrationTest {
     @SpringBootConfiguration
     @EnableAutoConfiguration
     @ConfigurationPropertiesScan("com.loopers")
+    @Import(CouponCacheMiss.class) // 캐시 도입 전 계약 검사. 조회 miss·저장 no-op(설계 §13.12 C1)
     @ComponentScan(basePackages = "com.loopers", excludeFilters = {
         @ComponentScan.Filter(type = FilterType.CUSTOM, classes = TypeExcludeFilter.class),
         @ComponentScan.Filter(type = FilterType.CUSTOM, classes = AutoConfigurationExcludeFilter.class),

@@ -1,6 +1,7 @@
 package com.loopers.application.coupon;
 
 import com.loopers.config.CouponAdmissionProperties;
+import com.loopers.config.CouponCacheProperties;
 import com.loopers.config.CouponWaitingProperties;
 import com.loopers.domain.coupon.CouponAdmissionRepository;
 import com.loopers.domain.coupon.CouponAdmissionRepository.AdmissionProgress;
@@ -9,6 +10,8 @@ import com.loopers.domain.coupon.CouponAdmissionRepository.RegistrationOutcome;
 import com.loopers.domain.coupon.CouponAdmissionRepository.Start;
 import com.loopers.domain.coupon.CouponAdmissionRepository.StartOutcome;
 import com.loopers.domain.coupon.CouponBenefitType;
+import com.loopers.domain.coupon.CouponCacheRepository;
+import com.loopers.domain.coupon.CouponCacheRepository.IssuedCoupon;
 import com.loopers.domain.coupon.CouponCampaignModel;
 import com.loopers.domain.coupon.CouponCampaignRepository;
 import com.loopers.domain.coupon.CouponCampaignStatus;
@@ -17,6 +20,7 @@ import com.loopers.domain.coupon.CouponRepository;
 import com.loopers.domain.coupon.CouponWaitingSnapshot;
 import com.loopers.domain.coupon.CouponWaitingState;
 import com.loopers.domain.coupon.OwnedCoupon;
+import com.loopers.fixture.CouponCacheMiss;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import com.loopers.support.persistence.ConstraintViolationClassifier;
@@ -38,6 +42,7 @@ import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -48,6 +53,8 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -73,6 +80,7 @@ class CouponFacadeWaitingTest {
     private CouponRepository couponRepository;
     private CouponAdmissionRepository admissionRepository;
     private CouponAdmissionService admission;
+    private CouponCacheRepository cacheRepository;
     private CouponFacade facade;
 
     @BeforeEach
@@ -85,7 +93,10 @@ class CouponFacadeWaitingTest {
         admission = new CouponAdmissionService(admissionRepository, new CouponAdmissionProperties(3),
             new CouponWaitingProperties(CAMPAIGN, Duration.ofSeconds(1), Duration.ofSeconds(30)));
         admission.open();
-        facade = new CouponFacade(tm, queryRepository, campaignRepository, couponRepository, new ConstraintViolationClassifier(), admission);
+        // 기본 mock 은 조회 empty·저장 no-op 이라 캐시 도입 전 분기를 그대로 탄다(설계 §13.12 C1). 캐시 분기 검사만 stub 한다.
+        cacheRepository = mock(CouponCacheRepository.class);
+        facade = new CouponFacade(tm, queryRepository, campaignRepository, couponRepository, new ConstraintViolationClassifier(), admission,
+            new CouponCacheService(cacheRepository, new CouponCacheProperties(Duration.ofSeconds(30), Duration.ofSeconds(30))));
         when(queryRepository.findOwned(USER, CAMPAIGN)).thenReturn(Optional.empty());
         CouponCampaignModel active = campaign(CouponCampaignStatus.ACTIVE, 0, 5);
         when(campaignRepository.findById(CAMPAIGN)).thenReturn(Optional.of(active));
@@ -313,6 +324,208 @@ class CouponFacadeWaitingTest {
     }
 
     @Nested
+    @DisplayName("캐시 분기(설계 §13.10, KQ3·KQ5·KQ6·KQ8 의 대역 부분)")
+    class Cache {
+
+        private final IssuedCoupon cached = new IssuedCoupon(COUPON_ID, CAMPAIGN, "가을 캠페인", CouponBenefitType.FIXED_AMOUNT, 5_000L);
+        private final List<Boolean> putInsideTx = new ArrayList<>();
+
+        /** 캐시 저장 시점에 TX 동기화가 켜져 있었는지 기록한다. 대역 TX 관리자는 TX 동안만 동기화를 켠다. */
+        private void recordPutTiming() {
+            doAnswer(invocation -> putInsideTx.add(TransactionSynchronizationManager.isSynchronizationActive()))
+                .when(cacheRepository).putIssuedIfAbsent(any(), any(), any(), anyLong());
+            doAnswer(invocation -> putInsideTx.add(TransactionSynchronizationManager.isSynchronizationActive()))
+                .when(cacheRepository).putSoldOutIfAbsent(any(), anyLong());
+        }
+
+        @DisplayName("기발급 hit 이면 등록·조회·발급 모두 쿠폰 DB·대기 상태·캠페인 조회 없이 기존 결과다. 닫힘·운영 ID 불일치·품절 캐시보다 우선한다.")
+        @Test
+        void issuedHitSkipsDatabaseAndWaiting() {
+            admission.close();
+            when(cacheRepository.findIssued(USER, CAMPAIGN)).thenReturn(Optional.of(cached));
+            when(cacheRepository.findSoldOutTtl(CAMPAIGN)).thenReturn(OptionalLong.of(10_000L));
+
+            CouponWaitingResult registered = facade.registerWaiting(USER, CAMPAIGN);
+            CouponWaitingResult found = facade.getWaiting(USER, CAMPAIGN);
+            CouponIssueResult issued = facade.issue(USER, CAMPAIGN, null).result();
+
+            assertAll(
+                () -> assertThat(registered).isEqualTo(new CouponWaitingResult(false, issuedSnapshot(null))),
+                () -> assertThat(found).isEqualTo(new CouponWaitingResult(false, issuedSnapshot(null))),
+                () -> assertThat(issued).isEqualTo(new CouponIssueResult(COUPON_ID, CAMPAIGN, "가을 캠페인", CouponBenefitType.FIXED_AMOUNT, 5_000L, false)),
+                () -> verify(queryRepository, never()).findOwned(any(), any()),
+                () -> verify(campaignRepository, never()).findById(any()),
+                () -> verify(cacheRepository, never()).findSoldOutTtl(any()),
+                () -> verifyNoInteractions(admissionRepository),
+                () -> assertThat(tm.begun()).isZero()
+            );
+        }
+
+        @DisplayName("기발급 miss 면 DB 를 읽고, 쿠폰이 있으면 읽기 TX 가 끝난 뒤 다섯 값을 30초로 저장한다. 없으면 저장하지 않는다.")
+        @Test
+        void missReadsDatabaseThenRemembersPositiveOnly() {
+            recordPutTiming();
+            when(queryRepository.findOwned(USER, CAMPAIGN)).thenReturn(Optional.of(owned()), Optional.empty());
+            when(admissionRepository.register(eq(CAMPAIGN), eq(USER), anyString()))
+                .thenReturn(new Registration(RegistrationOutcome.CREATED, snapshot(CouponWaitingState.WAITING)));
+
+            assertThat(facade.registerWaiting(USER, CAMPAIGN)).isEqualTo(new CouponWaitingResult(false, issuedSnapshot(null)));
+            assertThat(facade.registerWaiting(USER, CAMPAIGN).created()).isTrue();
+
+            assertAll(
+                () -> verify(cacheRepository, times(1)).putIssuedIfAbsent(USER, CAMPAIGN, cached, 30_000L),
+                () -> assertThat(putInsideTx).containsExactly(false)
+            );
+        }
+
+        @DisplayName("캐시 조회 오류는 DB 확인으로 이어지고 수용을 닫지 않는다. 저장 오류는 결과를 바꾸지 않으며 다시 시도하지 않는다.")
+        @Test
+        void cacheErrorsFallBackWithoutClosing() {
+            when(cacheRepository.findIssued(USER, CAMPAIGN)).thenThrow(new QueryTimeoutException("캐시 timeout(대역)"));
+            when(cacheRepository.findSoldOutTtl(CAMPAIGN)).thenThrow(new IllegalStateException("손상(대역)"));
+            doThrow(new QueryTimeoutException("캐시 저장 timeout(대역)"))
+                .when(cacheRepository).putIssuedIfAbsent(any(), any(), any(), anyLong());
+            when(queryRepository.findOwned(USER, CAMPAIGN)).thenReturn(Optional.empty(), Optional.of(owned()));
+            when(admissionRepository.register(eq(CAMPAIGN), eq(USER), anyString()))
+                .thenReturn(new Registration(RegistrationOutcome.CREATED, snapshot(CouponWaitingState.WAITING)));
+
+            CouponWaitingResult registered = facade.registerWaiting(USER, CAMPAIGN);
+            CouponWaitingResult found = facade.getWaiting(USER, CAMPAIGN);
+
+            assertAll(
+                () -> assertThat(registered).isEqualTo(new CouponWaitingResult(true, snapshot(CouponWaitingState.WAITING))),
+                () -> assertThat(found).isEqualTo(new CouponWaitingResult(false, issuedSnapshot(null))),
+                () -> verify(campaignRepository, times(1)).findById(CAMPAIGN),
+                () -> verify(cacheRepository, times(1)).putIssuedIfAbsent(any(), any(), any(), anyLong()),
+                () -> assertThat(admission.status()).isTrue()
+            );
+        }
+
+        @DisplayName("등록의 품절 캐시는 기존 쿠폰·운영 ID·열림 확인 뒤에만 보며, hit 이면 캠페인 DB·register 없이 409 다. INACTIVE 여도 품절이 우선한다.")
+        @Test
+        void soldOutCacheAfterAdmittingAndBeforeCampaign() {
+            when(cacheRepository.findSoldOutTtl(CAMPAIGN)).thenReturn(OptionalLong.of(10_000L));
+            CouponCampaignModel inactive = campaign(CouponCampaignStatus.INACTIVE, 5, 5);
+            when(campaignRepository.findById(CAMPAIGN)).thenReturn(Optional.of(inactive));
+
+            admission.close();
+            assertError(() -> facade.registerWaiting(USER, CAMPAIGN), ErrorType.COUPON_ADMISSION_UNAVAILABLE);
+            admission.open();
+            when(queryRepository.findOwned(USER, CAMPAIGN + 1)).thenReturn(Optional.empty());
+            assertError(() -> facade.registerWaiting(USER, CAMPAIGN + 1), ErrorType.COUPON_ADMISSION_UNAVAILABLE);
+            verify(cacheRepository, never()).findSoldOutTtl(any());
+
+            assertError(() -> facade.registerWaiting(USER, CAMPAIGN), ErrorType.COUPON_CAMPAIGN_SOLD_OUT);
+
+            assertAll(
+                () -> verify(cacheRepository, times(1)).findSoldOutTtl(CAMPAIGN),
+                () -> verify(campaignRepository, never()).findById(any()),
+                () -> verifyNoInteractions(admissionRepository),
+                () -> verify(cacheRepository, never()).putSoldOutIfAbsent(any(), anyLong())
+            );
+        }
+
+        @DisplayName("품절 캐시 miss 면 DB 의 없음 404·비활성 409·품절 409 순서를 지키고, DB 로 확인한 품절만 읽기 TX 종료 뒤 30초로 저장한다.")
+        @Test
+        void soldOutMissKeepsDatabaseOrderAndRemembersSoldOutOnly() {
+            recordPutTiming();
+            CouponCampaignModel inactiveSoldOut = campaign(CouponCampaignStatus.INACTIVE, 5, 5);
+            CouponCampaignModel soldOut = campaign(CouponCampaignStatus.ACTIVE, 5, 5);
+            CouponCampaignModel issuable = campaign(CouponCampaignStatus.ACTIVE, 0, 5);
+            when(campaignRepository.findById(CAMPAIGN))
+                .thenReturn(Optional.empty(), Optional.of(inactiveSoldOut), Optional.of(issuable), Optional.of(soldOut));
+            when(admissionRepository.register(eq(CAMPAIGN), eq(USER), anyString()))
+                .thenReturn(new Registration(RegistrationOutcome.CREATED, snapshot(CouponWaitingState.WAITING)));
+
+            assertError(() -> facade.registerWaiting(USER, CAMPAIGN), ErrorType.COUPON_CAMPAIGN_NOT_FOUND);
+            assertError(() -> facade.registerWaiting(USER, CAMPAIGN), ErrorType.COUPON_CAMPAIGN_INACTIVE);
+            assertThat(facade.registerWaiting(USER, CAMPAIGN).created()).isTrue();
+            verify(cacheRepository, never()).putSoldOutIfAbsent(any(), anyLong());
+            assertError(() -> facade.registerWaiting(USER, CAMPAIGN), ErrorType.COUPON_CAMPAIGN_SOLD_OUT);
+
+            assertAll(
+                () -> verify(cacheRepository, times(1)).putSoldOutIfAbsent(CAMPAIGN, 30_000L),
+                () -> assertThat(putInsideTx).containsExactly(false),
+                () -> verify(admissionRepository, times(1)).register(any(), any(), anyString())
+            );
+        }
+
+        @DisplayName("품절 캐시 저장 오류도 품절 409 를 유지하고 수용을 닫지 않는다.")
+        @Test
+        void soldOutPutFailureKeepsRejection() {
+            CouponCampaignModel soldOut = campaign(CouponCampaignStatus.ACTIVE, 5, 5);
+            when(campaignRepository.findById(CAMPAIGN)).thenReturn(Optional.of(soldOut));
+            doThrow(new QueryTimeoutException("캐시 저장 timeout(대역)"))
+                .when(cacheRepository).putSoldOutIfAbsent(any(), anyLong());
+
+            assertError(() -> facade.registerWaiting(USER, CAMPAIGN), ErrorType.COUPON_CAMPAIGN_SOLD_OUT);
+            assertAll(
+                () -> verify(cacheRepository, times(1)).putSoldOutIfAbsent(CAMPAIGN, 30_000L),
+                () -> assertThat(admission.status()).isTrue()
+            );
+        }
+
+        @DisplayName("대기 조회·발급은 품절 캐시를 읽거나 쓰지 않는다. 품절 캐시가 있어도 기존 대기 상태·start 분기를 그대로 탄다.")
+        @Test
+        void getAndIssueIgnoreSoldOutCache() {
+            when(cacheRepository.findSoldOutTtl(CAMPAIGN)).thenReturn(OptionalLong.of(10_000L));
+            when(admissionRepository.find(CAMPAIGN, USER)).thenReturn(Optional.of(snapshot(CouponWaitingState.READY)));
+            Start processing = new Start(StartOutcome.PROCESSING, snapshot(CouponWaitingState.PROCESSING));
+            when(admissionRepository.start(CAMPAIGN, USER, WAITING_ID)).thenReturn(processing);
+
+            assertThat(facade.getWaiting(USER, CAMPAIGN)).isEqualTo(new CouponWaitingResult(false, snapshot(CouponWaitingState.READY)));
+            assertThat(facade.issue(USER, CAMPAIGN, WAITING_ID)).isEqualTo(new CouponIssueOutcome(null, snapshot(CouponWaitingState.PROCESSING)));
+            assertAll(
+                () -> verify(cacheRepository, never()).findSoldOutTtl(any()),
+                () -> verify(cacheRepository, never()).putSoldOutIfAbsent(any(), anyLong())
+            );
+        }
+
+        @DisplayName("PROCESSING·ISSUED 뒤의 재확인은 캐시를 다시 보지 않고 DB 를 한 번 직접 읽으며, 쿠폰이 있으면 그 뒤에 저장한다.")
+        @Test
+        void recheckReadsDatabaseDirectly() {
+            Start processing = new Start(StartOutcome.PROCESSING, snapshot(CouponWaitingState.PROCESSING));
+            Start issuedStart = new Start(StartOutcome.ISSUED,
+                new CouponWaitingSnapshot(CAMPAIGN, WAITING_ID, CouponWaitingState.ISSUED, null, null, null));
+            when(admissionRepository.start(CAMPAIGN, USER, WAITING_ID)).thenReturn(processing, issuedStart);
+            when(queryRepository.findOwned(USER, CAMPAIGN)).thenReturn(Optional.empty(), Optional.of(owned()), Optional.empty(), Optional.of(owned()));
+
+            assertThat(facade.issue(USER, CAMPAIGN, WAITING_ID).result().couponId()).isEqualTo(COUPON_ID);
+            assertThat(facade.issue(USER, CAMPAIGN, WAITING_ID).result().couponId()).isEqualTo(COUPON_ID);
+
+            assertAll(
+                () -> verify(cacheRepository, times(2)).findIssued(USER, CAMPAIGN),
+                () -> verify(queryRepository, times(4)).findOwned(USER, CAMPAIGN),
+                () -> verify(cacheRepository, times(2)).putIssuedIfAbsent(USER, CAMPAIGN, cached, 30_000L),
+                () -> verify(campaignRepository, never()).reserveOne(any(), any())
+            );
+        }
+
+        @DisplayName("Redis ISSUED 인데 DB 에도 없으면 캐시를 쓰지 않고 기존 500·닫힘이다.")
+        @Test
+        void issuedContradictionWritesNothing() {
+            when(admissionRepository.find(CAMPAIGN, USER)).thenReturn(Optional.of(snapshot(CouponWaitingState.ISSUED)));
+
+            assertError(() -> facade.getWaiting(USER, CAMPAIGN), ErrorType.INTERNAL_ERROR);
+            assertAll(
+                () -> assertThat(admission.status()).isFalse(),
+                () -> verify(cacheRepository, never()).putIssuedIfAbsent(any(), any(), any(), anyLong())
+            );
+        }
+
+        @DisplayName("입장 처리는 캐시를 쓰지 않는다.")
+        @Test
+        void processAdmissionsIgnoresCache() {
+            when(admissionRepository.processAdmissions(eq(CAMPAIGN), anyInt(), anyLong(), anyBoolean(), anyBoolean()))
+                .thenReturn(new AdmissionProgress(0, 0));
+
+            facade.processAdmissions();
+
+            verifyNoInteractions(cacheRepository);
+        }
+    }
+
+    @Nested
     @DisplayName("processAdmissions")
     class Process {
 
@@ -322,7 +535,7 @@ class CouponFacadeWaitingTest {
             CouponAdmissionService unconfigured = new CouponAdmissionService(admissionRepository, new CouponAdmissionProperties(3),
                 new CouponWaitingProperties(null, Duration.ofSeconds(1), Duration.ofSeconds(30)));
             CouponFacade unconfiguredFacade = new CouponFacade(tm, queryRepository, campaignRepository, couponRepository,
-                new ConstraintViolationClassifier(), unconfigured);
+                new ConstraintViolationClassifier(), unconfigured, CouponCacheMiss.service());
             admission.close();
 
             assertAll(

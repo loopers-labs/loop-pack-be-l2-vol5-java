@@ -1,5 +1,7 @@
 package com.loopers.interfaces.api.coupon;
 
+import com.loopers.fixture.CouponCacheMiss;
+import org.springframework.context.annotation.Import;
 import com.loopers.interfaces.scheduler.CouponWaitingScheduler;
 import com.loopers.application.coupon.CouponFacade;
 import com.loopers.application.user.UserFacade;
@@ -51,6 +53,7 @@ import static org.mockito.Mockito.verify;
  * 요청자 확인(UserFacade)·CouponFacade 호출은 spy 로, Redis 변경은 운영 캠페인 키 내용으로 확인한다.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import(CouponCacheMiss.class) // 캐시 도입 전 계약 검사. 조회 miss·저장 no-op(설계 §13.12 C1)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 @DisplayName("대기 등록 한도를 넘으면 사용자 확인·Redis 전에 429 이고, 사용자·캠페인이 한도를 공유하며, 발급·조회·목록·제어는 이 한도로 막지 않는다.")
 class CouponWaitingRateLimitE2ETest {

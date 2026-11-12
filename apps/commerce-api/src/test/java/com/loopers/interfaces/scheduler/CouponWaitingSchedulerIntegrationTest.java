@@ -1,5 +1,7 @@
 package com.loopers.interfaces.scheduler;
 
+import com.loopers.fixture.CouponCacheMiss;
+import org.springframework.context.annotation.Import;
 import com.loopers.application.coupon.CouponFacade;
 import com.loopers.config.redis.RedisConfig;
 import com.loopers.config.redis.RedisProperties;
@@ -49,6 +51,7 @@ import static org.mockito.Mockito.verify;
  * <p>운영 캠페인 키 5개가 모두 비었을 때만 소유하고, 끝나면 수용을 닫고 scheduler 를 멈춘 뒤 소유한 키만 지운다.
  */
 @SpringBootTest
+@Import(CouponCacheMiss.class) // 캐시 도입 전 계약 검사. 조회 miss·저장 no-op(설계 §13.12 C1)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @DisplayName("실제 자동 회차는 닫힘에서 업무가 없고, 열리면 등록자를 C 이내로 승격하며, 미사용 READY 를 회수해 다음 대기자를 올리고 PROCESSING 은 남긴다.")
 class CouponWaitingSchedulerIntegrationTest {

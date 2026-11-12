@@ -1253,7 +1253,7 @@ created/createdAt·waitingId·권한/순번·품절 false·미발급 표식은 �
 | application/coupon/CouponCacheService | bean couponCacheService. cache-only 조회/저장 실패를 로그/miss 또는 무시로 변환. DB·쿠폰 수용 닫기·TX는 담당하지 않음. 로컬 품절 슬롯은 이 객체 내부에 추가 |
 | 기존 CouponFacade | 캐시 조회→기존 DB 확인·TX 종료→채움과 기존 업무 순서 조율. 목록/스케줄러는 캐시 미적용. 새 Facade·별도 전달 서비스 없음 |
 
-서비스 메서드는 findIssued(user,campaign): Optional<IssuedCoupon>, rememberIssued(user,campaign,value): void, isSoldOut(campaign): boolean, rememberSoldOut(campaign): void로 한다. false는 '캐시에서 품절 확인 못함'이지 DB 재고 있음 판정이 아니다. Redis 예외/timeout·변환 오류는 RuntimeException 범위에서 로그로 남기고 캐시 miss/저장 실패로 처리한다. Error를 삼켜 성공을 꾸미지 않는다. 실패 시 동일 작업 retry·새 회로/풀·캐시 실패 전역 상태는 만들지 않는다. 캐시 get/put 실패 때문에 같은 요청에 여러 timeout 비용이 남을 수 있으며 별도 격리/성능 보장을 주장하지 않는다.
+서비스 메서드는 findIssued(user,campaign): Optional<IssuedCoupon>, rememberIssued(user,campaign,result: CouponIssueResult): void, isSoldOut(campaign): boolean, rememberSoldOut(campaign): void로 한다. rememberIssued는 확보한 application 결과를 받아 try 안에서 포트의 IssuedCoupon으로 변환한다. 값 변환 실패도 저장 실패로 처리해 확정 업무 응답을 보존한다. false는 '캐시에서 품절 확인 못함'이지 DB 재고 있음 판정이 아니다. Redis 예외/timeout·변환 오류는 RuntimeException 범위에서 로그로 남기고 캐시 miss/저장 실패로 처리한다. Error를 삼켜 성공을 꾸미지 않는다. 실패 시 동일 작업 retry·새 회로/풀·캐시 실패 전역 상태는 만들지 않는다. 캐시 get/put 실패 때문에 같은 요청에 여러 timeout 비용이 남을 수 있으며 별도 격리/성능 보장을 주장하지 않는다.
 
 새 제품 책임은 설정1·포트1(중첩 값)·Redis 구현1·application 캐시 서비스1·읽기 Lua1로 제한한다. 로컬용 별도 bean/설정 클래스·라이브러리·공용 캐시 프레임워크는 추가하지 않는다. 기존 CouponAdmissionRepository/Lua·RedisConfig·등록 limiter·scheduler·DB 모델/제약은 변경하지 않는다.
 

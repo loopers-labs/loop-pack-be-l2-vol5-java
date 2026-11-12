@@ -1,5 +1,7 @@
 package com.loopers.interfaces.api.coupon;
 
+import com.loopers.fixture.CouponCacheMiss;
+import org.springframework.context.annotation.Import;
 import com.loopers.interfaces.scheduler.CouponWaitingScheduler;
 import com.loopers.application.coupon.CouponFacade;
 import com.loopers.application.coupon.HoldingWaitingRepository;
@@ -75,6 +77,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
  * DB 결과로 확인한다. 정리는 {@link ServerSettlement} 판단을 따르고, 근거가 없으면 보류해 같은 컨텍스트의 다음 사례도 막는다.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import(CouponCacheMiss.class) // 캐시 도입 전 계약 검사. 조회 miss·저장 no-op(설계 §13.12 C1)
 // fixture Redis 주소 주입·decorator 구성으로 이 클래스만의 컨텍스트가 생긴다. 끝나면 닫아 MySQL 연결 풀을 반납한다.
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @DisplayName("HTTP 응답 유실·client timeout·연결 종료·시간 경과가 서버의 발급·TX·자리 반환을 앞당기거나 바꾸지 않는다.")
