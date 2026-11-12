@@ -9,6 +9,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.concurrent.CompletableFuture;
+
 @RequiredArgsConstructor
 @Component
 public class PromotionFacade {
@@ -37,12 +39,13 @@ public class PromotionFacade {
      * 선착순 쿠폰 발급. 사용자·프로모션 상태 확인은 TX 없이 읽고,
      * 발급 내역 insert → 남은 수량 조건 갱신 두 문장만 CouponIssueProcessor 의 TX 로 묶는다 (DR-58).
      * 이미 받은 사용자는 허가를 얻기 전에 돌려보내고, 발급 TX 만 세마포어 허가 안에서 실행한다 (DR-60).
+     * 앞의 확인은 호출 스레드에서 동기로 하고 (실패하면 바로 예외), 허가 대기·발급 TX 는 future 로 돌려준다 (DR-63).
      */
-    public PromotionInfo.Issued issue(Long requesterId, Long promotionId) {
+    public CompletableFuture<PromotionInfo.Issued> issue(Long requesterId, Long promotionId) {
         userService.getUser(requesterId);
         promotionService.getIssuable(promotionId);
         promotionService.checkNotIssued(requesterId, promotionId);
-        return PromotionInfo.Issued.from(
-            couponIssueLimiter.run(promotionId, () -> couponIssueProcessor.issue(requesterId, promotionId)));
+        return couponIssueLimiter.run(promotionId, () -> couponIssueProcessor.issue(requesterId, promotionId))
+            .thenApply(PromotionInfo.Issued::from);
     }
 }

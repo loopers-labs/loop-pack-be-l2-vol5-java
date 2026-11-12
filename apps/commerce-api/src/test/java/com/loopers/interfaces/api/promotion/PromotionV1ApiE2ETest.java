@@ -73,7 +73,7 @@ class PromotionV1ApiE2ETest {
         redisCleanUp.truncateAll();
     }
 
-    /** 발급 세마포어(DR-61)의 허가를 다른 요청이 모두 쥔 상태로 만든다. 1 분 뒤 만료. */
+    /** 발급 세마포어(DR-63, 키는 DR-61 과 같음)의 허가를 다른 요청이 모두 쥔 상태로 만든다. 1 분 뒤 만료. */
     private void occupyAllPermits(long promotionId) throws InterruptedException {
         RPermitExpirableSemaphore semaphore = redissonClient.getPermitExpirableSemaphore("coupon-issue:semaphore:" + promotionId);
         semaphore.trySetPermits(limiterProperties.permits());

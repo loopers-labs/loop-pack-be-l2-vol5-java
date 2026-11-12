@@ -4,11 +4,13 @@ import com.loopers.interfaces.api.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
+import java.util.concurrent.CompletableFuture;
+
 @Tag(name = "Promotion V1 API", description = "프로모션 고객 API")
 public interface PromotionV1ApiSpec {
 
-    /** POST /api/v1/promotions/{promotionId}/issues */
+    /** POST /api/v1/promotions/{promotionId}/issues. 허가 대기·발급은 비동기로 처리하고 워커 스레드는 바로 돌려준다 (DR-63). */
     @Operation(summary = "선착순 쿠폰 발급",
         description = "ACTIVE 인 쿠폰 발급 프로모션에서 쿠폰 한 장을 받는다. 사용자당 한 장, 발급 한도를 넘지 않는다.")
-    ApiResponse<PromotionV1Dto.IssuedCouponResponse> issue(Long requesterId, Long promotionId);
+    CompletableFuture<ApiResponse<PromotionV1Dto.IssuedCouponResponse>> issue(Long requesterId, Long promotionId);
 }

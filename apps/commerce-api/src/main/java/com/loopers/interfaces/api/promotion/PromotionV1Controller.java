@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.concurrent.CompletableFuture;
+
 @RequiredArgsConstructor
 @RestController
 public class PromotionV1Controller implements PromotionV1ApiSpec {
@@ -16,11 +18,11 @@ public class PromotionV1Controller implements PromotionV1ApiSpec {
 
     @PostMapping("/api/v1/promotions/{promotionId}/issues")
     @Override
-    public ApiResponse<PromotionV1Dto.IssuedCouponResponse> issue(
+    public CompletableFuture<ApiResponse<PromotionV1Dto.IssuedCouponResponse>> issue(
         @RequesterId Long requesterId,
         @PathVariable("promotionId") Long promotionId
     ) {
-        var info = promotionFacade.issue(requesterId, promotionId);
-        return ApiResponse.success(PromotionV1Dto.IssuedCouponResponse.from(info));
+        return promotionFacade.issue(requesterId, promotionId)
+            .thenApply(info -> ApiResponse.success(PromotionV1Dto.IssuedCouponResponse.from(info)));
     }
 }
