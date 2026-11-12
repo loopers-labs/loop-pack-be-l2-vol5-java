@@ -48,6 +48,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -57,6 +58,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -67,6 +69,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -214,6 +217,13 @@ class CouponLocalRedisFaultIntegrationTest {
             beforeFinish.set(action);
         }
 
+        /** 사례 끝에 쓰이지 않은 callback 을 비워 다음 사례·재개가 소비하지 않게 한다. */
+        void clearBeforeFinish(String testCase) {
+            if (beforeFinish.getAndSet(null) != null) {
+                log.append(Map.of("event", "finish-callback-cleared", "case", testCase));
+            }
+        }
+
         String waitingIdOf(Long userId) {
             return waitingIdByUser.get(String.valueOf(userId));
         }
@@ -313,20 +323,51 @@ class CouponLocalRedisFaultIntegrationTest {
     /**
      * 확인된 대상 컨테이너 하나의 pause 시도와 실제 상태 복구. pause 를 "시도했다"는 사실을 명령 전에 남기고, 복구는 CLI 결과가 아니라
      * 그 컨테이너의 실제 Paused 상태를 조회해 판단한다. 대상이 정해지기 전이나 다른 컨테이너는 조작하지 않는다.
+     *
+     * <p>요청 안 pause(Q10)는 진입 문으로 조율한다. 문이 닫힌 뒤 도착한 호출은 pause 없이 기록만 하고 정상 반환해 원래 위임을 막지 않는다.
+     * 이미 진입한 호출은 finally 에서 종료 신호를 남기고, 복구는 그 신호를 유한하게 기다린 뒤에만 상태를 조회한다.
+     * 시도 이력은 지우지 않아 서버 요청 종료 뒤의 최종 복구도 실제로 조회한다. pause 명령 실패·종료 신호 미확인·조회/unpause 실패는
+     * 해소되지 않는 불명으로 남기며, 그 뒤 한 번의 조회가 false 여도 정리·재개를 허용하지 않는다.
      */
     static final class PauseGuard {
+        /** 요청 안 pause 호출의 종료 신호 대기. Docker CLI 한 호출 한도(30초)보다 길다. */
+        static final Duration PAUSE_END_WAIT = Duration.ofSeconds(35);
+        static final Duration CLI_LIMIT = Duration.ofSeconds(30);
+        /** test HTTP 클라이언트의 read 한도. 시간 초과는 관찰 실패이지 서버 요청 종료가 아니다. */
+        static final Duration HTTP_READ = Duration.ofSeconds(60);
+
         interface Cli {
             String run(String... args) throws Exception;
         }
 
         private final Cli cli;
         private final FaultLog log;
+        private final Duration pauseEndWait;
+        private final Object gate = new Object();
         private volatile String target;
         private volatile boolean attempted;
+        private volatile String unresolved;
+        private boolean entryClosed;
+        private CountDownLatch inFlight;
+        private final List<RuntimeException> logFailures = Collections.synchronizedList(new ArrayList<>());
 
         PauseGuard(Cli cli, FaultLog log) {
+            this(cli, log, PAUSE_END_WAIT);
+        }
+
+        PauseGuard(Cli cli, FaultLog log, Duration pauseEndWait) {
             this.cli = cli;
             this.log = log;
+            this.pauseEndWait = pauseEndWait;
+        }
+
+        /** HTTP read 한도는 종료 신호 대기와 Redis command timeout 의 합보다 커야 한다. 모르는 command timeout 은 거절한다. */
+        static void requireTimeoutBudget(Duration commandTimeout) {
+            if (commandTimeout == null || PAUSE_END_WAIT.compareTo(CLI_LIMIT) <= 0
+                || HTTP_READ.compareTo(PAUSE_END_WAIT.plus(commandTimeout)) <= 0) {
+                throw new IllegalStateException("대기 한도 조건 불충족: HTTP " + HTTP_READ + " > pause 종료 " + PAUSE_END_WAIT
+                    + "(> CLI " + CLI_LIMIT + ") + command timeout " + commandTimeout);
+            }
         }
 
         void target(String verifiedContainerId) {
@@ -338,35 +379,203 @@ class CouponLocalRedisFaultIntegrationTest {
                 throw new IllegalStateException("확인된 대상 컨테이너 없이 pause 하지 않는다.");
             }
             attempted = true; // CLI 가 실패·대기 초과해도 실제로 멈췄을 수 있다.
-            log.append(Map.of("event", "pause-attempt", "case", testCase, "container", target));
-            cli.run("pause", target);
-            log.append(Map.of("event", "pause", "case", testCase, "container", target));
+            try {
+                log.append(Map.of("event", "pause-attempt", "case", testCase, "container", target));
+            } catch (RuntimeException e) {
+                unresolved(testCase, "pause 시도 기록 실패 — pause 하지 않음");
+                throw e; // 시도를 기록하지 못하면 pause 하지 않는다.
+            }
+            try {
+                cli.run("pause", target);
+            } catch (Exception e) {
+                unresolved(testCase, "pause 명령 실패 — 원격 적용 불명: " + e.getMessage());
+                throw e;
+            }
+            record(Map.of("event", "pause", "case", testCase, "container", target));
         }
 
-        /** pause 를 시도했다면 실제 상태를 조회해 멈춰 있으면 unpause 한다. 조회·복구 실패는 기록하고 던진다. */
+        /** 요청 처리 스레드의 callback 용. 문이 닫혔으면 pause 하지 않고 정상 반환한다. */
+        void pauseInRequest(String testCase) {
+            CountDownLatch done;
+            synchronized (gate) {
+                if (entryClosed) {
+                    record(Map.of("event", "pause-skipped-entry-closed", "case", testCase));
+                    return;
+                }
+                done = new CountDownLatch(1);
+                inFlight = done;
+            }
+            String outcome = "불명";
+            try {
+                pause(testCase);
+                outcome = "성공";
+            } catch (Exception e) {
+                outcome = "실패 " + e.getClass().getSimpleName();
+                throw new IllegalStateException("종료 기록 직전 pause 실패", e);
+            } finally {
+                try {
+                    record(Map.of("event", "pause-call-end", "case", testCase, "outcome", outcome));
+                } finally {
+                    done.countDown(); // 호출 종료 신호. 종료 기록 실패는 record 가 불명으로 따로 남긴다.
+                }
+            }
+        }
+
+        /**
+         * 진입 문을 닫고, 이미 진입한 pause 의 종료 신호를 유한하게 기다린 뒤 실제 상태로 복구한다.
+         * 대기 중 interrupt 는 종료 미확인으로 남기고 복구를 계속한 뒤 interrupt 상태를 되돌린다(복구 CLI 대기가 즉시 끊기지 않게 복구 뒤에).
+         */
+        void closeEntryAndRestore(String testCase) throws Exception {
+            CountDownLatch done;
+            synchronized (gate) {
+                entryClosed = true;
+                done = inFlight;
+            }
+            record(Map.of("event", "pause-entry-closed", "case", testCase, "inFlight", done != null));
+            boolean interrupted = false;
+            if (done != null) {
+                try {
+                    if (!done.await(pauseEndWait.toMillis(), TimeUnit.MILLISECONDS)) {
+                        unresolved(testCase, "진행 중 pause 의 종료 신호를 " + pauseEndWait + " 안에 확인하지 못함");
+                    }
+                } catch (InterruptedException e) {
+                    interrupted = true;
+                    unresolved(testCase, "진행 중 pause 의 종료 대기 interrupt — 종료 미확인");
+                }
+            }
+            Exception failure = null;
+            try {
+                restoreState(testCase);
+            } catch (Exception e) {
+                failure = e;
+            } finally {
+                if (interrupted) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            reportFailures(failure);
+        }
+
+        /** pause 를 시도한 적이 있으면 매번 실제 상태를 조회해 멈춰 있으면 unpause 한다. 조회·복구·기록 실패는 복구 시도 뒤 던진다. */
         void restore(String testCase) throws Exception {
+            Exception failure = null;
+            try {
+                restoreState(testCase);
+            } catch (Exception e) {
+                failure = e;
+            }
+            reportFailures(failure);
+        }
+
+        private void restoreState(String testCase) throws Exception {
             if (!attempted) {
                 return;
+            }
+            synchronized (gate) {
+                if (inFlight != null && inFlight.getCount() > 0) {
+                    unresolved(testCase, "진행 중 pause 의 종료 전에 복구를 시작함");
+                }
             }
             String paused;
             try {
                 paused = cli.run("inspect", "-f", "{{.State.Paused}}", target).trim();
             } catch (Exception e) {
-                log.append(Map.of("event", "restore-state-unknown", "case", testCase, "container", target, "error", String.valueOf(e.getMessage())));
+                unresolved(testCase, "pause 시도 뒤 상태 조회 실패");
+                record(Map.of("event", "restore-state-unknown", "case", testCase, "container", target, "error", String.valueOf(e.getMessage())));
                 throw new IllegalStateException("pause 시도 뒤 컨테이너 상태를 확인하지 못했다: " + target, e);
             }
             if ("true".equals(paused)) {
                 try {
                     cli.run("unpause", target);
                 } catch (Exception e) {
-                    log.append(Map.of("event", "unpause-failed", "case", testCase, "container", target, "error", String.valueOf(e.getMessage())));
+                    unresolved(testCase, "unpause 실패");
+                    record(Map.of("event", "unpause-failed", "case", testCase, "container", target, "error", String.valueOf(e.getMessage())));
                     throw new IllegalStateException("unpause 실패: " + target, e);
                 }
-                log.append(Map.of("event", "unpause", "case", testCase, "container", target));
+                record(Map.of("event", "unpause", "case", testCase, "container", target));
             } else {
-                log.append(Map.of("event", "restore-not-paused", "case", testCase, "container", target, "paused", paused));
+                record(Map.of("event", "restore-not-paused", "case", testCase, "container", target, "paused", paused));
             }
-            attempted = false;
+        }
+
+        /** 정리·재개 전에 호출한다. 불명이 한 번이라도 있었으면 던진다. */
+        void requireResolved() {
+            if (unresolved != null) {
+                throw new IllegalStateException("pause 상태 불명 — 정리·재개 보류: " + unresolved);
+            }
+        }
+
+        boolean resolved() {
+            return unresolved == null;
+        }
+
+        /** 메모리의 불명 판정을 기록보다 먼저 남긴다. */
+        private void unresolved(String testCase, String reason) {
+            if (unresolved == null) {
+                unresolved = reason;
+            }
+            record(Map.of("event", "pause-state-unresolved", "case", testCase, "reason", reason));
+        }
+
+        /** 기록 실패는 복구를 막지 않게 여기서 던지지 않는다. 불명으로 남기고 모아 두었다가 복구 시도 뒤 reportFailures 가 던진다. */
+        private void record(Map<String, ?> fields) {
+            try {
+                log.append(fields);
+            } catch (RuntimeException e) {
+                if (unresolved == null) {
+                    unresolved = "실행 기록 쓰기 실패: " + fields.get("event");
+                }
+                logFailures.add(e);
+            }
+        }
+
+        /** 복구 실패를 먼저, 없으면 첫 기록 실패를 원인으로 던진다. 나머지 기록 실패는 suppressed 로 보존한다. */
+        private void reportFailures(Exception failure) throws Exception {
+            List<RuntimeException> logs;
+            synchronized (logFailures) {
+                logs = List.copyOf(logFailures);
+                logFailures.clear();
+            }
+            if (failure == null && logs.isEmpty()) {
+                return;
+            }
+            Exception thrown = failure != null ? failure : new IllegalStateException("실행 기록 쓰기 실패 — pause 상태 불명", logs.get(0));
+            logs.stream().filter(e -> e != thrown.getCause()).forEach(thrown::addSuppressed);
+            throw thrown;
+        }
+    }
+
+    /**
+     * 사례 끝. 남은 finish callback 을 비우고 진입 문을 닫은 뒤 복구한다. 사례가 정상 종료했고 pause 상태가 해소됐을 때만 DB 를 정리하며,
+     * 그 밖에는 컨텍스트를 보류한다. 복구 실패도 정리보다 먼저 남기고 마지막에 던진다.
+     */
+    static void endCase(PauseGuard guard, RecordingAdmissionRepository recording, boolean finishedCleanly,
+                        Runnable close, Runnable truncate) throws Exception {
+        List<Exception> failures = new ArrayList<>();
+        try {
+            recording.clearBeforeFinish("after-each"); // callback 은 기록 전에 비워진다.
+        } catch (RuntimeException e) {
+            failures.add(e);
+        }
+        try {
+            guard.closeEntryAndRestore("after-each"); // 보류된 컨텍스트에서도 Redis 복구 시도는 계속한다.
+        } catch (Exception e) {
+            failures.add(e);
+        }
+        close.run();
+        if (finishedCleanly && guard.resolved() && failures.isEmpty()) {
+            truncate.run();
+        } else {
+            try {
+                recording.withhold("사례 정상 종료·정리 근거 없음 또는 pause 상태 불명 — §10.1 사후 수동 정리 대상"); // 메모리 보류가 기록보다 먼저다.
+            } catch (RuntimeException e) {
+                failures.add(e);
+            }
+        }
+        if (!failures.isEmpty()) {
+            Exception first = failures.get(0);
+            failures.stream().skip(1).forEach(first::addSuppressed);
+            throw first;
         }
     }
 
@@ -376,7 +585,7 @@ class CouponLocalRedisFaultIntegrationTest {
         command.add("docker");
         command.addAll(Arrays.asList(args));
         Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
-        if (!process.waitFor(30, TimeUnit.SECONDS)) {
+        if (!process.waitFor(PauseGuard.CLI_LIMIT.toSeconds(), TimeUnit.SECONDS)) {
             process.destroyForcibly();
             throw new IllegalStateException("docker 명령 대기 초과: " + command);
         }
@@ -426,6 +635,7 @@ class CouponLocalRedisFaultIntegrationTest {
 
     /** 대상 앱 endpoint·database·컨테이너를 대조한다. 하나라도 다르면 장애 조작 없이 시작 조건 실패다. */
     private void verifyTarget(String testCase) throws Exception {
+        PauseGuard.requireTimeoutBudget(redisProperties.commandTimeout());
         assertAll(
             () -> assertThat(applicationContext.getBeansOfType(RedisTestContainersConfig.class)).as("fixture Redis 구성 없음").isEmpty(),
             () -> assertThat(redisProperties.master().host()).isEqualTo(MASTER_HOST),
@@ -466,6 +676,8 @@ class CouponLocalRedisFaultIntegrationTest {
         target.put("runId", containerRunId);
         target.put("redisVersion", infoValue(serverInfo, "redis_version"));
         target.put("mysql", mysqlEvidence());
+        target.put("redisCommandTimeout", String.valueOf(redisProperties.commandTimeout()));
+        target.put("httpRead", PauseGuard.HTTP_READ.toString());
         recording.log().append(target);
     }
 
@@ -579,8 +791,15 @@ class CouponLocalRedisFaultIntegrationTest {
         pauseGuard.pause(testCase);
     }
 
+    /** HTTP 관찰 끝의 복구. 진입 문을 닫고 진행 중 pause 의 종료를 확인한 뒤 실제 상태로 복구한다. */
     private void unpause(String testCase) throws Exception {
-        pauseGuard.restore(testCase);
+        pauseGuard.closeEntryAndRestore(testCase);
+    }
+
+    /** 서버 요청이 끝난 뒤의 최종 복구. 시도 이력이 있으면 실제 상태를 다시 조회하고, 불명이 남았으면 정리·재개 전에 멈춘다. */
+    private void finalRestore(String testCase) throws Exception {
+        pauseGuard.restore(testCase + " final");
+        pauseGuard.requireResolved();
     }
 
     // ------------------------------------------------------------------ 공통 준비·정리
@@ -604,20 +823,15 @@ class CouponLocalRedisFaultIntegrationTest {
     void reset() {
         finishedCleanly = false;
         pauseGuard = new PauseGuard(CouponLocalRedisFaultIntegrationTest::docker, recording.log());
+        SimpleClientHttpRequestFactory http = new SimpleClientHttpRequestFactory();
+        http.setConnectTimeout((int) Duration.ofSeconds(5).toMillis());
+        http.setReadTimeout((int) PauseGuard.HTTP_READ.toMillis());
+        rest.getRestTemplate().setRequestFactory(http);
     }
 
     @AfterEach
     void restoreRedis() throws Exception {
-        try {
-            pauseGuard.restore("after-each"); // 보류된 컨텍스트에서도 Redis 복구 시도는 계속한다.
-        } finally {
-            couponFacade.close();
-            if (finishedCleanly) {
-                databaseCleanUp.truncateAllTables();
-            } else {
-                recording.withhold("사례 정상 종료·정리 근거 없음 — §10.1 사후 수동 정리 대상");
-            }
-        }
+        endCase(pauseGuard, recording, finishedCleanly, couponFacade::close, databaseCleanUp::truncateAllTables);
     }
 
     private HttpEntity<Object> as(Long userId) {
@@ -711,6 +925,7 @@ class CouponLocalRedisFaultIntegrationTest {
             () -> assertThat(newcomerToken).isEqualTo(newcomerWaiting)
         );
 
+        finalRestore(testCase);
         invalidateWaiting(testCase);
         long removed = observedWaitingKeys();
         Set<String> finalMembers = observedMembers();
@@ -730,14 +945,15 @@ class CouponLocalRedisFaultIntegrationTest {
 
     // ------------------------------------------------------------------ Q10
 
-    @DisplayName("Q10: commit 뒤 종료 기록 직전에 Redis 가 멈춰도 201·쿠폰·발급 수가 유지되고 닫힌다. unpause 뒤 종료·DB 결과와 같은 연결 경과를 확인하고 자기 대기실 키를 무효화한 뒤 명시적으로 열어 새 등록·발급을 수용한다.")
+    @DisplayName("Q10: commit 뒤 종료 기록 직전에 Redis 가 멈춰도 201·쿠폰·발급 수가 유지되고 닫힌다. unpause 뒤 종료·DB 결과와 같은 연결 경과를 확인하고 자기 대기실 키를 무효화한 뒤 명시적으로 열어 새 등록·발급을 수용하며, 장애 전 READY 였던 미발급자의 옛 권한은 404·효과 0 이고 기존 보유자는 200 이 우선한다.")
     @Test
     void q10ReleaseFailure() throws Exception {
         String testCase = "Q10";
-        List<Long> ids = prepare(testCase, 2);
+        List<Long> ids = prepare(testCase, 3);
         Long issuer = ids.get(0);
         Long next = ids.get(1);
-        Long campaignId = ids.get(2);
+        Long waiter = ids.get(2);
+        Long campaignId = ids.get(3);
 
         long beforeId = clientId();
         String beforeRunId = runId();
@@ -745,13 +961,10 @@ class CouponLocalRedisFaultIntegrationTest {
         requireNoOtherClients(testCase, beforeId);
 
         String issuerWaiting = admit(testCase, issuer, campaignId);
-        recording.beforeNextFinish(() -> {
-            try {
-                pause(testCase);
-            } catch (Exception e) {
-                throw new IllegalStateException("종료 기록 직전 pause 실패", e);
-            }
-        });
+        String waiterOldWaiting = admit(testCase, waiter, campaignId); // 장애 전 READY·미발급. 무효화 전에 옛 ID 를 남긴다.
+        recording.log().append(Map.of("event", "waiter-old-id", "case", testCase, "userId", waiter, "waitingId", waiterOldWaiting));
+        PauseGuard guard = pauseGuard;
+        recording.beforeNextFinish(() -> guard.pauseInRequest(testCase));
         ResponseEntity<ApiResponse<CouponV1Dto.CouponResponse>> created;
         try {
             created = issue(testCase, issuer, campaignId, issuerWaiting);
@@ -779,7 +992,9 @@ class CouponLocalRedisFaultIntegrationTest {
             () -> assertThat(afterRunId).isEqualTo(beforeRunId)
         );
 
-        // DB 결과(201·쿠폰·발급 수)와 같은 연결의 후속 응답을 확인했다. 대기 상태를 무효화하고 새 대기실로 다시 연다(§12.5 원칙).
+        // HTTP 응답으로 서버 요청 종료를 확인한 뒤 최종 복구를 다시 확인한다. DB 결과·같은 연결의 후속 응답도 확인했다.
+        // 대기 상태를 무효화하고 새 대기실로 다시 연다(§12.5 원칙).
+        finalRestore(testCase);
         invalidateWaiting(testCase);
         long removed = observedWaitingKeys();
         Set<String> afterCleanup = observedMembers();
@@ -798,6 +1013,62 @@ class CouponLocalRedisFaultIntegrationTest {
             () -> assertThat(finalMembers).isEmpty(),
             () -> assertThat(fixture.issuedCount(campaignId)).isEqualTo(2),
             () -> assertThat(couponFacade.status()).isTrue()
+        );
+
+        // 재개 뒤 옛 권한: 아직 새로 등록하지 않은 미발급자의 옛 헤더는 404·DB 효과 0 이다.
+        var oldBeforeRegister = issue(testCase, waiter, campaignId, waiterOldWaiting);
+        long issuedAfterOld = fixture.issuedCount(campaignId);
+        long waiterCouponsAfterOld = fixture.couponCount(campaignId, waiter);
+        // 같은 사용자가 다시 등록하면 새 ID 다. 옛 헤더는 여전히 404 이고 새 항목(상태·순번)을 바꾸지 않는다.
+        recording.next(testCase, waiter, campaignId);
+        var reRegistered = rest.exchange("/api/v1/coupon-campaigns/" + campaignId + "/waiting", HttpMethod.POST, as(waiter), WAITING);
+        String waiterNewWaiting = reRegistered.getBody().data().waitingId();
+        var entryBeforeOld = rest.exchange("/api/v1/coupon-campaigns/" + campaignId + "/waiting", HttpMethod.GET, as(waiter), WAITING);
+        var oldAfterRegister = issue(testCase, waiter, campaignId, waiterOldWaiting);
+        var entryAfterOld = rest.exchange("/api/v1/coupon-campaigns/" + campaignId + "/waiting", HttpMethod.GET, as(waiter), WAITING);
+        Set<String> membersAfterOld = observedMembers();
+        // 새 권한으로는 정상 발급된다.
+        assertThat(couponFacade.processAdmissions()).isPresent();
+        var issuedWithNew = issue(testCase, waiter, campaignId, waiterNewWaiting);
+        // 이미 발급된 사용자는 옛 헤더·헤더 없음에도 기존 결과가 우선이다.
+        var holderOldHeader = issue(testCase, issuer, campaignId, issuerWaiting);
+        var holderNoHeader = issue(testCase, issuer, campaignId, null);
+        Map<String, Object> oldPermission = new LinkedHashMap<>();
+        oldPermission.put("event", "old-permission-after-reopen");
+        oldPermission.put("case", testCase);
+        oldPermission.put("waiter", waiter);
+        oldPermission.put("oldWaitingId", waiterOldWaiting);
+        oldPermission.put("newWaitingId", String.valueOf(waiterNewWaiting));
+        oldPermission.put("oldBeforeRegister", oldBeforeRegister.getStatusCode().value());
+        oldPermission.put("oldAfterRegister", oldAfterRegister.getStatusCode().value());
+        oldPermission.put("issuedWithNew", issuedWithNew.getStatusCode().value());
+        oldPermission.put("holderOldHeader", holderOldHeader.getStatusCode().value());
+        oldPermission.put("holderNoHeader", holderNoHeader.getStatusCode().value());
+        oldPermission.put("db", Map.of("issued", fixture.issuedCount(campaignId), "coupons", fixture.couponCount(campaignId)));
+        recording.log().append(oldPermission);
+        System.out.printf("[coupon-q10-old] old=%s reRegistered=%s oldAfterRegister=%s newIssue=%s holderOld=%s holderNone=%s issued=%d%n",
+            oldBeforeRegister.getStatusCode(), reRegistered.getStatusCode(), oldAfterRegister.getStatusCode(),
+            issuedWithNew.getStatusCode(), holderOldHeader.getStatusCode(), holderNoHeader.getStatusCode(), fixture.issuedCount(campaignId));
+        Long issuerCoupon = created.getBody().data().couponId();
+        assertAll(
+            () -> assertThat(oldBeforeRegister.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND),
+            () -> assertThat(oldBeforeRegister.getBody().meta().errorCode()).isEqualTo("COUPON_WAITING_NOT_FOUND"),
+            () -> assertThat(issuedAfterOld).as("옛 권한 DB 효과 0").isEqualTo(2),
+            () -> assertThat(waiterCouponsAfterOld).isZero(),
+            () -> assertThat(reRegistered.getStatusCode()).isEqualTo(HttpStatus.CREATED),
+            () -> assertThat(waiterNewWaiting).isNotEqualTo(waiterOldWaiting),
+            () -> assertThat(oldAfterRegister.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND),
+            () -> assertThat(oldAfterRegister.getBody().meta().errorCode()).isEqualTo("COUPON_WAITING_NOT_FOUND"),
+            () -> assertThat(entryAfterOld.getBody().data()).as("옛 헤더가 새 항목을 바꾸지 않음").isEqualTo(entryBeforeOld.getBody().data()),
+            () -> assertThat(membersAfterOld).isEmpty(),
+            () -> assertThat(issuedWithNew.getStatusCode()).isEqualTo(HttpStatus.CREATED),
+            () -> assertThat(fixture.couponCount(campaignId, waiter)).isEqualTo(1),
+            () -> assertThat(holderOldHeader.getStatusCode()).isEqualTo(HttpStatus.OK),
+            () -> assertThat(holderOldHeader.getBody().data().couponId()).isEqualTo(issuerCoupon),
+            () -> assertThat(holderNoHeader.getStatusCode()).isEqualTo(HttpStatus.OK),
+            () -> assertThat(holderNoHeader.getBody().data().couponId()).isEqualTo(issuerCoupon),
+            () -> assertThat(fixture.couponCount(campaignId, issuer)).isEqualTo(1),
+            () -> assertThat(fixture.issuedCount(campaignId)).isEqualTo(3)
         );
         couponFacade.close();
         finishedCleanly = true;

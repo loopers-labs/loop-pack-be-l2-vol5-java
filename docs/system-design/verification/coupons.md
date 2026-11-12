@@ -963,3 +963,15 @@ COUPON_LOCAL_REDIS_FAULT_TEST=true \
 
 
 **첫 전체 정적 검토 보완:** 사용자 승인으로 M1의 요청 내 pause/HTTP 복구 경합과 S1~S4를 반영했다. HTTP60초·pause 종료 관찰35초는 새 test 장치의 제안값이며 현재 코드를 변경한 것이 아니다. 기존 PauseGuard의 재호출 no-op도 보완 대상에 명시했다. R2/Q9·R3/Q10 재사용, finish 확인 뒤 해당 사용자 첫 put만 주입, R5-b get/put 실패, A의 기존 R1/R6 근거를 정리했다. 보완본 재검토와 최종 검증안 승인은 완료됐고 test 수정·실험은 아직이다. 실제 HEAD f4dcdd8에 latch 한 줄은 포함돼 있고, 수정 후 재실행이 없다는 기존 기록은 유지한다.
+
+
+## 장애 test 장치 구현·보완 검토 — 2026-11-12
+
+- 기준89e8eeb에서 Claude가 CouponLocalRedisFaultIntegrationTest·GuardTest 두 test 파일을 보완했다. Codex는 실제 diff와 원시 실행 자료를 대조했다. 제품 코드는 변경하지 않았다.
+- 진입 문/진행 pause 종료 신호·시도 이력 보존/최종 재복구·HTTP60초/CLI30초/종료 관찰35초·불명 시 정리/open 보류·잔여 callback 해제와 Q10 옛 ID/새 등록·기존 결과 우선 단언을 구현했다.
+- 첫 실행18:35:01~18:35:25 KST: Guard14·CacheRedis35·Architecture3의52건 실패/오류/skip0·Checkstyle0. Codex 검토에서 로그 쓰기 실패와 종료 대기 interrupt가 복구를 건너뛰는2건을 발견해 보완했다.
+- 보완은 메모리 불명 판정 우선·로그 오류 수집 후 가능한 복구 시도/예외 보존, 종료 기록 실패에도 호출 종료 신호 보장, interrupt 시 불명 유지/복구 시도 후 상태 복원, endCase의 기록 실패에도 복구/보류 판단 유지다. 가짜 CLI/latch와 실제 Guard/endCase 경로의 새3건을 추가했다. 일반 복구 framework/제품 기능은 추가하지 않았다.
+- 최종 실행20:24:16~20:24:41 KST, JDK21.0.12. Checkstyle main/test·test에 *CouponLocalRedisFaultGuardTest·*CouponCacheRedisIntegrationTest·*ArchitectureTest 필터, opt-in env 제거·--rerun-tasks --no-build-cache.34개 task 실제 실행/BUILD SUCCESSFUL. 원시 XML3개 총55건(Guard17·CacheRedis35·Architecture3), 실패/오류/skip0·Checkstyle main/test 오류0을 대조했다.
+- Guard17건은 Docker 없는 가짜 CLI 검사다. CacheRedis35건은 fixture master/db0·run_id 대조/실제 Redis 검사이며 A latch 수정 이후 재검사를 포함한다. Guard의 실제 공유 Docker pause/원격 late 적용을 관찰한 근거가 아니다.
+- 종료 보고는 worker/앱0, 실행 직후 남은 test MySQL/Ryuk는 약30초 뒤 회수돼0이며 공유 컨테이너7개는 그대로다. 종료/정리 로그와 요약을 확인했다. 로컬 원시 근거는 docs/week8/verification/runs/20261112-recovery-guard/와 20261112-recovery-guard-fix/다.
+- Q9/Q10의 수정은 컴파일/정적 준비까지이며 실제 opt-in은 실행하지 않았다. R4/R5·로컬 B·전체 회귀/O11/비교도 미실행이다. 수정 전 코드를 되돌려 새3건의 실패를 실행 관찰하지 않았으며, 정적 반례와 수정 후 실제 통과를 구분한다. Codex 검토 결과 이번 test 장치 단위의 추가 필수 보완은 없다.
