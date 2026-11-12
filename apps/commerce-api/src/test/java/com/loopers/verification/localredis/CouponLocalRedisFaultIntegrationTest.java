@@ -1070,7 +1070,35 @@ class CouponLocalRedisFaultIntegrationTest {
             () -> assertThat(fixture.couponCount(campaignId, issuer)).isEqualTo(1),
             () -> assertThat(fixture.issuedCount(campaignId)).isEqualTo(3)
         );
+
+        // 마지막 정리: 닫기 → 모든 HTTP 응답 수신(자동 회차 없음)·같은 연결 경과 → 최종 복구 → 자기 대기실 키 무효화 → 키 0, DB 결과 보존.
         couponFacade.close();
+        assertThat(couponFacade.status()).isFalse();
+        long endClientId = clientId();
+        String endRunId = runId();
+        long issuedBeforeCleanup = fixture.issuedCount(campaignId);
+        long couponsBeforeCleanup = fixture.couponCount(campaignId);
+        recording.log().append(Map.of("event", "final-cleanup-before", "case", testCase, "clientId", endClientId, "runId", endRunId,
+            "keys", observedWaitingKeys(), "db", Map.of("issued", issuedBeforeCleanup, "coupons", couponsBeforeCleanup)));
+        finalRestore(testCase + " end");
+        assertThat(endClientId).as("종료 시점까지 같은 연결").isEqualTo(beforeId);
+        assertThat(endRunId).as("종료 시점까지 같은 서버 프로세스").isEqualTo(beforeRunId);
+        invalidateWaiting(testCase + " end");
+        long keysAfterCleanup = observedWaitingKeys();
+        Set<String> processingAfterCleanup = observedMembers();
+        recording.log().append(Map.of("event", "final-cleanup-after", "case", testCase, "keys", keysAfterCleanup,
+            "processing", processingAfterCleanup, "accepting", couponFacade.status(),
+            "db", Map.of("issued", fixture.issuedCount(campaignId), "coupons", fixture.couponCount(campaignId))));
+        System.out.printf("[coupon-q10-end] keysLeft=%d processing=%s issued=%d coupons=%d clientId=%d runId=%s%n", keysAfterCleanup,
+            processingAfterCleanup, fixture.issuedCount(campaignId), fixture.couponCount(campaignId), endClientId, endRunId);
+        assertAll(
+            () -> assertThat(keysAfterCleanup).as("자기 대기실 키 5개 모두 없음").isZero(),
+            () -> assertThat(processingAfterCleanup).isEmpty(),
+            () -> assertThat(couponFacade.status()).isFalse(),
+            () -> assertThat(issuedBeforeCleanup).isEqualTo(3),
+            () -> assertThat(fixture.issuedCount(campaignId)).as("키 정리가 발급 수를 바꾸지 않음").isEqualTo(issuedBeforeCleanup),
+            () -> assertThat(fixture.couponCount(campaignId)).as("키 정리가 쿠폰을 바꾸지 않음").isEqualTo(couponsBeforeCleanup)
+        );
         finishedCleanly = true;
     }
 }

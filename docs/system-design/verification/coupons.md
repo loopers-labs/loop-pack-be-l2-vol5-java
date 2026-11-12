@@ -984,3 +984,16 @@ COUPON_LOCAL_REDIS_FAULT_TEST=true \
 - 실행 B O11:20:50:21~20:50:58 KST·32개 task 실제 실행·XML1개1건 통과/실패오류skip0, child graceful=true/exit143. 자원 종료 보고는 worker/streamer0, test Redis/MySQL/Ryuk는20:51:09 확인 시0이며 공유 컨테이너는 조작하지 않았다.
 - 원시 근거는 docs/week8/verification/runs/20261112-cache-b/의 a-related·b-o11/summary.md다. 실제 Redis/DB 근거와 Mockito 지연/오류 대역을 구분한다. Codex가 소스/보고서를 읽어 검토했고 검사를 재실행하지 않았다. 추가 필수 수정은 없다.
 - 미실행: 실제 공유 Redis pause/Q9·Q10/R4·R5, 실제 warm-cache HTTP, 전체 check/회귀, 비교 실험. 새 검사의 수정 전 실패를 되돌려 실행하지 않았고 정적 반례와 수정 후 통과를 구분한다. 다음은 이 B 구현 커밋 뒤 기존 Q9/Q10부터 실제 장애 검증이다.
+
+## Q9/Q10 실제 장애·재개 검증과 Q10 마지막 정리 보완 — 2026-11-12
+
+- 기준 dcbb32c의 C1 miss/no-op cache·자동 scheduler 대체 opt-in 조립이다. 이번 결과는 실제 대기 상태 Redis 장애/통제된 수동 재개 근거이며 실제 cache 장애 R4/R5의 근거가 아니다. 대상은 공유 로컬 Redis7.0.15 master6379/db0·replica6380이며 컨테이너/run_id·다른 client/host 연결·자기 worker와 운영9101 waiting5키 공백을 실행 전 대조했다.
+- 첫 실행21:00:31~21:00:55 KST는 실제 Q9/Q10 XML2건 실패/오류/skip0이었으나 재개 뒤 meta/entries2키가 남아 정리 미완료였다. 이전 원시 자료/판정은 보존한다.
+- 후속21:07:44~21:07:59에 동일 대상/서버·기존 JVM 종료·다른 client 없음과 두 키의 타입/전체 field/value를 재확인했다. 일회성 EVAL에서 같은 조건을 원자 비교한 뒤 자기2키만 삭제(DELETED2)했고 waiting5키0을 확인했다. 제품 Lua/공용 정리 도구는 추가하지 않았다.
+- Q10 끝을 닫기→최종 복구/연결 경과 확인→자기 키 무효화→전체 키0/processing0·DB 발급/쿠폰3 보존 단언→finishedCleanly로 보완했다.21:08 관련20건/실제2건 통과·독립 키0 확인 후, Codex가 연결 ID/run_id 일치 단언2개를 키 삭제 앞으로 이동했다. 이 이동 후 최신 재검사로 최종 판정한다.
+- 최종 관련 검사21:15:27~21:15:40 KST, JDK21.0.12·opt-in 제거·Checkstyle main/test·Guard17/Architecture3 필터, --rerun-tasks --no-build-cache로34개 task 실제 실행. XML2개20건 실패/오류/skip0·Checkstyle main/test 오류0을 대조했다.
+- 최종 실제 실행21:15:59~21:16:24 KST,32개 task 실제 실행·XML1개2건 실패/오류/skip0. 해당 test sha256 bbc4bc39bacfd0f1326fcdc44a7895e7e39543576a0bfea686be7807023ecc80을 작업 트리와 대조했다.
+- Q9: start timeout/503·닫힘·신규 DB 효과0·기존200/목록 유지. unpause 후 late START가 processing={2}로 관찰됐으며 같은 client14506/run_id 후속 응답 확인 뒤 자기 대기 상태 무효화/닫힘 유지. timeout을 미실행으로 간주하지 않는 근거다.
+- Q10: finish timeout에도201·쿠폰/발급1 보존·닫힘, 확인 후 무효화/명시 open·새 발급2, 미발급자 옛 ID404/효과0·새 등록/새 ID 발급·보유자200 우선까지 최종 발급3. 마지막 삭제 전 연결/run_id 단언과 정리 후 키0/processing0·DB3 보존 통과. JSONL87줄의 순서/결과와 불명·보류 event0을 대조했다.
+-21:16:57 독립 postrun은 target running/unpaused·동일 run_id/시작 시각·replica online, waiting5키0/processing0/db0=0, 자기 test JVM/worker/앱/test 컨테이너0을 확인했다. 공유 컨테이너7개는 유지했다. 이번 Q9/Q10 단위는 업무/복구/정리 근거까지 갖췄으며 추가 필수 보완은 없다.
+- 원시 근거: docs/week8/verification/runs/20261112-q9-q10/·20261112-q10-cleanup/·20261112-q10-order-recheck/. 과거 정리 미완료/단언 이동 전 결과와 최신 실행을 구분한다. 재연결/ID 불일치 차단은 실제 장애를 주입한 결과가 아니라 코드 순서의 정적 근거다. 같은 연결/알려진 로컬 요청 범위를 넘어 전역 종료·재시작 안전성을 주장하지 않는다. R4/R5·비교·전체 회귀/O11은 이번에 실행하지 않았다.
