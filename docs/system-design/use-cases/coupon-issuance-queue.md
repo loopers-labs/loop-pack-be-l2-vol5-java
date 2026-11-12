@@ -220,6 +220,8 @@ flowchart LR
 | `coupon:issue:queue:requests` | Hash | 서버에서 만든 `campaignId:userId`를 field로, requestId를 value로 저장 |
 | `coupon:issue:permits` | Set | 기존 동기 발급과 공유하는 실행 token |
 
+작업 정보 JSON은 `requestId`, `campaignId`, `userId`, `status`, `requestedAt`, `couponId`, `reasonCode`, `executionToken`을 담는다. Lua가 JSON을 읽고 다시 쓸 때 숫자 정밀도가 바뀌지 않도록 ID는 문자열로, 접수 시각은 ISO-8601 문자열로 저장한다. 사유 문구는 reasonCode로 정하므로 저장하지 않는다. 읽은 작업 정보는 도메인 복원 규칙으로 검증하며, 상태와 맞지 않는 값이나 형식 오류는 저장 불일치로 본다. 대기열 Lua가 돌려주는 오류 문구는 `coupon queue:`로 시작해 Redis 연결 문제와 구분한다.
+
 작업 정보에는 API 응답 필드 외에 소유 사용자 ID와 내부 실행 token을 둔다. 사용자 ID는 본인 조회 검증에 쓰고, 실행 token은 worker의 해당 처리 시도와 수동 복구를 연결한다. 내부 실행 token은 고객에게 반환하지 않는다.
 
 가장 최근 실행 token은 `SUCCEEDED`, `FAILED` 이력에도 보관한다. DB는 끝났지만 permit 반환에 실패한 경우, 완료된 작업에서도 자기 잔여 token을 찾을 수 있어야 한다. 이 token의 보존이 현재 점유 중이라는 뜻은 아니다.

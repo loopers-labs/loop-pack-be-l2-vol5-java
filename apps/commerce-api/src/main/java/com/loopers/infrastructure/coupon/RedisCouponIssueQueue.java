@@ -1,0 +1,143 @@
+package com.loopers.infrastructure.coupon;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.loopers.application.coupon.CouponIssueQueue;
+import com.loopers.application.coupon.CouponIssueQueueScriptException;
+import com.loopers.application.coupon.CouponIssueQueueSubmission;
+import com.loopers.config.redis.RedisConfig;
+import com.loopers.domain.coupon.CouponIssueRequest;
+import com.loopers.domain.coupon.CouponIssueRequestReason;
+import com.loopers.domain.coupon.CouponIssueRequestStatus;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.stereotype.Component;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+import java.util.function.Supplier;
+
+/**
+ * primary Redis에 대기열을 저장한다. 상태를 바꾸는 연산은 Lua 한 번으로 처리하고,
+ * 읽은 작업 정보는 도메인 복원 규칙으로 검증한다.
+ */
+@Component
+public class RedisCouponIssueQueue implements CouponIssueQueue {
+
+    public static final String WAITING_KEY = "coupon:issue:queue:waiting";
+    public static final String PROCESSING_KEY = "coupon:issue:queue:processing";
+    public static final String JOBS_KEY = "coupon:issue:queue:jobs";
+    public static final String REQUESTS_KEY = "coupon:issue:queue:requests";
+
+    private final RedisTemplate<String, String> redisTemplate;
+    private final ObjectMapper objectMapper;
+    @SuppressWarnings("rawtypes")
+    private final DefaultRedisScript<List> submitScript;
+
+    public RedisCouponIssueQueue(
+        @Qualifier(RedisConfig.REDIS_TEMPLATE_MASTER) RedisTemplate<String, String> redisTemplate,
+        ObjectMapper objectMapper
+    ) {
+        this.redisTemplate = redisTemplate;
+        this.objectMapper = objectMapper;
+        this.submitScript = listScript("redis/coupon-queue-submit.lua");
+    }
+
+    @Override
+    public CouponIssueQueueSubmission submit(CouponIssueRequest request, int capacity) {
+        String json = toJson(request);
+        List<?> result = redis(() -> redisTemplate.execute(submitScript,
+            List.of(REQUESTS_KEY, JOBS_KEY, WAITING_KEY, PROCESSING_KEY),
+            requestField(request.getCampaignId(), request.getUserId()), request.getRequestId(), json,
+            Integer.toString(capacity)));
+        if (result == null || result.isEmpty()) {
+            throw new CouponIssueQueueScriptException("대기열 접수 결과가 비어 있습니다.", null);
+        }
+        return switch (String.valueOf(result.get(0))) {
+            case "CREATED" -> new CouponIssueQueueSubmission.Created(fromJson(stringAt(result, 1)));
+            case "EXISTING" -> new CouponIssueQueueSubmission.Existing(fromJson(stringAt(result, 1)));
+            case "FULL" -> new CouponIssueQueueSubmission.Full();
+            default -> throw new CouponIssueQueueScriptException("알 수 없는 대기열 접수 결과입니다.", null);
+        };
+    }
+
+    @Override
+    public Optional<CouponIssueRequest> findById(String requestId) {
+        Object json = redis(() -> redisTemplate.opsForHash().get(JOBS_KEY, requestId));
+        return Optional.ofNullable(json).map(value -> fromJson(String.valueOf(value)));
+    }
+
+    @Override
+    public Optional<CouponIssueRequest> findByCampaignIdAndUserId(Long campaignId, Long userId) {
+        Object requestId = redis(() -> redisTemplate.opsForHash().get(REQUESTS_KEY, requestField(campaignId, userId)));
+        if (requestId == null) {
+            return Optional.empty();
+        }
+        return Optional.of(findById(String.valueOf(requestId))
+            .orElseThrow(() -> new CouponIssueQueueScriptException("중복 접수 정보에 연결된 작업 정보가 없습니다.", null)));
+    }
+
+    static String requestField(Long campaignId, Long userId) {
+        return campaignId + ":" + userId;
+    }
+
+    private String toJson(CouponIssueRequest request) {
+        StoredJob stored = new StoredJob(request.getRequestId(), String.valueOf(request.getCampaignId()),
+            String.valueOf(request.getUserId()), request.getStatus().name(), request.getRequestedAt().toString(),
+            request.getCouponId() == null ? null : String.valueOf(request.getCouponId()),
+            request.getReason() == null ? null : request.getReason().name(), request.getExecutionToken());
+        try {
+            return objectMapper.writeValueAsString(stored);
+        } catch (Exception exception) {
+            throw new CouponIssueQueueScriptException("대기열 작업 정보를 저장 형식으로 바꾸지 못했습니다.", exception);
+        }
+    }
+
+    private CouponIssueRequest fromJson(String json) {
+        try {
+            StoredJob stored = objectMapper.readValue(json, StoredJob.class);
+            return CouponIssueRequest.reconstitute(stored.requestId(), Long.valueOf(stored.campaignId()),
+                Long.valueOf(stored.userId()), CouponIssueRequestStatus.valueOf(stored.status()),
+                Instant.parse(stored.requestedAt()),
+                stored.couponId() == null ? null : Long.valueOf(stored.couponId()),
+                stored.reasonCode() == null ? null : CouponIssueRequestReason.valueOf(stored.reasonCode()),
+                stored.executionToken());
+        } catch (Exception exception) {
+            throw new CouponIssueQueueScriptException("저장된 대기열 작업 정보가 올바르지 않습니다.", exception);
+        }
+    }
+
+    private static String stringAt(List<?> result, int index) {
+        if (result.size() <= index || result.get(index) == null) {
+            throw new CouponIssueQueueScriptException("대기열 결과에 작업 정보가 없습니다.", null);
+        }
+        return String.valueOf(result.get(index));
+    }
+
+    private static <T> T redis(Supplier<T> command) {
+        try {
+            return command.get();
+        } catch (CouponIssueQueueScriptException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw RedisCouponIssueQueueExceptionTranslator.translate(exception);
+        }
+    }
+
+    @SuppressWarnings("rawtypes")
+    private static DefaultRedisScript<List> listScript(String location) {
+        DefaultRedisScript<List> script = new DefaultRedisScript<>();
+        script.setLocation(new ClassPathResource(location));
+        script.setResultType(List.class);
+        return script;
+    }
+
+    /**
+     * Redis에 저장하는 작업 정보. Lua가 숫자 정밀도를 바꾸지 않도록 ID와 시각은 문자열로 저장한다.
+     */
+    private record StoredJob(String requestId, String campaignId, String userId, String status, String requestedAt,
+                             String couponId, String reasonCode, String executionToken) {
+    }
+}
