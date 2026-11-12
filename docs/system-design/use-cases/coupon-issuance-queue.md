@@ -412,7 +412,45 @@ worker가 `FAILED`와 `UNKNOWN`을 구분할 수 있도록 기존 발급 실행�
 | 쿠폰이 없고 현재 발급 불가 | 사유를 기록해 `FAILED`, 처리 중 항목 제거, 이력과 중복 정보 유지 |
 | DB 조회 실패 또는 이전 실행 종료 불명 | 변경하지 않음. 처리 중 작업과 token 유지 |
 
-복구 Lua 파일과 `redis-cli`, SQL 실행 예시는 구현하면서 추가한다. 현재 실행 가능한 복구 Lua가 존재한다는 뜻은 아니다.
+#### 실행 예시
+
+명령은 로컬 primary Redis(`localhost:6379`, `redis-master`)와 로컬 MySQL에 실행한다. 복구 Lua는 `apps/commerce-api/src/main/resources/redis/coupon-queue-recover.lua`이며, 테스트도 같은 파일을 실행해 검증한다.
+
+조회는 데이터를 바꾸지 않는다.
+
+```bash
+redis-cli -p 6379 HGET coupon:issue:queue:jobs <requestId>
+redis-cli -p 6379 LPOS coupon:issue:queue:processing <requestId>
+redis-cli -p 6379 LPOS coupon:issue:queue:waiting <requestId>
+redis-cli -p 6379 SISMEMBER coupon:issue:permits <executionToken>
+```
+
+```sql
+SELECT id, user_id, issued_at FROM coupons WHERE campaign_id = :campaignId AND user_id = :userId;
+SELECT total_quota, issued_count, start_at, end_at, terminated_at FROM coupon_campaigns WHERE id = :campaignId;
+```
+
+적용은 이전 실행과 DB 작업의 종료를 확인한 뒤, 조회 때 본 상태와 실행 token을 그대로 넘긴다. 마지막 두 인자는 couponId와 reasonCode이며 쓰지 않는 값은 빈 문자열로 둔다.
+
+```bash
+LUA=apps/commerce-api/src/main/resources/redis/coupon-queue-recover.lua
+KEYS="coupon:issue:queue:jobs coupon:issue:queue:waiting coupon:issue:queue:processing coupon:issue:permits"
+
+# 이미 발급됨: 성공으로 기록
+redis-cli -p 6379 --eval $LUA $KEYS , <requestId> PROCESSING <executionToken> SUCCEED <couponId> ''
+# 미발급이고 현재 발급 가능: 같은 ID로 다시 대기
+redis-cli -p 6379 --eval $LUA $KEYS , <requestId> UNKNOWN <executionToken> REQUEUE '' ''
+# 미발급이고 현재 발급 불가: 사유를 기록해 실패
+redis-cli -p 6379 --eval $LUA $KEYS , <requestId> PROCESSING <executionToken> FAIL '' SOLD_OUT
+# 완료된 작업에 남은 자기 permit만 정리
+redis-cli -p 6379 --eval $LUA $KEYS , <requestId> SUCCEEDED <executionToken> RELEASE '' ''
+```
+
+| 응답 | 의미 |
+|---|---|
+| `APPLIED`, 바뀐 작업 JSON, 반환한 permit 수 | 기록과 List 이동, 자기 token 반환을 함께 반영했다. 반환 수 0은 이미 없던 token이다 |
+| `MISMATCH`, 현재 작업 JSON | 조회 뒤 상태나 token이 바뀌어 아무것도 바꾸지 않았다. 다시 조회해 판단한다 |
+| `coupon queue:`로 시작하는 오류 | 입력이 잘못됐거나, 대기 작업이거나, 저장 상태가 어긋났다. 아무것도 바꾸지 않았다 |
 
 ### 작업과 연결되지 않은 permit 정리
 
@@ -422,6 +460,12 @@ worker가 permit을 얻은 직후, 작업을 가져오기 전에 앱이 중단�
 2. 진행 중인 발급 DB 작업이 없는지 확인한다. 확인하지 못하면 정리하지 않는다.
 3. `PROCESSING`, `UNKNOWN` 작업에 기록된 token은 작업 복구 절차로 정리한다.
 4. permit Set에 남은 token 가운데 어떤 작업에도 기록되지 않은 token을 `SREM`으로 하나씩 지운다. 로그에 남은 token이 있으면 그 값과 대조하고, 앱이 중단돼 로그가 없으면 작업 기록에 없는 token으로 골라낸다. Set 전체를 지우지 않는다.
+
+```bash
+redis-cli -p 6379 SMEMBERS coupon:issue:permits
+redis-cli -p 6379 HVALS coupon:issue:queue:jobs | grep -c <token>   # 0이면 어떤 작업에도 기록되지 않은 token
+redis-cli -p 6379 SREM coupon:issue:permits <token>
+```
 
 정리 뒤 재시작하면 기존 수용 시작 조건대로 primary Set이 비어 있을 때만 신규 수용이 열린다. 동기 발급 설계의 "확인된 비활성 token만 Redis CLI로 제거한다"는 원칙과 같다.
 
