@@ -2,27 +2,24 @@ package com.loopers.application.order;
 
 import com.loopers.application.user.UserRegistrationService;
 import com.loopers.domain.brand.BrandModel;
+import com.loopers.domain.order.OrderOutbox;
+import com.loopers.domain.order.OrderOutboxStatus;
 import com.loopers.domain.order.OrderStatus;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.infrastructure.brand.BrandJpaRepository;
 import com.loopers.infrastructure.order.OrderJpaRepository;
+import com.loopers.infrastructure.order.OrderOutboxJpaRepository;
 import com.loopers.infrastructure.product.ProductJpaRepository;
 import com.loopers.support.payment.FakePaymentServer;
 import com.loopers.testcontainers.KafkaTestBroker;
 import com.loopers.utils.DatabaseCleanUp;
 import com.zaxxer.hikari.HikariDataSource;
-import org.apache.kafka.clients.admin.AdminClient;
-import org.apache.kafka.clients.admin.AdminClientConfig;
-import org.apache.kafka.clients.admin.NewTopic;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.system.CapturedOutput;
-import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -34,23 +31,24 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 브로커가 꺼졌을 때 주문 확정 요청이 send() 1단계(metadata 확보)에서 얼마나 묶이는지 잰다 (ADR 0051의 max.block.ms=5000).
+ * 브로커가 꺼지고 producer에 metadata가 없을 때, send() 1단계 대기(ADR 0051의 max.block.ms=5000)가 어디에 걸리는지 잰다.
+ * <p>
+ * W6에서는 AFTER_COMMIT 직접 발행이라 주문 확정 요청이 약 5초 묶이고 그동안 DB 커넥션도 쥐고 있었다
+ * (docs/week6/implementation-log.md의 당시 측정, W6 코드는 b0d84b4에서 실행). W7에서는 주문 확정이 Outbox 저장으로 끝나므로
+ * 같은 조건에서 다음을 본다.
  * <ul>
- *   <li>경우 1: 이미 한 번 보내 metadata를 기억하는 producer. 브로커를 끈 뒤에도 send()는 버퍼에 넣고 바로 돌아온다.</li>
- *   <li>경우 2: metadata가 없는 새 producer. send()가 max.block.ms 동안 기다린 뒤 실패한다. AFTER_COMMIT은 커넥션 반납 전이라
- *       그동안 DB 커넥션도 쥐고 있는지 Hikari의 사용 중 커넥션 수로 본다.</li>
+ *   <li>주문 확정 요청: Kafka를 기다리지 않고 끝나며 Outbox가 PENDING으로 남는다.</li>
+ *   <li>relay 한 회차: 대기를 relay가 대신 지고, 그동안 DB 커넥션을 쥐지 않는다. 실패 뒤 같은 행이 PENDING·오류 기록으로 남는다.</li>
  * </ul>
  * 시간을 재는 실험이라 평소 check에서 뺀다. 실행: {@code ./gradlew :apps:commerce-api:experimentTest --tests '*ProducerMaxBlockExperimentTest'}
  */
 @Tag("experiment")
-@ExtendWith(OutputCaptureExtension.class)
 @SpringBootTest(properties = "commerce.order-events.enabled=true")
 class ProducerMaxBlockExperimentTest {
     private static final KafkaTestBroker BROKER = new KafkaTestBroker();
@@ -69,6 +67,8 @@ class ProducerMaxBlockExperimentTest {
     @Autowired private BrandJpaRepository brands;
     @Autowired private ProductJpaRepository products;
     @Autowired private OrderJpaRepository orderRepository;
+    @Autowired private OrderOutboxJpaRepository outbox;
+    @Autowired private OrderOutboxRelay relay;
     @Autowired private KafkaTemplate<Object, Object> kafka;
     @Autowired private HikariDataSource dataSource;
     @Autowired private DatabaseCleanUp cleanUp;
@@ -88,54 +88,58 @@ class ProducerMaxBlockExperimentTest {
     }
 
     @Test
-    void cachedMetadataReturnsImmediatelyButMissingMetadataBlocksTheRequestAndItsConnection(CapturedOutput output)
-        throws Exception {
-        try (AdminClient admin = AdminClient.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, BROKER.bootstrapServers()))) {
-            admin.createTopics(List.of(new NewTopic(TOPIC, 1, (short) 1))).all().get(10, TimeUnit.SECONDS);
-        }
+    void brokerOutageDelaysRelayButNotOrderConfirmationAndHoldsNoConnection() throws Exception {
         PG.reset();
         Long userId = registration.register().getId();
         Long brandId = brands.save(new BrandModel("max.block 실험 브랜드", null)).getId();
         Long productId = products.save(new ProductModel(brandId, "양말", 1_000L, 100)).getId();
 
-        // 준비: 브로커가 살아 있을 때 한 건을 보내 producer가 metadata를 기억하게 한다.
-        Measured warmUp = confirm(userId, productId, "TEST-TX-1");
-        kafka.flush();
-        assertThat(output.getAll()).contains("Order event published:");
-
+        // W6 경우 2와 같은 조건: 브로커를 끄고 producer를 새로 만들어 metadata가 없게 한다.
         BROKER.close();
-
-        // 경우 1: metadata가 있으면 send()는 바로 돌아온다. 실패는 나중에 2단계(delivery.timeout.ms)에서 드러난다.
-        Measured cached = confirm(userId, productId, "TEST-TX-2");
-
-        // 경우 2: producer를 새로 만들어 metadata가 없게 한다. send()가 max.block.ms(5초) 동안 기다린다.
         kafka.getProducerFactory().reset();
-        Measured missing = confirm(userId, productId, "TEST-TX-3");
 
-        Map<String, Object> report = new LinkedHashMap<>();
-        report.put("warmUpMs", warmUp.elapsed.toMillis());
-        report.put("cachedMetadataMs", cached.elapsed.toMillis());
-        report.put("missingMetadataMs", missing.elapsed.toMillis());
-        report.put("missingMetadataMaxActiveConnectionsAfterOneSecond", missing.maxActiveAfterOneSecond);
-        report.put("cachedMetadataMaxActiveConnectionsAfterOneSecond", cached.maxActiveAfterOneSecond);
-        report.put("poolSize", dataSource.getMaximumPoolSize());
-        report.put("synchronousFailureLogged", output.getAll().contains("Order event publication failed after commit"));
-        System.out.println("MAX_BLOCK_EXPERIMENT " + report);
-
-        assertThat(cached.elapsed).isLessThan(Duration.ofSeconds(1));
-        assertThat(missing.elapsed).isBetween(Duration.ofMillis(4_500), Duration.ofSeconds(8));
-        assertThat(missing.maxActiveAfterOneSecond).isGreaterThanOrEqualTo(1);
-        assertThat(output.getAll()).contains("Order event publication failed after commit");
-        assertThat(orderRepository.findById(missing.orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.CONFIRMED);
-    }
-
-    /** 실제 PG 결과 적용으로 확정하며 걸린 시간과, 시작 1초 뒤부터 끝날 때까지 본 사용 중 커넥션 수의 최댓값을 잰다. */
-    private Measured confirm(Long userId, Long productId, String transactionKey) throws Exception {
         Long orderId = orders.create(userId, List.of(new OrderFacade.OrderLine(productId, 1))).id();
         orders.confirm(userId, orderId, new OrderFacade.PaymentCommand(
-            "max-block-" + transactionKey, "TEST", "0000-0000-0000-0000"));
-        PG.changeStatus(transactionKey, "SUCCESS");
+            "max-block-TEST-TX-1", "TEST", "0000-0000-0000-0000"));
+        PG.changeStatus("TEST-TX-1", "SUCCESS");
+        Measured confirmation = measure(() -> orders.reconcile(userId, orderId));
 
+        OrderOutbox pending = outboxOf(orderId);
+        assertThat(orderRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(pending.getStatus()).isEqualTo(OrderOutboxStatus.PENDING);
+        assertThat(pending.getAttemptCount()).isZero();
+
+        int[] published = new int[1];
+        Measured relayRun = measure(() -> published[0] = relay.runOnce());
+
+        OrderOutbox failed = outboxOf(orderId);
+        Map<String, Object> report = new LinkedHashMap<>();
+        report.put("confirmationMs", confirmation.elapsed.toMillis());
+        report.put("confirmationMaxActiveConnectionsAfterOneSecond", confirmation.maxActiveAfterOneSecond);
+        report.put("relayMs", relayRun.elapsed.toMillis());
+        report.put("relayMaxActiveConnectionsAfterOneSecond", relayRun.maxActiveAfterOneSecond);
+        report.put("poolSize", dataSource.getMaximumPoolSize());
+        report.put("outboxStatus", failed.getStatus());
+        report.put("attemptCount", failed.getAttemptCount());
+        report.put("lastError", failed.getLastError());
+        System.out.println("MAX_BLOCK_EXPERIMENT " + report);
+
+        assertThat(confirmation.elapsed).as("주문 확정은 Kafka를 기다리지 않는다").isLessThan(Duration.ofSeconds(1));
+        assertThat(relayRun.elapsed).as("max.block.ms 대기는 relay가 진다")
+            .isBetween(Duration.ofMillis(4_500), Duration.ofSeconds(8));
+        assertThat(relayRun.maxActiveAfterOneSecond).as("send 대기 중에는 DB 커넥션을 쥐지 않는다").isZero();
+        assertThat(published[0]).isZero();
+        assertThat(failed.getStatus()).isEqualTo(OrderOutboxStatus.PENDING);
+        assertThat(failed.getAttemptCount()).isEqualTo(1);
+        assertThat(failed.getLastError()).isNotBlank();
+    }
+
+    private OrderOutbox outboxOf(Long orderId) {
+        return outbox.findByEventId("order-confirmed:v1:" + orderId).orElseThrow();
+    }
+
+    /** 걸린 시간과, 시작 1초 뒤부터 끝날 때까지 본 사용 중 커넥션 수의 최댓값을 잰다. */
+    private Measured measure(Runnable action) throws InterruptedException {
         var running = new AtomicBoolean(true);
         var maxActive = new AtomicInteger();
         long started = System.nanoTime();
@@ -153,15 +157,15 @@ class ProducerMaxBlockExperimentTest {
         });
         sampler.start();
         try {
-            orders.reconcile(userId, orderId);
+            action.run();
         } finally {
             running.set(false);
             sampler.join(1_000);
         }
-        return new Measured(orderId, Duration.ofNanos(System.nanoTime() - started), maxActive.get());
+        return new Measured(Duration.ofNanos(System.nanoTime() - started), maxActive.get());
     }
 
-    private record Measured(Long orderId, Duration elapsed, int maxActiveAfterOneSecond) {}
+    private record Measured(Duration elapsed, int maxActiveAfterOneSecond) {}
 
     private static FakePaymentServer startPg() {
         try {
