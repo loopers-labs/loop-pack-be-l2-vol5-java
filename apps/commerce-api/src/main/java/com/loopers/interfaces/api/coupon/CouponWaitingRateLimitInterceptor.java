@@ -17,7 +17,7 @@ import java.time.Duration;
  * 대기 등록 입구의 요청률 제한(설계 §12.3). 앱 인스턴스에 limiter 하나를 두고 모든 사용자·캠페인이 공유한다.
  *
  * <p>MVC 매핑 뒤·인자 resolver(사용자 DB 조회) 전에 실행돼야 하므로 @RateLimiter 대신 interceptor 로 둔다.
- * 허가는 기다리지 않고(timeout 0) 요청 결과와 무관하게 반환하지 않는다. 대기 등록 handler 외에는 허가를 쓰지 않는다.
+ * 허가는 기다리지 않고(timeout 0) 요청 결과와 무관하게 반환하지 않는다. {@link CouponWaitingRateLimited} 를 붙인 대기 등록 handler 외에는 허가를 쓰지 않는다.
  * 설정이 Resilience4j 의 표현 범위를 넘으면 생성자에서 실패해 기동이 멈춘다.
  */
 @Component
@@ -45,7 +45,6 @@ public class CouponWaitingRateLimitInterceptor implements HandlerInterceptor {
     private static boolean isRegisterWaiting(HttpServletRequest request, Object handler) {
         return "POST".equals(request.getMethod())
             && handler instanceof HandlerMethod method
-            && method.getBeanType() == CouponV1Controller.class
-            && method.getMethod().getName().equals("registerWaiting");
+            && method.hasMethodAnnotation(CouponWaitingRateLimited.class);
     }
 }

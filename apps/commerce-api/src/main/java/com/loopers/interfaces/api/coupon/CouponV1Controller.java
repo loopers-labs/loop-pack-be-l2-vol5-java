@@ -27,6 +27,7 @@ public class CouponV1Controller implements CouponV1ApiSpec {
 
     private final CouponFacade couponFacade;
 
+    @CouponWaitingRateLimited
     @PostMapping("/api/v1/coupon-campaigns/{campaignId}/waiting")
     @Override
     public ResponseEntity<ApiResponse<CouponV1Dto.WaitingResponse>> registerWaiting(

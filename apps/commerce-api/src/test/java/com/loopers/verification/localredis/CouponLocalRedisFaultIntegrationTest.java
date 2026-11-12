@@ -835,7 +835,7 @@ class CouponLocalRedisFaultIntegrationTest {
     private List<Long> prepare(String testCase, int users) throws Exception {
         recording.requireNotWithheld(); // 앞 사례가 근거 없이 끝났으면 준비·DB 변경·열기·정리 전에 멈춘다.
         assertThat(couponFacade.close()).isFalse();
-        assertThat(couponFacade.status()).isFalse();
+        assertThat(couponFacade.isAccepting()).isFalse();
         verifyTarget(testCase);
         long existing = observedWaitingKeys();
         recording.log().append(Map.of("event", "start-keys", "case", testCase, "keys", existing));
@@ -927,7 +927,7 @@ class CouponLocalRedisFaultIntegrationTest {
         pause(testCase);
         try {
             rejected = issue(testCase, newcomer, campaignId, newcomerWaiting);
-            closedDuringFault = !couponFacade.status();
+            closedDuringFault = !couponFacade.isAccepting();
             issuedDuringFault = fixture.issuedCount(campaignId);
             newcomerCoupons = fixture.couponCount(campaignId, newcomer);
             storedAgain = issue(testCase, owner, campaignId, null);
@@ -962,14 +962,14 @@ class CouponLocalRedisFaultIntegrationTest {
         long removed = observedWaitingKeys();
         Set<String> finalMembers = observedMembers();
         recording.log().append(Map.of("event", "cleanup", "case", testCase, "keysLeft", removed,
-            "members", finalMembers, "accepting", couponFacade.status(),
+            "members", finalMembers, "accepting", couponFacade.isAccepting(),
             "db", Map.of("issued", fixture.issuedCount(campaignId), "coupons", fixture.couponCount(campaignId))));
         System.out.printf("[coupon-q9] container=%s runId=%s clientId=%d->%d rejected=%s stored=%s lateProcessing=%s keysLeft=%d finalProcessing=%s accepting=%s issued=%d%n",
             containerId, beforeRunId, beforeId, afterId, rejected.getStatusCode(), storedAgain.getStatusCode(), membersAfterUnpause,
-            removed, finalMembers, couponFacade.status(), fixture.issuedCount(campaignId));
+            removed, finalMembers, couponFacade.isAccepting(), fixture.issuedCount(campaignId));
         assertAll(
             () -> assertThat(finalMembers).isEmpty(),
-            () -> assertThat(couponFacade.status()).as("Q9 는 닫힘을 유지하며 끝난다").isFalse(),
+            () -> assertThat(couponFacade.isAccepting()).as("Q9 는 닫힘을 유지하며 끝난다").isFalse(),
             () -> assertThat(fixture.issuedCount(campaignId)).isEqualTo(1)
         );
         finishedCleanly = true;
@@ -1005,7 +1005,7 @@ class CouponLocalRedisFaultIntegrationTest {
         }
         String issuerToken = recording.waitingIdOf(issuer);
         String releaseOutcome = recording.finishOutcomeOf(issuerToken);
-        boolean closedAfterFault = !couponFacade.status();
+        boolean closedAfterFault = !couponFacade.isAccepting();
 
         long afterId = clientId();
         String afterRunId = runId();
@@ -1044,7 +1044,7 @@ class CouponLocalRedisFaultIntegrationTest {
             () -> assertThat(admitted.getStatusCode()).isEqualTo(HttpStatus.CREATED),
             () -> assertThat(finalMembers).isEmpty(),
             () -> assertThat(fixture.issuedCount(campaignId)).isEqualTo(2),
-            () -> assertThat(couponFacade.status()).isTrue()
+            () -> assertThat(couponFacade.isAccepting()).isTrue()
         );
 
         // 재개 뒤 옛 권한: 아직 새로 등록하지 않은 미발급자의 옛 헤더는 404·DB 효과 0 이다.
@@ -1105,7 +1105,7 @@ class CouponLocalRedisFaultIntegrationTest {
 
         // 마지막 정리: 닫기 → 모든 HTTP 응답 수신(자동 회차 없음)·같은 연결 경과 → 최종 복구 → 자기 대기실 키 무효화 → 키 0, DB 결과 보존.
         couponFacade.close();
-        assertThat(couponFacade.status()).isFalse();
+        assertThat(couponFacade.isAccepting()).isFalse();
         long endClientId = clientId();
         String endRunId = runId();
         long issuedBeforeCleanup = fixture.issuedCount(campaignId);
@@ -1119,14 +1119,14 @@ class CouponLocalRedisFaultIntegrationTest {
         long keysAfterCleanup = observedWaitingKeys();
         Set<String> processingAfterCleanup = observedMembers();
         recording.log().append(Map.of("event", "final-cleanup-after", "case", testCase, "keys", keysAfterCleanup,
-            "processing", processingAfterCleanup, "accepting", couponFacade.status(),
+            "processing", processingAfterCleanup, "accepting", couponFacade.isAccepting(),
             "db", Map.of("issued", fixture.issuedCount(campaignId), "coupons", fixture.couponCount(campaignId))));
         System.out.printf("[coupon-q10-end] keysLeft=%d processing=%s issued=%d coupons=%d clientId=%d runId=%s%n", keysAfterCleanup,
             processingAfterCleanup, fixture.issuedCount(campaignId), fixture.couponCount(campaignId), endClientId, endRunId);
         assertAll(
             () -> assertThat(keysAfterCleanup).as("자기 대기실 키 5개 모두 없음").isZero(),
             () -> assertThat(processingAfterCleanup).isEmpty(),
-            () -> assertThat(couponFacade.status()).isFalse(),
+            () -> assertThat(couponFacade.isAccepting()).isFalse(),
             () -> assertThat(issuedBeforeCleanup).isEqualTo(3),
             () -> assertThat(fixture.issuedCount(campaignId)).as("키 정리가 발급 수를 바꾸지 않음").isEqualTo(issuedBeforeCleanup),
             () -> assertThat(fixture.couponCount(campaignId)).as("키 정리가 쿠폰을 바꾸지 않음").isEqualTo(couponsBeforeCleanup)

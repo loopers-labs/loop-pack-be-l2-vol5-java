@@ -205,7 +205,7 @@ class CouponLocalFixtureConfigIntegrationTest {
                 () -> assertThat(((Number) campaign.get("benefit_value")).longValue()).isEqualTo(5_000L),
                 () -> assertThat(jdbc.queryForList("SELECT balance FROM point", Long.class)).hasSize(8).containsOnly(0L),
                 () -> assertThat(jdbc.queryForObject("SELECT COUNT(DISTINCT user_id) FROM point", Long.class)).isEqualTo(8L),
-                () -> assertThat(facade.status()).as("준비가 수용을 열지 않는다").isFalse()
+                () -> assertThat(facade.isAccepting()).as("준비가 수용을 열지 않는다").isFalse()
             );
 
         }
@@ -244,7 +244,7 @@ class CouponLocalFixtureConfigIntegrationTest {
                 () -> assertThat(jdbc.queryForList("SELECT id FROM users WHERE id <= ? ORDER BY id", Long.class, firstUsers.get(7)))
                     .as("기존 사용자 보존").isEqualTo(firstUsers),
                 () -> assertThat(jdbc.queryForList("SELECT balance FROM point", Long.class)).containsOnly(0L),
-                () -> assertThat(facade.status()).isFalse()
+                () -> assertThat(facade.isAccepting()).isFalse()
             );
 
             // 기존 DB ID 를 운영 캠페인으로 지정하면 대기 경로로 그대로 발급할 수 있다.

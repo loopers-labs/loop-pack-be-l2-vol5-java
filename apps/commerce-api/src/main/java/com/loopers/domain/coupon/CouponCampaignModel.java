@@ -70,10 +70,25 @@ public class CouponCampaignModel extends BaseEntity {
         return name.trim();
     }
 
+    /** 앞뒤 공백 없는 1~NAME_MAX_LENGTH 자. 캠페인 생성과 캐시 값 검증이 같은 규칙을 쓴다. */
+    public static boolean isValidName(String name) {
+        return name != null && !name.isEmpty() && name.length() <= NAME_MAX_LENGTH && name.equals(name.trim());
+    }
+
+    /** 조회용 판단. 상태를 바꾸지 않는다. */
+    public boolean isActive() {
+        return status == CouponCampaignStatus.ACTIVE;
+    }
+
+    /** 조회 시점 값 기준의 품절. 발급 수 증가는 조건부 UPDATE 책임이므로 이 값으로 수량을 확보하지 않는다. */
+    public boolean isSoldOut() {
+        return issuedCount >= totalQuota;
+    }
+
     @Override
     protected void guard() {
-        if (name == null || name.isEmpty() || name.length() > NAME_MAX_LENGTH || !name.equals(name.trim())) {
-            throw new CoreException(ErrorType.INTERNAL_ERROR, "캠페인 이름은 앞뒤 공백을 제외하고 1~100자여야 합니다.");
+        if (!isValidName(name)) {
+            throw new CoreException(ErrorType.INTERNAL_ERROR, "캠페인 이름은 앞뒤 공백을 제외하고 1~" + NAME_MAX_LENGTH + "자여야 합니다.");
         }
         if (status == null) {
             throw new CoreException(ErrorType.INTERNAL_ERROR, "캠페인 상태 필수");

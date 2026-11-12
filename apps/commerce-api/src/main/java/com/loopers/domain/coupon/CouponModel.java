@@ -18,11 +18,14 @@ import lombok.Getter;
 @Entity
 @Table(
     name = "coupon",
-    uniqueConstraints = @UniqueConstraint(name = "uk_coupon_campaign_user", columnNames = {"campaign_id", "user_id"}),
+    uniqueConstraints = @UniqueConstraint(name = CouponModel.UNIQUE_CAMPAIGN_USER, columnNames = {"campaign_id", "user_id"}),
     indexes = @Index(name = "idx_coupon_user_created", columnList = "user_id, created_at, id")
 )
 @Getter
 public class CouponModel extends BaseEntity {
+
+    /** 사용자당 캠페인 쿠폰 1장의 최종 방어 제약 이름. 저장 예외 분류에서 같은 이름으로 식별한다. */
+    public static final String UNIQUE_CAMPAIGN_USER = "uk_coupon_campaign_user";
 
     @Column(name = "campaign_id", nullable = false, updatable = false)
     private Long campaignId;

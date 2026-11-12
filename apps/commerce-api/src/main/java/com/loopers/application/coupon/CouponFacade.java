@@ -11,7 +11,6 @@ import com.loopers.domain.coupon.CouponCacheRepository.IssuedCoupon;
 import com.loopers.domain.coupon.CouponCampaignIssueData;
 import com.loopers.domain.coupon.CouponCampaignModel;
 import com.loopers.domain.coupon.CouponCampaignRepository;
-import com.loopers.domain.coupon.CouponCampaignStatus;
 import com.loopers.domain.coupon.CouponModel;
 import com.loopers.domain.coupon.CouponQueryRepository;
 import com.loopers.domain.coupon.CouponRepository;
@@ -24,8 +23,6 @@ import com.loopers.support.persistence.ConstraintViolationClassifier;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.ZonedDateTime;
@@ -49,8 +46,6 @@ import java.util.function.Supplier;
 @Slf4j
 @Component
 public class CouponFacade {
-
-    static final String UNIQUE_CAMPAIGN_USER = "uk_coupon_campaign_user";
 
     private final TransactionTemplate readTemplate;
     private final TransactionTemplate writeTemplate;
@@ -167,7 +162,7 @@ public class CouponFacade {
             return Optional.empty();
         }
         CampaignAdmission state = readTemplate.execute(status -> campaignRepository.findById(operating.get())
-            .map(c -> new CampaignAdmission(c.getStatus() == CouponCampaignStatus.ACTIVE, c.getIssuedCount() >= c.getTotalQuota()))
+            .map(c -> new CampaignAdmission(c.isActive(), c.isSoldOut()))
             .orElse(CampaignAdmission.MISSING));
         return admission.processAdmissions(state.soldOut(), state.active() && !state.soldOut());
     }
@@ -177,87 +172,99 @@ public class CouponFacade {
      * 반환할 확정 결과가 있을 때만 finish 뒤에 캐시에 쓴다. 종료 불명·결과 미확보·오류에서는 쓰지 않고 캐시용 DB 재조회도 하지 않는다.
      */
     private CouponIssueResult issueStarted(Long userId, Long campaignId, String waitingId) {
-        boolean terminationUnknown = false;
-        boolean writeCommitted = false;
-        String unknownStage = null;
-        CouponIssueResult result = null;
-        RuntimeException error = null;
+        IssueState state = new IssueState();
         try {
-            TxCall<CouponIssueResult> write = call(writeTemplate, () -> issueInTransaction(userId, campaignId));
-            Supplier<CouponIssueResult> followUp = null;
-            if (write.returned) {
-                result = write.candidate;
-            } else if (write.unknown()) {
-                terminationUnknown = true;
-                unknownStage = "발급 쓰기 TX";
-                error = unknownError(write);
-            } else if (write.committed()) {
-                writeCommitted = true;
-                if (write.candidate != null) {
-                    result = write.candidate;
-                    log.warn("발급 commit 뒤 예외가 있었지만 확보한 결과를 유지합니다. [waitingId = {}, userId = {}, campaignId = {}, couponId = {}]",
-                        waitingId, userId, campaignId, result.couponId(), write.failure);
-                } else {
-                    error = internal("발급 commit 은 확인했지만 응답 결과를 확보하지 못했습니다. 재요청으로 확인합니다.", write.failure);
-                }
-            } else if (!write.entered) {
-                error = asRuntime(write.failure); // 업무 SQL 미시작. 자동 재시도하지 않는다.
-            } else if (write.failure instanceof NotReserved) {
-                followUp = () -> resolveNotReserved(userId, campaignId);
-            } else if (classifier.namedUniqueViolation(write.failure).filter(UNIQUE_CAMPAIGN_USER::equals).isPresent()) {
-                followUp = () -> storedAfterConflict(userId, campaignId);
-            } else {
-                error = asRuntime(write.failure);
-            }
-
+            ObservedTransaction<CouponIssueResult> write = ObservedTransaction.run(writeTemplate, () -> issueInTransaction(userId, campaignId));
+            Supplier<CouponIssueResult> followUp = applyWrite(state, write, userId, campaignId, waitingId);
             if (followUp != null) {
-                TxCall<CouponIssueResult> read = call(readTemplate, followUp);
-                if (read.returned) {
-                    result = read.candidate;
-                } else if (read.unknown()) {
-                    terminationUnknown = true;
-                    unknownStage = "후속 읽기 TX";
-                    error = unknownError(read);
-                } else if (read.committed() && read.candidate != null) {
-                    result = read.candidate;
-                    log.warn("후속 읽기 종료 뒤 예외가 있었지만 확보한 결과를 유지합니다. [waitingId = {}, userId = {}, campaignId = {}]",
-                        waitingId, userId, campaignId, read.failure);
-                } else if (read.rolledBack() && read.failure instanceof CoreException rejection) {
-                    error = rejection; // 404·409 등 정의한 업무 거절, 또는 원인 설명 불가 500
-                } else {
-                    error = asRuntime(read.failure); // 미시작 실패여도 앞선 쓰기 TX 의 rollback 확인은 유지된다.
-                }
+                applyFollowUp(state, ObservedTransaction.run(readTemplate, followUp), userId, campaignId, waitingId);
             }
         } catch (RuntimeException | Error e) {
-            error = asRuntime(e);
+            state.error = asRuntime(e);
         } finally {
-            if (terminationUnknown) {
-                admission.close();
-                log.error("DB 종료를 확인하지 못해 PROCESSING 점유를 유지하고 신규 수용을 닫습니다. "
-                    + "[waitingId = {}, userId = {}, campaignId = {}, stage = {}, result = 불명]", waitingId, userId, campaignId, unknownStage);
+            recordTermination(state, userId, campaignId, waitingId);
+        }
+        if (state.error != null) {
+            throw state.error;
+        }
+        cache.rememberIssued(userId, campaignId, state.result);
+        return state.result;
+    }
+
+    /**
+     * 쓰기 TX 관찰을 상태에 반영한다. 원인을 새 읽기 TX 로 판별해야 하면(수량 미확보·유일 제약 충돌) 그 읽기를 돌려주고, 아니면 null 이다.
+     * 상태는 판정 즉시 기록한다. 이후 예외로 끝나도 finish 는 그때까지 확인한 종료로 판단한다.
+     */
+    private Supplier<CouponIssueResult> applyWrite(IssueState state, ObservedTransaction<CouponIssueResult> write,
+                                                   Long userId, Long campaignId, String waitingId) {
+        if (write.returned()) {
+            state.result = write.candidate();
+        } else if (write.unknown()) {
+            state.unknownStage = "발급 쓰기 TX";
+            state.error = unknownError(write);
+        } else if (write.committed()) {
+            state.writeCommitted = true;
+            if (write.candidate() != null) {
+                state.result = write.candidate();
+                log.warn("발급 commit 뒤 예외가 있었지만 확보한 결과를 유지합니다. [waitingId = {}, userId = {}, campaignId = {}, couponId = {}]",
+                    waitingId, userId, campaignId, state.result.couponId(), write.failure());
             } else {
-                // 쿠폰 결과가 있거나 쓰기 commit 을 확인했으면 ISSUED(응답 결과를 못 얻은 commit 도 포함), 그 밖의 종료 확인된 실패는 FAILED.
-                CouponWaitingState outcome = result != null || writeCommitted ? CouponWaitingState.ISSUED : CouponWaitingState.FAILED;
-                if (!admission.finish(campaignId, userId, waitingId, outcome)) {
-                    log.warn("대기 종료 기록이 적용되지 않았습니다. 업무 결과는 유지합니다. "
-                        + "[waitingId = {}, userId = {}, campaignId = {}, outcome = {}, result = {}]",
-                        waitingId, userId, campaignId, outcome, describe(result, error));
-                }
+                state.error = internal("발급 commit 은 확인했지만 응답 결과를 확보하지 못했습니다. 재요청으로 확인합니다.", write.failure());
             }
+        } else if (!write.entered()) {
+            state.error = asRuntime(write.failure()); // 업무 SQL 미시작. 자동 재시도하지 않는다.
+        } else if (write.failure() instanceof NotReserved) {
+            return () -> resolveNotReserved(userId, campaignId);
+        } else if (classifier.namedUniqueViolation(write.failure()).filter(CouponModel.UNIQUE_CAMPAIGN_USER::equals).isPresent()) {
+            return () -> storedAfterConflict(userId, campaignId);
+        } else {
+            state.error = asRuntime(write.failure());
         }
-        if (error != null) {
-            throw error;
+        return null;
+    }
+
+    /** rollback 을 확인한 쓰기 TX 뒤의 후속 읽기 TX 관찰을 상태에 반영한다. */
+    private void applyFollowUp(IssueState state, ObservedTransaction<CouponIssueResult> read,
+                               Long userId, Long campaignId, String waitingId) {
+        if (read.returned()) {
+            state.result = read.candidate();
+        } else if (read.unknown()) {
+            state.unknownStage = "후속 읽기 TX";
+            state.error = unknownError(read);
+        } else if (read.committed() && read.candidate() != null) {
+            state.result = read.candidate();
+            log.warn("후속 읽기 종료 뒤 예외가 있었지만 확보한 결과를 유지합니다. [waitingId = {}, userId = {}, campaignId = {}]",
+                waitingId, userId, campaignId, read.failure());
+        } else if (read.rolledBack() && read.failure() instanceof CoreException rejection) {
+            state.error = rejection; // 404·409 등 정의한 업무 거절, 또는 원인 설명 불가 500
+        } else {
+            state.error = asRuntime(read.failure()); // 미시작 실패여도 앞선 쓰기 TX 의 rollback 확인은 유지된다.
         }
-        cache.rememberIssued(userId, campaignId, result);
-        return result;
+    }
+
+    /** 종료 불명이면 PROCESSING 점유를 남기고 수용을 닫는다. 그 밖에는 finish 를 한 번 호출하며 그 실패는 업무 결과를 바꾸지 않는다. */
+    private void recordTermination(IssueState state, Long userId, Long campaignId, String waitingId) {
+        if (state.terminationUnknown()) {
+            admission.close();
+            log.error("DB 종료를 확인하지 못해 PROCESSING 점유를 유지하고 신규 수용을 닫습니다. "
+                + "[waitingId = {}, userId = {}, campaignId = {}, stage = {}, result = 불명]", waitingId, userId, campaignId, state.unknownStage);
+            return;
+        }
+        // 쿠폰 결과가 있거나 쓰기 commit 을 확인했으면 ISSUED(응답 결과를 못 얻은 commit 도 포함), 그 밖의 종료 확인된 실패는 FAILED.
+        CouponWaitingState outcome = state.result != null || state.writeCommitted ? CouponWaitingState.ISSUED : CouponWaitingState.FAILED;
+        if (!admission.finish(campaignId, userId, waitingId, outcome)) {
+            log.warn("대기 종료 기록이 적용되지 않았습니다. 업무 결과는 유지합니다. "
+                + "[waitingId = {}, userId = {}, campaignId = {}, outcome = {}, result = {}]",
+                waitingId, userId, campaignId, outcome, describe(state.result, state.error));
+        }
     }
 
     public PageResult<OwnedCoupon> getMyCoupons(Long userId, PageCommand page, ListSort sort) {
         return readTemplate.execute(status -> queryRepository.findOwnedPage(userId, page, sort));
     }
 
-    public boolean status() {
-        return admission.status();
+    public boolean isAccepting() {
+        return admission.isAccepting();
     }
 
     public boolean close() {
@@ -292,13 +299,9 @@ public class CouponFacade {
         if (owned.isPresent()) {
             return CouponIssueResult.stored(owned.get());
         }
-        CouponCampaignModel campaign = campaignRepository.findById(campaignId)
-            .orElseThrow(() -> new CoreException(ErrorType.COUPON_CAMPAIGN_NOT_FOUND));
-        if (campaign.getStatus() == CouponCampaignStatus.INACTIVE) {
-            throw new CoreException(ErrorType.COUPON_CAMPAIGN_INACTIVE);
-        }
-        if (campaign.getIssuedCount() >= campaign.getTotalQuota()) {
-            throw new CoreException(ErrorType.COUPON_CAMPAIGN_SOLD_OUT);
+        CampaignCheck check = checkCampaign(campaignId);
+        if (check.rejection != null) {
+            throw new CoreException(check.rejection);
         }
         throw new CoreException(ErrorType.INTERNAL_ERROR,
             "수량을 확보하지 못한 원인을 현재 상태로 설명할 수 없습니다. [campaignId = " + campaignId + "]");
@@ -340,48 +343,25 @@ public class CouponFacade {
         throw new CoreException(ErrorType.INTERNAL_ERROR, "대기 상태는 발급됨인데 쿠폰을 찾지 못했습니다.");
     }
 
-    /** 등록 전 캠페인 확인을 값으로 돌려준다. 판단 순서는 없음 → 비활성 → 품절이다. Entity 를 TX 밖으로 내보내지 않는다. */
+    /** 등록 전·수량 미확보 뒤 캠페인 확인을 값으로 돌려준다. 판단 순서는 없음 → 비활성 → 품절이다. Entity 를 TX 밖으로 내보내지 않는다. */
     private CampaignCheck checkCampaign(Long campaignId) {
         Optional<CouponCampaignModel> found = campaignRepository.findById(campaignId);
         if (found.isEmpty()) {
             return CampaignCheck.MISSING;
         }
         CouponCampaignModel campaign = found.get();
-        if (campaign.getStatus() == CouponCampaignStatus.INACTIVE) {
+        if (!campaign.isActive()) {
             return CampaignCheck.INACTIVE;
         }
-        return campaign.getIssuedCount() >= campaign.getTotalQuota() ? CampaignCheck.SOLD_OUT : CampaignCheck.ISSUABLE;
+        return campaign.isSoldOut() ? CampaignCheck.SOLD_OUT : CampaignCheck.ISSUABLE;
     }
 
     private static CouponWaitingSnapshot issuedSnapshot(Long campaignId, String waitingId, CouponIssueResult owned) {
         return new CouponWaitingSnapshot(campaignId, waitingId, CouponWaitingState.ISSUED, null, null, owned.couponId());
     }
 
-    /** 콜백 첫 부분에서 진입을 표시하고 업무 SQL 전에 afterCompletion 을 등록한다. 결과는 콜백 안에서 복사한 값이다. */
-    private static <T> TxCall<T> call(TransactionTemplate template, Supplier<T> work) {
-        TxCall<T> call = new TxCall<>();
-        try {
-            template.execute(status -> {
-                call.entered = true;
-                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                    @Override
-                    public void afterCompletion(int completionStatus) {
-                        call.completion = completionStatus;
-                    }
-                });
-                T value = work.get();
-                call.candidate = value;
-                return value;
-            });
-            call.returned = true;
-        } catch (RuntimeException | Error e) {
-            call.failure = e;
-        }
-        return call;
-    }
-
-    private static RuntimeException unknownError(TxCall<?> call) {
-        return internal("DB TX 종료를 확인하지 못했습니다.", call.failure);
+    private static RuntimeException unknownError(ObservedTransaction<?> call) {
+        return internal("DB TX 종료를 확인하지 못했습니다.", call.failure());
     }
 
     private static CoreException internal(String message, Throwable cause) {
@@ -409,30 +389,19 @@ public class CouponFacade {
         return error == null ? "불명" : "오류 " + error.getClass().getSimpleName();
     }
 
-    /** 한 TX 호출의 요청 내부 관찰. 공유하지 않는다. */
-    private static final class TxCall<T> {
-        private boolean entered;
-        private Integer completion;
-        private boolean returned;
-        private T candidate;
-        private Throwable failure;
+    /** 발급 한 요청 안에서 TX 관찰로 확정한 값. 판정 즉시 기록해 중간 예외에도 finish 판단에 쓴다. 요청 밖으로 공유하지 않는다. */
+    private static final class IssueState {
+        private CouponIssueResult result;
+        private RuntimeException error;
+        private boolean writeCommitted;
+        private String unknownStage;
 
-        /** 콜백에 들어간 뒤 UNKNOWN 이거나 완료 통지가 없으면 종료 불명이다. */
-        boolean unknown() {
-            return !returned && entered
-                && (completion == null || completion == TransactionSynchronization.STATUS_UNKNOWN);
-        }
-
-        boolean committed() {
-            return returned || (entered && completion != null && completion == TransactionSynchronization.STATUS_COMMITTED);
-        }
-
-        boolean rolledBack() {
-            return !returned && entered && completion != null && completion == TransactionSynchronization.STATUS_ROLLED_BACK;
+        boolean terminationUnknown() {
+            return unknownStage != null;
         }
     }
 
-    /** 등록 전 캠페인 확인 결과. ISSUABLE 만 거절 오류가 없다. */
+    /** 캠페인 확인 결과. ISSUABLE 만 거절 오류가 없다. */
     private enum CampaignCheck {
         MISSING(ErrorType.COUPON_CAMPAIGN_NOT_FOUND),
         INACTIVE(ErrorType.COUPON_CAMPAIGN_INACTIVE),

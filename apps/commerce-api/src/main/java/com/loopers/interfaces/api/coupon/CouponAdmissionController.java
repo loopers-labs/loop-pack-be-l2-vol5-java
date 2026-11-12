@@ -16,7 +16,7 @@ public class CouponAdmissionController implements CouponAdmissionApiSpec {
     @GetMapping("/api/coupon/admission")
     @Override
     public ApiResponse<CouponAdmissionDto.AdmissionResponse> status() {
-        return ApiResponse.success(new CouponAdmissionDto.AdmissionResponse(couponFacade.status()));
+        return ApiResponse.success(new CouponAdmissionDto.AdmissionResponse(couponFacade.isAccepting()));
     }
 
     @PostMapping("/api/coupon/admission/close")

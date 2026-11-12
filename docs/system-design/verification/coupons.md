@@ -1009,3 +1009,103 @@ COUPON_LOCAL_REDIS_FAULT_TEST=true \
 - R5-a: 실제 Redis true/PTTL로 채운 local이 유효한 구간에서409·sold-out Redis get0/캠페인SQL0·선행 issued get실패1. hit→응답393ms/5초 미만과 명령/SQL을 함께 근거로 썼다. R5-b는 local 채움 응답 후5520ms/Redis키 유효 상태에서 get실패1→캠페인SQL1→put실패1→409·새 대기0으로 다른 경로를 확인했다.
 -21:42:49 독립 postrun: master running/unpaused·동일run_id/시작시각·replica online, db0/9101 waiting/sold-out/issued/processing0, 자기JVM/worker/앱/test컨테이너0·공유 컨테이너 유지. 이전 잔여 키와 같은 정리 공백은 이번 실행에서 없었다.
 - 로컬 원시 근거는 docs/week8/verification/runs/20261112-cache-fault-prep/와 20261112-cache-fault/의 명령/pre/postrun·로그/XML/JSONL/요약이다. 늦은 put/START 적용은 이번1회 관찰이며 전역 fence/재시작 안전성·전체 Redis 장애 가용성으로 확대하지 않는다. R5-a는 local 분기를 직접 계측하지 않았고 보수적 시각 상한과 저장소/SQL0이 근거다. 실제 Q9/Q10 재실행·전체 check·비교는 이번에 하지 않았다.
+
+## 캐시 전후 비교 실험 상세설계 — 최종 승인·도구 준비 전, 미실행
+
+첫 정적 검토의 필수1~6과 실행 결정들을 묶어 사용자에게 제안했고 사용자가 추천 방향을 승인했다. 주 결과는 DB/Redis 호출 변화, 보조 결과는 고정5RPS에서의 HTTP 지연이다. 전용 MySQL 스키마·구간별 캠페인/소유 키·동일 SQL seed·JDK 클라이언트·외부 계측·3반복을 채택한다. 보완본 정적 검토에서 남은 A/B를 확인했고, 사용자는 기존 application 계정 재사용·전용 스키마 권한 추가/회수 방식을 선택했다. SQL 로그/Python runner 등 실행 세부를 아래처럼 보완해 최종 확정한다. 계측/seed/부하 도구 구현·빌드/앱 실행·DB/Redis 조작·측정은 아직 하지 않았다.
+
+### 1. 질문·버전·조건
+
+질문은 ‘같은 기대 응답을 유지하면서 어떤 DB/Redis 호출이 사라지거나 추가되고, 고정 유입에서 지연이 어떻게 달라지는가’다. 최대 처리량/포화점·limiter/C 튜닝은 제외한다. 실제 발행/완료율은 부하 준수 지표이며 최대 TPS 향상으로 해석하지 않는다.
+
+| 버전 | 기준 커밋 | 제품 차이 |
+|---|---|---|
+| V0 | 3bc158a | cache 없음 |
+| V1 | f4dcdd8 | 기발급/품절 Redis30초 |
+| V2 | dcbb32c | V1+품절 local5초 |
+
+제품 변경이 이 차이뿐임을 정적으로 확인한 기준이다. 세 커밋을 git archive로 각각 별도 임시 폴더에 풀어 같은 JDK21/Gradle 조건으로 bootJar를 만든다. 원 작업 트리 checkout/패치·제품 mode/캐시 switch·주석 처리·실험용 제품/test class overlay를 넣지 않는다. 최신 Guard 커밋은 버전 제품 차이로 세지 않는다. artifact SHA256/원본 커밋·빌드 명령을 기록한다.
+
+JVM은 구간마다 새로 시작하며 -Xms1g -Xmx1g, 같은 앱 포트/CPU·메모리/연결 풀·HTTP 클라이언트 조건을 쓴다. 자원이 부족하면 실행을 시작하지 않고 조정안을 보고한다. C3·delay1초/admission30초·등록10개/1초/대기0·Redis command200ms·기본 cache TTL을 유지한다. 실제 유효 설정이 다르면 측정 전에 중단한다. 제품 파일은 수정하지 않고 런타임 인자만 사용한다.
+
+### 2. 전용 DB·버전 간 상태 격리
+
+local 프로필 jpa.yml은 ddl-auto:create와 공유 loopers URL을 기본으로 가진다. 그대로 기동하지 않는다. 구간마다 새 전용 스키마 coupon_cmp_<runToken>_<segment>를 만들고 `datasource.mysql-jpa.main.jdbc-url`을 그 스키마로 명시 덮어쓴다. 전체 앱 DDL이 전용 스키마에만 생성되도록 기동 전 URL/스키마와 실제 적용 설정·접속 스키마를 대조한다. run manifest에 이름·소유/생성 기록을 남기고, 이미 있는 스키마는 재사용/삭제하지 않는다. 앱은 기존 application 계정을 재사용한다. 실행 전 계정의 원래 권한을 확인/기록하고, 이번에 새로 소유한 각 정확한 실험 스키마에 필요한 권한만 추가한다. 패턴/전역 권한 확대는 하지 않는다. 기존 계정/loopers 권한·자료는 그대로 남으며 계정 전체가 실험 스키마 전용이라고 주장하지 않는다. 그러므로 앱의 실제 JDBC URL/접속 스키마 검사가 필수다. 종료/DB 작업 확인 뒤 자기 스키마를 정리하고 이번에 추가한 권한만 회수해 원래 권한과 대조한다. 기존 권한을 통째로 REVOKE하거나 임시 사용자 생성/삭제·계정 암호 변경은 하지 않는다.
+
+스키마 생성/삭제·이 권한 추가/회수와 performance_schema 계측 조회는 기존 개발 MySQL 컨테이너의 root 관찰/관리 연결(docker exec mysql)로 수행한다. 앱을 root로 실행하지 않는다. 대상 컨테이너/계정 host를 실제로 확인하고 같은 이름의 다른 계정을 추측해 바꾸지 않는다. 준비 중 실패하면 이미 만든 자기 스키마/권한과 살아 있는 앱/DB 작업을 manifest로 추적하며, 종료 불명 상태에서는 삭제/권한 회수도 보류한다. 계정/접속 비밀값을 원시 로그에 남기지 않는다.
+
+캠페인 ID는 경로확인/반복 각 구간마다 유일하게 배정해 manifest에 기록하고 시작 설정 campaign-id와 SQL seed의 ID를 일치시킨다. 명시 ID를 써 DB AUTO_INCREMENT 재시작과 무관하게 한다. 사용자 ID는 전용 스키마 안에서 동일한 논리 ID를 사용하되 Redis 키의 campaign ID가 구간마다 달라야 한다. 대기5키·sold-out·해당 사용자 issued 키가 첫 요청 전에 모두 없을 때만 소유한다. cache TTL30초 경과나 이전 종료만으로 공백을 추측하지 않는다.
+
+CouponLocalFixtureConfig의8명/5장 준비는 이 데이터에 맞지 않고 ID도 지정할 수 없으므로 off로 둔다. 새 SQL seed를 앱 기동 후 한 TX로 실행한다. seed는 세 버전의 공통 users/coupon_campaign/coupon 테이블과 필수 BaseEntity 값·정확한 benefit/issuedCount·UNIQUE/총량을 따른다. API 신규 발급을 반복해 seed하지 않으며 cache 키는 미리 쓰지 않는다. SQL/예상 행 수·관계 검증을 같은 파일/같은 로직으로 사용한다.
+
+| 시나리오 | 데이터(기본안) | 측정 입력·기대 |
+|---|---|---|
+| P1 기발급 반복 | 보유자1명·ACTIVE 캠페인 quota1/issued1·쿠폰1 | 본인 GET waiting,200 ISSUED/같은couponId |
+| P2 품절 등록 | 보유자1명+미발급100명·ACTIVE quota1/issued1·보유자 쿠폰1 | 미발급100명 순환 POST waiting,409 COUPON_CAMPAIGN_SOLD_OUT |
+| P3 miss 비용 | 미발급1명·ACTIVE quota1/issued0·쿠폰/대기 없음 | GET waiting,404 COUPON_WAITING_NOT_FOUND |
+
+세 버전에서 캠페인 숫자ID만 구간별로 다르고 이름/혜택·논리 사용자·관계/초기 발급 수는 같게 만든다. P2의 issued1에는 실제 소유 쿠폰1을 두어 데이터 모순을 만들지 않는다. 측정 전후 행/관계·기대 응답을 확인하며 새 쿠폰·대기 등록 효과는 모두0이어야 한다.
+
+### 3. 경로 가설·수용 상태·배경 구간
+
+| 시나리오 | V0 요청 경로 | V1/V2 요청 경로(정상 hit 구간) |
+|---|---|---|
+| P1 | 사용자 SELECT1+쿠폰 SELECT1, 대기 Redis0 | 사용자 SELECT1은 남음. issued read1/hit으로 쿠폰 SELECT0. V2도 issued local은 없음 |
+| P2 | 사용자/쿠폰 SELECT2+캠페인 SELECT1, 요청 Redis0 | 둘 다 사용자/쿠폰 SELECT2+issued Redis read1/miss가 남음. V1은 sold-out read1/hit, V2 local hit은 sold-out read0. 캠페인 SELECT0 |
+| P3 | 사용자/쿠폰 SELECT2+waiting find1 | issued read1/miss 추가, 사용자/쿠폰 SELECT2+waiting find1은 남음. false 캐시 없음 |
+
+위 Redis read는 HTTP 측 경로의 논리 호출이다. EVAL/EVALSHA 내부 TYPE/GET/PTTL 수까지 합친 Redis 명령 총수나 네트워크 왕복 수와 같다고 보지 않는다. cold/자연 만료 시에는 DB/SET NX 등의 비용이 추가되므로 steady hit 표와 구분한다. V1은 캠페인 DB를 줄이는 대신 Redis 호출이 추가돼 지연이 악화될 수 있다.
+
+P1/P3은 명시 close 상태로 측정한다. 기존 보유 결과와 requireOperating/조회는 닫힘에서도 가능하다. P2는 seed 뒤 명시 open으로 품절 판정에 도달하게 한다. scheduler는 모든 버전의 실제 제품 실행을 유지한다. P1/P3 닫힘에서는 scheduler 업무 I/O가 없고, P2 열림에서는1초마다 캠페인 SELECT/상태 Redis 작업이 생긴다. 요청의 캠페인 SELECT와 scheduler SELECT는 같은 digest일 수 있다.
+
+각 시간 측정 구간에 동일 수용 상태의 요청 없는 대조30초를 앞뒤로 각각 둔다. P2에서는 두 대조 모두 open이며 scheduler를 끄지 않는다. DB/Redis 원시 전체 증분과 대조 구간/실제 경과를 함께 보고한다. 대조를 시간 비율로 환산한 차감치는 ‘배경 보정 추정’으로만 쓰고 정확한 요청별 호출 수로 단정하지 않는다. 차감이 음수/불안정하면 원시값·불확실성을 그대로 남긴다. 준비/관찰 명령과 다른 제품 배경 작업도 분리한다.
+
+### 4. 외부 계측 — 제품/test 코드 재사용 가정 제거
+
+SqlCapture·Recording decorator는 bootJar에 없고 V0에는 cache 포트도 없다. 이번 비교는 새 제품 instrumentation을 넣지 않고 앱/DB/Redis의 외부 관측으로 한다. 과거 week4 기록은 외부 관측의 참고일 뿐 이번 실행 근거가 아니다.
+
+- 경로 확인: 버전×시나리오9구간, 시간 측정과 별도 앱/전용 스키마/캠페인으로 각20요청을 관찰한다. 실제 SQL DEBUG 로그(`--spring.jpa.show-sql=false --logging.level.org.hibernate.SQL=DEBUG`, local 콘솔의 시각/thread 포함)와 짧은 Redis MONITOR 원시 기록으로 cold 첫 요청·뒤 hit·miss 비용을 HTTP 결과/시간과 연결한다. thread/time 정보를 얻을 수 없으면 요청/배경 SQL을 정확히 분리했다고 쓰지 않는다.
+- MONITOR는 해당 경로 구간에서만 실행하며 이 실험 외 다른 Redis client가 없는 조건으로 제한한다. 연결/키 prefix·스크립트 SHA를 원래 Lua와 대조해 cache read/put과 waiting 업무를 구분한다. Lua 안에서 실행되는 내부 명령과 앱이 보낸 EVAL/EVALSHA를 별도 분류하며 중복 합산을 왕복 절감으로 주장하지 않는다. 관찰자의 PTTL/INFO/CLIENT/PING은 업무 수에서 제외한다.
+- 지연 구간: `--spring.jpa.show-sql=false --logging.level.org.hibernate.SQL=OFF`를 명시하고 MONITOR도 끈 뒤 전용 스키마의 performance_schema digest·Redis INFO commandstats의 구간 전후 스냅샷만 수집한다. 전역 digest/commandstats reset은 하지 않는다. 자기 스키마 조건으로 SELECT/업무 SQL과 transaction 제어 문장을 구분하고 원시행을 보존한다. 누적 카운터 소실/감소·관측 누락은 무효 근거다.
+- INFO commandstats는 서버 합계이므로 key별/요청별 정확한 cache hit율을 제공한다고 가정하지 않는다. 명령별 원시 증분과 배경 대조를 보고하고, cache 종류별 정확한 호출 수는 짧은 경로 관찰로 증명한다. 계측하지 않은 정확 hit/miss율은 N/A로 둔다. 관찰용 INFO 자체/replication 등은 업무 합계에 섞지 않는다.
+
+SET의 calls 증분은 실제 데이터 변경 성공 수가 아니라 명령 시도 수이며 NX 무변경도 포함한다. 해당 구간에 다른 SET 발행자가 없는 것을 경로 관찰로 확인할 때만 cache SET 시도로 분류한다. EVALSHA의 NOSCRIPT 실패 뒤 EVAL 전환이 있을 수 있으므로 evalsha/eval/failed_calls를 각각 보존하고 두 시도를 두 번의 성공 업무 호출로 합산하지 않는다. Redis Lua 내부 명령 총수와 앱 발행 명령 수를 별도 표시한다.
+
+SQL schema 필터/권한·MONITOR/commandstats 가용성·로그 캡처·원시 자료 파싱은 실행 도구 준비의 읽기 전용 preflight로 확인한다. 얻을 수 없는 지표를 임의 추정해 채우지 않는다. 도구가 없거나 권한/수집 정확성이 부족하면 실행 전 보고한다. 필요 CLI는 기존 Docker 안 mysql/redis-cli를 활용하며 신규 도구 설치를 전제로 하지 않는다. 관찰용 MySQL 세션/SQL과 대상 스키마의 업무 digest를 구분한다. local 앱의 Kafka/Outbox 등 배경 구성을 읽고 실행 전 공유 Kafka topic 생성/메시지 발행 등 다른 서비스 부작용이 없는지도 확인한다. 예상 밖 부작용은 보고/보류하며 설정을 임의 변경해 숨기지 않는다.
+
+### 5. 고정 유입 클라이언트·구간 순서
+
+새 JDK21 HttpClient 외부 프로그램을 쓴다. 같은 바이너리/설정을 세 버전에 사용하고 앱 코드를 참조하지 않는다. HTTP/1.1·단일 HttpClient/keep-alive, connect2초·요청5초·동시 in-flight 최대8을 기본 실행안으로 둔다. 부하5RPS는 단조 시각 기준200ms마다 다음 요청을 시작하는 open-loop다. 각 응답 완료를 기다려 다음 발행을 늦추지 않는다.
+
+예정 시각/실제 발행/완료·상태/메타·지연·timeout/오류를 요청별로 기록한다. 동시 한도 초과는 숨은 대기로 바꾸지 않고 미발행으로 남겨 구간을 무효 처리한다. 예정 시각보다100ms 넘게 밀린 발행은 late로 표기하고 해당 구간의 고정 유입 준수 실패로 보고한다. 밀린 요청을 한 번에 몰아 보내지 않는다. 자동 재시도 없음. 응답은 status뿐 아니라 P1 couponId·P2/P3 errorCode를 검사한다. 지연은 실제 발행→body 완료의 HTTP 왕복이며 예정→발행 지연과 분리한다.
+
+각 단계가 끝나면 남은 in-flight 응답을 유한하게 모두 회수하고0인지 확인한 뒤 다음 카운터/시간 구간을 연다. timeout/미완료가 있으면 구간을 섞어 집계하지 않고 실패/보류한다. 각 시간 측정 구간은 다음 순서다.
+
+```text
+전용 폴더/manifest·스키마/캠페인·키 공백 소유 확인
+새 JVM bootJar 기동·적용 JDBC/설정 확인 → 동일 SQL seed/관계 확인
+수용 P1/P3=close, P2=open
+warm-up60초×5RPS=300요청 (측정 지연에 포함하지 않음)
+같은 수용 상태로 idle-before30초 (배경 카운터·시간 기록)
+측정60초×5RPS=300요청 (계측 최소화)
+같은 수용 상태로 idle-after30초 (배경 카운터·시간 기록)
+응답/원시 카운터·DB 효과·소유 키 상태 보존
+close→부하/observer 종료→앱 graceful 종료/DB 작업 종료 확인
+소유 Redis 키만 삭제·키0 확인→소유 전용 스키마만 정리
+```
+
+warm-up300건은 초기 준비 비용을 줄이기 위한 동일 조건이지 JIT가 완전히 안정됐다는 증명이 아니다. idle-before30초 동안 Redis30초/local5초가 만료될 수 있어 측정은 cold/re-fill도 포함하는 지속 구간이며 ‘전부 warm hit’이 아니다. 순수 hit/miss 경로의 명령 차이는 별도20건 관찰로 구분한다. P2의409/P3의404는 정상 기대 결과로서2xx와 별도로 통계화한다.
+
+3버전×3시나리오×3반복=27시간구간. 반복 순서는 V0→V1→V2, V1→V2→V0, V2→V0→V1로 순환하고 시나리오 순서는 동일하게 기록한다. 한 구간의 warm/idle/측정 유입 시간은180초로 총81분이며, 별도9경로구간·3회 빌드·27회 앱/DB 준비/종료·검증/정리 시간은 추가다. 기존31.5분 추정은 폐기한다. 실제 예비 기동 시간으로 총 비용을 실행 전에 다시 보고하고, 반복/시간을 줄여야 하면 사용자 범위 변경 승인을 받는다.
+
+### 6. 준비 산출물·실패·완료 기준
+
+Claude가 작성할 도구 기본안은 tools/coupon-comparison/의 FixedRateClient.java·seed.sql 템플릿·실행/수집 Python runner 한 파일이다. 외부 설치 없이 JDK/Python 표준 도구와 기존 Docker CLI를 사용한다. runner는 manifest/설정·예상 응답·schema/키 소유·단계별 종료 조건을 명시하고 잘못된 DB URL/스키마 이름·기존 스키마/다른 client 발견 시 앱/부하 실행을 차단한다. 제품/테스트 소스·Git 작업 트리를 수정하지 않는다. 계측/seed/드라이버 구현과 실제 실험 실행은 별도 단위다.
+
+기본 검사는 실험 없이 클라이언트의 발행 스케줄/동시 한도·status 검증/timeout·집계, 스키마/키 이름 검증·기존 소유 실패·종료 미확인 정리 보류를 가짜 HTTP/대역 명령으로 확인한다. 제품 동작과 같은 테스트를 복제하지 않는다. 민감 접속값은 원시 로그/명령 출력에서 제외한다.
+
+무효 구간은 예상 밖429/503/500·잘못된404/200·응답 내용/상태 변화, 미발행/late·부하 발생기 한도 소진, 다른 작업 간섭, 초기 상태/설정 불일치, 계측 오류, 종료 미확인이다. 실패 원시 자료를 보존하고 자동 반복으로 덮지 않는다. 미종료 상태에서 Redis 키/DB 스키마를 삭제하지 않는다. 데이터 보존/소유 불명은 정리를 보류하고 보고한다.
+
+결과는 버전/시나리오/반복별 예정·실제발행·완료·late/미발행·timeout/상태별 건수, 기대 응답 완료율, p50/p95(주)/p99(참고)·표본 수·반복 차이, SQL/Redis 원시 증분·배경 대조/보정 추정, 정확한 경로 관찰과 한계를 제시한다. CPU/GC는 상황 기록만 하고 수치 우열 분석은 하지 않는다. 약300개 표본의 p99를 안정적 운영 지표로 주장하지 않는다.
+
+완료는 세 버전/세 시나리오의 같은 조건에서 기대 계약·데이터 불변식·소유 자원 종료/정리를 지키고, 실제 호출 절감과 남는/추가 비용을 함께 설명하는 것이다. 지연 개선 없음이나 miss 비용 증가도 그대로 보고한다. 전체/보완본 정적 검토와 사용자 선택·최종 승인 반영을 마쳤다. 현재 도구/계측·실험 실행 결과는 없다. 도구 구현/가짜 장치 검사 후 결과를 검토하고 실제 실행을 별도 전달한다.

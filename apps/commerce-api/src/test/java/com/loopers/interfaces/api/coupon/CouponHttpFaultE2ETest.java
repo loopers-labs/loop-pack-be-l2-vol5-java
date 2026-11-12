@@ -457,7 +457,7 @@ class CouponHttpFaultE2ETest {
             () -> assertThat(openAfter).isZero(),
             () -> assertThat(holding.finishes()).hasSize(1),
             () -> assertThat(processing()).isEmpty(),
-            () -> assertThat(couponFacade.status()).isTrue()
+            () -> assertThat(couponFacade.isAccepting()).isTrue()
         );
     }
 

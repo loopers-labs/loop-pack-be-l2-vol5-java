@@ -111,9 +111,8 @@ class CouponFacadeWaitingTest {
 
     private static CouponCampaignModel campaign(CouponCampaignStatus status, long issued, long quota) {
         CouponCampaignModel campaign = mock(CouponCampaignModel.class);
-        when(campaign.getStatus()).thenReturn(status);
-        when(campaign.getIssuedCount()).thenReturn(issued);
-        when(campaign.getTotalQuota()).thenReturn(quota);
+        when(campaign.isActive()).thenReturn(status == CouponCampaignStatus.ACTIVE);
+        when(campaign.isSoldOut()).thenReturn(issued >= quota);
         return campaign;
     }
 
@@ -160,7 +159,7 @@ class CouponFacadeWaitingTest {
 
             verify(campaignRepository, never()).findById(anyLong());
             verifyNoInteractions(admissionRepository);
-            assertThat(admission.status()).isTrue();
+            assertThat(admission.isAccepting()).isTrue();
         }
 
         @DisplayName("캠페인 없음 404·비활성 409·품절 409 는 register 전에 끝난다.")
@@ -200,7 +199,7 @@ class CouponFacadeWaitingTest {
 
             assertThat(facade.registerWaiting(USER, CAMPAIGN)).isEqualTo(new CouponWaitingResult(false, issuedSnapshot(WAITING_ID)));
             assertError(() -> facade.registerWaiting(USER, CAMPAIGN), ErrorType.INTERNAL_ERROR);
-            assertThat(admission.status()).isFalse();
+            assertThat(admission.isAccepting()).isFalse();
             verify(queryRepository, times(4)).findOwned(USER, CAMPAIGN);
         }
     }
@@ -232,9 +231,9 @@ class CouponFacadeWaitingTest {
 
             assertError(() -> facade.getWaiting(USER, CAMPAIGN), ErrorType.COUPON_WAITING_NOT_FOUND);
             assertThat(facade.getWaiting(USER, CAMPAIGN)).isEqualTo(new CouponWaitingResult(false, issuedSnapshot(WAITING_ID)));
-            assertThat(admission.status()).isTrue();
+            assertThat(admission.isAccepting()).isTrue();
             assertError(() -> facade.getWaiting(USER, CAMPAIGN), ErrorType.COUPON_ADMISSION_UNAVAILABLE);
-            assertThat(admission.status()).isFalse();
+            assertThat(admission.isAccepting()).isFalse();
         }
     }
 
@@ -283,7 +282,7 @@ class CouponFacadeWaitingTest {
             assertThatThrownBy(() -> facade.issue(USER, CAMPAIGN, WAITING_ID)).isInstanceOf(CoreException.class);
             verify(campaignRepository, never()).reserveOne(any(), any());
             verify(admissionRepository, never()).finish(any(), any(), any(), any());
-            assertThat(admission.status()).isTrue();
+            assertThat(admission.isAccepting()).isTrue();
         }
 
         @DisplayName("PROCESSING 은 DB 를 한 번 다시 읽어 쿠폰이 있으면 기존 결과, 없으면 진행 중 결과다. DB 쓰기·finish 는 없다.")
@@ -316,7 +315,7 @@ class CouponFacadeWaitingTest {
             assertThat(facade.issue(USER, CAMPAIGN, WAITING_ID).result().couponId()).isEqualTo(COUPON_ID);
             assertError(() -> facade.issue(USER, CAMPAIGN, WAITING_ID), ErrorType.INTERNAL_ERROR);
             assertAll(
-                () -> assertThat(admission.status()).isFalse(),
+                () -> assertThat(admission.isAccepting()).isFalse(),
                 () -> verify(campaignRepository, never()).reserveOne(any(), any()),
                 () -> verify(admissionRepository, never()).finish(any(), any(), any(), any())
             );
@@ -397,7 +396,7 @@ class CouponFacadeWaitingTest {
                 () -> assertThat(found).isEqualTo(new CouponWaitingResult(false, issuedSnapshot(null))),
                 () -> verify(campaignRepository, times(1)).findById(CAMPAIGN),
                 () -> verify(cacheRepository, times(1)).putIssuedIfAbsent(any(), any(), any(), anyLong()),
-                () -> assertThat(admission.status()).isTrue()
+                () -> assertThat(admission.isAccepting()).isTrue()
             );
         }
 
@@ -461,7 +460,7 @@ class CouponFacadeWaitingTest {
             assertError(() -> facade.registerWaiting(USER, CAMPAIGN), ErrorType.COUPON_CAMPAIGN_SOLD_OUT);
             assertAll(
                 () -> verify(cacheRepository, times(1)).putSoldOutIfAbsent(CAMPAIGN, 30_000L),
-                () -> assertThat(admission.status()).isTrue()
+                () -> assertThat(admission.isAccepting()).isTrue()
             );
         }
 
@@ -508,7 +507,7 @@ class CouponFacadeWaitingTest {
 
             assertError(() -> facade.getWaiting(USER, CAMPAIGN), ErrorType.INTERNAL_ERROR);
             assertAll(
-                () -> assertThat(admission.status()).isFalse(),
+                () -> assertThat(admission.isAccepting()).isFalse(),
                 () -> verify(cacheRepository, never()).putIssuedIfAbsent(any(), any(), any(), anyLong())
             );
         }

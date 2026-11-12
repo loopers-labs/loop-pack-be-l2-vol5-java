@@ -18,6 +18,8 @@ public record CouponWaitingProperties(
     @DefaultValue("30s") Duration admissionDuration
 ) {
 
+    private static final String PREFIX = "commerce.coupon.waiting.";
+
     public CouponWaitingProperties {
         if (campaignId != null && campaignId < 1) {
             throw invalid("campaign-id", "생략하거나 1 이상의 정수", String.valueOf(campaignId));
@@ -27,21 +29,10 @@ public record CouponWaitingProperties(
     }
 
     private static void requirePositiveMillis(Duration value, String key) {
-        if (value == null) {
-            throw invalid(key, "1ms 이상의 기간", "null");
-        }
-        long millis;
-        try {
-            millis = value.toMillis();
-        } catch (ArithmeticException e) {
-            throw invalid(key, "밀리초로 표현 가능한 기간", value.toString());
-        }
-        if (millis < 1) {
-            throw invalid(key, "1ms 이상의 기간", value.toString());
-        }
+        CouponPropertyRules.requirePositiveMillis(PREFIX, key, value);
     }
 
     private static IllegalArgumentException invalid(String key, String rule, String value) {
-        return new IllegalArgumentException("commerce.coupon.waiting." + key + " 는 " + rule + "여야 합니다. [" + key + " = " + value + "]");
+        return CouponPropertyRules.invalid(PREFIX, key, rule, value);
     }
 }

@@ -7,7 +7,6 @@ import com.loopers.domain.coupon.CouponWaitingState;
 import com.loopers.domain.coupon.OwnedCoupon;
 
 import java.time.ZoneOffset;
-import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 
 public class CouponV1Dto {
@@ -41,11 +40,7 @@ public class CouponV1Dto {
     ) {
         public static OwnedCouponResponse from(OwnedCoupon coupon) {
             return new OwnedCouponResponse(coupon.couponId(), coupon.campaignId(), coupon.campaignName(),
-                coupon.benefitType(), coupon.benefitValue(), formatUtc(coupon.createdAt()));
-        }
-
-        static String formatUtc(ZonedDateTime value) {
-            return UTC_MICROS.format(value);
+                coupon.benefitType(), coupon.benefitValue(), UTC_MICROS.format(coupon.createdAt()));
         }
     }
 

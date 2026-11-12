@@ -293,7 +293,7 @@ class CouponFacadeCacheIntegrationTest {
             () -> assertThat(couponSql(statements)).hasSize(1),
             () -> assertThat(statements).noneMatch(sql -> sql.toLowerCase(Locale.ROOT).contains("from coupon_campaign")),
             () -> assertThat(admissionRepository.find(campaignId, users.get(1))).isEmpty(),
-            () -> assertThat(admission.status()).isTrue()
+            () -> assertThat(admission.isAccepting()).isTrue()
         );
     }
 
@@ -455,7 +455,7 @@ class CouponFacadeCacheIntegrationTest {
             () -> assertThat(pttl(CouponCacheRedisRepository.issuedKey(noTtl, campaignId))).isEqualTo(-1L),
             () -> assertThat(issuedRaw(otherCampaign, campaignId)).isEqualTo(otherJson),
             () -> assertThat(master.opsForValue().get(CouponCacheRedisRepository.soldOutKey(campaignId))).isEqualTo("TRUE"),
-            () -> assertThat(admission.status()).isTrue()
+            () -> assertThat(admission.isAccepting()).isTrue()
         );
     }
 

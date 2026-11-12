@@ -9,7 +9,6 @@ import com.loopers.domain.coupon.CouponAdmissionRepository;
 import com.loopers.domain.coupon.CouponAdmissionRepository.AdmissionProgress;
 import com.loopers.domain.coupon.CouponCampaignModel;
 import com.loopers.domain.coupon.CouponCampaignRepository;
-import com.loopers.domain.coupon.CouponCampaignStatus;
 import com.loopers.domain.coupon.CouponQueryRepository;
 import com.loopers.domain.coupon.CouponRepository;
 import com.loopers.interfaces.scheduler.CouponWaitingSchedulerIntegrationTest.ExecutorSettlement;
@@ -285,8 +284,8 @@ class CouponWaitingSchedulerLifecycleTest {
         CouponCampaignRepository campaigns = mock(CouponCampaignRepository.class);
         CouponAdmissionRepository waiting = mock(CouponAdmissionRepository.class);
         CouponCampaignModel campaign = mock(CouponCampaignModel.class);
-        when(campaign.getStatus()).thenReturn(CouponCampaignStatus.ACTIVE);
-        when(campaign.getTotalQuota()).thenReturn(5L);
+        when(campaign.isActive()).thenReturn(true);
+        when(campaign.isSoldOut()).thenReturn(false);
         when(campaigns.findById(CAMPAIGN)).thenReturn(Optional.of(campaign));
         AtomicReference<Boolean> fail = new AtomicReference<>(false);
         when(waiting.processAdmissions(eq(CAMPAIGN), eq(3), anyLong(), anyBoolean(), anyBoolean())).thenAnswer(invocation -> {
@@ -310,7 +309,7 @@ class CouponWaitingSchedulerLifecycleTest {
 
         fail.set(true);
         long until = System.nanoTime() + DEADLINE.toNanos();
-        while (admission.status()) {
+        while (admission.isAccepting()) {
             assertThat(System.nanoTime()).as("Redis 실패 뒤 닫힘 대기 초과").isLessThan(until);
             Thread.sleep(10);
         }
@@ -323,7 +322,7 @@ class CouponWaitingSchedulerLifecycleTest {
         assertAll(
             () -> assertThat(mockingDetails(waiting).getInvocations()).as("닫힌 뒤 Redis 업무 없음").hasSize(redisCalls),
             () -> assertThat(facadeCallsLater).as("회차는 계속").isGreaterThan(facadeCalls),
-            () -> assertThat(admission.status()).as("자동으로 다시 열지 않음").isFalse(),
+            () -> assertThat(admission.isAccepting()).as("자동으로 다시 열지 않음").isFalse(),
             () -> verify(campaigns, atLeastOnce()).findById(CAMPAIGN)
         );
     }

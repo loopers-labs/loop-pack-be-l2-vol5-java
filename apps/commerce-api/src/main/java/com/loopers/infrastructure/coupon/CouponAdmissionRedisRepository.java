@@ -7,22 +7,20 @@ import com.loopers.config.redis.RedisConfig;
 import com.loopers.domain.coupon.CouponAdmissionRepository;
 import com.loopers.domain.coupon.CouponWaitingSnapshot;
 import com.loopers.domain.coupon.CouponWaitingState;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+
+import static com.loopers.infrastructure.coupon.CouponRedisSupport.readScript;
+import static com.loopers.infrastructure.coupon.CouponRedisSupport.requireId;
 
 /**
  * 쿠폰 입장 대기 상태의 Redis 구현. 기존 master String template 만 사용하며 키에 TTL 을 두지 않는다.
@@ -31,10 +29,9 @@ import java.util.Set;
  * Lua 응답은 문자열 고정 배열이며, 길이·원소 타입·결과명·JSON·숫자·상태별 필수값 중 하나라도 어긋나면 결과로 해석하지 않고
  * IllegalStateException 으로 올린다. null 이나 알 수 없는 응답을 성공·미발견으로 바꾸지 않는다.
  */
+@Slf4j
 @Component
 public class CouponAdmissionRedisRepository implements CouponAdmissionRepository {
-
-    private static final Logger log = LoggerFactory.getLogger(CouponAdmissionRedisRepository.class);
 
     private static final RedisScript<List> REGISTER_SCRIPT = waitingScript("register");
     private static final RedisScript<List> FIND_SCRIPT = waitingScript("find");
@@ -311,12 +308,6 @@ public class CouponAdmissionRedisRepository implements CouponAdmissionRepository
         return new IllegalStateException(operation + " Lua 응답 형식이 계약과 다릅니다. [reply = " + reply + "]");
     }
 
-    private static void requireId(Long value, String name) {
-        if (value == null || value < 1) {
-            throw new IllegalArgumentException(name + " 는 1 이상이어야 합니다. [" + name + " = " + value + "]");
-        }
-    }
-
     private static void requireText(String value, String name) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(name + " 가 비어 있습니다.");
@@ -329,15 +320,7 @@ public class CouponAdmissionRedisRepository implements CouponAdmissionRepository
 
     /** 공통부를 앞에 붙여 한 스크립트로 만든다. Redis 는 합친 본문의 SHA1 로 캐시한다. */
     private static RedisScript<List> waitingScript(String name) {
-        return new DefaultRedisScript<>(read("redis/coupon-waiting-common.lua") + "\n" + read("redis/coupon-waiting-" + name + ".lua"),
+        return new DefaultRedisScript<>(readScript("redis/coupon-waiting-common.lua") + "\n" + readScript("redis/coupon-waiting-" + name + ".lua"),
             List.class);
-    }
-
-    private static String read(String path) {
-        try {
-            return new ClassPathResource(path).getContentAsString(StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Lua 스크립트를 읽을 수 없습니다. [path = " + path + "]", e);
-        }
     }
 }

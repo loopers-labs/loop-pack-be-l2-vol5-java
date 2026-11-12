@@ -17,6 +17,8 @@ public record CouponCacheProperties(
     @DefaultValue("5s") Duration localSoldOutTtl
 ) {
 
+    private static final String PREFIX = "commerce.coupon.cache.";
+
     public CouponCacheProperties {
         requirePositiveMillis(issuedTtl, "issued-ttl");
         requirePositiveMillis(soldOutTtl, "sold-out-ttl");
@@ -29,21 +31,10 @@ public record CouponCacheProperties(
     }
 
     private static void requirePositiveMillis(Duration value, String key) {
-        if (value == null) {
-            throw invalid(key, "1ms 이상의 기간", "null");
-        }
-        long millis;
-        try {
-            millis = value.toMillis();
-        } catch (ArithmeticException e) {
-            throw invalid(key, "밀리초로 표현 가능한 기간", value.toString());
-        }
-        if (millis < 1) {
-            throw invalid(key, "1ms 이상의 기간", value.toString());
-        }
+        CouponPropertyRules.requirePositiveMillis(PREFIX, key, value);
     }
 
     private static IllegalArgumentException invalid(String key, String rule, String value) {
-        return new IllegalArgumentException("commerce.coupon.cache." + key + " 는 " + rule + "여야 합니다. [" + key + " = " + value + "]");
+        return CouponPropertyRules.invalid(PREFIX, key, rule, value);
     }
 }

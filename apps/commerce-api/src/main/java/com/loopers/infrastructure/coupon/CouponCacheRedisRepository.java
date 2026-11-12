@@ -10,15 +10,11 @@ import com.loopers.config.redis.RedisConfig;
 import com.loopers.domain.coupon.CouponBenefitType;
 import com.loopers.domain.coupon.CouponCacheRepository;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -26,6 +22,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
+
+import static com.loopers.infrastructure.coupon.CouponRedisSupport.readScript;
+import static com.loopers.infrastructure.coupon.CouponRedisSupport.requireId;
 
 /**
  * 쿠폰 기발급 결과·품절 캐시의 Redis 구현(설계 §13.9). 기존 master String template 만 쓴다.
@@ -37,7 +36,7 @@ import java.util.Set;
 @Component
 public class CouponCacheRedisRepository implements CouponCacheRepository {
 
-    private static final RedisScript<List> READ_SCRIPT = new DefaultRedisScript<>(read("redis/coupon-cache-read.lua"), List.class);
+    private static final RedisScript<List> READ_SCRIPT = new DefaultRedisScript<>(readScript("redis/coupon-cache-read.lua"), List.class);
     private static final Set<String> ISSUED_FIELDS = Set.of("couponId", "campaignId", "campaignName", "benefitType", "benefitValue");
     private static final String SOLD_OUT_VALUE = "true";
     private static final ObjectMapper JSON = new ObjectMapper()
@@ -197,23 +196,9 @@ public class CouponCacheRedisRepository implements CouponCacheRepository {
         return new IllegalStateException("캐시 읽기 Lua 응답 형식이 계약과 다릅니다. [reply = " + reply + "]");
     }
 
-    private static void requireId(Long value, String name) {
-        if (value == null || value < 1) {
-            throw new IllegalArgumentException(name + " 는 1 이상이어야 합니다. [" + name + " = " + value + "]");
-        }
-    }
-
     private static void requireTtl(long ttlMillis) {
         if (ttlMillis < 1) {
             throw new IllegalArgumentException("캐시 TTL 은 1ms 이상이어야 합니다. [ttlMillis = " + ttlMillis + "]");
-        }
-    }
-
-    private static String read(String path) {
-        try {
-            return new ClassPathResource(path).getContentAsString(StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Lua 스크립트를 읽을 수 없습니다. [path = " + path + "]", e);
         }
     }
 }

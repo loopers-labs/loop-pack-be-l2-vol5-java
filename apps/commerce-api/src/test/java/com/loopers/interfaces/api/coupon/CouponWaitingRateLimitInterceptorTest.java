@@ -108,6 +108,30 @@ class CouponWaitingRateLimitInterceptorTest {
         );
     }
 
+    @DisplayName("대상은 메서드 이름이 아니라 표시로 고른다. 표시 없는 같은 이름 handler 는 허가를 쓰지 않는다.")
+    @Test
+    void selectsByMarkerNotByName() throws Exception {
+        CouponWaitingRateLimitInterceptor interceptor = new CouponWaitingRateLimitInterceptor(new CouponRateLimitProperties(1, LONG_PERIOD));
+        HandlerMethod unmarked = handler(new UnmarkedController(), "registerWaiting", Long.class, Long.class);
+
+        boolean unmarkedPasses = post(interceptor, unmarked) && post(interceptor, unmarked);
+        HandlerMethod marked = registerWaiting();
+        boolean firstMarked = post(interceptor, marked);
+
+        assertAll(
+            () -> assertThat(marked.hasMethodAnnotation(CouponWaitingRateLimited.class)).isTrue(),
+            () -> assertThat(unmarkedPasses).isTrue(),
+            () -> assertThat(firstMarked).as("표시 없는 handler 가 허가를 쓰지 않았다").isTrue()
+        );
+        assertRateLimited(() -> post(interceptor, marked));
+    }
+
+    /** 이름만 같은 표시 없는 handler. */
+    public static class UnmarkedController {
+        public void registerWaiting(Long userId, Long campaignId) {
+        }
+    }
+
     @DisplayName("동시 32건이 한도 10 을 넘지 않는다(사용자·캠페인 구분 없이 하나를 공유).")
     @Test
     void sharedUnderConcurrency() throws Exception {

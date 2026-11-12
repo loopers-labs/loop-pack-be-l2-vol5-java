@@ -309,7 +309,7 @@ class CouponFacadeIntegrationTest {
             () -> assertThat(finishes(repository, CouponWaitingState.FAILED)).isEqualTo(3),
             () -> assertThat(repository.finishes()).extracting(Finish::waitingId).doesNotHaveDuplicates().hasSize(8),
             () -> assertThat(occupancy(campaignId)).isZero(),
-            () -> assertThat(admission.status()).isTrue()
+            () -> assertThat(admission.isAccepting()).isTrue()
         );
     }
 
@@ -382,7 +382,7 @@ class CouponFacadeIntegrationTest {
             () -> assertThat(fixture.couponCount(campaignId)).isZero(),
             () -> assertThat(repository.finishes()).containsExactly(new Finish(user, waitingId, CouponWaitingState.FAILED)),
             () -> assertThat(occupancy(campaignId)).isZero(),
-            () -> assertThat(admission.status()).isTrue()
+            () -> assertThat(admission.isAccepting()).isTrue()
         );
         assertError(() -> facade.issue(user, campaignId, waitingId), ErrorType.COUPON_WAITING_ALREADY_USED);
 
@@ -476,7 +476,7 @@ class CouponFacadeIntegrationTest {
         assertAll(
             () -> assertThat(findOwnedCalls).as("기존 결과 사전 조회 한 번뿐").hasValue(1),
             () -> assertThat(reserves).isEmpty(),
-            () -> assertThat(admission.status()).isTrue()
+            () -> assertThat(admission.isAccepting()).isTrue()
         );
 
         for (Long user : users.subList(0, 3)) {
@@ -532,7 +532,7 @@ class CouponFacadeIntegrationTest {
             () -> assertThat(results).singleElement().matches(CouponFacadeIntegrationTest::created),
             () -> assertThat(repository.finishes()).containsExactly(new Finish(user, waitingId, CouponWaitingState.ISSUED)),
             () -> assertThat(occupancy(campaignId)).isZero(),
-            () -> assertThat(admission.status()).isFalse()
+            () -> assertThat(admission.isAccepting()).isFalse()
         );
     }
 

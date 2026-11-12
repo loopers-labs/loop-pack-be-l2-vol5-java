@@ -14,7 +14,6 @@ import com.loopers.domain.coupon.CouponCacheRepository.IssuedCoupon;
 import com.loopers.domain.coupon.CouponCampaignIssueData;
 import com.loopers.domain.coupon.CouponCampaignModel;
 import com.loopers.domain.coupon.CouponCampaignRepository;
-import com.loopers.domain.coupon.CouponCampaignStatus;
 import com.loopers.domain.coupon.CouponModel;
 import com.loopers.domain.coupon.CouponQueryRepository;
 import com.loopers.domain.coupon.CouponRepository;
@@ -158,7 +157,7 @@ class CouponFacadeTransactionOutcomeTest {
                 () -> assertThat(result.couponId()).isEqualTo(COUPON_ID),
                 () -> assertThat(tm.registeredSynchronizations()).containsExactly(0, 1),
                 () -> verifyFinishedOnce(CouponWaitingState.ISSUED),
-                () -> assertThat(admission.status()).isTrue()
+                () -> assertThat(admission.isAccepting()).isTrue()
             );
         }
 
@@ -172,7 +171,7 @@ class CouponFacadeTransactionOutcomeTest {
             assertAll(
                 () -> verify(campaignRepository, never()).reserveOne(any(), any()),
                 () -> verifyFinishedOnce(CouponWaitingState.FAILED),
-                () -> assertThat(admission.status()).isTrue()
+                () -> assertThat(admission.isAccepting()).isTrue()
             );
         }
 
@@ -203,7 +202,7 @@ class CouponFacadeTransactionOutcomeTest {
                 () -> assertThat(result.created()).isTrue(),
                 () -> assertThat(result.couponId()).isEqualTo(COUPON_ID),
                 () -> verifyFinishedOnce(CouponWaitingState.ISSUED),
-                () -> assertThat(admission.status()).isTrue()
+                () -> assertThat(admission.isAccepting()).isTrue()
             );
         }
 
@@ -217,7 +216,7 @@ class CouponFacadeTransactionOutcomeTest {
                 .satisfies(e -> assertThat(errorTypeOf(e)).isEqualTo(ErrorType.INTERNAL_ERROR));
             assertAll(
                 () -> verifyFinishedOnce(CouponWaitingState.ISSUED),
-                () -> assertThat(admission.status()).isTrue()
+                () -> assertThat(admission.isAccepting()).isTrue()
             );
         }
 
@@ -298,7 +297,7 @@ class CouponFacadeTransactionOutcomeTest {
             assertThatThrownBy(() -> issue()).isInstanceOf(CannotCreateTransactionException.class);
             assertAll(
                 () -> verifyFinishedOnce(CouponWaitingState.FAILED),
-                () -> assertThat(admission.status()).isTrue()
+                () -> assertThat(admission.isAccepting()).isTrue()
             );
         }
 
@@ -306,7 +305,7 @@ class CouponFacadeTransactionOutcomeTest {
         @Test
         void readRejection() {
             CouponCampaignModel inactive = mock(CouponCampaignModel.class);
-            when(inactive.getStatus()).thenReturn(CouponCampaignStatus.INACTIVE);
+            when(inactive.isActive()).thenReturn(false);
             when(campaignRepository.findById(CAMPAIGN)).thenReturn(Optional.of(inactive));
 
             assertThatThrownBy(() -> issue())
@@ -342,7 +341,7 @@ class CouponFacadeTransactionOutcomeTest {
 
             assertAll(
                 () -> assertThat(result.created()).isTrue(),
-                () -> assertThat(admission.status()).isTrue(),
+                () -> assertThat(admission.isAccepting()).isTrue(),
                 () -> assertThat(output).contains("waitingId = " + WAITING_ID, "userId = " + USER, "campaignId = " + CAMPAIGN,
                     "result = CREATED couponId " + COUPON_ID)
             );
@@ -358,7 +357,7 @@ class CouponFacadeTransactionOutcomeTest {
                 admission.open();
                 CouponIssueResult result = issue();
                 assertThat(result.created()).isTrue();
-                assertThat(admission.status()).isFalse();
+                assertThat(admission.isAccepting()).isFalse();
             }
         }
 
@@ -372,7 +371,7 @@ class CouponFacadeTransactionOutcomeTest {
 
             assertThatThrownBy(() -> issue())
                 .satisfies(e -> assertThat(errorTypeOf(e)).isEqualTo(ErrorType.COUPON_CAMPAIGN_NOT_FOUND));
-            assertThat(admission.status()).isFalse();
+            assertThat(admission.isAccepting()).isFalse();
         }
     }
 
@@ -454,7 +453,7 @@ class CouponFacadeTransactionOutcomeTest {
                 () -> assertThat(afterFinishFailure.created()).isTrue(),
                 () -> assertThat(afterPutFailure.created()).isTrue(),
                 () -> verify(cacheRepository, times(2)).putIssuedIfAbsent(USER, CAMPAIGN, value, 30_000L),
-                () -> assertThat(admission.status()).isTrue()
+                () -> assertThat(admission.isAccepting()).isTrue()
             );
         }
 
@@ -479,7 +478,7 @@ class CouponFacadeTransactionOutcomeTest {
             .satisfies(e -> assertThat(errorTypeOf(e)).isEqualTo(ErrorType.INTERNAL_ERROR));
         assertAll(
             () -> verify(admissionRepository, never()).finish(any(), any(), any(), any()),
-            () -> assertThat(admission.status()).isFalse(),
+            () -> assertThat(admission.isAccepting()).isFalse(),
             () -> assertThat(output).contains("waitingId = " + WAITING_ID, "userId = " + USER, "campaignId = " + CAMPAIGN,
                 "stage = " + stage, "result = 불명")
         );

@@ -84,10 +84,10 @@ class CouponAdmissionServiceTest {
                 new CouponWaitingProperties(null, Duration.ofSeconds(1), Duration.ofSeconds(30)));
 
             assertAll(
-                () -> assertThat(unconfigured.status()).isFalse(),
+                () -> assertThat(unconfigured.isAccepting()).isFalse(),
                 () -> assertThatThrownBy(unconfigured::open)
                     .satisfies(e -> assertThat(errorTypeOf(e)).isEqualTo(ErrorType.COUPON_ADMISSION_OPERATION_REJECTED)),
-                () -> assertThat(unconfigured.status()).isFalse(),
+                () -> assertThat(unconfigured.isAccepting()).isFalse(),
                 () -> assertThatThrownBy(() -> unconfigured.requireOperating(CAMPAIGN))
                     .satisfies(e -> assertThat(errorTypeOf(e)).isEqualTo(ErrorType.COUPON_ADMISSION_UNAVAILABLE)),
                 () -> assertThat(unconfigured.admittingCampaignId()).isEmpty(),
@@ -100,7 +100,7 @@ class CouponAdmissionServiceTest {
         @Test
         void operatingAndAdmittingChecks() {
             assertAll(
-                () -> assertThat(service.status()).isFalse(),
+                () -> assertThat(service.isAccepting()).isFalse(),
                 () -> service.requireOperating(CAMPAIGN),
                 () -> assertThatThrownBy(() -> service.requireAdmitting(CAMPAIGN))
                     .satisfies(e -> assertThat(errorTypeOf(e)).isEqualTo(ErrorType.COUPON_ADMISSION_UNAVAILABLE)),
@@ -114,7 +114,7 @@ class CouponAdmissionServiceTest {
                     .satisfies(e -> assertThat(errorTypeOf(e)).isEqualTo(ErrorType.COUPON_ADMISSION_UNAVAILABLE)),
                 () -> assertThatThrownBy(() -> service.requireAdmitting(CAMPAIGN + 1))
                     .satisfies(e -> assertThat(errorTypeOf(e)).isEqualTo(ErrorType.COUPON_ADMISSION_UNAVAILABLE)),
-                () -> assertThat(service.status()).as("운영 ID 불일치는 장애가 아니다").isTrue()
+                () -> assertThat(service.isAccepting()).as("운영 ID 불일치는 장애가 아니다").isTrue()
             );
             verifyNoInteractions(repository);
         }
@@ -139,7 +139,7 @@ class CouponAdmissionServiceTest {
 
         private void assertUnavailableAndClosed(Runnable call) {
             assertThatThrownBy(call::run).satisfies(e -> assertThat(errorTypeOf(e)).isEqualTo(ErrorType.COUPON_ADMISSION_UNAVAILABLE));
-            assertThat(service.status()).isFalse();
+            assertThat(service.isAccepting()).isFalse();
         }
 
         @DisplayName("register: CREATED/EXISTING 은 그대로, Redis 품절은 409 이며 둘 다 수용을 유지한다. 후보 ID 는 서버가 만든다.")
@@ -155,7 +155,7 @@ class CouponAdmissionServiceTest {
                 () -> assertThat(service.register(CAMPAIGN, USER)).isEqualTo(expired),
                 () -> assertThatThrownBy(() -> service.register(CAMPAIGN, USER))
                     .satisfies(e -> assertThat(errorTypeOf(e)).isEqualTo(ErrorType.COUPON_CAMPAIGN_SOLD_OUT)),
-                () -> assertThat(service.status()).isTrue()
+                () -> assertThat(service.isAccepting()).isTrue()
             );
             ArgumentCaptor<String> candidate = ArgumentCaptor.forClass(String.class);
             verify(repository, times(3)).register(eq(CAMPAIGN), eq(USER), candidate.capture());
@@ -191,7 +191,7 @@ class CouponAdmissionServiceTest {
 
             assertThat(service.find(CAMPAIGN, USER)).isEmpty();
             assertThat(service.find(CAMPAIGN, USER)).contains(snapshot(CouponWaitingState.SOLD_OUT));
-            assertThat(service.status()).isTrue();
+            assertThat(service.isAccepting()).isTrue();
             assertUnavailableAndClosed(() -> service.find(CAMPAIGN, USER));
         }
 
@@ -211,7 +211,7 @@ class CouponAdmissionServiceTest {
                 () -> assertStartRejected(ErrorType.COUPON_WAITING_NOT_READY),
                 () -> assertStartRejected(ErrorType.COUPON_WAITING_EXPIRED),
                 () -> assertStartRejected(ErrorType.COUPON_WAITING_ALREADY_USED),
-                () -> assertThat(service.status()).isTrue()
+                () -> assertThat(service.isAccepting()).isTrue()
             );
         }
 
@@ -237,7 +237,7 @@ class CouponAdmissionServiceTest {
             assertAll(
                 () -> assertThat(service.finish(CAMPAIGN, USER, WAITING_ID, CouponWaitingState.ISSUED)).isTrue(),
                 () -> assertThat(service.finish(CAMPAIGN, USER, WAITING_ID, CouponWaitingState.ISSUED)).isFalse(),
-                () -> assertThat(service.status()).isTrue(),
+                () -> assertThat(service.isAccepting()).isTrue(),
                 () -> assertThat(output).contains("WARN", "waitingId = " + WAITING_ID).doesNotContain("수용을 닫습니다")
             );
         }
@@ -252,7 +252,7 @@ class CouponAdmissionServiceTest {
             for (int i = 0; i < 3; i++) {
                 service.open();
                 assertThat(service.finish(CAMPAIGN, USER, WAITING_ID, CouponWaitingState.FAILED)).isFalse();
-                assertThat(service.status()).isFalse();
+                assertThat(service.isAccepting()).isFalse();
             }
             assertThat(output).contains("stage = 종료", "waitingId = " + WAITING_ID);
         }

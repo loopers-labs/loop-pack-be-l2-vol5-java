@@ -359,7 +359,7 @@ class CouponCacheLocalRedisFaultIntegrationTest {
      */
     private void finishCase(String testCase, long beforeId, String beforeRunId, long issued, long coupons) throws Exception {
         couponFacade.close();
-        assertThat(couponFacade.status()).isFalse();
+        assertThat(couponFacade.isAccepting()).isFalse();
         long endId = CouponLocalRedisFaultIntegrationTest.clientId(master);
         String endRunId = CouponLocalRedisFaultIntegrationTest.runId(master);
         recording.log().append(Map.of("event", "final-cleanup-before", "case", testCase, "clientId", endId, "runId", endRunId,
@@ -428,7 +428,7 @@ class CouponCacheLocalRedisFaultIntegrationTest {
         pauseGuard.pause(testCase);
         try {
             stored = issue(testCase, owner, null);
-            acceptingDuringFault = couponFacade.status();
+            acceptingDuringFault = couponFacade.isAccepting();
         } finally {
             unpause(testCase);
         }
@@ -471,7 +471,7 @@ class CouponCacheLocalRedisFaultIntegrationTest {
         pauseGuard.pause(testCase);
         try {
             rejected = issue(testCase, newcomer, waitingId);
-            closedDuringFault = !couponFacade.status();
+            closedDuringFault = !couponFacade.isAccepting();
             couponsDuringFault = fixture.couponCount(OPERATING, newcomer);
         } finally {
             unpause(testCase);
@@ -529,7 +529,7 @@ class CouponCacheLocalRedisFaultIntegrationTest {
         } finally {
             unpause(testCase);
         }
-        boolean accepting = couponFacade.status();
+        boolean accepting = couponFacade.isAccepting();
         Set<String> processing = CouponLocalRedisFaultIntegrationTest.observedMembers(containerId);
         long pttlAfter = pttl(CouponCacheRedisRepository.issuedKey(user, OPERATING));
         recording.log().append(Map.of("event", "after", "case", testCase, "status", created.getStatusCode().value(),
@@ -611,7 +611,7 @@ class CouponCacheLocalRedisFaultIntegrationTest {
             () -> assertThat(cache.calls("sold-out-get") - soldOutGets).as("품절 Redis 조회 0").isZero(),
             () -> assertThat(campaignSql(statements)).as("캠페인 SQL 0").isZero(),
             () -> assertThat(cache.failures("issued-get") - issuedGetFailures).as("선행 issued get 실제 실패").isEqualTo(1),
-            () -> assertThat(couponFacade.status()).isTrue()
+            () -> assertThat(couponFacade.isAccepting()).isTrue()
         );
         finishCase(testCase, beforeId, beforeRunId, 1, 0);
     }
@@ -667,7 +667,7 @@ class CouponCacheLocalRedisFaultIntegrationTest {
             () -> assertThat(cache.calls("sold-out-put") - soldOutPuts).isEqualTo(1),
             () -> assertThat(cache.failures("sold-out-put") - soldOutPutFailures).as("품절 put 실제 실패").isEqualTo(1),
             () -> assertThat(waitingKeys).as("새 대기 등록 0").isZero(),
-            () -> assertThat(couponFacade.status()).isTrue()
+            () -> assertThat(couponFacade.isAccepting()).isTrue()
         );
         finishCase(testCase, beforeId, beforeRunId, 1, 0);
     }

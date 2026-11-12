@@ -515,7 +515,7 @@ class CouponApiE2ETest {
                 () -> assertThat(fixture.couponCount(OPERATING)).isZero(),
                 () -> assertThat(fixture.issuedCount(OPERATING)).as("품절로 바꾼 값 그대로").isEqualTo(5),
                 () -> assertThat(occupancy()).isZero(),
-                () -> assertThat(couponFacade.status()).isTrue()
+                () -> assertThat(couponFacade.isAccepting()).isTrue()
             );
         }
 
@@ -675,7 +675,7 @@ class CouponApiE2ETest {
             () -> assertThat(fixture.issuedCount(OPERATING)).isEqualTo(4),
             () -> assertThat(holding.finishes()).hasSize(4),
             () -> assertThat(occupancy()).isZero(),
-            () -> assertThat(couponFacade.status()).isTrue()
+            () -> assertThat(couponFacade.isAccepting()).isTrue()
         );
     }
 
@@ -769,7 +769,7 @@ class CouponApiE2ETest {
                 () -> assertThat(post("close").getBody().data().accepting()).isFalse(),
                 () -> assertThat(post("close").getBody().data().accepting()).isFalse(),
                 () -> assertThat(status()).isFalse(),
-                () -> assertThat(couponFacade.status()).isFalse()
+                () -> assertThat(couponFacade.isAccepting()).isFalse()
             );
             var rejected = issue(user, OPERATING, waitingId);
             assertAll(

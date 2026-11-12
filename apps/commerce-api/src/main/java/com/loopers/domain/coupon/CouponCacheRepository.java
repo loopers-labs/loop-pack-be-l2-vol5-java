@@ -38,8 +38,7 @@ public interface CouponCacheRepository {
                 throw new CoreException(ErrorType.INTERNAL_ERROR,
                     "캐시 발급 결과의 ID 가 올바르지 않습니다. [couponId = " + couponId + ", campaignId = " + campaignId + "]");
             }
-            if (campaignName == null || campaignName.isEmpty() || campaignName.length() > CouponCampaignModel.NAME_MAX_LENGTH
-                || !campaignName.equals(campaignName.trim())) {
+            if (!CouponCampaignModel.isValidName(campaignName)) {
                 throw new CoreException(ErrorType.INTERNAL_ERROR, "캐시 발급 결과의 캠페인 이름이 범위를 벗어났습니다.");
             }
             CouponBenefits.require(benefitType, benefitValue);

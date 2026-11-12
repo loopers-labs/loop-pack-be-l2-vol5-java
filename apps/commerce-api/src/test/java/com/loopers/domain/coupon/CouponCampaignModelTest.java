@@ -6,6 +6,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -26,6 +27,29 @@ class CouponCampaignModelTest {
             () -> assertThat(campaign.getTotalQuota()).isEqualTo(5L),
             () -> assertThat(campaign.getBenefitType()).isEqualTo(CouponBenefitType.FIXED_AMOUNT),
             () -> assertThat(campaign.getBenefitValue()).isEqualTo(5_000L)
+        );
+    }
+
+    @DisplayName("isActive 는 ACTIVE 만, isSoldOut 은 발급 수가 총량 이상일 때만 true 다. 둘 다 상태를 바꾸지 않는다.")
+    @Test
+    void activeAndSoldOutQueries() {
+        CouponCampaignModel campaign = CouponCampaignModel.create("c", 2L, CouponBenefitType.FIXED_AMOUNT, 1L);
+        boolean freshActive = campaign.isActive();
+        boolean freshSoldOut = campaign.isSoldOut();
+
+        ReflectionTestUtils.setField(campaign, "issuedCount", 1L);
+        boolean partialSoldOut = campaign.isSoldOut();
+        ReflectionTestUtils.setField(campaign, "issuedCount", 2L);
+        boolean fullSoldOut = campaign.isSoldOut();
+        ReflectionTestUtils.setField(campaign, "status", CouponCampaignStatus.INACTIVE);
+
+        assertAll(
+            () -> assertThat(freshActive).isTrue(),
+            () -> assertThat(freshSoldOut).isFalse(),
+            () -> assertThat(partialSoldOut).isFalse(),
+            () -> assertThat(fullSoldOut).isTrue(),
+            () -> assertThat(campaign.isActive()).isFalse(),
+            () -> assertThat(campaign.getIssuedCount()).isEqualTo(2L)
         );
     }
 
