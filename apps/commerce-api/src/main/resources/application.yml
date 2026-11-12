@@ -121,6 +121,14 @@ coupon:
       tick: 1s
       scheduler:
         enabled: true
+  # W8 대기열 (D-4-3·D-4-4). 100ms마다 5명 = 초당 50명은 측정 전 임시값이다(필수 실험 ⑧로 다시 정한다).
+  queue:
+    entry-ttl: 30s
+    admission:
+      tick: 100ms
+      per-tick: 5
+      scheduler:
+        enabled: true
 
 payment:
   dispatch:
@@ -168,6 +176,10 @@ outbox:
 coupon:
   outbox:
     relay:
+      scheduler:
+        enabled: false
+  queue:
+    admission:
       scheduler:
         enabled: false
 
