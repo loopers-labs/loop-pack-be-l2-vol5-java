@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.application.coupon.CouponIssueQueue;
 import com.loopers.application.coupon.CouponIssueQueueClaim;
 import com.loopers.application.coupon.CouponIssueQueueRecord;
+import com.loopers.application.coupon.CouponIssueQueueResubmission;
 import com.loopers.application.coupon.CouponIssueQueueScriptException;
 import com.loopers.application.coupon.CouponIssueQueueSubmission;
 import com.loopers.config.redis.RedisConfig;
@@ -41,6 +42,8 @@ public class RedisCouponIssueQueue implements CouponIssueQueue {
     private final DefaultRedisScript<List> claimScript;
     @SuppressWarnings("rawtypes")
     private final DefaultRedisScript<List> recordScript;
+    @SuppressWarnings("rawtypes")
+    private final DefaultRedisScript<List> resubmitScript;
 
     public RedisCouponIssueQueue(
         @Qualifier(RedisConfig.REDIS_TEMPLATE_MASTER) RedisTemplate<String, String> redisTemplate,
@@ -51,6 +54,7 @@ public class RedisCouponIssueQueue implements CouponIssueQueue {
         this.submitScript = listScript("redis/coupon-queue-submit.lua");
         this.claimScript = listScript("redis/coupon-queue-claim.lua");
         this.recordScript = listScript("redis/coupon-queue-record.lua");
+        this.resubmitScript = listScript("redis/coupon-queue-resubmit.lua");
     }
 
     @Override
@@ -145,6 +149,37 @@ public class RedisCouponIssueQueue implements CouponIssueQueue {
             case "ALREADY_APPLIED" -> new CouponIssueQueueRecord.AlreadyApplied(current);
             case "REJECTED" -> new CouponIssueQueueRecord.Rejected(current);
             default -> throw new CouponIssueQueueScriptException("알 수 없는 대기열 결과 기록 응답입니다.", null);
+        };
+    }
+
+    @Override
+    public CouponIssueQueueResubmission requeueFailed(String requestId, CouponIssueRequestReason expectedReason,
+                                                      int capacity) {
+        return resubmit(requestId, expectedReason, "REQUEUE", Integer.toString(capacity), "");
+    }
+
+    @Override
+    public CouponIssueQueueResubmission markFailedSucceeded(String requestId, CouponIssueRequestReason expectedReason,
+                                                            Long couponId) {
+        return resubmit(requestId, expectedReason, "SUCCEED", "", couponId == null ? "" : String.valueOf(couponId));
+    }
+
+    private CouponIssueQueueResubmission resubmit(String requestId, CouponIssueRequestReason expectedReason,
+                                                  String mode, String capacity, String couponId) {
+        // 빈 입력과 업무 거절 사유는 Lua 입력 검증에서 거절한다.
+        List<?> result = redis(() -> redisTemplate.execute(resubmitScript,
+            List.of(JOBS_KEY, WAITING_KEY, PROCESSING_KEY), requestId == null ? "" : requestId,
+            expectedReason == null ? "" : expectedReason.name(), mode, capacity, couponId));
+        if (result == null || result.isEmpty()) {
+            throw new CouponIssueQueueScriptException("대기열 재접수 응답이 비어 있습니다.", null);
+        }
+        CouponIssueRequest current = fromJson(stringAt(result, 1));
+        return switch (String.valueOf(result.get(0))) {
+            case "REQUEUED" -> new CouponIssueQueueResubmission.Requeued(current);
+            case "SUCCEEDED" -> new CouponIssueQueueResubmission.Succeeded(current);
+            case "CHANGED" -> new CouponIssueQueueResubmission.Changed(current);
+            case "FULL" -> new CouponIssueQueueResubmission.Full(current);
+            default -> throw new CouponIssueQueueScriptException("알 수 없는 대기열 재접수 응답입니다.", null);
         };
     }
 

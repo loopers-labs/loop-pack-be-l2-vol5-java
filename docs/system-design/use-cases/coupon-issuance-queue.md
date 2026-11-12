@@ -235,7 +235,7 @@ worker가 만든 token과 이미 얻은 permit으로 기존 발급 실행의 DB 
 | 연산 | 함께 처리할 내용 |
 |---|---|
 | 접수 | 사용자와 캠페인의 기존 requestId 확인, 미완료 개수 확인, 작업 정보와 중복 정보 생성, 대기 List 추가 |
-| 시스템 실패 재접수 | 현재 `FAILED`와 reasonCode 일치 확인, 미완료 개수 확인, `WAITING` 기록과 reasonCode·사유·이전 실행 token 정리, 대기 List에 `RPUSH`. 쿠폰이 이미 있으면 같은 상태 확인 뒤 `SUCCEEDED` 기록 |
+| 시스템 실패 재접수 | 현재 `FAILED`와 reasonCode 일치 확인, 실패 작업이 대기·처리 중 List에 남아 있지 않은지 확인, 미완료 개수 확인, `WAITING` 기록과 reasonCode·사유·이전 실행 token 정리, 대기 List에 `RPUSH`. 쿠폰이 이미 있으면 같은 상태 확인 뒤 `SUCCEEDED` 기록 |
 | 가져오기 | permit을 얻은 실행만 호출. 첫 대기 항목과 작업 상태 검사, 대기에서 처리 중 List로 이동, `PROCESSING`과 실행 token 기록. 대기 작업이 없으면 없음 응답 |
 | 완료 | 현재 `PROCESSING`과 실행 token 일치 확인, 쓰기 전에 처리 중 List에 해당 ID가 있는지 `LPOS`로 확인, 결과 기록, 처리 중 List에서 해당 ID만 `LREM`으로 제거. 같은 실행의 같은 결과 반복은 이미 기록됨으로, token이나 상태가 다르면 거절로 응답 |
 | 결과 불명 기록 | 현재 `PROCESSING`과 실행 token 일치 확인, 처리 중 List 위치 확인, `UNKNOWN`과 사유 기록, 처리 중 List 항목은 유지 |

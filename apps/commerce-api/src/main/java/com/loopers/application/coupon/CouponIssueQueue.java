@@ -44,4 +44,16 @@ public interface CouponIssueQueue {
      * DB 결과를 확인하지 못한 작업을 결과 불명으로 기록하고 처리 중 List에 남긴다.
      */
     CouponIssueQueueRecord recordUnknown(String requestId, String executionToken);
+
+    /**
+     * 시스템 실패로 끝난 작업을 같은 작업 ID로 다시 대기시킨다. 작업이 여전히 기대한 사유의 실패이고
+     * 미완료 한도가 남았을 때만 바꾸며, 사유와 이전 실행 token을 비운다.
+     */
+    CouponIssueQueueResubmission requeueFailed(String requestId, CouponIssueRequestReason expectedReason, int capacity);
+
+    /**
+     * 시스템 실패로 끝난 작업을 재접수하던 중 DB에서 쿠폰을 확인했을 때, 같은 작업을 성공으로 바꾼다.
+     */
+    CouponIssueQueueResubmission markFailedSucceeded(String requestId, CouponIssueRequestReason expectedReason,
+                                                     Long couponId);
 }
