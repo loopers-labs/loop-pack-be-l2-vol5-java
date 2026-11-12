@@ -684,3 +684,22 @@ Codex 최종 코드 검토에서 지적된 test 실패 처리 3곳만 고쳤다.
 - 한계:
   - 실제 HTTP 연결 실패나 실제 docker CLI 대기 초과로 보류·복구가 일어나는 장면은 재현하지 않았다. 그 분기는 대역 단위 테스트로 확인했다.
   - raw 요청과 token의 연결은 "이 사례에서 그 요청 하나만 Redis를 썼다"는 단언에 근거한다. 동시 raw 요청에는 적용하지 않는다.
+
+## 최종 커밋 전체 검사 (2026-11-11, Codex)
+
+- 사용자 승인으로 최종 제품/테스트 커밋 `4711dfe`에서 전체 검사를 한 번 실행했다. 제품·테스트 코드와 기대값은 수정하지 않았다.
+- 명령: `./gradlew -Dorg.gradle.java.home=/opt/homebrew/Cellar/openjdk@21/21.0.12/libexec/openjdk.jdk/Contents/Home :apps:commerce-api:check --rerun-tasks --no-build-cache --console=plain`. JDK 21.0.12를 사용했다.
+- 실행 시각: 2026-11-11 17:44:52 KST ~ 2026-11-11 17:53:38 KST. `BUILD SUCCESSFUL in 8m 46s`, 35개 작업 모두 실제 실행됐다.
+- 일반 `test`: XML 262개, 총 1176건 중 **1174건 실행·실패 0·오류 0, skip 2**. skip은 기본 비활성 `CouponLocalRedisFaultIntegrationTest`의 Q9/Q10이며 이번 통과로 세지 않는다. 해당 두 사례의 실제 장애 실행 근거는 앞선 5단계 명시 실행 3차(2건 통과)다. 이번에 pause 실험은 반복하지 않았다.
+- 별도 `w6OutboxRecoveryTest`: XML 1개, 1건 실행·실패/오류/skip 0. `check`에 연결된 O11 작업이 실제 실행됐다.
+- `ArchitectureTest`: 일반 test 안에서 3건 실행·실패/오류/skip 0. Checkstyle main/test XML 오류 각 0개.
+- 실행 전 추적 파일 변경 없음, 공유 Redis DBSIZE 0·관찰 연결 외 NORMAL 클라이언트 없음·호스트 6379 외부 연결 없음 확인. 이전 중단 실행의 test worker PID 56631이 fixture MySQL handshake와 shutdown hook에서 멈춰 있어 thread dump를 보존하고 그 worker만 강제 종료했다. 새 검사와 중첩시키지 않았다.
+- 실행 후 새 test worker·streamer 자식이 남지 않았고 이번 테스트 소유 컨테이너가 종료됐다. 기존 공유 Redis는 running·paused=false, 쿠폰 전용 키 none·DBSIZE 0이었다. 공유 Kafka·개발 MySQL 등 기존 서버는 유지했다.
+- 원시 로그·XML/HTML·Checkstyle 보고서·집계 JSON·사전 worker 관찰은 로컬 `docs/week8/verification/runs/2026-11-11-final-check/`에 보존했다. 제출 필수 요약은 이 절에 둔다.
+
+### 최종 판단과 남은 범위
+
+- 앞선 기록의 “최종 전체 회귀 미실행” 한계는 이번 실행으로 해소됐다. 과거 실패·미실행 기록은 당시 실행 이력으로 보존한다.
+- 로컬 보관 실습 원문·발제 문서·Sam 세션 정리본을 제품 코드와 Q1~Q16 실행 근거에 대조했으며 필수 제품 기능의 누락은 발견하지 못했다. 단계별 승인 구현과 요구 시나리오 검증, 최종 전체 검사를 마쳤다.
+- 실제 DB 통신 단절 UNKNOWN 재현·다중 인스턴스/failover·운영 부하/최적 C·수동 bootRun 확인을 수행했다고 주장하지 않는다. 이들은 합의 범위의 검증 한계와 구분한다.
+- PR·기술 글·WIL 등 과제의 글 산출물·실제 제출 여부는 이 구현/검증 완료 판단과 별개다. 최종 제출 판단은 사용자가 담당한다.

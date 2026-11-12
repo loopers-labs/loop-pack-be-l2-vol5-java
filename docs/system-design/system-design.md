@@ -6,7 +6,8 @@
 
 ## 현재 상태
 
-- **쿠폰 승인 설계(2026-11-11):** [쿠폰 상세설계](features/coupons.md)와 [판단 근거](decisions/coupons.md)에 모델·API·DB/TX·Redis 수용·제어 API·수동 재개·준비 코드·검증 기준을 기록했다. 일곱 차례 Claude 정적 검토와 합의한 보완을 마친 전체 설계를 사용자가 최종 승인했다. Q9·Q10은 기존 로컬 Redis를 명시 실행으로 검증하고 Q9의 연결 ID·서버 run_id 및 후속 응답을 확인해 자기 token을 정리한다. 실패 테스트의 파일 기록·사후 자기 점유 정리·새 정리 연결 순서 보완본의 최종 정적 검토에서 필수 수정·계약 공백·문서 모순은 발견되지 않았다. TX 미시작/종료 불명, 정상 첫 반환 0/반복 정리, 보유 목록의 저장된 발급 시각, 전 프로필 제어·C 기본값, 명시 준비 코드와 공유 Redis 장애/DB 대역 검증을 구분했다. Map·전역 진행 수/불명 추적·재개용 Java 잠금은 제외한다. 구현 1단계(DB 저장·조회 계약), 2단계(Redis 수용 Lua·저장소·수용 서비스·수용량 설정), 3단계(Facade·고객 발급/목록·제어 API), 4단계(직접 실행용 준비 코드), 5단계(실제 HTTP 응답 유실·timeout·시간 경과와 명시 실행 로컬 Redis 장애 Q9·Q10)의 실행 기록과 Q1~Q16 대조·남은 한계는 [쿠폰 실행 기록](verification/coupons.md)에 있다. 5단계는 전체 회귀를 다시 실행하지 않았으며 구현 단위별 착수 승인은 별도다.
+- **쿠폰 승인 설계(2026-11-11):** [쿠폰 상세설계](features/coupons.md)와 [판단 근거](decisions/coupons.md)에 모델·API·DB/TX·Redis 수용·제어 API·수동 재개·준비 코드·검증 기준을 기록했다. 일곱 차례 Claude 정적 검토와 합의한 보완을 마친 전체 설계를 사용자가 최종 승인했다. Q9·Q10은 기존 로컬 Redis를 명시 실행으로 검증하고 Q9의 연결 ID·서버 run_id 및 후속 응답을 확인해 자기 token을 정리한다. 실패 테스트의 파일 기록·사후 자기 점유 정리·새 정리 연결 순서 보완본의 최종 정적 검토에서 필수 수정·계약 공백·문서 모순은 발견되지 않았다. TX 미시작/종료 불명, 정상 첫 반환 0/반복 정리, 보유 목록의 저장된 발급 시각, 전 프로필 제어·C 기본값, 명시 준비 코드와 공유 Redis 장애/DB 대역 검증을 구분했다. Map·전역 진행 수/불명 추적·재개용 Java 잠금은 제외한다. 구현 1단계(DB 저장·조회 계약), 2단계(Redis 수용 Lua·저장소·수용 서비스·수용량 설정), 3단계(Facade·고객 발급/목록·제어 API), 4단계(직접 실행용 준비 코드), 5단계(실제 HTTP 응답 유실·timeout·시간 경과와 명시 실행 로컬 Redis 장애 Q9·Q10)의 실행 기록과 Q1~Q16 대조·남은 한계는 [쿠폰 실행 기록](verification/coupons.md)에 있다. 기본 구현의 최종 전체 검사 결과도 같은 실행 기록을 따른다. 구현 단위별 착수 승인은 별도다.
+- **쿠폰 확장 승인 설계(2026-11-12):** [쿠폰 상세설계 §12](features/coupons.md)와 판단 CQ16의 정상 범위를 세 차례 Claude 정적 검토·보완 뒤 사용자가 최종 승인했다. 단일 앱/단일 운영 캠페인의 대기실·실행 자리 통합, 대기 등록 입구 Resilience4j 제한, 30초 입장 권한, 내부 단일 실행기의 processAdmissions, cleanup 제거와 WQ1~WQ12를 포함한다. 마지막 검토는 필수 수정·새 판단·정상 구현 blocker 없음이며 S6/S7 문구도 반영했다. §11/CQ15는 변경 전 미구현 구안이다. 추가 코드 구현·테스트 실행과 단위별 착수 승인은 아직이고 캐시/Bulkhead·epoch/장애별 복구는 후속이다.
 - 기존 커머스·PG 결제·PG 단독 실행 앱의 계약과 과거 검증 근거를 보존한다. 실행 범위·수량·한계는 아래 검증 기록을 따른다.
 - **현재 구현·과거 승인:** 주문 이벤트 W6의 2026-10-29 승인 설계에 따라 직접 발행 P1~P9·소비 C1~C10을 구현·검증했다. 실제 관찰·회귀 결과와 한계는 [주문 이벤트 실행 기록](verification/order-events.md)을 따른다. 그 기록의 Outbox·자동 재발행 제외는 W6 당시 경계이며 W7 요구를 제외한다는 뜻이 아니다.
 - **W7 승인 설계(2026-11-04):** [발행 설계](features/order-events/publication.md)의 W7~W7.4는 같은 확정 TX의 Outbox·API 내부 단일 scheduler/relay·BLOCKED/재개·명시 주문 복구를 정의한다. v1 사건·PG/HTTP·소비 정합성은 유지한다. W6 보존 구성·검증 기준·관련 문서의 통합 초안을 작성했다. 세 차례 Claude 정적 검토를 대조하고 사용자 선택/문서 보완 승인을 반영했다. 신규 전달 O6→O7/O9와 별도 W6 복구 O11의 자원/증거 범위를 정리했다. 2026-11-04 사용자가 최종 요약과 원문 부합 검토 뒤 설계 문서 스테이징 및 구현 검토 탭 인계를 요청해 전체 설계를 최종 승인했다. 구현/실행 검증은 미실행이며 구현 단위별 착수 허락은 별도다. 랭킹 API·DLQ는 추가하지 않는다.
@@ -20,7 +21,7 @@
 | 브랜드·상품·좋아요 | [카탈로그](features/catalog.md) |
 | 포인트 충전·조회 | [포인트](features/points.md) |
 | 상품 상세·캐시 | [상품 조회·캐시](features/product-cache.md) |
-| 쿠폰 발급·수용량 — 검토 초안 | [쿠폰 상세설계·수동 재개 가이드·검증 기준](features/coupons.md) |
+| 쿠폰 발급·수용량·요청률 제한 | [쿠폰 상세설계·수동 재개 가이드·검증 기준](features/coupons.md) |
 | 주문·PG 결제 | [읽기 안내](features/order-payment/README.md) · [상태·저장](features/order-payment/model.md) · [TX·처리](features/order-payment/processing.md) · [HTTP·회로](features/order-payment/pg-client.md) · [API](features/order-payment/api-contract.md) · [검증 기준](features/order-payment/verification.md) |
 | 로컬 PG·테스트 도구 | [앱·HTTP 계약](features/pg-simulator/README.md) · [테스트 래퍼·프록시](features/pg-simulator/fixture-contract.md) |
 | 주문 확정 이벤트 | [전체 경계·이벤트 계약](features/order-events/README.md) · [발행 상세설계](features/order-events/publication.md) · [소비 상세설계](features/order-events/consumption.md) |
@@ -47,7 +48,7 @@
 | 판단 이유·대안·비용·재검토 조건 | [공통 도메인·API A.1~A.15](decisions/domain-and-api.md) · [상품 캐시 A.16](decisions/product-cache.md) · [PG 결제 A.17~A.32](decisions/payment.md) · [PG 앱 A.33](decisions/pg-simulator.md) · [이벤트 W6 A.34·A.35/W7 A.36 이후](decisions/order-events.md) |
 | 현재 검증 기준 | 기능별 검증 절. PG 전환 표처럼 기준/결과가 혼합된 기존 자료는 [PG 전환 기록](verification/pg-simulator.md)에서 함께 보존 |
 | 날짜별 실제 실행·한계 | [기존 기능](verification/core-features.md) · [PG 결제](verification/payment.md) · [PG 앱 전환](verification/pg-simulator.md) · [주문 이벤트](verification/order-events.md) · [쿠폰](verification/coupons.md) |
-| 쿠폰 선택·대안·비용 | [쿠폰 CQ1~CQ14](decisions/coupons.md). 선택·대안·비용과 검증 한계이며 실행 통과 기록이 아님 |
+| 쿠폰 선택·대안·비용 | [쿠폰 CQ1~CQ16](decisions/coupons.md). 선택·대안·비용과 검증 한계이며 실행 통과 기록이 아님 |
 | 과거 계약·승인·진척 | [이전 POINT 설계·검증](verification/legacy-point.md) · [설계 변경 이력](verification/design-history.md) |
 
 과거 기록의 당시 미구현/미검증·검사 수량은 해당 시점의 설명이다. 현재 기능의 계약이나 이번 작업의 실행 결과로 대체하지 않는다. 삭제된 상품·과거 POINT 주문 등 여전히 유효한 보존 계약은 현재 기능 문서에서도 유지한다.
