@@ -2,6 +2,7 @@ package com.loopers.infrastructure.coupon;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.application.coupon.CouponIssueQueue;
+import com.loopers.application.coupon.CouponIssueQueueClaim;
 import com.loopers.application.coupon.CouponIssueQueueScriptException;
 import com.loopers.application.coupon.CouponIssueQueueSubmission;
 import com.loopers.config.redis.RedisConfig;
@@ -35,6 +36,8 @@ public class RedisCouponIssueQueue implements CouponIssueQueue {
     private final ObjectMapper objectMapper;
     @SuppressWarnings("rawtypes")
     private final DefaultRedisScript<List> submitScript;
+    @SuppressWarnings("rawtypes")
+    private final DefaultRedisScript<List> claimScript;
 
     public RedisCouponIssueQueue(
         @Qualifier(RedisConfig.REDIS_TEMPLATE_MASTER) RedisTemplate<String, String> redisTemplate,
@@ -43,6 +46,7 @@ public class RedisCouponIssueQueue implements CouponIssueQueue {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.submitScript = listScript("redis/coupon-queue-submit.lua");
+        this.claimScript = listScript("redis/coupon-queue-claim.lua");
     }
 
     @Override
@@ -77,6 +81,31 @@ public class RedisCouponIssueQueue implements CouponIssueQueue {
         }
         return Optional.of(findById(String.valueOf(requestId))
             .orElseThrow(() -> new CouponIssueQueueScriptException("중복 접수 정보에 연결된 작업 정보가 없습니다.", null)));
+    }
+
+    @Override
+    public boolean hasWaiting() {
+        Long size = redis(() -> redisTemplate.opsForList().size(WAITING_KEY));
+        if (size == null) {
+            throw new CouponIssueQueueScriptException("대기 List 길이를 읽지 못했습니다.", null);
+        }
+        return size > 0;
+    }
+
+    @Override
+    public CouponIssueQueueClaim claim(String executionToken) {
+        // 빈 token은 Lua 입력 검증에서 거절한다.
+        String token = executionToken == null ? "" : executionToken;
+        List<?> result = redis(() -> redisTemplate.execute(claimScript,
+            List.of(WAITING_KEY, PROCESSING_KEY, JOBS_KEY), token));
+        if (result == null || result.isEmpty()) {
+            throw new CouponIssueQueueScriptException("대기열 가져오기 결과가 비어 있습니다.", null);
+        }
+        return switch (String.valueOf(result.get(0))) {
+            case "CLAIMED" -> new CouponIssueQueueClaim.Claimed(fromJson(stringAt(result, 1)));
+            case "EMPTY" -> new CouponIssueQueueClaim.Empty();
+            default -> throw new CouponIssueQueueScriptException("알 수 없는 대기열 가져오기 결과입니다.", null);
+        };
     }
 
     static String requestField(Long campaignId, Long userId) {
