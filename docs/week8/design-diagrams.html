@@ -1,0 +1,836 @@
+<title>8주차 쿠폰 발급 설계</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap">
+<style>
+/* layout: 한 줄 읽기 폭의 본문 + 그림마다 가로 스크롤 박스. 색은 두 가지 뜻만: 자리 점유(accent), 거절·문제(bad) */
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --fg: #1d2330;
+  --muted: #5d6677;
+  --line: #c3c9d4;
+  --accent: #1f6fb2;
+  --hold-fill: #d6e7f6;
+  --bad: #c2412d;
+  --bad-fill: #f8dcd6;
+  --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12161d; --surface: #1a2029; --fg: #e3e7ee; --muted: #9aa3b2; --line: #3a4352;
+    --accent: #6cb2ec; --hold-fill: #1d3a55; --bad: #f08a75; --bad-fill: #4a2620;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12161d; --surface: #1a2029; --fg: #e3e7ee; --muted: #9aa3b2; --line: #3a4352;
+  --accent: #6cb2ec; --hold-fill: #1d3a55; --bad: #f08a75; --bad-fill: #4a2620;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body);
+  font-size: 15px; line-height: 1.7;
+}
+main {
+  max-width: 880px; margin: 0 auto;
+  padding-block: 40px 80px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 40px;
+}
+h1 { font-size: 26px; line-height: 1.3; margin: 0; text-wrap: balance; }
+h2 { font-size: 19px; line-height: 1.4; margin: 0; text-wrap: balance; }
+p { margin: 0; max-width: 68ch; }
+.eyebrow { font-size: 12px; letter-spacing: .06em; color: var(--muted); margin: 0 0 6px; }
+section { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+code { font-family: var(--font-mono); font-size: .9em; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 8px; }
+.sw { width: 22px; height: 12px; border-radius: 2px; display: inline-block; }
+.sw.hold { background: var(--hold-fill); border: 1.5px solid var(--accent); }
+.sw.bad { background: var(--bad-fill); border: 1.5px solid var(--bad); }
+figure { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; min-width: 0; }
+.scroll { overflow-x: auto; padding: 16px 12px 8px; }
+figure svg { display: block; width: 100%; min-width: 660px; height: auto; color: var(--fg); font-family: var(--font-body); font-size: 12px; }
+figcaption { padding: 4px 16px 14px; font-size: 13.5px; color: var(--muted); }
+/* svg 안 클래스: 색은 전부 토큰에서 */
+svg text { fill: currentColor; }
+svg .m { fill: var(--muted); }
+svg .ta { fill: var(--accent); font-weight: 500; }
+svg .tb { fill: var(--bad); font-weight: 500; }
+svg .mono { font-family: var(--font-mono); font-size: 11.5px; }
+svg .box { fill: var(--surface); stroke: currentColor; stroke-width: 1.2; }
+svg .life { stroke: var(--line); stroke-dasharray: 4 4; stroke-width: 1.2; }
+svg .msg { stroke: currentColor; stroke-width: 1.3; fill: none; }
+svg .ret { stroke-dasharray: 5 4; }
+svg .hold { fill: var(--hold-fill); stroke: var(--accent); stroke-width: 1.5; }
+svg .bad { fill: var(--bad-fill); stroke: var(--bad); stroke-width: 1.5; }
+svg .badline { stroke: var(--bad); stroke-width: 1.5; fill: none; }
+svg .accline { stroke: var(--accent); stroke-width: 2; fill: none; }
+svg .axis { stroke: var(--line); stroke-width: 1; }
+svg .seg { fill: var(--surface); stroke: var(--line); stroke-width: 1; }
+svg .wait { fill: var(--hold-fill); stroke: var(--accent); stroke-width: 1; stroke-dasharray: 4 3; }
+svg .act { fill: var(--surface); stroke: currentColor; stroke-width: 1.2; }
+svg .group { fill: none; stroke: var(--line); stroke-width: 1.3; stroke-dasharray: 6 4; }
+svg .dashbox { fill: var(--surface); stroke: currentColor; stroke-width: 1.2; stroke-dasharray: 5 3; }
+svg .mk-acc { fill: var(--accent); }
+svg .mk-bad { fill: var(--bad); }
+svg .accmsg { stroke: var(--accent); stroke-width: 1.8; fill: none; }
+svg .gl { font-size: 11.5px; letter-spacing: .04em; }
+details.past { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 14px 18px; }
+details.past > summary { cursor: pointer; font-weight: 500; }
+details.past[open] > summary { margin-bottom: 24px; }
+details.past > .inner { display: flex; flex-direction: column; gap: 40px; }
+.tbl { overflow-x: auto; }
+.tbl table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 13.5px; line-height: 1.55; }
+.tbl th, .tbl td { text-align: left; vertical-align: top; padding: 9px 10px; border-bottom: 1px solid var(--line); }
+.tbl th { font-weight: 500; color: var(--muted); font-size: 12.5px; letter-spacing: .03em; }
+.tbl td:first-child { font-weight: 700; color: var(--bad); white-space: nowrap; }
+.yes { color: var(--accent); font-weight: 500; }
+.no { color: var(--bad); font-weight: 500; }
+.ask { background: var(--surface); border: 1px solid var(--accent); border-radius: 6px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
+.ask ol { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 10px; max-width: 68ch; }
+.ask ul { margin: 6px 0 0; padding-left: 18px; }
+</style>
+
+<main>
+  <header>
+    <p class="eyebrow">LOOPERS BE L2 · 8주차 · 설계 D-1 검토용</p>
+    <h1>쿠폰 발급: 세마포어는 어디에 달리나</h1>
+  </header>
+
+  <div class="legend" aria-label="그림 읽는 법">
+    <span><i class="sw hold"></i>세마포어(자리·permit)에 관련된 부품과 연결</span>
+    <span><i class="sw bad"></i>거절되거나 문제가 생기는 곳</span>
+    <span>점선 테두리 = 애플리케이션 경계</span>
+  </div>
+
+  <!-- 구성도 B (v3) -->
+  <section>
+    <h2>구성도 B. 통합안: ① 로컬 캐시 → ② Redis → ③ outbox → relay → Kafka, 쿠폰 DB는 consumer만</h2>
+    <figure>
+      <div class="scroll">
+      <svg viewBox="0 0 990 530" role="img" aria-label="통합안 구성도. 발급 요청은 commerce-api에서 ① Caffeine 품절 플래그, ② Redis Lua 한 번으로 중복·한도·자리 판정, ③ token을 실어 outbox에 기록하는 순서로 지나가며 쿠폰 업무 DB에 닿지 않는다. relay가 1초마다 outbox를 읽어 Kafka에 발행한다. consumer가 Kafka에서 읽어 MySQL에 발급하고 commit 뒤 Redis permits Set에서 자기 token을 지운다. 세 번 실패하면 DLT로 간다.">
+        <defs>
+          <marker id="k3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+          <marker id="k3a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-acc" d="M0,0 L10,5 L0,10 z"/></marker>
+          <marker id="k3b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-bad" d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+        <rect class="box" x="20" y="45" width="80" height="50" rx="3"/><text x="60" y="75" text-anchor="middle">Client</text>
+
+        <rect class="group" x="130" y="20" width="350" height="290" rx="6"/>
+        <text class="m gl" x="142" y="38">commerce-api (쿠폰 업무 DB 접근 없음)</text>
+        <rect class="box" x="150" y="50" width="140" height="40" rx="3"/><text x="220" y="75" text-anchor="middle">CouponController</text>
+        <rect class="box" x="330" y="50" width="130" height="40" rx="3"/><text x="395" y="75" text-anchor="middle">CouponQueryService</text>
+
+        <rect class="box" x="150" y="120" width="140" height="170" rx="3"/>
+        <text x="220" y="140" text-anchor="middle">IssueRequestUseCase</text>
+        <text class="mono" x="162" y="174">① 품절?</text>
+        <text class="mono" x="162" y="214">② Lua 판정</text>
+        <text class="mono" x="162" y="269">③ outbox 기록</text>
+
+        <rect class="box" x="330" y="148" width="130" height="44" rx="3"/>
+        <text x="395" y="167" text-anchor="middle">Caffeine</text>
+        <text class="m" x="395" y="183" text-anchor="middle">품절이면 여기서 거절</text>
+
+        <rect class="box" x="520" y="140" width="250" height="126" rx="3"/>
+        <text x="645" y="160" text-anchor="middle">Redis (master)</text>
+        <rect class="seg" x="534" y="170" width="222" height="40" rx="2"/>
+        <text x="546" y="186">발급 사용자 Set</text>
+        <text class="m" x="546" y="202">중복·한도 판정 · 줄지 않음</text>
+        <rect class="hold" x="534" y="216" width="222" height="40" rx="2"/>
+        <text x="546" y="232">permits Set (세마포어)</text>
+        <text class="ta" x="546" y="248">token 수 ≤ C · 끝나면 반환</text>
+        <text class="tb" x="520" y="284">중복→200 · 품절 · 자리 없음→429 · 장애→503</text>
+
+        <rect class="box" x="520" y="300" width="250" height="56" rx="3"/>
+        <text x="645" y="322" text-anchor="middle">Kafka</text>
+        <text class="m mono" x="645" y="342" text-anchor="middle">coupon-issue · 3 partitions</text>
+        <rect class="bad" x="520" y="400" width="250" height="40" rx="3"/>
+        <text x="645" y="425" text-anchor="middle">DLT</text>
+
+        <rect class="group" x="800" y="290" width="160" height="140" rx="6"/>
+        <text class="m gl" x="810" y="308">consumer (앱: 다음 결정)</text>
+        <rect class="box" x="815" y="316" width="130" height="36" rx="3"/><text x="880" y="339" text-anchor="middle">IssueConsumer</text>
+        <rect class="box" x="815" y="372" width="130" height="46" rx="3"/>
+        <text x="880" y="392" text-anchor="middle">CouponIssueTx</text>
+        <text class="m mono" x="880" y="408" text-anchor="middle">@Transactional</text>
+
+        <rect class="box" x="800" y="455" width="160" height="66" rx="3"/>
+        <text x="880" y="476" text-anchor="middle">MySQL (최종 방어)</text>
+        <text class="m mono" x="810" y="496">issued_count ≤ quota</text>
+        <text class="m mono" x="810" y="512">UNIQUE(campaign,user)</text>
+
+        <line class="msg" x1="100" y1="70" x2="148" y2="70" marker-end="url(#k3)"/>
+        <line class="msg" x1="290" y1="70" x2="328" y2="70" marker-end="url(#k3)"/>
+        <line class="msg" x1="220" y1="90" x2="220" y2="118" marker-end="url(#k3)"/>
+        <text class="m" x="228" y="110">POST 발급</text>
+        <text class="m" x="296" y="62">GET</text>
+
+        <line class="msg" x1="290" y1="170" x2="328" y2="170" marker-end="url(#k3)"/>
+        <path class="accmsg" d="M290,210 H310 V230 H518" marker-end="url(#k3a)"/>
+        <text class="ta" x="490" y="223" text-anchor="end">② EVAL 1회</text>
+        <rect class="box" x="150" y="335" width="140" height="46" rx="3"/>
+        <text x="220" y="355" text-anchor="middle">outbox</text>
+        <text class="m" x="220" y="371" text-anchor="middle">MySQL 테이블 · 수락분만</text>
+        <rect class="box" x="330" y="335" width="140" height="46" rx="3"/>
+        <text x="400" y="355" text-anchor="middle">relay (W7)</text>
+        <text class="m" x="400" y="371" text-anchor="middle">1초마다 · 재시도</text>
+        <line class="msg" x1="220" y1="290" x2="220" y2="333" marker-end="url(#k3)"/>
+        <text class="m" x="228" y="322">③ INSERT +token</text>
+        <line class="msg" x1="290" y1="358" x2="328" y2="358" marker-end="url(#k3)"/>
+        <path class="msg" d="M470,358 H495 V340 H518" marker-end="url(#k3)"/>
+        <text class="m" x="494" y="395" text-anchor="middle">발행</text>
+
+        <line class="msg" x1="770" y1="330" x2="813" y2="333" marker-end="url(#k3)"/>
+        <text x="790" y="322" text-anchor="middle">poll</text>
+        <line class="msg" x1="880" y1="352" x2="880" y2="370" marker-end="url(#k3)"/>
+        <line class="msg" x1="880" y1="430" x2="880" y2="453" marker-end="url(#k3)"/>
+
+        <path class="accmsg" d="M880,290 V236 H758" marker-end="url(#k3a)"/>
+        <text class="ta" x="888" y="258">SREM token</text>
+        <text class="ta" x="888" y="274">(commit 뒤)</text>
+
+        <path class="badline" d="M800,420 H772" marker-end="url(#k3b)"/>
+        <text class="tb" x="645" y="460" text-anchor="middle">3회 실패 · 이 token은 반환 주체 없음</text>
+
+        <path class="msg" d="M460,70 H975 V488 H962" marker-end="url(#k3)"/>
+        <text x="720" y="62" text-anchor="middle">본인 목록 SELECT (Redis와 무관)</text>
+      </svg>
+      </div>
+      <figcaption>발급 요청은 ① 로컬 캐시 → ② Redis → ③ outbox 순서로만 지나가고, commerce-api는 쿠폰 업무 DB(발급 내역·한도)에 닿지 않습니다(블로그와 같음). outbox에는 수락된 요청만 기록하고, Kafka 발행은 relay가 끝까지 책임집니다(D-2 ✅). outbox 테이블도 MySQL에 있으므로 MySQL이 멈추면 새 수락은 503입니다. ②는 Lua 한 번으로 "중복인가 → 한도가 남았나 → 자리가 있나"를 차례로 판정합니다. Redis 안의 두 Set은 수명이 반대입니다. 발급 사용자 Set은 줄지 않고, permits Set은 consumer가 commit 뒤 자기 token을 지워 반환합니다. MySQL은 최종 방어선으로 한도와 unique를 한 번 더 지킵니다.</figcaption>
+    </figure>
+  </section>
+
+  <!-- 실패 지점 지도 -->
+  <section>
+    <h2>실패 지점 지도: Redis와 DB가 어긋나는 곳</h2>
+    <figure>
+      <div class="scroll">
+      <svg viewBox="0 0 940 170" role="img" aria-label="Lua 판정 뒤 쿠폰 commit 전까지의 네 실패 지점. a는 발행 전 API 종료, b는 발행 실패 확정, c는 발행 결과 불명, d는 consumer 재시도 소진 후 DLT.">
+        <defs>
+          <marker id="k4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+        </defs>
+        <rect class="hold" x="20" y="40" width="150" height="50" rx="3"/>
+        <text x="95" y="61" text-anchor="middle">② Lua 판정</text>
+        <text class="m" x="95" y="78" text-anchor="middle">사용자·token 기록</text>
+        <rect class="box" x="230" y="40" width="130" height="50" rx="3"/>
+        <text x="295" y="61" text-anchor="middle">③ 발행</text>
+        <text class="m" x="295" y="78" text-anchor="middle">API → 202</text>
+        <rect class="box" x="430" y="40" width="120" height="50" rx="3"/>
+        <text x="490" y="70" text-anchor="middle">Kafka</text>
+        <rect class="box" x="610" y="40" width="140" height="50" rx="3"/>
+        <text x="680" y="61" text-anchor="middle">④ DB TX</text>
+        <text class="m" x="680" y="78" text-anchor="middle">consumer</text>
+        <rect class="hold" x="800" y="40" width="120" height="50" rx="3"/>
+        <text x="860" y="70" text-anchor="middle">⑤ SREM token</text>
+
+        <line class="msg" x1="170" y1="65" x2="228" y2="65" marker-end="url(#k4)"/>
+        <line class="msg" x1="360" y1="65" x2="428" y2="65" marker-end="url(#k4)"/>
+        <line class="msg" x1="550" y1="65" x2="608" y2="65" marker-end="url(#k4)"/>
+        <line class="msg" x1="750" y1="65" x2="798" y2="65" marker-end="url(#k4)"/>
+
+        <g class="tb">
+          <path class="badline" d="M193,100 l14,14 M207,100 l-14,14"/><text x="200" y="140" text-anchor="middle">ⓐ</text>
+          <path class="badline" d="M288,100 l14,14 M302,100 l-14,14"/><text x="295" y="140" text-anchor="middle">ⓑ</text>
+          <path class="badline" d="M388,100 l14,14 M402,100 l-14,14"/><text x="395" y="140" text-anchor="middle">ⓒ</text>
+          <path class="badline" d="M673,100 l14,14 M687,100 l-14,14"/><text x="680" y="140" text-anchor="middle">ⓓ</text>
+          <path class="badline" d="M767,100 l14,14 M781,100 l-14,14"/><text x="774" y="140" text-anchor="middle">ⓔ</text>
+          <path class="badline" d="M88,100 l14,14 M102,100 l-14,14"/><text x="95" y="140" text-anchor="middle">ⓕ</text>
+        </g>
+        <path class="axis" d="M170,158 H760"/>
+        <text class="m" x="200" y="152">ⓐ~ⓓ: 어디서 끊겨도 "Redis는 수락, 쿠폰은 없음"</text>
+      </svg>
+      </div>
+      <div class="tbl">
+        <table>
+          <thead><tr><th>지점</th><th>남는 것</th><th>누가 알 수 있나</th><th>처리 후보</th></tr></thead>
+          <tbody>
+            <tr><td>ⓐ 발행 전 API 종료</td><td>사용자 <span class="no">O</span> · token <span class="no">O</span> · 메시지 없음</td><td>아무도 모름 (프로세스가 사라짐)</td><td>Redis 발급 사용자 Set과 DB를 대조해 찾음. 수용을 닫고 확인한 뒤 다시 여는 보수적 재개 절차와 같은 자리</td></tr>
+            <tr><td>ⓑ 발행 실패 확정</td><td>사용자 O · token O · 메시지 없음</td><td>API (send가 예외로 끝남)</td><td><span class="yes">원복 Lua</span>: 이 사용자와 이 token만 한 번에 SREM, 사용자에게 503</td></tr>
+            <tr><td>ⓒ 발행 결과 불명 (timeout)</td><td>사용자 O · token O · 메시지 <strong>있을 수도</strong></td><td>API도 모름</td><td>🤔 원복하면: 메시지가 실제로 있었다면 consumer가 자리 없이 DB를 씀(쿠폰은 unique가 1장 지킴). 원복 안 하면: 쿠폰 없는 수락자가 남을 수 있음</td></tr>
+            <tr><td>ⓓ 재시도 소진 → DLT</td><td>사용자 O · token O · 메시지 DLT</td><td>consumer</td><td>DLT로 보내기 전에 원복 Lua? 아니면 DLT 재처리로 끝까지 발급? 202는 이미 나갔음</td></tr>
+            <tr><td>ⓔ rebalance 재처리</td><td>쿠폰 1장(unique가 지킴) · token 하나를 두 실행이 공유</td><td>두 consumer 모두 모름</td><td>먼저 끝난 쪽의 SREM이 아직 실행 중인 쪽 자리까지 비움 → 자리 수가 잠깐 C+1. 🤔 한계로 적고 실험할지, 막을지</td></tr>
+            <tr><td>ⓕ Redis 재시작·유실</td><td>AOF everysec면 최근 최대 1초의 SADD가 사라질 수 있음</td><td>Redis는 PONG만 줌</td><td>사라진 사용자는 다시 수락될 수 있음(쿠폰은 unique가 막음), 자리 수도 실제보다 적게 보임 → 자동으로 다시 열지 않음(fail-closed, 과제 규칙)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <figcaption>어느 지점이든 MySQL의 한도·unique가 최종 방어선이라 쿠폰이 더 발급되지는 않습니다. 틀리는 방향은 "수락했는데 쿠폰이 없음(덜 발급)"과 "자리 수가 실제와 다름" 둘뿐입니다.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ⓑⓒ 두 길 -->
+  <section>
+    <h2>ⓑ 발행 실패 확정 · ⓒ 발행 결과 불명을 처리하는 두 길: 직접 발행 vs 수락분만 outbox</h2>
+    <p><strong>ⓑ 발행 실패 확정</strong>: Lua가 수락(사용자·token SADD)한 뒤 API의 Kafka send가 예외로 끝남. 메시지가 없다는 걸 API가 안다.<br><strong>ⓒ 발행 결과 불명</strong>: send가 timeout으로 끝남. Kafka에 들어갔는지 API가 모른다.</p>
+    <figure>
+      <div class="scroll">
+      <svg viewBox="0 0 940 210" role="img" aria-label="위쪽은 API가 Kafka에 직접 발행하는 길로, 발행 지점에서 b와 c가 생긴다. 아래쪽은 수락된 요청만 outbox에 insert하고 W7 relay가 발행하는 길로, API가 마주치는 실패는 DB insert의 b'와 c'로 바뀌고 발행 실패는 relay의 재시도가 된다.">
+        <defs>
+          <marker id="k5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+        </defs>
+        <text class="m gl" x="20" y="24">직접 발행</text>
+        <rect class="hold" x="20" y="34" width="150" height="44" rx="3"/><text x="95" y="61" text-anchor="middle">② Lua 판정</text>
+        <rect class="box" x="230" y="34" width="150" height="44" rx="3"/><text x="305" y="61" text-anchor="middle">API가 send</text>
+        <rect class="box" x="460" y="34" width="120" height="44" rx="3"/><text x="520" y="61" text-anchor="middle">Kafka</text>
+        <line class="msg" x1="170" y1="56" x2="228" y2="56" marker-end="url(#k5)"/>
+        <line class="msg" x1="380" y1="56" x2="458" y2="56" marker-end="url(#k5)"/>
+        <text class="tb" x="305" y="96" text-anchor="middle">ⓑ 실패 확정</text>
+        <text class="tb" x="420" y="96" text-anchor="middle">ⓒ 결과 불명</text>
+        <text class="m" x="600" y="52">API가 Kafka 결과를 직접 다룸</text>
+        <text class="m" x="600" y="70">ⓒ는 "들어갔나"를 확인하기 어려움</text>
+
+        <text class="m gl" x="20" y="124">수락분만 outbox (coupon-system · W7 relay)</text>
+        <rect class="hold" x="20" y="134" width="150" height="44" rx="3"/><text x="95" y="161" text-anchor="middle">② Lua 판정</text>
+        <rect class="box" x="230" y="134" width="150" height="44" rx="3"/>
+        <text x="305" y="153" text-anchor="middle">outbox insert</text>
+        <text class="m" x="305" y="169" text-anchor="middle">수락된 n건만</text>
+        <rect class="box" x="460" y="134" width="120" height="44" rx="3"/><text x="520" y="161" text-anchor="middle">W7 relay</text>
+        <rect class="box" x="660" y="134" width="120" height="44" rx="3"/><text x="720" y="161" text-anchor="middle">Kafka</text>
+        <line class="msg" x1="170" y1="156" x2="228" y2="156" marker-end="url(#k5)"/>
+        <line class="msg" x1="380" y1="156" x2="458" y2="156" marker-end="url(#k5)"/>
+        <text x="420" y="148" text-anchor="middle">commit</text>
+        <line class="msg" x1="580" y1="156" x2="658" y2="156" marker-end="url(#k5)"/>
+        <text class="tb" x="290" y="196" text-anchor="middle">ⓑ′ insert 실패</text>
+        <text class="tb" x="420" y="196" text-anchor="middle">ⓒ′ commit 불명</text>
+        <text class="ta" x="620" y="196" text-anchor="middle">실패 = 재시도(지연)</text>
+      </svg>
+      </div>
+      <div class="tbl">
+        <table>
+          <thead><tr><th>장면</th><th>직접 발행</th><th>수락분만 outbox</th></tr></thead>
+          <tbody>
+            <tr><td>실패 확정</td><td>ⓑ send 예외 → 원복 Lua</td><td>ⓑ′ insert 예외 → 원복 Lua (같음)</td></tr>
+            <tr><td>결과 불명</td><td>ⓒ Kafka에 들어갔는지 API가 확인하기 어려움</td><td>ⓒ′ DB commit 불명 → (campaign, user)로 SELECT하면 확인 가능</td></tr>
+            <tr><td>발행이 안 될 때</td><td>그대로 "수락했는데 쿠폰 없음"</td><td>relay가 될 때까지 재시도 → 늦어질 뿐 (평소 지연: relay tick 1s 이하)</td></tr>
+            <tr><td>Kafka가 멈추면</td><td>새 수락마다 send 실패 → ⓑ 원복 → 사용자는 503 받고 다시 요청</td><td>token이 반환되지 않아 permits가 C개로 참 → <strong>최대 C명</strong>이 202를 받고 Kafka 복구까지 기다림. 나머지는 429</td></tr>
+            <tr><td>비용</td><td>API의 DB 접근 0회</td><td>수락된 n건만 insert 1회 + relay 주기만큼 지연 + W7 장치 재사용</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <figcaption><strong>✅ 11-11 수락분만 outbox로 결정.</strong> outbox로 가면 API는 Kafka 발행 결과(ⓑ 실패 확정 · ⓒ 결과 불명)를 모르게 됩니다. 대신 모를 필요가 없어집니다. 발행은 relay가 끝까지 책임지고, API가 마주치는 불확실성은 "Kafka에 들어갔나"에서 "DB에 commit됐나"로 바뀝니다. 후자는 SELECT로 확인할 수 있습니다.</figcaption>
+    </figure>
+  </section>
+
+  <!-- outbox가 지켜 주는 범위 -->
+  <section>
+    <h2>outbox가 지켜 주는 범위: "Kafka까지 간다"이지 "쿠폰이 된다"가 아니다</h2>
+    <p>outbox 행은 MySQL에 commit됐으니 메시지는 잃지 않습니다. 하지만 그 앞(Redis)과 뒤(consumer)에서 생기는 실패는 outbox 밖입니다.</p>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>실패 지점</th><th>무슨 일</th><th>outbox로 막히나</th><th>결과</th></tr></thead>
+        <tbody>
+          <tr><td>ⓐ API가 Lua 수락 뒤 outbox insert 전에 죽음</td><td>Redis에는 "수락됨"으로 남는데 outbox 행이 없음</td><td>❌ 그 앞이라 안 됨</td><td>다시 요청하면 "이미 수락됨"인데 쿠폰은 영영 안 생김. token도 안 돌아옴</td></tr>
+          <tr><td>ⓓ consumer 재시도 소진 → DLT</td><td>메시지가 처리되지 못하고 DLT로 감</td><td>❌ 그 뒤라 안 됨</td><td>202를 받았는데 쿠폰 없음. token도 안 돌아옴</td></tr>
+          <tr><td>ⓕ Redis 재시작·유실</td><td>Redis가 수락한 사람을 잊고 실제보다 적게 셈</td><td>❌ Redis 문제라 안 됨</td><td>한 명을 더 받아 줌 → consumer에서 DB 한도에 막힘 → 202를 받았는데 쿠폰 없음</td></tr>
+          <tr><td>ⓑ 발행 실패 확정 · ⓒ 발행 결과 불명</td><td>API의 Kafka send 실패·timeout</td><td>✅ 없어짐 (relay가 재시도)</td><td>대신 ⓑ′ insert 실패 → 원복 Lua · ⓒ′ commit 불명 → SELECT로 확인</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <details class="past">
+    <summary>참고: 고려하지 않는 동기안 (구성도 A)</summary>
+    <div class="inner">
+  <!-- 구성도 A -->
+  <section>
+    <h2>구성도 A. 동기안: 세마포어가 API 안에서 DB TX 앞을 막는다</h2>
+    <figure>
+      <div class="scroll">
+      <svg viewBox="0 0 920 360" role="img" aria-label="동기안 구성도. commerce-api 안의 CouponIssueUseCase가 세마포어 어댑터로 Redis permits Set에 자리를 얻고, CouponIssueTx로 MySQL에 발급한다. 목록 조회는 Redis를 거치지 않고 MySQL만 읽는다.">
+        <defs>
+          <marker id="k1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+          <marker id="k1a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-acc" d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+        <rect class="box" x="20" y="45" width="90" height="50" rx="3"/><text x="65" y="75" text-anchor="middle">Client</text>
+
+        <rect class="group" x="140" y="20" width="520" height="315" rx="6"/>
+        <text class="m gl" x="152" y="40">commerce-api</text>
+
+        <rect class="box" x="300" y="50" width="200" height="40" rx="3"/><text x="400" y="75" text-anchor="middle">CouponController</text>
+        <rect class="box" x="160" y="130" width="140" height="46" rx="3"/><text x="230" y="158" text-anchor="middle">CouponQueryService</text>
+        <rect class="box" x="320" y="130" width="150" height="46" rx="3"/><text x="395" y="158" text-anchor="middle">CouponIssueUseCase</text>
+        <rect class="hold" x="510" y="130" width="130" height="46" rx="3"/>
+        <text x="575" y="150" text-anchor="middle">세마포어 어댑터</text>
+        <text class="m" x="575" y="166" text-anchor="middle">Lua 획득 · 반환</text>
+        <rect class="box" x="320" y="230" width="150" height="46" rx="3"/>
+        <text x="395" y="250" text-anchor="middle">CouponIssueTx</text>
+        <text class="m mono" x="395" y="266" text-anchor="middle">@Transactional</text>
+
+        <rect class="hold" x="720" y="110" width="180" height="80" rx="3"/>
+        <text x="810" y="134" text-anchor="middle">Redis (master)</text>
+        <text class="m" x="810" y="154" text-anchor="middle">permits Set</text>
+        <text class="ta" x="810" y="172" text-anchor="middle">token 수 ≤ C</text>
+        <text class="tb" x="810" y="210" text-anchor="middle">장애 → 신규 발급 503</text>
+
+        <rect class="box" x="720" y="225" width="180" height="120" rx="3"/>
+        <text x="810" y="247" text-anchor="middle">MySQL</text>
+        <text class="mono" x="732" y="270">coupon_campaign</text>
+        <text class="m mono" x="732" y="286">issued_count ≤ quota</text>
+        <text class="mono" x="732" y="310">user_coupon</text>
+        <text class="m mono" x="732" y="326">UNIQUE(campaign,user)</text>
+
+        <line class="msg" x1="110" y1="70" x2="298" y2="70" marker-end="url(#k1)"/>
+        <text x="205" y="62" text-anchor="middle">POST 발급 · GET 목록</text>
+
+        <path class="msg" d="M340,90 V110 H230 V128" marker-end="url(#k1)"/>
+        <text class="m" x="236" y="106">목록</text>
+        <line class="msg" x1="420" y1="90" x2="420" y2="128" marker-end="url(#k1)"/>
+        <text class="m" x="428" y="114">발급</text>
+
+        <line class="accmsg" x1="470" y1="153" x2="508" y2="153" marker-end="url(#k1a)"/>
+        <line class="accmsg" x1="640" y1="153" x2="718" y2="153" marker-end="url(#k1a)"/>
+        <text class="ta" x="680" y="145" text-anchor="middle">EVAL · SREM</text>
+
+        <line class="msg" x1="395" y1="176" x2="395" y2="228" marker-end="url(#k1)"/>
+        <text class="m" x="403" y="206">자리 얻은 뒤에만</text>
+
+        <line class="msg" x1="470" y1="253" x2="718" y2="253" marker-end="url(#k1)"/>
+        <text x="595" y="245" text-anchor="middle">한도 확인 · +1 · insert (한 TX)</text>
+
+        <path class="msg" d="M230,176 V310 H718" marker-end="url(#k1)"/>
+        <text x="470" y="303" text-anchor="middle">본인 목록 SELECT (Redis와 무관)</text>
+      </svg>
+      </div>
+      <figcaption>세마포어는 <code>CouponIssueUseCase</code>와 Redis 사이의 파란 부품입니다. UseCase는 자리를 얻은 뒤에만 <code>CouponIssueTx</code>를 부르고, TX가 끝나면 반환합니다. 그래서 MySQL로 동시에 들어가는 발급 TX는 C개를 넘지 않습니다. 목록 조회는 파란 부품을 거치지 않으니 Redis가 죽어도 동작합니다.</figcaption>
+    </figure>
+  </section>
+
+    </div>
+  </details>
+
+  <details class="past">
+    <summary>참고: 고치기 전 구성도 B (v2, 로컬 캐시·Redis 순서가 빠지고 발급 사용자 Set이 없음)</summary>
+    <div class="inner">
+  <section>
+    <h2>구성도 B v2</h2>
+    <figure>
+      <div class="scroll">
+      <svg viewBox="0 0 940 460" role="img" aria-label="통합안 구성도. commerce-api의 UseCase가 세마포어 어댑터로 Redis에 자리를 얻고 token을 실어 Kafka에 발행한다. Consumer가 Kafka에서 읽어 MySQL에 발급한 뒤 Redis에 SREM으로 자리를 반환한다. 세 번 실패하면 DLT로 간다.">
+        <defs>
+          <marker id="k2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+          <marker id="k2a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-acc" d="M0,0 L10,5 L0,10 z"/></marker>
+          <marker id="k2b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-bad" d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+        <rect class="box" x="20" y="55" width="90" height="50" rx="3"/><text x="65" y="85" text-anchor="middle">Client</text>
+
+        <rect class="group" x="140" y="20" width="340" height="245" rx="6"/>
+        <text class="m gl" x="152" y="40">commerce-api</text>
+        <rect class="box" x="160" y="60" width="140" height="40" rx="3"/><text x="230" y="85" text-anchor="middle">CouponController</text>
+        <rect class="box" x="160" y="140" width="140" height="50" rx="3"/>
+        <text x="230" y="162" text-anchor="middle">IssueRequest</text>
+        <text x="230" y="178" text-anchor="middle">UseCase</text>
+        <rect class="box" x="160" y="210" width="140" height="40" rx="3"/><text x="230" y="235" text-anchor="middle">CouponQueryService</text>
+
+        <rect class="dashbox" x="330" y="60" width="135" height="40" rx="3"/>
+        <text x="397" y="78" text-anchor="middle">품절 플래그</text>
+        <text class="m" x="397" y="93" text-anchor="middle">Caffeine</text>
+        <rect class="hold" x="330" y="140" width="135" height="50" rx="3"/>
+        <text x="397" y="162" text-anchor="middle">세마포어 어댑터</text>
+        <text class="m" x="397" y="178" text-anchor="middle">Lua 획득</text>
+        <rect class="box" x="330" y="210" width="135" height="40" rx="3"/><text x="397" y="235" text-anchor="middle">Producer 어댑터</text>
+
+        <rect class="hold" x="540" y="130" width="170" height="70" rx="3"/>
+        <text x="625" y="152" text-anchor="middle">Redis (master)</text>
+        <text class="m" x="625" y="170" text-anchor="middle">permits Set</text>
+        <text class="ta" x="625" y="188" text-anchor="middle">token 수 ≤ C</text>
+        <text class="tb" x="540" y="120">장애 → 신규 503</text>
+
+        <rect class="box" x="540" y="215" width="170" height="60" rx="3"/>
+        <text x="625" y="238" text-anchor="middle">Kafka</text>
+        <text class="m mono" x="625" y="258" text-anchor="middle">coupon-issue · 3 partitions</text>
+        <rect class="bad" x="540" y="300" width="170" height="40" rx="3"/>
+        <text x="625" y="325" text-anchor="middle">DLT</text>
+
+        <rect class="group" x="745" y="195" width="180" height="150" rx="6"/>
+        <text class="m gl" x="757" y="213">consumer (어느 앱: 다음 결정)</text>
+        <rect class="box" x="760" y="222" width="150" height="40" rx="3"/><text x="835" y="247" text-anchor="middle">IssueConsumer</text>
+        <rect class="box" x="760" y="285" width="150" height="46" rx="3"/>
+        <text x="835" y="305" text-anchor="middle">CouponIssueTx</text>
+        <text class="m mono" x="835" y="321" text-anchor="middle">@Transactional</text>
+
+        <rect class="box" x="745" y="375" width="180" height="76" rx="3"/>
+        <text x="835" y="396" text-anchor="middle">MySQL</text>
+        <text class="m mono" x="757" y="418">issued_count ≤ quota</text>
+        <text class="m mono" x="757" y="436">UNIQUE(campaign,user)</text>
+
+        <line class="msg" x1="110" y1="80" x2="158" y2="80" marker-end="url(#k2)"/>
+        <line class="msg" x1="230" y1="100" x2="230" y2="138" marker-end="url(#k2)"/>
+        <text class="m" x="238" y="124">발급</text>
+        <path class="msg" d="M160,80 H150 V230 H158" marker-end="url(#k2)"/>
+
+        <path class="msg" d="M300,165 H312 M312,80 V230" />
+        <line class="msg" x1="312" y1="80" x2="328" y2="80" marker-end="url(#k2)"/>
+        <line class="accmsg" x1="312" y1="165" x2="328" y2="165" marker-end="url(#k2a)"/>
+        <line class="msg" x1="312" y1="230" x2="328" y2="230" marker-end="url(#k2)"/>
+
+        <line class="accmsg" x1="465" y1="165" x2="538" y2="165" marker-end="url(#k2a)"/>
+        <text class="ta" x="502" y="157" text-anchor="middle">EVAL</text>
+        <line class="msg" x1="465" y1="235" x2="538" y2="235" marker-end="url(#k2)"/>
+        <text x="502" y="227" text-anchor="middle">발행 +token</text>
+
+        <line class="msg" x1="710" y1="242" x2="758" y2="242" marker-end="url(#k2)"/>
+        <text x="734" y="234" text-anchor="middle">poll</text>
+        <line class="msg" x1="835" y1="262" x2="835" y2="283" marker-end="url(#k2)"/>
+        <line class="msg" x1="835" y1="331" x2="835" y2="373" marker-end="url(#k2)"/>
+        <text class="m" x="843" y="358">한도·+1·insert</text>
+
+        <path class="accmsg" d="M835,195 V165 H712" marker-end="url(#k2a)"/>
+        <text class="ta" x="843" y="160">SREM token</text>
+        <text class="ta" x="843" y="176">(commit 뒤)</text>
+
+        <path class="badline" d="M745,320 H712" marker-end="url(#k2b)"/>
+        <text class="tb" x="625" y="358" text-anchor="middle">3회 실패 시 · 반환 주체 없음</text>
+
+        <path class="msg" d="M230,250 V420 H743" marker-end="url(#k2)"/>
+        <text x="470" y="412" text-anchor="middle">본인 목록 SELECT (Redis와 무관)</text>
+      </svg>
+      </div>
+      <figcaption>v2: 세 부품을 부르는 순서가 그림에 없었고, 블로그의 발급 사용자 Set(중복·한도 판정)이 빠져 있었습니다.</figcaption>
+    </figure>
+  </section>
+    </div>
+  </details>
+
+  <details class="past">
+    <summary>참고: 시간 흐름 그림 1~7 (그림 4는 v2 기준이라 API가 DB를 먼저 조회함, 지금 설계와 다름)</summary>
+    <div class="inner">
+
+  <!-- 그림 1 -->
+  <section>
+    <h2>1. 세마포어가 세는 것: 지금 동시에 실행 중인 수</h2>
+    <figure>
+      <div class="scroll">
+      <svg viewBox="0 0 760 245" role="img" aria-label="C=3 세마포어 타임라인. A, B, C가 자리를 잡은 동안 D는 429로 거절되고, A가 반환한 뒤 도착한 E는 자리를 얻는다.">
+        <text x="110" y="44" text-anchor="end">요청 A</text>
+        <text x="110" y="76" text-anchor="end">요청 B</text>
+        <text x="110" y="108" text-anchor="end">요청 C</text>
+        <text x="110" y="140" text-anchor="end">요청 D</text>
+        <text x="110" y="172" text-anchor="end">요청 E</text>
+
+        <rect class="hold" x="140" y="31" width="220" height="18" rx="2"/>
+        <text x="148" y="44">발급 중</text>
+        <text class="m" x="368" y="44">끝 → SREM A</text>
+
+        <rect class="hold" x="140" y="63" width="440" height="18" rx="2"/>
+        <text x="148" y="76">발급 중 (DB가 느림)</text>
+
+        <rect class="hold" x="140" y="95" width="495" height="18" rx="2"/>
+        <text x="148" y="108">발급 중 (DB가 느림)</text>
+
+        <path class="badline" d="M244,130 l12,12 M256,130 l-12,12"/>
+        <text class="tb" x="266" y="140">자리 없음 → 429 (3/3 사용 중)</text>
+
+        <rect class="hold" x="470" y="159" width="220" height="18" rx="2"/>
+        <text x="478" y="172">빈자리 획득 → 발급</text>
+
+        <line class="axis" x1="140" y1="192" x2="690" y2="192"/>
+        <g class="m">
+          <text x="140" y="208" text-anchor="middle">0.0s</text>
+          <text x="250" y="208" text-anchor="middle">0.1s</text>
+          <text x="360" y="208" text-anchor="middle">0.2s</text>
+          <text x="470" y="208" text-anchor="middle">0.3s</text>
+          <text x="580" y="208" text-anchor="middle">0.4s</text>
+          <text x="690" y="208" text-anchor="middle">0.5s</text>
+        </g>
+        <text x="110" y="234" text-anchor="end">사용 중 자리</text>
+        <line class="axis" x1="360" y1="220" x2="360" y2="240"/>
+        <line class="axis" x1="470" y1="220" x2="470" y2="240"/>
+        <line class="axis" x1="580" y1="220" x2="580" y2="240"/>
+        <line class="axis" x1="635" y1="220" x2="635" y2="240"/>
+        <text class="ta" x="250" y="234" text-anchor="middle">3</text>
+        <text class="ta" x="415" y="234" text-anchor="middle">2</text>
+        <text class="ta" x="525" y="234" text-anchor="middle">3</text>
+        <text class="ta" x="607" y="234" text-anchor="middle">2</text>
+        <text class="ta" x="662" y="234" text-anchor="middle">1</text>
+      </svg>
+      </div>
+      <figcaption>세마포어는 초당 요청 수도, 누적 발급 수도 세지 않습니다. 지금 이 순간 진행 중인 실행 수만 셉니다. D는 쿠폰이 남아 있어도 거절됩니다. 반대로 한 건이 금방 끝나면 요청이 많아도 차례로 모두 통과합니다. 세마포어가 효과를 내는 때는 작업이 느려질 때입니다.</figcaption>
+    </figure>
+  </section>
+
+  <!-- 그림 2 -->
+  <section>
+    <h2>2. 안 A (동기): 세마포어가 DB TX를 감싼다</h2>
+    <figure>
+      <div class="scroll">
+      <svg viewBox="0 0 760 400" role="img" aria-label="동기 발급 순서. API가 Redis Lua로 자리를 얻고, DB TX를 실행하고, commit 뒤 SREM으로 자리를 반환한 다음 201을 응답한다.">
+        <defs>
+          <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+        </defs>
+        <rect class="box" x="20" y="16" width="120" height="32" rx="3"/><text x="80" y="37" text-anchor="middle">Client</text>
+        <rect class="box" x="190" y="16" width="140" height="32" rx="3"/><text x="260" y="37" text-anchor="middle">API (UseCase)</text>
+        <rect class="box" x="390" y="16" width="120" height="32" rx="3"/><text x="450" y="37" text-anchor="middle">Redis (master)</text>
+        <rect class="box" x="580" y="16" width="120" height="32" rx="3"/><text x="640" y="37" text-anchor="middle">DB</text>
+        <line class="life" x1="80" y1="48" x2="80" y2="392"/>
+        <line class="life" x1="260" y1="48" x2="260" y2="392"/>
+        <line class="life" x1="450" y1="48" x2="450" y2="392"/>
+        <line class="life" x1="640" y1="48" x2="640" y2="392"/>
+
+        <rect class="hold" x="444" y="210" width="12" height="135"/>
+        <text class="ta" x="466" y="282">자리 점유 중</text>
+
+        <line class="msg" x1="80" y1="80" x2="258" y2="80" marker-end="url(#a2)"/>
+        <text x="170" y="74" text-anchor="middle">POST …/issues</text>
+
+        <line class="msg" x1="260" y1="115" x2="638" y2="115" marker-end="url(#a2)"/>
+        <text x="355" y="109" text-anchor="middle">① 기존 쿠폰 조회</text>
+        <line class="msg ret" x1="640" y1="140" x2="262" y2="140" marker-end="url(#a2)"/>
+        <text x="355" y="134" text-anchor="middle">없음</text>
+        <text class="m" x="268" y="160">있으면 여기서 200 + 기존 couponId (자리 안 씀)</text>
+
+        <line class="msg" x1="260" y1="185" x2="448" y2="185" marker-end="url(#a2)"/>
+        <text x="355" y="179" text-anchor="middle">② Lua 획득 (token)</text>
+        <line class="msg ret" x1="450" y1="210" x2="262" y2="210" marker-end="url(#a2)"/>
+        <text x="355" y="204" text-anchor="middle">1 = 수용</text>
+        <text class="tb" x="466" y="200">0 → 429 · 예외 → 503</text>
+
+        <rect class="act" x="634" y="250" width="12" height="60"/>
+        <line class="msg" x1="260" y1="250" x2="632" y2="250" marker-end="url(#a2)"/>
+        <text x="545" y="244" text-anchor="middle">③ DB TX 시작</text>
+        <text class="m" x="656" y="266">한도 확인</text>
+        <text class="m" x="656" y="282">issuedCount+1</text>
+        <text class="m" x="656" y="298">쿠폰 insert</text>
+        <line class="msg ret" x1="634" y1="310" x2="262" y2="310" marker-end="url(#a2)"/>
+        <text x="545" y="304" text-anchor="middle">commit (또는 rollback)</text>
+
+        <line class="msg" x1="260" y1="345" x2="448" y2="345" marker-end="url(#a2)"/>
+        <text x="355" y="339" text-anchor="middle">④ SREM token</text>
+
+        <line class="msg ret" x1="260" y1="380" x2="82" y2="380" marker-end="url(#a2)"/>
+        <text x="170" y="374" text-anchor="middle">⑤ 201 + couponId</text>
+      </svg>
+      </div>
+      <figcaption>자리는 ②에서 잡고 ④에서 반환합니다. 그 사이에 DB TX가 통째로 들어가니, 세마포어는 "동시에 DB TX를 실행하는 수"를 직접 제한합니다. 그래서 세마포어는 <code>@Transactional</code> 바깥, 응용 서비스(UseCase)에 놓입니다. TX 안에 두면 commit 전에 반환하게 됩니다.</figcaption>
+    </figure>
+  </section>
+
+  <!-- 그림 3 -->
+  <section>
+    <h2>3. 블로그 구조에서 세마포어를 둘 수 있는 세 자리</h2>
+    <figure>
+      <div class="scroll">
+      <svg viewBox="0 0 780 315" role="img" aria-label="블로그 구조(Client, API, Kafka, Consumer, DB)에서 세마포어 후보 세 구간. API부터 발행까지와 consumer만인 구간은 문제가 있고, API 획득부터 consumer 반환까지가 의미 있는 구간이다.">
+        <defs>
+          <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+        </defs>
+        <rect class="box" x="20" y="50" width="90" height="44" rx="3"/><text x="65" y="77" text-anchor="middle">Client</text>
+        <rect class="box" x="150" y="50" width="120" height="44" rx="3"/><text x="210" y="77" text-anchor="middle">API</text>
+        <rect class="box" x="320" y="50" width="130" height="44" rx="3"/><text x="385" y="77" text-anchor="middle">Kafka topic</text>
+        <rect class="box" x="500" y="50" width="120" height="44" rx="3"/><text x="560" y="77" text-anchor="middle">Consumer</text>
+        <rect class="box" x="670" y="50" width="90" height="44" rx="3"/><text x="715" y="77" text-anchor="middle">DB</text>
+        <rect class="box" x="150" y="130" width="120" height="40" rx="3"/><text x="210" y="155" text-anchor="middle">Redis</text>
+
+        <line class="msg" x1="110" y1="72" x2="148" y2="72" marker-end="url(#a3)"/>
+        <text x="130" y="40" text-anchor="middle">POST</text>
+        <line class="msg" x1="270" y1="72" x2="318" y2="72" marker-end="url(#a3)"/>
+        <text x="295" y="40" text-anchor="middle">발행</text>
+        <line class="msg" x1="450" y1="72" x2="498" y2="72" marker-end="url(#a3)"/>
+        <text x="475" y="40" text-anchor="middle">poll</text>
+        <line class="msg" x1="620" y1="72" x2="668" y2="72" marker-end="url(#a3)"/>
+        <text x="645" y="40" text-anchor="middle">DB TX</text>
+        <line class="msg" x1="210" y1="94" x2="210" y2="128" marker-end="url(#a3)"/>
+        <text class="m" x="218" y="116">한도·중복 판정 Lua (블로그)</text>
+
+        <path class="badline" d="M150,197 v8 h300 v-8"/>
+        <text class="tb" x="150" y="224">① API ~ 발행: DB 작업 전에 반환 → DB를 보호하지 못함</text>
+
+        <path class="badline" d="M500,242 v8 h260 v-8"/>
+        <text class="tb" x="500" y="269">② consumer만: 429를 줄 수 없음</text>
+
+        <path class="accline" d="M150,284 v8 h610 v-8"/>
+        <text class="ta" x="150" y="311">③ API에서 획득 → consumer가 DB TX 뒤 반환: 의미가 남는 유일한 자리</text>
+      </svg>
+      </div>
+      <figcaption>②는 거절 대신 기다리게(<code>acquire</code>) 됩니다. 그런데 consumer의 동시 처리 수는 이미 partition 수 × consumer thread 수로 정해져 있습니다. 블로그는 partition 3개에 consumer 3대였으니, 이미 C=3 세마포어를 가진 셈입니다. Kafka와 세마포어를 한 흐름으로 묶으려면 ③이어야 합니다.</figcaption>
+    </figure>
+  </section>
+
+  <!-- 그림 4 -->
+  <section>
+    <h2>4. 통합안: API 획득 → Kafka → consumer 반환</h2>
+    <figure>
+      <div class="scroll">
+      <svg viewBox="0 0 780 450" role="img" aria-label="통합안 순서. API가 Lua로 자리를 얻고 token을 담아 Kafka에 발행한 뒤 202를 응답한다. consumer가 record를 읽어 DB TX를 commit한 뒤 SREM으로 자리를 반환한다.">
+        <defs>
+          <marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+        </defs>
+        <rect class="box" x="10" y="16" width="100" height="32" rx="3"/><text x="60" y="37" text-anchor="middle">Client</text>
+        <rect class="box" x="135" y="16" width="100" height="32" rx="3"/><text x="185" y="37" text-anchor="middle">API</text>
+        <rect class="box" x="260" y="16" width="100" height="32" rx="3"/><text x="310" y="37" text-anchor="middle">Redis</text>
+        <rect class="box" x="390" y="16" width="100" height="32" rx="3"/><text x="440" y="37" text-anchor="middle">Kafka</text>
+        <rect class="box" x="520" y="16" width="100" height="32" rx="3"/><text x="570" y="37" text-anchor="middle">Consumer</text>
+        <rect class="box" x="650" y="16" width="100" height="32" rx="3"/><text x="700" y="37" text-anchor="middle">DB</text>
+        <line class="life" x1="60" y1="48" x2="60" y2="440"/>
+        <line class="life" x1="185" y1="48" x2="185" y2="440"/>
+        <line class="life" x1="310" y1="48" x2="310" y2="440"/>
+        <line class="life" x1="440" y1="48" x2="440" y2="440"/>
+        <line class="life" x1="570" y1="48" x2="570" y2="440"/>
+        <line class="life" x1="700" y1="48" x2="700" y2="440"/>
+
+        <rect class="hold" x="304" y="195" width="12" height="229"/>
+        <text class="ta" x="324" y="292">자리 점유</text>
+        <text class="ta" x="324" y="308">(Kafka 대기 포함)</text>
+
+        <line class="msg" x1="60" y1="80" x2="183" y2="80" marker-end="url(#a4)"/>
+        <text x="122" y="74" text-anchor="middle">POST</text>
+
+        <line class="msg" x1="185" y1="110" x2="698" y2="110" marker-end="url(#a4)"/>
+        <text x="248" y="104" text-anchor="middle">① 기존 쿠폰?</text>
+        <line class="msg ret" x1="700" y1="135" x2="187" y2="135" marker-end="url(#a4)"/>
+        <text x="248" y="129" text-anchor="middle">없음</text>
+
+        <line class="msg" x1="185" y1="170" x2="308" y2="170" marker-end="url(#a4)"/>
+        <text x="248" y="164" text-anchor="middle">② Lua 획득</text>
+        <line class="msg ret" x1="310" y1="195" x2="187" y2="195" marker-end="url(#a4)"/>
+        <text x="248" y="189" text-anchor="middle">1 = 수용</text>
+        <text class="tb" x="177" y="214" text-anchor="end">0→429 · 예외→503</text>
+
+        <line class="msg" x1="185" y1="230" x2="438" y2="230" marker-end="url(#a4)"/>
+        <text x="375" y="224" text-anchor="middle">③ 발행 (token 포함)</text>
+        <line class="msg ret" x1="440" y1="252" x2="187" y2="252" marker-end="url(#a4)"/>
+        <text x="375" y="246" text-anchor="middle">ack</text>
+
+        <line class="msg ret" x1="185" y1="282" x2="62" y2="282" marker-end="url(#a4)"/>
+        <text x="122" y="276" text-anchor="middle">202 Accepted</text>
+
+        <line class="msg" x1="570" y1="312" x2="442" y2="312" marker-end="url(#a4)"/>
+        <text x="505" y="306" text-anchor="middle">poll</text>
+        <line class="msg ret" x1="440" y1="334" x2="568" y2="334" marker-end="url(#a4)"/>
+        <text x="505" y="328" text-anchor="middle">record</text>
+
+        <rect class="act" x="694" y="364" width="12" height="30"/>
+        <line class="msg" x1="570" y1="364" x2="692" y2="364" marker-end="url(#a4)"/>
+        <text x="635" y="358" text-anchor="middle">④ DB TX</text>
+        <text class="m" x="714" y="376">한도·중복</text>
+        <text class="m" x="714" y="391">insert</text>
+        <line class="msg ret" x1="694" y1="394" x2="572" y2="394" marker-end="url(#a4)"/>
+        <text x="635" y="388" text-anchor="middle">commit</text>
+
+        <line class="msg" x1="570" y1="424" x2="312" y2="424" marker-end="url(#a4)"/>
+        <text x="505" y="418" text-anchor="middle">⑤ SREM token</text>
+      </svg>
+      </div>
+      <figcaption>자리를 잡는 쪽(API)과 반환하는 쪽(consumer)이 다른 프로세스입니다. token은 Kafka 메시지에 실려 건너갑니다. 사용자는 202를 받고, 쿠폰은 ⑤ 직전의 commit 뒤에야 <code>GET /api/v1/coupons</code>에 보입니다.</figcaption>
+    </figure>
+  </section>
+
+  <!-- 그림 5 -->
+  <section>
+    <h2>5. 두 안의 차이: 자리를 잡고 있는 구간의 길이</h2>
+    <figure>
+      <div class="scroll">
+      <svg viewBox="0 0 760 150" role="img" aria-label="안 A는 획득, DB TX, 반환만 점유 구간에 들어가고, 통합안은 발행과 Kafka 대기까지 점유 구간에 들어간다.">
+        <text x="120" y="60" text-anchor="end">안 A (동기)</text>
+        <rect class="seg" x="135" y="40" width="70" height="30"/><text x="170" y="60" text-anchor="middle">획득</text>
+        <rect class="seg" x="205" y="40" width="170" height="30"/><text x="290" y="60" text-anchor="middle">DB TX</text>
+        <rect class="seg" x="375" y="40" width="70" height="30"/><text x="410" y="60" text-anchor="middle">반환</text>
+        <rect x="135" y="40" width="310" height="30" fill="none" class="accline"/>
+        <text class="ta" x="458" y="60">점유 = DB TX 시간</text>
+
+        <text x="120" y="115" text-anchor="end">통합안</text>
+        <rect class="seg" x="135" y="95" width="70" height="30"/><text x="170" y="115" text-anchor="middle">획득</text>
+        <rect class="seg" x="205" y="95" width="70" height="30"/><text x="240" y="115" text-anchor="middle">발행</text>
+        <rect class="wait" x="275" y="95" width="190" height="30"/><text x="370" y="115" text-anchor="middle">Kafka 대기 (lag)</text>
+        <rect class="seg" x="465" y="95" width="170" height="30"/><text x="550" y="115" text-anchor="middle">DB TX</text>
+        <rect class="seg" x="635" y="95" width="70" height="30"/><text x="670" y="115" text-anchor="middle">반환</text>
+        <rect x="135" y="95" width="570" height="30" fill="none" class="accline"/>
+        <text class="ta" x="135" y="145">점유 = 발행 + Kafka 대기 + DB TX 시간</text>
+      </svg>
+      </div>
+      <figcaption>통합안에서 C는 "동시에 DB를 쓰는 수"가 아니라 "받아 놓고 아직 끝내지 못한 발급 작업 수"가 됩니다. 즉 Kafka에 쌓일 수 있는 양의 상한(제한된 queue의 크기)입니다. consumer가 밀려 lag가 늘면 자리가 오래 묶이고, 429가 더 자주 납니다.</figcaption>
+    </figure>
+  </section>
+
+  <!-- 그림 6 -->
+  <section>
+    <h2>6. 통합안의 비용 ②: 반환할 주체가 사라진 자리</h2>
+    <figure>
+      <div class="scroll">
+      <svg viewBox="0 0 760 220" role="img" aria-label="메시지가 세 번 실패해 DLT로 가면 consumer가 SREM을 하지 않아, Redis의 C=3 자리 중 하나가 계속 점유된 채 남는다.">
+        <defs>
+          <marker id="a6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+        </defs>
+        <rect class="box" x="30" y="40" width="120" height="40" rx="3"/><text x="90" y="65" text-anchor="middle">API</text>
+        <rect class="box" x="220" y="40" width="130" height="40" rx="3"/><text x="285" y="65" text-anchor="middle">Kafka topic</text>
+        <rect class="box" x="420" y="40" width="120" height="40" rx="3"/><text x="480" y="65" text-anchor="middle">Consumer</text>
+        <rect class="bad" x="610" y="40" width="120" height="40" rx="3"/><text x="670" y="65" text-anchor="middle">DLT</text>
+
+        <line class="msg" x1="150" y1="60" x2="218" y2="60" marker-end="url(#a6)"/>
+        <text x="185" y="32" text-anchor="middle">발행 (X)</text>
+        <line class="msg" x1="350" y1="60" x2="418" y2="60" marker-end="url(#a6)"/>
+        <text x="385" y="32" text-anchor="middle">poll</text>
+        <line class="msg" x1="540" y1="60" x2="608" y2="60" marker-end="url(#a6)"/>
+        <text class="tb" x="575" y="32" text-anchor="middle">3회 실패</text>
+
+        <rect class="box" x="220" y="140" width="320" height="64" rx="3"/>
+        <text x="236" y="166">Redis permits</text>
+        <text class="m" x="236" y="186">C = 3</text>
+        <rect class="bad" x="370" y="152" width="40" height="40" rx="2"/><text class="tb mono" x="390" y="177" text-anchor="middle">X</text>
+        <rect class="seg" x="420" y="152" width="40" height="40" rx="2"/>
+        <rect class="seg" x="470" y="152" width="40" height="40" rx="2"/>
+
+        <path class="msg ret" d="M90,80 V172 H218" marker-end="url(#a6)"/>
+        <text x="98" y="130">SADD X</text>
+
+        <line class="badline" x1="480" y1="82" x2="480" y2="138" stroke-dasharray="5 4"/>
+        <path class="badline" d="M473,103 l14,14 M487,103 l-14,14"/>
+        <text class="tb" x="494" y="114">SREM X가 오지 않음</text>
+      </svg>
+      </div>
+      <figcaption>발행이 timeout으로 결과 불명이 돼도 같은 일이 생깁니다. 과제 규칙상 TTL로 지울 수 없으니(살아 있는 실행과 겹칠 수 있음), 이 자리는 "수용을 닫고 → DLT·DB 결과를 확인하고 → 자기 범위 token만 정리하고 → 다시 연다"는 보수적 재개 절차로만 돌려받습니다.</figcaption>
+    </figure>
+  </section>
+
+  <!-- 그림 7 -->
+  <section>
+    <h2>7. 통합안의 비용 ③: rebalance로 같은 token을 두 consumer가 쥘 때</h2>
+    <figure>
+      <div class="scroll">
+      <svg viewBox="0 0 800 230" role="img" aria-label="consumer-1이 느린 DB TX 중 max.poll.interval을 넘겨 rebalance가 일어나고, consumer-2가 같은 record와 같은 token으로 먼저 끝내 SREM한다. consumer-1이 아직 실행 중인데 자리가 비어 보여 새 요청이 수용된다.">
+        <line class="life" x1="300" y1="34" x2="300" y2="182"/>
+        <text class="m" x="300" y="22" text-anchor="middle">max.poll.interval 초과 → rebalance</text>
+
+        <text x="130" y="54" text-anchor="end">consumer-1</text>
+        <text x="130" y="104" text-anchor="end">consumer-2</text>
+        <text x="130" y="164" text-anchor="end">Redis의 token T</text>
+
+        <rect class="hold" x="150" y="41" width="510" height="18" rx="2"/>
+        <text x="158" y="54">record R · token T · DB TX (느림)</text>
+        <text class="tb" x="668" y="48">commit 시 unique 위반</text>
+        <text class="tb" x="668" y="64">→ rollback (쿠폰 1장 유지)</text>
+
+        <rect class="hold" x="350" y="91" width="120" height="18" rx="2"/>
+        <text x="358" y="104">같은 R · 같은 T</text>
+        <text x="478" y="104">commit → SREM T</text>
+
+        <rect class="hold" x="150" y="151" width="320" height="18" rx="2"/>
+        <text x="158" y="164">T 있음 (자리 1개 점유)</text>
+        <rect class="bad" x="470" y="151" width="190" height="18" rx="2"/>
+        <text class="tb" x="478" y="164">T 없음, consumer-1은 실행 중</text>
+
+        <path class="badline" d="M520,182 l-6,12 h12 z"/>
+        <text class="tb" x="532" y="200">빈자리로 보여 새 요청 수용</text>
+        <text class="tb" x="532" y="216">→ 실제 동시 DB 실행이 잠깐 C+1</text>
+      </svg>
+      </div>
+      <figcaption>6주차 E-8에서 본 장면입니다. 쿠폰 효과는 DB의 <code>(campaignId, userId)</code> unique가 1장으로 지킵니다. 하지만 세마포어의 "동시 실행 ≤ C"는 잠깐 깨집니다. 발제가 "같은 token을 두 실행이 공유하지 않는다"고 쓴 이유가 이 장면입니다.</figcaption>
+    </figure>
+  </section>
+
+    </div>
+  </details>
+
+  <section class="ask" aria-label="결정할 것">
+    <h2>결정 현황</h2>
+    <ol>
+      <li>✅ <strong>D-1 구성도 B(통합)로 간다.</strong> 과제의 "최초 발급 201 + couponId"는 202 Accepted로 바뀌므로 PR에 이유를 적는다.</li>
+      <li>✅ <strong>P-W8-01 순서는 약속하지 않는다.</strong> 한도 n장과 1인 1장만 지킨다. 그래서 ZSET이 아니라 Set을 쓰고 남은 수량·순번을 보여 주지 않는다. 429를 받은 사람이 나중에 다시 요청해 받을 수 있다.</li>
+      <li>✅ <strong>Redis 읽기 위치: primary만.</strong></li>
+      <li>✅ <strong>D-2-1 ⓑ 발행 실패 확정 · ⓒ 발행 결과 불명 → 수락분만 outbox.</strong></li>
+      <li>다음: ⓐ API가 Lua 수락 뒤 outbox insert 전에 죽음 (수락 표시만 남음)</li>
+    </ol>
+  </section>
+</main>
