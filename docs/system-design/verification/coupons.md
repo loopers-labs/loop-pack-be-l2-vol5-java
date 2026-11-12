@@ -845,3 +845,121 @@ Codex 최종 코드 검토에서 지적된 test 실패 처리 3곳만 고쳤다.
 - 기존 HTTP/응답 유실 검사는 C1 miss/no-op 조립이며 실제 warm-cache HTTP 검사는 미실행이다. 공통 사용자 resolver는 변경하지 않았다. 전체 check·실제 장애·비교 실험·KQ7/local은 이번 완료 범위가 아니다.
 - Codex 검토 후 동시 채움 검사의 finally에 go.countDown() 한 줄을 추가했다. 준비 대기 실패에서도 worker latch를 먼저 해제하고 기존 종료 확인을 거치게 한다. 위 A/B 실행은 이 한 줄 수정 전 결과이며 수정 후 테스트는 아직 재실행하지 않았다. 문서/공백 정적 확인만 수행했다.
 - 로컬 원시 근거: docs/week8/verification/runs/20261112-cache-a/의 A-attempt1-checkstyle-fail·A·B와 summary.md. 종료/정리 보고는 실제 자원 및 대역 범위를 구분하며 새 장애/성능 통과를 주장하지 않는다.
+
+## 후속 장애·복구 검증 상세설계 — 2026-11-12, 최종 승인·미실행
+
+전체 정적 검토와 M1/S1~S4 보완본 재검토에서 필수 보완/새 판단 없음 확인 후 사용자가 최종 문장 정리·설계 스테이징과 필요한 test 보완 전달 준비를 승인했다. 제품 계약은 쿠폰 §12·§13/CQ16·CQ17이며 장애별 준비·주입·관찰·복구·정리·완료 기준을 기술한다. 캐시 A는 f4dcdd8에 구현됐다. 장애 test 장치 보완·실제 pause/복구 검증은 아직 실행하지 않았다. 실제 공유 Redis 장애 조작은 별도 승인 대상이다.
+
+### 1. 대상·실제 자원·판정 경계
+
+- 대상은 한 로컬 앱·한 운영 캠페인·실험이 만든 알려진 사용자/요청이다. 캐시 실패의 DB fallback과 대기 상태 실패의 수용 닫힘, commit 결과 보존, 확인 후 수동 재개를 검사한다. 총량/사용자 UNIQUE·기존 쿠폰/발급 수를 모든 단계에서 보존한다.
+- R1/R6은 선택적 오류·TX 결과 대역 검사다. R2/R3은 기존 opt-in Q9/Q10의 실제 Redis 장애 장치를 재사용한다. R4/R5는 실제 cache 포트/Redis와 DB를 사용하는 별도 opt-in 조립이다. 기존 정상 check의 opt-in skip과 기본 구현 시절 성공을 이번 장애 통과로 쓰지 않는다.
+- 캐시 A의 관련 결과는 실행 전 확인한다. R5 실행은 B 구현/관련 검증 뒤다. 설계 자체는 A/B 결과를 기다리지 않고 작성하며 결과가 오면 실제 타입·호출 위치·설정과 대조한다.
+- 앱 재시작·실제 DB 단절/재연결·다중 인스턴스·알 수 없는 옛 클라이언트는 제외한다. 알려진 동일 연결의 후속 응답은 해당 연결의 경과 근거이며 전역 종료 보장이 아니다. 자동 복구·epoch·추가 제품 API/스위치/재시도는 만들지 않는다.
+
+### 2. 공통 준비·장치·중단 조건
+
+1. 실제 커밋/미커밋 변경·JDK21·적용 계층(Redis-only/local)을 기록한다. 제품 설정/기본 TTL은 바꾸지 않는다. 현재 기본 Redis connect/command timeout은 application.yml의200ms, local 기본5초지만 실행에서는 실제 유효 설정을 다시 기록한다. Redis timeout은 HTTP 전체 상한이 아니다.
+2. 별도 opt-in Bootstrap으로 기존 로컬 master/replica/database를 명시하고 fixture Redis 자동 구성을 제외한다. 실제 cache R4/R5에는 C1의 miss/no-op 포트를 넣지 않는다. R2/R3은 C1 대역으로 상태 장애를 분리한다. 일반 테스트/제품 scan으로 test 구성을 유출하지 않는다.
+3. endpoint/database·컨테이너 ID/포트/Compose 서비스·INFO run_id·앱 master 연결 ID를 대조한다. 같은 Redis를 쓰는 다른 앱/검사/클라이언트가 있거나 대상 식별이 불명하면 pause하지 않는다. 다른 사용자 작업을 강제로 종료하지 않는다.
+4. 운영 캠페인의 waiting5키와 사용할 issued/sold-out 키를 첫 요청 전에 확인해 전부 비었을 때만 소유한다. fixture ID를 만든 뒤 캐시 키를 확인하되 실패하면 남의 키를 삭제하지 않는다. DB는 검사 소유 fixture이고 다른 사례와 병행 truncate하지 않는다.
+5. 실제 scheduler는 각 장애 위치를 분리하는 opt-in 조립에서 대체한다. 수동 processAdmissions는 장애 전 준비에서만 호출한다. Redis 전체 장애에서 실제 scheduler가 별도 상태 Redis 오류로 수용을 닫는 원칙은 유지하며, 통제된 cache-only 결과를 전체 서비스 가용성으로 확대하지 않는다.
+6. test-only cache/admission decorator는 입력·waitingId·위임 진입/정상·실패/종료를 기록하고 실제 adapter에 위임한다. cache get/put과 start/finish를 구분한다. callback 자체의 실패와 실제 Redis timeout을 구분하고 제품 hook은 추가하지 않는다.
+7. pause 시도는 CLI 호출 전에 기록한다. finally/AfterEach에서는 시도 여부와 실제 paused 상태를 확인해 unpause한다. 복구/로그 쓰기 실패는 독립 실패로 남긴다. pause 명령 실패도 미적용으로 추측하지 않는다. FLUSHALL·공유 서버 stop·출처 불명 키 삭제는 하지 않는다.
+
+대기 장치는 기존 한도를 재사용한다. Docker CLI 한 호출30초, native CLIENT ID/INFO 대기5초를 유지한다. HTTP 관찰은 test-only 클라이언트의 유한 read 한도60초로 제안한다. 요청 안 pause의 CLI 한도30초와 실제 Redis command timeout/여유보다 커야 하며, 실행 설정이 이 조건을 만족하지 않으면 실험을 시작하지 않는다. 기존 opt-in의 유한 read 설정은 별도 test 보완 범위다.20초 제안은 철회한다. HTTP timeout이면 서버 종료가 아니라 관찰 실패다. 서버/worker 종료는 기존 ServerSettlement/WorkerTermination의 유한 확인, 소유 실행기는 ExecutorSettlement의 원래 참조 확인을 재사용한다. 현재 장치와 정확한 조립 차이는 구현 전달 전에 대조하고 유효한 기존 검사 한도는 완화하지 않는다.
+
+### 3. 사례별 준비·주입·기대 결과
+
+| ID | 준비와 장애 주입 | 요청/저장소 기대 결과 | 복구 뒤 확인 |
+|---|---|---|---|
+| R1 선택 캐시 오류 | 대역 포트로 issued get, sold-out get, issued put, sold-out put을 각각 한 지점에서 실패시킨다. DB/입장 Redis는 정상 | get은 miss 후 원래 DB 경로, put은 확보한 응답/DB 결과 보존. cache 실패만으로 수용 닫지 않음·같은 작업 retry0·캐시용 추가 DB 조회0. DB도 실패하면 원래 DB 오류 유지 | 대역 오류 해제 후 정상 채움/조회. 기존 KQ6에서 실제 실행 근거가 있으면 같은 검사를 추가하지 않음 |
+| R2=Q9 START 장애 | 기존 소유자 쿠폰1개·신규 사용자 READY를 정상 생성. Q9처럼 같은 master 연결의 정상 finish 경로 확인 후 master pause, 신규 발급 POST | 실제 start 실패503/수용 닫힘, 신규 사용자 쿠폰0·발급 수 추가0. 장애 중 기존 소유자 재요청200/동일 ID와 목록 보존. 캐시는 miss/no-op 대역임을 명시 | finally unpause, 같은 연결 ID/run_id 후속 응답·late START의 실제 processing 관찰. 아래 종료 확인 뒤 자기 대기 상태 무효화. 기존 Q9는 닫힘 유지로 종료 |
+| R3=Q10 finish 장애·재개 단언 추가 | 신규 사용자 READY→실제 DB commit. Q10의 finish 위임 직전 callback에서 master pause. 장애 전 READY인 미발급 대기자도 한 명 준비해 옛 ID 기록 | 실제 finish 실패에도 최초201/쿠폰1·issuedCount1 보존, 수용 닫힘. 추가 commit/재시도 없음 | unpause·DB 결과/같은 연결 경과 확인 후 대기 상태 무효화·명시 open·다음 사용자 새 등록/발급. 기존 Q10의 제한된 재개 근거와 아래 옛 권한 검사를 구분 |
+| R4-a 실제 issued get | DB 쿠폰1개 확정. cold는 자기 issued 키 없음, warm은 정상 Redis 채움/TTL 확인. 각각 master pause 후 발급 재요청 | warm도 pause 중 Redis에서 읽을 수 없으므로 실제 get 실패→DB 기존200/같은 ID·추가 발급0. 재채움 put 실패가 이어지면 별도 기록. cache 실패만으로 닫지 않음 | unpause 뒤 늦게 적용된 get/put·현재 키/TTL 관찰. 캐시 값 미확정이어도 DB 결과를 취소하지 않음 |
+| R4-b 실제 cache+START | 미발급 사용자 READY 확보 후 master pause, 실제 cache를 쓰는 발급 요청 | issued get 실패→DB 없음→실제 start 실패503/닫힘·신규 DB 효과0. cache 실패와 상태 실패를 별도 기록 | unpause 뒤 late START/DB·종료 확인. R2와 같은 조건으로만 자기 대기 상태 무효화, 자동 open 금지 |
+| R4-c 실제 issued put | 정상 신규 발급의 해당 user/campaign 첫 put만 대상. admission 기록 decorator가 해당 waitingId의 finish 정상 완료를 이미 기록했을 때만 cache decorator에서 pause. TX 종료/finish 완료/1회 조건 불충족은 주입 전 사례 실패 | 실제 cache put 실패에도201/DB 쿠폰1·issuedCount1·정상 finish 점유0. 자동 회차가 없는 이 검사에서 cache 실패만으로 닫지 않음 | HTTP/위임 종료 후 finally unpause. late put이 적용됐거나 안 됐거나 DB 확정 결과는 같음. 소유 키/TTL과 DB 결과를 확인 |
+| R5-a local 유효 | 새 서비스/컨텍스트에서 DB 품절→Redis true→정상 실제 Redis 조회로 local 채움. master pause 뒤 미발급 사용자 등록 | local 분기 도달 시 수명이 남아 있으면 품절 Redis 조회0·캠페인 DB 조회0·품절409. 선행 issued get/사용자·쿠폰 DB 비용은 남으며 각각 기록 | unpause·진행 요청 종료 확인 뒤 자기 키/컨텍스트 정리.409만으로 local hit을 판정하지 않음 |
+| R5-b local 만료 | R5-a와 별도 새 서비스에서 실제 채움. local 수명 만료를 확인하고 master pause 뒤 등록 | local miss→sold-out get 실패→캠페인 DB 품절 확인→sold-out put 실패→409. get/put 각각의 실패·캠페인 DB 조회가 있어야 함. DB 쓰기/새 대기 등록0 | unpause·late 명령/요청 종료·소유 키 정리 확인. R5-a와 같은409지만 서로 다른 경로임을 증명 |
+| R6 TX 결과/종료 불명 | 기존 TX 관리자/저장소 대역으로 rollback, 결과 미확보 COMMITTED, UNKNOWN을 각각 재사용 | 종료된 실패는 기존 오류/finish FAILED·positive 미채움. COMMITTED 결과 미확보는 기존500/finish ISSUED·캐시 미채움. UNKNOWN은500/finish0·PROCESSING 보존/닫힘·캐시 미채움 | UNKNOWN 상태에서 복구/정리를 수행하는 검사가 아님. 새 test 인스턴스로 장치를 종료하고 실제 DB 장애 성공으로 쓰지 않음 |
+
+R5-a는 local 진입 직전의 관찰 시각/채움 경과·품절 저장소 호출0·DB 캠페인 호출0을 함께 근거로 삼는다. 테스트는 Redis 실제 남은 수명 이내의 유효 local을 준비하고, 제품 시간/TTL을 조작하지 않는다. 선행 issued get timeout/스케줄링 지연으로 수명이 끝났으면 그 실행은 유효 hit 근거가 아니다. 대역의 빠른 실패로 실제 pause를 대체하거나 TTL을 늘려 통과시키지 않는다. 실제 pause 경로를 제한된 반복에서 관찰할 수 없다면 한계를 남기고 cache-only 검사의 근거와 구분한다.
+
+### 4. 복구·재개·정리 순서
+
+HTTP/Redis timeout은 원격 작업 미실행·종료를 뜻하지 않는다. 다음 의사코드는 알려진 로컬 요청/동일 연결 범위에서만 사용한다. 기존 쿠폰/발급 수는 대기 상태 무효화 대상이 아니다.
+
+```text
+사례 시작: 자기 자원 소유 확인; 수용 열기; 정상 준비
+try:
+  승인된 위치에서 pause 시도 기록 → 실제 Redis 명령 위임
+  HTTP 결과·DB 효과·닫힘/유지·위임 종료 기록
+finally:
+  아직 시작하지 않은 pause callback의 진입을 닫음
+  이미 진입한 pause는 종료/실패 신호를 CLI 한도보다 긴35초 안에 확인
+  확인 후 대상 상태 inspect → 필요 시 unpause
+  신호 미확인/명령 적용 불명이면 pause 상태 불명 기록; 가능한 복구 시도
+  복구 실패/불명이면 정상 정리·재개 금지
+
+수용 닫기; 새 요청/자동 회차가 없음을 확인
+자기 서버 요청/worker/DB 작업의 종료를 유한하게 확인
+pause 시도 이력이 있으면 최종 상태를 다시 inspect → 필요 시 unpause
+같은 run_id/client ID 후속 응답 확인; 실제 late 명령 결과/점유 읽기
+  요청 종료 실패/DB UNKNOWN/재연결/관찰 실패면:
+    대기 키·DB 정리와 open 보류; 원시 근거 보존
+  모두 확인되면:
+    자기 waiting5키만 무효화; 쿠폰/발급 수 보존 확인
+    재개 사례만 명시 open → 새 등록/새 waitingId → 새 발급 검증
+사례 종료:
+  다시 닫기; 자기 서버/worker/원래 executor의 실제 종료 확인
+  확인된 자기 cache/waiting키만 삭제; fixture DB 정리
+  실패/정리 보류는 컨텍스트 수명 동안 유지해 다음 사례 준비도 차단
+```
+
+요청 안 pause 사례(R3/R4-c)는 HTTP 관찰 실패 시에도 진행 중 pause 호출의 종료를 먼저 확인한 뒤 복구한다. test-only guard에서 callback 진입과 진입 닫기를 원자적으로 조율한다. 아직 시작하지 않은 callback은 닫힌 뒤 pause를 호출할 수 없고, 이미 시작한 callback은 finally에서 성공/실패·호출 종료 신호를 남긴다. 종료 신호는 정리 스레드가35초 유한 대기로 관찰하며, 신호 기록 전의 오류도 미확인으로 취급한다. HTTP 한도를 길게 두는 것만으로 이 조율을 대체하지 않는다. 사례가 끝나면 등록해 둔 callback을 비운다. 진입 문이 닫힌 뒤 도착한 callback은 예외 없이 pause만 생략하고 기록을 남겨 원래 finish 위임을 막지 않는다. 이 경로도 가짜 CLI/latch Guard 회귀 검사에 포함한다. 새 사례는 새로 명시 등록한 callback만 사용한다.
+
+현재 PauseGuard.restore는 attempted=false 뒤 재호출하면 no-op이므로, 서버 종료 후 최종 복구는 기존 메서드 두 번 호출만으로 구현하지 않는다. test-only guard에 pause 시도 이력을 보존하고, 검증된 대상/시도 이력이 있으면 최종 inspect/unpause를 실제 수행하게 최소 보완한다. 같은 상태에서 반복 복구는 안전해야 하며 새 제품 복구 타입/기능은 추가하지 않는다. pause 호출 종료를 확인하지 못했거나 CLI를 중단해 원격 적용 여부가 불명이면 ‘pause 상태 불명’으로 기록한다. 그때의 단발 inspect=false만으로 정상 복구를 선언하지 않고 키/DB 정리·open을 보류해 미확인 작업과 대상 정보를 보고한다.
+
+Redis가 멈춘 채 애플리케이션 Redis 후속 응답/서버 전체 종료를 먼저 기다리지 않는다. pause 호출 자체의 종료와 애플리케이션 전체 종료는 다른 신호다. stop이 반환되거나 scheduler 필드가 null이라는 사실만으로 원래 실행기 종료를 추측하지 않는다. 키가 처음부터 있었던 준비 실패에서는 소유가 없으므로 해당 키를 지우지 않는다.
+
+수동 재개 검사의 추가 단언은 다음과 같다. 기존 Q10 성공만으로 일반 복구 완료를 선언하지 않고, 해당 재개 단위에 아래 항목을 함께 둔다.
+
+- 비어 있는 소유 캠페인에서 기존 보유자와 미발급 대기자를 구분한다. 무효화 전에 미발급 대기자의 옛 waitingId를 기록한다.
+- 종료/연결 경과 확인과 자기 대기 상태 무효화 후 명시 open한다. 아직 새 등록하지 않은 미발급 사용자의 옛 헤더 발급은404·신규 DB 효과0이어야 한다.
+- 같은 사용자가 다시 등록하면 새 waitingId를 받는다. 옛 헤더는 여전히404이고 새 항목/순번/점유를 바꾸지 않는다. 새 권한으로는 정상 발급 가능하며 사용자 UNIQUE/총량을 지킨다.
+- 이미 발급된 사용자는 옛 헤더나 헤더 없음에도 기존200/같은 couponId가 우선이다. 옛 권한 거절 검사를 이 사용자로 대신하지 않는다.
+- UNKNOWN/재연결/요청 종료 미확인 사례는 open하지 않는다. 확인되지 않은 모든 외부 클라이언트까지 차단하는 제품 보장으로 확대하지 않는다.
+
+### 5. 관측·완료 기준
+
+| 근거 | 필수 기록 |
+|---|---|
+| 실행 식별 | 코드/커밋·작업 트리·JDK·실제 설정/TTL·명령·시작/종료 KST·exit code |
+| 실제 대상 | master/replica/DB·컨테이너 ID/서비스/버전·run_id/client ID 전후·다른 클라이언트 확인 |
+| 요청·명령 | 사용자/캠페인/waitingId·HTTP status/errorCode/couponId·cache get/put와 start/finish 각각의 진입/성공/실패/종료·pause/unpause 시도/결과 |
+| 정합성·경로 | 쿠폰/issuedCount/UNIQUE 전후·READY+PROCESSING·기존 결과 우선·cache-only/상태 실패에 따른 수용 상태·local hit/miss의 품절 Redis/캠페인 DB 호출 수 |
+| 자원·보고서 | 원래 서버/worker/executor 종료·자기 키 소유/정리 또는 보류·이번 XML/로그·실패/오류/skip/0건·실제/대역/미확인 구분 |
+
+각 사례는 준비와 실제 주입 지점까지 도달하고 위 근거/해당 단언이 맞아야 통과다. callback 진입만 있고 Redis 위임이 없거나 opt-in skip/0건이면 실제 장애 통과가 아니다. 응답/DB 단언이 맞아도 unpause/종료/소유 자원 정리 근거가 실패하면 전체 사례는 실패/보류다. 로그/테스트 기대·유효 한도를 지우거나 완화하지 않는다.
+
+### 6. 구현·실행 단위와 범위
+
+- R1은 A 커밋 f4dcdd8의 CouponCacheServiceTest·CouponFacadeCacheIntegrationTest·CouponCacheRedisIntegrationTest, R6은 CouponFacadeTransactionOutcomeTest의 기존 근거를 재사용한다. 선택 오류/실제 손상/실제 DB/대역 TX 범위를 구분하고 새 장치를 중복 구현하지 않는다.
+- R2는 기존 Q9를 재사용하고 R3는 기존 Q10에 재개/옛 ID 단언을 추가한다. 별도 중복 메서드를 새로 만들지 않는다. 첫 실제 단위는 현재 opt-in 조립/종료·HTTP 유한 관찰과 pause 조율을 대조하고 필요한 최소 test 보완과 재개 추가 단언을 제안하는 것이다. 기존 정상 기대는 유지한다. Guard 회귀 검사에는 느린 pause 동안 HTTP 관찰 종료, 진입 전 취소 후 늦은 callback, pause 실패/종료 불명, 서버 종료 후 재복구가 실제 inspect를 수행하는 경우를 포함한다. 가짜 CLI/latch로 검증하고 실제 Docker pause를 guard 단위 검사에 넣지 않는다. 실제 실행은 별도 승인 후 아래 클래스 필터를 사용하며 JDK/로그 절대 경로를 준비한다.
+- R4/R5는 실제 캐시 opt-in 클래스 하나를 기본안으로 한다. 필요한 test-only decorator/소유 자원 장치는 기존 도구를 재사용하고, 파일/필터를 구현 전달문에 열거한다. R4는 A 후, R5는 B 후 실행 가능하다. 각 단위 종료 후 검토하고 다음 단위를 자동 시작하지 않는다.
+
+```sh
+COUPON_LOCAL_REDIS_FAULT_TEST=true \
+./gradlew -Dorg.gradle.java.home="$JAVA_HOME" \
+  :apps:commerce-api:test --tests '*CouponLocalRedisFaultIntegrationTest' \
+  --rerun-tasks --no-build-cache --console=plain
+```
+
+위는 실행안이며 현재 실행 지시가 아니다. COUPON_LOCAL_REDIS_FAULT_LOG는 실행별 새 절대 경로로 설정하고 XML/JSONL/전체 로그를 새 실행 폴더에 보존한다. 기존 클래스의2건과 추가 재개 검사 수를 실제 XML로 구분하며 고정 건수에 맞추지 않는다. 일반 check/Checkstyle/ArchUnit·O11은 캐시 구현의 별도 검사 근거이고 실제 pause의 대체 근거가 아니다.
+
+### 7. 현재 완료 상태·한계
+
+기존 합의 범위의 준비·주입·응답/상태·복구·정리·관측/완료 기준과 수동 재개 단언을 작성했다. 전체/보완본 정적 검토와 사용자 최종 검증안 승인은 완료됐다. test 보완/실행은 아직이다. 새 정책 판단은 현재 없으며 A/B 결과가 오면 위임 위치/조립·실제 설정/클래스만 대조한다. 늦은 명령의 실제 적용 여부는 실행에서 관찰할 항목이지 설계로 확정한 결과가 아니다. 성능 비교·자동 복구·재시작/다중 인스턴스 안전성은 이 문서 작성으로 완료되지 않는다.
+
+
+**첫 전체 정적 검토 보완:** 사용자 승인으로 M1의 요청 내 pause/HTTP 복구 경합과 S1~S4를 반영했다. HTTP60초·pause 종료 관찰35초는 새 test 장치의 제안값이며 현재 코드를 변경한 것이 아니다. 기존 PauseGuard의 재호출 no-op도 보완 대상에 명시했다. R2/Q9·R3/Q10 재사용, finish 확인 뒤 해당 사용자 첫 put만 주입, R5-b get/put 실패, A의 기존 R1/R6 근거를 정리했다. 보완본 재검토와 최종 검증안 승인은 완료됐고 test 수정·실험은 아직이다. 실제 HEAD f4dcdd8에 latch 한 줄은 포함돼 있고, 수정 후 재실행이 없다는 기존 기록은 유지한다.
