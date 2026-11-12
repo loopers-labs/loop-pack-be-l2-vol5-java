@@ -751,3 +751,15 @@ Codex 최종 코드 검토에서 지적된 test 실패 처리 3곳만 고쳤다.
 - 보완: adapter는 모든 snapshot의 sequence, READY/PROCESSING의 필수 expiresAtMillis와 다른 상태에 존재하는 기한의 문자열/양수/2^53-1 범위를 검사한다. 실제 응답 expiresAt은 READY만 채운다. Lua/상태 전이는 그대로며 기존 잘못된 fixture는 다른 필드를 정상화해 원래 오류를 검사하도록 유지했다. Codex 최종 검토에서 추가 필수 수정은 발견하지 못했다.
 - 로컬 원시 근거: `docs/week8/verification/runs/20261112-unit2-waiting-redis/`, `20261112-unit2-waiting-redis-race-rerun/`, `20261112-unit2-reply-validation-fix/`의 gradle.log·timing.txt·XML/Checkstyle 사본. 각 경합 분포는 해당 실행 관찰이며 매번 양쪽 결과 출현을 보장하지 않는다.
 - 미완료: Service/Facade·수용 닫기·DB 종료와 finish 연결·HTTP/RateLimiter·내부 스케줄러·W6/O11 확장 조립은 후속이다. 전체 회귀/check·장애/부하 실험은 미실행이며 opt-in 로컬 Redis 장애 소스는 컴파일만 확인했다. 기존 기본 실행을 확장 검증으로 대체하지 않는다.
+
+## 대기실 확장 3단위 — Service/Facade와 DB 종료 연결 (2026-11-12)
+
+- 기준: volume-8 / 4639565(2단위 커밋). Claude Code가 구현/검사했고 Codex는 실제 코드·변경·보존 XML/로그를 읽어 검토했다. Codex의 제품 검사 재실행은 없었다.
+- 제품 변경: CouponAdmissionService의 운영 캠페인/열림 조건·대기 포트 결과/실패 처리, CouponFacade의 registerWaiting/getWaiting/issue/processAdmissions, CouponWaitingResult·CouponIssueOutcome이다. 새 발급 경로는 기존 쿠폰 → 헤더 → 운영 ID/열림 → start → 기존 DB TX/후속 읽기 → finish 순서며 token을 다시 획득하지 않는다.
+- TX 관찰은 기존 콜백 진입/완료 통지를 재사용했다. 종료 확인된 새/기존 쿠폰 또는 쓰기 COMMITTED는 ISSUED, 종료 확인된 실패는 FAILED로 기록한다. 종료 불명은 finish하지 않고 PROCESSING 유지·닫힘이다. finish 실패는 확정된 DB 결과를 유지하고 정상 UNCHANGED는 수용을 닫지 않는다. 입장 처리는 짧은 캠페인 읽기 TX 뒤 Redis만 호출하고 DB를 쓰지 않는다.
+- 실제 MySQL/fixture Redis Facade 검사 11건: 총량 C=8·8명에서 5 발급/3 품절·ISSUED 5/FAILED 3·점유0, INSERT 실패 rollback·FAILED·권한 재사용 거절/명시 재등록, READY 뒤 비활성/품절, C=3 넷째 NOT_READY·DB 추가 진입 없음·종료 뒤 재배정, 동일 권한 PROCESSING, close 뒤 진행 작업 finish, 기존 결과/조회 보존, Redis 호출 중 TX 없음과 SQL 순서를 확인했다. 같은 사용자 UNIQUE/마지막 수량 Facade 경쟁 2건은 STARTED 대역+실제 DB이며 실제 자리 상한 근거가 아니다. 기존 직접 DB 경쟁도 별도 실행했다.
+- 실행: JDK 21.0.12, 2026-11-12 14:52:47~14:53:25 KST, Checkstyle main/test와 지정 클래스 필터의 test 작업에 `--rerun-tasks --no-build-cache --console=plain`을 사용했다. BUILD SUCCESSFUL, 34 actionable tasks 모두 executed. 실제 Redis는 fixture 8.10.1 master이며 endpoint/DB/run_id 대조를 통과했다.
+- XML 합계 200건 실행·실패/오류/skip 0: Service 41, FacadeWaiting 22, FacadeTransactionOutcome 17, FacadeIntegration 11, IssueTransactionIntegration 7, 기존 AdmissionRedis 14, WaitingRedis 18, WaitingReplyConversion 8, Properties 3클래스 59, ArchitectureTest 3. Checkstyle main/test 오류 각 0. IssueTransactionIntegration의 최상위 XML 0건은 실행 건수에 더하지 않았고 중첩 3+4건만 집계했다.
+- 원시 근거: 로컬 `docs/week8/verification/runs/20261112-unit3-service-facade/`의 gradle.log·timing.txt·test-results XML·Checkstyle XML. 실제 명령/필터는 gradle.log에 보존했다. Facade 테스트는 worker 종료 확인 뒤 자기 캠페인 대기 키만 정리했고 기본 token 키는 시작/끝 NONE 확인만 했다.
+- 임시 호환/한계: Controller는 아직 issue(user,campaign) → 새 issue(...,null) 경로라 기존 쿠폰만 반환하고 신규는 ID_REQUIRED다. campaign-id 미설정 open은409다. CouponApiE2ETest·CouponHttpFaultE2ETest·CouponLocalFixtureConfigIntegrationTest·opt-in CouponLocalRedisFaultIntegrationTest는 4단위 전환 전 예상 실패로 미실행이며 통과로 기록하지 않는다. HTTP 헤더/DTO/202·등록 limiter/새 W6/O11 조립·자동 scheduler·전체 회귀/check·장애/부하 실험은 미실행이다.
+- 4단위에서 제거할 것은 임시 issue 2인수 메서드, cleanup API/DTO와 전용 경로, 구 acquire/release 포트·Set/Lua·전용 test 대역이다. 유효한 TX/DB/응답 유실/자원 정리 검증은 새 경로로 유지한다. Codex 검토에서 필수 수정·불필요한 제품 계층 추가는 발견하지 못했다.

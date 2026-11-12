@@ -82,6 +82,8 @@ class CouponAdmissionRedisIntegrationTest {
     @DynamicPropertySource
     static void pinToFixtureContainer(DynamicPropertyRegistry registry) {
         CouponRedisTarget.register(registry);
+        // 3단위부터 open 은 운영 캠페인 설정을 요구한다. 이 클래스는 기본 token 경로만 보며 대기실 키는 쓰지 않는다.
+        registry.add("commerce.coupon.waiting.campaign-id", () -> "1");
     }
 
     @BeforeEach
