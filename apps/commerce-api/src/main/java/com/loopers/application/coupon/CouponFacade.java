@@ -84,9 +84,15 @@ public class CouponFacade {
     private void publish(Long campaignId, Long userId, int issueNumber, Instant reservedAt) {
         CouponIssuePublisher.Outcome outcome = couponIssuePublisher.publish(
             new CouponIssuePublisher.CouponIssue(campaignId, userId, issueNumber, reservedAt));
-        if (outcome instanceof CouponIssuePublisher.Outcome.Unconfirmed) {
-            couponReservation.cancel(campaignId, userId);
-            throw new CoreException(ErrorType.COUPON_ADMISSION_UNAVAILABLE);
+        switch (outcome) {
+            case CouponIssuePublisher.Outcome.Published() -> {
+            }
+            case CouponIssuePublisher.Outcome.Unconfirmed(String error) ->
+                throw new CoreException(ErrorType.COUPON_ADMISSION_UNAVAILABLE);
+            case CouponIssuePublisher.Outcome.Rejected(String error) -> {
+                couponReservation.cancel(campaignId, userId);
+                throw new CoreException(ErrorType.COUPON_ADMISSION_UNAVAILABLE);
+            }
         }
     }
 

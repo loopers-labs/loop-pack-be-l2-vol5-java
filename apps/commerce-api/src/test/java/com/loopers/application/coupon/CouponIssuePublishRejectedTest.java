@@ -22,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest(properties = "kafka.topics.coupon-issues=coupon-issues-missing")
-class CouponIssuePublishUnreachableTest {
+class CouponIssuePublishRejectedTest {
 
     private static final Instant NOW = Instant.parse("2026-11-08T00:00:00Z");
 
@@ -33,7 +33,7 @@ class CouponIssuePublishUnreachableTest {
     private final RedisCleanUp redisCleanUp;
 
     @Autowired
-    CouponIssuePublishUnreachableTest(CouponFacade couponFacade, CampaignCache campaignCache,
+    CouponIssuePublishRejectedTest(CouponFacade couponFacade, CampaignCache campaignCache,
                                       @Qualifier(RedisConfig.REDIS_TEMPLATE_MASTER) RedisTemplate<String, String> redis,
                                       DatabaseCleanUp databaseCleanUp, RedisCleanUp redisCleanUp) {
         this.couponFacade = couponFacade;
@@ -55,9 +55,9 @@ class CouponIssuePublishUnreachableTest {
         campaignCache.clear();
     }
 
-    @DisplayName("PUB-002: broker 확인을 받지 못하면 예약을 지우고 503 이며, 다시 요청해도 새로 접수를 시도한다")
+    @DisplayName("PUB-002: producer 가 포기한 실패면 예약을 지우고 503 이며, 다시 요청하면 새로 접수를 시도한다")
     @Test
-    void cancelsReservationWhenUnconfirmed() {
+    void cancelsReservationWhenRejected() {
         Long campaignId = openCampaign();
 
         assertThatThrownBy(() -> couponFacade.issue(campaignId, 42L, NOW))

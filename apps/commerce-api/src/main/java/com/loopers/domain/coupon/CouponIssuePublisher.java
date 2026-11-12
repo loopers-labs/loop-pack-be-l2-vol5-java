@@ -14,6 +14,9 @@ public interface CouponIssuePublisher {
 
         record Unconfirmed(String error) implements Outcome {
         }
+
+        record Rejected(String error) implements Outcome {
+        }
     }
 
     Outcome publish(CouponIssue issue);

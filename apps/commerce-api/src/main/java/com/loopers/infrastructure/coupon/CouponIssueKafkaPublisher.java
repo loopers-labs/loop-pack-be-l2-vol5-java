@@ -49,23 +49,42 @@ class CouponIssueKafkaPublisher implements CouponIssuePublisher {
                 issue.campaignId(), issue.userId(), issue.issueNumber(), metadata.partition(), metadata.offset());
             count("success", "none");
             return new Outcome.Published();
-        } catch (ExecutionException e) {
-            return unconfirmed(issue, e.getCause());
-        } catch (TimeoutException | JsonProcessingException | RuntimeException e) {
+        } catch (TimeoutException e) {
             return unconfirmed(issue, e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return unconfirmed(issue, e);
+        } catch (ExecutionException e) {
+            return rejected(issue, e.getCause());
+        } catch (JsonProcessingException | RuntimeException e) {
+            return rejected(issue, e);
         }
     }
 
     private Outcome unconfirmed(CouponIssue issue, Throwable ex) {
-        Throwable cause = NestedExceptionUtils.getMostSpecificCause(ex);
-        String error = cause.getClass().getSimpleName() + ": " + cause.getMessage();
-        log.warn("쿠폰 접수를 보냈는지 확인하지 못했다: campaignId={}, userId={}, issueNumber={}, error={}",
+        String error = describe(ex);
+        log.warn("쿠폰 접수를 보냈는지 확인하지 못했다. producer 가 아직 쥐고 있어 예약은 남긴다: "
+            + "campaignId={}, userId={}, issueNumber={}, error={}",
             issue.campaignId(), issue.userId(), issue.issueNumber(), error);
-        count("unconfirmed", cause.getClass().getSimpleName());
+        count("unconfirmed", causeOf(ex));
         return new Outcome.Unconfirmed(error);
+    }
+
+    private Outcome rejected(CouponIssue issue, Throwable ex) {
+        String error = describe(ex);
+        log.warn("쿠폰 접수 메시지를 producer 가 포기했다. 예약을 지운다: campaignId={}, userId={}, issueNumber={}, error={}",
+            issue.campaignId(), issue.userId(), issue.issueNumber(), error);
+        count("rejected", causeOf(ex));
+        return new Outcome.Rejected(error);
+    }
+
+    private static String describe(Throwable ex) {
+        Throwable cause = NestedExceptionUtils.getMostSpecificCause(ex);
+        return causeOf(ex) + ": " + cause.getMessage();
+    }
+
+    private static String causeOf(Throwable ex) {
+        return NestedExceptionUtils.getMostSpecificCause(ex).getClass().getSimpleName();
     }
 
     private void count(String result, String cause) {
