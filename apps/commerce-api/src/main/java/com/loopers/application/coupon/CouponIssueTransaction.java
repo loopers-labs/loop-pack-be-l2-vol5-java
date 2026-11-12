@@ -22,7 +22,9 @@ public class CouponIssueTransaction {
     private final ApplicationTime applicationTime;
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    public CouponIssueInfo issue(Long campaignId, Long userId) {
+    public CouponIssueInfo issue(Long campaignId, Long userId, CouponIssueTransactionCompletion completion) {
+        // permit 반환 판단을 위해 발급 SQL보다 먼저 이 트랜잭션의 완료 상태를 기록하게 한다.
+        completion.watchCurrentTransaction();
         var issueNow = applicationTime.now().toInstant();
 
         // UPDATE가 먼저 잠금을 얻고 최종 기간·잔여 수량 조건을 판정한다.

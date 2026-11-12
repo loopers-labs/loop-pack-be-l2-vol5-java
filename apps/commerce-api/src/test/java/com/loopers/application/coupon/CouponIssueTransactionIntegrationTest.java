@@ -55,7 +55,7 @@ class CouponIssueTransactionIntegrationTest {
         });
     }
 
-    @DisplayName("총량 5의 마지막 수량 경합에서 다섯 건만 commit하고 나머지는 품절로 끝난다.")
+    @DisplayName("총량 5의 마지막 수량 경합에서 다섯 건만 commit하고 나머지는 품절로 끝나며, 모든 실행의 DB 작업 종료를 기록한다.")
     @Test
     void concurrentRequestsCannotExceedCampaignQuota() throws Exception {
         CouponCampaign campaign = prepareCampaign(5);
@@ -71,10 +71,12 @@ class CouponIssueTransactionIntegrationTest {
                     if (!start.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                         throw new IllegalStateException("동시 발급 barrier가 시작되지 않았습니다.");
                     }
+                    CouponIssueTransactionCompletion completion = new CouponIssueTransactionCompletion();
                     try {
-                        return new Attempt(transaction.issue(campaign.getId(), requestUserId), null);
+                        return new Attempt(transaction.issue(campaign.getId(), requestUserId, completion), null,
+                            completion.isDbWorkDone());
                     } catch (CoreException exception) {
-                        return new Attempt(null, exception.getErrorType());
+                        return new Attempt(null, exception.getErrorType(), completion.isDbWorkDone());
                     }
                 }));
             }
@@ -84,6 +86,7 @@ class CouponIssueTransactionIntegrationTest {
             List<Attempt> results = attempts.stream().map(this::await).toList();
             assertThat(results.stream().filter(result -> result.info() != null)).hasSize(5);
             assertThat(results.stream().filter(result -> result.error() == ErrorType.CONFLICT)).hasSize(3);
+            assertThat(results).allMatch(Attempt::dbWorkDone);
         } finally {
             start.countDown();
             workers.shutdownNow();
@@ -98,16 +101,19 @@ class CouponIssueTransactionIntegrationTest {
         assertThat(coupons.countByCampaignId(campaign.getId())).isEqualTo(5);
     }
 
-    @DisplayName("조건부 쿠폰 배정이 실패하면 앞선 카운터 갱신과 조기 종료 기록도 rollback된다.")
+    @DisplayName("조건부 쿠폰 배정이 실패하면 앞선 카운터 갱신과 조기 종료 기록도 rollback되고, DB 작업 종료를 기록한다.")
     @Test
     void rollsBackCounterWhenCouponAssignmentDoesNotUpdateOneRow() {
         CouponCampaign campaign = prepareCampaign(1);
         Long couponId = coupons.findFirstUnissuedId(campaign.getId()).orElseThrow();
         doReturn(0).when(coupons).assignIfUnissued(eq(couponId), eq(campaign.getId()), eq(83000L), any(Instant.class));
 
-        assertThatThrownBy(() -> transaction.issue(campaign.getId(), 83000L))
+        CouponIssueTransactionCompletion completion = new CouponIssueTransactionCompletion();
+
+        assertThatThrownBy(() -> transaction.issue(campaign.getId(), 83000L, completion))
             .isInstanceOfSatisfying(CoreException.class,
                 exception -> assertThat(exception.getErrorType()).isEqualTo(ErrorType.INTERNAL_ERROR));
+        assertThat(completion.isDbWorkDone()).isTrue();
 
         entityManager.clear();
         CouponCampaign stored = campaigns.findById(campaign.getId()).orElseThrow();
@@ -134,5 +140,5 @@ class CouponIssueTransactionIntegrationTest {
         }
     }
 
-    private record Attempt(CouponIssueInfo info, ErrorType error) {}
+    private record Attempt(CouponIssueInfo info, ErrorType error, boolean dbWorkDone) {}
 }

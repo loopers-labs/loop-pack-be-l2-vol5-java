@@ -45,8 +45,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -219,7 +221,7 @@ class CouponIssueV1ApiE2ETest {
             assertThat(coupons.countIssuedByCampaignId(campaignId)).isZero();
             assertThat(issueStatus(71103L)).isEqualTo(429);
             assertThat(coupons.findIssuedByCampaignIdAndUserId(campaignId, 71103L)).isEmpty();
-            verify(issueTransaction, never()).issue(campaignId, 71103L);
+            verify(issueTransaction, never()).issue(eq(campaignId), eq(71103L), any());
 
             String releasedToken = initialTokens.iterator().next();
             continueByToken.get(releasedToken).countDown();
@@ -238,7 +240,7 @@ class CouponIssueV1ApiE2ETest {
             occupiedAfterRetry.add(retriedFourthToken);
             assertThat(redisTemplate.opsForSet().members(RedisCouponIssuePermits.PERMITS_KEY))
                 .containsExactlyInAnyOrderElementsOf(occupiedAfterRetry);
-            verify(issueTransaction, never()).issue(campaignId, 71103L);
+            verify(issueTransaction, never()).issue(eq(campaignId), eq(71103L), any());
 
             continueByToken.values().forEach(CountDownLatch::countDown);
             for (int completed = 0; completed < 3; completed++) {
