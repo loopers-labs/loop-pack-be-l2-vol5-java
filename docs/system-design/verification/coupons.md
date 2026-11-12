@@ -703,3 +703,23 @@ Codex 최종 코드 검토에서 지적된 test 실패 처리 3곳만 고쳤다.
 - 로컬 보관 실습 원문·발제 문서·Sam 세션 정리본을 제품 코드와 Q1~Q16 실행 근거에 대조했으며 필수 제품 기능의 누락은 발견하지 못했다. 단계별 승인 구현과 요구 시나리오 검증, 최종 전체 검사를 마쳤다.
 - 실제 DB 통신 단절 UNKNOWN 재현·다중 인스턴스/failover·운영 부하/최적 C·수동 bootRun 확인을 수행했다고 주장하지 않는다. 이들은 합의 범위의 검증 한계와 구분한다.
 - PR·기술 글·WIL 등 과제의 글 산출물·실제 제출 여부는 이 구현/검증 완료 판단과 별개다. 최종 제출 판단은 사용자가 담당한다.
+
+## 대기실 확장 1단위 — 시작 설정·오류 정의 (2026-11-12)
+
+- 기준: volume-8 / a2fee9f에서 수행한 확장 첫 단위다. 기본 제품 구현 4711dfe의 과거 검사와 구분한다. 작성·검사 실행은 Claude Code, 실제 diff·보존 XML/로그 검토는 Codex가 수행했다. Codex는 제품 검사를 재실행하지 않았다.
+- 제품 변경: CouponWaitingProperties(campaignId 생략 허용·명시 시 양수, schedulerDelay=1s·admissionDuration=30s, 두 Duration의 양의 밀리초 표현 검증), CouponRateLimitProperties(limitForPeriod=10·양의 int, refreshPeriod=1s·양의 Duration), 등록 요청률/대기 권한 ErrorType 6개와 기존 OPERATION_REJECTED 메시지 일반화다. 기존 HTTP/오류 코드·capacity 설정·YAML·의존성은 유지했다.
+- 검증: ApplicationContextRunner에서 기본값·명시 값·ID/숫자/기간 형식과 범위 거절, Waiting의 밀리초 변환 결과 0·overflow를 확인했다. 실제 limiter 생성/표현 범위 검증은 포함하지 않았다.
+- 실행: JDK 21.0.12, 2026-11-12 14:08:28~14:08:44 KST. 아래 명령에서 JAVA_HOME은 `/opt/homebrew/Cellar/openjdk@21/21.0.12/libexec/openjdk.jdk/Contents/Home`이었다.
+
+```sh
+./gradlew -Dorg.gradle.java.home="$JAVA_HOME" \
+  :apps:commerce-api:checkstyleMain :apps:commerce-api:checkstyleTest \
+  :apps:commerce-api:test \
+  --tests '*CouponWaitingPropertiesTest' --tests '*CouponRateLimitPropertiesTest' \
+  --tests '*CouponAdmissionPropertiesTest' --tests '*ArchitectureTest' \
+  --rerun-tasks --no-build-cache --console=plain
+```
+
+- 결과: BUILD SUCCESSFUL, 34 actionable tasks 모두 executed. XML 7개 합계 62건 실행·실패/오류/skip 0. Waiting은 최상위 1·CampaignId 8·SchedulerDelay 13·AdmissionDuration 13, RateLimit 15, 기존 Admission 설정 9, ArchitectureTest 3이다. Checkstyle main/test XML 오류 각 0개다. streamer bootJar·pg-simulator 컴파일은 기존 작업 의존성이며 해당 앱의 실행 검증은 아니다.
+- 원시 근거는 로컬 `docs/week8/verification/runs/20261112-unit1-config-errortype/`의 gradle.log·timing.txt·test-results XML·checkstyle XML에 보존했다. Codex가 보고와 실제 파일의 집계·시각·작업 실행 결과를 대조했다.
+- 완료 범위는 WQ1의 설정 부분이다. 실제 대기실 비활성/open/close·운영 ID 검사·Service/HTTP 연결·실제 RateLimiter·스케줄러·W6/O11·전체 회귀·장애/부하 실험은 이번에 검증하지 않았다. 새 ErrorType은 아직 사용처가 없고 실제 HTTP 오류 응답 검증은 후속이다.

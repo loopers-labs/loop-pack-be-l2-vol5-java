@@ -63,7 +63,15 @@ public enum ErrorType {
     /** 쿠폰 신규 발급 수용 */
     COUPON_ADMISSION_FULL(HttpStatus.TOO_MANY_REQUESTS, "COUPON_ADMISSION_FULL", "지금은 쿠폰 발급 요청을 더 받을 수 없습니다. 잠시 후 다시 시도해 주세요."),
     COUPON_ADMISSION_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "COUPON_ADMISSION_UNAVAILABLE", "지금은 쿠폰 신규 발급을 받을 수 없습니다."),
-    COUPON_ADMISSION_OPERATION_REJECTED(HttpStatus.CONFLICT, "COUPON_ADMISSION_OPERATION_REJECTED", "수용이 열린 상태에서는 점유를 정리할 수 없습니다.");
+    COUPON_ADMISSION_OPERATION_REJECTED(HttpStatus.CONFLICT, "COUPON_ADMISSION_OPERATION_REJECTED", "요청한 수용 제어 작업을 수행할 수 없습니다."),
+
+    /** 쿠폰 입장 대기 */
+    COUPON_RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "COUPON_RATE_LIMITED", "쿠폰 대기 등록 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요."),
+    COUPON_WAITING_ID_REQUIRED(HttpStatus.BAD_REQUEST, "COUPON_WAITING_ID_REQUIRED", "쿠폰 발급에는 대기 ID(X-WAITING-ID)가 필요합니다."),
+    COUPON_WAITING_NOT_FOUND(HttpStatus.NOT_FOUND, "COUPON_WAITING_NOT_FOUND", "쿠폰 대기 정보를 찾을 수 없습니다."),
+    COUPON_WAITING_NOT_READY(HttpStatus.CONFLICT, "COUPON_WAITING_NOT_READY", "아직 쿠폰 발급 입장 차례가 아닙니다."),
+    COUPON_WAITING_EXPIRED(HttpStatus.CONFLICT, "COUPON_WAITING_EXPIRED", "쿠폰 발급 입장 권한이 만료됐습니다."),
+    COUPON_WAITING_ALREADY_USED(HttpStatus.CONFLICT, "COUPON_WAITING_ALREADY_USED", "이미 사용된 쿠폰 발급 입장 권한입니다.");
 
     private final HttpStatus status;
     private final String code;
