@@ -21,7 +21,7 @@ public class CouponCacheMiss implements CouponCacheRepository {
 
     /** 직접 조립 Facade 용. 같은 miss/no-op 계약의 서비스다. */
     public static CouponCacheService service() {
-        return new CouponCacheService(new CouponCacheMiss(), new CouponCacheProperties(Duration.ofSeconds(30), Duration.ofSeconds(30)));
+        return new CouponCacheService(new CouponCacheMiss(), new CouponCacheProperties(Duration.ofSeconds(30), Duration.ofSeconds(30), Duration.ofSeconds(5)));
     }
 
     @Override

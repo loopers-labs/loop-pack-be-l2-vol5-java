@@ -19,15 +19,17 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 캐시 시작 설정 바인딩·기동 거절(설계 §13.9, KQ1 의 Redis 부분). 로컬 품절 TTL·나노초 검사는 로컬 단위(B)에서 더한다.
+ * 캐시 시작 설정 바인딩·기동 거절(설계 §13.9·13.11, KQ1). 로컬 품절 TTL 만 나노초 변환 검사를 더하고 Redis 두 TTL 에는 두지 않는다.
  * 각 거절 검사는 속성 하나만 지정하고 실패 원인에 그 속성 이름이 있는지 확인한다.
  */
-@DisplayName("캐시 설정은 두 Redis TTL 30초 기본값을 가지며, 1ms 미만·형식 오류·밀리초 변환 overflow 는 기동을 거절한다.")
+@DisplayName("캐시 설정은 Redis 30초·30초와 로컬 품절 5초 기본값을 가지며, 1ms 미만·형식 오류·변환 overflow 는 기동을 거절한다.")
 class CouponCachePropertiesTest {
 
     private static final String PREFIX = "commerce.coupon.cache.";
     /** Long.MAX_VALUE / 1000 + 1 초. Duration 으로는 표현되지만 toMillis 가 넘친다. */
     private static final String MILLIS_OVERFLOW_SECONDS = "9223372036854776s";
+    /** Long.MAX_VALUE / 10^9 + 1 초. 밀리초로는 표현되지만 toNanos 가 넘친다. */
+    private static final String NANOS_OVERFLOW_SECONDS = "9223372037s";
 
     private static final ApplicationContextRunner RUNNER = new ApplicationContextRunner()
         .withUserConfiguration(Support.class);
@@ -37,39 +39,53 @@ class CouponCachePropertiesTest {
     static class Support {
     }
 
-    @DisplayName("설정이 없으면 issued-ttl·sold-out-ttl 모두 30초다.")
+    @DisplayName("설정이 없으면 issued-ttl·sold-out-ttl 은 30초, local-sold-out-ttl 은 5초다.")
     @Test
     void bindsDefaults() {
         RUNNER.run(context -> assertThat(context.getBean(CouponCacheProperties.class))
-            .isEqualTo(new CouponCacheProperties(Duration.ofSeconds(30), Duration.ofSeconds(30))));
+            .isEqualTo(new CouponCacheProperties(Duration.ofSeconds(30), Duration.ofSeconds(30), Duration.ofSeconds(5))));
     }
 
-    @DisplayName("두 값은 서로 독립적으로 바꿀 수 있다.")
+    @DisplayName("세 값은 서로 독립적으로 바꿀 수 있고, Redis 두 TTL 은 나노초로 넘치는 큰 밀리초 값도 허용한다.")
     @Test
     void bindsChangedValues() {
         RUNNER.withPropertyValues(PREFIX + "issued-ttl=1ms", PREFIX + "sold-out-ttl=9223372036854775807ms")
             .run(context -> assertThat(context.getBean(CouponCacheProperties.class))
-                .isEqualTo(new CouponCacheProperties(Duration.ofMillis(1), Duration.ofMillis(Long.MAX_VALUE))));
+                .isEqualTo(new CouponCacheProperties(Duration.ofMillis(1), Duration.ofMillis(Long.MAX_VALUE), Duration.ofSeconds(5))));
         RUNNER.withPropertyValues(PREFIX + "sold-out-ttl=500ms")
             .run(context -> assertThat(context.getBean(CouponCacheProperties.class))
-                .isEqualTo(new CouponCacheProperties(Duration.ofSeconds(30), Duration.ofMillis(500))));
+                .isEqualTo(new CouponCacheProperties(Duration.ofSeconds(30), Duration.ofMillis(500), Duration.ofSeconds(5))));
+        RUNNER.withPropertyValues(PREFIX + "local-sold-out-ttl=1ms")
+            .run(context -> assertThat(context.getBean(CouponCacheProperties.class))
+                .isEqualTo(new CouponCacheProperties(Duration.ofSeconds(30), Duration.ofSeconds(30), Duration.ofMillis(1))));
+        RUNNER.withPropertyValues(PREFIX + "issued-ttl=" + NANOS_OVERFLOW_SECONDS, PREFIX + "sold-out-ttl=" + NANOS_OVERFLOW_SECONDS)
+            .run(context -> assertThat(context.getBean(CouponCacheProperties.class)).isEqualTo(new CouponCacheProperties(
+                Duration.ofSeconds(9_223_372_037L), Duration.ofSeconds(9_223_372_037L), Duration.ofSeconds(5))));
     }
 
     @DisplayName("0·음수·잘못된 형식·밀리초 결과 0·밀리초 변환 overflow 는 해당 속성 이름으로 기동 오류다.")
     @ParameterizedTest
     @ValueSource(strings = {"0s", "0ms", "-1ms", "abc", "1x", "1ns", "999us", MILLIS_OVERFLOW_SECONDS})
     void rejectsInvalid(String value) {
-        for (String key : List.of("issued-ttl", "sold-out-ttl")) {
+        for (String key : List.of("issued-ttl", "sold-out-ttl", "local-sold-out-ttl")) {
             RUNNER.withPropertyValues(PREFIX + key + "=" + value).run(context -> assertFailedOn(context, key));
         }
+    }
+
+    @DisplayName("local-sold-out-ttl 은 밀리초로 표현되더라도 나노초 변환이 넘치면 기동 오류다.")
+    @Test
+    void rejectsLocalNanosOverflow() {
+        RUNNER.withPropertyValues(PREFIX + "local-sold-out-ttl=" + NANOS_OVERFLOW_SECONDS)
+            .run(context -> assertFailedOn(context, "local-sold-out-ttl"));
     }
 
     @DisplayName("생성자는 null 도 거절한다.")
     @Test
     void rejectsNullInConstructor() {
         assertThat(Stream.of(
-            catchFailure(() -> new CouponCacheProperties(null, Duration.ofSeconds(1))),
-            catchFailure(() -> new CouponCacheProperties(Duration.ofSeconds(1), null))))
+            catchFailure(() -> new CouponCacheProperties(null, Duration.ofSeconds(1), Duration.ofSeconds(1))),
+            catchFailure(() -> new CouponCacheProperties(Duration.ofSeconds(1), null, Duration.ofSeconds(1))),
+            catchFailure(() -> new CouponCacheProperties(Duration.ofSeconds(1), Duration.ofSeconds(1), null))))
             .allSatisfy(failure -> assertThat(failure).isInstanceOf(IllegalArgumentException.class));
     }
 
@@ -79,7 +95,7 @@ class CouponCachePropertiesTest {
         assertThat(CommerceApiApplication.class.isAnnotationPresent(ConfigurationPropertiesScan.class)).isTrue();
         assertThat(CouponCacheProperties.class.getPackageName()).startsWith(CommerceApiApplication.class.getPackageName());
         assertThat(Stream.of(CouponCacheProperties.class.getRecordComponents()).map(c -> c.getName()))
-            .containsExactly("issuedTtl", "soldOutTtl");
+            .containsExactly("issuedTtl", "soldOutTtl", "localSoldOutTtl");
     }
 
     private static Throwable catchFailure(Runnable call) {

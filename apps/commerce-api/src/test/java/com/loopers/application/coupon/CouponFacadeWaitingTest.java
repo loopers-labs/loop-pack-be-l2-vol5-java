@@ -96,7 +96,7 @@ class CouponFacadeWaitingTest {
         // 기본 mock 은 조회 empty·저장 no-op 이라 캐시 도입 전 분기를 그대로 탄다(설계 §13.12 C1). 캐시 분기 검사만 stub 한다.
         cacheRepository = mock(CouponCacheRepository.class);
         facade = new CouponFacade(tm, queryRepository, campaignRepository, couponRepository, new ConstraintViolationClassifier(), admission,
-            new CouponCacheService(cacheRepository, new CouponCacheProperties(Duration.ofSeconds(30), Duration.ofSeconds(30))));
+            new CouponCacheService(cacheRepository, new CouponCacheProperties(Duration.ofSeconds(30), Duration.ofSeconds(30), Duration.ofSeconds(5))));
         when(queryRepository.findOwned(USER, CAMPAIGN)).thenReturn(Optional.empty());
         CouponCampaignModel active = campaign(CouponCampaignStatus.ACTIVE, 0, 5);
         when(campaignRepository.findById(CAMPAIGN)).thenReturn(Optional.of(active));

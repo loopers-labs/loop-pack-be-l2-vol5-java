@@ -50,13 +50,15 @@ import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
 /**
  * 실제 MySQL·fixture Redis 에서 Facade 의 기발급·품절 캐시 경로를 확인한다(설계 §13.10·13.11, KQ3~KQ6·KQ8·KQ9 의 실제 저장소 부분).
- * Facade·수용·캐시 서비스는 사례마다 새로 직접 조립하며 C1 miss 대역을 넣지 않는다. HTTP·사용자 확인 resolver·로컬 품절 슬롯은 다루지 않는다.
+ * Facade·수용·캐시 서비스는 사례마다 새로 직접 조립하며 C1 miss 대역을 넣지 않는다. 로컬 품절 슬롯도 사례별 새 서비스에서 시작한다(KQ7).
+ * HTTP·사용자 확인 resolver 는 다루지 않는다.
  * 쿠폰 관련 SQL 은 Hibernate StatementInspector(SqlCapture)로 센다. test fixture 의 JdbcTemplate SQL 은 세지 않는다.
  *
  * <p>소유·정리: 캠페인·사용자를 만든 뒤 첫 캐시 요청 전에 그 캠페인의 대기실 키 5개·품절 키와 쓸 campaign×user 기발급 키가
@@ -69,6 +71,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 class CouponFacadeCacheIntegrationTest {
 
     private static final Duration LONG_TTL = Duration.ofSeconds(30);
+    private static final Duration LOCAL_TTL = Duration.ofSeconds(5);
 
     @DynamicPropertySource
     static void pinToFixtureContainer(DynamicPropertyRegistry registry) {
@@ -105,6 +108,7 @@ class CouponFacadeCacheIntegrationTest {
 
     private final Set<String> ownKeys = new LinkedHashSet<>();
     private final List<String> putObservations = new ArrayList<>();
+    private final AtomicInteger soldOutReads = new AtomicInteger();
     private boolean targetVerified;
     private CouponAdmissionService admission;
 
@@ -139,12 +143,17 @@ class CouponFacadeCacheIntegrationTest {
      * 운영 캠페인 campaignId 로 열린 수용과 실제 캐시 서비스를 새로 조립한다.
      * 캐시 저장 시점의 TX 활성 여부와 대기 항목 상태를 기록하는 decorator 를 실제 adapter 앞에 둔다(동작은 그대로 위임).
      */
-    private CouponFacade facade(Long campaignId, Duration issuedTtl, Duration soldOutTtl) {
+    private CouponFacade facade(Long campaignId, Duration issuedTtl, Duration soldOutTtl, Duration localSoldOutTtl) {
         admission = new CouponAdmissionService(admissionRepository, new CouponAdmissionProperties(3),
             new CouponWaitingProperties(campaignId, Duration.ofSeconds(1), Duration.ofSeconds(30)));
         admission.open();
-        CouponCacheService cache = new CouponCacheService(new Observing(cacheRepository), new CouponCacheProperties(issuedTtl, soldOutTtl));
+        CouponCacheService cache = new CouponCacheService(new Observing(cacheRepository),
+            new CouponCacheProperties(issuedTtl, soldOutTtl, localSoldOutTtl));
         return new CouponFacade(transactionManager, queryRepository, campaignRepository, couponRepository, classifier, admission, cache);
+    }
+
+    private CouponFacade facade(Long campaignId, Duration issuedTtl, Duration soldOutTtl) {
+        return facade(campaignId, issuedTtl, soldOutTtl, LOCAL_TTL);
     }
 
     private CouponFacade facade(Long campaignId) {
@@ -288,6 +297,59 @@ class CouponFacadeCacheIntegrationTest {
         );
     }
 
+    @DisplayName("로컬 품절이 유효하면 등록은 품절 Redis·캠페인 SQL 없이 409 다. 기발급 확인·운영 ID·열림이 먼저이고, 로컬 만료 뒤에는 Redis 를 다시 읽는다.")
+    @Test
+    void localSoldOutSkipsRedisAndCampaignSql() throws InterruptedException {
+        Long campaignId = fixture.activeCampaign(1);
+        List<Long> users = fixture.users(5);
+        Long owner = users.get(0);
+        Long ownerCoupon = fixture.storedCoupon(owner, campaignId); // 발급 1/1 로 품절이 된다.
+        own(campaignId, users);
+        CouponFacade facade = facade(campaignId, LONG_TTL, LONG_TTL, Duration.ofSeconds(2));
+        String soldOutKey = CouponCacheRedisRepository.soldOutKey(campaignId);
+
+        // DB 로 품절 확인 → Redis 저장만(로컬 아님) → 다음 요청이 실제 Redis true·PTTL 을 읽고 로컬을 채운다.
+        assertThat(errorOf(() -> facade.registerWaiting(users.get(1), campaignId))).isEqualTo(ErrorType.COUPON_CAMPAIGN_SOLD_OUT);
+        assertThat(soldOutReads.get()).as("첫 요청: 빈 Redis 조회 1").isEqualTo(1);
+        assertThat(errorOf(() -> facade.registerWaiting(users.get(2), campaignId))).isEqualTo(ErrorType.COUPON_CAMPAIGN_SOLD_OUT);
+        long filledAt = System.nanoTime();
+        assertThat(soldOutReads.get()).as("둘째 요청: Redis true 조회로 로컬 채움").isEqualTo(2);
+        long pttlAfterFill = pttl(soldOutKey);
+
+        SqlCapture.start();
+        ErrorType local = errorOf(() -> facade.registerWaiting(users.get(3), campaignId));
+        List<String> statements = SqlCapture.stop();
+        var ownerResult = facade.registerWaiting(owner, campaignId);
+        admission.close();
+        ErrorType closed = errorOf(() -> facade.registerWaiting(users.get(4), campaignId));
+        admission.open();
+        long readsWhileLocal = soldOutReads.get();
+        long pttlAfterHits = pttl(soldOutKey);
+        long localElapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - filledAt);
+
+        assertAll(
+            () -> assertThat(localElapsed).as("위 요청들은 로컬 수명(2초) 안에서 끝나야 판정이 유효하다").isLessThan(2_000),
+            () -> assertThat(local).isEqualTo(ErrorType.COUPON_CAMPAIGN_SOLD_OUT),
+            () -> assertThat(readsWhileLocal).as("로컬 hit·기존 결과·닫힘은 품절 Redis 를 읽지 않는다").isEqualTo(2),
+            // 기발급 확인 조회(coupon 기준 join)는 남고, 캠페인 상태 조회(from coupon_campaign)는 없다.
+            () -> assertThat(couponSql(statements)).hasSize(1),
+            () -> assertThat(statements).noneMatch(sql -> sql.toLowerCase(Locale.ROOT).contains("from coupon_campaign")),
+            () -> assertThat(ownerResult.snapshot().status()).isEqualTo(CouponWaitingState.ISSUED),
+            () -> assertThat(ownerResult.snapshot().couponId()).isEqualTo(ownerCoupon),
+            () -> assertThat(closed).isEqualTo(ErrorType.COUPON_ADMISSION_UNAVAILABLE),
+            () -> assertThat(pttlAfterHits).as("로컬 hit 은 Redis TTL 을 연장하지 않는다").isLessThanOrEqualTo(pttlAfterFill),
+            () -> assertThat(admissionRepository.find(campaignId, users.get(3))).isEmpty(),
+            () -> assertThat(putObservations).containsExactly("soldOut txActive=false", "issued txActive=false waiting=NONE")
+        );
+
+        long remaining = 2_500 - TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - filledAt);
+        if (remaining > 0) {
+            Thread.sleep(remaining);
+        }
+        assertThat(errorOf(() -> facade.registerWaiting(users.get(3), campaignId))).isEqualTo(ErrorType.COUPON_CAMPAIGN_SOLD_OUT);
+        assertThat(soldOutReads.get()).as("로컬 만료 뒤 Redis 를 다시 읽는다").isEqualTo(3);
+    }
+
     @DisplayName("품절 캐시 miss 의 없음 404·비활성 409 는 기존 순서이고 품절 캐시를 쓰지 않는다.")
     @Test
     void missingAndInactiveDoNotFillSoldOut() {
@@ -427,6 +489,7 @@ class CouponFacadeCacheIntegrationTest {
 
         @Override
         public OptionalLong findSoldOutTtl(Long campaignId) {
+            soldOutReads.incrementAndGet();
             return delegate.findSoldOutTtl(campaignId);
         }
 

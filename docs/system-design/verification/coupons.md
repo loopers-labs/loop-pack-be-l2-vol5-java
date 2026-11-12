@@ -975,3 +975,12 @@ COUPON_LOCAL_REDIS_FAULT_TEST=true \
 - Guard17건은 Docker 없는 가짜 CLI 검사다. CacheRedis35건은 fixture master/db0·run_id 대조/실제 Redis 검사이며 A latch 수정 이후 재검사를 포함한다. Guard의 실제 공유 Docker pause/원격 late 적용을 관찰한 근거가 아니다.
 - 종료 보고는 worker/앱0, 실행 직후 남은 test MySQL/Ryuk는 약30초 뒤 회수돼0이며 공유 컨테이너7개는 그대로다. 종료/정리 로그와 요약을 확인했다. 로컬 원시 근거는 docs/week8/verification/runs/20261112-recovery-guard/와 20261112-recovery-guard-fix/다.
 - Q9/Q10의 수정은 컴파일/정적 준비까지이며 실제 opt-in은 실행하지 않았다. R4/R5·로컬 B·전체 회귀/O11/비교도 미실행이다. 수정 전 코드를 되돌려 새3건의 실패를 실행 관찰하지 않았으며, 정적 반례와 수정 후 실제 통과를 구분한다. Codex 검토 결과 이번 test 장치 단위의 추가 필수 보완은 없다.
+
+## 로컬 캐시 B단위 구현·관련 검사 검토 — 2026-11-12
+
+- 기준 volume-8/c5f86c9. 제품2파일(Properties/CacheService)·test6파일만 변경한 diff를 검토했다. private long ID/단조 시각 불변 record와 AtomicReference 한 슬롯, local5초·상위 Redis 잔여 수명/조회 지연 차감·hit 비연장·overflow/오류 미채움·Redis-only put이 승인 계약과 일치한다. 신규 bean/프레임워크·Facade/adapter/Lua 변경은 없다.
+- 서비스 검사는 기존 true→false 전달을 새 인스턴스 miss와 local hit으로 분리해 의미를 보존했다. 짧은 test TTL/지연 대역·동시 응답/ID 교체·put 뒤 미채움과 worker finally 해제/종료를 확인했다. 실제 Facade/MySQL/fixture Redis에서는 local hit의 품절 저장소 read0·캠페인 SQL0/선행 기발급 SQL1, 보유자 우선/닫힘503·TTL 비연장·local 만료 재조회를 관찰했다.
+- 관련 실행 A: JDK21.0.12,20:47:36~20:49:53 KST, opt-in env 제거·A와 같은 쿠폰/Architecture/정리 guard·W6/W7 관련 클래스 필터·Checkstyle main/test. --rerun-tasks --no-build-cache로34개 task 실제 실행/BUILD SUCCESSFUL. XML51개 총363건 중361건 실행/통과·실패/오류0·opt-in Q9/Q10 skip2, Checkstyle main/test 오류0을 원시 자료와 대조했다.
+- 실행 B O11:20:50:21~20:50:58 KST·32개 task 실제 실행·XML1개1건 통과/실패오류skip0, child graceful=true/exit143. 자원 종료 보고는 worker/streamer0, test Redis/MySQL/Ryuk는20:51:09 확인 시0이며 공유 컨테이너는 조작하지 않았다.
+- 원시 근거는 docs/week8/verification/runs/20261112-cache-b/의 a-related·b-o11/summary.md다. 실제 Redis/DB 근거와 Mockito 지연/오류 대역을 구분한다. Codex가 소스/보고서를 읽어 검토했고 검사를 재실행하지 않았다. 추가 필수 수정은 없다.
+- 미실행: 실제 공유 Redis pause/Q9·Q10/R4·R5, 실제 warm-cache HTTP, 전체 check/회귀, 비교 실험. 새 검사의 수정 전 실패를 되돌려 실행하지 않았고 정적 반례와 수정 후 통과를 구분한다. 다음은 이 B 구현 커밋 뒤 기존 Q9/Q10부터 실제 장애 검증이다.
