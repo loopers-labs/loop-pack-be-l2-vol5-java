@@ -1,7 +1,9 @@
 package com.loopers.interfaces.api.coupon;
 
-import com.loopers.application.coupon.HoldingAdmissionRepository;
-import com.loopers.domain.coupon.TokenOnlyAdmissionRepository;
+import com.loopers.application.coupon.HoldingWaitingRepository;
+import com.loopers.domain.coupon.CouponAdmissionRepository;
+import com.loopers.domain.coupon.CouponWaitingSnapshot;
+import com.loopers.domain.coupon.CouponWaitingState;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
@@ -9,8 +11,7 @@ import org.springframework.web.client.ResourceAccessException;
 
 import java.time.Duration;
 import java.util.List;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -22,114 +23,129 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
 /**
- * HTTP 테스트 정리 판단의 실패 분기. 실제 DB·Redis 없이 메모리 점유 대역 위에서 수용 decorator 관찰만 재현한다.
+ * HTTP 테스트 정리 판단의 실패 분기. 실제 DB·Redis 없이 메모리 대역 위에서 대기실 decorator 의 start·finish 관찰만 재현한다.
  * 실제 서버 요청은 만들지 않으므로 통제되지 않은 DB 작업이 남지 않는다.
  */
-@DisplayName("정리 판단은 응답 수신과 서버 측 반환 관찰이 모두 있을 때만 허용하고, 미확인은 뒤의 성공으로 지워지지 않는다.")
+@DisplayName("정리 판단은 응답 수신과 서버 측 finish 관찰이 모두 있을 때만 허용하고, 미확인은 뒤의 성공으로 지워지지 않는다.")
 class ServerSettlementTest {
 
     private static final Duration SHORT = Duration.ofMillis(200);
 
-    /** 메모리 Set 대역. failNext 가 켜지면 다음 획득을 예외로 끝낸다. */
-    private static final class MemoryPermits implements TokenOnlyAdmissionRepository {
-        private final Set<String> permits = ConcurrentHashMap.newKeySet();
+    /** start 는 "not-ready" 로 시작하는 ID 만 NOT_READY, 나머지는 STARTED. failNext 면 다음 start 를 예외로 끝낸다. */
+    private static final class MemoryWaiting implements CouponAdmissionRepository {
         private volatile boolean failNext;
-        private volatile CountDownLatch blockAcquire;
+        private volatile CountDownLatch blockStart;
 
         @Override
-        public Acquisition tryAcquire(String token, int capacity) {
-            if (blockAcquire != null) {
+        public Start start(Long campaignId, Long userId, String waitingId) {
+            if (blockStart != null) {
                 try {
-                    blockAcquire.await(5, TimeUnit.SECONDS);
+                    blockStart.await(5, TimeUnit.SECONDS);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
             }
             if (failNext) {
                 failNext = false;
-                throw new IllegalStateException("획득 결과 불명(대역)");
+                throw new IllegalStateException("시작 결과 불명(대역)");
             }
-            if (permits.contains(token)) {
-                return Acquisition.ACQUIRED;
-            }
-            if (permits.size() >= capacity) {
-                return Acquisition.FULL;
-            }
-            permits.add(token);
-            return Acquisition.ACQUIRED;
+            return new Start(waitingId.startsWith("not-ready") ? StartOutcome.NOT_READY : StartOutcome.STARTED, null);
         }
 
         @Override
-        public long release(String token) {
-            return permits.remove(token) ? 1 : 0;
+        public FinishOutcome finish(Long campaignId, Long userId, String waitingId, CouponWaitingState outcome) {
+            return FinishOutcome.APPLIED;
+        }
+
+        @Override
+        public Registration register(Long campaignId, Long userId, String newWaitingId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Optional<CouponWaitingSnapshot> find(Long campaignId, Long userId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public AdmissionProgress processAdmissions(Long campaignId, int capacity, long admissionDurationMillis, boolean soldOut, boolean canAdmit) {
+            throw new UnsupportedOperationException();
         }
     }
 
-    private final MemoryPermits permits = new MemoryPermits();
-    private final HoldingAdmissionRepository holding = new HoldingAdmissionRepository(permits);
+    private final MemoryWaiting memory = new MemoryWaiting();
+    private final HoldingWaitingRepository holding = HoldingWaitingRepository.real(memory);
     private final ServerSettlement settlement = new ServerSettlement(holding);
 
-    @DisplayName("ACQUIRED 뒤 반환이 관찰되고 응답을 받았으면 정리할 수 있다. FULL 만 받은 실행도 쓰기 TX 로 가지 않아 근거가 된다.")
+    private void start(String waitingId) {
+        holding.start(1L, 1L, waitingId);
+    }
+
+    private void finish(String waitingId) {
+        holding.finish(1L, 1L, waitingId, CouponWaitingState.ISSUED);
+    }
+
+    @DisplayName("STARTED 뒤 finish 가 관찰되고 응답을 받았으면 정리할 수 있다. STARTED 가 아닌 start 결과도 쓰기 TX 로 가지 않아 근거가 된다.")
     @Test
-    void settledWhenReleasedOrFull() throws Exception {
-        holding.tryAcquire("a", 1);
-        holding.tryAcquire("b", 1);
-        holding.release("a");
+    void settledWhenFinishedOrNotStarted() throws Exception {
+        start("a");
+        start("not-ready-b");
+        finish("a");
         settlement.observe("201", () -> ResponseEntity.status(201).build());
-        settlement.observe("429", () -> ResponseEntity.status(429).build());
+        settlement.observe("409", () -> ResponseEntity.status(409).build());
 
         assertThat(settlement.awaitSettled(SHORT)).isEmpty();
     }
 
-    @DisplayName("ACQUIRED 뒤 반환이 관찰되지 않으면 유한 대기 뒤에도 미확인 token 으로 남는다.")
+    @DisplayName("STARTED 뒤 finish 가 관찰되지 않으면 유한 대기 뒤에도 미확인으로 남는다.")
     @Test
-    void acquiredWithoutRelease() throws Exception {
-        holding.tryAcquire("held", 3);
+    void startedWithoutFinish() throws Exception {
+        start("held");
 
         assertThat(settlement.awaitSettled(SHORT)).singleElement().asString().contains("held");
     }
 
-    @DisplayName("대기 중에 반환이 관찰되면 정리를 허용한다.")
+    @DisplayName("대기 중에 finish 가 관찰되면 정리를 허용한다.")
     @Test
-    void lateReleaseWithinDeadline() throws Exception {
-        holding.tryAcquire("late", 3);
-        Thread releaser = new Thread(() -> {
+    void lateFinishWithinDeadline() throws Exception {
+        start("late");
+        Thread finisher = new Thread(() -> {
             sleep(50);
-            holding.release("late");
+            finish("late");
         });
-        releaser.start();
+        finisher.start();
 
         List<String> reasons = settlement.awaitSettled(Duration.ofSeconds(2));
-        releaser.join(2_000);
+        finisher.join(2_000);
 
         assertAll(
             () -> assertThat(reasons).isEmpty(),
-            () -> assertThat(releaser.isAlive()).isFalse()
+            () -> assertThat(finisher.isAlive()).isFalse()
         );
     }
 
-    @DisplayName("획득 예외(늦게 추가될 수 있음)는 뒤의 다른 실행이 정상 반환해도 미확인으로 남는다.")
+    @DisplayName("start 예외(늦게 적용됐을 수 있음)는 뒤의 다른 실행이 정상 종료해도 미확인으로 남는다.")
     @Test
-    void failedAcquireIsSticky() throws Exception {
-        permits.failNext = true;
-        assertThatThrownBy(() -> holding.tryAcquire("unknown", 3)).isInstanceOf(IllegalStateException.class);
-        holding.tryAcquire("ok", 3);
-        holding.release("ok");
+    void failedStartIsSticky() throws Exception {
+        memory.failNext = true;
+        assertThatThrownBy(() -> start("unknown")).isInstanceOf(IllegalStateException.class);
+        start("ok");
+        finish("ok");
         settlement.observe("503", () -> ResponseEntity.status(503).build());
         settlement.observe("201", () -> ResponseEntity.status(201).build());
 
         assertThat(settlement.awaitSettled(SHORT)).singleElement().asString().contains("unknown");
     }
 
-    @DisplayName("응답을 받지 못한 요청은 원래 예외를 그대로 던지고, 이후 token 이 모두 반환돼도 미확인으로 남는다.")
+    @DisplayName("응답을 받지 못한 요청은 원래 예외를 그대로 던지고, 이후 실행이 모두 끝나도 미확인으로 남는다.")
     @Test
     void clientFailureIsNotServerCompletion() throws Exception {
         ResourceAccessException failure = new ResourceAccessException("connection reset(대역)");
         assertThatThrownBy(() -> settlement.observe("POST issue", () -> {
             throw failure;
         })).isSameAs(failure);
-        holding.tryAcquire("t", 3);
-        holding.release("t");
+        start("t");
+        finish("t");
 
         assertThat(settlement.awaitSettled(SHORT)).singleElement().asString().contains("POST issue", "응답 없음");
     }
@@ -142,54 +158,45 @@ class ServerSettlementTest {
         assertThat(settlement.awaitSettled(SHORT)).singleElement().asString().contains("500");
     }
 
-    @DisplayName("획득 명령이 진행 중이면 미확인이고, 끝나고 반환되면 정리를 허용한다.")
+    @DisplayName("start 명령이 진행 중이면 미확인이고, 끝나고 finish 되면 정리를 허용한다.")
     @Test
-    void inFlightAcquire() throws Exception {
-        permits.blockAcquire = new CountDownLatch(1);
+    void inFlightStart() throws Exception {
+        memory.blockStart = new CountDownLatch(1);
         ExecutorService executor = Executors.newSingleThreadExecutor();
         try {
-            Future<?> acquiring = executor.submit(() -> holding.tryAcquire("slow", 3));
-            waitUntil(() -> holding.sentTokens().contains("slow"));
+            Future<?> starting = executor.submit(() -> start("slow"));
+            waitUntil(() -> holding.startedWaitingIds().contains("slow"));
 
             List<String> whileRunning = settlement.awaitSettled(SHORT);
 
-            permits.blockAcquire.countDown();
-            acquiring.get(5, TimeUnit.SECONDS);
-            holding.release("slow");
+            memory.blockStart.countDown();
+            starting.get(5, TimeUnit.SECONDS);
+            finish("slow");
             assertAll(
                 () -> assertThat(whileRunning).singleElement().asString().contains("slow"),
                 () -> assertThat(settlement.awaitSettled(SHORT)).isEmpty()
             );
         } finally {
-            permits.blockAcquire.countDown();
+            memory.blockStart.countDown();
             executor.shutdown();
             assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
         }
     }
 
-    @DisplayName("테스트가 직접 넣은 token 은 서버 실행이 아니므로 판단에서 뺀다.")
-    @Test
-    void testTokensExcluded() throws Exception {
-        settlement.markTestToken("own");
-        holding.tryAcquire("own", 3);
-
-        assertThat(settlement.awaitSettled(SHORT)).isEmpty();
-    }
-
-    @DisplayName("응답을 잃은 요청이 아직 token 을 만들지 않았어도 첫 정리를 보류하고, 그 뒤 키가 비어 있고 다른 요청이 성공해도 다음 사례의 시작·정리·기록 초기화를 계속 막는다.")
+    @DisplayName("응답을 잃은 요청이 아직 start 전이어도 첫 정리를 보류하고, 그 뒤 다른 요청이 성공해도 다음 사례의 시작·정리·기록 초기화를 계속 막는다.")
     @Test
     void withheldStatePersistsAcrossCases() {
-        // 첫 사례: 응답 없음. 서버 실행은 사전 DB 조회 중이라 Redis token 이 아직 없다고 가정한다.
+        // 첫 사례: 응답 없음. 서버 실행은 사전 DB 조회 중이라 아직 start 전이라고 가정한다.
         assertThatThrownBy(() -> settlement.observe("POST issue", () -> {
             throw new ResourceAccessException("connection reset(대역)");
         })).isInstanceOf(ResourceAccessException.class);
-        assertThat(holding.sentTokens()).isEmpty();
+        assertThat(holding.startedWaitingIds()).isEmpty();
         assertThatThrownBy(() -> settlement.confirmCleanupOrWithhold(true, SHORT))
             .hasMessageContaining("정리를 보류").hasMessageContaining("응답 없음");
 
         // 같은 컨텍스트에서 다른 요청이 정상 끝나도 풀리지 않는다.
-        holding.tryAcquire("later", 3);
-        holding.release("later");
+        start("later");
+        finish("later");
         settlement.observe("201", () -> ResponseEntity.status(201).build());
 
         // 다음 사례: 시작(키 검사·준비·수용 열기 전)과 기록 초기화가 막힌다.
@@ -212,7 +219,7 @@ class ServerSettlementTest {
     @DisplayName("종료 확인 대기 중 interrupt 는 근거 확보 실패로 보고 보류하며 interrupt 상태를 복원한다.")
     @Test
     void interruptedWhileWaitingWithholds() {
-        holding.tryAcquire("pending", 3);
+        start("pending");
         Thread.currentThread().interrupt();
         try {
             assertThatThrownBy(() -> settlement.confirmCleanupOrWithhold(true, Duration.ofSeconds(2)))
@@ -227,40 +234,40 @@ class ServerSettlementTest {
     @DisplayName("근거가 모두 있으면 정리를 허용하고 보류 상태가 생기지 않으며 다음 사례가 시작할 수 있다. 새 컨텍스트의 객체는 이전 보류와 무관하다.")
     @Test
     void confirmedCleanupDoesNotWithhold() {
-        holding.tryAcquire("a", 3);
-        holding.release("a");
+        start("a");
+        finish("a");
         settlement.observe("201", () -> ResponseEntity.status(201).build());
 
         settlement.confirmCleanupOrWithhold(true, SHORT);
 
         settlement.requireNotWithheld();
         settlement.reset();
-        ServerSettlement freshContext = new ServerSettlement(new HoldingAdmissionRepository(new MemoryPermits()));
+        ServerSettlement freshContext = new ServerSettlement(HoldingWaitingRepository.real(new MemoryWaiting()));
         freshContext.requireNotWithheld();
     }
 
-    @DisplayName("raw 요청은 전송 전 등록되면 아직 token 이 없어도 정리를 막고, 다른 요청이 끝나도 풀리지 않는다.")
+    @DisplayName("raw 요청은 전송 전 등록되면 아직 start 전이어도 정리를 막고, 다른 요청이 끝나도 풀리지 않는다.")
     @Test
-    void rawRequestBlocksUntilItsOwnReleaseIsObserved() {
-        String key = settlement.registerRaw("raw POST issue");
-        holding.tryAcquire("other", 3);
-        holding.release("other");
+    void rawRequestBlocksUntilItsOwnFinishIsObserved() {
+        settlement.registerRaw("raw POST issue");
+        start("other");
+        finish("other");
 
         assertThatThrownBy(() -> settlement.confirmCleanupOrWithhold(true, SHORT))
             .hasMessageContaining("raw POST issue");
         assertThatThrownBy(settlement::requireNotWithheld).hasMessageContaining("raw POST issue");
     }
 
-    @DisplayName("raw 요청은 그 요청 token 의 반환이 관찰돼야만 해소되고, 근거 없는 해소 시도는 거절된다.")
+    @DisplayName("raw 요청은 그 요청 waitingId 의 finish 가 관찰돼야만 해소되고, 근거 없는 해소 시도는 거절된다.")
     @Test
-    void rawRequestSettlesOnlyWithReleaseEvidence() {
+    void rawRequestSettlesOnlyWithFinishEvidence() {
         String key = settlement.registerRaw("raw POST issue");
-        holding.tryAcquire("raw-token", 3);
+        start("raw-id");
 
-        assertThatThrownBy(() -> settlement.settleRaw(key, "raw-token")).hasMessageContaining("근거");
+        assertThatThrownBy(() -> settlement.settleRaw(key, "raw-id")).hasMessageContaining("근거");
         assertThatThrownBy(() -> settlement.settleRaw(key, null)).hasMessageContaining("근거");
-        holding.release("raw-token");
-        settlement.settleRaw(key, "raw-token");
+        finish("raw-id");
+        settlement.settleRaw(key, "raw-id");
 
         settlement.confirmCleanupOrWithhold(true, SHORT);
         settlement.requireNotWithheld();

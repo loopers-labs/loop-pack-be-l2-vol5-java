@@ -28,7 +28,6 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.ZonedDateTime;
-import java.util.List;
 import java.util.Optional;
 import java.util.function.Supplier;
 
@@ -72,11 +71,6 @@ public class CouponFacade {
         this.couponRepository = couponRepository;
         this.classifier = classifier;
         this.admission = admission;
-    }
-
-    /** 4단위에서 Controller 가 새 issue 로 바뀌면 제거할 임시 호환. 헤더가 없으므로 기존 쿠폰만 반환하고 신규는 ID_REQUIRED 다. */
-    public CouponIssueResult issue(Long userId, Long campaignId) {
-        return issue(userId, campaignId, null).result();
     }
 
     /**
@@ -245,11 +239,6 @@ public class CouponFacade {
 
     public boolean close() {
         return admission.close();
-    }
-
-    /** 기본 token 자리 정리(설계 §8.3). 확장에서 제거 승인된 경로이며 4단위에서 API 와 함께 지운다. 대기실 키는 건드리지 않는다. */
-    public long cleanup(List<String> tokens) {
-        return admission.cleanup(tokens);
     }
 
     /** 운영 캠페인 미설정이면 409. 호출 전제: 운영자가 관련 실행·DB 종료를 확인했다. 시간 경과·PONG 으로 자동 호출하지 않는다. */

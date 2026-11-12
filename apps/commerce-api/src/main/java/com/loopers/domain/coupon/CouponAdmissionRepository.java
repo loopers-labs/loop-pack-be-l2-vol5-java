@@ -3,23 +3,13 @@ package com.loopers.domain.coupon;
 import java.util.Optional;
 
 /**
- * 쿠폰 신규 발급 수용 자리와 입장 대기 상태의 저장소.
+ * 쿠폰 입장 대기 상태의 저장소(설계 §12.8·12.11~12.12). 캠페인별 대기·입장(READY)·실행(PROCESSING) 상태를 원자적으로 바꾸며
+ * 실행 자리는 READY+PROCESSING 수로 센다.
  * Redis 오류·timeout·비정상 응답은 결과값이 아니라 예외로 전달한다. 예외는 명령이 적용되지 않았다는 뜻이 아니다.
  *
- * <p>tryAcquire/release 는 기본 구현의 token 자리다. register~finish 는 대기실 확장(설계 §12.8·12.11~12.12)이며
- * 캠페인별 대기·입장(READY)·실행(PROCESSING) 상태를 원자적으로 바꾼다. 실행 자리는 READY+PROCESSING 수로 센다.
- * 결과의 INVARIANT_ERROR 는 저장 상태를 설명할 수 없어 아무것도 쓰지 않았다는 뜻이다. 수용을 닫을지는 호출자가 판단한다.
+ * <p>결과의 INVARIANT_ERROR 는 저장 상태를 설명할 수 없어 아무것도 쓰지 않았다는 뜻이다. 수용을 닫을지는 호출자가 판단한다.
  */
 public interface CouponAdmissionRepository {
-
-    /** 같은 token 이 이미 있으면 점유를 늘리지 않고 ACQUIRED 다. capacity 는 신뢰한 서버 설정 값이다. */
-    Acquisition tryAcquire(String token, int capacity);
-
-    /**
-     * 지정한 token 하나만 제거하고 제거 수(0 또는 1)를 돌려준다. 다른 점유는 바꾸지 않는다.
-     * 반복 호출·없는 token 의 0 은 명령으로서 정상이며, 정상 실행의 첫 반환 0 을 이상으로 볼지는 호출자가 판단한다.
-     */
-    long release(String token);
 
     /**
      * 유효 항목(WAITING·기한 전 READY·PROCESSING·ISSUED)은 그대로 EXISTING 이다. 기한이 지났지만 회수 전인 READY 는
@@ -49,11 +39,6 @@ public interface CouponAdmissionRepository {
      * 현재 waitingId·PROCESSING 이 아니면 UNCHANGED(무변경)이고, 맞는데 점유가 없으면 INVARIANT_ERROR 다.
      */
     FinishOutcome finish(Long campaignId, Long userId, String waitingId, CouponWaitingState outcome);
-
-    enum Acquisition {
-        ACQUIRED,
-        FULL
-    }
 
     enum RegistrationOutcome {
         CREATED,

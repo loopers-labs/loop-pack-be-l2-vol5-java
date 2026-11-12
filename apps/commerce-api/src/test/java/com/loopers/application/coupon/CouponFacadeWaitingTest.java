@@ -231,25 +231,24 @@ class CouponFacadeWaitingTest {
     @DisplayName("issue")
     class Issue {
 
-        @DisplayName("기존 쿠폰은 헤더 없이도 기존 결과다. 임시 호환 issue(user, campaign) 도 같다.")
+        @DisplayName("기존 쿠폰은 헤더 없이도 기존 결과다.")
         @Test
         void storedWithoutHeader() {
             when(queryRepository.findOwned(USER, CAMPAIGN)).thenReturn(Optional.of(owned()));
 
             assertAll(
                 () -> assertThat(facade.issue(USER, CAMPAIGN, null).result().couponId()).isEqualTo(COUPON_ID),
-                () -> assertThat(facade.issue(USER, CAMPAIGN).created()).isFalse()
+                () -> assertThat(facade.issue(USER, CAMPAIGN, null).result().created()).isFalse()
             );
             verifyNoInteractions(admissionRepository);
         }
 
-        @DisplayName("기존 쿠폰이 없으면 헤더 누락·공백은 400 이고 Redis 를 부르지 않는다. 임시 호환 경로도 token 발급으로 우회하지 않는다.")
+        @DisplayName("기존 쿠폰이 없으면 헤더 누락·공백은 400 이고 Redis 를 부르지 않는다.")
         @ParameterizedTest
         @NullSource
         @ValueSource(strings = {"", "  "})
         void headerRequired(String waitingId) {
             assertError(() -> facade.issue(USER, CAMPAIGN, waitingId), ErrorType.COUPON_WAITING_ID_REQUIRED);
-            assertError(() -> facade.issue(USER, CAMPAIGN), ErrorType.COUPON_WAITING_ID_REQUIRED);
             verifyNoInteractions(admissionRepository);
             verify(campaignRepository, never()).reserveOne(any(), any());
         }
@@ -310,16 +309,6 @@ class CouponFacadeWaitingTest {
                 () -> verify(campaignRepository, never()).reserveOne(any(), any()),
                 () -> verify(admissionRepository, never()).finish(any(), any(), any(), any())
             );
-        }
-
-        @DisplayName("기본 token 자리(tryAcquire/release)는 대기실 발급에서 호출하지 않는다.")
-        @Test
-        void noTokenPath() {
-            when(admissionRepository.start(CAMPAIGN, USER, WAITING_ID)).thenReturn(new Start(StartOutcome.NOT_READY, null));
-
-            assertError(() -> facade.issue(USER, CAMPAIGN, WAITING_ID), ErrorType.COUPON_WAITING_NOT_READY);
-            verify(admissionRepository, never()).tryAcquire(anyString(), anyInt());
-            verify(admissionRepository, never()).release(anyString());
         }
     }
 

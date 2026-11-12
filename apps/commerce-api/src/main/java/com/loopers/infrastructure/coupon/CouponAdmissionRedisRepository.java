@@ -25,21 +25,16 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * 쿠폰 수용 자리와 입장 대기 상태의 Redis 구현. 기존 master String template 만 사용하며 키에 TTL 을 두지 않는다.
+ * 쿠폰 입장 대기 상태의 Redis 구현. 기존 master String template 만 사용하며 키에 TTL 을 두지 않는다.
  *
- * <p>기본 token 자리는 전용 Set 하나다. 대기실(설계 §12.8·12.11)은 캠페인별 키 5개를 Lua 로만 바꾼다.
+ * <p>대기실(설계 §12.8·12.11)은 캠페인별 키 5개를 Lua 로만 바꾼다.
  * Lua 응답은 문자열 고정 배열이며, 길이·원소 타입·결과명·JSON·숫자·상태별 필수값 중 하나라도 어긋나면 결과로 해석하지 않고
  * IllegalStateException 으로 올린다. null 이나 알 수 없는 응답을 성공·미발견으로 바꾸지 않는다.
  */
 @Component
 public class CouponAdmissionRedisRepository implements CouponAdmissionRepository {
 
-    public static final String PERMITS_KEY = "commerce:coupon-admission:v1:permits";
-
     private static final Logger log = LoggerFactory.getLogger(CouponAdmissionRedisRepository.class);
-
-    private static final RedisScript<Long> ACQUIRE_SCRIPT =
-        RedisScript.of(new ClassPathResource("redis/coupon-admission-acquire.lua"), Long.class);
 
     private static final RedisScript<List> REGISTER_SCRIPT = waitingScript("register");
     private static final RedisScript<List> FIND_SCRIPT = waitingScript("find");
@@ -68,30 +63,6 @@ public class CouponAdmissionRedisRepository implements CouponAdmissionRepository
             "waiting:ready:v1:" + campaignId,
             "waiting:processing:v1:" + campaignId
         );
-    }
-
-    @Override
-    public Acquisition tryAcquire(String token, int capacity) {
-        Long result = redisTemplate.execute(ACQUIRE_SCRIPT, List.of(PERMITS_KEY), token, String.valueOf(capacity));
-        if (result == null) {
-            throw new IllegalStateException("수용 자리 획득 응답이 없습니다. [token = " + token + "]");
-        }
-        if (result == 1L) {
-            return Acquisition.ACQUIRED;
-        }
-        if (result == 0L) {
-            return Acquisition.FULL;
-        }
-        throw new IllegalStateException("수용 자리 획득 응답이 1/0 이 아닙니다. [token = " + token + ", result = " + result + "]");
-    }
-
-    @Override
-    public long release(String token) {
-        Long removed = redisTemplate.opsForSet().remove(PERMITS_KEY, token);
-        if (removed == null || removed < 0 || removed > 1) {
-            throw new IllegalStateException("수용 자리 반환 응답이 0/1 이 아닙니다. [token = " + token + ", removed = " + removed + "]");
-        }
-        return removed;
     }
 
     @Override

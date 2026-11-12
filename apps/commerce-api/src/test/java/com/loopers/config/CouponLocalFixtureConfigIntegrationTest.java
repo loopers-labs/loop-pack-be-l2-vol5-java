@@ -28,8 +28,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -37,7 +39,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
 /**
- * 직접 실행용 준비 코드(설계 §9, Q15 의 준비 옵션 부분). 실제 앱 시작을 test 에서 직접 수행해 옵션별 등록·실행, 같은 DB 를 보존한
+ * 직접 실행용 준비 코드(설계 §9·§12.13 로컬 확인 가이드, Q15 의 준비 옵션 부분). 수동 발급은 준비가 출력한 ID 를 운영 캠페인으로 지정한 재시작에서
+ * 대기 경로로 한다. 실제 앱 시작을 test 에서 직접 수행해 옵션별 등록·실행, 같은 DB 를 보존한
  * 재시작(ddl-auto=update), 준비 TX 중간 실패의 rollback·기동 실패 전파를 확인한다. 공통 기본 ddl-auto 는 바꾸지 않고 시작 인자로 고른다.
  * 각 시작은 test 프로필·fixture MySQL·fixture Redis 주소를 쓰고, 검증 뒤 컨텍스트를 닫는다. 같은 컨텍스트에서 Runner 를 다시 호출하는
  * 확인은 재시작 확인과 별개로 기록한다.
@@ -50,10 +53,40 @@ class CouponLocalFixtureConfigIntegrationTest {
 
     private static final String RUNNER = "couponLocalFixtureRunner";
 
+    /** 이 테스트가 운영 캠페인으로 쓴 ID. 끝나면 그 대기실 키만 지운다(모든 시작은 동기 실행이며 닫힌 뒤 남는 작업이 없다). */
+    private final Set<Long> ownCampaigns = new LinkedHashSet<>();
+
     @AfterEach
     void clearPreparedRows() {
         try (ConfigurableApplicationContext context = boot("--spring.jpa.hibernate.ddl-auto=update")) {
+            CouponRedisTarget.verify(context.getBean(RedisProperties.class), master(context));
+            ownCampaigns.forEach(id -> master(context).delete(CouponAdmissionRedisRepository.waitingKeys(id)));
             context.getBean(DatabaseCleanUp.class).truncateAllTables();
+        }
+    }
+
+    /** fixture Redis 대상을 확인하고, 이 캠페인의 대기실 키가 비어 있을 때만 소유한다. 남은 값은 지우지 않고 실패한다. */
+    private void claimWaitingKeys(ConfigurableApplicationContext context, Long campaignId) {
+        RedisTemplate<String, String> master = master(context);
+        CouponRedisTarget.verify(context.getBean(RedisProperties.class), master);
+        if (ownCampaigns.add(campaignId)) {
+            for (String key : CouponAdmissionRedisRepository.waitingKeys(campaignId)) {
+                assertThat(master.type(key)).as("시작 전 대기실 키가 비어 있어야 한다: " + key).isEqualTo(DataType.NONE);
+            }
+        }
+    }
+
+    /** 수용을 명시적으로 열고 대기 등록 → 입장 처리 → 발급한 뒤 닫는다. 준비 코드가 수용을 열지 않는다는 기대와 맞춘다. */
+    private CouponIssueResult issueByWaiting(ConfigurableApplicationContext context, Long userId, Long campaignId) {
+        claimWaitingKeys(context, campaignId);
+        CouponFacade facade = context.getBean(CouponFacade.class);
+        facade.open();
+        try {
+            String waitingId = facade.registerWaiting(userId, campaignId).snapshot().waitingId();
+            facade.processAdmissions();
+            return facade.issue(userId, campaignId, waitingId).result();
+        } finally {
+            facade.close();
         }
     }
 
@@ -148,22 +181,22 @@ class CouponLocalFixtureConfigIntegrationTest {
                 () -> assertThat(facade.status()).as("준비가 수용을 열지 않는다").isFalse()
             );
 
-            RedisTemplate<String, String> master = master(context);
-            CouponRedisTarget.verify(context.getBean(RedisProperties.class), master);
-            assertThat(master.type(CouponAdmissionRedisRepository.PERMITS_KEY)).isEqualTo(DataType.NONE);
-            facade.open();
-            try {
-                CouponIssueResult issued = facade.issue(firstUsers.get(0), firstCampaign);
-                assertThat(issued.created()).isTrue();
-            } finally {
-                facade.close();
-            }
-            assertThat(master.type(CouponAdmissionRedisRepository.PERMITS_KEY)).as("정상 반환으로 키가 비었다").isEqualTo(DataType.NONE);
+        }
+
+        // 3-1. 로컬 확인 가이드(설계 §12.13): 준비가 출력한 캠페인 ID 를 운영 캠페인으로 지정하고 같은 DB 를 보존해(update·준비 끔) 재시작한 뒤
+        //      명시적으로 열고 대기 등록 → 입장 처리 → 발급으로 '기존 효과'를 만든다. 자동 입장 주기는 아직 없어 입장 처리를 직접 부른다.
+        try (ConfigurableApplicationContext context = boot("--spring.jpa.hibernate.ddl-auto=update", "--commerce.coupon.fixture.enabled=false",
+            "--commerce.coupon.waiting.campaign-id=" + firstCampaign)) {
+            JdbcTemplate jdbc = context.getBean(JdbcTemplate.class);
+            assertNoFixture(context);
+            claimWaitingKeys(context, firstCampaign);
+            assertThat(issueByWaiting(context, firstUsers.get(0), firstCampaign).created()).isTrue();
             issuedCoupon = jdbc.queryForMap("SELECT id, user_id, campaign_id, benefit_type, benefit_value, created_at FROM coupon");
         }
 
         // 4. 같은 DB 를 보존한 재시작(true + update): 새 데이터만 추가, 기존 효과 불변. 이어서 같은 컨텍스트의 Runner 재호출을 따로 본다.
-        try (ConfigurableApplicationContext context = boot("--spring.jpa.hibernate.ddl-auto=update", "--commerce.coupon.fixture.enabled=true")) {
+        try (ConfigurableApplicationContext context = boot("--spring.jpa.hibernate.ddl-auto=update", "--commerce.coupon.fixture.enabled=true",
+            "--commerce.coupon.waiting.campaign-id=" + firstCampaign)) {
             JdbcTemplate jdbc = context.getBean(JdbcTemplate.class);
             CouponFacade facade = context.getBean(CouponFacade.class);
             Counts afterRestart = Counts.of(jdbc);
@@ -187,14 +220,8 @@ class CouponLocalFixtureConfigIntegrationTest {
                 () -> assertThat(facade.status()).isFalse()
             );
 
-            // 기존 DB ID 로 발급 API 경로를 그대로 쓸 수 있다.
-            CouponRedisTarget.verify(context.getBean(RedisProperties.class), master(context));
-            facade.open();
-            try {
-                assertThat(facade.issue(firstUsers.get(1), firstCampaign).created()).isTrue();
-            } finally {
-                facade.close();
-            }
+            // 기존 DB ID 를 운영 캠페인으로 지정하면 대기 경로로 그대로 발급할 수 있다.
+            assertThat(issueByWaiting(context, firstUsers.get(1), firstCampaign).created()).isTrue();
             assertThat(jdbc.queryForObject("SELECT issued_count FROM coupon_campaign WHERE id = ?", Long.class, firstCampaign)).isEqualTo(2L);
 
             // 같은 컨텍스트에서 Runner 를 다시 호출하면 그 호출도 새 데이터만 추가한다(재시작 근거와 별개).
@@ -206,7 +233,7 @@ class CouponLocalFixtureConfigIntegrationTest {
                 () -> assertThat(afterRepeat).isEqualTo(new Counts(24, 24, 3, 2)),
                 () -> assertThat(jdbc.queryForObject("SELECT issued_count FROM coupon_campaign WHERE id = ?", Long.class, firstCampaign)).isEqualTo(2L)
             );
-            assertThat(master(context).type(CouponAdmissionRedisRepository.PERMITS_KEY)).isEqualTo(DataType.NONE);
+            assertThat(master(context).opsForSet().size("waiting:processing:v1:" + firstCampaign)).as("발급 뒤 점유 반환").isZero();
         }
     }
 

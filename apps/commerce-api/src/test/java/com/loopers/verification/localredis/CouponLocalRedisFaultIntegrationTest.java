@@ -6,7 +6,9 @@ import com.loopers.application.coupon.CouponFacade;
 import com.loopers.config.redis.RedisConfig;
 import com.loopers.config.redis.RedisProperties;
 import com.loopers.domain.coupon.CouponAdmissionRepository;
-import com.loopers.domain.coupon.TokenOnlyAdmissionRepository;
+import com.loopers.domain.coupon.CouponWaitingSnapshot;
+import com.loopers.domain.coupon.CouponWaitingState;
+import com.loopers.interfaces.api.coupon.CouponV1Controller;
 import com.loopers.fixture.CouponFixture;
 import com.loopers.infrastructure.coupon.CouponAdmissionRedisRepository;
 import com.loopers.interfaces.api.ApiResponse;
@@ -58,6 +60,7 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -67,20 +70,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
 /**
- * 현재 실행 중인 로컬 Redis(redis-master 컨테이너)를 pause/unpause 해 Q9(획득 장애)·Q10(반환 장애)을 확인한다(상세설계 §10.1).
+ * 현재 실행 중인 로컬 Redis(redis-master 컨테이너)를 pause/unpause 해 Q9(실행 시작 장애)·Q10(종료 기록 장애)을 대기실 경로로 확인한다
+ * (상세설계 §10.1·§12.5). 기본 token 자리·cleanup API 는 확장에서 제거됐다. 장애 뒤 정리는 DB 결과·같은 연결 경과를 확인한 뒤
+ * 이 사례 운영 캠페인의 대기실 키를 무효화하는 test 단계이며, 장애별 수동 재개 절차의 검증이 아니다(후속 범위).
  * 기본 실행에서는 비활성이며 {@code COUPON_LOCAL_REDIS_FAULT_TEST=true} 와 {@code COUPON_LOCAL_REDIS_FAULT_LOG}(절대 경로)를 준 명시 실행만 한다.
  *
  * <p>부트스트랩은 fixture Redis 컨테이너 구성과 앱 진입 클래스를 스캔에서 빼고, 실제 로컬 master/replica/database 를 속성으로 넣는다.
- * MySQL 은 기존 테스트 컨테이너를 쓴다. 획득·반환 decorator 는 Redis 명령을 보내기 전에 JSONL 기록을 append·flush 한다.
- * 실패해 정상 정리 근거가 없으면 자기 token 을 지우지 않고 기록만 남긴다(§10.1 사후 수동 정리 절차 대상). Redis 는 pause 상태로 두지 않는다.
+ * MySQL 은 기존 테스트 컨테이너를 쓴다. 대기실 decorator 는 Redis 명령을 보내기 전에 JSONL 기록을 append·flush 한다.
+ * 실패해 정상 정리 근거가 없으면 대기실 키를 지우지 않고 기록만 남긴다(§10.1 사후 수동 정리 절차 대상). Redis 는 pause 상태로 두지 않는다.
  */
 @EnabledIfEnvironmentVariable(named = "COUPON_LOCAL_REDIS_FAULT_TEST", matches = "true")
 @SpringBootTest(classes = CouponLocalRedisFaultIntegrationTest.Bootstrap.class, webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
-@DisplayName("로컬 Redis 장애: 획득 실패는 503·닫힘·DB 미진입, 반환 실패는 201 유지·닫힘이며, 같은 연결의 후속 응답과 종료 확인 뒤 자기 token 만 정리한다.")
+@DisplayName("로컬 Redis 장애: 시작 실패는 503·닫힘·DB 미진입, 종료 기록 실패는 201 유지·닫힘이며, 같은 연결의 후속 응답과 종료 확인 뒤 자기 대기실 키만 정리한다.")
 class CouponLocalRedisFaultIntegrationTest {
 
-    private static final String KEY = CouponAdmissionRedisRepository.PERMITS_KEY;
+    private static final long OPERATING = 9_101L;
     private static final String MASTER_HOST = env("COUPON_LOCAL_REDIS_MASTER_HOST", "localhost");
     private static final int MASTER_PORT = Integer.parseInt(env("COUPON_LOCAL_REDIS_MASTER_PORT", "6379"));
     private static final String REPLICA_HOST = env("COUPON_LOCAL_REDIS_REPLICA_HOST", "localhost");
@@ -89,6 +94,8 @@ class CouponLocalRedisFaultIntegrationTest {
     private static final long WAIT_SECONDS = 5;
 
     private static final ParameterizedTypeReference<ApiResponse<CouponV1Dto.CouponResponse>> COUPON =
+        new ParameterizedTypeReference<>() {};
+    private static final ParameterizedTypeReference<ApiResponse<CouponV1Dto.WaitingResponse>> WAITING =
         new ParameterizedTypeReference<>() {};
     private static final ParameterizedTypeReference<ApiResponse<PageResponse<CouponV1Dto.OwnedCouponResponse>>> PAGE =
         new ParameterizedTypeReference<>() {};
@@ -121,6 +128,7 @@ class CouponLocalRedisFaultIntegrationTest {
         registry.add("datasource.redis.master.port", () -> String.valueOf(MASTER_PORT));
         registry.add("datasource.redis.replicas[0].host", () -> REPLICA_HOST);
         registry.add("datasource.redis.replicas[0].port", () -> String.valueOf(REPLICA_PORT));
+        registry.add("commerce.coupon.waiting.campaign-id", () -> String.valueOf(OPERATING));
     }
 
     /** UTF-8 JSONL 실행 기록. 줄마다 append·DSYNC 쓰기를 마친 뒤 반환한다. 실패하면 예외로 다음 단계를 막는다. */
@@ -172,14 +180,14 @@ class CouponLocalRedisFaultIntegrationTest {
 
     /**
      * 실제 Redis 저장소에 위임하는 test decorator. 명령을 보내기 전에 기록을 남기고, 기록이 실패하면 위임하지 않는다.
-     * 순차 요청마다 테스트가 지정한 사용자·캠페인을 함께 기록한다. Q10 은 반환 명령 위임 직전에 한 번 동작을 끼운다.
+     * 순차 요청마다 테스트가 지정한 사용자·캠페인을 함께 기록한다. Q10 은 finish 위임 직전에 한 번 동작을 끼운다.
      */
-    static final class RecordingAdmissionRepository implements TokenOnlyAdmissionRepository {
+    static final class RecordingAdmissionRepository implements CouponAdmissionRepository {
         private final CouponAdmissionRepository delegate;
         private final FaultLog log;
-        private final Map<String, String> tokenByUser = new ConcurrentHashMap<>();
-        private final Map<String, String> releaseOutcome = new ConcurrentHashMap<>();
-        private final AtomicReference<Runnable> beforeRelease = new AtomicReference<>();
+        private final Map<String, String> waitingIdByUser = new ConcurrentHashMap<>();
+        private final Map<String, String> finishOutcome = new ConcurrentHashMap<>();
+        private final AtomicReference<Runnable> beforeFinish = new AtomicReference<>();
         private final List<String> withheld = Collections.synchronizedList(new ArrayList<>());
         private volatile Map<String, Object> context = Map.of("userId", "불명", "campaignId", "불명", "case", "불명");
 
@@ -192,21 +200,21 @@ class CouponLocalRedisFaultIntegrationTest {
             context = Map.of("case", testCase, "userId", userId, "campaignId", campaignId);
         }
 
-        /** 발급 요청이 아닌 수동 정리 명령. 사용자·캠페인은 정리 대상 token 의 원래 요청 기록으로 연결한다. */
+        /** 제품 명령이 아닌 test 의 대기실 키 무효화 단계. */
         void cleanupStep(String testCase) {
-            context = Map.of("case", testCase, "userId", "정리 명령(사용자 없음)", "campaignId", "정리 명령(캠페인 없음)");
+            context = Map.of("case", testCase, "userId", "정리 단계(사용자 없음)", "campaignId", OPERATING);
         }
 
-        void beforeNextRelease(Runnable action) {
-            beforeRelease.set(action);
+        void beforeNextFinish(Runnable action) {
+            beforeFinish.set(action);
         }
 
-        String tokenOf(Long userId) {
-            return tokenByUser.get(String.valueOf(userId));
+        String waitingIdOf(Long userId) {
+            return waitingIdByUser.get(String.valueOf(userId));
         }
 
-        String releaseOutcomeOf(String token) {
-            return releaseOutcome.get(token);
+        String finishOutcomeOf(String waitingId) {
+            return finishOutcome.get(waitingId);
         }
 
         FaultLog log() {
@@ -214,7 +222,7 @@ class CouponLocalRedisFaultIntegrationTest {
         }
 
         /**
-         * 정상 종료·정리 근거를 얻지 못한 사례를 컨텍스트 수명 동안 남긴다. 실패한 요청이 아직 token 을 만들지 않았을 수 있으므로
+         * 정상 종료·정리 근거를 얻지 못한 사례를 컨텍스트 수명 동안 남긴다. 실패한 요청이 아직 start 전일 수 있으므로
          * 빈 Set·다른 요청의 성공으로 풀지 않는다. 새 컨텍스트는 새 bean 이다.
          */
         void withhold(String reason) {
@@ -222,7 +230,7 @@ class CouponLocalRedisFaultIntegrationTest {
             log.append(Map.of("event", "context-withheld", "reason", reason));
         }
 
-        /** 이후 사례의 준비·DB 변경·수용 열기·점유 정리 전에 호출한다. */
+        /** 이후 사례의 준비·DB 변경·수용 열기·키 정리 전에 호출한다. */
         void requireNotWithheld() {
             synchronized (withheld) {
                 if (!withheld.isEmpty()) {
@@ -232,47 +240,67 @@ class CouponLocalRedisFaultIntegrationTest {
         }
 
         @Override
-        public Acquisition tryAcquire(String token, int capacity) {
-            Map<String, Object> ctx = context;
-            tokenByUser.put(String.valueOf(ctx.get("userId")), token);
-            log.append(event("acquire-before", token, ctx));
-            try {
-                Acquisition result = delegate.tryAcquire(token, capacity);
-                log.append(event("acquire-result " + result, token, ctx));
-                return result;
-            } catch (RuntimeException e) {
-                log.append(event("acquire-failed " + e.getClass().getSimpleName() + " (적용 여부 불명)", token, ctx));
-                throw e;
-            }
+        public Registration register(Long campaignId, Long userId, String newWaitingId) {
+            return logged("register", newWaitingId, () -> delegate.register(campaignId, userId, newWaitingId));
         }
 
         @Override
-        public long release(String token) {
+        public Optional<CouponWaitingSnapshot> find(Long campaignId, Long userId) {
+            return logged("find", null, () -> delegate.find(campaignId, userId));
+        }
+
+        @Override
+        public AdmissionProgress processAdmissions(Long campaignId, int capacity, long admissionDurationMillis, boolean soldOut, boolean canAdmit) {
+            return logged("process-admissions", null,
+                () -> delegate.processAdmissions(campaignId, capacity, admissionDurationMillis, soldOut, canAdmit));
+        }
+
+        @Override
+        public Start start(Long campaignId, Long userId, String waitingId) {
+            waitingIdByUser.put(String.valueOf(userId), waitingId);
+            return logged("start", waitingId, () -> delegate.start(campaignId, userId, waitingId));
+        }
+
+        @Override
+        public FinishOutcome finish(Long campaignId, Long userId, String waitingId, CouponWaitingState outcome) {
             Map<String, Object> ctx = context;
-            log.append(event("release-before", token, ctx));
-            Runnable action = beforeRelease.getAndSet(null);
+            log.append(event("finish-before " + outcome, waitingId, ctx));
+            Runnable action = beforeFinish.getAndSet(null);
             if (action != null) {
                 action.run();
             }
             try {
-                long removed = delegate.release(token);
-                releaseOutcome.put(token, "removed " + removed);
-                log.append(event("release-result removed " + removed, token, ctx));
-                return removed;
+                FinishOutcome result = delegate.finish(campaignId, userId, waitingId, outcome);
+                finishOutcome.put(waitingId, String.valueOf(result));
+                log.append(event("finish-result " + result, waitingId, ctx));
+                return result;
             } catch (RuntimeException e) {
-                releaseOutcome.put(token, "failed " + e.getClass().getSimpleName());
-                log.append(event("release-failed " + e.getClass().getSimpleName() + " (적용 여부 불명)", token, ctx));
+                finishOutcome.put(waitingId, "failed " + e.getClass().getSimpleName());
+                log.append(event("finish-failed " + e.getClass().getSimpleName() + " (적용 여부 불명)", waitingId, ctx));
                 throw e;
             }
         }
 
-        private static Map<String, Object> event(String stage, String token, Map<String, Object> ctx) {
+        private <T> T logged(String stage, String waitingId, java.util.function.Supplier<T> call) {
+            Map<String, Object> ctx = context;
+            log.append(event(stage + "-before", waitingId, ctx));
+            try {
+                T result = call.get();
+                log.append(event(stage + "-result " + result, waitingId, ctx));
+                return result;
+            } catch (RuntimeException e) {
+                log.append(event(stage + "-failed " + e.getClass().getSimpleName() + " (적용 여부 불명)", waitingId, ctx));
+                throw e;
+            }
+        }
+
+        private static Map<String, Object> event(String stage, String waitingId, Map<String, Object> ctx) {
             Map<String, Object> event = new LinkedHashMap<>(ctx);
             event.put("event", stage);
-            event.put("token", token);
+            event.put("waitingId", String.valueOf(waitingId));
             event.put("endpoint", MASTER_HOST + ":" + MASTER_PORT);
             event.put("database", DATABASE);
-            event.put("key", KEY);
+            event.put("keys", CouponAdmissionRedisRepository.waitingKeys(OPERATING));
             return event;
         }
     }
@@ -518,10 +546,24 @@ class CouponLocalRedisFaultIntegrationTest {
         });
     }
 
-    /** 앱 연결의 마지막 명령을 바꾸지 않는 별도 관찰 연결(컨테이너 안 redis-cli)로 Set 을 본다. */
+    /** 앱 연결의 마지막 명령을 바꾸지 않는 별도 관찰 연결(컨테이너 안 redis-cli)로 PROCESSING 점유 Set 을 본다. */
     private Set<String> observedMembers() throws Exception {
-        String out = docker("exec", containerId, "redis-cli", "-n", String.valueOf(DATABASE), "SMEMBERS", KEY);
+        String out = docker("exec", containerId, "redis-cli", "-n", String.valueOf(DATABASE), "SMEMBERS", "waiting:processing:v1:" + OPERATING);
         return out.isBlank() ? Set.of() : Set.copyOf(out.lines().map(String::trim).filter(s -> !s.isEmpty()).toList());
+    }
+
+    /** 같은 별도 관찰 연결로 이 운영 캠페인 대기실 키 수를 본다. */
+    private long observedWaitingKeys() throws Exception {
+        List<String> command = new ArrayList<>(List.of("exec", containerId, "redis-cli", "-n", String.valueOf(DATABASE), "EXISTS"));
+        command.addAll(CouponAdmissionRedisRepository.waitingKeys(OPERATING));
+        return Long.parseLong(docker(command.toArray(String[]::new)).trim());
+    }
+
+    /** DB 결과·같은 연결 경과를 확인한 뒤 이 사례 운영 캠페인의 대기 상태를 무효화한다(§12.5 원칙). 제품 API 가 아닌 test 단계다. */
+    private void invalidateWaiting(String testCase) throws Exception {
+        recording.cleanupStep(testCase);
+        master.delete(CouponAdmissionRedisRepository.waitingKeys(OPERATING));
+        recording.log().append(Map.of("event", "waiting-invalidated", "case", testCase, "keysLeft", observedWaitingKeys()));
     }
 
     private void pause(String testCase) throws Exception {
@@ -534,17 +576,17 @@ class CouponLocalRedisFaultIntegrationTest {
 
     // ------------------------------------------------------------------ 공통 준비·정리
 
-    /** 닫기 → 닫힘 확인 → 실제 master Set 0 확인 → 데이터 준비 commit → 명시 열기. 기존 점유가 있으면 지우지 않고 시작 조건 실패다. */
+    /** 닫기 → 닫힘 확인 → 운영 캠페인 대기실 키 0 확인 → 데이터 준비 commit → 명시 열기. 기존 키가 있으면 지우지 않고 시작 조건 실패다. */
     private List<Long> prepare(String testCase, int users) throws Exception {
         recording.requireNotWithheld(); // 앞 사례가 근거 없이 끝났으면 준비·DB 변경·열기·정리 전에 멈춘다.
         assertThat(couponFacade.close()).isFalse();
         assertThat(couponFacade.status()).isFalse();
         verifyTarget(testCase);
-        Set<String> existing = observedMembers();
-        recording.log().append(Map.of("event", "start-set", "case", testCase, "members", existing));
-        assertThat(existing).as("시작 전 실제 master Set 이 비어 있어야 한다").isEmpty();
+        long existing = observedWaitingKeys();
+        recording.log().append(Map.of("event", "start-keys", "case", testCase, "keys", existing));
+        assertThat(existing).as("시작 전 운영 캠페인 대기실 키가 없어야 한다").isZero();
         List<Long> ids = new ArrayList<>(fixture.users(users));
-        ids.add(fixture.activeCampaign(10));
+        ids.add(fixture.operatingCampaign(OPERATING, 10));
         assertThat(couponFacade.open()).isTrue();
         return ids;
     }
@@ -575,14 +617,29 @@ class CouponLocalRedisFaultIntegrationTest {
         return new HttpEntity<>(null, headers);
     }
 
-    private ResponseEntity<ApiResponse<CouponV1Dto.CouponResponse>> issue(String testCase, Long userId, Long campaignId) {
+    private ResponseEntity<ApiResponse<CouponV1Dto.CouponResponse>> issue(String testCase, Long userId, Long campaignId, String waitingId) {
         recording.next(testCase, userId, campaignId);
-        return rest.exchange("/api/v1/coupon-campaigns/" + campaignId + "/issues", HttpMethod.POST, as(userId), COUPON);
+        HttpEntity<Object> request = as(userId);
+        HttpHeaders headers = new HttpHeaders();
+        headers.putAll(request.getHeaders());
+        if (waitingId != null) {
+            headers.set(CouponV1Controller.WAITING_ID_HEADER, waitingId);
+        }
+        return rest.exchange("/api/v1/coupon-campaigns/" + campaignId + "/issues", HttpMethod.POST, new HttpEntity<>(null, headers), COUPON);
+    }
+
+    /** 등록 → 입장 처리(자동 주기 없음) 뒤 waitingId. 장애 전 준비 단계다. */
+    private String admit(String testCase, Long userId, Long campaignId) {
+        recording.next(testCase, userId, campaignId);
+        var registered = rest.exchange("/api/v1/coupon-campaigns/" + campaignId + "/waiting", HttpMethod.POST, as(userId), WAITING);
+        assertThat(registered.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(couponFacade.processAdmissions()).isPresent();
+        return registered.getBody().data().waitingId();
     }
 
     // ------------------------------------------------------------------ Q9
 
-    @DisplayName("Q9: 획득 중 Redis 가 멈추면 신규 요청은 503·DB 미진입·닫힘이고 기존 결과·목록은 유지된다. unpause 뒤 같은 연결의 CLIENT ID·run_id 가 같음을 확인하고 자기 token 만 정리하며 닫힘을 유지한다.")
+    @DisplayName("Q9: 실행 시작 중 Redis 가 멈추면 신규 요청은 503·DB 미진입·닫힘이고 기존 결과·목록은 유지된다. unpause 뒤 같은 연결의 CLIENT ID·run_id 가 같음을 확인하고 자기 대기실 키만 무효화하며 닫힘을 유지한다.")
     @Test
     void q9AcquireFailure() throws Exception {
         String testCase = "Q9";
@@ -595,12 +652,14 @@ class CouponLocalRedisFaultIntegrationTest {
         String beforeRunId = runId();
         recording.log().append(Map.of("event", "before", "case", testCase, "clientId", beforeId, "runId", beforeRunId));
 
-        var first = issue(testCase, owner, campaignId);
+        String ownerWaiting = admit(testCase, owner, campaignId);
+        String newcomerWaiting = admit(testCase, newcomer, campaignId);
+        var first = issue(testCase, owner, campaignId, ownerWaiting);
         assertThat(first.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         Long ownerCoupon = first.getBody().data().couponId();
         String lastCommand = docker("exec", containerId, "redis-cli", "CLIENT", "LIST", "ID", String.valueOf(beforeId));
         recording.log().append(Map.of("event", "path-check", "case", testCase, "client", lastCommand));
-        assertThat(field(lastCommand, "cmd")).as("정상 반환이 같은 master 연결의 마지막 명령").isEqualTo("srem");
+        assertThat(field(lastCommand, "cmd")).as("정상 종료 기록(finish Lua)이 같은 master 연결의 마지막 명령").isIn("evalsha", "eval");
         assertThat(observedMembers()).isEmpty();
 
         requireNoOtherClients(testCase, beforeId);
@@ -612,11 +671,11 @@ class CouponLocalRedisFaultIntegrationTest {
         long newcomerCoupons;
         pause(testCase);
         try {
-            rejected = issue(testCase, newcomer, campaignId);
+            rejected = issue(testCase, newcomer, campaignId, newcomerWaiting);
             closedDuringFault = !couponFacade.status();
             issuedDuringFault = fixture.issuedCount(campaignId);
             newcomerCoupons = fixture.couponCount(campaignId, newcomer);
-            storedAgain = issue(testCase, owner, campaignId);
+            storedAgain = issue(testCase, owner, campaignId, null);
             list = rest.exchange("/api/v1/coupons", HttpMethod.GET, as(owner), PAGE);
         } finally {
             unpause(testCase);
@@ -624,10 +683,10 @@ class CouponLocalRedisFaultIntegrationTest {
 
         long afterId = clientId();
         String afterRunId = runId();
-        String newcomerToken = recording.tokenOf(newcomer);
+        String newcomerToken = recording.waitingIdOf(newcomer);
         Set<String> membersAfterUnpause = observedMembers();
         recording.log().append(Map.of("event", "after", "case", testCase, "clientId", afterId, "runId", afterRunId,
-            "newcomerToken", String.valueOf(newcomerToken), "membersAfterUnpause", membersAfterUnpause,
+            "newcomerWaitingId", String.valueOf(newcomerToken), "processingAfterUnpause", membersAfterUnpause,
             "db", Map.of("issued", fixture.issuedCount(campaignId), "coupons", fixture.couponCount(campaignId))));
         assertAll(
             () -> assertThat(rejected.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE),
@@ -640,16 +699,16 @@ class CouponLocalRedisFaultIntegrationTest {
             () -> assertThat(list.getBody().data().items()).extracting(CouponV1Dto.OwnedCouponResponse::couponId).containsExactly(ownerCoupon),
             () -> assertThat(afterId).as("장애 전후 같은 연결").isEqualTo(beforeId),
             () -> assertThat(afterRunId).as("장애 전후 같은 서버 프로세스").isEqualTo(beforeRunId),
-            () -> assertThat(newcomerToken).isNotNull()
+            () -> assertThat(newcomerToken).isEqualTo(newcomerWaiting)
         );
 
-        recording.cleanupStep(testCase);
-        long removed = couponFacade.cleanup(List.of(newcomerToken));
+        invalidateWaiting(testCase);
+        long removed = observedWaitingKeys();
         Set<String> finalMembers = observedMembers();
-        recording.log().append(Map.of("event", "cleanup", "case", testCase, "tokens", List.of(newcomerToken), "removed", removed,
+        recording.log().append(Map.of("event", "cleanup", "case", testCase, "keysLeft", removed,
             "members", finalMembers, "accepting", couponFacade.status(),
             "db", Map.of("issued", fixture.issuedCount(campaignId), "coupons", fixture.couponCount(campaignId))));
-        System.out.printf("[coupon-q9] container=%s runId=%s clientId=%d->%d rejected=%s stored=%s lateSet=%s removed=%d finalSet=%s accepting=%s issued=%d%n",
+        System.out.printf("[coupon-q9] container=%s runId=%s clientId=%d->%d rejected=%s stored=%s lateProcessing=%s keysLeft=%d finalProcessing=%s accepting=%s issued=%d%n",
             containerId, beforeRunId, beforeId, afterId, rejected.getStatusCode(), storedAgain.getStatusCode(), membersAfterUnpause,
             removed, finalMembers, couponFacade.status(), fixture.issuedCount(campaignId));
         assertAll(
@@ -662,7 +721,7 @@ class CouponLocalRedisFaultIntegrationTest {
 
     // ------------------------------------------------------------------ Q10
 
-    @DisplayName("Q10: commit 뒤 반환 직전에 Redis 가 멈춰도 201·쿠폰·발급 수가 유지되고 닫힌다. unpause 뒤 종료·DB 결과와 같은 연결 경과를 확인하고 자기 token 만 정리한 뒤 명시적으로 열어 새 요청을 수용한다.")
+    @DisplayName("Q10: commit 뒤 종료 기록 직전에 Redis 가 멈춰도 201·쿠폰·발급 수가 유지되고 닫힌다. unpause 뒤 종료·DB 결과와 같은 연결 경과를 확인하고 자기 대기실 키를 무효화한 뒤 명시적으로 열어 새 등록·발급을 수용한다.")
     @Test
     void q10ReleaseFailure() throws Exception {
         String testCase = "Q10";
@@ -676,52 +735,53 @@ class CouponLocalRedisFaultIntegrationTest {
         recording.log().append(Map.of("event", "before", "case", testCase, "clientId", beforeId, "runId", beforeRunId));
         requireNoOtherClients(testCase, beforeId);
 
-        recording.beforeNextRelease(() -> {
+        String issuerWaiting = admit(testCase, issuer, campaignId);
+        recording.beforeNextFinish(() -> {
             try {
                 pause(testCase);
             } catch (Exception e) {
-                throw new IllegalStateException("반환 직전 pause 실패", e);
+                throw new IllegalStateException("종료 기록 직전 pause 실패", e);
             }
         });
         ResponseEntity<ApiResponse<CouponV1Dto.CouponResponse>> created;
         try {
-            created = issue(testCase, issuer, campaignId);
+            created = issue(testCase, issuer, campaignId, issuerWaiting);
         } finally {
             unpause(testCase);
         }
-        String issuerToken = recording.tokenOf(issuer);
-        String releaseOutcome = recording.releaseOutcomeOf(issuerToken);
+        String issuerToken = recording.waitingIdOf(issuer);
+        String releaseOutcome = recording.finishOutcomeOf(issuerToken);
         boolean closedAfterFault = !couponFacade.status();
 
         long afterId = clientId();
         String afterRunId = runId();
         Set<String> membersAfterUnpause = observedMembers();
         recording.log().append(Map.of("event", "after", "case", testCase, "clientId", afterId, "runId", afterRunId,
-            "issuerToken", String.valueOf(issuerToken), "releaseOutcome", String.valueOf(releaseOutcome),
-            "membersAfterUnpause", membersAfterUnpause,
+            "issuerWaitingId", String.valueOf(issuerToken), "finishOutcome", String.valueOf(releaseOutcome),
+            "processingAfterUnpause", membersAfterUnpause,
             "db", Map.of("issued", fixture.issuedCount(campaignId), "coupons", fixture.couponCount(campaignId))));
         assertAll(
             () -> assertThat(created.getStatusCode()).as("확정된 발급은 201 유지").isEqualTo(HttpStatus.CREATED),
             () -> assertThat(fixture.couponCount(campaignId, issuer)).isEqualTo(1),
             () -> assertThat(fixture.issuedCount(campaignId)).isEqualTo(1),
-            () -> assertThat(releaseOutcome).as("실제 SREM 실패/timeout").startsWith("failed"),
+            () -> assertThat(releaseOutcome).as("실제 finish Lua 실패/timeout").startsWith("failed"),
             () -> assertThat(closedAfterFault).isTrue(),
             () -> assertThat(afterId).isEqualTo(beforeId),
             () -> assertThat(afterRunId).isEqualTo(beforeRunId)
         );
 
-        // 종료된 실행의 자기 token 에 대한 늦은 SREM 만 남을 수 있는 조건: 이후 보낸 명령은 이 token 의 SREM 뿐이고, 같은 연결의 후속 응답을 받았다.
-        recording.cleanupStep(testCase);
-        long removed = couponFacade.cleanup(List.of(issuerToken));
+        // DB 결과(201·쿠폰·발급 수)와 같은 연결의 후속 응답을 확인했다. 대기 상태를 무효화하고 새 대기실로 다시 연다(§12.5 원칙).
+        invalidateWaiting(testCase);
+        long removed = observedWaitingKeys();
         Set<String> afterCleanup = observedMembers();
         assertThat(afterCleanup).isEmpty();
         assertThat(couponFacade.open()).isTrue();
-        var admitted = issue(testCase, next, campaignId);
+        var admitted = issue(testCase, next, campaignId, admit(testCase, next, campaignId));
         Set<String> finalMembers = observedMembers();
-        recording.log().append(Map.of("event", "cleanup-and-reopen", "case", testCase, "tokens", List.of(issuerToken), "removed", removed,
+        recording.log().append(Map.of("event", "invalidate-and-reopen", "case", testCase, "waitingIds", List.of(issuerToken), "keysLeft", removed,
             "afterCleanup", afterCleanup, "newRequest", admitted.getStatusCode().value(), "finalMembers", finalMembers,
             "db", Map.of("issued", fixture.issuedCount(campaignId), "coupons", fixture.couponCount(campaignId))));
-        System.out.printf("[coupon-q10] container=%s runId=%s clientId=%d->%d created=%s release=%s lateSet=%s removed=%d reopenedRequest=%s finalSet=%s issued=%d%n",
+        System.out.printf("[coupon-q10] container=%s runId=%s clientId=%d->%d created=%s finish=%s lateProcessing=%s keysLeft=%d reopenedRequest=%s finalProcessing=%s issued=%d%n",
             containerId, beforeRunId, beforeId, afterId, created.getStatusCode(), releaseOutcome, membersAfterUnpause, removed,
             admitted.getStatusCode(), finalMembers, fixture.issuedCount(campaignId));
         assertAll(

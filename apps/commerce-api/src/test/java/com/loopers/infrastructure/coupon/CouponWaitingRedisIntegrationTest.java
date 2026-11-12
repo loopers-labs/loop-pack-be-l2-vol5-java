@@ -2,6 +2,7 @@ package com.loopers.infrastructure.coupon;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.loopers.config.CouponAdmissionProperties;
 import com.loopers.config.redis.RedisConfig;
 import com.loopers.config.redis.RedisProperties;
 import com.loopers.domain.coupon.CouponAdmissionRepository.AdmissionProgress;
@@ -13,6 +14,7 @@ import com.loopers.domain.coupon.CouponAdmissionRepository.StartOutcome;
 import com.loopers.domain.coupon.CouponWaitingSnapshot;
 import com.loopers.domain.coupon.CouponWaitingState;
 import com.loopers.fixture.CouponRedisTarget;
+import com.loopers.testcontainers.RedisTestContainersConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -34,6 +36,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
@@ -75,6 +78,8 @@ class CouponWaitingRedisIntegrationTest {
     @Autowired
     private RedisProperties redisProperties;
     @Autowired
+    private CouponAdmissionProperties admissionProperties;
+    @Autowired
     @Qualifier(RedisConfig.REDIS_TEMPLATE_MASTER)
     private RedisTemplate<String, String> master;
 
@@ -115,6 +120,24 @@ class CouponWaitingRedisIntegrationTest {
             assertThat(master.type(key)).as("시작 전 키가 비어 있어야 한다: " + key).isEqualTo(DataType.NONE);
         }
         ownCampaigns.add(id);
+    }
+
+    @DisplayName("주입된 template 은 fixture 컨테이너의 master 서버에 연결되고, 앱 설정의 C 는 3 이다.")
+    @Test
+    void usesMasterAndConfiguredCapacity() {
+        Properties replication = master.execute((RedisCallback<Properties>) c -> c.serverCommands().info("replication"));
+        Properties server = master.execute((RedisCallback<Properties>) c -> c.serverCommands().info("server"));
+
+        System.out.printf("[coupon-waiting] master=%s:%d database=%d container=%s containerRunId=%s connectedRunId=%s"
+                + " redis_version=%s role=%s C=%d%n",
+            redisProperties.master().host(), redisProperties.master().port(), redisProperties.database(),
+            RedisTestContainersConfig.containerId(), RedisTestContainersConfig.serverRunId(), server.getProperty("run_id"),
+            server.getProperty("redis_version"), replication.getProperty("role"), admissionProperties.capacity());
+        assertAll(
+            () -> assertThat(server.getProperty("run_id")).isEqualTo(RedisTestContainersConfig.serverRunId()),
+            () -> assertThat(replication.getProperty("role")).isEqualTo("master"),
+            () -> assertThat(admissionProperties.capacity()).isEqualTo(C)
+        );
     }
 
     // ---------- WQ2: 등록 ----------

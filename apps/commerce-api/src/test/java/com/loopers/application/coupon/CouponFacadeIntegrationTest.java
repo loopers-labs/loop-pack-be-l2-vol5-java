@@ -71,7 +71,6 @@ import static org.junit.jupiter.api.Assertions.assertAll;
  * 대역으로 DB 경쟁만 만든다. 실제 자리 상한 근거는 Redis 를 쓰는 다른 사례다.
  *
  * <p>정리 순서: 붙잡기 해제 → worker 종료 확인 → 이 테스트 캠페인의 대기실 키만 삭제 → DB 정리. 종료를 확인하지 못하면 정리를 보류한다.
- * 기본 token 키는 건드리지 않으며 시작·끝에 비어 있는지만 확인한다(대기실 발급이 token 경로를 쓰지 않는다는 확인).
  */
 @SpringBootTest(properties = SqlCapture.PROPERTY)
 // fixture Redis 주소 주입 등으로 이 클래스만의 컨텍스트가 생긴다. 끝나면 닫아 MySQL 연결 풀을 반납한다(누적 시 Too many connections).
@@ -81,7 +80,6 @@ class CouponFacadeIntegrationTest {
 
     private static final Duration DEADLINE = Duration.ofSeconds(20);
     private static final Duration TERMINATION_DEADLINE = Duration.ofSeconds(30);
-    private static final String TOKEN_KEY = CouponAdmissionRedisRepository.PERMITS_KEY;
 
     @DynamicPropertySource
     static void pinToFixtureContainer(DynamicPropertyRegistry registry) {
@@ -121,7 +119,6 @@ class CouponFacadeIntegrationTest {
     void requireFixtureRedis() {
         CouponRedisTarget.verify(redisProperties, master);
         targetVerified = true;
-        assertThat(master.type(TOKEN_KEY)).as("시작 전 기본 token 키가 비어 있어야 한다").isEqualTo(DataType.NONE);
     }
 
     @AfterEach
@@ -135,9 +132,6 @@ class CouponFacadeIntegrationTest {
             ownCampaigns.forEach(id -> master.delete(CouponAdmissionRedisRepository.waitingKeys(id)));
         }
         databaseCleanUp.truncateAllTables();
-        if (targetVerified) {
-            assertThat(master.type(TOKEN_KEY)).as("대기실 발급은 기본 token 키를 쓰지 않는다").isEqualTo(DataType.NONE);
-        }
     }
 
     /** 캠페인을 만들고 그 ID 의 대기실 키가 비어 있음을 확인한 뒤 소유로 기록한다. 남은 값은 지우지 않고 실패한다. */

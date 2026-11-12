@@ -763,3 +763,22 @@ Codex 최종 코드 검토에서 지적된 test 실패 처리 3곳만 고쳤다.
 - 원시 근거: 로컬 `docs/week8/verification/runs/20261112-unit3-service-facade/`의 gradle.log·timing.txt·test-results XML·Checkstyle XML. 실제 명령/필터는 gradle.log에 보존했다. Facade 테스트는 worker 종료 확인 뒤 자기 캠페인 대기 키만 정리했고 기본 token 키는 시작/끝 NONE 확인만 했다.
 - 임시 호환/한계: Controller는 아직 issue(user,campaign) → 새 issue(...,null) 경로라 기존 쿠폰만 반환하고 신규는 ID_REQUIRED다. campaign-id 미설정 open은409다. CouponApiE2ETest·CouponHttpFaultE2ETest·CouponLocalFixtureConfigIntegrationTest·opt-in CouponLocalRedisFaultIntegrationTest는 4단위 전환 전 예상 실패로 미실행이며 통과로 기록하지 않는다. HTTP 헤더/DTO/202·등록 limiter/새 W6/O11 조립·자동 scheduler·전체 회귀/check·장애/부하 실험은 미실행이다.
 - 4단위에서 제거할 것은 임시 issue 2인수 메서드, cleanup API/DTO와 전용 경로, 구 acquire/release 포트·Set/Lua·전용 test 대역이다. 유효한 TX/DB/응답 유실/자원 정리 검증은 새 경로로 유지한다. Codex 검토에서 필수 수정·불필요한 제품 계층 추가는 발견하지 못했다.
+
+## 대기실 확장 4단위 — HTTP·등록 요청률 제한·구 경로 제거 (2026-11-12)
+
+- 기준: volume-8 / 0ca8ff5(3단위 커밋). Claude Code가 구현/검사했고 Codex가 코드·보존 XML/로그를 검토했다. Codex의 제품 검사 재실행은 없었다.
+- waiting POST/GET·선택 X-WAITING-ID·발급 200/201/202·WaitingResponse와 API 명세를 연결했다. 등록 handler 앞의 singleton Resilience4j interceptor는 사용자 식별/인자 변환보다 먼저 허가하며 timeout=0이다. 발급/조회/목록/제어에는 적용하지 않는다. 기존 WebMvcConfig는 유지하고 별도 CouponWaitingConfig가 등록한다.
+- 제거: cleanup API/전용 DTO·Facade 임시 issue(user,campaign)·구 acquire/release 포트/Set/Lua·token 전용 대역/검사. 유효한 DB/TX·응답 유실/timeout·종료 불명/정리 보류 검증은 start/finish 경로로 전환했다. 기존 master·앱 C=3 확인은 WaitingRedisIntegrationTest로 옮겼다. W6/O11 제외 목록에는 interceptor/config 두 동작 bean만 추가하고 관리 타입·DDL/행 보존 기대값은 유지했다.
+- HTTP 검사는 시작 설정과 고정 캠페인 fixture를 맞추고 수동 processAdmissions로 READY를 준비한다. 목록의 과거 캠페인 쿠폰은 DB fixture로 준비한다. 준비 코드 검사는 출력 ID와 같은 campaign-id·보존 DB로 재시작한 뒤 새 발급 흐름을 검사한다. RateLimiter 전용 검사는 긴 주기 안의 소진/동시 허가·즉시 거절/재허용·설정 범위·실제 MVC 선행429·등록 한도 소진 중 발급/조회/목록/제어 유지 등을 확인했다.
+
+| 실행(KST) | 결과와 범위 |
+|---|---|
+| 15:31:50~15:33:34 | 관련 23클래스 필터·Checkstyle main/test, XML 38개 합계 233건 실패/오류/skip 0·Checkstyle 오류 각 0. BUILD SUCCESSFUL, 34 actionable tasks executed |
+| 15:33:42~15:34:17 | 별도 w6OutboxRecoveryTest O11, 1건 실패/오류/skip 0. BUILD SUCCESSFUL, 32 actionable tasks executed |
+| 15:42:28~15:43:28 | 정리 조건/명세 보완 뒤 HTTP/정리 guard/ArchUnit, XML 9개 합계 39건 실패/오류/skip 0·Checkstyle 오류 각 0. BUILD SUCCESSFUL, 34 actionable tasks executed |
+
+- JDK21.0.12와 `--rerun-tasks --no-build-cache`를 사용했다. 관련 실행에는 W6 준비/직접 발행·W7 relay lifecycle·쿠폰 Service/Facade/TX/Redis/HTTP·설정 검사가 포함됐다. 보완 후 재실행은 CouponApiE2ETest 17·CouponHttpFaultE2ETest 4·CouponWaitingRateLimitE2ETest 2·ServerSettlementTest 13·ArchitectureTest 3뿐이며 나머지/O11을 다시 실행한 것으로 쓰지 않는다.
+- 보완 1: 세 HTTP 테스트는 test 전용 OwnedWaitingKeys를 통해 키 5개가 모두 비었을 때만 자기 키 정리를 허용한다. 첫/마지막 키 marker로 준비 실패 뒤 보존과 정상 소유 뒤 정리를 검사했다. 기존 서버/worker 종료·sticky 보류는 유지한다.
+- 보완 2: 발급 200/201/202의 생성 OpenAPI가 ApiResponse의 meta/data 구조와 각 data 타입을 표현하도록 수정했다. 실제 /v3/api-docs의 참조 스키마를 검사했다. 제품 wrapper 타입/실제 JSON은 추가·변경하지 않았다. Codex 재검토에서 두 지적의 해소와 추가 필수 수정 없음을 확인했다.
+- 원시 근거: 로컬 `docs/week8/verification/runs/20261112-unit4-http-ratelimit/a-related/`, `b-o11/`, `docs/week8/verification/runs/20261112-unit4-cleanup-schema-fix/`의 명령/로그·timing·XML/Checkstyle. 실제 Redis는 fixture 8.10.1 master/run_id를 대조했다. opt-in 로컬 Redis 장애 소스의 포트/키/관찰 대응은 컴파일만 확인했고 실제 pause/키 무효화/재개는 실행하지 않았다. 그 테스트 코드를 승인된 장애별 복구 절차/검증 근거로 사용하지 않는다.
+- 남은 범위: 5단위 자동 scheduler/실제 자동 주기·종료 검사와 scheduler bean의 W6/O11 격리, 이후 별도 전체 회귀가 남는다. 전체 check·부하/장애 실험은 이번에 수행하지 않았다. 현재 입장은 수동 processAdmissions에 의존한다.

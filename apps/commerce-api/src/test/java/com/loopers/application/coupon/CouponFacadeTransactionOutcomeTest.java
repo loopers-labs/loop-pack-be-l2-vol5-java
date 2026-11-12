@@ -46,9 +46,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -127,12 +125,10 @@ class CouponFacadeTransactionOutcomeTest {
         return facade.issue(USER, CAMPAIGN, WAITING_ID).result();
     }
 
-    /** 종료 기록은 한 번, 지정 결과로만. 기본 token 경로는 쓰지 않는다. */
+    /** 종료 기록은 한 번, 지정 결과로만. */
     private void verifyFinishedOnce(CouponWaitingState outcome) {
         verify(admissionRepository).finish(eq(CAMPAIGN), eq(USER), eq(WAITING_ID), any());
         verify(admissionRepository).finish(CAMPAIGN, USER, WAITING_ID, outcome);
-        verify(admissionRepository, never()).tryAcquire(anyString(), anyInt());
-        verify(admissionRepository, never()).release(anyString());
     }
 
     private static ErrorType errorTypeOf(Throwable thrown) {

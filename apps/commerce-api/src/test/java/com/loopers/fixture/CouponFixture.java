@@ -68,6 +68,30 @@ public class CouponFixture {
         return activeCampaign("테스트 캠페인", totalQuota, CouponBenefitType.FIXED_AMOUNT, 5_000L);
     }
 
+    /**
+     * 시작 설정의 운영 캠페인 ID(commerce.coupon.waiting.campaign-id)와 같은 고정 ID 로 ACTIVE 캠페인을 만든다.
+     * 모델 행동으로 저장한 뒤 PK 만 바꾼다. 아직 참조하는 행이 없을 때만 호출한다.
+     */
+    public Long operatingCampaign(long id, String name, long totalQuota, CouponBenefitType type, long value) {
+        Long created = activeCampaign(name, totalQuota, type, value);
+        requireOneRow(jdbcTemplate.update("UPDATE coupon_campaign SET id = ? WHERE id = ?", id, created));
+        return id;
+    }
+
+    public Long operatingCampaign(long id, long totalQuota) {
+        return operatingCampaign(id, "운영 캠페인", totalQuota, CouponBenefitType.FIXED_AMOUNT, 5_000L);
+    }
+
+    /** 운영 캠페인이 아닌 과거 캠페인의 발급 결과를 DB 에 직접 만든다. 캠페인의 현재 혜택을 복사하고 발급 수를 하나 늘린다. */
+    public Long storedCoupon(Long userId, Long campaignId) {
+        requireOneRow(jdbcTemplate.update("""
+            INSERT INTO coupon (user_id, campaign_id, benefit_type, benefit_value, created_at, updated_at)
+            SELECT ?, id, benefit_type, benefit_value, NOW(6), NOW(6) FROM coupon_campaign WHERE id = ?
+            """, userId, campaignId));
+        requireOneRow(jdbcTemplate.update("UPDATE coupon_campaign SET issued_count = issued_count + 1 WHERE id = ?", campaignId));
+        return jdbcTemplate.queryForObject("SELECT id FROM coupon WHERE user_id = ? AND campaign_id = ?", Long.class, userId, campaignId);
+    }
+
     /** 생성 후 test SQL 로 INACTIVE 로 바꾼다. */
     public Long inactiveCampaign(long totalQuota) {
         Long id = activeCampaign(totalQuota);

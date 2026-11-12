@@ -1,6 +1,8 @@
 package com.loopers.verification.localredis;
 
-import com.loopers.domain.coupon.TokenOnlyAdmissionRepository;
+import com.loopers.domain.coupon.CouponAdmissionRepository;
+import com.loopers.domain.coupon.CouponWaitingSnapshot;
+import com.loopers.domain.coupon.CouponWaitingState;
 import com.loopers.verification.localredis.CouponLocalRedisFaultIntegrationTest.FaultLog;
 import com.loopers.verification.localredis.CouponLocalRedisFaultIntegrationTest.PauseGuard;
 import com.loopers.verification.localredis.CouponLocalRedisFaultIntegrationTest.RecordingAdmissionRepository;
@@ -12,6 +14,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -29,21 +32,35 @@ class CouponLocalRedisFaultGuardTest {
     @TempDir
     Path dir;
 
-    private static final class MemoryPermits implements TokenOnlyAdmissionRepository {
-        private final Set<String> permits = ConcurrentHashMap.newKeySet();
+    /** start 는 STARTED, finish 는 APPLIED 로만 답하는 메모리 대역. 호출된 waitingId 를 남긴다. */
+    private static final class MemoryWaiting implements CouponAdmissionRepository {
+        private final Set<String> processing = ConcurrentHashMap.newKeySet();
 
         @Override
-        public Acquisition tryAcquire(String token, int capacity) {
-            if (permits.contains(token) || permits.size() < capacity) {
-                permits.add(token);
-                return Acquisition.ACQUIRED;
-            }
-            return Acquisition.FULL;
+        public Start start(Long campaignId, Long userId, String waitingId) {
+            processing.add(waitingId);
+            return new Start(StartOutcome.STARTED, null);
         }
 
         @Override
-        public long release(String token) {
-            return permits.remove(token) ? 1 : 0;
+        public FinishOutcome finish(Long campaignId, Long userId, String waitingId, CouponWaitingState outcome) {
+            processing.remove(waitingId);
+            return FinishOutcome.APPLIED;
+        }
+
+        @Override
+        public Registration register(Long campaignId, Long userId, String newWaitingId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Optional<CouponWaitingSnapshot> find(Long campaignId, Long userId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public AdmissionProgress processAdmissions(Long campaignId, int capacity, long admissionDurationMillis, boolean soldOut, boolean canAdmit) {
+            throw new UnsupportedOperationException();
         }
     }
 
@@ -90,19 +107,19 @@ class CouponLocalRedisFaultGuardTest {
         return Files.exists(path) ? Files.readString(path) : "";
     }
 
-    @DisplayName("실패한 요청이 token 을 만들지 않았어도 보류하면 다음 사례가 막히고, 다른 요청의 성공·빈 Set 으로 풀리지 않는다.")
+    @DisplayName("실패한 요청이 start 전이었어도 보류하면 다음 사례가 막히고, 다른 요청의 성공·빈 Set 으로 풀리지 않는다.")
     @Test
     void withheldContextBlocksNextCase() throws Exception {
-        MemoryPermits permits = new MemoryPermits();
-        RecordingAdmissionRepository recording = new RecordingAdmissionRepository(permits, log());
+        MemoryWaiting waiting = new MemoryWaiting();
+        RecordingAdmissionRepository recording = new RecordingAdmissionRepository(waiting, log());
 
-        recording.withhold("Q9 응답 없음, token 없음(대역)");
+        recording.withhold("Q9 응답 없음, start 전(대역)");
         recording.next("Q10", 2L, 1L);
-        recording.tryAcquire("other", 3);
-        recording.release("other");
+        recording.start(1L, 2L, "other");
+        recording.finish(1L, 2L, "other", CouponWaitingState.ISSUED);
 
         assertAll(
-            () -> assertThat(permits.permits).isEmpty(),
+            () -> assertThat(waiting.processing).isEmpty(),
             () -> assertThatThrownBy(recording::requireNotWithheld).hasMessageContaining("Q9 응답 없음"),
             () -> assertThat(logText()).contains("context-withheld")
         );
@@ -111,7 +128,7 @@ class CouponLocalRedisFaultGuardTest {
     @DisplayName("보류가 없으면 다음 사례가 시작할 수 있다.")
     @Test
     void notWithheldAllowsNextCase() {
-        RecordingAdmissionRepository recording = new RecordingAdmissionRepository(new MemoryPermits(), log());
+        RecordingAdmissionRepository recording = new RecordingAdmissionRepository(new MemoryWaiting(), log());
 
         recording.requireNotWithheld();
     }
