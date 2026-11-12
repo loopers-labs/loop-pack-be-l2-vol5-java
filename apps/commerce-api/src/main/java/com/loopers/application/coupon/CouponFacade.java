@@ -31,8 +31,6 @@ public class CouponFacade {
 
     public sealed interface IssueResult {
 
-        int issueNumber();
-
         record Accepted(int issueNumber) implements IssueResult {
         }
 
