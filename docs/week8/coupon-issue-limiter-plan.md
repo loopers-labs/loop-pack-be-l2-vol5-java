@@ -12,7 +12,7 @@
 | 1 | 레디스로 직접 구현한 세마포어 | 없음 |
 | 2 | Redisson 세마포어 (`RPermitExpirableSemaphore`) | 없음 (pub/sub 으로 깨어남, 순서 보장 없음) |
 | 3 | 직접 구현한 fair 세마포어 | 있음 (도착 순서대로) |
-| 4 | bulkhead | — |
+| 4 | Redisson 세마포어 async (`RPermitExpirableSemaphore` async API) + 비동기 응답 | 없음 (2번과 같음). 기다리는 동안 워커 스레드를 잡지 않음 |
 
 ## 발급 흐름 (큰 틀)
 
@@ -22,6 +22,7 @@
 2. 이미 있으면 중복 오류로 리턴한다.
 3. 없으면 세마포어 획득을 시도한다. 1번은 실패하면 600ms 뒤 한 번 재시도, 2번은 재시도 없이 최대 600ms 기다린다 (Redisson waitTime).
    3번은 먼저 시도하지 않고 대기열 뒤에 서서 차례를 최대 600ms 기다린다.
+   4번은 2번과 같이 기다리되, 워커 스레드는 기다리지 않고 돌아간다 (응답은 허가·발급이 끝난 뒤 비동기로).
 4. 그래도 실패하면 리턴한다.
 5. 획득하면 발급 로직을 실행한다.
 6. 발급 로직이 성공하든 실패하든(예외 포함) permit 을 반납한다.
@@ -68,7 +69,7 @@
 
 ## 3번 — 직접 구현 fair 세마포어
 
-구현됨: `RedisFairCouponIssueSemaphore`, `RedisConfig` 의 pub/sub 연결·리스너 컨테이너(modules/redis). 설계 기록은 [design.md 8-4, DR-62](../week2/design.md).
+구현했다가 4번으로 교체: `RedisFairCouponIssueSemaphore` 는 커밋 25b82e0 에 남아 있다. `RedisConfig` 의 pub/sub 연결·리스너 컨테이너(modules/redis)는 남겼다. 설계 기록은 [design.md DR-62](../week2/design.md).
 
 - 범위: 프로모션마다 ZSET 두 개.
   - `coupon-issue:fair-semaphore:{promotionId}:holders`: member 는 허가 토큰, score 는 lease 만료 시각(µs). 1번과 같은 토큰 채우기.
@@ -86,9 +87,24 @@
 - 시각은 Redis `TIME`. Lua 숫자는 %.14g 로 바뀌어 µs 시각이 잘리므로 score 는 %.0f 문자열로 넘긴다.
 - Redis 오류·인터럽트: 획득 실패 (fail-closed). 반납을 불러 마감 전인 큐 항목과 받은 허가를 지운다. 반납 오류는 로그만 남긴다.
 
+## 4번 — Redisson 세마포어 async
+
+구현됨: `RedissonAsyncCouponIssueSemaphore`, `CouponIssueLimiter` 의 스레드 풀. 설계 기록은 [design.md 8-4, DR-63](../week2/design.md).
+처음 계획한 4번(bulkhead)을 이 방식으로 바꿨다 (2026-11-12, 사용자 결정).
+
+- 세마포어: 2번과 같은 키 `coupon-issue:semaphore:{promotionId}`, 같은 순서를 async API 로 부른다.
+  `trySetPermitsAsync(200)` → `tryAcquireAsync(waitTime 600ms, lease 2s)`. 반납은 `tryReleaseAsync` 이고 기다리지 않는다.
+- 비동기 경계: 컨트롤러가 `CompletableFuture` 를 돌려준다 (Spring MVC async). 사용자·프로모션·중복 확인은 워커 스레드에서 동기로 하고, 그 뒤 워커 스레드는 반납된다.
+  - 세마포어만 async 로 바꾸고 리미터에서 기다리면 2번과 같다. 그래서 경계를 컨트롤러까지 올렸다.
+- 발급 TX 실행: 허가 결과는 Redisson(netty) 스레드로 온다. 거기서 JDBC 를 돌리지 않고 리미터가 가진 스레드 풀로 넘긴다.
+  - 스레드 100, 큐 200 (`coupon-issue.limiter.executor.*`). 큐가 넘치면 TX 를 실행하지 않고 허가를 반납한 뒤 503 `COUPON_ISSUE_BUSY`.
+  - 풀은 빈으로 두지 않는다 (Executor 빈이 생기면 Boot 의 `applicationTaskExecutor` 자동 구성이 빠진다).
+- `spring.mvc.async.request-timeout`: 5s. 넘으면 기존 `Throwable` 핸들러로 500. TX 는 취소되지 않아, 응답은 실패인데 발급은 될 수 있다.
+- permit 200, lease 2s, wait-time 600ms (2·3번과 같음). Redis 오류는 fail-closed, 반납 오류는 로그만.
+
 ## 미정 항목
 
 - 1번 부하 테스트 조건과 비교 지표 — 나중에 정한다.
 - 2번 부하 테스트 (1번과 같은 조건으로 비교).
 - 3번 테스트 (단위·통합, `PromotionV1ApiE2ETest` 의 허가 채우기) 와 부하 테스트.
-- 4번은 3번을 마친 뒤 다룬다.
+- 4번 부하 테스트 (2·3번과 같은 조건). 스레드 수·큐 크기는 여러 값으로 비교한다.
