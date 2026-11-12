@@ -19,6 +19,7 @@ Loopers 에서 제공하는 Spring Boot(Java 21) 멀티 모듈 커머스 템플�
 ## 빌드 및 테스트 명령어
 
 - 학습용 실험 테스트(`@Tag("experiment")`)는 기본 `test`/`check`에서 빠지며 `./gradlew :apps:commerce-streamer:experimentTest`(api도 동일)로 실행합니다.
+- streamer를 별도 프로세스로 띄우는 E2E 테스트(`@Tag("e2e")`)도 기본 `test`/`check`에서 빠지며 `./gradlew :apps:commerce-api:e2eTest`로 실행합니다.
 - 특정 테스트 클래스만 실행: `./gradlew :apps:commerce-api:test --tests "com.loopers.interfaces.api.ErrorTypeHttpStatusMapperTest"`
 - 특정 테스트 메소드만 실행: `./gradlew :apps:commerce-api:test --tests "com.loopers.interfaces.api.ErrorTypeHttpStatusMapperTest.<메소드명>"`
 - 최종 검사(Checkstyle + 테스트): `./gradlew :apps:commerce-api:check`
