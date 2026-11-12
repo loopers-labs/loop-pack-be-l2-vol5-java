@@ -723,3 +723,31 @@ Codex 최종 코드 검토에서 지적된 test 실패 처리 3곳만 고쳤다.
 - 결과: BUILD SUCCESSFUL, 34 actionable tasks 모두 executed. XML 7개 합계 62건 실행·실패/오류/skip 0. Waiting은 최상위 1·CampaignId 8·SchedulerDelay 13·AdmissionDuration 13, RateLimit 15, 기존 Admission 설정 9, ArchitectureTest 3이다. Checkstyle main/test XML 오류 각 0개다. streamer bootJar·pg-simulator 컴파일은 기존 작업 의존성이며 해당 앱의 실행 검증은 아니다.
 - 원시 근거는 로컬 `docs/week8/verification/runs/20261112-unit1-config-errortype/`의 gradle.log·timing.txt·test-results XML·checkstyle XML에 보존했다. Codex가 보고와 실제 파일의 집계·시각·작업 실행 결과를 대조했다.
 - 완료 범위는 WQ1의 설정 부분이다. 실제 대기실 비활성/open/close·운영 ID 검사·Service/HTTP 연결·실제 RateLimiter·스케줄러·W6/O11·전체 회귀·장애/부하 실험은 이번에 검증하지 않았다. 새 ErrorType은 아직 사용처가 없고 실제 HTTP 오류 응답 검증은 후속이다.
+
+## 대기실 확장 2단위 — 포트·Lua·Redis 저장소 (2026-11-12)
+
+- 기준: volume-8 / e7c7fc7(확장 1단위 커밋). Claude Code가 구현·실행했고 Codex가 실제 소스와 보존 XML/로그를 읽어 검토했다. Codex는 제품 검사를 재실행하지 않았다.
+- 변경: CouponWaitingState/Snapshot, CouponAdmissionRepository의 대기실 5메서드/결과 타입, Redis adapter와 등록·조회·입장 처리·시작·종료 Lua다. 공통 검증 Lua를 각 작업 앞에 합쳐 작업별 한 스크립트로 실행한다. 기존 master String template을 쓰고 기존 token 포트·Service/Facade·HTTP 동작은 이 단계에서 유지했다. 기존 test 대역 5곳은 test 전용 TokenOnlyAdmissionRepository를 구현하도록 최소 변경했다.
+- 실제 fixture Redis에서 WQ2~WQ6/WQ10의 저장소 부분(동시 등록 하나·순번·C=3/앞순번 승격·기한 비연장/회수·PROCESSING 미회수·만료/시작 경합·동시 STARTED 하나·finish 대조/자기 자리 반환·품절/배정 중단)을 확인했다. 잘못된 키/기록/색인·정확 정수 범위도 검사했다. HTTP/DB 발급 경로 전체의 충족 근거는 아니다.
+- 실행 환경: JDK 21.0.12, fixture Redis 8.10.1 master, CouponRedisTarget의 endpoint/DB/master/run_id 대조. 각 테스트는 자기 캠페인 키만 사용하고 worker 종료 확인 뒤 정리했다. 공유 로컬 Redis pause·FLUSHALL·장애/부하 실험은 하지 않았다.
+
+| 실행(KST) | 검사와 실제 결과 |
+|---|---|
+| 14:26:33~14:27:26 | Checkstyle main/test 및 관련 클래스 13개 필터. XML 22개, 165건 실행·실패/오류/skip 0, Checkstyle 오류 각 0. BUILD SUCCESSFUL, 34 actionable tasks executed |
+| 14:27:51~14:28:14 | 만료/start 경합 신호 시점을 기한 -4~+3ms로 조정한 뒤 Redis 클래스 재실행. 18건 실패/오류/skip 0·Checkstyle test 오류 0, 33 actionable tasks executed. STARTED 2·EXPIRED(회수 전) 1·EXPIRED(회수 후) 5 관찰 |
+| 14:35:09~14:35:34 | adapter의 필수 sequence/PROCESSING 기한 검증 누락 보완 뒤 변환 8·실제 Redis 18·ArchUnit 3, 총 29건 실패/오류/skip 0. Checkstyle main/test 오류 각 0, 34 actionable tasks executed. 경합 STARTED 3·EXPIRED(회수 후) 5 관찰 |
+
+- 첫 실행 클래스/건수: CouponWaitingRedisIntegrationTest 18, CouponWaitingReplyConversionTest 4, CouponAdmissionRedisIntegrationTest 14, CouponAdmissionServiceTest 25, CouponFacadeIntegrationTest 7, ServerSettlementTest 14, CouponApiE2ETest 12, CouponHttpFaultE2ETest 3, CouponLocalRedisFaultGuardTest 6, Properties 3클래스 59, ArchitectureTest 3. 마지막 보완 후 나머지 클래스를 재실행한 것으로 기록하지 않는다.
+- 세 실행 모두 `-Dorg.gradle.java.home`으로 확인한 JDK 21을 사용하고 `--rerun-tasks --no-build-cache --console=plain`으로 실행했다. 마지막 실행의 작업/필터는 다음과 같다.
+
+```sh
+./gradlew -Dorg.gradle.java.home="$JAVA_HOME" \
+  :apps:commerce-api:checkstyleMain :apps:commerce-api:checkstyleTest \
+  :apps:commerce-api:test --tests '*CouponWaitingReplyConversionTest' \
+  --tests '*CouponWaitingRedisIntegrationTest' --tests '*ArchitectureTest' \
+  --rerun-tasks --no-build-cache --console=plain
+```
+
+- 보완: adapter는 모든 snapshot의 sequence, READY/PROCESSING의 필수 expiresAtMillis와 다른 상태에 존재하는 기한의 문자열/양수/2^53-1 범위를 검사한다. 실제 응답 expiresAt은 READY만 채운다. Lua/상태 전이는 그대로며 기존 잘못된 fixture는 다른 필드를 정상화해 원래 오류를 검사하도록 유지했다. Codex 최종 검토에서 추가 필수 수정은 발견하지 못했다.
+- 로컬 원시 근거: `docs/week8/verification/runs/20261112-unit2-waiting-redis/`, `20261112-unit2-waiting-redis-race-rerun/`, `20261112-unit2-reply-validation-fix/`의 gradle.log·timing.txt·XML/Checkstyle 사본. 각 경합 분포는 해당 실행 관찰이며 매번 양쪽 결과 출현을 보장하지 않는다.
+- 미완료: Service/Facade·수용 닫기·DB 종료와 finish 연결·HTTP/RateLimiter·내부 스케줄러·W6/O11 확장 조립은 후속이다. 전체 회귀/check·장애/부하 실험은 미실행이며 opt-in 로컬 Redis 장애 소스는 컴파일만 확인했다. 기존 기본 실행을 확장 검증으로 대체하지 않는다.

@@ -1,6 +1,6 @@
 package com.loopers.verification.localredis;
 
-import com.loopers.domain.coupon.CouponAdmissionRepository;
+import com.loopers.domain.coupon.TokenOnlyAdmissionRepository;
 import com.loopers.verification.localredis.CouponLocalRedisFaultIntegrationTest.FaultLog;
 import com.loopers.verification.localredis.CouponLocalRedisFaultIntegrationTest.PauseGuard;
 import com.loopers.verification.localredis.CouponLocalRedisFaultIntegrationTest.RecordingAdmissionRepository;
@@ -29,7 +29,7 @@ class CouponLocalRedisFaultGuardTest {
     @TempDir
     Path dir;
 
-    private static final class MemoryPermits implements CouponAdmissionRepository {
+    private static final class MemoryPermits implements TokenOnlyAdmissionRepository {
         private final Set<String> permits = ConcurrentHashMap.newKeySet();
 
         @Override

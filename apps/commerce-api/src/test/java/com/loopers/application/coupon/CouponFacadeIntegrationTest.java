@@ -7,6 +7,7 @@ import com.loopers.domain.common.ListSort;
 import com.loopers.domain.common.PageCommand;
 import com.loopers.domain.common.PageResult;
 import com.loopers.domain.coupon.CouponAdmissionRepository;
+import com.loopers.domain.coupon.TokenOnlyAdmissionRepository;
 import com.loopers.domain.coupon.CouponCampaignIssueData;
 import com.loopers.domain.coupon.CouponCampaignModel;
 import com.loopers.domain.coupon.CouponCampaignRepository;
@@ -378,7 +379,7 @@ class CouponFacadeIntegrationTest {
         Long user = fixture.user();
         List<String> redisCalls = Collections.synchronizedList(new ArrayList<>());
         List<List<String>> segments = new ArrayList<>();
-        CouponAdmissionRepository observing = new CouponAdmissionRepository() {
+        CouponAdmissionRepository observing = new TokenOnlyAdmissionRepository() {
             @Override
             public Acquisition tryAcquire(String token, int capacity) {
                 redisCalls.add("acquire tx=" + TransactionSynchronizationManager.isActualTransactionActive()

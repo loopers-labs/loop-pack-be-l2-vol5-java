@@ -6,6 +6,7 @@ import com.loopers.application.coupon.CouponFacade;
 import com.loopers.config.redis.RedisConfig;
 import com.loopers.config.redis.RedisProperties;
 import com.loopers.domain.coupon.CouponAdmissionRepository;
+import com.loopers.domain.coupon.TokenOnlyAdmissionRepository;
 import com.loopers.fixture.CouponFixture;
 import com.loopers.infrastructure.coupon.CouponAdmissionRedisRepository;
 import com.loopers.interfaces.api.ApiResponse;
@@ -173,7 +174,7 @@ class CouponLocalRedisFaultIntegrationTest {
      * 실제 Redis 저장소에 위임하는 test decorator. 명령을 보내기 전에 기록을 남기고, 기록이 실패하면 위임하지 않는다.
      * 순차 요청마다 테스트가 지정한 사용자·캠페인을 함께 기록한다. Q10 은 반환 명령 위임 직전에 한 번 동작을 끼운다.
      */
-    static final class RecordingAdmissionRepository implements CouponAdmissionRepository {
+    static final class RecordingAdmissionRepository implements TokenOnlyAdmissionRepository {
         private final CouponAdmissionRepository delegate;
         private final FaultLog log;
         private final Map<String, String> tokenByUser = new ConcurrentHashMap<>();

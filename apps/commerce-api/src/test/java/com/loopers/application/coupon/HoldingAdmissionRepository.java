@@ -1,6 +1,7 @@
 package com.loopers.application.coupon;
 
 import com.loopers.domain.coupon.CouponAdmissionRepository;
+import com.loopers.domain.coupon.TokenOnlyAdmissionRepository;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -20,7 +21,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 붙잡기는 유한한 deadline 을 가지며 넘으면 예외다(서비스는 이를 획득 불명으로 보고 닫는다).
  * 이 테스트가 Redis 에 보낸 token 을 모두 기록해 정리 대상을 자기 token 으로 한정하고, 반환 호출을 서버 측 완료 관찰로 쓴다.
  */
-public class HoldingAdmissionRepository implements CouponAdmissionRepository {
+public class HoldingAdmissionRepository implements TokenOnlyAdmissionRepository {
 
     private static final String IN_FLIGHT = "IN_FLIGHT";
     private static final String FAILED = "FAILED";

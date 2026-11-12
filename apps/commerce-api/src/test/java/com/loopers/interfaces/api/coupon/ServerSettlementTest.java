@@ -1,7 +1,7 @@
 package com.loopers.interfaces.api.coupon;
 
 import com.loopers.application.coupon.HoldingAdmissionRepository;
-import com.loopers.domain.coupon.CouponAdmissionRepository;
+import com.loopers.domain.coupon.TokenOnlyAdmissionRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
@@ -31,7 +31,7 @@ class ServerSettlementTest {
     private static final Duration SHORT = Duration.ofMillis(200);
 
     /** 메모리 Set 대역. failNext 가 켜지면 다음 획득을 예외로 끝낸다. */
-    private static final class MemoryPermits implements CouponAdmissionRepository {
+    private static final class MemoryPermits implements TokenOnlyAdmissionRepository {
         private final Set<String> permits = ConcurrentHashMap.newKeySet();
         private volatile boolean failNext;
         private volatile CountDownLatch blockAcquire;
