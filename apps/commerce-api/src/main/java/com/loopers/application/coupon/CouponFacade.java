@@ -1,9 +1,9 @@
 package com.loopers.application.coupon;
 
 import com.loopers.domain.coupon.CampaignName;
-import com.loopers.domain.coupon.CouponAdmission;
 import com.loopers.domain.coupon.Coupon;
 import com.loopers.domain.coupon.CouponCampaign;
+import com.loopers.domain.coupon.CouponReservation;
 import com.loopers.domain.coupon.CouponService;
 import com.loopers.domain.coupon.DiscountAmount;
 import com.loopers.domain.coupon.IssueQuota;
@@ -16,18 +16,27 @@ import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 
 @Component
 @RequiredArgsConstructor
 public class CouponFacade {
 
     private final CouponService couponService;
-    private final CouponTransactions couponTransactions;
-    private final CouponAdmission couponAdmission;
-    private final SoldOutCampaigns soldOutCampaigns;
+    private final CampaignCache campaignCache;
+    private final CouponReservation couponReservation;
 
-    public record Issued(Coupon coupon, boolean newlyIssued) {
+    public sealed interface IssueResult {
+
+        int issueNumber();
+
+        record Accepted(int issueNumber) implements IssueResult {
+        }
+
+        record Pending(int issueNumber) implements IssueResult {
+        }
+
+        record Issued(int issueNumber, Coupon coupon) implements IssueResult {
+        }
     }
 
     public CouponCampaign openCampaign(CampaignName name, DiscountAmount discountAmount, IssueQuota totalQuota,
@@ -35,42 +44,21 @@ public class CouponFacade {
         return couponService.open(name, discountAmount, totalQuota, active);
     }
 
-    public Issued issue(Long campaignId, Long userId, Instant now) {
-        Optional<Coupon> existing = couponService.findIssued(campaignId, userId);
-        if (existing.isPresent()) {
-            return new Issued(existing.get(), false);
+    public IssueResult issue(Long campaignId, Long userId, Instant now) {
+        CouponCampaign campaign = campaignCache.get(campaignId);
+        if (!campaign.isActive()) {
+            throw new DomainException(DomainError.COUPON_CAMPAIGN_INACTIVE);
         }
-        if (soldOutCampaigns.contains(campaignId)) {
-            throw new DomainException(DomainError.COUPON_SOLD_OUT);
-        }
-        String token = switch (couponAdmission.tryAcquire()) {
-            case CouponAdmission.Result.Admitted admitted -> admitted.token();
-            case CouponAdmission.Result.Full full -> throw new CoreException(ErrorType.COUPON_BUSY);
-            case CouponAdmission.Result.Unavailable unavailable ->
-                throw new CoreException(ErrorType.COUPON_ADMISSION_UNAVAILABLE);
+        CouponReservation.Result reserved = couponReservation.reserve(campaignId, userId, campaign.getTotalQuota(),
+            campaign.getIssuedCount());
+        return switch (reserved) {
+            case CouponReservation.Result.Reserved accepted -> new IssueResult.Accepted(accepted.issueNumber());
+            case CouponReservation.Result.Existing existing -> couponService.findIssued(campaignId, userId)
+                .<IssueResult>map(coupon -> new IssueResult.Issued(existing.issueNumber(), coupon))
+                .orElseGet(() -> new IssueResult.Pending(existing.issueNumber()));
+            case CouponReservation.Result.SoldOut soldOut -> throw new DomainException(DomainError.COUPON_SOLD_OUT);
+            case CouponReservation.Result.Lost lost -> throw new CoreException(ErrorType.COUPON_ADMISSION_UNAVAILABLE);
         };
-        try {
-            return issueNew(campaignId, userId, now);
-        } finally {
-            couponAdmission.release(token);
-        }
-    }
-
-    private Issued issueNew(Long campaignId, Long userId, Instant now) {
-        try {
-            return new Issued(couponTransactions.issue(campaignId, userId, now), true);
-        } catch (DomainException e) {
-            if (e.error() == DomainError.COUPON_SOLD_OUT) {
-                soldOutCampaigns.mark(campaignId);
-            }
-            if (e.error() != DomainError.COUPON_ALREADY_ISSUED) {
-                throw e;
-            }
-            Coupon issued = couponService.findIssued(campaignId, userId)
-                .orElseThrow(() -> new IllegalStateException(
-                    "유일 제약에 걸렸는데 기존 쿠폰이 없습니다: campaignId=" + campaignId + ", userId=" + userId));
-            return new Issued(issued, false);
-        }
     }
 
     public List<Coupon> findMine(Long userId) {

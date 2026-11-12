@@ -23,13 +23,13 @@ public class CouponV1Controller {
     private final CouponFacade couponFacade;
 
     @PostMapping("/coupon-campaigns/{campaignId}/issues")
-    public ResponseEntity<ApiResponse<CouponV1Dto.CouponResponse>> issue(
+    public ResponseEntity<ApiResponse<CouponV1Dto.IssueResponse>> issue(
         @RequestHeader("X-USER-ID") Long userId,
         @PathVariable Long campaignId
     ) {
-        CouponFacade.Issued issued = couponFacade.issue(campaignId, userId, Instant.now());
-        HttpStatus status = issued.newlyIssued() ? HttpStatus.CREATED : HttpStatus.OK;
-        return ResponseEntity.status(status).body(ApiResponse.success(CouponV1Dto.CouponResponse.from(issued.coupon())));
+        CouponFacade.IssueResult result = couponFacade.issue(campaignId, userId, Instant.now());
+        HttpStatus status = result instanceof CouponFacade.IssueResult.Accepted ? HttpStatus.ACCEPTED : HttpStatus.OK;
+        return ResponseEntity.status(status).body(ApiResponse.success(CouponV1Dto.IssueResponse.from(result)));
     }
 
     @GetMapping("/coupons")

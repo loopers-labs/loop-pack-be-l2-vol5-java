@@ -1,15 +1,17 @@
 package com.loopers.application.coupon;
 
+import com.loopers.application.coupon.CouponFacade.IssueResult;
 import com.loopers.domain.coupon.CampaignName;
 import com.loopers.domain.coupon.Coupon;
-import com.loopers.domain.coupon.CouponAdmission;
 import com.loopers.domain.coupon.DiscountAmount;
 import com.loopers.domain.coupon.IssueQuota;
+import com.loopers.support.error.CoreException;
 import com.loopers.support.error.DomainError;
 import com.loopers.support.error.DomainException;
+import com.loopers.support.error.ErrorType;
 import com.loopers.utils.DatabaseCleanUp;
+import com.loopers.utils.RedisCleanUp;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -38,33 +40,28 @@ class CouponIssueIntegrationTest {
 
     private final CouponFacade couponFacade;
     private final CouponTransactions couponTransactions;
+    private final CampaignCache campaignCache;
     private final JdbcTemplate jdbcTemplate;
     private final DatabaseCleanUp databaseCleanUp;
-    private final CouponAdmission couponAdmission;
-    private final SoldOutCampaigns soldOutCampaigns;
+    private final RedisCleanUp redisCleanUp;
 
     @Autowired
-    CouponIssueIntegrationTest(CouponAdmission couponAdmission, CouponFacade couponFacade, CouponTransactions couponTransactions,
-                               JdbcTemplate jdbcTemplate, DatabaseCleanUp databaseCleanUp,
-                               SoldOutCampaigns soldOutCampaigns) {
+    CouponIssueIntegrationTest(CouponFacade couponFacade, CouponTransactions couponTransactions,
+                               CampaignCache campaignCache, JdbcTemplate jdbcTemplate,
+                               DatabaseCleanUp databaseCleanUp, RedisCleanUp redisCleanUp) {
         this.couponFacade = couponFacade;
         this.couponTransactions = couponTransactions;
+        this.campaignCache = campaignCache;
         this.jdbcTemplate = jdbcTemplate;
         this.databaseCleanUp = databaseCleanUp;
-        this.couponAdmission = couponAdmission;
-        this.soldOutCampaigns = soldOutCampaigns;
-    }
-
-    @BeforeEach
-    void setUp() {
-        couponAdmission.open();
+        this.redisCleanUp = redisCleanUp;
     }
 
     @AfterEach
     void tearDown() {
-        couponAdmission.close();
         databaseCleanUp.truncateAllTables();
-        soldOutCampaigns.clear();
+        redisCleanUp.truncateAll();
+        campaignCache.clear();
     }
 
     private Long openCampaign(int quota, boolean active) {
@@ -116,6 +113,107 @@ class CouponIssueIntegrationTest {
         }
     }
 
+    @Nested
+    @DisplayName("CPN-004: 접수 응답")
+    class Accept {
+
+        @DisplayName("처음 접수는 번호 1 과 PENDING 이고 DB 에는 아직 없다")
+        @Test
+        void firstIsAccepted() {
+            Long campaignId = openCampaign(5, true);
+
+            assertThat(couponFacade.issue(campaignId, 42L, NOW)).isEqualTo(new IssueResult.Accepted(1));
+            assertThat(couponRows(campaignId)).isZero();
+            assertThat(issuedCount(campaignId)).isZero();
+        }
+
+        @DisplayName("같은 사용자가 다시 오면 같은 번호와 PENDING 이다")
+        @Test
+        void repeatIsPendingWithSameNumber() {
+            Long campaignId = openCampaign(5, true);
+            couponFacade.issue(campaignId, 42L, NOW);
+
+            assertThat(couponFacade.issue(campaignId, 42L, NOW)).isEqualTo(new IssueResult.Pending(1));
+        }
+
+        @DisplayName("DB 에 쿠폰이 생겼으면 같은 번호와 ISSUED 와 쿠폰이다")
+        @Test
+        void repeatIsIssuedOnceRecorded() {
+            Long campaignId = openCampaign(5, true);
+            couponFacade.issue(campaignId, 42L, NOW);
+            Coupon recorded = couponTransactions.issue(campaignId, 42L, NOW);
+
+            assertThat(couponFacade.issue(campaignId, 42L, NOW)).isEqualTo(new IssueResult.Issued(1, recorded));
+        }
+
+        @DisplayName("품절 뒤에도 접수된 사용자는 같은 번호다")
+        @Test
+        void repeatAfterSoldOutKeepsNumber() {
+            Long campaignId = openCampaign(1, true);
+            couponFacade.issue(campaignId, 42L, NOW);
+
+            assertThatThrownBy(() -> couponFacade.issue(campaignId, 7L, NOW))
+                .isInstanceOf(DomainException.class)
+                .hasFieldOrPropertyWithValue("error", DomainError.COUPON_SOLD_OUT);
+            assertThat(couponFacade.issue(campaignId, 42L, NOW)).isEqualTo(new IssueResult.Pending(1));
+        }
+
+        @DisplayName("RSV-001: 같은 사용자가 동시에 두 번 접수하면 번호 하나다")
+        @Test
+        void sameUserRaceGetsOneNumber() throws Exception {
+            Long campaignId = openCampaign(5, true);
+
+            List<IssueResult> results = runTogether(List.of(
+                () -> couponFacade.issue(campaignId, 42L, NOW),
+                () -> couponFacade.issue(campaignId, 42L, NOW)));
+
+            assertThat(results).containsExactlyInAnyOrder(new IssueResult.Accepted(1), new IssueResult.Pending(1));
+        }
+    }
+
+    @DisplayName("CPN-005: 한도만큼 접수되면 품절이고 DB 는 그대로다")
+    @Test
+    void soldOutAtQuota() {
+        Long campaignId = openCampaign(2, true);
+        couponFacade.issue(campaignId, 1L, NOW);
+        couponFacade.issue(campaignId, 2L, NOW);
+
+        assertThatThrownBy(() -> couponFacade.issue(campaignId, 3L, NOW))
+            .isInstanceOf(DomainException.class)
+            .hasFieldOrPropertyWithValue("error", DomainError.COUPON_SOLD_OUT);
+        assertThat(couponRows(campaignId)).isZero();
+    }
+
+    @DisplayName("CPN-005: 비활성 캠페인은 접수하지 않는다")
+    @Test
+    void rejectsInactiveCampaign() {
+        Long campaignId = openCampaign(5, false);
+
+        assertThatThrownBy(() -> couponFacade.issue(campaignId, 42L, NOW))
+            .isInstanceOf(DomainException.class)
+            .hasFieldOrPropertyWithValue("error", DomainError.COUPON_CAMPAIGN_INACTIVE);
+        assertThat(couponRows(campaignId)).isZero();
+    }
+
+    @DisplayName("CPN-006: 없는 캠페인은 접수하지 않는다")
+    @Test
+    void rejectsUnknownCampaign() {
+        assertThatThrownBy(() -> couponFacade.issue(999L, 42L, NOW))
+            .isInstanceOf(DomainException.class)
+            .hasFieldOrPropertyWithValue("error", DomainError.COUPON_CAMPAIGN_NOT_FOUND);
+    }
+
+    @DisplayName("FLT-008: 예약 집합이 DB 발급 수보다 작으면 503 이고 접수하지 않는다")
+    @Test
+    void lostReservationsAreUnavailable() {
+        Long campaignId = openCampaign(5, true);
+        couponTransactions.issue(campaignId, 1L, NOW);
+
+        assertThatThrownBy(() -> couponFacade.issue(campaignId, 42L, NOW))
+            .isInstanceOf(CoreException.class)
+            .hasFieldOrPropertyWithValue("errorType", ErrorType.COUPON_ADMISSION_UNAVAILABLE);
+    }
+
     @DisplayName("EXP-019: 한도 5 에 8 명이 동시에 DB 발급에 들어가면 5 명이 받고 3 명은 품절이다")
     @Test
     void quotaHoldsUnderRace() throws Exception {
@@ -134,70 +232,18 @@ class CouponIssueIntegrationTest {
         assertThat(issuedCount(campaignId)).isEqualTo(5);
     }
 
-    @DisplayName("ISS-006: 같은 사용자가 동시에 두 번 발급하면 쿠폰은 하나다")
+    @DisplayName("ISS-006: 같은 사용자가 동시에 두 번 DB 발급에 들어가면 쿠폰은 하나다")
     @Test
     void sameUserRaceIssuesOnce() throws Exception {
         Long campaignId = openCampaign(5, true);
 
-        List<CouponFacade.Issued> results = runTogether(List.of(
-            () -> couponFacade.issue(campaignId, 42L, NOW),
-            () -> couponFacade.issue(campaignId, 42L, NOW)));
+        List<String> outcomes = runTogether(List.of(
+            () -> issueInDb(campaignId, 42L),
+            () -> issueInDb(campaignId, 42L)));
 
-        assertThat(results).extracting(CouponFacade.Issued::newlyIssued).containsExactlyInAnyOrder(true, false);
-        assertThat(results).extracting(issued -> issued.coupon().id()).containsOnly(results.get(0).coupon().id());
+        assertThat(outcomes).containsExactlyInAnyOrder("ISSUED", DomainError.COUPON_ALREADY_ISSUED.name());
         assertThat(couponRows(campaignId)).isEqualTo(1);
         assertThat(issuedCount(campaignId)).isEqualTo(1);
-    }
-
-    @Nested
-    @DisplayName("CPN-004: 이미 받은 사용자가 다시 발급하면")
-    class Repeat {
-
-        @DisplayName("같은 쿠폰을 돌려준다")
-        @Test
-        void returnsSameCoupon() {
-            Long campaignId = openCampaign(5, true);
-            Coupon first = couponFacade.issue(campaignId, 42L, NOW).coupon();
-
-            CouponFacade.Issued second = couponFacade.issue(campaignId, 42L, NOW);
-
-            assertThat(second.newlyIssued()).isFalse();
-            assertThat(second.coupon().id()).isEqualTo(first.id());
-            assertThat(issuedCount(campaignId)).isEqualTo(1);
-        }
-
-        @DisplayName("품절 뒤에도 같은 쿠폰을 돌려준다")
-        @Test
-        void returnsSameCouponAfterSoldOut() {
-            Long campaignId = openCampaign(1, true);
-            Coupon first = couponFacade.issue(campaignId, 42L, NOW).coupon();
-
-            CouponFacade.Issued again = couponFacade.issue(campaignId, 42L, NOW);
-
-            assertThat(again.newlyIssued()).isFalse();
-            assertThat(again.coupon().id()).isEqualTo(first.id());
-        }
-    }
-
-    @DisplayName("CPN-005: 비활성 캠페인은 발급하지 않는다")
-    @Test
-    void rejectsInactiveCampaign() {
-        Long campaignId = openCampaign(5, false);
-
-        assertThatThrownBy(() -> couponFacade.issue(campaignId, 42L, NOW))
-            .isInstanceOf(DomainException.class)
-            .hasFieldOrPropertyWithValue("error", DomainError.COUPON_CAMPAIGN_INACTIVE);
-        assertThat(couponRows(campaignId)).isZero();
-        assertThat(issuedCount(campaignId)).isZero();
-    }
-
-    @DisplayName("CPN-006: 없는 캠페인은 발급하지 않는다")
-    @Test
-    void rejectsUnknownCampaign() {
-        assertThatThrownBy(() -> couponFacade.issue(999L, 42L, NOW))
-            .isInstanceOf(DomainException.class)
-            .hasFieldOrPropertyWithValue("error", DomainError.COUPON_CAMPAIGN_NOT_FOUND);
-        assertThat(couponRows(999L)).isZero();
     }
 
     @DisplayName("CPN-007: 보유 목록은 본인 쿠폰만 최신순으로 보여 준다")
@@ -206,10 +252,10 @@ class CouponIssueIntegrationTest {
         Long blackFriday = openCampaign(5, true);
         Long cyberMonday = openCampaign(5, true);
         Long yearEnd = openCampaign(5, true);
-        Coupon older = couponFacade.issue(blackFriday, 42L, NOW).coupon();
-        Coupon sameTimeFirst = couponFacade.issue(cyberMonday, 42L, NOW.plusSeconds(60)).coupon();
-        Coupon sameTimeSecond = couponFacade.issue(yearEnd, 42L, NOW.plusSeconds(60)).coupon();
-        couponFacade.issue(blackFriday, 7L, NOW.plusSeconds(120));
+        Coupon older = couponTransactions.issue(blackFriday, 42L, NOW);
+        Coupon sameTimeFirst = couponTransactions.issue(cyberMonday, 42L, NOW.plusSeconds(60));
+        Coupon sameTimeSecond = couponTransactions.issue(yearEnd, 42L, NOW.plusSeconds(60));
+        couponTransactions.issue(blackFriday, 7L, NOW.plusSeconds(120));
 
         assertThat(couponFacade.findMine(42L)).extracting(Coupon::id)
             .containsExactly(sameTimeSecond.id(), sameTimeFirst.id(), older.id());

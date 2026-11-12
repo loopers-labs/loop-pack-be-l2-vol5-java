@@ -1,72 +1,57 @@
 package com.loopers.interfaces.api.coupon;
 
 import com.jayway.jsonpath.JsonPath;
-import com.loopers.application.coupon.SoldOutCampaigns;
-import com.loopers.config.redis.RedisConfig;
-import com.loopers.domain.coupon.CouponAdmission;
+import com.loopers.application.coupon.CampaignCache;
+import com.loopers.application.coupon.CouponTransactions;
 import com.loopers.utils.DatabaseCleanUp;
 import com.loopers.utils.RedisCleanUp;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.system.CapturedOutput;
-import org.springframework.boot.test.system.OutputCaptureExtension;
-import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import java.time.Instant;
+
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
 @AutoConfigureMockMvc
-@ExtendWith(OutputCaptureExtension.class)
 class CouponV1ApiTest {
 
+    private static final Instant NOW = Instant.parse("2026-11-08T00:00:00Z");
+
     private final MockMvc mvc;
-    private final RedisTemplate<String, String> redis;
+    private final CouponTransactions couponTransactions;
+    private final CampaignCache campaignCache;
     private final DatabaseCleanUp databaseCleanUp;
     private final RedisCleanUp redisCleanUp;
-    private final CouponAdmission couponAdmission;
-    private final SoldOutCampaigns soldOutCampaigns;
 
     @Autowired
-    CouponV1ApiTest(CouponAdmission couponAdmission, MockMvc mvc, @Qualifier(RedisConfig.REDIS_TEMPLATE_MASTER) RedisTemplate<String, String> redis,
-                    DatabaseCleanUp databaseCleanUp, RedisCleanUp redisCleanUp, SoldOutCampaigns soldOutCampaigns) {
+    CouponV1ApiTest(MockMvc mvc, CouponTransactions couponTransactions, CampaignCache campaignCache,
+                    DatabaseCleanUp databaseCleanUp, RedisCleanUp redisCleanUp) {
         this.mvc = mvc;
-        this.redis = redis;
+        this.couponTransactions = couponTransactions;
+        this.campaignCache = campaignCache;
         this.databaseCleanUp = databaseCleanUp;
-        this.couponAdmission = couponAdmission;
         this.redisCleanUp = redisCleanUp;
-        this.soldOutCampaigns = soldOutCampaigns;
-    }
-
-    @BeforeEach
-    void setUp() {
-        couponAdmission.open();
     }
 
     @AfterEach
     void tearDown() {
-        couponAdmission.close();
         databaseCleanUp.truncateAllTables();
         redisCleanUp.truncateAll();
-        soldOutCampaigns.clear();
+        campaignCache.clear();
     }
 
     private ResultActions openCampaign(String body) throws Exception {
@@ -131,26 +116,43 @@ class CouponV1ApiTest {
     @DisplayName("쿠폰 발급")
     class Issue {
 
-        @DisplayName("CPN-004: 처음은 201, 다시 요청하면 200 과 같은 couponId 다")
+        @DisplayName("CPN-004: 처음은 202 와 번호와 PENDING, 다시 요청하면 200 과 같은 번호다")
         @Test
-        void createsThenReturnsExisting() throws Exception {
+        void acceptsThenReturnsSameNumber() throws Exception {
             long campaignId = openCampaign(5, true);
 
-            String first = issue(campaignId, 42L)
-                .andExpect(status().isCreated())
-                .andReturn().getResponse().getContentAsString();
-            Number couponId = JsonPath.read(first, "$.data.couponId");
+            issue(campaignId, 42L)
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.data.issueNumber").value(1))
+                .andExpect(jsonPath("$.data.status").value("PENDING"))
+                .andExpect(jsonPath("$.data.couponId").doesNotExist());
 
             issue(campaignId, 42L)
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.couponId").value(couponId));
+                .andExpect(jsonPath("$.data.issueNumber").value(1))
+                .andExpect(jsonPath("$.data.status").value("PENDING"));
+        }
+
+        @DisplayName("CPN-004: DB 에 쿠폰이 생긴 뒤 다시 요청하면 200 과 ISSUED 와 couponId 다")
+        @Test
+        void returnsIssuedOnceRecorded() throws Exception {
+            long campaignId = openCampaign(5, true);
+            issue(campaignId, 42L).andExpect(status().isAccepted());
+            Long couponId = couponTransactions.issue(campaignId, 42L, NOW).id();
+
+            issue(campaignId, 42L)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.issueNumber").value(1))
+                .andExpect(jsonPath("$.data.status").value("ISSUED"))
+                .andExpect(jsonPath("$.data.couponId").value(couponId))
+                .andExpect(jsonPath("$.data.discountAmount").value(5000));
         }
 
         @DisplayName("CPN-005: 품절이면 409 COUPON_SOLD_OUT 이다")
         @Test
         void rejectsSoldOut() throws Exception {
             long campaignId = openCampaign(1, true);
-            issue(campaignId, 1L).andExpect(status().isCreated());
+            issue(campaignId, 1L).andExpect(status().isAccepted());
 
             issue(campaignId, 2L)
                 .andExpect(status().isConflict())
@@ -167,30 +169,14 @@ class CouponV1ApiTest {
                 .andExpect(jsonPath("$.meta.errorCode").value("COUPON_CAMPAIGN_INACTIVE"));
         }
 
-        @DisplayName("ADM-005: 자리가 없으면 429 와 Retry-After 를 주고 쿠폰을 만들지 않는다")
+        @DisplayName("CPN-007: 접수만 된 쿠폰은 보유 목록에 없다")
         @Test
-        void rejectsWhenNoSlot() throws Exception {
+        void pendingIsNotListed() throws Exception {
             long campaignId = openCampaign(5, true);
-            redis.opsForSet().add("coupon:issue:admission:v1", "held-1", "held-2", "held-3");
+            issue(campaignId, 42L).andExpect(status().isAccepted());
 
-            issue(campaignId, 42L)
-                .andExpect(status().isTooManyRequests())
-                .andExpect(header().exists(HttpHeaders.RETRY_AFTER))
-                .andExpect(jsonPath("$.meta.errorCode").value("COUPON_BUSY"));
             mvc.perform(get("/api/v1/coupons").header("X-USER-ID", 42L))
                 .andExpect(jsonPath("$.data", hasSize(0)));
-        }
-
-        @DisplayName("자리 없음 거절은 로그에 스택 트레이스를 남기지 않는다")
-        @Test
-        void logsRejectionWithoutStackTrace(CapturedOutput output) throws Exception {
-            long campaignId = openCampaign(5, true);
-            redis.opsForSet().add("coupon:issue:admission:v1", "held-1", "held-2", "held-3");
-
-            issue(campaignId, 42L).andExpect(status().isTooManyRequests());
-
-            assertThat(output.getAll()).contains("code=COUPON_BUSY");
-            assertThat(output.getAll()).doesNotContain("com.loopers.support.error.CoreException:");
         }
 
         @DisplayName("CPN-006: 없는 캠페인은 404 다")
@@ -204,8 +190,8 @@ class CouponV1ApiTest {
     @Test
     void listsOwnCoupons() throws Exception {
         long campaignId = openCampaign(5, true);
-        issue(campaignId, 42L).andExpect(status().isCreated());
-        issue(campaignId, 7L).andExpect(status().isCreated());
+        couponTransactions.issue(campaignId, 42L, NOW);
+        couponTransactions.issue(campaignId, 7L, NOW);
 
         mvc.perform(get("/api/v1/coupons").header("X-USER-ID", 42L))
             .andExpect(status().isOk())

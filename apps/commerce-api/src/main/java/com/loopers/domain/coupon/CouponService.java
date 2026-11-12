@@ -30,6 +30,10 @@ public class CouponService {
         return coupon;
     }
 
+    public Optional<CouponCampaign> findCampaign(Long campaignId) {
+        return campaignRepository.findById(campaignId);
+    }
+
     public Optional<Coupon> findIssued(Long campaignId, Long userId) {
         return couponRepository.find(campaignId, userId);
     }
