@@ -33,7 +33,7 @@
 | `POST /api/v1/coupon-campaigns/{campaignId}/issue-requests` | 신규 작업 접수 또는 같은 사용자와 캠페인의 기존 작업 반환 |
 | `GET /api/v1/coupon-issue-requests/{requestId}` | `X-USER-ID` 사용자 본인 작업의 상태와 결과 조회 |
 
-응답에는 `requestId`, `campaignId`, `status`, `requestedAt`, 성공 시 `couponId`, 실패나 결과 불명 시 `reasonCode`와 사유를 담는다. 작업 ID는 실행 permit token과 별개다. `requestedAt`은 처음 접수한 시각이며 시스템 실패 재접수로 다시 대기해도 바뀌지 않는다. 작업 조회에서 다른 사용자의 ID와 없는 ID는 모두 404로 처리한다. 기존 쿠폰을 바로 반환하는 응답은 작업이 없으므로 `requestId`와 `requestedAt`을 비운다.
+응답에는 `requestId`, `campaignId`, `status`, `requestedAt`, 성공 시 `couponId`, 실패나 결과 불명 시 `reasonCode`와 사유를 담는다. 작업 ID는 실행 permit token과 별개다. `requestedAt`은 처음 접수한 시각이며 시스템 실패 재접수로 다시 대기해도 바뀌지 않는다. 작업 조회에서 다른 사용자의 ID와 없는 ID는 모두 404로 처리한다. 기존 쿠폰을 바로 반환하는 응답은 작업이 없으므로 `requestId`와 `requestedAt`을 비운다. 값이 없는 필드는 공통 Jackson 설정(`NON_NULL`)에 따라 응답에서 빠진다.
 
 신규 접수와 진행 중 작업의 재접수는 202, 완료된 기존 작업 반환과 작업 조회는 200으로 응답한다. 202는 작업을 저장했다는 뜻이며 처리 시작 시점을 약속하지 않는다. worker가 꺼져 있어도 접수는 받고 작업은 `WAITING`에 머물며, 미완료 작업이 한도에 차면 새 접수는 429로 거절된다. 작업 이력이 없어도 이미 본인 쿠폰이 있으면 작업을 만들지 않고 기존 쿠폰을 200으로 반환한다. 새 발급이 필요한 요청의 발급 불가 캠페인은 기존과 같이 404 또는 409로 거절한다.
 
@@ -76,16 +76,13 @@ Lua의 한도 초과 판단도 같은 사용자와 캠페인의 기존 작업 �
 ```json
 {
   "meta": {
-    "result": "SUCCESS",
-    "errorCode": null,
-    "message": null
+    "result": "SUCCESS"
   },
   "data": {
     "requestId": "8e078261-f7c6-4d41-a8e9-f068d900c0cf",
     "campaignId": 1,
     "status": "FAILED",
     "requestedAt": "2026-11-13T00:00:00Z",
-    "couponId": null,
     "reasonCode": "SOLD_OUT",
     "message": "쿠폰이 모두 발급된 캠페인입니다."
   }
