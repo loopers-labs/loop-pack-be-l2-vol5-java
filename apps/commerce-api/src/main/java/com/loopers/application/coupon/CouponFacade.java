@@ -3,6 +3,7 @@ package com.loopers.application.coupon;
 import com.loopers.domain.coupon.CampaignName;
 import com.loopers.domain.coupon.Coupon;
 import com.loopers.domain.coupon.CouponCampaign;
+import com.loopers.domain.coupon.CouponIssuePublisher;
 import com.loopers.domain.coupon.CouponReservation;
 import com.loopers.domain.coupon.CouponService;
 import com.loopers.domain.coupon.DiscountAmount;
@@ -24,6 +25,7 @@ public class CouponFacade {
     private final CouponService couponService;
     private final CampaignCache campaignCache;
     private final CouponReservation couponReservation;
+    private final CouponIssuePublisher couponIssuePublisher;
 
     public sealed interface IssueResult {
 
@@ -52,12 +54,24 @@ public class CouponFacade {
         CouponReservation.Result reserved = couponReservation.reserve(campaignId, userId, campaign.getTotalQuota(),
             campaign.getIssuedCount());
         return switch (reserved) {
-            case CouponReservation.Result.Reserved accepted -> new IssueResult.Accepted(accepted.issueNumber());
+            case CouponReservation.Result.Reserved accepted -> publish(campaignId, userId, accepted.issueNumber(), now);
             case CouponReservation.Result.Existing existing -> couponService.findIssued(campaignId, userId)
                 .<IssueResult>map(coupon -> new IssueResult.Issued(existing.issueNumber(), coupon))
                 .orElseGet(() -> new IssueResult.Pending(existing.issueNumber()));
             case CouponReservation.Result.SoldOut soldOut -> throw new DomainException(DomainError.COUPON_SOLD_OUT);
             case CouponReservation.Result.Lost lost -> throw new CoreException(ErrorType.COUPON_ADMISSION_UNAVAILABLE);
+        };
+    }
+
+    private IssueResult publish(Long campaignId, Long userId, int issueNumber, Instant reservedAt) {
+        CouponIssuePublisher.Outcome outcome = couponIssuePublisher.publish(
+            new CouponIssuePublisher.CouponIssue(campaignId, userId, issueNumber, reservedAt));
+        return switch (outcome) {
+            case CouponIssuePublisher.Outcome.Published published -> new IssueResult.Accepted(issueNumber);
+            case CouponIssuePublisher.Outcome.Unconfirmed unconfirmed -> {
+                couponReservation.cancel(campaignId, userId);
+                throw new CoreException(ErrorType.COUPON_ADMISSION_UNAVAILABLE);
+            }
         };
     }
 

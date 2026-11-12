@@ -9,6 +9,8 @@ import com.loopers.support.error.CoreException;
 import com.loopers.support.error.DomainError;
 import com.loopers.support.error.DomainException;
 import com.loopers.support.error.ErrorType;
+import com.loopers.support.kafka.TopicRecords;
+import com.loopers.testcontainers.KafkaTestContainersConfig;
 import com.loopers.utils.DatabaseCleanUp;
 import com.loopers.utils.RedisCleanUp;
 import org.junit.jupiter.api.AfterEach;
@@ -18,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -169,6 +172,18 @@ class CouponIssueIntegrationTest {
 
             assertThat(results).containsExactlyInAnyOrder(new IssueResult.Accepted(1), new IssueResult.Pending(1));
         }
+    }
+
+    @DisplayName("PUB-001: 202 를 줬으면 그 예약의 메시지가 broker 에 있다")
+    @Test
+    void acceptedMeansPublished() {
+        Long campaignId = openCampaign(5, true);
+
+        List<ConsumerRecord<String, byte[]>> records = TopicRecords.during(KafkaTestContainersConfig.COUPON_ISSUES,
+            () -> couponFacade.issue(campaignId, 42L, NOW));
+
+        assertThat(records).singleElement().satisfies(record ->
+            assertThat(record.key()).isEqualTo(String.valueOf(campaignId)));
     }
 
     @DisplayName("CPN-005: 한도만큼 접수되면 품절이고 DB 는 그대로다")

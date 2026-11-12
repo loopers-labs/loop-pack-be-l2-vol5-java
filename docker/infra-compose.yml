@@ -101,7 +101,7 @@ services:
     command:
       - |
         set -e
-        for topic in order-events demo.internal.topic-v1; do
+        for topic in order-events coupon-issues demo.internal.topic-v1; do
           kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic "$$topic" --partitions 3 --replication-factor 1
         done
         kafka-topics.sh --bootstrap-server kafka:9092 --describe --topic order-events

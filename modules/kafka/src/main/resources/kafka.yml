@@ -28,6 +28,7 @@ spring:
 kafka:
   topics:
     order-events: order-events
+    coupon-issues: coupon-issues
 
 ---
 spring.config.activate.on-profile: local, test

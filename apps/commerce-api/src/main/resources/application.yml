@@ -33,6 +33,9 @@ spring:
 coupon:
   admission:
     capacity: 4 # EXP-015 로컬 측정에서 최대 처리량의 90% 에 처음 닿은 동시 수
+  issue:
+    publish:
+      ack-timeout: 500ms # PUB-002. 한 요청 스레드가 broker 확인을 기다리는 상한
 
 springdoc:
   use-fqn: true
