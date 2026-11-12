@@ -97,7 +97,7 @@
 - 비동기 경계: 컨트롤러가 `CompletableFuture` 를 돌려준다 (Spring MVC async). 사용자·프로모션·중복 확인은 워커 스레드에서 동기로 하고, 그 뒤 워커 스레드는 반납된다.
   - 세마포어만 async 로 바꾸고 리미터에서 기다리면 2번과 같다. 그래서 경계를 컨트롤러까지 올렸다.
 - 발급 TX 실행: 허가 결과는 Redisson(netty) 스레드로 온다. 거기서 JDBC 를 돌리지 않고 리미터가 가진 스레드 풀로 넘긴다.
-  - 스레드 100, 큐 200 (`coupon-issue.limiter.executor.*`). 큐가 넘치면 TX 를 실행하지 않고 허가를 반납한 뒤 503 `COUPON_ISSUE_BUSY`.
+  - 스레드 200, 큐 200 (`coupon-issue.limiter.executor.*`). 큐가 넘치면 TX 를 실행하지 않고 허가를 반납한 뒤 503 `COUPON_ISSUE_BUSY`.
   - 풀은 빈으로 두지 않는다 (Executor 빈이 생기면 Boot 의 `applicationTaskExecutor` 자동 구성이 빠진다).
 - `spring.mvc.async.request-timeout`: 5s. 넘으면 기존 `Throwable` 핸들러로 500. TX 는 취소되지 않아, 응답은 실패인데 발급은 될 수 있다.
 - permit 200, lease 2s, wait-time 600ms (2·3번과 같음). Redis 오류는 fail-closed, 반납 오류는 로그만.
