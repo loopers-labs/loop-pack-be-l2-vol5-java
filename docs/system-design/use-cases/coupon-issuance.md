@@ -279,7 +279,7 @@ flowchart TD
 | 미발급 행의 유일 제약 | MySQL은 복합 유일 인덱스에서 여러 `NULL user_id`를 허용한다. |
 | 동시 중복 방지 | 선조회가 아닌 트랜잭션 재확인과 유일 제약이 담당한다. |
 | 격리 수준 | 발급 TX는 `READ_COMMITTED`; 캠페인 행 갱신 대기 뒤 일반 조회가 최신 commit 결과를 읽도록 한다. |
-| 트랜잭션 경계 | permit 획득 뒤 DB TX 시작, commit/rollback 확인 뒤 token 반환. Redis 호출은 TX 밖이다. |
+| 트랜잭션 경계 | permit 획득 뒤 DB TX 시작, commit/rollback 완료를 트랜잭션 완료 상태로 확인한 뒤 token 반환. 종료를 확인하지 못하면 반환하지 않는다(D-24). Redis 호출은 TX 밖이다. |
 | 쿠폰 후보 경합 | 캠페인 카운터 행에서 발급 TX가 직렬화된다. 그 뒤 후보 조회와 조건부 UPDATE를 수행하며 별도 `SELECT ... FOR UPDATE`, `SKIP LOCKED`, 후보 재시도는 쓰지 않는다. |
 
 캠페인 카운터는 다음 한 문장에서 조기 품절 시각과 함께 변경한다. `terminated_at`의 조건은 증가 전 수량을 기준으로 계산하므로 이 대입을 먼저 둔다. 두 값 모두 쿠폰 배정과 같은 트랜잭션에서 rollback된다.
@@ -371,7 +371,7 @@ flowchart TD
 | Redis API·드라이버 | Spring Data Redis `RedisTemplate`의 Lua 실행 API를 사용한다. 기존 `RedisConfig`는 Lettuce 드라이버를 사용하므로 이를 재사용하며, 직접 Lettuce API나 Redisson 의존성은 추가하지 않는다. |
 | 연결 | 기존 `redisTemplateMaster`와 `StringRedisSerializer`로 primary에서 획득·반환. replica count는 수용 판단에 사용하지 않음 |
 | Timeout | 기존 공유 설정 `datasource.redis.connect-timeout=100ms`, `command-timeout=100ms`를 재사용한다. 원래 상품 캐시의 빠른 fallback을 위해 둔 API 설정이다. |
-| 반환 | DB commit/rollback과 실행 종료 확인 뒤 자기 token에 `SREM`; 첫 반환은 1이어야 함 |
+| 반환 | DB commit/rollback과 실행 종료 확인 뒤 자기 token에 `SREM`; 첫 반환은 1이어야 함. 종료를 확인하지 못하면 반환하지 않음 |
 
 | Redis 결과 | 응답 | 수용 상태 |
 |---|---|---|
@@ -380,6 +380,19 @@ flowchart TD
 | Lua 입력 검증 오류·permit 키 `WRONGTYPE` | 500 | 닫힘 |
 | 그 밖의 Redis command/server 오류 | 503 | 닫힘 |
 | 정상 획득 token의 첫 `SREM=0` | DB 업무 결과대로 응답 | 닫힘 |
+
+발급 트랜잭션은 첫 줄에서 Spring 트랜잭션 동기화를 등록해 commit 요청 여부와 완료 상태(COMMITTED·ROLLED_BACK·UNKNOWN)를 기록한다. facade는 예외 종류가 아니라 이 기록으로 token 반환을 정한다(D-24).
+
+| 발급 트랜잭션이 끝난 방식 | token | 수용 상태 | 응답 |
+|---|---|---|---|
+| 정상 반환(commit 완료) | 반환 | 유지 | 201 |
+| commit 완료 뒤 예외 전달 | 반환 | 유지 | 500 |
+| commit 요청 전 예외 뒤 rollback 완료(업무 거절·같은 사용자 중복 충돌·잠금 대기 timeout 등) | 반환 | 유지 | 404·409, 중복은 새 조회 뒤 200, 그 밖은 500 |
+| 발급 SQL 실행 전 실패(트랜잭션 시작 실패 등) | 반환 | 유지 | 500 |
+| commit 요청 뒤 실패(Spring이 ROLLED_BACK으로 알려도 포함) | 남김 | 열린 채 유지 | 500; 오류 로그에 `campaignId`·permit token |
+| rollback 실패 등 완료 상태 UNKNOWN 또는 기록 없음 | 남김 | 열린 채 유지 | 500; 같은 오류 로그 |
+
+commit 요청 뒤 DB 연결이 끊기면 Spring은 commit 실패 예외를 rollback 처리하고 완료 상태를 ROLLED_BACK으로 알릴 수 있다. 서버가 COMMIT을 받았는지는 알 수 없으므로 끝난 것으로 보지 않는다. 남은 token은 자리를 계속 점유해 그동안 쓸 수 있는 자리가 하나 줄지만 상한은 넘지 않는다. 운영자가 해당 DB 작업의 종료와 쿠폰·발급 수를 확인한 뒤 로그의 permit token만 제거한다. permit token은 인증 정보가 아니라 실행별 내부 ID다. Redis 상태 자체는 확인된 상태라 신규 수용은 닫지 않는다.
 
 설정된 수용량은 앱 시작 때 양의 정수인지 확인하며, 시작 시 수용을 열려면 수용량 설정을 요구한다. Lua도 capacity와 token을 검증한다.
 
@@ -451,6 +464,8 @@ Set이 비었다는 사실만으로 기존 DB 작업 종료를 대신 확인하�
 | commit 뒤 응답 유실 | 같은 사용자가 재요청 | 기존 쿠폰 반환; 추가 발급 0 |
 | Redis 중단 | 실제 연결 endpoint 중단 | 신규 발급 503·DB 효과 없음; 기존 본인 목록 조회와 같은 사용자 재요청의 200 유지 |
 | permit 반환 실패 | 첫 `SREM=0` 및 반환 명령 오류 주입 | DB 결과대로 응답; 쿠폰 보존·수용 닫힘·복구 확인 후 token 정리 |
+| 잠금 대기 timeout | 수용량 1, 다른 연결이 캠페인 행을 잠금, 테스트 연결의 잠금 대기 1초 | 500; rollback 완료로 token 반환·수용 열림; 잠금 해제 뒤 같은 사용자 201 |
+| commit 직전 연결 끊김 | 수용량 1, 발급 SQL 뒤 다른 연결에서 `KILL CONNECTION` | 500; Spring 완료 상태는 ROLLED_BACK, 쿠폰 미발급; token 1개 남음·수용 열림; 같은 사용자 429; token 정리 뒤 201 |
 | TTL 경과 | 활성 token 대기; Redis key TTL 확인 | 자동 만료 없음(`TTL=-1`); 시간 경과만으로 permit 재사용 불가 |
 
 | 검증 분리·정리 | 조건 |
@@ -458,8 +473,8 @@ Set이 비었다는 사실만으로 기존 DB 작업 종료를 대신 확인하�
 | 발급 총량 경합 | Redis 용량을 충분히 두거나 DB handler를 실제 병렬 호출해 DB 불변식만 검증 |
 | 장애 대상 | 실제 application endpoint; 테스트가 만든 자원만 정리 |
 | 테스트 판정 | 0건·skip·연결 실패는 통과가 아님; 기존 MySQL·Redis fixture 우선 사용 |
-| 실행 시점 | 발급 facade 12건·DB 트랜잭션 2건·설정 3건·수용 시작 runner 5건(단위 4·실제 Redis 1)·HTTP E2E 8건·Redis 장애/스크립트/반환 실패 E2E 4건·Redis 오류 분류 4건을 검증했다. 실제 Redis와 barrier로 수용량 3, 한 permit 반환 중 재수용, 마지막 한 장의 동일 사용자 경합, 시작 시 Set 확인, Redis 중단 후 기존 결과 조회, 활성 permit의 무TTL을 확인했다. |
-| 전체 회귀 | `./gradlew :apps:commerce-api:check` 통과: 857건, 실패·오류·skip 0. |
+| 실행 시점 | 발급 facade 19건·DB 트랜잭션 2건(완료 상태 기록 포함)·설정 3건·수용 시작 runner 5건(단위 4·실제 Redis 1)·HTTP E2E 8건·Redis 장애/스크립트/반환 실패 E2E 4건·발급 트랜잭션 실패 E2E 2건·Redis 오류 분류 4건을 검증했다. 실제 Redis와 barrier로 수용량 3, 한 permit 반환 중 재수용, 마지막 한 장의 동일 사용자 경합, 시작 시 Set 확인, Redis 중단 후 기존 결과 조회, 활성 permit의 무TTL을 확인했다. 실제 MySQL로 잠금 대기 timeout 뒤 permit 반환과 commit 직전 연결 끊김 뒤 permit 유지를 확인했다. |
+| 전체 회귀 | `./gradlew :apps:commerce-api:check` 통과: 866건, 실패·오류·skip 0. |
 
 ## 관련 결정 기록
 
@@ -468,3 +483,10 @@ Set이 비었다는 사실만으로 기존 DB 작업 종료를 대신 확인하�
 ## 범위 밖
 
 사용자 대기실, 비동기 worker, 쿠폰 사용·주문 할인 적용, 알림, 캠페인 관리 화면과 전체 CRUD는 이번 구현 범위에서 제외한다.
+
+다음은 필요성을 확인했지만 값을 측정한 뒤 정하기로 하고 이번에 넣지 않았다.
+
+| 항목 | 현재 동작 | 남은 개선 |
+|---|---|---|
+| 발급 트랜잭션 timeout | 캠페인 행 잠금을 기다리는 실행은 MySQL 기본 잠금 대기 시간(50초)까지 permit을 쥐고, 그동안 다른 신규 요청은 429를 받는다. | 부하 측정으로 발급 처리 시간을 확인한 뒤 트랜잭션 timeout을 정해, 오래 기다리는 실행을 일찍 rollback하고 자리를 돌려준다. |
+| 429 재시도 안내 | 응답에 `Retry-After`가 없어 클라이언트가 곧바로 다시 요청하면 거절이 같은 시각에 다시 몰릴 수 있다. | 처리 시간을 근거로 재시도 간격을 안내한다. 안내는 쿠폰 확보나 예약이 아니다. |

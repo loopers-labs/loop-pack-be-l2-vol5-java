@@ -37,7 +37,7 @@ Commerce 시스템(`commerce-api`, `commerce-streamer`)의 설계를 책임별�
 | 문서 | 다루는 내용 |
 | --- | --- |
 | [쿠폰 발급 설계](use-cases/coupon-issuance.md) | 발급 API, 도메인·DB 규칙, Redis 수용·장애 처리, 검증 시나리오 |
-| [쿠폰 발급 결정 기록](use-cases/coupon-issuance-decisions.md) | D-01~D-23 선택의 맥락, 대안, 근거와 영향 |
+| [쿠폰 발급 결정 기록](use-cases/coupon-issuance-decisions.md) | D-01~D-24 선택의 맥락, 대안, 근거와 영향 |
 
 ### 주문·결제
 
