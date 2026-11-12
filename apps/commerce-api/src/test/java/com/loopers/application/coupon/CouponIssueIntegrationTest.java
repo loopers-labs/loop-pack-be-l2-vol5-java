@@ -1,8 +1,10 @@
 package com.loopers.application.coupon;
 
 import com.loopers.application.coupon.CouponFacade.IssueResult;
+import com.loopers.config.redis.RedisConfig;
 import com.loopers.domain.coupon.CampaignName;
 import com.loopers.domain.coupon.Coupon;
+import com.loopers.domain.coupon.CouponPublishSlots;
 import com.loopers.domain.coupon.DiscountAmount;
 import com.loopers.domain.coupon.IssueQuota;
 import com.loopers.support.error.CoreException;
@@ -18,7 +20,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
@@ -44,20 +48,26 @@ class CouponIssueIntegrationTest {
     private final CouponFacade couponFacade;
     private final CouponTransactions couponTransactions;
     private final CampaignCache campaignCache;
+    private final CouponPublishSlots couponPublishSlots;
     private final JdbcTemplate jdbcTemplate;
     private final DatabaseCleanUp databaseCleanUp;
     private final RedisCleanUp redisCleanUp;
+    private final RedisTemplate<String, String> redis;
 
     @Autowired
-    CouponIssueIntegrationTest(CouponFacade couponFacade, CouponTransactions couponTransactions,
-                               CampaignCache campaignCache, JdbcTemplate jdbcTemplate,
-                               DatabaseCleanUp databaseCleanUp, RedisCleanUp redisCleanUp) {
+    CouponIssueIntegrationTest(@Qualifier(RedisConfig.REDIS_TEMPLATE_MASTER) RedisTemplate<String, String> redis,
+                               CouponFacade couponFacade, CouponTransactions couponTransactions,
+                               CampaignCache campaignCache, CouponPublishSlots couponPublishSlots,
+                               JdbcTemplate jdbcTemplate, DatabaseCleanUp databaseCleanUp,
+                               RedisCleanUp redisCleanUp) {
         this.couponFacade = couponFacade;
         this.couponTransactions = couponTransactions;
         this.campaignCache = campaignCache;
+        this.couponPublishSlots = couponPublishSlots;
         this.jdbcTemplate = jdbcTemplate;
         this.databaseCleanUp = databaseCleanUp;
         this.redisCleanUp = redisCleanUp;
+        this.redis = redis;
     }
 
     @AfterEach
@@ -184,6 +194,25 @@ class CouponIssueIntegrationTest {
 
         assertThat(records).singleElement().satisfies(record ->
             assertThat(record.key()).isEqualTo(String.valueOf(campaignId)));
+    }
+
+    @DisplayName("PUB-004: 확인을 기다리는 요청이 상한(테스트 2)만큼 차 있으면 예약 없이 503 이고, 자리가 나면 받는다")
+    @Test
+    void rejectsWithoutReservingWhenInFlightIsFull() {
+        Long campaignId = openCampaign(5, true);
+        assertThat(couponPublishSlots.tryAcquire()).isTrue();
+        assertThat(couponPublishSlots.tryAcquire()).isTrue();
+        try {
+            assertThatThrownBy(() -> couponFacade.issue(campaignId, 42L, NOW))
+                .isInstanceOf(CoreException.class)
+                .hasFieldOrPropertyWithValue("errorType", ErrorType.COUPON_ISSUE_BUSY);
+            assertThat(redis.opsForZSet().size("coupon:campaign:" + campaignId + ":issued")).isZero();
+        } finally {
+            couponPublishSlots.release();
+            couponPublishSlots.release();
+        }
+
+        assertThat(couponFacade.issue(campaignId, 42L, NOW)).isEqualTo(new IssueResult.Accepted(1));
     }
 
     @DisplayName("CPN-005: 한도만큼 접수되면 품절이고 DB 는 그대로다")

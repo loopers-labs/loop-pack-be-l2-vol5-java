@@ -36,6 +36,7 @@ coupon:
   issue:
     publish:
       ack-timeout: 500ms # PUB-002. 한 요청 스레드가 broker 확인을 기다리는 상한
+      max-in-flight: 32 # PUB-004. 동시에 확인을 기다리는 요청 스레드의 상한. EXP-022 뒤 다시 정한다
 
 springdoc:
   use-fqn: true
@@ -86,3 +87,6 @@ spring:
 coupon:
   admission:
     capacity: 3 # EXP-017 은 원문이 C=3 으로 정한 실험이다
+  issue:
+    publish:
+      max-in-flight: 2

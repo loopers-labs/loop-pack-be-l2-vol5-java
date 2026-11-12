@@ -43,6 +43,11 @@ class CouponIssuePublishUnreachableTest {
         this.redisCleanUp = redisCleanUp;
     }
 
+    private Long openCampaign() {
+        return couponFacade.openCampaign(CampaignName.of("블프 쿠폰"), DiscountAmount.of(5_000),
+            IssueQuota.of(100), true).getId();
+    }
+
     @AfterEach
     void tearDown() {
         databaseCleanUp.truncateAllTables();
@@ -53,8 +58,7 @@ class CouponIssuePublishUnreachableTest {
     @DisplayName("PUB-002: broker 확인을 받지 못하면 예약을 지우고 503 이며, 다시 요청해도 새로 접수를 시도한다")
     @Test
     void cancelsReservationWhenUnconfirmed() {
-        Long campaignId = couponFacade.openCampaign(CampaignName.of("블프 쿠폰"), DiscountAmount.of(5_000),
-            IssueQuota.of(5), true).getId();
+        Long campaignId = openCampaign();
 
         assertThatThrownBy(() -> couponFacade.issue(campaignId, 42L, NOW))
             .isInstanceOf(CoreException.class)

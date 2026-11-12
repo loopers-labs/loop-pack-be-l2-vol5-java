@@ -4,6 +4,7 @@ import com.loopers.domain.coupon.CampaignName;
 import com.loopers.domain.coupon.Coupon;
 import com.loopers.domain.coupon.CouponCampaign;
 import com.loopers.domain.coupon.CouponIssuePublisher;
+import com.loopers.domain.coupon.CouponPublishSlots;
 import com.loopers.domain.coupon.CouponReservation;
 import com.loopers.domain.coupon.CouponService;
 import com.loopers.domain.coupon.DiscountAmount;
@@ -26,6 +27,7 @@ public class CouponFacade {
     private final CampaignCache campaignCache;
     private final CouponReservation couponReservation;
     private final CouponIssuePublisher couponIssuePublisher;
+    private final CouponPublishSlots couponPublishSlots;
 
     public sealed interface IssueResult {
 
@@ -51,16 +53,24 @@ public class CouponFacade {
         if (!campaign.isActive()) {
             throw new DomainException(DomainError.COUPON_CAMPAIGN_INACTIVE);
         }
-        CouponReservation.Result reserved = couponReservation.reserve(campaignId, userId, campaign.getTotalQuota(),
-            campaign.getIssuedCount());
-        return switch (reserved) {
-            case CouponReservation.Result.Reserved accepted -> publish(campaignId, userId, accepted.issueNumber(), now);
-            case CouponReservation.Result.Existing existing -> couponService.findIssued(campaignId, userId)
-                .<IssueResult>map(coupon -> new IssueResult.Issued(existing.issueNumber(), coupon))
-                .orElseGet(() -> new IssueResult.Pending(existing.issueNumber()));
-            case CouponReservation.Result.SoldOut soldOut -> throw new DomainException(DomainError.COUPON_SOLD_OUT);
-            case CouponReservation.Result.Lost lost -> throw new CoreException(ErrorType.COUPON_ADMISSION_UNAVAILABLE);
-        };
+        if (!couponPublishSlots.tryAcquire()) {
+            throw new CoreException(ErrorType.COUPON_ISSUE_BUSY);
+        }
+        try {
+            CouponReservation.Result reserved = couponReservation.reserve(campaignId, userId,
+                campaign.getTotalQuota(), campaign.getIssuedCount());
+            return switch (reserved) {
+                case CouponReservation.Result.Reserved accepted ->
+                    publish(campaignId, userId, accepted.issueNumber(), now);
+                case CouponReservation.Result.Existing existing -> couponService.findIssued(campaignId, userId)
+                    .<IssueResult>map(coupon -> new IssueResult.Issued(existing.issueNumber(), coupon))
+                    .orElseGet(() -> new IssueResult.Pending(existing.issueNumber()));
+                case CouponReservation.Result.SoldOut soldOut -> throw new DomainException(DomainError.COUPON_SOLD_OUT);
+                case CouponReservation.Result.Lost lost -> throw new CoreException(ErrorType.COUPON_ADMISSION_UNAVAILABLE);
+            };
+        } finally {
+            couponPublishSlots.release();
+        }
     }
 
     private IssueResult publish(Long campaignId, Long userId, int issueNumber, Instant reservedAt) {
