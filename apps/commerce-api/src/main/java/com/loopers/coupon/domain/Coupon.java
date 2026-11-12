@@ -4,6 +4,8 @@ import com.loopers.domain.BaseEntity;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import jakarta.persistence.CollectionTable;
+import jakarta.persistence.ConstraintMode;
+import jakarta.persistence.ForeignKey;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
@@ -62,7 +64,9 @@ public class Coupon extends BaseEntity {
     private CouponScope scope;
 
     @ElementCollection
-    @CollectionTable(name = "coupon_applicable_product", joinColumns = @JoinColumn(name = "coupon_id"))
+    // 외래 키는 두지 않는다 — 다른 표들처럼 식별자로만 잇는다. FK가 있으면 streamer 테스트가 coupon 표를 다시 만들지 못한다
+    @CollectionTable(name = "coupon_applicable_product", joinColumns = @JoinColumn(name = "coupon_id"),
+        foreignKey = @ForeignKey(ConstraintMode.NO_CONSTRAINT))
     @Column(name = "product_id", nullable = false)
     private Set<Long> applicableProductIds = new HashSet<>();
 

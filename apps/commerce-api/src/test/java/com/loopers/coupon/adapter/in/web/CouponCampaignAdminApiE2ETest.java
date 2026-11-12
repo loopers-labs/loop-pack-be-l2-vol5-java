@@ -61,6 +61,8 @@ class CouponCampaignAdminApiE2ETest {
     @AfterEach
     void tearDown() {
         databaseCleanUp.truncateAllTables();
+        // @ElementCollection 표는 엔티티가 아니라 DatabaseCleanUp이 비우지 않는다
+        jdbcTemplate.execute("TRUNCATE TABLE coupon_applicable_product");
     }
 
     private Map<String, Object> fixedCoupon() {

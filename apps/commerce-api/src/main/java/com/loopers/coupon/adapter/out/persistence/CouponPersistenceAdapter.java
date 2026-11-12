@@ -47,4 +47,9 @@ public class CouponPersistenceAdapter implements CouponCampaignPort, CouponPort 
     public List<Coupon> findByCampaignId(Long campaignId) {
         return couponJpaRepository.findByCampaignIdOrderByIdAsc(campaignId);
     }
+
+    @Override
+    public List<Coupon> findAllByIds(List<Long> ids) {
+        return ids.isEmpty() ? List.of() : couponJpaRepository.findAllById(ids);
+    }
 }
