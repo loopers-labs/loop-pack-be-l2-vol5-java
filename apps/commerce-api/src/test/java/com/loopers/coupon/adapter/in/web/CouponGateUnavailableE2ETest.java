@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -32,6 +33,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 등록·조회·발급은 503 + Retry-After이고 기록이 생기지 않는다. 내 쿠폰 조회는 DB라 200이다.
  * Redis 컨테이너는 테스트 JVM 전체가 함께 써서 멈출 수 없으므로, Redis 어댑터가 닿지 못했을 때 던지는 예외를 넣는다.
  */
+// 이 클래스만 쓰는 설정(속성·mock)이라 컨텍스트를 다른 테스트와 공유하지 않는다. 끝나면 닫아 커넥션 풀(최소 30개)을 돌려준다 —
+// 닫지 않으면 캐시된 컨텍스트들의 커넥션이 MySQL max_connections(151)를 넘어 다른 테스트가 뜨지 못했다(11-12).
+@DirtiesContext
 @SpringBootTest
 @AutoConfigureMockMvc
 class CouponGateUnavailableE2ETest {

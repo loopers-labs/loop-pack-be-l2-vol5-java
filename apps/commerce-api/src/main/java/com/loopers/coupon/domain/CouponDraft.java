@@ -1,5 +1,8 @@
 package com.loopers.coupon.domain;
 
+import com.loopers.support.error.CoreException;
+import com.loopers.support.error.ErrorType;
+
 import java.time.ZonedDateTime;
 import java.util.Set;
 
@@ -21,6 +24,10 @@ public record CouponDraft(
     boolean stackable
 ) {
     public CouponDraft {
+        // Set.of()의 contains(null)은 NPE를 던지므로 원소를 하나씩 본다
+        if (applicableProductIds != null && applicableProductIds.stream().anyMatch(java.util.Objects::isNull)) {
+            throw new CoreException(ErrorType.BAD_REQUEST, "적용 상품 id가 비어 있습니다.");
+        }
         applicableProductIds = applicableProductIds == null ? Set.of() : Set.copyOf(applicableProductIds);
     }
 }

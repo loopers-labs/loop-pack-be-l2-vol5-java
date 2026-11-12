@@ -89,7 +89,11 @@ public class CouponCampaign extends BaseEntity {
 
     private static int validQueueCapacity(Integer queueCapacity, int totalQuantity) {
         if (queueCapacity == null) {
-            return Math.multiplyExact(totalQuantity, DEFAULT_QUEUE_CAPACITY_MULTIPLIER);
+            long defaultCapacity = (long) totalQuantity * DEFAULT_QUEUE_CAPACITY_MULTIPLIER;
+            if (defaultCapacity > Integer.MAX_VALUE) {
+                throw badRequest("당첨자 수가 너무 커서 기본 줄 길이 제한(× " + DEFAULT_QUEUE_CAPACITY_MULTIPLIER + ")을 정할 수 없습니다. 줄 길이 제한을 직접 주세요.");
+            }
+            return (int) defaultCapacity;
         }
         if (queueCapacity < totalQuantity) {
             throw badRequest("줄 길이 제한은 당첨자 수(" + totalQuantity + ") 이상이어야 합니다.");

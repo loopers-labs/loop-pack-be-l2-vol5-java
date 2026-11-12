@@ -44,7 +44,10 @@ class CouponIssueServiceIntegrationTest extends StreamerIntegrationTestSupport {
         List<String> expires = jdbcTemplate.queryForList(
             "SELECT DATE_FORMAT(expires_at, '%Y-%m-%d') FROM user_coupon WHERE user_id = 42 ORDER BY coupon_id", String.class);
         assertThat(expires.get(0)).isEqualTo("2026-11-30");
-        assertThat(expires.get(1)).isNotEqualTo("2026-11-30");
+        // 발급 후 7일: 만료 시각 - 발급 시각 = 정확히 7일 (실행 날짜와 무관하게)
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT TIMESTAMPDIFF(SECOND, issued_at, expires_at) FROM user_coupon WHERE user_id = 42 ORDER BY coupon_id LIMIT 1 OFFSET 1",
+            Long.class)).isEqualTo(7L * 24 * 60 * 60);
     }
 
     @DisplayName("필수 실험 ③ 같은 메시지를 두 번 처리하면 두 번째는 ALREADY_ISSUED이고 쿠폰·발급 수가 한 번만 늘어난다.")

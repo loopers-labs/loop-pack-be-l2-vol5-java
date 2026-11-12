@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -40,6 +41,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * 대기열 → 입장 → 발급 (D-4, D-2, D-7). 구간을 1시간·구간당 1명으로 두어, "바로 입장"은 테스트마다 첫 사람 한 명만 된다.
  */
+// 이 클래스만 쓰는 설정(속성·mock)이라 컨텍스트를 다른 테스트와 공유하지 않는다. 끝나면 닫아 커넥션 풀(최소 30개)을 돌려준다 —
+// 닫지 않으면 캐시된 컨텍스트들의 커넥션이 MySQL max_connections(151)를 넘어 다른 테스트가 뜨지 못했다(11-12).
+@DirtiesContext
 @SpringBootTest(properties = {"coupon.queue.admission.per-tick=1", "coupon.queue.admission.tick=1h"})
 @AutoConfigureMockMvc
 class CouponQueueFlowE2ETest {
@@ -70,6 +74,10 @@ class CouponQueueFlowE2ETest {
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
+
+    @Autowired
+    @org.springframework.beans.factory.annotation.Qualifier(com.loopers.config.redis.RedisConfig.REDIS_TEMPLATE_MASTER)
+    private org.springframework.data.redis.core.RedisTemplate<String, String> redis;
 
     @Autowired
     private RedisCleanUp redisCleanUp;
@@ -157,27 +165,37 @@ class CouponQueueFlowE2ETest {
         assertThat(polled.path("ahead").asLong()).isEqualTo(3);
     }
 
-    @DisplayName("필수 실험 ② 같은 사람이 동시에 여러 번 등록해도 줄에는 한 자리다.")
+    @DisplayName("필수 실험 ② 줄에 선 사람이 동시에 5번 다시 등록해도 원래 자리(앞 0명)이고, 뒷사람(앞 1명)도 그대로이며 줄은 2명이다.")
     @Test
     void concurrentRegisterOfSameUserTakesOneSlot() throws Exception {
         CouponCampaign campaign = openCampaign(100, null);
         register(campaign, user()); // 바로 입장으로 구간 한도를 쓴다
         Long me = user();
+        Long behind = user();
+        assertThat(register(campaign, me).path("ahead").asLong()).isZero();
+        assertThat(register(campaign, behind).path("ahead").asLong()).isEqualTo(1);
 
         ExecutorService executor = Executors.newFixedThreadPool(5);
         CountDownLatch start = new CountDownLatch(1);
         List<Future<JsonNode>> futures = new ArrayList<>();
-        for (int i = 0; i < 5; i++) {
-            futures.add(executor.submit(() -> {
-                start.await(10, TimeUnit.SECONDS);
-                return register(campaign, me);
-            }));
+        try {
+            for (int i = 0; i < 5; i++) {
+                futures.add(executor.submit(() -> {
+                    start.await(10, TimeUnit.SECONDS);
+                    return register(campaign, me);
+                }));
+            }
+            start.countDown();
+            for (Future<JsonNode> future : futures) {
+                JsonNode state = future.get(30, TimeUnit.SECONDS);
+                assertThat(state.path("status").asText()).isEqualTo("WAITING");
+                assertThat(state.path("ahead").asLong()).isZero();
+            }
+        } finally {
+            executor.shutdownNow();
         }
-        start.countDown();
-        for (Future<JsonNode> future : futures) {
-            assertThat(future.get(30, TimeUnit.SECONDS).path("ahead").asLong()).isZero();
-        }
-        executor.shutdownNow();
+        assertThat(data(call(get(base(campaign) + "/queue"), behind, 200)).path("ahead").asLong()).isEqualTo(1);
+        assertThat(redis.opsForZSet().zCard("coupon:{" + campaign.getId() + "}:queue")).isEqualTo(2);
     }
 
     @DisplayName("입장 전 발급은 409 QUEUE_NOT_ADMITTED이고 기록이 없다.")
@@ -190,8 +208,11 @@ class CouponQueueFlowE2ETest {
 
         MvcResult result = call(post(base(campaign) + "/issues"), waiting, 409);
 
-        assertThat(result.getResponse().getContentAsString()).contains("Queue Not Admitted");
+        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+        assertThat(body.path("meta").path("errorCode").asText()).isEqualTo("Queue Not Admitted");
+        assertThat(body.has("data") && !body.path("data").isNull()).isFalse();
         assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM coupon_issue_outbox", Long.class)).isZero();
+        assertThat(redis.opsForSet().size("coupon:{" + campaign.getId() + "}:winners")).isZero();
     }
 
     @DisplayName("품절되면 새 등록은 SOLD_OUT(200)이지만 당첨자는 조회 ISSUED·발급 202다. 줄이 가득 차면 등록은 429 + Retry-After다.")
@@ -212,6 +233,19 @@ class CouponQueueFlowE2ETest {
         register(full, user());           // 줄 1명 = 가득
         MvcResult rejected = call(post(base(full) + "/queue"), user(), 429);
         assertThat(rejected.getResponse().getHeader("Retry-After")).isEqualTo("1");
+        assertThat(redis.opsForZSet().zCard("coupon:{" + full.getId() + "}:queue")).isEqualTo(1); // 거절된 사람은 줄에 없다
+    }
+
+    @DisplayName("요청자는 인증 계층(JWT)이 검증한 id로 본다: 헤더가 없거나 숫자가 아니면 401이고, DB에 없는 id인지는 묻지 않는다.")
+    @Test
+    void trustsAuthenticatedIdWithoutDbLookup() throws Exception {
+        CouponCampaign campaign = openCampaign(5, null);
+
+        mockMvc.perform(post(base(campaign) + "/queue")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get(base(campaign) + "/queue").header("X-USER-ID", "abc")).andExpect(status().isUnauthorized());
+        mockMvc.perform(post(base(campaign) + "/issues").header("X-USER-ID", "0")).andExpect(status().isUnauthorized());
+        // users 표에 없는 id — 토큰으로 검증됐다고 보므로 DB에 묻지 않고 줄에 선다
+        assertThat(register(campaign, 987_654L).path("status").asText()).isEqualTo("ADMITTED");
     }
 
     @DisplayName("발급 기간이 아니면 409 CAMPAIGN_NOT_OPEN, 없는 캠페인이면 404다.")

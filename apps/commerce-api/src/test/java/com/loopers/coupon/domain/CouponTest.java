@@ -75,6 +75,33 @@ class CouponTest {
         }
     }
 
+    @DisplayName("CPN-04 쿠폰 이름은 1–100자(앞뒤 공백 제거)다. 공백뿐이거나 101자면 거절한다.")
+    @Test
+    void nameRule() {
+        CouponDraft base = fixed(1_000);
+        Coupon longest = Coupon.of(1L, new CouponDraft(" " + "가".repeat(100) + " ", base.discountType(), base.discountValue(), null,
+            base.minOrderAmount(), base.scope(), Set.of(), base.validityType(), null, null, base.validDays(), false));
+
+        assertThat(longest.getName()).hasSize(100);
+        assertBadRequest(() -> Coupon.of(1L, new CouponDraft("  ", base.discountType(), base.discountValue(), null,
+            base.minOrderAmount(), base.scope(), Set.of(), base.validityType(), null, null, base.validDays(), false)));
+        assertBadRequest(() -> Coupon.of(1L, new CouponDraft("가".repeat(101), base.discountType(), base.discountValue(), null,
+            base.minOrderAmount(), base.scope(), Set.of(), base.validityType(), null, null, base.validDays(), false)));
+    }
+
+    @DisplayName("CPN-04 정률의 최대 할인액 1원은 허용한다(경계).")
+    @Test
+    void rateMaxDiscountOfOneIsAllowed() {
+        assertThat(Coupon.of(1L, rate(10, 1L)).getMaxDiscountAmount()).isEqualTo(1L);
+    }
+
+    @DisplayName("적용 상품 id에 빈 값(null)이 있으면 400이다 (500이 아니라).")
+    @Test
+    void rejectsNullProductId() {
+        java.util.Set<Long> withNull = new java.util.HashSet<>(java.util.Arrays.asList(10L, null));
+        assertBadRequest(() -> withScope(CouponScope.PRODUCTS, withNull));
+    }
+
     @DisplayName("CPN-05 적용 범위")
     @Nested
     class Scope {

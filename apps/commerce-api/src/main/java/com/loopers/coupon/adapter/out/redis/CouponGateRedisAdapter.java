@@ -79,6 +79,10 @@ public class CouponGateRedisAdapter implements CouponGatePort {
         return prefix(campaignId) + "admit:";
     }
 
+    static String admittedKey(Long campaignId) {
+        return prefix(campaignId) + "admitted";
+    }
+
     static String rebuildLockKey(Long campaignId) {
         return prefix(campaignId) + "rebuild";
     }
@@ -86,7 +90,7 @@ public class CouponGateRedisAdapter implements CouponGatePort {
     @Override
     public IssueDecision issue(Long campaignId, Long userId, int totalQuantity) {
         String result = call(() -> redis.execute(issueScript,
-            List.of(stateKey(campaignId), winnersKey(campaignId), entryPrefix(campaignId) + userId),
+            List.of(stateKey(campaignId), winnersKey(campaignId), entryPrefix(campaignId) + userId, admittedKey(campaignId)),
             String.valueOf(userId), String.valueOf(totalQuantity)));
         return IssueDecision.valueOf(result);
     }
@@ -94,7 +98,8 @@ public class CouponGateRedisAdapter implements CouponGatePort {
     @Override
     public QueueState register(Long campaignId, Long userId, int totalQuantity, int queueCapacity) {
         List<?> result = call(() -> redis.execute(registerScript,
-            List.of(stateKey(campaignId), winnersKey(campaignId), queueKey(campaignId), seqKey(campaignId), entryPrefix(campaignId) + userId),
+            List.of(stateKey(campaignId), winnersKey(campaignId), queueKey(campaignId), seqKey(campaignId), entryPrefix(campaignId) + userId,
+                admittedKey(campaignId)),
             String.valueOf(userId), String.valueOf(totalQuantity), String.valueOf(queueCapacity), String.valueOf(admitPerTick),
             String.valueOf(tickMillis), String.valueOf(entryTtlSeconds), admitPrefix(campaignId)));
         return toQueueState(result);
@@ -111,7 +116,7 @@ public class CouponGateRedisAdapter implements CouponGatePort {
     @Override
     public AdmitResult admit(Long campaignId, int totalQuantity) {
         List<?> result = call(() -> redis.execute(admitScript,
-            List.of(stateKey(campaignId), winnersKey(campaignId), queueKey(campaignId)),
+            List.of(stateKey(campaignId), winnersKey(campaignId), queueKey(campaignId), admittedKey(campaignId)),
             String.valueOf(totalQuantity), String.valueOf(admitPerTick), String.valueOf(tickMillis), String.valueOf(entryTtlSeconds),
             admitPrefix(campaignId), entryPrefix(campaignId)));
         return new AdmitResult(AdmitStatus.valueOf(String.valueOf(result.get(0))), ((Number) result.get(1)).intValue());
@@ -145,7 +150,8 @@ public class CouponGateRedisAdapter implements CouponGatePort {
 
     @Override
     public void cleanup(Long campaignId) {
-        List<String> keys = new ArrayList<>(List.of(queueKey(campaignId), seqKey(campaignId), winnersKey(campaignId), stateKey(campaignId)));
+        List<String> keys = new ArrayList<>(List.of(queueKey(campaignId), seqKey(campaignId), winnersKey(campaignId), stateKey(campaignId),
+            admittedKey(campaignId)));
         call(() -> redis.unlink(keys));
     }
 

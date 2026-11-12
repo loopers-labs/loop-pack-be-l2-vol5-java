@@ -4,6 +4,7 @@ import com.loopers.coupon.application.port.in.CouponQueueUseCase;
 import com.loopers.coupon.application.port.out.CouponGatePort;
 import com.loopers.coupon.application.port.out.CouponGatePort.GateUnavailableException;
 import com.loopers.coupon.application.port.out.CouponGatePort.QueueState;
+import com.loopers.coupon.application.port.out.CouponGatePort.QueueStateType;
 import com.loopers.coupon.domain.CampaignSnapshot;
 import com.loopers.coupon.domain.PollInterval;
 import com.loopers.support.error.CoreException;
@@ -27,18 +28,21 @@ public class CouponQueueService implements CouponQueueUseCase {
     private final SoldOutFlags soldOutFlags;
     private final CouponGatePort gate;
     private final int admitPerSecond;
+    private final QueueAdmissionService admissionService;
 
     public CouponQueueService(
         OpenCampaigns openCampaigns,
         SoldOutFlags soldOutFlags,
         CouponGatePort gate,
         @Value("${coupon.queue.admission.per-tick}") int perTick,
-        @Value("${coupon.queue.admission.tick}") Duration tick
+        @Value("${coupon.queue.admission.tick}") Duration tick,
+        QueueAdmissionService admissionService
     ) {
         this.openCampaigns = openCampaigns;
         this.soldOutFlags = soldOutFlags;
         this.gate = gate;
         this.admitPerSecond = (int) (perTick * 1_000L / tick.toMillis());
+        this.admissionService = admissionService;
     }
 
     @Override
@@ -47,7 +51,8 @@ public class CouponQueueService implements CouponQueueUseCase {
         if (soldOutFlags.isSoldOut(campaignId)) {
             return QueueStatusInfo.of(QueueStatus.SOLD_OUT);
         }
-        return toInfo(campaignId, call(() -> gate.register(campaignId, userId, campaign.totalQuantity(), campaign.queueCapacity())));
+        return toInfo(campaignId, recoverIfUnknown(campaignId,
+            () -> gate.register(campaignId, userId, campaign.totalQuantity(), campaign.queueCapacity())));
     }
 
     @Override
@@ -55,7 +60,7 @@ public class CouponQueueService implements CouponQueueUseCase {
         CampaignSnapshot campaign = openCampaigns.require(campaignId);
         // 조회는 품절 표시로 끊지 않는다 — 당첨자는 품절 뒤에도 ISSUED를 받아야 한다. 품절되면 줄이 지워져
         // 기다리던 사람은 Lua에서 SOLD_OUT을 한 번 받고 조회를 멈추므로, 품절 뒤 조회가 계속 몰리지 않는다.
-        return toInfo(campaignId, call(() -> gate.status(campaignId, userId, campaign.totalQuantity())));
+        return toInfo(campaignId, recoverIfUnknown(campaignId, () -> gate.status(campaignId, userId, campaign.totalQuantity())));
     }
 
     private QueueStatusInfo toInfo(Long campaignId, QueueState state) {
@@ -74,7 +79,19 @@ public class CouponQueueService implements CouponQueueUseCase {
         };
     }
 
-    private static QueueState call(Supplier<QueueState> command) {
+    /**
+     * 상태 키가 없으면(캠페인 시작·Redis 유실) 스케줄러를 기다리지 않고 이 자리에서 복구한 뒤 한 번 더 본다 (학습자 11-12).
+     * 다른 서버가 복구 중이면 잠금을 얻지 못해 그대로 UNKNOWN → 503이고, 다시 조회하면 된다.
+     */
+    private QueueState recoverIfUnknown(Long campaignId, Supplier<QueueState> command) {
+        QueueState state = call(command);
+        if (state.type() == QueueStateType.UNKNOWN && admissionService.tryRecover(campaignId)) {
+            state = call(command);
+        }
+        return state;
+    }
+
+    private static <T> T call(Supplier<T> command) {
         try {
             return command.get();
         } catch (GateUnavailableException e) {

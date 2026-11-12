@@ -168,6 +168,28 @@ class CouponCampaignAdminApiE2ETest {
         assertThat(count("coupon_campaign")).isZero();
     }
 
+    @DisplayName("쿠폰 목록에 빈 항목(null)이 있으면 400이다 (500이 아니라).")
+    @Test
+    void rejectsNullCouponItem() throws Exception {
+        java.util.List<Map<String, Object>> coupons = new java.util.ArrayList<>();
+        coupons.add(null);
+        postCampaign(campaign(coupons), 400);
+
+        assertThat(count("coupon_campaign")).isZero();
+    }
+
+    @DisplayName("관리자가 아니면 생성·조회·DLT 재처리 모두 403이다.")
+    @Test
+    void rejectsNonAdmin() throws Exception {
+        mockMvc.perform(post(ENDPOINT).with(user("customer").roles("USER")).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(campaign(List.of(fixedCoupon())))))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(get(ENDPOINT + "/1")).andExpect(status().isForbidden());
+        mockMvc.perform(post(ENDPOINT + "/1/dead-letters/replay").with(csrf())).andExpect(status().isForbidden());
+
+        assertThat(count("coupon_campaign")).isZero();
+    }
+
     @DisplayName("없는 캠페인을 조회하면 404다.")
     @Test
     void notFound() throws Exception {

@@ -24,6 +24,9 @@ public class CouponCampaignAdminDto {
         List<CouponRequest> coupons
     ) {
         public CreateCampaignCommand toCommand() {
+            if (coupons != null && coupons.stream().anyMatch(java.util.Objects::isNull)) {
+                throw new CoreException(ErrorType.BAD_REQUEST, "쿠폰 항목이 비어 있습니다.");
+            }
             List<CouponDraft> drafts = coupons == null ? List.of() : coupons.stream().map(CouponRequest::toDraft).toList();
             return new CreateCampaignCommand(name, required(totalQuantity, "totalQuantity"), queueCapacity, issueStartAt, issueEndAt, drafts);
         }

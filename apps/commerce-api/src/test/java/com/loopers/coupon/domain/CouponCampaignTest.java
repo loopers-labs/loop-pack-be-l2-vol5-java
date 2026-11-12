@@ -55,6 +55,12 @@ class CouponCampaignTest {
             assertThat(campaign.getQueueCapacity()).isEqualTo(1_000);
         }
 
+        @DisplayName("CPN-02 기본 줄 길이(당첨자 수 × 10)가 int를 넘으면 400이다 (500이 아니라).")
+        @Test
+        void rejectsDefaultCapacityOverflow() {
+            assertBadRequest(() -> new CouponCampaign("선착순", 214_748_365, null, START, END));
+        }
+
         @DisplayName("CPN-02 줄 길이 제한이 당첨자 수보다 작으면 거절한다.")
         @Test
         void rejectsQueueCapacitySmallerThanQuantity() {

@@ -38,15 +38,18 @@ public class CouponIssueService implements CouponIssueUseCase {
     private final CouponIssueOutboxPort outboxPort;
     private final UserCouponPort userCouponPort;
     private final Clock clock;
+    private final QueueAdmissionService admissionService;
 
     public CouponIssueService(OpenCampaigns openCampaigns, SoldOutFlags soldOutFlags, CouponGatePort gate,
-                              CouponIssueOutboxPort outboxPort, UserCouponPort userCouponPort, Clock clock) {
+                              CouponIssueOutboxPort outboxPort, UserCouponPort userCouponPort, Clock clock,
+                              QueueAdmissionService admissionService) {
         this.openCampaigns = openCampaigns;
         this.soldOutFlags = soldOutFlags;
         this.gate = gate;
         this.outboxPort = outboxPort;
         this.userCouponPort = userCouponPort;
         this.clock = clock;
+        this.admissionService = admissionService;
     }
 
     @Override
@@ -73,7 +76,12 @@ public class CouponIssueService implements CouponIssueUseCase {
 
     private IssueDecision decide(CampaignSnapshot campaign, Long userId) {
         try {
-            return gate.issue(campaign.id(), userId, campaign.totalQuantity());
+            IssueDecision decision = gate.issue(campaign.id(), userId, campaign.totalQuantity());
+            if (decision == IssueDecision.UNKNOWN && admissionService.tryRecover(campaign.id())) {
+                // 상태 키가 없다(캠페인 시작·Redis 유실): 스케줄러를 기다리지 않고 이 자리에서 복구한 뒤 한 번 더 본다 (학습자 11-12)
+                decision = gate.issue(campaign.id(), userId, campaign.totalQuantity());
+            }
+            return decision;
         } catch (GateUnavailableException e) {
             log.warn("발급 판정 실패 — Redis에 닿지 못해 우회하지 않고 503. campaignId={}, userId={}", campaign.id(), userId, e);
             throw new CoreException(ErrorType.SERVICE_UNAVAILABLE);

@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
@@ -49,6 +50,9 @@ import static org.mockito.Mockito.reset;
 /**
  * 앞으로 채우기 (D-2): 당첨자 Set이 원본이고 outbox가 따라잡는다. 그리고 DLT 재처리.
  */
+// 이 클래스만 쓰는 설정(속성·mock)이라 컨텍스트를 다른 테스트와 공유하지 않는다. 끝나면 닫아 커넥션 풀(최소 30개)을 돌려준다 —
+// 닫지 않으면 캐시된 컨텍스트들의 커넥션이 MySQL max_connections(151)를 넘어 다른 테스트가 뜨지 못했다(11-12).
+@DirtiesContext
 @SpringBootTest
 class CouponRecoveryIntegrationTest {
 
@@ -190,5 +194,18 @@ class CouponRecoveryIntegrationTest {
 
         assertThat(gate.issue(ended.getId(), 1L, 5)).isEqualTo(IssueDecision.UNKNOWN);
         assertThat(gate.winners(ended.getId())).isEmpty();
+    }
+
+    @DisplayName("마감 뒤 10분이 안 지난 캠페인은 정리하지 않는다 — 맞춰 보기가 마감 직전 당첨자의 기록을 채울 여유 (D-4-6).")
+    @Test
+    void keepsKeysWithinTenMinutesAfterDeadline() {
+        ZonedDateTime now = ZonedDateTime.now();
+        CouponCampaign justEnded = campaignJpaRepository.save(new CouponCampaign("방금", 5, null, now.minusHours(1), now.minusMinutes(5)));
+        gate.rebuild(justEnded.getId(), java.util.Set.of(1L));
+
+        reconcileService.run();
+
+        assertThat(gate.winners(justEnded.getId())).containsExactly(1L);
+        assertThat(recorded(justEnded.getId(), 1L)).isEqualTo(1); // 기록이 없던 당첨자를 채웠다
     }
 }

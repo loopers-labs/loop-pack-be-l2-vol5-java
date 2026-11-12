@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -37,6 +38,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * 격벽 (D-6). 발급 Bulkhead 동시 1개·대기 0, 대기열 RateLimiter 10초에 2건으로 줄여 막히는 모습을 본다.
  */
+// 이 클래스만 쓰는 설정(속성·mock)이라 컨텍스트를 다른 테스트와 공유하지 않는다. 끝나면 닫아 커넥션 풀(최소 30개)을 돌려준다 —
+// 닫지 않으면 캐시된 컨텍스트들의 커넥션이 MySQL max_connections(151)를 넘어 다른 테스트가 뜨지 못했다(11-12).
+@DirtiesContext
 @SpringBootTest(properties = {
     "resilience4j.bulkhead.instances.couponIssue.max-concurrent-calls=1",
     "resilience4j.bulkhead.instances.couponIssue.max-wait-duration=0",
