@@ -65,6 +65,12 @@ coupon:
     queue:
       # 대기, 처리 중, 결과 불명 작업을 합친 미완료 한도. 한도 동작 검증용 로컬 값이다.
       capacity: 20
+      worker:
+        # 자동 실행은 기본으로 끈다. 켜도 신규 수용이 열린 동안에만 작업을 가져온다.
+        enabled: false
+        concurrency: 3
+        poll-interval: 100ms
+        shutdown-timeout: 30s
 
 # 기동 시 정렬별 전체·활성 브랜드 목록의 첫 페이지를 캐시에 채운다.
 product:
@@ -109,6 +115,9 @@ spring:
 coupon:
   issue:
     capacity: 3
+    queue:
+      worker:
+        enabled: true
   seed:
     reset: false
 

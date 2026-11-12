@@ -61,7 +61,7 @@ class CouponIssueQueueFacadeTest {
         admission = new CouponIssueAdmissionState();
         admission.open();
         facade = new CouponIssueQueueFacade(queue, coupons, campaigns, admission,
-            new CouponIssueQueueProperties(CAPACITY), new ApplicationTime(Clock.fixed(NOW, ZoneOffset.UTC)));
+            new CouponIssueQueueProperties(CAPACITY, null), new ApplicationTime(Clock.fixed(NOW, ZoneOffset.UTC)));
         campaign = CouponCampaign.create("테스트 행사", 5, "5,000원 할인권", NOW.minusSeconds(60), NOW.plusSeconds(3600));
     }
 
