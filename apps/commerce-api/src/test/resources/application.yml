@@ -1,0 +1,12 @@
+spring:
+  config:
+    import:
+      - jpa.yml
+      - redis.yml
+      - kafka.yml
+      - logging.yml
+      - monitoring.yml
+
+demo-kafka:
+  test:
+    topic-name: demo.internal.topic-v1

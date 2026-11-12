@@ -1,5 +1,7 @@
 package com.loopers.interfaces.api;
 
+import com.loopers.CommerceApiApplication;
+
 import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.order.OrderItemModel;
 import com.loopers.domain.order.OrderModel;
@@ -31,7 +33,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
+@SpringBootTest(classes = CommerceApiApplication.class)
 @AutoConfigureMockMvc
 class AdminV1ApiE2ETest {
 

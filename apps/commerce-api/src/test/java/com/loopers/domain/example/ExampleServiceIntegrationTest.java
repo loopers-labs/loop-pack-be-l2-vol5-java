@@ -1,5 +1,7 @@
 package com.loopers.domain.example;
 
+import com.loopers.CommerceApiApplication;
+
 import com.loopers.infrastructure.example.ExampleJpaRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
@@ -15,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-@SpringBootTest
+@SpringBootTest(classes = CommerceApiApplication.class)
 class ExampleServiceIntegrationTest {
     @Autowired
     private ExampleService exampleService;

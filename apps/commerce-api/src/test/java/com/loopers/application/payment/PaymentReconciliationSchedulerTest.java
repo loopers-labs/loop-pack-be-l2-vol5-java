@@ -1,6 +1,8 @@
 package com.loopers.application.payment;
 
-import com.loopers.application.order.OrderEventPublisher;
+import com.loopers.CommerceApiApplication;
+
+import com.loopers.application.order.OutboxPublisher;
 import com.loopers.application.order.OrderFacade;
 import com.loopers.application.order.OrderItemCommand;
 import com.loopers.domain.brand.BrandModel;
@@ -33,7 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
-@SpringBootTest
+@SpringBootTest(classes = CommerceApiApplication.class)
 class PaymentReconciliationSchedulerTest {
 
     @Autowired PaymentReconciliationScheduler scheduler;
@@ -48,7 +50,7 @@ class PaymentReconciliationSchedulerTest {
     @Autowired DatabaseCleanUp databaseCleanUp;
 
     @MockBean PgPaymentPort pgPaymentPort;
-    @MockBean OrderEventPublisher orderEventPublisher;
+    @MockBean OutboxPublisher outboxPublisher;
 
     @AfterEach
     void tearDown() {

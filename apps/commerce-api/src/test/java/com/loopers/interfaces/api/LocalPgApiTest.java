@@ -1,5 +1,7 @@
 package com.loopers.interfaces.api;
 
+import com.loopers.CommerceApiApplication;
+
 import com.loopers.interfaces.api.pg.LocalPgDto;
 import com.loopers.interfaces.api.pg.LocalPgStore;
 import org.junit.jupiter.api.AfterEach;
@@ -19,7 +21,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, classes = CommerceApiApplication.class)
 class LocalPgApiTest {
 
     private static final String PROVIDER_ID = "135135";

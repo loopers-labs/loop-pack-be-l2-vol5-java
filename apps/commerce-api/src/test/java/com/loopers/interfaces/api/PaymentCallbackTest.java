@@ -1,7 +1,9 @@
 package com.loopers.interfaces.api;
 
+import com.loopers.CommerceApiApplication;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.loopers.application.order.OrderEventPublisher;
+import com.loopers.application.order.OutboxPublisher;
 import com.loopers.application.order.OrderFacade;
 import com.loopers.application.order.OrderItemCommand;
 import com.loopers.application.payment.PgPaymentPort;
@@ -38,7 +40,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
+@SpringBootTest(classes = CommerceApiApplication.class)
 @AutoConfigureMockMvc
 class PaymentCallbackTest {
 
@@ -53,7 +55,7 @@ class PaymentCallbackTest {
     @Autowired DatabaseCleanUp databaseCleanUp;
 
     @MockBean PgPaymentPort pgPaymentPort;
-    @MockBean OrderEventPublisher orderEventPublisher;
+    @MockBean OutboxPublisher outboxPublisher;
 
     @AfterEach
     void tearDown() {

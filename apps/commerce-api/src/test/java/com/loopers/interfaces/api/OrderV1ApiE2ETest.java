@@ -1,6 +1,8 @@
 package com.loopers.interfaces.api;
 
-import com.loopers.application.order.OrderEventPublisher;
+import com.loopers.CommerceApiApplication;
+
+import com.loopers.application.order.OutboxPublisher;
 import com.loopers.application.payment.PgPaymentPort;
 import com.loopers.application.payment.PgPaymentResult;
 import com.loopers.domain.brand.BrandModel;
@@ -36,7 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, classes = CommerceApiApplication.class)
 class OrderV1ApiE2ETest {
 
     private static final String USER_ID_HEADER = "X-USER-ID";
@@ -58,7 +60,7 @@ class OrderV1ApiE2ETest {
     PgPaymentPort pgPaymentPort;
 
     @MockBean
-    OrderEventPublisher orderEventPublisher;
+    OutboxPublisher outboxPublisher;
 
     @Autowired
     PointJpaRepository pointJpaRepository;

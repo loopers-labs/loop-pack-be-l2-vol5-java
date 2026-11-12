@@ -1,5 +1,7 @@
 package com.loopers.interfaces.api;
 
+import com.loopers.CommerceApiApplication;
+
 import com.loopers.domain.point.PointModel;
 import com.loopers.domain.user.UserModel;
 import com.loopers.infrastructure.point.PointJpaRepository;
@@ -23,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, classes = CommerceApiApplication.class)
 class PointV1ApiE2ETest {
 
     private static final String USER_ID_HEADER = "X-USER-ID";

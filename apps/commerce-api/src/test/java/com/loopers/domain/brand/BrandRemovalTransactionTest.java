@@ -1,5 +1,7 @@
 package com.loopers.domain.brand;
 
+import com.loopers.CommerceApiApplication;
+
 import com.loopers.application.brand.BrandFacade;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.infrastructure.brand.BrandJpaRepository;
@@ -19,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 
-@SpringBootTest
+@SpringBootTest(classes = CommerceApiApplication.class)
 class BrandRemovalTransactionTest {
 
     @Autowired BrandJpaRepository brandJpaRepository;

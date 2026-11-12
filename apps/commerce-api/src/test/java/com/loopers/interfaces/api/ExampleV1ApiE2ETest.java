@@ -1,5 +1,7 @@
 package com.loopers.interfaces.api;
 
+import com.loopers.CommerceApiApplication;
+
 import com.loopers.domain.example.ExampleModel;
 import com.loopers.infrastructure.example.ExampleJpaRepository;
 import com.loopers.interfaces.api.example.ExampleV1Dto;
@@ -23,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, classes = CommerceApiApplication.class)
 class ExampleV1ApiE2ETest {
 
     private static final Function<Long, String> ENDPOINT_GET = id -> "/api/v1/examples/" + id;

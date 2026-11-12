@@ -34,6 +34,9 @@ dependencies {
     testImplementation(testFixtures(project(":modules:redis")))
     testImplementation(testFixtures(project(":modules:kafka")))
 
+    // streamer integration (E2E test: real PurchaseActivityHandler + consumer)
+    testImplementation(project(":apps:commerce-streamer"))
+
     // circuit breaker
     implementation("org.springframework.cloud:spring-cloud-starter-circuitbreaker-resilience4j")
 

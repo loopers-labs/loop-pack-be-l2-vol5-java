@@ -1,6 +1,8 @@
 package com.loopers.domain.order;
 
-import com.loopers.application.order.OrderEventPublisher;
+import com.loopers.CommerceApiApplication;
+
+import com.loopers.application.order.OutboxPublisher;
 import com.loopers.application.order.OrderFacade;
 import com.loopers.application.order.OrderInfo;
 import com.loopers.application.order.OrderItemCommand;
@@ -28,7 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
-@SpringBootTest
+@SpringBootTest(classes = CommerceApiApplication.class)
 class OrderTransactionTest {
 
     @Autowired UserJpaRepository userJpaRepository;
@@ -39,7 +41,7 @@ class OrderTransactionTest {
     @Autowired OrderFacade orderFacade;
 
     @MockBean PgPaymentPort pgPaymentPort;
-    @MockBean OrderEventPublisher orderEventPublisher;
+    @MockBean OutboxPublisher outboxPublisher;
 
     @Autowired DatabaseCleanUp databaseCleanUp;
 

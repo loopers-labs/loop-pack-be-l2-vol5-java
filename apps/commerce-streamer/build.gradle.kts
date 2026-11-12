@@ -1,3 +1,9 @@
+import org.springframework.boot.gradle.tasks.bundling.BootJar
+
+// plain JAR을 활성화해 testImplementation(project(":apps:commerce-streamer"))가 동작하도록 함
+tasks.getByName<BootJar>("bootJar") { archiveClassifier.set("boot") }
+tasks.getByName<Jar>("jar") { enabled = true }
+
 dependencies {
     // add-ons
     implementation(project(":modules:jpa"))

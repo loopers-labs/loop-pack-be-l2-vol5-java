@@ -1,5 +1,7 @@
 package com.loopers.interfaces.api;
 
+import com.loopers.CommerceApiApplication;
+
 import com.loopers.domain.brand.BrandModel;
 import com.loopers.infrastructure.brand.BrandJpaRepository;
 import com.loopers.interfaces.api.brand.BrandV1Dto;
@@ -20,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, classes = CommerceApiApplication.class)
 class BrandV1ApiE2ETest {
 
     private static final ParameterizedTypeReference<ApiResponse<BrandV1Dto.BrandResponse>> RESPONSE_TYPE =

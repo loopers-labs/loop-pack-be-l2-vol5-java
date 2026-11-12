@@ -2,7 +2,9 @@ package com.loopers.application.order;
 
 import com.loopers.domain.order.OrderModel;
 
+import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -26,6 +28,9 @@ public record OrderConfirmedEvent(
             .map(e -> new Item(e.getKey(), e.getValue()))
             .toList();
 
-        return new OrderConfirmedEvent(eventId, order.getId(), order.getConfirmedAt(), normalizedItems);
+        ZonedDateTime confirmedAt = order.getConfirmedAt()
+            .truncatedTo(ChronoUnit.MICROS)
+            .withZoneSameInstant(ZoneOffset.UTC);
+        return new OrderConfirmedEvent(eventId, order.getId(), confirmedAt, normalizedItems);
     }
 }

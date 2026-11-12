@@ -1,5 +1,7 @@
 package com.loopers.interfaces.api;
 
+import com.loopers.CommerceApiApplication;
+
 import com.loopers.domain.example.ExampleModel;
 import com.loopers.infrastructure.example.ExampleJpaRepository;
 import com.loopers.interfaces.api.example.ExampleV1Dto;
@@ -24,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 네 가지 HTTP 입력(정상 숫자, 숫자가 아닌 ID, 존재하지 않는 숫자 ID, 미매핑 URL)에 대해
  * HTTP status / meta.result / errorCode / data 유무를 관찰하고 문서의 표와 같은 값을 검증한다.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, classes = CommerceApiApplication.class)
 class ContractClassificationTest {
 
     private final TestRestTemplate testRestTemplate;

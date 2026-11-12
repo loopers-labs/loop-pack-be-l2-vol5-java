@@ -1,5 +1,7 @@
 package com.loopers.domain.order;
 
+import com.loopers.CommerceApiApplication;
+
 import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.domain.user.UserModel;
@@ -21,7 +23,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@SpringBootTest
+@SpringBootTest(classes = CommerceApiApplication.class)
 class OrderExpiryTest {
 
     @Autowired UserJpaRepository userJpaRepository;
