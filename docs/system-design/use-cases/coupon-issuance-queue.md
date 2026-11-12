@@ -449,7 +449,7 @@ Redis 재시작 후 접수 정보를 보존하는 수준은 실제 RDB, AOF 설�
 | `application/coupon/CouponIssueQueueFacade` | 본인 접수, 중복 결과 반환, 본인 작업 조회 |
 | `application/coupon/CouponIssueQueue` | 대기열 저장과 claim, 완료 기록을 위한 port. 응답 불명 시 상태, token, 결과와 List 위치를 일관되게 읽는 협력 |
 | `application/coupon/CouponIssueQueueWorker` | permit을 먼저 얻고 대기 작업을 가져와 기존 발급 흐름으로 처리하고 결과 기록. 대기 작업이 없으면 permit 반환. 가져오기 응답 불명 시 DB 진입 중단, 기록 응답 불명 시 저장 상태 보존 |
-| 기존 발급 애플리케이션 협력 | permit을 얻은 이후의 DB 발급, 완료 상태 판단, token 반환을 worker도 쓸 수 있게 분리. 확정 실패와 DB 결과 불명 구분 정보 전달. 동기 API 응답 계약 유지 |
+| 기존 발급 애플리케이션 협력 | permit을 얻은 이후의 DB 발급, 완료 상태 판단, token 반환을 `CouponIssueExecutor`로 분리하고 결과를 `CouponIssueExecution`(`Issued`, `AlreadyIssued`, `Failed`)으로 돌려준다. 동기 facade와 worker가 함께 사용한다. 확정 실패와 DB 결과 불명 구분 정보 전달. 동기 API 응답 계약 유지 |
 | `infrastructure/coupon` | primary Redis List adapter, 제한된 worker 실행 설정 |
 | 로컬 seed 준비 | reset 전에 남은 작업과 token 확인, 해당 캠페인의 작업 정보와 중복 접수 정보를 Lua로 정리한 뒤 DB 초기화 |
 | `resources/redis` | 중복 접수, 수용 한도, claim과 완료의 Lua 연산. 수동 복구용 조건부 Lua, seed reset용 캠페인 정리 Lua |

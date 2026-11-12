@@ -5,17 +5,14 @@ import com.loopers.domain.coupon.Coupon;
 import com.loopers.domain.coupon.CouponCampaign;
 import com.loopers.domain.coupon.CouponCampaignRepository;
 import com.loopers.domain.coupon.CouponRepository;
-import com.loopers.domain.coupon.DuplicateCouponIssueException;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.UUID;
 
-@Slf4j
 @Component
 @RequiredArgsConstructor
 public class CouponIssueFacade {
@@ -23,7 +20,7 @@ public class CouponIssueFacade {
     private final CouponRepository coupons;
     private final CouponCampaignRepository campaigns;
     private final CouponIssuePermits permits;
-    private final CouponIssueTransaction transaction;
+    private final CouponIssueExecutor executor;
     private final CouponIssueAdmissionState admission;
     private final CouponIssueProperties properties;
     private final ApplicationTime applicationTime;
@@ -54,22 +51,11 @@ public class CouponIssueFacade {
             throw new CoreException(ErrorType.TOO_MANY_REQUESTS, "현재 쿠폰 발급 처리 자리가 없습니다.");
         }
 
-        CouponIssueTransactionCompletion completion = new CouponIssueTransactionCompletion();
-        CouponIssueInfo issued;
-        try {
-            issued = transaction.issue(campaignId, userId, completion);
-        } catch (RuntimeException | Error failure) {
-            returnPermitIfDbWorkDone(campaignId, token, completion, failure);
-            if (failure instanceof DuplicateCouponIssueException) {
-                Coupon concurrentResult = coupons.findIssuedByCampaignIdAndUserId(campaignId, userId)
-                    .orElseThrow(() -> new CoreException(ErrorType.INTERNAL_ERROR,
-                        "중복 발급 충돌 뒤 기존 쿠폰을 찾지 못했습니다."));
-                return new CouponIssueResult(toInfo(concurrentResult), false);
-            }
-            throw failure;
-        }
-        returnPermitSafely(token);
-        return new CouponIssueResult(issued, true);
+        return switch (executor.execute(campaignId, userId, token)) {
+            case CouponIssueExecution.Issued issued -> new CouponIssueResult(issued.coupon(), true);
+            case CouponIssueExecution.AlreadyIssued already -> new CouponIssueResult(toInfo(already.coupon()), false);
+            case CouponIssueExecution.Failed failed -> throw failed.failure();
+        };
     }
 
     public List<CouponIssueInfo> getMyCoupons(Long userId) {
@@ -80,39 +66,5 @@ public class CouponIssueFacade {
         CouponCampaign campaign = campaigns.findById(coupon.getCampaignId())
             .orElseThrow(() -> new CoreException(ErrorType.INTERNAL_ERROR, "쿠폰의 캠페인 정보를 찾지 못했습니다."));
         return CouponIssueInfo.from(coupon, campaign);
-    }
-
-    /**
-     * 예외 종류가 아니라 트랜잭션 완료 상태로 DB 작업의 종료를 판단한다.
-     * 끝났는지 확인하지 못한 실행의 token은 자리를 계속 점유하게 두고, 정리할 수 있도록 내부 실행 ID인 token을 기록한다.
-     */
-    private void returnPermitIfDbWorkDone(Long campaignId, String token,
-                                          CouponIssueTransactionCompletion completion, Throwable failure) {
-        if (completion.isDbWorkDone()) {
-            returnPermitSafely(token);
-            return;
-        }
-        log.error("발급 트랜잭션의 DB 작업 종료를 확인하지 못해 permit을 반환하지 않습니다. "
-            + "작업 종료와 발급 수를 확인한 뒤 이 token만 정리해야 합니다. campaignId={}, permitToken={}",
-            campaignId, token, failure);
-    }
-
-    private void returnPermitSafely(String token) {
-        try {
-            if (permits.release(token) != 1) {
-                closeAfterReturnProblem("permit을 반환하지 못해 신규 발급을 닫았습니다.", null);
-            }
-        } catch (RuntimeException exception) {
-            closeAfterReturnProblem("permit 반환 중 오류가 발생해 신규 발급을 닫았습니다.", exception);
-        }
-    }
-
-    private void closeAfterReturnProblem(String message, RuntimeException exception) {
-        admission.close();
-        if (exception == null) {
-            log.error(message);
-        } else {
-            log.error(message, exception);
-        }
     }
 }

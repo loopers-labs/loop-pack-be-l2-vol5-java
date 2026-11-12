@@ -381,7 +381,7 @@ flowchart TD
 | 그 밖의 Redis command/server 오류 | 503 | 닫힘 |
 | 정상 획득 token의 첫 `SREM=0` | DB 업무 결과대로 응답 | 닫힘 |
 
-발급 트랜잭션은 첫 줄에서 Spring 트랜잭션 동기화를 등록해 commit 요청 여부와 완료 상태(COMMITTED·ROLLED_BACK·UNKNOWN)를 기록한다. facade는 예외 종류가 아니라 이 기록으로 token 반환을 정한다(D-24).
+발급 트랜잭션은 첫 줄에서 Spring 트랜잭션 동기화를 등록해 commit 요청 여부와 완료 상태(COMMITTED·ROLLED_BACK·UNKNOWN)를 기록한다. permit을 얻은 뒤의 실행은 `CouponIssueExecutor`가 맡고, 예외 종류가 아니라 이 기록으로 token 반환을 정한다(D-24). facade는 실행 결과를 동기 API 응답으로 바꾼다.
 
 | 발급 트랜잭션이 끝난 방식 | token | 수용 상태 | 응답 |
 |---|---|---|---|
@@ -473,7 +473,7 @@ Set이 비었다는 사실만으로 기존 DB 작업 종료를 대신 확인하�
 | 발급 총량 경합 | Redis 용량을 충분히 두거나 DB handler를 실제 병렬 호출해 DB 불변식만 검증 |
 | 장애 대상 | 실제 application endpoint; 테스트가 만든 자원만 정리 |
 | 테스트 판정 | 0건·skip·연결 실패는 통과가 아님; 기존 MySQL·Redis fixture 우선 사용 |
-| 실행 시점 | 발급 facade 19건·DB 트랜잭션 2건(완료 상태 기록 포함)·설정 3건·수용 시작 runner 5건(단위 4·실제 Redis 1)·HTTP E2E 8건·Redis 장애/스크립트/반환 실패 E2E 4건·발급 트랜잭션 실패 E2E 2건·Redis 오류 분류 4건을 검증했다. 실제 Redis와 barrier로 수용량 3, 한 permit 반환 중 재수용, 마지막 한 장의 동일 사용자 경합, 시작 시 Set 확인, Redis 중단 후 기존 결과 조회, 활성 permit의 무TTL을 확인했다. 실제 MySQL로 잠금 대기 timeout 뒤 permit 반환과 commit 직전 연결 끊김 뒤 permit 유지를 확인했다. |
+| 실행 시점 | 발급 facade 19건·발급 실행기 12건·DB 트랜잭션 2건(완료 상태 기록 포함)·설정 3건·수용 시작 runner 5건(단위 4·실제 Redis 1)·HTTP E2E 8건·Redis 장애/스크립트/반환 실패 E2E 4건·발급 트랜잭션 실패 E2E 2건·Redis 오류 분류 4건을 검증했다. 실제 Redis와 barrier로 수용량 3, 한 permit 반환 중 재수용, 마지막 한 장의 동일 사용자 경합, 시작 시 Set 확인, Redis 중단 후 기존 결과 조회, 활성 permit의 무TTL을 확인했다. 실제 MySQL로 잠금 대기 timeout 뒤 permit 반환과 commit 직전 연결 끊김 뒤 permit 유지를 확인했다. |
 | 전체 회귀 | `./gradlew :apps:commerce-api:check` 통과: 866건, 실패·오류·skip 0. |
 
 ## 관련 결정 기록

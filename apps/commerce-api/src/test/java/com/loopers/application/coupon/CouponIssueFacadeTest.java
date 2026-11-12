@@ -17,13 +17,11 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.stubbing.Answer;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.transaction.TransactionSystemException;
 import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -32,6 +30,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
 
+import static com.loopers.application.coupon.CouponIssueTransactionEndings.endsWith;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -61,7 +60,8 @@ class CouponIssueFacadeTest {
     @BeforeEach
     void setUp() {
         admission = new CouponIssueAdmissionState();
-        facade = new CouponIssueFacade(coupons, campaigns, permits, transaction, admission,
+        facade = new CouponIssueFacade(coupons, campaigns, permits,
+            new CouponIssueExecutor(coupons, permits, transaction, admission), admission,
             new CouponIssueProperties(3, new CouponIssueProperties.Admission(false)),
             new ApplicationTime(Clock.fixed(NOW, ZoneOffset.UTC)));
         campaign = CouponCampaign.create("테스트 행사", 5, "5,000원 할인권",
@@ -296,29 +296,6 @@ class CouponIssueFacadeTest {
     }
 
     private record TransactionEnding(boolean commitRequested, Integer status, RuntimeException failure) {
-    }
-
-    /**
-     * 발급 트랜잭션 안에서 완료 상태를 기록하게 한 뒤, Spring이 commit 요청과 완료 상태를 알리는 순서를 재현한다.
-     */
-    private static Answer<CouponIssueInfo> endsWith(boolean commitRequested, Integer status, RuntimeException failure) {
-        return invocation -> {
-            CouponIssueTransactionCompletion completion = invocation.getArgument(2);
-            TransactionSynchronizationManager.initSynchronization();
-            try {
-                completion.watchCurrentTransaction();
-                List<TransactionSynchronization> synchronizations = TransactionSynchronizationManager.getSynchronizations();
-                if (commitRequested) {
-                    synchronizations.forEach(synchronization -> synchronization.beforeCommit(false));
-                }
-                if (status != null) {
-                    synchronizations.forEach(synchronization -> synchronization.afterCompletion(status));
-                }
-            } finally {
-                TransactionSynchronizationManager.clearSynchronization();
-            }
-            throw failure;
-        };
     }
 
     private void prepareAcquiredPermit() {
