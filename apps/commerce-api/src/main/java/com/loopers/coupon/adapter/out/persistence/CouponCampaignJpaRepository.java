@@ -12,4 +12,7 @@ public interface CouponCampaignJpaRepository extends JpaRepository<CouponCampaig
 
     @Query("SELECT c FROM CouponCampaign c WHERE c.issueStartAt <= :now AND c.issueEndAt > :now AND c.deletedAt IS NULL ORDER BY c.id")
     List<CouponCampaign> findOpenAt(@Param("now") ZonedDateTime now);
+
+    @Query("SELECT c FROM CouponCampaign c WHERE c.issueEndAt > :from AND c.issueEndAt <= :to ORDER BY c.id")
+    List<CouponCampaign> findEndedBetween(@Param("from") ZonedDateTime from, @Param("to") ZonedDateTime to);
 }

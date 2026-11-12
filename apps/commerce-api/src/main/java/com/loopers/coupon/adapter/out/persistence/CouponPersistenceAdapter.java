@@ -37,6 +37,11 @@ public class CouponPersistenceAdapter implements CouponCampaignPort, CouponPort 
     }
 
     @Override
+    public List<CouponCampaign> findEndedBetween(ZonedDateTime from, ZonedDateTime to) {
+        return campaignJpaRepository.findEndedBetween(from, to);
+    }
+
+    @Override
     public List<Coupon> saveAll(List<Coupon> coupons) {
         List<Coupon> saved = couponJpaRepository.saveAll(coupons);
         couponJpaRepository.flush();

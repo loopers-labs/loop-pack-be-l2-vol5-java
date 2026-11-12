@@ -104,6 +104,8 @@ public class CouponCampaignAdminDto {
         }
     }
 
+    public record ReplayResponse(int replayed) {}
+
     private static <T> T required(T value, String field) {
         if (value == null) {
             throw new CoreException(ErrorType.BAD_REQUEST, "필수 필드 '" + field + "'이(가) 누락되었습니다.");

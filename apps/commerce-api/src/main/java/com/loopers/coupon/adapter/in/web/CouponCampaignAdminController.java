@@ -3,6 +3,7 @@ package com.loopers.coupon.adapter.in.web;
 import com.loopers.coupon.adapter.in.web.dto.CouponCampaignAdminDto;
 import com.loopers.coupon.adapter.in.web.spec.CouponCampaignAdminApiSpec;
 import com.loopers.coupon.application.CouponCampaignAdminQueryService;
+import com.loopers.coupon.application.CouponDeadLetterReplayService;
 import com.loopers.coupon.application.port.in.CouponCampaignCommandUseCase;
 import com.loopers.support.web.ApiResponse;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +21,7 @@ public class CouponCampaignAdminController implements CouponCampaignAdminApiSpec
 
     private final CouponCampaignCommandUseCase commandUseCase;
     private final CouponCampaignAdminQueryService queryService;
+    private final CouponDeadLetterReplayService deadLetterReplayService;
 
     @PostMapping
     @Override
@@ -31,5 +33,12 @@ public class CouponCampaignAdminController implements CouponCampaignAdminApiSpec
     @Override
     public ApiResponse<CouponCampaignAdminDto.CampaignResponse> get(@PathVariable Long campaignId) {
         return ApiResponse.success(CouponCampaignAdminDto.CampaignResponse.from(queryService.get(campaignId)));
+    }
+
+    @PostMapping("/{campaignId}/dead-letters/replay")
+    @Override
+    public ApiResponse<CouponCampaignAdminDto.ReplayResponse> replayDeadLetters(@PathVariable Long campaignId) {
+        queryService.get(campaignId); // 없는 캠페인이면 404
+        return ApiResponse.success(new CouponCampaignAdminDto.ReplayResponse(deadLetterReplayService.replay(campaignId)));
     }
 }

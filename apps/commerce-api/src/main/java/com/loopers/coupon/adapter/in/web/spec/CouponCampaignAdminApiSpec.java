@@ -13,4 +13,7 @@ public interface CouponCampaignAdminApiSpec {
 
     @Operation(summary = "캠페인 조회", description = "당첨자 수·발급 수·기간과 담긴 쿠폰들을 봅니다.")
     ApiResponse<CouponCampaignAdminDto.CampaignResponse> get(Long campaignId);
+
+    @Operation(summary = "발급 DLT 재처리", description = "원인을 고친 뒤 부릅니다. 이 캠페인의 DLT 메시지를 원래 topic으로 다시 보냅니다. 중복은 consumer가 거릅니다.")
+    ApiResponse<CouponCampaignAdminDto.ReplayResponse> replayDeadLetters(Long campaignId);
 }
