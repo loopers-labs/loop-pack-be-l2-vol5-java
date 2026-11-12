@@ -1,0 +1,25 @@
+server:
+  address: 0.0.0.0
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: redis-queue-experiment
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      connect-timeout: 2s
+      timeout: 2s
+
+experiment:
+  semaphore-capacity: ${SEMAPHORE_CAPACITY:4}
+  worker-count: ${WORKER_COUNT:10}
+  work-duration-ms: ${WORK_DURATION_MS:5000}
+  poll-interval-ms: ${WORKER_POLL_INTERVAL_MS:100}
+  job-retention-seconds: ${JOB_RETENTION_SECONDS:86400}
+  max-queue-size: ${MAX_QUEUE_SIZE:30}
+  memory-bytes-per-job: ${MEMORY_BYTES_PER_JOB:33554432}
+  disk-bytes-per-job: ${DISK_BYTES_PER_JOB:16777216}
+  image-transforms-per-job: ${IMAGE_TRANSFORMS_PER_JOB:1}
+  scratch-directory: ${SCRATCH_DIRECTORY:/var/tmp/redis-queue-experiment}
