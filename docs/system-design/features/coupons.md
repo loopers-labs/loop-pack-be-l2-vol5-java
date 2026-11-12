@@ -1347,6 +1347,16 @@ isSoldOut(campaign):
 
 rememberSoldOut의 DB 확인 뒤 NX 저장은 Redis에만 한다. 로컬은 다음 요청이 실제 Redis true/PTTL을 읽었을 때 채운다. Redis 저장 timeout 후 적용 여부를 추측해 로컬에 직접 true를 넣지 않는다. 로컬 hit이면 서버 Redis 장애가 있어도 품절 확인을 위해 Redis에 재접속하지 않는다. 기존 쿠폰 확인/사용자 DB는 앞에서 별도로 수행하므로 전체 요청의 외부 I/O0이나 DB 장애에서도 항상 기존 결과 제공을 보장하지 않는다.
 
+#### B단위 내부 처리 구체화 — 정적 검토·사용자 최종 승인 완료
+
+제품 변경은 CouponCacheProperties·CouponCacheService 두 파일이다. 설정 record에 localSoldOutTtl을 마지막 인자로 추가하고 기본5s·기존 밀리초 검사·추가 toNanos overflow/양수 검사를 적용한다. Redis 두 TTL에는 나노초 제약을 추가하지 않는다. 서비스는 설정을 유효 나노초로 복사하고 AtomicReference<LocalSoldOut> 하나를 가진다. LocalSoldOut은 서비스 private 중첩 record(long campaignId, long observedAtNanos, long lifetimeNanos)이며 별도 bean/파일·청소 기능·Map을 추가하지 않는다. 기발급/저장 경로·포트·adapter/Lua·Facade·공통 설정은 변경하지 않는다.
+
+isSoldOut의 local 판정은 ID의 숫자 값 일치와 0 <= now-observedAtNanos < lifetimeNanos다. boxed Long끼리 참조를 비교하지 않는다. 다른 ID·만료·설명 불가 경과는 Redis 경로로 간다. 만료 슬롯을 조회만으로 새 수명으로 갱신하지 않는다. Redis 조회 시작 시각부터 응답 변환/채움 판단까지 경과를 빼고, Math.multiplyExact(remainingMillis, 1_000_000) 등 overflow 검사를 거친 뒤 min(local 설정,budget)을 저장한다. OptionalLong 없음/0 이하·음의 경과·budget<=0·변환 overflow·RuntimeException은 false/미채움이며 기존 오류 로그 원칙을 따른다. Redis 조회 오류와 로컬 수명 계산 오류를 모두 다룬다는 의미가 드러나도록 로그를 작성한다. 한 catch를 쓰면 ‘품절 캐시 조회/수명 판정 실패’처럼 표현해 계산 overflow를 Redis 장애로 단정하지 않는다. Error는 기존처럼 전파한다. 관찰 시각은 채움 판단에서 확보한 값을 슬롯에 그대로 쓰며 슬롯 저장 뒤 새 시각으로 수명을 다시 시작하지 않는다.
+
+슬롯은 불변 값 하나를 원자 교체한다. 동시에 miss한 요청이 Redis를 각각 조회하는 것은 허용하며 single-flight/전역 잠금/CAS 재시도는 넣지 않는다. 늦은 응답도 자신의 잔여 수명과 전체 조회 경과를 적용한다. 경합 중 다른 요청이 더 최근 슬롯을 넣었더라도 각 응답의 유효 범위만 보장하고 최신 슬롯 보존 순서를 새 계약으로 추가하지 않는다. miss/오류 뒤 기존 슬롯을 억지 연장하거나 다른 ID에 재사용하지 않는다. rememberSoldOut은 계속 Redis 저장만 하며 성공/실패와 무관하게 local을 직접 채우지 않는다.
+
+검사는 서비스 사례마다 새 인스턴스로 시작한다. 시간 경계는 짧은 test TTL·실제 단조 시각/유한 대기·저장소 지연 대역으로 확인하고 제품 clock/reset hook을 추가하지 않는다. 기존 서비스의 true 다음 false 전달 검사는 local 유효 hit과 별도 새 인스턴스의 순수 miss로 나눠 검증 의미를 보존한다. 실제 Redis/Facade 검사에서는 관찰용 저장소 decorator의 호출 수와 DB SQL을 함께 기록한다. 다른 ID의 한 슬롯 교체 검사는 서비스 내부 캐시 구분만 확인하며 다중 운영 캠페인 지원을 뜻하지 않는다.
+
 이름 갱신·재고 재개·손상 데이터에 대한 경계:
 
 - 이름 변경은 캐시 결과의 짧은 지연을 허용한다. TTL30초는 저장 이후 수명이며 DB 읽기 시점부터의 엄격한 최신성 상한이 아니다. 변경 전에 시작한 조회가 늦게 채울 수 있다. NX로 유효한 새 항목 덮어쓰기를 줄이되, 만료 뒤 늦은 최초 채움까지 막는 버전/락 프로토콜은 넣지 않는다. 엄격한 변경 시각 기준 상한이 필요하면 별도 승인으로 재검토한다.
