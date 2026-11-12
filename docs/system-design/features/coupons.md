@@ -2,7 +2,7 @@
 
 ## 1. 상태와 읽는 기준
 
-이 문서는 쿠폰 발급·보유 목록·동시 수용 제한·수동 장애 재개의 제품 계약과 상세 구조를 정의한다. 2026-11-11 사용자가 기본 설계를 최종 승인했고, 구현 1~5단계와 최종 전체 검사 결과는 [쿠폰 실행 기록](../verification/coupons.md)을 따른다. 추가 설계는 §12의 대기열·실행 자리 통합과 대기 등록 입구 요청률 제한을 기준으로 논의 중이다. §11의 발급 POST 제한은 변경 전 미구현 구안이며 현재 확장 구현 기준이 아니다. 정책 합의·문서 반영과 전체 상세설계 완료·최종 승인·구현·실행 검증은 구분한다.
+이 문서는 쿠폰 발급·보유 목록·동시 수용 제한·수동 장애 재개의 제품 계약과 상세 구조를 정의한다. 2026-11-11 사용자가 기본 설계를 최종 승인했고, 구현 1~5단계와 최종 전체 검사 결과는 [쿠폰 실행 기록](../verification/coupons.md)을 따른다. §12의 대기열·실행 자리 통합/등록 입구 제한은 구현·정상 전체 검사 완료이며, §13 캐시는 최종 승인 후 구현 전이다. §11의 발급 POST 제한은 변경 전 미구현 구안이며 현재 확장 구현 기준이 아니다. 정책 합의·문서 반영과 전체 상세설계 완료·최종 승인·구현·실행 검증은 구분한다.
 
 - **합의:** 사용자가 선택한 동작·범위. 다시 임의로 바꾸지 않는다.
 - **구체화안:** 합의에 맞춰 작성한 클래스 배치·메서드·열/오류 코드 이름 등의 상세 계약으로, 이번 전체 설계 최종 승인에 포함한다. 계약·설계 판단 변경은 이유와 영향을 설명하고 별도 승인받는다.
@@ -1148,3 +1148,234 @@ Redis 시간/만료 검증은 짧은 테스트 전용 admission duration을 사�
 현재 승인 범위는 §12의 정상 대기/입장/발급·기본 중단/종료 판정과 WQ1~WQ12 검증 기준이다. 코드/테스트 작성·실제 실행 검증·구현 단위 착수 승인은 아직이다. 실제 제출/커밋과 최종 제출 판단은 사용자 담당이다. 기존 기본 구현의 실행 기록을 확장 검증 결과로 사용하지 않는다.
 
 별도 사용자 결정/작업 단위로 남긴 것은 캐시·Bulkhead의 채택과 epoch·다중 인스턴스/다중 운영 캠페인·자동 복구·순번 보존·장애별 수동 재개·늦은 명령/상태 유실 검증이다. 이를 현재 정상 구현 범위에 자동 추가하지 않는다. 실제 구현에서 계약 공백/모순이 발견되면 근거를 보고하고 필요한 판단만 사용자에게 확인한다.
+
+## 13. 기발급 결과·품절 캐시 — 최종 승인, 구현 전
+
+2026-11-12 전체 정적 검토와 C1/S2~S4 보완본 재검토에서 남은 필수 수정/새 정책 판단이 없음을 확인한 뒤, 사용자가 §13/CQ17의 캐시 설계를 최종 승인했다. 이 절은 정상 구현 기준점 `3bc158a` 이후의 추가 설계다. Redis 구현 단위 A 전달 준비를 승인받았으며 제품 구현·검사/비교 실험은 아직 미실행이다. 로컬 확장은 Redis 단위 검토 후 별도 착수한다. §12의 기존 전체 검사 근거는 캐시가 적용되지 않은 기준점이다.
+
+### 13.1 대상과 기본 원칙 — 합의
+
+| 대상 | 합의한 방향 |
+|---|---|
+| 기발급 결과 | 사용자·캠페인별 이미 발급된 쿠폰 결과를 캐시한다. DB commit이 확인된 결과만 저장한다. 미발급/없음 결과는 캐시하지 않는다 |
+| 캠페인 품절 | DB에서 품절을 확인한 경우에만 `true`를 저장한다. 키 없음은 '모름'이며 재고 있음/발급 가능 보장이 아니다. `false`는 저장하지 않는다. TTL 경과 뒤 필요 시 DB에서 재확인한다 |
+| 캠페인 정보 전체 | 이번 캐시 대상에서 제외한다. 실제 발급의 조건부 UPDATE·발급 데이터 조회는 계속 필요하며 이를 캐시로 대체하지 않는다 |
+| 사용자 존재 여부 | 이번 대상에서 제외한다. 기존 X-USER-ID resolver의 사용자 존재 DB 확인은 유지한다 |
+
+기존 쿠폰 결과 확인은 품절 캐시보다 우선한다. 품절됐더라도 이미 발급받은 사용자는 기존 쿠폰을 반환받아야 한다. 캐시 hit만으로 신규 발급을 허용하지 않으며 DB 총량/사용자 UNIQUE·TX 종료 판정·실행 자리 전이는 유지한다. 기존 Redis 대기실 meta의 품절 표시는 새 캐시의 저장 위치/수명 합의를 대신하지 않는다.
+
+사용자는 미발급 false 선저장 대안을 검토한 뒤 positive 결과만 캐시하는 방향을 재확인했다. 기발급 캐시 miss는 미발급 증거가 아니므로 DB에서 기존 결과를 확인한다. 이후 품절 캐시를 사용하더라도 이 DB 확인을 생략하지 않는다. 캐시 만료/저장 실패와 미발급을 구분하며, 신규 발급 뒤 stale false 또는 늦은 false 채움이 기존 결과를 숨기는 경합을 이번에 추가하지 않는다. 그만큼 미발급 요청의 선행 쿠폰 DB 조회는 남는 비용을 수용한다.
+
+**이름 최신성의 합의:** 기발급 결과에 포함된 campaignName은 캐시로 인한 짧은 반영 지연을 허용한다. 이는 기존 응답의 '조회 시 현재 이름'에서 캐시 도입 시 바뀔 부분이며, 쿠폰 혜택은 계속 발급 당시 값이다. 구체 TTL·적용 API·목록 처리 범위와 늦은 채움의 한계는 §13.5·13.7·13.11을 따른다. 이 합의로 캠페인 활성 상태·총량·품절/재개 판단의 지연까지 포괄 승인한 것으로 해석하지 않는다. 현재 코드는 아직 기존 DB 조회 계약을 따른다.
+
+**비용과 한계:** 기발급 결과 cache hit은 쿠폰 관련 조회/처리를 줄일 수 있으나 공통 사용자 존재 확인 DB 조회는 남는다. 미발급 대기자가 많은 요청에서는 positive 결과 캐시의 hit 이득이 작을 수 있다. 품절 표시가 오래 남았을 때 재고 변경/재개를 어떻게 처리할지는 별도 판단이 필요하다. 아직 DB/Redis 호출 감소나 지연 개선을 측정한 결과는 없다.
+
+### 13.2 품절 캐시의 계층·적용 순서 — 합의
+
+사용자는 품절을 먼저 Redis에 저장해 앱들이 공유할 수 있게 하고, 이후 로컬 캐시를 앞에 추가하는 순서를 선택했다. Redis를 생략하고 로컬에만 품절을 저장하는 제안은 채택하지 않는다. 로컬 확장 후에는 로컬에 품절 true가 있으면 품절 확인용 Redis 조회를 생략하고, 로컬 miss이면 Redis에서 확인하는 방향이다. 로컬을 Redis와 독립된 다른 품절 판정 기준으로 두지 않는다.
+
+Redis부터 적용한 뒤 로컬을 추가하는 구현/비교 단계를 구분한다. 이 배치 선택으로 다중 인스턴스의 무효화·재시작 복구까지 설계/검증됐다는 뜻은 아니다. 기존 쿠폰 결과 우선과 공통 사용자 확인은 유지하므로 로컬 품절 hit이 모든 Redis/DB 호출을 없앤다고 설명하지 않는다. 로컬 채움 시점·각 TTL/운영 경계·장애 처리는 §13.3~13.11을 따른다.
+
+### 13.3 품절 수명·운영 경계 — 합의
+
+- 품절 캐시는 Redis 30초, 이후 확장할 로컬 5초를 초기값으로 한다. 관찰/비교를 위한 초기 선택이며 최적 TTL의 실측 결론은 아니다. 시작 설정으로 변경 가능하게 하고 자동 테스트는 더 짧은 값으로 별도 검사할 수 있다.
+- 조회 hit으로 TTL을 연장하지 않는다. 로컬은 Redis에서 확인한 남은 수명보다 길게 품절을 보존하지 않는다. 남은 수명 확인/로컬 채움의 구체 처리와 경합은 §13.9·13.11을 따른다.
+- 품절된 캠페인은 종료하며 같은 캠페인의 수량을 늘려 재개하는 기능은 이번 범위에서 제외한다. 추가 발급은 새 캠페인 ID로 진행한다. 키는 캠페인별로 구분한다. 이 선택은 기존 대기실의 캠페인 전환/진행 작업 종료·장애 복구 문제까지 해소한 것이 아니다.
+- TTL이 있는 품절 캐시는 대기 순번/점유가 있는 기존 waiting meta 키 전체의 TTL로 구현하지 않는다. 새 캐시와 기존 품절 표시의 조회/채움 연결은 다음 상세설계에서 정한다.
+
+### 13.4 캐시 오류와 대기실 상태 오류의 구분 — 합의
+
+| 관찰 | 처리 원칙 |
+|---|---|
+| 캐시 조회 예외/timeout | 로그를 남기고 DB 조회로 보완한다. 캐시 오류만으로 신규 수용을 닫지 않는다 |
+| 캐시 값의 형식 오류 | miss로 취급하고 DB에서 확인한다 |
+| DB 조회 성공 뒤 캐시 저장 실패 | 이미 확보한 DB 응답을 유지한다 |
+| 신규 발급 commit 확인 뒤 캐시 저장 실패 | 확정된 발급 결과를 유지한다. 쿠폰 취소/발급 수 감소/자동 재시도 없음 |
+| 캐시 miss/실패 후 DB 조회도 실패 | 기존 DB 오류 처리를 따른다. 성공이나 품절로 임의 변환하지 않는다 |
+
+캐시는 조회 비용을 줄이는 수단이며 대기 순번/실행 권한의 기준 저장소와 구분한다. 같은 Redis 서버/연결을 사용하더라도 캐시 오류의 DB fallback이 신규 발급 우회를 허용하지 않는다. 이후 대기실 register/find/start/processAdmissions/finish에서 실제 Redis 오류가 관찰되면 §12.12의 닫힘/결과 보존 규칙을 그대로 적용한다. 세부 호출 위치·로그/오류 변환·저장 순서와 재조회 횟수는 §13.9~13.10을 따른다.
+
+### 13.5 기발급 결과의 배치·수명 — 합의
+
+기발급 positive 결과는 Redis에 저장하고 초기 TTL은 30초로 한다. 조회 hit으로 TTL을 연장하지 않는다. DB에서 기존 결과를 읽었거나 신규 발급 commit과 응답 결과를 확인한 뒤 채우는 방향이며, 캐시에서 반환한 발급 응답은 기존 결과 200으로 처리한다. 이 합의는 미발급 false 캐시나 기발급 결과의 로컬 계층 추가를 뜻하지 않는다. 구체적인 키/값·적용 API·쓰기/후속 읽기별 채움 순서·동시 늦은 채움/이름 최신성 경계는 다음 상세설계에서 정한다.
+
+**결과 미확보/종료 불명 예외 — 합의:** commit 확인은 됐지만 쿠폰 응답 값을 확보하지 못한 기존 분기에서는 캐시를 채우기 위한 추가 DB 조회를 하지 않고, 기존 오류/재요청 확인 계약을 유지한다. 후속 정상 요청이 DB에서 기존 결과를 읽으면 그때 채울 수 있다. DB 종료/commit 여부가 불명인 경우에는 기발급 성공 캐시를 쓰지 않고 기존 PROCESSING 점유 유지·신규 수용 닫힘 원칙을 적용한다. 서버가 commit과 응답 값을 확보한 뒤 HTTP 응답만 유실된 경우는 이 두 예외와 구분한다.
+
+**정상 신규 발급 채움 순서 — 합의:** DB commit과 쿠폰 결과를 확인하고 기존 finish 처리를 마친 뒤, 이미 확보한 결과로 기발급 캐시를 저장한다. 캐시 채움을 위한 추가 DB 조회는 하지 않는다. finish 실패가 확정된 DB 결과를 취소하지 않는 기존 원칙과 캐시 저장 실패의 결과 보존 원칙을 유지한다.
+
+### 13.6 등록 요청의 캐시 품절 우선순위 — 합의
+
+대기 등록은 기존 쿠폰 결과 확인 → 운영 캠페인 설정/ID 일치·수용 열림 확인 → 품절 캐시 확인 순서로 한다. 품절 캐시가 true이면 캠페인 상태 DB 조회 없이 기존 COUPON_CAMPAIGN_SOLD_OUT/409를 반환한다. 품절이 확인된 뒤 캠페인이 INACTIVE가 되더라도 유효한 품절 캐시가 있으면 품절 오류를 우선하는 변경을 사용자가 승인했다. 캐시 miss/오류로 DB에 도달하면 기존 없음404·비활성409·품절409 순서를 유지한다. 기존 쿠폰이 있으면 이 품절 판단보다 앞서 반환한다.
+
+이 합의는 대기 등록에 한정하며 GET·발급 POST·스케줄러의 품절 캐시 선행 적용을 승인한 것이 아니다. 발급의 PROCESSING/권한 오류 분기는 §13.7·13.10에 따라 기존 판단을 유지한다. 입구 RateLimiter/공통 사용자 확인은 기존처럼 Facade 앞에서 수행한다.
+
+### 13.7 API별 적용 범위 — 합의
+
+| 요청/작업 | 기발급 결과 캐시 | 품절 캐시 |
+|---|---|---|
+| 대기 등록 POST | 적용 | 적용 |
+| 대기 조회 GET | 적용 | 미적용 |
+| 발급 POST | 적용 | 미적용 |
+| 보유 목록 GET | 미적용 | 미적용 |
+| 자동 입장 처리 | 미적용 | 미적용 |
+
+대기 조회는 기존 쿠폰 결과가 없으면 실제 대기 상태를 읽고, 발급은 기존 결과가 없으면 권한/PROCESSING과 DB 최종 판단을 유지한다. 품절 캐시를 앞세워 이 분기를 바꾸지 않는다. 스케줄러는 기존 캠페인 DB 조회·만료 회수/입장 배정을 유지한다. 목록의 페이지/시각/정렬·현재 이름 계약은 이번 기발급 캐시 적용 범위에서 제외한다. 구체적인 캐시 키/값·채움 지점은 §13.9~13.10을 따른다.
+
+### 13.8 범위 마감·승인 상태
+
+사용자는 Bulkhead를 이번 범위에서 제외하고 나머지 상세를 묶어 작성하도록 승인했다. 기존 등록 RateLimiter와 READY+PROCESSING 상한은 유지한다. 요청률 제한이 모든 DB 읽기/공유 자원을 격리한다는 뜻은 아니며 추가 Bulkhead/실행 풀은 만들지 않는다.
+
+§13.1~13.13은 전체 정적 검토/보완본 재검토 후 사용자 최종 승인을 받았다. 제품 코드/테스트·장애/비교 실험의 실행 완료와는 구분한다. 구현은 단위별 범위를 따르며 실제 새 정책/계약 공백이 발견되면 해당 부분만 멈추고 사용자 판단을 받는다.
+
+### 13.9 키·값·설정·책임 배치 — 승인 설계
+
+#### Redis 키와 값
+
+| 키 예시 | 값/범위 |
+|---|---|
+| coupon:issued:v1:42:7 | campaignId=42/userId=7의 기발급 결과 JSON. couponId, campaignId, campaignName, benefitType, benefitValue 다섯 필드 |
+| coupon:sold-out:v1:42 | 캠페인42 품절 문자열 `true`만 저장 |
+
+캠페인/사용자 ID는 검증된 Long을 십진 문자열로 키에 넣는다. 캐시를 HTTP 입력 키로 받지 않는다. adapter는 전용 엄격 JSON reader/mapper로 숫자 문자열·실수의 정수 변환 같은 관대한 coercion을 허용하지 않고, JSON 정수의 Long 범위·필수 필드/타입과 요청 campaignId 일치를 확인한다. 앱 공통 ObjectMapper의 설정은 바꾸지 않는다. 값의 불변식은 포트의 IssuedCoupon 생성자 한곳에서 검사한다. couponId/campaignId는 양수, 이름은 기존 캠페인 이름 범위이며 혜택은 같은 domain.coupon의 CouponBenefits를 재사용한다. adapter에서 같은 범위 검사를 복제하지 않는다. 누락/null/손상·알 수 없는 값은 miss/로그다. 임의로 만든 well-formed 잘못된 데이터의 진실성까지 검증하는 저장소는 아니며 키/값은 서버의 확정 DB 결과에서만 쓴다.
+
+created/createdAt·waitingId·권한/순번·품절 false·미발급 표식은 기발급 JSON에 저장하지 않는다. 현재 목록 응답은 캐시하지 않으므로 발급 시각은 목록의 기존 DB 경로에 남긴다. 캐시 결과의 발급 응답은 항상 created=false/200이고 대기 응답은 ISSUED/couponId다. JSON을 API Entity나 application 응답 클래스로 직접 직렬화하지 않는다.
+
+두 키 모두 TTL 필수다. 저장은 `SET ... NX PX ttlMillis`에 해당하는 기존 String template 연산으로 한다. 이미 키가 있으면 값/TTL을 바꾸지 않는다. 동일 positive 채움이 경합해도 하나가 먼저 채우고 나머지는 현재 항목을 덮어쓰거나 수명을 연장하지 않는다. malformed/no-TTL 키를 자동 삭제/수정하는 복구 로직은 추가하지 않는다. 그 키가 만료/별도 통제 정리되기 전 miss 경로의 비용이 남을 수 있다.
+
+#### 설정과 타입
+
+| 타입 | 책임/계약 |
+|---|---|
+| config/CouponCacheProperties | prefix commerce.coupon.cache. issued-ttl=30s, sold-out-ttl=30s. 로컬 추가 단위에서 local-sold-out-ttl=5s 추가. 생략 기본값. Redis 두 TTL은 toMillis()가 overflow 없이 1 이상이어야 한다. local TTL도 같은 밀리초 조건과 toNanos()의 양수/overflow 검사를 적용한다. null/형식/해당 변환 overflow는 기동 실패. Redis TTL에 불필요한 나노초 변환 제약은 두지 않는다. 시작 설정만 지원 |
+| domain/coupon/CouponCacheRepository | findIssued(userId,campaignId): Optional<IssuedCoupon>, putIssuedIfAbsent(userId,campaignId,value,ttlMillis): void, findSoldOutTtl(campaignId): OptionalLong, putSoldOutIfAbsent(campaignId,ttlMillis): void. Spring/Redis/HTTP 타입 없음 |
+| 포트 안 IssuedCoupon record | 위 다섯 필드. 기존 OwnedCoupon/신규 CouponIssueResult의 확보 값에서 변환, API 응답용 created는 포함하지 않음. 생성자에서 ID/이름/혜택 불변식 검사, adapter와 중복하지 않음 |
+| infrastructure/coupon/CouponCacheRedisRepository | bean couponCacheRedisRepository. 기존 master String template·JSON 변환·키 조립·단일 키 읽기 Lua·NX/TTL 저장. get/put 기술 오류는 예외로 상위에 전달하고 정상 없음과 구분 |
+| application/coupon/CouponCacheService | bean couponCacheService. cache-only 조회/저장 실패를 로그/miss 또는 무시로 변환. DB·쿠폰 수용 닫기·TX는 담당하지 않음. 로컬 품절 슬롯은 이 객체 내부에 추가 |
+| 기존 CouponFacade | 캐시 조회→기존 DB 확인·TX 종료→채움과 기존 업무 순서 조율. 목록/스케줄러는 캐시 미적용. 새 Facade·별도 전달 서비스 없음 |
+
+서비스 메서드는 findIssued(user,campaign): Optional<IssuedCoupon>, rememberIssued(user,campaign,value): void, isSoldOut(campaign): boolean, rememberSoldOut(campaign): void로 한다. false는 '캐시에서 품절 확인 못함'이지 DB 재고 있음 판정이 아니다. Redis 예외/timeout·변환 오류는 RuntimeException 범위에서 로그로 남기고 캐시 miss/저장 실패로 처리한다. Error를 삼켜 성공을 꾸미지 않는다. 실패 시 동일 작업 retry·새 회로/풀·캐시 실패 전역 상태는 만들지 않는다. 캐시 get/put 실패 때문에 같은 요청에 여러 timeout 비용이 남을 수 있으며 별도 격리/성능 보장을 주장하지 않는다.
+
+새 제품 책임은 설정1·포트1(중첩 값)·Redis 구현1·application 캐시 서비스1·읽기 Lua1로 제한한다. 로컬용 별도 bean/설정 클래스·라이브러리·공용 캐시 프레임워크는 추가하지 않는다. 기존 CouponAdmissionRepository/Lua·RedisConfig·등록 limiter·scheduler·DB 모델/제약은 변경하지 않는다.
+
+#### 읽기 Lua
+
+resources/redis/coupon-cache-read.lua는 KEYS1개/ARGV없음, 원자적으로 GET/PTTL을 읽는다. 기존 대기실 Lua와 결합하지 않는다.
+
+```text
+인수 수와 키 타입(none/string)을 확인
+none이면 [MISS, 빈 문자열, 빈 문자열]
+string이면 value=GET, remaining=PTTL
+  value 없음 또는 remaining<=0이면 MISS  // 영구키/PTTL -1도 hit으로 쓰지 않음
+  그 외 [HIT, value, remaining의 십진 문자열]
+타입/인수/설명 불가 응답은 기술 오류, 쓰기/기한 연장/삭제 없음
+```
+
+adapter는 문자열 배열 길이/결과명/잔여값·PTTL 양수/표현 범위를 검사한다. issued HIT은 JSON, sold-out HIT은 정확히 `true`만 허용한다. findSoldOutTtl은 남은 밀리초만 반환한다. 기본 Redis TTL 키를 읽기 hit마다 갱신하지 않는다. 기발급도 TTL 없는 키는 miss라는 조건을 유지하므로 단독 GET으로 바꾸지 않고 같은 읽기 Lua를 공유한다.
+
+### 13.10 조회·채움·TX 순서 — 승인 의사코드
+
+#### 기발급 결과의 최초 확인과 강제 DB 재확인
+
+```text
+findExistingForRequest(user,campaign):
+  cached=cacheService.findIssued(user,campaign)    // 실패는 Optional.empty
+  있으면 반환                                   // 결과 필드, created=false
+  owned=readTemplate.execute: 기존 findOwned/값 복사
+  // template 정상 종료 뒤만 아래 실행. 없음/읽기 예외는 채우지 않음
+  owned 있으면:
+    value=다섯 필드 복사
+    cacheService.rememberIssued(user,campaign,value)
+    return value
+  return 없음
+```
+
+registerWaiting/getWaiting/issue의 첫 기존 결과 확인만 이 경로로 바꾼다. OwnedCoupon에 가짜 createdAt을 넣거나 Entity를 캐시하지 않는다. 캐시용 중첩 값에서 기존 CouponIssueResult(created=false)·ISSUED snapshot을 조립한다.
+
+start의 PROCESSING/ISSUED 또는 등록/조회 Lua의 ISSUED 뒤 기존 한 번 DB 재확인은 캐시로 대체하지 않는다. 직접 DB를 읽고 정상 종료 뒤 positive가 있으면 채운다. ISSUED 후 DB에도 없으면 기존500/닫힘, PROCESSING 후 없으면 기존202다. 쓰기 TX 안의 resolveNotReserved/storedAfterConflict 등 기존 DB 결과 판정에도 캐시 get/put을 넣지 않는다. 해당 경로의 positive 채움은 아래처럼 모든 DB 호출/finish 이후에 한다.
+
+#### 신규 발급
+
+```text
+issue의 첫 기존 결과 확인=위 함수
+없으면 기존 헤더→운영 ID/열림→start 순서
+STARTED만 기존 issueStarted 수행
+  기존 쓰기/후속 읽기 TxCall 판정 재사용
+  UNKNOWN/완료 통지 없음: PROCESSING 유지·닫힘, 캐시 저장 없음
+  종료 확인: 기존 finish(ISSUED/FAILED), 실패해도 확정 결과 보존
+  오류 응답이면 원래 오류 전파
+  반환 가능한 확정 쿠폰 결과가 있으면 rememberIssued
+  기존 신규201/기존200 반환
+```
+
+commit 확인/응답 값 미확보는 기존500과 finish(ISSUED)를 유지하되 캐시용 재조회/저장은 하지 않는다. 미시작/rollback/후속 읽기 실패에서 positive 결과가 없으면 채우지 않는다. 캐시 저장을 finally의 무조건 작업으로 넣지 않는다. commit/반환 오류로 응답 값이 확보되지 않은 것을 임의 성공 처리하지 않는다. 캐시 I/O 동안 DB TX/연결·PROCESSING 점유를 일부러 유지하지 않는다. 이미 다른 요청이 완료한 결과의 DB 읽기 채움은 해당 읽기 TX 종료 뒤 수행한다.
+
+#### 품절 등록
+
+```text
+registerWaiting:
+  입구 limiter→기존 사용자/인자 검증
+  기존 결과=기발급 cache→miss이면 DB, 있으면 ISSUED/200
+  기존 운영 ID/수용 조건 확인
+  cacheService.isSoldOut(campaign)이 true이면 품절409
+  check=짧은 readTemplate에서 캠페인 존재/비활성/품절/발급가능을 값으로 반환
+  // Entity를 밖으로 내보내지 않음. DB 읽기 정상 종료 뒤 판단
+  MISSING:404 / INACTIVE:409, 품절 캐시 쓰지 않음
+  SOLD_OUT:rememberSoldOut→품절409
+  ISSUABLE:기존 register Lua·생성/재사용/ISSUED 경합 처리
+```
+
+캠페인 판단은 Facade의 작은 private enum/값으로 충분하며 새 공개 서비스/클래스를 만들지 않는다. DB 읽기가 실패/종료 불명인데 원인 체인에 품절 신호가 있다는 이유로 캐시를 쓰지 않는다. DB 정상 종료 뒤 실제로 확인한 품절만 채운다. 스케줄러/발급 POST에서 품절 캐시를 읽거나 갱신하지 않는다. Redis register의 SOLD_OUT 결과만으로 새 캐시를 채우는 경로도 추가하지 않는다.
+
+### 13.11 로컬 품절 확장·동시성·한계 — 승인 설계
+
+로컬은 품절에만 적용한다. 현재 신규 등록은 requireAdmitting 이후 설정된 단일 운영 campaignId만 도달하므로, CouponCacheService 내부 AtomicReference<LocalSoldOut> 한 슬롯이면 충분하다. 값은 campaignId·단조 시계 기준 보관 시점·유효 나노초다. Map/최대항목수 설정·별도 청소 thread/eviction 프레임워크는 두지 않는다. ID 불일치/기한 경과는 miss, 새 ID 채움은 슬롯 교체다. 과거 캠페인 기발급 결과는 Redis 키별 조회로 유지한다. 다중 운영 캠페인 요구가 생기면 이 구조를 재검토한다.
+
+```text
+isSoldOut(campaign):
+  로컬 슬롯의 ID가 맞고 elapsed<유효기간이면 true (Redis 호출0)
+  started=System.nanoTime()
+  remainingMillis=Redis findSoldOutTtl(campaign)   // 오류/없음이면 false, 로컬 저장 없음
+  now=System.nanoTime()
+  budget=remainingMillis의 나노초 - (now-started)
+  budget<=0이면 false                           // 응답/처리 중 기한 소진
+  localLifetime=min(localSoldOutTtl.toNanos(),budget)
+  (campaign,now,localLifetime)를 슬롯에 저장
+  return true
+```
+
+로컬 채움 전까지의 실제 경과를 budget에서 차감한다. Redis의 PTTL 관찰 시점보다 앞선 요청 시작부터 차감하는 보수적 방식이므로 통신 지연을 남은 수명에 더하지 않는다. 나노초 변환/계산 overflow는 miss/로그로 처리한다. 읽기/쓰기/로컬 hit에서 TTL을 연장하지 않는다. 지연된 동시 응답도 자기 PTTL과 경과를 다시 적용하며, 슬롯을 교체했더라도 관찰한 Redis 수명을 넘지 않는다. 상대 수명 판정은 정상 시계 진행 전제이며 임의 Redis 시간 역행/강제 키 삭제의 즉시 로컬 무효화까지 보장하지 않는다.
+
+rememberSoldOut의 DB 확인 뒤 NX 저장은 Redis에만 한다. 로컬은 다음 요청이 실제 Redis true/PTTL을 읽었을 때 채운다. Redis 저장 timeout 후 적용 여부를 추측해 로컬에 직접 true를 넣지 않는다. 로컬 hit이면 서버 Redis 장애가 있어도 품절 확인을 위해 Redis에 재접속하지 않는다. 기존 쿠폰 확인/사용자 DB는 앞에서 별도로 수행하므로 전체 요청의 외부 I/O0이나 DB 장애에서도 항상 기존 결과 제공을 보장하지 않는다.
+
+이름 갱신·재고 재개·손상 데이터에 대한 경계:
+
+- 이름 변경은 캐시 결과의 짧은 지연을 허용한다. TTL30초는 저장 이후 수명이며 DB 읽기 시점부터의 엄격한 최신성 상한이 아니다. 변경 전에 시작한 조회가 늦게 채울 수 있다. NX로 유효한 새 항목 덮어쓰기를 줄이되, 만료 뒤 늦은 최초 채움까지 막는 버전/락 프로토콜은 넣지 않는다. 엄격한 변경 시각 기준 상한이 필요하면 별도 승인으로 재검토한다.
+- 같은 캠페인의 수량 증대/재개·쿠폰 취소/삭제는 이번 제품 유스케이스가 아니다. TTL 만료를 캠페인 재개로 해석하지 않는다. 테스트가 이름/DB 상태를 직접 바꾸는 경우 cached 경로와 DB 경로 기대를 구분한다. 목록/직접 QueryRepository는 기존 현재 이름/손상 감지 검사를 유지한다.
+- 유효한 positive 캐시가 있으면 해당 요청은 원본 DB/캠페인 손상을 즉시 재검사하지 않는다. 캐시 miss 후에는 기존 LEFT JOIN 손상 감지/500을 유지한다. 성공 캐시를 매번 DB에서 다시 검증하는 방식은 채택하지 않는다. 이 제한을 명시하고 원본 삭제/취소 기능을 후속에 도입하면 무효화를 함께 설계한다.
+- 원시 Redis 수동 삭제/이전 DB 폐기·ID 재사용을 일반 제품의 정상 갱신으로 보지 않는다. 검사에서는 §13.12의 test 격리 규칙을 따른다. 제품 cleanup API·캐시 flush endpoint는 추가하지 않는다.
+
+### 13.12 검증 기준·기존 검사 전환 — 전부 실행 전
+
+| ID | 필수 근거/관찰 |
+|---|---|
+| KQ1 | 설정 기본30s/30s/5s·정상 변경값·양수/형식/밀리초 overflow 및 local TTL 나노초 overflow 기동 거절, Properties scan·추가 스위치 없음 |
+| KQ2 | 서로 다른 campaignId/userId로 실제 키 문자열/값 연결·인자 순서를 단언. 실제 fixture master Redis의 5필드 JSON·엄격 숫자 타입/범위·true/PTTL·양수 TTL·TTL 없는 키 miss, NX 동시 최초 채움/유효 항목 비덮어쓰기·조회/중복 put TTL 비연장·만료 뒤 miss/재채움 |
+| KQ3 | 등록/대기 GET/발급의 positive hit은 쿠폰 DB/대기 상태 경로 미호출, miss는 DB 확인·없음 미캐싱, 기존 결과200/ISSUED·품절/닫힘/운영 ID보다 우선. 공통 사용자 조회는 유지 |
+| KQ4 | 실제 commit/TX 종료·finish 이후 저장, cached created=false/200, 정상 읽기 TX 종료 후 채움, rollback/UNKNOWN/응답 값 미확보 미기록, finish 오류·캐시 put 오류도 확정 결과 유지. HTTP 응답 유실 뒤 캐시/DB 기존 결과로 추가 효과0 |
+| KQ5 | 등록에서 기발급/운영 ID/열림→품절 순서, cached 품절은 캠페인 DB 조회0·409(뒤 INACTIVE도 품절 우선), miss DB 없음/비활성/품절 순서·정상 읽기 종료 뒤 true 채움. GET/발급/목록/scheduler 품절 캐시 미적용 |
+| KQ6 | 캐시 get timeout/형식·잘못된 키/JSON/TTL은 DB fallback·수용 유지, put 오류 결과 보존·재시도0, DB 오류 원래 전파, 이후 대기실 Redis 실패는 기존503/닫힘. 실제 오류와 대역을 구분 |
+| KQ7 | 실제 Redis true/PTTL에서만 local 채움·local hit의 품절 Redis 호출0·5초/상위 잔여 중 짧은 수명·조회 비연장·초기 Redis put 실패 local 미채움·ID 분리/한 슬롯 한계. 짧은 테스트 TTL·지연된 응답 대역과 실제 Redis 검사를 구분 |
+| KQ8 | PROCESSING/ISSUED 뒤 강제 DB 한 번 재확인과 기존500/닫힘 유지·DB 쓰기 TX 내 캐시0·추가 캐시용 DB 조회0, 캐시 손상/동시 채움과 늦은 이름 채움의 명시된 범위 확인 |
+| KQ9 | 기존 DB 총량/UNIQUE/TX·WQ1~WQ12의 유효 검증 유지. 직접 SQL/이름/손상 검사는 raw DB 또는 캐시 miss 준비로 의도를 보존하고 warm-cache 이름 지연/만료 뒤 갱신 검사를 추가. 기대 삭제/완화 금지 |
+| KQ10 | Checkstyle/ArchUnit·기존 HTTP/준비/자동 scheduler·W6/O11 추가 bean 격리·W7 lifecycle, 자기 캐시/로컬 소유 상태만 종료 확인 뒤 정리. 실패/skip/미실행과 과거 실행을 구분 |
+
+W6/O11 CouponBeanIsolation에는 새 동작 bean couponCacheRedisRepository·couponCacheService를 도입 단위에서 함께 추가한다. 동작 없는 CouponCacheProperties는 제외하지 않는다. 캐시 서비스의 로컬 확장은 추가 bean을 만들지 않는다. 기존 관리 타입/DDL/행 보존·이름 부재 기동 거절은 유지한다.
+
+기존 Spring 기반 쿠폰 E2E·HTTP fault·rate limit·scheduler·로컬 준비/opt-in 장애 컨텍스트는 공통 test 전용 CouponCacheRepository를 @Primary로 조립한다. 이 대역은 두 조회를 항상 empty로 반환하고 두 저장은 no-op이며 실제 Redis에 접근하지 않는다. 로컬 슬롯은 Redis true 조회에서만 채워지므로 기존 컨텍스트에서 로컬도 비어 있게 유지한다. 앱을 직접 시작하는 로컬 준비 검사는 해당 test 구성을 명시적으로 추가한다. 일반 Service/Facade/TX 직접 조립 검사도 같은 miss/no-op 계약을 기본으로 사용한다. DB truncate로 AUTO_INCREMENT가 초기화돼 같은 ID가 재사용돼도 이전 사례의 캐시가 다음 사례를 가로채지 않게 한다.
+
+실제 캐시를 검사하는 KQ 컨텍스트에는 이 대역을 넣지 않는다. fixture ID를 만든 뒤 첫 캐시 요청 전에 사용할 campaign×user의 issued 키와 sold-out 키가 모두 비었는지 확인한 경우에만 소유한다. 준비 실패 시 남의 키를 삭제하지 않고, 서버/worker/실행기 종료가 확인된 뒤에만 소유 키를 정리한다. KQ7 로컬 수명 검사는 직접 조립한 새 CouponCacheService 인스턴스로 시작하며 다른 검사와 슬롯을 공유하지 않는다. 실제 HTTP 캐시 통합 검사가 local을 포함하면 사례별 새 서비스/컨텍스트로 같은 격리를 확보한다.
+ 실제 cache/DB/Redis 관찰 없이 대역을 성능/부하 근거로 쓰지 않는다. TX 대역 검사는 기존 afterCompletion 분기를 유지하고 매번 cache가 앞단에서 가로채 원래 분기가 실행되지 않는 허위 통과를 막는다. 기존 HTTP 응답 유실/서버 종료·worker 정리 보류·OwnedWaitingKeys/ExecutorSettlement를 유지한다. 캐시 key 정리에는 별도 소유 확인이 필요하며 다른 사용자 키 전체를 FLUSHALL로 지우지 않는다. 로컬 격리는 위의 새 서비스/컨텍스트 조립으로 확보하고 제품 reset hook은 추가하지 않는다.
+
+### 13.13 후속 검증 경계
+
+KQ는 캐시의 정합성·오류 처리 기준이며 실제 장애 복구·성능 측정 완료를 뜻하지 않는다. 공유 Redis pause·늦은 명령·수동 재개·재시작은 후속 검증 대상이다. 캐시 비교에서는 사용자 존재/기발급 miss의 DB 조회와 scheduler의 기존 DB 조회 비용을 포함하고, 거절 증가를 정상 처리 성능 개선으로 해석하지 않는다. 현재 캐시 구현·측정 결과는 없다.

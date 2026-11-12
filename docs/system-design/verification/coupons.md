@@ -799,3 +799,37 @@ Codex 최종 코드 검토에서 지적된 test 실패 처리 3곳만 고쳤다.
 - 모두 JDK21.0.12, `--rerun-tasks --no-build-cache`로 BUILD SUCCESSFUL이었다. 원시 명령·timing·XML/Checkstyle은 로컬 `docs/week8/verification/runs/20261112-unit5-scheduler/a-related/`, `b-o11/`, `docs/week8/verification/runs/20261112-unit5-settlement-fix/`에 보존했다. 보완 뒤 O11/다른 클래스를 재실행한 것으로 기록하지 않는다.
 - 보완: 자동 통합 테스트가 원래 실행기 참조를 보관하고 stop 반환 후 실제 종료가 확인돼야만 키/DB 정리를 실행한다. 참조 없음·timeout·interrupt는 실패/정리 보류이며 interrupt를 복원한다. 같은 test 내부 ExecutorSettlement를 실제 scheduler/latch 경계와 재사용해 실패 시 정리0·본문 선행 stop 후 원래 참조 유지·정상 종료 후 정리를 검사했다. 제품 scheduler/API와 별도 파일은 추가하지 않았다. Codex 재검토에서 지적 해소·추가 필수 수정 없음을 확인했다.
 - 실제 Redis는 fixture8.10.1 master/run_id 대조를 통과했다. 시작 전 자기 캠페인 키 공백/소유 확인, 종료 확인 뒤 자기 키 정리를 유지했다. WQ12의 이번 W6/O11 조립·기존 W7 lifecycle 검사는 통과했지만 전체 회귀/check는 아직 별도 실행 전이다. 로컬 Redis pause·부하·장애별 복구/재시작/다중 인스턴스는 이번 실행 근거가 아니다.
+
+## 대기실 정상 범위 최종 전체 검사 — 기준점 3bc158a (2026-11-12)
+
+- 실행 기준: volume-8 / `3bc158abb7a4592acd443a94fd26c8d368bba05a`(5단위 커밋). 실행 전 staged/추적 unstaged 0, 실행 중 소스 변경 없음. Claude Code가 실행했고 Codex가 보존 XML/로그·WQ 대조표를 직접 검토했다. Codex는 검사를 재실행하지 않았다.
+- JDK21.0.12, 2026-11-12 16:11:55~16:21:13 KST. COUPON_LOCAL_REDIS_FAULT_TEST는 미설정이며 실행 환경에서도 제거했다. 필터 없이 다음 명령을 수행했다.
+
+```sh
+./gradlew -Dorg.gradle.java.home="$JAVA_HOME" \
+  :apps:commerce-api:check --rerun-tasks --no-build-cache --console=plain
+```
+
+- BUILD SUCCESSFUL, 종료0, 35 actionable tasks 모두 executed. 일반 test XML275개는 총1280건 중 실제1278건 실행/통과·실패0·오류0·skip2다. 중첩만 가진 최상위 XML24개의 0건을 별도 실행으로 세지 않았다. skip은 opt-in CouponLocalRedisFaultIntegrationTest Q9/Q10으로 미실행이다.
+- 별도 O11 XML1개/1건 실행·실패/오류/skip0. check에 연결된 w6OutboxRecoveryTest가 실제 수행됐다. ArchitectureTest3건 통과, Checkstyle main/test 오류 각0. streamer/PG의 선행 빌드는 해당 앱 전체 테스트 실행을 뜻하지 않는다.
+
+| WQ | 이번 전체 실행의 주요 근거·관찰 |
+|---|---|
+| WQ1 | Properties 3클래스·Service WaitingEntry·HTTP 제어/운영 ID·scheduler 미설정 컨텍스트. 미설정 open409는 Service 대역 검사 |
+| WQ2 | 실제 WaitingRedis 동시 등록/재사용/rank·HTTP 등록/조회. 같은 사용자 ID/queue 하나 |
+| WQ3 | 실제 Redis/Facade/HTTP C=3·넷째409→승격 뒤201·최종 점유0. 자동 회차 최대 점유3 |
+| WQ4 | 실제 Redis 만료/비연장/PROCESSING 미회수·HTTP 기한·자동 회수. 경합8회 STARTED2/EXPIRED(회수)6, 매회 단일 결과 |
+| WQ5 | 실제 Redis 동시 STARTED 하나·HTTP202·권한 오류·Facade PROCESSING/ISSUED 재확인. ISSUED/DB 모순500은 대역 |
+| WQ6 | 실제 finish ID/상태 대조·새 항목 보존·INVARIANT, Service/TX 대역 결과 유지/닫힘, 실제 실패 rollback/재등록 |
+| WQ7 | 실제 MySQL 직접 경쟁·SQL/TX·rollback·목록/과거 효과. 실제 Redis C=8 DB 경쟁 5발급/3품절은 실제 C=3 상한과 별개. Facade 같은 사용자 경쟁은 STARTED 대역 |
+| WQ8 | 실제 Resilience4j 단위5건·MVC2건. 등록만 제한·resolver 선행·소진 중 발급/조회/제어 유지 |
+| WQ9 | HTTP17건·HTTP fault4건. 200/201/202·오류/null/UTC·기존 결과 우선·생성 OpenAPI·응답 유실 뒤 같은 ID |
+| WQ10 | 실제 Redis 품절/승격 중단·PROCESSING 보존, 실제 DB READY 뒤 상태 변경, Facade 대역 캠페인 상태 매핑 |
+| WQ11 | 실제 자동 scheduler/Redis/MySQL 승격·회수·DB 쓰기0 및 lifecycle11건·close 뒤 finish. 자동 관찰 최종 PROCESSING1/EXPIRED3 |
+| WQ12 | 일반 전체1278건 통과·Checkstyle/ArchUnit·W6 준비/직접 발행·W7 relay lifecycle·별도 O11·준비 코드. opt-in2건은 미실행 |
+
+- WQ는 위 실제/대역 근거에 한정해 §12 정상 범위의 완료 근거가 갖춰졌다고 판단한다. 경합 결과 분포는 이번 관찰이며 매번 양쪽 결과 출현을 보장하는 검사는 아니다. WQ12 전체 회귀 미실행이라는 앞선 단계별 한계는 이번 실행으로 해소됐다.
+- 종료 근거: O11 자식 graceful=true·exit143, 검사 후 worker/streamer 자식·잔여 test fixture 없음 보고를 로그/실행 기록과 대조했다. 공유 기존 서버는 유지했다. scheduler STOP_INCOMPLETE/INTERRUPTED 로그는 lifecycle의 의도된 실패 검사에서 발생했다.
+- 로컬 원시 근거는 `docs/week8/verification/runs/20261112-final-check/`의 timing.txt·gradle.log·일반 test XML275·O11 XML1·Checkstyle·summary.md다. 제출 필수 결과는 이 절에 남긴다.
+- 후속/미검증: 실제 로컬 Redis pause·늦은 명령·장애별 수동 재개·재시작 복구·다중 인스턴스/다중 운영 캠페인·부하/최적 설정·캐시/Bulkhead/epoch. 기본 구현의 과거 장애 성공은 이번 확장 결과가 아니다. 제출/커밋 판단은 사용자 담당이다.
+- 이 커밋을 후속 캐시/격리 설계와 변경 전후 비교의 정상 구현 기준점으로 보존한다. 새 캐시/격리의 대상·정합성/장애 처리·비교 지표는 별도 설계/승인으로 정하며 이번 검사에 포함하지 않는다.

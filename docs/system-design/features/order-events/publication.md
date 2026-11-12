@@ -772,6 +772,8 @@ Replacer.postProcessBeanDefinitionRegistry: // CCPP 뒤
 
 Boot 3.4.4 JpaBaseConfiguration의 managedTypes/filter 연결, Spring Context 6.2.5 PostProcessorRegistrationDelegate의 PriorityOrdered→Ordered→나머지 순서, ConfigurationClassPostProcessor의 registry 재처리 방지와 ConfigurationClassUtils의 @Bean 설정 후보 인식을 로컬 소스로 대조했다. 설정 후보라는 사실만으로 늦게 등록한 클래스가 다시 해석되는 것은 아니다. 실제 기동 검증은 아직 없으며 streamer 전체 scan/runtime 의존성은 추가하지 않는다.
 
+쿠폰 캐시 최종 승인 설계(구현 전)는 쿠폰 §13.12를 따른다. 도입 단위에서 couponCacheRedisRepository·couponCacheService 두 동작 bean을 같은 CouponBeanIsolation/W6/O11 목록·조립 검사에 함께 추가할 예정이다. 동작 없는 CouponCacheProperties는 제외하지 않는다. 아직 소스에 없는 이름을 현재 코드 목록에 미리 넣거나 관리 타입/DDL·행 보존 기대를 바꾸지 않는다. 이 문장은 사용자 최종 승인 설계의 연결이며 캐시 구현/조립 통과 기록이 아니다.
+
 ### W7.4-2. 한 실행의 자원 수명과 스키마 전환
 
 기존 C10의 MySqlTestContainersConfig·RedisTestContainersConfig, LocalKafkaTestSupport, PgFixtureServer, streamer bootJar 자식 JVM 실행을 재사용한다. 테스트 JVM 소유 격리 MySQL/Redis와 공유 로컬 Kafka의 고유 2-partition topic/group을 사용하고 DB 사용 테스트는 직렬 실행한다. 공유 broker 자체는 종료하지 않는다. 부모가 PG fixture를 시작하고 URL을 두 API 컨텍스트에 주입하며 어느 API 컨텍스트의 destroy bean으로도 PG를 닫지 않는다. 실제 streamer는 동일 DB·broker/topic/group으로 한 번 시작해 복구 완료까지 유지한다. API test Gradle의 기존 streamer bootJar 선행 작업/입력 선언을 활용한다.
