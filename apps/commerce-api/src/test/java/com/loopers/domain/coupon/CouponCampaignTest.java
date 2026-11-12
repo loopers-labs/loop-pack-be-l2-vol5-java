@@ -1,5 +1,6 @@
 package com.loopers.domain.coupon;
 
+import com.loopers.domain.coupon.CouponNotIssuableException.Reason;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import org.junit.jupiter.api.DisplayName;
@@ -7,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 
 import java.time.Instant;
 
@@ -80,9 +82,9 @@ class CouponCampaignTest {
 
         assertThatCode(() -> campaign.validateIssuable(START_AT)).doesNotThrowAnyException();
         assertThatCode(() -> campaign.validateIssuable(END_AT.minusNanos(1))).doesNotThrowAnyException();
-        assertUnavailable(campaign, START_AT.minusNanos(1));
-        assertUnavailable(campaign, END_AT);
-        assertUnavailable(campaign, END_AT.plusSeconds(1));
+        assertUnavailable(campaign, START_AT.minusNanos(1), Reason.OUT_OF_PERIOD);
+        assertUnavailable(campaign, END_AT, Reason.OUT_OF_PERIOD);
+        assertUnavailable(campaign, END_AT.plusSeconds(1), Reason.OUT_OF_PERIOD);
         assertThat(campaign.getIssuedCount()).isZero();
         assertThat(campaign.getTerminatedAt()).isNull();
     }
@@ -107,9 +109,7 @@ class CouponCampaignTest {
 
         assertThat(campaign.getIssuedCount()).isEqualTo(1);
         assertThat(campaign.getTerminatedAt()).isEqualTo(ISSUE_NOW);
-        assertThatThrownBy(() -> campaign.recordIssue(ISSUE_NOW.plusSeconds(1)))
-            .isInstanceOfSatisfying(CoreException.class,
-                error -> assertThat(error.getErrorType()).isEqualTo(ErrorType.CONFLICT));
+        assertNotIssuable(() -> campaign.recordIssue(ISSUE_NOW.plusSeconds(1)), Reason.SOLD_OUT);
         assertThat(campaign.getIssuedCount()).isEqualTo(1);
         assertThat(campaign.getTerminatedAt()).isEqualTo(ISSUE_NOW);
     }
@@ -119,9 +119,7 @@ class CouponCampaignTest {
     void preservesStateWhenIssueIsOutsidePeriod() {
         CouponCampaign campaign = createCampaign(1);
 
-        assertThatThrownBy(() -> campaign.recordIssue(END_AT))
-            .isInstanceOfSatisfying(CoreException.class,
-                error -> assertThat(error.getErrorType()).isEqualTo(ErrorType.CONFLICT));
+        assertNotIssuable(() -> campaign.recordIssue(END_AT), Reason.OUT_OF_PERIOD);
         assertThat(campaign.getIssuedCount()).isZero();
         assertThat(campaign.getTerminatedAt()).isNull();
     }
@@ -134,7 +132,18 @@ class CouponCampaignTest {
         );
 
         assertThat(campaign.getId()).isEqualTo(1L);
-        assertUnavailable(campaign, ISSUE_NOW);
+        assertUnavailable(campaign, ISSUE_NOW, Reason.SOLD_OUT);
+    }
+
+    @DisplayName("품절과 기간 밖이 함께 성립하면 품절 사유로 거절한다.")
+    @Test
+    void prefersSoldOutReasonWhenAlsoOutsidePeriod() {
+        CouponCampaign campaign = CouponCampaign.reconstitute(
+            1L, "쿠폰 행사", 100, 100, "5,000원 할인권", START_AT, END_AT, ISSUE_NOW
+        );
+
+        assertUnavailable(campaign, END_AT, Reason.SOLD_OUT);
+        assertUnavailable(campaign, START_AT.minusNanos(1), Reason.SOLD_OUT);
     }
 
     @DisplayName("저장된 발급 수는 0 이상 총량 이하여야 한다.")
@@ -154,7 +163,7 @@ class CouponCampaignTest {
         );
 
         assertThat(campaign.getTerminatedAt()).isEqualTo(ISSUE_NOW);
-        assertUnavailable(campaign, ISSUE_NOW.plusSeconds(1));
+        assertUnavailable(campaign, ISSUE_NOW.plusSeconds(1), Reason.SOLD_OUT);
     }
 
     @DisplayName("발급 수가 남은 캠페인에 조기 품절 종료 시각을 저장할 수 없다.")
@@ -186,9 +195,23 @@ class CouponCampaignTest {
                 error -> assertThat(error.getErrorType()).isEqualTo(ErrorType.BAD_REQUEST));
     }
 
-    private static void assertUnavailable(CouponCampaign campaign, Instant issueNow) {
-        assertThatThrownBy(() -> campaign.validateIssuable(issueNow))
-            .isInstanceOfSatisfying(CoreException.class,
-                error -> assertThat(error.getErrorType()).isEqualTo(ErrorType.CONFLICT));
+    private static void assertUnavailable(CouponCampaign campaign, Instant issueNow, Reason reason) {
+        assertNotIssuable(() -> campaign.validateIssuable(issueNow), reason);
+    }
+
+    /**
+     * 사유를 담은 예외로 바뀌어도 동기 API가 받는 오류 종류와 메시지는 기존과 같아야 한다.
+     */
+    private static void assertNotIssuable(ThrowingCallable action, Reason reason) {
+        String expectedMessage = switch (reason) {
+            case SOLD_OUT -> "쿠폰이 모두 발급된 캠페인입니다.";
+            case OUT_OF_PERIOD -> "쿠폰 발급 기간이 아닙니다.";
+        };
+        assertThatThrownBy(action)
+            .isInstanceOfSatisfying(CouponNotIssuableException.class, error -> {
+                assertThat(error.getReason()).isEqualTo(reason);
+                assertThat(error.getErrorType()).isEqualTo(ErrorType.CONFLICT);
+                assertThat(error.getMessage()).isEqualTo(expectedMessage);
+            });
     }
 }

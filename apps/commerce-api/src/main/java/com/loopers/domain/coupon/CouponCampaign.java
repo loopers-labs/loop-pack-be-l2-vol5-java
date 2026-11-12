@@ -64,11 +64,12 @@ public class CouponCampaign {
 
     public void validateIssuable(Instant issueNow) {
         Objects.requireNonNull(issueNow, "issueNow");
+        // 조기 종료는 총량을 소진했을 때만 기록되므로 품절과 같은 사유로 본다.
         if (terminatedAt != null || issuedCount == totalQuota) {
-            throw new CoreException(ErrorType.CONFLICT, "쿠폰이 모두 발급된 캠페인입니다.");
+            throw new CouponNotIssuableException(CouponNotIssuableException.Reason.SOLD_OUT);
         }
         if (issueNow.isBefore(startAt) || !issueNow.isBefore(endAt)) {
-            throw new CoreException(ErrorType.CONFLICT, "쿠폰 발급 기간이 아닙니다.");
+            throw new CouponNotIssuableException(CouponNotIssuableException.Reason.OUT_OF_PERIOD);
         }
     }
 
