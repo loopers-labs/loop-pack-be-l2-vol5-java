@@ -15,7 +15,7 @@ flowchart TB
   subgraph API["commerce-api (여러 대)"]
     CF["Caffeine 품절 표시<br/>서버 메모리, TTL 5초"]
     Q["대기열 API<br/>POST · GET /queue"]
-    S["입장 스케줄러<br/>100ms마다 5명"]
+    S["입장 스케줄러<br/>100ms마다 5명<br/>(남은 쿠폰 수까지)"]
     BH["Bulkhead<br/>동시 10"]
     I["발급 API<br/>POST /issues"]
     RC["맞춰 보기 (reconcile)<br/>10초마다"]
@@ -24,6 +24,7 @@ flowchart TB
   subgraph R["Redis (primary 1대)"]
     ZQ[("줄 ZSET")]
     EK[("입장 키<br/>TTL 30초")]
+    AD[("입장자 ZSET<br/>입장했지만 아직 발급 안 함")]
     WS[("당첨자 Set")]
   end
   subgraph DB["MySQL"]
@@ -33,12 +34,14 @@ flowchart TB
   K[["Kafka<br/>coupon-issue-requests"]]
   CON["commerce-streamer<br/>발급 consumer"]
 
-  C --> CF
+  C -->|"POST /queue (새 등록)"| CF
   CF -->|"품절 아님"| Q
-  Q -->|"등록 Lua"| ZQ
+  C -->|"GET /queue (조회)"| Q
+  Q -->|"등록·상태 Lua"| ZQ
   S -->|"앞에서 꺼냄"| ZQ
   S -->|"입장 키 씀"| EK
-  CF -->|"입장한 사람"| I
+  S -->|"입장자 기록"| AD
+  C -->|"입장한 사람"| I
   I --> BH
   BH -->|"발급 Lua 1회:<br/>중복 · 입장 키 · 품절"| WS
   BH -->|"통과하면 짧은 TX"| OB
@@ -52,6 +55,7 @@ flowchart TB
 - 발급 API는 판정(Redis Lua 1회)과 outbox 기록까지만 하고 **202**를 준다.
 - 쿠폰을 실제로 만드는 건 commerce-streamer의 consumer다.
 - 세마포어(동시 처리 자리 수 C)는 없다. 11-12에 뺐다(D-3, 범위 다시 정함).
+- Caffeine 품절 표시는 **새 등록(POST /queue)만** 본다. 조회·발급은 바로 Lua로 간다. 당첨자가 품절 뒤에도 "이미 당첨"을 받게 하려고(11-12 바뀜: 이전엔 조회·발급도 Caffeine을 먼저 봤다. D-4-6).
 
 ### 2. 사용자 흐름
 
@@ -72,7 +76,7 @@ sequenceDiagram
     A->>R: 상태 Lua
     A-->>U: WAITING, 앞에 N명, pollAfterMs
   end
-  Note over A,R: 입장 스케줄러가 100ms마다 앞에서 5명을 꺼내 입장 키(TTL 30초)를 씀
+  Note over A,R: 입장 스케줄러가 100ms마다 앞에서 최대 5명(남은 쿠폰 수까지)을 꺼내 입장 키(TTL 30초)를 씀
   U->>A: GET /queue
   A-->>U: ADMITTED
   U->>A: POST /issues
@@ -124,10 +128,24 @@ flowchart TB
 | 이 문서의 말 | 뜻 |
 |---|---|
 | 당첨자 Set (= 발급 사용자 Set) | Redis Set. 발급 Lua를 통과한 사용자 명단. 줄지 않는다 |
-| 입장 키 (= 입장 토큰) | Redis `entry:{campaignId}:{userId}`, TTL 30초. 있어야 발급 API를 부를 수 있다 |
+| 입장 키 (= 입장 토큰) | Redis `coupon:{id}:entry:<userId>`, TTL 30초. 있어야 발급 API를 부를 수 있다 |
+| 입장자 ZSET | 입장했지만 아직 발급 안 한 사람. score = 입장 키 만료 시각. 남은 쿠폰 수를 셀 때 쓴다(D-4-3) |
 | 맞춰 보기 (reconcile) | 당첨자 Set과 outbox를 비교해 빠진 outbox 행을 채우는 10초 주기 작업 |
-| 캠페인 상태 키 | Redis `campaign:{id}:state`. 없으면 Redis 데이터가 사라진 것(`UNKNOWN`)으로 본다 |
-| Caffeine 품절 표시 | 서버 메모리의 품절 사본. 품절이면 Redis까지 가지 않고 거절 |
+| 캠페인 상태 키 | Redis `coupon:{id}:state`. 없으면 Redis 데이터가 사라진 것(`UNKNOWN`)으로 본다 |
+| Caffeine 품절 표시 | 서버 메모리의 품절 사본. 새 등록(POST /queue)만 이걸 보고 Redis까지 가지 않고 거절 |
+
+**Redis 키** (코드 `CouponGateRedisAdapter`. `{id}`의 중괄호는 키에 그대로 들어간다 — Redis Cluster hash tag(한 캠페인 키를 같은 slot에 모음). 예: `coupon:{42}:state`)
+
+| 키 | 종류 | TTL | 무엇 |
+|---|---|---|---|
+| `coupon:{id}:state` | String | 없음 | 캠페인 상태 키. 없으면 `UNKNOWN`(D-4-7) |
+| `coupon:{id}:queue` | ZSET | 없음 | 줄. member = userId, score = 순번 |
+| `coupon:{id}:queue:seq` | String(카운터) | 없음 | 순번 카운터(`INCR`) |
+| `coupon:{id}:winners` | Set | 없음 | 당첨자 Set |
+| `coupon:{id}:entry:<userId>` | String | 30초 | 입장 키 |
+| `coupon:{id}:admit:<구간 번호>` | String(카운터) | 구간 길이 × 2 | 이번 구간에 들인 수(D-4-3) |
+| `coupon:{id}:admitted` | ZSET | 없음(만료된 항목은 Lua가 지움) | 입장자 ZSET. score = 입장 키 만료 시각(ms) |
+| `coupon:{id}:rebuild` | String | 10초 | 복구 잠금(한 서버만 복구, D-4-7) |
 
 ### 결정 요약
 
@@ -137,7 +155,7 @@ flowchart TB
 | D-1 | 전체 구조 | 판정은 API의 Redis Lua 1회, 쿠폰 생성은 consumer. 응답은 202 | ✅ 11-10 (세마포어 부분은 11-12에 뺌) |
 | D-2 | 실패 처리 | 되돌리지 않고 앞으로 채움. Set이 원본, outbox가 따라잡음. DLT는 관리자 재처리 | ✅ 11-12 |
 | D-3 | 범위 다시 정함 | 세마포어(C=3)는 빼고 실험으로. 대기열을 본 설계로. 멀티 인스턴스 전제 | ✅ 11-12 |
-| D-4 | 대기열 | ZSET 줄, 100ms마다 5명 입장(Redis 카운터라 서버 수와 무관), 입장 키 30초, 서버가 정하는 조회 간격, 품절 = Set 크기 ≥ 수량, Redis 데이터 유실은 자동 복구 | ✅ 11-12 |
+| D-4 | 대기열 | ZSET 줄, 100ms마다 5명 입장(Redis 카운터라 서버 수와 무관)하되 남은 쿠폰 수까지만(줄 순서 = 당첨 순서), 입장 키 30초, 서버가 정하는 조회 간격, 품절 = Set 크기 ≥ 수량, Redis 데이터 유실·캠페인 시작은 요청 중에도 자동 복구 | ✅ 11-12 |
 | D-5 | 쿠폰 DB 모델 | 캠페인(줄·수량)과 쿠폰(할인 규칙) 분리, 당첨되면 쿠폰팩 전부, 발급 수는 조건부 UPDATE | ✅ 11-12 |
 | D-6 | 격벽 (bulkhead + rate limit) | 발급 API에 Bulkhead(동시 10, Lua 앞), 등록·조회에 RateLimiter, consumer 동시 처리 2 | ✅ 11-12 |
 | D-7 | API 계약 | 대기열 API는 업무 상태를 200 본문으로, 발급은 202 / 200 / 409 / 503. 429·503 ErrorType 추가 | ✅ 11-12 |
@@ -236,15 +254,15 @@ Client → commerce-api
 | D-4-1 | 위치 | 발급 API 앞에 대기열 API. 직접 만든다(서비스 밖 대기열 아님) |
 | D-4-1a | 언제 켜나 | 항상 줄을 거친다. 앞에 아무도 없으면 바로 입장 |
 | D-4-2 | Redis에 담는 방식 | ZSET, score = Redis 순번 카운터. 다시 등록하면 원래 자리 |
-| D-4-3 | 입장시키는 쪽 | 모든 서버가 돌되 100ms 구간 한도를 Redis 카운터로 셈. 전용 스레드 1개 |
-| D-4-4 | 입장 토큰 | Redis 키, TTL 30초. 삭제는 outbox 커밋 뒤 |
+| D-4-3 | 입장시키는 쪽 | 모든 서버가 돌되 100ms 구간 한도를 Redis 카운터로 셈. 남은 쿠폰 수까지만 입장. 전용 스레드 1개 |
+| D-4-4 | 입장 토큰 | Redis 키, TTL 30초. 삭제는 outbox 커밋 뒤. 입장자 ZSET에도 기록 |
 | D-4-5 | 순번 조회, 줄 길이 | 서버가 다음 조회 시점(`pollAfterMs`)을 알려 줌. 줄 길이 제한 `queue_capacity`, 넘으면 429 |
-| D-4-6 | 품절·마감 | 품절 = 당첨자 Set 크기 ≥ 쿠폰 수, 모든 Lua가 확인. 품절이면 줄을 지움 |
-| D-4-7 | Redis 장애 | 연결 안 되면 503. 데이터가 사라지면 outbox로 자동 복구 |
+| D-4-6 | 품절·마감 | 품절 = 당첨자 Set 크기 ≥ 쿠폰 수, 모든 Lua가 확인. 품절이면 줄을 지움. Caffeine 품절 표시는 새 등록만 봄 |
+| D-4-7 | Redis 장애 | 연결 안 되면 503. 데이터가 사라지면(캠페인 시작 포함) outbox로 자동 복구, 요청이 직접 복구도 함 |
 
 #### D-4-1. 위치: 발급 API 앞에 대기열 API ✅ 11-12
 
-**결론: 줄 서기 → 순번 조회 → 입장 → 발급 순서. 대기열에는 429가 없다.**
+**결론: 줄 서기 → 순번 조회 → 입장 → 발급 순서. 입장 속도 때문에 429를 주지는 않는다(줄이 가득 찼을 때·RateLimiter 초과 때만 429).**
 
 <details>
 <summary>자세히: 네 단계, 입장 속도의 기준, 서비스 밖 대기열을 버린 이유</summary>
@@ -253,10 +271,11 @@ Client → commerce-api
 ① POST /queue    대기열 등록 → 순번 응답, 연결은 바로 끊음
 ② GET  /queue    순번 조회 (몇 초마다)
 ③ 스케줄러        앞에서부터 초당 N명 입장 → 입장 토큰 발급
-④ POST /issues   입장 토큰이 있어야 호출 가능 → Caffeine → Lua → outbox → Kafka → DB
+④ POST /issues   입장 토큰이 있어야 호출 가능 → Lua → outbox → Kafka → DB
 ```
 
-- 대기열에서는 429가 없다. 입장 속도를 넘은 사람은 줄에서 더 기다릴 뿐이다. 그래서 쿠폰 수와 입장 속도 사이에 지켜야 할 크기 관계는 없다.
+- (11-12 바뀜: 이전 ④는 "Caffeine → Lua". 발급은 이제 Caffeine 품절 표시를 보지 않는다. D-4-6)
+- 입장 속도 때문에 429를 주지는 않는다. 입장 속도를 넘은 사람은 줄에서 더 기다릴 뿐이다. 그래서 쿠폰 수와 입장 속도 사이에 지켜야 할 크기 관계는 없다. 429는 줄이 가득 찼을 때(D-4-5)와 서버당 RateLimiter를 넘었을 때(D-6)만 준다.
 - 입장 속도(초당 몇 명)는 뒤쪽 처리 능력(consumer의 초당 발급 커밋 수, TPS)을 보고 정한다. RPS는 들어오는 HTTP 요청 수라서 기준이 아니다.
 
 **버린 안: 서비스 밖 대기열** (NetFUNNEL, Cloudflare Waiting Room 같은 별도 서비스·게이트웨이). 직접 만든 이유:
@@ -283,12 +302,12 @@ Client → commerce-api
 
 #### D-4-2. 줄을 Redis에 담는 방식 ✅ 11-12
 
-**결론: `queue:{campaignId}` ZSET. member = userId, score = Redis 순번 카운터 값.**
+**결론: `coupon:{id}:queue` ZSET. member = userId, score = Redis 순번 카운터 값.** 키 전체 목록은 맨 위 "용어"의 Redis 키 표.
 
 <details>
 <summary>자세히: score를 정하는 법, 다시 등록, 줄에 넣기 전 거름</summary>
 
-- score = Lua 안에서 `INCR queue:{campaignId}:seq` 한 값. Redis에 도착한 순서가 곧 줄 순서다.
+- score = Lua 안에서 `INCR coupon:{id}:queue:seq` 한 값. Redis에 도착한 순서가 곧 줄 순서다.
   - 버린 안: 서버 시각(서버마다 시계가 다름), Redis `TIME`(같은 시각이 겹칠 수 있음).
 - score는 안에서만 쓰는 값이다. 사용자에게는 `ZRANK`(내 앞에 몇 명)를 보여 준다. 앞사람이 입장하면 score는 그대로이고 rank만 줄어든다.
 - 이미 줄에 있으면 원래 순번을 돌려준다(뒤로 밀리지도, 끼어들지도 않음). 확인과 등록은 Lua 하나로 묶는다.
@@ -299,17 +318,29 @@ Client → commerce-api
 
 #### D-4-3. 입장시키는 쪽: 구간별 입장 한도를 Redis에서 센다 ✅ 11-12
 
-**결론: 모든 서버가 입장 스케줄러를 돌리되, 100ms 구간마다 몇 명 들였는지를 Redis 카운터 하나로 센다. 🔧 100ms마다 5명(초당 50명, 측정 전 임시값). 스케줄러는 전용 스레드 1개.**
+**결론: 모든 서버가 입장 스케줄러를 돌리되, 100ms 구간마다 몇 명 들였는지를 Redis 카운터 하나로 센다. 🔧 100ms마다 5명(초당 50명, 측정 전 임시값). 그리고 ✅ 남은 쿠폰 수만큼만 들인다(11-12 학습자 결정) — 줄 순서 = 당첨 순서. 스케줄러는 전용 스레드 1개.**
 
 <details>
-<summary>자세히: 문제, 두 안 비교, 초당 50명의 근거와 한계, 전용 스레드</summary>
+<summary>자세히: 남은 쿠폰 수만큼만 입장, 문제, 두 안 비교, 초당 50명의 근거와 한계, 전용 스레드</summary>
+
+**✅ 남은 쿠폰 수만큼만 입장 (11-12 학습자 결정)**
+
+- 한 번에 들이는 수 = min(구간 한도 남은 수, **남은 자리**). 스케줄러와 등록 때 바로 입장 둘 다 같다.
+- 남은 자리 = 당첨자 수 − 당첨자 Set 크기 − 입장했지만 아직 발급 안 한 사람 수.
+- "입장했지만 아직 발급 안 한 사람"은 Redis ZSET `coupon:{id}:admitted`(입장자 ZSET)에 둔다. score = 입장 키 만료 시각.
+  - 입장 Lua가 들일 때 ZADD, 발급 Lua가 당첨시킬 때 ZREM(당첨자 Set으로 옮겨 감).
+  - 세기 전에 만료된 항목을 지운다(`ZREMRANGEBYSCORE ... -inf 지금`). 입장하고 떠난 사람은 입장 키 TTL(30초) 뒤 자리가 풀리고 줄 다음 사람이 들어온다.
+- 왜 바꿨나: 실제 앱 실행(11-12)에서 쿠폰 3장·대기 8명이 0.2초 안에 8명 모두 입장했고, 발급을 먼저 누른 사람이 받았다. 줄 1번이 못 받았다. 줄을 세운 의미가 없다.
+- 지금: 줄 순서 = 당첨 순서. 예외는 입장하고 발급하지 않은 사람(no-show)뿐이다.
+- 비용: no-show 한 명이 다음 사람을 최대 입장 키 TTL(30초)만큼 늦춘다. 쿠폰이 거의 다 나갔을 때 마지막 몇 장이 늦게 나갈 수 있다.
+- (11-12 바뀜: 이전엔 구간 한도만 봤다. "입장 속도는 발급 완료를 기다리지 않는다"는 남은 자리가 있는 동안에만 맞다.)
 
 **문제:** 줄(ZSET)은 Redis에 하나다. 그런데 서버 5대가 각자 "100ms마다 5명 입장"을 돌리면 25명이 들어간다. 서버를 늘릴수록 입장 속도가 같이 빨라진다.
 
 | 안 | 방법 | 비용 |
 |---|---|---|
 | 가. 한 서버만 돌림 | ShedLock으로 스케줄러 하나만 실행 (W7 outbox relay가 이미 ShedLock JDBC를 쓴다) | 그 서버가 죽으면 락이 풀릴 때까지(lockAtMostFor) 아무도 입장 못 하고 대기 화면이 멈춘다. ShedLock JDBC는 락을 MySQL `shedlock` 행에 잡으므로, 100ms마다 잡으면 서버마다 초당 10번 MySQL에 쓰기가 간다 |
-| **나. 모든 서버가 돌되 구간 한도를 Redis 카운터로 셈 ✅** | 입장 Lua가 Redis `TIME`으로 100ms 구간 번호를 구하고, `admit:{campaignId}:{구간}` 카운터로 "이번 구간에 몇 명 들였나"를 센다. 한도가 차면 다른 서버는 꺼내지 않는다 | 서버 수 × 초당 10번 Lua 호출(5대면 초당 50번, Redis에는 작은 양). 구간 번호가 Redis 시각에 기대지만, 줄 자체가 이미 Redis에 있어서 새 의존이 늘지 않는다 |
+| **나. 모든 서버가 돌되 구간 한도를 Redis 카운터로 셈 ✅** | 입장 Lua가 Redis `TIME`으로 100ms 구간 번호를 구하고, `coupon:{id}:admit:<구간>` 카운터(TTL 구간 길이 × 2)로 "이번 구간에 몇 명 들였나"를 센다. 한도가 차면 다른 서버는 꺼내지 않는다 | 서버 수 × 초당 10번 Lua 호출(5대면 초당 50번, Redis에는 작은 양). 구간 번호가 Redis 시각에 기대지만, 줄 자체가 이미 Redis에 있어서 새 의존이 늘지 않는다 |
 
 나를 고른 이유:
 
@@ -333,7 +364,7 @@ Client → commerce-api
 
 **바로 입장과 언제 도나**
 
-- 🔧 바로 입장: 줄이 비어 있고(ZCARD = 0) 이번 구간 한도가 남아 있으면 등록 Lua가 줄에 넣지 않고 바로 입장 토큰을 준다. 같은 구간 카운터를 쓰므로 합쳐도 초당 50명을 넘지 않는다. 기다리는 사람이 있으면 새로 온 사람은 뒤로 선다.
+- 🔧 바로 입장: 줄이 비어 있고(ZCARD = 0) 이번 구간 한도와 남은 자리(위 "남은 쿠폰 수만큼만 입장")가 있으면 등록 Lua가 줄에 넣지 않고 바로 입장 토큰을 준다. 같은 구간 카운터를 쓰므로 합쳐도 초당 50명을 넘지 않는다. 기다리는 사람이 있으면 새로 온 사람은 뒤로 선다.
 - 🔧 언제 도나: 스케줄러는 100ms마다 깨어나지만, 열린 캠페인(발급 시작 ≤ 지금 < 마감, 품절 표시 꺼짐)이 없으면 Redis를 부르지 않고 바로 끝난다. 열린 캠페인 목록은 서버마다 DB에서 10초마다 읽어 메모리에 둔다. 그래서 이벤트가 끝나면 Redis 호출도 멈춘다.
 - `fixedDelay`로 돈다(이전 실행이 끝난 뒤 100ms). Redis 명령 timeout이 200ms(W4 RedisConfig)라 Redis가 느려도 한 번에 최대 200ms만 묶이고, 호출이 겹쳐 쌓이지 않는다.
 - 100ms 주기의 서버 비용은 열린 캠페인이 없으면 메모리 확인뿐이다. 이벤트 중에도 서버당 초당 10번 Lua다. 더 큰 부하는 대기자의 순번 조회(D-4-5)다. 실측으로 확인한다.
@@ -351,14 +382,21 @@ Client → commerce-api
 
 #### D-4-4. 입장 토큰 ✅ 11-12
 
-**결론: Redis `entry:{campaignId}:{userId}`, TTL 30초. 토큰 문자열은 주지 않고 `X-USER-ID`로 키가 있는지만 본다. 키 삭제는 outbox 커밋 뒤.**
+**결론: Redis `coupon:{id}:entry:<userId>`, TTL 30초. 토큰 문자열은 주지 않고 `X-USER-ID`로 키가 있는지만 본다. 입장할 때 입장자 ZSET(`coupon:{id}:admitted`)에도 적는다. 키 삭제는 outbox 커밋 뒤.**
 
 <details>
 <summary>자세히: TTL이 안전한 이유, 발급 API 순서, 트랜잭션 범위, 삭제 실패</summary>
 
 - 토큰 문자열을 따로 주지 않는다. 발급 API는 `X-USER-ID`로 "이 사용자의 입장 키가 있나"만 본다(남에게 넘길 수 없음).
-- TTL이 안전한 이유: 사라져도 그 사람이 입장 기회를 잃을 뿐, 쿠폰 수량은 발급 Lua에서만 줄어서 한 장도 묶이지 않는다(옛 세마포어 자리와 다름). 입장 속도는 발급 완료를 기다리지 않으므로 떠난 사람이 줄을 느리게 하지도 않는다.
-- 발급 API 순서: Caffeine 품절 → 409 / 발급 Lua(입장 키 없음 409 `QUEUE_NOT_ADMITTED` · 이미 발급 200 · 100명 참 409 품절 · 통과 시 당첨자 Set 추가) → outbox 기록 → 202.
+- TTL이 안전한 이유: 사라져도 그 사람이 입장 기회를 잃을 뿐, 쿠폰 수량은 발급 Lua에서만 줄어서 한 장도 묶이지 않는다(옛 세마포어 자리와 다름).
+- 떠난 사람(no-show)의 비용: 입장자 ZSET이 남은 자리를 잡고 있어서, 입장 키가 만료될 때(최대 30초)까지 다음 사람이 못 들어온다. 만료되면 자리가 풀린다(D-4-3). (11-12 바뀜: 이전 "입장 속도는 발급 완료를 기다리지 않으므로 떠난 사람이 줄을 느리게 하지도 않는다")
+- 발급 API 순서: 발급 Lua 한 번 → outbox 기록 → 202. Lua 판정 순서는 D-2(실패 처리) 표와 같다:
+  1. 상태 키 없음 → `UNKNOWN` → 요청 중 복구 뒤 한 번 더(D-4-7), 안 되면 503
+  2. 이미 당첨 → `ALREADY` → 쿠폰 있으면 200, 없으면 202
+  3. 입장 키 없음 → 409 `QUEUE_NOT_ADMITTED`
+  4. 품절(Set 크기 ≥ 당첨자 수) → 409 `COUPON_SOLD_OUT`
+  5. 통과 → 당첨자 Set에 추가, 입장자 ZSET에서 뺌
+- (11-12 바뀜, 커밋 6fe4da67: 이전엔 Lua 앞에서 Caffeine 품절 표시를 먼저 봐 409. 실제 앱 실행에서 품절 뒤 당첨자가 다시 요청하면 "이미 당첨" 대신 409 품절을 받았다. 이제 발급은 Caffeine을 보지 않는다. 또 이전 문장은 "입장 키 → 이미 발급" 순서였는데, 코드와 D-2 표는 "이미 당첨 → 입장 키"다.)
 
 **트랜잭션 범위: `TransactionTemplate`으로 코드에 직접 쓴다**
 
@@ -389,12 +427,15 @@ Lua (TX 밖) → outbox insert (짧은 TX) → 입장 키 삭제 (TX 밖)
 
 | 순서 | 조건 | 상태 |
 |---|---|---|
-| 0 | Caffeine 품절 표시 켜짐 (Lua 전) | `SOLD_OUT` |
-| 1 | 입장 키 있음 | `ADMITTED` |
-| 2 | 줄에 있음 | `WAITING` (앞 인원) |
-| 3 | 당첨자 Set에 있음 | `ISSUED` |
-| 4 | 그 외 | `NOT_IN_QUEUE` |
+| 1 | 상태 키 없음 | `UNKNOWN` → 요청 중 복구 뒤 한 번 더(D-4-7), 안 되면 503 |
+| 2 | 당첨자 Set에 있음 | `ISSUED` |
+| 3 | 품절(Set 크기 ≥ 당첨자 수) | `SOLD_OUT` |
+| 4 | 입장 키 있음 | `ADMITTED` |
+| 5 | 줄에 있음 | `WAITING` (앞 인원) |
+| 6 | 그 외 | `NOT_IN_QUEUE` |
 
+- (11-12 바뀜: 이전 표는 0번 "Caffeine 품절 표시 켜짐(Lua 전) → `SOLD_OUT`"이 맨 앞이었다. 실제 앱 실행에서 품절 뒤 당첨자가 `ISSUED` 대신 `SOLD_OUT`을 받아 빼고(커밋 6fe4da67), 순서도 코드 `status.lua`에 맞췄다. 이전 순서: 입장 키 → 줄 → 당첨자 Set.)
+- 조회가 Caffeine을 안 봐도 품절 뒤 조회가 계속 몰리지 않는다: 품절되면 줄이 지워져 기다리던 사람은 Lua에서 `SOLD_OUT`을 한 번 받고 조회를 멈춘다.
 - Lua로 묶는 이유: 따로 부르면 EXISTS와 ZRANK 사이에 스케줄러가 이 사람을 입장시켜, 입장된 사람이 `NOT_IN_QUEUE`를 받는다.
 - 예상 대기 시간은 보여 주지 않는다(입장 속도가 바뀌면 틀린 약속).
 - 조회를 멈춘 사람도 줄에서 빼지 않는다. 입장해도 입장 키가 30초 뒤 사라질 뿐, 쿠폰·입장 속도를 묶지 않는다.
@@ -417,7 +458,7 @@ Lua (TX 밖) → outbox insert (짧은 TX) → 입장 키 삭제 (TX 밖)
 
 #### D-4-6. 품절·마감 때 줄 정리 ✅ 11-12
 
-**결론: 품절 키를 따로 두지 않는다. 품절 = `SCARD(당첨자 Set) ≥ 쿠폰 수`를 모든 Lua가 확인한다. 품절이면 줄을 지우고, 기다리던 사람은 다음 조회에서 `SOLD_OUT`을 받는다.**
+**결론: 품절 키를 따로 두지 않는다. 품절 = `SCARD(당첨자 Set) ≥ 쿠폰 수`를 모든 Lua가 확인한다. 품절이면 줄을 지우고, 기다리던 사람은 다음 조회에서 `SOLD_OUT`을 받는다. Caffeine 품절 표시는 새 등록(POST /queue)만 본다(11-12 바뀜: 이전엔 등록·조회·발급 모두).**
 
 <details>
 <summary>자세히: 품절 계산, 버린 안 두 개, Caffeine TTL, 마감 뒤 키 정리</summary>
@@ -428,40 +469,53 @@ Lua (TX 밖) → outbox insert (짧은 TX) → 입장 키 삭제 (TX 밖)
 - 버린 안: 발급 Lua가 품절 키를 켜는 방식. 원본이 Set과 품절 키 둘이 되어 어긋날 수 있다. 한 명을 빼서 쿠폰이 다시 생길 때 품절 키를 지우는 걸 빠뜨리면 그 1장이 끝까지 안 나간다. Set 크기로 계산하면 빼는 순간 저절로 품절이 아니다.
 - 버린 안: 발급 Lua에만 두기. 쿠폰 100장·초당 50명·대기 1,000명이면 2초에 품절인데, 남은 900명이 18초 동안 입장해 409를 받고 새로 온 사람도 마감까지 줄에 선다.
 - 각 서버는 어떤 Lua에서든 `SOLD_OUT`을 받으면 Caffeine 품절 표시를 켠다. 🔧 TTL 5초. Set에서 빼는 경로가 없어져(D-2 실패 처리) 품절이 풀리는 건 Redis 복구 때뿐이지만, 그때를 위해 5초 안에 다시 Redis를 본다(11-11 기본안 "다시 끄지 않음"을 바꿈).
+- ✅ Caffeine 품절 표시를 보는 곳은 **새 등록(POST /queue)뿐**이다(커밋 6fe4da67). 조회(GET /queue)와 발급(POST /issues)은 바로 Lua로 간다.
+  - 이유: 품절 표시는 "이 사람이 당첨자인가"를 모른다. Lua 앞에서 보면 당첨자도 품절로 막힌다. 실제 앱 실행(11-12)에서 품절 뒤 당첨자가 발급을 다시 누르면 409 `COUPON_SOLD_OUT`, 조회하면 `SOLD_OUT`을 받았다. Lua는 "이미 당첨(`ALREADY`/`ISSUED`)"을 품절보다 먼저 본다.
+  - 새 등록에는 남긴다. 품절 뒤 몰리는 새 요청을 Redis 앞에서 끊는 게 Caffeine의 목적이기 때문이다. 한계: 당첨자가 품절 뒤 다시 등록을 누르면 `ISSUED` 대신 `SOLD_OUT`을 받는다. 당첨 결과는 조회·발급·내 쿠폰에서 본다.
+  - (11-12 바뀜: 이전엔 등록·조회·발급 모두 Lua 전에 Caffeine을 봤다.)
 - 품절되면 입장 스케줄러가 입장을 멈추고 줄을 `UNLINK`한다. `UNLINK`는 메모리 해제를 뒤에서 처리해 큰 줄을 지워도 Redis가 멈추지 않고, 여러 서버가 불러도 무해하다. 기다리던 사람은 다음 조회(최대 5초 안)에 `SOLD_OUT`, 이미 입장한 사람은 발급에서 409.
 
 **마감**
 
 - 열린 캠페인 목록에서 빠져 등록은 409 "발급 기간 아님", 입장 스케줄러도 멈춘다.
 - 🔧 마감 + 10분 뒤 입장 스케줄러 스레드가 줄·순번 카운터·당첨자 Set을 `UNLINK`. 10분 여유는 마감 직전 당첨자의 outbox 기록을 맞춰 보기(D-2 실패 처리)가 채울 수 있게 Set을 남겨 두려는 것.
-- 입장 키(30초)·구간 카운터(2초)는 TTL로 사라진다. 마감 뒤 "내 쿠폰" 조회는 DB를 본다.
+- 🔧 정리 대상에 입장자 ZSET(`coupon:{id}:admitted`)과 상태 키도 들어간다(코드 `cleanup`).
+- 입장 키(30초)·구간 카운터(구간 길이 × 2, 기본 200ms)는 TTL로 사라진다. 마감 뒤 "내 쿠폰" 조회는 DB를 본다.
 - 캠페인 상태 키는 품절용이 아니라 Redis 데이터 유실을 알아채는 용도로 남긴다(Set이 사라지면 SCARD 0이 "아무도 안 받음"과 구분 안 됨). D-4-7(Redis 장애)에서 정했다.
 
 </details>
 
 #### D-4-7. Redis 장애 ✅ 11-12
 
-**결론: 연결이 안 되면 등록·조회·발급은 503(우회하지 않음). 데이터가 사라지면 outbox로 당첨자 Set을 다시 채우는 자동 복구(학습자 결정).**
+**결론: 연결이 안 되면 등록·조회·발급은 503(우회하지 않음). 데이터가 사라지면 outbox로 당첨자 Set을 다시 채우는 자동 복구(학습자 결정). ✅ 요청이 상태 키 없음(`UNKNOWN`)을 보면 스케줄러를 기다리지 않고 그 요청이 직접 복구한 뒤 한 번 더 본다(11-12 학습자 결정).**
 
 <details>
-<summary>자세히: 연결 장애, 자동 복구 절차와 한계, 일부만 사라진 경우</summary>
+<summary>자세히: 연결 장애, 자동 복구 절차와 한계, 요청 중 복구, 일부만 사라진 경우</summary>
 
 **연결 안 됨**
 
 - 등록·순번 조회·발급은 503(우회하지 않음). 내 쿠폰 조회는 DB라 정상.
-- Caffeine에 품절이 켜진 캠페인은 `SOLD_OUT`.
+- Caffeine에 품절이 켜진 캠페인은 새 등록만 `SOLD_OUT`. 조회·발급은 Caffeine을 보지 않으므로 503(D-4-6, 11-12 바뀜: 이전 "Caffeine에 품절이 켜진 캠페인은 `SOLD_OUT`").
 - 입장 스케줄러는 실패를 기록하고 다음 주기에 다시 시도.
-- 화면은 503이면 2초 뒤 다시 조회하고, 줄이 Redis에 남아 있으면 원래 순번 그대로 이어진다.
+- 화면은 503이면 `Retry-After`(1초) 뒤 다시 조회하고, 줄이 Redis에 남아 있으면 원래 순번 그대로 이어진다. (11-12 바뀜: 이전 "2초 뒤". 실제 응답은 `Retry-After: 1` 헤더다)
 
 **데이터가 사라짐 → 자동 복구 ✅ (학습자 결정)**
 
 - 왜 자동인가: 돈이 걸린 일은 사람이 확인하고 재개해야 하지만, 쿠폰은 자동 복구로 한다. 최악의 경우에도 DB(UNIQUE, 발급 수 조건부 +1)가 100장 초과와 1인 2장을 막고, 사람을 기다리면 그동안 발급이 멈춘다. 과제 체크리스트 "확인 후 명시적으로 재개"와 다르게 가는 것이며 PR에 이유를 적는다.
-- 알아채기: 캠페인 상태 키 `campaign:{id}:state`. TTL이 없어서 메모리가 차도 Redis가 지우지 않는다(eviction 정책 volatile-lru는 TTL 있는 키만 지움). 모든 Lua가 첫 줄에서 확인하고, 없으면 `UNKNOWN` → 요청은 503.
+- 알아채기: 캠페인 상태 키 `coupon:{id}:state`. TTL이 없어서 메모리가 차도 Redis가 지우지 않는다(eviction 정책 volatile-lru는 TTL 있는 키만 지움). 모든 Lua가 첫 줄에서 확인하고, 없으면 `UNKNOWN` → 아래 복구 → 그래도 없으면 503.
 - 복구 절차:
-  1. 입장 스케줄러가 `UNKNOWN`을 보면 `SET rebuild:{id} NX EX 10`으로 한 서버만 복구한다.
+  1. 입장 스케줄러 또는 요청(아래 "요청 중 복구")이 `UNKNOWN`을 보면 `SET coupon:{id}:rebuild NX EX 10`으로 한 서버만 복구한다.
   2. `SELECT user_id FROM coupon_issue_outbox WHERE campaign_id = ?` 하나로 당첨자 전부를 읽는다. outbox 행은 지우지 않고 모든 쿠폰은 outbox 행에서 시작하므로, 처리가 끝났든 Kafka에 있든 outbox = 당첨자 전부다. 두 테이블을 따로 읽으면 그 사이에 consumer가 처리하는 틈이 생긴다.
   3. Lua 하나로 "당첨자 Set 다시 채우기 + 상태 키 쓰기"를 한다(최대 쿠폰 수만큼이라 작다).
+     - ✅ 상태 키가 이미 있으면 이 Lua는 아무것도 하지 않는다(11-12). 복구 잠금(10초)이 끝난 뒤 두 번째 서버가 늦게 복구하면, 그 사이 새로 들어온 당첨자를 Set째 지우던 틈을 막는다.
   - 복구 중에는 모든 Lua가 `UNKNOWN`이라 새 수락이 없어서 DB에서 읽은 내용이 흔들리지 않는다.
+
+**✅ 요청 중 복구 (11-12 학습자 결정)**
+
+- 등록·조회·발급이 `UNKNOWN`을 보면 그 요청이 위 복구(같은 잠금 `SET NX EX 10`, 같은 outbox 읽기)를 부르고, 한 번 더 Lua를 부른다.
+- 다른 서버가 잠금을 쥐고 복구 중이거나, 복구가 실패하면(Redis·DB 장애) 503 + `Retry-After: 1`. 다음 요청이나 스케줄러가 다시 한다.
+- 왜 바꿨나: 이전엔 입장 스케줄러만 복구했다. 실제 앱 실행(11-12)에서 캠페인 시작 직후 첫 요청들이 몇 초 동안 503을 받았다(스케줄러가 복구할 때까지).
+- 비용: 복구 잠금을 얻은 요청 하나가 outbox SELECT 한 번만큼 느려진다(최대 쿠폰 수 행). 잠금 덕분에 몰려도 복구는 한 서버에서만 돈다.
 - Redis 장애 중에도 outbox 뒤(relay → Kafka → consumer → DB)는 Redis를 쓰지 않아 계속 발급된다. 막히는 건 새 등록·새 당첨뿐이다. 복구 뒤 이미 당첨된 사람은 그대로 남고 남은 수량만 새로 받는다.
 - 캠페인 시작도 같은 경로다: 처음 열릴 때 상태 키가 없으니 DB 기준(빈 Set)으로 채우고 연다. 따로 open API가 필요 없다.
 - 한계: 줄 순서는 잃는다(대기자는 `NOT_IN_QUEUE` → 다시 등록). 사라지기 직전 Lua로 수락됐지만 outbox 기록이 복구가 DB를 읽은 뒤에 끝난 요청은 Set에서 빠질 수 있다 → DB 최종 방어.
@@ -605,10 +659,12 @@ UPDATE coupon_campaign SET issued_count = issued_count + 1
 
 | 자원 (서버마다) | 쿠폰이 쓰는 곳 | 격벽 |
 |---|---|---|
-| DB 커넥션 풀 40개 (주문·상품과 같이 씀) | 발급 API의 outbox INSERT | Resilience4j Bulkhead: 동시 최대 🔧 10(풀의 25%), 대기 🔧 500ms, 넘으면 503 + `pollAfterMs` |
+| DB 커넥션 풀 40개 (주문·상품과 같이 씀) | 발급 API의 outbox INSERT | Resilience4j Bulkhead: 동시 최대 🔧 10(풀의 25%), 대기 🔧 500ms, 넘으면 503 + `Retry-After` 헤더 |
 | | consumer 트랜잭션 | commerce-streamer로 분리(D-8, 프로세스 단위 격벽) + listener 동시 처리 수 고정 🔧 2 |
 | | outbox relay | 이미 한 서버에서만(ShedLock), 한 번에 한 묶음 |
-| Tomcat 스레드 200개 | 대기열 등록·순번 조회 | Resilience4j RateLimiter: 서버당 초당 🔧 N건, 넘으면 429 + `pollAfterMs` |
+| Tomcat 스레드 200개 | 대기열 등록·순번 조회 | Resilience4j RateLimiter: 서버당 초당 🔧 N건, 넘으면 429 + `Retry-After` 헤더 |
+
+- (11-12 바뀜: 이전 표는 "503/429 + `pollAfterMs`". 오류 본문 모양(ApiResponse)을 바꾸지 않으려고 `Retry-After: 1` 헤더만 준다. "구현하며 정한 것" 참고)
 
 - 대기열(rate limit)과 Bulkhead는 다른 것을 제한한다. 동시 처리 수 = 초당 들어오는 수 × 한 건 시간(Little's law).
   - 평소: 50/s × 10ms = 0.5. Bulkhead에 닿지 않는다.
@@ -658,7 +714,7 @@ UPDATE coupon_campaign SET issued_count = issued_count + 1
 
 - 과제의 "201 + couponId"는 202, 이미 발급이면 couponIds 목록으로 바뀐다. PR에 이유를 적는다.
 - 새 ErrorType 5개 (W3 `CONCURRENCY_CONFLICT`처럼 같은 상태 안에서 뜻을 나눔): `COUPON_SOLD_OUT`·`QUEUE_NOT_ADMITTED`·`CAMPAIGN_NOT_OPEN`(409), `TOO_MANY_REQUESTS`(**429 새 상태**), `SERVICE_UNAVAILABLE`(**503 새 상태**). ADR-12(ErrorType → HTTP 상태 대응표)에 429·503을 더한다 (학습자 확인 11-12).
-- 다시 시도 시점은 `Retry-After` 헤더(초)와 본문 `pollAfterMs` 둘 다 🔧.
+- 다시 시도 시점은 `Retry-After` 헤더(초)와 본문 `pollAfterMs` 둘 다 🔧. (11-12 바뀜: 구현은 오류에 `Retry-After: 1` 헤더만. "구현하며 정한 것" 참고)
 
 </details>
 
@@ -693,7 +749,8 @@ UPDATE coupon_campaign SET issued_count = issued_count + 1
 |---|---|---|
 | 줄(ZSET), 순번 카운터, 당첨자 Set, 상태 키 | 없음 | 지워지지 않는다 |
 | 입장 키 | 30초 | 입장된 사람이 409 "입장 전" → 다시 등록하면 줄 맨 뒤 (사용자 손해) |
-| 구간 입장 카운터 | 2초 | 그 100ms에 5명이 더 들어감 (작음) |
+| 구간 입장 카운터 | 구간 길이 × 2 (기본 200ms, 11-12 바뀜: 이전 2초) | 그 100ms에 5명이 더 들어감 (작음) |
+| 입장자 ZSET | 없음(만료 항목은 Lua가 지움) | 지워지지 않는다 |
 | 복구 잠금 | 10초 | 두 서버가 같이 복구, 결과는 같음 (작음) |
 
 - 쿠폰 키는 TTL이 없어 지워지지 않으므로 메모리가 차면 상품 캐시가 대신 지워진다 → 상품 목록이 DB로 간다. 줄 길이 제한 덕분에 쿠폰 메모리는 작다(줄 1,000명 ≈ 100KB).
@@ -726,7 +783,7 @@ UPDATE coupon_campaign SET issued_count = issued_count + 1
 | Redis 읽기 위치 | 발급 판정은 primary Lua 1회만. replica 사전 거절은 쓰지 않는다 — 통과하는 요청에 왕복이 하나 늘고, 품절 뒤 거절은 Caffeine이 이미 맡는다 | ✅ 11-11 |
 | Redis 격리 | D-9로 정함: 이번 주는 같은 Redis, 한계와 분리 시점을 적음 | ✅ 11-12 |
 | API 계약 | D-7로 정함 | ✅ 11-12 |
-| 품절 플래그 | D-4-6으로 정함: 품절 = Set 크기 ≥ 쿠폰 수, Caffeine은 사본(TTL 5초) | ✅ 11-12 |
+| 품절 플래그 | D-4-6으로 정함: 품절 = Set 크기 ≥ 쿠폰 수, Caffeine은 사본(TTL 5초), 새 등록만 Caffeine을 봄 | ✅ 11-12 |
 | consumer 위치 | D-8로 정함: commerce-streamer | ✅ 11-12 |
 | DB 모델 | D-5로 정함: 캠페인·쿠폰 분리, 쿠폰팩, 조건부 UPDATE | ✅ 11-12 |
 | 실험 | 아래 "실험" 절 | ✅ 11-12 |
@@ -741,9 +798,28 @@ UPDATE coupon_campaign SET issued_count = issued_count + 1
 | 2 | 등록 순서 = 줄 순서, 다시 등록 → 원래 자리, 동시 두 번 → 한 자리 | api `CouponQueueFlowE2ETest.queueKeepsArrivalOrder` · `concurrentRegisterOfSameUserTakesOneSlot` |
 | 3 | 같은 메시지 두 번 → 한 번 발급 (동시 4번도) | streamer `CouponIssueServiceIntegrationTest.sameMessageTwiceIssuesOnce` · `concurrentSameUserIssuesOnce` |
 | 4 | 기록 실패 → 503, Set에 남음 → 맞춰 보기가 채움 → 다시 요청 202 | api `CouponRecoveryIntegrationTest.recordFailureIsFilledForward` |
-| 5 | Redis에 닿지 못함 → 등록·조회·발급 503, 내 쿠폰 200 | api `CouponGateUnavailableE2ETest` (Redis 컨테이너는 테스트 전체가 같이 써서 멈추지 않고, 어댑터가 던지는 예외를 넣었다) |
+| 5 | Redis에 닿지 못함 → 등록·조회·발급 503, 내 쿠폰 200 | api `CouponGateUnavailableE2ETest` (Redis 컨테이너는 테스트 전체가 같이 써서 멈추지 않고, 어댑터가 던지는 예외를 넣었다) · `CouponGateRedisAdapterUnavailableTest`(아무것도 듣지 않는 포트에 붙인 어댑터 → `GateUnavailableException`. 위 E2E가 넣은 예외를 어댑터가 진짜로 던지는지 확인) |
 | 6 | FLUSHALL → 판정 UNKNOWN → outbox로 복구, 당첨자 유지 | api `QueueAdmissionIntegrationTest.autoRecoveryKeepsWinners` |
 | 7 | 입장 스케줄러 4개 동시 → 구간당 3명만, 앞에서부터 | api `QueueAdmissionIntegrationTest.concurrentSchedulersAdmitPerTickLimitInOrder` |
+| 7a | Lua 판정이 당첨자 수에서 멈춤 (입장 3명·쿠폰 2장 동시 발급 → 2명 당첨·1명 409) | api `QueueAdmissionIntegrationTest.luaStopsAtTotalUnderConcurrentIssue` |
+| 7b | 요청 중 복구: 상태 키 없음 → 요청이 복구하고 정상 응답 / 다른 서버가 복구 중이면 503 | api `QueueAdmissionIntegrationTest.requestRecoversMissingStateKey` · `unknownWhileOtherServerRecoversIs503` |
+| 7c | relay 실패 경로: 발행 실패·응답 시간 초과면 outbox가 대기 상태로 남음, 보내기 자체가 실패하면 그 회차를 멈춤 | api `CouponIssueRelayFailureTest` |
+| 7d | 마감 10분 경계: 마감 + 10분 안에는 키를 남기고, 지나면 정리 | api `CouponRecoveryIntegrationTest.keepsKeysWithinTenMinutesAfterDeadline` · `cleansUpAfterDeadline` |
+
+**실제 앱 실행 (11-12)**
+
+- 구성: commerce-api + commerce-streamer + Redis + Kafka 브로커 3대.
+- 순서: 8명 줄 등록 → 입장 → 동시 발급(쿠폰 3장) → 당첨 3명(202), 409 품절 5명 → 3초 안에 당첨자 3명 × 쿠폰 2장(쿠폰팩) 생성.
+- Redis `FLUSHALL` 뒤 자동 복구로 당첨자가 그대로 남는 것 확인.
+- 로컬에서는 관리자 API가 인증 수단이 없어 403이라, 캠페인을 SQL로 넣었다.
+
+발견한 것 3가지 (모두 고침):
+
+| 발견 | 원인 | 고친 것 |
+|---|---|---|
+| 품절 뒤 당첨자가 발급 409 `COUPON_SOLD_OUT`, 조회 `SOLD_OUT`을 받음 | Caffeine 품절 표시를 Lua의 "이미 당첨"보다 먼저 봄 | 새 등록만 Caffeine을 봄 (D-4-6, 커밋 6fe4da67) |
+| 캠페인 시작 직후 첫 요청들이 몇 초 동안 503 | 상태 키를 입장 스케줄러만 복구함 | 요청 중 복구 (D-4-7) |
+| 줄 1번이 쿠폰을 못 받음 (쿠폰 3장·대기 8명이 0.2초 안에 모두 입장, 발급을 먼저 누른 사람이 받음) | 입장 수를 구간 한도로만 셈 | 남은 쿠폰 수만큼만 입장 (D-4-3) |
 
 **필수 — 측정 (학습자가 실행)**
 
@@ -771,10 +847,18 @@ UPDATE coupon_campaign SET issued_count = issued_count + 1
 | 적용 상품 표 | 외래 키 없음 | 다른 표처럼 식별자로만 잇는다. FK가 있으면 streamer 테스트가 `coupon` 표를 다시 만들지 못했다 |
 | 열린 캠페인 목록 | 목록에 없으면 DB를 한 번 본다 | 막 열린 캠페인이 다음 갱신(10초) 전에 409가 되지 않게 |
 | 격벽 위치 | Bulkhead·RateLimiter는 web 어댑터(`CouponIsolation`) | 응용 서비스가 Resilience4j를 모르게. Bulkhead는 판정 Lua를 포함한 발급 전체를 감싼다 |
+| 품절 표시 보는 곳 | 새 등록(POST /queue)만. 조회·발급은 바로 Lua | 품절 뒤 당첨자가 "이미 당첨" 대신 품절을 받았다(실제 앱 실행). D-4-6 |
+| 요청 중 복구 | 등록·조회·발급이 `UNKNOWN`이면 그 자리에서 복구(같은 잠금) 뒤 한 번 더. 잠금 못 얻거나 실패하면 503 | 캠페인 시작 직후 몇 초 503(실제 앱 실행). D-4-7 |
+| 남은 쿠폰 수만큼 입장 | 입장 수 = min(구간 한도, 당첨자 수 − 당첨자 − 입장자 ZSET 크기). 입장자 ZSET `coupon:{id}:admitted`, score = 입장 키 만료 시각 | 줄 1번이 못 받았다(실제 앱 실행). 비용: no-show가 다음 사람을 최대 30초 늦춤. D-4-3 |
+| ✅ 쿠폰 대기열 API는 사용자를 DB로 확인하지 않는다 (11-12 학습자 결정) | 등록·조회·발급은 `TrustedUser`로 받는다: 헤더 `X-USER-ID`의 형식만 보고(없거나 숫자가 아니면 401) DB에 있는지는 묻지 않는다. 다른 API는 계속 `LoginUser`(USR-01, DB 확인) | 실무에서는 로그인 토큰(JWT) 서명으로 사용자를 알아서 DB에 묻지 않는다. 이 과제에는 토큰이 없어 헤더를 "토큰으로 검증된 id"로 본다. 100만 명이 몰리면 요청마다의 DB 확인이 100만 번(초당 10만)이 되고, 이 확인은 RateLimiter보다 앞이라 막을 수도 없다. 처음 5분 캐시를 넣었으나, 처음 오는 사용자에게는 소용이 없어 뺐다 |
+| 구간 입장 카운터 TTL | 구간 길이 × 2 (이전 2초 고정) | 2초 고정이면 구간을 2초보다 길게 설정할 때 구간이 끝나기 전에 카운터가 사라져 한도가 깨진다 |
+| 복구 Lua(rebuild) | 상태 키가 이미 있으면 아무것도 안 함 | 복구 잠금(10초)이 끝난 뒤 두 번째 복구가 그 사이 새로 들어온 당첨자를 지우던 틈 |
+| 잘못된 입력 3가지 | 500 대신 400: 쿠폰 목록의 null 항목, 적용 상품 id null, 당첨자 수 × 10(줄 길이 기본값)이 int를 넘침 | 입력 오류는 400이 계약(W1 오류 구분) |
 
 **남은 한계**
 
-- 순번 조회(`GET /queue`)도 `X-USER-ID` 존재를 DB로 확인한다(USR-01). 대기자가 많으면 조회마다 DB 1번이다. k6로 확인하고, 크면 "등록 때만 확인"으로 바꾼다.
+- (11-12 바뀜: 이전 한계 "순번 조회도 `X-USER-ID` 존재를 DB로 확인한다" → 5분 캐시 → 처음 오는 100만 명에게는 소용이 없어, 쿠폰 대기열 API에서 DB 확인을 뺐다. 위 표)
+- 쿠폰 대기열 API는 없는 사용자 id도 받는다(헤더를 검증된 id로 믿음). 이 과제의 헤더 방식에서는 가짜 id가 줄·쿠폰 자리를 차지할 수 있다. 실무에서는 토큰이 막는다.
 - 로컬 DB(loopers)에는 `docs/week8/schema.sql`을 한 번 실행해야 한다(local 프로필은 `ddl-auto: none`).
 - 측정 8·9와 k6 스크립트는 아직이다.
 
@@ -787,5 +871,7 @@ UPDATE coupon_campaign SET issued_count = issued_count + 1
 - 11-11: Redis 읽기 위치 ✅ (primary만). Redis 격리 항목에 키 정리 방식 추가. D-1에 Lua로 묶는 이유 기록. C 값 항목 추가, 실패 처리 ⓕ(Redis 재시작·유실)에 상태 키 메모. D-2-1 ✅ 수락분만 outbox (outbox가 지켜 주는 범위 표 포함). 실험에 Kafka 중단 추가. P-W8-01 비용(대기열) 메모, 입장 방식 항목 추가. D-2-2 ✅ 회수됨 행 먼저 INSERT, 회수는 관리 endpoint. 입장 방식 ✅ 필수는 거절, 대기열은 추가 과제.
 - 11-12: D-3 ✅ 멘토 공지 반영 — 세마포어는 본 설계에서 빼고 실험으로, 대기열을 본 설계로, 전제는 멀티 인스턴스. P-W8-01 다시 정함 🤔. D-4-1 ✅ 대기열 API를 발급 API 앞에 둔다. D-4-2 ✅ ZSET + Redis 순번 score. D-4-1a ✅ 항상 줄을 거침, 직접 구현 이유 기록. D-4-3 ✅ 구간별 입장 한도를 Redis에서 셈(선택 이유 기록), 입장 스케줄러 전용 스레드 1개. D-4-4 ✅ 입장 토큰. D-4-5 ✅ 순번 조회(서버가 간격 지정) · 줄 길이 제한(queue_capacity, ZCARD) · 설계 한계. D-4-6 ✅ 품절은 Set 크기로 계산해 모든 Lua에서 확인, 품절 키 없음, 마감 + 10분 키 정리. D-4-7 ✅ Redis 데이터 유실은 자동 복구(한 서버만, 복구 중 503, DB·outbox 기준 재구성). D-4 대기열 설계 끝. P-W8-01 ✅ 도착 순서대로 줄 세움. D-2 ✅ 다시 정함: 되돌리기(tombstone 회수) 대신 앞으로 채우기(10초 맞춰 보기, DLT는 관리자 재처리), 복구는 outbox만 읽음. D-5 ✅ 쿠폰 DB 모델(캠페인·쿠폰 분리, 쿠폰팩, 조건부 UPDATE — 3주차 비관적 잠금과 다른 이유 기록). D-6 ✅ 쿠폰 발급용 격벽(Bulkhead는 Lua 앞, consumer 동시 처리 수 고정, 등록·조회 RateLimiter, 값은 실측). D-7 ✅ API 경로·응답 코드, ErrorType 5개 추가(429·503 새 상태). D-8 ✅ consumer는 commerce-streamer. D-9 ✅ Redis는 같은 인스턴스(멘토: 나눠도 좋음, 학습자: 필요 없음). 필수 실험 9개 ✅, 선택 실험 순서 ✅. 설계 끝.
 - 11-12: 읽기 쉽게 다시 정리. 맨 위에 "한눈에 보기"(그림 4개 · 용어 · 결정 요약) 추가, 결정마다 결론 한 줄 + "자세히" 접기. 실험을 별도 절로. D-1의 11-10 그림은 옛 설계로 표시. 내용·결정은 바꾸지 않음. D-4-3의 깨진 줄("버린 안: 스케줄러 풀 크기 늘리기") 복구.
+- 11-12: 쿠폰 대기열 API는 사용자를 DB로 확인하지 않는다(TrustedUser, JWT 전제, 사용자 확인 캐시는 되돌림).
+- 11-12: 코드 리뷰와 실제 앱 실행 반영. Caffeine 품절 표시는 새 등록만 봄(D-4-4 발급 순서·D-4-5 상태 표·D-4-6, 커밋 6fe4da67). 요청 중 복구(D-4-7). 남은 쿠폰 수만큼만 입장, 입장자 ZSET 추가(D-4-3·D-4-4, 줄 순서 = 당첨 순서). 사용자 확인 캐시(구현하며 정한 것, 남은 한계 고침). 구간 카운터 TTL = 구간 × 2, 복구 Lua는 상태 키 있으면 안 함, 잘못된 입력 3가지 400. 문서 맞춤: D-6 표 `Retry-After` 헤더만, D-4-1 429 문장, D-4-7 다시 조회 1초, D-4-4 Lua 순서(이미 당첨 → 입장 키), Redis 키 이름을 코드(`coupon:{id}:…`)에 맞추고 키 표 추가. 실험에 필수 테스트 4줄(7a~7d)·⑤ 어댑터 테스트, "실제 앱 실행" 추가.
 
 </details>
