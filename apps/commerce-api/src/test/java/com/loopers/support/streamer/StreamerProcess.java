@@ -32,7 +32,7 @@ public final class StreamerProcess implements AutoCloseable {
     public static StreamerProcess start(String topic, String consumerGroup) {
         String jar = System.getProperty("streamer.jar");
         if (jar == null) {
-            throw new IllegalStateException("streamer.jar 시스템 속성이 없습니다. gradle test 로 실행해야 streamer 실행 jar 가 준비됩니다.");
+            throw new IllegalStateException("streamer.jar 시스템 속성이 없습니다. gradle e2eTest 로 실행해야 streamer 실행 jar 가 준비됩니다.");
         }
         List<String> command = new ArrayList<>(List.of(
             Path.of(System.getProperty("java.home"), "bin", "java").toString(),

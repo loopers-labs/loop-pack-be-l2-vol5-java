@@ -22,12 +22,26 @@ checkstyle {
     maxWarnings = 0
 }
 
-// 학습용 실험 테스트는 기본 test/check 에서 빼고 experimentTest 로만 돌린다.
-// E2E 테스트는 streamer 를 별도 프로세스로 띄우므로 실행 jar 를 먼저 만든다. 제품 runtime 의존은 만들지 않는다.
+// 학습용 실험 테스트와 무거운 E2E 테스트는 기본 test/check 에서 빼고 각자의 태스크로만 돌린다.
 tasks.test {
     useJUnitPlatform {
-        excludeTags("experiment")
+        excludeTags("experiment", "e2e")
     }
+}
+
+// E2E 테스트는 streamer 를 별도 프로세스로 띄우므로 실행 jar 를 먼저 만든다. 제품 runtime 의존은 만들지 않는다.
+tasks.register<Test>("e2eTest") {
+    description = "@Tag(\"e2e\") E2E 테스트만 실행한다."
+    group = "verification"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    maxParallelForks = 1
+    useJUnitPlatform {
+        includeTags("e2e")
+    }
+    systemProperty("user.timezone", "Asia/Seoul")
+    systemProperty("spring.profiles.active", "test")
+    jvmArgs("-Xshare:off")
     dependsOn(":apps:commerce-streamer:bootJar")
     doFirst {
         val streamerJar = project(":apps:commerce-streamer").tasks.getByName("bootJar").outputs.files.singleFile

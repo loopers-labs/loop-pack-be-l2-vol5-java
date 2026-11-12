@@ -14,6 +14,7 @@ import com.loopers.support.streamer.StreamerProcess;
 import com.loopers.testcontainers.KafkaTestContainersConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -41,6 +42,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * 주문 API → 확정 TX 의 Outbox → relay(broker 확인 뒤 중단 → 재시작) → 실제 streamer → 구매 활동을 한 실행에서 잇는다.
  * streamer 는 별도 프로세스이고, 중단은 예외로 만든 것이며 프로세스 강제 종료가 아니다.
  */
+@Tag("e2e")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class OutboxDeliveryE2ETest extends PaymentFlowTestSupport {
 
