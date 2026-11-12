@@ -34,6 +34,14 @@ pg:
   base-url: http://localhost:8080
   provider-id: "135135"
 
+coupon:
+  queue:
+    max-queue-size: 1000
+    capacity: 50
+    heartbeat-timeout-seconds: 30
+    admit-ttl-seconds: 30
+    promote-delay-ms: 200
+
 ---
 spring:
   config:

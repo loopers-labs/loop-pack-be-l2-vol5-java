@@ -45,4 +45,7 @@ dependencies {
 
     // security test
     testImplementation("org.springframework.security:spring-security-test")
+
+    // toxiproxy for latency injection tests
+    testImplementation("org.testcontainers:toxiproxy")
 }

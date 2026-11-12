@@ -10,3 +10,11 @@ spring:
 demo-kafka:
   test:
     topic-name: demo.internal.topic-v1
+
+coupon:
+  queue:
+    max-queue-size: 10
+    capacity: 5
+    heartbeat-timeout-seconds: 2
+    admit-ttl-seconds: 2
+    promote-delay-ms: 200
