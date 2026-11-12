@@ -97,6 +97,8 @@ resilience4j:
 kafka:
   topics:
     order-events: order-events
+    # W8 (docs/week8/plan.md D-8): 쿠폰 발급 요청. key = userId
+    coupon-issue: coupon-issue-requests
 
 # W7 relay 한 회차 (docs/week7/plan.md D-1): 한 번에 고르는 최대 행 수 · broker 응답(ack)을 기다리는 시간.
 # send-wait(35s)는 producer가 포기하는 delivery.timeout.ms(30s)보다 길어야 한다 — relay가 실패로 적은 행이 뒤늦게 성공하지 않게.
@@ -109,6 +111,16 @@ outbox:
     tick: 1s
     scheduler:
       enabled: true
+
+# W8 당첨 기록 relay (docs/week8/plan.md D-2). W7 relay와 같은 값으로 시작한다.
+coupon:
+  outbox:
+    relay:
+      batch-size: 200
+      send-wait: 35s
+      tick: 1s
+      scheduler:
+        enabled: true
 
 payment:
   dispatch:
@@ -152,6 +164,12 @@ outbox:
   relay:
     scheduler:
       enabled: false
+
+coupon:
+  outbox:
+    relay:
+      scheduler:
+        enabled: false
 
 ---
 spring:
