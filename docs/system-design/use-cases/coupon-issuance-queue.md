@@ -1,6 +1,6 @@
 # Redis List 쿠폰 발급 대기열
 
-> 상태: 학습용 첫 버전의 정책을 확정한 설계. 대기열과 worker 코드는 아직 구현하지 않았다. 현재 구현된 동기 발급 계약은 [쿠폰 발급 설계](coupon-issuance.md)를 따른다. 이 문서는 추가할 비동기 접수와 작업 조회, 로컬 수동 복구를 다룬다. 실제 구현과 검증 결과는 구현 단계에서 갱신한다.
+> 상태: 학습용 첫 버전을 구현하고 검증했다. 동기 발급 계약은 [쿠폰 발급 설계](coupon-issuance.md)를 따르고, 이 문서는 비동기 접수와 작업 조회, worker, 로컬 수동 복구를 다룬다. 구현과 검증 결과는 아래 "구현과 검증 결과"에 정리했다.
 
 ## 합의한 범위와 정책
 
@@ -561,6 +561,33 @@ Redis 재시작 후 접수 정보를 보존하는 수준은 실제 RDB, AOF 설�
 | 기존 회귀 | 동기 쿠폰 API, 관련 ArchUnit, Checkstyle과 `:apps:commerce-api:check` 유지 |
 
 코드는 확정한 계약에 맞춰 대표 규칙의 실패 테스트부터 작성한다. 구현한 단계와 실제 실행 결과를 이 문서에 구분해 기록한다.
+
+## 구현과 검증 결과
+
+단계마다 실패하는 테스트를 먼저 확인한 뒤 구현했다. 실행기 분리와 실제 환경 검증(worker E2E)은 기존 동작을 유지하거나 확인하는 단계라 실패 테스트를 먼저 두지 않았다.
+
+| 구현 단계 | 테스트 | 건수 |
+|---|---|---|
+| 캠페인 거절 사유와 작업 상태 도메인 | `CouponCampaignTest`, `CouponIssueRequestTest` | 22, 41 |
+| permit 이후 발급 실행 분리 | `CouponIssueExecutorTest`, 기존 `CouponIssueFacadeTest` 회귀 | 12, 19 |
+| Redis 저장소와 Lua | 접수·조회 `RedisCouponIssueQueueIntegrationTest`, 가져오기 `...ClaimIntegrationTest`, 결과 기록 `...RecordIntegrationTest`, 재접수 `...ResubmitIntegrationTest`, 예외 변환 `...ExceptionTranslatorTest` | 11, 6, 11, 8, 4 |
+| 접수와 조회 API | `CouponIssueQueueFacadeTest`, `CouponIssueRequestV1ApiE2ETest` | 23, 10 |
+| worker | 처리 단계 `CouponIssueQueueWorkerTest`, 실행 구조 `CouponIssueQueueWorkerRunnerTest`, 설정 `CouponIssueQueuePropertiesTest`, 실제 MySQL·Redis `CouponIssueQueueWorkerE2ETest` | 22, 7, 3, 8 |
+| seed reset과 수동 복구 | `RedisCouponIssueQueueCleanupIntegrationTest`, `CouponSeedServiceIntegrationTest`, 복구 Lua `RedisCouponIssueQueueRecoverScriptIntegrationTest` | 4, 8, 8 |
+| 전체 회귀 | `./gradlew :apps:commerce-api:check` | 1,048, 실패·오류·skip 0 |
+
+실제 MySQL·Redis에서는 접수부터 worker 처리와 조회까지, 동기 요청과의 permit 공유, 처리 시점 품절, 잠금 대기 timeout 뒤 시스템 실패와 재접수, permit·작업 가져오기·완료 기록 응답 유실, commit 직전 연결 끊김에 따른 결과 불명을 확인했다.
+
+자동 테스트로 확인하지 않은 항목은 다음과 같다.
+
+| 항목 | 현재 확인 범위 |
+|---|---|
+| seed reset 중 Redis 확인 불가, Redis 정리 뒤 DB 초기화 실패 | 코드에서 예외로 처리하지만 장애를 주입한 테스트는 없다. 정리가 막히는 경우만 실제 Redis로 확인했다 |
+| 실제 명령 timeout으로 접수 결과를 모르는 경우 | facade 단위 테스트에서 예외를 주입해 503을 확인했다. 실제 timeout을 재현하지는 않았다 |
+| 작업 완료로 빈 한도에 새 접수 | 완료 기록이 처리 중 List에서 빠지는 것과 한도 계산을 각각 확인했다. HTTP로 이어서 확인하지는 않았다 |
+| worker의 실제 앱 기동 순서와 자동 실행 | runner 단위 테스트로 실행 규칙을 확인했다. 앱을 띄워 seed와 수용 시작 뒤 자동 실행되는지는 확인하지 않았다 |
+| 동기 요청과 worker의 동시 경합 | 같은 permit Set을 공유하는 것은 확인했다. 두 경로를 동시에 실행하는 경합 테스트는 없다 |
+| 여러 앱 인스턴스 | 범위 밖이다 |
 
 ## 관련 결정 기록
 

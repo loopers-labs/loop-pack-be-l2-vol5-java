@@ -474,7 +474,7 @@ Set이 비었다는 사실만으로 기존 DB 작업 종료를 대신 확인하�
 | 장애 대상 | 실제 application endpoint; 테스트가 만든 자원만 정리 |
 | 테스트 판정 | 0건·skip·연결 실패는 통과가 아님; 기존 MySQL·Redis fixture 우선 사용 |
 | 실행 시점 | 발급 facade 19건·발급 실행기 12건·DB 트랜잭션 2건(완료 상태 기록 포함)·설정 3건·수용 시작 runner 5건(단위 4·실제 Redis 1)·HTTP E2E 8건·Redis 장애/스크립트/반환 실패 E2E 4건·발급 트랜잭션 실패 E2E 2건·Redis 오류 분류 4건을 검증했다. 실제 Redis와 barrier로 수용량 3, 한 permit 반환 중 재수용, 마지막 한 장의 동일 사용자 경합, 시작 시 Set 확인, Redis 중단 후 기존 결과 조회, 활성 permit의 무TTL을 확인했다. 실제 MySQL로 잠금 대기 timeout 뒤 permit 반환과 commit 직전 연결 끊김 뒤 permit 유지를 확인했다. |
-| 전체 회귀 | `./gradlew :apps:commerce-api:check` 통과: 866건, 실패·오류·skip 0. |
+| 전체 회귀 | `./gradlew :apps:commerce-api:check` 통과: 1,048건, 실패·오류·skip 0. 대기열 구현을 포함한 결과다. |
 
 ## 관련 결정 기록
 
