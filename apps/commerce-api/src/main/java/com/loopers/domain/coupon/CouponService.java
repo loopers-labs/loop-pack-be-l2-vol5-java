@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -63,11 +64,11 @@ public class CouponService {
         return couponRepository.maxIssueNumber(campaignId);
     }
 
-    public Set<Integer> issuedNumbersBetween(Long campaignId, int from, int to) {
-        return couponRepository.issuedNumbersBetween(campaignId, from, to);
+    public Set<Long> issuedUserIdsAmong(Long campaignId, Collection<Long> userIds) {
+        return couponRepository.issuedUserIdsAmong(campaignId, userIds);
     }
 
-    public List<CouponReservation.Reservation> issuedAfter(Long campaignId, int afterNumber, int limit) {
-        return couponRepository.findIssuedAfter(campaignId, afterNumber, limit);
+    public List<Coupon> issuedAfterId(Long campaignId, long afterId, int limit) {
+        return couponRepository.findIssuedAfterId(campaignId, afterId, limit);
     }
 }

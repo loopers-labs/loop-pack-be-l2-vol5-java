@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -17,10 +18,8 @@ interface CouponJpaRepository extends JpaRepository<CouponEntity, Long> {
     @Query("select coalesce(max(c.issueNumber), 0) from CouponEntity c where c.campaignId = :campaignId")
     int maxIssueNumber(@Param("campaignId") Long campaignId);
 
-    @Query("select c.issueNumber from CouponEntity c "
-        + "where c.campaignId = :campaignId and c.issueNumber between :from and :to")
-    List<Integer> issueNumbersBetween(@Param("campaignId") Long campaignId, @Param("from") int from, @Param("to") int to);
+    @Query("select c.userId from CouponEntity c where c.campaignId = :campaignId and c.userId in :userIds")
+    List<Long> userIdsAmong(@Param("campaignId") Long campaignId, @Param("userIds") Collection<Long> userIds);
 
-    List<CouponEntity> findByCampaignIdAndIssueNumberGreaterThanOrderByIssueNumberAsc(Long campaignId, int afterNumber,
-                                                                                    Pageable page);
+    List<CouponEntity> findByCampaignIdAndIdGreaterThanOrderByIdAsc(Long campaignId, Long afterId, Pageable page);
 }

@@ -3,7 +3,7 @@ package com.loopers.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties("coupon.issue.worker")
-record CouponIssueWorkerProperties(int concurrency, boolean autoStartup) {
+record CouponIssueWorkerProperties(int concurrency) {
 
     CouponIssueWorkerProperties {
         if (concurrency <= 0) {

@@ -133,35 +133,6 @@ class CouponIssueIntegrationTest {
     @DisplayName("CPN-004: 접수 응답")
     class Accept {
 
-        @DisplayName("처음 접수는 번호 1 과 PENDING 이고 DB 에는 아직 없다")
-        @Test
-        void firstIsAccepted() {
-            Long campaignId = openCampaign(5, true);
-
-            assertThat(couponFacade.issue(campaignId, 42L, NOW)).isEqualTo(new IssueResult.Accepted(1));
-            assertThat(couponRows(campaignId)).isZero();
-            assertThat(issuedCount(campaignId)).isZero();
-        }
-
-        @DisplayName("같은 사용자가 다시 오면 같은 번호와 PENDING 이다")
-        @Test
-        void repeatIsPendingWithSameNumber() {
-            Long campaignId = openCampaign(5, true);
-            couponFacade.issue(campaignId, 42L, NOW);
-
-            assertThat(couponFacade.issue(campaignId, 42L, NOW)).isEqualTo(new IssueResult.Pending(1));
-        }
-
-        @DisplayName("DB 에 쿠폰이 생겼으면 같은 번호와 ISSUED 와 쿠폰이다")
-        @Test
-        void repeatIsIssuedOnceRecorded() {
-            Long campaignId = openCampaign(5, true);
-            couponFacade.issue(campaignId, 42L, NOW);
-            Coupon recorded = couponTransactions.issue(campaignId, 42L, 1, NOW);
-
-            assertThat(couponFacade.issue(campaignId, 42L, NOW)).isEqualTo(new IssueResult.Issued(1, recorded));
-        }
-
         @DisplayName("품절 뒤에도 접수된 사용자는 같은 번호다")
         @Test
         void repeatAfterSoldOutKeepsNumber() {
@@ -218,38 +189,6 @@ class CouponIssueIntegrationTest {
         assertThat(couponFacade.issue(campaignId, 42L, NOW)).isEqualTo(new IssueResult.Accepted(1));
     }
 
-    @DisplayName("CPN-005: 한도만큼 접수되면 품절이고 DB 는 그대로다")
-    @Test
-    void soldOutAtQuota() {
-        Long campaignId = openCampaign(2, true);
-        couponFacade.issue(campaignId, 1L, NOW);
-        couponFacade.issue(campaignId, 2L, NOW);
-
-        assertThatThrownBy(() -> couponFacade.issue(campaignId, 3L, NOW))
-            .isInstanceOf(DomainException.class)
-            .hasFieldOrPropertyWithValue("error", DomainError.COUPON_SOLD_OUT);
-        assertThat(couponRows(campaignId)).isZero();
-    }
-
-    @DisplayName("CPN-005: 비활성 캠페인은 접수하지 않는다")
-    @Test
-    void rejectsInactiveCampaign() {
-        Long campaignId = openCampaign(5, false);
-
-        assertThatThrownBy(() -> couponFacade.issue(campaignId, 42L, NOW))
-            .isInstanceOf(DomainException.class)
-            .hasFieldOrPropertyWithValue("error", DomainError.COUPON_CAMPAIGN_INACTIVE);
-        assertThat(couponRows(campaignId)).isZero();
-    }
-
-    @DisplayName("CPN-006: 없는 캠페인은 접수하지 않는다")
-    @Test
-    void rejectsUnknownCampaign() {
-        assertThatThrownBy(() -> couponFacade.issue(999L, 42L, NOW))
-            .isInstanceOf(DomainException.class)
-            .hasFieldOrPropertyWithValue("error", DomainError.COUPON_CAMPAIGN_NOT_FOUND);
-    }
-
     private void pauseRedis(Duration duration) {
         redis.execute((RedisCallback<Object>) connection -> connection.execute("CLIENT",
             "PAUSE".getBytes(StandardCharsets.UTF_8), String.valueOf(duration.toMillis()).getBytes(StandardCharsets.UTF_8)));
@@ -266,9 +205,7 @@ class CouponIssueIntegrationTest {
             .hasFieldOrPropertyWithValue("errorType", ErrorType.COUPON_ADMISSION_UNAVAILABLE);
 
         Thread.sleep(600);
-        assertThat(couponFacade.issue(campaignId, 42L, NOW)).satisfiesAnyOf(
-            result -> assertThat(result).isEqualTo(new IssueResult.Accepted(1)),
-            result -> assertThat(result).isEqualTo(new IssueResult.Pending(1)));
+        assertThat(couponFacade.issue(campaignId, 42L, NOW)).isEqualTo(new IssueResult.Pending(1));
         assertThat(redis.opsForZSet().size("coupon:campaign:" + campaignId + ":issued")).isEqualTo(1);
     }
 

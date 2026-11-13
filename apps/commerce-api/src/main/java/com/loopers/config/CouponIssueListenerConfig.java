@@ -1,5 +1,6 @@
 package com.loopers.config;
 
+import com.loopers.interfaces.consumer.UnreadableCouponIssue;
 import com.loopers.support.error.DomainException;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
@@ -119,7 +120,7 @@ public class CouponIssueListenerConfig {
         backOff.setMaxInterval(MAX_BACKOFF_MILLIS);
         DefaultErrorHandler handler = new DefaultErrorHandler(toDeadLetterTopic, backOff);
         handler.setClassifications(Map.of(), true);
-        handler.addNotRetryableExceptions(DomainException.class, IllegalStateException.class);
+        handler.addNotRetryableExceptions(DomainException.class, UnreadableCouponIssue.class);
         handler.setRetryListeners(new RetryListener() {
             @Override
             public void failedDelivery(ConsumerRecord<?, ?> failed, Exception exception, int deliveryAttempt) {

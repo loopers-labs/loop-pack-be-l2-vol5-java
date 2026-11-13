@@ -15,6 +15,7 @@ import com.loopers.support.error.DomainException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.NestedExceptionUtils;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Component;
 
@@ -51,23 +52,29 @@ public class CouponFacade {
     }
 
     public IssueResult issue(Long campaignId, Long userId, Instant now) {
-        CouponCampaign campaign = campaignCache.get(campaignId);
-        if (!campaign.isActive()) {
-            throw new DomainException(DomainError.COUPON_CAMPAIGN_INACTIVE);
-        }
-        CouponReservation.Result reserved = reserveWithinSlot(campaignId, userId, campaign, now);
-        return switch (reserved) {
-            case CouponReservation.Result.Reserved(int issueNumber) -> new IssueResult.Accepted(issueNumber);
-            case CouponReservation.Result.Existing(int issueNumber) -> couponService.findIssued(campaignId, userId)
-                .<IssueResult>map(coupon -> new IssueResult.Issued(issueNumber, coupon))
-                .orElseGet(() -> new IssueResult.Pending(issueNumber));
-            case CouponReservation.Result.SoldOut() -> throw new DomainException(DomainError.COUPON_SOLD_OUT);
-            case CouponReservation.Result.Lost() -> {
-                couponLossRecovery.start(campaignId);
-                throw new CoreException(ErrorType.COUPON_ADMISSION_UNAVAILABLE);
+        try {
+            CouponCampaign campaign = campaignCache.get(campaignId);
+            if (!campaign.isActive()) {
+                throw new DomainException(DomainError.COUPON_CAMPAIGN_INACTIVE);
             }
-            case CouponReservation.Result.Closed() -> throw new CoreException(ErrorType.COUPON_ADMISSION_UNAVAILABLE);
-        };
+            CouponReservation.Result reserved = reserveWithinSlot(campaignId, userId, campaign, now);
+            return switch (reserved) {
+                case CouponReservation.Result.Reserved(int issueNumber) -> new IssueResult.Accepted(issueNumber);
+                case CouponReservation.Result.Existing(int issueNumber) -> couponService.findIssued(campaignId, userId)
+                    .<IssueResult>map(coupon -> new IssueResult.Issued(issueNumber, coupon))
+                    .orElseGet(() -> new IssueResult.Pending(issueNumber));
+                case CouponReservation.Result.SoldOut() -> throw new DomainException(DomainError.COUPON_SOLD_OUT);
+                case CouponReservation.Result.Lost() -> {
+                    couponLossRecovery.start(campaignId);
+                    throw new CoreException(ErrorType.COUPON_ADMISSION_UNAVAILABLE);
+                }
+                case CouponReservation.Result.Closed() -> throw new CoreException(ErrorType.COUPON_ADMISSION_UNAVAILABLE);
+            };
+        } catch (DataAccessException e) {
+            log.warn("저장소가 답하지 않아 접수하지 않는다. 예약이 늦게 적용됐으면 재요청이 같은 번호를 받고 대사가 메운다: campaignId={}, userId={}, cause={}",
+                campaignId, userId, NestedExceptionUtils.getMostSpecificCause(e).toString());
+            throw new CoreException(ErrorType.COUPON_ADMISSION_UNAVAILABLE);
+        }
     }
 
     private CouponReservation.Result reserveWithinSlot(Long campaignId, Long userId, CouponCampaign campaign,
@@ -82,10 +89,6 @@ public class CouponFacade {
                 publish(campaignId, userId, issueNumber, now);
             }
             return reserved;
-        } catch (DataAccessException e) {
-            log.warn("Redis 가 답하지 않아 접수하지 않는다. 예약이 늦게 적용됐으면 재요청이 같은 번호를 받고 대사가 메운다: campaignId={}, userId={}",
-                campaignId, userId, e);
-            throw new CoreException(ErrorType.COUPON_ADMISSION_UNAVAILABLE);
         } finally {
             couponPublishSlots.release();
         }

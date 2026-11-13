@@ -18,6 +18,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.BooleanSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -141,5 +143,27 @@ class CouponLossRecoveryTest {
         assertThat(couponFacade.issue(campaignId, 2L, NOW))
             .isInstanceOf(CouponFacade.IssueResult.Issued.class)
             .extracting("issueNumber").isEqualTo(2);
+    }
+
+    @DisplayName("FLT-008: 복구는 같은 번호를 가진 쿠폰이 페이지 경계에 걸려 있어도 전원을 명단에 다시 올린다")
+    @Test
+    void rebuildsEveryCouponEvenWhenNumbersRepeatAcrossPages() throws Exception {
+        Long campaignId = couponFacade.openCampaign(CampaignName.of("블프 쿠폰"), DiscountAmount.of(5_000),
+            IssueQuota.of(2_000), true).getId();
+        List<Object[]> rows = new ArrayList<>();
+        for (long userId = 1; userId <= 1_000; userId++) {
+            rows.add(new Object[] {campaignId, userId, (int) userId});
+        }
+        rows.add(new Object[] {campaignId, 1_001L, 1_000});
+        jdbcTemplate.batchUpdate("insert into coupon (campaign_id, user_id, issue_number, discount_amount, issued_at, "
+            + "created_at, updated_at) values (?, ?, ?, 5000, now(6), now(6), now(6))", rows);
+        jdbcTemplate.update("update coupon_campaign set issued_count = ? where id = ?", rows.size(), campaignId);
+
+        couponFacade.startRecovery(campaignId);
+        eventually(() -> !couponReservation.isClosed(campaignId));
+
+        assertThat(couponReservation.count(campaignId)).isEqualTo(1_001);
+        assertThat(couponReservation.isReserved(campaignId, 1_001L)).isTrue();
+        assertThat(couponFacade.issue(campaignId, 1_002L, NOW)).isEqualTo(new CouponFacade.IssueResult.Accepted(1_001));
     }
 }

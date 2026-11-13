@@ -20,10 +20,11 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
-import org.apache.kafka.clients.producer.internals.BuiltInPartitioner;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.AfterEach;
@@ -60,6 +61,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class CouponIssueListenerTest {
 
     private static final String TOPIC = KafkaTestContainersConfig.COUPON_ISSUES_WORKER;
+    private static final String DLT = KafkaTestContainersConfig.COUPON_ISSUES_WORKER_DLT;
     private static final Instant NOW = Instant.parse("2026-11-08T00:00:00.123456Z");
     private static final Duration WITHIN = Duration.ofSeconds(10);
     private static final int PARTITIONS = 3;
@@ -141,6 +143,15 @@ class CouponIssueListenerTest {
         }
     }
 
+    private static void awaitEveryRecordCommitted() {
+        try {
+            eventually(CouponIssueListenerTest::everyRecordCommitted);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("offset 커밋을 기다리다 중단됐다", e);
+        }
+    }
+
     private static void eventually(BooleanSupplier condition) throws InterruptedException {
         long deadline = System.nanoTime() + WITHIN.toNanos();
         while (!condition.getAsBoolean()) {
@@ -206,16 +217,32 @@ class CouponIssueListenerTest {
         Long campaignId = openCampaign();
         long unknownCampaignId = 999_999L;
 
-        publisher.publish(new CouponIssue(unknownCampaignId, 42L, 1, NOW));
-        publisher.publish(new CouponIssue(campaignId, 7L, 1, NOW));
-        eventually(CouponIssueListenerTest::everyRecordCommitted);
+        List<ConsumerRecord<String, byte[]>> deadLetters = TopicRecords.during(DLT, () -> {
+            publisher.publish(new CouponIssue(unknownCampaignId, 42L, 1, NOW));
+            publisher.publish(new CouponIssue(campaignId, 7L, 1, NOW));
+            awaitEveryRecordCommitted();
+        });
 
         assertThat(couponCount(campaignId)).isEqualTo(1);
         assertThat(meterRegistry.counter("coupon.issue.worker.retry", "cause", "DomainException").count()).isZero();
-        assertThat(TopicRecords.all(KafkaTestContainersConfig.COUPON_ISSUES_WORKER_DLT)).anySatisfy(record -> {
+        assertThat(deadLetters).singleElement().satisfies(record -> {
             assertThat(record.key()).isEqualTo(String.valueOf(unknownCampaignId));
             assertThat(record.headers().lastHeader("kafka_dlt-exception-message")).isNotNull();
         });
+    }
+
+    @DisplayName("WRK-009: DLT 로 간 메시지가 파티션의 마지막이어도 offset 은 그 뒤로 넘어간다")
+    @Test
+    void commitsPastADeadLetteredRecordAtTheEndOfThePartition() throws Exception {
+        long unknownCampaignId = 999_999L;
+
+        List<ConsumerRecord<String, byte[]>> deadLetters = TopicRecords.during(DLT, () -> {
+            publisher.publish(new CouponIssue(unknownCampaignId, 42L, 1, NOW));
+            awaitEveryRecordCommitted();
+        });
+
+        assertThat(deadLetters).singleElement().satisfies(record ->
+            assertThat(record.key()).isEqualTo(String.valueOf(unknownCampaignId)));
     }
 
     private double recoveries(Long campaignId) {
@@ -279,8 +306,7 @@ class CouponIssueListenerTest {
     }
 
     private static int partitionOf(long campaignId) {
-        return BuiltInPartitioner.partitionForKey(String.valueOf(campaignId).getBytes(StandardCharsets.UTF_8),
-            PARTITIONS);
+        return Utils.toPositive(Utils.murmur2(String.valueOf(campaignId).getBytes(StandardCharsets.UTF_8))) % PARTITIONS;
     }
 
     @DisplayName("WRK-011: 워커를 끈 동안 쌓인 정상, 없는 캠페인, 정상 메시지가 한 파티션에서 한 번에 오면 앞뒤는 기록되고 가운데만 DLT 로 가며 offset 은 끝까지 간다")
@@ -289,18 +315,19 @@ class CouponIssueListenerTest {
         Long campaignId = openCampaign();
         long unknownCampaignId = unknownCampaignIdInSamePartitionAs(campaignId);
 
-        publishWhileWorkerIsOff(() -> {
-            publisher.publish(new CouponIssue(campaignId, 42L, 1, NOW));
-            publisher.publish(new CouponIssue(unknownCampaignId, 7L, 1, NOW));
-            publisher.publish(new CouponIssue(campaignId, 9L, 2, NOW));
+        List<ConsumerRecord<String, byte[]>> deadLetters = TopicRecords.during(DLT, () -> {
+            publishWhileWorkerIsOff(() -> {
+                publisher.publish(new CouponIssue(campaignId, 42L, 1, NOW));
+                publisher.publish(new CouponIssue(unknownCampaignId, 7L, 1, NOW));
+                publisher.publish(new CouponIssue(campaignId, 9L, 2, NOW));
+            });
+            awaitEveryRecordCommitted();
         });
-        eventually(CouponIssueListenerTest::everyRecordCommitted);
 
         assertThat(couponCount(campaignId)).isEqualTo(2);
         assertThat(issuedCount(campaignId)).isEqualTo(2);
-        assertThat(TopicRecords.all(KafkaTestContainersConfig.COUPON_ISSUES_WORKER_DLT))
-            .filteredOn(record -> record.key().equals(String.valueOf(unknownCampaignId)))
-            .hasSize(1);
+        assertThat(deadLetters).singleElement().satisfies(record ->
+            assertThat(record.key()).isEqualTo(String.valueOf(unknownCampaignId)));
     }
 
     @DisplayName("WRK-011: 워커를 끈 동안 쌓인 정상, 읽을 수 없는, 정상 메시지가 한 번에 오면 앞뒤는 기록되고 읽을 수 없는 것만 DLT 로 가며 offset 은 끝까지 간다")
@@ -309,18 +336,19 @@ class CouponIssueListenerTest {
         Long campaignId = openCampaign();
         byte[] unreadable = "not a coupon issue".getBytes(StandardCharsets.UTF_8);
 
-        publishWhileWorkerIsOff(() -> {
-            publisher.publish(new CouponIssue(campaignId, 42L, 1, NOW));
-            kafkaTemplate.send(TOPIC, String.valueOf(campaignId), unreadable).join();
-            publisher.publish(new CouponIssue(campaignId, 9L, 2, NOW));
+        List<ConsumerRecord<String, byte[]>> deadLetters = TopicRecords.during(DLT, () -> {
+            publishWhileWorkerIsOff(() -> {
+                publisher.publish(new CouponIssue(campaignId, 42L, 1, NOW));
+                kafkaTemplate.send(TOPIC, String.valueOf(campaignId), unreadable).join();
+                publisher.publish(new CouponIssue(campaignId, 9L, 2, NOW));
+            });
+            awaitEveryRecordCommitted();
         });
-        eventually(CouponIssueListenerTest::everyRecordCommitted);
 
         assertThat(couponCount(campaignId)).isEqualTo(2);
         assertThat(issuedCount(campaignId)).isEqualTo(2);
-        assertThat(TopicRecords.all(KafkaTestContainersConfig.COUPON_ISSUES_WORKER_DLT))
-            .filteredOn(record -> Arrays.equals(record.value(), unreadable))
-            .hasSize(1);
+        assertThat(deadLetters).singleElement().satisfies(record ->
+            assertThat(Arrays.equals(record.value(), unreadable)).isTrue());
     }
 
     private boolean acceptedOrIssued(Long campaignId, Long userId) {

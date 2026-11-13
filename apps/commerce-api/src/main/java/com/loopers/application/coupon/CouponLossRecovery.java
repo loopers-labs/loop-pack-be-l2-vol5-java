@@ -1,5 +1,6 @@
 package com.loopers.application.coupon;
 
+import com.loopers.domain.coupon.Coupon;
 import com.loopers.domain.coupon.CouponIssueBacklog;
 import com.loopers.domain.coupon.CouponReservation;
 import com.loopers.domain.coupon.CouponReservation.Reservation;
@@ -46,10 +47,10 @@ public class CouponLossRecovery {
     }
 
     public void start(Long campaignId) {
-        couponReservation.close(campaignId);
         if (!inProgress.add(campaignId)) {
             return;
         }
+        couponReservation.close(campaignId);
         log.error("Redis 예약 집합이 DB 와 어긋나 캠페인을 닫고 복구를 시작한다: campaignId={}", campaignId);
         executor.execute(() -> {
             try {
@@ -63,8 +64,7 @@ public class CouponLossRecovery {
         });
     }
 
-    public void recover(Long campaignId) {
-        couponReservation.close(campaignId);
+    private void recover(Long campaignId) {
         int restored;
         int rounds = 0;
         do {
@@ -72,14 +72,25 @@ public class CouponLossRecovery {
             awaitDrained(campaignId);
             restored = rebuildFromDb(campaignId);
         } while (!backlog.isDrained(campaignId) && rounds < MAX_REBUILD_ROUNDS);
-        couponReservation.open(campaignId);
         meterRegistry.counter(RECOVERED, "campaignId", String.valueOf(campaignId)).increment();
+        couponReservation.open(campaignId);
         log.warn("DB 쿠폰으로 예약 집합을 다시 만들고 캠페인을 열었다: campaignId={}, restored={}", campaignId, restored);
     }
 
     private void awaitDrained(Long campaignId) {
+        Long target = null;
         int polls = 0;
-        while (!backlog.isDrained(campaignId)) {
+        while (true) {
+            try {
+                if (target == null) {
+                    target = backlog.endOffset(campaignId);
+                }
+                if (backlog.isCommittedUpTo(campaignId, target)) {
+                    return;
+                }
+            } catch (IllegalStateException e) {
+                log.warn("워커 lag 을 읽지 못해 다시 읽는다: campaignId={}", campaignId, e);
+            }
             polls++;
             if (polls % DRAIN_LOG_EVERY == 0) {
                 log.warn("워커가 broker 를 비우기를 기다린다: campaignId={}, waited={}", campaignId, DRAIN_POLL.multipliedBy(polls));
@@ -96,15 +107,17 @@ public class CouponLossRecovery {
     private int rebuildFromDb(Long campaignId) {
         couponReservation.clear(campaignId);
         int restored = 0;
-        int after = 0;
+        long afterId = 0;
         while (true) {
-            List<Reservation> page = couponService.issuedAfter(campaignId, after, PAGE);
+            List<Coupon> page = couponService.issuedAfterId(campaignId, afterId, PAGE);
             if (page.isEmpty()) {
                 return restored;
             }
-            couponReservation.restore(campaignId, page);
+            couponReservation.restore(campaignId, page.stream()
+                .map(coupon -> new Reservation(coupon.userId(), coupon.issueNumber()))
+                .toList());
             restored += page.size();
-            after = page.get(page.size() - 1).issueNumber();
+            afterId = page.get(page.size() - 1).id();
             if (page.size() < PAGE) {
                 return restored;
             }

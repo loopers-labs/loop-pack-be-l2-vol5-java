@@ -45,5 +45,5 @@ public interface CouponReservation {
 
     long count(Long campaignId);
 
-    List<Reservation> reservedBetween(Long campaignId, int afterNumber, int toNumber, int limit);
+    List<Reservation> reservedBetween(Long campaignId, int afterNumber, int toNumber, long offset, int limit);
 }

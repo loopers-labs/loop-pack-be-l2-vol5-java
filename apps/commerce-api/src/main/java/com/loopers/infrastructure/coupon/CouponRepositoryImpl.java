@@ -2,7 +2,6 @@ package com.loopers.infrastructure.coupon;
 
 import com.loopers.domain.coupon.Coupon;
 import com.loopers.domain.coupon.CouponRepository;
-import com.loopers.domain.coupon.CouponReservation;
 import com.loopers.support.error.DomainError;
 import com.loopers.support.error.DomainException;
 import lombok.RequiredArgsConstructor;
@@ -11,6 +10,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 
 import java.sql.SQLException;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
@@ -78,17 +78,19 @@ public class CouponRepositoryImpl implements CouponRepository {
     }
 
     @Override
-    public Set<Integer> issuedNumbersBetween(Long campaignId, int from, int to) {
-        return new HashSet<>(couponJpaRepository.issueNumbersBetween(campaignId, from, to));
+    public Set<Long> issuedUserIdsAmong(Long campaignId, Collection<Long> userIds) {
+        if (userIds.isEmpty()) {
+            return Set.of();
+        }
+        return new HashSet<>(couponJpaRepository.userIdsAmong(campaignId, userIds));
     }
 
     @Override
-    public List<CouponReservation.Reservation> findIssuedAfter(Long campaignId, int afterNumber, int limit) {
+    public List<Coupon> findIssuedAfterId(Long campaignId, long afterId, int limit) {
         return couponJpaRepository
-            .findByCampaignIdAndIssueNumberGreaterThanOrderByIssueNumberAsc(campaignId, afterNumber, PageRequest.of(0, limit))
+            .findByCampaignIdAndIdGreaterThanOrderByIdAsc(campaignId, afterId, PageRequest.of(0, limit))
             .stream()
             .map(CouponEntity::toDomain)
-            .map(coupon -> new CouponReservation.Reservation(coupon.userId(), coupon.issueNumber()))
             .toList();
     }
 }

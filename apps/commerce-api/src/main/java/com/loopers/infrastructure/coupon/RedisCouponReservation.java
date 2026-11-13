@@ -127,9 +127,9 @@ class RedisCouponReservation implements CouponReservation {
     }
 
     @Override
-    public List<Reservation> reservedBetween(Long campaignId, int afterNumber, int toNumber, int limit) {
+    public List<Reservation> reservedBetween(Long campaignId, int afterNumber, int toNumber, long offset, int limit) {
         Set<ZSetOperations.TypedTuple<String>> tuples = redis.opsForZSet()
-            .rangeByScoreWithScores(key(campaignId), afterNumber + 1, toNumber, 0, limit);
+            .rangeByScoreWithScores(key(campaignId), afterNumber + 1, toNumber, offset, limit);
         if (tuples == null) {
             return List.of();
         }

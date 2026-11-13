@@ -35,7 +35,7 @@ class CouponIssueDeadLetterListener {
     )
     void onMessage(ConsumerRecord<String, byte[]> consumerRecord, Acknowledgment acknowledgment) {
         deadLetters.record(messageKey(consumerRecord), read(consumerRecord.value()),
-            new String(consumerRecord.value(), StandardCharsets.UTF_8), error(consumerRecord),
+            payload(consumerRecord.value()), error(consumerRecord),
             Instant.ofEpochMilli(consumerRecord.timestamp()));
         acknowledgment.acknowledge();
     }
@@ -43,9 +43,13 @@ class CouponIssueDeadLetterListener {
     private Optional<CouponIssue> read(byte[] value) {
         try {
             return Optional.of(reader.read(value));
-        } catch (IllegalStateException e) {
+        } catch (RuntimeException e) {
             return Optional.empty();
         }
+    }
+
+    private static String payload(byte[] value) {
+        return value == null ? "" : new String(value, StandardCharsets.UTF_8);
     }
 
     private static String messageKey(ConsumerRecord<String, byte[]> consumerRecord) {

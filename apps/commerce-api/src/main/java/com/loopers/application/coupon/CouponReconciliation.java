@@ -65,17 +65,17 @@ public class CouponReconciliation {
         int confirmedUpTo = previous.confirmedUpTo();
         boolean prefixIntact = true;
         int republished = 0;
-        int cursor = previous.confirmedUpTo();
-        while (cursor < bound) {
-            List<Reservation> page = couponReservation.reservedBetween(campaignId, cursor, bound, PAGE);
+        long offset = 0;
+        while (previous.confirmedUpTo() < bound) {
+            List<Reservation> page = couponReservation.reservedBetween(campaignId, previous.confirmedUpTo(), bound,
+                offset, PAGE);
             if (page.isEmpty()) {
                 break;
             }
-            Set<Integer> issued = couponService.issuedNumbersBetween(campaignId,
-                page.get(0).issueNumber(), page.get(page.size() - 1).issueNumber());
+            Set<Long> issuedUsers = couponService.issuedUserIdsAmong(campaignId,
+                page.stream().map(Reservation::userId).toList());
             for (Reservation reservation : page) {
-                if (issued.contains(reservation.issueNumber())
-                    || couponService.findIssued(campaignId, reservation.userId()).isPresent()) {
+                if (issuedUsers.contains(reservation.userId())) {
                     if (prefixIntact) {
                         confirmedUpTo = reservation.issueNumber();
                     }
@@ -86,7 +86,7 @@ public class CouponReconciliation {
                     republished++;
                 }
             }
-            cursor = page.get(page.size() - 1).issueNumber();
+            offset += page.size();
             if (page.size() < PAGE) {
                 break;
             }

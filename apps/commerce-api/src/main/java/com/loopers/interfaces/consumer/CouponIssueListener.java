@@ -39,7 +39,7 @@ class CouponIssueListener {
                 readable.add(reader.read(records.get(i).value()));
             } catch (RuntimeException e) {
                 unreadable = i;
-                unreadableCause = e;
+                unreadableCause = new UnreadableCouponIssue(e);
             }
         }
         try {

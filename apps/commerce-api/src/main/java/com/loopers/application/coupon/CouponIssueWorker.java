@@ -3,6 +3,7 @@ package com.loopers.application.coupon;
 import com.loopers.domain.coupon.Coupon;
 import com.loopers.domain.coupon.CouponIssuePublisher.CouponIssue;
 import com.loopers.domain.coupon.CouponReservation;
+import com.loopers.support.error.DomainError;
 import com.loopers.support.error.DomainException;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
@@ -63,6 +64,9 @@ public class CouponIssueWorker {
                 campaignId, run.size(), run.get(0).issueNumber(), run.get(run.size() - 1).issueNumber());
             return;
         } catch (DomainException e) {
+            if (e.error() != DomainError.COUPON_ALREADY_ISSUED && e.error() != DomainError.COUPON_SOLD_OUT) {
+                throw new RecordFailed(start, e);
+            }
             log.info("묶음을 한 번에 기록하지 못해 건별로 다시 기록한다: campaignId={}, size={}, error={}",
                 campaignId, run.size(), e.error());
         } catch (RuntimeException e) {
