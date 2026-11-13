@@ -12,13 +12,26 @@ local function blank(value)
   return value == nil or value == '' or value == cjson.null
 end
 
+-- 운영자가 손으로 넣는 값이므로 Java가 다시 읽을 수 있는 실패 사유와 숫자 couponId만 받는다.
+local failedReasons = {
+  SOLD_OUT = true, CAMPAIGN_NOT_ISSUABLE = true, CAMPAIGN_NOT_FOUND = true, DB_ERROR = true, INTERNAL_ERROR = true
+}
+-- couponId는 0으로 시작하지 않는 양수이고 Java Long 최댓값 이하여야 한다. 자릿수가 같으면 문자열 비교가 숫자 비교와 같다.
+local LONG_MAX = '9223372036854775807'
+local function validCouponId(value)
+  if blank(value) or string.match(value, '^[1-9]%d*$') == nil then
+    return false
+  end
+  return #value < #LONG_MAX or (#value == #LONG_MAX and value <= LONG_MAX)
+end
+
 -- 처리 중이거나 결과 불명인 작업만 상태를 바꾼다. 완료된 작업은 잔여 permit만 정리하고, 대기 작업은 다루지 않는다.
 local recoverable = expectedStatus == 'PROCESSING' or expectedStatus == 'UNKNOWN'
 local completed = expectedStatus == 'SUCCEEDED' or expectedStatus == 'FAILED'
 local validInput = not blank(requestId) and not blank(expectedToken) and (
-  (action == 'SUCCEED' and recoverable and not blank(couponId) and blank(reason))
+  (action == 'SUCCEED' and recoverable and validCouponId(couponId) and blank(reason))
   or (action == 'REQUEUE' and recoverable and blank(couponId) and blank(reason))
-  or (action == 'FAIL' and recoverable and blank(couponId) and not blank(reason) and reason ~= 'DB_RESULT_UNKNOWN')
+  or (action == 'FAIL' and recoverable and blank(couponId) and failedReasons[reason] == true)
   or (action == 'RELEASE' and completed and blank(couponId) and blank(reason)))
 if not validInput then
   return redis.error_reply('coupon queue: invalid recover input')

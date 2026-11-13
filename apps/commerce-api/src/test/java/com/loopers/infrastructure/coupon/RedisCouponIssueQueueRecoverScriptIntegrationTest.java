@@ -182,6 +182,40 @@ class RedisCouponIssueQueueRecoverScriptIntegrationTest {
         assertThat(listIds(RedisCouponIssueQueue.WAITING_KEY)).containsExactly(waiting.getRequestId());
     }
 
+    @DisplayName("Java가 읽을 수 없는 사유나 couponId를 넣으면 거절하고 작업과 token을 그대로 둔다.")
+    @Test
+    void rejectsReasonOrCouponIdThatJavaCannotRead() {
+        CouponIssueRequest request = processing(1161L, "token-1161");
+
+        assertRejected(() -> recover(request.getRequestId(), "PROCESSING", "token-1161", "FAIL", "", "SOLDOUT"));
+        assertRejected(() -> recover(request.getRequestId(), "PROCESSING", "token-1161", "FAIL", "", "WAITING"));
+        assertRejected(() -> recover(request.getRequestId(), "PROCESSING", "token-1161", "SUCCEED", "3001x", ""));
+        assertRejected(() -> recover(request.getRequestId(), "PROCESSING", "token-1161", "SUCCEED", "1e3", ""));
+        assertRejected(() -> recover(request.getRequestId(), "PROCESSING", "token-1161", "SUCCEED",
+            "9223372036854775808", ""));
+        assertRejected(() -> recover(request.getRequestId(), "PROCESSING", "token-1161", "SUCCEED", "0", ""));
+        assertRejected(() -> recover(request.getRequestId(), "PROCESSING", "token-1161", "SUCCEED", "0123", ""));
+
+        assertThat(queue.findById(request.getRequestId()))
+            .hasValueSatisfying(stored -> assertThat(stored.getStatus()).isEqualTo(CouponIssueRequestStatus.PROCESSING));
+        assertThat(listIds(RedisCouponIssueQueue.PROCESSING_KEY)).containsExactly(request.getRequestId());
+        assertThat(redisTemplate.opsForSet().members(RedisCouponIssuePermits.PERMITS_KEY))
+            .containsExactly("token-1161");
+    }
+
+    @DisplayName("couponId는 Java Long 최댓값까지 받고, 기록한 작업을 앱이 다시 읽을 수 있다.")
+    @Test
+    void acceptsCouponIdUpToLongMaxValue() {
+        CouponIssueRequest request = processing(1162L, "token-1162");
+
+        recover(request.getRequestId(), "PROCESSING", "token-1162", "SUCCEED", String.valueOf(Long.MAX_VALUE), "");
+
+        assertThat(queue.findById(request.getRequestId())).hasValueSatisfying(stored -> {
+            assertThat(stored.getStatus()).isEqualTo(CouponIssueRequestStatus.SUCCEEDED);
+            assertThat(stored.getCouponId()).isEqualTo(Long.MAX_VALUE);
+        });
+    }
+
     /**
      * 작업을 접수하고 가져가며, 그 실행의 permit token을 Set에 남긴다.
      */
