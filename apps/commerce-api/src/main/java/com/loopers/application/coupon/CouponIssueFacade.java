@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
  * <ul>
  *   <li>이미 받은 사용자는 자리를 차지하지 않고 DB의 기존 쿠폰을 돌려받는다</li>
  *   <li>Redis 결과 FULL이면 DB 경로에 들어가지 않고 NO_PERMIT으로 거절한다</li>
- *   <li>Redis 오류·timeout(UNCERTAIN)이면 신규 발급을 멈추지 않고 직행한다. 이때 DB 보호는 로컬 상한이 맡는다</li>
+ *   <li>Redis 오류·timeout(UNCERTAIN)이거나 CircuitBreaker가 Redis 호출을 막으면(SKIPPED) 신규 발급을 멈추지 않고 직행한다. 이때 DB 보호는 로컬 상한이 맡는다</li>
  * </ul>
  */
 @Slf4j
@@ -45,8 +45,9 @@ public class CouponIssueFacade {
                     semaphoreGate.release(admission);
                 }
             }
-            case UNCERTAIN -> {
-                // Redis를 믿을 수 없다. 이 token은 게이트가 미반환 목록에 기록해 두었고, 복구 뒤 자기 token만 정리한다.
+            case UNCERTAIN, SKIPPED -> {
+                // Redis를 믿을 수 없다(불확실한 응답이거나 CircuitBreaker가 호출을 막았다). 불확실했던 token은 게이트가 미반환 목록에 기록해 두었고,
+                // 복구 뒤 자기 token만 정리한다. 직행의 DB 보호는 로컬 상한이 맡는다.
                 if (!localLimiter.tryAcquire()) {
                     throw new CoreException(ErrorType.NO_PERMIT);
                 }

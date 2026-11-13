@@ -3,6 +3,8 @@ package com.loopers.infrastructure.coupon;
 import com.loopers.application.coupon.CouponAdmissionProperties;
 import com.loopers.application.coupon.SemaphoreGate;
 import com.loopers.config.redis.RedisConfig;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.io.ClassPathResource;
@@ -17,6 +19,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Redis Set 세마포어. 수용 판단은 전용 master 연결로 하고(기본 REPLICA_PREFERRED 연결의 값을 쓰지 않는다),
@@ -25,6 +28,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>token 관리 규칙: 자리는 TTL이나 시간 경과로 회수하지 않고, 자기 token만 SREM으로 반환한다.
  * 반환에 실패했거나 획득 응답을 받지 못한 token은 {@link #unreleasedTokens}에 기록해 두었다가 {@link #recoverOwnTokens()}로 정리한다.
  * 이전 프로세스가 남긴 고아 token은 {@code instanceId:} 접두어로 자기 것만 찾아 정리한다(단일 인스턴스 전제).</p>
+ *
+ * <p>모든 Redis 호출은 CircuitBreaker를 거친다(코드로 조립, AOP 없음). 호출이 실패하거나 timeout이면 실패로 기록하고,
+ * 열리면 Redis를 호출하지 않고 {@link Status#SKIPPED}를 돌려 호출자가 DB로 직행하게 한다.</p>
  */
 @Slf4j
 @Component
@@ -39,6 +45,7 @@ public class RedisSemaphoreGate implements SemaphoreGate {
 
     private final RedisTemplate<String, String> redisTemplate;
     private final CouponAdmissionProperties properties;
+    private final CircuitBreaker breaker;
 
     /**
      * 이 프로세스에서 자리를 얻으려 하거나 얻어 쓰는 중인 token. 고아 정리가 진행 중인 실행의 자리를 지우지 않도록,
@@ -46,7 +53,7 @@ public class RedisSemaphoreGate implements SemaphoreGate {
      */
     private final Set<String> liveTokens = ConcurrentHashMap.newKeySet();
 
-    /** Redis에 남아 있을 수 있는 이 프로세스의 끝난 실행 token(반환 실패, 획득 응답 불확실). 시간이 지났다고 지우지 않는다. */
+    /** Redis에 남아 있을 수 있는 이 프로세스의 끝난 실행 token(반환 실패, 획득 응답 불확실, 건너뛴 반환). 시간이 지났다고 지우지 않는다. */
     private final Set<String> unreleasedTokens = ConcurrentHashMap.newKeySet();
 
     /** 이전 프로세스가 남긴 자기 인스턴스 token을 한 번 정리했는지. Redis가 안 되면 성공할 때까지 다음 회차에 다시 한다. */
@@ -58,6 +65,7 @@ public class RedisSemaphoreGate implements SemaphoreGate {
     ) {
         this.redisTemplate = redisTemplate;
         this.properties = properties;
+        this.breaker = CircuitBreaker.of("coupon-admission-redis", breakerConfig(properties.breaker()));
     }
 
     @Override
@@ -72,35 +80,54 @@ public class RedisSemaphoreGate implements SemaphoreGate {
             // 유효 용량이 없으면 Redis를 호출하지 않고 자리 없음으로 처리한다.
             return new Admission(Status.FULL, token);
         }
+        if (!breaker.tryAcquirePermission()) {
+            // Redis를 호출하지 않았으므로 token은 만들어지지 않았고 Set에도 없다.
+            return new Admission(Status.SKIPPED, null);
+        }
         liveTokens.add(token);
+        long startedAt = System.nanoTime();
         try {
             Long result = redisTemplate.execute(ACQUIRE_SCRIPT, List.of(PERMITS_KEY), String.valueOf(effectiveCapacity), token);
-            if (result != null && result == 1L) {
-                return new Admission(Status.ACQUIRED, token);
-            }
-            if (result != null && result == 0L) {
+            if (result != null && (result == 1L || result == 0L)) {
+                breaker.onSuccess(System.nanoTime() - startedAt, TimeUnit.NANOSECONDS);
+                if (result == 1L) {
+                    return new Admission(Status.ACQUIRED, token);
+                }
                 liveTokens.remove(token);
                 return new Admission(Status.FULL, token);
             }
-            return uncertain(token, null);
+            IllegalStateException unexpected = new IllegalStateException("예상하지 못한 획득 결과: " + result);
+            breaker.onError(System.nanoTime() - startedAt, TimeUnit.NANOSECONDS, unexpected);
+            return uncertain(token, unexpected);
         } catch (RuntimeException e) {
+            breaker.onError(System.nanoTime() - startedAt, TimeUnit.NANOSECONDS, e);
             return uncertain(token, e);
         }
     }
 
     @Override
     public void release(Admission admission) {
-        if (admission.status() == Status.FULL) {
+        if (admission.status() == Status.FULL || admission.status() == Status.SKIPPED) {
             return;
         }
         String token = admission.token();
         try {
-            redisTemplate.opsForSet().remove(PERMITS_KEY, token);
-            unreleasedTokens.remove(token);
-        } catch (RuntimeException e) {
-            // 쿠폰과 발급 수는 되돌리지 않는다. 자기 token만 기록해 두고 복구 뒤 정리한다.
-            unreleasedTokens.add(token);
-            log.warn("자리 반환 실패, 복구 뒤 정리할 token으로 기록한다: token={}, error={}", token, e.getMessage());
+            if (!breaker.tryAcquirePermission()) {
+                // Redis를 호출하지 않았다. token은 남아 있으므로 기록해 두고 복구 뒤 정리한다.
+                unreleasedTokens.add(token);
+                return;
+            }
+            long startedAt = System.nanoTime();
+            try {
+                redisTemplate.opsForSet().remove(PERMITS_KEY, token);
+                breaker.onSuccess(System.nanoTime() - startedAt, TimeUnit.NANOSECONDS);
+                unreleasedTokens.remove(token);
+            } catch (RuntimeException e) {
+                breaker.onError(System.nanoTime() - startedAt, TimeUnit.NANOSECONDS, e);
+                // 쿠폰과 발급 수는 되돌리지 않는다. 자기 token만 기록해 두고 복구 뒤 정리한다.
+                unreleasedTokens.add(token);
+                log.warn("자리 반환 실패, 복구 뒤 정리할 token으로 기록한다: token={}, error={}", token, e.getMessage());
+            }
         } finally {
             // 실행은 끝났다. 남아 있을 수 있는 token은 unreleasedTokens가 이어서 책임진다.
             liveTokens.remove(token);
@@ -108,7 +135,7 @@ public class RedisSemaphoreGate implements SemaphoreGate {
     }
 
     /**
-     * 자기 token만 정리한다. Redis가 안 되면 예외 없이 멈추고 다음 회차에 다시 한다.
+     * 자기 token만 정리한다. Redis가 안 되거나 CircuitBreaker가 막으면 예외 없이 멈추고 다음 회차에 다시 한다.
      * <ol>
      *   <li>기록해 둔 미반환 token을 SREM한다</li>
      *   <li>기동 뒤 한 번, Set에서 {@code instanceId:} 접두어 token 중 이 프로세스가 진행 중이지 않은 것을 SREM한다(이전 프로세스의 고아)</li>
@@ -117,6 +144,13 @@ public class RedisSemaphoreGate implements SemaphoreGate {
      */
     @Override
     public void recoverOwnTokens() {
+        if (unreleasedTokens.isEmpty() && previousRunSwept) {
+            return;
+        }
+        if (!breaker.tryAcquirePermission()) {
+            return;
+        }
+        long startedAt = System.nanoTime();
         try {
             for (String token : Set.copyOf(unreleasedTokens)) {
                 redisTemplate.opsForSet().remove(PERMITS_KEY, token);
@@ -126,7 +160,9 @@ public class RedisSemaphoreGate implements SemaphoreGate {
                 sweepPreviousRunTokens();
                 previousRunSwept = true;
             }
+            breaker.onSuccess(System.nanoTime() - startedAt, TimeUnit.NANOSECONDS);
         } catch (RuntimeException e) {
+            breaker.onError(System.nanoTime() - startedAt, TimeUnit.NANOSECONDS, e);
             log.warn("고아 token 정리를 다음 회차로 미룬다: {}", e.getMessage());
         }
     }
@@ -151,7 +187,7 @@ public class RedisSemaphoreGate implements SemaphoreGate {
         }
     }
 
-    /** 현재 활성 token 수(점유). 읽지 못하면 0이 아니라 예외를 그대로 올린다. */
+    /** 현재 활성 token 수(점유). 읽지 못하면 0이 아니라 예외를 그대로 올린다. 진단용이라 CircuitBreaker를 거치지 않는다. */
     public long activeCount() {
         Long size = redisTemplate.opsForSet().size(PERMITS_KEY);
         if (size == null) {
@@ -163,6 +199,22 @@ public class RedisSemaphoreGate implements SemaphoreGate {
     /** 반환하지 못해 기록해 둔 이 인스턴스의 token. */
     public Set<String> unreleasedTokens() {
         return Set.copyOf(unreleasedTokens);
+    }
+
+    /** Redis 호출 CircuitBreaker. 상태 확인과 테스트 사이의 초기화에 쓴다. */
+    public CircuitBreaker circuitBreaker() {
+        return breaker;
+    }
+
+    private static CircuitBreakerConfig breakerConfig(CouponAdmissionProperties.Breaker settings) {
+        return CircuitBreakerConfig.custom()
+            .slidingWindowType(CircuitBreakerConfig.SlidingWindowType.COUNT_BASED)
+            .slidingWindowSize(settings.slidingWindowSize())
+            .minimumNumberOfCalls(settings.minimumNumberOfCalls())
+            .failureRateThreshold(settings.failureRateThreshold())
+            .waitDurationInOpenState(settings.waitDurationInOpenState())
+            .permittedNumberOfCallsInHalfOpenState(settings.permittedCallsInHalfOpen())
+            .build();
     }
 
     private static DefaultRedisScript<Long> acquireScript() {
@@ -180,7 +232,7 @@ public class RedisSemaphoreGate implements SemaphoreGate {
         // 응답을 못 받았어도 token이 Set에 들어갔을 수 있다. 이 실행은 직행으로 가므로 진행 중 목록에서 빼고 미반환으로 기록한다.
         liveTokens.remove(token);
         unreleasedTokens.add(token);
-        log.warn("세마포어 획득 결과를 알 수 없다: token={}, error={}", token, cause == null ? "null result" : cause.getMessage());
+        log.warn("세마포어 획득 결과를 알 수 없다: token={}, error={}", token, cause.getMessage());
         return new Admission(Status.UNCERTAIN, token);
     }
 }

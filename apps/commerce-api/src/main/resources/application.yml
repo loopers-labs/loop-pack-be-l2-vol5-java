@@ -41,6 +41,12 @@ coupon:
     capacity: 10 # 지금 동시에 진행할 수 있는 신규 발급 실행의 최대 수(C). DB 연결 풀(test 10, 기본 40) 이하로 둔다
     auto-resume: true # Redis가 복구돼 안전 조건을 채우면 자동으로 세마포어 경로로 돌아온다. false면 사람이 확인해야 한다
     instance-id: local-1 # 이 인스턴스의 고정 ID. token이 `instance-id:UUID`가 되어 재시작 뒤 자기 token만 정리할 수 있다. 영문·숫자·_.-만 쓴다(단일 인스턴스 전제)
+    breaker: # Redis 호출 CircuitBreaker. 열리면 Redis를 건너뛰고 DB로 직행한다(직행의 상한은 capacity)
+      sliding-window-size: 10 # 최근 호출 수 기준
+      minimum-number-of-calls: 5 # 이 수만큼 호출되기 전에는 열지 않는다
+      failure-rate-threshold: 50 # 실패율(%)
+      wait-duration-in-open-state: 5s # 열린 뒤 다시 시험하기까지의 최소 대기. 재개 probe의 최소 대기이기도 하다
+      permitted-calls-in-half-open: 3 # 시험 상태에서 허용하는 호출 수
     recovery:
       scheduling-enabled: true # 미반환 token 재시도와 이전 프로세스가 남긴 자기 token 정리를 주기적으로 한다
       fixed-delay: 5s # 한 회차가 끝난 뒤 다음 회차까지 쉬는 시간

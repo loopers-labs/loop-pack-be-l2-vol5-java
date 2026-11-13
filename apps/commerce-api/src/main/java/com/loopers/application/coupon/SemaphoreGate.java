@@ -31,6 +31,8 @@ public interface SemaphoreGate {
         /** 자리가 없다(수용량 초과). DB 경로에 들어가지 않는다. */
         FULL,
         /** Redis 오류나 timeout으로 결과를 모른다. token이 Set에 들어갔을 수 있다. */
-        UNCERTAIN
+        UNCERTAIN,
+        /** CircuitBreaker가 Redis 호출을 막아 호출하지 않았다. token이 만들어지지 않았고 Set에도 없다. */
+        SKIPPED
     }
 }
