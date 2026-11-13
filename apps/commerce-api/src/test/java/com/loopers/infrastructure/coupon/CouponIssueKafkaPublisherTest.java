@@ -31,7 +31,7 @@ class CouponIssueKafkaPublisherTest {
         this.objectMapper = objectMapper;
     }
 
-    @DisplayName("PUB-001: 예약 하나가 메시지 하나이고, key 는 캠페인 ID, 내용은 캠페인과 사용자와 번호와 예약 시각이다")
+    @DisplayName("PUB-001: 예약 하나가 메시지 하나이고, key 는 사용자 ID, 내용은 캠페인과 사용자와 번호와 예약 시각이다")
     @Test
     void publishesOneRecordPerReservation() throws Exception {
         CouponIssue issue = new CouponIssue(7L, 42L, 3, Instant.parse("2026-11-08T00:00:00.123456Z"));
@@ -42,7 +42,7 @@ class CouponIssueKafkaPublisherTest {
 
         assertThat(outcome.get()).isEqualTo(new Outcome.Published());
         assertThat(records).singleElement().satisfies(record -> {
-            assertThat(record.key()).isNull();
+            assertThat(record.key()).isEqualTo("42");
             JsonNode body = objectMapper.readTree(record.value());
             assertThat(body.get("eventType").asText()).isEqualTo("CouponIssue");
             assertThat(body.get("schemaVersion").asInt()).isEqualTo(1);
