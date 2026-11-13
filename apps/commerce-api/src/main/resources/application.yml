@@ -39,8 +39,42 @@ datasource:
       data-source-properties:
         connectTimeout: 3000 # 연결 맺기 (Hikari connection-timeout과 같은 3초)
         socketTimeout: 10000 # 쿼리 응답 대기. 이 앱의 조회·저장·짧은 락 대기보다 충분히 길게 둔다
+  redis:
+    # 명령 하나의 응답을 기다리는 최대 시간. 이 시간 안에 쿠폰 발급 판단을 확인하지 못하면 신규 발급은 503으로 답한다.
+    # 공통 redis.yml이 아니라 앱에 둬서 다른 앱의 Redis 연결에는 적용하지 않는다.
+    command-timeout: 200ms
 
 commerce:
+  coupon:
+    # 현재 비교 범위는 DB 직접 발급과 Redis 수량·중복 판단 후 DB 동기 발급이다.
+    issue-mode: REDIS_SYNC # DB_ONLY: Redis 판단 없이 DB TX. QUEUE: Redis 판단 + 작업 큐 등록 뒤 202, DB 저장은 Worker.
+    issue-gate:
+      # REDIS: 서버들이 함께 보는 Redis에 판단 정보를 둔다. LOCAL: 이 앱의 메모리에 둔다(서버 한 대 비교용 실험 설정).
+      store: REDIS
+      retention-after-end: 1h # 행사 종료 뒤 판단 정보를 남겨 둘 시간. 실행 자리를 뜻하지 않는다.
+    issue-queue:
+      # issue-mode=QUEUE일 때만 쓴다. Worker는 이 앱 안의 스케줄 스레드 하나다.
+      consumer: worker-1 # 작업 큐 소비자 이름. 이 이름으로 처리 완료 전 작업을 다시 받는다.
+      worker:
+        enabled: true
+        batch-size: 10 # 한 번에 가져올 작업 수
+        save-in-batch: true # 가져온 작업을 한 DB TX로 저장한다. false면 한 건씩 TX다(비교용)
+        max-attempts: 5 # 연결 장애가 아닌 실패가 한 작업에서 이만큼 쌓이면 보류함으로 옮긴다
+        backoff-initial: 100ms # 연결 장애 뒤 Worker가 쉬는 시간. 이어지면 두 배씩 늘린다
+        backoff-max: 30s
+        fixed-delay-ms: 50 # 처리할 작업이 없을 때 다음 확인까지 기다리는 시간
+      # 판단 정보 보존 시간(행사 종료 뒤). 남은 작업이 다 처리되면 Worker가 먼저 지운다. 작업 큐 자체에는 만료가 없다.
+      retention-after-end: 7d
+    closed-cache:
+      # 다시 풀리지 않는 마감(남은 수 0이고 저장 전 예약도 0인 매진, 행사 종료)을 서버 메모리에 기억해 Redis에 가지 않는다.
+      enabled: true
+      ttl: 10s # 기억 시간. 다른 서버가 다시 준비한 캠페인을 이 시간 안에 다시 확인한다
+    issue-limit:
+      # DB 발급 TX 앞에서 기다리게 하는 비교 실험. NONE(기본) / LOCK(Redisson 분산락, 1개) / SEMAPHORE(Redisson 세마포어, permits개).
+      mode: NONE
+      permits: 3
+      # 자리를 기다리는 최대 시간. 넘으면 Redis 예약을 돌리고 429다. 0s면 기다리지 않고 바로 거절한다.
+      wait-timeout: 60s
   order-events:
     enabled: false
     topic: order-events
