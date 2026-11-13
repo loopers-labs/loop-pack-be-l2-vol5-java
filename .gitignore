@@ -47,3 +47,6 @@ out/
 
 ### 개인 노트 (git 미관리) ###
 docs/notes/
+
+### archify ###
+.archify/
