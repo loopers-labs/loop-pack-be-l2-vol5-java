@@ -36,15 +36,26 @@ public class CouponIssueExecutor {
                 throw error;
             }
             if (failure instanceof DuplicateCouponIssueException) {
-                return coupons.findIssuedByCampaignIdAndUserId(campaignId, userId)
-                    .<CouponIssueExecution>map(AlreadyIssued::new)
-                    .orElseGet(() -> new Failed(new CoreException(ErrorType.INTERNAL_ERROR,
-                        "중복 발급 충돌 뒤 기존 쿠폰을 찾지 못했습니다."), dbWorkDone));
+                return existingCouponAfterDuplicate(campaignId, userId, dbWorkDone);
             }
             return new Failed((RuntimeException) failure, dbWorkDone);
         }
         returnPermitSafely(token);
         return new Issued(issued);
+    }
+
+    /**
+     * 중복 충돌로 rollback한 뒤 새 조회로 기존 쿠폰을 찾는다. 조회도 실패하면 결과를 돌려주는 계약을 지키도록 실패로 감싼다.
+     */
+    private CouponIssueExecution existingCouponAfterDuplicate(Long campaignId, Long userId, boolean dbWorkDone) {
+        try {
+            return coupons.findIssuedByCampaignIdAndUserId(campaignId, userId)
+                .<CouponIssueExecution>map(AlreadyIssued::new)
+                .orElseGet(() -> new Failed(new CoreException(ErrorType.INTERNAL_ERROR,
+                    "중복 발급 충돌 뒤 기존 쿠폰을 찾지 못했습니다."), dbWorkDone));
+        } catch (RuntimeException lookupFailure) {
+            return new Failed(lookupFailure, dbWorkDone);
+        }
     }
 
     /**

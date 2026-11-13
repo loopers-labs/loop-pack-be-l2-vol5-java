@@ -120,6 +120,21 @@ class CouponIssueExecutorTest {
         });
     }
 
+    @DisplayName("중복 충돌 뒤 기존 쿠폰을 다시 읽다가 실패하면 예외를 던지지 않고 DB 작업이 끝난 실패로 돌려준다.")
+    @Test
+    void failsWithLookupErrorWhenExistingCouponCannotBeReadAfterDuplicateRollback() {
+        DataAccessResourceFailureException lookupFailure = new DataAccessResourceFailureException("연결 실패");
+        when(transaction.issue(eq(CAMPAIGN_ID), eq(USER_ID), any())).thenAnswer(endsWith(false,
+            TransactionSynchronization.STATUS_ROLLED_BACK, new DuplicateCouponIssueException(null)));
+        when(permits.release(TOKEN)).thenReturn(1L);
+        when(coupons.findIssuedByCampaignIdAndUserId(CAMPAIGN_ID, USER_ID)).thenThrow(lookupFailure);
+
+        CouponIssueExecution result = executor.execute(CAMPAIGN_ID, USER_ID, TOKEN);
+
+        assertThat(result).isEqualTo(new Failed(lookupFailure, true));
+        verify(permits).release(TOKEN);
+    }
+
     @DisplayName("DB 작업의 종료를 확인한 실패는 원래 예외와 함께 돌려주고 token을 반환한다.")
     @ParameterizedTest(name = "{0}")
     @MethodSource("finishedFailures")

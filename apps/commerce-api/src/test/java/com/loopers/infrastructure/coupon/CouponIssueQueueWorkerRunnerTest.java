@@ -1,5 +1,6 @@
 package com.loopers.infrastructure.coupon;
 
+import com.loopers.application.coupon.CouponIssueAdmissionState;
 import com.loopers.application.coupon.CouponIssueQueueProperties;
 import com.loopers.application.coupon.CouponIssueQueueWorkResult;
 import com.loopers.application.coupon.CouponIssueQueueWorker;
@@ -9,6 +10,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.SmartLifecycle;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 
 import java.time.Duration;
 import java.util.List;
@@ -16,6 +19,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -30,6 +34,7 @@ class CouponIssueQueueWorkerRunnerTest {
 
     @Mock private CouponIssueQueueWorker worker;
 
+    private final CouponIssueAdmissionState admission = new CouponIssueAdmissionState();
     private CouponIssueQueueWorkerRunner runner;
     private final CountDownLatch release = new CountDownLatch(1);
 
@@ -116,6 +121,20 @@ class CouponIssueQueueWorkerRunnerTest {
         verify(worker, timeout(1000).atLeast(2)).runOnce();
     }
 
+    @DisplayName("처리 중 예상하지 못한 예외가 나면 작업 상태를 확인할 수 없으므로 신규 수용을 닫는다.")
+    @Test
+    void closesAdmissionAfterUnexpectedFailure() {
+        admission.open();
+        when(worker.runOnce()).thenThrow(new IllegalStateException("예상하지 못한 오류"))
+            .thenReturn(CouponIssueQueueWorkResult.ADMISSION_CLOSED);
+        runner = runner(true, 1, Duration.ofMillis(50), Duration.ofSeconds(5));
+
+        runner.start();
+
+        verify(worker, timeout(1000).atLeast(2)).runOnce();
+        assertThat(admission.isOpen()).isFalse();
+    }
+
     @DisplayName("종료하면 새 작업을 가져오지 않고, 실행 중인 처리가 끝날 때까지 기다린다.")
     @Test
     void stopsTakingNewWorkAndWaitsForRunningWork() throws Exception {
@@ -156,9 +175,64 @@ class CouponIssueQueueWorkerRunnerTest {
         verify(worker, times(1)).runOnce();
     }
 
+    @DisplayName("애플리케이션을 종료하면 Redis 연결 같은 자원이 멈추기 전에 실행 중인 처리를 마친다.")
+    @Test
+    void finishesRunningWorkBeforeConnectionResourcesStop() throws Exception {
+        CountDownLatch started = new CountDownLatch(1);
+        AtomicBoolean connectionRunningAtFinish = new AtomicBoolean();
+        FakeRedisConnection connection = new FakeRedisConnection();
+        when(worker.runOnce()).thenAnswer(invocation -> {
+            started.countDown();
+            // 종료가 시작된 뒤에도 DB 처리와 결과 기록이 이어지는 상황이다.
+            Thread.sleep(300);
+            connectionRunningAtFinish.set(connection.isRunning());
+            return CouponIssueQueueWorkResult.PROCESSED;
+        });
+        runner = runner(true, 1, Duration.ofMillis(50), Duration.ofSeconds(5));
+        AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
+        context.registerBean(FakeRedisConnection.class, () -> connection);
+        context.registerBean(CouponIssueQueueWorkerRunner.class, () -> runner);
+        context.refresh();
+        runner.start();
+        assertThat(started.await(1, TimeUnit.SECONDS)).isTrue();
+
+        context.close();
+
+        assertThat(connectionRunningAtFinish).isTrue();
+        assertThat(connection.isRunning()).isFalse();
+    }
+
     private CouponIssueQueueWorkerRunner runner(boolean enabled, int concurrency, Duration pollInterval,
                                                 Duration shutdownTimeout) {
-        return new CouponIssueQueueWorkerRunner(worker, new CouponIssueQueueProperties(20,
+        return new CouponIssueQueueWorkerRunner(worker, admission, new CouponIssueQueueProperties(20,
             new CouponIssueQueueProperties.Worker(enabled, concurrency, pollInterval, shutdownTimeout)));
+    }
+
+    /**
+     * Lettuce 연결 팩토리처럼 phase 0에서 멈추는 연결 자원. 멈춘 뒤에는 Redis 명령을 보낼 수 없다.
+     */
+    static class FakeRedisConnection implements SmartLifecycle {
+
+        private volatile boolean running;
+
+        @Override
+        public void start() {
+            running = true;
+        }
+
+        @Override
+        public void stop() {
+            running = false;
+        }
+
+        @Override
+        public boolean isRunning() {
+            return running;
+        }
+
+        @Override
+        public int getPhase() {
+            return 0;
+        }
     }
 }
