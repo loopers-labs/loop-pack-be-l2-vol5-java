@@ -1,0 +1,511 @@
+# Week 8 · 쿠폰 발급 수용량 통제 설계
+
+> 상태: v7 — v6 이후 변경: 시스템 사정 실패 시 승격 시간 재충전(D15 결정 1), claim 시 자기 승격 만료 확인(§5-3), 장애 후 만료 유예(D15 결정 4), 구현 코드와 문서 대조 반영(지표·설정값 표 §15, DDL, reject 사유, §3 그림, 측정 계획). v6: DB 장애 대응(D15: 순번 유지 + 서킷브레이커 + 승격 멈춤). v5: 재개 규칙 변경(D10), 관리자 상태 조회. v4: 하트비트 기반 자리 회수(D4-A), 세대 키 기반 상태 유실 감지(D14), 측정 계획(§12-3) · 저장 위치: `docs/week8/`
+
+## 1. 문제 정의
+
+선착순 쿠폰은 짧은 시간에 요청이 몰리는 대표적인 스파이크 트래픽이다. 여기서 지켜야 할 것은 세 가지인데, 서로 성격이 다르다.
+
+| 지킬 것 | 성격 | 책임 저장소 |
+|---|---|---|
+| 총 발급량 (예: 5,000장) | **정합성.** 1장이라도 초과되면 사고 | DB |
+| 사용자당 1장 | **정합성.** 중복 발급은 사고 | DB |
+| 동시에 처리 중인 발급 수 (C개) | **자원 보호.** 넘어도 사고는 아니지만 DB·스레드풀이 무너짐 | Redis |
+
+이 세 가지를 하나의 장치로 해결하려 하면 설계가 꼬인다. 정합성은 트랜잭션과 제약이 있는 DB가 맡고, 자원 보호는 빠른 공유 카운터인 Redis가 맡는다. **Redis가 뚫려도 초과 발급은 생기지 않고, DB가 느려져도 요청은 거절이 아니라 대기로 흡수된다**는 것이 이 설계의 목표다. DB가 응답하지 못하는 동안에는 발급 요청이 503을 받지만 대기열과 승격은 보존되어 복구 뒤 이어진다(§7-4).
+
+## 2. 용어
+
+| 용어 | 뜻 |
+|---|---|
+| 수용량 C | 동시에 DB 발급 트랜잭션을 실행할 수 있는 최대 수. 서버 설정값 |
+| 자리(permit) | C개 중 하나. 실행 중인 발급 하나가 자리 하나를 점유 |
+| token | 실행 하나를 식별하는 서버 생성 UUID. 자리를 반납할 때 자기 것만 지우기 위해 사용 |
+| 대기열 | 자리를 기다리는 사용자 목록. 접수 순서를 유지 |
+| 승격(admit) | 대기열 맨 앞 사용자를 "입장 가능" 상태로 옮기는 것 |
+| gate | 신규 접수·승격을 받는지 여부. 장애 시 닫힘 |
+| fail-closed | 판단 근거(Redis)가 불확실하면 통과시키지 않고 막는 정책 |
+| 세대(generation) | gate를 열 때마다 새로 발급하는 식별값. Redis에 저장되며, 이 값이 사라지거나 바뀌면 "내가 알던 Redis 상태가 아니다"로 판단한다 |
+| cutoff (승격 만료 기준 시각) | score가 이 시각보다 오래된 승격을 만료로 본다. 평소에는 `now − admittedTtl`, DB 장애 직후 유예 동안은 0(아무도 만료시키지 않음). 서킷 부품이 계산해 Lua에 넘긴다 (§5-2, §7-4) |
+| lastLeftOpenAt | DB 서킷이 마지막으로 OPEN에서 벗어난 시각. 이 시각부터 admittedTtl 동안이 만료 유예 구간이다 (§7-4 결정 4) |
+
+## 3. 전체 구조
+
+```
+[사용자]                    [commerce-api]                         [Redis]            [MySQL]
+   │ POST issues(접수)  ──▶  기존 쿠폰 조회 ─있음─▶ 200             
+   │                         Lua(접수): 세대·중복·상한 확인 → INCR → ZADD waiting ─▶ waiting ZSET
+   │ ◀── 202 {seq}           
+   │
+   │ GET status (폴링) ──▶   ZRANK / ZSCORE ─────────────────▶ 조회만
+   │ ◀── WAITING{rank} | ADMITTED | ISSUED | SOLD_OUT | NONE
+   │
+   │                    [@Scheduled promote]  DB 서킷 OPEN 이면 건너뜀 (§7-4)
+   │                         Lua: admitted(cutoff)·permits 만료 정리 → 빈자리 계산 → ZPOPMIN→ZADD admitted
+   │
+   │ POST issues/claim ──▶   DB 서킷 OPEN ─▶ 503 (자리 획득 전)
+   │                         Lua(세마포어): 만료 token 정리 → ZSCORE admitted(만료 확인) → 자리 획득(ZADD permits now token)
+   │                         하트비트 스레드: 10초마다 ZADD XX permits now token
+   │                         DB TX: 조건부 UPDATE + INSERT(UNIQUE) ──────────────────▶ 발급
+   │                         finally: 하트비트 중지 · ZREM permits token (항상)
+   │                                  업무 결과 확정 ─▶ ZREM admitted userId
+   │                                  시스템 사정 실패(DB 일시 오류·서킷) ─▶ ZADD XX admitted now userId (승격 시간 재충전)
+   │ ◀── 201 {couponId} | 200(기존) | 409 품절 | 503 DB 일시 불가
+```
+
+흐름은 다섯 단계다. **진입 → 승격 → 시작(하트비트 개시) → 발급 → 반납(하트비트 중지).**
+
+### 왜 폴링(비동기)인가
+
+동기로 "자리가 날 때까지 요청을 붙잡고 기다리는" 방식은 구현이 가장 쉽지만, 대기 인원 수만큼 Tomcat 스레드가 점유된다. 즉 병목이 DB에서 웹 스레드풀로 옮겨갈 뿐이고, 스레드풀이 차면 쿠폰과 무관한 다른 API까지 함께 죽는다. 접수를 먼저 받고 결과를 나중에 확인하게 하면 대기 인원이 수만 명이어도 서버가 붙잡는 자원은 Redis의 ZSET 원소 하나다. 티켓 예매·수강신청 등 스파이크가 전제인 시스템이 이 구조를 택하는 이유다.
+
+### 왜 승격 단계를 따로 두는가
+
+대기열에서 바로 발급으로 가도 동작은 한다. 승격 단계를 두는 이유는 사용자에게 **"지금 당신 차례"** 라는 상태를 보여주고, 그 사용자가 실제로 발급 요청을 보냈을 때만 자리를 점유시키기 위해서다. 승격 없이 서버가 알아서 발급까지 끝내는 구조(worker 방식)도 가능하며 더 단순하다. 이번에는 사용자 대기실 UX를 재현하는 쪽을 택했고, 단순화가 필요하면 worker 방식으로 바꿀 수 있다(§14).
+
+## 4. Redis 키 설계
+
+모든 키는 캠페인 단위로 분리하고, 캐시 키 네임스페이스와 섞지 않는다.
+
+| 키 | 자료형 | 내용 | 비고 |
+|---|---|---|---|
+| `coupon:{cid}:seq` | String | 접수 번호 카운터 (`INCR`) | 상한 비교에 사용 |
+| `coupon:{cid}:waiting` | ZSET | member=userId, score=접수번호 | 대기열. 순서 보장 |
+| `coupon:{cid}:admitted` | ZSET | member=userId, score=승격 시각(ms) | 승격됨. TTL 정리를 위해 ZSET |
+| `coupon:{cid}:permits` | ZSET | member=token, score=마지막 하트비트 시각(ms) | 현재 실행 중인 자리. 만료 정리 후 크기 ≤ C |
+| `coupon:{cid}:gen` | String | 관리자 open 시 발급한 세대값(UUID) | 상태 유실 감지. 모든 Lua가 첫 줄에서 확인 |
+
+세대 키를 두는 이유: Redis가 재시작되어 데이터가 비면 `permits`·`admitted`·`waiting`도 함께 비지만, 애플리케이션은 그 사실을 알 수 없다. 비어 있는 permits는 "자리가 다 비었다"와 구별되지 않는다. 그래서 open 시점에 세대값을 Redis에 쓰고 애플리케이션 메모리에도 기억해 두면, Lua가 "Redis의 세대값 == 내가 기억한 세대값"을 매번 확인할 수 있다. 다르거나 없으면 상태가 유실된 것이므로 거절하고 gate를 닫는다. PING은 "연결됨"만 알려주지만 세대 키는 "내가 알던 상태인가"를 알려준다.
+
+permits를 Set이 아니라 ZSET으로 두는 이유: 하트비트가 끊긴 token을 찾아내려면 "마지막으로 살아 있다고 알린 시각"이 필요하고, 그 시각을 score에 두면 `ZREMRANGEBYSCORE` 한 명령으로 만료 token을 걸러낼 수 있다.
+
+접수 번호를 ZSET score로 쓰는 이유: 서버 시각은 인스턴스마다 미세하게 달라 다중 인스턴스에서 순서가 뒤바뀔 수 있다. `INCR`은 Redis 단일 지점에서 발급되므로 전역 순서가 보장된다.
+
+모든 Redis 접근은 **master 연결**을 사용한다. replica는 복제 지연이 있어 "자리가 비었다"고 읽은 순간 이미 찼을 수 있고, 수용 판단에 쓰면 C를 넘긴다.
+
+## 5. 단계별 상세
+
+### 5-1. 진입 (접수 API, Lua)
+
+```
+1. DB에서 (campaignId, userId) 쿠폰 조회 → 있으면 200 + couponId     (멱등)
+2. 캠페인 활성·gate 열림 확인 → 아니면 거절
+3. Lua(접수) 실행 → 결과 코드로 응답
+```
+
+```lua
+-- KEYS[1]=seq, KEYS[2]=waiting, KEYS[3]=admitted, KEYS[4]=gen
+-- ARGV[1]=expectedGen, ARGV[2]=acceptLimit, ARGV[3]=userId
+if redis.call('GET', KEYS[4]) ~= ARGV[1] then return {-1, 0} end     -- 상태 유실. 호출자는 gate를 닫는다
+local waiting = redis.call('ZSCORE', KEYS[2], ARGV[3])
+if waiting then return {2, tonumber(waiting)} end                    -- 이미 접수됨 (대기 중). 접수 번호 반환
+if redis.call('ZSCORE', KEYS[3], ARGV[3]) then return {2, 0} end     -- 이미 접수됨 (승격됨)
+local seq = tonumber(redis.call('GET', KEYS[1]) or '0')
+if seq >= tonumber(ARGV[2]) then return {0, 0} end                   -- 품절. 번호를 소비하지 않는다
+seq = redis.call('INCR', KEYS[1])
+redis.call('ZADD', KEYS[2], seq, ARGV[3])
+return {1, seq}
+```
+
+반환: `{1, seq}` 신규 접수(202) / `{2, seq|0}` 이미 접수(200) / `{0, 0}` 품절(409) / `{-1, 0}` 세대 불일치(gate 닫고 503).
+
+세대 확인·중복 확인·상한 비교·번호 발급·대기열 등록을 한 덩어리로 묶는다. 단일 명령으로 나누면 `INCR`과 `ZADD` 사이에 서버가 죽었을 때 번호만 소비되는 "빈 번호"가 생기고, 상한 비교와 번호 발급 사이에 다른 요청이 끼어들어 품절 판정이 어긋날 수 있다. 품절이면 `INCR`을 하지 않으므로 seq는 실제 접수 수와 같다. 이미 접수된 사용자의 재요청은 대기 중이면 첫 접수 번호를, 승격됐으면 0을 돌려주며, 어느 쪽도 접수 효과를 늘리지 않는다(멱등).
+
+### 5-2. 승격 (스케줄러, Lua)
+
+```lua
+-- KEYS[1]=waiting, KEYS[2]=admitted, KEYS[3]=permits, KEYS[4]=gen
+-- ARGV[1]=capacity, ARGV[2]=now(ms), ARGV[3]=admittedCutoff(ms), ARGV[4]=permitTtl(ms), ARGV[5]=expectedGen
+if redis.call('GET', KEYS[4]) ~= ARGV[5] then return -1 end        -- 상태 유실. 호출자는 gate를 닫는다
+redis.call('ZREMRANGEBYSCORE', KEYS[2], 0, ARGV[3])             -- 만료된 승격 제거. cutoff 가 0 이면 아무도 지우지 않는다
+redis.call('ZREMRANGEBYSCORE', KEYS[3], 0, ARGV[2] - ARGV[4])   -- 하트비트 끊긴 자리 회수
+local busy = redis.call('ZCARD', KEYS[2]) + redis.call('ZCARD', KEYS[3])
+local free = tonumber(ARGV[1]) - busy
+if free <= 0 then return 0 end
+local popped = redis.call('ZPOPMIN', KEYS[1], free)
+for i = 1, #popped, 2 do
+  redis.call('ZADD', KEYS[2], ARGV[2], popped[i])
+end
+return #popped / 2
+```
+
+반환 -1은 세대 불일치다. 호출자는 승격을 중단하고 gate를 닫는다.
+
+승격 만료 기준 시각 `admittedCutoff`는 Java가 계산해 넘긴다. 평소에는 `now − admittedTtl`이고, DB 서킷이 OPEN에서 벗어난 뒤 admittedTtl이 지나기 전까지는 0이다(§7-4 장애 후 만료 유예). Lua는 기준 시각만 받고 유예 여부를 알지 못한다. 유예 판단은 서킷 상태를 아는 쪽(Java)이 맡고, Lua는 "이 시각보다 오래된 승격을 지운다" 한 가지만 한다. 계산은 서킷 부품(domain 인터페이스 `CouponIssueCircuit`의 기본 메서드)이 하고, 승격·세마포어 어댑터는 서킷을 주입받아 그 값을 Lua에 넘긴다.
+
+Lua는 접수·승격·세마포어 세 곳에 쓴다(D6). 승격에서 Lua가 필요한 이유는 다음과 같다. "빈자리 계산"과 "꺼내서 옮기기"가 분리되면 두 인스턴스가 동시에 돌 때 둘 다 빈자리를 2로 읽고 각각 2명을 승격시켜 C를 넘긴다. 승격 대기 중인 사용자(admitted)도 자리를 예약한 것으로 계산(`busy`)해야, 승격만 받고 아직 발급을 시작하지 않은 사용자 몫까지 포함해 C가 지켜진다.
+
+실행 주기는 200ms 고정 지연(`fixedDelay`). 승격 지연 상한이 곧 사용자가 느끼는 반응 지연이므로 짧게 두되, 매 요청마다 승격을 시도하는 방식은 폴링 폭주 시 Redis 부하가 요청 수에 비례해 커지므로 피했다.
+
+### 5-3. 시작 + 발급 + 반납 (발급 요청 API)
+
+```
+0. DB 서킷 OPEN → 503 (자리 획득 전. DB·세마포어 모두 호출하지 않는다)     -- §7-4
+1. token = UUID
+2. Lua(세마포어): GET gen != expectedGen → -1 (상태 유실 → gate 닫고 503)
+                  ZREMRANGEBYSCORE permits 0 now-permitTtl   -- 하트비트 끊긴 자리 회수
+                  ZSCORE admitted userId == nil → 거절(NOT_ADMITTED)
+                  score < admittedCutoff → ZREM admitted userId, 거절(NOT_ADMITTED)   -- 자기 승격의 만료만 확인. cutoff 는 §5-2 와 같은 값
+                  ZSCORE permits token 있음 → 1               -- 같은 실행의 재확인
+                  ZCARD permits >= C → 거절(429)             -- 방어선. 정상이면 발생 안 함
+                  ZADD permits now token → 1
+2-1. 하트비트 개시: 10초마다 ZADD XX permits now token (XX = 존재할 때만 갱신. 이미 회수된 token을 되살리지 않는다)
+3. DB TX (서킷브레이커 안에서 최대 2회 재시도, 일시 오류만):
+     UPDATE campaign SET issued_count = issued_count + 1
+       WHERE id = ? AND issued_count < total_quota        -- 영향 0행 → SOLD_OUT
+     INSERT coupon(campaign_id, user_id, ...)             -- UNIQUE 위반 → 기존 쿠폰 조회 후 반환
+   재시도 소진 후 DataAccessException → 서킷 실패 1건, 503
+4. finally: 하트비트 중지 → ZREM permits token (최대 3회 재시도)   -- 자리는 항상 반납
+   ZREM 결과 0이면 이미 회수된 것 → `coupon.admission.release{result=recovered}` +1, warn 로그
+   ZREM admitted userId 는 업무 결과가 확정된 경우에만: 발급 성공·기존 쿠폰 반환·품절·캠페인 종료
+   DB 일시 오류(재시도 소진)·서킷 열림이면 승격 유지 + ZADD XX admitted now userId (승격 시간을 다시 채움. 없는 승격은 되살리지 않음)
+   → 사용자는 승격 TTL 안에 다시 claim
+5. 201 {couponId} | 200(기존) | 409 SOLD_OUT | 503 DB 일시 불가
+```
+
+세마포어 Lua는 `세대 확인 → 만료 정리 → ZSCORE(승격 확인·만료 확인) → ZSCORE(자기 token 재확인) → ZCARD → ZADD`를 한 덩어리로 묶는다. 이를 애플리케이션에서 나눠 호출하면 두 요청이 동시에 "2개 있네"를 읽고 둘 다 들어가 C+1이 된다. admitted·permits는 ZSET이므로 Set 명령(`SISMEMBER`·`SCARD`·`SADD`)을 쓰지 않는다.
+
+승격 확인은 존재 여부만 보지 않고 **자기 승격의 score가 admittedCutoff보다 오래됐는지**도 본다(cutoff 계산은 §5-2와 같다). admitted의 범위 정리(`ZREMRANGEBYSCORE`)는 승격 Lua가 맡는데, 승격 스케줄러가 멈춘 동안(인스턴스 재시작·설정 off)에는 만료된 승격이 남아 있을 수 있다. 그 사이에 들어온 claim이 만료된 승격으로 자리를 잡으면 D5의 "미응답자는 차례를 잃는다"가 깨진다. 세마포어는 자기 것 하나만 확인·삭제하고 범위 정리는 하지 않는다. 다른 사용자의 정리까지 하면 두 Lua가 같은 일을 두 곳에서 하게 된다. `extendAdmission`으로 시간이 다시 채워진 사용자는 score가 갱신되어 있어 원래 만료 시각이 지나도 통과한다.
+
+하트비트 갱신은 `ZADD XX`로만 한다. `XX` 없이 갱신하면, 이미 회수되어 다른 사용자가 들어온 자리에 죽은 token이 되살아나 C+1이 된다. 하트비트 갱신이 Redis 예외로 실패하면 로그만 남기고 발급은 계속한다. 이미 DB 트랜잭션이 진행 중이라 중단해도 쿠폰은 발급되며, Redis 이상 신호는 다음 접수·claim 요청의 Lua 호출이 받아 gate를 닫는다. 장애 감지 지점을 요청 경로 한 곳으로 유지한다.
+
+반납은 **반드시 자기 token만** 지운다. "아무나 하나 지우기"는 다른 실행의 자리를 빼앗아, 그 실행이 끝났을 때 또 하나를 지우는 연쇄로 이어진다. 두 번 반납해도(`ZREM` 중복) 다른 자리에 영향이 없는 것이 이 방식의 장점이다.
+
+반납은 **DB 트랜잭션이 commit 또는 rollback으로 끝난 뒤**에만 한다. HTTP 연결이 끊겼다고 반납하면 DB 작업은 아직 돌고 있는데 자리는 비어 C를 넘긴다.
+
+자리 반납과 승격 제거는 성격이 다르다. 자리(permits)는 "지금 DB를 쓰고 있는가"의 기록이라 트랜잭션이 끝나면 결과와 무관하게 항상 반납한다. 승격(admitted)은 "이 사용자의 차례인가"의 기록이라 **업무 결과가 확정됐을 때만** 지운다. DB 일시 오류로 끝난 claim의 승격을 지우면, DB가 죽은 동안 승격된 사용자가 차례로 claim → 실패 → 승격 제거를 반복해 대기열이 실패로 소진된다(§7-4).
+
+시스템 사정(DB 일시 오류·서킷 열림)으로 503이 된 claim은 그 사용자의 승격 시간을 **다시 채운다**(`ZADD XX admitted now userId`). 시스템 사정으로 흐른 시간을 사용자에게 물리지 않기 위해서다. 서킷이 열린 동안은 다음 대기자를 승격하지 않으므로, 연장이 다른 사용자의 차례를 빼앗지 않는다. `XX`라 이미 만료·제거된 승격은 되살리지 않으며, 단일 명령이라 Lua를 늘리지 않는다. 이 갱신이 Redis 예외로 실패하면 기존 규칙대로 gate를 닫고 503이다.
+
+## 6. DB 설계
+
+```sql
+coupon_campaign (id, name, active, total_quota, issued_count,
+                 benefit_type ENUM('FIXED','RATE'), benefit_value, coupon_expires_at,
+                 created_at, updated_at, deleted_at)
+coupon (id, campaign_id, user_id, issued_at, expires_at,
+        benefit_type ENUM('FIXED','RATE'), benefit_value, status ENUM('ISSUED','USED'),
+        created_at, updated_at, deleted_at,
+        UNIQUE KEY uk_coupon_campaign_user (campaign_id, user_id))
+```
+
+혜택(`benefit_type`·`benefit_value`)과 쿠폰 만료 시각은 캠페인이 정의하고, 발급 시 쿠폰에 값으로 복사한다. 캠페인 정의가 뒤에 바뀌어도 이미 발급된 쿠폰은 바뀌지 않는다(W1 INV-004와 같은 원칙). 제약 이름 `uk_coupon_campaign_user`는 이 프로젝트의 규칙(`uk_<테이블>_<컬럼>`)을 따르며, 중복 식별 코드가 이 이름의 꼬리를 비교한다.
+
+### 왜 비관적 잠금이 아니라 조건부 UPDATE인가
+
+이 저장소에서 비관적 잠금(`SELECT ... FOR UPDATE`)은 결제 시작 시 주문 row 한 곳에만 쓰인다. 재고 차감(`deductStockIfEnough`)과 포인트 충전은 조건부 UPDATE다. 쿠폰은 재고와 같은 패턴을 따른다.
+
+- 비관적 잠금은 캠페인 row 하나에 `SELECT ... FOR UPDATE`를 걸어 **모든 발급을 직렬화**한다. C=3으로 자리를 3개 열어도 DB에서 1개씩 처리되므로, 수용량 설계의 의미가 줄어든다.
+- 조건부 UPDATE는 `issued_count < total_quota`를 WHERE에 넣어 **DB가 단일 문장 안에서 원자적으로 판정**한다. 락 대기 없이 경쟁하고, 패자는 영향 행 0을 받아 즉시 품절로 끝난다.
+- 비관적 잠금이 맞는 경우는 "읽은 값으로 복잡한 계산을 한 뒤 쓰는" 규칙이다. 쿠폰의 규칙은 비교 한 줄이라 조건부가 더 적합하다.
+
+### W1 적용 흐름과의 정합
+
+1주차 주문 할인 설계(`docs/week1/order-discount-contract.md`)는 보유 쿠폰을 주문에 적용하는 장면을 다룬다. 이번 주차는 할인 적용을 구현하지 않지만, **발급한 쿠폰이 그 흐름에서 소비될 수 있는 모양**으로 저장한다.
+
+| 컬럼 | W1에서 필요한 이유 |
+|---|---|
+| `user_id` | 보유자 판정(INV-001 소유권). 조회 조건에 함께 건다 |
+| `expires_at` | `isUsableAt(requestedAt)` 만료 판정(INV-006) |
+| `benefit_type`, `benefit_value` | `DiscountPolicy`가 정액/정률을 구분해 계산 |
+| `status` (ISSUED / USED) | 환불 시 복구 여부(W1 Q-02)가 열려 있어 상태 컬럼이 필요해질 가능성이 높다. 지금 두는 비용이 가장 낮다 |
+
+UNIQUE 제약은 **마지막 안전장치**다. 접수 단계에서 접수 Lua의 중복 확인(waiting·admitted `ZSCORE`)으로 중복을 막더라도, 그 확인과 DB insert 사이에는 시간이 있다. "조회했을 때 없었다"는 사실만으로 동시 중복을 막을 수 없으므로, 제약 위반을 잡아 기존 쿠폰을 반환하는 멱등 처리가 필요하다. 단, 모든 `DataIntegrityViolationException`을 중복으로 간주하지 않고 위반된 제약 이름을 확인한다. 연결 오류나 다른 제약 위반을 "성공"으로 바꾸면 장애를 숨긴다.
+
+## 7. 장애 정책
+
+### 7-1. fail-closed
+
+Redis 호출이 예외·타임아웃·해석 불가 응답을 돌려주면 **gate를 닫고 신규 접수·승격·발급 시작을 모두 거절(503)** 한다. 이미 발급된 쿠폰 목록 조회는 DB만 쓰므로 유지한다.
+
+gate가 닫히는 조건은 세 가지다: ① Redis 예외·타임아웃 ② Lua 결과를 해석할 수 없음 ③ 세대 불일치(-1). ③은 Redis가 살아 있지만 상태가 사라진 경우를 잡는다. 장애 감지는 상태를 바꾸는 경로(접수·claim·승격)만 맡고, 읽기만 하는 상태 조회는 Redis 예외가 나도 503만 돌려주며 gate를 닫지 않는다.
+
+fail-open(Redis가 죽으면 그냥 통과)을 택하면 장애 순간에 수용량 제한이 사라지고, 가장 트래픽이 몰린 그 순간 DB가 무방비가 된다. 수용량 제한의 존재 이유가 스파이크 때 DB를 지키는 것인데, 스파이크 때 꺼지는 제한은 없는 것과 같다. 로컬 count나 별도 큐로 우회하는 것도 같은 이유로 금지한다.
+
+### 7-2. 하트비트 기반 자리 회수
+
+자리를 반납하지 못하고 실행이 사라지는 경우(인스턴스 종료, 프로세스 kill, 반납 3회 재시도 실패)가 있다. 그 자리를 그대로 두면 수용량이 하나씩 줄어드는 누수가 되고, 관리자가 손으로 정리해야 한다. 이 설계는 **하트비트가 끊긴 token을 자동으로 회수**한다.
+
+- 실행 중인 요청은 10초마다 permits의 자기 token score를 현재 시각으로 갱신한다(`ZADD XX`).
+- 세마포어·승격 Lua는 시작 시 `score < now − 30초`인 token을 제거한다. 하트비트가 30초 동안 없었다는 뜻이다.
+- TTL(30초)은 하트비트 주기(10초)의 3배다. 네트워크 지연이나 짧은 멈춤으로 하트비트 두 번을 연속 놓쳐도 자리를 잃지 않는다.
+
+**이 선택의 약점을 명시한다.** 실행이 살아 있는데 GC stop-the-world나 네트워크 파티션이 30초를 넘기면, 그 자리는 회수되고 다음 사용자가 들어와 **동시 실행이 일시적으로 C+1이 된다.** 처리량 제한이 그 순간 뚫리는 것이다. 이를 감수하는 이유는 두 가지다.
+
+1. 초과 발급은 생기지 않는다. 총량·중복은 DB가 판정하므로, C+1은 사고가 아니라 DB 부하가 한 건 늘어나는 것이다.
+2. 반대 선택(자동 회수 없음)의 비용은 누수가 생길 때마다 운영자가 개입하는 것이고, 개입 전까지 수용량이 줄어든 채 운영된다. 운영자 개입 없는 자동 복구를 우선했다.
+
+단순 `EXPIRE`로 token에 TTL을 거는 방식은 쓰지 않는다. 그 방식은 "실행이 살아 있는가"와 무관하게 시간만으로 지우므로, 정상적으로 오래 걸리는 실행도 회수된다. 하트비트는 "살아 있다고 알리는 실행은 지우지 않는다"는 조건이 붙는다는 점이 다르다.
+
+회수가 실제로 일어나는 빈도는 관측한다. 반납 시 `ZREM` 결과가 0이면 이미 회수된 것이므로 `coupon.admission.release{result=recovered}` 카운터를 올리고 warn 로그를 남긴다. 이 수치가 TTL 값이 적절한지, STW가 얼마나 자주 나는지 판단하는 근거가 된다.
+
+admitted의 TTL(30초)은 성격이 다르다. admitted는 **아직 실행을 시작하지 않은** 사용자의 예약이다. 승격을 받고 발급 요청을 보내지 않는 사용자를 무한히 기다리면 자리가 영구히 비므로, 일정 시간 뒤 승격을 취소하고 대기열 다음 사람에게 넘긴다. 단, DB 장애 직후에는 이 만료를 유예한다(§7-4 결정 4).
+
+### 7-3. 재개 규칙
+
+- gate는 인스턴스 메모리 플래그. 기본값 닫힘. **기본 동작은 수동 재개**로, 관리자 API `POST /api-admin/v1/coupon-campaigns/{id}/admission/open|close`로 열고 닫는다. 자동 재개는 `coupon.admission.auto-reopen.enabled=true`로 켤 때만 추가된다(아래). 기존 `/api-admin/**` 보호 경계 아래이므로 보안 설정에 경로를 추가하지 않는다. 현재 배포 형태에서는 인증 수단이 없어 테스트 컨텍스트에서만 호출할 수 있다(§12-1).
+- Redis 예외·Lua 해석 불가 응답·세대 불일치가 나면 자동으로 닫힌다(`forceClose`). 닫을 때 **이유를 기록**한다: `REDIS_ERROR`(예외·타임아웃), `STALE_GENERATION`(세대 불일치), `UNEXPECTED_RESULT`(Lua 반환값 해석 불가). 관리자 close는 `ADMIN`. 이유 기록은 자동 재개 설정과 무관하게 항상 한다.
+- PING 성공만으로 자동 재개하지 않는다. PONG은 "연결됨"이지 "상태가 보존됨"이 아니다. 장애 중 Redis가 재시작됐다면 permits·admitted가 비어 있어, 실행 중인 요청과 겹쳐 C를 넘길 수 있다.
+- **재개 시 기존 키(seq·waiting·admitted·permits)는 지우지 않는다.** 자리 기록을 지우면 실행 중인 발급이 기록 없이 돌아 C를 넘을 수 있다. 남기면 틀린 기록은 TTL로 만료될 뿐이다. 접수 기록을 남겨야 재접수가 같은 번호를 받고 접수 상한도 정확하다. open은 `SET gen`으로 새 세대만 발급하며, 기존 대기자는 세대가 바뀌어도 그 자리에서 이어서 승격된다. 대기자가 재접수해야 하는 경우는 Redis 데이터가 실제로 유실된 때뿐이다(§12-1).
+- 수동 재개 절차: ① 관리자 상태 조회(`GET .../admission`)로 이 인스턴스의 활성 요청 0과 남은 기록(waiting·admitted·permits 수, seq)을 확인 → ② 관리자 open. 잔존 token은 하트비트 만료로 자동 정리되므로 수동 정리 단계가 없다.
+- **조건부 자동 재개**(`auto-reopen.enabled=true`일 때만):
+  - 대상은 `REDIS_ERROR`로 닫힌 경우만. `STALE_GENERATION`·`UNEXPECTED_RESULT`·`ADMIN`은 관리자 open으로만 열린다.
+  - 닫힌 동안 `probe-interval`(PT5S)마다 `GET gen`을 읽어 기억한 세대와 비교한다. 연속 `required-successes`(3)회 일치하면 연다. 불일치가 나오면 이유를 `STALE_GENERATION`으로 바꾸고 자동 재개를 중단한다. 예외가 나면 연속 횟수를 0으로 되돌린다.
+  - 자동 재개는 세대를 바꾸지 않는다(`SET gen` 하지 않음). 관리자 open만 새 세대를 발급한다.
+  - 반복 방지: `window`(PT10M) 안에 자동 재개가 `max-reopens`(3)회를 넘으면 이유를 `FLAPPING`으로 바꾸고 관리자 open을 기다린다.
+  - probe는 쿠폰 전용 스케줄러에서 돈다. 꺼져 있으면 probe를 돌리지 않는다.
+- 자동 재개를 둔 이유: 수동 재개만 있으면 운영자가 닫힘을 모르는 동안 발급이 멈춘 채로 남는다. 세대 키(D14)가 상태 유실을 걸러 주므로, 일시 장애는 스스로 복구해도 안전하다.
+- 기본을 끈 이유: 건강 확인(연결됨)과 상태 확인(기록이 내가 알던 그대로인가)은 다르고, 세대 키가 잡지 못하는 경우(세대는 맞지만 기록이 과거 상태, §12-1)가 남아 있다. 보수적인 쪽을 기본으로 두고 운영 환경이 조건을 충족할 때 켠다.
+- 한계: 인스턴스마다 플래그를 따로 열어야 한다. 다중 인스턴스 운영에서는 중앙 설정(feature flag 서비스)으로 옮겨야 하며, 이번 범위에서는 단일 인스턴스 로컬 실험으로 한정한다.
+- gate 상태는 Gauge `coupon.admission.gate_open`(열림 1, 닫힘 0)으로, 닫힘과 자동 재개는 Counter `coupon.admission.gate_close{reason}`, `coupon.admission.auto_reopen`으로 노출한다.
+
+### 7-4. DB 장애
+
+Redis 장애는 §7-1·§7-3의 gate가 맡는다. DB 장애는 다른 장치가 필요하다. 대응이 없으면 DB가 죽은 동안 승격된 사용자가 차례로 claim → 실패 → 승격 제거를 반복하고, 승격 스케줄러는 빈자리마다 다음 대기자를 올려 **대기열 전체가 실패로 소진**된다. DB가 돌아왔을 때 남은 사람이 없다.
+
+결정(D15)은 네 가지다.
+
+1. **순번 유지.** claim의 finally에서 자리(permits)는 항상 반납하되, 승격(admitted) 제거는 업무 결과가 확정됐을 때만 한다(발급 성공·기존 쿠폰 반환·품절·캠페인 종료). DB 일시 오류로 재시도 2회를 다 쓰고 실패했거나 서킷이 열려 거절된 경우에는 승격을 유지하고, 그 사용자의 승격 시간을 현재 시각으로 다시 채운다(`ZADD XX`, 존재할 때만). 시스템 사정으로 흐른 시간을 사용자에게 물리지 않는다. 서킷이 열린 동안은 다음 대기자를 승격하지 않으므로 연장이 다른 사용자의 차례를 빼앗지 않는다. 사용자는 승격 TTL 안에 다시 claim할 수 있다.
+2. **서킷브레이커.** `CouponIssueService` 호출을 서킷브레이커로 감싼다. Resilience4j core를 코드로 조립한다(`HttpPaymentGateway` 선례. 스타터와 애노테이션은 쓰지 않는다). 대기열·세마포어·gate와 같이 domain에 인터페이스를 두고 infrastructure에 Resilience4j 구현을 둔다. Facade·승격 스케줄러·관리자 조회는 이 인터페이스로 상태를 읽는다. 서킷은 캠페인별이 아니라 **전체에 하나**다. DB는 모든 캠페인이 공유하므로 한 캠페인에서 본 DB 장애는 다른 캠페인에도 같은 장애다. 실패로 세는 것은 재시도까지 끝난 뒤의 `DataAccessException` 계열이다. `CoreException`(품절·종료·없음)과 유니크 중복은 업무 결과이므로 실패로 세지 않는다. 서킷이 열려 있으면 claim은 **세마포어 자리를 잡기 전에** 503으로 끝낸다. DB를 호출하지 않는다.
+3. **승격 멈춤.** 서킷이 열려 있으면 승격 스케줄러는 승격 Lua를 호출하지 않는다. 대기열을 그대로 둔다. 만료 정리도 하지 않는다.
+4. **장애 후 만료 유예.** 서킷이 OPEN에서 벗어난 시각(`lastLeftOpenAt`, Clock 기준)을 서킷 부품이 기억한다. 그 뒤 admittedTtl이 지나기 전까지는 승격 만료 기준 시각(cutoff)을 0으로 두어 아무도 만료시키지 않는다(승격 Lua의 범위 정리와 세마포어의 자기 확인 모두). 서킷이 열린 동안 다시 시도하지 않은 승격자는 승격 때 대기열에서 이미 빠졌으므로, 그대로 만료되면 상태가 NONE이 되어 **사용자 잘못이 아닌데 접수가 없던 일이 된다.** 유예는 그 사용자에게 복구 뒤 admittedTtl만큼의 claim 기회를 돌려준다. `extendAdmission`(결정 1)은 서킷이 열리지 않는 드문 일시 오류를 맡고, 유예는 서킷이 열린 장애를 맡는다.
+
+**gate가 아니라 서킷브레이커를 쓰는 이유.** gate는 "Redis 기록을 믿을 수 없다"는 신호에 대한 장치다. 그래서 자동 재개를 보수적으로 두고 세대 키로 상태 보존을 확인한다. DB 장애에서는 Redis 기록(대기열·승격·자리)이 그대로 믿을 수 있으므로, DB가 돌아오면 그 기록 위에서 스스로 재개해도 안전하다. 자동 복구가 안전한 장애를 수동 재개 장치에 묶으면 운영 부담만 늘어난다. **DB 장애로는 gate를 닫지 않는다.**
+
+서킷 설정(`coupon.admission.db-circuit`): sliding-window-size 10, minimum-calls 5, failure-rate-threshold 50, wait-duration-in-open PT5S, permitted-calls-in-half-open 3. 창 크기·최소 호출·임계율은 PG 조회 서킷과 같다. 열림 대기는 PG의 10초보다 짧은 5초다. PG는 30초 주기 스케줄러가 호출자라 10초로 충분하지만, claim은 승격 TTL 30초 안에 사용자가 재시도해야 하므로 TTL 안에 반열림 시험 기회가 여러 번 있어야 한다. 반열림 허용 호출 3은 C=3과 맞춰 자리 수만큼 시험한다. 서킷은 열림 대기 시간이 지나면 호출이 없어도 스스로 반열림으로 넘어간다. 승격이 멈추면 claim이 오지 않아 전이가 일어나지 않고 영구히 멈추기 때문이다.
+
+관측: `coupon.admission.reject{reason=db_unavailable}` 카운터, 관리자 상태 조회 응답의 `dbCircuitState`(CLOSED·OPEN·HALF_OPEN).
+
+## 8. API 계약
+
+### 8-1. 엔드포인트
+
+| 메서드 | 경로 | 성공 응답 |
+|---|---|---|
+| POST | `/api/v1/coupon-campaigns/{id}/issues` | 202 `{seq}` 신규 접수 / 200 `{seq}` 이미 접수됨(대기·승격 중, 첫 접수 번호) / 200 `{couponId}` 이미 발급 |
+| GET | `/api/v1/coupon-campaigns/{id}/issues/me` | 200 `{status, rank?, couponId?}` status ∈ WAITING·ADMITTED·ISSUED·SOLD_OUT·NONE |
+| POST | `/api/v1/coupon-campaigns/{id}/issues/claim` | 201 `{couponId}` 신규 발급 / 200 기존 발급 |
+| GET | `/api/v1/coupons` | 200 본인 보유 목록, issuedAt desc · couponId desc |
+| POST | `/api-admin/v1/coupon-campaigns/{id}/admission/open` `/close` | 200. 관리자 전용 (`ROLE_ADMIN`, CSRF 토큰 필요) |
+| GET | `/api-admin/v1/coupon-campaigns/{id}/admission` | 200 `{open, closeReason?, closedAt?, generationMatches, dbCircuitState, waiting, admitted, permits, seq, activeRequests, autoReopenEnabled, recentAutoReopens, redisUnavailable}`. 관리자 전용. 읽기만 하며 Redis 예외가 나도 gate 상태를 바꾸지 않고 `redisUnavailable=true`로 답한다 |
+
+- 사용자 식별은 기존 `X-USER-ID` 헤더 방식 그대로. 신원은 요청 파라미터가 아니라 요청의 맥락이므로 본문으로 받지 않는다(W1 §7.1과 같은 원칙). 소유자 조건은 조회 조건에 함께 걸어, 타인의 발급 상태·보유 목록이 응답에 나타날 경로를 만들지 않는다.
+- 응답은 기존 `ApiResponse` 봉투(`meta` + `data`)를 그대로 쓴다. 엔드포인트마다 다른 봉투를 쓰면 요청자가 성공·실패 판정 규칙을 따로 알아야 한다.
+- 202는 "접수됨"이며 발급 보장이 아니다. `meta.message`에 명시한다.
+- 상태 조회는 `ZRANK`·`ZSCORE`·DB 조회를 조합한 **읽기만** 하므로 Lua가 필요 없다. 조회 사이에 상태가 바뀌어도 다음 폴링에서 갱신된다.
+- 상태 판정 순서: DB에 쿠폰이 있으면 `ISSUED` → waiting에 있으면 `WAITING`(rank) → admitted에 있으면 `ADMITTED` → 어디에도 없으면 `issued_count ≥ total_quota` 또는 `seq ≥ 접수 상한`이면 `SOLD_OUT`, 아니면 `NONE`. 승격이 만료된 사용자는 `NONE`이 되어 재접수 대상이다.
+- 관리자 상태 조회의 `activeRequests`는 캠페인별이 아니라 **이 인스턴스 전체**의 값이다. Redis에서 읽는 항목(`generationMatches`·`waiting`·`admitted`·`permits`·`seq`)은 하나라도 실패하면 모두 null이 되고 `redisUnavailable=true`로 답한다. 부분 성공은 표현하지 않는다.
+
+### 8-2. 실패의 의미 — 요청자의 다음 행동
+
+W1 §8-1의 분류를 따른다. 상태 코드는 "어떤 규칙을 어겼는가"가 아니라 **"다음에 무엇을 하면 되는가"** 를 지시한다. `400` 보낸 값을 고쳐라 / `404` 대상을 다시 찾아라 / `409` 대상의 상태가 허락하지 않는다 / `429` 잠시 후 그대로 다시 보내라 / `503` 서버 쪽 문제, 잠시 후 다시 보내라. 어떤 불변식이 걸렸는지는 `INV-W8-xx`로 로그·지표에만 남긴다.
+
+| 상황 | status | errorCode | `reject{reason}` | 요청자의 다음 행동 | 관련 규칙 |
+|---|---|---|---|---|---|
+| 캠페인 없음 | 404 | `Not Found` | — | 캠페인 목록에서 다시 확인 | — |
+| 캠페인 비활성(종료) | 409 | `Conflict` | — | 재시도 무의미. 이미 받은 쿠폰은 보유 목록에 그대로 | — |
+| 품절 (접수 상한 초과 또는 DB 총량 소진) | 409 | `Conflict` | `sold_out` | 재시도 무의미. 다른 캠페인 | INV-W8-02 |
+| 이미 접수됨 (대기·승격 중) | 200 | — | — | 상태 조회로 진행 확인. 접수 효과는 늘지 않음 | INV-W8-03 |
+| 이미 발급됨 (접수·claim 재요청) | 200 | — | — | 추가 행동 없음. 첫 결과를 그대로 받음 | INV-W8-03 |
+| 승격되지 않은 상태에서 claim | 409 | `Conflict` | `not_admitted` | 상태 조회 후 ADMITTED가 되면 다시 claim | — |
+| 승격 만료 후 claim | 409 | `Conflict` | `not_admitted` | 다시 접수 (상태는 NONE) | D5 |
+| 처리 자리 없음 | 429 | `Too Many Requests` | `no_permit` | 잠시 후 같은 요청 재시도. 쿠폰은 남아 있음 | INV-W8-01 |
+| gate 닫힘 | 503 | `Service Unavailable` | `gate_closed` | 잠시 후 재시도. 접수 상태는 보존됨(Redis 상태가 살아 있는 한) | INV-W8-05 |
+| Redis 예외·타임아웃 (이 요청이 감지, gate 닫음) | 503 | `Service Unavailable` | `redis_error` | 잠시 후 재시도 | INV-W8-05 |
+| Redis 세대 불일치 (상태 유실 감지, gate 닫음) | 503 | `Service Unavailable` | `stale_generation` | 관리자 open 뒤 재접수 | INV-W8-12 |
+| Lua 응답 해석 불가 (gate 닫음) | 503 | `Service Unavailable` | `unexpected_result` | 잠시 후 재시도 | INV-W8-05 |
+| DB 일시 불가 (서킷 열림 또는 재시도 소진) | 503 | `Service Unavailable` | `db_unavailable` | 잠시 후 같은 claim을 다시 보낸다. 승격 시간이 다시 채워진다 | INV-W8-13 |
+
+`reject{reason}`은 Counter `coupon.admission.reject`의 태그다. 요청자는 status·errorCode만 보고, 어느 이유로 거절됐는지는 이 태그와 로그로만 남긴다(§15).
+
+**미승격 claim을 403이 아니라 409로 두는 이유:** 403은 "권한이 없다"를 뜻한다. 미승격은 권한 문제가 아니라 **대상(접수)의 상태가 아직 claim을 허락하지 않는 것**이므로 409 가족이다. W1에서 "확정된 주문에 쿠폰 적용"을 409로 둔 것과 같은 판단이다.
+
+**품절과 자리 없음을 다른 코드로 두는 이유:** 둘 다 "지금은 못 받는다"지만 다음 행동이 정반대다. 품절(409)은 재시도가 무의미하고, 자리 없음(429)은 재시도하면 받는다. 하나의 코드로 합치면 클라이언트가 재시도 여부를 판단할 수 없다. 429·503을 "나중 발급 보장"처럼 표현하지 않는다.
+
+**이미 접수됨을 409가 아니라 200으로 두는 이유:** 같은 사용자의 재요청은 응답을 못 받은 클라이언트의 재전송일 가능성이 높다. 거절하면 클라이언트가 "실패"로 해석해 다른 경로를 타게 된다. 첫 접수 결과(seq)를 그대로 돌려주는 것이 멱등이다(W1 INV-005와 같은 패턴).
+
+## 9. 불변식과 반례
+
+W1 §6 형식을 따른다. 각 규칙에 "깨지는 입력"을 하나씩 붙여, §11 검증 시나리오와 1:1로 대응시킨다.
+
+| ID | 규칙 | 책임 | 깨지는 입력 (반례) | 기대 결과 |
+|---|---|---|---|---|
+| INV-W8-01 | **수용량.** 발급 트랜잭션을 실행 중인 자리는 언제 세어도 C개 이하다 | Redis permits ZSET + 세마포어 Lua | C=3, 3개 점유 중 4번째 claim | 429. DB 발급 경로 진입 0, 쿠폰 0 |
+| INV-W8-02 | **총량.** `issued_count ≤ total_quota`를 모든 실행에서 지킨다 | DB 조건부 UPDATE | 총량 5, 8명이 DB 발급 핸들러 동시 호출 | 발급 5, 품절 3, issued_count 5. 쿠폰 row 5 |
+| INV-W8-03 | **사용자당 1장.** 같은 (campaign, user)의 쿠폰은 언제 세어도 1건이다 | DB UNIQUE + 접수 Lua의 중복 확인 | 같은 사용자의 claim 2건 동시 도착 | 쿠폰 1, 두 응답의 couponId 동일, issued_count 증가 1 |
+| INV-W8-04 | **자기 반납.** 자리 반납은 자기 token만 지우며, 반복·오반납이 다른 자리에 영향을 주지 않는다 | `ZREM permits ownToken` | 자기 token 2회 반납 / 존재하지 않는 token 반납 | 다른 활성 token 유지. permits 크기 변화 0 |
+| INV-W8-05 | **fail-closed.** Redis 응답이 불확실하면 신규 발급을 시작하지 않는다. 기존 결과 조회는 유지한다 | gate + 예외 처리 | Redis 중단 중 접수·claim / 보유 목록 조회 | 접수·claim 503, DB 신규 효과 0 / 보유 목록 200 |
+| INV-W8-06 | **순서.** 접수 번호가 작은 사용자가 먼저 승격된다 (보는 것은 **승격 순서**다. 같은 묶음 C명 안의 발급 순서는 보장하지 않는다, §12-1) | ZSET score = seq, `ZPOPMIN` | 10명 순차 접수, C=3 | 3명씩 접수 번호 순으로 ADMITTED → 각 묶음이 발급을 마치면 다음 3명 |
+| INV-W8-07 | **반납 ≠ 되돌림.** 자리 반납·반납 실패는 발급된 쿠폰과 issued_count를 바꾸지 않는다 | 반납 로직이 DB를 건드리지 않음 | 발급 성공 후 `ZREM` 3회 실패 | 쿠폰 유지, issued_count 유지, `release{result=failed}` +1. 자리는 TTL 뒤 회수 |
+| INV-W8-08 | **원자적 롤백.** issued_count 증가와 쿠폰 insert는 함께 성공하거나 함께 취소된다 | 단일 TX | 증가 후 insert 강제 실패 | 둘 다 rollback. 종료 후 자리 반납 |
+| INV-W8-09 | **하트비트 회수.** 하트비트가 끊긴 token은 TTL 뒤 회수되고, 하트비트가 살아 있는 token은 TTL이 지나도 유지된다 | ZSET score + `ZREMRANGEBYSCORE` + `ZADD XX` | ① 하트비트 중단 후 TTL 경과 / ② 하트비트 유지 중 TTL 경과 | ① 회수, 다음 claim 진입 가능 / ② 유지 |
+| INV-W8-12 | **상태 유실 감지.** Redis 세대값이 기억한 값과 다르면 신규 접수·승격·claim을 거절하고 gate를 닫는다 | `gen` 키 + Lua 첫 줄 | gate open 후 Redis `FLUSHALL`(상태 유실 재현) → 접수 | 503, gate 닫힘, DB 신규 효과 0. 관리자 open 후 재개 |
+| INV-W8-11 | **되살림 없음.** 회수된 token은 늦은 하트비트로 되살아나지 않는다 | `ZADD XX` | 회수 뒤 원래 실행이 하트비트 전송 | permits에 없음. 반납 시 `release{result=recovered}` +1 |
+| INV-W8-10 | **재개 조건.** 닫힌 gate는 관리자 open으로 열린다. 자동 재개를 켠 경우에만, Redis 오류로 닫힌 gate가 세대 일치를 연속 확인했을 때 스스로 열린다. 세대 불일치, 관리자 닫힘, 반복 한도 초과는 항상 관리자 open으로만 열린다 | 메모리 플래그 + 닫힌 이유 + probe | 자동 재개 꺼짐, Redis 복구 후 세대 일치 (전체 시나리오는 §11 INV-W8-10 ①~⑤) | gate 닫힘 유지. 관리자 open 후 재개 |
+| INV-W8-13 | **DB 장애 시 대기열 보존.** DB 일시 오류는 승격을 지우지 않고, 서킷이 열린 동안은 DB를 호출하지 않으며 다음 대기자를 승격하지 않는다 | 서킷브레이커 + 승격 제거 조건 | DB 오류를 연속 주입한 뒤 claim과 승격 | claim 503, DB 호출 0, 승격 유지, 대기열 길이 불변. DB 복구 후 같은 사용자의 claim 성공 |
+
+## 10. 결정 기록 (ADR 요약)
+
+| # | 결정 | 대안 | 선택 이유 | 감수하는 비용 |
+|---|---|---|---|---|
+| D1 | 폴링 비동기 | 동기 대기 / 서버 worker | 대기 인원이 웹 스레드를 점유하지 않음. 대기실 UX | 사용자가 접수, 상태 조회, 발급 요청 세 번에 걸쳐 호출한다(동기 방식은 한 번). admitted TTL 관리 |
+| D2 | 승격은 200ms 스케줄러 | 요청마다 / 반납 직후 | 조회 폭주와 승격 부하 분리 | 최대 200ms 승격 지연 |
+| D4 | 하트비트 기반 자리 회수 (10초 갱신 / 30초 TTL) | 회수 없음 + 관리자 정리 / 단순 EXPIRE | 운영자 개입 없는 자동 복구. 초과 발급은 DB가 막으므로 일시적 C+1은 부하 증가에 그침 | STW·파티션 30초 초과 시 일시적 C 초과. `release{result=recovered}` 메트릭으로 관측 |
+| D4-1 | 늦은 반납(`ZREM` 0)은 `release{result=recovered}` 카운터 + warn | 조용히 무시 | 회수 빈도를 모르면 TTL 적절성·STW 빈도를 판단할 수 없음 | 코드 두 줄 |
+| D4-2 | 하트비트 갱신 실패는 로그만. gate는 접수·claim 경로에서만 닫힘 | 하트비트 스레드도 gate 닫기 | 장애 감지 지점을 한 곳으로 유지. 진행 중 DB TX는 중단 의미 없음 | 하트비트 실패 중 TTL 경과 시 C+1 가능 |
+| D4-3 | 테스트는 spy로 DB만 멈추고 하트비트는 운영 코드 그대로. barrier deadline 5초 | TTL 늘리기 / 테스트 훅 | 테스트가 운영 코드를 바꾸지 않음 | ①회수 ②유지 두 테스트 분리 필요 |
+| D4-4 | heartbeat 10초 / permit TTL 30초. 테스트 프로파일 200ms / 1초 | 3초 / 10초 | 오탐(살아 있는 실행 회수) 비용 > 복구 지연 비용. 분산락 lease 30초·1/3 갱신이 통용 기본값 | 누수 복구에 최대 30초 |
+| D14 | 세대 키로 상태 유실 감지. open마다 새 세대, 모든 Lua 첫 줄에서 확인 | PING 헬스체크 / 감지 없음 | PING은 연결만 확인하고 상태 보존은 확인하지 못함. 키 1개 + Lua 1줄로 "내가 알던 상태인가"를 매 요청 확인 | Redis 데이터 유실 시 대기자는 재접수 필요. Lua마다 GET 1회 추가 |
+| D5 | admitted TTL 30초 | 없음 | 미응답 사용자가 자리를 영구 예약하는 것 방지 | 느린 클라이언트는 재접수 필요 |
+| D6 | Lua 3개(접수·세마포어·승격) | 5개 / 0개 | 여러 키를 함께 바꾸는 상태 전이는 Lua, 읽기와 삭제는 단일 명령 | — |
+| D7 | 접수 상한 = 총량 × 1.2 | 총량과 동일 + 실패분 복원 | 복원 로직은 드물게 실행돼 버그가 숨기 쉬움. 여유분이 DB 실패를 흡수 | 접수됐으나 품절되는 사용자 발생 → 202 문구로 "접수 ≠ 확정" 명시 |
+| D8 | 조건부 UPDATE + UNIQUE | 비관적 잠금 | 락 대기 없는 경쟁, 자리 C개의 의미 유지. 재고 차감과 같은 패턴 | — |
+| D9 | DB TX 재시도 2회(일시 오류만), 반납 3회. 횟수는 재시도만 센다: DB는 최초 1회 + 재시도 2회(최대 3회 호출), 반납은 최초 1회 + 재시도 3회(최대 4회 호출) | 무재시도 / 무제한 | 품절·중복은 업무 결과라 재시도 제외. 반납 실패는 누수로 직결 | 재시도 중 자리 점유 유지 |
+| D10 | gate 메모리 플래그. 수동 재개 기본 + 설정으로 켜는 조건부 자동 재개(REDIS_ERROR만, 세대 일치 연속 3회, 10분 3회 상한) | 수동만 / PING 기반 자동 / 자동 기본 켬 | 수동만: 운영자가 모르면 발급이 멈춘 채 남음. PING 기반: 상태 보존을 확인하지 못함. 자동 기본 켬: 세대 키가 잡지 못하는 과거 상태 위에서 열릴 수 있음 | 인스턴스별 개별 개방. 설정·probe·이유 추적 코드 추가. 자동 재개를 켠 환경은 §12-1 "세대는 맞지만 기록이 과거 상태" 위험을 받아들임 |
+| D12 | Kafka 리스너 관련 설정 변경 없음 | auto-startup=false / `@DirtiesContext` | 6주차 리스너는 commerce-streamer에 있어 commerce-api 테스트 컨텍스트에서 기동되지 않음. auto-startup을 끄면 리스너가 돌아야 하는 crossAppTest가 깨짐 | Kafka 컨테이너 기동 시간은 그대로 |
+| D13 | 접수 202 / 기존 200 / 발급 완료 201 | 접수 201 | 201은 "생성됨"이라 아직 없는 쿠폰에 쓰면 거짓 응답 | — |
+| D15 | DB 장애는 순번 유지(+ 시스템 사정 실패 시 승격 시간 재충전) + 전체 하나의 서킷브레이커 + 승격 멈춤 + 장애 후 만료 유예 | gate 닫기 / 대응 없음 / 유예 없이 TTL만 | DB가 죽어도 Redis 기록은 믿을 수 있어 자동 복구가 안전하다. gate는 Redis 상태를 의심할 때 쓰는 장치다. 재충전·유예는 시스템 사정으로 흐른 시간을 사용자에게 물리지 않기 위한 것이다 | 서킷 설정과 테스트 추가. 장애 직후 admitted-ttl 동안 떠난 승격자가 자리 예약을 쥔다(§12-1) |
+
+## 11. 검증 시나리오
+
+| 불변식 | 시나리오 | 기대 |
+|---|---|---|
+| INV-W8-01 | C=3, 서로 다른 3명 발급 시작 후 DB TX 직전 barrier로 유지, 4번째 claim | 4번째 429, DB 진입 0, 쿠폰 0 |
+| INV-W8-01 | 위에서 1명 완료·반납 후 4번째 재시도 | 빈자리 진입, 쿠폰 발급 |
+| INV-W8-01 | 모두 종료 후 | permits 0, 쿠폰 3, issued_count 3 |
+| INV-W8-04 | 자기 token 2회 반납 / 모르는 token 반납 | 다른 활성 token 유지 |
+| INV-W8-06 | 10명 순차 접수, C=3 → 승격 → 승격된 사용자가 claim, 반복 | 3명씩 접수 번호 순으로 승격. 승격 순서가 접수 순서와 같다 |
+| INV-W8-02 | 총량 5, 8명이 DB 발급 핸들러 동시 호출 | 발급 5, 품절 3, issued_count 5. Redis에서 거절된 건은 품절에 미포함 |
+| INV-W8-03 | 같은 사용자 재요청 / 동시 2요청 | couponId 동일, 발급 수 증가 0 |
+| INV-W8-08 | issued_count 증가 후 insert 실패 | 둘 다 rollback, 종료 후 자리 반납 |
+| INV-W8-07 | 발급 성공 후 반납 실패 주입 | 쿠폰·issued_count 유지, 누수 메트릭 증가 |
+| INV-W8-05 | 실제 Redis 중단 | 접수·claim 503, DB 신규 효과 0, 보유 목록 조회 정상 |
+| INV-W8-10 ① | auto-reopen 꺼짐. Redis 오류로 닫힘 → 복구, 세대 일치 | 자동으로 열리지 않음. 관리자 open 후 재개 |
+| INV-W8-10 ② | auto-reopen 켬. Redis 오류로 닫힘 → probe 세대 일치 3회 | 자동 열림. 기존 대기자 순번 유지, 재접수는 같은 번호 |
+| INV-W8-10 ③ | auto-reopen 켬. `FLUSHALL` 후 probe | `STALE_GENERATION`, 자동으로 열리지 않음 |
+| INV-W8-10 ④ | auto-reopen 켬. 관리자 close 후 probe | 자동으로 열리지 않음 |
+| INV-W8-10 ⑤ | auto-reopen 켬. 10분 안에 4번째 자동 재개 조건 충족 | `FLAPPING`, 자동으로 열리지 않음 |
+| INV-W8-13 ① | DB 일시 오류 1회 후 재시도 성공 | 쿠폰 발급, 승격 제거 |
+| INV-W8-13 ② | 재시도 소진 | 503, 자리 반납, 승격 유지 → 같은 사용자 재claim 성공 |
+| INV-W8-13 ③ | 연속 실패로 서킷 열림 | claim 503, DB 호출 0, promoteOnce가 아무도 승격하지 않음 |
+| INV-W8-13 ④ | 서킷 반열림에서 성공 | 닫힘, 승격 재개 |
+| INV-W8-13 ⑤ | 품절과 유니크 중복 | 서킷 실패로 세지 않음 |
+| INV-W8-13 ⑥ | 재시도 소진 503 뒤 원래 승격 만료 시각이 지남 | 승격 시간이 다시 채워져 유지. 재claim 성공 |
+| INV-W8-13 ⑦ | 이미 만료·제거된 승격 상태에서 claim 실패 | 승격이 되살아나지 않음(`ZADD XX`). 409, 상태 NONE |
+| INV-W8-13 ⑧ | 승격 후 서킷 OPEN → admitted-ttl보다 길게 경과 → 서킷 닫힘 → 다시 시도한 적 없는 승격자의 claim | 성공(장애 후 만료 유예) |
+| INV-W8-13 ⑨ | 서킷이 닫힌 뒤 admitted-ttl 경과 | 평소대로 만료. 떠난 승격자가 정리되고 다음 대기자가 승격 |
+| INV-W8-13 ⑩ | 서킷이 열린 적 없음 | 기존 만료 동작과 같다 (D5 시나리오) |
+| INV-W8-12 | open 상태에서 `FLUSHALL` 후 접수·claim | 세대 불일치 → 503, gate 닫힘. open 후 새 세대로 재개 |
+| INV-W8-09 ① | 하트비트 중단 후 TTL(테스트 1초) 경과 → 다음 claim | 회수됨. 새 claim 진입 |
+| INV-W8-09 ② | 하트비트 유지 중 TTL 경과 | token 유지. 4번째 claim 429 |
+| INV-W8-11 | 회수 뒤 원래 실행이 하트비트·반납 | permits에 되살아나지 않음. `release{result=recovered}` +1 |
+| D5 | admitted TTL(운영 30초, 테스트 1초) 미응답 | 다음 대기자 승격, 미응답자는 NONE |
+| D7 | 총량 5, 접수 상한 6, 7명 접수 | 6명 202, 1명 즉시 409 품절 |
+| §8-2 | 미승격 사용자 claim / 승격 만료 후 claim | 409. DB 진입 0 |
+
+barrier는 deadline(5초, TTL보다 짧게)을 두고, 실패 시 자신이 시작한 실행을 정리한다. barrier 대기 중에도 하트비트 스레드는 운영 코드 그대로 돌아야 한다(D4-3). 시간 의존 테스트는 테스트 프로파일의 짧은 주기(200ms / 1초)로 실행한다. mock Redis가 아닌 Testcontainers Redis·MySQL을 사용한다. DB 오류는 `CouponIssueService` spy로 주입한다. 서킷 열림 대기는 테스트 프로파일에서 1초로 짧게 잡는다.
+
+운영 코드에 테스트 전용 기능을 두지 않기 위해, 싱글톤 상태와 시각은 테스트 설정에서 바꿔 끼운 포장지로 다룬다. `ResettableCouponIssueCircuit`(테스트마다 서킷을 새 운영 구현으로 교체), `FaultInjectingCouponAdmissionQueue`(승격 경로의 Redis 예외 주입, 반납 실패 주입용 세마포어 포장지도 같은 꼴), `AdjustableClock`(운영 Clock 빈 대신 오프셋을 더해 TTL·유예·서킷 대기를 sleep 없이 넘김). 셋 다 `src/test`에만 있고 `@Primary`로 끼운다.
+
+## 12. 한계
+
+설계는 한계를 없애는 것이 아니라 어느 한계를 받아들일지 정하는 것이다. 한계를 하나 없애면 다른 한계가 생긴다. 이 절은 받아들인 한계와, 그 대신 택하지 않은 대안이 무엇을 요구했는지를 기록한다. "택하지 않은 대안과 그 비용" 열이 비어 있으면 몰라서 안 한 것과 구별되지 않는다.
+
+### 12-1. 보장하지 않는 것
+
+| 한계 | 왜 생기나 | 영향 | 택하지 않은 대안과 그 비용 |
+|---|---|---|---|
+| 동시 실행 수 C는 **상한이 아니라 목표**다 | 실행이 살아 있는데 STW·네트워크 파티션이 30초를 넘기면 하트비트가 끊겨 자리가 회수되고 다음 사용자가 들어온다 (§7-2) | 그 순간 C+1. 초과 발급은 없고 DB 부하만 한 건 늘어난다 | 회수 없음(D4-C): C를 절대 넘지 않지만 누수 시 운영자 개입과 수용량 감소. 이번엔 `release{result=recovered}` 메트릭으로 빈도만 관측 |
+| Redis 상태 유실 시 대기자 손실 | Redis가 재시작되면 waiting·admitted가 비어 대기자의 접수 기록이 사라진다. 세대 키(D14)가 유실을 감지해 gate를 닫지만, 사라진 대기열을 복원하지는 않는다 | 대기자는 재접수해야 한다. 순서도 다시 정해진다 | 대기열 DB 이중 기록: 복원 가능하지만 접수 피크에 DB 쓰기가 생겨 처리량 제한 취지가 약해짐. Redis AOF: 인프라 설정이라 이번 범위 밖 |
+| 세대 확인과 실행 사이의 틈 | Lua는 세대 확인과 자리 획득을 한 덩어리로 하지만, 세대 확인 직후 Redis가 재시작되고 다른 인스턴스가 open해 새 세대를 쓰면, 그 실행은 구세대 자리를 쥔 채 DB 발급을 진행한다 | 극히 짧은 틈. C+1 가능, 초과 발급은 없음 | 재개를 한 곳에서 조율(리더 선출): 조율자라는 새 구성요소가 생김 |
+| 다중 인스턴스 gate 동기화 | gate가 인스턴스 메모리 플래그라 인스턴스마다 따로 열고 닫는다 (§7-3) | 한 인스턴스만 열려 있으면 그 인스턴스로 온 요청만 처리된다 | Redis 플래그: Redis 장애 때 플래그도 못 읽어 결국 fail-closed. 중앙 설정(feature flag 서비스): 외부 의존 추가 |
+| 접수 ≠ 발급 보장 | 접수 상한을 총량 × 1.2로 두어(D7) 상한 안에 들어온 사용자 중 일부는 품절을 받는다 | "접수됐는데 못 받았다"는 경험이 생긴다. 202 문구로 접수와 확정을 구분한다 | 상한 = 총량 + 실패분 복원: 접수된 사람은 모두 받지만, 복원은 드물게 실행되는 코드라 버그가 숨기 쉽다 |
+| 세대는 맞지만 기록이 과거 상태인 경우 | 예전 복제본으로 넘어가면 세대 키가 잡지 못한다 | 자동 재개를 켜면 틀린 기록 위에서 열린다 | 수동 재개만 허용: 운영자가 모르면 발급이 멈춘다. 그래서 자동 재개를 기본으로 켜지 않았다 |
+| 운영자 초기화 수단 없음 | open은 기존 키를 지우지 않는다 | 남은 기록을 믿기 어려우면 Redis 키를 직접 지워야 한다 | open에 초기화 선택지 추가: API와 테스트가 늘고, 진행 중 발급 확인이 틀리면 C를 넘는다 |
+| 닫힘 알림 없음 | 기본값인 수동 재개에서는 운영자가 닫힘을 알아야 한다 | 모르면 발급이 멈춘 채로 남는다 | 알림 연동: 알림 채널 필요. 이번에는 `gate_open` Gauge만 노출해 알림을 걸 지점을 둔다 |
+| 장애 직후 admitted-ttl 동안 떠난 승격자가 자리 예약을 쥔다 | 장애 후 만료 유예 | 복구 직후 최대 admitted-ttl 동안 처리량이 떨어질 수 있다 | 만료 시 원래 번호로 대기열 복귀: 떠난 사용자가 반복해서 되돌아와 자리를 막으므로 횟수 제한과 접수 번호 저장이 필요하다 |
+| 실행 중인 앱에서 관리자 API를 호출할 수 없다 | 관리자 경계가 ROLE_ADMIN을 요구하지만 인증 수단이 없고 테스트의 가짜 사용자로만 통과한다. 2주차부터의 구조다 | gate 기본값이 닫힘이라 실제로 띄운 서버에서는 수용을 열 수 없다. 측정도 HTTP 부하 도구 대신 테스트 코드로 한다 | 로컬 프로파일 전용 관리자 인증 추가: 2주차 보안 설정과 테스트를 고쳐야 하고, 실제 인증으로 확대하지 않는다는 이번 범위와 어긋난다 |
+| 스케줄러 스레드 1개 공유 | 하트비트, 승격, probe가 한 스레드에서 돈다 | 캠페인 수 × Redis 타임아웃이 자리 TTL 여유(20초)에 가까워지면 하트비트가 밀린다 | 하트비트 전용 스레드 분리 |
+| 마지막 수량에서 순서 보장의 단위는 C | 동시에 처리 중인 C명 사이에서는 DB 도착 순서가 접수 번호와 다를 수 있다 | 남은 수량이 C보다 적을 때 번호가 늦은 사용자가 먼저 받을 수 있다 | C=1: 처리량이 줄어든다. 접수 상한을 총량과 같게: 접수된 사람은 모두 받으므로 순서가 결과를 바꾸지 않지만 실패분 복원이 필요하다 |
+
+### 12-2. 조건이 붙는 보장
+
+고칠 것이 아니라 조건을 지키고 있는지 확인할 것이다. 조건은 모두 §10의 결정에 들어 있다.
+
+| 보장 | 조건 |
+|---|---|
+| 접수 순서 = 승격 순서 (INV-W8-06) | 접수 번호를 Redis `INCR` 한 곳에서 발급할 때. Redis가 다중 master로 분산되면 성립하지 않는다 |
+| 승격 지연 ≤ 200ms | 승격 스케줄러가 전용 스레드에서 돌 때 (C11). 다른 스케줄러와 스레드를 공유하면 그 작업 시간만큼 밀린다. 전용 스레드 안에서도 하트비트·probe와 함께 돌므로, 그 작업이 Redis 타임아웃(300ms)에 걸리지 않을 때만 성립한다 (§12-1) |
+| fail-closed 반응 ≤ 300ms | 쿠폰 전용 Redis 연결의 commandTimeout(C6). 기본 연결(60초)을 쓰면 장애 시 요청이 60초간 걸린다 |
+| 수용 판단에 복제 지연 없음 | master 연결 사용(§4). 테스트 Redis는 master·replica가 같은 컨테이너라 복제 지연 시나리오는 재현되지 않는다 |
+
+### 12-3. 측정 계획
+
+측정할 수 있는 것은 측정한다. 측정하면 한계가 사라지는 것이 아니라 한계의 경계가 숫자로 그려진다. 구현 10단계(`check` 통과) 뒤 11단계로 수행하고, 결과는 `docs/week8/reference/02-measurement.md`에 기록한다.
+
+측정 방식은 4주차(k6 + performance_schema)와 다르다. 관리자 API를 실행 중인 앱에서 호출할 수 없어(§12-1) HTTP 경로로는 gate를 열 수 없으므로, **테스트 코드로 서버 내부(Facade·Service·어댑터 빈)를 직접 호출**한다. 4주차에서는 프로토콜만 가져온다: 조건마다 준비 실행 1회를 버리고 3회 측정, `mean/min/max/range_pct` 요약, 환경(`env.txt`) 기록. 서블릿 스택(Tomcat 스레드)은 측정에서 빠진다. 측정 코드는 `check`에 포함되지 않는 별도 소스셋에 둔다.
+
+| # | 측정 | 방법 | 보려는 것 |
+|---|---|---|---|
+| M0 | 천장과 한 건 처리 시간 | Hikari 풀 크기·획득 타임아웃, MySQL max_connections, Tomcat 스레드, CPU·Docker 할당 기록. `CouponIssueService.issue` 500회 순차(처음 50회 폐기) p50·p95·p99·max | "자리 하나당 초당 처리 건수"의 근거 |
+| S1 | DB만, 제한 없음 | 동시 10·50·100·200으로 Service 직접 호출. 사용자 2,000명 | 초당 처리, p50/p99, 오류, 풀 사용·대기 수, 같은 시간 다른 조회의 지연 |
+| S2 | 창구 제한, 자리 없으면 즉시 거절 | C=3, 대기열 없이 세마포어 → Service → 반납 | 발급 수, 쿠폰이 남았는데 거절된 수, DB p99, 풀 대기 수 |
+| S3 | 대기열과 승격(전체 흐름) | 2,000명 접수 → 폴링(200ms·1초) → 승격되면 claim | 거절 수, 접수→발급 완료 p50/p95/p99, 초당 발급 |
+| S4 | C 바꿔 보기 | S3 방식, C = 1·2·3·5·8·10 | 초당 발급, 완료 p99, DB p99, 풀 대기, 오류 |
+| S5 | 승격 주기 바꿔 보기 | S3 방식, C=3, 주기 50·100·200·500ms | 초당 발급, 완료 p99, 승격 Lua 호출 수 |
+
+결과는 측정 뒤 `02-measurement.md`에 넣고, 설계 결정을 바꿔야 한다고 나오면 바꾸지 않고 먼저 보고한다.
+
+### 12-4. 측정하지 않는 것
+
+- 분산 세마포어의 장애 주입 안전성. Jepsen 류의 검증은 범위 밖이다. 이번 실험은 로컬 단일 인스턴스의 통제된 장애·재개이며, 감지되지 않은 Redis 상태 손실이나 다중 인스턴스 자동 장애 전환 아래에서 안전한 분산 세마포어라고 주장하지 않는다.
+- 세대 키가 잡지 못하는 유실. 데이터가 일부만 손상되거나 오래된 replica로 failover된 경우(세대값은 있지만 permits가 과거 상태)는 감지하지 못한다.
+- 테스트 Redis의 복제 지연. Testcontainers로 master·replica를 분리하면 재현되지만, 설계가 이미 master만 쓰므로 결과가 코드를 바꾸지 않는다.
+
+## 13. 비범위
+
+쿠폰 사용·할인 적용, 알림, 다중 인스턴스 gate 동기화, 감지되지 않은 Redis 상태 손실 하에서의 안전성 보장, 주문 이벤트·구매 활동과의 연동.
+
+## 14. 단순화 경로 (일정이 밀릴 때)
+
+D1을 worker 방식으로 바꾸면 승격 단계·admitted·claim API·승격 Lua가 모두 사라진다. 스케줄러가 "세마포어 자리 획득 → ZPOPMIN → DB 발급 → 반납"을 직접 수행하고 사용자는 상태 조회만 한다. Lua는 세마포어 1개로 줄고 API는 2개(접수·상태)가 된다. 수용량·정합성·장애 정책(§6·§7)과 하트비트 회수는 그대로 유효하다.
+
+**실무 확장 경로.** 발급 구간(세마포어 획득 → DB 발급 → 반납)을 Kafka 컨슈머로 옮기면 commerce-api는 접수와 상태 조회만 맡고, commerce-streamer가 발급을 맡는 구조가 된다. 대기열·세마포어·gate가 domain 인터페이스 뒤에 있어 발급 구간만 떼어낼 수 있다. 이번에는 한 앱에 담았다.
+
+## 15. 설정값과 지표
+
+### 15-1. 설정값 (`coupon.admission.*`)
+
+| 키 | 운영값 | test 프로파일 | 뜻 | 정한 근거 |
+|---|---|---|---|---|
+| `enabled` | true | false | 승격·probe 스케줄러의 인스턴스별 자동 실행. 꺼지면 빈은 있고 실행만 안 한다 | 관례 — Outbox relay·결제 조회 스케줄러와 같은 방식. 테스트는 `promoteOnce()`를 직접 호출 |
+| `capacity` | 3 | 3 | 동시에 DB 발급 TX를 실행하는 자리 수 C | 발제 제시값. 측정(S4)으로 근거를 붙인다 |
+| `promote-fixed-delay` | PT0.2S | PT0.2S | 승격 주기. 사용자가 느끼는 승격 지연 상한 | 어림 — 폴링 간격보다 짧고 Redis 부하는 요청 수에 비례하지 않는 값. 측정(S5) |
+| `admitted-ttl` | PT30S | PT1S | 승격 뒤 claim을 보내지 않는 사용자의 예약을 취소하기까지 | 어림 — 사람이 버튼을 누르는 시간. test는 대기를 줄이기 위해 1초 |
+| `heartbeat-interval` | PT10S | PT0.2S | 실행 중 자리의 하트비트 주기 | 관례 — 분산 락 lease의 1/3 갱신 (D4-4) |
+| `permit-ttl` | PT30S | PT1S | 하트비트가 끊긴 자리를 회수하기까지 | 관례 — 주기의 3배. 두 번 연속 놓쳐도 유지 (D4-4) |
+| `accept-limit-multiplier` | 1.2 | 1.2 | 접수 상한 = 총량 × 배수 | 어림 — DB 실패분을 흡수할 여유. 복원 로직 대신 선택 (D7) |
+| `auto-reopen.enabled` | false | false (테스트 클래스에서 true로 켬) | 조건부 자동 재개 | 보수적 기본값 (D10) |
+| `auto-reopen.probe-interval` | PT5S | PT5S | 닫힌 동안 `GET gen` 확인 주기 | 어림 |
+| `auto-reopen.required-successes` | 3 | 3 | 연속 일치 횟수 | 어림 — 한 번의 운으로 열리지 않게 |
+| `auto-reopen.max-reopens` | 3 | 3 | window 안 자동 재개 허용 횟수 | 어림 |
+| `auto-reopen.window` | PT10M | PT10M | 위 횟수를 세는 창 | 어림 |
+| `db-circuit.sliding-window-size` | 10 | 10 | 실패율 계산 표본 수 | 관례 — PG 조회 서킷과 같음 |
+| `db-circuit.minimum-calls` | 5 | 5 | 이만큼 모이기 전엔 열리지 않음 | 관례 — PG 조회 서킷과 같음 |
+| `db-circuit.failure-rate-threshold` | 50 | 50 | 실패율 임계(%) | 관례 — PG 조회 서킷과 같음 |
+| `db-circuit.wait-duration-in-open` | PT5S | PT1S | 열림 유지 시간. 지나면 호출 없이 반열림으로 | 어림 — 승격 TTL 30초 안에 반열림 시험 기회가 여러 번 (§7-4). test는 전이 테스트 대기를 줄임 |
+| `db-circuit.permitted-calls-in-half-open` | 3 | 3 | 반열림 시험 호출 수 | 어림 — C와 맞춤 |
+
+그 밖에 코드 상수: DB 재시도 2회, 반납 재시도 3회(D9), 쿠폰 전용 Redis commandTimeout 300ms·connectTimeout 500ms(C6, §12-2).
+
+### 15-2. 지표 (`coupon.admission.*`)
+
+| 이름 | 종류 | 태그 | 뜻 |
+|---|---|---|---|
+| `reject` | Counter | `reason` ∈ gate_closed · stale_generation · unexpected_result · redis_error · sold_out · not_admitted · no_permit · db_unavailable | 거절 사유 (§8-2 표) |
+| `release` | Counter | `result` ∈ released · recovered · failed | 자리 반납. `recovered`는 이미 회수돼 있던 경우(D4-1), `failed`는 3회 재시도 실패(INV-W8-07) |
+| `gate_close` | Counter | `reason` ∈ admin · redis_error · stale_generation · unexpected_result · flapping | gate가 닫힌 이유 (§7-3) |
+| `auto_reopen` | Counter | — | 조건부 자동 재개 횟수 |
+| `active_requests` | Gauge | — | 이 인스턴스에서 자리를 쥐고 DB 발급을 실행 중인 요청 수 |
+| `permits` | Gauge | `campaign` | permits 크기. **지표를 수집할 때만** `ZCARD`를 읽고, 수집 중 Redis 예외는 삼키고 마지막 값을 유지한다. gate를 닫지 않는다. `active_requests`와의 차이가 누수다 (§7-2) |
+| `gate_open` | Gauge | `campaign` | 열림 1 / 닫힘 0. 알림을 걸 지점 (§12-1) |
