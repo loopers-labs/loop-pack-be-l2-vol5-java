@@ -1,3 +1,7 @@
+coupon:
+  admission:
+    max-concurrency: 3
+
 server:
   shutdown: graceful
   tomcat:

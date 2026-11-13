@@ -2,6 +2,8 @@ package com.loopers.application.coupon.service;
 
 import com.loopers.application.coupon.command.CouponIssueCommand;
 import com.loopers.application.coupon.port.CouponDatabaseClock;
+import com.loopers.application.coupon.port.CouponTransactionObserver;
+import com.loopers.application.coupon.support.CouponExecution;
 import com.loopers.application.coupon.result.CouponIssueResult;
 import com.loopers.application.coupon.support.CouponSlotBusyException;
 import com.loopers.application.support.error.ApplicationErrorCode;
@@ -27,9 +29,16 @@ public class IssueCouponTxService {
     private final CouponCampaignRepository campaignRepository;
     private final CouponSlotRepository slotRepository;
     private final CouponDatabaseClock databaseClock;
+    private final CouponTransactionObserver observer;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.READ_COMMITTED)
     public CouponIssueResult execute(CouponIssueCommand command) {
+        return execute(command, null);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.READ_COMMITTED)
+    public CouponIssueResult execute(CouponIssueCommand command, CouponExecution execution) {
+        observer.observe(execution);
         Optional<Coupon> existing = couponRepository.findByCampaignIdAndUserId(command.campaignId(), command.userId());
         if (existing.isPresent()) {
             return CouponIssueResult.from(existing.get(), false);
