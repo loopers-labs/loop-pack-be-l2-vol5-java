@@ -1,6 +1,7 @@
 package com.loopers.interfaces.api;
 
 import com.loopers.domain.brand.enums.BrandErrorCode;
+import com.loopers.domain.coupon.enums.CouponErrorCode;
 import com.loopers.domain.order.enums.OrderErrorCode;
 import com.loopers.domain.payment.enums.PaymentErrorCode;
 import com.loopers.domain.point.enums.PointErrorCode;
@@ -42,7 +43,13 @@ public final class ErrorStatusMapper {
         Map.entry(OrderErrorCode.INVALID_QUANTITY, HttpStatus.BAD_REQUEST),
         Map.entry(PaymentErrorCode.INVALID_PAYMENT_REQUEST, HttpStatus.BAD_REQUEST),
         Map.entry(PaymentErrorCode.PAYMENT_ATTEMPT_CONFLICT, HttpStatus.CONFLICT),
-        Map.entry(PaymentErrorCode.PAYMENT_NOT_FOUND, HttpStatus.NOT_FOUND)
+        Map.entry(PaymentErrorCode.PAYMENT_NOT_FOUND, HttpStatus.NOT_FOUND),
+        Map.entry(CouponErrorCode.CAMPAIGN_NOT_FOUND, HttpStatus.NOT_FOUND),
+        Map.entry(CouponErrorCode.CAMPAIGN_NOT_ACTIVE, HttpStatus.CONFLICT),
+        Map.entry(CouponErrorCode.INVALID_CAMPAIGN_NAME, HttpStatus.BAD_REQUEST),
+        Map.entry(CouponErrorCode.INVALID_TOTAL_QUOTA, HttpStatus.BAD_REQUEST),
+        Map.entry(CouponErrorCode.INVALID_DISCOUNT, HttpStatus.BAD_REQUEST),
+        Map.entry(CouponErrorCode.INVALID_COUPON_DESCRIPTION, HttpStatus.BAD_REQUEST)
     );
 
     private ErrorStatusMapper() {}
