@@ -1,0 +1,122 @@
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+time="2026-11-13T11:55:38+09:00" level=warning msg="Request Failed" error="Post \"http://127.0.0.1:8080/api/v1/coupon-campaigns/1/issues\": dial tcp 127.0.0.1:8080: connectex: No connection could be made because the target machine actively refused it."
+
+
+  █ TOTAL RESULTS 
+
+    CUSTOM
+    issue_201......................: 585    9.702988/s
+    issue_201_duration.............: avg=704.41ms p(50)=596.02ms p(95)=1.42s    p(99)=2.34s    max=2.71s count=585  
+    issue_429......................: 26001  431.260475/s
+    issue_duration.................: avg=450.13ms p(50)=437.41ms p(95)=654.8ms  p(99)=1.26s    max=2.71s count=26677
+    issue_other....................: 91     1.509354/s
+    list_duration..................: avg=134.59ms p(50)=74.29ms  p(95)=441.72ms p(99)=992.93ms max=1.52s count=1197 
+
+    HTTP
+    http_req_duration..............: avg=436.58ms p(50)=433.25ms p(95)=650.11ms p(99)=1.24s    max=2.71s count=27874
+      { expected_response:true }...: avg=321.65ms p(50)=153.86ms p(95)=1.05s    p(99)=1.7s     max=2.71s count=1782 
+    http_req_failed................: 93.60% 26092 out of 27874
+    http_reqs......................: 27874  462.326622/s
+
+    EXECUTION
+    dropped_iterations.............: 4      0.066345/s
+    iteration_duration.............: avg=437.29ms p(50)=433.46ms p(95)=650.41ms p(99)=1.24s    max=2.71s count=27874
+    iterations.....................: 27874  462.326622/s
+    vus............................: 201    min=201            max=220
+    vus_max........................: 224    min=220            max=224
+
+    NETWORK
+    data_received..................: 7.3 MB 120 kB/s
+    data_sent......................: 3.9 MB 65 kB/s
+
+
+
