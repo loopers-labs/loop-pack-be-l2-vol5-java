@@ -34,7 +34,7 @@ coupon:
   issue:
     publish:
       ack-timeout: 500ms # PUB-002. 한 요청 스레드가 broker 확인을 기다리는 상한
-      max-in-flight: 64 # PUB-004. 동시에 확인을 기다리는 요청 스레드의 상한. EXP-022: 32 는 22,800/s 에서 천장이 됐고 64 는 CPU 천장 위다
+      max-in-flight: 128 # PUB-004. 동시에 확인을 기다리는 요청 스레드의 상한. 목표 접수율 × 복제된 ack p50 (EXP-022: broker 3 대에서 ack p50 2.8ms, 25,000/s 면 70)
     worker:
       concurrency: 4 # WRK-002. consumer 스레드 수. 1부의 knee 4 가 출발값이고 EXP-023 뒤 다시 정한다
       auto-startup: true # WRK-008. 끄면 접수는 받되 기록하지 않는다. EXP-023 이 끈 채 예약을 쌓는다
