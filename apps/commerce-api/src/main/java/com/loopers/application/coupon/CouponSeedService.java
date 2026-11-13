@@ -39,6 +39,9 @@ public class CouponSeedService {
             return createSeed();
         }
         CouponCampaign campaign = candidates.getFirst();
+        if (campaign.getTotalQuota() != SEED_QUOTA) {
+            throw inconsistentSeed("로컬 seed의 발급 한도가 예상과 다릅니다.");
+        }
         if (!reset) {
             if (coupons.countIssuedByCampaignId(campaign.getId()) != campaign.getIssuedCount()) {
                 throw inconsistentSeed("로컬 seed의 실제 발급 결과와 발급 수가 일치하지 않습니다.");

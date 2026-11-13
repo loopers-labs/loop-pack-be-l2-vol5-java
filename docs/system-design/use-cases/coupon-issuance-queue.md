@@ -475,7 +475,7 @@ redis-cli -p 6379 SREM coupon:issue:permits <token>
 
 ### 로컬 seed 초기화와 작업 이력
 
-기존 seed reset은 DB의 발급 수를 되돌리고 그 캠페인의 발급된 쿠폰을 지운다. Redis 성공 이력과 중복 접수 정보가 남아 있으면 DB에서는 초기화된 쿠폰을 작업 조회가 여전히 발급 완료로 응답할 수 있다. 그래서 seed reset은 DB를 바꾸기 전에 해당 캠페인의 대기열 정보를 먼저 정리한다(`CouponSeedService`).
+기존 seed reset은 DB의 발급 수를 되돌리고 그 캠페인의 발급된 쿠폰을 지운다. Redis 성공 이력과 중복 접수 정보가 남아 있으면 DB에서는 지운 쿠폰을 작업 조회가 여전히 발급 완료로 응답할 수 있다. 그래서 seed reset은 DB를 바꾸기 전에 해당 캠페인의 대기열 정보를 먼저 정리한다(`CouponSeedService`).
 
 reset은 다른 API 인스턴스를 모두 멈춘 상태에서 한 인스턴스로만 실행한다. 신규 수용 닫힘은 인스턴스마다 메모리에 있는 상태라서, 다른 인스턴스가 살아 있으면 reset 중에도 접수와 발급이 계속될 수 있기 때문이다. 동기 발급 설계에서 seed runner를 로컬 단일 인스턴스에서만 실행하고 여러 인스턴스의 동시 reset을 지원하지 않는 것과 같은 조건이다.
 
@@ -578,7 +578,7 @@ Redis 재시작 후 접수 정보를 보존하는 수준은 실제 RDB, AOF 설�
 | 접수와 조회 API | `CouponIssueQueueFacadeTest`, `CouponIssueRequestV1ApiE2ETest` | 30, 10 |
 | worker | 처리 단계 `CouponIssueQueueWorkerTest`, 실행 구조 `CouponIssueQueueWorkerRunnerTest`(컨텍스트 종료 순서 포함), 설정 `CouponIssueQueuePropertiesTest`, 실제 MySQL·Redis `CouponIssueQueueWorkerE2ETest` | 22, 9, 3, 8 |
 | seed reset과 수동 복구 | `RedisCouponIssueQueueCleanupIntegrationTest`, `CouponSeedServiceIntegrationTest`, 복구 Lua `RedisCouponIssueQueueRecoverScriptIntegrationTest` | 4, 8, 10 |
-| 전체 회귀 | `./gradlew :apps:commerce-api:check` | 1,058, 실패·오류·skip 0 |
+| 전체 회귀 | `./gradlew :apps:commerce-api:check` | 1,061, 실패·오류·skip 0 |
 
 구현을 마친 뒤 최종 검토에서 결함 세 가지를 찾았고, 각각 실패하는 테스트를 먼저 확인한 뒤 고쳤다. worker 종료 대기가 Redis 연결이 멈춘 뒤에 실행되던 문제, 중복 충돌 뒤 쿠폰 재조회가 실패하면 작업이 처리 중으로 남고 수용이 열려 있던 문제, 수동 복구 Lua가 앱이 읽을 수 없는 사유와 couponId를 받던 문제다. 동기 발급의 거절 직전 쿠폰 재확인과 복구 Lua의 couponId 범위 검사도 같은 방식으로 추가했다.
 

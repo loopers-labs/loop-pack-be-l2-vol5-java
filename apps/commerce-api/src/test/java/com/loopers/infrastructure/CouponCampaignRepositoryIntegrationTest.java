@@ -164,8 +164,8 @@ class CouponCampaignRepositoryIntegrationTest {
         assertThatThrownBy(() -> transact(() -> {
             assertThat(repository.incrementIssuedCountIfIssuable(campaign.getId(), ISSUE_NOW)).isEqualTo(1);
             assertThat(repository.findById(campaign.getId()).orElseThrow().getTerminatedAt()).isEqualTo(ISSUE_NOW);
-            throw new IllegalStateException("쿠폰 배정 실패 재현");
-        })).isInstanceOf(IllegalStateException.class).hasMessage("쿠폰 배정 실패 재현");
+            throw new IllegalStateException("쿠폰 insert 실패 재현");
+        })).isInstanceOf(IllegalStateException.class).hasMessage("쿠폰 insert 실패 재현");
 
         CouponCampaign stored = reload(campaign.getId());
         assertThat(stored.getIssuedCount()).isZero();

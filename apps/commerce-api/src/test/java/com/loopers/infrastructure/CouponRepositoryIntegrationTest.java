@@ -173,6 +173,52 @@ class CouponRepositoryIntegrationTest {
         }
     }
 
+    @DisplayName("쿠폰 스키마 SQL을 테이블이 없는 DB에 적용하면 NOT NULL 컬럼, 같은 사용자 유일 키, 캠페인 FK를 가진 테이블을 만든다.")
+    @Test
+    void createsCouponTableWhenMissing() throws Exception {
+        String migration = Files.readString(Path.of(System.getProperty("coupon.migration")))
+            .replace("loopers.coupons", "loopers.fresh_coupons")
+            .replace("table_name = 'coupons'", "table_name = 'fresh_coupons'")
+            .replace("fk_coupons_", "fk_fresh_coupons_");
+        ByteArrayResource script = new ByteArrayResource(migration.getBytes(StandardCharsets.UTF_8));
+        try {
+            jdbc.execute("DROP TABLE IF EXISTS fresh_coupons");
+
+            executeWithDifferentDefaultSchema(script);
+
+            assertThat(jdbc.queryForList("""
+                SELECT COLUMN_NAME FROM information_schema.columns
+                WHERE TABLE_SCHEMA = 'loopers' AND TABLE_NAME = 'fresh_coupons'
+                  AND COLUMN_NAME IN ('campaign_id', 'user_id', 'issued_at') AND IS_NULLABLE = 'NO'
+                """, String.class)).containsExactlyInAnyOrder("campaign_id", "user_id", "issued_at");
+            assertThat(jdbc.queryForList("""
+                SELECT COLUMN_NAME FROM information_schema.statistics
+                WHERE TABLE_SCHEMA = 'loopers' AND TABLE_NAME = 'fresh_coupons' AND INDEX_NAME = 'uk_coupon_campaign_user'
+                ORDER BY SEQ_IN_INDEX
+                """, String.class)).containsExactly("campaign_id", "user_id");
+            assertThat(jdbc.queryForList("""
+                SELECT REFERENCED_TABLE_NAME FROM information_schema.key_column_usage
+                WHERE TABLE_SCHEMA = 'loopers' AND TABLE_NAME = 'fresh_coupons'
+                  AND COLUMN_NAME = 'campaign_id' AND REFERENCED_TABLE_NAME IS NOT NULL
+                """, String.class)).containsExactly("coupon_campaigns");
+        } finally {
+            jdbc.execute("DROP TABLE IF EXISTS fresh_coupons");
+        }
+    }
+
+    @DisplayName("중복이 아닌 제약 오류는 중복 예외로 바꾸지 않고, 이미 저장된 쿠폰은 다시 insert하지 않는다.")
+    @Test
+    void distinguishesNonDuplicateFailuresAndRejectsStoredCoupon() {
+        long userId = createUser();
+        Long missingCampaignId = Long.MAX_VALUE;
+
+        assertThatThrownBy(() -> transact(() -> coupons.insert(Coupon.create(missingCampaignId, userId, NOW))))
+            .isInstanceOf(DataIntegrityViolationException.class)
+            .isNotInstanceOf(DuplicateCouponIssueException.class);
+        assertThatThrownBy(() -> transact(() -> coupons.insert(Coupon.reconstitute(1L, campaign(1), userId, NOW))))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
     @DisplayName("동일 사용자 제약 충돌은 별도로 구분하고 마지막 카운터와 조기 종료 기록도 rollback한다.")
     @Test
     void rollsBackCounterAndTerminationOnDuplicateUserConstraint() {

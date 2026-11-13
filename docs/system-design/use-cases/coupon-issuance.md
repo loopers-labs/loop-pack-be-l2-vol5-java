@@ -233,7 +233,7 @@ flowchart LR
 | 생성 | `local` seed runner가 예약된 이름 `local-coupon-seed`로 조회하고 없을 때 캠페인을 생성 |
 | 재설정 | `coupon.seed.reset=true`일 때 해당 seed만 초기화. 캠페인 reset SQL → 그 캠페인의 쿠폰 행 삭제 순서로 같은 TX에서 실행한다. 지운 쿠폰 ID는 다시 쓰지 않는다. 기본값은 false이며 만료 후 재시작도 기존 기간·발급 결과를 보존한다. DB를 바꾸기 전에 해당 캠페인의 대기열 정보를 먼저 정리하고, permit token이 남아 있거나 그 캠페인의 작업이 대기·처리 중이면 reset을 거절한다([대기열 결정 기록](coupon-issuance-queue-decisions.md)의 Q-11). |
 | 발급 기간 | 생성·reset 시 `ApplicationTime`으로 읽은 실행 시각부터 하루 뒤까지 설정한다. 시작 포함·종료 제외이며 기본 재시작에서는 갱신하지 않는다. |
-| 이상 상태 | 예약된 이름 중복에는 임의 선택 없이 실패해 local 앱 시작을 중단한다. 기본 실행은 쿠폰 행 수와 발급 수의 일치를 확인한다. |
+| 이상 상태 | 예약된 이름 중복, seed 캠페인의 총량이 100이 아닌 경우에는 임의 선택·자동 수정 없이 실패해 local 앱 시작을 중단한다. 기본 실행은 쿠폰 행 수와 발급 수의 일치도 확인한다. |
 | DB 스키마 | 로컬은 `ddl-auto=validate`다. 새 DB는 [init.sql](../../../docker/mysql/init.sql), 기존 DB는 [쿠폰 스키마 준비 SQL](../../../docker/mysql/coupon-migration.sql)을 적용한 뒤 시작한다. 이 파일은 캠페인 테이블을 먼저 만들고 쿠폰 테이블을 만든다. 예전 모델로 만든 DB에서는 미발급 쿠폰 행을 지우고 `user_id`, `issued_at`을 NOT NULL로 바꾼다. 발급된 쿠폰은 그대로 두며, 앱을 멈춘 뒤 적용한다. |
 | 범위 | 기존 commerce-api와 개발 DB만 사용. 별도 서버·앱·캠페인 CRUD 없음 |
 
@@ -276,7 +276,7 @@ flowchart TD
 | 규칙 | 설명 |
 |---|---|
 | 동시 중복 방지 | 선조회가 아닌 트랜잭션 재확인과 유일 제약이 담당한다. |
-| 격리 수준 | 발급 TX는 `READ_COMMITTED`; 카운터 UPDATE가 0행일 때 기존 쿠폰 확인이 앞 트랜잭션의 commit을 읽게 한다. UPDATE 앞에 일반 조회가 생겨도 잠금 대기 전 스냅샷에 묶이지 않는다(D-26). |
+| 격리 수준 | 발급 TX는 `READ_COMMITTED`; 카운터 UPDATE가 0행일 때 기존 쿠폰 확인과 최신 캠페인 상태 재조회가 앞 트랜잭션의 commit을 읽게 한다. UPDATE 앞에 일반 조회가 생겨도 잠금 대기 전 스냅샷에 묶이지 않는다(D-26). |
 | 트랜잭션 경계 | permit 획득 뒤 DB TX 시작, commit/rollback 완료를 트랜잭션 완료 상태로 확인한 뒤 token 반환. 종료를 확인하지 못하면 반환하지 않는다(D-24). Redis 호출은 TX 밖이다. |
 | 쿠폰 행 경합 | 캠페인 카운터 행에서 발급 TX가 직렬화된다. 쿠폰은 새 행을 insert하므로 쿠폰 행끼리 경합하지 않는다. |
 
@@ -468,7 +468,7 @@ Set이 비었다는 사실만으로 기존 DB 작업 종료를 대신 확인하�
 | 장애 대상 | 실제 application endpoint; 테스트가 만든 자원만 정리 |
 | 테스트 판정 | 0건·skip·연결 실패는 통과가 아님; 기존 MySQL·Redis fixture 우선 사용 |
 | 실행 시점 | 발급 facade 21건·발급 실행기 14건·DB 트랜잭션 2건(완료 상태 기록 포함)·설정 3건·수용 시작 runner 5건(단위 4·실제 Redis 1)·HTTP E2E 8건·Redis 장애/스크립트/반환 실패 E2E 4건·발급 트랜잭션 실패 E2E 2건·Redis 오류 분류 4건을 검증했다. 실제 Redis와 barrier로 수용량 3, 한 permit 반환 중 재수용, 마지막 한 장의 동일 사용자 경합, 시작 시 Set 확인, Redis 중단 후 기존 결과 조회, 활성 permit의 무TTL을 확인했다. 실제 MySQL로 잠금 대기 timeout 뒤 permit 반환과 commit 직전 연결 끊김 뒤 permit 유지를 확인했다. |
-| 전체 회귀 | `./gradlew :apps:commerce-api:check` 통과: 1,058건, 실패·오류·skip 0. 대기열 구현과 쿠폰 insert 전환을 포함한 결과다. |
+| 전체 회귀 | `./gradlew :apps:commerce-api:check` 통과: 1,061건, 실패·오류·skip 0. 대기열 구현과 쿠폰 insert 전환을 포함한 결과다. |
 
 ## 관련 결정 기록
 

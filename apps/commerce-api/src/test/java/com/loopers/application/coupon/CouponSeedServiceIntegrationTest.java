@@ -130,7 +130,7 @@ class CouponSeedServiceIntegrationTest {
         assertThat(storedCoupon.getIssuedAt()).isEqualTo(FIRST_START.plusSeconds(1));
     }
 
-    @DisplayName("명시적 reset은 품절 seed의 쿠폰을 지우고 기간·카운터·종료를 복원하며, 다른 캠페인과 지운 쿠폰 ID는 다시 쓰지 않는다.")
+    @DisplayName("명시적 reset은 품절 seed의 쿠폰을 지우고 기간·카운터·종료를 복원한다. 다른 캠페인은 그대로 두고, 지운 쿠폰 ID는 다시 쓰지 않는다.")
     @Test
     void resetsOnlySeedAndDeletesItsCoupons() {
         CouponCampaign campaign = prepareSeed();
@@ -215,6 +215,25 @@ class CouponSeedServiceIntegrationTest {
         CouponCampaign stored = transact(() -> campaigns.findById(campaign.getId()).orElseThrow());
         assertThat(stored.getIssuedCount()).isEqualTo(2);
         assertThat(stockIds(campaign.getId())).containsExactly(kept.getId());
+    }
+
+    @DisplayName("seed 캠페인의 총량이 100이 아니면 기본 실행과 reset 모두 실패하고 DB를 바꾸지 않는다.")
+    @Test
+    void rejectsSeedWithUnexpectedTotalQuota() {
+        CouponCampaign campaign = prepareSeed();
+        Coupon issued = issueOne(campaign.getId(), createUser(), FIRST_START.plusSeconds(1));
+        jdbc.update("UPDATE coupon_campaigns SET total_quota = 50 WHERE id = ?", campaign.getId());
+        clock.set(FIRST_START.plusSeconds(172800));
+
+        assertThatThrownBy(() -> seed.prepare(false)).isInstanceOfSatisfying(CoreException.class,
+            failure -> assertThat(failure.getErrorType()).isEqualTo(ErrorType.INTERNAL_ERROR));
+        assertThatThrownBy(() -> seed.prepare(true)).isInstanceOfSatisfying(CoreException.class,
+            failure -> assertThat(failure.getErrorType()).isEqualTo(ErrorType.INTERNAL_ERROR));
+
+        CouponCampaign stored = transact(() -> campaigns.findById(campaign.getId()).orElseThrow());
+        assertThat(stored.getIssuedCount()).isEqualTo(1);
+        assertThat(stored.getStartAt()).isEqualTo(FIRST_START);
+        assertThat(stockIds(campaign.getId())).containsExactly(issued.getId());
     }
 
     @DisplayName("예약된 seed 이름이 중복되면 임의의 행을 선택해 초기화하지 않는다.")
