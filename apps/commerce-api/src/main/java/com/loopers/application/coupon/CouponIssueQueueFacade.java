@@ -8,6 +8,7 @@ import com.loopers.domain.coupon.Coupon;
 import com.loopers.domain.coupon.CouponCampaign;
 import com.loopers.domain.coupon.CouponCampaignRepository;
 import com.loopers.domain.coupon.CouponIssueRequest;
+import com.loopers.domain.coupon.CouponIssueRequestStatus;
 import com.loopers.domain.coupon.CouponRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
@@ -84,22 +85,61 @@ public class CouponIssueQueueFacade {
 
     /**
      * 시스템 실패로 끝난 작업을 사용자가 다시 접수했다. 그사이 발급된 쿠폰이 있으면 성공으로 바꾸고,
-     * 없으면 새 접수와 같은 확인을 거쳐 같은 작업 ID로 다시 대기시킨다. 거절되면 작업은 실패 그대로 둔다.
+     * 없으면 새 접수와 같은 확인을 거쳐 같은 작업 ID로 다시 대기시킨다. 처음 확인 뒤 동기 발급으로 쿠폰을 받고
+     * 캠페인이 품절되거나 한도가 찼을 수 있으므로, 거절하기 직전에 쿠폰을 다시 확인한다. 그래도 없으면 작업은 실패 그대로 둔다.
      */
     private CouponIssueQueueResult resubmitSystemFailure(CouponIssueRequest failed) {
-        Optional<Coupon> coupon = coupons.findIssuedByCampaignIdAndUserId(failed.getCampaignId(), failed.getUserId());
-        if (coupon.isPresent()) {
-            return afterResubmission(queueCall(() ->
-                queue.markFailedSucceeded(failed.getRequestId(), failed.getReason(), coupon.get().getId())));
+        Optional<CouponIssueQueueResult> issued = succeedIfCouponIssued(failed);
+        if (issued.isPresent()) {
+            return issued.get();
         }
-        requireNewIssuable(failed.getCampaignId());
+        try {
+            requireNewIssuable(failed.getCampaignId());
+        } catch (CoreException rejection) {
+            return currentResubmissionResultOrReject(failed, rejection);
+        }
         CouponIssueQueueResubmission result = queueCall(() ->
             queue.requeueFailed(failed.getRequestId(), failed.getReason(), properties.requireCapacity()));
+        if (result instanceof CouponIssueQueueResubmission.Full) {
+            return currentResubmissionResultOrReject(failed,
+                new CoreException(ErrorType.TOO_MANY_REQUESTS, "쿠폰 발급 대기열이 가득 찼습니다."));
+        }
         if (result instanceof CouponIssueQueueResubmission.Requeued) {
             log.info("시스템 실패로 끝난 대기열 작업을 사용자 재접수로 다시 대기시킵니다. requestId={}, previousReason={}, "
                 + "previousExecutionToken={}", failed.getRequestId(), failed.getReason(), failed.getExecutionToken());
         }
         return afterResubmission(result);
+    }
+
+    /**
+     * 거절 직전 쿠폰과 작업을 다시 확인한다. 다른 재접수가 작업 상태를 바꿨다면 현재 상태를 돌려준다.
+     */
+    private CouponIssueQueueResult currentResubmissionResultOrReject(CouponIssueRequest failed, CoreException rejection) {
+        Optional<CouponIssueQueueResult> issued = succeedIfCouponIssued(failed);
+        if (issued.isPresent()) {
+            return issued.get();
+        }
+        Optional<CouponIssueRequest> current = queueCall(() ->
+            queue.findByCampaignIdAndUserId(failed.getCampaignId(), failed.getUserId()));
+        if (current.isEmpty() || isSameSystemFailure(current.get(), failed)) {
+            throw rejection;
+        }
+        return currentState(current.get());
+    }
+
+    private static boolean isSameSystemFailure(CouponIssueRequest current, CouponIssueRequest failed) {
+        return current.getRequestId().equals(failed.getRequestId())
+            && current.getStatus() == CouponIssueRequestStatus.FAILED
+            && current.getReason() == failed.getReason();
+    }
+
+    /**
+     * 시스템 실패 작업의 사용자에게 이미 발급된 쿠폰이 있으면, 작업이 여전히 같은 사유의 실패일 때만 성공으로 바꾼다.
+     */
+    private Optional<CouponIssueQueueResult> succeedIfCouponIssued(CouponIssueRequest failed) {
+        return coupons.findIssuedByCampaignIdAndUserId(failed.getCampaignId(), failed.getUserId())
+            .map(coupon -> afterResubmission(queueCall(() ->
+                queue.markFailedSucceeded(failed.getRequestId(), failed.getReason(), coupon.getId()))));
     }
 
     private CouponIssueQueueResult afterResubmission(CouponIssueQueueResubmission result) {

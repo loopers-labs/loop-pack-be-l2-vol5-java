@@ -172,6 +172,85 @@ class CouponIssueQueueFacadeTest {
         assertErrorType(() -> facade.submit(CAMPAIGN_ID, USER_ID), ErrorType.TOO_MANY_REQUESTS);
     }
 
+    @DisplayName("시스템 실패 재접수 중 그사이 쿠폰이 발급되고 캠페인이 품절되면, 409 대신 같은 작업을 성공으로 바꾼다.")
+    @Test
+    void marksSystemFailureSucceededWhenCouponIsIssuedBeforeCampaignRejection() {
+        CouponIssueRequest failed = stored(CouponIssueRequestStatus.FAILED, null, CouponIssueRequestReason.DB_ERROR, TOKEN);
+        CouponIssueRequest succeeded = stored(CouponIssueRequestStatus.SUCCEEDED, 105L, null, TOKEN);
+        when(queue.findByCampaignIdAndUserId(CAMPAIGN_ID, USER_ID)).thenReturn(Optional.of(failed));
+        when(coupons.findIssuedByCampaignIdAndUserId(CAMPAIGN_ID, USER_ID))
+            .thenReturn(Optional.empty(), Optional.of(coupon()));
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(soldOutCampaign()));
+        when(queue.markFailedSucceeded(REQUEST_ID, CouponIssueRequestReason.DB_ERROR, 105L))
+            .thenReturn(new CouponIssueQueueResubmission.Succeeded(succeeded));
+
+        assertThat(facade.submit(CAMPAIGN_ID, USER_ID)).isEqualTo(new Completed(succeeded));
+        verify(queue, never()).requeueFailed(any(), any(), anyInt());
+    }
+
+    @DisplayName("캠페인 거절 전에 다른 요청이 같은 작업을 다시 대기시키면 현재 작업을 돌려준다.")
+    @Test
+    void returnsCurrentRequestWhenCampaignRejectsAfterConcurrentResubmission() {
+        CouponIssueRequest failed = stored(CouponIssueRequestStatus.FAILED, null, CouponIssueRequestReason.DB_ERROR, TOKEN);
+        CouponIssueRequest waiting = stored(CouponIssueRequestStatus.WAITING, null, null, null);
+        when(queue.findByCampaignIdAndUserId(CAMPAIGN_ID, USER_ID)).thenReturn(Optional.of(failed), Optional.of(waiting));
+        when(coupons.findIssuedByCampaignIdAndUserId(CAMPAIGN_ID, USER_ID))
+            .thenReturn(Optional.empty(), Optional.empty());
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(soldOutCampaign()));
+
+        assertThat(facade.submit(CAMPAIGN_ID, USER_ID)).isEqualTo(new Accepted(waiting));
+        verify(queue, never()).requeueFailed(any(), any(), anyInt());
+    }
+
+    @DisplayName("시스템 실패 재접수 중 그사이 쿠폰이 발급되고 대기열이 가득 차면, 429 대신 같은 작업을 성공으로 바꾼다.")
+    @Test
+    void marksSystemFailureSucceededWhenCouponIsIssuedBeforeFullRejection() {
+        CouponIssueRequest failed = stored(CouponIssueRequestStatus.FAILED, null, CouponIssueRequestReason.DB_ERROR, TOKEN);
+        CouponIssueRequest succeeded = stored(CouponIssueRequestStatus.SUCCEEDED, 105L, null, TOKEN);
+        when(queue.findByCampaignIdAndUserId(CAMPAIGN_ID, USER_ID)).thenReturn(Optional.of(failed));
+        when(coupons.findIssuedByCampaignIdAndUserId(CAMPAIGN_ID, USER_ID))
+            .thenReturn(Optional.empty(), Optional.of(coupon()));
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(campaign));
+        when(queue.requeueFailed(REQUEST_ID, CouponIssueRequestReason.DB_ERROR, CAPACITY))
+            .thenReturn(new CouponIssueQueueResubmission.Full(failed));
+        when(queue.markFailedSucceeded(REQUEST_ID, CouponIssueRequestReason.DB_ERROR, 105L))
+            .thenReturn(new CouponIssueQueueResubmission.Succeeded(succeeded));
+
+        assertThat(facade.submit(CAMPAIGN_ID, USER_ID)).isEqualTo(new Completed(succeeded));
+    }
+
+    @DisplayName("대기열 만석 거절 전에 다른 요청이 같은 작업을 다시 대기시키면 현재 작업을 돌려준다.")
+    @Test
+    void returnsCurrentRequestWhenFullRejectionFollowsConcurrentResubmission() {
+        CouponIssueRequest failed = stored(CouponIssueRequestStatus.FAILED, null, CouponIssueRequestReason.DB_ERROR, TOKEN);
+        CouponIssueRequest waiting = stored(CouponIssueRequestStatus.WAITING, null, null, null);
+        when(queue.findByCampaignIdAndUserId(CAMPAIGN_ID, USER_ID)).thenReturn(Optional.of(failed), Optional.of(waiting));
+        when(coupons.findIssuedByCampaignIdAndUserId(CAMPAIGN_ID, USER_ID))
+            .thenReturn(Optional.empty(), Optional.empty());
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(campaign));
+        when(queue.requeueFailed(REQUEST_ID, CouponIssueRequestReason.DB_ERROR, CAPACITY))
+            .thenReturn(new CouponIssueQueueResubmission.Full(failed));
+
+        assertThat(facade.submit(CAMPAIGN_ID, USER_ID)).isEqualTo(new Accepted(waiting));
+    }
+
+    @DisplayName("시스템 실패 재접수 중 신규 수용이 닫혀도 그사이 발급된 쿠폰이 있으면 같은 작업을 성공으로 바꾼다.")
+    @Test
+    void marksSystemFailureSucceededWhenCouponIsIssuedBeforeAdmissionRejection() {
+        admission.close();
+        CouponIssueRequest failed = stored(CouponIssueRequestStatus.FAILED, null, CouponIssueRequestReason.INTERNAL_ERROR,
+            TOKEN);
+        CouponIssueRequest succeeded = stored(CouponIssueRequestStatus.SUCCEEDED, 105L, null, TOKEN);
+        when(queue.findByCampaignIdAndUserId(CAMPAIGN_ID, USER_ID)).thenReturn(Optional.of(failed));
+        when(coupons.findIssuedByCampaignIdAndUserId(CAMPAIGN_ID, USER_ID))
+            .thenReturn(Optional.empty(), Optional.of(coupon()));
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(campaign));
+        when(queue.markFailedSucceeded(REQUEST_ID, CouponIssueRequestReason.INTERNAL_ERROR, 105L))
+            .thenReturn(new CouponIssueQueueResubmission.Succeeded(succeeded));
+
+        assertThat(facade.submit(CAMPAIGN_ID, USER_ID)).isEqualTo(new Completed(succeeded));
+    }
+
     @DisplayName("시스템 실패 작업을 다른 요청이 먼저 다시 대기시켰으면 바뀐 현재 작업을 돌려준다.")
     @Test
     void returnsCurrentRequestWhenResubmissionChangedMeanwhile() {

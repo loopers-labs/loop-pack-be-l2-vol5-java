@@ -144,6 +144,27 @@ class RedisCouponIssueQueueResubmitIntegrationTest {
         assertThat(processingIds()).isEmpty();
     }
 
+    @DisplayName("성공으로 바꿀 때도 사유가 다르거나 이미 다시 대기했으면 손대지 않고 현재 작업을 돌려준다.")
+    @Test
+    void returnsChangedWhenMarkingSucceededAfterStateOrReasonChanged() {
+        CouponIssueRequest otherReason = failedRequest(912L, "token-912", CouponIssueRequestReason.INTERNAL_ERROR);
+        CouponIssueRequest requeued = failedRequest(913L, "token-913", CouponIssueRequestReason.DB_ERROR);
+        queue.requeueFailed(requeued.getRequestId(), CouponIssueRequestReason.DB_ERROR, 20);
+
+        assertThat(queue.markFailedSucceeded(otherReason.getRequestId(), CouponIssueRequestReason.DB_ERROR, 2002L))
+            .isInstanceOfSatisfying(Changed.class, changed -> {
+                assertThat(changed.request().getStatus()).isEqualTo(CouponIssueRequestStatus.FAILED);
+                assertThat(changed.request().getReason()).isEqualTo(CouponIssueRequestReason.INTERNAL_ERROR);
+                assertThat(changed.request().getCouponId()).isNull();
+            });
+        assertThat(queue.markFailedSucceeded(requeued.getRequestId(), CouponIssueRequestReason.DB_ERROR, 2003L))
+            .isInstanceOfSatisfying(Changed.class, changed -> {
+                assertThat(changed.request().getStatus()).isEqualTo(CouponIssueRequestStatus.WAITING);
+                assertThat(changed.request().getCouponId()).isNull();
+            });
+        assertThat(waitingIds()).containsExactly(requeued.getRequestId());
+    }
+
     @DisplayName("업무 거절 사유를 기대하거나 작업 정보가 없으면 스크립트 오류로 거절한다.")
     @Test
     void rejectsBusinessReasonOrMissingJob() {

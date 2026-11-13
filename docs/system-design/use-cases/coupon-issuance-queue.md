@@ -108,6 +108,7 @@ Lua의 한도 초과 판단도 같은 사용자와 캠페인의 기존 작업 �
 1. DB의 본인 쿠폰을 먼저 확인한다. 그사이 동기 API로 발급됐으면 Lua에서 작업이 여전히 같은 `FAILED`와 reasonCode인지 확인한 뒤 기존 couponId의 `SUCCEEDED`로 바꾸고 200을 반환한다.
 2. 쿠폰이 없으면 캠페인 조건과 신규 수용을 확인한다. 거절되면 작업은 기존 `FAILED`와 reasonCode를 유지하고 404, 409 또는 503으로 응답한다.
 3. 통과하면 Lua에서 작업이 여전히 같은 `FAILED`와 reasonCode인지, 미완료 한도가 남았는지 확인한다. 조건이 맞으면 `WAITING`으로 바꾸고 reasonCode와 사유, 이전 실행 token을 비운 뒤 대기 List에 추가해 202를 반환한다. 한도가 찼으면 작업을 바꾸지 않고 429로 응답한다.
+4. 2단계나 3단계에서 거절하기 직전에 DB의 본인 쿠폰을 한 번 더 확인한다. 1단계 뒤 동기 API가 같은 사용자에게 쿠폰을 발급하고 캠페인이 품절되거나 한도가 찼을 수 있기 때문이다. 쿠폰이 있으면 1단계와 같은 조건으로 `SUCCEEDED`로 바꾸고 200을 반환한다. 작업이 이미 다른 상태로 바뀌었으면 손대지 않고 현재 상태를 반환한다.
 
 작업 정보는 최신 시도의 상태만 보존한다. 다시 대기시킬 때 이전 reasonCode와 사유, 실행 token을 서버 로그에 남긴 뒤 작업 정보에서 비운다. 사용자 조회에는 현재 상태만 보인다. `requestedAt`은 작업 ID와 함께 처음 접수할 때 정해지는 값이라 재접수해도 바꾸지 않으며, 최신 시도 시각은 재대기 로그로 확인한다.
 
@@ -542,7 +543,7 @@ Redis 재시작 후 접수 정보를 보존하는 수준은 실제 RDB, AOF 설�
 | 접수 응답 timeout | 작업 생성 후 응답만 실패한 경우 재접수에서 같은 ID 복구, 추가 List 항목과 중복 발급 없음 |
 | 완료 이력과 중복 정보 보존 | `SUCCEEDED`와 `FAILED` 뒤에도 같은 작업 ID와 결과 조회. `SUCCEEDED`와 업무 거절 `FAILED`의 재접수는 새 List 항목 없음, 자동 만료 없음 |
 | 시스템 실패 재접수 | `DB_ERROR`, `INTERNAL_ERROR` 작업 재접수 시 같은 작업 ID로 202와 `WAITING`, 대기 항목 하나, 미완료 개수 증가. 작업 정보에서 이전 reasonCode와 사유가 비워짐. 업무 거절 `FAILED`와 `SUCCEEDED`는 200과 저장된 결과 유지 |
-| 시스템 실패 재접수의 거절과 경합 | 캠페인 발급 불가, 한도 도달, 신규 수용 닫힘이면 작업은 기존 `FAILED` 유지. 그사이 쿠폰이 발급됐으면 같은 작업 ID로 `SUCCEEDED`. 동시 재접수에도 대기 항목 하나. worker와 복구 절차는 `FAILED`를 자동으로 다시 대기시키지 않음 |
+| 시스템 실패 재접수의 거절과 경합 | 캠페인 발급 불가, 한도 도달, 신규 수용 닫힘이면 작업은 기존 `FAILED` 유지. 그사이 쿠폰이 발급됐으면 같은 작업 ID로 `SUCCEEDED`. 처음 확인 뒤 쿠폰이 발급되고 품절, 한도 도달, 수용 닫힘이 겹쳐도 거절하지 않고 `SUCCEEDED`. 성공으로 바꾸는 Lua도 상태나 reasonCode가 바뀌었으면 변경하지 않음. 동시 재접수에도 대기 항목 하나. worker와 복구 절차는 `FAILED`를 자동으로 다시 대기시키지 않음 |
 | 실제 DB 발급 | 처리 후 쿠폰 ID가 보유 목록과 일치, 총량과 중복 규칙 유지 |
 | 동기 요청과 worker 경합 | 같은 permit 키를 공유하고 전체 발급 실행 상한 유지 |
 | worker 중단과 결과 미기록 | 완료 기록이 실행되지 않은 경우 처리 중 작업 ID와 DB 결과 보존, 자동 재실행 없음, 수동 복구에서 실제 쿠폰 확인 |
@@ -570,11 +571,11 @@ Redis 재시작 후 접수 정보를 보존하는 수준은 실제 RDB, AOF 설�
 |---|---|---|
 | 캠페인 거절 사유와 작업 상태 도메인 | `CouponCampaignTest`, `CouponIssueRequestTest` | 22, 41 |
 | permit 이후 발급 실행 분리 | `CouponIssueExecutorTest`, 기존 `CouponIssueFacadeTest` 회귀 | 12, 19 |
-| Redis 저장소와 Lua | 접수·조회 `RedisCouponIssueQueueIntegrationTest`, 가져오기 `...ClaimIntegrationTest`, 결과 기록 `...RecordIntegrationTest`, 재접수 `...ResubmitIntegrationTest`, 예외 변환 `...ExceptionTranslatorTest` | 11, 6, 11, 8, 4 |
-| 접수와 조회 API | `CouponIssueQueueFacadeTest`, `CouponIssueRequestV1ApiE2ETest` | 23, 10 |
+| Redis 저장소와 Lua | 접수·조회 `RedisCouponIssueQueueIntegrationTest`, 가져오기 `...ClaimIntegrationTest`, 결과 기록 `...RecordIntegrationTest`, 재접수 `...ResubmitIntegrationTest`, 예외 변환 `...ExceptionTranslatorTest` | 11, 6, 11, 9, 4 |
+| 접수와 조회 API | `CouponIssueQueueFacadeTest`, `CouponIssueRequestV1ApiE2ETest` | 28, 10 |
 | worker | 처리 단계 `CouponIssueQueueWorkerTest`, 실행 구조 `CouponIssueQueueWorkerRunnerTest`, 설정 `CouponIssueQueuePropertiesTest`, 실제 MySQL·Redis `CouponIssueQueueWorkerE2ETest` | 22, 7, 3, 8 |
 | seed reset과 수동 복구 | `RedisCouponIssueQueueCleanupIntegrationTest`, `CouponSeedServiceIntegrationTest`, 복구 Lua `RedisCouponIssueQueueRecoverScriptIntegrationTest` | 4, 8, 8 |
-| 전체 회귀 | `./gradlew :apps:commerce-api:check` | 1,048, 실패·오류·skip 0 |
+| 전체 회귀 | `./gradlew :apps:commerce-api:check` | 1,054, 실패·오류·skip 0 |
 
 실제 MySQL·Redis에서는 접수부터 worker 처리와 조회까지, 동기 요청과의 permit 공유, 처리 시점 품절, 잠금 대기 timeout 뒤 시스템 실패와 재접수, permit·작업 가져오기·완료 기록 응답 유실, commit 직전 연결 끊김에 따른 결과 불명을 확인했다.
 
