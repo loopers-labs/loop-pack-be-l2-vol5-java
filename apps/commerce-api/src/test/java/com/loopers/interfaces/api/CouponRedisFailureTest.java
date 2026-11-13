@@ -105,7 +105,18 @@ class CouponRedisFailureTest {
     @BeforeEach
     void setUp() {
         startRedisIfStopped();
+        resumeIfDegraded();
         gate.circuitBreaker().reset();
+    }
+
+    /** 앞선 테스트의 장애로 직행 중이면, Redis가 살아 있는 지금 재개 조건에 따라 돌아오게 한다. */
+    private void resumeIfDegraded() {
+        if (gate.isDegraded()) {
+            await().atMost(DEADLINE).pollInterval(Duration.ofMillis(500)).untilAsserted(() -> {
+                gate.tryResume();
+                assertThat(gate.isDegraded()).isFalse();
+            });
+        }
     }
 
     @AfterEach
@@ -115,7 +126,6 @@ class CouponRedisFailureTest {
             startRedisIfStopped();
         } finally {
             databaseCleanUp.truncateAllTables();
-            gate.circuitBreaker().reset();
         }
     }
 

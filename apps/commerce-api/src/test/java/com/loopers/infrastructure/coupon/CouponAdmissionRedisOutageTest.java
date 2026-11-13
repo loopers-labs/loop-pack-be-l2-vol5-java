@@ -94,7 +94,9 @@ class CouponAdmissionRedisOutageTest {
 
         // act 2 — 같은 Redis가 복구되면 정리가 성공한다
         docker.startContainerCmd(OUTAGE_REDIS.getContainerId()).exec();
-        await().atMost(Duration.ofSeconds(30)).pollInterval(Duration.ofMillis(300)).untilAsserted(() -> {
+        // 정리는 스케줄러의 한 회차(재개 확인 → 자기 token 정리)와 같게 부른다. 최소 대기가 지나야 돌아온다
+        await().atMost(Duration.ofSeconds(60)).pollInterval(Duration.ofMillis(500)).untilAsserted(() -> {
+            gate.tryResume();
             gate.recoverOwnTokens();
             assertThat(gate.unreleasedTokens()).isEmpty();
         });

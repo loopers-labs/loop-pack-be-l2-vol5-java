@@ -12,7 +12,7 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 
 /**
- * 기동 직후부터 일정 간격으로 자기 token을 정리한다(미반환 token 재시도, 이전 프로세스가 남긴 고아 정리).
+ * 기동 직후부터 일정 간격으로 직행 중인 수용을 재개 조건에 따라 되돌리고, 자기 token을 정리한다(미반환 token 재시도, 이전 프로세스가 남긴 고아 정리).
  * 자체 스케줄러 스레드 하나를 쓰므로 회차가 겹치지 않고, 공용 스케줄링 설정(Outbox relay)에 기대지 않는다.
  */
 @Component
@@ -37,7 +37,13 @@ public class CouponAdmissionRecoveryScheduler {
         scheduler.setPoolSize(1);
         scheduler.setThreadNamePrefix("coupon-admission-recovery-");
         scheduler.initialize();
-        scheduler.scheduleWithFixedDelay(semaphoreGate::recoverOwnTokens, fixedDelay);
+        scheduler.scheduleWithFixedDelay(this::tick, fixedDelay);
+    }
+
+    /** 한 회차: 직행 중이면 재개 조건을 확인하고, 아니면 자기 token을 정리한다. 어느 쪽이든 예외 없이 끝난다. */
+    void tick() {
+        semaphoreGate.tryResume();
+        semaphoreGate.recoverOwnTokens();
     }
 
     @PreDestroy

@@ -1,6 +1,7 @@
 package com.loopers.infrastructure.coupon;
 
 import com.loopers.application.coupon.CouponAdmissionProperties;
+import com.loopers.application.coupon.LocalLimiter;
 import com.loopers.application.coupon.SemaphoreGate.Admission;
 import com.loopers.application.coupon.SemaphoreGate.Status;
 import com.loopers.config.redis.RedisConfig;
@@ -36,6 +37,9 @@ class CouponAdmissionRecoveryTest {
     private CouponAdmissionProperties properties;
 
     @Autowired
+    private LocalLimiter localLimiter;
+
+    @Autowired
     private RedisCleanUp redisCleanUp;
 
     /** 기동 뒤 한 번만 하는 이전 프로세스 정리를 테스트마다 새로 겪도록, 테스트마다 새 게이트(새 "프로세스")를 만든다. 연결은 실제 Redis다. */
@@ -44,7 +48,7 @@ class CouponAdmissionRecoveryTest {
     @BeforeEach
     void setUp() {
         redisCleanUp.truncateAll();
-        gate = new RedisSemaphoreGate(masterTemplate, properties);
+        gate = new RedisSemaphoreGate(masterTemplate, properties, localLimiter);
     }
 
     @AfterEach

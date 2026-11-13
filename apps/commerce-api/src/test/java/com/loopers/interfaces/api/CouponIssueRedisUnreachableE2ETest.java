@@ -113,6 +113,7 @@ class CouponIssueRedisUnreachableE2ETest {
         assertThat(couponJpaRepository.count()).isEqualTo(2);
         assertThat(elapsed).as("Redis 실패가 요청을 오래 붙잡지 않는다").isLessThan(Duration.ofSeconds(15));
         assertThat(localLimiter.inProgress()).as("직행 상한은 끝나면 반환된다").isZero();
-        assertThat(gate.unreleasedTokens()).as("응답을 못 받은 자기 token을 기록해 둔다(복구 뒤 정리용)").hasSize(2);
+        assertThat(gate.isDegraded()).as("기동 때 Redis 확인에 실패해 직행(DEGRADED)으로 시작한다").isTrue();
+        assertThat(gate.unreleasedTokens()).as("Redis를 호출하지 않았으므로 Set에 남을 token이 없다").isEmpty();
     }
 }

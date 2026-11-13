@@ -19,6 +19,15 @@ public interface SemaphoreGate {
     void recoverOwnTokens();
 
     /**
+     * Redis를 건너뛰고 직행 중이면, 안전 조건(쓰기·읽기 왕복과 상태 유실 감지, 자기 token 정리, 용량 차감, 최소 대기)을 확인하고
+     * 세마포어 경로로 돌아온다. 조건을 채우지 못하면 예외 없이 직행을 유지한다. 직행 중이 아니면 아무것도 하지 않는다.
+     */
+    void tryResume();
+
+    /** auto-resume이 꺼져 있을 때, 사람이 확인했다는 표시. 다음 {@link #tryResume()}이 조건을 모두 채우면 돌아온다. */
+    void approveResume();
+
+    /**
      * @param status 획득 결과
      * @param token  이번 실행의 token. 획득했거나 결과가 불확실할 때 반환 대상이 된다
      */
