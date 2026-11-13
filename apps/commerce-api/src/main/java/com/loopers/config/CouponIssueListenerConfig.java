@@ -15,6 +15,7 @@ import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.core.KafkaOperations;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.core.MicrometerConsumerListener;
 import org.springframework.kafka.listener.ContainerProperties;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
@@ -41,6 +42,7 @@ public class CouponIssueListenerConfig {
     private static final long MAX_BACKOFF_MILLIS = 30_000;
     private static final int ANY_PARTITION = -1;
     private static final int MAX_POLL_RECORDS = 50;
+    private static final int FETCH_MAX_WAIT_MILLIS = 50;
 
     @Bean(name = FACTORY)
     public ConcurrentKafkaListenerContainerFactory<String, byte[]> couponIssueListenerContainerFactory(
@@ -52,9 +54,10 @@ public class CouponIssueListenerConfig {
         consumer.put(ConsumerConfig.ALLOW_AUTO_CREATE_TOPICS_CONFIG, false);
         consumer.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
         consumer.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, MAX_POLL_RECORDS);
+        consumer.put(ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG, FETCH_MAX_WAIT_MILLIS);
 
         ConcurrentKafkaListenerContainerFactory<String, byte[]> factory = new ConcurrentKafkaListenerContainerFactory<>();
-        factory.setConsumerFactory(new DefaultKafkaConsumerFactory<>(consumer));
+        factory.setConsumerFactory(metered(consumer, meterRegistry));
         factory.setConcurrency(properties.concurrency());
         factory.setBatchListener(true);
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL);
@@ -73,12 +76,19 @@ public class CouponIssueListenerConfig {
         consumer.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
 
         ConcurrentKafkaListenerContainerFactory<String, byte[]> factory = new ConcurrentKafkaListenerContainerFactory<>();
-        factory.setConsumerFactory(new DefaultKafkaConsumerFactory<>(consumer));
+        factory.setConsumerFactory(metered(consumer, meterRegistry));
         factory.setConcurrency(1);
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL);
         factory.getContainerProperties().setObservationEnabled(true);
         factory.setCommonErrorHandler(retryWithoutSkipping(meterRegistry));
         return factory;
+    }
+
+    private static DefaultKafkaConsumerFactory<String, byte[]> metered(Map<String, Object> consumer,
+                                                                      MeterRegistry meterRegistry) {
+        DefaultKafkaConsumerFactory<String, byte[]> consumerFactory = new DefaultKafkaConsumerFactory<>(consumer);
+        consumerFactory.addListener(new MicrometerConsumerListener<>(meterRegistry));
+        return consumerFactory;
     }
 
     private static DefaultErrorHandler retryWithoutSkipping(MeterRegistry meterRegistry) {
