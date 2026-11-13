@@ -4,6 +4,8 @@ import com.loopers.domain.coupon.Coupon;
 import com.loopers.domain.coupon.CouponReservation;
 import com.loopers.domain.coupon.CouponReservation.Reservation;
 import com.loopers.domain.coupon.CouponService;
+import com.loopers.support.error.DomainError;
+import com.loopers.support.error.DomainException;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,7 +36,9 @@ public class CouponLossRecovery {
     }
 
     public int recover(Long campaignId) {
-        couponReservation.close(campaignId);
+        if (!couponReservation.isClosed(campaignId)) {
+            throw new DomainException(DomainError.COUPON_CAMPAIGN_NOT_CLOSED);
+        }
         int restored = rebuildFromDb(campaignId);
         couponReservation.prepare(campaignId);
         meterRegistry.counter(RECOVERED, "campaignId", String.valueOf(campaignId)).increment();

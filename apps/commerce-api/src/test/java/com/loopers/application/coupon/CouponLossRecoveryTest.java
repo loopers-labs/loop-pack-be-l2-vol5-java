@@ -185,6 +185,7 @@ class CouponLossRecoveryTest {
         jdbcTemplate.batchUpdate("insert into coupon (campaign_id, user_id, issue_number, discount_amount, issued_at, "
             + "created_at, updated_at) values (?, ?, ?, 5000, now(6), now(6), now(6))", rows);
         jdbcTemplate.update("update coupon_campaign set issued_count = ? where id = ?", rows.size(), campaignId);
+        couponReservation.close(campaignId);
 
         assertThat(couponFacade.recover(campaignId)).isEqualTo(1_001);
 
