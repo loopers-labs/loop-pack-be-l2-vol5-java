@@ -14,11 +14,22 @@ WITH RECURSIVE seq (n) AS (
 )
 SELECT n FROM seq;
 
--- 측정 캠페인 9001: 총량 100, 활성, 발급 수 0. 이전 측정에서 발급된 쿠폰은 지운다(이 캠페인 것만).
+-- 상품 상세 부하용 브랜드 1개와 상품 1,000개(id 100001~101000, 재고 넉넉히). 이미 있으면 그대로 둔다.
+INSERT IGNORE INTO brands (id, name, deleted) VALUES (9001, '측정용 브랜드', FALSE);
+INSERT IGNORE INTO products (id, brand_id, name, price, stock, deleted, created_at)
+WITH RECURSIVE seq (n) AS (
+    SELECT 1
+    UNION ALL
+    SELECT n + 1 FROM seq WHERE n < 1000
+)
+SELECT 100000 + n, 9001, CONCAT('측정용 상품 ', n), 1000 + n, 100000, FALSE, NOW(6) FROM seq;
+
+-- 측정 캠페인 9001: 총량 10,000(요청이 품절 409로 빠지지 않고 발급 트랜잭션까지 들어가게), 활성, 발급 수 0.
+-- 이전 측정에서 발급된 쿠폰은 지운다(이 캠페인 것만).
 DELETE FROM issued_coupon WHERE campaign_id = 9001;
 INSERT INTO coupon_campaign (id, name, active, total_quota, issued_count, discount_amount, created_at)
-VALUES (9001, '측정용 한정 수량 쿠폰', TRUE, 100, 0, 3000, NOW(6))
-ON DUPLICATE KEY UPDATE active = TRUE, total_quota = 100, issued_count = 0;
+VALUES (9001, '측정용 한정 수량 쿠폰', TRUE, 10000, 0, 3000, NOW(6))
+ON DUPLICATE KEY UPDATE active = TRUE, total_quota = 10000, issued_count = 0;
 
 -- 수용 설정: 자리 3, 열림. epoch는 그대로 둔다(Redis 키를 위에서 지웠다는 전제).
 INSERT INTO coupon_admission_settings (id, capacity, open, epoch, updated_at)
