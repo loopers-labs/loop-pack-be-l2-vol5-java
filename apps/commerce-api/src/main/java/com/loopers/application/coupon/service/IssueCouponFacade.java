@@ -11,14 +11,14 @@ import com.loopers.application.coupon.support.CouponAdmissionException;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.annotation.Primary;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.TransactionSystemException;
 import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-@Primary
+
 @Service
 @RequiredArgsConstructor
 public class IssueCouponFacade implements IssueCouponUseCase {
