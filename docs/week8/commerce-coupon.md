@@ -1414,13 +1414,13 @@ PG 취소 API 연동(늦은 성공의 자동 환불), 다중 서버 선점, 실�
 ```
 ② 설정 행 읽기(coupon_admission_settings, 행 하나)
    - open = false, 행 없음, 읽기 실패          → 503 (기본 닫힘, D130·D133)
-   - capacity는 이 행의 값(HTTP 입력이 아님)
-③ Redis 자리 얻기(Lua 한 번: SISMEMBER·SCARD·SADD, 키 coupon:issue:permits, token = 실행마다 서버가 만든 UUID)
+   - capacity·epoch는 이 행의 값(HTTP 입력이 아님)
+③ Redis 자리 얻기(Lua 한 번: SISMEMBER·SCARD·SADD, 키 coupon:issue:permits:{②의 epoch}, token = 실행마다 서버가 만든 UUID)
    - 1 → ④
    - 0 → 429 (자리가 없음)
    - 예외·timeout·0/1이 아닌 결과 → 설정 행 닫기(이유·시각) → 503, ④를 시작하지 않음 (D123)
 ④ 1단계 발급 트랜잭션 그대로
-⑤ finally에서 자기 token 반환(SREM). ④의 트랜잭션이 끝난 뒤(commit·rollback·예외 모두)
+⑤ finally에서 자기 token 반환(SREM, ③과 같은 epoch 키). ④의 트랜잭션이 끝난 뒤(commit·rollback·예외 모두)
    - 반환 실패 → 응답은 원래 결과 그대로, error 로그 + 설정 행 닫기(이유·시각) (D134)
 ```
 
@@ -1428,7 +1428,7 @@ PG 취소 API 연동(늦은 성공의 자동 환불), 다중 서버 선점, 실�
 - **Redis 획득·반환은 DB 트랜잭션 밖이다.** 트랜잭션 안에서 자리를 얻으면 거절될 요청까지 DB 연결을 잡는다. 반환도 트랜잭션이 끝난 뒤라 커밋 전에 자리가 비지 않는다.
 - **자리는 동시에 ④를 진행하는 요청 수의 상한이다.** 발급 총량은 여전히 ④의 조건부 UPDATE가 지킨다(D125). 같은 사용자의 동시 미완료 요청은 각자 자리를 차지할 수 있다(효과는 DB가 하나로 만든다). 같은 token을 두 실행이 공유하지 않는다.
 - **수용 상태는 DB 설정 행에만 둔다(D130·D133).** 열은 `capacity`(자리 수)와 `open`(열림) 두 개로 한 열에 한 뜻이다. 기본은 닫힘이다. Redis에 두지 않는다(장애 기록이 장애 영역 안에 있으면 안 된다). 서버 메모리에 두지 않는다(여러 서버에서 같아야 한다).
-- **TTL·자동 재개는 없다.** Redis가 되살아나도(PONG) 스스로 열지 않는다. 사람이 원인을 확인한 뒤 연다. 2단계의 재개 도구는 local 프로필 전용 러너(`CouponAdmissionLocalTools`, `--coupon.admission.open`)의 열기 하나뿐이다(D132 최소). 확인 모드는 3단계다.
+- **TTL·자동 재개는 없다.** Redis가 되살아나도(PONG) 스스로 열지 않는다. 사람이 아래 확인 모드로 원인을 확인한 뒤 연다(3단계).
 - **Redis 명령 timeout 500ms는 수용 전용 연결에만 둔다(D135·D137).** 공용 Redis 설정(`datasource.redis.command-timeout: 1s`)은 상품 목록 캐시도 쓰므로 바꾸지 않고, 같은 master 호스트를 가리키는 쿠폰 전용 연결·template(`domains.coupon.config`)을 둔다. 캐시의 장애 계약은 그대로다.
 - **Redis·Spring 예외는 app으로 새지 않는다(D123).** 어댑터가 업무 의미 예외(`AdmissionUnavailableException`)로 바꾼다.
 - Lua는 입력을 검사한다(capacity ≥ 1 정수, token 비어 있지 않음). 틀리면 오류 응답이고 Set은 바뀌지 않는다.
@@ -1443,9 +1443,22 @@ PG 취소 API 연동(늦은 성공의 자동 환불), 다중 서버 선점, 실�
 
 | 테이블 | 열 |
 | --- | --- |
-| `coupon_admission_settings`(행 하나, id = 1) | id, capacity, open, closed_reason, closed_at, updated_at |
+| `coupon_admission_settings`(행 하나, id = 1) | id, capacity, open, epoch(기본 1, 3단계), closed_reason, closed_at, updated_at |
 
-- ddl-auto를 쓰지 않는 환경은 `sql/create-coupon-admission-settings.sql`을 실행한다(다시 실행해도 안전). local seed는 capacity 3, open = false다.
+- ddl-auto를 쓰지 않는 환경은 `sql/create-coupon-admission-settings.sql`을 실행한다(다시 실행해도 안전, 2단계 테이블에는 epoch 열이 없을 때만 추가). local seed는 capacity 3, open = false다.
+
+### 장애와 재개 [확정] (8주차 3단계, D138~D140)
+
+- **epoch(D138):** 수용 자리 키는 `coupon:issue:permits:{epoch}`다. 한 요청의 획득(③)과 반환(⑤)은 모두 그 요청이 ②에서 읽은 epoch의 키를 쓴다. **열기만 epoch를 +1** 하고, 장애로 닫을 때는 바꾸지 않는다(자동 재개 금지). 그래서 장애 전에 남은 token(반환하지 못한 것)은 옛 키에 남아 새 키의 자리 계산에 들어가지 않고, 열기 전에 시작한 실행은 반환할 때 옛 키에서만 지운다. fencing(④에서 epoch를 다시 확인하는 것)은 하지 않는다.
+- **재개 도구(D139):** local 프로필 전용 러너 `CouponAdmissionLocalTools`, 앱 시작 인자로만 받는다. 공개 API는 없다.
+- **확인 모드 `--coupon.admission.check`(D140):** 아무 값도 바꾸지 않고 다음을 보고한다.
+  1. 상태: open, closed_reason, closed_at, 닫힌 뒤 경과 시간
+  2. 시간 기준: 경과 ≥ 실행 최대 시간(설정값 `commerce.coupon.admission.max-execution`, 기본 10초 = 잠금 대기 3초 + 연결 대기 3초 + 여유) → ✓/✗
+  3. DB 기준: `information_schema.innodb_trx` JOIN `performance_schema.data_locks`로 `coupon_campaign`·`issued_coupon` 잠금을 쥔 열린 트랜잭션 수가 0 → ✓/✗. 조회 실패(권한 포함)는 ✗이고 열지 말라고 보고한다
+  4. 대조: 캠페인별 issued_count = 실제 issued_coupon 수 → ✓/✗
+  5. 참고: 현재 epoch 키의 token 수
+  6. 결론: 2·3·4가 모두 ✓일 때만 "열어도 됨"
+- **열기 모드 `--coupon.admission.open`:** epoch +1, open = true, closed_reason·closed_at을 비운다. 확인 결과를 강제하지 않는다(사람이 판단). 로그에 이전·새 epoch를 남긴다.
 
 ### 결정 기록
 
@@ -1464,11 +1477,15 @@ PG 취소 API 연동(늦은 성공의 자동 환불), 다중 서버 선점, 실�
 | D134 | 반환(SREM) 실패는 사용자에게 원래 결과를 주고, 내부에서 로그 + 설정 행 닫기(이유·시각). 닫기 실패도 error 로그만 |
 | D135 | 429는 `common.error`의 새 업무 예외(Retry-After 1), 503은 `TemporarilyUnavailableException` 계열(Retry-After 30). Redis 명령 timeout 500ms, 키 `coupon:issue:permits` 하나, token은 실행마다 UUID |
 | D137 | timeout 500ms는 공용 Redis 설정이 아니라 수용 전용 연결에 둔다(같은 master 호스트, 공용 1s 유지) |
+| D138 | 설정 행에 epoch(기본 1). 자리 키는 `coupon:issue:permits:{epoch}`, 획득·반환 모두 ②에서 읽은 epoch. 열기만 +1, 닫기는 그대로. fencing 없음 |
+| D139 | 재개 도구는 기존 local 러너(시작 인자). 공개 API 없음 |
+| D140 | 확인 모드는 바꾸지 않고 보고만(상태·시간·DB 잠금·대조·token 수·결론). 열기 모드는 epoch +1, 확인 결과를 강제하지 않음 |
 
 ### 한계
 
 - 동시성 테스트는 한 JVM 안의 여러 DB 연결이다. 여러 서버 인스턴스가 실제로 동시에 도는 경우와 운영 MySQL의 격리 수준 차이는 확인하지 않는다.
 - 같은 사용자가 몰리면 유일 제약 충돌 뒤 재조회가 그만큼 생긴다. 사용자별 요청 제한은 범위 밖이다.
 - 같은 사용자의 동시 미완료 요청은 각자 수용 자리를 차지한다. 그만큼 다른 사용자가 429를 받을 수 있다.
-- 반환하지 못한 token은 TTL이 없어 Set에 남는다. 그 경우 수용은 닫히고, 사람이 Set을 정리한 뒤 연다(정리 절차는 3단계).
-- 2단계 테스트는 실제 Redis 컨테이너를 쓰지만 컨테이너 중단·재개는 흉내 내지 않는다(실패는 포트 대역으로 주입). 실제 중단·재개는 3단계에서 확인한다.
+- 반환하지 못한 token은 TTL이 없어 옛 epoch 키에 남는다. 열기가 epoch를 올려 새 키를 쓰므로 자리 계산에는 들어가지 않는다(옛 키 정리는 사람이 한다).
+- 앱 안에서 트랜잭션 전 단계로 실행 최대 시간보다 오래 멈춘 실행은 시간·DB 어느 기준으로도 보이지 않는다. 그 경우 열기 뒤 동시 실행이 잠깐 C를 넘을 수 있다(쿠폰 정확성은 DB가 지킨다). 막으려면 fencing이 필요하다(범위 밖).
+- 2단계 테스트는 실패를 포트 대역으로 주입했다. 3단계는 테스트 전용 Redis 컨테이너를 실제로 멈추고 다시 띄워 확인한다(공용 컨테이너는 건드리지 않는다).
