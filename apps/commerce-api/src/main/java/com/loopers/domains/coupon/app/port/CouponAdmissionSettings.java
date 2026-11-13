@@ -11,6 +11,6 @@ public interface CouponAdmissionSettings {
     // 닫기는 epoch를 바꾸지 않는다(D138).
     void close(String reason, Instant at);
 
-    // 열기만 epoch를 1 올린다(D138). 새 epoch를 돌려준다.
-    long open(Instant at);
+    // 열기만 epoch를 1 올린다(D138). 실제로 바꿨으면 true다.
+    boolean open(Instant at);
 }

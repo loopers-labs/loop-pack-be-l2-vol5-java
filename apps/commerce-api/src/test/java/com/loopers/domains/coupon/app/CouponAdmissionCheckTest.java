@@ -123,9 +123,9 @@ class CouponAdmissionCheckTest {
         }
 
         @Override
-        public long open(Instant at) {
+        public boolean open(Instant at) {
             writes.incrementAndGet();
-            return 5;
+            return true;
         }
 
         @Override

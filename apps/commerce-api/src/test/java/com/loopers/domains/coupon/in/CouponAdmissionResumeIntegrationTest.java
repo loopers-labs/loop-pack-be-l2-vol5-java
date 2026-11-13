@@ -24,7 +24,11 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.DefaultApplicationArguments;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.core.env.Environment;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -32,6 +36,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 // 8주차 3단계: epoch(D138)와 재개 확인·열기(D139·D140). 실제 Redis·MySQL이고, 붙잡기·반환 실패는 테스트 설정의 포트 래퍼로만 한다.
 // 실제 Redis 중단·재개는 CouponAdmissionRedisFailureTest(전용 컨테이너)가 본다.
+@ExtendWith(OutputCaptureExtension.class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class CouponAdmissionResumeIntegrationTest extends CouponIntegrationSupport {
     private static final long DEADLINE_SECONDS = 20;
@@ -148,6 +153,9 @@ class CouponAdmissionResumeIntegrationTest extends CouponIntegrationSupport {
             Future<Integer> oldRun = executor.submit(() -> issue(1, campaignId).andReturn().getResponse().getStatus());
             assertThat(held.await(DEADLINE_SECONDS, TimeUnit.SECONDS)).as("옛 epoch 실행이 자리를 얻고 붙잡힘").isTrue();
             assertThat(permits(1)).isEqualTo(1);
+            // 열린 상태의 열기는 아무것도 바꾸지 않으므로(D142), 실행 중에 닫혔다가 다시 열리는 장면으로 만든다.
+            jdbc.update("update coupon_admission_settings set open = false, closed_reason = 'F6 닫힘', closed_at = ? where id = 1",
+                LocalDateTime.ofInstant(NOW, ZoneOffset.UTC));
             couponAdmissionCheck.open();
             admissionRedis.opsForSet().add(RedisCouponAdmission.key(2), "new-epoch-holder");
 
@@ -187,6 +195,26 @@ class CouponAdmissionResumeIntegrationTest extends CouponIntegrationSupport {
         assertThat(couponId(campaignId, 1)).isEqualTo(firstCoupon);
         assertThat(coupons(campaignId)).isEqualTo(2);
         assertThat(issuedCount(campaignId)).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("F8: 이미 열린 상태에서 열기를 하면 epoch·open이 그대로이고 현재 epoch 키의 token이 남아 자리 계산에 계속 들어가며, 결과와 로그는 변경 없음이다")
+    void openWhileOpenChangesNothing(CapturedOutput output) throws Exception {
+        user(1);
+        long campaignId = campaign(true, 10, 0, 3000);
+        admissionSettings(1, true);
+        admissionRedis.opsForSet().add(RedisCouponAdmission.key(1), "running-token");
+        Map<String, Object> before = settingsRow();
+
+        CouponAdmissionCheck.Reopened reopened = couponAdmissionCheck.open();
+        new CouponAdmissionLocalTools(couponAdmissionCheck).run(new DefaultApplicationArguments("--coupon.admission.open"));
+
+        assertThat(reopened.changed()).isFalse();
+        assertThat(reopened.newEpoch()).isEqualTo(reopened.previousEpoch()).isEqualTo(1);
+        assertThat(settingsRow()).isEqualTo(before);
+        assertThat(admissionRedis.opsForSet().members(RedisCouponAdmission.key(1))).containsExactly("running-token");
+        issue(1, campaignId).andExpect(status().isTooManyRequests());
+        assertThat(output.getAll()).contains("이미 열림, 변경 없음(epoch=1)");
     }
 
     private void close(String reason, Instant closedAt) {

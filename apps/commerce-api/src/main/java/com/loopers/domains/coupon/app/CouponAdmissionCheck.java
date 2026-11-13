@@ -17,7 +17,7 @@ import org.springframework.stereotype.Service;
 // 시간 기준의 실행 최대 시간은 한 발급 실행이 걸릴 수 있는 상한(잠금 대기 3초 + 연결 대기 3초 + 여유)이다.
 @Service
 public class CouponAdmissionCheck {
-    public record Reopened(long previousEpoch, long newEpoch) { }
+    public record Reopened(long previousEpoch, long newEpoch, boolean changed) { }
 
     private final CouponAdmissionSettings couponAdmissionSettings;
     private final CouponAdmissionInspection couponAdmissionInspection;
@@ -51,8 +51,8 @@ public class CouponAdmissionCheck {
 
     public Reopened open() {
         long previous = couponAdmissionSettings.status().epoch();
-        long next = couponAdmissionSettings.open(clock.instant());
-        return new Reopened(previous, next);
+        boolean changed = couponAdmissionSettings.open(clock.instant());
+        return new Reopened(previous, couponAdmissionSettings.status().epoch(), changed);
     }
 
     private Criterion timeCriterion(Duration sinceClosed) {

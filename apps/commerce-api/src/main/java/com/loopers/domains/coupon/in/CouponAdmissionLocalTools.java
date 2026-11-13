@@ -38,7 +38,11 @@ public class CouponAdmissionLocalTools implements ApplicationRunner {
         }
         if (args.containsOption(OPEN_OPTION)) {
             CouponAdmissionCheck.Reopened reopened = couponAdmissionCheck.open();
-            log.info("쿠폰 수용을 열었다. epoch {} → {}", reopened.previousEpoch(), reopened.newEpoch());
+            if (reopened.changed()) {
+                log.info("쿠폰 수용을 열었다. epoch {} → {}", reopened.previousEpoch(), reopened.newEpoch());
+            } else {
+                log.info("쿠폰 수용: 이미 열림, 변경 없음(epoch={})", reopened.newEpoch());
+            }
         }
     }
 

@@ -10,6 +10,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 // 수용 닫힘 상태는 이 행에만 둔다(D130·D133). 행이 없으면 닫힘이다(기본 닫힘). 닫기·열기는 각자 짧은 트랜잭션이다.
 // 열기만 epoch를 1 올린다. 닫기는 epoch를 바꾸지 않는다(D138).
+// 열기는 닫힌 행에만 적용한다(D142). 열린 상태에서 epoch를 올리면 현재 세대에서 실행 중인 token이 자리 계산에서 빠져
+// 동시 실행이 최대 2C까지 늘 수 있어서다.
 @Repository
 public class CouponAdmissionSettingsAdapter implements CouponAdmissionSettings {
     private static final int CLOSED_REASON_LENGTH = 500;
@@ -48,10 +50,7 @@ public class CouponAdmissionSettingsAdapter implements CouponAdmissionSettings {
 
     @Override
     @Transactional
-    public long open(Instant at) {
-        couponAdmissionSettingsJpaRepository.open(CouponAdmissionSettingsJpaEntity.SINGLE_ROW_ID, at);
-        return couponAdmissionSettingsJpaRepository.findById(CouponAdmissionSettingsJpaEntity.SINGLE_ROW_ID)
-            .map(CouponAdmissionSettingsJpaEntity::epoch)
-            .orElseThrow(() -> new IllegalStateException("수용 설정 행이 없어 열 수 없습니다."));
+    public boolean open(Instant at) {
+        return couponAdmissionSettingsJpaRepository.open(CouponAdmissionSettingsJpaEntity.SINGLE_ROW_ID, at) == 1;
     }
 }
