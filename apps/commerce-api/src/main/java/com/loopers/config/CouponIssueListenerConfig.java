@@ -56,6 +56,7 @@ public class CouponIssueListenerConfig {
         ConcurrentKafkaListenerContainerFactory<String, byte[]> factory = new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(new DefaultKafkaConsumerFactory<>(consumer));
         factory.setConcurrency(properties.concurrency());
+        factory.setBatchListener(true);
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL);
         factory.getContainerProperties().setObservationEnabled(true);
         factory.setCommonErrorHandler(retryInfraFailuresAndDeadLetterBugs(kafkaTemplate, deadLetterTopic, meterRegistry));

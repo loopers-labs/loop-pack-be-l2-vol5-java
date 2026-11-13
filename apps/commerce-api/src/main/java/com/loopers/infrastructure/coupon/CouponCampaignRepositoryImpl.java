@@ -30,7 +30,7 @@ public class CouponCampaignRepositoryImpl implements CouponCampaignRepository {
     }
 
     @Override
-    public boolean increaseIssuedCountWithinQuota(Long campaignId) {
-        return campaignJpaRepository.increaseIssuedCountWithinQuota(campaignId) == 1;
+    public boolean increaseIssuedCountWithinQuota(Long campaignId, int count) {
+        return campaignJpaRepository.increaseIssuedCountWithinQuota(campaignId, count) == 1;
     }
 }

@@ -22,6 +22,7 @@ import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.clients.producer.internals.BuiltInPartitioner;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -31,11 +32,16 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.listener.MessageListenerContainer;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
@@ -56,6 +62,7 @@ class CouponIssueListenerTest {
     private static final String TOPIC = KafkaTestContainersConfig.COUPON_ISSUES_WORKER;
     private static final Instant NOW = Instant.parse("2026-11-08T00:00:00.123456Z");
     private static final Duration WITHIN = Duration.ofSeconds(10);
+    private static final int PARTITIONS = 3;
 
     private final CouponFacade couponFacade;
     private final CouponIssuePublisher publisher;
@@ -63,6 +70,8 @@ class CouponIssueListenerTest {
     private final CampaignCache campaignCache;
     private final JdbcTemplate jdbcTemplate;
     private final MeterRegistry meterRegistry;
+    private final KafkaListenerEndpointRegistry listeners;
+    private final KafkaTemplate<String, byte[]> kafkaTemplate;
     private final DatabaseCleanUp databaseCleanUp;
     private final RedisCleanUp redisCleanUp;
 
@@ -70,6 +79,7 @@ class CouponIssueListenerTest {
     CouponIssueListenerTest(CouponFacade couponFacade, CouponIssuePublisher publisher,
                             CouponReservation couponReservation, CampaignCache campaignCache,
                             JdbcTemplate jdbcTemplate, MeterRegistry meterRegistry,
+                            KafkaListenerEndpointRegistry listeners, KafkaTemplate<String, byte[]> kafkaTemplate,
                             DatabaseCleanUp databaseCleanUp, RedisCleanUp redisCleanUp) {
         this.couponFacade = couponFacade;
         this.publisher = publisher;
@@ -77,6 +87,8 @@ class CouponIssueListenerTest {
         this.campaignCache = campaignCache;
         this.jdbcTemplate = jdbcTemplate;
         this.meterRegistry = meterRegistry;
+        this.listeners = listeners;
+        this.kafkaTemplate = kafkaTemplate;
         this.databaseCleanUp = databaseCleanUp;
         this.redisCleanUp = redisCleanUp;
     }
@@ -245,6 +257,70 @@ class CouponIssueListenerTest {
         assertThat(couponFacade.issue(campaignId, 42L, NOW))
             .isInstanceOf(CouponFacade.IssueResult.Issued.class)
             .extracting("issueNumber").isEqualTo(1);
+    }
+
+    private void publishWhileWorkerIsOff(Runnable publishing) {
+        MessageListenerContainer worker = listeners.getListenerContainer(CouponIssueListenerConfig.LISTENER_ID);
+        worker.stop();
+        try {
+            publishing.run();
+        } finally {
+            worker.start();
+        }
+    }
+
+    private static long unknownCampaignIdInSamePartitionAs(Long campaignId) {
+        int partition = partitionOf(campaignId);
+        for (long candidate = 999_999L; ; candidate++) {
+            if (partitionOf(candidate) == partition) {
+                return candidate;
+            }
+        }
+    }
+
+    private static int partitionOf(long campaignId) {
+        return BuiltInPartitioner.partitionForKey(String.valueOf(campaignId).getBytes(StandardCharsets.UTF_8),
+            PARTITIONS);
+    }
+
+    @DisplayName("WRK-011: 워커를 끈 동안 쌓인 정상, 없는 캠페인, 정상 메시지가 한 파티션에서 한 번에 오면 앞뒤는 기록되고 가운데만 DLT 로 가며 offset 은 끝까지 간다")
+    @Test
+    void deadLettersOnlyTheRejectedRecordInTheMiddleOfABatch() throws Exception {
+        Long campaignId = openCampaign();
+        long unknownCampaignId = unknownCampaignIdInSamePartitionAs(campaignId);
+
+        publishWhileWorkerIsOff(() -> {
+            publisher.publish(new CouponIssue(campaignId, 42L, 1, NOW));
+            publisher.publish(new CouponIssue(unknownCampaignId, 7L, 1, NOW));
+            publisher.publish(new CouponIssue(campaignId, 9L, 2, NOW));
+        });
+        eventually(CouponIssueListenerTest::everyRecordCommitted);
+
+        assertThat(couponCount(campaignId)).isEqualTo(2);
+        assertThat(issuedCount(campaignId)).isEqualTo(2);
+        assertThat(TopicRecords.all(KafkaTestContainersConfig.COUPON_ISSUES_WORKER_DLT))
+            .filteredOn(record -> record.key().equals(String.valueOf(unknownCampaignId)))
+            .hasSize(1);
+    }
+
+    @DisplayName("WRK-011: 워커를 끈 동안 쌓인 정상, 읽을 수 없는, 정상 메시지가 한 번에 오면 앞뒤는 기록되고 읽을 수 없는 것만 DLT 로 가며 offset 은 끝까지 간다")
+    @Test
+    void deadLettersOnlyTheUnreadableRecordInTheMiddleOfABatch() throws Exception {
+        Long campaignId = openCampaign();
+        byte[] unreadable = "not a coupon issue".getBytes(StandardCharsets.UTF_8);
+
+        publishWhileWorkerIsOff(() -> {
+            publisher.publish(new CouponIssue(campaignId, 42L, 1, NOW));
+            kafkaTemplate.send(TOPIC, String.valueOf(campaignId), unreadable).join();
+            publisher.publish(new CouponIssue(campaignId, 9L, 2, NOW));
+        });
+        eventually(CouponIssueListenerTest::everyRecordCommitted);
+
+        assertThat(couponCount(campaignId)).isEqualTo(2);
+        assertThat(issuedCount(campaignId)).isEqualTo(2);
+        assertThat(TopicRecords.all(KafkaTestContainersConfig.COUPON_ISSUES_WORKER_DLT))
+            .filteredOn(record -> Arrays.equals(record.value(), unreadable))
+            .hasSize(1);
     }
 
     private boolean acceptedOrIssued(Long campaignId, Long userId) {

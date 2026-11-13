@@ -8,6 +8,8 @@ public interface CouponRepository {
 
     Coupon insert(Coupon coupon);
 
+    List<Coupon> insertAll(List<Coupon> coupons);
+
     Optional<Coupon> find(Long campaignId, Long userId);
 
     List<Coupon> findAllOwnedBy(Long userId);

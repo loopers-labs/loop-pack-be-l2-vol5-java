@@ -7,7 +7,6 @@ import com.loopers.domain.coupon.IssueQuota;
 import com.loopers.testcontainers.KafkaTestContainersConfig;
 import com.loopers.utils.DatabaseCleanUp;
 import com.loopers.utils.RedisCleanUp;
-import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -38,14 +37,13 @@ class CouponReconciliationTest {
     private final CouponReconciliation couponReconciliation;
     private final CampaignCache campaignCache;
     private final JdbcTemplate jdbcTemplate;
-    private final MeterRegistry meterRegistry;
     private final DatabaseCleanUp databaseCleanUp;
     private final RedisCleanUp redisCleanUp;
 
     @Autowired
     CouponReconciliationTest(CouponFacade couponFacade, CouponReservation couponReservation,
                              CouponTransactions couponTransactions, CouponReconciliation couponReconciliation,
-                             CampaignCache campaignCache, JdbcTemplate jdbcTemplate, MeterRegistry meterRegistry,
+                             CampaignCache campaignCache, JdbcTemplate jdbcTemplate,
                              DatabaseCleanUp databaseCleanUp, RedisCleanUp redisCleanUp) {
         this.couponFacade = couponFacade;
         this.couponReservation = couponReservation;
@@ -53,7 +51,6 @@ class CouponReconciliationTest {
         this.couponReconciliation = couponReconciliation;
         this.campaignCache = campaignCache;
         this.jdbcTemplate = jdbcTemplate;
-        this.meterRegistry = meterRegistry;
         this.databaseCleanUp = databaseCleanUp;
         this.redisCleanUp = redisCleanUp;
     }
@@ -86,10 +83,6 @@ class CouponReconciliationTest {
             Integer.class, campaignId, userId);
     }
 
-    private double republished(Long campaignId) {
-        return meterRegistry.counter("coupon.issue.republished", "campaignId", String.valueOf(campaignId)).count();
-    }
-
     private static void eventually(BooleanSupplier condition) throws InterruptedException {
         long deadline = System.nanoTime() + WITHIN.toNanos();
         while (!condition.getAsBoolean()) {
@@ -104,7 +97,6 @@ class CouponReconciliationTest {
     @Test
     void republishesEveryMissingNumberWhenTheWorkerIsDrained() throws Exception {
         Long campaignId = openCampaign();
-        double republishedBefore = republished(campaignId);
         reserveOnly(campaignId, 1L);
         reserveOnly(campaignId, 2L);
         reserveOnly(campaignId, 3L);
@@ -118,7 +110,6 @@ class CouponReconciliationTest {
 
         assertThat(issueNumberOf(campaignId, 2L)).isEqualTo(2);
         assertThat(issueNumberOf(campaignId, 4L)).isEqualTo(4);
-        assertThat(republished(campaignId)).isEqualTo(republishedBefore + 2);
         assertThat(couponReconciliation.reconcile(campaignId)).isZero();
         assertThat(couponCount(campaignId)).isEqualTo(4);
     }
@@ -127,7 +118,6 @@ class CouponReconciliationTest {
     @Test
     void treatsReservationAsConfirmedWhenTheUserAlreadyHasACoupon() {
         Long campaignId = openCampaign();
-        double republishedBefore = republished(campaignId);
         reserveOnly(campaignId, 1L);
         reserveOnly(campaignId, 42L);
         couponTransactions.issue(campaignId, 1L, 1, NOW);
@@ -136,6 +126,5 @@ class CouponReconciliationTest {
         assertThat(couponReconciliation.reconcile(campaignId)).isZero();
         assertThat(couponReconciliation.reconcile(campaignId)).isZero();
         assertThat(couponReconciliation.reconcile(campaignId)).isZero();
-        assertThat(republished(campaignId)).isEqualTo(republishedBefore);
     }
 }

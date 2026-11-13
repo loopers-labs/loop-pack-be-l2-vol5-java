@@ -25,10 +25,22 @@ public class CouponService {
         CouponCampaign campaign = campaignRepository.findById(campaignId)
             .orElseThrow(() -> new DomainException(DomainError.COUPON_CAMPAIGN_NOT_FOUND));
         Coupon coupon = couponRepository.insert(campaign.issueTo(userId, issueNumber, issuedAt));
-        if (!campaignRepository.increaseIssuedCountWithinQuota(campaignId)) {
+        if (!campaignRepository.increaseIssuedCountWithinQuota(campaignId, 1)) {
             throw new DomainException(DomainError.COUPON_SOLD_OUT);
         }
         return coupon;
+    }
+
+    public List<Coupon> issueAll(Long campaignId, List<CouponIssuePublisher.CouponIssue> issues) {
+        CouponCampaign campaign = campaignRepository.findById(campaignId)
+            .orElseThrow(() -> new DomainException(DomainError.COUPON_CAMPAIGN_NOT_FOUND));
+        List<Coupon> coupons = couponRepository.insertAll(issues.stream()
+            .map(issue -> campaign.issueTo(issue.userId(), issue.issueNumber(), issue.reservedAt()))
+            .toList());
+        if (!campaignRepository.increaseIssuedCountWithinQuota(campaignId, issues.size())) {
+            throw new DomainException(DomainError.COUPON_SOLD_OUT);
+        }
+        return coupons;
     }
 
     public Optional<CouponCampaign> findCampaign(Long campaignId) {

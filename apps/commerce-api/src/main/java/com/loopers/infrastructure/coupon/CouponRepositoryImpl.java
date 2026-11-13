@@ -29,11 +29,26 @@ public class CouponRepositoryImpl implements CouponRepository {
         try {
             return couponJpaRepository.saveAndFlush(CouponEntity.from(coupon)).toDomain();
         } catch (DataIntegrityViolationException e) {
-            if (isDuplicateCampaignUser(e)) {
-                throw new DomainException(DomainError.COUPON_ALREADY_ISSUED);
-            }
-            throw e;
+            throw duplicateOrRethrow(e);
         }
+    }
+
+    @Override
+    public List<Coupon> insertAll(List<Coupon> coupons) {
+        try {
+            return couponJpaRepository.saveAllAndFlush(coupons.stream().map(CouponEntity::from).toList()).stream()
+                .map(CouponEntity::toDomain)
+                .toList();
+        } catch (DataIntegrityViolationException e) {
+            throw duplicateOrRethrow(e);
+        }
+    }
+
+    private static RuntimeException duplicateOrRethrow(DataIntegrityViolationException e) {
+        if (isDuplicateCampaignUser(e)) {
+            return new DomainException(DomainError.COUPON_ALREADY_ISSUED);
+        }
+        return e;
     }
 
     private static boolean isDuplicateCampaignUser(Throwable e) {

@@ -11,5 +11,5 @@ public interface CouponCampaignRepository {
 
     List<Long> findActiveIds();
 
-    boolean increaseIssuedCountWithinQuota(Long campaignId);
+    boolean increaseIssuedCountWithinQuota(Long campaignId, int count);
 }

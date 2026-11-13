@@ -15,8 +15,8 @@ interface CouponCampaignJpaRepository extends JpaRepository<CouponCampaignEntity
     @Modifying
     @Query(value = """
         UPDATE coupon_campaign
-           SET issued_count = issued_count + 1, updated_at = NOW(6)
-         WHERE id = :id AND issued_count < total_quota
+           SET issued_count = issued_count + :count, updated_at = NOW(6)
+         WHERE id = :id AND issued_count + :count <= total_quota
         """, nativeQuery = true)
-    int increaseIssuedCountWithinQuota(@Param("id") Long id);
+    int increaseIssuedCountWithinQuota(@Param("id") Long id, @Param("count") int count);
 }
