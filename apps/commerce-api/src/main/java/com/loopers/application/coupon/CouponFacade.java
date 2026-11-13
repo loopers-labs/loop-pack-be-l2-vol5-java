@@ -67,9 +67,7 @@ public class CouponFacade {
             CouponReservation.Result reserved = reserveWithinSlot(campaignId, userId, campaign, now);
             return switch (reserved) {
                 case CouponReservation.Result.Reserved(int issueNumber) -> new IssueResult.Accepted(issueNumber);
-                case CouponReservation.Result.Existing(int issueNumber) -> couponService.findIssued(campaignId, userId)
-                    .<IssueResult>map(coupon -> new IssueResult.Issued(issueNumber, coupon))
-                    .orElseGet(() -> new IssueResult.Pending(issueNumber));
+                case CouponReservation.Result.Existing(int issueNumber) -> existing(campaignId, userId, issueNumber);
                 case CouponReservation.Result.SoldOut() -> throw new DomainException(DomainError.COUPON_SOLD_OUT);
                 case CouponReservation.Result.Lost() -> {
                     couponLossRecovery.close(campaignId);
@@ -81,6 +79,18 @@ public class CouponFacade {
             log.warn("저장소가 답하지 않아 접수하지 않는다. 예약이 늦게 적용됐으면 재요청이 같은 번호를 받고 대사가 메운다: campaignId={}, userId={}, cause={}",
                 campaignId, userId, NestedExceptionUtils.getMostSpecificCause(e).toString());
             throw new CoreException(ErrorType.COUPON_ADMISSION_UNAVAILABLE);
+        }
+    }
+
+    private IssueResult existing(Long campaignId, Long userId, int issueNumber) {
+        try {
+            return couponService.findIssued(campaignId, userId)
+                .<IssueResult>map(coupon -> new IssueResult.Issued(issueNumber, coupon))
+                .orElseGet(() -> new IssueResult.Pending(issueNumber));
+        } catch (DataAccessException e) {
+            log.warn("쿠폰이 적혔는지 DB 에서 확인하지 못해 PENDING 으로 답한다: campaignId={}, userId={}, cause={}",
+                campaignId, userId, NestedExceptionUtils.getMostSpecificCause(e).toString());
+            return new IssueResult.Pending(issueNumber);
         }
     }
 

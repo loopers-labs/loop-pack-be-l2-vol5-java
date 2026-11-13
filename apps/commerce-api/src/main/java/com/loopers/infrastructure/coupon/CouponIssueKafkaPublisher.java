@@ -8,6 +8,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.errors.RetriableException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.NestedExceptionUtils;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -63,7 +64,9 @@ class CouponIssueKafkaPublisher implements CouponIssuePublisher {
             Thread.currentThread().interrupt();
             return unconfirmed(issue, e);
         } catch (ExecutionException e) {
-            return rejected(issue, e.getCause());
+            return NestedExceptionUtils.getMostSpecificCause(e) instanceof RetriableException
+                ? unconfirmed(issue, e.getCause())
+                : rejected(issue, e.getCause());
         } catch (JsonProcessingException | RuntimeException e) {
             return rejected(issue, e);
         }

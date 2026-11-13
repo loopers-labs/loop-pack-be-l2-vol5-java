@@ -51,7 +51,7 @@ POST /api/v1/coupon-campaigns/{id}/issues
   ├─ Redis Lua 예약 ──────── {1, n} 새로 받음 / {0, n} 이미 있음 / {-1} 품절 / {-2} 유실 / {-3} 닫힘
   │     이미 있음 → DB 에 쿠폰이 있으면 200 ISSUED + couponId, 없으면 200 PENDING + n
   │     품절 409, 유실이면 캠페인을 닫고 503, Redis 가 답하지 않으면 503
-  ├─ Kafka 발행, ack 대기 ── 500ms 상한, 동시 대기 상한. producer 가 포기하면 예약 ZREM 뒤 503
+  ├─ Kafka 발행, ack 대기 ── 500ms 상한, 동시 대기 상한. 보내기 전에 끝난 실패면 예약 ZREM 뒤 503
   └─ 202 PENDING + issueNumber
 
 워커 (consumer × C) ─ poll 묶음을 캠페인별 구간마다 DB TX 하나로: 쿠폰 insert N + issued_count += N 조건부 update
@@ -101,7 +101,7 @@ return {1, next}
 | producer | `acks=all`, `enable.idempotence=true`, `delivery.timeout.ms` 30s |
 | ack 대기 | 500ms. 넘으면 503. 앞에 `max.block.ms` 1s 가 붙을 수 있어 최악 1.5s |
 | 동시 대기 | 로컬 Resilience4j `Bulkhead`(`coupon-publish`, 대기 0) N=128(14.1). 차면 기다리지 않고 **예약 전에** 503 이라 `ZREM` 이 없다 |
-| 결과 셋(`PUB-002`) | Published 202. Unconfirmed(`get()` timeout)는 producer 가 레코드를 쥐고 있어 30s 안에 닿을 수 있으므로 예약을 남기고 503. Rejected(future 실패, `send()` 가 던짐)는 producer 가 포기한 것이라 `ZREM` 뒤 503. `ZREM` 도 실패하면 예약은 남고 대사가 메운다 |
+| 결과 셋(`PUB-002`) | Published 202. Unconfirmed(`get()` timeout)는 producer 가 레코드를 쥐고 있어 30s 안에 닿을 수 있으므로 예약을 남기고 503. Rejected(`send()` 가 던짐, 또는 future 가 재시도성이 아닌 원인으로 실패)는 메시지가 없는 것이 확실하므로 `ZREM` 뒤 503. future 가 `RetriableException`(`delivery.timeout.ms` 만료, `NotEnoughReplicas`)으로 실패한 것은 리더에 닿았을 수 있어 Unconfirmed 와 같다. `ZREM` 도 실패하면 예약은 남고 대사가 메운다 |
 
 **ack 를 기다리는 이유**(Q-11). "202 인데 메시지가 없는" 간극을 요청 경로에서 없앤다. 기다리지 않으면 응답은 빠르지만 그 간극을 대사에만 기댄다. 뒤집을 조건: broker 확인 지연이 접수 p99 를 좌우할 때. 로컬에서는 ack p99 2 ~ 4ms 로 요청 전체(p50 1 ~ 2ms)에 묻힌다(14.1).
 
@@ -156,7 +156,7 @@ UPDATE coupon_campaign SET issued_count = issued_count + N WHERE id = ? AND issu
 | 다시 보낸 메시지 | `reservedAt` 은 대사 시각이다. 그 쿠폰의 `issued_at` 이 그만큼 늦다 |
 | 지표 | `coupon.issue.backlog`(`ZCARD − issued_count`), `coupon.issue.republished`. 재발행이 주기마다 계속 오르면 워커가 유예(한 주기)보다 밀려 있다는 뜻이라 알람 대상이다 |
 
-대사는 쿠폰을 만들지 않고 메시지를 다시 보낸다. 접수를 받는 인스턴스는 전부 대사를 켠다. 유실 감지의 하한(캐시의 DB 발급 수, `RSV-003`)을 대사가 갱신하므로, 대사를 끈 인스턴스는 하한이 첫 로드 값에 머물러 꼬리 유실을 못 본다. `coupon.issue.reconcile.enabled=false` 는 테스트와 측정에서만 쓴다. 두 선은 인스턴스 메모리라 인스턴스가 여럿이면 같은 번호를 두 번 보낼 수 있고 `WRK-004` 가 흡수한다. 뒤집을 조건: 재발행 지표가 인스턴스 수에 비례해 오를 때. 그때는 두 선을 Redis 에 두고 한 인스턴스만 돌린다. 정상 부하에서 후보가 0 이 아니면 "한 주기 전" 을 "두 주기 전" 으로 늘린다. 뒤집을 조건 둘째: 워커가 밀린 동안의 헛재발행이 워커를 더 밀리게 하는 되먹임이 지표로 보일 때. 그때는 주기당 재발행 상한을 두는 것이 먼저이고, 워커 lag 를 묻는 것은 그다음이다.
+대사는 쿠폰을 만들지 않고 메시지를 다시 보낸다. 접수를 받는 인스턴스는 전부 대사를 켠다. 유실 감지의 하한(캐시의 DB 발급 수, `RSV-003`)을 대사가 갱신하므로, 대사를 끈 인스턴스는 하한이 첫 로드 값에 머물러 꼬리 유실을 못 본다. `coupon.issue.reconcile.enabled=false` 는 테스트와 측정에서만 쓴다. 두 선은 인스턴스 메모리라 인스턴스가 여럿이면 같은 번호를 두 번 보낼 수 있고 `WRK-004` 가 흡수한다. 뒤집을 조건: 재발행 지표가 인스턴스 수에 비례해 오를 때. 그때는 두 선을 Redis 에 두고 한 인스턴스만 돌린다. 정상 부하에서 후보가 0 이 아니면 "한 주기 전" 을 "두 주기 전" 으로 늘린다. 뒤집을 조건 둘째: 워커가 밀린 동안의 헛재발행이 워커를 더 밀리게 하는 되먹임이 지표로 보일 때. 그때는 주기당 재발행 상한을 두는 것이 먼저이고, 워커 lag 를 묻는 것은 그다음이다. 뒤집을 조건 셋째: 읽기가 `ZRANGEBYSCORE … LIMIT offset` 이라 offset 에 비례해 비싸고 재시작 뒤에는 처음부터 다시 읽으므로, 캠페인 하나의 예약이 수십만을 넘어 대사 한 주기가 Redis 를 눈에 띄게 잡을 때. 그때는 마지막 번호를 커서로 쓰고 같은 번호는 사용자 ID 로 가른다.
 
 ## 11. 장애 (`FLT-*`)
 
