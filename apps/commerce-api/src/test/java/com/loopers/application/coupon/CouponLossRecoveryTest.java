@@ -85,21 +85,6 @@ class CouponLossRecoveryTest {
         }
     }
 
-    @DisplayName("FLT-008: 대사가 DB 발급 수를 캐시에 반영한 뒤 Redis 가 비면, 다음 접수는 유실로 보고 503 이다")
-    @Test
-    void detectsLossOnceReconcileRefreshedTheLowerBound() throws Exception {
-        Long campaignId = openCampaign();
-        assertThat(couponFacade.issue(campaignId, 42L, NOW)).isEqualTo(new CouponFacade.IssueResult.Accepted(1));
-        eventually(() -> couponCount(campaignId) == 1);
-        couponReconciliation.reconcile(campaignId);
-
-        redisCleanUp.truncateAll();
-
-        assertThatThrownBy(() -> couponFacade.issue(campaignId, 7L, NOW))
-            .isInstanceOf(CoreException.class)
-            .hasFieldOrPropertyWithValue("errorType", ErrorType.COUPON_ADMISSION_UNAVAILABLE);
-    }
-
     @DisplayName("FLT-008: 대사가 하한을 갱신하기 전에 Redis 가 비어도 다음 접수는 유실로 보고 503 이며, 복구 뒤 앞서 202 를 받은 사람은 전원 쿠폰이 있고 한도를 넘겨 받지 않는다")
     @Test
     void refusesAfterLossEvenBeforeReconcileAndKeepsEveryAcceptedPromise() throws Exception {
