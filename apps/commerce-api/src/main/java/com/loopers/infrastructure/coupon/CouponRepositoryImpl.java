@@ -18,7 +18,17 @@ public class CouponRepositoryImpl implements CouponRepository {
     }
 
     @Override
+    public Coupon insert(Coupon coupon) {
+        return couponJpaRepository.saveAndFlush(coupon);
+    }
+
+    @Override
     public Optional<Coupon> findById(Long id) {
         return couponJpaRepository.findById(id);
+    }
+
+    @Override
+    public Optional<Coupon> findByCampaignIdAndUserId(Long campaignId, Long userId) {
+        return couponJpaRepository.findByCampaignIdAndUserId(campaignId, userId);
     }
 }

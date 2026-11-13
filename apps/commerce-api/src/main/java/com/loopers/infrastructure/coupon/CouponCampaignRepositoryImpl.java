@@ -21,4 +21,9 @@ public class CouponCampaignRepositoryImpl implements CouponCampaignRepository {
     public Optional<CouponCampaign> findById(Long id) {
         return couponCampaignJpaRepository.findById(id);
     }
+
+    @Override
+    public int increaseIssuedCount(Long id) {
+        return couponCampaignJpaRepository.increaseIssuedCount(id);
+    }
 }
