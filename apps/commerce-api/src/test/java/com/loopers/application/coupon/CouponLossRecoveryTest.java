@@ -25,6 +25,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest(properties = {
     "kafka.topics.coupon-issues=" + KafkaTestContainersConfig.COUPON_ISSUES_WORKER,
+    "kafka.topics.coupon-issues-dlt=" + KafkaTestContainersConfig.COUPON_ISSUES_WORKER_DLT,
     "coupon.issue.worker.auto-startup=true"
 })
 class CouponLossRecoveryTest {
@@ -107,5 +108,37 @@ class CouponLossRecoveryTest {
 
         couponReservation.open(campaignId);
         assertThat(couponFacade.issue(campaignId, 42L, NOW)).isEqualTo(new CouponFacade.IssueResult.Accepted(1));
+    }
+
+    private boolean acceptedWithNumber(Long campaignId, Long userId, int issueNumber) {
+        try {
+            return couponFacade.issue(campaignId, userId, NOW).equals(new CouponFacade.IssueResult.Accepted(issueNumber));
+        } catch (CoreException e) {
+            return false;
+        }
+    }
+
+    @DisplayName("FLT-008: Redis 가 비면 첫 접수가 캠페인을 닫고, 워커가 비운 뒤 DB 쿠폰으로 명단을 다시 만들어 열며, 번호가 이어진다")
+    @Test
+    void recoversReservationsFromDbAfterLoss() throws Exception {
+        Long campaignId = openCampaign();
+        for (long userId = 1; userId <= 3; userId++) {
+            assertThat(couponFacade.issue(campaignId, userId, NOW))
+                .isEqualTo(new CouponFacade.IssueResult.Accepted((int) userId));
+        }
+        eventually(() -> couponCount(campaignId) == 3);
+        couponReconciliation.reconcile(campaignId);
+
+        redisCleanUp.truncateAll();
+
+        assertThatThrownBy(() -> couponFacade.issue(campaignId, 4L, NOW))
+            .isInstanceOf(CoreException.class)
+            .hasFieldOrPropertyWithValue("errorType", ErrorType.COUPON_ADMISSION_UNAVAILABLE);
+        eventually(() -> acceptedWithNumber(campaignId, 4L, 4));
+
+        assertThat(couponReservation.count(campaignId)).isEqualTo(4);
+        assertThat(couponFacade.issue(campaignId, 2L, NOW))
+            .isInstanceOf(CouponFacade.IssueResult.Issued.class)
+            .extracting("issueNumber").isEqualTo(2);
     }
 }

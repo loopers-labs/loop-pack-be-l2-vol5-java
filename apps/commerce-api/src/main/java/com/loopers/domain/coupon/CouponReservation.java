@@ -33,6 +33,10 @@ public interface CouponReservation {
 
     void open(Long campaignId);
 
+    void clear(Long campaignId);
+
+    void restore(Long campaignId, List<Reservation> reservations);
+
     int largestNumber(Long campaignId);
 
     long count(Long campaignId);

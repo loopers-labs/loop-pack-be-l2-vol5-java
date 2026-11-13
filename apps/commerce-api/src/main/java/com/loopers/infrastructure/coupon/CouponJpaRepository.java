@@ -1,5 +1,6 @@
 package com.loopers.infrastructure.coupon;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -19,4 +20,7 @@ interface CouponJpaRepository extends JpaRepository<CouponEntity, Long> {
     @Query("select c.issueNumber from CouponEntity c "
         + "where c.campaignId = :campaignId and c.issueNumber between :from and :to")
     List<Integer> issueNumbersBetween(@Param("campaignId") Long campaignId, @Param("from") int from, @Param("to") int to);
+
+    List<CouponEntity> findByCampaignIdAndIssueNumberGreaterThanOrderByIssueNumberAsc(Long campaignId, int afterNumber,
+                                                                                    Pageable page);
 }

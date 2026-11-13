@@ -28,6 +28,7 @@ public class CouponFacade {
     private final CouponReservation couponReservation;
     private final CouponIssuePublisher couponIssuePublisher;
     private final CouponPublishSlots couponPublishSlots;
+    private final CouponLossRecovery couponLossRecovery;
 
     public sealed interface IssueResult {
 
@@ -58,7 +59,10 @@ public class CouponFacade {
                 .<IssueResult>map(coupon -> new IssueResult.Issued(issueNumber, coupon))
                 .orElseGet(() -> new IssueResult.Pending(issueNumber));
             case CouponReservation.Result.SoldOut() -> throw new DomainException(DomainError.COUPON_SOLD_OUT);
-            case CouponReservation.Result.Lost() -> throw new CoreException(ErrorType.COUPON_ADMISSION_UNAVAILABLE);
+            case CouponReservation.Result.Lost() -> {
+                couponLossRecovery.start(campaignId);
+                throw new CoreException(ErrorType.COUPON_ADMISSION_UNAVAILABLE);
+            }
             case CouponReservation.Result.Closed() -> throw new CoreException(ErrorType.COUPON_ADMISSION_UNAVAILABLE);
         };
     }

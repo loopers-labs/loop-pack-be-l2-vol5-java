@@ -5,11 +5,13 @@ import com.loopers.domain.coupon.CouponReservation;
 import com.loopers.domain.coupon.IssueQuota;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Set;
 
@@ -77,6 +79,26 @@ class RedisCouponReservation implements CouponReservation {
     @Override
     public void cancel(Long campaignId, Long userId) {
         redis.opsForZSet().remove(key(campaignId), String.valueOf(userId));
+    }
+
+    @Override
+    public void clear(Long campaignId) {
+        redis.unlink(key(campaignId));
+    }
+
+    @Override
+    public void restore(Long campaignId, List<Reservation> reservations) {
+        if (reservations.isEmpty()) {
+            return;
+        }
+        String key = key(campaignId);
+        redis.executePipelined((RedisCallback<Object>) connection -> {
+            for (Reservation reservation : reservations) {
+                connection.zSetCommands().zAdd(key.getBytes(StandardCharsets.UTF_8), reservation.issueNumber(),
+                    String.valueOf(reservation.userId()).getBytes(StandardCharsets.UTF_8));
+            }
+            return null;
+        });
     }
 
     @Override

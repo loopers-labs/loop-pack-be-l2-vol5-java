@@ -2,10 +2,12 @@ package com.loopers.infrastructure.coupon;
 
 import com.loopers.domain.coupon.Coupon;
 import com.loopers.domain.coupon.CouponRepository;
+import com.loopers.domain.coupon.CouponReservation;
 import com.loopers.support.error.DomainError;
 import com.loopers.support.error.DomainException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 
 import java.sql.SQLException;
@@ -63,5 +65,15 @@ public class CouponRepositoryImpl implements CouponRepository {
     @Override
     public Set<Integer> issuedNumbersBetween(Long campaignId, int from, int to) {
         return new HashSet<>(couponJpaRepository.issueNumbersBetween(campaignId, from, to));
+    }
+
+    @Override
+    public List<CouponReservation.Reservation> findIssuedAfter(Long campaignId, int afterNumber, int limit) {
+        return couponJpaRepository
+            .findByCampaignIdAndIssueNumberGreaterThanOrderByIssueNumberAsc(campaignId, afterNumber, PageRequest.of(0, limit))
+            .stream()
+            .map(CouponEntity::toDomain)
+            .map(coupon -> new CouponReservation.Reservation(coupon.userId(), coupon.issueNumber()))
+            .toList();
     }
 }

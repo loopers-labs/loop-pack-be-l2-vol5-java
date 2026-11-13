@@ -50,4 +50,8 @@ public class CouponService {
     public Set<Integer> issuedNumbersBetween(Long campaignId, int from, int to) {
         return couponRepository.issuedNumbersBetween(campaignId, from, to);
     }
+
+    public List<CouponReservation.Reservation> issuedAfter(Long campaignId, int afterNumber, int limit) {
+        return couponRepository.findIssuedAfter(campaignId, afterNumber, limit);
+    }
 }

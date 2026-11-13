@@ -15,4 +15,6 @@ public interface CouponRepository {
     int maxIssueNumber(Long campaignId);
 
     Set<Integer> issuedNumbersBetween(Long campaignId, int from, int to);
+
+    List<CouponReservation.Reservation> findIssuedAfter(Long campaignId, int afterNumber, int limit);
 }
