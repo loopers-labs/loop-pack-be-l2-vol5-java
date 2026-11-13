@@ -3,6 +3,8 @@ package com.loopers.domain.coupon;
 import com.loopers.infrastructure.coupon.CouponCampaignJpaRepository;
 import com.loopers.infrastructure.coupon.CouponJpaRepository;
 import com.loopers.utils.DatabaseCleanUp;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -12,6 +14,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.ZonedDateTime;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -33,6 +36,9 @@ class CouponRepositoryTest {
 
     @Autowired
     private TransactionTemplate transactionTemplate;
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
@@ -74,6 +80,23 @@ class CouponRepositoryTest {
 
         // assert
         assertThat(couponJpaRepository.count()).isEqualTo(3);
+    }
+
+    @DisplayName("내 목록 인덱스는 (user_id 오름차순, issued_at·id 내림차순)으로 실제 DDL에 만들어지고, 목록 조회가 이 인덱스를 쓴다.")
+    @Test
+    void listIndexIsCreatedWithDescendingColumns_andUsedByTheListQuery() {
+        // act
+        @SuppressWarnings("unchecked")
+        List<Object[]> indexRows = entityManager
+            .createNativeQuery("show index from coupon where Key_name = 'idx_coupon_user_issued'").getResultList();
+        @SuppressWarnings("unchecked")
+        List<Object[]> plan = entityManager.createNativeQuery(
+            "explain select * from coupon where user_id = 1 order by issued_at desc, id desc").getResultList();
+
+        // assert — SHOW INDEX 열: [3]=Seq_in_index, [4]=Column_name, [5]=Collation(A 오름차순, D 내림차순)
+        assertThat(indexRows).extracting(row -> row[4] + ":" + row[5]).containsExactly("user_id:A", "issued_at:D", "id:D");
+        // EXPLAIN 열: [5]=key — 정렬을 위한 별도 filesort 없이 이 인덱스를 쓴다
+        assertThat(plan).extracting(row -> String.valueOf(row[5])).contains("idx_coupon_user_issued");
     }
 
     @DisplayName("발급 수 증가는 한도에 닿으면 영향 행 0으로 실패하고, 한도를 넘기지 않는다.")
