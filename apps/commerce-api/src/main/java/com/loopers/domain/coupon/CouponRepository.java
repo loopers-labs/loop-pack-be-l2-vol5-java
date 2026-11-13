@@ -2,6 +2,7 @@ package com.loopers.domain.coupon;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 public interface CouponRepository {
 
@@ -10,4 +11,8 @@ public interface CouponRepository {
     Optional<Coupon> find(Long campaignId, Long userId);
 
     List<Coupon> findAllOwnedBy(Long userId);
+
+    int maxIssueNumber(Long campaignId);
+
+    Set<Integer> issuedNumbersBetween(Long campaignId, int from, int to);
 }

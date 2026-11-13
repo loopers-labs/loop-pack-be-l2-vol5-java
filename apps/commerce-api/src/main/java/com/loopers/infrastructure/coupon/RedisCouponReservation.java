@@ -6,10 +6,12 @@ import com.loopers.domain.coupon.IssueQuota;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Set;
 
 @Component
 class RedisCouponReservation implements CouponReservation {
@@ -57,5 +59,32 @@ class RedisCouponReservation implements CouponReservation {
     @Override
     public void cancel(Long campaignId, Long userId) {
         redis.opsForZSet().remove(key(campaignId), String.valueOf(userId));
+    }
+
+    @Override
+    public int largestNumber(Long campaignId) {
+        Set<ZSetOperations.TypedTuple<String>> top = redis.opsForZSet().reverseRangeWithScores(key(campaignId), 0, 0);
+        if (top == null || top.isEmpty()) {
+            return 0;
+        }
+        return top.iterator().next().getScore().intValue();
+    }
+
+    @Override
+    public long count(Long campaignId) {
+        Long size = redis.opsForZSet().zCard(key(campaignId));
+        return size == null ? 0 : size;
+    }
+
+    @Override
+    public List<Reservation> reservedBetween(Long campaignId, int afterNumber, int toNumber, int limit) {
+        Set<ZSetOperations.TypedTuple<String>> tuples = redis.opsForZSet()
+            .rangeByScoreWithScores(key(campaignId), afterNumber + 1, toNumber, 0, limit);
+        if (tuples == null) {
+            return List.of();
+        }
+        return tuples.stream()
+            .map(tuple -> new Reservation(Long.valueOf(tuple.getValue()), tuple.getScore().intValue()))
+            .toList();
     }
 }

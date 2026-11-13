@@ -41,19 +41,14 @@ import java.util.function.BooleanSupplier;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(properties = {
-    "kafka.topics.coupon-issues=" + CouponIssueListenerTest.TOPIC,
+    "kafka.topics.coupon-issues=" + KafkaTestContainersConfig.COUPON_ISSUES_WORKER,
     "coupon.issue.worker.auto-startup=true"
 })
 class CouponIssueListenerTest {
 
-    static final String TOPIC = "coupon-issues-worker";
-
+    private static final String TOPIC = KafkaTestContainersConfig.COUPON_ISSUES_WORKER;
     private static final Instant NOW = Instant.parse("2026-11-08T00:00:00.123456Z");
     private static final Duration WITHIN = Duration.ofSeconds(10);
-
-    static {
-        KafkaTestContainersConfig.createTopic(TOPIC, 3, Map.of());
-    }
 
     private final CouponFacade couponFacade;
     private final CouponIssuePublisher publisher;

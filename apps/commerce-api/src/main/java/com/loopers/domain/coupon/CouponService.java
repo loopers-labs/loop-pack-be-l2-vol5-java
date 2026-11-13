@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -40,5 +41,13 @@ public class CouponService {
 
     public List<Coupon> findOwnedBy(Long userId) {
         return couponRepository.findAllOwnedBy(userId);
+    }
+
+    public int maxIssueNumber(Long campaignId) {
+        return couponRepository.maxIssueNumber(campaignId);
+    }
+
+    public Set<Integer> issuedNumbersBetween(Long campaignId, int from, int to) {
+        return couponRepository.issuedNumbersBetween(campaignId, from, to);
     }
 }

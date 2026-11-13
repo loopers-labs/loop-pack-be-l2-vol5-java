@@ -21,6 +21,7 @@ public class KafkaTestContainersConfig {
 
     public static final String ORDER_EVENTS = "order-events";
     public static final String COUPON_ISSUES = "coupon-issues";
+    public static final String COUPON_ISSUES_WORKER = "coupon-issues-worker";
 
     private static final int ORDER_EVENTS_PARTITIONS = 3;
     private static final short REPLICATION_FACTOR = 1;
@@ -33,6 +34,7 @@ public class KafkaTestContainersConfig {
         kafkaContainer.start();
         createTopic(ORDER_EVENTS, ORDER_EVENTS_PARTITIONS, Map.of());
         createTopic(COUPON_ISSUES, ORDER_EVENTS_PARTITIONS, Map.of());
+        createTopic(COUPON_ISSUES_WORKER, ORDER_EVENTS_PARTITIONS, Map.of());
         System.setProperty("spring.kafka.bootstrap-servers", kafkaContainer.getBootstrapServers());
     }
 

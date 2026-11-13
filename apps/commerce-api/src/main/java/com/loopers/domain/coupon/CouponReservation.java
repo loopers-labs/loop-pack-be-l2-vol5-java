@@ -1,5 +1,7 @@
 package com.loopers.domain.coupon;
 
+import java.util.List;
+
 public interface CouponReservation {
 
     sealed interface Result {
@@ -17,7 +19,16 @@ public interface CouponReservation {
         }
     }
 
+    record Reservation(Long userId, int issueNumber) {
+    }
+
     Result reserve(Long campaignId, Long userId, IssueQuota quota, int dbIssuedCount);
 
     void cancel(Long campaignId, Long userId);
+
+    int largestNumber(Long campaignId);
+
+    long count(Long campaignId);
+
+    List<Reservation> reservedBetween(Long campaignId, int afterNumber, int toNumber, int limit);
 }

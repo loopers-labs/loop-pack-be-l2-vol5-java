@@ -40,6 +40,9 @@ coupon:
     worker:
       concurrency: 4 # WRK-002. consumer 스레드 수. 1부의 knee 4 가 출발값이고 EXP-023 뒤 다시 정한다
       auto-startup: true # WRK-008. 끄면 접수는 받되 기록하지 않는다. EXP-023 이 끈 채 예약을 쌓는다
+    reconcile:
+      enabled: true # RCN-001. 캐시에 있는 캠페인마다 예약과 쿠폰을 대조해 빠진 메시지를 다시 보낸다
+      interval: 10s # Q-14. 지난 실행의 최대 번호가 "한 주기는 지났다" 를 뜻한다
 
 springdoc:
   use-fqn: true
@@ -95,3 +98,5 @@ coupon:
       max-in-flight: 2
     worker:
       auto-startup: false # 요청 경로 테스트가 "아직 DB 에 없다" 를 단언한다. 워커 테스트만 전용 토픽으로 켠다
+    reconcile:
+      enabled: false # 대사 테스트가 직접 부른다
