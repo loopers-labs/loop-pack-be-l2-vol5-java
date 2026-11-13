@@ -5,6 +5,7 @@ import com.loopers.domain.coupon.Coupon;
 import com.loopers.domain.coupon.CouponService;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -18,6 +19,7 @@ import java.time.ZonedDateTime;
  *
  * <p>유일 제약 충돌은 rollback 뒤 새 트랜잭션에서 기존 쿠폰을 확인한 경우에만 중복으로 본다. 연결 오류 등 다른 예외는 그대로 던진다.
  */
+@Slf4j
 @Component
 public class CouponIssueWriter {
 
@@ -50,6 +52,16 @@ public class CouponIssueWriter {
                 throw e;
             }
             return CouponWriteResult.alreadyIssued(existing.getId());
+        }
+    }
+
+    /** 202 로 약속하기 전에 당첨 기록을 남긴다. 이미 있으면 같은 약속이므로 성공으로 본다. 다른 실패는 그대로 던진다. */
+    public void recordTicket(Long campaignId, Long userId) {
+        try {
+            writeTransaction.executeWithoutResult(status ->
+                couponService.recordTicket(campaignId, userId, ZonedDateTime.now(clock)));
+        } catch (DataIntegrityViolationException e) {
+            log.info("이미 당첨 기록이 있다. campaignId={}, userId={}", campaignId, userId);
         }
     }
 }

@@ -14,6 +14,7 @@ public class CouponService {
 
     private final CouponCampaignRepository couponCampaignRepository;
     private final CouponRepository couponRepository;
+    private final CouponIssueTicketRepository couponIssueTicketRepository;
 
     /**
      * 쿠폰을 저장하고 발급 수를 올린다. 트랜잭션은 호출하는 쪽이 연다.
@@ -33,5 +34,14 @@ public class CouponService {
 
     public Optional<Coupon> findIssued(Long campaignId, Long userId) {
         return couponRepository.findByCampaignIdAndUserId(campaignId, userId);
+    }
+
+    /** 202 로 약속한 당첨을 기록한다. 같은 당첨의 기록이 이미 있으면 유일 제약 충돌이 난다. */
+    public CouponIssueTicket recordTicket(Long campaignId, Long userId, ZonedDateTime now) {
+        return couponIssueTicketRepository.insert(CouponIssueTicket.record(campaignId, userId, now));
+    }
+
+    public boolean campaignExists(Long campaignId) {
+        return couponCampaignRepository.findById(campaignId).isPresent();
     }
 }

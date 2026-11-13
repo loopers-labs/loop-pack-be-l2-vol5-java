@@ -18,6 +18,11 @@ public class CouponIssueTicketRepositoryImpl implements CouponIssueTicketReposit
     }
 
     @Override
+    public CouponIssueTicket insert(CouponIssueTicket couponIssueTicket) {
+        return couponIssueTicketJpaRepository.saveAndFlush(couponIssueTicket);
+    }
+
+    @Override
     public Optional<CouponIssueTicket> findById(Long id) {
         return couponIssueTicketJpaRepository.findById(id);
     }
