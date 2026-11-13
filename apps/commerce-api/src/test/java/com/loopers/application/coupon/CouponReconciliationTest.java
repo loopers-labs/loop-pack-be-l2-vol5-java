@@ -93,9 +93,9 @@ class CouponReconciliationTest {
         }
     }
 
-    @DisplayName("RCN-001: 워커가 비어 있으면 지난 실행 때 있었는데 DB 에 없는 번호를 전부 다시 보내 워커가 쿠폰으로 만든다. 마지막 번호도 빠지지 않는다")
+    @DisplayName("RCN-001: 지난 실행 때 있었는데 DB 에 없는 번호를 전부 다시 보내 워커가 쿠폰으로 만든다. 마지막 번호도 빠지지 않는다")
     @Test
-    void republishesEveryMissingNumberWhenTheWorkerIsDrained() throws Exception {
+    void republishesEveryMissingNumber() throws Exception {
         Long campaignId = openCampaign();
         reserveOnly(campaignId, 1L);
         reserveOnly(campaignId, 2L);

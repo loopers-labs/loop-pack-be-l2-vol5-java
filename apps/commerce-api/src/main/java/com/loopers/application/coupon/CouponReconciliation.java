@@ -1,7 +1,6 @@
 package com.loopers.application.coupon;
 
 import com.loopers.domain.coupon.CouponCampaign;
-import com.loopers.domain.coupon.CouponIssueBacklog;
 import com.loopers.domain.coupon.CouponIssuePublisher;
 import com.loopers.domain.coupon.CouponIssuePublisher.CouponIssue;
 import com.loopers.domain.coupon.CouponReservation;
@@ -31,13 +30,11 @@ public class CouponReconciliation {
 
     static final String REPUBLISHED = "coupon.issue.republished";
     static final String BACKLOG = "coupon.issue.backlog";
-    static final String SKIPPED = "coupon.issue.reconcile.skipped";
     private static final int PAGE = 1_000;
 
     private final CouponReservation couponReservation;
     private final CouponService couponService;
     private final CouponIssuePublisher couponIssuePublisher;
-    private final CouponIssueBacklog backlog;
     private final CampaignCache campaignCache;
     private final MeterRegistry meterRegistry;
     private final Map<Long, Watermark> watermarks = new ConcurrentHashMap<>();
@@ -47,13 +44,12 @@ public class CouponReconciliation {
     }
 
     public void reconcileAll() {
-        boolean drained = backlog.isDrained();
         for (Long campaignId : couponService.findActiveCampaignIds()) {
             try {
                 if (couponReservation.isClosed(campaignId)) {
                     continue;
                 }
-                reconcile(campaignId, drained);
+                reconcile(campaignId);
             } catch (RuntimeException e) {
                 log.warn("대사가 실패해 다음 주기에 다시 본다: campaignId={}", campaignId, e);
             }
@@ -61,16 +57,6 @@ public class CouponReconciliation {
     }
 
     public int reconcile(Long campaignId) {
-        return reconcile(campaignId, backlog.isDrained());
-    }
-
-    private int reconcile(Long campaignId, boolean drained) {
-        if (!drained) {
-            meterRegistry.counter(SKIPPED, "campaignId", String.valueOf(campaignId)).increment();
-            log.warn("워커가 밀려 있어 이번 주기 대사를 건너뛴다. 이 사이의 누락은 큐가 빈 뒤에 잡힌다: campaignId={}", campaignId);
-            refreshCounts(campaignId);
-            return 0;
-        }
         Watermark previous = watermarks.getOrDefault(campaignId, new Watermark(0, 0));
         int bound = previous.seenMax();
         int confirmedUpTo = previous.confirmedUpTo();
