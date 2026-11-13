@@ -33,6 +33,11 @@ public class CampaignCache {
         return Set.copyOf(campaigns.keySet());
     }
 
+    public void refreshIssuedCount(Long campaignId, int issuedCount) {
+        campaigns.computeIfPresent(campaignId, (id, cached) -> CouponCampaign.restore(cached.getId(),
+            cached.getName(), cached.getDiscountAmount(), cached.getTotalQuota(), issuedCount, cached.isActive()));
+    }
+
     public void clear() {
         campaigns.clear();
     }

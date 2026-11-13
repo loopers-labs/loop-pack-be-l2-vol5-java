@@ -200,6 +200,7 @@ POST /api/v1/coupon-campaigns/{id}/issues
 |---|---|
 | 키 | 캠페인마다 `coupon:campaign:{campaignId}:issued`. ZSET, member 는 사용자 ID, score 는 `issueNumber` |
 | 한도, 활성 | 프로세스의 캠페인 캐시에서 Lua 인자로 넘긴다(`RSV-003`). 캐시는 `ConcurrentHashMap`, 만료 없음. 캠페인은 만든 뒤 바뀌지 않는다(Q-5) |
+| DB 발급 수 (유실 감지의 하한) | 같은 캐시에 실려 Lua 의 `dbIssuedCount` 로 간다. 이것만은 캐시가 아니라 **하한**이다. 처음 읽은 값(대개 0)에 머물면 `ZCARD < 하한` 이 영원히 안 울리므로, 대사가 10 초마다 backlog 게이지를 위해 읽는 DB 값으로 `issuedCount` 만 바꾼다(`refreshIssuedCount`). 한도와 활성은 그대로다. 하한이 10 초 뒤처져도 `ZCARD ≥ DB 발급 수` 는 항상 참이라 오탐이 없고, 유실은 늦어도 한 주기 뒤 첫 요청에서 잡힌다 |
 | 유실 감지 인자 | 캐시가 아는 DB 의 `issued_count`. `ZCARD` 가 그보다 작으면 집합이 줄어든 것이다(Q-15) |
 | 연결 | `REDIS_TEMPLATE_MASTER` |
 | 품절 뒤 요청 | 그대로 Lua 에 간다. 기존 예약이면 `{0, n}` 으로 200 이어야 하므로(`CPN-004`) 프로세스에 품절을 표시해 Redis 를 건너뛰지 않는다. 품절 요청의 비용은 Lua 한 번이다(7.1) |
@@ -307,7 +308,7 @@ UPDATE coupon_campaign SET issued_count = issued_count + 1 WHERE id = ? AND issu
 
 | 항목 | 정한 것 |
 |---|---|
-| 주기 | `@Scheduled` 10 초(Q-14) |
+| 주기 | `@Scheduled` 10 초(Q-14). 잰 값이 아니라 두 경계 사이의 값이다. 아래 경계는 Unconfirmed 메시지가 뒤늦게 닿는 시간(`delivery.timeout.ms` 30 초가 최대, 로컬 ack p99 77ms)이라 주기보다 늦게 닿으면 한 번 더 보내고 `WRK-004` 가 흡수한다. 위 경계는 메시지를 잃은 사용자가 ISSUED 를 보기까지 1~2 주기라는 것이다. 비용은 경계가 아니다 |
 | 대상 | 캐시에 있는 활성 캠페인 |
 | 누락 판정 | 번호로 한다. ZSET 에 예약 시각이 없고(score 가 번호), 번호는 가장 큰 score + 1 이라 시간 순이다. 후보 = 번호 ≤ 지난 실행 때 본 최대 번호(한 주기는 지남) 이고 번호 ≤ DB 의 최대 `issue_number`(워커가 그 번호를 지나감) 인데 DB 에 없는 것 |
 | 읽기 | `ZRANGEBYSCORE key (읽기 커서 min(지난 최대, DB 최대) WITHSCORES LIMIT 1000` 으로 두 선 사이만 읽는다. ZSET 끝은 `ZREVRANGE 0 0` 한 번이다. 10 만을 한 번에 읽으면 7.2 의 비례로 15ms 를 모두 세운다 |

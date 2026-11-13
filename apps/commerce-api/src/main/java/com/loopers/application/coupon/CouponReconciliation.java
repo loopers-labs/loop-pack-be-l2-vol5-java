@@ -1,5 +1,6 @@
 package com.loopers.application.coupon;
 
+import com.loopers.domain.coupon.CouponCampaign;
 import com.loopers.domain.coupon.CouponIssuePublisher;
 import com.loopers.domain.coupon.CouponIssuePublisher.CouponIssue;
 import com.loopers.domain.coupon.CouponReservation;
@@ -85,8 +86,9 @@ public class CouponReconciliation {
             }
         }
         watermarks.put(campaignId, new Watermark(couponReservation.largestNumber(campaignId), confirmedUpTo));
-        backlog(campaignId).set(couponReservation.count(campaignId) - couponService.findCampaign(campaignId)
-            .map(campaign -> (long) campaign.getIssuedCount()).orElse(0L));
+        int dbIssuedCount = couponService.findCampaign(campaignId).map(CouponCampaign::getIssuedCount).orElse(0);
+        campaignCache.refreshIssuedCount(campaignId, dbIssuedCount);
+        backlog(campaignId).set(couponReservation.count(campaignId) - dbIssuedCount);
         return republished;
     }
 
