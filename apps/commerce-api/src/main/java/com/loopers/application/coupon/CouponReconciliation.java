@@ -106,6 +106,10 @@ public class CouponReconciliation {
         return true;
     }
 
+    public void clear() {
+        watermarks.clear();
+    }
+
     private AtomicLong backlog(Long campaignId) {
         return backlogs.computeIfAbsent(campaignId,
             id -> meterRegistry.gauge(BACKLOG, Tags.of("campaignId", String.valueOf(id)), new AtomicLong()));

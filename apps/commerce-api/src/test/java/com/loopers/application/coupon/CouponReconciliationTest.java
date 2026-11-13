@@ -63,6 +63,7 @@ class CouponReconciliationTest {
         databaseCleanUp.truncateAllTables();
         redisCleanUp.truncateAll();
         campaignCache.clear();
+        couponReconciliation.clear();
     }
 
     private Long openCampaign() {

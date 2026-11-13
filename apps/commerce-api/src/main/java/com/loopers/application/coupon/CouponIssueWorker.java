@@ -16,6 +16,7 @@ public class CouponIssueWorker {
     static final String REJECTED_BY_DB = "coupon.issue.rejected_by_db";
 
     private final CouponTransactions couponTransactions;
+    private final CouponLossRecovery couponLossRecovery;
     private final MeterRegistry meterRegistry;
 
     public void record(CouponIssue issue) {
@@ -38,5 +39,6 @@ public class CouponIssueWorker {
         meterRegistry.counter(REJECTED_BY_DB, "campaignId", String.valueOf(issue.campaignId())).increment();
         log.warn("Redis 가 받아들인 접수를 DB 가 품절로 거절했다. 예약 집합과 DB 가 어긋났다: campaignId={}, userId={}, issueNumber={}",
             issue.campaignId(), issue.userId(), issue.issueNumber());
+        couponLossRecovery.start(issue.campaignId());
     }
 }

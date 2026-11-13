@@ -30,7 +30,7 @@ public class CouponLossRecovery {
     private final CouponIssueBacklog backlog;
     private final MeterRegistry meterRegistry;
     private final Set<Long> inProgress = ConcurrentHashMap.newKeySet();
-    private final ExecutorService executor = Executors.newSingleThreadExecutor(runnable -> {
+    private final ExecutorService executor = Executors.newCachedThreadPool(runnable -> {
         Thread thread = new Thread(runnable, "coupon-loss-recovery");
         thread.setDaemon(true);
         return thread;
