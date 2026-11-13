@@ -123,7 +123,7 @@ class CouponIssueWorkerIntegrationTest {
     void isIdempotent_whenSameEntryProcessedAgain() {
         // arrange
         long campaignId = couponTables.insertOpenCampaign(2);
-        IssueEntry entry = new IssueEntry(campaignId, "0-1", 7, 1, 1, "1");
+        IssueEntry entry = new IssueEntry(campaignId, "0-1", 7, 1, 1, "1", 0, 0, 1);
 
         // act
         long first = couponIssueSteps.issue(entry);
@@ -155,9 +155,9 @@ class CouponIssueWorkerIntegrationTest {
         );
     }
 
-    @DisplayName("열리지 않은 캠페인이거나 슬롯이 한도 밖이면 발급하지 않고 대기열에 남긴다.")
+    @DisplayName("슬롯이 한도 밖이면(슬롯 배정 버그) 발급하지 않고 미분류로 세어 지연 ZSET 으로 놓는다. (D-126, D-129)")
     @Test
-    void leavesPending_whenIssueFails() {
+    void delaysAsUnclassified_whenSlotOutOfQuota() {
         // arrange
         long campaignId = couponTables.insertOpenCampaign(1);
         queued(campaignId, 7, 2);
@@ -169,7 +169,8 @@ class CouponIssueWorkerIntegrationTest {
         assertAll(
             () -> assertThat(completed).isZero(),
             () -> assertThat(couponCount(campaignId)).isZero(),
-            () -> assertThat(pendingOf(campaignId)).isEqualTo(1L)
+            () -> assertThat(pendingOf(campaignId)).isZero(),
+            () -> assertThat(redis.opsForZSet().range(key(campaignId, "delayed"), 0, -1)).containsExactly("7|2|2|1|1|0")
         );
     }
 
