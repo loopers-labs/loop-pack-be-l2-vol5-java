@@ -59,6 +59,7 @@ public class CouponFacade {
                 .orElseGet(() -> new IssueResult.Pending(issueNumber));
             case CouponReservation.Result.SoldOut() -> throw new DomainException(DomainError.COUPON_SOLD_OUT);
             case CouponReservation.Result.Lost() -> throw new CoreException(ErrorType.COUPON_ADMISSION_UNAVAILABLE);
+            case CouponReservation.Result.Closed() -> throw new CoreException(ErrorType.COUPON_ADMISSION_UNAVAILABLE);
         };
     }
 

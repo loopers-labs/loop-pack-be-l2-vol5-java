@@ -20,6 +20,7 @@ class RedisCouponReservation implements CouponReservation {
     private static final long EXISTING = 0L;
     private static final long SOLD_OUT = -1L;
     private static final long LOST = -2L;
+    private static final long CLOSED = -3L;
 
     @SuppressWarnings("rawtypes")
     private static final RedisScript<List> RESERVE =
@@ -35,9 +36,23 @@ class RedisCouponReservation implements CouponReservation {
         return "coupon:campaign:" + campaignId + ":issued";
     }
 
+    static String closedKey(Long campaignId) {
+        return "coupon:campaign:" + campaignId + ":closed";
+    }
+
+    @Override
+    public void close(Long campaignId) {
+        redis.opsForValue().set(closedKey(campaignId), "1");
+    }
+
+    @Override
+    public void open(Long campaignId) {
+        redis.delete(closedKey(campaignId));
+    }
+
     @Override
     public Result reserve(Long campaignId, Long userId, IssueQuota quota, int dbIssuedCount) {
-        List<?> reply = redis.execute(RESERVE, List.of(key(campaignId)),
+        List<?> reply = redis.execute(RESERVE, List.of(key(campaignId), closedKey(campaignId)),
             String.valueOf(userId), String.valueOf(quota.value()), String.valueOf(dbIssuedCount));
         long code = ((Number) reply.get(0)).longValue();
         int issueNumber = ((Number) reply.get(1)).intValue();
@@ -52,6 +67,9 @@ class RedisCouponReservation implements CouponReservation {
         }
         if (code == LOST) {
             return new Result.Lost();
+        }
+        if (code == CLOSED) {
+            return new Result.Closed();
         }
         throw new IllegalStateException("예약 Lua 가 모르는 값을 돌려줬습니다: " + reply);
     }

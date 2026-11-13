@@ -17,6 +17,9 @@ public interface CouponReservation {
 
         record Lost() implements Result {
         }
+
+        record Closed() implements Result {
+        }
     }
 
     record Reservation(Long userId, int issueNumber) {
@@ -25,6 +28,10 @@ public interface CouponReservation {
     Result reserve(Long campaignId, Long userId, IssueQuota quota, int dbIssuedCount);
 
     void cancel(Long campaignId, Long userId);
+
+    void close(Long campaignId);
+
+    void open(Long campaignId);
 
     int largestNumber(Long campaignId);
 

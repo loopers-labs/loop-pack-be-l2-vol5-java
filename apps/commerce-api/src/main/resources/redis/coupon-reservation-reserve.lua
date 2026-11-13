@@ -1,3 +1,6 @@
+if redis.call('EXISTS', KEYS[2]) == 1 then
+  return {-3, 0}
+end
 local existing = redis.call('ZSCORE', KEYS[1], ARGV[1])
 if existing then
   return {0, tonumber(existing)}
