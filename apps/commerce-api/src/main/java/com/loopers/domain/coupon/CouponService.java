@@ -60,10 +60,6 @@ public class CouponService {
         return couponRepository.findAllOwnedBy(userId);
     }
 
-    public int maxIssueNumber(Long campaignId) {
-        return couponRepository.maxIssueNumber(campaignId);
-    }
-
     public Set<Long> issuedUserIdsAmong(Long campaignId, Collection<Long> userIds) {
         return couponRepository.issuedUserIdsAmong(campaignId, userIds);
     }

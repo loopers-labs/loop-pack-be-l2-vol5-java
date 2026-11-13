@@ -16,6 +16,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -98,7 +99,8 @@ class CouponIssueDeadLetterAdminV1ApiTest {
                 }
             });
 
-        assertThat(records).singleElement().satisfies(record -> assertThat(record.key()).isEqualTo("7"));
+        assertThat(records).singleElement().satisfies(record ->
+            assertThat(new String(record.value(), StandardCharsets.UTF_8)).contains("\"campaignId\":7"));
         mvc.perform(get(PATH).with(user("admin").roles("ADMIN")))
             .andExpect(jsonPath("$.data[0].status").value("REPLAYED"));
     }

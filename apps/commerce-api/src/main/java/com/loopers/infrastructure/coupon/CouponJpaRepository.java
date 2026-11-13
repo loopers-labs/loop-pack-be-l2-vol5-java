@@ -15,9 +15,6 @@ interface CouponJpaRepository extends JpaRepository<CouponEntity, Long> {
 
     List<CouponEntity> findByUserIdOrderByIssuedAtDescIdDesc(Long userId);
 
-    @Query("select coalesce(max(c.issueNumber), 0) from CouponEntity c where c.campaignId = :campaignId")
-    int maxIssueNumber(@Param("campaignId") Long campaignId);
-
     @Query("select c.userId from CouponEntity c where c.campaignId = :campaignId and c.userId in :userIds")
     List<Long> userIdsAmong(@Param("campaignId") Long campaignId, @Param("userIds") Collection<Long> userIds);
 

@@ -67,9 +67,9 @@ class CouponReconciliationBacklogTest {
         return campaignId;
     }
 
-    @DisplayName("RCN-001: 워커가 밀려 있으면 DB 최대 번호보다 큰 번호는 큐에 있는 것으로 보고 다시 보내지 않는다")
+    @DisplayName("RCN-001: 워커가 밀려 있으면 큐의 번호를 누락으로 볼 수 없으므로 대사하지 않고, 하한만 갱신한다")
     @Test
-    void leavesNumbersAboveDbMaxWhileTheWorkerIsBehind() {
+    void doesNotReconcileWhileTheWorkerIsBehind() {
         Long campaignId = openCampaign();
         publisher.publish(new CouponIssue(campaignId, 99L, 99, NOW));
         couponReservation.reserve(campaignId, 1L, QUOTA, 0);
@@ -78,12 +78,13 @@ class CouponReconciliationBacklogTest {
         couponReservation.reserve(campaignId, 4L, QUOTA, 0);
         couponTransactions.issue(campaignId, 1L, 1, NOW);
         couponTransactions.issue(campaignId, 3L, 3, NOW);
-        assertThat(couponReconciliation.reconcile(campaignId)).isZero();
 
-        List<ConsumerRecord<String, byte[]>> records = TopicRecords.during(KafkaTestContainersConfig.COUPON_ISSUES,
-            () -> assertThat(couponReconciliation.reconcile(campaignId)).isEqualTo(1));
+        List<ConsumerRecord<String, byte[]>> records = TopicRecords.during(KafkaTestContainersConfig.COUPON_ISSUES, () -> {
+            assertThat(couponReconciliation.reconcile(campaignId)).isZero();
+            assertThat(couponReconciliation.reconcile(campaignId)).isZero();
+        });
 
-        assertThat(records).singleElement().satisfies(record ->
-            assertThat(new String(record.value())).contains("\"userId\":2"));
+        assertThat(records).isEmpty();
+        assertThat(campaignCache.get(campaignId).getIssuedCount()).isEqualTo(2);
     }
 }

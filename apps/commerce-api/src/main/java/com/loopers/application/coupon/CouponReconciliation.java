@@ -59,9 +59,12 @@ public class CouponReconciliation {
     }
 
     public int reconcile(Long campaignId) {
+        if (!backlog.isDrained()) {
+            refreshCounts(campaignId);
+            return 0;
+        }
         Watermark previous = watermarks.getOrDefault(campaignId, new Watermark(0, 0));
-        int dbMax = couponService.maxIssueNumber(campaignId);
-        int bound = backlog.isDrained(campaignId) ? previous.seenMax() : Math.min(previous.seenMax(), dbMax);
+        int bound = previous.seenMax();
         int confirmedUpTo = previous.confirmedUpTo();
         boolean prefixIntact = true;
         int republished = 0;
@@ -92,10 +95,14 @@ public class CouponReconciliation {
             }
         }
         watermarks.put(campaignId, new Watermark(couponReservation.largestNumber(campaignId), confirmedUpTo));
+        refreshCounts(campaignId);
+        return republished;
+    }
+
+    private void refreshCounts(Long campaignId) {
         int dbIssuedCount = couponService.findCampaign(campaignId).map(CouponCampaign::getIssuedCount).orElse(0);
         campaignCache.refreshIssuedCount(campaignId, dbIssuedCount);
         backlog(campaignId).set(couponReservation.count(campaignId) - dbIssuedCount);
-        return republished;
     }
 
     private boolean republish(Long campaignId, Reservation reservation) {

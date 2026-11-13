@@ -48,7 +48,7 @@ class CouponIssueKafkaPublisher implements CouponIssuePublisher {
         try {
             byte[] payload = CouponIssueMessage.from(issue).toBytes(objectMapper);
             long started = System.nanoTime();
-            RecordMetadata metadata = kafkaTemplate.send(topic, String.valueOf(issue.campaignId()), payload)
+            RecordMetadata metadata = kafkaTemplate.send(topic, payload)
                 .get(ackTimeout.toMillis(), TimeUnit.MILLISECONDS)
                 .getRecordMetadata();
             ackLatency.record(System.nanoTime() - started, TimeUnit.NANOSECONDS);

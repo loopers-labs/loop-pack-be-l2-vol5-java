@@ -25,7 +25,6 @@ public class CouponLossRecovery {
     private static final int PAGE = 1_000;
     private static final Duration DRAIN_POLL = Duration.ofMillis(500);
     private static final int DRAIN_LOG_EVERY = 20;
-    private static final int MAX_REBUILD_ROUNDS = 3;
 
     private final CouponReservation couponReservation;
     private final CouponService couponService;
@@ -65,27 +64,22 @@ public class CouponLossRecovery {
     }
 
     private void recover(Long campaignId) {
-        int restored;
-        int rounds = 0;
-        do {
-            rounds++;
-            awaitDrained(campaignId);
-            restored = rebuildFromDb(campaignId);
-        } while (!backlog.isDrained(campaignId) && rounds < MAX_REBUILD_ROUNDS);
+        awaitDrained(campaignId);
+        int restored = rebuildFromDb(campaignId);
         meterRegistry.counter(RECOVERED, "campaignId", String.valueOf(campaignId)).increment();
         couponReservation.open(campaignId);
         log.warn("DB 쿠폰으로 예약 집합을 다시 만들고 캠페인을 열었다: campaignId={}, restored={}", campaignId, restored);
     }
 
     private void awaitDrained(Long campaignId) {
-        Long target = null;
+        CouponIssueBacklog.Position target = null;
         int polls = 0;
         while (true) {
             try {
                 if (target == null) {
-                    target = backlog.endOffset(campaignId);
+                    target = backlog.position();
                 }
-                if (backlog.isCommittedUpTo(campaignId, target)) {
+                if (backlog.isCommittedUpTo(target)) {
                     return;
                 }
             } catch (IllegalStateException e) {

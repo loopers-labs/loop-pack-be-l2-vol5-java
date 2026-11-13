@@ -42,7 +42,7 @@ class CouponIssueKafkaPublisherTest {
 
         assertThat(outcome.get()).isEqualTo(new Outcome.Published());
         assertThat(records).singleElement().satisfies(record -> {
-            assertThat(record.key()).isEqualTo("7");
+            assertThat(record.key()).isNull();
             JsonNode body = objectMapper.readTree(record.value());
             assertThat(body.get("eventType").asText()).isEqualTo("CouponIssue");
             assertThat(body.get("schemaVersion").asInt()).isEqualTo(1);

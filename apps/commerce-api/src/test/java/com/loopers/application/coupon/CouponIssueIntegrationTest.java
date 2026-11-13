@@ -167,7 +167,7 @@ class CouponIssueIntegrationTest {
             () -> couponFacade.issue(campaignId, 42L, NOW));
 
         assertThat(records).singleElement().satisfies(record ->
-            assertThat(record.key()).isEqualTo(String.valueOf(campaignId)));
+            assertThat(new String(record.value(), StandardCharsets.UTF_8)).contains("\"campaignId\":" + campaignId));
     }
 
     @DisplayName("PUB-004: 확인을 기다리는 요청이 상한(테스트 2)만큼 차 있으면 예약 없이 503 이고, 자리가 나면 받는다")

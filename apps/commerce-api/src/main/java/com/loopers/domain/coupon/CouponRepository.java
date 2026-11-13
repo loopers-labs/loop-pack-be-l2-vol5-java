@@ -15,8 +15,6 @@ public interface CouponRepository {
 
     List<Coupon> findAllOwnedBy(Long userId);
 
-    int maxIssueNumber(Long campaignId);
-
     Set<Long> issuedUserIdsAmong(Long campaignId, Collection<Long> userIds);
 
     List<Coupon> findIssuedAfterId(Long campaignId, long afterId, int limit);

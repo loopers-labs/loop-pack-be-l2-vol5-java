@@ -24,7 +24,6 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.AfterEach;
@@ -64,7 +63,6 @@ class CouponIssueListenerTest {
     private static final String DLT = KafkaTestContainersConfig.COUPON_ISSUES_WORKER_DLT;
     private static final Instant NOW = Instant.parse("2026-11-08T00:00:00.123456Z");
     private static final Duration WITHIN = Duration.ofSeconds(10);
-    private static final int PARTITIONS = 3;
 
     private final CouponFacade couponFacade;
     private final CouponIssuePublisher publisher;
@@ -226,7 +224,7 @@ class CouponIssueListenerTest {
         assertThat(couponCount(campaignId)).isEqualTo(1);
         assertThat(meterRegistry.counter("coupon.issue.worker.retry", "cause", "DomainException").count()).isZero();
         assertThat(deadLetters).singleElement().satisfies(record -> {
-            assertThat(record.key()).isEqualTo(String.valueOf(unknownCampaignId));
+            assertThat(new String(record.value(), StandardCharsets.UTF_8)).contains("\"campaignId\":" + unknownCampaignId);
             assertThat(record.headers().lastHeader("kafka_dlt-exception-message")).isNotNull();
         });
     }
@@ -242,7 +240,7 @@ class CouponIssueListenerTest {
         });
 
         assertThat(deadLetters).singleElement().satisfies(record ->
-            assertThat(record.key()).isEqualTo(String.valueOf(unknownCampaignId)));
+            assertThat(new String(record.value(), StandardCharsets.UTF_8)).contains("\"campaignId\":" + unknownCampaignId));
     }
 
     private double recoveries(Long campaignId) {
@@ -296,30 +294,27 @@ class CouponIssueListenerTest {
         }
     }
 
-    private static long unknownCampaignIdInSamePartitionAs(Long campaignId) {
-        int partition = partitionOf(campaignId);
-        for (long candidate = 999_999L; ; candidate++) {
-            if (partitionOf(candidate) == partition) {
-                return candidate;
-            }
-        }
+    private void sendToPartition(int partition, byte[] payload) {
+        kafkaTemplate.send(TOPIC, partition, null, payload).join();
     }
 
-    private static int partitionOf(long campaignId) {
-        return Utils.toPositive(Utils.murmur2(String.valueOf(campaignId).getBytes(StandardCharsets.UTF_8))) % PARTITIONS;
+    private static byte[] issuePayload(long campaignId, long userId, int issueNumber) {
+        return ("{\"eventType\":\"CouponIssue\",\"schemaVersion\":1,\"campaignId\":" + campaignId + ",\"userId\":" + userId
+            + ",\"issueNumber\":" + issueNumber + ",\"reservedAt\":\"2026-11-08T00:00:00.123456Z\"}")
+            .getBytes(StandardCharsets.UTF_8);
     }
 
-    @DisplayName("WRK-011: 워커를 끈 동안 쌓인 정상, 없는 캠페인, 정상 메시지가 한 파티션에서 한 번에 오면 앞뒤는 기록되고 가운데만 DLT 로 가며 offset 은 끝까지 간다")
+    @DisplayName("WRK-011: 워커를 끈 동안 한 파티션에 쌓인 정상, 없는 캠페인, 정상 메시지가 한 번에 오면 앞뒤는 기록되고 가운데만 DLT 로 가며 offset 은 끝까지 간다")
     @Test
     void deadLettersOnlyTheRejectedRecordInTheMiddleOfABatch() throws Exception {
         Long campaignId = openCampaign();
-        long unknownCampaignId = unknownCampaignIdInSamePartitionAs(campaignId);
+        long unknownCampaignId = 999_999L;
 
         List<ConsumerRecord<String, byte[]>> deadLetters = TopicRecords.during(DLT, () -> {
             publishWhileWorkerIsOff(() -> {
-                publisher.publish(new CouponIssue(campaignId, 42L, 1, NOW));
-                publisher.publish(new CouponIssue(unknownCampaignId, 7L, 1, NOW));
-                publisher.publish(new CouponIssue(campaignId, 9L, 2, NOW));
+                sendToPartition(0, issuePayload(campaignId, 42L, 1));
+                sendToPartition(0, issuePayload(unknownCampaignId, 7L, 1));
+                sendToPartition(0, issuePayload(campaignId, 9L, 2));
             });
             awaitEveryRecordCommitted();
         });
@@ -327,7 +322,7 @@ class CouponIssueListenerTest {
         assertThat(couponCount(campaignId)).isEqualTo(2);
         assertThat(issuedCount(campaignId)).isEqualTo(2);
         assertThat(deadLetters).singleElement().satisfies(record ->
-            assertThat(record.key()).isEqualTo(String.valueOf(unknownCampaignId)));
+            assertThat(new String(record.value(), StandardCharsets.UTF_8)).contains("\"campaignId\":" + unknownCampaignId));
     }
 
     @DisplayName("WRK-011: 워커를 끈 동안 쌓인 정상, 읽을 수 없는, 정상 메시지가 한 번에 오면 앞뒤는 기록되고 읽을 수 없는 것만 DLT 로 가며 offset 은 끝까지 간다")
@@ -338,9 +333,9 @@ class CouponIssueListenerTest {
 
         List<ConsumerRecord<String, byte[]>> deadLetters = TopicRecords.during(DLT, () -> {
             publishWhileWorkerIsOff(() -> {
-                publisher.publish(new CouponIssue(campaignId, 42L, 1, NOW));
-                kafkaTemplate.send(TOPIC, String.valueOf(campaignId), unreadable).join();
-                publisher.publish(new CouponIssue(campaignId, 9L, 2, NOW));
+                sendToPartition(0, issuePayload(campaignId, 42L, 1));
+                sendToPartition(0, unreadable);
+                sendToPartition(0, issuePayload(campaignId, 9L, 2));
             });
             awaitEveryRecordCommitted();
         });

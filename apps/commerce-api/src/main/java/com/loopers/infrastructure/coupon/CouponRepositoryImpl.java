@@ -73,11 +73,6 @@ public class CouponRepositoryImpl implements CouponRepository {
     }
 
     @Override
-    public int maxIssueNumber(Long campaignId) {
-        return couponJpaRepository.maxIssueNumber(campaignId);
-    }
-
-    @Override
     public Set<Long> issuedUserIdsAmong(Long campaignId, Collection<Long> userIds) {
         if (userIds.isEmpty()) {
             return Set.of();

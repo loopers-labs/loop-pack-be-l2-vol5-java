@@ -20,6 +20,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 
@@ -82,6 +83,7 @@ class CouponIssuePublishUnconfirmedTest {
             kafkaTemplate.flush();
         });
 
-        assertThat(records).singleElement().satisfies(record -> assertThat(record.key()).isEqualTo(String.valueOf(campaignId)));
+        assertThat(records).singleElement().satisfies(record ->
+            assertThat(new String(record.value(), StandardCharsets.UTF_8)).contains("\"campaignId\":" + campaignId));
     }
 }

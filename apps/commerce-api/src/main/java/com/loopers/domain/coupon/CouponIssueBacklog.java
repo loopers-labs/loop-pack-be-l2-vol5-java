@@ -1,10 +1,15 @@
 package com.loopers.domain.coupon;
 
+import java.util.Map;
+
 public interface CouponIssueBacklog {
 
-    boolean isDrained(Long campaignId);
+    record Position(Map<Integer, Long> endOffsets) {
+    }
 
-    long endOffset(Long campaignId);
+    boolean isDrained();
 
-    boolean isCommittedUpTo(Long campaignId, long offset);
+    Position position();
+
+    boolean isCommittedUpTo(Position position);
 }
