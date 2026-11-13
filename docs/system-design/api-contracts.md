@@ -48,8 +48,8 @@ PG와 주고받는 HTTP 계약은 callback 수신을 포함해 [PG 연동 설계
 ## 고객 API
 
 공통 Prefix: `/api/v1`<br>
-사용자 식별: Header `X-USER-ID` (좋아요·포인트·주문 API)<br>
-`X-USER-ID` 누락·숫자가 아닌 값은 `400 Bad Request`, 존재하지 않는 User는 `404 Not Found`로 거절하고 데이터를 바꾸지 않는다. 아래 표의 대표 오류는 이 공통 오류를 제외한다.
+사용자 식별: Header `X-USER-ID` (좋아요·포인트·주문·쿠폰 API)<br>
+`X-USER-ID` 누락·숫자가 아닌 값은 `400 Bad Request`, 존재하지 않는 User는 `404 Not Found`로 거절하고 데이터를 바꾸지 않는다. 쿠폰 API는 User 존재를 확인하지 않는다. 아래 표의 대표 오류는 이 공통 오류를 제외한다.
 
 ### 브랜드·상품
 
@@ -152,6 +152,17 @@ confirm·reconcile은 이 객체를 응답 본문으로 반환하고, 고객 주
 | `FAILED` | 결제 실패 | 주문 `PAYMENT_FAILED` |
 
 종결된 주문은 충돌 사유가 있어도 저장된 최종 결과로 표시한다.
+
+### 쿠폰
+
+쿠폰 API는 `X-USER-ID`를 요청자 식별값으로만 쓴다. 처리 흐름과 상태별 응답은 [쿠폰 발급 설계](use-cases/coupon-issuance.md)와 [쿠폰 발급 대기열 설계](use-cases/coupon-issuance-queue.md)를 따른다.
+
+| 기능 | Method | Path | 입력 | 성공 | 대표 오류 |
+|---|---|---|---|---|---|
+| 쿠폰 발급 | `POST` | `/coupon-campaigns/{campaignId}/issues` | Path: `campaignId` | `201 Created`<br/>새로 발급한 쿠폰<br/>`200 OK`<br/>이미 받은 쿠폰 | `404 Not Found`<br/>없는 캠페인<br/>`409 Conflict`<br/>발급 기간 밖, 품절<br/>`429 Too Many Requests`<br/>발급 실행 자리 없음. 다음 차례 예약이 아님<br/>`503 Service Unavailable`<br/>Redis 점유 확인 불가 또는 신규 수용 닫힘 |
+| 내 쿠폰 목록 조회 | `GET` | `/coupons` | - | `200 OK`<br/>내 쿠폰 목록 | 기능별 대표 오류 없음 |
+| 쿠폰 발급 대기열 접수 | `POST` | `/coupon-campaigns/{campaignId}/issue-requests` | Path: `campaignId` | `202 Accepted`<br/>작업 ID와 현재 상태. 작업 저장만 뜻하며 처리 시점을 약속하지 않음<br/>`200 OK`<br/>끝난 기존 작업 또는 이미 받은 쿠폰 | `404 Not Found`·`409 Conflict`<br/>새 발급이 필요한 요청의 캠페인 거절<br/>`429 Too Many Requests`<br/>미완료 작업 한도 도달<br/>`503 Service Unavailable`<br/>대기열 확인 불가 또는 신규 수용 닫힘 |
+| 쿠폰 발급 작업 조회 | `GET` | `/coupon-issue-requests/{requestId}` | Path: `requestId` | `200 OK`<br/>작업의 현재 상태와 결과 | `404 Not Found`<br/>없거나 다른 사용자의 작업<br/>`503 Service Unavailable`<br/>대기열 확인 불가 |
 
 ## 포인트 충전 기대값
 
