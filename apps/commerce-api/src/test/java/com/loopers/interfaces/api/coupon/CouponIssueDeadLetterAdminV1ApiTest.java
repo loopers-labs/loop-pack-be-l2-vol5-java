@@ -105,6 +105,15 @@ class CouponIssueDeadLetterAdminV1ApiTest {
             .andExpect(jsonPath("$.data[0].status").value("REPLAYED"));
     }
 
+    @DisplayName("비어 있는 id 가 섞인 재발행 요청은 400 이다")
+    @Test
+    void rejectsReplayWithNullId() throws Exception {
+        mvc.perform(post(PATH + "/replay").with(user("admin").roles("ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"ids\":[1,null]}"))
+            .andExpect(status().isBadRequest());
+    }
+
     @DisplayName("일반 사용자는 DLT 로그를 볼 수 없다")
     @Test
     void rejectsCustomer() throws Exception {

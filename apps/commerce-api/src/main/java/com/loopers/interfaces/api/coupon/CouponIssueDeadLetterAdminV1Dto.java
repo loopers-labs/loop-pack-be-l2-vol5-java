@@ -13,8 +13,8 @@ public class CouponIssueDeadLetterAdminV1Dto {
 
     public record ReplayRequest(List<Long> ids) {
         public ReplayRequest {
-            if (ids == null || ids.isEmpty()) {
-                throw new IllegalArgumentException("ids 는 하나 이상이어야 합니다.");
+            if (ids == null || ids.isEmpty() || ids.contains(null)) {
+                throw new IllegalArgumentException("ids 는 하나 이상이어야 하고 비어 있는 값이 없어야 합니다.");
             }
             if (ids.size() > MAX_REPLAY_IDS) {
                 throw new IllegalArgumentException("ids 는 한 번에 " + MAX_REPLAY_IDS + " 개까지입니다.");

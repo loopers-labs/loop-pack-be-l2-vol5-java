@@ -52,7 +52,7 @@ public class CouponFacade {
         try {
             couponReservation.prepare(campaign.getId());
         } catch (DataAccessException e) {
-            log.warn("캠페인의 예약 명단을 준비하지 못했다. 첫 접수가 유실로 보고 복구하며 준비한다: campaignId={}, cause={}",
+            log.warn("캠페인의 예약 명단을 준비하지 못했다. 첫 접수가 유실로 보고 닫으며, 관리자가 복구해야 열린다: campaignId={}, cause={}",
                 campaign.getId(), NestedExceptionUtils.getMostSpecificCause(e).toString());
         }
         return campaign;
