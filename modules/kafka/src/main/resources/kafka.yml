@@ -29,6 +29,7 @@ kafka:
   topics:
     order-events: order-events
     coupon-issues: coupon-issues
+    coupon-issues-dlt: coupon-issues.dlt
 
 ---
 spring.config.activate.on-profile: local, test

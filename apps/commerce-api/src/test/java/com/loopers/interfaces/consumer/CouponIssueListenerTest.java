@@ -8,6 +8,7 @@ import com.loopers.domain.coupon.CouponIssuePublisher;
 import com.loopers.domain.coupon.CouponIssuePublisher.CouponIssue;
 import com.loopers.domain.coupon.DiscountAmount;
 import com.loopers.domain.coupon.IssueQuota;
+import com.loopers.support.kafka.TopicRecords;
 import com.loopers.testcontainers.KafkaTestContainersConfig;
 import com.loopers.utils.DatabaseCleanUp;
 import com.loopers.utils.RedisCleanUp;
@@ -42,6 +43,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(properties = {
     "kafka.topics.coupon-issues=" + KafkaTestContainersConfig.COUPON_ISSUES_WORKER,
+    "kafka.topics.coupon-issues-dlt=" + KafkaTestContainersConfig.COUPON_ISSUES_WORKER_DLT,
     "coupon.issue.worker.auto-startup=true"
 })
 class CouponIssueListenerTest {
@@ -172,5 +174,23 @@ class CouponIssueListenerTest {
         assertThat(issuedCount(campaignId)).isEqualTo(1);
         assertThat(meterRegistry.counter("coupon.issue.rejected_by_db", "campaignId", String.valueOf(campaignId)).count())
             .isEqualTo(1.0);
+    }
+
+    @DisplayName("WRK-009: 없는 캠페인의 메시지는 재시도 없이 DLT 로 가고, 뒤의 메시지는 기록되며 offset 이 넘어간다")
+    @Test
+    void deadLettersMessageOfUnknownCampaignWithoutRetry() throws Exception {
+        Long campaignId = openCampaign();
+        long unknownCampaignId = 999_999L;
+
+        publisher.publish(new CouponIssue(unknownCampaignId, 42L, 1, NOW));
+        publisher.publish(new CouponIssue(campaignId, 7L, 1, NOW));
+        eventually(CouponIssueListenerTest::everyRecordCommitted);
+
+        assertThat(couponCount(campaignId)).isEqualTo(1);
+        assertThat(meterRegistry.counter("coupon.issue.worker.retry", "cause", "DomainException").count()).isZero();
+        assertThat(TopicRecords.all(KafkaTestContainersConfig.COUPON_ISSUES_WORKER_DLT)).anySatisfy(record -> {
+            assertThat(record.key()).isEqualTo(String.valueOf(unknownCampaignId));
+            assertThat(record.headers().lastHeader("kafka_dlt-exception-message")).isNotNull();
+        });
     }
 }
