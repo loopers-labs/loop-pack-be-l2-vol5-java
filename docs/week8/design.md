@@ -179,7 +179,7 @@ POST /api/v1/coupon-campaigns/{id}/issues
   │
   ├─ 캠페인 캐시 ─────────── 없으면 DB 에서 한 번 읽어 채움. 없는 캠페인 404, 비활성 409
   ├─ 로컬 bulkhead ───────── ack 기다리는 자리가 가득이면 503 (예약 없음)
-  ├─ Redis Lua 예약 ──────── {1, n} 새로 받음 / {0, n} 이미 있음 / {-1} 품절 / {-2} 유실
+  ├─ Redis Lua 예약 ──────── {1, n} 새로 받음 / {0, n} 이미 있음 / {-1} 품절 / {-2} 유실 / {-3} 닫힘
   │     이미 있음 → DB 에 쿠폰이 있으면 200 ISSUED + couponId, 없으면 200 PENDING + n
   │     품절 → 409
   │     유실 → 캠페인 닫음, 503
@@ -206,7 +206,8 @@ POST /api/v1/coupon-campaigns/{id}/issues
 | 품절 뒤 요청 | 그대로 Lua 에 간다. 기존 예약이면 `{0, n}` 으로 200 이어야 하므로(`CPN-004`) 프로세스에 품절을 표시해 Redis 를 건너뛰지 않는다. 품절 요청의 비용은 Lua 한 번이다(7.1) |
 
 ```lua
--- KEYS[1] = 예약 집합, ARGV = userId, quota, dbIssuedCount
+-- KEYS[1] = 예약 집합, KEYS[2] = 닫힘 키, ARGV = userId, quota, dbIssuedCount
+if redis.call('EXISTS', KEYS[2]) == 1 then return {-3} end  -- 닫힘. 복구 중이라 재요청도 503
 local n = redis.call('ZSCORE', KEYS[1], ARGV[1])
 if n then return {0, tonumber(n)} end                 -- 이미 받음. 같은 번호
 local size = redis.call('ZCARD', KEYS[1])
@@ -270,7 +271,7 @@ Kafka 를 두는 이유는 접수(Redis)와 보관(Kafka)의 장애 영역을 �
 | DB 중복 | `COUPON_ALREADY_ISSUED` 를 받으면 로그만 남기고 offset 을 넘긴다. 같은 메시지 재전달과 대사의 재발행이 여기서 멱등해진다 |
 | DB 품절 | `COUPON_SOLD_OUT` 을 받으면 지표 `coupon.issue.rejected_by_db` 를 올리고 넘기고, 그 캠페인의 유실 복구(16.1)를 시작한다. Redis 가 받은 것을 DB 가 거절했다는 것은 예약 집합과 DB 가 어긋났다는 뜻이다. 넘기기만 하면 그 사용자는 재요청마다 200 PENDING 을 받고 대사는 매 주기 그 번호를 후보로 잡는다. `ZREM` 만 하면 빈 자리로 다음 사람이 202 를 받고 또 거절된다. 재구성하면 거절된 사용자는 집합에서 빠져 409 를 받고, 쿠폰 없는 PENDING 이 남지 않는다 |
 | 인프라 실패 | 예외를 던져 컨테이너가 재시도. offset 은 그대로 |
-| 읽을 수 없는 메시지 | 우리 publisher 만 쓰는 토픽이라 버그다. 16.2 의 "버그" 행과 같이 던져서 멈추고 지표 `coupon.issue.worker.retry` 로 보인다. 보류 테이블(W7)은 두지 않는다 |
+| 읽을 수 없는 메시지 | 우리 publisher 만 쓰는 토픽이라 버그다. 16.2 의 "버그" 행과 같이 던져서 멈추고 지표 `coupon.issue.worker.retry` 로 보인다. 보류 테이블(W7)은 두지 않는다. 멈추는 건 그 파티션이라 같은 파티션의 다른 캠페인도 같이 선다. 그게 안 될 때의 선택지가 19 장의 DLT 다 |
 | 켜고 끄기 | `coupon.issue.worker.auto-startup`(`WRK-008`). 끄면 접수는 받고 기록만 멈춘다. `EXP-023` 이 끈 채 예약을 쌓고 켠다 |
 
 코드는 셋이다. `interfaces/consumer/CouponIssueListener` 가 메시지를 읽어 ack 하고, `application/coupon/CouponIssueWorker` 가 TX 밖에서 중복과 품절을 가르고, `CouponTransactions.issue` 가 TX 다. 워커와 TX 를 한 클래스에 두지 않는 이유는 중복 처리 때문이다. 유니크 위반은 `saveAndFlush` 에서 터져 그 TX 는 rollback 만 남는데, 같은 메서드 안에서 잡고 정상 반환하면 commit 이 `UnexpectedRollbackException` 이 된다. 잡는 곳은 TX 밖이어야 하고, 같은 빈 안의 호출은 프록시를 안 거치므로 빈이 둘이다.
@@ -348,7 +349,7 @@ Redis 가 재시작하면 AOF `everysec` 가 마지막 1 초를 잃고, 빈 인�
 
 잃는 것은 Redis 의 복사본이고 DB 와 Kafka 에서 다시 만든다. 진짜 피해는 **되살리기 전에 빈 상태로 받는 것**이다. 집합이 비면 번호가 1 부터 다시 나가 한도만큼 더 받아들이고, 워커가 DB 품절을 받아 "202 인데 쿠폰 없음" 이 생긴다. 그래서 순서를 강제한다.
 
-1. 감지: 요청 경로에서 Lua 가 `ZCARD < dbIssuedCount` 면 `{-2}`, 워커에서 DB 품절(`WRK-005`). 그 캠페인을 닫고 503
+1. 감지: 요청 경로에서 Lua 가 `ZCARD < dbIssuedCount` 면 `{-2}`, 워커에서 DB 품절(`WRK-005`). 그 캠페인을 닫고 503. 닫힘은 Redis 키 `coupon:campaign:{id}:closed` 다. 인스턴스 전부가 같이 닫혀야 하므로 로컬 메모리가 아니고, DB 열이면 캐시 무효화가 따라와야 한다. Redis 가 다시 지워져 이 키도 사라지면 다음 요청의 `{-2}` 가 다시 닫는다. Lua 는 이 키를 맨 먼저 보므로 복구 동안은 재요청도 503 이다. 집합을 다시 만드는 중이라 `{0, n}` 을 믿을 수 없어서고, 보유 목록(`FLT-002`)은 그대로다
 2. 워커 lag 0 을 기다린다. Kafka 에 남은 메시지를 DB 에 다 쓴다
 3. DB 쿠폰(사용자, `issue_number`)을 `ZADD` 로 넣는다. Lua 하나로 묶지 않고 파이프라인으로 나눠 보낸다(7.2)
 4. 연다. 번호가 이어진다
@@ -405,7 +406,8 @@ Kafka 가 죽었을 때 1부 경로(세마포어 C 로 막은 동기 DB 쓰기)�
 | Kafka 장애 시 동기 우회 | broker 가 죽으면 세마포어 C 로 막은 DB 직접 쓰기 | 16.3 | 16.3 |
 | 사용자 대기열 | 번호표 ZSET, 위치 조회 API, 폴링 | 한도 안은 전원 즉시 접수되고 한도 밖은 즉시 409 라 기다릴 사람이 없다. 폴링 트래픽이 발급보다 크다 | 접수 요청이 Redis 상한에 닿을 때, 또는 "한도 밖이지만 이탈분을 기다리겠다" 를 제공할 때 |
 | 사용자별 요청 제한 (429) | 같은 사용자가 1 초에 N 번 넘으면 429 | 품절 뒤 요청이 Lua 한 번(4.5µs)이라 비용이 거의 0 이다 | 어뷰저가 Redis 를 채울 때 |
-| 품절 표시 (1부 `SoldOutCampaigns`) | 품절을 본 서버가 Redis 없이 409 | 기존 예약 확인이 Lua 안이라 표시가 `CPN-004` 의 200 을 깬다. 유실 복구 뒤 품절이 풀리면 인스턴스마다 지워야 한다 | 품절 뒤 요청으로 Redis CPU 가 병목일 때. 그때도 `ZADD` 만 건너뛰고 `ZSCORE` 는 묻는다 |
+| 품절 표시 (1부 `SoldOutCampaigns`) | 품절을 본 서버가 Redis 없이 409 | 기존 예약 확인이 Lua 안이라 표시가 `CPN-004` 의 200 을 깬다. 유실 복구 뒤 품절이 풀리면 인스턴스마다 지워야 한다. 품절 요청 하나는 Lua 4.5µs 라 Redis 가 초당 수만 번을 받는다(7.1) | 품절 뒤 요청으로 Redis CPU 가 병목일 때. 그때는 Redis 플래그 + 인스턴스 L1(1초)로 Redis 호출을 1초에 한 번으로 줄이되, `ZADD` 만 건너뛰고 `ZSCORE` 는 물어 200 을 지킨다 |
+| 워커 DLT | 재시도 N 번 뒤 실패 메시지를 `coupon-issues.dlt` 로 보내고, 로그 테이블(PENDING, REPLAYED)에 적고, 운영자가 조회 뒤 원본 토픽에 다시 보낸다 | 버그 메시지(읽을 수 없음, 없는 캠페인)를 "잃지 않고 멈춘다"(16.2) 로 두었다. 지표로 바로 보이고 사람이 고치면 그 자리에서 이어진다. DLT 는 토픽, 테이블, API 둘, consumer 하나가 더 생기고, 멈춤 대신 "사람이 볼 때까지 빠진 채 진행" 이 된다 | 키가 `campaignId` 라 한 파티션에 캠페인 여럿이 섞이므로, 한 캠페인의 버그 메시지가 **다른 캠페인까지 세우면 안 될 때**. 동시에 여는 캠페인이 둘 이상이면 그때다. 모양은 DLT 토픽, 로그 테이블(PENDING, REPLAYED), 조회와 리플레이 API 다 |
 | Redis Streams 로 보관 | 예약 Lua 안에서 `XADD` 까지 해 쓰기를 한 번으로. 워커는 `XREADGROUP`, `XACK`, `XAUTOCLAIM` | `PUB-*` 와 대사가 빠지지만 접수와 보관이 한 장애 영역이 된다. Redis 가 지워지면 워커가 안 읽은 202 를 잃는다. `WAIT 1` 비용 자체는 작다(7.1) | "Redis 가 지워져도 202 를 지킨다" 가 요구가 아닐 때, 또는 Kafka 가 없는 환경 |
 | 201 응답 | 예약을 발급으로 치고 목록에 Redis 예약을 합침 | 목록이 두 저장소를 봐야 한다(Q-7) | 클라이언트가 접수 상태를 못 다룰 때 |
 | DB 아웃박스 | 17 장 | 17 장 | 17 장 |
