@@ -15,6 +15,7 @@ class DomainPurityArchitectureTest {
             "com.loopers.domain.shopping..",
             "com.loopers.domain.ordering..",
             "com.loopers.domain.pay..",
+            "com.loopers.domain.coupon..",
             "com.loopers.domain.shared.."
     };
 
