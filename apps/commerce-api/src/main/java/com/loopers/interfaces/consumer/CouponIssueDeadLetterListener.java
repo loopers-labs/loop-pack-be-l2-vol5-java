@@ -1,6 +1,8 @@
 package com.loopers.interfaces.consumer;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.application.coupon.CouponIssueDeadLetters;
+import com.loopers.application.coupon.CouponIssueMessage;
 import com.loopers.config.CouponIssueListenerConfig;
 import com.loopers.domain.coupon.CouponIssuePublisher.CouponIssue;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -18,11 +20,11 @@ import java.util.Optional;
 @Component
 class CouponIssueDeadLetterListener {
 
-    private final CouponIssueMessageReader reader;
+    private final ObjectMapper objectMapper;
     private final CouponIssueDeadLetters deadLetters;
 
-    CouponIssueDeadLetterListener(CouponIssueMessageReader reader, CouponIssueDeadLetters deadLetters) {
-        this.reader = reader;
+    CouponIssueDeadLetterListener(ObjectMapper objectMapper, CouponIssueDeadLetters deadLetters) {
+        this.objectMapper = objectMapper;
         this.deadLetters = deadLetters;
     }
 
@@ -42,7 +44,7 @@ class CouponIssueDeadLetterListener {
 
     private Optional<CouponIssue> read(byte[] value) {
         try {
-            return Optional.of(reader.read(value));
+            return Optional.of(CouponIssueMessage.read(objectMapper, value));
         } catch (RuntimeException e) {
             return Optional.empty();
         }

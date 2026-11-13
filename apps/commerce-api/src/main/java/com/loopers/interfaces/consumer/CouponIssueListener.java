@@ -1,5 +1,7 @@
 package com.loopers.interfaces.consumer;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.loopers.application.coupon.CouponIssueMessage;
 import com.loopers.application.coupon.CouponIssueWorker;
 import com.loopers.config.CouponIssueListenerConfig;
 import com.loopers.domain.coupon.CouponIssuePublisher.CouponIssue;
@@ -15,11 +17,11 @@ import java.util.List;
 @Component
 class CouponIssueListener {
 
-    private final CouponIssueMessageReader reader;
+    private final ObjectMapper objectMapper;
     private final CouponIssueWorker worker;
 
-    CouponIssueListener(CouponIssueMessageReader reader, CouponIssueWorker worker) {
-        this.reader = reader;
+    CouponIssueListener(ObjectMapper objectMapper, CouponIssueWorker worker) {
+        this.objectMapper = objectMapper;
         this.worker = worker;
     }
 
@@ -36,7 +38,7 @@ class CouponIssueListener {
         RuntimeException unreadableCause = null;
         for (int i = 0; i < records.size() && unreadable < 0; i++) {
             try {
-                readable.add(reader.read(records.get(i).value()));
+                readable.add(CouponIssueMessage.read(objectMapper, records.get(i).value()));
             } catch (RuntimeException e) {
                 unreadable = i;
                 unreadableCause = new UnreadableCouponIssue(e);

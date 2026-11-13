@@ -2,6 +2,7 @@ package com.loopers.infrastructure.coupon;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.loopers.application.coupon.CouponIssueMessage;
 import com.loopers.domain.coupon.CouponIssuePublisher;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
