@@ -33,14 +33,14 @@ spring:
 coupon:
   issue:
     publish:
-      ack-timeout: 500ms # PUB-002. 한 요청 스레드가 broker 확인을 기다리는 상한
-      max-in-flight: 128 # PUB-004. 동시에 확인을 기다리는 요청 스레드의 상한. 목표 접수율 × 복제된 ack p50 (EXP-022: broker 3 대에서 ack p50 2.8ms, 25,000/s 면 70)
+      ack-timeout: 500ms
+      max-in-flight: 128
     worker:
-      concurrency: 4 # WRK-002. consumer 스레드 수. 1부의 knee 4 가 출발값이고 EXP-023 뒤 다시 정한다
-      auto-startup: true # WRK-008. 끄면 접수는 받되 기록하지 않는다. EXP-023 이 끈 채 예약을 쌓는다
+      concurrency: 4
+      auto-startup: true
     reconcile:
-      enabled: true # RCN-001. 캐시에 있는 캠페인마다 예약과 쿠폰을 대조해 빠진 메시지를 다시 보낸다
-      interval: 10s # Q-14. 지난 실행의 최대 번호가 "한 주기는 지났다" 를 뜻한다
+      enabled: true
+      interval: 10s
 
 springdoc:
   use-fqn: true
@@ -93,6 +93,6 @@ coupon:
     publish:
       max-in-flight: 2
     worker:
-      auto-startup: false # 요청 경로 테스트가 "아직 DB 에 없다" 를 단언한다. 워커 테스트만 전용 토픽으로 켠다
+      auto-startup: false
     reconcile:
-      enabled: false # 대사 테스트가 직접 부른다
+      enabled: false

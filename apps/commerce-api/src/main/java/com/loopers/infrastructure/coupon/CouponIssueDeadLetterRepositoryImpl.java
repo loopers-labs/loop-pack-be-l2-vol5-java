@@ -19,14 +19,14 @@ public class CouponIssueDeadLetterRepositoryImpl implements CouponIssueDeadLette
 
     @Override
     public boolean insertIfAbsent(CouponIssueDeadLetter deadLetter) {
-        if (jpaRepository.existsByMessageKey(deadLetter.messageKey())) {
-            return false;
-        }
         try {
             jpaRepository.saveAndFlush(CouponIssueDeadLetterEntity.from(deadLetter));
             return true;
         } catch (DataIntegrityViolationException e) {
-            return false;
+            if (DuplicateKey.on(e, CouponIssueDeadLetterEntity.UK_MESSAGE_KEY)) {
+                return false;
+            }
+            throw e;
         }
     }
 

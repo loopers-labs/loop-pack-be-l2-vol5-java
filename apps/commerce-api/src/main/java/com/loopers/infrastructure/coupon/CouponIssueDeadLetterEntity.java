@@ -24,6 +24,7 @@ import java.util.Optional;
 class CouponIssueDeadLetterEntity extends AuditEntity {
 
     static final String UK_MESSAGE_KEY = "uk_coupon_issue_dlt_log_message_key";
+    private static final int ERROR_LENGTH = 1000;
 
     @Column(name = "message_key", nullable = false, updatable = false, length = 200)
     private String messageKey;
@@ -44,7 +45,7 @@ class CouponIssueDeadLetterEntity extends AuditEntity {
     @Column(name = "payload", nullable = false, updatable = false)
     private String payload;
 
-    @Column(name = "error_message", nullable = false, updatable = false, length = 1000)
+    @Column(name = "error_message", nullable = false, updatable = false, length = ERROR_LENGTH)
     private String errorMessage;
 
     @Enumerated(EnumType.STRING)
@@ -69,16 +70,13 @@ class CouponIssueDeadLetterEntity extends AuditEntity {
             entity.reservedAt = issue.reservedAt();
         });
         entity.payload = deadLetter.payload();
-        entity.errorMessage = deadLetter.error();
+        entity.errorMessage = deadLetter.error().length() > ERROR_LENGTH
+            ? deadLetter.error().substring(0, ERROR_LENGTH)
+            : deadLetter.error();
         entity.status = deadLetter.status();
         entity.receivedAt = deadLetter.receivedAt();
         entity.replayedAt = deadLetter.replayedAt();
         return entity;
-    }
-
-    void markReplayed(Instant at) {
-        this.status = CouponIssueDeadLetter.Status.REPLAYED;
-        this.replayedAt = at;
     }
 
     CouponIssueDeadLetter toDomain() {

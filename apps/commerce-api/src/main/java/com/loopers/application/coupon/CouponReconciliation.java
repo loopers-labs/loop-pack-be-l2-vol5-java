@@ -63,7 +63,7 @@ public class CouponReconciliation {
         boolean prefixIntact = true;
         int republished = 0;
         long offset = 0;
-        while (previous.confirmedUpTo() < bound) {
+        while (confirmedUpTo < bound) {
             List<Reservation> page = couponReservation.reservedBetween(campaignId, previous.confirmedUpTo(), bound,
                 offset, PAGE);
             if (page.isEmpty()) {

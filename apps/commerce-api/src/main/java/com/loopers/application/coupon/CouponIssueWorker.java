@@ -81,7 +81,7 @@ public class CouponIssueWorker {
         }
     }
 
-    public void record(CouponIssue issue) {
+    private void record(CouponIssue issue) {
         try {
             Coupon coupon = couponTransactions.issue(issue.campaignId(), issue.userId(), issue.issueNumber(),
                 issue.reservedAt());

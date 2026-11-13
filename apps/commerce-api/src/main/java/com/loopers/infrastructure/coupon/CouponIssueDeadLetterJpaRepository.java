@@ -11,8 +11,6 @@ import java.util.List;
 
 interface CouponIssueDeadLetterJpaRepository extends JpaRepository<CouponIssueDeadLetterEntity, Long> {
 
-    boolean existsByMessageKey(String messageKey);
-
     List<CouponIssueDeadLetterEntity> findTop100ByOrderByReceivedAtDescIdDesc();
 
     @Modifying

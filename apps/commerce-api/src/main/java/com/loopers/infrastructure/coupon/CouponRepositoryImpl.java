@@ -9,7 +9,6 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 
-import java.sql.SQLException;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
@@ -19,8 +18,6 @@ import java.util.Set;
 @Component
 @RequiredArgsConstructor
 public class CouponRepositoryImpl implements CouponRepository {
-
-    private static final int MYSQL_DUPLICATE_KEY = 1062;
 
     private final CouponJpaRepository couponJpaRepository;
 
@@ -45,19 +42,10 @@ public class CouponRepositoryImpl implements CouponRepository {
     }
 
     private static RuntimeException duplicateOrRethrow(DataIntegrityViolationException e) {
-        if (isDuplicateCampaignUser(e)) {
+        if (DuplicateKey.on(e, CouponEntity.UK_CAMPAIGN_USER)) {
             return new DomainException(DomainError.COUPON_ALREADY_ISSUED);
         }
         return e;
-    }
-
-    private static boolean isDuplicateCampaignUser(Throwable e) {
-        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
-            if (cause instanceof SQLException sql && sql.getErrorCode() == MYSQL_DUPLICATE_KEY) {
-                return sql.getMessage() != null && sql.getMessage().contains(CouponEntity.UK_CAMPAIGN_USER);
-            }
-        }
-        return false;
     }
 
     @Override

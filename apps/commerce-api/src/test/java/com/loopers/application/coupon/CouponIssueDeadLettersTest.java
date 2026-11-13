@@ -18,6 +18,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.BooleanSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -86,6 +87,28 @@ class CouponIssueDeadLettersTest {
             }
             Thread.sleep(100);
         }
+    }
+
+    @DisplayName("WRK-010: 원인 메시지가 열 길이보다 길어도 DLT 로그는 남는다. 잘라서 적고 잃지 않는다")
+    @Test
+    void keepsDeadLetterWhoseErrorIsLongerThanTheColumn() {
+        String longError = "x".repeat(1_500);
+
+        couponIssueDeadLetters.record("coupon-issues-0@7", Optional.empty(), "not a coupon issue", longError, NOW);
+
+        String stored = jdbcTemplate.queryForObject(
+            "select error_message from coupon_issue_dlt_log where message_key = ?", String.class, "coupon-issues-0@7");
+        assertThat(stored).hasSize(1_000);
+    }
+
+    @DisplayName("WRK-010: 같은 메시지 키의 DLT 로그는 한 번만 남는다")
+    @Test
+    void recordsEachMessageKeyOnce() {
+        couponIssueDeadLetters.record("coupon-issues-0@8", Optional.empty(), "payload", "error", NOW);
+        couponIssueDeadLetters.record("coupon-issues-0@8", Optional.empty(), "payload", "error", NOW);
+
+        assertThat(jdbcTemplate.queryForObject("select count(*) from coupon_issue_dlt_log where message_key = ?",
+            Integer.class, "coupon-issues-0@8")).isEqualTo(1);
     }
 
     @DisplayName("WRK-010: DLT 의 메시지는 로그에 PENDING 으로 남고, 원인을 고친 뒤 골라 다시 보내면 쿠폰이 생기고 REPLAYED 다")
