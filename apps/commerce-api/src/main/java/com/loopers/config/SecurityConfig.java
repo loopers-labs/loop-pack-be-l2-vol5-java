@@ -34,7 +34,9 @@ public class SecurityConfig {
         antMatcher("/api/v1/points/**"),
         antMatcher("/api/v1/products/*/likes"),
         antMatcher("/api/v1/users/*/likes"),
-        antMatcher("/api/v1/orders/**")
+        antMatcher("/api/v1/orders/**"),
+        antMatcher("/api/v1/coupon-campaigns/*/issues"),
+        antMatcher("/api/v1/coupons/**")
     );
 
     /** 관리자 API. 관리자 역할만 허용하며 미식별·권한 부족 모두 403 이다. */

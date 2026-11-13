@@ -3,6 +3,8 @@ package com.loopers.domain.coupon;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
 
 import java.time.ZonedDateTime;
@@ -39,6 +41,10 @@ public class CouponService {
     /** 202 로 약속한 당첨을 기록한다. 같은 당첨의 기록이 이미 있으면 유일 제약 충돌이 난다. */
     public CouponIssueTicket recordTicket(Long campaignId, Long userId, ZonedDateTime now) {
         return couponIssueTicketRepository.insert(CouponIssueTicket.record(campaignId, userId, now));
+    }
+
+    public Page<Coupon> getList(Long userId, Pageable pageable) {
+        return couponRepository.findAllByUserId(userId, pageable);
     }
 
     public boolean campaignExists(Long campaignId) {
