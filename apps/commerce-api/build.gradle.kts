@@ -13,6 +13,12 @@ tasks.named("check") {
     dependsOn(":modules:jpa:check")
 }
 
+tasks.test {
+    // 각 Spring 테스트 컨텍스트의 커넥션 풀이 공유 MySQL 한도를 넘지 않게 종료한다.
+    // 연결 풀의 크기와 동시성 테스트의 요청 수는 변경하지 않는다.
+    systemProperty("spring.test.context.cache.maxSize", "8")
+}
+
 dependencyManagement {
     imports {
         mavenBom("io.github.resilience4j:resilience4j-bom:${project.properties["resilience4jVersion"]}")
