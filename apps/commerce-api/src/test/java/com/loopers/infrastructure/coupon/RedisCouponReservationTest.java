@@ -67,7 +67,7 @@ class RedisCouponReservationTest {
         assertThat(reservation.count(CAMPAIGN)).isEqualTo(2L);
     }
 
-    @DisplayName("RSV-001: 한도만큼 차면 품절이고 집합은 늘지 않는다")
+    @DisplayName("RSV-001: 한도만큼 차면 품절이고 집합은 늘지 않으며, 이미 받아들인 사용자는 품절 뒤에도 같은 번호다")
     @Test
     void soldOutAtQuota() {
         reserve(101L);
@@ -75,6 +75,7 @@ class RedisCouponReservationTest {
         reserve(103L);
 
         assertThat(reserve(104L)).isEqualTo(new Result.SoldOut());
+        assertThat(reserve(101L)).isEqualTo(new Result.Existing(1));
         assertThat(reservation.count(CAMPAIGN)).isEqualTo(3L);
     }
 

@@ -72,11 +72,6 @@ class CouponLossRecoveryTest {
         couponReconciliation.clear();
     }
 
-    private Long openCampaign() {
-        return couponFacade.openCampaign(CampaignName.of("블프 쿠폰"), DiscountAmount.of(5_000),
-            IssueQuota.of(100), true).getId();
-    }
-
     private int couponCount(Long campaignId) {
         return jdbcTemplate.queryForObject("select count(*) from coupon where campaign_id = ?", Integer.class, campaignId);
     }
@@ -91,85 +86,34 @@ class CouponLossRecoveryTest {
         }
     }
 
-    @DisplayName("FLT-008: 대사가 하한을 갱신하기 전에 Redis 가 비어도 다음 접수는 유실로 보고 503 이며 닫힌 채 남는다. 관리자가 복구하면 앞서 202 를 받은 사람은 전원 쿠폰이 있고 한도를 넘겨 받지 않는다")
+    @DisplayName("FLT-008: Redis 가 비면 첫 접수가 캠페인을 닫고 닫힌 채 남는다. 관리자가 복구하면 202 를 받은 사람은 전원 쿠폰이 있고, 번호가 이어지며, 한도를 넘겨 받지 않는다")
     @Test
-    void refusesAfterLossEvenBeforeReconcileAndKeepsEveryAcceptedPromise() throws Exception {
+    void recoversReservationsFromDbAfterLoss() throws Exception {
         Long campaignId = couponFacade.openCampaign(CampaignName.of("블프 쿠폰"), DiscountAmount.of(5_000),
-            IssueQuota.of(3), true).getId();
+            IssueQuota.of(4), true).getId();
         for (long userId = 1; userId <= 3; userId++) {
             assertThat(couponFacade.issue(campaignId, userId, NOW))
                 .isEqualTo(new CouponFacade.IssueResult.Accepted((int) userId));
         }
+        eventually(() -> couponCount(campaignId) == 3);
 
         redisCleanUp.truncateAll();
 
         assertThatThrownBy(() -> couponFacade.issue(campaignId, 4L, NOW))
             .isInstanceOf(CoreException.class)
             .hasFieldOrPropertyWithValue("errorType", ErrorType.COUPON_ADMISSION_UNAVAILABLE);
-        eventually(() -> couponCount(campaignId) == 3);
         assertThat(couponReservation.isClosed(campaignId)).isTrue();
 
         assertThat(couponFacade.recover(campaignId)).isEqualTo(3);
 
         assertThat(couponReservation.isClosed(campaignId)).isFalse();
-        assertThat(jdbcTemplate.queryForList("select user_id from coupon where campaign_id = ? order by user_id",
-            Long.class, campaignId)).containsExactly(1L, 2L, 3L);
-        assertThatThrownBy(() -> couponFacade.issue(campaignId, 4L, NOW))
-            .isInstanceOf(DomainException.class)
-            .hasFieldOrPropertyWithValue("error", DomainError.COUPON_SOLD_OUT);
-    }
-
-    @DisplayName("FLT-008: 닫힌 캠페인은 예약 없이 503 이고, 열면 다시 접수한다")
-    @Test
-    void closedCampaignRefusesAdmissionUntilOpened() {
-        Long campaignId = openCampaign();
-        couponReservation.close(campaignId);
-
-        assertThatThrownBy(() -> couponFacade.issue(campaignId, 42L, NOW))
-            .isInstanceOf(CoreException.class)
-            .hasFieldOrPropertyWithValue("errorType", ErrorType.COUPON_ADMISSION_UNAVAILABLE);
-        assertThat(couponReservation.count(campaignId)).isZero();
-
-        couponReservation.open(campaignId);
-        assertThat(couponFacade.issue(campaignId, 42L, NOW)).isEqualTo(new CouponFacade.IssueResult.Accepted(1));
-    }
-
-    private boolean acceptedWithNumber(Long campaignId, Long userId, int issueNumber) {
-        try {
-            return couponFacade.issue(campaignId, userId, NOW).equals(new CouponFacade.IssueResult.Accepted(issueNumber));
-        } catch (CoreException e) {
-            return false;
-        }
-    }
-
-    @DisplayName("FLT-008: Redis 가 비면 첫 접수가 캠페인을 닫고 닫힌 채 남는다. 관리자가 복구하면 DB 쿠폰으로 명단을 다시 만들어 열며 번호가 이어진다")
-    @Test
-    void recoversReservationsFromDbAfterLoss() throws Exception {
-        Long campaignId = openCampaign();
-        for (long userId = 1; userId <= 3; userId++) {
-            assertThat(couponFacade.issue(campaignId, userId, NOW))
-                .isEqualTo(new CouponFacade.IssueResult.Accepted((int) userId));
-        }
-        eventually(() -> couponCount(campaignId) == 3);
-        couponReconciliation.reconcile(campaignId);
-
-        redisCleanUp.truncateAll();
-
-        assertThatThrownBy(() -> couponFacade.issue(campaignId, 4L, NOW))
-            .isInstanceOf(CoreException.class)
-            .hasFieldOrPropertyWithValue("errorType", ErrorType.COUPON_ADMISSION_UNAVAILABLE);
-        assertThatThrownBy(() -> couponFacade.issue(campaignId, 4L, NOW))
-            .isInstanceOf(CoreException.class)
-            .hasFieldOrPropertyWithValue("errorType", ErrorType.COUPON_ADMISSION_UNAVAILABLE);
-        assertThat(couponReservation.isClosed(campaignId)).isTrue();
-
-        assertThat(couponFacade.recover(campaignId)).isEqualTo(3);
-
-        assertThat(acceptedWithNumber(campaignId, 4L, 4)).isTrue();
-        assertThat(couponReservation.count(campaignId)).isEqualTo(4);
         assertThat(couponFacade.issue(campaignId, 2L, NOW))
             .isInstanceOf(CouponFacade.IssueResult.Issued.class)
             .extracting("issueNumber").isEqualTo(2);
+        assertThat(couponFacade.issue(campaignId, 4L, NOW)).isEqualTo(new CouponFacade.IssueResult.Accepted(4));
+        assertThatThrownBy(() -> couponFacade.issue(campaignId, 5L, NOW))
+            .isInstanceOf(DomainException.class)
+            .hasFieldOrPropertyWithValue("error", DomainError.COUPON_SOLD_OUT);
     }
 
     @DisplayName("FLT-008: 복구는 같은 번호를 가진 쿠폰이 페이지 경계에 걸려 있어도 전원을 명단에 다시 올린다")

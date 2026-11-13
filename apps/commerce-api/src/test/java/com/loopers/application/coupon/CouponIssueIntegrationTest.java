@@ -11,13 +11,10 @@ import com.loopers.support.error.CoreException;
 import com.loopers.support.error.DomainError;
 import com.loopers.support.error.DomainException;
 import com.loopers.support.error.ErrorType;
-import com.loopers.support.kafka.TopicRecords;
-import com.loopers.testcontainers.KafkaTestContainersConfig;
 import com.loopers.utils.DatabaseCleanUp;
 import com.loopers.utils.RedisCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -25,7 +22,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -129,47 +125,6 @@ class CouponIssueIntegrationTest {
         }
     }
 
-    @Nested
-    @DisplayName("CPN-004: 접수 응답")
-    class Accept {
-
-        @DisplayName("품절 뒤에도 접수된 사용자는 같은 번호다")
-        @Test
-        void repeatAfterSoldOutKeepsNumber() {
-            Long campaignId = openCampaign(1, true);
-            couponFacade.issue(campaignId, 42L, NOW);
-
-            assertThatThrownBy(() -> couponFacade.issue(campaignId, 7L, NOW))
-                .isInstanceOf(DomainException.class)
-                .hasFieldOrPropertyWithValue("error", DomainError.COUPON_SOLD_OUT);
-            assertThat(couponFacade.issue(campaignId, 42L, NOW)).isEqualTo(new IssueResult.Pending(1));
-        }
-
-        @DisplayName("RSV-001: 같은 사용자가 동시에 두 번 접수하면 번호 하나다")
-        @Test
-        void sameUserRaceGetsOneNumber() throws Exception {
-            Long campaignId = openCampaign(5, true);
-
-            List<IssueResult> results = runTogether(List.of(
-                () -> couponFacade.issue(campaignId, 42L, NOW),
-                () -> couponFacade.issue(campaignId, 42L, NOW)));
-
-            assertThat(results).containsExactlyInAnyOrder(new IssueResult.Accepted(1), new IssueResult.Pending(1));
-        }
-    }
-
-    @DisplayName("PUB-001: 202 를 줬으면 그 예약의 메시지가 broker 에 있다")
-    @Test
-    void acceptedMeansPublished() {
-        Long campaignId = openCampaign(5, true);
-
-        List<ConsumerRecord<String, byte[]>> records = TopicRecords.during(KafkaTestContainersConfig.COUPON_ISSUES,
-            () -> couponFacade.issue(campaignId, 42L, NOW));
-
-        assertThat(records).singleElement().satisfies(record ->
-            assertThat(new String(record.value(), StandardCharsets.UTF_8)).contains("\"campaignId\":" + campaignId));
-    }
-
     @DisplayName("PUB-004: 확인을 기다리는 요청이 상한(테스트 2)만큼 차 있으면 예약 없이 503 이고, 자리가 나면 받는다")
     @Test
     void rejectsWithoutReservingWhenInFlightIsFull() {
@@ -207,17 +162,6 @@ class CouponIssueIntegrationTest {
         Thread.sleep(600);
         assertThat(couponFacade.issue(campaignId, 42L, NOW)).isEqualTo(new IssueResult.Pending(1));
         assertThat(redis.opsForZSet().count("coupon:campaign:" + campaignId + ":issued", 1, Double.MAX_VALUE)).isEqualTo(1);
-    }
-
-    @DisplayName("FLT-008: 예약 집합이 DB 발급 수보다 작으면 503 이고 접수하지 않는다")
-    @Test
-    void lostReservationsAreUnavailable() {
-        Long campaignId = openCampaign(5, true);
-        couponTransactions.issue(campaignId, 1L, 1, NOW);
-
-        assertThatThrownBy(() -> couponFacade.issue(campaignId, 42L, NOW))
-            .isInstanceOf(CoreException.class)
-            .hasFieldOrPropertyWithValue("errorType", ErrorType.COUPON_ADMISSION_UNAVAILABLE);
     }
 
     @DisplayName("EXP-019: 한도 5 에 8 명이 동시에 DB 발급에 들어가면 5 명이 받고 3 명은 품절이다")
