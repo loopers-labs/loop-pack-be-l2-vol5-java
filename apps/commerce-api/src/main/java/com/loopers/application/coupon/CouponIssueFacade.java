@@ -8,11 +8,13 @@ import com.loopers.domain.coupon.CouponRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.UUID;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class CouponIssueFacade {
@@ -45,10 +47,10 @@ public class CouponIssueFacade {
         try {
             acquired = permits.tryAcquire(token, properties.requireCapacity());
         } catch (CouponPermitScriptException exception) {
-            admission.close();
+            closeAdmissionAfterAcquireFailure(token, exception);
             throw new CoreException(ErrorType.INTERNAL_ERROR, "쿠폰 처리 자리 스크립트 오류로 신규 발급을 닫았습니다.");
         } catch (RuntimeException exception) {
-            admission.close();
+            closeAdmissionAfterAcquireFailure(token, exception);
             throw new CoreException(ErrorType.SERVICE_UNAVAILABLE, "쿠폰 처리 자리 상태를 확인할 수 없어 신규 발급을 닫았습니다.");
         }
         if (!acquired) {
@@ -74,6 +76,15 @@ public class CouponIssueFacade {
         return coupons.findIssuedByCampaignIdAndUserId(campaignId, userId)
             .map(coupon -> new CouponIssueResult(toInfo(coupon), false))
             .orElseThrow(() -> rejection);
+    }
+
+    /**
+     * 수용 결과를 모르면 Redis가 token을 추가하고 응답만 잃었을 수 있다. 재시작 전까지 이어질 닫힘이므로 원인과 token을 남긴다.
+     */
+    private void closeAdmissionAfterAcquireFailure(String token, RuntimeException cause) {
+        admission.close();
+        log.error("permit 획득 결과를 확인하지 못해 신규 발급을 닫았습니다. Set에 남았을 수 있는 token입니다. permitToken={}",
+            token, cause);
     }
 
     private CouponIssueInfo toInfo(Coupon coupon) {

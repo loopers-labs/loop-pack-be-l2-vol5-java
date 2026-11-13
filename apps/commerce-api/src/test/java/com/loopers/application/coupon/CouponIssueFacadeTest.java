@@ -14,9 +14,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.transaction.CannotCreateTransactionException;
@@ -42,7 +45,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-@ExtendWith(MockitoExtension.class)
+@ExtendWith({MockitoExtension.class, OutputCaptureExtension.class})
 class CouponIssueFacadeTest {
 
     private static final Instant NOW = Instant.parse("2026-11-11T12:00:00.123456Z");
@@ -198,9 +201,9 @@ class CouponIssueFacadeTest {
         verify(permits, never()).release(anyString());
     }
 
-    @DisplayName("Redis 수용 상태를 확인할 수 없으면 503으로 응답하고 앱 수용을 닫는다.")
+    @DisplayName("Redis 수용 상태를 확인할 수 없으면 503으로 응답하고, 원인과 token을 남긴 뒤 앱 수용을 닫는다.")
     @Test
-    void closesAdmissionWhenPermitStoreIsUnavailable() {
+    void closesAdmissionWhenPermitStoreIsUnavailable(CapturedOutput output) {
         admission.open();
         when(coupons.findIssuedByCampaignIdAndUserId(CAMPAIGN_ID, USER_ID)).thenReturn(Optional.empty());
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(campaign));
@@ -212,11 +215,12 @@ class CouponIssueFacadeTest {
                 exception -> assertThat(exception.getErrorType()).isEqualTo(ErrorType.SERVICE_UNAVAILABLE));
         assertThat(admission.isOpen()).isFalse();
         verify(transaction, never()).issue(any(), any(), any());
+        assertThat(output).contains(acquiredToken(), "timeout");
     }
 
-    @DisplayName("Lua 입력·키 오류는 500으로 응답하고 앱 수용을 닫는다.")
+    @DisplayName("Lua 입력·키 오류는 500으로 응답하고, 원인과 token을 남긴 뒤 앱 수용을 닫는다.")
     @Test
-    void closesAdmissionWhenPermitScriptIsInvalid() {
+    void closesAdmissionWhenPermitScriptIsInvalid(CapturedOutput output) {
         admission.open();
         when(coupons.findIssuedByCampaignIdAndUserId(CAMPAIGN_ID, USER_ID)).thenReturn(Optional.empty());
         when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(campaign));
@@ -228,6 +232,7 @@ class CouponIssueFacadeTest {
                 exception -> assertThat(exception.getErrorType()).isEqualTo(ErrorType.INTERNAL_ERROR));
         assertThat(admission.isOpen()).isFalse();
         verify(transaction, never()).issue(any(), any(), any());
+        assertThat(output).contains(acquiredToken(), "WRONGTYPE");
     }
 
     @DisplayName("permit 반환 결과가 0이어도 commit된 발급 결과를 유지하고 신규 수용을 닫는다.")
@@ -371,5 +376,11 @@ class CouponIssueFacadeTest {
 
         assertThat(result).containsExactly(new CouponIssueInfo(104L, CAMPAIGN_ID, NOW.minusSeconds(1), "5,000원 할인권"));
         verify(coupons).findAllIssuedByUserId(USER_ID);
+    }
+
+    private String acquiredToken() {
+        ArgumentCaptor<String> token = ArgumentCaptor.forClass(String.class);
+        verify(permits).tryAcquire(token.capture(), eq(3));
+        return token.getValue();
     }
 }

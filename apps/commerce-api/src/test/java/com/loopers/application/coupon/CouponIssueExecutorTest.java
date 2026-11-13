@@ -24,6 +24,7 @@ import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.transaction.TransactionSystemException;
 import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
 import java.util.Optional;
@@ -73,6 +74,26 @@ class CouponIssueExecutorTest {
         assertThat(result).isEqualTo(new Issued(issued));
         verify(permits).release(TOKEN);
         assertThat(admission.isOpen()).isTrue();
+    }
+
+    @DisplayName("바깥 트랜잭션 안에서 호출되면 commit 전에 자리가 풀리므로 DB 작업을 시작하지 않고 token을 반환한 실패로 돌려준다.")
+    @Test
+    void refusesToRunInsideOuterTransaction() {
+        when(permits.release(TOKEN)).thenReturn(1L);
+        TransactionSynchronizationManager.setActualTransactionActive(true);
+        CouponIssueExecution result;
+        try {
+            result = executor.execute(CAMPAIGN_ID, USER_ID, TOKEN);
+        } finally {
+            TransactionSynchronizationManager.setActualTransactionActive(false);
+        }
+
+        assertThat(result).isInstanceOfSatisfying(Failed.class, failed -> {
+            assertThat(failed.dbWorkDone()).isTrue();
+            assertThat(failed.failure()).isInstanceOf(IllegalStateException.class);
+        });
+        verifyNoInteractions(transaction);
+        verify(permits).release(TOKEN);
     }
 
     @DisplayName("commit 뒤 token 반환 결과가 0이면 발급 결과는 유지하고 신규 수용을 닫는다.")

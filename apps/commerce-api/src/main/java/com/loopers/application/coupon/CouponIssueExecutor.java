@@ -10,6 +10,7 @@ import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * permit을 이미 얻은 발급 실행을 처리한다. 동기 API와 대기열 worker가 함께 사용한다.
@@ -26,6 +27,11 @@ public class CouponIssueExecutor {
     private final CouponIssueAdmissionState admission;
 
     public CouponIssueExecution execute(Long campaignId, Long userId, String token) {
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            // 바깥 트랜잭션에 참여하면 발급 메서드가 정상 반환해도 아직 commit 전이라, 반환한 자리를 새 실행이 잠금 대기로 쓴다.
+            returnPermitSafely(token);
+            return new Failed(new IllegalStateException("쿠폰 발급 실행은 트랜잭션 밖에서 호출해야 합니다."), true);
+        }
         CouponIssueTransactionCompletion completion = new CouponIssueTransactionCompletion();
         CouponIssueInfo issued;
         try {
