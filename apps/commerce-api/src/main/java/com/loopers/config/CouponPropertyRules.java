@@ -7,7 +7,6 @@ final class CouponPropertyRules {
 
     private CouponPropertyRules() {}
 
-    /** null 이 아니고, 밀리초 변환이 넘치지 않으며, 1ms 이상이어야 한다. */
     static void requirePositiveMillis(String prefix, String key, Duration value) {
         if (value == null) {
             throw invalid(prefix, key, "1ms 이상의 기간", "null");

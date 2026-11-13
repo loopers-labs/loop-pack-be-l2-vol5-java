@@ -1,6 +1,4 @@
--- 대기 상태 조회(읽기 전용). ARGV = userId. 반환 [FOUND|NOT_FOUND|INVARIANT_ERROR, 항목 JSON, position].
--- 품절 표시가 있으면 WAITING/READY 를 SOLD_OUT 으로, 그 밖의 기한 지난 READY 는 EXPIRED 로 보여 준다.
--- PROCESSING 은 품절이어도 그대로다. 회수·승격·기한 연장은 하지 않는다.
+-- 대기 상태 조회(읽기 전용). ARGV = userId.
 if #KEYS ~= 5 or #ARGV ~= 1 then
   return arg_error('find expects 5 keys and 1 arg')
 end

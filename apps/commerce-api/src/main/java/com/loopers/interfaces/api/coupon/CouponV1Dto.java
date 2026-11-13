@@ -15,7 +15,6 @@ public class CouponV1Dto {
     private static final DateTimeFormatter UTC_MICROS = DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss.SSSSSS'Z'")
         .withZone(ZoneOffset.UTC);
 
-    /** 발급 응답. 최초 201 과 기존 결과 200 이 같은 다섯 필드를 사용한다. */
     public record CouponResponse(
         Long couponId,
         Long campaignId,
@@ -29,7 +28,6 @@ public class CouponV1Dto {
         }
     }
 
-    /** 보유 목록 항목. 다섯 필드와 DB 에 저장된 발급 시각을 UTC·마이크로초 6자리·Z 로 제공한다. */
     public record OwnedCouponResponse(
         Long couponId,
         Long campaignId,
@@ -44,10 +42,7 @@ public class CouponV1Dto {
         }
     }
 
-    /**
-     * 대기 등록·조회와 발급 진행 중(202) 응답(설계 §12.7·12.11). 상태에 없는 필드는 null 이고 공통 설정으로 JSON 에서 빠진다.
-     * position 은 WAITING, expiresAt 은 READY, couponId 는 DB 에서 확인한 ISSUED 에만 있다. 기존 쿠폰만 있으면 waitingId 도 없다.
-     */
+    /** 상태에 없는 필드는 null 이라 JSON 에서 빠진다. */
     public record WaitingResponse(
         Long campaignId,
         String waitingId,

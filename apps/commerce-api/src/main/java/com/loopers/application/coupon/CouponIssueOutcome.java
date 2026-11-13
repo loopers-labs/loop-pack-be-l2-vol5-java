@@ -3,10 +3,7 @@ package com.loopers.application.coupon;
 import com.loopers.domain.coupon.CouponWaitingSnapshot;
 import com.loopers.domain.coupon.CouponWaitingState;
 
-/**
- * 발급 POST 의 결과(설계 §12.11). 쿠폰 결과(신규 201·기존 200) 또는 같은 권한이 진행 중인 PROCESSING 대기 상태(202) 중 정확히 하나다.
- * 둘 다 있거나 둘 다 없으면 내부 불변식 오류다.
- */
+/** 쿠폰 결과(201·200) 또는 진행 중 대기 상태(202) 중 정확히 하나다. */
 public record CouponIssueOutcome(CouponIssueResult result, CouponWaitingSnapshot processing) {
 
     public CouponIssueOutcome {

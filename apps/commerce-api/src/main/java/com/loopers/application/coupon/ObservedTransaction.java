@@ -6,10 +6,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.function.Supplier;
 
-/**
- * 한 TX 호출을 요청 안에서 관찰한 결과(설계 §12.11). 콜백 진입과 afterCompletion 통지로 업무 미시작·commit·rollback·종료 불명을 가른다.
- * 예외 종류보다 이 종료 판정을 먼저 적용하기 위한 값이며 요청 사이에 공유하지 않는다.
- */
+/** 한 TX 호출의 종료를 콜백 진입과 afterCompletion 통지로 관찰한다. 예외 종류만으로는 commit 여부를 알 수 없어서다. */
 final class ObservedTransaction<T> {
 
     private boolean entered;
@@ -20,7 +17,7 @@ final class ObservedTransaction<T> {
 
     private ObservedTransaction() {}
 
-    /** 콜백 첫 부분에서 진입을 표시하고 업무 SQL 전에 afterCompletion 을 등록한다. 결과는 콜백 안에서 복사한 값이다. 예외는 던지지 않고 기록한다. */
+    /** 업무 SQL 전에 afterCompletion 을 등록한다. 예외는 던지지 않고 기록한다. */
     static <T> ObservedTransaction<T> run(TransactionTemplate template, Supplier<T> work) {
         ObservedTransaction<T> call = new ObservedTransaction<>();
         try {
@@ -43,17 +40,14 @@ final class ObservedTransaction<T> {
         return call;
     }
 
-    /** execute 가 정상 반환했다. */
     boolean returned() {
         return returned;
     }
 
-    /** 콜백에 들어갔다. false 면 업무 SQL 을 시작하지 않았다. */
     boolean entered() {
         return entered;
     }
 
-    /** 콜백이 반환한 값. 반환 뒤 예외가 있었어도 남는다. */
     T candidate() {
         return candidate;
     }

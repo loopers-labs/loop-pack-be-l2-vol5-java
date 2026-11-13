@@ -11,10 +11,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import lombok.Getter;
 
-/**
- * 사용자에게 지급된 쿠폰 한 장. 캠페인·사용자는 물리 FK 없는 scalar 참조이며, 동시 발급의 중복은
- * {@code uk_coupon_campaign_user} 가 최종 방어한다. 혜택은 발급 당시 값을 복사하고 캠페인 이름은 복사하지 않는다.
- */
+/** 사용자에게 지급된 쿠폰 한 장. 동시 발급의 중복은 {@code uk_coupon_campaign_user} 가 최종 방어한다. */
 @Entity
 @Table(
     name = "coupon",
@@ -24,7 +21,6 @@ import lombok.Getter;
 @Getter
 public class CouponModel extends BaseEntity {
 
-    /** 사용자당 캠페인 쿠폰 1장의 최종 방어 제약 이름. 저장 예외 분류에서 같은 이름으로 식별한다. */
     public static final String UNIQUE_CAMPAIGN_USER = "uk_coupon_campaign_user";
 
     @Column(name = "campaign_id", nullable = false, updatable = false)

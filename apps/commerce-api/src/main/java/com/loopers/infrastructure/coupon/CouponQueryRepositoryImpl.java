@@ -19,10 +19,7 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * 연결 캠페인은 LEFT JOIN 으로 읽는다. INNER JOIN 이면 캠페인이 없는 쿠폰이 조용히 빠지거나 '미발급'으로 보이므로,
- * 캠페인이 없는 행은 결과 검증에서 INTERNAL_ERROR 로 드러낸다.
- */
+/** INNER JOIN 이면 캠페인이 없는 쿠폰이 조용히 빠지므로 LEFT JOIN 으로 읽고 결과 검증에서 INTERNAL_ERROR 로 드러낸다. */
 @RequiredArgsConstructor
 @Component
 public class CouponQueryRepositoryImpl implements CouponQueryRepository {

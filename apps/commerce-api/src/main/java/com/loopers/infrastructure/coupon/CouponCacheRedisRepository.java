@@ -27,11 +27,8 @@ import static com.loopers.infrastructure.coupon.CouponRedisSupport.readScript;
 import static com.loopers.infrastructure.coupon.CouponRedisSupport.requireId;
 
 /**
- * 쿠폰 기발급 결과·품절 캐시의 Redis 구현(설계 §13.9). 기존 master String template 만 쓴다.
- * 저장은 SET NX PX, 읽기는 GET+PTTL 을 원자적으로 하는 읽기 Lua 하나를 두 캐시가 공유한다.
- *
- * <p>기발급 JSON 은 전용 mapper 의 트리로만 읽는다. 숫자 문자열·실수·범위 밖 정수를 정수로 바꾸지 않고, 다섯 필드 외 값·누락·null·
- * 요청 campaignId 불일치는 손상으로 본다. 손상·설명할 수 없는 응답은 IllegalStateException 등 예외로 올리고 키를 지우거나 고치지 않는다.
+ * 쿠폰 캐시 Redis 구현. 저장은 SET NX PX, 읽기는 GET+PTTL 읽기 Lua 하나를 두 캐시가 공유한다.
+ * 손상된 값은 예외로 올리고 키를 지우거나 고치지 않는다.
  */
 @Component
 public class CouponCacheRedisRepository implements CouponCacheRepository {
@@ -99,7 +96,7 @@ public class CouponCacheRedisRepository implements CouponCacheRepository {
         setIfAbsent(soldOutKey(campaignId), SOLD_OUT_VALUE, ttlMillis);
     }
 
-    /** SET NX PX. 이미 있으면 false 이며 값·TTL 은 그대로다. null 은 결과를 알 수 없는 응답이다. */
+    /** null 은 결과를 알 수 없는 응답이다. */
     private void setIfAbsent(String key, String value, long ttlMillis) {
         Boolean applied = redisTemplate.opsForValue().setIfAbsent(key, value, Duration.ofMillis(ttlMillis));
         if (applied == null) {
@@ -107,12 +104,11 @@ public class CouponCacheRedisRepository implements CouponCacheRepository {
         }
     }
 
-    // ---- 응답·값 변환. 실제 Redis 로 만들 수 없는 응답도 검사할 수 있게 package-private static 으로 둔다. ----
+    // ---- 실제 Redis 로 만들 수 없는 응답도 검사하려고 package-private static 으로 둔다. ----
 
     record Hit(String value, long remainingMillis) {
     }
 
-    /** [MISS, "", ""] 또는 [HIT, 비어 있지 않은 값, 양의 십진 정수]만 받는다. */
     static Optional<Hit> readHit(Object reply) {
         if (!(reply instanceof List<?> list) || list.size() != 3 || !list.stream().allMatch(String.class::isInstance)) {
             throw unexpected(reply);

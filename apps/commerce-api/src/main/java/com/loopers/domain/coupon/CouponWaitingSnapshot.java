@@ -3,10 +3,7 @@ package com.loopers.domain.coupon;
 import java.time.Instant;
 import java.util.Objects;
 
-/**
- * 한 사용자의 현재 대기 항목을 읽은 시점의 모습(설계 §12.11). 상태에 필요 없는 필드는 null 이다.
- * position 은 WAITING 에만(맨 앞 1), expiresAt 은 READY 에만 둔다. couponId 는 DB 에서 확인한 값만 채우며 Redis 계층은 항상 null 이다.
- */
+/** 상태에 필요 없는 필드는 null 이다. couponId 는 DB 에서 확인한 값만 채운다. */
 public record CouponWaitingSnapshot(
     Long campaignId,
     String waitingId,

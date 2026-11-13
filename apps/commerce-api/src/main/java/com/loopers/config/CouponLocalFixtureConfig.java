@@ -19,10 +19,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 직접 실행용 쿠폰 준비 데이터(설계 §9). {@code commerce.coupon.fixture.enabled=true} 를 명시한 앱 시작에서만 등록돼 한 번 실행된다.
- * 매 실행마다 새 사용자 8명(잔액 0 Point)과 새 ACTIVE 캠페인 1개를 한 TX 로 추가한다. 이름으로 기존 캠페인을 찾거나 기존 데이터를
- * 바꾸지 않고, 쿠폰을 만들지 않으며, Redis 와 수용 상태에 손대지 않는다(수용은 기본 닫힘 그대로).
- * 준비 실패는 예외로 앱 기동을 멈춘다.
+ * 직접 실행용 준비 데이터. {@code commerce.coupon.fixture.enabled=true} 일 때만 실행된다.
+ * 실행마다 새 사용자 8명과 ACTIVE 캠페인 1개를 추가하며 기존 데이터·Redis·수용 상태는 건드리지 않는다.
  */
 @Slf4j
 @Configuration

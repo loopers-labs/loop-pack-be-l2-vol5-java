@@ -1,6 +1,5 @@
--- 발급 실행 종료 기록. ARGV = userId, waitingId, 결과(ISSUED|FAILED). 반환 [APPLIED|UNCHANGED|INVARIANT_ERROR].
--- DB 종료 확인은 호출자 전제다. 현재 waitingId·PROCESSING 이 아니면(반복·옛 호출·새 등록 뒤) 아무것도 바꾸지 않는다.
--- 맞는데 processing 점유가 없으면 UNCHANGED 로 숨기지 않고 INVARIANT_ERROR 다. 자기 점유만 반환하며 재시도·이력은 없다.
+-- 발급 종료 기록. ARGV = userId, waitingId, 결과(ISSUED|FAILED).
+-- 현재 waitingId 의 PROCESSING 이 아니면(반복·옛 호출) 아무것도 바꾸지 않는다.
 if #KEYS ~= 5 or #ARGV ~= 3 then
   return arg_error('finish expects 5 keys and 3 args')
 end

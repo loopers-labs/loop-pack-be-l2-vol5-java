@@ -16,12 +16,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * 쿠폰 대기실 입장 처리의 자동 회차(설계 §12.4·12.11 F4). 직전 회차가 끝난 뒤 schedulerDelay 를 두고 CouponFacade.processAdmissions 를 부른다.
- *
- * <p>W7 relay 실행기와 공유하지 않으려고 내부 단일 스레드 실행기를 직접 소유한다(Spring bean 아님). 운영 캠페인이 없으면 실행기를 만들지 않는다.
- * 수용이 닫혀 있으면 Facade 가 DB·Redis 를 부르지 않으므로 이 클래스는 열림 여부를 보지 않는다.
- * 회차의 RuntimeException 은 로그 후 다음 회차를 유지한다(Redis 오류면 서비스가 이미 수용을 닫았다). Error 는 로그 후 다시 던져
- * 이후 회차가 멈춘 사실을 숨기지 않으며 자동 재시작하지 않는다.
+ * 쿠폰 대기실 입장 처리 회차. 직전 회차가 끝난 뒤 delay 를 두고 processAdmissions 를 부른다.
+ * W7 relay 실행기와 공유하지 않으려고 단일 스레드 실행기를 직접 소유한다.
+ * Error 는 다시 던져 이후 회차가 멈춘 사실을 숨기지 않는다.
  */
 @Slf4j
 @Component
@@ -46,7 +43,6 @@ public class CouponWaitingScheduler implements SmartLifecycle {
         this.stopTimeout = DurationStyle.detectAndParse(phaseTimeout);
     }
 
-    /** 중복 호출에 안전하다. 최초 회차도 delay 뒤에 시작한다. */
     @Override
     public void start() {
         synchronized (monitor) {
@@ -76,10 +72,7 @@ public class CouponWaitingScheduler implements SmartLifecycle {
         }
     }
 
-    /**
-     * 예약 취소(진행 중 회차는 끊지 않음) → 실행기 shutdown → 진행 회차 종료를 lifecycle phase 한도 안에서 기다린다.
-     * 한도 안에 끝나지 않거나 대기가 interrupt 되면 미완료로 기록하고 정상 종료로 보고하지 않는다.
-     */
+    /** 한도 안에 진행 회차가 끝나지 않으면 정상 종료로 보고하지 않는다. */
     @Override
     public void stop() {
         ScheduledExecutorService owned;

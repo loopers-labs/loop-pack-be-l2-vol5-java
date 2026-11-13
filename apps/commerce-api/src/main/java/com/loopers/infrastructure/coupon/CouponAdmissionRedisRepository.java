@@ -23,11 +23,8 @@ import static com.loopers.infrastructure.coupon.CouponRedisSupport.readScript;
 import static com.loopers.infrastructure.coupon.CouponRedisSupport.requireId;
 
 /**
- * 쿠폰 입장 대기 상태의 Redis 구현. 기존 master String template 만 사용하며 키에 TTL 을 두지 않는다.
- *
- * <p>대기실(설계 §12.8·12.11)은 캠페인별 키 5개를 Lua 로만 바꾼다.
- * Lua 응답은 문자열 고정 배열이며, 길이·원소 타입·결과명·JSON·숫자·상태별 필수값 중 하나라도 어긋나면 결과로 해석하지 않고
- * IllegalStateException 으로 올린다. null 이나 알 수 없는 응답을 성공·미발견으로 바꾸지 않는다.
+ * 대기실 Redis 구현. 캠페인별 키 5개를 Lua 로만 바꾸며 키에 TTL 을 두지 않는다.
+ * 응답 형식이 어긋나면 결과로 해석하지 않고 예외로 올린다. null·알 수 없는 응답을 성공·미발견으로 바꾸지 않는다.
  */
 @Slf4j
 @Component
@@ -51,7 +48,7 @@ public class CouponAdmissionRedisRepository implements CouponAdmissionRepository
         this.redisTemplate = redisTemplate;
     }
 
-    /** 대기실 키 5개. 순서는 Lua 공통부의 KEYS 순서(meta, entries, queue, ready, processing)와 같아야 한다. */
+    /** 순서는 Lua 공통부의 KEYS 순서와 같아야 한다. */
     public static List<String> waitingKeys(long campaignId) {
         return List.of(
             "waiting:meta:v1:" + campaignId,
@@ -112,7 +109,7 @@ public class CouponAdmissionRedisRepository implements CouponAdmissionRepository
         return redisTemplate.execute(script, waitingKeys(campaignId), (Object[]) args);
     }
 
-    // ---- Lua 응답 변환. 실제 Lua 와 별도로 잘못된 응답 분기를 검사할 수 있게 package-private static 으로 둔다. ----
+    // ---- 잘못된 응답 분기를 실제 Lua 없이 검사하려고 package-private static 으로 둔다. ----
 
     static Registration toRegistration(Long campaignId, Object reply) {
         List<String> parts = parts(reply, 3, "register");
@@ -211,7 +208,6 @@ public class CouponAdmissionRedisRepository implements CouponAdmissionRepository
         return list.stream().map(String.class::cast).toList();
     }
 
-    /** 항목 JSON 과 position 을 snapshot 으로. position 은 WAITING 에만, expiresAt 은 READY 에만 있어야 한다. */
     private static CouponWaitingSnapshot snapshot(Long campaignId, String json, String position, String operation) {
         JsonNode node;
         try {
@@ -236,7 +232,7 @@ public class CouponAdmissionRedisRepository implements CouponAdmissionRepository
             throw new IllegalStateException(operation + " position 은 WAITING 에만 있어야 합니다. [json = " + json + ", position = " + position + "]");
         }
         exactPositive(node, "sequence", json, operation);
-        // READY·PROCESSING 은 기한이 필수다. 다른 상태는 과거 기한이 남아 있을 수 있어 있으면 검증만 한다. 응답 expiresAt 은 READY 만 채운다.
+        // READY·PROCESSING 은 기한이 필수다. 다른 상태에 남은 기한은 검증만 한다.
         Long expiresAtMillis = null;
         if (status == CouponWaitingState.READY || status == CouponWaitingState.PROCESSING || node.has("expiresAtMillis")) {
             expiresAtMillis = exactPositive(node, "expiresAtMillis", json, operation);
@@ -245,7 +241,7 @@ public class CouponAdmissionRedisRepository implements CouponAdmissionRepository
         return new CouponWaitingSnapshot(campaignId, waitingId, status, rank, expiresAt, null);
     }
 
-    /** Lua 가 십진 문자열로 저장한 정수 필드. ZSet score·Lua number 가 정확히 표현하는 1~2^53-1 만 받는다. */
+    /** ZSet score·Lua number 가 정확히 표현하는 1~2^53-1 만 받는다. */
     private static long exactPositive(JsonNode node, String field, String json, String operation) {
         long value = positive(text(node, field, json, operation), operation + " " + field);
         if (value > MAX_EXACT_INTEGER) {
@@ -318,7 +314,6 @@ public class CouponAdmissionRedisRepository implements CouponAdmissionRepository
         return value ? "1" : "0";
     }
 
-    /** 공통부를 앞에 붙여 한 스크립트로 만든다. Redis 는 합친 본문의 SHA1 로 캐시한다. */
     private static RedisScript<List> waitingScript(String name) {
         return new DefaultRedisScript<>(readScript("redis/coupon-waiting-common.lua") + "\n" + readScript("redis/coupon-waiting-" + name + ".lua"),
             List.class);

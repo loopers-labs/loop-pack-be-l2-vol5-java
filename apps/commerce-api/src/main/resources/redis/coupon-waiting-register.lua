@@ -1,6 +1,5 @@
--- 대기 등록. ARGV = userId, 새 waitingId 후보. 반환 [CREATED|EXISTING|SOLD_OUT|INVARIANT_ERROR, 항목 JSON, position].
--- 유효 항목은 그대로 돌려준다. 기한 지난 READY 도 회수는 스케줄러 몫이라 EXPIRED 표현만 돌려주고 쓰지 않는다.
--- 항목이 없거나 저장 상태가 EXPIRED/FAILED 일 때만 새 순번으로 맨 뒤에 등록한다. 승격·회수는 하지 않는다.
+-- 대기 등록. ARGV = userId, 새 waitingId 후보.
+-- 기한 지난 READY 회수는 스케줄러 몫이라 여기서는 EXPIRED 로 보여 주기만 한다.
 if #KEYS ~= 5 or #ARGV ~= 2 then
   return arg_error('register expects 5 keys and 2 args')
 end
@@ -38,7 +37,6 @@ if raw then
   if status == 'PROCESSING' or status == 'ISSUED' then
     return {'EXISTING', view(entry, status), ''}
   end
-  -- EXPIRED/FAILED 는 아래에서 새 항목으로 교체한다.
 elseif orphan_index(user) then
   return invariant('index without entry')
 end
@@ -51,7 +49,7 @@ if sold_out then
   return {'SOLD_OUT', '', ''}
 end
 
--- nextSequence 는 다음에 줄 순번이다. 2^53 - 1 을 넘는 순번은 줄 수 없으므로 쓰기 전에 오류로 끝낸다.
+-- 2^53 - 1 을 넘는 순번은 줄 수 없어 쓰기 전에 오류로 끝낸다.
 local next_raw = redis.call('HGET', META, 'nextSequence')
 local sequence = 1
 if next_raw ~= false then

@@ -1,7 +1,6 @@
--- 스케줄러의 입장 처리. ARGV = capacity, admissionDurationMillis, soldOut(1/0), canAdmit(1/0). 반환 [OK, 회수 수, 승격 수].
--- 순서: 기한 지난 READY 회수 → 빈자리(capacity - READY - PROCESSING)만큼 queue 앞순번을 READY 로 승격.
--- PROCESSING 은 기한이 지나도 회수하지 않는다(DB 종료 확인 전 자리 반환 금지). soldOut 이거나 !canAdmit 이면 승격하지 않는다.
--- 대상 기록을 모두 검증한 뒤에 쓴다. 검증 실패면 아무것도 쓰지 않고 INVARIANT_ERROR 다.
+-- 스케줄러 입장 처리. ARGV = capacity, admissionDurationMillis, soldOut(1/0), canAdmit(1/0).
+-- PROCESSING 은 DB 종료 확인 전이라 기한이 지나도 회수하지 않는다.
+-- 대상을 모두 검증한 뒤에 쓰며, 검증 실패면 아무것도 쓰지 않는다.
 if #KEYS ~= 5 or #ARGV ~= 4 then
   return arg_error('processAdmissions expects 5 keys and 4 args')
 end

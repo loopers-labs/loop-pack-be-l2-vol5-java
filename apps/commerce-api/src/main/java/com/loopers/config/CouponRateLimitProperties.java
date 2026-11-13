@@ -6,9 +6,8 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 import java.time.Duration;
 
 /**
- * 쿠폰 대기 등록 입구 요청률 제한 시작 설정(commerce.coupon.rate-limit, 설계 §12.3·12.11).
- * 앱 인스턴스 하나에 limiter 하나이며 주기당 허가 수·갱신 주기만 설정한다. 허가 대기는 설정하지 않는다(0 고정).
- * 기본값(1초당 10개)은 테스트하기 쉬운 초기값이며 적정 처리량의 실측이 아니다. 0 이하·형식 오류는 기동 오류다.
+ * 대기 등록 요청률 제한 설정. 앱 인스턴스마다 limiter 하나이며 허가를 기다리지 않는다.
+ * 기본값(1초당 10개)은 테스트용 초기값이며 적정 처리량의 실측이 아니다.
  */
 @ConfigurationProperties("commerce.coupon.rate-limit")
 public record CouponRateLimitProperties(

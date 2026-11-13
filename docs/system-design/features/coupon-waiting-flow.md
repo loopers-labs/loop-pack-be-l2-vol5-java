@@ -71,144 +71,105 @@ stateDiagram-v2
 
 ## 3. 요청별 흐름
 
-그림의 `Cache` 는 `CouponCacheService`, `Admission` 은 `CouponAdmissionService`, `Redis` 는 Lua 실행이다. 모든 Redis 호출에서 예외·응답 없음·`INVARIANT_ERROR` 가 나오면 수용을 닫고 503 이다(발급 종료 기록은 예외). 그림에는 반복하지 않는다.
+그림은 정상 흐름만 그리고 분기는 아래 표에 둔다. `기존 쿠폰 확인` 은 기발급 캐시를 보고 miss·오류면 DB 읽기 TX 로 본인 쿠폰을 찾는 단계다. `Admission` 은 `CouponAdmissionService`, `Redis` 는 Lua 실행이다. 모든 Redis 호출에서 예외·응답 없음·`INVARIANT_ERROR` 가 나오면 수용을 닫고 503 이다(발급 종료 기록은 예외).
 
 ### 3.1 대기 등록 — `POST /api/v1/coupon-campaigns/{campaignId}/waiting`
 
 ```mermaid
 sequenceDiagram
-    autonumber
     actor C as Client
-    participant L as RateLimiter
     participant F as CouponFacade
-    participant K as Cache
     participant A as Admission
     participant D as DB
     participant R as Redis
 
-    C->>L: POST /waiting
-    alt 허가 없음
-        L-->>C: 429 COUPON_RATE_LIMITED
-    end
-    L->>F: registerWaiting(userId, campaignId)
-    F->>K: 기발급 캐시 조회
-    alt 캐시 miss·오류
-        F->>D: 읽기 TX: 본인 쿠폰 조회
-    end
-    alt 기존 쿠폰 있음
-        F-->>C: 200 ISSUED + couponId
-    end
-    F->>A: requireAdmitting
-    alt 운영 캠페인 아님·수용 닫힘
-        A-->>C: 503
-    end
-    F->>K: 품절 캐시 조회(로컬 → Redis)
-    alt 품절 캐시 hit
-        F-->>C: 409 SOLD_OUT
-    end
-    F->>D: 읽기 TX: 캠페인 확인
-    alt 없음 / 비활성 / 품절
-        F->>K: 품절이면 품절 캐시 저장
-        F-->>C: 404 / 409 / 409
-    end
+    C->>F: POST /waiting (RateLimiter 통과)
+    F->>F: 기존 쿠폰 확인
+    F->>A: 수용 열림·운영 캠페인 확인
+    F->>D: 읽기 TX: 캠페인 활성·품절 확인
     F->>R: register Lua
-    alt CREATED
-        R-->>F: WAITING + 순번
-        F-->>C: 201 WAITING, waitingId, position
-    else EXISTING
-        R-->>F: 현재 항목
-        F-->>C: 200 현재 상태(WAITING·READY·PROCESSING·회수 전 EXPIRED)
-    else Redis 품절 표시
-        F-->>C: 409 SOLD_OUT
-    end
+    R-->>F: CREATED(WAITING, 순번)
+    F-->>C: 201 WAITING, waitingId, position
 ```
 
-- 이미 가진 쿠폰 확인이 모든 대기 조건보다 먼저다. 수용이 닫혀 있어도 기존 쿠폰은 200 이다.
-- Redis 항목이 ISSUED 이면 DB 로 쿠폰을 다시 확인해 couponId 를 채운다. DB 에 쿠폰이 없으면 설명할 수 없는 상태라서 수용을 닫고 500 이다.
+| 조건 | 응답 |
+|---|---|
+| RateLimiter 허가 없음 | 429 `COUPON_RATE_LIMITED`, 사용자 조회 전에 거절 |
+| 기존 쿠폰 있음 | 200 ISSUED + couponId. 수용이 닫혀 있어도 이 응답이 먼저다. |
+| 운영 캠페인 아님·수용 닫힘 | 503 |
+| 품절 캐시 hit(로컬 → Redis) | 409 SOLD_OUT, DB 를 읽지 않음 |
+| 캠페인 없음 / 비활성 / 품절 | 404 / 409 / 409. 품절이면 품절 캐시 저장 |
+| Lua 결과 EXISTING | 200 현재 상태(WAITING·READY·PROCESSING·회수 전 EXPIRED) |
+| Lua 결과 Redis 품절 표시 | 409 SOLD_OUT |
+| Redis 항목이 ISSUED | DB 로 쿠폰을 다시 확인해 200. DB 에 없으면 설명할 수 없는 상태라 수용을 닫고 500 |
 
 ### 3.2 입장 처리 — 스케줄러 회차
 
 ```mermaid
 sequenceDiagram
-    autonumber
     participant S as CouponWaitingScheduler
     participant F as CouponFacade
-    participant A as Admission
     participant D as DB
     participant R as Redis
 
     loop 직전 회차 종료 후 1초마다
         S->>F: processAdmissions()
-        F->>A: 운영 캠페인 ID(수용 열림일 때만)
-        alt 미설정·닫힘
-            F-->>S: 회차 건너뜀(DB·Redis 호출 없음)
-        end
         F->>D: 짧은 읽기 TX: 캠페인 활성·품절 값 복사
         F->>R: process-admissions Lua(C, 30초, 품절, 승격 가능)
-        Note over R: 1) 기한 지난 READY → EXPIRED, ready 에서 제거<br/>2) DB 품절이면 품절 표시<br/>3) 활성·품절 아님이면 빈자리 = C − READY − PROCESSING<br/>   queue 앞순번부터 빈자리만큼 READY, 기한 = Redis 시각 + 30초
-        R-->>F: OK, 회수 수, 승격 수
+        Note over R: 1) 기한 지난 READY → EXPIRED<br/>2) DB 품절이면 품절 표시<br/>3) 빈자리 = C − READY − PROCESSING 만큼<br/>queue 앞순번부터 READY(기한 30초)
+        R-->>F: 회수 수, 승격 수
     end
 ```
 
-- 회차에서 예외가 나도 다음 회차는 계속된다. Redis 오류면 서비스가 이미 수용을 닫았으므로 이후 회차는 건너뛴다.
+- 수용이 닫혔거나 운영 캠페인이 없으면 회차를 건너뛰고 DB·Redis 를 부르지 않는다.
 - 캠페인이 없거나 비활성이면 회수만 하고 승격하지 않는다.
+- 회차에서 예외가 나도 다음 회차는 계속된다. Redis 오류면 서비스가 이미 수용을 닫았으므로 이후 회차는 건너뛴다.
 - 기한은 Lua 안에서 Redis 서버 시각으로 판단한다.
 
 ### 3.3 발급 — `POST /api/v1/coupon-campaigns/{campaignId}/issues`
 
 ```mermaid
 sequenceDiagram
-    autonumber
     actor C as Client
     participant F as CouponFacade
-    participant K as Cache
     participant A as Admission
     participant R as Redis
     participant D as DB
 
-    C->>F: issue(userId, campaignId, X-WAITING-ID)
-    F->>K: 기발급 캐시 → miss 면 DB 읽기
-    alt 기존 쿠폰 있음
-        F-->>C: 200 기존 쿠폰(헤더 없어도)
-    end
-    alt X-WAITING-ID 없음
-        F-->>C: 400 COUPON_WAITING_ID_REQUIRED
-    end
-    F->>A: requireAdmitting
-    F->>R: start Lua(userId, waitingId)
-    alt NOT_FOUND / NOT_READY·EXPIRED·ALREADY_USED
-        F-->>C: 404 / 409
-    else PROCESSING(같은 권한이 진행 중)
-        F->>D: 읽기 TX: 쿠폰 다시 확인
-        F-->>C: 쿠폰 있으면 200, 없으면 202 PROCESSING
-    else ISSUED
-        F->>D: 읽기 TX: 쿠폰 확인
-        F-->>C: 200 기존 쿠폰
-    else STARTED(READY → PROCESSING)
-        F->>D: 쓰기 TX 1) 조건부 UPDATE issued_count + 1
-        Note over D: WHERE status = ACTIVE<br/>AND issued_count < total_quota
-        alt 1건 변경
-            F->>D: 2) 캠페인 이름·혜택 읽기 3) 쿠폰 INSERT
-            D-->>F: commit
-            F->>R: finish Lua(ISSUED): PROCESSING 자리 반환
-            F->>K: 기발급 캐시 저장
-            F-->>C: 201 신규 쿠폰
-        else 0건 변경(rollback)
-            F->>D: 새 읽기 TX: 원인 판별
-            F->>R: finish Lua(쿠폰 있으면 ISSUED, 아니면 FAILED)
-            F-->>C: 200 기존 쿠폰 / 404 없음 / 409 비활성·품절 / 500 설명 불가
-        else uk_coupon_campaign_user 충돌(rollback)
-            F->>D: 새 읽기 TX: 기존 쿠폰 조회
-            F->>R: finish Lua(ISSUED)
-            F-->>C: 200 기존 쿠폰
-        else TX 종료 불명
-            F->>A: 수용 닫기(PROCESSING 유지, finish 안 함)
-            F-->>C: 500
-        end
-    end
+    C->>F: POST /issues (X-WAITING-ID)
+    F->>F: 기존 쿠폰 확인
+    F->>A: 수용 열림·운영 캠페인 확인
+    F->>R: start Lua: READY → PROCESSING
+    F->>D: 쓰기 TX: 조건부 UPDATE issued_count + 1 → 쿠폰 INSERT
+    D-->>F: commit
+    F->>R: finish Lua(ISSUED): 실행 자리 반환
+    F->>F: 기발급 캐시 저장
+    F-->>C: 201 신규 쿠폰
 ```
 
-- 발급은 입장 때 받은 READY 자리를 그대로 PROCESSING 으로 바꿔 쓴다. 발급 시점에 자리를 다시 얻지 않는다.
+조건부 UPDATE 는 `WHERE status = ACTIVE AND issued_count < total_quota` 이다. 발급은 입장 때 받은 READY 자리를 PROCESSING 으로 바꿔 쓰고, 발급 시점에 자리를 다시 얻지 않는다.
+
+**발급 시작 전 분기**
+
+| 조건 | 응답 |
+|---|---|
+| 기존 쿠폰 있음 | 200 기존 쿠폰(헤더가 없어도) |
+| `X-WAITING-ID` 없음 | 400 `COUPON_WAITING_ID_REQUIRED` |
+| 수용 닫힘·운영 캠페인 아님 | 503 |
+| start 결과 NOT_FOUND | 404(옛 waitingId 포함) |
+| start 결과 NOT_READY·EXPIRED·ALREADY_USED | 409 |
+| start 결과 PROCESSING(같은 권한이 진행 중) | DB 를 다시 확인해 쿠폰 있으면 200, 없으면 202 PROCESSING |
+| start 결과 ISSUED | DB 확인 후 200 기존 쿠폰 |
+
+**쓰기 TX 결과별 처리**
+
+| TX 결과 | 후속 처리 | finish | 응답 |
+|---|---|---|---|
+| commit | — | ISSUED | 201 |
+| 조건부 UPDATE 0건(rollback) | 새 읽기 TX 로 원인 판별 | 쿠폰 있으면 ISSUED, 아니면 FAILED | 200 기존 / 404 / 409 비활성·품절 / 500 설명 불가 |
+| `uk_coupon_campaign_user` 충돌(rollback) | 새 읽기 TX 로 기존 쿠폰 조회 | ISSUED | 200 기존 쿠폰 |
+| 종료 불명 | 수용 닫기 | 호출 안 함(PROCESSING 유지) | 500 |
+
 - TX 종료는 예외 종류가 아니라 `ObservedTransaction` 이 관찰한 콜백 진입과 afterCompletion 통지로 판정한다. 업무 미시작·commit·rollback·종료 불명으로 나눈다.
 - 종료 불명이 아니면 모든 DB 호출이 끝난 뒤 finish 를 한 번 호출한다. finish 결과는 이미 정한 응답을 바꾸지 않는다. finish 예외·`INVARIANT_ERROR` 면 수용을 닫고, 현재 항목과 맞지 않아 바꾸지 않은 경우(`UNCHANGED`)는 경고만 남긴다.
 - 캐시 저장은 DB TX 종료(신규 발급은 finish) 뒤에 확보한 결과로만 한다.
@@ -217,41 +178,51 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    autonumber
     actor C as Client
     participant F as CouponFacade
-    participant K as Cache
     participant A as Admission
     participant R as Redis
-    participant D as DB
 
-    C->>F: getWaiting(userId, campaignId)
-    F->>K: 기발급 캐시 → miss 면 DB 읽기
-    alt 기존 쿠폰 있음
-        F-->>C: 200 ISSUED + couponId
-    end
-    F->>A: requireOperating(수용 닫힘은 막지 않음)
+    C->>F: GET /waiting
+    F->>F: 기존 쿠폰 확인
+    F->>A: 운영 캠페인 확인(수용 닫힘은 막지 않음)
     F->>R: find Lua(상태를 바꾸지 않음)
-    alt 항목 없음
-        F-->>C: 404 COUPON_WAITING_NOT_FOUND
-    else ISSUED
-        F->>D: 읽기 TX: 쿠폰 확인
-        F-->>C: 200 ISSUED + couponId
-    else 그 밖
-        F-->>C: 200 WAITING(순번) / READY(기한) / PROCESSING / EXPIRED / FAILED / SOLD_OUT
-    end
+    R-->>F: 현재 항목
+    F-->>C: 200 현재 상태
 ```
 
+| 조건 | 응답 |
+|---|---|
+| 기존 쿠폰 있음 | 200 ISSUED + couponId |
+| 항목 없음 | 404 `COUPON_WAITING_NOT_FOUND` |
+| 항목 ISSUED | DB 로 쿠폰 확인 후 200 ISSUED + couponId |
+| 그 밖 | 200 WAITING(순번) / READY(기한) / PROCESSING / EXPIRED / FAILED / SOLD_OUT |
+
 ## 4. 코드 위치
+
+### 4.1 대기·발급
 
 | 흐름 | 시작 지점 |
 |---|---|
 | 대기 등록·조회·발급 HTTP | `interfaces/api/coupon/CouponV1Controller` |
-| 수용 제어 HTTP | `interfaces/api/coupon/CouponAdmissionController` |
+| 요청률 제한 | `interfaces/api/coupon/CouponWaitingRateLimitInterceptor`, 대상 표시 `CouponWaitingRateLimited` |
 | 요청 흐름 조율 | `application/coupon/CouponFacade` 의 `registerWaiting`·`getWaiting`·`issue`·`processAdmissions` |
 | 발급 DB 처리 | `CouponFacade.issueStarted` → `applyWrite`·`applyFollowUp`·`recordTermination`, TX 관찰은 `ObservedTransaction` |
-| 수용·Redis 결과 해석 | `application/coupon/CouponAdmissionService` |
+| 조건부 수량 UPDATE | `infrastructure/coupon/CouponCampaignJpaRepository.reserveOne` |
 | 캐시 | `application/coupon/CouponCacheService`, `infrastructure/coupon/CouponCacheRedisRepository` |
 | Redis 대기실 | `infrastructure/coupon/CouponAdmissionRedisRepository`, `resources/redis/coupon-waiting-{common,register,find,process-admissions,start,finish}.lua` |
-| 조건부 수량 UPDATE | `infrastructure/coupon/CouponCampaignJpaRepository.reserveOne` |
 | 스케줄러 | `interfaces/scheduler/CouponWaitingScheduler` |
+
+### 4.2 수용 제어(열기·닫기)
+
+수용 상태는 `CouponAdmissionService` 의 `accepting` 값 하나다. 여는 길은 운영자 호출 하나이고, 닫는 길은 운영자 호출과 자동 닫기로 나뉜다.
+
+| 동작 | 코드 |
+|---|---|
+| 운영자 조회·열기·닫기 HTTP | `interfaces/api/coupon/CouponAdmissionController`: `GET /api/coupon/admission`, `POST .../open`, `POST .../close` |
+| 열기·닫기 처리 | `CouponFacade.open`·`close`·`isAccepting` → `CouponAdmissionService.open`·`close`·`isAccepting` |
+| Redis 오류·응답 없음·`INVARIANT_ERROR` 자동 닫기 | `CouponAdmissionService.callRedis` → `closeWaiting` (등록·조회·발급 시작·입장 처리) |
+| 발급 종료 기록 실패 자동 닫기 | `CouponAdmissionService.finish` |
+| Redis 와 DB 결과 모순 자동 닫기 | `CouponAdmissionService.closeOnContradiction` (Redis ISSUED 인데 DB 쿠폰 없음) |
+| DB TX 종료 불명 자동 닫기 | `CouponFacade.recordTermination` |
+| 열림 확인 | `CouponAdmissionService.requireAdmitting` (등록·발급 시작), `admittingCampaignId` (스케줄러) |

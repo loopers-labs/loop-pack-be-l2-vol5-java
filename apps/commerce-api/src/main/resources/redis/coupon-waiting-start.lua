@@ -1,6 +1,5 @@
--- 발급 실행 시작. ARGV = userId, waitingId. 반환 [결과명, 항목 JSON(PROCESSING/ISSUED만), ''].
--- 현재 항목의 waitingId 가 같고 기한 전 READY 일 때만 ready 에서 빼고 PROCESSING 으로 바꾼다(STARTED). 자리 수는 그대로다.
--- 기한 연장·품절 검사·만료 회수·다른 사용자 정리는 하지 않는다. 같은 ID 의 동시 시작은 하나만 STARTED 다.
+-- 발급 시작. ARGV = userId, waitingId.
+-- READY 자리를 PROCESSING 으로 그대로 옮기므로 실행 자리 수는 변하지 않는다.
 if #KEYS ~= 5 or #ARGV ~= 2 then
   return arg_error('start expects 5 keys and 2 args')
 end
@@ -47,7 +46,6 @@ end
 if status == 'PROCESSING' or status == 'ISSUED' then
   return {status, view(entry, status), ''}
 end
--- 남은 저장 상태는 READY 뿐이다(decode_entry 가 상태 값을 제한한다).
 if now_millis() >= tonumber(entry.expiresAtMillis) then
   return {'EXPIRED', '', ''}
 end

@@ -30,18 +30,8 @@ import java.util.Optional;
 import java.util.function.Supplier;
 
 /**
- * 쿠폰 대기 등록·조회·발급·입장 처리·보유 목록·수용 제어를 조율한다(설계 §6·§12.9~12.12).
- * 상위 TX 없이 짧은 읽기 TX → Redis 대기 상태 → 쓰기 TX → 필요한 후속 읽기 TX 순서로 실행해 Redis 를 기다리는 동안 DB 연결을 잡지 않는다.
- * 기존 DB 쿠폰은 모든 대기 조건보다 먼저 확인한다.
- *
- * <p>발급은 입장 때 확보한 READY 자리를 start 로 PROCESSING 으로 바꿔 그대로 쓴다. 자리를 다시 획득하지 않는다.
- * 각 TX 호출은 콜백 진입과 afterCompletion 통지를 요청 안에서 관찰해 업무 미시작·commit·rollback·종료 불명을 가른다.
- * 예외 종류보다 이 종료 판정을 먼저 적용한다. 종료 불명이 하나라도 있으면 PROCESSING 점유를 남기고 신규 수용을 닫는다.
- * 그 밖에는 모든 DB 호출이 끝난 뒤 finish 를 한 번 호출하며, 종료 기록 실패는 이미 정해진 업무 결과를 바꾸지 않는다.
- *
- * <p>캐시(설계 §13.10): 등록·대기 조회·발급의 첫 기존 결과 확인만 기발급 캐시를 먼저 본다. 품절 캐시는 등록에만 쓴다.
- * 캐시 저장은 항상 해당 DB TX 가 끝난 뒤(신규 발급은 finish 뒤) 확보한 결과로만 한다. TX 안에서는 캐시를 읽거나 쓰지 않는다.
- * PROCESSING·ISSUED 관찰 뒤의 재확인은 캐시를 보지 않고 DB 를 직접 읽는다.
+ * 쿠폰 대기 등록·조회·발급·입장 처리를 조율한다.
+ * Redis 를 기다리는 동안 DB 연결을 잡지 않도록 상위 TX 없이 짧은 TX 로 나눠 실행한다.
  */
 @Slf4j
 @Component
@@ -76,10 +66,7 @@ public class CouponFacade {
         this.cache = cache;
     }
 
-    /**
-     * 기존 쿠폰 → 헤더 → 운영 캠페인·열림 → start 순서. STARTED 일 때만 DB 발급을 시작한다.
-     * PROCESSING·ISSUED 관찰은 그사이 commit 됐을 수 있어 DB 를 한 번 다시 읽는다(업무 재실행 아님).
-     */
+    /** PROCESSING·ISSUED 는 그사이 commit 됐을 수 있어 DB 를 한 번 다시 읽는다. */
     public CouponIssueOutcome issue(Long userId, Long campaignId, String waitingId) {
         Optional<CouponIssueResult> stored = findExisting(userId, campaignId);
         if (stored.isPresent()) {
@@ -106,10 +93,7 @@ public class CouponFacade {
         }
     }
 
-    /**
-     * 기존 쿠폰 → 운영 캠페인·열림 → 품절 캐시 → 캠페인 없음 404/비활성·품절 409 → register.
-     * 품절 캐시 hit 이면 캠페인 DB 를 읽지 않고 409 다(그 뒤 INACTIVE 가 됐어도 품절 우선). DB 로 확인한 품절만 읽기 TX 종료 뒤 캐시에 쓴다.
-     */
+    /** 품절 캐시 hit 이면 캠페인을 읽지 않고 409 다. 그 뒤 비활성이 됐어도 품절이 우선한다. */
     public CouponWaitingResult registerWaiting(Long userId, Long campaignId) {
         Optional<CouponIssueResult> stored = findExisting(userId, campaignId);
         if (stored.isPresent()) {
@@ -135,7 +119,6 @@ public class CouponFacade {
         return new CouponWaitingResult(registration.outcome() == RegistrationOutcome.CREATED, snapshot);
     }
 
-    /** 기존 쿠폰 → 운영 캠페인 일치(닫힘은 막지 않음) → find. 상태를 바꾸지 않는다. */
     public CouponWaitingResult getWaiting(Long userId, Long campaignId) {
         Optional<CouponIssueResult> stored = findExisting(userId, campaignId);
         if (stored.isPresent()) {
@@ -151,11 +134,6 @@ public class CouponFacade {
         return new CouponWaitingResult(false, snapshot);
     }
 
-    /**
-     * 운영 캠페인의 회수·승격 한 회차. 미설정·닫힘이면 DB·Redis 를 호출하지 않는다.
-     * 캠페인 상태는 짧은 읽기 TX 안에서 값으로 복사한 뒤 TX 를 끝내고 Redis 를 호출한다. DB 는 쓰지 않는다.
-     * 캠페인이 없거나 INACTIVE 면 회수만 한다.
-     */
     public Optional<AdmissionProgress> processAdmissions() {
         Optional<Long> operating = admission.admittingCampaignId();
         if (operating.isEmpty()) {
@@ -167,10 +145,6 @@ public class CouponFacade {
         return admission.processAdmissions(state.soldOut(), state.active() && !state.soldOut());
     }
 
-    /**
-     * STARTED 뒤의 DB 발급. 필요한 모든 DB 호출의 종료를 확인한 뒤에만 finish 한다.
-     * 반환할 확정 결과가 있을 때만 finish 뒤에 캐시에 쓴다. 종료 불명·결과 미확보·오류에서는 쓰지 않고 캐시용 DB 재조회도 하지 않는다.
-     */
     private CouponIssueResult issueStarted(Long userId, Long campaignId, String waitingId) {
         IssueState state = new IssueState();
         try {
@@ -191,10 +165,7 @@ public class CouponFacade {
         return state.result;
     }
 
-    /**
-     * 쓰기 TX 관찰을 상태에 반영한다. 원인을 새 읽기 TX 로 판별해야 하면(수량 미확보·유일 제약 충돌) 그 읽기를 돌려주고, 아니면 null 이다.
-     * 상태는 판정 즉시 기록한다. 이후 예외로 끝나도 finish 는 그때까지 확인한 종료로 판단한다.
-     */
+    /** 판정 즉시 상태에 기록해 이후 예외가 나도 그때까지 확인한 종료로 finish 를 판단한다. */
     private Supplier<CouponIssueResult> applyWrite(IssueState state, ObservedTransaction<CouponIssueResult> write,
                                                    Long userId, Long campaignId, String waitingId) {
         if (write.returned()) {
@@ -223,7 +194,6 @@ public class CouponFacade {
         return null;
     }
 
-    /** rollback 을 확인한 쓰기 TX 뒤의 후속 읽기 TX 관찰을 상태에 반영한다. */
     private void applyFollowUp(IssueState state, ObservedTransaction<CouponIssueResult> read,
                                Long userId, Long campaignId, String waitingId) {
         if (read.returned()) {
@@ -236,13 +206,16 @@ public class CouponFacade {
             log.warn("후속 읽기 종료 뒤 예외가 있었지만 확보한 결과를 유지합니다. [waitingId = {}, userId = {}, campaignId = {}]",
                 waitingId, userId, campaignId, read.failure());
         } else if (read.rolledBack() && read.failure() instanceof CoreException rejection) {
-            state.error = rejection; // 404·409 등 정의한 업무 거절, 또는 원인 설명 불가 500
+            state.error = rejection;
         } else {
             state.error = asRuntime(read.failure()); // 미시작 실패여도 앞선 쓰기 TX 의 rollback 확인은 유지된다.
         }
     }
 
-    /** 종료 불명이면 PROCESSING 점유를 남기고 수용을 닫는다. 그 밖에는 finish 를 한 번 호출하며 그 실패는 업무 결과를 바꾸지 않는다. */
+    /**
+     * 종료 불명이면 PROCESSING 을 남긴다. 자리를 돌려주면 실행 자리가 C 를 넘을 수 있다.
+     * finish 실패는 이미 정한 응답을 바꾸지 않는다.
+     */
     private void recordTermination(IssueState state, Long userId, Long campaignId, String waitingId) {
         if (state.terminationUnknown()) {
             admission.close();
@@ -250,7 +223,7 @@ public class CouponFacade {
                 + "[waitingId = {}, userId = {}, campaignId = {}, stage = {}, result = 불명]", waitingId, userId, campaignId, state.unknownStage);
             return;
         }
-        // 쿠폰 결과가 있거나 쓰기 commit 을 확인했으면 ISSUED(응답 결과를 못 얻은 commit 도 포함), 그 밖의 종료 확인된 실패는 FAILED.
+        // 쿠폰 결과가 있거나 쓰기 commit 을 확인했으면 ISSUED, 그 밖의 확인된 실패는 FAILED.
         CouponWaitingState outcome = state.result != null || state.writeCommitted ? CouponWaitingState.ISSUED : CouponWaitingState.FAILED;
         if (!admission.finish(campaignId, userId, waitingId, outcome)) {
             log.warn("대기 종료 기록이 적용되지 않았습니다. 업무 결과는 유지합니다. "
@@ -271,12 +244,12 @@ public class CouponFacade {
         return admission.close();
     }
 
-    /** 운영 캠페인 미설정이면 409. 호출 전제: 운영자가 관련 실행·DB 종료를 확인했다. 시간 경과·PONG 으로 자동 호출하지 않는다. */
+    /** 호출 전제: 운영자가 진행 중 실행과 DB 종료를 확인했다. 자동으로 열지 않는다. */
     public boolean open() {
         return admission.open();
     }
 
-    /** 조건부 UPDATE 가 첫 업무 SQL 이다. INSERT 전 (campaign_id, user_id) 재조회와 캠페인 Entity 선행 로드를 하지 않는다. */
+    /** 조건부 UPDATE 가 첫 업무 SQL 이다. 중복은 INSERT 전 재조회 대신 유일 제약으로 막는다. */
     private CouponIssueResult issueInTransaction(Long userId, Long campaignId) {
         int affected = campaignRepository.reserveOne(campaignId, ZonedDateTime.now());
         if (affected == 0) {
@@ -293,7 +266,7 @@ public class CouponFacade {
             saved.getBenefitType(), saved.getBenefitValue(), true);
     }
 
-    /** UPDATE 0 건의 원인을 새 읽기 TX 에서 판별한다. 실패 당시 상태의 재구성이 아니다. */
+    /** 원인은 새 읽기 TX 에서 판별하므로 실패 당시 상태의 재구성이 아니다. */
     private CouponIssueResult resolveNotReserved(Long userId, Long campaignId) {
         Optional<OwnedCoupon> owned = queryRepository.findOwned(userId, campaignId);
         if (owned.isPresent()) {
@@ -314,7 +287,6 @@ public class CouponFacade {
                 "유일 제약 충돌 뒤 기존 쿠폰을 찾지 못했습니다. [userId = " + userId + ", campaignId = " + campaignId + "]"));
     }
 
-    /** 첫 기존 결과 확인. 캐시 hit 이면 DB 를 읽지 않고, miss·캐시 오류면 DB 를 읽는다. 결과는 항상 created=false 다. */
     private Optional<CouponIssueResult> findExisting(Long userId, Long campaignId) {
         Optional<IssuedCoupon> cached = cache.findIssued(userId, campaignId);
         if (cached.isPresent()) {
@@ -325,7 +297,6 @@ public class CouponFacade {
         return findOwnedAndRemember(userId, campaignId);
     }
 
-    /** DB 를 직접 읽고, 읽기 TX 가 정상 종료돼 쿠폰이 있을 때만 캐시에 쓴다. 없음·읽기 예외는 쓰지 않는다. */
     private Optional<CouponIssueResult> findOwnedAndRemember(Long userId, Long campaignId) {
         Optional<CouponIssueResult> owned = readTemplate.execute(status -> queryRepository.findOwned(userId, campaignId))
             .map(CouponIssueResult::stored);
@@ -333,7 +304,7 @@ public class CouponFacade {
         return owned;
     }
 
-    /** Redis 의 ISSUED 를 DB 로 한 번 확인한다(캐시 미사용). 쿠폰이 없으면 설명할 수 없는 상태라 수용을 닫고 500 이다. */
+    /** DB 에 쿠폰이 없으면 설명할 수 없는 상태라 수용을 닫는다. */
     private CouponIssueResult confirmIssued(Long userId, Long campaignId, String waitingId, String stage) {
         Optional<CouponIssueResult> owned = findOwnedAndRemember(userId, campaignId);
         if (owned.isPresent()) {
@@ -343,7 +314,7 @@ public class CouponFacade {
         throw new CoreException(ErrorType.INTERNAL_ERROR, "대기 상태는 발급됨인데 쿠폰을 찾지 못했습니다.");
     }
 
-    /** 등록 전·수량 미확보 뒤 캠페인 확인을 값으로 돌려준다. 판단 순서는 없음 → 비활성 → 품절이다. Entity 를 TX 밖으로 내보내지 않는다. */
+    /** Entity 를 TX 밖으로 내보내지 않으려고 판단 결과를 값으로 돌려준다. */
     private CampaignCheck checkCampaign(Long campaignId) {
         Optional<CouponCampaignModel> found = campaignRepository.findById(campaignId);
         if (found.isEmpty()) {
@@ -389,7 +360,6 @@ public class CouponFacade {
         return error == null ? "불명" : "오류 " + error.getClass().getSimpleName();
     }
 
-    /** 발급 한 요청 안에서 TX 관찰로 확정한 값. 판정 즉시 기록해 중간 예외에도 finish 판단에 쓴다. 요청 밖으로 공유하지 않는다. */
     private static final class IssueState {
         private CouponIssueResult result;
         private RuntimeException error;
@@ -401,7 +371,6 @@ public class CouponFacade {
         }
     }
 
-    /** 캠페인 확인 결과. ISSUABLE 만 거절 오류가 없다. */
     private enum CampaignCheck {
         MISSING(ErrorType.COUPON_CAMPAIGN_NOT_FOUND),
         INACTIVE(ErrorType.COUPON_CAMPAIGN_INACTIVE),
@@ -415,12 +384,11 @@ public class CouponFacade {
         }
     }
 
-    /** 입장 처리용 캠페인 상태 복사본. 엔티티를 TX 밖으로 내보내지 않는다. */
     private record CampaignAdmission(boolean active, boolean soldOut) {
         static final CampaignAdmission MISSING = new CampaignAdmission(false, false);
     }
 
-    /** 조건부 UPDATE 0 건. 쓰기 TX 를 rollback 으로 끝낸 뒤 새 읽기에서 원인을 판별하기 위한 내부 신호다. */
+    /** 쓰기 TX 를 rollback 시킨 뒤 새 읽기에서 원인을 판별하기 위한 내부 신호. */
     private static final class NotReserved extends RuntimeException {
         NotReserved() {
             super("조건부 수량 UPDATE 0 건", null, false, false);

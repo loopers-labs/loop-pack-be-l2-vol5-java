@@ -48,7 +48,7 @@ public class CouponV1Controller implements CouponV1ApiSpec {
         return ApiResponse.success(CouponV1Dto.WaitingResponse.from(couponFacade.getWaiting(userId, campaignId).snapshot()));
     }
 
-    /** 헤더는 MVC 필수 입력이 아니다. 기존 쿠폰 반환이 헤더 누락 400 보다 먼저라서 Facade 가 순서대로 판단한다. */
+    /** 기존 쿠폰 반환이 헤더 누락 400 보다 먼저라 헤더를 MVC 필수 입력으로 두지 않는다. */
     @PostMapping("/api/v1/coupon-campaigns/{campaignId}/issues")
     @Override
     public ResponseEntity<ApiResponse<?>> issue(

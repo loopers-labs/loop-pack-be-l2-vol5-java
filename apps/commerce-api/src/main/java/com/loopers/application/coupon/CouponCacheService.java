@@ -11,13 +11,9 @@ import java.util.OptionalLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * 쿠폰 캐시 조회·저장 실패를 miss·무시로 바꾼다(설계 §13.4·13.9). 캐시 오류만으로 수용을 닫거나 업무 결과를 바꾸지 않는다.
- * DB·TX 는 다루지 않는다. 실패는 RuntimeException 범위에서 로그로 남기며 재시도하지 않는다. Error 는 삼키지 않는다.
- * isSoldOut 의 false 는 '캐시에서 품절을 확인하지 못함'이지 재고 있음이 아니다.
- *
- * <p>로컬 품절(설계 §13.11): 등록은 단일 운영 캠페인만 이 판단에 도달하므로 슬롯 하나를 원자 교체한다. 실제 Redis 에서 품절 true 와
- * 남은 수명을 읽었을 때만 채우고, 수명은 min(로컬 TTL, Redis 남은 수명 − 조회 시작부터의 경과)다. 조회 hit 으로 연장하지 않는다.
- * 동시 miss 의 중복 Redis 조회는 허용한다. rememberSoldOut 은 Redis 에만 저장하며 로컬을 직접 채우지 않는다.
+ * 캐시 오류를 miss·무시로 바꾼다. 캐시 오류만으로 수용을 닫거나 업무 결과를 바꾸지 않는다.
+ * isSoldOut 의 false 는 '품절을 확인하지 못함'이지 재고 있음이 아니다.
+ * 로컬 품절 수명은 min(로컬 TTL, Redis 남은 수명 − 조회 경과)이며 조회 hit 으로 연장하지 않는다.
  */
 @Slf4j
 @Component
@@ -47,7 +43,6 @@ public class CouponCacheService {
         }
     }
 
-    /** 확보한 발급 결과의 다섯 값만 저장한다. created 는 두지 않는다. 값 변환 실패도 저장 실패와 같다. */
     public void rememberIssued(Long userId, Long campaignId, CouponIssueResult result) {
         try {
             IssuedCoupon value = new IssuedCoupon(result.couponId(), result.campaignId(), result.campaignName(),
@@ -58,7 +53,6 @@ public class CouponCacheService {
         }
     }
 
-    /** 유효한 로컬 품절이면 Redis 를 부르지 않는다. 아니면 Redis 를 읽고, 남은 수명이 있으면 로컬을 채운다. */
     public boolean isSoldOut(Long campaignId) {
         try {
             if (campaignId != null) {
@@ -97,7 +91,6 @@ public class CouponCacheService {
         }
     }
 
-    /** 로컬 품절 한 칸. 관찰 시각부터 수명 동안만 유효하며 ID 는 숫자 값으로 비교한다. */
     private record LocalSoldOut(long campaignId, long observedAtNanos, long lifetimeNanos) {
 
         boolean validFor(long requested, long nowNanos) {
