@@ -17,15 +17,7 @@ import com.loopers.testcontainers.KafkaTestContainersConfig;
 import com.loopers.utils.DatabaseCleanUp;
 import com.loopers.utils.RedisCleanUp;
 import io.micrometer.core.instrument.MeterRegistry;
-import org.apache.kafka.clients.admin.Admin;
-import org.apache.kafka.clients.admin.AdminClientConfig;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.clients.consumer.OffsetAndMetadata;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.serialization.ByteArrayDeserializer;
-import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -45,9 +37,6 @@ import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.function.BooleanSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -64,6 +53,7 @@ class CouponIssueListenerTest {
     private static final String DLT = KafkaTestContainersConfig.COUPON_ISSUES_WORKER_DLT;
     private static final Instant NOW = Instant.parse("2026-11-08T00:00:00.123456Z");
     private static final Duration WITHIN = Duration.ofSeconds(10);
+    private static final int PARTITION = 0;
 
     private final CouponFacade couponFacade;
     private final CouponIssuePublisher publisher;
@@ -119,56 +109,83 @@ class CouponIssueListenerTest {
         return jdbcTemplate.queryForObject("select count(*) from coupon where campaign_id = ?", Integer.class, campaignId);
     }
 
+    private boolean hasCoupon(Long campaignId, long userId) {
+        return jdbcTemplate.queryForObject("select count(*) from coupon where campaign_id = ? and user_id = ?",
+            Integer.class, campaignId, userId) == 1;
+    }
+
     private int issuedCount(Long campaignId) {
         return jdbcTemplate.queryForObject("select issued_count from coupon_campaign where id = ?", Integer.class, campaignId);
     }
 
-    private static boolean everyRecordCommitted() {
-        Map<String, Object> bootstrap = Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG,
-            KafkaTestContainersConfig.bootstrapServers());
-        try (Admin admin = Admin.create(bootstrap);
-             KafkaConsumer<String, byte[]> consumer = new KafkaConsumer<>(Map.of(
-                 ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, KafkaTestContainersConfig.bootstrapServers()),
-                 new StringDeserializer(), new ByteArrayDeserializer())) {
-            List<TopicPartition> partitions = consumer.partitionsFor(TOPIC).stream()
-                .map(info -> new TopicPartition(TOPIC, info.partition()))
-                .toList();
-            Map<TopicPartition, Long> end = consumer.endOffsets(partitions);
-            Map<TopicPartition, OffsetAndMetadata> committed = admin
-                .listConsumerGroupOffsets(CouponIssueListenerConfig.GROUP)
-                .partitionsToOffsetAndMetadata().get(10, TimeUnit.SECONDS);
-            return partitions.stream().allMatch(partition -> end.get(partition) == 0
-                || (committed.get(partition) != null && committed.get(partition).offset() == end.get(partition)));
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("consumer group 의 offset 을 읽다 중단됐다", e);
-        } catch (ExecutionException | TimeoutException e) {
-            throw new IllegalStateException("consumer group 의 offset 을 읽지 못했다", e);
-        }
+    private double rejectedByDb(Long campaignId) {
+        return meterRegistry.counter("coupon.issue.rejected_by_db", "campaignId", String.valueOf(campaignId)).count();
     }
 
-    private static void awaitEveryRecordCommitted() {
+    private double recoveries(Long campaignId) {
+        return meterRegistry.counter("coupon.issue.recovery", "campaignId", String.valueOf(campaignId)).count();
+    }
+
+    private MessageListenerContainer worker() {
+        return listeners.getListenerContainer(CouponIssueListenerConfig.LISTENER_ID);
+    }
+
+    private void publishWhileWorkerIsOff(Runnable publishing) {
+        worker().stop();
         try {
-            eventually(CouponIssueListenerTest::everyRecordCommitted);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("offset 커밋을 기다리다 중단됐다", e);
+            publishing.run();
+        } finally {
+            worker().start();
         }
     }
 
-    private static void eventually(BooleanSupplier condition) throws InterruptedException {
+    private void restartWorkerAndProcessAfter(Long markerCampaignId, long markerUserId, int markerNumber) {
+        worker().stop();
+        worker().start();
+        sendToPartition(PARTITION, markerUserId, issuePayload(markerCampaignId, markerUserId, markerNumber));
+        eventually(() -> hasCoupon(markerCampaignId, markerUserId));
+    }
+
+    private void sendToPartition(int partition, long userId, byte[] payload) {
+        sendToPartition(partition, String.valueOf(userId), payload);
+    }
+
+    private void sendToPartition(int partition, String key, byte[] payload) {
+        kafkaTemplate.send(TOPIC, partition, key, payload).join();
+    }
+
+    private static byte[] issuePayload(long campaignId, long userId, int issueNumber) {
+        return ("{\"eventType\":\"CouponIssue\",\"schemaVersion\":1,\"campaignId\":" + campaignId + ",\"userId\":" + userId
+            + ",\"issueNumber\":" + issueNumber + ",\"reservedAt\":\"2026-11-08T00:00:00.123456Z\"}")
+            .getBytes(StandardCharsets.UTF_8);
+    }
+
+    private boolean acceptedOrIssued(Long campaignId, Long userId) {
+        try {
+            return couponFacade.issue(campaignId, userId, NOW) instanceof CouponFacade.IssueResult.Issued;
+        } catch (CoreException e) {
+            return false;
+        }
+    }
+
+    private static void eventually(BooleanSupplier condition) {
         long deadline = System.nanoTime() + WITHIN.toNanos();
         while (!condition.getAsBoolean()) {
             if (System.nanoTime() > deadline) {
                 throw new AssertionError(WITHIN + " 안에 조건이 채워지지 않았다");
             }
-            Thread.sleep(100);
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("조건을 기다리다 중단됐다", e);
+            }
         }
     }
 
     @DisplayName("WRK-003: 접수된 메시지 하나는 같은 번호와 예약 시각을 가진 쿠폰 행 하나가 되고 발급 수가 1 오르며, 재요청은 ISSUED 다")
     @Test
-    void recordsOneCouponPerMessage() throws Exception {
+    void recordsOneCouponPerMessage() {
         Long campaignId = openCampaign();
 
         assertThat(couponFacade.issue(campaignId, 42L, NOW)).isEqualTo(new CouponFacade.IssueResult.Accepted(1));
@@ -182,52 +199,52 @@ class CouponIssueListenerTest {
         assertThat(couponFacade.issue(campaignId, 42L, NOW)).isInstanceOf(CouponFacade.IssueResult.Issued.class);
     }
 
-    @DisplayName("WRK-004: 같은 메시지를 두 번 받아도 쿠폰은 하나이고 발급 수는 1 이며, 두 번째도 offset 을 넘긴다")
+    @DisplayName("WRK-004: 같은 메시지를 두 번 받아도 쿠폰은 하나이고 발급 수는 1 이다")
     @Test
-    void recordsDuplicateMessageOnce() throws Exception {
+    void recordsDuplicateMessageOnce() {
         Long campaignId = openCampaign();
-        CouponIssue issue = new CouponIssue(campaignId, 42L, 1, NOW);
+        Long otherCampaignId = openCampaign();
 
-        publisher.publish(issue);
-        publisher.publish(issue);
-        eventually(CouponIssueListenerTest::everyRecordCommitted);
+        sendToPartition(PARTITION, 42L, issuePayload(campaignId, 42L, 1));
+        sendToPartition(PARTITION, 42L, issuePayload(campaignId, 42L, 1));
+        sendToPartition(PARTITION, 7L, issuePayload(otherCampaignId, 7L, 1));
+        eventually(() -> hasCoupon(otherCampaignId, 7L));
 
         assertThat(couponCount(campaignId)).isEqualTo(1);
         assertThat(issuedCount(campaignId)).isEqualTo(1);
     }
 
-    @DisplayName("WRK-005: DB 가 품절이라 하면 쿠폰 없이 넘기고 지표에 그 캠페인의 수가 남으며, offset 은 넘어간다")
+    @DisplayName("WRK-005: DB 가 품절이라 하면 쿠폰 없이 넘기고 지표에 그 캠페인의 수가 남으며, 워커를 다시 시작해도 다시 받지 않는다")
     @Test
-    void countsRejectionByDbAndMovesOn() throws Exception {
+    void countsRejectionByDbAndMovesOn() {
         Long campaignId = openCampaign(1);
+        Long otherCampaignId = openCampaign();
         double rejectedBefore = rejectedByDb(campaignId);
 
-        publisher.publish(new CouponIssue(campaignId, 42L, 1, NOW));
-        publisher.publish(new CouponIssue(campaignId, 7L, 2, NOW));
-        eventually(CouponIssueListenerTest::everyRecordCommitted);
+        sendToPartition(PARTITION, 42L, issuePayload(campaignId, 42L, 1));
+        sendToPartition(PARTITION, 7L, issuePayload(campaignId, 7L, 2));
+        eventually(() -> rejectedByDb(campaignId) == rejectedBefore + 1);
+        restartWorkerAndProcessAfter(otherCampaignId, 9L, 1);
 
         assertThat(couponCount(campaignId)).isEqualTo(1);
         assertThat(issuedCount(campaignId)).isEqualTo(1);
         assertThat(rejectedByDb(campaignId)).isEqualTo(rejectedBefore + 1);
     }
 
-    private double rejectedByDb(Long campaignId) {
-        return meterRegistry.counter("coupon.issue.rejected_by_db", "campaignId", String.valueOf(campaignId)).count();
-    }
-
-    @DisplayName("WRK-009: 없는 캠페인의 메시지는 재시도 없이 DLT 로 가고, 뒤의 메시지는 기록되며 offset 이 넘어간다")
+    @DisplayName("WRK-009: 없는 캠페인의 메시지는 재시도 없이 DLT 로 가고, 뒤의 메시지는 기록되며, 워커를 다시 시작해도 다시 받지 않는다")
     @Test
-    void deadLettersMessageOfUnknownCampaignWithoutRetry() throws Exception {
+    void deadLettersMessageOfUnknownCampaignWithoutRetry() {
         Long campaignId = openCampaign();
         long unknownCampaignId = 999_999L;
 
         List<ConsumerRecord<String, byte[]>> deadLetters = TopicRecords.during(DLT, () -> {
-            publisher.publish(new CouponIssue(unknownCampaignId, 42L, 1, NOW));
-            publisher.publish(new CouponIssue(campaignId, 7L, 1, NOW));
-            awaitEveryRecordCommitted();
+            sendToPartition(PARTITION, 42L, issuePayload(unknownCampaignId, 42L, 1));
+            sendToPartition(PARTITION, 7L, issuePayload(campaignId, 7L, 1));
+            eventually(() -> hasCoupon(campaignId, 7L));
+            restartWorkerAndProcessAfter(campaignId, 9L, 2);
         });
 
-        assertThat(couponCount(campaignId)).isEqualTo(1);
+        assertThat(couponCount(campaignId)).isEqualTo(2);
         assertThat(meterRegistry.counter("coupon.issue.worker.retry", "cause", "DomainException").count()).isZero();
         assertThat(deadLetters).singleElement().satisfies(record -> {
             assertThat(new String(record.value(), StandardCharsets.UTF_8)).contains("\"campaignId\":" + unknownCampaignId);
@@ -235,29 +252,29 @@ class CouponIssueListenerTest {
         });
     }
 
-    @DisplayName("WRK-009: DLT 로 간 메시지가 파티션의 마지막이어도 offset 은 그 뒤로 넘어간다")
+    @DisplayName("WRK-009: DLT 로 간 메시지가 파티션의 마지막이어도 워커를 다시 시작하면 그 뒤부터 읽는다")
     @Test
-    void commitsPastADeadLetteredRecordAtTheEndOfThePartition() throws Exception {
+    void commitsPastADeadLetteredRecordAtTheEndOfThePartition() {
+        Long campaignId = openCampaign();
         long unknownCampaignId = 999_999L;
+        int deadLettersBefore = TopicRecords.all(DLT).size();
 
         List<ConsumerRecord<String, byte[]>> deadLetters = TopicRecords.during(DLT, () -> {
-            publisher.publish(new CouponIssue(unknownCampaignId, 42L, 1, NOW));
-            awaitEveryRecordCommitted();
+            sendToPartition(PARTITION, 42L, issuePayload(unknownCampaignId, 42L, 1));
+            eventually(() -> TopicRecords.all(DLT).size() == deadLettersBefore + 1);
+            restartWorkerAndProcessAfter(campaignId, 9L, 1);
         });
 
         assertThat(deadLetters).singleElement().satisfies(record ->
             assertThat(new String(record.value(), StandardCharsets.UTF_8)).contains("\"campaignId\":" + unknownCampaignId));
     }
 
-    private double recoveries(Long campaignId) {
-        return meterRegistry.counter("coupon.issue.recovery", "campaignId", String.valueOf(campaignId)).count();
-    }
-
     @DisplayName("WRK-005: Redis 가 받아들인 사용자를 DB 가 품절로 거절하면 캠페인을 닫고 닫힌 채 둔다. 관리자가 복구하면 DB 쿠폰으로 명단이 다시 만들어지고, 거절된 사용자들은 409 다")
     @Test
-    void closesWhenDbRejectsReservedUsersAsSoldOut() throws Exception {
+    void closesWhenDbRejectsReservedUsersAsSoldOut() {
         Long campaignId = openCampaign(1);
         double recoveriesBefore = recoveries(campaignId);
+        double rejectedBefore = rejectedByDb(campaignId);
         couponReservation.restore(campaignId, List.of(new CouponReservation.Reservation(42L, 1),
             new CouponReservation.Reservation(7L, 2), new CouponReservation.Reservation(9L, 3)));
 
@@ -265,7 +282,7 @@ class CouponIssueListenerTest {
         publisher.publish(new CouponIssue(campaignId, 7L, 2, NOW));
         publisher.publish(new CouponIssue(campaignId, 9L, 3, NOW));
         eventually(() -> couponReservation.isClosed(campaignId));
-        eventually(CouponIssueListenerTest::everyRecordCommitted);
+        eventually(() -> rejectedByDb(campaignId) == rejectedBefore + 2);
 
         assertThat(recoveries(campaignId)).isEqualTo(recoveriesBefore);
         assertThat(couponReservation.count(campaignId)).isEqualTo(3);
@@ -274,23 +291,31 @@ class CouponIssueListenerTest {
 
         assertThat(recoveries(campaignId)).isEqualTo(recoveriesBefore + 1);
         assertThat(couponReservation.count(campaignId)).isEqualTo(1);
-        assertThat(acceptedOrIssued(campaignId, 42L)).isTrue();
-        assertThatThrownBy(() -> couponFacade.issue(campaignId, 7L, NOW))
-            .isInstanceOf(DomainException.class)
-            .hasFieldOrPropertyWithValue("error", DomainError.COUPON_SOLD_OUT);
+        Long issuedUser = jdbcTemplate.queryForObject("select user_id from coupon where campaign_id = ?", Long.class, campaignId);
+        assertThat(issuedUser).isIn(42L, 7L, 9L);
+        assertThat(acceptedOrIssued(campaignId, issuedUser)).isTrue();
+        for (Long rejectedUser : List.of(42L, 7L, 9L)) {
+            if (rejectedUser.equals(issuedUser)) {
+                continue;
+            }
+            assertThatThrownBy(() -> couponFacade.issue(campaignId, rejectedUser, NOW))
+                .isInstanceOf(DomainException.class)
+                .hasFieldOrPropertyWithValue("error", DomainError.COUPON_SOLD_OUT);
+        }
     }
 
     @DisplayName("WRK-005: Redis 가 받아들이지 않은 사용자의 메시지가 품절로 거절되면 어긋남이 아니므로 캠페인을 닫지 않는다")
     @Test
-    void doesNotStartRecoveryWhenTheRejectedUserWasNeverReserved() throws Exception {
+    void doesNotCloseWhenTheRejectedUserWasNeverReserved() {
         Long campaignId = openCampaign(1);
         double recoveriesBefore = recoveries(campaignId);
+        double rejectedBefore = rejectedByDb(campaignId);
         couponReservation.restore(campaignId, List.of(new CouponReservation.Reservation(42L, 1)));
 
         publisher.publish(new CouponIssue(campaignId, 42L, 1, NOW));
         eventually(() -> couponCount(campaignId) == 1);
         publisher.publish(new CouponIssue(campaignId, 7L, 2, NOW));
-        eventually(CouponIssueListenerTest::everyRecordCommitted);
+        eventually(() -> rejectedByDb(campaignId) == rejectedBefore + 1);
 
         assertThat(couponReservation.isClosed(campaignId)).isFalse();
         assertThat(recoveries(campaignId)).isEqualTo(recoveriesBefore);
@@ -299,73 +324,47 @@ class CouponIssueListenerTest {
             .extracting("issueNumber").isEqualTo(1);
     }
 
-    private void publishWhileWorkerIsOff(Runnable publishing) {
-        MessageListenerContainer worker = listeners.getListenerContainer(CouponIssueListenerConfig.LISTENER_ID);
-        worker.stop();
-        try {
-            publishing.run();
-        } finally {
-            worker.start();
-        }
-    }
-
-    private void sendToPartition(int partition, byte[] payload) {
-        kafkaTemplate.send(TOPIC, partition, null, payload).join();
-    }
-
-    private static byte[] issuePayload(long campaignId, long userId, int issueNumber) {
-        return ("{\"eventType\":\"CouponIssue\",\"schemaVersion\":1,\"campaignId\":" + campaignId + ",\"userId\":" + userId
-            + ",\"issueNumber\":" + issueNumber + ",\"reservedAt\":\"2026-11-08T00:00:00.123456Z\"}")
-            .getBytes(StandardCharsets.UTF_8);
-    }
-
-    @DisplayName("WRK-011: 워커를 끈 동안 한 파티션에 쌓인 정상, 없는 캠페인, 정상 메시지가 한 번에 오면 앞뒤는 기록되고 가운데만 DLT 로 가며 offset 은 끝까지 간다")
+    @DisplayName("WRK-011: 워커를 끈 동안 한 파티션에 쌓인 정상, 없는 캠페인, 정상 메시지가 한 번에 오면 앞뒤는 기록되고 가운데만 DLT 로 가며, 워커를 다시 시작해도 다시 받지 않는다")
     @Test
-    void deadLettersOnlyTheRejectedRecordInTheMiddleOfABatch() throws Exception {
+    void deadLettersOnlyTheRejectedRecordInTheMiddleOfABatch() {
         Long campaignId = openCampaign();
         long unknownCampaignId = 999_999L;
 
         List<ConsumerRecord<String, byte[]>> deadLetters = TopicRecords.during(DLT, () -> {
             publishWhileWorkerIsOff(() -> {
-                sendToPartition(0, issuePayload(campaignId, 42L, 1));
-                sendToPartition(0, issuePayload(unknownCampaignId, 7L, 1));
-                sendToPartition(0, issuePayload(campaignId, 9L, 2));
+                sendToPartition(PARTITION, 42L, issuePayload(campaignId, 42L, 1));
+                sendToPartition(PARTITION, 7L, issuePayload(unknownCampaignId, 7L, 1));
+                sendToPartition(PARTITION, 9L, issuePayload(campaignId, 9L, 2));
             });
-            awaitEveryRecordCommitted();
+            eventually(() -> couponCount(campaignId) == 2);
+            restartWorkerAndProcessAfter(campaignId, 11L, 3);
         });
 
-        assertThat(couponCount(campaignId)).isEqualTo(2);
-        assertThat(issuedCount(campaignId)).isEqualTo(2);
+        assertThat(couponCount(campaignId)).isEqualTo(3);
+        assertThat(issuedCount(campaignId)).isEqualTo(3);
         assertThat(deadLetters).singleElement().satisfies(record ->
             assertThat(new String(record.value(), StandardCharsets.UTF_8)).contains("\"campaignId\":" + unknownCampaignId));
     }
 
-    @DisplayName("WRK-011: 워커를 끈 동안 쌓인 정상, 읽을 수 없는, 정상 메시지가 한 번에 오면 앞뒤는 기록되고 읽을 수 없는 것만 DLT 로 가며 offset 은 끝까지 간다")
+    @DisplayName("WRK-011: 워커를 끈 동안 쌓인 정상, 읽을 수 없는, 정상 메시지가 한 번에 오면 앞뒤는 기록되고 읽을 수 없는 것만 DLT 로 가며, 워커를 다시 시작해도 다시 받지 않는다")
     @Test
-    void deadLettersOnlyTheUnreadableRecordInTheMiddleOfABatch() throws Exception {
+    void deadLettersOnlyTheUnreadableRecordInTheMiddleOfABatch() {
         Long campaignId = openCampaign();
         byte[] unreadable = "not a coupon issue".getBytes(StandardCharsets.UTF_8);
 
         List<ConsumerRecord<String, byte[]>> deadLetters = TopicRecords.during(DLT, () -> {
             publishWhileWorkerIsOff(() -> {
-                sendToPartition(0, issuePayload(campaignId, 42L, 1));
-                sendToPartition(0, unreadable);
-                sendToPartition(0, issuePayload(campaignId, 9L, 2));
+                sendToPartition(PARTITION, 42L, issuePayload(campaignId, 42L, 1));
+                sendToPartition(PARTITION, "unreadable", unreadable);
+                sendToPartition(PARTITION, 9L, issuePayload(campaignId, 9L, 2));
             });
-            awaitEveryRecordCommitted();
+            eventually(() -> couponCount(campaignId) == 2);
+            restartWorkerAndProcessAfter(campaignId, 11L, 3);
         });
 
-        assertThat(couponCount(campaignId)).isEqualTo(2);
-        assertThat(issuedCount(campaignId)).isEqualTo(2);
+        assertThat(couponCount(campaignId)).isEqualTo(3);
+        assertThat(issuedCount(campaignId)).isEqualTo(3);
         assertThat(deadLetters).singleElement().satisfies(record ->
             assertThat(Arrays.equals(record.value(), unreadable)).isTrue());
-    }
-
-    private boolean acceptedOrIssued(Long campaignId, Long userId) {
-        try {
-            return couponFacade.issue(campaignId, userId, NOW) instanceof CouponFacade.IssueResult.Issued;
-        } catch (CoreException e) {
-            return false;
-        }
     }
 }
