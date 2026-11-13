@@ -73,6 +73,23 @@ outbox:
     multiplier: 2
     max-backoff: PT5M         # 상한을 짧게 둬 broker 회복 뒤 기존 PENDING 재처리가 오래 밀리지 않게 한다
 
+# 쿠폰 발급 수용량 통제 (8주차 설계 §5·§7-2). enabled 는 승격 스케줄러의 인스턴스별 자동 실행 여부다.
+coupon:
+  admission:
+    enabled: true
+    capacity: 3                  # 동시에 DB 발급 트랜잭션을 실행할 수 있는 자리 수 C
+    promote-fixed-delay: PT0.2S  # 승격 주기. 사용자가 느끼는 승격 지연의 상한 (D2)
+    admitted-ttl: PT30S          # 승격 후 claim 을 보내지 않으면 예약을 취소하기까지 (D5)
+    heartbeat-interval: PT10S    # 실행 중 자리의 하트비트 주기 (D4-4)
+    permit-ttl: PT30S            # 하트비트가 끊긴 자리를 회수하기까지. 주기의 3배 (D4-4)
+    accept-limit-multiplier: 1.2 # 접수 상한 = 총량 × 배수. DB 실패분 흡수 (D7)
+    auto-reopen:                 # 조건부 자동 재개 (§7-3, D10). 기본은 수동 재개
+      enabled: false
+      probe-interval: PT5S       # 닫힌 동안 GET gen 확인 주기
+      required-successes: 3      # 세대가 연속 일치해야 하는 횟수
+      max-reopens: 3             # window 안 자동 재개 허용 횟수. 넘으면 FLAPPING
+      window: PT10M
+
 ---
 spring:
   config:
@@ -106,6 +123,14 @@ outbox:
     initial-backoff: PT0S
     multiplier: 1
     max-backoff: PT0S
+
+# 승격 스케줄러 자동 실행을 끄고 promoteOnce() 를 직접 호출한다. 시간 의존 테스트(하트비트 회수·승격 만료)를 위해 주기·TTL 을 짧게 (D4-4)
+coupon:
+  admission:
+    enabled: false
+    heartbeat-interval: PT0.2S
+    permit-ttl: PT1S
+    admitted-ttl: PT1S
 
 ---
 server:
