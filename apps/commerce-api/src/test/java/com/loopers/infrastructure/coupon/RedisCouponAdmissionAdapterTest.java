@@ -416,6 +416,7 @@ class RedisCouponAdmissionAdapterTest {
             assertThat(semaphore.tryAcquire(CAMPAIGN, 4L, "t4", gen)).isEqualTo(ClaimOutcome.NO_PERMIT);
 
             sleep(TTL_PASSED_MS);
+            admitDirectly(4L); // 자리 회수를 보는 테스트이므로 승격 만료 조건을 제거한다
 
             assertThat(semaphore.tryAcquire(CAMPAIGN, 4L, "t4", gen)).isEqualTo(ClaimOutcome.ACQUIRED);
             assertThat(permitScore("t1")).isNull();
@@ -436,6 +437,7 @@ class RedisCouponAdmissionAdapterTest {
                 assertThat(semaphore.heartbeat(CAMPAIGN, "t1")).isTrue();
             }
 
+            admitDirectly(2L, 3L, 4L); // 자리 회수를 보는 테스트이므로 승격 만료 조건을 제거한다
             assertThat(semaphore.tryAcquire(CAMPAIGN, 2L, "t2", gen)).isEqualTo(ClaimOutcome.ACQUIRED);
             assertThat(semaphore.tryAcquire(CAMPAIGN, 3L, "t3", gen)).isEqualTo(ClaimOutcome.ACQUIRED);
             assertThat(semaphore.tryAcquire(CAMPAIGN, 4L, "t4", gen)).isEqualTo(ClaimOutcome.NO_PERMIT);
@@ -448,6 +450,7 @@ class RedisCouponAdmissionAdapterTest {
             admitDirectly(1L, 2L);
             semaphore.tryAcquire(CAMPAIGN, 1L, "t1", gen);
             sleep(TTL_PASSED_MS);
+            admitDirectly(2L); // 자리 회수를 보는 테스트이므로 승격 만료 조건을 제거한다
             semaphore.tryAcquire(CAMPAIGN, 2L, "t2", gen);
             assertThat(permitScore("t1")).as("TTL 경과 후 Lua 가 t1 을 회수").isNull();
 

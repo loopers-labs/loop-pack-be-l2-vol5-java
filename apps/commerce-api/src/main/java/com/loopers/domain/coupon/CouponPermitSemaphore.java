@@ -19,7 +19,8 @@ public interface CouponPermitSemaphore {
     }
 
     /**
-     * 세마포어 Lua. 세대 확인 → 만료 token 회수 → 승격 확인 → 자기 token 재확인 → ZCARD < C 이면 ZADD permits now token.
+     * 세마포어 Lua. 세대 확인 → 만료 token 회수 → 승격 확인(자기 승격이 admittedTtl 을 넘었으면 지우고 NOT_ADMITTED) → 자기 token 재확인
+     * → ZCARD < C 이면 ZADD permits now token.
      *
      * @param token 이 실행을 식별하는 UUID. 반납 때 자기 것만 지우기 위해 쓴다
      */

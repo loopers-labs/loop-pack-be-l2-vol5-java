@@ -3,6 +3,7 @@ package com.loopers.infrastructure.coupon;
 import com.loopers.config.coupon.CouponAdmissionProperties;
 import com.loopers.config.coupon.CouponAdmissionRedisConfig;
 import com.loopers.domain.coupon.CouponAdmissionQueue;
+import com.loopers.domain.coupon.CouponIssueCircuit;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.connection.RedisZSetCommands.ZAddArgs;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -12,6 +13,7 @@ import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -35,10 +37,13 @@ public class RedisCouponAdmissionQueue implements CouponAdmissionQueue {
         return {1, seq}
         """;
 
-    /** KEYS = [waiting, admitted, permits, gen], ARGV = [capacity, now, admittedTtl, permitTtl, expectedGen]. 반환 승격 수 / -1 (§5-2). */
+    /**
+     * KEYS = [waiting, admitted, permits, gen], ARGV = [capacity, now, admittedCutoff, permitTtl, expectedGen]. 반환 승격 수 / -1 (§5-2).
+     * admittedCutoff 는 Java 가 계산한 승격 만료 기준 시각(ms)이다. 0 이면 아무도 만료시키지 않는다 (DB 장애 후 유예, §7-4).
+     */
     static final String PROMOTE_SCRIPT = """
         if redis.call('GET', KEYS[4]) ~= ARGV[5] then return -1 end
-        redis.call('ZREMRANGEBYSCORE', KEYS[2], 0, ARGV[2] - ARGV[3])
+        redis.call('ZREMRANGEBYSCORE', KEYS[2], 0, ARGV[3])
         redis.call('ZREMRANGEBYSCORE', KEYS[3], 0, ARGV[2] - ARGV[4])
         local busy = redis.call('ZCARD', KEYS[2]) + redis.call('ZCARD', KEYS[3])
         local free = tonumber(ARGV[1]) - busy
@@ -56,15 +61,18 @@ public class RedisCouponAdmissionQueue implements CouponAdmissionQueue {
 
     private final RedisTemplate<String, String> redisTemplate;
     private final CouponAdmissionProperties properties;
+    private final CouponIssueCircuit circuit;
     private final Clock clock;
 
     public RedisCouponAdmissionQueue(
         @Qualifier(CouponAdmissionRedisConfig.COUPON_ADMISSION_REDIS_TEMPLATE) RedisTemplate<String, String> redisTemplate,
         CouponAdmissionProperties properties,
+        CouponIssueCircuit circuit,
         Clock clock
     ) {
         this.redisTemplate = redisTemplate;
         this.properties = properties;
+        this.circuit = circuit;
         this.clock = clock;
     }
 
@@ -123,6 +131,7 @@ public class RedisCouponAdmissionQueue implements CouponAdmissionQueue {
 
     @Override
     public int promote(Long campaignId, String expectedGen) {
+        Instant now = clock.instant();
         Long result = redisTemplate.execute(
             PROMOTE,
             List.of(
@@ -132,8 +141,8 @@ public class RedisCouponAdmissionQueue implements CouponAdmissionQueue {
                 CouponAdmissionKeys.gen(campaignId)
             ),
             String.valueOf(properties.capacity()),
-            String.valueOf(clock.millis()),
-            String.valueOf(properties.admittedTtl().toMillis()),
+            String.valueOf(now.toEpochMilli()),
+            String.valueOf(circuit.admittedCutoffMillis(now, properties.admittedTtl())),
             String.valueOf(properties.permitTtl().toMillis()),
             expectedGen
         );

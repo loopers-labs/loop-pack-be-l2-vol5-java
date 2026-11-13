@@ -5,6 +5,8 @@ import com.loopers.domain.coupon.CouponIssueCircuit;
 import com.loopers.infrastructure.coupon.Resilience4jCouponIssueCircuit;
 
 import java.time.Clock;
+import java.time.Instant;
+import java.util.Optional;
 
 /**
  * 테스트 전용 서킷 포장지. 서킷은 전체에 하나인 싱글톤이라 한 테스트가 열어 둔 상태가 다음 테스트로 넘어간다.
@@ -29,6 +31,11 @@ class ResettableCouponIssueCircuit implements CouponIssueCircuit {
     @Override
     public State state() {
         return delegate.state();
+    }
+
+    @Override
+    public Optional<Instant> lastLeftOpenAt() {
+        return delegate.lastLeftOpenAt();
     }
 
     @Override

@@ -9,6 +9,8 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;
+import java.time.Instant;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -21,8 +23,11 @@ public class Resilience4jCouponIssueCircuit implements CouponIssueCircuit {
     static final String NAME = "coupon-issue-db";
 
     private final CircuitBreaker circuitBreaker;
+    private final Clock clock;
+    private volatile Instant lastLeftOpenAt;
 
     public Resilience4jCouponIssueCircuit(CouponAdmissionProperties properties, Clock clock) {
+        this.clock = clock;
         CouponAdmissionProperties.DbCircuit settings = properties.dbCircuit();
         this.circuitBreaker = CircuitBreaker.of(NAME, CircuitBreakerConfig.custom()
             .slidingWindowType(CircuitBreakerConfig.SlidingWindowType.COUNT_BASED)
@@ -38,6 +43,17 @@ public class Resilience4jCouponIssueCircuit implements CouponIssueCircuit {
             .ignoreExceptions(CoreException.class)
             .clock(clock)
             .build());
+        // OPEN 에서 벗어난 시각을 기억한다. 승격 만료 유예(admittedCutoffMillis)의 기준이다
+        this.circuitBreaker.getEventPublisher().onStateTransition(event -> {
+            if (event.getStateTransition().getFromState() == CircuitBreaker.State.OPEN) {
+                lastLeftOpenAt = this.clock.instant();
+            }
+        });
+    }
+
+    @Override
+    public Optional<Instant> lastLeftOpenAt() {
+        return Optional.ofNullable(lastLeftOpenAt);
     }
 
     @Override

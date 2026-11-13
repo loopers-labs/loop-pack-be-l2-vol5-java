@@ -593,6 +593,96 @@ class CouponAdmissionFacadeTest {
         }
     }
 
+    @DisplayName("세마포어의 승격 만료 확인 (§5-3, D5). 승격 스케줄러는 돌리지 않는다.")
+    @Nested
+    class AdmissionExpiryAtClaim {
+        @DisplayName("승격 스케줄러가 멈춘 상태에서 admitted TTL(1초)이 지난 사용자의 claim 은 409 이고 자리를 잡지 않는다. 만료된 승격은 지워진다.")
+        @Test
+        void rejectsExpiredAdmission_withoutPromoteRunning() {
+            Long userId = admittedUsers(1).get(0);
+            clock.advance(Duration.ofMillis(1_200));
+            assertThat(queue.isAdmitted(campaignId, userId)).as("승격 Lua 를 돌리지 않아 기록은 아직 남아 있다").isTrue();
+
+            assertThatThrownBy(() -> facade.claim(campaignId, userId)).satisfies(e -> assertCoreException(e, ErrorType.CONFLICT));
+
+            assertThat(permitCount()).isZero();
+            assertThat(queue.isAdmitted(campaignId, userId)).as("세마포어가 자기 승격의 만료를 지운다").isFalse();
+            verify(couponIssueService, never()).issue(any(), any());
+            assertThat(issuedCount()).isZero();
+        }
+
+        @DisplayName("extendAdmission 으로 시간이 다시 채워진 사용자는 원래 만료 시각이 지나도 claim 이 통과한다.")
+        @Test
+        void acceptsExtendedAdmission_pastOriginalExpiry() {
+            Long userId = admittedUsers(1).get(0);
+            clock.advance(Duration.ofMillis(800));
+            assertThat(queue.extendAdmission(campaignId, userId)).isTrue();
+            clock.advance(Duration.ofMillis(800));
+
+            ClaimInfo result = facade.claim(campaignId, userId);
+
+            assertThat(result.created()).isTrue();
+            assertThat(permitCount()).isZero();
+            assertThat(issuedCount()).isEqualTo(1);
+        }
+    }
+
+    @DisplayName("장애 후 만료 유예 (§7-4 결정 4, INV-W8-13 ⑧⑨)")
+    @Nested
+    class GraceAfterCircuitOpen {
+        /** 다른 사용자 5명을 직접 승격시켜 DB 실패로 서킷을 연다. 대상 사용자는 건드리지 않는다. */
+        private void openCircuitWithOthers() {
+            List<Long> others = saveUsers(5);
+            others.forEach(CouponAdmissionFacadeTest.this::admitDirectly);
+            doThrow(transientFailure()).when(couponIssueService).issue(any(), any());
+            for (Long userId : others) {
+                assertThatThrownBy(() -> facade.claim(campaignId, userId)).satisfies(e -> assertCoreException(e, ErrorType.SERVICE_UNAVAILABLE));
+            }
+            assertThat(circuit.state()).isEqualTo(CouponIssueCircuit.State.OPEN);
+            Mockito.reset(couponIssueService);
+        }
+
+        @DisplayName("INV-W8-13⑧ 승격 뒤 서킷이 열리고 admitted-ttl(1초)보다 길게 지난 다음 서킷이 벗어나면, 다시 시도한 적 없는 승격자의 claim 이 성공한다.")
+        @Test
+        void keepsUntouchedAdmissionThroughOutage() {
+            Long userId = admittedUsers(1).get(0);
+            openCircuitWithOthers();
+            clock.advance(Duration.ofMillis(1_500));
+            sleep(1_200);
+            assertThat(circuit.state()).as("열림 대기 뒤 HALF_OPEN").isEqualTo(CouponIssueCircuit.State.HALF_OPEN);
+            assertThat(circuit.lastLeftOpenAt()).isPresent();
+            assertThat(circuit.admittedCutoffMillis(clock.instant(), Duration.ofSeconds(1))).as("유예 중에는 cutoff 0").isZero();
+
+            ClaimInfo result = facade.claim(campaignId, userId);
+
+            assertThat(result.created()).isTrue();
+            assertThat(issuedCount()).isEqualTo(1);
+        }
+
+        @DisplayName("INV-W8-13⑨ 서킷이 벗어난 뒤 admitted-ttl 이 지나면 평소대로 만료된다. 떠난 승격자는 정리되고 다음 대기자가 승격된다.")
+        @Test
+        void expiresAgainAfterGrace() {
+            List<Long> users = saveUsers(4);
+            users.forEach(userId -> facade.apply(campaignId, userId));
+            assertThat(facade.promoteOnce()).isEqualTo(3);
+            Long waiter = users.get(3);
+            openCircuitWithOthers();
+            clock.advance(Duration.ofMillis(1_500));
+            sleep(1_200);
+            assertThat(circuit.state()).isEqualTo(CouponIssueCircuit.State.HALF_OPEN);
+
+            assertThat(facade.promoteOnce()).as("유예 중에는 아무도 만료되지 않아 빈자리가 없다").isZero();
+            assertThat(facade.status(campaignId, waiter).status()).isEqualTo(Status.WAITING);
+
+            clock.advance(Duration.ofMillis(1_200));
+            int promoted = facade.promoteOnce();
+
+            assertThat(promoted).as("유예가 끝나 떠난 승격자 3명이 정리되고 대기자가 승격된다").isGreaterThan(0);
+            assertThat(facade.status(campaignId, waiter).status()).isEqualTo(Status.ADMITTED);
+            assertThat(facade.status(campaignId, users.get(0)).status()).isEqualTo(Status.NONE);
+        }
+    }
+
     @DisplayName("승격 (§5-2, §7-1, §7-4, INV-W8-06·13, D5)")
     @Nested
     class Promote {
