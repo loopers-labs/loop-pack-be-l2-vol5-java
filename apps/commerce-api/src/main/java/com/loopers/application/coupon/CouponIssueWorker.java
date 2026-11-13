@@ -2,6 +2,7 @@ package com.loopers.application.coupon;
 
 import com.loopers.domain.coupon.Coupon;
 import com.loopers.domain.coupon.CouponIssuePublisher.CouponIssue;
+import com.loopers.domain.coupon.CouponReservation;
 import com.loopers.support.error.DomainException;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +17,7 @@ public class CouponIssueWorker {
     static final String REJECTED_BY_DB = "coupon.issue.rejected_by_db";
 
     private final CouponTransactions couponTransactions;
+    private final CouponReservation couponReservation;
     private final CouponLossRecovery couponLossRecovery;
     private final MeterRegistry meterRegistry;
 
@@ -37,6 +39,11 @@ public class CouponIssueWorker {
 
     private void rejectedByDb(CouponIssue issue) {
         meterRegistry.counter(REJECTED_BY_DB, "campaignId", String.valueOf(issue.campaignId())).increment();
+        if (!couponReservation.isReserved(issue.campaignId(), issue.userId())) {
+            log.warn("DB 가 품절로 거절했지만 Redis 가 받아들인 사용자가 아니라 어긋남이 아니다. 넘긴다: campaignId={}, userId={}, issueNumber={}",
+                issue.campaignId(), issue.userId(), issue.issueNumber());
+            return;
+        }
         log.warn("Redis 가 받아들인 접수를 DB 가 품절로 거절했다. 예약 집합과 DB 가 어긋났다: campaignId={}, userId={}, issueNumber={}",
             issue.campaignId(), issue.userId(), issue.issueNumber());
         couponLossRecovery.start(issue.campaignId());

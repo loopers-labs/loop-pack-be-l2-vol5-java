@@ -46,8 +46,11 @@ public class CouponReconciliation {
     }
 
     public void reconcileAll() {
-        for (Long campaignId : campaignCache.campaignIds()) {
+        for (Long campaignId : couponService.findActiveCampaignIds()) {
             try {
+                if (couponReservation.isClosed(campaignId)) {
+                    continue;
+                }
                 reconcile(campaignId);
             } catch (RuntimeException e) {
                 log.warn("대사가 실패해 다음 주기에 다시 본다: campaignId={}", campaignId, e);
@@ -58,7 +61,7 @@ public class CouponReconciliation {
     public int reconcile(Long campaignId) {
         Watermark previous = watermarks.getOrDefault(campaignId, new Watermark(0, 0));
         int dbMax = couponService.maxIssueNumber(campaignId);
-        int bound = backlog.isDrained() ? previous.seenMax() : Math.min(previous.seenMax(), dbMax);
+        int bound = backlog.isDrained(campaignId) ? previous.seenMax() : Math.min(previous.seenMax(), dbMax);
         int confirmedUpTo = previous.confirmedUpTo();
         boolean prefixIntact = true;
         int republished = 0;
@@ -71,7 +74,8 @@ public class CouponReconciliation {
             Set<Integer> issued = couponService.issuedNumbersBetween(campaignId,
                 page.get(0).issueNumber(), page.get(page.size() - 1).issueNumber());
             for (Reservation reservation : page) {
-                if (issued.contains(reservation.issueNumber())) {
+                if (issued.contains(reservation.issueNumber())
+                    || couponService.findIssued(campaignId, reservation.userId()).isPresent()) {
                     if (prefixIntact) {
                         confirmedUpTo = reservation.issueNumber();
                     }

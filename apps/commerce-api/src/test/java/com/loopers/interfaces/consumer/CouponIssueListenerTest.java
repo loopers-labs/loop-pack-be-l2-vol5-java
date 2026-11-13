@@ -6,7 +6,11 @@ import com.loopers.config.CouponIssueListenerConfig;
 import com.loopers.domain.coupon.CampaignName;
 import com.loopers.domain.coupon.CouponIssuePublisher;
 import com.loopers.domain.coupon.CouponIssuePublisher.CouponIssue;
+import com.loopers.domain.coupon.CouponReservation;
 import com.loopers.domain.coupon.DiscountAmount;
+import com.loopers.support.error.CoreException;
+import com.loopers.support.error.DomainError;
+import com.loopers.support.error.DomainException;
 import com.loopers.domain.coupon.IssueQuota;
 import com.loopers.support.kafka.TopicRecords;
 import com.loopers.testcontainers.KafkaTestContainersConfig;
@@ -40,6 +44,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.BooleanSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest(properties = {
     "kafka.topics.coupon-issues=" + KafkaTestContainersConfig.COUPON_ISSUES_WORKER,
@@ -54,6 +59,7 @@ class CouponIssueListenerTest {
 
     private final CouponFacade couponFacade;
     private final CouponIssuePublisher publisher;
+    private final CouponReservation couponReservation;
     private final CampaignCache campaignCache;
     private final JdbcTemplate jdbcTemplate;
     private final MeterRegistry meterRegistry;
@@ -61,11 +67,13 @@ class CouponIssueListenerTest {
     private final RedisCleanUp redisCleanUp;
 
     @Autowired
-    CouponIssueListenerTest(CouponFacade couponFacade, CouponIssuePublisher publisher, CampaignCache campaignCache,
+    CouponIssueListenerTest(CouponFacade couponFacade, CouponIssuePublisher publisher,
+                            CouponReservation couponReservation, CampaignCache campaignCache,
                             JdbcTemplate jdbcTemplate, MeterRegistry meterRegistry,
                             DatabaseCleanUp databaseCleanUp, RedisCleanUp redisCleanUp) {
         this.couponFacade = couponFacade;
         this.publisher = publisher;
+        this.couponReservation = couponReservation;
         this.campaignCache = campaignCache;
         this.jdbcTemplate = jdbcTemplate;
         this.meterRegistry = meterRegistry;
@@ -165,6 +173,7 @@ class CouponIssueListenerTest {
     @Test
     void countsRejectionByDbAndMovesOn() throws Exception {
         Long campaignId = openCampaign(1);
+        double rejectedBefore = rejectedByDb(campaignId);
 
         publisher.publish(new CouponIssue(campaignId, 42L, 1, NOW));
         publisher.publish(new CouponIssue(campaignId, 7L, 2, NOW));
@@ -172,8 +181,11 @@ class CouponIssueListenerTest {
 
         assertThat(couponCount(campaignId)).isEqualTo(1);
         assertThat(issuedCount(campaignId)).isEqualTo(1);
-        assertThat(meterRegistry.counter("coupon.issue.rejected_by_db", "campaignId", String.valueOf(campaignId)).count())
-            .isEqualTo(1.0);
+        assertThat(rejectedByDb(campaignId)).isEqualTo(rejectedBefore + 1);
+    }
+
+    private double rejectedByDb(Long campaignId) {
+        return meterRegistry.counter("coupon.issue.rejected_by_db", "campaignId", String.valueOf(campaignId)).count();
     }
 
     @DisplayName("WRK-009: 없는 캠페인의 메시지는 재시도 없이 DLT 로 가고, 뒤의 메시지는 기록되며 offset 이 넘어간다")
@@ -192,5 +204,54 @@ class CouponIssueListenerTest {
             assertThat(record.key()).isEqualTo(String.valueOf(unknownCampaignId));
             assertThat(record.headers().lastHeader("kafka_dlt-exception-message")).isNotNull();
         });
+    }
+
+    private double recoveries(Long campaignId) {
+        return meterRegistry.counter("coupon.issue.recovery", "campaignId", String.valueOf(campaignId)).count();
+    }
+
+    @DisplayName("WRK-005: Redis 가 받아들인 사용자를 DB 가 품절로 거절하면 복구가 한 번 시작돼 DB 쿠폰으로 명단이 다시 만들어지고, 거절된 사용자들은 409 다")
+    @Test
+    void startsRecoveryOnceWhenDbRejectsReservedUsersAsSoldOut() throws Exception {
+        Long campaignId = openCampaign(1);
+        double recoveriesBefore = recoveries(campaignId);
+        couponReservation.restore(campaignId, List.of(new CouponReservation.Reservation(42L, 1),
+            new CouponReservation.Reservation(7L, 2), new CouponReservation.Reservation(9L, 3)));
+
+        publisher.publish(new CouponIssue(campaignId, 42L, 1, NOW));
+        publisher.publish(new CouponIssue(campaignId, 7L, 2, NOW));
+        publisher.publish(new CouponIssue(campaignId, 9L, 3, NOW));
+        eventually(() -> couponReservation.count(campaignId) == 1);
+        eventually(() -> acceptedOrIssued(campaignId, 42L));
+
+        assertThat(recoveries(campaignId)).isEqualTo(recoveriesBefore + 1);
+        assertThatThrownBy(() -> couponFacade.issue(campaignId, 7L, NOW))
+            .isInstanceOf(DomainException.class)
+            .hasFieldOrPropertyWithValue("error", DomainError.COUPON_SOLD_OUT);
+    }
+
+    @DisplayName("WRK-005: Redis 가 받아들이지 않은 사용자의 메시지가 품절로 거절되면 어긋남이 아니므로 복구를 시작하지 않는다")
+    @Test
+    void doesNotStartRecoveryWhenTheRejectedUserWasNeverReserved() throws Exception {
+        Long campaignId = openCampaign(1);
+        double recoveriesBefore = recoveries(campaignId);
+        couponReservation.restore(campaignId, List.of(new CouponReservation.Reservation(42L, 1)));
+
+        publisher.publish(new CouponIssue(campaignId, 42L, 1, NOW));
+        publisher.publish(new CouponIssue(campaignId, 7L, 2, NOW));
+        eventually(CouponIssueListenerTest::everyRecordCommitted);
+
+        assertThat(recoveries(campaignId)).isEqualTo(recoveriesBefore);
+        assertThat(couponFacade.issue(campaignId, 42L, NOW))
+            .isInstanceOf(CouponFacade.IssueResult.Issued.class)
+            .extracting("issueNumber").isEqualTo(1);
+    }
+
+    private boolean acceptedOrIssued(Long campaignId, Long userId) {
+        try {
+            return couponFacade.issue(campaignId, userId, NOW) instanceof CouponFacade.IssueResult.Issued;
+        } catch (CoreException e) {
+            return false;
+        }
     }
 }

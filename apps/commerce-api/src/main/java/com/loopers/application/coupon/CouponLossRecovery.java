@@ -24,6 +24,7 @@ public class CouponLossRecovery {
     private static final int PAGE = 1_000;
     private static final Duration DRAIN_POLL = Duration.ofMillis(500);
     private static final int DRAIN_LOG_EVERY = 20;
+    private static final int MAX_REBUILD_ROUNDS = 3;
 
     private final CouponReservation couponReservation;
     private final CouponService couponService;
@@ -64,8 +65,13 @@ public class CouponLossRecovery {
 
     public void recover(Long campaignId) {
         couponReservation.close(campaignId);
-        awaitDrained(campaignId);
-        int restored = rebuildFromDb(campaignId);
+        int restored;
+        int rounds = 0;
+        do {
+            rounds++;
+            awaitDrained(campaignId);
+            restored = rebuildFromDb(campaignId);
+        } while (!backlog.isDrained(campaignId) && rounds < MAX_REBUILD_ROUNDS);
         couponReservation.open(campaignId);
         meterRegistry.counter(RECOVERED, "campaignId", String.valueOf(campaignId)).increment();
         log.warn("DB 쿠폰으로 예약 집합을 다시 만들고 캠페인을 열었다: campaignId={}, restored={}", campaignId, restored);
@@ -73,7 +79,7 @@ public class CouponLossRecovery {
 
     private void awaitDrained(Long campaignId) {
         int polls = 0;
-        while (!backlog.isDrained()) {
+        while (!backlog.isDrained(campaignId)) {
             polls++;
             if (polls % DRAIN_LOG_EVERY == 0) {
                 log.warn("워커가 broker 를 비우기를 기다린다: campaignId={}, waited={}", campaignId, DRAIN_POLL.multipliedBy(polls));

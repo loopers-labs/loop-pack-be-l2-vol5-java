@@ -276,10 +276,10 @@ Kafka 를 두는 이유는 접수(Redis)와 보관(Kafka)의 장애 영역을 �
 |---|---|
 | 위치 | commerce-api 안의 `@KafkaListener`(Q-8). consumer group `coupon-issue` |
 | 동시 수 | 컨테이너 `concurrency = C`. 설정 `coupon.issue.worker.concurrency`. 1부의 knee 4 가 출발값이고 `EXP-023` 으로 다시 정한다 |
-| 컨테이너 | W6 `PurchaseActivityListenerConfig` 와 같은 모양. 수동 커밋, `earliest`, 인프라 실패는 같은 record 를 backoff 로 재시도하고 건너뛰지 않음 |
+| 컨테이너 | W6 `PurchaseActivityListenerConfig` 와 같은 모양. 수동 커밋, `earliest`, 인프라 실패는 같은 record 를 backoff 로 재시도하고 건너뛰지 않음. `max.poll.records` 50. 기본 500 이면 DB 가 느린 날 레코드마다 잠금 대기 상한 3 초 × 500 = 25 분이 `max.poll.interval.ms` 5 분을 넘겨 consumer 가 쫓겨나고 리밸런스가 반복된다. 50 × 3 초 = 150 초로 안에 든다. 정상일 땐 50 개가 30ms 라 처리량 손실이 없다. 핫파티션 자체는 리밸런스를 만들지 않는다. lag 은 멤버십과 무관하다 |
 | 메시지 하나 | `CouponTransactions.issue(campaignId, userId, issueNumber, reservedAt)` 한 TX |
 | DB 중복 | `COUPON_ALREADY_ISSUED` 를 받으면 로그만 남기고 offset 을 넘긴다. 같은 메시지 재전달과 대사의 재발행이 여기서 멱등해진다 |
-| DB 품절 | `COUPON_SOLD_OUT` 을 받으면 지표 `coupon.issue.rejected_by_db` 를 올리고 넘기고, 그 캠페인의 유실 복구(16.1)를 시작한다. Redis 가 받은 것을 DB 가 거절했다는 것은 예약 집합과 DB 가 어긋났다는 뜻이다. 넘기기만 하면 그 사용자는 재요청마다 200 PENDING 을 받고 대사는 매 주기 그 번호를 후보로 잡는다. `ZREM` 만 하면 빈 자리로 다음 사람이 202 를 받고 또 거절된다. 재구성하면 거절된 사용자는 집합에서 빠져 409 를 받고, 쿠폰 없는 PENDING 이 남지 않는다 |
+| DB 품절 | `COUPON_SOLD_OUT` 을 받으면 지표 `coupon.issue.rejected_by_db` 를 올리고 넘기고, **그 사용자가 Redis 명단에 있을 때만** 그 캠페인의 유실 복구(16.1)를 시작한다. 명단에 없는 사용자의 품절(DLT 리플레이가 정상 품절 캠페인에 닿은 경우)은 어긋남이 아니다. Redis 가 받은 것을 DB 가 거절했다는 것은 예약 집합과 DB 가 어긋났다는 뜻이다. 넘기기만 하면 그 사용자는 재요청마다 200 PENDING 을 받고 대사는 매 주기 그 번호를 후보로 잡는다. `ZREM` 만 하면 빈 자리로 다음 사람이 202 를 받고 또 거절된다. 재구성하면 거절된 사용자는 집합에서 빠져 409 를 받고, 쿠폰 없는 PENDING 이 남지 않는다 |
 | 인프라 실패 | `DataAccessException` 처럼 기다리면 낫는 것. 예외를 던져 컨테이너가 backoff(1s → 30s)로 같은 레코드를 재시도. offset 은 그대로. 지표 `coupon.issue.worker.retry` 는 둘째 전달부터 센다 |
 | 다시 해도 같을 실패 | 읽을 수 없는 메시지, 없는 캠페인, 비활성 캠페인, 그 외 `DomainException`. 재시도 없이 `coupon-issues.dlt` 로 보내고 넘긴다(`WRK-009`). 지표 `coupon.issue.worker.dead_letter`. 멈추면 같은 파티션의 다른 캠페인까지 서므로 넘긴다. DLT 발행이 실패하면(broker) 넘기지 않고 재시도한다 |
 | DLT 뒤 | consumer 하나가 DLT 를 읽어 로그 테이블(`coupon_issue_dlt_log`, PENDING)에 적고, 운영자가 `/api-admin` 으로 조회해 골라 원본 토픽에 다시 보낸다(`WRK-010`). 자동으로 다시 보내지 않는다. 다시 해도 같을 실패라 사람이 원인을 고친 뒤여야 한다 |
@@ -321,10 +321,11 @@ UPDATE coupon_campaign SET issued_count = issued_count + 1 WHERE id = ? AND issu
 | 항목 | 정한 것 |
 |---|---|
 | 주기 | `@Scheduled` 10 초(Q-14). 잰 값이 아니라 두 경계 사이의 값이다. 아래 경계는 Unconfirmed 메시지가 뒤늦게 닿는 시간(`delivery.timeout.ms` 30 초가 최대, 로컬 ack p99 77ms)이라 주기보다 늦게 닿으면 한 번 더 보내고 `WRK-004` 가 흡수한다. 위 경계는 메시지를 잃은 사용자가 ISSUED 를 보기까지 1~2 주기라는 것이다. 비용은 경계가 아니다 |
-| 대상 | 캐시에 있는 활성 캠페인 |
+| 대상 | DB 의 활성 캠페인(10 초마다 id SELECT 한 번). 캐시의 캠페인으로 하면 재시작 뒤 첫 요청이 올 때까지 그 캠페인의 누락이 안 풀린다. 닫힌(복구 중) 캠페인은 건너뛴다. 재구성 중에 보내면 열자마자 유실로 다시 잡힌다 |
 | 누락 판정 | 번호로 한다. ZSET 에 예약 시각이 없고(score 가 번호), 번호는 가장 큰 score + 1 이라 시간 순이다. 후보 = 번호 ≤ 지난 실행 때 본 최대 번호(한 주기는 지남) 이고 번호 ≤ DB 의 최대 `issue_number`(워커가 그 번호를 지나감) 인데 DB 에 없는 것. **워커가 비어 있으면**(lag 0) 둘째 조건을 뺀다. 큐에 아무것도 없는데 DB 에 없으면 그건 누락이고, 이 조건이 없으면 캠페인의 마지막 번호가 영원히 후보가 안 된다 |
 | 읽기 | `ZRANGEBYSCORE key (읽기 커서 min(지난 최대, DB 최대) WITHSCORES LIMIT 1000` 으로 두 선 사이만 읽는다. ZSET 끝은 `ZREVRANGE 0 0` 한 번이다. 10 만을 한 번에 읽으면 7.2 의 비례로 15ms 를 모두 세운다 |
 | 읽기 커서 | DB 에 있는 번호가 **이어진 데까지만** 전진한다. 재발행했는데 아직 DB 에 없는 번호가 커서를 잡아 다음 주기에 다시 보인다. 워커가 적으면 커서가 넘어간다 |
+| 확인된 것 | 번호가 DB 에 있거나, 번호는 없어도 **그 사용자가 그 캠페인의 쿠폰을 가졌으면** 확인된 것이다. 유실 복구 창(16.1)에서 같은 사용자가 다른 번호로 적힐 수 있는데, 번호만 보면 그 예약을 매 주기 다시 보내고 워커는 매번 중복으로 넘긴다. 후보는 드물어 SELECT 한 줄의 비용이다 |
 | 다시 보낸 메시지 | `reservedAt` 은 대사 시각이다. ZSET 에 예약 시각이 없다. 그 쿠폰의 `issued_at` 이 그만큼 늦다 |
 | 지표 | 캠페인마다 `coupon.issue.backlog`(`ZCARD − issued_count`, 게이지), `coupon.issue.republished`(카운터), `rejected_by_db` |
 
@@ -365,7 +366,9 @@ Redis 가 재시작하면 AOF `everysec` 가 마지막 1 초를 잃고, 빈 인�
 3. DB 쿠폰(사용자, `issue_number`)을 `ZADD` 로 넣는다. Lua 하나로 묶지 않고 파이프라인으로 나눠 보낸다(7.2)
 4. 연다. 번호가 이어진다
 
-코드는 `CouponLossRecovery` 다. `start` 는 닫힘 키를 두고 단일 스레드에 복구를 맡긴 뒤 바로 돌아오므로 감지한 요청은 503 만 주고 끝난다. 같은 인스턴스 안의 중복 시작은 진행 중 집합이 막고, 인스턴스 둘이 같이 시작하면 둘 다 재구성하는데 결과가 같다. lag 0 은 Kafka Admin 으로 group `coupon-issue` 의 committed offset 과 end offset 을 500ms 마다 비교한다. 재구성은 `UNLINK` 뒤 DB 쿠폰을 번호 순으로 1,000 건씩 읽어 파이프라인 `ZADD` 다. 복구가 실패하면 캠페인은 닫힌 채 남고, 다음 유실 감지나 수동 복구(`POST /api-admin/v1/coupon-campaigns/{id}/recover`)가 다시 시작한다. 열기는 코드가 하지만 닫힌 채로 두는 쪽이 기본이라는 1부 규칙은 그대로다.
+코드는 `CouponLossRecovery` 다. `start` 는 닫힘 키를 두고 단일 스레드에 복구를 맡긴 뒤 바로 돌아오므로 감지한 요청은 503 만 주고 끝난다. 같은 인스턴스 안의 중복 시작은 진행 중 집합이 막고, 인스턴스 둘이 같이 시작하면 둘 다 재구성하는데 결과가 같다. lag 0 은 Kafka Admin 으로 **그 캠페인의 파티션**(키 해시로 계산) 의 committed offset 과 end offset 을 500ms 마다 비교한다. 토픽 전체를 기다리면 다른 캠페인의 10 만 건 뒤에서 60 초를 닫혀 있게 된다. 재구성은 `UNLINK` 뒤 DB 쿠폰을 번호 순으로 1,000 건씩 읽어 파이프라인 `ZADD` 다. 재구성 뒤 파티션에 다시 쌓였으면(대사나 리플레이가 보낸 것) 한 번 더, 최대 3 번 돈다. 복구가 실패하거나 복구 중인 인스턴스가 죽으면 캠페인은 닫힌 채 남는다. 닫힘 키에 TTL 이 없고 Lua 가 닫힘을 유실보다 먼저 보므로 자동 감지가 다시 열어 주지 않는다. 그때의 길은 수동 복구(`POST /api-admin/v1/coupon-campaigns/{id}/recover`)이고, 닫힌 캠페인은 backlog 게이지가 움직이지 않는 것으로 보인다. 열기는 코드가 하지만 닫힌 채로 두는 쪽이 기본이라는 1부 규칙은 그대로다.
+
+번호는 복구 창에서 겹칠 수 있다. 사용자 A 의 #5 가 Unconfirmed 로 producer 에 남은 채 Redis 가 비고, 복구가 1 ~ 4 로 재구성해 열면 B 가 #5 를 받고, 그 뒤 A 의 레코드가 닿아 DB 에 #5 가 둘이 된다. 수량과 1 인 1 장은 그대로다(유니크가 번호가 아니라 사용자라서). 번호에 유니크를 걸면 늦게 닿은 A 가 쿠폰을 잃는데 그쪽이 더 큰 약속이라 걸지 않는다. `RSV-002` 는 그래서 "유실 복구 창 밖에서는" 으로 좁힌다.
 
 2 를 건너뛰면 Kafka 에는 있고 DB 에는 없던 사람이 재구성에 빠져 그 수만큼 더 받아들인다. 열기는 재구성이 끝난 뒤에만 받는다. 1부의 "닫힌 채 시작, 명시적 열기" 와 같은 규칙이고, 열기 전 할 일이 "진행 중 실행 확인" 이 아니라 "DB 로 재구성" 이라 자동화할 수 있다. AOF `always` 를 두지 않는 이유는 처리량이 아니다. 7.2 에서 `always` 는 연결 50 에서 초당 39,200 으로 DB 의 24 배다. 두지 않는 이유는 fsync 시간이 요청 지연에 그대로 붙어서고(p50 0.30 → 1.21ms, 디스크가 느린 날엔 수십 ms), 마지막 1 초를 지켜도 빈 인스턴스 교체와 eviction 은 못 막아 복구 절차가 그대로 필요해서다. **뒤집을 조건**: 복구에 걸리는 시간이 허용치를 넘고 디스크 fsync p99 가 1ms 안일 때.
 

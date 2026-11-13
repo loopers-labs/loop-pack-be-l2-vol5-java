@@ -40,6 +40,7 @@ public class CouponIssueListenerConfig {
     private static final double BACKOFF_MULTIPLIER = 2.0;
     private static final long MAX_BACKOFF_MILLIS = 30_000;
     private static final int ANY_PARTITION = -1;
+    private static final int MAX_POLL_RECORDS = 50;
 
     @Bean(name = FACTORY)
     public ConcurrentKafkaListenerContainerFactory<String, byte[]> couponIssueListenerContainerFactory(
@@ -50,6 +51,7 @@ public class CouponIssueListenerConfig {
         consumer.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         consumer.put(ConsumerConfig.ALLOW_AUTO_CREATE_TOPICS_CONFIG, false);
         consumer.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
+        consumer.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, MAX_POLL_RECORDS);
 
         ConcurrentKafkaListenerContainerFactory<String, byte[]> factory = new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(new DefaultKafkaConsumerFactory<>(consumer));

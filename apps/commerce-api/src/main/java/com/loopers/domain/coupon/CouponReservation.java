@@ -29,6 +29,10 @@ public interface CouponReservation {
 
     void cancel(Long campaignId, Long userId);
 
+    boolean isReserved(Long campaignId, Long userId);
+
+    boolean isClosed(Long campaignId);
+
     void close(Long campaignId);
 
     void open(Long campaignId);

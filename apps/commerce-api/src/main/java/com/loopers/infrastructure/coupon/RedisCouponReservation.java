@@ -43,6 +43,16 @@ class RedisCouponReservation implements CouponReservation {
     }
 
     @Override
+    public boolean isReserved(Long campaignId, Long userId) {
+        return redis.opsForZSet().score(key(campaignId), String.valueOf(userId)) != null;
+    }
+
+    @Override
+    public boolean isClosed(Long campaignId) {
+        return Boolean.TRUE.equals(redis.hasKey(closedKey(campaignId)));
+    }
+
+    @Override
     public void close(Long campaignId) {
         redis.opsForValue().set(closedKey(campaignId), "1");
     }

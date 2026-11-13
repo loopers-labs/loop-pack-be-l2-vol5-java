@@ -104,6 +104,7 @@ class CouponReconciliationTest {
     @Test
     void republishesEveryMissingNumberWhenTheWorkerIsDrained() throws Exception {
         Long campaignId = openCampaign();
+        double republishedBefore = republished(campaignId);
         reserveOnly(campaignId, 1L);
         reserveOnly(campaignId, 2L);
         reserveOnly(campaignId, 3L);
@@ -117,8 +118,24 @@ class CouponReconciliationTest {
 
         assertThat(issueNumberOf(campaignId, 2L)).isEqualTo(2);
         assertThat(issueNumberOf(campaignId, 4L)).isEqualTo(4);
-        assertThat(republished(campaignId)).isEqualTo(2.0);
+        assertThat(republished(campaignId)).isEqualTo(republishedBefore + 2);
         assertThat(couponReconciliation.reconcile(campaignId)).isZero();
         assertThat(couponCount(campaignId)).isEqualTo(4);
+    }
+
+    @DisplayName("RCN-001: 번호는 DB 에 없어도 그 사용자가 이미 쿠폰을 가졌으면 다시 보내지 않는다")
+    @Test
+    void treatsReservationAsConfirmedWhenTheUserAlreadyHasACoupon() {
+        Long campaignId = openCampaign();
+        double republishedBefore = republished(campaignId);
+        reserveOnly(campaignId, 1L);
+        reserveOnly(campaignId, 42L);
+        couponTransactions.issue(campaignId, 1L, 1, NOW);
+        couponTransactions.issue(campaignId, 42L, 5, NOW);
+
+        assertThat(couponReconciliation.reconcile(campaignId)).isZero();
+        assertThat(couponReconciliation.reconcile(campaignId)).isZero();
+        assertThat(couponReconciliation.reconcile(campaignId)).isZero();
+        assertThat(republished(campaignId)).isEqualTo(republishedBefore);
     }
 }

@@ -5,6 +5,7 @@ import com.loopers.domain.coupon.CouponCampaignRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.Optional;
 
 @Component
@@ -21,6 +22,11 @@ public class CouponCampaignRepositoryImpl implements CouponCampaignRepository {
     @Override
     public Optional<CouponCampaign> findById(Long campaignId) {
         return campaignJpaRepository.findById(campaignId).map(CouponCampaignEntity::toDomain);
+    }
+
+    @Override
+    public List<Long> findActiveIds() {
+        return campaignJpaRepository.findActiveIds();
     }
 
     @Override

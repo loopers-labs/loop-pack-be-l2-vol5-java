@@ -8,7 +8,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
@@ -27,10 +26,6 @@ public class CampaignCache {
             .orElseThrow(() -> new DomainException(DomainError.COUPON_CAMPAIGN_NOT_FOUND));
         campaigns.putIfAbsent(campaignId, loaded);
         return loaded;
-    }
-
-    public Set<Long> campaignIds() {
-        return Set.copyOf(campaigns.keySet());
     }
 
     public void refreshIssuedCount(Long campaignId, int issuedCount) {
