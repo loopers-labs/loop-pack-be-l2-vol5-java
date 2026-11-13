@@ -1,0 +1,6 @@
+# 테스트는 회차를 직접 부르므로 재계산을 매 회차 하고, 회수는 짧은 대기 뒤 바로 일어나게 한다
+coupon-issue:
+  worker:
+    recount-interval: 0s
+    claim-min-idle: 200ms
+    pending-confirm-after: 1s

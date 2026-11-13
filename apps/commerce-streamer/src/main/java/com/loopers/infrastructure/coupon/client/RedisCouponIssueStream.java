@@ -1,0 +1,246 @@
+package com.loopers.infrastructure.coupon.client;
+
+import com.loopers.config.CouponRedisConfig;
+import com.loopers.domain.coupon.gateway.CouponIssueStream;
+import com.loopers.domain.coupon.vo.IssueEntry;
+import com.loopers.domain.coupon.vo.PendingConfirm;
+import com.loopers.domain.coupon.vo.RebuildPlan;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.data.redis.RedisSystemException;
+import org.springframework.data.redis.connection.stream.Consumer;
+import org.springframework.data.redis.connection.stream.MapRecord;
+import org.springframework.data.redis.connection.stream.ReadOffset;
+import org.springframework.data.redis.connection.stream.StreamOffset;
+import org.springframework.data.redis.connection.stream.StreamReadOptions;
+import org.springframework.data.redis.core.RedisOperations;
+import org.springframework.data.redis.core.SessionCallback;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.data.redis.core.script.RedisScript;
+import org.springframework.stereotype.Component;
+
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+@Component
+public class RedisCouponIssueStream implements CouponIssueStream {
+
+    static final String GROUP = "coupon-issue-worker";
+
+    private static final RedisScript<Long> ISSUED = script("redis/coupon/issued.lua", Long.class);
+    private static final RedisScript<Long> DELAY = script("redis/coupon/delay.lua", Long.class);
+    private static final RedisScript<Long> MOVE = script("redis/coupon/move.lua", Long.class);
+    @SuppressWarnings("rawtypes")
+    private static final RedisScript<List> CLAIM = script("redis/coupon/claim.lua", List.class);
+    private static final RedisScript<String> FAIL = script("redis/coupon/fail.lua", String.class);
+    @SuppressWarnings("rawtypes")
+    private static final RedisScript<List> STALE_PENDING = script("redis/coupon/stale-pending.lua", List.class);
+    @SuppressWarnings("rawtypes")
+    private static final RedisScript<List> CONFIRM = script("redis/coupon/confirm.lua", List.class);
+
+    private final StringRedisTemplate redis;
+
+    public RedisCouponIssueStream(@Qualifier(CouponRedisConfig.MASTER_TEMPLATE) StringRedisTemplate redis) {
+        this.redis = redis;
+    }
+
+    @Override
+    public int moveDue(long campaignId, long nowMillis, int limit) {
+        CouponIssueKeys keys = CouponIssueKeys.of(campaignId);
+        Long moved = redis.execute(MOVE, List.of(keys.delayed(), keys.stream()), String.valueOf(nowMillis), String.valueOf(limit));
+        return moved == null ? 0 : moved.intValue();
+    }
+
+    @Override
+    public List<IssueEntry> claim(long campaignId, String consumer, Duration minIdle, int count) {
+        CouponIssueKeys keys = CouponIssueKeys.of(campaignId);
+        if (!ready(keys)) {
+            return List.of();
+        }
+        ensureGroup(keys);
+        List<?> claimed = redis.execute(CLAIM, List.of(keys.stream()),
+            GROUP, consumer, String.valueOf(minIdle.toMillis()), String.valueOf(count));
+        if (claimed == null) {
+            return List.of();
+        }
+        List<IssueEntry> entries = new ArrayList<>(claimed.size());
+        for (Object item : claimed) {
+            List<?> parts = (List<?>) item;
+            entries.add(entry(campaignId, String.valueOf(parts.get(0)), fields((List<?>) parts.get(1)),
+                Long.parseLong(String.valueOf(parts.get(2)))));
+        }
+        return entries;
+    }
+
+    @Override
+    public List<PendingConfirm> stalePending(long campaignId, long acceptedBeforeMillis, int limit) {
+        CouponIssueKeys keys = CouponIssueKeys.of(campaignId);
+        List<?> stale = redis.execute(STALE_PENDING, List.of(keys.pending(), keys.users()),
+            String.valueOf(acceptedBeforeMillis), String.valueOf(limit));
+        if (stale == null) {
+            return List.of();
+        }
+        List<PendingConfirm> pending = new ArrayList<>(stale.size());
+        for (Object item : stale) {
+            List<?> parts = (List<?>) item;
+            pending.add(new PendingConfirm(campaignId, Long.parseLong(String.valueOf(parts.get(0))),
+                Long.parseLong(String.valueOf(parts.get(1))), (long) Double.parseDouble(String.valueOf(parts.get(2)))));
+        }
+        return pending;
+    }
+
+    @Override
+    public void confirm(long campaignId, long userId) {
+        redis.execute(CONFIRM, CouponIssueKeys.of(campaignId).forConfirm(), String.valueOf(userId));
+    }
+
+    @Override
+    public List<IssueEntry> read(long campaignId, String consumer, int count) {
+        CouponIssueKeys keys = CouponIssueKeys.of(campaignId);
+        if (!ready(keys)) {
+            return List.of();
+        }
+        ensureGroup(keys);
+        List<MapRecord<String, Object, Object>> records = redis.opsForStream().read(
+            Consumer.from(GROUP, consumer),
+            StreamReadOptions.empty().count(count),
+            StreamOffset.create(keys.stream(), ReadOffset.lastConsumed()));
+        if (records == null) {
+            return List.of();
+        }
+        return records.stream()
+            .map(record -> entry(campaignId, record.getId().getValue(), record.getValue(), 1L))
+            .toList();
+    }
+
+    @Override
+    public void completeIssued(IssueEntry entry, long couponId) {
+        CouponIssueKeys keys = CouponIssueKeys.of(entry.campaignId());
+        redis.execute(ISSUED, List.of(keys.users(), keys.stream()),
+            String.valueOf(entry.userId()), String.valueOf(entry.sequence()), String.valueOf(couponId), GROUP, entry.entryId());
+    }
+
+    @Override
+    public void delay(IssueEntry entry, long nextAtMillis) {
+        CouponIssueKeys keys = CouponIssueKeys.of(entry.campaignId());
+        String member = String.join("|", String.valueOf(entry.userId()), String.valueOf(entry.sequence()),
+            String.valueOf(entry.slotNo()), entry.epoch(), String.valueOf(entry.unclassified()), String.valueOf(entry.transientAttempts()));
+        redis.execute(DELAY, List.of(keys.stream(), keys.delayed()), GROUP, entry.entryId(), String.valueOf(nextAtMillis), member);
+    }
+
+    @Override
+    public Long fail(IssueEntry entry, boolean promote) {
+        CouponIssueKeys keys = CouponIssueKeys.of(entry.campaignId());
+        String promoted = redis.execute(FAIL, keys.forFail(), String.valueOf(entry.userId()), GROUP, entry.entryId(),
+            String.valueOf(entry.slotNo()), promote ? "1" : "0", entry.epoch());
+        return promoted == null || promoted.isEmpty() ? null : Long.valueOf(promoted);
+    }
+
+    @Override
+    public boolean epochMissing(long campaignId) {
+        return !Boolean.TRUE.equals(redis.hasKey(CouponIssueKeys.of(campaignId).epoch()));
+    }
+
+    @Override
+    public void dropEpoch(long campaignId) {
+        redis.delete(CouponIssueKeys.of(campaignId).epoch());
+    }
+
+    @Override
+    public List<Long> missingUsers(long campaignId, List<Long> userIds) {
+        List<Object> fields = userIds.stream().<Object>map(String::valueOf).toList();
+        List<Object> values = redis.opsForHash().multiGet(CouponIssueKeys.of(campaignId).users(), fields);
+        List<Long> missing = new ArrayList<>();
+        for (int i = 0; i < userIds.size(); i++) {
+            if (values.get(i) == null) {
+                missing.add(userIds.get(i));
+            }
+        }
+        return missing;
+    }
+
+    /** 표식이 없는 동안이라 접수 · worker 가 이 키들을 쓰지 않는다. 그래서 원자적이지 않아도 된다 */
+    @Override
+    public void rebuild(long campaignId, RebuildPlan plan) {
+        CouponIssueKeys keys = CouponIssueKeys.of(campaignId);
+        redis.delete(keys.forRebuild());
+        redis.executePipelined(new SessionCallback<Object>() {
+            @Override
+            @SuppressWarnings("unchecked")
+            public Object execute(RedisOperations operations) {
+                RedisOperations<String, String> ops = operations;
+                ops.opsForValue().set(keys.sequence(), String.valueOf(plan.maxSequence()));
+                plan.users().forEach((userId, stored) -> ops.opsForHash().put(keys.users(), String.valueOf(userId), stored));
+                plan.queue().forEach(queued -> ops.opsForStream().add(keys.stream(), Map.of(
+                    "userId", String.valueOf(queued.userId()), "sequence", String.valueOf(queued.sequence()),
+                    "slotNo", String.valueOf(queued.slotNo()), "epoch", "rebuilt", "unclassified", "0", "transient", "0")));
+                plan.reserve().forEach((userId, sequence) -> ops.opsForZSet().add(keys.reserve(), String.valueOf(userId), sequence));
+                ops.opsForValue().set(keys.promoted(), String.valueOf(plan.promotedCount()));
+                if (plan.soldOut()) {
+                    ops.opsForValue().set(keys.soldOut(), "1");
+                }
+                return null;
+            }
+        });
+    }
+
+    @Override
+    public void markSoldOut(long campaignId) {
+        redis.opsForValue().set(CouponIssueKeys.of(campaignId).soldOut(), "1");
+    }
+
+    /** 표식이 없으면 상태를 잃은 것이라 처리하지 않는다 (D-139) */
+    private boolean ready(CouponIssueKeys keys) {
+        return Boolean.TRUE.equals(redis.hasKey(keys.epoch())) && Boolean.TRUE.equals(redis.hasKey(keys.stream()));
+    }
+
+    /**
+     * 읽기 전에 group 을 만든다(이미 있으면 그대로). 0 부터라 group 을 만들기 전에 쌓인 항목도 받는다.
+     * 만든 사실을 기억하지 않는다. Redis 재구성으로 group 이 사라져도 다시 만든다 (D-140)
+     */
+    private void ensureGroup(CouponIssueKeys keys) {
+        try {
+            redis.opsForStream().createGroup(keys.stream(), ReadOffset.from("0"), GROUP);
+        } catch (RedisSystemException e) {
+            if (!String.valueOf(e.getMostSpecificCause().getMessage()).contains("BUSYGROUP")) {
+                throw e;
+            }
+        }
+    }
+
+    private static Map<Object, Object> fields(List<?> flat) {
+        Map<Object, Object> fields = new HashMap<>();
+        for (int i = 0; i + 1 < flat.size(); i += 2) {
+            fields.put(String.valueOf(flat.get(i)), flat.get(i + 1));
+        }
+        return fields;
+    }
+
+    private static IssueEntry entry(long campaignId, String entryId, Map<Object, Object> value, long deliveries) {
+        return new IssueEntry(
+            campaignId,
+            entryId,
+            Long.parseLong(String.valueOf(value.get("userId"))),
+            Long.parseLong(String.valueOf(value.get("sequence"))),
+            Integer.parseInt(String.valueOf(value.get("slotNo"))),
+            String.valueOf(value.get("epoch")),
+            intOrZero(value.get("unclassified")),
+            intOrZero(value.get("transient")),
+            deliveries);
+    }
+
+    private static int intOrZero(Object value) {
+        return value == null ? 0 : Integer.parseInt(String.valueOf(value));
+    }
+
+    private static <T> RedisScript<T> script(String path, Class<T> resultType) {
+        DefaultRedisScript<T> script = new DefaultRedisScript<>();
+        script.setLocation(new ClassPathResource(path));
+        script.setResultType(resultType);
+        return script;
+    }
+}
