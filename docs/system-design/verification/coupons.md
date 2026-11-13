@@ -1,6 +1,6 @@
 # 쿠폰 발급 구현·실행 기록
 
-계약의 원본은 [쿠폰 상세설계](../features/coupons.md)와 [쿠폰 판단 근거](../decisions/coupons.md)다. 이 문서는 구현 단위별 실행 조건·관찰값·한계를 남긴다. 설계의 Q1~Q16 전체 완료 기록이 아니다.
+계약의 원본은 [쿠폰 상세설계](../features/coupons.md)와 [쿠폰 판단 근거](../decisions/coupons.md)다. 이 문서는 구현 단위별 실행 조건·관찰값·한계를 남긴다. 각 절은 해당 기준 커밋/실행의 기록이며 과거의 미착수·미실행 상태를 최신 결과와 구분한다.
 
 ## 구현 1단계 — DB 저장·조회 계약 (2026-11-11)
 
@@ -1010,7 +1010,9 @@ COUPON_LOCAL_REDIS_FAULT_TEST=true \
 -21:42:49 독립 postrun: master running/unpaused·동일run_id/시작시각·replica online, db0/9101 waiting/sold-out/issued/processing0, 자기JVM/worker/앱/test컨테이너0·공유 컨테이너 유지. 이전 잔여 키와 같은 정리 공백은 이번 실행에서 없었다.
 - 로컬 원시 근거는 docs/week8/verification/runs/20261112-cache-fault-prep/와 20261112-cache-fault/의 명령/pre/postrun·로그/XML/JSONL/요약이다. 늦은 put/START 적용은 이번1회 관찰이며 전역 fence/재시작 안전성·전체 Redis 장애 가용성으로 확대하지 않는다. R5-a는 local 분기를 직접 계측하지 않았고 보수적 시각 상한과 저장소/SQL0이 근거다. 실제 Q9/Q10 재실행·전체 check·비교는 이번에 하지 않았다.
 
-## 캐시 전후 비교 실험 상세설계 — 최종 승인·도구 준비 전, 미실행
+## 캐시 전후 비교 실험 상세설계 — 계획 이력·사용자 선택으로 중단, 미실행
+
+**현재 상태:** 사용자는 비교 결과를 필수 산출물로 두지 않기로 했고, 도구 보완·실제 실험을 중단했다. 아래는 당시 승인한 계획 이력이다. 도구는 가짜 장치 검사까지만 수행했으며 제품 성능 비교 결과는 없다. 이 계획을 다음 필수 작업이나 실행 완료 근거로 사용하지 않는다.
 
 첫 정적 검토의 필수1~6과 실행 결정들을 묶어 사용자에게 제안했고 사용자가 추천 방향을 승인했다. 주 결과는 DB/Redis 호출 변화, 보조 결과는 고정5RPS에서의 HTTP 지연이다. 전용 MySQL 스키마·구간별 캠페인/소유 키·동일 SQL seed·JDK 클라이언트·외부 계측·3반복을 채택한다. 보완본 정적 검토에서 남은 A/B를 확인했고, 사용자는 기존 application 계정 재사용·전용 스키마 권한 추가/회수 방식을 선택했다. SQL 로그/Python runner 등 실행 세부를 아래처럼 보완해 최종 확정한다. 계측/seed/부하 도구 구현·빌드/앱 실행·DB/Redis 조작·측정은 아직 하지 않았다.
 
@@ -1109,3 +1111,37 @@ Claude가 작성할 도구 기본안은 tools/coupon-comparison/의 FixedRateCli
 결과는 버전/시나리오/반복별 예정·실제발행·완료·late/미발행·timeout/상태별 건수, 기대 응답 완료율, p50/p95(주)/p99(참고)·표본 수·반복 차이, SQL/Redis 원시 증분·배경 대조/보정 추정, 정확한 경로 관찰과 한계를 제시한다. CPU/GC는 상황 기록만 하고 수치 우열 분석은 하지 않는다. 약300개 표본의 p99를 안정적 운영 지표로 주장하지 않는다.
 
 완료는 세 버전/세 시나리오의 같은 조건에서 기대 계약·데이터 불변식·소유 자원 종료/정리를 지키고, 실제 호출 절감과 남는/추가 비용을 함께 설명하는 것이다. 지연 개선 없음이나 miss 비용 증가도 그대로 보고한다. 전체/보완본 정적 검토와 사용자 선택·최종 승인 반영을 마쳤다. 현재 도구/계측·실험 실행 결과는 없다. 도구 구현/가짜 장치 검사 후 결과를 검토하고 실제 실행을 별도 전달한다.
+
+
+## 최신 구현 최종 전체 검사·마무리 검토 — 2026-11-12
+
+### 기준·명령
+
+- 기준: `volume-8` / `0e53078`. 제품·test·빌드 소스는 HEAD와 같았고 실행 전후 변경이 없다. 기존 staged 비교 설계와 untracked 도구는 검사 대상 제품 변경이 아니다.
+- JDK 21.0.12. `JAVA_HOME`과 Gradle JDK를 맞추고, `COUPON_LOCAL_REDIS_FAULT_TEST`를 자식 환경에서 제거했다. 실행 전 다른 worker·앱·streamer는 없었다.
+- 필터 없이 한 번 실행했다. `check`의 기존 의존성으로 O11(`w6OutboxRecoveryTest`)도 실행하며 별도로 반복하지 않았다.
+
+```sh
+env -u COUPON_LOCAL_REDIS_FAULT_TEST ./gradlew -Dorg.gradle.java.home="$JAVA_HOME" \
+  :apps:commerce-api:check --rerun-tasks --no-build-cache --console=plain
+```
+
+- 실행: 22:58:51~23:08:30 KST, exit 0, `BUILD SUCCESSFUL in 9m 38s`. 35개 작업 모두 실제 실행됐고 cache/UP-TO-DATE 대체는 없다.
+
+| 작업 | 총 테스트 | 통과 | 실패 | 오류 | skip·미실행 |
+|---|---:|---:|---:|---:|---:|
+| 일반 test | 1,384 | 1,376 | 0 | 0 | 8 |
+| O11 | 1 | 1 | 0 | 0 | 0 |
+
+일반 XML 282개 중 중첩 클래스만 가진 상위 XML 24개는 0건이며 실행으로 더하지 않았다. skip 8건은 opt-in Q9/Q10 2건과 R4/R5 6건이고 다른 skip은 없다. 해당 실제 장애 검사는 앞선 별도 실행으로만 근거를 연결한다. 최신 check에서 실제 pause를 다시 실행한 것은 아니다.
+
+Checkstyle main/test 오류는 0건이다. ArchitectureTest 3건, W6 준비/발행/리스너 TX 1·8·3건, W7 relay lifecycle 5건, GuardTest 19건이 모두 통과했다. O11 streamer 자식은 `graceful=true exit=143 stoppedLog=true`로 종료했다. 23:09:09 사후 기록에서 worker·앱·streamer·test 컨테이너는 0이고 공유 컨테이너 7개는 유지됐으며 Redis는 unpaused였다.
+
+원시 근거는 로컬 `docs/week8/verification/runs/20261112-final-cache-check/`의 명령·로그·XML·Checkstyle·pre/postrun이고, Codex가 집계/skip·종료 기록을 대조했다. 위 표와 조건은 Git에 포함하는 검증 요약이며 로컬 자료 접근을 전제로 하지 않는다.
+
+### 현재 완료 범위와 남은 한계
+
+- 코드 정적 검토에서 §12/CQ16·§13/CQ17의 순서·TX/Redis 경계·상태 전이·캐시 수명·W6/O11 격리와 충돌하는 필수 수정은 발견하지 못했다. 길이만을 이유로 TX 판정을 중계 서비스로 나누거나 주석을 제거하지 않았다.
+- 대기실/등록 RateLimiter, DB 총량·중복 보호, 기발급 Redis/품절 Redis→local, 실제 Q9/Q10·R4/R5의 통제된 장애·수동 재개·소유 키 정리, 최신 전체 회귀까지 근거를 확보했다.
+- 비교 실험은 사용자 선택으로 중단했다. 성능 개선량·최대 TPS·운영 적정 C/TTL·다중 인스턴스/운영 캠페인·재시작/상태 유실 복구·epoch·자동 복구는 검증하지 않았다. 실제 장애 관찰을 임의의 늦은 명령/전역 종료 보장으로 확대하지 않는다.
+- 추가 제품 코드 수정은 없으며 최종 제출·commit·PR 게시 판단은 사용자 담당이다.
