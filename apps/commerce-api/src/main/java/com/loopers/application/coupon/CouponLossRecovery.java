@@ -66,6 +66,7 @@ public class CouponLossRecovery {
     private void recover(Long campaignId) {
         awaitDrained(campaignId);
         int restored = rebuildFromDb(campaignId);
+        couponReservation.prepare(campaignId);
         meterRegistry.counter(RECOVERED, "campaignId", String.valueOf(campaignId)).increment();
         couponReservation.open(campaignId);
         log.warn("DB 쿠폰으로 예약 집합을 다시 만들고 캠페인을 열었다: campaignId={}, restored={}", campaignId, restored);

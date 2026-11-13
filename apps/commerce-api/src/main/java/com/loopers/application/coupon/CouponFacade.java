@@ -48,7 +48,14 @@ public class CouponFacade {
 
     public CouponCampaign openCampaign(CampaignName name, DiscountAmount discountAmount, IssueQuota totalQuota,
                                        boolean active) {
-        return couponService.open(name, discountAmount, totalQuota, active);
+        CouponCampaign campaign = couponService.open(name, discountAmount, totalQuota, active);
+        try {
+            couponReservation.prepare(campaign.getId());
+        } catch (DataAccessException e) {
+            log.warn("캠페인의 예약 명단을 준비하지 못했다. 첫 접수가 유실로 보고 복구하며 준비한다: campaignId={}, cause={}",
+                campaign.getId(), NestedExceptionUtils.getMostSpecificCause(e).toString());
+        }
+        return campaign;
     }
 
     public IssueResult issue(Long campaignId, Long userId, Instant now) {

@@ -27,6 +27,8 @@ public interface CouponReservation {
 
     Result reserve(Long campaignId, Long userId, IssueQuota quota, int dbIssuedCount);
 
+    void prepare(Long campaignId);
+
     void cancel(Long campaignId, Long userId);
 
     boolean isReserved(Long campaignId, Long userId);

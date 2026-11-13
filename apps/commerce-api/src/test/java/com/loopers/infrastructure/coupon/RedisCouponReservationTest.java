@@ -6,6 +6,7 @@ import com.loopers.domain.coupon.CouponReservation.Result;
 import com.loopers.domain.coupon.IssueQuota;
 import com.loopers.utils.RedisCleanUp;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,6 +35,11 @@ class RedisCouponReservationTest {
         this.redisCleanUp = redisCleanUp;
     }
 
+    @BeforeEach
+    void setUp() {
+        reservation.prepare(CAMPAIGN);
+    }
+
     @AfterEach
     void tearDown() {
         redisCleanUp.truncateAll();
@@ -58,7 +64,7 @@ class RedisCouponReservationTest {
         reserve(102L);
 
         assertThat(reserve(101L)).isEqualTo(new Result.Existing(1));
-        assertThat(redis.opsForZSet().size(RedisCouponReservation.key(CAMPAIGN))).isEqualTo(2L);
+        assertThat(reservation.count(CAMPAIGN)).isEqualTo(2L);
     }
 
     @DisplayName("RSV-001: 한도만큼 차면 품절이고 집합은 늘지 않는다")
@@ -69,7 +75,7 @@ class RedisCouponReservationTest {
         reserve(103L);
 
         assertThat(reserve(104L)).isEqualTo(new Result.SoldOut());
-        assertThat(redis.opsForZSet().size(RedisCouponReservation.key(CAMPAIGN))).isEqualTo(3L);
+        assertThat(reservation.count(CAMPAIGN)).isEqualTo(3L);
     }
 
     @DisplayName("RSV-002: 가운데 예약이 취소돼도 다음 번호는 이미 나간 번호와 겹치지 않는다")
@@ -89,6 +95,16 @@ class RedisCouponReservationTest {
         reserve(101L);
 
         assertThat(reservation.reserve(CAMPAIGN, 102L, QUOTA, 2)).isEqualTo(new Result.Lost());
-        assertThat(redis.opsForZSet().size(RedisCouponReservation.key(CAMPAIGN))).isEqualTo(1L);
+        assertThat(reservation.count(CAMPAIGN)).isEqualTo(1L);
+    }
+
+    @DisplayName("FLT-008: 명단이 통째로 사라지면 DB 발급 수를 몰라도 유실이고 받지 않는다")
+    @Test
+    void missingListIsLostEvenWithoutKnownIssuedCount() {
+        reserve(101L);
+        redis.unlink(RedisCouponReservation.key(CAMPAIGN));
+
+        assertThat(reserve(102L)).isEqualTo(new Result.Lost());
+        assertThat(reservation.count(CAMPAIGN)).isZero();
     }
 }

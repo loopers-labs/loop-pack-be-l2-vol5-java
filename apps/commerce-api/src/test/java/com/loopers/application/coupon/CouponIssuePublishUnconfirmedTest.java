@@ -77,7 +77,7 @@ class CouponIssuePublishUnconfirmedTest {
                 .isInstanceOf(CoreException.class)
                 .hasFieldOrPropertyWithValue("errorType", ErrorType.COUPON_ADMISSION_UNAVAILABLE);
 
-            assertThat(redis.opsForZSet().size("coupon:campaign:" + campaignId + ":issued")).isEqualTo(1);
+            assertThat(redis.opsForZSet().count("coupon:campaign:" + campaignId + ":issued", 1, Double.MAX_VALUE)).isEqualTo(1);
             assertThat(couponFacade.issue(campaignId, 42L, NOW)).isEqualTo(new CouponFacade.IssueResult.Pending(1));
 
             kafkaTemplate.flush();

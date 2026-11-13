@@ -23,6 +23,8 @@ class RedisCouponReservation implements CouponReservation {
     private static final long SOLD_OUT = -1L;
     private static final long LOST = -2L;
     private static final long CLOSED = -3L;
+    private static final String READY = "__ready";
+    private static final int READY_SCORE = 0;
 
     @SuppressWarnings("rawtypes")
     private static final RedisScript<List> RESERVE =
@@ -65,7 +67,7 @@ class RedisCouponReservation implements CouponReservation {
     @Override
     public Result reserve(Long campaignId, Long userId, IssueQuota quota, int dbIssuedCount) {
         List<?> reply = redis.execute(RESERVE, List.of(key(campaignId), closedKey(campaignId)),
-            String.valueOf(userId), String.valueOf(quota.value()), String.valueOf(dbIssuedCount));
+            String.valueOf(userId), String.valueOf(quota.value()), String.valueOf(dbIssuedCount), READY);
         long code = ((Number) reply.get(0)).longValue();
         int issueNumber = ((Number) reply.get(1)).intValue();
         if (code == RESERVED) {
@@ -84,6 +86,11 @@ class RedisCouponReservation implements CouponReservation {
             return new Result.Closed();
         }
         throw new IllegalStateException("예약 Lua 가 모르는 값을 돌려줬습니다: " + reply);
+    }
+
+    @Override
+    public void prepare(Long campaignId) {
+        redis.opsForZSet().add(key(campaignId), READY, READY_SCORE);
     }
 
     @Override
@@ -123,7 +130,10 @@ class RedisCouponReservation implements CouponReservation {
     @Override
     public long count(Long campaignId) {
         Long size = redis.opsForZSet().zCard(key(campaignId));
-        return size == null ? 0 : size;
+        if (size == null || size == 0) {
+            return 0;
+        }
+        return redis.opsForZSet().score(key(campaignId), READY) == null ? size : size - 1;
     }
 
     @Override

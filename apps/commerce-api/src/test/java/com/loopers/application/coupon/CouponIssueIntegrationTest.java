@@ -180,7 +180,7 @@ class CouponIssueIntegrationTest {
             assertThatThrownBy(() -> couponFacade.issue(campaignId, 42L, NOW))
                 .isInstanceOf(CoreException.class)
                 .hasFieldOrPropertyWithValue("errorType", ErrorType.COUPON_ISSUE_BUSY);
-            assertThat(redis.opsForZSet().size("coupon:campaign:" + campaignId + ":issued")).isZero();
+            assertThat(redis.opsForZSet().count("coupon:campaign:" + campaignId + ":issued", 1, Double.MAX_VALUE)).isZero();
         } finally {
             couponPublishSlots.release();
             couponPublishSlots.release();
@@ -206,7 +206,7 @@ class CouponIssueIntegrationTest {
 
         Thread.sleep(600);
         assertThat(couponFacade.issue(campaignId, 42L, NOW)).isEqualTo(new IssueResult.Pending(1));
-        assertThat(redis.opsForZSet().size("coupon:campaign:" + campaignId + ":issued")).isEqualTo(1);
+        assertThat(redis.opsForZSet().count("coupon:campaign:" + campaignId + ":issued", 1, Double.MAX_VALUE)).isEqualTo(1);
     }
 
     @DisplayName("FLT-008: 예약 집합이 DB 발급 수보다 작으면 503 이고 접수하지 않는다")

@@ -5,6 +5,8 @@ import com.loopers.domain.coupon.CouponReservation;
 import com.loopers.domain.coupon.DiscountAmount;
 import com.loopers.domain.coupon.IssueQuota;
 import com.loopers.support.error.CoreException;
+import com.loopers.support.error.DomainError;
+import com.loopers.support.error.DomainException;
 import com.loopers.support.error.ErrorType;
 import com.loopers.testcontainers.KafkaTestContainersConfig;
 import com.loopers.utils.DatabaseCleanUp;
@@ -96,6 +98,30 @@ class CouponLossRecoveryTest {
         assertThatThrownBy(() -> couponFacade.issue(campaignId, 7L, NOW))
             .isInstanceOf(CoreException.class)
             .hasFieldOrPropertyWithValue("errorType", ErrorType.COUPON_ADMISSION_UNAVAILABLE);
+    }
+
+    @DisplayName("FLT-008: 대사가 하한을 갱신하기 전에 Redis 가 비어도 다음 접수는 유실로 보고 503 이며, 복구 뒤 앞서 202 를 받은 사람은 전원 쿠폰이 있고 한도를 넘겨 받지 않는다")
+    @Test
+    void refusesAfterLossEvenBeforeReconcileAndKeepsEveryAcceptedPromise() throws Exception {
+        Long campaignId = couponFacade.openCampaign(CampaignName.of("블프 쿠폰"), DiscountAmount.of(5_000),
+            IssueQuota.of(3), true).getId();
+        for (long userId = 1; userId <= 3; userId++) {
+            assertThat(couponFacade.issue(campaignId, userId, NOW))
+                .isEqualTo(new CouponFacade.IssueResult.Accepted((int) userId));
+        }
+
+        redisCleanUp.truncateAll();
+
+        assertThatThrownBy(() -> couponFacade.issue(campaignId, 4L, NOW))
+            .isInstanceOf(CoreException.class)
+            .hasFieldOrPropertyWithValue("errorType", ErrorType.COUPON_ADMISSION_UNAVAILABLE);
+        eventually(() -> !couponReservation.isClosed(campaignId) && couponCount(campaignId) == 3);
+
+        assertThat(jdbcTemplate.queryForList("select user_id from coupon where campaign_id = ? order by user_id",
+            Long.class, campaignId)).containsExactly(1L, 2L, 3L);
+        assertThatThrownBy(() -> couponFacade.issue(campaignId, 4L, NOW))
+            .isInstanceOf(DomainException.class)
+            .hasFieldOrPropertyWithValue("error", DomainError.COUPON_SOLD_OUT);
     }
 
     @DisplayName("FLT-008: 닫힌 캠페인은 예약 없이 503 이고, 열면 다시 접수한다")

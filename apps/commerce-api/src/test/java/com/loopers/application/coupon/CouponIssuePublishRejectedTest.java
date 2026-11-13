@@ -64,7 +64,7 @@ class CouponIssuePublishRejectedTest {
             .isInstanceOf(CoreException.class)
             .hasFieldOrPropertyWithValue("errorType", ErrorType.COUPON_ADMISSION_UNAVAILABLE);
 
-        assertThat(redis.opsForZSet().size("coupon:campaign:" + campaignId + ":issued")).isZero();
+        assertThat(redis.opsForZSet().count("coupon:campaign:" + campaignId + ":issued", 1, Double.MAX_VALUE)).isZero();
         assertThatThrownBy(() -> couponFacade.issue(campaignId, 42L, NOW)).isInstanceOf(CoreException.class);
     }
 }
