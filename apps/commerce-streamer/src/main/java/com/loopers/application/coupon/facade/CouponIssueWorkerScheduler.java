@@ -14,10 +14,16 @@ import org.springframework.stereotype.Component;
 public class CouponIssueWorkerScheduler {
 
     private final CouponIssueWorker worker;
+    private final CouponRedisRecovery recovery;
 
     /** fixedDelay 는 앞 회차가 끝난 뒤 다음을 잡아 같은 인스턴스의 회차끼리 겹치지 않는다 */
     @Scheduled(fixedDelayString = "${coupon-issue.worker.interval-ms}")
     public void run() {
         worker.runOnce();
+    }
+
+    @Scheduled(fixedDelayString = "${coupon-issue.recovery.interval-ms}")
+    public void recover() {
+        recovery.runOnce();
     }
 }

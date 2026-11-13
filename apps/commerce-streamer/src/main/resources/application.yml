@@ -66,6 +66,11 @@ coupon-issue:
     claim-min-idle: 30s # (연결 3s + 잠금 3s + Redis 1s) × (안쪽 재시도 + 1) + 여유 (D-131)
     recount-interval: 1s
     pending-confirm-after: 10s # api 접수 producer delivery-timeout(3s)보다 길게 (D-134)
+  # Redis 유실 대응 (D-174, D-175). 잠정값
+  recovery:
+    interval-ms: 1000
+    audit-interval: 60s
+    audit-batch-size: 1000
   resend-producer: # 확인 대기 재전송. api 접수 producer 와 같은 잠정값 (D-134)
     request-timeout: 2s
     delivery-timeout: 3s

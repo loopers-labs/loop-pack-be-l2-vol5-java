@@ -2,6 +2,7 @@ package com.loopers.infrastructure.coupon.persistence;
 
 import com.loopers.domain.coupon.repository.CouponIssueRequestStore;
 import com.loopers.domain.coupon.vo.CouponIssueRequested;
+import com.loopers.domain.coupon.vo.IssueRequestRow;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -37,7 +38,32 @@ public class JdbcCouponIssueRequestStore implements CouponIssueRequestStore {
 
     private static final String EXISTS = "SELECT COUNT(*) FROM coupon_issue_request WHERE campaign_id = :campaignId AND user_id = :userId";
 
+    private static final String ALL_ROWS = """
+        SELECT user_id, sequence, status, slot_no, coupon_id, promoted_at IS NOT NULL AS promoted
+        FROM coupon_issue_request WHERE campaign_id = :campaignId ORDER BY sequence
+        """;
+    private static final String USER_IDS_AFTER = """
+        SELECT id, user_id FROM coupon_issue_request WHERE campaign_id = :campaignId AND id > :afterId ORDER BY id LIMIT :limit
+        """;
+
     private final NamedParameterJdbcTemplate jdbc;
+
+    @Override
+    public List<IssueRequestRow> findAll(long campaignId) {
+        return jdbc.query(ALL_ROWS, Map.of("campaignId", campaignId), (rs, rowNum) -> new IssueRequestRow(
+            rs.getLong("user_id"),
+            rs.getLong("sequence"),
+            rs.getString("status"),
+            (Integer) rs.getObject("slot_no", Integer.class),
+            (Long) rs.getObject("coupon_id", Long.class),
+            rs.getBoolean("promoted")));
+    }
+
+    @Override
+    public List<long[]> findUserIdsAfter(long campaignId, long afterId, int limit) {
+        return jdbc.query(USER_IDS_AFTER, Map.of("campaignId", campaignId, "afterId", afterId, "limit", limit),
+            (rs, rowNum) -> new long[] {rs.getLong("id"), rs.getLong("user_id")});
+    }
 
     @Override
     public boolean exists(long campaignId, long userId) {

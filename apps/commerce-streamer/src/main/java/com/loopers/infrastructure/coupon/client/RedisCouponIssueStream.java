@@ -4,6 +4,7 @@ import com.loopers.config.CouponRedisConfig;
 import com.loopers.domain.coupon.gateway.CouponIssueStream;
 import com.loopers.domain.coupon.vo.IssueEntry;
 import com.loopers.domain.coupon.vo.PendingConfirm;
+import com.loopers.domain.coupon.vo.RebuildPlan;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.RedisSystemException;
@@ -12,6 +13,8 @@ import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.connection.stream.ReadOffset;
 import org.springframework.data.redis.connection.stream.StreamOffset;
 import org.springframework.data.redis.connection.stream.StreamReadOptions;
+import org.springframework.data.redis.core.RedisOperations;
+import org.springframework.data.redis.core.SessionCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.script.RedisScript;
@@ -135,6 +138,54 @@ public class RedisCouponIssueStream implements CouponIssueStream {
         String promoted = redis.execute(FAIL, keys.forFail(), String.valueOf(entry.userId()), GROUP, entry.entryId(),
             String.valueOf(entry.slotNo()), promote ? "1" : "0", entry.epoch());
         return promoted == null || promoted.isEmpty() ? null : Long.valueOf(promoted);
+    }
+
+    @Override
+    public boolean epochMissing(long campaignId) {
+        return !Boolean.TRUE.equals(redis.hasKey(CouponIssueKeys.of(campaignId).epoch()));
+    }
+
+    @Override
+    public void dropEpoch(long campaignId) {
+        redis.delete(CouponIssueKeys.of(campaignId).epoch());
+    }
+
+    @Override
+    public List<Long> missingUsers(long campaignId, List<Long> userIds) {
+        List<Object> fields = userIds.stream().<Object>map(String::valueOf).toList();
+        List<Object> values = redis.opsForHash().multiGet(CouponIssueKeys.of(campaignId).users(), fields);
+        List<Long> missing = new ArrayList<>();
+        for (int i = 0; i < userIds.size(); i++) {
+            if (values.get(i) == null) {
+                missing.add(userIds.get(i));
+            }
+        }
+        return missing;
+    }
+
+    /** 표식이 없는 동안이라 접수 · worker 가 이 키들을 쓰지 않는다. 그래서 원자적이지 않아도 된다 */
+    @Override
+    public void rebuild(long campaignId, RebuildPlan plan) {
+        CouponIssueKeys keys = CouponIssueKeys.of(campaignId);
+        redis.delete(keys.forRebuild());
+        redis.executePipelined(new SessionCallback<Object>() {
+            @Override
+            @SuppressWarnings("unchecked")
+            public Object execute(RedisOperations operations) {
+                RedisOperations<String, String> ops = operations;
+                ops.opsForValue().set(keys.sequence(), String.valueOf(plan.maxSequence()));
+                plan.users().forEach((userId, stored) -> ops.opsForHash().put(keys.users(), String.valueOf(userId), stored));
+                plan.queue().forEach(queued -> ops.opsForStream().add(keys.stream(), Map.of(
+                    "userId", String.valueOf(queued.userId()), "sequence", String.valueOf(queued.sequence()),
+                    "slotNo", String.valueOf(queued.slotNo()), "epoch", "rebuilt", "unclassified", "0", "transient", "0")));
+                plan.reserve().forEach((userId, sequence) -> ops.opsForZSet().add(keys.reserve(), String.valueOf(userId), sequence));
+                ops.opsForValue().set(keys.promoted(), String.valueOf(plan.promotedCount()));
+                if (plan.soldOut()) {
+                    ops.opsForValue().set(keys.soldOut(), "1");
+                }
+                return null;
+            }
+        });
     }
 
     @Override

@@ -7,7 +7,7 @@ import java.util.List;
  * 한 스크립트가 여러 키를 다루므로 해시 태그로 캠페인 id 를 묶는다
  */
 record CouponIssueKeys(String epoch, String meta, String users, String stream, String delayed,
-                       String reserve, String promoted, String soldOut, String pending) {
+                       String reserve, String promoted, String soldOut, String pending, String sequence) {
 
     static CouponIssueKeys of(long campaignId) {
         String prefix = "coupon-issue:{" + campaignId + "}:";
@@ -20,12 +20,18 @@ record CouponIssueKeys(String epoch, String meta, String users, String stream, S
             prefix + "reserve",
             prefix + "promoted",
             prefix + "sold-out",
-            prefix + "pending-confirm"
+            prefix + "pending-confirm",
+            prefix + "sequence"
         );
     }
 
     List<String> forConfirm() {
         return List.of(epoch, meta, users, pending, stream, reserve, soldOut, promoted);
+    }
+
+    /** 재구성 때 지우고 다시 만드는 키. 메타 · 표식은 api 의 열기 명령이 쓴다 (D-174) */
+    List<String> forRebuild() {
+        return List.of(sequence, users, stream, delayed, reserve, promoted, soldOut, pending);
     }
 
     List<String> forFail() {

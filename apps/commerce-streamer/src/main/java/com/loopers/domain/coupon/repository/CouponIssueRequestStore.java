@@ -1,6 +1,7 @@
 package com.loopers.domain.coupon.repository;
 
 import com.loopers.domain.coupon.vo.CouponIssueRequested;
+import com.loopers.domain.coupon.vo.IssueRequestRow;
 
 import java.util.List;
 
@@ -15,4 +16,10 @@ public interface CouponIssueRequestStore {
 
     /** DB 접수 기록(약속의 원본)이 있는가 (D-134) */
     boolean exists(long campaignId, long userId);
+
+    /** 재구성용. 순번 순 (D-174) */
+    List<IssueRequestRow> findAll(long campaignId);
+
+    /** 대사용. id 가 afterId 보다 큰 접수의 (id, userId) 를 id 순으로 (D-175) */
+    List<long[]> findUserIdsAfter(long campaignId, long afterId, int limit);
 }

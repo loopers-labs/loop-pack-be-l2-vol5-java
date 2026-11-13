@@ -2,6 +2,7 @@ package com.loopers.domain.coupon.gateway;
 
 import com.loopers.domain.coupon.vo.IssueEntry;
 import com.loopers.domain.coupon.vo.PendingConfirm;
+import com.loopers.domain.coupon.vo.RebuildPlan;
 
 import java.time.Duration;
 import java.util.List;
@@ -40,6 +41,18 @@ public interface CouponIssueStream {
      * @return 승격한 사용자 id, 없으면 null
      */
     Long fail(IssueEntry entry, boolean promote);
+
+    /** 표식이 없는가(상태를 잃었거나 아직 열지 않음) (D-139) */
+    boolean epochMissing(long campaignId);
+
+    /** 표식을 지워 닫는다. 접수 · worker 가 멈추고 재구성이 시작된다 (D-175) */
+    void dropEpoch(long campaignId);
+
+    /** 주어진 사용자 중 사용자 기록이 없는 사람 (D-175) */
+    List<Long> missingUsers(long campaignId, List<Long> userIds);
+
+    /** 메타 · 표식을 뺀 접수 상태를 지우고 다시 만든다. 다시 열기는 api 의 열기 명령이 한다 (D-174) */
+    void rebuild(long campaignId, RebuildPlan plan);
 
     /** 발급 수가 한도에 닿으면 세운다. 예비는 SOLD_OUT 으로 읽히고 승격 · 새 접수가 멈춘다 (D-125, D-142) */
     void markSoldOut(long campaignId);
