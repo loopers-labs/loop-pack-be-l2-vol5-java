@@ -22,10 +22,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -245,6 +248,28 @@ class CouponIssueIntegrationTest {
         assertThatThrownBy(() -> couponFacade.issue(999L, 42L, NOW))
             .isInstanceOf(DomainException.class)
             .hasFieldOrPropertyWithValue("error", DomainError.COUPON_CAMPAIGN_NOT_FOUND);
+    }
+
+    private void pauseRedis(Duration duration) {
+        redis.execute((RedisCallback<Object>) connection -> connection.execute("CLIENT",
+            "PAUSE".getBytes(StandardCharsets.UTF_8), String.valueOf(duration.toMillis()).getBytes(StandardCharsets.UTF_8)));
+    }
+
+    @DisplayName("FLT-001: Redis 가 상한 안에 답하지 않으면 접수하지 않고 503 이다. 명령이 늦게 적용돼 예약이 남았으면 재요청은 같은 번호다")
+    @Test
+    void refusesWhenRedisTimesOut() throws Exception {
+        Long campaignId = openCampaign(5, true);
+        pauseRedis(Duration.ofMillis(600));
+
+        assertThatThrownBy(() -> couponFacade.issue(campaignId, 42L, NOW))
+            .isInstanceOf(CoreException.class)
+            .hasFieldOrPropertyWithValue("errorType", ErrorType.COUPON_ADMISSION_UNAVAILABLE);
+
+        Thread.sleep(600);
+        assertThat(couponFacade.issue(campaignId, 42L, NOW)).satisfiesAnyOf(
+            result -> assertThat(result).isEqualTo(new IssueResult.Accepted(1)),
+            result -> assertThat(result).isEqualTo(new IssueResult.Pending(1)));
+        assertThat(redis.opsForZSet().size("coupon:campaign:" + campaignId + ":issued")).isEqualTo(1);
     }
 
     @DisplayName("FLT-008: 예약 집합이 DB 발급 수보다 작으면 503 이고 접수하지 않는다")

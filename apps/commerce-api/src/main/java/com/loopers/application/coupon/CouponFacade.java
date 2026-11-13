@@ -14,11 +14,14 @@ import com.loopers.support.error.DomainError;
 import com.loopers.support.error.DomainException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.util.List;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class CouponFacade {
@@ -79,6 +82,10 @@ public class CouponFacade {
                 publish(campaignId, userId, issueNumber, now);
             }
             return reserved;
+        } catch (DataAccessException e) {
+            log.warn("Redis 가 답하지 않아 접수하지 않는다. 예약이 늦게 적용됐으면 재요청이 같은 번호를 받고 대사가 메운다: campaignId={}, userId={}",
+                campaignId, userId, e);
+            throw new CoreException(ErrorType.COUPON_ADMISSION_UNAVAILABLE);
         } finally {
             couponPublishSlots.release();
         }
