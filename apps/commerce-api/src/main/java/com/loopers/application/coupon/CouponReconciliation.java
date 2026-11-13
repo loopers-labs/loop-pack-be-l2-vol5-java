@@ -31,6 +31,7 @@ public class CouponReconciliation {
 
     static final String REPUBLISHED = "coupon.issue.republished";
     static final String BACKLOG = "coupon.issue.backlog";
+    static final String SKIPPED = "coupon.issue.reconcile.skipped";
     private static final int PAGE = 1_000;
 
     private final CouponReservation couponReservation;
@@ -60,6 +61,8 @@ public class CouponReconciliation {
 
     public int reconcile(Long campaignId) {
         if (!backlog.isDrained()) {
+            meterRegistry.counter(SKIPPED, "campaignId", String.valueOf(campaignId)).increment();
+            log.warn("워커가 밀려 있어 이번 주기 대사를 건너뛴다. 이 사이의 누락은 큐가 빈 뒤에 잡힌다: campaignId={}", campaignId);
             refreshCounts(campaignId);
             return 0;
         }

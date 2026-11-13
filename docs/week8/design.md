@@ -152,7 +152,7 @@ UPDATE coupon_campaign SET issued_count = issued_count + N WHERE id = ? AND issu
 | 읽기 | `ZRANGEBYSCORE ... LIMIT offset 1000` 으로 두 선 사이를 같은 구간 안에서 offset 으로 넘긴다. 마지막 score 를 커서로 쓰면 같은 번호를 가진 member 가 페이지 경계에서 빠진다. 읽기 커서는 DB 에 있는 번호가 이어진 데까지만 전진한다 |
 | 확인된 것 | 그 사용자가 그 캠페인의 쿠폰을 가졌으면 확인된 것이다. 번호로 보지 않는다. 복구 창에서 번호가 겹치면 남의 쿠폰이 내 번호를 갖고 있어 번호 기준은 잃은 메시지를 확인된 것으로 잘못 본다. 페이지의 사용자들을 `IN` 한 번으로 묻는다 |
 | 다시 보낸 메시지 | `reservedAt` 은 대사 시각이다. 그 쿠폰의 `issued_at` 이 그만큼 늦다 |
-| 지표 | `coupon.issue.backlog`(`ZCARD − issued_count`), `coupon.issue.republished` |
+| 지표 | `coupon.issue.backlog`(`ZCARD − issued_count`), `coupon.issue.republished`, `coupon.issue.reconcile.skipped`(워커가 밀려 건너뛴 주기 수. 연속으로 오르면 유실 감지가 멈춰 있다는 뜻이라 알람 대상이다) |
 
 대사는 쿠폰을 만들지 않고 메시지를 다시 보낸다. 두 선은 인스턴스 메모리라 인스턴스가 여럿이면 같은 번호를 두 번 보낼 수 있고 `WRK-004` 가 흡수한다. 뒤집을 조건: 재발행 지표가 인스턴스 수에 비례해 오를 때. 그때는 두 선을 Redis 에 두고 한 인스턴스만 돌린다. 정상 부하에서 후보가 0 이 아니면 "한 주기 전" 을 "두 주기 전" 으로 늘린다.
 
