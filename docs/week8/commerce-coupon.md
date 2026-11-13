@@ -1454,10 +1454,11 @@ PG 취소 API 연동(늦은 성공의 자동 환불), 다중 서버 선점, 실�
 - **확인 모드 `--coupon.admission.check`(D140):** 아무 값도 바꾸지 않고 다음을 보고한다.
   1. 상태: open, closed_reason, closed_at, 닫힌 뒤 경과 시간
   2. 시간 기준: 경과 ≥ 실행 최대 시간(설정값 `commerce.coupon.admission.max-execution`, 기본 10초 = 잠금 대기 3초 + 연결 대기 3초 + 여유) → ✓/✗
-  3. DB 기준: `information_schema.innodb_trx` JOIN `performance_schema.data_locks`로 `coupon_campaign`·`issued_coupon` 잠금을 쥔 열린 트랜잭션 수가 0 → ✓/✗. 조회 실패(권한 포함)는 ✗이고 열지 말라고 보고한다
+  3. DB 기준: `performance_schema.data_locks`에서 `coupon_campaign`·`issued_coupon` 잠금을 쥔 트랜잭션 수가 0 → ✓/✗(잠금은 트랜잭션이 열려 있는 동안만 남는다). `information_schema.innodb_trx`와 JOIN하면 잠금을 쥔 트랜잭션이 innodb_trx에 보이지 않는 경우가 있어(테스트에서 확인) 쓰지 않는다. 조회 실패(권한 포함)는 ✗이고 열지 말라고 보고한다
   4. 대조: 캠페인별 issued_count = 실제 issued_coupon 수 → ✓/✗
   5. 참고: 현재 epoch 키의 token 수
   6. 결론: 2·3·4가 모두 ✓일 때만 "열어도 됨"
+- 운영 DB 계정에 PROCESS와 performance_schema SELECT 권한이 필요하다. 없으면 확인 모드는 DB 기준을 ✗(조회 실패)로 보고하고 "열지 말 것"이라고 결론낸다.
 - **열기 모드 `--coupon.admission.open`:** epoch +1, open = true, closed_reason·closed_at을 비운다. 확인 결과를 강제하지 않는다(사람이 판단). 로그에 이전·새 epoch를 남긴다.
 
 ### 결정 기록
