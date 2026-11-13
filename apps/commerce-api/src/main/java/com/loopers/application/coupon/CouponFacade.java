@@ -102,4 +102,10 @@ public class CouponFacade {
     public List<Coupon> findMine(Long userId) {
         return couponService.findOwnedBy(userId);
     }
+
+    public void startRecovery(Long campaignId) {
+        couponService.findCampaign(campaignId)
+            .orElseThrow(() -> new DomainException(DomainError.COUPON_CAMPAIGN_NOT_FOUND));
+        couponLossRecovery.start(campaignId);
+    }
 }
