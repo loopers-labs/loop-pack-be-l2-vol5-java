@@ -212,33 +212,48 @@ return 'OK'
 - 신규 발급은 둘 다 열려 있을 때만 Lua를 호출한다. 로컬 스위치가 닫혀 있으면 `CLOSED`와 같이 처리한다.
 
 재개 절차 (관리자 열기 API):
-1. 해당 캠페인의 진행 중 발급 실행이 0인지 확인 (애플리케이션의 진행 중 실행 수). 0이 아니면 거절.
+1. 이 인스턴스의 진행 중 발급 실행이 0인지 확인한다. 0이 아니면 409 `CONFLICT`로 거절하고 닫힌 상태를 유지한다.
 2. DB만으로 winners를 다시 만든다: 쿠폰이 있는 userId → couponId, 쿠폰 없는 ticket의 userId → TICKETED. Redis에만 있던 PENDING은 지운다(약속하지 않은 당첨). 그 자리는 남은 수량으로 돌아간다.
 3. running에서 이 인스턴스가 만든 token만 SREM (애플리케이션이 기록해 둔 token 목록 기준).
 4. meta `quota`·`active`를 DB 값으로 맞추고 `open=1`, 로컬 스위치 열기.
 
+- 진행 중 실행 수와 자기 token은 `CouponIssueExecutions`(메모리)가 센다. token은 Lua 호출 **전에** 기록하고, Redis에 들어가지 않은 것이 확실하거나(자리 없음·판정 결과) finish가 성공했을 때만 지운다. 응답이 불확실한 token은 남겨 두었다가 3단계에서 지운다.
+- 다른 인스턴스의 실행·token은 알지 못한다. 단일 로컬 인스턴스의 통제된 재개만 보장한다.
 - token TTL을 두지 않는다. 시간 경과로 자리가 반환되지 않는다.
 - 종료가 불명확하면 닫힌 상태를 유지한다.
 
 ## 9. 관리자 기능 (`/api-admin/v1/coupon-campaigns`)
 
-| 기능 | 동작 |
-|---|---|
-| 준비 | DB 캠페인 생성 + Redis meta(active=1, open=0, quota) |
-| 열기 | 8장 재개 절차 |
-| 종료 | Redis `active=0` 먼저, 그다음 DB active=false |
-| 마감 보정 | winners를 HSCAN해 PENDING·TICKETED만: DB에 쿠폰이 있으면 couponId 기록, 없으면 `acquire.lua`로 자리를 받아 발급 TX → finish. `FULL`이면 다음 호출로 미룸 |
+| API | 기능 | 동작 |
+|---|---|---|
+| `POST /` | 준비 | DB 캠페인 생성 + Redis meta(active=1, open=0, quota). 열지 않는다 |
+| `POST /{id}/open` | 열기 | 8장 재개 절차. 처음 열 때와 장애 뒤 재개가 같은 절차다 |
+| `POST /{id}/close` | 종료 | Redis `active=0` 먼저, 그다음 DB active=false. Redis 실패면 DB를 바꾸지 않고 503 |
+| `POST /{id}/reconcile` | 마감 보정 | winners를 HSCAN해 PENDING·TICKETED만: DB에 쿠폰이 있으면 couponId만 기록(`recordIssued`, 자리 없음), 없으면 `acquire.lua`로 자리를 받아 발급 TX → finish. `FULL`이면 멈추고 남은 수를 돌려준다. 응답 `{issued, recorded, remaining}` |
+
+- 관리 작업 중 Redis를 바꾸지 못하면 로컬 스위치를 닫고 503으로 알린다. 관리자는 확인 뒤 다시 시도한다.
 
 ## 10. 테스트 시나리오
 
-테스트 이름은 태스크 단계에서 확정한다. 실제 MySQL·Redis Testcontainers를 쓰고, 만든 키·행만 정리한다.
+실제 MySQL·Redis Testcontainers를 쓰고, Redis는 만든 캠페인 키만 정리한다.
+
+| 테스트 클래스 | 다루는 장면 |
+|---|---|
+| `CouponCampaignTest` | 한도 1 미만 캠페인 거절 |
+| `CouponIssueWriterTest` | DB 발급 TX: 저장·rollback·중복·8명이 5장 경쟁 (Redis 없이, DB handler 직접 동시 호출) |
+| `CouponIssueRedisAdmissionTest` | Lua 판정·자리·결과 기록·자기 token 반환·TTL 없음 |
+| `CouponIssueFacadeTest` | 정상·재요청·같은 사용자 동시 요청·DB 실패 시 202·품절 |
+| `CouponApiE2ETest` | 201·본인 목록만 노출·409 품절·헤더 누락 400 |
+| `AdminCouponCampaignFacadeTest` | 재구성·종료·마감 보정 |
+| `CouponAdmissionTest` | C=3 수용 실험·대기 시간 초과 |
+| `CouponRedisFailureTest` | 실제 Redis pause·PONG 뒤에도 닫힘·반환 실패 복구·202 뒤 상태 유실 |
 
 | 과제 장면 | 기대 |
 |---|---|
 | 정상 발급·본인 목록 | 201, 쿠폰 1·issued_count 1, 본인 목록에 같은 ID, 다른 사용자 목록에 없음 |
 | 같은 사용자 재요청 | 200 같은 couponId, DB 조회·쓰기 0, issued_count 그대로 |
 | 같은 사용자 동시 요청 | 쿠폰 1, 나머지 응답은 409 처리 중 또는 200 |
-| 마지막 수량 경쟁 (quota 5, 8명, C 충분) | 201 5·409 품절 3, 쿠폰 5·issued_count 5 |
+| 마지막 수량 경쟁 (quota 5, 8명, DB handler 직접) | 발급 5·한도 소진 3, 쿠폰 5·issued_count 5. Redis 판정 단계는 별도로 quota 5에 20명 → 당첨 5·품절 15 |
 | insert 실패 | 쿠폰·issued_count rollback, token 반환, ticket 기록 후 202·TICKETED |
 | commit 뒤 응답 유실 | 재요청 200 같은 couponId, 추가 발급 0 |
 | C=3 수용 실험 | barrier로 3 실행 유지(running 3) → 4번째 요청은 자리를 기다리며 DB 미진입·쿠폰 없음 → 하나를 진행시켜 DB 발급·종료·token 반환 확인 → 4번째가 그 자리를 얻어 201·쿠폰 생성 → 나머지 종료 후 쿠폰 4·issued_count 4·running 0. 과제의 "4번째 429"와 달리 당첨자는 거절하지 않고 기다린다 |
