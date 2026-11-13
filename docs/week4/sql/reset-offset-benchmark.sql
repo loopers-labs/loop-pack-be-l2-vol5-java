@@ -5,7 +5,9 @@ DROP DATABASE IF EXISTS loopers_offset_bench;
 CREATE DATABASE loopers_offset_bench CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 USE loopers_offset_bench;
 create table brands (created_at datetime(6) not null, deleted_at datetime(6), id bigint not null auto_increment, updated_at datetime(6) not null, name varchar(50) not null, primary key (id)) engine=InnoDB;
+create table coupon_campaigns (active bit not null, created_at datetime(6) not null, deleted_at datetime(6), id bigint not null auto_increment, issued_count bigint not null, total_quota bigint not null, updated_at datetime(6) not null, name varchar(100) not null, benefit_description varchar(255) not null, primary key (id)) engine=InnoDB;
 create table example (created_at datetime(6) not null, deleted_at datetime(6), id bigint not null auto_increment, updated_at datetime(6) not null, description varchar(255), name varchar(255), primary key (id)) engine=InnoDB;
+create table issued_coupons (campaign_id bigint not null, created_at datetime(6) not null, deleted_at datetime(6), id bigint not null auto_increment, issued_at datetime(6) not null, updated_at datetime(6) not null, user_id bigint not null, benefit_description varchar(255) not null, primary key (id)) engine=InnoDB;
 create table order_items (item_position integer not null, quantity integer not null, line_amount bigint not null, order_id bigint not null, product_id bigint not null, unit_price bigint not null, primary key (item_position, order_id)) engine=InnoDB;
 create table order_outbox (event_id varchar(160) not null, order_id bigint not null, event_type varchar(80) not null, schema_version integer not null, message_key varchar(80) not null, destination_topic varchar(249) not null, payload longtext not null, status varchar(16) not null, attempt_count integer not null, cycle_attempt_count integer not null, next_attempt_at datetime(6), last_error varchar(500), created_at datetime(6) not null, published_at datetime(6), primary key (event_id), key idx_order_outbox_pending (status, next_attempt_at, created_at)) engine=InnoDB;
 create table orders (confirmed_at datetime(6), created_at datetime(6) not null, deleted_at datetime(6), id bigint not null auto_increment, paid_amount bigint, total_amount bigint not null, updated_at datetime(6) not null, user_id bigint not null, payment_result varchar(255), status enum ('CONFIRMED','DRAFT','PAYMENT_FAILED','PAYMENT_PENDING') not null, primary key (id)) engine=InnoDB;
@@ -23,4 +25,6 @@ alter table payments add constraint uk_payments_transaction unique (transaction_
 alter table point_balances add constraint UKf73gobj58s2jkt8h5diqs76lx unique (user_id);
 alter table product_likes add constraint UK712hmqku6f5l2q28jql7vj0f5 unique (user_id, product_id);
 alter table stock_reservations add constraint uk_reservations_order_product unique (order_id, product_id);
+alter table issued_coupons add constraint uk_coupon_campaign_user unique (campaign_id, user_id);
+create index idx_coupon_user_issued_id on issued_coupons (user_id, issued_at, id);
 alter table order_items add constraint FKbioxgbv59vetrxe0ejfubep1w foreign key (order_id) references orders (id);
