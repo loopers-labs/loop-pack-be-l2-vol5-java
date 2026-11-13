@@ -1,0 +1,134 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "docker/monitoring-compose.yml의 Prometheus",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "title": "8주차 쿠폰 발급 수용량 C",
+  "uid": "week8-coupon-admission",
+  "editable": true,
+  "schemaVersion": 39,
+  "time": { "from": "now-30m", "to": "now" },
+  "refresh": "5s",
+  "tags": ["loopers", "week8"],
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "DB 커넥션 풀 (mysql-main-pool): 사용 / 대기 / 최대",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 9 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "min": 0, "custom": { "lineWidth": 2, "fillOpacity": 0 } },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "최대" },
+            "properties": [
+              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [8, 6] } },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#898781" } },
+              { "id": "custom.lineWidth", "value": 1 }
+            ]
+          },
+          { "matcher": { "id": "byName", "options": "사용(active)" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#2a78d6" } }] },
+          { "matcher": { "id": "byName", "options": "대기(pending)" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#eb6834" } }] }
+        ]
+      },
+      "targets": [
+        { "refId": "A", "expr": "max(hikaricp_connections_active{pool=\"mysql-main-pool\"})", "legendFormat": "사용(active)" },
+        { "refId": "B", "expr": "max(hikaricp_connections_pending{pool=\"mysql-main-pool\"})", "legendFormat": "대기(pending)" },
+        { "refId": "C", "expr": "max(hikaricp_connections_max{pool=\"mysql-main-pool\"})", "legendFormat": "최대" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "커넥션 획득 시간: 평균 / 최대 (ms)",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 9 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "ms", "min": 0, "custom": { "lineWidth": 2 } }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "1000 * sum(rate(hikaricp_connections_acquire_seconds_sum{pool=\"mysql-main-pool\"}[15s])) / sum(rate(hikaricp_connections_acquire_seconds_count{pool=\"mysql-main-pool\"}[15s]))",
+          "legendFormat": "평균"
+        },
+        { "refId": "B", "expr": "1000 * max(hikaricp_connections_acquire_seconds_max{pool=\"mysql-main-pool\"})", "legendFormat": "최대(최근 구간)" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "쿠폰 발급 요청 수 (상태별, 건/초)",
+      "gridPos": { "x": 0, "y": 9, "w": 12, "h": 9 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "min": 0, "custom": { "lineWidth": 2 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "201" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#2a78d6" } }] },
+          { "matcher": { "id": "byName", "options": "429" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#eb6834" } }] },
+          { "matcher": { "id": "byName", "options": "200" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#1baf7a" } }] },
+          { "matcher": { "id": "byName", "options": "500" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#eda100" } }] }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (status) (rate(http_server_requests_seconds_count{uri=\"/api/v1/coupon-campaigns/{campaignId}/issues\"}[15s]))",
+          "legendFormat": "{{status}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "다른 기능(GET /api/v1/coupons) 응답 시간 p50 / p95 (ms)",
+      "gridPos": { "x": 12, "y": 9, "w": 12, "h": 9 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "ms", "min": 0, "custom": { "lineWidth": 2 } }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "1000 * histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{uri=\"/api/v1/coupons\"}[15s])))",
+          "legendFormat": "p95"
+        },
+        {
+          "refId": "B",
+          "expr": "1000 * histogram_quantile(0.5, sum by (le) (rate(http_server_requests_seconds_bucket{uri=\"/api/v1/coupons\"}[15s])))",
+          "legendFormat": "p50"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "쿠폰 발급 응답 시간 p95 (ms, 상태 무관)",
+      "gridPos": { "x": 0, "y": 18, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "ms", "min": 0, "custom": { "lineWidth": 2 } }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "1000 * histogram_quantile(0.95, sum by (le, status) (rate(http_server_requests_seconds_bucket{uri=\"/api/v1/coupon-campaigns/{campaignId}/issues\"}[15s])))",
+          "legendFormat": "{{status}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Tomcat 바쁜 스레드",
+      "gridPos": { "x": 12, "y": 18, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0, "custom": { "lineWidth": 2 } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "max(tomcat_threads_busy_threads)", "legendFormat": "busy" },
+        { "refId": "B", "expr": "max(tomcat_threads_config_max_threads)", "legendFormat": "max" }
+      ]
+    }
+  ]
+}

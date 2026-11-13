@@ -1,0 +1,28 @@
+
+
+  █ TOTAL RESULTS 
+
+    CUSTOM
+    issue_201......................: 2084   34.167877/s
+    issue_201_duration.............: avg=1.16s    p(50)=1.13s   p(95)=1.39s   p(99)=1.72s    max=2.54s    count=2084
+    issue_duration.................: avg=1.16s    p(50)=1.13s   p(95)=1.39s   p(99)=1.72s    max=2.54s    count=2084
+    list_duration..................: avg=21.69ms  p(50)=15.28ms p(95)=33.75ms p(99)=125.86ms max=711.59ms count=1201
+
+    HTTP
+    http_req_duration..............: avg=744.22ms p(50)=1.08s   p(95)=1.29s   p(99)=1.63s    max=2.54s    count=3285
+      { expected_response:true }...: avg=744.22ms p(50)=1.08s   p(95)=1.29s   p(99)=1.63s    max=2.54s    count=3285
+    http_req_failed................: 0.00%  0 out of 3285
+    http_reqs......................: 3285   53.858673/s
+
+    EXECUTION
+    iteration_duration.............: avg=744.44ms p(50)=1.08s   p(95)=1.29s   p(99)=1.63s    max=2.55s    count=3285
+    iterations.....................: 3285   53.858673/s
+    vus............................: 1      min=1         max=42
+    vus_max........................: 60     min=60        max=60
+
+    NETWORK
+    data_received..................: 964 kB 16 kB/s
+    data_sent......................: 421 kB 6.9 kB/s
+
+
+

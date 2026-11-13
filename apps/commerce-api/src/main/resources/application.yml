@@ -31,6 +31,14 @@ cache:
     command-timeout: 50ms   # 명령 하나
     connect-timeout: 1s     # 연결 수립(시작·재연결 때만)
 
+# 쿠폰 발급 동시 처리 자리(docs/week8/decisions.md D-14, D-16) — HTTP 입력으로 받지 않는다
+coupon:
+  admission:
+    capacity: 3             # 동시에 DB 발급 경로에 들어가는 신규 발급 실행 수 C
+    redis:                  # 수용 전용 연결(AdmissionRedisConfig) — master에만 붙는다
+      command-timeout: 500ms
+      connect-timeout: 1s
+
 # 로컬 테스트 PG (docs/week5/pg-contract.md, recovery.md 2번) — 주소는 설정으로 고정하고 고객 입력을 받지 않는다
 pg:
   base-url: http://127.0.0.1:18080

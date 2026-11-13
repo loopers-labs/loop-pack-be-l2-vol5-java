@@ -20,7 +20,7 @@ interfaces/api  → application (Facade/Info) → domain (Model/Service/Reposito
 ## 응답·에러 컨벤션
 
 - 모든 API 응답은 `ApiResponse<T>` 래퍼 (`meta.result`: `SUCCESS`/`FAIL`, 실패 시 `data`는 항상 `null`).
-- 예외는 `CoreException` + `ErrorType`(`INTERNAL_ERROR` 500 / `BAD_REQUEST` 400 / `NOT_FOUND` 404 / `CONFLICT` 409) 네 가지로만 매핑한다. `errorCode`는 별도 업무 코드가 아니라 HTTP reason phrase.
+- 예외는 `CoreException` + `ErrorType`(`INTERNAL_ERROR` 500 / `BAD_REQUEST` 400 / `NOT_FOUND` 404 / `CONFLICT` 409 / `TOO_MANY_REQUESTS` 429 / `SERVICE_UNAVAILABLE` 503) 여섯 가지로만 매핑한다. 429·503은 8주차 수용량 제어(처리 자리 없음 / 수용 상태 확인 불가)에서 추가했다(`docs/week8/decisions.md` D-9). `errorCode`는 별도 업무 코드가 아니라 HTTP reason phrase.
 - 400 vs 409 기준: **요청자가 입력을 바꾸면 해결되는가** → 그렇다면 400, 리소스 상태를 먼저 바꿔야 하면 409.
 - 인가 실패(소유자 불일치)와 리소스 부재는 도메인 레벨에서는 구분해서 던지고, 변환 계층에서만 동일 응답(404)으로 합친다 — 응답 차이로 정보가 노출되지 않게.
 
