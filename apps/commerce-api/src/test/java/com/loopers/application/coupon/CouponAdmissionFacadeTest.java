@@ -9,13 +9,15 @@ import com.loopers.config.coupon.CouponAdmissionProperties;
 import com.loopers.config.coupon.CouponAdmissionRedisConfig;
 import com.loopers.domain.coupon.Coupon;
 import com.loopers.domain.coupon.CouponAdmissionGate;
-import com.loopers.domain.coupon.CouponAdmissionQueue;
+import com.loopers.domain.coupon.CouponAdmissionGate.CloseReason;
+import com.loopers.domain.coupon.CouponAdmissionGate.Closure;
 import com.loopers.domain.coupon.CouponCampaign;
 import com.loopers.domain.coupon.CouponCampaignRepository;
 import com.loopers.domain.coupon.CouponIssueCircuit;
 import com.loopers.domain.coupon.CouponIssueService;
 import com.loopers.domain.user.User;
 import com.loopers.infrastructure.coupon.CouponJpaRepository;
+import com.loopers.infrastructure.coupon.RedisCouponAdmissionQueue;
 import com.loopers.infrastructure.user.UserJpaRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
@@ -81,6 +83,12 @@ class CouponAdmissionFacadeTest {
         ResettableCouponIssueCircuit resettableCouponIssueCircuit(CouponAdmissionProperties properties, Clock clock) {
             return new ResettableCouponIssueCircuit(properties, clock);
         }
+
+        @Primary
+        @Bean
+        FaultInjectingCouponAdmissionQueue faultInjectingCouponAdmissionQueue(RedisCouponAdmissionQueue delegate) {
+            return new FaultInjectingCouponAdmissionQueue(delegate);
+        }
     }
 
     @MockitoSpyBean
@@ -88,7 +96,7 @@ class CouponAdmissionFacadeTest {
 
     private final CouponAdmissionFacade facade;
     private final CouponAdmissionGate gate;
-    private final CouponAdmissionQueue queue;
+    private final FaultInjectingCouponAdmissionQueue queue;
     private final ResettableCouponIssueCircuit circuit;
     private final CouponCampaignRepository couponCampaignRepository;
     private final CouponJpaRepository couponJpaRepository;
@@ -105,7 +113,7 @@ class CouponAdmissionFacadeTest {
     CouponAdmissionFacadeTest(
         CouponAdmissionFacade facade,
         CouponAdmissionGate gate,
-        CouponAdmissionQueue queue,
+        FaultInjectingCouponAdmissionQueue queue,
         ResettableCouponIssueCircuit circuit,
         CouponCampaignRepository couponCampaignRepository,
         CouponJpaRepository couponJpaRepository,
@@ -139,6 +147,7 @@ class CouponAdmissionFacadeTest {
     void tearDown() {
         // @TestConfiguration 을 둔 뒤로 spy 의 자동 reset 이 동작하지 않아 stub·호출 기록이 다음 테스트로 넘어갔다. 명시적으로 되돌린다
         Mockito.reset(couponIssueService);
+        queue.reset();
         gate.close(campaignId);
         databaseCleanUp.truncateAllTables();
         redisCleanUp.truncateAll();
@@ -536,6 +545,122 @@ class CouponAdmissionFacadeTest {
             assertThat(permitCount()).isZero();
             users.forEach(userId -> assertThat(queue.isAdmitted(campaignId, userId)).isTrue());
             assertThat(issuedCount()).isZero();
+        }
+    }
+
+    @DisplayName("승격 (§5-2, §7-1, §7-4, INV-W8-06·13, D5)")
+    @Nested
+    class Promote {
+        @DisplayName("INV-W8-06 10명이 순서대로 접수하면 C=3 씩 접수 번호 순으로 승격·발급된다. 발급 순서가 접수 순서와 같다.")
+        @Test
+        void promotesAndIssuesInSeqOrder() {
+            List<Long> users = saveUsers(10);
+            users.forEach(userId -> facade.apply(campaignId, userId));
+            List<Long> issuedOrder = new ArrayList<>();
+
+            while (issuedOrder.size() < users.size()) {
+                int promoted = facade.promoteOnce();
+                assertThat(promoted).isGreaterThan(0);
+                for (Long userId : users) {
+                    if (!issuedOrder.contains(userId) && queue.isAdmitted(campaignId, userId)) {
+                        facade.claim(campaignId, userId);
+                        issuedOrder.add(userId);
+                    }
+                }
+            }
+
+            assertThat(issuedOrder).containsExactlyElementsOf(users);
+            assertThat(facade.promoteOnce()).as("대기열이 비면 0").isZero();
+            assertThat(issuedCount()).isEqualTo(10);
+        }
+
+        @DisplayName("D5 승격 후 claim 하지 않으면 admitted TTL(테스트 1초) 뒤 다음 대기자가 승격되고, 미응답자는 NONE 이 된다.")
+        @Test
+        void expiresUnresponsiveAdmission() {
+            List<Long> users = saveUsers(4);
+            users.forEach(userId -> facade.apply(campaignId, userId));
+            assertThat(facade.promoteOnce()).isEqualTo(3);
+            assertThat(facade.status(campaignId, users.get(3)).status()).isEqualTo(Status.WAITING);
+
+            sleep(1_200);
+            int promoted = facade.promoteOnce();
+
+            assertThat(promoted).as("만료된 3명 자리에 4번째가 들어간다").isEqualTo(1);
+            assertThat(facade.status(campaignId, users.get(3)).status()).isEqualTo(Status.ADMITTED);
+            assertThat(facade.status(campaignId, users.get(0)).status()).isEqualTo(Status.NONE);
+        }
+
+        @DisplayName("§7-1 승격 Lua 가 -1(세대 불일치)을 돌려주면 gate 를 STALE_GENERATION 으로 닫고 아무도 승격하지 않는다.")
+        @Test
+        void closesGateOnStaleGeneration() {
+            Long userId = saveUser();
+            facade.apply(campaignId, userId);
+            redisCleanUp.truncateAll();
+
+            int promoted = facade.promoteOnce();
+
+            assertThat(promoted).isZero();
+            assertThat(gate.isOpen(campaignId)).isFalse();
+            assertThat(gate.closure(campaignId)).map(Closure::reason).contains(CloseReason.STALE_GENERATION);
+        }
+
+        @DisplayName("§7-1 승격 경로에서 Redis 예외가 나면 gate 를 REDIS_ERROR 로 닫고 reject{redis_error} 가 는다. 다음 promote 는 닫힌 캠페인을 건너뛴다.")
+        @Test
+        void closesGateOnRedisError() {
+            Long userId = saveUser();
+            facade.apply(campaignId, userId);
+            double before = counter(CouponAdmissionMetrics.REJECT, "reason", "redis_error");
+            queue.setMode(FaultInjectingCouponAdmissionQueue.Mode.FAIL_PROMOTE);
+
+            int promoted = facade.promoteOnce();
+
+            assertThat(promoted).isZero();
+            assertThat(gate.isOpen(campaignId)).isFalse();
+            assertThat(gate.closure(campaignId)).map(Closure::reason).contains(CloseReason.REDIS_ERROR);
+            assertThat(counter(CouponAdmissionMetrics.REJECT, "reason", "redis_error") - before).isEqualTo(1.0);
+            queue.reset();
+            assertThat(facade.promoteOnce()).as("닫힌 gate 의 캠페인은 승격하지 않는다").isZero();
+            assertThat(queue.waitingRank(campaignId, userId)).as("대기열은 그대로").contains(0L);
+        }
+
+        @DisplayName("INV-W8-13③④ 서킷이 열리면 promoteOnce 는 아무도 승격하지 않는다. 열림 대기(테스트 1초) 뒤 반열림에서 3회 성공하면 닫히고 승격이 재개된다.")
+        @Test
+        void skipsWhileCircuitOpen_andResumesAfterHalfOpenSuccess() {
+            List<Long> admitted = saveUsers(5);
+            admitted.forEach(userId -> facade.apply(campaignId, userId));
+            admitted.forEach(CouponAdmissionFacadeTest.this::admitDirectly);
+            List<Long> waiting = saveUsers(2);
+            waiting.forEach(userId -> facade.apply(campaignId, userId));
+            doThrow(transientFailure()).when(couponIssueService).issue(any(), any());
+            for (Long userId : admitted) {
+                assertThatThrownBy(() -> facade.claim(campaignId, userId)).satisfies(e -> assertCoreException(e, ErrorType.SERVICE_UNAVAILABLE));
+            }
+            assertThat(circuit.state()).isEqualTo(CouponIssueCircuit.State.OPEN);
+
+            assertThat(facade.promoteOnce()).as("③ 서킷 열림 → 승격 0").isZero();
+            waiting.forEach(userId -> assertThat(queue.waitingRank(campaignId, userId)).isPresent());
+
+            Mockito.reset(couponIssueService);
+            sleep(1_200);
+            assertThat(circuit.state()).as("열림 대기 뒤 호출 없이 HALF_OPEN").isEqualTo(CouponIssueCircuit.State.HALF_OPEN);
+            for (int i = 0; i < 3; i++) {
+                assertThat(facade.claim(campaignId, admitted.get(i)).created()).isTrue();
+            }
+            assertThat(circuit.state()).as("④ 반열림 3회 성공 → CLOSED").isEqualTo(CouponIssueCircuit.State.CLOSED);
+
+            int promoted = facade.promoteOnce();
+
+            // 직접 admitted 에 넣은 사용자들은 대기열에도 남아 있고 1.2초 뒤 승격 예약이 만료돼 정확한 수는 의미가 없다. 재개 여부만 본다
+            assertThat(promoted).as("승격 재개").isGreaterThan(0);
+        }
+    }
+
+    private static void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
         }
     }
 }

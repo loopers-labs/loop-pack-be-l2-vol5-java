@@ -17,6 +17,7 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -114,6 +115,11 @@ public class RedisCouponAdmissionGate implements CouponAdmissionGate {
         }
         Instant cutoff = clock.instant().minus(properties.autoReopen().window());
         return (int) recent.stream().filter(at -> !at.isBefore(cutoff)).count();
+    }
+
+    @Override
+    public Set<Long> campaignIds() {
+        return Set.copyOf(states.keySet());
     }
 
     @Override

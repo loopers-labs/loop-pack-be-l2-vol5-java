@@ -31,6 +31,9 @@ public class Resilience4jCouponIssueCircuit implements CouponIssueCircuit {
             .failureRateThreshold(settings.failureRateThreshold())
             .waitDurationInOpenState(settings.waitDurationInOpen())
             .permittedNumberOfCallsInHalfOpenState(settings.permittedCallsInHalfOpen())
+            // 열림 대기가 지나면 호출 없이도 HALF_OPEN 으로 바뀐다. 승격 스케줄러는 state() 만 보고 건너뛰므로(§7-4 3번),
+            // 이 전이가 호출에 의존하면 "승격 중단 → claim 없음 → 전이 없음" 으로 영구히 멈춘다
+            .automaticTransitionFromOpenToHalfOpenEnabled(true)
             .recordException(cause -> cause instanceof DataAccessException)
             .ignoreExceptions(CoreException.class)
             .clock(clock)

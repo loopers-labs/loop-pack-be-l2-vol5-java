@@ -203,6 +203,54 @@ public class CouponAdmissionFacade {
         return couponRepository.findAllByUserId(userId);
     }
 
+    // ---- 스케줄러 진입점 (§5-2, §7-3, §7-4). CouponAdmissionScheduler 가 주기적으로 호출한다 ----
+
+    /**
+     * 승격 한 번. 열린 캠페인마다 승격 Lua 를 한 번 실행한다. DB 서킷이 열려 있으면 아무 캠페인도 승격하지 않는다 (§7-4 3번).
+     * 승격 경로도 상태를 바꾸는 경로라 Redis 예외·-1·해석 불가는 접수·claim 과 같은 이유로 gate 를 닫는다 (§7-1).
+     *
+     * @return 승격한 사용자 수 합계
+     */
+    public int promoteOnce() {
+        if (circuit.state() == CouponIssueCircuit.State.OPEN) {
+            log.info("DB 서킷이 열려 있어 승격을 건너뛴다. 대기열은 그대로 둔다.");
+            return 0;
+        }
+        int promoted = 0;
+        for (Long campaignId : gate.campaignIds()) {
+            Optional<String> gen = gate.generation(campaignId);
+            if (gen.isEmpty()) {
+                continue;
+            }
+            try {
+                int result = redis(campaignId, () -> queue.promote(campaignId, gen.get()));
+                if (result < 0) {
+                    gate.forceClose(campaignId, CloseReason.STALE_GENERATION);
+                    metrics.reject("stale_generation");
+                    continue;
+                }
+                promoted += result;
+            } catch (CoreException e) {
+                // redis() 가 이미 gate 를 닫고 거절을 집계했다. 다른 캠페인의 승격은 계속한다
+            }
+        }
+        return promoted;
+    }
+
+    /** gate probe 한 번. 자동 재개 설정이 꺼져 있으면 아무 일도 하지 않는다 (§7-3). */
+    public int probeOnce() {
+        if (!properties.autoReopen().enabled()) {
+            return 0;
+        }
+        int reopened = 0;
+        for (Long campaignId : gate.campaignIds()) {
+            if (gate.probeOnce(campaignId)) {
+                reopened++;
+            }
+        }
+        return reopened;
+    }
+
     // ---- 관리자 (§7-3, §8-1). ROLE_ADMIN 검사가 접근 경계이므로 여기서는 신원을 다시 확인하지 않는다 ----
 
     /**

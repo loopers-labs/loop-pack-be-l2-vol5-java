@@ -2,6 +2,7 @@ package com.loopers.domain.coupon;
 
 import java.time.Instant;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * 캠페인별 신규 접수·승격·claim 허용 여부 (8주차 설계 §7-1·§7-3, D10·D14).
@@ -45,6 +46,9 @@ public interface CouponAdmissionGate {
 
     /** window 안에 일어난 자동 재개 횟수. 관리자 상태 조회용 (§8-1). */
     int recentAutoReopens(Long campaignId);
+
+    /** 이 인스턴스가 한 번이라도 열거나 닫은 캠페인. 승격·probe 스케줄러가 돌 대상이다 (§5-2·§7-3). */
+    Set<Long> campaignIds();
 
     /**
      * 새 세대값을 만들어 Redis 에 쓰고 gate 를 연다. Redis 쓰기가 실패하면 gate 는 닫힌 채로 예외가 전파된다.
