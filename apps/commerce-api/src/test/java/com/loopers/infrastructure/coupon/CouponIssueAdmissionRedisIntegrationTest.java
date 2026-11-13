@@ -1,8 +1,5 @@
 package com.loopers.infrastructure.coupon;
 
-import com.github.dockerjava.api.model.ExposedPort;
-import com.github.dockerjava.api.model.PortBinding;
-import com.github.dockerjava.api.model.Ports;
 import com.loopers.application.coupon.CouponIssueAdmissionState;
 import com.loopers.application.coupon.CouponIssuePermits;
 import org.junit.jupiter.api.AfterAll;
@@ -20,9 +17,6 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.net.ServerSocket;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -38,12 +32,8 @@ import static org.mockito.Mockito.mock;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class CouponIssueAdmissionRedisIntegrationTest {
 
-    private static final int REDIS_PORT = freePort();
     private static final GenericContainer<?> REDIS = new GenericContainer<>(DockerImageName.parse("redis:7.0"))
-        .withExposedPorts(6379)
-        .withCreateContainerCmdModifier(command -> command.getHostConfig().withPortBindings(
-            new PortBinding(Ports.Binding.bindPort(REDIS_PORT), new ExposedPort(6379))
-        ));
+        .withExposedPorts(6379);
 
     static {
         REDIS.start();
@@ -52,9 +42,9 @@ class CouponIssueAdmissionRedisIntegrationTest {
     @DynamicPropertySource
     static void redisProperties(DynamicPropertyRegistry registry) {
         registry.add("datasource.redis.master.host", REDIS::getHost);
-        registry.add("datasource.redis.master.port", () -> REDIS_PORT);
+        registry.add("datasource.redis.master.port", () -> REDIS.getMappedPort(6379));
         registry.add("datasource.redis.replicas[0].host", REDIS::getHost);
-        registry.add("datasource.redis.replicas[0].port", () -> REDIS_PORT);
+        registry.add("datasource.redis.replicas[0].port", () -> REDIS.getMappedPort(6379));
     }
 
     @AfterAll
@@ -85,13 +75,5 @@ class CouponIssueAdmissionRedisIntegrationTest {
         startupRunner.run(mock(ApplicationArguments.class));
 
         assertThat(admission.isOpen()).isFalse();
-    }
-
-    private static int freePort() {
-        try (ServerSocket socket = new ServerSocket(0)) {
-            return socket.getLocalPort();
-        } catch (IOException exception) {
-            throw new UncheckedIOException(exception);
-        }
     }
 }
