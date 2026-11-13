@@ -44,7 +44,15 @@ public enum ErrorType {
     INVALID_BRAND(HttpStatus.BAD_REQUEST, "브랜드 정보가 올바르지 않습니다."),
     INVALID_PRODUCT_NAME(HttpStatus.BAD_REQUEST, "상품 이름이 올바르지 않습니다."),
     INVALID_PRODUCT_PRICE(HttpStatus.BAD_REQUEST, "상품 가격이 올바르지 않습니다."),
-    INVALID_STOCK(HttpStatus.BAD_REQUEST, "재고 수량이 올바르지 않습니다.");
+    INVALID_STOCK(HttpStatus.BAD_REQUEST, "재고 수량이 올바르지 않습니다."),
+
+    /** W8 프로모션·쿠폰 발급 (8장) */
+    INVALID_PROMOTION(HttpStatus.BAD_REQUEST, "프로모션 정보가 올바르지 않습니다."),
+    PROMOTION_NOT_FOUND(HttpStatus.NOT_FOUND, "프로모션을 찾을 수 없습니다."),
+    PROMOTION_NOT_ACTIVE(HttpStatus.CONFLICT, "진행 중인 프로모션이 아닙니다."),
+    COUPON_SOLD_OUT(HttpStatus.CONFLICT, "쿠폰이 모두 발급되었습니다."),
+    COUPON_ALREADY_ISSUED(HttpStatus.CONFLICT, "이미 발급받은 쿠폰입니다."),
+    COUPON_ISSUE_BUSY(HttpStatus.SERVICE_UNAVAILABLE, "쿠폰 발급 요청이 많습니다. 잠시 후 다시 시도해 주세요.");
 
     private final HttpStatus status;
     private final String message;

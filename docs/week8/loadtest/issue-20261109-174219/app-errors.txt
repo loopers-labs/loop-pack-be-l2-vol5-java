@@ -1,0 +1,28 @@
+== 3.38.165.194
+   3108 "level":"WARN"
+    765 "level":"ERROR"
+    648 Connection is not available, request timed out after 3000ms
+    382 CannotCreateTransactionException
+    324 SQLTransientConnectionException: mysql-main-pool - Connection is not available, request timed out after 3000ms (total=40,
+     58 Connection is not available, request timed out after 3001ms
+== 3.36.113.194
+   3136 "level":"WARN"
+    665 "level":"ERROR"
+    604 Connection is not available, request timed out after 3000ms
+    332 CannotCreateTransactionException
+    302 SQLTransientConnectionException: mysql-main-pool - Connection is not available, request timed out after 3000ms (total=40,
+     26 Connection is not available, request timed out after 3001ms
+== 13.125.200.183
+   3125 "level":"WARN"
+    753 "level":"ERROR"
+    668 Connection is not available, request timed out after 3000ms
+    376 CannotCreateTransactionException
+    334 SQLTransientConnectionException: mysql-main-pool - Connection is not available, request timed out after 3000ms (total=40,
+     38 Connection is not available, request timed out after 3001ms
+== mysql lock/deadlock settings
+innodb_deadlock_detect	ON
+innodb_flush_log_at_trx_commit	1
+innodb_lock_wait_timeout	50
+log_bin	ON
+sync_binlog	1
+transaction_isolation	REPEATABLE-READ

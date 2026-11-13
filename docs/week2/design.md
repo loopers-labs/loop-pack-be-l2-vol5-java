@@ -13,7 +13,7 @@
 
 ### 0-1. 도메인 지도
 
-바운디드 컨텍스트 4개와 의존 방향. 실선은 조회, 굵은 선은 상태 변경. 표는 2-3, 컨텍스트 정의는 2-1.
+바운디드 컨텍스트 5개와 의존 방향. 실선은 조회, 굵은 선은 상태 변경. 표는 2-3, 컨텍스트 정의는 2-1 (BC-05 는 8-1).
 
 ```mermaid
 flowchart LR
@@ -21,16 +21,19 @@ flowchart LR
     C["BC-02 카탈로그<br/>브랜드 · 상품 · 재고 · 좋아요"]
     P["BC-03 포인트<br/>잔액 · 충전 · 환불"]
     O["BC-04 주문<br/>주문 · 주문 품목 · 결제"]
+    PR["BC-05 프로모션<br/>프로모션 · 쿠폰 발급 · 발급 쿠폰"]
 
     U -->|존재 · 관리자 여부| C
     U -->|존재 · 관리자 여부| P
     U -->|존재 · 관리자 여부| O
+    U -->|존재 · 관리자 여부| PR
     C -->|존재 · 삭제 여부 · 현재 가격| O
     C ==>|재고 차감| O
     P ==>|잔액 차감| O
 ```
 
 순환 없음. BC-04 주문이 유일한 하류 종점이고, 재고·잔액을 바꾸는 쓰기 의존은 주문 확정(FR-ORDER-02) 한 곳에서만 일어난다.
+BC-05 프로모션은 W8 에서 추가했고 BC-01 만 조회한다 (8장).
 
 ### 0-2. 계층 지도
 
@@ -360,7 +363,7 @@ BC-01 사용자는 모든 FR의 공통 사전 조건(요청자 식별·관리자
 | `updated_at` | timestamp | N | | | 시스템 |
 | `deleted_at` | timestamp | Y | | 삭제 시각. 삭제되지 않았으면 NULL | 시스템 |
 
-fixture로만 채워진다. 런타임에 이 테이블에 쓰는 FR은 없다. `deleted_at`은 항상 NULL (삭제 FR 없음).
+W2~W7 은 fixture로만 채웠다. W8 부터 테스트용 생성 API(`POST /api/v1/users`, 9장)가 포인트 계정과 함께 만든다 (DR-12, DR-59). `deleted_at`은 항상 NULL (삭제 FR 없음).
 
 ### TB-02 `brand`
 
@@ -1562,6 +1565,182 @@ BLOCKED ─resume(eventId)→ PENDING (failure 0, next_attempt_at = now. attempt
 
 한계: 단일 broker·통제된 중단만 다룬다. "중단"은 hook 이 그 단계 뒤에 예외를 던져 다음 단계로 못 가게 한 것이고, "재시작"은 relay 객체를 새로 만든 것이다. OS 강제 종료·broker 장애 주입·다중 인스턴스 relay 는 시험하지 않았다.
 
+---
+
+## 8. 프로모션과 선착순 쿠폰 발급 (W8)
+
+프로모션(이벤트)을 나타내는 범용 메타데이터와 종류별 설정을 두고, 첫 종류인 선착순 쿠폰 발급을 만든다. 발급된 쿠폰의 사용(주문 적용)·만료는 이 장의 범위 밖이다.
+
+### 8-1. BC-05 프로모션 (promotion)
+
+| 소유 개념 | 정의 |
+|---|---|
+| 프로모션 | 이름·종류·진행 상태·기간을 가진 이벤트. 종류별 설정은 종류별 테이블에 둔다 (DR-52) |
+| 진행 상태 | READY · ACTIVE · PAUSED · ENDED. 참여 가능 여부는 이것만 본다 (DR-53) |
+| 쿠폰 발급 설정 | 종류 COUPON_ISSUE 의 설정. 발급 한도·1인당 한도(1)·발급할 쿠폰 속성 |
+| 남은 발급 수량 | 쿠폰 발급 프로모션당 하나. 발급 한도에서 시작해 발급마다 1 줄고 0 아래로 내려가지 않는다 (DR-58) |
+| 발급 쿠폰 | 사용자가 받은 쿠폰. 발급 내역이 곧 사용자의 쿠폰이다. 사용자·프로모션당 한 장 (DR-57) |
+
+- 참조 개념: 사용자(BC-01). 요청자 확인·관리자 판정, 발급 쿠폰의 주인(ID 만).
+- AG-07 프로모션: 루트 `PromotionModel`, 포함 개념 `CouponIssuePromotionModel`·`CouponIssueStockModel`·`IssuedCouponModel`. `PromotionRepository` 가 TB-15~18 을 함께 맡고, 규칙은 `PromotionService` 가 지킨다.
+- ArchUnit: `AGGREGATES_BY_BC` 에 `"promotion" → ["promotion"]`.
+
+### 8-2. 테이블
+
+생성 SQL: `docs/week8/promotion.sql`(`-pg.sql`). 네 테이블 모두 FK 없이 ID 만 든다. 공통 컬럼 `created_at`·`updated_at`·`deleted_at` 은 표에서 뺀다 (DR-01).
+
+#### TB-15 `promotion`
+
+검증 (`PromotionModel.create`): 이름 1~100자, 종류·기간 필수, 시작 < 종료
+
+| 컬럼 | 타입 | NULL | 변경 | 의미 |
+|---|---|---|---|---|
+| `id` | bigint | N | | PK |
+| `name` | varchar(100) | N | | 프로모션 이름 |
+| `type` | varchar(30) | N | 불변 | COUPON_ISSUE. 종류별 설정 테이블을 정한다 |
+| `status` | varchar(20) | N | | READY · ACTIVE · PAUSED · ENDED (8-3) |
+| `starts_at` / `ends_at` | datetime(6) | N | | 진행 기간. 메타데이터이고 참여 판단에 쓰지 않는다 (DR-53) |
+
+#### TB-16 `coupon_issue_promotion`
+
+TB-15 와 1:1 (`promotion_id` UNIQUE). 검증 (`CouponIssuePromotionModel.create`): `total_quantity` ≥ 1, `per_user_limit` = 1 (DR-57), `coupon_spec` 은 null·빈 객체가 아님 (키는 해석하지 않는다, DR-54)
+
+| 컬럼 | 타입 | NULL | 변경 | 의미 |
+|---|---|---|---|---|
+| `id` | bigint | N | | PK |
+| `promotion_id` | bigint | N | 불변 | TB-15 `id`. UNIQUE |
+| `total_quantity` | int | N | | 선착순 발급 한도 |
+| `per_user_limit` | int | N | | 1인당 발급 한도. 지금은 1 만 받는다 |
+| `coupon_spec` | JSON (PG `jsonb`) | N | | 발급할 쿠폰의 속성. 구조로 읽고 쓴다 (DR-54) |
+
+#### TB-17 `coupon_issue_stock`
+
+TB-16 과 1:1 (`promotion_id` UNIQUE). 생성 TX 에서 `remaining = total_quantity` 로 만들고, 발급 TX 의 조건 갱신만 줄인다 (DR-58)
+
+| 컬럼 | 타입 | NULL | 변경 | 의미 |
+|---|---|---|---|---|
+| `id` | bigint | N | | PK |
+| `promotion_id` | bigint | N | 불변 | TB-15 `id`. UNIQUE |
+| `remaining` | int | N | | 남은 발급 수량. ≥ 0 |
+
+#### TB-18 `issued_coupon`
+
+고유 제약 (`user_id`, `promotion_id`): 사용자·프로모션당 한 장. 선두가 `user_id` 라 내 쿠폰 조회도 이 인덱스를 쓴다. 쿠폰 내용은 복사하지 않고 조회 때 TB-16 `coupon_spec` 을 함께 읽는다 (DR-57)
+
+| 컬럼 | 타입 | NULL | 변경 | 의미 |
+|---|---|---|---|---|
+| `id` | bigint | N | | PK. 응답의 `couponId` |
+| `user_id` | bigint | N | 불변 | 받은 사용자 (BC-01) |
+| `promotion_id` | bigint | N | 불변 | TB-15 `id` |
+| `created_at` | datetime(6) | N | 불변 | 발급 시각. 응답의 `issuedAt` |
+
+### 8-3. 상태와 전이
+
+```
+(생성) → READY ─activate→ ACTIVE ─pause→ PAUSED ─resume→ ACTIVE
+READY · ACTIVE · PAUSED ─end→ ENDED (끝)
+```
+
+- 생성 API 는 만든 뒤 같은 TX 에서 바로 activate 해 ACTIVE 로 돌려준다 (DR-56). READY 를 거치는 경로와 pause·resume·end 를 부르는 API 는 아직 없다.
+- 허용되지 않은 전이는 `IllegalStateException` 이고 상태는 그대로다. API 가 없어 사용자 응답 코드가 없다 (DR-55).
+
+### 8-4. 발급 흐름과 동시성
+
+```
+PromotionFacade.issue  (TX 없음, 워커 스레드)
+  사용자 확인 (USER_NOT_FOUND)
+  PromotionService.getIssuable: promotion 조회, 잠금 없음 ─ 없음·종류 다름 → PROMOTION_NOT_FOUND / ACTIVE 아님 → PROMOTION_NOT_ACTIVE
+  PromotionService.checkNotIssued: 발급 내역 존재 조회, 잠금 없음 ─ 있음 → COUPON_ALREADY_ISSUED
+  CouponIssueLimiter.run  ─ future 를 돌려주고 워커 스레드는 끝난다 (DR-63)
+  (Redisson 스레드) 허가를 최대 600ms 기다림, 그래도 없으면 → COUPON_ISSUE_BUSY
+  (리미터 스레드 풀 coupon-issue-*) 큐가 넘치면 허가 반납 → COUPON_ISSUE_BUSY
+    CouponIssueProcessor.issue  @Transactional
+      ① INSERT issued_coupon (user_id, promotion_id) ─ saveAndFlush, UNIQUE 위반 → COUPON_ALREADY_ISSUED
+      ② UPDATE coupon_issue_stock SET remaining = remaining - 1
+           WHERE promotion_id = ? AND remaining > 0 ─ 0 행 → COUPON_SOLD_OUT (①도 rollback)
+    COMMIT
+  허가 반납 (finally: 커밋·롤백·예외 모두)
+```
+
+- 발급 리미터 (DR-63, 앞선 구현은 DR-60·DR-61·DR-62): 발급 TX 하나만 Redisson `RPermitExpirableSemaphore` 허가 안에서 실행하고, 허가를 기다리는 동안 워커 스레드를 잡지 않는다. 허가는 TX 를 시작하기 전(커넥션을 잡기 전)에 얻는다.
+  - 프로모션마다 세마포어 하나, `coupon-issue:semaphore:{promotionId}` (DR-61 과 같은 키). 획득마다 `trySetPermitsAsync` (키가 없을 때만 설정) → `tryAcquireAsync(wait-time, lease)`.
+    반납·lease 만료 때 pub/sub 으로 깨어나 다시 시도한다. 순서는 보장하지 않는다. lease 만료 시각은 앱 서버 시계 기준이다.
+  - 컨트롤러는 `CompletableFuture` 를 돌려준다 (Spring MVC async). 앞의 확인은 워커 스레드에서 동기로 하고, 그 뒤 워커 스레드는 바로 반납된다.
+  - 허가 결과는 Redisson 스레드로 온다. 거기서 JDBC 를 돌리지 않고, 리미터가 가진 스레드 풀(`executor.threads` 200, `executor.queue-capacity` 200)에 TX 를 넘긴다.
+    큐가 넘치면 TX 를 실행하지 않고 허가를 바로 반납한 뒤 503. 풀은 빈이 아니다 (Executor 빈이 생기면 Boot 의 `applicationTaskExecutor` 자동 구성이 빠진다).
+  - 반납은 `tryReleaseAsync` 로 하고 기다리지 않는다.
+  - 설정 `coupon-issue.limiter.*`: `permits` 200 (앱 3대 × 커넥션 풀 100 = 300 보다 작게), `lease` 2s, `wait-time` 600ms, `executor.threads` 200, `executor.queue-capacity` 200. `spring.mvc.async.request-timeout` 5s.
+  - async 응답이 5s 를 넘으면 기존 `Throwable` 핸들러로 500 이 나간다. 이때 TX 는 취소되지 않아, 응답은 실패인데 발급은 될 수 있다.
+  - Redis 오류는 획득 실패로 본다 (fail-closed). 반납 오류는 로그만 남기고, 그 허가는 lease 가 지나면 회수된다.
+  - 발급이 lease 보다 오래 걸리면 실행 중인 허가가 만료돼 동시 실행이 `permits` 를 넘을 수 있다. 커넥션 풀이 마지막 상한이다.
+    lease 200ms·400ms 는 실제로 이렇게 되어 MySQL 동시 실행이 300 까지 올랐다. 2s 는 행 잠금 대기 최대(약 1.5초)보다 길다 (docs/week8/loadtest).
+- 이미 받은 사용자는 허가를 얻기 전에 `checkNotIssued` 에서 돌려보낸다. 같은 사용자의 동시 요청이 함께 통과하면 ① 의 UNIQUE 가 막는다.
+
+- TX 범위: ①② 두 문장만 묶는다. 사용자·상태 확인은 TX 밖에서 각각 읽어 발급 TX 가 커넥션을 쥐는 시간을 줄인다 (DR-58).
+
+| 경합 | 막는 것 | 결과 |
+|---|---|---|
+| 서로 다른 사용자가 마지막 수량을 동시에 요청 | ② 의 행 잠금 + 조건. 기다린 쪽은 커밋된 최신 `remaining` 으로 조건을 다시 본다 (MySQL REPEATABLE READ·PG READ COMMITTED 모두) | 한도만큼만 성공, 나머지 SOLD_OUT. `remaining` 은 0 아래로 가지 않는다 |
+| 같은 사용자의 동시 요청 | ① 의 고유 제약. 뒤 요청은 앞 TX 가 끝날 때까지 기다린다 | 한 장. 앞 TX 가 소진으로 rollback 되면 뒤 요청이 다시 시도할 수 있다 |
+| 발급과 중지(pause·end)가 겹침 | 막지 않는다 (상태를 잠그지 않음, DR-53) | 중지 커밋 직전에 상태를 읽은 요청은 발급될 수 있다 |
+
+- 순서: 모든 요청이 몰리는 수량 행을 마지막에 갱신해 그 행 잠금을 commit 직전까지로 줄이고, 중복 요청은 수량 행을 건드리지 않고 실패한다 (DR-58).
+- ① 의 UNIQUE 위반 뒤 TX 는 rollback 전용이다. Service 는 바로 예외로 끝낸다.
+
+### 8-5. 엔드포인트
+
+| 메서드·경로 | 요청자 | 요청 | 응답 `data` | 실패 |
+|---|---|---|---|---|
+| POST `/api-admin/v1/promotions` | 관리자 | `name`, `type`("COUPON_ISSUE"), `startsAt`, `endsAt`, `couponIssue{totalQuantity, perUserLimit, couponSpec}` | `promotionId`, `name`, `type`, `status`("ACTIVE"), `startsAt`, `endsAt`, `totalQuantity`, `perUserLimit`, `couponSpec` | 400 `INVALID_PROMOTION`, 400 `BAD_REQUEST`(JSON 형식), 403 `NOT_ADMIN`, 404 `USER_NOT_FOUND` |
+| POST `/api/v1/promotions/{promotionId}/issues` | 사용자 | 없음 | `couponId`, `promotionId`, `issuedAt` | 404 `USER_NOT_FOUND`·`PROMOTION_NOT_FOUND`, 409 `PROMOTION_NOT_ACTIVE`·`COUPON_ALREADY_ISSUED`·`COUPON_SOLD_OUT`, 503 `COUPON_ISSUE_BUSY` |
+| GET `/api/v1/coupons` | 사용자 | 없음 | 배열 `[{couponId, promotionId, promotionName, couponSpec, issuedAt}]`. 최근 발급 순(id 내림차순), 페이지 없음 | 404 `USER_NOT_FOUND` |
+
+| ErrorType | HTTP | 언제 |
+|---|---|---|
+| `INVALID_PROMOTION` | 400 | 이름·종류·기간·한도·1인당 한도·쿠폰 속성 검증 실패, 쿠폰 발급 설정 없음 |
+| `PROMOTION_NOT_FOUND` | 404 | 없는 프로모션, 또는 종류가 COUPON_ISSUE 가 아님 |
+| `PROMOTION_NOT_ACTIVE` | 409 | 상태가 ACTIVE 가 아님 |
+| `COUPON_ALREADY_ISSUED` | 409 | 같은 사용자가 같은 프로모션에서 이미 받음 |
+| `COUPON_SOLD_OUT` | 409 | 남은 수량 0 |
+| `COUPON_ISSUE_BUSY` | 503 | 발급 허가를 wait-time 안에 얻지 못함, 리미터 스레드 풀 큐가 참, 또는 Redis 오류 (DR-63) |
+
+- 요청·응답의 `type`·`status` 는 문자열이다. interfaces 는 domain enum 을 참조하지 않는다 (ArchUnit).
+- 조회는 `CouponReader` → `CouponQueryRepository` 가 TB-18·15·16 을 조인해 `CouponView.MyCoupon` 으로 돌려준다 (DR-31).
+
+### 8-6. 테스트
+
+| 테스트 | 확인 |
+|---|---|
+| `PromotionModelTest` | 생성 검증(INVALID_PROMOTION), 허용·거부 전이, `isActive` |
+| `CouponIssuePromotionModelTest` | 한도 경계, 1인당 한도 1 만, spec 비어 있음, spec 복사·읽기 전용 |
+| `CouponIssueStockModelTest` | 남은 수량 = 한도로 시작, 검증 |
+| `PromotionRepositoryIntegrationTest` | 실제 MySQL 저장·조회, JSON 왕복(중첩 객체·배열·숫자·문자열·불리언), `promotion_id` UNIQUE, 발급 내역 존재 조회 |
+| `PromotionServiceIntegrationTest` | 생성 즉시 ACTIVE·수량 행, 설정 오류 시 promotion 도 rollback, 발급 성공·NOT_FOUND·NOT_ACTIVE·ALREADY_ISSUED·SOLD_OUT(먼저 넣은 발급 내역 rollback), 발급 전 확인 `checkNotIssued` |
+| `CouponIssueLimiterTest` | 첫 시도 성공·반납, 실패 뒤 retry-delay 만큼 기다려 재시도, 두 번 실패면 BUSY(작업·반납 없음), 작업 예외에도 반납 |
+| `RedisCouponIssueSemaphoreTest` | 실제 Redis. permit 수까지만 획득, 반납 뒤 재획득, 남의 토큰 반납은 무효, lease 지난 허가 회수, 프로모션별 계수, 50 스레드 동시 획득 시 정확히 permit 수, Redis 오류 시 획득 실패·반납 예외 없음 |
+| `CouponIssueConcurrencyTest` | 한도 10 에 서로 다른 사용자 20 명 동시 → 성공 10·SOLD_OUT 10·남은 수량 0. 같은 사용자 20 번 동시 → 성공 1·ALREADY_ISSUED 19·남은 수량 9 |
+| `PromotionV1ApiE2ETest` | 세 엔드포인트의 성공 응답과 실패 코드(400·403·404·409·503). 허가가 모두 차 있으면 503·발급 없음, 이미 받은 사용자는 허가가 차 있어도 409 |
+| `ArchitectureTest` | BC-05 의존 규칙, interfaces 의 domain 비의존 |
+
+### 8-7. 아직 정하지 않은 것
+
+- 1인당 한도 2 이상: 지금 고유 제약으로는 표현할 수 없다. 필요해지면 사용자별 발급 수 행의 조건 갱신 등으로 바꾼다 (DR-57)
+- 쿠폰 사용·만료 상태와 주문 적용, 그때 쿠폰 내용을 발급 행에 복사할지 (DR-57)
+- 상태 변경(pause·resume·end) API, 그때 전이 위반의 ErrorType (DR-55)
+- 발급 쿠폰을 BC-05 에 계속 둘지, 쿠폰 사용이 생길 때 별도 BC 로 뺄지
+
+## 9. 테스트용 사용자 생성 (W8)
+
+부하 테스트에서 사용자·관리자를 API 로 만들기 위한 것이다. 가입·인증 기능이 아니다 (0-3 의 "가입·로그인·인증"은 여전히 범위 밖).
+
+| 메서드·경로 | 요청자 | 요청 | 응답 `data` | 실패 |
+|---|---|---|---|---|
+| POST `/api/v1/users` | 누구나 (헤더 없음) | `{ "admin": true \| false }` 또는 본문 없음. 없으면 일반 사용자 | `userId`, `admin` | 400 `BAD_REQUEST`(JSON 형식) |
+
+- `UserFacade.create` 가 한 TX 에서 사용자(TB-01)와 잔액 0 인 포인트 계정(TB-05)을 만든다 (DR-12). BC-01·BC-03 의 Service 를 Facade 가 조립한다 (5-6).
+- 누구나 관리자를 만들 수 있다. 테스트 전용이라 받아들인 구멍이다 (DR-59).
+- 테스트: `UserV1ApiE2ETest` (일반 사용자 + 포인트 계정·잔액 조회, 본문 없음·admin 없음 → 일반, admin=true 로 관리자 API 사용·일반 사용자 403)
+
 ## 부록 A. 설계 판단 기록과 열린 질문
 
 ### A-1. 결정
@@ -1580,7 +1759,7 @@ BLOCKED ─resume(eventId)→ PENDING (failure 0, next_attempt_at = now. attempt
 
 | DR-10 | 3 | TB-04, TB-06 | 테이블명 `product_like`, `orders`. 소유 개념 이름(좋아요, 주문)과 어긋나는 물리 이름 | `like`, `order` | 둘 다 SQL 예약어라 모든 DB에서 따옴표가 필요하다. 개념 이름은 2-1과 5장 Model 이름에서 유지된다 | 없음 | 없음 |
 | DR-11 | 3 | ASM-03, ASM-04, ASM-05, ASM-20, INV-02, INV-13, INV-14 | 원문에 없는 값을 확정한다. 표현 범위 = 64비트 부호 있는 정수(0 ~ 9,223,372,036,854,775,807). 브랜드 이름 1~100자, 상품 이름 1~200자. 재고·수량은 32비트 정수(0 또는 1 ~ 2,147,483,647). 관리자 주문 목록의 구매자 묶음 순서 = 사용자 ID 오름차순 | 표현 범위를 업무 상한(예: 1억)으로 / 이름 상한 255 | 금액은 64비트면 오버플로 검사가 타입 경계와 일치해 별도 상수가 필요 없다. 이름 상한은 화면·저장에 무리 없는 값. 묶음 순서는 자동 증가 ID라 사용자 ID 순 = 사용자 생성 순이 되어 안정적이고 별도 정렬 컬럼이 필요 없다 | 업무 상한이 정해지거나 화면 요구가 생기면 값을 바꾼다. 값만 바뀌고 구조는 안 바뀐다 | ASM-03·04·05에 값 확정 표시 `(설계 결정 DR-11)`, ASM-20에 묶음 순서 한 줄 추가 |
-| DR-12 | 3 | TB-05, TB-01, FR-POINT-02, FR-ADMIN-POINT-01 | 포인트 계정(TB-05)은 사용자와 1:1이며 fixture에서 사용자와 함께 잔액 0으로 준비한다. 런타임에 생성하지 않는다 | (a) 첫 충전·조회 때 없으면 생성 (b) 사용자 PK를 포인트 PK로 겸용 | (a)는 조회 FR(FR-POINT-02)에 쓰기가 섞인다. (b)는 공통 컬럼 규칙(모든 테이블 자동 증가 `id`)에 어긋난다. 사용자 가입이 범위 밖이라 fixture가 둘을 같이 만드는 게 가장 단순하다 | 사용자 가입 FR이 들어오면 가입 트랜잭션에서 포인트 계정을 함께 만드는 것으로 바꾼다 | 없음 |
+| DR-12 | 3 | TB-05, TB-01, FR-POINT-02, FR-ADMIN-POINT-01 | 포인트 계정(TB-05)은 사용자와 1:1이며 fixture에서 사용자와 함께 잔액 0으로 준비한다. 런타임에 생성하지 않는다 | (a) 첫 충전·조회 때 없으면 생성 (b) 사용자 PK를 포인트 PK로 겸용 | (a)는 조회 FR(FR-POINT-02)에 쓰기가 섞인다. (b)는 공통 컬럼 규칙(모든 테이블 자동 증가 `id`)에 어긋난다. 사용자 가입이 범위 밖이라 fixture가 둘을 같이 만드는 게 가장 단순하다 | 사용자 가입 FR이 들어오면 가입 트랜잭션에서 포인트 계정을 함께 만드는 것으로 바꾼다 | 없음. (갱신: W8 테스트용 사용자 생성 API 가 생겨 되돌릴 조건에 도달했다. 사용자 생성 TX 에서 잔액 0 인 계정을 함께 만든다. DR-59) |
 | DR-13 | 3 | TB-06, TB-07, INV-06, INV-09, ASM-13, FR-ORDER-03 | 합계(`total_amount`)는 생성 시 계산해 저장한다. 항목 금액은 저장하지 않는다. 결제액(`paid_amount`)과 확정 시각(`confirmed_at`)을 결제 결과로 두고 별도 테이블은 만들지 않는다 | (a) 합계도 매번 품목에서 집계 (b) 결제 결과를 별도 테이블로 | 주문 품목은 생성 후 불변(주문 수정 범위 밖)이라 저장된 합계가 어긋날 갱신 경로가 없고, 내 주문 목록(FR-ORDER-03)이 주문마다 합계를 보여줘 집계를 피할 가치가 있다. 항목 금액은 같은 행의 두 컬럼 곱이라 저장 이득이 없다. 결제 결과는 필드 둘뿐이라 테이블로 뺄 이유가 없다 | 주문 수정이 범위에 들어오면 합계 갱신 책임을 루트 Model에 두고 다시 검토한다. 결제 결과에 외부 결제 정보가 붙으면 테이블로 뺀다 | 없음 |
 | DR-14 | 3 | 3-7-A 예상 빈도 | 비기능이 없으므로 빈도는 상대 추정: 고객 상품 조회 높음, 그 외 고객 FR 중간(환불만 낮음), 관리자 FR 낮음 | 전부 미정 | 인덱스 생성 판단(3-7-B)에 기준이 필요하다. 고객 목록·상세가 가장 많이 불리고 관리자 행위는 드물다는 통상 가정 | 부하 측정치가 생기면 값을 바꾸고 3-7-B를 다시 본다 | 없음 |
 | DR-15 | 3 | IX-01, IX-02, IX-03, IX-04, IX-06, IX-08, IX-09 | 복합 인덱스 컬럼 순서. IX-01은 `user_id` 먼저(FR-LIKE-03이 사용자로 거르고, 쌍 조회는 두 컬럼 다 씀). 상품 기준 집계는 IX-02가 따로 맡는다(DR-36으로 삭제). IX-03·IX-04는 `status`(등호) → 정렬 키 → `id`(동률 보조). IX-08·IX-09는 그 앞에 `brand_id`(등호, DR-35). IX-06은 `user_id`(등호) → `created_at` → `id` | IX-01을 `product_id` 먼저로 하고 IX-02 대신 `user_id` 단독 | 등호 조건을 앞에, 정렬 키를 뒤에 두면 필터 후 정렬을 인덱스 순서로 읽는다. 좋아요는 사용자 기준 목록과 상품 기준 집계가 둘 다 있어 인덱스 둘이 필요하다 | `likes_desc`나 좋아요 집계가 병목이면 좋아요 수 계산값 컬럼(3-2 규칙상 DR 필요)을 검토한다 | 없음 |
@@ -1620,6 +1799,18 @@ BLOCKED ─resume(eventId)→ PENDING (failure 0, next_attempt_at = now. attempt
 | DR-49 | 7 | TB-14, OutboxStatus | 연속 전송 실패 3회(예외·확인 대기 초과 구분 없음)면 BLOCKED 로 분리한다. 재시도 간격은 1s 에서 두 배씩, 상한 60s. BLOCKED 는 eventId 를 지정한 재개로만 같은 행이 PENDING 으로 돌아가고(연속 실패만 0, 누적 시도·마지막 오류 유지) 바로 한 번 보낸다 | (a) 일시 오류(Kafka `RetriableException`)는 세지 않고 영구 오류만 3회로 셈 (b) BLOCKED 없이 무한 재시도 (c) 실패 행 삭제·DLQ | 사용자 결정. (a)는 broker 장애 회복 뒤 자동 재개가 되지만 실패 분류를 Kafka 예외 계층에 기대야 한다. 지금 결정에서는 broker 장애가 1s·2s 백오프보다 길면 그동안의 행이 BLOCKED 가 되어 회복 후 운영자가 재개해야 한다 (7-3). (b)는 영구 오류가 원인과 함께 드러나지 않는다. (c)는 미발행 사실을 잃는다 | broker 일시 장애로 인한 BLOCKED 재개가 운영 부담이 되면 (a) | 없음 |
 | DR-50 | 7 | TB-14, OrderConfirmedBackfill, DR-40 | W6 직접 발행에서 빠진 확정은 운영자가 지정한 주문만, 저장된 확정 사실로 확정 TX 와 같은 팩토리를 거쳐 Outbox 에 넣는다. 이미 있으면 내용이 같을 때만 그대로 둔다. 실행은 local 프로필 runner 의 기동 인자로만 한다 | (a) SQL 로 Outbox 행 생성 (b) 이전 CONFIRMED 주문 전체 소급 (c) 관리자 HTTP API (d) 행이 있으면 덮어씀 | (a)는 계약 JSON·eventId 규칙을 SQL 에 다시 써야 해 확정 TX 의 payload 와 어긋날 수 있다. (b)는 이미 소비된 다수 사건을 다시 흘리고 대상 확인 없이 범위가 커진다 (6-1 의 소급 안 함과 같다). (c)는 공개 표면이 생긴다. (d)는 원본 사실과 다른 행을 추측으로 고친다 | 운영 환경에서 복구가 반복되면 인증된 운영 도구로 | 없음 |
 | DR-51 | 7 | tests/commerce-e2e, DR-45 | 주문 API → Outbox → Kafka → 구매 활동 E2E 와 W6 누락 재현은 테스트 전용 모듈 `tests/commerce-e2e` 에 둔다. 두 앱의 컴파일 출력(api 는 test 출력 포함)에 직접 의존하고, 두 context 를 각각 명시 구성(api: streamer 패키지 제외 scan / streamer: 구매 활동 패키지만 scan)으로 띄운다. application.yml 은 이름을 바꿔 복사해 `spring.config.name` 으로 고른다. 테스트 클래스마다 JVM 을 새로 띄운다. root build 에는 `tests` 컨테이너 프로젝트의 task 를 끄는 한 줄만 더한다 | (a) api 에 streamer 를 `testImplementation` (b) 앱의 일반 jar 를 켜서 project 의존 (c) 가짜 handler 로 소비 대체 | (a)는 streamer main 클래스가 같은 `com.loopers` 로 api ArchUnit 가져오기에 섞여 규칙 범위를 바꿔야 한다. (b)는 모든 앱의 빌드 산출물이 바뀐다. (c)는 실제 consumer 의 멱등·ack 를 확인하지 못한다 | 앱 사이 공용 test fixture 모듈이 생기면 그쪽으로 | 없음 |
+| DR-52 | 8 | BC-05, AG-07, TB-15, TB-16 | 프로모션을 BC-05 로 새로 두고, 범용 메타데이터(TB-15)와 종류별 설정(TB-16, 1:1, FK 없음)을 한 AG(AG-07)로 묶는다. ArchUnit BC 매핑에 `promotion` 을 더한다 | (a) 기존 BC 에 넣기 (b) 쿠폰 전용 테이블 하나 (c) promotion 의 JSON config 컬럼 하나로 종류별 설정 | (a) 프로모션·진행 상태·발급 한도는 기존 BC 의 언어에 없고, 넣으면 그 BC 의 규칙이 바뀐다. (b) 쿠폰 외 프로모션이 생기면 테이블을 다시 나눠야 한다. (c) 종류별 제약·검증을 DB·엔티티에 걸 수 없다 | 종류별 테이블이 많아져 관리 부담이 커지면 (c) | 없음 |
+| DR-53 | 8 | TB-15 | 참여 가능 여부는 `status` 만 본다. `starts_at`·`ends_at` 은 메타데이터이고 필수·시작 < 종료 검증만 한다 | (a) status 와 기간을 함께 (b) 기간만 | 사용자 결정. 운영자가 상태로 직접 열고 닫는다. 기간과 상태가 어긋나도 상태가 기준이다 | 기간 기반 자동 오픈·종료가 필요해지면 | 없음 |
+| DR-54 | 8 | TB-16, DR-47 | 발급할 쿠폰 속성은 JSON 컬럼(MySQL `JSON`, PG `jsonb`) 하나로 두고 `Map<String, Object>` + `@JdbcTypeCode(SqlTypes.JSON)` 으로 매핑한다. 엔티티는 null·빈 객체만 거절하고 키를 해석하지 않는다 | (a) 속성별 컬럼(할인 방식·값·만료) (b) 별도 coupon_template 테이블 (c) TEXT 문자열 | 사용자 결정. 쿠폰 속성이 동적이다. DR-47 이 JSON 을 버린 이유(저장 바이트가 바뀜)는 해당하지 않는다. 바이트가 아니라 구조로 읽으므로 키 순서·공백 정규화가 상관없다 | 속성이 고정되고 DB 제약·조회 조건이 필요해지면 (a)(b) | 없음 |
+| DR-55 | 8 | TB-15, TB-16, TB-17 | 생성·수량 검증 위반은 엔티티 생성 메서드에서 막는다. DB CHECK 는 두지 않는다. 처음에는 API 가 없어 `IllegalArgumentException` 으로 두었고, 생성 API 를 만들며 `INVALID_PROMOTION`(400) 으로 바꿨다 (되돌릴 조건 도달). 상태 전이 위반은 부르는 API 가 아직 없어 `IllegalStateException` 그대로다 | (a) 처음부터 ErrorType (b) DB CHECK 제약 | 사용자 응답 계약이 생긴 시점에 코드를 붙인다. 검증은 어느 경로로 만들어도 빠지지 않도록 엔티티 한 곳에 둔다 | 상태 변경 API 가 생기면 전이 위반에도 ErrorType | 없음 |
+| DR-56 | 8 | TB-15, DR-53 | 생성 API 는 promotion·쿠폰 발급 설정·남은 수량을 한 TX 에서 만들고 같은 TX 에서 바로 ACTIVE 로 연다. 모델은 READY 로 시작하는 그대로 둔다 | (a) READY 로 만들고 상태 변경 API 로 연다 (b) 모델이 처음부터 ACTIVE | 사용자 결정. 상태 변경 API 없이도 발급할 수 있어야 한다. (b)는 READY 의 의미를 지운다 | 예약 오픈(READY 대기)이 필요해지면 (a) | 없음 |
+| DR-57 | 8 | TB-16, TB-18 | 발급 내역이 곧 사용자의 쿠폰이다. (user_id, promotion_id) 고유 제약으로 사용자당 한 장이고, 그래서 `per_user_limit` 은 1 만 받는다. 쿠폰 내용(coupon_spec)은 발급 행에 복사하지 않고 조회 때 TB-16 과 조인한다 | (a) 사용자 쿠폰 테이블을 발급 내역과 따로 (b) `per_user_limit` 컬럼 제거 (c) seq 로 여러 장 (d) 발급 시 spec 복사 | 사용자 결정. (b)는 다시 늘릴 때 스키마가 바뀐다. (c)는 몇 번째인지 계산하는 곳에서 다시 경합한다. (d)는 지금 설정을 바꾸는 경로가 없어 복사할 이유가 없다 | 2 장 이상이 필요하면 사용자별 발급 수 조건 갱신으로. 설정 변경·쿠폰 사용이 생기면 (d) | 없음 |
+| DR-58 | 8 | TB-17, TB-18, DR-38 | 남은 수량은 별도 테이블(TB-17)에 두고 조건 갱신(`remaining > 0` 일 때만 -1)으로만 줄인다. 발급 TX 는 발급 내역 insert(즉시 flush) → 수량 조건 갱신 두 문장만 묶고(사용자·상태 확인은 TX 밖), 0 행이면 예외로 둘 다 rollback 한다 | (a) 수량 행을 `SELECT … FOR UPDATE` 로 읽고 검사 (b) TB-16 에 남은 수량 컬럼 (c) 발급 수 count 로 판정 (d) 수량 갱신을 먼저 | 조건 갱신 한 문장이 잠금·검사·감소를 함께 해 읽고 쓰는 사이의 틈이 없다. (b)는 자주 바뀌는 값과 설정이 한 행에 섞인다 (DR-38 재고 분리와 같은 이유). (c)는 count 와 insert 사이에 경합이 남는다. (d)는 중복 요청도 몰리는 수량 행을 잠그고, 잠금 시간이 insert 만큼 길어진다 | 수량 행 한 곳의 잠금 대기가 처리량을 막으면 Redis 등 DB 밖 선점으로 | 없음 |
+| DR-59 | 9 | TB-01, TB-05, DR-12 | 테스트용 사용자 생성 API `POST /api/v1/users` 를 둔다. 헤더 없이 누구나 부르고, 본문의 `admin` 으로 관리자도 만든다. 포인트 계정을 같은 TX 에서 함께 만든다 | (a) 공개 API 는 일반 사용자만, 관리자는 관리자 API + 첫 관리자는 SQL (b) bulk 생성 API (c) 부하 테스트 데이터를 SQL 로만 | 사용자 결정. 부하 테스트 준비를 API 하나로 끝낸다. 누구나 관리자가 될 수 있는 구멍은 테스트 전용이라 받아들인다. (b)는 1 만 명 정도는 한 명씩 불러도 충분하다 | 실제 가입·인증 요구가 생기면 (a) 로 나누고 관리자 지정은 관리자 API 로만 | 없음 |
+| DR-60 | 8 | TB-17, TB-18, DR-58 | 발급 TX(`CouponIssueProcessor.issue`) 하나만 Redis 세마포어 허가 안에서 실행해 워커 스레드·커넥션을 보호한다. 프로모션마다 ZSET(토큰, 만료 시각) 을 Lua 로 원자 획득하고, 시각은 Redis `TIME` 이다. 대기열 없이 시도하고 실패하면 600ms 뒤 한 번 재시도, 그래도 없으면 503 `COUPON_ISSUE_BUSY`. 허가는 TX 전에 얻고 끝나면 항상 반납한다. permit 200·lease 2s. 이미 받은 사용자는 허가 전에 발급 내역 조회로 409. Redis 오류는 fail-closed | (a) 숫자 하나 INCR/DECR (b) 프로모션 구분 없는 전역 키 하나 (c) 사용자·상태 확인까지 허가 안에 (d) TX 메서드 안에서 허가 (e) Redis 장애 시 허가 없이 발급(fail-open) | 사용자 결정. (a)는 허가를 쥔 채 서버가 죽으면 영영 돌아오지 않는다. (c)는 허가 보유 시간이 늘고, 허가가 필요한 건 커넥션을 오래 쥐는 발급 TX 뿐이다. (d)는 커넥션을 이미 잡은 뒤라 보호가 안 된다. lease 는 처음 200ms(재시도 300ms)로 시작했으나 부하 테스트에서 permit 보유 시간(잠금 대기 최대 약 1.5초)보다 짧아 동시 실행이 300 까지 올라, 사용자 결정으로 2s(재시도 600ms)로 바꿨다. 2s 에서 300~600 rps 동시 실행이 permit 근처(MySQL 실행 중 스레드 최대 203)에 머물렀다 (docs/week8/loadtest) | 부하 테스트에서 동시 실행이 permit 을 크게 넘거나 거절이 과하면 lease·permit·재시도 간격을 바꾼다. 비교할 다른 방식(Redisson·fair 대기열·bulkhead)은 docs/week8/coupon-issue-limiter-plan.md | 없음 |
+| DR-61 | 8 | DR-60 | 발급 리미터의 세마포어를 직접 구현(ZSET + Lua)에서 Redisson `RPermitExpirableSemaphore` 로 바꾼다. 프로모션마다 하나, permit 200·lease 2s 는 그대로. 허가가 없으면 `wait-time` 600ms 까지 기다리고(반납·lease 만료 시 pub/sub 으로 깨어남), 그래도 없으면 재시도 없이 503 `COUPON_ISSUE_BUSY`. 획득마다 `trySetPermits`. Redis 오류는 fail-closed. 1번 구현은 코드에서 지우고 커밋 577ed5c 에 남긴다 | (a) 설정값(`type`)으로 두 구현을 골라 쓰기 (b) 1번처럼 즉시 시도 → 1초 sleep → 한 번 재시도 (c) 앱 시작 때 한 번만 permit 설정 | 사용자 결정. 네 방식을 차례로 비교하는 중이라 전환은 코드 교체로 한다 ((a) 는 하지 않음). (b) 는 저장소만 바뀌어 비교 의미가 작다. 기다리는 동안 반납되면 바로 얻는 것이 Redisson 의 차이다. (c) 는 키가 사라지면(FLUSH·재시작) permit 이 0 이 되어 영영 못 얻는다. 매번 `trySetPermits` 는 왕복 하나가 늘지만 키가 없을 때만 설정해 안전하다 | 대기 중 스레드가 워커 스레드를 600ms 까지 잡는다. 부하 테스트에서 대기 스레드로 톰캣 스레드가 마르면 wait-time 을 줄인다. lease 만료가 앱 서버 시계 기준이라 서버 간 시계 차이가 크면 lease 를 늘린다 | 없음 |
+| DR-62 | 8 | DR-60, DR-61 | 발급 리미터를 도착 순서대로 주는 직접 구현 fair 세마포어로 바꾼다. 프로모션마다 holders ZSET(토큰, lease 만료)과 queue ZSET(`serverId:토큰`, 대기 마감 = 도착 + wait-time). 획득은 먼저 시도하지 않고 항상 큐 뒤에 선 뒤 빈 자리만큼 큐 앞을 holders 로 옮긴다(Lua). 반납도 같은 방식으로 큐 앞을 채운다. 옮겨진 대기자는 서버별 채널 PUBLISH 로 깨운다. 서버는 시작할 때 자기 채널만 구독하고 토큰별 future 로 기다린다. wait-time 이 지나면 로컬에서 끝내고 503, 끝내기 전에 반납을 불러 혹시 받은 허가를 다음 대기자에게 넘긴다. permit 200·lease 2s·wait-time 600ms 그대로, 큐 길이 상한 없음. Redisson 구현은 코드에서 지우고 커밋 e2f0c9e 에 남긴다. Redisson 의존성과 `RedissonConfig`(`@Lazy`)는 남긴다 | (a) 먼저 한 번 시도하고 실패하면 큐에 (b) 반납 때 하나만 꺼내기 (c) 요청마다 subscribe (d) 타임아웃 때 취소 Lua 로 확인해 이미 옮겨졌으면 발급 (e) 큐 길이 상한 (f) 큐 score 에 도착 순번(INCR)을 두고 마감은 따로 | 사용자 결정 (a)(d)(e). (a) 는 기다리는 사람보다 새로 온 요청이 먼저 얻어 순서가 깨진다. (b) 는 lease 만료로 여러 자리가 빌 때 허가가 남는데도 대기자가 기다린다. (c) 는 큐에 넣은 뒤 구독이 걸리기 전에 알림이 오면 잃는다. (d) 는 처음 정했다가 바꿨다. 로컬 타임아웃 때면 Redis 마감도 이미 지나 큐에서 뺄 일이 없고, 남는 경우는 알림 유실뿐이라 스크립트 하나를 더 둘 이유가 작다. 반납 하나로 그 허가와 빈 자리를 다음 대기자에게 넘긴다. (e) 는 대기자가 마감으로 스스로 빠지므로 우선 두지 않는다. (f) 는 wait-time 이 모두 같아 마감 순서가 곧 도착 순서이고, 마감 score 하나로 서버가 죽어 남은 대기자까지 지운다. 구독은 master/replica 연결이 pub/sub 을 지원하지 않아 master 단독 연결을 따로 둔다. Lua 숫자는 %.14g 로 바뀌어 µs 시각이 잘리므로 score 는 %.0f 문자열로 넘긴다 | 큐가 길어져 대부분 wait-time 을 다 채우고 503 이 되면 큐 길이 상한(넘으면 바로 503)을 둔다. 큐 앞 대기자가 몰린 서버의 알림이 늦어 허가 사용이 늦어지면 lease 를 다시 본다. 획득·반납이 끊긴 채 lease 가 만료되면 대기자가 마감까지 못 깨어난다(다음 획득·반납, 대기자의 타임아웃 반납 때 채움). 트래픽이 없을 때 이게 문제되면 주기적 채움을 둔다 | 없음 |
+| DR-63 | 8 | DR-61, DR-62 | 발급 리미터를 Redisson `RPermitExpirableSemaphore` 의 async API 로 바꾸고, 허가를 기다리는 동안 워커 스레드를 잡지 않는다. 컨트롤러·Facade 가 `CompletableFuture` 를 돌려준다 (Spring MVC async, `request-timeout` 5s). 사용자·프로모션·중복 확인은 워커 스레드에서 동기로 한다. 획득은 DR-61 과 같다 (`trySetPermitsAsync` → `tryAcquireAsync`, 같은 키, permit 200·lease 2s·wait-time 600ms, 재시도 없음). 허가를 얻으면 TX 를 리미터가 가진 스레드 풀(스레드 200, 큐 200)에서 실행하고, 큐가 넘치면 허가를 반납하고 503 `COUPON_ISSUE_BUSY`. 반납은 `tryReleaseAsync`. Redis 오류는 fail-closed. fair 구현은 코드에서 지우고 커밋 25b82e0 에 남긴다. pub/sub 연결·리스너 컨테이너(`RedisConfig`)는 남긴다 | (a) 세마포어만 async 로 바꾸고 리미터에서 기다림 (b) Redisson 콜백 스레드에서 TX 실행 (c) 풀을 Spring 빈으로 (d) 풀 큐 상한 없음 (e) async timeout 전용 응답 | 사용자 결정. (a) 는 기다리는 스레드만 바뀌어 DR-61 과 같다. 의미가 있으려면 비동기 경계가 컨트롤러까지 올라가야 한다. (b) 는 JDBC 블로킹이 netty event loop 를 막는다. (c) 는 Boot 의 `applicationTaskExecutor` 자동 구성이 빠진다. (d) 는 허가를 쥔 채 큐에서 기다리는 동안 lease 가 흘러, 오래 기다린 작업이 만료된 허가로 실행될 수 있다. 스레드 200·큐 200 은 사용자가 정한 값이다 (스레드는 100 으로 시작했다가 부하 테스트 전에 200 으로 올렸다). (e) 는 두지 않는다. 5s 는 정상 경로(600ms + TX)보다 넉넉하다 | 스레드 200·큐 200 은 시작값이다. 부하 테스트로 여러 값을 비교한다. timeout 500 이 나오면 응답은 실패인데 발급은 될 수 있어 전용 처리를 다시 본다. 큐에서 오래 기다려 lease 가 만료된 채 실행되는 일이 잦으면 큐를 줄이거나 lease 를 늘린다 | 없음 |
 
 ### A-2. 열린 질문
 

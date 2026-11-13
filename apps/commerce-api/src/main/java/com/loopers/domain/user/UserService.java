@@ -14,6 +14,11 @@ public class UserService {
 
     private final UserRepository userRepository;
 
+    /** 테스트용 사용자 생성 (DR-59). 관리자 여부를 요청자가 정한다. */
+    public UserModel create(boolean admin) {
+        return userRepository.save(new UserModel(admin));
+    }
+
     /** ASM-01: 헤더 값이 가리키는 사용자가 존재할 때만 요청자로 식별된다. */
     public UserModel getUser(Long userId) {
         return userRepository.find(userId)

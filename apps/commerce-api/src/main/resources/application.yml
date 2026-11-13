@@ -8,11 +8,16 @@ server:
     max-connections: 8192 # 최대 동시 연결 수 (default : 8192)
     accept-count: 100 # 대기 큐 크기 (default : 100)
     keep-alive-timeout: 60s # 60s
+    mbeanregistry:
+      enabled: true # tomcat_threads_busy/current/config_max 지표를 내보낸다 (W8 부하 테스트 모니터링)
   max-http-request-header-size: 8KB
 
 spring:
   main:
     web-application-type: servlet
+  mvc:
+    async:
+      request-timeout: 5s # 비동기 응답(쿠폰 발급) 상한. 허가 대기 600ms + 발급 TX 보다 넉넉하게 (DR-63)
   application:
     name: commerce-api
   profiles:
@@ -45,6 +50,15 @@ pg:
     slow-call-rate-threshold: 50 # 3초 넘은 호출 비율(%)
     wait-duration-in-open-state: 10s
     permitted-number-of-calls-in-half-open-state: 3
+
+coupon-issue:
+  limiter: # 쿠폰 발급 TX(CouponIssueProcessor.issue) 동시 실행 제한. Redisson 세마포어를 async 로 부른다, 프로모션마다 따로 센다 (DR-63)
+    permits: 200 # 프로모션 하나의 동시 발급 TX 수 (앱 전체 합). 앱 3대 × 커넥션 풀 100 = 300 보다 작게
+    lease: 2s # 허가 보유 상한. 지나면 반납하지 않아도 회수된다
+    wait-time: 600ms # 허가를 기다리는 상한 (워커 스레드는 잡지 않는다). 그 안에 얻지 못하면 재시도 없이 503 COUPON_ISSUE_BUSY
+    executor: # 허가를 얻은 발급 TX 를 실행하는 앱 서버 하나의 스레드 풀
+      threads: 200
+      queue-capacity: 200 # 스레드가 모두 바쁠 때 허가를 쥔 채 기다리는 작업 수 상한. 넘치면 허가를 반납하고 503 COUPON_ISSUE_BUSY
 
 kafka:
   topics:
