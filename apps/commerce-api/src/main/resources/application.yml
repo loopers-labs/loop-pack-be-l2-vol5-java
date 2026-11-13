@@ -89,6 +89,12 @@ coupon:
       required-successes: 3      # 세대가 연속 일치해야 하는 횟수
       max-reopens: 3             # window 안 자동 재개 허용 횟수. 넘으면 FLAPPING
       window: PT10M
+    db-circuit:                  # DB 발급 구간 서킷브레이커. 전체에 하나 (§7-4, D15)
+      sliding-window-size: 10
+      minimum-calls: 5
+      failure-rate-threshold: 50
+      wait-duration-in-open: PT5S          # 승격 TTL(30초) 안에 반열림 시험 기회가 여러 번 있도록 PG(10초)보다 짧다
+      permitted-calls-in-half-open: 3      # C=3 과 맞춰 자리 수만큼 시험한다
 
 ---
 spring:
@@ -131,6 +137,8 @@ coupon:
     heartbeat-interval: PT0.2S
     permit-ttl: PT1S
     admitted-ttl: PT1S
+    db-circuit:
+      wait-duration-in-open: PT1S  # 반열림 전이 테스트가 실제 시간을 길게 기다리지 않도록
 
 ---
 server:

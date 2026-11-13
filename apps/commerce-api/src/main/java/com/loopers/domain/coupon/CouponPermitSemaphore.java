@@ -39,4 +39,7 @@ public interface CouponPermitSemaphore {
      * @return 지웠으면 true. 이미 회수돼 없었으면 false (호출자는 recovered 로 집계한다, D4-1)
      */
     boolean release(Long campaignId, String token);
+
+    /** 현재 permits 크기. ZCARD. 누수 감시 Gauge(coupon.admission.permits)의 값이다 (§7-2). */
+    long permitCount(Long campaignId);
 }

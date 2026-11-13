@@ -38,6 +38,15 @@ public interface CouponAdmissionGate {
     Optional<Closure> closure(Long campaignId);
 
     /**
+     * 기억한 세대값과 Redis 의 gen 키가 같은지. 닫혀 있어도 마지막으로 기억한 세대와 비교한다. 한 번도 열지 않았으면 false.
+     * 관리자 상태 조회용이며 Redis 예외는 그대로 전파한다 (호출자가 "조회 불가"로 표시한다).
+     */
+    boolean generationMatches(Long campaignId);
+
+    /** window 안에 일어난 자동 재개 횟수. 관리자 상태 조회용 (§8-1). */
+    int recentAutoReopens(Long campaignId);
+
+    /**
      * 새 세대값을 만들어 Redis 에 쓰고 gate 를 연다. Redis 쓰기가 실패하면 gate 는 닫힌 채로 예외가 전파된다.
      *
      * @return 새 세대값

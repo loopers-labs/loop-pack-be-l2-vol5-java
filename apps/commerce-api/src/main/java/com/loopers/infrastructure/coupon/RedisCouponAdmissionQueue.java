@@ -108,6 +108,18 @@ public class RedisCouponAdmissionQueue implements CouponAdmissionQueue {
     }
 
     @Override
+    public long waitingCount(Long campaignId) {
+        Long size = redisTemplate.opsForZSet().size(CouponAdmissionKeys.waiting(campaignId));
+        return size == null ? 0L : size;
+    }
+
+    @Override
+    public long admittedCount(Long campaignId) {
+        Long size = redisTemplate.opsForZSet().size(CouponAdmissionKeys.admitted(campaignId));
+        return size == null ? 0L : size;
+    }
+
+    @Override
     public int promote(Long campaignId, String expectedGen) {
         Long result = redisTemplate.execute(
             PROMOTE,

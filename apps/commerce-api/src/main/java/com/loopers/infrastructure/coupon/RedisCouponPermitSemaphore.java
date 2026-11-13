@@ -96,4 +96,10 @@ public class RedisCouponPermitSemaphore implements CouponPermitSemaphore {
         Long removed = redisTemplate.opsForZSet().remove(CouponAdmissionKeys.permits(campaignId), token);
         return removed != null && removed > 0;
     }
+
+    @Override
+    public long permitCount(Long campaignId) {
+        Long size = redisTemplate.opsForZSet().size(CouponAdmissionKeys.permits(campaignId));
+        return size == null ? 0L : size;
+    }
 }

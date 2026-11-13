@@ -3,6 +3,8 @@ package com.loopers.infrastructure.coupon;
 import com.loopers.config.coupon.CouponAdmissionProperties;
 import com.loopers.config.coupon.CouponAdmissionRedisConfig;
 import com.loopers.domain.coupon.CouponAdmissionGate;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.DataAccessException;
@@ -44,9 +46,14 @@ public class RedisCouponAdmissionGate implements CouponAdmissionGate {
         }
     }
 
+    static final String GATE_OPEN = "coupon.admission.gate_open";
+    static final String GATE_CLOSE = "coupon.admission.gate_close";
+    static final String AUTO_REOPEN = "coupon.admission.auto_reopen";
+
     private final RedisTemplate<String, String> redisTemplate;
     private final CouponAdmissionProperties properties;
     private final Clock clock;
+    private final MeterRegistry meterRegistry;
     private final Map<Long, State> states = new ConcurrentHashMap<>();
     /** 캠페인별 자동 재개 시각. window 안의 횟수만 의미가 있어 오래된 것은 probe 때 버린다. */
     private final Map<Long, Deque<Instant>> autoReopens = new ConcurrentHashMap<>();
@@ -54,11 +61,22 @@ public class RedisCouponAdmissionGate implements CouponAdmissionGate {
     public RedisCouponAdmissionGate(
         @Qualifier(CouponAdmissionRedisConfig.COUPON_ADMISSION_REDIS_TEMPLATE) RedisTemplate<String, String> redisTemplate,
         CouponAdmissionProperties properties,
-        Clock clock
+        Clock clock,
+        MeterRegistry meterRegistry
     ) {
         this.redisTemplate = redisTemplate;
         this.properties = properties;
         this.clock = clock;
+        this.meterRegistry = meterRegistry;
+    }
+
+    /** 상태를 바꿀 때마다 거친다. 캠페인을 처음 보면 gate_open Gauge(열림 1 / 닫힘 0)를 등록한다. */
+    private void put(Long campaignId, State state) {
+        if (states.put(campaignId, state) == null) {
+            Gauge.builder(GATE_OPEN, states, map -> map.get(campaignId).open() ? 1 : 0)
+                .tag("campaign", String.valueOf(campaignId))
+                .register(meterRegistry);
+        }
     }
 
     @Override
@@ -80,10 +98,29 @@ public class RedisCouponAdmissionGate implements CouponAdmissionGate {
     }
 
     @Override
+    public boolean generationMatches(Long campaignId) {
+        State state = states.get(campaignId);
+        if (state == null || state.generation() == null) {
+            return false;
+        }
+        return state.generation().equals(redisTemplate.opsForValue().get(CouponAdmissionKeys.gen(campaignId)));
+    }
+
+    @Override
+    public synchronized int recentAutoReopens(Long campaignId) {
+        Deque<Instant> recent = autoReopens.get(campaignId);
+        if (recent == null) {
+            return 0;
+        }
+        Instant cutoff = clock.instant().minus(properties.autoReopen().window());
+        return (int) recent.stream().filter(at -> !at.isBefore(cutoff)).count();
+    }
+
+    @Override
     public synchronized String open(Long campaignId) {
         String generation = UUID.randomUUID().toString();
         redisTemplate.opsForValue().set(CouponAdmissionKeys.gen(campaignId), generation);
-        states.put(campaignId, State.opened(generation));
+        put(campaignId, State.opened(generation));
         log.info("쿠폰 접수 gate 를 연다. campaignId={} generation={}", campaignId, generation);
         return generation;
     }
@@ -102,7 +139,8 @@ public class RedisCouponAdmissionGate implements CouponAdmissionGate {
 
     private void closeWith(Long campaignId, CloseReason reason) {
         State current = states.getOrDefault(campaignId, State.opened(null));
-        states.put(campaignId, current.closed(reason, clock.instant()));
+        put(campaignId, current.closed(reason, clock.instant()));
+        meterRegistry.counter(GATE_CLOSE, "reason", reason.name().toLowerCase()).increment();
     }
 
     @Override
@@ -122,7 +160,7 @@ public class RedisCouponAdmissionGate implements CouponAdmissionGate {
             return false;
         }
         if (actual == null || !actual.equals(state.generation())) {
-            states.put(campaignId, state.closed(CloseReason.STALE_GENERATION, clock.instant()));
+            closeWith(campaignId, CloseReason.STALE_GENERATION);
             log.warn("자동 재개 probe 에서 세대 불일치. 자동 재개를 중단한다. campaignId={} expected={} actual={}", campaignId, state.generation(), actual);
             return false;
         }
@@ -139,13 +177,14 @@ public class RedisCouponAdmissionGate implements CouponAdmissionGate {
             recent.pollFirst();
         }
         if (recent.size() >= settings.maxReopens()) {
-            states.put(campaignId, state.closed(CloseReason.FLAPPING, now));
+            closeWith(campaignId, CloseReason.FLAPPING);
             log.warn("자동 재개가 window 안에 {}회를 넘었다. 관리자 open 을 기다린다. campaignId={}", settings.maxReopens(), campaignId);
             return false;
         }
 
         recent.addLast(now);
-        states.put(campaignId, State.opened(state.generation()));
+        put(campaignId, State.opened(state.generation()));
+        meterRegistry.counter(AUTO_REOPEN).increment();
         log.info("자동 재개. 세대가 연속 {}회 일치해 gate 를 연다(세대 유지). campaignId={} generation={}", successes, campaignId, state.generation());
         return true;
     }

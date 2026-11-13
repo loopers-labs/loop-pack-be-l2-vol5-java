@@ -38,6 +38,12 @@ public interface CouponAdmissionQueue {
     /** 지금까지 발급된 접수 번호 수. GET seq. 접수가 없으면 0. */
     long acceptedCount(Long campaignId);
 
+    /** 대기열 크기. ZCARD waiting. 관리자 상태 조회용 (§8-1). */
+    long waitingCount(Long campaignId);
+
+    /** 승격된 사용자 수. ZCARD admitted. 관리자 상태 조회용 (§8-1). */
+    long admittedCount(Long campaignId);
+
     /**
      * 승격 Lua. 세대 확인 → admitted·permits 만료 정리 → 빈자리만큼 ZPOPMIN waiting → ZADD admitted (§5-2).
      *
