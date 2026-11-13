@@ -46,6 +46,7 @@ public final class ErrorStatusMapper {
         Map.entry(PaymentErrorCode.PAYMENT_NOT_FOUND, HttpStatus.NOT_FOUND),
         Map.entry(CouponErrorCode.CAMPAIGN_NOT_FOUND, HttpStatus.NOT_FOUND),
         Map.entry(CouponErrorCode.CAMPAIGN_NOT_ACTIVE, HttpStatus.CONFLICT),
+        Map.entry(CouponErrorCode.COUPON_ISSUE_NOT_FOUND, HttpStatus.NOT_FOUND),
         Map.entry(CouponErrorCode.COUPON_ISSUE_UNAVAILABLE, HttpStatus.SERVICE_UNAVAILABLE),
         Map.entry(CouponErrorCode.INVALID_CAMPAIGN_NAME, HttpStatus.BAD_REQUEST),
         Map.entry(CouponErrorCode.INVALID_TOTAL_QUOTA, HttpStatus.BAD_REQUEST),

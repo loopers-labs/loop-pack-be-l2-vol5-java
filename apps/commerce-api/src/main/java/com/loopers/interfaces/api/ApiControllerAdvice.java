@@ -3,12 +3,14 @@ package com.loopers.interfaces.api;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import com.fasterxml.jackson.databind.exc.MismatchedInputException;
+import com.loopers.domain.coupon.enums.CouponErrorCode;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorCode;
 import com.loopers.support.error.ErrorType;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.dao.PessimisticLockingFailureException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -28,12 +30,17 @@ import java.util.stream.Collectors;
 @Slf4j
 public class ApiControllerAdvice {
     private static final int MYSQL_DEADLOCK = 1213;
+    /** 장애 회복을 기다리는 간격의 잠정값(초). 다시 확인할 시각의 안내일 뿐 발급 약속이 아님 (8주차 D-148) */
+    private static final String COUPON_UNAVAILABLE_RETRY_AFTER = "10";
 
     @ExceptionHandler
     public ResponseEntity<ApiResponse<?>> handle(CoreException e) {
         log.warn("CoreException : {}", e.getCustomMessage() != null ? e.getCustomMessage() : e.getMessage(), e);
-        return ResponseEntity.status(ErrorStatusMapper.statusOf(e.getErrorCode()))
-            .body(ApiResponse.fail(e.getErrorCode().getCode(), e.getMessage(), e.getDetail()));
+        ResponseEntity.BodyBuilder builder = ResponseEntity.status(ErrorStatusMapper.statusOf(e.getErrorCode()));
+        if (e.getErrorCode() == CouponErrorCode.COUPON_ISSUE_UNAVAILABLE) {
+            builder.header(HttpHeaders.RETRY_AFTER, COUPON_UNAVAILABLE_RETRY_AFTER);
+        }
+        return builder.body(ApiResponse.fail(e.getErrorCode().getCode(), e.getMessage(), e.getDetail()));
     }
 
     @ExceptionHandler

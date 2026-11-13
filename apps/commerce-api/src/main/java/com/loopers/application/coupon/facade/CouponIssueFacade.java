@@ -2,11 +2,14 @@ package com.loopers.application.coupon.facade;
 
 import com.loopers.application.coupon.dto.CouponIssueInfo;
 import com.loopers.domain.coupon.entity.CouponCampaign;
+import com.loopers.domain.coupon.entity.CouponIssueRequest;
 import com.loopers.domain.coupon.enums.CouponErrorCode;
+import com.loopers.domain.coupon.enums.IssueRequestStatus;
 import com.loopers.domain.coupon.enums.IssueState;
 import com.loopers.domain.coupon.gateway.CouponIssueQueue;
 import com.loopers.domain.coupon.gateway.CouponIssueRequestSender;
 import com.loopers.domain.coupon.repository.CouponCampaignRepository;
+import com.loopers.domain.coupon.repository.CouponIssueRequestRepository;
 import com.loopers.domain.coupon.vo.IssueAcceptance;
 import com.loopers.domain.coupon.vo.IssueRequested;
 import com.loopers.domain.coupon.vo.IssueSnapshot;
@@ -17,6 +20,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Clock;
 import java.time.ZonedDateTime;
+import java.util.Optional;
 import java.util.function.Supplier;
 
 /**
@@ -30,6 +34,7 @@ public class CouponIssueFacade {
     private final CouponIssueQueue couponIssueQueue;
     private final CouponIssueRequestSender couponIssueRequestSender;
     private final CouponCampaignRepository couponCampaignRepository;
+    private final CouponIssueRequestRepository couponIssueRequestRepository;
     private final Clock clock;
 
     public CouponIssueInfo request(Long campaignId, Long userId) {
@@ -45,6 +50,44 @@ public class CouponIssueFacade {
             case IssueAcceptance.NotActive notActive -> throw new CoreException(CouponErrorCode.CAMPAIGN_NOT_ACTIVE);
             case IssueAcceptance.SoldOut soldOut -> CouponIssueInfo.soldOut(campaignId);
         };
+    }
+
+    /**
+     * 평소에는 Redis 사본만 읽는다 (D-125). Redis 를 쓸 수 없으면 DB 접수 기록(원본)으로 대신 읽는다 (D-145).
+     * 아직 확정되지 않은 접수(PENDING_CONFIRM)는 결과를 모르므로 503 이다
+     */
+    public CouponIssueInfo find(Long campaignId, Long userId) {
+        Optional<IssueSnapshot> snapshot;
+        try {
+            snapshot = couponIssueQueue.read(campaignId, userId);
+        } catch (DataAccessException e) {
+            return fromDatabase(campaignId, userId);
+        } catch (CoreException e) {
+            if (e.getErrorCode() != CouponErrorCode.COUPON_ISSUE_UNAVAILABLE) {
+                throw e;
+            }
+            return fromDatabase(campaignId, userId);
+        }
+        IssueSnapshot found = snapshot.orElseThrow(() -> new CoreException(CouponErrorCode.COUPON_ISSUE_NOT_FOUND));
+        if (found.state() == IssueState.PENDING_CONFIRM) {
+            throw new CoreException(CouponErrorCode.COUPON_ISSUE_UNAVAILABLE);
+        }
+        return CouponIssueInfo.from(campaignId, found);
+    }
+
+    /** 기록이 없으면 "접수 안 함"과 "아직 적재 안 됨"을 구분할 수 없어 404 가 아니라 503 이다 (D-146) */
+    private CouponIssueInfo fromDatabase(Long campaignId, Long userId) {
+        CouponCampaign campaign = couponCampaignRepository.findById(campaignId)
+            .orElseThrow(() -> new CoreException(CouponErrorCode.CAMPAIGN_NOT_FOUND));
+        CouponIssueRequest request = couponIssueRequestRepository.find(campaignId, userId)
+            .orElseThrow(() -> new CoreException(CouponErrorCode.COUPON_ISSUE_UNAVAILABLE));
+        boolean soldOut = !campaign.isOpen() || campaign.getIssuedCount() >= campaign.getTotalQuota();
+        long promoted = request.getStatus() == IssueRequestStatus.RESERVE
+            ? couponIssueRequestRepository.countPromoted(campaignId)
+            : 0L;
+        IssueSnapshot snapshot = IssueSnapshot.of(IssueState.valueOf(request.getStatus().name()), request.getSequence(),
+            request.getCouponId(), soldOut, promoted, campaign.getTotalQuota());
+        return CouponIssueInfo.from(campaignId, snapshot);
     }
 
     /** broker 확인이 없으면 확정하지 않는다. PENDING_CONFIRM 은 재전송 · 대사가 정리한다 (D-133, D-134) */
