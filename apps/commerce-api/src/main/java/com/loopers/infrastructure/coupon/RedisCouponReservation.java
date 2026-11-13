@@ -11,6 +11,8 @@ import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Set;
@@ -27,13 +29,20 @@ class RedisCouponReservation implements CouponReservation {
     private static final int READY_SCORE = 0;
 
     @SuppressWarnings("rawtypes")
-    private static final RedisScript<List> RESERVE =
-        RedisScript.of(new ClassPathResource("redis/coupon-reservation-reserve.lua"), List.class);
+    private static final RedisScript<List> RESERVE = RedisScript.of(read("redis/coupon-reservation-reserve.lua"), List.class);
 
     private final RedisTemplate<String, String> redis;
 
     RedisCouponReservation(@Qualifier(RedisConfig.REDIS_TEMPLATE_MASTER) RedisTemplate<String, String> redis) {
         this.redis = redis;
+    }
+
+    private static String read(String path) {
+        try {
+            return new ClassPathResource(path).getContentAsString(StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     static String key(Long campaignId) {
