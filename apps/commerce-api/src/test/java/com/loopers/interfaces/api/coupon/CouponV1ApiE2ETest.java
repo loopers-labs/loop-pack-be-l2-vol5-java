@@ -1,5 +1,6 @@
 package com.loopers.interfaces.api.coupon;
 
+import com.loopers.application.coupon.facade.SoldOutCampaigns;
 import com.loopers.domain.coupon.entity.Coupon;
 import com.loopers.domain.coupon.entity.CouponCampaign;
 import com.loopers.domain.coupon.entity.CouponIssueRequest;
@@ -61,6 +62,9 @@ class CouponV1ApiE2ETest {
     private DatabaseCleanUp databaseCleanUp;
 
     @Autowired
+    private SoldOutCampaigns soldOutCampaigns;
+
+    @Autowired
     private RedisCleanUp redisCleanUp;
 
     private User user;
@@ -72,6 +76,7 @@ class CouponV1ApiE2ETest {
 
     @AfterEach
     void tearDown() {
+        soldOutCampaigns.clear();
         databaseCleanUp.truncateAllTables();
         redisCleanUp.truncateAll();
     }

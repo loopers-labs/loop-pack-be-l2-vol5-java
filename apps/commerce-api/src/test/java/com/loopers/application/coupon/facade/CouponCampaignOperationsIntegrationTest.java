@@ -50,10 +50,14 @@ class CouponCampaignOperationsIntegrationTest {
     private DatabaseCleanUp databaseCleanUp;
 
     @Autowired
+    private SoldOutCampaigns soldOutCampaigns;
+
+    @Autowired
     private RedisCleanUp redisCleanUp;
 
     @AfterEach
     void tearDown() {
+        soldOutCampaigns.clear();
         databaseCleanUp.truncateAllTables();
         redisCleanUp.truncateAll();
     }

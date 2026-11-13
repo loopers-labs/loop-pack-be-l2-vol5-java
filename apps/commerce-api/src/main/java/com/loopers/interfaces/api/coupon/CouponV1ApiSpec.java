@@ -15,7 +15,8 @@ public interface CouponV1ApiSpec {
     @Operation(
         summary = "쿠폰 발급 접수",
         description = "접수되면 202(WAITING · RESERVE)이고 발급은 나중에 확정됩니다. 발급 · 품절 · 최종 실패는 200 과 본문 상태입니다. "
-            + "같은 사용자가 다시 요청하면 기존 상태를 돌려줍니다. Retry-After 는 다시 확인할 시각의 안내일 뿐 발급 약속이 아닙니다."
+            + "같은 사용자가 다시 요청하면 기존 상태를 돌려줍니다. 단, 품절된 뒤에는 새 접수를 받지 않아 누구에게나 SOLD_OUT 이며, "
+            + "이미 접수한 결과는 내 발급 결과 조회로 확인합니다. Retry-After 는 다시 확인할 시각의 안내일 뿐 발급 약속이 아닙니다."
     )
     ResponseEntity<ApiResponse<CouponV1Dto.IssueResponse>> requestIssue(
         @Parameter(hidden = true) LoginUser loginUser,

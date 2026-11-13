@@ -35,21 +35,39 @@ public class CouponIssueFacade {
     private final CouponIssueRequestSender couponIssueRequestSender;
     private final CouponCampaignRepository couponCampaignRepository;
     private final CouponIssueRequestRepository couponIssueRequestRepository;
+    private final SoldOutCampaigns soldOutCampaigns;
     private final Clock clock;
 
+    /** 품절을 본 캠페인은 누구든 바로 SOLD_OUT. 이미 접수한 사람은 결과를 find 로 확인한다 (D-170) */
     public CouponIssueInfo request(Long campaignId, Long userId) {
+        if (soldOutCampaigns.contains(campaignId)) {
+            return CouponIssueInfo.soldOut(campaignId);
+        }
         ZonedDateTime now = ZonedDateTime.now(clock);
         IssueAcceptance acceptance = onQueue(campaignId,
             () -> couponIssueQueue.accept(campaignId, userId, now.toInstant().toEpochMilli()));
         return switch (acceptance) {
             case IssueAcceptance.Pending pending -> sendAndConfirm(campaignId, userId, pending.sequence(), now);
-            case IssueAcceptance.Existing existing -> existing.snapshot().state() == IssueState.PENDING_CONFIRM
-                // 503 뒤 재요청이면 같은 key 로 다시 보내 확인한다 (D-134)
-                ? sendAndConfirm(campaignId, userId, existing.snapshot().sequence(), now)
-                : CouponIssueInfo.from(campaignId, existing.snapshot());
+            case IssueAcceptance.Existing existing -> existing(campaignId, userId, existing.snapshot(), now);
             case IssueAcceptance.NotActive notActive -> throw new CoreException(CouponErrorCode.CAMPAIGN_NOT_ACTIVE);
-            case IssueAcceptance.SoldOut soldOut -> CouponIssueInfo.soldOut(campaignId);
+            case IssueAcceptance.SoldOut soldOut -> soldOut(campaignId);
         };
+    }
+
+    private CouponIssueInfo existing(Long campaignId, Long userId, IssueSnapshot snapshot, ZonedDateTime now) {
+        if (snapshot.state() == IssueState.PENDING_CONFIRM) {
+            // 503 뒤 재요청이면 같은 key 로 다시 보내 확인한다 (D-134)
+            return sendAndConfirm(campaignId, userId, snapshot.sequence(), now);
+        }
+        if (snapshot.state() == IssueState.SOLD_OUT) {
+            soldOutCampaigns.remember(campaignId);
+        }
+        return CouponIssueInfo.from(campaignId, snapshot);
+    }
+
+    private CouponIssueInfo soldOut(Long campaignId) {
+        soldOutCampaigns.remember(campaignId);
+        return CouponIssueInfo.soldOut(campaignId);
     }
 
     /**

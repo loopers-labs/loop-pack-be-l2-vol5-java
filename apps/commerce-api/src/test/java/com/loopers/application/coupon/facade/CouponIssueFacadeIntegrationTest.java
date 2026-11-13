@@ -30,8 +30,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 @SpringBootTest
 class CouponIssueFacadeIntegrationTest {
@@ -39,7 +43,7 @@ class CouponIssueFacadeIntegrationTest {
     @Autowired
     private CouponIssueFacade couponIssueFacade;
 
-    @Autowired
+    @MockitoSpyBean
     private CouponIssueQueue couponIssueQueue;
 
     @Autowired
@@ -55,10 +59,14 @@ class CouponIssueFacadeIntegrationTest {
     private DatabaseCleanUp databaseCleanUp;
 
     @Autowired
+    private SoldOutCampaigns soldOutCampaigns;
+
+    @Autowired
     private RedisCleanUp redisCleanUp;
 
     @AfterEach
     void tearDown() {
+        soldOutCampaigns.clear();
         databaseCleanUp.truncateAllTables();
         redisCleanUp.truncateAll();
     }
@@ -136,6 +144,28 @@ class CouponIssueFacadeIntegrationTest {
                 () -> assertThat(reserve.state()).isEqualTo(IssueState.RESERVE),
                 () -> assertThat(reserve.reservePosition()).isEqualTo(1),
                 () -> assertThat(soldOut.state()).isEqualTo(IssueState.SOLD_OUT)
+            );
+        }
+
+        @DisplayName("품절을 본 뒤에는 이미 접수한 사람에게도 Redis 를 거치지 않고 SOLD_OUT 이고, 결과는 조회로 확인한다. (D-170)")
+        @Test
+        void soldOutWithoutRedis_afterSoldOutSeen() {
+            // arrange
+            Long campaignId = openCampaign();
+            couponIssueFacade.request(campaignId, 1L);
+            couponIssueFacade.request(campaignId, 2L);
+            couponIssueFacade.request(campaignId, 3L);
+            couponIssueFacade.request(campaignId, 4L);
+            clearInvocations(couponIssueQueue);
+
+            // act
+            CouponIssueInfo again = couponIssueFacade.request(campaignId, 1L);
+
+            // assert
+            assertAll(
+                () -> assertThat(again.state()).isEqualTo(IssueState.SOLD_OUT),
+                () -> verify(couponIssueQueue, never()).accept(anyLong(), anyLong(), anyLong()),
+                () -> assertThat(couponIssueFacade.find(campaignId, 1L).state()).isEqualTo(IssueState.WAITING)
             );
         }
 
