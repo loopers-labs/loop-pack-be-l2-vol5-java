@@ -191,7 +191,7 @@ class QueryDslOrderQueryDaoIntegrationTest {
                     : PaymentRecoveryTask.Reason.NONE, Instant.now()));
             if (completed) {
                 orderRepository.completePgIfPending(saved.getId(), OrderStatus.CONFIRMED,
-                    OrderRecord.paidByPg(2L, saved.getTotalAmount()));
+                    OrderRecord.paidByPg(2L, saved.getTotalAmount(), Instant.now(), UUID.randomUUID()));
             }
             return saved.getId();
         });

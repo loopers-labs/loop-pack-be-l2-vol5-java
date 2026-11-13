@@ -1,0 +1,11 @@
+spring:
+  main:
+    web-application-type: none
+
+order-events:
+  relay:
+    enabled: false
+
+scheduler:
+  like-count:
+    enabled: false

@@ -1,0 +1,11 @@
+{
+  "eventType": "OrderConfirmed",
+  "schemaVersion": 1,
+  "eventId": "e321d56a-59b3-4cf1-a7d0-6238451af280",
+  "orderId": 42,
+  "confirmedAt": "2026-11-04T01:00:00.123456Z",
+  "items": [
+    {"productId": 7, "quantity": 2},
+    {"productId": 8, "quantity": 1}
+  ]
+}

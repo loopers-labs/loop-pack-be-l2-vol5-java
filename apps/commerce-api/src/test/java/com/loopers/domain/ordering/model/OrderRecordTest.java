@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
+import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -22,7 +23,8 @@ class OrderRecordTest {
             assertThat(orderRecord.getAmount()).isEqualTo(7_000L);
             assertThat(orderRecord.getStatus()).isEqualTo(OrderRecordStatus.PAID);
             assertThat(orderRecord.getPaymentMethod()).isEqualTo(PaymentMethod.POINT);
-            assertThat(OrderRecord.paidByPg(1L, 7000L).getPaymentMethod()).isEqualTo(PaymentMethod.PG);
+            var record = OrderRecord.paidByPg(1L, 7000L, Instant.EPOCH, UUID.randomUUID());
+            assertThat(record.getPaymentMethod()).isEqualTo(PaymentMethod.PG);
         }
 
         @DisplayName("0 이하 결제액은 거절한다")

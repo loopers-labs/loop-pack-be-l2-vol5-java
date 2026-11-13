@@ -1,0 +1,17 @@
+spring:
+  main:
+    web-application-type: none
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  sql:
+    init:
+      mode: never
+
+order-events:
+  relay:
+    enabled: false
+
+scheduler:
+  like-count:
+    enabled: false
