@@ -66,6 +66,21 @@ class CouponAdmissionSettingsDdlTest {
             .satisfies(row -> assertThat(row).containsEntry("id", 1L).containsEntry("capacity", 3).containsEntry("open", false));
     }
 
+    @Test
+    @DisplayName("2단계 모양(epoch 없음)의 테이블에 스크립트를 실행하면 epoch 열이 기본 1로 추가되어 엔티티와 같아지고 기존 행은 남는다")
+    void addsEpochToStageTwoTable() {
+        jdbcTemplate.execute("create table coupon_admission_settings (id bigint not null, capacity integer not null,"
+            + " closed_at datetime(6), closed_reason varchar(500), open bit not null, updated_at datetime(6) not null, primary key (id))");
+        jdbcTemplate.update("insert into coupon_admission_settings(id, capacity, open, updated_at) values (1, 7, false, now(6))");
+
+        run(SCRIPT);
+        run(SCRIPT);
+
+        assertThat(shape()).isEqualTo(entityShape);
+        assertThat(jdbcTemplate.queryForMap("select capacity, epoch from " + TABLE + " where id = 1"))
+            .containsEntry("capacity", 7).containsEntry("epoch", 1L);
+    }
+
     private List<Map<String, Object>> shape() {
         List<Map<String, Object>> rows = new ArrayList<Map<String, Object>>(jdbcTemplate.queryForList(
             "select column_name, column_type, is_nullable, column_key, extra from information_schema.columns"

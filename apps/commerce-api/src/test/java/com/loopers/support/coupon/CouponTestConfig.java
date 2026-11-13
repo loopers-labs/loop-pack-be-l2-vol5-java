@@ -82,13 +82,13 @@ public class CouponTestConfig {
         }
 
         @Override
-        public boolean acquire(String token, int capacity) {
+        public boolean acquire(long epoch, String token, int capacity) {
             acquireInTransaction.add(TransactionSynchronizationManager.isActualTransactionActive());
             RuntimeException failure = acquireFailure.getAndSet(null);
             if (failure != null) {
                 throw failure;
             }
-            boolean acquired = delegate.acquire(token, capacity);
+            boolean acquired = delegate.acquire(epoch, token, capacity);
             if (acquired) {
                 afterAcquired.get().run();
             }
@@ -96,13 +96,18 @@ public class CouponTestConfig {
         }
 
         @Override
-        public void release(String token) {
+        public void release(long epoch, String token) {
             releaseInTransaction.add(TransactionSynchronizationManager.isActualTransactionActive());
             RuntimeException failure = releaseFailure.getAndSet(null);
             if (failure != null) {
                 throw failure;
             }
-            delegate.release(token);
+            delegate.release(epoch, token);
+        }
+
+        @Override
+        public long holders(long epoch) {
+            return delegate.holders(epoch);
         }
     }
 

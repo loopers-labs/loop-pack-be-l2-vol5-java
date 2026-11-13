@@ -12,6 +12,7 @@ import java.sql.PreparedStatement;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,7 +53,7 @@ abstract class CouponIntegrationSupport {
         clock.set(NOW);
         failingCoupons.disarm();
         admission.disarm();
-        admissionRedis.delete(RedisCouponAdmission.KEY);
+        deletePermitKeys();
         admissionSettings(1000, true);
     }
 
@@ -60,7 +61,7 @@ abstract class CouponIntegrationSupport {
     void cleanCoupons() {
         failingCoupons.disarm();
         admission.disarm();
-        admissionRedis.delete(RedisCouponAdmission.KEY);
+        deletePermitKeys();
         cleanup.truncateAllTables();
     }
 
@@ -74,9 +75,22 @@ abstract class CouponIntegrationSupport {
         return jdbc.queryForMap("select capacity, open, closed_reason, closed_at from coupon_admission_settings where id = 1");
     }
 
+    // 1·2단계 테스트는 설정 행의 기본 epoch 1 키를 본다.
     long permits() {
-        Long size = admissionRedis.opsForSet().size(RedisCouponAdmission.KEY);
+        return permits(1);
+    }
+
+    long permits(long epoch) {
+        Long size = admissionRedis.opsForSet().size(RedisCouponAdmission.key(epoch));
         return size == null ? 0 : size;
+    }
+
+    // 이 테스트들이 쓰는 수용 키만 지운다(다른 Redis 데이터는 건드리지 않는다).
+    void deletePermitKeys() {
+        Set<String> keys = admissionRedis.keys(RedisCouponAdmission.KEY_PREFIX + "*");
+        if (keys != null && !keys.isEmpty()) {
+            admissionRedis.delete(keys);
+        }
     }
 
     void user(long id) {

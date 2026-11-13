@@ -1,6 +1,7 @@
 package com.loopers.domains.coupon.out;
 
 import com.loopers.domains.coupon.app.port.AdmissionSettings;
+import com.loopers.domains.coupon.app.port.AdmissionStatus;
 import com.loopers.domains.coupon.app.port.AdmissionUnavailableException;
 import com.loopers.domains.coupon.app.port.CouponAdmissionSettings;
 import java.time.Instant;
@@ -22,8 +23,8 @@ public class CouponAdmissionSettingsAdapter implements CouponAdmissionSettings {
     public AdmissionSettings current() {
         try {
             return couponAdmissionSettingsJpaRepository.findById(CouponAdmissionSettingsJpaEntity.SINGLE_ROW_ID)
-                .map(entity -> new AdmissionSettings(entity.capacity(), entity.open()))
-                .orElse(new AdmissionSettings(0, false));
+                .map(entity -> new AdmissionSettings(entity.capacity(), entity.open(), 1))
+                .orElse(new AdmissionSettings(0, false, 1));
         } catch (RuntimeException e) {
             // DB 연결 실패는 DataAccessException이 아니라 리포지토리 트랜잭션 시작 실패(TransactionException)로도 온다. 모두 포트 예외로 바꾼다(D123).
             throw new AdmissionUnavailableException("수용 설정을 읽지 못함: " + e.getClass().getSimpleName() + ": " + e.getMessage(), e);
@@ -38,8 +39,16 @@ public class CouponAdmissionSettingsAdapter implements CouponAdmissionSettings {
     }
 
     @Override
+    public AdmissionStatus status() {
+        return couponAdmissionSettingsJpaRepository.findById(CouponAdmissionSettingsJpaEntity.SINGLE_ROW_ID)
+            .map(entity -> new AdmissionStatus(entity.open(), entity.closedReason(), entity.closedAt(), entity.epoch()))
+            .orElse(new AdmissionStatus(false, null, null, 0));
+    }
+
+    @Override
     @Transactional
-    public void open(Instant at) {
+    public long open(Instant at) {
         couponAdmissionSettingsJpaRepository.open(CouponAdmissionSettingsJpaEntity.SINGLE_ROW_ID, at);
+        return 1;
     }
 }

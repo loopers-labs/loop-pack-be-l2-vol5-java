@@ -110,14 +110,14 @@ class CouponAdmissionIntegrationTest extends CouponIntegrationSupport {
     @Test
     @DisplayName("A5: 자기 token을 두 번 반환하거나 모르는 token을 반환해도 다른 활성 token은 그대로 남는다")
     void releaseOnlyRemovesOwnToken() {
-        redisCouponAdmission.acquire("token-a", 3);
-        redisCouponAdmission.acquire("token-b", 3);
+        redisCouponAdmission.acquire(1, "token-a", 3);
+        redisCouponAdmission.acquire(1, "token-b", 3);
 
-        redisCouponAdmission.release("token-a");
-        redisCouponAdmission.release("token-a");
-        redisCouponAdmission.release("unknown-token");
+        redisCouponAdmission.release(1, "token-a");
+        redisCouponAdmission.release(1, "token-a");
+        redisCouponAdmission.release(1, "unknown-token");
 
-        assertThat(admissionRedis.opsForSet().members(RedisCouponAdmission.KEY)).containsExactly("token-b");
+        assertThat(admissionRedis.opsForSet().members(RedisCouponAdmission.key(1))).containsExactly("token-b");
     }
 
     @Test
@@ -129,12 +129,12 @@ class CouponAdmissionIntegrationTest extends CouponIntegrationSupport {
             RedisCouponAdmission first = new RedisCouponAdmission(template(firstConnection));
             RedisCouponAdmission second = new RedisCouponAdmission(template(secondConnection));
 
-            assertThat(first.acquire("a", 3)).isTrue();
-            assertThat(first.acquire("b", 3)).isTrue();
-            assertThat(second.acquire("c", 3)).isTrue();
+            assertThat(first.acquire(1, "a", 3)).isTrue();
+            assertThat(first.acquire(1, "b", 3)).isTrue();
+            assertThat(second.acquire(1, "c", 3)).isTrue();
 
-            assertThat(first.acquire("d", 3)).isFalse();
-            assertThat(second.acquire("e", 3)).isFalse();
+            assertThat(first.acquire(1, "d", 3)).isFalse();
+            assertThat(second.acquire(1, "e", 3)).isFalse();
             assertThat(permits()).isEqualTo(3);
         } finally {
             firstConnection.destroy();
@@ -164,14 +164,14 @@ class CouponAdmissionIntegrationTest extends CouponIntegrationSupport {
     @Test
     @DisplayName("A8: 획득 스크립트는 capacity가 0이거나 정수가 아니거나 token이 비어 있으면 오류를 내고 Set을 바꾸지 않는다")
     void acquireScriptRejectsInvalidInput() {
-        admissionRedis.opsForSet().add(RedisCouponAdmission.KEY, "existing");
+        admissionRedis.opsForSet().add(RedisCouponAdmission.key(1), "existing");
         RedisScript<Long> script = RedisScript.of(new ClassPathResource(RedisCouponAdmission.SCRIPT), Long.class);
 
-        assertThatThrownBy(() -> admissionRedis.execute(script, List.of(RedisCouponAdmission.KEY), "0", "t1")).isNotNull();
-        assertThatThrownBy(() -> admissionRedis.execute(script, List.of(RedisCouponAdmission.KEY), "1.5", "t2")).isNotNull();
-        assertThatThrownBy(() -> admissionRedis.execute(script, List.of(RedisCouponAdmission.KEY), "3", "")).isNotNull();
+        assertThatThrownBy(() -> admissionRedis.execute(script, List.of(RedisCouponAdmission.key(1)), "0", "t1")).isNotNull();
+        assertThatThrownBy(() -> admissionRedis.execute(script, List.of(RedisCouponAdmission.key(1)), "1.5", "t2")).isNotNull();
+        assertThatThrownBy(() -> admissionRedis.execute(script, List.of(RedisCouponAdmission.key(1)), "3", "")).isNotNull();
 
-        assertThat(admissionRedis.opsForSet().members(RedisCouponAdmission.KEY)).containsExactly("existing");
+        assertThat(admissionRedis.opsForSet().members(RedisCouponAdmission.key(1))).containsExactly("existing");
     }
 
     @Test
@@ -248,7 +248,7 @@ class CouponAdmissionIntegrationTest extends CouponIntegrationSupport {
         user(1);
         long campaignId = campaign(true, 10, 0, 3000);
         admissionSettings(1, true);
-        admissionRedis.opsForSet().add(RedisCouponAdmission.KEY, "someone-else");
+        admissionRedis.opsForSet().add(RedisCouponAdmission.key(1), "someone-else");
 
         MockHttpServletResponse tooMany = issue(1, campaignId).andExpect(status().isTooManyRequests())
             .andExpect(header().string("Retry-After", "1")).andReturn().getResponse();
@@ -278,7 +278,7 @@ class CouponAdmissionIntegrationTest extends CouponIntegrationSupport {
                     if (!start.await(DEADLINE_SECONDS, TimeUnit.SECONDS)) {
                         throw new IllegalStateException("시작 대기 시간 초과");
                     }
-                    return redisCouponAdmission.acquire(UUID.randomUUID().toString(), 3);
+                    return redisCouponAdmission.acquire(1, UUID.randomUUID().toString(), 3);
                 };
                 futures.add(executor.submit(attempt));
             }

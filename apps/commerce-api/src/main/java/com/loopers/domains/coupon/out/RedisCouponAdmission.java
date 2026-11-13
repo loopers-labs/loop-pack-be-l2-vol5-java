@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
 // Redis·Spring 예외와 0·1이 아닌 결과는 모두 AdmissionUnavailableException으로 바꾼다(D123).
 @Component
 public class RedisCouponAdmission implements CouponAdmission {
-    public static final String KEY = "coupon:issue:permits";
+    public static final String KEY_PREFIX = "coupon:issue:permits:";
     public static final String SCRIPT = "redis/coupon-admission-acquire.lua";
     private static final RedisScript<Long> ACQUIRE = RedisScript.of(new ClassPathResource(SCRIPT), Long.class);
 
@@ -24,10 +24,10 @@ public class RedisCouponAdmission implements CouponAdmission {
     }
 
     @Override
-    public boolean acquire(String token, int capacity) {
+    public boolean acquire(long epoch, String token, int capacity) {
         Long result;
         try {
-            result = redisTemplate.execute(ACQUIRE, List.of(KEY), String.valueOf(capacity), token);
+            result = redisTemplate.execute(ACQUIRE, List.of(key(1)), String.valueOf(capacity), token);
         } catch (RuntimeException e) {
             throw new AdmissionUnavailableException("수용 자리 획득 실패: " + e.getClass().getSimpleName() + ": " + e.getMessage(), e);
         }
@@ -41,11 +41,20 @@ public class RedisCouponAdmission implements CouponAdmission {
     }
 
     @Override
-    public void release(String token) {
+    public void release(long epoch, String token) {
         try {
-            redisTemplate.opsForSet().remove(KEY, token);
+            redisTemplate.opsForSet().remove(key(1), token);
         } catch (RuntimeException e) {
             throw new AdmissionUnavailableException("수용 자리 반환 실패: " + e.getClass().getSimpleName() + ": " + e.getMessage(), e);
         }
+    }
+
+    @Override
+    public long holders(long epoch) {
+        return 0;
+    }
+
+    public static String key(long epoch) {
+        return KEY_PREFIX + epoch;
     }
 }

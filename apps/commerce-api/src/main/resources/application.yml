@@ -55,6 +55,7 @@ commerce:
   coupon:
     admission:
       redis-command-timeout: 500ms
+      max-execution: 10s # 재개 확인 모드의 시간 기준(D140). 잠금 대기 3초 + 연결 대기 3초 + 여유
   # 설계 28절 2단계. 수치는 [임시]다. enabled는 이 인스턴스에서 relay 스케줄러를 띄울지 정한다(여러 인스턴스면 한 대만 true).
   outbox:
     relay:

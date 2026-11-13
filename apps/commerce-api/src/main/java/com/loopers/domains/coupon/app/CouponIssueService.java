@@ -56,13 +56,13 @@ public class CouponIssueService {
         if (!lookup.campaign().canIssue()) {
             throw new RuleViolationException(NOT_ISSUABLE);
         }
-        int capacity = openCapacity();
+        AdmissionSettings settings = openSettings();
         String token = UUID.randomUUID().toString();
-        acquire(token, capacity);
+        acquire(settings, token);
         try {
             return issueInTransaction(campaignId, userId);
         } finally {
-            release(token);
+            release(settings.epoch(), token);
         }
     }
 
@@ -70,8 +70,8 @@ public class CouponIssueService {
         return couponRepository.findByUser(userId).stream().map(IssuedCouponView::from).toList();
     }
 
-    // ② 닫혀 있거나 설정을 읽을 수 없으면 503이다. capacity는 HTTP 입력이 아니라 이 행의 값이다.
-    private int openCapacity() {
+    // ② 닫혀 있거나 설정을 읽을 수 없으면 503이다. capacity·epoch는 HTTP 입력이 아니라 이 행의 값이다.
+    private AdmissionSettings openSettings() {
         AdmissionSettings settings;
         try {
             settings = couponAdmissionSettings.current();
@@ -82,14 +82,14 @@ public class CouponIssueService {
         if (!settings.open()) {
             throw new AdmissionClosedException(ADMISSION_CLOSED);
         }
-        return settings.capacity();
+        return settings;
     }
 
     // ③ 자리가 없으면 429다. Redis를 확인할 수 없으면 수용을 닫고(이유·시각) 503이며 발급 트랜잭션은 시작하지 않는다(D123).
-    private void acquire(String token, int capacity) {
+    private void acquire(AdmissionSettings settings, String token) {
         boolean acquired;
         try {
-            acquired = couponAdmission.acquire(token, capacity);
+            acquired = couponAdmission.acquire(settings.epoch(), token, settings.capacity());
         } catch (AdmissionUnavailableException e) {
             log.error("쿠폰 수용 자리 획득 실패. 수용을 닫는다", e);
             closeAdmission("acquire 실패: " + e.getMessage());
@@ -101,9 +101,9 @@ public class CouponIssueService {
     }
 
     // ⑤ 결과가 정해진 뒤라 반환 실패는 응답을 바꾸지 않는다. 로그를 남기고 수용을 닫는다(D134).
-    private void release(String token) {
+    private void release(long epoch, String token) {
         try {
-            couponAdmission.release(token);
+            couponAdmission.release(epoch, token);
         } catch (AdmissionUnavailableException e) {
             log.error("쿠폰 수용 자리 반환 실패. 수용을 닫는다. token={}", token, e);
             closeAdmission("release 실패: " + e.getMessage());
