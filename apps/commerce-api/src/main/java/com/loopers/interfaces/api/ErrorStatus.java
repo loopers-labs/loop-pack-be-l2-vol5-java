@@ -27,6 +27,7 @@ public final class ErrorStatus {
                  ORDER_NOT_FOUND,
                  USER_NOT_FOUND,
                  LIKE_NOT_FOUND,
+                 COUPON_CAMPAIGN_NOT_FOUND,
                  NOT_FOUND -> HttpStatus.NOT_FOUND;
             case METHOD_NOT_ALLOWED -> HttpStatus.METHOD_NOT_ALLOWED;
             case DUPLICATE_BRAND_NAME,
@@ -38,10 +39,14 @@ public final class ErrorStatus {
                  INSUFFICIENT_STOCK,
                  INSUFFICIENT_POINT,
                  PAYMENT_ALREADY_PROCESSED,
+                 COUPON_CAMPAIGN_INACTIVE,
+                 COUPON_CAMPAIGN_SOLD_OUT,
                  POINT_CONFLICT,
                  POINT_BALANCE_LIMIT_EXCEEDED -> HttpStatus.CONFLICT;
+            case COUPON_ADMISSION_FULL -> HttpStatus.TOO_MANY_REQUESTS;
             case PAYMENT_FAILED -> HttpStatus.UNPROCESSABLE_ENTITY;
-            case PAYMENT_CANCELLATION_PENDING -> HttpStatus.SERVICE_UNAVAILABLE;
+            case PAYMENT_CANCELLATION_PENDING,
+                 COUPON_ADMISSION_UNAVAILABLE -> HttpStatus.SERVICE_UNAVAILABLE;
             case INTERNAL_ERROR -> HttpStatus.INTERNAL_SERVER_ERROR;
         };
     }
