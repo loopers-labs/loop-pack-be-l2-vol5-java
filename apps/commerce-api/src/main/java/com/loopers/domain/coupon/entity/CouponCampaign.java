@@ -90,6 +90,15 @@ public class CouponCampaign extends BaseEntity {
         return status == CampaignStatus.OPEN;
     }
 
+    /** 한도 + 예비 인원. 예비 인원은 한도의 비율이고 최소 1명이다 (8주차 D-122) */
+    public int reserveLimit(double reserveRatio) {
+        if (reserveRatio < 0) {
+            throw new IllegalArgumentException("예비 비율은 0 이상. reserveRatio=" + reserveRatio);
+        }
+        int reserve = Math.max(1, (int) Math.ceil(totalQuota * reserveRatio));
+        return Math.addExact(totalQuota, reserve);
+    }
+
     /** 슬롯은 1 ~ 한도뿐이라 한 슬롯에 한 장이면 발급 수가 한도를 넘지 못한다 (8주차 D-141) */
     public boolean hasSlot(int slotNo) {
         return slotNo >= 1 && slotNo <= totalQuota;

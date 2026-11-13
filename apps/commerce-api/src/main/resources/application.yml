@@ -70,6 +70,7 @@ order-event:
 # 쿠폰 접수 (8주차 설계 3장). topic 은 인프라가 만듦 (6주차 D-90)
 coupon-issue:
   topic: coupon-issue-requests
+  reserve-ratio: 0.1 # 예비 인원 = 한도 × 비율(최소 1명). 잠정값, 실패 주입 실험으로 확정 (D-122)
   producer: # 사용자가 응답을 기다리는 경로라 relay 보다 짧은 잠정값 (D-132, D-134)
     request-timeout: 2s
     delivery-timeout: 3s # linger.ms + request-timeout 이상

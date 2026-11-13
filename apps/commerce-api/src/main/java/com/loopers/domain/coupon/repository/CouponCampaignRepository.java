@@ -8,4 +8,6 @@ public interface CouponCampaignRepository {
     CouponCampaign save(CouponCampaign campaign);
 
     Optional<CouponCampaign> findById(Long campaignId);
+
+    long count();
 }

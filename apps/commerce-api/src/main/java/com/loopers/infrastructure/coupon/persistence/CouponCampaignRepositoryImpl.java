@@ -22,4 +22,9 @@ public class CouponCampaignRepositoryImpl implements CouponCampaignRepository {
     public Optional<CouponCampaign> findById(Long campaignId) {
         return couponCampaignJpaRepository.findById(campaignId);
     }
+
+    @Override
+    public long count() {
+        return couponCampaignJpaRepository.count();
+    }
 }

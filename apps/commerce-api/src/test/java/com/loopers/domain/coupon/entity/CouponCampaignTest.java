@@ -139,6 +139,17 @@ class CouponCampaignTest {
         }
     }
 
+    @DisplayName("예비 범위는 한도 + 한도의 비율(올림, 최소 1명)이다. (D-122)")
+    @Test
+    void reserveLimitIsQuotaPlusRatio_atLeastOne() {
+        assertAll(
+            () -> assertThat(campaign(100).reserveLimit(0.1)).isEqualTo(110),
+            () -> assertThat(campaign(5).reserveLimit(0.1)).isEqualTo(6),
+            () -> assertThat(campaign(5).reserveLimit(0.0)).isEqualTo(6),
+            () -> assertThatThrownBy(() -> campaign(5).reserveLimit(-0.1)).isInstanceOf(IllegalArgumentException.class)
+        );
+    }
+
     @DisplayName("슬롯은 1 부터 한도까지만 있다. (D-141)")
     @Test
     void hasSlotsFromOneToQuota() {
