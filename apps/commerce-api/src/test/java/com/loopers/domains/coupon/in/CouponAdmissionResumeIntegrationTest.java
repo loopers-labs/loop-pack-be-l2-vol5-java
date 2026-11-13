@@ -4,8 +4,11 @@ import com.loopers.domains.coupon.app.AdmissionCheckReport;
 import com.loopers.domains.coupon.app.CouponAdmissionCheck;
 import com.loopers.domains.coupon.app.port.AdmissionUnavailableException;
 import com.loopers.domains.coupon.out.RedisCouponAdmission;
+import com.zaxxer.hikari.HikariDataSource;
 import java.sql.Connection;
+import java.sql.DriverManager;
 import java.sql.PreparedStatement;
+import java.sql.Statement;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -17,21 +20,41 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Environment;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 // 8주차 3단계: epoch(D138)와 재개 확인·열기(D139·D140). 실제 Redis·MySQL이고, 붙잡기·반환 실패는 테스트 설정의 포트 래퍼로만 한다.
 // 실제 Redis 중단·재개는 CouponAdmissionRedisFailureTest(전용 컨테이너)가 본다.
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class CouponAdmissionResumeIntegrationTest extends CouponIntegrationSupport {
     private static final long DEADLINE_SECONDS = 20;
 
     @Autowired private CouponAdmissionCheck couponAdmissionCheck;
     @Autowired private RedisCouponAdmission redisCouponAdmission;
     @Autowired private DataSource dataSource;
+    @Autowired private Environment environment;
+
+    // 확인 모드의 DB 기준(열린 쿠폰 잠금 트랜잭션 수)을 실제로 세려면 PROCESS·performance_schema 읽기 권한이 필요하다.
+    // 테스트 컨테이너의 test 계정에는 없어서, 이 컨테이너 안에서만 root로 읽기 권한을 더한다(운영 코드·공용 fixture는 그대로).
+    // 권한이 없을 때의 "조회 실패 → ✗" 장면은 CouponAdmissionCheckTest가 fake 포트로 본다.
+    @BeforeAll
+    void grantLockViewsToTestUser() throws Exception {
+        try (Connection root = DriverManager.getConnection(environment.getRequiredProperty("datasource.mysql-jpa.main.jdbc-url"),
+            "root", environment.getRequiredProperty("datasource.mysql-jpa.main.password"));
+            Statement statement = root.createStatement()) {
+            statement.execute("GRANT PROCESS ON *.* TO 'test'@'%'");
+            statement.execute("GRANT SELECT ON performance_schema.* TO 'test'@'%'");
+        }
+        // 전역 권한(PROCESS)은 새로 맺는 연결부터 적용되므로, 풀에 이미 있는 연결을 바꾸게 한다.
+        dataSource.unwrap(HikariDataSource.class).getHikariPoolMXBean().softEvictConnections();
+    }
 
     @Test
     @DisplayName("F3: 반환되지 않은 token은 시간이 지나도 그대로 남고 수용 키에는 만료 시간이 없다(TTL -1)")

@@ -9,7 +9,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
-// 수용 자리는 Redis Set 하나(키 coupon:issue:permits, D135)에 token으로 둔다. 서버 메모리에 두지 않아 여러 서버에서 같은 자리를 본다.
+// 수용 자리는 epoch별 Redis Set(키 coupon:issue:permits:{epoch}, D135·D138)에 token으로 둔다. 서버 메모리에 두지 않아 여러 서버에서 같은 자리를 본다.
 // Redis·Spring 예외와 0·1이 아닌 결과는 모두 AdmissionUnavailableException으로 바꾼다(D123).
 @Component
 public class RedisCouponAdmission implements CouponAdmission {
@@ -27,7 +27,7 @@ public class RedisCouponAdmission implements CouponAdmission {
     public boolean acquire(long epoch, String token, int capacity) {
         Long result;
         try {
-            result = redisTemplate.execute(ACQUIRE, List.of(key(1)), String.valueOf(capacity), token);
+            result = redisTemplate.execute(ACQUIRE, List.of(key(epoch)), String.valueOf(capacity), token);
         } catch (RuntimeException e) {
             throw new AdmissionUnavailableException("수용 자리 획득 실패: " + e.getClass().getSimpleName() + ": " + e.getMessage(), e);
         }
@@ -43,7 +43,7 @@ public class RedisCouponAdmission implements CouponAdmission {
     @Override
     public void release(long epoch, String token) {
         try {
-            redisTemplate.opsForSet().remove(key(1), token);
+            redisTemplate.opsForSet().remove(key(epoch), token);
         } catch (RuntimeException e) {
             throw new AdmissionUnavailableException("수용 자리 반환 실패: " + e.getClass().getSimpleName() + ": " + e.getMessage(), e);
         }
@@ -51,7 +51,12 @@ public class RedisCouponAdmission implements CouponAdmission {
 
     @Override
     public long holders(long epoch) {
-        return 0;
+        try {
+            Long size = redisTemplate.opsForSet().size(key(epoch));
+            return size == null ? 0 : size;
+        } catch (RuntimeException e) {
+            throw new AdmissionUnavailableException("수용 자리 수 조회 실패: " + e.getClass().getSimpleName() + ": " + e.getMessage(), e);
+        }
     }
 
     public static String key(long epoch) {

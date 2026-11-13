@@ -13,7 +13,7 @@ public interface CouponAdmissionSettingsJpaRepository extends JpaRepository<Coup
     int close(@Param("id") long id, @Param("reason") String reason, @Param("at") Instant at);
 
     @Modifying(flushAutomatically = true, clearAutomatically = true)
-    @Query("update CouponAdmissionSettingsJpaEntity s set s.open = true, s.closedReason = null, s.closedAt = null,"
-        + " s.updatedAt = :at where s.id = :id")
+    @Query("update CouponAdmissionSettingsJpaEntity s set s.open = true, s.epoch = s.epoch + 1, s.closedReason = null,"
+        + " s.closedAt = null, s.updatedAt = :at where s.id = :id")
     int open(@Param("id") long id, @Param("at") Instant at);
 }
