@@ -1,6 +1,7 @@
 package com.loopers.application.coupon;
 
 import com.loopers.domain.coupon.Coupon;
+import com.loopers.domain.coupon.CouponIssueDeadLetterService;
 import com.loopers.domain.coupon.CouponService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -13,9 +14,15 @@ import java.time.Instant;
 public class CouponTransactions {
 
     private final CouponService couponService;
+    private final CouponIssueDeadLetterService deadLetterService;
 
     @Transactional
     public Coupon issue(Long campaignId, Long userId, int issueNumber, Instant reservedAt) {
         return couponService.issue(campaignId, userId, issueNumber, reservedAt);
+    }
+
+    @Transactional
+    public void markDeadLetterReplayed(Long deadLetterId, Instant replayedAt) {
+        deadLetterService.markReplayed(deadLetterId, replayedAt);
     }
 }

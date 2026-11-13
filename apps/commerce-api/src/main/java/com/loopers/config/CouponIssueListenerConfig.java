@@ -32,6 +32,9 @@ public class CouponIssueListenerConfig {
     public static final String LISTENER_ID = "coupon-issue";
     public static final String GROUP = "coupon-issue";
     public static final String AUTO_STARTUP = "${coupon.issue.worker.auto-startup}";
+    public static final String DEAD_LETTER_FACTORY = "couponIssueDeadLetterListenerContainerFactory";
+    public static final String DEAD_LETTER_LISTENER_ID = "coupon-issue-dlt";
+    public static final String DEAD_LETTER_GROUP = "coupon-issue-dlt";
 
     private static final long FIRST_BACKOFF_MILLIS = 1_000;
     private static final double BACKOFF_MULTIPLIER = 2.0;
@@ -55,6 +58,41 @@ public class CouponIssueListenerConfig {
         factory.getContainerProperties().setObservationEnabled(true);
         factory.setCommonErrorHandler(retryInfraFailuresAndDeadLetterBugs(kafkaTemplate, deadLetterTopic, meterRegistry));
         return factory;
+    }
+
+    @Bean(name = DEAD_LETTER_FACTORY)
+    public ConcurrentKafkaListenerContainerFactory<String, byte[]> couponIssueDeadLetterListenerContainerFactory(
+        KafkaProperties kafkaProperties, MeterRegistry meterRegistry
+    ) {
+        Map<String, Object> consumer = new HashMap<>(kafkaProperties.buildConsumerProperties());
+        consumer.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        consumer.put(ConsumerConfig.ALLOW_AUTO_CREATE_TOPICS_CONFIG, false);
+        consumer.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
+
+        ConcurrentKafkaListenerContainerFactory<String, byte[]> factory = new ConcurrentKafkaListenerContainerFactory<>();
+        factory.setConsumerFactory(new DefaultKafkaConsumerFactory<>(consumer));
+        factory.setConcurrency(1);
+        factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL);
+        factory.getContainerProperties().setObservationEnabled(true);
+        factory.setCommonErrorHandler(retryWithoutSkipping(meterRegistry));
+        return factory;
+    }
+
+    private static DefaultErrorHandler retryWithoutSkipping(MeterRegistry meterRegistry) {
+        ExponentialBackOff backOff = new ExponentialBackOff(FIRST_BACKOFF_MILLIS, BACKOFF_MULTIPLIER);
+        backOff.setMaxInterval(MAX_BACKOFF_MILLIS);
+        DefaultErrorHandler handler = new DefaultErrorHandler((failed, exception) -> {
+            throw new IllegalStateException("DLT record 는 건너뛰지 않는다: " + failed.topic() + "-"
+                + failed.partition() + "@" + failed.offset(), exception);
+        }, backOff);
+        handler.setClassifications(Map.of(), true);
+        handler.setRetryListeners((failed, exception, deliveryAttempt) -> {
+            String cause = NestedExceptionUtils.getMostSpecificCause(exception).getClass().getSimpleName();
+            meterRegistry.counter("coupon.issue.dead_letter.retry", "cause", cause).increment();
+            log.warn("DLT 로그 저장이 실패해 같은 record 를 다시 시도한다: position={}-{}@{}, attempt={}, cause={}",
+                failed.topic(), failed.partition(), failed.offset(), deliveryAttempt, cause, exception);
+        });
+        return handler;
     }
 
     @SuppressWarnings("unchecked")
