@@ -141,7 +141,8 @@ class ArchitectureTest {
             "point", List.of("in", "app", "domain", "out"),
             "product", List.of("in", "app", "domain", "out"),
             "payment", List.of("in", "app", "domain", "out"),
-            "order", List.of("in", "app", "domain", "out"));
+            "order", List.of("in", "app", "domain", "out"),
+            "coupon", List.of("in", "app", "domain", "out"));
 
         layers.forEach((context, contextLayers) -> contextLayers.forEach(layer -> {
             String layerPackage = "com.loopers.domains." + context + "." + layer + "..";
