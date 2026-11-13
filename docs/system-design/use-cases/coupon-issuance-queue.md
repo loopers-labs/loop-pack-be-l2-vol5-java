@@ -16,10 +16,10 @@
 | 작업 상태 | `WAITING`, `PROCESSING`, `SUCCEEDED`, `FAILED`, `UNKNOWN` 5개를 사용한다. 확정된 업무 거절과 시스템 실패는 `FAILED`로 합치고 6개 `reasonCode`로 구분한다. |
 | 거절 사유 전달 | `CoreException(CONFLICT)`를 상속하고 사유를 가진 도메인 예외로 품절과 기간 밖을 구분한다. 동기 API 응답은 유지한다. 조기 종료는 총량 소진이므로 품절로 분류한다. |
 | 작업 이력 보존 | 학습용 첫 버전에서는 작업 정보와 사용자, 캠페인별 작업 ID 연결을 자동 만료하거나 자동 삭제하지 않는다. `SUCCEEDED` 또는 `FAILED` 뒤에도 같은 작업 ID와 결과를 조회한다. |
-| 접수 한도 계산 | 로컬 실험은 대기와 처리 중 작업을 합쳐 최대 20건으로 제한한다. 결과 불명으로 수동 복구를 기다리는 작업도 포함한다. `SUCCEEDED` 또는 `FAILED`로 끝난 작업은 제외한다. 한도는 서버 YAML로 설정한다. |
+| 접수 한도 계산 | 대기와 처리 중 작업을 합쳐 최대 20건으로 제한한다. 결과 불명으로 수동 복구를 기다리는 작업도 포함한다. `SUCCEEDED` 또는 `FAILED`로 끝난 작업은 제외한다. 한도는 서버 YAML로 설정한다. |
 | 중단 작업 복구 | 처리 중 목록에 남긴다. 이전 worker와 해당 DB 작업의 종료, 실제 발급 결과를 확인한 뒤 수동으로 복구한다. 자동 재시도와 시간 기반 회수는 하지 않는다. |
 | 복구 적용 범위 | 상태 변경은 `PROCESSING`, `UNKNOWN`만 허용한다. 완료 상태는 결과와 List를 유지하며 확인된 자기 잔여 permit만 정리한다. |
-| 수동 복구 실행 | 첫 버전은 별도 복구 명령을 만들지 않고 문서화한 절차와 조건부 Lua로 처리한다. `redis-cli`와 SQL로 먼저 조회하고, 운영자가 이전 실행과 DB 작업 종료를 확인한 뒤 Lua를 `redis-cli EVAL`로 실행한다. |
+| 수동 복구 실행 | 첫 버전은 별도 복구 명령을 만들지 않고 문서화한 절차와 조건부 Lua로 처리한다. `redis-cli`와 SQL로 먼저 조회하고, 운영자가 이전 실행과 DB 작업 종료를 확인한 뒤 Lua를 `redis-cli --eval`로 실행한다. |
 | worker 실행 | 기존 `commerce-api` 안의 전용 스레드 최대 3개로 실행한다. 대기 작업이 있으면 실행 자리(permit)를 먼저 얻은 뒤 작업을 가져와 연속 처리한다. 비었거나 실행 자리를 못 얻으면 작업을 건드리지 않고 100ms 뒤 다시 확인한다. |
 | worker 활성화 | 자동 실행은 기본 비활성이고 로컬에서 명시적으로 켠다. 켜져 있어도 앱 준비 완료와 신규 수용 열림을 확인한 뒤 가져온다. worker가 꺼져 있어도 접수는 받으며, 작업은 worker를 켤 때까지 `WAITING`에 머문다. |
 | 순서 | 순번 안내와 엄격한 선착순 완료는 요구하지 않는다. |
@@ -46,7 +46,7 @@
 | POST 신규 접수 완료 | 202 Accepted | 작업 ID와 현재 상태. 접수 직후 worker가 가져갈 수도 있으므로 상태를 항상 `WAITING`으로 고정하지 않음. worker가 꺼져 있어도 접수하며 처리 시작 시점은 약속하지 않음 |
 | POST 기존 `WAITING`, `PROCESSING`, `UNKNOWN` 작업 | 202 Accepted | 같은 작업 ID와 현재 상태, 새 작업 생성 없음 |
 | POST 기존 `SUCCEEDED` 작업 또는 업무 거절로 끝난 `FAILED` 작업 | 200 OK | 같은 작업 ID와 저장된 결과, 자동 재실행 없음 |
-| POST 시스템 실패(`DB_ERROR`, `INTERNAL_ERROR`)로 끝난 `FAILED` 작업 | 202 Accepted | 재접수 확인을 통과하면 같은 작업 ID를 `WAITING`으로 다시 대기. 그사이 쿠폰이 발급됐으면 `SUCCEEDED`와 200, 거절되면 작업은 `FAILED`로 두고 해당 거절 응답 |
+| POST 시스템 실패(`DB_ERROR`, `INTERNAL_ERROR`)로 끝난 `FAILED` 작업 | 202 Accepted | 재접수 확인을 통과하면 같은 작업 ID를 `WAITING`으로 다시 대기. 그사이 쿠폰이 발급됐으면 `SUCCEEDED`와 200. 거절할 때는 작업을 다시 읽어, 다른 재접수가 먼저 바꿨으면 현재 상태로 응답하고 그대로면 `FAILED`로 두고 해당 거절 응답 |
 | POST 작업 이력이 없고 DB에 본인 쿠폰이 있음 | 200 OK | 작업을 만들지 않고 `status=SUCCEEDED`와 기존 couponId 반환, requestId 없음. Redis 쓰기, List, permit을 사용하지 않음 |
 | GET 본인 작업 조회 | 200 OK | 작업의 5개 상태 중 현재 상태와 결과 |
 | POST 미완료 20건에서 새로운 사용자와 캠페인 접수 | 429 Too Many Requests | 신규 작업을 추가하지 않음. 진행 중이거나 완료된 기존 작업의 재접수는 한도 초과로 거절하지 않음. 시스템 실패 작업을 다시 대기시킬 때는 한도를 확인 |
@@ -56,6 +56,7 @@
 | 요청자 헤더 누락 또는 입력 형식 오류 | 400 Bad Request | 기존 공통 오류 처리 재사용 |
 | Redis 접근 실패 또는 접수 결과 불확실 | 503 Service Unavailable | 접수나 조회 성공을 확인할 수 없음. 단, DB에 본인 쿠폰이 있는 POST는 기존 쿠폰을 200으로 반환 |
 | 신규 수용 닫힘에서 새 발급 작업 접수 | 503 Service Unavailable | 새 발급 작업은 접수하지 않음. 기존 작업 반환과 이미 받은 쿠폰의 반환은 유지 |
+| 대기열 저장 정보 불일치 | 500 Internal Server Error | Lua의 `coupon queue:` 오류, 키 타입 오류, 작업 정보를 읽을 수 없는 경우. 저장 정보를 믿을 수 없으므로 접수나 조회 결과를 돌려주지 않음 |
 
 POST는 기존 작업을 먼저 찾는다. 기존 작업이 있으면 현재 캠페인 상태, 한도, 신규 수용 닫힘보다 그 작업의 반환을 우선한다. 시스템 실패로 끝난 `FAILED` 작업은 예외로, 아래 재접수 절차를 따른다. 신규 추가 연산에서도 같은 사용자와 캠페인의 작업이 다른 요청에 의해 먼저 생성됐는지 원자적으로 재검사한다.
 
@@ -108,7 +109,7 @@ Lua의 한도 초과 판단도 같은 사용자와 캠페인의 기존 작업 �
 1. DB의 본인 쿠폰을 먼저 확인한다. 그사이 동기 API로 발급됐으면 Lua에서 작업이 여전히 같은 `FAILED`와 reasonCode인지 확인한 뒤 기존 couponId의 `SUCCEEDED`로 바꾸고 200을 반환한다.
 2. 쿠폰이 없으면 캠페인 조건과 신규 수용을 확인한다. 거절되면 작업은 기존 `FAILED`와 reasonCode를 유지하고 404, 409 또는 503으로 응답한다.
 3. 통과하면 Lua에서 작업이 여전히 같은 `FAILED`와 reasonCode인지, 미완료 한도가 남았는지 확인한다. 조건이 맞으면 `WAITING`으로 바꾸고 reasonCode와 사유, 이전 실행 token을 비운 뒤 대기 List에 추가해 202를 반환한다. 한도가 찼으면 작업을 바꾸지 않고 429로 응답한다.
-4. 2단계나 3단계에서 거절하기 직전에 DB의 본인 쿠폰을 한 번 더 확인한다. 1단계 뒤 동기 API가 같은 사용자에게 쿠폰을 발급하고 캠페인이 품절되거나 한도가 찼을 수 있기 때문이다. 쿠폰이 있으면 1단계와 같은 조건으로 `SUCCEEDED`로 바꾸고 200을 반환한다. 작업이 이미 다른 상태로 바뀌었으면 손대지 않고 현재 상태를 반환한다.
+4. 2단계나 3단계에서 거절하기 직전에 DB의 본인 쿠폰을 한 번 더 확인한다. 1단계 뒤 동기 API가 같은 사용자에게 쿠폰을 발급하고 캠페인이 품절되거나 한도가 찼을 수 있기 때문이다. 쿠폰이 있으면 1단계와 같은 조건으로 `SUCCEEDED`로 바꾸고 200을 반환한다. 쿠폰이 없으면 작업을 다시 읽어, 여전히 같은 reasonCode의 `FAILED`일 때만 거절한다. 그사이 다른 재접수가 작업을 바꿨으면 손대지 않고 현재 상태로 응답한다. 대기 중이면 202, 끝났으면 200이다.
 
 작업 정보는 최신 시도의 상태만 보존한다. 다시 대기시킬 때 이전 reasonCode와 사유, 실행 token을 서버 로그에 남긴 뒤 작업 정보에서 비운다. 사용자 조회에는 현재 상태만 보인다. `requestedAt`은 작업 ID와 함께 처음 접수할 때 정해지는 값이라 재접수해도 바꾸지 않으며, 최신 시도 시각은 재대기 로그로 확인한다.
 
@@ -208,7 +209,7 @@ flowchart LR
 | 중복 접수 정보 | 사용자와 캠페인에 대응하는 작업 ID |
 | 기존 permit Set | 동기 요청과 worker가 공유하는 현재 실행 자리 |
 
-### Redis 키와 데이터 초안
+### Redis 키와 데이터
 
 모든 대기열 쓰기와 상태 조회는 기존 `redisTemplateMaster`를 사용한다. 현재 String serializer를 따르며 업무별 key prefix를 캐시와 구분한다.
 
@@ -261,7 +262,7 @@ Lua 입력, key 타입, 작업 JSON과 상태는 쓰기 전에 확인한다. Lua
 
 가져오기 응답이 유실되면 작업이 아직 `WAITING`일 수도 있고 이미 `PROCESSING`일 수도 있다. 호출 전에 생성한 실행 token을 확인 단서로 보관하며, 응답에서 작업 ID를 못 받았다고 다음 대기 항목을 대신 가져오지 않는다. 이미 처리 중인 작업은 그 token과 List 항목을 유지한다. 아직 대기 중인 작업을 추측으로 처리 중 상태로 바꾸거나, 처리 중 작업을 자동 재대기시키지 않는다.
 
-완료 기록 응답이 유실되면 같은 실행의 `SUCCEEDED` 또는 `FAILED` 이력과 List 제거가 이미 반영됐을 수 있다. primary에서 상태, 실행 token, 결과와 List 위치를 쓰기 없는 한 번의 Lua로 확인한다. 같은 실행과 결과의 완료 상태가 확인되면 그대로 유지한다. 여전히 `PROCESSING`이면 자동 재대기하지 않고 기존 수동 복구 절차를 적용한다. 읽을 수 없거나 정보가 어긋나면 쓰지 않고 수용을 닫은 상태로 둔다. Redis 기록 응답 유실만으로 `UNKNOWN`이나 `FAILED`를 덮어쓰지 않으며, `UNKNOWN`은 DB 종료 또는 결과가 불명확한 경우에만 사용한다.
+완료 기록 응답이 유실되면 같은 실행의 `SUCCEEDED` 또는 `FAILED` 이력과 List 제거가 이미 반영됐을 수 있다. worker는 결과를 추측해 다시 쓰지 않고 신규 수용을 닫은 뒤, 저장된 작업을 한 번 읽어(HGET) 상태와 실행 token을 로그에 남긴다. List 위치와 결과는 운영자가 수동 복구 조회 절차로 확인한다. 같은 실행의 완료 상태면 그대로 두고, 여전히 `PROCESSING`이면 자동 재대기하지 않고 수동 복구 절차를 적용한다. Redis 기록 응답 유실만으로 `UNKNOWN`이나 `FAILED`를 덮어쓰지 않으며, `UNKNOWN`은 DB 종료 또는 결과가 불명확한 경우에만 사용한다.
 
 이 확인은 읽기만 수행하며 신규 수용을 자동으로 다시 열지 않는다. 시스템 실패 재접수와 수동 복구 Lua의 응답이 유실됐을 때도 저장 상태를 재확인하며, 원래 상태를 가정한 보상 쓰기나 변경 명령의 자동 재실행은 하지 않는다.
 
@@ -277,16 +278,16 @@ Lua 입력, key 타입, 작업 JSON과 상태는 쓰기 전에 확인한다. Lua
 
 같은 작업의 재접수는 한도를 추가로 쓰지 않는다. 한도가 찼어도 이미 접수된 같은 사용자와 캠페인에는 기존 작업 ID와 상태를 반환한다. 예외로 시스템 실패로 끝난 작업을 다시 대기시키면 완료 작업이 미완료 작업이 되므로, 이때는 한도를 확인하고 찼으면 429로 응답한다. 처리 중 작업을 다시 대기로 옮겨도 미완료 작업 수는 늘지 않는다.
 
-로컬 실험은 미완료 20건으로 시작한다. 처리 중이 3건이면 대기는 17건까지 받을 수 있다. 20은 접수 한도 도달과 반환을 검증하기 위한 값이며 운영 적정값으로 측정한 수치는 아니다.
+미완료 한도는 모든 프로필에서 20건으로 시작한다. 처리 중이 3건이면 대기는 17건까지 받을 수 있다. 20은 접수 한도 도달과 반환을 검증하기 위한 값이며 운영 적정값으로 측정한 수치는 아니다.
 
-접수 한도는 새 대기열 API의 작업에 적용한다. 기존 동기 요청은 이 개수에 포함하지 않는다. 동기 요청과 worker의 실제 발급 실행은 기존 permit 한도를 공유한다. 아래 설정 이름은 구현 시 사용할 초안이다.
+접수 한도는 새 대기열 API의 작업에 적용한다. 기존 동기 요청은 이 개수에 포함하지 않는다. 동기 요청과 worker의 실제 발급 실행은 기존 permit 한도를 공유한다. `issue.capacity`는 local과 test 프로필에만 있고, `queue.capacity`와 worker 설정은 모든 프로필의 기본값이다.
 
 ```yaml
 coupon:
   issue:
-    capacity: 3 # 동기 요청과 worker가 공유하는 동시 발급 실행 수
+    capacity: 3 # local, test 프로필. 동기 요청과 worker가 공유하는 동시 발급 실행 수
     queue:
-      capacity: 20 # 대기와 처리 중 작업의 합, 결과 불명 포함
+      capacity: 20 # 모든 프로필 기본값. 대기와 처리 중 작업의 합, 결과 불명 포함
 ```
 
 worker는 별도 서버를 추가하지 않고 `commerce-api` 안의 전용 스레드에서 실행한다. 실행 스레드 수를 제한하고 Java 내부에 대기 작업을 쌓지 않는다. 기존 공유 Redis command timeout이 100ms이므로 첫 버전은 무한 blocking 명령 대신 짧은 주기로 원자적 List 이동을 호출한다.
@@ -298,7 +299,7 @@ worker는 대기 작업이 있을 때만 permit을 요청하고, permit을 얻�
 | 확인한 상황 | DB 발급 시작 | 작업 처리 |
 |---|---|---|
 | 대기 List가 비었거나 신규 수용 닫힘 | 하지 않음 | permit을 요청하지 않음. 비었으면 100ms 뒤 재확인, 닫혔으면 추가 가져오기 중단 |
-| 대기 작업 확인 읽기 실패 | 하지 않음 | 바뀐 상태가 없으므로 수용을 닫지 않고 다음 주기에 다시 확인. Redis가 계속 응답하지 않으면 다음 permit 요청에서 수용이 닫힘 |
+| 대기 작업 확인 읽기 실패 | 하지 않음 | 바뀐 상태가 없으므로 수용을 닫지 않고 다음 주기에 다시 확인. worker는 이 실패만으로 수용을 닫지 않으며, 동기 요청의 permit 획득이나 읽기가 회복된 뒤 worker의 permit 요청이 실패하면 닫힘 |
 | 획득 응답 0 | 하지 않음 | 작업을 건드리지 않고 100ms 뒤 재확인. 획득하지 않은 token에 반환 명령을 보내지 않음 |
 | 획득 응답 1 | 작업을 가져온 뒤 시작 | 같은 실행 token으로 작업 가져오기. 대기 작업이 없으면 자기 permit 반환 |
 | 획득 응답 timeout, 예외 또는 해석 불가 | 하지 않음 | 작업을 가져오지 않아 `WAITING` 유지. 신규 수용 닫힘, token을 반환하지 않고 오류 로그에 실행 token 기록 후 수동 확인 |
@@ -335,7 +336,7 @@ coupon:
 
 ### 시작과 종료 순서
 
-기동 시 seed 준비, 기존 permit 수용 상태 확인을 마친 뒤 worker를 시작한다. 기존 seed runner의 순서 0과 수용 시작 runner의 순서 100을 따르며, worker runner는 순서 200에서 시작해 준비 전 작업이 실행되지 않게 한다. 설정한 스레드 수만큼만 반복 실행하며, 작업을 처리하면 바로 다음 작업을 확인하고 그 밖에는 확인 주기만큼 기다린다. 처리 중 예상하지 못한 오류가 나도 스레드는 끝나지 않고 다음 주기에 다시 확인한다.
+기동 시 seed 준비, 기존 permit 수용 상태 확인을 마친 뒤 worker를 시작한다. 기존 seed runner의 순서 0과 수용 시작 runner의 순서 100을 따르며, worker runner는 순서 200에서 시작해 준비 전 작업이 실행되지 않게 한다. 설정한 스레드 수만큼만 반복 실행하며, 작업을 처리하면 바로 다음 작업을 확인하고 그 밖에는 확인 주기만큼 기다린다. 처리 중 예상하지 못한 오류가 나면 작업과 token의 상태를 알 수 없으므로 신규 수용을 닫는다. 스레드는 끝나지 않고 다음 주기에 다시 확인하지만, 수용이 닫혀 있어 작업을 더 가져오지 않는다.
 
 worker는 켜짐 설정과 앱 준비 완료, 신규 수용 열림을 모두 확인하고 대기 작업을 가져온다. 오류로 신규 수용이 닫히면 추가 가져오기를 멈추며, worker 활성화 설정이 수용 상태를 자동으로 다시 열지는 않는다. 기존 작업 조회는 신규 발급 실행과 분리한다.
 
@@ -345,9 +346,11 @@ worker는 켜짐 설정과 앱 준비 완료, 신규 수용 열림을 모두 확
 2. 실행 중인 발급의 DB 종료와 Redis 결과 기록을 `shutdown-timeout`(기본 30초)까지 기다린다. 쉬고 있던 스레드는 종료 신호로 바로 깨어나며, 실행 중인 처리는 끊지 않는다. 시간이 지나도 끝나지 않은 처리는 로그로 남긴다.
 3. DB 작업 종료를 확인한 실행만 기존 기준에 따라 token을 반환한다. 작업 결과 기록도 마치며, DB 종료를 확인하지 못한 실행의 token과 처리 중 항목은 보존한다.
 
+종료 대기는 컨텍스트 종료 이벤트에서 시작한다. Spring은 이 이벤트 뒤에 웹 서버와 Redis 연결 같은 lifecycle 자원을 멈추고, 빈 소멸(`@PreDestroy`)은 그 다음에 실행한다. 빈 소멸 단계에서 기다리면 Redis 연결이 이미 멈춰, 처리를 마친 실행도 permit 반환과 결과 기록을 하지 못한다. 기존 주문 확정 Outbox relay도 같은 이벤트에서 멈춘다.
+
 기존 HTTP 동기 발급은 기존 종료 절차와 완료 확인 규칙을 유지한다. 재기동은 처리 중 List를 비우거나 중단 작업을 다시 실행하는 수단으로 사용하지 않는다.
 
-DB 실행 자리 반환과 작업 이력 완료 기록은 구분한다. DB 종료 뒤 permit을 반환했지만 작업 결과의 Redis 기록 여부를 확인하지 못할 수도 있다. 이 경우에는 신규 수용을 닫고 저장된 작업 상태와 List 위치를 확인한다. 미완료로 남은 항목은 수동 복구 대상으로 보존하며, 이미 완료된 이력과 List 제거는 되돌리지 않는다. 처리 중 항목마다 반드시 활성 permit이 있다고 가정하거나, token이 없다는 이유로 DB 종료를 추정하지 않는다.
+DB 실행 자리 반환과 작업 이력 완료 기록은 구분한다. DB 종료 뒤 permit을 반환했지만 작업 결과의 Redis 기록 여부를 확인하지 못할 수도 있다. 이 경우에는 신규 수용을 닫고, 운영자가 저장된 작업 상태와 List 위치를 확인한다. 미완료로 남은 항목은 수동 복구 대상으로 보존하며, 이미 완료된 이력과 List 제거는 되돌리지 않는다. 처리 중 항목마다 반드시 활성 permit이 있다고 가정하거나, token이 없다는 이유로 DB 종료를 추정하지 않는다.
 
 ## 장애와 복구
 
@@ -375,11 +378,11 @@ worker가 `FAILED`와 `UNKNOWN`을 구분할 수 있도록 기존 발급 실행�
 3. 이 두 상태에서는 이미 발급됐으면 `SUCCEEDED`, 미발급이고 현재 발급 가능하면 같은 requestId의 `WAITING`, 미발급이고 발급 불가하면 사유를 담은 `FAILED`로 복구 결과를 결정한다. 이 시점에는 아직 쓰지 않는다.
 4. Lua에서 조회 때의 상태와 token을 다시 비교한 뒤, 그 이전 token만 정리하고 결정한 상태 기록과 List 이동을 함께 수행한다. `WAITING`, `SUCCEEDED`, `FAILED`를 이 절차로 다시 대기시키지 않는다.
 
-다시 대기 상태로 돌린 작업은 정리된 이전 실행과 겹치지 않도록 위 확인과 정리를 마친 뒤 실행한다. 구체적인 복구 Lua와 실행 예시는 구현 단계에서 문서와 테스트에 추가한다.
+다시 대기 상태로 돌린 작업은 정리된 이전 실행과 겹치지 않도록 위 확인과 정리를 마친 뒤 실행한다. 복구 Lua와 실행 예시는 아래 "로컬 수동 복구 절차"에 있다.
 
 ### 로컬 수동 복구 절차
 
-첫 버전은 별도 복구 명령을 만들지 않는다. 운영자가 `redis-cli`와 SQL로 작업과 DB 결과를 조회하고, 위 종료 확인을 전제로 저장소에 둔 조건부 Lua를 `redis-cli EVAL`로 실행해 `PROCESSING`, `UNKNOWN` 작업을 같은 ID의 완료 또는 재대기 상태로 바꾼다. Lua는 상태와 실행 token을 조건으로 하며, 다른 작업의 List 항목이나 permit은 건드리지 않는다. 별도의 HTTP 관리 API는 추가하지 않는다.
+첫 버전은 별도 복구 명령을 만들지 않는다. 운영자가 `redis-cli`와 SQL로 작업과 DB 결과를 조회하고, 위 종료 확인을 전제로 저장소에 둔 조건부 Lua를 `redis-cli --eval`로 실행해 `PROCESSING`, `UNKNOWN` 작업을 같은 ID의 완료 또는 재대기 상태로 바꾼다. Lua는 상태와 실행 token을 조건으로 하며, 다른 작업의 List 항목이나 permit은 건드리지 않는다. 별도의 HTTP 관리 API는 추가하지 않는다.
 
 복구 절차는 조회와 적용을 구분한다. 조회는 작업과 DB 결과를 확인하기만 하고 데이터나 permit을 변경하지 않는다. 적용은 이전 worker와 DB 작업의 종료를 운영자가 확인한 뒤 실행한다. Lua를 실행했다는 사실이 이전 DB 작업 종료의 증거가 되지는 않는다.
 
@@ -431,20 +434,20 @@ SELECT id, user_id, issued_at FROM coupons WHERE campaign_id = :campaignId AND u
 SELECT total_quota, issued_count, start_at, end_at, terminated_at FROM coupon_campaigns WHERE id = :campaignId;
 ```
 
-적용은 이전 실행과 DB 작업의 종료를 확인한 뒤, 조회 때 본 상태와 실행 token을 그대로 넘긴다. 마지막 두 인자는 couponId와 reasonCode이며 쓰지 않는 값은 빈 문자열로 둔다.
+적용은 이전 실행과 DB 작업의 종료를 확인한 뒤, 조회 때 본 상태와 실행 token을 그대로 넘긴다. 마지막 두 인자는 couponId와 reasonCode이며 쓰지 않는 값은 빈 문자열로 둔다. couponId는 0으로 시작하지 않는 양수이면서 Java `Long` 최댓값 이하만, 실패 사유는 `SOLD_OUT`, `CAMPAIGN_NOT_ISSUABLE`, `CAMPAIGN_NOT_FOUND`, `DB_ERROR`, `INTERNAL_ERROR`만 받는다. 앱이 다시 읽을 수 없는 값을 기록하면 그 사용자의 접수와 조회가 계속 500이 되기 때문이다. 키는 배열로 넘겨 bash와 zsh에서 모두 따로 전달되게 한다.
 
 ```bash
 LUA=apps/commerce-api/src/main/resources/redis/coupon-queue-recover.lua
-KEYS="coupon:issue:queue:jobs coupon:issue:queue:waiting coupon:issue:queue:processing coupon:issue:permits"
+KEYS=(coupon:issue:queue:jobs coupon:issue:queue:waiting coupon:issue:queue:processing coupon:issue:permits)
 
 # 이미 발급됨: 성공으로 기록
-redis-cli -p 6379 --eval $LUA $KEYS , <requestId> PROCESSING <executionToken> SUCCEED <couponId> ''
+redis-cli -p 6379 --eval "$LUA" "${KEYS[@]}" , <requestId> PROCESSING <executionToken> SUCCEED <couponId> ''
 # 미발급이고 현재 발급 가능: 같은 ID로 다시 대기
-redis-cli -p 6379 --eval $LUA $KEYS , <requestId> UNKNOWN <executionToken> REQUEUE '' ''
+redis-cli -p 6379 --eval "$LUA" "${KEYS[@]}" , <requestId> UNKNOWN <executionToken> REQUEUE '' ''
 # 미발급이고 현재 발급 불가: 사유를 기록해 실패
-redis-cli -p 6379 --eval $LUA $KEYS , <requestId> PROCESSING <executionToken> FAIL '' SOLD_OUT
+redis-cli -p 6379 --eval "$LUA" "${KEYS[@]}" , <requestId> PROCESSING <executionToken> FAIL '' SOLD_OUT
 # 완료된 작업에 남은 자기 permit만 정리
-redis-cli -p 6379 --eval $LUA $KEYS , <requestId> SUCCEEDED <executionToken> RELEASE '' ''
+redis-cli -p 6379 --eval "$LUA" "${KEYS[@]}" , <requestId> SUCCEEDED <executionToken> RELEASE '' ''
 ```
 
 | 응답 | 의미 |
@@ -459,7 +462,7 @@ worker가 permit을 얻은 직후, 작업을 가져오기 전에 앱이 중단�
 
 1. 동기 API와 worker를 포함해 쿠폰을 발급하는 모든 인스턴스를 멈춘다.
 2. 진행 중인 발급 DB 작업이 없는지 확인한다. 확인하지 못하면 정리하지 않는다.
-3. `PROCESSING`, `UNKNOWN` 작업에 기록된 token은 작업 복구 절차로 정리한다.
+3. `PROCESSING`, `UNKNOWN` 작업에 기록된 token은 작업 복구 절차로 정리한다. DB 종료 뒤 반환 명령이 실패하면 `SUCCEEDED`, `FAILED` 작업에도 token이 남으므로, 이 token은 같은 Lua의 `RELEASE`로 정리한다.
 4. permit Set에 남은 token 가운데 어떤 작업에도 기록되지 않은 token을 `SREM`으로 하나씩 지운다. 로그에 남은 token이 있으면 그 값과 대조하고, 앱이 중단돼 로그가 없으면 작업 기록에 없는 token으로 골라낸다. Set 전체를 지우지 않는다.
 
 ```bash
@@ -472,7 +475,7 @@ redis-cli -p 6379 SREM coupon:issue:permits <token>
 
 ### 로컬 seed 초기화와 작업 이력
 
-기존 seed reset은 DB의 발급 수와 쿠폰 배정을 되돌린다. Redis 성공 이력과 중복 접수 정보가 남아 있으면 DB에서는 초기화된 쿠폰을 작업 조회가 여전히 발급 완료로 응답할 수 있다. 그래서 대기열을 추가할 때 seed reset이 해당 캠페인의 대기열 정보도 함께 정리하게 바꾼다. 현재 seed 코드에 이 동작이 이미 있다는 뜻은 아니다.
+기존 seed reset은 DB의 발급 수와 쿠폰 배정을 되돌린다. Redis 성공 이력과 중복 접수 정보가 남아 있으면 DB에서는 초기화된 쿠폰을 작업 조회가 여전히 발급 완료로 응답할 수 있다. 그래서 seed reset은 DB를 바꾸기 전에 해당 캠페인의 대기열 정보를 먼저 정리한다(`CouponSeedService`).
 
 reset은 다른 API 인스턴스를 모두 멈춘 상태에서 한 인스턴스로만 실행한다. 신규 수용 닫힘은 인스턴스마다 메모리에 있는 상태라서, 다른 인스턴스가 살아 있으면 reset 중에도 접수와 발급이 계속될 수 있기 때문이다. 동기 발급 설계에서 seed runner를 로컬 단일 인스턴스에서만 실행하고 여러 인스턴스의 동시 reset을 지원하지 않는 것과 같은 조건이다.
 
@@ -488,7 +491,7 @@ Redis를 먼저 정리하는 이유는 중간 실패의 결과가 덜 위험하�
 
 seed 준비는 앱 시작 때 worker와 신규 수용보다 먼저 실행되므로, 1단계는 이전 실행이 남긴 상태를 확인하는 것이다. 처리 중 작업이나 token이 남아 있으면 수동 복구 절차로 먼저 정리한 뒤 reset한다.
 
-기존 seed를 보존하는 일반 기동에서는 이력을 자동 삭제하지 않는다. 복구 절차에 seed reset을 섞지 않으며, 복구 Lua는 이력 삭제나 DB 초기화를 수행하지 않는다. DB를 새로 만들 때도 같은 실험의 Redis 이력을 그대로 재사용하지 않는다.
+기존 seed를 보존하는 일반 기동에서는 이력을 자동 삭제하지 않는다. 복구 절차에 seed reset을 섞지 않으며, 복구 Lua는 이력 삭제나 DB 초기화를 수행하지 않는다. DB를 새로 만들 때도 같은 실험의 Redis 이력을 그대로 재사용하지 않는다. 코드가 이를 막지는 않으므로, MySQL을 새로 만들면 모든 인스턴스를 멈춘 상태에서 Redis의 대기열 키와 permit Set도 함께 지운다.
 
 Redis 재시작 후 접수 정보를 보존하는 수준은 실제 RDB, AOF 설정에 따르며, List 이동만으로 영속성이나 정확히 한 번 실행을 보장하지 않는다.
 
@@ -498,13 +501,13 @@ Redis 재시작 후 접수 정보를 보존하는 수준은 실제 RDB, AOF 설�
 |---|---|
 | `domain/coupon` | 접수 작업(`CouponIssueRequest`), 상태(`CouponIssueRequestStatus`), reasonCode(`CouponIssueRequestReason`). 상태별로 허용된 쿠폰, 사유, 실행 token 조합과 소유자, 재접수 때의 처리를 정한다. 상태 전이 자체는 Lua가 원자적으로 처리하므로 Java에 전이 메서드를 두지 않는다. 캠페인 발급 불가 사유(품절, 기간 밖)를 담은 예외를 추가하고 `validateIssuable`이 던지게 변경. `CoreException(CONFLICT)`를 상속해 동기 API의 409와 메시지 유지 |
 | `application/coupon/CouponIssueQueueFacade` | 본인 접수, 중복 결과 반환, 본인 작업 조회 |
-| `application/coupon/CouponIssueQueue` | 대기열 저장과 claim, 완료 기록을 위한 port. 응답 불명 시 상태, token, 결과와 List 위치를 일관되게 읽는 협력 |
+| `application/coupon/CouponIssueQueue` | 대기열 저장과 claim, 완료 기록을 위한 port. 기록 응답을 받지 못하면 저장된 작업을 한 번 읽어 로그에 남기는 조회 |
 | `application/coupon/CouponIssueQueueWorker` | permit을 먼저 얻고 대기 작업을 가져와 기존 발급 흐름으로 처리하고 결과 기록. 대기 작업이 없으면 permit 반환. 가져오기 응답 불명 시 DB 진입 중단, 기록 응답 불명 시 저장 상태 보존 |
 | 기존 발급 애플리케이션 협력 | permit을 얻은 이후의 DB 발급, 완료 상태 판단, token 반환을 `CouponIssueExecutor`로 분리하고 결과를 `CouponIssueExecution`(`Issued`, `AlreadyIssued`, `Failed`)으로 돌려준다. 동기 facade와 worker가 함께 사용한다. 확정 실패와 DB 결과 불명 구분 정보 전달. 동기 API 응답 계약 유지 |
 | `infrastructure/coupon` | primary Redis List adapter, 제한된 worker 실행 설정 |
 | 로컬 seed 준비 | reset 전에 남은 작업과 token 확인, 해당 캠페인의 작업 정보와 중복 접수 정보를 Lua로 정리한 뒤 DB 초기화 |
 | `resources/redis` | 중복 접수, 수용 한도, claim과 완료의 Lua 연산. 수동 복구용 조건부 Lua, seed reset용 캠페인 정리 Lua |
-| 이 문서의 복구 절차 | 구현 때 실제 키, 복구 Lua 파일 위치, `redis-cli`와 SQL 실행 예시 추가 |
+| 이 문서의 복구 절차 | 실제 키, 복구 Lua 파일 위치, `redis-cli`와 SQL 실행 예시 |
 | `interfaces/api/coupon` | 새 접수와 조회 controller, 응답 DTO |
 | `application.yml` | 대기열 한도와 worker 설정, local과 test의 실행 범위 |
 
@@ -543,7 +546,7 @@ Redis 재시작 후 접수 정보를 보존하는 수준은 실제 RDB, AOF 설�
 | 접수 응답 timeout | 작업 생성 후 응답만 실패한 경우 재접수에서 같은 ID 복구, 추가 List 항목과 중복 발급 없음 |
 | 완료 이력과 중복 정보 보존 | `SUCCEEDED`와 `FAILED` 뒤에도 같은 작업 ID와 결과 조회. `SUCCEEDED`와 업무 거절 `FAILED`의 재접수는 새 List 항목 없음, 자동 만료 없음 |
 | 시스템 실패 재접수 | `DB_ERROR`, `INTERNAL_ERROR` 작업 재접수 시 같은 작업 ID로 202와 `WAITING`, 대기 항목 하나, 미완료 개수 증가. 작업 정보에서 이전 reasonCode와 사유가 비워짐. 업무 거절 `FAILED`와 `SUCCEEDED`는 200과 저장된 결과 유지 |
-| 시스템 실패 재접수의 거절과 경합 | 캠페인 발급 불가, 한도 도달, 신규 수용 닫힘이면 작업은 기존 `FAILED` 유지. 그사이 쿠폰이 발급됐으면 같은 작업 ID로 `SUCCEEDED`. 처음 확인 뒤 쿠폰이 발급되고 품절, 한도 도달, 수용 닫힘이 겹쳐도 거절하지 않고 `SUCCEEDED`. 성공으로 바꾸는 Lua도 상태나 reasonCode가 바뀌었으면 변경하지 않음. 동시 재접수에도 대기 항목 하나. worker와 복구 절차는 `FAILED`를 자동으로 다시 대기시키지 않음 |
+| 시스템 실패 재접수의 거절과 경합 | 캠페인 발급 불가, 한도 도달, 신규 수용 닫힘이면 작업은 기존 `FAILED` 유지. 그사이 쿠폰이 발급됐으면 같은 작업 ID로 `SUCCEEDED`. 처음 확인 뒤 쿠폰이 발급되고 품절, 한도 도달, 수용 닫힘이 겹쳐도 거절하지 않고 `SUCCEEDED`. 성공으로 바꾸는 Lua도 상태나 reasonCode가 바뀌었으면 변경하지 않음. 쿠폰 없이 거절할 때도 다른 재접수가 먼저 다시 대기시켰으면 현재 상태로 응답. 동시 재접수에도 대기 항목 하나. worker와 복구 절차는 `FAILED`를 자동으로 다시 대기시키지 않음 |
 | 실제 DB 발급 | 처리 후 쿠폰 ID가 보유 목록과 일치, 총량과 중복 규칙 유지 |
 | 동기 요청과 worker 경합 | 같은 permit 키를 공유하고 전체 발급 실행 상한 유지 |
 | worker 중단과 결과 미기록 | 완료 기록이 실행되지 않은 경우 처리 중 작업 ID와 DB 결과 보존, 자동 재실행 없음, 수동 복구에서 실제 쿠폰 확인 |
@@ -570,12 +573,14 @@ Redis 재시작 후 접수 정보를 보존하는 수준은 실제 RDB, AOF 설�
 | 구현 단계 | 테스트 | 건수 |
 |---|---|---|
 | 캠페인 거절 사유와 작업 상태 도메인 | `CouponCampaignTest`, `CouponIssueRequestTest` | 22, 41 |
-| permit 이후 발급 실행 분리 | `CouponIssueExecutorTest`, 기존 `CouponIssueFacadeTest` 회귀 | 12, 19 |
+| permit 이후 발급 실행 분리 | `CouponIssueExecutorTest`, 기존 `CouponIssueFacadeTest` 회귀 | 14, 21 |
 | Redis 저장소와 Lua | 접수·조회 `RedisCouponIssueQueueIntegrationTest`, 가져오기 `...ClaimIntegrationTest`, 결과 기록 `...RecordIntegrationTest`, 재접수 `...ResubmitIntegrationTest`, 예외 변환 `...ExceptionTranslatorTest` | 11, 6, 11, 9, 4 |
-| 접수와 조회 API | `CouponIssueQueueFacadeTest`, `CouponIssueRequestV1ApiE2ETest` | 28, 10 |
-| worker | 처리 단계 `CouponIssueQueueWorkerTest`, 실행 구조 `CouponIssueQueueWorkerRunnerTest`, 설정 `CouponIssueQueuePropertiesTest`, 실제 MySQL·Redis `CouponIssueQueueWorkerE2ETest` | 22, 7, 3, 8 |
-| seed reset과 수동 복구 | `RedisCouponIssueQueueCleanupIntegrationTest`, `CouponSeedServiceIntegrationTest`, 복구 Lua `RedisCouponIssueQueueRecoverScriptIntegrationTest` | 4, 8, 8 |
-| 전체 회귀 | `./gradlew :apps:commerce-api:check` | 1,054, 실패·오류·skip 0 |
+| 접수와 조회 API | `CouponIssueQueueFacadeTest`, `CouponIssueRequestV1ApiE2ETest` | 30, 10 |
+| worker | 처리 단계 `CouponIssueQueueWorkerTest`, 실행 구조 `CouponIssueQueueWorkerRunnerTest`(컨텍스트 종료 순서 포함), 설정 `CouponIssueQueuePropertiesTest`, 실제 MySQL·Redis `CouponIssueQueueWorkerE2ETest` | 22, 9, 3, 8 |
+| seed reset과 수동 복구 | `RedisCouponIssueQueueCleanupIntegrationTest`, `CouponSeedServiceIntegrationTest`, 복구 Lua `RedisCouponIssueQueueRecoverScriptIntegrationTest` | 4, 8, 10 |
+| 전체 회귀 | `./gradlew :apps:commerce-api:check` | 1,064, 실패·오류·skip 0 |
+
+구현을 마친 뒤 최종 검토에서 결함 세 가지를 찾았고, 각각 실패하는 테스트를 먼저 확인한 뒤 고쳤다. worker 종료 대기가 Redis 연결이 멈춘 뒤에 실행되던 문제, 중복 충돌 뒤 쿠폰 재조회가 실패하면 작업이 처리 중으로 남고 수용이 열려 있던 문제, 수동 복구 Lua가 앱이 읽을 수 없는 사유와 couponId를 받던 문제다. 동기 발급의 거절 직전 쿠폰 재확인과 복구 Lua의 couponId 범위 검사도 같은 방식으로 추가했다.
 
 실제 MySQL·Redis에서는 접수부터 worker 처리와 조회까지, 동기 요청과의 permit 공유, 처리 시점 품절, 잠금 대기 timeout 뒤 시스템 실패와 재접수, permit·작업 가져오기·완료 기록 응답 유실, commit 직전 연결 끊김에 따른 결과 불명을 확인했다.
 
@@ -589,6 +594,14 @@ Redis 재시작 후 접수 정보를 보존하는 수준은 실제 RDB, AOF 설�
 | worker의 실제 앱 기동 순서와 자동 실행 | runner 단위 테스트로 실행 규칙을 확인했다. 앱을 띄워 seed와 수용 시작 뒤 자동 실행되는지는 확인하지 않았다 |
 | 동기 요청과 worker의 동시 경합 | 같은 permit Set을 공유하는 것은 확인했다. 두 경로를 동시에 실행하는 경합 테스트는 없다 |
 | 여러 앱 인스턴스 | 범위 밖이다 |
+
+### 남은 개선
+
+| 항목 | 현재 동작 | 남은 개선 |
+|---|---|---|
+| MySQL만 새로 만든 경우 | seed 생성 경로는 Redis에 남은 같은 캠페인 ID의 작업 이력을 확인하지 않는다. 옛 성공 이력이 남으면 초기화된 DB와 다르게 응답할 수 있어, 지금은 운영 절차로 Redis 키를 함께 지운다. | seed 생성 때도 해당 캠페인의 대기열 정리를 호출하고, 막히면 기동을 실패시킨다. |
+| Lua의 JSON 다시 쓰기 위치 | 가져오기와 수동 복구 Lua는 첫 쓰기 뒤에 작업 JSON을 다시 만든다. 지금은 앱만 문자열 값으로 JSON을 쓰므로 실패하기 어렵다. | JSON 생성을 첫 쓰기 앞으로 옮긴다. |
+| 수용 확인과 permit 획득 사이 | 동기 발급과 같다. [쿠폰 발급 설계](coupon-issuance.md)의 "범위 밖"에 적었다. | 같은 문서를 따른다. |
 
 ## 관련 결정 기록
 
