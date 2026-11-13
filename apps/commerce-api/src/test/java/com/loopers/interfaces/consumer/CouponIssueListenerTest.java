@@ -11,6 +11,7 @@ import com.loopers.domain.coupon.IssueQuota;
 import com.loopers.testcontainers.KafkaTestContainersConfig;
 import com.loopers.utils.DatabaseCleanUp;
 import com.loopers.utils.RedisCleanUp;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -58,16 +59,19 @@ class CouponIssueListenerTest {
     private final CouponIssuePublisher publisher;
     private final CampaignCache campaignCache;
     private final JdbcTemplate jdbcTemplate;
+    private final MeterRegistry meterRegistry;
     private final DatabaseCleanUp databaseCleanUp;
     private final RedisCleanUp redisCleanUp;
 
     @Autowired
     CouponIssueListenerTest(CouponFacade couponFacade, CouponIssuePublisher publisher, CampaignCache campaignCache,
-                            JdbcTemplate jdbcTemplate, DatabaseCleanUp databaseCleanUp, RedisCleanUp redisCleanUp) {
+                            JdbcTemplate jdbcTemplate, MeterRegistry meterRegistry,
+                            DatabaseCleanUp databaseCleanUp, RedisCleanUp redisCleanUp) {
         this.couponFacade = couponFacade;
         this.publisher = publisher;
         this.campaignCache = campaignCache;
         this.jdbcTemplate = jdbcTemplate;
+        this.meterRegistry = meterRegistry;
         this.databaseCleanUp = databaseCleanUp;
         this.redisCleanUp = redisCleanUp;
     }
@@ -80,8 +84,12 @@ class CouponIssueListenerTest {
     }
 
     private Long openCampaign() {
+        return openCampaign(100);
+    }
+
+    private Long openCampaign(int quota) {
         return couponFacade.openCampaign(CampaignName.of("블프 쿠폰"), DiscountAmount.of(5_000),
-            IssueQuota.of(100), true).getId();
+            IssueQuota.of(quota), true).getId();
     }
 
     private int couponCount(Long campaignId) {
@@ -154,5 +162,20 @@ class CouponIssueListenerTest {
 
         assertThat(couponCount(campaignId)).isEqualTo(1);
         assertThat(issuedCount(campaignId)).isEqualTo(1);
+    }
+
+    @DisplayName("WRK-005: DB 가 품절이라 하면 쿠폰 없이 넘기고 지표에 그 캠페인의 수가 남으며, offset 은 넘어간다")
+    @Test
+    void countsRejectionByDbAndMovesOn() throws Exception {
+        Long campaignId = openCampaign(1);
+
+        publisher.publish(new CouponIssue(campaignId, 42L, 1, NOW));
+        publisher.publish(new CouponIssue(campaignId, 7L, 2, NOW));
+        eventually(CouponIssueListenerTest::everyRecordCommitted);
+
+        assertThat(couponCount(campaignId)).isEqualTo(1);
+        assertThat(issuedCount(campaignId)).isEqualTo(1);
+        assertThat(meterRegistry.counter("coupon.issue.rejected_by_db", "campaignId", String.valueOf(campaignId)).count())
+            .isEqualTo(1.0);
     }
 }
