@@ -33,9 +33,9 @@ public class CouponIssueFacade {
             return new CouponIssueResult(toInfo(existing), false);
         }
 
+        CouponCampaign campaign = campaigns.findById(campaignId)
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "쿠폰 캠페인을 찾을 수 없습니다."));
         try {
-            CouponCampaign campaign = campaigns.findById(campaignId)
-                .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "쿠폰 캠페인을 찾을 수 없습니다."));
             campaign.validateIssuable(applicationTime.now().toInstant());
             admission.requireOpen();
         } catch (CoreException rejection) {
@@ -69,7 +69,8 @@ public class CouponIssueFacade {
     }
 
     /**
-     * 처음 조회 뒤 같은 사용자의 다른 요청이 발급하고 캠페인이 품절됐을 수 있으므로, 거절하기 직전에 쿠폰을 한 번 더 확인한다.
+     * 처음 조회 뒤 같은 사용자의 다른 요청이 발급하고 캠페인이 품절됐을 수 있으므로, 캠페인 거절(409)과 수용 닫힘(503) 직전에
+     * 쿠폰을 한 번 더 확인한다. 없는 캠페인(404)은 쿠폰을 돌려줄 수 없어 다시 조회하지 않는다.
      * 429는 몰릴 때 가장 많은 응답이라 DB를 다시 읽지 않는다. 다시 요청하면 첫 조회에서 기존 쿠폰을 받는다.
      */
     private CouponIssueResult existingCouponOrReject(Long campaignId, Long userId, CoreException rejection) {

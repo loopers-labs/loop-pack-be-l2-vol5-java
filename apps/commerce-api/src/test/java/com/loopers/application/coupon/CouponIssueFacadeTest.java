@@ -111,7 +111,7 @@ class CouponIssueFacadeTest {
         verify(transaction, never()).issue(any(), any(), any());
     }
 
-    @DisplayName("없는 캠페인은 permit 전에 404로 끝난다.")
+    @DisplayName("없는 캠페인은 permit 전에 404로 끝나고, 쿠폰을 돌려줄 수 없으므로 다시 조회하지 않는다.")
     @Test
     void rejectsMissingCampaignBeforeAdmission() {
         when(coupons.findIssuedByCampaignIdAndUserId(CAMPAIGN_ID, USER_ID)).thenReturn(Optional.empty());
@@ -122,6 +122,7 @@ class CouponIssueFacadeTest {
                 exception -> assertThat(exception.getErrorType()).isEqualTo(ErrorType.NOT_FOUND));
         verify(permits, never()).tryAcquire(anyString(), eq(3));
         verify(transaction, never()).issue(any(), any(), any());
+        verify(coupons, times(1)).findIssuedByCampaignIdAndUserId(CAMPAIGN_ID, USER_ID);
     }
 
     @DisplayName("기간이 지난 캠페인은 permit 전에 409로 끝난다.")
@@ -142,6 +143,8 @@ class CouponIssueFacadeTest {
     @DisplayName("캠페인 품절로 거절하기 직전에 다시 확인해, 그사이 같은 사용자에게 발급된 쿠폰이 있으면 409 대신 그 쿠폰을 돌려준다.")
     @Test
     void returnsCouponIssuedMeanwhileInsteadOfSoldOut() {
+        // 수용을 열어 두어야 품절이 아닐 때 503 경로로 통과하지 않는다.
+        admission.open();
         Coupon issuedMeanwhile = Coupon.reconstitute(104L, CAMPAIGN_ID, USER_ID, NOW.minusSeconds(1));
         CouponCampaign soldOut = CouponCampaign.reconstitute(CAMPAIGN_ID, "테스트 행사", 5, 5, "5,000원 할인권",
             NOW.minusSeconds(3600), NOW.plusSeconds(3600), NOW.minusSeconds(1));
