@@ -100,9 +100,9 @@ class CouponReconciliationTest {
         }
     }
 
-    @DisplayName("RCN-001: 지난 실행 때 있었고 DB 최대 번호 이하인데 DB 에 없는 번호만 다시 보내 워커가 쿠폰으로 만들고, 큐에 있는 번호는 건드리지 않는다")
+    @DisplayName("RCN-001: 워커가 비어 있으면 지난 실행 때 있었는데 DB 에 없는 번호를 전부 다시 보내 워커가 쿠폰으로 만든다. 마지막 번호도 빠지지 않는다")
     @Test
-    void republishesOnlyNumbersTheWorkerHasPassed() throws Exception {
+    void republishesEveryMissingNumberWhenTheWorkerIsDrained() throws Exception {
         Long campaignId = openCampaign();
         reserveOnly(campaignId, 1L);
         reserveOnly(campaignId, 2L);
@@ -112,12 +112,13 @@ class CouponReconciliationTest {
         couponTransactions.issue(campaignId, 3L, 3, NOW);
 
         assertThat(couponReconciliation.reconcile(campaignId)).isZero();
-        assertThat(couponReconciliation.reconcile(campaignId)).isEqualTo(1);
-        eventually(() -> couponCount(campaignId) == 3);
+        assertThat(couponReconciliation.reconcile(campaignId)).isEqualTo(2);
+        eventually(() -> couponCount(campaignId) == 4);
 
         assertThat(issueNumberOf(campaignId, 2L)).isEqualTo(2);
-        assertThat(republished(campaignId)).isEqualTo(1.0);
+        assertThat(issueNumberOf(campaignId, 4L)).isEqualTo(4);
+        assertThat(republished(campaignId)).isEqualTo(2.0);
         assertThat(couponReconciliation.reconcile(campaignId)).isZero();
-        assertThat(couponCount(campaignId)).isEqualTo(3);
+        assertThat(couponCount(campaignId)).isEqualTo(4);
     }
 }

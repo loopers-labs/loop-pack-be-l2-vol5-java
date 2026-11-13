@@ -1,6 +1,7 @@
 package com.loopers.application.coupon;
 
 import com.loopers.domain.coupon.CouponCampaign;
+import com.loopers.domain.coupon.CouponIssueBacklog;
 import com.loopers.domain.coupon.CouponIssuePublisher;
 import com.loopers.domain.coupon.CouponIssuePublisher.CouponIssue;
 import com.loopers.domain.coupon.CouponReservation;
@@ -35,6 +36,7 @@ public class CouponReconciliation {
     private final CouponReservation couponReservation;
     private final CouponService couponService;
     private final CouponIssuePublisher couponIssuePublisher;
+    private final CouponIssueBacklog backlog;
     private final CampaignCache campaignCache;
     private final MeterRegistry meterRegistry;
     private final Map<Long, Watermark> watermarks = new ConcurrentHashMap<>();
@@ -56,7 +58,7 @@ public class CouponReconciliation {
     public int reconcile(Long campaignId) {
         Watermark previous = watermarks.getOrDefault(campaignId, new Watermark(0, 0));
         int dbMax = couponService.maxIssueNumber(campaignId);
-        int bound = Math.min(previous.seenMax(), dbMax);
+        int bound = backlog.isDrained() ? previous.seenMax() : Math.min(previous.seenMax(), dbMax);
         int confirmedUpTo = previous.confirmedUpTo();
         boolean prefixIntact = true;
         int republished = 0;
