@@ -36,9 +36,40 @@ datasource:
     connect-timeout: 1s # 연결 수립(초기 핸드셰이크 포함)의 상한. JVM의 첫 연결은 300ms를 넘을 수 있다
     reject-commands-when-disconnected: true # 연결이 끊긴 동안은 재연결을 기다리지 않고 바로 실패한다
 
+coupon:
+  admission: # 쿠폰 신규 발급의 동시 실행 수용 (docs/week8 설계서)
+    capacity: 10 # 지금 동시에 진행할 수 있는 신규 발급 실행의 최대 수(C). DB 연결 풀(test 10, 기본 40) 이하로 둔다
+    auto-resume: true # Redis가 복구돼 안전 조건을 채우면 자동으로 세마포어 경로로 돌아온다. false면 사람이 확인해야 한다
+    instance-id: local-1 # 이 인스턴스의 고정 ID. token이 `instance-id:UUID`가 되어 재시작 뒤 자기 token만 정리할 수 있다. 영문·숫자·_.-만 쓴다(단일 인스턴스 전제)
+    breaker: # Redis 호출 CircuitBreaker. 열리면 Redis를 건너뛰고 DB로 직행한다(직행의 상한은 capacity)
+      sliding-window-size: 10 # 최근 호출 수 기준
+      minimum-number-of-calls: 5 # 이 수만큼 호출되기 전에는 열지 않는다
+      failure-rate-threshold: 50 # 실패율(%)
+      wait-duration-in-open-state: 5s # 열린 뒤 다시 시험하기까지의 최소 대기. 재개 probe의 최소 대기이기도 하다
+      permitted-calls-in-half-open: 3 # 시험 상태에서 허용하는 호출 수
+    recovery:
+      scheduling-enabled: true # 미반환 token 재시도와 이전 프로세스가 남긴 자기 token 정리를 주기적으로 한다
+      fixed-delay: 5s # 한 회차가 끝난 뒤 다음 회차까지 쉬는 시간
+
+  rate-limit: # 쿠폰 발급 요청의 전역 초당 한도. 초과하면 429 RATE_LIMITED + Retry-After (동시 실행 수 제한 NO_PERMIT과 별개)
+    enabled: true
+    limit-for-period: 300 # 제안값. 부하를 측정해 조정한다
+    refresh-period: 1s
+
 order-event:
   topic-name: order-events # 확정 주문 이벤트(OrderConfirmed v1)의 topic. 테스트는 고유 접미사를 붙여 덮어쓴다
   send-timeout: 5s # send 결과를 기다리는 상한. 넘으면 발행 실패로 기록하고 주문 결과는 그대로 돌려준다
+
+order-outbox:
+  relay: # 확정 주문 Outbox를 broker로 보내는 단일 relay (docs/week7/design.md 4절)
+    scheduling-enabled: true # 이 인스턴스에서 relay를 주기적으로 실행한다. 여러 인스턴스 중 한 곳에서만 켠다(분산 잠금이 없다)
+    fixed-delay: 1s # 한 회차가 끝난 뒤 다음 회차까지 쉬는 시간. 회차는 겹치지 않는다
+    batch-size: 50 # 한 회차에 고르는 최대 행 수
+    send-timeout: 5s # broker 확인을 기다리는 상한. 넘으면 수신 여부를 모르는 실패로 보고 같은 행을 다시 보낸다
+    initial-backoff: 1s # 첫 실패 뒤 다음 시도까지. 실패마다 backoff-multiplier배로 늘어난다
+    backoff-multiplier: 2
+    max-backoff: 5m # 영구 오류도 이 간격보다 자주 다시 보내지 않는다
+    alert-after-attempts: 5 # 한 행이 이만큼 실패하면 반복 실패로 보고 원인과 eventId를 ERROR로 남긴다 (첫 대기 1s 기준 약 15초 뒤)
 
 payment:
   pg:
@@ -64,6 +95,23 @@ spring:
   config:
     activate:
       on-profile: local, test
+
+---
+spring:
+  config:
+    activate:
+      on-profile: test
+
+order-outbox:
+  relay:
+    scheduling-enabled: false # 테스트는 relay를 직접 한 회차씩 부른다. 백그라운드 회차가 테스트의 Outbox 행을 바꾸지 않게 한다
+
+coupon:
+  admission:
+    recovery:
+      scheduling-enabled: false # 테스트는 정리를 직접 한 회차씩 부른다. 백그라운드 회차가 테스트의 token 상태를 바꾸지 않게 한다
+  rate-limit:
+    enabled: false # 수용 실험(C=3)을 속도 제한이 가리지 않게 끈다. 속도 제한 테스트는 자기 설정으로 켠다
 
 ---
 spring:

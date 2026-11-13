@@ -6,6 +6,7 @@ import com.loopers.application.product.ProductFacade;
 import com.loopers.domain.brand.BrandModel;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.OrderModel;
+import com.loopers.domain.order.OrderOutboxModel;
 import com.loopers.domain.order.ReservationStatus;
 import com.loopers.domain.payment.PaymentAttemptModel;
 import com.loopers.domain.payment.ProviderOrderId;
@@ -13,6 +14,7 @@ import com.loopers.domain.point.PointModel;
 import com.loopers.domain.product.ProductModel;
 import com.loopers.infrastructure.brand.BrandJpaRepository;
 import com.loopers.infrastructure.order.OrderJpaRepository;
+import com.loopers.infrastructure.order.OrderOutboxJpaRepository;
 import com.loopers.infrastructure.order.StockReservationJpaRepository;
 import com.loopers.infrastructure.payment.PaymentAttemptJpaRepository;
 import com.loopers.infrastructure.point.PointJpaRepository;
@@ -38,6 +40,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import java.util.List;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * 결제 시나리오 통합 테스트의 공통 기반 (design.md 9-9절). 실제 MySQL, 실제 controller, 실제 adapter → 테스트 PG fixture를 모두 거친다.
@@ -92,6 +95,9 @@ abstract class PaymentScenarioTestBase {
     protected StockReservationJpaRepository stockReservationJpaRepository;
 
     @Autowired
+    protected OrderOutboxJpaRepository orderOutboxJpaRepository;
+
+    @Autowired
     protected JdbcTemplate jdbcTemplate;
 
     @Autowired
@@ -140,6 +146,14 @@ abstract class PaymentScenarioTestBase {
 
     protected ResultActions reconcile() throws Exception {
         return mvc.perform(post("/api/v1/orders/" + orderId + "/payment/reconcile").header("X-USER-ID", USER_ID));
+    }
+
+    /** 주문의 결제를 시작하고 PG가 성공으로 끝낸 뒤, 그 결과를 실제 callback 경로로 적용해 확정한다. Outbox에 PENDING 한 행이 생긴다. */
+    protected void confirmOrderThroughCallback(Long targetOrderId) throws Exception {
+        confirm(targetOrderId, USER_ID, PaymentTestSupport.attemptKeyOf(targetOrderId), PaymentTestSupport.CARD_TYPE)
+            .andExpect(status().isAccepted());
+        PaymentTestSupport.completeAt(pg, targetOrderId, TestPgStatus.SUCCESS);
+        callbackOf(PaymentTestSupport.onlyTransactionOf(pg, targetOrderId)).andExpect(status().isOk());
     }
 
     /** PG가 보내는 결과 알림. 고객 식별 헤더 없이 보낸다. */
@@ -195,6 +209,11 @@ abstract class PaymentScenarioTestBase {
 
     protected PaymentAttemptModel attempt() {
         return paymentAttemptJpaRepository.findByOrderId(orderId).orElseThrow();
+    }
+
+    /** 이 주문의 Outbox 행. 테스트는 트랜잭션 밖에서 부르므로 매번 DB에서 새로 읽는다. */
+    protected List<OrderOutboxModel> outboxRows() {
+        return orderOutboxJpaRepository.findAllByOrderId(orderId);
     }
 
     protected OrderAdminInfo order() {
