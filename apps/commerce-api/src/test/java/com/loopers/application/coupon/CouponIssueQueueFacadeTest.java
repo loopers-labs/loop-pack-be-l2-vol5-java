@@ -315,6 +315,36 @@ class CouponIssueQueueFacadeTest {
             issued -> assertThat(issued.coupon().couponId()).isEqualTo(105L));
     }
 
+    @DisplayName("거절 직전 다시 확인할 때 대기열을 읽지 못해도 그사이 발급된 쿠폰이 있으면 그 쿠폰을 돌려준다.")
+    @Test
+    void returnsCouponIssuedMeanwhileWhenQueueIsUnavailableOnRecheck() {
+        when(queue.findByCampaignIdAndUserId(CAMPAIGN_ID, USER_ID))
+            .thenReturn(Optional.empty())
+            .thenThrow(new CouponIssueQueueUnavailableException(null));
+        when(coupons.findIssuedByCampaignIdAndUserId(CAMPAIGN_ID, USER_ID))
+            .thenReturn(Optional.empty(), Optional.of(coupon()));
+        CouponCampaign soldOut = soldOutCampaign();
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(soldOut));
+
+        CouponIssueQueueResult result = facade.submit(CAMPAIGN_ID, USER_ID);
+
+        assertThat(result).isInstanceOfSatisfying(CouponAlreadyIssued.class,
+            issued -> assertThat(issued.coupon().couponId()).isEqualTo(105L));
+    }
+
+    @DisplayName("거절 직전 다시 확인할 때 대기열을 읽지 못하고 쿠폰도 없으면 503으로 거절한다.")
+    @Test
+    void rejectsWhenQueueIsUnavailableOnRecheckAndNoCoupon() {
+        when(queue.findByCampaignIdAndUserId(CAMPAIGN_ID, USER_ID))
+            .thenReturn(Optional.empty())
+            .thenThrow(new CouponIssueQueueUnavailableException(null));
+        when(coupons.findIssuedByCampaignIdAndUserId(CAMPAIGN_ID, USER_ID)).thenReturn(Optional.empty());
+        CouponCampaign soldOut = soldOutCampaign();
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(soldOut));
+
+        assertErrorType(() -> facade.submit(CAMPAIGN_ID, USER_ID), ErrorType.SERVICE_UNAVAILABLE);
+    }
+
     @DisplayName("신규 수용이 닫혀 있으면 새 작업을 접수하지 않고 503으로 거절한다.")
     @Test
     void rejectsNewRequestWhenAdmissionIsClosed() {

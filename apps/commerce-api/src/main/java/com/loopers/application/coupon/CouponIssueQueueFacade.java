@@ -156,7 +156,15 @@ public class CouponIssueQueueFacade {
      * 사전 확인 중 다른 요청이 먼저 접수하거나 발급했을 수 있으므로, 거절하기 전에 작업과 쿠폰을 한 번 더 확인한다.
      */
     private CouponIssueQueueResult recheckBeforeRejecting(Long campaignId, Long userId, CoreException rejection) {
-        Optional<CouponIssueRequest> request = queueCall(() -> queue.findByCampaignIdAndUserId(campaignId, userId));
+        Optional<CouponIssueRequest> request;
+        try {
+            request = queue.findByCampaignIdAndUserId(campaignId, userId);
+        } catch (CouponIssueQueueUnavailableException unavailable) {
+            // 처음 조회와 같이, 이미 발급된 쿠폰은 대기열을 읽지 못해도 알려 줄 수 있다.
+            return issuedCoupon(campaignId, userId).orElseThrow(() -> queueUnavailable(unavailable));
+        } catch (CouponIssueQueueScriptException inconsistent) {
+            throw queueInconsistent(inconsistent);
+        }
         if (request.isPresent()) {
             return currentState(request.get());
         }

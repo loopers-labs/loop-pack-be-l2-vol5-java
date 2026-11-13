@@ -31,10 +31,14 @@ public class CouponIssueFacade {
             return new CouponIssueResult(toInfo(existing), false);
         }
 
-        CouponCampaign campaign = campaigns.findById(campaignId)
-            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "쿠폰 캠페인을 찾을 수 없습니다."));
-        campaign.validateIssuable(applicationTime.now().toInstant());
-        admission.requireOpen();
+        try {
+            CouponCampaign campaign = campaigns.findById(campaignId)
+                .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "쿠폰 캠페인을 찾을 수 없습니다."));
+            campaign.validateIssuable(applicationTime.now().toInstant());
+            admission.requireOpen();
+        } catch (CoreException rejection) {
+            return existingCouponOrReject(campaignId, userId, rejection);
+        }
 
         String token = UUID.randomUUID().toString();
         boolean acquired;
@@ -60,6 +64,16 @@ public class CouponIssueFacade {
 
     public List<CouponIssueInfo> getMyCoupons(Long userId) {
         return coupons.findAllIssuedByUserId(userId).stream().map(this::toInfo).toList();
+    }
+
+    /**
+     * 처음 조회 뒤 같은 사용자의 다른 요청이 발급하고 캠페인이 품절됐을 수 있으므로, 거절하기 직전에 쿠폰을 한 번 더 확인한다.
+     * 429는 몰릴 때 가장 많은 응답이라 DB를 다시 읽지 않는다. 다시 요청하면 첫 조회에서 기존 쿠폰을 받는다.
+     */
+    private CouponIssueResult existingCouponOrReject(Long campaignId, Long userId, CoreException rejection) {
+        return coupons.findIssuedByCampaignIdAndUserId(campaignId, userId)
+            .map(coupon -> new CouponIssueResult(toInfo(coupon), false))
+            .orElseThrow(() -> rejection);
     }
 
     private CouponIssueInfo toInfo(Coupon coupon) {

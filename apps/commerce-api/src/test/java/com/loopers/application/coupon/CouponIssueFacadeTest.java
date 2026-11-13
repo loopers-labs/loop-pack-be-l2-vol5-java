@@ -38,6 +38,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -135,6 +136,38 @@ class CouponIssueFacadeTest {
         verify(transaction, never()).issue(any(), any(), any());
     }
 
+    @DisplayName("캠페인 품절로 거절하기 직전에 다시 확인해, 그사이 같은 사용자에게 발급된 쿠폰이 있으면 409 대신 그 쿠폰을 돌려준다.")
+    @Test
+    void returnsCouponIssuedMeanwhileInsteadOfSoldOut() {
+        Coupon issuedMeanwhile = Coupon.reconstitute(104L, CAMPAIGN_ID, USER_ID, NOW.minusSeconds(1));
+        CouponCampaign soldOut = CouponCampaign.reconstitute(CAMPAIGN_ID, "테스트 행사", 5, 5, "5,000원 할인권",
+            NOW.minusSeconds(3600), NOW.plusSeconds(3600), NOW.minusSeconds(1));
+        when(coupons.findIssuedByCampaignIdAndUserId(CAMPAIGN_ID, USER_ID))
+            .thenReturn(Optional.empty(), Optional.of(issuedMeanwhile));
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(soldOut));
+
+        CouponIssueResult result = facade.issue(CAMPAIGN_ID, USER_ID);
+
+        assertThat(result.newlyIssued()).isFalse();
+        assertThat(result.coupon().couponId()).isEqualTo(104L);
+        verify(permits, never()).tryAcquire(anyString(), eq(3));
+    }
+
+    @DisplayName("수용이 닫혀 거절하기 직전에도 다시 확인해, 그사이 발급된 쿠폰이 있으면 503 대신 그 쿠폰을 돌려준다.")
+    @Test
+    void returnsCouponIssuedMeanwhileInsteadOfAdmissionClosed() {
+        Coupon issuedMeanwhile = Coupon.reconstitute(104L, CAMPAIGN_ID, USER_ID, NOW.minusSeconds(1));
+        when(coupons.findIssuedByCampaignIdAndUserId(CAMPAIGN_ID, USER_ID))
+            .thenReturn(Optional.empty(), Optional.of(issuedMeanwhile));
+        when(campaigns.findById(CAMPAIGN_ID)).thenReturn(Optional.of(campaign));
+
+        CouponIssueResult result = facade.issue(CAMPAIGN_ID, USER_ID);
+
+        assertThat(result.newlyIssued()).isFalse();
+        assertThat(result.coupon().couponId()).isEqualTo(104L);
+        verify(permits, never()).tryAcquire(anyString(), eq(3));
+    }
+
     @DisplayName("앱 수용 상태가 닫혀 있으면 Redis와 DB 신규 발급을 호출하지 않고 503을 반환한다.")
     @Test
     void rejectsWhenAdmissionIsClosed() {
@@ -160,6 +193,8 @@ class CouponIssueFacadeTest {
             .isInstanceOfSatisfying(CoreException.class,
                 exception -> assertThat(exception.getErrorType()).isEqualTo(ErrorType.TOO_MANY_REQUESTS));
         verify(transaction, never()).issue(any(), any(), any());
+        // 429는 몰릴 때 가장 많은 응답이라 DB를 다시 읽지 않는다. 다시 요청하면 첫 조회에서 기존 쿠폰을 받는다.
+        verify(coupons, times(1)).findIssuedByCampaignIdAndUserId(CAMPAIGN_ID, USER_ID);
         verify(permits, never()).release(anyString());
     }
 
