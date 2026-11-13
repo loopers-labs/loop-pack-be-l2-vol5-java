@@ -78,6 +78,13 @@ class CouponAdmissionFacadeTest {
 
     @TestConfiguration
     static class ResettableCircuitConfig {
+        /** 운영 Clock 빈 대신 오프셋을 더할 수 있는 시계를 끼운다. 어댑터·서비스·서킷이 모두 이 시계를 본다. */
+        @Primary
+        @Bean
+        AdjustableClock adjustableClock() {
+            return new AdjustableClock();
+        }
+
         @Primary
         @Bean
         ResettableCouponIssueCircuit resettableCouponIssueCircuit(CouponAdmissionProperties properties, Clock clock) {
@@ -98,6 +105,7 @@ class CouponAdmissionFacadeTest {
     private final CouponAdmissionGate gate;
     private final FaultInjectingCouponAdmissionQueue queue;
     private final ResettableCouponIssueCircuit circuit;
+    private final AdjustableClock clock;
     private final CouponCampaignRepository couponCampaignRepository;
     private final CouponJpaRepository couponJpaRepository;
     private final UserJpaRepository userJpaRepository;
@@ -115,6 +123,7 @@ class CouponAdmissionFacadeTest {
         CouponAdmissionGate gate,
         FaultInjectingCouponAdmissionQueue queue,
         ResettableCouponIssueCircuit circuit,
+        AdjustableClock clock,
         CouponCampaignRepository couponCampaignRepository,
         CouponJpaRepository couponJpaRepository,
         UserJpaRepository userJpaRepository,
@@ -127,6 +136,7 @@ class CouponAdmissionFacadeTest {
         this.gate = gate;
         this.queue = queue;
         this.circuit = circuit;
+        this.clock = clock;
         this.couponCampaignRepository = couponCampaignRepository;
         this.couponJpaRepository = couponJpaRepository;
         this.userJpaRepository = userJpaRepository;
@@ -148,6 +158,7 @@ class CouponAdmissionFacadeTest {
         // @TestConfiguration 을 둔 뒤로 spy 의 자동 reset 이 동작하지 않아 stub·호출 기록이 다음 테스트로 넘어갔다. 명시적으로 되돌린다
         Mockito.reset(couponIssueService);
         queue.reset();
+        clock.reset();
         gate.close(campaignId);
         databaseCleanUp.truncateAllTables();
         redisCleanUp.truncateAll();
@@ -509,6 +520,40 @@ class CouponAdmissionFacadeTest {
             assertThat(circuit.tryAcquire()).isTrue();
             circuit.release();
             gate.close(small);
+        }
+
+        @DisplayName("INV-W8-13⑥ 재시도 소진 503 은 승격 시간을 다시 채운다. 원래 만료 시각(TTL 1초)이 지나도 승격이 유지되고, DB 가 돌아오면 재claim 이 성공한다.")
+        @Test
+        void extendsAdmissionOnSystemFailure() {
+            Long userId = admittedUsers(1).get(0);
+            doThrow(transientFailure()).when(couponIssueService).issue(any(), any());
+
+            clock.advance(Duration.ofMillis(800));
+            assertThatThrownBy(() -> facade.claim(campaignId, userId)).satisfies(e -> assertCoreException(e, ErrorType.SERVICE_UNAVAILABLE));
+            clock.advance(Duration.ofMillis(800));
+            // 원래 승격 시각 + 1.6초. 연장이 없었다면 승격 Lua 의 만료 정리(TTL 1초)에 걸린다
+            assertThat(facade.promoteOnce()).isZero();
+
+            assertThat(queue.isAdmitted(campaignId, userId)).as("승격 유지").isTrue();
+            doCallReal();
+            assertThat(facade.claim(campaignId, userId).created()).isTrue();
+        }
+
+        @DisplayName("INV-W8-13⑦ 이미 만료·제거된 승격은 claim 실패로 되살아나지 않는다(ZADD XX). claim 은 409, 상태는 NONE 이다.")
+        @Test
+        void doesNotResurrectExpiredAdmission() {
+            Long userId = admittedUsers(1).get(0);
+            clock.advance(Duration.ofMillis(1_200));
+            assertThat(facade.promoteOnce()).as("만료 정리만 일어나고 대기자는 없다").isZero();
+            assertThat(queue.isAdmitted(campaignId, userId)).isFalse();
+            doThrow(transientFailure()).when(couponIssueService).issue(any(), any());
+
+            assertThatThrownBy(() -> facade.claim(campaignId, userId)).satisfies(e -> assertCoreException(e, ErrorType.CONFLICT));
+
+            assertThat(queue.extendAdmission(campaignId, userId)).as("없는 승격은 XX 로 갱신되지 않는다").isFalse();
+            assertThat(queue.isAdmitted(campaignId, userId)).isFalse();
+            assertThat(facade.status(campaignId, userId).status()).isEqualTo(Status.NONE);
+            verify(couponIssueService, never()).issue(any(), any());
         }
 
         private void doCallReal() {

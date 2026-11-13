@@ -52,6 +52,14 @@ public interface CouponAdmissionQueue {
     int promote(Long campaignId, String expectedGen);
 
     /**
+     * 시스템 사정(DB 일시 오류·서킷 열림)으로 claim 이 실패한 사용자의 승격 시간을 현재 시각으로 다시 채운다. ZADD XX admitted now userId (§7-4 D15).
+     * XX 라 이미 만료·제거된 승격은 되살리지 않는다.
+     *
+     * @return 갱신했으면 true. 승격 기록이 없으면 false
+     */
+    boolean extendAdmission(Long campaignId, Long userId);
+
+    /**
      * 발급 종료 후 승격 예약을 지운다. ZREM admitted.
      *
      * @return 지웠으면 true. 이미 만료 정리로 없어졌으면 false

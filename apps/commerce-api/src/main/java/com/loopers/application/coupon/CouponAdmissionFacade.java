@@ -168,7 +168,8 @@ public class CouponAdmissionFacade {
         String gen = requireOpenGate(campaignId);
 
         if (!circuit.tryAcquire()) {
-            throw reject("db_unavailable", ErrorType.SERVICE_UNAVAILABLE, "쿠폰 발급 저장소를 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.");
+            extendAdmission(campaignId, userId);
+            throw dbUnavailable();
         }
         String token = UUID.randomUUID().toString();
         ClaimOutcome outcome;
@@ -337,8 +338,9 @@ public class CouponAdmissionFacade {
             throw e;
         } catch (DataAccessException e) {
             circuit.recordFailure(e);
-            log.warn("쿠폰 DB 발급이 일시 오류로 끝났다. 승격은 유지하고 503 으로 끝낸다. campaignId={} userId={}", campaignId, userId, e);
-            throw reject("db_unavailable", ErrorType.SERVICE_UNAVAILABLE, "쿠폰 발급 저장소를 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.");
+            log.warn("쿠폰 DB 발급이 일시 오류로 끝났다. 승격 시간을 다시 채우고 503 으로 끝낸다. campaignId={} userId={}", campaignId, userId, e);
+            extendAdmission(campaignId, userId);
+            throw dbUnavailable();
         } finally {
             heartbeat.cancel(false);
             metrics.requestFinished();
@@ -390,6 +392,21 @@ public class CouponAdmissionFacade {
                 }
             }
         }
+    }
+
+    /**
+     * 시스템 사정으로 실패한 claim 의 승격 시간을 다시 채운다 (D15). 시스템 사정으로 흐른 시간을 사용자에게 물리지 않는다.
+     * 상태를 바꾸는 Redis 호출이라 실패하면 gate 를 닫고 503 이다 (§7-1). 승격이 이미 없으면(XX) 아무 일도 하지 않는다.
+     */
+    private void extendAdmission(Long campaignId, Long userId) {
+        boolean extended = redis(campaignId, () -> queue.extendAdmission(campaignId, userId));
+        if (!extended) {
+            log.info("승격 시간을 채울 기록이 없다(이미 만료). campaignId={} userId={}", campaignId, userId);
+        }
+    }
+
+    private CoreException dbUnavailable() {
+        return reject("db_unavailable", ErrorType.SERVICE_UNAVAILABLE, "쿠폰 발급 저장소를 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.");
     }
 
     private void removeAdmitted(Long campaignId, Long userId) {

@@ -4,11 +4,13 @@ import com.loopers.config.coupon.CouponAdmissionProperties;
 import com.loopers.config.coupon.CouponAdmissionRedisConfig;
 import com.loopers.domain.coupon.CouponAdmissionQueue;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.data.redis.connection.RedisZSetCommands.ZAddArgs;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.util.List;
 import java.util.Optional;
@@ -139,6 +141,19 @@ public class RedisCouponAdmissionQueue implements CouponAdmissionQueue {
             throw new IllegalStateException("승격 Lua 결과를 해석할 수 없다. result=" + result);
         }
         return result.intValue();
+    }
+
+    /** ZADD XX CH. 세마포어 하트비트와 같은 꼴이다. XX 는 있는 사용자만 갱신하고, CH 는 갱신 수를 돌려준다. */
+    @Override
+    public boolean extendAdmission(Long campaignId, Long userId) {
+        byte[] key = CouponAdmissionKeys.admitted(campaignId).getBytes(StandardCharsets.UTF_8);
+        byte[] member = String.valueOf(userId).getBytes(StandardCharsets.UTF_8);
+        double now = clock.millis();
+        Boolean updated = redisTemplate.execute(
+            connection -> connection.zSetCommands().zAdd(key, now, member, ZAddArgs.ifExists().ch()),
+            true
+        );
+        return Boolean.TRUE.equals(updated);
     }
 
     @Override

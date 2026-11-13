@@ -67,6 +67,11 @@ class FaultInjectingCouponAdmissionQueue implements CouponAdmissionQueue {
     }
 
     @Override
+    public boolean extendAdmission(Long campaignId, Long userId) {
+        return delegate.extendAdmission(campaignId, userId);
+    }
+
+    @Override
     public boolean removeAdmitted(Long campaignId, Long userId) {
         return delegate.removeAdmitted(campaignId, userId);
     }
