@@ -53,7 +53,11 @@ class RedisCouponIssueQueueIntegrationTest {
 
     @BeforeEach
     void open() {
-        redis.opsForValue().set(keys.epoch(), "1");
+        openWith(QUOTA, RESERVE_LIMIT);
+    }
+
+    private void openWith(int totalQuota, int reserveLimit) {
+        queue.open(CAMPAIGN_ID, totalQuota, reserveLimit, "1");
     }
 
     @AfterEach
@@ -62,7 +66,7 @@ class RedisCouponIssueQueueIntegrationTest {
     }
 
     private IssueAcceptance accept(long userId) {
-        return queue.accept(CAMPAIGN_ID, userId, QUOTA, RESERVE_LIMIT, NOW);
+        return queue.accept(CAMPAIGN_ID, userId, NOW);
     }
 
     @DisplayName("접수할 때, ")
@@ -129,6 +133,20 @@ class RedisCouponIssueQueueIntegrationTest {
             assertThat(accept(1L)).isInstanceOf(IssueAcceptance.SoldOut.class);
         }
 
+        @DisplayName("캠페인이 닫혔으면 새 사람은 NOT_ACTIVE 이고, 이미 기록이 있는 사람은 기존 상태를 받는다. (D-117, D-144)")
+        @Test
+        void notActiveForNewcomer_existingForRecorded_whenClosed() {
+            // arrange
+            accept(7L);
+            queue.close(CAMPAIGN_ID);
+
+            // act & assert
+            assertAll(
+                () -> assertThat(accept(8L)).isInstanceOf(IssueAcceptance.NotActive.class),
+                () -> assertThat(accept(7L)).isInstanceOf(IssueAcceptance.Existing.class)
+            );
+        }
+
         @DisplayName("표식 키가 없으면, 순번을 나눠 주지 않고 COUPON_ISSUE_UNAVAILABLE 이다. (D-139)")
         @Test
         void unavailable_whenEpochIsMissing() {
@@ -150,6 +168,7 @@ class RedisCouponIssueQueueIntegrationTest {
             // arrange
             int users = 50;
             int limit = 30;
+            openWith(20, limit);
             CountDownLatch start = new CountDownLatch(1);
             ExecutorService executor = Executors.newFixedThreadPool(16);
             List<Future<IssueAcceptance>> results = new ArrayList<>();
@@ -160,7 +179,7 @@ class RedisCouponIssueQueueIntegrationTest {
                     long userId = i;
                     results.add(executor.submit(() -> {
                         start.await();
-                        return queue.accept(CAMPAIGN_ID, userId, 20, limit, NOW);
+                        return queue.accept(CAMPAIGN_ID, userId, NOW);
                     }));
                 }
                 start.countDown();
@@ -198,7 +217,7 @@ class RedisCouponIssueQueueIntegrationTest {
             accept(7L);
 
             // act
-            IssueSnapshot snapshot = queue.confirm(CAMPAIGN_ID, 7L, QUOTA).orElseThrow();
+            IssueSnapshot snapshot = queue.confirm(CAMPAIGN_ID, 7L).orElseThrow();
 
             // assert
             var entries = redis.opsForStream().range(keys.stream(), org.springframework.data.domain.Range.unbounded());
@@ -220,7 +239,7 @@ class RedisCouponIssueQueueIntegrationTest {
             accept(3L);
 
             // act
-            IssueSnapshot snapshot = queue.confirm(CAMPAIGN_ID, 3L, QUOTA).orElseThrow();
+            IssueSnapshot snapshot = queue.confirm(CAMPAIGN_ID, 3L).orElseThrow();
 
             // assert
             assertAll(
@@ -235,10 +254,10 @@ class RedisCouponIssueQueueIntegrationTest {
         void confirmsOnce_whenRepeated() {
             // arrange
             accept(7L);
-            queue.confirm(CAMPAIGN_ID, 7L, QUOTA);
+            queue.confirm(CAMPAIGN_ID, 7L);
 
             // act
-            IssueSnapshot again = queue.confirm(CAMPAIGN_ID, 7L, QUOTA).orElseThrow();
+            IssueSnapshot again = queue.confirm(CAMPAIGN_ID, 7L).orElseThrow();
 
             // assert
             assertAll(
@@ -250,7 +269,7 @@ class RedisCouponIssueQueueIntegrationTest {
         @DisplayName("접수 기록이 없으면, 비어 있다.")
         @Test
         void empty_whenNoRecord() {
-            assertThat(queue.confirm(CAMPAIGN_ID, 7L, QUOTA)).isEmpty();
+            assertThat(queue.confirm(CAMPAIGN_ID, 7L)).isEmpty();
         }
     }
 
@@ -264,26 +283,27 @@ class RedisCouponIssueQueueIntegrationTest {
             accept(1L);
             accept(2L);
             accept(3L);
-            queue.confirm(CAMPAIGN_ID, 3L, QUOTA);
+            queue.confirm(CAMPAIGN_ID, 3L);
             redis.opsForValue().set(keys.soldOut(), "1");
 
             // act & assert
-            assertThat(queue.read(CAMPAIGN_ID, 3L, QUOTA).orElseThrow().state()).isEqualTo(IssueState.SOLD_OUT);
+            assertThat(queue.read(CAMPAIGN_ID, 3L).orElseThrow().state()).isEqualTo(IssueState.SOLD_OUT);
         }
 
         @DisplayName("승격된 인원만큼 예비 위치가 줄어든다. (D-149)")
         @Test
         void reservePositionShrinks_byPromotedCount() {
             // arrange
+            openWith(QUOTA, 4);
             for (long userId = 1; userId <= 4; userId++) {
-                queue.accept(CAMPAIGN_ID, userId, QUOTA, 4, NOW);
+                accept(userId);
             }
-            queue.confirm(CAMPAIGN_ID, 4L, QUOTA);
-            int before = queue.read(CAMPAIGN_ID, 4L, QUOTA).orElseThrow().reservePosition();
+            queue.confirm(CAMPAIGN_ID, 4L);
+            int before = queue.read(CAMPAIGN_ID, 4L).orElseThrow().reservePosition();
             redis.opsForValue().set(keys.promoted(), "1");
 
             // act
-            int after = queue.read(CAMPAIGN_ID, 4L, QUOTA).orElseThrow().reservePosition();
+            int after = queue.read(CAMPAIGN_ID, 4L).orElseThrow().reservePosition();
 
             // assert
             assertAll(
@@ -299,7 +319,7 @@ class RedisCouponIssueQueueIntegrationTest {
             redis.opsForHash().put(keys.users(), "7", "ISSUED:1:900");
 
             // act
-            IssueSnapshot snapshot = queue.read(CAMPAIGN_ID, 7L, QUOTA).orElseThrow();
+            IssueSnapshot snapshot = queue.read(CAMPAIGN_ID, 7L).orElseThrow();
 
             // assert
             assertThat(snapshot).isEqualTo(new IssueSnapshot(IssueState.ISSUED, 1, null, 900L));

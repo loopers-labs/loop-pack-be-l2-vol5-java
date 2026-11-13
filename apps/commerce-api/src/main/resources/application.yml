@@ -67,6 +67,15 @@ payment:
 order-event:
   topic: order-events
 
+# 쿠폰 접수 (8주차 설계 3장). topic 은 인프라가 만듦 (6주차 D-90)
+coupon-issue:
+  topic: coupon-issue-requests
+  producer: # 사용자가 응답을 기다리는 경로라 relay 보다 짧은 잠정값 (D-132, D-134)
+    request-timeout: 2s
+    delivery-timeout: 3s # linger.ms + request-timeout 이상
+    send-timeout: 4s
+    max-block: 500ms
+
 # Outbox relay (7주차 설계 4). 값의 근거는 docs/week7/experiment-relay-interval.md (D-108)
 order-outbox:
   relay:
