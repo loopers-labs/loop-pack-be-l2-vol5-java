@@ -24,6 +24,9 @@ dependencies {
     implementation("net.javacrumbs.shedlock:shedlock-spring:${project.properties["shedlockVersion"]}")
     implementation("net.javacrumbs.shedlock:shedlock-provider-jdbc-template:${project.properties["shedlockVersion"]}")
 
+    // W8 품절 표시를 서버 메모리에 짧게 둔다 (docs/week8/plan.md D-4-6)
+    implementation("com.github.ben-manes.caffeine:caffeine")
+
     // querydsl
     annotationProcessor("com.querydsl:querydsl-apt::jakarta")
     annotationProcessor("jakarta.persistence:jakarta.persistence-api")
