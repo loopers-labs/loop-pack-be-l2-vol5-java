@@ -275,6 +275,7 @@ class CouponIssueListenerTest {
         couponReservation.restore(campaignId, List.of(new CouponReservation.Reservation(42L, 1)));
 
         publisher.publish(new CouponIssue(campaignId, 42L, 1, NOW));
+        eventually(() -> couponCount(campaignId) == 1);
         publisher.publish(new CouponIssue(campaignId, 7L, 2, NOW));
         eventually(CouponIssueListenerTest::everyRecordCommitted);
 
