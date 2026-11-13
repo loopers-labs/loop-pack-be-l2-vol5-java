@@ -66,6 +66,9 @@ coupon-issue:
     claim-min-idle: 30s # (연결 3s + 잠금 3s + Redis 1s) × (안쪽 재시도 + 1) + 여유 (D-131)
     recount-interval: 1s
     pending-confirm-after: 10s # api 접수 producer delivery-timeout(3s)보다 길게 (D-134)
+  # 세마포어 실험의 처리 자리 수 C (D-157). 실제 발급 경로에는 쓰지 않음
+  admission:
+    capacity: 3
   # Redis 유실 대응 (D-174, D-175). 잠정값
   recovery:
     interval-ms: 1000
