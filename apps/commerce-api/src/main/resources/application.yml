@@ -51,6 +51,11 @@ coupon:
       scheduling-enabled: true # 미반환 token 재시도와 이전 프로세스가 남긴 자기 token 정리를 주기적으로 한다
       fixed-delay: 5s # 한 회차가 끝난 뒤 다음 회차까지 쉬는 시간
 
+  rate-limit: # 쿠폰 발급 요청의 전역 초당 한도. 초과하면 429 RATE_LIMITED + Retry-After (동시 실행 수 제한 NO_PERMIT과 별개)
+    enabled: true
+    limit-for-period: 300 # 제안값. 부하를 측정해 조정한다
+    refresh-period: 1s
+
 order-event:
   topic-name: order-events # 확정 주문 이벤트(OrderConfirmed v1)의 topic. 테스트는 고유 접미사를 붙여 덮어쓴다
   send-timeout: 5s # send 결과를 기다리는 상한. 넘으면 발행 실패로 기록하고 주문 결과는 그대로 돌려준다
@@ -105,6 +110,8 @@ coupon:
   admission:
     recovery:
       scheduling-enabled: false # 테스트는 정리를 직접 한 회차씩 부른다. 백그라운드 회차가 테스트의 token 상태를 바꾸지 않게 한다
+  rate-limit:
+    enabled: false # 수용 실험(C=3)을 속도 제한이 가리지 않게 끈다. 속도 제한 테스트는 자기 설정으로 켠다
 
 ---
 spring:

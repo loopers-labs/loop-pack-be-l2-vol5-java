@@ -26,6 +26,8 @@ dependencies {
     // resilience (PG 조회 경로의 재조회·회로 차단기. 스타터·AOP 없이 코드로 조립한다)
     implementation("io.github.resilience4j:resilience4j-circuitbreaker:${project.properties["resilience4jVersion"]}")
     implementation("io.github.resilience4j:resilience4j-retry:${project.properties["resilience4jVersion"]}")
+    // 쿠폰 발급 API 진입의 전역 Rate limiter (docs/week8 설계서 4·13절)
+    implementation("io.github.resilience4j:resilience4j-ratelimiter:${project.properties["resilience4jVersion"]}")
 
     // security (관리자 접근 제어)
     implementation("org.springframework.boot:spring-boot-starter-security")
