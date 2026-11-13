@@ -27,6 +27,9 @@ class CouponEntity extends AuditEntity {
     @Column(name = "user_id", nullable = false, updatable = false)
     private Long userId;
 
+    @Column(name = "issue_number", nullable = false, updatable = false)
+    private int issueNumber;
+
     @Column(name = "discount_amount", nullable = false, updatable = false)
     private long discountAmount;
 
@@ -39,12 +42,13 @@ class CouponEntity extends AuditEntity {
         CouponEntity entity = new CouponEntity();
         entity.campaignId = coupon.campaignId();
         entity.userId = coupon.userId();
+        entity.issueNumber = coupon.issueNumber();
         entity.discountAmount = coupon.discountAmount().value();
         entity.issuedAt = coupon.issuedAt();
         return entity;
     }
 
     Coupon toDomain() {
-        return new Coupon(getId(), campaignId, userId, DiscountAmount.of(discountAmount), issuedAt);
+        return new Coupon(getId(), campaignId, userId, issueNumber, DiscountAmount.of(discountAmount), issuedAt);
     }
 }

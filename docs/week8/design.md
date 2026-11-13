@@ -269,6 +269,12 @@ Kafka 를 두는 이유는 접수(Redis)와 보관(Kafka)의 장애 영역을 �
 | DB 중복 | `COUPON_ALREADY_ISSUED` 를 받으면 로그만 남기고 offset 을 넘긴다. 같은 메시지 재전달과 대사의 재발행이 여기서 멱등해진다 |
 | DB 품절 | `COUPON_SOLD_OUT` 을 받으면 지표 `coupon.issue.rejected_by_db` 를 올리고 넘기고, 그 캠페인의 유실 복구(16.1)를 시작한다. Redis 가 받은 것을 DB 가 거절했다는 것은 예약 집합과 DB 가 어긋났다는 뜻이다. 넘기기만 하면 그 사용자는 재요청마다 200 PENDING 을 받고 대사는 매 주기 그 번호를 후보로 잡는다. `ZREM` 만 하면 빈 자리로 다음 사람이 202 를 받고 또 거절된다. 재구성하면 거절된 사용자는 집합에서 빠져 409 를 받고, 쿠폰 없는 PENDING 이 남지 않는다 |
 | 인프라 실패 | 예외를 던져 컨테이너가 재시도. offset 은 그대로 |
+| 읽을 수 없는 메시지 | 우리 publisher 만 쓰는 토픽이라 버그다. 16.2 의 "버그" 행과 같이 던져서 멈추고 지표 `coupon.issue.worker.retry` 로 보인다. 보류 테이블(W7)은 두지 않는다 |
+| 켜고 끄기 | `coupon.issue.worker.auto-startup`(`WRK-008`). 끄면 접수는 받고 기록만 멈춘다. `EXP-023` 이 끈 채 예약을 쌓고 켠다 |
+
+코드는 셋이다. `interfaces/consumer/CouponIssueListener` 가 메시지를 읽어 ack 하고, `application/coupon/CouponIssueWorker` 가 TX 밖에서 중복과 품절을 가르고, `CouponTransactions.issue` 가 TX 다. 워커와 TX 를 한 클래스에 두지 않는 이유는 중복 처리 때문이다. 유니크 위반은 `saveAndFlush` 에서 터져 그 TX 는 rollback 만 남는데, 같은 메서드 안에서 잡고 정상 반환하면 commit 이 `UnexpectedRollbackException` 이 된다. 잡는 곳은 TX 밖이어야 하고, 같은 빈 안의 호출은 프록시를 안 거치므로 빈이 둘이다.
+
+test 프로필은 워커를 끈다. 요청 경로 테스트가 "접수 뒤 DB 에는 아직 없다"(`CPN-004`)를 단언하는데, 워커가 돌면 그 사이에 쿠폰이 생겨 결과가 워커 속도에 달린다. 워커 테스트만 전용 토픽(`coupon-issues-worker`)으로 켠다. 토픽을 나누는 이유는 다른 테스트가 남긴 메시지다. 그 캠페인은 이미 truncate 돼 없고, 없는 캠페인은 "버그" 행이라 워커가 그 메시지에서 멈춘다.
 
 같은 캠페인이 한 파티션이라 그 캠페인의 메시지는 consumer 하나가 순서대로 쓴다. 캠페인 행 잠금 경쟁이 **캠페인 하나 안에서는 없다.** 1부 3 장의 같은 행 측정(동시 1 에서 초당 1,636)이 워커 하나의 소진 속도 출발점이다. C 는 캠페인 여러 개가 동시에 열릴 때를 위한 것이다.
 

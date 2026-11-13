@@ -40,11 +40,12 @@ class CouponCampaignTest {
         @DisplayName("캠페인의 할인 금액을 쿠폰에 옮겨 적는다")
         @Test
         void copiesBenefitIntoCoupon() {
-            Coupon coupon = campaign(true).issueTo(42L, NOW);
+            Coupon coupon = campaign(true).issueTo(42L, 3, NOW);
 
             assertThat(coupon.id()).isNull();
             assertThat(coupon.campaignId()).isEqualTo(7L);
             assertThat(coupon.userId()).isEqualTo(42L);
+            assertThat(coupon.issueNumber()).isEqualTo(3);
             assertThat(coupon.discountAmount()).isEqualTo(DiscountAmount.of(5_000));
             assertThat(coupon.issuedAt()).isEqualTo(NOW);
         }
@@ -52,7 +53,7 @@ class CouponCampaignTest {
         @DisplayName("비활성 캠페인이면 거절한다")
         @Test
         void rejectsInactiveCampaign() {
-            assertThatThrownBy(() -> campaign(false).issueTo(42L, NOW))
+            assertThatThrownBy(() -> campaign(false).issueTo(42L, 3, NOW))
                 .isInstanceOf(DomainException.class)
                 .hasFieldOrPropertyWithValue("error", DomainError.COUPON_CAMPAIGN_INACTIVE);
         }

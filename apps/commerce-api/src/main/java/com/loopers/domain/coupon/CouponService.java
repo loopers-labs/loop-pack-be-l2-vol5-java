@@ -20,10 +20,10 @@ public class CouponService {
         return campaignRepository.save(CouponCampaign.open(name, discountAmount, totalQuota, active));
     }
 
-    public Coupon issue(Long campaignId, Long userId, Instant issuedAt) {
+    public Coupon issue(Long campaignId, Long userId, int issueNumber, Instant issuedAt) {
         CouponCampaign campaign = campaignRepository.findById(campaignId)
             .orElseThrow(() -> new DomainException(DomainError.COUPON_CAMPAIGN_NOT_FOUND));
-        Coupon coupon = couponRepository.insert(campaign.issueTo(userId, issuedAt));
+        Coupon coupon = couponRepository.insert(campaign.issueTo(userId, issueNumber, issuedAt));
         if (!campaignRepository.increaseIssuedCountWithinQuota(campaignId)) {
             throw new DomainException(DomainError.COUPON_SOLD_OUT);
         }

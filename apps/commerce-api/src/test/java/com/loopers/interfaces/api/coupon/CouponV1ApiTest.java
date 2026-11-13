@@ -138,7 +138,7 @@ class CouponV1ApiTest {
         void returnsIssuedOnceRecorded() throws Exception {
             long campaignId = openCampaign(5, true);
             issue(campaignId, 42L).andExpect(status().isAccepted());
-            Long couponId = couponTransactions.issue(campaignId, 42L, NOW).id();
+            Long couponId = couponTransactions.issue(campaignId, 42L, 1, NOW).id();
 
             issue(campaignId, 42L)
                 .andExpect(status().isOk())
@@ -190,8 +190,8 @@ class CouponV1ApiTest {
     @Test
     void listsOwnCoupons() throws Exception {
         long campaignId = openCampaign(5, true);
-        couponTransactions.issue(campaignId, 42L, NOW);
-        couponTransactions.issue(campaignId, 7L, NOW);
+        couponTransactions.issue(campaignId, 42L, 1, NOW);
+        couponTransactions.issue(campaignId, 7L, 2, NOW);
 
         mvc.perform(get("/api/v1/coupons").header("X-USER-ID", 42L))
             .andExpect(status().isOk())

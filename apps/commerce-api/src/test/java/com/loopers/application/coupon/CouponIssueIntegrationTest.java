@@ -119,7 +119,7 @@ class CouponIssueIntegrationTest {
 
     private String issueInDb(Long campaignId, Long userId) {
         try {
-            couponTransactions.issue(campaignId, userId, NOW);
+            couponTransactions.issue(campaignId, userId, userId.intValue(), NOW);
             return "ISSUED";
         } catch (DomainException e) {
             return e.error().name();
@@ -154,7 +154,7 @@ class CouponIssueIntegrationTest {
         void repeatIsIssuedOnceRecorded() {
             Long campaignId = openCampaign(5, true);
             couponFacade.issue(campaignId, 42L, NOW);
-            Coupon recorded = couponTransactions.issue(campaignId, 42L, NOW);
+            Coupon recorded = couponTransactions.issue(campaignId, 42L, 1, NOW);
 
             assertThat(couponFacade.issue(campaignId, 42L, NOW)).isEqualTo(new IssueResult.Issued(1, recorded));
         }
@@ -251,7 +251,7 @@ class CouponIssueIntegrationTest {
     @Test
     void lostReservationsAreUnavailable() {
         Long campaignId = openCampaign(5, true);
-        couponTransactions.issue(campaignId, 1L, NOW);
+        couponTransactions.issue(campaignId, 1L, 1, NOW);
 
         assertThatThrownBy(() -> couponFacade.issue(campaignId, 42L, NOW))
             .isInstanceOf(CoreException.class)
@@ -296,10 +296,10 @@ class CouponIssueIntegrationTest {
         Long blackFriday = openCampaign(5, true);
         Long cyberMonday = openCampaign(5, true);
         Long yearEnd = openCampaign(5, true);
-        Coupon older = couponTransactions.issue(blackFriday, 42L, NOW);
-        Coupon sameTimeFirst = couponTransactions.issue(cyberMonday, 42L, NOW.plusSeconds(60));
-        Coupon sameTimeSecond = couponTransactions.issue(yearEnd, 42L, NOW.plusSeconds(60));
-        couponTransactions.issue(blackFriday, 7L, NOW.plusSeconds(120));
+        Coupon older = couponTransactions.issue(blackFriday, 42L, 1, NOW);
+        Coupon sameTimeFirst = couponTransactions.issue(cyberMonday, 42L, 1, NOW.plusSeconds(60));
+        Coupon sameTimeSecond = couponTransactions.issue(yearEnd, 42L, 1, NOW.plusSeconds(60));
+        couponTransactions.issue(blackFriday, 7L, 2, NOW.plusSeconds(120));
 
         assertThat(couponFacade.findMine(42L)).extracting(Coupon::id)
             .containsExactly(sameTimeSecond.id(), sameTimeFirst.id(), older.id());

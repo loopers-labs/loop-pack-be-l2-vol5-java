@@ -34,11 +34,11 @@ public class CouponCampaign {
         return new CouponCampaign(id, name, discountAmount, totalQuota, issuedCount, active);
     }
 
-    public Coupon issueTo(Long userId, Instant issuedAt) {
+    public Coupon issueTo(Long userId, int issueNumber, Instant issuedAt) {
         if (!active) {
             throw new DomainException(DomainError.COUPON_CAMPAIGN_INACTIVE);
         }
-        return new Coupon(null, id, userId, discountAmount, issuedAt);
+        return new Coupon(null, id, userId, issueNumber, discountAmount, issuedAt);
     }
 
     public Long getId() {

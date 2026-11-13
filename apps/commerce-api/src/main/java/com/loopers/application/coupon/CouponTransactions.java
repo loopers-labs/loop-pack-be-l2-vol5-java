@@ -15,7 +15,7 @@ public class CouponTransactions {
     private final CouponService couponService;
 
     @Transactional
-    public Coupon issue(Long campaignId, Long userId, Instant issuedAt) {
-        return couponService.issue(campaignId, userId, issuedAt);
+    public Coupon issue(Long campaignId, Long userId, int issueNumber, Instant reservedAt) {
+        return couponService.issue(campaignId, userId, issueNumber, reservedAt);
     }
 }
