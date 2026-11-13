@@ -5,12 +5,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.application.coupon.CouponIssueAdmissionState;
 import com.loopers.application.coupon.CouponIssueQueue;
 import com.loopers.application.time.ApplicationTime;
-import com.loopers.domain.coupon.Coupon;
 import com.loopers.domain.coupon.CouponCampaign;
 import com.loopers.domain.coupon.CouponCampaignRepository;
 import com.loopers.domain.coupon.CouponIssueRequest;
 import com.loopers.domain.coupon.CouponIssueRequestReason;
-import com.loopers.domain.coupon.CouponRepository;
 import com.loopers.infrastructure.coupon.RedisCouponIssuePermits;
 import com.loopers.infrastructure.coupon.RedisCouponIssueQueue;
 import jakarta.persistence.EntityManager;
@@ -32,7 +30,6 @@ import org.springframework.test.web.servlet.ResultActions;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -53,7 +50,6 @@ class CouponIssueRequestV1ApiE2ETest {
     @Autowired private MockMvc mockMvc;
     @Autowired private ObjectMapper objectMapper;
     @Autowired private CouponCampaignRepository campaigns;
-    @Autowired private CouponRepository coupons;
     @Autowired private CouponIssueAdmissionState admission;
     @Autowired private CouponIssueQueue queue;
     @Autowired private ApplicationTime applicationTime;
@@ -226,7 +222,6 @@ class CouponIssueRequestV1ApiE2ETest {
         CouponCampaign campaign = campaigns.save(CouponCampaign.create("coupon-queue-api-" + System.nanoTime(),
             quota, "5,000원 할인권", now.minusSeconds(60), now.plusSeconds(3600)));
         campaignIds.add(campaign.getId());
-        coupons.saveStock(IntStream.range(0, quota).mapToObj(index -> Coupon.create(campaign.getId())).toList());
         entityManager.clear();
         return campaign.getId();
     }

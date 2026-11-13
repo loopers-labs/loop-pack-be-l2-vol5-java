@@ -14,6 +14,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
@@ -25,13 +26,11 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 
 @SpringBootTest
 class CouponIssueTransactionIntegrationTest {
@@ -98,21 +97,18 @@ class CouponIssueTransactionIntegrationTest {
         assertThat(stored.getIssuedCount()).isEqualTo(5);
         assertThat(stored.getTerminatedAt()).isNotNull();
         assertThat(coupons.countIssuedByCampaignId(campaign.getId())).isEqualTo(5);
-        assertThat(coupons.countByCampaignId(campaign.getId())).isEqualTo(5);
     }
 
-    @DisplayName("조건부 쿠폰 배정이 실패하면 앞선 카운터 갱신과 조기 종료 기록도 rollback되고, DB 작업 종료를 기록한다.")
+    @DisplayName("쿠폰 insert가 실패하면 앞선 카운터 갱신과 조기 종료 기록도 rollback되고, DB 작업 종료를 기록한다.")
     @Test
-    void rollsBackCounterWhenCouponAssignmentDoesNotUpdateOneRow() {
+    void rollsBackCounterWhenCouponInsertFails() {
         CouponCampaign campaign = prepareCampaign(1);
-        Long couponId = coupons.findFirstUnissuedId(campaign.getId()).orElseThrow();
-        doReturn(0).when(coupons).assignIfUnissued(eq(couponId), eq(campaign.getId()), eq(83000L), any(Instant.class));
+        DataAccessResourceFailureException insertFailure = new DataAccessResourceFailureException("쿠폰 insert 실패");
+        doThrow(insertFailure).when(coupons).insert(any(Coupon.class));
 
         CouponIssueTransactionCompletion completion = new CouponIssueTransactionCompletion();
 
-        assertThatThrownBy(() -> transaction.issue(campaign.getId(), 83000L, completion))
-            .isInstanceOfSatisfying(CoreException.class,
-                exception -> assertThat(exception.getErrorType()).isEqualTo(ErrorType.INTERNAL_ERROR));
+        assertThatThrownBy(() -> transaction.issue(campaign.getId(), 83000L, completion)).isSameAs(insertFailure);
         assertThat(completion.isDbWorkDone()).isTrue();
 
         entityManager.clear();
@@ -127,8 +123,6 @@ class CouponIssueTransactionIntegrationTest {
         CouponCampaign campaign = campaigns.save(CouponCampaign.create("coupon-transaction-" + System.nanoTime(),
             quota, "테스트 혜택", now.minusSeconds(60), now.plusSeconds(3600)));
         campaignIds.add(campaign.getId());
-        coupons.saveStock(IntStream.range(0, (int) quota)
-            .mapToObj(index -> Coupon.create(campaign.getId())).toList());
         return campaign;
     }
 

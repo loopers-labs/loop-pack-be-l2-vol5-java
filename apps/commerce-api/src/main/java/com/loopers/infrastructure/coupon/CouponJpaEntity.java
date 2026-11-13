@@ -29,15 +29,17 @@ public class CouponJpaEntity extends BaseEntity {
         foreignKey = @ForeignKey(name = "fk_coupons_campaign"))
     private CouponCampaignJpaEntity campaign;
 
-    @Column(name = "user_id")
+    @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(name = "issued_at", columnDefinition = "datetime(6)")
+    @Column(name = "issued_at", nullable = false, columnDefinition = "datetime(6)")
     private Instant issuedAt;
 
-    public static CouponJpaEntity create(CouponCampaignJpaEntity campaign) {
+    public static CouponJpaEntity create(CouponCampaignJpaEntity campaign, Long userId, Instant issuedAt) {
         CouponJpaEntity entity = new CouponJpaEntity();
         entity.campaign = campaign;
+        entity.userId = userId;
+        entity.issuedAt = issuedAt;
         return entity;
     }
 }

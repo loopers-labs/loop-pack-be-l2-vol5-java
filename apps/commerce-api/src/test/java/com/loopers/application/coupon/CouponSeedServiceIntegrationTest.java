@@ -92,9 +92,9 @@ class CouponSeedServiceIntegrationTest {
         }
     }
 
-    @DisplayName("첫 준비는 실행 시각부터 하루 동안 발급 가능한 캠페인과 미발급 100행을 같은 트랜잭션으로 만든다.")
+    @DisplayName("첫 준비는 실행 시각부터 하루 동안 발급 가능한 캠페인만 만들고 쿠폰 행은 만들지 않는다.")
     @Test
-    void createsOneCampaignAndOneHundredRows() {
+    void createsOnlyCampaignWithoutCouponRows() {
         CouponCampaign prepared = prepareSeed();
         CouponCampaign stored = transact(() -> campaigns.findById(prepared.getId()).orElseThrow());
 
@@ -105,8 +105,7 @@ class CouponSeedServiceIntegrationTest {
         assertThat(stored.getIssuedCount()).isZero();
         assertThat(stored.getTerminatedAt()).isNull();
         assertThat(stored.getBenefitDescription()).isEqualTo("5,000원 할인권");
-        assertThat(transact(() -> coupons.countByCampaignId(stored.getId())).longValue()).isEqualTo(100);
-        assertThat(transact(() -> coupons.countIssuedByCampaignId(stored.getId())).longValue()).isZero();
+        assertThat(stockIds(stored.getId())).isEmpty();
     }
 
     @DisplayName("기본 재실행은 만료 뒤에도 기존 캠페인 기간·발급 결과·쿠폰 ID를 보존한다.")
@@ -131,17 +130,17 @@ class CouponSeedServiceIntegrationTest {
         assertThat(storedCoupon.getIssuedAt()).isEqualTo(FIRST_START.plusSeconds(1));
     }
 
-    @DisplayName("명시적 reset은 품절 seed의 같은 100개 ID를 유지하며 기간·카운터·종료·할당을 함께 복원한다.")
+    @DisplayName("명시적 reset은 품절 seed의 쿠폰을 지우고 기간·카운터·종료를 복원하며, 다른 캠페인과 지운 쿠폰 ID는 다시 쓰지 않는다.")
     @Test
-    void resetsOnlySeedAndPreservesStockIds() {
+    void resetsOnlySeedAndDeletesItsCoupons() {
         CouponCampaign campaign = prepareSeed();
-        List<Long> originalIds = stockIds(campaign.getId());
         for (int index = 0; index < 100; index++) {
             issueOne(campaign.getId(), createUser(), FIRST_START.plusSeconds(1));
         }
+        List<Long> originalIds = stockIds(campaign.getId());
+        assertThat(originalIds).hasSize(100);
         assertThat(transact(() -> campaigns.findById(campaign.getId()).orElseThrow()).getTerminatedAt()).isNotNull();
         CouponCampaign unrelated = createUnrelatedCampaign("별도 행사");
-        List<Coupon> unrelatedStock = transact(() -> coupons.saveStock(List.of(Coupon.create(unrelated.getId()))));
         Coupon unrelatedCoupon = issueOne(unrelated.getId(), createUser(), FIRST_START.plusSeconds(2));
         Instant resetTime = FIRST_START.plusSeconds(172800);
         clock.set(resetTime);
@@ -153,16 +152,12 @@ class CouponSeedServiceIntegrationTest {
         assertThat(reset.getTerminatedAt()).isNull();
         assertThat(reset.getStartAt()).isEqualTo(resetTime);
         assertThat(reset.getEndAt()).isEqualTo(resetTime.plusSeconds(86400));
-        assertThat(stockIds(campaign.getId())).containsExactlyElementsOf(originalIds);
-        for (Long couponId : originalIds) {
-            Coupon coupon = transact(() -> coupons.findById(couponId).orElseThrow());
-            assertThat(coupon.getUserId()).isNull();
-            assertThat(coupon.getIssuedAt()).isNull();
-        }
-        assertThat(transact(() -> coupons.countIssuedByCampaignId(campaign.getId())).longValue()).isZero();
-        assertThat(transact(() -> coupons.findById(unrelatedStock.getFirst().getId()).orElseThrow()).getUserId())
+        assertThat(stockIds(campaign.getId())).isEmpty();
+        assertThat(transact(() -> coupons.findById(unrelatedCoupon.getId()).orElseThrow()).getUserId())
             .isEqualTo(unrelatedCoupon.getUserId());
         assertThat(transact(() -> campaigns.findById(unrelated.getId()).orElseThrow()).getIssuedCount()).isEqualTo(1);
+        Coupon issuedAfterReset = issueOne(campaign.getId(), createUser(), resetTime.plusSeconds(1));
+        assertThat(originalIds).doesNotContain(issuedAfterReset.getId());
     }
 
     @DisplayName("reset은 seed 캠페인의 완료된 대기열 작업과 중복 접수 정보를 지운 뒤 DB를 초기화한다.")
@@ -206,29 +201,27 @@ class CouponSeedServiceIntegrationTest {
         assertThat(queue.findById(completed.getRequestId())).isPresent();
     }
 
-    @DisplayName("재고 행 수가 한도와 다르면 자동 보충·reset하지 않고 기존 발급 결과를 보존한 채 실패한다.")
+    @DisplayName("기본 실행에서 쿠폰 행 수와 발급 수가 다르면 자동으로 맞추지 않고 기존 발급 결과를 보존한 채 실패한다.")
     @Test
-    void rejectsStockCountMismatchBeforeReset() {
+    void rejectsCouponCountMismatchWithoutReset() {
         CouponCampaign campaign = prepareSeed();
-        Coupon issued = issueOne(campaign.getId(), createUser(), FIRST_START.plusSeconds(1));
-        long missingId = transact(() -> coupons.findFirstUnissuedId(campaign.getId()).orElseThrow());
-        jdbc.update("DELETE FROM coupons WHERE id = ?", missingId);
-        clock.set(FIRST_START.plusSeconds(172800));
+        Coupon kept = issueOne(campaign.getId(), createUser(), FIRST_START.plusSeconds(1));
+        Coupon missing = issueOne(campaign.getId(), createUser(), FIRST_START.plusSeconds(2));
+        jdbc.update("DELETE FROM coupons WHERE id = ?", missing.getId());
 
-        assertThatThrownBy(() -> seed.prepare(true)).isInstanceOfSatisfying(CoreException.class,
+        assertThatThrownBy(() -> seed.prepare(false)).isInstanceOfSatisfying(CoreException.class,
             failure -> assertThat(failure.getErrorType()).isEqualTo(ErrorType.INTERNAL_ERROR));
 
         CouponCampaign stored = transact(() -> campaigns.findById(campaign.getId()).orElseThrow());
-        assertThat(stored.getIssuedCount()).isEqualTo(1);
-        assertThat(stored.getStartAt()).isEqualTo(FIRST_START);
-        assertThat(transact(() -> coupons.countByCampaignId(campaign.getId())).longValue()).isEqualTo(99);
-        assertThat(transact(() -> coupons.findById(issued.getId()).orElseThrow()).getUserId()).isEqualTo(issued.getUserId());
+        assertThat(stored.getIssuedCount()).isEqualTo(2);
+        assertThat(stockIds(campaign.getId())).containsExactly(kept.getId());
     }
 
     @DisplayName("예약된 seed 이름이 중복되면 임의의 행을 선택해 초기화하지 않는다.")
     @Test
     void rejectsAmbiguousSeedName() {
         CouponCampaign original = prepareSeed();
+        Coupon issued = issueOne(original.getId(), createUser(), FIRST_START.plusSeconds(1));
         createUnrelatedCampaign(SEED_NAME);
         clock.set(FIRST_START.plusSeconds(172800));
 
@@ -236,7 +229,7 @@ class CouponSeedServiceIntegrationTest {
             failure -> assertThat(failure.getErrorType()).isEqualTo(ErrorType.INTERNAL_ERROR));
 
         assertThat(transact(() -> campaigns.findById(original.getId()).orElseThrow()).getStartAt()).isEqualTo(FIRST_START);
-        assertThat(stockIds(original.getId())).hasSize(100);
+        assertThat(stockIds(original.getId())).containsExactly(issued.getId());
     }
 
     private CouponCampaign prepareSeed() {
@@ -261,9 +254,7 @@ class CouponSeedServiceIntegrationTest {
     private Coupon issueOne(Long campaignId, long userId, Instant issueNow) {
         return transact(() -> {
             assertThat(campaigns.incrementIssuedCountIfIssuable(campaignId, issueNow)).isEqualTo(1);
-            long couponId = coupons.findFirstUnissuedId(campaignId).orElseThrow();
-            assertThat(coupons.assignIfUnissued(couponId, campaignId, userId, issueNow)).isEqualTo(1);
-            return coupons.findById(couponId).orElseThrow();
+            return coupons.insert(Coupon.create(campaignId, userId, issueNow));
         });
     }
 

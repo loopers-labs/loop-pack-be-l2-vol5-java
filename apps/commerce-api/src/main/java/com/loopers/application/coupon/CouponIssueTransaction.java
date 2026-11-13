@@ -48,14 +48,8 @@ public class CouponIssueTransaction {
             throw new DuplicateCouponIssueException(null);
         }
 
-        Long couponId = coupons.findFirstUnissuedId(campaignId)
-            .orElseThrow(() -> new CoreException(ErrorType.INTERNAL_ERROR,
-                "캠페인 발급 수는 남았지만 배정할 미발급 쿠폰이 없습니다."));
-        if (coupons.assignIfUnissued(couponId, campaignId, userId, issueNow) != 1) {
-            throw new CoreException(ErrorType.INTERNAL_ERROR, "미발급 쿠폰을 배정하지 못했습니다.");
-        }
-
-        Coupon issued = Coupon.reconstitute(couponId, campaignId, userId, issueNow);
+        // 카운터 갱신과 같은 트랜잭션에서 발급 기록을 insert한다. 같은 사용자 충돌은 유일 제약이 최종으로 막는다.
+        Coupon issued = coupons.insert(Coupon.create(campaignId, userId, issueNow));
         return CouponIssueInfo.from(issued, campaign);
     }
 }

@@ -1,5 +1,5 @@
 -- 기존 DB에는 애플리케이션을 시작하기 전에 적용한다. 새 DB는 init.sql을 사용한다.
--- 캠페인 테이블을 먼저 만들고 쿠폰 재고 테이블을 만든다. seed는 스키마 준비 뒤 로컬 runner에서 생성한다.
+-- 캠페인 테이블을 먼저 만들고 쿠폰 테이블을 만든다. 쿠폰 행은 발급할 때 insert하며, seed는 스키마 준비 뒤 로컬 runner에서 캠페인만 만든다.
 CREATE TABLE IF NOT EXISTS loopers.coupon_campaigns (
     id BIGINT NOT NULL AUTO_INCREMENT,
     created_at DATETIME(6) NOT NULL,
@@ -22,8 +22,8 @@ CREATE TABLE IF NOT EXISTS loopers.coupons (
     updated_at DATETIME(6) NOT NULL,
     deleted_at DATETIME(6) DEFAULT NULL,
     campaign_id BIGINT NOT NULL,
-    user_id BIGINT DEFAULT NULL,
-    issued_at DATETIME(6) DEFAULT NULL,
+    user_id BIGINT NOT NULL,
+    issued_at DATETIME(6) NOT NULL,
     PRIMARY KEY (id),
     UNIQUE KEY uk_coupon_campaign_user (campaign_id, user_id),
     KEY idx_coupons_owner_issued (user_id, issued_at, id),
@@ -41,3 +41,17 @@ SET @coupon_user_fk_ddl = IF(@coupon_user_fk_exists > 0,
 PREPARE coupon_user_fk_migration FROM @coupon_user_fk_ddl;
 EXECUTE coupon_user_fk_migration;
 DEALLOCATE PREPARE coupon_user_fk_migration;
+
+-- 예전 모델(쿠폰 행을 미리 만들어 배정)로 만든 DB를 발급 기록 모델로 바꾼다.
+-- 발급된 쿠폰은 그대로 두고 미발급 행만 지운 뒤 사용자와 발급 시각을 필수로 바꾼다. 앱을 멈춘 뒤 적용하며 반복 실행해도 결과가 같다.
+DELETE FROM loopers.coupons WHERE user_id IS NULL OR issued_at IS NULL;
+SET @coupon_nullable_columns = (
+    SELECT COUNT(*) FROM information_schema.columns
+    WHERE table_schema = 'loopers' AND table_name = 'coupons'
+      AND column_name IN ('user_id', 'issued_at') AND is_nullable = 'YES'
+);
+SET @coupon_not_null_ddl = IF(@coupon_nullable_columns > 0,
+    'ALTER TABLE loopers.coupons MODIFY user_id BIGINT NOT NULL, MODIFY issued_at DATETIME(6) NOT NULL', 'SELECT 1');
+PREPARE coupon_not_null_migration FROM @coupon_not_null_ddl;
+EXECUTE coupon_not_null_migration;
+DEALLOCATE PREPARE coupon_not_null_migration;

@@ -6,7 +6,6 @@ import com.loopers.application.coupon.CouponIssueAdmissionState;
 import com.loopers.application.coupon.CouponIssuePermits;
 import com.loopers.application.coupon.CouponPermitStoreUnavailableException;
 import com.loopers.application.time.ApplicationTime;
-import com.loopers.domain.coupon.Coupon;
 import com.loopers.domain.coupon.CouponCampaign;
 import com.loopers.domain.coupon.CouponCampaignRepository;
 import com.loopers.domain.coupon.CouponRepository;
@@ -34,7 +33,6 @@ import org.testcontainers.utility.DockerImageName;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -135,7 +133,6 @@ class CouponIssueReleaseCommandFailureE2ETest {
         CouponCampaign campaign = campaigns.save(CouponCampaign.create("coupon-release-command-failure-"
             + System.nanoTime(), 2, "5,000원 할인권", now.minusSeconds(60), now.plusSeconds(3600)));
         campaignIds.add(campaign.getId());
-        coupons.saveStock(IntStream.range(0, 2).mapToObj(index -> Coupon.create(campaign.getId())).toList());
         entityManager.clear();
         return campaign;
     }

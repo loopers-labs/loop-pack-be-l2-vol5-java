@@ -1,7 +1,6 @@
 package com.loopers.application.coupon;
 
 import com.loopers.application.time.ApplicationTime;
-import com.loopers.domain.coupon.Coupon;
 import com.loopers.domain.coupon.CouponCampaign;
 import com.loopers.domain.coupon.CouponCampaignRepository;
 import com.loopers.domain.coupon.CouponRepository;
@@ -15,7 +14,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.stream.IntStream;
 
 @Service
 @RequiredArgsConstructor
@@ -41,9 +39,6 @@ public class CouponSeedService {
             return createSeed();
         }
         CouponCampaign campaign = candidates.getFirst();
-        if (campaign.getTotalQuota() != SEED_QUOTA || coupons.countByCampaignId(campaign.getId()) != SEED_QUOTA) {
-            throw inconsistentSeed("로컬 seed의 쿠폰 행 수와 발급 한도가 일치하지 않습니다.");
-        }
         if (!reset) {
             if (coupons.countIssuedByCampaignId(campaign.getId()) != campaign.getIssuedCount()) {
                 throw inconsistentSeed("로컬 seed의 실제 발급 결과와 발급 수가 일치하지 않습니다.");
@@ -52,13 +47,11 @@ public class CouponSeedService {
         }
         clearQueueBeforeReset(campaign.getId());
         Instant resetNow = time.now().toInstant();
-        // 실제 발급과 같은 순서로 캠페인 잠금을 먼저 얻고, 쿠폰 할당을 함께 초기화한다.
+        // 실제 발급과 같은 순서로 캠페인 잠금을 먼저 얻고, 같은 트랜잭션에서 그 캠페인의 쿠폰을 지운다.
         if (campaigns.resetSeedState(campaign.getId(), resetNow, resetNow.plus(ISSUANCE_PERIOD), resetNow) != 1) {
             throw inconsistentSeed("로컬 seed 캠페인을 초기화할 수 없습니다.");
         }
-        if (coupons.resetSeedAssignments(campaign.getId(), resetNow) != SEED_QUOTA) {
-            throw inconsistentSeed("로컬 seed 쿠폰을 모두 초기화할 수 없습니다.");
-        }
+        coupons.deleteByCampaignId(campaign.getId());
         return campaigns.findById(campaign.getId()).orElseThrow(() -> inconsistentSeed("로컬 seed가 없습니다."));
     }
 
@@ -81,10 +74,9 @@ public class CouponSeedService {
 
     private CouponCampaign createSeed() {
         Instant startAt = time.now().toInstant();
-        CouponCampaign campaign = campaigns.save(CouponCampaign.create(
+        // 쿠폰 행은 발급할 때 insert하므로 캠페인만 만든다.
+        return campaigns.save(CouponCampaign.create(
             SEED_NAME, SEED_QUOTA, "5,000원 할인권", startAt, startAt.plus(ISSUANCE_PERIOD)));
-        coupons.saveStock(IntStream.range(0, SEED_QUOTA).mapToObj(index -> Coupon.create(campaign.getId())).toList());
-        return campaign;
     }
 
     private CoreException inconsistentSeed(String message) {

@@ -8,9 +8,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
-import java.time.Instant;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 
 @Component
@@ -21,24 +19,31 @@ public class CouponRepositoryImpl implements CouponRepository {
     private final CouponCampaignJpaRepository campaigns;
 
     @Override
-    public List<Coupon> saveStock(List<Coupon> stock) {
-        if (stock.stream().anyMatch(coupon -> coupon.getId() != null || coupon.isIssued())) {
-            throw new IllegalArgumentException("새 미발급 쿠폰만 준비 단계에서 저장할 수 있습니다.");
-        }
-        List<CouponJpaEntity> entities = stock.stream()
-            .map(coupon -> CouponJpaEntity.create(campaigns.getReferenceById(coupon.getCampaignId())))
-            .toList();
-        return jpaRepository.saveAllAndFlush(entities).stream().map(CouponJpaMapper::toDomain).toList();
-    }
-
-    @Override
     public Optional<Coupon> findById(Long couponId) {
         return jpaRepository.findByIdAndDeletedAtIsNull(couponId).map(CouponJpaMapper::toDomain);
     }
 
     @Override
-    public Optional<Long> findFirstUnissuedId(Long campaignId) {
-        return jpaRepository.findFirstUnissuedId(campaignId);
+    public Coupon insert(Coupon issued) {
+        if (issued.getId() != null) {
+            throw new IllegalArgumentException("새로 발급한 쿠폰만 저장할 수 있습니다.");
+        }
+        CouponJpaEntity entity = CouponJpaEntity.create(campaigns.getReferenceById(issued.getCampaignId()),
+            issued.getUserId(), issued.getIssuedAt());
+        try {
+            // 같은 트랜잭션 안에서 유일 제약 충돌을 확인하도록 바로 반영한다.
+            return CouponJpaMapper.toDomain(jpaRepository.saveAndFlush(entity));
+        } catch (DataIntegrityViolationException exception) {
+            if (MySqlConstraintErrors.isDuplicateKey(exception, "uk_coupon_campaign_user")) {
+                throw new DuplicateCouponIssueException(exception);
+            }
+            throw exception;
+        }
+    }
+
+    @Override
+    public int deleteByCampaignId(Long campaignId) {
+        return jpaRepository.deleteByCampaignId(campaignId);
     }
 
     @Override
@@ -54,31 +59,7 @@ public class CouponRepositoryImpl implements CouponRepository {
     }
 
     @Override
-    public long countByCampaignId(Long campaignId) {
-        return jpaRepository.countByCampaignIdAndDeletedAtIsNull(campaignId);
-    }
-
-    @Override
     public long countIssuedByCampaignId(Long campaignId) {
         return jpaRepository.countByCampaignIdAndUserIdIsNotNullAndIssuedAtIsNotNullAndDeletedAtIsNull(campaignId);
-    }
-
-    @Override
-    public int assignIfUnissued(Long couponId, Long campaignId, Long userId, Instant issueNow) {
-        Objects.requireNonNull(userId, "userId");
-        Objects.requireNonNull(issueNow, "issueNow");
-        try {
-            return jpaRepository.assignIfUnissued(couponId, campaignId, userId, issueNow);
-        } catch (DataIntegrityViolationException exception) {
-            if (MySqlConstraintErrors.isDuplicateKey(exception, "uk_coupon_campaign_user")) {
-                throw new DuplicateCouponIssueException(exception);
-            }
-            throw exception;
-        }
-    }
-
-    @Override
-    public int resetSeedAssignments(Long campaignId, Instant resetNow) {
-        return jpaRepository.resetSeedAssignments(campaignId, Objects.requireNonNull(resetNow, "resetNow"));
     }
 }

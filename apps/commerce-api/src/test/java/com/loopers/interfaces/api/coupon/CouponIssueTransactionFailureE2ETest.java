@@ -4,7 +4,6 @@ import com.loopers.application.coupon.CouponIssueAdmissionState;
 import com.loopers.application.coupon.CouponIssueTransaction;
 import com.loopers.application.coupon.CouponIssueTransactionCompletion;
 import com.loopers.application.time.ApplicationTime;
-import com.loopers.domain.coupon.Coupon;
 import com.loopers.domain.coupon.CouponCampaign;
 import com.loopers.domain.coupon.CouponCampaignRepository;
 import com.loopers.domain.coupon.CouponRepository;
@@ -38,7 +37,6 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -187,7 +185,6 @@ class CouponIssueTransactionFailureE2ETest {
         CouponCampaign campaign = campaigns.save(CouponCampaign.create("coupon-transaction-failure-"
             + System.nanoTime(), 3, "5,000원 할인권", now.minusSeconds(60), now.plusSeconds(3600)));
         campaignIds.add(campaign.getId());
-        coupons.saveStock(IntStream.range(0, 3).mapToObj(index -> Coupon.create(campaign.getId())).toList());
         entityManager.clear();
         return campaign;
     }

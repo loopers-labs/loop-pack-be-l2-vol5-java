@@ -6,7 +6,6 @@ import com.loopers.application.coupon.CouponIssueAdmissionState;
 import com.loopers.application.coupon.CouponIssuePermits;
 import com.loopers.application.coupon.CouponIssueTransaction;
 import com.loopers.application.time.ApplicationTime;
-import com.loopers.domain.coupon.Coupon;
 import com.loopers.domain.coupon.CouponCampaign;
 import com.loopers.domain.coupon.CouponCampaignRepository;
 import com.loopers.domain.coupon.CouponRepository;
@@ -42,7 +41,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -93,7 +91,6 @@ class CouponIssueV1ApiE2ETest {
         CouponCampaign campaign = campaigns.save(CouponCampaign.create("coupon-api-" + System.nanoTime(),
             5, "5,000원 할인권", now.minusSeconds(60), now.plusSeconds(3600)));
         campaignId = campaign.getId();
-        coupons.saveStock(IntStream.range(0, 5).mapToObj(index -> Coupon.create(campaignId)).toList());
         entityManager.clear();
         admission.open();
     }
@@ -162,7 +159,6 @@ class CouponIssueV1ApiE2ETest {
         CouponCampaign expired = campaigns.save(CouponCampaign.create("coupon-api-expired-" + System.nanoTime(),
             1, "5,000원 할인권", now.minusSeconds(3600), now.minusSeconds(1)));
         additionalCampaignIds.add(expired.getId());
-        coupons.saveStock(List.of(Coupon.create(expired.getId())));
         mockMvc.perform(post(ISSUE_PATH.formatted(expired.getId())).header("X-USER-ID", FIRST_USER_ID))
             .andExpect(status().isConflict());
 
@@ -326,7 +322,6 @@ class CouponIssueV1ApiE2ETest {
             "coupon-api-last-duplicate-" + System.nanoTime(),
             1, "5,000원 할인권", now.minusSeconds(60), now.plusSeconds(3600)));
         additionalCampaignIds.add(lastCouponCampaign.getId());
-        coupons.saveStock(List.of(Coupon.create(lastCouponCampaign.getId())));
         entityManager.clear();
 
         CountDownLatch twoPermitsAcquired = new CountDownLatch(2);

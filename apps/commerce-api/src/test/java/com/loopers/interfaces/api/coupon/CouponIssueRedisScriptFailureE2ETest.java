@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.application.coupon.CouponIssueAdmissionState;
 import com.loopers.application.time.ApplicationTime;
-import com.loopers.domain.coupon.Coupon;
 import com.loopers.domain.coupon.CouponCampaign;
 import com.loopers.domain.coupon.CouponCampaignRepository;
 import com.loopers.domain.coupon.CouponRepository;
@@ -29,7 +28,6 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;
 
 import java.time.Instant;
-import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -97,7 +95,6 @@ class CouponIssueRedisScriptFailureE2ETest {
         CouponCampaign campaign = campaigns.save(CouponCampaign.create("coupon-script-error-" + System.nanoTime(),
             1, "5,000원 할인권", now.minusSeconds(60), now.plusSeconds(3600)));
         campaignId = campaign.getId();
-        coupons.saveStock(List.of(Coupon.create(campaignId)));
         entityManager.clear();
         redisTemplate.opsForValue().set(RedisCouponIssuePermits.PERMITS_KEY, "not-a-set");
         admission.open();

@@ -83,51 +83,36 @@ class CouponRepositoryIntegrationTest {
         }
     }
 
-    @DisplayName("미발급 쿠폰 100행은 NULL 소유자가 충돌하지 않고 저장되며 가장 작은 ID부터 후보가 된다.")
+    @DisplayName("발급한 쿠폰을 insert하면 ID가 생기고, flush·clear 뒤에도 같은 캠페인·사용자·발급 시각으로 읽힌다.")
     @Test
-    void preparesOneHundredUnissuedRows() {
-        Stock stock = prepare(100);
+    void insertsIssuedCouponAndReadsItBack() {
+        Long campaignId = campaign(2);
+        long userId = createUser();
 
-        assertThat(transact(() -> coupons.countByCampaignId(stock.campaignId())).longValue()).isEqualTo(100);
-        assertThat(transact(() -> coupons.countIssuedByCampaignId(stock.campaignId())).longValue()).isZero();
-        assertThat(transact(() -> coupons.findFirstUnissuedId(stock.campaignId())))
-            .contains(stock.couponIds().getFirst());
-        for (Long couponId : stock.couponIds()) {
-            Coupon coupon = transact(() -> coupons.findById(couponId).orElseThrow());
-            assertThat(coupon.getCampaignId()).isEqualTo(stock.campaignId());
-            assertThat(coupon.isIssued()).isFalse();
-            assertThat(coupon.getIssuedAt()).isNull();
-        }
+        Coupon inserted = transact(() -> coupons.insert(Coupon.create(campaignId, userId, NOW)));
+
+        assertThat(inserted.getId()).isNotNull();
+        Coupon stored = transact(() -> coupons.findById(inserted.getId()).orElseThrow());
+        assertThat(stored.getCampaignId()).isEqualTo(campaignId);
+        assertThat(stored.getUserId()).isEqualTo(userId);
+        assertThat(stored.getIssuedAt()).isEqualTo(NOW);
+        assertThat(transact(() -> coupons.countIssuedByCampaignId(campaignId)).longValue()).isEqualTo(1);
         assertThat(jdbc.queryForList("""
             SELECT COLUMN_NAME FROM information_schema.statistics
             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'coupons' AND INDEX_NAME = 'uk_coupon_campaign_user'
             ORDER BY SEQ_IN_INDEX
             """, String.class)).containsExactly("campaign_id", "user_id");
+        assertThat(jdbc.queryForList("""
+            SELECT COLUMN_NAME FROM information_schema.columns
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'coupons'
+              AND COLUMN_NAME IN ('user_id', 'issued_at') AND IS_NULLABLE = 'NO'
+            """, String.class)).containsExactlyInAnyOrder("user_id", "issued_at");
     }
 
-    @DisplayName("쿠폰 한 행을 조건부 배정한 뒤에는 다른 사용자가 같은 행을 다시 배정할 수 없다.")
+    @DisplayName("예전 모델로 만든 DB에 쿠폰 스키마 SQL을 적용하면 발급 기록은 남고 미발급 행은 지워지며, 다시 적용해도 같다.")
     @Test
-    void assignsOnceAndPreservesOwnerAndTime() {
-        Stock stock = prepare(2);
-        long owner = createUser();
-        long other = createUser();
-
-        Coupon issued = tryAssign(stock.campaignId(), owner, NOW).orElseThrow();
-        int repeated = transact(() -> coupons.assignIfUnissued(issued.getId(), stock.campaignId(), other, NOW.plusSeconds(1)));
-
-        assertThat(repeated).isZero();
-        Coupon stored = transact(() -> coupons.findById(issued.getId()).orElseThrow());
-        assertThat(stored.getUserId()).isEqualTo(owner);
-        assertThat(stored.getIssuedAt()).isEqualTo(NOW);
-        assertThat(transact(() -> coupons.countByCampaignId(stock.campaignId())).longValue()).isEqualTo(2);
-        assertThat(transact(() -> coupons.findIssuedByCampaignIdAndUserId(stock.campaignId(), owner)))
-            .get().extracting(Coupon::getId).isEqualTo(issued.getId());
-    }
-
-    @DisplayName("기존 DB용 쿠폰 스키마 SQL을 재적용해도 재고와 발급 결과를 보존한다.")
-    @Test
-    void preparesSchemaWithoutResettingStock() throws Exception {
-        Stock stock = prepare(1);
+    void migratesPreparedRowModelWithoutLosingIssuedCoupons() throws Exception {
+        Long campaignId = campaign(2);
         long userId = createUser();
         String migration = Files.readString(Path.of(System.getProperty("coupon.migration")))
             .replace("loopers.coupons", "loopers.review_coupons")
@@ -135,18 +120,40 @@ class CouponRepositoryIntegrationTest {
             .replace("fk_coupons_", "fk_review_coupons_");
         ByteArrayResource script = new ByteArrayResource(migration.getBytes(StandardCharsets.UTF_8));
         try {
-            executeWithDifferentDefaultSchema(script);
+            // 예전 모델: 미리 만든 쿠폰 행은 사용자와 발급 시각이 비어 있고, 사용자 FK가 남아 있을 수 있다.
             jdbc.execute("""
-                ALTER TABLE review_coupons ADD CONSTRAINT fk_review_coupons_user
-                FOREIGN KEY (user_id) REFERENCES users (id)
+                CREATE TABLE review_coupons (
+                    id BIGINT NOT NULL AUTO_INCREMENT,
+                    created_at DATETIME(6) NOT NULL,
+                    updated_at DATETIME(6) NOT NULL,
+                    deleted_at DATETIME(6) DEFAULT NULL,
+                    campaign_id BIGINT NOT NULL,
+                    user_id BIGINT DEFAULT NULL,
+                    issued_at DATETIME(6) DEFAULT NULL,
+                    PRIMARY KEY (id),
+                    UNIQUE KEY uk_review_coupon_campaign_user (campaign_id, user_id),
+                    CONSTRAINT fk_review_coupons_campaign FOREIGN KEY (campaign_id) REFERENCES coupon_campaigns (id),
+                    CONSTRAINT fk_review_coupons_user FOREIGN KEY (user_id) REFERENCES users (id)
+                )
                 """);
             jdbc.update("""
                 INSERT INTO review_coupons (id, created_at, updated_at, campaign_id, user_id, issued_at)
-                VALUES (1, '2026-11-11 00:00:00', '2026-11-11 00:00:00', ?, ?, '2026-11-11 00:00:00.123456')
-                """, stock.campaignId(), userId);
+                VALUES (1, '2026-11-11 00:00:00', '2026-11-11 00:00:00', ?, ?, '2026-11-11 00:00:00.123456'),
+                       (2, '2026-11-11 00:00:00', '2026-11-11 00:00:00', ?, NULL, NULL)
+                """, campaignId, userId, campaignId);
+
+            executeWithDifferentDefaultSchema(script);
             executeWithDifferentDefaultSchema(script);
 
-            assertThat(jdbc.queryForList("SELECT user_id FROM review_coupons", Long.class)).containsExactly(userId);
+            assertThat(jdbc.queryForList("SELECT id FROM review_coupons", Long.class)).containsExactly(1L);
+            assertThat(jdbc.queryForObject("SELECT user_id FROM review_coupons WHERE id = 1", Long.class)).isEqualTo(userId);
+            assertThat(jdbc.queryForObject("SELECT issued_at FROM review_coupons WHERE id = 1", java.sql.Timestamp.class)
+                .getNanos()).isEqualTo(123456000);
+            assertThat(jdbc.queryForList("""
+                SELECT COLUMN_NAME FROM information_schema.columns
+                WHERE TABLE_SCHEMA = 'loopers' AND TABLE_NAME = 'review_coupons'
+                  AND COLUMN_NAME IN ('user_id', 'issued_at') AND IS_NULLABLE = 'NO'
+                """, String.class)).containsExactlyInAnyOrder("user_id", "issued_at");
             assertThat(jdbc.queryForList("""
                 SELECT REFERENCED_TABLE_NAME FROM information_schema.key_column_usage
                 WHERE TABLE_SCHEMA = 'loopers' AND TABLE_NAME = 'review_coupons'
@@ -157,12 +164,10 @@ class CouponRepositoryIntegrationTest {
                 WHERE TABLE_SCHEMA = 'loopers' AND TABLE_NAME = 'review_coupons'
                   AND COLUMN_NAME = 'campaign_id' AND REFERENCED_TABLE_NAME IS NOT NULL
                 """, String.class)).containsExactly("coupon_campaigns");
-            assertThat(jdbc.queryForObject("SELECT issued_at FROM review_coupons WHERE id = 1", java.sql.Timestamp.class)
-                .getNanos()).isEqualTo(123456000);
             assertThatThrownBy(() -> jdbc.update("""
                 INSERT INTO review_coupons (created_at, updated_at, campaign_id, user_id, issued_at)
                 VALUES (NOW(6), NOW(6), ?, ?, NOW(6))
-                """, stock.campaignId(), userId)).isInstanceOf(DataIntegrityViolationException.class);
+                """, campaignId, userId)).isInstanceOf(DataIntegrityViolationException.class);
         } finally {
             jdbc.execute("DROP TABLE IF EXISTS review_coupons");
         }
@@ -171,36 +176,34 @@ class CouponRepositoryIntegrationTest {
     @DisplayName("동일 사용자 제약 충돌은 별도로 구분하고 마지막 카운터와 조기 종료 기록도 rollback한다.")
     @Test
     void rollsBackCounterAndTerminationOnDuplicateUserConstraint() {
-        Stock stock = prepare(2);
+        Long campaignId = campaign(2);
         long userId = createUser();
-        Coupon first = tryAssign(stock.campaignId(), userId, NOW).orElseThrow();
+        Coupon first = tryIssue(campaignId, userId, NOW).orElseThrow();
 
-        assertThatThrownBy(() -> tryAssign(stock.campaignId(), userId, NOW.plusSeconds(1)))
+        assertThatThrownBy(() -> tryIssue(campaignId, userId, NOW.plusSeconds(1)))
             .isInstanceOf(DuplicateCouponIssueException.class);
 
-        CouponCampaign campaign = transact(() -> campaigns.findById(stock.campaignId()).orElseThrow());
+        CouponCampaign campaign = transact(() -> campaigns.findById(campaignId).orElseThrow());
         assertThat(campaign.getIssuedCount()).isEqualTo(1);
         assertThat(campaign.getTerminatedAt()).isNull();
-        assertThat(transact(() -> coupons.countIssuedByCampaignId(stock.campaignId())).longValue()).isEqualTo(1);
-        assertThat(transact(() -> coupons.findIssuedByCampaignIdAndUserId(stock.campaignId(), userId)))
+        assertThat(transact(() -> coupons.countIssuedByCampaignId(campaignId)).longValue()).isEqualTo(1);
+        assertThat(transact(() -> coupons.findIssuedByCampaignIdAndUserId(campaignId, userId)))
             .get().extracting(Coupon::getId).isEqualTo(first.getId());
-        assertThat(transact(() -> coupons.findFirstUnissuedId(stock.campaignId()))).isPresent();
     }
 
     @DisplayName("로컬 식별자에 대응하는 users 행이 없어도 발급할 수 있다.")
     @Test
     void allowsLocalIdentifierWithoutUserRow() {
-        Stock stock = prepare(1);
+        Long campaignId = campaign(1);
         long localIdentifier = Long.MAX_VALUE;
 
-        Coupon issued = tryAssign(stock.campaignId(), localIdentifier, NOW).orElseThrow();
+        Coupon issued = tryIssue(campaignId, localIdentifier, NOW).orElseThrow();
 
-        CouponCampaign campaign = transact(() -> campaigns.findById(stock.campaignId()).orElseThrow());
-        Coupon coupon = transact(() -> coupons.findById(stock.couponIds().getFirst()).orElseThrow());
+        CouponCampaign campaign = transact(() -> campaigns.findById(campaignId).orElseThrow());
+        Coupon coupon = transact(() -> coupons.findById(issued.getId()).orElseThrow());
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM users WHERE id = ?", Long.class, localIdentifier)).isZero();
         assertThat(campaign.getIssuedCount()).isEqualTo(1);
         assertThat(campaign.getTerminatedAt()).isEqualTo(NOW);
-        assertThat(coupon.getId()).isEqualTo(issued.getId());
         assertThat(coupon.getUserId()).isEqualTo(localIdentifier);
         assertThat(coupon.getIssuedAt()).isEqualTo(NOW);
     }
@@ -208,15 +211,15 @@ class CouponRepositoryIntegrationTest {
     @DisplayName("보유 목록은 해당 사용자만 발급 시각·쿠폰 ID 내림차순으로 반환한다.")
     @Test
     void listsOnlyOwnerCouponsInStableOrderAcrossCampaigns() {
-        Stock first = prepare(2);
-        Stock second = prepare(1);
-        Stock third = prepare(1);
+        Long first = campaign(2);
+        Long second = campaign(1);
+        Long third = campaign(1);
         long owner = createUser();
         long other = createUser();
-        Coupon old = tryAssign(first.campaignId(), owner, NOW).orElseThrow();
-        Coupon tiedEarlierId = tryAssign(second.campaignId(), owner, NOW.plusSeconds(1)).orElseThrow();
-        Coupon tiedLaterId = tryAssign(third.campaignId(), owner, NOW.plusSeconds(1)).orElseThrow();
-        Coupon others = tryAssign(first.campaignId(), other, NOW.plusSeconds(2)).orElseThrow();
+        Coupon old = tryIssue(first, owner, NOW).orElseThrow();
+        Coupon tiedEarlierId = tryIssue(second, owner, NOW.plusSeconds(1)).orElseThrow();
+        Coupon tiedLaterId = tryIssue(third, owner, NOW.plusSeconds(1)).orElseThrow();
+        Coupon others = tryIssue(first, other, NOW.plusSeconds(2)).orElseThrow();
 
         List<Coupon> owned = transact(() -> coupons.findAllIssuedByUserId(owner));
 
@@ -227,26 +230,26 @@ class CouponRepositoryIntegrationTest {
             .extracting(Coupon::getId).containsExactly(others.getId());
     }
 
-    @DisplayName("준비 경로는 새 미발급 쿠폰만 저장하고 발급 상태를 덮어쓰지 않는다.")
+    @DisplayName("캠페인 쿠폰 삭제는 그 캠페인의 쿠폰만 지운다.")
     @Test
-    void rejectsIssuedOrExistingCouponsInPreparationPath() {
-        Stock stock = prepare(1);
+    void deletesOnlyTargetCampaignCoupons() {
+        Long target = campaign(2);
+        Long other = campaign(2);
         long userId = createUser();
-        Coupon existing = transact(() -> coupons.findById(stock.couponIds().getFirst()).orElseThrow());
-        Coupon issued = Coupon.create(stock.campaignId());
-        issued.issueTo(userId, NOW);
+        tryIssue(target, userId, NOW).orElseThrow();
+        Coupon kept = tryIssue(other, userId, NOW).orElseThrow();
 
-        assertThatThrownBy(() -> transact(() -> coupons.saveStock(List.of(existing))))
-            .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> transact(() -> coupons.saveStock(List.of(issued))))
-            .isInstanceOf(IllegalArgumentException.class);
-        assertThat(transact(() -> coupons.countByCampaignId(stock.campaignId())).longValue()).isEqualTo(1);
+        int deleted = transact(() -> coupons.deleteByCampaignId(target));
+
+        assertThat(deleted).isEqualTo(1);
+        assertThat(transact(() -> coupons.countIssuedByCampaignId(target)).longValue()).isZero();
+        assertThat(transact(() -> coupons.findById(kept.getId()))).isPresent();
     }
 
-    @DisplayName("서로 다른 사용자 8명이 총량 5개를 경쟁하면 쿠폰 5행만 배정된다.")
+    @DisplayName("서로 다른 사용자 8명이 총량 5개를 경쟁하면 쿠폰 5행만 insert된다.")
     @Test
-    void assignsOnlyFiveRowsForEightConcurrentUsers() throws Exception {
-        Stock stock = prepare(5);
+    void insertsOnlyFiveRowsForEightConcurrentUsers() throws Exception {
+        Long campaignId = campaign(5);
         List<Long> competitors = IntStream.range(0, 8).mapToObj(index -> createUser()).toList();
         CountDownLatch ready = new CountDownLatch(8);
         CountDownLatch start = new CountDownLatch(1);
@@ -255,9 +258,9 @@ class CouponRepositoryIntegrationTest {
             List<Future<Optional<Coupon>>> attempts = competitors.stream().map(userId -> workers.submit(() -> {
                 ready.countDown();
                 if (!start.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-                    throw new AssertionError("쿠폰 배정 시작 대기 시간 초과");
+                    throw new AssertionError("쿠폰 발급 시작 대기 시간 초과");
                 }
-                return tryAssign(stock.campaignId(), userId, NOW);
+                return tryIssue(campaignId, userId, NOW);
             })).toList();
             assertThat(ready.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
             start.countDown();
@@ -269,12 +272,10 @@ class CouponRepositoryIntegrationTest {
             assertThat(issued).hasSize(5);
             assertThat(issued).extracting(Coupon::getId).doesNotHaveDuplicates();
             assertThat(issued).extracting(Coupon::getUserId).doesNotHaveDuplicates();
-            assertThat(transact(() -> coupons.countByCampaignId(stock.campaignId())).longValue()).isEqualTo(5);
-            assertThat(transact(() -> coupons.countIssuedByCampaignId(stock.campaignId())).longValue()).isEqualTo(5);
-            CouponCampaign campaign = transact(() -> campaigns.findById(stock.campaignId()).orElseThrow());
+            assertThat(transact(() -> coupons.countIssuedByCampaignId(campaignId)).longValue()).isEqualTo(5);
+            CouponCampaign campaign = transact(() -> campaigns.findById(campaignId).orElseThrow());
             assertThat(campaign.getIssuedCount()).isEqualTo(5);
             assertThat(campaign.getTerminatedAt()).isEqualTo(NOW);
-            assertThat(transact(() -> coupons.findFirstUnissuedId(stock.campaignId()))).isEmpty();
         } finally {
             start.countDown();
             workers.shutdownNow();
@@ -282,14 +283,12 @@ class CouponRepositoryIntegrationTest {
         }
     }
 
-    private Stock prepare(int quota) {
+    private Long campaign(int quota) {
         CouponCampaign campaign = transact(() -> campaigns.save(
             CouponCampaign.create("쿠폰 저장 테스트", quota, "5,000원 할인권", START, END)
         ));
         campaignIds.add(campaign.getId());
-        List<Coupon> saved = transact(() -> coupons.saveStock(IntStream.range(0, quota)
-            .mapToObj(index -> Coupon.create(campaign.getId())).toList()));
-        return new Stock(campaign.getId(), saved.stream().map(Coupon::getId).toList());
+        return campaign.getId();
     }
 
     private void executeWithDifferentDefaultSchema(ByteArrayResource script) throws Exception {
@@ -310,16 +309,15 @@ class CouponRepositoryIntegrationTest {
         return id;
     }
 
-    private Optional<Coupon> tryAssign(Long campaignId, Long userId, Instant issueNow) {
+    /**
+     * 발급 트랜잭션과 같은 순서로 캠페인 카운터를 조건부 갱신한 뒤 쿠폰을 insert한다. 품절이면 비어 있다.
+     */
+    private Optional<Coupon> tryIssue(Long campaignId, Long userId, Instant issueNow) {
         return transact(() -> {
             if (campaigns.incrementIssuedCountIfIssuable(campaignId, issueNow) == 0) {
                 return Optional.empty();
             }
-            long couponId = coupons.findFirstUnissuedId(campaignId).orElseThrow();
-            if (coupons.assignIfUnissued(couponId, campaignId, userId, issueNow) != 1) {
-                throw new IllegalStateException("쿠폰 조건부 배정 실패");
-            }
-            return coupons.findById(couponId);
+            return Optional.of(coupons.insert(Coupon.create(campaignId, userId, issueNow)));
         });
     }
 
@@ -334,5 +332,4 @@ class CouponRepositoryIntegrationTest {
         });
     }
 
-    private record Stock(Long campaignId, List<Long> couponIds) {}
 }

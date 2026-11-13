@@ -42,7 +42,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -310,7 +309,6 @@ class CouponIssueQueueWorkerE2ETest {
         CouponCampaign campaign = campaigns.save(CouponCampaign.create("coupon-queue-worker-" + System.nanoTime(),
             quota, "5,000원 할인권", now.minusSeconds(60), now.plusSeconds(3600)));
         campaignIds.add(campaign.getId());
-        coupons.saveStock(IntStream.range(0, quota).mapToObj(index -> Coupon.create(campaign.getId())).toList());
         entityManager.clear();
         return campaign.getId();
     }
