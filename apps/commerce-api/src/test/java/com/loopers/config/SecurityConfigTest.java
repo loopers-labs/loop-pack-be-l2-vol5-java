@@ -28,6 +28,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -76,6 +77,14 @@ class SecurityConfigTest {
                 .andExpect(jsonPath("$.meta.result").value("FAIL"))
                 .andExpect(jsonPath("$.meta.errorCode").value("FORBIDDEN"))
                 .andExpect(jsonPath("$.meta.message").value("접근 권한이 없습니다."));
+        }
+
+        @DisplayName("local 프로필이 아니면 로컬 관리자 계정의 Basic 인증으로도 403 으로 거절한다.")
+        @Test
+        void rejectsWithForbidden_whenBasicCredentialsAreSentOutsideLocalProfile() throws Exception {
+            mvc.perform(get(ADMIN_BRANDS).with(httpBasic("local-admin", "local-admin")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.meta.errorCode").value("FORBIDDEN"));
         }
 
         @DisplayName("관리자 역할이 없는 사용자는 403 FORBIDDEN 으로 ApiResponse 형식으로 거절한다.")

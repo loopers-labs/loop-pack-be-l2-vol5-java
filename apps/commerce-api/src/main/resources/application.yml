@@ -108,6 +108,10 @@ spring:
     activate:
       on-profile: local
 
+local-admin: # 로컬 부하 실험용 관리자 계정. local 프로필에만 있다
+  username: local-admin
+  password: local-admin
+
 outbox:
   relay:
     enabled: true
