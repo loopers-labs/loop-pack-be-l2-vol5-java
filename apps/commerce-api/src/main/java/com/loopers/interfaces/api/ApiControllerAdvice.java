@@ -34,7 +34,12 @@ public class ApiControllerAdvice {
 
     @ExceptionHandler
     public ResponseEntity<ApiResponse<?>> handle(CoreException e) {
-        log.warn("CoreException : {}", e.getCustomMessage() != null ? e.getCustomMessage() : e.getMessage(), e);
+        String message = e.getCustomMessage() != null ? e.getCustomMessage() : e.getMessage();
+        if (e.getErrorType() == ErrorType.INTERNAL_ERROR) {
+            log.error("CoreException : code={}, message={}", e.getErrorType().getCode(), message, e);
+        } else {
+            log.warn("CoreException : code={}, message={}", e.getErrorType().getCode(), message);
+        }
         return failureResponse(e.getErrorType(), e.getCustomMessage());
     }
 

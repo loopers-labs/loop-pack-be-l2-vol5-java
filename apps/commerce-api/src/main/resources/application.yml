@@ -30,6 +30,18 @@ spring:
       - monitoring.yml
       - pg.yml
 
+coupon:
+  issue:
+    publish:
+      ack-timeout: 500ms
+      max-in-flight: 128
+    worker:
+      concurrency: 4
+      auto-startup: true
+    reconcile:
+      enabled: true
+      interval: 10s
+
 springdoc:
   use-fqn: true
   swagger-ui:
@@ -70,3 +82,17 @@ spring:
 springdoc:
   api-docs:
     enabled: false
+---
+spring:
+  config:
+    activate:
+      on-profile: test
+
+coupon:
+  issue:
+    publish:
+      max-in-flight: 2
+    worker:
+      auto-startup: false
+    reconcile:
+      enabled: false

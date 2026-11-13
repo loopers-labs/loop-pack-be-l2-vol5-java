@@ -20,7 +20,13 @@ public enum DomainError {
     PAYMENT_NOT_FOUND(Failure.UNIDENTIFIED, "결제 시도를 찾을 수 없습니다."),
     PAYMENT_ATTEMPT_CONFLICT(Failure.RULE_VIOLATION, "같은 결제 시도 키로 다른 요청이 왔습니다."),
 
-    LIKE_LIST_NOT_FOUND(Failure.UNIDENTIFIED, "좋아요 목록을 찾을 수 없습니다.");
+    LIKE_LIST_NOT_FOUND(Failure.UNIDENTIFIED, "좋아요 목록을 찾을 수 없습니다."),
+
+    COUPON_CAMPAIGN_NOT_FOUND(Failure.UNIDENTIFIED, "쿠폰 캠페인을 찾을 수 없습니다."),
+    COUPON_CAMPAIGN_INACTIVE(Failure.RULE_VIOLATION, "발급 가능한 캠페인이 아닙니다."),
+    COUPON_SOLD_OUT(Failure.RULE_VIOLATION, "쿠폰이 모두 발급되었습니다."),
+    COUPON_ALREADY_ISSUED(Failure.RULE_VIOLATION, "이 캠페인의 쿠폰을 이미 받았습니다."),
+    COUPON_CAMPAIGN_NOT_CLOSED(Failure.RULE_VIOLATION, "닫힌 캠페인만 복구할 수 있습니다.");
 
     private final Failure failure;
     private final String message;

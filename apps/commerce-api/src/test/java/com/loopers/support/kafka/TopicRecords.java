@@ -20,6 +20,29 @@ public final class TopicRecords {
     private TopicRecords() {
     }
 
+    public static List<ConsumerRecord<String, byte[]>> all(String topic) {
+        try (KafkaConsumer<String, byte[]> consumer = new KafkaConsumer<>(Map.of(
+                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, KafkaTestContainersConfig.bootstrapServers(),
+                ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false),
+            new StringDeserializer(), new ByteArrayDeserializer())) {
+            List<TopicPartition> partitions = consumer.partitionsFor(topic).stream()
+                .map(info -> new TopicPartition(topic, info.partition()))
+                .toList();
+            Map<TopicPartition, Long> end = consumer.endOffsets(partitions);
+            consumer.assign(partitions);
+            consumer.seekToBeginning(partitions);
+            List<ConsumerRecord<String, byte[]>> records = new ArrayList<>();
+            long deadline = System.nanoTime() + READ_DEADLINE.toNanos();
+            while (partitions.stream().anyMatch(partition -> consumer.position(partition) < end.get(partition))) {
+                if (System.nanoTime() > deadline) {
+                    throw new IllegalStateException("broker 의 record 를 다 읽지 못했다: end=" + end);
+                }
+                consumer.poll(Duration.ofMillis(200)).forEach(records::add);
+            }
+            return records;
+        }
+    }
+
     public static List<ConsumerRecord<String, byte[]>> during(String topic, Runnable action) {
         try (KafkaConsumer<String, byte[]> consumer = new KafkaConsumer<>(Map.of(
                 ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, KafkaTestContainersConfig.bootstrapServers(),
