@@ -1,6 +1,8 @@
 # 커머스 설계 초안
 
-2026-09-17 이벤트 스토밍 대화부터 W7까지 확장하는 전체 설계 문서다. 버드뷰, 구조와 의존, 도메인 관계와 책임, 세 대표 흐름을 함께 다루며 API 계약·정책 선택·TDD 계획은 별도 문서로 연결한다. 기존 업무 테이블 6개와 W4의 `product_list_revision`에 W5 `payment_attempt` 저장 구조를 추가했다. **2026-10-23 현재 내부 신규 시작·단건 조회에서 TX A/B와 실제 PG HTTP·주문·재고를 연결했다. 고객 confirm·고객/관리자 주문 조회·최초 제한 조회·PG 조회 회로를 연결했다. callback/reconcile HTTP도 연결했으며 현재 confirm API는 PG 방식이다.** 당시 검증 결과는 [복구 API TDD 기록](../week5/payment-recovery-api-tdd-log.md)을 따르며 선행 confirm·조회 증거는 [고객 결제 API 기록](../week5/customer-payment-api-tdd-log.md)으로 보존한다. 내부 조율의 선행 증거는 [PG HTTP·주문·재고 연결 기록](../week5/order-payment-http-connection-tdd-log.md)으로 보존한다. [재고 확보·반환 기록](../week5/order-stock-reservation-tdd-log.md), [로컬 PG·HTTP 기록](../week5/local-test-pg-http-tdd-log.md), [주문·결제 저장 기록](../week5/order-payment-persistence-tdd-log.md), [예약 상태 첫 기록](../week5/order-reservation-state-tdd-log.md), [결제 시도 순수 모델 기록](../week5/payment-attempt-state-tdd-log.md)은 선행 증거로 보존한다. 수동 SQL 제공은 사용자 DB에 실제 이행을 실행했다는 뜻이 아니다.
+**2026-11-12 · W8 설계 1단계** — [쿠폰 예약과 발급](#w8-쿠폰-예약과-발급)은 고객에게 한 장을 약속하는 시점과 서버 재시작 뒤 이어갈 작업을 정한다. 아래 W7까지의 기록은 기존 기능의 구현 이력이다.
+
+2026-09-17 이벤트 스토밍에서 시작해 W8 쿠폰 예약까지 확장한 전체 설계 문서다. 버드뷰, 구조와 의존, 도메인 관계와 책임, 세 대표 흐름을 함께 다루며 API 계약·정책 선택·TDD 계획은 별도 문서로 연결한다. 기존 업무 테이블 6개와 W4의 `product_list_revision`에 W5 `payment_attempt` 저장 구조를 추가했다. **2026-10-23 현재 내부 신규 시작·단건 조회에서 TX A/B와 실제 PG HTTP·주문·재고를 연결했다. 고객 confirm·고객/관리자 주문 조회·최초 제한 조회·PG 조회 회로를 연결했다. callback/reconcile HTTP도 연결했으며 현재 confirm API는 PG 방식이다.** 당시 검증 결과는 [복구 API TDD 기록](../week5/payment-recovery-api-tdd-log.md)을 따르며 선행 confirm·조회 증거는 [고객 결제 API 기록](../week5/customer-payment-api-tdd-log.md)으로 보존한다. 내부 조율의 선행 증거는 [PG HTTP·주문·재고 연결 기록](../week5/order-payment-http-connection-tdd-log.md)으로 보존한다. [재고 확보·반환 기록](../week5/order-stock-reservation-tdd-log.md), [로컬 PG·HTTP 기록](../week5/local-test-pg-http-tdd-log.md), [주문·결제 저장 기록](../week5/order-payment-persistence-tdd-log.md), [예약 상태 첫 기록](../week5/order-reservation-state-tdd-log.md), [결제 시도 순수 모델 기록](../week5/payment-attempt-state-tdd-log.md)은 선행 증거로 보존한다. 수동 SQL 제공은 사용자 DB에 실제 이행을 실행했다는 뜻이 아니다.
 
 **2026-11-04 W7 저장·전달·W6 복구 구현:** 공통 Outbox·완성 JSON/topic 공동 저장(Q01)과 공통 BEFORE_COMMIT 기록(Q02)에 단일 polling relay(Q03~05)를 연결했다. 현재 주문 경로는 최초 확정과 Outbox를 같은 TX에 저장하며 직접 Kafka send는 하지 않는다. relay는 별도 실행에서 저장 사실을 전송하고 broker 확인 뒤 전달 상태만 갱신한다. 자동 실행은 기본 OFF다. 첫 저장 증거는 [Outbox 원자성 TDD 기록](../week7/outbox-atomicity-tdd-log.md), 이번 전달·상태 검증 범위는 [relay TDD 기록](../week7/outbox-relay-tdd-log.md)에 구분한다. 후속 [중단·재발행 E2E 기록](../week7/outbox-republication-e2e-tdd-log.md)에서 실제 주문 HTTP·PG·Kafka·별도 streamer JVM/DB로 두 중단 구간과 소비 중복 방지를 검증했다. 해당 중단 증분은 생산 코드 변경 없이 테스트·문서만 추가했다. 후속 [W6 Outbox 보충·복구 기록](../week7/w6-outbox-backfill-tdd-log.md)에서는 내부 보충 서비스를 연결해 같은 실행의 누락·기소비 두 사례를 복구했다. 최종 W7 전체 검사·채점 대조는 남아 있다. 선택 이유와 후속 결정은 [W7 정책](commerce-policy-decisions.md#w7-outbox-설계의-선택과-질문), 기대값은 [W7 TDD 계획](commerce-tdd-plan.md#w7-outbox-원자성과-복구-tdd-계획)을 따른다. 추가 DDL 제공은 사용자 DB에 적용했다는 뜻이 아니다.
 
@@ -46,6 +48,46 @@ W3에서는 **주문 재확정 거절 정책(P16)을 승인**하고 `W3-RECONFIR
 ## 문서 안내
 
 [API 계약](commerce-api-contract.md), [TDD 계획](commerce-tdd-plan.md), [정책 선택과 설계 검토](commerce-policy-decisions.md)는 각각의 상세 내용을 관리한다. 버드뷰·계층 의존·도메인 관계·세 대표 흐름은 이 문서에 함께 유지한다.
+
+## W8 쿠폰 예약과 발급
+
+한정 쿠폰 100장에 신청이 몰려도 마감된 신규 요청이 주문·상품과 공유하는 MySQL까지 들어오지 않도록 Redis에서 먼저 선별한다. **고객에게 “한 장 확보됐어요”라고 응답하는 시점은 해당 사용자의 예약과 수량이 MySQL에서 함께 커밋된 뒤다.** 그때부터 고객이 화면을 닫거나 다시 방문하지 않아도 서버가 발급을 이어간다. 100장과 작업 자리 3개는 설명과 실험에 쓰는 값이다.
+
+**선택 근거** — 11월 12일 설계에 반영한 멘토 공지(사용자가 대화에 전달)에서 “우리 발제의 BASIC 샘플은 처리량 제한에 대한 이해를 위해 실험해보는 수준으로 끝내도 괜찮습니다”라고 안내했고, 발급 구현 방식을 선택하도록 했다. [원문의 세마포어 실험](../week8/assignment-original.md)은 네 번째 요청의 즉시 거절을 관찰한다. 이 프로젝트에서는 고객 신청을 받아 두고, 세마포어는 실제 발급 작업의 동시성을 제한하는 데 쓴다. 2단계에서 MySQL 예약·발급·본인 조회를, 3단계에서 신청 POST·Redis 선별과 선별 뒤 예약 재개를 구현했다. 4단계 작업자는 지정 캠페인들의 DB 대기 예약을 읽고 Redis에서 전역 발급 자리를 얻어 T2를 실행한다. 두 캠페인이 세 자리를 공유한 실제 결과는 [발급 작업자 검증](../week8/implementation-checklist.md#4단계-발급-작업자와-redis-세마포어)에 남겼다. [3단계 HTTP·복구 결과](../week8/implementation-checklist.md#3단계-redis-선별과-예약-복구) [DB 경합과 롤백 검증](../week8/implementation-checklist.md#2단계-mysql-tdd-실행-기록) [API 계약](commerce-api-contract.md#w8-쿠폰-예약-응답) · [선택 이유](commerce-policy-decisions.md#w8-쿠폰-발급-선택) · [테스트 기대값](commerce-tdd-plan.md#w8-쿠폰-예약과-복구-테스트)
+
+```mermaid
+flowchart TD
+    U["고객이 한 번 신청"] --> R{"API가 Redis에서 캠페인별 중복·남은 몫 확인"}
+    R -->|"마감 후 신규 사용자"| End["접수 마감 응답 · 쿠폰 DB 접근 0회"]
+    R -->|"신규 선별 또는 기존 선별의 재개"| T1["MySQL 예약 커밋 · 사용자별 WAITING 한 건"]
+    T1 --> Reply["고객에게 한 장 확보 안내 · 화면을 닫아도 됨"]
+    T1 --> W["Spring 작업자가 예약을 읽고 Redis 발급 자리를 획득"]
+    W --> T2["MySQL 발급 커밋 · 보유 쿠폰 한 장 · ISSUED"]
+    T2 --> Release["발급 실행 종료 후 자기 자리 반환"]
+    U -->|"본인 보유 목록 조회"| List["API가 MySQL의 발급 완료 쿠폰 조회"]
+    U -->|"캠페인 다시 열기"| State["API가 MySQL의 본인 예약 상태 조회"]
+```
+
+| 경계 | 기록과 책임 |
+| --- | --- |
+| Redis 선별 | 캠페인을 열 때 MySQL에서 남은 몫과 이미 예약·발급된 사용자를 맞춘다. 정상 수용 중에는 기존 사용자 여부를 마감보다 먼저 확인한다. 신규 한 명에 대해 남은 몫 차감·사용자 기록·예약으로 이어갈 작업 기록을 Lua 한 번으로 처리한다. 선별 시 캠페인별 Stream에 작업을 넣고 Hash에는 해당 사용자의 작업 ID를 저장한다. MySQL 예약 커밋이 확인되면 해당 Stream 항목을 지운다. 실제 쿠폰 번호는 발급 시 MySQL에서 생성한다. |
+| 예약 트랜잭션 | 선별된 사용자마다 즉시 실행한다. 같은 캠페인·사용자에게 이미 확보 또는 발급한 기록이 있으면 그 상태를 읽는다. 신규이면 캠페인 상태·잔여 한도를 DB에서 확인하고 한 장 확보와 `WAITING` 저장을 함께 커밋한다. 두 실행이 경합해도 DB 유일 제약으로 예약 한 건만 허용한다. 동시에 처리 중인 발급 작업이 3개여도 이 예약은 가능하다. |
+| 작업 순서·자리 | Spring 작업자는 같은 캠페인의 커밋된 `WAITING` 중 먼저 접수된 예약부터 가져간다. 스스로 부여한 실행별 토큰으로 Redis 세마포어의 자리를 획득한 경우에만 발급을 시작한다. 자리가 없으면 예약이 남아 다음 회차에 이어진다. 완료 시각은 작업별로 다를 수 있다. |
+| 발급 트랜잭션 | 예약 때와 같은 캠페인 행을 먼저 쓰기 잠금한 후 해당 예약을 읽는다. 아직 대기 중일 때만 보유 쿠폰 생성·대기 수 감소·발급 수 증가·`ISSUED` 전환을 한 번에 커밋한다. 같은 예약을 다시 처리하면 기존 쿠폰을 확인한다. 작업이 끝난 뒤 해당 실행의 토큰만 반환한다. |
+| 본인 조회 | 캠페인 화면은 GET으로 MySQL의 본인 예약을 읽어 미신청·대기·완료를 표시한다. 내 쿠폰 목록과 전체 건수는 본인에게 발급 완료된 쿠폰을 기준으로 계산한다. 두 조회는 Redis와 독립적이다. 고객이 화면을 닫아도 작업자는 발급을 이어간다. [조회 API](commerce-api-contract.md#w8-쿠폰-예약-응답) |
+
+**수량 예시.** 총 100장 중 3장이 발급 완료이고 대기 예약이 없다고 하자. 4번의 예약 커밋 후에는 대기 1·발급 3·남은 몫 96이다. 4번의 발급 커밋 후에는 대기 0·발급 4·남은 몫 96이다. 항상 `대기 예약 수 + 발급 완료 수 ≤ 캠페인 한도`를 지킨다. 발급 작업자가 자리를 반환해도 이 수량은 변하지 않는다.
+
+**도메인·계층.** 캠페인은 총량과 발급 가능 조건을 갖는다. 예약은 한 사용자와 한 캠페인을 연결하며, 발급 완료 시 그 예약에 대응하는 보유 쿠폰 한 장을 갖는다. HTTP 입력·응답은 interfaces, 예약·발급 트랜잭션과 작업 순서 조율은 application, 수량·상태 전이 규칙은 domain, Redis와 MySQL 접근은 infrastructure가 맡는다. 이 흐름에 주문 PG·Kafka·Outbox를 연결할 필요는 없다.
+
+### 중단 시 어디서 이어가는가
+
+| 멈춘 순간 | 고객 약속과 복구 기준 |
+| --- | --- |
+| Redis에서 선별한 직후, MySQL 예약 커밋 전 | 아직 확보 응답을 보내지 않는다. 앱만 중단됐고 Redis 선별·미처리 기록이 남았다면 재시작 후 같은 캠페인·사용자로 예약을 이어간다. 기록을 완료로 표시하는 시점은 DB 결과 확인 뒤다. Redis의 유일한 선별 기록까지 사라지고 MySQL에도 예약이 없다면 그 사용자를 알아낼 수 없다. |
+| 예약 커밋 결과가 불명확하거나 성공 응답이 유실됨 | 새 DB 조회로 같은 캠페인·사용자의 예약 또는 쿠폰을 확인한다. 확인 전에는 확보를 안내하거나 몫을 다른 사람에게 돌리지 않는다. DB에 커밋됐다면 HTTP 응답 유실 여부와 관계없이 작업자가 발급한다. |
+| 확보 후 앱과 Redis가 중단됨 | MySQL에 `WAITING`과 배정 수량이 남는다. 신규 수용을 닫고 이전 실행 종료와 DB 상태를 대조해 Redis의 사용자·잔여 몫과 작업 자리를 복구한 뒤 재개한다. 작업자는 MySQL 대기 건에서 이어간다. 고객의 두 번째 POST는 필요하지 않다. |
+| 발급 중 실패 또는 발급 커밋 직후 중단 | 발급 트랜잭션이 롤백되면 예약은 `WAITING`으로 남는다. 커밋됐다면 재실행은 같은 `ISSUED` 예약과 쿠폰을 읽는다. 응답·토큰 반환 실패 또는 시간 경과를 근거로 쿠폰을 다시 만들거나 배정 몫을 복원하지 않는다. |
 
 ## W7 Outbox와 단일 relay 설계
 
@@ -1087,4 +1129,4 @@ stateDiagram-v2
 
 ## 관련 문서와 범위
 
-쿠폰 적용은 별도 [주문 할인 계약](../week1/order-discount-contract.md)에서 다루고 있다. 현재 대화에서 확정한 범위의 ERD에는 쿠폰 테이블을 통합하지 않았으며, 쿠폰을 포함하게 되면 주문 금액 구조와 확정 규칙을 함께 검토한다.
+W8의 [쿠폰 예약과 발급](#w8-쿠폰-예약과-발급)은 캠페인·예약·보유 쿠폰의 관계를 다룬다. 주문 금액에 쿠폰을 적용하는 규칙은 별도 [W1 주문 할인 계약](../week1/order-discount-contract.md)에 있다.
