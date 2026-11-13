@@ -26,7 +26,11 @@ public final class ErrorTypeHttpStatusMapper {
                  OUT_OF_STOCK,
                  INSUFFICIENT_POINT,
                  PRODUCT_UNAVAILABLE,
-                 PAYMENT_ATTEMPT_CONFLICT -> HttpStatus.CONFLICT;
+                 PAYMENT_ATTEMPT_CONFLICT,
+                 COUPON_SOLD_OUT,
+                 COUPON_CAMPAIGN_UNAVAILABLE,
+                 COUPON_ISSUE_IN_PROGRESS -> HttpStatus.CONFLICT;
+            case COUPON_ADMISSION_UNAVAILABLE -> HttpStatus.SERVICE_UNAVAILABLE;
         };
     }
 }

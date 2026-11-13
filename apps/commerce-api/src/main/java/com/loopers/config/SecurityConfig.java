@@ -5,6 +5,8 @@ import com.loopers.support.error.ErrorType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -34,13 +36,24 @@ public class SecurityConfig {
         antMatcher("/api/v1/points/**"),
         antMatcher("/api/v1/products/*/likes"),
         antMatcher("/api/v1/users/*/likes"),
-        antMatcher("/api/v1/orders/**")
+        antMatcher("/api/v1/orders/**"),
+        antMatcher("/api/v1/coupon-campaigns/*/issues"),
+        antMatcher("/api/v1/coupons/**")
     );
 
     /** 관리자 API. 관리자 역할만 허용하며 미식별·권한 부족 모두 403 이다. */
     @Bean
     @Order(1)
-    SecurityFilterChain adminChain(HttpSecurity http, SecurityErrorResponseWriter errorWriter) throws Exception {
+    SecurityFilterChain adminChain(
+        HttpSecurity http, SecurityErrorResponseWriter errorWriter, Environment environment
+    ) throws Exception {
+        // local 에서만 관리자 API 를 직접 부를 수 있게 Basic 인증을 켠다(부하 실험의 캠페인 준비·열기). 다른 프로필에는 인증 수단이 없다.
+        // Basic 은 쿠키 세션을 쓰지 않으므로 이때 CSRF 를 끈다.
+        if (environment.acceptsProfiles(Profiles.of(LocalAdminConfig.PROFILE))) {
+            http.httpBasic(basic -> basic.authenticationEntryPoint((request, response, exception) ->
+                    errorWriter.write(response, ErrorType.FORBIDDEN, null)))
+                .csrf(AbstractHttpConfigurer::disable);
+        }
         return http.securityMatcher("/api-admin/**")
             .authorizeHttpRequests(rules -> rules.anyRequest().hasRole("ADMIN"))
             .exceptionHandling(errors -> errors
