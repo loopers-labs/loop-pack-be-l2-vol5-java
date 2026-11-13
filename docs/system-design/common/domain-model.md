@@ -1,5 +1,7 @@
 # 공통 도메인 모델
 
+**쿠폰 승인 설계(2026-11-11):** [쿠폰 상세설계의 저장 모델](../features/coupons.md)은 CouponCampaignModel의 총량·현재 발급 수와 CouponModel의 사용자별 실제 발급 결과를 구분한다. 캠페인·사용자는 scalar ID로 참조하고 물리 FK 없이 캠페인·사용자 UNIQUE를 둔다. 혜택은 발급 당시 값으로 복사하지만 캠페인 이름은 조회 시 참조한다. 이 모델 설계는 사용자 최종 승인을 받았으며 구현·검증은 미완료다.
+
 **W7 목표 모델:** 아래 기존 주문·결제·예약/POINT 관계는 유지한다. [발행 W7.2~W7.4](../features/order-events/publication.md)의 OrderConfirmedOutboxModel이 최초 확정 사실의 전달을 보존하며 Order를 scalar orderId로 참조한다. 물리 FK·주문 행의 발행 상태·현재 Product 연관을 추가하지 않는다. Outbox 상태/메타데이터는 API 소유, 구매 완료·활동은 streamer 소유이고 서로 별도 TX다. 이 모델 설계는 2026-11-04 사용자 최종 승인을 받았으며 구현·검증은 미완료다.
 
 기존 절을 기능별 기준 문서로 이동했다. 절 번호·계약·승인/검증 상태는 보존하며, 이동 자체는 새 설계 승인이나 실행 검증을 뜻하지 않는다.
@@ -17,6 +19,7 @@
 |결제|`PaymentModel`, `PaymentConflictModel`, `PaymentObservation` (값 계약)|주문당 결제 행·확인 정보, 별도 마지막 충돌 요약|
 |주문 확정 전달 — W7 목표|`OrderConfirmed`, `OrderConfirmedOutboxModel`·불변 메시지 값|최초 확정 사실·불변 key/payload·전달 상태·시도/재개 정보. 상세 원본은 발행 W7.2·W7.3|
 |포인트|`PointModel`, `PointChange` (VO), `PointHistoryModel`|사용자별 포인트 잔액과 변경 이력|
+|쿠폰 — 승인 설계|`CouponCampaignModel`, `CouponModel`|캠페인 총량·활성 상태, 사용자별 발급 결과·혜택 보존. 상세 계약과 검증 기준은 쿠폰 문서가 원본|
 
 `Money`는 상품 가격과 주문 당시 단가·품목 금액·주문 총액·결제액에 공통으로 사용하는 Value Object다. 별도 식별자 없이 `long` 타입의 원 단위 값을 감싸며, 금액 계산과 표현 범위 검사를 맡는다. 포인트 잔액과 포인트 사용액은 원화 금액과 구분해 `Money`로 표현하지 않는다. 기본형 숫자나 `BigDecimal`을 사용하는 대안과 선택 비용은 [부록 A.15](../decisions/domain-and-api.md#a15-금전적-값의-표현과-숫자-타입)에서 비교한다.
 

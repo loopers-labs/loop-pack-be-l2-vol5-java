@@ -1,0 +1,1147 @@
+# 쿠폰 발급 구현·실행 기록
+
+계약의 원본은 [쿠폰 상세설계](../features/coupons.md)와 [쿠폰 판단 근거](../decisions/coupons.md)다. 이 문서는 구현 단위별 실행 조건·관찰값·한계를 남긴다. 각 절은 해당 기준 커밋/실행의 기록이며 과거의 미착수·미실행 상태를 최신 결과와 구분한다.
+
+## 구현 1단계 — DB 저장·조회 계약 (2026-11-11)
+
+### 범위
+
+- 구현: `CouponCampaignModel`·`CouponModel`, `CouponCampaignStatus`·`CouponBenefitType`과 기존 `EnumNameConverter` 방식 변환기, `CouponCampaignRepository`(`save`·`reserveOne`·`findIssueData`·`findById`)·`CouponRepository.save`·`CouponQueryRepository`(`findOwned`·`findOwnedPage`)와 infrastructure 구현, 불변 조회 결과 `OwnedCoupon`·`CouponCampaignIssueData`, `ConstraintViolationClassifier`의 `uk_coupon_campaign_user` 식별.
+- 테스트: 모델 단위 테스트, 분류기 단위 테스트, 실제 MySQL의 스키마·쓰기 TX·직접 DB 경쟁·조회 통합 테스트, 조건별 test fixture `CouponFixture`.
+- 제외: `CouponFacade`, Redis Lua·수용 서비스, 고객·제어 API, main 준비 코드. 쓰기 TX는 test 소스의 `TransactionTemplate`으로 설계 §6.2 순서를 조합했다. 제품에 별도 TX 서비스·테스트 hook을 추가하지 않았다.
+
+### 실행 조건
+
+- 기준 revision: `541b451`(브랜치 `volume-8`)과 이 단계의 미커밋 변경. 커밋 전 작업 트리에서 실행했다.
+- JDK 21.0.12(Homebrew). 로컬 `~/.gradle/gradle.properties`가 Gradle daemon을 JDK 17로 지정하고 있어 subproject 컴파일이 실패하므로, 명령에 `-Dorg.gradle.java.home=<JDK 21 경로>`를 붙여 실행했다. 저장소 설정은 바꾸지 않았다.
+- Docker 29.7.2, 기존 `MySqlTestContainersConfig`의 `mysql:8.0` 테스트 컨테이너, `ddl-auto=create`. Redis는 이 단계 테스트의 검증 대상이 아니다.
+
+```sh
+./gradlew -Dorg.gradle.java.home="$JAVA_HOME" :apps:commerce-api:test \
+  --tests '*Coupon*' --tests '*ConstraintViolationClassifierTest' --rerun --no-build-cache
+```
+
+- 실행: 2026-11-11 13:58:46~13:59:07 KST, `BUILD SUCCESSFUL`. 34건 실행·실패 0·skip 0. 보고서는 `apps/commerce-api/build/reports/tests/test/` (이후 실행으로 덮어써지는 빌드 산출물이다).
+- 같은 명령의 직전 실행(13:58:14~13:58:35)은 34건 중 1건 실패였다. `persistGuard` 테스트가 guard 예외를 원인으로 감싼 형태로 기대했으나 실제로는 `CoreException`이 그대로 전파됐다. guard 동작이 아니라 테스트의 예외 형태 기대가 틀린 것이며, 기대를 `isInstanceOf(CoreException)`로 고친 뒤 위 실행에서 통과했다.
+
+| 테스트 클래스 | 건수 |
+|---|---|
+| `CouponCampaignModelTest` | 11 |
+| `CouponModelTest` | 3 |
+| `ConstraintViolationClassifierTest` | 2 |
+| `CouponSchemaIntegrationTest` | 5 |
+| `CouponIssueTransactionIntegrationTest` (단일 TX 4·직접 DB 경쟁 3) | 7 |
+| `CouponQueryRepositoryIntegrationTest` | 6 |
+
+회귀 실행 결과는 아래 [회귀·Checkstyle·ArchUnit](#회귀checkstylearchunit)에 둔다.
+
+### 실제 관찰
+
+- **DDL:** `coupon_campaign`의 `name varchar(100)`, `status`·`benefit_type varchar(16)`, `total_quota`·`issued_count`·`benefit_value bigint`, `coupon`의 `campaign_id`·`user_id`·`benefit_value bigint`, `benefit_type varchar(16)`, `created_at datetime(6)` 모두 NOT NULL. `uk_coupon_campaign_user(campaign_id, user_id)`, 목록 인덱스 `idx_coupon_user_created(user_id, created_at, id)`, `ck_coupon_campaign_quota = ((total_quota >= 1) and (issued_count >= 0) and (issued_count <= total_quota))`, 두 테이블 관련 물리 FK 0개. 인덱스는 존재·열 순서만 확인했으며 실행계획·성능은 확인하지 않았다. 목록 인덱스 이름은 설계에 이름이 없어 구현에서 정했다.
+- **제약 적용:** CHECK 위반(총량 0·발급 수 -1·총량 초과)은 MySQL 3819와 제약 이름, 같은 캠페인·사용자 두 번째 INSERT는 `uk_coupon_campaign_user` 위반, NULL user_id는 NOT NULL 위반으로 실패했다.
+- **SQL 순서·격리:** 한 쓰기 TX의 Hibernate SQL 캡처는 `update coupon_campaign set issued_count = issued_count + 1, updated_at = ? where id = ? and status = 'ACTIVE' and issued_count < total_quota` → `select id, name, benefit_type, benefit_value from coupon_campaign where id=?` → `insert into coupon (...)` 세 문장이었다(캡처 문자열은 비교를 위해 소문자·공백 정규화). INSERT 전 `(campaign_id, user_id)` 조회는 없었다. 콜백 안의 `@@transaction_isolation`은 `REPEATABLE-READ`였다.
+- **save 반환 객체:** 반환 객체는 인자와 다른 인스턴스였고 인자 ID는 0으로 남았다. guard 실패 스택에서 `DefaultMergeEventListener` 경로가 보였다. BaseEntity 초기 ID 때문에 merge 경로를 탄 것으로 해석한다. 다만 이번 조건에서는 merge에 따른 `coupon` PK SELECT가 SQL 캡처에 나타나지 않았다.
+- **commit/rollback:** 정상 commit 뒤 새 조회에서 쿠폰 1·issuedCount 1, DB 쿠폰 ID와 반환 객체 ID 일치. UPDATE 1건 뒤 save 지점 실패 주입과 실제 INSERT의 named unique 충돌 모두 TX 종료 뒤 새 조회에서 증가분이 남지 않았다. 충돌 예외는 분류기가 `uk_coupon_campaign_user`로 식별했다.
+- **수량 미확보 0건:** 비활성·품절·없는 캠페인의 조건부 UPDATE는 0건이며 DB 효과가 없었다.
+- **총량 5·사용자 8 직접 DB 경쟁:** 시작 latch 뒤 8개 worker가 동시에 쓰기 TX를 수행해 성공 5·수량 미확보(UPDATE 0건) 3, 실제 쿠폰 5(서로 다른 사용자 5)·issuedCount 5. 이 3건은 DB 수량 미확보 관찰이며 HTTP 409 품절 응답 검증이 아니다.
+- **같은 사용자 동시 경쟁:** 앞 TX를 INSERT 뒤 commit 전에 붙잡고 뒤 TX가 `update coupon_campaign` 잠금을 기다리는 것을 InnoDB `innodb_trx`의 LOCK WAIT로 확인한 뒤 놓았다. 잔여량 10에서는 뒤 TX도 UPDATE 1건 뒤 INSERT가 named unique로 rollback, 총량 1에서는 뒤 TX가 UPDATE 0건으로 INSERT에 도달하지 않았다. 두 경우 모두 worker 종료 확인 뒤 새 읽기에서 쿠폰 1·issuedCount 1이고 `findOwned`가 앞 TX의 쿠폰 ID를 반환했다.
+- **조회:** 본인 필터, 빈 목록 총건수 0, 페이지 경계, latest/oldest와 같은 `created_at` 세 건의 ID 보조 정렬, 현재 캠페인 이름·발급 당시 혜택, 비활성 캠페인 쿠폰의 목록 유지, 조회 시각과 DB `created_at` 원문의 마이크로초 일치·반복 조회 일치를 확인했다. 캠페인 행을 지운 손상 데이터는 `findOwned`·`findOwnedPage` 모두 INTERNAL_ERROR였고 쿠폰 행은 남았다.
+
+### 설계 Q 대응 — 부분 근거
+
+| Q | 이번 근거 | 남은 검증 |
+|---|---|---|
+| Q1 | 본인/타인 조회 분리, 쓰기 TX 정상 commit의 쿠폰 1·issuedCount 1 | 사용자 식별 오류, HTTP 201·본인 목록 API |
+| Q2 | 현재 이름/과거 혜택, 비활성 뒤 기존 쿠폰 조회 | 순차 재요청 200·응답 필드, 추가 효과 0의 API 경로 |
+| Q3 | 같은 사용자 named unique 충돌과 마지막 수량 UPDATE 0건 두 경로의 DB 효과 1·새 읽기 결과 | Redis 수용·사전 조회 통과를 포함한 HTTP 경로와 200 응답 |
+| Q4 | 총량 5·사용자 8 직접 DB 경쟁 5/3, 쿠폰 5·issuedCount 5 | HTTP 409 품절 응답, Redis 거절과의 분리 집계 |
+| Q5 | UPDATE 뒤 save 지점 실패·실제 INSERT 충돌의 전체 rollback과 새 조회 | 자기 token 반환 |
+| Q13 | 증가+INSERT 동일 TX, SQL 순서, INSERT 전 중복 재조회 없음, CHECK 위반이 named unique로 분류되지 않음, named unique 식별 | Redis 호출 중 TX 없음, TX 대역의 미시작·COMMITTED+예외 분기 |
+| Q15 | 이름·정액/정률·총량 경계, 안정 정렬·총건수, 현재 이름/과거 혜택, 연결 손상의 명시적 실패, 저장 시각 일치·반복 일치 | 페이지 오류·DTO, `createdAt` UTC·6자리·Z JSON 형식, C 설정·준비 옵션 |
+| Q16 | Checkstyle·ArchUnit 통과, worker 종료 확인 뒤 테스트 DB 정리. 최초 회귀 9건 실패 → 아래 후속 수정 뒤 전체 회귀·O11 통과 | 이후 단계의 회귀 |
+
+Q6~Q12·Q14는 이번 단계에서 검증하지 않았다.
+
+### 한계
+
+- commit 시점 예외는 별도로 재현하지 않았다. IDENTITY라 INSERT 실패는 save 호출 중에 드러났고, 테스트는 `transactionTemplate.execute` 바깥에서 예외를 받았다. commit 예외·종료 불명 분기는 Facade 단계와 TX 대역 검증 대상이다.
+- 쓰기 TX 흐름은 test 소스의 조합이며 제품 Facade의 동작 검증이 아니다. HTTP 201/200/409, Redis token, 응답 시각 JSON 형식은 검증하지 않았다.
+- 직접 경쟁은 한 번 실행한 결과다. 반복 실행 안정성·처리량·잠금 대기 시간은 측정하지 않았다.
+- merge 경로에서 PK SELECT가 나타나지 않은 원인은 확인하지 않았다(미확인 가설은 로컬 글감 후보 W8-I02).
+
+### 회귀·Checkstyle·ArchUnit
+
+```sh
+./gradlew -Dorg.gradle.java.home="$JAVA_HOME" :apps:commerce-api:checkstyleMain :apps:commerce-api:checkstyleTest \
+  :apps:commerce-api:test --rerun --no-build-cache
+```
+
+- 실행: 2026-11-11 13:59:26~14:07:04 KST, **`BUILD FAILED`**. Checkstyle main/test는 통과했다. 테스트 보고서 242개, 1063건 실행·실패 9·오류 0·skip 0. `ArchitectureTest` 3건은 통과했다. 쿠폰 관련 34건은 이 실행에서도 통과했다.
+- **실패 9건은 이번 변경이 일으킨 회귀다.** `W6PreparationContextIntegrationTest` 1건과 `W6OrderConfirmedPublicationIntegrationTest` 8건이 컨텍스트 기동에 실패했다. 원인은 `Not a managed type: class com.loopers.domain.coupon.CouponCampaignModel`이다. 이 W6 보존 컨텍스트는 [발행 W7.4-1](../features/order-events/publication.md)에 따라 `53f912b`의 관리 타입 15개만 허용하고 W7 bean을 이름으로 제거한다. 새 쿠폰 JPA repository(제품 코드)와 test `CouponFixture`가 스캔돼 관리되지 않는 Entity를 요구했다.
+- 수정은 W7.4-1의 승인된 테스트 구성 계약을 바꾸는 일이므로 사용자 결정 전까지 보류했다. 회귀는 **미통과**이며 Q16은 충족되지 않았다. 별도 명시 작업인 W6 복구 O11(`w6OutboxRecoveryTest`)도 같은 initializer를 쓰지만 이번에는 실행하지 않았다.
+
+## 구현 1단계 후속 수정 — W6/W7 재현 컨텍스트의 쿠폰 격리 (2026-11-11)
+
+위 회귀 9건 실패는 당시 실행 기록으로 보존한다. Codex 검토 뒤 사용자가 아래 수정을 승인했다.
+
+### 수정
+
+- **W6 준비 컨텍스트:** test `CouponBeanIsolation`이 쿠폰 bean 정의 6개(`couponCampaignJpaRepository`·`couponCampaignRepositoryImpl`·`couponJpaRepository`·`couponRepositoryImpl`·`couponQueryRepositoryImpl`·`couponFixture`)의 정확한 이름 목록과 제거를 제공한다. `W6PreparationContextInitializer`의 Replacer가 W7 제거 뒤 이 목록을 제거하며, 이름이 하나라도 없으면 기동을 거절한다. 관리 타입 15개·Entity 12개·12개 테이블 기대값은 그대로이고, 조립 단언에 쿠폰 bean 부재를 더했다.
+- **O11 W7 기동:** `bootW7Api`에만 test `W7CouponIsolationInitializer`를 붙였다. 관리 타입을 W6 15개+`OrderConfirmedOutboxModel`로 제한하고 CCPP 뒤 BDRPP로 같은 쿠폰 정의만 제거한다. W7 제품 recorder·Outbox repository·relay·운영·전송은 그대로다. `assertW7Assembly`에 관리 타입 일치와 쿠폰 bean 부재를 더했다. 근거·경계는 [발행 W7.4-1·W7.4-2](../features/order-events/publication.md)에 반영했다.
+- **동시성 테스트 종료 처리:** test `WorkerTermination`이 executor 생성 즉시 미확인으로 세고, `awaitTermination`이 true일 때만 확인으로 친다. 시간 초과·대기 중 interrupt는 미확인을 영구히 남기고(interrupt 상태 복원), 뒤의 다른 종료 확인이 지우지 않는다. `shutdownNow`는 중단 요청으로만 다룬다. `CouponIssueTransactionIntegrationTest`의 @AfterEach는 이 상태가 안전할 때만 DB를 정리한다.
+- **주석:** 설계 절 번호·코드로 드러나는 설명을 줄이고, UPDATE 0건의 의미·stale 방지·LEFT JOIN 손상 감지·save 반환 객체 이유는 남겼다. `CouponFixture`는 기본 전파라 상위 TX에 참여할 수 있으므로 상위 TX 없이 호출해야 준비 commit이 보장된다고 바로잡았다.
+
+일반 테스트·제품 컨텍스트에는 위 초기화기를 붙이지 않는다. 일반 컨텍스트에서 쿠폰 repository·Entity를 사용하는 통합 테스트를 포함해 쿠폰·분류기 관련 34건이 통과했다.
+
+### 실행
+
+- 대상 실행: 2026-11-11 14:17:09~14:17:31 KST, `BUILD SUCCESSFUL`. `W6PreparationContextIntegrationTest` 1, `W6OrderConfirmedPublicationIntegrationTest` 8, 쿠폰 32, 분류기 2, `WorkerTerminationTest` 3 — 46건 실행·실패 0·skip 0. W6 준비 관리 타입 15개·테이블 12개(Outbox·쿠폰 없음)를 출력으로 확인했다.
+
+```sh
+./gradlew -Dorg.gradle.java.home="$JAVA_HOME" :apps:commerce-api:test --tests '*W6PreparationContextIntegrationTest' \
+  --tests '*W6OrderConfirmedPublicationIntegrationTest' --tests '*Coupon*' --tests '*ConstraintViolationClassifierTest' \
+  --tests '*WorkerTerminationTest' --rerun --no-build-cache
+```
+
+- O11: `./gradlew -Dorg.gradle.java.home="$JAVA_HOME" :apps:commerce-api:w6OutboxRecoveryTest`, 2026-11-11 14:17:40~14:18:08 KST, `BUILD SUCCESSFUL`. 작업이 실제 실행됐고(up-to-date 아님) 보고서 `apps/commerce-api/build/test-results/w6OutboxRecoveryTest/`에서 1건 실행·실패 0·skip 0. 새 worker의 자기 MySQL에서 시작 테이블 0개, W6 준비 뒤 API 12+streamer 2, W7 update 뒤 15개(기존 14 + `order_confirmed_outbox`)로 쿠폰 테이블이 없었다. PG 호출은 생성 2건 외 조회·callback 0이었고 실제 streamer 자식은 graceful 종료됐다. 기존 기대값(Outbox만 추가·14개 DDL/행 보존·멱등 복구)은 바꾸지 않았다.
+- 격리 없이 O11을 실행하면 쿠폰 테이블이 생겨 실패한다는 판단은 코드 경로에 근거한 예상이며, 격리 없이 실행해 관찰하지는 않았다.
+- 전체 일반 회귀: `./gradlew -Dorg.gradle.java.home="$JAVA_HOME" :apps:commerce-api:checkstyleMain :apps:commerce-api:checkstyleTest :apps:commerce-api:test --rerun --no-build-cache`, 2026-11-11 14:18:35~14:26:08 KST, `BUILD SUCCESSFUL`. 보고서 243개, 1066건 실행·실패 0·오류 0·skip 0. Checkstyle main/test 오류 0, `ArchitectureTest` 3건 통과. 이전 9건 실패 클래스도 통과했다. O11은 일반 test에서 제외되는 별도 작업이라 위 O11 실행으로 따로 확인했고 `check`로 중복 실행하지 않았다.
+
+### 1단계 충족 범위
+
+- Q16: 관련 기존 회귀·Checkstyle·ArchUnit·O11이 최종 코드에서 통과했고, 직접 DB 경쟁 worker는 종료 확인 뒤에만 테스트 DB를 정리한다. 1단계 범위의 Q16은 충족이며 후속 단계의 회귀는 각 단계에서 다시 확인한다.
+- Q1~Q5·Q13·Q15는 위 표의 DB 부분 근거만 확보했다. HTTP·Redis·Facade·응답 형식·TX 대역 분기와 Q6~Q12·Q14는 후속 단계다.
+
+## 구현 2단계 — Redis 수용 계층 (2026-11-11)
+
+### 범위
+
+- domain `CouponAdmissionRepository`(`tryAcquire(token, capacity)` → `Acquisition.ACQUIRED/FULL`, `release(token)` → 제거 수). Redis 오류·timeout·null·1/0 이외 응답은 결과값이 아니라 예외로 전달한다.
+- infrastructure `CouponAdmissionRedisRepository`: 기존 `redisTemplateMaster`(`RedisTemplate<String, String>`)를 qualifier로 주입한다. 키는 `commerce:coupon-admission:v1:permits` 하나이며 TTL을 두지 않는다. 획득은 `src/main/resources/redis/coupon-admission-acquire.lua`, 반환은 `SREM key token`이다.
+- Lua: 인자 수·빈 token·양의 정수 C를 검증하고, SISMEMBER → SCARD → SADD를 한 스크립트로 실행한다. 같은 token이면 1, `SCARD >= C`이면 0, 그 외 SADD 후 1이다. 입력·키 타입 오류는 첫 쓰기 전에 오류 응답이 된다.
+- application `CouponAdmissionService`: 공유 `AtomicBoolean accepting`(초기 false) 하나.
+  - `acquire`는 닫혀 있으면 저장소를 호출하지 않고 503을 반환한다. FULL은 429이며 수용을 닫지 않는다. 예외와 비정상 결과는 닫고 503이다.
+  - `release`(정상 실행의 첫 반환)는 예외를 던지지 않는다. 결과가 1이 아니거나 예외가 나면 로그를 남기고 닫는다.
+  - `status`·`close`·`open`을 제공한다.
+  - `cleanup(tokens)`는 열린 상태면 409를 반환하고, 입력 오류는 400 `INVALID_REQUEST`다. 지정 token을 차례로 SREM하고 제거 수를 합산한다. 도중 실패하면 닫고 503이며, 앞서 제거한 token은 되돌리지 않는다.
+  - 오류 로그에는 단계·token·확인된 결과(불명이면 불명)를 남긴다.
+- `ErrorType`: `COUPON_ADMISSION_FULL`(429), `COUPON_ADMISSION_UNAVAILABLE`(503), `COUPON_ADMISSION_OPERATION_REJECTED`(409).
+- 설정: `CouponAdmissionProperties`는 `commerce.coupon.admission.capacity`를 받는 record다(`@DefaultValue("3")`, 1 미만이면 기동 오류). `application.yml`에 공통 값 3을 명시했다. 기존 `@ConfigurationPropertiesScan`으로 등록된다.
+- 테스트 격리: test `CouponBeanIsolation` 목록에 `couponAdmissionRedisRepository`·`couponAdmissionService`를 더했다. 이 두 bean은 기동을 깨지 않지만 쿠폰 동작을 가진 bean이라 W6/O11 컨텍스트의 "쿠폰 bean 없음" 단언을 유지하기 위해 넣었다. 동작 없는 설정 바인딩은 제외 대상이 아니다. [발행 W7.4-1](../features/order-events/publication.md)의 목록 설명을 함께 고쳤다.
+- 제외: Facade·Controller·DTO·main 준비 코드·TTL·자동 재시도·우회·전체 실행 추적·Q9/Q10 로컬 Redis 장애 실험.
+
+### 실행 조건
+
+- JDK 21. 기존과 같이 명령에 `-Dorg.gradle.java.home="$JAVA_HOME"`을 붙였고, 전역 Gradle 설정은 바꾸지 않았다. Docker 29.7.2.
+- **실제 Redis endpoint:** 수용 통합 테스트는 실제 master template으로 `localhost:6379`, database 0, `redis_version` 7.0.15, `role:master`에 연결됐다. 이 주소는 Docker Compose 서비스 `redis-master`(image `redis:7.0`)의 기존 로컬 Redis다. 같은 JVM에서 `RedisTestContainersConfig`가 띄운 테스트 컨테이너는 이 컨텍스트에서 사용되지 않았다.
+  - 추정 원인: 이 fixture는 생성자에서 System property로 주소를 덮어쓰는데, `RedisProperties`가 그보다 먼저 바인딩되는 bean 생성 순서로 보인다. 실행으로 원인을 확인하지는 않았다.
+  - 상세설계 §7의 "테스트 fixture는 실제 생성한 컨테이너 주소로 덮어쓴다"는 문장과 다른 관찰이다. 기존 fixture라 이번 범위에서 수정하지 않았다.
+- 공유 로컬 Redis 보호:
+  - 각 테스트 시작 시 전용 키가 비어 있는지(`TYPE none`) 확인하고, 비어 있지 않으면 지우지 않고 실패하게 했다.
+  - 테스트가 만든 UUID token만 SREM했다. worker 종료를 확인하지 못하면 정리를 보류한다(`WorkerTermination`).
+  - 잘못된 키 타입 검증은 비어 있던 전용 키에 자기 marker 문자열을 쓰고, 값이 같을 때만 DEL했다.
+  - FLUSHALL·SCRIPT FLUSH·다른 키 삭제·pause는 하지 않았다.
+  - 실행 뒤 전용 키 `TYPE none`, `DBSIZE 0`, run_id `79b929f4…`를 확인했다. 수용 Lua 한 개가 서버 스크립트 캐시에 남는다.
+  - 테스트 중 8080 포트에 실행 중인 앱은 없었다.
+
+### 실제 관찰
+
+| 확인 | 결과 |
+|---|---|
+| 실제 Lua 실행 | 획득 뒤 스크립트 파일 SHA1(`a8c14a3e…`)에 대한 `SCRIPT EXISTS`가 true이고, Set에 해당 token이 생겼다. 반환은 실제 SREM 결과 1/0으로 확인했다. |
+| C=3 | 서로 다른 token 3개가 ACQUIRED, 4번째는 FULL이었다. 하나를 반환한 뒤 4번째가 ACQUIRED였다. |
+| 동시 경쟁 | 16개 token을 시작 신호로 동시 실행하는 회차를 5번 반복했다. 매 회차 ACQUIRED 3, FULL 13이었고, Set 구성원은 ACQUIRED token과 정확히 같았다. 회차마다 반환 후 키가 비었다. |
+| 같은 token | 재획득은 ACQUIRED이며 SCARD가 늘지 않았다. 가득 찬 상태에서도 자기 token은 ACQUIRED였다. |
+| 반환 반복 안전성 | 같은 token의 두 번째 반환과 없는 token 반환은 0이었고, 다른 활성 token 두 개는 남았다. |
+| TTL·시간 경과 | 키 TTL이 -1이었다. 2초 뒤에도 세 token이 유지됐고 새 token은 FULL이었다. |
+| Lua 입력 오류 | 빈 token, C=0, C=-1은 오류 응답이었고 키는 생기지 않았다. |
+| 잘못된 키 타입 | 실제 WRONGTYPE 오류로 서비스는 503을 반환하고 닫혔다. 키는 문자열 marker 그대로였다. |
+| 서비스(실제 Redis) | 기본 닫힘 상태에서는 Redis에 쓰지 않았다. 열린 상태에서 4번째 요청은 429였고 열림이 유지됐다. 반환 뒤 재획득이 됐고, 정상 첫 반환 1은 수용을 닫지 않았다. 외부에서 token을 제거한 뒤의 첫 반환 0은 닫았다. 닫힌 상태의 cleanup은 지정 token만 지웠고 반복 시 0이었으며 수용을 다시 열지 않았다. 열린 상태의 cleanup은 409였고 Set은 그대로였다. |
+| 서비스 분기(대역) | timeout(`QueryTimeoutException`), Redis 오류, 비정상 응답 예외, null 결과로 획득하면 503이고 닫히며 로그를 남겼다. 닫힌 뒤에는 저장소를 호출하지 않았다. 반환 0·예외는 예외 없이 로그를 남기고 닫았으며, 뒤늦은 반환 1은 수용을 다시 열지 않았다. cleanup은 열린 상태 거절이 입력 검증보다 먼저였다. null·빈 목록·null/빈/공백 token은 400이었다. 도중 실패하면 503이고 닫혔으며 뒤 token은 시도하지 않았다. |
+| 설정 | 생략하면 3, 1과 5는 그대로 바인딩됐다. 0, -1, 3.5, abc, 빈 값, 2147483648은 기동에 실패했다. 앱 YAML의 실제 값은 3이었다. |
+
+timeout과 불명 분기는 저장소 대역의 예외로 확인했다. 실제 Redis에서 관찰한 오류 경로는 WRONGTYPE과 Lua 입력 오류뿐이다. 실제 Redis 지연·timeout과 pause는 Q9·Q10 단계에서 다룬다.
+
+### 실행
+
+- 대상: `./gradlew -Dorg.gradle.java.home="$JAVA_HOME" :apps:commerce-api:test --tests '*CouponAdmission*' --rerun --no-build-cache`, 2026-11-11 14:43:09~14:43:27 KST. 서비스 단위 25, 설정 9, 실제 Redis 통합 14 — 48건 실행, 실패 0, skip 0.
+- O11: `./gradlew -Dorg.gradle.java.home="$JAVA_HOME" :apps:commerce-api:w6OutboxRecoveryTest --rerun --no-build-cache`, 14:44:10~14:44:38 KST, `BUILD SUCCESSFUL`. 작업이 실제 실행됐고 보고서 `apps/commerce-api/build/test-results/w6OutboxRecoveryTest/`에서 1건 실행, 실패 0, skip 0이었다. 격리 목록이 바뀌어 다시 실행했다.
+- 전체 일반 회귀 + Checkstyle: `./gradlew -Dorg.gradle.java.home="$JAVA_HOME" :apps:commerce-api:checkstyleMain :apps:commerce-api:checkstyleTest :apps:commerce-api:test --rerun --no-build-cache`, 14:44:48~14:52:29 KST.
+  - test 작업은 보고서 249개, 1114건 실행·실패 0·오류 0·skip 0이었다. `W6PreparationContextIntegrationTest` 1건과 `ArchitectureTest` 3건이 포함된다.
+  - **빌드 결과는 `BUILD FAILED`였다.** 원인은 `checkstyleMain`의 미사용 import 1건(`CouponAdmissionRedisRepository`의 `DefaultRedisScript`)이며, checkstyleTest 오류는 0이었다.
+  - import 한 줄을 지운 뒤 `checkstyleMain`·`checkstyleTest`와 `--tests '*CouponAdmission*' --tests '*ArchitectureTest'`를 `--rerun --no-build-cache`로 다시 실행했다(14:52:46~14:53:04 KST). Checkstyle main/test 오류 0, 51건 실행·실패 0·skip 0이었다.
+  - import 삭제는 바이트코드를 바꾸지 않으므로 1114건 전체 회귀는 다시 돌리지 않았다.
+
+### 설계 Q 대응 — 부분 근거
+
+| Q | 이번 근거 | 남은 검증 |
+|---|---|---|
+| Q7 | 실제 Redis에서 C=3 유지, 4번째 FULL, 반환 후 재획득, 동시 경쟁에서 한도 미초과를 확인했다. 수용 계층만의 부분 근거다. | 실제 발급 HTTP 요청, DB TX 전 barrier, 429의 DB 미진입, 쿠폰·발급 수, 최종 token 0 — Facade/API 단계 |
+| Q8 | 반복 반환·없는 token 반환·cleanup의 0이 정상이고 다른 token이 그대로임을 확인했다. 정상 첫 반환 0은 닫힘과 로그로 처리했다(실제 Redis와 대역 모두). | 업무 결과 유지, 사용자·캠페인과의 로그 연결 — Facade 단계 |
+| Q12 | TTL -1, 2초 경과 뒤에도 점유가 유지되고 새 token은 FULL이었다. | HTTP 경로의 시간 경과 확인은 후속 단계다. 이번 2초는 짧은 관찰이다. |
+| Q14 | 기본 닫힘, 닫힌 뒤 Redis 미호출, 열린 상태 cleanup 409, 반복 cleanup 안전성, 입력 검증 400, Redis 실패 후 닫힘 유지를 서비스 수준에서 확인했다. | 제어 API HTTP 경로, JSON 매핑 오류와의 구분, 진행 중 요청의 완료 확인 — API 단계 |
+| Q15 | C 생략 시 3, 잘못된 값의 기동 실패, 앱 YAML 값 3을 확인했다. | 준비 옵션 관련 항목 — 준비 코드 단계 |
+| Q16 | 전체 일반 회귀 1114건, O11, ArchUnit이 통과했고, 수정 뒤 Checkstyle 오류 0이다. 수용 테스트는 worker 종료를 확인한 뒤 자기 token만 정리했다. | 이후 단계마다 다시 확인 |
+
+Q9·Q10(로컬 Redis pause/unpause, 실제 앱 장애)은 이번에 수행하지 않았다. Q1~Q6·Q11·Q13은 이번 단계에서 새로 확인한 것이 없다.
+
+### 한계
+
+- 실제 Redis는 공유 로컬 master였다. 테스트 컨테이너 격리를 전제로 한 검증이 아니며, 같은 키를 쓰는 다른 프로세스가 없다는 것은 실행 시점의 관찰(8080 미사용, 시작 시 키 비어 있음)에 근거한다.
+- 서비스 로그에는 token·단계·결과만 있다. userId·campaignId·DB 결과와의 연결은 Facade 단계에서 추가하고 검증한다.
+- 동시 경쟁은 단일 JVM의 16개 스레드, 5회차다. C=3 이외의 용량이나 성능에 대한 주장이 아니다.
+
+## 구현 2단계 후속 — 수용 테스트의 Redis 연결 고정 (2026-11-11)
+
+위 2단계 실행은 공유 로컬 `redis-master`에서 실제로 관찰한 결과로 보존한다. 테스트 컨테이너 격리 검증으로는 취급하지 않는다. Codex 검토에 따라 아래와 같이 보완했다.
+
+### 원인 확인
+
+- 임시 관찰 테스트(실행 뒤 삭제)를 실제 컨텍스트에 넣고, BeanPostProcessor로 bean 초기화 순서와 그 시점의 System property를 기록했다.
+- 관찰 결과, `RedisProperties`가 `localhost:6379`로 바인딩되고 `redisConfig`, `masterRedisConnectionFactory`, `masterRedisTemplate`, `couponAdmissionRedisRepository`가 먼저 만들어졌다. 그때 `datasource.redis.master.port` System property는 비어 있었다.
+- 그 뒤에 `redisTestContainersConfig` 생성자가 실행되어 컨테이너 포트(관찰 시 57682)를 System property에 넣었지만, 이미 바인딩된 값은 바뀌지 않았다.
+- 컨테이너 자체는 static 초기화로 시작되지만 주소 덮어쓰기는 생성자에서 일어난다. 그래서 바인딩보다 늦은 경우 일반 컨텍스트는 test 프로필 값 localhost:6379를 쓴다. 비교하면 `MySqlTestContainersConfig`는 static 블록에서 System property를 설정한다.
+- 일반 컨텍스트에서 같은 순서가 늘 재현되는지는 이 한 번의 관찰로만 확인했다. 다른 Redis 사용 테스트의 연결 대상은 이번에 바꾸지 않았다.
+
+### 수정
+
+- `modules/redis` testFixtures의 `RedisTestContainersConfig`에 읽기용 static 메서드를 추가했다: `host()`, `port()`, `containerId()`, 그리고 컨테이너 안 `redis-cli INFO server`로 읽는 `serverRunId()`. 컨테이너 수명과 기존 생성자의 덮어쓰기 동작은 바꾸지 않았다.
+- `CouponAdmissionRedisIntegrationTest`:
+  - `@DynamicPropertySource`로 같은 fixture 컨테이너의 host·port를 master·replica 주소로 넣고, database는 0으로 넣는다. 새 컨테이너나 template은 만들지 않는다.
+  - 매 테스트의 첫 Redis 명령 전에 연결 대상을 확인한다.
+    - 바인딩된 master·replica 주소와 database가 컨테이너와 일치하는지
+    - master template의 팩토리가 `ReadFrom.MASTER`이고 database가 0인지
+    - template 연결로 받은 `run_id`가 컨테이너 안에서 직접 읽은 `run_id`와 같은지
+    - `role`이 master인지
+  - 정적 master/replica 팩토리는 노드 목록 getter가 없다. 그래서 주소는 바인딩 값으로, 실제 연결 서버는 `run_id`로 대조한다.
+  - 하나라도 다르면 Redis에 쓰지 않고 준비 실패(예외)로 끝난다. 로컬 대상으로 대체 연결하거나 skip하지 않는다.
+  - 대상 확인 전에 끝난 경우 `@AfterEach`는 어떤 Redis 명령도 보내지 않는다.
+- 주석과 표시 이름의 "실제 Redis(테스트 컨테이너)"를 실제 근거에 맞게 "fixture 컨테이너"로 고쳤다. 기존 검증 항목과 기대값은 바꾸지 않았다.
+
+### 실행
+
+- 명령:
+
+```sh
+./gradlew -Dorg.gradle.java.home="$JAVA_HOME" :apps:commerce-api:checkstyleMain :apps:commerce-api:checkstyleTest :apps:commerce-api:test \
+  --tests '*CouponAdmission*' --tests '*ProductCache*' --tests '*ProductFacadeIntegrationTest' --tests '*BrandFacadeIntegrationTest' \
+  --tests '*ProductV1ApiE2ETest' --tests '*LikeV1ApiE2ETest' --tests '*CustomerPurchaseFlowE2ETest' \
+  --tests '*AfterCommitRunnerIntegrationTest' --tests '*ArchitectureTest' --rerun --no-build-cache
+```
+
+- 결과: 2026-11-11 15:04:13~15:05:27 KST, `BUILD SUCCESSFUL`.
+  - 보고서 42개, 142건 실행·실패 0·오류 0·skip 0.
+  - 이 중 쿠폰 수용 테스트는 서비스 25, 설정 9, fixture Redis 14건이다.
+  - `ArchitectureTest` 3건 통과, Checkstyle main/test 오류 0.
+- 연결 근거(테스트 출력):
+  - `master=localhost:57778`, database 0
+  - 컨테이너 `24a8405421188473…`
+  - `containerRunId`와 `connectedRunId`가 모두 `917757b13e0068bde867b2d6405c0cb2dbdba824`로 같았다
+  - `redis_version` 8.10.1, `role` master
+  - 같은 시각 공유 로컬 `redis-master`의 run_id는 `79b929f4…`로 이와 다르다.
+- 공유 로컬 Redis 상태: 실행 뒤 run_id가 그대로였고, 전용 키는 none, DBSIZE 0이었다. 정리·중단·FLUSHALL·SCRIPT FLUSH는 하지 않았다.
+- 재실행 범위의 근거:
+  - fixture 변경은 읽기용 static 메서드 추가뿐이다. 다른 테스트의 컨텍스트 구성과 연결 대상은 바뀌지 않는다.
+  - 그래서 Redis를 쓰는 관련 테스트(상품 캐시·상품/브랜드 Facade·상품/좋아요/구매 E2E·AfterCommit)와 Checkstyle·ArchUnit만 다시 실행했다.
+  - 전체 일반 회귀는 2단계 실행(1114건, 실패 0)과 비교해 제품 코드 변화가 미사용 import 삭제뿐이라 다시 돌리지 않았다.
+  - O11은 이 fixture 메서드나 쿠폰 테스트를 사용하지 않아 다시 돌리지 않았다.
+- Checkstyle은 commerce-api에만 적용된다. `modules/redis` testFixtures의 변경은 Checkstyle 대상이 아니며, 컴파일과 위 실행으로만 확인했다.
+
+### 2단계 충족 범위 재판단
+
+- 수용 계층의 Q7·Q8·Q12 부분 근거는 이제 테스트 소유 컨테이너에서 확인됐다. 공유 로컬 Redis 결과에 의존하지 않는다.
+- Q16(2단계):
+  - 관련 Redis 회귀·Checkstyle·ArchUnit은 이번 실행으로 통과했다. 쿠폰 수용 테스트는 worker 종료 확인 뒤 자기 token만 정리했다.
+  - 전체 일반 회귀는 앞 실행의 1114건 통과를 근거로 한다. 그 보고서는 이후 필터 실행에 덮어써져 원본 XML이 남아 있지 않다. 집계와 시각은 위 2단계 절의 기록이다.
+  - 따라서 2단계 Q16은 "관련 범위 충족, 전체 회귀 원본 보고서 미보존"으로 판단한다.
+- 남은 점:
+  - 다른 일반 Redis 사용 테스트도 같은 순서로 공유 로컬 6379에 연결될 수 있다. 공통 fixture의 동작을 고치면 모든 테스트에 전역 영향이 있어 이번 범위에서 다루지 않았다.
+  - 상세설계 §7의 "테스트 fixture는 실제 생성한 컨테이너 주소로 덮어쓴다" 문장도 일반 컨텍스트에서는 관찰과 다르다.
+- 앞으로 실행별 요약·보고서는 로컬 `docs/week8/verification/runs/<날짜-단위>/`에 복사해 보존한다.
+
+## 구현 3단계 — Facade·고객/제어 API (2026-11-11)
+
+### 범위
+
+- application `CouponFacade`:
+  - 상위 `@Transactional` 없이 생성자에서 받은 `PlatformTransactionManager`로 읽기(readOnly)·쓰기 `TransactionTemplate`을 한 번씩 만든다. 요청마다 설정을 바꾸지 않는다.
+  - 순서: 사전 읽기 TX → 실행별 UUID token으로 Redis 획득 → 쓰기 TX → 필요한 후속 읽기 TX → 종료 확인 뒤 token 반환.
+  - 쓰기 TX: `reserveOne`(첫 업무 SQL) → scalar `findIssueData` → `save`의 반환 객체에서 값을 복사한다.
+  - 각 TX 호출은 콜백 첫 부분에서 진입을 표시하고, 업무 SQL 전에 afterCompletion을 등록한다. 이 관찰로 미시작·commit·rollback·종료 불명을 판정하며, 예외 종류보다 이 판정을 먼저 적용한다.
+  - 판정 관찰은 private 중첩 클래스 하나에 둔다. 공유 Map·진행 수·불명 플래그·잠금은 없다.
+- 후속 읽기:
+  - UPDATE 0건이면 새 읽기에서 기존 쿠폰 → 캠페인 없음 404 → 비활성 409 → 품절 409 → 설명 불가 500 순으로 판별한다.
+  - 정확한 `uk_coupon_campaign_user` 충돌만 기존 결과 조회로 연결한다.
+  - 다른 제약·CHECK·기술 오류는 원래 오류로 끝낸다.
+- 종료 불명이면 token을 유지하고 수용을 닫으며, 로그를 남기고 500을 반환한다. 그 밖에는 token을 한 번 반환한다.
+  - 반환 실패나 정상 첫 반환 0은 확정된 업무 결과를 유지한다. 대신 token·userId·campaignId·결과를 로그로 남기고 수용을 닫는다.
+  - 이를 위해 `CouponAdmissionService.release`가 정상 반환 여부(boolean)를 돌려주도록 바꿨다. 동작은 2단계와 같다.
+- 수용 불가 503에서는 Facade가 token·userId·campaignId를 경고 로그로 남긴다. 획득 오류의 상세는 수용 서비스 로그에 같은 token으로 남는다.
+- interfaces `CouponV1Controller`·`CouponV1ApiSpec`·`CouponV1Dto`:
+  - `POST /api/v1/coupon-campaigns/{campaignId}/issues`: 본문 없음. created면 201, 아니면 200이며 다섯 필드를 반환한다.
+  - `GET /api/v1/coupons`: 기존 `PageResponse`·`PageCommand`·`ListSort`를 쓰고, 각 항목에 `createdAt`(UTC·마이크로초 6자리·Z 문자열)을 더한다.
+- interfaces `CouponAdmissionController`·`CouponAdmissionApiSpec`·`CouponAdmissionDto`: `GET /api/coupon/admission`, `POST .../close·cleanup·open`.
+  - `@Profile`·키·로그인이 없고, Facade를 거쳐 같은 수용 서비스를 쓴다.
+  - cleanup 본문은 `{"tokens":[...]}`다.
+- `ErrorType`: `COUPON_CAMPAIGN_NOT_FOUND`(404), `COUPON_CAMPAIGN_INACTIVE`(409), `COUPON_CAMPAIGN_SOLD_OUT`(409).
+- test:
+  - TX 관리자 대역 `ScriptedTransactionManager`.
+  - 실제 저장소에 위임하는 붙잡기 decorator `HoldingAdmissionRepository`.
+  - fixture Redis 고정·대조 도우미 `CouponRedisTarget`(2단계 테스트의 대조 코드를 옮김).
+  - `WorkerTermination` public화.
+  - `CouponBeanIsolation`에 `couponFacade`·`couponV1Controller`·`couponAdmissionController`를 추가하고, [발행 W7.4-1](../features/order-events/publication.md)의 목록 설명도 고쳤다.
+- 제외: main 준비 코드(4단계), Q9/Q10 pause·수동 복구, Q6 실제 응답 유실, Q11 실제 HTTP timeout/연결 종료(5단계).
+
+### 실행 조건
+
+- JDK 21 명령 옵션은 기존과 같다.
+- 쿠폰 Redis 통합 테스트 3개 클래스는 `@DynamicPropertySource`로 fixture 컨테이너 주소를 넣는다. 매 테스트의 첫 Redis 명령 전에 바인딩 주소·DB·팩토리 MASTER 읽기·run_id(template 연결 vs 컨테이너 직접 조회)·role을 대조한다.
+  - 전체 회귀에서 관찰한 값: `localhost:61375`, 컨테이너 `40217fcb…`, run_id `5e8d775d085cff36c9dc6be66e62af9ece564cfb`가 양쪽에서 같았다. Redis 8.10.1, master.
+  - 공유 로컬 `redis-master`의 run_id(`79b929f4…`)는 실행 뒤에도 그대로였고, 전용 키는 none이었다.
+- 앱 수용량은 기본 C=3이다. Facade 통합 테스트는 앱 bean과 별개인 수용 서비스 인스턴스를 사례별 C로 조립했다(Q4는 C=8, Q3은 C=2).
+- **정리 순서**: 붙잡기 해제 → worker 종료 확인(`WorkerTermination`) → 이 테스트가 Redis에 보낸 token만 SREM → DB truncate. 종료를 확인하지 못하면 정리를 보류한다. HTTP 요청의 서버 측 처리 종료는 decorator가 관찰한 반환 호출(Facade의 마지막 단계)과 응답 수신으로 확인했다.
+
+### 실제 관찰
+
+| 확인 | 결과 |
+|---|---|
+| Q1·Q2 HTTP | 최초 201과 재요청 200이 같은 다섯 필드·같은 couponId였다. 쿠폰 1·발급 수 1이었고, 재요청은 Redis token을 쓰지 않았다. 비활성·품절·수용 닫힘 뒤에도 기존 쿠폰은 200이었다. 이름은 바뀐 현재 이름, 혜택은 저장된 FIXED_AMOUNT 5000이었다. |
+| 업무 거절 | 캠페인 없음 404, 비활성 409, 품절 409였고 쿠폰은 생기지 않았다. token 3개를 판별 뒤 반환했고 수용은 열린 채였다. |
+| 식별 | 헤더 없음 400 `INVALID_REQUEST`, 없는 사용자 404 `USER_NOT_FOUND`. 두 경우 모두 Redis 미호출이었다. |
+| 우선순위 | 닫힌 상태에서는 없는 캠페인도 503(Redis 미호출)이었다. 자리 3개를 미리 채우면 없는 캠페인도 429였고 수용은 열린 채였다. |
+| Q3 | 같은 사용자의 두 실행이 실제 ACQUIRED 뒤·쓰기 TX 전에 함께 붙잡혔다가 놓였다. 잔여량이 있을 때는 reserveOne `[1, 1]`이었고, 유일 제약 충돌 뒤 기존 결과 STORED가 같은 couponId로 돌아왔다. 마지막 한 장에서는 `[1, 0]`이었고 UPDATE 0건 뒤 새 읽기에서 STORED를 받았다. 두 경우 모두 쿠폰 1·발급 수 1·반환 2·키 비어 있음이었다. |
+| Q4 | 총량 5·사용자 8·C=8에서 8개 실행이 모두 붙잡힌 상태로 Set 8개·발급 수 0을 확인한 뒤 놓았다. 결과는 발급 5, 품절 409 3, 발급 수 5, 쿠폰 5, 반환 8, 키 none이었다. Redis 거절은 없었다. |
+| Q5 | 실제 reserveOne 1건 뒤 저장 단계에 실패를 주입했다. 주입한 예외가 그대로 전파됐고 발급 수 0·쿠폰 0(증가분 rollback)이었다. token은 반환됐고 수용은 열린 채였으며, 다음 요청은 정상 발급(발급 수 1)됐다. 실패는 save 호출 직전 test 저장소가 던진 것이며 실제 INSERT SQL 오류는 아니다. 실제 INSERT 실패 경로는 Q3의 유일 제약 충돌이다. |
+| Q7 HTTP | 실제 Redis C=3. 서로 다른 사용자 세 요청이 실제 ACQUIRED 직후·쓰기 TX 전에 붙잡힌 동안 Set은 붙잡힌 token 3개와 같았고 발급 수·쿠폰은 0이었다. 넷째 요청은 429 `COUPON_ADMISSION_FULL`이었고 발급 수 0·그 사용자 쿠폰 0·Set 3이었다. 하나를 놓아 서버 측 반환 1건을 관찰한 뒤 Set은 2였고, 넷째 재요청은 201이었다. 나머지를 놓은 뒤 붙잡혔던 세 요청은 모두 201, 최종 쿠폰 4·발급 수 4·반환 4·키 none·수용 열림이었다. |
+| FULL 뒤 | 429 이후 사전 조회 1회 외에 DB 조회·reserveOne은 없었다. 수용은 열린 채였고 반환 호출도 없었다. |
+| 목록 Q1·Q15 | 본인 쿠폰 3개만 나왔고 타인 쿠폰은 없었다. latest는 저장 시각 내림차순이고 같은 시각이면 ID 내림차순, oldest는 그 반대였다. `createdAt`은 `2026-11-10T09:30:00.123456Z`로 DB 저장값에 `Z`를 붙인 값과 같았고, 반복 조회에서도 같았다. 이름은 현재 이름, 혜택은 저장값이었다. 빈 목록은 200, size 0과 101은 `INVALID_PAGE_REQUEST`, 정렬 오류는 `INVALID_SORT`였다. |
+| 제어 Q14 HTTP | close·open은 반복할 수 있었고, GET이 같은 공유 값을 보였다. 닫힌 뒤 신규 발급은 503이고 Redis와 발급 TX를 호출하지 않았다. 열린 상태 cleanup은 409 `COUPON_ADMISSION_OPERATION_REJECTED`였고 Set은 그대로였다. 닫힌 상태 cleanup은 지정 token만 지웠고(removedCount 1, 반복 시 0, 다른 token 유지) 수용을 다시 열지 않았다. 빈 목록·빈 문자열·null 요소·tokens 없음은 400 `INVALID_REQUEST`, 깨진 JSON·타입 불일치는 400 `Bad Request`였다. |
+| TX 대역 Q13·Q11 일부 | 쓰기 콜백에서 afterCompletion 등록이 수락됐다(대역 기록 `[0, 1]`). 분기별 결과는 아래와 같다. |
+
+TX 대역 분기별 결과:
+
+- TX 시작 실패(콜백 미진입): 저장소 미호출, 예외 전파, token 반환, 수용 유지.
+- commit UNKNOWN, 통지 없는 commit 실패: 500, token 유지, 수용 닫힘. 로그에 token·userId·campaignId·단계·`result = 불명`이 남았다.
+- COMMITTED 뒤 예외: 확보한 결과가 있으면 CREATED를 유지하고 token을 반환했다. 결과가 없으면 500이고 token을 반환했다.
+- UPDATE 0건이나 정확한 유일 제약 신호가 있어도 rollback이 UNKNOWN이면 500·token 유지·닫힘이었다. 후속 읽기는 하지 않았다.
+- CHECK 위반은 원래 예외 그대로였고 후속 읽기가 없었다.
+- 후속 읽기 UNKNOWN: 500·token 유지·닫힘. 후속 읽기 시작 실패: 앞선 rollback 확인을 유지하고 token을 반환했다. 후속 읽기의 업무 거절은 409.
+- Q8 대역: 반환 0이나 반환 예외에서도 CREATED는 유지되고 수용이 닫혔으며 로그에 사용자·캠페인·결과가 남았다. 업무 거절 뒤 반환 실패에서도 원래 404를 유지했다.
+
+### 실행
+
+- 대상(개발 중 단계별 실행): TX 대역 16건(시각 미기록), Facade 통합 6건(15:20:26~15:20:40), HTTP 12건(15:22:42~15:23:05). 모두 실패·skip 0이다.
+- **전체 회귀 1차** (`checkstyleMain checkstyleTest test --rerun --no-build-cache`), 15:23:16~15:30:57 KST: **BUILD FAILED**.
+  - 보고서 257개, 1136건 중 6건 실패, 오류·skip 0. `OrderOutboxRelaySchedulerLifecycleTest` 5건과 `PgPaymentMigrationIntegrationTest` 1건이다.
+  - 원인은 모두 컨텍스트 기동 중 MySQL `Too many connections`였다. 쿠폰 통합 테스트 3개 클래스가 각자 별도 컨텍스트를 만들고, 각 컨텍스트가 연결 풀을 유지한 채 캐시되면서 테스트 MySQL의 연결 한도를 넘었다.
+  - 원시 보고서: `docs/week8/verification/runs/2026-11-11-stage3/full/`.
+- **수정**: 위 세 클래스에 `@DirtiesContext(classMode = AFTER_CLASS)`를 붙여, 클래스가 끝나면 컨텍스트를 닫고 풀을 반납하게 했다. 프로젝트의 기존 사용 예는 `PaymentHttpTestSupport`다. 테스트 기대값은 바꾸지 않았다.
+- **전체 회귀 2차** (같은 명령), 15:31:43~15:39:39 KST: `BUILD SUCCESSFUL`.
+  - 보고서 257개, 1148건 실행·실패 0·오류 0·skip 0. Checkstyle main/test 오류 0, `ArchitectureTest` 3건 통과.
+  - 쿠폰 관련 건수: 서비스 25, 설정 9, 수용 Redis 14, TX 대역 16, Facade 통합 6, HTTP 12, 1단계 쿠폰 테스트들, `W6PreparationContextIntegrationTest` 1.
+  - 1차의 1136건과의 차이는 실패한 클래스가 기동 오류로 일부 테스트만 집계된 데서 생겼다.
+  - 원시 보고서: `runs/2026-11-11-stage3/full-2/`.
+- **O11** (`w6OutboxRecoveryTest --rerun --no-build-cache`), 15:39:50~15:40:18 KST: `BUILD SUCCESSFUL`, 1건 실행·실패/오류/skip 0. 격리 목록이 바뀌어 다시 실행했다. 원시 보고서: `runs/2026-11-11-stage3/o11/`.
+
+### 설계 Q 대응
+
+| Q | 이번 근거 | 남은 검증 |
+|---|---|---|
+| Q1 | HTTP 식별 오류, 최초 201·쿠폰 1·발급 수 1, 본인 목록의 같은 ID, 타인 비노출 | — |
+| Q2 | 201·200 다섯 필드·같은 ID·추가 효과 0, 비활성·품절·닫힘 뒤 기존 결과, 현재 이름·과거 혜택 | — |
+| Q3 | 실제 MySQL·Redis에서 두 경로(`[1,1]` 유일 제약, `[1,0]` UPDATE 0) | — |
+| Q4 | 총량 5·8명·C=8: 발급 5·품절 3·쿠폰 5·발급 수 5 | — |
+| Q5 | 실제 증가 뒤 저장 단계 실패 주입·rollback·token 반환 | 실제 INSERT SQL 오류 주입은 아니다. 실제 INSERT 실패는 Q3 유일 제약 경로로 확인했다. |
+| Q6 | 없음. 순차 재요청 200은 Q2 근거일 뿐 응답 유실 검증이 아니다. | 5단계 |
+| Q7 | HTTP·실제 Redis C=3·barrier·429 DB 미진입·반환 뒤 재수용·최종 쿠폰 4/발급 수 4/token 0 | — |
+| Q8 | 반복·없는 token·cleanup 0(2·3단계), 정상 첫 반환 0과 반환 예외의 결과 유지·닫힘·로그(대역) | 실제 Redis pause 반환 장애는 Q10(5단계) |
+| Q11 | 대역의 UNKNOWN·통지 없음 → token 유지·로그·닫힘 | 실제 HTTP timeout·연결 종료(5단계) |
+| Q12 | 2단계 수용 계층 관찰 유지 | HTTP 경로 시간 경과(5단계에서 함께) |
+| Q13 | Redis 호출 중 TX 없음(구조), 증가+INSERT 동일 TX(Q5 rollback), INSERT 전 재조회 없음(Facade 쓰기 코드 확인. Facade 경로 SQL 캡처는 하지 않았고, 같은 순서의 SQL 관찰은 1단계 test 조합 기록), CHECK 위반 미변환·named unique 식별, 미시작·COMMITTED+예외 대역 | — |
+| Q14 | 제어 HTTP, 열린 상태 cleanup 거절, 반복 정리, JSON/입력 오류 구분, 닫힌 신규 요청의 Redis·DB 미진입 | 진행 중 요청의 수동 완료 확인·장애 뒤 재개(5단계). 기본 닫힘은 서비스 단위 테스트로만 확인했다(공유 컨텍스트라 HTTP에서는 확인하지 않음). |
+| Q15 | 응답 필드·createdAt 형식·안정 정렬·페이지 오류 | 준비 옵션 관련 항목(4단계) |
+| Q16 | 2차 전체 회귀 1148건·Checkstyle·ArchUnit·O11 통과, 자기 자원만 정리 | 단계마다 다시 확인 |
+
+### 한계
+
+- "Redis 호출 중 TX 없음"은 코드 구조(사전 읽기 template 종료 뒤 획득)로 근거를 댄다. 연결 점유를 계측하지는 않았다.
+- TX 대역 결과는 실제 드라이버·네트워크의 UNKNOWN 재현이 아니다.
+- 로그에 사용자·캠페인·결과가 연결되는 것은 대역 테스트의 출력으로 확인했다. 운영 로그 수집은 다루지 않았다.
+- 세 쿠폰 통합 클래스는 클래스마다 컨텍스트를 새로 띄운다. 연결 한도 문제를 피하는 대신 실행 시간이 늘어난다.
+
+## 구현 3단계 후속 — HTTP 테스트 정리 근거와 Q13 Facade 관찰 (2026-11-11)
+
+Codex 검토 뒤 사용자가 요청한 두 보완이다. 제품 코드와 격리 구성은 바꾸지 않았고 test만 수정했다. 위 3단계 절의 최초 회귀 실패와 수정 뒤 통과 기록은 그대로 둔다.
+
+### 보완 1 — HTTP 테스트 실패 경로의 정리
+
+- 문제: `CouponApiE2ETest`의 정리는 클라이언트 worker 종료만 확인했다. 연결 실패 등으로 client future가 끝나도 서버의 발급 TX는 계속될 수 있다. Q7의 반환 관찰은 정상 경로에만 있었다.
+- 수정:
+  - test `HoldingAdmissionRepository`가 token별 획득 결과(진행 중·ACQUIRED·FULL·예외)를 기록한다.
+  - "서버 종료 근거가 없는 token"은 진행 중이거나 예외로 끝난 획득, 그리고 반환이 관찰되지 않은 ACQUIRED다.
+  - 새 test `ServerSettlement`가 모든 HTTP 호출을 감싸고, 응답을 받지 못한 요청과 500 응답을 미확인으로 기록한다. 미확인 기록은 지워지지 않는다.
+  - `@AfterEach` 순서: 붙잡기 해제 → 클라이언트 worker 종료 확인 → 서버 미확인 token이 사라지길 유한하게(10초) 대기 → 사유가 하나라도 남으면 token 제거·DB 초기화를 하지 않고 사유·보낸 token을 담은 예외로 끝낸다. JUnit은 원래 실패를 유지하고 이 예외를 함께 보고한다.
+  - 테스트가 직접 넣은 점유 token은 서버 실행이 아니므로 판단에서 뺀다.
+- 근거로 쓰지 않는 것: client future 실패·timeout·cancel, `shutdownNow`, 빈 Set, 500. 획득 예외로 끝난 503도 token이 늦게 추가될 수 있어 미확인으로 남는다. 닫힘 503은 획득 호출이 없으므로 미확인 사유가 생기지 않는다.
+- 제품에 실행 Map·카운터·필터·hook은 추가하지 않았다. 관찰은 기존 test decorator와 응답 수신만 쓴다.
+- 실패 분기 검증: `ServerSettlementTest` 8건. 실제 DB·Redis 없이 메모리 점유 대역으로 확인했으며, 확인한 분기는 아래와 같다.
+  - 반환과 응답이 모두 있으면 정리 허용. FULL만 받은 실행도 허용.
+  - 반환이 없으면 유한 대기 뒤 미확인. 대기 중 늦게 반환되면 허용.
+  - 획득 예외는 뒤의 다른 실행이 성공해도 미확인으로 남는다.
+  - 응답 없음은 원래 예외를 그대로 던지고, 이후 모든 token이 반환돼도 미확인으로 남는다.
+  - 500은 미확인. 진행 중 획득은 미확인이었다가 끝나고 반환되면 허용.
+  - 테스트 소유 token은 판단에서 제외.
+- 한계: 실제 HTTP 연결 실패를 일으켜 E2E의 정리 보류가 실행되는 장면은 재현하지 않았다. 판단 로직은 위 단위 테스트로, 연결은 E2E 12건의 정상 경로(모든 사례에서 판단을 통과해 정리)로 확인했다. 뒤 사례의 차단 방식은 아래 "정리 보류 상태 유지" 절에서 정정했다. 처음 쓴 "빈 키 검사에서 실패한다"는 설명은 틀렸다. 응답을 잃은 요청이 아직 token을 만들지 않았으면 키가 비어 있어 차단되지 않는다.
+
+### 보완 2 — Q13 실제 Facade 실행 근거
+
+- `CouponFacadeIntegrationTest`에 실제 MySQL·fixture Redis로 Facade 정상 발급 한 건을 관찰하는 사례를 더했다. 컨텍스트 속성으로 기존 `SqlCapture`를 켰다.
+- 획득·반환 위임 직전 스레드 상태는 `TransactionSynchronizationManager` 기준으로 두 번 모두 `isActualTransactionActive=false`, `isSynchronizationActive=false`, 바인딩 자원 0개였다.
+- SQL 구간은 획득 시점과 반환 시점을 경계로 나눴다(소문자 정규화).
+  - 사전 조회 1문장: `select … from coupon cm1_0 left join coupon_campaign ccm1_0 on … where cm1_0.user_id=? and cm1_0.campaign_id=?`
+  - 쓰기 구간 3문장:
+    1. `update coupon_campaign set issued_count = issued_count + 1, updated_at = ? where id = ? and status = 'active' and issued_count < total_quota`
+    2. `select ccm1_0.id,ccm1_0.name,ccm1_0.benefit_type,ccm1_0.benefit_value from coupon_campaign ccm1_0 where ccm1_0.id=?`
+    3. `insert into coupon (…) values (…)`
+- 단언:
+  - 조건부 UPDATE가 쓰기 구간의 첫 SQL이고, 이어서 scalar 조회와 INSERT가 온다.
+  - INSERT 전에 `user_id=?` 조건의 쿠폰 재조회가 없다.
+  - 쓰기 구간의 UPDATE는 조건부 UPDATE 하나뿐이다(캠페인 stale 덮어쓰기·쿠폰 UPDATE 없음).
+- 이번 실행에서 `save`의 merge 경로 PK 조회(`where id=?`)는 관찰되지 않았다. 단언은 PK 조회와 금지한 사용자·캠페인 재조회를 구분한다. 즉 PK 조회가 생겨도 실패하지 않고, `user_id=?` 재조회만 실패로 본다.
+- 한계: TX 비활성과 바인딩 자원 0은 스레드 상태 관찰이다. 연결 풀 점유량이나 대기 시간은 계측하지 않았고, 연결 풀 성능 검증이 아니다. 정상 발급 한 건의 관찰이며 실패 분기의 SQL은 캡처하지 않았다.
+
+### 실행
+
+- `./gradlew -Dorg.gradle.java.home="$JAVA_HOME" :apps:commerce-api:checkstyleMain :apps:commerce-api:checkstyleTest :apps:commerce-api:test --tests '*ServerSettlementTest' --tests '*CouponFacadeIntegrationTest' --tests '*CouponApiE2ETest' --tests '*ArchitectureTest' --rerun --no-build-cache`
+- 2026-11-11 15:52:13~15:52:44 KST, `BUILD SUCCESSFUL`. 30건 실행·실패 0·오류 0·skip 0.
+  - 정리 판단 단위 8, Facade 통합 7(기존 6 + Q13 1), HTTP 12, ArchUnit 3.
+  - Checkstyle main/test 오류 0.
+  - Q3·Q4·Q7 출력은 3단계 기록과 같았다.
+- 원시 보고서: 로컬 `docs/week8/verification/runs/2026-11-11-stage3-fix/targeted/`.
+- 전체 회귀·O11을 다시 돌리지 않은 근거:
+  - 제품 코드·`CouponBeanIsolation`·공통 fixture는 바뀌지 않았다.
+  - 바뀐 test 지원 코드(`HoldingAdmissionRepository`·`ServerSettlement`)는 이번에 실행한 세 클래스만 사용한다.
+  - `CouponFacadeIntegrationTest`의 컨텍스트 속성 추가는 그 클래스 전용 컨텍스트(`@DirtiesContext(AFTER_CLASS)`)에만 영향을 준다.
+  - 직전 전체 회귀(1148건)와 O11 결과는 3단계 절의 기록이다.
+
+### Q 대응 갱신
+
+- Q13: 위 3단계 표의 "Redis 호출 중 TX 없음(구조)"·"INSERT 전 재조회 없음(코드 확인)" 근거를 실제 Facade 실행 관찰로 보강했다. 연결 풀 계측은 여전히 없다.
+- Q16: HTTP 테스트도 서버 측 종료 근거 없이는 정리하지 않도록 바꿨다. 실제 연결 실패에서 정리를 보류하는 장면은 단위 테스트 수준의 근거다.
+
+
+## 구현 3단계 후속 — HTTP 테스트 정리 보류 상태 유지 (2026-11-11)
+
+- **문제**: 이전 수정에서는 `CouponApiE2ETest.setUp`이 키가 비어 있으면 판단 기록을 새로 만들고 수용을 다시 열었다. 응답을 잃은 요청이 아직 사전 DB 조회 중이라 Redis token이 없으면, 앞 사례가 정리를 보류했어도 다음 사례가 그 기록을 지울 수 있었다.
+- **수정**(test만, 제품 코드·격리 구성 불변):
+  - `ServerSettlement`를 사례마다 새로 만들지 않고 HTTP 테스트 컨텍스트의 bean으로 두었다. 보류 사유 목록을 그 bean에 남긴다.
+  - `confirmCleanupOrWithhold`가 정리 직전 판단을 맡는다. 다음 경우 보류 사유를 남기고 예외로 끝나며, 호출자는 token 제거와 DB 초기화를 하지 않는다.
+    - 이미 보류된 컨텍스트
+    - 클라이언트 worker 종료 미확인
+    - 서버 종료 근거 없음
+    - 확인 대기 중 interrupt(interrupt 상태는 복원한다)
+  - `setUp`은 첫 줄에서 `requireNotWithheld()`를 호출해, 보류된 컨텍스트면 Redis 대상 확인·키 검사·fixture 준비·기록 초기화·수용 열기 전에 실패한다.
+  - `@BeforeEach`가 실패해도 실행되는 `@AfterEach` 역시 같은 판단에서 바로 예외로 끝나 정리하지 않는다. `reset()`도 보류 상태에서는 실패해 기록을 지우지 않는다.
+- **해제 조건**: 빈 Set이나 같은 컨텍스트의 다른 요청 성공으로는 풀리지 않는다. 새 컨텍스트는 새 bean이라 이전 컨텍스트의 보류와 섞이지 않는다. 이 클래스는 `@DirtiesContext(AFTER_CLASS)`로 클래스가 끝나면 컨텍스트를 닫는다. 보류 사유는 테스트 출력(예외 메시지)으로만 남고 컨텍스트 밖에 저장하지 않는다.
+- **검증**: `ServerSettlementTest`에 4건을 더했다(총 12건). 대역만 쓰며 실제 HTTP 요청이나 DB 작업은 만들지 않는다.
+  - 응답 없음이고 token도 없는 상태에서 첫 정리를 보류한다. 그 뒤 다른 요청이 정상 반환되고 응답 201을 받아도, 다음 사례의 시작 확인·기록 초기화·정리가 모두 막힌다.
+  - worker 종료 미확인이면 보류하고 유지한다.
+  - 대기 중 interrupt면 보류하고 interrupt 상태를 복원한다.
+  - 근거가 모두 있으면 보류가 생기지 않고, 새 객체(새 컨텍스트)는 이전 보류와 무관하다.
+  - 기존 8건(정상 정리·늦은 반환·획득 불명·응답 없음·500·진행 중 획득·테스트 token 제외)은 그대로다.
+- **실행**: `./gradlew -Dorg.gradle.java.home="$JAVA_HOME" :apps:commerce-api:checkstyleMain :apps:commerce-api:checkstyleTest :apps:commerce-api:test --tests '*ServerSettlementTest' --tests '*CouponApiE2ETest' --tests '*ArchitectureTest' --rerun --no-build-cache`
+  - 2026-11-11 15:56:44~15:57:13 KST, `BUILD SUCCESSFUL`.
+  - 27건 실행·실패 0·오류 0·skip 0(정리 판단 12, HTTP 12, ArchUnit 3). Checkstyle main/test 오류 0.
+  - 원시 보고서: 로컬 `docs/week8/verification/runs/2026-11-11-stage3-fix2/targeted/`.
+- **재실행 범위의 근거**: 제품 코드·`CouponBeanIsolation`·공통 fixture가 그대로이고, 바뀐 test 코드는 위 두 클래스만 사용한다. 그래서 전체 회귀·O11·`CouponFacadeIntegrationTest`(Q13 포함, 이번 변경과 무관)는 다시 돌리지 않았다.
+- **한계**: 실제 HTTP 연결 실패로 E2E 컨텍스트가 보류 상태에 들어가는 장면은 재현하지 않았다. 판단과 유지는 대역 단위 테스트로, E2E 연결은 정상 경로 12건으로 확인했다. 보류된 컨텍스트가 닫힌 뒤 남은 서버 작업의 종료는 이 장치의 범위가 아니다.
+
+## 구현 4단계 — 직접 실행용 준비 코드 (2026-11-11)
+
+### 범위
+
+- main `config/CouponLocalFixtureConfig`: 클래스 수준 `@ConditionalOnProperty(name = "commerce.coupon.fixture.enabled", havingValue = "true")`.
+  - 옵션을 생략하거나 false로 두면 구성 자체가 등록되지 않는다. 그래서 `CouponBeanIsolation`에 더할 이름이 없다.
+- `ApplicationRunner` 하나가 `TransactionTemplate` 한 TX 안에서 다음을 저장한다.
+  - 사용자 8명과 각 사용자의 잔액 0 Point(save 반환 ID 사용)
+  - ACTIVE 캠페인 `로컬 쿠폰 캠페인`(totalQuota 5, issuedCount 0, FIXED_AMOUNT 5000)
+- commit 뒤 캠페인 ID·사용자 ID·요청 예시를 로그 한 줄로 남긴다.
+- 하지 않는 것: 쿠폰 생성, Redis 접근, 수용 열기, 이름으로 기존 캠페인 조회·재사용, 기존 데이터 수정.
+- 준비 예외는 그대로 전파돼 앱 기동이 실패한다.
+- 공통 `ddl-auto`(local/test create)와 프로필 설정은 바꾸지 않았다. test 소스의 fixture는 참조하지 않는다.
+
+### 검증 구성
+
+- `CouponLocalFixtureConfigIntegrationTest`(2건)는 test에서 `SpringApplicationBuilder`로 실제 앱을 여러 번 시작·종료한다(test 프로필, fixture MySQL, fixture Redis 주소 지정).
+- `ddl-auto`는 시작 인자로 고른다. 첫 시작만 create로 빈 스키마를 만들고, 이후는 update로 같은 DB를 보존한다.
+- 사례가 끝나면 한 번 더 시작해 `DatabaseCleanUp`으로 이 테스트가 남긴 행을 비운다. 같은 JVM의 다른 테스트 컨텍스트와 공유하는 DB이기 때문이다.
+
+### 실제 관찰
+
+| 확인 | 결과 |
+|---|---|
+| 옵션 생략(create) | Runner·구성 bean 없음, 사용자/Point/캠페인/쿠폰 0/0/0/0 |
+| 명시 false(update) | Runner·구성 bean 없음, 0/0/0/0 |
+| true(update) 첫 시작 | Runner 있음. 8/8/1/0. 캠페인 `로컬 쿠폰 캠페인`·ACTIVE·총량 5·발급 수 0·FIXED_AMOUNT·5000. Point 8개가 모두 잔액 0이고 user_id는 8명 모두 다름. 수용 닫힘 |
+| 같은 시작에서 기존 효과 생성 | fixture Redis 대상 확인 뒤 Facade로 열고 첫 사용자 발급(created), 닫음. 전용 키 비어 있음 |
+| 같은 DB 재시작(true, update) | 16/16/2/1. 기존 캠페인 발급 수 1·ACTIVE·5000 유지, 새 캠페인 발급 수 0. 기존 쿠폰 행(id·user·campaign·혜택·created_at)과 기존 사용자 8명 그대로. Point 모두 0. 수용 닫힘. 기존 사용자·캠페인 ID로 발급이 created(발급 수 2) |
+| 같은 컨텍스트 Runner 재호출 | 24/24/3/2. 기존 캠페인 발급 수 2 유지. 재시작 근거와 별개인 반복 호출 관찰이다. |
+| 준비 TX 중간 실패 | test 소스의 BeanPostProcessor가 캠페인 저장 직전에 실패를 주입했다. 실패 직전 같은 TX 연결에서 본 행은 8/8/0/0(사용자·Point INSERT 진행)이었다. 기동은 주입한 예외로 실패했고, 다음 시작(update)에서 확인한 DB는 0/0/0/0(rollback)이었다. |
+
+### 실행
+
+- 개발 중 1차(16:04:00~16:04:21)는 BUILD FAILED, 2건 실패. 원인은 둘 다 test 코드 오류였다.
+  - master template을 bean 이름으로 조회한 오류(qualifier 조회로 수정).
+  - 기동 실패 예외를 root cause 단언으로 확인한 오류. 실제로는 주입 예외가 감싸지지 않고 그대로 전달됐다. 원인 사슬에 주입 예외가 포함됐는지로 단언을 바꿨다.
+  - 제품 코드는 바꾸지 않았다.
+- 2차(16:04:44~16:05:07): 5건 통과(준비 2, ArchUnit 3).
+- 정리 단계(`@AfterEach`)를 더한 뒤 전체 회귀를 시작했지만, 사용자 요청("이번 구현에 해당하는 테스트만")으로 도중에 중단했다. 결과가 없으므로 통과로도 실패로도 기록하지 않는다(`runs/2026-11-11-stage4/full/STOPPED.txt`).
+- 최종: `./gradlew -Dorg.gradle.java.home="$JAVA_HOME" :apps:commerce-api:checkstyleMain :apps:commerce-api:checkstyleTest :apps:commerce-api:test --tests '*CouponLocalFixtureConfigIntegrationTest' --tests '*ArchitectureTest' --rerun --no-build-cache`
+  - 2026-11-11 17:03:52~17:04:17 KST, `BUILD SUCCESSFUL`.
+  - 5건 실행·실패 0·오류 0·skip 0. Checkstyle main/test 오류 0. 관찰값은 위 표와 같았다.
+  - 원시 보고서: 로컬 `docs/week8/verification/runs/2026-11-11-stage4/targeted-3/`. 개발 중 실행은 `targeted/`·`targeted-2/`.
+- 실행하지 않은 것:
+  - 전체 일반 회귀(사용자 결정).
+  - O11: 별도 DB를 쓰는 작업이고, 옵션이 꺼지면 새 bean이 없어 격리 목록이 바뀌지 않는다.
+
+### Q15 준비 옵션 부분
+
+- 충족: 옵션 기본 off(생략·false에서 미등록·데이터 증가 없음), on에서 8명·5장 캠페인 생성, 보존 DB 재실행 시 새 데이터만 추가하고 기존 효과 불변, 준비 후 수용 닫힘.
+- Q15의 나머지(응답·정렬·모델 경계·C 설정)는 앞 단계 기록과 같다.
+
+### 한계
+
+- 전체 회귀를 돌리지 않았다. 이 테스트는 같은 JVM의 다른 테스트와 공유하는 fixture MySQL에서 create로 스키마를 다시 만들고 데이터를 넣었다가 사례 끝에 비운다. 다른 테스트 클래스와의 실행 순서에 따른 상호작용은 확인하지 않았다.
+- 실제 로컬 앱(`bootRun`, local 프로필, 로컬 MySQL)에서 준비 옵션을 켜고 시작하는 수동 확인은 하지 않았다. 검증은 test 프로필·fixture DB에서 앱을 직접 시작한 결과다.
+- update를 쓴 재시작 검증은 운영 마이그레이션이나 장애 복구를 보장한다는 뜻이 아니다.
+
+## 구현 5단계 — 실제 HTTP·로컬 Redis 장애 검증 (2026-11-11)
+
+제품 코드는 바꾸지 않았다. 결함은 발견되지 않았다. test 소스만 추가·수정했다.
+
+### 변경
+
+- test `HoldingAdmissionRepository`: 반환 명령 위임 직전의 유한 붙잡기(`holdNextReleases`)를 추가했다. 이 지점은 쓰기 TX 종료 확인 뒤·HTTP 응답 전이다.
+- test `CouponHttpFaultE2ETest`(Q6·Q11·Q12, 3건):
+  - 클라이언트는 test의 raw socket HTTP/1.1이다. timeout과 RST 종료가 실제 TCP 동작이다.
+  - 서버 진행 위치는 수용 decorator(반환 직전)와 `ReserveHold`(실제 조건부 UPDATE 직후, 쓰기 TX 안)의 유한 barrier로 통제한다.
+  - 정리는 3단계 후속의 `ServerSettlement` 판단(컨텍스트 bean, 보류 유지)을 그대로 쓴다.
+- test `com.loopers.verification.localredis.CouponLocalRedisFaultIntegrationTest`(Q9·Q10, 2건):
+  - 클래스 수준 `@EnabledIfEnvironmentVariable(COUPON_LOCAL_REDIS_FAULT_TEST=true)`.
+  - static nested `Bootstrap`: `@SpringBootConfiguration`·`@EnableAutoConfiguration`·`@ConfigurationPropertiesScan("com.loopers")`·`@ComponentScan("com.loopers")`. 스캔에서 Boot의 TypeExcludeFilter·AutoConfigurationExcludeFilter를 유지하고 `RedisTestContainersConfig`·`CommerceApiApplication`을 제외한다.
+  - 로컬 master `localhost:6379`·replica `localhost:6380`·database 0을 `@DynamicPropertySource`로 넣는다.
+  - JSONL을 쓰는 획득·반환 decorator가 Redis 명령 전에 append하고 DSYNC로 기록한다. 기록 실패 시 위임하지 않는다.
+  - docker CLI로 컨테이너를 식별하고 pause/unpause한다.
+
+### A — 실제 HTTP
+
+| Q | 제어 지점·방법 | 관찰 |
+|---|---|---|
+| Q6 응답 유실 | 반환 위임 직전(쓰기 TX commit 확인 뒤·응답 쓰기 전)에 서버를 붙잡았다. DB에 쿠폰 1·발급 수 1이 commit된 것을 다른 연결로 확인했다. 그 뒤 클라이언트 소켓을 응답 바이트를 하나도 읽지 않은 채 RST(SO_LINGER 0)로 닫고 서버를 놓았다. | 클라이언트가 받은 응답: 없음(201 상태줄·본문 전체 유실). 서버 측 반환이 관찰돼 Facade 처리가 끝났다. 같은 사용자·캠페인 재요청은 200·같은 couponId였고 발급 수 1·쿠폰 1(추가 효과 0)이었다. 재요청은 수용 자리를 쓰지 않았다(반환 1회). |
+| Q11 timeout·연결 종료 | 실제 조건부 UPDATE 뒤 쓰기 TX 안에서 서버를 붙잡았다. 클라이언트 read timeout(500ms, `SocketTimeoutException`) 뒤 RST로 연결을 끊었다. | 끊은 뒤에도 서버 스레드는 barrier에 있었다. 행을 바꾼 열린 InnoDB TX가 1개(`trx_rows_modified > 0`, root로 `information_schema.innodb_trx` 조회)였다. 다른 연결에서 본 발급 수는 0(commit 전)이었다. token은 Set에 남아 있었고 반환 호출은 0이었다(조기 반환 없음). 놓은 뒤 서버 반환이 관찰됐고, 쿠폰 1·발급 수 1·쓰기 TX 0·키 비어 있음·수용 열림이었다. |
+| Q12 시간 경과 | C=3 자리를 실제 HTTP 처리 세 건이 ACQUIRED 직후에 쥔 상태로 5초(측정 5000~5004ms) 기다렸다. | 전후 TTL이 -1, Set 구성원은 그대로, 넷째 요청은 429, 발급 수 0이었다. 놓은 뒤 세 건 모두 201, 발급 수 3, 키 비어 있음. |
+
+- Q11 처음 실행의 실패 2회는 test 관찰 코드의 오류였다(제품 결함 아님).
+  - 1회: 모든 열린 InnoDB TX를 셌다.
+  - 2회: 행을 바꾼 TX만 세도록 좁혔지만, commit 직후 조회에서 여전히 1이 나왔다.
+  - 원인은 `innodb_trx`가 캐시라는 점이다. MySQL 8.0 Reference Manual의 "InnoDB INFORMATION_SCHEMA Transaction and Locking Information" 절에 따르면 이 정보는 최대 0.1초 주기로 갱신된다. 진단 실행에서 같은 TX가 114~119ms 뒤 사라졌다.
+  - 그래서 commit 뒤 확인을 유한(최대 10초) 재조회로 바꿨다. 기대값은 그대로다.
+- 원시 보고서: `runs/2026-11-11-stage5/http-a1`(실패)·`http-a2`(실패)·`http-a3-debug`·`http-a4-debug`·`http-a5`(통과).
+- 한계:
+  - Q6의 유실 범위는 "클라이언트가 응답을 받지 못함"이다. 서버의 응답 쓰기 실패 여부는 관찰하지 않았다.
+  - Q11은 열린 TX를 행 변경 수로 식별했다. 이 TX가 정확히 이 요청의 연결이라는 대조(스레드 ID ↔ 요청)는 출력 기록으로만 남겼다.
+  - Q12의 5초는 짧은 관찰이며 장시간 운영 검증이 아니다. TTL 부재는 `TTL = -1`과 코드에 만료 설정이 없다는 점(2단계)에 근거한다.
+  - 실제 DB 통신 단절로 UNKNOWN을 만드는 재현은 하지 않았다. UNKNOWN 분기는 3단계 TX 대역 결과다.
+
+### B — 실제 로컬 Redis(Q9·Q10)
+
+- 대상: Docker Compose 프로젝트 `docker`, 서비스 `redis-master`, 컨테이너 `41734fb0f04c…`, image `redis:7.0`, Redis 7.0.15, run_id `79b929f45a37ace4a78ccfd0486141331b1eec9c`, 호스트 포트 6379, database 0, 키 `commerce:coupon-admission:v1:permits`. replica `redis-readonly`(6380)는 pause하지 않았다.
+- 각 사례 시작 시 확인한 것:
+  - 바인딩 주소·database
+  - fixture Redis 구성 bean 부재
+  - 컨테이너 유일성·running·not paused·compose 서비스·호스트 포트
+  - 앱 master 연결의 `INFO server` run_id와 컨테이너 안 redis-cli run_id의 일치
+- 간섭 확인(pause 직전):
+  - 호스트 `lsof`로 master 포트에 연결한 프로세스가 이 테스트 JVM PID뿐인지 확인했다.
+  - 서버 `CLIENT LIST TYPE NORMAL`의 클라이언트가 앱 연결 주소이거나 관찰용 redis-cli인지 확인했다.
+  - 두 실행의 Q9·Q10 모두 외부 클라이언트는 0이었다.
+  - 실행 전 서버의 NORMAL 클라이언트는 관찰용 redis-cli 하나였다. test 작업은 클래스 필터로 이 클래스만 실행했다.
+- 스캔 격리 확인(임시 관찰 테스트, 실행 뒤 삭제): 일반 `@SpringBootTest` 컨텍스트와 `CommerceApiApplication`을 직접 시작한 컨텍스트 모두에 이 중첩 구성의 bean이 없었다.
+- 기본 실행(환경변수 없음)에서는 2건 skip이다. 이는 미실행이다.
+- 명시 실행 명령(저장소 루트):
+
+```sh
+COUPON_LOCAL_REDIS_FAULT_TEST=true \
+COUPON_LOCAL_REDIS_FAULT_LOG="$PWD/docs/week8/verification/coupon-local-redis-fault.jsonl" \
+./gradlew -Dorg.gradle.java.home="$JAVA_HOME" :apps:commerce-api:test --tests '*CouponLocalRedisFaultIntegrationTest' --rerun --no-build-cache
+```
+
+| 실행 | 시각(KST) | 결과 |
+|---|---|---|
+| 1차 | 17:21:17~17:21:33 | BUILD SUCCESSFUL, 2건 실행·실패/skip 0. 단 기록에 test 코드 결함 2개가 있었다: MySQL 컨테이너 ID 미기록(`docker ps --filter publish`가 임의 호스트 포트를 찾지 못함), 정리 명령의 반환 이벤트에 이전 요청 사용자가 붙음. |
+| 2차 | 17:22:20~17:22:37 | 기록 결함을 고친 뒤 BUILD SUCCESSFUL, 2건 실행·실패/skip 0, Checkstyle test 0. JSONL 36→72줄 누적(1차 기록 보존). MySQL 테스트 컨테이너 `37427b8a32b4`(호스트 51417) 기록. |
+
+- 기록 파일(로컬): `docs/week8/verification/coupon-local-redis-fault.jsonl`. 원시 보고서: `runs/2026-11-11-stage5/local-redis-fault-1`, `local-redis-fault-2`.
+- 아래 관찰은 2차 실행 기준이다. 1차도 같은 결과였고, 1차의 CLIENT ID는 2536이다.
+
+| Q | 관찰 |
+|---|---|
+| Q9 | 장애 전 같은 master 경로의 CLIENT ID 2570·run_id를 확인했다. 실제 Lua 발급·정상 반환 뒤 별도 관찰 연결의 `CLIENT LIST ID 2570`에서 마지막 명령이 `srem`이었다. pause 중 신규 사용자 요청은 503 `COUPON_ADMISSION_UNAVAILABLE`이었다(획득 `QueryTimeoutException`, 200ms 뒤). 수용이 닫혔고 발급 수 1 유지·그 사용자 쿠폰 0(DB 발급 미진입)이었다. 기존 사용자 POST는 200·같은 couponId, 목록에 그 쿠폰이 있었다. unpause 뒤 같은 경로의 CLIENT ID 2570→2570, run_id 같음. 이때 Set에 늦게 실행된 획득(EVAL)으로 그 실패 요청의 token이 들어 있었다. 기록된 자기 token만 cleanup(removed 1)해 Set 0이 됐고 수용은 닫힘을 유지했다. |
+| Q10 | 반환 위임 직전에 같은 컨테이너를 pause했다. 반환 `QueryTimeoutException`에도 201, 그 사용자 쿠폰 1·발급 수 1, 수용 닫힘이었다. unpause 뒤 같은 경로 CLIENT ID·run_id 일치, Set은 이미 비어 있었다(늦은 SREM이 실행됨). pause 이후 이 앱이 보낸 Redis 명령은 그 token의 SREM 하나뿐(기록)이어서, 자기 token cleanup(removed 0)·Set 0을 확인한 뒤 명시적으로 열었다. 새 요청 201, 종료 뒤 Set 0, 발급 수 2. 테스트 끝에 닫았다. |
+
+- 실패 뒤 사후 수동 정리: 두 실행 모두 정상 정리 근거가 있어 사용하지 않았다. 실행 뒤 `redis-master`는 running·not paused, 전용 키는 비어 있었다.
+- 한계:
+  - 동일 로컬 앱 하나·알려진 요청·순차 운영 조건의 검증이다. 다중 인스턴스·앱 재시작 복구는 다루지 않았다.
+  - 간섭 확인은 실행 시점의 호스트 연결·서버 클라이언트 관찰이다.
+  - pause 동안 replica 복제 연결이 끊겼다가 다시 붙는 영향은 관찰하지 않았다.
+  - 요청별 사용자·캠페인 기록은 테스트가 순차 요청마다 지정한 값이다.
+
+### C — 관련 테스트
+
+- `./gradlew -Dorg.gradle.java.home="$JAVA_HOME" :apps:commerce-api:checkstyleMain :apps:commerce-api:checkstyleTest :apps:commerce-api:test --tests '*CouponHttpFaultE2ETest' --tests '*CouponApiE2ETest' --tests '*CouponFacadeIntegrationTest' --tests '*ServerSettlementTest' --tests '*CouponLocalRedisFaultIntegrationTest' --tests '*ArchitectureTest' --rerun --no-build-cache`
+- 2026-11-11 17:22:50~17:23:29 KST, `BUILD SUCCESSFUL`.
+  - 39건 중 37건 실행·실패 0·오류 0. skip 2는 환경변수 없는 기본 실행의 로컬 Redis 장애 테스트(미실행)이며, 그 실행 근거는 위 명시 실행이다.
+  - Checkstyle main/test 0, ArchUnit 3.
+  - 원시 보고서: `runs/2026-11-11-stage5/related/`.
+- 범위 근거: 바뀐 test 지원 코드(`HoldingAdmissionRepository`)를 쓰는 클래스, 이번 신규 클래스, ArchUnit만 실행했다(사용자 결정: 이번 구현에 해당하는 테스트만). 로컬 Redis 장애 실행과 다른 Redis 테스트는 겹치지 않게 별도 명령으로 실행했다.
+- 실행하지 않음: 전체 일반 회귀·전체 check·O11. 제품 코드·격리 목록·공통 fixture가 바뀌지 않았다. 필요하면 커밋 전 확인 대상으로 별도 판단한다.
+
+### Q1~Q16 최종 대조
+
+| Q | 기존 근거(단계) | 이번 근거 | 미완료·한계 |
+|---|---|---|---|
+| Q1 | 3단계 HTTP 식별·201·본인 목록·타인 비노출 | Q9의 기존 결과·목록 유지 | — |
+| Q2 | 3단계 201/200 다섯 필드·같은 ID·현재 이름/과거 혜택 | Q6 재요청 200 | — |
+| Q3 | 3단계 실제 DB 두 경로 | — | — |
+| Q4 | 3단계 총량 5·8명 | — | — |
+| Q5 | 3단계 증가 뒤 저장 단계 실패 rollback | — | 실제 INSERT SQL 오류 주입은 아님(유일 제약 충돌로 대신 확인) |
+| Q6 | 없음 | 실제 HTTP 응답 유실·재요청 200·추가 효과 0 | 서버 응답 쓰기 실패 여부 미관찰 |
+| Q7 | 3단계 HTTP·C=3·barrier·429·재수용·token 0 | — | — |
+| Q8 | 2단계 반복·없는 token 0, 3단계 대역 반환 0·예외 | Q10 실제 반환 timeout 뒤 201 유지·닫힘·자기 token cleanup 0 정상 | — |
+| Q9 | 없음 | 실제 로컬 Redis pause·503·DB 미진입·같은 연결 ID·run_id·자기 token 정리·닫힘 유지 | 단일 앱·순차 조건 |
+| Q10 | 없음 | 실제 commit 뒤 반환 장애·201·닫힘·늦은 SREM 조건의 정리·명시 재개·새 요청 수용 | 단일 앱·순차 조건 |
+| Q11 | 3단계 TX 대역 UNKNOWN·통지 없음 | 실제 HTTP timeout·RST 뒤 서버 TX 생존·조기 반환 없음·놓은 뒤 commit·반환 | 실제 DB 통신 단절의 UNKNOWN 재현 없음 |
+| Q12 | 2단계 수용 계층 TTL -1·2초 | 실제 HTTP 처리 중 5초 TTL -1·429 | 짧은 관찰 |
+| Q13 | 1·3단계 SQL·TX·named unique·대역, 3단계 후속 Facade 경로 관찰 | 관련 테스트 재실행에서 같은 관찰 | 연결 풀 점유 미계측 |
+| Q14 | 3단계 제어 HTTP·서비스 단위 기본 닫힘 | Q9·Q10에서 닫힘 확인 뒤 신규 Redis/DB 미진입, 수동 확인 뒤 cleanup·open | 기본 닫힘의 HTTP 직접 확인은 공유 컨텍스트라 하지 않음 |
+| Q15 | 2·3·4단계 응답·정렬·C·준비 옵션 | — | 실제 bootRun 수동 확인 없음 |
+| Q16 | 각 단계 관련 회귀·Checkstyle·ArchUnit·자원 정리 | 관련 37건·명시 장애 2건, 자기 token만 정리·Redis 복구 확인 | 이번 단계 전체 회귀·O11 미실행(사용자 결정). 마지막 전체 회귀는 3단계(1148건) |
+
+모든 Q에 실제 실행 근거가 있다. 다만 위 한계(전체 회귀 미실행, 실제 bootRun 수동 확인 없음, 실제 DB 통신 단절 UNKNOWN 미재현, 단일 앱 조건)가 남아 있어 "전체 완료"로 쓰지 않는다.
+
+## 구현 5단계 후속 — 테스트 실패 처리 보완 (2026-11-11)
+
+Codex 최종 코드 검토에서 지적된 test 실패 처리 3곳만 고쳤다. 제품 코드·계약·기존 기대값은 바꾸지 않았다. 위 5단계 절의 실행 결과(1·2차 명시 실행, Q11 처음 실패 이력)는 그대로 둔다.
+
+### 1. raw HTTP 요청의 정리 판단
+
+- 문제: `CouponHttpFaultE2ETest`의 raw 요청은 정리 판단(`ServerSettlement`)에 등록되지 않았다. 서버가 아직 사전 조회 중이라 token이 없을 때 barrier 대기가 실패하면, 진행 중인 요청을 놓칠 수 있었다.
+- 수정:
+  - `ServerSettlement.registerRaw`가 소켓 연결 전에 요청을 미확인으로 등록한다.
+  - `settleRaw(key, token)`은 그 요청의 token 반환이 수용 decorator에 관찰됐을 때만 해소하고, 근거가 없으면 예외로 미확인을 유지한다.
+  - 미해소 등록은 정리 판단의 사유가 돼, 기존 컨텍스트 수명의 보류로 이어진다.
+  - `sendIssue`는 연결·전송에 실패하면 만든 소켓을 닫고 예외를 던지되, 등록은 남긴다(요청이 서버에 닿았는지 모르기 때문).
+  - Q6·Q11 정상 경로는 "이 요청 하나만 반환 직전에 있다 / 이 요청 하나만 Redis를 썼다"를 단언한 뒤, 관찰된 반환 token으로 명시적으로 해소한다.
+- 근거로 쓰지 않는 것: socket 전송 실패, timeout, RST, 일반 `observe`의 응답 없음 기록을 우회하는 처리.
+- 검증: `ServerSettlementTest` 2건 추가(총 14건).
+  - 등록된 raw 요청은 token이 없어도 정리를 막고, 다른 요청이 끝나도 풀리지 않는다.
+  - 반환 관찰 전이나 token 없이 해소하려 하면 거절된다. 반환이 관찰된 뒤에만 해소되고, 그때 정리가 허용된다.
+
+### 2. 로컬 Redis 장애 테스트의 사례 간 보류 유지
+
+- 문제: 사례별 필드 `finishedCleanly`만 있어서, 실패한 사례는 DB 정리만 생략됐다. 다음 사례는 Set이 비어 있으면 준비를 통과해 수용을 다시 열 수 있었다.
+- 수정:
+  - 컨텍스트 bean인 `RecordingAdmissionRepository`에 보류 사유 목록을 두었다.
+  - 정상 종료·정리 근거 없이 끝난 사례는 `@AfterEach`에서 보류를 남긴다(JSONL `context-withheld`).
+  - 이후 사례의 `prepare`는 첫 줄에서 막혀, 준비·DB 변경·수용 열기·점유 정리를 하지 못한다.
+  - 빈 Set이나 다른 요청 성공으로 풀리지 않는다. Redis 복구(unpause) 시도는 보류 중에도 계속한다.
+- 검증: 신규 `CouponLocalRedisFaultGuardTest`(일반 실행, Docker·Redis 없음). token이 만들어지지 않은 실패를 보류한 뒤 다른 요청이 획득·반환해도 다음 사례 시작이 막혔고, 보류가 없으면 시작할 수 있었다.
+
+### 3. pause 결과가 불명일 때의 실제 상태 복구
+
+- 문제: `paused=true`가 docker pause 명령이 정상 반환한 뒤에야 설정됐다. pause가 실제로 적용됐지만 CLI 대기·응답이 실패하면 복구를 건너뛸 수 있었다.
+- 수정:
+  - `PauseGuard`(테스트 클래스 안 static nested, docker CLI 함수 주입)가 확인된 대상 컨테이너 ID만 다룬다.
+  - pause 명령 전에 시도 사실(`pause-attempt`)을 남긴다.
+  - 복구는 CLI 결과가 아니라 그 컨테이너의 `docker inspect -f {{.State.Paused}}` 실제 상태로 판단해, true면 unpause하고 아니면 `restore-not-paused`를 남긴다.
+  - 상태 조회나 unpause 실패는 기록(`restore-state-unknown`·`unpause-failed`)하고 예외로 던진다. 원래 실패가 있으면 함께 보고된다.
+  - 대상이 정해지기 전에는 pause하지 않는다.
+- 검증: `CouponLocalRedisFaultGuardTest` 명령 대역 4건. 공유 Redis를 실제로 멈춘 상태로 남기는 실험은 하지 않았다.
+  - pause CLI 실패(대기 초과) 뒤에도 실제 상태가 paused면 unpause했고, 모든 명령이 확인된 대상 ID에만 갔다.
+  - 실제로 멈춰 있지 않으면 unpause하지 않았다.
+  - 조회·unpause 실패는 기록하고 던졌다.
+  - 대상 없음·시도 없음이면 명령을 보내지 않았다.
+
+### 실행
+
+| 실행 | 시각(KST) | 결과 |
+|---|---|---|
+| 대역·HTTP 관련: `checkstyleMain checkstyleTest test --tests '*CouponLocalRedisFaultGuardTest' --tests '*ServerSettlementTest' --tests '*CouponHttpFaultE2ETest' --tests '*ArchitectureTest' --rerun --no-build-cache` | 17:32:36~17:33:01 | BUILD SUCCESSFUL. 26건 실행(가드 6·정리 판단 14·HTTP 장애 3·ArchUnit 3), 실패/오류/skip 0, Checkstyle main/test 0. Q6·Q11·Q12 관찰은 5단계 기록과 같았다(Q11 innodb_trx 재조회 123ms). |
+| 로컬 Redis 명시 실행 3차(5단계 명령과 같음) | 17:33:19~17:33:36 | 실행 직전 확인: 호스트 6379 연결 0, 서버 NORMAL 클라이언트(관찰 cli 제외) 0, 전용 키 비어 있음, not paused. BUILD SUCCESSFUL, 2건 실행·실패/skip 0. Q9: CLIENT ID 2723→2723, run_id 같음, 503, 늦은 EVAL token cleanup 1, 닫힘 유지. Q10: 반환 timeout에도 201·닫힘, 늦은 SREM 뒤 cleanup 0, 열기 뒤 새 요청 201. 사례별로 `pause-attempt → pause → unpause`가 기록됐고, 두 사례 모두 간섭 외부 클라이언트 0. JSONL 72→110줄(이전 기록 보존). 실행 뒤 redis-master running·not paused·키 비어 있음. |
+
+- 원시 보고서: 로컬 `docs/week8/verification/runs/2026-11-11-stage5-fix/guards-and-http/`, `local-redis-fault-3/`.
+- 실행하지 않음: 전체 일반 회귀·O11(제품 코드·격리 구성 불변, 사용자 결정).
+- 한계:
+  - 실제 HTTP 연결 실패나 실제 docker CLI 대기 초과로 보류·복구가 일어나는 장면은 재현하지 않았다. 그 분기는 대역 단위 테스트로 확인했다.
+  - raw 요청과 token의 연결은 "이 사례에서 그 요청 하나만 Redis를 썼다"는 단언에 근거한다. 동시 raw 요청에는 적용하지 않는다.
+
+## 최종 커밋 전체 검사 (2026-11-11, Codex)
+
+- 사용자 승인으로 최종 제품/테스트 커밋 `4711dfe`에서 전체 검사를 한 번 실행했다. 제품·테스트 코드와 기대값은 수정하지 않았다.
+- 명령: `./gradlew -Dorg.gradle.java.home=/opt/homebrew/Cellar/openjdk@21/21.0.12/libexec/openjdk.jdk/Contents/Home :apps:commerce-api:check --rerun-tasks --no-build-cache --console=plain`. JDK 21.0.12를 사용했다.
+- 실행 시각: 2026-11-11 17:44:52 KST ~ 2026-11-11 17:53:38 KST. `BUILD SUCCESSFUL in 8m 46s`, 35개 작업 모두 실제 실행됐다.
+- 일반 `test`: XML 262개, 총 1176건 중 **1174건 실행·실패 0·오류 0, skip 2**. skip은 기본 비활성 `CouponLocalRedisFaultIntegrationTest`의 Q9/Q10이며 이번 통과로 세지 않는다. 해당 두 사례의 실제 장애 실행 근거는 앞선 5단계 명시 실행 3차(2건 통과)다. 이번에 pause 실험은 반복하지 않았다.
+- 별도 `w6OutboxRecoveryTest`: XML 1개, 1건 실행·실패/오류/skip 0. `check`에 연결된 O11 작업이 실제 실행됐다.
+- `ArchitectureTest`: 일반 test 안에서 3건 실행·실패/오류/skip 0. Checkstyle main/test XML 오류 각 0개.
+- 실행 전 추적 파일 변경 없음, 공유 Redis DBSIZE 0·관찰 연결 외 NORMAL 클라이언트 없음·호스트 6379 외부 연결 없음 확인. 이전 중단 실행의 test worker PID 56631이 fixture MySQL handshake와 shutdown hook에서 멈춰 있어 thread dump를 보존하고 그 worker만 강제 종료했다. 새 검사와 중첩시키지 않았다.
+- 실행 후 새 test worker·streamer 자식이 남지 않았고 이번 테스트 소유 컨테이너가 종료됐다. 기존 공유 Redis는 running·paused=false, 쿠폰 전용 키 none·DBSIZE 0이었다. 공유 Kafka·개발 MySQL 등 기존 서버는 유지했다.
+- 원시 로그·XML/HTML·Checkstyle 보고서·집계 JSON·사전 worker 관찰은 로컬 `docs/week8/verification/runs/2026-11-11-final-check/`에 보존했다. 제출 필수 요약은 이 절에 둔다.
+
+### 최종 판단과 남은 범위
+
+- 앞선 기록의 “최종 전체 회귀 미실행” 한계는 이번 실행으로 해소됐다. 과거 실패·미실행 기록은 당시 실행 이력으로 보존한다.
+- 로컬 보관 실습 원문·발제 문서·Sam 세션 정리본을 제품 코드와 Q1~Q16 실행 근거에 대조했으며 필수 제품 기능의 누락은 발견하지 못했다. 단계별 승인 구현과 요구 시나리오 검증, 최종 전체 검사를 마쳤다.
+- 실제 DB 통신 단절 UNKNOWN 재현·다중 인스턴스/failover·운영 부하/최적 C·수동 bootRun 확인을 수행했다고 주장하지 않는다. 이들은 합의 범위의 검증 한계와 구분한다.
+- PR·기술 글·WIL 등 과제의 글 산출물·실제 제출 여부는 이 구현/검증 완료 판단과 별개다. 최종 제출 판단은 사용자가 담당한다.
+
+## 대기실 확장 1단위 — 시작 설정·오류 정의 (2026-11-12)
+
+- 기준: volume-8 / a2fee9f에서 수행한 확장 첫 단위다. 기본 제품 구현 4711dfe의 과거 검사와 구분한다. 작성·검사 실행은 Claude Code, 실제 diff·보존 XML/로그 검토는 Codex가 수행했다. Codex는 제품 검사를 재실행하지 않았다.
+- 제품 변경: CouponWaitingProperties(campaignId 생략 허용·명시 시 양수, schedulerDelay=1s·admissionDuration=30s, 두 Duration의 양의 밀리초 표현 검증), CouponRateLimitProperties(limitForPeriod=10·양의 int, refreshPeriod=1s·양의 Duration), 등록 요청률/대기 권한 ErrorType 6개와 기존 OPERATION_REJECTED 메시지 일반화다. 기존 HTTP/오류 코드·capacity 설정·YAML·의존성은 유지했다.
+- 검증: ApplicationContextRunner에서 기본값·명시 값·ID/숫자/기간 형식과 범위 거절, Waiting의 밀리초 변환 결과 0·overflow를 확인했다. 실제 limiter 생성/표현 범위 검증은 포함하지 않았다.
+- 실행: JDK 21.0.12, 2026-11-12 14:08:28~14:08:44 KST. 아래 명령에서 JAVA_HOME은 `/opt/homebrew/Cellar/openjdk@21/21.0.12/libexec/openjdk.jdk/Contents/Home`이었다.
+
+```sh
+./gradlew -Dorg.gradle.java.home="$JAVA_HOME" \
+  :apps:commerce-api:checkstyleMain :apps:commerce-api:checkstyleTest \
+  :apps:commerce-api:test \
+  --tests '*CouponWaitingPropertiesTest' --tests '*CouponRateLimitPropertiesTest' \
+  --tests '*CouponAdmissionPropertiesTest' --tests '*ArchitectureTest' \
+  --rerun-tasks --no-build-cache --console=plain
+```
+
+- 결과: BUILD SUCCESSFUL, 34 actionable tasks 모두 executed. XML 7개 합계 62건 실행·실패/오류/skip 0. Waiting은 최상위 1·CampaignId 8·SchedulerDelay 13·AdmissionDuration 13, RateLimit 15, 기존 Admission 설정 9, ArchitectureTest 3이다. Checkstyle main/test XML 오류 각 0개다. streamer bootJar·pg-simulator 컴파일은 기존 작업 의존성이며 해당 앱의 실행 검증은 아니다.
+- 원시 근거는 로컬 `docs/week8/verification/runs/20261112-unit1-config-errortype/`의 gradle.log·timing.txt·test-results XML·checkstyle XML에 보존했다. Codex가 보고와 실제 파일의 집계·시각·작업 실행 결과를 대조했다.
+- 완료 범위는 WQ1의 설정 부분이다. 실제 대기실 비활성/open/close·운영 ID 검사·Service/HTTP 연결·실제 RateLimiter·스케줄러·W6/O11·전체 회귀·장애/부하 실험은 이번에 검증하지 않았다. 새 ErrorType은 아직 사용처가 없고 실제 HTTP 오류 응답 검증은 후속이다.
+
+## 대기실 확장 2단위 — 포트·Lua·Redis 저장소 (2026-11-12)
+
+- 기준: volume-8 / e7c7fc7(확장 1단위 커밋). Claude Code가 구현·실행했고 Codex가 실제 소스와 보존 XML/로그를 읽어 검토했다. Codex는 제품 검사를 재실행하지 않았다.
+- 변경: CouponWaitingState/Snapshot, CouponAdmissionRepository의 대기실 5메서드/결과 타입, Redis adapter와 등록·조회·입장 처리·시작·종료 Lua다. 공통 검증 Lua를 각 작업 앞에 합쳐 작업별 한 스크립트로 실행한다. 기존 master String template을 쓰고 기존 token 포트·Service/Facade·HTTP 동작은 이 단계에서 유지했다. 기존 test 대역 5곳은 test 전용 TokenOnlyAdmissionRepository를 구현하도록 최소 변경했다.
+- 실제 fixture Redis에서 WQ2~WQ6/WQ10의 저장소 부분(동시 등록 하나·순번·C=3/앞순번 승격·기한 비연장/회수·PROCESSING 미회수·만료/시작 경합·동시 STARTED 하나·finish 대조/자기 자리 반환·품절/배정 중단)을 확인했다. 잘못된 키/기록/색인·정확 정수 범위도 검사했다. HTTP/DB 발급 경로 전체의 충족 근거는 아니다.
+- 실행 환경: JDK 21.0.12, fixture Redis 8.10.1 master, CouponRedisTarget의 endpoint/DB/master/run_id 대조. 각 테스트는 자기 캠페인 키만 사용하고 worker 종료 확인 뒤 정리했다. 공유 로컬 Redis pause·FLUSHALL·장애/부하 실험은 하지 않았다.
+
+| 실행(KST) | 검사와 실제 결과 |
+|---|---|
+| 14:26:33~14:27:26 | Checkstyle main/test 및 관련 클래스 13개 필터. XML 22개, 165건 실행·실패/오류/skip 0, Checkstyle 오류 각 0. BUILD SUCCESSFUL, 34 actionable tasks executed |
+| 14:27:51~14:28:14 | 만료/start 경합 신호 시점을 기한 -4~+3ms로 조정한 뒤 Redis 클래스 재실행. 18건 실패/오류/skip 0·Checkstyle test 오류 0, 33 actionable tasks executed. STARTED 2·EXPIRED(회수 전) 1·EXPIRED(회수 후) 5 관찰 |
+| 14:35:09~14:35:34 | adapter의 필수 sequence/PROCESSING 기한 검증 누락 보완 뒤 변환 8·실제 Redis 18·ArchUnit 3, 총 29건 실패/오류/skip 0. Checkstyle main/test 오류 각 0, 34 actionable tasks executed. 경합 STARTED 3·EXPIRED(회수 후) 5 관찰 |
+
+- 첫 실행 클래스/건수: CouponWaitingRedisIntegrationTest 18, CouponWaitingReplyConversionTest 4, CouponAdmissionRedisIntegrationTest 14, CouponAdmissionServiceTest 25, CouponFacadeIntegrationTest 7, ServerSettlementTest 14, CouponApiE2ETest 12, CouponHttpFaultE2ETest 3, CouponLocalRedisFaultGuardTest 6, Properties 3클래스 59, ArchitectureTest 3. 마지막 보완 후 나머지 클래스를 재실행한 것으로 기록하지 않는다.
+- 세 실행 모두 `-Dorg.gradle.java.home`으로 확인한 JDK 21을 사용하고 `--rerun-tasks --no-build-cache --console=plain`으로 실행했다. 마지막 실행의 작업/필터는 다음과 같다.
+
+```sh
+./gradlew -Dorg.gradle.java.home="$JAVA_HOME" \
+  :apps:commerce-api:checkstyleMain :apps:commerce-api:checkstyleTest \
+  :apps:commerce-api:test --tests '*CouponWaitingReplyConversionTest' \
+  --tests '*CouponWaitingRedisIntegrationTest' --tests '*ArchitectureTest' \
+  --rerun-tasks --no-build-cache --console=plain
+```
+
+- 보완: adapter는 모든 snapshot의 sequence, READY/PROCESSING의 필수 expiresAtMillis와 다른 상태에 존재하는 기한의 문자열/양수/2^53-1 범위를 검사한다. 실제 응답 expiresAt은 READY만 채운다. Lua/상태 전이는 그대로며 기존 잘못된 fixture는 다른 필드를 정상화해 원래 오류를 검사하도록 유지했다. Codex 최종 검토에서 추가 필수 수정은 발견하지 못했다.
+- 로컬 원시 근거: `docs/week8/verification/runs/20261112-unit2-waiting-redis/`, `20261112-unit2-waiting-redis-race-rerun/`, `20261112-unit2-reply-validation-fix/`의 gradle.log·timing.txt·XML/Checkstyle 사본. 각 경합 분포는 해당 실행 관찰이며 매번 양쪽 결과 출현을 보장하지 않는다.
+- 미완료: Service/Facade·수용 닫기·DB 종료와 finish 연결·HTTP/RateLimiter·내부 스케줄러·W6/O11 확장 조립은 후속이다. 전체 회귀/check·장애/부하 실험은 미실행이며 opt-in 로컬 Redis 장애 소스는 컴파일만 확인했다. 기존 기본 실행을 확장 검증으로 대체하지 않는다.
+
+## 대기실 확장 3단위 — Service/Facade와 DB 종료 연결 (2026-11-12)
+
+- 기준: volume-8 / 4639565(2단위 커밋). Claude Code가 구현/검사했고 Codex는 실제 코드·변경·보존 XML/로그를 읽어 검토했다. Codex의 제품 검사 재실행은 없었다.
+- 제품 변경: CouponAdmissionService의 운영 캠페인/열림 조건·대기 포트 결과/실패 처리, CouponFacade의 registerWaiting/getWaiting/issue/processAdmissions, CouponWaitingResult·CouponIssueOutcome이다. 새 발급 경로는 기존 쿠폰 → 헤더 → 운영 ID/열림 → start → 기존 DB TX/후속 읽기 → finish 순서며 token을 다시 획득하지 않는다.
+- TX 관찰은 기존 콜백 진입/완료 통지를 재사용했다. 종료 확인된 새/기존 쿠폰 또는 쓰기 COMMITTED는 ISSUED, 종료 확인된 실패는 FAILED로 기록한다. 종료 불명은 finish하지 않고 PROCESSING 유지·닫힘이다. finish 실패는 확정된 DB 결과를 유지하고 정상 UNCHANGED는 수용을 닫지 않는다. 입장 처리는 짧은 캠페인 읽기 TX 뒤 Redis만 호출하고 DB를 쓰지 않는다.
+- 실제 MySQL/fixture Redis Facade 검사 11건: 총량 C=8·8명에서 5 발급/3 품절·ISSUED 5/FAILED 3·점유0, INSERT 실패 rollback·FAILED·권한 재사용 거절/명시 재등록, READY 뒤 비활성/품절, C=3 넷째 NOT_READY·DB 추가 진입 없음·종료 뒤 재배정, 동일 권한 PROCESSING, close 뒤 진행 작업 finish, 기존 결과/조회 보존, Redis 호출 중 TX 없음과 SQL 순서를 확인했다. 같은 사용자 UNIQUE/마지막 수량 Facade 경쟁 2건은 STARTED 대역+실제 DB이며 실제 자리 상한 근거가 아니다. 기존 직접 DB 경쟁도 별도 실행했다.
+- 실행: JDK 21.0.12, 2026-11-12 14:52:47~14:53:25 KST, Checkstyle main/test와 지정 클래스 필터의 test 작업에 `--rerun-tasks --no-build-cache --console=plain`을 사용했다. BUILD SUCCESSFUL, 34 actionable tasks 모두 executed. 실제 Redis는 fixture 8.10.1 master이며 endpoint/DB/run_id 대조를 통과했다.
+- XML 합계 200건 실행·실패/오류/skip 0: Service 41, FacadeWaiting 22, FacadeTransactionOutcome 17, FacadeIntegration 11, IssueTransactionIntegration 7, 기존 AdmissionRedis 14, WaitingRedis 18, WaitingReplyConversion 8, Properties 3클래스 59, ArchitectureTest 3. Checkstyle main/test 오류 각 0. IssueTransactionIntegration의 최상위 XML 0건은 실행 건수에 더하지 않았고 중첩 3+4건만 집계했다.
+- 원시 근거: 로컬 `docs/week8/verification/runs/20261112-unit3-service-facade/`의 gradle.log·timing.txt·test-results XML·Checkstyle XML. 실제 명령/필터는 gradle.log에 보존했다. Facade 테스트는 worker 종료 확인 뒤 자기 캠페인 대기 키만 정리했고 기본 token 키는 시작/끝 NONE 확인만 했다.
+- 임시 호환/한계: Controller는 아직 issue(user,campaign) → 새 issue(...,null) 경로라 기존 쿠폰만 반환하고 신규는 ID_REQUIRED다. campaign-id 미설정 open은409다. CouponApiE2ETest·CouponHttpFaultE2ETest·CouponLocalFixtureConfigIntegrationTest·opt-in CouponLocalRedisFaultIntegrationTest는 4단위 전환 전 예상 실패로 미실행이며 통과로 기록하지 않는다. HTTP 헤더/DTO/202·등록 limiter/새 W6/O11 조립·자동 scheduler·전체 회귀/check·장애/부하 실험은 미실행이다.
+- 4단위에서 제거할 것은 임시 issue 2인수 메서드, cleanup API/DTO와 전용 경로, 구 acquire/release 포트·Set/Lua·전용 test 대역이다. 유효한 TX/DB/응답 유실/자원 정리 검증은 새 경로로 유지한다. Codex 검토에서 필수 수정·불필요한 제품 계층 추가는 발견하지 못했다.
+
+## 대기실 확장 4단위 — HTTP·등록 요청률 제한·구 경로 제거 (2026-11-12)
+
+- 기준: volume-8 / 0ca8ff5(3단위 커밋). Claude Code가 구현/검사했고 Codex가 코드·보존 XML/로그를 검토했다. Codex의 제품 검사 재실행은 없었다.
+- waiting POST/GET·선택 X-WAITING-ID·발급 200/201/202·WaitingResponse와 API 명세를 연결했다. 등록 handler 앞의 singleton Resilience4j interceptor는 사용자 식별/인자 변환보다 먼저 허가하며 timeout=0이다. 발급/조회/목록/제어에는 적용하지 않는다. 기존 WebMvcConfig는 유지하고 별도 CouponWaitingConfig가 등록한다.
+- 제거: cleanup API/전용 DTO·Facade 임시 issue(user,campaign)·구 acquire/release 포트/Set/Lua·token 전용 대역/검사. 유효한 DB/TX·응답 유실/timeout·종료 불명/정리 보류 검증은 start/finish 경로로 전환했다. 기존 master·앱 C=3 확인은 WaitingRedisIntegrationTest로 옮겼다. W6/O11 제외 목록에는 interceptor/config 두 동작 bean만 추가하고 관리 타입·DDL/행 보존 기대값은 유지했다.
+- HTTP 검사는 시작 설정과 고정 캠페인 fixture를 맞추고 수동 processAdmissions로 READY를 준비한다. 목록의 과거 캠페인 쿠폰은 DB fixture로 준비한다. 준비 코드 검사는 출력 ID와 같은 campaign-id·보존 DB로 재시작한 뒤 새 발급 흐름을 검사한다. RateLimiter 전용 검사는 긴 주기 안의 소진/동시 허가·즉시 거절/재허용·설정 범위·실제 MVC 선행429·등록 한도 소진 중 발급/조회/목록/제어 유지 등을 확인했다.
+
+| 실행(KST) | 결과와 범위 |
+|---|---|
+| 15:31:50~15:33:34 | 관련 23클래스 필터·Checkstyle main/test, XML 38개 합계 233건 실패/오류/skip 0·Checkstyle 오류 각 0. BUILD SUCCESSFUL, 34 actionable tasks executed |
+| 15:33:42~15:34:17 | 별도 w6OutboxRecoveryTest O11, 1건 실패/오류/skip 0. BUILD SUCCESSFUL, 32 actionable tasks executed |
+| 15:42:28~15:43:28 | 정리 조건/명세 보완 뒤 HTTP/정리 guard/ArchUnit, XML 9개 합계 39건 실패/오류/skip 0·Checkstyle 오류 각 0. BUILD SUCCESSFUL, 34 actionable tasks executed |
+
+- JDK21.0.12와 `--rerun-tasks --no-build-cache`를 사용했다. 관련 실행에는 W6 준비/직접 발행·W7 relay lifecycle·쿠폰 Service/Facade/TX/Redis/HTTP·설정 검사가 포함됐다. 보완 후 재실행은 CouponApiE2ETest 17·CouponHttpFaultE2ETest 4·CouponWaitingRateLimitE2ETest 2·ServerSettlementTest 13·ArchitectureTest 3뿐이며 나머지/O11을 다시 실행한 것으로 쓰지 않는다.
+- 보완 1: 세 HTTP 테스트는 test 전용 OwnedWaitingKeys를 통해 키 5개가 모두 비었을 때만 자기 키 정리를 허용한다. 첫/마지막 키 marker로 준비 실패 뒤 보존과 정상 소유 뒤 정리를 검사했다. 기존 서버/worker 종료·sticky 보류는 유지한다.
+- 보완 2: 발급 200/201/202의 생성 OpenAPI가 ApiResponse의 meta/data 구조와 각 data 타입을 표현하도록 수정했다. 실제 /v3/api-docs의 참조 스키마를 검사했다. 제품 wrapper 타입/실제 JSON은 추가·변경하지 않았다. Codex 재검토에서 두 지적의 해소와 추가 필수 수정 없음을 확인했다.
+- 원시 근거: 로컬 `docs/week8/verification/runs/20261112-unit4-http-ratelimit/a-related/`, `b-o11/`, `docs/week8/verification/runs/20261112-unit4-cleanup-schema-fix/`의 명령/로그·timing·XML/Checkstyle. 실제 Redis는 fixture 8.10.1 master/run_id를 대조했다. opt-in 로컬 Redis 장애 소스의 포트/키/관찰 대응은 컴파일만 확인했고 실제 pause/키 무효화/재개는 실행하지 않았다. 그 테스트 코드를 승인된 장애별 복구 절차/검증 근거로 사용하지 않는다.
+- 남은 범위: 5단위 자동 scheduler/실제 자동 주기·종료 검사와 scheduler bean의 W6/O11 격리, 이후 별도 전체 회귀가 남는다. 전체 check·부하/장애 실험은 이번에 수행하지 않았다. 현재 입장은 수동 processAdmissions에 의존한다.
+
+## 대기실 확장 5단위 — 내부 실행기 자동 입장·종료 (2026-11-12)
+
+- 기준: volume-8 / 02de22a(4단위 커밋). Claude Code가 구현/검사, Codex가 실제 코드·조립 diff·보존 XML/로그를 검토했다. Codex의 제품 검사 재실행은 없었다.
+- 신규 CouponWaitingScheduler는 SmartLifecycle의 기본 phase로 내부 단일 ScheduledExecutorService를 관리한다. 캠페인 미설정이면 실행기/예약이 없고, 설정됐으면 최초/회차 종료 후 schedulerDelay를 두고 Facade.processAdmissions만 호출한다. RuntimeException은 로그 후 다음 회차 유지, Error는 로그 후 재던짐으로 중단한다. stop은 cancel(false)·shutdown·기존 phase 종료 한도 내 대기 순서며 timeout/interrupt는 미완료로 기록한다. W7 실행기/설정·공통 scheduling 인프라는 변경하지 않았다.
+- 일반 HTTP/opt-in 컨텍스트는 test의 MockitoBean 대체, 직접 실행 준비 코드 컨텍스트는 test 전용 bean 정의 제거로 자동 회차를 통제했다. W6/O11 CouponBeanIsolation에는 실제 scheduler 이름 하나만 추가했다. 실제 자동 주기 전용 컨텍스트는 real scheduler를 사용했다.
+- WQ11 관찰: 최초 delay·회차 비중첩/fixed delay·단일 스레드·중복 start/stop·진행 회차 종료 대기/스레드 종료·timeout/interrupt·RuntimeException/Error, 닫힘에서 DB/Redis 업무0·open 뒤 처리·Redis 실패 뒤 닫힘/이후 업무0. 실제 fixture Redis/MySQL에서 수동 processAdmissions/GET 없이 4명 중 3명 승격·미사용 READY 회수/넷째 승격·PROCESSING 미회수·쿠폰/issuedCount 변화0을 확인했다.
+
+| 실행(KST) | 실제 결과와 범위 |
+|---|---|
+| 15:55:03~15:56:54 | 관련 23클래스 필터·Checkstyle main/test, XML 38개 합계 234건 실패/오류/skip 0·Checkstyle 오류 각 0. 34 actionable tasks executed |
+| 15:57:01~15:57:35 | 별도 O11 w6OutboxRecoveryTest 1건 실패/오류/skip 0. 32 actionable tasks executed |
+| 16:05:25~16:05:57 | 테스트 종료 확인 보완 뒤 scheduler lifecycle 11·자동 통합1·ArchUnit3, 총15건 실패/오류/skip 0·Checkstyle main/test 오류 각 0. 34 actionable tasks executed |
+
+- 모두 JDK21.0.12, `--rerun-tasks --no-build-cache`로 BUILD SUCCESSFUL이었다. 원시 명령·timing·XML/Checkstyle은 로컬 `docs/week8/verification/runs/20261112-unit5-scheduler/a-related/`, `b-o11/`, `docs/week8/verification/runs/20261112-unit5-settlement-fix/`에 보존했다. 보완 뒤 O11/다른 클래스를 재실행한 것으로 기록하지 않는다.
+- 보완: 자동 통합 테스트가 원래 실행기 참조를 보관하고 stop 반환 후 실제 종료가 확인돼야만 키/DB 정리를 실행한다. 참조 없음·timeout·interrupt는 실패/정리 보류이며 interrupt를 복원한다. 같은 test 내부 ExecutorSettlement를 실제 scheduler/latch 경계와 재사용해 실패 시 정리0·본문 선행 stop 후 원래 참조 유지·정상 종료 후 정리를 검사했다. 제품 scheduler/API와 별도 파일은 추가하지 않았다. Codex 재검토에서 지적 해소·추가 필수 수정 없음을 확인했다.
+- 실제 Redis는 fixture8.10.1 master/run_id 대조를 통과했다. 시작 전 자기 캠페인 키 공백/소유 확인, 종료 확인 뒤 자기 키 정리를 유지했다. WQ12의 이번 W6/O11 조립·기존 W7 lifecycle 검사는 통과했지만 전체 회귀/check는 아직 별도 실행 전이다. 로컬 Redis pause·부하·장애별 복구/재시작/다중 인스턴스는 이번 실행 근거가 아니다.
+
+## 대기실 정상 범위 최종 전체 검사 — 기준점 3bc158a (2026-11-12)
+
+- 실행 기준: volume-8 / `3bc158abb7a4592acd443a94fd26c8d368bba05a`(5단위 커밋). 실행 전 staged/추적 unstaged 0, 실행 중 소스 변경 없음. Claude Code가 실행했고 Codex가 보존 XML/로그·WQ 대조표를 직접 검토했다. Codex는 검사를 재실행하지 않았다.
+- JDK21.0.12, 2026-11-12 16:11:55~16:21:13 KST. COUPON_LOCAL_REDIS_FAULT_TEST는 미설정이며 실행 환경에서도 제거했다. 필터 없이 다음 명령을 수행했다.
+
+```sh
+./gradlew -Dorg.gradle.java.home="$JAVA_HOME" \
+  :apps:commerce-api:check --rerun-tasks --no-build-cache --console=plain
+```
+
+- BUILD SUCCESSFUL, 종료0, 35 actionable tasks 모두 executed. 일반 test XML275개는 총1280건 중 실제1278건 실행/통과·실패0·오류0·skip2다. 중첩만 가진 최상위 XML24개의 0건을 별도 실행으로 세지 않았다. skip은 opt-in CouponLocalRedisFaultIntegrationTest Q9/Q10으로 미실행이다.
+- 별도 O11 XML1개/1건 실행·실패/오류/skip0. check에 연결된 w6OutboxRecoveryTest가 실제 수행됐다. ArchitectureTest3건 통과, Checkstyle main/test 오류 각0. streamer/PG의 선행 빌드는 해당 앱 전체 테스트 실행을 뜻하지 않는다.
+
+| WQ | 이번 전체 실행의 주요 근거·관찰 |
+|---|---|
+| WQ1 | Properties 3클래스·Service WaitingEntry·HTTP 제어/운영 ID·scheduler 미설정 컨텍스트. 미설정 open409는 Service 대역 검사 |
+| WQ2 | 실제 WaitingRedis 동시 등록/재사용/rank·HTTP 등록/조회. 같은 사용자 ID/queue 하나 |
+| WQ3 | 실제 Redis/Facade/HTTP C=3·넷째409→승격 뒤201·최종 점유0. 자동 회차 최대 점유3 |
+| WQ4 | 실제 Redis 만료/비연장/PROCESSING 미회수·HTTP 기한·자동 회수. 경합8회 STARTED2/EXPIRED(회수)6, 매회 단일 결과 |
+| WQ5 | 실제 Redis 동시 STARTED 하나·HTTP202·권한 오류·Facade PROCESSING/ISSUED 재확인. ISSUED/DB 모순500은 대역 |
+| WQ6 | 실제 finish ID/상태 대조·새 항목 보존·INVARIANT, Service/TX 대역 결과 유지/닫힘, 실제 실패 rollback/재등록 |
+| WQ7 | 실제 MySQL 직접 경쟁·SQL/TX·rollback·목록/과거 효과. 실제 Redis C=8 DB 경쟁 5발급/3품절은 실제 C=3 상한과 별개. Facade 같은 사용자 경쟁은 STARTED 대역 |
+| WQ8 | 실제 Resilience4j 단위5건·MVC2건. 등록만 제한·resolver 선행·소진 중 발급/조회/제어 유지 |
+| WQ9 | HTTP17건·HTTP fault4건. 200/201/202·오류/null/UTC·기존 결과 우선·생성 OpenAPI·응답 유실 뒤 같은 ID |
+| WQ10 | 실제 Redis 품절/승격 중단·PROCESSING 보존, 실제 DB READY 뒤 상태 변경, Facade 대역 캠페인 상태 매핑 |
+| WQ11 | 실제 자동 scheduler/Redis/MySQL 승격·회수·DB 쓰기0 및 lifecycle11건·close 뒤 finish. 자동 관찰 최종 PROCESSING1/EXPIRED3 |
+| WQ12 | 일반 전체1278건 통과·Checkstyle/ArchUnit·W6 준비/직접 발행·W7 relay lifecycle·별도 O11·준비 코드. opt-in2건은 미실행 |
+
+- WQ는 위 실제/대역 근거에 한정해 §12 정상 범위의 완료 근거가 갖춰졌다고 판단한다. 경합 결과 분포는 이번 관찰이며 매번 양쪽 결과 출현을 보장하는 검사는 아니다. WQ12 전체 회귀 미실행이라는 앞선 단계별 한계는 이번 실행으로 해소됐다.
+- 종료 근거: O11 자식 graceful=true·exit143, 검사 후 worker/streamer 자식·잔여 test fixture 없음 보고를 로그/실행 기록과 대조했다. 공유 기존 서버는 유지했다. scheduler STOP_INCOMPLETE/INTERRUPTED 로그는 lifecycle의 의도된 실패 검사에서 발생했다.
+- 로컬 원시 근거는 `docs/week8/verification/runs/20261112-final-check/`의 timing.txt·gradle.log·일반 test XML275·O11 XML1·Checkstyle·summary.md다. 제출 필수 결과는 이 절에 남긴다.
+- 후속/미검증: 실제 로컬 Redis pause·늦은 명령·장애별 수동 재개·재시작 복구·다중 인스턴스/다중 운영 캠페인·부하/최적 설정·캐시/Bulkhead/epoch. 기본 구현의 과거 장애 성공은 이번 확장 결과가 아니다. 제출/커밋 판단은 사용자 담당이다.
+- 이 커밋을 후속 캐시/격리 설계와 변경 전후 비교의 정상 구현 기준점으로 보존한다. 새 캐시/격리의 대상·정합성/장애 처리·비교 지표는 별도 설계/승인으로 정하며 이번 검사에 포함하지 않는다.
+
+
+## 캐시 A단위 Redis 구현·관련 검사 검토 — 2026-11-12
+
+- 구현 기준 volume-8/90b14c6. Redis 기발급/품절 positive 캐시·설정/포트/엄격 JSON adapter·읽기 Lua·cache 서비스·Facade 연결과 C1/W6/O11 조립을 검토했다. local B는 미구현이다. 서비스 내부에서 확정 CouponIssueResult를 IssuedCoupon으로 변환해 변환 실패도 캐시 저장 실패로만 처리한다.
+- 실행 A: JDK21.0.12, 18:00:01~18:02:01 KST. Checkstyle main/test·일반 test에 *Coupon*·ArchitectureTest·ServerSettlementTest·WorkerTerminationTest·W6 준비/직접 발행·W7 relay lifecycle 필터를 적용했고 --rerun-tasks --no-build-cache로34개 task 실제 실행. XML51개 총342건 중340건 통과·실패/오류0·opt-in Q9/Q10 skip2건이다. Checkstyle 오류0·ArchUnit3건 통과를 원시 보고서와 대조했다.
+- 실행 B: 18:02:30~18:03:05 KST, 별도 w6OutboxRecoveryTest32개 task 실제 실행·XML1개1건 통과/skip0. 자식 graceful=true·exit143 보고를 로그와 대조했다. 실제 Redis는 fixture master/DB0이며 대상 run_id 대조 기록이 있다. 공유 Redis pause는 하지 않았다.
+- 선행 A-attempt1은 unused import1건으로 checkstyleTest에서 실패해 test0건이었다. 실패 로그/보고서를 보존하고 해당 import 제거 후 A를 다시 실행했다. 이 실패를 통과로 집계하지 않는다.
+- 실제 DB/Redis 근거: 기존 결과 hit의 쿠폰 SQL0·miss 후 positive 채움, 신규 put 시 txActive=false/waiting=ISSUED, cached 품절의 캠페인 SQL0/INACTIVE보다 품절 우선, 이름 TTL 지연/만료 뒤 새 이름·목록 현재 이름, NX/TTL 비연장·손상/no-TTL DB fallback. TX 종료 불명/결과 미확보·finish/put 실패 분기는 대역 근거다.
+- 기존 HTTP/응답 유실 검사는 C1 miss/no-op 조립이며 실제 warm-cache HTTP 검사는 미실행이다. 공통 사용자 resolver는 변경하지 않았다. 전체 check·실제 장애·비교 실험·KQ7/local은 이번 완료 범위가 아니다.
+- Codex 검토 후 동시 채움 검사의 finally에 go.countDown() 한 줄을 추가했다. 준비 대기 실패에서도 worker latch를 먼저 해제하고 기존 종료 확인을 거치게 한다. 위 A/B 실행은 이 한 줄 수정 전 결과이며 수정 후 테스트는 아직 재실행하지 않았다. 문서/공백 정적 확인만 수행했다.
+- 로컬 원시 근거: docs/week8/verification/runs/20261112-cache-a/의 A-attempt1-checkstyle-fail·A·B와 summary.md. 종료/정리 보고는 실제 자원 및 대역 범위를 구분하며 새 장애/성능 통과를 주장하지 않는다.
+
+## 후속 장애·복구 검증 상세설계 — 2026-11-12, 최종 승인·미실행
+
+전체 정적 검토와 M1/S1~S4 보완본 재검토에서 필수 보완/새 판단 없음 확인 후 사용자가 최종 문장 정리·설계 스테이징과 필요한 test 보완 전달 준비를 승인했다. 제품 계약은 쿠폰 §12·§13/CQ16·CQ17이며 장애별 준비·주입·관찰·복구·정리·완료 기준을 기술한다. 캐시 A는 f4dcdd8에 구현됐다. 장애 test 장치 보완·실제 pause/복구 검증은 아직 실행하지 않았다. 실제 공유 Redis 장애 조작은 별도 승인 대상이다.
+
+### 1. 대상·실제 자원·판정 경계
+
+- 대상은 한 로컬 앱·한 운영 캠페인·실험이 만든 알려진 사용자/요청이다. 캐시 실패의 DB fallback과 대기 상태 실패의 수용 닫힘, commit 결과 보존, 확인 후 수동 재개를 검사한다. 총량/사용자 UNIQUE·기존 쿠폰/발급 수를 모든 단계에서 보존한다.
+- R1/R6은 선택적 오류·TX 결과 대역 검사다. R2/R3은 기존 opt-in Q9/Q10의 실제 Redis 장애 장치를 재사용한다. R4/R5는 실제 cache 포트/Redis와 DB를 사용하는 별도 opt-in 조립이다. 기존 정상 check의 opt-in skip과 기본 구현 시절 성공을 이번 장애 통과로 쓰지 않는다.
+- 캐시 A의 관련 결과는 실행 전 확인한다. R5 실행은 B 구현/관련 검증 뒤다. 설계 자체는 A/B 결과를 기다리지 않고 작성하며 결과가 오면 실제 타입·호출 위치·설정과 대조한다.
+- 앱 재시작·실제 DB 단절/재연결·다중 인스턴스·알 수 없는 옛 클라이언트는 제외한다. 알려진 동일 연결의 후속 응답은 해당 연결의 경과 근거이며 전역 종료 보장이 아니다. 자동 복구·epoch·추가 제품 API/스위치/재시도는 만들지 않는다.
+
+### 2. 공통 준비·장치·중단 조건
+
+1. 실제 커밋/미커밋 변경·JDK21·적용 계층(Redis-only/local)을 기록한다. 제품 설정/기본 TTL은 바꾸지 않는다. 현재 기본 Redis connect/command timeout은 application.yml의200ms, local 기본5초지만 실행에서는 실제 유효 설정을 다시 기록한다. Redis timeout은 HTTP 전체 상한이 아니다.
+2. 별도 opt-in Bootstrap으로 기존 로컬 master/replica/database를 명시하고 fixture Redis 자동 구성을 제외한다. 실제 cache R4/R5에는 C1의 miss/no-op 포트를 넣지 않는다. R2/R3은 C1 대역으로 상태 장애를 분리한다. 일반 테스트/제품 scan으로 test 구성을 유출하지 않는다.
+3. endpoint/database·컨테이너 ID/포트/Compose 서비스·INFO run_id·앱 master 연결 ID를 대조한다. 같은 Redis를 쓰는 다른 앱/검사/클라이언트가 있거나 대상 식별이 불명하면 pause하지 않는다. 다른 사용자 작업을 강제로 종료하지 않는다.
+4. 운영 캠페인의 waiting5키와 사용할 issued/sold-out 키를 첫 요청 전에 확인해 전부 비었을 때만 소유한다. fixture ID를 만든 뒤 캐시 키를 확인하되 실패하면 남의 키를 삭제하지 않는다. DB는 검사 소유 fixture이고 다른 사례와 병행 truncate하지 않는다.
+5. 실제 scheduler는 각 장애 위치를 분리하는 opt-in 조립에서 대체한다. 수동 processAdmissions는 장애 전 준비에서만 호출한다. Redis 전체 장애에서 실제 scheduler가 별도 상태 Redis 오류로 수용을 닫는 원칙은 유지하며, 통제된 cache-only 결과를 전체 서비스 가용성으로 확대하지 않는다.
+6. test-only cache/admission decorator는 입력·waitingId·위임 진입/정상·실패/종료를 기록하고 실제 adapter에 위임한다. cache get/put과 start/finish를 구분한다. callback 자체의 실패와 실제 Redis timeout을 구분하고 제품 hook은 추가하지 않는다.
+7. pause 시도는 CLI 호출 전에 기록한다. finally/AfterEach에서는 시도 여부와 실제 paused 상태를 확인해 unpause한다. 복구/로그 쓰기 실패는 독립 실패로 남긴다. pause 명령 실패도 미적용으로 추측하지 않는다. FLUSHALL·공유 서버 stop·출처 불명 키 삭제는 하지 않는다.
+
+대기 장치는 기존 한도를 재사용한다. Docker CLI 한 호출30초, native CLIENT ID/INFO 대기5초를 유지한다. HTTP 관찰은 test-only 클라이언트의 유한 read 한도60초로 제안한다. 요청 안 pause의 CLI 한도30초와 실제 Redis command timeout/여유보다 커야 하며, 실행 설정이 이 조건을 만족하지 않으면 실험을 시작하지 않는다. 기존 opt-in의 유한 read 설정은 별도 test 보완 범위다.20초 제안은 철회한다. HTTP timeout이면 서버 종료가 아니라 관찰 실패다. 서버/worker 종료는 기존 ServerSettlement/WorkerTermination의 유한 확인, 소유 실행기는 ExecutorSettlement의 원래 참조 확인을 재사용한다. 현재 장치와 정확한 조립 차이는 구현 전달 전에 대조하고 유효한 기존 검사 한도는 완화하지 않는다.
+
+### 3. 사례별 준비·주입·기대 결과
+
+| ID | 준비와 장애 주입 | 요청/저장소 기대 결과 | 복구 뒤 확인 |
+|---|---|---|---|
+| R1 선택 캐시 오류 | 대역 포트로 issued get, sold-out get, issued put, sold-out put을 각각 한 지점에서 실패시킨다. DB/입장 Redis는 정상 | get은 miss 후 원래 DB 경로, put은 확보한 응답/DB 결과 보존. cache 실패만으로 수용 닫지 않음·같은 작업 retry0·캐시용 추가 DB 조회0. DB도 실패하면 원래 DB 오류 유지 | 대역 오류 해제 후 정상 채움/조회. 기존 KQ6에서 실제 실행 근거가 있으면 같은 검사를 추가하지 않음 |
+| R2=Q9 START 장애 | 기존 소유자 쿠폰1개·신규 사용자 READY를 정상 생성. Q9처럼 같은 master 연결의 정상 finish 경로 확인 후 master pause, 신규 발급 POST | 실제 start 실패503/수용 닫힘, 신규 사용자 쿠폰0·발급 수 추가0. 장애 중 기존 소유자 재요청200/동일 ID와 목록 보존. 캐시는 miss/no-op 대역임을 명시 | finally unpause, 같은 연결 ID/run_id 후속 응답·late START의 실제 processing 관찰. 아래 종료 확인 뒤 자기 대기 상태 무효화. 기존 Q9는 닫힘 유지로 종료 |
+| R3=Q10 finish 장애·재개 단언 추가 | 신규 사용자 READY→실제 DB commit. Q10의 finish 위임 직전 callback에서 master pause. 장애 전 READY인 미발급 대기자도 한 명 준비해 옛 ID 기록 | 실제 finish 실패에도 최초201/쿠폰1·issuedCount1 보존, 수용 닫힘. 추가 commit/재시도 없음 | unpause·DB 결과/같은 연결 경과 확인 후 대기 상태 무효화·명시 open·다음 사용자 새 등록/발급. 기존 Q10의 제한된 재개 근거와 아래 옛 권한 검사를 구분 |
+| R4-a 실제 issued get | DB 쿠폰1개 확정. cold는 자기 issued 키 없음, warm은 정상 Redis 채움/TTL 확인. 각각 master pause 후 발급 재요청 | warm도 pause 중 Redis에서 읽을 수 없으므로 실제 get 실패→DB 기존200/같은 ID·추가 발급0. 재채움 put 실패가 이어지면 별도 기록. cache 실패만으로 닫지 않음 | unpause 뒤 늦게 적용된 get/put·현재 키/TTL 관찰. 캐시 값 미확정이어도 DB 결과를 취소하지 않음 |
+| R4-b 실제 cache+START | 미발급 사용자 READY 확보 후 master pause, 실제 cache를 쓰는 발급 요청 | issued get 실패→DB 없음→실제 start 실패503/닫힘·신규 DB 효과0. cache 실패와 상태 실패를 별도 기록 | unpause 뒤 late START/DB·종료 확인. R2와 같은 조건으로만 자기 대기 상태 무효화, 자동 open 금지 |
+| R4-c 실제 issued put | 정상 신규 발급의 해당 user/campaign 첫 put만 대상. admission 기록 decorator가 해당 waitingId의 finish 정상 완료를 이미 기록했을 때만 cache decorator에서 pause. TX 종료/finish 완료/1회 조건 불충족은 주입 전 사례 실패 | 실제 cache put 실패에도201/DB 쿠폰1·issuedCount1·정상 finish 점유0. 자동 회차가 없는 이 검사에서 cache 실패만으로 닫지 않음 | HTTP/위임 종료 후 finally unpause. late put이 적용됐거나 안 됐거나 DB 확정 결과는 같음. 소유 키/TTL과 DB 결과를 확인 |
+| R5-a local 유효 | 새 서비스/컨텍스트에서 DB 품절→Redis true→정상 실제 Redis 조회로 local 채움. master pause 뒤 미발급 사용자 등록 | local 분기 도달 시 수명이 남아 있으면 품절 Redis 조회0·캠페인 DB 조회0·품절409. 선행 issued get/사용자·쿠폰 DB 비용은 남으며 각각 기록 | unpause·진행 요청 종료 확인 뒤 자기 키/컨텍스트 정리.409만으로 local hit을 판정하지 않음 |
+| R5-b local 만료 | R5-a와 별도 새 서비스에서 실제 채움. local 수명 만료를 확인하고 master pause 뒤 등록 | local miss→sold-out get 실패→캠페인 DB 품절 확인→sold-out put 실패→409. get/put 각각의 실패·캠페인 DB 조회가 있어야 함. DB 쓰기/새 대기 등록0 | unpause·late 명령/요청 종료·소유 키 정리 확인. R5-a와 같은409지만 서로 다른 경로임을 증명 |
+| R6 TX 결과/종료 불명 | 기존 TX 관리자/저장소 대역으로 rollback, 결과 미확보 COMMITTED, UNKNOWN을 각각 재사용 | 종료된 실패는 기존 오류/finish FAILED·positive 미채움. COMMITTED 결과 미확보는 기존500/finish ISSUED·캐시 미채움. UNKNOWN은500/finish0·PROCESSING 보존/닫힘·캐시 미채움 | UNKNOWN 상태에서 복구/정리를 수행하는 검사가 아님. 새 test 인스턴스로 장치를 종료하고 실제 DB 장애 성공으로 쓰지 않음 |
+
+R5-a는 local 진입 직전의 관찰 시각/채움 경과·품절 저장소 호출0·DB 캠페인 호출0을 함께 근거로 삼는다. 테스트는 Redis 실제 남은 수명 이내의 유효 local을 준비하고, 제품 시간/TTL을 조작하지 않는다. 선행 issued get timeout/스케줄링 지연으로 수명이 끝났으면 그 실행은 유효 hit 근거가 아니다. 대역의 빠른 실패로 실제 pause를 대체하거나 TTL을 늘려 통과시키지 않는다. 실제 pause 경로를 제한된 반복에서 관찰할 수 없다면 한계를 남기고 cache-only 검사의 근거와 구분한다.
+
+### 4. 복구·재개·정리 순서
+
+HTTP/Redis timeout은 원격 작업 미실행·종료를 뜻하지 않는다. 다음 의사코드는 알려진 로컬 요청/동일 연결 범위에서만 사용한다. 기존 쿠폰/발급 수는 대기 상태 무효화 대상이 아니다.
+
+```text
+사례 시작: 자기 자원 소유 확인; 수용 열기; 정상 준비
+try:
+  승인된 위치에서 pause 시도 기록 → 실제 Redis 명령 위임
+  HTTP 결과·DB 효과·닫힘/유지·위임 종료 기록
+finally:
+  아직 시작하지 않은 pause callback의 진입을 닫음
+  이미 진입한 pause는 종료/실패 신호를 CLI 한도보다 긴35초 안에 확인
+  확인 후 대상 상태 inspect → 필요 시 unpause
+  신호 미확인/명령 적용 불명이면 pause 상태 불명 기록; 가능한 복구 시도
+  복구 실패/불명이면 정상 정리·재개 금지
+
+수용 닫기; 새 요청/자동 회차가 없음을 확인
+자기 서버 요청/worker/DB 작업의 종료를 유한하게 확인
+pause 시도 이력이 있으면 최종 상태를 다시 inspect → 필요 시 unpause
+같은 run_id/client ID 후속 응답 확인; 실제 late 명령 결과/점유 읽기
+  요청 종료 실패/DB UNKNOWN/재연결/관찰 실패면:
+    대기 키·DB 정리와 open 보류; 원시 근거 보존
+  모두 확인되면:
+    자기 waiting5키만 무효화; 쿠폰/발급 수 보존 확인
+    재개 사례만 명시 open → 새 등록/새 waitingId → 새 발급 검증
+사례 종료:
+  다시 닫기; 자기 서버/worker/원래 executor의 실제 종료 확인
+  확인된 자기 cache/waiting키만 삭제; fixture DB 정리
+  실패/정리 보류는 컨텍스트 수명 동안 유지해 다음 사례 준비도 차단
+```
+
+요청 안 pause 사례(R3/R4-c)는 HTTP 관찰 실패 시에도 진행 중 pause 호출의 종료를 먼저 확인한 뒤 복구한다. test-only guard에서 callback 진입과 진입 닫기를 원자적으로 조율한다. 아직 시작하지 않은 callback은 닫힌 뒤 pause를 호출할 수 없고, 이미 시작한 callback은 finally에서 성공/실패·호출 종료 신호를 남긴다. 종료 신호는 정리 스레드가35초 유한 대기로 관찰하며, 신호 기록 전의 오류도 미확인으로 취급한다. HTTP 한도를 길게 두는 것만으로 이 조율을 대체하지 않는다. 사례가 끝나면 등록해 둔 callback을 비운다. 진입 문이 닫힌 뒤 도착한 callback은 예외 없이 pause만 생략하고 기록을 남겨 원래 finish 위임을 막지 않는다. 이 경로도 가짜 CLI/latch Guard 회귀 검사에 포함한다. 새 사례는 새로 명시 등록한 callback만 사용한다.
+
+현재 PauseGuard.restore는 attempted=false 뒤 재호출하면 no-op이므로, 서버 종료 후 최종 복구는 기존 메서드 두 번 호출만으로 구현하지 않는다. test-only guard에 pause 시도 이력을 보존하고, 검증된 대상/시도 이력이 있으면 최종 inspect/unpause를 실제 수행하게 최소 보완한다. 같은 상태에서 반복 복구는 안전해야 하며 새 제품 복구 타입/기능은 추가하지 않는다. pause 호출 종료를 확인하지 못했거나 CLI를 중단해 원격 적용 여부가 불명이면 ‘pause 상태 불명’으로 기록한다. 그때의 단발 inspect=false만으로 정상 복구를 선언하지 않고 키/DB 정리·open을 보류해 미확인 작업과 대상 정보를 보고한다.
+
+Redis가 멈춘 채 애플리케이션 Redis 후속 응답/서버 전체 종료를 먼저 기다리지 않는다. pause 호출 자체의 종료와 애플리케이션 전체 종료는 다른 신호다. stop이 반환되거나 scheduler 필드가 null이라는 사실만으로 원래 실행기 종료를 추측하지 않는다. 키가 처음부터 있었던 준비 실패에서는 소유가 없으므로 해당 키를 지우지 않는다.
+
+수동 재개 검사의 추가 단언은 다음과 같다. 기존 Q10 성공만으로 일반 복구 완료를 선언하지 않고, 해당 재개 단위에 아래 항목을 함께 둔다.
+
+- 비어 있는 소유 캠페인에서 기존 보유자와 미발급 대기자를 구분한다. 무효화 전에 미발급 대기자의 옛 waitingId를 기록한다.
+- 종료/연결 경과 확인과 자기 대기 상태 무효화 후 명시 open한다. 아직 새 등록하지 않은 미발급 사용자의 옛 헤더 발급은404·신규 DB 효과0이어야 한다.
+- 같은 사용자가 다시 등록하면 새 waitingId를 받는다. 옛 헤더는 여전히404이고 새 항목/순번/점유를 바꾸지 않는다. 새 권한으로는 정상 발급 가능하며 사용자 UNIQUE/총량을 지킨다.
+- 이미 발급된 사용자는 옛 헤더나 헤더 없음에도 기존200/같은 couponId가 우선이다. 옛 권한 거절 검사를 이 사용자로 대신하지 않는다.
+- UNKNOWN/재연결/요청 종료 미확인 사례는 open하지 않는다. 확인되지 않은 모든 외부 클라이언트까지 차단하는 제품 보장으로 확대하지 않는다.
+
+### 5. 관측·완료 기준
+
+| 근거 | 필수 기록 |
+|---|---|
+| 실행 식별 | 코드/커밋·작업 트리·JDK·실제 설정/TTL·명령·시작/종료 KST·exit code |
+| 실제 대상 | master/replica/DB·컨테이너 ID/서비스/버전·run_id/client ID 전후·다른 클라이언트 확인 |
+| 요청·명령 | 사용자/캠페인/waitingId·HTTP status/errorCode/couponId·cache get/put와 start/finish 각각의 진입/성공/실패/종료·pause/unpause 시도/결과 |
+| 정합성·경로 | 쿠폰/issuedCount/UNIQUE 전후·READY+PROCESSING·기존 결과 우선·cache-only/상태 실패에 따른 수용 상태·local hit/miss의 품절 Redis/캠페인 DB 호출 수 |
+| 자원·보고서 | 원래 서버/worker/executor 종료·자기 키 소유/정리 또는 보류·이번 XML/로그·실패/오류/skip/0건·실제/대역/미확인 구분 |
+
+각 사례는 준비와 실제 주입 지점까지 도달하고 위 근거/해당 단언이 맞아야 통과다. callback 진입만 있고 Redis 위임이 없거나 opt-in skip/0건이면 실제 장애 통과가 아니다. 응답/DB 단언이 맞아도 unpause/종료/소유 자원 정리 근거가 실패하면 전체 사례는 실패/보류다. 로그/테스트 기대·유효 한도를 지우거나 완화하지 않는다.
+
+### 6. 구현·실행 단위와 범위
+
+- R1은 A 커밋 f4dcdd8의 CouponCacheServiceTest·CouponFacadeCacheIntegrationTest·CouponCacheRedisIntegrationTest, R6은 CouponFacadeTransactionOutcomeTest의 기존 근거를 재사용한다. 선택 오류/실제 손상/실제 DB/대역 TX 범위를 구분하고 새 장치를 중복 구현하지 않는다.
+- R2는 기존 Q9를 재사용하고 R3는 기존 Q10에 재개/옛 ID 단언을 추가한다. 별도 중복 메서드를 새로 만들지 않는다. 첫 실제 단위는 현재 opt-in 조립/종료·HTTP 유한 관찰과 pause 조율을 대조하고 필요한 최소 test 보완과 재개 추가 단언을 제안하는 것이다. 기존 정상 기대는 유지한다. Guard 회귀 검사에는 느린 pause 동안 HTTP 관찰 종료, 진입 전 취소 후 늦은 callback, pause 실패/종료 불명, 서버 종료 후 재복구가 실제 inspect를 수행하는 경우를 포함한다. 가짜 CLI/latch로 검증하고 실제 Docker pause를 guard 단위 검사에 넣지 않는다. 실제 실행은 별도 승인 후 아래 클래스 필터를 사용하며 JDK/로그 절대 경로를 준비한다.
+- R4/R5는 실제 캐시 opt-in 클래스 하나를 기본안으로 한다. 필요한 test-only decorator/소유 자원 장치는 기존 도구를 재사용하고, 파일/필터를 구현 전달문에 열거한다. R4는 A 후, R5는 B 후 실행 가능하다. 각 단위 종료 후 검토하고 다음 단위를 자동 시작하지 않는다.
+
+```sh
+COUPON_LOCAL_REDIS_FAULT_TEST=true \
+./gradlew -Dorg.gradle.java.home="$JAVA_HOME" \
+  :apps:commerce-api:test --tests '*CouponLocalRedisFaultIntegrationTest' \
+  --rerun-tasks --no-build-cache --console=plain
+```
+
+위는 실행안이며 현재 실행 지시가 아니다. COUPON_LOCAL_REDIS_FAULT_LOG는 실행별 새 절대 경로로 설정하고 XML/JSONL/전체 로그를 새 실행 폴더에 보존한다. 기존 클래스의2건과 추가 재개 검사 수를 실제 XML로 구분하며 고정 건수에 맞추지 않는다. 일반 check/Checkstyle/ArchUnit·O11은 캐시 구현의 별도 검사 근거이고 실제 pause의 대체 근거가 아니다.
+
+### 7. 현재 완료 상태·한계
+
+기존 합의 범위의 준비·주입·응답/상태·복구·정리·관측/완료 기준과 수동 재개 단언을 작성했다. 전체/보완본 정적 검토와 사용자 최종 검증안 승인은 완료됐다. test 보완/실행은 아직이다. 새 정책 판단은 현재 없으며 A/B 결과가 오면 위임 위치/조립·실제 설정/클래스만 대조한다. 늦은 명령의 실제 적용 여부는 실행에서 관찰할 항목이지 설계로 확정한 결과가 아니다. 성능 비교·자동 복구·재시작/다중 인스턴스 안전성은 이 문서 작성으로 완료되지 않는다.
+
+
+**첫 전체 정적 검토 보완:** 사용자 승인으로 M1의 요청 내 pause/HTTP 복구 경합과 S1~S4를 반영했다. HTTP60초·pause 종료 관찰35초는 새 test 장치의 제안값이며 현재 코드를 변경한 것이 아니다. 기존 PauseGuard의 재호출 no-op도 보완 대상에 명시했다. R2/Q9·R3/Q10 재사용, finish 확인 뒤 해당 사용자 첫 put만 주입, R5-b get/put 실패, A의 기존 R1/R6 근거를 정리했다. 보완본 재검토와 최종 검증안 승인은 완료됐고 test 수정·실험은 아직이다. 실제 HEAD f4dcdd8에 latch 한 줄은 포함돼 있고, 수정 후 재실행이 없다는 기존 기록은 유지한다.
+
+
+## 장애 test 장치 구현·보완 검토 — 2026-11-12
+
+- 기준89e8eeb에서 Claude가 CouponLocalRedisFaultIntegrationTest·GuardTest 두 test 파일을 보완했다. Codex는 실제 diff와 원시 실행 자료를 대조했다. 제품 코드는 변경하지 않았다.
+- 진입 문/진행 pause 종료 신호·시도 이력 보존/최종 재복구·HTTP60초/CLI30초/종료 관찰35초·불명 시 정리/open 보류·잔여 callback 해제와 Q10 옛 ID/새 등록·기존 결과 우선 단언을 구현했다.
+- 첫 실행18:35:01~18:35:25 KST: Guard14·CacheRedis35·Architecture3의52건 실패/오류/skip0·Checkstyle0. Codex 검토에서 로그 쓰기 실패와 종료 대기 interrupt가 복구를 건너뛰는2건을 발견해 보완했다.
+- 보완은 메모리 불명 판정 우선·로그 오류 수집 후 가능한 복구 시도/예외 보존, 종료 기록 실패에도 호출 종료 신호 보장, interrupt 시 불명 유지/복구 시도 후 상태 복원, endCase의 기록 실패에도 복구/보류 판단 유지다. 가짜 CLI/latch와 실제 Guard/endCase 경로의 새3건을 추가했다. 일반 복구 framework/제품 기능은 추가하지 않았다.
+- 최종 실행20:24:16~20:24:41 KST, JDK21.0.12. Checkstyle main/test·test에 *CouponLocalRedisFaultGuardTest·*CouponCacheRedisIntegrationTest·*ArchitectureTest 필터, opt-in env 제거·--rerun-tasks --no-build-cache.34개 task 실제 실행/BUILD SUCCESSFUL. 원시 XML3개 총55건(Guard17·CacheRedis35·Architecture3), 실패/오류/skip0·Checkstyle main/test 오류0을 대조했다.
+- Guard17건은 Docker 없는 가짜 CLI 검사다. CacheRedis35건은 fixture master/db0·run_id 대조/실제 Redis 검사이며 A latch 수정 이후 재검사를 포함한다. Guard의 실제 공유 Docker pause/원격 late 적용을 관찰한 근거가 아니다.
+- 종료 보고는 worker/앱0, 실행 직후 남은 test MySQL/Ryuk는 약30초 뒤 회수돼0이며 공유 컨테이너7개는 그대로다. 종료/정리 로그와 요약을 확인했다. 로컬 원시 근거는 docs/week8/verification/runs/20261112-recovery-guard/와 20261112-recovery-guard-fix/다.
+- Q9/Q10의 수정은 컴파일/정적 준비까지이며 실제 opt-in은 실행하지 않았다. R4/R5·로컬 B·전체 회귀/O11/비교도 미실행이다. 수정 전 코드를 되돌려 새3건의 실패를 실행 관찰하지 않았으며, 정적 반례와 수정 후 실제 통과를 구분한다. Codex 검토 결과 이번 test 장치 단위의 추가 필수 보완은 없다.
+
+## 로컬 캐시 B단위 구현·관련 검사 검토 — 2026-11-12
+
+- 기준 volume-8/c5f86c9. 제품2파일(Properties/CacheService)·test6파일만 변경한 diff를 검토했다. private long ID/단조 시각 불변 record와 AtomicReference 한 슬롯, local5초·상위 Redis 잔여 수명/조회 지연 차감·hit 비연장·overflow/오류 미채움·Redis-only put이 승인 계약과 일치한다. 신규 bean/프레임워크·Facade/adapter/Lua 변경은 없다.
+- 서비스 검사는 기존 true→false 전달을 새 인스턴스 miss와 local hit으로 분리해 의미를 보존했다. 짧은 test TTL/지연 대역·동시 응답/ID 교체·put 뒤 미채움과 worker finally 해제/종료를 확인했다. 실제 Facade/MySQL/fixture Redis에서는 local hit의 품절 저장소 read0·캠페인 SQL0/선행 기발급 SQL1, 보유자 우선/닫힘503·TTL 비연장·local 만료 재조회를 관찰했다.
+- 관련 실행 A: JDK21.0.12,20:47:36~20:49:53 KST, opt-in env 제거·A와 같은 쿠폰/Architecture/정리 guard·W6/W7 관련 클래스 필터·Checkstyle main/test. --rerun-tasks --no-build-cache로34개 task 실제 실행/BUILD SUCCESSFUL. XML51개 총363건 중361건 실행/통과·실패/오류0·opt-in Q9/Q10 skip2, Checkstyle main/test 오류0을 원시 자료와 대조했다.
+- 실행 B O11:20:50:21~20:50:58 KST·32개 task 실제 실행·XML1개1건 통과/실패오류skip0, child graceful=true/exit143. 자원 종료 보고는 worker/streamer0, test Redis/MySQL/Ryuk는20:51:09 확인 시0이며 공유 컨테이너는 조작하지 않았다.
+- 원시 근거는 docs/week8/verification/runs/20261112-cache-b/의 a-related·b-o11/summary.md다. 실제 Redis/DB 근거와 Mockito 지연/오류 대역을 구분한다. Codex가 소스/보고서를 읽어 검토했고 검사를 재실행하지 않았다. 추가 필수 수정은 없다.
+- 미실행: 실제 공유 Redis pause/Q9·Q10/R4·R5, 실제 warm-cache HTTP, 전체 check/회귀, 비교 실험. 새 검사의 수정 전 실패를 되돌려 실행하지 않았고 정적 반례와 수정 후 통과를 구분한다. 다음은 이 B 구현 커밋 뒤 기존 Q9/Q10부터 실제 장애 검증이다.
+
+## Q9/Q10 실제 장애·재개 검증과 Q10 마지막 정리 보완 — 2026-11-12
+
+- 기준 dcbb32c의 C1 miss/no-op cache·자동 scheduler 대체 opt-in 조립이다. 이번 결과는 실제 대기 상태 Redis 장애/통제된 수동 재개 근거이며 실제 cache 장애 R4/R5의 근거가 아니다. 대상은 공유 로컬 Redis7.0.15 master6379/db0·replica6380이며 컨테이너/run_id·다른 client/host 연결·자기 worker와 운영9101 waiting5키 공백을 실행 전 대조했다.
+- 첫 실행21:00:31~21:00:55 KST는 실제 Q9/Q10 XML2건 실패/오류/skip0이었으나 재개 뒤 meta/entries2키가 남아 정리 미완료였다. 이전 원시 자료/판정은 보존한다.
+- 후속21:07:44~21:07:59에 동일 대상/서버·기존 JVM 종료·다른 client 없음과 두 키의 타입/전체 field/value를 재확인했다. 일회성 EVAL에서 같은 조건을 원자 비교한 뒤 자기2키만 삭제(DELETED2)했고 waiting5키0을 확인했다. 제품 Lua/공용 정리 도구는 추가하지 않았다.
+- Q10 끝을 닫기→최종 복구/연결 경과 확인→자기 키 무효화→전체 키0/processing0·DB 발급/쿠폰3 보존 단언→finishedCleanly로 보완했다.21:08 관련20건/실제2건 통과·독립 키0 확인 후, Codex가 연결 ID/run_id 일치 단언2개를 키 삭제 앞으로 이동했다. 이 이동 후 최신 재검사로 최종 판정한다.
+- 최종 관련 검사21:15:27~21:15:40 KST, JDK21.0.12·opt-in 제거·Checkstyle main/test·Guard17/Architecture3 필터, --rerun-tasks --no-build-cache로34개 task 실제 실행. XML2개20건 실패/오류/skip0·Checkstyle main/test 오류0을 대조했다.
+- 최종 실제 실행21:15:59~21:16:24 KST,32개 task 실제 실행·XML1개2건 실패/오류/skip0. 해당 test sha256 bbc4bc39bacfd0f1326fcdc44a7895e7e39543576a0bfea686be7807023ecc80을 작업 트리와 대조했다.
+- Q9: start timeout/503·닫힘·신규 DB 효과0·기존200/목록 유지. unpause 후 late START가 processing={2}로 관찰됐으며 같은 client14506/run_id 후속 응답 확인 뒤 자기 대기 상태 무효화/닫힘 유지. timeout을 미실행으로 간주하지 않는 근거다.
+- Q10: finish timeout에도201·쿠폰/발급1 보존·닫힘, 확인 후 무효화/명시 open·새 발급2, 미발급자 옛 ID404/효과0·새 등록/새 ID 발급·보유자200 우선까지 최종 발급3. 마지막 삭제 전 연결/run_id 단언과 정리 후 키0/processing0·DB3 보존 통과. JSONL87줄의 순서/결과와 불명·보류 event0을 대조했다.
+-21:16:57 독립 postrun은 target running/unpaused·동일 run_id/시작 시각·replica online, waiting5키0/processing0/db0=0, 자기 test JVM/worker/앱/test 컨테이너0을 확인했다. 공유 컨테이너7개는 유지했다. 이번 Q9/Q10 단위는 업무/복구/정리 근거까지 갖췄으며 추가 필수 보완은 없다.
+- 원시 근거: docs/week8/verification/runs/20261112-q9-q10/·20261112-q10-cleanup/·20261112-q10-order-recheck/. 과거 정리 미완료/단언 이동 전 결과와 최신 실행을 구분한다. 재연결/ID 불일치 차단은 실제 장애를 주입한 결과가 아니라 코드 순서의 정적 근거다. 같은 연결/알려진 로컬 요청 범위를 넘어 전역 종료·재시작 안전성을 주장하지 않는다. R4/R5·비교·전체 회귀/O11은 이번에 실행하지 않았다.
+
+## 실제 캐시 장애 R4/R5 test 준비·6사례 실행 검토 — 2026-11-12
+
+- 실행 코드: edc140b에 미커밋 test3파일(신규 CouponCacheLocalRedisFaultIntegrationTest·기존 opt-in helper 공유·GuardTest2건 추가)을 더한 상태다. 제품 변경 없음. 기존 Q9 본문부터 EOF까지 동일하며 새6사례는 실제 cache adapter/C1 미적용·사례별 새 local context/클래스 보류를 사용한다. Codex가 소스/정리·주입 gate 최소성과 실행 근거를 검토했고 추가 필수 보완은 없다.
+- 준비 실행21:30:32~21:32:51 KST: JDK21.0.12·쿠폰/격리 관련 필터/Checkstyle·34task 실제 실행, XML52개 총371 중363통과·실패/오류0·opt-in8미실행(새6+기존2)·Checkstyle0. Guard19/Architecture3·W6/W7 조립 통과. 별도O11 21:33:08~21:33:45는1건 통과·child graceful=true/exit143. 준비 skip은 실제 장애 통과가 아니다.
+- 실제 실행21:41:24~21:42:06 KST,32task 실제 실행/exit0. 대상은 로컬 Redis7.0.15 master6379/db0·replica6380, 기존과 같은 run_id/컨테이너다. 다른 클라이언트/host 연결·worker/앱 없음과 소유 waiting/sold-out/issued 키 공백을 확인했다. 기본 issued/sold-out30초·local5초·command200ms를 유지했다.
+- 원시 XML1개6건 모두 실행/통과·실패/오류/skip0. JSONL162줄에서 불명/보류/callback 실패0과6사례 최종 키0/processing0·DB 결과 보존을 대조했다. 실제 작업 트리3파일 SHA-256을 실행 뒤 postrun과 대조해 일치 확인했다.
+- R4-a cold: issued get 실제 실패 뒤 DB기존200/동일ID·쿠폰/발급1/수용유지, put 실패 뒤 unpause에 키/PTTL29966ms로 late put 적용 관찰. warm도 get 실패/DB200이며 기존 NX 키 유지/PTTL29279ms였다. warm hit 성공으로 해석하지 않는다.
+- R4-b: cache get 실패→DB없음→start 실패503/닫힘·신규DB효과0·put0. unpause 후 processing={1}의 late START를 관찰했다. R4-c는 finish APPLIED/TX 밖 조건 뒤 첫 put에서만 주입·실제 put 실패에도201/DB1/processing0·수용유지, 이후 late put/PTTL29926ms 관찰.
+- R5-a: 실제 Redis true/PTTL로 채운 local이 유효한 구간에서409·sold-out Redis get0/캠페인SQL0·선행 issued get실패1. hit→응답393ms/5초 미만과 명령/SQL을 함께 근거로 썼다. R5-b는 local 채움 응답 후5520ms/Redis키 유효 상태에서 get실패1→캠페인SQL1→put실패1→409·새 대기0으로 다른 경로를 확인했다.
+-21:42:49 독립 postrun: master running/unpaused·동일run_id/시작시각·replica online, db0/9101 waiting/sold-out/issued/processing0, 자기JVM/worker/앱/test컨테이너0·공유 컨테이너 유지. 이전 잔여 키와 같은 정리 공백은 이번 실행에서 없었다.
+- 로컬 원시 근거는 docs/week8/verification/runs/20261112-cache-fault-prep/와 20261112-cache-fault/의 명령/pre/postrun·로그/XML/JSONL/요약이다. 늦은 put/START 적용은 이번1회 관찰이며 전역 fence/재시작 안전성·전체 Redis 장애 가용성으로 확대하지 않는다. R5-a는 local 분기를 직접 계측하지 않았고 보수적 시각 상한과 저장소/SQL0이 근거다. 실제 Q9/Q10 재실행·전체 check·비교는 이번에 하지 않았다.
+
+## 캐시 전후 비교 실험 상세설계 — 계획 이력·사용자 선택으로 중단, 미실행
+
+**현재 상태:** 사용자는 비교 결과를 필수 산출물로 두지 않기로 했고, 도구 보완·실제 실험을 중단했다. 아래는 당시 승인한 계획 이력이다. 도구는 가짜 장치 검사까지만 수행했으며 제품 성능 비교 결과는 없다. 이 계획을 다음 필수 작업이나 실행 완료 근거로 사용하지 않는다.
+
+첫 정적 검토의 필수1~6과 실행 결정들을 묶어 사용자에게 제안했고 사용자가 추천 방향을 승인했다. 주 결과는 DB/Redis 호출 변화, 보조 결과는 고정5RPS에서의 HTTP 지연이다. 전용 MySQL 스키마·구간별 캠페인/소유 키·동일 SQL seed·JDK 클라이언트·외부 계측·3반복을 채택한다. 보완본 정적 검토에서 남은 A/B를 확인했고, 사용자는 기존 application 계정 재사용·전용 스키마 권한 추가/회수 방식을 선택했다. SQL 로그/Python runner 등 실행 세부를 아래처럼 보완해 최종 확정한다. 계측/seed/부하 도구 구현·빌드/앱 실행·DB/Redis 조작·측정은 아직 하지 않았다.
+
+### 1. 질문·버전·조건
+
+질문은 ‘같은 기대 응답을 유지하면서 어떤 DB/Redis 호출이 사라지거나 추가되고, 고정 유입에서 지연이 어떻게 달라지는가’다. 최대 처리량/포화점·limiter/C 튜닝은 제외한다. 실제 발행/완료율은 부하 준수 지표이며 최대 TPS 향상으로 해석하지 않는다.
+
+| 버전 | 기준 커밋 | 제품 차이 |
+|---|---|---|
+| V0 | 3bc158a | cache 없음 |
+| V1 | f4dcdd8 | 기발급/품절 Redis30초 |
+| V2 | dcbb32c | V1+품절 local5초 |
+
+제품 변경이 이 차이뿐임을 정적으로 확인한 기준이다. 세 커밋을 git archive로 각각 별도 임시 폴더에 풀어 같은 JDK21/Gradle 조건으로 bootJar를 만든다. 원 작업 트리 checkout/패치·제품 mode/캐시 switch·주석 처리·실험용 제품/test class overlay를 넣지 않는다. 최신 Guard 커밋은 버전 제품 차이로 세지 않는다. artifact SHA256/원본 커밋·빌드 명령을 기록한다.
+
+JVM은 구간마다 새로 시작하며 -Xms1g -Xmx1g, 같은 앱 포트/CPU·메모리/연결 풀·HTTP 클라이언트 조건을 쓴다. 자원이 부족하면 실행을 시작하지 않고 조정안을 보고한다. C3·delay1초/admission30초·등록10개/1초/대기0·Redis command200ms·기본 cache TTL을 유지한다. 실제 유효 설정이 다르면 측정 전에 중단한다. 제품 파일은 수정하지 않고 런타임 인자만 사용한다.
+
+### 2. 전용 DB·버전 간 상태 격리
+
+local 프로필 jpa.yml은 ddl-auto:create와 공유 loopers URL을 기본으로 가진다. 그대로 기동하지 않는다. 구간마다 새 전용 스키마 coupon_cmp_<runToken>_<segment>를 만들고 `datasource.mysql-jpa.main.jdbc-url`을 그 스키마로 명시 덮어쓴다. 전체 앱 DDL이 전용 스키마에만 생성되도록 기동 전 URL/스키마와 실제 적용 설정·접속 스키마를 대조한다. run manifest에 이름·소유/생성 기록을 남기고, 이미 있는 스키마는 재사용/삭제하지 않는다. 앱은 기존 application 계정을 재사용한다. 실행 전 계정의 원래 권한을 확인/기록하고, 이번에 새로 소유한 각 정확한 실험 스키마에 필요한 권한만 추가한다. 패턴/전역 권한 확대는 하지 않는다. 기존 계정/loopers 권한·자료는 그대로 남으며 계정 전체가 실험 스키마 전용이라고 주장하지 않는다. 그러므로 앱의 실제 JDBC URL/접속 스키마 검사가 필수다. 종료/DB 작업 확인 뒤 자기 스키마를 정리하고 이번에 추가한 권한만 회수해 원래 권한과 대조한다. 기존 권한을 통째로 REVOKE하거나 임시 사용자 생성/삭제·계정 암호 변경은 하지 않는다.
+
+스키마 생성/삭제·이 권한 추가/회수와 performance_schema 계측 조회는 기존 개발 MySQL 컨테이너의 root 관찰/관리 연결(docker exec mysql)로 수행한다. 앱을 root로 실행하지 않는다. 대상 컨테이너/계정 host를 실제로 확인하고 같은 이름의 다른 계정을 추측해 바꾸지 않는다. 준비 중 실패하면 이미 만든 자기 스키마/권한과 살아 있는 앱/DB 작업을 manifest로 추적하며, 종료 불명 상태에서는 삭제/권한 회수도 보류한다. 계정/접속 비밀값을 원시 로그에 남기지 않는다.
+
+캠페인 ID는 경로확인/반복 각 구간마다 유일하게 배정해 manifest에 기록하고 시작 설정 campaign-id와 SQL seed의 ID를 일치시킨다. 명시 ID를 써 DB AUTO_INCREMENT 재시작과 무관하게 한다. 사용자 ID는 전용 스키마 안에서 동일한 논리 ID를 사용하되 Redis 키의 campaign ID가 구간마다 달라야 한다. 대기5키·sold-out·해당 사용자 issued 키가 첫 요청 전에 모두 없을 때만 소유한다. cache TTL30초 경과나 이전 종료만으로 공백을 추측하지 않는다.
+
+CouponLocalFixtureConfig의8명/5장 준비는 이 데이터에 맞지 않고 ID도 지정할 수 없으므로 off로 둔다. 새 SQL seed를 앱 기동 후 한 TX로 실행한다. seed는 세 버전의 공통 users/coupon_campaign/coupon 테이블과 필수 BaseEntity 값·정확한 benefit/issuedCount·UNIQUE/총량을 따른다. API 신규 발급을 반복해 seed하지 않으며 cache 키는 미리 쓰지 않는다. SQL/예상 행 수·관계 검증을 같은 파일/같은 로직으로 사용한다.
+
+| 시나리오 | 데이터(기본안) | 측정 입력·기대 |
+|---|---|---|
+| P1 기발급 반복 | 보유자1명·ACTIVE 캠페인 quota1/issued1·쿠폰1 | 본인 GET waiting,200 ISSUED/같은couponId |
+| P2 품절 등록 | 보유자1명+미발급100명·ACTIVE quota1/issued1·보유자 쿠폰1 | 미발급100명 순환 POST waiting,409 COUPON_CAMPAIGN_SOLD_OUT |
+| P3 miss 비용 | 미발급1명·ACTIVE quota1/issued0·쿠폰/대기 없음 | GET waiting,404 COUPON_WAITING_NOT_FOUND |
+
+세 버전에서 캠페인 숫자ID만 구간별로 다르고 이름/혜택·논리 사용자·관계/초기 발급 수는 같게 만든다. P2의 issued1에는 실제 소유 쿠폰1을 두어 데이터 모순을 만들지 않는다. 측정 전후 행/관계·기대 응답을 확인하며 새 쿠폰·대기 등록 효과는 모두0이어야 한다.
+
+### 3. 경로 가설·수용 상태·배경 구간
+
+| 시나리오 | V0 요청 경로 | V1/V2 요청 경로(정상 hit 구간) |
+|---|---|---|
+| P1 | 사용자 SELECT1+쿠폰 SELECT1, 대기 Redis0 | 사용자 SELECT1은 남음. issued read1/hit으로 쿠폰 SELECT0. V2도 issued local은 없음 |
+| P2 | 사용자/쿠폰 SELECT2+캠페인 SELECT1, 요청 Redis0 | 둘 다 사용자/쿠폰 SELECT2+issued Redis read1/miss가 남음. V1은 sold-out read1/hit, V2 local hit은 sold-out read0. 캠페인 SELECT0 |
+| P3 | 사용자/쿠폰 SELECT2+waiting find1 | issued read1/miss 추가, 사용자/쿠폰 SELECT2+waiting find1은 남음. false 캐시 없음 |
+
+위 Redis read는 HTTP 측 경로의 논리 호출이다. EVAL/EVALSHA 내부 TYPE/GET/PTTL 수까지 합친 Redis 명령 총수나 네트워크 왕복 수와 같다고 보지 않는다. cold/자연 만료 시에는 DB/SET NX 등의 비용이 추가되므로 steady hit 표와 구분한다. V1은 캠페인 DB를 줄이는 대신 Redis 호출이 추가돼 지연이 악화될 수 있다.
+
+P1/P3은 명시 close 상태로 측정한다. 기존 보유 결과와 requireOperating/조회는 닫힘에서도 가능하다. P2는 seed 뒤 명시 open으로 품절 판정에 도달하게 한다. scheduler는 모든 버전의 실제 제품 실행을 유지한다. P1/P3 닫힘에서는 scheduler 업무 I/O가 없고, P2 열림에서는1초마다 캠페인 SELECT/상태 Redis 작업이 생긴다. 요청의 캠페인 SELECT와 scheduler SELECT는 같은 digest일 수 있다.
+
+각 시간 측정 구간에 동일 수용 상태의 요청 없는 대조30초를 앞뒤로 각각 둔다. P2에서는 두 대조 모두 open이며 scheduler를 끄지 않는다. DB/Redis 원시 전체 증분과 대조 구간/실제 경과를 함께 보고한다. 대조를 시간 비율로 환산한 차감치는 ‘배경 보정 추정’으로만 쓰고 정확한 요청별 호출 수로 단정하지 않는다. 차감이 음수/불안정하면 원시값·불확실성을 그대로 남긴다. 준비/관찰 명령과 다른 제품 배경 작업도 분리한다.
+
+### 4. 외부 계측 — 제품/test 코드 재사용 가정 제거
+
+SqlCapture·Recording decorator는 bootJar에 없고 V0에는 cache 포트도 없다. 이번 비교는 새 제품 instrumentation을 넣지 않고 앱/DB/Redis의 외부 관측으로 한다. 과거 week4 기록은 외부 관측의 참고일 뿐 이번 실행 근거가 아니다.
+
+- 경로 확인: 버전×시나리오9구간, 시간 측정과 별도 앱/전용 스키마/캠페인으로 각20요청을 관찰한다. 실제 SQL DEBUG 로그(`--spring.jpa.show-sql=false --logging.level.org.hibernate.SQL=DEBUG`, local 콘솔의 시각/thread 포함)와 짧은 Redis MONITOR 원시 기록으로 cold 첫 요청·뒤 hit·miss 비용을 HTTP 결과/시간과 연결한다. thread/time 정보를 얻을 수 없으면 요청/배경 SQL을 정확히 분리했다고 쓰지 않는다.
+- MONITOR는 해당 경로 구간에서만 실행하며 이 실험 외 다른 Redis client가 없는 조건으로 제한한다. 연결/키 prefix·스크립트 SHA를 원래 Lua와 대조해 cache read/put과 waiting 업무를 구분한다. Lua 안에서 실행되는 내부 명령과 앱이 보낸 EVAL/EVALSHA를 별도 분류하며 중복 합산을 왕복 절감으로 주장하지 않는다. 관찰자의 PTTL/INFO/CLIENT/PING은 업무 수에서 제외한다.
+- 지연 구간: `--spring.jpa.show-sql=false --logging.level.org.hibernate.SQL=OFF`를 명시하고 MONITOR도 끈 뒤 전용 스키마의 performance_schema digest·Redis INFO commandstats의 구간 전후 스냅샷만 수집한다. 전역 digest/commandstats reset은 하지 않는다. 자기 스키마 조건으로 SELECT/업무 SQL과 transaction 제어 문장을 구분하고 원시행을 보존한다. 누적 카운터 소실/감소·관측 누락은 무효 근거다.
+- INFO commandstats는 서버 합계이므로 key별/요청별 정확한 cache hit율을 제공한다고 가정하지 않는다. 명령별 원시 증분과 배경 대조를 보고하고, cache 종류별 정확한 호출 수는 짧은 경로 관찰로 증명한다. 계측하지 않은 정확 hit/miss율은 N/A로 둔다. 관찰용 INFO 자체/replication 등은 업무 합계에 섞지 않는다.
+
+SET의 calls 증분은 실제 데이터 변경 성공 수가 아니라 명령 시도 수이며 NX 무변경도 포함한다. 해당 구간에 다른 SET 발행자가 없는 것을 경로 관찰로 확인할 때만 cache SET 시도로 분류한다. EVALSHA의 NOSCRIPT 실패 뒤 EVAL 전환이 있을 수 있으므로 evalsha/eval/failed_calls를 각각 보존하고 두 시도를 두 번의 성공 업무 호출로 합산하지 않는다. Redis Lua 내부 명령 총수와 앱 발행 명령 수를 별도 표시한다.
+
+SQL schema 필터/권한·MONITOR/commandstats 가용성·로그 캡처·원시 자료 파싱은 실행 도구 준비의 읽기 전용 preflight로 확인한다. 얻을 수 없는 지표를 임의 추정해 채우지 않는다. 도구가 없거나 권한/수집 정확성이 부족하면 실행 전 보고한다. 필요 CLI는 기존 Docker 안 mysql/redis-cli를 활용하며 신규 도구 설치를 전제로 하지 않는다. 관찰용 MySQL 세션/SQL과 대상 스키마의 업무 digest를 구분한다. local 앱의 Kafka/Outbox 등 배경 구성을 읽고 실행 전 공유 Kafka topic 생성/메시지 발행 등 다른 서비스 부작용이 없는지도 확인한다. 예상 밖 부작용은 보고/보류하며 설정을 임의 변경해 숨기지 않는다.
+
+### 5. 고정 유입 클라이언트·구간 순서
+
+새 JDK21 HttpClient 외부 프로그램을 쓴다. 같은 바이너리/설정을 세 버전에 사용하고 앱 코드를 참조하지 않는다. HTTP/1.1·단일 HttpClient/keep-alive, connect2초·요청5초·동시 in-flight 최대8을 기본 실행안으로 둔다. 부하5RPS는 단조 시각 기준200ms마다 다음 요청을 시작하는 open-loop다. 각 응답 완료를 기다려 다음 발행을 늦추지 않는다.
+
+예정 시각/실제 발행/완료·상태/메타·지연·timeout/오류를 요청별로 기록한다. 동시 한도 초과는 숨은 대기로 바꾸지 않고 미발행으로 남겨 구간을 무효 처리한다. 예정 시각보다100ms 넘게 밀린 발행은 late로 표기하고 해당 구간의 고정 유입 준수 실패로 보고한다. 밀린 요청을 한 번에 몰아 보내지 않는다. 자동 재시도 없음. 응답은 status뿐 아니라 P1 couponId·P2/P3 errorCode를 검사한다. 지연은 실제 발행→body 완료의 HTTP 왕복이며 예정→발행 지연과 분리한다.
+
+각 단계가 끝나면 남은 in-flight 응답을 유한하게 모두 회수하고0인지 확인한 뒤 다음 카운터/시간 구간을 연다. timeout/미완료가 있으면 구간을 섞어 집계하지 않고 실패/보류한다. 각 시간 측정 구간은 다음 순서다.
+
+```text
+전용 폴더/manifest·스키마/캠페인·키 공백 소유 확인
+새 JVM bootJar 기동·적용 JDBC/설정 확인 → 동일 SQL seed/관계 확인
+수용 P1/P3=close, P2=open
+warm-up60초×5RPS=300요청 (측정 지연에 포함하지 않음)
+같은 수용 상태로 idle-before30초 (배경 카운터·시간 기록)
+측정60초×5RPS=300요청 (계측 최소화)
+같은 수용 상태로 idle-after30초 (배경 카운터·시간 기록)
+응답/원시 카운터·DB 효과·소유 키 상태 보존
+close→부하/observer 종료→앱 graceful 종료/DB 작업 종료 확인
+소유 Redis 키만 삭제·키0 확인→소유 전용 스키마만 정리
+```
+
+warm-up300건은 초기 준비 비용을 줄이기 위한 동일 조건이지 JIT가 완전히 안정됐다는 증명이 아니다. idle-before30초 동안 Redis30초/local5초가 만료될 수 있어 측정은 cold/re-fill도 포함하는 지속 구간이며 ‘전부 warm hit’이 아니다. 순수 hit/miss 경로의 명령 차이는 별도20건 관찰로 구분한다. P2의409/P3의404는 정상 기대 결과로서2xx와 별도로 통계화한다.
+
+3버전×3시나리오×3반복=27시간구간. 반복 순서는 V0→V1→V2, V1→V2→V0, V2→V0→V1로 순환하고 시나리오 순서는 동일하게 기록한다. 한 구간의 warm/idle/측정 유입 시간은180초로 총81분이며, 별도9경로구간·3회 빌드·27회 앱/DB 준비/종료·검증/정리 시간은 추가다. 기존31.5분 추정은 폐기한다. 실제 예비 기동 시간으로 총 비용을 실행 전에 다시 보고하고, 반복/시간을 줄여야 하면 사용자 범위 변경 승인을 받는다.
+
+### 6. 준비 산출물·실패·완료 기준
+
+Claude가 작성할 도구 기본안은 tools/coupon-comparison/의 FixedRateClient.java·seed.sql 템플릿·실행/수집 Python runner 한 파일이다. 외부 설치 없이 JDK/Python 표준 도구와 기존 Docker CLI를 사용한다. runner는 manifest/설정·예상 응답·schema/키 소유·단계별 종료 조건을 명시하고 잘못된 DB URL/스키마 이름·기존 스키마/다른 client 발견 시 앱/부하 실행을 차단한다. 제품/테스트 소스·Git 작업 트리를 수정하지 않는다. 계측/seed/드라이버 구현과 실제 실험 실행은 별도 단위다.
+
+기본 검사는 실험 없이 클라이언트의 발행 스케줄/동시 한도·status 검증/timeout·집계, 스키마/키 이름 검증·기존 소유 실패·종료 미확인 정리 보류를 가짜 HTTP/대역 명령으로 확인한다. 제품 동작과 같은 테스트를 복제하지 않는다. 민감 접속값은 원시 로그/명령 출력에서 제외한다.
+
+무효 구간은 예상 밖429/503/500·잘못된404/200·응답 내용/상태 변화, 미발행/late·부하 발생기 한도 소진, 다른 작업 간섭, 초기 상태/설정 불일치, 계측 오류, 종료 미확인이다. 실패 원시 자료를 보존하고 자동 반복으로 덮지 않는다. 미종료 상태에서 Redis 키/DB 스키마를 삭제하지 않는다. 데이터 보존/소유 불명은 정리를 보류하고 보고한다.
+
+결과는 버전/시나리오/반복별 예정·실제발행·완료·late/미발행·timeout/상태별 건수, 기대 응답 완료율, p50/p95(주)/p99(참고)·표본 수·반복 차이, SQL/Redis 원시 증분·배경 대조/보정 추정, 정확한 경로 관찰과 한계를 제시한다. CPU/GC는 상황 기록만 하고 수치 우열 분석은 하지 않는다. 약300개 표본의 p99를 안정적 운영 지표로 주장하지 않는다.
+
+완료는 세 버전/세 시나리오의 같은 조건에서 기대 계약·데이터 불변식·소유 자원 종료/정리를 지키고, 실제 호출 절감과 남는/추가 비용을 함께 설명하는 것이다. 지연 개선 없음이나 miss 비용 증가도 그대로 보고한다. 전체/보완본 정적 검토와 사용자 선택·최종 승인 반영을 마쳤다. 현재 도구/계측·실험 실행 결과는 없다. 도구 구현/가짜 장치 검사 후 결과를 검토하고 실제 실행을 별도 전달한다.
+
+
+## 최신 구현 최종 전체 검사·마무리 검토 — 2026-11-12
+
+### 기준·명령
+
+- 기준: `volume-8` / `0e53078`. 제품·test·빌드 소스는 HEAD와 같았고 실행 전후 변경이 없다. 기존 staged 비교 설계와 untracked 도구는 검사 대상 제품 변경이 아니다.
+- JDK 21.0.12. `JAVA_HOME`과 Gradle JDK를 맞추고, `COUPON_LOCAL_REDIS_FAULT_TEST`를 자식 환경에서 제거했다. 실행 전 다른 worker·앱·streamer는 없었다.
+- 필터 없이 한 번 실행했다. `check`의 기존 의존성으로 O11(`w6OutboxRecoveryTest`)도 실행하며 별도로 반복하지 않았다.
+
+```sh
+env -u COUPON_LOCAL_REDIS_FAULT_TEST ./gradlew -Dorg.gradle.java.home="$JAVA_HOME" \
+  :apps:commerce-api:check --rerun-tasks --no-build-cache --console=plain
+```
+
+- 실행: 22:58:51~23:08:30 KST, exit 0, `BUILD SUCCESSFUL in 9m 38s`. 35개 작업 모두 실제 실행됐고 cache/UP-TO-DATE 대체는 없다.
+
+| 작업 | 총 테스트 | 통과 | 실패 | 오류 | skip·미실행 |
+|---|---:|---:|---:|---:|---:|
+| 일반 test | 1,384 | 1,376 | 0 | 0 | 8 |
+| O11 | 1 | 1 | 0 | 0 | 0 |
+
+일반 XML 282개 중 중첩 클래스만 가진 상위 XML 24개는 0건이며 실행으로 더하지 않았다. skip 8건은 opt-in Q9/Q10 2건과 R4/R5 6건이고 다른 skip은 없다. 해당 실제 장애 검사는 앞선 별도 실행으로만 근거를 연결한다. 최신 check에서 실제 pause를 다시 실행한 것은 아니다.
+
+Checkstyle main/test 오류는 0건이다. ArchitectureTest 3건, W6 준비/발행/리스너 TX 1·8·3건, W7 relay lifecycle 5건, GuardTest 19건이 모두 통과했다. O11 streamer 자식은 `graceful=true exit=143 stoppedLog=true`로 종료했다. 23:09:09 사후 기록에서 worker·앱·streamer·test 컨테이너는 0이고 공유 컨테이너 7개는 유지됐으며 Redis는 unpaused였다.
+
+원시 근거는 로컬 `docs/week8/verification/runs/20261112-final-cache-check/`의 명령·로그·XML·Checkstyle·pre/postrun이고, Codex가 집계/skip·종료 기록을 대조했다. 위 표와 조건은 Git에 포함하는 검증 요약이며 로컬 자료 접근을 전제로 하지 않는다.
+
+### 현재 완료 범위와 남은 한계
+
+- 코드 정적 검토에서 §12/CQ16·§13/CQ17의 순서·TX/Redis 경계·상태 전이·캐시 수명·W6/O11 격리와 충돌하는 필수 수정은 발견하지 못했다. 길이만을 이유로 TX 판정을 중계 서비스로 나누거나 주석을 제거하지 않았다.
+- 대기실/등록 RateLimiter, DB 총량·중복 보호, 기발급 Redis/품절 Redis→local, 실제 Q9/Q10·R4/R5의 통제된 장애·수동 재개·소유 키 정리, 최신 전체 회귀까지 근거를 확보했다.
+- 비교 실험은 사용자 선택으로 중단했다. 성능 개선량·최대 TPS·운영 적정 C/TTL·다중 인스턴스/운영 캠페인·재시작/상태 유실 복구·epoch·자동 복구는 검증하지 않았다. 실제 장애 관찰을 임의의 늦은 명령/전역 종료 보장으로 확대하지 않는다.
+- 추가 제품 코드 수정은 없으며 최종 제출·commit·PR 게시 판단은 사용자 담당이다.

@@ -1,5 +1,11 @@
 # 공통 구조와 의존
 
+**쿠폰 캐시 구현·전체 검사 완료(2026-11-12):** [쿠폰 §13.9~13.13](../features/coupons.md)의 domain 포트/값·Redis 구현·application 캐시 서비스·설정으로 배치했다. Facade는 DB/TX 순서와 결과를 조율하고 캐시 서비스는 캐시 I/O/로컬 슬롯만 다룬다. Redis 호출은 TX 밖, 신규 채움은 finish 뒤이며 캐시 실패만으로 수용을 닫지 않는다. 로컬 품절은 한 슬롯이고 새 실행기·라이브러리·공용 프레임워크·Bulkhead는 없다. 동작 bean 두 이름의 W6/O11 격리를 포함한 최신 전체 검사와 실제 장애 검증 결과는 [쿠폰 실행 기록](../verification/coupons.md)을 따른다.
+
+**쿠폰 확장 구현(2026-11-12):** [쿠폰 상세설계 §12](../features/coupons.md)는 단일 인스턴스의 캠페인별 대기열·실행 자리 배정을 통합한다. 입장 시 확보한 자리를 발급에 사용하고 기존 세마포어를 별도 재획득하지 않는다. Resilience4j는 발급 POST가 아닌 대기 등록 입구에서 사용자 식별/DB 조회보다 앞서 판단한다. 클래스·저장 구조·전이·입출력·검증은 §12.8~12.13의 승인 계약을 따른다. 새 동작 bean 세 이름은 §12.11을 따른다. CouponWaitingScheduler가 내부 단일 실행기를 lifecycle에서 관리하며 @EnableScheduling/@Scheduled·공통 TaskScheduler bean을 추가하지 않는다. W7 relay 실행기/수명은 유지하고 §11의 발급 전용 interceptor 구안은 구현하지 않는다. 아래 기본 구현의 종료 불명·조기 반환 금지 등 안전 원칙은 새 흐름에서도 보존한다.
+
+**쿠폰 승인 설계(2026-11-11):** [쿠폰 상세설계의 §5~§6](../features/coupons.md)는 같은 계층·포트·Facade 간 호출 금지 규칙을 유지하며, 상위 TX 없는 CouponFacade의 읽기/쓰기 TransactionTemplate로 사전 조회 TX → Redis → 발급 TX를 조율한다. 별도 CouponTransactionService·Control·단순 전달용 운영 Facade는 추가하지 않는다. Redis 포트는 CouponAdmissionRepository, 구현은 CouponAdmissionRedisRepository, 수용 조율은 CouponAdmissionService다. 요청 내부의 콜백 진입·완료 관찰로 업무 미시작과 실제 종료 불명을 구분하고 COMMITTED 뒤 예외에서도 확보한 응답 결과를 우선한다. 전체 실행 Map·전역 진행 수/불명 표시·재개용 Java 잠금은 제외한다. 직접 실행용 준비는 main의 config/CouponLocalFixtureConfig에서 명시 옵션으로 ApplicationRunner를 등록하며, 준비 구성의 JPA 접근 때문에 application이 infrastructure에 의존하게 만들지 않는다. 장애 재개는 수동 절차이며 자동 전역 종료 보증이 아니다. 기존 PG·캐시 구조와 다른 기능의 승인/검증 상태는 바꾸지 않는다. 기본 쿠폰 설계는 사용자 최종 승인을 받았으며 구현·실행 결과는 쿠폰 실행 기록을 따른다. 요청률 제한 추가의 검토·구현 착수와 기본 기능 완료는 구분한다.
+
 **W7 승인 설계 연결(2026-11-04):** 아래 계층·포트·TX 원칙은 유지한다. Outbox 기록·relay/복구 조율은 commerce-api의 application, 불변 사실·상태 모델/저장·전송 포트는 domain, JPA·Jackson·Kafka 구현은 infrastructure, scheduler 진입점은 interfaces에 둔다. 상세 계약은 [발행 W7.2~W7.4](../features/order-events/publication.md)가 원본이다. 현재 코드의 구현 완료를 뜻하지 않는다.
 
 기존 절을 기능별 기준 문서로 이동했다. 절 번호·계약·승인/검증 상태는 보존하며, 이동 자체는 새 설계 승인이나 실행 검증을 뜻하지 않는다.
