@@ -184,6 +184,20 @@ Redis 유실 시: DB 접수 기록 + consumer 가 아직 적재하지 않은 top
 
 포기하는 것: 엔티티별 create · validate 분리를 위한 설정 손질, 앱 기동 순서 의존.
 
+### streamer 는 공유 테이블을 엔티티 없이 JDBC 로 다룬다 (D-172)
+
+**commerce-streamer 는 쿠폰 · 캠페인 · 접수 기록 테이블에 JPA 엔티티를 두지 않고 SQL(JDBC)로 다룬다.** D-137 의 "엔티티는 앱별로 필요한 만큼 따로 정의"와 D-138 의 "streamer 는 validate"를 이것으로 바꾼다. 스키마는 그대로 commerce-api 엔티티가 만든다.
+
+- 로컬 · 테스트의 `ddl-auto: create` 는 앱 전체 설정이라, streamer 에 엔티티가 있으면 공유 테이블을 지우고 다시 만든다. 엔티티가 없으면 이 문제가 구조적으로 사라진다.
+- 접수 기록 적재는 묶음 `INSERT … ON DUPLICATE KEY UPDATE` 로 멱등하게 한다(D-132, D-134). IDENTITY 키라 JPA 는 어차피 묶음 insert 를 하지 않는다.
+- streamer 테스트는 api 없이 자기 컨테이너를 쓰므로, 테스트용 DDL 스크립트로 공유 테이블을 만든다.
+
+| 검토한 안 | 포기한 이유 |
+|---|---|
+| JPA 엔티티 + Hibernate 스키마 필터(로컬은 공유 테이블 제외) | Hibernate 확장 지점을 처음 쓰고, 제외한 테이블은 validate 도 빠져 결국 매핑 어긋남을 자동으로 잡지 못한다. 묶음 적재는 어차피 JDBC 가 필요하다 |
+
+포기하는 것: 테스트 DDL 스크립트 · streamer SQL 이 api 엔티티와 어긋나도 자동으로 잡히지 않는다. 엔티티의 검증 로직(슬롯 범위 등)을 streamer 쪽 코드로 다시 쓴다.
+
 ### Redis command timeout 은 앱마다 쿠폰용 연결에 둔다 (D-161)
 
 **commerce-api 와 commerce-streamer 에 각각 쿠폰용 Redis 연결(master, command timeout 잠정 1초)을 따로 둔다.** 4주차 캐시 전용 연결(`ProductCacheRedisConfig`, 100ms)과 같은 방식이다. 공통 `RedisConfig` 는 바꾸지 않는다. D-131 회수 기준 시간 계산의 "Redis timeout" 이 이 값이다.
@@ -1117,7 +1131,7 @@ PR 에 남길 내용이다. 멘토 공지(11/12)의 "쿠폰 발급 구현은 어
 - 접수 Lua 1 은 입력 검증 뒤 `INCR` → 사용자 기록 → 확인 대기 순서로 쓴다. Lua 는 rollback 이 없어, `INCR` 뒤 쓰기가 실패하면 아무에게도 가지 않은 순번(공백)이 남는다. 그 순번이 한도 안이면 그 슬롯은 비고 승격으로 메워지지 않는다 (D-133)
 - 접수 POST 는 Redis 판정 전에 로그인 확인(사용자 DB 조회)을 한다. 몰릴 때 연결 풀 대기가 순서를 흔들 수 있으며, 측정 전이다 (D-169)
 - 접수 producer 시간 값(request 2초 · delivery 3초 · send 대기 4초)은 잠정값이다. 확인 대기 T(D-134)는 delivery 보다 길어야 한다
-- 같은 테이블 매핑이 api · streamer 두 곳에 있어 스키마 변경 시 둘 다 고쳐야 한다 (D-137)
+- 공유 테이블을 api 는 엔티티로, streamer 는 SQL 로 다뤄 스키마 변경 시 둘 다 고쳐야 하고, 어긋나도 자동으로 잡히지 않는다 (D-137, D-172)
 
 ## 13. 구현 때 정할 것
 
@@ -1131,7 +1145,6 @@ PR 에 남길 내용이다. 멘토 공지(11/12)의 "쿠폰 발급 구현은 어
 | 재구성 실행 주체(여러 streamer 중 하나만), 운영자가 열기 전 확인 항목 | D-140 |
 | topic 이름 확정, 시간 보존 값 | D-136 |
 | 대기열을 Kafka 로 대신하지 않고 Redis Stream 으로 둔 근거 문서화 (항목별 ack · 지연 재시도가 partition 오프셋 모델에서는 head-of-line blocking 을 만든다) | D-119, D-132 |
-| streamer 의 엔티티별 create · validate 분리 방법, 앱 기동 순서 | D-138 |
 | 엔티티 · 패키지 배치 (CLAUDE.md 패키지 규칙) | D-156 |
 | 캠페인 initializer 의 설정 키, runner 명령 형식 | D-165 ~ D-167 |
 | 오류 코드 이름 (`CAMPAIGN_NOT_ACTIVE`, `CAMPAIGN_NOT_FOUND`, `COUPON_ISSUE_NOT_FOUND`) | D-144, D-145 |
@@ -1199,3 +1212,4 @@ PR 에 남길 내용이다. 멘토 공지(11/12)의 "쿠폰 발급 구현은 어
 | D-169 | 접수 API 도 기존 `LoginUser`(사용자 DB 확인)를 쓰고, 풀 대기 · 접수 지연은 부하 실험으로 확인 |
 | D-170 | 요청 수는 앱에서 제한하지 않고, 품절을 본 인스턴스는 POST 에 누구든 바로 SOLD_OUT(품절 뒤 POST 는 D-117 의 예외, 결과는 GET 으로). 앞단 rate limit 은 범위 밖 |
 | D-171 | DB 발급 동시성은 worker 인스턴스마다 고정(잠정 스레드 4 · COUNT 10). 전역 세마포어는 두지 않는다 |
+| D-172 | streamer 는 공유 테이블을 엔티티 없이 JDBC 로 다룬다(D-137 · D-138 변경). 적재는 묶음 upsert, streamer 테스트는 DDL 스크립트 |

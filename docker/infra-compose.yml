@@ -104,6 +104,7 @@ services:
         create order-events 3
         create order-events.DLT 3
         create coupon-issue-requests 3
+        create coupon-issue-requests.DLT 3
         create demo.internal.topic-v1 1
     restart: "no"
 

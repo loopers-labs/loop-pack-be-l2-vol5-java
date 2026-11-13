@@ -40,6 +40,17 @@ order-event:
     max-interval: 30s
     max-elapsed: 5m
 
+# 쿠폰 접수 기록 적재 (8주차 D-132). topic 은 인프라가 만듦 (D-136)
+coupon-issue:
+  topic: coupon-issue-requests
+  consumer-group: coupon-issue-request-loader
+  max-poll-records: 500 # 묶음 적재 크기의 상한
+  # 일시 오류는 상한 없이 pause 한 채 재시도한다. 적재를 멈추면 접수 약속이 DB 에 남지 않는다 (D-126 과 같은 기준)
+  retry:
+    initial-interval: 1s
+    multiplier: 2
+    max-interval: 30s
+
 # 응답 없는 DB 에서 listener 가 예외 없이 무기한 기다리면 재시도 · 상한이 동작하지 않아 드라이버에 상한을 둠 (6주차 D-98).
 # 문장이 ms 단위라 정상 처리는 끊지 않음. 끊긴 COMMIT 의 결과가 모호해도 재전달을 멱등 처리로 흡수함. 공용 jpa.yml 이 아니라 앱마다 둬 batch 는 건드리지 않음
 datasource:
