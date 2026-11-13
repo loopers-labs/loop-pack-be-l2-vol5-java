@@ -36,7 +36,7 @@ public class CouponAdminV1Dto {
         }
     }
 
-    public record RecoveryResponse(Long campaignId) {
+    public record RecoveryResponse(Long campaignId, int restored) {
     }
 
     public record CampaignResponse(Long campaignId, String name, long discountAmount, int totalQuota, int issuedCount,

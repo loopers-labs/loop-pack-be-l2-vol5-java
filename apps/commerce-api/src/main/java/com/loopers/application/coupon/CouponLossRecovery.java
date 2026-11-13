@@ -1,102 +1,46 @@
 package com.loopers.application.coupon;
 
 import com.loopers.domain.coupon.Coupon;
-import com.loopers.domain.coupon.CouponIssueBacklog;
 import com.loopers.domain.coupon.CouponReservation;
 import com.loopers.domain.coupon.CouponReservation.Reservation;
 import com.loopers.domain.coupon.CouponService;
 import io.micrometer.core.instrument.MeterRegistry;
-import jakarta.annotation.PreDestroy;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import java.time.Duration;
 import java.util.List;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class CouponLossRecovery {
 
+    static final String CLOSED = "coupon.issue.closed";
     static final String RECOVERED = "coupon.issue.recovery";
     private static final int PAGE = 1_000;
-    private static final Duration DRAIN_POLL = Duration.ofMillis(500);
-    private static final int DRAIN_LOG_EVERY = 20;
 
     private final CouponReservation couponReservation;
     private final CouponService couponService;
-    private final CouponIssueBacklog backlog;
     private final MeterRegistry meterRegistry;
-    private final Set<Long> inProgress = ConcurrentHashMap.newKeySet();
-    private final ExecutorService executor = Executors.newCachedThreadPool(runnable -> {
-        Thread thread = new Thread(runnable, "coupon-loss-recovery");
-        thread.setDaemon(true);
-        return thread;
-    });
 
-    public CouponLossRecovery(CouponReservation couponReservation, CouponService couponService,
-                              CouponIssueBacklog backlog, MeterRegistry meterRegistry) {
-        this.couponReservation = couponReservation;
-        this.couponService = couponService;
-        this.backlog = backlog;
-        this.meterRegistry = meterRegistry;
-    }
-
-    public void start(Long campaignId) {
-        if (!inProgress.add(campaignId)) {
+    public void close(Long campaignId) {
+        if (couponReservation.isClosed(campaignId)) {
             return;
         }
         couponReservation.close(campaignId);
-        log.error("Redis 예약 집합이 DB 와 어긋나 캠페인을 닫고 복구를 시작한다: campaignId={}", campaignId);
-        executor.execute(() -> {
-            try {
-                recover(campaignId);
-            } catch (RuntimeException e) {
-                log.error("복구가 실패했다. 캠페인은 닫힌 채다. 다시 시작하려면 유실 감지가 다시 울리거나 수동 복구가 필요하다: campaignId={}",
-                    campaignId, e);
-            } finally {
-                inProgress.remove(campaignId);
-            }
-        });
+        meterRegistry.counter(CLOSED, "campaignId", String.valueOf(campaignId)).increment();
+        log.error("Redis 예약 집합이 DB 와 어긋나 캠페인을 닫았다. 워커 lag 가 0 인 것을 확인한 뒤 관리자가 복구한다: campaignId={}", campaignId);
     }
 
-    private void recover(Long campaignId) {
-        awaitDrained(campaignId);
+    public int recover(Long campaignId) {
+        couponReservation.close(campaignId);
         int restored = rebuildFromDb(campaignId);
         couponReservation.prepare(campaignId);
         meterRegistry.counter(RECOVERED, "campaignId", String.valueOf(campaignId)).increment();
         couponReservation.open(campaignId);
         log.warn("DB 쿠폰으로 예약 집합을 다시 만들고 캠페인을 열었다: campaignId={}, restored={}", campaignId, restored);
-    }
-
-    private void awaitDrained(Long campaignId) {
-        CouponIssueBacklog.Position target = null;
-        int polls = 0;
-        while (true) {
-            try {
-                if (target == null) {
-                    target = backlog.position();
-                }
-                if (backlog.isCommittedUpTo(target)) {
-                    return;
-                }
-            } catch (IllegalStateException e) {
-                log.warn("워커 lag 을 읽지 못해 다시 읽는다: campaignId={}", campaignId, e);
-            }
-            polls++;
-            if (polls % DRAIN_LOG_EVERY == 0) {
-                log.warn("워커가 broker 를 비우기를 기다린다: campaignId={}, waited={}", campaignId, DRAIN_POLL.multipliedBy(polls));
-            }
-            try {
-                Thread.sleep(DRAIN_POLL.toMillis());
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException("복구 중 중단됐다: campaignId=" + campaignId, e);
-            }
-        }
+        return restored;
     }
 
     private int rebuildFromDb(Long campaignId) {
@@ -117,10 +61,5 @@ public class CouponLossRecovery {
                 return restored;
             }
         }
-    }
-
-    @PreDestroy
-    void shutdown() {
-        executor.shutdownNow();
     }
 }

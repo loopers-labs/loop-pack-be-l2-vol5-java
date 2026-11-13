@@ -106,6 +106,6 @@ public class CouponIssueWorker {
         }
         log.warn("Redis 가 받아들인 접수를 DB 가 품절로 거절했다. 예약 집합과 DB 가 어긋났다: campaignId={}, userId={}, issueNumber={}",
             issue.campaignId(), issue.userId(), issue.issueNumber());
-        couponLossRecovery.start(issue.campaignId());
+        couponLossRecovery.close(issue.campaignId());
     }
 }

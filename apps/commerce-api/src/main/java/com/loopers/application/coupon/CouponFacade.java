@@ -72,7 +72,7 @@ public class CouponFacade {
                     .orElseGet(() -> new IssueResult.Pending(issueNumber));
                 case CouponReservation.Result.SoldOut() -> throw new DomainException(DomainError.COUPON_SOLD_OUT);
                 case CouponReservation.Result.Lost() -> {
-                    couponLossRecovery.start(campaignId);
+                    couponLossRecovery.close(campaignId);
                     throw new CoreException(ErrorType.COUPON_ADMISSION_UNAVAILABLE);
                 }
                 case CouponReservation.Result.Closed() -> throw new CoreException(ErrorType.COUPON_ADMISSION_UNAVAILABLE);
@@ -120,9 +120,9 @@ public class CouponFacade {
         return couponService.findOwnedBy(userId);
     }
 
-    public void startRecovery(Long campaignId) {
+    public int recover(Long campaignId) {
         couponService.findCampaign(campaignId)
             .orElseThrow(() -> new DomainException(DomainError.COUPON_CAMPAIGN_NOT_FOUND));
-        couponLossRecovery.start(campaignId);
+        return couponLossRecovery.recover(campaignId);
     }
 }

@@ -253,9 +253,9 @@ class CouponIssueListenerTest {
         return meterRegistry.counter("coupon.issue.recovery", "campaignId", String.valueOf(campaignId)).count();
     }
 
-    @DisplayName("WRK-005: Redis 가 받아들인 사용자를 DB 가 품절로 거절하면 복구가 한 번 시작돼 DB 쿠폰으로 명단이 다시 만들어지고, 거절된 사용자들은 409 다")
+    @DisplayName("WRK-005: Redis 가 받아들인 사용자를 DB 가 품절로 거절하면 캠페인을 닫고 닫힌 채 둔다. 관리자가 복구하면 DB 쿠폰으로 명단이 다시 만들어지고, 거절된 사용자들은 409 다")
     @Test
-    void startsRecoveryOnceWhenDbRejectsReservedUsersAsSoldOut() throws Exception {
+    void closesWhenDbRejectsReservedUsersAsSoldOut() throws Exception {
         Long campaignId = openCampaign(1);
         double recoveriesBefore = recoveries(campaignId);
         couponReservation.restore(campaignId, List.of(new CouponReservation.Reservation(42L, 1),
@@ -264,16 +264,23 @@ class CouponIssueListenerTest {
         publisher.publish(new CouponIssue(campaignId, 42L, 1, NOW));
         publisher.publish(new CouponIssue(campaignId, 7L, 2, NOW));
         publisher.publish(new CouponIssue(campaignId, 9L, 3, NOW));
-        eventually(() -> couponReservation.count(campaignId) == 1);
-        eventually(() -> acceptedOrIssued(campaignId, 42L));
+        eventually(() -> couponReservation.isClosed(campaignId));
+        eventually(CouponIssueListenerTest::everyRecordCommitted);
+
+        assertThat(recoveries(campaignId)).isEqualTo(recoveriesBefore);
+        assertThat(couponReservation.count(campaignId)).isEqualTo(3);
+
+        assertThat(couponFacade.recover(campaignId)).isEqualTo(1);
 
         assertThat(recoveries(campaignId)).isEqualTo(recoveriesBefore + 1);
+        assertThat(couponReservation.count(campaignId)).isEqualTo(1);
+        assertThat(acceptedOrIssued(campaignId, 42L)).isTrue();
         assertThatThrownBy(() -> couponFacade.issue(campaignId, 7L, NOW))
             .isInstanceOf(DomainException.class)
             .hasFieldOrPropertyWithValue("error", DomainError.COUPON_SOLD_OUT);
     }
 
-    @DisplayName("WRK-005: Redis 가 받아들이지 않은 사용자의 메시지가 품절로 거절되면 어긋남이 아니므로 복구를 시작하지 않는다")
+    @DisplayName("WRK-005: Redis 가 받아들이지 않은 사용자의 메시지가 품절로 거절되면 어긋남이 아니므로 캠페인을 닫지 않는다")
     @Test
     void doesNotStartRecoveryWhenTheRejectedUserWasNeverReserved() throws Exception {
         Long campaignId = openCampaign(1);
@@ -285,6 +292,7 @@ class CouponIssueListenerTest {
         publisher.publish(new CouponIssue(campaignId, 7L, 2, NOW));
         eventually(CouponIssueListenerTest::everyRecordCommitted);
 
+        assertThat(couponReservation.isClosed(campaignId)).isFalse();
         assertThat(recoveries(campaignId)).isEqualTo(recoveriesBefore);
         assertThat(couponFacade.issue(campaignId, 42L, NOW))
             .isInstanceOf(CouponFacade.IssueResult.Issued.class)

@@ -55,18 +55,19 @@ class CouponCampaignRecoveryAdminV1ApiTest {
         return ((Number) JsonPath.read(body, "$.data.campaignId")).longValue();
     }
 
-    @DisplayName("FLT-008: 관리자가 복구를 시작하면 202 이고 그 캠페인은 즉시 닫혀 접수가 503 이다")
+    @DisplayName("FLT-008: 관리자가 복구하면 DB 쿠폰으로 명단을 다시 만들어 열고, 200 과 함께 다시 올린 수를 준다. 그 뒤 접수는 202 다")
     @Test
-    void startsRecoveryAndClosesImmediately() throws Exception {
+    void rebuildsAndOpensSynchronously() throws Exception {
         long campaignId = openCampaign();
 
         mvc.perform(post("/api-admin/v1/coupon-campaigns/{campaignId}/recover", campaignId)
                 .with(user("admin").roles("ADMIN")))
-            .andExpect(status().isAccepted())
-            .andExpect(jsonPath("$.data.campaignId").value(campaignId));
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.campaignId").value(campaignId))
+            .andExpect(jsonPath("$.data.restored").value(0));
 
         mvc.perform(post("/api/v1/coupon-campaigns/{campaignId}/issues", campaignId).header("X-USER-ID", 42L))
-            .andExpect(status().isServiceUnavailable());
+            .andExpect(status().isAccepted());
     }
 
     @DisplayName("없는 캠페인의 복구는 404 다")

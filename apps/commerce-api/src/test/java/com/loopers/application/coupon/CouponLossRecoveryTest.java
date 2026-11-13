@@ -91,7 +91,7 @@ class CouponLossRecoveryTest {
         }
     }
 
-    @DisplayName("FLT-008: 대사가 하한을 갱신하기 전에 Redis 가 비어도 다음 접수는 유실로 보고 503 이며, 복구 뒤 앞서 202 를 받은 사람은 전원 쿠폰이 있고 한도를 넘겨 받지 않는다")
+    @DisplayName("FLT-008: 대사가 하한을 갱신하기 전에 Redis 가 비어도 다음 접수는 유실로 보고 503 이며 닫힌 채 남는다. 관리자가 복구하면 앞서 202 를 받은 사람은 전원 쿠폰이 있고 한도를 넘겨 받지 않는다")
     @Test
     void refusesAfterLossEvenBeforeReconcileAndKeepsEveryAcceptedPromise() throws Exception {
         Long campaignId = couponFacade.openCampaign(CampaignName.of("블프 쿠폰"), DiscountAmount.of(5_000),
@@ -106,8 +106,12 @@ class CouponLossRecoveryTest {
         assertThatThrownBy(() -> couponFacade.issue(campaignId, 4L, NOW))
             .isInstanceOf(CoreException.class)
             .hasFieldOrPropertyWithValue("errorType", ErrorType.COUPON_ADMISSION_UNAVAILABLE);
-        eventually(() -> !couponReservation.isClosed(campaignId) && couponCount(campaignId) == 3);
+        eventually(() -> couponCount(campaignId) == 3);
+        assertThat(couponReservation.isClosed(campaignId)).isTrue();
 
+        assertThat(couponFacade.recover(campaignId)).isEqualTo(3);
+
+        assertThat(couponReservation.isClosed(campaignId)).isFalse();
         assertThat(jdbcTemplate.queryForList("select user_id from coupon where campaign_id = ? order by user_id",
             Long.class, campaignId)).containsExactly(1L, 2L, 3L);
         assertThatThrownBy(() -> couponFacade.issue(campaignId, 4L, NOW))
@@ -138,7 +142,7 @@ class CouponLossRecoveryTest {
         }
     }
 
-    @DisplayName("FLT-008: Redis 가 비면 첫 접수가 캠페인을 닫고, 워커가 비운 뒤 DB 쿠폰으로 명단을 다시 만들어 열며, 번호가 이어진다")
+    @DisplayName("FLT-008: Redis 가 비면 첫 접수가 캠페인을 닫고 닫힌 채 남는다. 관리자가 복구하면 DB 쿠폰으로 명단을 다시 만들어 열며 번호가 이어진다")
     @Test
     void recoversReservationsFromDbAfterLoss() throws Exception {
         Long campaignId = openCampaign();
@@ -154,8 +158,14 @@ class CouponLossRecoveryTest {
         assertThatThrownBy(() -> couponFacade.issue(campaignId, 4L, NOW))
             .isInstanceOf(CoreException.class)
             .hasFieldOrPropertyWithValue("errorType", ErrorType.COUPON_ADMISSION_UNAVAILABLE);
-        eventually(() -> acceptedWithNumber(campaignId, 4L, 4));
+        assertThatThrownBy(() -> couponFacade.issue(campaignId, 4L, NOW))
+            .isInstanceOf(CoreException.class)
+            .hasFieldOrPropertyWithValue("errorType", ErrorType.COUPON_ADMISSION_UNAVAILABLE);
+        assertThat(couponReservation.isClosed(campaignId)).isTrue();
 
+        assertThat(couponFacade.recover(campaignId)).isEqualTo(3);
+
+        assertThat(acceptedWithNumber(campaignId, 4L, 4)).isTrue();
         assertThat(couponReservation.count(campaignId)).isEqualTo(4);
         assertThat(couponFacade.issue(campaignId, 2L, NOW))
             .isInstanceOf(CouponFacade.IssueResult.Issued.class)
@@ -176,9 +186,9 @@ class CouponLossRecoveryTest {
             + "created_at, updated_at) values (?, ?, ?, 5000, now(6), now(6), now(6))", rows);
         jdbcTemplate.update("update coupon_campaign set issued_count = ? where id = ?", rows.size(), campaignId);
 
-        couponFacade.startRecovery(campaignId);
-        eventually(() -> !couponReservation.isClosed(campaignId));
+        assertThat(couponFacade.recover(campaignId)).isEqualTo(1_001);
 
+        assertThat(couponReservation.isClosed(campaignId)).isFalse();
         assertThat(couponReservation.count(campaignId)).isEqualTo(1_001);
         assertThat(couponReservation.isReserved(campaignId, 1_001L)).isTrue();
         assertThat(couponFacade.issue(campaignId, 1_002L, NOW)).isEqualTo(new CouponFacade.IssueResult.Accepted(1_001));

@@ -26,9 +26,7 @@ public class CouponAdminV1Controller {
     }
 
     @PostMapping("/{campaignId}/recover")
-    @ResponseStatus(HttpStatus.ACCEPTED)
     public ApiResponse<CouponAdminV1Dto.RecoveryResponse> recover(@PathVariable Long campaignId) {
-        couponFacade.startRecovery(campaignId);
-        return ApiResponse.success(new CouponAdminV1Dto.RecoveryResponse(campaignId));
+        return ApiResponse.success(new CouponAdminV1Dto.RecoveryResponse(campaignId, couponFacade.recover(campaignId)));
     }
 }
