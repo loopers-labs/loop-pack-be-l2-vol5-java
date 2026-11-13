@@ -1,8 +1,55 @@
 # CLAUDE.md
 
+## Latest collaboration workflow
+
+The user's latest workflow supersedes all historical review/execution/approval rules below.
+The main conversational agent owns scope, implementation, test code, fixes, test execution, commits and reporting.
+Before tests, exactly one review agent covers business, technical/maintenance and UX concerns together and proposes checks.
+The main agent applies fixes and runs the minimum relevant tests. Then a QA agent reviews the diff, test list and execution evidence.
+QA does not normally run or rerun tests; it sends concrete additional checks and reasons to the main agent.
+Bundle purpose, affected files, key risks and verification information in each review/QA handoff.
+Repeat checks only for new changes, failures or unresolved concerns; focus re-review on findings and fixes unless behavior/design changes substantially.
+For documentation-only or history-only changes without runtime impact, inspect content, diff and history; skip code tests and separate QA.
+Proceed through commit within authorized scope without step-by-step confirmation; clarify only unclear requirements or destructive work.
+Use `type: summary`, a blank line and detailed bullets explaining changes, reasons and exception handling.
+See [AGENTS.md](AGENTS.md) for the complete current workflow.
+
+## Current work: sequential Week-8 implementation
+
+Latest user instruction (2026-11-13): implement C01–C06 in docs/week8/development-plan.md sequentially,
+application and infrastructure together, presentation last. C01 campaign/slot preparation is now in progress.
+Read docs/week8/campaign-preparation.md. This supersedes the domain-only/preparation-only restrictions below.
+One review agent covers all three perspectives before the main agent runs minimal relevant tests; QA then reviews scope and results.
+Commit only verified changes, using `type: Korean summary` plus detailed bullets. Never label environment failures/skips as passes.
+The user also requests squashing Week-8 documentation-only commits into one on the new local work branch;
+preserve previous branch refs, remote history and the user's unstaged JMeter change.
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Current work: combined Weeks 6–7 with consumer Inbox
+## Current work: Week 8 preparation only
+
+Latest user instruction (2026-11-13) supersedes preparation-only scope below: finalize the existing design defaults and commit docs,
+then implement only the pure coupon domain models, repository contracts and minimal necessary unit tests for user review.
+Do not implement coupon APIs, application workflows, persistence/DDL, Redis or Semaphore/YAML wiring yet.
+Run focused domain tests plus related Checkstyle/ArchUnit; preserve the user's JMeter change. Keep required three-perspective feature reviews.
+
+As of 2026-11-13, the user authorizes Git synchronization and pre-assignment setup only; do not implement coupon features yet.
+Local base: `volume-8/main` from `origin/corinB` at `270fb60776fb046a193c72c03b7621a4c9fe3261`.
+Read [Week-8 guide](docs/week8/README.md), [requirements](docs/week8/total_requirement.md),
+[development sequence](docs/week8/development-plan.md), [environment](docs/week8/environment.md)
+and [actual preparation results](docs/week8/initial-setup.md).
+The user additionally requests all preparation documents, including [trade-offs](docs/week8/trade-offs.md)
+and [verification plan](docs/week8/verification-plan.md), in one documentation commit. Keep proposals distinct from approved decisions.
+Latest user decision supersedes Redis global admission: use one Java Semaphore per instance, with no aggregate/global concurrency cap.
+Read `coupon.admission.max-concurrency` from YAML (initial 3) at startup; positive integer only, changes take effect on instance restart.
+Keep DB preallocated issuance slots, transactional coupon/issuedCount updates and DB idempotency separate from local execution permits.
+Do not add coupon Redis Set/Lua/SREM or fail coupon admission solely because Redis is down; preserve Redis use by existing features.
+Keep previously chosen local admin controls/default-closed opening per instance and retain a permit when DB execution termination is unknown.
+See [current design](docs/week8/design.md). The old global Redis design is historical; binding/feature implementation is still unauthorized.
+Preserve previous product/order/PG/Outbox/Inbox/purchase activity behavior and the user's unstaged JMeter modification.
+The following Week-6/7 branch and next-step notes are historical. Existing technical/check rules still apply.
+
+## Previous work: combined Weeks 6–7 with consumer Inbox
 
 As of 2026-11-04, follow [requirements](docs/week6-7/total_requirement.md),
 [development plan](docs/week6-7/development-plan.md), [environment](docs/week6-7/environment.md)
