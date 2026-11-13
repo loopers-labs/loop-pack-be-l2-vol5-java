@@ -11,5 +11,5 @@ public interface CouponIssueDeadLetterRepository {
 
     List<CouponIssueDeadLetter> findByIds(List<Long> ids);
 
-    void markReplayed(Long id, Instant replayedAt);
+    boolean markReplayed(Long id, Instant replayedAt);
 }

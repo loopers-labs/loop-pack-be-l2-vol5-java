@@ -29,7 +29,7 @@ public class CouponTransactions {
     }
 
     @Transactional
-    public void markDeadLetterReplayed(Long deadLetterId, Instant replayedAt) {
-        deadLetterService.markReplayed(deadLetterId, replayedAt);
+    public boolean markDeadLetterReplayed(Long deadLetterId, Instant replayedAt) {
+        return deadLetterService.markReplayed(deadLetterId, replayedAt);
     }
 }

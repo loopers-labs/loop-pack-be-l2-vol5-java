@@ -48,8 +48,9 @@ public class CouponIssueDeadLetters {
                 log.warn("DLT 메시지를 다시 보내지 못했다. PENDING 으로 둔다: id={}, outcome={}", deadLetter.id(), outcome);
                 continue;
             }
-            couponTransactions.markDeadLetterReplayed(deadLetter.id(), Instant.now());
-            replayed++;
+            if (couponTransactions.markDeadLetterReplayed(deadLetter.id(), Instant.now())) {
+                replayed++;
+            }
         }
         return replayed;
     }

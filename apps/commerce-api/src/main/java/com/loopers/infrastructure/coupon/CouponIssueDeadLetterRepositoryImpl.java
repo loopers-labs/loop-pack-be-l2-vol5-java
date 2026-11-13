@@ -44,8 +44,8 @@ public class CouponIssueDeadLetterRepositoryImpl implements CouponIssueDeadLette
     }
 
     @Override
-    public void markReplayed(Long id, Instant replayedAt) {
-        jpaRepository.markReplayed(id, replayedAt, CouponIssueDeadLetter.Status.PENDING,
-            CouponIssueDeadLetter.Status.REPLAYED);
+    public boolean markReplayed(Long id, Instant replayedAt) {
+        return jpaRepository.markReplayed(id, replayedAt, CouponIssueDeadLetter.Status.PENDING,
+            CouponIssueDeadLetter.Status.REPLAYED) == 1;
     }
 }

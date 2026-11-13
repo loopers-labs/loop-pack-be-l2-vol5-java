@@ -24,7 +24,7 @@ public class CouponIssueDeadLetterService {
         return repository.findByIds(ids);
     }
 
-    public void markReplayed(Long id, Instant replayedAt) {
-        repository.markReplayed(id, replayedAt);
+    public boolean markReplayed(Long id, Instant replayedAt) {
+        return repository.markReplayed(id, replayedAt);
     }
 }
