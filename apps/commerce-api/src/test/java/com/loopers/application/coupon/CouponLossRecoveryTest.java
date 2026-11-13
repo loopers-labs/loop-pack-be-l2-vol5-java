@@ -1,6 +1,7 @@
 package com.loopers.application.coupon;
 
 import com.loopers.domain.coupon.CampaignName;
+import com.loopers.domain.coupon.CouponReservation;
 import com.loopers.domain.coupon.DiscountAmount;
 import com.loopers.domain.coupon.IssueQuota;
 import com.loopers.support.error.CoreException;
@@ -32,6 +33,7 @@ class CouponLossRecoveryTest {
     private static final Duration WITHIN = Duration.ofSeconds(10);
 
     private final CouponFacade couponFacade;
+    private final CouponReservation couponReservation;
     private final CouponReconciliation couponReconciliation;
     private final CampaignCache campaignCache;
     private final JdbcTemplate jdbcTemplate;
@@ -39,10 +41,11 @@ class CouponLossRecoveryTest {
     private final RedisCleanUp redisCleanUp;
 
     @Autowired
-    CouponLossRecoveryTest(CouponFacade couponFacade, CouponReconciliation couponReconciliation,
-                           CampaignCache campaignCache, JdbcTemplate jdbcTemplate,
-                           DatabaseCleanUp databaseCleanUp, RedisCleanUp redisCleanUp) {
+    CouponLossRecoveryTest(CouponFacade couponFacade, CouponReservation couponReservation,
+                           CouponReconciliation couponReconciliation, CampaignCache campaignCache,
+                           JdbcTemplate jdbcTemplate, DatabaseCleanUp databaseCleanUp, RedisCleanUp redisCleanUp) {
         this.couponFacade = couponFacade;
+        this.couponReservation = couponReservation;
         this.couponReconciliation = couponReconciliation;
         this.campaignCache = campaignCache;
         this.jdbcTemplate = jdbcTemplate;
@@ -89,5 +92,20 @@ class CouponLossRecoveryTest {
         assertThatThrownBy(() -> couponFacade.issue(campaignId, 7L, NOW))
             .isInstanceOf(CoreException.class)
             .hasFieldOrPropertyWithValue("errorType", ErrorType.COUPON_ADMISSION_UNAVAILABLE);
+    }
+
+    @DisplayName("FLT-008: 닫힌 캠페인은 예약 없이 503 이고, 열면 다시 접수한다")
+    @Test
+    void closedCampaignRefusesAdmissionUntilOpened() {
+        Long campaignId = openCampaign();
+        couponReservation.close(campaignId);
+
+        assertThatThrownBy(() -> couponFacade.issue(campaignId, 42L, NOW))
+            .isInstanceOf(CoreException.class)
+            .hasFieldOrPropertyWithValue("errorType", ErrorType.COUPON_ADMISSION_UNAVAILABLE);
+        assertThat(couponReservation.count(campaignId)).isZero();
+
+        couponReservation.open(campaignId);
+        assertThat(couponFacade.issue(campaignId, 42L, NOW)).isEqualTo(new CouponFacade.IssueResult.Accepted(1));
     }
 }
