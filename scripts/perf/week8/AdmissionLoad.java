@@ -42,6 +42,7 @@ public class AdmissionLoad {
         ConcurrentLinkedQueue<Long> couponMillis = new ConcurrentLinkedQueue<>();
         ConcurrentLinkedQueue<Long> productMillis = new ConcurrentLinkedQueue<>();
         AtomicInteger productErrors = new AtomicInteger();
+        Map<String, AtomicInteger> productErrorCodes = new ConcurrentHashMap<>();
         AtomicInteger productRequests = new AtomicInteger();
         AtomicBoolean couponsDone = new AtomicBoolean();
         CountDownLatch couponLatch = new CountDownLatch(users);
@@ -93,9 +94,14 @@ public class AdmissionLoad {
                             productMillis.add(millisSince(sent));
                             if (response.statusCode() != 200) {
                                 productErrors.incrementAndGet();
+                                count(productErrorCodes, String.valueOf(response.statusCode()));
                             }
+                        } catch (HttpTimeoutException e) {
+                            productErrors.incrementAndGet();
+                            count(productErrorCodes, "timeout");
                         } catch (Exception e) {
                             productErrors.incrementAndGet();
+                            count(productErrorCodes, "연결 오류(" + e.getClass().getSimpleName() + ")");
                         }
                         return null;
                     });
@@ -125,11 +131,14 @@ public class AdmissionLoad {
         codes.forEach((key, value) -> System.out.println("  " + key + ": " + value));
         System.out.println("  지연 p50 " + percentile(coupon, 50) + "ms, p99 " + percentile(coupon, 99) + "ms (응답 받은 " + coupon.size() + "건)");
         System.out.println("== 상품 목록 (초당 " + productRps + "건 목표, " + productPath + ")");
-        System.out.println("  요청 " + productRequests.get() + "건, 오류 " + productErrors.get() + "건");
+        Map<String, Integer> productCodes = new TreeMap<>();
+        productErrorCodes.forEach((key, value) -> productCodes.put(key, value.get()));
+        System.out.println("  요청 " + productRequests.get() + "건, 오류 " + productErrors.get() + "건 " + productCodes);
         System.out.println("  지연 p50 " + percentile(product, 50) + "ms, p99 " + percentile(product, 99) + "ms");
         System.out.println("== 총 소요 " + totalMillis + "ms");
         System.out.println("SUMMARY coupon=" + codes + " coupon_p50=" + percentile(coupon, 50) + " coupon_p99=" + percentile(coupon, 99)
-            + " product_requests=" + productRequests.get() + " product_errors=" + productErrors.get() + " product_p50="
+            + " product_requests=" + productRequests.get() + " product_errors=" + productErrors.get() + " product_error_codes="
+            + productCodes + " product_p50="
             + percentile(product, 50) + " product_p99=" + percentile(product, 99) + " total_ms=" + totalMillis);
     }
 
