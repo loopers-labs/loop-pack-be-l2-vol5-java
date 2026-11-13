@@ -3,6 +3,7 @@ package com.loopers.infrastructure.coupon.client;
 import com.loopers.config.CouponRedisConfig;
 import com.loopers.domain.coupon.gateway.CouponIssueStream;
 import com.loopers.domain.coupon.vo.IssueEntry;
+import com.loopers.domain.coupon.vo.PendingConfirm;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.RedisSystemException;
@@ -33,6 +34,10 @@ public class RedisCouponIssueStream implements CouponIssueStream {
     @SuppressWarnings("rawtypes")
     private static final RedisScript<List> CLAIM = script("redis/coupon/claim.lua", List.class);
     private static final RedisScript<String> FAIL = script("redis/coupon/fail.lua", String.class);
+    @SuppressWarnings("rawtypes")
+    private static final RedisScript<List> STALE_PENDING = script("redis/coupon/stale-pending.lua", List.class);
+    @SuppressWarnings("rawtypes")
+    private static final RedisScript<List> CONFIRM = script("redis/coupon/confirm.lua", List.class);
 
     private final StringRedisTemplate redis;
 
@@ -66,6 +71,28 @@ public class RedisCouponIssueStream implements CouponIssueStream {
                 Long.parseLong(String.valueOf(parts.get(2)))));
         }
         return entries;
+    }
+
+    @Override
+    public List<PendingConfirm> stalePending(long campaignId, long acceptedBeforeMillis, int limit) {
+        CouponIssueKeys keys = CouponIssueKeys.of(campaignId);
+        List<?> stale = redis.execute(STALE_PENDING, List.of(keys.pending(), keys.users()),
+            String.valueOf(acceptedBeforeMillis), String.valueOf(limit));
+        if (stale == null) {
+            return List.of();
+        }
+        List<PendingConfirm> pending = new ArrayList<>(stale.size());
+        for (Object item : stale) {
+            List<?> parts = (List<?>) item;
+            pending.add(new PendingConfirm(campaignId, Long.parseLong(String.valueOf(parts.get(0))),
+                Long.parseLong(String.valueOf(parts.get(1))), (long) Double.parseDouble(String.valueOf(parts.get(2)))));
+        }
+        return pending;
+    }
+
+    @Override
+    public void confirm(long campaignId, long userId) {
+        redis.execute(CONFIRM, CouponIssueKeys.of(campaignId).forConfirm(), String.valueOf(userId));
     }
 
     @Override

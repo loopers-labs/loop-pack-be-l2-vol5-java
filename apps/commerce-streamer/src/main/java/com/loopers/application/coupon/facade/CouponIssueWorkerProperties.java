@@ -23,5 +23,7 @@ public record CouponIssueWorkerProperties(
     /** 이만큼 처리 중이면 죽은 worker 로 보고 회수 (D-119). 정상 처리 최대 시간보다 길어야 한다 */
     Duration claimMinIdle,
     /** 발급 수 재계산 간격 (D-142) */
-    Duration recountInterval
+    Duration recountInterval,
+    /** 접수 뒤 이만큼 지나도 확정되지 않으면 정리한다. producer 전송 상한보다 길어야 한다 (D-134) */
+    Duration pendingConfirmAfter
 ) {}

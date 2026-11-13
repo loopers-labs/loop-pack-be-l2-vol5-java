@@ -1,6 +1,7 @@
 package com.loopers.domain.coupon.gateway;
 
 import com.loopers.domain.coupon.vo.IssueEntry;
+import com.loopers.domain.coupon.vo.PendingConfirm;
 
 import java.time.Duration;
 import java.util.List;
@@ -13,6 +14,12 @@ public interface CouponIssueStream {
 
     /** 오래 처리 중인(죽은 worker 의) 항목을 이 consumer 로 가져온다 (D-119) */
     List<IssueEntry> claim(long campaignId, String consumer, Duration minIdle, int count);
+
+    /** 접수 시각이 기준보다 이른데 아직 PENDING_CONFIRM 인 접수 (D-134) */
+    List<PendingConfirm> stalePending(long campaignId, long acceptedBeforeMillis, int limit);
+
+    /** PENDING_CONFIRM 을 WAITING(대기열) · RESERVE(예비 목록)로 확정한다. 이미 확정됐으면 그대로 둔다 (D-133) */
+    void confirm(long campaignId, long userId);
 
     /** 새 항목을 이 consumer 몫으로 받는다. 대기열 · 표식이 없으면 비어 있다 */
     List<IssueEntry> read(long campaignId, String consumer, int count);

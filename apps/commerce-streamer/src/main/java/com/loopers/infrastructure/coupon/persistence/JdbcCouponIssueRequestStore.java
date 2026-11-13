@@ -35,7 +35,15 @@ public class JdbcCouponIssueRequestStore implements CouponIssueRequestStore {
         WHERE campaign_id IN (:campaignIds) AND user_id IN (:userIds)
         """;
 
+    private static final String EXISTS = "SELECT COUNT(*) FROM coupon_issue_request WHERE campaign_id = :campaignId AND user_id = :userId";
+
     private final NamedParameterJdbcTemplate jdbc;
+
+    @Override
+    public boolean exists(long campaignId, long userId) {
+        Long count = jdbc.queryForObject(EXISTS, Map.of("campaignId", campaignId, "userId", userId), Long.class);
+        return count != null && count > 0;
+    }
 
     @Override
     public List<CouponIssueRequested> loadAll(List<CouponIssueRequested> requests) {

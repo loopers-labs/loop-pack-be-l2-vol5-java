@@ -7,7 +7,7 @@ import java.util.List;
  * 한 스크립트가 여러 키를 다루므로 해시 태그로 캠페인 id 를 묶는다
  */
 record CouponIssueKeys(String epoch, String meta, String users, String stream, String delayed,
-                       String reserve, String promoted, String soldOut) {
+                       String reserve, String promoted, String soldOut, String pending) {
 
     static CouponIssueKeys of(long campaignId) {
         String prefix = "coupon-issue:{" + campaignId + "}:";
@@ -19,8 +19,13 @@ record CouponIssueKeys(String epoch, String meta, String users, String stream, S
             prefix + "delayed",
             prefix + "reserve",
             prefix + "promoted",
-            prefix + "sold-out"
+            prefix + "sold-out",
+            prefix + "pending-confirm"
         );
+    }
+
+    List<String> forConfirm() {
+        return List.of(epoch, meta, users, pending, stream, reserve, soldOut, promoted);
     }
 
     List<String> forFail() {

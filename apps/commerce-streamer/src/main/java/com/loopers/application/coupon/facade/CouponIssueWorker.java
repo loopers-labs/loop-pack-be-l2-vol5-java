@@ -1,8 +1,11 @@
 package com.loopers.application.coupon.facade;
 
+import com.loopers.domain.coupon.gateway.CouponIssueRequestResender;
 import com.loopers.domain.coupon.gateway.CouponIssueStream;
 import com.loopers.domain.coupon.repository.CouponIssuanceStore;
+import com.loopers.domain.coupon.repository.CouponIssueRequestStore;
 import com.loopers.domain.coupon.vo.IssueEntry;
+import com.loopers.domain.coupon.vo.PendingConfirm;
 import com.loopers.support.error.IssueRejectedException;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -25,7 +28,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 /**
- * 발급 worker 의 한 회차. 열린 캠페인마다: 지연 항목 이동 → 죽은 worker 항목 회수 → 새 항목 읽기 → 처리 → 발급 수 재계산 (8주차 D-130, D-142).
+ * 발급 worker 의 한 회차. 열린 캠페인마다: 지연 항목 이동 → 죽은 worker 항목 회수 → 확인 대기 정리 → 새 항목 읽기 → 처리 → 발급 수 재계산
+ * (8주차 D-130, D-134, D-142).
  * 처리: DB 발급 → commit → Redis 갱신 · XACK (D-125). 인스턴스당 동시 발급은 스레드 수로 고정한다 (D-171).
  * 실패는 분류해서 다룬다 (D-126): 영구는 즉시 FAILED(승격 없음), 일시는 상한 없이 재시도, 미분류는 상한 뒤 FAILED · 승격
  */
@@ -36,6 +40,8 @@ public class CouponIssueWorker {
     private final CouponIssuanceStore couponIssuanceStore;
     private final CouponIssueStream couponIssueStream;
     private final CouponIssueSteps couponIssueSteps;
+    private final CouponIssueRequestStore couponIssueRequestStore;
+    private final CouponIssueRequestResender couponIssueRequestResender;
     private final CouponIssueWorkerProperties properties;
     private final Clock clock;
     private final ExecutorService executor;
@@ -45,12 +51,16 @@ public class CouponIssueWorker {
         CouponIssuanceStore couponIssuanceStore,
         CouponIssueStream couponIssueStream,
         CouponIssueSteps couponIssueSteps,
+        CouponIssueRequestStore couponIssueRequestStore,
+        CouponIssueRequestResender couponIssueRequestResender,
         CouponIssueWorkerProperties properties,
         Clock clock
     ) {
         this.couponIssuanceStore = couponIssuanceStore;
         this.couponIssueStream = couponIssueStream;
         this.couponIssueSteps = couponIssueSteps;
+        this.couponIssueRequestStore = couponIssueRequestStore;
+        this.couponIssueRequestResender = couponIssueRequestResender;
         this.properties = properties;
         this.clock = clock;
         this.executor = Executors.newFixedThreadPool(properties.threads());
@@ -69,10 +79,30 @@ public class CouponIssueWorker {
         couponIssueStream.moveDue(campaignId, clock.millis(), properties.batchSize());
         List<IssueEntry> entries = new ArrayList<>(
             couponIssueStream.claim(campaignId, properties.instanceId(), properties.claimMinIdle(), properties.batchSize()));
+        resolvePending(campaignId);
         entries.addAll(couponIssueStream.read(campaignId, properties.instanceId(), properties.batchSize()));
         int completed = process(entries);
         recountIfDue(campaignId);
         return completed;
+    }
+
+    /**
+     * 확정되지 못한 접수를 정리한다. 같은 key · 순번으로 재전송해 확인되면 확정하고, 재전송이 안 되면 DB 접수 기록이 있을 때만 확정한다.
+     * 결과를 모르는 사람은 지우지 않고 다음 회차로 미룬다 (D-134)
+     */
+    private void resolvePending(long campaignId) {
+        long acceptedBefore = clock.millis() - properties.pendingConfirmAfter().toMillis();
+        for (PendingConfirm pending : couponIssueStream.stalePending(campaignId, acceptedBefore, properties.batchSize())) {
+            try {
+                if (couponIssueRequestResender.resend(pending) || couponIssueRequestStore.exists(campaignId, pending.userId())) {
+                    couponIssueStream.confirm(campaignId, pending.userId());
+                    log.info("확인 대기 접수를 확정함. campaignId={} userId={} sequence={}", campaignId, pending.userId(), pending.sequence());
+                }
+            } catch (RuntimeException e) {
+                log.warn("확인 대기 정리 실패, 다음 회차에 다시 함. campaignId={} userId={} cause={}",
+                    campaignId, pending.userId(), e.toString());
+            }
+        }
     }
 
     private int process(List<IssueEntry> entries) {

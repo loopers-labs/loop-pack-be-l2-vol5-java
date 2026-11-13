@@ -3,3 +3,4 @@ coupon-issue:
   worker:
     recount-interval: 0s
     claim-min-idle: 200ms
+    pending-confirm-after: 1s

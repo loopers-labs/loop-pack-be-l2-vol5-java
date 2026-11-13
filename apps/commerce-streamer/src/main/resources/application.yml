@@ -65,6 +65,12 @@ coupon-issue:
     poison-deliveries: 10
     claim-min-idle: 30s # (연결 3s + 잠금 3s + Redis 1s) × (안쪽 재시도 + 1) + 여유 (D-131)
     recount-interval: 1s
+    pending-confirm-after: 10s # api 접수 producer delivery-timeout(3s)보다 길게 (D-134)
+  resend-producer: # 확인 대기 재전송. api 접수 producer 와 같은 잠정값 (D-134)
+    request-timeout: 2s
+    delivery-timeout: 3s
+    send-timeout: 4s
+    max-block: 500ms
 
 # 응답 없는 DB 에서 listener 가 예외 없이 무기한 기다리면 재시도 · 상한이 동작하지 않아 드라이버에 상한을 둠 (6주차 D-98).
 # 문장이 ms 단위라 정상 처리는 끊지 않음. 끊긴 COMMIT 의 결과가 모호해도 재전달을 멱등 처리로 흡수함. 공용 jpa.yml 이 아니라 앱마다 둬 batch 는 건드리지 않음
