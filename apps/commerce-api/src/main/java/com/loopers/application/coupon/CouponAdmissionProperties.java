@@ -18,8 +18,9 @@ public record CouponAdmissionProperties(int capacity, boolean autoResume, String
             throw new IllegalArgumentException("coupon.admission.capacity는 1 이상이어야 한다");
         }
         Objects.requireNonNull(instanceId, "coupon.admission.instance-id가 없다");
-        if (instanceId.isBlank() || instanceId.contains(":")) {
-            throw new IllegalArgumentException("coupon.admission.instance-id는 비어 있거나 ':'를 포함할 수 없다");
+        // token 접두어({instanceId}:)로 Redis를 검색하므로 glob 특수문자와 ':'를 허용하지 않는다
+        if (!instanceId.matches("[A-Za-z0-9_.-]+")) {
+            throw new IllegalArgumentException("coupon.admission.instance-id는 영문·숫자·'_'·'.'·'-'만 쓸 수 있다");
         }
     }
 }

@@ -40,7 +40,10 @@ coupon:
   admission: # 쿠폰 신규 발급의 동시 실행 수용 (docs/week8 설계서)
     capacity: 10 # 지금 동시에 진행할 수 있는 신규 발급 실행의 최대 수(C). DB 연결 풀(test 10, 기본 40) 이하로 둔다
     auto-resume: true # Redis가 복구돼 안전 조건을 채우면 자동으로 세마포어 경로로 돌아온다. false면 사람이 확인해야 한다
-    instance-id: local-1 # 이 인스턴스의 고정 ID. token이 `instance-id:UUID`가 되어 재시작 뒤 자기 token만 정리할 수 있다. ':'를 넣지 않는다(단일 인스턴스 전제)
+    instance-id: local-1 # 이 인스턴스의 고정 ID. token이 `instance-id:UUID`가 되어 재시작 뒤 자기 token만 정리할 수 있다. 영문·숫자·_.-만 쓴다(단일 인스턴스 전제)
+    recovery:
+      scheduling-enabled: true # 미반환 token 재시도와 이전 프로세스가 남긴 자기 token 정리를 주기적으로 한다
+      fixed-delay: 5s # 한 회차가 끝난 뒤 다음 회차까지 쉬는 시간
 
 order-event:
   topic-name: order-events # 확정 주문 이벤트(OrderConfirmed v1)의 topic. 테스트는 고유 접미사를 붙여 덮어쓴다
@@ -91,6 +94,11 @@ spring:
 order-outbox:
   relay:
     scheduling-enabled: false # 테스트는 relay를 직접 한 회차씩 부른다. 백그라운드 회차가 테스트의 Outbox 행을 바꾸지 않게 한다
+
+coupon:
+  admission:
+    recovery:
+      scheduling-enabled: false # 테스트는 정리를 직접 한 회차씩 부른다. 백그라운드 회차가 테스트의 token 상태를 바꾸지 않게 한다
 
 ---
 spring:
