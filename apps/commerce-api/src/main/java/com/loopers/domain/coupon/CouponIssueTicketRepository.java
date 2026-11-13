@@ -1,5 +1,6 @@
 package com.loopers.domain.coupon;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface CouponIssueTicketRepository {
@@ -9,4 +10,6 @@ public interface CouponIssueTicketRepository {
     CouponIssueTicket insert(CouponIssueTicket couponIssueTicket);
 
     Optional<CouponIssueTicket> findById(Long id);
+
+    List<CouponIssueTicket> findAllByCampaignId(Long campaignId);
 }

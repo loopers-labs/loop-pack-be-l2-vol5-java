@@ -1,5 +1,6 @@
 package com.loopers.domain.coupon;
 
+import com.loopers.domain.common.Money;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
@@ -8,11 +9,15 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
 
 import java.time.ZonedDateTime;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 
 @RequiredArgsConstructor
 @Component
 public class CouponService {
+
+    private static final String TICKETED = "TICKETED";
 
     private final CouponCampaignRepository couponCampaignRepository;
     private final CouponRepository couponRepository;
@@ -45,6 +50,33 @@ public class CouponService {
 
     public Page<Coupon> getList(Long userId, Pageable pageable) {
         return couponRepository.findAllByUserId(userId, pageable);
+    }
+
+    public CouponCampaign prepare(String name, Money discountAmount, int totalQuota) {
+        return couponCampaignRepository.save(CouponCampaign.create(name, discountAmount, totalQuota));
+    }
+
+    public CouponCampaign getCampaign(Long campaignId) {
+        return couponCampaignRepository.findById(campaignId)
+            .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "쿠폰 캠페인을 찾을 수 없습니다."));
+    }
+
+    /** 신규 발급을 끝낸다. 호출하는 쪽의 트랜잭션 안에서 변경 감지로 저장된다. */
+    public void close(Long campaignId) {
+        getCampaign(campaignId).close();
+    }
+
+    /**
+     * DB 에 남은 약속으로 당첨자 명단을 만든다. 쿠폰이 있으면 couponId, 쿠폰 없는 당첨 기록이면 TICKETED 다.
+     * 약속하지 않은 당첨(Redis 에만 있던 PENDING)은 원본이 없으므로 포함되지 않는다.
+     */
+    public Map<Long, String> promisedWinners(Long campaignId) {
+        Map<Long, String> winners = new HashMap<>();
+        couponIssueTicketRepository.findAllByCampaignId(campaignId)
+            .forEach(ticket -> winners.put(ticket.getUserId(), TICKETED));
+        couponRepository.findAllByCampaignId(campaignId)
+            .forEach(coupon -> winners.put(coupon.getUserId(), String.valueOf(coupon.getId())));
+        return winners;
     }
 
     public boolean campaignExists(Long campaignId) {

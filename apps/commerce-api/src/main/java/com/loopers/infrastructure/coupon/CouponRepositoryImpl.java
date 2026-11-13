@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
+import java.util.List;
 import java.util.Optional;
 
 @RequiredArgsConstructor
@@ -33,6 +34,11 @@ public class CouponRepositoryImpl implements CouponRepository {
     @Override
     public Optional<Coupon> findByCampaignIdAndUserId(Long campaignId, Long userId) {
         return couponJpaRepository.findByCampaignIdAndUserId(campaignId, userId);
+    }
+
+    @Override
+    public List<Coupon> findAllByCampaignId(Long campaignId) {
+        return couponJpaRepository.findAllByCampaignId(campaignId);
     }
 
     @Override

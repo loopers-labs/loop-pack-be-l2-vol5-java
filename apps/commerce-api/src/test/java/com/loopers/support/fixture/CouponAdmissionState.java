@@ -43,6 +43,11 @@ public class CouponAdmissionState {
         return value == null ? null : value.toString();
     }
 
+    public String metaOf(long campaignId, String field) {
+        Object value = redisTemplate.opsForHash().get(metaKey(campaignId), field);
+        return value == null ? null : value.toString();
+    }
+
     public long winnerCount(long campaignId) {
         return redisTemplate.opsForHash().size(winnersKey(campaignId));
     }

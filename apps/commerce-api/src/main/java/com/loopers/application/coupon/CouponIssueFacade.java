@@ -4,6 +4,8 @@ import com.loopers.application.coupon.admission.AcquireOutcome;
 import com.loopers.application.coupon.admission.CouponAdmissionException;
 import com.loopers.application.coupon.admission.CouponAdmissionSwitch;
 import com.loopers.application.coupon.admission.CouponIssueAdmission;
+import com.loopers.application.coupon.admission.CouponIssueExecutions;
+import com.loopers.application.coupon.admission.ReserveOutcome;
 import com.loopers.application.coupon.admission.ReserveResult;
 import com.loopers.application.coupon.dto.CouponIssueInfo;
 import com.loopers.application.coupon.dto.CouponWriteResult;
@@ -40,6 +42,7 @@ public class CouponIssueFacade {
 
     private final CouponIssueAdmission admission;
     private final CouponAdmissionSwitch admissionSwitch;
+    private final CouponIssueExecutions executions;
     private final CouponIssueWriter writer;
     private final CouponService couponService;
     private final Duration waitTimeout;
@@ -48,6 +51,7 @@ public class CouponIssueFacade {
     public CouponIssueFacade(
         CouponIssueAdmission admission,
         CouponAdmissionSwitch admissionSwitch,
+        CouponIssueExecutions executions,
         CouponIssueWriter writer,
         CouponService couponService,
         PlatformTransactionManager transactionManager,
@@ -55,6 +59,7 @@ public class CouponIssueFacade {
     ) {
         this.admission = admission;
         this.admissionSwitch = admissionSwitch;
+        this.executions = executions;
         this.writer = writer;
         this.couponService = couponService;
         this.waitTimeout = waitTimeout;
@@ -66,14 +71,29 @@ public class CouponIssueFacade {
         if (!admissionSwitch.isOpen()) {
             return closed(campaignId, userId);
         }
+        // 재개할 때 진행 중 실행이 없는지 확인할 수 있게 이 인스턴스의 실행을 센다.
+        executions.start();
+        try {
+            return admit(campaignId, userId);
+        } finally {
+            executions.end();
+        }
+    }
+
+    private CouponIssueInfo admit(Long campaignId, Long userId) {
         // 실행마다 새 token 을 만든다. 다른 실행과 공유하지 않는다.
         String token = UUID.randomUUID().toString();
+        // 응답이 불확실해도 Redis 에 들어갔을 수 있으므로 호출 전에 기록해 두고, 확실히 아닐 때만 지운다.
+        executions.hold(campaignId, token);
         ReserveResult reserved;
         try {
             reserved = admission.reserve(campaignId, userId, token);
         } catch (CouponAdmissionException e) {
             closeAdmission("당첨 판정 실패", e);
             return closed(campaignId, userId);
+        }
+        if (reserved.outcome() != ReserveOutcome.WON_RUNNING && reserved.outcome() != ReserveOutcome.WON_WAITING) {
+            executions.release(token);
         }
         return switch (reserved.outcome()) {
             case CLOSED -> closed(campaignId, userId);
@@ -98,14 +118,18 @@ public class CouponIssueFacade {
                         return runAndFinish(campaignId, userId, token);
                     }
                     case NOT_PENDING -> {
+                        executions.release(token);
                         return existingAfterWait(campaignId, userId);
                     }
                     case CLOSED -> {
+                        executions.release(token);
                         return promise(campaignId, userId);
                     }
                     case FULL -> sleepBeforeRetry();
                 }
             }
+            // FULL 로 끝났으면 token 은 자리에 들어가지 않았다.
+            executions.release(token);
         } catch (CouponAdmissionException e) {
             // 자리를 얻었는지 모르므로 DB 에 쓰지 않는다. 당첨은 이미 확정이라 약속만 남긴다.
             closeAdmission("자리 재요청 실패", e);
@@ -142,8 +166,9 @@ public class CouponIssueFacade {
     private void finish(Long campaignId, Long userId, String token, Long couponId) {
         try {
             admission.finish(campaignId, userId, token, couponId);
+            executions.release(token);
         } catch (CouponAdmissionException e) {
-            // 쿠폰·발급 수는 되돌리지 않는다. 남은 자리는 관리자가 확인 뒤 정리한다.
+            // 쿠폰·발급 수는 되돌리지 않는다. token 은 남겨 두고, 관리자가 확인 뒤 재개할 때 정리한다.
             closeAdmission("자리 반환 실패", e);
         }
     }

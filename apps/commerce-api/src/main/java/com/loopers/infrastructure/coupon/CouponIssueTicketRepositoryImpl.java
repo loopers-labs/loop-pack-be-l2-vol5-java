@@ -5,6 +5,7 @@ import com.loopers.domain.coupon.CouponIssueTicketRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.Optional;
 
 @RequiredArgsConstructor
@@ -25,5 +26,10 @@ public class CouponIssueTicketRepositoryImpl implements CouponIssueTicketReposit
     @Override
     public Optional<CouponIssueTicket> findById(Long id) {
         return couponIssueTicketJpaRepository.findById(id);
+    }
+
+    @Override
+    public List<CouponIssueTicket> findAllByCampaignId(Long campaignId) {
+        return couponIssueTicketJpaRepository.findAllByCampaignId(campaignId);
     }
 }

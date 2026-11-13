@@ -15,4 +15,7 @@ public interface CouponIssueAdmission {
 
     /** 자기 token 만 반환한다. {@code couponId} 가 있으면 결과로 기록한다. */
     void finish(Long campaignId, Long userId, String token, Long couponId);
+
+    /** 이미 DB 에 있는 쿠폰을 결과로 기록한다. 자리는 다루지 않는다. */
+    void recordIssued(Long campaignId, Long userId, Long couponId);
 }
