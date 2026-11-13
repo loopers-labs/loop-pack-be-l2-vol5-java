@@ -110,9 +110,9 @@ return {1, seq}
 
 ```lua
 -- KEYS[1]=waiting, KEYS[2]=admitted, KEYS[3]=permits, KEYS[4]=gen
--- ARGV[1]=capacity, ARGV[2]=now(ms), ARGV[3]=admittedTtl(ms), ARGV[4]=permitTtl(ms), ARGV[5]=expectedGen
+-- ARGV[1]=capacity, ARGV[2]=now(ms), ARGV[3]=admittedCutoff(ms), ARGV[4]=permitTtl(ms), ARGV[5]=expectedGen
 if redis.call('GET', KEYS[4]) ~= ARGV[5] then return -1 end        -- 상태 유실. 호출자는 gate를 닫는다
-redis.call('ZREMRANGEBYSCORE', KEYS[2], 0, ARGV[2] - ARGV[3])   -- 만료된 승격 제거
+redis.call('ZREMRANGEBYSCORE', KEYS[2], 0, ARGV[3])             -- 만료된 승격 제거. cutoff 가 0 이면 아무도 지우지 않는다
 redis.call('ZREMRANGEBYSCORE', KEYS[3], 0, ARGV[2] - ARGV[4])   -- 하트비트 끊긴 자리 회수
 local busy = redis.call('ZCARD', KEYS[2]) + redis.call('ZCARD', KEYS[3])
 local free = tonumber(ARGV[1]) - busy
@@ -126,6 +126,8 @@ return #popped / 2
 
 반환 -1은 세대 불일치다. 호출자는 승격을 중단하고 gate를 닫는다.
 
+승격 만료 기준 시각 `admittedCutoff`는 Java가 계산해 넘긴다. 평소에는 `now − admittedTtl`이고, DB 서킷이 OPEN에서 벗어난 뒤 admittedTtl이 지나기 전까지는 0이다(§7-4 장애 후 만료 유예). Lua는 기준 시각만 받고 유예 여부를 알지 못한다. 유예 판단은 서킷 상태를 아는 쪽(Java)이 맡고, Lua는 "이 시각보다 오래된 승격을 지운다" 한 가지만 한다.
+
 이 단계만 Lua가 필요하다. "빈자리 계산"과 "꺼내서 옮기기"가 분리되면 두 인스턴스가 동시에 돌 때 둘 다 빈자리를 2로 읽고 각각 2명을 승격시켜 C를 넘긴다. 승격 대기 중인 사용자(admitted)도 자리를 예약한 것으로 계산(`busy`)해야, 승격만 받고 아직 발급을 시작하지 않은 사용자 몫까지 포함해 C가 지켜진다.
 
 실행 주기는 200ms 고정 지연(`fixedDelay`). 승격 지연 상한이 곧 사용자가 느끼는 반응 지연이므로 짧게 두되, 매 요청마다 승격을 시도하는 방식은 폴링 폭주 시 Redis 부하가 요청 수에 비례해 커지므로 피했다.
@@ -138,6 +140,7 @@ return #popped / 2
 2. Lua(세마포어): GET gen != expectedGen → -1 (상태 유실 → gate 닫고 503)
                   ZREMRANGEBYSCORE permits 0 now-permitTtl   -- 하트비트 끊긴 자리 회수
                   ZSCORE admitted userId == nil → 거절(NOT_ADMITTED)
+                  score < admittedCutoff → ZREM admitted userId, 거절(NOT_ADMITTED)   -- 자기 승격의 만료만 확인. cutoff 는 §5-2 와 같은 값
                   ZSCORE permits token 있음 → 1               -- 같은 실행의 재확인
                   ZCARD permits >= C → 거절(429)             -- 방어선. 정상이면 발생 안 함
                   ZADD permits now token → 1
@@ -155,7 +158,9 @@ return #popped / 2
 5. 201 {couponId} | 200(기존) | 409 SOLD_OUT | 503 DB 일시 불가
 ```
 
-세마포어 Lua는 `세대 확인 → 만료 정리 → ZSCORE(승격 확인) → ZSCORE(자기 token 재확인) → ZCARD → ZADD`를 한 덩어리로 묶는다. 이를 애플리케이션에서 나눠 호출하면 두 요청이 동시에 "2개 있네"를 읽고 둘 다 들어가 C+1이 된다. admitted·permits는 ZSET이므로 Set 명령(`SISMEMBER`·`SCARD`·`SADD`)을 쓰지 않는다.
+세마포어 Lua는 `세대 확인 → 만료 정리 → ZSCORE(승격 확인·만료 확인) → ZSCORE(자기 token 재확인) → ZCARD → ZADD`를 한 덩어리로 묶는다. 이를 애플리케이션에서 나눠 호출하면 두 요청이 동시에 "2개 있네"를 읽고 둘 다 들어가 C+1이 된다. admitted·permits는 ZSET이므로 Set 명령(`SISMEMBER`·`SCARD`·`SADD`)을 쓰지 않는다.
+
+승격 확인은 존재 여부만 보지 않고 **자기 승격의 score가 admittedCutoff보다 오래됐는지**도 본다(cutoff 계산은 §5-2와 같다). admitted의 범위 정리(`ZREMRANGEBYSCORE`)는 승격 Lua가 맡는데, 승격 스케줄러가 멈춘 동안(인스턴스 재시작·설정 off)에는 만료된 승격이 남아 있을 수 있다. 그 사이에 들어온 claim이 만료된 승격으로 자리를 잡으면 D5의 "미응답자는 차례를 잃는다"가 깨진다. 세마포어는 자기 것 하나만 확인·삭제하고 범위 정리는 하지 않는다. 다른 사용자의 정리까지 하면 두 Lua가 같은 일을 두 곳에서 하게 된다. `extendAdmission`으로 시간이 다시 채워진 사용자는 score가 갱신되어 있어 원래 만료 시각이 지나도 통과한다.
 
 하트비트 갱신은 `ZADD XX`로만 한다. `XX` 없이 갱신하면, 이미 회수되어 다른 사용자가 들어온 자리에 죽은 token이 되살아나 C+1이 된다. 하트비트 갱신이 Redis 예외로 실패하면 로그만 남기고 발급은 계속한다. 이미 DB 트랜잭션이 진행 중이라 중단해도 쿠폰은 발급되며, Redis 이상 신호는 다음 접수·claim 요청의 Lua 호출이 받아 gate를 닫는다. 장애 감지 지점을 요청 경로 한 곳으로 유지한다.
 
@@ -251,7 +256,8 @@ Redis 장애는 §7-1·§7-3의 gate가 맡는다. DB 장애는 다른 장치가
 
 1. **순번 유지.** claim의 finally에서 자리(permits)는 항상 반납하되, 승격(admitted) 제거는 업무 결과가 확정됐을 때만 한다(발급 성공·기존 쿠폰 반환·품절·캠페인 종료). DB 일시 오류로 재시도 2회를 다 쓰고 실패했거나 서킷이 열려 거절된 경우에는 승격을 유지하고, 그 사용자의 승격 시간을 현재 시각으로 다시 채운다(`ZADD XX`, 존재할 때만). 시스템 사정으로 흐른 시간을 사용자에게 물리지 않는다. 서킷이 열린 동안은 다음 대기자를 승격하지 않으므로 연장이 다른 사용자의 차례를 빼앗지 않는다. 사용자는 승격 TTL 안에 다시 claim할 수 있다.
 2. **서킷브레이커.** `CouponIssueService` 호출을 서킷브레이커로 감싼다. Resilience4j core를 코드로 조립한다(`HttpPaymentGateway` 선례. 스타터와 애노테이션은 쓰지 않는다). 대기열·세마포어·gate와 같이 domain에 인터페이스를 두고 infrastructure에 Resilience4j 구현을 둔다. Facade·승격 스케줄러·관리자 조회는 이 인터페이스로 상태를 읽는다. 서킷은 캠페인별이 아니라 **전체에 하나**다. DB는 모든 캠페인이 공유하므로 한 캠페인에서 본 DB 장애는 다른 캠페인에도 같은 장애다. 실패로 세는 것은 재시도까지 끝난 뒤의 `DataAccessException` 계열이다. `CoreException`(품절·종료·없음)과 유니크 중복은 업무 결과이므로 실패로 세지 않는다. 서킷이 열려 있으면 claim은 **세마포어 자리를 잡기 전에** 503으로 끝낸다. DB를 호출하지 않는다.
-3. **승격 멈춤.** 서킷이 열려 있으면 승격 스케줄러는 승격 Lua를 호출하지 않는다. 대기열을 그대로 둔다. 이미 승격된 사용자의 TTL은 그대로 흐른다(§12-1).
+3. **승격 멈춤.** 서킷이 열려 있으면 승격 스케줄러는 승격 Lua를 호출하지 않는다. 대기열을 그대로 둔다. 만료 정리도 하지 않는다.
+4. **장애 후 만료 유예.** 서킷이 OPEN에서 벗어난 시각(`lastLeftOpenAt`, Clock 기준)을 서킷 부품이 기억한다. 그 뒤 admittedTtl이 지나기 전까지는 승격 만료 기준 시각(cutoff)을 0으로 두어 아무도 만료시키지 않는다(승격 Lua의 범위 정리와 세마포어의 자기 확인 모두). 서킷이 열린 동안 다시 시도하지 않은 승격자는 승격 때 대기열에서 이미 빠졌으므로, 그대로 만료되면 상태가 NONE이 되어 **사용자 잘못이 아닌데 접수가 없던 일이 된다.** 유예는 그 사용자에게 복구 뒤 admittedTtl만큼의 claim 기회를 돌려준다. `extendAdmission`(결정 1)은 서킷이 열리지 않는 드문 일시 오류를 맡고, 유예는 서킷이 열린 장애를 맡는다.
 
 **gate가 아니라 서킷브레이커를 쓰는 이유.** gate는 "Redis 기록을 믿을 수 없다"는 신호에 대한 장치다. 그래서 자동 재개를 보수적으로 두고 세대 키로 상태 보존을 확인한다. DB 장애에서는 Redis 기록(대기열·승격·자리)이 그대로 믿을 수 있으므로, DB가 돌아오면 그 기록 위에서 스스로 재개해도 안전하다. 자동 복구가 안전한 장애를 수동 재개 장치에 묶으면 운영 부담만 늘어난다. **DB 장애로는 gate를 닫지 않는다.**
 
@@ -368,6 +374,9 @@ W1 §6 형식을 따른다. 각 규칙에 "깨지는 입력"을 하나씩 붙여
 | INV-W8-13 ⑤ | 품절과 유니크 중복 | 서킷 실패로 세지 않음 |
 | INV-W8-13 ⑥ | 재시도 소진 503 뒤 원래 승격 만료 시각이 지남 | 승격 시간이 다시 채워져 유지. 재claim 성공 |
 | INV-W8-13 ⑦ | 이미 만료·제거된 승격 상태에서 claim 실패 | 승격이 되살아나지 않음(`ZADD XX`). 409, 상태 NONE |
+| INV-W8-13 ⑧ | 승격 후 서킷 OPEN → admitted-ttl보다 길게 경과 → 서킷 닫힘 → 다시 시도한 적 없는 승격자의 claim | 성공(장애 후 만료 유예) |
+| INV-W8-13 ⑨ | 서킷이 닫힌 뒤 admitted-ttl 경과 | 평소대로 만료. 떠난 승격자가 정리되고 다음 대기자가 승격 |
+| INV-W8-13 ⑩ | 서킷이 열린 적 없음 | 기존 만료 동작과 같다 (D5 시나리오) |
 | INV-W8-12 | open 상태에서 `FLUSHALL` 후 접수·claim | 세대 불일치 → 503, gate 닫힘. open 후 새 세대로 재개 |
 | INV-W8-09 ① | 하트비트 중단 후 TTL(테스트 1초) 경과 → 다음 claim | 회수됨. 새 claim 진입 |
 | INV-W8-09 ② | 하트비트 유지 중 TTL 경과 | token 유지. 4번째 claim 429 |
@@ -394,7 +403,7 @@ barrier는 deadline(5초, TTL보다 짧게)을 두고, 실패 시 자신이 시�
 | 세대는 맞지만 기록이 과거 상태인 경우 | 예전 복제본으로 넘어가면 세대 키가 잡지 못한다 | 자동 재개를 켜면 틀린 기록 위에서 열린다 | 수동 재개만 허용: 운영자가 모르면 발급이 멈춘다. 그래서 자동 재개를 기본으로 켜지 않았다 |
 | 운영자 초기화 수단 없음 | open은 기존 키를 지우지 않는다 | 남은 기록을 믿기 어려우면 Redis 키를 직접 지워야 한다 | open에 초기화 선택지 추가: API와 테스트가 늘고, 진행 중 발급 확인이 틀리면 C를 넘는다 |
 | 닫힘 알림 없음 | 기본값인 수동 재개에서는 운영자가 닫힘을 알아야 한다 | 모르면 발급이 멈춘 채로 남는다 | 알림 연동: 알림 채널 필요. 이번에는 `gate_open` Gauge만 노출해 알림을 걸 지점을 둔다 |
-| 다시 시도하지 않는 사용자는 장애 중에도 승격이 만료된다 | 승격 연장은 claim 실패 시점에만 일어난다 | 장애가 admitted-ttl을 넘으면 차례를 잃고 상태 조회는 NONE을 준다 | 서버가 직접 발급(§14 단순화 경로): 차례를 놓치는 경우가 없어지지만 claim 구조를 바꿔야 한다 |
+| 장애 직후 admitted-ttl 동안 떠난 승격자가 자리 예약을 쥔다 | 장애 후 만료 유예 | 복구 직후 최대 admitted-ttl 동안 처리량이 떨어질 수 있다 | 만료 시 원래 번호로 대기열 복귀: 떠난 사용자가 반복해서 되돌아와 자리를 막으므로 횟수 제한과 접수 번호 저장이 필요하다 |
 | 스케줄러 스레드 1개 공유 | 하트비트, 승격, probe가 한 스레드에서 돈다 | 캠페인 수 × Redis 타임아웃이 자리 TTL 여유(20초)에 가까워지면 하트비트가 밀린다 | 하트비트 전용 스레드 분리 |
 | 마지막 수량에서 순서 보장의 단위는 C | 동시에 처리 중인 C명 사이에서는 DB 도착 순서가 접수 번호와 다를 수 있다 | 남은 수량이 C보다 적을 때 번호가 늦은 사용자가 먼저 받을 수 있다 | C=1: 처리량이 줄어든다. 접수 상한을 총량과 같게: 접수된 사람은 모두 받으므로 순서가 결과를 바꾸지 않지만 실패분 복원이 필요하다 |
 
