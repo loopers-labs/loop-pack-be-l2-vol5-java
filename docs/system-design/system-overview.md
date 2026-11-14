@@ -18,7 +18,7 @@ flowchart LR
         Kafka[("Kafka")]
         Streamer["commerce-streamer"]
         API <--> DB
-        API <-->|"상품 목록 캐시"| Redis
+        API <-->|"상품 목록 캐시 · 쿠폰 수용과 대기열"| Redis
         API -->|"OrderConfirmed"| Kafka
         Kafka -->|"구매 활동 소비"| Streamer
         Streamer -->|"구매 활동"| DB
@@ -34,7 +34,8 @@ flowchart LR
 
 테스트 PG는 `apps:test-pg`의 별도 앱·컨테이너로 구성하며 Commerce와 HTTP로 통신한다.<br>
 PG와의 송수신 계약은 [PG 연동 설계](external-systems/payment-gateway.md), 실행 경계, 시나리오 제어와 후속 작업은 [로컬 테스트 PG 앱 설계](../../apps/test-pg/docs/test-payment-gateway.md)에서 관리한다.<br>
-`commerce-api`와 `commerce-streamer`는 같은 MySQL을 쓰지만 서로의 테이블을 읽거나 쓰지 않는다. 이벤트 계약과 전달 보장은 [주문 확정 이벤트](use-cases/order-confirmed-event.md)를 따른다.
+`commerce-api`와 `commerce-streamer`는 같은 MySQL을 쓰지만 서로의 테이블을 읽거나 쓰지 않는다. 이벤트 계약과 전달 보장은 [주문 확정 이벤트](use-cases/order-confirmed-event.md)를 따른다.<br>
+쿠폰 캠페인과 발급 결과의 원본은 MySQL이고, Redis는 쿠폰 발급의 동시 수용과 비동기 대기열을 조정한다. 쿠폰의 불변식은 [도메인 모델](domain-model.md#couponcampaign과-coupon), 처리 흐름은 [쿠폰 발급 설계](use-cases/coupon-issuance.md)와 [대기열 설계](use-cases/coupon-issuance-queue.md)를 따른다.
 
 ## 계층과 의존성
 
@@ -63,6 +64,6 @@ flowchart TB
 | 액터 | 주요 기능 |
 | --- | --- |
 | 관리자 | 브랜드·상품 운영, 재고 관리, 주문 조회 |
-| 고객 | 브랜드·상품 탐색, 좋아요 관리, 포인트 충전·조회, 주문 생성·결제·조회 |
+| 고객 | 브랜드·상품 탐색, 좋아요 관리, 포인트 충전·조회, 쿠폰 발급·보유 쿠폰·발급 작업 조회, 주문 생성·결제·조회 |
 
 고객·관리자 API의 입력·응답은 [API 계약](api-contracts.md), 업무 규칙은 [도메인 모델](domain-model.md)을 기준으로 한다.

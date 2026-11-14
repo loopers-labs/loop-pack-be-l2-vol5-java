@@ -4,6 +4,7 @@ import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.time.ZonedDateTime;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
@@ -36,6 +37,7 @@ class ArchitectureTest {
                 .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
                 .importPackages(
                         "com.loopers.domain.brand",
+                        "com.loopers.domain.coupon",
                         "com.loopers.domain.product",
                         "com.loopers.domain.like",
                         "com.loopers.domain.point",
@@ -44,19 +46,19 @@ class ArchitectureTest {
                         "com.loopers.domain.user");
 
         noClasses().that().resideInAnyPackage(
-                            "..domain.brand..", "..domain.product..", "..domain.like..",
+                            "..domain.brand..", "..domain.coupon..", "..domain.product..", "..domain.like..",
                             "..domain.point..", "..domain.order..", "..domain.payment..", "..domain.user..")
                    .should().dependOnClassesThat().resideInAPackage("jakarta.persistence..")
                    .check(classes);
 
         noClasses().that().resideInAnyPackage(
-                            "..domain.brand..", "..domain.product..", "..domain.like..",
+                            "..domain.brand..", "..domain.coupon..", "..domain.product..", "..domain.like..",
                             "..domain.point..", "..domain.order..", "..domain.payment..", "..domain.user..")
                    .should().dependOnClassesThat().haveFullyQualifiedName("com.loopers.domain.BaseEntity")
                    .check(classes);
 
         noClasses().that().resideInAnyPackage(
-                            "..domain.brand..", "..domain.product..", "..domain.like..",
+                            "..domain.brand..", "..domain.coupon..", "..domain.product..", "..domain.like..",
                             "..domain.point..", "..domain.order..", "..domain.payment..", "..domain.user..")
                    .should().dependOnClassesThat().resideInAPackage("lombok..")
                    .check(classes);
@@ -68,19 +70,25 @@ class ArchitectureTest {
                 .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
                 .importPackages(
                         "com.loopers.application.brand",
+                        "com.loopers.application.coupon",
                         "com.loopers.application.payment",
                         "com.loopers.application.point",
                         "com.loopers.application.product",
                         "com.loopers.domain.brand",
+                        "com.loopers.domain.coupon",
                         "com.loopers.domain.payment",
                         "com.loopers.domain.point",
                         "com.loopers.domain.product");
 
         noClasses().that().resideInAnyPackage(
-                            "..application.brand..", "..application.payment..", "..application.point..",
-                            "..application.product..", "..domain.brand..", "..domain.payment..",
+                            "..application.brand..", "..application.coupon..", "..application.payment..", "..application.point..",
+                            "..application.product..", "..domain.brand..", "..domain.coupon..", "..domain.payment..",
                             "..domain.point..", "..domain.product..")
                    .should().callMethod(ZonedDateTime.class, "now", new Class<?>[0])
+                   .check(classes);
+
+        noClasses().that().resideInAnyPackage("..domain.coupon..", "..application.coupon..")
+                   .should().callMethod(Instant.class, "now", new Class<?>[0])
                    .check(classes);
     }
 }

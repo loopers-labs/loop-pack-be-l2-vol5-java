@@ -52,6 +52,16 @@ classDiagram
         수량: 양수
         확정시각
     }
+    class CouponCampaign {
+        이름
+        시작·종료·조기 종료 시각
+        총량
+        발급 수
+        혜택 설명
+    }
+    class Coupon {
+        발급시각
+    }
     class OrderItem {
         <<VO>>
         수량: 양수
@@ -76,6 +86,9 @@ classDiagram
 
     ProductPurchaseActivity "N" ..> "1" Order : orderId (event fact, no FK)
     ProductPurchaseActivity "N" ..> "1" Product : productId (event fact, no FK)
+
+    Coupon "N" ..> "1" CouponCampaign : campaignId (required FK)
+    Coupon "N" ..> "1" User : userId (request identity, no FK)
 ```
 
 ### User
@@ -86,7 +99,7 @@ classDiagram
 
 #### 사용자 식별
 
-- User는 fixture로 저장하며, 고객별 API는 `X-USER-ID`로 존재하는 User를 식별한다.
+- User는 fixture로 저장하며, 일반 고객 API는 `X-USER-ID`로 존재하는 User를 식별한다. 쿠폰 API는 로컬 요청자 식별값으로만 사용해 User 존재를 확인하지 않는다.
 - User CRUD는 현재 범위에 포함하지 않는다.
 
 ### Brand
@@ -274,3 +287,16 @@ PG 관찰별 시도 상태는 [결과별 효과](use-cases/order-payment-result.
 - [불변식] 한 주문의 같은 상품 활동은 하나이며 수량은 양수다.
 - [불변식] 확정 시각은 이벤트의 최초 확정 시각이며 저장 뒤 바뀌지 않는다. 소비 시각이 아니다.
 - [불변식] 한 주문의 구매 활동은 모든 품목이 함께 있거나 하나도 없다.
+
+### CouponCampaign과 Coupon
+
+- [관계와 경계] `CouponCampaign`과 `Coupon`은 별도 애그리게이트다. 발급 애플리케이션이 두 애그리게이트의 변경을 한 DB 트랜잭션으로 조정한다.
+- [도메인 책임] `CouponCampaign`은 발급 기간, 총량, 발급 수와 고정 혜택 설명을 관리한다. `Coupon`은 한 사용자에게 발급된 한 장의 결과를 나타낸다.
+- [도메인 규칙] 캠페인은 발급 시각이 `startAt` 이상 `endAt` 미만이고, 조기 종료되지 않았고, `issuedCount < totalQuota`일 때만 발급한다. 발급 가능 여부는 별도 상태값으로 저장하지 않는다.
+- [도메인 규칙] 쿠폰은 발급 시 사용자와 발급 시각을 담아 생성하며, 발급 뒤 소유자와 발급 시각을 변경하지 않는다. 쿠폰 사용·회수와 주문 할인 적용은 현재 범위 밖이다.
+- [불변식] 캠페인은 `totalQuota > 0`, `0 <= issuedCount <= totalQuota`, `startAt < endAt`을 만족한다. 발급 수 증가와 쿠폰 생성은 함께 commit 또는 rollback되며, 발급 수와 실제 쿠폰 행 수가 일치한다.
+- [불변식] 새 쿠폰 한 장마다 발급 수가 한 번 늘어난다. 기존 쿠폰을 다시 돌려주거나 Redis permit을 반환해도 발급 수는 바뀌지 않는다.
+- [불변식] 조기 종료 시각은 총량을 모두 발급해 종료 예정보다 일찍 끝난 경우에만 기록하며, 마지막 쿠폰의 발급 시각과 같다.
+- [불변식] 같은 캠페인과 사용자 조합은 최대 한 장이다. 발급 시점의 중복 경쟁은 `(campaignId, userId)` 유일 제약으로 막는다.
+- [관계 표현] `Coupon.campaignId`는 `CouponCampaign`의 필수 FK다. `Coupon.userId`는 로컬 `X-USER-ID`의 식별값이며 User 존재 확인이나 FK를 두지 않는다.
+- 규칙별 보장 위치는 [쿠폰 발급 설계의 불변식 보장 위치](use-cases/coupon-issuance.md#불변식-보장-위치)를, 발급 API와 조건부 카운터 갱신, Redis 처리 절차는 [쿠폰 발급 설계](use-cases/coupon-issuance.md)를 따른다. 비동기 접수와 worker는 [쿠폰 발급 대기열 설계](use-cases/coupon-issuance-queue.md)를 따른다.

@@ -120,6 +120,35 @@ CREATE TABLE IF NOT EXISTS order_confirmed_outbox (
     KEY idx_order_confirmed_outbox_due (status, next_attempt_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE IF NOT EXISTS coupon_campaigns (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    created_at DATETIME(6) NOT NULL,
+    updated_at DATETIME(6) NOT NULL,
+    deleted_at DATETIME(6) DEFAULT NULL,
+    name VARCHAR(255) NOT NULL,
+    total_quota BIGINT NOT NULL,
+    issued_count BIGINT NOT NULL,
+    benefit_description TEXT NOT NULL,
+    start_at DATETIME(6) NOT NULL,
+    end_at DATETIME(6) NOT NULL,
+    terminated_at DATETIME(6) DEFAULT NULL,
+    PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS coupons (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    created_at DATETIME(6) NOT NULL,
+    updated_at DATETIME(6) NOT NULL,
+    deleted_at DATETIME(6) DEFAULT NULL,
+    campaign_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    issued_at DATETIME(6) NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_coupon_campaign_user (campaign_id, user_id),
+    KEY idx_coupons_owner_issued (user_id, issued_at, id),
+    CONSTRAINT fk_coupons_campaign FOREIGN KEY (campaign_id) REFERENCES coupon_campaigns (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE IF NOT EXISTS points (
     balance BIGINT NOT NULL,
     created_at DATETIME(6) NOT NULL,
