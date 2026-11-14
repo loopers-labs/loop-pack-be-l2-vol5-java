@@ -2,6 +2,12 @@
 
 Commerce 시스템(`commerce-api`, `commerce-streamer`)의 설계를 책임별로 안내한다. 시스템 구조와 도메인 규칙, 고객·관리자 API, 유스케이스, 외부 연동, 영속성·오류 변환 순으로 읽는다.
 
+| 설계 수준 | 문서 |
+| --- | --- |
+| HLD · 시스템 경계, 도메인 모델, API 요약 | [시스템 개요](system-overview.md), [도메인 모델](domain-model.md), [API 계약](api-contracts.md) |
+| LLD · 기능별 계약, 객체 협력, 트랜잭션과 실패 처리, 외부 연동, 저장·오류 변환 | [유스케이스 설계](#유스케이스), [외부 시스템 연동](#외부-시스템-연동), [영속성과 오류 변환](#영속성과-오류-변환) |
+| 결정·검증 근거 | 각 기능의 결정 기록, [쿠폰 발급 검증 기록](use-cases/coupon-issuance-verification.md)과 [주문 확정 이벤트 검증](use-cases/order-confirmed-event-verification.md) |
+
 ## 시스템 구조와 도메인
 
 시스템의 경계와 계층별 책임, 도메인 관계와 업무 규칙을 확인한다.
@@ -36,10 +42,11 @@ Commerce 시스템(`commerce-api`, `commerce-streamer`)의 설계를 책임별�
 
 | 문서 | 다루는 내용 |
 | --- | --- |
-| [쿠폰 발급 설계](use-cases/coupon-issuance.md) | 발급 API, 도메인·DB 규칙, Redis 수용·장애 처리, 검증 시나리오 |
+| [쿠폰 발급 설계](use-cases/coupon-issuance.md) | 발급 API, 도메인·DB 규칙, Redis 수용·장애 처리 |
 | [쿠폰 발급 결정 기록](use-cases/coupon-issuance-decisions.md) | D-01~D-26 선택의 맥락, 대안, 근거와 영향 |
-| [쿠폰 발급 대기열 설계](use-cases/coupon-issuance-queue.md) | Redis List 접수, 본인 작업 조회, worker와 로컬 수동 복구, 초기화 절차와 검증 계획 |
+| [쿠폰 발급 대기열 설계](use-cases/coupon-issuance-queue.md) | Redis List 접수, 본인 작업 조회, worker와 로컬 수동 복구, 초기화 절차 |
 | [쿠폰 발급 대기열 결정 기록](use-cases/coupon-issuance-queue-decisions.md) | Q-01~Q-11 선택의 맥락, 대안, 근거와 영향 |
+| [쿠폰 발급 검증 기록](use-cases/coupon-issuance-verification.md) | 동기 발급과 대기열의 검증 시나리오, 실행 결과, 확인하지 않은 항목과 남은 개선 |
 
 ### 주문·결제
 
@@ -72,7 +79,7 @@ Commerce 시스템(`commerce-api`, `commerce-streamer`)의 설계를 책임별�
 
 | 문서 | 다루는 내용 |
 | --- | --- |
-| [영속성 매핑 설계](persistence-mapping.md) | Domain과 JPA 저장 모델의 경계·변환, 결제·확정 시각·구매 활동 스키마와 과거 데이터 전환 |
+| [영속성 매핑 설계](persistence-mapping.md) | Domain과 JPA 저장 모델의 경계·변환, 결제·확정 시각·구매 활동·쿠폰 스키마와 과거 데이터 전환 |
 | [오류 변환 설계](error-mapping.md) | Domain 오류 표현과 HTTP/API 응답 변환 방식 |
 
 ## 문서 갱신 기준

@@ -1,6 +1,6 @@
 # 쿠폰 발급
 
-> 구현 상태: 캠페인·쿠폰 도메인과 저장소, 조건부 카운터 갱신과 쿠폰 insert, 로컬 seed runner, 발급 애플리케이션 흐름, Redis primary Lua permit, HTTP API를 구현했다. 로컬·통합 검증은 아래 시나리오에 정리했다. 이 문서는 계약·처리 흐름·검증을, [결정 기록](coupon-issuance-decisions.md)은 선택 배경·대안·영향을 다룬다. 비동기 접수와 worker는 [쿠폰 발급 대기열 설계](coupon-issuance-queue.md)에서 다룬다.
+> 구현 상태: 캠페인·쿠폰 도메인과 저장소, 조건부 카운터 갱신과 쿠폰 insert, 로컬 seed runner, 발급 애플리케이션 흐름, Redis primary Lua permit, HTTP API를 구현했다. 이 문서는 계약과 처리 흐름을, [결정 기록](coupon-issuance-decisions.md)은 선택 배경·대안·영향을 다룬다. 검증 시나리오와 실행 결과는 [쿠폰 발급 검증 기록](coupon-issuance-verification.md#동기-발급)을 참고한다. 비동기 접수와 worker는 [쿠폰 발급 대기열 설계](coupon-issuance-queue.md)에서 다룬다.
 
 쿠폰 발급은 캠페인에 정해진 혜택을 사용자에게 한 번 부여하고, 본인 보유 목록에서 확인할 수 있게 하는 기능이다. 쿠폰 사용·주문 할인 적용·환불은 범위에 포함하지 않는다.
 
@@ -205,19 +205,21 @@ flowchart LR
 
 두 aggregate는 저장 모델만 나누고, 발급은 한 DB 트랜잭션으로 조정한다. 캠페인은 쿠폰 행 전체를 로드하지 않는다.
 
-## 도메인 불변식과 규칙
+## 불변식 보장 위치
 
-| 대상 | 불변식·규칙 | 최종 보장 위치 |
+캠페인과 쿠폰의 규칙과 불변식은 [도메인 모델](../domain-model.md#couponcampaign과-coupon)을 기준으로 한다. 아래 표는 각 규칙을 어디서 지키는지 정리한다.
+
+| 대상 | 규칙 | 최종 보장 위치 |
 |---|---|---|
-| CouponCampaign | `totalQuota > 0`, `0 <= issuedCount <= totalQuota` | 캠페인 생성 검증, 발급 수 조건부 UPDATE |
-| CouponCampaign | 발급 가능 여부는 `start_at <= issueNow < end_at`, `terminated_at IS NULL`, `issuedCount < totalQuota`로 계산한다. 별도 boolean은 두지 않는다. | 도메인 정책으로 표현하고, DB 조건부 UPDATE가 동시성에서 최종 판정 |
-| CouponCampaign | 새 발급 효과 한 건마다 `issuedCount`를 한 번 증가한다. 기존 발급 재응답이나 Redis permit 반환은 발급 수를 바꾸지 않는다. | 발급 애플리케이션 트랜잭션 |
-| CouponCampaign | `start_at < end_at`. `terminated_at`은 발급 총량을 소진해 예정 종료 시각보다 일찍 끝난 때만 기록하며, 마지막 쿠폰 발급과 같은 시각으로 저장한다. | 캠페인 생성 검증, 발급 트랜잭션 |
-| Coupon | 쿠폰은 발급될 때 만들어지며 `userId`와 `issuedAt`이 항상 있다. | 도메인 생성 검증, DB NOT NULL |
-| Coupon | 발급 후 소유자와 발급 시각을 바꾸지 않는다. | 도메인 규칙; 발급 경로는 insert만 한다 |
-| Coupon | 같은 캠페인·사용자의 발급 결과는 최대 한 건이다. | `(campaignId, userId)` DB 유일 제약 |
-| Coupon | 로컬 `user_id`는 요청 헤더의 식별값이며 실제 사용자 존재를 뜻하지 않는다. | `users` FK 없음; 헤더 위조 방지는 범위 밖 |
-| Campaign + Coupon | 발급 수와 그 캠페인의 쿠폰 행 수가 같고, 카운터 증가와 쿠폰 insert가 함께 commit 또는 rollback된다. | 한 DB 트랜잭션, seed 확인, 통합 검증 |
+| CouponCampaign | 총량과 발급 수 범위 | 캠페인 생성 검증, 발급 수 조건부 UPDATE |
+| CouponCampaign | 발급 가능 조건 | 도메인 정책으로 표현하고, DB 조건부 UPDATE가 동시성에서 최종 판정 |
+| CouponCampaign | 새 쿠폰 한 장당 발급 수 한 번 증가 | 발급 애플리케이션 트랜잭션 |
+| CouponCampaign | 기간 순서와 조기 종료 시각 | 캠페인 생성 검증, 발급 트랜잭션 |
+| Coupon | 사용자와 발급 시각 필수 | 도메인 생성 검증, DB NOT NULL |
+| Coupon | 발급 뒤 소유자와 발급 시각 불변 | 도메인 규칙; 발급 경로는 insert만 한다 |
+| Coupon | 캠페인·사용자당 최대 한 장 | `(campaignId, userId)` DB 유일 제약 |
+| Coupon | 로컬 사용자 ID는 요청 식별값 | `users` FK 없음; 헤더 위조 방지는 범위 밖 |
+| Campaign + Coupon | 발급 수와 쿠폰 행 수 일치, 함께 commit 또는 rollback | 한 DB 트랜잭션, seed 확인, 통합 검증 |
 
 | 경계 | 책임 |
 |---|---|
@@ -410,69 +412,13 @@ stateDiagram-v2
 
 Set이 비었다는 사실만으로 기존 DB 작업 종료를 대신 확인하지 않는다.
 
-## 검증 시나리오: 현재 수용량과 permit 반환
+## 검증
 
-| 사전 조건 | 값 |
-|---|---|
-| 수용량 | 3; 3+1 API 테스트는 Redis를 비운 뒤 테스트에서 허용 상태를 연다. 시작 runner는 별도의 실제 Redis 통합 테스트에서 `open-on-startup=true`로 확인한다. |
-| Redis | 격리된 실제 Redis; 시작 전에 permit Set 비어 있음 |
-| 캠페인 | 총량이 네 요청보다 큼 |
-| 검증 대상 | Redis permit이 동시 신규 DB 발급 실행을 세 개로 제한하는지 확인; 총량 경합과 분리 |
-
-| 순서 | 동작 | 기대 결과 |
-|---|---|---|
-| 1 | 서로 다른 세 사용자의 실제 발급 요청을 보내고, 실제 Redis permit 획득 직후·DB 트랜잭션 시작 전에 테스트 barrier에서 멈춘다. | Redis primary에 서로 다른 활성 token 세 개가 있고, 세 요청 모두 DB 트랜잭션 전이다. |
-| 2 | 활성 token 세 개를 유지한 채 네 번째 사용자가 발급을 요청한다. | 429를 받고 DB 발급 트랜잭션에 진입하지 않으며 쿠폰도 발급되지 않는다. 진입 여부는 트랜잭션 spy로 직접 확인한다. |
-| 3 | 첫 세 실행 중 하나만 barrier에서 풀어 발급·commit·token 반환을 완료한다. 나머지 두 실행은 계속 멈춰 둔다. | 발급 수는 1, Redis에는 나머지 두 token만 남는다. |
-| 4 | 네 번째 사용자가 새 HTTP 요청을 보내고, 그 요청도 DB 트랜잭션 직전까지 멈춘다. | 새 token이 들어가며 Redis Set에는 기존 두 token과 새 token이 함께 있다. 먼저 받은 429가 자동으로 처리된 것이 아니다. |
-| 5 | 남은 두 실행과 네 번째 재요청을 진행해 commit·token 반환을 기다린다. | 발급 쿠폰 네 장, issuedCount 4, 활성 token 0개가 확인된다. |
-
-| 테스트 보조 조건 | 확인 |
-|---|---|
-| Barrier | deadline 설정; 실패 시 요청을 풀고 종료·token 정리까지 대기 |
-| 네 번째 요청 | 첫 429 요청은 transaction spy로 DB 진입이 없음을 확인; 재요청은 나머지 두 실행이 유지되는 동안 새 permit을 얻음 |
-| Set 구성원 | Redis Set에서 실제 UUID token을 비교; 단순 크기만 확인하지 않음 |
-| token 반환 | 첫 `SREM=1`; 반복·미지 token은 `0`, 다른 활성 token 유지 여부를 실제 Redis에서 확인 |
-| TTL | 활성 token이 있는 동안 Redis key의 TTL이 `-1`인지 확인 |
-| 실제 의존성 | 실제 Redis Set과 token을 검사; mock·thread-local 대체 금지 |
-| 시작 runner | `open-on-startup=true` 실제 앱 컨텍스트가 빈 primary Set에서 열리고, token 존재 시 runner가 닫는지 확인 |
-| 닫힘 시나리오 | 클래스당 하나, 전용 Spring 컨텍스트·Redis, `@DirtiesContext(AFTER_CLASS)` |
-| Redis 중단 | 전용 Testcontainers Redis와 `@DynamicPropertySource`; 수용 재개용 테스트 기능 없음 |
-
-## 검증 시나리오: 쿠폰 결과·중복·장애
-
-| 장면 | 준비·실행 | 핵심 기대 |
-|---|---|---|
-| 요청자 식별 누락 | `X-USER-ID` 없이 발급 또는 목록 API 호출 | 400 `BAD_REQUEST`; 신규 발급 permit·DB 효과 없음 |
-| 캠페인 사전 거절 | 없음·기간 밖·종료·품절 | 404/409; permit과 발급 TX에 진입하지 않음 |
-| Lua·키 오류 | 잘못된 입력 또는 permit 키 타입 오류 | 500 `INTERNAL_ERROR`; 수용 닫힘, DB 신규 효과 없음 |
-| 캠페인 조건부 SQL | 첫 발급·마지막 발급·동시 수량 경쟁·rollback | 첫 발급에는 종료 시각 없음, 마지막 발급에만 같은 `issueNow` 저장; rollback 시 카운터와 종료 시각 원복 |
-| 쿠폰 저장소 SQL | 쿠폰 insert·유일 제약·DB에 없는 로컬 사용자 ID·사용자별 정렬·예전 모델 DB의 스키마 준비 SQL | 같은 사용자 제약만 별도 중복 예외; `users` 행 없는 ID도 허용; 스키마 준비 SQL은 발급된 쿠폰을 보존하고 미발급 행을 지운다 |
-| 로컬 seed | 생성·기본 재실행·명시적 reset·발급 수 불일치 | 기본 재실행에서 기존 결과 보존, reset에서만 기간·발급 수 초기화와 그 캠페인 쿠폰 삭제; 다른 캠페인 유지 |
-| 정상 발급·목록 | 신규 발급 후 본인 목록 조회 | 쿠폰 1건, `issuedCount=1`, 같은 `couponId` 노출 |
-| 동일 사용자 재요청 | 같은 캠페인으로 재호출 | 같은 `couponId`; 쿠폰 행 추가·카운터 증가 없음 |
-| 동시 동일 사용자 | 같은 사용자 요청 병렬 실행 | DB 효과 1건, 응답은 같은 쿠폰; 타인 목록에 없음 |
-| 마지막 한 장의 동시 중복 | 총량 1, 같은 사용자의 두 요청을 barrier 뒤 함께 진행 | 201·200과 같은 `couponId`; `issuedCount=1` |
-| 마지막 수량 경쟁 | 총량 5, 서로 다른 사용자 8명 | 발급 5·품절 3·쿠폰 5·`issuedCount=5`; Redis 거절은 품절로 세지 않음 |
-| 쿠폰 insert 실패 | 카운터 UPDATE 뒤 쿠폰 insert 실패 | 전체 TX rollback; 쿠폰 행 없음·카운터 원복·permit 반환 |
-| commit 뒤 응답 유실 | 같은 사용자가 재요청 | 기존 쿠폰 반환; 추가 발급 0 |
-| Redis 중단 | 실제 연결 endpoint 중단 | 신규 발급 503·DB 효과 없음; 기존 본인 목록 조회와 같은 사용자 재요청의 200 유지 |
-| permit 반환 실패 | 첫 `SREM=0` 및 반환 명령 오류 주입 | DB 결과대로 응답; 쿠폰 보존·수용 닫힘·복구 확인 후 token 정리 |
-| 잠금 대기 timeout | 수용량 1, 다른 연결이 캠페인 행을 잠금, 테스트 연결의 잠금 대기 1초 | 500; rollback 완료로 token 반환·수용 열림; 잠금 해제 뒤 같은 사용자 201 |
-| commit 직전 연결 끊김 | 수용량 1, 발급 SQL 뒤 다른 연결에서 `KILL CONNECTION` | 500; Spring 완료 상태는 ROLLED_BACK, 쿠폰 미발급; token 1개 남음·수용 열림; 같은 사용자 429; token 정리 뒤 201 |
-| TTL 경과 | 활성 token 대기; Redis key TTL 확인 | 자동 만료 없음(`TTL=-1`); 시간 경과만으로 permit 재사용 불가 |
-
-| 검증 분리·정리 | 조건 |
-|---|---|
-| 발급 총량 경합 | Redis 용량을 충분히 두거나 DB handler를 실제 병렬 호출해 DB 불변식만 검증 |
-| 장애 대상 | 실제 application endpoint; 테스트가 만든 자원만 정리 |
-| 테스트 판정 | 0건·skip·연결 실패는 통과가 아님; 기존 MySQL·Redis fixture 우선 사용 |
-| 실행 시점 | 발급 facade 21건·발급 실행기 14건·DB 트랜잭션 2건(완료 상태 기록 포함)·설정 3건·수용 시작 runner 5건(단위 4·실제 Redis 1)·HTTP E2E 8건·Redis 장애/스크립트/반환 실패 E2E 4건·발급 트랜잭션 실패 E2E 2건·Redis 오류 분류 4건을 검증했다. 실제 Redis와 barrier로 수용량 3, 한 permit 반환 중 재수용, 마지막 한 장의 동일 사용자 경합, 시작 시 Set 확인, Redis 중단 후 기존 결과 조회, 활성 permit의 무TTL을 확인했다. 실제 MySQL로 잠금 대기 timeout 뒤 permit 반환과 commit 직전 연결 끊김 뒤 permit 유지를 확인했다. |
-| 전체 회귀 | `./gradlew :apps:commerce-api:check` 통과: 1,061건, 실패·오류·skip 0. 대기열 구현과 쿠폰 insert 전환을 포함한 결과다. |
+동기 발급의 시나리오와 실행 결과는 [쿠폰 발급 검증 기록](coupon-issuance-verification.md#동기-발급)에 정리했다.
 
 ## 관련 결정 기록
 
-결정별 맥락·대안·근거·영향은 [쿠폰 발급 결정 기록](coupon-issuance-decisions.md)에 정리했다. 이 문서에는 선택된 계약과 처리 흐름, 검증 시나리오를 유지한다.
+결정별 맥락·대안·근거·영향은 [쿠폰 발급 결정 기록](coupon-issuance-decisions.md)에 정리했다. 이 문서에는 선택된 계약과 처리 흐름을 유지한다.
 
 ## 범위 밖
 
