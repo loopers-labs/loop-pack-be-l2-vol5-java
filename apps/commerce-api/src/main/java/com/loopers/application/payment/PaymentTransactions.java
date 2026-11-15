@@ -4,6 +4,7 @@ import com.loopers.application.order.OrderInfo;
 import com.loopers.domain.order.OrderConfirmedEvent;
 import com.loopers.domain.order.OrderItem;
 import com.loopers.domain.order.OrderModel;
+import com.loopers.domain.order.OrderOutboxService;
 import com.loopers.domain.order.OrderService;
 import com.loopers.domain.order.StockReservationModel;
 import com.loopers.domain.order.StockReservationService;
@@ -31,7 +32,8 @@ import java.util.function.Function;
  *
  * <ul>
  *   <li>TX A {@link #start}: 주문·상품을 검사하고 재고를 확보(예약)하며 결제 시도를 저장한다. 어느 하나라도 실패하면 전부 rollback되고 PG는 호출되지 않는다.</li>
- *   <li>TX B {@link #applyCreate}·{@link #applyLookup}: 검증한 PG 관찰을 시도·주문·예약에 한 번만 적용한다.</li>
+ *   <li>TX B {@link #applyCreate}·{@link #applyLookup}: 검증한 PG 관찰을 시도·주문·예약에 한 번만 적용한다. 주문을 처음 확정하면 보낼 사실(OrderConfirmed)을
+ *       같은 트랜잭션의 Outbox에 남긴다 (W7 design.md 1절). broker로 보내는 일은 commit 뒤 relay가 맡는다.</li>
  * </ul>
  *
  * <p>Facade와 다른 빈이라 {@code @Transactional}이 프록시를 거쳐 적용된다. 같은 객체 안에서 부르면 적용되지 않는다 (design.md 7-4절 반례 1).
@@ -46,6 +48,7 @@ public class PaymentTransactions {
     private final ProductRevisionService productRevisionService;
     private final PaymentAttemptService paymentAttemptService;
     private final StockReservationService stockReservationService;
+    private final OrderOutboxService orderOutboxService;
     private final Clock clock;
 
     /**
@@ -91,21 +94,13 @@ public class PaymentTransactions {
         return new Started(outcomeOf(order, attempt), true, attempt.getProviderOrderId(), attempt.getAmount());
     }
 
-    /**
-     * 관찰을 적용한 결과. {@code confirmedEvent}는 이번 적용이 주문을 <b>처음</b> CONFIRMED로 만든 경우에만 있다(그 밖에는 null).
-     * 이벤트는 트랜잭션 안에서 저장된 값으로 미리 만들어 두므로, commit 뒤에 호출자가 엔티티를 다시 읽지 않아도 된다.
-     * 이 값을 받았다면 트랜잭션은 이미 commit됐다.
-     */
-    public record Applied(PaymentOutcome outcome, OrderConfirmedEvent confirmedEvent) {
-    }
-
     @Transactional
-    public Applied applyCreate(Long orderId, PgCreateResult result) {
+    public PaymentOutcome applyCreate(Long orderId, PgCreateResult result) {
         return settle(orderId, attempt -> attempt.applyCreate(result));
     }
 
     @Transactional
-    public Applied applyLookup(Long orderId, List<PgTransaction> transactions) {
+    public PaymentOutcome applyLookup(Long orderId, List<PgTransaction> transactions) {
         return settle(orderId, attempt -> attempt.applyLookup(transactions));
     }
 
@@ -130,18 +125,18 @@ public class PaymentTransactions {
     }
 
     // 주문 → 결제 시도 → 재고 예약 순으로 잠근 뒤, 관찰을 적용하고 시도가 이번에 종결된 경우에만 주문·재고에 효과를 낸다
-    private Applied settle(Long orderId, Function<PaymentAttemptModel, PaymentEffect> observation) {
+    private PaymentOutcome settle(Long orderId, Function<PaymentAttemptModel, PaymentEffect> observation) {
         OrderModel order = orderService.getOrderForUpdate(orderId);
         PaymentAttemptModel attempt = paymentAttemptService.getByOrderIdForUpdate(orderId);
         StockReservationModel reservation = stockReservationService.getByOrderIdForUpdate(orderId);
 
-        OrderConfirmedEvent confirmedEvent = null;
         PaymentEffect effect = observation.apply(attempt);
         switch (effect) {
             case SUCCEEDED -> {
                 order.completePgPayment(attempt.getAmount(), clock.instant());
                 reservation.consume();
-                confirmedEvent = OrderConfirmedEvent.from(order);
+                // 확정 사실과 보낼 사실을 함께 commit한다. Outbox 저장이 실패하면 확정·예약 소비도 rollback된다 (W7 design.md 3절)
+                orderOutboxService.append(OrderConfirmedEvent.from(order), order.getConfirmedAt());
             }
             case FAILED -> {
                 order.failPgPayment();
@@ -152,7 +147,7 @@ public class PaymentTransactions {
             case NONE -> {
             }
         }
-        return new Applied(outcomeOf(order, attempt), confirmedEvent);
+        return outcomeOf(order, attempt);
     }
 
     // 확보했던 수량을 한 번 되돌린다. 품목은 상품 id 오름차순으로 잠그고, revision은 모두 처리한 뒤 올린다

@@ -9,6 +9,7 @@ import com.loopers.domain.payment.ProviderOrderId;
 import com.loopers.infrastructure.order.KafkaOrderEventPublisher;
 import com.loopers.support.kafka.BrokerRecords;
 import com.loopers.support.kafka.RecordingOrderEventPublisher;
+import com.loopers.support.kafka.W6DirectPublishConfig;
 import com.loopers.support.pg.PaymentTestSupport;
 import com.loopers.support.pg.TestPgStatus;
 import com.loopers.support.pg.TestPgTransaction;
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -50,14 +52,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *
  * <h3>재현 조건</h3>
  * <ul>
- *   <li>W6 직접 발행 경로: 커밋 {@code 389b6d4}(commit 뒤 {@code PaymentFacade.publishAfterCommit}). 이 테스트는 그 경로를 그대로 실행한다.</li>
+ *   <li>W6 직접 발행 경로: 커밋 {@code 389b6d4}(commit 뒤 {@code PaymentFacade.publishAfterCommit}). W7부터 제품 코드에는 이 경로가 없어서,
+ *       {@link W6DirectPublishConfig}가 이 테스트 context에서만 Outbox 기록 자리를 "commit 뒤 발행기 호출"로 바꿔 같은 순서를 재현한다(W7 design.md 5절 결정 C).
+ *       원래 W6 코드의 실행 결과는 {@code docs/week6/omission-repro.md}에 있다.</li>
  *   <li>고정 clock: {@value #FIXED_CONFIRMED_AT}. 품목: 상품 1개 × 수량 {@value PaymentScenarioTestBase#ORDER_QUANTITY}(단가 7,000원). 재고 5에서 시작.</li>
  *   <li>실행: {@code ./gradlew :apps:commerce-api:test --tests '*OrderConfirmedOmissionReproTest'} (Docker 필요: MySQL·Kafka 컨테이너)</li>
  * </ul>
  *
  * <p>주의: hook에서 발행을 건너뛰는 것은 "commit 뒤 send 전에 프로세스가 멈춘 상황"을 통제해 만든 <b>주입</b>이다. OS 강제 종료가 아니다.
- * W7의 Outbox 경로를 실행한 뒤 행을 지워 누락을 꾸미지 않았다. 이 테스트는 W6의 직접 발행 경로만 쓴다.
+ * W7의 Outbox 경로를 실행한 뒤 행을 지워 누락을 꾸미지 않았다. 이 테스트는 W6의 직접 발행 경로만 쓰고, Outbox 행은 처음부터 만들지 않는다.
  */
+@Import(W6DirectPublishConfig.class)
 class OrderConfirmedOmissionReproTest extends PaymentScenarioTestBase {
 
     static final String FIXED_CONFIRMED_AT = "2026-09-07T01:00:00Z";
@@ -134,6 +139,7 @@ class OrderConfirmedOmissionReproTest extends PaymentScenarioTestBase {
         assertThat(publisher.attempts()).extracting(e -> e.orderId()).containsExactly(omittedOrderId);
         assertThat(publisher.events()).as("broker가 받은 이벤트 없음").isEmpty();
         assertThat(BrokerRecords.readAll(topic)).as("A의 eventId record는 broker에 없다").isEmpty();
+        assertThat(orderOutboxJpaRepository.count()).as("W6 경로에는 다시 찾을 Outbox 행이 없다").isZero();
 
         // act (사례 B): 같은 경로로 확정하고 이번에는 실제 broker로 발행한다
         publisher.beforeSend(null);
