@@ -117,10 +117,16 @@ subprojects {
             html.required = false
         }
         afterEvaluate {
+            val generatedSources = layout.buildDirectory.dir("generated/sources/annotationProcessor/java/main").get().asFile
             classDirectories.setFrom(
                 files(
                     classDirectories.files.map {
-                        fileTree(it)
+                        fileTree(it) {
+                            exclude { element ->
+                                !element.isDirectory
+                                    && generatedSources.resolve(element.path.substringBefore('$').removeSuffix(".class") + ".java").exists()
+                            }
+                        }
                     },
                 ),
             )
