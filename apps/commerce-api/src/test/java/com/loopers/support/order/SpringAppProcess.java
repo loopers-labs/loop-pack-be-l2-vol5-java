@@ -70,6 +70,32 @@ public final class SpringAppProcess implements AutoCloseable {
         return start("commerce-api-current", command);
     }
 
+    /**
+     * 쿠폰 부하 실험용으로 현재 commerce-api를 띄운다. Kafka·PG 설정은 넣지 않는다.
+     * 관리 포트를 지정해 실험이 actuator 지표(Hikari 대기 등)를 읽을 수 있게 한다.
+     */
+    public static SpringAppProcess couponApi(Database database, int port, int managementPort, List<String> arguments)
+        throws IOException {
+        return couponApi(database, port, managementPort, arguments, null);
+    }
+
+    /** 실험 계측만 추가할 때 전용 main과 격리된 테스트 classpath를 사용한다. */
+    public static SpringAppProcess couponApi(Database database, int port, int managementPort, List<String> arguments,
+                                             Path diagnosticClasspath) throws IOException {
+        String classpath = required("e2e.apiClasspath") + (diagnosticClasspath == null ? ""
+            : java.io.File.pathSeparator + diagnosticClasspath);
+        String main = diagnosticClasspath == null ? "com.loopers.CommerceApiApplication" : "experiments.coupon.CouponTimingApplication";
+        List<String> command = new ArrayList<>(List.of(java(), "-Duser.timezone=Asia/Seoul",
+            "-cp", classpath, main,
+            "--spring.profiles.active=test", "--server.port=" + port, "--management.server.port=" + managementPort,
+            "--spring.jpa.show-sql=false", "--spring.jpa.hibernate.ddl-auto=update",
+            "--datasource.mysql-jpa.main.jdbc-url=" + database.jdbcUrl(),
+            "--datasource.mysql-jpa.main.username=" + database.username(),
+            "--datasource.mysql-jpa.main.password=" + database.password()));
+        command.addAll(arguments);
+        return start("commerce-api-coupon", command);
+    }
+
     public static int freePort() throws IOException {
         try (ServerSocket socket = new ServerSocket(0)) {
             return socket.getLocalPort();
@@ -89,6 +115,11 @@ public final class SpringAppProcess implements AutoCloseable {
         try (var lines = Files.lines(log)) {
             return lines.filter(line -> line.contains(text)).count();
         }
+    }
+
+    /** 앱 로그 파일 크기(바이트). 거절 응답마다 남는 로그의 양을 보려는 것이다. */
+    public long logBytes() throws IOException {
+        return Files.size(log);
     }
 
     /** 실패한 단계의 원인을 보여 줄 수 있게 로그 끝부분을 돌려준다. */

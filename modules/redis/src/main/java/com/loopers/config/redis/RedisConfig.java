@@ -76,6 +76,7 @@ public class RedisConfig{
             Consumer<LettuceClientConfiguration.LettuceClientConfigurationBuilder> customizer
     ){
         LettuceClientConfiguration.LettuceClientConfigurationBuilder builder = LettuceClientConfiguration.builder();
+        if(redisProperties.commandTimeout() != null) builder.commandTimeout(redisProperties.commandTimeout());
         if(customizer != null) customizer.accept(builder);
         LettuceClientConfiguration clientConfig = builder.build();
         RedisStaticMasterReplicaConfiguration masterReplicaConfig = new RedisStaticMasterReplicaConfiguration(master.host(), master.port());

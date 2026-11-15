@@ -18,6 +18,8 @@ dependencies {
     implementation("org.apache.httpcomponents.client5:httpclient5")
     implementation("io.github.resilience4j:resilience4j-retry:2.3.0")
     implementation("io.github.resilience4j:resilience4j-circuitbreaker:2.3.0")
+    // DB 발급 TX 앞 분산락·세마포어 비교 실험(commerce.coupon.issue-limit.mode)에서만 클라이언트를 만든다.
+    implementation("org.redisson:redisson:3.45.1")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:${project.properties["springDocOpenApiVersion"]}")
 
