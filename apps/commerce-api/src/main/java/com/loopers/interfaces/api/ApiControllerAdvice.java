@@ -123,8 +123,10 @@ public class ApiControllerAdvice {
     private ResponseEntity<ApiResponse<?>> failureResponse(ErrorType errorType, String errorMessage) {
         HttpStatus status = switch (errorType) {
             case INTERNAL_ERROR -> HttpStatus.INTERNAL_SERVER_ERROR;
-            case NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case NOT_FOUND, COUPON_CAMPAIGN_NOT_FOUND -> HttpStatus.NOT_FOUND;
             case CONFLICT -> HttpStatus.CONFLICT;
+            case COUPON_ADMISSION_FULL -> HttpStatus.TOO_MANY_REQUESTS;
+            case COUPON_ADMISSION_UNAVAILABLE -> HttpStatus.SERVICE_UNAVAILABLE;
             default -> HttpStatus.BAD_REQUEST;
         };
         return ResponseEntity.status(status)
