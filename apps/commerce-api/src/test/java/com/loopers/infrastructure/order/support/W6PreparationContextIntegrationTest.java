@@ -1,5 +1,6 @@
 package com.loopers.infrastructure.order.support;
 
+import com.loopers.domain.coupon.CouponCacheRepository;
 import com.loopers.CommerceApiApplication;
 import com.loopers.application.order.OrderConfirmedRecorder;
 import com.loopers.application.order.OrderOutboxExecutionGate;
@@ -138,7 +139,10 @@ public class W6PreparationContextIntegrationTest {
             () -> assertThat(factory.getKeySerializer()).isInstanceOf(StringSerializer.class),
             () -> assertThat(((JsonSerializer<?>) factory.getValueSerializer()).isAddTypeInfo()).as("type header 없음").isFalse(),
             () -> assertThat(managed).as("53f912b 관리 타입과 같음").isEqualTo(W6PreparationContextInitializer.MANAGED_TYPES),
-            () -> assertThat(managed).doesNotContain(OrderConfirmedOutboxModel.class.getName())
+            () -> assertThat(managed).doesNotContain(OrderConfirmedOutboxModel.class.getName()),
+            () -> assertThat(CouponBeanIsolation.COUPON_DEFINITIONS).allSatisfy(name ->
+                assertThat(context.containsBean(name)).as("쿠폰 bean 없음: " + name).isFalse()),
+            () -> assertThat(context.getBeanNamesForType(CouponCacheRepository.class)).as("실제·test 대역 캐시 저장소 모두 없음").isEmpty()
         );
     }
 

@@ -42,6 +42,9 @@ commerce:
     product-detail:
       enabled: true # false 는 DB-only 비교 모드. 읽기·채움만 우회하고 commit 뒤 무효화는 유지한다.
       ttl: 5m # 저장할 때 정하는 고정 TTL. hit 에서 연장하지 않는다.
+  coupon:
+    admission:
+      capacity: 3 # 신규 발급 수용량 C. 모든 프로필 공통 초기값이며 적정 운영 용량 실측값이 아니다. 1 미만·형식 오류는 기동 실패
   order-events:
     topic: order-events # 테스트는 실행별 이름으로 바꾼다. 기본 topic 에 테스트 record 를 쓰지 않는다.
     physical-close-timeout-seconds: 15 # 정상 종료 때 미완료 전송을 기다리는 시간. 30초 전달 예산 전체를 주지 않는다.

@@ -33,7 +33,7 @@ import java.util.Set;
  * <p>Replacer 를 context.addBeanFactoryPostProcessor 로 넣으면 CCPP 보다 먼저 실행돼 repository 정의가 아직 없다. 그래서 bean 정의로 등록한다.
  * 전역 override 허용·@Primary·이름 접두사 일괄 삭제는 쓰지 않는다. 순수 encoder·verifier 는 전송을 하지 않으므로 남긴다.
  * relay 설정 값(OrderOutboxRelayProperties)은 전송·DB 동작이 없는 바인딩이라 남긴다. 전용 relay scheduler·pool 은 relay 설정의 @Bean 이라 함께 뺀다. 후속 단위가 그 정의를 추가하면 {@link #W7_DEFINITIONS} 에 이름을 더하고,
- * 남은 W7 정의는 기동 뒤 부재 단언으로 드러난다.
+ * 남은 W7 정의는 기동 뒤 부재 단언으로 드러난다. 쿠폰 bean 은 {@link CouponBeanIsolation} 의 별도 목록으로 뺀다.
  */
 public class W6PreparationContextInitializer implements ApplicationContextInitializer<ConfigurableApplicationContext> {
 
@@ -117,6 +117,8 @@ public class W6PreparationContextInitializer implements ApplicationContextInitia
             if (!produced.stream().sorted().toList().equals(W7_PRODUCED_DEFINITIONS.stream().sorted().toList())) {
                 throw new IllegalStateException("W7 설정이 만든 정의가 예상과 다릅니다. [removed = " + produced + "]");
             }
+            // 53f912b 에 없던 쿠폰 bean 도 관리 타입 밖 Entity 를 요구하므로 W7 목록과 따로 정확한 이름으로 뺀다.
+            CouponBeanIsolation.remove(registry);
         }
 
         @Override

@@ -745,6 +745,7 @@ SQL/구조화 로그로 상태별 건수·가장 오래된 PENDING 기록 시각
 |W6OrderEventKafkaConfig|같은 revision의 JsonSerializer 전용 producer/template·properties 검사·close 계약을 테스트 전용으로 보존. Clock 조립만 아래 공통 설정으로 이동. W7 String template으로 바꿔 W6 전송을 흉내 내지 않음|
 |제품 config/OrderConfirmationClockConfig|기존 orderConfirmationClock 이름·Clock.systemUTC()·한 번 생성/UTC 마이크로초 절삭 계약 유지. 기존 OrderEventKafkaConfig에서 Clock 조립만 이동해 W6/W7 양쪽에 사용. outboxRecordClock과 별개|
 |API test의 W6PreparationContextInitializer|refresh 전 W6 정의 등록과 CCPP 뒤 W7 정의 제거/교체를 구분. 아래 managed type·bean 경계를 이 준비 컨텍스트에만 적용|
+|API test의 CouponBeanIsolation|53f912b 이후 추가된 쿠폰 bean 정의의 정확한 이름 목록과 제거만 제공. W6 준비와 O11의 W7 기동이 공유. 일반 테스트·제품 컨텍스트에는 적용하지 않음|
 |API test의 W6OutboxRecoveryEndToEndIntegrationTest|C10의 API/PG/consumer·고정 입력·probe·broker/DB 관찰을 준비 함수로 보존하고 복구까지 한 자원 수명으로 소유. 기존 C10의 완료 기대값을 낮추지 않음|
 
 보존 출처·revision과 허용한 기계적 변경을 각 테스트 지원 소스에 명시하고 원본과 대조한다. 현재 생산 소스의 직접 발행 listener/adapter/port/probe·JSON producer 조립은 제품 경로에서 제거하고 위 테스트 소스로 보존한다. 공통 OrderEventKafkaProperties의 topic·기존 producer 계약은 유지한다. Clock 상수/qualifier 참조와 기존 테스트도 새 중립 Clock 설정에 맞춘다. 제품에는 두 recorder를 동시에 등록하지 않고 profile·환경변수·운영용 우회 스위치로 W6를 선택하지 않는다.
@@ -754,8 +755,8 @@ W6 준비 컨텍스트는 기존 CommerceApiApplication을 사용하되 **refres
 1. initializer의 initialize에서 refresh 전에 ManagedClassNameFilter·W6OrderEventTestConfiguration/W6OrderEventKafkaConfig와 W6 recorder/listener/adapter/probe 정의를 명시 등록한다. @Bean 메서드가 있는 테스트 설정 클래스는 이때 등록해 CCPP가 해석하게 한다. 전역 scan 대상 @Configuration/@Component로 만들지 않는다.
 2. ManagedClassNameFilter는 53f912b의 관리 타입만 full class name으로 허용한다. Entity는 BrandModel, ExampleModel, LikeModel, OrderModel, OrderItemModel, PaymentModel, PaymentConflictModel, PointModel, PointHistoryModel, ProductModel, StockHistoryModel, UserModel의 12개다. Money·Stock Embeddable과 BaseEntity MappedSuperclass도 포함한다. Outbox는 관리/DDL 대상이 아니다.
 3. 같은 initializer가 Replacer를 **bean 정의**로 등록한다. Replacer는 PriorityOrdered/Ordered를 구현하지 않는 BDRPP로 두어 CCPP의 설정 해석·repository/@Bean 정의 생성 뒤 실행시킨다. context.addBeanFactoryPostProcessor에 인스턴스를 직접 추가해 CCPP보다 먼저 실행시키지 않는다.
-4. Replacer는 singleton 생성 전에 W7 repository 정의/구현·제품 recorder·relay/복구/운영/scheduler/sender·전용 relay/Kafka config를 제외한다. config가 만든 @Bean 정의도 factoryBeanName 연결로 제외한다. 이 단계에서는 @Bean 설정 클래스를 새로 등록해 다시 해석되길 기대하지 않는다. 고정 orderConfirmationClock·beforeSend probe는 기존 정의가 있음을 확인하고 제거/교체한다. 전역 override 허용·@Primary·이름 접두사만으로 무관한 bean 제거는 사용하지 않는다.
-5. 시작 후 sole recorder가 W6 구현이고 실제 listener/JSON adapter/template/factory가 연결됐는지, W7 relay·Outbox repository/Entity가 없는지 단언한다. O11은 빈 DB 준비 검사와 W6 준비 뒤 Outbox 테이블 부재도 확인한다. 누락/충돌은 준비 실패이며 SQL 성공 상태 삽입으로 우회하지 않는다.
+4. Replacer는 singleton 생성 전에 W7 repository 정의/구현·제품 recorder·relay/복구/운영/scheduler/sender·전용 relay/Kafka config를 제외한다. W7 목록과 별도로 CouponBeanIsolation의 쿠폰 정의(쿠폰 JPA repository 2개·저장/조회 구현 3개·수용 Redis 저장소·수용 서비스·`couponFacade`·고객/제어 Controller 2개·test `couponFixture`)도 정확한 이름으로 제외한다. 쿠폰 상세설계 §12.11의 확장 구현에서는 `couponWaitingRateLimitInterceptor`, `couponWaitingConfig`, `couponWaitingScheduler` 세 동작 bean을 이 목록과 CouponBeanIsolation·W6/O11 조립 검증에 함께 추가한다. 현재 코드에는 없는 구현 예정 이름이며 기존 §11의 발급 전용 interceptor 이름은 사용하지 않는다. 동작 없는 CouponWaitingProperties/CouponRateLimitProperties는 제외하지 않는다. 쿠폰 Entity를 관리 타입에 더하지 않으므로 남은 쿠폰 JPA repository는 기동 실패를 만든다. 수용 저장소·서비스·Facade·Controller는 기동을 깨지 않지만 쿠폰 동작을 가진 bean이므로 같은 목록에 둔다. 동작 없는 수용량 설정 바인딩은 제외하지 않는다. 추가 요청률 제한의 동작 없는 설정 바인딩도 같은 원칙을 따른다. 목록의 이름이 하나라도 없으면 조립 변경으로 기동을 거절하며, 쿠폰 bean이 늘면 목록에 이름을 더한다. config가 만든 @Bean 정의도 factoryBeanName 연결로 제외한다. 이 단계에서는 @Bean 설정 클래스를 새로 등록해 다시 해석되길 기대하지 않는다. 고정 orderConfirmationClock·beforeSend probe는 기존 정의가 있음을 확인하고 제거/교체한다. 전역 override 허용·@Primary·이름 접두사만으로 무관한 bean 제거는 사용하지 않는다.
+5. 시작 후 sole recorder가 W6 구현이고 실제 listener/JSON adapter/template/factory가 연결됐는지, W7 relay·Outbox repository/Entity와 쿠폰 bean이 없는지 단언한다. O11은 빈 DB 준비 검사와 W6 준비 뒤 Outbox 테이블 부재도 확인한다. 누락/충돌은 준비 실패이며 SQL 성공 상태 삽입으로 우회하지 않는다.
 
 ~~~text
 initialize(context): // refresh 전
@@ -770,6 +771,8 @@ Replacer.postProcessBeanDefinitionRegistry: // CCPP 뒤
 ~~~
 
 Boot 3.4.4 JpaBaseConfiguration의 managedTypes/filter 연결, Spring Context 6.2.5 PostProcessorRegistrationDelegate의 PriorityOrdered→Ordered→나머지 순서, ConfigurationClassPostProcessor의 registry 재처리 방지와 ConfigurationClassUtils의 @Bean 설정 후보 인식을 로컬 소스로 대조했다. 설정 후보라는 사실만으로 늦게 등록한 클래스가 다시 해석되는 것은 아니다. 실제 기동 검증은 아직 없으며 streamer 전체 scan/runtime 의존성은 추가하지 않는다.
+
+쿠폰 캐시 최종 승인 설계(구현 전)는 쿠폰 §13.12를 따른다. 도입 단위에서 couponCacheRedisRepository·couponCacheService 두 동작 bean을 같은 CouponBeanIsolation/W6/O11 목록·조립 검사에 함께 추가할 예정이다. 동작 없는 CouponCacheProperties는 제외하지 않는다. 아직 소스에 없는 이름을 현재 코드 목록에 미리 넣거나 관리 타입/DDL·행 보존 기대를 바꾸지 않는다. 이 문장은 사용자 최종 승인 설계의 연결이며 캐시 구현/조립 통과 기록이 아니다.
 
 ### W7.4-2. 한 실행의 자원 수명과 스키마 전환
 
@@ -804,6 +807,7 @@ Boot 3.4.4 JpaBaseConfiguration의 managedTypes/filter 연결, Spring Context 6.
   W7 정상 API context:
     동일 datasource/Redis/PG/topic 사용, 새 자기 포트/callback URL은 기동 전 주입
     ddl-auto=update, 자동 relay enabled=false
+    O11 전용 W7CouponIsolationInitializer: 관리 타입=W6 15개+Outbox, 쿠폰 bean 정의 제외
     제품 sole recorder=OrderOutboxRecordingService, W6 listener/adapter 없음
   Outbox 테이블 추가와 기존 테이블/행·PG 기준 불변을 새 SQL로 단언
   operations.recoverOrders([A, B]) // 주문별 TX; 없던 Outbox 각각 1행
@@ -814,6 +818,14 @@ Boot 3.4.4 JpaBaseConfiguration의 managedTypes/filter 연결, Spring Context 6.
     Outbox 행 전체 snapshot·구매 효과·PG/업무 기준 불변
   모든 확인 또는 실패 뒤 finally에서 소유 자원 정리
 ~~~
+
+#### O11 W7 기동의 쿠폰 격리 (2026-11-11 보완)
+
+쿠폰 기능이 W7 뒤에 추가되면서 정상 `CommerceApiApplication`을 update로 띄우면 coupon·coupon_campaign도 생성되어 “Outbox만 추가” 단언과 충돌한다. 사용자는 기대값을 넓히거나 쿠폰 테이블을 비교에서 숨기지 않고, O11의 W7 기동에만 test 전용 조립을 붙이는 방향을 승인했다.
+
+- `bootW7Api`만 `W7CouponIsolationInitializer`를 붙인다. refresh 전에 W6 관리 타입 15개에 OrderConfirmedOutboxModel을 더한 ManagedClassNameFilter와, CCPP 뒤 실행되는 bean 정의 BDRPP를 등록한다. BDRPP는 CouponBeanIsolation의 쿠폰 정의만 제거한다.
+- W6PreparationContextInitializer 전체를 재사용하지 않는다. W7의 제품 recorder·Outbox repository·relay·운영·전송 구성은 그대로다. 제품 profile·운영 옵션·전역 scan은 바꾸지 않으며 일반 테스트와 제품 컨텍스트에는 쿠폰 bean·Entity가 그대로 등록된다.
+- 기동 뒤 관리 타입이 W6+Outbox와 같고 쿠폰 bean이 없음을 단언한다. W6 12개 API 테이블·Outbox 부재, 전환 뒤 Outbox만 추가, 기존 14개 테이블 DDL·전체 행 보존, PG 호출 증가 0, 전달·소비·복구 멱등성과 W7의 W6 recorder/listener/adapter 부재는 그대로 유지한다.
 
 최초 create는 비어 있는 격리 DB에서 W6 상태를 준비할 때만 사용한다. W6→W7 전환에 create/create-drop을 사용하지 않고 W7은 update로 Outbox를 추가한다. 기존 streamer는 재시작하지 않으므로 구매 테이블을 다시 create하지 않는다. 원본 DB 보존 방식은 이번 기본 검증에 추가하지 않는다.
 
