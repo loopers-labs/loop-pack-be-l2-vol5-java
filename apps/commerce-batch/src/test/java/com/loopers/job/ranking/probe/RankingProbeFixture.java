@@ -24,8 +24,10 @@ import org.springframework.batch.item.database.builder.JdbcCursorItemReaderBuild
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 
-// 9주차 1단계 probe. 과제 §3 "세 상품으로 DB chunk 재시작 연결하기" 예시를 테스트 안에서 그대로 조립한다(제품 코드·진입점 없음).
-// 테이블 두 개는 테스트 준비에서만 만들고 지운다. Batch metadata는 지우지 않으므로 snapshotId를 테스트마다 새로 만든다.
+// 9주차 1단계 probe. 과제 §3 "세 상품으로 DB chunk 재시작 연결하기" 예시를
+// 테스트 안에서 그대로 조립한다(제품 코드·진입점 없음).
+// 테이블 두 개는 테스트 준비에서만 만들고 지운다.
+// Batch metadata는 지우지 않으므로 snapshotId를 테스트마다 새로 만든다.
 final class RankingProbeFixture {
     static final String JOB = "purchaseInputProbe";
     static final String STEP = "probeProducts";
@@ -67,11 +69,13 @@ final class RankingProbeFixture {
         };
         for (Object[] row : rows) {
             jdbcTemplate.update("insert into ranking_snapshot_input(snapshot_id, order_id, product_id, quantity, confirmed_at)"
-                + " values (?, ?, ?, ?, ?)", snapshotId, row[0], row[1], row[2], Timestamp.valueOf(LocalDateTime.parse((String) row[3])));
+                + " values (?, ?, ?, ?, ?)", snapshotId, row[0], row[1], row[2],
+                Timestamp.valueOf(LocalDateTime.parse((String) row[3])));
         }
     }
 
-    // 상품 ID를 순서대로 읽는다. saveState로 읽은 위치를 ExecutionContext(read.count)에 남겨 재시작 때 그 뒤부터 읽는다.
+    // 상품 ID를 순서대로 읽는다. saveState로 읽은 위치를 ExecutionContext(read.count)에 남겨
+    // 재시작 때 그 뒤부터 읽는다.
     JdbcCursorItemReader<Long> reader(String snapshotId) {
         return new JdbcCursorItemReaderBuilder<Long>()
             .name(READER)
@@ -83,7 +87,8 @@ final class RankingProbeFixture {
             .build();
     }
 
-    // 결과 테이블에 INSERT한다(upsert 아님). 같은 상품을 다시 쓰면 PK 충돌로 드러난다. failOnProduct가 들어오면 그 상품에서 실패한다.
+    // 결과 테이블에 INSERT한다(upsert 아님). 같은 상품을 다시 쓰면 PK 충돌로 드러난다.
+    // failOnProduct가 들어오면 그 상품에서 실패한다.
     ItemWriter<Long> insertWriter(String snapshotId, Long failOnProduct, Consumer<Chunk<? extends Long>> beforeWrite) {
         return chunk -> {
             beforeWrite.accept(chunk);
@@ -91,7 +96,8 @@ final class RankingProbeFixture {
                 if (productId.equals(failOnProduct)) {
                     throw new IllegalStateException("주입된 쓰기 실패 product=" + productId);
                 }
-                jdbcTemplate.update("insert into batch_restart_probe(snapshot_id, product_id) values (?, ?)", snapshotId, productId);
+                jdbcTemplate.update("insert into batch_restart_probe(snapshot_id, product_id) values (?, ?)", snapshotId,
+                    productId);
             }
         };
     }
@@ -122,9 +128,5 @@ final class RankingProbeFixture {
             }
         }
         return productIds;
-    }
-
-    DataSource dataSource() {
-        return dataSource;
     }
 }

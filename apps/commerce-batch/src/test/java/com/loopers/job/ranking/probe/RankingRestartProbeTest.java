@@ -56,6 +56,7 @@ class RankingRestartProbeTest {
         JobExecution first = jobLauncher.run(fixture.job(snapshotId, fixture.insertWriter(snapshotId, 9L, chunk -> { }), null), parameters);
 
         assertThat(first.getStatus()).isEqualTo(BatchStatus.FAILED);
+        assertThat(causeMessages(first)).contains("주입된 쓰기 실패");
         assertThat(fixture.resultRows(snapshotId)).containsExactly(7L, 8L);
         StepExecution firstStep = persistedStep(first);
         assertThat(firstStep.getExecutionContext().getInt(RankingProbeFixture.READ_COUNT_KEY)).isEqualTo(2);
@@ -74,6 +75,17 @@ class RankingRestartProbeTest {
         JobInstance instance = jobExplorer.getJobInstance(first.getJobInstance().getInstanceId());
         List<JobExecution> executions = jobExplorer.getJobExecutions(instance);
         assertThat(executions).hasSize(2);
+    }
+
+    // 실패 원인이 주입한 예외인지 보려고 실패 예외의 원인 사슬 메시지를 모은다.
+    private static String causeMessages(JobExecution execution) {
+        StringBuilder messages = new StringBuilder();
+        for (Throwable failure : execution.getAllFailureExceptions()) {
+            for (Throwable cause = failure; cause != null; cause = cause.getCause() == cause ? null : cause.getCause()) {
+                messages.append(cause.getMessage()).append('\n');
+            }
+        }
+        return messages.toString();
     }
 
     // 메모리의 실행 객체가 아니라 JobRepository에 저장된 값을 읽는다.

@@ -68,13 +68,26 @@ class RankingProbeTransactionFailureTest {
             new JobParametersBuilder().addString("snapshotId", snapshotId).toJobParameters());
 
         assertThat(execution.getStatus()).isEqualTo(BatchStatus.FAILED);
+        assertThat(causeMessages(execution)).contains("주입된 위치 저장 직전 실패");
         assertThat(fixture.resultRows(snapshotId)).isEmpty();
         StepExecution step = jobExplorer.getStepExecution(execution.getId(), execution.getStepExecutions().iterator().next().getId());
         assertThat(step.getExecutionContext().getInt(RankingProbeFixture.READ_COUNT_KEY, 0)).isZero();
         assertThat(step.getCommitCount()).isZero();
         assertThat(stream.calls()).hasSizeGreaterThanOrEqualTo(2);
         assertThat(stream.calls().get(0)).isEqualTo("update#1 written=false tx=false");
-        assertThat(stream.calls().get(stream.calls().size() - 1)).isEqualTo("update#2 written=true tx=true 실패");
+        // 몇 번째 호출인지는 Spring Batch 내부 순서에 맡기고, 실패한 호출이 writer가 쓴 뒤의 첫 트랜잭션 안 호출인지만 본다.
+        assertThat(stream.calls()).filteredOn(call -> call.contains("written=true tx=true")).first().asString().endsWith("실패");
+        assertThat(stream.calls()).filteredOn(call -> call.endsWith("실패")).hasSize(1);
+    }
+
+    private static String causeMessages(JobExecution execution) {
+        StringBuilder messages = new StringBuilder();
+        for (Throwable failure : execution.getAllFailureExceptions()) {
+            for (Throwable cause = failure; cause != null; cause = cause.getCause() == cause ? null : cause.getCause()) {
+                messages.append(cause.getMessage()).append('\n');
+            }
+        }
+        return messages.toString();
     }
 
     private static class FailAfterWriteStream implements ItemStream {
