@@ -45,6 +45,12 @@ outbox:
     batch-size: ${OUTBOX_RELAY_BATCH_SIZE:10}
     max-attempts: ${OUTBOX_RELAY_MAX_ATTEMPTS:3}
 
+coupon:
+  issue:
+    admission:
+      capacity: ${COUPON_ISSUE_ADMISSION_CAPACITY:3}
+      enabled: ${COUPON_ISSUE_ADMISSION_ENABLED:false}
+
 payment:
   resilience:
     bulkhead:

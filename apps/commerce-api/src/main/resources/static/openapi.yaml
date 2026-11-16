@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Commerce API
   version: v1
-  description: 브랜드, 상품, 좋아요, 포인트, 주문을 위한 HTTP API 계약
+  description: 브랜드, 상품, 좋아요, 포인트, 주문, 쿠폰을 위한 HTTP API 계약
 servers:
   - url: http://localhost:8080
 tags:
@@ -11,6 +11,7 @@ tags:
   - name: Like
   - name: Point
   - name: Customer Order
+  - name: Coupon
   - name: PG Callback
   - name: Admin Brand
   - name: Admin Product
@@ -124,6 +125,80 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/coupon-campaigns/{campaignId}/issues:
+    post:
+      tags: [Coupon]
+      operationId: IssueCoupon
+      summary: 캠페인 쿠폰 발급
+      description: 최초 발급은 201, 같은 사용자의 재요청은 기존 쿠폰을 반환하며 200이다.
+      security:
+        - userId: []
+      parameters:
+        - $ref: '#/components/parameters/CouponCampaignId'
+      responses:
+        '200':
+          description: 이미 발급된 사용자의 기존 쿠폰
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CouponEnvelope'
+        '201':
+          description: 새로 발급된 쿠폰
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CouponEnvelope'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/UserNotIdentified'
+        '404':
+          description: COUPON_CAMPAIGN_NOT_FOUND - 캠페인이 없음
+          x-error-codes: [COUPON_CAMPAIGN_NOT_FOUND]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          description: 캠페인이 비활성화되었거나 발급 한도가 소진됨
+          x-error-codes: [COUPON_CAMPAIGN_INACTIVE, COUPON_CAMPAIGN_SOLD_OUT]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '429':
+          description: COUPON_ADMISSION_FULL - 발급 처리 수용량이 가득 참
+          x-error-codes: [COUPON_ADMISSION_FULL]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '503':
+          description: COUPON_ADMISSION_UNAVAILABLE - 발급 수용 상태를 확인할 수 없음
+          x-error-codes: [COUPON_ADMISSION_UNAVAILABLE]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/coupons:
+    get:
+      tags: [Coupon]
+      operationId: GetMyCoupons
+      summary: 내 쿠폰 목록 조회
+      description: 발급 시각 내림차순, 같은 시각이면 쿠폰 ID 내림차순으로 반환한다.
+      security:
+        - userId: []
+      responses:
+        '200':
+          description: 요청한 사용자의 보유 쿠폰 목록
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CouponListEnvelope'
+        '401':
+          $ref: '#/components/responses/UserNotIdentified'
 
   /api/v1/products/{productId}/likes:
     post:
@@ -953,6 +1028,13 @@ components:
       schema:
         type: integer
         format: int64
+    CouponCampaignId:
+      name: campaignId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
     OrderId:
       name: orderId
       in: path
@@ -1188,6 +1270,11 @@ components:
             - ORDER_NOT_FOUND
             - USER_NOT_FOUND
             - LIKE_NOT_FOUND
+            - COUPON_CAMPAIGN_NOT_FOUND
+            - COUPON_CAMPAIGN_INACTIVE
+            - COUPON_CAMPAIGN_SOLD_OUT
+            - COUPON_ADMISSION_FULL
+            - COUPON_ADMISSION_UNAVAILABLE
             - NOT_FOUND
             - METHOD_NOT_ALLOWED
             - DUPLICATE_BRAND_NAME
@@ -1733,6 +1820,48 @@ components:
           $ref: '#/components/schemas/SuccessMetadata'
         data:
           $ref: '#/components/schemas/CustomerProduct'
+    CouponEnvelope:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: '#/components/schemas/SuccessMetadata'
+        data:
+          $ref: '#/components/schemas/Coupon'
+    CouponListEnvelope:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: '#/components/schemas/SuccessMetadata'
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Coupon'
+    Coupon:
+      type: object
+      required: [id, issuedAt, userId, campaignId, benefit]
+      properties:
+        id:
+          type: integer
+          format: int64
+        issuedAt:
+          type: string
+          format: date-time
+        userId:
+          type: integer
+          format: int64
+        campaignId:
+          type: integer
+          format: int64
+        benefit:
+          type: string
+      example:
+        id: 1
+        issuedAt: '2026-11-09T12:00:00Z'
+        userId: 7
+        campaignId: 2
+        benefit: 5,000원 할인권
     AdminProductEnvelope:
       type: object
       required: [meta, data]

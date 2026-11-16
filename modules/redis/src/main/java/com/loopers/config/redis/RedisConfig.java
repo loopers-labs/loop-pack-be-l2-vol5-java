@@ -15,6 +15,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.connection.RedisStaticMasterReplicaConfiguration;
+import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -101,10 +102,16 @@ public class RedisConfig{
                         .build());
         if(customizer != null) customizer.accept(builder);
         LettuceClientConfiguration clientConfig = builder.build();
+        if (replicas.isEmpty()) {
+            RedisStandaloneConfiguration standaloneConfig = new RedisStandaloneConfiguration(master.host(), master.port());
+            standaloneConfig.setDatabase(database);
+            return new LettuceConnectionFactory(standaloneConfig, clientConfig);
+        }
+
         RedisStaticMasterReplicaConfiguration masterReplicaConfig = new RedisStaticMasterReplicaConfiguration(master.host(), master.port());
         masterReplicaConfig.setDatabase(database);
-        for(RedisNodeInfo r : replicas){
-            masterReplicaConfig.addNode(r.host(), r.port());
+        for (RedisNodeInfo replica : replicas) {
+            masterReplicaConfig.addNode(replica.host(), replica.port());
         }
         return new LettuceConnectionFactory(masterReplicaConfig, clientConfig);
     }

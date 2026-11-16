@@ -32,6 +32,7 @@ public enum ErrorCode {
     ORDER_NOT_FOUND("주문을 찾을 수 없습니다."),
     USER_NOT_FOUND("사용자를 찾을 수 없습니다."),
     LIKE_NOT_FOUND("좋아요를 찾을 수 없습니다."),
+    COUPON_CAMPAIGN_NOT_FOUND("쿠폰 캠페인을 찾을 수 없습니다."),
     NOT_FOUND("요청한 경로를 찾을 수 없습니다."),
     METHOD_NOT_ALLOWED("허용하지 않는 요청 방식입니다."),
 
@@ -46,6 +47,10 @@ public enum ErrorCode {
     INSUFFICIENT_POINT("포인트 잔액이 부족합니다."),
     PAYMENT_ALREADY_PROCESSED("이미 처리된 결제입니다."),
     PAYMENT_FAILED("결제가 실패했습니다."),
+    COUPON_CAMPAIGN_INACTIVE("쿠폰 캠페인이 비활성화되었습니다."),
+    COUPON_CAMPAIGN_SOLD_OUT("쿠폰 캠페인의 발급 한도가 소진되었습니다."),
+    COUPON_ADMISSION_FULL("쿠폰 발급 요청을 처리할 수 없습니다."),
+    COUPON_ADMISSION_UNAVAILABLE("쿠폰 발급 수용 상태를 확인할 수 없습니다."),
     PAYMENT_CANCELLATION_PENDING("결제 결과 확인 중 문제가 발생했습니다. 결제 취소가 진행될 예정입니다."),
     POINT_CONFLICT("포인트 잔액이 변경되었습니다. 최신 잔액을 확인한 뒤 다시 시도해 주세요."),
     POINT_BALANCE_LIMIT_EXCEEDED("충전할 수 있는 한도를 넘었습니다."),

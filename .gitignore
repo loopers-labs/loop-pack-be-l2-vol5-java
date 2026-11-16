@@ -59,3 +59,6 @@ out/
 /docs/week4/seed-data/skewed-1m-v1/*
 !/docs/week4/seed-data/skewed-1m-v1/generation.json
 !/docs/week4/seed-data/skewed-1m-v1/manifest.json
+
+### Local experiments ###
+/apps/redis-queue-experiment/

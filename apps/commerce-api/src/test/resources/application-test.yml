@@ -4,3 +4,9 @@ outbox:
     retry-interval: 10s
     batch-size: 10
     max-attempts: 3
+
+coupon:
+  issue:
+    admission:
+      capacity: 3
+      enabled: true
