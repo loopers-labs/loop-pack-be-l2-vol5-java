@@ -250,9 +250,10 @@ class WeeklyRankingJobTest {
         "형식 오류, 2026-08-17, weekly-2026-08-17-r1",
         "revision 0, 2026-08-17, weekly-20260817-r0",
         "월요일 아님, 2026-08-18, weekly-20260818-r1",
-        "날짜 불일치, 2026-08-17, weekly-20260824-r1"
+        "날짜 불일치, 2026-08-17, weekly-20260824-r1",
+        "revision 앞자리 0, 2026-08-17, weekly-20260817-r01"
     })
-    @DisplayName("식별 파라미터가 형식에 맞지 않거나 revision이 0이거나 월요일이 아니거나 snapshotId 날짜가 다르면 Job을 시작하지 않고 거절한다")
+    @DisplayName("식별 파라미터가 형식에 맞지 않거나 revision이 0이거나 앞자리 0이 있거나 월요일이 아니거나 snapshotId 날짜가 다르면 Job을 시작하지 않고 거절한다")
     void invalidParametersAreRejectedBeforeStart(String scene, String periodStart, String snapshotId) {
         Throwable rejected = catchThrowable(() -> run(periodStart, snapshotId));
 
