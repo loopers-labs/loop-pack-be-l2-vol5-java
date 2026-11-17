@@ -13,7 +13,7 @@ public record WeeklyRankingRequest(LocalDate periodStart, LocalDate periodEnd, l
     private static final DateTimeFormatter ID_DATE = DateTimeFormatter.ofPattern("uuuuMMdd");
 
     public static WeeklyRankingRequest of(String periodStart, Long revision, String snapshotId) {
-        LocalDate start = parseMonday(periodStart);
+        LocalDate start = parsePeriodStart(periodStart);
         if (revision == null || revision <= 0) {
             throw invalid("revision 은 양수여야 합니다.");
         }
@@ -28,7 +28,8 @@ public record WeeklyRankingRequest(LocalDate periodStart, LocalDate periodEnd, l
         return "weekly-" + periodStart.format(ID_DATE) + "-r" + revision;
     }
 
-    private static LocalDate parseMonday(String raw) {
+    /** 엄격한 YYYY-MM-DD 형식의 월요일만 허용한다. */
+    public static LocalDate parsePeriodStart(String raw) {
         if (raw == null || !DATE_SHAPE.matcher(raw).matches()) {
             throw invalid("periodStart 는 YYYY-MM-DD 형식이어야 합니다.");
         }

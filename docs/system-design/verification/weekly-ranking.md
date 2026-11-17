@@ -188,3 +188,43 @@ r1 instance ID는 로그에 남기지 않았다. 원문 기대 순위(7→9→8)
 - 실패 주입은 같은 JVM의 테스트 대역(processor BeanPostProcessor, JobRepository 대역)이다. 새 JVM 재시작은 실제 연결 단위에서 확인한다.
 - 입력 고정 rollback은 "복사·manifest 저장 뒤, 같은 TX의 metadata 저장 실패"로 재현했다. 복사와 manifest 사이 지점의 별도 실패 주입은 하지 않았다.
 - UNKNOWN 실행의 운영 복구 절차(§5.6~5.8)는 구현 범위가 아니며 확인하지 않았다.
+
+## 4단위 — 명시 실행 진입·revision 자동 결정 (2026-11-17)
+
+### 범위
+
+- 사용자 착수 승인(2026-11-17): [§4.3~4.12](../features/weekly-ranking/execution-recovery.md#47-실행-옵션과-최초-준비-전제)의 WeeklyRankingLaunchRunner(new/restart)·revision 자동 결정·실행 옵션 Properties·initializer·`CommerceBatchApplication.createApplication`·시작 로그 listener.
+- 제외(후속 단위): API, 실제 연결과 batch 자식 JVM.
+
+### 구현
+
+|위치|내용|
+|---|---|
+|`CommerceBatchApplication`|`createApplication(Class<?>...)`가 SpringApplication 조립과 initializer 등록을 맡고 main이 이를 사용|
+|`domain/ranking/RankingLaunchRepository`·`infrastructure/ranking/JdbcRankingLaunchRepository`|`SELECT MAX(revision) FROM ranking_snapshot WHERE period_start = ?`(삭제 행 포함)|
+|`batch/job/weeklyranking/WeeklyRankingLaunchProperties`|`weekly-ranking` prefix, unknown field 거절, `launch.enabled` 기본 false|
+|`WeeklyRankingLaunchContextInitializer`|launch.enabled=true면 job.name=weeklyRanking·job.enabled=false·ddl-auto=none·initialize-schema=never가 아니면 refresh 전 IllegalStateException|
+|`WeeklyRankingLaunchRunner`|ApplicationRunner·ExitCodeGenerator. 옵션 조합·non-option 인자·Boot 자동 실행·registry 확인 → new는 JobExplorer 전체 이력과 snapshot 최대값의 다음 revision으로 `JobOperator.start`, restart는 최신 FAILED/STOPPED 실행만 `JobOperator.restart`. 같은 기간의 진행 중·UNKNOWN·손상 이력은 거절. JobExplorer로 다시 읽은 상태가 COMPLETED일 때만 0|
+|`WeeklyRankingJobConfig`|launch.enabled=true일 때만 Runner 등록, Job의 beforeJob 시작 로그(instance·execution·parameter)|
+|test `WeeklyRankingLaunchTest`|Runner를 옵션별로 직접 만들어 호출하는 4개 시나리오|
+
+### 실행 결과
+
+코드 상태: HEAD `5260c74`(3단위 커밋) + 4단위 미커밋 변경. 실제 MySQL 8.0 testcontainers.
+
+|검사|명령·시각|결과|
+|---|---|---|
+|batch check|`./gradlew :apps:commerce-batch:check --rerun-tasks` 16:23:58|checkstyleMain·checkstyleTest 오류 0. 테스트 5클래스 17건 통과(기존 13 + WeeklyRankingLaunchTest 4), failure/error/skip 0. 종료 뒤 테스트 컨테이너 0개|
+
+|주|시나리오|관찰|
+|---|---|---|
+|2026-06-01|자동 revision|new → r1(execution 23) 종료 코드 0. 입력 고정 TX 실패로 snapshot 없이 이력만 남은 r2(execution 24, FAILED, 1). 다음 new는 r3(execution 25)로 r2를 재사용하지 않음, pointer r3|
+|2026-06-08|명시 재시작|new 실패(execution 27) → restart 27도 9 직전 실패(28, 같은 instance 22) → 과거 ID 27 restart는 NOT_LATEST_EXECUTION(실행 수 2 유지) → restart 28 성공(29, 0) → 완료 ID restart는 NOT_RESTARTABLE. new+execution-id, restart+period-start, mode 누락, 월요일 아님, non-option 인자는 INVALID_OPTION|
+|2026-06-15|UNKNOWN 보호|공개 commit 뒤 최종 Step 저장 실패로 UNKNOWN(종료 코드 1). 같은 주 new·UNKNOWN 실행 restart 모두 IN_PROGRESS_OR_UNKNOWN, instance 수 불변|
+|-|initializer|올바른 네 설정은 통과, 각 설정을 바꾸면 해당 key를 담은 IllegalStateException. `createApplication().run(... ddl-auto=update)`도 refresh 전에 같은 예외|
+
+### 한계
+
+- Runner는 테스트에서 직접 생성해 호출했다. launch.enabled=true context에서 Boot가 ApplicationRunner로 실행하고 `SpringApplication.exit`가 종료 코드를 받는 경로는 실제 연결 단위의 batch 자식 JVM에서 확인한다.
+- 프로세스 생존 확인 등 §5.6의 수동 절차는 Runner 범위가 아니다. 같은 기간 직렬 실행 전제이며 다중 프로세스 번호 발급 원자성은 보장하지 않는다(§4.5).
+- 로그의 거절 사유 집계: INVALID_OPTION 5, IN_PROGRESS_OR_UNKNOWN 2, NOT_LATEST_EXECUTION 1, NOT_RESTARTABLE 1.
