@@ -1,5 +1,7 @@
 # Use Case / API 계약
 
+> **학습 기록 · 2주차 당시 기준.** 요구·선택·검증 수치는 해당 단계의 기록이다. 현재 구조·명령·정책 차이는 [현행 컨벤션](conventions.md)을 함께 확인한다.
+
 모든 성공 응답은 `ApiResponse(meta, data)`다. 표의 성공 값은 HTTP 상태와 data의 내용이다.
 응답 모델은 [Read Model](06-read-models.md), 오류 E번호는 [오류 명세](07-error-specification.md)를 참조한다.
 X-USER-ID는 학습용 사용자 입력이며 인증·인가를 수행하지 않는다. 필요한 API는 아래 입력 열에 표시한다.

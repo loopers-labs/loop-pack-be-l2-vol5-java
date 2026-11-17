@@ -1,8 +1,10 @@
 # R02. 주문·재고·포인트 정합성 보장
 
+> **학습 기록 · 3주차 당시 기준.** 요구·선택·검증 수치는 해당 단계의 기록이다. 현재 구조·명령·정책 차이는 [현행 컨벤션](../../week2/conventions.md)을 함께 확인한다.
+
 [전체 요구사항](../total_requirement.md) · 작업 브랜치: `volume-3/r02-order-consistency` · PR 대상: `volume-3/main`
 
-상태: 합의한 구현·검증 완료. 최종 모듈 check 247건 통과(실패·오류·skip 0), Checkstyle 위반 0. [구현 계획](plan.md) · [결과·한계·회고](result.md).
+상태: 합의한 구현·검증 완료. 최종 모듈 check 247건 통과(실패·오류·skip 0), Checkstyle 위반 0. [구현·검증 결과](result.md) · [결과·한계·회고](result.md).
 R01 병합 내용은 현재 작업 브랜치에 반영되어 있다. 최신 원격 main 포함 여부와 관련 경로의 회귀를 확인했다.
 선택과 근거는 [트레이드오프 전체 목록](trade_off/total_trade_off.md)에서 관리한다.
 원문 대응: Implementation Quest 1의 주문·경쟁 흐름, 3, 4의 대조군·주문·경쟁 검증 및 Checklist 주문과 경쟁.
@@ -126,12 +128,12 @@ timeout·SQL 오류를 재현 성공으로 간주하거나 의도적으로 실�
 [기존 DB 대기 설정·자동 재시도 없이 전체 롤백](trade_off/06-failure-handling.md)을 채택했다.
 구현 착수 중 [사용자 잔액 도메인 모델링](trade_off/07-wallet-model.md)을 추가로 합의했다: Point를 Wallet으로 전환하고, PointBill은 Wallet(같은 컨텍스트)이 생성해 반환하되 컬렉션으로 소유하지 않는다.
 [OrderBill 생성 책임](trade_off/08-bill-creation-boundary.md)은 별도다: Order(ordering)와 OrderBill(pay.orderbill)은 다른 컨텍스트이므로 OrderBill은 지금처럼 application이 생성한다.
-아래 내용은 [구현 계획](plan.md)에 구체화하고 구현했다. 실제 검증 범위와 미실행 항목은 [결과 문서](result.md)를 따른다.
+아래 내용은 당시 계획에 구체화해 구현했고 완료 근거는 [결과](result.md)에 통합했다. 실제 검증 범위와 미실행 항목은 [결과 문서](result.md)를 따른다.
 
 - 주문 → 해당 사용자 포인트 → 상품 ID 오름차순으로 잠금을 획득하고 다른 변경 경로에도 일관된 보호를 적용한다.
 - JPA 잠금 조회·관리 엔티티 매핑을 구성하고 실제 SQL 실행을 확인한다.
 - 충전·상품 수정·개별 삭제·관리자 재고 설정에 변경용 조회를 적용하고, 브랜드 일괄 삭제는 트레이드오프 09에 따라 fetch join 자체의 잠금 조회 후 도메인으로 변환한다.
 - 모든 변경의 동일 트랜잭션 참여와 실패 예외의 전체 롤백·오류 응답 경로를 확인한다.
-- 관리자 재고 설정 경쟁의 데이터·허용 결과, SQL 실행 후 Writer spy 실패 주입, worker·connection과 제한 시간은 구현 계획의 커밋 5~7을 따른다.
+- 관리자 재고 설정 경쟁·실제 SQL 뒤 실패 주입·worker/connection/timeout의 실제 확인 범위와 한계는 결과 문서의 검증·미실행 기록을 따른다.
 
-위 선택의 근거는 `trade_off/`의 전체 목록·주제별 문서, 커밋별 목표·TODO·완료 기준은 [구현 계획](plan.md)을 따른다. 필수 성공·거절 수를 충돌 오류로 낮춰 잡거나 검사 기준을 완화하지 않는다.
+위 선택의 근거는 `trade_off/`의 전체 목록·주제별 문서, 실제 구현·검증 결과·남은 한계는 [결과](result.md)를 따른다. 필수 성공·거절 수를 충돌 오류로 낮춰 잡거나 검사 기준을 완화하지 않는다.

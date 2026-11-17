@@ -1,6 +1,8 @@
 # R01. 전체 최신순·가격순 인덱스와 전후 측정
 
-[전체 요구사항](../total_requirement.md) · [트레이드오프](trade_off/total_trade_off.md) · [계획](plan.md) · [JMeter 안내](jmeter-guide.md)
+> **학습 기록 · 4주차 당시 기준.** 요구·선택·검증 수치는 해당 단계의 기록이다. 현재 구조·명령·정책 차이는 [현행 컨벤션](../../week2/conventions.md)을 함께 확인한다.
+
+[전체 요구사항](../total_requirement.md) · [트레이드오프](trade_off/total_trade_off.md) · [구현·검증 결과](result.md) · [JMeter 안내](jmeter-guide.md)
 
 작업 브랜치: `volume-4/r01-product-list-index` · PR 대상: `volume-4/main`
 

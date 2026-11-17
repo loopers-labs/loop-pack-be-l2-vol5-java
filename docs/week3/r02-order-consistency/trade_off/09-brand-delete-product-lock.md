@@ -1,5 +1,7 @@
 # 브랜드 일괄 삭제가 상품 잠금을 어떻게 확보할까?
 
+> **학습 기록 · 3주차 당시 기준.** 요구·선택·검증 수치는 해당 단계의 기록이다. 현재 구조·명령·정책 차이는 [현행 컨벤션](../../../week2/conventions.md)을 함께 확인한다.
+
 [← 전체 선택 현황](total_trade_off.md)
 
 현재 상태: 채택안을 구현하고 최종 모듈 검사를 통과했다. 설계 당시 비교와 구분되는 실제 검증 범위·남은 한계는 [구현 결과](../result.md)를 따른다.
@@ -12,7 +14,7 @@ MySQL 기본 격리수준(REPEATABLE READ)에서는 같은 트랜잭션 안의 �
 > **채택 — C. `findForDeletion` 조회 자체에 `@Lock(PESSIMISTIC_WRITE)`를 적용**
 >
 > 브랜드+상품을 읽어오는 `LEFT JOIN FETCH` 쿼리 자체에 비관적 쓰기 잠금을 걸어 한 번의 쿼리로 브랜드 행과 상품 행 전체를 동시에 잠그고 최신값을 읽는다.
-> [`BrandFindForDeletionLockIntegrationTest`](../../../../apps/commerce-api/src/test/java/com/loopers/infrastructure/mall/brand/BrandFindForDeletionLockIntegrationTest.java)로 실제 검증했다 — 별도 커넥션에서 같은 상품 행을 `innodb_lock_wait_timeout=1`로 짧게 잠금 조회를 시도하면 타임아웃으로 실패한다. 즉 이 Hibernate·MySQL 조합에서는 `fetch join`한 자식(Product) 행까지 잠금이 정상적으로 걸린다.
+> ``BrandFindForDeletionLockIntegrationTest``로 실제 검증했다 — 별도 커넥션에서 같은 상품 행을 `innodb_lock_wait_timeout=1`로 짧게 잠금 조회를 시도하면 타임아웃으로 실패한다. 즉 이 Hibernate·MySQL 조합에서는 `fetch join`한 자식(Product) 행까지 잠금이 정상적으로 걸린다.
 
 ## 흐름 비교
 
@@ -67,6 +69,14 @@ flowchart TB
 - 브랜드 삭제는 주문 확정과 달리 "상대방이 먼저 끝났다고 자신이 실패하는" 업무 규칙이 없다 — 항상 대기 후 성공한다(연관 상품 존재로 삭제를 거절하는 규칙은 R01에서 이미 제거됨). 반대로 주문 확정은 "이미 삭제된 상품이면 거절"하는 규칙이 있어 비대칭적으로 실패할 수 있다.
 - 검증은 두 개의 실제 DB 커넥션(스레드)으로 한쪽이 `findForDeletion`을 호출해 트랜잭션을 연 채 유지하고, 다른 쪽이 같은 상품 행에 짧은 `innodb_lock_wait_timeout`으로 잠금 조회를 시도해 대기/타임아웃하는지로 확인한다.
 
-## 구현 계획·검증으로 이어갈 것
+## 당시 계획 반영과 구현 결과
 
-[구현 계획](../plan.md) 커밋 4에 이 결정을 반영한다. `BrandJpaRepository.findForDeletion`에 `@Lock(PESSIMISTIC_WRITE)`만 추가했고, `BrandRepositoryImpl.save`의 재조회 로직은 그대로 둔다(저장 시점엔 이미 findForDeletion이 잠근 최신 상태를 그대로 쓰므로 문제 없음).
+완료 계획의 고유 근거는 결과 문서에 통합했다. 아래 커밋 순서·TODO는 당시 계획의 배경이며 현재 작업 목록이 아니다.
+
+당시 계획 커밋 4에 이 결정을 반영했다. `BrandJpaRepository.findForDeletion`에 `@Lock(PESSIMISTIC_WRITE)`만 추가했고, `BrandRepositoryImpl.save`의 재조회 로직은 유지했다(저장 시점엔 findForDeletion이 잠근 최신 상태를 사용). 당시 완료 범위는 [구현·검증 결과](../result.md), 후속 대체는 아래 R07 기록을 따른다.
+
+## 후속 변경과 현재 검증 위치
+
+위 BrandFindForDeletionLockIntegrationTest는 당시 fetch-join 잠금 시험이다.
+후속 [R07 결과](../../../week3-2/r07-brand-delete-bulk/result.md)에서 해당 조회·테스트를 제거하고 잠금 범위를 바꿨다.
+현재 다른 테스트로 옛 검증 링크를 대체하지 않으며 당시 상세 코드는 이 문서의 Git 이력에서 확인한다.

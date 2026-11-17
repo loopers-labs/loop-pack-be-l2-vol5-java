@@ -1,5 +1,7 @@
 # 4주차 전체 요구사항 · 조회 최적화와 캐시
 
+> **학습 기록 · 4주차 당시 기준.** 요구·선택·검증 수치는 해당 단계의 기록이다. 현재 구조·명령·정책 차이는 [현행 컨벤션](../week2/conventions.md)을 함께 확인한다.
+
 ## 1. 목표·기준·현재 상태
 
 기존 상품 조회의 업무 결과를 유지하면서 SQL·인덱스 비용을 줄이고, 고객 상품 상세에 Caffeine 로컬 캐시를 적용한다.
@@ -14,7 +16,7 @@ Redis와 성능을 직접 비교하거나 장애·복구를 검증한 결과는 
 
 - [Implementation Quest·체크리스트·Technical Writing Quest 원문](reference/implementation-quest.md)
 - [학습 자료 원문](reference/learning.md)
-- [현재 작업 지침](../../AGENTS.md), [현재 구조·명령 안내](../../CLAUDE.md)
+- [현재 작업 지침](../../AGENTS.md), [현재 구조·명령 안내](../week2/conventions.md)
 - [3주차 후속 요구사항](../week3-2/total_requirement.md), [R04 구현 결과](../week3-2/r04-like-sort-index/result.md)
 
 두 원문은 사용자 첨부를 내용 변경 없이 보존했다. 원문에는 Redis 적용·장애·복구 요구가 있으나,
@@ -35,7 +37,7 @@ Redis와 성능을 직접 비교하거나 장애·복구를 검증한 결과는 
 
 사용자가 최종 선택한 [R02 상품 상세 로컬 캐시](r02-product-detail-local-cache/requirement.md)는
 Caffeine W-TinyLFU를 사용한다. [설계](r02-product-detail-local-cache/trade_off/total_trade_off.md)와
-[계획](r02-product-detail-local-cache/plan.md)에 범위를 기록한다. 로컬 캐시의 완료와 원문 Redis 요구의 미적용을 구분한다.
+[구현·검증 결과](r02-product-detail-local-cache/result.md)에 범위를 기록한다. 로컬 캐시의 완료와 원문 Redis 요구의 미적용을 구분한다.
 
 ## 2. 진행 순서와 완료 조건
 
@@ -57,7 +59,7 @@ Caffeine W-TinyLFU를 사용한다. [설계](r02-product-detail-local-cache/trad
 | 항목 | 결정·상태 |
 |---|---|
 | 작업 브랜치 / PR 대상 | `volume-4/r01-product-list-index` / `volume-4/main` |
-| 문서 | [요구사항](r01-product-list-index/requirement.md), [트레이드오프](r01-product-list-index/trade_off/total_trade_off.md), [구현·측정 계획](r01-product-list-index/plan.md), [실제 결과](r01-product-list-index/result.md), [JMeter 첫 실행 안내](r01-product-list-index/jmeter-guide.md) |
+| 문서 | [요구사항](r01-product-list-index/requirement.md), [트레이드오프](r01-product-list-index/trade_off/total_trade_off.md), [구현·검증 결과](r01-product-list-index/result.md), [실제 결과](r01-product-list-index/result.md), [JMeter 첫 실행 안내](r01-product-list-index/jmeter-guide.md) |
 | 인덱스 | 기존 4개 유지 + 전체 최신순 `(deleted, created_at DESC, id DESC)`·전체 가격순 `(deleted, price ASC, id DESC)` 2개 적용 완료 |
 | 측정 규모·대상 | 상품 100만 개. 전체 최신순·전체 가격순·브랜드별 가격순, 각 `page=0&size=20` |
 | 동시 부하 | JMeter 동시 1명·10명을 구분해 전후 비교 |
@@ -69,7 +71,7 @@ Caffeine W-TinyLFU를 사용한다. [설계](r02-product-detail-local-cache/trad
 | 항목 | 결정·상태 |
 |---|---|
 | 작업 브랜치 / 기준 | `volume-4/r02-product-detail-local-cache` / 최신 `origin/volume-4/main`의 `3786c0d` |
-| 문서 | [요구사항](r02-product-detail-local-cache/requirement.md), [설계](r02-product-detail-local-cache/trade_off/total_trade_off.md), [계획](r02-product-detail-local-cache/plan.md), [실제 결과](r02-product-detail-local-cache/result.md), [JMeter 안내](r02-product-detail-local-cache/jmeter-guide.md) |
+| 문서 | [요구사항](r02-product-detail-local-cache/requirement.md), [설계](r02-product-detail-local-cache/trade_off/total_trade_off.md), [구현·검증 결과](r02-product-detail-local-cache/result.md), [실제 결과](r02-product-detail-local-cache/result.md), [JMeter 안내](r02-product-detail-local-cache/jmeter-guide.md) |
 | 읽기 | 고객 상세 전체의 불변 View, Caffeine W-TinyLFU, 기본 OFF·1000개·expireAfterWrite 30초, 기존 TX는 우회 |
 | 변경 | 상품·브랜드·재고·주문·좋아요 관계/집계/전체 재집계의 동기 AFTER_COMMIT 무효화와 세대 기반 늦은 채움 방지 |
 | 검증 | 실제 MySQL 쓰기 commit/rollback, 래치 경쟁·가짜 시간원 TTL, HTTP SQL OFF/miss 1회·hit 0회, 최종 전체 333개 테스트·Checkstyle·ArchUnit 통과 |

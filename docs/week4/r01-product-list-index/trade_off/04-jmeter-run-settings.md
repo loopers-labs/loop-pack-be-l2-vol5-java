@@ -1,5 +1,7 @@
 # JMeter 기준선 실행 설정
 
+> **학습 기록 · 4주차 당시 기준.** 요구·선택·검증 수치는 해당 단계의 기록이다. 현재 구조·명령·정책 차이는 [현행 컨벤션](../../../week2/conventions.md)을 함께 확인한다.
+
 [← 전체 선택 현황](total_trade_off.md) · [전후 비교 경계](02-before-after-benchmark.md) · [첫 실행 안내](../jmeter-guide.md)
 
 상태: **첫 CLI 측정이 최신순 10명에서 timeout으로 중단됐다.** 아래는 확정 설정이며 부분 결과는 result.md에 보존한다.

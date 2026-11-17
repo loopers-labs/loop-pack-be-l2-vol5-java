@@ -1,6 +1,8 @@
 # 패키지 구조 리팩토링 결과
 
-[계획](plan.md) · [체크리스트](checklist.md) · [결정 기록](context-notes.md) · [테스트 경량화 결과](test-slimming.md)
+> **학습 기록 · 구조 리팩터링 당시 기준.** 요구·선택·검증 수치는 해당 단계의 기록이다. 현재 구조·명령·정책 차이는 [현행 컨벤션](../week2/conventions.md)을 함께 확인한다.
+
+[결정 기록](context-notes.md) · [테스트 경량화 결과](test-slimming.md)
 
 ## 최종 구조
 

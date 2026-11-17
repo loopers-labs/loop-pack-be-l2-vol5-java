@@ -1,6 +1,6 @@
 # R01 이벤트 계약 · OrderConfirmed v1
 
-이 문서는 [상세 설계](plan.md)의 추천안을 풀어 쓴 wire/identity 초안이다. 아직 runtime에 연결한 계약 구현은 없다.
+이 문서는 현재 구현한 앱별 wire/identity 계약이다. 실제 테스트·확인 한계는 [검증 매핑](verification.md), 실행 설정은 [환경](../environment.md)을 따른다.
 사용자는 앱별 DTO·createdAt 재사용·snapshot 비교·최초 UUID 저장·추가 필드 무시를 [확정](trade-offs.md)했다.
 
 ## 형식

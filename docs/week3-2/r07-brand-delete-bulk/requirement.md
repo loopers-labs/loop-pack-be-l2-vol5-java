@@ -1,5 +1,7 @@
 # R07. 브랜드 삭제의 상품 일괄 삭제 전환
 
+> **학습 기록 · 3-2주차 당시 기준.** 요구·선택·검증 수치는 해당 단계의 기록이다. 현재 구조·명령·정책 차이는 [현행 컨벤션](../../week2/conventions.md)을 함께 확인한다.
+
 [전체 요구사항](../total_requirement.md) · 작업 브랜치: `volume-3/r07-brand-delete-bulk` · PR 대상: `volume-3/main`
 
 상태: 구현·검증 완료([결과](result.md)). 최종 check 260건 통과. 브랜치는 R04 브랜치(PR #18)에서 분기했고 R04 병합(PR #18) 후 main 기준으로 리베이스했다. [PR #19](https://github.com/corinB/loop-pack-be-l2-vol5-java/pull/19) 병합 완료.

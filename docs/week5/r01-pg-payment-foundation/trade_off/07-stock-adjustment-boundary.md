@@ -1,5 +1,7 @@
 # 재고 차감·복구 기록의 경계
 
+> **학습 기록 · 5주차 해당 단계 기준.** 당시 구현·선택·검증 수치를 보존한다. 현행 결제 흐름은 [상태 모델](../../states/total.md)과 연결된 회복 안내를 우선한다.
+
 [설계 질문 목록](total_trade_off.md) · [pay 복구 작업 분리 결정](06-recovery-progress-storage.md) · [전체 재고 정책](../../total_requirement.md)
 
 상태: **mall 별도 모델·동일 TX 복구 채택·세부 설계 전·구현 전**.

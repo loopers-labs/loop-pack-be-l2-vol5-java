@@ -1,5 +1,7 @@
 # 복구 작업 실행 권한의 만료·회수
 
+> **학습 기록 · 5주차 해당 단계 기준.** 당시 구현·선택·검증 수치를 보존한다. 현행 결제 흐름은 [상태 모델](../../states/total.md)과 연결된 회복 안내를 우선한다.
+
 [설계 질문 목록](total_trade_off.md) · [실행 권한 결정](08-recovery-claim-coordination.md) · [재확인 예산](../../r03-payment-resilience/trade_off/01-reconciliation-retry-policy.md)
 
 상태: **사용자 요청으로 보류·A/B 미채택·구현 전**. 만료 시간·갱신 주기·구체적인 필드는 정하지 않는다.

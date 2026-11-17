@@ -1,6 +1,8 @@
 # R01 진행 결과: 실패 기준선과 인덱스 2개 적용
 
-[요구사항](requirement.md) · [계획](plan.md) · [재현 절차](baseline/README.md) · [seed 실행 계획 해석](baseline/seed-explain-review.md)
+> **학습 기록 · 4주차 당시 기준.** 요구·선택·검증 수치는 해당 단계의 기록이다. 현재 구조·명령·정책 차이는 [현행 컨벤션](../../week2/conventions.md)을 함께 확인한다.
+
+[요구사항](requirement.md) · [재현 절차](baseline/README.md) · [seed 실행 계획 해석](baseline/seed-explain-review.md)
 
 2026-10-16 사용자 승인 조건으로 **상품 100만 개와 실제 좋아요 관계 적재·검증을 완료**했다.
 현재까지 확인한 실행 계획은 seed INSERT의 사전 `EXPLAIN`·`FORMAT=TREE`다.

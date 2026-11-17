@@ -1,5 +1,7 @@
 # 파사드 조율과 트랜잭션 경계
 
+> **학습 기록 · 5주차 해당 단계 기준.** 당시 구현·선택·검증 수치를 보존한다. 현행 결제 흐름은 [상태 모델](../../states/total.md)과 연결된 회복 안내를 우선한다.
+
 [설계 질문 목록](total_trade_off.md) · [요구사항](../requirement.md) · [mall 재고 모델 결정](../../r01-pg-payment-foundation/trade_off/07-stock-adjustment-boundary.md)
 
 상태: **파사드 분리 A·관찰 저장 TX 분리·주문 준비 CAS 채택·구현 전**.
@@ -93,7 +95,7 @@ R01의 `PaymentAttempt.startDispatch()`는 모델의 상태 전이이며, 이 �
 현재는 사용자 결정 기록이며 기능 구현·검증 완료를 뜻하지 않는다.
 
 후속 커밋 3에서 내부 준비 흐름을 구현했다. PrepareOrderPaymentFacade는 TX를 감싸지 않고, 별도 PrepareOrderPaymentService의 REQUIRES_NEW 준비 TX가 commit된 뒤 최초 발송 권한을 받는다.
-CAS 패자·유일 제약 실패자는 원래 TX 종료 후 별도 읽기 TX에서 기존 요청을 확인한다. 준비에는 카드/HTTP가 없고 실제 PG 호출은 confirm 전환 단계에서 연결한다. 구현 검증은 [리뷰 기록](../review.md)을 따른다.
+CAS 패자·유일 제약 실패자는 원래 TX 종료 후 별도 읽기 TX에서 기존 요청을 확인한다. 준비에는 카드/HTTP가 없고 실제 PG 호출은 confirm 전환 단계에서 연결한다. 구현 검증은 [통합한 리뷰 근거](../result.md)을 따른다.
 
 - 구체적인 클래스명·Context·UseCase 계약과 오류 반환 경계.
 - 결제 시도·복구 작업·주문·상품·mall 재고 기록의 잠금 순서와 실행 권한 확보 방식.

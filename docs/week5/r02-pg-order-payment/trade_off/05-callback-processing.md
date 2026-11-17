@@ -1,5 +1,7 @@
 # callback 처리 시점
 
+> **학습 기록 · 5주차 해당 단계 기준.** 당시 구현·선택·검증 수치를 보존한다. 현행 결제 흐름은 [상태 모델](../../states/total.md)과 연결된 회복 안내를 우선한다.
+
 [결정 목록](total_trade_off.md) · [공통 결과 반영](03-common-result-application.md) · [수동 대사](06-interrupted-payment-reconcile.md)
 
 상태: **요청 안의 동기 처리 구현·관련 검증·세 관점 기능 리뷰 완료**. 2026-10-22 사용자 선택을 기록한다.

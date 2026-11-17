@@ -1,8 +1,10 @@
 # R01 구현 결과
 
+> **학습 기록 · 5주차 해당 단계 기준.** 당시 구현·선택·검증 수치를 보존한다. 현행 결제 흐름은 [상태 모델](../states/total.md)과 연결된 회복 안내를 우선한다.
+
 2026-10-21 기준으로 **로컬 구현·검증을 완료했다.** 작업 브랜치는 `volume-5/r01-pg-payment-foundation`이며 대상은 `volume-5/main`이다. 2026-10-22 사용자 요청으로 [PR #24](https://github.com/corinB/loop-pack-be-l2-vol5-java/pull/24)를 게시했다. 사용자가 병합했으며 기준 브랜치의 병합 커밋은 `4b81541`이다.
 
-[요구사항](requirement.md) · [구현 계획·진행 기록](plan.md) · [전체 상태 흐름](../states/total.md) · [실행·SQL·보존 실험](../../../docker/payment-lab/README.md)
+[요구사항](requirement.md) · [테스트 PG 계약](../../../apps/test-pg/README.md) · [전체 상태 흐름](../states/total.md) · [실행·SQL·보존 실험](../../../docker/payment-lab/README.md)
 
 ## 이번 PR에서 사용할 수 있게 된 것
 

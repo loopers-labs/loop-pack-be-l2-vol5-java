@@ -22,7 +22,17 @@ public enum DomainErrorCode {
     PAYMENT_DISPATCH_NOT_ALLOWED("결제 요청을 새로 발송할 수 없는 상태입니다."),
     PAYMENT_RECOVERY_NOT_ALLOWED("복구 작업의 실행 권한 또는 조회 예산이 유효하지 않습니다."),
     STOCK_ADJUSTMENT_ALREADY_FINISHED("이미 종결한 재고 처리 결과를 바꿀 수 없습니다."),
-    PAYMENT_OBSERVATION_NOT_ALLOWED("발송 시작을 기록한 결제 시도에만 결과를 반영할 수 있습니다.");
+    PAYMENT_OBSERVATION_NOT_ALLOWED("발송 시작을 기록한 결제 시도에만 결과를 반영할 수 있습니다."),
+    COUPON_INVALID_CAMPAIGN_NAME("쿠폰 캠페인 이름은 앞뒤 공백을 제외하고 1자 이상 100자 이하여야 합니다."),
+    COUPON_INVALID_BENEFIT("쿠폰 혜택 설명은 앞뒤 공백을 제외하고 1자 이상 500자 이하여야 합니다."),
+    COUPON_INVALID_QUOTA("발급 한도는 양수이고 발급 수는 0 이상 한도 이하여야 합니다."),
+    COUPON_INVALID_PERIOD("쿠폰 발급 시작 시각은 종료 시각보다 빨라야 합니다."),
+    COUPON_SLOTS_NOT_READY("캠페인 한도와 준비된 쿠폰 슬롯 수가 일치하지 않습니다."),
+    COUPON_CAMPAIGN_NOT_STARTED("아직 쿠폰 발급 기간이 시작되지 않았습니다."),
+    COUPON_CAMPAIGN_ENDED("쿠폰 발급 기간이 종료되었습니다."),
+    COUPON_CAMPAIGN_INACTIVE("쿠폰 발급이 비활성화된 캠페인입니다."),
+    COUPON_SOLD_OUT("발급 가능한 쿠폰이 모두 소진되었습니다."),
+    COUPON_SLOT_ALREADY_ISSUED("이미 발급에 사용한 쿠폰 슬롯입니다.");
 
     private final String message;
 

@@ -1,5 +1,7 @@
 # 주문 확정의 업무 규칙을 어디에 명시할까?
 
+> **학습 기록 · 3주차 당시 기준.** 요구·선택·검증 수치는 해당 단계의 기록이다. 현재 구조·명령·정책 차이는 [현행 컨벤션](../../../week2/conventions.md)을 함께 확인한다.
+
 [← 전체 선택 현황](total_trade_off.md)
 
 > 후속 결정(R09): 주문 확정은 파사드(`ConfirmOrderFacade`)가 주문·지갑·상품 Service를 순서대로 호출하는 구조로 바뀌고 `OrderConfirmationPolicy`는 해체된다. 이 문서의 "도메인 서비스로 묶기" 결정을 대체한다([R09 01](../../../week3-2/r09-order-confirm-facade/trade_off/01-orchestration.md)).

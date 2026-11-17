@@ -1,5 +1,7 @@
 # 5주차 전체 요구사항 · 재고 선차감과 외부 결제
 
+> **학습 기록 · 5주차 해당 단계 기준.** 당시 구현·선택·검증 수치를 보존한다. 현행 결제 흐름은 [상태 모델](states/total.md)과 연결된 회복 안내를 우선한다.
+
 ## 목표·기준·현재 상태
 
 기존 주문의 포인트 결제를 로컬 테스트 PG로 교체한다. 재고를 먼저 차감해 저장하고 PG를 호출한다.
@@ -21,7 +23,7 @@
 - [상태 문서: 전체 흐름·주문·재고·결제](states/total.md)
 - [학습 자료 원문](reference/learning.md)
 - [Implementation Quest·체크리스트·Technical Writing Quest 원문](reference/implementation-quest.md)
-- [저장소 작업 규칙](../../AGENTS.md), [구조·명령 안내](../../CLAUDE.md)
+- [저장소 작업 규칙](../../AGENTS.md), [구조·명령 안내](../week2/conventions.md)
 - [4주차 최종 범위와 결과 안내](../week4/total_requirement.md)
 
 두 원문은 사용자 첨부를 내용 변경 없이 보존한다. 사용자 확정 사항, 원문의 요구, 아직 결정하지 않은 설계를 구분한다.
@@ -58,7 +60,7 @@ TX 밖:     PG 결제 생성 또는 기존 거래 조회
 문서의 '재고 예약'은 특정 미완료 주문을 위해 재고를 확보한 의미다. 이번 구현 방향은 기존 가용 재고를 먼저 줄이고,
 주문별 차감 수량과 처리 상태를 DB에 보존하는 것이다. R01은 mall의 StockAdjustment/품목 기록을 저장한다. R02에서 실제 상품 수량 변경과 업무 TX 연결을 완료했다.
 PG HTTP 호출 동안 DB 트랜잭션이나 재고 잠금을 유지하지 않는다.
-application의 조율 파사드와 별도 준비/공통 결과 반영 TX 컴포넌트를 두는 [A안](r02-pg-order-payment/trade_off/01-facade-transaction-boundary.md)을 채택했다. 전체 흐름을 하나의 TX로 감싸지 않고 PG HTTP는 TX 밖에서 수행한다. callback·수동 대사·자동 재확인은 같은 결과 반영 TX 진입점을 사용한다. R02에서 확정한 클래스/Context·저장/잠금 순서는 [구현 계획](r02-pg-order-payment/plan.md)을 따른다.
+application의 조율 파사드와 별도 준비/공통 결과 반영 TX 컴포넌트를 두는 [A안](r02-pg-order-payment/trade_off/01-facade-transaction-boundary.md)을 채택했다. 전체 흐름을 하나의 TX로 감싸지 않고 PG HTTP는 TX 밖에서 수행한다. callback·수동 대사·자동 재확인은 같은 결과 반영 TX 진입점을 사용한다. R02에서 확정한 클래스/Context·저장/잠금 순서는 [결과 반영·실패 계약](r02-pg-order-payment/requirement.md#통합한-결과-반영실패-처리-계약)을 따른다.
 후속 결정으로 검증 관찰 저장 진입점도 별도 짧은 TX로 분리해 TX B 전에 commit한다. TX B 실패로 관찰이 사라지지 않으며 저장된 신뢰할 종결 결과는 재조회 없이 재적용할 수 있다. 특히 거래 없는 확정 거절은 저장 근거로 재적용하고 빈 목록/404로 실패를 새로 판단하지 않는다. 관찰 저장 전 종료의 미확인 한계는 유지한다.
 
 | PG 관찰 | 주문·결제 처리 | 재고 처리 |
@@ -76,7 +78,7 @@ application의 조율 파사드와 별도 준비/공통 결과 반영 TX 컴포�
 ### 결제 시도·외부 결과
 
 - 결제 시도는 pay의 독립 모델·저장소로 두고 orderId로 주문과 연결한다. OrderRecord는 주문 확정 기록으로 유지하며 application이 같은 commerce DB의 로컬 TX에서 주문·시도·재고를 조율한다.
-- [확인한 결제 결과와 복구 진행을 나눈다](r01-pg-payment-foundation/trade_off/05-payment-attempt-state.md). 수동 전환·조회 오류가 검증한 PG 사실을 덮어쓰지 않으며, PG 결과 확인과 내부 업무 반영 완료를 구분한다. R01의 구체 상태·허용 조합은 [구현 계획](r01-pg-payment-foundation/plan.md)과 [결제 상태](states/payment.md)를 따른다.
+- [확인한 결제 결과와 복구 진행을 나눈다](r01-pg-payment-foundation/trade_off/05-payment-attempt-state.md). 수동 전환·조회 오류가 검증한 PG 사실을 덮어쓰지 않으며, PG 결과 확인과 내부 업무 반영 완료를 구분한다. commerce의 구체 상태·허용 조합은 [결제 상태](states/payment.md)와 연결된 결정 기록을 따른다.
 - [복구 진행은 별도 pay 작업 모델·저장소로 분리](r01-pg-payment-foundation/trade_off/06-recovery-progress-storage.md)한다. 사용 횟수·현재 실행/진행·최근 시각·오류를 우선 보존하고 같은 commerce DB의 로컬 TX에서 조율한다. commerce의 지터/다음 예약 시각·재시작 대기 재개 정보는 영속화하지 않는다. PG의 완료 예정 시각은 별도 사실로 저장한다.
 - [재고 차감·복구 기록은 mall의 별도 모델](r01-pg-payment-foundation/trade_off/07-stock-adjustment-boundary.md)로 둔다. 확정 실패 반영 TX에서 실제 재고 증가와 복구 완료 기록·관련 주문/결제/작업 변경을 함께 보호한다. 별도 비동기 재고 복구 worker는 두지 않으며 저장 구조는 R01에서 구현했고 실제 업무 반영의 잠금 순서도 R02에서 확정·구현했다.
 - R02 전환 후 신규 결제와 기존 미확정 DRAFT의 결제는 PG를 사용한다. 포인트 차감은 0회이며 과거 POINT 결제 사실은 보존한다.
@@ -100,10 +102,10 @@ PG base URL·callback URL은 고객 입력이 아닌 로컬 설정으로 고정�
 R03에서 연결한 정상 실행은 [Resilience4j Retry + DB 진행 기록](r03-payment-resilience/trade_off/06-reconciliation-execution.md)으로 처리한다. 2026-10-22 후속 결정으로 자동 조회 Retry와 공유 조회 CircuitBreaker를 Resilience4j로 통일해 기존 Spring Retry @Retryable 선택을 대체했다. 기존 재조회 정책·30초 예산·DB 기록은 유지하며 [연결 문서](r03-payment-resilience/trade_off/03-resilience-library-wiring.md)를 따른다. 후속 결정으로 장애/재시작 뒤 자동 재개는 [운영 담당자 미완료 목록 조회·수동 대사](r02-pg-order-payment/trade_off/06-interrupted-payment-reconcile.md)로 변경했다. 자동 만료/갱신·회수는 보류한다.
 조회 작업 직전에 [사용 횟수를 DB에 기록·commit](r03-payment-resilience/trade_off/07-retry-attempt-accounting.md)한다. 기록 뒤 실제 조회 전에 종료돼도 소비한 회차를 되돌리지 않는다.
 복구 작업 실행 권한은 [멱등성 키 + 조건부 상태 갱신 + 실행 식별자](r01-pg-payment-foundation/trade_off/08-recovery-claim-coordination.md)로 보호한다. 명시적 비관적 잠금 조회를 필수로 두지 않고 조건부 갱신 성공/commit 후 PG 조회한다. DB UPDATE 내부 잠금까지 없다는 뜻은 아니며 상품 재고 동시성·공통 결과 반영 TX의 보호는 유지한다. 수동 처리 조건·필드/갱신·영속성 정합성은 R02/R03 계획과 구현을 따른다. 자동 lease는 도입하지 않는다.
-수동 대사는 미완료 작업의 현재 실행 ID·상태를 조건으로 새 실행 ID를 기록해 옛 진행 갱신을 차단한다. 중단 RUNNING도 인계할 수 있어야 하며 일반 save가 최신 실행/횟수를 되돌리지 않도록 한다. 정확한 조건식·허용 상태·응답·JPA 정합성 처리는 R02 [구현 계획](r02-pg-order-payment/plan.md)과 [결과](r02-pg-order-payment/result.md)를 따른다.
+수동 대사는 미완료 작업의 현재 실행 ID·상태를 조건으로 새 실행 ID를 기록해 옛 진행 갱신을 차단한다. 중단 RUNNING도 인계할 수 있어야 하며 일반 save가 최신 실행/횟수를 되돌리지 않도록 한다. 정확한 조건식·허용 상태·응답·JPA 정합성 처리는 R02 [결과 반영·실패 계약](r02-pg-order-payment/requirement.md#통합한-결과-반영실패-처리-계약)과 [결과](r02-pg-order-payment/result.md)를 따른다.
 [HTTP 설정](r01-pg-payment-foundation/trade_off/03-http-client-settings.md)은 RestClient + Apache HttpClient 5·자동 retry/redirect 차단으로 확정했다. 연결 1초·연결 풀 대기 1초·응답 대기 2초를 초기값으로 사용하며 전체 호출의 절대 제한으로 해석하지 않는다.
 [adapter 결과·검증 분담](r01-pg-payment-foundation/trade_off/04-adapter-fixture.md)은 검증한 관찰/확인 불가 사유를 결과값으로 반환하는 A다. 실제 PG에서 정상·지연·유실·DB 보존을, 작은 테스트용 HTTP 서버에서 불완전 응답 등을 검증한다. 복구 실행기와 회로는 반환 결과를 분류해 연결한다.
-총 예산·회차 기록/실행 ID 조건부 갱신·Resilience4j 버전과 사유 코드는 R03 [계획](r03-payment-resilience/plan.md)과 [결과](r03-payment-resilience/result.md) 기준으로 구현·검증했다. 결제 생성 재시도는 허용하지 않는다. HTTP 응답 검증과 실제 timeout은 R01 이후 검사 및 독립 PG 실험으로 확인했다.
+총 예산·회차 기록/실행 ID 조건부 갱신·Resilience4j 버전과 사유 코드는 R03 [실행 권한·종료 계약](r03-payment-resilience/requirement.md#통합한-실행-권한종료-경계)과 [결과](r03-payment-resilience/result.md) 기준으로 구현·검증했다. 결제 생성 재시도는 허용하지 않는다. HTTP 응답 검증과 실제 timeout은 R01 이후 검사 및 독립 PG 실험으로 확인했다.
 
 2026-10-22 R03 후속 결정: 자동/수동/callback PG 조회는 하나의 회로를 공유한다. 차단 시 자동은 확보한 회차를 유지하고 즉시 수동 전환하며 실제 HTTP/회로 표본은 0이다. 첫 자동 조회는 작업 시작 후 즉시, 명확한 실행기 접수 거절은 100ms 뒤 전달만 1회 재시도한다. timeout·통신·5xx·408·429·잘못된 정상 응답은 회로 실패, 검증한 결과/계약상 거래 없음은 정상, 그 외 4xx·식별 충돌·우리 DB/실행기 오류·차단은 제외다. [집계/재조회/업무 처리 표](r03-payment-resilience/trade_off/02-lookup-circuit-breaker.md)를 따른다. 회로 수치는 최근 10건/최소 5건·실패율 50%·1초 초과 느림 비율 50%·OPEN 10초 후 요청 기반 탐색·HALF_OPEN 표본 2건/최대 10초 미판정 시 재차단이다. 자동 조회 예산은 최초 전달부터30초, 내부 반영은 전체 rollback 확인된 MySQL 데드락만100ms 뒤 추가1회로 확정해 구현·검증했다.
 
@@ -147,9 +149,9 @@ confirm·고객 상세 GET의 소유권/타인 404와 주문 관리자 GET의 fi
 | 2 | R02 · `volume-5/r02-pg-order-payment` | confirm 전환·멱등성·발송 제어·TX 분리·실패 복구·callback·reconcile·조회/소유권 경계 | 구현·통합/재시작·필수 전체 검사 완료, PR #25 병합 완료 |
 | 3 | R03 · `volume-5/r03-payment-resilience` | 조회 회로·fallback·제한된 재조회·통합 장애 실험·회귀·설계/기술 글 정리 | 구현·리뷰·전체509건·실제PG실험14건·PR #26 병합 완료. 반환 캐시2건도 후속 관련24건/테스트 Checkstyle로 검증 완료 |
 
-- R01: [요구사항](r01-pg-payment-foundation/requirement.md) · [설계 질문](r01-pg-payment-foundation/trade_off/total_trade_off.md) · [구현 계획](r01-pg-payment-foundation/plan.md) · [실제 결과](r01-pg-payment-foundation/result.md)
-- R02: [요구사항](r02-pg-order-payment/requirement.md) · [설계 질문](r02-pg-order-payment/trade_off/total_trade_off.md) · [구현 계획](r02-pg-order-payment/plan.md) · [실제 결과](r02-pg-order-payment/result.md)
-- R03: [요구사항](r03-payment-resilience/requirement.md) · [설계 질문](r03-payment-resilience/trade_off/total_trade_off.md) · [상세 계획](r03-payment-resilience/plan.md) · [실제 결과](r03-payment-resilience/result.md) · [운영 확인](r03-payment-resilience/operations.md) · [기술 글](r03-payment-resilience/technical-article.md)
+- R01: [요구사항](r01-pg-payment-foundation/requirement.md) · [설계 질문](r01-pg-payment-foundation/trade_off/total_trade_off.md) · [테스트 PG 계약](../../apps/test-pg/README.md) · [실제 결과](r01-pg-payment-foundation/result.md)
+- R02: [요구사항](r02-pg-order-payment/requirement.md) · [설계 질문](r02-pg-order-payment/trade_off/total_trade_off.md) · [결과 반영·실패 계약](r02-pg-order-payment/requirement.md#통합한-결과-반영실패-처리-계약) · [실제 결과](r02-pg-order-payment/result.md)
+- R03: [요구사항](r03-payment-resilience/requirement.md) · [설계 질문](r03-payment-resilience/trade_off/total_trade_off.md) · [실행 권한·종료 계약](r03-payment-resilience/requirement.md#통합한-실행-권한종료-경계) · [실제 결과](r03-payment-resilience/result.md) · [운영 확인](r03-payment-resilience/operations.md) · [기술 글](r03-payment-resilience/technical-article.md)
 
 각 PR의 대상은 `volume-5/main`이다. 앞 PR을 검증·병합한 뒤 최신 기준 브랜치에서 다음 작업 브랜치를 생성한다.
 작업 브랜치끼리 직접 병합하지 않으며 세 작업 브랜치를 준비 시점에 미리 만들지 않는다.

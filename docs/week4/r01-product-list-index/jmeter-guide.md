@@ -1,5 +1,7 @@
 # JMeter 변경 전 측정: 실행하고 보고서 읽기
 
+> **학습 기록 · 4주차 당시 기준.** 요구·선택·검증 수치는 해당 단계의 기록이다. 현재 구조·명령·정책 차이는 [현행 컨벤션](../../week2/conventions.md)을 함께 확인한다.
+
 [측정 설정](trade_off/04-jmeter-run-settings.md) · [JMX](jmeter/product-list.jmx) · [요구사항](requirement.md)
 
 **실시간 화면으로 보려면 [GUI 실행 안내](jmeter-ui-guide.md)를 따른다.** 아래는 기존 CLI 전체 실행 절차다.

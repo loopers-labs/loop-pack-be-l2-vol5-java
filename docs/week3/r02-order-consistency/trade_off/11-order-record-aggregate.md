@@ -1,5 +1,7 @@
 # 주문 기록을 주문 애그리거트 안에 둘까? (Order ↔ OrderRecord 1:1)
 
+> **학습 기록 · 3주차 당시 기준.** 요구·선택·검증 수치는 해당 단계의 기록이다. 현재 구조·명령·정책 차이는 [현행 컨벤션](../../../week2/conventions.md)을 함께 확인한다.
+
 [← 전체 선택 현황](total_trade_off.md) · [이전 결정: 10 주문 확정 기록 소유](10-order-record-ownership.md) · [패키지 리팩토링 결정 기록](../../../refactor/context-notes.md)
 
 현재 상태: 패키지 구조 리팩토링 중 사용자와 문답으로 합의했다. 구현은 `volume-3/refacto-order-aggregate` 브랜치에서 진행한다.

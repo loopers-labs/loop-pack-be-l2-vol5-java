@@ -1,6 +1,8 @@
 # R01 구현 결과
 
-[요구사항](requirement.md) · [트레이드오프](trade_off/total_trade_off.md) · [구현 계획](plan.md) · [전체 요구사항](../total_requirement.md)
+> **학습 기록 · 3주차 당시 기준.** 요구·선택·검증 수치는 해당 단계의 기록이다. 현재 구조·명령·정책 차이는 [현행 컨벤션](../../week2/conventions.md)을 함께 확인한다.
+
+[요구사항](requirement.md) · [트레이드오프](trade_off/total_trade_off.md) · [전체 요구사항](../total_requirement.md)
 
 > 후속 결정: 이 문서는 작성 당시의 패키지·클래스 이름을 기록한다. 이후 패키지 구조 리팩토링으로 경로가 `<layer>.<ctx>.<종류>` 구조로 바뀌었다([결정 기록](../../refactor/context-notes.md)).
 >

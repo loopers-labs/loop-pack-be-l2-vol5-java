@@ -1,6 +1,8 @@
 # R04 구현 결과
 
-[요구사항](requirement.md) · [트레이드오프](trade_off/total_trade_off.md) · [구현 계획](plan.md) · [전체 요구사항](../total_requirement.md)
+> **학습 기록 · 3-2주차 당시 기준.** 요구·선택·검증 수치는 해당 단계의 기록이다. 현재 구조·명령·정책 차이는 [현행 컨벤션](../../week2/conventions.md)을 함께 확인한다.
+
+[요구사항](requirement.md) · [트레이드오프](trade_off/total_trade_off.md) · [전체 요구사항](../total_requirement.md)
 
 작업 브랜치: `volume-3/r04-like-sort-index` (R03 브랜치에서 분기, R03 병합(PR #16) 후 `volume-3/main` 위로 리베이스, 리베이스 전후 트리 동일) · PR 대상: `volume-3/main`
 
@@ -38,7 +40,7 @@ GET /api/v1/products?sort=likes_desc[&brandId=]
 
 ### EXPLAIN (MySQL 8.0.46, 상품 100만 건 중 활성 95만, 브랜드 1,000개, 1회 측정)
 
-스크립트는 [explain/](explain/)에 있다. 변경 전후 같은 데이터로 측정했다. 상세 표는 [plan.md 검증 기록](plan.md#검증-기록)에 있다.
+스크립트는 [explain/](explain/)에 있다. 변경 전후 같은 데이터로 측정했다. 상세 표는 [통합한 EXPLAIN 상세 기록](#통합한-explain-상세-기록)에 있다.
 
 | 쿼리 | 변경 전 | 변경 후 |
 |---|---|---|
@@ -101,3 +103,38 @@ GET /api/v1/products?sort=likes_desc[&brandId=]
 - **문답 뒤 계획 단계에서 새 문제가 나왔다.** 전체 개수 캐시가 테스트 사이로 새는 문제는 문답에서 보지 못했다. 코드 구조(공유 싱글톤 빈)까지 내려가야 보이는 문제는 계획 작성 시 다시 확인해야 한다.
 - **테스트가 무엇을 증명하는지 확인해야 한다.** 에이전트의 덮어쓰기 테스트는 통과했지만 보호 설정이 없어도 통과하는 구조였다. 보호 장치를 잠시 빼서 테스트가 실패하는지 보는 확인이 유효했다.
 - **위임 시간이 길었다(약 25분).** 대량 데이터 적재와 커밋마다의 테스트 실행 때문이었다. 이를 계기로 테스트 기동 비용을 측정했고, `check`의 테스트를 한 JVM으로 합치는 별도 변경(PR #17)으로 이어졌다.
+
+## 통합한 EXPLAIN 상세 기록
+
+### EXPLAIN 환경
+
+MySQL 8.0.46(`docker-mysql-1`, `docker/infra-compose.yml`). 스크래치 스키마 `r04_before`/`r04_after`. 브랜드 1,000개, 상품 1,000,000건(삭제 50,000건 = 5%, 브랜드당 약 1,000건), `product_like_counts` 610,000행(1% 상품 1만~6만, 나머지 0~10, 약 39% 상품은 집계 행 없음). 스크립트는 [explain/](explain/) 참고(`before.sql` → `seed.sql` → `explain.sql`·`explain_before.sql`, 이후 `after.sql` → `explain.sql`·`explain_after.sql`). 시간은 `EXPLAIN ANALYZE`의 첫 실행(실제 시간) 값이다.
+
+### 변경 전 (커밋 1)
+
+| 쿼리 | type / key | rows(추정) | Extra | 실행 시간 |
+|---|---|---|---|---|
+| 좋아요순, 필터 없음 | p: ref / `idx_products_deleted_brand_created`(deleted만 사용), b·c: eq_ref PRIMARY | 497,280 (실제 950,000행 읽음) | `Using temporary; Using filesort` | 9,112 ms |
+| 좋아요순, 브랜드 필터(500) | b: const, p: ref / `idx_products_deleted_brand_created`(deleted, brand_id), c: eq_ref | 1,000 | `Using temporary; Using filesort` | 34 ms |
+| COUNT, 필터 없음(브랜드 조인) | b: ref / `idx_brands_deleted_created`, p: ref / `idx_products_deleted_brand_price` (covering) | 1,000 x 993 | `Using index` | 286 ms |
+| COUNT, 브랜드 필터(브랜드 조인) | b: const, p: ref / `idx_products_deleted_brand_price` (covering) | 1,000 | `Using index` | 0.31 ms |
+| 최신순, 필터 없음 (기록만) | p: ref / `idx_products_deleted_brand_created`(deleted만 사용) | 497,280 (실제 950,000행 읽음) | `Using filesort` | 5,583 ms |
+| 가격순, 필터 없음 (기록만) | p: ref / `idx_products_deleted_brand_created`(가격 인덱스 미사용) | 497,280 (실제 950,000행 읽음) | `Using filesort` | 5,700 ms |
+
+### 변경 후 (커밋 7)
+
+`after.sql`(`products.like_count` + 인덱스 2개, 데이터는 `r04_before`에서 복사)로 만든 `r04_after`에서 `explain_after.sql`·`explain.sql` 실행. 같은 MySQL 8.0.46.
+
+| 쿼리 | type / key | rows(추정) | Extra | 실행 시간 |
+|---|---|---|---|---|
+| 좋아요순, 필터 없음 | p: ref / `idx_products_deleted_like`, b: eq_ref PRIMARY | 496,944 (LIMIT 20이라 실제 20행만 읽음) | `Using filesort`·`Using temporary` 없음 | 0.30 ms (변경 전 9,112 ms) |
+| 좋아요순, 브랜드 필터(500) | b: const, p: ref / `idx_products_deleted_brand_like` | 1,000 (LIMIT 20이라 실제 20행만 읽음) | filesort·temporary 없음 | 0.75 ms (변경 전 34 ms) |
+| COUNT, 필터 없음(products만) | p: ref / `idx_products_deleted_brand_price` (covering) | 496,944 (실제 950,000행 스캔) | `Using index` | 177 ms (변경 전 286 ms) |
+| COUNT, 브랜드 필터(products만) | p: ref / `idx_products_deleted_brand_price` (covering) | 1,000 | `Using index` | 0.24 ms (변경 전 0.31 ms) |
+| 최신순, 필터 없음 (기록만, 변경 없음) | p: ref / `idx_products_deleted_brand_created`(deleted만 사용) | 496,944 (실제 950,000행 읽음) | `Using filesort` | 16,328 ms |
+| 가격순, 필터 없음 (기록만, 변경 없음) | p: ref / `idx_products_deleted_brand_created` | 496,944 (실제 950,000행 읽음) | `Using filesort` | 4,522 ms |
+
+- 좋아요순은 두 경우 모두 새 인덱스를 사용하고 filesort가 사라졌다. 기대(중단 조건 미해당)와 일치한다.
+- 필터 없는 COUNT는 여전히 인덱스 950,000건을 훑는다(브랜드 조인은 제거됨). 그래서 앱에서 전체 개수를 TTL 캐시한다.
+- 최신순·가격순(필터 없음)의 시간은 `brand_id`가 선두 다음 컬럼이라 인덱스를 타지 못해 filesort가 남은 결과이며 이번 범위 밖이다. 변경 전후 시간 차이(5.6s/5.7s → 16.3s/4.5s)는 인덱스가 늘어난 스키마의 버퍼 풀 상태 등 측정 잡음으로 보이며 실행 계획은 동일하다(단발 측정, 반복 측정 아님).
+- 이 EXPLAIN의 좋아요순 쿼리는 SQL로 옮긴 것이다. 앱이 실제로 내는 QueryDSL SQL은 `select ... from products p1_0 join brands b1_0 on ... where p1_0.deleted=0 and b1_0.deleted=0 order by p1_0.like_count desc, p1_0.id desc limit ?, ?` 형태이다(Hibernate가 `deleted`를 bit로 비교하므로 동일 계획으로 기대하지만, 앱 실행 로그로 재확인한 것은 아님).

@@ -1,5 +1,7 @@
 # 사용자 잔액 도메인을 어떻게 모델링할까? (Point → Wallet)
 
+> **학습 기록 · 3주차 당시 기준.** 요구·선택·검증 수치는 해당 단계의 기록이다. 현재 구조·명령·정책 차이는 [현행 컨벤션](../../../week2/conventions.md)을 함께 확인한다.
+
 [← 전체 선택 현황](total_trade_off.md)
 
 > 후속 결정: 이 문서는 작성 당시의 패키지·클래스 이름을 기록한다. 이후 패키지 구조 리팩토링으로 경로가 `<layer>.<ctx>.<종류>` 구조로 바뀌었고([결정 기록](../../../refactor/context-notes.md)), `OrderBill`은 ordering의 `OrderRecord`로 바뀌어 `Order` 애그리거트의 자식이 되었다([10번](10-order-record-ownership.md)·[11번](11-order-record-aggregate.md) 트레이드오프).
@@ -71,8 +73,10 @@ flowchart TB
 
 `Money.java` 확인 결과 구조적 검증(음수 금지)은 이미 `Money`가, 업무 규칙(잔액 부족)은 `Point`(신규 `Wallet`)가 담당하는 구조였다(`Point.use()`가 직접 `amount > balance` 검사 후 `Money.of(...)`로 재구성). 2단계 검증에 필요한 건 `Wallet.ensureSufficientBalance(Money)` non-mutating 메서드 하나뿐이며, 잔액이 가격·주문총액과 다른 산술 규칙을 가질 근거가 없어 새 VO 계층을 만들지 않는다.
 
-## 구현 계획·검증으로 이어갈 것
+## 당시 계획 반영과 구현 결과
 
-이 결정은 [구현 계획](../plan.md)의 새 커밋 1(Point→Wallet 전환)로 먼저 진행하고, 기존 커밋 1~7은 커밋 2~8로 이어간다.
-`Stock.ensureCanDecrease(int)`/`Wallet.ensureSufficientBalance(Money)` non-mutating 검증과 `Wallet.use(...)`가 `PointBill`을 생성해 반환하는 방식은 새 커밋 2(옛 커밋 1, 도메인 규칙 분리)에서 함께 구현한다.
+완료 계획의 고유 근거는 결과 문서에 통합했다. 아래 커밋 순서·TODO는 당시 계획의 배경이며 현재 작업 목록이 아니다.
+
+이 결정은 당시 계획의 새 커밋 1(Point→Wallet 전환)에 먼저 반영했고 기존 커밋 1~7을 2~8로 재배치했다.
+`Stock.ensureCanDecrease(int)`/`Wallet.ensureSufficientBalance(Money)` non-mutating 검증과 `Wallet.use(...)`의 `PointBill` 반환은 새 커밋 2(옛 커밋 1)의 범위였다. 실제 완료·검증은 [결과](../result.md)를 따른다.
 `OrderBill` 생성 책임은 이 문서가 다루는 범위가 아니다 — [Order/OrderBill의 컨텍스트 경계](08-bill-creation-boundary.md)에서 별도로 정리했다.

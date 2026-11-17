@@ -1,6 +1,8 @@
 # R02 상품 상세 캐시 전후 측정
 
-[요구사항](requirement.md) · [계획](plan.md) · [실제 결과](result.md)
+> **학습 기록 · 4주차 당시 기준.** 요구·선택·검증 수치는 해당 단계의 기록이다. 현재 구조·명령·정책 차이는 [현행 컨벤션](../../week2/conventions.md)을 함께 확인한다.
+
+[요구사항](requirement.md) · [구현·검증 결과](result.md)
 
 같은 새 JAR의 Caffeine OFF/ON을 비교한다. R01 GUI JMX는 수정하거나 사용하지 않는다.
 명령을 실행하기 전에는 API 기동·DB 확인·JMeter 요청이 발생하지 않는다. 기본 모드는 읽기 전용 사전 확인이다.

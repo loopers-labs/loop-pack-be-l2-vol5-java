@@ -1,7 +1,7 @@
 # R01 Inbox·상품 구매 활동 저장 설계
 
-[상세 설계](plan.md) · [이벤트 계약](event-contract.md). 아래는 설계 DDL이며 DB에 적용하지 않았다.
-snapshot 저장·필드 비교는 사용자 T03 선택으로 확정했다. 구체 컬럼·나머지 처리 정책은 [논의 중인 설계](trade-offs.md)다.
+[이벤트 계약](event-contract.md) · [현재 실행](../environment.md). 아래는 구현한 저장 경계 설명이다. 실제 적용 SQL은 docker/payment-lab의008·009·010을 기준으로 한다.
+snapshot 필드 비교와 Inbox/활동의 같은 TX를 유지한다. 실제 DDL·rollback 검증의 범위는 [검증 매핑](verification.md)과 [결과](../r03-delivery-recovery/result.md)를 따른다.
 
 ## 저장 책임
 
@@ -86,7 +86,7 @@ CREATE TABLE product_purchase_activities (
       └─ rollback → 이번 TX의 Inbox/활동 모두 없음
 
 완료된 같은 사실 재수신 → no-op → ack 가능
-완료 기록과 다른 사실 수신 → 충돌 → 별도 DB 실패 기록 → commit 뒤 recovered offset 진행
+완료 기록과 다른 사실 수신 → 충돌 → 별도 DB 실패 기록 → commit 정상 반환 뒤 listener 직접 ack
 ```
 
 commit 후 offset ack가 실패해도 DB 결과는 유지한다. 재수신에서 같은 완료 사실을 확인한 뒤 다시 ack한다.
@@ -143,7 +143,8 @@ Facade에는 외부 TX를 허용하지 않고 proxy 자기 호출로 경계를 �
 제약 이름의 DB prefix/인용부호는 드라이버가 제공하는 범위에서 정규화하되 임의 문구를 추측하지 않는다.
 구매 활동의 유일 제약·NOT NULL·길이·FK·연결·데드락·기타 오류는 이 후보로 취급하지 않는다.
 constraint 정보를 확인하지 못하거나 rollback이 실패했다면 성공으로 바꾸지 않고 소비 실패로 남긴다.
-실제 드라이버가 반환한 제약 정보와 rollback/별도 TX 동작은 구현 시 MySQL 8.0 검사로 확정한다.
+실제 MySQL의 제약 정보·경합 패자 rollback·별도 TX 재판정은 PurchaseActivityIntegrationTest의 구현과 당시 실행 근거를 확인한다.
+[검증 매핑](verification.md)과 [결과](../r03-delivery-recovery/result.md)를 따르며 이 문서 정리에서 새 DB 검사를 실행한 것은 아니다.
 
 ## 충돌 판정
 

@@ -12,13 +12,13 @@
 | R01 사용자 선택 | 앱별 DTO와 JSON 계약 검사, 기존 확정 기록 createdAt 재사용, 정규화 snapshot 필드 비교 |
 | R01 추가 선택 | 최초 UUID 생성·저장, 모르는 추가 필드 무시, 개별 최종 실패의 DB 보관과 commit 뒤 offset 진행, 공통 DB 장애 시 리스너 중단·offset 유지 |
 | 최종 구조 | 주문 확정과 Outbox 원자적 저장 → 단일 relay → Kafka → Inbox와 구매 활동 원자적 저장 |
-| 현재 상태 | 초기 준비 완료. R01은 T01~T08 사용자 선택을 반영한 설계이며 업무 기능은 미구현 |
+| 현재 상태 | R01~R03 구현·당시 검증 완료. 최종 발행은 Outbox이며 직접 발행은 보존 revision의 학습 경로 |
 
 기존 5주차 PG·예약(선차감 기록)·callback/reconcile·소유권·이전 POINT·상품 삭제/비노출 규칙을 보존한다.
 로컬 출발 커밋은 사용자의 과거 인계 문서 삭제를 포함한다. 해당 삭제와 사용자 JMeter 수정은 보존한다.
-준비·현재 검증은 [실행 환경](environment.md)과 [준비 결과](initial-setup.md), 순서는 [개발 계획](development-plan.md)을 따른다.
-R01의 구체 계약·저장·실행 설정과 검증은 [상세 설계 초안](r01-order-events-inbox/plan.md)에 제안했다.
-[트레이드오프와 질문](r01-order-events-inbox/trade-offs.md)의 사용자 선택을 반영했다. 세부 기술 수치는 구현 제안으로 구분한다.
+현재 실행은 [환경](environment.md), 실제 근거는 [결과](r03-delivery-recovery/result.md), 확인 경계는 [검증 매핑](r01-order-events-inbox/verification.md)을 따른다.
+R01 직접 발행/Inbox → R02 Outbox/relay → R03 누락 복구 순서로 학습했다. 아래 요구사항을 전부 새로 재실행했다는 뜻은 아니다.
+[결정 기록](r01-order-events-inbox/trade-offs.md)의 선택과 이후 구현을 구분하며 코드에 없는 제안값을 현행 설정으로 사용하지 않는다.
 
 원문: [W6 학습](reference/week6-learning.md) · [W6 과제](reference/week6-implementation-quest.md) ·
 [W7 학습](reference/week7-learning.md) · [W7 과제](reference/week7-implementation-quest.md).
@@ -29,7 +29,7 @@ R01의 구체 계약·저장·실행 설정과 검증은 [상세 설계 초안](
 
 | 항목 | 계약 |
 |---|---|
-| topic | `order-events`; 테스트는 고유 suffix로 격리 |
+| topic | `order-events`; 테스트는 독립 broker 또는 고유 topic으로 격리 |
 | eventType / schemaVersion | `OrderConfirmed` / `1` |
 | key | 내부 orderId의 문자열. payload orderId와 일치 |
 | eventId | 최초 PG 확정 TX에서 UUID를 생성·저장. 재발행/복구는 저장 UUID 재사용 |
@@ -37,10 +37,10 @@ R01의 구체 계약·저장·실행 설정과 검증은 [상세 설계 초안](
 | items | 상품별 productId·양수 quantity. 중복 상품은 수량을 합산 |
 
 전송마다 ID·시각을 새로 만들지 않는다. JSON 속성/품목 순서가 달라도 같은 사실로 비교한다.
-fingerprint는 정규화한 고정 필드에서 계산한다. 현재 상품 정보나 소비 시각으로 과거 사실을 덮어쓰지 않는다.
+동등성은 정규화한 snapshot의 고정 필드를 비교한다. 별도 fingerprint hash를 저장/계산하지 않는다. 현재 상품 정보나 소비 시각으로 과거 사실을 덮어쓰지 않는다.
 카드·PG 비밀·불필요한 개인정보와 임의 발행 공개 API는 제외한다.
 
-### W6 직접 발행과 누락 실험
+### W6 직접 발행과 누락 실험 · 보존 revision 기준
 
 - 검증된 PG SUCCESS의 최초 내부 확정 TX가 실제 commit된 뒤에만 직접 발행한다.
 - callback·reconcile은 같은 확정 경계를 사용한다. 중복 결과 적용은 새 사건을 만들지 않는다.
@@ -66,7 +66,7 @@ fingerprint는 정규화한 고정 필드에서 계산한다. 현재 상품 정�
 - 실제 `commerce-streamer` consumer와 파싱·검증·업무 handler를 연결한다.
 - 신규 사건은 Inbox와 품목을 함께 저장한다. commit된 Inbox가 소비 완료를 뜻하는 최소 구조로 충분하다.
 - 같은 eventId·같은 사실은 정상 no-op이다.
-- 같은 eventId의 다른 주문·수량·시각 또는 같은 orderId의 다른 eventId/사실은 충돌이며 ack하지 않는다.
+- 같은 eventId의 다른 주문·수량·시각 또는 같은 orderId의 다른 eventId/사실은 충돌이며 정상 no-op으로 ack하지 않는다. 최종 실패는 아래 실패 보관 commit 정책을 따른다.
 - 메모리 Set·사전 조회만으로 보호하지 않는다. 동시 중복은 DB 유일 제약으로 막는다.
 - 중간 품목 실패 시 Inbox와 모든 품목을 rollback한다. Inbox만 별도 TX로 먼저 확정하지 않는다.
 - 유일 제약 예외의 TX는 rollback하고 별도 TX에서 동일 사실인지 확인한다. 다른 오류를 중복으로 숨기지 않는다.
@@ -189,4 +189,4 @@ W6는 같은 offset의 재전달, W7은 같은 eventId의 별도 record 재발�
 - PR에 대표 주문 결과, assignment, 실제 offset 전후, 단일 relay 제약·재개 방법·실험 한계를 남긴다.
 
 랭킹 API·새 결제수단/상품 CRUD/주문 도메인·범용 Saga·CDC 플랫폼·다중 relay·새 모니터링 서버는 필수가 아니다.
-R01의 실패 보관 범위는 DB에 원문과 사유를 기록하는 단계까지다. BLOCKED·실제 OS 강제 종료·별도 Inbox worker는 선택 사항이다.
+R01의 개별 실패는 DB에 원문·사유를 보관한다. 최종 relay는 BLOCKED와 지정 재개를 구현했다. 실제 OS 강제 종료·별도 Inbox worker를 추가 보장하지 않는다.

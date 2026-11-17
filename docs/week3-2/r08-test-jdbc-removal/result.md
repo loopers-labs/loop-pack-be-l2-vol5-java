@@ -1,6 +1,8 @@
 # R08 구현 결과
 
-[요구사항](requirement.md) · [트레이드오프](trade_off/total_trade_off.md) · [구현 계획](plan.md) · [전체 요구사항](../total_requirement.md)
+> **학습 기록 · 3-2주차 당시 기준.** 요구·선택·검증 수치는 해당 단계의 기록이다. 현재 구조·명령·정책 차이는 [현행 컨벤션](../../week2/conventions.md)을 함께 확인한다.
+
+[요구사항](requirement.md) · [트레이드오프](trade_off/total_trade_off.md) · [전체 요구사항](../total_requirement.md)
 
 작업 브랜치: `volume-3/r08-test-jdbc-removal` (R07 브랜치에서 분기, R07 병합(PR #19) 후 main 위로 리베이스, 트리 동일) · PR 대상: `volume-3/main`
 
@@ -67,7 +69,7 @@ noClasses().that().resideInAnyPackage("com.loopers.domain..", "com.loopers.appli
 ## 2. 테스트 정리 요약
 
 테스트 14개 클래스의 `JdbcClient` 사용을 QueryDSL(`JPAQueryFactory`)·도메인 저장소로 바꾸고, `LikeStorageIntegrationTest`를 삭제했다. 단언 기대값은 바꾸지 않았다. 반복되던 주문 확정 검증은 `support.test.OrderConfirmProbe`로 모았다. 막아 둔 컬럼(`like_count`, `created_at`)은 QueryDSL `update`로 준비하며, 일괄 UPDATE라 `insertable/updatable = false` 제한을 받지 않는다.
-`git grep -nE "JdbcClient|JdbcTemplate" apps/commerce-api/src/test`의 결과는 없다. 세부는 [plan.md 검증 기록](plan.md#검증-기록)에 있다.
+`git grep -nE "JdbcClient|JdbcTemplate" apps/commerce-api/src/test`의 결과는 없다. 세부는 이 문서의 실제 검증 기록에 있다.
 
 ## 3. 검증
 

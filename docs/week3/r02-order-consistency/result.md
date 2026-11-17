@@ -1,6 +1,8 @@
 # R02 구현 결과
 
-[요구사항](requirement.md) · [트레이드오프](trade_off/total_trade_off.md) · [구현 계획](plan.md) · [전체 요구사항](../total_requirement.md)
+> **학습 기록 · 3주차 당시 기준.** 요구·선택·검증 수치는 해당 단계의 기록이다. 현재 구조·명령·정책 차이는 [현행 컨벤션](../../week2/conventions.md)을 함께 확인한다.
+
+[요구사항](requirement.md) · [트레이드오프](trade_off/total_trade_off.md) · [전체 요구사항](../total_requirement.md)
 
 > 후속 결정: 이 문서는 작성 당시의 패키지·클래스 이름을 기록한다. 이후 패키지 구조 리팩토링으로 경로가 `<layer>.<ctx>.<종류>` 구조로 바뀌었고([결정 기록](../../refactor/context-notes.md)), `OrderBill`은 ordering의 `OrderRecord`로 바뀌어 `Order` 애그리거트의 자식이 되었다([10번](trade_off/10-order-record-ownership.md)·[11번](trade_off/11-order-record-aggregate.md) 트레이드오프).
 

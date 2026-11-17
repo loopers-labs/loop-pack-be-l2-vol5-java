@@ -1,5 +1,7 @@
 # 미완료 작업 조회·운영 담당자 수동 대사
 
+> **학습 기록 · 5주차 해당 단계 기준.** 당시 구현·선택·검증 수치를 보존한다. 현행 결제 흐름은 [상태 모델](../../states/total.md)과 연결된 회복 안내를 우선한다.
+
 [설계 질문 목록](total_trade_off.md) · [자동 만료 논의 보류](../../r01-pg-payment-foundation/trade_off/09-recovery-lease.md) · [공통 결과 반영 TX](01-facade-transaction-boundary.md)
 
 상태: **수동 복구·실행 ID 교체·저장 관찰 재적용 방향 채택·상세 계약 설계 전·구현 전**.
@@ -71,4 +73,4 @@ PENDING/미확인 응답은 수동 확인이 필요한 상태로 남기며 새�
 
 고객 `POST /api/v1/orders/{id}/payment/reconcile`와 관리자 `POST /api-admin/v1/orders/{id}/payment/reconcile`를 구현했다. 본문 없이 기존 X-USER-ID를 사용한다. 상태·실행 ID·사용 회차가 같은 작업만 새 실행으로 인계하고 자동 사용 회차는 유지한다.
 수동 조회 직전의 lastCheckedAt 갱신도 실행 ID·회차 CAS로 commit한다. 이전 실행이 이미 보낸 PG 조회를 마칠 수는 있지만 늦은 진행·실패 표시는 인계자의 상태를 바꾸지 못한다. 수동 실패 표시는 준비에서 얻은 실행 snapshot을 공통 업무 반영에 전달해 보호한다.
-관련 기능 11건·ArchUnit 8건·Checkstyle·세 관점 리뷰를 통과했다. 이후 최종 전체 검사 432건과 별도 JVM 실험을 마쳤다. 주문 50은 실제 조회 도중 commerce를 종료한 뒤 RUNNING·실행 ID·회차·시각 보존, 미완료 목록 GET의 무효과, 수동 POST 인계 후 한 번의 완료를 확인했다. 주문 51은 PG 재시작 후 같은 거래의 완료를 대사했다. 새 frontend·운영 화면·자동 lease는 추가하지 않았다. [실제 결과](../result.md)와 [리뷰 기록](../review.md)을 따른다.
+관련 기능 11건·ArchUnit 8건·Checkstyle·세 관점 리뷰를 통과했다. 이후 최종 전체 검사 432건과 별도 JVM 실험을 마쳤다. 주문 50은 실제 조회 도중 commerce를 종료한 뒤 RUNNING·실행 ID·회차·시각 보존, 미완료 목록 GET의 무효과, 수동 POST 인계 후 한 번의 완료를 확인했다. 주문 51은 PG 재시작 후 같은 거래의 완료를 대사했다. 새 frontend·운영 화면·자동 lease는 추가하지 않았다. [실제 결과](../result.md)와 [통합한 리뷰 근거](../result.md)을 따른다.

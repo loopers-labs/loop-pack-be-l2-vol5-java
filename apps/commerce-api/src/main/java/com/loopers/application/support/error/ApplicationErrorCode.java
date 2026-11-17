@@ -9,7 +9,9 @@ public enum ApplicationErrorCode {
     ORDER_ADMIN_FORBIDDEN("주문 관리자 권한이 필요합니다."),
     PAYMENT_ATTEMPT_NOT_FOUND("결제 시도를 찾을 수 없습니다."),
     PAYMENT_CALLBACK_CONFLICT("결제 알림의 식별 정보가 기존 거래와 일치하지 않습니다."),
-    PAYMENT_REQUEST_CONFLICT("기존 결제 요청과 일치하지 않습니다.");
+    PAYMENT_REQUEST_CONFLICT("기존 결제 요청과 일치하지 않습니다."),
+    COUPON_CAMPAIGN_NOT_FOUND("쿠폰 캠페인을 찾을 수 없습니다."),
+    COUPON_ADMIN_FORBIDDEN("쿠폰 관리자 권한이 필요합니다.");
 
     private final String message;
 
