@@ -111,7 +111,7 @@ batch Checkstyle은 이제 일반 `check`에 포함된다. DemoJobE2ETest의 기
 
 |검사|명령·시각|결과|
 |---|---|---|
-|batch check(정리 후 최종 코드)|`./gradlew :apps:commerce-batch:check --rerun-tasks` 15:58:05|checkstyleMain 28파일·checkstyleTest 5파일 오류 0. 테스트 3클래스 7건 통과(CommerceBatchApplicationTest 1, DemoJobE2ETest 2, RankingJobRestartTest 3), failure/error/skip 0|
+|batch check(정리 후 최종 코드)|`./gradlew :apps:commerce-batch:check --rerun-tasks` 15:58:05|checkstyleMain 28파일·checkstyleTest 5파일 오류 0. 테스트 3클래스 6건 통과(CommerceBatchApplicationTest 1, DemoJobE2ETest 2, RankingJobRestartTest 3), failure/error/skip 0. (처음 기록한 7건은 합계 오류로 Codex 검토 뒤 정정)|
 
 ### 재시작 증거
 
@@ -328,6 +328,96 @@ API·batch 전체 회귀는 실행하지 않았다.
 
 ### 한계
 
-- 부모(API 테스트)는 Batch를 의존하지 않아 영속 read.count를 JobExplorer 대신 BATCH_STEP_EXECUTION_CONTEXT의 기본 직렬화(Base64+Java 직렬화, `java.*`만 허용)를 읽기 전용으로 되돌려 확인했다. 같은 JVM의 JobExplorer 확인은 batch RankingJobRestartTest가 맡는다.
+- (검토 보완으로 대체) 이 실행에서는 부모가 영속 read.count를 BATCH_STEP_EXECUTION_CONTEXT의 기본 직렬화를 직접 풀어 확인했다. 보완 뒤에는 batch 자식이 JobExplorer로 다시 읽은 값을 출력하고 부모가 그 출력을 확인한다(아래 검토 보완 절).
 - A 재발행은 Outbox relay가 아니라 테스트 producer로 같은 key·payload를 보냈다. relay 중단·재발행 자체는 기존 W7 테스트 범위다.
 - 기존 운영 DB에 `idx_ppa_confirmed_at`을 적용하는 절차는 만들지 않았다(§9.11).
+
+## 전체 회귀 (2026-11-17)
+
+코드 상태: HEAD `3c0d040` + 6단위 staged 변경(1~5단위는 커밋됨). JDK 21.0.12, 실제 MySQL·Redis testcontainers, 로컬 Docker Kafka.
+
+`./gradlew -Dorg.gradle.java.home="$JAVA_HOME" check --rerun-tasks --no-build-cache --continue`, 17:13:04~17:24:24, `BUILD SUCCESSFUL`(53개 작업 모두 실행).
+
+|모듈|테스트|Checkstyle|
+|---|---|---|
+|commerce-api `test`|284개 결과 파일, 1,402건 중 1,394건 통과·failure 0·error 0·skip 8|main/test 오류 0|
+|commerce-api `w6OutboxRecoveryTest`(O11)|1건 통과|-|
+|commerce-streamer|16개 결과 파일, 88건 통과|main/test 오류 0|
+|commerce-batch|5개 결과 파일, 17건 통과|main/test 오류 0|
+|pg-simulator|9개 결과 파일, 79건 통과|main/test 오류 0|
+
+skip 8건은 기존 W8 쿠폰의 로컬 Redis 장애 opt-in 테스트(`CouponLocalRedisFaultIntegrationTest`의 Q9·Q10, `CouponCacheLocalRedisFaultIntegrationTest`의 R4·R5 6건)로, 명시 실행 조건이 없으면 실행하지 않는 기존 설계다. 이번 통과로 세지 않는다. ArchUnit은 commerce-api·commerce-streamer의 기존 ArchitectureTest가 위 실행에 포함됐고 batch에는 없다. 종료 뒤 테스트 컨테이너 0개.
+
+## Codex 종합 검토 보완 (2026-11-17)
+
+Codex의 읽기 전용 종합 검토(HEAD `60b0e96` 기준) 지적 중 사용자가 승인한 범위를 반영했다. 기준 설계 문서는 바꾸지 않았다.
+
+### 변경
+
+|지적|반영|
+|---|---|
+|batch 자식 timeout·interrupt 때 종료 미확인, 정리 단계가 batch 자식을 모름|`WeeklyRankingBatchChild`가 띄운 프로세스를 모두 기록. timeout 메시지에 강제 종료 확인 여부 포함. Flow 정리의 `stopChild`가 남은 batch 자식을 먼저 강제 종료·대기하고, `childExited`는 streamer와 모든 batch 자식이 끝났을 때만 참이어서 W7 정리 규칙대로 API 데이터·구매 테이블·Kafka 정리를 막는다|
+|snapshot 최대 revision 0 이하를 없음으로 보정|Runner가 저장값 0 이하이면 `CORRUPT_HISTORY`로 실행 등록 전에 거절(§4.8). `WeeklyRankingLaunchTest.nonPositiveStoredRevisionIsRejected`(2026-06-22) 추가|
+|실제 연결의 소비 완료 증거 부족|relay probe로 받은 broker 위치(재발행은 producer의 RecordMetadata)에 대응하는 `ORDER_ACTIVITY_HANDLED_AND_ACK_RETURNED topic/partition/offset/eventId/result` 로그와 group committed offset ≥ 위치+1을 기다림|
+|준비 child 확인이 전체 instance 0개|준비 전후 weeklyRanking instance 수 불변과 랭킹 다섯·Batch 핵심 테이블 존재로 확인|
+|`queryForObject(..., LocalDateTime.class)`의 Timestamp fallback(§9.12)|`readDatabaseUtcNow`가 RowMapper에서 `rs.getObject(1, LocalDateTime.class)`를 직접 호출|
+|최종 결과 로그에 공개 outcome 없음(§4.9)|이번 실행의 공개 Step context가 대상 snapshot과 맞을 때만 `publicationOutcome`을 결과·로그에 남김. 공개 Step을 실행하지 않으면 `null`|
+|부모가 Batch 직렬화를 직접 해석(§5.7)|batch 자식 main이 종료 전 JobExplorer로 이번 실행의 계산 Step 영속 context를 다시 읽어 `WEEKLY_RANKING_CHECKPOINT … readCount=` 출력, 부모는 이를 확인. 직렬화 해석 코드 삭제|
+|선택: 재공개 시각 불변|2026-09-28 시나리오가 snapshot 완료·수정 시각, 결과 행 수정 시각, pointer 공개·수정 시각 불변까지 단언|
+|선택: UNKNOWN 영속 상태|2026-10-05 시나리오가 영속 Job `UNKNOWN`, 공개 Step `STARTED`를 단언|
+|선택: 테스트 숫자 변환|Flow의 점수 읽기를 `toBigIntegerExact`로 변경|
+|기록 오류|2단위 batch 결과 7건 → 6건 정정|
+
+### 기존 DB의 `idx_ppa_confirmed_at` 적용 안내(§9.11)
+
+새로 만드는 DB는 streamer 매핑으로 생긴다. 이미 있는 DB에는 운영자가 소유 DB에서 직접 확인·적용한다. 이번에 어떤 DB에도 적용하지 않았다.
+
+```sql
+-- 1) 존재 확인. 다음 중 하나면 적용하지 않는다.
+--    a) idx_ppa_confirmed_at 이 NON_UNIQUE=1, 열 confirmed_at 하나로 이미 있음 → 이미 적용됨
+--    b) 같은 이름이지만 유일성·열이 다름 → 멈추고 원인 확인
+--    c) 다른 이름의 인덱스가 confirmed_at 하나로 이미 있음 → 중복 추가하지 말고 멈추고 확인
+SELECT INDEX_NAME, NON_UNIQUE, GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) AS columns
+FROM information_schema.STATISTICS
+WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'product_purchase_activity'
+GROUP BY INDEX_NAME, NON_UNIQUE;
+
+-- 2) 없을 때만 추가. 기존 행·다른 인덱스를 지우거나 테이블을 다시 만들지 않는다.
+ALTER TABLE product_purchase_activity
+    ADD INDEX idx_ppa_confirmed_at (confirmed_at), ALGORITHM = INPLACE, LOCK = NONE;
+```
+
+MySQL 8.0 Reference Manual의 Online DDL Operations(Secondary Indexes)는 보조 인덱스 추가를 INPLACE·동시 DML 허용으로 설명한다. `LOCK=NONE`이어도 시작·종료 단계의 metadata lock은 잡으므로, 오래 열린 트랜잭션이 있으면 DDL과 뒤이은 쿼리가 대기할 수 있다. 실제 소요 시간·잠금 영향은 데이터 크기에 따라 다르며 측정하지 않았다. 지원하지 않는 환경이면 위 문장은 오류로 끝나므로 다른 방식으로 바꾸지 말고 확인한다.
+
+### 실행 결과
+
+코드 상태: HEAD `60b0e96` + 검토 보완 미커밋 변경. JDK 21.0.12.
+
+|검사|명령·시각|결과|
+|---|---|---|
+|batch check|`./gradlew -Dorg.gradle.java.home="$JAVA_HOME" :apps:commerce-batch:check --rerun-tasks` 18:31:03|5클래스 18건 통과(WeeklyRankingLaunchTest 5), Checkstyle 오류 0|
+|API 관련|`./gradlew -Dorg.gradle.java.home="$JAVA_HOME" :apps:commerce-api:checkstyleMain :apps:commerce-api:checkstyleTest :apps:commerce-api:test --tests '*WeeklyRanking*' --tests '*ArchitectureTest' --rerun-tasks` 18:31:28|WeeklyRankingFlowTest 1, WeeklyRankingApiTest 15, ArchitectureTest 3 통과, Checkstyle 오류 0|
+
+실제 연결 관찰(18:31 실행): Kafka 처리·commit `A APPLIED@partition1:offset0`, `A 재발행 ALREADY_PROCESSED@1:1`, `B APPLIED@0:0`, 종료 시 committed offset partition1=2·partition0=1. r2 실패 실행의 JobExplorer read.count 2. r1·restart·r3·빈 주의 publicationOutcome은 PUBLISHED, 실패 실행은 null. W7 정리 `kept=[]`.
+
+검토 보완 뒤 전체 회귀(`check`)는 사용자 결정으로 다시 실행하지 않았다. 18:3x에 시작한 실행은 중간에 중단했으며 그 결과를 통과로 쓰지 않는다. 중단 뒤 Gradle test worker·batch/streamer 자식 프로세스·테스트 컨테이너가 남지 않은 것을 확인했다. 직전 전체 회귀(17:13~17:24)는 보완 전 코드의 결과다.
+
+## Codex 재검토 2차 보완 (2026-11-17)
+
+Codex 재검토(보완 8개 파일 staged 상태)의 남은 지적 중 사용자가 승인한 범위를 반영했다. 기준 설계 문서는 바꾸지 않았다.
+
+|지적|반영|
+|---|---|
+|준비 child 확인이 테이블 존재만 봄(§11.5)|API 테스트의 `WeeklyRankingSchemaSupport.assertDefinitions`(열 타입·null·ASCII collation, 명명 인덱스·열 순서·유일성, CHECK/FK 없음, InnoDB)를 공개해, 실제 연결 테스트가 batch 준비 child가 만든 다섯 랭킹 테이블에도 같은 기준을 적용. Batch metadata는 JOB_INSTANCE·JOB_EXECUTION·STEP_EXECUTION·STEP_EXECUTION_CONTEXT 존재 확인|
+|공개 outcome이 이번 execution만 봄(§4.9)|같은 instance의 모든 execution에서 마지막 공개 Step(StepExecution ID 최대)의 context를 읽고, 대상 snapshot이 맞을 때만 outcome을 씀. 저장된 값이 없으면 null. `WeeklyRankingLaunchTest`에 실패 실행 null·재시작 PUBLISHED 단언 추가|
+|자식 main의 관찰 실패 시 context 미종료(선택)|checkpoint 관찰이 예외로 끝나면 `SpringApplication.exit`로 context를 닫고 예외를 다시 던짐(부모는 0이 아닌 종료 코드를 봄)|
+|인덱스 적용 전 판정 문구|`NON_UNIQUE=1`·열 일치, 같은 이름의 다른 정의, 다른 이름의 같은 열 인덱스를 구분해 적용하지 않을 조건을 명시. `LOCK=NONE`도 metadata lock은 잡는다는 한계 추가|
+|HANDOFF의 2단위 7건|6건으로 정정(로컬 운영 문서)|
+
+|검사|명령·시각|결과|
+|---|---|---|
+|batch·API 관련|`./gradlew -Dorg.gradle.java.home="$JAVA_HOME" :apps:commerce-batch:check :apps:commerce-api:checkstyleMain :apps:commerce-api:checkstyleTest :apps:commerce-api:test --tests '*WeeklyRanking*' --tests '*ArchitectureTest' --rerun-tasks` 20:26:47~20:27:56|batch 5클래스 18건(WeeklyRankingLaunchTest 5), API: WeeklyRankingFlowTest 1·WeeklyRankingApiTest 15·ArchitectureTest 3 통과, failure/error/skip 0, Checkstyle api/batch 오류 0|
+
+실제 연결 관찰: Kafka `A APPLIED@1:0`, `A 재발행 ALREADY_PROCESSED@1:1`, `B APPLIED@0:0`, r2 실패 JobExplorer read.count 2, W7 정리 `kept=[]`, 준비 직후 랭킹 다섯 테이블 정의 확인 통과. 종료 뒤 테스트 컨테이너 0개.
+
+보완 뒤 전체 회귀는 실행하지 않았다(사용자 결정). batch 자식의 timeout·interrupt 정리 분기는 코드로 확인했고 강제 상황을 만들어 실행하지는 않았다.

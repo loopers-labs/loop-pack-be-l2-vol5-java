@@ -96,6 +96,7 @@ class WeeklyRankingLaunchTest {
 
         LaunchResult first = launch("new", "2026-06-01", null);
         assertThat(first.exitCode()).isZero();
+        assertThat(first.publicationOutcome()).isEqualTo("PUBLISHED");
         assertThat(revisionOf(first)).isEqualTo(1L);
 
         metadataFault.arm(WeeklyRankingJobConfig.FREEZE_STEP, Point.IN_CHUNK);
@@ -121,6 +122,7 @@ class WeeklyRankingLaunchTest {
         processorFault.armBeforeProduct(9L);
         LaunchResult failed = launch("new", "2026-06-08", null);
         assertThat(failed.status()).isEqualTo(BatchStatus.FAILED);
+        assertThat(failed.publicationOutcome()).as("공개 Step 미실행").isNull();
         processorFault.armBeforeProduct(9L);
         LaunchResult failedAgain = launch("restart", null, failed.executionId());
         assertThat(failedAgain.status()).isEqualTo(BatchStatus.FAILED);
@@ -131,6 +133,7 @@ class WeeklyRankingLaunchTest {
 
         LaunchResult restarted = launch("restart", null, failedAgain.executionId());
         assertThat(restarted.exitCode()).isZero();
+        assertThat(restarted.publicationOutcome()).isEqualTo("PUBLISHED");
         assertThat(restarted.instanceId()).isEqualTo(failed.instanceId());
         assertThat(restarted.executionId()).isNotEqualTo(failedAgain.executionId());
         assertThat(launch("restart", null, restarted.executionId()).rejection()).isEqualTo(Reason.NOT_RESTARTABLE);
@@ -156,6 +159,20 @@ class WeeklyRankingLaunchTest {
 
         assertThat(launch("new", "2026-06-15", null).rejection()).isEqualTo(Reason.IN_PROGRESS_OR_UNKNOWN);
         assertThat(launch("restart", null, unknown.executionId()).rejection()).isEqualTo(Reason.IN_PROGRESS_OR_UNKNOWN);
+        assertThat(jobExplorer.getJobInstanceCount(WeeklyRankingJobConfig.JOB_NAME)).isEqualTo(instancesBefore);
+    }
+
+    @DisplayName("2026-06-22: 저장된 snapshot 최대 revision 이 0 이하이면 손상으로 보고 실행을 등록하지 않는다.")
+    @Test
+    void nonPositiveStoredRevisionIsRejected() throws Exception {
+        LocalDate week = LocalDate.of(2026, 6, 22);
+        jdbc.update("INSERT INTO ranking_snapshot (snapshot_id, period_start, period_end, revision, status, input_fixed_at, "
+                + "input_count, product_count, input_checksum, created_at, updated_at) "
+                + "VALUES ('weekly-20260622-r0', ?, ?, 0, 'READY', UTC_TIMESTAMP(6), 0, 0, ?, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))",
+            week, week.plusDays(7), "0".repeat(64));
+        long instancesBefore = jobExplorer.getJobInstanceCount(WeeklyRankingJobConfig.JOB_NAME);
+
+        assertThat(launch("new", "2026-06-22", null).rejection()).isEqualTo(Reason.CORRUPT_HISTORY);
         assertThat(jobExplorer.getJobInstanceCount(WeeklyRankingJobConfig.JOB_NAME)).isEqualTo(instancesBefore);
     }
 

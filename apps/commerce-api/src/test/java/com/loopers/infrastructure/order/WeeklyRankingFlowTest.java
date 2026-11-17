@@ -6,12 +6,12 @@ import com.loopers.application.order.OrderOutboxExecutionGate;
 import com.loopers.application.order.OrderOutboxRelay;
 import com.loopers.application.order.OrderOutboxRelay.RowOutcome;
 import com.loopers.application.order.OrderOutboxRelay.RowResult;
-import com.loopers.application.order.OrderOutboxRelayProbe;
 import com.loopers.application.order.OrderOutboxRelayTransactionService;
 import com.loopers.config.OrderConfirmationClockConfig;
 import com.loopers.config.OrderOutboxClockConfig;
 import com.loopers.config.OrderOutboxRelayProperties;
 import com.loopers.domain.order.OrderOutboxMessageVerifier;
+import com.loopers.domain.order.OrderOutboxReceipt;
 import com.loopers.domain.order.OrderOutboxSender;
 import com.loopers.domain.payment.PaymentModel;
 import com.loopers.fixture.PgCommands;
@@ -26,6 +26,7 @@ import com.loopers.infrastructure.order.OrderOutboxE2eLifecycleSupport.ChildLaun
 import com.loopers.infrastructure.order.OrderOutboxE2eLifecycleSupport.CleanupSteps;
 import com.loopers.infrastructure.order.OrderOutboxE2eLifecycleSupport.Ownership;
 import com.loopers.infrastructure.order.WeeklyRankingBatchChild.Result;
+import com.loopers.interfaces.api.ranking.WeeklyRankingSchemaSupport;
 import com.loopers.testsupport.LocalKafkaTestSupport;
 import com.loopers.utils.DatabaseCleanUp;
 import com.loopers.utils.RedisCleanUp;
@@ -33,6 +34,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -56,9 +58,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.web.client.RestTemplate;
 
-import java.io.ByteArrayInputStream;
-import java.io.ObjectInputFilter;
-import java.io.ObjectInputStream;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.nio.file.Path;
@@ -67,10 +66,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.StreamSupport;
 
@@ -98,11 +98,12 @@ class WeeklyRankingFlowTest {
     private static final Instant A_CONFIRMED_AT = Instant.parse("2026-10-19T00:00:00Z");
     private static final Instant B_CONFIRMED_AT = Instant.parse("2026-10-20T03:00:00Z");
     private static final long SENTINEL_ORDER = 900_000_001L;
-    private static final String READ_COUNT_KEY = "weeklyRankingProductReader.read.count";
 
     private static final long STARTED = System.nanoTime();
     private static final SettableClock CONFIRMATION_CLOCK = new SettableClock(A_CONFIRMED_AT, ZoneOffset.UTC);
     private static final Ownership OWNERSHIP = new Ownership();
+    /** 주문/결과@partition:offset 의 실제 처리·commit 관찰. */
+    private static final List<String> EVIDENCE = new CopyOnWriteArrayList<>();
 
     private static LocalKafkaTestSupport kafka;
     private static PgFixtureServer pg;
@@ -128,7 +129,7 @@ class WeeklyRankingFlowTest {
         api = bootApi();
     }
 
-    /** relay 진입 중단 → streamer 자식 종료 → API 데이터·컨텍스트 → PG → 이 실행이 만든 구매 테이블 → Kafka 소유 자원. */
+    /** relay 진입 중단 → batch·streamer 자식 종료 → API 데이터·컨텍스트 → PG → 이 실행이 만든 구매 테이블 → Kafka 소유 자원. */
     @AfterAll
     static void releaseResources() {
         OrderOutboxE2eLifecycleSupport.release(OWNERSHIP, new CleanupSteps() {
@@ -149,14 +150,19 @@ class WeeklyRankingFlowTest {
 
             @Override
             public void stopChild() throws InterruptedException {
-                if (streamer != null) {
-                    streamer.stop(LABEL, OBSERVE);
+                try {
+                    WeeklyRankingBatchChild.stopRemaining(OBSERVE);
+                } finally {
+                    if (streamer != null) {
+                        streamer.stop(LABEL, OBSERVE);
+                    }
                 }
             }
 
+            /** streamer 와 이 실행이 띄운 모든 batch 자식이 실제로 끝났을 때만 데이터·Kafka 정리를 허용한다. */
             @Override
             public boolean childExited() {
-                return streamer == null || !streamer.isAlive();
+                return (streamer == null || !streamer.isAlive()) && WeeklyRankingBatchChild.allExited();
             }
 
             @Override
@@ -203,9 +209,13 @@ class WeeklyRankingFlowTest {
     @Test
     void purchasesFlowIntoRestartableWeeklyRankingAndApi() throws Exception {
         startStreamer();
+        long instancesBefore = weeklyRankingInstances();
         Result prepared = WeeklyRankingBatchChild.prepareSchema(LOG_DIR, limit(BATCH));
         assertThat(prepared.exitCode()).isZero();
-        assertThat(weeklyRankingInstances()).as("준비 child 는 업무 Job 을 실행하지 않는다").isZero();
+        assertThat(weeklyRankingInstances()).as("준비 child 는 업무 Job 을 실행하지 않는다").isEqualTo(instancesBefore);
+        WeeklyRankingSchemaSupport.assertDefinitions(fresh);
+        assertThat(tablesOf("BATCH_JOB_INSTANCE", "BATCH_JOB_EXECUTION", "BATCH_STEP_EXECUTION", "BATCH_STEP_EXECUTION_CONTEXT"))
+            .as("준비된 Batch metadata 테이블").hasSize(4);
         viewer = api.getBean(UserFixture.class).createUserWithPoint().getId();
         assertThat(ranking(WEEK, null).path("status").asText()).isEqualTo("NOT_PUBLISHED");
 
@@ -224,7 +234,7 @@ class WeeklyRankingFlowTest {
 
         // r1 정상 비교본
         Result r1 = WeeklyRankingBatchChild.startNew(LOG_DIR, WEEK.toString(), null, limit(BATCH));
-        assertThat(List.of(r1.exitCode(), r1.status())).isEqualTo(List.of(0, "COMPLETED"));
+        assertThat(List.of(r1.exitCode(), r1.status(), r1.publicationOutcome())).isEqualTo(List.of(0, "COMPLETED", "PUBLISHED"));
         List<String> expected = List.of(a + ":2:1", c + ":2:2", b + ":1:3");
         assertThat(results("weekly-20261019-r1")).isEqualTo(expected);
         JsonNode r1Api = ranking(WEEK, null);
@@ -235,16 +245,17 @@ class WeeklyRankingFlowTest {
         Result failed = WeeklyRankingBatchChild.startNew(LOG_DIR, WEEK.toString(), c, limit(BATCH));
         assertThat(List.of(failed.exitCode(), failed.status())).isEqualTo(List.of(1, "FAILED"));
         assertThat(failed.processedProductIds()).containsExactly(a, b);
+        assertThat(failed.publicationOutcome()).as("공개 Step 미실행").isEqualTo("null");
         assertThat(failed.output()).contains("WEEKLY_RANKING_FAULT beforeProduct=" + c);
         List<Object> r2Manifest = manifest("weekly-20261019-r2");
         assertThat(r2Manifest.subList(0, 3)).isEqualTo(List.of("READY", 3L, manifest("weekly-20261019-r1").get(2)));
         assertThat(stage("weekly-20261019-r2")).isEqualTo(List.of(a + ":2", b + ":1"));
-        assertThat(readCount(failed.executionId())).isEqualTo(2);
+        assertThat(failed.readCount()).as("JobExplorer 로 다시 읽은 영속 reader 위치").isEqualTo("2");
         assertThat(ranking(WEEK, null).path("snapshotId").asText()).as("실패 중 기존 공개본 유지").isEqualTo("weekly-20261019-r1");
 
         // A 의 같은 사건을 저장 payload·key 그대로 실제 Kafka 에 다시 발행 → 중복 처리, 원본 불변
         RecordMetadata republished = republish(orderA);
-        awaitHandled(orderA, "ALREADY_PROCESSED");
+        awaitHandledAndCommitted(republished.partition(), republished.offset(), orderA, "ALREADY_PROCESSED");
         assertThat(sourceRows(orderA)).isEqualTo(3);
 
         // 늦은 구매 B: a3, 같은 주의 다음 날 확정. 기존 r2 입력·stage 는 바뀌지 않는다
@@ -256,7 +267,8 @@ class WeeklyRankingFlowTest {
 
         // 최신 실패 실행 restart: 새 JVM·같은 DB/metadata, 같은 instance 의 새 execution 에서 c 부터
         Result restarted = WeeklyRankingBatchChild.restart(LOG_DIR, failed.executionId(), limit(BATCH));
-        assertThat(List.of(restarted.exitCode(), restarted.status())).isEqualTo(List.of(0, "COMPLETED"));
+        assertThat(List.of(restarted.exitCode(), restarted.status(), restarted.publicationOutcome()))
+            .isEqualTo(List.of(0, "COMPLETED", "PUBLISHED"));
         assertThat(restarted.instanceId()).isEqualTo(failed.instanceId());
         assertThat(restarted.executionId()).isNotEqualTo(failed.executionId());
         assertThat(restarted.processedProductIds()).containsExactly(c);
@@ -268,7 +280,7 @@ class WeeklyRankingFlowTest {
 
         // 새 revision r3: A+B 를 새 입력으로 계산·공개, r1/r2 는 보존
         Result r3 = WeeklyRankingBatchChild.startNew(LOG_DIR, WEEK.toString(), null, limit(BATCH));
-        assertThat(List.of(r3.exitCode(), r3.status())).isEqualTo(List.of(0, "COMPLETED"));
+        assertThat(List.of(r3.exitCode(), r3.status(), r3.publicationOutcome())).isEqualTo(List.of(0, "COMPLETED", "PUBLISHED"));
         assertThat(manifest("weekly-20261019-r3").subList(0, 2)).isEqualTo(List.of("COMPLETED", 4L));
         assertThat(results("weekly-20261019-r3")).isEqualTo(List.of(a + ":5:1", c + ":2:2", b + ":1:3"));
         assertThat(results("weekly-20261019-r1")).isEqualTo(expected);
@@ -282,16 +294,16 @@ class WeeklyRankingFlowTest {
         // 공개 없는 주는 NOT_PUBLISHED, 활동 없는 주를 계산하면 PUBLISHED·빈 items
         assertThat(ranking(EMPTY_WEEK, null).path("status").asText()).isEqualTo("NOT_PUBLISHED");
         Result empty = WeeklyRankingBatchChild.startNew(LOG_DIR, EMPTY_WEEK.toString(), null, limit(BATCH));
-        assertThat(empty.exitCode()).isZero();
+        assertThat(List.of(empty.exitCode(), empty.publicationOutcome())).isEqualTo(List.of(0, "PUBLISHED"));
         JsonNode emptyApi = ranking(EMPTY_WEEK, null);
         assertThat(List.of(emptyApi.path("status").asText(), emptyApi.path("snapshotId").asText(), emptyApi.path("items").size()))
             .isEqualTo(List.of("PUBLISHED", "weekly-20261012-r1", 0));
 
         System.out.println("[" + LABEL + "] orders A=" + orderA + " B=" + orderB + " products a=" + a + " b=" + b + " c=" + c
-            + " sentinel=" + SENTINEL_ORDER + " republished=" + republished.partition() + "@" + republished.offset()
+            + " sentinel=" + SENTINEL_ORDER + " kafka=" + EVIDENCE + " committed=" + kafka.committedOffsets(group)
             + " r1=" + r1.instanceId() + "/" + r1.executionId() + " r2 failed=" + failed.instanceId() + "/" + failed.executionId()
             + " restarted=" + restarted.instanceId() + "/" + restarted.executionId() + " r3=" + r3.instanceId() + "/" + r3.executionId()
-            + " empty=" + empty.executionId() + " r1/r2 manifest=" + manifest("weekly-20261019-r1") + "/" + manifest("weekly-20261019-r2")
+            + " empty=" + empty.executionId() + " readCount(r2 failed)=" + failed.readCount() + " r1/r2 manifest=" + manifest("weekly-20261019-r1") + "/" + manifest("weekly-20261019-r2")
             + " r3 manifest=" + manifest("weekly-20261019-r3") + " totalMs=" + Duration.ofNanos(System.nanoTime() - STARTED).toMillis());
     }
 
@@ -333,22 +345,35 @@ class WeeklyRankingFlowTest {
         return order;
     }
 
-    /** 자동 relay 가 꺼진 API 의 실제 relay 를 한 번 실행해 PUBLISHED 를 확인하고, streamer 자식의 처리 결과를 기다린다. */
+    /**
+     * 자동 relay 가 꺼진 API 의 실제 relay 를 한 번 실행해 PUBLISHED 와 broker 확인 위치를 얻고,
+     * 그 위치의 streamer 처리와 group commit 을 기다린다.
+     */
     private static void relayAndAwaitHandled(long order, String result) {
+        List<OrderOutboxReceipt> receipts = new ArrayList<>();
         OrderOutboxRelay relay = new OrderOutboxRelay(api.getBean(OrderOutboxRelayTransactionService.class),
-            api.getBean(OrderOutboxMessageVerifier.class), api.getBean(OrderOutboxSender.class), OrderOutboxRelayProbe.NO_OP,
+            api.getBean(OrderOutboxMessageVerifier.class), api.getBean(OrderOutboxSender.class),
+            (attempt, receipt) -> receipts.add(receipt),
             api.getBean(OrderOutboxExecutionGate.class), api.getBean(OrderOutboxClockConfig.OUTBOX_RECORD_CLOCK, Clock.class),
             api.getBean(OrderOutboxRelayProperties.class));
         assertThat(relay.runDueBatch().value().orElseThrow()).extracting(RowResult::outcome).containsExactly(RowOutcome.PUBLISHED);
-        awaitHandled(order, result);
+        OrderOutboxReceipt receipt = receipts.get(0);
+        assertThat(receipt.topic()).isEqualTo(topic);
+        awaitHandledAndCommitted(receipt.partition(), receipt.offset(), order, result);
     }
 
-    private static void awaitHandled(long order, String result) {
-        String line = "eventId=order-confirmed:" + order + " result=" + result;
+    /** 그 partition·offset 의 처리 로그(ACK 반환)와 broker 의 group committed offset(위치+1 이상)을 함께 확인한다. */
+    private static void awaitHandledAndCommitted(int partition, long offset, long order, String result) {
+        String line = "ORDER_ACTIVITY_HANDLED_AND_ACK_RETURNED topic=" + topic + " partition=" + partition + " offset=" + offset
+            + " eventId=order-confirmed:" + order + " result=" + result;
         OrderActivityStreamerChild.await("streamer 처리 " + line, limit(OBSERVE), () -> {
             assertThat(streamer.isAlive()).as("streamer 자식 생존").isTrue();
             return streamer.output().contains(line);
         });
+        TopicPartition position = new TopicPartition(topic, partition);
+        OrderActivityStreamerChild.await("committed offset " + partition + "@" + offset + "+1", limit(OBSERVE),
+            () -> kafka.committedOffsets(group).getOrDefault(position, -1L) >= offset + 1);
+        EVIDENCE.add(order + "/" + result + "@" + partition + ":" + offset);
     }
 
     /** Outbox 에 저장된 같은 key·payload 를 별도 producer 로 실제 topic 에 한 번 더 보낸다. 새 PG 주문은 만들지 않는다. */
@@ -422,13 +447,13 @@ class WeeklyRankingFlowTest {
 
     private static List<String> results(String snapshotId) {
         return fresh.query("SELECT product_id, score, calculated_rank FROM ranking_result WHERE snapshot_id = ? "
-            + "ORDER BY calculated_rank", (rs, n) -> rs.getLong(1) + ":" + rs.getBigDecimal(2).toBigInteger() + ":" + rs.getLong(3),
+            + "ORDER BY calculated_rank", (rs, n) -> rs.getLong(1) + ":" + rs.getBigDecimal(2).toBigIntegerExact() + ":" + rs.getLong(3),
             snapshotId);
     }
 
     private static List<String> stage(String snapshotId) {
         return fresh.query("SELECT product_id, score FROM ranking_score_stage WHERE snapshot_id = ? ORDER BY product_id",
-            (rs, n) -> rs.getLong(1) + ":" + rs.getBigDecimal(2).toBigInteger(), snapshotId);
+            (rs, n) -> rs.getLong(1) + ":" + rs.getBigDecimal(2).toBigIntegerExact(), snapshotId);
     }
 
     /** status·input_count·input_checksum·result_checksum. */
@@ -447,23 +472,16 @@ class WeeklyRankingFlowTest {
             + "AND order_id <> ?", Long.class, WEEK.atStartOfDay(), WEEK.plusDays(7).atStartOfDay(), SENTINEL_ORDER);
     }
 
+    /** 준비 전에는 Batch 테이블이 없을 수 있다. 없으면 0 이다. */
     private static long weeklyRankingInstances() {
-        return fresh.queryForObject("SELECT COUNT(*) FROM BATCH_JOB_INSTANCE WHERE JOB_NAME = 'weeklyRanking'", Long.class);
+        return tablesOf("BATCH_JOB_INSTANCE").isEmpty() ? 0
+            : fresh.queryForObject("SELECT COUNT(*) FROM BATCH_JOB_INSTANCE WHERE JOB_NAME = 'weeklyRanking'", Long.class);
     }
 
-    /**
-     * 실패 실행의 계산 Step 에 영속된 reader 위치. Batch 5.2 기본 직렬화(Base64 + Java 직렬화)를 읽기 전용으로 되돌리며,
-     * java.* 타입만 허용한다. 부모 API 테스트는 Batch 를 의존하지 않으므로 JobExplorer 대신 이 방식으로 확인한다.
-     */
-    @SuppressWarnings("unchecked")
-    private static int readCount(long jobExecutionId) throws Exception {
-        String context = fresh.queryForObject("SELECT c.SHORT_CONTEXT FROM BATCH_STEP_EXECUTION_CONTEXT c "
-            + "JOIN BATCH_STEP_EXECUTION s ON s.STEP_EXECUTION_ID = c.STEP_EXECUTION_ID "
-            + "WHERE s.JOB_EXECUTION_ID = ? AND s.STEP_NAME = 'calculateWeeklyScores'", String.class, jobExecutionId);
-        try (ObjectInputStream in = new ObjectInputStream(new ByteArrayInputStream(Base64.getDecoder().decode(context)))) {
-            in.setObjectInputFilter(ObjectInputFilter.Config.createFilter("java.**;!*"));
-            return (Integer) ((Map<String, Object>) in.readObject()).get(READ_COUNT_KEY);
-        }
+    private static List<String> tablesOf(String... names) {
+        return fresh.queryForList("SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() "
+            + "AND TABLE_NAME IN (" + String.join(",", Arrays.stream(names).map(name -> "'" + name + "'").toList()) + ")",
+            String.class);
     }
 
     private ResponseEntity<JsonNode> post(Long user, String path, Object body) {

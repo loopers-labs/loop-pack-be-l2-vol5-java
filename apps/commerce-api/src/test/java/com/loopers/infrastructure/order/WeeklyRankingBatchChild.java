@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -16,13 +17,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * 주간 랭킹 실제 연결 테스트가 띄우는 batch 자식 JVM 한 번의 실행(랭킹 설계 11.5). 끝날 때까지 기다려 종료 코드와 출력을 돌려준다.
  * classpath 는 Gradle 이 넘긴 batch 제품 runtime + 테스트 진입점 패키지뿐이며, 접속값은 부모 fixture 의 실제 값을 명시한다.
+ * 띄운 프로세스는 모두 기록해 두고, 정리 단계는 {@link #stopRemaining}·{@link #allExited()} 로 실제 종료를 확인한다.
  */
 final class WeeklyRankingBatchChild {
 
     private static final String MAIN = "com.loopers.job.ranking.process.WeeklyRankingTestProcessMain";
     private static final Pattern RESULT = Pattern.compile(
-        "weeklyRanking 결과 instanceId=(\\d+) executionId=(\\d+) .* status=([A-Z]+)");
+        "weeklyRanking 결과 instanceId=(\\d+) executionId=(\\d+) .* status=([A-Z]+) publicationOutcome=(\\S+)");
     private static final Pattern PROCESSED = Pattern.compile("WEEKLY_RANKING_PROCESS productId=(\\d+)");
+    private static final Pattern CHECKPOINT = Pattern.compile("WEEKLY_RANKING_CHECKPOINT executionId=\\d+ step=\\S+ readCount=(\\S+)");
+    private static final List<Process> STARTED = new CopyOnWriteArrayList<>();
 
     record Result(int exitCode, String output) {
 
@@ -36,6 +40,18 @@ final class WeeklyRankingBatchChild {
 
         String status() {
             return result().group(3);
+        }
+
+        /** 이번 실행의 공개 Step 결과. 공개 Step 을 실행하지 않았으면 "null". */
+        String publicationOutcome() {
+            return result().group(4);
+        }
+
+        /** 자식이 JobExplorer 로 다시 읽은 계산 Step 의 영속 reader 위치. */
+        String readCount() {
+            Matcher matcher = CHECKPOINT.matcher(output);
+            assertThat(matcher.find()).as("batch 자식의 checkpoint 로그").isTrue();
+            return matcher.group(1);
         }
 
         List<Long> processedProductIds() {
@@ -110,10 +126,12 @@ final class WeeklyRankingBatchChild {
             + " env=[DATASOURCE_MYSQLJPA_MAIN_PASSWORD=(hidden)]");
 
         Process process = builder.start();
+        STARTED.add(process);
         try {
             if (!process.waitFor(limit.toMillis(), TimeUnit.MILLISECONDS)) {
-                process.destroyForcibly().waitFor(10, TimeUnit.SECONDS);
-                throw new AssertionError("batch 자식 " + name + " 이 " + limit + " 안에 끝나지 않아 강제 종료했습니다.\n" + tail(log));
+                boolean stopped = process.destroyForcibly().waitFor(10, TimeUnit.SECONDS);
+                throw new AssertionError("batch 자식 " + name + " 이 " + limit + " 안에 끝나지 않아 강제 종료를 요청했습니다. [종료 확인="
+                    + stopped + "]\n" + tail(log));
             }
         } catch (InterruptedException interrupted) {
             process.destroyForcibly();
@@ -123,6 +141,19 @@ final class WeeklyRankingBatchChild {
         Result result = new Result(process.exitValue(), Files.readString(log, StandardCharsets.UTF_8));
         System.out.println("[WEEKLY_RANKING_FLOW BATCH CHILD] " + name + " exit=" + result.exitCode());
         return result;
+    }
+
+    /** 아직 살아 있는 batch 자식을 강제 종료하고 기다린다. 끝나지 않으면 실패로 알린다. */
+    static void stopRemaining(Duration limit) throws InterruptedException {
+        for (Process process : STARTED) {
+            if (process.isAlive() && !process.destroyForcibly().waitFor(limit.toMillis(), TimeUnit.MILLISECONDS)) {
+                throw new IllegalStateException("batch 자식 pid=" + process.pid() + " 이 종료되지 않았습니다.");
+            }
+        }
+    }
+
+    static boolean allExited() {
+        return STARTED.stream().noneMatch(Process::isAlive);
     }
 
     private static String tail(Path log) throws IOException {

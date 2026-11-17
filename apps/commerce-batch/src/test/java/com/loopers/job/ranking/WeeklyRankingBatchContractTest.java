@@ -266,10 +266,12 @@ class WeeklyRankingBatchContractTest {
         assertThat(run(r2).getStatus()).isEqualTo(BatchStatus.COMPLETED);
         String r2Publication = publication(week);
         List<Object> r2Manifest = manifest(r2.snapshotId());
+        List<String> r2Times = writeTimes(r2.snapshotId(), week);
 
         assertThat(callInTransaction(() -> publicationService.publish(r2)).outcome()).isEqualTo(PublicationOutcome.ALREADY_PUBLISHED);
         assertThat(publication(week)).isEqualTo(r2Publication);
         assertThat(manifest(r2.snapshotId())).isEqualTo(r2Manifest);
+        assertThat(writeTimes(r2.snapshotId(), week)).as("완료·감사·공개 시각을 다시 쓰지 않는다").isEqualTo(r2Times);
         assertThat(rankedResults(r2.snapshotId())).isEqualTo(ORIGINAL_RANKING);
 
         JobExecution older = run(r1);
@@ -291,6 +293,9 @@ class WeeklyRankingBatchContractTest {
         metadataFault.arm(WeeklyRankingJobConfig.PUBLISH_STEP, Point.FINAL);
         JobExecution execution = run(r1);
         assertThat(execution.getStatus()).isEqualTo(BatchStatus.UNKNOWN);
+        assertThat(persistedJobStatus(execution.getId())).isEqualTo("UNKNOWN");
+        assertThat(persistedStep(jobExplorer, execution, WeeklyRankingJobConfig.PUBLISH_STEP).getStatus())
+            .as("최종 Step 저장 실패로 영속 Step 은 진행 중 상태로 남는다").isEqualTo(BatchStatus.STARTED);
         assertThat(manifest(r1.snapshotId()).get(0)).isEqualTo("COMPLETED");
         assertThat(rankedResults(r1.snapshotId())).isEqualTo(ORIGINAL_RANKING);
         String committedPublication = publication(week);
@@ -303,6 +308,18 @@ class WeeklyRankingBatchContractTest {
             + " persistedJobStatus=" + persistedJobStatus(execution.getId())
             + " persistedPublishStep=" + persistedStep(jobExplorer, execution, WeeklyRankingJobConfig.PUBLISH_STEP).getStatus()
             + " publication=" + committedPublication);
+    }
+
+    /** snapshot 완료·수정 시각, 결과 행 수정 시각, pointer 공개·수정 시각. */
+    private static List<String> writeTimes(String snapshotId, LocalDate week) {
+        JdbcTemplate fresh = freshJdbc();
+        return List.of(
+            fresh.queryForObject("SELECT CONCAT(completed_at, '/', updated_at) FROM ranking_snapshot WHERE snapshot_id = ?",
+                String.class, snapshotId),
+            fresh.queryForObject("SELECT GROUP_CONCAT(updated_at ORDER BY calculated_rank) FROM ranking_result WHERE snapshot_id = ?",
+                String.class, snapshotId),
+            fresh.queryForObject("SELECT CONCAT(published_at, '/', updated_at) FROM ranking_publication WHERE period_start = ?",
+                String.class, week));
     }
 
     /** 원문 6절 4행을 같은 요일·시각으로 다른 주와 주문 ID 영역에 옮긴다. */

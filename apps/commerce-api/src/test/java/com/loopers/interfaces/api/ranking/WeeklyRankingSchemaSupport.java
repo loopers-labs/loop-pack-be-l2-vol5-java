@@ -14,8 +14,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * API 단독 테스트의 랭킹 다섯 테이블 준비(랭킹 설계 11.3.1). 모두 없으면 SQL 로 만들고, 있으면 정의를 확인해 재사용한다.
  * 일부만 있거나 정의가 다르면 실패한다. 자동 DROP/ALTER 는 하지 않는다.
+ * 실제 연결 테스트도 batch 준비 child 가 만든 테이블을 {@link #assertDefinitions} 로 같은 기준에 대조한다.
  */
-final class WeeklyRankingSchemaSupport {
+public final class WeeklyRankingSchemaSupport {
 
     private static final List<String> BASE = List.of(
         "id bigint NO - auto_increment", "created_at datetime(6) NO -", "updated_at datetime(6) NO -",
@@ -58,6 +59,11 @@ final class WeeklyRankingSchemaSupport {
         if (existing == 0) {
             new ResourceDatabasePopulator(new ClassPathResource("fixtures/weekly-ranking-schema.sql")).execute(dataSource);
         }
+        assertDefinitions(jdbc);
+    }
+
+    /** 다섯 랭킹 테이블의 열 타입·null·ASCII collation, 명명 인덱스·열 순서·유일성, CHECK/FK 없음, InnoDB 를 확인한다. */
+    public static void assertDefinitions(JdbcTemplate jdbc) {
         TABLES.forEach((table, spec) -> assertMatches(jdbc, table, spec.get(0), spec.get(1)));
     }
 

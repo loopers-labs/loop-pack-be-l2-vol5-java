@@ -54,7 +54,8 @@ public class JdbcRankingInputRepository implements RankingInputRepository {
 
     @Override
     public LocalDateTime readDatabaseUtcNow() {
-        return jdbc.queryForObject("SELECT UTC_TIMESTAMP(6)", LocalDateTime.class);
+        // Spring 의 LocalDateTime 변환은 실패 시 기본 시간대 Timestamp 로 fallback 하므로 typed getObject 를 직접 호출한다.
+        return jdbc.queryForObject("SELECT UTC_TIMESTAMP(6)", (rs, rowNum) -> rs.getObject(1, LocalDateTime.class));
     }
 
     @Override

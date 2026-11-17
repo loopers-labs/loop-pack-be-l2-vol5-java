@@ -1,6 +1,7 @@
 package com.loopers.batch.job.weeklyranking;
 
 import com.loopers.batch.job.weeklyranking.WeeklyRankingLaunchException.Reason;
+import com.loopers.batch.job.weeklyranking.step.PublishWeeklyRankingTasklet;
 import com.loopers.domain.ranking.RankingInputException;
 import com.loopers.domain.ranking.RankingLaunchRepository;
 import com.loopers.domain.ranking.WeeklyRankingRequest;
@@ -13,6 +14,7 @@ import org.springframework.batch.core.JobExecution;
 import org.springframework.batch.core.JobInstance;
 import org.springframework.batch.core.JobParameters;
 import org.springframework.batch.core.JobParametersInvalidException;
+import org.springframework.batch.core.StepExecution;
 import org.springframework.batch.core.configuration.JobRegistry;
 import org.springframework.batch.core.converter.DefaultJobParametersConverter;
 import org.springframework.batch.core.explore.JobExplorer;
@@ -28,8 +30,11 @@ import org.springframework.boot.ExitCodeGenerator;
 import org.springframework.core.env.Environment;
 
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Objects;
+import java.util.OptionalLong;
 import java.util.Set;
 
 /**
@@ -55,9 +60,12 @@ public class WeeklyRankingLaunchRunner implements ApplicationRunner, ExitCodeGen
     @Getter
     private LaunchResult result = LaunchResult.rejected(null);
 
-    public record LaunchResult(int exitCode, Reason rejection, Long executionId, Long instanceId, BatchStatus status) {
+    /** publicationOutcome 은 같은 instance 의 마지막 공개 Step 이 대상 snapshot 에 남긴 값이 있을 때만 채운다. */
+    public record LaunchResult(
+        int exitCode, Reason rejection, Long executionId, Long instanceId, BatchStatus status, String publicationOutcome
+    ) {
         static LaunchResult rejected(Reason reason) {
-            return new LaunchResult(1, reason, null, null, null);
+            return new LaunchResult(1, reason, null, null, null, null);
         }
     }
 
@@ -107,7 +115,11 @@ public class WeeklyRankingLaunchRunner implements ApplicationRunner, ExitCodeGen
     private long startNew() throws Exception {
         LocalDate periodStart = parsePeriodStart(properties.periodStart());
         long historyMax = scanHistory(periodStart);
-        long snapshotMax = launchRepository.findMaxSnapshotRevision(periodStart).orElse(0L);
+        OptionalLong storedMax = launchRepository.findMaxSnapshotRevision(periodStart);
+        if (storedMax.isPresent() && storedMax.getAsLong() <= 0) {
+            throw reject(Reason.CORRUPT_HISTORY, "snapshot 최대 revision 이 양수가 아닙니다: " + storedMax.getAsLong());
+        }
+        long snapshotMax = storedMax.orElse(0L);
         long revision = Math.addExact(Math.max(historyMax, snapshotMax), 1L);
         WeeklyRankingRequest request = WeeklyRankingRequest.of(
             periodStart.toString(), revision, WeeklyRankingRequest.canonicalId(periodStart, revision));
@@ -193,10 +205,20 @@ public class WeeklyRankingLaunchRunner implements ApplicationRunner, ExitCodeGen
             throw reject(Reason.LAUNCH_REJECTED, "재시작 실행이 대상 instance·parameter 와 다릅니다.");
         }
         BatchStatus status = fresh.getStatus();
-        log.info("weeklyRanking 결과 instanceId={} executionId={} parameters={} status={}",
-            fresh.getJobInstance().getId(), executionId, fresh.getJobParameters(), status);
+        String snapshotId = fresh.getJobParameters().getString(WeeklyRankingParameters.SNAPSHOT_ID);
+        // 같은 instance 의 마지막 공개 Step context 를 쓴다. 재시작에서 완료 Step 을 건너뛰어도 저장된 값만 읽고 만들어 쓰지 않는다.
+        String outcome = jobExplorer.getJobExecutions(fresh.getJobInstance()).stream()
+            .flatMap(execution -> execution.getStepExecutions().stream())
+            .filter(step -> step.getStepName().equals(WeeklyRankingJobConfig.PUBLISH_STEP))
+            .max(Comparator.comparing(StepExecution::getId))
+            .map(StepExecution::getExecutionContext)
+            .filter(context -> Objects.equals(snapshotId, context.getString(PublishWeeklyRankingTasklet.TARGET_KEY, null)))
+            .map(context -> context.getString(PublishWeeklyRankingTasklet.OUTCOME_KEY, null))
+            .orElse(null);
+        log.info("weeklyRanking 결과 instanceId={} executionId={} parameters={} status={} publicationOutcome={}",
+            fresh.getJobInstance().getId(), executionId, fresh.getJobParameters(), status, outcome);
         return new LaunchResult(status == BatchStatus.COMPLETED ? 0 : 1, null, executionId,
-            fresh.getJobInstance().getId(), status);
+            fresh.getJobInstance().getId(), status, outcome);
     }
 
     private static LocalDate parsePeriodStart(String raw) {
