@@ -92,11 +92,28 @@ resilience4j:
         retry-exceptions: # timeout·5xx·IO·해석 불가만. 4xx·회로 OPEN은 재시도하지 않는다
           - com.loopers.payment.adapter.out.pg.PgLookupRetryableException
 
+# W8 쿠폰 격벽 (docs/week8/plan.md D-6). 서버마다 센다. 값은 측정 전 임시값(필수 실험 ⑨로 다시 정한다).
+# couponIssue: 커넥션 풀 40개 중 쿠폰 발급이 동시에 쥘 수 있는 상한 10(25%), 잠깐 몰리면 500ms 기다린다.
+# couponQueue: 대기열 등록·조회를 서버당 초당 2000건까지. 1만 명 대기 시 계산상 초당 약 2,200건(서버 여러 대로 나뉨).
+resilience4j.bulkhead:
+  instances:
+    couponIssue:
+      max-concurrent-calls: 10
+      max-wait-duration: 500ms
+resilience4j.ratelimiter:
+  instances:
+    couponQueue:
+      limit-for-period: 2000
+      limit-refresh-period: 1s
+      timeout-duration: 0
+
 # W5 결제 발송 풀 (ADR-W5-01·03, plan.md 0-1 🔧): 동시 PG 대기 100 TPS × 0.5s = 50. 대기열 0 — 넘치면 늦게 보내지 않고 바로 실패로 닫는다.
 # W6 (docs/week6/plan.md D-2·D-8): 주문 확정 이벤트 topic. partition 3 · RF 3 · min.insync.replicas 2.
 kafka:
   topics:
     order-events: order-events
+    # W8 (docs/week8/plan.md D-8): 쿠폰 발급 요청. key = userId
+    coupon-issue: coupon-issue-requests
 
 # W7 relay 한 회차 (docs/week7/plan.md D-1): 한 번에 고르는 최대 행 수 · broker 응답(ack)을 기다리는 시간.
 # send-wait(35s)는 producer가 포기하는 delivery.timeout.ms(30s)보다 길어야 한다 — relay가 실패로 적은 행이 뒤늦게 성공하지 않게.
@@ -109,6 +126,24 @@ outbox:
     tick: 1s
     scheduler:
       enabled: true
+
+# W8 당첨 기록 relay (docs/week8/plan.md D-2). W7 relay와 같은 값으로 시작한다.
+coupon:
+  outbox:
+    relay:
+      batch-size: 200
+      send-wait: 35s
+      tick: 1s
+      scheduler:
+        enabled: true
+  # W8 대기열 (D-4-3·D-4-4). 100ms마다 5명 = 초당 50명은 측정 전 임시값이다(필수 실험 ⑧로 다시 정한다).
+  queue:
+    entry-ttl: 30s
+    admission:
+      tick: 100ms
+      per-tick: 5
+      scheduler:
+        enabled: true
 
 payment:
   dispatch:
@@ -152,6 +187,16 @@ outbox:
   relay:
     scheduler:
       enabled: false
+
+coupon:
+  outbox:
+    relay:
+      scheduler:
+        enabled: false
+  queue:
+    admission:
+      scheduler:
+        enabled: false
 
 ---
 spring:

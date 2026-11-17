@@ -10,6 +10,7 @@ import jakarta.persistence.PessimisticLockException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -28,6 +29,8 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 @Slf4j
 public class ApiControllerAdvice {
+
+    private static final String RETRY_AFTER_SECONDS = "1";
 
     private static final int MYSQL_LOCK_WAIT_TIMEOUT = 1205;
     private static final int MYSQL_DEADLOCK = 1213;
@@ -161,8 +164,12 @@ public class ApiControllerAdvice {
     }
 
     private ResponseEntity<ApiResponse<?>> failureResponse(ErrorType errorType, String errorMessage) {
-        return ResponseEntity.status(toHttpStatus(errorType))
-            .body(ApiResponse.fail(errorType.getCode(), errorMessage != null ? errorMessage : errorType.getMessage()));
+        ResponseEntity.BodyBuilder builder = ResponseEntity.status(toHttpStatus(errorType));
+        if (errorType == ErrorType.TOO_MANY_REQUESTS || errorType == ErrorType.SERVICE_UNAVAILABLE) {
+            // W8 D-7: 다시 시도할 시점 (표준 헤더, 초)
+            builder.header(HttpHeaders.RETRY_AFTER, RETRY_AFTER_SECONDS);
+        }
+        return builder.body(ApiResponse.fail(errorType.getCode(), errorMessage != null ? errorMessage : errorType.getMessage()));
     }
 
     /**
@@ -177,6 +184,9 @@ public class ApiControllerAdvice {
             case NOT_FOUND -> HttpStatus.NOT_FOUND;
             case CONFLICT -> HttpStatus.CONFLICT;
             case CONCURRENCY_CONFLICT -> HttpStatus.CONFLICT;
+            case COUPON_SOLD_OUT, QUEUE_NOT_ADMITTED, CAMPAIGN_NOT_OPEN -> HttpStatus.CONFLICT;
+            case TOO_MANY_REQUESTS -> HttpStatus.TOO_MANY_REQUESTS;
+            case SERVICE_UNAVAILABLE -> HttpStatus.SERVICE_UNAVAILABLE;
         };
     }
 }

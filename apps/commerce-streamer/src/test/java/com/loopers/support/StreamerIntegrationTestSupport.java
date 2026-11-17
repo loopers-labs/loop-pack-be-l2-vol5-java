@@ -57,6 +57,8 @@ public abstract class StreamerIntegrationTestSupport {
         // order-events는 api가 만든다. streamer 테스트 클러스터에는 직접 만든다 (partition 3).
         KafkaTestContainersConfig.bootstrapServers();
         KafkaTestSupport.ensureTopic("order-events", 3);
+        // W8: 쿠폰 발급 요청도 api가 만드는 topic이다. 컨텍스트가 뜨기 전에 있어야 listener가 바로 partition을 받는다.
+        KafkaTestSupport.ensureTopic("coupon-issue-requests", 3);
     }
 
     @Autowired

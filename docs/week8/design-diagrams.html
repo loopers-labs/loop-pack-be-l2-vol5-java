@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>8주차 쿠폰 발급 설계</title>
+<style>
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --fg: #1d2330;
+  --muted: #5d6677;
+  --line: #d3d8e0;
+  --font-body: "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif;
+  --font-mono: ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12161d; --surface: #1a2029; --fg: #e3e7ee; --muted: #9aa3b2; --line: #3a4352;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12161d; --surface: #1a2029; --fg: #e3e7ee; --muted: #9aa3b2; --line: #3a4352;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.7; }
+main { max-width: 920px; margin: 0 auto; padding: 32px 16px 80px; display: flex; flex-direction: column; gap: 36px; }
+h1 { font-size: 26px; line-height: 1.3; margin: 0 0 8px; }
+h2 { font-size: 19px; line-height: 1.4; margin: 0; }
+p { margin: 0; }
+.lead { color: var(--muted); max-width: 68ch; }
+section { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+code { font-family: var(--font-mono); font-size: .9em; }
+figure { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
+.scroll { overflow-x: auto; padding: 16px 12px; }
+.diagram { text-align: center; }
+pre.mermaid { margin: 0; background: none; font-family: var(--font-body); }
+.w-560 { min-width: 560px; }
+.w-640 { min-width: 640px; }
+.w-720 { min-width: 720px; }
+ul { margin: 0; padding-left: 20px; }
+li { margin: 2px 0; }
+.table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td.id { font-family: var(--font-mono); white-space: nowrap; }
+.note { font-size: 13.5px; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>8주차 쿠폰 발급 설계</h1>
+    <p class="lead">선착순 쿠폰을 대기열로 받는다. 줄은 Redis, 판정은 Redis Lua 1회, 쿠폰 생성은 Kafka 뒤 consumer가 한다. 세마포어(동시 처리 자리 수 C)는 11-12에 뺐다. 결정의 이유와 숫자는 <code>docs/week8/plan.md</code>에 있다.</p>
+  </header>
+
+  <section>
+    <h2>1. 전체 구조</h2>
+    <figure><div class="scroll"><div class="diagram w-640"><pre class="mermaid">
+flowchart TB
+  C["사용자 화면 (Client)"]
+  subgraph API["commerce-api (여러 대)"]
+    CF["Caffeine 품절 표시<br/>서버 메모리, TTL 5초"]
+    Q["대기열 API<br/>POST · GET /queue"]
+    S["입장 스케줄러<br/>100ms마다 5명"]
+    BH["Bulkhead<br/>동시 10"]
+    I["발급 API<br/>POST /issues"]
+    RC["맞춰 보기 (reconcile)<br/>10초마다"]
+    RL["outbox relay<br/>1초마다"]
+  end
+  subgraph R["Redis (primary 1대)"]
+    ZQ[("줄 ZSET")]
+    EK[("입장 키<br/>TTL 30초")]
+    WS[("당첨자 Set")]
+  end
+  subgraph DB["MySQL"]
+    OB[("coupon_issue_outbox")]
+    UC[("user_coupon<br/>coupon_campaign")]
+  end
+  K[["Kafka<br/>coupon-issue-requests"]]
+  CON["commerce-streamer<br/>발급 consumer"]
+
+  C --> CF
+  CF -->|"품절 아님"| Q
+  Q -->|"등록 Lua"| ZQ
+  S -->|"앞에서 꺼냄"| ZQ
+  S -->|"입장 키 씀"| EK
+  CF -->|"입장한 사람"| I
+  I --> BH
+  BH -->|"발급 Lua 1회:<br/>중복 · 입장 키 · 품절"| WS
+  BH -->|"통과하면 짧은 TX"| OB
+  RC -.->|"Set에 있는데 기록 없으면 채움"| OB
+  RL -->|"읽어서 발행"| OB
+  RL --> K
+  K --> CON
+  CON -->|"한 TX"| UC
+</pre></div></div></figure>
+    <ul>
+      <li>발급 API는 판정(Redis Lua 1회)과 outbox 기록까지만 하고 <strong>202</strong>를 준다.</li>
+      <li>쿠폰을 실제로 만드는 건 commerce-streamer의 consumer다. 다른 프로세스라 커넥션 풀·스레드가 나뉜다.</li>
+      <li>입장 속도는 모든 서버가 Redis 카운터 하나로 센다. 서버를 늘려도 초당 50명(측정 전 임시값)을 넘지 않는다.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>2. 사용자 흐름</h2>
+    <figure><div class="scroll"><div class="diagram w-720"><pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant U as 사용자 화면
+  participant A as commerce-api
+  participant R as Redis
+  participant D as MySQL
+  participant K as Kafka와 streamer
+  U->>A: POST /queue (줄 서기)
+  A->>R: 등록 Lua (이미 줄에 있으면 원래 순번)
+  A-->>U: 200 WAITING, 앞에 N명, pollAfterMs
+  Note over U,A: 줄이 비어 있으면 바로 ADMITTED
+  loop pollAfterMs마다 (0.5~5초, jitter ±20%)
+    U->>A: GET /queue
+    A->>R: 상태 Lua
+    A-->>U: WAITING, 앞에 N명, pollAfterMs
+  end
+  Note over A,R: 입장 스케줄러가 100ms마다 앞에서 5명을 꺼내 입장 키(TTL 30초)를 씀
+  U->>A: GET /queue
+  A-->>U: ADMITTED
+  U->>A: POST /issues
+  A->>R: 발급 Lua (통과하면 당첨자 Set에 추가)
+  A->>D: outbox INSERT (짧은 TX)
+  A->>R: 입장 키 삭제
+  A-->>U: 202 ACCEPTED
+  A->>K: relay가 outbox를 읽어 발행 (1초마다)
+  K->>D: consumer가 user_coupon INSERT, issued_count +1
+  U->>A: GET /api/v1/coupons
+  A->>D: 내 쿠폰 조회 (Redis 장애에도 동작)
+  A-->>U: 200 쿠폰 목록
+</pre></div></div></figure>
+    <ul>
+      <li>다음 조회 시점은 화면이 아니라 서버가 정한다(<code>pollAfterMs</code>). 같은 순간에 몰리지 않게 jitter를 섞는다.</li>
+      <li>품절이면 줄을 지우고, 기다리던 사람은 다음 조회에서 <code>SOLD_OUT</code>을 받는다.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>3. 실패 처리: 되돌리지 않고 앞으로 채운다</h2>
+    <figure><div class="scroll"><div class="diagram w-560"><pre class="mermaid">
+flowchart LR
+  subgraph R["Redis: 빠름, 사라질 수 있음"]
+    WS[("당첨자 Set<br/>원본 명단")]
+  end
+  subgraph M["MySQL: 느림, 사라지지 않음"]
+    OB[("coupon_issue_outbox<br/>UNIQUE(campaign_id, user_id)")]
+  end
+  WS -->|"맞춰 보기 (10초마다):<br/>Set에 있는데 outbox에 없으면 행을 채움"| OB
+  OB -->|"Redis 데이터가 사라지면:<br/>outbox로 Set을 다시 채움 (자동 복구)"| WS
+  F1["API가 Lua 통과 뒤<br/>기록 전에 죽음"] -.-> WS
+  F2["outbox 기록 실패 → 503<br/>다시 요청하면 기록을 채움"] -.-> OB
+</pre></div></div></figure>
+    <ul>
+      <li>Set에서 빼는 경로는 없다. 두 곳이 서로 빠진 걸 채우기만 한다.</li>
+      <li>같은 행을 여러 번 채워도 UNIQUE가 하나만 남긴다. 채우는 쪽끼리 겹쳐도 꼬이지 않는다.</li>
+      <li>Redis 데이터가 사라진 것은 캠페인 상태 키가 없는 것으로 알아챈다. 복구 동안은 503이다.</li>
+      <li>consumer 재시도가 다 실패한 메시지(DLT)는 관리자 재처리 API로 다시 보낸다.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>4. consumer 트랜잭션</h2>
+    <figure><div class="scroll"><div class="diagram"><pre class="mermaid">
+flowchart TB
+  M["Kafka 메시지<br/>campaignId, userId"] --> T1
+  subgraph TX["DB 트랜잭션 하나"]
+    T1["INSERT user_coupon<br/>쿠폰팩의 쿠폰 수만큼"] --> T2["UPDATE coupon_campaign<br/>SET issued_count = issued_count + 1<br/>WHERE issued_count #lt; total_quantity"]
+  end
+  T1 -->|"UNIQUE 위반: 이미 발급"| OK1["롤백, 성공으로 처리"]
+  T2 -->|"1행 바뀜"| OK2["commit: 발급 끝"]
+  T2 -->|"0행: 다 참"| RB["롤백: INSERT도 취소"]
+</pre></div></div></figure>
+    <ul>
+      <li>발급 수를 바꾸는 경로가 consumer 하나뿐이라, 3주차 재고처럼 비관적 잠금(<code>SELECT … FOR UPDATE</code>)을 쓰지 않고 조건부 UPDATE 한 문장으로 끝낸다.</li>
+      <li>UPDATE를 맨 뒤에 둬서 캠페인 행 잠금을 쥐는 시간을 가장 짧게 한다.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>결정 요약</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>ID</th><th>무엇</th><th>결론</th></tr></thead>
+        <tbody>
+          <tr><td class="id">P-W8-01</td><td>줄 세우는 순서</td><td>Redis에 도착한 순서대로 줄 세우고 앞에서부터 입장. 내 앞 인원만 보여 줌. 한도 n장, 1인 1장</td></tr>
+          <tr><td class="id">D-1</td><td>전체 구조</td><td>판정은 API의 Redis Lua 1회, 쿠폰 생성은 consumer. 응답은 202</td></tr>
+          <tr><td class="id">D-2</td><td>실패 처리</td><td>되돌리지 않고 앞으로 채움. Set이 원본, outbox가 따라잡음. DLT는 관리자 재처리</td></tr>
+          <tr><td class="id">D-3</td><td>범위 다시 정함</td><td>세마포어(C=3)는 빼고 실험으로. 대기열을 본 설계로. 멀티 인스턴스 전제</td></tr>
+          <tr><td class="id">D-4</td><td>대기열</td><td>ZSET 줄, 100ms마다 5명 입장, 입장 키 30초, 서버가 정하는 조회 간격, 품절 = Set 크기 ≥ 수량, Redis 데이터 유실은 자동 복구</td></tr>
+          <tr><td class="id">D-5</td><td>쿠폰 DB 모델</td><td>캠페인(줄·수량)과 쿠폰(할인 규칙) 분리, 당첨되면 쿠폰팩 전부, 발급 수는 조건부 UPDATE</td></tr>
+          <tr><td class="id">D-6</td><td>격벽</td><td>발급 API에 Bulkhead(동시 10, Lua 앞), 등록·조회에 RateLimiter, consumer 동시 처리 2</td></tr>
+          <tr><td class="id">D-7</td><td>API 계약</td><td>대기열 API는 업무 상태를 200 본문으로, 발급은 202 / 200 / 409 / 503</td></tr>
+          <tr><td class="id">D-8</td><td>consumer 위치</td><td>commerce-streamer (다른 프로세스가 가장 강한 격벽)</td></tr>
+          <tr><td class="id">D-9</td><td>Redis 격리</td><td>이번 주는 상품 캐시와 같은 Redis. 상품 캐시 조회가 느려지면 나눔</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">모두 ✅ 합의(11-10 ~ 11-12). 좁은 화면에서 그림이 잘리면 그림 상자를 옆으로 밀어 본다.</p>
+  </section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>
+(function () {
+  if (!window.mermaid) return;
+  var forced = document.documentElement.getAttribute('data-theme');
+  var dark = forced ? forced === 'dark'
+    : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  mermaid.initialize({ startOnLoad: false, theme: dark ? 'dark' : 'default', securityLevel: 'strict' });
+  mermaid.run({ querySelector: 'pre.mermaid' });
+})();
+</script>
+</body>
+</html>

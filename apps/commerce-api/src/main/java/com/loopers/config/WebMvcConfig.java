@@ -1,6 +1,7 @@
 package com.loopers.config;
 
 import com.loopers.user.adapter.in.web.LoginUserArgumentResolver;
+import com.loopers.user.adapter.in.web.TrustedUserArgumentResolver;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
@@ -12,9 +13,11 @@ import java.util.List;
 @Configuration
 public class WebMvcConfig implements WebMvcConfigurer {
     private final LoginUserArgumentResolver loginUserArgumentResolver;
+    private final TrustedUserArgumentResolver trustedUserArgumentResolver;
 
     @Override
     public void addArgumentResolvers(List<HandlerMethodArgumentResolver> resolvers) {
         resolvers.add(loginUserArgumentResolver);
+        resolvers.add(trustedUserArgumentResolver);
     }
 }
