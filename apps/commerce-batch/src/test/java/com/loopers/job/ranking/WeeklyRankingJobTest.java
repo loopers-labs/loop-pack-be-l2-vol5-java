@@ -14,8 +14,10 @@ import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
@@ -23,11 +25,14 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.batch.core.BatchStatus;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.JobExecution;
 import org.springframework.batch.core.JobInstance;
 import org.springframework.batch.core.JobParameters;
+import org.springframework.batch.core.JobParametersInvalidException;
 import org.springframework.batch.core.JobParametersBuilder;
 import org.springframework.batch.core.StepExecution;
 import org.springframework.batch.core.explore.JobExplorer;
@@ -159,9 +164,9 @@ class WeeklyRankingJobTest {
         Map<String, Object> frozenInfo = info(snapshotId());
         List<Map<String, Object>> frozenInputs = inputs(snapshotId());
 
-        Object result = runCatching("2026-08-24", snapshotId());
+        Throwable rejected = catchThrowable(() -> run("2026-08-24", snapshotId()));
 
-        assertThat(result).isNotEqualTo(BatchStatus.COMPLETED);
+        assertThat(rejected).isInstanceOf(JobParametersInvalidException.class).hasMessageContaining("periodStart");
         assertThat(info(snapshotId())).isEqualTo(frozenInfo);
         assertThat(inputs(snapshotId())).isEqualTo(frozenInputs);
     }
@@ -190,18 +195,19 @@ class WeeklyRankingJobTest {
             inserted.countDown();
         });
 
-        CompletableFuture<JobExecution> running = CompletableFuture.supplyAsync(() -> {
-            try {
-                return run(PERIOD_START, snapshotId());
-            } catch (Exception e) {
-                throw new IllegalStateException(e);
-            }
-        });
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<JobExecution> running = executor.submit(() -> run(PERIOD_START, snapshotId()));
 
-        assertThat(inserted.await(20, TimeUnit.SECONDS)).as("다른 연결 INSERT 시도 끝남").isTrue();
-        JobExecution execution = running.get(30, TimeUnit.SECONDS);
-        assertThat(otherResult[0]).isEqualTo("성공");
-        assertThat(execution.getStatus()).isEqualTo(BatchStatus.COMPLETED);
+            assertThat(inserted.await(20, TimeUnit.SECONDS)).as("다른 연결 INSERT 시도 끝남").isTrue();
+            JobExecution execution = running.get(30, TimeUnit.SECONDS);
+            assertThat(otherResult[0]).isEqualTo("성공");
+            assertThat(execution.getStatus()).isEqualTo(BatchStatus.COMPLETED);
+        } finally {
+            inserted.countDown();
+            executor.shutdownNow();
+            executor.awaitTermination(30, TimeUnit.SECONDS);
+        }
     }
 
     @Test
@@ -237,6 +243,21 @@ class WeeklyRankingJobTest {
         assertThat(execution.getStatus()).isEqualTo(BatchStatus.FAILED);
         assertThat(infoCount(snapshotId())).isZero();
         assertThat(inputs(snapshotId())).isEmpty();
+    }
+
+    @ParameterizedTest(name = "{0}: periodStart={1}, snapshotId={2}")
+    @CsvSource({
+        "형식 오류, 2026-08-17, weekly-2026-08-17-r1",
+        "revision 0, 2026-08-17, weekly-20260817-r0",
+        "월요일 아님, 2026-08-18, weekly-20260818-r1",
+        "날짜 불일치, 2026-08-17, weekly-20260824-r1"
+    })
+    @DisplayName("식별 파라미터가 형식에 맞지 않거나 revision이 0이거나 월요일이 아니거나 snapshotId 날짜가 다르면 Job을 시작하지 않고 거절한다")
+    void invalidParametersAreRejectedBeforeStart(String scene, String periodStart, String snapshotId) {
+        Throwable rejected = catchThrowable(() -> run(periodStart, snapshotId));
+
+        assertThat(rejected).isInstanceOf(JobParametersInvalidException.class);
+        assertThat(infoCount(snapshotId)).isZero();
     }
 
     private String snapshotId() {
@@ -283,14 +304,6 @@ class WeeklyRankingJobTest {
 
     private JobExecution run(String periodStart, String snapshotId) throws Exception {
         return jobLauncher.run(weeklyRanking, parameters(periodStart, snapshotId));
-    }
-
-    // 파라미터 검증에서 시작 전에 거절되면 예외, 시작했다면 실행 상태를 돌려준다.
-    private Object runCatching(String periodStart, String snapshotId) {
-        Throwable[] failure = new Throwable[1];
-        JobExecution[] execution = new JobExecution[1];
-        failure[0] = catchThrowable(() -> execution[0] = run(periodStart, snapshotId));
-        return execution[0] == null ? failure[0] : execution[0].getStatus();
     }
 
     private static JobParameters parameters(String periodStart, String snapshotId) {
