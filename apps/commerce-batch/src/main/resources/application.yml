@@ -20,6 +20,9 @@ spring:
 
 # 설계 27절. 유예·겹침·청크 크기·send 확인 대기는 [임시] 수치이며 환경변수(COMMERCE_RECONCILE_GRACE 등)로 덮어쓸 수 있다.
 commerce:
+  # docs/week9/commerce-ranking.md. 주간 점수 계산 chunk 크기([임시]).
+  ranking:
+    chunk-size: 100
   reconcile:
     grace: 5m
     overlap: 1m
