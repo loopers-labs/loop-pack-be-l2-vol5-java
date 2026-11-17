@@ -48,7 +48,8 @@
 - job `weeklyRanking`, 식별 parameter `periodStart`(월요일 날짜)·`snapshotId`. incrementer는 없다. 같은 parameter로 다시 실행하면 같은 JobInstance의 재시작이다.
 - revision은 3단계 런처가 job 시작 전에 정해 snapshotId에 담는다. 이번 단계 job은 snapshotId에서 revision을 읽는다.
 - **[사용자 결정] D152** snapshotId의 날짜가 periodStart와 다르면 실패한다(이름·기간 어긋남 방지).
-- **[구현 판단]** snapshotId는 정규식 `weekly-(\d{8})-r(\d+)`로 읽고 revision은 1 이상이다. periodStart가 월요일이 아니면 실패한다. 이 검사들과 날짜 불일치는 JobParametersValidator가 Job 시작 전에 거절한다(JobParametersInvalidException). Step 1은 같은 snapshotId가 다른 기간·revision으로 이미 고정돼 있으면 덮어쓰지 않고 실패한다(D148의 두 번째 방어).
+- **[참모 지시(w9s2-1)]** revision은 앞자리 0을 받지 않는다(`r01` 거절). 같은 revision을 가리키는 이름이 둘 있으면 안 된다. snapshotId는 정규식 `weekly-(\d{8})-r([1-9]\d*)`로 읽는다.
+- **[구현 판단]** revision은 1 이상이다. periodStart가 월요일이 아니면 실패한다. 이 검사들과 날짜 불일치는 JobParametersValidator가 Job 시작 전에 거절한다(JobParametersInvalidException). Step 1은 같은 snapshotId가 다른 기간·revision으로 이미 고정돼 있으면 덮어쓰지 않고 실패한다(D148의 두 번째 방어).
 - **[구현 판단]** frozen_at은 주입한 Clock 값이다. chunk 크기는 설정값이다.
 
 ## 5. 원본 테이블 정의는 한 벌 [사용자 결정 D153]
