@@ -26,8 +26,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 
 // 9주차 1단계 probe. 과제 §3 "세 상품으로 DB chunk 재시작 연결하기" 예시를
 // 테스트 안에서 그대로 조립한다(제품 코드·진입점 없음).
-// 테이블 두 개는 테스트 준비에서만 만들고 지운다.
-// Batch metadata는 지우지 않으므로 snapshotId를 테스트마다 새로 만든다.
+// 입력은 batch 소유 ranking_snapshot_input, 결과 테이블은 probe 전용(테스트 준비에서만 만들고 지운다).
+// Batch metadata와 입력 행은 지우지 않으므로 snapshotId를 테스트마다 새로 만든다.
 final class RankingProbeFixture {
     static final String JOB = "purchaseInputProbe";
     static final String STEP = "probeProducts";
@@ -46,16 +46,13 @@ final class RankingProbeFixture {
         this.jdbcTemplate = new JdbcTemplate(dataSource);
     }
 
+    // ranking_snapshot_input은 batch 소유 진짜 테이블(sql/create-ranking-tables.sql)을 쓴다. 결과 테이블만 probe 전용이라 여기서 만들고 지운다.
     void createTables() {
-        jdbcTemplate.execute("create table if not exists ranking_snapshot_input (snapshot_id varchar(100) not null,"
-            + " order_id bigint not null, product_id bigint not null, quantity int not null, confirmed_at datetime(6) not null,"
-            + " primary key (snapshot_id, order_id, product_id))");
         jdbcTemplate.execute("create table if not exists batch_restart_probe (snapshot_id varchar(100) not null,"
             + " product_id bigint not null, primary key (snapshot_id, product_id))");
     }
 
     void dropTables() {
-        jdbcTemplate.execute("drop table if exists ranking_snapshot_input");
         jdbcTemplate.execute("drop table if exists batch_restart_probe");
     }
 
