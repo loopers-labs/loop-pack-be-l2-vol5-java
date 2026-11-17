@@ -228,3 +228,51 @@ r1 instance ID는 로그에 남기지 않았다. 원문 기대 순위(7→9→8)
 - Runner는 테스트에서 직접 생성해 호출했다. launch.enabled=true context에서 Boot가 ApplicationRunner로 실행하고 `SpringApplication.exit`가 종료 코드를 받는 경로는 실제 연결 단위의 batch 자식 JVM에서 확인한다.
 - 프로세스 생존 확인 등 §5.6의 수동 절차는 Runner 범위가 아니다. 같은 기간 직렬 실행 전제이며 다중 프로세스 번호 발급 원자성은 보장하지 않는다(§4.5).
 - 로그의 거절 사유 집계: INVALID_OPTION 5, IN_PROGRESS_OR_UNKNOWN 2, NOT_LATEST_EXECUTION 1, NOT_RESTARTABLE 1.
+
+## 실행 JDK 정정 (2026-11-17)
+
+로컬 `~/.gradle/gradle.properties`가 Gradle daemon을 JDK 17로 지정하고, 하위 프로젝트에는 toolchain 설정이 없어 1~4단위의 batch 명령은 JDK 17로 컴파일·실행됐다(쿠폰 실행 기록과 같은 환경 문제). commerce-api는 Java 21 문법 때문에 JDK 17에서 컴파일되지 않아 이 문제가 드러났다. 저장소 설정은 바꾸지 않고 이후 명령에 `-Dorg.gradle.java.home="$JAVA_HOME"`(JDK 21.0.12)을 붙였다. 4단위까지의 최종 코드에 대해 `./gradlew -Dorg.gradle.java.home="$JAVA_HOME" :apps:commerce-batch:check --rerun-tasks`(16:56:05)를 다시 실행해 Checkstyle 오류 0, 5클래스 17건 통과·failure/error/skip 0을 확인했다.
+
+## 5단위 — 랭킹 API (2026-11-17)
+
+### 범위
+
+- 사용자 착수 승인(2026-11-17): [§7](../features/weekly-ranking/api-contract.md#7-api-응답)의 `GET /api/v1/rankings/weekly`, [§11.3.1](../features/weekly-ranking/verification.md#1131-단독-테스트의-준비-파일순서소유권)의 API 단독 테스트 SQL 준비와 WeeklyRankingApiTest.
+- 제외: 실제 연결(6단위). API 테스트의 공개본은 batch 실행이 아니라 SQL로 준비한 fixture다.
+
+### 구현 (commerce-api)
+
+|위치|내용|
+|---|---|
+|`domain/ranking/WeeklyRankingQuery`|raw periodStart·limit 검증. 날짜 필수·형식·실제 날짜·월요일(INVALID_REQUEST) → limit 정수(BAD_REQUEST)·1~100(INVALID_REQUEST), 기본 10|
+|`domain/ranking/WeeklyRankingQueryRepository`·`WeeklyRankingQueryResult`|§7.8 두 조회 포트와 Publication·SnapshotSummary·Item projection|
+|`infrastructure/ranking/WeeklyRankingQueryRepositoryImpl`|§7.8 두 SQL(LEFT JOIN pointer·snapshot, 현재 Product·Brand 미삭제 JOIN 뒤 rank 순 LIMIT). 시각은 getObject(LocalDateTime), score는 toBigIntegerExact|
+|`application/ranking/RankingFacade`·`WeeklyRankingInfo`|readOnly TX 하나에서 pointer 확인 → 같은 snapshotId로 항목 조회. pointer 없음은 NOT_PUBLISHED, 깨진 공개 상태는 INTERNAL_ERROR|
+|`interfaces/api/ranking`|Controller·ApiSpec·Dto. score는 문자열, inputFixedAt은 UTC `…SSSSSS'Z'`, 미공개면 snapshotId·inputFixedAt null(기존 NON_NULL로 생략)|
+|test `fixtures/weekly-ranking-schema.sql`·`WeeklyRankingSchemaSupport`|batch 매핑과 같은 다섯 테이블. 모두 없을 때만 생성, 모두 있으면 열·인덱스 이름/순서/유일성·CHECK/FK 없음·InnoDB 확인, 일부만 있으면 실패|
+|test `WeeklyRankingApiTest`|아래 6개 테스트(파라미터 case 포함 15건)|
+
+### 실행 결과
+
+코드 상태: HEAD `ff18269`(4단위 커밋) + 5단위 미커밋 변경. JDK 21.0.12, 실제 MySQL 8.0 testcontainers.
+
+|검사|명령·시각|결과|
+|---|---|---|
+|API 관련 테스트·Checkstyle·ArchUnit|`./gradlew -Dorg.gradle.java.home="$JAVA_HOME" :apps:commerce-api:checkstyleMain :apps:commerce-api:checkstyleTest :apps:commerce-api:test --tests '*WeeklyRankingApiTest' --tests '*ArchitectureTest' --rerun-tasks` 16:54:56|Checkstyle main/test 오류 0. WeeklyRankingApiTest 15건, ArchitectureTest 3건 통과, failure/error/skip 0|
+|전체 Controller 영향 확인|같은 방식으로 `--tests '*ContractClassificationTest' --tests '*AdminAccessBoundaryTest' --tests '*CommerceApiContextTest'` 16:55:28|기동 1, 관리자 경계 6, 계약 분류 4건 통과|
+
+API 전체 회귀는 실행하지 않았다(관련 테스트만 실행).
+
+|주|시나리오|관찰|
+|---|---|---|
+|2026-11-02|숨김 제외 후 limit|rank1 정상·rank2 삭제 상품·rank3 삭제 브랜드 상품·rank4 정상(재고 0)에서 limit=2 → rank 1·4. score `123456789012345678901234567890`·`1` 문자열, inputFixedAt `2026-11-09T01:23:45.123456Z`, 현재 상품명|
+|2026-11-09|limit 기본/최대|공개 가능 12개에서 생략 → rank 1~10, limit=100 → 12개|
+|2026-11-16·11-23|빈 공개본·미공개|11-16은 PUBLISHED·snapshotId·빈 items. 11-23은 NOT_PUBLISHED·기간·빈 items이고 JSON에 snapshotId·inputFixedAt 키 없음|
+|2026-11-30·12-07|깨진 공개 상태|없는 snapshot을 가리키는 pointer, READY snapshot을 가리키는 pointer 모두 500 `Internal Server Error`|
+|-|입력 오류 10건|날짜 누락/빈 값·형식·실제 날짜 아님·월요일 아님은 400 INVALID_REQUEST, limit 빈 값·문자·int 초과는 400 `Bad Request`, 0·101은 400 INVALID_REQUEST. 메시지는 §7.10 문구|
+|-|고객 식별 우선|헤더 없음 400 INVALID_REQUEST(날짜 오류 메시지 아님), 없는 고객 404 USER_NOT_FOUND|
+
+### 한계
+
+- 두 조회가 같은 readOnly TX와 snapshotId를 쓰는 것은 코드 경로로 보장했고, 조회 중간에 새 revision이 공개되는 동시성 상황은 재현하지 않았다.
+- batch가 만든 실제 완성본을 API가 읽는 연결은 6단위에서 확인한다.
