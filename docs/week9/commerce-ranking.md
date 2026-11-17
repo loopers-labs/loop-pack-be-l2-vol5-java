@@ -4,6 +4,7 @@
 나머지 설계(1~29절)는 `docs/week8/commerce-coupon.md`를 따른다.
 
 - **[사용자 결정]**: 사용자가 정한 것(참모 결정 기록 번호). 바꾸려면 승인이 필요하다.
+- **[참모 지시]**: D번호가 없는 참모 지시문·고정 규칙이다. 바꾸려면 참모 확인이 필요하다.
 - **[구현 판단]**: 사용자 결정 범위 안에서 AI(PL·DEVELOPER)가 정한 내부 선택이다. 근거와 함께 적고 뒤집을 수 있다.
 
 ## 1. snapshot — 원본과 복사본
@@ -33,9 +34,10 @@
   5. snapshot 정보를 INSERT한다.
 - 입력 행과 정보 행이 함께 commit되거나 함께 rollback된다. 반쪽 snapshot이 남지 않는다.
 - **평범한 SELECT를 쓰는 이유:** `FOR UPDATE`나 `INSERT … SELECT`는 원본 행·범위에 잠금을 걸어, 고정하는 동안 streamer의 새 구매 기록 INSERT를 막는다. 기본 격리 수준(REPEATABLE READ)의 일관된 읽기로 그 시점의 행만 복사하고, 그 뒤에 들어온 늦은 구매는 이 snapshot에 넣지 않는다(새 revision으로 다시 고정할 때 들어간다). 격리 수준은 바꾸지 않는다.
-- **[사용자 결정] D150** Step 2 `calculateWeeklyScores`(chunk)는 snapshot 입력의 상품을 읽어 상품별 quantity 합을 점수로 쓴다. writer는 절대값 upsert다(`score += …` 금지). 같은 chunk를 다시 써도 값이 같다.
+- **[사용자 결정] D150** 점수 stage는 별도 테이블 `ranking_score_stage`다.
+- **[참모 지시(지시문 2절)]** Step 2 `calculateWeeklyScores`(chunk)는 snapshot 입력의 상품을 읽어 상품별 quantity 합을 점수로 쓴다. writer는 절대값 upsert다(`score += …` 금지). 같은 chunk를 다시 써도 값이 같다.
 
-## 3. checksum 규칙 [사용자 결정]
+## 3. checksum 규칙 [참모 지시: D번호 없는 고정 규칙]
 
 - 입력 행을 `order_id, product_id` 오름차순으로 놓고, 행마다 `orderId\tproductId\tquantity\tconfirmedAt\n`(마지막 행에도 `\n`)을 이어 붙인다.
 - confirmedAt은 UTC `yyyy-MM-dd'T'HH:mm:ss.SSS'Z'`이다.
@@ -45,7 +47,8 @@
 
 - job `weeklyRanking`, 식별 parameter `periodStart`(월요일 날짜)·`snapshotId`. incrementer는 없다. 같은 parameter로 다시 실행하면 같은 JobInstance의 재시작이다.
 - revision은 3단계 런처가 job 시작 전에 정해 snapshotId에 담는다. 이번 단계 job은 snapshotId에서 revision을 읽는다.
-- **[구현 판단]** snapshotId는 정규식 `weekly-(\d{8})-r(\d+)`로 읽고 revision은 1 이상이다. 날짜가 periodStart와 다르거나 periodStart가 월요일이 아니면 job을 시작하지 않고 실패한다(이름·기간 어긋남 방지).
+- **[사용자 결정] D152** snapshotId의 날짜가 periodStart와 다르면 실패한다(이름·기간 어긋남 방지).
+- **[구현 판단]** snapshotId는 정규식 `weekly-(\d{8})-r(\d+)`로 읽고 revision은 1 이상이다. periodStart가 월요일이 아니면 실패한다. 이 검사들과 날짜 불일치는 JobParametersValidator가 Job 시작 전에 거절한다(JobParametersInvalidException). Step 1은 같은 snapshotId가 다른 기간·revision으로 이미 고정돼 있으면 덮어쓰지 않고 실패한다(D148의 두 번째 방어).
 - **[구현 판단]** frozen_at은 주입한 Clock 값이다. chunk 크기는 설정값이다.
 
 ## 5. 원본 테이블 정의는 한 벌 [사용자 결정 D153]
