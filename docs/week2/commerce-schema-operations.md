@@ -4,7 +4,7 @@
 
 ## 제공 범위와 적용 순서
 
-W2의 `001`~`006`은 커머스의 6개 업무 테이블을 빈 MySQL 8 데이터베이스에 수동으로 최초 생성하는 SQL이다. W4는 조회 인덱스 `007`과 목록 캐시 버전 메타데이터 `008`을 추가했다. W5는 주문·품목의 전진 이행 `009`, 결제 시도 테이블 `010`, 요청 지문 컬럼의 전진 이행 `011`을 제공한다. W7은 공통 Outbox 테이블 `012`를 추가하며 기존 001~011을 수정하지 않는다. 현재 **API 신규 설치는 12개 스크립트·업무 7개 + 캐시 메타데이터 1개 + Outbox 1개, 총 9개 테이블**이다. W6 streamer의 별도 001·두 테이블은 아래 소비 저장 절에서 다룬다. [인덱스 기록](../week4/product-query-optimization.md)·[캐시 기록](../week4/product-list-cache-tdd-log.md)·[선행 W5 저장 연결 기록](../week5/order-payment-persistence-tdd-log.md)과 [지문 저장 증분](../week5/payment-request-fingerprint-persistence-tdd-log.md)을 구분한다.
+W2의 `001`~`006`은 커머스의 6개 업무 테이블을 빈 MySQL 8 데이터베이스에 수동으로 최초 생성하는 SQL이다. W4는 조회 인덱스 `007`과 목록 캐시 버전 메타데이터 `008`을 추가했다. W5는 주문·품목의 전진 이행 `009`, 결제 시도 테이블 `010`, 요청 지문 컬럼의 전진 이행 `011`을 제공한다. W7은 공통 Outbox 테이블 `012`, W8은 쿠폰 캠페인·예약·보유 쿠폰 세 테이블 `013`과 대기 예약 조회 인덱스 `014`를 추가한다. **API 신규 설치는 14개 스크립트로 업무 테이블 10개, 캐시 메타데이터 1개, Outbox 1개를 생성한다.** W6 streamer의 별도 001·두 테이블은 아래 소비 저장 절에서 다룬다. [인덱스 기록](../week4/product-query-optimization.md)·[캐시 기록](../week4/product-list-cache-tdd-log.md)·[선행 W5 저장 연결 기록](../week5/order-payment-persistence-tdd-log.md)과 [지문 저장 증분](../week5/payment-request-fingerprint-persistence-tdd-log.md)을 구분한다.
 
 | 순서·파일 | 역할·주요 제약 |
 | --- | --- |
@@ -20,8 +20,25 @@ W2의 `001`~`006`은 커머스의 6개 업무 테이블을 빈 MySQL 8 데이터
 | [010-payment-attempt.sql](../../apps/commerce-api/src/main/resources/db/schema/010-payment-attempt.sql) | 별도 payment_attempt. 주문 FK·주문/UUID/외부 식별 유일 제약, 비음수 금액·관찰 상태 CHECK, 영속 발송 시작 시각 |
 | [011-payment-request-fingerprint.sql](../../apps/commerce-api/src/main/resources/db/schema/011-payment-request-fingerprint.sql) | 기존 payment_attempt에 nullable VARBINARY(32) 지문·INT 형식/키 버전 추가. 전체 NULL 또는 정확히 32바이트·양수 두 버전만 허용하는 CHECK. 기존 행 재작성·지문 소급 생성 없음 |
 | [012-outbox.sql](../../apps/commerce-api/src/main/resources/db/schema/012-outbox.sql) | 공통 outbox_message 추가. eventId 유일성·완성 JSON 문자열·목적지·불변 사실, PENDING/PUBLISHED·시도/시간 정보. 기존 주문·결제·재고·소비 DB 변경이나 과거 사건 소급 생성 없음 |
+| [013-coupon-issuance.sql](../../apps/commerce-api/src/main/resources/db/schema/013-coupon-issuance.sql) | 쿠폰 캠페인·사용자별 예약·보유 쿠폰. 캠페인·사용자당 예약 한 건, 예약당 보유 쿠폰 한 장, 대기 수와 발급 수의 합은 캠페인 한도 이하 |
+| [014-coupon-waiting-index.sql](../../apps/commerce-api/src/main/resources/db/schema/014-coupon-waiting-index.sql) | 캠페인별 커밋된 대기 예약을 순서대로 조회하는 인덱스 |
 
-SQL 파일은 애플리케이션 시작 시 자동 실행되지 않는다. 새 마이그레이션 프레임워크나 자동 스키마 적용 프로파일을 추가하지 않았다. 파일의 번호는 수동 적용 순서다. 기존 예시 API의 ExampleModel 테이블은 이 9개 테이블 범위에 포함하지 않는다.
+SQL 파일은 애플리케이션 시작 시 자동 실행되지 않는다. 새 마이그레이션 프레임워크나 자동 스키마 적용 프로파일을 추가하지 않았다. 파일의 번호는 수동 적용 순서다. 기존 예시 API의 ExampleModel 테이블은 이 12개 테이블 범위에 포함하지 않는다.
+
+## W8 쿠폰 예약·발급 스키마
+
+4단계 작업자는 지정 캠페인에서 `WAITING` 예약을 ID 오름차순으로 찾는다. 013이 적용된 DB에는 014가 `(campaign_id, status, id)` 인덱스를 추가한다. 쿠폰·예약 데이터 변경은 없다. 적용 여부는 `SHOW INDEX FROM coupon_reservation`로 확인한다.
+
+기존 API DB에 012까지 적용했다면 013을 한 번 적용한다. 예약은 캠페인과 기존 `user`를 참조하고, 보유 쿠폰은 예약을 참조한다. 적용 도중 중단되면 각 테이블의 존재 여부와 `SHOW CREATE TABLE` 결과를 대조한 뒤 미적용 구문부터 이어간다. 사용자 DB에는 이 스크립트를 실행하지 않았다.
+
+| 저장 단계 | 커밋 뒤 확인할 상태 |
+| --- | --- |
+| 예약 | `coupon_reservation`에 고객의 `WAITING` 예약이 한 건 생기고, 같은 트랜잭션에서 `coupon_campaign.waiting_count`가 1 증가한다. 이 커밋이 한 장 확보의 근거다. |
+| 발급 | 같은 예약이 `ISSUED`로 바뀌면서 `owned_coupon` 한 장이 생긴다. 대기 수 1 감소와 발급 수 1 증가를 같은 트랜잭션에서 커밋한다. 기존 예약을 다시 처리해도 같은 쿠폰 한 장을 유지한다. |
+
+두 단계 모두 `waiting_count + issued_count <= total_quota`를 지킨다. DB의 캠페인 수량 제약과 예약·보유 쿠폰의 유일 제약은 서로 다른 사실을 보호한다. 장애 후 복구 기준은 [W8 예약·발급 설계](commerce-erd-draft.md#w8-쿠폰-예약과-발급)를 따른다.
+
+앱을 재시작해 기존 예약을 복구할 때는 같은 MySQL 스키마와 데이터를 보존한다. 이 저장소의 `local`·`test` 프로필은 기본값이 `ddl-auto=create`여서, 복구 실험은 최초 DDL 준비 후 모든 API JVM에 `spring.jpa.hibernate.ddl-auto=validate`를 명시한다. [JPA 프로필 설정](../../modules/jpa/src/main/resources/jpa.yml)
 
 ## W7 Outbox의 추가 DDL과 배포 순서
 
@@ -57,7 +74,7 @@ SHOW INDEX FROM outbox_message;
 
 ## W6 streamer 구매 활동 DDL
 
-[001-purchase-activity.sql](../../apps/commerce-streamer/src/main/resources/db/schema/001-purchase-activity.sql)은 **streamer가 소유하는 두 테이블의 최초 생성 파일**이다. API의 001~012와는 별도의 데이터 소스·적용 경로다. 사용자 DB에는 실행하지 않았고 실제 적용·검사는 격리 DB에서만 수행하며 [소비 TDD 기록](../week6/purchase-activity-consumer-tdd-log.md)에 남긴다.
+[001-purchase-activity.sql](../../apps/commerce-streamer/src/main/resources/db/schema/001-purchase-activity.sql)은 **streamer가 소유하는 두 테이블의 최초 생성 파일**이다. API의 001~014와는 별도의 데이터 소스·적용 경로다. 사용자 DB에는 실행하지 않았고 실제 적용·검사는 격리 DB에서만 수행하며 [소비 TDD 기록](../week6/purchase-activity-consumer-tdd-log.md)에 남긴다.
 
 | 테이블·컬럼 | 보호할 사실 |
 | --- | --- |
@@ -115,9 +132,11 @@ SOURCE apps/commerce-api/src/main/resources/db/schema/009-order-payment-state.sq
 SOURCE apps/commerce-api/src/main/resources/db/schema/010-payment-attempt.sql;
 SOURCE apps/commerce-api/src/main/resources/db/schema/011-payment-request-fingerprint.sql;
 SOURCE apps/commerce-api/src/main/resources/db/schema/012-outbox.sql;
+SOURCE apps/commerce-api/src/main/resources/db/schema/013-coupon-issuance.sql;
+SOURCE apps/commerce-api/src/main/resources/db/schema/014-coupon-waiting-index.sql;
 ```
 
-`001`~`006`은 각각 한 테이블의 CREATE TABLE이고 `007`은 CREATE INDEX, `008`은 메타데이터 CREATE와 초기 INSERT다. `009`는 기존 주문·품목의 ALTER와 POINT 식별 UPDATE, `010`은 결제 시도 CREATE, `011`은 지문 세 컬럼·CHECK의 ALTER, `012`는 Outbox CREATE다. MySQL DDL의 암묵적 커밋 때문에 전체가 하나의 트랜잭션으로 취소되지는 않는다. 중간 실패 시 실제 상태를 확인하며 기존 테이블을 삭제하고 처음부터 다시 실행하지 않는다.
+`001`~`006`은 각각 한 테이블의 CREATE TABLE이고 `007`은 CREATE INDEX, `008`은 메타데이터 CREATE와 초기 INSERT다. `009`는 기존 주문·품목의 ALTER와 POINT 식별 UPDATE, `010`은 결제 시도 CREATE, `011`은 지문 세 컬럼·CHECK의 ALTER, `012`는 Outbox CREATE, `013`은 쿠폰 테이블 세 개의 CREATE, `014`는 예약 인덱스 CREATE다. MySQL DDL의 암묵적 커밋 때문에 전체가 하나의 트랜잭션으로 취소되지는 않는다. 중간 실패 시 실제 상태를 확인하며 기존 테이블을 삭제하고 처음부터 다시 실행하지 않는다.
 
 이미 대상 테이블이 있으면 해당 CREATE가 실패한다. 기존 데이터를 지우거나 `IF NOT EXISTS`로 구조 차이를 숨기지 않는다. 이전에 브랜드 SQL만 적용했다면 기존 brand 구조가 검증한 001과 같은지 확인한 후 002부터 진행한다. 운영 중인 다른 스키마를 변경·교체하는 마이그레이션은 이번 최초 생성 파일의 역할이 아니다.
 
@@ -198,7 +217,7 @@ SHOW INDEX FROM product;
 
 기존 DB에는 새 코드 배포 전에 `008`을 적용하고 `SELECT * FROM product_list_revision`으로 `(1,0)`을 확인한다. **캐시 OFF도 쓰기의 버전 증가를 생략하지 않으므로 008이 필요하다.** CREATE 성공 후 INSERT만 실패했다면 트래픽을 막고 실제 행 상태부터 확인한다. 이미 존재하는 버전을 0으로 덮어쓰지 않는다. 빈 메타데이터의 동시 최초 INSERT는 교착이 발생할 수 있어 초기화를 사용자 요청에 맡기지 않는다.
 
-로컬은 사용자 선택으로 캐시 기본 OFF다. 기존 local `ddl-auto=create`는 앱 재시작 시 DB를 재생성하기 때문이다. 현재 W7 코드로 로컬 캐시를 실험하려면 먼저 수동 스키마·012까지 준비하고 다음처럼 자동 재생성을 끄고 활성화한다. `experiment-1`은 이 DB 수명에만 사용하는 예시 구분값이다.
+로컬은 사용자 선택으로 캐시 기본 OFF다. 기존 local `ddl-auto=create`는 앱 재시작 시 DB를 재생성하기 때문이다. 현재 API 코드로 로컬 캐시를 실험하려면 먼저 014까지 수동 스키마를 준비하고 다음처럼 자동 재생성을 끄고 활성화한다. `experiment-1`은 이 DB 수명에만 사용하는 예시 구분값이다.
 
 ```shell
 ./gradlew :apps:commerce-api:bootRun --args='--spring.jpa.hibernate.ddl-auto=none --commerce.product-list-cache.enabled=true --commerce.product-list-cache.namespace=commerce:local:experiment-1:products:v1'
@@ -276,6 +295,7 @@ SELECT id, point_balance FROM `user` ORDER BY id;
   --tests 'com.loopers.infrastructure.schema.W5PaymentSchemaIntegrationTest' \
   --tests 'com.loopers.infrastructure.payment.PaymentAttemptPersistenceIntegrationTest' \
   --tests 'com.loopers.infrastructure.payment.PaymentAttemptFingerprintPersistenceIntegrationTest' \
+  --tests 'com.loopers.application.coupon.CouponIssuanceIntegrationTest' \
   --tests 'com.loopers.infrastructure.outbox.OutboxSchemaIntegrationTest' \
   --tests 'com.loopers.infrastructure.brand.BrandSchemaIntegrationTest' \
   --console=plain -q

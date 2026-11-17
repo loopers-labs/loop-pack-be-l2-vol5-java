@@ -2,6 +2,26 @@
 
 [전체 설계](commerce-erd-draft.md) · [정책 선택과 설계 검토](commerce-policy-decisions.md) · [TDD 계획](commerce-tdd-plan.md)
 
+## W8 쿠폰 예약 응답
+
+신청은 본문 없는 POST다. 성공 응답의 `data`에는 `campaignId`, `reservationId`, `status`가 들어간다. 발급이 끝났을 때만 `couponId`를 추가한다. 신청 주체는 기존 `X-USER-ID`로 식별한다. 사용자는 한 번 신청하며 서버가 후속 발급을 맡는다. BASIC의 동기 발급 `201`·자리 부족 `429`는 원문 실험의 기대값이다. 아래 표는 예약 방식을 선택한 고객 API의 계약이다. [예약·발급 흐름](commerce-erd-draft.md#w8-쿠폰-예약과-발급) · [테스트 기대값](commerce-tdd-plan.md#w8-쿠폰-예약과-복구-테스트)
+
+| 요청·시점 | 응답과 고객이 알 수 있는 사실 |
+| --- | --- |
+| `POST /api/v1/coupon-campaigns/{campaignId}/issues` · Redis에서만 선별됨 | 요청은 MySQL 예약 결과를 기다린다. Redis 선별만으로 고객에게 확보 성공을 응답하지 않는다. |
+| 같은 POST · 예약 커밋 확인 | `202 Accepted` · `WAITING` · “한 장 확보됐어요. 발급이 끝나면 내 쿠폰에서 확인할 수 있어요.” 발급 대기 중에는 실제 `couponId`가 없다. 같은 사용자의 반복 요청에도 기존 예약 상태를 돌려준다. 작업 자리 3개가 모두 사용 중이어도 이 응답은 가능하다. |
+| 같은 POST · 이미 발급 완료 | `200 OK` · `ISSUED` · 기존 `couponId`. 발급 완료 안내와 쿠폰 ID는 MySQL의 완료 기록에 근거한다. |
+| 같은 POST · 마감 후 신규 사용자 | Redis가 신뢰 가능한 상태에서 모든 몫을 배정했으면 접수 마감을 알린다. 신규 고객에게 `409 COUPON_CAMPAIGN_SOLD_OUT`을 반환하며 쿠폰 DB 접근은 0회다. 이미 배정된 사용자는 먼저 식별해 기존 결과를 보존한다. |
+| 같은 POST · 선별 또는 예약 커밋 결과 불확실 | 신규 접수 또는 커밋을 확인할 수 없으면 `503 COUPON_ADMISSION_UNAVAILABLE`로 알린다. 이미 진행한 작업의 실패나 쿠폰 소진을 단정하지 않는다. 커밋 여부는 서버가 기존 신청으로 대조한다. |
+| 같은 POST · Redis가 멈추고 MySQL은 정상 | 해당 사용자·캠페인에 커밋된 예약이 있으면 `202 WAITING` 또는 기존 쿠폰 ID를 담은 `200 ISSUED`를 반환한다. 기존 결과가 없으면 503이다. 장애 중 신규 예약·발급을 시작하지 않는다. |
+| 같은 POST · 비활성 캠페인 | 이미 예약된 사용자의 결과를 먼저 확인한다. 신규 신청은 `409 COUPON_CAMPAIGN_INACTIVE`를 반환한다. 캠페인을 열지 않아 상태를 모르면 `503`이다. |
+| `GET /api/v1/coupon-campaigns/{campaignId}/issues/me` · 화면 재진입 | 존재하는 캠페인은 `200 OK`와 `campaignId`, `status`를 반환한다. 본인 예약이 없으면 `NOT_APPLIED`, 예약 커밋 후에는 `WAITING`과 `reservationId`, 발급 커밋 후에는 `ISSUED`와 같은 `reservationId` 및 `couponId`다. 없는 캠페인은 `404 COUPON_CAMPAIGN_NOT_FOUND`다. |
+| `GET /api/v1/coupons?page=0&size=20` | `200 OK`. MySQL에 발급 완료된 본인 쿠폰만 반환한다. 각 항목은 `couponId`, `campaignId`, `benefitDescription`, `issuedAt`이다. 발급 시각 내림차순이며 동률이면 쿠폰 ID 내림차순이다. |
+
+고객은 확보 응답 뒤 화면을 닫을 수 있다. 다시 열 때는 GET으로 현재 상태를 확인한다. 두 조회는 `X-USER-ID`로 사용자를 식별한다. 헤더 누락은 `400 INVALID_REQUEST`, 미등록 사용자는 `404 USER_NOT_FOUND`다. 목록은 공통 `items`, `page`, `size`, `totalElements`, `totalPages` 형식을 따른다. 기본값은 첫 페이지와 20개이며 크기는 1~100이다. 범위를 넘는 페이지는 본인의 전체 건수와 빈 배열을 반환한다. 대기 예약은 목록과 전체 건수에서 모두 제외된다. [조회 검증](../week8/implementation-checklist.md#본인-예약과-보유-쿠폰-조회)
+
+예약 커밋이 확인되기 전에는 “신청 확인 중”까지만 안내한다. 그때의 조회 결과 `NOT_APPLIED`는 아직 커밋된 본인 예약이 없다는 뜻이다. 신청을 한 번 보내고 응답을 기다리는 화면이 이 값만 보고 자동 재신청하지 않는다. 예약 커밋이 확인된 뒤 Redis 작업 완료 표시만 실패하면 확인된 예약 결과를 돌려준다. 서버는 다음 대조에서 MySQL 예약과 Redis 기록을 맞춘다. [선별과 예약 복구](../week8/implementation-checklist.md#3단계-redis-선별과-예약-복구) · [발급 작업자 검증](../week8/implementation-checklist.md#4단계-발급-작업자와-redis-세마포어)
+
 **2026-11-04 W7 저장·relay·W6 복구 구현:** 공통 Outbox에 완성 JSON·topic·key를 저장하고 공통 BEFORE_COMMIT listener를 최초 확정 TX에 연결했다. 기존 HTTP 입출력은 유지한다. 현재 주문 경로는 Outbox PENDING까지 저장하며 Kafka 직접 발행을 호출하지 않는다. 후속 2단계에서 기본 OFF인 단일 relay를 연결했다. 저장 payload를 전송하고 broker 확인 뒤 별도 TX로 PUBLISHED를 기록한다. 후속 [중단·재발행 E2E](../week7/outbox-republication-e2e-tdd-log.md)에서 실제 주문 확정 HTTP·PG·Kafka·streamer를 연결해 두 중단 구간과 재개 뒤 구매 활동 불변을 확인했다. 후속 [W6 Outbox 보충·복구 기록](../week7/w6-outbox-backfill-tdd-log.md)에서는 같은 격리 실행의 누락·기소비 두 사건을 복구했다. 내부 보충 서비스만 추가했고 공개 HTTP 계약은 바꾸지 않았다. [relay TDD 기록](../week7/outbox-relay-tdd-log.md)에 이번 검증을 구분한다. 실제 결과와 범위는 [Outbox 원자성 TDD 기록](../week7/outbox-atomicity-tdd-log.md)에 남긴다. 사용자 DB에는 DDL을 적용하지 않았다.
 
 고객 계약 C01~C12와 관리자 계약 A01~A13의 입력·응답·오류와 W5의 결제 교체 계약을 정리한다. 업무 규칙과 세 대표 흐름은 전체 설계를 참조한다. **2026-10-23 현재 내부 startNew·startOrReuse·단건 refreshOnce에서 실제 PG HTTP, HMAC 저장/비교와 주문·재고 TX A/B를 연결했다. 고객 confirm·고객/관리자 주문 조회·최초 요청 제한 조회·PG 조회 회로를 연결했다. callback/reconcile HTTP도 연결했으며 이번 검증 결과는 [복구 API TDD 기록](../week5/payment-recovery-api-tdd-log.md)을 따른다. confirm·조회·제한 조회의 선행 증거는 [고객 결제 API TDD 기록](../week5/customer-payment-api-tdd-log.md)으로 보존한다.** HTTP·재고의 선행 결과는 [HTTP·주문·재고 연결 기록](../week5/order-payment-http-connection-tdd-log.md), 후속 지문 공동 저장·내부 동일 재요청은 [주문 HMAC 연결 기록](../week5/order-payment-fingerprint-connection-tdd-log.md)을 따른다. [재고 확보·반환 기록](../week5/order-stock-reservation-tdd-log.md), [PG HTTP 기록](../week5/local-test-pg-http-tdd-log.md), [주문·결제 기록](../week5/order-payment-persistence-tdd-log.md), [예약 상태 기록](../week5/order-reservation-state-tdd-log.md)과 [결제 시도 기록](../week5/payment-attempt-state-tdd-log.md)은 선행 증거로 보존한다. 고객 confirm API는 이제 PG 방식이며 관리자 status 필터는 승인된 DRAFT·CONFIRMED·PAYMENT_PENDING·PAYMENT_FAILED를 허용한다. 이전 POINT의 저장 사실과 본문 없는 재확정 오류는 보존한다. 최초 요청의 제한 조회·시간/회로 초기값과 저장 A안, 후속 UUID 키·테스트 PG 규격 카드 입력·호출 전 DB 상태 전이로 최초 발송을 보호하는 사용자 선택은 유지한다. 아래 W5 고객 confirm·조회와 callback/reconcile 계약은 현재 코드에 연결했다. 선행 관리자 재고 상한 응답은 구현돼 있다. `기본 API 계약` 이하의 기존 표는 W2~W4 구현과 POINT 결제의 기준을 보존하며 변경 대상이 아닌 계약은 계속 유지한다.

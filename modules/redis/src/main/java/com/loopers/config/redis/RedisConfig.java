@@ -1,8 +1,12 @@
 package com.loopers.config.redis;
 
 
+import io.lettuce.core.ClientOptions;
 import io.lettuce.core.ReadFrom;
+import io.lettuce.core.SocketOptions;
+import io.lettuce.core.TimeoutOptions;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -13,6 +17,7 @@ import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactor
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -42,13 +47,22 @@ public class RedisConfig{
 
     @Qualifier(CONNECTION_MASTER)
     @Bean
-    public LettuceConnectionFactory masterRedisConnectionFactory() {
+    public LettuceConnectionFactory masterRedisConnectionFactory(
+            @Value("${datasource.redis.master-timeout:2s}") Duration timeout) {
+        if (timeout.toMillis() < 1) {
+            throw new IllegalArgumentException("Redis master timeout must be at least one millisecond");
+        }
+        ClientOptions options = ClientOptions.builder()
+            .socketOptions(SocketOptions.builder().connectTimeout(timeout).build())
+            .timeoutOptions(TimeoutOptions.enabled())
+            .disconnectedBehavior(ClientOptions.DisconnectedBehavior.REJECT_COMMANDS)
+            .build();
         int database = redisProperties.database();
         RedisNodeInfo master = redisProperties.master();
         List<RedisNodeInfo> replicas = redisProperties.replicas();
         return lettuceConnectionFactory(
                 database, master, replicas,
-                b -> b.readFrom(ReadFrom.MASTER)
+                b -> b.readFrom(ReadFrom.MASTER).commandTimeout(timeout).clientOptions(options)
         );
     }
 

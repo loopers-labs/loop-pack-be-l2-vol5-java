@@ -4,12 +4,15 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.web.servlet.HandlerExceptionResolver;
 import org.springframework.web.servlet.ModelAndView;
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+import org.springframework.web.servlet.mvc.WebContentInterceptor;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.io.IOException;
@@ -22,6 +25,14 @@ public class CommerceWebConfiguration implements WebMvcConfigurer {
 
     public CommerceWebConfiguration(CommerceErrors errors) {
         this.errors = errors;
+    }
+
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        var personalCouponReads = new WebContentInterceptor();
+        personalCouponReads.setCacheControl(CacheControl.noStore());
+        registry.addInterceptor(personalCouponReads)
+            .addPathPatterns("/api/v1/coupons", "/api/v1/coupon-campaigns/{campaignId}/issues/me");
     }
 
     @Override
@@ -60,6 +71,6 @@ public class CommerceWebConfiguration implements WebMvcConfigurer {
     private boolean isCommerce(String path) {
         return path.startsWith("/api-admin/v1/")
             || path.equals("/api/v1/payments/callback")
-            || path.matches("/api/v1/(brands|products|users|points|orders)(/.*)?");
+            || path.matches("/api/v1/(brands|products|users|points|orders|coupon-campaigns|coupons)(/.*)?");
     }
 }

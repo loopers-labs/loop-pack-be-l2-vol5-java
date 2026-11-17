@@ -49,7 +49,7 @@ tasks.test {
     systemProperty("spring.test.context.cache.maxSize", "8")
     systemProperty("w4.startup.main-classpath", sourceSets.main.get().runtimeClasspath.asPath)
     useJUnitPlatform {
-        excludeTags("ttl-measurement")
+        excludeTags("ttl-measurement", "coupon-load-measurement")
     }
 }
 
@@ -84,4 +84,22 @@ tasks.register<Test>("ttlMeasurement") {
     systemProperty("spring.profiles.active", "test")
     jvmArgs("-Xshare:off")
     shouldRunAfter(tasks.test)
+}
+
+// Run the 100,000-request experiment explicitly so a normal regression run stays lightweight.
+tasks.register<Test>("couponLoadMeasurement") {
+    group = "verification"
+    description = "Measure coupon admission and concurrent product and order HTTP reads in isolated stores"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform { includeTags("coupon-load-measurement") }
+    maxParallelForks = 1
+    maxHeapSize = "1g"
+    systemProperty("spring.profiles.active", "test")
+    systemProperty("user.timezone", "Asia/Seoul")
+    val report = layout.buildDirectory.file("reports/coupon-load/measurement.json")
+    systemProperty("w8.coupon.load.report", report.get().asFile.absolutePath)
+    outputs.file(report)
+    outputs.upToDateWhen { false }
+    outputs.doNotCacheIf("Measure the current run") { true }
 }

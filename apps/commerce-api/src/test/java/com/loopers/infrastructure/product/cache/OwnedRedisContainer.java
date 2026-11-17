@@ -11,8 +11,8 @@ import java.io.UncheckedIOException;
 import java.net.ServerSocket;
 
 /** 재시작 때 Docker의 임의 published port가 바뀌지 않도록 이 테스트 소유 포트만 고정한다. */
-final class OwnedRedisContainer extends GenericContainer<OwnedRedisContainer> {
-    OwnedRedisContainer() {
+public final class OwnedRedisContainer extends GenericContainer<OwnedRedisContainer> {
+    public OwnedRedisContainer() {
         super(DockerImageName.parse("redis:7.4-alpine"));
         int port = availablePort();
         withExposedPorts(6379);
@@ -20,7 +20,7 @@ final class OwnedRedisContainer extends GenericContainer<OwnedRedisContainer> {
             new PortBinding(Ports.Binding.bindIpAndPort("127.0.0.1", port), new ExposedPort(6379))));
     }
 
-    int actualPublishedPort() {
+    public int actualPublishedPort() {
         var inspection = getDockerClient().inspectContainerCmd(getContainerId()).exec();
         var binding = inspection.getNetworkSettings().getPorts().getBindings().get(new ExposedPort(6379));
         if (binding == null || binding.length != 1) {

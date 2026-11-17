@@ -7,6 +7,7 @@ import com.loopers.application.user.UserResolutionException;
 import com.loopers.domain.brand.BrandDeletionException;
 import com.loopers.domain.brand.BrandNameException;
 import com.loopers.domain.brand.BrandStateException;
+import com.loopers.domain.coupon.CouponException;
 import com.loopers.domain.user.PointsException;
 import com.loopers.domain.product.ProductException;
 import com.loopers.domain.product.ProductStockException;
@@ -42,6 +43,15 @@ public class CommerceErrors {
     }
 
     public Failure translate(Exception exception) {
+        if (exception instanceof CouponException coupon) {
+            return switch (coupon.reason()) {
+                case SOLD_OUT -> new Failure(409, "COUPON_CAMPAIGN_SOLD_OUT", "쿠폰 신청이 마감됐습니다.");
+                case INACTIVE -> new Failure(409, "COUPON_CAMPAIGN_INACTIVE", "현재 신청할 수 없는 캠페인입니다.");
+                case CAMPAIGN_NOT_FOUND -> new Failure(404, "COUPON_CAMPAIGN_NOT_FOUND", "쿠폰 캠페인을 찾을 수 없습니다.");
+                case ADMISSION_UNAVAILABLE -> new Failure(503, "COUPON_ADMISSION_UNAVAILABLE", "현재 쿠폰 신청 결과를 확인할 수 없습니다.");
+                case RESERVATION_NOT_FOUND -> new Failure(500, "INTERNAL_ERROR", "일시적인 오류가 발생했습니다.");
+            };
+        }
         if (exception instanceof PaymentRecoveryException recovery) {
             return switch (recovery.getReason()) {
                 case PAYMENT_NOT_STARTED -> new Failure(409, "PAYMENT_NOT_STARTED", "결제를 시작하지 않은 주문입니다.");
