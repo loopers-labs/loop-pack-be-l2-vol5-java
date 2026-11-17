@@ -102,17 +102,29 @@ GET /api/v1/rankings/weekly ── ranking_publication → 그 snapshot의 weekl
 - confirmedAt 형식: `uuuu-MM-dd'T'HH:mm:ss.SSSSSS'Z'`(UTC, 마이크로초 6자리 고정)
 - 실행 ID·실행 시각은 넣지 않는다. 기대 점수·순위 assert와 함께 쓴다.
 
-## 9. 검증 계획 (실제 MySQL·Kafka, mock 없음)
+## 9. 검증 (실제 MySQL·Kafka, mock 없음)
 
-| 테스트 | 확인 |
-|---|---|
-| `PurchaseInputProbeTest` | 실패 chunk 다음부터 같은 instance로 이어짐(완료) |
-| freeze 테스트 | 같은 주문 여러 품목, 경계(시작 포함·끝 제외), 실패 시 반쪽 없음, 고정 뒤 늦은 구매 미반영, 충돌 |
-| `RankingJobRestartTest` | §6 fixture, chunk=2, 9 직전 실패 → 재시작. 기대 7(5,1위)·9(5,2위)·8(1,3위), 정상 실행과 checksum 동일, 입력 step 재실행 없음 |
-| publish 테스트 | rollback 시 이전 공개본 유지, 재실행 수렴, 오래된 revision 차단 |
-| `WeeklyRankingApiTest` | 미공개·빈 완성본 구분, 삭제 상품 제외와 순위 간격, 400 조건 |
-| E2E | 주문 → Kafka → 활동 → job → API, 재발행 무변화, 늦은 구매는 r2에서만 |
+| 테스트 | 확인 | 결과 |
+|---|---|---|
+| `PurchaseInputProbeTest` | 9 직전 실패 → FAILED, 행 7·8, 영속 `purchaseProductProbe.read.count=2` → 같은 instance 새 실행이 9만 써서 COMPLETED | 통과 |
+| `FreezeWeeklyInputTest` | 같은 주문 여러 품목, 경계(시작 포함·끝 제외, 마이크로초), 입력 checksum 직렬화, 늦은 구매 미반영(ALREADY_FROZEN), revision 충돌, 수량 0 → 전체 rollback, 잘못된 parameter 거부 | 5/5 |
+| `RankingJobRestartTest` | 정상 실행 r1 vs 재시작 r2. 1차: FAILED, `weeklyProductReader.read.count=2`, commit 1, stage 7·8, 공개본 r1 유지 → 늦은 구매 도착 → 2차: 같은 instance, 입력 고정 step 없음, read 1·write 1, 7(5,1위)·9(5,2위)·8(1,3위), 입력·결과 checksum r1과 같음. 첫 chunk commit 전 실패는 처음부터 수렴, 같은 상품 재쓰기 5 → 5 | 3/3 |
+| `PublishWeeklyRankingTest` | 공개 트랜잭션 rollback 시 ranking·COMPLETED·pointer 모두 이전 그대로, 같은 공개 재실행은 ALREADY_PUBLISHED로 수렴, 오래된 r1 재시작은 SUPERSEDED로 pointer r2 유지, 빈 주 공개 | 4/4 |
+| `WeeklyRankingV1ApiE2ETest` | 미공개(다른 주·계산 중 snapshot으로 대신하지 않음), 빈 완성본, 삭제 상품 제외와 순위 간격(1, 3)·limit, 400 조건 | 4/4 |
+| `WeeklyRankingFlowE2ETest` | 주문 API → PG → Outbox → Kafka → 구매 활동 → job → API. 재발행 무변화, r1(A5·C5·B1) → 늦은 구매 B×7은 r1에 없고 같은 parameter 재실행 거부 → r2(B8·A5·C5), 다음 주 정각 구매 제외 | 통과 |
 
-## 10. 실행 환경 메모
+- 실패는 테스트에서만 `RankingSnapshotStore`를 spy로 감싸 넣는다. job parameter·제품 코드에 실패 스위치를 두지 않는다.
+- 비교용 정상 실행은 같은 입력의 별도 snapshot(r1)이다. 재시작 대상의 stage·metadata를 지워 정상 실행으로 위장하지 않는다.
+- Batch metadata는 테스트 사이에 지우지 않고, 테스트마다 다른 주를 써서 JobInstance가 겹치지 않게 한다.
+- 회귀: `:apps:commerce-batch:check :apps:commerce-api:check :apps:commerce-streamer:check` (JDK 21) 성공. batch 16, api 458, api e2eTest 3, streamer 25 테스트 모두 통과(skip 0). checkstyle·ArchUnit 포함.
+
+## 10. 구현하며 정한 것
+
+- `StepMonitorListener`는 weeklyRanking에 붙이지 않는다. 실패가 없으면 exit status를 COMPLETED로 덮어써서 ALREADY_FROZEN·SUPERSEDED 같은 step 결과를 지운다.
+- E2E는 commerce-batch가 만드는 plain jar를 `e2eTest` source set에만 올린다. batch 클래스는 `ExcludeBatchFromScan`으로 스캔에서 빼고 job 부품만 `WeeklyRankingJobImportConfig`로 명시한다. 기존 W6·W7 E2E에도 같은 필터를 더했다.
+- 입력 고정의 `INSERT … SELECT`는 원본을 잠금 읽기로 훑는다. `product_purchase_activity`에 `confirmed_at` 선두 인덱스가 없어서, 고정하는 동안 consumer의 insert가 잠깐 기다릴 수 있다. 데이터가 커지면 `(confirmed_at)` 인덱스나 범위를 나눈 고정을 검토한다.
+- 처리량·소요 시간은 측정하지 않았다.
+
+## 11. 실행 환경 메모
 
 - 루트 `build.gradle.kts`의 toolchain(21)은 루트 프로젝트에만 걸려 있어서, 서브모듈은 Gradle을 실행하는 JDK로 컴파일된다. JDK 17로 실행하면 commerce-api가 컴파일되지 않으므로 `JAVA_HOME`을 21로 맞춘다.
