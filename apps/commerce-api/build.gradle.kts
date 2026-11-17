@@ -61,6 +61,9 @@ configurations[e2eTest.runtimeOnlyConfigurationName].extendsFrom(configurations.
 
 dependencies {
     "e2eTestImplementation"(project(":apps:commerce-streamer"))
+    // W9 E2E: 실제 weeklyRanking job을 같은 DB로 실행한다 (docs/week9/design.md D7). 제품 runtime 의존성이 아니다
+    "e2eTestImplementation"(project(":apps:commerce-batch"))
+    "e2eTestImplementation"("org.springframework.boot:spring-boot-starter-batch")
 }
 
 val e2eTestTask = tasks.register<Test>("e2eTest") {

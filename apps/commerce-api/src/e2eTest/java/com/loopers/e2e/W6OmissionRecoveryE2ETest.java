@@ -84,7 +84,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @SpringBootTest(classes = CommerceApiApplication.class)
 @AutoConfigureMockMvc
-@TypeExcludeFilters(ExcludeStreamerFromScan.class)
+@TypeExcludeFilters({ExcludeStreamerFromScan.class, ExcludeBatchFromScan.class})
 @Import({PurchaseActivityConsumerConfig.class, W6DirectPublishConfig.class, W6OmissionRecoveryE2ETest.RecoveryClockConfig.class})
 @ExtendWith({TestPgResetExtension.class, OutputCaptureExtension.class})
 class W6OmissionRecoveryE2ETest {
