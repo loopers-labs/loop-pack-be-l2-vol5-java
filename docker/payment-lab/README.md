@@ -150,3 +150,9 @@ SUCCESS가 되는지, 앞서 완료한 거래도 같은 결과로 조회되는�
 
 POINT 증분 호환은 `000` 직후 `orders`/`order_records`에 기존 PAID 행을 넣고 `003`~`008`을 적용해 확인한다.
 `payment_method=POINT`가 채워지고 기존 amount/status/created_at이 보존되어야 한다. `payment-lab` validate 기동도 확인한다.
+
+
+## 쿠폰 스키마
+
+위 결제·이벤트 준비는 000~011 범위다. 현재 쿠폰 기능의012/013 SQL 적용·보존 실행·개방·복구는
+[쿠폰 운영 안내](../../docs/week8/completed/operations.md)를 따른다. 기존 DB의 적용 상태를 확인하고 이전 SQL을 무조건 재실행하지 않는다.

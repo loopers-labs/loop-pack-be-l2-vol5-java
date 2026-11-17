@@ -1,8 +1,10 @@
 # R01. 브랜드·연관 상품 일괄 삭제
 
+> **학습 기록 · 3주차 당시 기준.** 요구·선택·검증 수치는 해당 단계의 기록이다. 현재 구조·명령·정책 차이는 [현행 컨벤션](../../week2/conventions.md)을 함께 확인한다.
+
 [전체 요구사항](../total_requirement.md) · 작업 브랜치: `volume-3/r01-brand-bulk-delete` · PR 대상: `volume-3/main`
 
-상태: 트레이드오프 정리·[구현 계획](plan.md) 작성, 기능 구현·검증 완료. 실제 결과와 회고는 [result.md](result.md)를 따른다.
+상태: 트레이드오프 정리·[구현·검증 결과](result.md) 작성, 기능 구현·검증 완료. 실제 결과와 회고는 [result.md](result.md)를 따른다.
 합의한 방향과 구현 시 확인할 사항은 [트레이드오프 전체 목록](trade_off/total_trade_off.md)을 따른다.
 원문 대응: Implementation Quest 1의 브랜드 흐름, 2, 4의 브랜드 검증 및 Checklist 브랜드 일괄 변경.
 관리자 접근 제한은 사용자 합의로 제외한다.

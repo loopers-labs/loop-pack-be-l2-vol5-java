@@ -1,6 +1,8 @@
 # R03 설계 질문·결정 목록
 
-상태: **2026-10-23 정책 구현·세 관점 기능 리뷰·최종 검증 완료**. 전체 검사 509건과 실제 PG 장애/재시작 실험 14건의 증거·검증 한계는 [결과](../result.md)를 따른다. 아래 논의는 결정 과정이며 현재 클래스와 완료 범위는 [계획](../plan.md)·[리뷰 기록](../review.md)에 연결한다. 원격 PR은 후속 범위다.
+> **학습 기록 · 5주차 해당 단계 기준.** 당시 구현·선택·검증 수치를 보존한다. 현행 결제 흐름은 [상태 모델](../../states/total.md)과 연결된 회복 안내를 우선한다.
+
+상태: **2026-10-23 정책 구현·세 관점 기능 리뷰·최종 검증 완료**. 전체 검사 509건과 실제 PG 장애/재시작 실험 14건의 증거·검증 한계는 [결과](../result.md)를 따른다. 아래 논의는 결정 과정이며 현재 클래스와 완료 범위는 [실행 권한·종료 계약](../requirement.md#통합한-실행-권한종료-경계)·[통합한 리뷰 근거](../result.md)에 연결한다. 원격 PR은 후속 범위다.
 
 ## 확정한 제약
 
@@ -40,11 +42,11 @@
 | [06](06-reconciliation-execution.md) | 자동 재확인 저장·실행 | 정상 Resilience4j Retry + DB 기록·중단 시 수동 대사. 최초 confirm에서만 시작·DB 권한 commit 후 전달·전용 동시 2개/대기 2개·첫 조회 즉시·명확한 접수 거절은 100ms 뒤 전달만 1회 재시도 확정. 대상 검사·실행기 빈/종료·오류 연결은 미정 |
 | [07](07-retry-attempt-accounting.md) | 횟수 소비·진행 중 종료 | 조회 직전 commit. 회로 차단도 확보한 자동 회차 소비·즉시 수동, 수동/callback은 자동 회차 소비 없음. 동시 실행 상세는 미정 |
 
-01·02·03·06·07과 R01의 [HTTP 설정](../../r01-pg-payment-foundation/trade_off/03-http-client-settings.md)·[관찰 결과값 반환](../../r01-pg-payment-foundation/trade_off/04-adapter-fixture.md)에서 위 정책을 확정했다. 주요 정책 문답 후 [상세 계획](../plan.md)의 세 관점 초회 리뷰를 마쳤다. [리뷰 기록](../review.md)의 중요 보완은 사용자가 승인해 계획에 반영했고 세 관점 재리뷰에서 미해결 중요 지적이 없음을 확인했다. 의존성 2.3.0·빈/예외 변환·시간 예산 검사·최소 검증·글 주제는 계획 제안이며 리뷰와 실제 검증을 거쳐 반영한다.
+01·02·03·06·07과 R01의 [HTTP 설정](../../r01-pg-payment-foundation/trade_off/03-http-client-settings.md)·[관찰 결과값 반환](../../r01-pg-payment-foundation/trade_off/04-adapter-fixture.md)에서 위 정책을 확정했다. 주요 정책 문답 후 [실행 권한·종료 계약](../requirement.md#통합한-실행-권한종료-경계)의 세 관점 초회 리뷰를 마쳤다. [통합한 리뷰 근거](../result.md)의 중요 보완은 사용자가 승인해 계획에 반영했고 세 관점 재리뷰에서 미해결 중요 지적이 없음을 확인했다. 의존성 2.3.0·빈/예외 변환·시간 예산 검사·최소 검증·글 주제는 계획 제안이며 리뷰와 실제 검증을 거쳐 반영한다.
 R01의 [상태 표현](../../r01-pg-payment-foundation/trade_off/05-payment-attempt-state.md)은 확인한 결과와 복구 진행을 나누기로 확정했다.
 R01의 [복구 진행 기록 저장 경계](../../r01-pg-payment-foundation/trade_off/06-recovery-progress-storage.md)는 별도 pay 작업 모델로 확정했다.
 [재고 차감·복구 기록](../../r01-pg-payment-foundation/trade_off/07-stock-adjustment-boundary.md)은 mall의 별도 모델·같은 TX 복구로 후속 확정했다.
 R02의 [파사드·TX 경계](../../r02-pg-order-payment/trade_off/01-facade-transaction-boundary.md)는 A안, R01의 [실행 권한 확보](../../r01-pg-payment-foundation/trade_off/08-recovery-claim-coordination.md)는 멱등성 키 + 조건부 상태 갱신 + 실행 식별자의 C로 변경했다. 자동 만료·회수는 보류하고 [중단 작업 조회·운영 담당자 수동 대사](../../r02-pg-order-payment/trade_off/06-interrupted-payment-reconcile.md) 방향을 채택했다.
 결정 후 번호별 설계 문서에 대안·근거·비용·한계를 기록하고 계획을 채운다.
 
-[요구사항](../requirement.md) · [상세 계획](../plan.md) · [전체 요구사항](../../total_requirement.md)
+[요구사항](../requirement.md) · [실행 권한·종료 계약](../requirement.md#통합한-실행-권한종료-경계) · [전체 요구사항](../../total_requirement.md)

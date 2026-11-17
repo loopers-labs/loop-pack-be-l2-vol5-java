@@ -1,5 +1,7 @@
 # Aggregate / Domain Model
 
+> **학습 기록 · 2주차 당시 기준.** 요구·선택·검증 수치는 해당 단계의 기록이다. 현재 구조·명령·정책 차이는 [현행 컨벤션](conventions.md)을 함께 확인한다.
+
 Aggregate는 함께 지켜야 할 상태·규칙을 묶는 경계이며, Root의 행동으로 변경한다.
 **Aggregate 경계와 DB 트랜잭션 범위가 항상 같지는 않다.** 주문 확정은 여러 Aggregate를 함께 저장한다.
 
@@ -93,7 +95,12 @@ RepositoryImpl은 저장을 조율하고 EntityMapper는 도메인 복원·신�
 
 주문 확정만 예외로, 검증은 그대로 domain 객체(`Product.decreaseStock`, `Point.use`, `Order.confirm`)가 수행하되
 실제 저장은 개별 repository의 `save` 대신 `ConfirmOrderWriter`(application 계약) 하나가 JDBC로 모아서 처리한다.
-품목·기록 수만큼 반복되는 저장 라운드트립을 줄이기 위한 선택이며, 근거는 [pr-06-order-confirm-plan.md](pr-06-order-confirm-plan.md)의
-"설계 변경" 절을 따른다.
+품목·기록 수만큼 반복되는 저장 라운드트립을 줄이기 위한 선택이며, 근거는 [통합한 당시 구현 기록](README.md#당시-구현과-결정)의 PR06 선택을 따른다.
 
 값의 범위는 [정책](02-business-policies.md), 조회 형태는 [Read Model](06-read-models.md)에 정의한다.
+
+## 후속 결정: PointBill 잔액 필드
+
+위 초기 모델의 차감 후 잔액 설명과 달리 PR06 문답에서는 balanceAfter를 저장하지 않기로 선택했다.
+이력 조회 API가 없는 당시 범위의 결정이며 [통합한 구현 기록](README.md#당시-구현과-결정)을 따른다.
+이 초기 표를 현재 필드 추가 요구로 해석하지 않는다.

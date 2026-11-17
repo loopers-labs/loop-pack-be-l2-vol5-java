@@ -1,6 +1,8 @@
 # R03 구현 결과
 
-[요구사항](requirement.md) · [트레이드오프](trade_off/total_trade_off.md) · [구현 계획](plan.md) · [전체 요구사항](../total_requirement.md)
+> **학습 기록 · 3-2주차 당시 기준.** 요구·선택·검증 수치는 해당 단계의 기록이다. 현재 구조·명령·정책 차이는 [현행 컨벤션](../../week2/conventions.md)을 함께 확인한다.
+
+[요구사항](requirement.md) · [트레이드오프](trade_off/total_trade_off.md) · [전체 요구사항](../total_requirement.md)
 
 작업 브랜치: `volume-3/r03-jdbc-and-like-aggregation` (`volume-3/refacto`에서 분기, refacto 병합(PR #15) 후 `volume-3/main`의 `b81d60e` 위로 리베이스) · PR 대상: `volume-3/main`
 
@@ -112,3 +114,9 @@ DELETE /api/v1/products/{id}/likes
 - **추천을 철회한 사례:** `useAffectedRows=true`는 영향 범위(전역 연결 설정, Hibernate의 UPDATE 행 수 검사)를 확인하기 전에 추천했다가 철회했다. 전역 설정을 추천할 때는 먼저 영향 범위를 확인한다.
 - **위임은 효과적이었고 검토는 필요했다.** 구현 20개 커밋을 Sonnet에 세 번 위임했다. 중단 조건(HQL/INSERT IGNORE 반환값, ArchUnit 배치)을 명시해 두어 임의의 대체 구현이 없었다. 반면 계획에 없던 세부(UseCase 메서드 이름, Row 가시성)는 결과 검토에서 드러났다.
 - **가벼운 테스트 원칙을 지켰다.** 동시성·slow 테스트를 추가하지 않고, 도메인·Service는 단위 테스트로, SQL 동작만 최소 통합 테스트로 확인했다.
+
+## C13 재검사 범위의 주의
+
+완료 계획의 C13 기록은 Like 관련 34건과 Checkstyle 재확인을 명시했다.
+결과 표의 전체 check 표기만으로 C13 직후에 새 전체 검사를 수행했다고 단정하지 않는다.
+이전 전체 검사·이후 최종 253건의 근거와 해당 부분 재검사를 구분하며 서로 합산하지 않는다.

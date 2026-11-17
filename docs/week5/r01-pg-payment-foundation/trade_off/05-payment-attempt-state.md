@@ -1,5 +1,7 @@
 # 결제 결과·재확인 진행 상태 표현
 
+> **학습 기록 · 5주차 해당 단계 기준.** 당시 구현·선택·검증 수치를 보존한다. 현행 결제 흐름은 [상태 모델](../../states/total.md)과 연결된 회복 안내를 우선한다.
+
 [설계 질문 목록](total_trade_off.md) · [시도 소유권](01-payment-attempt-ownership.md) · [재확인 실행 결정](../../r03-payment-resilience/trade_off/06-reconciliation-execution.md)
 
 상태: **B 채택·상세 전이 설계 전·구현 전**. 아래 이름과 값은 설명용이며 실제 필드/enum/테이블은 확정하지 않는다.

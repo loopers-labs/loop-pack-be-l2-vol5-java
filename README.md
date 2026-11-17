@@ -1,43 +1,66 @@
-# Loopers Template (Spring + Java)
-Loopers 에서 제공하는 스프링 자바 템플릿 프로젝트입니다.
+# Loop Java 백엔드 · 개발과 학습 안내
 
-현재 작업: [8주차 시작 전 준비 — 쿠폰 발급과 수용량 제어](docs/week8/README.md).
-이전 완료 범위: [6~7주차 통합 개발 안내 — Outbox·Kafka·Inbox](docs/week6-7/README.md).
+상품·브랜드·좋아요·포인트·주문에서 시작해 PG 결제, Outbox·Kafka·Inbox, 쿠폰 발급으로 확장한 Java 21 / Spring Boot 프로젝트다.
+현재 기능 기준은 8주차 쿠폰 API까지 포함한다. 단계별 준비 문구보다 현재 코드·Git 이력과 아래 기준 문서를 우선한다.
 
-## Getting Started
-현재 프로젝트 안정성 및 유지보수성 등을 위해 아래와 같은 장치를 운용하고 있습니다. 이에 아래 명령어를 통해 프로젝트의 기반을 설치해주세요.
-### Environment
-`local` 프로필로 동작할 수 있도록, 필요 인프라를 `docker-compose` 로 제공합니다.
-```shell
-docker-compose -f ./docker/infra-compose.yml up
+## 현재 개발에 필요한 문서
+
+| 목적 | 기준 문서 |
+|---|---|
+| 에이전트 작업·협업 규칙 | [AGENTS](AGENTS.md) |
+| 구조·의존·객체·트랜잭션 관례 | [개발 컨벤션](docs/week2/conventions.md) |
+| 실행·DB 준비·PG·Outbox | [결제 실험 환경](docker/payment-lab/README.md), [테스트 PG](apps/test-pg/README.md) |
+| 결제 상태·장애 대응 | [상태 모델](docs/week5/states/total.md), [회복 전략](docs/week5/resilience/README.md) |
+| 이벤트 계약·소비·복구 | [6~7주차 안내](docs/week6-7/README.md) |
+| 쿠폰 설계·API·운영·검증 한계 | [8주차 안내](docs/week8/README.md) |
+| 테스트 실행과 검증 경계 | [domain](docs/test/domain.md), [application](docs/test/application.md), [infrastructure](docs/test/infrastructure.md), [interfaces](docs/test/interfaces.md) |
+
+현재 구현은 실제 로그인·공개 서비스 운영을 제공하지 않는다. 고객의 `X-USER-ID`는 로컬 fixture 식별이며,
+주문 고객 경로와 쿠폰의 소유권 검사는 각 기능 계약을 따른다. 관리자 fixture와 테스트 PG 제공자 헤더는 별도 계약이다.
+
+## 주차별 학습 기록
+
+| 주차 | 내용과 읽는 기준 |
+|---|---|
+| [1주차](docs/week1/order-discount-contract.md) | 중단한 주문 할인 설계. 질문 17개와 미확인 정책을 보존하며 8주차 쿠폰 발급 구현과 구분 |
+| [2주차](docs/week2/README.md) | 당시 요구사항·초기 계약·구현 선택. 현재 개발 관례는 위 컨벤션 우선 |
+| [3주차](docs/week3/total_requirement.md) | 브랜드 삭제와 주문 정합성·동시성 |
+| [3주차 후속](docs/week3-2/total_requirement.md) | 조회·집계·잠금·파사드 변경의 이유와 결과 |
+| [구조 리팩터링](docs/refactor/result.md) | 패키지 개편과 테스트 경량화의 당시 근거 |
+| [4주차](docs/week4/total_requirement.md) | 인덱스·로컬 캐시와 원본 측정 근거 |
+| [5주차](docs/week5/total_requirement.md) | PG 결제·장애 회복, 당시 최종 점검 |
+| [6~7주차](docs/week6-7/README.md) | Outbox·Kafka·Inbox와 전달 복구 |
+| [8주차](docs/week8/README.md) | DB 쿠폰 발급·인스턴스별 수용 제어·Redis 누적 집계 |
+
+과제 원문은 출처로, 과거 결과·수치는 해당 실행 시점의 근거로 읽는다. 과거 계획의 미체크나 브랜치 지시는
+현재 미완료·다음 작업의 증거가 아니다. 현재 코드와 다른 정책은 현행 안내의 차이 설명을 함께 확인한다.
+
+## 로컬 실행과 검사
+
+저장소 루트 PowerShell에서 실행한다. 인프라 기동은 앱 스키마 준비를 대신하지 않는다.
+기존 DB를 사용하는 경우 먼저 [보존 실행 절차](docker/payment-lab/README.md)와 [쿠폰 운영 안내](docs/week8/completed/operations.md)를 읽는다.
+
+```powershell
+docker compose -f docker/infra-compose.yml up -d
+./gradlew.bat :apps:commerce-api:bootRun
 ```
-### Monitoring
-`local` 환경에서 모니터링을 할 수 있도록, `docker-compose` 를 통해 `prometheus` 와 `grafana` 를 제공합니다.
 
-애플리케이션 실행 이후, **http://localhost:3000** 로 접속해, admin/admin 계정으로 로그인하여 확인하실 수 있습니다.
-```shell
-docker-compose -f ./docker/monitoring-compose.yml up
+선택 사항인 모니터링 스택은 `docker compose -f docker/monitoring-compose.yml up -d`로 실행한다.
+기본 Grafana 주소는 `http://localhost:3000`, 로컬 기본 계정은 `admin/admin`이다.
+
+```powershell
+./gradlew.bat :apps:commerce-api:test
+./gradlew.bat :apps:commerce-api:slowTest
+./gradlew.bat :apps:commerce-api:check
 ```
 
-## About Multi-Module Project
-본 프로젝트는 멀티 모듈 프로젝트로 구성되어 있습니다. 각 모듈의 위계 및 역할을 분명히 하고, 아래와 같은 규칙을 적용합니다.
+`test` 단독은 slow/example 태그를 제외하고 `slowTest`는 해당 태그만 실행한다.
+commerce-api의 `check`/`build`는 `test` 한 번에 모든 태그를 포함하며 Checkstyle·ArchUnit을 함께 확인한다.
+저장소 전체 검사는 `./gradlew.bat check --continue`다. 과거 성공 수치를 이번 실행 결과로 재사용하지 않는다.
 
-- apps : 각 모듈은 실행가능한 **SpringBootApplication** 을 의미합니다.
-- modules : 특정 구현이나 도메인에 의존적이지 않고, reusable 한 configuration 을 원칙으로 합니다.
-- supports : logging, monitoring 과 같이 부가적인 기능을 지원하는 add-on 모듈입니다.
+## 모듈
 
-```
-Root
-├── apps ( spring-applications )
-│   ├── 📦 commerce-api
-│   ├── 📦 commerce-batch
-│   └── 📦 commerce-streamer
-├── modules ( reusable-configurations )
-│   ├── 📦 jpa
-│   ├── 📦 redis
-│   └── 📦 kafka
-└── supports ( add-ons )
-    ├── 📦 jackson
-    ├── 📦 monitoring
-    └── 📦 logging
-```
+- `apps/commerce-api`: 상품·주문·결제·쿠폰 HTTP와 업무 처리.
+- `apps/commerce-streamer`: 주문 이벤트의 Inbox·구매 활동·실패 보관.
+- `apps/test-pg`: 별도 프로세스로 실행하는 학습용 결제 제공자.
+- `apps/commerce-batch`: 배치 앱 기반. `modules`: JPA·Redis·Kafka 구성. `supports`: Jackson·로깅·모니터링.

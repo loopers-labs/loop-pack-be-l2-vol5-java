@@ -1,8 +1,10 @@
 # 재시도·서킷브레이커 라이브러리 연결
 
+> **학습 기록 · 5주차 해당 단계 기준.** 당시 구현·선택·검증 수치를 보존한다. 현행 결제 흐름은 [상태 모델](../../states/total.md)과 연결된 회복 안내를 우선한다.
+
 [결정 목록](total_trade_off.md) · [재확인 정책](01-reconciliation-retry-policy.md) · [회로 집계](02-lookup-circuit-breaker.md) · [작업 실행](06-reconciliation-execution.md)
 
-상태: **2026-10-23 정책 구현·세 관점 기능 리뷰·최종 검증 완료**. 전체 검사 509건과 실제 PG 장애/재시작 실험 14건의 증거·검증 한계는 [결과](../result.md)를 따른다. 아래 논의는 결정 과정이며 현재 클래스와 완료 범위는 [계획](../plan.md)·[리뷰 기록](../review.md)에 연결한다. 원격 PR은 후속 범위다.
+상태: **2026-10-23 정책 구현·세 관점 기능 리뷰·최종 검증 완료**. 전체 검사 509건과 실제 PG 장애/재시작 실험 14건의 증거·검증 한계는 [결과](../result.md)를 따른다. 아래 논의는 결정 과정이며 현재 클래스와 완료 범위는 [실행 권한·종료 계약](../requirement.md#통합한-실행-권한종료-경계)·[통합한 리뷰 근거](../result.md)에 연결한다. 원격 PR은 후속 범위다.
 
 ## 이번에 바뀐 결정
 
@@ -74,6 +76,6 @@
 - 자동 작업이 수동 전환을 마치고 정상 반환한 경우도 Retry 지표상 정상 종료일 수 있다. 업무 완료 여부는 주문·복구 APPLIED로, 중단 원인은 저장된 사유와 로그로 확인한다. ‘자동 PG 조회 준비’ 로그도 실제 HTTP 전송 횟수를 뜻하지 않는다.
 - 기존 Prometheus 경로와 포트를 활용한다. OPEN을 이유로 전체 서비스의 health 상태를 바꾸는 별도 연결은 추가하지 않는다.
 
-버전·의존성 모듈·구체적인 클래스/결과 변환·시간 예산 검사·소진 처리와 최소 검증은 [상세 구현 계획](../plan.md)에서 정한다. 이 문서는 기능 구현이나 검사 통과 기록이 아니다.
+버전·의존성 모듈·구체적인 클래스/결과 변환·시간 예산 검사·소진 처리와 최소 검증은 [실행 권한·종료 계약](../requirement.md#통합한-실행-권한종료-경계)에서 정한다. 이 문서는 기능 구현이나 검사 통과 기록이 아니다.
 
 참고: [Resilience4j Retry](https://resilience4j.readme.io/docs/retry), [CircuitBreaker](https://resilience4j.readme.io/docs/circuitbreaker), [Spring Boot 애노테이션 연결](https://resilience4j.readme.io/docs/getting-started-3).

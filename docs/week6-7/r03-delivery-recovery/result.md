@@ -29,3 +29,20 @@ Kafka 토픽은 `order-events-6724aec69c`, consumer group은 `purchase-6724aec69
 - 잘못된 복구 프로필 조합은 실행 파일에서 DataSource 시작 전에 거절되는 것을 확인했다. MySQL 검사에서는 UUID 불일치, 기존 수량·UUID 충돌 거절, JSON 필드 순서와 공백 차이를 허용하는 재실행을 확인했다.
 - 이 실험은 중단 위치를 디버거로 제어한 뒤 해당 프로세스를 종료했다. PG callback은 실험 옵션으로 생략하고 주문 대사 API를 사용했다. 실험 스크립트를 실행하면 PG 거래 ID, Kafka 원문과 위치, DB 행 식별자가 로컬 `build/r03-lab/<실행ID>/evidence.json`에 기록된다.
 - [재현·운영 절차](operations.md)와 [전달 경계 기술 정리](technical-note.md)를 참고한다.
+
+## 통합한 초기 준비·R01·R02 검증 근거
+
+과거 인계·준비·개발 계획의 고유 근거를 통합했다. 최종 R03 결과와 서로 중복되므로 합산하지 않는다.
+
+| 단계 | 실제 기록과 한계 |
+|---|---|
+| 초기 준비 ·2026-11-04 | Java21.0.10·Docker Linux29.8.0. KafkaTestFixtureTest 실제1건 성공. Admin API timeout10초가 request30초보다 짧아 최초 실패했고 테스트 request5초로 보완 후 성공. Streamer compileTestJava는 당시NO-SOURCE여서 업무 검사를 뜻하지 않음 |
+| 원문·사용자 변경 | 준비 시 원문4개 복사 전후 SHA-256 일치. 원문 후행 공백 보존. 당시 사용자 JMeter SHA-256 F51DC3363E79FB6EEB15846ACA55C9028CB58F207C8F89CC973E2CE3B3FC89C0 보존 |
+| R01 계약/저장 | 앱별 DTO·최초 UUID·createdAt 보존 관련43건. 별도 MySQL의008 SQL에서 기존 POINT/PG 시각·null UUID 보존,009에서 동시 중복·충돌·중간 품목 실패 전체 rollback |
+| R01 발행·소비 | 관련42건. 직접 발행/전송 실패 뒤 주문 확정 보존·중복·충돌·계약 오류·실패 보관 commit 뒤 offset 진행 |
+| R02 집중 | 관련45건. 실제2-partition의 consumer1→2→3 배정, 품목 rollback·offset 유지, 업무 commit 후 ack 전 중단의 같은 offset 재전달/no-op |
+| R02 Outbox | 직렬화/insert 직후 실패의 원자적 rollback, 재시도/BLOCKED/재개. broker 확인 뒤 상태 저장 실패 주입 후 새 relay가 같은 key/payload를 별도 Kafka offset 두 개로 발행 |
+| R02 전체 | commerce-api493·streamer22·kafka1=516건 성공. 독립 DB에000~011 적용 후 재개 프로필 시작·validate·대상 한 행 갱신·종료 확인 |
+
+초기 준비 검사는 주문 실험/전체 회귀를 대신하지 않았다. 직접 발행 revision42d8ed8과 최종 Outbox를 구분한다.
+R03의 전체542건과 A/B/C 실험은 위의 최종 결과 절을 따른다. 환경의 현재 실행법은 [환경 안내](../environment.md)로 통합했다.

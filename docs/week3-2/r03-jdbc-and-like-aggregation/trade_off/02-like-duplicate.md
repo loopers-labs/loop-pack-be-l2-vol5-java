@@ -1,5 +1,7 @@
 # 좋아요 중복 등록·취소 처리
 
+> **학습 기록 · 3-2주차 당시 기준.** 요구·선택·검증 수치는 해당 단계의 기록이다. 현재 구조·명령·정책 차이는 [현행 컨벤션](../../../week2/conventions.md)을 함께 확인한다.
+
 [← 전체 선택 현황](total_trade_off.md)
 
 > **후속 변경:** 좋아요 집계를 delta 방식으로 바꾸며 "실제로 새로 들어갔는지"를 알아야 해서, 등록 SQL은 [08번](08-like-insert-detection.md)의 native `INSERT IGNORE` + `boolean` 반환으로 대체된다. 멱등 200 계약과 취소 방식(JPQL delete, 이제 `boolean` 반환)은 유지한다. 아래는 R03 초기 결정의 기록이다.

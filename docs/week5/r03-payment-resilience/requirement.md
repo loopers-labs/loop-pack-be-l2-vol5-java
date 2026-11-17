@@ -1,8 +1,10 @@
 # R03 회복 전략·통합 검증 요구사항
 
+> **학습 기록 · 5주차 해당 단계 기준.** 당시 구현·선택·검증 수치를 보존한다. 현행 결제 흐름은 [상태 모델](../states/total.md)과 연결된 회복 안내를 우선한다.
+
 ## 상태·목표
 
-- 상태: **2026-10-23 로컬 구현·세 관점 기능 리뷰·실제 PG 실험 14건·필수 전체 검사 509건 완료**. [결과](result.md)·[운영](operations.md)·[기술 글](technical-article.md)에 실제 증거와 한계를 기록했다. 원격 PR은 후속 요청 범위다. R02는 [PR #25](https://github.com/corinB/loop-pack-be-l2-vol5-java/pull/25)로 병합됐다. [계획](plan.md)·[리뷰 기록](review.md)을 따른다.
+- 상태: **2026-10-23 로컬 구현·세 관점 기능 리뷰·실제 PG 실험 14건·필수 전체 검사 509건 완료**. [결과](result.md)·[운영](operations.md)·[기술 글](technical-article.md)에 실제 증거와 한계를 기록했다. 원격 PR은 후속 요청 범위다. R02는 [PR #25](https://github.com/corinB/loop-pack-be-l2-vol5-java/pull/25)로 병합됐다. [실행 권한·종료 계약](requirement.md#통합한-실행-권한종료-경계)·[통합한 리뷰 근거](result.md)을 따른다.
 - 2026-10-22 최신 `volume-5/main`의 `42c22c2`에서 `volume-5/r03-payment-resilience`를 생성했다. PR 대상은 `volume-5/main`이다.
 - 기존 거래 조회의 호출·대기 한도를 정하고 회로 차단·fallback·복구를 검증한다. 통합 장애 실험과 제출 자료를 정리한다.
 
@@ -16,9 +18,9 @@
 - 자동 조회 시작은 최초 PG 발송 권한을 얻은 confirm에서 PG 처리 뒤에도 미확인/처리 중이며 시작 가능한 작업에만 허용한다. 같은 confirm 재요청은 현재 상태를 반환하고 READY 작업을 시작하거나 중단 작업을 자동 재개하지 않는다. 시작 전 중단은 기존 미완료 목록·명시적 수동 대사로 처리한다. 저장 종결 결과의 내부 반영 실패·충돌은 각각의 반영/수동 정책을 따른다.
 - 실행기에 전달하기 전에 짧은 DB TX에서 READY→RUNNING과 실행 ID를 commit한다. RUNNING은 대기열에서 기다리는 상태도 포함한다. 권한 확보/접수 자체는 조회 회차를 소비하지 않고, 실제 작업이 현재 실행 ID를 확인한 뒤 조회 직전에 회차를 따로 commit한다. 명확한 접수 거절의 재전달도 같은 실행 ID를 사용한다.
 - 자동 조회 전용 실행기는 고정 스레드 2개·대기 작업 최대 2개로 시작한다. 재조회 대기 동안도 스레드를 사용하고, 포화 시 정해진 접수 거절/재전달/수동 전환을 따른다. 대기 시간도 30초 예산에 포함하며 실행 차례에 이미 만료됐다면 새 조회·회차 소비 없이 미완료를 수동 전환한다. 운영 최적값을 검증한 수치가 아니다.
-- [확정한 재확인 정책](trade_off/01-reconciliation-retry-policy.md)의 실패/수동 전환 기준을 따른다. R01의 [HTTP 설정](../r01-pg-payment-foundation/trade_off/03-http-client-settings.md)은 연결 1초·연결 풀 대기 1초·응답 대기 2초와 client 자동 retry/redirect 차단이다. 구체적인 재조회 분류는 아래 정책과 [계획](plan.md)·[결과](result.md)를 따른다.
+- [확정한 재확인 정책](trade_off/01-reconciliation-retry-policy.md)의 실패/수동 전환 기준을 따른다. R01의 [HTTP 설정](../r01-pg-payment-foundation/trade_off/03-http-client-settings.md)은 연결 1초·연결 풀 대기 1초·응답 대기 2초와 client 자동 retry/redirect 차단이다. 구체적인 재조회 분류는 아래 정책과 [실행 권한·종료 계약](requirement.md#통합한-실행-권한종료-경계)·[결과](result.md)를 따른다.
 - 자동 조회의 시간 예산은 PG 생성 처리 뒤 실행기에 최초 전달하는 시점부터 30초다. 대기열·100ms 재접수·조회·재시도 대기를 포함한다. 만료 뒤 새 조회/추가 대기를 시작하지 않고 미완료는 수동 전환한다. 이미 시작한 조회와 결과 저장/반영은 마무리하므로 전체 처리를 30초에 강제 종료하는 뜻은 아니다. 최대 4회 미만으로 중단될 수 있다.
-- R01 [adapter 결과값 반환 결정](../r01-pg-payment-foundation/trade_off/04-adapter-fixture.md)에 따라 복구 실행기가 재조회할 결과만 Resilience4j Retry 제어에 연결한다. 회로 실패 집계도 반환 결과를 분류하며 통신 장애를 정상 반환이라는 이유로 성공 집계하지 않는다. 실제 애노테이션 연결과 분류 경계는 [계획](plan.md)·[결과](result.md)를 따른다.
+- R01 [adapter 결과값 반환 결정](../r01-pg-payment-foundation/trade_off/04-adapter-fixture.md)에 따라 복구 실행기가 재조회할 결과만 Resilience4j Retry 제어에 연결한다. 회로 실패 집계도 반환 결과를 분류하며 통신 장애를 정상 반환이라는 이유로 성공 집계하지 않는다. 실제 애노테이션 연결과 분류 경계는 [실행 권한·종료 계약](requirement.md#통합한-실행-권한종료-경계)·[결과](result.md)를 따른다.
 - PG HTTP retry 대상은 기존 거래 조회뿐이다. 저장된 검증 결과의 내부 반영은 확실히 rollback된 MySQL 데드락(1213·SQLSTATE 40001)에만 100ms 뒤 새 TX에서 추가 1회 시도한다. PG 호출·자동 조회 회차·회로 표본을 추가하지 않는다. 잠금 대기 timeout·연결 끊김·무결성 문제·재고 반환 overflow는 이 재시도 대상이 아니며, commit 결과가 불명확하면 저장 상태부터 확인한다. 실제 예외 식별과 rollback 확인의 검증 범위는 [결과](result.md)를 따른다.
 - 자동·고객/관리자 수동 대사·callback PG 조회는 하나의 circuit breaker를 공유한다. 생성 POST는 회로 범위 밖이며 저장 종결 근거의 내부 재적용은 OPEN에도 가능하다.
 - [집계 기준](trade_off/02-lookup-circuit-breaker.md)에 따라 timeout·통신·5xx·408·429·잘못된 정상 응답은 실패 집계, 검증한 SUCCESS/FAILED/PENDING·계약상 거래 없음은 정상 집계다. 나머지 4xx·식별 충돌·우리 DB/실행기 오류·회로 차단은 정상/실패 표본 모두에서 제외한다. 거래 키 조회 404와 목록 경로 자체의 404는 구분한다.
@@ -75,4 +77,14 @@
 - [x] 기존 조회의 중단 사유·추적 로그·기존 Prometheus의 회로/Retry 기본 지표로 대표 장애를 확인한다.
 - [x] 로컬 PR 설명 초안에 대표 효과 수와 미확인 처리 한계를 기록했다. 원격 PR 생성·게시 시점은 후속 요청에서 정한다.
 
-[설계 질문](trade_off/total_trade_off.md) · [상세 계획](plan.md)
+[설계 질문](trade_off/total_trade_off.md) · [실행 권한·종료 계약](requirement.md#통합한-실행-권한종료-경계)
+
+## 통합한 실행 권한·종료 경계
+
+- 자동 조회 회차 commit 뒤 짧은 TX에서 실행 권한·완료 상태를 다시 확인하고 HTTP 직전30초 예산도 재검사한다.
+- 확인 직후 인계까지 막는 취소 프로토콜은 없다. 예산/대기 종료는 실행별 상태이며 음수 간격을 종료 신호로 사용하지 않는다.
+- 회차는 HTTP 전송 횟수와 다르며, 30초 예산은 이미 시작한 HTTP를 강제 취소하는 보장이 아니다.
+- commit 불명·관찰 저장 실패·상태 조회 실패를 PG 조회 Retry로 반복하지 않는다. 저장된 관찰과 최초 snapshot을 보호한다.
+- 내부 업무 재시도는 MySQL1213/40001과 전체 rollback을 함께 확인한 경우만 새 TX에서100ms 뒤 추가1회다.
+- 알려진 종결/존재 충돌은 회로 표본에서 제외하되 원래 VERIFIED 관찰은 저장 TX에 전달한다. 조회 중 새로 발견된 충돌은 표본을 소급 수정하지 않는다.
+구체 실행은 [재시도](../resilience/retry.md), 표본/분류는 [회로](../resilience/circuit-breaker.md)와 [결정](trade_off/02-lookup-circuit-breaker.md)을 따른다.

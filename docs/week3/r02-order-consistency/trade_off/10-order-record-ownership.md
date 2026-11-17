@@ -1,5 +1,7 @@
 # 주문 확정 기록은 누가 소유할까? (OrderBill → OrderRecord)
 
+> **학습 기록 · 3주차 당시 기준.** 요구·선택·검증 수치는 해당 단계의 기록이다. 현재 구조·명령·정책 차이는 [현행 컨벤션](../../../week2/conventions.md)을 함께 확인한다.
+
 [← 전체 선택 현황](total_trade_off.md) · [이전 결정: 08 OrderBill 생성 책임](08-bill-creation-boundary.md) · [패키지 리팩토링 결정 기록](../../../refactor/context-notes.md)
 
 > 후속 결정: [11번 주문 기록의 애그리거트 경계](11-order-record-aggregate.md)에서 `OrderRecord`를 `Order` 애그리거트 안으로 옮겼다. `Order.confirm()`은 기록을 반환하지 않고 내부에 보관하며, 독립 저장소는 없어진다.
@@ -70,7 +72,9 @@ flowchart TB
 - `Order.confirm()`은 `OrderRecord`를 반환한다. [08번](08-bill-creation-boundary.md)의 "반환값 없음" 결정을 대체한다.
 - 주문 조회 API의 `paymentAmount`·`paymentStatus` 응답 형태는 바뀌지 않는다.
 
-## 구현 계획·검증으로 이어갈 것
+## 당시 계획 반영과 구현 결과
+
+완료 계획의 고유 근거는 결과 문서에 통합했다. 아래 커밋 순서·TODO는 당시 계획의 배경이며 현재 작업 목록이 아니다.
 
 구현은 두 커밋으로 나눈다. 먼저 동작 변경 없이 이관·이름·테이블만 바꾸고, 다음 커밋에서 확정 흐름을 결제 단계와 주문 단계로 나누며 `Order.confirm()`이 `OrderRecord`를 반환하게 한다.
 테스트는 이름·시그니처 변경에 따른 수정과 새 동작(`Order.confirm()` 반환값) 검증 추가만 허용하고, 오류 우선순위·롤백·동시성 결과 같은 행위 기대값은 바꾸지 않는다.

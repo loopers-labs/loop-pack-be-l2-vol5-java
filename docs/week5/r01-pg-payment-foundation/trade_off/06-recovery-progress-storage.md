@@ -1,5 +1,7 @@
 # 복구 진행 기록의 저장 경계
 
+> **학습 기록 · 5주차 해당 단계 기준.** 당시 구현·선택·검증 수치를 보존한다. 현행 결제 흐름은 [상태 모델](../../states/total.md)과 연결된 회복 안내를 우선한다.
+
 [설계 질문 목록](total_trade_off.md) · [상태 분리 결정](05-payment-attempt-state.md) · [횟수 기록 결정](../../r03-payment-resilience/trade_off/07-retry-attempt-accounting.md)
 
 상태: **B 채택·세부 설계 전·구현 전**. 아래 이름은 설명용이며 실제 클래스·필드·테이블 이름은 미정이다.

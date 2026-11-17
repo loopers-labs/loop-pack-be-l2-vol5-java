@@ -1,6 +1,6 @@
 # 상품 목록 인덱스 전후 재현 절차
 
-[요구사항](../requirement.md) · [계획](../plan.md) · [SQL seed 결정](../trade_off/03-profile-sql-seed.md) · [검증 SQL](verify-data.sql) · [인덱스 적용 SQL](add-product-list-indexes.sql)
+[요구사항](../requirement.md) · [구현 결과](../result.md) · [SQL seed 결정](../trade_off/03-profile-sql-seed.md) · [검증 SQL](verify-data.sql) · [인덱스 적용 SQL](add-product-list-indexes.sql)
 
 이 문서는 실행 절차다. 명령의 출력이나 예상 건수를 실제 측정 결과로 간주하지 않는다.
 기존 상품 인덱스 4개와 추가 후 6개 상태에서 같은 데이터·SQL의 실행 계획을 순차 비교한다.

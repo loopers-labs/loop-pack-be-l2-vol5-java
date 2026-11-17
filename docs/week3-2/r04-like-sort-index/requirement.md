@@ -1,5 +1,7 @@
 # R04. 좋아요순 상품 목록 조회 개선
 
+> **학습 기록 · 3-2주차 당시 기준.** 요구·선택·검증 수치는 해당 단계의 기록이다. 현재 구조·명령·정책 차이는 [현행 컨벤션](../../week2/conventions.md)을 함께 확인한다.
+
 [전체 요구사항](../total_requirement.md) · 작업 브랜치: `volume-3/r04-like-sort-index` · PR 대상: `volume-3/main`
 
 상태: 구현·검증 완료([결과](result.md)). 최종 check: test 241건, slowTest 17건 통과. R03 병합 후 main 기준으로 리베이스했다. [PR #18](https://github.com/corinB/loop-pack-be-l2-vol5-java/pull/18) 병합 완료.

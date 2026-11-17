@@ -1,6 +1,8 @@
 # R07 구현 결과
 
-[요구사항](requirement.md) · [트레이드오프](trade_off/total_trade_off.md) · [구현 계획](plan.md) · [전체 요구사항](../total_requirement.md)
+> **학습 기록 · 3-2주차 당시 기준.** 요구·선택·검증 수치는 해당 단계의 기록이다. 현재 구조·명령·정책 차이는 [현행 컨벤션](../../week2/conventions.md)을 함께 확인한다.
+
+[요구사항](requirement.md) · [트레이드오프](trade_off/total_trade_off.md) · [전체 요구사항](../total_requirement.md)
 
 작업 브랜치: `volume-3/r07-brand-delete-bulk` (R04 브랜치에서 분기, R04 병합(PR #18) 후 main 위로 리베이스, 트리 동일) · PR 대상: `volume-3/main`
 
@@ -44,7 +46,7 @@ POST /api-admin/v1/products
 | 변경 후 삭제 | 상품 UPDATE `type=range`, `idx_products_deleted_brand_created`(`const,const`), rows 1,000 | 브랜드 1, 상품 PRIMARY 1,000 + 보조 인덱스 1,004 |
 | 변경 후 등록 | — | 브랜드 1(`S,REC_NOT_GAP`), 상품 잠금 없음 |
 
-상세 기록은 [plan.md 검증 기록](plan.md#검증-기록)에 있다.
+상세 기록은 [통합한 SQL·측정 기록](#통합한-sql측정-재현-기록)에 있다.
 
 ### 테스트
 
@@ -81,3 +83,23 @@ POST /api-admin/v1/products
 - **측정이 설계를 바꿨다.** "브랜드 삭제 방식 조사" 요청에서 잠금 조회가 상품 100만 행 전체를 잠근다는 것을 `data_locks`로 확인했고, 사용자의 "서비스에서 브랜드 id로 상품 일괄 삭제" 제안이 같은 측정으로 1,000행 수준임이 바로 증명됐다. R01의 "직접 bulk UPDATE" 미채택 이유(도메인 우회)는 규칙을 서비스로 옮기면서 사라졌다.
 - **동시성 결정을 따라가다 새 데드락을 찾았다.** "등록 경쟁을 막는다"를 수정·재고 설정에까지 적용하면 상품→브랜드와 브랜드→상품 순서가 엇갈린다. 상품 행 잠금이 이미 수정 경로를 보호한다는 점을 따져 적용 범위를 등록으로 좁혔다.
 - **위임은 계획대로 끝났다.** 계획에 삭제할 테스트 목록과 중단 조건을 구체적으로 적어 두어 검토에서 고칠 것이 없었다. 소요 시간(약 25분)은 커밋마다의 통합 테스트 실행과 대량 데이터 적재가 대부분이었다.
+
+## 통합한 SQL·측정 재현 기록
+
+### 생성된 SQL (테스트 로그의 Hibernate SQL)
+
+- 상품 일괄 삭제: `update products pje1_0 set deleted=1,updated_at=? where pje1_0.brand_id=? and pje1_0.deleted=0`
+- 브랜드 삭제 조회: `select … from brands bje1_0 where bje1_0.id=? for update`
+- 상품 등록의 브랜드 조회: `select … from brands bje1_0 where bje1_0.id=? for share` (`PESSIMISTIC_READ`가 `FOR SHARE`로 나감)
+
+### 잠금 범위 측정 (2026-10-09, MySQL 8.0 Docker, R04 스크립트로 `r04_after`에 상품 100만 건, 브랜드 500에 활성 상품 1,000건, 트랜잭션 후 ROLLBACK, 측정 후 스크래치 스키마 삭제)
+
+`EXPLAIN UPDATE products SET deleted = 1, updated_at = NOW(6) WHERE brand_id = 500 AND deleted = 0`: `type=range`, `key=idx_products_deleted_brand_created`(key_len 9, ref `const,const`), `rows=1000`, `Using where; Using temporary`.
+
+| 구분 | 실행 | 잠긴 행/락(`performance_schema.data_locks`) |
+|---|---|---|
+| 변경 전 삭제(요구사항 2절) | `findForDeletion` 조회 | 상품 PRIMARY 1,000,000 + 보조 인덱스 1,002,941 |
+| 변경 후 삭제 | `SELECT … FROM brands WHERE id = 500 FOR UPDATE` → `UPDATE brands SET deleted = 1` → 위 상품 UPDATE(영향 행 1,000) | brands PRIMARY RECORD 1, products PRIMARY RECORD 1,000, products `idx_products_deleted_brand_created` RECORD 1,004 (+ 테이블 의도 락 각 1) |
+| 변경 후 등록 | `SELECT id FROM brands WHERE id = 500 FOR SHARE` | brands PRIMARY RECORD 1 (`S,REC_NOT_GAP`), 상품 락 없음 |
+
+대상 브랜드의 활성 상품 수(1,000) 수준이며 중단 조건에 해당하지 않는다.

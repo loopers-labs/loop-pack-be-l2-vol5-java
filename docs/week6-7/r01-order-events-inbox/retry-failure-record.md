@@ -20,21 +20,26 @@
 
 1. 개별 이벤트 처리에 실패하면 Inbox와 구매 활동을 담은 업무 트랜잭션을 rollback한다. 파싱 실패는 업무 트랜잭션 시작 전에 분류한다.
 2. 별도 트랜잭션으로 실패 기록을 삽입한다. 유일 키는 `(consumer_group, source_topic, source_partition, source_offset)`이다.
-3. 실패 기록 commit이 성공하거나 동일 원본의 commit된 기록을 확인하면 recovered offset 경로에서 진행한다. 업무 완료 집계에는 Inbox와 구매 활동만 반영한다.
+3. 별도 Bean인 RecordOrderEventFailureService의 REQUIRES_NEW 호출이 정상 반환하면 listener가 직접 acknowledgment.acknowledge()를 호출한다. 같은 원본의 기존 기록도 일치를 확인한 뒤 정상 반환한다. 업무 완료 집계에는 Inbox와 구매 활동만 반영한다.
 4. 실패 기록 commit 뒤 offset 진행 전에 중단되면 동일 record가 다시 전달될 수 있다. 다시 실패하면 유일 키로 기존 기록을 재사용한다. 재수신에서 업무 처리가 성공하면 Inbox와 구매 활동을 정상 commit하고 기존 실패 이력은 보존한다.
 
-저장 필드 제안은 원본 위치와 group, 수신한 key와 원문 value, 검증 가능한 eventId, 실패 코드, 기록 시각이다. value는 파싱할 수 없는 메시지도 보관할 수 있도록 바이트로 저장하고 Kafka null과 빈 값을 구분한다. 원문 payload는 DB의 실패 기록에 보관하고 운영 로그에는 원본 위치와 안전한 오류 코드만 남긴다. 실패 원문과 기존 기록이 동일한지 확인하고, 저장 실패나 별개의 제약 위반을 중복 성공으로 처리하지 않는다.
+실제 저장 필드는 원본 위치와 group, 수신한 key와 원문 value, 검증 가능한 eventId, 실패 코드, 기록 시각이다. value는 파싱할 수 없는 메시지도 보관할 수 있도록 바이트로 저장하고 Kafka null과 빈 값을 구분한다. 원문 payload는 DB의 실패 기록에 보관하고 운영 로그에는 원본 위치와 안전한 오류 코드만 남긴다. 실패 원문과 기존 기록이 동일한지 확인하고, 저장 실패나 별개의 제약 위반을 중복 성공으로 처리하지 않는다.
 
-## 실제 DB·broker 검증
+## 검증 기준과 확인 범위
+
+아래는 실패 경계의 계약·확인 기준이며 모든 행의 실행 완료표가 아니다. 실제 테스트와 당시 결과는
+[검증 매핑](verification.md)과 [실행 근거](../r03-delivery-recovery/result.md)를 따른다.
 
 | 장면 | 기대 |
 |---|---|
 | 일시 오류 뒤 재시도 성공 | Inbox·활동 한 번, 실패 기록 0행 |
-| 추가 시도 두 번의 대기 | 제어 가능한 난수 입력으로 매 회차 새 표본을 쓰는지와 800~1,200ms 범위 확인 |
+| 추가 시도 두 번의 대기 | 구현은 ThreadLocalRandom으로 매 회차 800~1,200ms 표본을 선택한다. 난수를 제어한 별도 검사는 확인되지 않음 |
 | 형식 오류 또는 개별 처리 재시도 소진 | 실패 기록 1행, 해당 시도의 Inbox·활동 rollback, 기록 commit 후 offset 진행 |
 | 공통 DB 장애의 재시도 소진 | 리스너 중단, 해당 offset 유지, 복구 후 같은 group에서 재전달 |
 | 실패 기록 저장 실패 | 리스너 중단, 해당 offset 유지 |
 | 실패 기록 commit 후 offset commit 전 중단 | 동일 원본 재전달, 재차 실패해도 실패 기록 1행 |
 | 실패 기록 commit 뒤 다음 정상 record | 정상 소비 진행과 Inbox·구매 활동 확인 |
 
-Spring Kafka의 오류 처리기는 실패 기록 저장과 실제 recovered offset의 연결을 broker 검사로 확인한 뒤 확정한다. 재시도 횟수는 프로세스 재시작을 가로질러 보존되는 총한도가 아니다.
+재시도는 OrderConfirmedKafkaConsumer 내부 process loop가 수행한다. 업무 처리 또는 실패 기록이 정상 반환한 뒤 listener가 직접 ack한다.
+CommonContainerStoppingErrorHandler는 밖으로 전달된 중단 예외를 처리하며 실패 보관이나 recovered offset commit을 대신하지 않는다.
+재시도 횟수는 프로세스 재시작을 가로질러 보존되는 총한도가 아니다. 실제 설정은 [환경 안내](../environment.md#kafka-실효-설정)를 따른다.

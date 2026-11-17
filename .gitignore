@@ -48,3 +48,6 @@ apps/commerce-streamer/src/test/resources/docker-java.properties
 /apache-jmeter-5.6.3/
 /apache-jmeter-5.6.3.zip
 /jmeter.log*
+
+### Local session handoff ###
+/docs/week8/handoff.md

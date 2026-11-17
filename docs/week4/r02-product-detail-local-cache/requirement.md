@@ -1,5 +1,7 @@
 # R02 상품 상세 로컬 캐시 요구사항
 
+> **학습 기록 · 4주차 당시 기준.** 요구·선택·검증 수치는 해당 단계의 기록이다. 현재 구조·명령·정책 차이는 [현행 컨벤션](../../week2/conventions.md)을 함께 확인한다.
+
 ## 목표와 범위
 
 - 기준은 PR #22가 병합된 `origin/volume-4/main`의 `3786c0d`다. 작업 브랜치는 `volume-4/r02-product-detail-local-cache`다.
@@ -52,4 +54,4 @@
 - [x] 현재 100만 상품·보조 인덱스 6개·버퍼 풀 128MiB·주요 DB 설정 유지.
 - [x] 사용자 GUI JMX 수정 보존·커밋 제외, 재현 도구·원본 해시·비교 한계와 결과 기록.
 
-상위 기준은 [4주차 전체 요구사항](../total_requirement.md), 결정 근거는 [설계 판단](trade_off/total_trade_off.md), 작업 순서는 [계획](plan.md)이다.
+상위 기준은 [4주차 전체 요구사항](../total_requirement.md), 결정 근거는 [설계 판단](trade_off/total_trade_off.md), 작업 순서는 [구현·검증 결과](result.md)이다.

@@ -1,5 +1,7 @@
 # 테스트 경량화 결과
 
+> **학습 기록 · 구조 리팩터링 당시 기준.** 요구·선택·검증 수치는 해당 단계의 기록이다. 현재 구조·명령·정책 차이는 [현행 컨벤션](../week2/conventions.md)을 함께 확인한다.
+
 [레이어별 테스트 문서](../test/) · [결정 기록](context-notes.md)
 
 작업 브랜치: `volume-3/refacto-test-slim` (`volume-3/refacto`의 `be9cf1d`에서 분기, 완료 후 fast-forward 병합)

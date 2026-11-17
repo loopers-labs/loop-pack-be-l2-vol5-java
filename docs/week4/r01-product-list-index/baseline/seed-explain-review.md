@@ -1,6 +1,6 @@
 # seed 실행 전 계획 검토
 
-[계획](../plan.md) · [사전 상태](seed-preflight.txt) · [EXPLAIN SQL](seed-explain-before.sql) · [계획 원문](seed-explain-before.txt)
+[구현 결과](../result.md) · [사전 상태](seed-preflight.txt) · [EXPLAIN SQL](seed-explain-before.sql) · [계획 원문](seed-explain-before.txt)
 
 상태: 실행 계획 설명 뒤 **사용자 승인 완료, 적재·검증 성공**. 승인한 실행 결과는 [seed 실행 기록](seed-run.json)과
 [전체 결과](../result.md)에 별도로 기록한다.

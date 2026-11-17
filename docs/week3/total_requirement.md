@@ -1,5 +1,7 @@
 # 3주차 전체 요구사항
 
+> **학습 기록 · 3주차 당시 기준.** 요구·선택·검증 수치는 해당 단계의 기록이다. 현재 구조·명령·정책 차이는 [현행 컨벤션](../week2/conventions.md)을 함께 확인한다.
+
 ## 1. 목표와 기준 자료
 
 브랜드와 연결 상품의 변경을 하나의 성공·실패로 묶고, 동시에 실행되는 요청에서도 주문·재고·포인트의 결과가 일치하도록 한다.
@@ -99,7 +101,7 @@ R02 구현은 R01 리뷰·병합 후 최신 `volume-3/main`을 반영하고 관�
 - 시나리오는 **사전 상태 / 실행 / 기대 결과 / 유지되어야 할 상태**로 구분한다.
 - 트레이드오프는 깊은 번호 중첩 없이 주제별 파일로 나눈다. 미확정 옵션에는 채택 표시나 취소선을 사용하지 않는다.
 - 현재 R01의 결정과 남은 사항은 [트레이드오프 전체 목록](r01-brand-bulk-delete/trade_off/total_trade_off.md)에서 확인한다.
-- R02의 확정된 선택은 [전체 목록](r02-order-consistency/trade_off/total_trade_off.md), 7개 커밋의 목표·TODO·완료 기준은 [구현 계획](r02-order-consistency/plan.md)을 따른다. 추가 주제를 시작할 때 [템플릿](r02-order-consistency/trade_off/_template.md)을 복사하고 실제 파일이 생긴 뒤 목록에 연결한다.
+- R02의 확정된 선택은 [전체 목록](r02-order-consistency/trade_off/total_trade_off.md), 실제 구현·검증 범위와 미확인 한계는 [결과](r02-order-consistency/result.md)를 확인한다. 추가 주제를 시작할 때 [템플릿](r02-order-consistency/trade_off/_template.md)을 복사하고 실제 파일이 생긴 뒤 목록에 연결한다.
 - Mermaid는 비교 흐름을 표현하며 구현 완료를 뜻하지 않는다. 템플릿의 예시는 설계 결정으로 간주하지 않는다.
 - 잠금 전략·재시도 정책·구체적인 코드 변경은 초기 요구사항에서 확정하지 않는다.
 - 설계 문서에는 Controller부터 repository·SQL까지의 실제 경로, 프록시 진입점, 예외 전달, 전파와 잠금 순서를 표시한다.

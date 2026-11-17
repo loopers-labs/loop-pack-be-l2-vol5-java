@@ -1,5 +1,7 @@
 # 복구 작업 실행 권한 확보
 
+> **학습 기록 · 5주차 해당 단계 기준.** 당시 구현·선택·검증 수치를 보존한다. 현행 결제 흐름은 [상태 모델](../../states/total.md)과 연결된 회복 안내를 우선한다.
+
 현재의 실행 ID 인계·진행 갱신 조건과 보호 범위는 [멱등성과 동시성 제어 안내](../../resilience/idempotency-and-concurrency.md)에서 설명한다. 아래의 구현 전·미정 표현은 당시 설계 논의의 기록이다.
 
 [설계 질문 목록](total_trade_off.md) · [pay 복구 작업 결정](06-recovery-progress-storage.md) · [조회 횟수 기록 결정](../../r03-payment-resilience/trade_off/07-retry-attempt-accounting.md) · [파사드/TX 결정](../../r02-pg-order-payment/trade_off/01-facade-transaction-boundary.md)

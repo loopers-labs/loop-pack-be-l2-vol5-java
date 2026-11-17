@@ -1,5 +1,7 @@
 # R01 PG 연동 기반·결제 모델 요구사항
 
+> **학습 기록 · 5주차 해당 단계 기준.** 당시 구현·선택·검증 수치를 보존한다. 현행 결제 흐름은 [상태 모델](../states/total.md)과 연결된 회복 안내를 우선한다.
+
 ## 상태·목표
 
 - 상태: **R01 로컬 구현·검증 완료** ([실제 결과](result.md)). 2026-10-21 원문과 현재 코드를 대조해 아래 빈틈·확인 사항을 정리했다.
@@ -8,7 +10,7 @@
 - 이번 PR의 기반을 R02가 주문 흐름에 연결한다. 기존 confirm을 PG로 전환하는 책임은 R02에 둔다.
 
 상위 기준은 [전체 요구사항](../total_requirement.md), HTTP 계약 원문은 [Implementation Quest](../reference/implementation-quest.md)다.
-후속 [구현 계획](plan.md)에 키/옵션/실행 기본값과 커밋 순서를 구체화했고 [상태별 문서](../states/total.md)를 준비했다. 아래 분석 당시의 미정 항목 중 계획에 구체값을 정한 항목은 최신 계획을 따른다. 아래 미정 목록은 분석 당시 기록이며, 구현 시 확정한 값은 계획과 실제 진행 기록을 우선한다.
+PG 옵션·프리셋·실행 기본값은 [테스트 PG 계약](../../../apps/test-pg/README.md), commerce의 시도 키·발송/결과/복구 상태는 [상태 문서](../states/payment.md)와 [멱등성 결정](trade_off/02-idempotency-request-contract.md)을 따른다. 당시 미정 항목의 후속 구현·보완 근거는 [실제 결과](result.md)로 통합했으며 완료된 커밋 순서를 새 작업 지시로 사용하지 않는다.
 
 ## 사용자 확정 · 학습용 PG의 실행·저장
 
@@ -32,7 +34,7 @@
 - application이 같은 commerce DB의 로컬 TX에서 주문·결제 시도·재고를 조율한다. 별도 모델이어서 분산 TX가 필요한 것은 아니다.
 - 발송/관찰 상태의 정확한 표현·허용 전이·테이블 구성은 후속 문답에서 정한다. 재고 차감·복구 기록의 Context는 mall로 확정했다.
 - 정상 자동 재확인은 @Retryable + DB 진행 기록으로 처리한다. 후속 결정으로 장애/재시작 뒤 자동 재개는 운영 담당자 조회·수동 대사로 변경했다. R01은 모델/저장 기반을 설계하고 실행 연결·장애 검증은 R02/R03에서 수행한다.
-- [결제 결과·재확인 진행 상태 표현](trade_off/05-payment-attempt-state.md)은 확인한 결제 결과와 복구 진행을 나누는 것으로 확정했다. R01의 실제 enum·필드·허용 조합은 [구현 계획](plan.md)과 [상태 문서](../states/payment.md)를 따른다.
+- [결제 결과·재확인 진행 상태 표현](trade_off/05-payment-attempt-state.md)은 확인한 결제 결과와 복구 진행을 나누는 것으로 확정했다. commerce의 실제 enum·필드·허용 조합은 [상태 문서](../states/payment.md)와 연결된 결정 기록을 따른다.
 - [복구 진행 기록](trade_off/06-recovery-progress-storage.md)은 별도 pay 복구 작업 모델·저장소로 분리한다. 결제 시도에는 확인한 결제 사실을 두고 작업에는 진행·사용 횟수·재개 정보를 둔다.
 - [재고 차감·복구 기록](trade_off/07-stock-adjustment-boundary.md)은 mall의 별도 모델에 둔다. 확정 실패를 반영하는 같은 로컬 TX에서 실제 재고와 복구 기록을 함께 갱신하며 별도 비동기 재고 복구 작업은 두지 않는다.
 - application의 조율 파사드와 준비/공통 결과 반영용 TX 컴포넌트를 분리하는 A안을 채택했다. 각 TX 진입점은 별도 Spring 빈이며 PG HTTP·재조회 대기는 TX 밖에 둔다. 정확한 클래스/Context·계약은 R02 상세 설계에서 정한다.
@@ -133,4 +135,4 @@ HTTP client 선택·timeout 수치·테이블 구성은 일반적인 설계 선�
 - [x] 실제 HTTP timeout·자동 create 재시도 차단과 카드 정보 비저장을 확인한다.
 - [x] 관련 회귀·Checkstyle·ArchUnit을 확인하고 실제 결과만 기록한다.
 
-[설계 질문](trade_off/total_trade_off.md) · [구현 계획](plan.md) · [실제 결과](result.md)
+[설계 질문](trade_off/total_trade_off.md) · [테스트 PG 계약](../../../apps/test-pg/README.md) · [실제 결과](result.md)

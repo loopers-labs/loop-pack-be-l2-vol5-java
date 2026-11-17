@@ -1,258 +1,77 @@
-# 2주차 작업 규칙
+# Loop Java 백엔드 작업 규칙
 
-## 최신 협업 흐름 · 메인 실행, 리뷰 1명, QA 결과 검토
+## 현재 근거와 진입점
 
-2026-11-13 사용자 후속 요청이며 아래의 세 관점별 에이전트·QA 직접 테스트 실행·단계별 승인 규칙보다 우선한다.
+- 현재 사용자 요청을 우선한다. 구현 상태는 현재 Git·코드·실제 검사 근거로 판단하며 지난 주차의 준비/승인/브랜치 지시를 재실행하지 않는다.
+- [개발 안내](README.md), [개발 컨벤션](docs/week2/conventions.md), 해당 주차의 기준 문서를 읽는다.
+- 세션 재개에는 `.agents/skills/loop-backend-delivery/SKILL.md`를 활용한다. `docs/week8/handoff.md`가 있으면 로컬 인계로 읽는다.
+  이 파일은 Git 추적 대상에서 제외하며 다른 checkout에 없을 수 있다. 없으면 Git·코드·검사 근거로 재구성한다.
+- 쿠폰의 현재 기준은 [설계](docs/week8/design.md), [구현 현황](docs/week8/completed/README.md), [검증 한계](docs/week8/verification-plan.md)다.
+  C01부터 다시 시작하거나 도메인만/준비만 허용된 상태로 오해하지 않는다.
+- 작업은 요청된 기능/문서 범위로 한정한다. 과거 기록만으로 다음 기능·리팩터링·원격 게시를 시작하지 않는다.
+
+## 협업과 검증
 
 | 역할 | 책임 |
 |---|---|
-| 메인 에이전트 | 현재 대화를 담당하며 범위 결정·구현·테스트 코드 작성·수정·테스트 실행·커밋·결과 보고 |
-| 리뷰 에이전트 1명 | 비즈니스·기술 및 유지보수·사용자 경험을 함께 검토하고 필요한 검증 항목 제안 |
-| QA 에이전트 | 변경 내용·테스트 범위·실행 결과 검토. 기본적으로 테스트를 직접 실행하거나 재실행하지 않음 |
+| 메인 | 범위·구현·테스트 코드·수정·테스트 실행·커밋·결과 보고 |
+| 리뷰 1명 | 비즈니스·기술/유지보수·사용자 경험을 함께 검토하고 검증 항목 제안 |
+| QA | 변경·테스트 범위·실행 결과 읽기 검토. 기본적으로 테스트를 직접 재실행하지 않음 |
 
-커밋별 순서:
+기능 변경은 메인 구현 → 리뷰 → 메인 보완·최소 관련 검사 → QA 결과 검토 → 보완·커밋 순서다.
+리뷰 요청에 목적·대상·핵심 위험·검증 정보를 함께 전달한다. 재검토는 지적 부분과 변경 영향에 집중한다.
+통과 후 새 변경·실패·미해결 우려가 없으면 같은 검사를 반복하지 않는다. 공통 설정 영향이 있을 때만 범위를 넓힌다.
+문서/이력 전용 변경은 내용·링크·diff·Git 검증으로 간소화하고 앱 테스트와 별도 QA는 생략할 수 있다.
+승인된 범위는 단계별 재확인 없이 완료한다. 미정 정책·의미가 불명확한 충돌은 질문한다.
+환경 실패·미실행·0건·skip을 통과로 기록하지 않는다. 이전 실행/재사용 근거와 새 실행을 구분한다.
 
-1. 메인이 관련 문서/코드를 확인하고 구현 범위를 정한다.
-2. 메인이 구현과 필요한 테스트 코드 작성을 완료한다.
-3. 테스트 실행 전에 리뷰 1명이 세 관점을 함께 검토하고 검증 항목을 제안한다.
-4. 메인이 지적사항을 반영하고 변경 영향에 필요한 최소 테스트를 직접 실행한다.
-5. QA가 변경 내용·테스트 목록·실행 결과를 검토한다. 추가 검증은 항목과 이유를 메인에게 전달한다.
-6. 메인이 필요한 보완을 완료하고 검증된 변경을 커밋한 뒤 결과를 보고한다.
+## 구조와 Java 관례
 
-효율 기준:
+- Java 21, 생성자 주입, 기존 스타일과 `.editorconfig`의 본문 130자/테스트 예외를 따른다. 별표·미사용 import는 허용하지 않는다.
+- domain/application/interfaces는 `<layer>.<context>.<kind>`, infrastructure는 `infrastructure.<kind>.<context>` 순서다.
+  실제 업무 Context는 mall/shopping/ordering/pay/coupon이며 shared와 legacy example을 구분한다.
+- domain은 순수 Java로 모델·업무 규칙·repository 계약을 소유하고 Spring·JPA·HTTP·다른 계층에 의존하지 않는다.
+  저장 Entity와 도메인을 분리하고 도메인이 JPA BaseEntity를 상속하지 않게 한다.
+- application은 순서·TX·쓰기 조건·외부 gateway/DAO 계약을 조율한다. interfaces와 infrastructure 구현에 의존하지 않는다.
+  interfaces는 HTTP 변환과 오류 매핑, infrastructure는 저장·조회·외부 기술을 담당한다.
+  infrastructure는 interfaces나 application의 Service 구현에 의존하지 않는다.
+- 도메인은 create/restore와 의미 있는 행동을 제공한다. 실패 후 메모리 상태도 보존하며 변경 뒤 repository.save를 명시한다.
+  EntityMapper는 infrastructure에서 저장 메타데이터·snapshot을 보존하며 업무 판단을 넣지 않는다.
+- 쓰기는 Command/Result, 조회는 Criteria/View/QueryDao를 사용한다. QueryDao는 HTTP를 알지 못하며 상세 없음은 Controller가 처리한다.
+  일반 조회는 QueryDSL projection을 사용한다. 운영 JDBC 의존은 실제 `LayerArchitectureTest`의 Jdbc* 규칙을 따른다.
+- R08의 테스트 JDBC 제거 기록과 현재 쿠폰 테스트의 직접 JDBC 사용은 차이가 있다. 이를 새 코드 전반의 허용으로 확대하거나
+  문서 정리를 이유로 코드·ArchUnit 규칙을 바꾸지 않는다.
 
-- 리뷰/QA 요청에는 변경 목적·대상 파일·핵심 위험·검증 정보를 한 번에 전달한다.
-- 테스트는 영향 범위에 맞춰 최소 실행한다. 공통 설정/여러 기능에 영향이 있으면 범위를 확대한다.
-- 통과 후 새 변경·실패·미해결 우려가 없으면 같은 검증을 반복하지 않는다.
-- 재리뷰는 지적사항과 수정 부분에 집중한다. 설계/동작이 크게 바뀐 경우만 전체 재검토한다.
-- 문서만 수정하거나 커밋 이력만 정리하면 내용·diff·이력 검증으로 간소화한다. 실행 동작에 영향이 없으면 코드 테스트/별도 QA를 생략한다.
-- 승인된 범위는 단계마다 확인을 요청하지 않고 커밋까지 진행한다. 요구사항이 불명확하거나 파괴적인 작업만 확인한다.
-- 환경 실패·미실행·skip을 통과로 기록하지 않는다. 사용자 변경은 보존하고 명시 staging한다.
+## 현재 동작에서 보존할 경계
 
-커밋 메시지:
+- PG 주문 확정은 짧은 준비 TX → TX 밖 제공자 호출 → 관찰 저장 → 공통 결과 반영이다.
+  과거 POINT 단일 TX 설명을 현재 ConfirmOrderFacade에 적용하지 않는다. [상태/회복 기준](docs/week5/states/total.md)을 따른다.
+- `X-USER-ID`는 fixture 식별이며 실제 인증이 아니다. 필요한 사용자 존재·주문/쿠폰 소유권·관리자 fixture 검사는 기능 계약을 따른다.
+  과거의 소유권 검사 제외 결정을 현행 주문 API에 적용하지 않는다.
+- 좋아요 관계는 즉시 반영하고 likeCount는 commit 뒤 증감분을 모아 5초 fixed delay로 저장한다. 시작 시 전체 재집계로 누락을 복구한다.
+  과거의 매 10초 전체 COUNT 설명을 현행 구현으로 사용하지 않는다.
+- 주문 확정 이벤트는 최종 Outbox 경로를 사용한다. Inbox와 모든 구매 활동은 같은 TX이며 DB commit 뒤 ack한다.
+  [이벤트 계약](docs/week6-7/r01-order-events-inbox/event-contract.md)과 [복구 절차](docs/week6-7/r03-delivery-recovery/operations.md)를 따른다.
+- 쿠폰 총량·중복은 DB 쿠폰/슬롯/issuedCount의 같은 TX, 처리 여력은 인스턴스별 Semaphore, Redis는 누적 집계다.
+  종료 불명 permit 보류·로컬 닫힘·지정 실행 복구를 유지하며 HTTP timeout을 실행 종료로 간주하지 않는다.
+- 신규 기능은 application과 infrastructure를 기능별로 함께 완성한다. 과거 쿠폰 구현 단계의 presentation 마지막 순서를 다른 작업에 자동 적용하지 않는다.
 
-```text
-종류: 변경 내용 요약
+## 테스트와 환경
 
-- 주요 변경 내용과 이유
-- 세부 구현 및 예외 처리 내용
-- 필요한 추가 설명
-```
+- 업무 규칙은 핵심 정상·경계·실패 후 상태를 TDD로 검증한다. 단순 getter나 구현 복사 검사는 늘리지 않는다.
+- 도메인 단위, 협력 단위, 실제 DB/외부 기술, HTTP 경계의 책임을 구분한다. 전체 rollback·동시성·DDL 제약은 실제 DB 근거를 확인한다.
+- JUnit은 한글 DisplayName, 필요한 Nested, arrange/act/assert와 기존 AssertJ 관례를 따른다.
+- 공용 IntegrationTest/E2ETest 구성을 재사용하되 독립 DB/Redis/프로세스가 필요한 시험의 경계를 보존한다.
+  현재 테스트는 MySQL뿐 아니라 Redis·Kafka·PG도 사용한다. [레이어별 실행 안내](docs/test/application.md)를 따른다.
+- Checkstyle·ArchUnit은 실제 설정·대상과 실행 결과를 확인한다. 테스트 기대값·업무 규칙·검사 규칙을 완화해 통과시키지 않는다.
+- Docker 접근과 Gradle/JDK/cache는 현재 세션에서 확인한다. 다른 세션의 권한·검사 성공을 그대로 가정하지 않는다.
+  반복되는 환경 거절은 우회하지 말고 실행 가능한 확인과 필요한 사용자 실행 명령을 구분한다.
 
-## 8주차 최신 구현 요청 · C01부터 순서대로
+## 변경 보존과 Git
 
-2026-11-13 사용자는 docs/week8의 C01~C06을 순서대로 구현하도록 요청했다.
-이 요청은 아래 도메인만/준비만 제한보다 우선한다. application과 infrastructure를 기능별로 함께 구현하며 presentation은 C06이다.
-현재 C01 캠페인/사전 슬롯 준비를 구현 중이다. [C01 안내](docs/week8/campaign-preparation.md)를 먼저 읽는다.
-기능 구현 후 리뷰 에이전트 1명이 세 관점을 함께 검토하고, 메인이 최소 테스트를 실행한 뒤 QA가 범위/결과를 검토한다.
-검증이 통과한 기능만 `type: 한글 요약`과 상세 bullet을 포함해 커밋한다. 환경 실패/미실행/skip을 통과로 기록하지 않는다.
-사용자는 문서 전용 8주차 커밋들을 하나로 합치도록 요청했다. 새 로컬 작업 브랜치만 정리하고 이전 브랜치/원격 이력은 보존한다.
-사용자 JMeter 수정은 보존하고 staging하지 않는다.
-
-## 8주차 최신 범위 · 도메인 레이어 먼저 구현
-
-2026-11-13 후속 사용자 요청: 설계는 현재 기본안으로 마무리하고 나머지는 구현하며 검증한다.
-설계 문서를 먼저 커밋한 뒤 coupon 도메인 모델·repository 계약과 필요한 최소 단위 테스트만 구현해 사용자 검토에 제공한다.
-아래의 준비만/기능 구현 금지 표현은 이전 요청 기록이다. 이번 허용은 순수 domain과 관련 검사에 한정한다.
-API·application 발급 흐름·JPA/DDL·Redis·Semaphore/YAML 바인딩은 아직 구현하지 않는다.
-테스트는 핵심 규칙/경계·실패 후 상태 보존에 필요한 최소 사례와 관련 Checkstyle/ArchUnit만 실행한다.
-기능 변경의 비즈니스·사용자 경험·기술 리뷰 규칙은 유지한다. 사용자 JMeter 수정은 보존하고 staging하지 않는다.
-현재 정책/진행 상태는 [설계](docs/week8/design.md)와 [인계](docs/week8/handoff.md)를 따른다.
-도메인 구현/최소 검사 결과와 검토 순서는 [도메인 검토 안내](docs/week8/domain-review.md)에 기록했다. 사용자 검토 전 다음 계층으로 진행하지 않는다.
-
-## 8주차 적용 안내 · 현재는 시작 전 준비만
-
-2026-11-13 사용자 요청은 Git 최신화와 쿠폰 과제 시작 전 설정까지다. 기능 구현은 아직 시작하지 않는다.
-현재 기준은 `origin/corinB`의 `270fb60776fb046a193c72c03b7621a4c9fe3261`에서 만든 로컬 `volume-8/main`이다.
-[8주차 안내](docs/week8/README.md), [요구사항](docs/week8/total_requirement.md),
-[개발 순서](docs/week8/development-plan.md), [환경](docs/week8/environment.md),
-[준비 결과](docs/week8/initial-setup.md)를 먼저 읽는다.
-추가 사용자 요청에 따라 [트레이드오프](docs/week8/trade-offs.md)와 [검증 계획](docs/week8/verification-plan.md)까지
-준비 문서를 함께 작성하고 해당 문서 변경만 한 번에 커밋한다. 추천 설계는 사용자 확정과 구분한다.
-준비 커밋은 `66e0871`이다. 이후 사용자와 트레이드오프/설계를 함께 논의하며 첫 선택으로 독립 coupon Context·
-캠페인 행 비관적 잠금·앱 실행 중 로컬 관리자 제어를 확정했다. 구체화는 [설계](docs/week8/design.md)를 따른다.
-이후 추가 S01-A로 사전 DB 발급 슬롯 + 같은 TX 마지막의 캠페인 잠금/issuedCount 갱신을 채택했다.
-기존 캠페인 선잠금 순서를 최신 설계에 그대로 적용하지 않는다.
-13-A/14-A/15-A로 Redis 명령 초기 1초·마지막 카운터 잠금 초기 목표 1초·coupon 업무별 오류 코드를 확정했다.
-이후 최신 사용자 선택 B로 Redis 전체 한도를 없애고 인스턴스별 Java Semaphore만 사용한다.
-최대 동시 발급 수는 YAML `coupon.admission.max-concurrency`(초기 3)에서 시작 시 읽고 재시작 시 변경을 적용한다.
-이 변경이 위 Redis 관련 과거 선택과 아래 과제 원문의 전역 수용 조건보다 우선한다. 기존 다른 기능의 Redis 사용은 유지한다.
-18-A/19-B/20-A로 슬롯 경유 복합 FK·쓰기 전 슬롯 제한 재확인·로그/운영자 확인 수동 복구를 확정했다.
-기능 구현은 아직 시작하지 않으며 문서 변경만 커밋한다. 실제 설정 바인딩/DDL/검사는 구현 요청 이후 진행한다.
-
-- 실제 발급 총량·사용자 중복은 DB, 동시 실행 수는 각 인스턴스의 singleton Java Semaphore로 보호한다.
-- 기존 쿠폰 조회 → 로컬 tryAcquire → DB 발급 TX → 실행/종료 확인 → 원래 permit 한 번 반환 순서다.
-- 인스턴스별 YAML 값은 양수이며 잘못된 값은 시작 실패다. 전역 합계 한도/쿠폰 Redis Set/Lua는 만들지 않는다.
-- 기본 닫힘/명시적 열기와 DB 종료 불명 시 로컬 닫힘은 유지한다. HTTP timeout만으로 permit을 반환하지 않는다.
-- 현재는 설계/준비 문서만 다룬다. API·Entity·SQL·Semaphore 바인딩/제어 코드는 아직 구현하지 않는다.
-- 기존 상품·주문·PG·Outbox·Inbox·구매 활동과 사용자 JMeter 수정을 보존한다.
-- 아래 과거 주차의 기준 브랜치·다음 작업 안내보다 이 안내가 우선한다. 기술·검사 규칙은 유지한다.
-
-## 6~7주차 통합 적용 안내 · 현재 작업
-
-2026-11-04부터 6~7주차를 함께 진행하며 사용자 추가 조건으로 consumer Inbox를 포함한다.
-현재 범위·완료 조건은 [통합 요구사항](docs/week6-7/total_requirement.md),
-진행 순서는 [개발 계획](docs/week6-7/development-plan.md),
-다음 작업은 [현재 인계](docs/week6-7/handoff.md)를 먼저 읽는다.
-이 안내가 아래 과거 주차의 브랜치·다음 작업 안내보다 우선하며 기존 기술 규칙은 유지한다.
-
-- 출발점은 사용자 로컬 커밋을 포함한 `volume-5/main`의 `b4e499d`다.
-- 통합 기준은 `volume-6-7/main`이다. 작업 브랜치는 해당 기준의 최신 준비/병합 커밋에서 순서대로 만든다.
-- R01 `volume-6-7/r01-order-events-inbox`: 고정 이벤트 계약·직접 발행·Inbox와 구매 활동·W6 실험.
-- R02 `volume-6-7/r02-transactional-outbox`: 확정 TX의 Outbox·단일 relay·재시도·중단 실험.
-- R03 `volume-6-7/r03-delivery-recovery`: W6 누락/정상 사례 재현·복구·최종 E2E·제출 정리.
-- 최종 발행 경로는 Outbox이며 R01의 실제 직접 발행 재현 경로는 테스트 구성/revision으로 보존한다.
-- Inbox 기록과 모든 품목의 구매 활동은 같은 TX, DB commit 후 ack다. 중복과 payload 충돌을 구분한다.
-- 초기 준비는 문서·빌드·테스트 기반만 다루며 기능 구현 완료로 기록하지 않는다.
-- 사용자 JMeter 수정과 사용자가 삭제한 과거 인계 문서는 되돌리거나 초기 커밋에 포함하지 않는다.
-- 기존의 기능 변경에 대한 세 관점 서브에이전트 리뷰 규칙은 유지한다. 문서·빌드·테스트 전용 준비에는 적용하지 않는다.
-
-아래 2주차 규칙은 당시 기록이며, 현재 주차의 적용 안내와 기술 규칙을 함께 따른다. 규칙의 이유와 예시는 [개발 컨벤션](docs/week2/conventions.md)을 기준으로 한다.
-
-## 5주차 적용 안내
-
-2026-10-23 최종 점검: R03 [PR #26](https://github.com/corinB/loop-pack-be-l2-vol5-java/pull/26)까지 병합한 기준은 `volume-5/main`의 `b70d83b`다. [5주차 최종 점검](docs/week5/final-audit.md)을 먼저 읽는다. 병합 트리는 검증된 `8e2e92f`와 같으며 전체 검사509건/실제 R03 실험14건의 기존 근거를 대조했다. 발견한 PG 실패 반환 캐시 검증 공백은 사용자 요청으로 commit/rollback2건을 추가해 보완했다. 캐시16건/ArchUnit8건의 관련24건과 테스트 Checkstyle을 통과했고 기능 수정은 없다. 반환 캐시 보완과 점검 문서는 e200e78로 volume-5/main에 게시했다. 아래 PR 생성 예정·미정 표현은 당시 진행 기록이며 현재 범위는 최종 점검과 인계 문서를 우선한다.
-
-다음 작업은 [인계 문서](docs/week5/handoff.md)에서 현재 브랜치·완료 검증·남은 범위를 먼저 확인한다.
-
-처음 읽는 개발자용 [결제 장애 대응 안내](docs/week5/resilience/README.md)를 추가했다. [서킷브레이커](docs/week5/resilience/circuit-breaker.md)·[폴백 전략](docs/week5/resilience/fallback.md)은 현재 구현을 설명하고 기존 [요청 상태 모델](docs/week5/states/payment.md)을 재사용한다. 고객 confirm/reconcile의 본문에는 completed가 없으며 callback 응답만 이를 노출한다. 해당 문서 표현을 실제 controller/View에 맞춰 바로잡았다. 문서 변경은 기능/테스트 재검사나 별도 기능 리뷰 대상으로 확대하지 않는다.
-
-현재 준비 범위·진행 순서·완료 조건은 [5주차 전체 요구사항](docs/week5/total_requirement.md)을 따른다.
-기준 브랜치는 `volume-5/main`이며, `volume-4/main`의 `9eff402`에서 시작한다.
-PR은 아래 세 개로 나눈다. 각 작업 브랜치는 작업 시작 시 최신 기준 브랜치에서 생성하고 `volume-5/main`을 대상으로 한다.
-
-- R01 `volume-5/r01-pg-payment-foundation`: 테스트 PG·HTTP adapter·결제/차감 기록 모델.
-- R02 `volume-5/r02-pg-order-payment`: 재고 선차감·PG 주문 전환·멱등성·callback·대사.
-- R03 `volume-5/r03-payment-resilience`: 조회 회복 전략·통합 장애 검증·제출 정리.
-
-R01은 로컬 구현·검증 후 [PR #24](https://github.com/corinB/loop-pack-be-l2-vol5-java/pull/24)로 병합됐다(`4b81541`). [R01 결과](docs/week5/r01-pg-payment-foundation/result.md)에 전체 검사 384건·실연결·보존과 승인 보완을 기록했다. payment-lab은 commerce8080/PG8081/commerce관리8082와 INFO 콘솔을 사용한다.
-R02도 이 병합 기준에서 시작해 **로컬 구현·검증을 완료했다.** [R02 결과](docs/week5/r02-pg-order-payment/result.md)에 전체 검사 432건(PG25/commerce407, 실패·오류·건너뛰기0), 독립 JVM 실험 10개와 기존 POINT/사용자 파일 보존을 기록했다. 준비/공통 업무 TX·주문 CAS·실제 PG confirm·고객/관리자 조회·단일 수동 대사/인계·동기 callback을 연결했다. 기능마다 세 관점 리뷰와 중요 수정 승인·재리뷰를 마쳤으며 [리뷰 기록](docs/week5/r02-pg-order-payment/review.md)에 미해결 중요 지적은 없다. 이번 최종 검증은 기능 변경 없이 완료했다. R02는 사용자 요청으로 게시한 [PR #25](https://github.com/corinB/loop-pack-be-l2-vol5-java/pull/25)가 병합됐다(`42c22c2`). R03의 공유 조회 회로·fallback·내부 반영 데드락 Retry·제한된 자동 조회/실행기를 구현했다. 2026-10-23 실제 PG 장애/재시작 실험 14건과 필수 전체 검사 509건(PG25/commerce484, 실패·오류·skip0)까지 완료했다. 기능 기준은 `ae46776`이며 최종 검증의 기능 수정은 없다. [R03 결과](docs/week5/r03-payment-resilience/result.md)·[운영 안내](docs/week5/r03-payment-resilience/operations.md)를 따른다. 원격 PR은 후속 요청 범위다. [상태 문서](docs/week5/states/total.md)는 R01/R02 구현과 R03 목표를 구분한다.
-2026-10-22 R03 착수: 최신 기준 `42c22c2`에서 `volume-5/r03-payment-resilience`를 생성했다. 주요 정책을 확정하고 [상세 구현 계획](docs/week5/r03-payment-resilience/plan.md)을 작성해 비즈니스·사용자 경험·기술 초회 계획 리뷰를 마쳤다. [리뷰 기록](docs/week5/r03-payment-resilience/review.md)의 회차 commit 뒤 권한/시간 재확인 보완은 사용자 승인 후 계획에 반영했고 세 관점 재리뷰도 마쳤다. 계획의 미해결 중요 지적은 없다. 2026-10-23 첫 기능인 PG 조회 회로·fallback·수동/callback 연결·기본 지표를 구현했다. 기능 리뷰의 알려진 종결/존재 충돌 제외 보완은 사용자 승인 후 적용했고 세 관점 재리뷰도 중요 지적 없이 완료했다. 관련 검사 76건(실패·오류·skip 0)과 Checkstyle/ArchUnit이 통과했다. 이어서 내부 반영 데드락 Retry도 구현했다. 실제 rollback 완료와 MySQL 1213/40001을 함께 확인한 경우만 새 TX로 100ms 뒤 추가 1회이며, commit 미확인은 상태 우선 조회·최초 snapshot 보호를 유지한다. 세 관점 기능 리뷰에 중요 지적이 없고 관련 고유 검사 49건(47건 초회 통과＋설정 확인 API 수정 후 2건 재검사 통과)·Checkstyle/ArchUnit이 통과했다. 자동 조회·실행기도 구현했다. 세 관점 기능 리뷰에 중요 지적이 없고 관련 53건과 Checkstyle/ArchUnit이 통과했다. 기본 지표/운영 간격과 실행기 검사를 보강한 2건도 재검사했다. test 프로필은 confirm 자동 시작만 false이며 자동 컴포넌트/프록시/DB는 별도 핵심 검사한다. 2026-10-23 실제 PG 장애/재시작 실험 14건과 필수 전체 검사 509건(PG25/commerce484, 실패·오류·skip0)까지 완료했다. 기능 기준은 `ae46776`이며 최종 검증의 기능 수정은 없다. [R03 결과](docs/week5/r03-payment-resilience/result.md)·[운영 안내](docs/week5/r03-payment-resilience/operations.md)를 따른다. 원격 PR은 후속 요청 범위다. [결정 목록](docs/week5/r03-payment-resilience/trade_off/total_trade_off.md)·[회로 집계](docs/week5/r03-payment-resilience/trade_off/02-lookup-circuit-breaker.md)·[연결/운영 범위](docs/week5/r03-payment-resilience/trade_off/03-resilience-library-wiring.md)가 현재 기준이다. 자동 조회 Retry와 공유 조회 CircuitBreaker는 Resilience4j 애노테이션으로 통일해 기존 Spring Retry 선택을 대체했다. 최초 confirm만 시작·claim commit 후 전달·전용 2스레드/큐2·최초＋추가3회·1/3/10초±20%·최초전달부터30초·회로 차단 즉시 수동·내부 반영 데드락만 추가1회/100ms·기존 조회＋로그＋기본 지표를 확정했다. 회로 수치와 HTTP 분류는 링크 문서를 따른다. 준비 문서나 계획 리뷰를 구현·검사 완료로 기록하지 않는다.
-2026-10-22 R02 설계 결정: 준비 진입은 주문 상태 DRAFT→PAYMENT_PENDING CAS로 선점하고, 공통 결과 반영도 PAYMENT_PENDING→CONFIRMED/PAYMENT_FAILED CAS 성공자가 맡는다. 결과 반영은 결제 시도 행을 짧게 잠가 저장된 결과/충돌을 확인하며 관련 주문 기록·재고·작업 변경을 같은 TX에서 보호한다. 상품 재고 잠금·복구 작업 CAS·관찰 저장 경계는 유지한다. callback은 요청 안의 동기 처리이며 PG 권위 조회는 TX 밖, 관찰 commit 후 공통 업무 TX를 호출한다. 별도 callback 접수 실행기는 추가하지 않는다. 수동 대사는 저장 종결 근거가 있으면 조회 없이 반영하고, 그 외 요청당 PG 조회 최대 1회·미완료 202다. 자동 회차를 소비/초기화하거나 새 자동 대기 작업을 만들지 않는다. 재고 복구 한도 초과는 업무 전체 rollback·PG 실패 보존·수동 처리로 정했다. 관리자 반환 예정량 집계 제한은 추가하지 않는다. 준비·공통 반영·수동 대사·동기 callback API를 연결했다. callback은 초기 실행 비교값으로 늦은 실패 표시를 보호하며 작업 인계·회차 소비를 하지 않는다.
-2026-10-22 고객 소유권 결정: confirm/고객 상세/reconcile에 기존 X-USER-ID와 저장된 주문 userId 비교를 추가한다. 과거 POINT 고객 상세도 포함하며 타인 주문은 없는 주문과 같은 404·ORDER_NOT_FOUND·메시지다. 주문 상태·기존 결제 결과 반환이나 CAS/재고/PG/작업 변경 전에 검사한다. 실제 로그인·Spring Security는 추가하지 않는다. 주문 관리자 조회·미완료 목록·운영자 대사는 기존 X-USER-ID=1 관리자 fixture를 확인한다. 고객 경로는 1번도 본인 주문만 처리하며 상품 등 다른 관리자 API 변경·역할 테이블은 포함하지 않는다. 이 결정은 과거 2주차의 본인 검사 제외 정책보다 우선한다. confirm과 고객 GET 소유권 및 주문 관리자 GET 접근은 구현했다. 수동 대사의 접근/처리와 고객 헤더를 사용하지 않는 callback 권위 확인도 연결했다.
-2026-10-21 최신 사용자 요청에 따라 **기능 동작을 바꾸는 구현만 비즈니스·사용자 경험·기술 서브에이전트 리뷰**를 받는다. 동작 변경 없는 문서·빌드 구성·테스트 전용 변경은 별도 리뷰하지 않는다. 최신 사용자 요청에 따라 중요한 기능 리뷰 수정은 구체안을 사용자에게 확인받고 진행하며 사소한 보완까지 승인 대상으로 확대하지 않는다. 테스트는 핵심 상태/멱등성·저장/경합·HTTP 오류·보존에 필요한 최소 사례만 작성하고 변경마다 관련 검사만 실행한다. 필수 전체 검사는 PR 마무리에 한 번 실행하고 이후 변경/실패로 필요해진 경우만 반복한다. 기존 검사 기준은 완화하지 않는다. 커밋은 Green 이후 최소 기능 단위·`type: 한글 요약`·명시 staging을 유지한다.
-구현 계획의 기본값은 독립 apps:test-pg·127.0.0.1:8081·loopers_test_pg/test_pg·보존용 payment-lab 프로필과 validate/명시 SQL이다. 시도 키는 표준 UUID(공백 거절·소문자 정규화), 테스트 조건은 향후 confirm의 요청별 옵션(생략 NORMAL_SUCCESS)이다. enum·옵션 필드·주기·프리셋 등은 계획을 따른다. 아래 이전 논의의 미정 목록보다 최신 계획의 구체값을 우선하며 기능 완료로 해석하지 않는다.
-후속 [학습용 최소 보완](docs/week5/r01-pg-payment-foundation/trade_off/10-learning-scope-completion.md)을 확정했다. 검증 결과/확정 거절 사실은 기존 pay 시도에 짧은 TX로 먼저 commit하고 공통 업무 반영 TX는 분리한다. 저장된 종결 결과의 미반영은 재조회 없이 재적용할 수 있다. 실효 테스트 조건은 고정 필드로 보존·비교한다. PG는 DB 예정 시각/결과를 주기 조회해 완료하고 재시작 실험용 프로필은 테이블을 보존하며 초기화는 명시 실행한다. 수동 대사는 실행 ID 조건부 교체로 옛 진행 갱신을 차단한다. commerce의 지터/다음 예약 정보는 영속화하지 않는다. 정확한 필드·프로필/초기화 파일·조건식·주기 등은 상세 설계 대상이다.
-사용자 추가 조건으로 테스트 PG는 로컬 독립 실행 서버이며 commerce가 실제 HTTP로 연결한다. 거래는 기존 MySQL의 PG 전용 스키마에 저장하고 PG 재시작 후에도 보존한다. 메모리 저장 선택은 철회됐다.
-재고는 먼저 차감해 commit하고 PG를 TX 밖에서 호출한다. 성공 시 차감 상태 유지, 확정 실패 시 한 번 복구하며 결과 미확인에서는 유지한다.
-[HTTP 호출](docs/week5/r01-pg-payment-foundation/trade_off/03-http-client-settings.md)은 RestClient + Apache HttpClient 5 직접 호출이며 자동 retry/redirect를 끈다. 초기값은 연결 1초·연결 풀 대기 1초·응답 대기 2초다. 전체 호출의 절대 제한을 뜻하지 않는다. [adapter](docs/week5/r01-pg-payment-foundation/trade_off/04-adapter-fixture.md)는 검증한 관찰/확인 불가 사유를 결과값으로 구분해 반환한다. 실제 PG는 정상·지연·유실·DB 보존을, 작은 테스트용 HTTP 서버는 불완전 응답 등을 검증한다. 재조회/회로 연결에서 결과값 분류가 필요하며 상세 타입·버전·읽기 제한 적용은 후속 설계/검증 대상이다.
-결제 시도 키는 [전체 결제 시도에서 전역 유일](docs/week5/r01-pg-payment-foundation/trade_off/02-idempotency-request-contract.md)하다. 고객이 달라도 같은 키를 다른 주문에 재사용할 수 없다. 주문당 한 시도 제약은 별도로 유지한다. 실제 적용할 PG 테스트 조건도 비교하며 다르면 충돌로 처리한다. 사용자 요청으로 카드 입력은 재요청 비교에서 제외하고 같은 주문·키·저장 금액·실제 조건이면 기존 상태를 반환한다. 카드 기반 HMAC/해시 저장·비밀키 관리는 범위 밖이며 카드 원문 비저장/로그 금지·형식 검증은 유지한다. 키는 표준 UUID를 소문자 36자로 정규화하며 조건 필드/기본값은 최신 구현 계획을 따른다.
-확인한 결제 결과와 복구 진행을 나누어 관리한다. 수동 전환·조회 실패로 마지막 검증 결과를 덮어쓰지 않는다. 정확한 enum·허용 조합·전이는 [상태 설계](docs/week5/r01-pg-payment-foundation/trade_off/05-payment-attempt-state.md)에서 후속 확정한다.
-복구 진행·사용 횟수·현재 실행/최근 시각·오류는 [별도 pay 복구 작업 모델·저장소](docs/week5/r01-pg-payment-foundation/trade_off/06-recovery-progress-storage.md)에 둔다. [재고 차감·복구 기록은 mall의 별도 모델](docs/week5/r01-pg-payment-foundation/trade_off/07-stock-adjustment-boundary.md)이다. 확정 실패 반영 시 실제 재고와 복구 기록·관련 주문/결제/작업 변경을 같은 commerce DB의 로컬 TX에서 보호하며 별도 비동기 재고 복구 worker는 두지 않는다.
-application 파사드가 모델 간 흐름을 조율한다. [A안](docs/week5/r02-pg-order-payment/trade_off/01-facade-transaction-boundary.md)으로 조율 파사드와 준비/공통 결과 반영용 TX 컴포넌트를 분리하기로 확정했다. 각 TX 진입점은 별도 Spring 빈의 공개 @Transactional 메서드다. 전체 흐름을 단일 TX로 감싸지 않으며 PG HTTP·재조회 대기는 TX 밖에 둔다. callback·수동 대사·자동 재확인은 같은 결과 반영 TX 진입점을 사용한다. 후속 결정으로 관찰 저장 TX를 먼저 commit하고 공통 업무 반영 TX를 호출한다. 실제 클래스명·Context 배치·잠금 순서는 미정이다.
-8번은 기존 비관적 잠금 선택을 변경해 [멱등성 키 + 조건부 상태 갱신 + 실행 식별자](docs/week5/r01-pg-payment-foundation/trade_off/08-recovery-claim-coordination.md)를 채택했다. 복구 작업 실행 권한에 명시적 SELECT FOR UPDATE를 필수로 두지 않고 DB의 원자적 갱신 결과와 현재 실행 식별자를 검증한다. DB 쓰기 내부 잠금까지 제거하거나 상품 재고/공통 결과 반영의 보호를 없앤 선택이 아니다. JPA 쓰기 규칙은 유지하며 수동 인계는 실행 ID 조건부 교체로 확정했고 구체적인 조건식/응답·bulk/Entity 정합성은 후속 설계 대상이다. 자동 lease는 보류한다.
-후속 사용자 결정으로 정상 실행은 최초 조회+추가 재조회 최대 3회, 간격 1초·3초·10초와 지터 ±20%를 적용한다. 실패/수동 전환 기준은 [재확인 정책](docs/week5/r03-payment-resilience/trade_off/01-reconciliation-retry-policy.md)을 따른다. 정상 실행은 2026-10-22 후속 결정으로 Resilience4j Retry + DB 기록을 사용하고 장애/재시작 뒤 자동 재개는 [운영 담당자 미완료 목록 조회·수동 대사](docs/week5/r02-pg-order-payment/trade_off/06-interrupted-payment-reconcile.md)로 변경했다. [조회 직전에 횟수를 DB에 기록·commit](docs/week5/r03-payment-resilience/trade_off/07-retry-attempt-accounting.md)하며 실제 조회 전 종료돼도 소비를 취소하지 않는다. 목록 GET은 조회 전용, 실제 대사는 명시적인 POST 요청이다. 자동 예산을 새로 부여하지 않으며 PG create 재시도는 금지한다. 하위 HTTP timeout과 자동 조회 30초·내부 반영 추가 1회/100ms는 위 후속 결정으로 확정했다. 세부 오류 매핑·실행기 연결 등은 미정이다.
-아래 과거 포인트 주문의 단일 TX 규칙이나 2주차 동시성 제외 규칙을 5주차 PG 경계에 그대로 적용하지 않는다.
-소유권·관리자 접근의 적용 범위는 위 2026-10-22 결정을 따른다. confirm·고객 GET·주문 관리자 GET·고객/관리자 수동 대사의 접근 검사를 구현했다.
-기존 패키지·계층 의존·순수 도메인·데이터 접근·TDD·Checkstyle·ArchUnit·검사 완화 금지와 사용자 변경 보존 규칙은 유지한다.
-준비 문서나 계획을 구현·테스트 완료로 기록하지 않고 `result.md`는 실제 구현·검증 후 작성한다.
-
-## 4주차 적용 안내 · 당시 기록
-
-4주차 제출 범위·진행 순서·완료 조건은 [4주차 전체 요구사항](docs/week4/total_requirement.md)을 따른다.
-기준 브랜치는 `volume-4/main`이며, 3주차 최종 병합 커밋 `72ae005`에서 시작한다.
-아래 2주차 작업 순서·범위와 3주차 문서는 당시 기록이다. 4주차의 브랜치·캐시 선택·경쟁 검증 범위는 4주차 문서를 우선한다.
-패키지·계층 의존·순수 도메인·데이터 접근·TDD·Checkstyle·ArchUnit·변경 금지 규칙은 현재 코드와 후속 변경 사항을 기준으로 유지한다.
-HTTP 성능 테스트는 JMeter를 사용하며, 실제 측정 전 수치나 성능 개선을 완료로 기록하지 않는다.
-R02의 고객 상세 로컬 캐시·변경 경계·측정은 [승인 계획](docs/week4/r02-product-detail-local-cache/plan.md)을 따른다.
-제출 시 캐시는 Caffeine W-TinyLFU 로컬 캐시로 확정했다. Redis는 이번에 도입하지 않기로 한 선택이며 남은 필수 작업이 아니다.
-여러 서버의 캐시 공유와 DB 직접 수정의 전파는 지원 범위 밖이다. Redis 장애·복구를 검증했다고 기록하지 않는다.
-
-## 작업 순서
-
-학습 범위와 총 7개 PR의 완료 조건은 [개발 계획](docs/week2/development-plan.md)을 따른다.
-기준 브랜치는 `volume-2/main`, 작업 브랜치는 `volume-2/pr-번호-작업명`이다.
-앞 PR을 검증·병합한 뒤 최신 기준 브랜치에서 다음 브랜치를 만들며 작업 브랜치끼리 직접 병합하지 않는다.
-PR 01은 계획 정리·공통 기반·사용자 입력을 함께 다룬다. PR 내부에서는 작은 기능 단위로 TDD와 커밋을 진행한다.
-동시성 구현·검증은 다음 학습으로 미룬다. 잠금·버전 검증·재시도·동시 요청 테스트는 이번 범위에서 제외한다.
-순차 재확정 거절, DB 유일성 제약, 단일 요청의 전체 롤백은 유지한다.
-과제 원문의 인증·인가 요구는 이번 학습 범위에서 제외한다. Spring Security·ADMIN·CSRF·본인 여부 검사를 구현하지 않는다.
-`X-USER-ID`는 fixture 사용자 입력이다. 필요한 API에서 누락·형식 오류는 400, 없는 사용자는 404로 처리한다.
-좋아요 목록은 경로 userId, 주문 상세·확정은 orderId를 사용한다. 주문 결제 대상은 저장된 userId를 따른다.
-상품·브랜드 조회와 관리자용 기능은 사용자 헤더를 요구하지 않는다. API별 입력은 설계 계약을 따른다.
-
-1. 구현 전에 요구사항과 API 계약에서 정상 결과, 대표 오류, 상태 유지 조건을 확인한다.
-2. 미정 정책은 임의로 결정하지 않는다. 설계 문서에 질문과 영향을 기록하고 사용자에게 확인한다.
-3. 한 번에 하나의 작은 기능을 다룬다. 변경할 책임, 파일 범위, 관련 테스트를 먼저 밝힌다.
-4. 대표 도메인 규칙은 테스트를 먼저 작성하고 Red, Green, Refactor 결과를 확인한다.
-5. 변경 후 diff와 관련 테스트를 확인하고, 기능이 끝나면 Checkstyle, ArchUnit, 모듈 검사를 실행한다.
-6. Green 이후 관련 테스트가 통과한 작은 기능 단위로 커밋한다. 커밋 시점과 메시지 기준은 개발 계획을 따른다.
-
-## 구조와 의존
-
-- User·두 사용자 fixture는 PR 01, 사용자별 초기 잔액 0의 Point는 PR 04에 연결하며 기존 잔액을 초기화하지 않는다.
-- PR 02에서 Shopping 소유의 Like 관계·유일성·집계 테이블과 주기 집계를 준비하고 등록·취소는 PR 03에서 연결한다.
-- PR 05에서 Pay 소유의 OrderBill 저장·조회 구조를 먼저 준비하고 실제 결제 기록 생성은 PR 06에서 연결한다.
-- 선행 저장 구조는 fixture로 검증하며 Context 소유권을 유지한다. 준비용 공개 API·임시 상수 응답을 추가하지 않는다.
-
-- (2주차 당시 규칙, 역사적 기록) 패키지는 `interfaces`, `application`, `domain`, `infrastructure` 아래 Context → 기능 순서로 나눴다.
-  Context 이름은 `mall`, `shopping`, `ordering`, `pay`였다. 예: `domain.mall.product`.
-- 이후 `volume-3/refacto`에서 패키지 구조가 Context → 종류(kind) 순서로 바뀌었다. domain·application·interfaces는
-  `<layer>.<context>.<종류>` 순서를 따른다. 예: `domain.mall.model`, `application.mall.query`,
-  `interfaces.api.mall.controller`. infrastructure만 종류가 먼저다: `infrastructure.<종류>.<context>` 순서를 따른다.
-  예: `infrastructure.persistence.mall.entity`. 현재 구조와 결정 배경은 [CLAUDE.md](CLAUDE.md)와
-  [docs/refactor/](docs/refactor/)(`plan.md`, `context-notes.md`, `result.md`)를 참고한다.
-- `interfaces`는 HTTP 입력과 응답 변환을 담당하며 `infrastructure`에 직접 의존하지 않는다.
-- `application`은 유스케이스 순서와 트랜잭션을 조율하며 `interfaces`와 `infrastructure` 구현에 의존하지 않는다.
-- 신규 `domain`은 순수 Java로 상태·업무 규칙·repository 계약을 소유한다. Spring·JPA·HTTP와 다른 계층에 의존하지 않는다.
-- `infrastructure`는 domain 저장 계약과 application QueryDao·조회 타입을 사용한다. application 구현 서비스에는 의존하지 않는다.
-- HTTP 정책이나 업무 규칙을 infrastructure에서 중복 구현하지 않는다.
-- GET은 조회 전용 Controller → application QueryDao 계약 → infrastructure 구현으로 연결한다. 조회 구현은 QueryDSL
-  Projection을 사용한다. 쓰기는 JPA, JdbcClient는 좋아요 집계 같은 배치 작업에만 사용하며 테스트 코드도 쓰지 않는다(3주차 후속 R03·R08에서 변경, 운영 코드는 `LayerArchitectureTest`가 검사한다).
-- DAO는 같은 DB의 Context 간 조인과 조회 모델 조합을 담당한다. Controller는 입력·404·ApiResponse 포장을 담당한다.
-- 조회 모델은 application의 순수 record이며 별도 HTTP Response 복사 없이 반환한다. domain은 HTTP DTO를 알지 못한다.
-- `@XUserId` resolver는 UserQueryDao.findById로 사용자 존재를 검사하고 ID를 반환한다. 형식 오류 시 DAO를 호출하지 않는다.
-- 경로 userId는 좋아요 조회 Controller에서 같은 DAO로 검사한다. 쓰기 Service는 사용자 존재를 재검사하지 않는다.
-- 쓰기 Service를 직접 호출하는 쪽은 존재하는 사용자 ID를 제공한다. 사용자 검증을 인증·인가로 해석하지 않는다.
-
-## Java 코드
-
-- Java 21과 기존 코드 스타일을 사용하고 `.editorconfig`의 본문 최대 130자와 테스트 파일 예외를 따른다.
-- 별표 import와 미사용 import를 허용하지 않는다.
-- 의존성은 생성자로 주입한다. Spring 구성요소에는 기존 관례에 맞춰 `@RequiredArgsConstructor`를 사용할 수 있다.
-- 도메인 `Product`와 저장 객체 `ProductJpaEntity`를 분리한다. domain은 JPA BaseEntity를 상속하지 않는다.
-- 도메인은 숨긴 생성자와 `create` / `restore`로 유효한 상태를 구성하고, 공개 setter 없이 의미 있는 행동으로 변경한다.
-- Money·Stock처럼 규칙이 모이는 값부터 값 객체로 분리한다. 실패하는 행동은 메모리 상태도 유지해야 한다.
-- 행동별 `ConfirmOrderUseCase` 인터페이스와 `ConfirmOrderFacade` 구현체(컨텍스트 서비스를 순서대로 조율하는 `facade`)를 두고 `execute`로 실행한다.
-- 쓰기는 Request → Command → Result → Response, 조회는 Request → Criteria → 조회 record → ApiResponse를 사용한다.
-- 쓰기 트랜잭션은 application Service의 `execute`, 조회 readOnly 트랜잭션은 DAO 구현의 공개 메서드에 둔다.
-- DAO 상세 조회는 Optional을 반환하며 Controller가 기존 오류로 변환한다. 조회 UseCase·Service는 만들지 않는다.
-- 쓰기 성공 응답은 Result를 유지한다. 상품 응답의 likeCount만 DAO로 저장된 집계 값을 읽는다.
-- 도메인 변경 후 repository의 `save`를 명시한다. 주문 확정의 모든 변경·기록은 단일 트랜잭션으로 저장한다.
-- infrastructure의 전용 EntityMapper로 변환한다. repository는 기존 Entity를 확보하고 Mapper는 저장 메타데이터를 보존한다.
-- Mapper 인터페이스·변환 라이브러리는 추가하지 않는다. Mapper에는 업무 판단을 넣지 않는다.
-- Request는 형식·구조, domain은 업무 규칙, application은 쓰기의 대상·사용자별 데이터·객체 간 조건을 검사한다.
-- domain은 DomainException·업무 코드로 실패를 표현하고 interfaces가 기존 HTTP·ApiResponse 계약으로 변환한다.
-
-## 테스트
-
-- 핵심 업무 규칙은 TDD로 진행한다. domain 단위 테스트는 Spring·DB 없이 정상·경계·실패·실패 후 상태를 엄격히 검증한다.
-- 0·정확한 필요량·1 부족·최댓값·계산 초과, 중복 품목·삭제 상태·재확정을 포함한다.
-- UseCase 단위 테스트는 실제 도메인과 mock repository/DAO로 협력·사용자별 데이터·순서·실패 시 후속 처리 중단을 검증한다.
-- DAO는 실제 DB로 조회·필터·페이지·집계를 검증하고 resolver는 정상·400·404·잘못된 입력의 DAO 미호출을 검증한다.
-- 전체 롤백은 실제 DB 통합 테스트로 검증한다. 복잡한 Mapper 변환은 스냅샷·품목·메타데이터 보존을 확인한다.
-- repository 통합 테스트는 필요할 때 `flush`와 `clear` 후 저장 값을 재조회한다.
-- HTTP 테스트는 실제 Controller, application, repository와 테스트 DB를 연결해 입력·응답·저장 결과를 검증한다.
-- JUnit 테스트는 한글 `@DisplayName`, 기능별 `@Nested`, `arrange`, `act`, `assert` 구성을 사용한다.
-- 오류 테스트는 예외나 상태 코드뿐 아니라 실패 후 기존 상태가 유지되는지도 확인한다.
-
-## 좋아요 집계
-
-- 좋아요 관계·내 목록 포함 여부는 즉시 반영하며 likeCount·인기순은 Shopping의 저장 집계 값을 사용한다.
-- 단일 commerce-api 인스턴스에서 시작 시 1회, 이전 실행 종료 10초 후 전체 COUNT를 재집계한다.
-- 집계 행이 없으면 0이며 마지막 취소 후에도 0으로 갱신한다. 전체 갱신 실패는 롤백·로그 후 다음 주기에 실행한다.
-- 집계 스케줄러는 application 집계 Service를 호출한다. 집계 쓰기 계약은 읽기 DAO와 분리한다.
-- 집계 테스트는 시간을 기다리지 않고 실행을 직접 호출한다. Redis·메시징·다중 인스턴스 조율은 추가하지 않는다.
-
-## 검사 적용
-
-- Checkstyle은 별표·미사용 import 금지부터 적용한다. 기본 계층 의존 검사와 신규 도메인 순수성 검사를 구분한다.
-- 신규 순수성 검사는 실제 네 Context와 신규 공통 domain을 포함한다. Example은 참고 코드로 보존한다.
-- 현재 존재하는 신규 클래스를 실제로 검사하며 아직 없는 Context의 순수성을 검증했다고 기록하지 않는다.
-- 검사 설정·실행 상태는 사실대로 기록한다. 문서에 기준을 적었다고 설정 연결이나 검사 통과로 보고하지 않는다.
-
-## 변경 금지
-
-- 검사를 통과시키기 위해 테스트 기대값, 업무 규칙, Checkstyle 또는 ArchUnit 규칙을 삭제하거나 완화하지 않는다.
-- 요청 범위 밖의 패키지 개편과 기존 Example 코드 리팩터링을 함께 진행하지 않는다.
-- 사용자가 수정한 파일과 관련 없는 변경을 되돌리거나 덮어쓰지 않는다.
+- 사용자 수정·staging·미추적 파일을 보존한다. 기존 Example 개편, 무관한 설정·데이터·브랜치 정리를 섞지 않는다.
+- 사용자 JMeter 변경은 명시적 요청이 없으면 수정하거나 staging하지 않는다. 요청 범위의 파일만 명시적으로 staging한다.
+- 커밋은 `type: 한글 요약`, 빈 줄, 변경 이유·예외·실제 검증을 설명하는 상세 bullet로 작성한다.
+  긴 본문은 UTF-8 파일과 `git commit --file`을 사용하고 커밋 뒤 해시·본문·상태를 확인한다.
+- push/PR/병합/이력 재작성은 현재 사용자 요청에 포함된 범위에서만 수행한다. 과거 작업의 게시 권한을 새 요청에 자동 적용하지 않는다.
+- 로컬 인계에는 다음 작업·정확한 HEAD·검증 근거·환경 한계를 남긴다. 인계 본문을 다시 추적하거나 오래된 진행 상태를 지침에 복사하지 않는다.

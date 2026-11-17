@@ -1,5 +1,7 @@
 # JMeter GUI로 실시간 측정 보기
 
+> **학습 기록 · 4주차 당시 기준.** 요구·선택·검증 수치는 해당 단계의 기록이다. 현재 구조·명령·정책 차이는 [현행 컨벤션](../../week2/conventions.md)을 함께 확인한다.
+
 [전체 가이드](jmeter-guide.md) · [GUI 실행기](jmeter/open-jmeter-ui.ps1) · [GUI JMX](jmeter/product-list-ui.jmx)
 
 GUI는 계획만 열며 **초록색 Start 버튼을 눌러야 요청을 보낸다**.
