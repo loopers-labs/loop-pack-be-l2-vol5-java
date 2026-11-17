@@ -1,6 +1,7 @@
 package com.loopers.batch.job.ranking;
 
 import com.loopers.batch.job.ranking.step.FreezeWeeklyInputTasklet;
+import com.loopers.batch.job.ranking.step.PublishWeeklyRankingTasklet;
 import com.loopers.batch.job.ranking.step.WeeklyScoreProcessor;
 import com.loopers.batch.job.ranking.step.WeeklyScoreWriter;
 import com.loopers.batch.listener.JobListener;
@@ -39,6 +40,7 @@ public class WeeklyRankingJobConfig {
     public static final String FREEZE_STEP = "freezeWeeklyInput";
     public static final String CALCULATE_STEP = "calculateWeeklyScores";
     public static final String PRODUCT_READER = "weeklyProductReader";
+    public static final String PUBLISH_STEP = "publishWeeklyRanking";
 
     private final JobRepository jobRepository;
     private final PlatformTransactionManager transactionManager;
@@ -53,13 +55,23 @@ public class WeeklyRankingJobConfig {
     @Bean(JOB_NAME)
     public Job weeklyRankingJob(
         @Qualifier(FREEZE_STEP) Step freezeWeeklyInputStep,
-        @Qualifier(CALCULATE_STEP) Step calculateWeeklyScoresStep
+        @Qualifier(CALCULATE_STEP) Step calculateWeeklyScoresStep,
+        @Qualifier(PUBLISH_STEP) Step publishWeeklyRankingStep
     ) {
         return new JobBuilder(JOB_NAME, jobRepository)
             .validator(parametersValidator())
             .start(freezeWeeklyInputStep)
             .next(calculateWeeklyScoresStep)
+            .next(publishWeeklyRankingStep)
             .listener(jobListener)
+            .build();
+    }
+
+    /** ③ 완성본 공개. 완성 표시와 공개 pointer 변경을 한 트랜잭션에서 한다. */
+    @Bean(PUBLISH_STEP)
+    public Step publishWeeklyRankingStep(PublishWeeklyRankingTasklet publishWeeklyRankingTasklet) {
+        return new StepBuilder(PUBLISH_STEP, jobRepository)
+            .tasklet(publishWeeklyRankingTasklet, transactionManager)
             .build();
     }
 

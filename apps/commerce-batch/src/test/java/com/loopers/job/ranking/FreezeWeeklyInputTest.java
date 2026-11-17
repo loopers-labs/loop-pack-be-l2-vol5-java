@@ -68,7 +68,7 @@ class FreezeWeeklyInputTest {
         fixtures.clearData();
     }
 
-    @DisplayName("그 주의 활동만 시작 포함·끝 제외로 복사하고, 같은 주문의 여러 품목을 모두 담아 건수·상품 수·checksum과 함께 FROZEN으로 기록한다.")
+    @DisplayName("그 주의 활동만 시작 포함·끝 제외로 복사하고, 같은 주문의 여러 품목을 모두 담아 건수·상품 수·checksum과 함께 기록한다.")
     @Test
     void freezesWeekWithAllItemsAndBoundaries() throws Exception {
         // 2026-08-31 주. 경계 바로 앞·뒤 활동은 들어오지 않는다.
@@ -89,7 +89,8 @@ class FreezeWeeklyInputTest {
             Map.of("order_id", 44L, "product_id", 9L, "quantity", 5)
         );
         Map<String, Object> snapshot = fixtures.snapshot("weekly-20260831-r1");
-        assertThat(snapshot.get("status")).isEqualTo("FROZEN");
+        // job 전체(고정 → 계산 → 공개)를 실행하므로 최종 상태는 COMPLETED다. 고정 단계가 남긴 건수·checksum은 그대로다.
+        assertThat(snapshot.get("status")).isEqualTo("COMPLETED");
         assertThat(snapshot.get("revision")).isEqualTo(1);
         assertThat(snapshot.get("input_count")).isEqualTo(4);
         assertThat(snapshot.get("product_count")).isEqualTo(3);

@@ -121,6 +121,70 @@ public class RankingSnapshotStore {
             });
     }
 
+    // ---- 완성본 공개 ----
+
+    public int countStage(String snapshotId) {
+        Integer count = jdbc.queryForObject(
+            "select count(*) from ranking_score_stage where snapshot_id = ?", Integer.class, snapshotId);
+        return count == null ? 0 : count;
+    }
+
+    /** stage 점수에 score DESC, product_id ASC 순서로 계산 순위를 붙여 완성 ranking으로 저장한다. */
+    public int insertRanking(String snapshotId) {
+        return jdbc.update("""
+                insert into weekly_ranking (snapshot_id, product_id, score, rank_no)
+                select snapshot_id, product_id, score, row_number() over (order by score desc, product_id asc)
+                from ranking_score_stage where snapshot_id = ?""",
+            snapshotId);
+    }
+
+    /** 결과 checksum: rank 순서로 productId, score, rank를 직렬화한다. */
+    public String resultChecksum(String snapshotId) {
+        RankingChecksum checksum = new RankingChecksum();
+        jdbc.query(
+            "select product_id, score, rank_no from weekly_ranking where snapshot_id = ? order by rank_no",
+            rs -> {
+                checksum.addResult(rs.getLong("product_id"), rs.getLong("score"), rs.getInt("rank_no"));
+            },
+            snapshotId);
+        return checksum.hex();
+    }
+
+    public void markCompleted(String snapshotId, String resultChecksum, LocalDateTime completedAt) {
+        int updated = jdbc.update("""
+                update ranking_snapshot set status = ?, result_checksum = ?, completed_at = ?
+                where snapshot_id = ? and status = ?""",
+            RankingSnapshot.Status.COMPLETED.name(), resultChecksum, completedAt, snapshotId, RankingSnapshot.Status.FROZEN.name());
+        if (updated != 1) {
+            throw new IllegalStateException("FROZEN 상태의 snapshot만 완성할 수 있습니다. snapshotId=" + snapshotId);
+        }
+    }
+
+    /** 기간의 공개 pointer를 잠그고 읽는다. 같은 기간 공개를 직렬화한다. */
+    public Optional<Publication> findPublicationForUpdate(LocalDate periodStart) {
+        return jdbc.query(
+            "select period_start, snapshot_id, revision from ranking_publication where period_start = ? for update",
+            (rs, rowNum) -> new Publication(rs.getObject("period_start", LocalDate.class), rs.getString("snapshot_id"), rs.getInt("revision")),
+            periodStart).stream().findFirst();
+    }
+
+    public void insertPublication(WeeklySnapshotKey key, LocalDateTime publishedAt) {
+        jdbc.update(
+            "insert into ranking_publication (period_start, snapshot_id, revision, published_at) values (?, ?, ?, ?)",
+            key.periodStart(), key.snapshotId(), key.revision(), publishedAt);
+    }
+
+    /** 기존 공개 revision이 이번보다 낮을 때만 바꾼다. 오래된 실행이 새 공개본을 되돌리지 못한다. */
+    public boolean advancePublication(WeeklySnapshotKey key, LocalDateTime publishedAt) {
+        return jdbc.update("""
+                update ranking_publication set snapshot_id = ?, revision = ?, published_at = ?
+                where period_start = ? and revision < ?""",
+            key.snapshotId(), key.revision(), publishedAt, key.periodStart(), key.revision()) == 1;
+    }
+
+    public record Publication(LocalDate periodStart, String snapshotId, int revision) {
+    }
+
     private RankingSnapshot mapSnapshot(ResultSet rs, int rowNum) throws SQLException {
         return new RankingSnapshot(
             rs.getString("snapshot_id"),

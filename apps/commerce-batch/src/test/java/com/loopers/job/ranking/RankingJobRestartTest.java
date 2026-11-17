@@ -78,13 +78,18 @@ class RankingJobRestartTest {
         }).when(store).sumQuantity(anyString(), anyLong());
     }
 
-    @DisplayName("상품 9 직전에 실패한 실행을 같은 parameter로 재시작하면, 같은 JobInstance의 새 실행이 입력 고정을 다시 하지 않고 상품 9부터 이어서 계산한다.")
+    @DisplayName("상품 9 직전에 실패한 실행을 같은 parameter로 재시작하면, 같은 JobInstance의 새 실행이 입력 고정을 다시 하지 않고 상품 9부터 이어서 "
+        + "정상 한 번 실행과 같은 점수·순위·checksum을 만들고, 실패 동안에는 기존 공개본이 유지된다.")
     @Test
-    void restartsFromProductNine_withSameInputAndInstance() throws Exception {
+    void restartsFromProductNine_andMatchesNormalRun() throws Exception {
         fixtures.assignmentWeek("2026-08-17T00:00:00Z");
-        JobParameters params = params("2026-08-17", "weekly-20260817-r1");
 
-        // 1차 실행: 7·8 chunk는 commit되고, 세 번째 item인 상품 9를 처리하기 직전에 실패한다.
+        // 비교용 정상 실행: 같은 입력을 별도 snapshot(r1)으로 한 번에 끝까지 계산·공개한다. 재시작 대상의 metadata·stage를 지워 위장하지 않는다.
+        JobExecution normal = jobLauncher.run(job, params("2026-08-17", "weekly-20260817-r1"));
+        assertThat(normal.getStatus()).isEqualTo(BatchStatus.COMPLETED);
+
+        // 재시작 대상(r2) 1차 실행: 7·8 chunk는 commit되고, 세 번째 item인 상품 9를 처리하기 직전에 실패한다.
+        JobParameters params = params("2026-08-17", "weekly-20260817-r2");
         failOnceAt.set(9L);
         JobExecution first = jobLauncher.run(job, params);
 
@@ -92,13 +97,16 @@ class RankingJobRestartTest {
         StepExecution persistedCalc = jobExplorer.getStepExecution(first.getId(), firstCalc.getId());
         assertThat(first.getStatus()).isEqualTo(BatchStatus.FAILED);
         assertThat(step(first, WeeklyRankingJobConfig.FREEZE_STEP).orElseThrow().getStatus()).isEqualTo(BatchStatus.COMPLETED);
+        assertThat(step(first, WeeklyRankingJobConfig.PUBLISH_STEP)).isEmpty();
         assertThat(persistedCalc.getExecutionContext().getInt(READ_COUNT_KEY)).isEqualTo(2);
         assertThat(persistedCalc.getCommitCount()).isEqualTo(1);
-        assertThat(fixtures.stage("weekly-20260817-r1")).containsExactly(
+        assertThat(fixtures.stage("weekly-20260817-r2")).containsExactly(
             Map.of("product_id", 7L, "score", 5L),
             Map.of("product_id", 8L, "score", 1L)
         );
-        String inputChecksum = (String) fixtures.snapshot("weekly-20260817-r1").get("input_checksum");
+        assertThat(fixtures.ranking("weekly-20260817-r2")).isEmpty();
+        assertThat(fixtures.publications()).extracting(row -> row.get("snapshot_id")).containsExactly("weekly-20260817-r1");
+        String inputChecksum = (String) fixtures.snapshot("weekly-20260817-r2").get("input_checksum");
 
         // 실패와 재시작 사이에 같은 주의 늦은 구매가 도착해도 현재 snapshot 입력은 바뀌지 않아야 한다.
         fixtures.activity(46, 8, 7, "2026-08-18T05:00:00Z");
@@ -113,13 +121,22 @@ class RankingJobRestartTest {
         assertThat(step(second, WeeklyRankingJobConfig.FREEZE_STEP)).as("완료한 입력 고정 step은 다시 실행하지 않는다").isEmpty();
         assertThat(secondCalc.getReadCount()).isEqualTo(1);
         assertThat(secondCalc.getWriteCount()).isEqualTo(1);
-        assertThat(fixtures.stage("weekly-20260817-r1")).containsExactly(
-            Map.of("product_id", 7L, "score", 5L),
-            Map.of("product_id", 8L, "score", 1L),
-            Map.of("product_id", 9L, "score", 5L)
+        assertThat(fixtures.snapshotInput("weekly-20260817-r2")).hasSize(4);
+
+        // 손으로 계산한 기대값: 7(5점·1위), 9(5점·2위, 동점이면 productId 오름차순), 8(1점·3위).
+        List<Map<String, Object>> expected = List.of(
+            Map.of("product_id", 7L, "score", 5L, "rank_no", 1),
+            Map.of("product_id", 9L, "score", 5L, "rank_no", 2),
+            Map.of("product_id", 8L, "score", 1L, "rank_no", 3)
         );
-        assertThat(fixtures.snapshotInput("weekly-20260817-r1")).hasSize(4);
-        assertThat(fixtures.snapshot("weekly-20260817-r1").get("input_checksum")).isEqualTo(inputChecksum);
+        assertThat(fixtures.ranking("weekly-20260817-r2")).containsExactlyElementsOf(expected);
+        assertThat(fixtures.ranking("weekly-20260817-r1")).containsExactlyElementsOf(expected);
+        Map<String, Object> normalSnapshot = fixtures.snapshot("weekly-20260817-r1");
+        Map<String, Object> restartedSnapshot = fixtures.snapshot("weekly-20260817-r2");
+        assertThat(restartedSnapshot.get("input_checksum")).isEqualTo(inputChecksum).isEqualTo(normalSnapshot.get("input_checksum"));
+        assertThat(restartedSnapshot.get("result_checksum")).isEqualTo(normalSnapshot.get("result_checksum"))
+            .isEqualTo(RankingFixtures.sha256("7\t5\t1\n9\t5\t2\n8\t1\t3\n"));
+        assertThat(fixtures.publications()).extracting(row -> row.get("snapshot_id")).containsExactly("weekly-20260817-r2");
     }
 
     @DisplayName("첫 chunk가 commit되기 전에 실패하면 점수도 reader 위치도 남지 않고, 재시작은 처음 상품부터 다시 계산해 같은 점수로 수렴한다.")
