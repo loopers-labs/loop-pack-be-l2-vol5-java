@@ -86,3 +86,47 @@ batch Checkstyle은 이제 일반 `check`에 포함된다. DemoJobE2ETest의 기
 - 제품 freeze·manifest·checksum·점수 upsert·공개는 구현하지 않았다. 원문 §6의 기대 점수/순위, 정상/재시작 checksum 비교, 기존 공개본 유지는 다음 단위 범위다.
 - JobRepository 갱신이 writer와 같은 물리 연결을 썼는지는 직접 관찰하지 않았다. 같은 transactionManager/DataSource 객체와, 실패 chunk의 행·위치가 함께 남지 않은 결과로 간접 확인했다.
 - 원본 DB에 idx_ppa_confirmed_at를 적용하거나 streamer Entity를 수정하지 않았다.
+
+## 2단위 — 입력 고정·계산 Step과 실제 Job 재시작 (2026-11-17)
+
+### 범위
+
+- 사용자 착수 승인(2026-11-17): [§8.1~8.6](../features/weekly-ranking/calculation-publication.md#86-클래스-배치포트와-호출-순서)의 요청·parameter 변환, 입력 고정 tasklet(§8.2·§9.7·§9.12), 계산 Step(Reader·SUM Processor·절대 점수 upsert Writer, chunk=2), [§4.11](../features/weekly-ranking/execution-recovery.md#411-job-등록-조건과-실행준비테스트-설정) 조건부 JobConfig, 원문 4행 정상/재시작 테스트.
+- 제외(후속 단위): 공개 Step·결과 checksum·순위, Runner·revision 자동 결정·initializer, API, 실제 연결. 이번 Job은 `freezeWeeklyRankingInput → calculateWeeklyScores` 두 Step이며 공개 Step은 3단위에서 붙인다. 테스트는 revision r1/r2를 직접 지정해 JobLauncher로 실행했다.
+
+### 구현
+
+|위치|내용|
+|---|---|
+|`domain/ranking`|WeeklyRankingRequest(엄격 날짜·월요일·양수 revision·canonical ID), RankingInputException(INVALID_REQUEST·SNAPSHOT_CONTRACT_MISMATCH·INCONSISTENT_INPUT), RankingInputManifest, RankingProductScore, RankingChecksum(입력 행), 두 Repository 포트|
+|`infrastructure/ranking`|JdbcRankingInputRepository(§9.7 INSERT SELECT·UTC_TIMESTAMP(6)·count·정렬 읽기·READY INSERT, 고아 확인), JdbcRankingScoreRepository(SUM→BigDecimal→toBigIntegerExact, ON DUPLICATE KEY 절대값 upsert). 날짜·시각은 setObject/getObject|
+|`application/ranking/RankingInputService`|MANDATORY. 기존 snapshot 재사용 시 manifest·건수·checksum 재검사, 신규 시 고아 확인→복사→DB 시각→건수→checksum→READY 저장|
+|`batch/job/weeklyranking`|WeeklyRankingParameters(identifying String/Long/String 검사, validator 공용), WeeklyRankingJobConfig(조건부 등록, 기존 JobRepository·transactionManager), 입력 고정 tasklet, step-scoped Reader(`weeklyRankingProductReader`)·Processor(beforeStep에서 READY manifest 확인)·Writer|
+|test `job/ranking/process/WeeklyRankingFaultSupport`|스테레오타입 없는 명시 등록 클래스. BeanPostProcessor가 step-scoped Processor target을 감싸 arm한 상품의 process 직전에 한 번 예외. 실제 위임 상품 ID 기록|
+|test `RankingJobRestartTest`|`@Import(WeeklyRankingFaultSupport)`, 새 메서드 `weeklyRankingRestartsCalculationFromThirdProduct`|
+
+### 실행 결과
+
+코드 상태: HEAD `6d61104`(1단위 커밋) + 2단위 미커밋 변경. 실제 MySQL 8.0 testcontainers. 15:55 첫 통과 뒤 사용자 요청으로 미사용 `disarm`·중복 Step 조회 helper를 정리하고 다시 실행했다(execution ID·관찰 동일).
+
+|검사|명령·시각|결과|
+|---|---|---|
+|batch check(정리 후 최종 코드)|`./gradlew :apps:commerce-batch:check --rerun-tasks` 15:58:05|checkstyleMain 28파일·checkstyleTest 5파일 오류 0. 테스트 3클래스 7건 통과(CommerceBatchApplicationTest 1, DemoJobE2ETest 2, RankingJobRestartTest 3), failure/error/skip 0|
+
+### 재시작 증거
+
+source는 원문 4행(주문 42/42/43/44, 2026-08-17 주)을 `product_purchase_activity`에 넣고 제품 입력 고정을 거쳤다. 입력 checksum 기대값 `3e90276e…7c357a298`는 제품 코드와 별도로 원문 4행을 §3.5 규칙 문자열로 만들어 `shasum -a 256`으로 계산했다.
+
+|실행|instance / execution|상태|위임 상품|관찰(새 연결·JobExplorer)|
+|---|---|---|---|---|
+|r1 정상|- / 6|COMPLETED|7, 8, 9|manifest READY·입력 4·상품 3·checksum 기대값, stage 7=5·8=1·9=5|
+|r2 1차|6 / 7|FAILED(9 직전 테스트 예외 1회)|7, 8|freeze COMPLETED·calculate FAILED, `weeklyRankingProductReader.read.count=2`, stage 7=5·8=1, manifest 동일|
+|r2 재실행|6 / 8|COMPLETED|9|이 실행의 Step은 calculateWeeklyScores 하나(완료한 입력 고정 생략), stage 7=5·8=1·9=5 = r1, 입력 4행·checksum 불변|
+
+r1 instance ID는 로그에 남기지 않았다. 원문 기대 순위(7→9→8)·결과 checksum·기존 공개본 유지는 공개 Step이 없어 이번에 확인하지 않았다.
+
+### 한계
+
+- writer 같은 상품 재기록, chunk commit 전 실패, 잘못된 ID·기간·revision, 고아·손상 입력, freeze rollback, 빈 주, 기간 경계는 구현은 했거나 경로가 있으나 테스트하지 않았다. 3단위(WeeklyRankingBatchContractTest)에서 확인한다.
+- 실패 주입은 같은 JVM의 테스트 BeanPostProcessor다. 새 JVM 재시작은 실제 연결 단위에서 확인한다.
+- Batch 테이블·랭킹 데이터는 테스트 컨테이너 수명에 맡겼다(§11.6 보존 원칙).
