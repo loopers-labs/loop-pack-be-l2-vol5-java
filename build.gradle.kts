@@ -1,5 +1,9 @@
 import org.gradle.api.Project.DEFAULT_VERSION
+import org.gradle.language.jvm.tasks.ProcessResources
 import org.springframework.boot.gradle.tasks.bundling.BootJar
+import java.nio.file.Files
+import java.nio.file.LinkOption.NOFOLLOW_LINKS
+import java.nio.file.attribute.DosFileAttributeView
 
 /** --- configuration functions --- */
 fun getGitHash(): String {
@@ -38,6 +42,37 @@ subprojects {
     apply(plugin = "org.springframework.boot")
     apply(plugin = "io.spring.dependency-management")
     apply(plugin = "jacoco")
+
+    val prepareGeneratedDirectories by tasks.registering {
+        description = "Clears Windows read-only directory attributes before Gradle replaces Java outputs."
+        onlyIf { System.getProperty("os.name").startsWith("Windows", ignoreCase = true) }
+        doLast {
+            // OneDrive can mark generated directories read-only; File.setWritable cannot repair directories on Windows.
+            // Limit repairs to Java build outputs, preserving files, other attributes and benchmark data.
+            listOf("classes", "resources", "generated", "tmp").forEach { output ->
+                val directory = layout.buildDirectory.dir(output).get().asFile.toPath()
+                if (Files.isDirectory(directory, NOFOLLOW_LINKS)) {
+                    val realDirectory = directory.toRealPath()
+                    require(realDirectory.startsWith(layout.buildDirectory.get().asFile.toPath().toRealPath())) {
+                        "Generated output points outside the build directory: $directory"
+                    }
+                    Files.walk(directory).use { paths ->
+                        paths.filter { Files.isDirectory(it, NOFOLLOW_LINKS) }.forEach { path ->
+                            val attributes = Files.getFileAttributeView(path, DosFileAttributeView::class.java, NOFOLLOW_LINKS)
+                            if (attributes.readAttributes().isReadOnly) {
+                                require(path.toRealPath().startsWith(realDirectory)) {
+                                    "Generated directory points outside the output directory: $path"
+                                }
+                                attributes.setReadOnly(false)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    tasks.withType<JavaCompile>().configureEach { dependsOn(prepareGeneratedDirectories) }
+    tasks.withType<ProcessResources>().configureEach { dependsOn(prepareGeneratedDirectories) }
 
     dependencyManagement {
         imports {

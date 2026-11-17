@@ -1,13 +1,11 @@
 package com.loopers.job.demo;
 
 import com.loopers.batch.job.demo.DemoJobConfig;
-import lombok.RequiredArgsConstructor;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.batch.core.ExitStatus;
 import org.springframework.batch.core.Job;
-import org.springframework.batch.core.JobParametersBuilder;
 import org.springframework.batch.test.JobLauncherTestUtils;
 import org.springframework.batch.test.context.SpringBatchTest;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,11 +32,6 @@ class DemoJobE2ETest {
     @Qualifier(DemoJobConfig.JOB_NAME)
     private Job job;
 
-    @BeforeEach
-    void beforeEach() {
-
-    }
-
     @DisplayName("jobParameter 중 requestDate 인자가 주어지지 않았을 때, demoJob 배치는 실패한다.")
     @Test
     void shouldNotSaveCategories_whenApiError() throws Exception {
@@ -56,13 +49,13 @@ class DemoJobE2ETest {
     }
 
     @DisplayName("demoJob 배치가 정상적으로 실행된다.")
-    @Test
+    @RepeatedTest(2)
     void success() throws Exception {
         // arrange
         jobLauncherTestUtils.setJob(job);
 
         // act
-        var jobParameters = new JobParametersBuilder()
+        var jobParameters = jobLauncherTestUtils.getUniqueJobParametersBuilder()
             .addLocalDate("requestDate", LocalDate.now())
             .toJobParameters();
         var jobExecution = jobLauncherTestUtils.launchJob(jobParameters);
