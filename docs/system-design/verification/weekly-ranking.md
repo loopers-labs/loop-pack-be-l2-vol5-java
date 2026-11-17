@@ -130,3 +130,61 @@ r1 instance ID는 로그에 남기지 않았다. 원문 기대 순위(7→9→8)
 - writer 같은 상품 재기록, chunk commit 전 실패, 잘못된 ID·기간·revision, 고아·손상 입력, freeze rollback, 빈 주, 기간 경계는 구현은 했거나 경로가 있으나 테스트하지 않았다. 3단위(WeeklyRankingBatchContractTest)에서 확인한다.
 - 실패 주입은 같은 JVM의 테스트 BeanPostProcessor다. 새 JVM 재시작은 실제 연결 단위에서 확인한다.
 - Batch 테이블·랭킹 데이터는 테스트 컨테이너 수명에 맡겼다(§11.6 보존 원칙).
+
+## 3단위 — 공개 Step과 batch 계약 시나리오 (2026-11-17)
+
+### 범위
+
+- 사용자 착수 승인(2026-11-17): [§6.1~6.9](../features/weekly-ranking/calculation-publication.md#68-클래스메서드tx-처리-순서)의 공개 Step(완성 확인·ROW_NUMBER 순위·결과 checksum·COMPLETED·조건부 pointer), 원문 재시작의 순위·공개 단언, [§11.3](../features/weekly-ranking/verification.md#113-미리-준비할-fixture와-batch-검증의-책임)의 WeeklyRankingBatchContractTest.
+- 제외(후속 단위): Runner·revision 자동 결정·initializer, API, 실제 연결. 테스트는 revision을 직접 지정해 JobLauncher로 실행했다.
+
+### 구현
+
+|위치|내용|
+|---|---|
+|`domain/ranking`|PublicationOutcome·PublicationResult·RankingPublicationException(6 reason)·CurrentPublication·RankingPublicationRepository, RankingChecksum.addResultRow|
+|`infrastructure/ranking/JdbcRankingPublicationRepository`|§6.5 완성 count, §6.6 ROW_NUMBER INSERT SELECT·순위순 읽기·COMPLETED 조건부 UPDATE, §6.7 JOIN 조건부 pointer UPDATE·FOR UPDATE current read·최초 INSERT|
+|`application/ranking/RankingPublicationService`|MANDATORY. READY면 완성 후 공개 판정, COMPLETED면 결과 건수 확인 뒤 판정. UPDATE 0행은 current read로 최초 INSERT·ALREADY_PUBLISHED·SKIPPED_NEWER·정합성 오류로 분류|
+|`batch/job/weeklyranking`|PublishWeeklyRankingTasklet(outcome·대상·공개 snapshotId를 Step context에 기록), Job에 `publishWeeklyRanking` Step 추가|
+|test `RankingTestDb`|두 테스트가 같이 쓰는 fixture 입력·새 연결 조회·JobExplorer 재조회 helper. RankingJobRestartTest의 중복 helper를 옮김|
+|test `BatchMetadataFaultSupport`|JobRepository 테스트 대역. 지정 Step의 StepExecution 저장을 한 번 실패시킴. IN_CHUNK=업무 쓰기와 같은 chunk TX 안, FINAL=업무 commit 뒤 Step 최종 저장|
+|test `WeeklyRankingBatchContractTest`|아래 7개 시나리오, 주마다 격리|
+
+### 실행 결과
+
+코드 상태: HEAD `baeaa5d`(2단위 커밋) + 3단위 미커밋 변경. 실제 MySQL 8.0 testcontainers.
+
+|검사|명령·시각|결과|
+|---|---|---|
+|batch check(정리 후 최종 코드)|`./gradlew :apps:commerce-batch:check --rerun-tasks` 16:11:14|checkstyleMain·checkstyleTest 오류 0. 테스트 4클래스 13건 통과(CommerceBatchApplicationTest 1, DemoJobE2ETest 2, RankingJobRestartTest 3, WeeklyRankingBatchContractTest 7), failure/error/skip 0. 종료 뒤 테스트 컨테이너 0개|
+
+### 원문 재시작(2026-08-17)
+
+- r1 정상(execution 6): COMPLETED, 순위 `7:5:1, 9:5:2, 8:1:3`, 결과 checksum `745d50bb…3b0a67d2`(기대 순위를 §3.5 규칙 문자열로 만들어 shasum 계산), pointer=r1.
+- r2 1차(instance 6 / execution 7): 9 직전 FAILED, read.count=2, stage 7/8, r2 manifest READY·결과 checksum 없음·ranking 0행, **pointer는 r1 그대로(published_at 동일)**.
+- r2 재실행(execution 8): Step은 calculateWeeklyScores·publishWeeklyRanking만 실행, outcome PUBLISHED, 순위·결과 checksum이 r1과 같음, pointer=r2.
+
+### 계약 시나리오
+
+|주|시나리오|관찰|
+|---|---|---|
+|2026-08-24|같은 점수 재기록|두 번 upsert해도 7=5|
+||계산 chunk TX의 metadata 저장 실패(IN_CHUNK)|instance 7: execution 9 FAILED, 위임 7·8 뒤 stage 0행·read.count 없음 → execution 10에서 7·8·9 처리, 순위 정상|
+||잘못된 요청|월요일 아님·snapshotId 불일치·revision 0 모두 JobParametersInvalidException|
+||고아 stage|snapshot 없이 stage가 있으면 FAILED, snapshot 미생성·기존 행 보존|
+||ID/revision 불일치|같은 ID가 revision 6 행을 가리키면 FAILED, 기존 행 보존|
+||저장 입력 손상|입력 1행 삭제 뒤 재사용 요청은 INCONSISTENT_INPUT|
+|2026-08-31|입력 고정 TX의 metadata 저장 실패(IN_CHUNK)|execution 14 FAILED, 복사 입력 0행·manifest 없음 → execution 15에서 4행 고정·완료|
+|2026-07-20|주 경계|07-19T23:59:59.999999·07-27T00:00 제외, 07-20T00:00·07-26T23:59:59.999999 포함. 입력 checksum이 shasum 기대값과 일치(마이크로초·UTC 유지), 순위 `8:3:1, 7:2:2`|
+|2026-09-14|빈 주|COMPLETED·입력/상품 0·두 checksum 모두 0바이트 SHA-256, 결과 0행, pointer 생성|
+|2026-09-21|공개 TX의 metadata 저장 실패(IN_CHUNK)|r2 READY 유지·결과 0행, pointer r1 유지 → 재실행은 공개 Step만 수행해 pointer r2|
+|2026-09-28|공개 멱등·역전 방지|r2 공개 뒤 같은 대상 재공개는 ALREADY_PUBLISHED, pointer·manifest 불변. 이어 r1 실행은 완성 결과만 저장하고 SKIPPED_NEWER, pointer r2 유지|
+|2026-10-05|공개 commit 뒤 최종 Step 저장 실패(FINAL)|execution 13 UNKNOWN(영속 Job UNKNOWN, 공개 Step STARTED). 완성본·pointer는 commit됨. Job restart 없이 공개 서비스를 별도 TX로 다시 호출하면 ALREADY_PUBLISHED, pointer 불변|
+
+경계 시나리오는 [§11.3.2](../features/weekly-ranking/verification.md#1132-독립-시나리오의-주업무-id-격리) 예시의 2026-09-07 대신 2026-07-20 주를 썼다. 09-07 주의 시작 직전 행과 끝 행이 각각 08-31(입력 고정 rollback)과 09-14(빈 주) 시나리오 주에 들어가 격리가 깨지기 때문이다. 표는 "고정 배정 예시"이므로 계약 변경은 아니지만, 설계 표에는 아직 반영하지 않았다.
+
+### 한계
+
+- 실패 주입은 같은 JVM의 테스트 대역(processor BeanPostProcessor, JobRepository 대역)이다. 새 JVM 재시작은 실제 연결 단위에서 확인한다.
+- 입력 고정 rollback은 "복사·manifest 저장 뒤, 같은 TX의 metadata 저장 실패"로 재현했다. 복사와 manifest 사이 지점의 별도 실패 주입은 하지 않았다.
+- UNKNOWN 실행의 운영 복구 절차(§5.6~5.8)는 구현 범위가 아니며 확인하지 않았다.

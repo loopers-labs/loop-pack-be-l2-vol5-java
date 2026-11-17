@@ -1,5 +1,6 @@
 package com.loopers.domain.ranking;
 
+import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -29,6 +30,10 @@ public final class RankingChecksum {
 
     public void addInputRow(long orderId, long productId, long quantity, LocalDateTime confirmedAtUtc) {
         addRow(Long.toString(orderId), Long.toString(productId), Long.toString(quantity), formatUtc(confirmedAtUtc));
+    }
+
+    public void addResultRow(long productId, BigInteger score, long rank) {
+        addRow(Long.toString(productId), score.toString(), Long.toString(rank));
     }
 
     public long rowCount() {

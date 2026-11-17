@@ -2,6 +2,7 @@ package com.loopers.job.ranking;
 
 import com.loopers.batch.job.weeklyranking.WeeklyRankingJobConfig;
 import com.loopers.batch.job.weeklyranking.WeeklyRankingParameters;
+import com.loopers.batch.job.weeklyranking.step.PublishWeeklyRankingTasklet;
 import com.loopers.domain.ranking.WeeklyRankingRequest;
 import com.loopers.job.ranking.process.WeeklyRankingFaultSupport;
 import com.loopers.job.ranking.process.WeeklyRankingFaultSupport.FaultPlan;
@@ -27,8 +28,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowCallbackHandler;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.orm.jpa.JpaTransactionManager;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -40,11 +39,21 @@ import java.math.BigInteger;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.LinkedHashMap;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
+import static com.loopers.job.ranking.RankingTestDb.countBySnapshot;
+import static com.loopers.job.ranking.RankingTestDb.countSourceOrders;
+import static com.loopers.job.ranking.RankingTestDb.freshJdbc;
+import static com.loopers.job.ranking.RankingTestDb.insertSource;
+import static com.loopers.job.ranking.RankingTestDb.manifest;
+import static com.loopers.job.ranking.RankingTestDb.persistedJobStatus;
+import static com.loopers.job.ranking.RankingTestDb.persistedStep;
+import static com.loopers.job.ranking.RankingTestDb.persistedStepStatuses;
+import static com.loopers.job.ranking.RankingTestDb.publication;
+import static com.loopers.job.ranking.RankingTestDb.rankedResults;
+import static com.loopers.job.ranking.RankingTestDb.stageScores;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -66,6 +75,8 @@ class RankingJobRestartTest {
     private static final String RANKING_READ_COUNT_KEY = WeeklyRankingJobConfig.PRODUCT_READER + ".read.count";
     /** 원문 4행을 3.5 규칙으로 직렬화한 SHA-256. 제품 코드와 별도로 shasum 으로 계산한 값이다. */
     private static final String SOURCE_INPUT_CHECKSUM = "3e90276ec1f9123f308cd18d155e1dde6bf811ef3aa741105ff5c766c357a298";
+    /** 기대 순위 7:5:1, 9:5:2, 8:1:3 을 3.5 규칙으로 직렬화한 SHA-256(shasum 계산). */
+    private static final String SOURCE_RESULT_CHECKSUM = "745d50bbd2f04a2e8c937f9ebf5f2cddbf75b958540e964934a424903b0a67d2";
 
     @Autowired
     @Qualifier("mySqlMainDataSource")
@@ -169,7 +180,7 @@ class RankingJobRestartTest {
         Observation firstRun = new Observation();
         JobExecution first = jobLauncher.run(probe(params, true, firstRun), params);
 
-        StepExecution firstStep = persistedStep(first, "probeProducts");
+        StepExecution firstStep = persistedStep(jobExplorer, first, "probeProducts");
         assertThat(first.getStatus()).isEqualTo(BatchStatus.FAILED);
         assertThat(firstRun.processed).containsExactly(7L, 8L, 9L);
         assertThat(firstRun.written).containsExactly(7L, 8L);
@@ -184,7 +195,7 @@ class RankingJobRestartTest {
         Observation secondRun = new Observation();
         JobExecution second = jobLauncher.run(probe(params, false, secondRun), params);
 
-        StepExecution secondStep = persistedStep(second, "probeProducts");
+        StepExecution secondStep = persistedStep(jobExplorer, second, "probeProducts");
         assertThat(second.getStatus()).isEqualTo(BatchStatus.COMPLETED);
         assertThat(second.getJobInstance().getId()).isEqualTo(first.getJobInstance().getId());
         assertThat(second.getId()).isNotEqualTo(first.getId());
@@ -212,7 +223,7 @@ class RankingJobRestartTest {
         log("cleanup: instance " + instanceId + " deleted, probe input removed, probeTableDropped=" + probeTableCreated);
     }
 
-    @DisplayName("weeklyRanking: 원문 4행의 정상 r1 과, 상품 9 직전 실패 뒤 같은 instance 로 9부터 이어간 r2 의 입력·점수가 같다.")
+    @DisplayName("weeklyRanking: 원문 4행의 정상 r1 과, 상품 9 직전 실패 뒤 같은 instance 로 9부터 이어간 r2 의 입력·점수·순위가 같고 실패 중에는 r1 공개가 유지된다.")
     @Test
     void weeklyRankingRestartsCalculationFromThirdProduct() throws Exception {
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
@@ -223,10 +234,9 @@ class RankingJobRestartTest {
         WeeklyRankingRequest restartTarget = WeeklyRankingRequest.of("2026-08-17", 2L, "weekly-20260817-r2");
 
         // 남은 source·snapshot 이 있으면 지우지 않고 실패한다.
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM product_purchase_activity WHERE order_id IN (42, 43, 44)",
-            Long.class)).isZero();
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM ranking_snapshot WHERE period_start = ?",
-            Long.class, normal.periodStart())).isZero();
+        assertThat(countSourceOrders(jdbc, 42, 43, 44)).isZero();
+        assertThat(publication(normal.periodStart())).isNull();
+        assertThat(manifest(normal.snapshotId())).isEmpty();
         assertThat(faultPlan.isArmed()).isFalse();
         // 원문 6절 fixture(UTC)
         insertSource(jdbc, 42L, 7L, 2L, LocalDateTime.of(2026, 8, 17, 1, 0));
@@ -234,14 +244,19 @@ class RankingJobRestartTest {
         insertSource(jdbc, 43L, 7L, 3L, LocalDateTime.of(2026, 8, 18, 1, 0));
         insertSource(jdbc, 44L, 9L, 5L, LocalDateTime.of(2026, 8, 19, 1, 0));
         Map<Long, BigInteger> expectedScores = Map.of(7L, BigInteger.valueOf(5), 8L, BigInteger.ONE, 9L, BigInteger.valueOf(5));
+        List<String> expectedRanking = List.of("7:5:1", "9:5:2", "8:1:3");
+        List<Object> completedManifest = List.of("COMPLETED", 4L, 3L, SOURCE_INPUT_CHECKSUM, SOURCE_RESULT_CHECKSUM);
 
         // 정상 비교본 r1
         faultPlan.takeDelegated();
         JobExecution normalRun = jobLauncher.run(weeklyRankingJob, WeeklyRankingParameters.toJobParameters(normal));
         assertThat(normalRun.getStatus()).isEqualTo(BatchStatus.COMPLETED);
         assertThat(faultPlan.takeDelegated()).containsExactly(7L, 8L, 9L);
-        assertThat(manifest(normal.snapshotId())).isEqualTo(List.of("READY", 4L, 3L, SOURCE_INPUT_CHECKSUM));
+        assertThat(manifest(normal.snapshotId())).isEqualTo(completedManifest);
         assertThat(stageScores(normal.snapshotId())).isEqualTo(expectedScores);
+        assertThat(rankedResults(normal.snapshotId())).isEqualTo(expectedRanking);
+        String r1Publication = publication(normal.periodStart());
+        assertThat(r1Publication).startsWith(normal.snapshotId() + "@");
 
         // r2: 입력 고정 뒤 상품 7·8 chunk commit, 9 직전 한 번 실패
         faultPlan.armBeforeProduct(9L);
@@ -251,17 +266,22 @@ class RankingJobRestartTest {
         assertThat(failed.getStatus()).isEqualTo(BatchStatus.FAILED);
         assertThat(faultPlan.isArmed()).isFalse();
         assertThat(faultPlan.takeDelegated()).containsExactly(7L, 8L);
-        assertThat(persistedStepStatuses(failed)).containsExactly(
+        assertThat(persistedStepStatuses(jobExplorer, failed)).containsExactly(
             Map.entry(WeeklyRankingJobConfig.FREEZE_STEP, BatchStatus.COMPLETED),
             Map.entry(WeeklyRankingJobConfig.CALCULATE_STEP, BatchStatus.FAILED));
-        int failedReadCount = persistedStep(failed, WeeklyRankingJobConfig.CALCULATE_STEP).getExecutionContext().getInt(RANKING_READ_COUNT_KEY);
+        int failedReadCount = persistedStep(jobExplorer, failed, WeeklyRankingJobConfig.CALCULATE_STEP)
+            .getExecutionContext().getInt(RANKING_READ_COUNT_KEY);
         assertThat(failedReadCount).isEqualTo(2);
         assertThat(stageScores(restartTarget.snapshotId())).isEqualTo(Map.of(7L, BigInteger.valueOf(5), 8L, BigInteger.ONE));
-        assertThat(manifest(restartTarget.snapshotId())).isEqualTo(List.of("READY", 4L, 3L, SOURCE_INPUT_CHECKSUM));
+        assertThat(manifest(restartTarget.snapshotId()))
+            .isEqualTo(Arrays.asList("READY", 4L, 3L, SOURCE_INPUT_CHECKSUM, null));
+        assertThat(rankedResults(restartTarget.snapshotId())).isEmpty();
+        assertThat(publication(normal.periodStart())).as("실패 중에는 기존 공개본 유지").isEqualTo(r1Publication);
         assertThat(persistedJobStatus(failed.getId())).isEqualTo("FAILED");
-        log("weeklyRanking normal r1 executionId=" + normalRun.getId() + " COMPLETED; r2 first instanceId="
-            + failed.getJobInstance().getId() + " executionId=" + failed.getId() + " status=" + failed.getStatus()
-            + " " + RANKING_READ_COUNT_KEY + "=" + failedReadCount + " stage=" + stageScores(restartTarget.snapshotId()));
+        log("weeklyRanking normal r1 executionId=" + normalRun.getId() + " COMPLETED publication=" + r1Publication
+            + "; r2 first instanceId=" + failed.getJobInstance().getId() + " executionId=" + failed.getId()
+            + " status=" + failed.getStatus() + " " + RANKING_READ_COUNT_KEY + "=" + failedReadCount
+            + " stage=" + stageScores(restartTarget.snapshotId()));
 
         // 같은 식별 parameter 로 재실행. 입력·stage·metadata 는 그대로 둔다
         JobExecution restarted = jobLauncher.run(weeklyRankingJob, restartParams);
@@ -270,16 +290,23 @@ class RankingJobRestartTest {
         assertThat(restarted.getJobInstance().getId()).isEqualTo(failed.getJobInstance().getId());
         assertThat(restarted.getId()).isNotEqualTo(failed.getId());
         assertThat(faultPlan.takeDelegated()).containsExactly(9L);
-        assertThat(persistedStepStatuses(restarted)).as("완료한 입력 고정 Step 은 다시 실행하지 않는다")
-            .containsExactly(Map.entry(WeeklyRankingJobConfig.CALCULATE_STEP, BatchStatus.COMPLETED));
-        assertThat(stageScores(restartTarget.snapshotId())).isEqualTo(expectedScores)
-            .isEqualTo(stageScores(normal.snapshotId()));
-        assertThat(manifest(restartTarget.snapshotId())).isEqualTo(List.of("READY", 4L, 3L, SOURCE_INPUT_CHECKSUM));
+        assertThat(persistedStepStatuses(jobExplorer, restarted)).as("완료한 입력 고정 Step 은 다시 실행하지 않는다")
+            .containsExactly(
+                Map.entry(WeeklyRankingJobConfig.CALCULATE_STEP, BatchStatus.COMPLETED),
+                Map.entry(WeeklyRankingJobConfig.PUBLISH_STEP, BatchStatus.COMPLETED));
+        assertThat(persistedStep(jobExplorer, restarted, WeeklyRankingJobConfig.PUBLISH_STEP).getExecutionContext()
+            .getString(PublishWeeklyRankingTasklet.OUTCOME_KEY)).isEqualTo("PUBLISHED");
+        assertThat(stageScores(restartTarget.snapshotId())).isEqualTo(expectedScores);
+        assertThat(rankedResults(restartTarget.snapshotId())).isEqualTo(expectedRanking)
+            .isEqualTo(rankedResults(normal.snapshotId()));
+        assertThat(manifest(restartTarget.snapshotId())).isEqualTo(completedManifest);
         assertThat(countBySnapshot(jdbc, "ranking_snapshot_input", restartTarget.snapshotId())).isEqualTo(4);
+        assertThat(publication(normal.periodStart())).startsWith(restartTarget.snapshotId() + "@");
         assertThat(persistedJobStatus(restarted.getId())).isEqualTo("COMPLETED");
         log("weeklyRanking r2 restart instanceId=" + restarted.getJobInstance().getId() + " executionId="
-            + restarted.getId() + " status=" + restarted.getStatus() + " steps=" + persistedStepStatuses(restarted)
-            + " stage=" + stageScores(restartTarget.snapshotId()) + " inputChecksum=" + SOURCE_INPUT_CHECKSUM);
+            + restarted.getId() + " status=" + restarted.getStatus() + " steps=" + persistedStepStatuses(jobExplorer, restarted)
+            + " ranking=" + rankedResults(restartTarget.snapshotId()) + " publication=" + publication(normal.periodStart())
+            + " inputChecksum=" + SOURCE_INPUT_CHECKSUM + " resultChecksum=" + SOURCE_RESULT_CHECKSUM);
     }
 
     /** 원문 3절 helper 구성. 호출마다 새 reader·step·job 을 만들며 실패 스위치는 parameter 가 아니다. */
@@ -317,64 +344,9 @@ class RankingJobRestartTest {
         return new JobBuilder("purchaseInputProbe", jobRepository).start(step).build();
     }
 
-    /** 새 연결로 읽은 stage 점수. */
-    private Map<Long, BigInteger> stageScores(String snapshotId) {
-        Map<Long, BigInteger> scores = new LinkedHashMap<>();
-        freshJdbc().query("SELECT product_id, score FROM ranking_score_stage WHERE snapshot_id = ? ORDER BY product_id",
-            (RowCallbackHandler) rs -> scores.put(rs.getLong("product_id"), rs.getBigDecimal("score").toBigIntegerExact()), snapshotId);
-        return scores;
-    }
-
-    /** 새 연결로 읽은 status·input_count·product_count·input_checksum. */
-    private List<Object> manifest(String snapshotId) {
-        return freshJdbc().queryForObject("SELECT status, input_count, product_count, input_checksum "
-                + "FROM ranking_snapshot WHERE snapshot_id = ?",
-            (rs, rowNum) -> List.of(rs.getString(1), rs.getLong(2), rs.getLong(3), rs.getString(4)), snapshotId);
-    }
-
-    /** JobExplorer 로 다시 읽은 이 실행의 Step 이름·상태. */
-    private List<Map.Entry<String, BatchStatus>> persistedStepStatuses(JobExecution execution) {
-        return jobExplorer.getJobExecution(execution.getId()).getStepExecutions().stream()
-            .sorted(Comparator.comparing(StepExecution::getId))
-            .map(step -> Map.entry(step.getStepName(), step.getStatus()))
-            .toList();
-    }
-
-    private static void insertSource(JdbcTemplate jdbc, long orderId, long productId, long quantity, LocalDateTime confirmedAt) {
-        jdbc.update("INSERT INTO product_purchase_activity "
-                + "(order_id, product_id, quantity, confirmed_at, created_at, updated_at, deleted_at) "
-                + "VALUES (?, ?, ?, ?, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6), NULL)",
-            orderId, productId, quantity, confirmedAt);
-    }
-
-    /** 메모리의 실행 객체가 아니라 JobExplorer 로 영속 StepExecution 을 다시 읽는다. */
-    private StepExecution persistedStep(JobExecution execution, String stepName) {
-        long stepExecutionId = execution.getStepExecutions().stream()
-            .filter(step -> step.getStepName().equals(stepName))
-            .findFirst().orElseThrow().getId();
-        return jobExplorer.getStepExecution(execution.getId(), stepExecutionId);
-    }
-
     private List<Long> probeRows() {
         return freshJdbc().queryForList("SELECT product_id FROM batch_restart_probe WHERE snapshot_id = ? "
             + "ORDER BY product_id", Long.class, PROBE_SNAPSHOT_ID);
-    }
-
-    private String persistedJobStatus(long executionId) {
-        return freshJdbc().queryForObject("SELECT STATUS FROM BATCH_JOB_EXECUTION WHERE JOB_EXECUTION_ID = ?",
-            String.class, executionId);
-    }
-
-    /** 애플리케이션 pool 이 아닌 새 JDBC 연결. */
-    private static JdbcTemplate freshJdbc() {
-        return new JdbcTemplate(new DriverManagerDataSource(
-            System.getProperty("datasource.mysql-jpa.main.jdbc-url"),
-            System.getProperty("datasource.mysql-jpa.main.username"),
-            System.getProperty("datasource.mysql-jpa.main.password")));
-    }
-
-    private static long countBySnapshot(JdbcTemplate jdbc, String table, String snapshotId) {
-        return jdbc.queryForObject("SELECT COUNT(*) FROM " + table + " WHERE snapshot_id = ?", Long.class, snapshotId);
     }
 
     private static void insertInput(

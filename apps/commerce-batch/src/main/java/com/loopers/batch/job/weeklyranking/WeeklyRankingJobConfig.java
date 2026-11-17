@@ -1,7 +1,9 @@
 package com.loopers.batch.job.weeklyranking;
 
 import com.loopers.application.ranking.RankingInputService;
+import com.loopers.application.ranking.RankingPublicationService;
 import com.loopers.batch.job.weeklyranking.step.FreezeWeeklyRankingInputTasklet;
+import com.loopers.batch.job.weeklyranking.step.PublishWeeklyRankingTasklet;
 import com.loopers.batch.job.weeklyranking.step.WeeklyRankingScoreProcessor;
 import com.loopers.batch.job.weeklyranking.step.WeeklyRankingScoreWriter;
 import com.loopers.domain.ranking.RankingProductScore;
@@ -35,15 +37,19 @@ public class WeeklyRankingJobConfig {
     public static final String JOB_NAME = "weeklyRanking";
     public static final String FREEZE_STEP = "freezeWeeklyRankingInput";
     public static final String CALCULATE_STEP = "calculateWeeklyScores";
+    public static final String PUBLISH_STEP = "publishWeeklyRanking";
     public static final String PRODUCT_READER = "weeklyRankingProductReader";
     private static final int CHUNK_SIZE = 2;
 
     @Bean(JOB_NAME)
-    public Job weeklyRankingJob(JobRepository jobRepository, Step freezeWeeklyRankingInput, Step calculateWeeklyScores) {
+    public Job weeklyRankingJob(
+        JobRepository jobRepository, Step freezeWeeklyRankingInput, Step calculateWeeklyScores, Step publishWeeklyRanking
+    ) {
         return new JobBuilder(JOB_NAME, jobRepository)
             .validator(WeeklyRankingParameters.VALIDATOR)
             .start(freezeWeeklyRankingInput)
             .next(calculateWeeklyScores)
+            .next(publishWeeklyRanking)
             .build();
     }
 
@@ -69,6 +75,15 @@ public class WeeklyRankingJobConfig {
             .reader(weeklyRankingProductReader)
             .processor(weeklyRankingScoreProcessor)
             .writer(weeklyRankingScoreWriter)
+            .build();
+    }
+
+    @Bean(PUBLISH_STEP)
+    public Step publishWeeklyRanking(
+        JobRepository jobRepository, PlatformTransactionManager transactionManager, RankingPublicationService service
+    ) {
+        return new StepBuilder(PUBLISH_STEP, jobRepository)
+            .tasklet(new PublishWeeklyRankingTasklet(service), transactionManager)
             .build();
     }
 
