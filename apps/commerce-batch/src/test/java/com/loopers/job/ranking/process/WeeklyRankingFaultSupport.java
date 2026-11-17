@@ -6,19 +6,28 @@ import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.context.annotation.Bean;
+import org.springframework.core.env.Environment;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 테스트 전용 실패 주입(랭킹 설계 11.5). 스캔 스테레오타입이 없어 @Import 등 명시 등록으로만 쓰인다.
+ * 테스트 전용 실패 주입(랭킹 설계 11.5). 스캔 스테레오타입이 없어 @Import·자식 main 의 명시 등록으로만 쓰인다.
  * 실제 step-scoped Processor target 을 감싸 지정 상품의 process 직전에 한 번 예외를 던진다.
+ * 자식 JVM 은 {@value #FAIL_BEFORE_PROPERTY} 가 있을 때만 arm 하며, 위임한 상품 ID 를 stdout 에 남겨 부모가 관찰한다.
  */
 public class WeeklyRankingFaultSupport {
 
+    public static final String FAIL_BEFORE_PROPERTY = "test.weekly-ranking.fail-before-product-id";
+
     @Bean
-    public static FaultPlan weeklyRankingFaultPlan() {
-        return new FaultPlan();
+    public static FaultPlan weeklyRankingFaultPlan(Environment environment) {
+        FaultPlan plan = new FaultPlan();
+        Long failBefore = environment.getProperty(FAIL_BEFORE_PROPERTY, Long.class);
+        if (failBefore != null) {
+            plan.armBeforeProduct(failBefore);
+        }
+        return plan;
     }
 
     @Bean
@@ -65,8 +74,10 @@ public class WeeklyRankingFaultSupport {
         synchronized void beforeProcess(Long productId) {
             if (productId.equals(failBeforeProductId)) {
                 failBeforeProductId = null;
+                System.out.println("WEEKLY_RANKING_FAULT beforeProduct=" + productId);
                 throw new IllegalStateException("test fault before product " + productId);
             }
+            System.out.println("WEEKLY_RANKING_PROCESS productId=" + productId);
             delegated.add(productId);
         }
     }

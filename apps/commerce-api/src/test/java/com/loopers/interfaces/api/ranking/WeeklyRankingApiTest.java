@@ -28,9 +28,8 @@ import javax.sql.DataSource;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.IntStream;
-import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -106,11 +105,12 @@ class WeeklyRankingApiTest {
     @Test
     void appliesDefaultAndMaximumLimit() {
         BrandModel brand = brandFixture.createBrand("브랜드");
-        Object[] rows = IntStream.rangeClosed(1, 12).boxed()
-            .flatMap(rank -> Stream.of(
-                String.valueOf(100 - rank), productFixture.createProduct(brand.getId(), "상품" + rank, 1_000L, 1L).getId()))
-            .toArray();
-        publish(LocalDate.of(2026, 11, 9), rows);
+        List<Object> rows = new ArrayList<>();
+        for (int rank = 1; rank <= 12; rank++) {
+            rows.add(String.valueOf(100 - rank));
+            rows.add(productFixture.createProduct(brand.getId(), "상품" + rank, 1_000L, 1L).getId());
+        }
+        publish(LocalDate.of(2026, 11, 9), rows.toArray());
 
         assertThat(get("?periodStart=2026-11-09").getBody().data().items())
             .extracting(WeeklyRankingV1Dto.ItemResponse::rank).containsExactly(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L, 9L, 10L);

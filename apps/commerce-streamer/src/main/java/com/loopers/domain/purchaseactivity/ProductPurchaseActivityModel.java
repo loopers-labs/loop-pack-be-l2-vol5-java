@@ -3,6 +3,7 @@ package com.loopers.domain.purchaseactivity;
 import com.loopers.domain.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import lombok.Getter;
@@ -17,7 +18,9 @@ import java.time.ZonedDateTime;
 @Entity
 @Table(
     name = "product_purchase_activity",
-    uniqueConstraints = @UniqueConstraint(name = "uk_ppa_order_product", columnNames = {"order_id", "product_id"})
+    uniqueConstraints = @UniqueConstraint(name = "uk_ppa_order_product", columnNames = {"order_id", "product_id"}),
+    // 주간 랭킹 입력 고정의 confirmed_at 기간 복사(랭킹 설계 9.11). 이미 있는 DB 에는 별도 적용이 필요하다.
+    indexes = @Index(name = "idx_ppa_confirmed_at", columnList = "confirmed_at")
 )
 @Check(name = "ck_ppa_order_id", constraints = "order_id > 0")
 @Check(name = "ck_ppa_product_id", constraints = "product_id > 0")

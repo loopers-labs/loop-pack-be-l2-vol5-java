@@ -276,3 +276,58 @@ API 전체 회귀는 실행하지 않았다(관련 테스트만 실행).
 
 - 두 조회가 같은 readOnly TX와 snapshotId를 쓰는 것은 코드 경로로 보장했고, 조회 중간에 새 revision이 공개되는 동시성 상황은 재현하지 않았다.
 - batch가 만든 실제 완성본을 API가 읽는 연결은 6단위에서 확인한다.
+
+## 6단위 — 실제 연결 한 건 (2026-11-17)
+
+### 범위
+
+- 사용자 착수 승인(2026-11-17): Implementation Quest §7, [§11.4~11.6](../features/weekly-ranking/verification.md#114-실제-연결-한-건--결제-주문-ab)의 WeeklyRankingFlowTest, batch 자식 JVM 진입점·실패 설정·Gradle classpath, [§9.11](../features/weekly-ranking/input-storage.md#911-조회저장-sql에-맞춘-인덱스-구성)의 streamer `idx_ppa_confirmed_at`.
+- 5단위 정리: WeeklyRankingApiTest의 limit 테스트 데이터 조립을 반복문으로 바꿨다(기대값 동일, 16:58 15건 통과).
+
+### 구현
+
+|위치|내용|
+|---|---|
+|streamer `ProductPurchaseActivityModel`|`@Index(name = "idx_ppa_confirmed_at", columnList = "confirmed_at")`. 새로 만드는 DB에만 반영되며 기존 DB에는 별도 적용이 필요하다|
+|streamer `PurchaseActivitySchemaIntegrationTest`|인덱스 목록 단언에 승인된 `idx_ppa_confirmed_at` 한 항목 추가. 기존 unique·CHECK 기대값은 그대로|
+|batch test `process/WeeklyRankingTestProcessMain`|`CommerceBatchApplication.createApplication(WeeklyRankingFaultSupport.class)` → `SpringApplication.exit` → `System.exit`|
+|batch test `process/WeeklyRankingFaultSupport`|`test.weekly-ranking.fail-before-product-id`가 있을 때만 arm(식별 parameter 아님). 위임 상품·실패 지점을 stdout에 남김|
+|api `build.gradle.kts`|`prepareWeeklyRankingBatchChildClasses`(Sync: batch testClasses의 `com/loopers/job/ranking/process/**`만 복사), test 작업에 batch `sourceSets.main.runtimeClasspath`+복사 디렉터리를 입력·`-Dweekly-ranking.batch-child.classpath`로 전달. API classpath에는 넣지 않음|
+|api test `WeeklyRankingBatchChild`|batch 자식 한 번 실행(준비/new/restart). test 프로필·부모 DB/Redis 접속값 명시, 비밀번호는 환경 변수, 출력은 파일. 결과 로그에서 instance·execution·상태, 처리 상품 ID를 읽음|
+|api test `WeeklyRankingFlowTest`|아래 흐름. 기존 W7의 `OrderActivityStreamerChild`·`OrderOutboxE2eLifecycleSupport`(소유권·정리)를 재사용|
+
+### 실행 결과
+
+코드 상태: HEAD `3c0d040`(5단위 커밋) + 6단위 미커밋 변경. JDK 21.0.12, 실제 MySQL 8.0·Redis testcontainers, 로컬 Docker Kafka(전용 topic·group), PgFixtureServer.
+
+|검사|명령·시각|결과|
+|---|---|---|
+|실제 연결 단독|`./gradlew -Dorg.gradle.java.home="$JAVA_HOME" :apps:commerce-api:test --tests '*WeeklyRankingFlowTest' --rerun-tasks` 17:05:59|1건 통과|
+|streamer 전체|`./gradlew -Dorg.gradle.java.home="$JAVA_HOME" :apps:commerce-streamer:checkstyleMain :apps:commerce-streamer:checkstyleTest :apps:commerce-streamer:test --rerun-tasks` 17:01:15|16클래스 88건 통과, Checkstyle 오류 0|
+|관련 회귀|`./gradlew -Dorg.gradle.java.home="$JAVA_HOME" :apps:commerce-batch:check :apps:commerce-api:checkstyleMain :apps:commerce-api:checkstyleTest :apps:commerce-api:test --tests '*WeeklyRanking*' --tests '*ArchitectureTest' --tests '*OrderOutboxDeliveryEndToEndIntegrationTest' --tests '*OrderEventEndToEndIntegrationTest' :apps:commerce-api:w6OutboxRecoveryTest --rerun-tasks` 17:07:04~17:09:23|batch 17건, API: WeeklyRankingFlowTest 1·WeeklyRankingApiTest 15·ArchitectureTest 3·W7 실제 전달 1, O11 1건 통과. Checkstyle api/batch 오류 0. `OrderEventEndToEndIntegrationTest`는 독립 @Test가 없는 지원 코드로 O11 안에서 실행됨|
+
+API·batch 전체 회귀는 실행하지 않았다.
+
+### 관찰 (17:05:59 실행)
+
+|단계|관찰|
+|---|---|
+|준비|batch 준비 child(`job.name=NONE`, update/always) 종료 코드 0, weeklyRanking instance 0개. 2026-10-19 API는 NOT_PUBLISHED|
+|주문 A|상품 a=1·b=2·c=3, 실제 PG 확정(확정 Clock 2026-10-19T00:00Z) → relay PUBLISHED → streamer APPLIED, 원본 3행. 기간 끝 sentinel(주문 900000001, a 수량 99, 2026-10-26T00:00)은 별도 source 행|
+|r1|instance 1 / execution 1 COMPLETED, 결과 `1:2:1, 3:2:2, 2:1:3`(a2·c2·b1), API 같은 항목·snapshotId r1|
+|r2 실패|instance 2 / execution 2, 종료 코드 1·FAILED. 처리 a·b 뒤 c 직전 실패, READY·입력 3행·입력 checksum = r1, stage a2·b1, 영속 read.count 2, API는 r1 유지|
+|A 재발행|저장된 key·payload를 별도 producer로 같은 topic에 보냄(partition 1 offset 1) → streamer ALREADY_PROCESSED, A 원본 3행 그대로|
+|늦은 구매 B|a 수량 3, 2026-10-20T03:00Z 확정 → APPLIED. 주 원본 4행(sentinel 제외). r2 manifest·stage 불변|
+|r2 재시작|새 JVM에서 execution 2 restart → 같은 instance 2의 execution 3 COMPLETED(종료 코드 0), 처리 c만. 결과·입력/결과 checksum이 r1과 같고 API는 r2·같은 항목|
+|r3|instance 3 / execution 4 COMPLETED, 입력 4행, 결과 a5·c2·b1, API r3. r1·r2 결과 보존|
+|삭제·limit|c 삭제 뒤 limit=2 → `1:5:1, 2:1:3`(rank 유지)|
+|빈 주|2026-10-12 NOT_PUBLISHED → new(execution 5) → PUBLISHED·`weekly-20261012-r1`·빈 items|
+|정리|streamer 자식 SIGTERM 정상 종료, W7 정리 `kept=[]`. 구매 테이블은 W7 규칙대로 삭제, 랭킹 다섯 테이블·BATCH_*는 보존(컨테이너 수명). batch 자식은 매번 종료 확인. 종료 뒤 테스트 컨테이너 0개|
+
+4단위에서 남긴 "Boot가 Runner를 ApplicationRunner로 실행하고 종료 코드를 내는 경로"는 위 batch 자식의 종료 코드 0/1로 확인했다.
+
+### 한계
+
+- 부모(API 테스트)는 Batch를 의존하지 않아 영속 read.count를 JobExplorer 대신 BATCH_STEP_EXECUTION_CONTEXT의 기본 직렬화(Base64+Java 직렬화, `java.*`만 허용)를 읽기 전용으로 되돌려 확인했다. 같은 JVM의 JobExplorer 확인은 batch RankingJobRestartTest가 맡는다.
+- A 재발행은 Outbox relay가 아니라 테스트 producer로 같은 key·payload를 보냈다. relay 중단·재발행 자체는 기존 W7 테스트 범위다.
+- 기존 운영 DB에 `idx_ppa_confirmed_at`을 적용하는 절차는 만들지 않았다(§9.11).
