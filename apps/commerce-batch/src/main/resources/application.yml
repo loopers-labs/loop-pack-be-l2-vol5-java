@@ -9,6 +9,7 @@ spring:
     import:
       - jpa.yml
       - redis.yml
+      - ranking.yml
       - logging.yml
       - monitoring.yml
   batch:
