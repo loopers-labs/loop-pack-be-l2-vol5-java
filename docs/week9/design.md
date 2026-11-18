@@ -170,7 +170,7 @@ insert into ranking_score_stage (snapshot_id, product_id, score) values (?, ?, ?
 on duplicate key update score = new.score
 ```
 
-chunk 의 점수를 `batchUpdate` 로 보낸다. 같은 chunk 를 다시 써도 값이 같다. `score = score + ?` 처럼 더하는 방식은 섞지 않는다. 행 별칭(`as new`)은 MySQL 8.0.19 부터이고, `VALUES()` 함수는 8.0.20 부터 deprecated 다.
+chunk 의 점수를 `batchUpdate` 로 보낸다. 같은 chunk 를 다시 써도 값이 같다. `jpa.yml` 의 `rewriteBatchedStatements=true` 로 드라이버가 chunk 를 `values (…),(…),…` 한 문장으로 다시 써서 보낸다. 행 별칭과 `on duplicate key update` 는 그대로다(`EXP-032`, 서버 general log 로 확인). 다시 쓴 문장은 행마다의 영향 행 수 대신 `SUCCESS_NO_INFO` 를 돌려줄 수 있어, writer 는 `batchUpdate` 의 반환값으로 판단하지 않는다. `score = score + ?` 처럼 더하는 방식은 섞지 않는다. 행 별칭(`as new`)은 MySQL 8.0.19 부터이고, `VALUES()` 함수는 8.0.20 부터 deprecated 다.
 
 **뒤집을 조건**: 운영 DB 가 MySQL 이 아니게 될 때. 그 DB 의 upsert(`MERGE` 등)로 바꾼다.
 
