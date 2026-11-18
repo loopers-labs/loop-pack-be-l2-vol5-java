@@ -13,7 +13,6 @@ import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
-import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.database.JdbcCursorItemReader;
 import org.springframework.batch.item.database.builder.JdbcCursorItemReaderBuilder;
@@ -99,36 +98,30 @@ public class WeeklyRankingJobConfig {
 
     @Bean
     public Step calculateWeeklyScoresStep(JobRepository jobRepository, PlatformTransactionManager transactionManager,
-        JdbcCursorItemReader<Long> weeklyRankingProductReader, ItemProcessor<Long, ProductScore> weeklyScoreProcessor,
-        ItemWriter<ProductScore> weeklyScoreWriter, @Value("${commerce.ranking.chunk-size}") int chunkSize) {
+        JdbcCursorItemReader<ProductScore> weeklyRankingProductReader, ItemWriter<ProductScore> weeklyScoreWriter,
+        @Value("${commerce.ranking.chunk-size}") int chunkSize) {
         return new StepBuilder(CALCULATE_STEP, jobRepository)
-            .<Long, ProductScore>chunk(chunkSize, transactionManager)
+            .<ProductScore, ProductScore>chunk(chunkSize, transactionManager)
             .reader(weeklyRankingProductReader)
-            .processor(weeklyScoreProcessor)
             .writer(weeklyScoreWriter)
             .build();
     }
 
     // reader 이름이 ExecutionContext 키(weeklyRankingProduct.read.count)가 되므로 바꾸지 않는다. snapshot 입력만 읽는다.
+    // 상품별 합계까지 한 쿼리로 읽는다(D159). product_id 순서가 고정이라 재시작 때 읽은 행 수만큼 건너뛰어도 같은 위치다.
     @StepScope
     @Bean
-    public JdbcCursorItemReader<Long> weeklyRankingProductReader(DataSource dataSource,
+    public JdbcCursorItemReader<ProductScore> weeklyRankingProductReader(DataSource dataSource,
         @Value("#{jobParameters['snapshotId']}") String snapshotId) {
-        return new JdbcCursorItemReaderBuilder<Long>()
+        return new JdbcCursorItemReaderBuilder<ProductScore>()
             .name(READER)
             .dataSource(dataSource)
-            .sql("select distinct product_id from ranking_snapshot_input where snapshot_id = ? order by product_id")
+            .sql("select product_id, sum(quantity) from ranking_snapshot_input where snapshot_id = ?"
+                + " group by product_id order by product_id")
             .preparedStatementSetter(statement -> statement.setString(1, snapshotId))
-            .rowMapper((resultSet, rowNumber) -> resultSet.getLong(1))
+            .rowMapper((resultSet, rowNumber) -> new ProductScore(snapshotId, resultSet.getLong(1), resultSet.getLong(2)))
             .saveState(true)
             .build();
-    }
-
-    @StepScope
-    @Bean
-    public ItemProcessor<Long, ProductScore> weeklyScoreProcessor(WeeklyRankingRepository weeklyRankingRepository,
-        @Value("#{jobParameters['snapshotId']}") String snapshotId) {
-        return productId -> new ProductScore(snapshotId, productId, weeklyRankingRepository.scoreOf(snapshotId, productId));
     }
 
     @Bean

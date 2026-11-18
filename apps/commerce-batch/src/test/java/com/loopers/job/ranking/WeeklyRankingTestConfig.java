@@ -1,5 +1,6 @@
 package com.loopers.job.ranking;
 
+import com.loopers.batch.job.ranking.ProductScore;
 import com.loopers.batch.job.ranking.SnapshotInfo;
 import com.loopers.batch.job.ranking.SourcePurchase;
 import com.loopers.batch.job.ranking.WeeklyRankingRepository;
@@ -47,7 +48,7 @@ public class WeeklyRankingTestConfig {
             failNextInfo.set(true);
         }
 
-        // 그 상품의 점수 계산을 한 번 실패시킨다.
+        // 그 상품의 점수 쓰기를 한 번 실패시킨다.
         public void failScoreOnce(long productId) {
             failScoreOfProduct.set(productId);
         }
@@ -92,13 +93,15 @@ public class WeeklyRankingTestConfig {
             return super.publish(periodStart, snapshotId);
         }
 
+        // reader가 합계까지 읽으므로(D159) 그 상품이 든 점수 chunk를 쓰기 전에 실패시킨다. 그 chunk는 통째로 rollback된다.
         @Override
-        public long scoreOf(String snapshotId, long productId) {
-            if (Long.valueOf(productId).equals(failScoreOfProduct.get())) {
+        public void upsertScores(List<ProductScore> scores) {
+            Long failing = failScoreOfProduct.get();
+            if (failing != null && scores.stream().anyMatch(score -> score.productId() == failing)) {
                 failScoreOfProduct.set(null);
-                throw new IllegalStateException(SCORE_FAILURE + " product=" + productId);
+                throw new IllegalStateException(SCORE_FAILURE + " product=" + failing);
             }
-            return super.scoreOf(snapshotId, productId);
+            super.upsertScores(scores);
         }
     }
 }

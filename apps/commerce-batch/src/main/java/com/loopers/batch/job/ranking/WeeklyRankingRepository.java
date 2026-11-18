@@ -54,13 +54,6 @@ public class WeeklyRankingRepository {
             LocalDateTime.ofInstant(info.frozenAt(), ZoneOffset.UTC), info.inputCount(), info.inputChecksum());
     }
 
-    // 원본이 아니라 snapshot 입력에서 합산한다.
-    public long scoreOf(String snapshotId, long productId) {
-        Long score = jdbcTemplate.queryForObject("select coalesce(sum(quantity), 0) from ranking_snapshot_input"
-            + " where snapshot_id = ? and product_id = ?", Long.class, snapshotId, productId);
-        return score == null ? 0 : score;
-    }
-
     // 절대값으로 덮는다(+= 아님). 같은 chunk를 다시 써도 값이 같다.
     public void upsertScores(List<ProductScore> scores) {
         jdbcTemplate.batchUpdate("insert into ranking_score_stage(snapshot_id, product_id, score) values (?, ?, ?)"
