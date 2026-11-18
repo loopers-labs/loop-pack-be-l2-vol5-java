@@ -141,7 +141,7 @@ class WeeklyRankingJobTest extends WeeklyRankingJobTestSupport {
         db.activity(2302, 2, 1, "2026-10-20T01:00:00Z");
         WeeklyRankingTarget r1 = target("2026-10-19", 1);
         WeeklyRankingTarget r2 = target("2026-10-19", 2);
-        doThrow(new IllegalStateException("주입된 실패: r1 계산")).doCallRealMethod().when(store).sumQuantity(r1.snapshotId(), 1L);
+        doThrow(new IllegalStateException("주입된 실패: r1 계산")).doCallRealMethod().when(store).upsertScores(eq(r1.snapshotId()), any());
 
         assertThat(launch(r1).getStatus()).isEqualTo(BatchStatus.FAILED);
         JobExecution blocked = launch(r2);

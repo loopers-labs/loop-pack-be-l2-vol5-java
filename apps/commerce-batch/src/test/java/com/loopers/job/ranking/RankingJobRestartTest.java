@@ -1,5 +1,6 @@
 package com.loopers.job.ranking;
 
+import com.loopers.batch.job.ranking.ProductScore;
 import com.loopers.batch.job.ranking.RankingChecksum;
 import com.loopers.batch.job.ranking.WeeklyRankingJobConfig;
 import com.loopers.batch.job.ranking.WeeklyRankingTarget;
@@ -14,17 +15,20 @@ import org.springframework.batch.core.StepExecution;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 /**
  * §6 작은 입력으로 재시작 확인. 2026-08-17 주의 r1 은 한 번에 끝나는 정상 실행(비교 기준, 별도 snapshot), r2 는 같은 입력을 다시 고정한 재시작 대상이다.
- * r2 는 상품 9 를 처리하기 직전에 한 번 실패하고, 같은 식별 parameter 로 다시 실행하면 입력 고정·상품 7·8 을 다시 하지 않고 9 부터 이어 간다.
+ * r2 는 세 번째 item(상품 9)의 chunk 를 commit 하기 전에 한 번 실패하고(writer 에서 주입), 같은 식별 parameter 로 다시 실행하면
+ * 입력 고정·상품 7·8 을 다시 하지 않고 9 부터 이어 간다.
  * 실행: ./gradlew :apps:commerce-batch:test --tests '*RankingJobRestartTest' (Docker 필요).
  */
 class RankingJobRestartTest extends WeeklyRankingJobTestSupport {
@@ -45,7 +49,7 @@ class RankingJobRestartTest extends WeeklyRankingJobTestSupport {
         8\t1\t3
         """;
 
-    @DisplayName("[§6] r2 가 상품 9 직전에 실패하면 FAILED·같은 JobInstance·read.count=2·stage 7,8 이고 공개본은 r1 그대로다. 같은 parameter 로 재실행하면 9 부터 이어 완료하고 r1 과 같은 점수·순위·checksum 이 된다.")
+    @DisplayName("[§6] r2 가 상품 9 의 chunk commit 전에 실패하면 FAILED·같은 JobInstance·read.count=2·stage 7,8 이고 공개본은 r1 그대로다. 같은 parameter 로 재실행하면 9 부터 이어 완료하고 r1 과 같은 점수·순위·checksum 이 된다.")
     @Test
     void restartsFromLastCheckpoint_andMatchesNormalRun() throws Exception {
         db.section6Fixture();
@@ -61,10 +65,18 @@ class RankingJobRestartTest extends WeeklyRankingJobTestSupport {
         assertThat(normalSnapshot.get("result_checksum")).isEqualTo(RankingChecksum.sha256(EXPECTED_RESULT_TEXT));
         assertThat(db.publishedSnapshotId(WEEK)).contains(r1.snapshotId());
 
-        // 1~3. r2: 입력 고정 → chunk(2) 로 7·8 commit → 세 번째 item(9) 처리 직전 한 번 실패
-        doThrow(new IllegalStateException("주입된 실패: 상품 9 처리 직전"))
-            .doCallRealMethod()
-            .when(store).sumQuantity(r2.snapshotId(), 9L);
+        // 1~3. r2: 입력 고정 → chunk(2) 로 7·8 commit → 세 번째 item(9) 의 chunk 를 쓰는 중 commit 전에 한 번 실패
+        List<List<Long>> writes = new CopyOnWriteArrayList<>();
+        AtomicBoolean failed = new AtomicBoolean();
+        doAnswer(invocation -> {
+            List<? extends ProductScore> scores = invocation.getArgument(1);
+            List<Long> productIds = scores.stream().map(ProductScore::productId).toList();
+            writes.add(productIds);
+            if (productIds.contains(9L) && failed.compareAndSet(false, true)) {
+                throw new IllegalStateException("주입된 실패: 상품 9 의 chunk commit 전");
+            }
+            return invocation.callRealMethod();
+        }).when(store).upsertScores(eq(r2.snapshotId()), any());
         JobExecution first = launch(r2);
 
         // 4. FAILED, 영속 checkpoint, stage 2행, 공개본 유지
@@ -98,9 +110,7 @@ class RankingJobRestartTest extends WeeklyRankingJobTestSupport {
         // 완료 뒤 read.count 는 item 3 + 끝을 확인한 마지막 read(null) 1 = 4 (AbstractItemCountingItemStreamItemReader 는 null read 도 센다)
         assertThat(secondScore.getExecutionContext().getInt(READ_COUNT)).isEqualTo(4);
         verify(store, times(1)).copyInputs(eq(r2.snapshotId()), any(), any());
-        verify(store, times(1)).sumQuantity(r2.snapshotId(), 7L);
-        verify(store, times(1)).sumQuantity(r2.snapshotId(), 8L);
-        verify(store, times(2)).sumQuantity(r2.snapshotId(), 9L);
+        assertThat(writes).as("7·8 은 다시 쓰지 않고 9 만 (실패한 시도 + 재시작)").containsExactly(List.of(7L, 8L), List.of(9L), List.of(9L));
         assertThat(db.inputs(r2.snapshotId())).as("완성된 입력을 다시 복사하지 않는다").hasSize(4);
 
         // 7. 정상 실행(r1)과 비교: 점수·순위·checksum, 공개 pointer 는 r2

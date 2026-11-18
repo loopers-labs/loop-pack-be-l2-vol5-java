@@ -3,7 +3,6 @@ package com.loopers.batch.job.ranking;
 import com.loopers.batch.job.ranking.step.FreezeInputTasklet;
 import com.loopers.batch.job.ranking.step.PublishRankingTasklet;
 import com.loopers.batch.job.ranking.step.ScoreStageWriter;
-import com.loopers.batch.job.ranking.step.WeeklyScoreProcessor;
 import com.loopers.batch.listener.JobListener;
 import com.loopers.batch.listener.StepMonitorListener;
 import lombok.RequiredArgsConstructor;
@@ -77,14 +76,12 @@ public class WeeklyRankingJobConfig {
 
     @Bean(SCORE_STEP)
     public Step scoreStep(
-        JdbcCursorItemReader<Long> weeklyRankingProductReader,
-        WeeklyScoreProcessor weeklyScoreProcessor,
+        JdbcCursorItemReader<ProductScore> weeklyRankingProductReader,
         ScoreStageWriter scoreStageWriter
     ) {
         return new StepBuilder(SCORE_STEP, jobRepository)
-            .<Long, ProductScore>chunk(properties.chunkSize(), transactionManager)
+            .<ProductScore, ProductScore>chunk(properties.chunkSize(), transactionManager)
             .reader(weeklyRankingProductReader)
-            .processor(weeklyScoreProcessor)
             .writer(scoreStageWriter)
             .listener(stepMonitorListener)
             .build();
@@ -99,34 +96,27 @@ public class WeeklyRankingJobConfig {
     }
 
     /**
-     * 고정 입력의 서로 다른 productId 를 오름차순으로 하나씩. 입력이 바뀌지 않으므로 재시작 때 같은 순서로 다시 읽고 read.count 만큼 건너뛴다.
+     * 고정 입력(TB-20)을 상품별로 묶어 quantity 합까지 읽는다. 상품 하나가 item 하나이고 productId 오름차순이다 (DR-68).
+     * 현재 활동 테이블(TB-13)은 읽지 않는다. 입력이 바뀌지 않으므로 재시작 때 같은 순서로 다시 읽고 read.count 만큼 건너뛴다.
      * step scope: 실행마다 새로 만들고 job parameter 를 실제 실행에서 받는다.
      */
     @Bean
     @StepScope
-    public JdbcCursorItemReader<Long> weeklyRankingProductReader(
+    public JdbcCursorItemReader<ProductScore> weeklyRankingProductReader(
         DataSource dataSource,
         @Value("#{jobParameters['" + WeeklyRankingTarget.PERIOD_START + "']}") String periodStart,
         @Value("#{jobParameters['" + WeeklyRankingTarget.REVISION + "']}") String revision
     ) {
         String snapshotId = WeeklyRankingTarget.of(periodStart, revision).snapshotId();
-        return new JdbcCursorItemReaderBuilder<Long>()
+        return new JdbcCursorItemReaderBuilder<ProductScore>()
             .name(READER_NAME)
             .saveState(true)
             .dataSource(dataSource)
-            .sql("select distinct product_id from ranking_snapshot_input where snapshot_id = ? order by product_id")
+            .sql("select product_id, sum(quantity) as score from ranking_snapshot_input where snapshot_id = ? "
+                + "group by product_id order by product_id")
             .preparedStatementSetter(ps -> ps.setString(1, snapshotId))
-            .rowMapper((rs, rowNum) -> rs.getLong("product_id"))
+            .rowMapper((rs, rowNum) -> new ProductScore(rs.getLong("product_id"), rs.getLong("score")))
             .build();
-    }
-
-    @Bean
-    @StepScope
-    public WeeklyScoreProcessor weeklyScoreProcessor(
-        @Value("#{jobParameters['" + WeeklyRankingTarget.PERIOD_START + "']}") String periodStart,
-        @Value("#{jobParameters['" + WeeklyRankingTarget.REVISION + "']}") String revision
-    ) {
-        return new WeeklyScoreProcessor(store, WeeklyRankingTarget.of(periodStart, revision).snapshotId());
     }
 
     @Bean

@@ -82,14 +82,7 @@ public class WeeklyRankingStore {
             snapshotId);
     }
 
-    // --- TB-20 → TB-21 점수 ---
-
-    /** 같은 frozen snapshot 의 상품 하나의 quantity 합. 현재 활동 테이블(TB-13)은 읽지 않는다. */
-    public long sumQuantity(String snapshotId, long productId) {
-        Long sum = jdbc.queryForObject("select coalesce(sum(quantity), 0) from ranking_snapshot_input where snapshot_id = ? and product_id = ?",
-            Long.class, snapshotId, productId);
-        return sum == null ? 0 : sum;
-    }
+    // --- TB-20 → TB-21 점수 (상품별 합은 reader 의 GROUP BY 가 계산한다) ---
 
     /** 절대값 upsert: 같은 상품을 다시 써도 score = total 로 수렴한다 (score += total 이 아니다). */
     public void upsertScores(String snapshotId, List<? extends ProductScore> scores) {
