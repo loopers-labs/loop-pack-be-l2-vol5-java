@@ -1,7 +1,7 @@
 package com.loopers.domains.ranking.out;
 
-import com.loopers.domains.ranking.app.port.PublishedRanking.RankedProduct;
 import com.loopers.domains.ranking.app.port.PublishedRanking;
+import com.loopers.domains.ranking.app.port.PublishedRanking.RankedProduct;
 import com.loopers.domains.ranking.app.port.WeeklyRankingReader;
 import java.time.LocalDate;
 import java.time.LocalDateTime;

@@ -49,8 +49,8 @@ final class RankingRows {
 
     // calc_rank 순서의 "순위/상품/점수".
     List<String> results(String snapshotId) {
-        return jdbc.queryForList("select calc_rank, product_id, score from ranking_result where snapshot_id = ? order by calc_rank",
-                snapshotId).stream()
+        return jdbc.queryForList("select calc_rank, product_id, score from ranking_result where snapshot_id = ?"
+                + " order by calc_rank", snapshotId).stream()
             .map(row -> row.get("calc_rank") + "/" + row.get("product_id") + "/" + row.get("score"))
             .toList();
     }
