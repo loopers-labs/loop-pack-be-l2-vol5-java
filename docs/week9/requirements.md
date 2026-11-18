@@ -58,7 +58,7 @@
 | `SNP-003` | 원본 활동을 한 번의 일관된 읽기로 가져와 snapshot 입력과 snapshot 정보를 한 TX 로 commit 한다. `max(id)` 로 고정했다고 보지 않는다 | 원문, 정함(수단: INSERT…SELECT 한 문장) | |
 | `SNP-004` | 고정이 실패하면 반쪽 입력이 계산 대상이 되지 않는다 | 원문 | 고정 TX rollback 뒤 입력 0 행, snapshot 정보 없음 |
 | `SNP-005` | 고정을 마친 입력은 재시작 때 다시 복사하거나 더하지 않는다 | 원문 | 재시작 전후 입력 행 수와 checksum 이 같다 |
-| `SNP-006` | 이미 있는 `snapshotId` 의 기간, 입력, revision 이 다르면 덮지 않고 충돌로 실패한다. 같으면 아무것도 바꾸지 않는다 | 원문, 정함(같을 때) | |
+| `SNP-006` | 이미 있는 `snapshotId` 의 기간이나 revision 이 다르면 덮지 않고 충돌로 실패한다. 같으면 원본을 다시 읽지 않고 아무것도 바꾸지 않은 채 step 을 완료한다. 입력은 비교하지 않는다. 고정 뒤 도착한 구매가 있어도 이미 고정한 입력이 그 snapshot 의 입력이다(`SNP-005`, `REV-001`) | 원문, 정함(같음의 기준: 기간과 revision) | 고정 뒤 늦은 구매가 들어와도 다시 고정하면 COMPLETED, 입력 3 행, checksum 그대로 |
 | `SNP-007` | 입력 checksum 은 `(orderId, productId)` 순으로 정렬한 행마다 `orderId`, `productId`, `quantity`, `confirmedAt` 을 TAB 으로 잇고 LF 로 끝낸 바이트의 SHA-256 hex 다. 마지막 행도 LF 로 끝난다. `confirmedAt` 은 UTC ISO-8601, 소수 6 자리(`EVT-003` 과 같은 형식)다. 실행 ID·실행 시각은 넣지 않는다 | 원문, 정함(형식) | |
 | `SNP-008` | `snapshotId` 는 `weekly-{yyyyMMdd}-r{revision}`(예: `weekly-20260817-r1`)이고 launch parameter 로 받는다. 기간과 revision 으로 만든 값과 다르면 고정하지 않는다 | 정함(Q-1) | `weekly-20260817-r2` 에 revision 1 이면 FAILED, 입력 0 행 |
 

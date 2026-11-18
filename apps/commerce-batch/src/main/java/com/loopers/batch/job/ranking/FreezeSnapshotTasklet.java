@@ -6,10 +6,12 @@ import java.security.NoSuchAlgorithmException;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.HexFormat;
+import java.util.List;
 
 import org.springframework.batch.core.JobParameters;
 import org.springframework.batch.core.StepContribution;
@@ -44,6 +46,19 @@ class FreezeSnapshotTasklet implements Tasklet {
             throw new IllegalArgumentException(
                 "snapshotId " + requestedId + " does not match period and revision: " + snapshot.id()
             );
+        }
+        List<WeeklySnapshot> existing = jdbc.query(
+            "select period_start, revision from ranking_snapshot where snapshot_id = ?",
+            (rs, rowNum) -> new WeeklySnapshot(rs.getObject("period_start", LocalDate.class), rs.getInt("revision")),
+            snapshot.id()
+        );
+        if (!existing.isEmpty()) {
+            if (!existing.get(0).equals(snapshot)) {
+                throw new IllegalStateException(
+                    "snapshot " + snapshot.id() + " already exists for " + existing.get(0)
+                );
+            }
+            return RepeatStatus.FINISHED;
         }
 
         int inputCount = jdbc.update("""

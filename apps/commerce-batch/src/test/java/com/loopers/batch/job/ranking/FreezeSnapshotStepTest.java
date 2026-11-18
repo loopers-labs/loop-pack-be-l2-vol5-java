@@ -152,6 +152,56 @@ class FreezeSnapshotStepTest {
         );
     }
 
+    @DisplayName("SNP-006, REV-001: 이미 고정한 snapshot 을 다시 고정하면 늦은 구매가 있어도 입력과 snapshot 정보를 그대로 두고 완료한다.")
+    @Test
+    void refreezingKeepsFrozenInput() throws Exception {
+        forget(launch(PERIOD_START, 1, SNAPSHOT_ID));
+        Map<String, Object> frozen = snapshotInfo();
+        insertActivity(60L, 7L, 5, LocalDateTime.parse("2026-08-20T00:00:00"));
+
+        long executionId = launch(PERIOD_START, 1, SNAPSHOT_ID);
+
+        assertAll(
+            () -> assertThat(statusOf(executionId)).isEqualTo(BatchStatus.COMPLETED),
+            () -> assertThat(frozenInputs()).containsExactly("42:7:2", "42:8:1", "43:7:3"),
+            () -> assertThat(snapshotInfo()).isEqualTo(frozen)
+        );
+    }
+
+    @DisplayName("SNP-006: 같은 snapshotId 의 행이 다른 기간을 가리키면 덮지 않고 실패한다.")
+    @Test
+    void failsWhenExistingSnapshotHasDifferentPeriod() throws Exception {
+        jdbc.update(
+            "insert into ranking_snapshot "
+                + "(snapshot_id, period_start, revision, status, frozen_at, input_count, input_checksum) "
+                + "values (?, '2026-08-24', 1, 'FROZEN', now(6), 0, repeat('0', 64))",
+            SNAPSHOT_ID
+        );
+
+        long executionId = launch(PERIOD_START, 1, SNAPSHOT_ID);
+
+        assertAll(
+            () -> assertThat(statusOf(executionId)).isEqualTo(BatchStatus.FAILED),
+            () -> assertThat(snapshotInfo().get("period_start").toString()).isEqualTo("2026-08-24"),
+            () -> assertThat(countRows("ranking_snapshot_input")).isZero()
+        );
+    }
+
+    private Map<String, Object> snapshotInfo() {
+        return jdbc.queryForMap(
+            "select period_start, revision, status, frozen_at, input_count, input_checksum "
+                + "from ranking_snapshot where snapshot_id = ?",
+            SNAPSHOT_ID
+        );
+    }
+
+    private void forget(long executionId) {
+        new JobRepositoryTestUtils(jobRepository).removeJobExecutions(
+            List.of(jobExplorer.getJobExecution(executionId))
+        );
+        executionIds.remove(executionId);
+    }
+
     private long countRows(String table) {
         return jdbc.queryForObject("select count(*) from " + table, Long.class);
     }

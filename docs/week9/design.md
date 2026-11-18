@@ -121,6 +121,16 @@ SELECT 한 문장은 하나의 읽기 시점이다. 재시작에 걸쳐 같은 �
 
 **뒤집을 조건**: 고정 TX 시간이나 undo 증가가 측정으로 문제가 될 때 "한 번 읽고 나눠 쓰기" 로 바꾼다. 서버 격리 수준이 REPEATABLE READ 인 환경에서 실행할 때 고정 TX 의 격리 수준을 READ COMMITTED 로 명시한다.
 
+### 이미 고정한 snapshot (`SNP-006`)
+
+Batch 는 COMPLETED step 을 다시 실행하지 않지만 고정 step 이 다시 도는 경우가 있다. tasklet TX 가 commit 된 뒤 step 을 COMPLETED 로 기록하는 JobRepository 의 TX 가 실패하면 그 step 은 COMPLETED 가 아니고, 재시작이 고정 step 을 다시 실행한다. metadata 를 지우고 같은 parameter 로 다시 launch 해도 같다.
+
+고정 step 은 먼저 `snapshotId` 의 행을 찾는다. 있으면 기간과 revision 만 비교한다. 같으면 원본을 읽지 않고 끝내고, 다르면 실패한다. 입력은 비교하지 않는다. 다시 계산하면 고정 뒤 도착한 구매 때문에 다르게 나오는 것이 정상이고(`REV-001`), 고정한 입력이 그 snapshot 의 정의다(`SNP-005`). 늦은 구매를 넣으려면 새 revision 이다(`REV-002`).
+
+`snapshotId` 는 기간과 revision 으로 정해지고(`SNP-008`) 기본 키라, 고정 step 을 거친 행끼리는 기간이나 revision 이 다를 수 없다. "다르면 실패" 는 손으로 넣은 행이나 형식이 바뀐 옛 행을 덮지 않으려는 것이다.
+
+**뒤집을 조건**: 같은 snapshotId 로 입력을 다시 만들어야 하는 운영 절차가 생길 때. 그때도 덮지 않고, 무엇이 바뀌었는지 비교하려면 저장된 checksum 과 다시 계산한 checksum 을 함께 남긴다.
+
 ## 7. reader: `JdbcPagingItemReader`, keyset (`CAL-001`)
 
 | 기준 | offset | keyset |
