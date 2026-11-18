@@ -95,7 +95,7 @@
 | `PBL-005` | 더 새 revision 이 이미 공개돼 있으면 pointer 를 되돌리지 않는다. 조건부 갱신으로 지킨다 | 원문 | |
 | `PBL-006` | 공개 TX 가 commit 된 뒤 JobExecution 이 FAILED 로 남을 수 있다. 재실행한 공개 step 은 같은 결과로 수렴하고, 공개한 결과를 지우지 않는다 | 원문 | |
 | `PBL-007` | 결과 checksum 은 순위 순으로 `productId`, `score`, `rank` 를 TAB 으로 잇고 LF 로 끝낸 바이트의 SHA-256 hex 다 | 원문, 정함(형식) | |
-| `PBL-008` | 같은 기간의 계산은 직렬로 실행한다. 수단은 Q-3 | 원문 | |
+| `PBL-008` | 같은 기간의 계산은 직렬로 실행한다. 운영에서 한 번에 하나만 launch 한다(Q-3) | 원문, 범위(수단) | |
 | `PBL-009` | 과거 활동, snapshot, 점수 행은 지우지 않는다 | 원문 | |
 
 ## REV: 늦은 구매와 revision
@@ -121,12 +121,12 @@
 |---|---|---|
 | ~~Q-1~~ | ~~`snapshotId` 의 형식과 정하는 주체~~ `weekly-{yyyyMMdd}-r{revision}` 을 launch parameter 로 받고 job 이 기간·revision 과 맞는지 확인한다. 사람이 읽고 기간과 revision 을 바로 알 수 있다. **뒤집을 조건**: 한 기간에 revision 말고 다른 축(예: 점수 기준)으로 snapshot 을 나눠야 할 때 | `SNP-008` |
 | ~~Q-2~~ | ~~revision 을 정하는 방법~~ launch 할 때 명시적으로 준다. 그 기간의 가장 큰 revision 보다 커야 하고 아니면 고정 step 이 실패한다. 원문이 "명시적으로 증가" 를 요구하고, 자동으로 매기면 같은 launch 를 두 번 했을 때 의도하지 않은 새 revision 이 생긴다. `(period_start, revision)` 유일 제약이 동시에 같은 revision 을 만드는 것을 막는다. **뒤집을 조건**: 스케줄러가 늦은 구매를 감지해 자동으로 재계산해야 할 때 | `REV-002` |
-| Q-3 | 같은 기간의 동시 계산을 직렬로 만드는 수단. 서로 다른 snapshotId 는 다른 JobInstance 라 Batch 가 막지 않는다. 후보: 기간마다 한 행을 두고 고정 step 이 조건부 갱신으로 실행권을 얻는다 / 운영에서 한 번에 하나만 launch 한다고 범위로 둔다 | `PBL-008` |
+| ~~Q-3~~ | ~~같은 기간의 동시 계산을 직렬로 만드는 수단~~ 운영에서 한 기간에 한 번에 하나만 launch 한다고 범위로 둔다. 스케줄러와 자동 launch 가 범위 밖이라 동시에 launch 하는 주체가 없다. 근거는 설계 13 장. **뒤집을 조건**: 자동 launch 나 재시도가 생길 때 | `PBL-008` |
 | Q-4 | `limit` 의 상한과 기본값. 원문은 "최대 100 등" 이다. 제안: 상한 100, 생략하면 10 | `QRY-003` |
 | Q-5 | `periodStart` 를 생략하면 400 인가, 지난주로 보는가. 제안: 400 | `QRY-002` |
 | Q-6 | §7 을 한 실행으로 하는가. W6·W7 은 앱별 테스트와 공유 계약으로 나눴다(W6 Q-4, W7 Q-3). 원문은 "한 연결 테스트" 다. 이번에는 commerce-api, streamer, batch 세 앱이다 | `EXP-028` |
 | Q-7 | `purchase_activity` 에 `confirmed_at` 인덱스를 둘 것인가. streamer 의 스키마를 바꾼다 | `SNP-003` |
-| Q-8 | commerce-batch 의 계층. 기존 앱은 `interfaces → application → domain ← infrastructure` 이고 TX 경계가 application 에만 있다. Batch 에서는 step 이 TX 경계다 | `JOB-003` |
+| ~~Q-8~~ | ~~commerce-batch 의 계층~~ `com.loopers.batch.job.ranking` 한 패키지에 package-private 으로 둔다. step 이 TX 경계이고 DB 없이 판단할 애그리거트가 없다. 근거는 설계 11 장. **뒤집을 조건**: 반품 차감 같은 도메인 판단이 생길 때 | `JOB-003` |
 
 ## 범위 밖
 

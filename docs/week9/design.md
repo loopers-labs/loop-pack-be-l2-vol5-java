@@ -183,7 +183,9 @@ chunk 의 점수를 `batchUpdate` 로 보낸다. 같은 chunk 를 다시 써도 
 
 ## 11. 패키지
 
-main 과 test 모두 `com.loopers.batch.job.ranking` 이다. `WeeklySnapshot` 과 step 구성 요소를 package-private 으로 두므로 테스트가 같은 패키지에 있어야 한다. 연결 테스트도 여기에 남긴다. 설정만 보는 테스트라 깨지면 원인이 랭킹 로직이 아니라 TX·저장소 설정이라는 것이 바로 드러난다.
+main 과 test 모두 `com.loopers.batch.job.ranking` 이다(Q-8). commerce-api 의 `interfaces → application → domain ← infrastructure` 를 따르지 않는다. 그 계층은 TX 경계를 application 에 모으고 판단을 DB 없는 애그리거트에 두려는 것인데, batch 에서는 step 이 TX 경계이고 판단은 SQL 안의 합계와 정렬뿐이다. `WeeklySnapshot` 과 step 구성 요소를 package-private 으로 두므로 테스트가 같은 패키지에 있어야 한다. 연결 테스트도 여기에 남긴다.
+
+**뒤집을 조건**: 반품 차감, 가중치처럼 DB 없이 테스트할 판단이 생길 때. 그 판단을 domain 패키지의 객체로 꺼내고 step 은 그것을 부른다. 설정만 보는 테스트라 깨지면 원인이 랭킹 로직이 아니라 TX·저장소 설정이라는 것이 바로 드러난다.
 
 ## 12. 공개 결과의 저장소: DB, Redis Sorted Set 은 쓰지 않는다
 
@@ -197,3 +199,17 @@ main 과 test 모두 `com.loopers.batch.job.ranking` 이다. `WeeklySnapshot` �
 | 삭제 상품 제외(`QRY-007`) | 상품 테이블을 어차피 읽는다 |
 
 **뒤집을 조건**: 실시간·시간 단위 랭킹이 요구될 때. 구매 이벤트 consumer 가 `ZINCRBY` 로 쌓는 별도 기능으로 둔다. 랭킹 API 의 읽기 부하가 측정으로 문제가 될 때는 공개된 snapshot 결과를 `ranking:weekly:{snapshotId}` 로 캐시한다. snapshot 내용은 바뀌지 않으므로 무효화가 필요 없고, pointer 는 DB 가 정한다.
+
+## 13. 같은 기간의 직렬 실행 (`PBL-008`)
+
+같은 기간의 서로 다른 revision 은 snapshotId 가 달라 다른 JobInstance 다. Batch 는 같은 instance 의 동시 실행만 막는다. 이번 범위에서는 운영에서 한 기간에 한 번에 하나만 launch 한다(Q-3). 스케줄러와 자동 launch 가 범위 밖이라 동시에 launch 하는 주체가 없다.
+
+DB 가 지키는 것은 둘이다. 같은 기간·revision 의 snapshot 은 `(period_start, revision)` 유일 키 때문에 하나만 생긴다. 공개 pointer 는 조건부 갱신이라 늦게 끝난 옛 revision 이 새 revision 을 덮지 않는다(`PBL-005`). 지키지 않는 것은 두 revision 의 계산이 동시에 도는 일이다. 결과는 섞이지 않지만 같은 원본을 두 번 훑는다.
+
+지금 고르지 않은 선택지:
+
+| 선택지 | 고르지 않은 이유 |
+|---|---|
+| 기간마다 실행권 행을 두고 고정 step 이 조건부 갱신으로 얻는다 | 실행권 테이블, 해제 시점, 실패한 실행의 실행권 만료 규칙이 함께 생긴다. 동시에 launch 하는 주체가 없는데 그 규칙을 검증해야 한다 |
+
+**뒤집을 조건**: 스케줄러의 자동 launch 나 실패 시 자동 재시도가 생길 때 실행권 행을 둔다.
