@@ -29,4 +29,11 @@ public class FakeUserRepository implements UserRepository {
     public long count() {
         return users.size();
     }
+
+    @Override
+    public void createUsers(int count) {
+        for (int i = 0; i < count; i++) {
+            save(new User());
+        }
+    }
 }

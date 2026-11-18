@@ -40,6 +40,46 @@ order-event:
     max-interval: 30s
     max-elapsed: 5m
 
+# 쿠폰 접수 기록 적재 (8주차 D-132). topic 은 인프라가 만듦 (D-136)
+coupon-issue:
+  topic: coupon-issue-requests
+  consumer-group: coupon-issue-request-loader
+  max-poll-records: 500 # 묶음 적재 크기의 상한
+  # 일시 오류는 상한 없이 pause 한 채 재시도한다. 적재를 멈추면 접수 약속이 DB 에 남지 않는다 (D-126 과 같은 기준)
+  retry:
+    initial-interval: 1s
+    multiplier: 2
+    max-interval: 30s
+  # 발급 worker (D-171). 인스턴스당 동시 발급 = threads. 잠정값, 실험으로 확정
+  worker:
+    enabled: false # 로컬 · 운영은 실행 인자로 켬. 테스트는 회차를 직접 부름
+    instance-id: streamer-1 # 인스턴스마다 다르게 둔다 (D-162)
+    interval-ms: 200
+    threads: 4
+    batch-size: 10
+    inner-retries: 2 # 일시 오류만 안쪽에서 다시 해 본다 (D-128)
+    inner-backoff: 100ms
+    redelivery-initial: 1s # 그다음은 지연 ZSET 으로 놓는다. 일시 오류는 상한 없음 (D-126, D-129)
+    redelivery-max: 1m
+    unclassified-limit: 3
+    poison-deliveries: 10
+    claim-min-idle: 30s # (연결 3s + 잠금 3s + Redis 1s) × (안쪽 재시도 + 1) + 여유 (D-131)
+    recount-interval: 1s
+    pending-confirm-after: 10s # api 접수 producer delivery-timeout(3s)보다 길게 (D-134)
+  # 세마포어 실험의 처리 자리 수 C (D-157). 실제 발급 경로에는 쓰지 않음
+  admission:
+    capacity: 3
+  # Redis 유실 대응 (D-174, D-175). 잠정값
+  recovery:
+    interval-ms: 1000
+    audit-interval: 60s
+    audit-batch-size: 1000
+  resend-producer: # 확인 대기 재전송. api 접수 producer 와 같은 잠정값 (D-134)
+    request-timeout: 2s
+    delivery-timeout: 3s
+    send-timeout: 4s
+    max-block: 500ms
+
 # 응답 없는 DB 에서 listener 가 예외 없이 무기한 기다리면 재시도 · 상한이 동작하지 않아 드라이버에 상한을 둠 (6주차 D-98).
 # 문장이 ms 단위라 정상 처리는 끊지 않음. 끊긴 COMMIT 의 결과가 모호해도 재전달을 멱등 처리로 흡수함. 공용 jpa.yml 이 아니라 앱마다 둬 batch 는 건드리지 않음
 datasource:

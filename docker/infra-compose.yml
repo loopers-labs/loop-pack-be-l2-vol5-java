@@ -103,6 +103,8 @@ services:
         create() { kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic "$$1" --partitions "$$2" --replication-factor 1; }
         create order-events 3
         create order-events.DLT 3
+        create coupon-issue-requests 3
+        create coupon-issue-requests.DLT 3
         create demo.internal.topic-v1 1
     restart: "no"
 
