@@ -78,7 +78,7 @@ Java 로 넘어오는 값에만 타입을 둔다. 테이블마다 record 를 두
 | reader | `JdbcPagingItemReader`(7 장) |
 | processor | `select sum(quantity) …` |
 | writer | `insert … as new on duplicate key update score = new.score`, chunk 를 `batchUpdate` 로(8 장) |
-| 입력 checksum | `RowCallbackHandler` 로 한 행씩 해시에 넣는다 |
+| 입력 checksum | fetchSize `Integer.MIN_VALUE` 로 드라이버가 행을 하나씩 받게 하고, `RowCallbackHandler` 로 한 행씩 해시에 넣는다(14 장) |
 
 근거:
 
@@ -215,3 +215,28 @@ DB 가 지키는 것은 둘이다. 같은 기간·revision 의 snapshot 은 `(pe
 | 기간마다 실행권 행을 두고 고정 step 이 조건부 갱신으로 얻는다 | 실행권 테이블, 해제 시점, 실패한 실행의 실행권 만료 규칙이 함께 생긴다. 동시에 launch 하는 주체가 없는데 그 규칙을 검증해야 한다 |
 
 **뒤집을 조건**: 스케줄러의 자동 launch 나 실패 시 자동 재시도가 생길 때 실행권 행을 둔다.
+
+## 14. 입력 checksum 의 메모리 (`EXP-029`)
+
+MySQL Connector/J 는 fetchSize 를 정하지 않으면 결과 전체를 클라이언트 메모리에 받은 뒤 첫 행을 넘긴다. `RowCallbackHandler` 가 한 행씩 처리해도 메모리에는 한 주의 입력이 모두 올라간다. checksum 쿼리에 fetchSize `Integer.MIN_VALUE` 를 주어 드라이버가 소켓에서 한 행씩 읽게 한다.
+
+측정: heap 512MB, young 16MB(결과를 받는 도중에 GC 가 일어나 붙잡힌 행이 보이도록), 각 3 회. GC 직후 live heap 최댓값에서 실행 전 기준선을 뺀 값의 중앙값이다. 모든 실행에서 GC 가 4 회 이상 일어났다.
+
+| 입력 행 | 결과 전체를 받음 | 행 단위로 받음 |
+|---|---|---|
+| 100,000 | 22MB | 0MB |
+| 200,000 | 45MB | 0MB |
+| 400,000 | 92MB | 0MB |
+
+결과 전체를 받으면 행당 약 240B 가 붙잡힌다. fetchSize 하나만 바꾼 대조에서 증가가 사라지므로 원인은 드라이버의 결과 버퍼링이다. 경과 시간은 40 만 행에서 23~55 초와 20~22 초였다. 시간을 재려고 설계한 실험이 아니라(웜업, young 크기 고정) 행 단위로 받아도 느려지지 않았다는 것까지만 말한다. 쿼리는 한 번이고 서버가 결과를 이어 보내므로 행마다 왕복하지 않는다.
+
+대가: 결과를 다 읽기 전에는 그 커넥션으로 다른 쿼리를 보낼 수 없다. checksum 은 고정 step 의 마지막 읽기라 그 사이에 다른 쿼리가 없다. 클라이언트가 늦게 읽으면 서버가 쓰기를 기다리고, Connector/J 는 이때 `net_write_timeout` 을 `netTimeoutForStreamingResults`(기본 600 초)로 올린다.
+
+고르지 않은 선택지:
+
+| 선택지 | 고르지 않은 이유 |
+|---|---|
+| `useCursorFetch=true` 와 fetchSize N | N 행마다 서버 cursor 에 왕복하고 서버에 임시 테이블이 생긴다. 커넥션 URL 에 두면 모든 쿼리에 걸린다 |
+| DB 에서 checksum 계산(`sha2(group_concat(...))`) | `group_concat_max_len` 을 넘으면 결과가 잘린다. 행 단위 해시가 아니라 이어 붙인 문자열 전체를 서버 메모리에 만든다 |
+
+**뒤집을 조건**: checksum 읽기 도중 같은 커넥션으로 다른 쿼리를 보내야 할 때 `useCursorFetch` 로 바꾼다. 실험의 heap 수치는 `-Xmn16m` 조건의 값이므로 운영 heap 을 정할 때는 운영 GC 설정으로 다시 잰다.
