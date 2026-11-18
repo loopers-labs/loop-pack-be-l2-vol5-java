@@ -1,16 +1,10 @@
 package com.loopers.batch.job.ranking;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
-import java.util.HexFormat;
 import java.util.List;
 
 import org.springframework.batch.core.JobParameters;
@@ -19,14 +13,11 @@ import org.springframework.batch.core.scope.context.ChunkContext;
 import org.springframework.batch.core.step.tasklet.Tasklet;
 import org.springframework.batch.repeat.RepeatStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowCallbackHandler;
 
 class FreezeSnapshotTasklet implements Tasklet {
 
     private static final DateTimeFormatter CONFIRMED_AT =
         DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss.SSSSSS'Z'");
-
-    private static final int ROW_BY_ROW = Integer.MIN_VALUE;
 
     private final JdbcTemplate jdbc;
 
@@ -90,40 +81,20 @@ class FreezeSnapshotTasklet implements Tasklet {
     }
 
     private String inputChecksum(String snapshotId) {
-        MessageDigest digest = sha256();
-        jdbc.query(
-            connection -> {
-                PreparedStatement statement = connection.prepareStatement("""
-                    select order_id, product_id, quantity, confirmed_at
-                    from ranking_snapshot_input
-                    where snapshot_id = ?
-                    order by order_id, product_id
-                    """, ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
-                statement.setFetchSize(ROW_BY_ROW);
-                statement.setString(1, snapshotId);
-                return statement;
-            },
-            (RowCallbackHandler) rs -> {
-                String line = rs.getLong("order_id")
-                    + "\t" + rs.getLong("product_id")
-                    + "\t" + rs.getInt("quantity")
-                    + "\t" + rs.getObject("confirmed_at", LocalDateTime.class).format(CONFIRMED_AT)
-                    + "\n";
-                digest.update(line.getBytes(StandardCharsets.UTF_8));
-            }
+        return new SortedRowsChecksum(jdbc).of("""
+            select order_id, product_id, quantity, confirmed_at
+            from ranking_snapshot_input
+            where snapshot_id = ?
+            order by order_id, product_id
+            """, snapshotId,
+            rs -> rs.getLong("order_id")
+                + "\t" + rs.getLong("product_id")
+                + "\t" + rs.getInt("quantity")
+                + "\t" + rs.getObject("confirmed_at", LocalDateTime.class).format(CONFIRMED_AT)
         );
-        return HexFormat.of().formatHex(digest.digest());
     }
 
     private static LocalDateTime utc(Instant instant) {
         return LocalDateTime.ofInstant(instant, ZoneOffset.UTC);
-    }
-
-    private static MessageDigest sha256() {
-        try {
-            return MessageDigest.getInstance("SHA-256");
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException(e);
-        }
     }
 }

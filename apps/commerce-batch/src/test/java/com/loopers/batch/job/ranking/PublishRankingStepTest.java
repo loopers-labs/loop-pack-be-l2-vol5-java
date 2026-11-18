@@ -20,6 +20,7 @@ import org.springframework.batch.core.Job;
 import org.springframework.batch.core.JobExecution;
 import org.springframework.batch.core.JobParametersBuilder;
 import org.springframework.batch.core.Step;
+import org.springframework.batch.core.StepExecution;
 import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.explore.JobExplorer;
 import org.springframework.batch.core.launch.JobLauncher;
@@ -164,6 +165,22 @@ class PublishRankingStepTest {
             () -> assertThat(publishedBefore.get("snapshot_id")).isEqualTo(R2),
             () -> assertThat(publication()).isEqualTo(publishedBefore)
         );
+    }
+
+    @DisplayName("PBL-007: 공개 step 은 순위 순으로 productId, score, rank 를 TAB 으로 잇고 LF 로 끝낸 결과 checksum 을 실행 기록에 남긴다.")
+    @Test
+    void recordsResultChecksumInStepExecution() throws Exception {
+        long executionId = launch();
+
+        JobExecution execution = jobExplorer.getJobExecution(executionId);
+        StepExecution publish = execution.getStepExecutions().stream()
+            .filter(step -> step.getStepName().equals("publishRanking"))
+            .findFirst()
+            .orElseThrow();
+        Object recorded = jobExplorer.getStepExecution(executionId, publish.getId())
+            .getExecutionContext().get("resultChecksum");
+
+        assertThat(recorded).isEqualTo("745d50bbd2f04a2e8c937f9ebf5f2cddbf75b958540e964934a424903b0a67d2");
     }
 
     private void forget(long executionId) {

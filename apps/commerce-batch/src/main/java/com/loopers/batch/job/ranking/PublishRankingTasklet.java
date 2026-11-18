@@ -65,6 +65,19 @@ class PublishRankingTasklet implements Tasklet {
             """,
             snapshot.periodStart(), snapshot.id(), snapshot.revision(), LocalDateTime.now(ZoneOffset.UTC)
         );
+        contribution.getStepExecution().getExecutionContext()
+            .putString("resultChecksum", resultChecksum(snapshot.id()));
         return RepeatStatus.FINISHED;
+    }
+
+    private String resultChecksum(String snapshotId) {
+        return new SortedRowsChecksum(jdbc).of("""
+            select product_id, score, rank_no
+            from weekly_ranking
+            where snapshot_id = ?
+            order by rank_no
+            """, snapshotId,
+            rs -> rs.getLong("product_id") + "\t" + rs.getLong("score") + "\t" + rs.getInt("rank_no")
+        );
     }
 }

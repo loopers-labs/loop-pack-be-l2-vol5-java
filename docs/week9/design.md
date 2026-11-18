@@ -236,7 +236,7 @@ DB 가 지키는 것은 둘이다. 같은 기간·revision 의 snapshot 은 `(pe
 
 ## 14. 입력 checksum 의 메모리 (`EXP-029`)
 
-MySQL Connector/J 는 fetchSize 를 정하지 않으면 결과 전체를 클라이언트 메모리에 받은 뒤 첫 행을 넘긴다. `RowCallbackHandler` 가 한 행씩 처리해도 메모리에는 한 주의 입력이 모두 올라간다. checksum 쿼리에 fetchSize `Integer.MIN_VALUE` 를 주어 드라이버가 소켓에서 한 행씩 읽게 한다.
+MySQL Connector/J 는 fetchSize 를 정하지 않으면 결과 전체를 클라이언트 메모리에 받은 뒤 첫 행을 넘긴다. `RowCallbackHandler` 가 한 행씩 처리해도 메모리에는 한 주의 입력이 모두 올라간다. checksum 쿼리에 fetchSize `Integer.MIN_VALUE` 를 주어 드라이버가 소켓에서 한 행씩 읽게 한다. 입력과 결과 checksum 모두 `SortedRowsChecksum` 을 거친다.
 
 측정: heap 512MB, young 16MB(결과를 받는 도중에 GC 가 일어나 붙잡힌 행이 보이도록), 각 3 회. GC 직후 live heap 최댓값에서 실행 전 기준선을 뺀 값의 중앙값이다. 모든 실행에서 GC 가 4 회 이상 일어났다.
 
@@ -282,3 +282,15 @@ MySQL Connector/J 는 fetchSize 를 정하지 않으면 결과 전체를 클라�
 | `weekly_ranking_publication` | `period_start` | 기간마다 공개본은 하나다. 조건부 갱신이 한 행에서 끝난다 |
 
 **뒤집을 조건**: 한 기간에 공개본이 둘 이상 필요할 때(예: 점수 기준이 여럿) pointer 키에 그 축을 더한다.
+
+### 결과 checksum 은 저장하지 않는다 (`PBL-007`)
+
+공개 step 은 공개한 순위로 결과 checksum 을 계산해 자기 StepExecution 의 ExecutionContext 에 `resultChecksum` 으로 남긴다. 공개 TX 가 commit 될 때 step 기록과 함께 저장된다. `ranking_snapshot` 에 칸을 두지 않는다.
+
+입력 checksum 은 저장한다. 원본 `purchase_activity` 는 계속 바뀌므로 고정 시점의 값은 다시 만들 수 없고, `SNP-001` 이 snapshot 정보에 넣으라고 한다. 결과 checksum 은 한 번 쓰면 바뀌지 않는 `weekly_ranking` 에서 언제든 같은 값으로 다시 계산된다(`PBL-004`, `PBL-009`). 칸으로 두면 순위 행과 그 해시가 따로 저장되어 둘이 어긋날 수 있고, 공개 전의 null 이 "아직 공개 안 됨" 이라는 상태를 대신 말하게 된다. 지금 이 값을 읽는 것은 실험(`EXP-027`)과 운영자 확인뿐이다.
+
+두 checksum 은 같은 방식이다. 정렬한 행을 한 줄씩 행 단위로 읽어(14 장) 해시에 넣는다. `SortedRowsChecksum` 이 이 일을 하고, 쿼리와 줄 형식만 다르다.
+
+`ranking_snapshot.status` 는 `FROZEN` 하나만 쓴다. 공개 여부는 pointer 와 `weekly_ranking` 행이 말한다. `PUBLISHED` 를 더하면 상태와 pointer 가 서로 다른 revision 을 말하는 조합이 생긴다.
+
+**뒤집을 조건**: API 나 외부 소비자가 결과 checksum 을 읽어야 할 때, 또는 `weekly_ranking` 을 지우거나 옮기는 정책이 생길 때 `ranking_snapshot` 에 결과 checksum 칸을 둔다. 상태를 읽어 분기하는 규칙(예: 계산 중인 snapshot 의 재계산 금지)이 생길 때 상태 값을 더한다.
