@@ -62,6 +62,24 @@ datasource:
       minimum-idle: 5
 
 ---
+spring.config.activate.on-profile: ranking-preserve
+
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  sql:
+    init:
+      mode: never
+
+datasource:
+  mysql-jpa:
+    main:
+      jdbc-url: ${COMMERCE_MYSQL_JDBC_URL}
+      username: ${COMMERCE_MYSQL_USER:application}
+      password: ${COMMERCE_MYSQL_PASSWORD:application}
+
+---
 spring.config.activate.on-profile: dev
 
 spring:

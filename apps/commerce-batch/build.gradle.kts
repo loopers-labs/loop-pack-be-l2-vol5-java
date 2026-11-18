@@ -1,3 +1,11 @@
+import org.gradle.api.plugins.quality.CheckstyleExtension
+
+tasks.processTestResources {
+    from(rootProject.file("docker/week9/001-batch-metadata-mysql.sql")) {
+        into("preservation")
+    }
+}
+
 dependencies {
     // add-ons
     implementation(project(":modules:jpa"))
@@ -18,4 +26,13 @@ dependencies {
     // test-fixtures
     testImplementation(testFixtures(project(":modules:jpa")))
     testImplementation(testFixtures(project(":modules:redis")))
+}
+
+apply(plugin = "checkstyle")
+
+configure<CheckstyleExtension> {
+    toolVersion = project.properties["checkstyleVersion"].toString()
+    configFile = rootProject.file("config/checkstyle/checkstyle.xml")
+    isIgnoreFailures = false
+    maxWarnings = 0
 }
