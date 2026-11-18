@@ -321,7 +321,7 @@ class WeeklyRankingJobTest {
     }
 
     private Map<String, Object> info(String snapshotId) {
-        List<Map<String, Object>> rows = jdbc.queryForList("select snapshot_id, period_start, period_end, revision, frozen_at,"
+        List<Map<String, Object>> rows = jdbc.queryForList("select snapshot_id, period_start, revision, frozen_at,"
             + " input_count, input_checksum from ranking_snapshot where snapshot_id = ?", snapshotId);
         return rows.isEmpty() ? Map.of() : rows.get(0);
     }

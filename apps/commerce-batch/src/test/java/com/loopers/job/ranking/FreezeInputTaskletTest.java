@@ -27,8 +27,8 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 // 이 분기는 tasklet을 직접 실행해 확인한다. 저장소는 fake로 두고 원본 읽기·INSERT 호출이 있었는지 기록한다.
 class FreezeInputTaskletTest {
     private static final String SNAPSHOT_ID = "weekly-20260817-r3";
-    private static final SnapshotInfo FROZEN = new SnapshotInfo(SNAPSHOT_ID, LocalDate.parse("2026-08-17"),
-        LocalDate.parse("2026-08-24"), 3, Instant.parse("2026-08-24T00:10:00Z"), 4, "checksum");
+    private static final SnapshotInfo FROZEN = new SnapshotInfo(SNAPSHOT_ID, LocalDate.parse("2026-08-17"), 3,
+        Instant.parse("2026-08-24T00:10:00Z"), 4, "checksum");
 
     @ParameterizedTest(name = "요청 periodStart={0}, revision={1}")
     @CsvSource({"2026-08-24, 3", "2026-08-17, 4"})

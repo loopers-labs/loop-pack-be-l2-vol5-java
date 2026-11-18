@@ -78,3 +78,14 @@ val e2eTestTask = tasks.register<Test>("e2eTest") {
 tasks.check {
     dependsOn(e2eTestTask)
 }
+
+// 주간 랭킹 완성 랭킹·공개 pointer의 정의는 batch SQL 한 벌이다(D155). api 운영 코드는 SQL로 읽기만 하고, api 테스트는 그 파일을
+// 빌드 때 복사해 그대로 실행한다(내용을 다시 정의하지 않는다). 운영 classpath에는 들어가지 않는다.
+val rankingTablesSql = tasks.register<Sync>("rankingTablesSql") {
+    from(rootProject.file("apps/commerce-batch/src/main/resources/sql/create-ranking-tables.sql"))
+    into(layout.buildDirectory.dir("ranking-tables-sql/sql/ranking"))
+}
+
+dependencies {
+    testRuntimeOnly(files(layout.buildDirectory.dir("ranking-tables-sql")).builtBy(rankingTablesSql))
+}

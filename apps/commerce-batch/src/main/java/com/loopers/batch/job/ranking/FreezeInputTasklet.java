@@ -35,7 +35,7 @@ public class FreezeInputTasklet implements Tasklet {
         }
         weeklyRankingRepository.insertInputs(parameters.snapshotId(), rows);
         weeklyRankingRepository.insertInfo(new SnapshotInfo(parameters.snapshotId(), parameters.periodStart(),
-            parameters.periodEnd(), parameters.revision(), clock.instant(), rows.size(), InputChecksum.of(rows)));
+            parameters.revision(), clock.instant(), rows.size(), InputChecksum.of(rows)));
         contribution.incrementWriteCount(rows.size());
         return RepeatStatus.FINISHED;
     }

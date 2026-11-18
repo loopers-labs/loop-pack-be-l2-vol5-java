@@ -20,10 +20,10 @@ public class WeeklyRankingRepository {
     }
 
     public Optional<SnapshotInfo> findInfo(String snapshotId) {
-        return jdbcTemplate.query("select snapshot_id, period_start, period_end, revision, frozen_at, input_count, input_checksum"
+        return jdbcTemplate.query("select snapshot_id, period_start, revision, frozen_at, input_count, input_checksum"
             + " from ranking_snapshot where snapshot_id = ?", (resultSet, rowNumber) -> new SnapshotInfo(resultSet.getString(1),
-                resultSet.getObject(2, LocalDate.class), resultSet.getObject(3, LocalDate.class), resultSet.getInt(4),
-                instant(resultSet, 5), resultSet.getInt(6), resultSet.getString(7)), snapshotId)
+                resultSet.getObject(2, LocalDate.class), resultSet.getInt(3), instant(resultSet, 4),
+                resultSet.getInt(5), resultSet.getString(6)), snapshotId)
             .stream().findFirst();
     }
 
@@ -48,10 +48,9 @@ public class WeeklyRankingRepository {
     }
 
     public void insertInfo(SnapshotInfo info) {
-        jdbcTemplate.update("insert into ranking_snapshot(snapshot_id, period_start, period_end, revision, frozen_at,"
-            + " input_count, input_checksum) values (?, ?, ?, ?, ?, ?, ?)", info.snapshotId(), info.periodStart(),
-            info.periodEnd(), info.revision(), LocalDateTime.ofInstant(info.frozenAt(), ZoneOffset.UTC), info.inputCount(),
-            info.inputChecksum());
+        jdbcTemplate.update("insert into ranking_snapshot(snapshot_id, period_start, revision, frozen_at, input_count,"
+            + " input_checksum) values (?, ?, ?, ?, ?, ?)", info.snapshotId(), info.periodStart(), info.revision(),
+            LocalDateTime.ofInstant(info.frozenAt(), ZoneOffset.UTC), info.inputCount(), info.inputChecksum());
     }
 
     // 원본이 아니라 snapshot 입력에서 합산한다.
