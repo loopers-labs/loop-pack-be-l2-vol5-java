@@ -11,7 +11,7 @@ import org.springframework.context.annotation.FilterType;
  * 공용 설정: JPA(데이터소스·엔티티·repository), Kafka(consumerFactory), Jackson. 데모 consumer 는 뺀다. 테이블은 만들지 않는다 (api context 가 만든다).
  */
 @SpringBootConfiguration
-@EnableAutoConfiguration
+@EnableAutoConfiguration(excludeName = "org.springframework.boot.autoconfigure.batch.BatchAutoConfiguration")
 @ComponentScan(basePackages = {
     "com.loopers.config.jpa",
     "com.loopers.confg.kafka",
