@@ -11,7 +11,11 @@ import java.util.regex.Pattern;
 // revision은 앞자리 0을 받지 않는다(r1과 r01이 같은 revision을 가리키지 않게, w9s2-1).
 // snapshotId의 날짜가 periodStart와 다르거나 periodStart가 월요일이 아니면 받지 않는다(이름·기간 어긋남 방지).
 public record WeeklyRankingParameters(LocalDate periodStart, String snapshotId, int revision) {
-    private static final Pattern SNAPSHOT_ID = Pattern.compile("weekly-(\\d{8})-r([1-9]\\d*)");
+    public static final String PERIOD_START = "periodStart";
+    public static final String SNAPSHOT_ID = "snapshotId";
+    public static final String RANKING_SIZE = "rankingSize";
+
+    private static final Pattern SNAPSHOT_ID_PATTERN = Pattern.compile("weekly-(\\d{8})-r([1-9]\\d*)");
     private static final DateTimeFormatter COMPACT_DATE = DateTimeFormatter.BASIC_ISO_DATE;
 
     public static WeeklyRankingParameters parse(String periodStart, String snapshotId) {
@@ -20,7 +24,7 @@ public record WeeklyRankingParameters(LocalDate periodStart, String snapshotId, 
         }
         LocalDate start;
         LocalDate named;
-        Matcher matcher = SNAPSHOT_ID.matcher(snapshotId);
+        Matcher matcher = SNAPSHOT_ID_PATTERN.matcher(snapshotId);
         if (!matcher.matches()) {
             throw new IllegalArgumentException("snapshotId 형식은 weekly-YYYYMMDD-rN입니다. snapshotId=" + snapshotId);
         }
@@ -47,6 +51,27 @@ public record WeeklyRankingParameters(LocalDate periodStart, String snapshotId, 
                 + ", snapshotId=" + snapshotId);
         }
         return new WeeklyRankingParameters(start, snapshotId, revision);
+    }
+
+    // 확장 job처럼 snapshotId만 받는 곳에서 쓴다. 날짜는 이름에서 읽는다.
+    public static WeeklyRankingParameters fromSnapshotId(String snapshotId) {
+        Matcher matcher = SNAPSHOT_ID_PATTERN.matcher(snapshotId == null ? "" : snapshotId);
+        if (!matcher.matches()) {
+            throw new IllegalArgumentException("snapshotId 형식은 weekly-YYYYMMDD-rN입니다. snapshotId=" + snapshotId);
+        }
+        String named = matcher.group(1);
+        return parse(named.substring(0, 4) + "-" + named.substring(4, 6) + "-" + named.substring(6), snapshotId);
+    }
+
+    public static String snapshotIdOf(LocalDate periodStart, int revision) {
+        return "weekly-" + periodStart.format(COMPACT_DATE) + "-r" + revision;
+    }
+
+    // 완성 랭킹 저장 개수 K는 1 이상이다(D156). 없으면 설정값을 쓴다.
+    public static void requireRankingSize(Long rankingSize) {
+        if (rankingSize != null && (rankingSize < 1 || rankingSize > Integer.MAX_VALUE)) {
+            throw new IllegalArgumentException("rankingSize는 1 이상입니다. rankingSize=" + rankingSize);
+        }
     }
 
     // 구간 끝(제외)은 다음 월요일이다.
