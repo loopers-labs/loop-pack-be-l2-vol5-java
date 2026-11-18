@@ -155,6 +155,12 @@ Batch 는 COMPLETED step 을 다시 실행하지 않지만 고정 step 이 다�
 
 **뒤집을 조건**: 정렬 key 가 `product_id` 하나로 유일하지 않게 될 때(예: 상품과 옵션 단위로 item 을 나눌 때). `sortKeys` 에 칸을 더한다.
 
+### chunk 크기
+
+chunk 크기는 설정값 `ranking.chunk-size` 이고 기본값은 100 이다. 재시작 테스트는 2 로 준다(`CAL-004`). job parameter 로 두지 않는다. 식별 parameter 면 값을 바꿀 때마다 새 JobInstance 가 되어 재시작이 이어지지 않고(`JOB-002`), 비식별 parameter 면 재시작 때 다른 값을 줄 수 있어 저장된 위치와 page 경계가 어긋나 보인다. 100 은 처리량을 잰 값이 아니다. 한 chunk 의 TX 가 상품 100 개의 합계 쿼리와 upsert 한 번을 담는 크기로 시작한다.
+
+**뒤집을 조건**: 계산 step 의 처리량이나 chunk TX 시간을 측정해 문제가 될 때 그 측정으로 값을 정한다.
+
 ## 8. writer: 절대값 (`CAL-003`)
 
 ```sql

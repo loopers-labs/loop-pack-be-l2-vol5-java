@@ -17,6 +17,9 @@ spring:
     jdbc:
       initialize-schema: never
 
+ranking:
+  chunk-size: 100
+
 management:
   health:
     defaults:

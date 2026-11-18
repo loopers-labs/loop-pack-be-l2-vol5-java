@@ -29,6 +29,8 @@ import org.springframework.batch.core.BatchStatus;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.JobExecution;
 import org.springframework.batch.core.JobParametersBuilder;
+import org.springframework.batch.core.Step;
+import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.explore.JobExplorer;
 import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.batch.core.repository.JobRepository;
@@ -70,8 +72,8 @@ class FreezeSnapshotMemoryExperimentTest {
     private JobRepository jobRepository;
 
     @Autowired
-    @Qualifier(WeeklyRankingJobConfig.JOB_NAME)
-    private Job job;
+    @Qualifier("freezeSnapshotStep")
+    private Step freezeSnapshotStep;
 
     private JdbcTemplate jdbc;
 
@@ -147,7 +149,8 @@ class FreezeSnapshotMemoryExperimentTest {
         heapAfterGc.clear();
         long startedAt = System.nanoTime();
 
-        JobExecution execution = jobLauncher.run(job, new JobParametersBuilder()
+        Job freezeOnly = new JobBuilder("exp029FreezeOnly", jobRepository).start(freezeSnapshotStep).build();
+        JobExecution execution = jobLauncher.run(freezeOnly, new JobParametersBuilder()
             .addLocalDate("periodStart", LocalDate.of(2026, 8, 17))
             .addLong("revision", 1L)
             .addString("snapshotId", SNAPSHOT_ID)
