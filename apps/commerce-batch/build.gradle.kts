@@ -22,7 +22,7 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform {
-        excludeTags("experiment")
+        excludeTags("experiment", "speed-experiment")
     }
 }
 
@@ -45,6 +45,23 @@ val experimentTest by tasks.registering(Test::class) {
         "-XX:+HeapDumpOnOutOfMemoryError",
         "-XX:HeapDumpPath=" + layout.buildDirectory.file("exp029.hprof").get().asFile.path
     )
+    testLogging {
+        showStandardStreams = true
+    }
+}
+
+val speedExperimentTest by tasks.registering(Test::class) {
+    description = "Runs timing experiments with default GC settings. Not part of check."
+    group = "verification"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform {
+        includeTags("speed-experiment")
+    }
+    maxHeapSize = "1g"
+    systemProperty("user.timezone", "Asia/Seoul")
+    systemProperty("spring.profiles.active", "test")
+    jvmArgs("-Xshare:off")
     testLogging {
         showStandardStreams = true
     }

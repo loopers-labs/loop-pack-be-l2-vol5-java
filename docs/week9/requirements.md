@@ -115,6 +115,7 @@
 | `EXP-027` | 정상 한 번 실행(별도 snapshot)과 실패·재시작의 입력 checksum, 결과 checksum, 기대 점수·순위가 같다. 재시작 대상의 stage·metadata 를 지워 정상 실행으로 꾸미지 않는다 | 원문 | |
 | `EXP-028` | §7 연결. PG 확정 → Outbox → Kafka → 구매 활동 → snapshot → job → API. 재발행, 늦은 구매, 새 revision, 경계 시각, 빈 주, 미공개, 삭제 상품. 한 실행으로 할지는 Q-6 | 원문 | |
 | `EXP-029` | 입력 고정이 붙잡는 heap 이 입력 행 수에 비례하는가. heap 512MB, young 16MB, 행 10 만·20 만·40 만, 각 3 회. GC 직후 live heap 최댓값에서 실행 전 기준선을 뺀다. 40 만 행 중앙값이 32MB 미만이어야 한다. `./gradlew --offline :apps:commerce-batch:experimentTest` | 실험 | 설계 14 장. 결과 전체를 받으면 22 → 45 → 92MB(행당 약 240B), 행 단위로 받으면 0 → 0 → 0MB |
+| `EXP-031` | 행 단위로 받는 checksum 읽기가 결과 전체를 받는 것보다 느린가. 기본 GC, heap 1GB, checksum 읽기만, 행 10 만·40 만, 웜업 3 회 뒤 두 방식을 번갈아 10 회. 중앙값 비율이 1.2 이하여야 한다. `./gradlew --offline :apps:commerce-batch:speedExperimentTest` | 실험 | 설계 14 장. 10 만 92 → 91ms(0.99), 40 만 392 → 376ms(0.96) |
 | `EXP-030` | 실패한 입력 고정 TX 의 rollback 시간과 그동안 원본 테이블에 걸리는 metadata lock. 행 수에 따라 잰다 | 실험 | 측정 전. 200 만 행 고정이 실패한 뒤 rollback 이 1 분에 약 2 만 행씩 줄고 `truncate table purchase_activity` 가 기다리는 것을 한 번 보았다 |
 
 ## 물을 질문
