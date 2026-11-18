@@ -132,6 +132,29 @@ class PublishRankingStepTest {
         );
     }
 
+    @DisplayName("PBL-004, PBL-006: 같은 snapshot 을 다시 공개해도 순위 행이 늘지 않고 순위와 공개 시각이 그대로다.")
+    @Test
+    void republishingSameSnapshotChangesNothing() throws Exception {
+        forget(launch(job, 1));
+        List<String> rankedBefore = publishedRanking();
+        Map<String, Object> publishedBefore = publication();
+
+        long executionId = launch(job, 1);
+
+        assertAll(
+            () -> assertThat(statusOf(executionId)).isEqualTo(BatchStatus.COMPLETED),
+            () -> assertThat(publishedRanking()).isEqualTo(rankedBefore),
+            () -> assertThat(publication()).isEqualTo(publishedBefore)
+        );
+    }
+
+    private void forget(long executionId) {
+        new JobRepositoryTestUtils(jobRepository).removeJobExecutions(
+            List.of(jobExplorer.getJobExecution(executionId))
+        );
+        executionIds.remove(executionId);
+    }
+
     private Map<String, Object> publication() {
         return jdbc.queryForMap(
             "select snapshot_id, revision, published_at from weekly_ranking_publication "
