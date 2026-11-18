@@ -31,8 +31,10 @@ public class WeeklyRankingTestConfig {
     public static class HookedWeeklyRankingRepository extends WeeklyRankingRepository {
         public static final String INFO_FAILURE = "주입된 snapshot 정보 저장 실패";
         public static final String SCORE_FAILURE = "주입된 점수 계산 실패";
+        public static final String PUBLISH_FAILURE = "주입된 pointer 공개 실패";
 
         private final AtomicBoolean failNextInfo = new AtomicBoolean();
+        private final AtomicBoolean failNextPublish = new AtomicBoolean();
         private final AtomicReference<Long> failScoreOfProduct = new AtomicReference<Long>();
         private final AtomicReference<Runnable> afterSourceRead = new AtomicReference<Runnable>(() -> { });
 
@@ -55,8 +57,14 @@ public class WeeklyRankingTestConfig {
             afterSourceRead.set(action);
         }
 
+        // 다음 한 번의 pointer 공개를 실제로 하지 않고 실패시킨다(완성 랭킹 INSERT는 이미 같은 TX에서 나간 뒤다).
+        public void failNextPublish() {
+            failNextPublish.set(true);
+        }
+
         public void disarm() {
             failNextInfo.set(false);
+            failNextPublish.set(false);
             failScoreOfProduct.set(null);
             afterSourceRead.set(() -> { });
         }
@@ -74,6 +82,14 @@ public class WeeklyRankingTestConfig {
                 throw new IllegalStateException(INFO_FAILURE);
             }
             super.insertInfo(info);
+        }
+
+        @Override
+        public boolean publish(LocalDate periodStart, String snapshotId) {
+            if (failNextPublish.getAndSet(false)) {
+                throw new IllegalStateException(PUBLISH_FAILURE);
+            }
+            return super.publish(periodStart, snapshotId);
         }
 
         @Override

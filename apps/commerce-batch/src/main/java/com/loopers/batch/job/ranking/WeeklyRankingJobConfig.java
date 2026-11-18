@@ -16,7 +16,9 @@ import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.database.JdbcCursorItemReader;
 import org.springframework.batch.item.database.builder.JdbcCursorItemReaderBuilder;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.batch.core.explore.JobExplorer;
+import org.springframework.batch.core.launch.JobLauncher;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -24,21 +26,57 @@ import org.springframework.transaction.PlatformTransactionManager;
 
 // 주간 랭킹(docs/week9/commerce-ranking.md). 식별 parameter는 periodStart·snapshotId이고 incrementer가 없어,
 // 같은 parameter로 다시 실행하면 같은 JobInstance의 재시작이다. 완료된 Step 1은 재시작 때 다시 돌지 않고 Step 2가 읽은 위치에서 이어 간다.
-@ConditionalOnProperty(name = "spring.batch.job.name", havingValue = WeeklyRankingJobConfig.JOB_NAME)
+// 확장 job(weeklyRankingExtend)은 같은 공개 tasklet을 쓰므로 두 이름 중 하나면 이 설정을 올린다.
+@ConditionalOnExpression("'${spring.batch.job.name:}' == '" + WeeklyRankingJobConfig.JOB_NAME + "' or '${spring.batch.job.name:}' == '"
+    + WeeklyRankingJobConfig.EXTEND_JOB_NAME + "'")
 @Configuration
 public class WeeklyRankingJobConfig {
     public static final String JOB_NAME = "weeklyRanking";
+    public static final String EXTEND_JOB_NAME = "weeklyRankingExtend";
+    public static final String PUBLISH_STEP = "publishWeeklyRanking";
     public static final String FREEZE_STEP = "freezeInput";
     public static final String CALCULATE_STEP = "calculateWeeklyScores";
     public static final String READER = "weeklyRankingProduct";
 
     @Bean(JOB_NAME)
-    public Job weeklyRankingJob(JobRepository jobRepository, Step freezeInputStep, Step calculateWeeklyScoresStep) {
+    public Job weeklyRankingJob(JobRepository jobRepository, Step freezeInputStep, Step calculateWeeklyScoresStep,
+        Step publishWeeklyRankingStep) {
         return new JobBuilder(JOB_NAME, jobRepository)
             .validator(weeklyRankingParametersValidator())
             .start(freezeInputStep)
             .next(calculateWeeklyScoresStep)
+            .next(publishWeeklyRankingStep)
             .build();
+    }
+
+    // K 확장(8절). 이미 고정·계산된 snapshot에 공개 Step만 다시 돌린다. 식별값 snapshotId·rankingSize.
+    @Bean(EXTEND_JOB_NAME)
+    public Job weeklyRankingExtendJob(JobRepository jobRepository, Step publishWeeklyRankingStep) {
+        return new JobBuilder(EXTEND_JOB_NAME, jobRepository)
+            .start(publishWeeklyRankingStep)
+            .build();
+    }
+
+    @Bean
+    public Step publishWeeklyRankingStep(JobRepository jobRepository, PlatformTransactionManager transactionManager,
+        PublishRankingTasklet publishRankingTasklet) {
+        return new StepBuilder(PUBLISH_STEP, jobRepository)
+            .tasklet(publishRankingTasklet, transactionManager)
+            .build();
+    }
+
+    @StepScope
+    @Bean
+    public PublishRankingTasklet publishRankingTasklet(WeeklyRankingRepository weeklyRankingRepository,
+        @Value("#{jobParameters['snapshotId']}") String snapshotId, @Value("#{jobParameters['rankingSize']}") Long rankingSize,
+        @Value("${commerce.ranking.size}") int defaultRankingSize) {
+        return new PublishRankingTasklet(weeklyRankingRepository, snapshotId,
+            rankingSize == null ? defaultRankingSize : Math.toIntExact(rankingSize));
+    }
+
+    @Bean
+    public WeeklyRankingLauncher weeklyRankingLauncher(JobLauncher jobLauncher, JobExplorer jobExplorer, Job weeklyRanking) {
+        return new WeeklyRankingLauncher(jobLauncher, jobExplorer, weeklyRanking);
     }
 
     @Bean

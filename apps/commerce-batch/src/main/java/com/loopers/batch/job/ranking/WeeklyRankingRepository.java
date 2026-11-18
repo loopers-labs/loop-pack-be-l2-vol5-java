@@ -70,6 +70,33 @@ public class WeeklyRankingRepository {
             });
     }
 
+    public long distinctInputProducts(String snapshotId) {
+        return 0;
+    }
+
+    public long stageCount(String snapshotId) {
+        return 0;
+    }
+
+    public int maxCalcRank(String snapshotId) {
+        return 0;
+    }
+
+    public List<RankedScore> stageRanking(String snapshotId, int offset, int limit) {
+        return List.of();
+    }
+
+    public void insertResults(String snapshotId, List<RankedScore> ranking) {
+    }
+
+    public boolean publish(LocalDate periodStart, String snapshotId) {
+        return false;
+    }
+
+    public Optional<String> publishedSnapshotId(LocalDate periodStart) {
+        return Optional.empty();
+    }
+
     private static Instant instant(ResultSet resultSet, int column) throws SQLException {
         return resultSet.getObject(column, LocalDateTime.class).toInstant(ZoneOffset.UTC);
     }
