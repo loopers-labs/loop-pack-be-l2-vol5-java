@@ -60,6 +60,16 @@ class FreezeSnapshotTasklet implements Tasklet {
             }
             return RepeatStatus.FINISHED;
         }
+        Integer latestRevision = jdbc.queryForObject(
+            "select max(revision) from ranking_snapshot where period_start = ?",
+            Integer.class, snapshot.periodStart()
+        );
+        if (latestRevision != null && latestRevision >= snapshot.revision()) {
+            throw new IllegalStateException(
+                "revision " + snapshot.revision() + " is not above latest revision " + latestRevision
+                    + " of " + snapshot.periodStart()
+            );
+        }
 
         int inputCount = jdbc.update("""
             insert into ranking_snapshot_input (snapshot_id, product_id, order_id, quantity, confirmed_at)

@@ -187,6 +187,38 @@ class FreezeSnapshotStepTest {
         );
     }
 
+    @DisplayName("REV-002: 그 기간에 이미 있는 가장 큰 revision 보다 크지 않은 revision 은 고정하지 않고 실패한다.")
+    @Test
+    void rejectsRevisionNotAboveLatest() throws Exception {
+        launch(PERIOD_START, 2, "weekly-20260817-r2");
+
+        long executionId = launch(PERIOD_START, 1, SNAPSHOT_ID);
+
+        assertAll(
+            () -> assertThat(statusOf(executionId)).isEqualTo(BatchStatus.FAILED),
+            () -> assertThat(frozenInputs(SNAPSHOT_ID)).isEmpty(),
+            () -> assertThat(jdbc.queryForObject(
+                "select count(*) from ranking_snapshot where snapshot_id = ?", Long.class, SNAPSHOT_ID
+            )).isZero()
+        );
+    }
+
+    @DisplayName("REV-001, REV-002: 새 revision 은 늦은 구매까지 고정하고, 이전 revision 의 입력은 그대로 둔다.")
+    @Test
+    void newRevisionIncludesLatePurchase() throws Exception {
+        launch(PERIOD_START, 1, SNAPSHOT_ID);
+        insertActivity(60L, 7L, 5, LocalDateTime.parse("2026-08-20T00:00:00"));
+
+        long executionId = launch(PERIOD_START, 2, "weekly-20260817-r2");
+
+        assertAll(
+            () -> assertThat(statusOf(executionId)).isEqualTo(BatchStatus.COMPLETED),
+            () -> assertThat(frozenInputs("weekly-20260817-r2"))
+                .containsExactly("42:7:2", "42:8:1", "43:7:3", "60:7:5"),
+            () -> assertThat(frozenInputs(SNAPSHOT_ID)).containsExactly("42:7:2", "42:8:1", "43:7:3")
+        );
+    }
+
     private Map<String, Object> snapshotInfo() {
         return jdbc.queryForMap(
             "select period_start, revision, status, frozen_at, input_count, input_checksum "
@@ -222,11 +254,15 @@ class FreezeSnapshotStepTest {
     }
 
     private List<String> frozenInputs() {
+        return frozenInputs(SNAPSHOT_ID);
+    }
+
+    private List<String> frozenInputs(String snapshotId) {
         return jdbc.query(
             "select order_id, product_id, quantity from ranking_snapshot_input "
                 + "where snapshot_id = ? order by order_id, product_id",
             (rs, rowNum) -> rs.getLong("order_id") + ":" + rs.getLong("product_id") + ":" + rs.getInt("quantity"),
-            SNAPSHOT_ID
+            snapshotId
         );
     }
 
