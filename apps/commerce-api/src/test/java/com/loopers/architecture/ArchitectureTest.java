@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAnyPackage;
@@ -23,9 +24,15 @@ class ArchitectureTest {
             "catalog", List.of("brand", "product", "productlike"),
             "point", List.of("point"),
             "order", List.of("order"),
-            "promotion", List.of("promotion")
+            "promotion", List.of("promotion"),
+            "ranking", List.of("ranking")
     );
     private static final List<String> AGGREGATES = AGGREGATES_BY_BC.values().stream().flatMap(List::stream).toList();
+    /**
+     * 조회 전용 AG: 쓰기는 다른 앱(commerce-batch)이 하고 이 앱에는 Model·Repository 가 없다 (설계 10-1, DR-74).
+     * Model·Repository 규칙에서만 검사 대상이 비어도 통과시킨다. 나머지 AG 는 비어 있으면 지금처럼 실패한다.
+     */
+    private static final Set<String> QUERY_ONLY_AGGREGATES = Set.of("ranking");
 
     private static JavaClasses importClasses() {
         return new ClassFileImporter()
@@ -121,6 +128,7 @@ class ArchitectureTest {
             noClasses().that().resideInAPackage("..domain." + ag + "..")
                     .and().haveSimpleNameEndingWith("Model")
                     .should().dependOnClassesThat().resideInAnyPackage(otherAggregateDomainPackages(ag))
+                    .allowEmptyShould(QUERY_ONLY_AGGREGATES.contains(ag))
                     .check(classes);
         }
     }
@@ -134,6 +142,7 @@ class ArchitectureTest {
                     .and().haveSimpleNameEndingWith("Repository")
                     .should().dependOnClassesThat(
                             resideInAnyPackage(otherAggregateDomainPackages(ag)).and(simpleNameEndingWith("Model")))
+                    .allowEmptyShould(QUERY_ONLY_AGGREGATES.contains(ag))
                     .check(classes);
         }
     }
