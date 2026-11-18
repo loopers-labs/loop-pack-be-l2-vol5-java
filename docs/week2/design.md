@@ -34,6 +34,7 @@ flowchart LR
 
 순환 없음. BC-04 주문이 유일한 하류 종점이고, 재고·잔액을 바꾸는 쓰기 의존은 주문 확정(FR-ORDER-02) 한 곳에서만 일어난다.
 BC-05 프로모션은 W8 에서 추가했고 BC-01 만 조회한다 (8장).
+BC-06 랭킹은 W9 에서 추가했다 (10장). `commerce-batch` 가 구매 활동(W6, TB-13)을 고정해 계산하고, `commerce-api` 는 공개된 결과와 카탈로그 표시 정보를 읽기만 한다.
 
 ### 0-2. 계층 지도
 
@@ -1382,6 +1383,7 @@ PG 로 확정된 주문의 구매 사실을 Kafka 로 전달해 `commerce-stream
 
 - 확정 주문 하나의 상품별 구매 수량. 주간 랭킹 입력
 - 고유 제약: (`order_id`, `product_id`)
+- 인덱스: `ix_product_purchase_activity_confirmed_at (confirmed_at)` — W9 주간 랭킹의 입력 고정이 기간 범위만 읽고 잠그게 한다 (DR-67)
 - productId 는 과거 주문의 식별자로 보존한다. 상품 행의 존재·현재 가격에 의존하지 않고, 삭제·비노출 상품을 다시 노출하지 않는다 (상품을 읽지 않는다)
 
 | 컬럼 | 타입 | NULL | 제약 | 의미 |
@@ -1741,6 +1743,150 @@ PromotionFacade.issue  (TX 없음, 워커 스레드)
 - 누구나 관리자를 만들 수 있다. 테스트 전용이라 받아들인 구멍이다 (DR-59).
 - 테스트: `UserV1ApiE2ETest` (일반 사용자 + 포인트 계정·잔액 조회, 본문 없음·admin 없음 → 일반, admin=true 로 관리자 API 사용·일반 사용자 403)
 
+## 10. 주간 구매 랭킹 (W9)
+
+W6·W7 의 구매 활동(TB-13)을 입력으로 상품별 주간 구매 수량 랭킹을 만든다. `commerce-batch` 의 `weeklyRanking` job 이 한 주의 활동을 바뀌지 않는 snapshot 으로 고정해 계산하고 완성본만 공개하며, `commerce-api` 는 공개된 완성본만 읽는다. W8 쿠폰 발급은 점수에 섞지 않는다.
+
+### 10-1. BC-06 랭킹 (ranking)
+
+| 소유 개념 | 정의 |
+|---|---|
+| 주간 기간 | UTC 월요일 00:00 부터 다음 월요일 00:00 전까지. 구매는 주문의 최초 확정 시각(`confirmed_at`)으로 한 주에 속한다. 늦게 소비된 구매도 원래 주다 |
+| snapshot | 기간 하나의 revision 하나. 그 주의 구매 활동을 고정한 입력 묶음과 manifest(건수·checksum·고정 시각). id = `weekly:{periodStart}:r{revision}` (DR-65) |
+| 점수 | snapshot 입력에서 상품별 quantity 합 (정수). 동점이면 productId 오름차순 |
+| 완성 ranking | snapshot 의 모든 상품 점수와 계산 순위(1 부터, 동점도 다른 순위) |
+| 공개 pointer | 기간별 공개 snapshot 하나. revision 이 커지는 쪽으로만 바뀐다 (DR-72) |
+
+- 참조 개념: 구매 활동(TB-13, W6 소유. 읽기만), 상품·브랜드·좋아요 수(BC-02. API 의 표시 정보와 고객 공개 조건).
+- 쓰기는 `commerce-batch` 만 한다. `commerce-api` 쪽 BC-06 은 조회 전용이다: `domain.ranking.RankingPeriod`(기간 규칙), `application.ranking.query`(Reader·조회 Repository·View), `infrastructure.ranking.query`, `interfaces.api.ranking`. Model·Repository(쓰기)는 없다 (DR-71).
+- ArchUnit: `AGGREGATES_BY_BC` 에 `"ranking" → ["ranking"]`. Model·Repository 가 없는 조회 전용 AG 라 `QUERY_ONLY_AGGREGATES` 에 두고, Model·Repository 두 규칙에서만 검사 대상이 비어도 통과시킨다. 다른 AG 는 비어 있으면 지금처럼 실패한다 (DR-74).
+
+### 10-2. 테이블
+
+생성 SQL: `docs/week9/weekly-ranking.sql` (MySQL 8.0.19+, `IF NOT EXISTS`). 엔티티가 없어 ddl-auto 로 만들어지지 않는다. 배포와 테스트(batch·api·e2e) 모두 이 파일을 실행한다 (DR-73). 행은 지우지 않는다. 시각 컬럼은 모두 UTC 값이다 (DR-70). 공통 컬럼(`created_at` 등)과 자동 증가 PK 를 두지 않고 업무 키를 PK 로 쓴다 (DR-73).
+
+#### TB-19 `ranking_snapshot` (manifest)
+
+고유 제약 (`period_start`, `revision`). 입력 고정 TX 가 FROZEN 으로 만들고 공개 TX 가 한 번만 바꾼다.
+
+| 컬럼 | 타입 | NULL | 의미 |
+|---|---|---|---|
+| `snapshot_id` | varchar(64) | N | PK. `weekly:2026-08-17:r1` |
+| `period_start` / `period_end` | date | N | [시작, 끝). 끝 = 시작 + 7일 |
+| `revision` | bigint | N | 기간별 1, 2, … (DR-66) |
+| `status` | varchar(20) | N | FROZEN · PUBLISHED · SUPERSEDED (10-5) |
+| `frozen_at` | datetime(6) | N | 입력 고정 시각 (batch 시계). API 의 `frozenAt` |
+| `input_count` / `product_count` | int | N | 고정한 활동 행 수 / 서로 다른 상품 수 (= 완성 점수 행 수) |
+| `input_checksum` / `result_checksum` | char(64) | N / Y | 10-4. 결과는 공개 단계에서 |
+| `published_at` | datetime(6) | Y | 공개 단계를 마친 시각 |
+| `frozen_by_execution_id` / `published_by_execution_id` | bigint | N / Y | 고정·공개한 JobExecution. 소속 증거이고 내용 비교에서 뺀다 |
+
+#### TB-20 `ranking_snapshot_input`
+
+PK (`snapshot_id`, `order_id`, `product_id`), 인덱스 (`snapshot_id`, `product_id`). 컬럼 `quantity` int, `confirmed_at` datetime(6). TB-13 의 (order_id, product_id) 유일성을 그대로 지킨다. 같은 주문의 여러 품목은 모두 들어간다 (eventId 로 중복 제거하지 않는다).
+
+#### TB-21 `ranking_score_stage`
+
+PK (`snapshot_id`, `product_id`), `score` bigint. 계산 중 절대 점수. upsert 로만 쓴다 (DR-68). API 는 읽지 않는다.
+
+#### TB-22 `weekly_ranking`
+
+PK (`snapshot_id`, `product_id`), UNIQUE (`snapshot_id`, `rank_no`), `score` bigint, `rank_no` int (`rank` 는 MySQL 예약어). 공개 TX 가 stage 에서 한 문장으로 만든다.
+
+#### TB-23 `weekly_ranking_publication`
+
+PK `period_start`, `snapshot_id`, `revision`, `published_at`. 조건부 갱신(`revision < 새 revision`)으로만 바뀐다.
+
+- TB-13 에 인덱스 `ix_product_purchase_activity_confirmed_at (confirmed_at)` 를 더했다 (엔티티 `ProductPurchaseActivityModel`). 입력 고정이 기간 범위만 읽고 잠그게 한다 (DR-67).
+
+### 10-3. job 구성
+
+```
+weeklyRanking (식별 parameter: periodStart, revision — 문자열, incrementer 없음)
+  ├ freezeWeeklyInput     tasklet, TX 1개: 기간·revision 검사 → INSERT … SELECT (TB-13 → TB-20) → manifest(TB-19, FROZEN)
+  ├ calculateWeeklyScores chunk(ranking.weekly.chunk-size, 기본 100): reader 서로 다른 productId ↑ → processor quantity 합 → writer 절대값 upsert (TB-21)
+  └ publishWeeklyRanking  tasklet, TX 1개: 완성 조건 → 순위(TB-22) → pointer(TB-23) → 상태(TB-19)
+```
+
+- 실행: `--job.name=weeklyRanking periodStart=2026-08-17 revision=1`. `spring.batch.job.name` 이 `weeklyRanking` 일 때만 job 을 만든다 (Demo 와 같은 방식).
+- JobParametersValidator 가 JobInstance 를 만들기 전에 거절한다: 두 값이 식별 String parameter 가 아님, 월요일이 아님, revision < 1, 정규 표기가 아님(`01`·`+1`·`2026-8-17`). snapshotId 는 두 값으로 만든다 (DR-65).
+- TX: 세 step 모두 Boot 가 만든 `transactionManager`(JPA, primary DataSource)를 쓰고, JobRepository 도 Boot 의 JDBC 구현(같은 DataSource)이다. writer 의 SQL(`JdbcTemplate`)·tasklet 의 SQL 과 step 의 checkpoint(ExecutionContext·commit 수)가 같은 commit 에 들어간다. `ResourcelessTransactionManager`·메모리 repository·`@EnableBatchProcessing` 을 쓰지 않는다 (DR-64).
+- 재시작: 같은 parameter 로 다시 실행하면 같은 JobInstance 의 새 JobExecution 이다. 완료한 step 은 다시 실행하지 않는다(`allowStartIfComplete` 기본 false). reader(`weeklyRankingProductReader`, step scope)는 저장된 `weeklyRankingProductReader.read.count` 만큼 건너뛰고 이어 읽는다. 입력이 고정돼 있어 다시 읽어도 순서가 같다.
+- 실패 주입·chunk 크기는 parameter 가 아니다 (같은 작업의 식별을 바꾸지 않는다).
+
+### 10-4. 입력 고정과 checksum
+
+1. 같은 snapshotId 의 manifest 가 이미 있으면(고정 TX commit 뒤 step 최종 상태 저장 전에 멈춘 재실행) 복사하지 않고 기간·revision·입력 건수·입력 checksum 이 같은지만 본다. 다르면 덮어쓰지 않고 실패한다.
+2. 기간이 끝나지 않았으면(`now < periodEnd 00:00Z`) 실패한다. 늦은 구매는 새 revision 으로 다룬다.
+3. 기간의 최대 revision 을 `FOR UPDATE` 로 읽는다. 요청 revision 이 최대 + 1 이 아니면 실패한다. 직전 revision 이 아직 FROZEN(계산·공개 미완료)이면 실패한다: 같은 기간의 계산은 직렬이다. 직전 실행을 같은 parameter 로 재시작해 끝내야 다음 revision 이 진행된다 (DR-66).
+4. `INSERT INTO ranking_snapshot_input SELECT … FROM product_purchase_activity WHERE confirmed_at >= 시작 AND confirmed_at < 끝 AND deleted_at IS NULL` 한 문장. 같은 TX 에서 방금 넣은 입력을 (order_id, product_id) 순으로 읽어 건수·상품 수·checksum 을 계산하고 manifest 를 넣는다. 둘이 한 commit 이라 반쪽 snapshot 이 남지 않는다 (DR-67).
+
+checksum (DR-69): SHA-256 소문자 hex. 필드 TAB, 행 끝 LF(마지막 행 포함). 빈 입력은 빈 문자열의 해시 `e3b0c442…b855`.
+
+| 대상 | 행 순서 | 한 행 |
+|---|---|---|
+| 입력 | orderId, productId 오름차순 | `orderId TAB productId TAB quantity TAB confirmedAt` (UTC, `yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'`) |
+| 결과 | rank 오름차순 | `productId TAB score TAB rank` |
+
+§6 fixture 의 입력 checksum `3e90276e…a298`, 결과 checksum `745d50bb…67d2`. 실행 ID·실행 시각은 넣지 않는다.
+
+### 10-5. 점수 계산·공개와 상태
+
+- reader: `select distinct product_id from ranking_snapshot_input where snapshot_id = ? order by product_id`. 상품 하나가 item 하나.
+- processor: 같은 snapshot 의 그 상품 quantity 합 (현재 TB-13 을 읽지 않는다).
+- writer: `insert … as new on duplicate key update score = new.score`. 같은 상품을 다시 써도 `score = total` 로 수렴한다. 증분 쓰기와 섞지 않는다 (DR-68).
+- 공개 TX (DR-72):
+  1. snapshot 행을 `FOR UPDATE`. FROZEN 이 아니면 저장된 ranking 이 결과 checksum 과 같은지만 확인하고 끝낸다 (공개 TX commit 뒤 Batch metadata 저장 전에 멈춘 재실행이 같은 결과로 수렴, 지우거나 다시 만들지 않는다).
+  2. 완성 조건: stage 행 수 = manifest 상품 수, stage 점수 합 = 입력 quantity 합. 아니면 실패.
+  3. `insert into weekly_ranking select … row_number() over (order by score desc, product_id asc)`.
+  4. 결과 checksum.
+  5. pointer 를 `FOR UPDATE`: 없으면 insert, 더 작은 revision 이면 조건부 update(`where revision < ?`), 더 큰 revision 이 이미 공개면 바꾸지 않는다.
+  6. snapshot 상태를 PUBLISHED(또는 SUPERSEDED)로 (`where status = 'FROZEN'`).
+  중간 어디서 실패해도 한 TX 라 새 pointer·일부 ranking 이 보이지 않고 기존 공개본이 유지된다.
+
+```
+(고정) → FROZEN ─공개 TX: pointer 를 이 revision 으로→ PUBLISHED
+                └공개 TX: 더 새 revision 이 이미 공개→ SUPERSEDED (job 은 COMPLETED, step context publishStatus)
+```
+
+- FROZEN 이 남는 경우: 계산·공개가 실패했다. 같은 parameter 로 재시작한다. 그동안 다음 revision 은 막힌다.
+- SUPERSEDED 는 직렬 규칙 아래에서는 정상 흐름에 나타나지 않는다. pointer 를 되돌리지 않는 방어로 둔다.
+
+### 10-6. 엔드포인트
+
+| 메서드·경로 | 요청자 | 요청 | 응답 `data` | 실패 |
+|---|---|---|---|---|
+| GET `/api/v1/rankings/weekly` | 누구나 (헤더 없음) | `periodStart`(필수, UTC 월요일 `yyyy-MM-dd`), `limit`(선택, 1~100, 기본 10) | `status`(PUBLISHED·NOT_PUBLISHED), `periodStart`, `periodEnd`(제외 경계), `snapshotId`·`revision`·`frozenAt`(UTC, 공개본이 있을 때만), `items[{rank, score, product{id, name, price, brand{id, name}, likeCount}}]` | 400 `INVALID_RANKING_PERIOD`, 400 `INVALID_RANKING_LIMIT` |
+
+| ErrorType | HTTP | 언제 |
+|---|---|---|
+| `INVALID_RANKING_PERIOD` | 400 | periodStart 없음·빈 값·형식 오류·없는 날짜·월요일 아님 |
+| `INVALID_RANKING_LIMIT` | 400 | limit 이 10진 정수가 아니거나 1~100 밖 (빈 값 포함) |
+
+- 공개본이 없으면 `NOT_PUBLISHED`·빈 items (미래 주·job 을 돌리지 않은 주·계산 중인 주). 구매가 없던 완성본은 `PUBLISHED`·snapshotId·빈 items. 내부 stage·FROZEN snapshot·다른 주를 요청한 주의 결과로 돌려주지 않는다.
+- 조회 (DR-71): `WeeklyRankingReader`(읽기 TX 하나) → pointer ⨝ snapshot 으로 snapshotId 를 정한다 → 그 snapshotId 의 ranking ⨝ product ⨝ brand ⨝ product_stat 을 `product.deleted_at IS NULL`(고객 상품 목록·상세와 같은 공개 조건)로 거른 뒤 `rank_no` 순 `LIMIT`. 완성 ranking 행은 공개 뒤 바뀌지 않으므로 두 조회가 서로 다른 snapshot 을 섞지 않는다.
+- **저장된 계산 순위를 유지한다.** 삭제된 상품은 빠지고 순위를 다시 매기지 않으므로 1·3위처럼 간격이 있을 수 있다. 이름·가격·브랜드·좋아요 수는 현재 값이다. 과거 활동·점수 행은 지우지 않는다.
+- 캐시를 두지 않는다.
+
+### 10-7. 테스트
+
+| 테스트 | 확인 |
+|---|---|
+| `RankingChecksumTest` (batch) | 입력·결과 직렬화(순서 무관, TAB·LF·마지막 LF, 마이크로초), 빈 입력 해시, job 대상 검증·식별 parameter |
+| `PurchaseInputProbeTest` (batch) | §3: probe-1 에서 7·8·9 를 chunk 2 로. 1차 FAILED·확인 행 7·8·영속 `purchaseProductProbe.read.count=2`·commit 1, 같은 parameter 재실행은 같은 JobInstance 의 새 JobExecution·9 만 써서 7·8·9 |
+| `RankingJobRestartTest` (batch) | §6: r1 정상 실행(비교 기준), r2 가 9 직전 실패 → FAILED·read.count 2·stage 7:5, 8:1·공개 r1 유지 → 재실행은 점수·공개 step 만, read 1·write 1, 7·8 재계산 없음(spy 호출 수), 입력 재복사 없음 → r1 과 같은 순위·두 checksum, 기대값 7:5:1, 9:5:2, 8:1:3 |
+| `WeeklyRankingJobTest` (batch) | 시작 포함·끝 제외, 빈 주 공개, 미종료 주 거절, 잘못된 parameter 는 JobInstance 없음, revision +1 규칙과 r2 재시작, 직렬(FROZEN r1 이 r2 를 막음), 공개 TX rollback 뒤 r1 유지·재시작으로 r2, 더 새 pointer 를 되돌리지 않음(SUPERSEDED), snapshot 충돌, 공개 재수행 no-op·완료 instance 재실행 거절, writer 절대값 upsert |
+| `RankingPeriodTest`, `WeeklyRankingApiTest` (api) | NOT_PUBLISHED / 빈 PUBLISHED / FROZEN 숨김, pointer 의 revision 만, 다른 주, 삭제 상품 제외 뒤 1·3·4위·limit 은 제외 뒤, 현재 표시 정보, 기본·최대 limit, 400 두 종류 |
+| `WeeklyRankingFlowTest` (e2e) | §7: 실제 주문 API·PG fixture → Outbox relay → Kafka → 구매 활동 → job → API. 같은 주문 두 품목, 확정 시각 UTC 저장, 재발행 뒤 활동 불변, 경계(월 00:00Z 포함·다음 월 00:00Z 제외·앞 주 제외), 고정 뒤 늦은 구매가 r1 입력·결과·API 를 바꾸지 않음·r1 재실행 거절, r2 공개 TX 실패 동안 API 는 r1, 재시작 뒤 r2(8:7:1, 7:5:2, 9:5:3, 6:4:4), 삭제 상품 제외 1·3·4위, 빈 주 PUBLISHED, 미공개 주 NOT_PUBLISHED |
+| `ArchitectureTest` (api) | BC-06 의존 규칙 (DR-74) |
+
+### 10-8. 아직 정하지 않은 것
+
+- 스케줄(매주 자동 실행)·운영 알림: 지금은 수동 CLI 실행만.
+- 다중 인스턴스에서 같은 기간을 동시에 띄우는 경우의 최종 보호는 `FOR UPDATE`(gap lock)와 UNIQUE(`period_start`, `revision`)다. 교착이 나면 한쪽이 실패하고 같은 parameter 로 재시작한다.
+- PostgreSQL(`local-pg`) 용 SQL·upsert 는 만들지 않았다 (DR-73).
+- reader 는 MySQL Connector/J 기본(결과 전체를 받아 둠)이다. 상품 수가 커지면 스트리밍(fetchSize)이나 paging reader 를 다시 본다. chunk 100 은 측정값이 아니다.
+
 ## 부록 A. 설계 판단 기록과 열린 질문
 
 ### A-1. 결정
@@ -1811,6 +1957,17 @@ PromotionFacade.issue  (TX 없음, 워커 스레드)
 | DR-61 | 8 | DR-60 | 발급 리미터의 세마포어를 직접 구현(ZSET + Lua)에서 Redisson `RPermitExpirableSemaphore` 로 바꾼다. 프로모션마다 하나, permit 200·lease 2s 는 그대로. 허가가 없으면 `wait-time` 600ms 까지 기다리고(반납·lease 만료 시 pub/sub 으로 깨어남), 그래도 없으면 재시도 없이 503 `COUPON_ISSUE_BUSY`. 획득마다 `trySetPermits`. Redis 오류는 fail-closed. 1번 구현은 코드에서 지우고 커밋 577ed5c 에 남긴다 | (a) 설정값(`type`)으로 두 구현을 골라 쓰기 (b) 1번처럼 즉시 시도 → 1초 sleep → 한 번 재시도 (c) 앱 시작 때 한 번만 permit 설정 | 사용자 결정. 네 방식을 차례로 비교하는 중이라 전환은 코드 교체로 한다 ((a) 는 하지 않음). (b) 는 저장소만 바뀌어 비교 의미가 작다. 기다리는 동안 반납되면 바로 얻는 것이 Redisson 의 차이다. (c) 는 키가 사라지면(FLUSH·재시작) permit 이 0 이 되어 영영 못 얻는다. 매번 `trySetPermits` 는 왕복 하나가 늘지만 키가 없을 때만 설정해 안전하다 | 대기 중 스레드가 워커 스레드를 600ms 까지 잡는다. 부하 테스트에서 대기 스레드로 톰캣 스레드가 마르면 wait-time 을 줄인다. lease 만료가 앱 서버 시계 기준이라 서버 간 시계 차이가 크면 lease 를 늘린다 | 없음 |
 | DR-62 | 8 | DR-60, DR-61 | 발급 리미터를 도착 순서대로 주는 직접 구현 fair 세마포어로 바꾼다. 프로모션마다 holders ZSET(토큰, lease 만료)과 queue ZSET(`serverId:토큰`, 대기 마감 = 도착 + wait-time). 획득은 먼저 시도하지 않고 항상 큐 뒤에 선 뒤 빈 자리만큼 큐 앞을 holders 로 옮긴다(Lua). 반납도 같은 방식으로 큐 앞을 채운다. 옮겨진 대기자는 서버별 채널 PUBLISH 로 깨운다. 서버는 시작할 때 자기 채널만 구독하고 토큰별 future 로 기다린다. wait-time 이 지나면 로컬에서 끝내고 503, 끝내기 전에 반납을 불러 혹시 받은 허가를 다음 대기자에게 넘긴다. permit 200·lease 2s·wait-time 600ms 그대로, 큐 길이 상한 없음. Redisson 구현은 코드에서 지우고 커밋 e2f0c9e 에 남긴다. Redisson 의존성과 `RedissonConfig`(`@Lazy`)는 남긴다 | (a) 먼저 한 번 시도하고 실패하면 큐에 (b) 반납 때 하나만 꺼내기 (c) 요청마다 subscribe (d) 타임아웃 때 취소 Lua 로 확인해 이미 옮겨졌으면 발급 (e) 큐 길이 상한 (f) 큐 score 에 도착 순번(INCR)을 두고 마감은 따로 | 사용자 결정 (a)(d)(e). (a) 는 기다리는 사람보다 새로 온 요청이 먼저 얻어 순서가 깨진다. (b) 는 lease 만료로 여러 자리가 빌 때 허가가 남는데도 대기자가 기다린다. (c) 는 큐에 넣은 뒤 구독이 걸리기 전에 알림이 오면 잃는다. (d) 는 처음 정했다가 바꿨다. 로컬 타임아웃 때면 Redis 마감도 이미 지나 큐에서 뺄 일이 없고, 남는 경우는 알림 유실뿐이라 스크립트 하나를 더 둘 이유가 작다. 반납 하나로 그 허가와 빈 자리를 다음 대기자에게 넘긴다. (e) 는 대기자가 마감으로 스스로 빠지므로 우선 두지 않는다. (f) 는 wait-time 이 모두 같아 마감 순서가 곧 도착 순서이고, 마감 score 하나로 서버가 죽어 남은 대기자까지 지운다. 구독은 master/replica 연결이 pub/sub 을 지원하지 않아 master 단독 연결을 따로 둔다. Lua 숫자는 %.14g 로 바뀌어 µs 시각이 잘리므로 score 는 %.0f 문자열로 넘긴다 | 큐가 길어져 대부분 wait-time 을 다 채우고 503 이 되면 큐 길이 상한(넘으면 바로 503)을 둔다. 큐 앞 대기자가 몰린 서버의 알림이 늦어 허가 사용이 늦어지면 lease 를 다시 본다. 획득·반납이 끊긴 채 lease 가 만료되면 대기자가 마감까지 못 깨어난다(다음 획득·반납, 대기자의 타임아웃 반납 때 채움). 트래픽이 없을 때 이게 문제되면 주기적 채움을 둔다 | 없음 |
 | DR-63 | 8 | DR-61, DR-62 | 발급 리미터를 Redisson `RPermitExpirableSemaphore` 의 async API 로 바꾸고, 허가를 기다리는 동안 워커 스레드를 잡지 않는다. 컨트롤러·Facade 가 `CompletableFuture` 를 돌려준다 (Spring MVC async, `request-timeout` 5s). 사용자·프로모션·중복 확인은 워커 스레드에서 동기로 한다. 획득은 DR-61 과 같다 (`trySetPermitsAsync` → `tryAcquireAsync`, 같은 키, permit 200·lease 2s·wait-time 600ms, 재시도 없음). 허가를 얻으면 TX 를 리미터가 가진 스레드 풀(스레드 200, 큐 200)에서 실행하고, 큐가 넘치면 허가를 반납하고 503 `COUPON_ISSUE_BUSY`. 반납은 `tryReleaseAsync`. Redis 오류는 fail-closed. fair 구현은 코드에서 지우고 커밋 25b82e0 에 남긴다. pub/sub 연결·리스너 컨테이너(`RedisConfig`)는 남긴다 | (a) 세마포어만 async 로 바꾸고 리미터에서 기다림 (b) Redisson 콜백 스레드에서 TX 실행 (c) 풀을 Spring 빈으로 (d) 풀 큐 상한 없음 (e) async timeout 전용 응답 | 사용자 결정. (a) 는 기다리는 스레드만 바뀌어 DR-61 과 같다. 의미가 있으려면 비동기 경계가 컨트롤러까지 올라가야 한다. (b) 는 JDBC 블로킹이 netty event loop 를 막는다. (c) 는 Boot 의 `applicationTaskExecutor` 자동 구성이 빠진다. (d) 는 허가를 쥔 채 큐에서 기다리는 동안 lease 가 흘러, 오래 기다린 작업이 만료된 허가로 실행될 수 있다. 스레드 200·큐 200 은 사용자가 정한 값이다 (스레드는 100 으로 시작했다가 부하 테스트 전에 200 으로 올렸다). (e) 는 두지 않는다. 5s 는 정상 경로(600ms + TX)보다 넉넉하다 | 스레드 200·큐 200 은 시작값이다. 부하 테스트로 여러 값을 비교한다. timeout 500 이 나오면 응답은 실패인데 발급은 될 수 있어 전용 처리를 다시 본다. 큐에서 오래 기다려 lease 가 만료된 채 실행되는 일이 잦으면 큐를 줄이거나 lease 를 늘린다 | 없음 |
+| DR-64 | 10 | weeklyRanking, TB-19~23 | 주간 랭킹은 `commerce-batch` 의 job 하나(입력 고정 → 점수 계산 → 공개)로 만든다. 세 step 모두 Boot 의 JDBC JobRepository 와 primary DataSource 의 `transactionManager`(JPA)를 쓰고, 결과 SQL 은 같은 DataSource 의 `JdbcTemplate` 으로 써서 checkpoint 와 같은 commit 에 넣는다. `spring.batch.job.name` 으로 job 을 고르고 incrementer 를 두지 않는다 | (a) Demo 처럼 `ResourcelessTransactionManager` (b) 별도 Batch DataSource·메모리 JobRepository (c) `RunIdIncrementer` (d) API 서버의 스케줄러에서 계산 | (a) 는 DB 점수·checkpoint 의 원자성이 없다. (b) 는 재시작 상태가 실행 사이에 남지 않거나 결과와 다른 TX 다. (c) 는 실패한 같은 작업을 새 JobInstance 로 만들어 재시작이 아니다. (d) 는 재시작 지점·실행 이력이 없다 | 업무 DB 와 Batch metadata DB 를 나눠야 하면 둘을 한 TX 로 묶을 수 없으니 결과 쓰기를 멱등 + 별도 완료 기록으로 바꾼다 | 없음 |
+| DR-65 | 10 | weeklyRanking, TB-19 | 식별 parameter 는 `periodStart`·`revision` 두 문자열이고 snapshotId(`weekly:{periodStart}:r{revision}`)는 그 둘로 만든다. JobParametersValidator 가 월요일·revision ≥ 1·정규 표기·식별 여부를 JobInstance 생성 전에 검사한다 | (a) `periodStart, snapshotId` 를 받고 revision 을 snapshotId 에 인코딩 (b) LocalDate·Long 타입 parameter (c) 표기 정규화 없이 파싱만 | 사용자 결정 (b안 채택: periodStart·revision). 같은 값이 두 곳에 있다가 어긋날 수 없다. (b) 는 CLI 에서 `,java.lang.Long` 을 붙여야 하고, 같은 값이 타입만 달라 다른 JobInstance 가 될 수 있다. (c) 는 `01` 과 `1` 이 다른 JobInstance 인데 같은 snapshot 을 가리킨다 | 기간 단위가 주 외로 늘면 snapshotId 에 단위를 넣는다 | 없음 |
+| DR-66 | 10 | TB-19, weeklyRanking | revision 은 기간의 최대 + 1 일 때만 받고, 직전 revision 이 FROZEN(계산·공개 미완료)이면 새 revision 을 거절한다. 같은 revision 의 재실행은 재시작이다 | (a) 최대보다 크기만 하면 허용(빈 번호) (b) job 이 max+1 을 자동 배정 (c) 직렬 없이 pointer 조건부 갱신만으로 보호 | 사용자 결정. 공개 순서가 revision 순서와 같아지고, 같은 기간 계산이 직렬이 된다. (b) 는 같은 입력의 재시작과 새 계산을 parameter 로 구분할 수 없다. (c) 는 오래된 실행이 나중에 끝나면 SUPERSEDED 가 되어 계산을 버린다 | FROZEN 으로 버려진 실행을 재시작하지 않고 건너뛰어야 하는 운영 요구가 생기면 ABANDONED 상태를 둔다 | 없음 |
+| DR-67 | 10 | TB-13, TB-20, TB-19 | 입력 고정은 tasklet TX 하나에서 `INSERT … SELECT`(TB-13 → TB-20) 한 문장 + 같은 TX 의 manifest insert 로 한다. TB-13 에 `confirmed_at` 인덱스를 더한다 | (a) `WITH CONSISTENT SNAPSHOT` 으로 읽고 Java 에서 batch insert (b) 여러 페이지를 `max(id)` 로 잘라 복사 (c) 입력을 복사하지 않고 TB-13 을 기간으로 직접 읽어 계산 | 사용자 결정. 한 문장이 곧 일관된 읽기이고 manifest 와 같은 commit 이라 반쪽 snapshot 이 없다. REPEATABLE READ 의 `INSERT … SELECT` 는 원본 범위에 공유 next-key lock 을 걸어 복사가 commit 될 때까지 그 주의 늦은 활동 insert(streamer)를 기다리게 한다. 인덱스가 없으면 전체 표를 훑어 잠근다. (b) 는 commit 순서와 id 순서가 달라 고정을 보장하지 못한다. (c) 는 재시작·재계산 사이에 늦은 구매가 섞인다 | 한 주의 활동이 커져 복사 동안의 대기가 streamer 지연으로 보이면 (a) 로 바꾼다 | 없음 |
+| DR-68 | 10 | TB-21, calculateWeeklyScores | 점수 step 은 고정 입력의 서로 다른 productId 를 오름차순으로 읽고(item = 상품), processor 가 같은 snapshot 에서 quantity 합을 구하고, writer 가 (snapshotId, productId) 에 절대값을 upsert 한다 | (a) 활동 행을 item 으로 읽어 `score += quantity` (b) reader 가 GROUP BY 합까지 계산 | (a) 는 재시작 경계에서 같은 활동을 두 번 더하지 않으려면 활동별 적용 기록이 필요하다. 절대값이면 같은 상품을 다시 써도 수렴한다. (b) 는 가능하지만 과제의 reader·processor 경계(상품 → 점수)를 따로 확인하려고 나눴다 | 상품 수가 커져 상품마다 SUM 왕복이 병목이면 (b) | 없음 |
+| DR-69 | 10 | TB-19 | 입력·결과 checksum 은 SHA-256 소문자 hex, 필드 TAB·행 LF(마지막 포함), 입력은 orderId·productId 순 `orderId, productId, quantity, confirmedAt`(UTC 마이크로초 6자리 고정), 결과는 rank 순 `productId, score, rank`. 빈 입력은 빈 문자열의 해시 | (a) `Instant.toString()` (b) DB `GROUP_CONCAT`·`SHA2` 로 계산 | (a) 는 0 으로 끝나는 소수 자리를 생략해 같은 시각의 문자열이 달라진다. (b) 는 `group_concat_max_len` 에 잘린다 | 없음 | 없음 |
+| DR-70 | 10 | TB-13, TB-19, TB-20 | 랭킹의 시각은 UTC 값의 `LocalDateTime` 으로 bind·read 한다. 기간 경계는 `periodStart 00:00`(UTC 값)과 비교한다 | JVM 기본 시간대(Asia/Seoul)의 `Timestamp` 로 읽기 | TB-13 은 Hibernate `NORMALIZE_UTC` 로 UTC 값이 저장돼 있다. JVM 시간대를 거치면 경계가 9시간 밀린다 | 없음 | 없음 |
+| DR-71 | 10 | BC-06, EP(랭킹), TB-02·03·08·19·22·23 | `commerce-api` 의 BC-06 은 조회 전용(Model·Repository 없음)이고, 조회 Repository 가 랭킹 표와 카탈로그 표를 native SQL 로 조인한다(카탈로그 클래스를 import 하지 않는다). 공개 조건(`product.deleted_at IS NULL`)을 적용한 뒤 LIMIT 하고, 저장된 순위를 다시 매기지 않는다. limit 기본 10·최대 100, 범위 밖은 400. 미래 주는 NOT_PUBLISHED. 캐시 없음 | (a) 랭킹을 읽은 뒤 `ProductService` 로 표시 정보 조회 (b) 랭킹 표를 JPA 읽기 전용 엔티티로 (c) 공개 조건 뒤 순위를 다시 매김 (d) 범위 밖 limit 을 1~100 으로 잘라 줌 | (a) 는 제외 뒤 LIMIT 을 하려면 몇 개를 더 읽어야 할지 알 수 없다. (b) 는 쓰는 쪽(batch)과 스키마 정의가 두 곳이 된다. (c) 는 과제 계약(저장된 계산 순위 유지)과 다르다 | 상품 표시 규칙이 바뀌면 이 SQL 도 같이 바꾼다. 표시 규칙이 복잡해지면 (a) + 넉넉히 읽기 | 없음 |
+| DR-72 | 10 | TB-19, TB-22, TB-23, publishWeeklyRanking | 공개는 tasklet TX 하나에서 snapshot `FOR UPDATE` → 완성 조건(상품 수·점수 합) → `ROW_NUMBER()` 순위 insert → 결과 checksum → pointer 잠금·insert 또는 조건부 update(`revision < ?`) → 상태 변경. 이미 PUBLISHED·SUPERSEDED 면 결과 checksum 만 확인하고 아무것도 바꾸지 않는다. 더 새 revision 이 공개돼 있으면 pointer 를 두고 SUPERSEDED, job 은 COMPLETED | (a) 순위를 Java 에서 계산해 insert (b) pointer 를 무조건 덮어씀 (c) 재실행 때 ranking 을 지우고 다시 만듦 (d) SUPERSEDED 를 FAILED 로 | (b) 는 오래된 실행이 공개를 되돌린다. (c) 는 이미 공개된 정상 결과를 잠시라도 지운다. (d) 는 재시작해도 영원히 실패한다. (a) 는 가능하지만 한 문장이 같은 TX 의 stage 를 그대로 옮긴다 | 없음 | 없음 |
+| DR-73 | 10 | TB-19~23 | 랭킹 표는 엔티티 없이 `docs/week9/weekly-ranking.sql`(MySQL, `IF NOT EXISTS`)로만 만들고 batch·api·e2e 테스트도 이 파일을 실행한다. 공통 컬럼·자동 증가 PK 를 두지 않고 업무 키를 PK 로 쓴다. PostgreSQL 판은 만들지 않는다 | (a) batch 에 JPA 엔티티를 두고 ddl-auto (b) api·batch 양쪽에 엔티티 (c) `-pg.sql` 도 작성 | 쓰는 앱(batch)과 읽는 앱(api)이 달라 한쪽 엔티티로는 다른 쪽 테스트에 표가 없다. 행이 바뀌지 않고(상태 컬럼 외) 지우지 않으므로 수정·삭제 시각이 필요 없다 (DR-01 의 예외). (c) 는 upsert(`as new`)·window 함수 SQL 이 MySQL 전용이라 표만 만들어도 job 이 돌지 않는다 | `local-pg` 에서 랭킹을 돌려야 하면 SQL 방언을 나눈다 | 없음 |
+| DR-74 | 10 | BC-06, ArchitectureTest | `ranking` 을 BC 로 `AGGREGATES_BY_BC` 에 넣고, 조회 전용 AG 목록(`QUERY_ONLY_AGGREGATES`)에 있는 AG 만 `modelDoesNotDependOnOtherAggregate`·`repositoryDoesNotExposeOtherAggregateModel` 에서 검사 대상이 비어도 통과시킨다(`allowEmptyShould`). 나머지 규칙과 다른 AG 는 그대로다 | (a) 쓰지 않는 Model·Repository 를 domain.ranking 에 만듦 (b) `ranking` 을 BC 매핑에서 뺌 (c) `archunit.properties` 로 전체 `failOnEmptyShould=false` | 사용자 결정. ArchUnit 기본 `failOnEmptyShould` 때문에 Model·Repository 가 없는 AG 는 두 규칙이 "검사 대상 없음"으로 실패한다. (a) 는 쓰기가 batch 에 있어 쓰이지 않는 클래스와 두 번째 스키마 정의가 생긴다. (b) 는 BC-06 의 다른 의존 규칙도 빠진다. (c) 는 모든 AG·규칙의 빈 대상 검출을 끈다. `user` 의 Facade 규칙 예외(allowEmptyShould)와 같은 방식이고 범위는 AG 하나·규칙 둘이다 | api 쪽 BC-06 에 쓰기(Model·Repository)가 생기면 목록에서 뺀다 | 없음 |
 
 ### A-2. 열린 질문
 
