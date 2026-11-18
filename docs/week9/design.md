@@ -70,6 +70,8 @@ Java 로 넘어오는 값에만 타입을 둔다. 테이블마다 record 를 두
 
 운영 프로필은 `ddl-auto: none` 이고 `spring.sql.init` 을 켜지 않는다. 운영 DB 에는 `schema/ranking.sql` 을 따로 적용한다.
 
+`create table if not exists` 는 없는 테이블만 만든다. 정의를 고쳐도 이미 있는 테이블에는 반영되지 않으므로 local 에서 칸을 바꾸면 그 테이블을 지우고 다시 띄운다. 테스트는 testcontainers 가 빈 DB 로 시작해 항상 파일 그대로다.
+
 | 위치 | 구현 |
 |---|---|
 | 입력 고정 | `insert … select ?, … from purchase_activity where …` 한 문장 |

@@ -34,6 +34,12 @@ class FreezeSnapshotTasklet implements Tasklet {
             params.getLocalDate("periodStart"),
             Math.toIntExact(params.getLong("revision"))
         );
+        String requestedId = params.getString("snapshotId");
+        if (!snapshot.id().equals(requestedId)) {
+            throw new IllegalArgumentException(
+                "snapshotId " + requestedId + " does not match period and revision: " + snapshot.id()
+            );
+        }
 
         int inputCount = jdbc.update("""
             insert into ranking_snapshot_input (snapshot_id, product_id, order_id, quantity, confirmed_at)

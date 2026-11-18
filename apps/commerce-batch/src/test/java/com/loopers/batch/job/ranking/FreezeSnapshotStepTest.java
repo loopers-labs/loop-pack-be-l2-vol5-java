@@ -114,6 +114,22 @@ class FreezeSnapshotStepTest {
         );
     }
 
+    @DisplayName("SNP-008: snapshotId 가 기간과 revision 으로 만든 값과 다르면 고정하지 않고 실패한다.")
+    @Test
+    void failsWhenSnapshotIdDoesNotMatchPeriodAndRevision() throws Exception {
+        long executionId = launch(PERIOD_START, 1, "weekly-20260817-r2");
+
+        assertAll(
+            () -> assertThat(statusOf(executionId)).isEqualTo(BatchStatus.FAILED),
+            () -> assertThat(countRows("ranking_snapshot_input")).isZero(),
+            () -> assertThat(countRows("ranking_snapshot")).isZero()
+        );
+    }
+
+    private long countRows(String table) {
+        return jdbc.queryForObject("select count(*) from " + table, Long.class);
+    }
+
     private long launch(LocalDate periodStart, long revision, String snapshotId) throws Exception {
         JobParameters params = new JobParametersBuilder()
             .addLocalDate("periodStart", periodStart)
