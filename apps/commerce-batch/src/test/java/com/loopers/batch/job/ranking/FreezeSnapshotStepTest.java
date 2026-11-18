@@ -3,6 +3,7 @@ package com.loopers.batch.job.ranking;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
+import java.sql.Connection;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -118,6 +119,31 @@ class FreezeSnapshotStepTest {
     @Test
     void failsWhenSnapshotIdDoesNotMatchPeriodAndRevision() throws Exception {
         long executionId = launch(PERIOD_START, 1, "weekly-20260817-r2");
+
+        assertAll(
+            () -> assertThat(statusOf(executionId)).isEqualTo(BatchStatus.FAILED),
+            () -> assertThat(countRows("ranking_snapshot_input")).isZero(),
+            () -> assertThat(countRows("ranking_snapshot")).isZero()
+        );
+    }
+
+    @DisplayName("SNP-004: snapshot 정보를 쓰다 실패하면 이미 복사한 입력도 함께 rollback 되어 계산 대상이 남지 않는다.")
+    @Test
+    void rollsBackCopiedInputWhenSnapshotInfoFails() throws Exception {
+        long executionId;
+        try (Connection blocker = dataSource.getConnection()) {
+            blocker.setAutoCommit(false);
+            try (var hold = blocker.prepareStatement(
+                "insert into ranking_snapshot "
+                    + "(snapshot_id, period_start, revision, status, frozen_at, input_count, input_checksum) "
+                    + "values (?, '2026-08-17', 1, 'FROZEN', now(6), 0, repeat('0', 64))"
+            )) {
+                hold.setString(1, SNAPSHOT_ID);
+                hold.executeUpdate();
+            }
+            executionId = launch(PERIOD_START, 1, SNAPSHOT_ID);
+            blocker.rollback();
+        }
 
         assertAll(
             () -> assertThat(statusOf(executionId)).isEqualTo(BatchStatus.FAILED),
