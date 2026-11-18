@@ -148,6 +148,24 @@ class PublishRankingStepTest {
         );
     }
 
+    @DisplayName("PBL-005: 더 새 revision 이 공개된 뒤 옛 revision 의 공개가 다시 돌아도 pointer 를 되돌리지 않는다.")
+    @Test
+    void olderRevisionDoesNotMovePointerBack() throws Exception {
+        long r1ExecutionId = launch(job, 1);
+        insertActivity(60L, 10L, 4, LocalDateTime.parse("2026-08-20T00:00:00"));
+        launch(job, 2);
+        Map<String, Object> publishedBefore = publication();
+        forget(r1ExecutionId);
+
+        long executionId = launch(job, 1);
+
+        assertAll(
+            () -> assertThat(statusOf(executionId)).isEqualTo(BatchStatus.COMPLETED),
+            () -> assertThat(publishedBefore.get("snapshot_id")).isEqualTo(R2),
+            () -> assertThat(publication()).isEqualTo(publishedBefore)
+        );
+    }
+
     private void forget(long executionId) {
         new JobRepositoryTestUtils(jobRepository).removeJobExecutions(
             List.of(jobExplorer.getJobExecution(executionId))
