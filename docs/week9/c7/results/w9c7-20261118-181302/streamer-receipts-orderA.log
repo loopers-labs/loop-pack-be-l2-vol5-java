@@ -1,0 +1,2 @@
+2026-11-18T18:13:51.404+09:00  INFO 31171 --- [commerce-streamer] [-activity-0-C-1] [                                                 ] c.l.p.a.PurchaseActivityService          : 구매 활동 저장. eventId=fd4c5d26-ace5-447d-9507-d40279389717, orderId=1, items=2
+2026-11-18T18:14:33.392+09:00  INFO 31171 --- [commerce-streamer] [-activity-0-C-1] [                                                 ] c.l.p.a.PurchaseActivityService          : 같은 사실의 재전달 — 변경 없이 완료(no-op). eventId=fd4c5d26-ace5-447d-9507-d40279389717, orderId=1

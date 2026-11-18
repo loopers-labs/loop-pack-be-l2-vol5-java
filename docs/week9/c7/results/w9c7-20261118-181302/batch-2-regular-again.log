@@ -1,0 +1,95 @@
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v3.4.4)
+
+2026-11-18T18:14:37.565+09:00  INFO 31639 --- [commerce-batch] [           main] [                                                 ] com.loopers.CommerceBatchApplication     : Starting CommerceBatchApplication v4e7fefa5 using Java 21.0.13 with PID 31639 (~/Documents/loopers/loop-pack-be-l2-vol5-java-claude/apps/commerce-batch/build/libs/commerce-batch-4e7fefa5.jar started by tanonkim in ~/Documents/loopers/loop-pack-be-l2-vol5-java-claude)
+2026-11-18T18:14:37.566+09:00 DEBUG 31639 --- [commerce-batch] [           main] [                                                 ] com.loopers.CommerceBatchApplication     : Running with Spring Boot v3.4.4, Spring v6.2.5
+2026-11-18T18:14:37.566+09:00  INFO 31639 --- [commerce-batch] [           main] [                                                 ] com.loopers.CommerceBatchApplication     : The following 1 profile is active: "local"
+2026-11-18T18:14:37.938+09:00  INFO 31639 --- [commerce-batch] [           main] [                                                 ] .s.d.r.c.RepositoryConfigurationDelegate : Multiple Spring Data modules found, entering strict repository configuration mode
+2026-11-18T18:14:37.938+09:00  INFO 31639 --- [commerce-batch] [           main] [                                                 ] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2026-11-18T18:14:37.946+09:00  INFO 31639 --- [commerce-batch] [           main] [                                                 ] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 2 ms. Found 0 JPA repository interfaces.
+2026-11-18T18:14:38.492+09:00  INFO 31639 --- [commerce-batch] [           main] [                                                 ] com.zaxxer.hikari.HikariDataSource       : mysql-main-pool - Starting...
+2026-11-18T18:14:38.725+09:00  INFO 31639 --- [commerce-batch] [           main] [                                                 ] com.zaxxer.hikari.pool.HikariPool        : mysql-main-pool - Added connection com.mysql.cj.jdbc.ConnectionImpl@362a561e
+2026-11-18T18:14:38.726+09:00  INFO 31639 --- [commerce-batch] [           main] [                                                 ] com.zaxxer.hikari.HikariDataSource       : mysql-main-pool - Start completed.
+2026-11-18T18:14:38.911+09:00  INFO 31639 --- [commerce-batch] [           main] [                                                 ] o.hibernate.jpa.internal.util.LogHelper  : HHH000204: Processing PersistenceUnitInfo [name: default]
+2026-11-18T18:14:38.959+09:00  INFO 31639 --- [commerce-batch] [           main] [                                                 ] org.hibernate.Version                    : HHH000412: Hibernate ORM core version 6.6.11.Final
+2026-11-18T18:14:38.981+09:00  INFO 31639 --- [commerce-batch] [           main] [                                                 ] o.h.c.internal.RegionFactoryInitiator    : HHH000026: Second-level cache disabled
+2026-11-18T18:14:39.182+09:00  INFO 31639 --- [commerce-batch] [           main] [                                                 ] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
+2026-11-18T18:14:39.244+09:00  INFO 31639 --- [commerce-batch] [           main] [                                                 ] org.hibernate.orm.connections.pooling    : HHH10001005: Database info:
+	Database JDBC URL [Connecting through datasource 'HikariDataSource (mysql-main-pool)']
+	Database driver: undefined/unknown
+	Database version: 8.0.46
+	Autocommit mode: undefined/unknown
+	Isolation level: undefined/unknown
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-11-18T18:14:39.786+09:00  INFO 31639 --- [commerce-batch] [           main] [                                                 ] o.h.e.t.j.p.i.JtaPlatformInitiator       : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2026-11-18T18:14:39.787+09:00  INFO 31639 --- [commerce-batch] [           main] [                                                 ] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
+2026-11-18T18:14:40.800+09:00  INFO 31639 --- [commerce-batch] [           main] [                                                 ] com.loopers.CommerceBatchApplication     : Started CommerceBatchApplication in 3.572 seconds (process running for 3.893)
+2026-11-18T18:14:40.801+09:00  INFO 31639 --- [commerce-batch] [           main] [                                                 ] o.s.b.a.b.JobLauncherApplicationRunner   : Running default command line with: [periodStart=2026-11-16]
+2026-11-18T18:14:40.838+09:00  INFO 31639 --- [commerce-batch] [           main] [                                                 ] c.l.batch.runner.WeeklyRankingJobRunner  : [주간 랭킹] periodStart = 2026-11-16, 재계산 = false → revision = 1
+2026-11-18T18:14:40.891+09:00  INFO 31639 --- [commerce-batch] [           main] [                                                 ] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+2026-11-18T18:14:40.900+09:00 ERROR 31639 --- [commerce-batch] [           main] [                                                 ] o.s.boot.SpringApplication               : Application run failed
+
+java.lang.IllegalStateException: Failed to execute ApplicationRunner
+	at org.springframework.boot.SpringApplication.lambda$callRunner$6(SpringApplication.java:795)
+	at org.springframework.util.function.ThrowingConsumer.accept(ThrowingConsumer.java:66)
+	at org.springframework.util.function.ThrowingConsumer$1.accept(ThrowingConsumer.java:86)
+	at org.springframework.boot.SpringApplication.callRunner(SpringApplication.java:796)
+	at org.springframework.boot.SpringApplication.callRunner(SpringApplication.java:784)
+	at org.springframework.boot.SpringApplication.lambda$callRunners$3(SpringApplication.java:772)
+	at java.base/java.util.stream.ForEachOps$ForEachOp$OfRef.accept(ForEachOps.java:184)
+	at java.base/java.util.stream.SortedOps$SizedRefSortingSink.end(SortedOps.java:357)
+	at java.base/java.util.stream.AbstractPipeline.copyInto(AbstractPipeline.java:510)
+	at java.base/java.util.stream.AbstractPipeline.wrapAndCopyInto(AbstractPipeline.java:499)
+	at java.base/java.util.stream.ForEachOps$ForEachOp.evaluateSequential(ForEachOps.java:151)
+	at java.base/java.util.stream.ForEachOps$ForEachOp$OfRef.evaluateSequential(ForEachOps.java:174)
+	at java.base/java.util.stream.AbstractPipeline.evaluate(AbstractPipeline.java:234)
+	at java.base/java.util.stream.ReferencePipeline.forEach(ReferencePipeline.java:596)
+	at org.springframework.boot.SpringApplication.callRunners(SpringApplication.java:772)
+	at org.springframework.boot.SpringApplication.run(SpringApplication.java:325)
+	at org.springframework.boot.SpringApplication.run(SpringApplication.java:1361)
+	at org.springframework.boot.SpringApplication.run(SpringApplication.java:1350)
+	at com.loopers.CommerceBatchApplication.main(CommerceBatchApplication.java:21)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at org.springframework.boot.loader.launch.Launcher.launch(Launcher.java:102)
+	at org.springframework.boot.loader.launch.Launcher.launch(Launcher.java:64)
+	at org.springframework.boot.loader.launch.JarLauncher.main(JarLauncher.java:40)
+Caused by: org.springframework.batch.core.repository.JobInstanceAlreadyCompleteException: A job instance already exists and is complete for identifying parameters={'periodStart':'{value=2026-11-16, type=class java.time.LocalDate, identifying=true}','revision':'{value=1, type=class java.lang.Long, identifying=true}'}.  If you want to run this job again, change the parameters.
+	at org.springframework.batch.core.repository.support.SimpleJobRepository.createJobExecution(SimpleJobRepository.java:158)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at org.springframework.aop.support.AopUtils.invokeJoinpointUsingReflection(AopUtils.java:359)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.invokeJoinpoint(ReflectiveMethodInvocation.java:196)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:163)
+	at org.springframework.transaction.interceptor.TransactionAspectSupport.invokeWithinTransaction(TransactionAspectSupport.java:380)
+	at org.springframework.transaction.interceptor.TransactionInterceptor.invoke(TransactionInterceptor.java:119)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:184)
+	at org.springframework.batch.core.repository.support.AbstractJobRepositoryFactoryBean.lambda$getObject$0(AbstractJobRepositoryFactoryBean.java:204)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:184)
+	at org.springframework.aop.framework.JdkDynamicAopProxy.invoke(JdkDynamicAopProxy.java:223)
+	at jdk.proxy2/jdk.proxy2.$Proxy121.createJobExecution(Unknown Source)
+	at org.springframework.batch.core.launch.support.TaskExecutorJobLauncher.run(TaskExecutorJobLauncher.java:143)
+	at org.springframework.boot.autoconfigure.batch.JobLauncherApplicationRunner.execute(JobLauncherApplicationRunner.java:210)
+	at com.loopers.batch.runner.WeeklyRankingJobRunner.execute(WeeklyRankingJobRunner.java:54)
+	at org.springframework.boot.autoconfigure.batch.JobLauncherApplicationRunner.executeLocalJobs(JobLauncherApplicationRunner.java:194)
+	at org.springframework.boot.autoconfigure.batch.JobLauncherApplicationRunner.launchJobFromProperties(JobLauncherApplicationRunner.java:174)
+	at org.springframework.boot.autoconfigure.batch.JobLauncherApplicationRunner.run(JobLauncherApplicationRunner.java:169)
+	at org.springframework.boot.autoconfigure.batch.JobLauncherApplicationRunner.run(JobLauncherApplicationRunner.java:164)
+	at org.springframework.boot.SpringApplication.lambda$callRunner$4(SpringApplication.java:784)
+	at org.springframework.util.function.ThrowingConsumer$1.acceptWithException(ThrowingConsumer.java:82)
+	at org.springframework.util.function.ThrowingConsumer.accept(ThrowingConsumer.java:60)
+	... 22 common frames omitted
+
+2026-11-18T18:14:40.914+09:00  INFO 31639 --- [commerce-batch] [           main] [                                                 ] j.LocalContainerEntityManagerFactoryBean : Closing JPA EntityManagerFactory for persistence unit 'default'
+2026-11-18T18:14:40.916+09:00  INFO 31639 --- [commerce-batch] [           main] [                                                 ] com.zaxxer.hikari.HikariDataSource       : mysql-main-pool - Shutdown initiated...
+2026-11-18T18:14:40.928+09:00  INFO 31639 --- [commerce-batch] [           main] [                                                 ] com.zaxxer.hikari.HikariDataSource       : mysql-main-pool - Shutdown completed.
