@@ -4,9 +4,13 @@ import com.loopers.batch.job.ranking.PublishRankingTasklet;
 import com.loopers.batch.job.ranking.WeeklyRankingJobConfig;
 import com.loopers.job.ranking.WeeklyRankingTestConfig.HookedWeeklyRankingRepository;
 import com.loopers.job.reconcile.ReconcileTestConfig.MutableClock;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -45,6 +49,7 @@ class WeeklyRankingPublishTest {
     @Autowired private Job weeklyRankingExtend;
     @Autowired private JobExplorer jobExplorer;
     @Autowired private JdbcTemplate jdbc;
+    @Autowired private DataSource dataSource;
     @Autowired private MutableClock clock;
     @Autowired private HookedWeeklyRankingRepository repository;
 
@@ -142,6 +147,22 @@ class WeeklyRankingPublishTest {
     }
 
     @Test
+    @DisplayName("P5-1: r1 공개 TX가 시작된 뒤 다른 연결이 r2를 pointer에 공개하고 commit하면, r1은 pointer를 덮지 않고 종료 코드 NEWER_PUBLISHED로 끝난다")
+    void newerPublishedDuringPublishIsDetected() throws Exception {
+        rows.insertFixture(period);
+        repository.failNextPublish();
+        assertThat(run(id(2), null).getStatus()).isEqualTo(BatchStatus.FAILED);
+        assertThat(rows.pointer(period)).isEmpty();
+        repository.beforePublish(() -> publishFromOtherConnection(id(2)));
+
+        JobExecution execution = run(id(1), null);
+
+        assertThat(execution.getStatus()).isEqualTo(BatchStatus.COMPLETED);
+        assertThat(rows.pointer(period)).contains(id(2));
+        assertThat(publishStep(execution).getExitStatus().getExitCode()).isEqualTo(PublishRankingTasklet.NEWER_PUBLISHED);
+    }
+
+    @Test
     @DisplayName("P6: K=2로 공개한 뒤 K=3으로 확장하면 3위만 추가되고 1·2위 행과 pointer는 그대로다")
     void extendAddsOnlyNextRanks() throws Exception {
         rows.insertFixture(period);
@@ -169,6 +190,21 @@ class WeeklyRankingPublishTest {
         assertThat(rows.pointer(period)).contains(id(1));
         assertThat(publishStep(restarted).getExecutionContext().getString(PublishRankingTasklet.RESULT_CHECKSUM_KEY))
             .isEqualTo(RESULT_CHECKSUM);
+    }
+
+    // 다른 공개 TX가 먼저 commit한 상황을 별도 연결(자동 commit)로 만든다.
+    private void publishFromOtherConnection(String snapshotId) {
+        try (Connection connection = dataSource.getConnection()) {
+            connection.setAutoCommit(true);
+            try (PreparedStatement insert = connection.prepareStatement(
+                "insert into ranking_publication(period_start, snapshot_id) values (?, ?)")) {
+                insert.setObject(1, period);
+                insert.setString(2, snapshotId);
+                insert.executeUpdate();
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     private String id(int revision) {

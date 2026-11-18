@@ -38,6 +38,7 @@ public class WeeklyRankingTestConfig {
         private final AtomicBoolean failNextPublish = new AtomicBoolean();
         private final AtomicReference<Long> failScoreOfProduct = new AtomicReference<Long>();
         private final AtomicReference<Runnable> afterSourceRead = new AtomicReference<Runnable>(() -> { });
+        private final AtomicReference<Runnable> beforePublish = new AtomicReference<Runnable>(() -> { });
 
         HookedWeeklyRankingRepository(JdbcTemplate jdbcTemplate) {
             super(jdbcTemplate);
@@ -63,11 +64,17 @@ public class WeeklyRankingTestConfig {
             failNextPublish.set(true);
         }
 
+        // pointer 공개 직전(같은 TX 안, 완성 랭킹 INSERT 뒤) 실행한다.
+        public void beforePublish(Runnable action) {
+            beforePublish.set(action);
+        }
+
         public void disarm() {
             failNextInfo.set(false);
             failNextPublish.set(false);
             failScoreOfProduct.set(null);
             afterSourceRead.set(() -> { });
+            beforePublish.set(() -> { });
         }
 
         @Override
@@ -87,6 +94,7 @@ public class WeeklyRankingTestConfig {
 
         @Override
         public boolean publish(LocalDate periodStart, String snapshotId) {
+            beforePublish.get().run();
             if (failNextPublish.getAndSet(false)) {
                 throw new IllegalStateException(PUBLISH_FAILURE);
             }

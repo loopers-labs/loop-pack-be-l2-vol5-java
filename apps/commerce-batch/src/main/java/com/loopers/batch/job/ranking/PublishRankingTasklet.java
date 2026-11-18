@@ -43,14 +43,19 @@ public class PublishRankingTasklet implements Tasklet {
         contribution.incrementWriteCount(added.size());
         String checksum = ResultChecksum.of(weeklyRankingRepository.stageRanking(snapshotId, 0, Integer.MAX_VALUE));
         chunkContext.getStepContext().getStepExecution().getExecutionContext().putString(RESULT_CHECKSUM_KEY, checksum);
-        weeklyRankingRepository.publish(info.periodStart(), snapshotId);
-        Optional<String> published = weeklyRankingRepository.publishedSnapshotId(info.periodStart());
+        if (weeklyRankingRepository.publish(info.periodStart(), snapshotId)) {
+            log.info("주간 랭킹 공개. snapshotId={}, 추가한 순위={}, 결과 checksum={}", snapshotId, added.size(), checksum);
+            return RepeatStatus.FINISHED;
+        }
+        // 바꾸지 않았다: 이미 이 snapshot이 공개돼 있거나 더 새 revision이 공개돼 있다. 평범한 SELECT는 TX 앞부분 snapshot을 보므로
+        // 지금 commit된 pointer를 잠금 읽기로 확인한다.
+        Optional<String> published = weeklyRankingRepository.currentPublishedSnapshotId(info.periodStart());
         if (published.isPresent() && !published.get().equals(snapshotId)) {
             log.info("더 새 공개본이 있어 pointer를 바꾸지 않았다. snapshotId={}, 공개본={}, 결과 checksum={}", snapshotId,
                 published.get(), checksum);
             contribution.setExitStatus(new ExitStatus(NEWER_PUBLISHED, "공개본=" + published.get()));
         } else {
-            log.info("주간 랭킹 공개. snapshotId={}, 추가한 순위={}, 결과 checksum={}", snapshotId, added.size(), checksum);
+            log.info("이미 공개된 snapshot이다. snapshotId={}, 추가한 순위={}, 결과 checksum={}", snapshotId, added.size(), checksum);
         }
         return RepeatStatus.FINISHED;
     }

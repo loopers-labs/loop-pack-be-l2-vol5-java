@@ -117,9 +117,10 @@ public class WeeklyRankingRepository {
             periodStart, snapshotId, periodStart) > 0;
     }
 
-    public Optional<String> publishedSnapshotId(LocalDate periodStart) {
-        return jdbcTemplate.queryForList("select snapshot_id from ranking_publication where period_start = ?", String.class,
-            periodStart).stream().findFirst();
+    // 잠금 읽기(FOR SHARE)라 REPEATABLE READ의 TX 앞부분 snapshot이 아니라 지금 commit된 pointer를 본다.
+    public Optional<String> currentPublishedSnapshotId(LocalDate periodStart) {
+        return jdbcTemplate.queryForList("select snapshot_id from ranking_publication where period_start = ? for share",
+            String.class, periodStart).stream().findFirst();
     }
 
     private static Instant instant(ResultSet resultSet, int column) throws SQLException {
