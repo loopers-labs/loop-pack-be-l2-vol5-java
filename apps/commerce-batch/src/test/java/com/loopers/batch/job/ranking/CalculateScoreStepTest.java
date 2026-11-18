@@ -109,6 +109,26 @@ class CalculateScoreStepTest {
         );
     }
 
+    @DisplayName("CAL-003: 같은 입력을 다시 계산해도 상품마다 한 행이고 점수는 합계 그대로다.")
+    @Test
+    void recalculationConvergesToSameScores() throws Exception {
+        forget(launch());
+
+        long rerunId = launch();
+
+        assertAll(
+            () -> assertThat(statusOf(rerunId)).isEqualTo(BatchStatus.COMPLETED),
+            () -> assertThat(stagedScores()).containsExactly("7:5", "8:1", "9:5")
+        );
+    }
+
+    private void forget(long executionId) {
+        new JobRepositoryTestUtils(jobRepository).removeJobExecutions(
+            List.of(jobExplorer.getJobExecution(executionId))
+        );
+        executionIds.remove(executionId);
+    }
+
     private long launch() throws Exception {
         JobExecution execution = jobLauncher.run(job, new JobParametersBuilder()
             .addLocalDate("periodStart", LocalDate.of(2026, 8, 17))
