@@ -53,18 +53,8 @@ class PurchaseInputProbeRestartTest {
     @BeforeEach
     void setUp() {
         jdbc = new JdbcTemplate(dataSource);
-        jdbc.execute("drop table if exists ranking_snapshot_input");
+        jdbc.update("delete from ranking_snapshot_input where snapshot_id = ?", SNAPSHOT_ID);
         jdbc.execute("drop table if exists batch_restart_probe");
-        jdbc.execute("""
-            create table ranking_snapshot_input (
-              snapshot_id varchar(64) not null,
-              order_id bigint not null,
-              product_id bigint not null,
-              quantity int not null,
-              confirmed_at datetime(6) not null,
-              primary key (snapshot_id, product_id, order_id)
-            ) engine=InnoDB
-            """);
         jdbc.execute("""
             create table batch_restart_probe (
               snapshot_id varchar(64) not null,
