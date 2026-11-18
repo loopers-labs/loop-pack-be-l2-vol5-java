@@ -34,6 +34,10 @@ public final class PreservedMySql implements AutoCloseable {
         return DriverManager.getConnection(jdbcUrl(), container.getUsername(), container.getPassword());
     }
 
+    public Connection connectAsAdministrator() throws SQLException {
+        return DriverManager.getConnection(jdbcUrl(), "root", container.getPassword());
+    }
+
     public String jdbcUrl() {
         return container.getJdbcUrl();
     }
