@@ -82,7 +82,7 @@ class WeeklyRankingRestartTest {
         );
     }
 
-    @DisplayName("JOB-004, EXP-026: 계산이 상품 9 에서 실패하면, 같은 parameter 의 재실행이 같은 instance 에서 계산 step 만 저장된 위치 다음 상품부터 이어 간다.")
+    @DisplayName("JOB-004, EXP-026: 계산이 상품 9 에서 실패하면, 같은 parameter 의 재실행이 같은 instance 에서 고정 step 을 다시 돌지 않고 저장된 위치 다음 상품부터 이어 간다.")
     @Test
     void resumesCalculationFromLastCommittedProduct() throws Exception {
         JobParameters params = new JobParametersBuilder()
@@ -122,7 +122,7 @@ class WeeklyRankingRestartTest {
                 .isEqualTo(first.getJobInstance().getInstanceId()),
             () -> assertThat(secondId).isNotEqualTo(firstId),
             () -> assertThat(second.getStepExecutions()).extracting(StepExecution::getStepName)
-                .containsExactly("calculateScore"),
+                .containsExactly("calculateScore", "publishRanking"),
             () -> assertThat(stepNamed(second, "calculateScore").getWriteCount()).isEqualTo(1),
             () -> assertThat(stagedScores()).containsExactly("7:5", "8:1", "9:5")
         );

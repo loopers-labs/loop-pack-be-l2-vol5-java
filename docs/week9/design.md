@@ -60,7 +60,9 @@ chunk TX 가 시작되면 transaction manager 가 커넥션을 현재 스레드�
 
 ## 5. 데이터 접근: batch 는 JDBC, 테이블은 SQL DDL, 엔티티는 두지 않는다
 
-batch 의 업무 코드는 `JdbcTemplate` 과 Spring Batch 의 JDBC reader 로 쓴다. batch 가 쓰는 테이블(`ranking_snapshot`, `ranking_snapshot_input`, `ranking_score_stage`)은 `schema/ranking.sql` 이 정의하고, local·test 프로필에서 `spring.sql.init` 이 `create table if not exists` 로 만든다. Batch metadata 를 `initialize-schema: always` 로 만드는 것과 같은 방식이다. commerce-api 의 랭킹 조회는 기존 코드와 같이 QueryDSL 이다.
+batch 의 업무 코드는 `JdbcTemplate` 과 Spring Batch 의 JDBC reader 로 쓴다. batch 가 쓰는 테이블(`ranking_snapshot`, `ranking_snapshot_input`, `ranking_score_stage`, `weekly_ranking`, `weekly_ranking_publication`)은 `schema/ranking.sql` 이 정의하고, local·test 프로필에서 `spring.sql.init` 이 `create table if not exists` 로 만든다. Batch metadata 를 `initialize-schema: always` 로 만드는 것과 같은 방식이다.
+
+commerce-api 는 공개 ranking 을 엔티티 없이 `JdbcTemplate` 과 record 로 읽는다. 조회는 pointer 와 ranking 을 잇는 정적 쿼리 하나다(`QRY-009`). 읽기 엔티티를 두면 같은 테이블의 정의가 batch 의 SQL 과 api 의 엔티티 두 곳에 생긴다. 테이블의 주인은 쓰는 쪽인 batch 하나다. **뒤집을 조건**: 랭킹 조회에 검색 조건처럼 붙었다 빠지는 조건이 생길 때 api 에 읽기 엔티티와 QueryDSL 을 둔다.
 
 엔티티는 행을 객체로 꺼내 상태를 바꾸거나 판단을 맡길 때 값을 한다. batch 는 행을 SQL 안에서 옮기고 합하므로 그런 일이 없다. 엔티티를 두면 테이블 자동 생성 하나를 얻는 대신 칸 순서를 Hibernate 에 맡기고(7 장), 원본 테이블의 정의를 batch 에 하나 더 두게 된다.
 
@@ -265,3 +267,18 @@ MySQL Connector/J 는 fetchSize 를 정하지 않으면 결과 전체를 클라�
 | DB 에서 checksum 계산(`sha2(group_concat(...))`) | `group_concat_max_len` 을 넘으면 결과가 잘린다. 행 단위 해시가 아니라 이어 붙인 문자열 전체를 서버 메모리에 만든다 |
 
 **뒤집을 조건**: checksum 읽기 도중 같은 커넥션으로 다른 쿼리를 보내야 할 때 `useCursorFetch` 로 바꾼다. 실험의 heap 수치는 `-Xmn16m` 조건의 값이므로 운영 heap 을 정할 때는 운영 GC 설정으로 다시 잰다.
+
+## 15. 공개 (`PBL-001` ~ `PBL-005`)
+
+공개 step 은 Tasklet 하나이고, 한 TX 안에서 세 가지를 한다(`PBL-002`).
+
+1. 완성 확인. stage 의 점수 행 수가 입력의 서로 다른 상품 수와 같아야 한다. 다르면 실패하고 아무것도 쓰지 않는다(`PBL-001`).
+2. 순위 쓰기. `row_number() over (order by score desc, product_id)` 로 `weekly_ranking` 에 insert…select 한다(`RNK-004`). 그 snapshot 의 순위 행이 이미 있으면 쓰지 않는다. 순위 행은 pointer 와 같은 TX 로만 들어가므로 행이 있으면 완전한 결과다(`PBL-004`).
+3. pointer 갱신. `weekly_ranking_publication` 은 기간마다 한 행이다. upsert 하되 새 revision 이 저장된 revision 보다 클 때만 snapshot 을 바꾼다(`PBL-005`). 같은 revision 을 다시 공개해도 `published_at` 이 바뀌지 않는다.
+
+| 테이블 | 키 | 이유 |
+|---|---|---|
+| `weekly_ranking` | `(snapshot_id, rank_no)` | 조회가 snapshot 의 순위 앞부분부터 읽는다. 순위 칸을 `rank` 로 하지 않는 것은 MySQL 8 의 예약어(window 함수)라서다 |
+| `weekly_ranking_publication` | `period_start` | 기간마다 공개본은 하나다. 조건부 갱신이 한 행에서 끝난다 |
+
+**뒤집을 조건**: 한 기간에 공개본이 둘 이상 필요할 때(예: 점수 기준이 여럿) pointer 키에 그 축을 더한다.

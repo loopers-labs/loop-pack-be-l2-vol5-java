@@ -30,10 +30,22 @@ class WeeklyRankingJobConfig {
     static final String JOB_NAME = "weeklyRanking";
 
     @Bean(JOB_NAME)
-    Job weeklyRanking(JobRepository jobRepository, Step freezeSnapshotStep, Step calculateScoreStep) {
+    Job weeklyRanking(
+        JobRepository jobRepository, Step freezeSnapshotStep, Step calculateScoreStep, Step publishRankingStep
+    ) {
         return new JobBuilder(JOB_NAME, jobRepository)
             .start(freezeSnapshotStep)
             .next(calculateScoreStep)
+            .next(publishRankingStep)
+            .build();
+    }
+
+    @Bean
+    Step publishRankingStep(
+        JobRepository jobRepository, PlatformTransactionManager transactionManager, DataSource dataSource
+    ) {
+        return new StepBuilder("publishRanking", jobRepository)
+            .tasklet(new PublishRankingTasklet(new JdbcTemplate(dataSource)), transactionManager)
             .build();
     }
 

@@ -69,7 +69,7 @@
 | `JOB-001` | `weeklyRanking` job 은 입력 고정(Tasklet) → 점수 계산(Chunk) → 완성본 공개(Tasklet) 세 step 이다 | 원문, 정함(Tasklet/Chunk) | |
 | `JOB-002` | 식별 parameter 는 `periodStart`, `revision`, `snapshotId` 다. `run.id`, 현재 시각, 실패 스위치를 식별 parameter 로 넣지 않는다 | 원문 | |
 | `JOB-003` | step 은 실제 DB transaction manager 를 쓴다. JobRepository 는 업무 테이블과 같은 DataSource 의 JDBC 저장소이고 결과 writer 와 같은 TX 에 참여한다. `ResourcelessTransactionManager`, 메모리 저장소를 쓰지 않는다 | 원문 | |
-| `JOB-004` | 계산 step 이 실패하면 같은 식별 parameter 로 같은 JobInstance 의 새 JobExecution 을 시작한다. 완료한 step 은 다시 실행하지 않고, 계산은 마지막 commit 다음 상품부터 이어 간다 | 원문 | 상품 9 에서 잠금 대기 초과로 FAILED, 점수 7·8. 재실행은 같은 instance, 실행된 step 은 계산 step 하나, write 1, 점수 7·8·9 |
+| `JOB-004` | 계산 step 이 실패하면 같은 식별 parameter 로 같은 JobInstance 의 새 JobExecution 을 시작한다. 완료한 step 은 다시 실행하지 않고, 계산은 마지막 commit 다음 상품부터 이어 간다 | 원문 | 상품 9 에서 잠금 대기 초과로 FAILED, 점수 7·8. 재실행은 같은 instance, 실행된 step 은 계산과 공개(완료한 고정 step 은 다시 실행하지 않는다), write 1, 점수 7·8·9 |
 | `JOB-005` | step 은 단일 스레드로 실행한다 | 정함 | |
 | `JOB-006` | `spring.batch.job.name` 이 실행할 job 을 고른다. 테스트는 자동 실행을 끄고 명시적으로 launch 한다 | 원문 | |
 | `JOB-007` | 랭킹 계산 전에 §6 입력을 `probe-1` 로 고정하고 상품 7·8·9 를 chunk 2 로 읽는 연결 테스트를 둔다. 확인용 테이블 `batch_restart_probe` 는 테스트 전용이다 | 원문 | 첫 실행 FAILED, 확인 행 7·8, `read.count=2`. 재실행은 같은 instance, 새 execution, 확인 행 7·8·9 |
@@ -111,7 +111,7 @@
 
 | ID | 재는 것 | 출처 | 결과 |
 |---|---|---|---|
-| `EXP-026` | §6 재시작. 입력 고정 → chunk 2 로 상품 7·8 commit → 상품 9 직전 실패 → FAILED, 같은 instance, 저장 위치, stage 2 행, 기존 공개본 유지 → 같은 parameter 로 재실행 → 9 만 계산하고 완료 | 원문 | `WeeklyRankingRestartTest`. 상품 9 의 점수 행을 다른 커넥션이 잡아 잠금 대기 초과로 FAILED, 저장 위치 `{product_id=8}`, stage 7·8. 재실행은 같은 instance, 실행된 step 은 계산 하나, write 1, stage 7·8·9. reader 의 `saveState` 를 끄면 저장 위치가 없어 실패한다. 기존 공개본 유지는 공개 step 을 만든 뒤 더한다 |
+| `EXP-026` | §6 재시작. 입력 고정 → chunk 2 로 상품 7·8 commit → 상품 9 직전 실패 → FAILED, 같은 instance, 저장 위치, stage 2 행, 기존 공개본 유지 → 같은 parameter 로 재실행 → 9 만 계산하고 완료 | 원문 | `WeeklyRankingRestartTest`. 상품 9 의 점수 행을 다른 커넥션이 잡아 잠금 대기 초과로 FAILED, 저장 위치 `{product_id=8}`, stage 7·8. 재실행은 같은 instance, 실행된 step 은 계산과 공개(고정 step 은 다시 돌지 않는다), write 1, stage 7·8·9. reader 의 `saveState` 를 끄면 저장 위치가 없어 실패한다. 기존 공개본 유지는 공개 step 을 만든 뒤 더한다 |
 | `EXP-027` | 정상 한 번 실행(별도 snapshot)과 실패·재시작의 입력 checksum, 결과 checksum, 기대 점수·순위가 같다. 재시작 대상의 stage·metadata 를 지워 정상 실행으로 꾸미지 않는다 | 원문 | |
 | `EXP-028` | §7 연결. PG 확정 → Outbox → Kafka → 구매 활동 → snapshot → job → API. 재발행, 늦은 구매, 새 revision, 경계 시각, 빈 주, 미공개, 삭제 상품. 한 실행으로 할지는 Q-6 | 원문 | |
 | `EXP-029` | 입력 고정이 붙잡는 heap 이 입력 행 수에 비례하는가. heap 512MB, young 16MB, 행 10 만·20 만·40 만, 각 3 회. GC 직후 live heap 최댓값에서 실행 전 기준선을 뺀다. 40 만 행 중앙값이 32MB 미만이어야 한다. `./gradlew --offline :apps:commerce-batch:experimentTest` | 실험 | 설계 14 장. 결과 전체를 받으면 22 → 45 → 92MB(행당 약 240B), 행 단위로 받으면 0 → 0 → 0MB |
