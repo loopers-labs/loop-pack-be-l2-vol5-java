@@ -19,6 +19,8 @@ import org.springframework.batch.core.BatchStatus;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.JobExecution;
 import org.springframework.batch.core.JobParametersBuilder;
+import org.springframework.batch.core.Step;
+import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.explore.JobExplorer;
 import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.batch.core.repository.JobRepository;
@@ -38,6 +40,7 @@ import org.springframework.test.context.jdbc.Sql;
 class PublishRankingStepTest {
 
     private static final String SNAPSHOT_ID = "weekly-20260817-r1";
+    private static final String R2 = "weekly-20260817-r2";
 
     @Autowired
     private DataSource dataSource;
@@ -54,6 +57,18 @@ class PublishRankingStepTest {
     @Autowired
     @Qualifier(WeeklyRankingJobConfig.JOB_NAME)
     private Job job;
+
+    @Autowired
+    @Qualifier("freezeSnapshotStep")
+    private Step freezeSnapshotStep;
+
+    @Autowired
+    @Qualifier("calculateScoreStep")
+    private Step calculateScoreStep;
+
+    @Autowired
+    @Qualifier("publishRankingStep")
+    private Step publishRankingStep;
 
     private JdbcTemplate jdbc;
 
@@ -98,11 +113,41 @@ class PublishRankingStepTest {
         );
     }
 
+    @DisplayName("PBL-001, PBL-003: 점수가 입력의 상품 수보다 적으면 공개하지 않고 실패하며, 기존 공개 pointer 는 그대로다.")
+    @Test
+    void doesNotPublishIncompleteScores() throws Exception {
+        launch(job, 1);
+        Map<String, Object> publishedBefore = publication();
+        insertActivity(60L, 10L, 4, LocalDateTime.parse("2026-08-20T00:00:00"));
+        launch(new JobBuilder("freezeAndCalculate", jobRepository)
+            .start(freezeSnapshotStep).next(calculateScoreStep).build(), 2);
+        jdbc.update("delete from ranking_score_stage where snapshot_id = ? and product_id = 10", R2);
+
+        long executionId = launch(new JobBuilder("publishOnly", jobRepository).start(publishRankingStep).build(), 2);
+
+        assertAll(
+            () -> assertThat(statusOf(executionId)).isEqualTo(BatchStatus.FAILED),
+            () -> assertThat(publishedRanking(R2)).isEmpty(),
+            () -> assertThat(publication()).isEqualTo(publishedBefore)
+        );
+    }
+
+    private Map<String, Object> publication() {
+        return jdbc.queryForMap(
+            "select snapshot_id, revision, published_at from weekly_ranking_publication "
+                + "where period_start = '2026-08-17'"
+        );
+    }
+
     private long launch() throws Exception {
-        JobExecution execution = jobLauncher.run(job, new JobParametersBuilder()
+        return launch(job, 1);
+    }
+
+    private long launch(Job target, int revision) throws Exception {
+        JobExecution execution = jobLauncher.run(target, new JobParametersBuilder()
             .addLocalDate("periodStart", LocalDate.of(2026, 8, 17))
-            .addLong("revision", 1L)
-            .addString("snapshotId", SNAPSHOT_ID)
+            .addLong("revision", (long) revision)
+            .addString("snapshotId", "weekly-20260817-r" + revision)
             .toJobParameters());
         executionIds.add(execution.getId());
         return execution.getId();
@@ -113,10 +158,14 @@ class PublishRankingStepTest {
     }
 
     private List<String> publishedRanking() {
+        return publishedRanking(SNAPSHOT_ID);
+    }
+
+    private List<String> publishedRanking(String snapshotId) {
         return jdbc.query(
             "select rank_no, product_id, score from weekly_ranking where snapshot_id = ? order by rank_no",
             (rs, rowNum) -> rs.getInt("rank_no") + ":" + rs.getLong("product_id") + ":" + rs.getLong("score"),
-            SNAPSHOT_ID
+            snapshotId
         );
     }
 
