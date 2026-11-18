@@ -38,3 +38,6 @@ out/
 
 ### Kotlin ###
 .kotlin
+
+### W8 load test infra state (key pair, host IPs) ###
+infra/loadtest/.state/

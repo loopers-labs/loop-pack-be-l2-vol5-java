@@ -1,0 +1,3 @@
+promotion=2 coupons=100000 stages=10s:600 vus=20000 requests=6000
+remaining=97158
+issued=2842 distinct_users=2842 first=2026-11-12 07:33:46.144467 last=2026-11-12 07:33:58.759917 span_ms=12615

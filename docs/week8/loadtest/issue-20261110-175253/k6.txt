@@ -1,0 +1,145 @@
+
+         /\      Grafana   /‾‾/  
+    /\  /  \     |\  __   /  /   
+   /  \/    \    | |/ /  /   ‾‾\ 
+  /          \   |   (  |  (‾)  |
+ / __________ \  |_|\_\  \_____/ 
+
+
+     execution: local
+        script: issue-spike.js
+ web dashboard: http://127.0.0.1:5665
+        output: Prometheus remote write (http://172.31.9.66:9090/api/v1/write)
+
+     scenarios: (100.00%) 1 scenario, 10000 max VUs, 50s max duration (incl. graceful stop):
+              * issue: 400.00 iterations/s for 20s (maxVUs: 10000, gracefulStop: 30s)
+
+
+Init    [  70% ] 07019/10000 VUs initialized
+issue   [   0% ]
+
+running (00.4s), 00096/10000 VUs, 50 complete and 0 interrupted iterations
+issue   [   2% ] 00096/10000 VUs  00.4s/20s  400.00 iters/s
+
+running (01.4s), 00261/10000 VUs, 285 complete and 0 interrupted iterations
+issue   [   7% ] 00261/10000 VUs  01.4s/20s  400.00 iters/s
+
+running (02.4s), 00331/10000 VUs, 615 complete and 0 interrupted iterations
+issue   [  12% ] 00331/10000 VUs  02.4s/20s  400.00 iters/s
+
+running (03.4s), 00365/10000 VUs, 981 complete and 0 interrupted iterations
+issue   [  17% ] 00365/10000 VUs  03.4s/20s  400.00 iters/s
+
+running (04.4s), 00339/10000 VUs, 1407 complete and 0 interrupted iterations
+issue   [  22% ] 00339/10000 VUs  04.4s/20s  400.00 iters/s
+
+running (05.4s), 00352/10000 VUs, 1794 complete and 0 interrupted iterations
+issue   [  27% ] 00352/10000 VUs  05.4s/20s  400.00 iters/s
+
+running (06.4s), 00345/10000 VUs, 2201 complete and 0 interrupted iterations
+issue   [  32% ] 00345/10000 VUs  06.4s/20s  400.00 iters/s
+
+running (07.4s), 00346/10000 VUs, 2600 complete and 0 interrupted iterations
+issue   [  37% ] 00346/10000 VUs  07.4s/20s  400.00 iters/s
+
+running (08.4s), 00335/10000 VUs, 3011 complete and 0 interrupted iterations
+issue   [  42% ] 00335/10000 VUs  08.4s/20s  400.00 iters/s
+
+running (09.4s), 00343/10000 VUs, 3403 complete and 0 interrupted iterations
+issue   [  47% ] 00343/10000 VUs  09.4s/20s  400.00 iters/s
+
+running (10.4s), 00340/10000 VUs, 3806 complete and 0 interrupted iterations
+issue   [  52% ] 00340/10000 VUs  10.4s/20s  400.00 iters/s
+
+running (11.4s), 00342/10000 VUs, 4204 complete and 0 interrupted iterations
+issue   [  57% ] 00342/10000 VUs  11.4s/20s  400.00 iters/s
+
+running (12.4s), 00340/10000 VUs, 4606 complete and 0 interrupted iterations
+issue   [  62% ] 00340/10000 VUs  12.4s/20s  400.00 iters/s
+
+running (13.4s), 00148/10000 VUs, 5198 complete and 0 interrupted iterations
+issue   [  67% ] 00148/10000 VUs  13.4s/20s  400.00 iters/s
+
+running (14.4s), 00005/10000 VUs, 5741 complete and 0 interrupted iterations
+issue   [  72% ] 00005/10000 VUs  14.4s/20s  400.00 iters/s
+
+running (15.4s), 00005/10000 VUs, 6141 complete and 0 interrupted iterations
+issue   [  77% ] 00005/10000 VUs  15.4s/20s  400.00 iters/s
+
+running (16.4s), 00005/10000 VUs, 6541 complete and 0 interrupted iterations
+issue   [  82% ] 00005/10000 VUs  16.4s/20s  400.00 iters/s
+
+running (17.4s), 00006/10000 VUs, 6940 complete and 0 interrupted iterations
+issue   [  87% ] 00006/10000 VUs  17.4s/20s  400.00 iters/s
+
+running (18.4s), 00006/10000 VUs, 7340 complete and 0 interrupted iterations
+issue   [  92% ] 00006/10000 VUs  18.4s/20s  400.00 iters/s
+
+running (19.4s), 00005/10000 VUs, 7741 complete and 0 interrupted iterations
+issue   [  97% ] 00005/10000 VUs  19.4s/20s  400.00 iters/s
+
+
+  █ THRESHOLDS 
+
+    issue_outcomes{outcome:COUPON_ALREADY_ISSUED}
+    ✓ 'count>=0' count=0
+
+    issue_outcomes{outcome:COUPON_ISSUE_BUSY}
+    ✓ 'count>=0' count=1880
+
+    issue_outcomes{outcome:COUPON_SOLD_OUT}
+    ✓ 'count>=0' count=3121
+
+    issue_outcomes{outcome:OTHER}
+    ✓ 'count>=0' count=0
+
+    issue_outcomes{outcome:PROMOTION_NOT_ACTIVE}
+    ✓ 'count>=0' count=0
+
+    issue_outcomes{outcome:SUCCESS}
+    ✓ 'count>=0' count=3000
+
+    issue_outcomes{outcome:USER_NOT_FOUND}
+    ✓ 'count>=0' count=0
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 8001   399.695855/s
+    checks_succeeded...: 76.50% 6121 out of 8001
+    checks_failed......: 23.49% 1880 out of 8001
+
+    ✗ no 5xx
+      ↳  76% — ✓ 6121 / ✗ 1880
+
+    CUSTOM
+    issue_outcomes........................: 8001   399.695855/s
+      { outcome:COUPON_ALREADY_ISSUED }...: 0      0/s
+      { outcome:COUPON_ISSUE_BUSY }.......: 1880   93.916786/s
+      { outcome:COUPON_SOLD_OUT }.........: 3121   155.911856/s
+      { outcome:OTHER }...................: 0      0/s
+      { outcome:PROMOTION_NOT_ACTIVE }....: 0      0/s
+      { outcome:SUCCESS }.................: 3000   149.867212/s
+      { outcome:USER_NOT_FOUND }..........: 0      0/s
+
+    HTTP
+    http_req_duration.....................: avg=538.92ms min=9.14ms  med=608.05ms p(90)=900.13ms p(95)=1.46s p(99)=1.49s max=1.56s
+      { expected_response:true }..........: avg=959.71ms min=23.27ms med=865.15ms p(90)=1.46s    p(95)=1.48s p(99)=1.49s max=1.56s
+    http_req_failed.......................: 62.50% 5001 out of 8001
+    http_reqs.............................: 8001   399.695855/s
+
+    EXECUTION
+    iteration_duration....................: avg=539.72ms min=9.61ms  med=608.66ms p(90)=900.92ms p(95)=1.46s p(99)=1.49s max=1.56s
+    iterations............................: 8001   399.695855/s
+    vus...................................: 5      min=0            max=366  
+    vus_max...............................: 10000  min=7031         max=10000
+
+    NETWORK
+    data_received.........................: 2.0 MB 102 kB/s
+    data_sent.............................: 1.1 MB 54 kB/s
+
+
+
+
+running (20.0s), 00000/10000 VUs, 8001 complete and 0 interrupted iterations
+issue ✓ [ 100% ] 00000/10000 VUs  20s  400.00 iters/s
