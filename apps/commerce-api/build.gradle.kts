@@ -111,9 +111,13 @@ dependencies {
 
 val week6E2eTest by sourceSets.creating {
     java.srcDir("src/week6E2eTest/java")
+    java.srcDir("../commerce-batch/src/main/java/com/loopers/batch/ranking")
     resources.srcDir("src/week6E2eTest/resources")
+    resources.srcDir("src/test/resources")
     compileClasspath += sourceSets.main.get().output
+    compileClasspath += sourceSets.test.get().output
     runtimeClasspath += sourceSets.main.get().output
+    runtimeClasspath += sourceSets.test.get().output
 }
 
 val week6E2eTestImplementation by configurations.getting {
@@ -126,6 +130,7 @@ val commerceStreamerMain = commerceStreamer.extensions
 
 dependencies {
     week6E2eTestImplementation(files(commerceStreamerMain.get().output))
+    week6E2eTestImplementation("org.springframework.boot:spring-boot-starter-batch")
 }
 
 tasks.named(week6E2eTest.compileJavaTaskName) {
