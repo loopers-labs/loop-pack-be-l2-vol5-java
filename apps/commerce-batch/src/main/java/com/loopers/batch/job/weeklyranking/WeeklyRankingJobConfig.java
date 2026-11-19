@@ -35,6 +35,7 @@ public class WeeklyRankingJobConfig {
     public static final String JOB_NAME = "weeklyRanking";
     public static final String FREEZE_STEP = "freezeWeeklyInput";
     public static final String CALCULATE_STEP = "calculateWeeklyScores";
+    public static final String PUBLISH_STEP = "publishWeeklyRanking";
     // 재시작 위치가 이 이름으로 ExecutionContext 에 저장된다(<name>.read.count). 바꾸면 기존 실행을 이어 가지 못한다.
     public static final String PRODUCT_READER = "weeklyRankingProductReader";
 
@@ -44,6 +45,7 @@ public class WeeklyRankingJobConfig {
     private final FreezeInputTasklet freezeInputTasklet;
     private final WeeklyScoreProcessor weeklyScoreProcessor;
     private final WeeklyScoreWriter weeklyScoreWriter;
+    private final PublishTasklet publishTasklet;
 
     @Value("${ranking.weekly.chunk-size}")
     private int chunkSize;
@@ -56,6 +58,7 @@ public class WeeklyRankingJobConfig {
                 new String[] {}))
             .start(freezeInputStep())
             .next(calculateScoresStep())
+            .next(publishStep())
             .build();
     }
 
@@ -78,6 +81,14 @@ public class WeeklyRankingJobConfig {
             .reader(productReader(null, null))
             .processor(weeklyScoreProcessor)
             .writer(weeklyScoreWriter)
+            .build();
+    }
+
+    @Bean(PUBLISH_STEP)
+    public Step publishStep() {
+        // 완성 조건 검증·완성 ranking·pointer 변경이 한 TX 다.
+        return new StepBuilder(PUBLISH_STEP, jobRepository)
+            .tasklet(publishTasklet, transactionManager)
             .build();
     }
 

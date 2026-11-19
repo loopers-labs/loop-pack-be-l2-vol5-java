@@ -23,6 +23,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import javax.sql.DataSource;
 import java.time.LocalDate;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static com.loopers.job.weeklyranking.PurchaseActivityRows.insert;
@@ -36,6 +37,10 @@ import static org.mockito.Mockito.doThrow;
     "ranking.weekly.chunk-size=2"
 })
 class RankingJobRestartTest {
+
+    // §6 입력·결과를 설계 문서의 직렬화 규칙대로 손으로 만든 텍스트의 SHA-256 (shasum -a 256 으로 계산).
+    private static final String INPUT_CHECKSUM = "3e90276ec1f9123f308cd18d155e1dde6bf811ef3aa741105ff5c766c357a298";
+    private static final String RESULT_CHECKSUM = "745d50bbd2f04a2e8c937f9ebf5f2cddbf75b958540e964934a424903b0a67d2";
 
     @Autowired
     private JobLauncher jobLauncher;
@@ -101,6 +106,21 @@ class RankingJobRestartTest {
         assertThat(jdbc.queryForObject(
             "SELECT COUNT(*) FROM weekly_ranking_snapshot_input WHERE snapshot_id = 'weekly-20260817-r1'", Integer.class))
             .isEqualTo(4);
+
+        // assert: 손으로 계산한 점수·순위와 checksum 으로 공개된다
+        assertThat(rankingRows(jdbc, "weekly-20260817-r1")).containsExactly("7:5:1", "9:5:2", "8:1:3");
+        assertThat(checksums(jdbc, "weekly-20260817-r1")).containsExactly(INPUT_CHECKSUM, RESULT_CHECKSUM);
+
+        // act: 같은 입력을 실패 없이 계산하는 비교용 정상 실행(새 snapshot r2)
+        JobExecution normal = jobLauncher.run(job, new JobParametersBuilder()
+            .addLocalDate("periodStart", LocalDate.parse("2026-08-17"))
+            .addLong("revision", 2L)
+            .toJobParameters());
+
+        // assert: 재시작 결과와 정상 실행 결과가 같다
+        assertThat(normal.getStatus()).isEqualTo(BatchStatus.COMPLETED);
+        assertThat(rankingRows(jdbc, "weekly-20260817-r2")).containsExactly("7:5:1", "9:5:2", "8:1:3");
+        assertThat(checksums(jdbc, "weekly-20260817-r2")).containsExactly(INPUT_CHECKSUM, RESULT_CHECKSUM);
     }
 
     @DisplayName("첫 chunk 가 commit 되기 전에 실패하면 점수·위치가 남지 않고, 재시작은 처음 상품부터 한 번씩 계산한다.")
@@ -152,5 +172,15 @@ class RankingJobRestartTest {
                 scores.put(rs.getLong("product_id"), rs.getLong("score"));
             }, snapshotId);
         return scores;
+    }
+
+    private static List<String> rankingRows(JdbcTemplate jdbc, String snapshotId) {
+        return jdbc.query("SELECT product_id, score, ranking FROM weekly_ranking WHERE snapshot_id = ? ORDER BY ranking",
+            (rs, n) -> rs.getLong("product_id") + ":" + rs.getLong("score") + ":" + rs.getInt("ranking"), snapshotId);
+    }
+
+    private static List<String> checksums(JdbcTemplate jdbc, String snapshotId) {
+        return jdbc.queryForObject("SELECT input_checksum, result_checksum FROM weekly_ranking_snapshot WHERE snapshot_id = ?",
+            (rs, n) -> List.of(rs.getString("input_checksum"), rs.getString("result_checksum")), snapshotId);
     }
 }
