@@ -18,6 +18,59 @@
 | 추가 | 주간 랭킹 job(입력 고정 → 점수 계산 → 공개), 주간 랭킹 조회 API | Redis 실시간 랭킹, 운영 스케줄러, 처리량 측정 |
 | 유지 | 7주차까지의 구매 활동 · 8주차 쿠폰. 쿠폰은 점수에 섞지 않는다 | |
 
+### 큰 흐름
+
+```mermaid
+flowchart LR
+    subgraph W7["7주차까지 (유지)"]
+        O[주문 확정] -->|Outbox relay| K[(Kafka)]
+        K --> S[commerce-streamer]
+        S --> SRC[("processed_order_confirmation<br/>product_purchase_activity")]
+    end
+
+    subgraph B["commerce-batch · weeklyRanking job"]
+        CMD["실행 진입점<br/>기간 → revision 결정 (D-184)"]
+        F["입력 고정 (tasklet)<br/>입력 복사 + manifest FROZEN"]
+        SC["점수 계산 (chunk)<br/>상품별 수량 합 upsert"]
+        C["계산 완료 (tasklet)<br/>FROZEN → COMPLETED"]
+        P["공개 (tasklet)<br/>순위 → 이전 공개본 내림 → PUBLISHED"]
+        CMD --> F --> SC --> C --> P
+    end
+
+    subgraph T["ranking 테이블 (스키마는 api 엔티티)"]
+        SNAP[(weekly_ranking_snapshot<br/>manifest · 상태)]
+        IN[(weekly_ranking_input)]
+        SCORE[(weekly_ranking_score<br/>점수 · 순위)]
+    end
+
+    SRC -->|잠금 없는 읽기| F
+    F --> IN & SNAP
+    IN --> SC --> SCORE
+    C & P --> SNAP
+    P --> SCORE
+
+    API["commerce-api<br/>GET /api/v1/rankings/weekly"]
+    SNAP -->|1. 공개 snapshot 찾기| API
+    SCORE -->|2. 그 snapshotId 순위만 읽기| API
+
+    CHK["check 명령<br/>늦은 구매 수 (D-191)"]
+    SRC -.-> CHK
+    IN -.-> CHK
+```
+
+```mermaid
+stateDiagram-v2
+    [*] --> FROZEN: 입력 고정
+    FROZEN --> COMPLETED: 점수 계산 완료
+    COMPLETED --> PUBLISHED: 공개
+    PUBLISHED --> COMPLETED: 새 revision 공개로 내려감
+    FROZEN --> ABANDONED: abandon 명령
+    COMPLETED --> ABANDONED: abandon 명령
+    note right of PUBLISHED: 기간마다 하나 (생성 컬럼 유일 인덱스, D-180)
+```
+
+- 실패하면 같은 revision · 같은 JobInstance 로 마지막 commit 부터 이어 간다. 최대 revision 이 `PUBLISHED` · `ABANDONED` 면 다음 실행은 새 revision 이다.
+
 ## 2. 입력 고정
 
 ### 주간 입력은 처리 기록의 확정 시각으로 고른다 (D-176)
