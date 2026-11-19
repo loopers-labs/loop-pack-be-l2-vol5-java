@@ -24,9 +24,6 @@ commerce:
   ranking:
     chunk-size: 100
     size: 150
-    # 주 끝(다음 월요일 00:00 UTC) 뒤 고정을 시작하기 전에 기다릴 시간([임시], D159). 스케줄러가 없어 코드는 읽지 않고
-    # 운영자가 런처를 실행할 시각의 기준으로만 쓴다(docs/week9/commerce-ranking.md 9절).
-    freeze-delay: 1h
   reconcile:
     grace: 5m
     overlap: 1m
