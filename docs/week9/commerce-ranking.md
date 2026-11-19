@@ -129,7 +129,7 @@ job `weeklyRanking`의 Step 3 `publishWeeklyRanking`(tasklet)은 step 트랜잭�
 - **[사용자 결정] D158** 삭제 상품(`products.deleted`)만 뺀다(상품 목록과 같은 공개 규칙). 품절은 빼지 않고 `soldOut`(재고 0)으로 표시한다. 재고에서 읽으며 DB 칸을 더하지 않는다.
 - **[사용자 결정] D158** 배치는 삭제를 보지 않는다(구매 사실만). API가 products와 조인해 거른다. 과거 활동·점수·랭킹 행은 지우지 않는다.
 - 응답은 공개된 snapshot 기준 시점이다(`frozenAt`까지 고정된 구매). 고정 뒤 들어온 늦은 구매는 다음 revision이 공개될 때 보인다.
-- **[구현 판단]** 한 쿼리에서 pointer → snapshot 정보 → 완성 랭킹 → products(deleted = false) → brands를 조인하고 calc_rank 순으로 거른 뒤 limit을 건다. pointer와 랭킹을 따로 읽지 않아 그 사이에 pointer가 바뀌어도 섞이지 않는다. 표시 순위는 응답을 만들 때 1부터 매긴다.
+- **[구현 판단]** 완성 랭킹을 앞에 두고 pointer 서브쿼리가 가리키는 snapshot의 행을 PK(snapshot_id, calc_rank) 순서로 읽으며 products(deleted = false)·brands·snapshot 정보를 조인해 거른 뒤 limit을 건다. 정렬 순서가 PK와 같아 nested loop 계획이면 limit개를 채운 곳에서 멈춘다. 0행이면 pointer와 snapshot 정보를 따로 읽어 "공개본 없음 / 남은 행 없음"을 가른다. 두 읽기는 한 읽기 전용 TX(REPEATABLE READ의 같은 읽기 시점)라 그 사이 새 공개본이 commit돼도 섞이지 않는다. 표시 순위는 응답을 만들 때 1부터 매긴다.
 - **[구현 판단]** 완성 랭킹은 K(150)까지만 있으므로 삭제 상품이 많으면 limit보다 적게 나올 수 있다. 이때 K 확장(8절)으로 채운다.
 
 ## 11. 범위 밖과 규모가 커질 때
