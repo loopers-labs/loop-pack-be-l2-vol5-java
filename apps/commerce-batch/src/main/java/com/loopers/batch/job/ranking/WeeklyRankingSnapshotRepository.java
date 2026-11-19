@@ -59,6 +59,23 @@ public class WeeklyRankingSnapshotRepository {
             frozenAtUtc, frozenAtUtc);
     }
 
+    /** FROZEN → COMPLETED. 다른 상태면 바꾸지 않고 0 을 돌려준다 */
+    public int markCompleted(String snapshotId, LocalDateTime nowUtc) {
+        return jdbc.update("""
+                update weekly_ranking_snapshot set status = 'COMPLETED', updated_at = ?
+                where snapshot_id = ? and status = 'FROZEN'""",
+            nowUtc, snapshotId);
+    }
+
+    public int countScores(String snapshotId) {
+        return jdbc.queryForObject("select count(*) from weekly_ranking_score where snapshot_id = ?", Integer.class, snapshotId);
+    }
+
+    public int countInputProducts(String snapshotId) {
+        return jdbc.queryForObject(
+            "select count(distinct product_id) from weekly_ranking_input where snapshot_id = ?", Integer.class, snapshotId);
+    }
+
     public record SnapshotManifest(
         String snapshotId,
         LocalDate periodStart,
@@ -69,6 +86,10 @@ public class WeeklyRankingSnapshotRepository {
     ) {
         public boolean sameIdentityAs(WeeklyRankingParameters params) {
             return periodStart.equals(params.periodStart()) && revision == params.revision();
+        }
+
+        public boolean is(String expectedStatus) {
+            return status.equals(expectedStatus);
         }
     }
 }

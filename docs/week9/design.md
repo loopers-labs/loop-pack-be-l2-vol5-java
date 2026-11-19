@@ -182,6 +182,18 @@
 
 포기하는 것: api 에 쓰지 않는 입력 엔티티가 생긴다. batch 테스트 DDL 이 api 엔티티와 어긋나도 자동으로 잡히지 않는다.
 
+### job 은 입력 고정 → 점수 계산 → 계산 완료 → 공개 네 step 이다 (D-194)
+
+- **점수 계산(chunk)**: reader 는 고정 입력의 서로 다른 `product_id` 를 오름차순으로 읽는 cursor reader 이고, 위치를 `saveState` 로 step 의 ExecutionContext 에 남긴다. processor 는 같은 snapshot 입력에서 상품의 수량 합을 구하고, writer 는 `(snapshot_id, product_id)` 에 절대 점수를 upsert 한다. 결과와 reader 위치는 같은 chunk TX 로 commit 된다.
+- **계산 완료(tasklet)**: 입력의 상품 수와 점수 행 수가 같은지 확인하고 `FROZEN → COMPLETED` 로 바꾼다. 이미 `COMPLETED` 면 그대로 끝낸다. step 이 끝난 뒤의 listener 는 chunk TX 밖이라 상태 전이를 두지 않는다.
+- 점수 계산 · 계산 완료 step 은 시작할 때 manifest 가 없거나 `ABANDONED` 면 실패한다(D-185).
+- chunk 크기는 설정값이다. 재시작 실험(실습 §6)은 2 를 쓰고, 기본값 100 은 측정한 최적값이 아니다.
+
+| 검토한 안 | 포기한 이유 |
+|---|---|
+| paging reader(`product_id` 정렬 키) | 고정 입력은 바뀌지 않아 cursor 의 위치 재현 문제가 없고, probe 로 확인한 방식이다. 큰 입력에서 페이지 단위 조회가 필요해지면 바꾼다 |
+| 계산 완료 전이를 공개 step 에 합침 | 상태가 "계산은 끝났지만 공개 전"을 표현하지 못하고, 공개 실패 때 계산 완료 여부를 구분할 수 없다 |
+
 ## 6. 조회 API
 
 ### 주간 랭킹 조회는 product 기능 아래에 둔다 (D-187)

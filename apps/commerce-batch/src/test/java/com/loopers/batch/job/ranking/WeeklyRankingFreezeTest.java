@@ -19,7 +19,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.LocalDate;
 import java.util.HexFormat;
-import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -46,21 +45,20 @@ class WeeklyRankingFreezeTest {
     @Autowired
     private JdbcTemplate jdbc;
 
+    @Autowired
+    private RankingTables tables;
+
     // batch metadata 는 지우지 않는다. 테스트마다 다른 기간 · revision 으로 JobInstance 를 나눈다
     @AfterEach
     void tearDown() {
-        List.of("processed_order_confirmation", "product_purchase_activity",
-                "weekly_ranking_snapshot", "weekly_ranking_input", "weekly_ranking_score")
-            .forEach(table -> jdbc.execute("truncate table " + table));
+        tables.truncate();
     }
 
-    @DisplayName("주간 구매 활동을 고정하면, 같은 주문의 여러 품목까지 모든 행이 입력에 복사되고 manifest 가 FROZEN 으로 남는다.")
+    @DisplayName("주간 구매 활동을 고정하면, 같은 주문의 여러 품목까지 모든 행이 입력에 복사되고 manifest 에 건수 · checksum 이 남는다.")
     @Test
     void freezesAllItemsOfWeek() throws Exception {
-        // arrange: 실습 §6
-        confirm(42L, "2026-08-17 01:00:00", Map.of(7L, 2, 8L, 1));
-        confirm(43L, "2026-08-18 01:00:00", Map.of(7L, 3));
-        confirm(44L, "2026-08-19 01:00:00", Map.of(9L, 5));
+        // arrange
+        tables.confirmLabFixture(WEEK);
         WeeklyRankingParameters params = WeeklyRankingParameters.of(WEEK, 1);
 
         // act
@@ -75,13 +73,12 @@ class WeeklyRankingFreezeTest {
             """);
         assertAll(
             () -> assertThat(execution.getStatus()).isEqualTo(BatchStatus.COMPLETED),
-            () -> assertThat(inputsOf("weekly-20260817-r1"))
+            () -> assertThat(tables.inputsOf("weekly-20260817-r1"))
                 .extracting(row -> row.get("order_id"), row -> row.get("product_id"), row -> row.get("quantity"))
                 .containsExactly(tuple(42L, 7L, 2), tuple(42L, 8L, 1), tuple(43L, 7L, 3), tuple(44L, 9L, 5)),
-            () -> assertThat(manifestOf("weekly-20260817-r1"))
+            () -> assertThat(tables.manifestOf("weekly-20260817-r1"))
                 .containsEntry("period_start", "2026-08-17")
                 .containsEntry("revision", 1)
-                .containsEntry("status", "FROZEN")
                 .containsEntry("input_count", 4)
                 .containsEntry("input_checksum", expectedChecksum)
         );
@@ -91,24 +88,24 @@ class WeeklyRankingFreezeTest {
     @Test
     void appliesUtcWeekBoundary() throws Exception {
         // arrange
-        confirm(50L, "2026-08-23 23:59:59.999999", Map.of(1L, 1));
-        confirm(51L, "2026-08-24 00:00:00", Map.of(2L, 1));
-        confirm(52L, "2026-08-30 23:59:59.999999", Map.of(3L, 1));
-        confirm(53L, "2026-08-31 00:00:00", Map.of(4L, 1));
+        tables.confirm(50L, "2026-08-23 23:59:59.999999", Map.of(1L, 1));
+        tables.confirm(51L, "2026-08-24 00:00:00", Map.of(2L, 1));
+        tables.confirm(52L, "2026-08-30 23:59:59.999999", Map.of(3L, 1));
+        tables.confirm(53L, "2026-08-31 00:00:00", Map.of(4L, 1));
         WeeklyRankingParameters params = WeeklyRankingParameters.of(LocalDate.parse("2026-08-24"), 1);
 
         // act
         jobLauncher.run(job, params.toJobParameters());
 
         // assert
-        assertThat(inputsOf("weekly-20260824-r1")).extracting(row -> row.get("order_id")).containsExactly(51L, 52L);
+        assertThat(tables.inputsOf("weekly-20260824-r1")).extracting(row -> row.get("order_id")).containsExactly(51L, 52L);
     }
 
     @DisplayName("같은 snapshotId 의 manifest 가 이미 있으면, 입력을 다시 복사하지 않고 step 을 끝낸다.")
     @Test
     void doesNotCopyAgainWhenAlreadyFrozen() throws Exception {
         // arrange: 입력 commit 뒤 step 완료 기록 전에 멈춘 상태
-        confirm(60L, "2026-09-01 01:00:00", Map.of(7L, 1));
+        tables.confirm(60L, "2026-09-01 01:00:00", Map.of(7L, 1));
         jdbc.update("""
             insert into weekly_ranking_snapshot
                 (snapshot_id, period_start, revision, status, frozen_at, input_count, input_checksum, created_at, updated_at)
@@ -120,8 +117,8 @@ class WeeklyRankingFreezeTest {
         // assert
         assertAll(
             () -> assertThat(execution.getStatus()).isEqualTo(BatchStatus.COMPLETED),
-            () -> assertThat(inputsOf("weekly-20260831-r1")).isEmpty(),
-            () -> assertThat(manifestOf("weekly-20260831-r1")).containsEntry("input_checksum", "earlier")
+            () -> assertThat(tables.inputsOf("weekly-20260831-r1")).isEmpty(),
+            () -> assertThat(tables.manifestOf("weekly-20260831-r1")).containsEntry("input_checksum", "earlier")
         );
     }
 
@@ -129,7 +126,7 @@ class WeeklyRankingFreezeTest {
     @Test
     void rollsBackInputsWhenManifestFails() throws Exception {
         // arrange: 같은 기간 · revision 의 다른 snapshotId 가 있어 manifest insert 가 유일 제약에 걸림
-        confirm(70L, "2026-09-08 01:00:00", Map.of(7L, 1, 8L, 2));
+        tables.confirm(70L, "2026-09-08 01:00:00", Map.of(7L, 1, 8L, 2));
         jdbc.update("""
             insert into weekly_ranking_snapshot
                 (snapshot_id, period_start, revision, status, frozen_at, input_count, input_checksum, created_at, updated_at)
@@ -141,7 +138,7 @@ class WeeklyRankingFreezeTest {
         // assert
         assertAll(
             () -> assertThat(execution.getStatus()).isEqualTo(BatchStatus.FAILED),
-            () -> assertThat(inputsOf("weekly-20260907-r1")).isEmpty(),
+            () -> assertThat(tables.inputsOf("weekly-20260907-r1")).isEmpty(),
             () -> assertThat(jdbc.queryForObject(
                 "select count(*) from weekly_ranking_snapshot where snapshot_id = 'weekly-20260907-r1'", Integer.class)).isZero()
         );
@@ -167,28 +164,6 @@ class WeeklyRankingFreezeTest {
             () -> assertThrows(JobParametersInvalidException.class, () -> jobLauncher.run(job, mismatched)),
             () -> assertThrows(JobParametersInvalidException.class, () -> jobLauncher.run(job, tuesday))
         );
-    }
-
-    /** W6 consumer 가 남기는 모양: 처리 기록 1행 + 품목별 활동 */
-    private void confirm(long orderId, String confirmedAtUtc, Map<Long, Integer> quantityByProduct) {
-        jdbc.update("""
-            insert into processed_order_confirmation (event_id, order_id, confirmed_at, created_at, updated_at)
-            values (?, ?, ?, now(6), now(6))""", "event-" + orderId, orderId, confirmedAtUtc);
-        quantityByProduct.forEach((productId, quantity) -> jdbc.update("""
-            insert into product_purchase_activity (order_id, product_id, quantity, created_at, updated_at)
-            values (?, ?, ?, now(6), now(6))""", orderId, productId, quantity));
-    }
-
-    private List<Map<String, Object>> inputsOf(String snapshotId) {
-        return jdbc.queryForList(
-            "select order_id, product_id, quantity from weekly_ranking_input where snapshot_id = ? order by order_id, product_id",
-            snapshotId);
-    }
-
-    private Map<String, Object> manifestOf(String snapshotId) {
-        return jdbc.queryForMap("""
-            select cast(period_start as char) as period_start, revision, status, input_count, input_checksum
-            from weekly_ranking_snapshot where snapshot_id = ?""", snapshotId);
     }
 
     private static String sha256(String value) throws Exception {
