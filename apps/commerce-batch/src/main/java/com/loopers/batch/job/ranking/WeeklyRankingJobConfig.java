@@ -4,8 +4,6 @@ import com.loopers.batch.job.ranking.freeze.FreezeInputTasklet;
 import com.loopers.batch.job.ranking.publish.PublishRankingTasklet;
 import com.loopers.batch.job.ranking.score.CompleteScoresTasklet;
 import com.loopers.batch.job.ranking.score.ProductKey;
-import com.loopers.batch.job.ranking.score.ProductScore;
-import com.loopers.batch.job.ranking.score.WeeklyScoreProcessor;
 import com.loopers.batch.job.ranking.score.WeeklyScoreWriter;
 import com.loopers.batch.listener.JobListener;
 import com.loopers.batch.listener.StepMonitorListener;
@@ -48,12 +46,11 @@ public class WeeklyRankingJobConfig {
     private final StepMonitorListener stepMonitorListener;
     private final RejectAbandonedSnapshotListener rejectAbandonedSnapshotListener;
     private final FreezeInputTasklet freezeInputTasklet;
-    private final WeeklyScoreProcessor weeklyScoreProcessor;
     private final WeeklyScoreWriter weeklyScoreWriter;
     private final CompleteScoresTasklet completeScoresTasklet;
     private final PublishRankingTasklet publishRankingTasklet;
 
-    /** 재시작 실험(실습 §6)은 2 를 쓴다. 기본값은 측정한 최적값이 아니다 */
+    /** 재시작 실험(실습 §6)은 2 를 쓴다 */
     @Value("${weekly-ranking.chunk-size:100}")
     private int chunkSize;
 
@@ -80,9 +77,8 @@ public class WeeklyRankingJobConfig {
     @Bean(SCORE_STEP)
     public Step calculateWeeklyScoresStep() {
         return new StepBuilder(SCORE_STEP, jobRepository)
-            .<ProductKey, ProductScore>chunk(chunkSize, transactionManager)
+            .<ProductKey, ProductKey>chunk(chunkSize, transactionManager)
             .reader(weeklyProductReader(null, null))
-            .processor(weeklyScoreProcessor)
             .writer(weeklyScoreWriter)
             .listener(rejectAbandonedSnapshotListener)
             .listener(stepMonitorListener)

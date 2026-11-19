@@ -17,6 +17,7 @@ import org.springframework.batch.item.Chunk;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import java.time.LocalDate;
@@ -26,12 +27,13 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doThrow;
 
 /**
  * 실습 §6 의 재시작. chunk=2 로 상품 7 · 8 을 commit 한 뒤 상품 9 직전에 한 번 실패시키고, 같은 식별 파라미터로 다시 실행한다.
- * 실패 스위치는 파라미터가 아니라 processor spy 로 건다
+ * 실패 스위치는 파라미터가 아니라 writer spy 로 건다
  */
 @SpringBootTest(properties = {
     "spring.batch.job.enabled=false",
@@ -53,10 +55,10 @@ class WeeklyRankingRestartTest {
     private Job job;
 
     @MockitoSpyBean
-    private WeeklyScoreProcessor processor;
+    private WeeklyScoreWriter writer;
 
     @Autowired
-    private WeeklyScoreWriter writer;
+    private JdbcTemplate jdbc;
 
     @Autowired
     private RankingTables tables;
@@ -93,7 +95,7 @@ class WeeklyRankingRestartTest {
         );
 
         // act: 실패 스위치를 끄고 job · reader 객체를 새로 받아 같은 파라미터로 실행
-        Mockito.reset(processor);
+        Mockito.reset(writer);
         JobExecution second = jobLauncher.run(job, restarted.toJobParameters());
 
         // assert
@@ -129,7 +131,7 @@ class WeeklyRankingRestartTest {
         failBeforeProduct(9L);
         jobLauncher.run(job, params.toJobParameters());
         tables.changeStatus(params.snapshotId(), "ABANDONED");
-        Mockito.reset(processor);
+        Mockito.reset(writer);
 
         // act
         JobExecution resumed = jobLauncher.run(job, params.toJobParameters());
@@ -142,25 +144,51 @@ class WeeklyRankingRestartTest {
         );
     }
 
-    @DisplayName("같은 상품의 점수를 두 번 써도 더해지지 않고 같은 절대값으로 남는다.")
+    @DisplayName("같은 chunk 를 두 번 써도 더해지지 않고, 범위 안 상품마다 입력 수량 합의 절대값으로 남는다.")
     @Test
     void writerConvergesToAbsoluteScore() throws Exception {
-        // arrange
-        Chunk<ProductScore> chunk = Chunk.of(new ProductScore("weekly-20260921-r1", 7L, 5L));
+        // arrange: 범위 밖 상품 9 는 이 chunk 가 쓰지 않는다
+        String snapshotId = "weekly-20260921-r1";
+        insertInput(snapshotId, 42L, 7L, 2);
+        insertInput(snapshotId, 43L, 7L, 3);
+        insertInput(snapshotId, 42L, 8L, 1);
+        insertInput(snapshotId, 44L, 9L, 5);
+        Chunk<ProductKey> chunk = Chunk.of(new ProductKey(snapshotId, 7L), new ProductKey(snapshotId, 8L));
 
         // act
         writer.write(chunk);
         writer.write(chunk);
 
         // assert
-        assertThat(tables.scoresOf("weekly-20260921-r1"))
+        assertThat(tables.scoresOf(snapshotId))
             .extracting(row -> row.get("product_id"), row -> row.get("score"))
-            .containsExactly(tuple(7L, 5L));
+            .containsExactly(tuple(7L, 5L), tuple(8L, 1L));
+    }
+
+    @DisplayName("chunk 상품이 오름차순이 아니면, 범위가 다른 상품을 덮지 않도록 쓰지 않고 실패한다.")
+    @Test
+    void writerRejectsUnorderedChunk() {
+        // arrange
+        Chunk<ProductKey> chunk = Chunk.of(new ProductKey("weekly-20260921-r1", 9L), new ProductKey("weekly-20260921-r1", 7L));
+
+        // act & assert
+        assertAll(
+            () -> assertThrows(IllegalStateException.class, () -> writer.write(chunk)),
+            () -> assertThat(tables.scoresOf("weekly-20260921-r1")).isEmpty()
+        );
+    }
+
+    private void insertInput(String snapshotId, long orderId, long productId, int quantity) {
+        jdbc.update("""
+            insert into weekly_ranking_input
+                (snapshot_id, order_id, product_id, quantity, confirmed_at, created_at, updated_at)
+            values (?, ?, ?, ?, '2026-09-21 01:00:00', now(6), now(6))""", snapshotId, orderId, productId, quantity);
     }
 
     private void failBeforeProduct(long productId) throws Exception {
         doThrow(new IllegalStateException("before product " + productId))
-            .when(processor).process(argThat((ProductKey key) -> key != null && key.productId() == productId));
+            .when(writer).write(argThat((Chunk<? extends ProductKey> chunk) -> chunk != null
+                && chunk.getItems().stream().anyMatch(key -> key.productId() == productId)));
     }
 
     /** 메모리의 실행 객체가 아니라 저장된 metadata 를 다시 읽는다 */

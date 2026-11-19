@@ -4,7 +4,7 @@ import com.loopers.batch.job.ranking.RankingTables;
 import com.loopers.batch.job.ranking.WeeklyRankingJobConfig;
 import com.loopers.batch.job.ranking.WeeklyRankingParameters;
 import com.loopers.batch.job.ranking.score.ProductKey;
-import com.loopers.batch.job.ranking.score.WeeklyScoreProcessor;
+import com.loopers.batch.job.ranking.score.WeeklyScoreWriter;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -12,6 +12,7 @@ import org.mockito.Mockito;
 import org.springframework.batch.core.JobExecution;
 import org.springframework.batch.core.JobInstance;
 import org.springframework.batch.core.explore.JobExplorer;
+import org.springframework.batch.item.Chunk;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
@@ -40,7 +41,7 @@ class WeeklyRankingCommandsTest {
     private JobExplorer jobExplorer;
 
     @MockitoSpyBean
-    private WeeklyScoreProcessor processor;
+    private WeeklyScoreWriter writer;
 
     @Autowired
     private RankingTables tables;
@@ -78,7 +79,7 @@ class WeeklyRankingCommandsTest {
         tables.confirmLabFixture(week);
         failBeforeProduct(9L);
         assertThrows(IllegalStateException.class, () -> commands.run(week));
-        Mockito.reset(processor);
+        Mockito.reset(writer);
 
         // act
         WeeklyRankingParameters next = commands.nextParameters(week);
@@ -102,7 +103,7 @@ class WeeklyRankingCommandsTest {
         tables.confirmLabFixture(week);
         failBeforeProduct(9L);
         assertThrows(IllegalStateException.class, () -> commands.run(week));
-        Mockito.reset(processor);
+        Mockito.reset(writer);
 
         // act
         commands.abandon(week, 1);
@@ -145,6 +146,7 @@ class WeeklyRankingCommandsTest {
 
     private void failBeforeProduct(long productId) throws Exception {
         doThrow(new IllegalStateException("before product " + productId))
-            .when(processor).process(argThat((ProductKey key) -> key != null && key.productId() == productId));
+            .when(writer).write(argThat((Chunk<? extends ProductKey> chunk) -> chunk != null
+                && chunk.getItems().stream().anyMatch(key -> key.productId() == productId)));
     }
 }
