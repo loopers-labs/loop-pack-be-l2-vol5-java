@@ -10,7 +10,6 @@ import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
-import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemStreamReader;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.database.Order;
@@ -21,6 +20,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 
 @ConditionalOnProperty(name = "spring.batch.job.name", havingValue = WeeklyRankingJobConfig.JOB_NAME)
@@ -45,7 +45,7 @@ class WeeklyRankingJobConfig {
         JobRepository jobRepository, PlatformTransactionManager transactionManager, DataSource dataSource
     ) {
         return new StepBuilder("publishRanking", jobRepository)
-            .tasklet(new PublishRankingTasklet(new JdbcTemplate(dataSource)), transactionManager)
+            .tasklet(new PublishRankingTasklet(new PublishedRankingStore(new JdbcTemplate(dataSource))), transactionManager)
             .build();
     }
 
@@ -54,7 +54,7 @@ class WeeklyRankingJobConfig {
         JobRepository jobRepository, PlatformTransactionManager transactionManager, DataSource dataSource
     ) {
         return new StepBuilder("freezeSnapshot", jobRepository)
-            .tasklet(new FreezeSnapshotTasklet(new JdbcTemplate(dataSource)), transactionManager)
+            .tasklet(new FreezeSnapshotTasklet(new SnapshotStore(new JdbcTemplate(dataSource))), transactionManager)
             .build();
     }
 
@@ -63,14 +63,12 @@ class WeeklyRankingJobConfig {
         JobRepository jobRepository,
         PlatformTransactionManager transactionManager,
         ItemStreamReader<Long> snapshotProductReader,
-        ItemProcessor<Long, ProductScore> productScoreProcessor,
-        ItemWriter<ProductScore> productScoreWriter,
+        ItemWriter<Long> productScoreWriter,
         @Value("${ranking.chunk-size}") int chunkSize
     ) {
         return new StepBuilder("calculateScore", jobRepository)
-            .<Long, ProductScore>chunk(chunkSize, transactionManager)
+            .<Long, Long>chunk(chunkSize, transactionManager)
             .reader(snapshotProductReader)
-            .processor(productScoreProcessor)
             .writer(productScoreWriter)
             .build();
     }
@@ -99,34 +97,10 @@ class WeeklyRankingJobConfig {
 
     @Bean
     @StepScope
-    ItemProcessor<Long, ProductScore> productScoreProcessor(
+    ItemWriter<Long> productScoreWriter(
         DataSource dataSource,
         @Value("#{jobParameters['snapshotId']}") String snapshotId
     ) {
-        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
-        return productId -> new ProductScore(productId, jdbc.queryForObject(
-            "select sum(quantity) from ranking_snapshot_input where snapshot_id = ? and product_id = ?",
-            Long.class, snapshotId, productId
-        ));
-    }
-
-    @Bean
-    @StepScope
-    ItemWriter<ProductScore> productScoreWriter(
-        DataSource dataSource,
-        @Value("#{jobParameters['snapshotId']}") String snapshotId
-    ) {
-        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
-        return chunk -> jdbc.batchUpdate("""
-            insert into ranking_score_stage (snapshot_id, product_id, score) values (?, ?, ?) as new
-            on duplicate key update score = new.score
-            """,
-            chunk.getItems(), chunk.size(),
-            (statement, item) -> {
-                statement.setString(1, snapshotId);
-                statement.setLong(2, item.productId());
-                statement.setLong(3, item.score());
-            }
-        );
+        return new ScoreStageWriter(new NamedParameterJdbcTemplate(dataSource), snapshotId);
     }
 }

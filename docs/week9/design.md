@@ -17,6 +17,10 @@ ranking_snapshot + ranking_snapshot_input      ← 바뀌지 않는 입력
 완성 ranking + 기간별 공개 pointer              ← API 가 읽는 것
 ```
 
+입력과 stage 는 계산하는 쪽(쓰기 모델)이고, 완성 ranking 과 pointer 는 보여 주는 쪽(읽기 모델)이다. 쓰기 모델은 batch 만, 읽기 모델은 commerce-api 만 읽는다. 공개 step 이 쓰기 모델을 읽기 모델로 옮기는 projection 이다. 이벤트마다 조금씩 고치는 projection(W6 의 구매 활동 consumer)과 달리 snapshot 마다 읽기 모델을 통째로 새로 만들고, 다 만든 뒤 pointer 하나로 바꾼다. 그래서 API 는 계산 중인 조각을 보지 않고(`PBL-003`), 다시 돌려도 결과가 같고(`PBL-004`), 옛 snapshot 의 결과가 남는다(`PBL-009`). 순위를 읽기 모델에 저장해 두므로 조회는 집계하지 않고, 공개 조건으로 상품을 빼도 순위가 당겨지지 않는다(`QRY-007`).
+
+**뒤집을 조건**: 실시간 랭킹처럼 읽기 모델을 이벤트마다 고쳐야 할 때. 그때는 snapshot 을 통째로 만드는 대신 이벤트마다 고치는 projection 을 따로 둔다(12 장).
+
 ## 2. step 을 셋으로 나눈다 (`JOB-001`)
 
 step 은 재시작의 단위다. Batch 는 COMPLETED step 을 다시 실행하지 않는다. 입력 고정을 따로 두면 계산이 실패해도 입력을 다시 복사하지 않고(`SNP-005`), 그 판단을 코드가 아니라 프레임워크가 한다.
@@ -56,7 +60,9 @@ chunk TX 가 시작되면 transaction manager 가 커넥션을 현재 스레드�
 | writer 와 transaction manager 의 DataSource 가 다름 | writer 가 새 커넥션을 연다 |
 | 다른 스레드에서 쿼리 | 그 스레드에는 묶인 커넥션이 없다 |
 
-**뒤집을 조건**: Batch 전용 DataSource 를 두게 될 때. writer 와 JobRepository 가 같은 DataSource 를 쓰도록 먼저 맞추고 연결 테스트를 다시 돌린다.
+step 에 넘기는 transaction manager 는 Boot 가 만든 `JpaTransactionManager` 다. batch 는 엔티티를 쓰지 않지만 DataSource 를 받으려고 의존하는 `modules:jpa` 가 JPA 를 데려와 Boot 가 `DataSourceTransactionManager` 대신 이것을 만든다. TX 를 시작하면 Hibernate 가 잡은 JDBC 커넥션을 같은 DataSource 로 스레드에 묶어, `JdbcTemplate` 과 JobRepository 가 그 커넥션을 쓴다. 대가는 TX 마다 쓰지 않는 Hibernate Session 을 하나 여는 것이다.
+
+**뒤집을 조건**: Batch 전용 DataSource 를 두게 될 때. writer 와 JobRepository 가 같은 DataSource 를 쓰도록 먼저 맞추고 연결 테스트를 다시 돌린다. batch 가 JPA 없이 DataSource 만 받게 되면 transaction manager 가 `DataSourceTransactionManager` 로 바뀌므로 같은 TX 를 보는 테스트(`JOB-007`, `SNP-004`, `JOB-004`)를 다시 돌린다.
 
 ## 5. 데이터 접근: batch 는 JDBC, 테이블은 SQL DDL, 엔티티는 두지 않는다
 
@@ -78,8 +84,7 @@ Java 로 넘어오는 값에만 타입을 둔다. 테이블마다 record 를 두
 |---|---|
 | 입력 고정 | `insert … select ?, … from purchase_activity where …` 한 문장 |
 | reader | `JdbcPagingItemReader`(7 장) |
-| processor | `select sum(quantity) …` |
-| writer | `insert … as new on duplicate key update score = new.score`, chunk 를 `batchUpdate` 로(8 장) |
+| writer | chunk 의 상품 ID 로 `insert … select … sum(quantity) … group by … on duplicate key update` 한 문장(8 장) |
 | 입력 checksum | fetchSize `Integer.MIN_VALUE` 로 드라이버가 행을 하나씩 받게 하고, `RowCallbackHandler` 로 한 행씩 해시에 넣는다(14 장) |
 
 근거:
@@ -95,7 +100,7 @@ Java 로 넘어오는 값에만 타입을 둔다. 테이블마다 record 를 두
 
 batch 모듈의 QueryDSL annotation processor 는 두지 않는다. QueryDSL 의 Q 클래스는 엔티티에서 만들어지므로 QueryDSL 을 쓰는 것은 엔티티를 다시 두는 것과 같은 선택이다.
 
-**뒤집을 조건**: batch 에 조건이 바뀌는 쿼리(검색 필터, 선택적 조건)가 생길 때 QueryDSL 과 엔티티를 함께 둔다. 그때는 OpenFeign 포크로 옮길지 함께 정한다. 점수 계산에 반품 차감, 가중치 같은 도메인 규칙이 붙어 DB 없이 판단해야 할 때는 읽은 값을 도메인 객체로 바꾸어 넘긴다. 운영 스키마를 migration 도구로 관리하게 되면 `schema/ranking.sql` 을 그 도구의 첫 migration 으로 옮긴다.
+**뒤집을 조건**: batch 에 조건이 바뀌는 쿼리(검색 필터, 선택적 조건)가 생길 때 QueryDSL 과 엔티티를 함께 둔다. 그때는 OpenFeign 포크로 옮길지 함께 정한다. 점수 계산에 반품 차감, 가중치 같은 도메인 규칙이 붙어 DB 없이 판단해야 할 때는 읽은 값을 도메인 객체로 바꾸어 넘긴다. 운영 스키마를 migration 도구로 관리하게 되면 `schema/ranking.sql` 을 그 도구의 첫 migration 으로 옮긴다. 칸 이름을 컴파일에서 잡고 싶어지면 jOOQ 를 둔다. `ranking.sql` 에서 DB 없이 타입을 만들 수 있어 테이블 정의가 한 곳으로 남고, insert…select·on duplicate key update·window 함수를 표현한다. 그때 같은 TX 테스트(`JOB-007`, `SNP-004`, `JOB-004`)를 다시 돌린다.
 
 ## 6. 입력 고정 (`SNP-003`)
 
@@ -143,7 +148,7 @@ Batch 는 COMPLETED step 을 다시 실행하지 않지만 고정 step 이 다�
 
 `JdbcPagingItemReader` 는 `sortKey` 로 keyset 조회를 하고 마지막 값을 ExecutionContext 의 `snapshotProductReader.start.after` 에 저장한다. 재시작하면 그 값 다음부터 읽는다. `select distinct product_id … where snapshot_id = :snapshotId`, `sortKey = product_id` 이고 page 크기는 chunk 크기와 같다. 결과 안에서 `product_id` 가 유일하므로 정렬 key 의 유일성 조건을 만족한다. 페이지 조회는 chunk TX 의 커넥션을 쓴다. reader 는 `@StepScope` bean 이고 반환 타입을 `ItemStreamReader` 로 둔다. step scope 프록시는 반환 타입의 인터페이스만 구현하므로 `ItemReader` 로 두면 Batch 가 `open`·`update` 를 부르지 않아 위치가 저장되지 않는다.
 
-입력의 기본 키를 `(snapshot_id, product_id, order_id)` 로 둔다(`SNP-002`). reader 의 `product_id > ?` 와 processor 의 `product_id = ?` 가 기본 키 범위에서 시작한다. `(snapshot_id, order_id, product_id)` 이면 둘 다 snapshot 전체를 훑는다. 유일성은 세 칸의 조합이고 칸 순서는 정해져 있지 않다. InnoDB 는 기본 키 순서로 행을 저장하므로 한 snapshot 의 한 상품 입력이 붙어 있다. 대리 키를 두지 않는다. 테이블을 SQL 로 정의하므로 칸 순서를 직접 적을 수 있다(5 장).
+입력의 기본 키를 `(snapshot_id, product_id, order_id)` 로 둔다(`SNP-002`). reader 의 `product_id > ?` 와 writer 의 `product_id in (…)` 가 기본 키 범위에서 시작한다. `(snapshot_id, order_id, product_id)` 이면 둘 다 snapshot 전체를 훑는다. 유일성은 세 칸의 조합이고 칸 순서는 정해져 있지 않다. InnoDB 는 기본 키 순서로 행을 저장하므로 한 snapshot 의 한 상품 입력이 붙어 있다. 대리 키를 두지 않는다. 테이블을 SQL 로 정의하므로 칸 순서를 직접 적을 수 있다(5 장).
 
 고르지 않은 것:
 
@@ -153,24 +158,49 @@ Batch 는 COMPLETED step 을 다시 실행하지 않지만 고정 step 이 다�
 | `JpaPagingItemReader` | 값 projection 이면 엔티티를 올리지 않지만 offset 이다 |
 | jojoldu `QuerydslNoOffsetPagingItemReader` | `javax` 이고 마지막 key 를 메모리에만 두어 재시작 때 복원하지 않는다 |
 | `AbstractPagingItemReader` 를 상속해 keyset 으로 | 재시작 때 `read.count` 로 페이지 안 위치를 계산해, keyset 으로 읽은 페이지의 앞부분을 건너뛴다. page 크기와 chunk 크기가 다르면 상품이 빠진다 |
-| `JdbcCursorItemReader` | step 내내 커넥션을 따로 잡고, MySQL 은 fetchSize 를 정하지 않으면 결과 전체를 메모리에 올린다 |
+| `JdbcCursorItemReader` | step 내내 커넥션을 하나 더 잡고 읽기가 chunk TX 밖에서 일어난다. 재시작하면 쿼리를 처음부터 다시 실행해 처리한 행을 읽어 버린다. MySQL 은 fetchSize 를 정하지 않으면 결과 전체를 메모리에 올리고(14 장), 행 단위 fetch 에서는 `rs.getRow()` 를 지원하지 않아 `verifyCursorPosition(false)` 가 필요하다 |
+| `RepositoryItemReader`(Spring Data 저장소) | `Pageable` 의 page 번호로 읽어 offset 이다. 재시작도 읽은 개수로 page 를 계산한다. 엔티티와 저장소가 필요해 5 장의 결정과 맞지 않는다 |
+
+상품 10,000 개를 90% 지점에서 실패시켜 재시작해 보면, paging 은 커넥션 1 개로 남은 1,000 행만 다시 읽고 cursor 는 커넥션 2 개로 10,000 행을 다시 받아 9,000 행을 버린다. cursor 의 재시작 비용은 남은 양이 아니라 전체 양에 비례한다.
 
 **뒤집을 조건**: 정렬 key 가 `product_id` 하나로 유일하지 않게 될 때(예: 상품과 옵션 단위로 item 을 나눌 때). `sortKeys` 에 칸을 더한다.
 
+### 합계는 writer 가 chunk 마다 구한다
+
+계산 step 에 processor 가 없다. reader 는 상품 ID 를 읽고, writer 가 chunk 에 든 상품들의 `sum(quantity)` 를 고정 입력에서 group by 로 구해 그대로 upsert 한다. 점수가 단순 합이라 Java 에서 할 일이 없다. 상품마다 sum 쿼리를 보내는 processor 방식에 비해 쿼리 수는 상품 수에서 chunk 수로 줄고, DB 가 더하는 입력 행은 같다(상품 10,000 개에서 쿼리 10,101 → 201, 검사한 행 100,099 → 60,099, 시간 약 1.9 초 → 0.5 초).
+
+| 선택지 | 판단 |
+|---|---|
+| processor 가 상품마다 sum | 지금은 두지 않는다. 읽기 · 계산 · 저장의 책임이 코드 모양에 드러나지만 계산이 SQL 의 합 하나라 processor 에 Java 로 할 일이 없다 |
+| `JdbcPagingItemReader` 에 `groupClause` 를 준다 | 쓰지 않는다. provider 가 `SELECT * FROM (… GROUP BY …) AS MAIN_QRY WHERE key > ? … LIMIT n` 을 만든다. MySQL 은 key 조건을 집계 안으로 밀어 넣지만 LIMIT 은 넣지 못해 page 마다 남은 상품 전부를 집계한다. 비용이 상품 수의 제곱으로 는다 |
+| group by·keyset·LIMIT 을 한 층에 둔 쿼리를 만드는 provider 를 직접 둔다 | 두지 않는다. writer 방식과 쿼리 수가 비슷하면서 `JdbcPagingItemReader` 의 내부 규칙(마지막 key 를 받는 `:_product_id`)에 기대는 코드를 우리가 갖게 된다 |
+
+writer 가 같은 chunk TX 안에서 입력을 읽는다. READ COMMITTED 에서 INSERT…SELECT 는 읽는 행을 잠그지 않고, REPEATABLE READ 에서 거는 공유 잠금도 고정 입력은 아무도 쓰지 않아 기다릴 상대가 없다. 한 상품에 주문이 몰리면 그 상품을 맡은 chunk 의 TX 가 길어지는 것은 방식과 무관하게 남는다.
+
+**뒤집을 조건**: 점수에 가중치, 반품 차감처럼 DB 없이 테스트할 규칙이 붙을 때 processor 를 다시 두고 그 규칙을 Java 로 옮긴다. 한 상품의 입력이 커서 chunk TX 가 길어지는 것이 측정되면 고정 때 상품별 합계를 함께 만들지 따진다.
+
 ### chunk 크기
 
-chunk 크기는 설정값 `ranking.chunk-size` 이고 기본값은 100 이다. 재시작 테스트는 2 로 준다(`CAL-004`). job parameter 로 두지 않는다. 식별 parameter 면 값을 바꿀 때마다 새 JobInstance 가 되어 재시작이 이어지지 않고(`JOB-002`), 비식별 parameter 면 재시작 때 다른 값을 줄 수 있어 저장된 위치와 page 경계가 어긋나 보인다. 100 은 처리량을 잰 값이 아니다. 한 chunk 의 TX 가 상품 100 개의 합계 쿼리와 upsert 한 번을 담는 크기로 시작한다.
+chunk 크기는 설정값 `ranking.chunk-size` 이고 기본값은 100 이다. 재시작 테스트는 2 로 준다(`CAL-004`). job parameter 로 두지 않는다. 식별 parameter 면 값을 바꿀 때마다 새 JobInstance 가 되어 재시작이 이어지지 않고(`JOB-002`), 비식별 parameter 면 재시작 때 다른 값을 줄 수 있어 저장된 위치와 page 경계가 어긋나 보인다. 100 은 처리량을 잰 값이 아니다. 한 chunk 의 TX 가 page 조회 한 번과 상품 100 개의 집계 upsert 한 번을 담는 크기로 시작한다.
 
 **뒤집을 조건**: 계산 step 의 처리량이나 chunk TX 시간을 측정해 문제가 될 때 그 측정으로 값을 정한다.
 
 ## 8. writer: 절대값 (`CAL-003`)
 
 ```sql
-insert into ranking_score_stage (snapshot_id, product_id, score) values (?, ?, ?) as new
-on duplicate key update score = new.score
+insert into ranking_score_stage (snapshot_id, product_id, score)
+select * from (
+  select snapshot_id, product_id, sum(quantity) as total
+  from ranking_snapshot_input
+  where snapshot_id = :snapshotId and product_id in (:productIds)
+  group by snapshot_id, product_id
+) as scored
+on duplicate key update score = scored.total
 ```
 
-chunk 의 점수를 `batchUpdate` 로 보낸다. 같은 chunk 를 다시 써도 값이 같다. `jpa.yml` 의 `rewriteBatchedStatements=true` 로 드라이버가 chunk 를 `values (…),(…),…` 한 문장으로 다시 써서 보낸다. 행 별칭과 `on duplicate key update` 는 그대로다(`EXP-032`, 서버 general log 로 확인). 다시 쓴 문장은 행마다의 영향 행 수 대신 `SUCCESS_NO_INFO` 를 돌려줄 수 있어, writer 는 `batchUpdate` 의 반환값으로 판단하지 않는다. `score = score + ?` 처럼 더하는 방식은 섞지 않는다. 행 별칭(`as new`)은 MySQL 8.0.19 부터이고, `VALUES()` 함수는 8.0.20 부터 deprecated 다.
+`ScoreStageWriter` 가 이 문장을 맡는다. 점수 규칙(`CAL-002`, `CAL-003`)이 있는 곳이라 조립만 하는 config 에서 떼어 이름을 붙였다. chunk 하나가 문장 하나다. 같은 chunk 를 다시 써도 고정 입력의 합으로 덮으므로 값이 같다. `score = score + ?` 처럼 더하는 방식은 섞지 않는다. 집계는 chunk 의 상품 최대 chunk 크기만큼에 대해서만 일어나고 PK `(snapshot_id, product_id, …)` 범위로 읽는다.
+
+stage 점수가 다시 써도 같다는 것을 지키는 테스트는 `CAL-003` 하나다. writer 를 더하는 방식으로 바꾸면 재공개(`PBL-004`)는 이미 쓴 순위 행을 건너뛰어, 재시작(`JOB-004`)은 다시 쓰는 상품이 처음 쓰는 행이어서 둘 다 통과한다.
 
 **뒤집을 조건**: 운영 DB 가 MySQL 이 아니게 될 때. 그 DB 의 upsert(`MERGE` 등)로 바꾼다.
 
@@ -203,7 +233,11 @@ chunk 의 점수를 `batchUpdate` 로 보낸다. 같은 chunk 를 다시 써도 
 
 ## 11. 패키지
 
-main 과 test 모두 `com.loopers.batch.job.ranking` 이다(Q-8). commerce-api 의 `interfaces → application → domain ← infrastructure` 를 따르지 않는다. 그 계층은 TX 경계를 application 에 모으고 판단을 DB 없는 애그리거트에 두려는 것인데, batch 에서는 step 이 TX 경계이고 판단은 SQL 안의 합계와 정렬뿐이다. `WeeklySnapshot` 과 step 구성 요소를 package-private 으로 두므로 테스트가 같은 패키지에 있어야 한다. 연결 테스트도 여기에 남긴다.
+main 과 test 모두 `com.loopers.batch.job.ranking` 이다(Q-8). commerce-api 의 `interfaces → application → domain ← infrastructure` 를 따르지 않는다. 그 계층은 TX 경계를 application 에 모으고 판단을 DB 없는 애그리거트에 두려는 것인데, batch 에서는 step 이 TX 경계이고 판단은 SQL 안의 합계와 정렬뿐이다. `WeeklySnapshot` 과 step 구성 요소를 package-private 으로 두므로 테스트가 같은 패키지에 있어야 한다.
+
+한 패키지 안에서도 판단, SQL, 순서를 나눈다. 판단(`SNP-006`, `SNP-008`, `REV-002`)은 `WeeklySnapshot` 이 하고 DB 없이 테스트한다. SQL 은 테이블 묶음마다 이름 있는 메서드로 `SnapshotStore`, `PublishedRankingStore`, `ScoreStageWriter` 에 모은다. tasklet 은 그 둘을 부르는 순서만 갖는다. config 는 조립만 한다. `store/`, `writer/` 같은 종류별 하위 패키지는 두지 않는다. 하위 패키지는 package-private 을 공유하지 않아 store 를 public 으로 열어야 하고, 그러면 다른 코드가 이 테이블을 우회해 쓸 수 있다.
+
+**뒤집을 조건**: 다른 job 이 이 store 를 함께 쓰게 되거나 패키지가 한눈에 들어오지 않을 만큼 커질 때. 종류가 아니라 step 의 개념(`snapshot/`, `publish/`)으로 나누고, 패키지 사이에 필요한 것만 public 으로 연다. 연결 테스트도 여기에 남긴다.
 
 **뒤집을 조건**: 반품 차감, 가중치처럼 DB 없이 테스트할 판단이 생길 때. 그 판단을 domain 패키지의 객체로 꺼내고 step 은 그것을 부른다. 설정만 보는 테스트라 깨지면 원인이 랭킹 로직이 아니라 TX·저장소 설정이라는 것이 바로 드러난다.
 
@@ -234,28 +268,11 @@ DB 가 지키는 것은 둘이다. 같은 기간·revision 의 snapshot 은 `(pe
 
 **뒤집을 조건**: 스케줄러의 자동 launch 나 실패 시 자동 재시도가 생길 때 실행권 행을 둔다.
 
-## 14. 입력 checksum 의 메모리 (`EXP-029`)
+## 14. 입력 checksum 의 메모리
 
 MySQL Connector/J 는 fetchSize 를 정하지 않으면 결과 전체를 클라이언트 메모리에 받은 뒤 첫 행을 넘긴다. `RowCallbackHandler` 가 한 행씩 처리해도 메모리에는 한 주의 입력이 모두 올라간다. checksum 쿼리에 fetchSize `Integer.MIN_VALUE` 를 주어 드라이버가 소켓에서 한 행씩 읽게 한다. 입력과 결과 checksum 모두 `SortedRowsChecksum` 을 거친다.
 
-측정: heap 512MB, young 16MB(결과를 받는 도중에 GC 가 일어나 붙잡힌 행이 보이도록), 각 3 회. GC 직후 live heap 최댓값에서 실행 전 기준선을 뺀 값의 중앙값이다. 모든 실행에서 GC 가 4 회 이상 일어났다.
-
-| 입력 행 | 결과 전체를 받음 | 행 단위로 받음 |
-|---|---|---|
-| 100,000 | 22MB | 0MB |
-| 200,000 | 45MB | 0MB |
-| 400,000 | 92MB | 0MB |
-
-결과 전체를 받으면 행당 약 240B 가 붙잡힌다. fetchSize 하나만 바꾼 대조에서 증가가 사라지므로 원인은 드라이버의 결과 버퍼링이다.
-
-속도는 따로 쟀다(`EXP-031`). 기본 GC, heap 1GB 에서 checksum 읽기만 두 방식으로, 웜업 3 회를 버리고 10 회를 번갈아 실행했다. 두 방식의 checksum 은 같았다.
-
-| 입력 행 | 결과 전체를 받음 (중앙값, 범위) | 행 단위로 받음 (중앙값, 범위) | 비율 |
-|---|---|---|---|
-| 100,000 | 92ms (89~95) | 91ms (89~98) | 0.99 |
-| 400,000 | 392ms (381~409) | 376ms (361~388) | 0.96 |
-
-행 단위로 받아도 느려지지 않는다. 쿼리는 한 번이고 서버가 결과를 이어 보내므로 행마다 왕복하지 않는다. 40 만 행에서 checksum 읽기는 0.4 초이고, `EXP-029` 에서 고정 step 이 20 초 넘게 걸린 것은 대부분 INSERT…SELECT 다.
+결과 전체를 받으면 입력 행당 약 240B 가 heap 에 붙잡혀 행 수에 비례해 늘고, 행 단위로 받으면 늘지 않는다. 행 단위로 받아도 느려지지 않는다. 쿼리는 한 번이고 서버가 결과를 이어 보내므로 행마다 왕복하지 않는다.
 
 대가: 결과를 다 읽기 전에는 그 커넥션으로 다른 쿼리를 보낼 수 없다. checksum 은 고정 step 의 마지막 읽기라 그 사이에 다른 쿼리가 없다. 클라이언트가 늦게 읽으면 서버가 쓰기를 기다리고, Connector/J 는 이때 `net_write_timeout` 을 `netTimeoutForStreamingResults`(기본 600 초)로 올린다.
 
@@ -266,7 +283,7 @@ MySQL Connector/J 는 fetchSize 를 정하지 않으면 결과 전체를 클라�
 | `useCursorFetch=true` 와 fetchSize N | N 행마다 서버 cursor 에 왕복하고 서버에 임시 테이블이 생긴다. 커넥션 URL 에 두면 모든 쿼리에 걸린다 |
 | DB 에서 checksum 계산(`sha2(group_concat(...))`) | `group_concat_max_len` 을 넘으면 결과가 잘린다. 행 단위 해시가 아니라 이어 붙인 문자열 전체를 서버 메모리에 만든다 |
 
-**뒤집을 조건**: checksum 읽기 도중 같은 커넥션으로 다른 쿼리를 보내야 할 때 `useCursorFetch` 로 바꾼다. 실험의 heap 수치는 `-Xmn16m` 조건의 값이므로 운영 heap 을 정할 때는 운영 GC 설정으로 다시 잰다.
+**뒤집을 조건**: checksum 읽기 도중 같은 커넥션으로 다른 쿼리를 보내야 할 때 `useCursorFetch` 로 바꾼다.
 
 ## 15. 공개 (`PBL-001` ~ `PBL-005`)
 
@@ -282,6 +299,8 @@ MySQL Connector/J 는 fetchSize 를 정하지 않으면 결과 전체를 클라�
 | `weekly_ranking_publication` | `period_start` | 기간마다 공개본은 하나다. 조건부 갱신이 한 행에서 끝난다 |
 
 **뒤집을 조건**: 한 기간에 공개본이 둘 이상 필요할 때(예: 점수 기준이 여럿) pointer 키에 그 축을 더한다.
+
+완성 확인은 점수 행을 센 뒤 순위를 쓰는 "읽고 나서 쓰기" 다. 그 사이 stage 가 바뀌지 않는다. 같은 snapshot 의 계산은 같은 JobInstance 라 Batch 가 동시 실행을 막고, 다른 revision 은 다른 snapshot 의 행을 쓴다. pointer 는 비교와 갱신이 upsert 한 문장 안에 있어 읽고 나서 쓰는 틈이 없다. **뒤집을 조건**: 같은 snapshot 의 stage 를 job 밖에서 고치는 경로가 생길 때 완성 확인과 순위 쓰기 사이를 잠근다.
 
 ### 결과 checksum 은 저장하지 않는다 (`PBL-007`)
 

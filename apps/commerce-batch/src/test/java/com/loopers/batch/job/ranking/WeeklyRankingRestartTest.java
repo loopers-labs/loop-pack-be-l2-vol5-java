@@ -141,6 +141,45 @@ class WeeklyRankingRestartTest {
         );
     }
 
+    @DisplayName("EXP-027: 한 번에 끝난 실행과 실패 뒤 재시작으로 끝난 실행의 입력 checksum, 결과 checksum, 순위가 같다.")
+    @Test
+    void restartedRunMatchesUninterruptedRun() throws Exception {
+        long normalId = launch(params(1));
+
+        long failedId = launchWhileProductNineIsLocked(params(2), R2);
+        long restartedId = launch(params(2));
+
+        assertAll(
+            () -> assertThat(jobExplorer.getJobExecution(normalId).getStatus()).isEqualTo(BatchStatus.COMPLETED),
+            () -> assertThat(jobExplorer.getJobExecution(failedId).getStatus()).isEqualTo(BatchStatus.FAILED),
+            () -> assertThat(jobExplorer.getJobExecution(restartedId).getJobInstance().getInstanceId())
+                .isEqualTo(jobExplorer.getJobExecution(failedId).getJobInstance().getInstanceId()),
+            () -> assertThat(jobExplorer.getJobExecution(restartedId).getStatus()).isEqualTo(BatchStatus.COMPLETED),
+            () -> assertThat(inputChecksum(R2)).isEqualTo(inputChecksum(SNAPSHOT_ID)),
+            () -> assertThat(resultChecksum(restartedId)).isEqualTo(resultChecksum(normalId)),
+            () -> assertThat(ranking(R2)).isEqualTo(ranking(SNAPSHOT_ID)).containsExactly("1:7:5", "2:9:5", "3:8:1")
+        );
+    }
+
+    private String inputChecksum(String snapshotId) {
+        return jdbc.queryForObject(
+            "select input_checksum from ranking_snapshot where snapshot_id = ?", String.class, snapshotId
+        );
+    }
+
+    private Object resultChecksum(long executionId) {
+        return stepNamed(jobExplorer.getJobExecution(executionId), "publishRanking")
+            .getExecutionContext().get("resultChecksum");
+    }
+
+    private List<String> ranking(String snapshotId) {
+        return jdbc.query(
+            "select rank_no, product_id, score from weekly_ranking where snapshot_id = ? order by rank_no",
+            (rs, rowNum) -> rs.getInt("rank_no") + ":" + rs.getLong("product_id") + ":" + rs.getLong("score"),
+            snapshotId
+        );
+    }
+
     private JobParameters params(int revision) {
         return new JobParametersBuilder()
             .addLocalDate("periodStart", LocalDate.of(2026, 8, 17))
@@ -166,7 +205,7 @@ class WeeklyRankingRestartTest {
 
     private Map<String, Object> publication() {
         return jdbc.queryForMap(
-            "select snapshot_id, revision, published_at from weekly_ranking_publication "
+            "select snapshot_id, revision, published_at, frozen_at from weekly_ranking_publication "
                 + "where period_start = '2026-08-17'"
         );
     }

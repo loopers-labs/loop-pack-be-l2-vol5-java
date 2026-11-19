@@ -183,6 +183,20 @@ class PublishRankingStepTest {
         assertThat(recorded).isEqualTo("745d50bbd2f04a2e8c937f9ebf5f2cddbf75b958540e964934a424903b0a67d2");
     }
 
+    @DisplayName("QRY-004: 공개 pointer 는 가리키는 snapshot 의 입력 고정 시점을 함께 가져, API 가 쓰기 모델을 읽지 않는다.")
+    @Test
+    void pointerCarriesFrozenAtOfPublishedSnapshot() throws Exception {
+        launch();
+
+        Object frozenAt = jdbc.queryForObject(
+            "select frozen_at from ranking_snapshot where snapshot_id = ?", Object.class, SNAPSHOT_ID
+        );
+        Object publishedFrozenAt = jdbc.queryForObject(
+            "select frozen_at from weekly_ranking_publication where period_start = '2026-08-17'", Object.class
+        );
+        assertThat(publishedFrozenAt).isNotNull().isEqualTo(frozenAt);
+    }
+
     private void forget(long executionId) {
         new JobRepositoryTestUtils(jobRepository).removeJobExecutions(
             List.of(jobExplorer.getJobExecution(executionId))
@@ -192,7 +206,7 @@ class PublishRankingStepTest {
 
     private Map<String, Object> publication() {
         return jdbc.queryForMap(
-            "select snapshot_id, revision, published_at from weekly_ranking_publication "
+            "select snapshot_id, revision, published_at, frozen_at from weekly_ranking_publication "
                 + "where period_start = '2026-08-17'"
         );
     }

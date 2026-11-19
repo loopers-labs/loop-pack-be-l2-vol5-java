@@ -39,5 +39,6 @@ create table if not exists weekly_ranking_publication (
   snapshot_id  varchar(40) not null,
   revision     int         not null,
   published_at datetime(6) not null,
+  frozen_at    datetime(6) not null,
   primary key (period_start)
 ) engine=InnoDB;
