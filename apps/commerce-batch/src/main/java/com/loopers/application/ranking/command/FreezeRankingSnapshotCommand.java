@@ -1,6 +1,6 @@
 package com.loopers.application.ranking.command;
 
-import com.loopers.domain.ranking.model.RankingPeriod;
+import com.loopers.domain.ranking.model.vo.RankingPeriod;
 import java.time.LocalDate;
 import java.util.UUID;
 

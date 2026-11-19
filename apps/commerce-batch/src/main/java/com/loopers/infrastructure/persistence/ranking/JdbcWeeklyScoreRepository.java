@@ -1,6 +1,6 @@
 package com.loopers.infrastructure.persistence.ranking;
 
-import com.loopers.domain.ranking.model.WeeklyPurchaseScore;
+import com.loopers.domain.ranking.model.vo.WeeklyPurchaseScore;
 import com.loopers.domain.ranking.repository.WeeklyScoreRepository;
 import java.util.List;
 import java.util.UUID;

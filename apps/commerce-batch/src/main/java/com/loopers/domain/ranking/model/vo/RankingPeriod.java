@@ -1,4 +1,4 @@
-package com.loopers.domain.ranking.model;
+package com.loopers.domain.ranking.model.vo;
 
 import java.time.Instant;
 import java.time.LocalDate;

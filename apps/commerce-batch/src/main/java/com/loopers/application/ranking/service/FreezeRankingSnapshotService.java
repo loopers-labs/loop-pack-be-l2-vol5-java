@@ -3,10 +3,10 @@ package com.loopers.application.ranking.service;
 import com.loopers.application.ranking.command.FreezeRankingSnapshotCommand;
 import com.loopers.application.ranking.result.FrozenRankingSnapshotResult;
 import com.loopers.domain.ranking.repository.RankingSnapshotRepository;
-import com.loopers.domain.ranking.model.RankingPeriod;
+import com.loopers.domain.ranking.model.vo.RankingPeriod;
 import com.loopers.domain.ranking.model.RankingSnapshot;
 import com.loopers.domain.ranking.model.SnapshotConflictException;
-import com.loopers.domain.ranking.policy.FrozenPurchaseInputChecksum;
+import com.loopers.domain.ranking.model.vo.InputFingerprint;
 import com.loopers.domain.ranking.repository.SnapshotReservationConflictException;
 import com.loopers.application.ranking.support.SnapshotFreezeRetryableException;
 import java.util.Objects;
@@ -52,7 +52,7 @@ public class FreezeRankingSnapshotService {
         repository.copyInputs(command.snapshotId(), period);
         var inputs = repository.fingerprint(command.snapshotId(), period);
         var completed = repository.complete(command.snapshotId(), inputs);
-        completed.requireContract(command.snapshotId(), period, command.revision(), FrozenPurchaseInputChecksum.CONTRACT_VERSION);
+        completed.requireContract(command.snapshotId(), period, command.revision(), InputFingerprint.CONTRACT_VERSION);
         completed.requireFrozen(inputs);
         return result(completed);
     }
@@ -65,7 +65,7 @@ public class FreezeRankingSnapshotService {
 
     private FrozenRankingSnapshotResult verifyAndResult(RankingSnapshot snapshot, FreezeRankingSnapshotCommand command,
                                                        RankingPeriod period) {
-        snapshot.requireContract(command.snapshotId(), period, command.revision(), FrozenPurchaseInputChecksum.CONTRACT_VERSION);
+        snapshot.requireContract(command.snapshotId(), period, command.revision(), InputFingerprint.CONTRACT_VERSION);
         var actual = repository.fingerprint(snapshot.snapshotId(), snapshot.period());
         snapshot.requireFrozen(actual);
         return result(snapshot);

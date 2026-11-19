@@ -1,7 +1,7 @@
 package com.loopers.ranking;
 
-import com.loopers.domain.ranking.model.InputFingerprint;
-import com.loopers.domain.ranking.model.RankingPeriod;
+import com.loopers.domain.ranking.model.vo.InputFingerprint;
+import com.loopers.domain.ranking.model.vo.RankingPeriod;
 import com.loopers.domain.ranking.model.RankingSnapshot;
 import com.loopers.domain.ranking.repository.RankingSnapshotRepository;
 import java.util.Optional;

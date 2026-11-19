@@ -1,12 +1,19 @@
 package com.loopers.batch.job.ranking;
 
 import com.loopers.application.ranking.service.CalculateWeeklyScoreService;
+import com.loopers.application.ranking.command.PublishWeeklyRankingCommand;
+import com.loopers.application.ranking.result.WeeklyRankingPublicationResult;
+import com.loopers.application.ranking.service.PublishWeeklyRankingService;
 import com.loopers.application.ranking.service.FreezeRankingSnapshotService;
 import com.loopers.application.ranking.service.ValidateFrozenRankingSnapshotService;
-import com.loopers.domain.ranking.model.WeeklyPurchaseScore;
+import com.loopers.domain.ranking.model.vo.WeeklyPurchaseScore;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.springframework.batch.core.Job;
+import org.springframework.batch.core.BatchStatus;
+import org.springframework.batch.core.ExitStatus;
+import org.springframework.batch.core.StepExecution;
+import org.springframework.batch.core.StepExecutionListener;
 import org.springframework.batch.core.JobParameters;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.StepScope;
@@ -31,9 +38,37 @@ import org.springframework.transaction.PlatformTransactionManager;
 public class WeeklyRankingJobConfig {
     @Bean("weeklyRanking")
     public Job weeklyRanking(JobRepository repository, @Qualifier("freezeWeeklyRankingInput") Step freeze,
-                             @Qualifier("calculateWeeklyScores") Step calculation) {
+                             @Qualifier("calculateWeeklyScores") Step calculation,
+                             @Qualifier("publishWeeklyRanking") Step publication) {
         return new JobBuilder("weeklyRanking", repository).validator(new WeeklyRankingParametersValidator())
-            .start(freeze).next(calculation).build();
+            .start(freeze).next(calculation).next(publication).build();
+    }
+
+    @Bean("publishWeeklyRanking")
+    public Step publishWeeklyRanking(JobRepository repository, PlatformTransactionManager manager,
+        @Qualifier("weeklyRankingPublicationTasklet") Tasklet tasklet) {
+        return new StepBuilder("publishWeeklyRanking", repository).tasklet(tasklet, manager)
+            .listener(new StepExecutionListener() {
+                @Override
+                public ExitStatus afterStep(StepExecution execution) {
+                    return execution.getStatus() == BatchStatus.COMPLETED && WeeklyRankingPublicationResult.SUPERSEDED.name()
+                        .equals(execution.getExecutionContext().getString("weeklyRanking.publicationOutcome", ""))
+                        ? new ExitStatus("SUPERSEDED") : null;
+                }
+            }).build();
+    }
+
+    @Bean("weeklyRankingPublicationTasklet")
+    @StepScope
+    public Tasklet weeklyRankingPublicationTasklet(PublishWeeklyRankingService publisher,
+        @Value("#{stepExecution.jobExecution.jobParameters}") JobParameters parameters) {
+        return (contribution, context) -> {
+            var command = WeeklyRankingParametersValidator.command(parameters);
+            var outcome = publisher.publish(new PublishWeeklyRankingCommand(command.snapshotId(), command.periodStart(),
+                command.revision()));
+            contribution.getStepExecution().getExecutionContext().putString("weeklyRanking.publicationOutcome", outcome.name());
+            return RepeatStatus.FINISHED;
+        };
     }
 
     @Bean("freezeWeeklyRankingInput")

@@ -1,5 +1,6 @@
-package com.loopers.domain.ranking.model;
+package com.loopers.domain.ranking.model.vo;
 
+import com.loopers.domain.ranking.model.SnapshotIntegrityException;
 import java.math.BigDecimal;
 import java.util.UUID;
 

@@ -63,6 +63,7 @@ class RankingJobRestartTest {
             if (stage.exists()) {
                 ScriptUtils.executeSqlScript(connection, stage);
             }
+            ScriptUtils.executeSqlScript(connection, new ClassPathResource("preservation/016-weekly-ranking-publication.sql"));
         }
     }
 
@@ -110,7 +111,8 @@ class RankingJobRestartTest {
             assertThat(second.getId()).isNotEqualTo(first.getId());
             assertThat(context.getBean(RankingJobTestControl.class).processed).containsExactly(9L);
             assertThat(context.getBean(RankingSnapshotTestConfiguration.Control.class).copies).hasValue(0);
-            assertThat(second.getStepExecutions()).extracting(StepExecution::getStepName).containsExactly("calculateWeeklyScores");
+            assertThat(second.getStepExecutions()).extracting(StepExecution::getStepName)
+                .containsExactly("calculateWeeklyScores", "publishWeeklyRanking");
             assertThat(scores(parameters)).isEqualTo(Map.of(7L, 5L, 8L, 1L, 9L, 5L));
             assertGoldenFrozenInput(context, parameters);
             System.out.printf("C04 %s instance=%d executions=%d->%d checkpoint2 resumed=%s scores=%s%n",

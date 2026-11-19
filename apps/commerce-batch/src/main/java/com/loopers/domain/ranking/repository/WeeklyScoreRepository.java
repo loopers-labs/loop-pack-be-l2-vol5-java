@@ -1,6 +1,6 @@
 package com.loopers.domain.ranking.repository;
 
-import com.loopers.domain.ranking.model.WeeklyPurchaseScore;
+import com.loopers.domain.ranking.model.vo.WeeklyPurchaseScore;
 import java.util.List;
 import java.util.UUID;
 

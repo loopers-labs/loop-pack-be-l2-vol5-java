@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.loopers.domain.ranking.model.SnapshotIntegrityException;
-import com.loopers.domain.ranking.model.WeeklyPurchaseScore;
+import com.loopers.domain.ranking.model.vo.WeeklyPurchaseScore;
 import java.math.BigDecimal;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;

@@ -1,11 +1,72 @@
 package com.loopers.domain.ranking.model;
 
+import com.loopers.domain.ranking.model.vo.InputFingerprint;
+import com.loopers.domain.ranking.model.vo.RankingPeriod;
 import java.time.Instant;
 import java.util.UUID;
 
-public record RankingSnapshot(UUID snapshotId, RankingPeriod period, int revision, int inputContractVersion,
-                              State state, Instant frozenAt, InputFingerprint inputs) {
+public final class RankingSnapshot {
     public enum State { FREEZING, FROZEN }
+
+    private final UUID snapshotId;
+    private final RankingPeriod period;
+    private final int revision;
+    private final int inputContractVersion;
+    private final State state;
+    private final Instant frozenAt;
+    private final InputFingerprint inputs;
+
+    public RankingSnapshot(UUID snapshotId, RankingPeriod period, int revision, int inputContractVersion,
+                           State state, Instant frozenAt, InputFingerprint inputs) {
+        if (snapshotId == null) {
+            throw new SnapshotIntegrityException("snapshot 엔티티의 식별자는 필수입니다.");
+        }
+        this.snapshotId = snapshotId;
+        this.period = period;
+        this.revision = revision;
+        this.inputContractVersion = inputContractVersion;
+        this.state = state;
+        this.frozenAt = frozenAt;
+        this.inputs = inputs;
+    }
+
+    public UUID snapshotId() {
+        return snapshotId;
+    }
+
+    public RankingPeriod period() {
+        return period;
+    }
+
+    public int revision() {
+        return revision;
+    }
+
+    public int inputContractVersion() {
+        return inputContractVersion;
+    }
+
+    public State state() {
+        return state;
+    }
+
+    public Instant frozenAt() {
+        return frozenAt;
+    }
+
+    public InputFingerprint inputs() {
+        return inputs;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+        return this == other || other instanceof RankingSnapshot that && snapshotId.equals(that.snapshotId);
+    }
+
+    @Override
+    public int hashCode() {
+        return snapshotId.hashCode();
+    }
 
     public void requireContract(UUID expectedId, RankingPeriod expectedPeriod, int expectedRevision, int expectedVersion) {
         if (!expectedId.equals(snapshotId) || !expectedPeriod.equals(period) || expectedRevision != revision

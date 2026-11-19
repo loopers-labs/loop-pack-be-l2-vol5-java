@@ -1,11 +1,10 @@
 package com.loopers.infrastructure.persistence.ranking;
 
-import com.loopers.domain.ranking.model.InputFingerprint;
-import com.loopers.domain.ranking.model.RankingPeriod;
+import com.loopers.domain.ranking.model.vo.InputFingerprint;
+import com.loopers.domain.ranking.model.vo.RankingPeriod;
 import com.loopers.domain.ranking.model.RankingSnapshot;
 import com.loopers.domain.ranking.repository.RankingSnapshotRepository;
 import com.loopers.domain.ranking.model.SnapshotIntegrityException;
-import com.loopers.domain.ranking.policy.FrozenPurchaseInputChecksum;
 import com.loopers.domain.ranking.repository.SnapshotReservationConflictException;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -49,7 +48,7 @@ public class JdbcRankingSnapshotRepository implements RankingSnapshotRepository 
                 INSERT INTO weekly_ranking_snapshots
                   (snapshot_id,period_start,period_end,revision,state,input_contract_version)
                 VALUES (?,?,?,?,'FREEZING',?)
-                """, snapshotId.toString(), period.start(), period.end(), revision, FrozenPurchaseInputChecksum.CONTRACT_VERSION);
+                """, snapshotId.toString(), period.start(), period.end(), revision, InputFingerprint.CONTRACT_VERSION);
         } catch (DuplicateKeyException exception) {
             if (isReservationDuplicate(exception)) {
                 throw new SnapshotReservationConflictException(exception);
@@ -72,7 +71,7 @@ public class JdbcRankingSnapshotRepository implements RankingSnapshotRepository 
 
     @Override
     public InputFingerprint fingerprint(UUID snapshotId, RankingPeriod period) {
-        var checksum = new FrozenPurchaseInputChecksum(period);
+        var checksum = new PurchaseInputFingerprintAccumulator(period);
         jdbc.query(connection -> {
             var statement = connection.prepareStatement("""
                 SELECT order_id,product_id,quantity,confirmed_at FROM weekly_ranking_snapshot_inputs
@@ -94,7 +93,7 @@ public class JdbcRankingSnapshotRepository implements RankingSnapshotRepository 
             UPDATE weekly_ranking_snapshots
             SET state='FROZEN',frozen_at=UTC_TIMESTAMP(6),input_count=?,input_checksum=?
             WHERE snapshot_id=? AND state='FREEZING' AND input_contract_version=?
-            """, inputs.count(), inputs.sha256(), snapshotId.toString(), FrozenPurchaseInputChecksum.CONTRACT_VERSION);
+            """, inputs.count(), inputs.sha256(), snapshotId.toString(), InputFingerprint.CONTRACT_VERSION);
         if (updated != 1) {
             throw new SnapshotIntegrityException("snapshot 고정 완료 전이가 적용되지 않았습니다: " + snapshotId);
         }

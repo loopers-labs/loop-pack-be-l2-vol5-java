@@ -1,8 +1,8 @@
-package com.loopers.domain.ranking.policy;
+package com.loopers.infrastructure.persistence.ranking;
 
-import com.loopers.domain.ranking.model.InputFingerprint;
-import com.loopers.domain.ranking.model.RankingPeriod;
-import com.loopers.domain.ranking.model.SnapshotIntegrityException;
+import com.loopers.domain.ranking.model.vo.InputFingerprint;
+import com.loopers.domain.ranking.model.vo.RankingPeriod;
+import com.loopers.domain.ranking.policy.FrozenPurchaseInputPolicy;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -12,17 +12,15 @@ import java.time.format.DateTimeFormatterBuilder;
 import java.util.HexFormat;
 import java.util.Objects;
 
-public final class FrozenPurchaseInputChecksum {
-    public static final int CONTRACT_VERSION = 1;
+public final class PurchaseInputFingerprintAccumulator {
     private static final DateTimeFormatter UTC_MICROS = new DateTimeFormatterBuilder().appendInstant(6).toFormatter();
     private final RankingPeriod period;
     private final MessageDigest digest;
     private long count;
-    private long previousOrderId;
-    private long previousProductId;
+    private FrozenPurchaseInputPolicy.Row previous;
     private InputFingerprint completed;
 
-    public FrozenPurchaseInputChecksum(RankingPeriod period) {
+    public PurchaseInputFingerprintAccumulator(RankingPeriod period) {
         this.period = Objects.requireNonNull(period);
         try {
             digest = MessageDigest.getInstance("SHA-256");
@@ -35,18 +33,13 @@ public final class FrozenPurchaseInputChecksum {
         if (completed != null) {
             throw new IllegalStateException("완료한 입력 checksum에 행을 추가할 수 없습니다.");
         }
-        if (orderId <= 0 || productId <= 0 || quantity <= 0 || !period.contains(confirmedAt)
-            || confirmedAt.getNano() % 1000 != 0) {
-            throw new SnapshotIntegrityException("고정 입력의 식별자·수량·UTC 기간·마이크로초 계약을 위반했습니다.");
-        }
-        if (count > 0 && (orderId < previousOrderId || (orderId == previousOrderId && productId <= previousProductId))) {
-            throw new SnapshotIntegrityException("고정 입력은 중복 없이 orderId·productId 오름차순이어야 합니다.");
-        }
+        var current = new FrozenPurchaseInputPolicy.Row(orderId, productId, quantity, confirmedAt);
+        FrozenPurchaseInputPolicy.requireValid(period, current, previous);
+        long next = Math.addExact(count, 1);
         String row = orderId + "\t" + productId + "\t" + quantity + "\t" + UTC_MICROS.format(confirmedAt) + "\n";
         digest.update(row.getBytes(StandardCharsets.UTF_8));
-        count = Math.addExact(count, 1);
-        previousOrderId = orderId;
-        previousProductId = productId;
+        count = next;
+        previous = current;
     }
 
     public InputFingerprint finish() {
