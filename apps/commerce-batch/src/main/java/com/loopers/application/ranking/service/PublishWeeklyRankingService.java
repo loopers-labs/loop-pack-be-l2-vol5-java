@@ -25,11 +25,20 @@ public class PublishWeeklyRankingService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.READ_COMMITTED)
     public WeeklyRankingPublicationResult publish(PublishWeeklyRankingCommand command) {
+        return publishChecked(command, InputFingerprint.CONTRACT_VERSION, null);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public WeeklyRankingPublicationResult publishPartitioned(PublishWeeklyRankingCommand command, InputFingerprint verified) {
+        return publishChecked(command, 2, Objects.requireNonNull(verified));
+    }
+
+    private WeeklyRankingPublicationResult publishChecked(PublishWeeklyRankingCommand command, int contract,
+                                                          InputFingerprint verified) {
         Objects.requireNonNull(command, "command");
         var snapshot = snapshots.findById(command.snapshotId())
             .orElseThrow(() -> new SnapshotIntegrityException("공개할 고정 snapshot이 없습니다: " + command.snapshotId()));
-        snapshot.requireContract(command.snapshotId(), command.period(), command.revision(),
-            InputFingerprint.CONTRACT_VERSION);
+        snapshot.requireContract(command.snapshotId(), command.period(), command.revision(), contract);
         snapshot.requireFrozen(snapshot.inputs());
         var current = publications.lockPointer(command.period());
         if (current.isPresent() && current.get().revision() > command.revision()) {
@@ -40,7 +49,7 @@ public class PublishWeeklyRankingService {
             throw new SnapshotConflictException("같은 기간·revision의 공개 snapshotId가 다릅니다.");
         }
         // Validate in this publication transaction, not via the REQUIRES_NEW calculation validator.
-        snapshot.requireFrozen(snapshots.fingerprint(command.snapshotId(), command.period()));
+        snapshot.requireFrozen(verified != null ? verified : snapshots.fingerprint(command.snapshotId(), command.period()));
         var completed = publications.findCompletion(command.snapshotId());
         if (completed.isEmpty()) {
             publications.materialize(command.snapshotId());
