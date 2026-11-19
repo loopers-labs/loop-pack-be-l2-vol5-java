@@ -5,34 +5,34 @@ import java.time.ZoneOffset;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 
-class PublishedRankingStore {
+public class PublishedRankingStore {
 
     private final JdbcTemplate jdbc;
 
-    PublishedRankingStore(JdbcTemplate jdbc) {
+    public PublishedRankingStore(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 
-    long productCount(String snapshotId) {
+    public long productCount(String snapshotId) {
         return jdbc.queryForObject(
             "select count(distinct product_id) from ranking_snapshot_input where snapshot_id = ?",
             Long.class, snapshotId
         );
     }
 
-    long scoreCount(String snapshotId) {
+    public long scoreCount(String snapshotId) {
         return jdbc.queryForObject(
             "select count(*) from ranking_score_stage where snapshot_id = ?", Long.class, snapshotId
         );
     }
 
-    boolean isRanked(String snapshotId) {
+    public boolean isRanked(String snapshotId) {
         return jdbc.queryForObject(
             "select count(*) from weekly_ranking where snapshot_id = ?", Long.class, snapshotId
         ) > 0;
     }
 
-    void rank(String snapshotId) {
+    public void rank(String snapshotId) {
         jdbc.update("""
             insert into weekly_ranking (snapshot_id, rank_no, product_id, score)
             select snapshot_id, row_number() over (order by score desc, product_id), product_id, score
@@ -41,7 +41,7 @@ class PublishedRankingStore {
             """, snapshotId);
     }
 
-    void pointToUnlessNewerPublished(WeeklySnapshot snapshot) {
+    public void pointToUnlessNewerPublished(WeeklySnapshot snapshot) {
         jdbc.update("""
             insert into weekly_ranking_publication (period_start, snapshot_id, revision, published_at, frozen_at)
             select * from (
@@ -62,7 +62,7 @@ class PublishedRankingStore {
         );
     }
 
-    String resultChecksum(String snapshotId) {
+    public String resultChecksum(String snapshotId) {
         return new SortedRowsChecksum(jdbc).of("""
             select product_id, score, rank_no
             from weekly_ranking

@@ -1,26 +1,31 @@
-package com.loopers.batch.job.ranking;
+package com.loopers.batch.job.ranking.step;
+
+import com.loopers.batch.job.ranking.WeeklyRankingParameters;
+import com.loopers.batch.job.ranking.SnapshotStore;
+import com.loopers.batch.job.ranking.WeeklySnapshot;
 
 import java.util.Optional;
 
-import org.springframework.batch.core.JobParameters;
 import org.springframework.batch.core.StepContribution;
 import org.springframework.batch.core.scope.context.ChunkContext;
 import org.springframework.batch.core.step.tasklet.Tasklet;
 import org.springframework.batch.repeat.RepeatStatus;
 
-class FreezeSnapshotTasklet implements Tasklet {
+public class FreezeSnapshotTasklet implements Tasklet {
 
     private final SnapshotStore snapshots;
 
-    FreezeSnapshotTasklet(SnapshotStore snapshots) {
+    public FreezeSnapshotTasklet(SnapshotStore snapshots) {
         this.snapshots = snapshots;
     }
 
     @Override
     public RepeatStatus execute(StepContribution contribution, ChunkContext chunkContext) {
-        JobParameters params = chunkContext.getStepContext().getStepExecution().getJobParameters();
-        WeeklySnapshot snapshot = SnapshotParameters.snapshot(params);
-        snapshot.requireId(SnapshotParameters.requestedId(params));
+        WeeklyRankingParameters params = WeeklyRankingParameters.from(
+            chunkContext.getStepContext().getStepExecution().getJobParameters()
+        );
+        WeeklySnapshot snapshot = params.snapshot();
+        snapshot.requireId(params.snapshotId());
 
         Optional<WeeklySnapshot> existing = snapshots.find(snapshot.id());
         if (existing.isPresent()) {

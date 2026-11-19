@@ -23,6 +23,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 
+import com.loopers.batch.job.ranking.step.FreezeSnapshotTasklet;
+import com.loopers.batch.job.ranking.step.PublishRankingTasklet;
+import com.loopers.batch.job.ranking.step.ScoreStageWriter;
+
 @ConditionalOnProperty(name = "spring.batch.job.name", havingValue = WeeklyRankingJobConfig.JOB_NAME)
 @Configuration
 class WeeklyRankingJobConfig {

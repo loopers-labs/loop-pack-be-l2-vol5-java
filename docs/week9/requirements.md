@@ -113,7 +113,7 @@
 |---|---|---|---|
 | `EXP-026` | §6 재시작. 입력 고정 → chunk 2 로 상품 7·8 commit → 상품 9 직전 실패 → FAILED, 같은 instance, 저장 위치, stage 2 행, 기존 공개본 유지 → 같은 parameter 로 재실행 → 9 만 계산하고 완료 | 원문 | `WeeklyRankingRestartTest`. 상품 9 의 점수 행을 다른 커넥션이 잡아 잠금 대기 초과로 FAILED, 저장 위치 `{product_id=8}`, stage 7·8. 재실행은 같은 instance, 실행된 step 은 계산과 공개(고정 step 은 다시 돌지 않는다), write 1, stage 7·8·9. reader 의 `saveState` 를 끄면 저장 위치가 없어 실패한다. 기존 공개본 유지: r1 공개 뒤 r2 계산이 상품 9 에서 실패한 동안 pointer 는 r1(`published_at` 포함) 그대로, r2 순위 행 0. 재실행이 끝나면 pointer 가 r2, 순위 3 행 |
 | `EXP-027` | 정상 한 번 실행(별도 snapshot)과 실패·재시작의 입력 checksum, 결과 checksum, 기대 점수·순위가 같다. 재시작 대상의 stage·metadata 를 지워 정상 실행으로 꾸미지 않는다 | 원문 | `WeeklyRankingRestartTest`. r1 을 한 번에 끝내고, r2 는 상품 9 에서 FAILED 뒤 같은 instance 로 재실행해 끝낸다. 아무것도 지우지 않는다. 두 snapshot 의 입력 checksum, 공개 step 이 남긴 결과 checksum, 순위(1:7:5, 2:9:5, 3:8:1)가 같다 |
-| `EXP-028` | §7 연결. PG 확정 → Outbox → Kafka → 구매 활동 → snapshot → job → API. 재발행, 늦은 구매, 새 revision, 경계 시각, 빈 주, 미공개, 삭제 상품. 한 실행으로 할지는 Q-6 | 원문 | |
+| `EXP-028` | §7 연결. PG 확정 → Outbox → Kafka → 구매 활동 → snapshot → job → API. 재발행, 늦은 구매, 새 revision, 경계 시각, 빈 주, 미공개, 삭제 상품. 한 실행으로 할지는 Q-6 | 원문 | 한 실행으로 하지 않는다(Q-6). 구간별 확인은 설계 17 장. 읽기 모델 DDL 의 칸 이름을 바꾸면 api 테스트 5 개가 실패하는 것을 확인했다 |
 
 ## 물을 질문
 
@@ -124,9 +124,9 @@
 | ~~Q-3~~ | ~~같은 기간의 동시 계산을 직렬로 만드는 수단~~ 운영에서 한 기간에 한 번에 하나만 launch 한다고 범위로 둔다. 스케줄러와 자동 launch 가 범위 밖이라 동시에 launch 하는 주체가 없다. 근거는 설계 13 장. **뒤집을 조건**: 자동 launch 나 재시도가 생길 때 | `PBL-008` |
 | ~~Q-4~~ | ~~`limit` 의 상한과 기본값~~ 상한 100, 생략하면 10. 원문의 "최대 100" 을 상한으로 쓰고, 기본은 한 화면 크기다. 상품 목록의 `PageSize`(기본 20)와 뜻이 달라 타입을 따로 둔다. **뒤집을 조건**: 화면이 다른 기본 개수를 요구할 때 | `QRY-003` |
 | ~~Q-5~~ | ~~`periodStart` 를 생략하면 400 인가, 지난주로 보는가~~ 400. 지난주로 보면 같은 요청의 답이 서버 시각(UTC 월요일 경계)에 따라 바뀐다. **뒤집을 조건**: 화면이 "최신 공개 주" 를 기본으로 요구할 때. 그때는 지난주가 아니라 가장 최근 pointer 를 돌려준다 | `QRY-002` |
-| Q-6 | §7 을 한 실행으로 하는가. W6·W7 은 앱별 테스트와 공유 계약으로 나눴다(W6 Q-4, W7 Q-3). 원문은 "한 연결 테스트" 다. 이번에는 commerce-api, streamer, batch 세 앱이다 | `EXP-028` |
+| ~~Q-6~~ | ~~§7 을 한 실행으로 하는가~~ 하지 않는다. 구간마다 그 앱의 테스트로 확인하고, 앱 사이는 계약(이벤트 JSON, 읽기 모델 DDL)으로 잇는다. api 테스트는 batch 의 DDL 을 직접 읽는다. W6 Q-4, W7 Q-3 과 같은 방식이고 PR 에 밝힌다. 근거는 설계 17 장. **뒤집을 조건**: 구간 테스트가 통과했는데 실제 연결이 실패할 때 | `EXP-028` |
 | Q-7 | `purchase_activity` 에 `confirmed_at` 인덱스를 둘 것인가. streamer 의 스키마를 바꾼다 | `SNP-003` |
-| ~~Q-8~~ | ~~commerce-batch 의 계층~~ `com.loopers.batch.job.ranking` 한 패키지에 package-private 으로 둔다. step 이 TX 경계이고 DB 없이 판단할 애그리거트가 없다. 근거는 설계 11 장. **뒤집을 조건**: 반품 차감 같은 도메인 판단이 생길 때 | `JOB-003` |
+| ~~Q-8~~ | ~~commerce-batch 의 계층~~ 템플릿 demo job 의 관례를 따른다. job 하나가 `com.loopers.batch.job.ranking` 이고 step 구성 요소는 그 아래 `step/` 이다. commerce-api 의 계층은 따르지 않는다. step 이 TX 경계이고 DB 없이 판단할 애그리거트가 없다. 근거는 설계 11 장. **뒤집을 조건**: 두 번째 job 이 store 를 함께 쓸 때, 반품 차감 같은 도메인 판단이 생길 때 | `JOB-003` |
 
 ## 범위 밖
 

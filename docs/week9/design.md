@@ -233,13 +233,20 @@ stage 점수가 다시 써도 같다는 것을 지키는 테스트는 `CAL-003` 
 
 ## 11. 패키지
 
-main 과 test 모두 `com.loopers.batch.job.ranking` 이다(Q-8). commerce-api 의 `interfaces → application → domain ← infrastructure` 를 따르지 않는다. 그 계층은 TX 경계를 application 에 모으고 판단을 DB 없는 애그리거트에 두려는 것인데, batch 에서는 step 이 TX 경계이고 판단은 SQL 안의 합계와 정렬뿐이다. `WeeklySnapshot` 과 step 구성 요소를 package-private 으로 두므로 테스트가 같은 패키지에 있어야 한다.
+batch 는 템플릿의 demo job 과 같은 관례를 따른다(Q-8). job 하나가 `com.loopers.batch.job.ranking` 이고, step 구성 요소(tasklet, writer)는 그 아래 `step/` 에 둔다. commerce-api 의 `interfaces → application → domain ← infrastructure` 계층은 따르지 않는다. 그 계층은 TX 경계를 application 에 모으고 판단을 DB 없는 애그리거트에 두려는 것인데, batch 에서는 step 이 TX 경계다.
 
-한 패키지 안에서도 판단, SQL, 순서를 나눈다. 판단(`SNP-006`, `SNP-008`, `REV-002`)은 `WeeklySnapshot` 이 하고 DB 없이 테스트한다. SQL 은 테이블 묶음마다 이름 있는 메서드로 `SnapshotStore`, `PublishedRankingStore`, `ScoreStageWriter` 에 모은다. tasklet 은 그 둘을 부르는 순서만 갖는다. config 는 조립만 한다. `store/`, `writer/` 같은 종류별 하위 패키지는 두지 않는다. 하위 패키지는 package-private 을 공유하지 않아 store 를 public 으로 열어야 하고, 그러면 다른 코드가 이 테이블을 우회해 쓸 수 있다.
+| 위치 | 클래스 | 하는 일 |
+|---|---|---|
+| `ranking/` | `WeeklyRankingJobConfig` | job·step·reader 조립 |
+| `ranking/` | `WeeklyRankingParameters` | job parameter 를 한 번 읽어 타입 있는 값으로 |
+| `ranking/` | `WeeklySnapshot` | 판단(`SNP-006`, `SNP-008`, `REV-002`). DB 없이 테스트 |
+| `ranking/` | `SnapshotStore`, `PublishedRankingStore`, `SortedRowsChecksum` | 테이블 묶음마다 이름 있는 메서드로 SQL |
+| `ranking/step/` | `FreezeSnapshotTasklet`, `PublishRankingTasklet` | 판단과 store 를 부르는 순서 |
+| `ranking/step/` | `ScoreStageWriter` | chunk 의 점수를 쓴다(`CAL-002`, `CAL-003`) |
 
-**뒤집을 조건**: 다른 job 이 이 store 를 함께 쓰게 되거나 패키지가 한눈에 들어오지 않을 만큼 커질 때. 종류가 아니라 step 의 개념(`snapshot/`, `publish/`)으로 나누고, 패키지 사이에 필요한 것만 public 으로 연다. 연결 테스트도 여기에 남긴다.
+`step/` 이 루트의 store 와 `WeeklySnapshot` 을 쓰므로 그것들은 public 이다. demo 의 `DemoTasklet` 도 public 이다. batch 에는 ArchUnit 이 없고 job 이 하나라, 다른 코드가 store 를 우회해 쓰는 것은 리뷰로 막는다. 테스트는 `ranking/` 에 둔다. 연결 테스트도 여기에 남긴다. 설정만 보는 테스트라 깨지면 원인이 랭킹 로직이 아니라 TX·저장소 설정이라는 것이 바로 드러난다.
 
-**뒤집을 조건**: 반품 차감, 가중치처럼 DB 없이 테스트할 판단이 생길 때. 그 판단을 domain 패키지의 객체로 꺼내고 step 은 그것을 부른다. 설정만 보는 테스트라 깨지면 원인이 랭킹 로직이 아니라 TX·저장소 설정이라는 것이 바로 드러난다.
+**뒤집을 조건**: 두 번째 job 이 생겨 store 를 함께 쓰게 될 때. 공유하는 것을 job 밖으로 꺼내고, batch 에도 ArchUnit 으로 job 사이 의존을 막는다. 반품 차감, 가중치처럼 DB 없이 테스트할 판단이 생기면 그 판단을 `WeeklySnapshot` 옆의 객체로 꺼낸다.
 
 ## 12. 공개 결과의 저장소: DB, Redis Sorted Set 은 쓰지 않는다
 
@@ -326,6 +333,23 @@ commerce-api 는 상품 조회와 같은 경로다. controller → `RankingFacad
 
 batch 는 그 주에 구매된 상품 전부의 순위를 쓰고, API 가 limit 만큼 읽는다. 상위 N 개만 저장하면 그중 삭제된 상품만큼 limit 보다 적게 돌아온다.
 
-**읽기 모델은 batch 와 api 사이의 계약이다.** 두 앱은 코드나 모듈을 공유하지 않는다. 테이블 정의는 쓰는 쪽인 batch 의 `schema/ranking.sql` 에 있고, api 테스트는 기대하는 모양을 사본(`src/test/resources/sql/weekly-ranking.sql`)으로 둔다. 두 정의가 어긋나면 각자의 테스트는 통과하고 연결(`EXP-028`)에서 실패한다. 칸을 바꿀 때는 두 정의를 함께 바꾼다. 입력 고정 시점도 pointer 에 함께 써서 api 가 쓰기 모델(`ranking_snapshot`)을 읽지 않는다.
+**읽기 모델은 batch 와 api 사이의 계약이다.** 두 앱은 코드나 모듈을 공유하지 않는다. 테이블 정의는 쓰는 쪽인 batch 의 `schema/ranking.sql` 한 곳에 있고, api 테스트는 사본 없이 그 파일을 직접 읽어(`@Sql("file:../commerce-batch/…/ranking.sql")`) 테이블을 만든다. batch 가 칸을 바꾸면 api 테스트가 깨진다. Gradle 이 이 의존을 모르면 api 테스트를 다시 돌리지 않으므로, api 의 test task 에 그 파일을 입력으로 선언한다. 입력 고정 시점도 pointer 에 함께 써서 api 가 쓰기 모델(`ranking_snapshot`)을 읽지 않는다.
 
-**뒤집을 조건**: 읽는 앱이 늘거나 두 정의가 실제로 어긋나는 일이 생길 때 계약을 한 곳(공유 스키마 모듈이나 계약 테스트)으로 모은다. 상품 수가 커서 전부 저장하는 비용이 측정으로 문제가 되면 상위 K 개를 여유 있게 저장하고 limit 보다 적게 돌아올 수 있음을 받아들인다. 읽기 부하가 문제가 되면 공개된 snapshot 결과를 Redis 에 캐시한다(12 장).
+**뒤집을 조건**: api 와 batch 가 다른 저장소로 나뉘어 파일을 읽을 수 없게 될 때 계약 테스트나 공유 스키마 모듈을 둔다. 상품 수가 커서 전부 저장하는 비용이 측정으로 문제가 되면 상위 K 개를 여유 있게 저장하고 limit 보다 적게 돌아올 수 있음을 받아들인다. 읽기 부하가 문제가 되면 공개된 snapshot 결과를 Redis 에 캐시한다(12 장).
+
+## 17. 연결 검증 (`EXP-028`)
+
+원문은 PG 확정부터 API 까지를 한 연결 테스트에서 확인하라고 한다. 한 실행으로 묶지 않고 구간마다 그 앱의 테스트로 확인한다(Q-6). W6 Q-4, W7 Q-3 과 같은 방식이다.
+
+| 구간 | 확인하는 곳 |
+|---|---|
+| PG 확정 → Outbox → Kafka | commerce-api 의 W6·W7 테스트와 공유 계약 JSON |
+| 재발행해도 구매 활동이 한 번(`REV-004`) | streamer 의 W6 테스트(`ACT-002`) |
+| 구매 활동 → 고정 → 계산 → 공개, 늦은 구매와 revision, 경계 시각 | batch 테스트 |
+| 공개본 → API, 빈 주·미공개·삭제 상품 | api 테스트 |
+
+구간 사이의 계약은 두 개다. 이벤트 payload 는 W6 의 공유 계약 JSON 이 잇는다. 읽기 모델은 api 테스트가 batch 의 DDL 을 직접 읽어 잇는다(16 장). `purchase_activity` 는 streamer 가 엔티티로 정의해 batch 테스트가 사본 DDL 을 둔다. 이 사본이 어긋나는 것은 테스트로 잡지 못한다.
+
+한 실행으로 묶으면 앱 테스트가 다른 앱의 실행물과 테이블을 알게 되어, 그 테스트의 주인이 모호해진다. 원문과 다르게 한 것이므로 PR 에 밝힌다.
+
+**뒤집을 조건**: 구간 테스트가 모두 통과했는데 실제 연결에서 실패하는 일이 생길 때. 그 장면을 재현 스크립트(compose 위에 세 앱을 프로세스로)로 남긴다. `purchase_activity` 사본이 실제로 어긋날 때 batch 테스트가 streamer 엔티티로 만든 스키마를 쓰는 방법을 따진다.

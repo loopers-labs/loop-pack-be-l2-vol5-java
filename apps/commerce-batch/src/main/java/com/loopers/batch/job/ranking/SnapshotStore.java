@@ -10,18 +10,18 @@ import java.util.OptionalInt;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 
-class SnapshotStore {
+public class SnapshotStore {
 
     private static final DateTimeFormatter CONFIRMED_AT =
         DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss.SSSSSS'Z'");
 
     private final JdbcTemplate jdbc;
 
-    SnapshotStore(JdbcTemplate jdbc) {
+    public SnapshotStore(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 
-    Optional<WeeklySnapshot> find(String snapshotId) {
+    public Optional<WeeklySnapshot> find(String snapshotId) {
         return jdbc.query(
             "select period_start, revision from ranking_snapshot where snapshot_id = ?",
             (rs, rowNum) -> new WeeklySnapshot(rs.getObject("period_start", LocalDate.class), rs.getInt("revision")),
@@ -29,14 +29,14 @@ class SnapshotStore {
         ).stream().findFirst();
     }
 
-    OptionalInt latestRevision(LocalDate periodStart) {
+    public OptionalInt latestRevision(LocalDate periodStart) {
         Integer latest = jdbc.queryForObject(
             "select max(revision) from ranking_snapshot where period_start = ?", Integer.class, periodStart
         );
         return latest == null ? OptionalInt.empty() : OptionalInt.of(latest);
     }
 
-    int copyInput(WeeklySnapshot snapshot) {
+    public int copyInput(WeeklySnapshot snapshot) {
         return jdbc.update("""
             insert into ranking_snapshot_input (snapshot_id, product_id, order_id, quantity, confirmed_at)
             select ?, product_id, order_id, quantity, confirmed_at
@@ -45,7 +45,7 @@ class SnapshotStore {
             """, snapshot.id(), utc(snapshot.start()), utc(snapshot.end()));
     }
 
-    String inputChecksum(String snapshotId) {
+    public String inputChecksum(String snapshotId) {
         return new SortedRowsChecksum(jdbc).of("""
             select order_id, product_id, quantity, confirmed_at
             from ranking_snapshot_input
@@ -59,7 +59,7 @@ class SnapshotStore {
         );
     }
 
-    void markFrozen(WeeklySnapshot snapshot, int inputCount, String inputChecksum) {
+    public void markFrozen(WeeklySnapshot snapshot, int inputCount, String inputChecksum) {
         jdbc.update("""
             insert into ranking_snapshot
               (snapshot_id, period_start, revision, status, frozen_at, input_count, input_checksum)

@@ -1,4 +1,4 @@
-package com.loopers.batch.job.ranking;
+package com.loopers.batch.job.ranking.step;
 
 import java.util.Map;
 
@@ -6,12 +6,12 @@ import org.springframework.batch.item.Chunk;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
-class ScoreStageWriter implements ItemWriter<Long> {
+public class ScoreStageWriter implements ItemWriter<Long> {
 
     private final NamedParameterJdbcTemplate jdbc;
     private final String snapshotId;
 
-    ScoreStageWriter(NamedParameterJdbcTemplate jdbc, String snapshotId) {
+    public ScoreStageWriter(NamedParameterJdbcTemplate jdbc, String snapshotId) {
         this.jdbc = jdbc;
         this.snapshotId = snapshotId;
     }
