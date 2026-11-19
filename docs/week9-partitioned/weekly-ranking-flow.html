@@ -129,6 +129,51 @@ code { font-family: var(--mono); }
 .structure summary { width: fit-content; color: var(--deep); cursor: pointer; font-weight: 650; }
 .structure iframe { width: 100%; height: min(74vh,670px); min-height: 370px; display: block; margin-top: 12px; border: 1px solid var(--line); border-radius: 6px; background: white; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.flow-figure { margin: 16px 24px; border: 1px solid #c8d6cc; border-radius: 8px; overflow: hidden; background: #fafcf8; }
+.flow-heading { display: flex; gap: 12px; align-items: baseline; justify-content: space-between; padding: 12px 16px 0; }
+.flow-heading h3 { font-size: 16px; }
+.flow-heading span, .flow-figure figcaption { color: #4b615b; font-size: 12px; }
+.flow-figure figcaption { border-top: 1px solid #d9e2d8; padding: 8px 16px; background: #f1f5ee; }
+#flow-svg { width: 100%; height: auto; display: block; }
+#flow-svg text { pointer-events: none; font-family: Inter,"Malgun Gothic",system-ui,sans-serif; }
+.flow-node { --stroke: #749382; --fill: #fff; cursor: pointer; }
+.flow-node rect { fill: var(--fill); stroke: var(--stroke); stroke-width: 1.35px; }
+.flow-node[data-tone=b] { --stroke: #a75a29; --fill: #fff8ed; }
+.flow-node[data-tone=a] { --stroke: #347b69; --fill: #f2faf3; }
+.flow-node[data-state=pending] { --stroke: #9aa99f; --fill: #f5f7f2; }
+.flow-node[data-state=pending] rect { stroke-dasharray: 4 3; }
+.flow-node[data-state=blocked] { --stroke: #a24d22; --fill: #fff1df; }
+.flow-node[data-state=active] rect, .flow-node[data-state=blocked] rect { stroke-width: 2.5px; }
+.flow-node:hover rect, .flow-node:focus-visible rect { stroke: #0062a7; stroke-width: 3px; }
+.flow-node:focus { outline: none; }
+.flow-node .kind { font-size: 11.5px; fill: #455e53; }
+.flow-node .value { font-size: 17px; font-weight: 750; fill: #17372d; }
+.flow-node .detail { font-size: 11.5px; fill: #42594f; }
+.flow-node[data-tone=b] .value, .flow-node[data-state=blocked] .value { fill: #834319; }
+.flow-edge { color: #9baaa0; }
+.flow-edge path { fill: none; stroke: currentColor; stroke-width: 1.7px; }
+.flow-edge[data-state=pending] path { stroke-dasharray: 4 4; }
+.flow-edge[data-state=done] { color: #578372; }
+.flow-edge[data-state=active] { color: #006b60; }
+.flow-edge[data-state=active] path { stroke-width: 2.7px; }
+.flow-edge[data-edge=retry] { color: #a24d22; }
+.flow-edge[data-edge=retry] path { stroke-dasharray: 6 3; }
+.flow-edge[data-edge=retry][data-state=active] path { animation: retry-path .9s linear 2; }
+@keyframes retry-path { to { stroke-dashoffset: -36; } }
+@media (prefers-reduced-motion: reduce) { .flow-edge[data-edge=retry][data-state=active] path { animation: none; } }
+.evidence { margin: 0 24px 16px; }
+.evidence > summary { width: fit-content; cursor: pointer; color: var(--teal); font-size: 13px; font-weight: 650; }
+.evidence .lanes { padding: 12px 0 0; }
+.hero { padding-block: clamp(22px,3vw,40px) 16px; }
+@media(max-width:860px) {
+  .flow-figure { margin: 12px 14px; }
+  #flow-svg { max-width: 490px; margin-inline: auto; }
+  .flow-heading { flex-wrap: wrap; gap: 2px 12px; }
+  .evidence { margin-inline: 14px; }
+}
+@media(max-width:520px) {
+  .flow-figure { margin-inline: 9px; } .flow-heading, .flow-figure figcaption { padding-inline: 10px; }
+}
 [hidden] { display: none !important; }
 .lanes.refresh .actor, .lanes.refresh .store, .lanes.refresh .api-panel { animation: update .24s ease-out; }
 @keyframes update { from { opacity: .65; transform: translateY(2px) } to { opacity: 1; transform: none } }
@@ -207,6 +252,13 @@ code { font-family: var(--mono); }
       </div>
       <div class="step-track" id="step-track" role="group" aria-label="단계 바로가기"></div>
       <p class="sr-only" id="announcement" role="status" aria-live="polite" aria-atomic="true"></p>
+      <figure id="flow-figure" class="flow-figure">
+        <div class="flow-heading"><h3 id="flow-heading">주문에서 공개까지</h3><span>노드를 누르면 해당 단계로 이동합니다.</span></div>
+        <svg id="flow-svg" role="group" aria-labelledby="flow-heading" aria-describedby="flow-caption"></svg>
+        <figcaption id="flow-caption"></figcaption>
+      </figure>
+      <details class="evidence" id="step-evidence">
+        <summary>이 단계의 JVM 상태·DB 행·고객 응답 보기</summary>
       <div class="lanes">
         <section class="lane lane-workers" aria-labelledby="workers-title">
           <header class="lane-head"><span class="lane-icon" aria-hidden="true">▦</span><h3 id="workers-title">JVM 실행 상태</h3></header>
@@ -229,6 +281,7 @@ code { font-family: var(--mono); }
           </div>
         </section>
       </div>
+      </details>
       <div class="finding"><span class="info-mark" aria-hidden="true">i</span><p id="notice"></p>
         <button type="button" class="jump" id="jump">재시도 장면 보기 <span aria-hidden="true">↗</span></button>
       </div>
@@ -3502,10 +3555,10 @@ const extraCases = {
   "use strict";
   const replaySteps = [
     { label: "스케줄러", title: "같은 주의 재계산을 두 JVM이 기다립니다",
-      description: "운영자가 R2를 요청합니다. MySQL에서 주차별 포인터 행을 잠그고, 주차·revision 유일 키로 실행 계획 하나를 확정합니다. A와 B는 각자 스케줄러로 담당 구간을 찾습니다.",
-      action: "주문 구간 나누기", notice: "실제 2점·3점 재전달 시험은 첫 판본 R1에서 실행했습니다. 이 화면은 공개 전후를 비교하기 위해 이전 공개본 R1이 있는 상태에서 R2를 계산합니다." },
+      description: "운영자가 R2를 요청합니다. 계획을 만드는 트랜잭션은 MySQL의 주차별 포인터 행을 잠급니다. 두 JVM에는 각자 담당 구간을 찾는 스케줄러가 있습니다.",
+      action: "주문 구간 나누기", notice: "주차·revision 유일 키가 같은 판본의 중복 생성을 막습니다. 구간을 선점하는 스케줄러는 다른 실행자가 잠근 구간을 건너뜁니다." },
     { label: "주문 구간 배정", title: "구매 입력을 한 번 고정하고 주문번호 20에서 나눕니다",
-      description: "A는 주문번호 20 미만, B는 20 이상을 맡습니다. 각 JVM은 자기 구간의 상품 ID를 기준으로 로컬 worker에 일을 나눕니다.",
+      description: "계획·공통 입력·주문 경계를 한 트랜잭션에서 확정합니다. A는 주문번호 20 미만, B는 20 이상을 맡고, 각 JVM은 상품 ID로 로컬 worker를 나눕니다.",
       action: "A의 2점 저장", notice: "같은 주문의 모든 품목은 한 JVM으로 갑니다. 상품 7은 서로 다른 두 주문에 등장하므로 A와 B에서 각각 집계합니다." },
     { label: "A 커밋", title: "A가 주문 10의 2점을 저장했습니다",
       description: "A의 로컬 worker가 자기 구간에서 상품 7의 수량을 모두 더했습니다. B의 주문 20은 아직 대기 중입니다.",
@@ -3561,7 +3614,7 @@ const extraCases = {
       ? "B의 키 (" + model.snapshotId + ", " + last.partitionId + ", " + last.productId + ")에서 MySQL이 확인한 값은 " + last.oldScore + " → " + last.score +
         "입니다. 이 시험은 완료 worker에도 같은 쓰기를 재전달합니다. 운영 기본 설정은 완료 worker를 건너뜁니다."
       : step.notice;
-    return { ...step, actors: replayActors(model),
+    return { ...step, model, actors: replayActors(model),
       tableTitle: model.snapshotId ? model.snapshotId + " · 구간별 부분 점수" : "구간별 부분 점수",
       headers: ["주문 구간", "상품", "부분합"],
       rows: model.partials.map(row => [row.partitionId, row.productId, row.score]),
@@ -3632,6 +3685,197 @@ const extraCases = {
     }
     result.replaceChildren(list);
   }
+  // Every node has a column and a lane. On narrow screens the same graph runs top to bottom.
+  const smallFlow = window.matchMedia("(max-width: 860px)");
+  function station(id, col, lane, step, state, labels, tone = "") {
+    return { id, col, lane, step, state, labels, tone };
+  }
+  function link(from, to, state, id = from + "-" + to) {
+    return { from, to, state, id };
+  }
+  function progress(index, at) {
+    if (index < at) return "pending";
+    return index === at ? "active" : "done";
+  }
+  function replayFlow(scene) {
+    const model = scene.model;
+    const i = model.stage;
+    const latest = model.audit.at(-1);
+    const frozen = model.snapshotId !== null;
+    const assigned = progress(i, 1);
+    const branches = model.nodes.map((worker, position) => {
+      const lower = worker.node.toLowerCase();
+      const row = model.partials.find(item => item.partitionId === worker.partitionId);
+      const range = position === 0 ? worker.maxOrderId + " 미만" : worker.minOrderId + " 이상";
+      const order = model.inputs.find(item => (worker.minOrderId === null || item.orderId >= worker.minOrderId)
+        && (worker.maxOrderId === null || item.orderId < worker.maxOrderId));
+      const retrying = position === 1 && i === 4;
+      const firstWrite = position + 2;
+      const target = position === 1 && (i === 3 || i === 4) ? 4 : firstWrite;
+      const lane = position === 0 ? -1 : 1;
+      const workerState = worker.job === "FAILED" ? "blocked" : retrying ? "active" : progress(i, firstWrite);
+      const key = frozen ? "(" + [model.snapshotId, worker.partitionId, 7].join(", ") + ")" : "스냅샷 · 구간 · 상품";
+      const rowLabel = row ? row.score + "점" : "저장 대기";
+      return {
+        worker: station(lower, 1, lane, target, workerState, [
+          "JVM " + worker.node + " · " + (retrying ? "같은 키 재전달" : worker.job === "FAILED" ? "Job 실패" : "로컬 worker"),
+          frozen ? "주문번호 " + range : "구간 배정 대기",
+          order ? "주문 " + order.orderId + " · 상품 " + order.productId + " × " + order.quantity : "스케줄러 대기"
+        ], lower),
+        row: station("row-" + lower, 2, lane, target, retrying ? "active" : progress(i, firstWrite), [
+          "MySQL · " + worker.node + " 부분 점수",
+          retrying ? latest.oldScore + "점 → " + latest.score + "점" : rowLabel, key
+        ], lower)
+      };
+    });
+    const gateState = i === 3 ? "blocked" : i === 5 ? "done" : progress(i, 4);
+    const ready = model.verification;
+    const goal = ready === "PASSED" ? "검산 통과" : ready === "READY" ? "검산 대기" : i === 3 ? "B 미완료" : "구간 완료 대기";
+    const nodes = [
+      station("input", 0, 0, 1, frozen ? assigned : "active", [
+        "공통 입력", frozen ? model.snapshotId + " 고정" : "R2 계획 요청",
+        frozen ? "같은 시점 · 구매 " + model.inputs.length + "행" : "두 스케줄러 대기"
+      ]),
+      ...branches.map(branch => branch.worker), ...branches.map(branch => branch.row),
+      station("gate", 3, 0, i < 4 ? 4 : 5, gateState,
+        ["전역 검산", goal, model.rowCount + "행 · 합계 " + model.total + "점"]),
+      station("api", 4, 0, 5, i === 5 ? "active" : "done",
+        ["고객 공개 포인터", scene.pointer + " 공개 중", i === 5 ? "상품 7 · 5점 · 1위" : "이전 완성본 유지"])
+    ];
+    const joined = i >= 5 ? "active" : "pending";
+    const edges = [link("input", "a", assigned), link("input", "b", assigned),
+      link("a", "row-a", progress(i, 2)), link("b", "row-b", progress(i, 3)),
+      link("row-a", "gate", joined), link("row-b", "gate", joined), link("gate", "api", joined)];
+    if (i === 4) edges.push(link("b", "row-b", "active", "retry"));
+    return { title: "공통 입력에서 두 갈래로, 검산에서 다시 하나로", nodes, edges,
+      caption: "A와 B는 독립 실행됩니다. 실측은 첫 판본 R1에서 했고, 그림은 이전 공개본을 유지하는 모습을 보여주려고 R2를 사용합니다.",
+      evidence: "서로-다른-두-jvm의-2점3점과-b의-재전달" };
+  }
+
+  function chunkFlow(i, scene) {
+    const first = progress(i, 1);
+    const resumed = progress(i, 3);
+    const finished = progress(i, 4);
+    const nodes = [
+      station("input", 0, 0, 0, progress(i, 0), ["공통 입력", "R2 고정", "주문 42·43·44 · 4행"]),
+      station("worker", 1, 0, 1, first, ["단일 JVM · worker", "상품 7·8", "첫 청크 · 두 상품"]),
+      station("scores", 2, -1, 1, first, ["첫 청크 · 같은 TX", i < 1 ? "점수 저장 대기" : "7번 5점 · 8번 1점",
+        i < 1 ? "부분 점수" : "두 행 커밋"], "a"),
+      station("checkpoint", 2, 1, 2, first, ["첫 청크 · 같은 TX", i < 1 ? "체크포인트 0" : "체크포인트 2",
+        i === 2 ? "실패 당시 READ_COUNT 3" : "첫 청크의 재개 위치"], "b"),
+      station("resume", 3, 0, i < 2 ? 2 : 3, i === 2 ? "blocked" : resumed, ["다음 청크", i === 2 ? "상품 9에서 중단" : i < 3 ? "상품 9 대기" : "상품 9 · 5점",
+        i < 3 ? "상품 9 커밋 전" : "재시작 · 읽기 1 / 쓰기 1"]),
+      station("api", 4, 0, 4, finished, ["고객 공개 포인터", scene.pointer + " 공개 중", "1위 상품 7 · 5점"])
+    ];
+    return { title: "첫 청크의 두 점수와 재시작 위치", nodes,
+      edges: [link("input", "worker", first), link("worker", "scores", first), link("worker", "checkpoint", first),
+        link("checkpoint", "resume", resumed), link("scores", "resume", resumed), link("resume", "api", finished)],
+      caption: "상품 9를 읽은 횟수는 실패한 실행에 남습니다. 새 실행은 첫 청크가 커밋한 위치 2에서 시작해 상품 9만 처리합니다.",
+      evidence: "주문-424344-청크-2의-실제-재시작" };
+  }
+
+  function lateFlow(i, scene) {
+    const freeze = progress(i, 1);
+    const arrival = progress(i, 2);
+    const publish2 = progress(i, 4);
+    const freeze3 = progress(i, 5);
+    const publish3 = progress(i, 6);
+    const qty = i === 0 ? 2 : i === 1 ? 5 : 7;
+    const nodes = [
+      station("source", 0, 0, 2, i === 2 ? "active" : "done", ["구매 활동 원본", "구매 " + qty + "행", "주간 주문 품목"]),
+      station("snapshot2", 1, -1, 1, freeze, ["R2 공통 입력", i < 1 ? "고정 대기" : "5행 고정", "주문번호 경계 3"], "a"),
+      station("workers", 2, -1, i < 3 ? 3 : 4, i === 3 ? "blocked" : publish2, ["두 JVM · R2", i === 3 ? "B 쓰기 실패" : i >= 4 ? "A·B 계산 완료" : "A·B 주문 분할",
+        i === 3 ? "B 첫 커밋 전" : "동일한 5행 사용"], "a"),
+      station("pub2", 3, -1, 4, publish2, ["R2 검산·공개", i < 4 ? "공개 대기" : "상품 8 · 1점", "고정 뒤 주문 제외"], "a"),
+      station("late", 1, 1, 2, arrival, ["늦은 구매 적재", i < 2 ? "도착 대기" : "적재 후 원본 7행", "주문 2·6 · 상품 8 × 7"], "b"),
+      station("snapshot3", 2, 1, 5, freeze3, ["명시적 R3 요청", i < 5 ? "새 고정 대기" : "원본 7행 새로 고정", "기존 5행 + 늦은 2행"], "b"),
+      station("pub3", 3, 1, 6, publish3, ["R3 검산·공개", i < 6 ? "공개 대기" : "상품 8 · 8점", "기존 1 + 추가 7"], "b"),
+      station("api", 4, 0, i < 4 ? 4 : 6, "done", ["고객 공개 포인터", scene.pointer + " 공개 중",
+        "1위 상품 " + scene.publicRows[0][1] + " · " + scene.publicRows[0][2] + "점"])
+    ];
+    return { title: "늦게 온 두 주문은 R3에 합류합니다", nodes,
+      edges: [link("source", "snapshot2", freeze), link("snapshot2", "workers", freeze), link("workers", "pub2", publish2),
+        link("source", "late", arrival), link("late", "snapshot3", freeze3), link("snapshot3", "pub3", publish3),
+        link("pub2", "api", i >= 6 ? "pending" : publish2), link("pub3", "api", publish3)],
+      caption: "R2가 입력을 고정한 뒤 주문 2와 6이 도착합니다. 각 판본은 공통 고정 시점의 원본을 읽고, 고객은 검산을 마친 판본을 조회합니다.",
+      evidence: "두-jvm에서-고정-후-도착한-실제-구매" };
+  }
+
+  function svgElement(tag, attrs, text) {
+    const element = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (const [key, value] of Object.entries(attrs)) element.setAttribute(key, value);
+    if (text !== undefined) element.textContent = text;
+    return element;
+  }
+  const boxHeight = 72;
+  function nodeBox(node, vertical) {
+    if (vertical) return { x: 96 + node.lane * 87, y: 13 + node.col * 100, width: 158 };
+    return { x: 13 + node.col * 207, y: 81 + node.lane * 52, width: 164 };
+  }
+  function connection(start, end, vertical, retry) {
+    const midX = box => box.x + box.width / 2;
+    const midY = box => box.y + boxHeight / 2;
+    if (vertical) {
+      const x1 = midX(start), x2 = midX(end), y1 = start.y + boxHeight, y2 = end.y;
+      if (retry) return "M " + (x1 + 40) + " " + y1 + " C " + (x1 + 70) + " " + (y1 + 16) + " " + (x2 + 70) + " " + (y2 - 16) + " " + (x2 + 44) + " " + (y2 - 3);
+      const mid = (y1 + y2) / 2;
+      return "M " + x1 + " " + y1 + " C " + x1 + " " + mid + " " + x2 + " " + mid + " " + x2 + " " + (y2 - 4);
+    }
+    const x1 = start.x + start.width, x2 = end.x, y1 = midY(start), y2 = midY(end);
+    if (retry) return "M " + (midX(start) + 38) + " " + (start.y + boxHeight) + " C " + (x1 + 33) + " " + (start.y + boxHeight + 31) + " " + (x2 - 20) + " " + (end.y + boxHeight + 31) + " " + (midX(end) - 35) + " " + (end.y + boxHeight + 4);
+    const mid = (x1 + x2) / 2;
+    return "M " + x1 + " " + y1 + " C " + mid + " " + y1 + " " + mid + " " + y2 + " " + (x2 - 4) + " " + y2;
+  }
+  function showFlow(scene) {
+    const index = currentIndex();
+    const graph = active === "replay" ? replayFlow(scene) : active === "chunk" ? chunkFlow(index, scene) : lateFlow(index, scene);
+    const svg = byId("flow-svg");
+    const focusedId = document.activeElement?.closest("[data-node]")?.dataset.node;
+    const vertical = smallFlow.matches;
+    svg.setAttribute("viewBox", vertical ? "0 0 350 499" : "0 0 1018 237");
+    byId("flow-heading").textContent = graph.title;
+    const evidence = make("a", "MySQL 검증 기록 ↗");
+    evidence.href = "verification.md#" + graph.evidence;
+    byId("flow-caption").replaceChildren(graph.caption + " ", evidence);
+    const definitions = svgElement("defs", {});
+    const arrow = svgElement("marker", { id: "flow-arrow", viewBox: "0 0 8 8", refX: 7, refY: 4,
+      markerWidth: 5, markerHeight: 5, orient: "auto" });
+    arrow.append(svgElement("path", { d: "M0 0 L8 4 L0 8 Z", fill: "context-stroke" }));
+    definitions.append(arrow);
+    svg.replaceChildren(definitions);
+    const boxes = new Map(graph.nodes.map(node => [node.id, nodeBox(node, vertical)]));
+    for (const edge of graph.edges) {
+      const line = svgElement("g", { class: "flow-edge", "data-edge": edge.id, "data-state": edge.state, "aria-hidden": true });
+      line.append(svgElement("path", { d: connection(boxes.get(edge.from), boxes.get(edge.to), vertical, edge.id === "retry"),
+        "marker-end": "url(#flow-arrow)" }));
+      svg.append(line);
+    }
+    for (const node of graph.nodes) {
+      const { x, y, width } = boxes.get(node.id);
+      const action = steps()[node.step].label + " 단계 보기";
+      const group = svgElement("g", { class: "flow-node", "data-node": node.id, "data-state": node.state,
+        "data-tone": node.tone, "data-step": node.step, role: "button", tabindex: 0,
+        transform: "translate(" + x + " " + y + ")", "aria-label": node.labels.join(", ") + ". " + action });
+      group.append(svgElement("title", {}, action), svgElement("rect", { width, height: boxHeight, rx: 8 }));
+      node.labels.forEach((label, n) => group.append(svgElement("text", {
+        x: 12, y: [20, 43, 61][n], class: ["kind", "value", "detail"][n] }, label)));
+      svg.append(group);
+    }
+    if (focusedId) svg.querySelector('[data-node="' + focusedId + '"]')?.focus({ preventScroll: true });
+  }
+  function selectFlowNode(event) {
+    const node = event.target.closest("[data-node]");
+    if (!node || (event.type === "keydown" && event.key !== "Enter" && event.key !== " ")) return;
+    event.preventDefault();
+    if (active === "replay" && ["b", "row-b"].includes(node.dataset.node) && (replay.stage === 3 || replay.stage === 4)) {
+      replay = RankingReplay.retryB(replay);
+      showScene();
+    } else goTo(Number(node.dataset.step));
+  }
+  byId("flow-svg").addEventListener("click", selectFlowNode);
+  byId("flow-svg").addEventListener("keydown", selectFlowNode);
+  smallFlow.addEventListener("change", () => showScene());
+
   function showScene() {
     const index = currentIndex();
     const sequence = steps();
@@ -3649,6 +3893,7 @@ const extraCases = {
       if (position === index) button.setAttribute("aria-current", "step");
       else button.removeAttribute("aria-current");
     });
+    showFlow(scene);
     showActors(scene.actors);
     showDatabase(scene);
     showPublication(scene);

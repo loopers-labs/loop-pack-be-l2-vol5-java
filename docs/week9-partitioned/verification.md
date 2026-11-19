@@ -60,6 +60,8 @@ B의 JobInstance 3에서 JobExecution 3(`FAILED`)과 5(`COMPLETED`)가 실행됐
 
 ## 서로 다른 두 JVM의 2점·3점과 B의 재전달
 
+이 시험에서 공개한 판본은 R1이다. 실행 다이어그램은 검산 전후 고객의 조회 결과를 비교할 수 있도록 이전 공개본 R1이 있는 상태에서 R2를 계산하는 예시를 사용한다. 주문 10·20의 수량과 B의 재전달 결과는 아래 실측과 같다. [주문 구간과 재시도 다이어그램](weekly-ranking-flow.html)
+
 계약 3에서도 A(PID 1472)가 주문 10의 2점을 쓰고, B(PID 35124)가 주문 20의 3점을 썼다. B의 같은 JobInstance 1에서 JobExecution 1과 3이 차례로 실행됐다. 세대 2의 재전달을 MySQL이 `oldScore=3, score=3`으로 기록했다. snapshot `7b5223e5-5cbf-48ee-8905-b07eb0af0ea5`에 부분 점수 두 행, 최종 점수 5 한 행, 공개 순위 1위 한 행을 확인했다.
 
 [두 JVM의 동일 값 재전달 시험](../../apps/commerce-streamer/src/test/java/com/loopers/application/ranking/WeeklyRankingEqualScoreReplayProcessTest.java)은 B의 완료 worker에만 `allowStartIfComplete=true`를 적용해 같은 입력을 writer까지 다시 보냈다. 운영 기본값에서는 재시작 시 완료된 worker를 건너뛴다.
