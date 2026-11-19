@@ -267,15 +267,32 @@ java -jar commerce-batch.jar --job.name=weeklyRanking --spring.batch.job.enabled
 
 ### job 은 입력 고정 → 점수 계산 → 계산 완료 → 공개 네 step 이다 (D-194)
 
-- **점수 계산(chunk)**: reader 는 고정 입력의 서로 다른 `product_id` 를 오름차순으로 읽는 cursor reader 이고, 위치를 `saveState` 로 step 의 ExecutionContext 에 남긴다. processor 는 같은 snapshot 입력에서 상품의 수량 합을 구하고, writer 는 `(snapshot_id, product_id)` 에 절대 점수를 upsert 한다. 결과와 reader 위치는 같은 chunk TX 로 commit 된다.
+- **점수 계산(chunk)**: reader 는 고정 입력의 서로 다른 `product_id` 를 오름차순으로 읽는 cursor reader 이고, 위치를 `saveState` 로 step 의 ExecutionContext 에 남긴다. processor 는 없고, writer 가 chunk 의 상품 범위를 입력에서 합산해 `(snapshot_id, product_id)` 에 절대 점수를 upsert 한다(D-197). 결과와 reader 위치는 같은 chunk TX 로 commit 된다.
 - **계산 완료(tasklet)**: 입력의 상품 수와 점수 행 수가 같은지 확인하고 `FROZEN → COMPLETED` 로 바꾼다. 이미 `COMPLETED` 면 그대로 끝낸다. step 이 끝난 뒤의 listener 는 chunk TX 밖이라 상태 전이를 두지 않는다.
 - 점수 계산 · 계산 완료 step 은 시작할 때 manifest 가 없거나 `ABANDONED` 면 실패한다(D-185).
-- chunk 크기는 설정값이다. 재시작 실험(실습 §6)은 2 를 쓴다. 처리량 실험에서 100 · 500 · 1000 · 5000 의 차이가 같은 값의 실행 간 흔들림보다 작아 기본값 100 을 유지한다.
+- chunk 크기는 설정값이다(기본 100). 재시작 실험(실습 §6)은 2 를 쓴다. 처리량 실험에서 5000 이 100 보다 점수 계산이 약 3초 빨랐지만, 실패 때 다시 하는 양이 늘어 기본값은 바꾸지 않았다.
 
 | 검토한 안 | 포기한 이유 |
 |---|---|
 | paging reader(`product_id` 정렬 키) | 고정 입력은 바뀌지 않아 cursor 의 위치 재현 문제가 없고, probe 로 확인한 방식이다. 큰 입력에서 페이지 단위 조회가 필요해지면 바꾼다 |
 | 계산 완료 전이를 공개 step 에 합침 | 상태가 "계산은 끝났지만 공개 전"을 표현하지 못하고, 공개 실패 때 계산 완료 여부를 구분할 수 없다 |
+
+### 점수는 writer 가 chunk 의 상품 범위를 한 문장으로 합산해 쓴다 (D-197)
+
+**reader 가 준 chunk 의 첫 ~ 마지막 `product_id` 범위를 고정 입력에서 `group by` 로 합산해, `INSERT … SELECT … ON DUPLICATE KEY UPDATE` 한 문장으로 점수 테이블에 쓴다.** processor 는 두지 않는다.
+
+- reader 는 같은 snapshot 입력의 서로 다른 상품을 오름차순으로 주므로, 그 범위의 입력 상품이 곧 chunk 의 상품이다. writer 는 chunk 가 한 snapshot 의 오름차순이 아니면 쓰지 않고 실패한다.
+- 처리량 실험에서 상품마다 `sum` 쿼리를 보내던 방식은 5만 상품에 26 ~ 35초로 job 에서 가장 길었다. 바꾼 뒤 4.8 ~ 8.2초, 결과 checksum 은 같다.
+- 읽는 곳은 배치만 쓰는 snapshot 입력이라 `INSERT … SELECT` 의 공유 잠금이 streamer 를 막지 않는다(D-177 에서 원본에 쓰지 않은 이유와 다르다). 같은 snapshot 을 두 실행이 함께 쓰는 일은 같은 JobInstance 의 동시 실행을 Spring Batch 가 막는다.
+- 실패 · 재시작은 그대로다. chunk 하나의 점수 쓰기와 reader 위치가 같은 TX 로 commit 되고, 다시 써도 합계 절대값으로 수렴한다.
+
+| 검토한 안 | 포기한 이유 |
+|---|---|
+| reader 가 처음부터 상품별 합계를 읽음 | 쿼리는 job 에 한 번이지만 재시작 때 집계 전체를 다시 하고 앞 행을 버린다. 집계 결과 전체를 앱 메모리로 받는다 |
+| writer 가 chunk 의 id 목록으로 `IN (…) GROUP BY` 조회 후 batch upsert | chunk 당 왕복이 두 번이고 데이터가 앱을 거친다. 얻는 것은 범위 전제가 없다는 것 하나인데 writer 의 순서 확인으로 대신한다 |
+| processor 의 상품별 쿼리 유지 | 위 측정처럼 상품 수만큼 왕복한다 |
+
+포기하는 것: "chunk 상품 = 범위 안 입력 상품" 이 reader SQL 의 정렬 · distinct 에 기댄다. reader 를 바꾸면 writer 도 함께 봐야 한다. 상품마다 합이 있는지 따로 확인하지 않고, 계산 완료 step 의 개수 확인(입력 상품 수 = 점수 행 수)에 맡긴다.
 
 ### 공개 step 은 순위 → 기존 공개본 내리기 → 새 공개본 올리기를 한 TX 로 한다 (D-195)
 
@@ -377,7 +394,7 @@ java -jar commerce-batch.jar --job.name=weeklyRanking --spring.batch.job.enabled
 
 **`WeeklyRankingThroughputExperiment` 가 주문 25만 · 활동 50만 · 상품 5만에서 step 별 소요 시간을 잰다.** `RUN_EXPERIMENT=true` 일 때만 돌고, 그때만 테스트 힙을 키운다(`EXPERIMENT_HEAP`, 기본 2g). 결과와 해석은 `experiment-throughput.md`.
 
-- job 전체 약 52 ~ 63초(로컬). 점수 계산 26 ~ 35초, 입력 고정 19 ~ 28초, 공개 2초, 계산 완료 0.2초.
+- job 전체 약 27 ~ 30초(로컬). 입력 고정 약 20초, 점수 계산 4.8 ~ 8.2초(D-197 전 26 ~ 35초), 공개 2초, 계산 완료 0.2초.
 - 로컬 Testcontainers 한 대의 값이라 운영 수치로 쓰지 않는다.
 
 ## 9. 남은 한계
@@ -387,7 +404,6 @@ java -jar commerce-batch.jar --job.name=weeklyRanking --spring.batch.job.enabled
 | 공개 TX commit 뒤 batch metadata 저장만 실패 | 공개를 다시 실행하면 같은 결과로 수렴함(`ALREADY_PUBLISHED`)만 확인했다. metadata 갱신 실패를 직접 재현하지 않았고, Spring Batch 가 이때 step 을 `UNKNOWN` 으로 남겨 재시작을 막는지는 확인하지 않았다 | 실패를 주입해 재시작 가능 여부와 운영 복구 절차를 확인 |
 | 원본 조회 인덱스 | `processed_order_confirmation.confirmed_at` 에 인덱스가 없어 늦은 구매 확인이 전체를 훑고, 입력 고정은 order_id 0 부터 과거 주문까지 지나간다(D-196). 실험 seed 는 과거 주문이 뒤에 있어 이 비용을 보지 못했다. streamer 엔티티의 테이블이라 손대지 않았다 | 이력이 쌓이면 streamer 쪽에 인덱스를 두거나 시작 키를 그 주의 최소 order_id 로 |
 | 입력 고정 SQL 힌트 | 인덱스 이름(`uk_product_purchase_activity_order_product`)과 조인 순서를 고정했다(D-196) | streamer 인덱스를 바꿀 때 함께 고침 |
-| 점수 계산의 상품별 쿼리 | processor 가 상품마다 `sum` 쿼리를 보내 5만 상품에서 26 ~ 35초로 job 에서 가장 길다 | chunk 의 상품을 `group by` 한 번으로 모으는 방식 검토 |
 | batch 모듈 검사 | commerce-batch 에는 checkstyle · ArchitectureTest 설정이 없다 | api · streamer 와 맞출지 판단 |
 | 결과 checksum | 테스트에서만 계산하고 manifest 에 저장하지 않는다(D-195) | 운영 검사 필요 여부를 멘토링에서 확인 |
 | 처리량 수치 | 로컬 Testcontainers 한 대 · 실행마다 20% 안팎 흔들림. 힙 사용량은 재지 않았다 | 운영과 비슷한 환경에서 다시 잼 |
