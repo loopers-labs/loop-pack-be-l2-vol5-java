@@ -218,6 +218,42 @@ class WeeklyRankingV1ApiTest {
         }
     }
 
+    @DisplayName("GET /api/v1/rankings/weekly — R4 읽기 검증 (2차 방어)")
+    @Nested
+    class InvariantViolation {
+
+        @DisplayName("COMPLETED 회차인데 ranking 이 NULL 인 행이 있으면 숨기지 않고 500 INTERNAL_ERROR 로 드러낸다.")
+        @Test
+        void nullRankingInCompletedSnapshotIs500() {
+            tables.insertRevision(R1, PERIOD, 1, "COMPLETED", FROZEN_AT, 3);
+            tables.insertScore(R1, product7, 5, 1, FROZEN_AT);
+            tables.insertScore(R1, product9, 5, null, FROZEN_AT);
+            tables.insertScore(R1, product8, 1, 3, FROZEN_AT);
+            tables.insertPublication(PERIOD, R1, 1, FROZEN_AT);
+
+            ResponseEntity<ApiResponse<RankingV1Dto.WeeklyRankingResponse>> response = get("periodStart=2026-08-17");
+
+            assertAll(
+                () -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR),
+                () -> assertThat(response.getBody().meta().result()).isEqualTo(ApiResponse.Metadata.Result.FAIL),
+                () -> assertThat(response.getBody().meta().errorCode()).isEqualTo("Internal Server Error")
+            );
+        }
+
+        @DisplayName("점수 행 수가 expected_product_count 와 다르면 500 INTERNAL_ERROR 다.")
+        @Test
+        void rowCountMismatchIs500() {
+            tables.insertRevision(R1, PERIOD, 1, "COMPLETED", FROZEN_AT, 3);
+            tables.insertScore(R1, product7, 5, 1, FROZEN_AT);
+            tables.insertScore(R1, product9, 5, 2, FROZEN_AT);
+            tables.insertPublication(PERIOD, R1, 1, FROZEN_AT);
+
+            ResponseEntity<ApiResponse<RankingV1Dto.WeeklyRankingResponse>> response = get("periodStart=2026-08-17");
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
     @DisplayName("GET /api/v1/rankings/weekly — 잘못된 요청")
     @Nested
     class BadRequest {

@@ -22,29 +22,30 @@ public class WeeklyRankingJdbcReader implements WeeklyRankingReader {
 
     /** ① pointer + COMPLETED 회차. */
     static final String FIND_PUBLISHED_SQL =
-        "SELECT r.snapshot_id, r.revision, r.frozen_at "
+        "SELECT r.snapshot_id, r.revision, r.frozen_at, r.expected_product_count "
             + "FROM weekly_ranking_publications p "
             + "JOIN weekly_ranking_revisions r ON r.snapshot_id = p.snapshot_id AND r.status = 'COMPLETED' "
             + "WHERE p.period_start = ?";
 
-    /** ② 그 snapshot 의 완성 순위 행. */
+    /** ② 그 snapshot 의 점수 행 전부. ranking NULL 을 걸러내지 않는다 — R4 위반은 Facade 가 읽기 시점에 검증해 드러낸다 (D14). */
     static final String FIND_RANKED_SCORES_SQL =
         "SELECT product_id, score, ranking FROM weekly_ranking_scores "
-            + "WHERE snapshot_id = ? AND ranking IS NOT NULL ORDER BY ranking";
+            + "WHERE snapshot_id = ? ORDER BY ranking";
 
     private final JdbcTemplate jdbcTemplate;
 
     @Override
     public Optional<PublishedSnapshot> findPublished(LocalDate periodStart) {
         return jdbcTemplate.query(FIND_PUBLISHED_SQL, (rs, rowNum) -> new PublishedSnapshot(
-            rs.getString("snapshot_id"), rs.getInt("revision"), rs.getObject("frozen_at", LocalDateTime.class)
+            rs.getString("snapshot_id"), rs.getInt("revision"), rs.getObject("frozen_at", LocalDateTime.class),
+            rs.getInt("expected_product_count")
         ), periodStart).stream().findFirst();
     }
 
     @Override
     public List<RankedScore> findRankedScores(String snapshotId) {
         return jdbcTemplate.query(FIND_RANKED_SCORES_SQL, (rs, rowNum) -> new RankedScore(
-            rs.getLong("product_id"), rs.getLong("score"), rs.getInt("ranking")
+            rs.getLong("product_id"), rs.getLong("score"), rs.getObject("ranking", Integer.class)
         ), snapshotId);
     }
 }

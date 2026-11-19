@@ -36,6 +36,7 @@ public class RankingV1Dto {
     }
 
     public record Item(long productId, String productName, long score, int ranking) {
+        /** Facade 가 R4 를 검증한 뒤라 ranking 은 NULL 이 아니다. */
         public static Item from(WeeklyRankingInfo.Item item) {
             return new Item(item.productId(), item.productName(), item.score(), item.ranking());
         }
