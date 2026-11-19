@@ -32,7 +32,7 @@ Spring이 수집한 버전별 해석기를 버전 번호에 대응하는 불변 
 - 구매 활동의 `confirmed_at`은 이벤트의 최초 확정 시각이다. 소비 시각을 쓰지 않는다.
 - 소비 모델은 시각을 UTC `Instant`의 마이크로초 정밀도로 정규화하고 `datetime(6)`에 저장한다. Entity는 `@FractionalSeconds(6)`으로 소수초 정밀도를 선언한다.
 - 확정 시각과 품목은 구매 활동에만 둔다. 처리 기록은 처리 여부만 표시하고, 같은 사실인지는 구매 활동과 비교해 판정한다.
-- `product_id`는 과거 주문의 상품 식별자로 보존한다. 소비할 때 상품의 존재·삭제·가격을 조회하지 않고 상품 테이블에 FK를 두지 않는다. 삭제·비노출 상품을 거르는 일은 활동을 읽는 쪽(이후 랭킹)이 맡는다.
+- `product_id`는 과거 주문의 상품 식별자로 보존한다. 소비할 때 상품의 존재·삭제·가격을 조회하지 않고 상품 테이블에 FK를 두지 않는다. 삭제·비노출 상품을 거르는 일은 활동을 읽는 쪽인 [주간 구매 랭킹](../../../docs/system-design/use-cases/weekly-ranking.md)이 맡는다.
 
 주문 42가 상품 7을 2개, 상품 8을 1개 구매했다면 활동은 2행이다. 같은 이벤트를 다시 받아도 2행이다. 주문 43이 상품 7을 3개 구매하면 활동은 3행이고 상품 7의 구매 수량 합은 5다.
 
@@ -138,6 +138,8 @@ listener는 별도 executor로 품목 처리를 넘기지 않는다. 같은 part
 ## 로컬 DB와 검증
 
 local 프로필은 `ddl-auto=validate`로 준비된 스키마를 확인하며, 필요한 SQL과 순서는 [영속성 매핑 설계의 DB 전환 순서](../../../docs/system-design/persistence-mapping.md#db-전환-순서)를 따른다. 앱 재시작으로 완료 기록·구매 활동을 다시 만들지 않는다. test 프로필의 격리 DB는 공통 `create` 설정을 유지한다.
+
+`commerce-batch`가 주간 랭킹의 회차를 계산할 때 이 테이블을 확정 시각 범위로 읽고, 논리 삭제된 행은 읽지 않는다. 배치는 읽기만 하고 쓰지 않으며, 그 읽기를 위해 `confirmed_at` 인덱스를 둔다. 테이블 구조를 바꿀 때는 [주간 랭킹 Job 설계](../../commerce-batch/docs/weekly-ranking-job.md)의 읽기 전용 매핑도 함께 확인한다.
 
 테스트 위치·방법·기대값은 [공통 검증 문서](../../../docs/system-design/use-cases/order-confirmed-event-verification.md), 실제 앱 프로세스 재시작 검증은 [로컬 검증 절차](../../../docs/verification/order-confirmed-event/README.md)를 따른다.
 

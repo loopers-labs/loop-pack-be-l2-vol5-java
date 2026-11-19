@@ -193,5 +193,31 @@ CREATE TABLE IF NOT EXISTS product_purchase_activity (
     product_id BIGINT NOT NULL,
     updated_at DATETIME(6) NOT NULL,
     PRIMARY KEY (id),
-    UNIQUE KEY uk_purchase_activity_order_product (order_id, product_id)
+    UNIQUE KEY uk_purchase_activity_order_product (order_id, product_id),
+    KEY idx_purchase_activity_confirmed_at (confirmed_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- 주간 랭킹. commerce-batch가 쓰고 commerce-api가 완성된 회차만 읽는다. 두 테이블은 점수 고정 트랜잭션에서 함께 만들어 FK를 두지 않는다.
+-- 계산 중인 회차는 결과 checksum과 계산 순위가 비어 있다.
+CREATE TABLE IF NOT EXISTS weekly_ranking_revisions (
+    period_start DATE NOT NULL,
+    revision INT NOT NULL,
+    status VARCHAR(16) NOT NULL,
+    calculated_at DATETIME(6) NOT NULL,
+    result_checksum VARCHAR(64) DEFAULT NULL,
+    job_execution_id BIGINT NOT NULL,
+    cancelled_at DATETIME(6) DEFAULT NULL,
+    cancel_reason VARCHAR(500) DEFAULT NULL,
+    PRIMARY KEY (period_start, revision)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS weekly_ranking_scores (
+    period_start DATE NOT NULL,
+    revision INT NOT NULL,
+    product_id BIGINT NOT NULL,
+    score BIGINT NOT NULL,
+    rank_no INT DEFAULT NULL,
+    PRIMARY KEY (period_start, revision, product_id),
+    UNIQUE KEY uk_weekly_ranking_scores_revision_rank (period_start, revision, rank_no),
+    CONSTRAINT ck_weekly_ranking_scores_score CHECK (score > 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

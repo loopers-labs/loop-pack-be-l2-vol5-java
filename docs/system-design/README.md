@@ -1,12 +1,12 @@
 # 시스템 설계 문서
 
-Commerce 시스템(`commerce-api`, `commerce-streamer`)의 설계를 책임별로 안내한다. 시스템 구조와 도메인 규칙, 고객·관리자 API, 유스케이스, 외부 연동, 영속성·오류 변환 순으로 읽는다.
+Commerce 시스템(`commerce-api`, `commerce-streamer`, `commerce-batch`)의 설계를 책임별로 안내한다. 시스템 구조와 도메인 규칙, 고객·관리자 API, 유스케이스, 외부 연동, 영속성·오류 변환 순으로 읽는다.
 
 | 설계 수준 | 문서 |
 | --- | --- |
 | HLD · 시스템 경계, 도메인 모델, API 요약 | [시스템 개요](system-overview.md), [도메인 모델](domain-model.md), [API 계약](api-contracts.md) |
 | LLD · 기능별 계약, 객체 협력, 트랜잭션과 실패 처리, 외부 연동, 저장·오류 변환 | [유스케이스 설계](#유스케이스), [외부 시스템 연동](#외부-시스템-연동), [영속성과 오류 변환](#영속성과-오류-변환) |
-| 결정·검증 근거 | 각 기능의 결정 기록, [쿠폰 발급 검증 기록](use-cases/coupon-issuance-verification.md)과 [주문 확정 이벤트 검증](use-cases/order-confirmed-event-verification.md) |
+| 결정·검증 근거 | 각 기능의 결정 기록, [쿠폰 발급 검증 기록](use-cases/coupon-issuance-verification.md), [주문 확정 이벤트 검증](use-cases/order-confirmed-event-verification.md)과 [주간 구매 랭킹 검증 기록](use-cases/weekly-ranking-verification.md) |
 
 ## 시스템 구조와 도메인
 
@@ -48,6 +48,16 @@ Commerce 시스템(`commerce-api`, `commerce-streamer`)의 설계를 책임별�
 | [쿠폰 발급 대기열 결정 기록](use-cases/coupon-issuance-queue-decisions.md) | Q-01~Q-11 선택의 맥락, 대안, 근거와 영향 |
 | [쿠폰 발급 검증 기록](use-cases/coupon-issuance-verification.md) | 동기 발급과 대기열의 검증 시나리오, 실행 결과, 확인하지 않은 항목과 남은 개선 |
 
+### 랭킹
+
+| 문서 | 다루는 내용 |
+| --- | --- |
+| [주간 구매 랭킹](use-cases/weekly-ranking.md) | 기간·점수·순서, 점수 고정·순위 매기기·공개의 세 단계, 다시 실행과 재계산, 회차 닫기, 조회 계약, 테이블 소유권 |
+| [주간 구매 랭킹 결정 기록](use-cases/weekly-ranking-decisions.md) | R-01~R-31 선택의 맥락, 대안, 근거와 영향 |
+| [주간 랭킹 Job](../../apps/commerce-batch/docs/weekly-ranking-job.md) | Spring Batch Job과 세 Step, Step별 SQL과 트랜잭션, 순위 Step의 reader·processor·writer, 실패와 다시 실행 |
+| [주간 랭킹 조회](../../apps/commerce-api/docs/weekly-ranking-query.md) | 랭킹 API의 계층, 입력 검증, 두 번 나눠 읽는 쿼리, 응답 만들기 |
+| [주간 구매 랭킹 검증 기록](use-cases/weekly-ranking-verification.md) | 과제 요구와 확인 위치, fixture와 기대 checksum, 순위 Step에서 실패한 뒤 다시 실행, 앱별 테스트, 로컬 연결 확인 |
+
 ### 주문·결제
 
 결제 요청·PG 연동·결과 반영과 callback·reconcile·주기 조회를 구현했다. 조회 CircuitBreaker, Retry, RateLimiter, TimeLimiter는 [회복 정책과 실험 프로필](use-cases/order-payment-recovery.md#조회-회복-정책)로 적용하며 기본 프로필에서는 비활성화한다. 운영 활성화 등 후속 결정은 같은 문서의 미정 사항으로 남긴다. PG 성공으로 확정한 주문은 Kafka 이벤트로 `commerce-streamer`에 전달해 상품 구매 활동으로 저장한다. 각 문서 상단의 안내에서 결제 흐름을 연결한다.
@@ -79,7 +89,7 @@ Commerce 시스템(`commerce-api`, `commerce-streamer`)의 설계를 책임별�
 
 | 문서 | 다루는 내용 |
 | --- | --- |
-| [영속성 매핑 설계](persistence-mapping.md) | Domain과 JPA 저장 모델의 경계·변환, 결제·확정 시각·구매 활동·쿠폰 스키마와 과거 데이터 전환 |
+| [영속성 매핑 설계](persistence-mapping.md) | Domain과 JPA 저장 모델의 경계·변환, 결제·확정 시각·구매 활동·쿠폰·주간 랭킹 스키마와 과거 데이터 전환 |
 | [오류 변환 설계](error-mapping.md) | Domain 오류 표현과 HTTP/API 응답 변환 방식 |
 
 ## 문서 갱신 기준

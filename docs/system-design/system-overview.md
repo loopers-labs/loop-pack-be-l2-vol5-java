@@ -1,10 +1,10 @@
 # 시스템 개요
 
-Commerce 시스템(`commerce-api`, `commerce-streamer`)의 경계, 코드 의존 방향과 계층별 책임을 정리한다. 개별 기능의 정책과 실행 흐름은 [유스케이스 설계](README.md#유스케이스)를 따른다.
+Commerce 시스템(`commerce-api`, `commerce-streamer`, `commerce-batch`)의 경계, 코드 의존 방향과 계층별 책임을 정리한다. 개별 기능의 정책과 실행 흐름은 [유스케이스 설계](README.md#유스케이스)를 따른다.
 
 ## 시스템 경계
 
-고객·관리자 요청과 PG의 결과 알림은 `commerce-api`에서 수신한다. 주문 확정 사실은 Kafka로 전달하고 `commerce-streamer`가 소비해 구매 활동을 저장한다.
+고객·관리자 요청과 PG의 결과 알림은 `commerce-api`에서 수신한다. 주문 확정 사실은 Kafka로 전달하고 `commerce-streamer`가 소비해 구매 활동을 저장한다. `commerce-batch`는 구매 활동으로 주간 랭킹을 계산해 공개하고, `commerce-api`가 공개된 랭킹을 조회한다.
 
 ```mermaid
 flowchart LR
@@ -22,6 +22,9 @@ flowchart LR
         API -->|"OrderConfirmed"| Kafka
         Kafka -->|"구매 활동 소비"| Streamer
         Streamer -->|"구매 활동"| DB
+        Batch["commerce-batch"]
+        DB -->|"구매 활동 읽기"| Batch
+        Batch -->|"주간 랭킹 회차·순위"| DB
     end
 
     PG["테스트 PG"]
@@ -34,8 +37,9 @@ flowchart LR
 
 테스트 PG는 `apps:test-pg`의 별도 앱·컨테이너로 구성하며 Commerce와 HTTP로 통신한다.<br>
 PG와의 송수신 계약은 [PG 연동 설계](external-systems/payment-gateway.md), 실행 경계, 시나리오 제어와 후속 작업은 [로컬 테스트 PG 앱 설계](../../apps/test-pg/docs/test-payment-gateway.md)에서 관리한다.<br>
-`commerce-api`와 `commerce-streamer`는 같은 MySQL을 쓰지만 서로의 테이블을 읽거나 쓰지 않는다. 이벤트 계약과 전달 보장은 [주문 확정 이벤트](use-cases/order-confirmed-event.md)를 따른다.<br>
-쿠폰 캠페인과 발급 결과의 원본은 MySQL이고, Redis는 쿠폰 발급의 동시 수용과 비동기 대기열을 조정한다. 쿠폰의 불변식은 [도메인 모델](domain-model.md#couponcampaign과-coupon), 처리 흐름은 [쿠폰 발급 설계](use-cases/coupon-issuance.md)와 [대기열 설계](use-cases/coupon-issuance-queue.md)를 따른다.
+세 앱은 같은 MySQL을 쓴다. 테이블은 쓰는 앱이 주인이고, 다른 앱의 테이블에는 쓰지 않는다. 다른 앱의 테이블을 읽는 것은 `commerce-batch`가 구매 활동을, `commerce-api`가 공개된 주간 랭킹을 읽는 두 경우뿐이며 대상 테이블은 [주간 구매 랭킹의 테이블 소유권](use-cases/weekly-ranking.md#테이블-소유권)을 따른다. 이벤트 계약과 전달 보장은 [주문 확정 이벤트](use-cases/order-confirmed-event.md)를 따른다.<br>
+쿠폰 캠페인과 발급 결과의 원본은 MySQL이고, Redis는 쿠폰 발급의 동시 수용과 비동기 대기열을 조정한다. 쿠폰의 불변식은 [도메인 모델](domain-model.md#couponcampaign과-coupon), 처리 흐름은 [쿠폰 발급 설계](use-cases/coupon-issuance.md)와 [대기열 설계](use-cases/coupon-issuance-queue.md)를 따른다.<br>
+주간 랭킹의 계산·공개 규칙은 [주간 구매 랭킹](use-cases/weekly-ranking.md), Job 구현은 [주간 랭킹 Job 설계](../../apps/commerce-batch/docs/weekly-ranking-job.md), 조회 구현은 [주간 랭킹 조회 설계](../../apps/commerce-api/docs/weekly-ranking-query.md)를 따른다.
 
 ## 계층과 의존성
 
@@ -55,7 +59,7 @@ flowchart TB
 | `domain` | 업무 규칙·불변식과 상태 전이를 관리하고, 필요한 조회·저장 계약을 정의한다. |
 | `infrastructure` | Domain·Application의 계약을 영속 기술과 외부 연동 기술로 구현한다. 모델 변환과 저장소·외부 시스템·메시지 broker 연결을 담당한다. |
 
-`commerce-streamer`도 같은 계층 구성을 따르되, Kafka record 해석기(`interfaces`)가 record를 도메인 값 `OrderConfirmation`으로 바로 변환한다.
+`commerce-streamer`도 같은 계층 구성을 따르되, Kafka record 해석기(`interfaces`)가 record를 도메인 값 `OrderConfirmation`으로 바로 변환한다. `commerce-batch`는 Job 단위로 `batch.job.<job>` 아래에 Job 설정과 Step을 둔다.
 
 저장 모델과의 매핑은 [영속성 매핑 설계](persistence-mapping.md), 업무 오류의 HTTP 응답 변환은 [오류 변환 설계](error-mapping.md)를 따른다.
 
@@ -64,6 +68,6 @@ flowchart TB
 | 액터 | 주요 기능 |
 | --- | --- |
 | 관리자 | 브랜드·상품 운영, 재고 관리, 주문 조회 |
-| 고객 | 브랜드·상품 탐색, 좋아요 관리, 포인트 충전·조회, 쿠폰 발급·보유 쿠폰·발급 작업 조회, 주문 생성·결제·조회 |
+| 고객 | 브랜드·상품 탐색, 좋아요 관리, 포인트 충전·조회, 쿠폰 발급·보유 쿠폰·발급 작업 조회, 주문 생성·결제·조회, 주간 구매 랭킹 조회 |
 
 고객·관리자 API의 입력·응답은 [API 계약](api-contracts.md), 업무 규칙은 [도메인 모델](domain-model.md)을 기준으로 한다.
