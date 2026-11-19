@@ -1,5 +1,6 @@
 package com.loopers.batch.job.ranking.step;
 
+import com.loopers.batch.job.ranking.WeeklyRankingJobConfig;
 import com.loopers.domain.ranking.RankingChecksum;
 import com.loopers.domain.ranking.WeeklySnapshotId;
 import lombok.RequiredArgsConstructor;
@@ -32,8 +33,7 @@ import java.util.List;
  */
 @Slf4j
 @StepScope
-// JOB_NAME 상수는 ⑤ WeeklyRankingJobConfig 에서 정의하며, 그때 이 리터럴을 상수 참조로 바꾼다.
-@ConditionalOnProperty(name = "spring.batch.job.name", havingValue = "weeklyRanking")
+@ConditionalOnProperty(name = "spring.batch.job.name", havingValue = WeeklyRankingJobConfig.JOB_NAME)
 @RequiredArgsConstructor
 @Component
 public class FreezeWeeklyInputTasklet implements Tasklet {
