@@ -313,3 +313,19 @@ MySQL Connector/J 는 fetchSize 를 정하지 않으면 결과 전체를 클라�
 `ranking_snapshot.status` 는 `FROZEN` 하나만 쓴다. 공개 여부는 pointer 와 `weekly_ranking` 행이 말한다. `PUBLISHED` 를 더하면 상태와 pointer 가 서로 다른 revision 을 말하는 조합이 생긴다.
 
 **뒤집을 조건**: API 나 외부 소비자가 결과 checksum 을 읽어야 할 때, 또는 `weekly_ranking` 을 지우거나 옮기는 정책이 생길 때 `ranking_snapshot` 에 결과 checksum 칸을 둔다. 상태를 읽어 분기하는 규칙(예: 계산 중인 snapshot 의 재계산 금지)이 생길 때 상태 값을 더한다.
+
+## 16. 조회 API (`QRY-001` ~ `QRY-009`)
+
+commerce-api 는 상품 조회와 같은 경로다. controller → `RankingFacade` → domain 의 조회 포트 `WeeklyRankingQuery` → infrastructure 의 `WeeklyRankingQueryImpl`. 요청 값은 `WeekStart`(월요일)와 `RankingLimit`(1 ~ 100, 기본 10)이 converter 에서 만들어지고, 거부하면 400 이다. 조회 결과 record(`Published`, `Item`)는 상품 조회의 `View` 처럼 포트와 함께 domain 에 있다.
+
+조회는 pointer 와 순위, 상품 표시 정보를 한 문장으로 읽는다(`QRY-009`). 삭제된 상품은 안쪽 join 에서 먼저 빼고 바깥에서 limit 을 건다(`QRY-008`). 순위는 저장된 `rank_no` 를 그대로 쓴다(`QRY-007`). pointer 가 있고 순위 행이 없으면 left join 의 한 행으로 `PUBLISHED` 와 빈 items 가 된다(`QRY-006`). 결과는 엔티티 없이 `NamedParameterJdbcTemplate` 의 `ResultSetExtractor` 가 칸 이름으로 읽어 domain record 를 바로 만든다. `frozen_at` 은 `LocalDateTime` 으로 읽어 JVM 시간대로 바뀌지 않는다.
+
+읽기 쪽은 화면에 필요한 테이블을 한 문장에서 join 한다. 상품 목록 조회(`ProductViewQueryImpl`)가 상품·브랜드·좋아요 집계를 join 하는 것과 같다. 애그리거트 경계와 package-private 엔티티는 상태를 바꾸는 쪽에서 지킨다. 그래서 랭킹 조회는 QueryDSL 로 쓰지 않는다. 상품·브랜드 엔티티와 그 Q 클래스는 상품·브랜드 패키지 밖에서 쓰지 않는다. 결과 record 는 상품 조회의 `View` 처럼 포트의 `Published`, `Item` 이고, 응답 record 는 `RankingV1Dto` 다.
+
+대가: "고객에게 보이는 상품" 조건(`PRODUCT-005`, `deleted_at IS NULL`)이 상품 조회와 랭킹 조회 두 SQL 에 있다. **뒤집을 조건**: 그 조건이 하나에서 늘어날 때(숨김 상품, 판매 중지 등) 한 곳(DB view 나 상품 조회 포트)으로 모으고, 랭킹은 상품 정보를 그 포트에 묻는다.
+
+batch 는 그 주에 구매된 상품 전부의 순위를 쓰고, API 가 limit 만큼 읽는다. 상위 N 개만 저장하면 그중 삭제된 상품만큼 limit 보다 적게 돌아온다.
+
+**읽기 모델은 batch 와 api 사이의 계약이다.** 두 앱은 코드나 모듈을 공유하지 않는다. 테이블 정의는 쓰는 쪽인 batch 의 `schema/ranking.sql` 에 있고, api 테스트는 기대하는 모양을 사본(`src/test/resources/sql/weekly-ranking.sql`)으로 둔다. 두 정의가 어긋나면 각자의 테스트는 통과하고 연결(`EXP-028`)에서 실패한다. 칸을 바꿀 때는 두 정의를 함께 바꾼다. 입력 고정 시점도 pointer 에 함께 써서 api 가 쓰기 모델(`ranking_snapshot`)을 읽지 않는다.
+
+**뒤집을 조건**: 읽는 앱이 늘거나 두 정의가 실제로 어긋나는 일이 생길 때 계약을 한 곳(공유 스키마 모듈이나 계약 테스트)으로 모은다. 상품 수가 커서 전부 저장하는 비용이 측정으로 문제가 되면 상위 K 개를 여유 있게 저장하고 limit 보다 적게 돌아올 수 있음을 받아들인다. 읽기 부하가 문제가 되면 공개된 snapshot 결과를 Redis 에 캐시한다(12 장).

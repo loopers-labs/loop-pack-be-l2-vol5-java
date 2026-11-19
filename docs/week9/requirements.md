@@ -40,9 +40,9 @@
 | ID | 규칙 | 출처 | 관찰값 |
 |---|---|---|---|
 | `QRY-001` | `GET /api/v1/rankings/weekly?periodStart=2026-08-17&limit=10` | 원문 | |
-| `QRY-002` | `periodStart` 는 `yyyy-MM-dd` 날짜이고 월요일이어야 한다. 아니면 400 이다. 검증은 요청 record 의 타입이 하고 도메인까지 보내지 않는다 | 원문, 정함(수단) | `2026-08-18` 은 400 |
-| `QRY-003` | `limit` 은 양수이고 상한이 있다. 상한과 생략 시 기본값은 Q-4 | 원문, 선택 | `limit=0` 은 400 |
-| `QRY-004` | 응답은 `status`, `periodStart`, `periodEnd`, `snapshotId`, 입력 고정 시점, `items[]`(순위, `productId`, 점수, 상품 표시 정보)다 | 원문, 정함(이름) | |
+| `QRY-002` | `periodStart` 는 `yyyy-MM-dd` 날짜이고 월요일이어야 한다. 아니면 400 이다. 생략해도 400 이다(Q-5). 검증은 요청 parameter 의 타입(`WeekStart`)이 하고 도메인까지 보내지 않는다 | 원문, 정함(수단, 생략) | `2026-08-18`, `2026/08/17`, 생략은 400 |
+| `QRY-003` | `limit` 은 1 이상 100 이하이고 생략하면 10 이다(Q-4). 검증은 `RankingLimit` 이 한다 | 원문, 선택 | `limit=0`, `limit=101` 은 400 |
+| `QRY-004` | 응답은 `status`, `periodStart`, `periodEnd`, `snapshotId`, `frozenAt`(입력 고정 시점), `items[]` 다. item 은 `rank`, `productId`, `score` 와 상품 표시 정보 `productName`, `brandId`, `brandName`, `price`, `soldOut` 이다. API 는 읽기 모델(`weekly_ranking`, `weekly_ranking_publication`)만 읽는다 | 원문, 정함(이름, 표시 정보) | |
 | `QRY-005` | 공개 pointer 가 없으면 `NOT_PUBLISHED` 와 빈 `items` 다. 다른 주나 계산 중인 stage 를 대신 돌려주지 않는다 | 원문 | 계산 중에도 `NOT_PUBLISHED` |
 | `QRY-006` | 구매가 없던 주의 완성본은 `PUBLISHED`, 그 `snapshotId`, 빈 `items` 다 | 원문 | `QRY-005` 와 응답으로 구분된다 |
 | `QRY-007` | 고객 공개 조건(`PRODUCT-005`, 삭제되지 않은 상품)에 맞지 않는 상품은 뺀다. 저장된 순위는 다시 매기지 않으므로 순위에 빈 자리가 생길 수 있다 | 원문 | 2위 상품이 삭제되면 1위, 3위 |
@@ -122,8 +122,8 @@
 | ~~Q-1~~ | ~~`snapshotId` 의 형식과 정하는 주체~~ `weekly-{yyyyMMdd}-r{revision}` 을 launch parameter 로 받고 job 이 기간·revision 과 맞는지 확인한다. 사람이 읽고 기간과 revision 을 바로 알 수 있다. **뒤집을 조건**: 한 기간에 revision 말고 다른 축(예: 점수 기준)으로 snapshot 을 나눠야 할 때 | `SNP-008` |
 | ~~Q-2~~ | ~~revision 을 정하는 방법~~ launch 할 때 명시적으로 준다. 그 기간의 가장 큰 revision 보다 커야 하고 아니면 고정 step 이 실패한다. 원문이 "명시적으로 증가" 를 요구하고, 자동으로 매기면 같은 launch 를 두 번 했을 때 의도하지 않은 새 revision 이 생긴다. `(period_start, revision)` 유일 제약이 동시에 같은 revision 을 만드는 것을 막는다. **뒤집을 조건**: 스케줄러가 늦은 구매를 감지해 자동으로 재계산해야 할 때 | `REV-002` |
 | ~~Q-3~~ | ~~같은 기간의 동시 계산을 직렬로 만드는 수단~~ 운영에서 한 기간에 한 번에 하나만 launch 한다고 범위로 둔다. 스케줄러와 자동 launch 가 범위 밖이라 동시에 launch 하는 주체가 없다. 근거는 설계 13 장. **뒤집을 조건**: 자동 launch 나 재시도가 생길 때 | `PBL-008` |
-| Q-4 | `limit` 의 상한과 기본값. 원문은 "최대 100 등" 이다. 제안: 상한 100, 생략하면 10 | `QRY-003` |
-| Q-5 | `periodStart` 를 생략하면 400 인가, 지난주로 보는가. 제안: 400 | `QRY-002` |
+| ~~Q-4~~ | ~~`limit` 의 상한과 기본값~~ 상한 100, 생략하면 10. 원문의 "최대 100" 을 상한으로 쓰고, 기본은 한 화면 크기다. 상품 목록의 `PageSize`(기본 20)와 뜻이 달라 타입을 따로 둔다. **뒤집을 조건**: 화면이 다른 기본 개수를 요구할 때 | `QRY-003` |
+| ~~Q-5~~ | ~~`periodStart` 를 생략하면 400 인가, 지난주로 보는가~~ 400. 지난주로 보면 같은 요청의 답이 서버 시각(UTC 월요일 경계)에 따라 바뀐다. **뒤집을 조건**: 화면이 "최신 공개 주" 를 기본으로 요구할 때. 그때는 지난주가 아니라 가장 최근 pointer 를 돌려준다 | `QRY-002` |
 | Q-6 | §7 을 한 실행으로 하는가. W6·W7 은 앱별 테스트와 공유 계약으로 나눴다(W6 Q-4, W7 Q-3). 원문은 "한 연결 테스트" 다. 이번에는 commerce-api, streamer, batch 세 앱이다 | `EXP-028` |
 | Q-7 | `purchase_activity` 에 `confirmed_at` 인덱스를 둘 것인가. streamer 의 스키마를 바꾼다 | `SNP-003` |
 | ~~Q-8~~ | ~~commerce-batch 의 계층~~ `com.loopers.batch.job.ranking` 한 패키지에 package-private 으로 둔다. step 이 TX 경계이고 DB 없이 판단할 애그리거트가 없다. 근거는 설계 11 장. **뒤집을 조건**: 반품 차감 같은 도메인 판단이 생길 때 | `JOB-003` |
