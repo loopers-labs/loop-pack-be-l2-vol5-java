@@ -2,12 +2,13 @@ openapi: 3.0.3
 info:
   title: Commerce API
   version: v1
-  description: 브랜드, 상품, 좋아요, 포인트, 주문, 쿠폰을 위한 HTTP API 계약
+  description: 브랜드, 상품, 랭킹, 좋아요, 포인트, 주문, 쿠폰을 위한 HTTP API 계약
 servers:
   - url: http://localhost:8080
 tags:
   - name: Customer Brand
   - name: Customer Product
+  - name: Customer Ranking
   - name: Like
   - name: Point
   - name: Customer Order
@@ -17,6 +18,84 @@ tags:
   - name: Admin Product
   - name: Admin Order
 paths:
+  /api/v1/rankings/weekly:
+    get:
+      tags: [Customer Ranking]
+      operationId: GetWeeklyRanking
+      summary: 주간 상품 구매 랭킹 조회
+      description: 공개 결과에서 삭제된 상품을 제외한 뒤 limit을 적용하며 저장된 순위는 유지한다.
+      security:
+        - userId: []
+      parameters:
+        - name: periodStart
+          in: query
+          required: true
+          description: UTC 월요일 날짜(YYYY-MM-DD)
+          schema:
+            type: string
+            format: date
+            example: '2026-08-17'
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+      responses:
+        '200':
+          description: 공개 여부와 주간 랭킹
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [meta, data]
+                properties:
+                  meta:
+                    $ref: '#/components/schemas/SuccessMetadata'
+                  data:
+                    type: object
+                    required: [status, periodStart, periodEnd, snapshotId, inputFixedAt, items]
+                    properties:
+                      status:
+                        type: string
+                        enum: [PUBLISHED, NOT_PUBLISHED]
+                      periodStart:
+                        type: string
+                        format: date
+                      periodEnd:
+                        type: string
+                        format: date
+                      snapshotId:
+                        type: string
+                        nullable: true
+                      inputFixedAt:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          required: [productId, productName, score, rank]
+                          properties:
+                            productId:
+                              type: integer
+                              format: int64
+                            productName:
+                              type: string
+                            score:
+                              type: integer
+                              format: int64
+                            rank:
+                              type: integer
+                              format: int64
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/UserNotIdentified'
+
   /api/v1/brands:
     get:
       tags: [Customer Brand]
