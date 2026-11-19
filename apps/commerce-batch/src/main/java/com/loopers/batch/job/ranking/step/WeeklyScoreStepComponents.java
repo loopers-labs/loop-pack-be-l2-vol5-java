@@ -2,6 +2,7 @@ package com.loopers.batch.job.ranking.step;
 
 import com.loopers.batch.job.ranking.WeeklyRankingJobConfig;
 import com.loopers.domain.ranking.ProductScore;
+import com.loopers.domain.ranking.ScoreProcessingHook;
 import lombok.RequiredArgsConstructor;
 import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.item.Chunk;
@@ -10,6 +11,7 @@ import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.database.JdbcCursorItemReader;
 import org.springframework.batch.item.database.builder.JdbcCursorItemReaderBuilder;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -72,10 +74,21 @@ public class WeeklyScoreStepComponents {
             .build();
     }
 
+    /** 제품 기본 hook (no-op). 테스트가 같은 타입의 빈을 등록하면 그것이 쓰인다. */
+    @ConditionalOnMissingBean(ScoreProcessingHook.class)
+    @Bean
+    public ScoreProcessingHook noOpScoreProcessingHook() {
+        return ScoreProcessingHook.NO_OP;
+    }
+
     @StepScope
     @Bean("weeklyScoreProcessor")
-    public ItemProcessor<Long, ProductScore> weeklyScoreProcessor(@Value("#{jobParameters['snapshotId']}") String snapshotId) {
+    public ItemProcessor<Long, ProductScore> weeklyScoreProcessor(
+        @Value("#{jobParameters['snapshotId']}") String snapshotId,
+        ScoreProcessingHook hook
+    ) {
         return productId -> {
+            hook.beforeProcess(snapshotId, productId);
             Long total = jdbcTemplate.queryForObject(SUM_QUANTITY_SQL, Long.class, snapshotId, productId);
             if (total == null || total <= 0) {
                 // reader 가 돌려준 상품인데 수량이 없다는 것은 입력 계약 위반이다. skip 하지 않고 실패를 드러낸다.
