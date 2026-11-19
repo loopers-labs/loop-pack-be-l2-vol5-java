@@ -1,5 +1,7 @@
-package com.loopers.batch.job.ranking;
+package com.loopers.batch.job.ranking.publish;
 
+import com.loopers.batch.job.ranking.WeeklyRankingParameters;
+import com.loopers.batch.job.ranking.WeeklyRankingSnapshotRepository;
 import com.loopers.batch.job.ranking.WeeklyRankingSnapshotRepository.SnapshotManifest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;

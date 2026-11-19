@@ -1,4 +1,4 @@
-package com.loopers.batch.job.ranking;
+package com.loopers.batch.job.ranking.freeze;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;

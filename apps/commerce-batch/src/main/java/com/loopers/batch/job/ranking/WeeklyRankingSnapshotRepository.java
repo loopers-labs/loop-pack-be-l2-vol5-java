@@ -1,5 +1,6 @@
 package com.loopers.batch.job.ranking;
 
+import com.loopers.batch.job.ranking.freeze.PurchaseInput;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;

@@ -1,4 +1,4 @@
-package com.loopers.batch.job.ranking;
+package com.loopers.batch.job.ranking.command;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.ApplicationArguments;

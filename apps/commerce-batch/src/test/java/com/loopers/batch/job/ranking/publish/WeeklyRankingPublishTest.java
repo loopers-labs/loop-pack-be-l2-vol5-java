@@ -1,6 +1,10 @@
-package com.loopers.batch.job.ranking;
+package com.loopers.batch.job.ranking.publish;
 
-import com.loopers.batch.job.ranking.WeeklyRankingPublisher.PublishResult;
+import com.loopers.batch.job.ranking.RankingTables;
+import com.loopers.batch.job.ranking.WeeklyRankingJobConfig;
+import com.loopers.batch.job.ranking.WeeklyRankingParameters;
+import com.loopers.batch.job.ranking.WeeklyRankingSnapshotRepository;
+import com.loopers.batch.job.ranking.publish.WeeklyRankingPublisher.PublishResult;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

@@ -1,8 +1,7 @@
-package com.loopers.batch.job.ranking.step;
+package com.loopers.batch.job.ranking.publish;
 
 import com.loopers.batch.job.ranking.WeeklyRankingParameters;
-import com.loopers.batch.job.ranking.WeeklyRankingPublisher;
-import com.loopers.batch.job.ranking.WeeklyRankingPublisher.PublishResult;
+import com.loopers.batch.job.ranking.publish.WeeklyRankingPublisher.PublishResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.StepContribution;

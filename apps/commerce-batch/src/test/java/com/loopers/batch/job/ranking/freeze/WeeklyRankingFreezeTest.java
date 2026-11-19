@@ -1,5 +1,8 @@
-package com.loopers.batch.job.ranking;
+package com.loopers.batch.job.ranking.freeze;
 
+import com.loopers.batch.job.ranking.RankingTables;
+import com.loopers.batch.job.ranking.WeeklyRankingJobConfig;
+import com.loopers.batch.job.ranking.WeeklyRankingParameters;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

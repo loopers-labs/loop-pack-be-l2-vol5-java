@@ -1,4 +1,4 @@
-package com.loopers.batch.job.ranking.step;
+package com.loopers.batch.job.ranking.score;
 
 import com.loopers.batch.job.ranking.WeeklyRankingParameters;
 import com.loopers.batch.job.ranking.WeeklyRankingSnapshotRepository;

@@ -1,9 +1,8 @@
-package com.loopers.batch.job.ranking;
+package com.loopers.batch.job.ranking.score;
 
-import com.loopers.batch.job.ranking.step.ProductKey;
-import com.loopers.batch.job.ranking.step.ProductScore;
-import com.loopers.batch.job.ranking.step.WeeklyScoreProcessor;
-import com.loopers.batch.job.ranking.step.WeeklyScoreWriter;
+import com.loopers.batch.job.ranking.RankingTables;
+import com.loopers.batch.job.ranking.WeeklyRankingJobConfig;
+import com.loopers.batch.job.ranking.WeeklyRankingParameters;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

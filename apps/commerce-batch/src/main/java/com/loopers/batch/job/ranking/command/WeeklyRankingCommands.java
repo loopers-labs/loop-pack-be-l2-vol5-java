@@ -1,5 +1,8 @@
-package com.loopers.batch.job.ranking;
+package com.loopers.batch.job.ranking.command;
 
+import com.loopers.batch.job.ranking.WeeklyRankingJobConfig;
+import com.loopers.batch.job.ranking.WeeklyRankingParameters;
+import com.loopers.batch.job.ranking.WeeklyRankingSnapshotRepository;
 import com.loopers.batch.job.ranking.WeeklyRankingSnapshotRepository.SnapshotManifest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

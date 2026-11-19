@@ -1,8 +1,5 @@
-package com.loopers.batch.job.ranking.step;
+package com.loopers.batch.job.ranking.freeze;
 
-import com.loopers.batch.job.ranking.InputChecksum;
-import com.loopers.batch.job.ranking.PurchaseActivitySource;
-import com.loopers.batch.job.ranking.PurchaseInput;
 import com.loopers.batch.job.ranking.WeeklyRankingParameters;
 import com.loopers.batch.job.ranking.WeeklyRankingSnapshotRepository;
 import com.loopers.batch.job.ranking.WeeklyRankingSnapshotRepository.SnapshotManifest;

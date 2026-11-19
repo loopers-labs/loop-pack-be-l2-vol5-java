@@ -1,4 +1,4 @@
-package com.loopers.batch.job.ranking;
+package com.loopers.batch.job.ranking.freeze;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;

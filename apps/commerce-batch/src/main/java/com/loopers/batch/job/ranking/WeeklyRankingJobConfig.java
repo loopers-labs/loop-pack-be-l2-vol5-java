@@ -1,13 +1,12 @@
 package com.loopers.batch.job.ranking;
 
-import com.loopers.batch.job.ranking.step.CompleteScoresTasklet;
-import com.loopers.batch.job.ranking.step.FreezeInputTasklet;
-import com.loopers.batch.job.ranking.step.ProductKey;
-import com.loopers.batch.job.ranking.step.ProductScore;
-import com.loopers.batch.job.ranking.step.PublishRankingTasklet;
-import com.loopers.batch.job.ranking.step.RejectAbandonedSnapshotListener;
-import com.loopers.batch.job.ranking.step.WeeklyScoreProcessor;
-import com.loopers.batch.job.ranking.step.WeeklyScoreWriter;
+import com.loopers.batch.job.ranking.freeze.FreezeInputTasklet;
+import com.loopers.batch.job.ranking.publish.PublishRankingTasklet;
+import com.loopers.batch.job.ranking.score.CompleteScoresTasklet;
+import com.loopers.batch.job.ranking.score.ProductKey;
+import com.loopers.batch.job.ranking.score.ProductScore;
+import com.loopers.batch.job.ranking.score.WeeklyScoreProcessor;
+import com.loopers.batch.job.ranking.score.WeeklyScoreWriter;
 import com.loopers.batch.listener.JobListener;
 import com.loopers.batch.listener.StepMonitorListener;
 import lombok.RequiredArgsConstructor;
