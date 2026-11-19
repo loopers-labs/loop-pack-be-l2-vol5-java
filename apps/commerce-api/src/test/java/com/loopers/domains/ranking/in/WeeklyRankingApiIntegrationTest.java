@@ -12,6 +12,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -144,22 +145,35 @@ class WeeklyRankingApiIntegrationTest {
         "limit 0, 2026-08-17, 0",
         "limit 101, 2026-08-17, 101"
     })
-    @DisplayName("A5: periodStart가 월요일이 아니거나 날짜 형식이 아니거나 limit이 1~100 밖이면 400이다")
+    @DisplayName("A5: X-USER-ID 없이도 periodStart가 월요일이 아니거나 날짜 형식이 아니거나 limit이 1~100 밖이면 400이다")
     void invalidRequestIsBadRequest(String scene, String periodStart, String limit) throws Exception {
         publishFixture();
 
-        mvc.perform(get("/api/v1/rankings/weekly").param("periodStart", periodStart).param("limit", limit)
-                .header("X-USER-ID", "1"))
+        mvc.perform(get("/api/v1/rankings/weekly").param("periodStart", periodStart).param("limit", limit))
             .andExpect(status().isBadRequest());
     }
 
     @Test
-    @DisplayName("A5: X-USER-ID가 없으면 401이다")
-    void missingUserIsUnauthorized() throws Exception {
+    @DisplayName("A5: 비로그인 공개라 X-USER-ID가 없어도 200과 공개본 랭킹을 준다")
+    void anonymousRequestIsAllowed() throws Exception {
         publishFixture();
 
         mvc.perform(get("/api/v1/rankings/weekly").param("periodStart", PERIOD))
-            .andExpect(status().isUnauthorized());
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.status").value("PUBLISHED"))
+            .andExpect(jsonPath("$.data.items", hasSize(3)));
+    }
+
+    @ParameterizedTest(name = "X-USER-ID={0}")
+    @ValueSource(strings = {"999", "abc"})
+    @DisplayName("A5: X-USER-ID가 와도 무시해 모르는 사용자·숫자가 아닌 값이어도 200과 공개본 랭킹을 준다")
+    void userHeaderIsIgnored(String user) throws Exception {
+        publishFixture();
+
+        mvc.perform(get("/api/v1/rankings/weekly").param("periodStart", PERIOD).header("X-USER-ID", user))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.status").value("PUBLISHED"))
+            .andExpect(jsonPath("$.data.items", hasSize(3)));
     }
 
     // 과제 §6 결과(7·9·8, 점수 5·5·1)를 이 테스트의 상품 셋으로 옮긴 공개본 r1.
