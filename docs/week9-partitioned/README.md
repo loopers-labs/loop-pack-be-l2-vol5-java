@@ -4,6 +4,7 @@ Kafka 소비자가 주문의 구매 활동을 적재한다. 각 Batch 인스턴�
 
 고객 조회는 `GET /api/v1/rankings/weekly?periodStart=2026-08-17&limit=10`이다. limit은 기본 10, 범위 1~100이다. 미공개는 `NOT_PUBLISHED`, 구매 0건 완성본은 snapshot ID가 있는 `PUBLISHED`다. 비공개 상품·브랜드를 제외한 뒤 limit을 적용하며, 표시되는 상품은 저장된 순위를 유지한다.
 
+- [ADR · 주간 입력을 한 번 고정하고 구간별 점수를 검산한 뒤 공개하는 이유](adr-0001-weekly-ranking.md)
 - [재시작·늦은 구매·덮어쓰기의 MySQL 검증 기록](verification.md)
 - [기술 글 · worker가 네 개일 때 한 JVM과 두 JVM의 성능이 달랐던 이유](benchmark.md)
 
