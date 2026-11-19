@@ -158,9 +158,23 @@ code { font-family: var(--mono); }
 .flow-edge[data-state=active] path { stroke-width: 2.7px; }
 .flow-edge[data-edge=retry] { color: #a24d22; }
 .flow-edge[data-edge=retry] path { stroke-dasharray: 6 3; }
-.flow-edge[data-edge=retry][data-state=active] path { animation: retry-path .9s linear 2; }
-@keyframes retry-path { to { stroke-dashoffset: -36; } }
-@media (prefers-reduced-motion: reduce) { .flow-edge[data-edge=retry][data-state=active] path { animation: none; } }
+.flow-edge[data-edge=retry][data-state=pending]:not(.travelling) { visibility: hidden; }
+.flow-edge.travelling path { stroke: #006b60; stroke-width: 3.5px; stroke-dasharray: none; }
+.flow-edge.travelling[data-ink=b] path { stroke: #a24d22; }
+.flow-node.in-flight rect { stroke: #006b60; stroke-width: 3px; stroke-dasharray: none; }
+.flow-node.in-flight[data-tone=b] rect { stroke: #a24d22; }
+.flow-transport { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; padding: 10px 16px 0; }
+.flow-transport button { border: 1px solid #a6bbb0; border-radius: 5px; background: white; color: #214a3d; padding: 7px 12px; font-weight: 650; font-size: 13px; }
+.flow-transport #flow-play { background: #0d5648; color: white; border-color: #0d5648; min-width: 99px; }
+#motion-text { min-height: 1.6em; margin: 8px 16px 0; color: #294f42; font-size: 13px; }
+.flow-token { pointer-events: none; }
+.flow-token rect { fill: #135e52; stroke: #fff; stroke-width: 1.8px; }
+.flow-token[data-ink=b] rect { fill: #92451c; }
+.flow-token text { fill: #fff; font-size: 12px; font-weight: 700; text-anchor: middle; }
+.next[aria-disabled=true] { opacity: .65; }
+@media(max-width:520px) {
+  .flow-transport { padding-inline: 10px; } #motion-text { margin-inline: 10px; min-height: 3.1em; }
+}
 .evidence { margin: 0 24px 16px; }
 .evidence > summary { width: fit-content; cursor: pointer; color: var(--teal); font-size: 13px; font-weight: 650; }
 .evidence .lanes { padding: 12px 0 0; }
@@ -254,7 +268,12 @@ code { font-family: var(--mono); }
       <p class="sr-only" id="announcement" role="status" aria-live="polite" aria-atomic="true"></p>
       <figure id="flow-figure" class="flow-figure">
         <div class="flow-heading"><h3 id="flow-heading">주문에서 공개까지</h3><span>노드를 누르면 해당 단계로 이동합니다.</span></div>
-        <svg id="flow-svg" role="group" aria-labelledby="flow-heading" aria-describedby="flow-caption"></svg>
+        <div class="flow-transport" role="group" aria-label="흐름 재생 제어">
+          <button type="button" id="flow-play" aria-controls="flow-svg">▶ 흐름 재생</button>
+          <button type="button" id="flow-repeat" aria-controls="flow-svg">↺ 장면 다시 보기</button>
+        </div>
+        <p id="motion-text" role="status" aria-live="polite" aria-atomic="true"></p>
+        <svg id="flow-svg" role="group" aria-labelledby="flow-heading" aria-describedby="motion-text flow-caption"></svg>
         <figcaption id="flow-caption"></figcaption>
       </figure>
       <details class="evidence" id="step-evidence">
@@ -3746,7 +3765,7 @@ const extraCases = {
     const edges = [link("input", "a", assigned), link("input", "b", assigned),
       link("a", "row-a", progress(i, 2)), link("b", "row-b", progress(i, 3)),
       link("row-a", "gate", joined), link("row-b", "gate", joined), link("gate", "api", joined)];
-    if (i === 4) edges.push(link("b", "row-b", "active", "retry"));
+    edges.push(link("b", "row-b", i === 4 ? "active" : "pending", "retry"));
     return { title: "공통 입력에서 두 갈래로, 검산에서 다시 하나로", nodes, edges,
       caption: "A와 B는 독립 실행됩니다. 실측은 첫 판본 R1에서 했고, 그림은 이전 공개본을 유지하는 모습을 보여주려고 R2를 사용합니다.",
       evidence: "서로-다른-두-jvm의-2점3점과-b의-재전달" };
@@ -3845,7 +3864,8 @@ const extraCases = {
     svg.replaceChildren(definitions);
     const boxes = new Map(graph.nodes.map(node => [node.id, nodeBox(node, vertical)]));
     for (const edge of graph.edges) {
-      const line = svgElement("g", { class: "flow-edge", "data-edge": edge.id, "data-state": edge.state, "aria-hidden": true });
+      const line = svgElement("g", { class: "flow-edge", "data-edge": edge.id, "data-state": edge.state,
+        "data-from": edge.from, "data-to": edge.to, "aria-hidden": true });
       line.append(svgElement("path", { d: connection(boxes.get(edge.from), boxes.get(edge.to), vertical, edge.id === "retry"),
         "marker-end": "url(#flow-arrow)" }));
       svg.append(line);
@@ -3863,18 +3883,239 @@ const extraCases = {
     }
     if (focusedId) svg.querySelector('[data-node="' + focusedId + '"]')?.focus({ preventScroll: true });
   }
+  // One beat can send multiple values at once. The next committed scene appears after its last beat.
+  function beat(text, routes, focus = [], preview = {}) {
+    return { text, routes, focus, preview };
+  }
+  const motionScenes = {
+    replay: [
+      [],
+      [beat("공통 입력 두 행과 주문번호 경계 20을 같은 트랜잭션에서 고정합니다.", [], ["input"]),
+       beat("주문 10은 A로, 주문 20은 B로 갑니다. 두 JVM은 독립적으로 계산할 수 있습니다.",
+         [["input-a", "주문 10"], ["input-b", "주문 20"]], [], { input: ["S2 고정", "공통 입력 · 구매 2행"],
+           a: ["20 미만 담당", "주문 10 · 상품 7 × 2"], b: ["20 이상 담당", "주문 20 · 상품 7 × 3"] })],
+      [beat("A의 worker가 상품 7의 부분합 2점을 구간 0의 행에 씁니다.", [["a-row-a", "2점"]])],
+      [beat("B의 worker가 3점을 구간 1의 행에 씁니다. 이 커밋 직후 B의 manager가 실패합니다.", [["b-row-b", "3점"]])],
+      [beat("B가 3점을 다시 보냅니다. 목적지는 이미 3점이 저장된 같은 키 (S2, 1, 7)입니다.", [["retry", "같은 3점"]])],
+      [beat("두 구간의 2점과 3점을 고정 입력과 대조합니다. 이때 고객은 R1을 조회합니다.",
+         [["row-a-gate", "2점"], ["row-b-gate", "3점"]]),
+       beat("검산한 5점의 순위·완성 기록·포인터를 함께 커밋합니다. 커밋이 끝나면 고객에게 R2가 보입니다.",
+         [["gate-api", "R2 · 5점"]], [], { gate: "입력 대조 완료" })]
+    ],
+    chunk: [
+      [],
+      [beat("worker가 같은 고정 입력에서 첫 청크의 상품 7과 8을 읽습니다.", [["input-worker", "상품 7·8"]]),
+       beat("부분 점수 두 행과 읽기 위치 2가 한 트랜잭션에서 함께 커밋됩니다.",
+         [["worker-scores", "두 점수"], ["worker-checkpoint", "위치 2"]])],
+      [beat("상품 9를 읽은 뒤 계산 전에 실패합니다. 저장된 읽기 위치는 여전히 2입니다.", [], ["checkpoint", "resume"])],
+      [beat("재시작한 worker는 위치 2에서 이어 읽어 상품 9 하나의 5점만 저장합니다.", [["checkpoint-resume", "위치 2"]])],
+      [beat("세 상품의 점수와 순위를 검산하고 R2를 공개합니다.", [["resume-api", "R2"]])]
+    ],
+    late: [
+      [],
+      [beat("R1 이후 구매가 추가됐습니다. 원본 5행을 R2에 고정합니다.", [["source-snapshot2", "5행"]], [], { source: "구매 5행" }),
+       beat("A와 B가 주문번호 경계 3을 기준으로 같은 고정 입력을 나눕니다.", [["snapshot2-workers", "R2 입력"]], [],
+         { source: "구매 5행", snapshot2: "5행 고정" })],
+      [beat("늦게 온 두 주문은 구매 원본에 적재됩니다. R2의 사본은 5행을 유지합니다.", [["source-late", "주문 2·6"]])],
+      [beat("B의 첫 쓰기가 커밋 전에 실패합니다. A의 완료 상태와 R2의 고정 입력은 보존됩니다.", [], ["workers", "snapshot2"])],
+      [beat("B가 같은 R2 입력으로 재시작하고, 두 구간의 부분 점수를 검산합니다.", [["workers-pub2", "R2 점수"]]),
+       beat("검산을 마친 R2가 공개됩니다. 상품 8의 점수는 1점입니다.", [["pub2-api", "R2"]], [], { pub2: "입력 대조 완료" })],
+      [beat("새 판본을 요청하면 늦은 구매를 포함한 원본 7행 전체를 R3에 다시 고정합니다.", [["late-snapshot3", "전체 7행"]])],
+      [beat("R3의 고정 입력으로 계산한 상품 8의 8점을 검산합니다.", [["snapshot3-pub3", "8점"]]),
+       beat("공개 포인터가 R3으로 넘어가면 고객 순위 1위는 상품 8입니다.", [["pub3-api", "R3"]], [], { pub3: "입력 대조 완료" })]
+    ]
+  };
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const beatMs = 1850;
+  const holdMs = 1650;
+  let playback = null;
+  let frame = 0;
+
+  function motionControls() {
+    const mode = !playback ? "idle" : playback.paused ? "paused" : "playing";
+    byId("flow-figure").dataset.playback = mode;
+    const play = byId("flow-play");
+    if (mode === "playing") play.textContent = "Ⅱ 일시정지";
+    else if (mode === "paused") play.textContent = "▶ 이어 재생";
+    else play.textContent = currentIndex() + 1 === steps().length ? "▶ 처음부터 재생" : "▶ 흐름 재생";
+    byId("next").setAttribute("aria-disabled", String(Boolean(playback && !playback.settled)));
+  }
+  function clearFlight() {
+    const svg = byId("flow-svg");
+    svg.querySelector(".flow-stream")?.remove();
+    for (const item of svg.querySelectorAll(".travelling, .in-flight")) item.classList.remove("travelling", "in-flight");
+  }
+  function stopPlayback() {
+    cancelAnimationFrame(frame);
+    playback = null;
+    clearFlight();
+    motionControls();
+  }
+  function settledText() {
+    if (currentIndex() === 0) return "흐름 재생을 누르면 화살표를 따라 각 단계가 진행됩니다.";
+    if (active === "replay") return [
+      "", "분할 완료 · 주문 10은 A, 주문 20은 B에 배정됐습니다.",
+      "A 커밋 · 구간 0에 2점 한 행이 있습니다. 고객은 R1을 조회합니다.",
+      "B 중단 · DB에는 2점과 3점이 있고, B의 Job은 미완료입니다.",
+      "재시도 완료 · B의 같은 행에서 3점 → 3점. 두 행의 합계는 5점이고 공개본은 R1입니다.",
+      "공개 완료 · 고객은 R2에서 상품 7의 5점·1위를 조회합니다."
+    ][currentIndex()];
+    return steps()[currentIndex()].notice;
+  }
+  function centerOf(id) {
+    const node = byId("flow-svg").querySelector('[data-node="' + id + '"]');
+    const rect = node.querySelector("rect");
+    const offset = node.transform.baseVal.getItem(0).matrix;
+    return { x: offset.e + rect.width.baseVal.value / 2, y: offset.f + rect.height.baseVal.value / 2 };
+  }
+  function movingToken(layer, edge, label, ink, fork, join) {
+    const visiblePath = edge.querySelector("path");
+    const from = centerOf(edge.dataset.from), to = centerOf(edge.dataset.to);
+    const vertical = smallFlow.matches;
+    const crossAxis = vertical ? "x" : "y";
+    const separation = Math.sign(to[crossAxis] - from[crossAxis]) * (vertical ? 38 : 17);
+    const travelAxis = vertical ? "y" : "x";
+    from[travelAxis] += vertical ? 9 : 25;
+    to[travelAxis] -= vertical ? 9 : 25;
+    // Follow the actual connector, extending it into each card so even short mobile arrows are readable.
+    const d = "M " + from.x + " " + from.y + " L " + visiblePath.getAttribute("d").slice(1)
+      + " L " + to.x + " " + to.y;
+    const guide = svgElement("path", { d, fill: "none", stroke: "none" });
+    const chip = svgElement("g", { class: "flow-token", "data-edge": edge.dataset.edge, "data-ink": ink });
+    const words = svgElement("text", { x: 0, y: 4 }, label);
+    chip.append(words);
+    layer.append(guide, chip);
+    const width = Math.max(34, Math.ceil(words.getComputedTextLength()) + 16);
+    chip.prepend(svgElement("rect", { x: -width / 2, y: -11, width, height: 22, rx: 11 }));
+    return { chip, guide, length: guide.getTotalLength(), crossAxis,
+      startOffset: fork ? separation : 0, endOffset: join ? -separation : 0 };
+  }
+  function drawBeat(run) {
+    clearFlight();
+    const svg = byId("flow-svg");
+    const phase = run.beats[run.beat];
+    const node = id => svg.querySelector('[data-node="' + id + '"]');
+    byId("motion-text").textContent = phase.text;
+    for (const [id, labels] of Object.entries(phase.preview)) {
+      const card = node(id);
+      const [value, detail] = Array.isArray(labels) ? labels : [labels];
+      card.querySelector(".value").textContent = value;
+      if (detail) card.querySelector(".detail").textContent = detail;
+      card.setAttribute("aria-label", [...card.querySelectorAll("text, title")].map(item => item.textContent).join(". "));
+    }
+    for (const id of phase.focus) node(id).classList.add("in-flight");
+    const layer = svgElement("g", { class: "flow-stream", "aria-hidden": true, "pointer-events": "none" });
+    svg.append(layer);
+    run.tokens = [];
+    const edges = phase.routes.map(([id]) => svg.querySelector('[data-edge="' + id + '"]'));
+    for (const [index, edge] of edges.entries()) {
+      const from = node(edge.dataset.from), to = node(edge.dataset.to);
+      const ink = from.dataset.tone || to.dataset.tone || "a";
+      edge.classList.add("travelling");
+      edge.dataset.ink = ink;
+      from.classList.add("in-flight");
+      to.classList.add("in-flight");
+      if (!reducedMotion.matches) {
+        const shared = end => edges.some(other => other !== edge && other.dataset[end] === edge.dataset[end]);
+        run.tokens.push(movingToken(layer, edge, phase.routes[index][1], ink, shared("from"), shared("to")));
+      }
+    }
+  }
+  function positionTokens(run) {
+    const fraction = Math.min(1, run.elapsed / beatMs);
+    const eased = fraction * fraction * (3 - 2 * fraction);
+    for (const { chip, guide, length, crossAxis, startOffset, endOffset } of run.tokens) {
+      const point = guide.getPointAtLength(length * eased);
+      point[crossAxis] += startOffset * (1 - eased) + endOffset * eased;
+      chip.setAttribute("transform", "translate(" + point.x + " " + point.y + ")");
+      chip.setAttribute("opacity", String(Math.min(1, fraction * 7, (1 - fraction) * 7)));
+    }
+  }
+  function beginTravel(target, tour) {
+    const first = !playback;
+    stopPlayback();
+    if (first && smallFlow.matches) byId("flow-figure").scrollIntoView({ block: "nearest", behavior: "instant" });
+    playback = { target, tour, beats: motionScenes[active][target], beat: 0, elapsed: 0, last: performance.now(),
+      paused: false, settled: false, tokens: [] };
+    drawBeat(playback);
+    positionTokens(playback);
+    motionControls();
+    frame = requestAnimationFrame(tick);
+  }
+  function tick(now) {
+    const run = playback;
+    if (!run || run.paused) return;
+    run.elapsed += Math.max(0, now - run.last);
+    run.last = now;
+    if (run.settled) {
+      if (run.elapsed >= holdMs) return beginTravel(run.target + 1, true);
+    } else if (run.elapsed >= beatMs) {
+      run.elapsed = 0;
+      if (run.beat + 1 < run.beats.length) {
+        run.beat++;
+        drawBeat(run);
+        positionTokens(run);
+      } else {
+        applyStage(run.target);
+        byId("motion-text").textContent = settledText();
+        if (!run.tour || run.target + 1 === steps().length) return stopPlayback();
+        run.settled = true;
+        motionControls();
+      }
+    } else positionTokens(run);
+    frame = requestAnimationFrame(tick);
+  }
+  function pausePlayback() {
+    if (!playback || playback.paused) return;
+    cancelAnimationFrame(frame);
+    playback.paused = true;
+    motionControls();
+  }
+  function togglePlayback() {
+    if (playback?.paused) {
+      playback.paused = false;
+      playback.last = performance.now();
+      motionControls();
+      frame = requestAnimationFrame(tick);
+    } else if (playback) pausePlayback();
+    else {
+      if (currentIndex() + 1 === steps().length) goTo(0);
+      beginTravel(currentIndex() + 1, true);
+    }
+  }
+  function playOne(target) {
+    if (reducedMotion.matches) return goTo(target);
+    if (currentIndex() !== target - 1) goTo(target - 1);
+    beginTravel(target, false);
+  }
+  function repeatScene() {
+    const target = playback?.target ?? Math.max(1, currentIndex());
+    goTo(target - 1);
+    beginTravel(target, false);
+  }
+  byId("flow-play").addEventListener("click", togglePlayback);
+  byId("flow-repeat").addEventListener("click", repeatScene);
+  document.addEventListener("visibilitychange", () => { if (document.hidden) pausePlayback(); });
+  function redrawForMedia() {
+    showScene();
+    if (playback && !playback.settled) {
+      drawBeat(playback);
+      positionTokens(playback);
+    }
+  }
+  smallFlow.addEventListener("change", redrawForMedia);
+  reducedMotion.addEventListener("change", redrawForMedia);
+
   function selectFlowNode(event) {
     const node = event.target.closest("[data-node]");
     if (!node || (event.type === "keydown" && event.key !== "Enter" && event.key !== " ")) return;
     event.preventDefault();
     if (active === "replay" && ["b", "row-b"].includes(node.dataset.node) && (replay.stage === 3 || replay.stage === 4)) {
-      replay = RankingReplay.retryB(replay);
-      showScene();
+      playOne(4);
     } else goTo(Number(node.dataset.step));
   }
   byId("flow-svg").addEventListener("click", selectFlowNode);
   byId("flow-svg").addEventListener("keydown", selectFlowNode);
-  smallFlow.addEventListener("change", () => showScene());
 
   function showScene() {
     const index = currentIndex();
@@ -3906,10 +4147,17 @@ const extraCases = {
     void lanes.offsetWidth;
     lanes.classList.add("refresh");
   }
-  function goTo(index) {
-    if (active === "replay") replay = RankingReplay.seekReplay(index);
-    else extraIndex = index;
+  function applyStage(index) {
+    if (active !== "replay") extraIndex = index;
+    else if (index === replay.stage + 1) replay = RankingReplay.advanceReplay(replay);
+    else replay = RankingReplay.seekReplay(index);
     showScene();
+  }
+  function goTo(index) {
+    stopPlayback();
+    applyStage(index);
+    byId("motion-text").textContent = settledText();
+    motionControls();
   }
   const heroes = {
     replay: ["같은 상품을 두 서버가 집계합니다. B의 쓰기를 다시 실행하고, DB에 남은 점수와 고객이 보는 순위를 비교해 보세요.", 7, 2, "주문 10", 3, "주문 20", 5],
@@ -3936,14 +4184,37 @@ const extraCases = {
   }
   buttons.forEach(button => button.addEventListener("click", () => choose(button.dataset.case)));
   byId("next").addEventListener("click", () => {
+    if (playback && !playback.settled) return;
     if (currentIndex() + 1 === steps().length) return goTo(0);
-    if (active !== "replay") return goTo(extraIndex + 1);
-    replay = replay.stage === 3 ? RankingReplay.retryB(replay) : RankingReplay.advanceReplay(replay);
-    showScene();
+    playOne(currentIndex() + 1);
   });
   byId("back").addEventListener("click", () => goTo(currentIndex() - 1));
   byId("jump").addEventListener("click", () => { goTo(3); byId("next").focus(); });
   choose("replay");
+  // The presentation link starts playback when its diagram is on screen. The local file opens paused.
+  if (new URLSearchParams(location.search).get("play") === "1" && !reducedMotion.matches) {
+    const figure = byId("flow-figure");
+    let inView = false;
+    const visible = new IntersectionObserver(entries => {
+      inView = entries.some(entry => entry.isIntersecting);
+      startWhenVisible();
+    });
+    function startWhenVisible() {
+      if (!inView || document.hidden) return;
+      cancelPreview();
+      if (!reducedMotion.matches && active === "replay" && currentIndex() === 0 && !playback) togglePlayback();
+    }
+    function cancelPreview() {
+      visible.disconnect();
+      document.removeEventListener("visibilitychange", startWhenVisible);
+      document.removeEventListener("pointerdown", cancelPreview);
+      document.removeEventListener("keydown", cancelPreview);
+    }
+    document.addEventListener("pointerdown", cancelPreview);
+    document.addEventListener("keydown", cancelPreview);
+    document.addEventListener("visibilitychange", startWhenVisible);
+    visible.observe(figure);
+  }
 })();
 // Decode the optional offline diagram only when the reader opens it.
 document.getElementById("arch-details").addEventListener("toggle", async event => {

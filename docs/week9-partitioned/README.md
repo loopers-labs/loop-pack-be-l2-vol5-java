@@ -4,7 +4,7 @@ Kafka 소비자가 주문의 구매 활동을 적재한다. 각 Batch 인스턴�
 
 고객 조회는 `GET /api/v1/rankings/weekly?periodStart=2026-08-17&limit=10`이다. limit은 기본 10, 범위 1~100이다. 미공개는 `NOT_PUBLISHED`, 구매 0건 완성본은 snapshot ID가 있는 `PUBLISHED`다. 비공개 상품·브랜드를 제외한 뒤 limit을 적용하며, 표시되는 상품은 저장된 순위를 유지한다.
 
-- [실행 다이어그램 · 두 JVM의 주문 분할과 B 재시도 후 2 + 3 = 5 확인](weekly-ranking-flow.html) — 주문 구간·부분 점수·공개 포인터를 누르면 해당 단계로 이동한다. 청크 재시작과 늦은 구매의 새 revision도 같은 화면에서 확인할 수 있다.
+- [두 JVM의 주문 분할과 B 재시도 애니메이션 재생](weekly-ranking-flow.html?play=1#flow-figure) — 주문 10과 20이 갈라지는 순간, B의 3점이 같은 DB 행에 도착하는 순간, 검산 후 R2가 공개되는 순간을 멈추거나 다시 볼 수 있다. [단계별로 열기](weekly-ranking-flow.html)
 - [ADR · 주간 입력을 한 번 고정하고 구간별 점수를 검산한 뒤 공개하는 이유](adr-0001-weekly-ranking.md)
 - [재시작·늦은 구매·덮어쓰기의 MySQL 검증 기록](verification.md)
 - [기술 글 · worker가 네 개일 때 한 JVM과 두 JVM의 성능이 달랐던 이유](benchmark.md)
