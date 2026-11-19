@@ -58,6 +58,7 @@
 
 - `product_purchase_activity`의 정의는 streamer 엔티티(`ProductPurchaseActivityJpaEntity`) 한 벌뿐이다. batch는 SQL로 다시 정의하지 않는다.
 - batch 테스트에서만 그 엔티티 클래스를 테스트 classpath에 빌려 와 JPA(ddl-auto)가 테이블을 만들게 한다.
+- streamer 출력 전체가 아니라 그 클래스 파일 하나만 복사하는 이유: 출력 전체를 넣으면 streamer의 listener·handler·Kafka 설정이 batch 테스트 컨텍스트에 섞인다.
 - batch 운영 코드는 streamer에 의존하지 않고 JDBC로 읽는다. 8주차 설계 27절 경계 메모(D75, batch가 대사를 위해 다른 앱의 테이블을 JDBC로 읽음)의 범위를 주간 랭킹의 `product_purchase_activity` 읽기까지 넓힌다.
 
 ## 6. 완성 랭킹과 공개 pointer [사용자 결정 D155·D156·D157]
