@@ -102,6 +102,16 @@
 **사람은 기간만 넘긴다. batch 의 실행 진입점이 그 기간의 최대 revision snapshot 을 보고 revision 을 정해, `periodStart` 와 함께 식별 파라미터로 job 에 넘긴다.**
 
 ```
+java -jar commerce-batch.jar --job.name=weeklyRanking --spring.batch.job.enabled=false \
+  --weekly-ranking.command=run --periodStart=2026-08-17        # 실행 · 재시작
+  --weekly-ranking.command=check --periodStart=2026-08-17      # 늦은 구매 확인 (D-191)
+  --weekly-ranking.command=abandon --periodStart=2026-08-17 --revision=2   # 포기 (D-185)
+```
+
+- Boot 의 기본 job runner 는 revision 없이 실행하므로 `spring.batch.job.enabled=false` 를 함께 준다. 빠뜨리면 진입점이 실패한다.
+- 실행이 COMPLETED 가 아니면 예외로 끝나 종료 코드가 0 이 아니다.
+
+```
 그 기간의 최대 revision snapshot
  ├─ 없음                       → r1
  ├─ PUBLISHED                  → 최대 + 1 (새 계산)
@@ -277,8 +287,9 @@
 
 **commerce-api 테스트 하나에서 실제 흐름을 잇는다: 주문 확정 → Outbox relay → Kafka → streamer(bootJar) 가 구매 활동 저장 → batch(bootJar) 실행 → 랭킹 API.** 시나리오는 정상 흐름(r1 공개)과 늦은 구매(r2 공개) 두 가지다.
 
-- streamer 는 기존 `OrderOutboxDeliveryE2ETest` 처럼 bootJar 프로세스로 띄운다. batch 는 bootJar 를 실행하고 끝날 때까지 기다리는 프로세스로 두 번(r1, r2) 돌린다. batch bootJar 는 streamer 와 같은 방식으로 api 테스트 전에 만든다.
-- 확인할 것: 같은 이벤트 재발행에도 구매 활동 · 점수가 늘지 않음, 같은 주문의 여러 품목 포함, r2 공개 전에는 r1 · 공개 후에는 r2, 구간 시작 포함 · 끝 제외.
+- streamer 는 기존 `OrderOutboxDeliveryE2ETest` 처럼 bootJar 프로세스로 띄운다. batch 는 bootJar 를 실행하고 끝날 때까지 기다리는 프로세스로 돌린다(r1 실행 · 늦은 구매 확인 · r2 실행). batch bootJar 는 streamer 와 같은 방식으로 api 테스트 전에 만든다.
+- 확인할 것: 같은 이벤트 재발행에도 구매 활동 · 점수가 늘지 않음, 같은 주문의 여러 품목 포함, 확인 명령이 늦은 구매를 셈, r2 공개 전에는 r1 · 공개 후에는 r2.
+- 주문 확정 시각은 실제 시계라 연결 테스트에서 주간 경계를 고를 수 없다. 구간 시작 포함 · 끝 제외는 batch 입력 고정 테스트가 UTC 경계 시각으로 확인한다.
 - 재시작 · 동시 공개 · 공개 TX rollback · 포기 · 삭제 상품 · 미공개 · 빈 주는 batch 와 api 의 각 테스트가 맡는다.
 - 이 테스트가 batch 테스트 DDL 과 api 엔티티의 어긋남(D-183), streamer 가 쓴 `confirmed_at` 과 주간 경계 쿼리의 어긋남을 잡는 곳이다.
 

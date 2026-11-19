@@ -8,13 +8,18 @@ plugins {
 evaluationDependsOn(":apps:commerce-streamer")
 val streamerBootJar = project(":apps:commerce-streamer").tasks.named<BootJar>("bootJar")
 
+// 9주차 연결 테스트가 실제 batch 실행물로 주간 랭킹을 만듦 (9주차 D-193)
+evaluationDependsOn(":apps:commerce-batch")
+val batchBootJar = project(":apps:commerce-batch").tasks.named<BootJar>("bootJar")
+
 // 6주차 누락 복구 실험이 7주차 운영 진입점을 실행물로 부르고, 6주차 revision 을 worktree 로 빌드함 (7주차 설계 6장)
 val apiBootJar = tasks.named<BootJar>("bootJar")
 
 tasks.test {
-    dependsOn(streamerBootJar, apiBootJar)
+    dependsOn(streamerBootJar, apiBootJar, batchBootJar)
     systemProperty("commerce-streamer.boot-jar", streamerBootJar.get().archiveFile.get().asFile.absolutePath)
     systemProperty("commerce-api.boot-jar", apiBootJar.get().archiveFile.get().asFile.absolutePath)
+    systemProperty("commerce-batch.boot-jar", batchBootJar.get().archiveFile.get().asFile.absolutePath)
     systemProperty("project.root-dir", rootDir.absolutePath)
 }
 

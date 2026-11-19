@@ -76,6 +76,44 @@ public class WeeklyRankingSnapshotRepository {
             "select count(distinct product_id) from weekly_ranking_input where snapshot_id = ?", Integer.class, snapshotId);
     }
 
+    /** 그 기간의 최대 revision snapshot. 실행 진입점이 다음 revision 을 정할 때 이것 하나만 본다 (D-184) */
+    public Optional<SnapshotManifest> findLatest(LocalDate periodStart) {
+        return jdbc.query("""
+                select snapshot_id, period_start, revision, status, input_count, input_checksum
+                from weekly_ranking_snapshot where period_start = ? order by revision desc limit 1""",
+            (rs, rowNum) -> new SnapshotManifest(
+                rs.getString("snapshot_id"),
+                rs.getObject("period_start", LocalDate.class),
+                rs.getInt("revision"),
+                rs.getString("status"),
+                rs.getInt("input_count"),
+                rs.getString("input_checksum")
+            ),
+            periodStart).stream().findFirst();
+    }
+
+    /** FROZEN · COMPLETED → ABANDONED. 공개본은 포기할 수 없다 (D-185) */
+    public int abandon(String snapshotId, LocalDateTime nowUtc) {
+        return jdbc.update("""
+                update weekly_ranking_snapshot set status = 'ABANDONED', updated_at = ?
+                where snapshot_id = ? and status in ('FROZEN', 'COMPLETED')""",
+            nowUtc, snapshotId);
+    }
+
+    /** 그 기간 원본에 있지만 이 snapshot 입력에 없는 (orderId, productId) 수. 시각으로 판단하지 않는다 (D-179, D-191) */
+    public int countMissingFromSnapshot(String snapshotId, LocalDate start, LocalDate end) {
+        return jdbc.queryForObject("""
+                select count(*)
+                from processed_order_confirmation c
+                join product_purchase_activity a on a.order_id = c.order_id
+                where c.confirmed_at >= ? and c.confirmed_at < ?
+                  and not exists (
+                      select 1 from weekly_ranking_input i
+                      where i.snapshot_id = ? and i.order_id = a.order_id and i.product_id = a.product_id
+                  )""",
+            Integer.class, start.atStartOfDay(), end.atStartOfDay(), snapshotId);
+    }
+
     public Optional<Integer> findPublishedRevision(LocalDate periodStart) {
         return jdbc.queryForList(
             "select revision from weekly_ranking_snapshot where period_start = ? and status = 'PUBLISHED'",
