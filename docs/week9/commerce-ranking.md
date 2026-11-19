@@ -6,7 +6,6 @@
 - **[사용자 결정]**: 사용자가 정한 것(참모 결정 기록 번호). 바꾸려면 승인이 필요하다.
 - **[참모 지시]**: D번호가 없는 참모 지시문·고정 규칙이다. 바꾸려면 참모 확인이 필요하다.
 - **[구현 판단]**: 사용자 결정 범위 안에서 AI(PL·DEVELOPER)가 정한 내부 선택이다. 근거와 함께 적고 뒤집을 수 있다.
-- **[PL 결정]**: 해석이 갈린 계약을 PL이 기존 규칙에 맞춰 정한 것이다(questions 번호). 참모 확인을 받는다.
 
 ## 1. snapshot — 원본과 복사본
 
@@ -119,7 +118,7 @@ job `weeklyRanking`의 Step 3 `publishWeeklyRanking`(tasklet)은 step 트랜잭�
 
 | 항목 | 계약 |
 | --- | --- |
-| 식별 | **[PL 결정(questions w9s3-1)]** `X-USER-ID`(다른 고객 API와 같다). 없거나 모르는 사용자 401 |
+| 식별 | **[사용자 결정(w9s3-1)]** 비로그인 공개다. `X-USER-ID`를 요구하지 않고, 헤더가 와도 무시한다(다른 고객 API의 `X-USER-ID` 규칙은 그대로) |
 | 입력 | periodStart 필수, 날짜 형식이 아니거나 월요일이 아니면 400. limit 기본 10, 1~100 밖이면 400 |
 | 성공 200 | `status`(`PUBLISHED`/`NOT_PUBLISHED`), `periodStart`, `periodEnd`(계산, 제외), `snapshotId`, `frozenAt`, `items[]` |
 | items | `rank`(표시 순위), `productId`, `name`, `price`, `brandId`, `brandName`, `score`, `soldOut` |
