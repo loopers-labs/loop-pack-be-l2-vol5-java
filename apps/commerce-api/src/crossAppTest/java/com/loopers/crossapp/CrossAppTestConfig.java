@@ -1,6 +1,7 @@
 package com.loopers.crossapp;
 
 import com.loopers.CommerceApiApplication;
+import com.loopers.CommerceBatchApplication;
 import com.loopers.CommerceStreamerApplication;
 import com.loopers.application.purchase.PurchaseActivityService;
 import com.loopers.config.kafka.OrderActivityKafkaConfig;
@@ -39,13 +40,17 @@ import org.springframework.context.annotation.Import;
     excludeFilters = {
         @ComponentScan.Filter(type = FilterType.CUSTOM, classes = TypeExcludeFilter.class),
         @ComponentScan.Filter(type = FilterType.CUSTOM, classes = AutoConfigurationExcludeFilter.class),
-        @ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE, classes = {CommerceApiApplication.class, CommerceStreamerApplication.class}),
+        // CommerceBatchApplication 도 제외: @SpringBootApplication 중복과 @PostConstruct TimeZone 설정 회피 (9주차 §7)
+        @ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE,
+            classes = {CommerceApiApplication.class, CommerceStreamerApplication.class, CommerceBatchApplication.class}),
         @ComponentScan.Filter(type = FilterType.REGEX, pattern = {
             "com\\.loopers\\.crossapp\\..*",
             "com\\.loopers\\.application\\.purchase\\..*",
             "com\\.loopers\\.infrastructure\\.purchase\\..*",
             "com\\.loopers\\.interfaces\\.consumer\\..*",
             "com\\.loopers\\.config\\.ClockConfig",
+            // batch 의 시계 빈. Clock 은 기존 @MockitoBean 하나만 쓴다 (설계 D12)
+            "com\\.loopers\\.config\\.BatchClockConfig",
             "com\\.loopers\\.config\\.kafka\\.OrderActivityKafkaConfig"
         })
     }
