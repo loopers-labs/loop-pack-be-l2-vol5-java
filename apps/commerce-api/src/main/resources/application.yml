@@ -40,6 +40,11 @@ product:
   list-cache:
     ttl: 60s # 무효화가 실패했을 때 낡은 목록이 남는 상한
 
+coupon:
+  issue:
+    capacity: 3 # 쿠폰 DB 발급을 동시에 실행할 수 있는 최대 수(C). HTTP 입력으로 받지 않는다
+    wait-timeout: 2s # 당첨자가 실행 자리를 기다리는 상한. 측정 전 시작값(설계 문서 참고). 넘으면 당첨 기록 후 202
+
 payment:
   pg: # 로컬 테스트 PG 계약. 실제 PG 가 아니며 127.0.0.1 밖의 주소는 거절한다
     base-url: http://127.0.0.1:8082
@@ -102,6 +107,10 @@ spring:
   config:
     activate:
       on-profile: local
+
+local-admin: # 로컬 부하 실험용 관리자 계정. local 프로필에만 있다
+  username: local-admin
+  password: local-admin
 
 outbox:
   relay:

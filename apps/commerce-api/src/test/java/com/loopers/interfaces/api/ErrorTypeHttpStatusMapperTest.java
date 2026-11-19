@@ -32,5 +32,13 @@ class ErrorTypeHttpStatusMapperTest {
             assertThat(ErrorTypeHttpStatusMapper.toHttpStatus(ErrorType.PAYMENT_ATTEMPT_CONFLICT))
                 .isEqualTo(HttpStatus.CONFLICT);
         }
+
+        @DisplayName("쿠폰 수용 상태를 확인할 수 없으면 503 으로 변환한다.")
+        @Test
+        void returnsServiceUnavailable_forCouponAdmissionUnavailable() {
+            // 업무 거절(품절·종료, 409)과 수용 확인 불가(503)를 과제가 구분해 요구한다.
+            assertThat(ErrorTypeHttpStatusMapper.toHttpStatus(ErrorType.COUPON_ADMISSION_UNAVAILABLE))
+                .isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        }
     }
 }
