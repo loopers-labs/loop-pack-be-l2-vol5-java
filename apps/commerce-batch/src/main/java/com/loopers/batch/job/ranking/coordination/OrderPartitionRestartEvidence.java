@@ -28,26 +28,15 @@ final class OrderPartitionRestartEvidence {
     boolean matches(WeeklyPlanStore.Claim claim, JobExecution execution) {
         String snapshot = claim.snapshot().toString();
         if (execution == null) {
-            return jdbc.queryForObject("""
-                SELECT s.frozen_at IS NULL
-                    AND NOT EXISTS(SELECT 1 FROM weekly_ranking_partial_scores v WHERE v.snapshot_id=s.snapshot_id AND v.order_partition_id=s.order_partition_id)
-                    AND NOT EXISTS(SELECT 1 FROM weekly_ranking_score_conflicts c WHERE c.snapshot_id=s.snapshot_id AND c.order_partition_id=s.order_partition_id)
-                    AND NOT EXISTS(SELECT 1 FROM weekly_ranking_snapshot_inputs i WHERE NOT s.is_empty AND i.snapshot_id=s.snapshot_id
-                        AND (s.order_min IS NULL OR i.order_id>=s.order_min) AND (s.order_max IS NULL OR i.order_id<s.order_max))
-                FROM weekly_ranking_order_partitions s WHERE s.snapshot_id=? AND s.order_partition_id=?
-                """, Boolean.class, snapshot, claim.orderPartitionId());
+            boolean untouched = jdbc.queryForObject("""
+                SELECT NOT EXISTS(SELECT 1 FROM weekly_ranking_partial_scores WHERE snapshot_id=? AND order_partition_id=?)
+                    AND NOT EXISTS(SELECT 1 FROM weekly_ranking_score_conflicts WHERE snapshot_id=? AND order_partition_id=?)
+                """, Boolean.class, snapshot, claim.orderPartitionId(), snapshot, claim.orderPartitionId());
+            return untouched && frozenInputMismatch(claim).isEmpty();
         }
         long staged = jdbc.queryForObject("""
             SELECT COUNT(*) FROM weekly_ranking_partial_scores WHERE snapshot_id=? AND order_partition_id=?
             """, Long.class, snapshot, claim.orderPartitionId());
-        boolean frozen = jdbc.queryForObject("""
-            SELECT frozen_at IS NOT NULL FROM weekly_ranking_order_partitions WHERE snapshot_id=? AND order_partition_id=?
-            """, Boolean.class, snapshot, claim.orderPartitionId());
-        if (!frozen) {
-            var freeze = jobs.getLastStepExecution(execution.getJobInstance(), "freezeWeeklyRankingOrderPartition");
-            return staged == 0 && (freeze == null || freeze.getStatus() != BatchStatus.COMPLETED)
-                && jobs.getLastStepExecution(execution.getJobInstance(), "calculateWeeklyRankingOrderPartition") == null;
-        }
         long verified = 0;
         for (var localProductPartition : inputs.localProductPartitions(command(claim))) {
             var step = jobs.getLastStepExecution(execution.getJobInstance(), "scoreWeeklyRankingLocalProductPartition:localProductPartition-" + localProductPartition.index());

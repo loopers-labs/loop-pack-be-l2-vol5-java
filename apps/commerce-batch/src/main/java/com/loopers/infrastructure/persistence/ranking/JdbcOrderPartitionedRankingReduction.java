@@ -3,17 +3,14 @@ package com.loopers.infrastructure.persistence.ranking;
 import com.loopers.domain.ranking.model.SnapshotIntegrityException;
 import com.loopers.domain.ranking.model.vo.InputFingerprint;
 import com.loopers.domain.ranking.model.vo.RankingPeriod;
-import java.sql.ResultSet;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,16 +24,20 @@ public class JdbcOrderPartitionedRankingReduction {
         jdbc = new JdbcTemplate(source);
     }
 
-    public record Plan(LocalDate periodStart, int revision, int orderPartitionCount, String state) { }
+    public record Plan(LocalDate periodStart, int revision, int orderPartitionCount, String state, int contractVersion,
+                       LocalDateTime frozenAt, InputFingerprint inputs) { }
 
     private record Manifest(int orderPartitionId, Long lower, Long upper, boolean empty, String state, LocalDateTime frozenAt,
-                            InputFingerprint expected, PurchaseInputFingerprintAccumulator observed) { }
+                            InputFingerprint inputs) { }
 
     public Plan lockPlan(UUID id) {
         return jdbc.queryForObject("""
-            SELECT period_start,revision,order_partition_count,state FROM weekly_ranking_plans WHERE snapshot_id=? FOR UPDATE
-            """, (row, index) -> new Plan(row.getObject(1, LocalDate.class), row.getInt(2), row.getInt(3), row.getString(4)),
-            id.toString());
+            SELECT p.period_start,p.revision,p.order_partition_count,p.state,m.input_contract_version,m.frozen_at,m.input_count,m.input_checksum
+            FROM weekly_ranking_plans p JOIN weekly_ranking_snapshots m USING(snapshot_id)
+            WHERE p.snapshot_id=? FOR UPDATE
+            """, (row, index) -> new Plan(row.getObject(1, LocalDate.class), row.getInt(2), row.getInt(3), row.getString(4),
+            row.getInt(5), row.getObject(6, LocalDateTime.class),
+            row.getObject(6) == null ? null : new InputFingerprint(row.getLong(7), row.getString(8))), id.toString());
     }
 
     private boolean hasConflicts(UUID id) {
@@ -52,14 +53,14 @@ public class JdbcOrderPartitionedRankingReduction {
         }
     }
 
-    public Optional<InputFingerprint> verifyAndSeal(UUID id, Plan plan) {
+    public Optional<InputFingerprint> verifyFrozenInputs(UUID id, Plan plan) {
         var period = new RankingPeriod(plan.periodStart());
         var manifests = jdbc.query("""
             SELECT order_partition_id,order_min,order_max,is_empty,state,frozen_at,input_count,input_checksum
             FROM weekly_ranking_order_partitions WHERE snapshot_id=? ORDER BY order_partition_id FOR UPDATE
             """, (row, index) -> new Manifest(row.getInt(1), row.getObject(2, Long.class), row.getObject(3, Long.class),
             row.getBoolean(4), row.getString(5), row.getObject(6, LocalDateTime.class),
-            new InputFingerprint(row.getLong(7), row.getString(8)), new PurchaseInputFingerprintAccumulator(period)), id.toString());
+            row.getObject(6) == null ? null : new InputFingerprint(row.getLong(7), row.getString(8))), id.toString());
         if (hasConflicts(id)) {
             finish(id, "CONFLICT");
             return Optional.empty();
@@ -72,25 +73,19 @@ public class JdbcOrderPartitionedRankingReduction {
         }
         var nonEmptyOrderPartitions = manifests.stream().filter(orderPartition -> !orderPartition.empty()).toList();
         requireFullCoverage(nonEmptyOrderPartitions);
-        var weekly = readFrozenInputs(id, period, nonEmptyOrderPartitions);
-        LocalDateTime lastFreeze = null;
+        var cuts = nonEmptyOrderPartitions.stream().map(Manifest::upper).filter(Objects::nonNull).toList();
+        var observed = WeeklyInputFingerprints.read(jdbc, id, period, cuts, manifests.size());
+        if (plan.frozenAt() == null || !observed.week().equals(plan.inputs())) {
+            throw new SnapshotIntegrityException("계획 시점의 주간 입력 건수 또는 checksum이 다릅니다: " + id);
+        }
         for (int index = 0; index < manifests.size(); index++) {
-            var orderPartition = manifests.get(index);
-            if (orderPartition.orderPartitionId() != index || orderPartition.frozenAt() == null || !orderPartition.expected().equals(orderPartition.observed().finish())) {
-                throw new SnapshotIntegrityException("주문 파티션의 입력 건수 또는 checksum이 다릅니다: " + orderPartition.orderPartitionId());
-            }
-            if (lastFreeze == null || lastFreeze.isBefore(orderPartition.frozenAt())) {
-                lastFreeze = orderPartition.frozenAt();
+            var partition = manifests.get(index);
+            if (partition.orderPartitionId() != index || partition.empty() != (index >= nonEmptyOrderPartitions.size())
+                || !plan.frozenAt().equals(partition.frozenAt()) || !observed.partitions().get(index).equals(partition.inputs())) {
+                throw new SnapshotIntegrityException("주간 고정 시각 또는 주문 파티션의 입력 건수·checksum이 다릅니다: " + index);
             }
         }
-        int changed = jdbc.update("""
-            UPDATE weekly_ranking_snapshots SET state='FROZEN',frozen_at=?,input_count=?,input_checksum=?
-            WHERE snapshot_id=? AND input_contract_version=2 AND state='FREEZING'
-            """, lastFreeze, weekly.count(), weekly.sha256(), id.toString());
-        if (changed != 1) {
-            throw new SnapshotIntegrityException("주간 입력을 고정할 수 없습니다: " + id);
-        }
-        return Optional.of(weekly);
+        return Optional.of(observed.week());
     }
 
     private static void requireFullCoverage(List<Manifest> nonEmptyOrderPartitions) {
@@ -103,37 +98,6 @@ public class JdbcOrderPartitionedRankingReduction {
                 throw new SnapshotIntegrityException("주문 파티션이 겹치거나 비었습니다.");
             }
         }
-    }
-
-    private InputFingerprint readFrozenInputs(UUID id, RankingPeriod period, List<Manifest> nonEmptyOrderPartitions) {
-        var total = new PurchaseInputFingerprintAccumulator(period);
-        var iterator = nonEmptyOrderPartitions.iterator();
-        // The cursor and order partition iterator advance together; each frozen row is read once.
-        jdbc.query(connection -> {
-            var statement = connection.prepareStatement("""
-                SELECT order_id,product_id,quantity,confirmed_at FROM weekly_ranking_snapshot_inputs
-                WHERE snapshot_id=? ORDER BY order_id,product_id
-                """, ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
-            statement.setFetchSize(Integer.MIN_VALUE);
-            statement.setString(1, id.toString());
-            return statement;
-        }, new RowCallbackHandler() {
-            private Manifest current = iterator.next();
-
-            @Override
-            public void processRow(ResultSet row) throws java.sql.SQLException {
-                long order = row.getLong(1);
-                while (current.upper() != null && order >= current.upper()) {
-                    current = iterator.next();
-                }
-                long product = row.getLong(2);
-                int quantity = row.getInt(3);
-                var confirmed = row.getObject(4, LocalDateTime.class).toInstant(ZoneOffset.UTC);
-                current.observed().accept(order, product, quantity, confirmed);
-                total.accept(order, product, quantity, confirmed);
-            }
-        });
-        return total.finish();
     }
 
     private void requireMatchingPartials(UUID id) {

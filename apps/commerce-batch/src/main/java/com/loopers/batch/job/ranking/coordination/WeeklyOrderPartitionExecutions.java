@@ -33,6 +33,7 @@ final class WeeklyOrderPartitionExecutions {
         SELECT p.period_start,p.revision,s.snapshot_id,s.order_partition_id,s.owner_id,s.generation,s.execution_id,
                s.state,s.attempts,m.heartbeat_at>=TIMESTAMPADD(MICROSECOND,?,UTC_TIMESTAMP(6)) AS alive
         FROM weekly_ranking_order_partitions s JOIN weekly_ranking_plans p ON p.snapshot_id=s.snapshot_id
+        JOIN weekly_ranking_snapshots f ON f.snapshot_id=p.snapshot_id AND f.input_contract_version=3
         LEFT JOIN weekly_ranking_members m ON m.node_id=s.owner_id AND m.session_id=s.owner_session
         WHERE p.state='OPEN' AND s.state IN ('RUNNING','RECOVERY_REQUIRED')
         """;
@@ -119,10 +120,10 @@ final class WeeklyOrderPartitionExecutions {
 
     void reconcileAll() {
         var conflicts = jdbc.query("""
-            SELECT p.snapshot_id FROM weekly_ranking_plans p
-            WHERE (p.state='OPEN' AND EXISTS(SELECT 1 FROM weekly_ranking_score_conflicts c WHERE c.snapshot_id=p.snapshot_id))
+            SELECT p.snapshot_id FROM weekly_ranking_plans p JOIN weekly_ranking_snapshots f ON f.snapshot_id=p.snapshot_id
+            WHERE f.input_contract_version=3 AND ((p.state='OPEN' AND EXISTS(SELECT 1 FROM weekly_ranking_score_conflicts c WHERE c.snapshot_id=p.snapshot_id))
                OR (p.state='CONFLICT' AND EXISTS(SELECT 1 FROM weekly_ranking_order_partitions s WHERE s.snapshot_id=p.snapshot_id
-                                                 AND s.state IN ('READY','RUNNING','RECOVERY_REQUIRED')))
+                                                 AND s.state IN ('READY','RUNNING','RECOVERY_REQUIRED'))))
             """, (row, n) -> UUID.fromString(row.getString(1)));
         for (var snapshot : conflicts) {
             transactions.executeWithoutResult(status -> {

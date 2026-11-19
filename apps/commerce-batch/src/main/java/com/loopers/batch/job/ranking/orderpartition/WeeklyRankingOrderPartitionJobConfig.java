@@ -39,14 +39,14 @@ import org.springframework.transaction.PlatformTransactionManager;
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(name = "spring.batch.job.name", havingValue = "weeklyRankingOrderPartition")
 public class WeeklyRankingOrderPartitionJobConfig {
-    private static final String FREEZE = "freezeWeeklyRankingOrderPartition";
+    private static final String VERIFY_INPUTS = "verifyWeeklyRankingOrderPartitionInputs";
     private static final String MANAGER = "calculateWeeklyRankingOrderPartition";
     private static final String WORKER = "scoreWeeklyRankingLocalProductPartition";
     private static final Set<String> IDENTITY = Set.of("snapshotId", "orderPartitionId");
     private static final Set<String> ALL_PARAMETERS = Set.of("snapshotId", "orderPartitionId", "periodStart", "revision", "ownerId", "generation");
 
     @Bean("weeklyRankingOrderPartition")
-    public Job weeklyRankingOrderPartition(JobRepository repository, @Qualifier(FREEZE) Step freeze, @Qualifier(MANAGER) Step manager,
+    public Job weeklyRankingOrderPartition(JobRepository repository, @Qualifier(VERIFY_INPUTS) Step verifyInputs, @Qualifier(MANAGER) Step manager,
                                   JdbcWeeklyRankingOrderPartitionInputs inputs) {
         return new JobBuilder("weeklyRankingOrderPartition", repository)
             .validator(parameters -> {
@@ -61,14 +61,14 @@ public class WeeklyRankingOrderPartitionJobConfig {
                 public void beforeJob(JobExecution execution) {
                     inputs.bindExecution(command(execution.getJobParameters()), execution.getId());
                 }
-            }).start(freeze).next(manager).build();
+            }).start(verifyInputs).next(manager).build();
     }
 
-    @Bean(FREEZE)
-    public Step freezeWeeklyRankingOrderPartition(JobRepository repository, PlatformTransactionManager transactions,
+    @Bean(VERIFY_INPUTS)
+    public Step verifyWeeklyRankingOrderPartitionInputs(JobRepository repository, PlatformTransactionManager transactions,
                                           JdbcWeeklyRankingOrderPartitionInputs inputs) {
-        return new StepBuilder(FREEZE, repository).tasklet((contribution, context) -> {
-            inputs.freeze(command(contribution.getStepExecution().getJobParameters()));
+        return new StepBuilder(VERIFY_INPUTS, repository).tasklet((contribution, context) -> {
+            inputs.verifyFrozenInputs(command(contribution.getStepExecution().getJobParameters()));
             return RepeatStatus.FINISHED;
         }, transactions).build();
     }

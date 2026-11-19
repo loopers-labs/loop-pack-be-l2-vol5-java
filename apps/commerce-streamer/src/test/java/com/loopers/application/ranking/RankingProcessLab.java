@@ -31,6 +31,7 @@ final class RankingProcessLab {
     private static final String BATCH_JAR = "ranking.worker.test-jar";
     private static final String OBSERVER = "fixture/ranking/RankingChildObservation.class";
     private static final String REPLAY = "fixture/ranking/CompletedWorkerReplay.class";
+    private static final String INTERRUPT = "fixture/ranking/InterruptBeforeProduct.class";
     private static final Pattern TOMCAT_PORT = Pattern.compile("Tomcat started on port (\\d+)");
     private final PreservedMySql database;
     private final Path logs;
@@ -42,7 +43,7 @@ final class RankingProcessLab {
         this.logs = logs;
         Files.createDirectories(logs);
         this.childClasspath = logs.resolve("observer");
-        for (String entry : List.of(OBSERVER, REPLAY)) {
+        for (String entry : List.of(OBSERVER, REPLAY, INTERRUPT)) {
             Path target = childClasspath.resolve(entry);
             Files.createDirectories(target.getParent());
             try (var source = RankingChildObservation.class.getResourceAsStream("/" + entry)) {
@@ -52,7 +53,8 @@ final class RankingProcessLab {
         Path factories = childClasspath.resolve("META-INF/spring.factories");
         Files.createDirectories(factories.getParent());
         Files.writeString(factories, "org.springframework.context.ApplicationContextInitializer="
-            + RankingChildObservation.class.getName() + ",fixture.ranking.CompletedWorkerReplay" + System.lineSeparator(), StandardCharsets.UTF_8);
+            + RankingChildObservation.class.getName() + ",fixture.ranking.CompletedWorkerReplay,fixture.ranking.InterruptBeforeProduct"
+            + System.lineSeparator(), StandardCharsets.UTF_8);
         this.jdbc = new JdbcTemplate(new DriverManagerDataSource(database.jdbcUrl(), "root", "application"));
     }
 
@@ -68,11 +70,15 @@ final class RankingProcessLab {
     }
 
     App resident(String node, int workers, int poolSize, String... fixtureOptions) throws IOException {
+        return residentWithChunkSize(node, workers, poolSize, 16, fixtureOptions);
+    }
+
+    App residentWithChunkSize(String node, int workers, int poolSize, int chunkSize, String... fixtureOptions) throws IOException {
         var properties = new ArrayList<>(List.of("-Dranking.lab.metrics=" + logs.resolve(node + ".port")));
         properties.addAll(List.of(fixtureOptions));
         return batch(node, properties, poolSize, List.of("--ranking.scheduler.node-id=" + node,
             "--ranking.scheduler.auto-plan=false", "--ranking.scheduler.local-grid=" + workers, "--ranking.weekly.local-workers=" + workers,
-            "--ranking.weekly.chunk-size=16", "--ranking.scheduler.poll-delay=PT0.2S",
+            "--ranking.weekly.chunk-size=" + chunkSize, "--ranking.scheduler.poll-delay=PT0.2S",
             "--ranking.scheduler.heartbeat-delay=PT1S", "--ranking.scheduler.member-timeout=PT10S"));
     }
 

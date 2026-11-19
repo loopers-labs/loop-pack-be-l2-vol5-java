@@ -37,6 +37,7 @@ public class JdbcWeeklyRankingOrderPartitionInputs {
         var params = parameters(command).addValue("execution", executionId);
         int matched = jdbc.update("""
             UPDATE weekly_ranking_order_partitions s JOIN weekly_ranking_plans p ON p.snapshot_id=s.snapshot_id
+            JOIN weekly_ranking_snapshots m ON m.snapshot_id=p.snapshot_id AND m.input_contract_version=3 AND m.state='FROZEN'
             SET s.execution_id=:execution
             WHERE s.snapshot_id=:snapshot AND s.order_partition_id=:orderPartition AND s.state='RUNNING'
               AND s.owner_id=:owner AND s.generation=:generation AND p.state='OPEN'
@@ -48,35 +49,16 @@ public class JdbcWeeklyRankingOrderPartitionInputs {
         }
     }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.READ_COMMITTED)
-    public void freeze(WeeklyRankingOrderPartitionCommand command) {
+    @Transactional(readOnly = true, isolation = Isolation.READ_COMMITTED)
+    public void verifyFrozenInputs(WeeklyRankingOrderPartitionCommand command) {
         var params = parameters(command);
-        var orderPartition = load(params, true, "RUNNING");
-        if (orderPartition.fingerprint() != null) {
-            verify(command, orderPartition, params);
-            return;
-        }
-        params.addValue("start", LocalDateTime.ofInstant(command.period().startInclusive(), ZoneOffset.UTC));
-        params.addValue("end", LocalDateTime.ofInstant(command.period().endExclusive(), ZoneOffset.UTC));
-        String bounds = orderPartition.bounds().predicate(params);
-        if (!orderPartition.empty()) {
-            jdbc.update("""
-                INSERT INTO weekly_ranking_snapshot_inputs(snapshot_id,order_id,product_id,quantity,confirmed_at)
-                SELECT :snapshot,order_id,product_id,quantity,confirmed_at FROM product_purchase_activities
-                WHERE confirmed_at>=:start AND confirmed_at<:end
-                """ + bounds + " ORDER BY order_id,product_id", params);
-        }
-        var input = fingerprint(command, orderPartition, params);
-        jdbc.update("""
-            UPDATE weekly_ranking_order_partitions SET frozen_at=UTC_TIMESTAMP(6),input_count=:count,input_checksum=:checksum
-            WHERE snapshot_id=:snapshot AND order_partition_id=:orderPartition
-            """, params.addValue("count", input.count()).addValue("checksum", input.sha256()));
+        verify(command, load(params, "RUNNING"), params);
     }
 
     @Transactional(readOnly = true, isolation = Isolation.READ_COMMITTED)
     public List<LocalProductPartition> localProductPartitions(WeeklyRankingOrderPartitionCommand command) {
         var params = parameters(command);
-        var orderPartition = load(params, false, "RUNNING");
+        var orderPartition = load(params, "RUNNING");
         verify(command, orderPartition, params);
         if (orderPartition.empty() || orderPartition.fingerprint().count() == 0) {
             return List.of();
@@ -105,7 +87,7 @@ public class JdbcWeeklyRankingOrderPartitionInputs {
     @Transactional(propagation = Propagation.MANDATORY)
     public Optional<String> frozenInputMismatch(WeeklyRankingOrderPartitionCommand command) {
         var params = parameters(command);
-        var partition = load(params, false, "RUNNING", "RECOVERY_REQUIRED");
+        var partition = load(params, "RUNNING", "RECOVERY_REQUIRED");
         try {
             verify(command, partition, params);
             return Optional.empty();
@@ -114,17 +96,18 @@ public class JdbcWeeklyRankingOrderPartitionInputs {
         }
     }
 
-    private OrderPartition load(MapSqlParameterSource params, boolean lock, String... states) {
-        // OF s avoids serializing independent freezes on their shared plan row.
+    private OrderPartition load(MapSqlParameterSource params, String... states) {
         var rows = jdbc.query("""
-            SELECT s.order_min,s.order_max,s.is_empty,s.local_grid,s.frozen_at,s.input_count,s.input_checksum
+            SELECT s.order_min,s.order_max,s.is_empty,s.local_grid,s.frozen_at,s.input_count,s.input_checksum,m.frozen_at AS week_frozen_at
             FROM weekly_ranking_order_partitions s JOIN weekly_ranking_plans p ON p.snapshot_id=s.snapshot_id
+            JOIN weekly_ranking_snapshots m ON m.snapshot_id=p.snapshot_id AND m.input_contract_version=3
             WHERE s.snapshot_id=:snapshot AND s.order_partition_id=:orderPartition AND s.state IN (:states)
               AND s.owner_id=:owner AND s.generation=:generation AND p.state='OPEN'
               AND p.period_start=:period AND p.revision=:revision
-            """ + (lock ? " FOR UPDATE OF s" : ""), params.addValue("states", List.of(states)), (row, index) -> new OrderPartition(
+            """, params.addValue("states", List.of(states)), (row, index) -> new OrderPartition(
                 new OrderPartitionBounds(row.getObject("order_min", Long.class), row.getObject("order_max", Long.class)),
-                row.getBoolean("is_empty"), row.getInt("local_grid"), row.getObject("frozen_at") == null
+                row.getBoolean("is_empty"), row.getInt("local_grid"), row.getObject("week_frozen_at", LocalDateTime.class),
+                row.getObject("frozen_at", LocalDateTime.class), row.getObject("frozen_at") == null
                     ? null : new InputFingerprint(row.getLong("input_count"), row.getString("input_checksum"))));
         if (rows.size() != 1) {
             throw new SnapshotConflictException("주문 파티션을 읽을 수 있는 현재 실행권이 없습니다.");
@@ -134,8 +117,8 @@ public class JdbcWeeklyRankingOrderPartitionInputs {
 
     private void verify(WeeklyRankingOrderPartitionCommand command, OrderPartition orderPartition, MapSqlParameterSource params) {
         var expected = orderPartition.fingerprint();
-        if (expected == null) {
-            throw new SnapshotIntegrityException("주문 파티션의 고정 입력 manifest가 없습니다.");
+        if (expected == null || !orderPartition.frozenAt().equals(orderPartition.weekFrozenAt())) {
+            throw new SnapshotIntegrityException("주간 고정 입력과 주문 파티션의 고정 시각 또는 manifest가 일치하지 않습니다.");
         }
         var actual = fingerprint(command, orderPartition, params);
         if (!expected.equals(actual)) {
@@ -162,7 +145,8 @@ public class JdbcWeeklyRankingOrderPartitionInputs {
             .addValue("owner", command.ownerId()).addValue("generation", command.generation());
     }
 
-    private record OrderPartition(OrderPartitionBounds bounds, boolean empty, int grid, InputFingerprint fingerprint) {}
+    private record OrderPartition(OrderPartitionBounds bounds, boolean empty, int grid, LocalDateTime weekFrozenAt,
+                                  LocalDateTime frozenAt, InputFingerprint fingerprint) {}
 
     public record LocalProductPartition(int index, long firstProduct, long lastProduct, OrderPartitionBounds orderPartitionBounds) {}
 

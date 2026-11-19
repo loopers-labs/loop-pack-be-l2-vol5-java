@@ -4,6 +4,7 @@ import com.loopers.application.ranking.command.PublishWeeklyRankingCommand;
 import com.loopers.application.ranking.result.WeeklyRankingPublicationResult;
 import com.loopers.application.ranking.service.PublishWeeklyRankingService;
 import com.loopers.domain.ranking.model.SnapshotIntegrityException;
+import com.loopers.domain.ranking.model.vo.InputFingerprint;
 import com.loopers.infrastructure.persistence.ranking.JdbcOrderPartitionedRankingReduction;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
@@ -39,10 +40,10 @@ public class OrderPartitionedWeeklyRankingFinalizer implements WeeklyPlanFinaliz
 
     private void publishIfComplete(UUID id) {
         var plan = reduction.lockPlan(id);
-        if (!"OPEN".equals(plan.state())) {
+        if (!"OPEN".equals(plan.state()) || plan.contractVersion() != InputFingerprint.PARTITIONED_CONTRACT_VERSION) {
             return;
         }
-        reduction.verifyAndSeal(id, plan).ifPresent(fingerprint -> {
+        reduction.verifyFrozenInputs(id, plan).ifPresent(fingerprint -> {
             reduction.reduce(id);
             var command = new PublishWeeklyRankingCommand(id, plan.periodStart(), plan.revision());
             var outcome = publication.publishPartitioned(command, fingerprint);

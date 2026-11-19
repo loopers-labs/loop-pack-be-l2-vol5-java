@@ -1,8 +1,12 @@
 package com.loopers.batch.job.ranking.coordination;
 
+import com.loopers.domain.ranking.model.vo.InputFingerprint;
 import com.loopers.domain.ranking.model.vo.RankingPeriod;
+import com.loopers.infrastructure.persistence.ranking.JdbcRankingSnapshotRepository;
+import com.loopers.infrastructure.persistence.ranking.WeeklyInputFingerprints;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -14,6 +18,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 final class WeeklyPlanStore {
     private static final String ELIGIBLE = """
         FROM weekly_ranking_order_partitions s JOIN weekly_ranking_plans p ON p.snapshot_id=s.snapshot_id
+        JOIN weekly_ranking_snapshots f ON f.snapshot_id=p.snapshot_id AND f.input_contract_version=3 AND f.state='FROZEN'
         LEFT JOIN weekly_ranking_members m ON m.node_id=s.preferred_node
         WHERE s.state='READY' AND p.state='OPEN' AND
             (s.preferred_node=? OR m.heartbeat_at IS NULL OR m.heartbeat_at<TIMESTAMPADD(MICROSECOND,?,UTC_TIMESTAMP(6)))
@@ -23,11 +28,14 @@ final class WeeklyPlanStore {
     private final String session = UUID.randomUUID().toString();
     private final JdbcTemplate jdbc;
     private final TransactionTemplate transactions;
+    private final TransactionTemplate planning;
 
     WeeklyPlanStore(JdbcTemplate jdbc, PlatformTransactionManager manager) {
         this.jdbc = jdbc;
         transactions = new TransactionTemplate(manager);
         transactions.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
+        planning = new TransactionTemplate(manager, transactions);
+        planning.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     void heartbeat(String node, int grid) {
@@ -67,7 +75,7 @@ final class WeeklyPlanStore {
         if (revision < 1) {
             throw new IllegalArgumentException("revision은 양수여야 합니다.");
         }
-        return transactions.execute(status -> {
+        return planning.execute(status -> {
             jdbc.update("""
                 INSERT INTO weekly_ranking_publications(period_start) VALUES (?)
                 ON DUPLICATE KEY UPDATE period_start=period_start
@@ -76,16 +84,19 @@ final class WeeklyPlanStore {
                 SELECT COALESCE(revision,0) FROM weekly_ranking_publications WHERE period_start=? FOR UPDATE
                 """, Integer.class, start);
             var existing = jdbc.query("""
-                SELECT m.snapshot_id,p.snapshot_id IS NOT NULL,c.snapshot_id IS NOT NULL
+                SELECT m.snapshot_id,p.state,c.snapshot_id IS NOT NULL,m.input_contract_version
                 FROM weekly_ranking_snapshots m LEFT JOIN weekly_ranking_plans p ON p.snapshot_id=m.snapshot_id
                 LEFT JOIN weekly_ranking_completions c ON c.snapshot_id=m.snapshot_id
                 WHERE m.period_start=? AND m.revision=?
-                """, (row, n) -> new Existing(UUID.fromString(row.getString(1)), row.getBoolean(2), row.getBoolean(3)), start, revision);
+                """, (row, n) -> new Existing(UUID.fromString(row.getString(1)), row.getString(2), row.getBoolean(3), row.getInt(4)), start, revision);
             if (!existing.isEmpty()) {
                 var found = existing.getFirst();
-                if (!found.plan() && !(found.complete() && pointer >= revision)) {
+                if (found.planState() == null && !(found.complete() && pointer >= revision)) {
                     throw new IllegalStateException("기존 단일 배치 snapshot이 미공개 상태입니다. 같은 식별값으로 기존 작업을 완료하십시오: "
                         + found.id());
+                }
+                if ("OPEN".equals(found.planState()) && found.inputContract() != InputFingerprint.PARTITIONED_CONTRACT_VERSION) {
+                    throw new IllegalStateException("기존 입력 계약의 미완료 계획입니다. 해당 버전에서 계획을 종료한 뒤 다음 revision을 요청하십시오: " + found.id());
                 }
                 return acknowledge(start, found.id(), automatic);
             }
@@ -107,15 +118,18 @@ final class WeeklyPlanStore {
             UUID snapshot = UUID.randomUUID();
             jdbc.update("""
                 INSERT INTO weekly_ranking_snapshots(snapshot_id,period_start,period_end,revision,state,input_contract_version)
-                VALUES (?,?,?,?,'FREEZING',2)
+                VALUES (?,?,?,?,'FREEZING',3)
                 """, snapshot.toString(), start, period.end(), revision);
             jdbc.update("""
                 INSERT INTO weekly_ranking_plans(snapshot_id,period_start,revision,order_partition_count) VALUES (?,?,?,?)
                 """, snapshot.toString(), start, revision, members.size());
+            // READ COMMITTED gives this single INSERT ... SELECT one nonlocking source read view.
+            var frozenAt = jdbc.queryForObject("SELECT UTC_TIMESTAMP(6)", LocalDateTime.class);
+            JdbcRankingSnapshotRepository.copyInputs(jdbc, snapshot, period);
             var starts = jdbc.queryForList("""
                 WITH weights AS (
-                    SELECT order_id,COUNT(*) AS weight FROM product_purchase_activities
-                    WHERE confirmed_at>=? AND confirmed_at<? GROUP BY order_id
+                    SELECT order_id,COUNT(*) AS weight FROM weekly_ranking_snapshot_inputs
+                    WHERE snapshot_id=? GROUP BY order_id
                 ), totals AS (
                     SELECT order_id,weight,SUM(weight) OVER (ORDER BY order_id) AS cumulative,SUM(weight) OVER () AS total
                     FROM weights
@@ -123,16 +137,22 @@ final class WeeklyPlanStore {
                     SELECT order_id,FLOOR(((2*cumulative-weight)*?)/(2*total)) AS bucket FROM totals
                 )
                 SELECT MIN(order_id) FROM buckets GROUP BY bucket ORDER BY bucket
-                """, Long.class, start.atStartOfDay(), period.end().atStartOfDay(), members.size());
+                """, Long.class, snapshot.toString(), members.size());
+            var fingerprints = WeeklyInputFingerprints.read(jdbc, snapshot, period, starts.stream().skip(1).toList(), members.size());
+            jdbc.update("""
+                UPDATE weekly_ranking_snapshots SET state='FROZEN',frozen_at=?,input_count=?,input_checksum=?
+                WHERE snapshot_id=?
+                """, frozenAt, fingerprints.week().count(), fingerprints.week().sha256(), snapshot.toString());
             for (int i = 0; i < members.size(); i++) {
                 boolean empty = i >= Math.max(1, starts.size());
                 Long lower = !empty && i > 0 ? starts.get(i) : null;
                 Long upper = i + 1 < starts.size() ? starts.get(i + 1) : null;
                 var member = members.get(i);
+                var input = fingerprints.partitions().get(i);
                 jdbc.update("""
-                    INSERT INTO weekly_ranking_order_partitions(snapshot_id,order_partition_id,order_min,order_max,is_empty,preferred_node,local_grid)
-                    VALUES (?,?,?,?,?,?,?)
-                    """, snapshot.toString(), i, lower, upper, empty, member.id(), member.grid());
+                    INSERT INTO weekly_ranking_order_partitions(snapshot_id,order_partition_id,order_min,order_max,is_empty,preferred_node,local_grid,
+                        frozen_at,input_count,input_checksum) VALUES (?,?,?,?,?,?,?,?,?,?)
+                    """, snapshot.toString(), i, lower, upper, empty, member.id(), member.grid(), frozenAt, input.count(), input.sha256());
             }
             return acknowledge(start, snapshot, automatic);
         });
@@ -178,7 +198,8 @@ final class WeeklyPlanStore {
 
     List<UUID> publishable() {
         return jdbc.query("""
-            SELECT p.snapshot_id FROM weekly_ranking_plans p WHERE p.state='OPEN' AND p.order_partition_count=(
+            SELECT p.snapshot_id FROM weekly_ranking_plans p JOIN weekly_ranking_snapshots f ON f.snapshot_id=p.snapshot_id
+            WHERE f.input_contract_version=3 AND f.state='FROZEN' AND p.state='OPEN' AND p.order_partition_count=(
                 SELECT COUNT(*) FROM weekly_ranking_order_partitions s WHERE s.snapshot_id=p.snapshot_id AND s.state='DONE'
             ) ORDER BY p.period_start,p.revision
             """, (row, n) -> UUID.fromString(row.getString(1)));
@@ -193,7 +214,7 @@ final class WeeklyPlanStore {
         }
     }
 
-    private record Existing(UUID id, boolean plan, boolean complete) { }
+    private record Existing(UUID id, String planState, boolean complete, int inputContract) { }
 
     private record Member(String id, int grid) { }
 }

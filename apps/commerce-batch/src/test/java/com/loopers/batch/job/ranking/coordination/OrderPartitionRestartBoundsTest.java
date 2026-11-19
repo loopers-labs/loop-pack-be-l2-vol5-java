@@ -3,10 +3,13 @@ package com.loopers.batch.job.ranking.coordination;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
+import com.loopers.domain.ranking.model.vo.RankingPeriod;
 import com.loopers.infrastructure.persistence.ranking.JdbcWeeklyRankingOrderPartitionInputs;
+import com.loopers.ranking.CommonRankingInputFixture;
 import com.loopers.support.preservation.PreservedMySql;
 import com.loopers.support.preservation.PreservationContexts;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
@@ -201,7 +204,7 @@ class OrderPartitionRestartBoundsTest {
         store.register(owner, 1, TIMEOUT);
         jdbc.update("""
             INSERT INTO weekly_ranking_snapshots(snapshot_id,period_start,period_end,revision,state,input_contract_version)
-            VALUES (?,'2026-08-17','2026-08-24',?,'FREEZING',2)
+            VALUES (?,'2026-08-17','2026-08-24',?,'FREEZING',3)
             """, id, revision);
         jdbc.update("""
             INSERT INTO weekly_ranking_plans(snapshot_id,period_start,revision,order_partition_count,state)
@@ -211,6 +214,7 @@ class OrderPartitionRestartBoundsTest {
             INSERT INTO weekly_ranking_order_partitions(snapshot_id,order_partition_id,order_min,order_max,preferred_node,local_grid)
             VALUES (?,0,NULL,43,?,1),(?,1,43,NULL,?,1)
             """, id, partition == 0 ? owner : "other-node", id, partition == 1 ? owner : "other-node");
+        CommonRankingInputFixture.copyAndSeal(jdbc, id, new RankingPeriod(LocalDate.parse("2026-08-17")), List.of(43L), 2);
     }
 
     private JobExecution failSecondChunk(WeeklyPlanStore.Claim claim) throws Exception {

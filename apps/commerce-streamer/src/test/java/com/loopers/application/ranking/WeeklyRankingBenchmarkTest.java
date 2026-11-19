@@ -26,9 +26,10 @@ class WeeklyRankingBenchmarkTest {
     private static final String EXPECTED_CHECKSUM = "af984639cf2a88196c6b74cd014fa2a2bbf1edbf80b4d2e3b83d2e85dba8fcdf";
     private static final String ATTEMPTS = """
         WITH attempts AS (
-            SELECT j.JOB_EXECUTION_ID,j.START_TIME,j.END_TIME,partition_param.PARAMETER_VALUE AS order_partition_id
+            SELECT j.JOB_EXECUTION_ID,t.started_at AS START_TIME,t.ended_at AS END_TIME,partition_param.PARAMETER_VALUE AS order_partition_id
             FROM BATCH_JOB_EXECUTION_PARAMS id JOIN BATCH_JOB_EXECUTION_PARAMS partition_param ON partition_param.JOB_EXECUTION_ID=id.JOB_EXECUTION_ID
             JOIN BATCH_JOB_EXECUTION j ON j.JOB_EXECUTION_ID=id.JOB_EXECUTION_ID
+            LEFT JOIN benchmark_batch_times t ON t.kind='job' AND t.execution_id=j.JOB_EXECUTION_ID
             WHERE id.PARAMETER_NAME='snapshotId' AND id.PARAMETER_VALUE=? AND partition_param.PARAMETER_NAME='orderPartitionId'
         )
         """;
@@ -42,6 +43,7 @@ class WeeklyRankingBenchmarkTest {
             RankingProcessLab.prepare(database);
             var lab = new RankingProcessLab(logs.resolve(nodes + "x" + workers), database);
             seed(lab.jdbc);
+            observeDatabaseTimes(lab.jdbc);
             System.out.printf("RANKING_ENV MySQL=%s Java=%s nodes=%d workers=%d%n",
                 lab.jdbc.queryForObject("SELECT VERSION()", String.class), Runtime.version(), nodes, workers);
             try (var first = lab.resident("bench-a", workers, 24 / nodes);
@@ -74,12 +76,15 @@ class WeeklyRankingBenchmarkTest {
                             SELECT owner_id FROM weekly_ranking_order_partitions WHERE snapshot_id=? AND state='DONE'
                             """, String.class, snapshot)).containsExactlyInAnyOrderElementsOf(active);
                         var execution = lab.jdbc.queryForMap(ATTEMPTS + """
-                            SELECT SUM(attempt_count) AS job_attempts, MAX(wall_us) AS slowest_order_partition FROM (
-                                SELECT order_partition_id,COUNT(*) AS attempt_count,TIMESTAMPDIFF(MICROSECOND,MIN(START_TIME),MAX(END_TIME)) AS wall_us
+                            SELECT SUM(attempt_count) AS job_attempts, SUM(timed) AS timed_attempts, MAX(wall_us) AS slowest_order_partition FROM (
+                                SELECT order_partition_id,COUNT(*) AS attempt_count,COUNT(END_TIME) AS timed,
+                                       TIMESTAMPDIFF(MICROSECOND,MIN(START_TIME),MAX(END_TIME)) AS wall_us
                                 FROM attempts GROUP BY order_partition_id
                             ) by_order_partition
                             """, snapshot);
                         long slowest = ((Number) execution.get("slowest_order_partition")).longValue();
+                        assertThat(((Number) execution.get("timed_attempts")).longValue())
+                            .isEqualTo(((Number) execution.get("job_attempts")).longValue());
                         long attempts = ((Number) execution.get("job_attempts")).longValue();
                         var steps = lab.jdbc.queryForMap(ATTEMPTS + """
                             SELECT COUNT(DISTINCT a.order_partition_id,e.STEP_NAME) AS completed_local_product_partitions
@@ -90,26 +95,63 @@ class WeeklyRankingBenchmarkTest {
                         assertThat(completed).isEqualTo(nodes * workers);
                         var overlap = lab.jdbc.queryForMap(ATTEMPTS + """
                             , workers AS (
-                              SELECT e.START_TIME,e.END_TIME FROM BATCH_STEP_EXECUTION e JOIN attempts a USING(JOB_EXECUTION_ID)
+                              SELECT t.started_at AS START_TIME,t.ended_at AS END_TIME,e.READ_COUNT
+                              FROM BATCH_STEP_EXECUTION e JOIN attempts a USING(JOB_EXECUTION_ID)
+                              LEFT JOIN benchmark_batch_times t ON t.kind='worker' AND t.execution_id=e.STEP_EXECUTION_ID
                               WHERE e.STEP_NAME LIKE 'scoreWeeklyRankingLocalProductPartition:localProductPartition-%'
                             ), times AS (SELECT START_TIME AS t,1 AS delta FROM workers UNION ALL SELECT END_TIME,-1 FROM workers)
-                            SELECT (SELECT COUNT(*) FROM workers) AS worker_runs, MAX(active) AS peak_workers
+                            SELECT (SELECT COUNT(*) FROM workers) AS worker_runs, (SELECT COUNT(END_TIME) FROM workers) AS timed_workers,
+                              MAX(active) AS peak_workers,
+                              (SELECT SUM(READ_COUNT) FROM workers) AS product_items,
+                              (SELECT TIMESTAMPDIFF(MICROSECOND,MIN(START_TIME),MAX(END_TIME)) FROM workers) AS worker_window_us
                             FROM (SELECT SUM(SUM(delta)) OVER (ORDER BY t) AS active FROM times GROUP BY t) events
                             """, snapshot);
                         int runs = ((Number) overlap.get("worker_runs")).intValue();
                         int peak = ((Number) overlap.get("peak_workers")).intValue();
+                        long items = ((Number) overlap.get("product_items")).longValue();
+                        long window = ((Number) overlap.get("worker_window_us")).longValue();
                         long acquires = poolsAfter[0] - poolsBefore[0];
-                        assertThat(slowest).isPositive();
+                        assertThat(((Number) overlap.get("timed_workers")).intValue()).isEqualTo(runs);
+                        assertThat(slowest).isBetween(1L, elapsed);
+                        assertThat(window).isBetween(1L, elapsed);
                         assertThat(inspected).isPositive();
                         assertThat(acquires).isPositive();
                         System.out.printf(Locale.ROOT, """
-                            RANKING_BENCH nodes=%d workers=%d warmup=%s trial=%d inputRows=%d products=512 inputChecksum=%s checksum=%s totalMs=%.3f slowestOrderPartitionMs=%.3f completedLocalProductPartitions=%d jobAttempts=%d workerRuns=%d peakWorkers=%d sourceStatementRowsExamined=%d poolAcquires=%d meanAcquireMs=%.4f%n""",
+                            RANKING_BENCH nodes=%d workers=%d warmup=%s trial=%d inputRows=%d products=512 inputChecksum=%s checksum=%s totalMs=%.3f slowestOrderPartitionMs=%.3f completedLocalProductPartitions=%d jobAttempts=%d workerRuns=%d peakWorkers=%d sourceStatementRowsExamined=%d poolAcquires=%d meanAcquireMs=%.4f productItems=%d workerWindowMs=%.3f%n""",
                             nodes, workers, revision == 1, revision - 1, ORDERS * 2, EXPECTED_INPUT, digest, elapsed / 1000.0,
-                            slowest / 1000.0, completed, attempts, runs, peak, inspected, acquires, (poolsAfter[1] - poolsBefore[1]) / 1_000_000.0 / acquires);
+                            slowest / 1000.0, completed, attempts, runs, peak, inspected, acquires, (poolsAfter[1] - poolsBefore[1]) / 1_000_000.0 / acquires,
+                            items, window / 1000.0);
                     }
                 }
             }
         }
+    }
+
+    private static void observeDatabaseTimes(JdbcTemplate jdbc) {
+        jdbc.execute("""
+            CREATE TABLE benchmark_batch_times (
+              kind VARCHAR(8) NOT NULL, execution_id BIGINT NOT NULL, started_at DATETIME(6) NOT NULL, ended_at DATETIME(6),
+              PRIMARY KEY (kind,execution_id)
+            ) ENGINE=InnoDB
+            """);
+        observeTransitions(jdbc, "job", "BATCH_JOB_EXECUTION", "JOB_EXECUTION_ID", "TRUE");
+        observeTransitions(jdbc, "worker", "BATCH_STEP_EXECUTION", "STEP_EXECUTION_ID",
+            "NEW.STEP_NAME LIKE 'scoreWeeklyRankingLocalProductPartition:localProductPartition-%'");
+    }
+
+    private static void observeTransitions(JdbcTemplate jdbc, String kind, String table, String id, String selected) {
+        jdbc.execute("""
+            CREATE TRIGGER observe_%1$s_time AFTER UPDATE ON %2$s FOR EACH ROW
+            BEGIN
+              IF %4$s THEN
+                IF NEW.STATUS='STARTED' AND OLD.STATUS<>'STARTED' THEN
+                  INSERT INTO benchmark_batch_times(kind,execution_id,started_at) VALUES ('%1$s',NEW.%3$s,UTC_TIMESTAMP(6));
+                ELSEIF OLD.END_TIME IS NULL AND NEW.END_TIME IS NOT NULL THEN
+                  UPDATE benchmark_batch_times SET ended_at=UTC_TIMESTAMP(6) WHERE kind='%1$s' AND execution_id=NEW.%3$s;
+                END IF;
+              END IF;
+            END
+            """.formatted(kind, table, id, selected));
     }
 
     private static long[] poolTotals(RankingProcessLab lab, List<String> nodes) throws Exception {

@@ -1,5 +1,44 @@
 # 주간 랭킹 정합성 검증
 
+## 주차·revision 공통 입력 고정 (계약 3)
+
+실제 MySQL에서 계약 2를 대상으로 공통 입력과 계획 생성 회귀 5건을 먼저 실행했다. 5건이 모두 실패했다. 구간 A가 끝난 후 양쪽에 새 구매를 넣자 B가 새 상품 8의 30점까지 읽었다. 계약 3에서 같은 시험을 실행한 결과, 계획 직후와 세 개의 주문 파티션 Job 종료 후의 입력은 모두 `[42:7:2, 44:7:3]`이었다. 세 파티션 모두 같은 `frozen_at`을 가리켰고 부분 점수에는 2와 3이 한 번씩 남았다.
+
+| MySQL 관측 시점 | 확인한 결과 |
+|---|---|
+| 첫 계획의 복사 SQL이 첫 행에서 대기 중 | 다른 연결에서 새 주문 11을 커밋했다. 두 번째 계획은 같은 주차의 공개 포인터 행 잠금을 기다렸다. 어느 연결에도 미완료 계획·복사 행은 보이지 않았다. |
+| 두 계획 호출 종료 | 같은 snapshot 한 개에 기존 주문 10과 20만 있었다. 경계는 20, 양쪽 건수는 1건씩, 전체는 2건이었다. |
+| 복사 후 두 번째 주문 파티션 저장에서 강제 실패 | 계획·입력·경계·스케줄 커서가 함께 롤백됐다. 같은 revision을 재요청해 성공했다. |
+| 구매 0건 | 계획 생성 트랜잭션이 빈 입력의 SHA-256과 공통 시각까지 저장했다. |
+| 계약 2의 열린 계획 | 계약 3 Job의 실행권 연결 및 재고정이 차단됐다. 구버전에서 종료한 후 다음 revision을 계약 3으로 생성했다. |
+
+위 사례와 재시작·공개를 포함한 실제 DB 집중 검사 25건에서 실패·오류·건너뜀이 각각 0건이었다. [계획 생성·경쟁·롤백](../../apps/commerce-batch/src/test/java/com/loopers/batch/job/ranking/coordination/WeeklyPlanGlobalFreezeTest.java) · [늦게 시작한 주문 파티션](../../apps/commerce-batch/src/test/java/com/loopers/batch/job/ranking/coordination/WeeklyRankingCommonInputTest.java)
+
+### 주문 42·43·44, 청크 2의 실제 재시작
+
+MySQL에 주문 42의 상품 7×2·8×1, 주문 43의 상품 7×3, 주문 44의 상품 9×5를 준비했다. 상주 Batch JVM(PID 18448)과 별도 고객 API를 기동했다. 첫 revision은 장애 없이 공개해 대조군으로 사용했고, 두 번째 revision에서는 실제 processor가 상품 9를 호출하기 직전에 장애를 주입했다.
+
+| 두 번째 revision의 시점 | JobInstance / JobExecution | MySQL·API에서 확인한 상태 |
+|---|---|---|
+| 첫 실행 실패 | 2 / 2, `FAILED` | 부분 점수 `7:5, 8:1`, 최종 stage 0행, `READ_COUNT=3`, `WRITE_COUNT=2`. 영속 `weeklyRankingLocalProductPartitionProducts.read.count=2`. DB 포인터와 고객 API 모두 정상 revision 1. |
+| 재시작 후 공개 | 2 / 3, `COMPLETED` | 재개한 processor의 호출은 상품 9 한 건. `READ_COUNT=1`, `WRITE_COUNT=1`. 추가 입력 INSERT를 DB에서 차단한 상태로 완료. 고객 API 순위는 상품 7(5점·1위), 9(5점·2위), 8(1점·3위). |
+
+정상 snapshot은 `266b7d11-df2a-46d0-bc95-e178b0e206e2`, 재시작 snapshot은 `a5020477-4e96-4355-9850-a310356a68b3`이었다. 두 snapshot의 입력 SHA-256은 모두 `3e90276ec1f9123f308cd18d155e1dde6bf811ef3aa741105ff5c766c357a298`, 결과 SHA-256은 모두 `745d50bbd2f04a2e8c937f9ebf5f2cddbf75b958540e964934a424903b0a67d2`였다. 두 값 모두 고정 fixture의 정답과 일치했다. 실패 당시 관측한 공통 시각 `2026-11-19T18:49:56.498802Z`가 재시작 후 API의 `frozenAt`과 일치했다. [실제 스케줄러·체크포인트·고객 응답 검사](../../apps/commerce-streamer/src/test/java/com/loopers/application/ranking/WeeklyRankingChunkRestartFlowTest.java)
+
+### 두 JVM에서 고정 후 도착한 실제 구매
+
+실제 PG 확정, Outbox relay, Kafka consumer가 적재한 원본을 사용했다. 첫 주문 이벤트를 재발행한 뒤에도 Inbox 1건과 원래 구매 품목 수를 유지했다. revision 2에서 주문번호 경계는 3이고, 계산 JVM의 PID는 35056(A)과 32520(B)이었다. A가 작업을 끝내고 B가 계산 직전 대기하는 동안 낮은 주문 2의 지연 Outbox(상품 8×3)와 높은 신규 주문 6(상품 8×4)을 모두 소비했다.
+
+| 시점 | 새 snapshot에 실제 저장된 두 늦은 주문 | 고객이 조회한 공개본 |
+|---|---|---|
+| 계약 2 대조 실행, B 재시작 후 | 주문 6만 포함 | revision 2 · 상품 7·8 모두 5점 |
+| 계약 3, revision 2 계산 중 | 모두 제외, 공통 입력 총 5행 | revision 1 · 상품 7은 2점, 8은 1점 |
+| 계약 3, B 재시작 및 revision 2 공개 | 모두 제외, 고정 건수·시각·SHA 동일 | revision 2 · 상품 7은 5점, 8은 1점 |
+| 명시적 revision 3의 고정 후 B 계산 전 | 주문 2·6 각각 1행, 총 7행 | 여전히 revision 2, 같은 snapshot ID·순위 |
+| revision 3 공개 | 주문 2·6 각각 1행, 과거 revision 2에는 0행 | revision 3 · 상품 8은 8점·1위, 7은 5점·2위 |
+
+B의 JobInstance 3에서 JobExecution 3(`FAILED`)과 5(`COMPLETED`)가 실행됐다. revision 2의 전체 입력 SHA-256은 `639f87aa7a779061dbe094fb4fdeff96cff822ab3a633099a5b77c2cea8d3efa`, revision 3은 `2d7142055cdfa34303e95ab4fcb6eac1c8f1bd2817f0e222f619702486d41a60`이었다. 두 구간과 공개 API의 공통 시각은 각각 `2026-11-19T18:52:08.310891Z`와 `2026-11-19T18:52:29.311445Z`였다. [실제 구매·재시작·포인터 검증](../../apps/commerce-streamer/src/test/java/com/loopers/application/ranking/WeeklyRankingFlowTest.java)
+
 ## 같은 상품의 부분 점수
 
 격리 MySQL 8.0.46에 C05의 실제 014·015 DDL을 적용했다. 상품 7에 두 주문 파티션의 부분합 2, 3을 기존 `ON DUPLICATE KEY UPDATE score=?`로 기록했다. 합계 5를 기대한 회귀 검사는 실제 1행·3점으로 실패했다.
@@ -12,8 +51,8 @@
 | 다른 값 재시도 | 3 대신 4를 시도한 청크는 실패. 원래 3 유지. 청크 롤백 뒤 새 조회로 원장의 기존값 3·시도값 4 확인. |
 | 오래된 소유자 | 세대가 바뀌거나 주문 파티션이 완료된 후 이전 실행의 쓰기 거절. 실패 청크의 행 수 0개. |
 | 로컬 체크포인트 | 7번 상품 커밋 뒤 8번 청크의 checkpoint UPDATE 실패. 8번 부분 점수 롤백 및 체크포인트 1 보존. 새 소유자는 같은 JobInstance에서 해당 Step의 상품 8 한 건만 처리. |
-| 독립 입력 고정 | 두 주문 파티션에 대해 고정 사이에 들어온 구매가 아직 열린 주문 파티션에만 포함됨. 이미 고정된 입력은 재시작 후에도 동일. |
-| 동시 최종화 | 두 finalizer와 추가 재호출 후 상품 7의 5점·완성 기록 하나·공개 포인터 하나. 공개 시각 정보는 마지막 주문 파티션의 입력 고정 시각과 일치. |
+| 독립 입력 고정 (계약 2 이력) | 두 고정 사이의 구매가 아직 고정하지 않은 주문 파티션에 포함됐다. 현재 계약 3의 실측은 위 표에 기록했다. |
+| 동시 최종화 | 두 finalizer와 추가 재호출 후 상품 7의 5점·완성 기록 하나·공개 포인터 하나. 계약 2에서는 마지막 구간 고정 시각을 반환했다. |
 | 검산 실패 | 새 revision의 잘못된 부분합은 공개 실패. 새 최종 stage 롤백, 이전 revision의 포인터 보존. |
 
 주문 파티션별 검산을 추가하는 과정에서 부분합을 2·3에서 1·4로 바꾸는 반례도 사용했다. 전체 합은 양쪽 모두 5이므로 기존 전역 합계 비교만으로는 공개가 성공했다. 주문 파티션·상품별로 기대값과 실제값을 완전히 대조하도록 수정한 뒤 같은 테스트에서 새 stage와 포인터가 모두 0행이었다. 누락·추가된 상품도 같은 검산에 포함된다.
@@ -21,6 +60,10 @@
 두 주문 파티션에 주문 42의 상품 7·8, 주문 43의 상품 7, 주문 44의 상품 9를 배치한 공개 시험에서 순위는 상품 7(5점·1위), 9(5점·2위), 8(1점·3위)였다. 완성 checksum은 `745d50bbd2f04a2e8c937f9ebf5f2cddbf75b958540e964934a424903b0a67d2`로 C05의 정답과 일치했다.
 
 ## 서로 다른 두 JVM의 2점·3점과 B의 재전달
+
+계약 3에서도 A(PID 1472)가 주문 10의 2점을 쓰고, B(PID 35124)가 주문 20의 3점을 썼다. B의 같은 JobInstance 1에서 JobExecution 1과 3이 차례로 실행됐다. 세대 2의 재전달을 MySQL이 `oldScore=3, score=3`으로 기록했다. snapshot `7b5223e5-5cbf-48ee-8905-b07eb0af0ea5`에 부분 점수 두 행, 최종 점수 5 한 행, 공개 순위 1위 한 행을 확인했다.
+
+### 계약 2의 비교 기록
 
 단일 JVM의 두 트랜잭션 검사와 별도로 `WeeklyRankingEqualScoreReplayProcessTest`를 실행했다. 별도 프로세스인 A(PID 13416)와 B(PID 27576)가 한 MySQL을 공유했다. 두 JVM의 세션 ID도 달랐다. 관찰한 snapshot은 `68bba61e-6686-4661-8a98-01926d9179dd`다.
 
@@ -38,7 +81,7 @@ B의 첫 로컬 상품 파티션이 쓰기와 reader 체크포인트를 커밋�
 .\gradlew.bat :apps:commerce-streamer:test --tests '*WeeklyRankingEqualScoreReplayProcessTest'
 ```
 
-## 실제 구매와 프로세스 인수
+## 계약 2의 구매 흐름과 프로세스 인수 이력
 
 - 실제 PG 주문 확정, Outbox 재발행, Kafka 소비로 만든 구매 활동을 두 상주 Batch JVM이 계산했다. 첫 revision의 API 조회는 상품 7·8이 각각 5점이고 동점 순서는 7이 먼저였다. 아직 고정 전인 주문 파티션의 구매는 첫 revision에 포함됐고 이미 고정한 주문 파티션의 늦은 구매는 다음 revision에 포함됐다. 다음 공개본은 상품 8이 8점·1위, 상품 7이 5점·2위였다.
 - 주문 파티션의 상품 33개 중 16개를 커밋한 상태에서 첫 JVM을 강제로 종료했다. 같은 snapshot의 부분 점수 16행과 저장된 reader 위치 16을 조회했다. 잘못된 실행 ID의 복구 요청은 거절됐다. 정확한 종료·실행 근거를 준 뒤 다른 JVM이 같은 JobInstance에서 나머지 17개를 처리했다. 두 JobExecution의 상태는 `FAILED → COMPLETED`였고 최종 결과와 포인터를 확인했다.
@@ -47,7 +90,7 @@ B의 첫 로컬 상품 파티션이 쓰기와 reader 체크포인트를 커밋�
 
 초기 병렬 실험에서 부분 점수 확인 쿼리가 이웃 worker가 소유한 행의 잠금까지 기다려 교착이 발생했다. 실제 MySQL 8.0의 `REPEATABLE READ`에서 오래된 읽기 시점을 만든 뒤 다른 트랜잭션이 상품 16을 커밋하고 무관한 상품 17을 잠그도록 재현했다. 원래 쿼리는 잠금 대기 1205, 일반 스냅샷 조회는 기대한 16건 중 15건이었다. 변경 후에는 청크의 상품 키로 전체 기본 키를 한 건씩 찾는 현재 읽기를 한 SQL로 수행한다. `EXPLAIN`은 `eq_ref`, `PRIMARY`, 예상 행 수 1을 보였고 조회 결과도 정확히 16건이었다. `OrderPartitionScoreConsistencyTest`에서 이 조건과 2점·3점 동시 저장, 동일값 재시도, 다른 값 충돌을 검사했다.
 
-## 동시 JobInstance 생성
+## 계약 2의 동시 JobInstance 생성 이력
 
 두 상주 JVM이 서로 다른 주문 파티션을 처음 시작한 통합 검사에서 MySQL이 `BATCH_JOB_INSTANCE` 삽입 하나를 교착 상태로 롤백했다(SQLState `40001`, 오류 `1213`). 해당 주문 파티션의 Batch 실행과 입력 고정 기록은 모두 0건이었고, 이전 처리 방식은 운영자 인수를 기다렸다. 이 사례는 부분 점수 계산 전에 발생했다.
 
@@ -59,7 +102,7 @@ B의 첫 로컬 상품 파티션이 쓰기와 reader 체크포인트를 커밋�
 
 ### revision 2 손상과 revision 3 공개
 
-revision 1은 주문 42에서 상품 7을 2개 구매한 결과를 공개했다. 주문 43의 구매 3개가 원본에 추가된 뒤 revision 2의 실제 worker에 쓰기 실패를 주입했다. 입력 고정 Step은 완료, worker와 Job은 실패했다. 이때 **revision 2에 복사된 주문 43의 수량만 3에서 30으로** 변경했다. 원본 수량은 계속 3이었다.
+revision 1은 주문 42에서 상품 7을 2개 구매한 결과를 공개했다. 주문 43의 구매 3개가 원본에 추가된 뒤 revision 2의 실제 worker에 쓰기 실패를 주입했다. 계약 2에서는 입력 고정 Step, 계약 3에서는 이미 고정된 입력의 검증 Step이 완료되고 worker와 Job이 실패했다. 이때 **revision 2에 복사된 주문 43의 수량만 3에서 30으로** 변경했다. 원본 수량은 계속 3이었다.
 
 | 관측 시점 | 계획 / 주문 파티션 | 해당 revision의 JobExecution | 고객 공개 포인터·상품 7 |
 |---|---|---|---|
@@ -93,11 +136,15 @@ FROZEN_INPUT_INTEGRITY_MISMATCH expectedCount=2 actualCount=2 expectedSha256=206
 
 변조 22건 모두 수정 후 `CHECKPOINT_EVIDENCE_MISMATCH`로 `RECOVERY_REQUIRED`에 머물렀다. 이미 커밋된 상품 7과 기존 실행 ID가 보존됐다. 누락 6건에는 `RUNNING`에서 운영자가 직접 인수한 첫·마지막 파티션 두 건도 포함된다. 수정 전에는 마지막 파티션의 하한을 44로 바꾸거나 열린 상한에 42를 넣으면 상품 9의 부분 점수가 빠져도 주문 파티션이 `DONE`이 됐다. [경계별 실제 재시작 시험](../../apps/commerce-batch/src/test/java/com/loopers/batch/job/ranking/coordination/OrderPartitionRestartBoundsTest.java)
 
-## 기준 커밋의 세 앱 전체 검사
+## 세 앱 전체 검사
+
+2026-11-20 KST에 공통 고정 버전으로 `:apps:commerce-batch:check :apps:commerce-api:check :apps:commerce-streamer:check --continue`를 실행했다. 14분 13초에 `BUILD SUCCESSFUL`이었다. Batch 224건과 Streamer 28건을 새로 실행했고, API 609건은 기존 전체 검사 결과를 Gradle이 재사용했다. 세 모듈 JUnit XML 합계 **861건**, 실패·오류·건너뜀 및 Checkstyle 위반은 각각 0건이다. 새 스냅샷의 실제 고객 API 응답은 별도로 기동한 API 프로세스에 HTTP 요청을 보내 검증했다.
+
+### 복구 수정과 최초 구현의 검사 이력
 
 손상 복구 수정 후 Batch와 Streamer의 전체 `check`를 별도로 실행했다. Batch 218건과 Streamer 27건, 합계 245건에서 실패·오류·건너뜀 및 Checkstyle 위반은 각각 0건이었다. 위 재시작 회귀 34건은 Batch 218건에 포함된다.
 
-2026-11-20 KST, Java 21에서 세 앱의 `check`를 함께 실행해 `BUILD SUCCESSFUL`을 확인했다. Batch와 Streamer는 마지막 배치 수정 후 다시 실행했다. API는 앞서 단독으로 609건 전체를 통과한 결과를 Gradle이 재사용했다. 각 모듈의 JUnit XML과 Checkstyle XML을 확인한 결과다.
+최초 분할 구현 `4f2efbd`에서 세 앱의 `check`를 함께 실행해 `BUILD SUCCESSFUL`을 확인했다. Batch와 Streamer는 해당 배치 수정 후 다시 실행했다. API는 앞서 단독으로 609건 전체를 통과한 결과를 Gradle이 재사용했다.
 
 | 모듈 | 실행된 테스트 | 실패·오류·건너뜀 | Checkstyle 위반 |
 |---|---:|---:|---:|

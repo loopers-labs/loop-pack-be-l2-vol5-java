@@ -152,6 +152,55 @@ final class WeeklyRankingFlowLab implements AutoCloseable {
         return order;
     }
 
+    long deferOrder(int port) throws Exception {
+        // Reserve an order ID in the first range before making its purchase activity visible.
+        jdbc.execute("""
+            CREATE TRIGGER defer_event BEFORE INSERT ON order_event_outbox FOR EACH ROW SET NEW.next_attempt_at='9998-01-01'
+            """);
+        try {
+            return confirmOrder(port, "[{\"productId\":8,\"quantity\":3}]");
+        } finally {
+            jdbc.execute("DROP TRIGGER defer_event");
+        }
+    }
+
+    void installCalculationGate(LocalDate week) {
+        // Delay B before its first step starts. A separate lock makes the arrival observable across JVMs.
+        jdbc.execute("""
+            CREATE TRIGGER delay_order_partition BEFORE INSERT ON BATCH_STEP_EXECUTION FOR EACH ROW
+            BEGIN
+              IF NEW.STEP_NAME IN ('freezeWeeklyRankingOrderPartition','verifyWeeklyRankingOrderPartitionInputs') AND EXISTS (
+                SELECT 1 FROM BATCH_JOB_EXECUTION_PARAMS id
+                JOIN weekly_ranking_plans p ON p.snapshot_id=id.PARAMETER_VALUE
+                JOIN weekly_ranking_order_partitions o ON o.snapshot_id=p.snapshot_id
+                WHERE id.JOB_EXECUTION_ID=NEW.JOB_EXECUTION_ID AND id.PARAMETER_NAME='snapshotId' AND p.period_start='%s'
+                  AND p.revision IN (2,3) AND o.order_partition_id=1 AND o.execution_id=NEW.JOB_EXECUTION_ID AND o.generation=1
+              ) THEN
+                IF GET_LOCK('ranking-flow-arrived',0) <> 1 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='duplicate gate arrival'; END IF;
+                IF GET_LOCK('ranking-flow-calculation',180) <> 1 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='calculation gate timeout'; END IF;
+                DO RELEASE_LOCK('ranking-flow-calculation');
+                DO RELEASE_LOCK('ranking-flow-arrived');
+              END IF;
+            END
+            """.formatted(week));
+        // The first generation fails in the real score writer, after the delayed JVM entered its job.
+        jdbc.execute("""
+            CREATE TRIGGER fail_second_partition_once BEFORE INSERT ON weekly_ranking_partial_scores FOR EACH ROW
+            BEGIN
+              IF NEW.order_partition_id=1 AND EXISTS (
+                SELECT 1 FROM weekly_ranking_plans p JOIN weekly_ranking_order_partitions o USING(snapshot_id)
+                WHERE p.snapshot_id=NEW.snapshot_id AND p.period_start='%s' AND p.revision=2
+                  AND o.order_partition_id=1 AND o.generation=1
+              ) THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='retry delayed purchase calculation once'; END IF;
+            END
+            """.formatted(week));
+    }
+
+    void awaitDelayedPartition() {
+        await().atMost(Duration.ofSeconds(90)).untilAsserted(() -> assertThat(jdbc.queryForObject(
+            "SELECT IS_USED_LOCK('ranking-flow-arrived')", Long.class)).isNotNull());
+    }
+
     JsonNode ranking(int apiPort, LocalDate week) throws Exception {
         return request(apiPort, "/api/v1/rankings/weekly?periodStart=" + week, null, 200);
     }

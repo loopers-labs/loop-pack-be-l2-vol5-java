@@ -6,11 +6,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.loopers.batch.job.ranking.coordination.WeeklyPlanFinalizer;
 import com.loopers.domain.ranking.model.SnapshotIntegrityException;
 import com.loopers.domain.ranking.model.vo.RankingPeriod;
-import com.loopers.infrastructure.persistence.ranking.PurchaseInputFingerprintAccumulator;
 import com.loopers.support.preservation.PreservedMySql;
 import com.loopers.support.preservation.PreservationContexts;
-import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -63,20 +62,10 @@ class OrderPartitionedPublicationTest {
     @DisplayName("두 주문 파티션이 닫힐 때까지 기다린 후 동시 공개와 재시도를 거쳐도 5점 한 행만 공개한다")
     void concurrentFinalizers() throws Exception {
         String start = "2026-08-17";
-        var id = seed(start, 1);
-        var period = new RankingPeriod(LocalDate.parse(start));
-        var at = Instant.parse(start + "T12:00:00Z");
-        var firstInput = new PurchaseInputFingerprintAccumulator(period);
-        firstInput.accept(42, 7, 2, at);
-        firstInput.accept(42, 8, 1, at);
-        var secondInput = new PurchaseInputFingerprintAccumulator(period);
-        secondInput.accept(43, 7, 3, at);
-        secondInput.accept(44, 9, 5, at);
-        jdbc.update("INSERT INTO weekly_ranking_snapshot_inputs VALUES (?,42,8,1,?),(?,44,9,5,?)",
-            id.toString(), start + " 12:00:00", id.toString(), start + " 12:00:00");
-        jdbc.update("INSERT INTO weekly_ranking_partial_scores VALUES (?,0,8,1),(?,1,9,5)", id.toString(), id.toString());
-        jdbc.update("UPDATE weekly_ranking_order_partitions SET input_count=2,input_checksum=IF(order_partition_id=0,?,?) WHERE snapshot_id=?",
-            firstInput.finish().sha256(), secondInput.finish().sha256(), id.toString());
+        var id = seed(start, 1, List.of(new Purchase(42, 7, 2), new Purchase(42, 8, 1),
+            new Purchase(43, 7, 3), new Purchase(44, 9, 5)));
+        var originalFreeze = jdbc.queryForObject("SELECT frozen_at FROM weekly_ranking_snapshots WHERE snapshot_id=?",
+            LocalDateTime.class, id.toString());
         var service = context.getBean(WeeklyPlanFinalizer.class);
         service.finalizePlan(id);
         assertThat(count(id, "weekly_ranking_score_stage")).isZero();
@@ -99,8 +88,10 @@ class OrderPartitionedPublicationTest {
             String.class, id.toString())).isEqualTo("745d50bbd2f04a2e8c937f9ebf5f2cddbf75b958540e964934a424903b0a67d2");
         assertThat(count(id, "weekly_ranking_completions")).isOne();
         assertThat(count(id, "weekly_ranking_publications")).isOne();
-        assertThat(jdbc.queryForObject("SELECT frozen_at=(SELECT MAX(frozen_at) FROM weekly_ranking_order_partitions WHERE snapshot_id=?) "
-            + "FROM weekly_ranking_snapshots WHERE snapshot_id=?", Boolean.class, id.toString(), id.toString())).isTrue();
+        assertThat(jdbc.queryForObject("SELECT frozen_at FROM weekly_ranking_snapshots WHERE snapshot_id=?",
+            LocalDateTime.class, id.toString())).isEqualTo(originalFreeze);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM weekly_ranking_order_partitions WHERE snapshot_id=? AND frozen_at=?",
+            Long.class, id.toString(), originalFreeze)).isEqualTo(2);
     }
 
     @Test
@@ -160,12 +151,8 @@ class OrderPartitionedPublicationTest {
     @Test
     @DisplayName("입력 0건인 모든 주문 파티션이 닫히면 빈 주도 완성 기록과 포인터를 가진다")
     void publishesEmptyWeek() {
-        var id = seed("2026-09-21", 1);
-        var empty = new PurchaseInputFingerprintAccumulator(new RankingPeriod(LocalDate.parse("2026-09-21"))).finish();
-        jdbc.update("DELETE FROM weekly_ranking_partial_scores WHERE snapshot_id=?", id.toString());
-        jdbc.update("DELETE FROM weekly_ranking_snapshot_inputs WHERE snapshot_id=?", id.toString());
-        jdbc.update("UPDATE weekly_ranking_order_partitions SET state='DONE',input_count=0,input_checksum=? WHERE snapshot_id=?",
-            empty.sha256(), id.toString());
+        var id = seed("2026-09-21", 1, List.of());
+        jdbc.update("UPDATE weekly_ranking_order_partitions SET state='DONE' WHERE snapshot_id=?", id.toString());
         context.getBean(WeeklyPlanFinalizer.class).finalizePlan(id);
         assertThat(count(id, "weekly_ranking_publications")).isOne();
         assertThat(count(id, "weekly_rankings")).isZero();
@@ -186,29 +173,60 @@ class OrderPartitionedPublicationTest {
         assertThat(count(id, "weekly_ranking_score_stage")).isZero();
     }
 
+    @Test
+    @DisplayName("주간 checksum 또는 주문 파티션 고정 시각이 계획과 달라지면 manifest를 그대로 두고 공개를 거부한다")
+    void rejectsChangedCommonManifest() {
+        for (String field : List.of("checksum", "frozenAt")) {
+            var id = seed("checksum".equals(field) ? "2026-10-05" : "2026-10-12", 1);
+            jdbc.update("UPDATE weekly_ranking_order_partitions SET state='DONE' WHERE snapshot_id=?", id.toString());
+            if ("checksum".equals(field)) {
+                jdbc.update("UPDATE weekly_ranking_snapshots SET input_checksum=REPEAT('0',64) WHERE snapshot_id=?", id.toString());
+            } else {
+                jdbc.update("UPDATE weekly_ranking_order_partitions SET frozen_at=TIMESTAMPADD(SECOND,1,frozen_at) "
+                    + "WHERE snapshot_id=? AND order_partition_id=1", id.toString());
+            }
+            var original = jdbc.queryForMap("SELECT frozen_at,input_count,input_checksum FROM weekly_ranking_snapshots WHERE snapshot_id=?",
+                id.toString());
+            assertThatThrownBy(() -> context.getBean(WeeklyPlanFinalizer.class).finalizePlan(id)).isInstanceOf(SnapshotIntegrityException.class);
+            assertThat(jdbc.queryForMap("SELECT frozen_at,input_count,input_checksum FROM weekly_ranking_snapshots WHERE snapshot_id=?",
+                id.toString())).isEqualTo(original);
+            assertThat(count(id, "weekly_ranking_score_stage")).isZero();
+            assertThat(count(id, "weekly_ranking_publications")).isZero();
+        }
+    }
+
     private long count(UUID id, String table) {
         return jdbc.queryForObject("SELECT COUNT(*) FROM " + table + " WHERE snapshot_id=?", Long.class, id.toString());
     }
 
+    private record Purchase(int order, int product, int quantity) {}
+
     private UUID seed(String start, int revision) {
+        return seed(start, revision, List.of(new Purchase(42, 7, 2), new Purchase(43, 7, 3)));
+    }
+
+    private UUID seed(String start, int revision, List<Purchase> purchases) {
         var id = UUID.randomUUID();
         var period = new RankingPeriod(LocalDate.parse(start));
         var key = id.toString();
         jdbc.update("INSERT INTO weekly_ranking_snapshots(snapshot_id,period_start,period_end,revision,state,input_contract_version)"
-            + " VALUES (?,?,?,?,'FREEZING',2)", key, period.start(), period.end(), revision);
+            + " VALUES (?,?,?,?,'FREEZING',3)", key, period.start(), period.end(), revision);
         jdbc.update("INSERT INTO weekly_ranking_plans(snapshot_id,period_start,revision,order_partition_count) VALUES (?,?,?,2)",
             key, period.start(), revision);
-        for (int i = 0; i < 2; i++) {
-            int quantity = 2 + i;
-            int order = 42 + i;
-            var fingerprint = new PurchaseInputFingerprintAccumulator(period);
-            fingerprint.accept(order, 7, quantity, Instant.parse(start + "T12:00:00Z"));
-            jdbc.update("INSERT INTO weekly_ranking_order_partitions(snapshot_id,order_partition_id,preferred_node,local_grid,state,order_min,order_max,"
-                + "frozen_at,input_count,input_checksum) VALUES (?,?,'node',2,'RUNNING',?,?,?,1,?)",
-                key, i, i == 0 ? null : 43, i == 0 ? 43 : null, start + " 13:00:0" + i, fingerprint.finish().sha256());
-            jdbc.update("INSERT INTO weekly_ranking_snapshot_inputs VALUES (?,?,7,?,?)", key, order, quantity, start + " 12:00:00");
-            jdbc.update("INSERT INTO weekly_ranking_partial_scores VALUES (?,?,7,?)", key, i, quantity);
+        jdbc.update("""
+            INSERT INTO weekly_ranking_order_partitions(snapshot_id,order_partition_id,preferred_node,local_grid,state,order_min,order_max)
+            VALUES (?,0,'node',2,'RUNNING',NULL,43),(?,1,'node',2,'RUNNING',43,NULL)
+            """, key, key);
+        for (var purchase : purchases) {
+            jdbc.update("INSERT INTO weekly_ranking_snapshot_inputs VALUES (?,?,?,?,?)", key, purchase.order(), purchase.product(),
+                purchase.quantity(), start + " 12:00:00");
         }
+        CommonRankingInputFixture.seal(jdbc, key, period, List.of(43L), 2);
+        jdbc.update("""
+            INSERT INTO weekly_ranking_partial_scores(snapshot_id,order_partition_id,product_id,score)
+            SELECT snapshot_id,IF(order_id<43,0,1),product_id,SUM(quantity) FROM weekly_ranking_snapshot_inputs
+            WHERE snapshot_id=? GROUP BY snapshot_id,IF(order_id<43,0,1),product_id
+            """, key);
         return id;
     }
 }

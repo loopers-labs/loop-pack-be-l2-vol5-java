@@ -5,8 +5,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.loopers.application.ranking.command.WeeklyRankingOrderPartitionCommand;
-import com.loopers.domain.ranking.model.vo.RankingPeriod;
 import com.loopers.infrastructure.persistence.ranking.JdbcWeeklyRankingOrderPartitionInputs;
 import com.loopers.support.preservation.PreservedMySql;
 import java.time.Duration;
@@ -57,7 +55,6 @@ class WeeklyOrderPartitionIntegrityRecoveryTest {
     private WeeklyPlanStore plans;
     private JobRepository jobs;
     private WeeklyOrderPartitionExecutions runs;
-    private JdbcWeeklyRankingOrderPartitionInputs inputs;
     private LocalDate week = LocalDate.of(2026, 8, 17);
 
     @BeforeAll
@@ -98,7 +95,7 @@ class WeeklyOrderPartitionIntegrityRecoveryTest {
             }
             return call.proceed();
         });
-        inputs = (JdbcWeeklyRankingOrderPartitionInputs) proxy.getProxy();
+        var inputs = (JdbcWeeklyRankingOrderPartitionInputs) proxy.getProxy();
         plans = new WeeklyPlanStore(jdbc, manager);
         plans.register("node-a", 1, TIMEOUT);
         plans.register("node-b", 1, TIMEOUT);
@@ -227,7 +224,6 @@ class WeeklyOrderPartitionIntegrityRecoveryTest {
             UPDATE weekly_ranking_order_partitions SET state='RUNNING',owner_id='node-a',generation=1,execution_id=?,attempts=1
             WHERE snapshot_id=? AND order_partition_id=0
             """, execution.getId(), id);
-        inputs.freeze(new WeeklyRankingOrderPartitionCommand(snapshot, 0, new RankingPeriod(week), 1, "node-a", 1));
         var checksum = jdbc.queryForObject("SELECT input_checksum FROM weekly_ranking_order_partitions WHERE snapshot_id=? AND order_partition_id=0", String.class, id);
         if (corrupt) {
             jdbc.update("UPDATE weekly_ranking_order_partitions SET input_checksum=REPEAT('0',64) WHERE snapshot_id=? AND order_partition_id=0", id);

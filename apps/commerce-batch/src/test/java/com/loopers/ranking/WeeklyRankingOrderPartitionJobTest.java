@@ -2,8 +2,10 @@ package com.loopers.ranking;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.loopers.domain.ranking.model.vo.RankingPeriod;
 import com.loopers.support.preservation.PreservedMySql;
 import com.loopers.support.preservation.PreservationContexts;
+import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
@@ -64,17 +66,18 @@ class WeeklyRankingOrderPartitionJobTest {
             var jdbc = new JdbcTemplate(first.getBean(DataSource.class));
             jdbc.update("""
                 INSERT INTO weekly_ranking_snapshots(snapshot_id,period_start,period_end,revision,state,input_contract_version)
-                VALUES (?, '2026-08-17', '2026-08-24', 1, 'FREEZING', 2)
+                VALUES (?, '2026-08-17', '2026-08-24', 1, 'FREEZING', 3)
                 """, id);
             jdbc.update("""
                 INSERT INTO weekly_ranking_plans(snapshot_id,period_start,revision,order_partition_count,state)
-                VALUES (?, '2026-08-17', 1, 2, 'OPEN')
+                VALUES (?, '2026-08-17', 1, 1, 'OPEN')
                 """, id);
             jdbc.update("""
                 INSERT INTO weekly_ranking_order_partitions
                     (snapshot_id,order_partition_id,order_min,order_max,is_empty,preferred_node,local_grid,state,owner_id,generation)
-                VALUES (?,0,42,45,FALSE,'node-a',2,'RUNNING','node-a',1)
+                VALUES (?,0,NULL,NULL,FALSE,'node-a',2,'RUNNING','node-a',1)
                 """, id);
+            CommonRankingInputFixture.copyAndSeal(jdbc, id, new RankingPeriod(LocalDate.parse("2026-08-17")), List.of(), 1);
             try (var admin = database.connectAsAdministrator(); var ddl = admin.createStatement()) {
                 ddl.execute("""
                     CREATE TRIGGER fail_checkpoint BEFORE UPDATE ON BATCH_STEP_EXECUTION_CONTEXT FOR EACH ROW
@@ -111,7 +114,7 @@ class WeeklyRankingOrderPartitionJobTest {
             assertThat(run.getJobInstance().getId()).isEqualTo(failed.getJobInstance().getId());
             var durable = second.getBean(JobExplorer.class).getJobExecution(run.getId());
             assertThat(durable.getStepExecutions()).extracting(StepExecution::getStepName)
-                .contains("scoreWeeklyRankingLocalProductPartition:localProductPartition-0").doesNotContain("scoreWeeklyRankingLocalProductPartition:localProductPartition-1", "freezeWeeklyRankingOrderPartition");
+                .contains("scoreWeeklyRankingLocalProductPartition:localProductPartition-0").doesNotContain("scoreWeeklyRankingLocalProductPartition:localProductPartition-1", "verifyWeeklyRankingOrderPartitionInputs");
             var resumed = durable.getStepExecutions().stream().filter(step -> step.getStepName().equals("scoreWeeklyRankingLocalProductPartition:localProductPartition-0"))
                 .findFirst().orElseThrow();
             assertThat(resumed.getReadCount()).isOne();
@@ -123,8 +126,8 @@ class WeeklyRankingOrderPartitionJobTest {
     }
 
     @Test
-    @DisplayName("각 주문 파티션이 시작한 시점의 구매만 고정하며 양 끝 열린 범위와 빈 주문 파티션도 완료한다")
-    void freezesEachOrderPartitionAtItsOwnStart() throws Exception {
+    @DisplayName("이전 독립 고정 계약의 미완료 주문 파티션은 새 Job이 입력을 복사하거나 실행권을 연결할 수 없다")
+    void rejectsOpenLegacyPlan() throws Exception {
         var id = UUID.randomUUID().toString();
         try (var context = start()) {
             var jdbc = new JdbcTemplate(context.getBean(DataSource.class));
@@ -134,36 +137,20 @@ class WeeklyRankingOrderPartitionJobTest {
                 """, id);
             jdbc.update("""
                 INSERT INTO weekly_ranking_plans(snapshot_id,period_start,revision,order_partition_count,state)
-                VALUES (?, '2026-08-31', 1, 3, 'OPEN')
+                VALUES (?, '2026-08-31', 1, 1, 'OPEN')
                 """, id);
             jdbc.update("""
-                INSERT INTO weekly_ranking_order_partitions
-                    (snapshot_id,order_partition_id,order_min,order_max,is_empty,preferred_node,local_grid,state,owner_id,generation)
-                VALUES (?,0,NULL,43,FALSE,'a',2,'RUNNING','a',1),(?,1,43,NULL,FALSE,'b',2,'RUNNING','b',1),
-                       (?,2,NULL,NULL,TRUE,'c',2,'RUNNING','c',1)
-                """, id, id, id);
-            jdbc.update("""
-                INSERT INTO product_purchase_activities(inbox_id,order_id,product_id,quantity,confirmed_at)
-                VALUES (42,42,17,3,'2026-09-01 01:00:00'),(44,44,17,5,'2026-09-01 02:00:00')
-                """);
-            var launcher = context.getBean(JobLauncher.class);
-            var job = context.getBean("weeklyRankingOrderPartition", Job.class);
-            assertThat(launcher.run(job, parameters(id, 0, "2026-08-31", "a", 1)).getStatus()).isEqualTo(BatchStatus.COMPLETED);
-            jdbc.update("""
-                INSERT INTO product_purchase_activities(inbox_id,order_id,product_id,quantity,confirmed_at)
-                VALUES (42,42,18,20,'2026-09-01 01:00:00'),(44,44,18,10,'2026-09-01 02:00:00')
-                """);
-            assertThat(launcher.run(job, parameters(id, 1, "2026-08-31", "b", 1)).getStatus()).isEqualTo(BatchStatus.COMPLETED);
-            var empty = launcher.run(job, parameters(id, 2, "2026-08-31", "c", 1));
-            assertThat(empty.getStatus()).isEqualTo(BatchStatus.COMPLETED);
-            assertThat(empty.getStepExecutions()).extracting(StepExecution::getStepName)
-                .containsExactlyInAnyOrder("freezeWeeklyRankingOrderPartition", "calculateWeeklyRankingOrderPartition");
-            assertThat(jdbc.queryForList("SELECT input_count FROM weekly_ranking_order_partitions WHERE snapshot_id=? ORDER BY order_partition_id",
-                Long.class, id)).containsExactly(1L, 2L, 0L);
-            assertThat(jdbc.queryForList("""
-                SELECT CONCAT(order_partition_id,':',product_id,':',score) FROM weekly_ranking_partial_scores
-                WHERE snapshot_id=? ORDER BY order_partition_id,product_id
-                """, String.class, id)).containsExactly("0:17:3", "1:17:5", "1:18:10");
+                INSERT INTO weekly_ranking_order_partitions(snapshot_id,order_partition_id,preferred_node,local_grid,state,owner_id,generation)
+                VALUES (?,0,'a',1,'RUNNING','a',1)
+                """, id);
+            var run = context.getBean(JobLauncher.class).run(context.getBean("weeklyRankingOrderPartition", Job.class),
+                parameters(id, 0, "2026-08-31", "a", 1));
+            assertThat(run.getStatus()).isEqualTo(BatchStatus.FAILED);
+            assertThat(run.getStepExecutions()).isEmpty();
+            assertThat(jdbc.queryForObject("SELECT execution_id FROM weekly_ranking_order_partitions WHERE snapshot_id=?", Long.class, id))
+                .isNull();
+            assertThat(jdbc.queryForObject("SELECT state FROM weekly_ranking_plans WHERE snapshot_id=?", String.class, id)).isEqualTo("OPEN");
+            assertThat(jdbc.queryForObject("SELECT frozen_at FROM weekly_ranking_snapshots WHERE snapshot_id=?", String.class, id)).isNull();
         }
     }
 

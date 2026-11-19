@@ -17,6 +17,7 @@ import java.util.regex.Pattern;
 import javax.sql.DataSource;
 import org.springframework.stereotype.Repository;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -59,6 +60,10 @@ public class JdbcRankingSnapshotRepository implements RankingSnapshotRepository 
 
     @Override
     public void copyInputs(UUID snapshotId, RankingPeriod period) {
+        copyInputs(jdbc, snapshotId, period);
+    }
+
+    public static void copyInputs(JdbcTemplate jdbc, UUID snapshotId, RankingPeriod period) {
         jdbc.update("""
             INSERT INTO weekly_ranking_snapshot_inputs (snapshot_id,order_id,product_id,quantity,confirmed_at)
             SELECT ?,order_id,product_id,quantity,confirmed_at
@@ -72,6 +77,13 @@ public class JdbcRankingSnapshotRepository implements RankingSnapshotRepository 
     @Override
     public InputFingerprint fingerprint(UUID snapshotId, RankingPeriod period) {
         var checksum = new PurchaseInputFingerprintAccumulator(period);
+        readInputs(jdbc, snapshotId, result -> checksum.accept(result.getLong("order_id"), result.getLong("product_id"),
+            result.getInt("quantity"), result.getObject("confirmed_at", LocalDateTime.class).toInstant(ZoneOffset.UTC)));
+        // JdbcTemplate has consumed and closed the streaming ResultSet before the next manifest statement.
+        return checksum.finish();
+    }
+
+    static void readInputs(JdbcTemplate jdbc, UUID snapshotId, RowCallbackHandler handler) {
         jdbc.query(connection -> {
             var statement = connection.prepareStatement("""
                 SELECT order_id,product_id,quantity,confirmed_at FROM weekly_ranking_snapshot_inputs
@@ -80,11 +92,7 @@ public class JdbcRankingSnapshotRepository implements RankingSnapshotRepository 
             statement.setString(1, snapshotId.toString());
             statement.setFetchSize(Integer.MIN_VALUE);
             return statement;
-        }, (org.springframework.jdbc.core.RowCallbackHandler) result -> checksum.accept(result.getLong("order_id"),
-            result.getLong("product_id"), result.getInt("quantity"),
-            result.getObject("confirmed_at", LocalDateTime.class).toInstant(ZoneOffset.UTC)));
-        // JdbcTemplate has consumed and closed the streaming ResultSet before the next manifest statement.
-        return checksum.finish();
+        }, handler);
     }
 
     @Override

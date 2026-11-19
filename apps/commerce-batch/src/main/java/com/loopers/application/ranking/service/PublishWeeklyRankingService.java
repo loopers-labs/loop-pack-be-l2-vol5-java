@@ -30,7 +30,7 @@ public class PublishWeeklyRankingService {
 
     @Transactional(propagation = Propagation.MANDATORY)
     public WeeklyRankingPublicationResult publishPartitioned(PublishWeeklyRankingCommand command, InputFingerprint verified) {
-        return publishChecked(command, 2, Objects.requireNonNull(verified));
+        return publishChecked(command, InputFingerprint.PARTITIONED_CONTRACT_VERSION, Objects.requireNonNull(verified));
     }
 
     private WeeklyRankingPublicationResult publishChecked(PublishWeeklyRankingCommand command, int contract,

@@ -125,7 +125,9 @@ class WeeklyRankingIntegrityRecoveryTest {
                 assertThat(third).isNotIn(first, second);
                 var requested = observe(jdbc, third, "revision-3-requested");
                 assertThat(requested.plan()).isEqualTo("OPEN");
-                assertThat(requested.inputs()).isEmpty();
+                assertThat(requested.inputs()).isEqualTo(failed.source());
+                assertThat(requested.manifestCount()).isEqualTo(2);
+                assertThat(requested.inputHash()).isEqualTo(requested.manifestHash());
                 assertThat(requested.executions()).isEmpty();
                 assertThat(requested.pointer()).isEqualTo(original.pointer());
                 resident.work();
@@ -183,7 +185,7 @@ class WeeklyRankingIntegrityRecoveryTest {
                     SELECT CONCAT(STEP_NAME,':',STATUS) FROM BATCH_STEP_EXECUTION WHERE JOB_EXECUTION_ID=? ORDER BY STEP_EXECUTION_ID
                     """, String.class, run.getId());
                 System.out.printf("integrity worker execution=%s steps=%s%n", run.getId(), steps);
-                assertThat(steps).contains("freezeWeeklyRankingOrderPartition:COMPLETED",
+                assertThat(steps).contains("verifyWeeklyRankingOrderPartitionInputs:COMPLETED",
                     "scoreWeeklyRankingLocalProductPartition:localProductPartition-0:FAILED");
                 var errors = context.getBean(JdbcTemplate.class).queryForList("""
                     SELECT EXIT_MESSAGE FROM BATCH_STEP_EXECUTION
