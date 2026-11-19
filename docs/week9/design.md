@@ -237,7 +237,10 @@
 
 ### 업무 규칙 위반은 새 오류 코드로 400 을 준다 (D-190)
 
-**`periodStart` 가 월요일이 아니거나 `limit` 이 1 ~ 100 밖이면 `ProductErrorCode` 에 추가한 코드로 400 을 준다.** 날짜 형식 오류 · 파라미터 누락은 기존 `ApiControllerAdvice` 처리(400)를 그대로 쓴다.
+**`periodStart` 가 월요일이 아니거나 `limit` 이 1 ~ 100 밖이면 `ProductErrorCode` 에 추가한 코드(`INVALID_RANKING_PERIOD`, `INVALID_RANKING_LIMIT`)로 400 을 준다.** 날짜 형식 오류 · 파라미터 누락은 기존 `ApiControllerAdvice` 처리(400, `BAD_REQUEST`)를 그대로 쓴다.
+
+- `limit` 을 생략하면 10 이다(과제 예시). 범위 밖 값은 기본값으로 바꾸지 않고 거절한다.
+- 공개본이 없을 때 `snapshotId` · `frozenAt` 은 응답에서 빠진다. 프로젝트 Jackson 설정이 null 필드를 내보내지 않는다.
 
 ## 7. 늦은 구매
 

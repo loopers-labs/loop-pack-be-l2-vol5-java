@@ -32,6 +32,8 @@ public final class ErrorStatusMapper {
         Map.entry(ProductErrorCode.INVALID_PRICE, HttpStatus.BAD_REQUEST),
         Map.entry(ProductErrorCode.OUT_OF_STOCK, HttpStatus.CONFLICT),
         Map.entry(ProductErrorCode.INVALID_STOCK, HttpStatus.BAD_REQUEST),
+        Map.entry(ProductErrorCode.INVALID_RANKING_PERIOD, HttpStatus.BAD_REQUEST),
+        Map.entry(ProductErrorCode.INVALID_RANKING_LIMIT, HttpStatus.BAD_REQUEST),
         Map.entry(UserErrorCode.USER_NOT_FOUND, HttpStatus.NOT_FOUND),
         Map.entry(PointErrorCode.INVALID_CHARGE_AMOUNT, HttpStatus.BAD_REQUEST),
         Map.entry(PointErrorCode.BALANCE_LIMIT_EXCEEDED, HttpStatus.CONFLICT),
