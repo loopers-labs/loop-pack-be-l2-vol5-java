@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>두 서버가 동시에 월요일을 맞으면 누가 랭킹 계산을 시작할까요? · 주간 구매 랭킹</title>
+  <link rel="stylesheet" href="guide.css">
+  <script defer src="lesson.js"></script>
+</head>
+<body>
+<header class="mast"><div class="shell">
+  <a class="brand" href="index.html"><svg aria-hidden="true" viewBox="0 0 24 18"><rect x="1" y="11" width="5" height="7"/><rect x="9" y="6" width="5" height="12"/><rect x="17" y="1" width="5" height="17"/></svg>주간 구매 랭킹</a>
+  <nav aria-label="학습 자료"><a href="index.html#contents">주제 목차</a><a href="../weekly-ranking-flow.html">전체 애니메이션 ↗</a></nav>
+</div></header>
+<main class="shell">
+  <header class="intro"><p class="letter">실행 준비와 분할 / 스케줄러</p>
+    <h1>두 서버가 동시에 월요일을 맞으면 누가 랭킹 계산을 시작할까요?</h1><p class="lead">배치 프로그램을 실행하는 자바 프로세스(JVM)마다 스케줄러가 하나씩 있습니다. 두 스케줄러가 지난주 랭킹을 동시에 요청해도 데이터베이스(MySQL)에 계획은 하나만 만들어지고, 각 JVM은 그 계획에서 자기 몫의 주문을 가져갑니다.</p>
+  </header>
+  <div class="reader">
+    <figure id="lab" class="lab" aria-labelledby="lab-title">
+      <div class="lab-head"><h2 id="lab-title">스케줄러 단계별로 보기</h2>
+        <div class="controls" hidden>
+          <button type="button" data-play>흐름 재생</button><button type="button" data-prev>이전</button><button type="button" data-next>다음</button>
+          <button type="button" data-repeat hidden>같은 3점 다시 보내기</button><span data-count></span>
+        </div>
+      </div>
+      <div class="step-tabs" role="group" aria-label="장면 선택" hidden>
+        <button type="button" data-pick="0">서버 등록</button>
+        <button type="button" data-pick="1">주차 확인</button>
+        <button type="button" data-pick="2">계획 확정</button>
+        <button type="button" data-pick="3">구간 선점</button>
+      </div>
+      <svg id="diagram" role="img" hidden></svg>
+      <ol class="stages">
+      <li class="stage">
+        <h3>A와 B가 살아 있다는 신호를 남깁니다</h3>
+        <dl class="nodes">
+          <div><dt>서버 A</dt><dd>생존 신호</dd></div>
+          <div><dt>MySQL</dt><dd>가동 서버 A·B</dd></div>
+          <div><dt>서버 B</dt><dd>생존 신호</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="0" data-to="1">등록</li>
+          <li data-from="2" data-to="1">등록</li>
+        </ul>
+        <p class="stage-note">각 JVM은 자신의 이름과 마지막 응답 시각을 주기적으로 남깁니다. 한 JVM이 여러 번 신호를 보내도 활성 목록에는 그 이름이 한 번만 들어갑니다.</p>
+      </li>
+      <li class="stage">
+        <h3>한국 시각 월요일 09시 01분부터 지난주가 계산 대상입니다</h3>
+        <dl class="nodes">
+          <div><dt>서버 A</dt><dd>지난주 확인</dd></div>
+          <div><dt>MySQL</dt><dd>지난주 R1</dd></div>
+          <div><dt>서버 B</dt><dd>지난주 확인</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="0" data-to="1">계획 요청</li>
+          <li data-from="2" data-to="1">계획 요청</li>
+        </ul>
+        <p class="stage-note">매주 월요일 00시 01분 UTC부터 각 스케줄러가 지난주 계획을 확인합니다. 두 서버가 동시에 같은 주를 요청할 수 있습니다.</p>
+      </li>
+      <li class="stage">
+        <h3>하나가 계획을 저장하는 동안 다른 하나는 기다립니다</h3>
+        <dl class="nodes">
+          <div><dt>서버 A</dt><dd>먼저 계획 생성</dd></div>
+          <div><dt>MySQL</dt><dd>주차 행 잠금</dd></div>
+          <div><dt>서버 B</dt><dd>같은 행 대기</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="0" data-to="1">잠금 획득</li>
+          <li data-from="2" data-to="1">잠금 대기</li>
+        </ul>
+        <p class="stage-note">먼저 도착한 A는 그 주에 고객에게 보여 줄 판본을 가리키는 DB 행(공개 포인터)을 잠급니다. 기존 R1 계획이 없으면 생존 신호가 유효한 JVM을 조회합니다. 이때 찾은 JVM 수가 주문 구간 수 N입니다. 여기서는 A와 B가 모두 보여 N=2입니다.</p>
+      </li>
+      <li class="stage">
+        <h3>하나의 계획에서 A와 B가 서로 다른 구간을 맡습니다</h3>
+        <dl class="nodes">
+          <div><dt>서버 A</dt><dd>구간 0 실행</dd></div>
+          <div><dt>MySQL</dt><dd>계획 1개·구간 2개</dd></div>
+          <div><dt>서버 B</dt><dd>구간 1 실행</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="1" data-to="0">구간 배정</li>
+          <li data-from="1" data-to="2">구간 배정</li>
+        </ul>
+        <p class="stage-note">A가 계획·구매 사본·주문 경계를 한 트랜잭션으로 함께 확정하면 잠금이 풀립니다. 기다리던 B는 같은 주차·판본의 기존 계획을 재사용합니다. 그다음 각 스케줄러는 MySQL의 SKIP LOCKED로 다른 실행자가 잠근 구간을 건너뛰고 자기 구간의 실행권을 얻습니다.</p>
+      </li>
+      </ol>
+      <p class="sr-only" data-live role="status" aria-live="polite"></p>
+      <figcaption><a href="../weekly-ranking-flow.html?case=replay&amp;step=0#flow-figure">계획을 요청하는 두 JVM</a> · 함께 읽기 &ndash; <a href="partitioning.html">배치 파티셔닝</a></figcaption>
+    </figure>
+    <aside class="terms" aria-labelledby="terms-title"><h2 id="terms-title">이 장의 용어</h2>
+      <dl><dt>스케줄러</dt><dd>정해진 때가 됐거나 맡을 일이 생겼는지 주기적으로 확인하는 프로그램입니다.</dd>
+        <dt>생존 신호</dt><dd>실행 중인 서버가 DB에 정기적으로 남기는 마지막 응답 시각입니다. heartbeat라고도 합니다.</dd>
+        <dt>판본(revision)</dt><dd>같은 주를 몇 번째로 계산했는지 나타내는 번호입니다. 자동으로 만드는 첫 판본은 R1입니다.</dd></dl>
+    </aside>
+  </div>
+  <figure class="route" aria-labelledby="late-member-title">
+    <h2 id="late-member-title">A가 혼자 계획을 만든 직후 B가 켜지면요?</h2>
+    <ol>
+      <li><strong>A만 활성</strong><span>R1의 계획을 만들 때 생존 신호가 유효한 JVM은 A 한 대입니다.</span></li>
+      <li><strong>R1은 N=1</strong><span>MySQL에 주문 구간 하나와 경계를 함께 저장합니다.</span></li>
+      <li><strong>B 합류</strong><span>B의 스케줄러가 곧바로 같은 R1을 요청해도 저장된 구간 수는 1입니다.</span></li>
+      <li><strong>R2는 N=2</strong><span>R1 공개 뒤 운영자가 R2를 요청할 때 A와 B가 모두 활성이라면 새 계획에 두 구간을 만듭니다.</span></li>
+    </ol>
+    <figcaption>예시에서 N은 새 판본의 계획을 처음 만들 때 조회한 활성 JVM 수입니다. 이미 만든 판본에 같은 요청이 여러 번 도착해도 그 판본의 N과 주문 경계는 유지됩니다.</figcaption>
+  </figure>
+  <div class="followup">
+    <section><h2>모든 서버가 쉬었거나 주문이 하나도 없던 주는 어떻게 되나요?</h2><p>처음 켜면 가장 최근에 마감한 주부터 시작합니다. 그 뒤에는 마지막으로 자동 계획을 저장한 주를 기억했다가, 재가동하면 그다음 주부터 빠진 계획을 차례로 만듭니다. 구매가 0건인 주도 계산을 마치면 빈 랭킹을 공개합니다.</p></section>
+    <section class="sources"><h2>구현과 검증 근거</h2><ul>
+      <li><a href="../../../apps/commerce-batch/src/main/java/com/loopers/batch/job/ranking/coordination/WeeklySchedulerConfiguration.java">스케줄러의 주차 계산과 빠진 주 보충</a></li>
+      <li><a href="../../../apps/commerce-batch/src/main/java/com/loopers/batch/job/ranking/coordination/WeeklyPlanStore.java">주차 행 잠금과 구간 선점 SQL</a></li>
+      <li><a href="../../../apps/commerce-batch/src/test/java/com/loopers/batch/job/ranking/coordination/WeeklyPlanGlobalFreezeTest.java">두 요청이 같은 계획을 얻은 MySQL 시험</a></li>
+    </ul></section>
+  </div>
+  <nav class="footer" aria-label="이어 읽기"><a href="index.html">← 구매에서 랭킹까지</a>
+    <a href="index.html#contents">전체 목차</a> <a href="snapshot.html">스냅샷 →</a>
+  </nav>
+</main>
+</body></html>

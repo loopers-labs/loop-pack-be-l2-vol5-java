@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>B가 3점을 두 번 보내도 왜 8점이 되지 않을까요? · 주간 구매 랭킹</title>
+  <link rel="stylesheet" href="guide.css">
+  <script defer src="lesson.js"></script>
+</head>
+<body>
+<header class="mast"><div class="shell">
+  <a class="brand" href="index.html"><svg aria-hidden="true" viewBox="0 0 24 18"><rect x="1" y="11" width="5" height="7"/><rect x="9" y="6" width="5" height="12"/><rect x="17" y="1" width="5" height="17"/></svg>주간 구매 랭킹</a>
+  <nav aria-label="학습 자료"><a href="index.html#contents">주제 목차</a><a href="../weekly-ranking-flow.html">전체 애니메이션 ↗</a></nav>
+</div></header>
+<main class="shell">
+  <header class="intro"><p class="letter">점수 계산과 고객 공개 / 배치 멱등성</p>
+    <h1>B가 3점을 두 번 보내도 왜 8점이 되지 않을까요?</h1><p class="lead">B가 보내는 3점은 자기 주문 구간에서 상품 7을 산 전체 수량입니다. 저장소는 같은 구간의 같은 상품에 이미 3점이 있는지 확인하므로, 재전달 후에도 A의 2점과 B의 3점만 남습니다.</p>
+  </header>
+  <div class="reader">
+    <figure id="lab" class="lab" aria-labelledby="lab-title">
+      <div class="lab-head"><h2 id="lab-title">배치 멱등성 단계별로 보기</h2>
+        <div class="controls" hidden>
+          <button type="button" data-play>흐름 재생</button><button type="button" data-prev>이전</button><button type="button" data-next>다음</button>
+          <button type="button" data-repeat hidden>같은 3점 다시 보내기</button><span data-count></span>
+        </div>
+      </div>
+      <div class="step-tabs" role="group" aria-label="장면 선택" hidden>
+        <button type="button" data-pick="0">A의 2점 쓰기</button>
+        <button type="button" data-pick="1">B의 3점 쓰기</button>
+        <button type="button" data-pick="2">같은 3점 재전달</button>
+        <button type="button" data-pick="3">4점 충돌 실험</button>
+      </div>
+      <svg id="diagram" role="img" hidden></svg>
+      <ol class="stages">
+      <li class="stage">
+        <h3>A가 자신의 구간에서 계산한 2점을 기록합니다</h3>
+        <dl class="nodes">
+          <div><dt>도착한 쓰기</dt><dd>A · 상품 7 · 2점</dd></div>
+          <div><dt>상품 7 저장 행</dt><dd>A 2점</dd></div>
+          <div><dt>부분 점수 합</dt><dd>1행 · 2점</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="0" data-to="1">A 행 생성</li>
+          <li data-from="1" data-to="2">합계 확인</li>
+        </ul>
+        <p class="stage-note">한 주의 같은 고정 입력으로 계산한다고 가정합니다. A와 B는 독립적으로 일하며 그림에서는 쓰기 한 번의 효과를 보려고 A부터 표시합니다.</p>
+      </li>
+      <li class="stage">
+        <h3>B의 3점은 같은 상품의 두 번째 행에 들어갑니다</h3>
+        <dl class="nodes">
+          <div><dt>도착한 쓰기</dt><dd>B · 상품 7 · 3점</dd></div>
+          <div><dt>상품 7 저장 행</dt><dd>A 2점 · B 3점</dd></div>
+          <div><dt>부분 점수 합</dt><dd>2행 · 5점</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="0" data-to="1">B 행 생성</li>
+          <li data-from="1" data-to="2">두 행 합산</li>
+        </ul>
+        <p class="stage-note">상품 번호는 둘 다 7이지만 주문 구간 번호가 다릅니다. B의 행을 만든 뒤에도 A의 2점 행이 그대로 남습니다.</p>
+      </li>
+      <li class="stage" data-repeat="true" data-rows='[["A",2],["B",3]]' data-delivery='["B",3]'>
+        <h3>같은 키에 같은 3점이 다시 도착합니다</h3>
+        <dl class="nodes">
+          <div><dt>다시 도착한 쓰기</dt><dd>B · 상품 7 · 3점</dd></div>
+          <div><dt>상품 7 저장 행</dt><dd>A 2점 · B 3점</dd></div>
+          <div><dt>부분 점수 합</dt><dd>2행 · 5점</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="0" data-to="1">기존 3점 확인</li>
+          <li data-from="1" data-to="2">합계 유지</li>
+        </ul>
+        <p class="stage-note">두 배치 서버로 실행한 시험에서 MySQL은 B 행의 기존값 3과 재전달된 값 3을 기록했습니다. 같은 키에 이미 같은 값이 있으므로 이 쓰기도 성공합니다.</p>
+      </li>
+      <li class="stage">
+        <h3>별도 충돌 시험에서 B가 같은 키에 4점을 보내면 공개를 멈춥니다</h3>
+        <dl class="nodes">
+          <div><dt>다른 값 시도</dt><dd>B · 상품 7 · 4점</dd></div>
+          <div><dt>상품 7 저장 행</dt><dd>A 2점 · B 3점</dd></div>
+          <div><dt>공개 판정</dt><dd>값 충돌 · 보류</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="0" data-to="1">3과 4 대조</li>
+          <li data-from="1" data-to="2">충돌 기록</li>
+        </ul>
+        <p class="stage-note">이 실험은 B가 아직 쓰기 권한을 가진 시점에서 시작합니다. 4점을 쓰던 작업을 되돌린 뒤에도 기존 3점과 시도값 4의 충돌 기록은 남고, 이 계산 결과의 공개가 보류됩니다.</p>
+      </li>
+      </ol>
+      <p class="sr-only" data-live role="status" aria-live="polite"></p>
+      <figcaption><a href="../weekly-ranking-flow.html?case=replay&amp;step=3#flow-figure">B의 3점을 다시 보내는 장면</a> · 함께 읽기 &ndash; <a href="consistency.html">배치 정합성</a></figcaption>
+    </figure>
+    <aside class="terms" aria-labelledby="terms-title"><h2 id="terms-title">이 장의 용어</h2>
+      <dl><dt>멱등성</dt><dd>같은 작업을 여러 번 적용해도 최종 결과가 한 번 적용했을 때와 같은 성질입니다.</dd>
+        <dt>행의 키</dt><dd>저장된 기록 한 줄을 찾는 주소입니다. 이 표에서는 구매 사본의 식별자(ID), 주문 구간 번호, 상품 번호를 함께 씁니다.</dd>
+        <dt>충돌 기록</dt><dd>같은 키로 다른 값이 도착했을 때, 처음 값과 새로 시도한 값을 따로 남기는 기록입니다.</dd></dl>
+    </aside>
+  </div>
+  <div class="followup">
+    <section><h2>실제 재시작 때마다 B가 같은 점수를 다시 쓰나요?</h2><p>운영 설정은 이미 완료된 작업 단계를 건너뜁니다. 두 서버 시험에서는 B의 완료된 단계도 한 번 더 실행하도록 설정해, 같은 쓰기가 저장소까지 실제로 도착해도 점수가 유지되는지 확인했습니다.</p></section>
+    <section class="sources"><h2>구현과 검증 근거</h2><ul>
+      <li><a href="../verification.md#서로-다른-두-jvm의-2점3점과-b의-재전달">두 서버에서 같은 3점을 실제로 재전달한 기록</a></li>
+      <li><a href="../../../apps/commerce-batch/src/test/java/com/loopers/ranking/OrderPartitionScoreConsistencyTest.java">다른 값 4를 시도하고 기존값 3을 확인한 시험</a></li>
+      <li><a href="../../../apps/commerce-streamer/src/test/java/com/loopers/application/ranking/WeeklyRankingEqualScoreReplayProcessTest.java">재전달된 값과 최종 5점을 읽은 두 프로세스 시험</a></li>
+    </ul></section>
+  </div>
+  <nav class="footer" aria-label="이어 읽기"><a href="consistency.html">← 배치 정합성</a>
+    <a href="index.html#contents">전체 목차</a> <a href="publication.html">검산과 고객 공개 →</a>
+  </nav>
+</main>
+</body></html>

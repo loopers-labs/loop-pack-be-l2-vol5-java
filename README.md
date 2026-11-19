@@ -31,7 +31,7 @@
 | [5주차](docs/week5/total_requirement.md) | PG 결제·장애 회복, 당시 최종 점검 |
 | [6~7주차](docs/week6-7/README.md) | Outbox·Kafka·Inbox와 전달 복구 |
 | [8주차](docs/week8/README.md) | DB 쿠폰 발급·인스턴스별 수용 제어·Redis 누적 집계 |
-| [9주차](docs/week9-partitioned/README.md) | 주문 파티션 분배·로컬 상품 파티셔닝·주간 랭킹 공개와 장애 인수 |
+| [9주차](docs/week9-partitioned/README.md) | [구매에서 주간 랭킹까지 · 주제별 HTML 가이드](docs/week9-partitioned/guide/index.html), 주문 파티션 분배·주간 랭킹 공개와 장애 인수 |
 
 과제 원문은 출처로, 과거 결과·수치는 해당 실행 시점의 근거로 읽는다. 과거 계획의 미체크나 브랜치 지시는
 현재 미완료·다음 작업의 증거가 아니다. 현재 코드와 다른 정책은 현행 안내의 차이 설명을 함께 확인한다.

@@ -233,7 +233,7 @@ code { font-family: var(--mono); }
   <header class="mast">
     <div class="shell mast-inner">
       <span class="mast-name"><span aria-hidden="true" class="symbol"><i></i><i></i><i></i></span> 주간 구매 랭킹</span>
-      <nav aria-label="참고 문서"><a href="adr-0001-weekly-ranking.md">설계 ADR <span aria-hidden="true">↗</span></a><a href="verification.md">검증 기록 <span aria-hidden="true">↗</span></a></nav>
+      <nav aria-label="참고 문서"><a href="guide/index.html">주제별 가이드</a><a href="adr-0001-weekly-ranking.md">설계 ADR <span aria-hidden="true">↗</span></a><a href="verification.md">검증 기록 <span aria-hidden="true">↗</span></a></nav>
     </div>
   </header>
   <main class="shell">
@@ -4190,9 +4190,15 @@ const extraCases = {
   });
   byId("back").addEventListener("click", () => goTo(currentIndex() - 1));
   byId("jump").addEventListener("click", () => { goTo(3); byId("next").focus(); });
-  choose("replay");
+  const entryParams = new URLSearchParams(location.search);
+  const requestedCase = entryParams.get("case");
+  const entryCase = Object.hasOwn(heroes, requestedCase) ? requestedCase : "replay";
+  choose(entryCase);
+  const requestedStep = Number(entryParams.get("step"));
+  const entryStep = Number.isInteger(requestedStep) && requestedStep >= 0 && requestedStep < steps().length ? requestedStep : 0;
+  if (entryStep) goTo(entryStep);
   // The presentation link starts playback when its diagram is on screen. The local file opens paused.
-  if (new URLSearchParams(location.search).get("play") === "1" && !reducedMotion.matches) {
+  if (entryParams.get("play") === "1" && !reducedMotion.matches) {
     const figure = byId("flow-figure");
     let inView = false;
     const visible = new IntersectionObserver(entries => {
@@ -4202,7 +4208,7 @@ const extraCases = {
     function startWhenVisible() {
       if (!inView || document.hidden) return;
       cancelPreview();
-      if (!reducedMotion.matches && active === "replay" && currentIndex() === 0 && !playback) togglePlayback();
+      if (!reducedMotion.matches && active === entryCase && currentIndex() === entryStep && !playback) togglePlayback();
     }
     function cancelPreview() {
       visible.disconnect();

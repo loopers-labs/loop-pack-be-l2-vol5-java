@@ -1,5 +1,7 @@
 # 주문 파티션별 주간 구매 랭킹
 
+처음 읽는다면 [구매에서 주간 랭킹까지 · 주제별 학습 가이드](guide/index.html)에서 시작한다. HTML을 브라우저에서 열어 주문 분할, 3점 재전달, 장애 복구를 장면별로 따라갈 수 있다.
+
 Kafka 소비자가 주문의 구매 활동을 적재한다. 각 Batch 인스턴스의 스케줄러는 지난주의 입력을 함께 사용할 계획을 찾거나 만든다. 주차·revision당 한 번 고정한 입력을 주문번호 구간으로 나누고, 각 JVM은 자기 구간의 상품을 Spring Batch Local Partitioning으로 병렬 집계한다. 모든 구간의 부분 점수가 고정 입력과 일치하면 새 랭킹을 공개한다.
 
 고객 조회는 `GET /api/v1/rankings/weekly?periodStart=2026-08-17&limit=10`이다. limit은 기본 10, 범위 1~100이다. 미공개는 `NOT_PUBLISHED`, 구매 0건 완성본은 snapshot ID가 있는 `PUBLISHED`다. 비공개 상품·브랜드를 제외한 뒤 limit을 적용하며, 표시되는 상품은 저장된 순위를 유지한다.

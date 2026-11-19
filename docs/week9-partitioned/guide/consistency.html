@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>합계가 5점인데도 공개를 멈추는 이유는 뭘까요? · 주간 구매 랭킹</title>
+  <link rel="stylesheet" href="guide.css">
+  <script defer src="lesson.js"></script>
+</head>
+<body>
+<header class="mast"><div class="shell">
+  <a class="brand" href="index.html"><svg aria-hidden="true" viewBox="0 0 24 18"><rect x="1" y="11" width="5" height="7"/><rect x="9" y="6" width="5" height="12"/><rect x="17" y="1" width="5" height="17"/></svg>주간 구매 랭킹</a>
+  <nav aria-label="학습 자료"><a href="index.html#contents">주제 목차</a><a href="../weekly-ranking-flow.html">전체 애니메이션 ↗</a></nav>
+</div></header>
+<main class="shell">
+  <header class="intro"><p class="letter">점수 계산과 고객 공개 / 배치 정합성</p>
+    <h1>합계가 5점인데도 공개를 멈추는 이유는 뭘까요?</h1><p class="lead">상품 7을 A 구간에서 2개, B 구간에서 3개 샀다면 각 구간의 점수도 2점과 3점이어야 합니다. A에서 1개를 빼고 B에 1개를 더한 잘못은 합계만 보면 놓칩니다.</p>
+  </header>
+  <div class="reader">
+    <figure id="lab" class="lab" aria-labelledby="lab-title">
+      <div class="lab-head"><h2 id="lab-title">배치 정합성 단계별로 보기</h2>
+        <div class="controls" hidden>
+          <button type="button" data-play>흐름 재생</button><button type="button" data-prev>이전</button><button type="button" data-next>다음</button>
+          <button type="button" data-repeat hidden>같은 3점 다시 보내기</button><span data-count></span>
+        </div>
+      </div>
+      <div class="step-tabs" role="group" aria-label="장면 선택" hidden>
+        <button type="button" data-pick="0">주문 확인</button>
+        <button type="button" data-pick="1">정상값 대조</button>
+        <button type="button" data-pick="2">오류 사례 보기</button>
+        <button type="button" data-pick="3">구간별로 검산</button>
+      </div>
+      <svg id="diagram" role="img" hidden></svg>
+      <ol class="stages">
+      <li class="stage">
+        <h3>주문 두 건에서 상품 7의 정답을 읽습니다</h3>
+        <dl class="nodes">
+          <div><dt>고정 구매 내역</dt><dd>상품 7</dd></div>
+          <div><dt>A 구간의 정답</dt><dd>주문 42 · 2개</dd></div>
+          <div><dt>B 구간의 정답</dt><dd>주문 43 · 3개</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="0" data-to="1">A 주문 확인</li>
+          <li data-from="0" data-to="2">B 주문 확인</li>
+        </ul>
+        <p class="stage-note">검산할 때는 계산 결과와 독립된 기준이 필요합니다. 이 주에 고정한 구매 내역을 주문 구간과 상품 번호로 묶어 기대 수량을 구합니다.</p>
+      </li>
+      <li class="stage">
+        <h3>각 구간의 저장값이 원래 수량과 맞으면 5점을 얻습니다</h3>
+        <dl class="nodes">
+          <div><dt>A · 상품 7</dt><dd>구매 2 = 저장 2</dd></div>
+          <div><dt>B · 상품 7</dt><dd>구매 3 = 저장 3</dd></div>
+          <div><dt>상품 7 주간 점수</dt><dd>2 + 3 = 5점</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="0" data-to="2">2점 합산</li>
+          <li data-from="1" data-to="2">3점 합산</li>
+        </ul>
+        <p class="stage-note">주간 점수 5점도 고정 입력의 상품 7 총구매량 5개와 대조합니다. 모든 구간이 완료되고 충돌이 없어야 공개 단계로 넘어갑니다.</p>
+      </li>
+      <li class="stage">
+        <h3>별도 시험에서 구간 점수를 1점과 4점으로 바꿨습니다</h3>
+        <dl class="nodes">
+          <div><dt>A · 상품 7</dt><dd>구매 2 ≠ 저장 1</dd></div>
+          <div><dt>B · 상품 7</dt><dd>구매 3 ≠ 저장 4</dd></div>
+          <div><dt>합계만 본 결과</dt><dd>1 + 4 = 5점</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="0" data-to="2">1점 합산</li>
+          <li data-from="1" data-to="2">4점 합산</li>
+        </ul>
+        <p class="stage-note">실제 MySQL 시험에서 정상값 2와 3을 일부러 바꿨습니다. A에서 빠진 1점과 B에서 늘어난 1점이 상쇄되어 주간 합계는 여전히 5점입니다.</p>
+      </li>
+      <li class="stage">
+        <h3>구간별 비교에서 두 오류가 드러납니다</h3>
+        <dl class="nodes">
+          <div><dt>A · 상품 7</dt><dd>1점 부족</dd></div>
+          <div><dt>B · 상품 7</dt><dd>1점 초과</dd></div>
+          <div><dt>공개 판정</dt><dd>새 랭킹 보류</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="0" data-to="2">불일치 확인</li>
+          <li data-from="1" data-to="2">불일치 확인</li>
+        </ul>
+        <p class="stage-note">1점과 4점을 넣은 시험에서는 공개할 최종 점수도, 고객이 읽을 새 판본을 가리키는 기록도 생기지 않았습니다. 이미 공개본이 있는 주에 검산을 실패시킨 별도 시험에서는 고객이 계속 이전 순위를 조회했습니다.</p>
+      </li>
+      </ol>
+      <p class="sr-only" data-live role="status" aria-live="polite"></p>
+      <figcaption><a href="../weekly-ranking-flow.html?case=replay&amp;step=4#flow-figure">검산을 기다리는 두 부분합</a> · 함께 읽기 &ndash; <a href="idempotency.html">배치 멱등성</a></figcaption>
+    </figure>
+    <aside class="terms" aria-labelledby="terms-title"><h2 id="terms-title">이 장의 용어</h2>
+      <dl><dt>정합성</dt><dd>저장한 점수를 계산에 사용한 구매 내역과 대조했을 때, 구간별 수량과 주간 합계가 모두 맞는 성질입니다.</dd>
+        <dt>고정 입력</dt><dd>이번 계산에서 사용할 구매 내역을 한 시점에 복사해 둔 것입니다.</dd>
+        <dt>부분 점수</dt><dd>한 주문 구간에서 한 상품을 산 수량의 합입니다. 여기서는 구매 1개를 1점으로 셉니다.</dd></dl>
+    </aside>
+  </div>
+  <div class="followup">
+    <section><h2>빠진 상품과 엉뚱하게 추가된 상품도 찾나요?</h2><p>네. 고정 입력에서 기대한 구간·상품 조합마다 저장한 부분 점수가 있는지 확인하고, 저장된 쪽에만 있는 조합도 찾습니다. 상품 수와 전체 수량이 우연히 같아도 어떤 상품에서 생긴 차이인지 판별할 수 있습니다.</p></section>
+    <section class="sources"><h2>구현과 검증 근거</h2><ul>
+      <li><a href="../verification.md#같은-상품의-부분-점수">2·3과 1·4를 대조한 MySQL 관측</a></li>
+      <li><a href="../../../apps/commerce-batch/src/test/java/com/loopers/ranking/OrderPartitionedPublicationTest.java">합계가 같은 두 오류를 주입한 시험</a></li>
+      <li><a href="../../../apps/commerce-batch/src/test/java/com/loopers/ranking/WeeklyRankingPublicationTest.java">누락·추가·상품 교체를 검사한 공개 시험</a></li>
+    </ul></section>
+  </div>
+  <nav class="footer" aria-label="이어 읽기"><a href="partitioning.html">← 배치 파티셔닝</a>
+    <a href="index.html#contents">전체 목차</a> <a href="idempotency.html">배치 멱등성 →</a>
+  </nav>
+</main>
+</body></html>

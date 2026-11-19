@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>세 번째 상품에서 실패하면 어디부터 다시 읽을까요? · 주간 구매 랭킹</title>
+  <link rel="stylesheet" href="guide.css">
+  <script defer src="lesson.js"></script>
+</head>
+<body>
+<header class="mast"><div class="shell">
+  <a class="brand" href="index.html"><svg aria-hidden="true" viewBox="0 0 24 18"><rect x="1" y="11" width="5" height="7"/><rect x="9" y="6" width="5" height="12"/><rect x="17" y="1" width="5" height="17"/></svg>주간 구매 랭킹</a>
+  <nav aria-label="학습 자료"><a href="index.html#contents">주제 목차</a><a href="../weekly-ranking-flow.html">전체 애니메이션 ↗</a></nav>
+</div></header>
+<main class="shell">
+  <header class="intro"><p class="letter">시간과 실행이 어긋날 때 / 배치 재시도</p>
+    <h1>세 번째 상품에서 실패하면 어디부터 다시 읽을까요?</h1><p class="lead">마지막으로 점수와 읽기 위치를 함께 저장한 곳에서 이어갑니다. 상품 7·8을 저장한 뒤 상품 9에서 실패한 시험에서는 재시작한 작업이 상품 9 하나만 처리했습니다.</p>
+  </header>
+  <div class="reader">
+    <figure id="lab" class="lab" aria-labelledby="lab-title">
+      <div class="lab-head"><h2 id="lab-title">배치 재시도 단계별로 보기</h2>
+        <div class="controls" hidden>
+          <button type="button" data-play>흐름 재생</button><button type="button" data-prev>이전</button><button type="button" data-next>다음</button>
+          <button type="button" data-repeat hidden>같은 3점 다시 보내기</button><span data-count></span>
+        </div>
+      </div>
+      <div class="step-tabs" role="group" aria-label="장면 선택" hidden>
+        <button type="button" data-pick="0">상품 순서 확인</button>
+        <button type="button" data-pick="1">첫 청크 커밋</button>
+        <button type="button" data-pick="2">상품 9에서 실패</button>
+        <button type="button" data-pick="3">재시작</button>
+      </div>
+      <svg id="diagram" role="img" hidden></svg>
+      <ol class="stages">
+      <li class="stage">
+        <h3>구매 4행에서 상품 세 개를 계산합니다</h3>
+        <dl class="nodes">
+          <div><dt>계산할 상품</dt><dd>7 → 8 → 9</dd></div>
+          <div><dt>저장한 점수</dt><dd>0행</dd></div>
+          <div><dt>체크포인트</dt><dd>위치 0</dd></div>
+        </dl>
+        <ul class="edges">
+
+        </ul>
+        <p class="stage-note">주문 42에는 상품 7 두 개와 상품 8 한 개, 주문 43에는 상품 7 세 개, 주문 44에는 상품 9 다섯 개가 있습니다. 이 시험의 작업은 고정된 입력을 상품번호 순으로 처리합니다.</p>
+      </li>
+      <li class="stage">
+        <h3>상품 7·8의 점수와 위치 2를 함께 저장합니다</h3>
+        <dl class="nodes">
+          <div><dt>계산할 상품</dt><dd>상품 7·8 처리</dd></div>
+          <div><dt>저장한 점수</dt><dd>7번 5점 · 8번 1점</dd></div>
+          <div><dt>체크포인트</dt><dd>위치 2</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="0" data-to="1">점수 저장</li>
+          <li data-from="0" data-to="2">위치 저장</li>
+        </ul>
+        <p class="stage-note">상품 7의 구매 두 건을 합치면 5점이고 상품 8은 1점입니다. 점수와 읽기 위치를 한 트랜잭션으로 저장하므로, 중간에 실패해도 둘 중 하나만 저장될 수 없습니다.</p>
+      </li>
+      <li class="stage">
+        <h3>읽은 수는 3이지만 저장된 위치는 2입니다</h3>
+        <dl class="nodes">
+          <div><dt>계산할 상품</dt><dd>9번 읽은 뒤 실패</dd></div>
+          <div><dt>저장한 점수</dt><dd>7번·8번만 저장</dd></div>
+          <div><dt>체크포인트</dt><dd>위치 2 유지</dd></div>
+        </dl>
+        <ul class="edges">
+
+        </ul>
+        <p class="stage-note">시험에서 상품 9를 읽은 직후, 점수 계산 직전에 오류를 냈습니다. 실행 기록에는 읽기 3건이 남았고, DB에 커밋된 점수는 앞의 두 건입니다.</p>
+      </li>
+      <li class="stage">
+        <h3>같은 작업의 새 실행이 상품 9만 처리합니다</h3>
+        <dl class="nodes">
+          <div><dt>계산할 상품</dt><dd>9번만 다시 읽기</dd></div>
+          <div><dt>저장한 점수</dt><dd>9번 5점 추가</dd></div>
+          <div><dt>체크포인트</dt><dd>위치 2에서 재개</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="2" data-to="0">이어서 읽기</li>
+          <li data-from="0" data-to="1">5점 저장</li>
+        </ul>
+        <p class="stage-note">처음 고정한 입력과 주문 구간을 그대로 사용하고, 새 실행에서 읽은 수와 쓴 수는 각각 1건입니다. 검산 후 공개한 순위는 상품 7, 9, 8 순으로 정상 실행의 결과와 일치했습니다.</p>
+      </li>
+      </ol>
+      <p class="sr-only" data-live role="status" aria-live="polite"></p>
+      <figcaption><a href="../weekly-ranking-flow.html?case=chunk&amp;step=2#flow-figure">실패한 청크에서 재개하는 장면</a> · 함께 읽기 &ndash; <a href="failure.html">실패와 장애 인수</a></figcaption>
+    </figure>
+    <aside class="terms" aria-labelledby="terms-title"><h2 id="terms-title">이 장의 용어</h2>
+      <dl><dt>청크(chunk)</dt><dd>몇 개의 항목을 한 묶음으로 처리하고 그 결과를 한꺼번에 저장하는 단위입니다. 이 시험에서는 상품 두 개가 한 묶음입니다.</dd>
+        <dt>커밋(commit)</dt><dd>한 묶음의 변경을 데이터베이스에 확정하는 일입니다.</dd>
+        <dt>체크포인트</dt><dd>커밋을 마친 위치를 데이터베이스에 저장한 값입니다. 위치 2는 앞의 두 상품까지 처리를 마쳤다는 뜻입니다.</dd></dl>
+    </aside>
+  </div>
+  <div class="followup">
+    <section><h2>상품 9를 한 번 읽었는데 왜 다시 읽나요?</h2><p>읽은 수는 어디까지 시도했는지 보여줍니다. 체크포인트는 어디까지 결과를 안전하게 저장했는지 알려줍니다. 이 차이 덕분에 재시작할 때 상품 9의 5점도 빠짐없이 들어갑니다.</p></section>
+    <section class="sources"><h2>구현과 검증 근거</h2><ul>
+      <li><a href="../verification.md#주문-424344-청크-2의-실제-재시작">읽기 3건과 영속 체크포인트 2를 확인한 MySQL 기록</a></li>
+      <li><a href="../../../apps/commerce-streamer/src/test/java/com/loopers/application/ranking/WeeklyRankingChunkRestartFlowTest.java">재시작한 작업이 실제로 상품 9 한 건만 처리한 테스트</a></li>
+    </ul></section>
+  </div>
+  <nav class="footer" aria-label="이어 읽기"><a href="late-events.html">← 늦은 이벤트 도착</a>
+    <a href="index.html#contents">전체 목차</a> <a href="failure.html">실패와 장애 인수 →</a>
+  </nav>
+</main>
+</body></html>

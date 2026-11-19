@@ -1,0 +1,15 @@
+#lab [hidden] { display: none !important; }
+#lab.enhanced .stage > .nodes, #lab.enhanced .stage > .edges { display: none; }
+#lab #diagram { display: block; width: 100%; height: auto; margin-inline: auto; color: #436b61; }
+#lab.enhanced #diagram[viewBox="0 0 308 296"] { max-width: 370px; }
+#diagram text { font-family: inherit; }
+#diagram .lesson-node rect { fill: #f6faf7; stroke: #93aa9c; stroke-width: 1.3; }
+#diagram .lesson-node[data-node="1"] rect { fill: #e9f4ed; stroke: #518474; }
+#diagram .lesson-node[data-node="2"] rect { fill: #fff7e9; stroke: #ba956b; }
+#diagram .lesson-node-name { fill: #466356; font-size: 13px; font-weight: 550; }
+#diagram .lesson-node-value { fill: #13382b; font-size: 17px; font-weight: 720; }
+#diagram .lesson-verb { fill: #34564a; font-size: 12px; font-weight: 650; paint-order: stroke; stroke: #fafbf6; stroke-width: 3px; stroke-linejoin: round; }
+#diagram .lesson-wire { fill: none; stroke: #78978b; stroke-width: 1.8; stroke-linejoin: round; }
+#diagram .moving .lesson-wire { stroke: #006b58; stroke-width: 3; }
+#diagram .lesson-token { fill: #005e4e; stroke: white; stroke-width: 1.4; pointer-events: none; }
+#lab .repeat-count { font-variant-numeric: tabular-nums; color: #50665a; font-size: .82rem; }

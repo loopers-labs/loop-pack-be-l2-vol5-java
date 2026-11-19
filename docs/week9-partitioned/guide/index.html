@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>구매에서 주간 랭킹까지 · 주간 구매 랭킹</title>
+  <link rel="stylesheet" href="guide.css">
+</head>
+<body>
+<header class="mast"><div class="shell">
+  <a class="brand" href="index.html"><svg aria-hidden="true" viewBox="0 0 24 18"><rect x="1" y="11" width="5" height="7"/><rect x="9" y="6" width="5" height="12"/><rect x="17" y="1" width="5" height="17"/></svg>주간 구매 랭킹</a>
+  <nav aria-label="학습 자료"><a href="index.html#contents">주제 목차</a><a href="../weekly-ranking-flow.html">전체 애니메이션 ↗</a></nav>
+</div></header>
+<main class="shell">
+  <header class="hub-intro intro">
+    <div><p class="letter">처음 읽는 개발자를 위한 배치 가이드</p>
+      <h1>구매에서 주간 랭킹까지</h1>
+      <p class="lead">이 서비스는 지난주에 팔린 수량을 상품별로 더해 순위를 매깁니다. 여러 주문을 모아 처리하는 일을 <strong>배치</strong>라고 합니다. 상품 7을 두 주문에서 2개와 3개 샀다면, 서버가 일을 나누고 재시도한 뒤에도 정답은 5점입니다.</p>
+      <a class="start" href="scheduler.html">스케줄러부터 읽기 →</a>
+    </div>
+    <figure class="receipt"><header><span>상품 7의 주간 구매</span><small>대표 사례</small></header>
+      <dl><div><dt>주문 10 · 서버 A</dt><dd>2개</dd></div><div><dt>주문 20 · 서버 B</dt><dd>3개</dd></div>
+        <div class="sum"><dt>검산 후 공개</dt><dd>2 + 3 = 5점</dd></div></dl>
+      <figcaption>B가 같은 3점을 다시 보내면 어떻게 될까요? <a href="idempotency.html">같은 행에 다시 써 보기</a></figcaption>
+    </figure>
+  </header>
+  <figure class="route"><h2>주문 하나가 고객에게 보이기까지</h2>
+    <ol>
+      <li><strong>주문 확정</strong><span>주문 앱이 구매를 확정하고 보낼 이벤트를 DB에 함께 남깁니다.</span></li>
+      <li><strong>구매 활동 적재</strong><span>메시지 전달 시스템인 Kafka를 거쳐 소비자가 주문별 상품과 수량을 저장합니다.</span></li>
+      <li><strong>주간 계산</strong><span>마감된 주의 구매를 한 번 복사하고, 배치 앱을 실행하는 자바 프로세스(JVM)들이 구간을 나눠 계산합니다.</span></li>
+      <li><strong>고객 조회</strong><span>검산이 끝나면 공개 대상을 새 순위로 바꿉니다. 계산 도중에는 마지막으로 공개한 완성본을 보여줍니다.</span></li>
+    </ol>
+    <figcaption>고객이 <code>GET /api/v1/rankings/weekly</code>로 조회하면 첫 공개 전에는 미공개 상태를, 공개 후에는 마지막 완성본을 받습니다. <a href="../weekly-ranking-flow.html?play=1#flow-figure">전체 흐름 재생 ↗</a></figcaption>
+  </figure>
+  <details class="primer">
+    <summary>Spring Batch를 처음 본다면 · Job, Step, 청크</summary>
+    <dl>
+      <dt>Job · 한 작업</dt><dd>Spring Batch는 묶음 처리를 실행하는 자바 도구입니다. 이 프로젝트에서 한 JVM은 자신에게 배정된 주문 구간 하나를 Job으로 실행합니다.</dd>
+      <dt>Step · 작업 안의 단계</dt><dd>고정 입력을 확인하거나 상품별 점수를 쓰는 단위입니다. 한 JVM에서 상품 범위별로 여러 작업자 Step을 동시에 실행할 수 있습니다.</dd>
+      <dt>청크 · 함께 저장할 묶음</dt><dd>예를 들어 두 상품씩 처리하면 두 점수와 읽기 위치를 함께 확정합니다. 다음 묶음에서 실패해도 앞서 저장한 두 상품은 기억합니다. <a href="retry.html">재시작 위치 따라가기</a></dd>
+    </dl>
+  </details>
+  <section id="contents" class="directory"><h2>질문으로 찾아보기</h2>
+    <p>처음에는 위에서부터 읽고, 문제가 생겼다면 해당 질문으로 바로 들어가세요. 각 장의 예시는 독립적입니다. R1·R2·R3은 같은 주 랭킹의 첫 번째·두 번째·세 번째 판본을 뜻합니다.</p>
+    <section class="shelf"><h3>실행 준비와 분할</h3><ol>
+<li><a href="scheduler.html"><strong>스케줄러</strong><span>두 서버가 동시에 월요일을 맞으면 누가 랭킹 계산을 시작할까요?</span></a></li>
+<li><a href="snapshot.html"><strong>스냅샷</strong><span>B가 늦게 시작해도 A와 같은 시점의 구매를 읽으려면 어떻게 할까요?</span></a></li>
+<li><a href="partitioning.html"><strong>배치 파티셔닝</strong><span>두 서버는 왜 주문을 나누고, 서버 안에서는 왜 상품을 나눌까요?</span></a></li>
+</ol></section>
+<section class="shelf"><h3>점수 계산과 고객 공개</h3><ol>
+<li><a href="consistency.html"><strong>배치 정합성</strong><span>합계가 5점인데도 공개를 멈추는 이유는 뭘까요?</span></a></li>
+<li><a href="idempotency.html"><strong>배치 멱등성</strong><span>B가 3점을 두 번 보내도 왜 8점이 되지 않을까요?</span></a></li>
+<li><a href="publication.html"><strong>검산과 고객 공개</strong><span>계산 중에 고객이 조회하면 어느 랭킹을 볼까요?</span></a></li>
+</ol></section>
+<section class="shelf"><h3>시간과 실행이 어긋날 때</h3><ol>
+<li><a href="late-events.html"><strong>늦은 이벤트 도착</strong><span>지난주 주문이 늦게 도착하면 언제 순위에 들어갈까요?</span></a></li>
+<li><a href="retry.html"><strong>배치 재시도</strong><span>세 번째 상품에서 실패하면 어디부터 다시 읽을까요?</span></a></li>
+<li><a href="failure.html"><strong>실패와 장애 인수</strong><span>한 서버가 응답을 멈추면 다른 서버는 언제 이어받을까요?</span></a></li>
+</ol></section>
+<section class="shelf"><h3>측정 결과 읽기</h3><ol>
+<li><a href="performance.html"><strong>성능 측정</strong><span>작업자 수는 네 개로 같은데, 왜 두 JVM이 더 오래 걸렸을까요?</span></a></li>
+</ol></section>
+  </section>
+  <footer class="footer"><a href="../adr-0001-weekly-ranking.md">설계 결정을 남긴 ADR</a><a href="../verification.md">실제 MySQL·JVM 검증 기록</a><a href="../README.md">실행·장애 인수 안내</a></footer>
+</main>
+</body></html>
