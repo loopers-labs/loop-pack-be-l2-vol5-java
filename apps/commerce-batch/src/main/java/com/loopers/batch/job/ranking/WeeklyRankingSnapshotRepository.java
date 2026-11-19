@@ -76,6 +76,40 @@ public class WeeklyRankingSnapshotRepository {
             "select count(distinct product_id) from weekly_ranking_input where snapshot_id = ?", Integer.class, snapshotId);
     }
 
+    public Optional<Integer> findPublishedRevision(LocalDate periodStart) {
+        return jdbc.queryForList(
+            "select revision from weekly_ranking_snapshot where period_start = ? and status = 'PUBLISHED'",
+            Integer.class, periodStart).stream().findFirst();
+    }
+
+    /** 점수 내림차순, 동점이면 productId 오름차순으로 1 부터 매긴다. 같은 점수도 순위가 다르다 (과제 계약) */
+    public int assignRanks(String snapshotId, LocalDateTime nowUtc) {
+        return jdbc.update("""
+                update weekly_ranking_score s
+                join (
+                    select id, row_number() over (order by score desc, product_id asc) as ranked
+                    from weekly_ranking_score where snapshot_id = ?
+                ) r on r.id = s.id
+                set s.ranking = r.ranked, s.updated_at = ?""",
+            snapshotId, nowUtc);
+    }
+
+    /** 그 기간의 공개본이 이 revision 보다 오래됐을 때만 COMPLETED 로 내린다 (D-180) */
+    public int demotePublished(LocalDate periodStart, int revisionBelow, LocalDateTime nowUtc) {
+        return jdbc.update("""
+                update weekly_ranking_snapshot set status = 'COMPLETED', updated_at = ?
+                where period_start = ? and status = 'PUBLISHED' and revision < ?""",
+            nowUtc, periodStart, revisionBelow);
+    }
+
+    /** COMPLETED → PUBLISHED. 같은 기간에 공개본이 남아 있으면 published_period 유일 제약으로 실패한다 */
+    public int promote(String snapshotId, LocalDateTime nowUtc) {
+        return jdbc.update("""
+                update weekly_ranking_snapshot set status = 'PUBLISHED', updated_at = ?
+                where snapshot_id = ? and status = 'COMPLETED'""",
+            nowUtc, snapshotId);
+    }
+
     public record SnapshotManifest(
         String snapshotId,
         LocalDate periodStart,

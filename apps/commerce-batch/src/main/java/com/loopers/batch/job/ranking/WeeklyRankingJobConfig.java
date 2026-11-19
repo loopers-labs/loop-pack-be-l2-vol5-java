@@ -4,6 +4,7 @@ import com.loopers.batch.job.ranking.step.CompleteScoresTasklet;
 import com.loopers.batch.job.ranking.step.FreezeInputTasklet;
 import com.loopers.batch.job.ranking.step.ProductKey;
 import com.loopers.batch.job.ranking.step.ProductScore;
+import com.loopers.batch.job.ranking.step.PublishRankingTasklet;
 import com.loopers.batch.job.ranking.step.RejectAbandonedSnapshotListener;
 import com.loopers.batch.job.ranking.step.WeeklyScoreProcessor;
 import com.loopers.batch.job.ranking.step.WeeklyScoreWriter;
@@ -39,6 +40,7 @@ public class WeeklyRankingJobConfig {
     public static final String FREEZE_STEP = "freezeWeeklyInput";
     public static final String SCORE_STEP = "calculateWeeklyScores";
     public static final String COMPLETE_STEP = "completeWeeklyScores";
+    public static final String PUBLISH_STEP = "publishWeeklyRanking";
     public static final String PRODUCT_READER = "weeklyProductReader";
 
     private final JobRepository jobRepository;
@@ -50,6 +52,7 @@ public class WeeklyRankingJobConfig {
     private final WeeklyScoreProcessor weeklyScoreProcessor;
     private final WeeklyScoreWriter weeklyScoreWriter;
     private final CompleteScoresTasklet completeScoresTasklet;
+    private final PublishRankingTasklet publishRankingTasklet;
 
     /** 재시작 실험(실습 §6)은 2 를 쓴다. 기본값은 측정한 최적값이 아니다 */
     @Value("${weekly-ranking.chunk-size:100}")
@@ -62,6 +65,7 @@ public class WeeklyRankingJobConfig {
             .start(freezeWeeklyInputStep())
             .next(calculateWeeklyScoresStep())
             .next(completeWeeklyScoresStep())
+            .next(publishWeeklyRankingStep())
             .listener(jobListener)
             .build();
     }
@@ -90,6 +94,15 @@ public class WeeklyRankingJobConfig {
     public Step completeWeeklyScoresStep() {
         return new StepBuilder(COMPLETE_STEP, jobRepository)
             .tasklet(completeScoresTasklet, transactionManager)
+            .listener(rejectAbandonedSnapshotListener)
+            .listener(stepMonitorListener)
+            .build();
+    }
+
+    @Bean(PUBLISH_STEP)
+    public Step publishWeeklyRankingStep() {
+        return new StepBuilder(PUBLISH_STEP, jobRepository)
+            .tasklet(publishRankingTasklet, transactionManager)
             .listener(rejectAbandonedSnapshotListener)
             .listener(stepMonitorListener)
             .build();

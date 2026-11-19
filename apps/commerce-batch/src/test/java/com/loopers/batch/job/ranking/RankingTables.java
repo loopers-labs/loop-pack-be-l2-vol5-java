@@ -3,7 +3,11 @@ package com.loopers.batch.job.ranking;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 
@@ -60,6 +64,27 @@ public class RankingTables {
         return jdbc.queryForMap("""
             select cast(period_start as char) as period_start, revision, status, input_count, input_checksum
             from weekly_ranking_snapshot where snapshot_id = ?""", snapshotId);
+    }
+
+    /** 결과 checksum. 순위 순서의 productId · score · rank 를 TAB · LF 로 직렬화해 SHA-256 (실습 §6). 실행 ID · 시각은 넣지 않는다 */
+    public String resultChecksumOf(String snapshotId) {
+        StringBuilder serialized = new StringBuilder();
+        jdbc.query("select product_id, score, ranking from weekly_ranking_score where snapshot_id = ? order by ranking",
+            rs -> {
+                serialized.append(rs.getLong("product_id")).append('\t')
+                    .append(rs.getLong("score")).append('\t')
+                    .append(rs.getInt("ranking")).append('\n');
+            },
+            snapshotId);
+        return sha256(serialized.toString());
+    }
+
+    public static String sha256(String value) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     public void changeStatus(String snapshotId, String status) {

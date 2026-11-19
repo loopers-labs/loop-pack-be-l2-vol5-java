@@ -106,13 +106,17 @@ class WeeklyRankingRestartTest {
             () -> assertThat(stepNames(second)).doesNotContain(WeeklyRankingJobConfig.FREEZE_STEP),
             () -> assertThat(secondScoreStep.getReadCount()).isEqualTo(1),
             () -> assertThat(secondScoreStep.getWriteCount()).isEqualTo(1),
+            // 손으로 계산한 기대값: 7 은 5점 1위, 9 는 동점이라 productId 순으로 2위, 8 은 1점 3위
             () -> assertThat(tables.scoresOf(restarted.snapshotId()))
-                .extracting(row -> row.get("product_id"), row -> row.get("score"))
-                .containsExactly(tuple(7L, 5L), tuple(8L, 1L), tuple(9L, 5L)),
-            () -> assertThat(scoresWithoutSnapshot(restarted)).isEqualTo(scoresWithoutSnapshot(normal)),
+                .extracting(row -> row.get("product_id"), row -> row.get("score"), row -> row.get("ranking"))
+                .containsExactly(tuple(7L, 5L, 1), tuple(8L, 1L, 3), tuple(9L, 5L, 2)),
+            () -> assertThat(tables.resultChecksumOf(restarted.snapshotId()))
+                .isEqualTo(tables.resultChecksumOf(normal.snapshotId()))
+                .isEqualTo(RankingTables.sha256("7\t5\t1\n9\t5\t2\n8\t1\t3\n")),
             () -> assertThat(tables.manifestOf(restarted.snapshotId()).get("input_checksum"))
                 .isEqualTo(tables.manifestOf(normal.snapshotId()).get("input_checksum")),
-            () -> assertThat(tables.manifestOf(restarted.snapshotId())).containsEntry("status", "COMPLETED"),
+            () -> assertThat(tables.manifestOf(restarted.snapshotId())).containsEntry("status", "PUBLISHED"),
+            () -> assertThat(tables.manifestOf(normal.snapshotId())).containsEntry("status", "COMPLETED"),
             () -> assertThat(tables.inputsOf(restarted.snapshotId())).hasSize(4)
         );
     }
@@ -171,11 +175,5 @@ class WeeklyRankingRestartTest {
 
     private List<String> stepNames(JobExecution execution) {
         return execution.getStepExecutions().stream().map(StepExecution::getStepName).toList();
-    }
-
-    private List<List<Object>> scoresWithoutSnapshot(WeeklyRankingParameters params) {
-        return tables.scoresOf(params.snapshotId()).stream()
-            .map(row -> List.of(row.get("product_id"), row.get("score")))
-            .toList();
     }
 }

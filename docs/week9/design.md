@@ -194,6 +194,16 @@
 | paging reader(`product_id` 정렬 키) | 고정 입력은 바뀌지 않아 cursor 의 위치 재현 문제가 없고, probe 로 확인한 방식이다. 큰 입력에서 페이지 단위 조회가 필요해지면 바꾼다 |
 | 계산 완료 전이를 공개 step 에 합침 | 상태가 "계산은 끝났지만 공개 전"을 표현하지 못하고, 공개 실패 때 계산 완료 여부를 구분할 수 없다 |
 
+### 공개 step 은 순위 → 기존 공개본 내리기 → 새 공개본 올리기를 한 TX 로 한다 (D-195)
+
+1. manifest 가 `PUBLISHED` 면 아무것도 바꾸지 않고 끝낸다. `COMPLETED` 가 아니면 실패한다.
+2. 그 기간의 공개본 revision 이 이 revision 보다 크면 실패한다. 늦게 끝난 오래된 실행은 공개본을 되돌리지 않고 FAILED 로 남는다.
+3. `row_number() over (order by score desc, product_id asc)` 로 순위를 채운다. 동점도 순위가 다르다(과제 기대값: 상품 7 · 9 가 5점으로 1 · 2위).
+4. 기존 공개본을 `revision < 이 revision` 조건으로 `COMPLETED` 로 내리고, 이 snapshot 을 `COMPLETED → PUBLISHED` 로 올린다. 그사이 다른 실행이 더 새 revision 을 공개했다면 내리기는 0행이고 올리기가 `published_period` 유일 제약으로 실패한다.
+
+- 결과 checksum(순위 순서의 `productId, score, rank`)은 테스트에서 정상 실행과 재시작을 비교하는 데만 쓰고 manifest 에 저장하지 않는다.
+- 오래된 revision 의 실행을 성공으로 끝내지 않고 실패로 두는 것은, 공개하지 않은 실행이 COMPLETED 로 보이면 공개됐다고 오해할 수 있어서다. D-184 의 진입점은 최대 revision 만 고르므로 이 실패는 job 을 직접 실행한 경우에만 생긴다.
+
 ## 6. 조회 API
 
 ### 주간 랭킹 조회는 product 기능 아래에 둔다 (D-187)
