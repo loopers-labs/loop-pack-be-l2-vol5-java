@@ -44,6 +44,18 @@ plugins {
 // C10 종단 검증이 별도 JVM 으로 띄울 streamer 실행물. API 테스트 classpath 에는 넣지 않고 경로만 넘긴다.
 val streamerBootJar = project(":apps:commerce-streamer").tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar")
 
+// 주간 랭킹 실제 연결(랭킹 설계 11.5)이 띄울 batch 자식 JVM 의 classpath. batch 제품 runtimeClasspath 와 테스트 진입점·실패 설정
+// 패키지만 넘기고, testFixtures(컨테이너 자동 기동)나 다른 테스트 클래스는 넣지 않는다. API 테스트 classpath 에도 넣지 않는다.
+val batchSourceSets = project(":apps:commerce-batch").extensions.getByType<SourceSetContainer>()
+val prepareWeeklyRankingBatchChildClasses = tasks.register<Sync>("prepareWeeklyRankingBatchChildClasses") {
+    dependsOn(":apps:commerce-batch:testClasses")
+    from(batchSourceSets.named("test").map { it.output.classesDirs })
+    include("com/loopers/job/ranking/process/**")
+    into(layout.buildDirectory.dir("weekly-ranking-batch-child/classes"))
+}
+val weeklyRankingBatchChildClasspath =
+    files(batchSourceSets.named("main").map { it.runtimeClasspath }, prepareWeeklyRankingBatchChildClasses)
+
 // O11(설계 W7.4-2): W6 준비→W7 복구 E2E 는 빈 fixture DB 가 필요해 새 worker JVM 의 전용 작업에서만 실행한다.
 val w6OutboxRecoveryClass = "com.loopers.infrastructure.order.W6OutboxRecoveryEndToEndIntegrationTest"
 
@@ -55,6 +67,12 @@ tasks.test {
         .withPathSensitivity(PathSensitivity.NONE)
     jvmArgumentProviders.add(CommandLineArgumentProvider {
         listOf("-Dc10.streamer.boot-jar=" + streamerBootJar.get().archiveFile.get().asFile.absolutePath)
+    })
+    inputs.files(weeklyRankingBatchChildClasspath)
+        .withPropertyName("weeklyRankingBatchChildClasspath")
+        .withNormalizer(ClasspathNormalizer::class)
+    jvmArgumentProviders.add(CommandLineArgumentProvider {
+        listOf("-Dweekly-ranking.batch-child.classpath=" + weeklyRankingBatchChildClasspath.asPath)
     })
     // 일반 test 에서는 O11 클래스 하나만 정확히 제외한다. 다른 테스트는 제외하지 않는다.
     filter { excludeTestsMatching(w6OutboxRecoveryClass) }

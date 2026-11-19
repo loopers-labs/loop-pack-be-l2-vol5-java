@@ -6,6 +6,7 @@
 
 ## 현재 상태
 
+- **주간 랭킹 전체 설계 사용자 승인(2026-11-17):** [주간 랭킹 설계](features/weekly-ranking.md)를 진입 문서로 두고 `features/weekly-ranking/`의 입력·실행 복구·계산 공개·API·검증 상세 5개로 나눴다. 승인된 계약과 기존 절 번호는 유지하며 전체 읽기 순서와 절 위치는 진입 문서에서 안내한다. 사용자 선택으로 원본 confirmed_at 인덱스(§9.11), 테스트 SQL 준비(§11.3.1), 최소 자식 실행(§11.5), native JDBC UTC(§9.12), 조건부 Job 등록(§4.11), 공통 시작 경로(§4.12)를 보완했다. 추가 DB 날짜 범위 guard·새 scheduler·batch ArchUnit은 추가하지 않는다. 후속 검토의 R1/R2/R3도 사용자 선택으로 batch 테스트의 update 기본값·인덱스 이름 일치·Flow 공유 테이블 보존으로 반영했다. Claude의 후속 확인에서 새 구현 전 필수 결함 없음 의견을 받은 뒤 사용자가 전체 설계를 최종 승인했다. 구현/실행 검증은 아직 전이며 작은 구현 단위 착수는 별도다.
 - **쿠폰 승인 설계(2026-11-11):** [쿠폰 상세설계](features/coupons.md)와 [판단 근거](decisions/coupons.md)에 모델·API·DB/TX·Redis 수용·제어 API·수동 재개·준비 코드·검증 기준을 기록했다. 일곱 차례 Claude 정적 검토와 합의한 보완을 마친 전체 설계를 사용자가 최종 승인했다. Q9·Q10은 기존 로컬 Redis를 명시 실행으로 검증하고 Q9의 연결 ID·서버 run_id 및 후속 응답을 확인해 자기 token을 정리한다. 실패 테스트의 파일 기록·사후 자기 점유 정리·새 정리 연결 순서 보완본의 최종 정적 검토에서 필수 수정·계약 공백·문서 모순은 발견되지 않았다. TX 미시작/종료 불명, 정상 첫 반환 0/반복 정리, 보유 목록의 저장된 발급 시각, 전 프로필 제어·C 기본값, 명시 준비 코드와 공유 Redis 장애/DB 대역 검증을 구분했다. Map·전역 진행 수/불명 추적·재개용 Java 잠금은 제외한다. 구현 1단계(DB 저장·조회 계약), 2단계(Redis 수용 Lua·저장소·수용 서비스·수용량 설정), 3단계(Facade·고객 발급/목록·제어 API), 4단계(직접 실행용 준비 코드), 5단계(실제 HTTP 응답 유실·timeout·시간 경과와 명시 실행 로컬 Redis 장애 Q9·Q10)의 실행 기록과 Q1~Q16 대조·남은 한계는 [쿠폰 실행 기록](verification/coupons.md)에 있다. 기본 구현의 최종 전체 검사 결과도 같은 실행 기록을 따른다. 구현 단위별 착수 승인은 별도다.
 - **쿠폰 확장 정상 구현·전체 검사 완료(2026-11-12):** [쿠폰 상세설계 §12](features/coupons.md)·판단 CQ16의 승인 정상 범위를 1~5단위로 구현했다. 단일 앱/단일 운영 캠페인의 대기실·실행 자리 통합, 등록 입구 RateLimiter, 고정30초 입장 권한, 내부 실행기 scheduler, cleanup 제거를 포함한다. 기준 `3bc158a`의 전체 check에서 일반1278건 실행/통과·opt-in2건 미실행, 별도O11 1건 통과와 WQ1~WQ12 대조를 확인했다. 상세 근거/실제·대역/한계는 [쿠폰 실행 기록](verification/coupons.md)의 정상 범위 최종 전체 검사 절을 따른다. §11/CQ15는 구안이다. 이 정상 구현 당시 캐시·장애별 복구·비교는 후속이었다. 이후 캐시와 통제된 장애 검증의 현재 상태는 아래 문단을 따르며, 정상 검사만으로 장애 복구 완료를 주장하지 않는다.
 - 기존 커머스·PG 결제·PG 단독 실행 앱의 계약과 과거 검증 근거를 보존한다. 실행 범위·수량·한계는 아래 검증 기록을 따른다.
@@ -27,6 +28,7 @@
 | 주문·PG 결제 | [읽기 안내](features/order-payment/README.md) · [상태·저장](features/order-payment/model.md) · [TX·처리](features/order-payment/processing.md) · [HTTP·회로](features/order-payment/pg-client.md) · [API](features/order-payment/api-contract.md) · [검증 기준](features/order-payment/verification.md) |
 | 로컬 PG·테스트 도구 | [앱·HTTP 계약](features/pg-simulator/README.md) · [테스트 래퍼·프록시](features/pg-simulator/fixture-contract.md) |
 | 주문 확정 이벤트 | [전체 경계·이벤트 계약](features/order-events/README.md) · [발행 상세설계](features/order-events/publication.md) · [소비 상세설계](features/order-events/consumption.md) |
+| 주간 구매 수량 랭킹 | [승인된 전체 상세설계·원문 검증 대응](features/weekly-ranking.md) |
 
 ## 기능별 읽기 순서
 

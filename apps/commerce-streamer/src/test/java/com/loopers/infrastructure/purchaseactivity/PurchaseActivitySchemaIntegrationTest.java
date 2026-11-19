@@ -158,7 +158,7 @@ class PurchaseActivitySchemaIntegrationTest {
         );
     }
 
-    @DisplayName("명명 unique 세 개와 CHECK 다섯 개가 있다.")
+    @DisplayName("명명 unique 세 개·주간 랭킹 기간 복사용 confirmed_at 인덱스와 CHECK 다섯 개가 있다.")
     @Test
     void namedConstraints() {
         Map<String, String> processedIndexes = indexes(PROCESSED);
@@ -170,7 +170,8 @@ class PurchaseActivitySchemaIntegrationTest {
             () -> assertThat(processedIndexes).containsOnly(Map.entry("PRIMARY", "unique:id"),
                 Map.entry("uk_poc_event", "unique:event_id"), Map.entry("uk_poc_order", "unique:order_id")),
             () -> assertThat(activityIndexes).containsOnly(Map.entry("PRIMARY", "unique:id"),
-                Map.entry("uk_ppa_order_product", "unique:order_id,product_id")),
+                Map.entry("uk_ppa_order_product", "unique:order_id,product_id"),
+                Map.entry("idx_ppa_confirmed_at", "index:confirmed_at")),
             () -> assertThat(checks(PROCESSED)).containsOnly(
                 Map.entry("ck_poc_order_id", "(order_id > 0)"), Map.entry("ck_poc_item_count", "(item_count > 0)")),
             () -> assertThat(checks(ACTIVITY)).containsOnly(Map.entry("ck_ppa_order_id", "(order_id > 0)"),

@@ -19,3 +19,19 @@ dependencies {
     testImplementation(testFixtures(project(":modules:jpa")))
     testImplementation(testFixtures(project(":modules:redis")))
 }
+
+plugins {
+    checkstyle
+}
+
+checkstyle {
+    toolVersion = "10.26.1"
+    configFile = rootProject.file("config/checkstyle/checkstyle.xml")
+    isIgnoreFailures = false
+    maxWarnings = 0
+}
+
+// test 프로필의 create 대신 update 로 기존 테이블을 보존한다(랭킹 설계 4.11).
+tasks.withType<Test>().configureEach {
+    systemProperty("spring.jpa.hibernate.ddl-auto", "update")
+}
