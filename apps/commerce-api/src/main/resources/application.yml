@@ -51,6 +51,11 @@ commerce:
       max-block: 2s # broker 장애 때 metadata 대기로 요청 스레드가 묶이는 상한 (Kafka 기본 60초)
       republish-timeout: 10s # 재발행 명령 처리에서 OrderConfirmed send 확인을 기다리는 상한
       delivery-timeout: 30s # producer가 한 건 전송을 포기하는 상한. relay send-timeout(35s)보다 짧아 broker 결과가 먼저 온다
+  # 설계 29절. 쿠폰 수용 전용 Redis 연결의 명령 timeout(D135·D137). 공용 datasource.redis.command-timeout은 그대로 둔다.
+  coupon:
+    admission:
+      redis-command-timeout: 500ms
+      max-execution: 10s # 재개 확인 모드의 시간 기준(D140). 잠금 대기 3초 + 연결 대기 3초 + 여유
   # 설계 28절 2단계. 수치는 [임시]다. enabled는 이 인스턴스에서 relay 스케줄러를 띄울지 정한다(여러 인스턴스면 한 대만 true).
   outbox:
     relay:
@@ -98,6 +103,21 @@ spring:
   config:
     activate:
       on-profile: local, test
+
+---
+# 로컬에서 쿠폰 발급을 해 볼 캠페인을 준비한다(29절). ddl-auto create로 테이블이 생긴 뒤 실행되도록 초기화를 미룬다. test 프로필에는 두지 않는다.
+spring:
+  config:
+    activate:
+      on-profile: local
+  sql:
+    init:
+      mode: always
+      data-locations:
+        - classpath:sql/local/seed-coupon-campaign.sql
+        - classpath:sql/local/seed-coupon-admission-settings.sql
+  jpa:
+    defer-datasource-initialization: true
 
 ---
 spring:
