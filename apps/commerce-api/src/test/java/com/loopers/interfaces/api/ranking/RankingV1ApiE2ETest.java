@@ -30,7 +30,7 @@ import com.loopers.utils.DatabaseCleanUp;
 
 @SpringBootTest
 @AutoConfigureMockMvc
-@Sql("/sql/weekly-ranking.sql")
+@Sql("file:../commerce-batch/src/main/resources/schema/ranking.sql")
 class RankingV1ApiE2ETest {
 
     private static final String WEEKLY = "/api/v1/rankings/weekly";

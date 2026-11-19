@@ -53,3 +53,9 @@ tasks.register<Jar>("pgFixtureJar") {
     exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
     manifest { attributes["Main-Class"] = "com.loopers.support.pg.PgFixtureServer" }
 }
+
+tasks.test {
+    inputs.file(rootProject.file("apps/commerce-batch/src/main/resources/schema/ranking.sql"))
+        .withPropertyName("weeklyRankingSchema")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+}
