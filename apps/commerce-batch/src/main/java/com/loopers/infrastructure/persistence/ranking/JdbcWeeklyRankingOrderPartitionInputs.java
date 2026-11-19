@@ -8,6 +8,7 @@ import com.loopers.domain.ranking.model.vo.WeeklyPurchaseScore;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -50,7 +51,7 @@ public class JdbcWeeklyRankingOrderPartitionInputs {
     @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.READ_COMMITTED)
     public void freeze(WeeklyRankingOrderPartitionCommand command) {
         var params = parameters(command);
-        var orderPartition = load(params, true);
+        var orderPartition = load(params, true, "RUNNING");
         if (orderPartition.fingerprint() != null) {
             verify(command, orderPartition, params);
             return;
@@ -75,7 +76,7 @@ public class JdbcWeeklyRankingOrderPartitionInputs {
     @Transactional(readOnly = true, isolation = Isolation.READ_COMMITTED)
     public List<LocalProductPartition> localProductPartitions(WeeklyRankingOrderPartitionCommand command) {
         var params = parameters(command);
-        var orderPartition = load(params, false);
+        var orderPartition = load(params, false, "RUNNING");
         verify(command, orderPartition, params);
         if (orderPartition.empty() || orderPartition.fingerprint().count() == 0) {
             return List.of();
@@ -101,15 +102,27 @@ public class JdbcWeeklyRankingOrderPartitionInputs {
                 row.getBigDecimal("total"), row.getLong("input_count"), row.getInt("minimum")));
     }
 
-    private OrderPartition load(MapSqlParameterSource params, boolean lock) {
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Optional<String> frozenInputMismatch(WeeklyRankingOrderPartitionCommand command) {
+        var params = parameters(command);
+        var partition = load(params, false, "RUNNING", "RECOVERY_REQUIRED");
+        try {
+            verify(command, partition, params);
+            return Optional.empty();
+        } catch (SnapshotIntegrityException mismatch) {
+            return Optional.of(mismatch.getMessage());
+        }
+    }
+
+    private OrderPartition load(MapSqlParameterSource params, boolean lock, String... states) {
         // OF s avoids serializing independent freezes on their shared plan row.
         var rows = jdbc.query("""
             SELECT s.order_min,s.order_max,s.is_empty,s.local_grid,s.frozen_at,s.input_count,s.input_checksum
             FROM weekly_ranking_order_partitions s JOIN weekly_ranking_plans p ON p.snapshot_id=s.snapshot_id
-            WHERE s.snapshot_id=:snapshot AND s.order_partition_id=:orderPartition AND s.state='RUNNING'
+            WHERE s.snapshot_id=:snapshot AND s.order_partition_id=:orderPartition AND s.state IN (:states)
               AND s.owner_id=:owner AND s.generation=:generation AND p.state='OPEN'
               AND p.period_start=:period AND p.revision=:revision
-            """ + (lock ? " FOR UPDATE OF s" : ""), params, (row, index) -> new OrderPartition(
+            """ + (lock ? " FOR UPDATE OF s" : ""), params.addValue("states", List.of(states)), (row, index) -> new OrderPartition(
                 new OrderPartitionBounds(row.getObject("order_min", Long.class), row.getObject("order_max", Long.class)),
                 row.getBoolean("is_empty"), row.getInt("local_grid"), row.getObject("frozen_at") == null
                     ? null : new InputFingerprint(row.getLong("input_count"), row.getString("input_checksum"))));
@@ -120,8 +133,14 @@ public class JdbcWeeklyRankingOrderPartitionInputs {
     }
 
     private void verify(WeeklyRankingOrderPartitionCommand command, OrderPartition orderPartition, MapSqlParameterSource params) {
-        if (orderPartition.fingerprint() == null || !orderPartition.fingerprint().equals(fingerprint(command, orderPartition, params))) {
-            throw new SnapshotIntegrityException("주문 파티션의 고정 입력과 manifest의 건수 또는 checksum이 다릅니다.");
+        var expected = orderPartition.fingerprint();
+        if (expected == null) {
+            throw new SnapshotIntegrityException("주문 파티션의 고정 입력 manifest가 없습니다.");
+        }
+        var actual = fingerprint(command, orderPartition, params);
+        if (!expected.equals(actual)) {
+            throw new SnapshotIntegrityException("expectedCount=%d actualCount=%d expectedSha256=%s actualSha256=%s"
+                .formatted(expected.count(), actual.count(), expected.sha256(), actual.sha256()));
         }
     }
 

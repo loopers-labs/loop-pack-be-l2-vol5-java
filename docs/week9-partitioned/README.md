@@ -54,6 +54,14 @@ java -jar $batchJar.FullName $profiles --ranking.scheduler.mode=request --rankin
 
 ## 중단된 주문 파티션 인수
 
+먼저 `weekly_ranking_plans.state`와 `weekly_ranking_order_partitions.last_error`를 함께 확인한다.
+
+| 관측값 | 운영 동작 |
+|---|---|
+| 계획 `CONFLICT`, 손상 파티션 `FROZEN_INPUT_INTEGRITY_MISMATCH` | `last_error`의 기대·실제 건수와 SHA-256을 확인하고 구매 활동 원본과 대조한다. 원본을 확인한 뒤 다음 revision을 명시적으로 요청한다. 고객은 그 revision이 검산을 마칠 때까지 이전 공개본을 조회한다. |
+| 계획 `OPEN`, 파티션 `RECOVERY_REQUIRED`, 사유 `CHECKPOINT_EVIDENCE_MISMATCH` | 실패한 로컬 Step의 주문번호 경계, 상품 경계, reader 위치와 커밋한 부분 점수를 계획에 대조한다. 유한한 주문 경계는 저장된 `Long` 값이 일치해야 하며, 열린 쪽의 키는 없어야 한다. 인수 명령도 같은 증거를 검사한다. |
+| 점검 도중 DB 연결 단절 | DB 연결이 복구되면 다음 스케줄러 점검이 같은 실행을 다시 확인한다. |
+
 1. `weekly_ranking_plans`, `weekly_ranking_order_partitions`, `weekly_ranking_score_conflicts`에서 대상 주·revision·주문 파티션·담당자·세대·실행 ID·고정 여부를 확인한다. 운영 환경에서 이전 JVM의 종료를 독립적으로 확인한다. heartbeat 만료만으로 실행 종료를 판정하지 않는다.
 2. 스케줄러는 최초 Job 생성에서 MySQL 교착 롤백(1213)이 확정되고 생존한 담당자·세대가 일치하며 Batch 실행, 고정 입력, 부분 점수, 충돌 기록이 모두 없을 때만 다음 tick에서 자동으로 다시 시작한다. 최초 시도를 포함해 세 번까지 허용한다. 그 밖의 불확정 상태에서는 `BATCH_JOB_EXECUTION`과 `BATCH_STEP_EXECUTION`에서 마지막 실행과 로컬 Step 상태를 대조한다. 충돌이 기록되면 기존 부분 점수, 시도값, 해당 고정 입력을 보존해 원인을 조사한다. 재실행 가능한 일반 실패는 같은 JobInstance에서 자동 재시도한다.
 3. 종료가 확인된 대상에 한해 아래 단건 명령을 실행한다. 예시의 변수는 위 DB 조회에서 확인한 실제 값이다. 코드가 소유권·세대·최신 실행 ID·영속 체크포인트와 저장 점수를 다시 대조한다. 실행 ID 0은 아직 Batch 실행이 생성되지 않은 경우다.

@@ -1,6 +1,7 @@
 package com.loopers.batch.job.ranking.coordination;
 
 import com.loopers.batch.job.ranking.coordination.WeeklyPlanStore.Claim;
+import com.loopers.domain.ranking.model.SnapshotIntegrityException;
 import com.loopers.infrastructure.persistence.ranking.WeeklyPlanQuarantine;
 import java.sql.SQLException;
 import java.time.Duration;
@@ -54,6 +55,7 @@ final class WeeklyOrderPartitionExecutions {
         this.jdbc = jdbc;
         this.transactions = new TransactionTemplate(manager);
         this.transactions.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
+        this.transactions.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.evidence = evidence;
         this.timeout = timeout;
     }
@@ -150,81 +152,150 @@ final class WeeklyOrderPartitionExecutions {
     }
 
     private void reconcile(UUID snapshot, int orderPartitionId) {
-        transactions.executeWithoutResult(status -> {
-            var current = locked(snapshot, orderPartitionId);
-            if (current == null) {
-                return;
+        try {
+            transactions.executeWithoutResult(status -> reconcileLocked(snapshot, orderPartitionId));
+        } catch (FrozenInputFailure failure) {
+            quarantineIfStillInvalid(failure);
+        }
+    }
+
+    private void reconcileLocked(UUID snapshot, int orderPartitionId) {
+        var current = locked(snapshot, orderPartitionId);
+        if (current == null) {
+            return;
+        }
+        var execution = latest(current.claim());
+        if (execution == null || execution.getStatus().isRunning()) {
+            if (!current.alive() && current.running()) {
+                change(current, "RECOVERY_REQUIRED", "OWNER_HEARTBEAT_EXPIRED");
             }
-            var execution = latest(current.claim());
-            if (execution == null || execution.getStatus().isRunning()) {
-                if (!current.alive() && current.running()) {
-                    change(current, "RECOVERY_REQUIRED", "OWNER_HEARTBEAT_EXPIRED");
-                }
-                return;
-            }
-            if (execution.getStatus() == BatchStatus.COMPLETED) {
-                change(current, "DONE", null);
-            } else if (current.running() && execution.getStatus() == BatchStatus.FAILED && current.attempts() < MAX_ATTEMPTS
-                && execution.getStepExecutions().stream().noneMatch(step -> step.getStatus().isRunning())
-                && evidence.matches(current.claim(), execution)) {
+            return;
+        }
+        if (current.executionId() != null && !current.executionId().equals(execution.getId())) {
+            return;
+        }
+        if (execution.getStatus() == BatchStatus.COMPLETED) {
+            change(current, "DONE", null);
+        } else if (current.running() && execution.getStatus() == BatchStatus.FAILED
+            && execution.getStepExecutions().stream().noneMatch(step -> step.getStatus().isRunning())) {
+            if (!restartEvidenceMatches(current, execution)) {
+                change(current, "RECOVERY_REQUIRED", "CHECKPOINT_EVIDENCE_MISMATCH");
+            } else if (current.attempts() < MAX_ATTEMPTS) {
                 change(current, "READY", "RETRY_FAILED_EXECUTION");
-            } else if (current.running()) {
-                change(current, "RECOVERY_REQUIRED", execution.getStatus().name());
+            } else {
+                change(current, "RECOVERY_REQUIRED", "FAILED");
             }
-        });
+        } else if (current.running()) {
+            change(current, "RECOVERY_REQUIRED", execution.getStatus().name());
+        }
     }
 
     void recover(UUID snapshot, int orderPartitionId, String owner, long generation, long expectedExecution, boolean terminated, String reason) {
         if (!terminated || reason == null || reason.isBlank() || reason.length() > 400) {
             throw new IllegalArgumentException("이전 프로세스의 종료 확인과 복구 근거가 필요합니다.");
         }
+        boolean recovered;
+        try {
+            recovered = Boolean.TRUE.equals(transactions.execute(status ->
+                recoverLocked(snapshot, orderPartitionId, owner, generation, expectedExecution, reason)));
+        } catch (FrozenInputFailure failure) {
+            quarantineIfStillInvalid(failure);
+            throw failure;
+        }
+        if (!recovered) {
+            // Report refusal only after the operator-visible recovery state has committed.
+            throw new IllegalStateException("현재 고정 입력·체크포인트와 저장된 부분 점수가 일치하지 않습니다.");
+        }
+    }
+
+    private boolean recoverLocked(UUID snapshot, int orderPartitionId, String owner, long generation, long expectedExecution, String reason) {
+        var current = locked(snapshot, orderPartitionId);
+        if (current == null || !current.claim().owner().equals(owner) || current.claim().generation() != generation) {
+            throw new IllegalStateException("현재 실행권과 복구 대상이 다릅니다.");
+        }
+        var execution = latest(current.claim());
+        if (expectedExecution != (execution == null ? 0L : execution.getId())
+            || current.executionId() != null && current.executionId() != expectedExecution) {
+            throw new IllegalStateException("최신 Batch execution과 복구 대상이 다릅니다.");
+        }
+        if (Boolean.TRUE.equals(jdbc.queryForObject("""
+            SELECT EXISTS(SELECT 1 FROM weekly_ranking_score_conflicts WHERE snapshot_id=? AND order_partition_id=?)
+            """, Boolean.class, snapshot.toString(), orderPartitionId))) {
+            throw new IllegalStateException("부분 점수 충돌이 있는 주문 파티션은 재실행할 수 없습니다.");
+        }
+        if (execution != null && execution.getStatus() == BatchStatus.COMPLETED) {
+            change(current, "DONE", "RECONCILED " + reason);
+            return true;
+        }
+        if (execution != null && (execution.getStatus() == BatchStatus.UNKNOWN || execution.getStatus() == BatchStatus.ABANDONED
+            || execution.getStepExecutions().stream().anyMatch(step -> step.getStatus() == BatchStatus.UNKNOWN
+                || step.getStatus() == BatchStatus.ABANDONED))) {
+            throw new IllegalStateException("결과가 불명확한 Batch 상태는 재시작할 수 없습니다.");
+        }
+        // The checkpoint validator reads a RUNNING owner. This state is invisible outside this transaction.
+        change(current, "RUNNING", null);
+        var checkpoint = execution;
+        if (checkpoint == null) {
+            // A JVM can die after claiming a retry but before creating its new JobExecution.
+            checkpoint = jobs.getLastJobExecution(job.getName(), parameters(current.claim()));
+            if (checkpoint != null && checkpoint.getStatus() != BatchStatus.FAILED && checkpoint.getStatus() != BatchStatus.STOPPED) {
+                throw new IllegalStateException("이전 세대의 Batch execution 결과를 확인해야 합니다.");
+            }
+        }
+        if (!restartEvidenceMatches(current, checkpoint)) {
+            change(current, "RECOVERY_REQUIRED", "CHECKPOINT_EVIDENCE_MISMATCH");
+            return false;
+        }
+        if (execution != null) {
+            markTerminated(execution, reason);
+        }
+        jdbc.update("UPDATE weekly_ranking_order_partitions SET attempts=0 WHERE snapshot_id=? AND order_partition_id=?", snapshot.toString(), orderPartitionId);
+        change(current, "READY", "REQUEUED " + reason);
+        return true;
+    }
+
+    private boolean restartEvidenceMatches(State current, JobExecution checkpoint) {
+        try {
+            return evidence.matches(current.claim(), checkpoint);
+        } catch (SnapshotIntegrityException mismatch) {
+            if (checkpoint == null) {
+                throw mismatch;
+            }
+            throw new FrozenInputFailure(current, checkpoint, mismatch);
+        }
+    }
+
+    private void quarantineIfStillInvalid(FrozenInputFailure failure) {
+        // The evidence read rolled back. Recheck the same ownership and data before closing the whole plan.
         transactions.executeWithoutResult(status -> {
-            var current = locked(snapshot, orderPartitionId);
-            if (current == null || !current.claim().owner().equals(owner) || current.claim().generation() != generation) {
-                throw new IllegalStateException("현재 실행권과 복구 대상이 다릅니다.");
-            }
-            var execution = latest(current.claim());
-            if (expectedExecution != (execution == null ? 0L : execution.getId())
-                || current.executionId() != null && current.executionId() != expectedExecution) {
-                throw new IllegalStateException("최신 Batch execution과 복구 대상이 다릅니다.");
-            }
-            if (Boolean.TRUE.equals(jdbc.queryForObject("""
-                SELECT EXISTS(SELECT 1 FROM weekly_ranking_score_conflicts WHERE snapshot_id=? AND order_partition_id=?)
-                """, Boolean.class, snapshot.toString(), orderPartitionId))) {
-                throw new IllegalStateException("부분 점수 충돌이 있는 주문 파티션은 재실행할 수 없습니다.");
-            }
-            if (execution != null && execution.getStatus() == BatchStatus.COMPLETED) {
-                change(current, "DONE", "RECONCILED " + reason);
+            var prior = failure.observed;
+            var claim = prior.claim();
+            var current = locked(claim.snapshot(), claim.orderPartitionId(), true);
+            if (current == null || !current.claim().equals(claim) || !current.state().equals(prior.state())
+                || !Objects.equals(current.executionId(), prior.executionId())) {
                 return;
             }
-            if (execution != null && (execution.getStatus() == BatchStatus.UNKNOWN || execution.getStatus() == BatchStatus.ABANDONED
-                || execution.getStepExecutions().stream().anyMatch(step -> step.getStatus() == BatchStatus.UNKNOWN
-                    || step.getStatus() == BatchStatus.ABANDONED))) {
-                throw new IllegalStateException("결과가 불명확한 Batch 상태는 재시작할 수 없습니다.");
+            var last = jobs.getLastJobExecution(job.getName(), parameters(claim));
+            if (last == null || !last.getId().equals(failure.executionId) || last.getStatus() != failure.executionStatus
+                || current.executionId() != null && !current.executionId().equals(last.getId())) {
+                return;
             }
-            // The validator reads a RUNNING owner. This temporary state is invisible outside this transaction.
-            change(current, "RUNNING", null);
-            var checkpoint = execution;
-            if (checkpoint == null) {
-                // A JVM can die after claiming a retry but before creating its new JobExecution.
-                checkpoint = jobs.getLastJobExecution(job.getName(), parameters(current.claim()));
-                if (checkpoint != null && checkpoint.getStatus() != BatchStatus.FAILED && checkpoint.getStatus() != BatchStatus.STOPPED) {
-                    throw new IllegalStateException("이전 세대의 Batch execution 결과를 확인해야 합니다.");
-                }
-            }
-            if (!evidence.matches(current.claim(), checkpoint)) {
-                throw new IllegalStateException("현재 고정 입력·체크포인트와 저장된 부분 점수가 일치하지 않습니다.");
-            }
-            if (execution != null) {
-                markTerminated(execution, reason);
-            }
-            jdbc.update("UPDATE weekly_ranking_order_partitions SET attempts=0 WHERE snapshot_id=? AND order_partition_id=?", snapshot.toString(), orderPartitionId);
-            change(current, "READY", "REQUEUED " + reason);
+            evidence.frozenInputMismatch(claim).ifPresent(detail -> {
+                var reason = "FROZEN_INPUT_INTEGRITY_MISMATCH " + detail;
+                change(current, "CONFLICT", reason.substring(0, Math.min(reason.length(), 512)));
+                jdbc.update("UPDATE weekly_ranking_plans SET state='CONFLICT' WHERE snapshot_id=?", claim.snapshot().toString());
+                WeeklyPlanQuarantine.blockOpenSiblings(jdbc, claim.snapshot());
+            });
         });
     }
 
     private State locked(UUID snapshot, int orderPartitionId) {
-        if (!"OPEN".equals(jdbc.queryForObject("SELECT state FROM weekly_ranking_plans WHERE snapshot_id=? FOR SHARE",
+        return locked(snapshot, orderPartitionId, false);
+    }
+
+    private State locked(UUID snapshot, int orderPartitionId, boolean exclusivePlan) {
+        var planLock = exclusivePlan ? " FOR UPDATE" : " FOR SHARE";
+        if (!"OPEN".equals(jdbc.queryForObject("SELECT state FROM weekly_ranking_plans WHERE snapshot_id=?" + planLock,
             String.class, snapshot.toString()))) {
             return null;
         }
@@ -279,6 +350,20 @@ final class WeeklyOrderPartitionExecutions {
     private record State(Claim claim, Long executionId, String state, int attempts, boolean alive) {
         boolean running() {
             return "RUNNING".equals(state);
+        }
+    }
+
+    private static final class FrozenInputFailure extends SnapshotIntegrityException {
+        private final State observed;
+        private final Long executionId;
+        private final BatchStatus executionStatus;
+
+        private FrozenInputFailure(State observed, JobExecution checkpoint, SnapshotIntegrityException mismatch) {
+            super(mismatch.getMessage());
+            initCause(mismatch);
+            this.observed = observed;
+            this.executionId = checkpoint.getId();
+            this.executionStatus = checkpoint.getStatus();
         }
     }
 
