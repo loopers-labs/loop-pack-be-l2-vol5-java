@@ -39,6 +39,7 @@ class ArchitectureTest {
                         "com.loopers.domain.brand",
                         "com.loopers.domain.coupon",
                         "com.loopers.domain.product",
+                        "com.loopers.domain.ranking",
                         "com.loopers.domain.like",
                         "com.loopers.domain.point",
                         "com.loopers.domain.order",
@@ -47,19 +48,22 @@ class ArchitectureTest {
 
         noClasses().that().resideInAnyPackage(
                             "..domain.brand..", "..domain.coupon..", "..domain.product..", "..domain.like..",
-                            "..domain.point..", "..domain.order..", "..domain.payment..", "..domain.user..")
+                            "..domain.point..", "..domain.order..", "..domain.payment..", "..domain.ranking..",
+                            "..domain.user..")
                    .should().dependOnClassesThat().resideInAPackage("jakarta.persistence..")
                    .check(classes);
 
         noClasses().that().resideInAnyPackage(
                             "..domain.brand..", "..domain.coupon..", "..domain.product..", "..domain.like..",
-                            "..domain.point..", "..domain.order..", "..domain.payment..", "..domain.user..")
+                            "..domain.point..", "..domain.order..", "..domain.payment..", "..domain.ranking..",
+                            "..domain.user..")
                    .should().dependOnClassesThat().haveFullyQualifiedName("com.loopers.domain.BaseEntity")
                    .check(classes);
 
         noClasses().that().resideInAnyPackage(
                             "..domain.brand..", "..domain.coupon..", "..domain.product..", "..domain.like..",
-                            "..domain.point..", "..domain.order..", "..domain.payment..", "..domain.user..")
+                            "..domain.point..", "..domain.order..", "..domain.payment..", "..domain.ranking..",
+                            "..domain.user..")
                    .should().dependOnClassesThat().resideInAPackage("lombok..")
                    .check(classes);
     }
@@ -74,16 +78,18 @@ class ArchitectureTest {
                         "com.loopers.application.payment",
                         "com.loopers.application.point",
                         "com.loopers.application.product",
+                        "com.loopers.application.ranking",
                         "com.loopers.domain.brand",
                         "com.loopers.domain.coupon",
                         "com.loopers.domain.payment",
                         "com.loopers.domain.point",
-                        "com.loopers.domain.product");
+                        "com.loopers.domain.product",
+                        "com.loopers.domain.ranking");
 
         noClasses().that().resideInAnyPackage(
                             "..application.brand..", "..application.coupon..", "..application.payment..", "..application.point..",
-                            "..application.product..", "..domain.brand..", "..domain.coupon..", "..domain.payment..",
-                            "..domain.point..", "..domain.product..")
+                            "..application.product..", "..application.ranking..", "..domain.brand..", "..domain.coupon..",
+                            "..domain.payment..", "..domain.point..", "..domain.product..", "..domain.ranking..")
                    .should().callMethod(ZonedDateTime.class, "now", new Class<?>[0])
                    .check(classes);
 
