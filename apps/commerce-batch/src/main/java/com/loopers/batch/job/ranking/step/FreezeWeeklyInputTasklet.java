@@ -52,7 +52,7 @@ public class FreezeWeeklyInputTasklet implements Tasklet {
 
     @Override
     public RepeatStatus execute(StepContribution contribution, ChunkContext chunkContext) {
-        // 1. 파라미터 검증 (D1)
+        // 1. 파라미터 검증 (D1). 1차는 Job 의 JobParametersValidator, 2차는 여기 (Tasklet 단독 사용 대비 2중 방어)
         WeeklySnapshotId snapshot = WeeklySnapshotId.of(snapshotId, periodStart);
 
         // 2. 충돌 검사 (D6) — 같은 snapshot_id 또는 같은 (period_start, revision) 이 있으면 덮어쓰지 않고 실패

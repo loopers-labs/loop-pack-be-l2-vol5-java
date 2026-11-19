@@ -68,9 +68,14 @@ public class OpenWeeklyRankingTasklet implements Tasklet {
     static final String COMPLETE_REVISION_SQL =
         "UPDATE weekly_ranking_revisions SET status = ?, result_checksum = ?, updated_at = ? WHERE snapshot_id = ?";
 
-    /** 6. 현재 pointer 의 revision (없으면 0행). 6a 의 UPDATED/UNCHANGED 구분과 6b 거절 판정에 쓴다. */
+    /**
+     * 6. 현재 pointer 의 revision (없으면 0행). 6a 의 UPDATED/UNCHANGED 구분과 6b 거절 판정에 쓴다.
+     * FOR SHARE 인 이유: 이 TX 는 2단계 COUNT 에서 REPEATABLE READ 스냅샷이 잡힌다. 그 뒤 다른 TX 가 새 revision 을 공개하면
+     * 6a UPDATE(잠금 읽기)는 0행인데 평범한 SELECT 는 옛 스냅샷을 볼 수 있다. 잠금 읽기는 최신 commit 값을 읽어
+     * 거절 로그·exitDescription 의 "현재 공개 revision" 이 정확해진다 (설계 D11).
+     */
     static final String CURRENT_POINTER_SQL =
-        "SELECT revision FROM weekly_ranking_publications WHERE period_start = ?";
+        "SELECT revision FROM weekly_ranking_publications WHERE period_start = ? FOR SHARE";
 
     /**
      * 6a. 조건부 갱신 (D5). revision <= 로 같은 revision 재실행을 통과시키고, 그때 published_at 은 유지한다(CASE).
@@ -176,7 +181,7 @@ public class OpenWeeklyRankingTasklet implements Tasklet {
         return checksum;
     }
 
-    /** 6. 공개 pointer 조건부 갱신 (D5 두 단계). 거절은 D8: pointer 미변경, WARN, ExitStatus 설명만 추가. */
+    /** 6. 공개 pointer 조건부 갱신 (D5 두 단계). 현재 revision 은 FOR SHARE 로 읽는다(위 상수 주석). 거절은 D8: pointer 미변경, WARN, ExitStatus 설명만 추가. */
     private PointerResult publishPointer(Revision revision, LocalDateTime now, StepContribution contribution) {
         Optional<Integer> current = jdbcTemplate.query(CURRENT_POINTER_SQL,
             (rs, rowNum) -> rs.getInt("revision"), revision.periodStart()).stream().findFirst();

@@ -12,6 +12,8 @@ import org.springframework.batch.core.BatchStatus;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.JobExecution;
 import org.springframework.batch.core.JobParameters;
+import org.springframework.batch.core.JobParametersBuilder;
+import org.springframework.batch.core.JobParametersInvalidException;
 import org.springframework.batch.core.StepExecution;
 import org.springframework.batch.core.explore.JobExplorer;
 import org.springframework.batch.core.job.SimpleJob;
@@ -27,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
 /**
@@ -75,6 +78,22 @@ class WeeklyRankingJobRestartTest {
             FreezeWeeklyInputTasklet.STEP_NAME, WeeklyScoreStepComponents.STEP_NAME, OpenWeeklyRankingTasklet.STEP_NAME);
         assertThat(job.isRestartable()).isTrue();
         assertThat(job.getJobParametersIncrementer()).isNull();
+    }
+
+    @DisplayName("snapshotId 의 날짜가 periodStart 와 다르거나 revision 이 0 이면 Job 시작 전에 거절되고 JobInstance 가 생기지 않는다.")
+    @Test
+    void rejectsInvalidParametersBeforeCreatingInstance() throws Exception {
+        long instancesBefore = jobExplorer.getJobInstanceCount(WeeklyRankingJobConfig.JOB_NAME);
+        JobParameters mismatched = new JobParametersBuilder()
+            .addString("periodStart", "2026-08-17", true).addString("snapshotId", "weekly-20260818-r1", true).toJobParameters();
+        JobParameters revisionZero = new JobParametersBuilder()
+            .addString("periodStart", "2026-08-17", true).addString("snapshotId", "weekly-20260817-r0", true).toJobParameters();
+
+        assertThatThrownBy(() -> jobLauncher.run(job, mismatched)).isInstanceOf(JobParametersInvalidException.class)
+            .hasMessageContaining("weekly-20260818-r1").hasMessageContaining("2026-08-17");
+        assertThatThrownBy(() -> jobLauncher.run(job, revisionZero)).isInstanceOf(JobParametersInvalidException.class)
+            .hasMessageContaining("weekly-20260817-r0");
+        assertThat(jobExplorer.getJobInstanceCount(WeeklyRankingJobConfig.JOB_NAME)).isEqualTo(instancesBefore);
     }
 
     @DisplayName("상품 9 직전에 실패한 r1 을 같은 파라미터로 재시작하면 상품 9 만 처리해 완성·공개하고, 정상 1회 실행 r2 와 같은 결과를 낸다.")

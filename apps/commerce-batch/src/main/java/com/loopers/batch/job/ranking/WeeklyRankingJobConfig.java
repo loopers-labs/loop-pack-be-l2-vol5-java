@@ -4,8 +4,11 @@ import com.loopers.batch.job.ranking.step.FreezeWeeklyInputTasklet;
 import com.loopers.batch.job.ranking.step.OpenWeeklyRankingTasklet;
 import com.loopers.batch.job.ranking.step.WeeklyScoreStepComponents;
 import com.loopers.domain.ranking.ProductScore;
+import com.loopers.domain.ranking.WeeklySnapshotId;
 import lombok.RequiredArgsConstructor;
 import org.springframework.batch.core.Job;
+import org.springframework.batch.core.JobParametersInvalidException;
+import org.springframework.batch.core.JobParametersValidator;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.repository.JobRepository;
@@ -57,10 +60,25 @@ public class WeeklyRankingJobConfig {
     @Bean(JOB_NAME)
     public Job weeklyRankingJob() {
         return new JobBuilder(JOB_NAME, jobRepository)
+            .validator(weeklyRankingParametersValidator())
             .start(freezeWeeklyInputStep())
             .next(calculateWeeklyScoresStep())
             .next(openWeeklyRankingStep())
             .build();
+    }
+
+    /**
+     * 식별 파라미터 1차 검증 (D1). Job 시작 전에 거절하므로 잘못된 파라미터로 FAILED JobInstance 가 metadata 에 남지 않는다.
+     * 규칙은 WeeklySnapshotId 와 같다(존재·형식·날짜 일치·월요일·revision ≥ 1). Step 1 Tasklet 의 같은 검증은 2차 방어로 그대로 둔다.
+     */
+    static JobParametersValidator weeklyRankingParametersValidator() {
+        return parameters -> {
+            try {
+                WeeklySnapshotId.of(parameters.getString("snapshotId"), parameters.getString("periodStart"));
+            } catch (IllegalArgumentException e) {
+                throw new JobParametersInvalidException(e.getMessage());
+            }
+        };
     }
 
     /**

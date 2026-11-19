@@ -77,6 +77,7 @@
 | `snapshotId` | String | `weekly-YYYYMMDD-rN` | `weekly-20260817-r1` | true |
 
 - revision N 은 `snapshotId` 의 `-rN` 에서 파싱한다. `snapshotId` 안의 날짜(`YYYYMMDD`)와 `periodStart` 가 같은 날이 아니면 Step 1 에서 실패한다 (예외 → Job FAILED. 업무 오류 분류는 "잘못된 요청"에 해당. 배치는 HTTP 가 아니므로 `ErrorType` 을 쓰지 않고 `IllegalArgumentException` 에 `snapshotId`·`periodStart` 두 값을 담은 메시지로 던진다. 새 예외 클래스는 만들지 않는다).
+- 두 파라미터는 Job 의 `JobParametersValidator` 가 **시작 전에** 같은 규칙(존재·형식·날짜 일치·월요일·revision ≥ 1)으로 1차 검증한다. 위반이면 `JobParametersInvalidException` 이고 JobInstance 가 만들어지지 않으므로, 잘못된 파라미터로 FAILED 인스턴스가 metadata 에 남지 않는다. Step 1 의 같은 검증은 2차 방어로 유지한다(Tasklet 단독 사용 대비).
 - 재시작은 같은 두 값을 그대로 넘긴다. 실패 스위치(테스트용 hook)는 파라미터가 아니라 테스트 코드의 메서드 인자·빈 교체로 전달한다 (probe 와 같은 방식, `02-probe-result.md` 7절).
 - **이유**:
   - 과제 예시가 그대로 이 조합이다(`weeklyRanking + periodStart + snapshotId` → 같은 JobInstance, 예시 값 `weekly-20260817-r1`).
@@ -302,7 +303,7 @@ CREATE TABLE weekly_ranking_publications (
   2. `UPDATE weekly_ranking_scores s JOIN (SELECT id, ROW_NUMBER() OVER (ORDER BY score DESC, product_id ASC) rn FROM weekly_ranking_scores WHERE snapshot_id = ?) r ON s.id = r.id SET s.ranking = r.rn, s.updated_at = ?` — 모든 행을 한 문장으로 (R3). 정렬 키가 유일(product_id)하므로 재실행 시 같은 값 (R6).
   3. 결과 checksum 계산(D13) → 회차 `result_checksum` 저장. 재실행이라 `result_checksum` 이 이미 있는데 지금 값과 **다르면** 예외(Job FAILED) — 같은 snapshot 에서 다른 결과가 나왔다는 뜻으로 R6 위반이다. 순위 1..N 연속·유일성도 이 시점에 함께 검증한다(R4).
   4. 회차 `status = COMPLETED`, `updated_at` 갱신. 이미 COMPLETED 면 같은 값으로 다시 쓴다(재실행 수렴).
-  5. pointer 조건부 갱신(D5). 거절이면 D8.
+  5. pointer 조건부 갱신(D5). 거절이면 D8. 현재 pointer 의 revision 은 `SELECT ... FOR SHARE` 로 읽는다 — 이 TX 는 (1) 의 COUNT 에서 REPEATABLE READ 스냅샷이 잡히므로, 그 뒤 다른 TX 가 새 revision 을 공개하면 6a UPDATE(잠금 읽기)는 0행인데 평범한 SELECT 는 옛 스냅샷을 볼 수 있다. 잠금 읽기는 최신 commit 값을 읽어 거절 로그·exitDescription 의 "현재 공개 revision" 이 정확하다.
 - **공개 commit 뒤 Batch metadata 저장 실패** → 재시작하면 Step 3 가 다시 실행된다. (2) 는 같은 값, (4) 는 이미 COMPLETED, (5) 는 `<=` 로 통과 → 결과 불변 (R6). 이 시나리오를 테스트로 고정한다 (8절).
 - 기존 공개본을 먼저 지우고 나중에 넣는 두 TX 방식은 쓰지 않는다. 공개는 pointer 한 행의 UPDATE/INSERT 뿐이다.
 - **한계**: (2) 의 "바뀐 행 수 == expected" 와 D5 6a 의 "affected rows 1" 검증은 Connector/J 기본값(`useAffectedRows=false`, 매치된 행 수 반환)에 의존한다. `jpa.yml`·테스트 fixture 의 jdbc-url 에 이 파라미터는 없다(확인 2026-11-20). 누군가 `useAffectedRows=true` 를 켜면 같은 값을 다시 쓰는 재실행에서 0 이 돌아와 3단계·6a 검증이 깨진다. (2) 의 `UPDATE ... JOIN (SELECT ... ROW_NUMBER())` 는 MySQL 8.0 윈도 함수에 의존한다(Testcontainers `mysql:8.0`, `modules/jpa/src/testFixtures/java/com/loopers/testcontainers/MySqlTestContainersConfig.java:13`). 상품 수가 많으면 한 UPDATE 가 길어진다.
