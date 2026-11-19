@@ -4,6 +4,9 @@ tasks.processTestResources {
     from(rootProject.file("docker/payment-lab/014-weekly-ranking-snapshots.sql")) {
         into("preservation")
     }
+    from(rootProject.file("docker/payment-lab/015-weekly-ranking-scores.sql")) {
+        into("preservation")
+    }
     from(rootProject.file("docker/week9/001-batch-metadata-mysql.sql")) {
         into("preservation")
     }
