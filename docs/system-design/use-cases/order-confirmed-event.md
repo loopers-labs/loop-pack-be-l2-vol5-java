@@ -5,7 +5,7 @@
 > 주문 확정과 Kafka에 전달할 메시지는 같은 DB 트랜잭션에 기록한다. Relay는 commit된 Outbox를 읽어 Kafka에 발행한다.
 
 PG 성공으로 처음 확정된 주문의 사실을 `OrderConfirmed` Outbox에 기록하고, Relay가 Kafka에 발행한다. `commerce-streamer`는 이벤트를 상품별 구매 활동으로 한 번만 저장한다.<br>
-구매 활동은 이후 상품 랭킹의 입력이다. 이 문서는 주문 확정·전달 계약과 Consumer의 업무 효과를 정의하며, 랭킹 조회는 다루지 않는다.
+구매 활동은 [주간 구매 랭킹](weekly-ranking.md)의 입력이다. 이 문서는 주문 확정·전달 계약과 Consumer의 업무 효과를 정의하며, 랭킹 계산과 조회는 다루지 않는다.
 
 ## 설계 문서의 책임
 
@@ -197,5 +197,5 @@ Kafka transaction의 exactly-once는 Kafka record와 offset을 함께 다루는 
 - Outbox와 발행 누락의 자동 복구
 - 발행 누락의 주기적 자동 대조와 보충 발행
 - DLQ와 자동 재시도 정책
-- 주간 랭킹 조회와 집계 인덱스
+- 주간 랭킹 계산·조회와 집계 인덱스. [주간 구매 랭킹](weekly-ranking.md)에서 다룬다.
 - 확정 이후의 주문 취소·환불 이벤트

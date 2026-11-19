@@ -15,7 +15,8 @@ Commerce 도메인 모델과 JPA 저장 모델의 경계를 정리한다.<br>
 | 결제 실패의 재고 보상 기준 | `OrderItem`의 상품 ID·수량 스냅샷 | 기존 `order_items`의 저장 값을 사용한다. 결제 요청 이후 품목·수량은 갱신하지 않는다. 시도 종결과 재고 반환의 원자성은 [결과 반영 설계](use-cases/order-payment-result.md#재고-보상-트랜잭션)를 따른다 |
 | 주문 결제수단 | `Order.paymentMethod` | `orders.payment_method`를 그대로 복원한다. 주문 상태로 결제수단을 추론하지 않는다 |
 | 주문 확정 시각 | `Order.confirmedAt` | `orders.confirmed_at`을 그대로 복원한다. 비어 있으면 다른 시각으로 채우지 않는다. 저장은 [결과 반영의 조건부 갱신](use-cases/order-payment-result.md#중복-방지)만 한다 |
-| 상품 구매 활동 | `commerce-streamer`의 구매 활동과 소비 완료 기록 | `commerce-streamer`의 JPA 엔티티가 `product_purchase_activity`, `processed_order_confirmation`을 매핑한다. 주문·상품 테이블에 FK를 두지 않고, `commerce-api`는 이 테이블을 읽거나 쓰지 않는다 |
+| 상품 구매 활동 | `commerce-streamer`의 구매 활동과 소비 완료 기록 | `commerce-streamer`의 JPA 엔티티가 `product_purchase_activity`, `processed_order_confirmation`을 매핑한다. 주문·상품 테이블에 FK를 두지 않고, `commerce-api`는 이 테이블을 읽거나 쓰지 않는다. `commerce-batch`는 주간 랭킹의 점수 고정에서 읽기만 한다 |
+| 주간 랭킹 | `commerce-batch`의 회차 정보와 점수·순위 | `commerce-batch`가 랭킹 테이블 두 개와 읽기 전용 `product_purchase_activity`를 JPA 엔티티로 매핑한다. 매핑은 local 스키마 확인과 test 스키마 생성에 쓰고, 읽기·쓰기는 같은 DataSource의 JDBC SQL로 한다. JDBC SQL의 시각은 Hibernate의 UTC 설정이 적용되지 않으므로 UTC `LocalDateTime`으로 넣고 읽는다. `commerce-api`는 두 랭킹 테이블을 읽기 전용으로 매핑하고 완성된 회차만 읽는다. 규칙은 [주간 구매 랭킹](use-cases/weekly-ranking.md)을 따른다 |
 
 ## 선택 이유와 영향
 
@@ -41,11 +42,13 @@ Commerce 도메인 모델과 JPA 엔티티를 분리해 업무 규칙이 JPA 프
 | `orders` | `payment_method` 추가. 상태에 `PAYMENT_PENDING`·`PAYMENT_FAILED`, 결제 결과에 `FAILED` 허용 | `payment_method`는 DRAFT에서 NULL, 결제 시작 이후 `POINT` 또는 `PG`다. |
 | `orders` 확정 시각 | nullable `confirmed_at` `DATETIME(6)` 추가 | `PAYMENT_PENDING → CONFIRMED` 조건부 갱신이 같은 UPDATE에서 기록한다. 이후 바꾸지 않는다. `ApplicationTime`이 마이크로초로 자른 시각을 저장하므로 이벤트의 `confirmedAt`과 같은 값이다. |
 | `processed_order_confirmation` (신규, streamer) | ID, `event_id`, `order_id`, `BaseEntity` 공통 시각 | `event_id`와 `order_id`는 각각 유일하고 필수다. 저장 뒤 바꾸지 않는다. 이미 처리한 이벤트인지만 표시하며 확정 시각과 품목은 갖지 않는다. 같은 사실인지는 [사실의 비교](use-cases/order-confirmed-event.md#사실의-비교)에 따라 구매 활동과 비교한다. |
-| `product_purchase_activity` (신규, streamer) | ID, `order_id`, `product_id`, `quantity`, `confirmed_at`, `BaseEntity` 공통 시각 | `(order_id, product_id)`는 유일하고 수량은 양수다. 같은 이벤트의 소비 완료 기록과 한 트랜잭션에서 저장한다. `confirmed_at`은 주문 단위 값을 품목 행마다 두는 [의도한 반정규화](#구매-활동의-확정-시각)다. 랭킹 조회용 인덱스는 랭킹 설계에서 정한다. |
+| `product_purchase_activity` (신규, streamer) | ID, `order_id`, `product_id`, `quantity`, `confirmed_at`, `BaseEntity` 공통 시각 | `(order_id, product_id)`는 유일하고 수량은 양수다. 같은 이벤트의 소비 완료 기록과 한 트랜잭션에서 저장한다. `confirmed_at`은 주문 단위 값을 품목 행마다 두는 [의도한 반정규화](#구매-활동의-확정-시각)다. 주간 랭킹의 점수 고정이 기간 범위로 읽도록 `confirmed_at` 인덱스를 둔다. |
 | `payment_attempts` (신규) | ID, `payment_attempt_key`(소문자 UUID 36자), `order_id`, `provider_order_id`, `amount`, `status`, nullable `transaction_key`, nullable `conflict_reason`·`conflict_detected_at`·`last_checked_at`, `BaseEntity` 공통 시각 | 시도 키, 주문 ID와 providerOrderId는 각각 유일하고 필수다. 금액·상태도 필수이며 금액은 저장된 주문 총액과 같다. 충돌 사유는 TX A에서 NULL로 저장하고 [충돌 기록](use-cases/order-payment-result.md#충돌-기록) 규칙으로만 채운다. [주기 조회](use-cases/order-payment-recovery.md#주기-조회)를 위해 `(status, last_checked_at)` 인덱스를 둔다. 미종결 시도가 전체 시도보다 훨씬 적다는 전제다. 카드 입력은 저장하지 않는다. |
 | `order_confirmed_outbox` (신규, commerce-api) | ID, `event_id`, `order_id`, `event_type`, `schema_version`, `message_key`, JSON 문자열 `payload`, 전송 상태·시도 횟수·재시도 시각·오류, `BaseEntity` 공통 시각 | `event_id` 유일 제약으로 같은 확정 메시지의 Outbox 행을 하나로 제한한다. payload는 TEXT로 저장하며 메시지 생성 뒤 바꾸지 않는다. 주문 확정과 같은 로컬 TX에서 PENDING으로 기록하고 Relay가 broker 확인 뒤 전달 상태를 갱신한다. 주문 테이블과 FK를 두지 않아 보존 기간 동안 전송 기록을 유지한다. |
 | `coupon_campaigns` (신규) | ID, `name`, `total_quota`, `issued_count`, `benefit_description`, `start_at`, `end_at`, nullable `terminated_at`, `BaseEntity` 공통 시각 | 발급 가능 여부는 저장하지 않고 기간, 조기 종료 시각, 발급 수로 계산한다. 발급 수와 조기 종료 시각은 [발급 트랜잭션의 조건부 갱신](use-cases/coupon-issuance.md#발급-db-트랜잭션)이 바꾸며, 새 캠페인 생성이나 로컬 seed reset 때 초기화한다. |
 | `coupons` (신규) | ID, `campaign_id`, `user_id`, `issued_at`, `BaseEntity` 공통 시각 | 발급할 때 insert하며 사용자와 발급 시각은 필수다. `(campaign_id, user_id)` 유일 제약으로 같은 캠페인의 중복 발급을 막는다. `campaign_id`는 `coupon_campaigns` FK이고, `user_id`는 로컬 요청자 식별값이라 `users` FK를 두지 않는다. 본인 목록 조회용 `(user_id, issued_at, id)` 인덱스를 둔다. |
+| `weekly_ranking_revisions` (신규, batch) | `period_start`, `revision`, `status`, `calculated_at`, `job_execution_id`, nullable `result_checksum`·`cancelled_at`·`cancel_reason`. 기본키가 `(period_start, revision)`이라 `BaseEntity`를 상속하지 않는다 | `(period_start, revision)` 기본키, FK 없음. 상태는 `CALCULATING`, `COMPLETED`, `CANCELLED`. 점수 고정 트랜잭션에서 계산 시각과 점수를 고정한 실행 ID를 채운 `CALCULATING`으로 만들고, 공개 트랜잭션에서 결과 checksum을 채워 `COMPLETED`로 바꾼다. 닫을 때는 상태와 닫은 시각·사유만 바꾼다. checksum은 SHA-256 16진수 64자다. |
+| `weekly_ranking_scores` (신규, batch) | `period_start`, `revision`, `product_id`, `BIGINT` `score`, nullable `rank_no` | `(period_start, revision, product_id)` 기본키, `(period_start, revision, rank_no)` 유일, 점수 양수 CHECK, FK 없음. 원본 수량이 `INT`라 합이 그 범위를 넘을 수 있어 점수는 `BIGINT`다. 점수는 점수 고정 트랜잭션에서 순위를 비운 채 한 번 넣고 바꾸지 않는다. 순위는 순위 Step이 묶음마다 채우고, 다시 실행하면 비운 뒤 다시 채운다. 유일 제약은 비어 있는 순위끼리 겹친다고 보지 않는다. 완성된 회차의 행은 바꾸지 않고, 과거 회차의 행도 지우지 않는다. |
 
 ### DB 전환 순서
 
@@ -53,8 +56,8 @@ Commerce 도메인 모델과 JPA 엔티티를 분리해 업무 규칙이 JPA 프
 
 | 기존 DB 상태 | 적용 순서 (`docker/mysql/`) |
 | --- | --- |
-| POINT 전용 | `pg-payment-migration.sql` → `pg-payment-safety-migration.sql` → `order-confirmed-at-migration.sql` → `order-confirmed-outbox-migration.sql` → `purchase-activity-migration.sql` → `coupon-migration.sql` |
-| PG 스키마 | `pg-payment-safety-migration.sql` → `order-confirmed-at-migration.sql` → `order-confirmed-outbox-migration.sql` → `purchase-activity-migration.sql` → `coupon-migration.sql`. 충돌 사유 ENUM이 2개뿐이면 먼저 `pg-payment-conflict-migration.sql` |
+| POINT 전용 | `pg-payment-migration.sql` → `pg-payment-safety-migration.sql` → `order-confirmed-at-migration.sql` → `order-confirmed-outbox-migration.sql` → `purchase-activity-migration.sql` → `coupon-migration.sql` → `weekly-ranking-migration.sql` |
+| PG 스키마 | `pg-payment-safety-migration.sql` → `order-confirmed-at-migration.sql` → `order-confirmed-outbox-migration.sql` → `purchase-activity-migration.sql` → `coupon-migration.sql` → `weekly-ranking-migration.sql`. 충돌 사유 ENUM이 2개뿐이면 먼저 `pg-payment-conflict-migration.sql` |
 
 ### 결제수단과 과거 주문 전환
 
@@ -71,7 +74,7 @@ Commerce 도메인 모델과 JPA 엔티티를 분리해 업무 규칙이 JPA 프
 
 이미 확정한 주문(POINT·PG)의 `confirmed_at`은 NULL로 둔다. `updated_at` 등 다른 시각으로 추정해 채우지 않으며, 이 주문들의 확정 이벤트를 소급 발행하지 않는다.
 
-구매 활동 테이블은 `commerce-streamer`가 소유하며 템플릿 구성에 따라 같은 MySQL schema에 둔다. 서비스별로 DB를 나누더라도 두 앱이 서로의 테이블을 읽지 않는 경계는 같다.
+구매 활동 테이블은 `commerce-streamer`가 소유하며 템플릿 구성에 따라 같은 MySQL schema에 둔다. 서비스별로 DB를 나누더라도 두 앱이 서로의 테이블을 읽지 않는 경계는 같다. 다만 `commerce-batch`가 주간 랭킹을 계산할 때 이 테이블을 읽으므로, DB를 나누면 한 문장으로 점수를 고정하는 방식도 함께 바꿔야 한다.
 
 API와 streamer의 local 프로필은 `ddl-auto=validate`로 준비된 스키마를 확인한다. streamer를 재시작해도 완료 기록과 구매 활동을 삭제하지 않는다. test 프로필의 격리 DB는 공통 설정의 `create`를 사용한다.
 
@@ -101,6 +104,12 @@ WHERE conflict_reason IS NOT NULL
 ```
 
 결과가 없으면 지원하지 않는 사유는 없다. 이 조회는 데이터만 확인하며 ENUM 확장 여부는 별도로 확인한다. 결과가 있다면 신규 코드로 기동하기 전에 해당 기록의 보존·전환 방식을 정하고, 알 수 없는 사유를 자동 삭제하거나 다른 사유로 치환하지 않는다. 현재 `init.sql`로 만든 DB에는 과거 값이 없어 이 확인이 필요하지 않다.
+
+### 주간 랭킹 테이블 전환
+
+`weekly-ranking-migration.sql`은 랭킹 테이블 두 개를 만들고 `product_purchase_activity`에 `confirmed_at` 인덱스를 추가한다. 반복 실행해도 결과가 같고, 기존 구매 활동은 바꾸지 않는다. 구매 활동 테이블의 주인은 `commerce-streamer`이며 인덱스는 배치의 읽기를 위한 것이다.
+
+`commerce-batch`의 local 프로필은 `ddl-auto=validate`로 준비된 스키마를 확인한다. 공통 설정의 `create`를 그대로 받으면 엔티티로 매핑한 테이블을 로컬 실행 때마다 지우고 다시 만들기 때문이다. test 프로필은 공통 `create`를 유지한다.
 
 ### 검증 기준
 
