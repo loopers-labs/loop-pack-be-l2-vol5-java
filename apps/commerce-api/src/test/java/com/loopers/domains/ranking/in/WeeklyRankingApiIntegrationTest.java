@@ -127,6 +127,21 @@ class WeeklyRankingApiIntegrationTest {
     }
 
     @Test
+    @DisplayName("A3: 공개본은 있는데 그 랭킹의 상품이 모두 삭제되면 PUBLISHED·공개 snapshotId와 빈 items를 준다")
+    void publishedButAllProductsDeleted() throws Exception {
+        publishFixture();
+        products.delete(first);
+        products.delete(second);
+        products.delete(third);
+
+        mvc.perform(get("/api/v1/rankings/weekly").param("periodStart", PERIOD))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.status").value("PUBLISHED"))
+            .andExpect(jsonPath("$.data.snapshotId").value(R1))
+            .andExpect(jsonPath("$.data.items", hasSize(0)));
+    }
+
+    @Test
     @DisplayName("A4: 재고가 0인 상품은 순위에서 빠지지 않고 soldOut=true로 표시된다")
     void soldOutProductStaysWithFlag() throws Exception {
         publishFixture();
