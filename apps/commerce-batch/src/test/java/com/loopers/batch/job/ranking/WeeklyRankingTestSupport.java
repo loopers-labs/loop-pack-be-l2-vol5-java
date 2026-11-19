@@ -1,9 +1,11 @@
 package com.loopers.batch.job.ranking;
 
+import org.springframework.batch.core.Job;
 import org.springframework.batch.core.JobExecution;
 import org.springframework.batch.core.JobParameters;
 import org.springframework.batch.core.JobParametersBuilder;
 import org.springframework.batch.core.StepExecution;
+import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.batch.core.scope.context.ChunkContext;
 import org.springframework.batch.core.scope.context.StepContext;
 import org.springframework.batch.core.step.tasklet.Tasklet;
@@ -17,6 +19,15 @@ import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.doAnswer;
 
 /**
  * 랭킹 테스트의 공통 준비. DB 시각은 UTC 날짜·시각이다.
@@ -130,7 +141,57 @@ public final class WeeklyRankingTestSupport {
             VALUES (?, ?, ?, ?, ?)""", LocalDate.parse(periodStart), revision, productId, score, rank);
     }
 
+    // 공개본: 그 기간에서 가장 최근에 완성된 회차. 조회 API의 첫 번째 쿼리와 같다.
+    public static Integer publishedRevision(JdbcTemplate jdbc, String periodStart) {
+        return jdbc.queryForList("""
+                SELECT revision FROM weekly_ranking_revisions
+                WHERE period_start = ? AND status = 'COMPLETED' ORDER BY revision DESC LIMIT 1""",
+                Integer.class, LocalDate.parse(periodStart))
+            .stream().findFirst().orElse(null);
+    }
+
     public static int count(JdbcTemplate jdbc, String table) {
         return jdbc.queryForObject("SELECT COUNT(*) FROM " + table, Integer.class);
+    }
+
+    public static StepExecution step(JobExecution execution, String stepName) {
+        return execution.getStepExecutions().stream()
+            .filter(stepExecution -> stepExecution.getStepName().equals(stepName))
+            .findFirst()
+            .orElseThrow();
+    }
+
+    // 식별 파라미터가 아니라 테스트 설정으로, 그 순위를 쓰는 묶음에서 한 번만 실패시킨다. repository는 spy여야 한다.
+    public static void failOnceWritingRank(WeeklyRankingRepository repository, int rank) {
+        AtomicBoolean failed = new AtomicBoolean();
+        doAnswer(invocation -> {
+            List<ProductRank> ranks = invocation.getArgument(2);
+            if (ranks.stream().anyMatch(productRank -> productRank.rank() == rank) && failed.compareAndSet(false, true)) {
+                throw new IllegalStateException("순위 " + rank + "를 쓰는 묶음에서 실패");
+            }
+            return invocation.callRealMethod();
+        }).when(repository).writeRanks(any(), anyInt(), anyList());
+    }
+
+    // 다른 스레드에서 Job을 실행한다. 한 실행을 붙잡아 둔 동안 다른 실행을 해 보는 테스트에 쓴다.
+    public static CompletableFuture<JobExecution> launchInBackground(JobLauncher jobLauncher, Job job, JobParameters parameters) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                return jobLauncher.run(job, parameters);
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        });
+    }
+
+    public static void await(CountDownLatch latch) {
+        try {
+            if (!latch.await(10, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("기다리던 순서가 오지 않았다.");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
     }
 }
