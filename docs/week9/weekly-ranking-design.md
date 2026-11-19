@@ -218,6 +218,7 @@ CREATE TABLE weekly_ranking_publications (
   1. `UPDATE weekly_ranking_publications SET snapshot_id=?, revision=?, published_at=?, updated_at=? WHERE period_start=? AND revision <= ?` 를 실행하고 affected rows 를 본다. 1건이면 끝(갱신 또는 같은 revision 재기록).
   2. 0건이면 `SELECT revision FROM weekly_ranking_publications WHERE period_start=?` 로 존재를 확인한다. 행이 **있으면** 현재 revision 이 더 크다는 뜻이므로 **거절**(D8). 행이 **없으면** `INSERT` 한다.
   - `<=` 로 **같은 revision 의 재실행을 통과**시킨다. Step 3 가 두 번 실행돼도 같은 pointer 로 수렴(R6).
+  - 같은 revision 재실행에서는 `published_at` 을 유지한다(`CASE WHEN revision = 새 revision THEN published_at ELSE now END`). 공개 시각은 처음 공개된 때를 뜻해야 하므로 수렴 재실행이 바꾸지 않는다.
   - 한 문장 `INSERT ... ON DUPLICATE KEY UPDATE` 로 쓰지 않는 이유: MySQL 은 그 UPDATE 절에 WHERE 조건을 둘 수 없어 `IF(revision <= VALUES(revision), ...)` 꼴이 되고, 거절 여부를 affected rows 로 읽기 어렵다.
 - **한계**: pointer 와 회차 두 곳에 `revision` 이 있다. 어긋남은 테스트(R4·D8)로만 잡는다. 또 같은 기간의 **첫 공개가 동시에** 두 실행에서 일어나면 둘 다 UPDATE 0건 → SELECT 없음 → INSERT 로 가고, PK(`period_start`) 위반으로 한쪽이 실패한다. 과제가 같은 기간의 계산을 직렬 실행으로 전제하므로 이 실패는 그대로 수용한다(7-2절 "배치 다중 인스턴스").
 
@@ -263,7 +264,7 @@ CREATE TABLE weekly_ranking_publications (
 - **선택**: (a) + (d).
 - 한 TX 안에서 순서대로:
   1. D1 검증(`snapshotId` 날짜 == `periodStart`), D6 충돌 검사(회차 행 조회).
-  2. `INSERT INTO weekly_ranking_inputs (snapshot_id, order_id, product_id, quantity, confirmed_at, created_at, updated_at) SELECT :snapshotId, order_id, product_id, quantity, confirmed_at, :now, :now FROM product_purchase_activity WHERE confirmed_at >= :start AND confirmed_at < :end` — 시작 포함·끝 제외. `:start`/`:end` 는 UTC `LocalDateTime` 바인딩 (D12).
+  2. `INSERT INTO weekly_ranking_inputs (snapshot_id, order_id, product_id, quantity, confirmed_at, created_at, updated_at) SELECT :snapshotId, order_id, product_id, quantity, confirmed_at, :now, :now FROM product_purchase_activity WHERE confirmed_at >= :start AND confirmed_at < :end AND deleted_at IS NULL` — 시작 포함·끝 제외. `deleted_at IS NULL` 은 저장소 관례(소프트 삭제 행은 없는 행으로 취급)를 따른 것이며, W6 consumer 에 삭제 경로가 없어 현재는 항상 NULL 이다. `:start`/`:end` 는 UTC `LocalDateTime` 바인딩 (D12).
   3. 복사된 행을 **같은 TX 에서** 다시 읽어 `input_count`, `expected_product_count`(distinct product_id), `input_checksum`(D13) 계산.
   4. 회차 행 INSERT: status `CALCULATING`, `frozen_at` = Clock.now (D12).
 - 실패하면 전체 rollback → 반쪽 snapshot 도, 회차 행도 없다. 완료 뒤 재시작에서는 재실행하지 않는다(`allowStartIfComplete` 기본 false 유지).
@@ -294,14 +295,15 @@ CREATE TABLE weekly_ranking_publications (
 ### D11. Step 3 공개 → `openWeeklyRankingStep` (Tasklet, 한 TX, 순서 (1)~(5))
 
 - 한 TX 안에서 순서대로:
+  0. 회차 행을 `SELECT ... FROM weekly_ranking_revisions WHERE snapshot_id = ? FOR UPDATE` 로 잠가 읽는다. 같은 snapshot 의 공개 단계가 겹치지 않게 직렬화하는 방어선이다(Batch 가 같은 JobInstance 의 동시 실행을 막지만 비용이 거의 없어 하나 더 둔다). 행이 없으면 예외.
   1. `select count(*) from weekly_ranking_scores where snapshot_id = ?` == 회차의 `expected_product_count` 검증. 다르면 예외(Job FAILED). 0 == 0 이면 통과(구매 0건 완성본).
   2. `UPDATE weekly_ranking_scores s JOIN (SELECT id, ROW_NUMBER() OVER (ORDER BY score DESC, product_id ASC) rn FROM weekly_ranking_scores WHERE snapshot_id = ?) r ON s.id = r.id SET s.ranking = r.rn, s.updated_at = ?` — 모든 행을 한 문장으로 (R3). 정렬 키가 유일(product_id)하므로 재실행 시 같은 값 (R6).
-  3. 결과 checksum 계산(D13) → 회차 `result_checksum` 저장.
+  3. 결과 checksum 계산(D13) → 회차 `result_checksum` 저장. 재실행이라 `result_checksum` 이 이미 있는데 지금 값과 **다르면** 예외(Job FAILED) — 같은 snapshot 에서 다른 결과가 나왔다는 뜻으로 R6 위반이다. 순위 1..N 연속·유일성도 이 시점에 함께 검증한다(R4).
   4. 회차 `status = COMPLETED`, `updated_at` 갱신. 이미 COMPLETED 면 같은 값으로 다시 쓴다(재실행 수렴).
   5. pointer 조건부 갱신(D5). 거절이면 D8.
 - **공개 commit 뒤 Batch metadata 저장 실패** → 재시작하면 Step 3 가 다시 실행된다. (2) 는 같은 값, (4) 는 이미 COMPLETED, (5) 는 `<=` 로 통과 → 결과 불변 (R6). 이 시나리오를 테스트로 고정한다 (8절).
 - 기존 공개본을 먼저 지우고 나중에 넣는 두 TX 방식은 쓰지 않는다. 공개는 pointer 한 행의 UPDATE/INSERT 뿐이다.
-- **한계**: (2) 의 `UPDATE ... JOIN (SELECT ... ROW_NUMBER())` 는 MySQL 8.0 윈도 함수에 의존한다(Testcontainers `mysql:8.0`, `modules/jpa/src/testFixtures/java/com/loopers/testcontainers/MySqlTestContainersConfig.java:13`). 상품 수가 많으면 한 UPDATE 가 길어진다.
+- **한계**: (2) 의 "바뀐 행 수 == expected" 와 D5 6a 의 "affected rows 1" 검증은 Connector/J 기본값(`useAffectedRows=false`, 매치된 행 수 반환)에 의존한다. `jpa.yml`·테스트 fixture 의 jdbc-url 에 이 파라미터는 없다(확인 2026-11-20). 누군가 `useAffectedRows=true` 를 켜면 같은 값을 다시 쓰는 재실행에서 0 이 돌아와 3단계·6a 검증이 깨진다. (2) 의 `UPDATE ... JOIN (SELECT ... ROW_NUMBER())` 는 MySQL 8.0 윈도 함수에 의존한다(Testcontainers `mysql:8.0`, `modules/jpa/src/testFixtures/java/com/loopers/testcontainers/MySqlTestContainersConfig.java:13`). 상품 수가 많으면 한 UPDATE 가 길어진다.
 
 ---
 
