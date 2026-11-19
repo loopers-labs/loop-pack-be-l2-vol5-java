@@ -299,3 +299,14 @@ java -jar commerce-batch.jar --job.name=weeklyRanking --spring.batch.job.enabled
 | 연결 테스트에 모든 시나리오를 넣음 | 프로세스를 여러 번 띄워 느리고, 실패했을 때 원인을 좁히기 어렵다 |
 
 포기하는 것: 테스트 하나가 무겁고 느리다. batch bootJar 빌드가 api 테스트의 선행 작업이 된다.
+
+## 9. 남은 한계
+
+| 한계 | 지금 상태 | 나중에 할 일 |
+|---|---|---|
+| 공개 TX commit 뒤 batch metadata 저장만 실패 | 공개를 다시 실행하면 같은 결과로 수렴함(`ALREADY_PUBLISHED`)만 확인했다. metadata 갱신 실패를 직접 재현하지 않았고, Spring Batch 가 이때 step 을 `UNKNOWN` 으로 남겨 재시작을 막는지는 확인하지 않았다 | 실패를 주입해 재시작 가능 여부와 운영 복구 절차를 확인 |
+| 원본 조회 인덱스 | `processed_order_confirmation.confirmed_at` 에 인덱스가 없어 입력 고정 · 늦은 구매 확인이 전체를 훑는다. streamer 엔티티의 테이블이라 손대지 않았다 | 데이터가 커지면 streamer 쪽에 인덱스 추가 |
+| 입력을 한 번에 메모리로 읽음 | 입력 고정이 그 주의 활동을 한 번에 읽는다(D-177). 같은 TX 안 페이지 읽기로 바꿀 수 있다 | 측정 뒤 판단 |
+| batch 모듈 검사 | commerce-batch 에는 checkstyle · ArchitectureTest 설정이 없다 | api · streamer 와 맞출지 판단 |
+| 결과 checksum | 테스트에서만 계산하고 manifest 에 저장하지 않는다(D-195) | 운영 검사 필요 여부를 멘토링에서 확인 |
+| 처리량 | 측정하지 않았다. chunk 기본값 100 은 측정값이 아니다(D-194) | |
