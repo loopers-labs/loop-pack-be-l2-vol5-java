@@ -17,6 +17,11 @@ spring:
     jdbc:
       initialize-schema: never
 
+ranking:
+  weekly:
+    # 한 chunk(한 TX)에서 계산·commit 할 상품 수. 측정한 최적값이 아니다.
+    chunk-size: 100
+
 management:
   health:
     defaults:
@@ -30,6 +35,16 @@ spring:
   batch:
     jdbc:
       initialize-schema: always
+
+---
+spring:
+  config:
+    activate:
+      on-profile: local
+  # batch 는 실행마다 새로 뜨는 프로세스라 create 면 재시작 사이에 고정 입력·stage 가 지워진다.
+  jpa:
+    hibernate:
+      ddl-auto: update
 
 ---
 spring:
