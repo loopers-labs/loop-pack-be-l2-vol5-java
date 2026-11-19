@@ -32,7 +32,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 /** 9주차 설계 2장(입력 고정). 실습 §6 fixture 를 실제 MySQL 원본 테이블에 넣고 job 을 실행한다 */
 @SpringBootTest(properties = {
     "spring.batch.job.enabled=false",
-    "spring.batch.job.name=" + WeeklyRankingJobConfig.JOB_NAME
+    "spring.batch.job.name=" + WeeklyRankingJobConfig.JOB_NAME,
+    // 한 주문의 두 품목 사이를 포함해 모든 행이 페이지 경계가 되게 한다
+    "weekly-ranking.freeze-page-size=1"
 })
 class WeeklyRankingFreezeTest {
 

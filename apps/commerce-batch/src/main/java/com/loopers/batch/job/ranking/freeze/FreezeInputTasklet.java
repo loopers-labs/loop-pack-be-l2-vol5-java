@@ -9,12 +9,12 @@ import org.springframework.batch.core.StepContribution;
 import org.springframework.batch.core.scope.context.ChunkContext;
 import org.springframework.batch.core.step.tasklet.Tasklet;
 import org.springframework.batch.repeat.RepeatStatus;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
-import java.util.List;
 import java.util.Optional;
 
 /**
@@ -29,6 +29,10 @@ public class FreezeInputTasklet implements Tasklet {
     private final WeeklyRankingSnapshotRepository snapshots;
     private final PurchaseActivitySource source;
     private final Clock clock;
+
+    // 읽기 확인(50만 행)에서 1000 · 5000 · 20000 의 차이가 1초 안이라 중간값을 둔다
+    @Value("${weekly-ranking.freeze-page-size:5000}")
+    private int pageSize;
 
     @Override
     public RepeatStatus execute(StepContribution contribution, ChunkContext chunkContext) {
@@ -46,11 +50,17 @@ public class FreezeInputTasklet implements Tasklet {
             return RepeatStatus.FINISHED;
         }
 
-        List<PurchaseInput> inputs = source.findConfirmedBetween(params.periodStart(), params.periodEnd());
-        snapshots.insertInputs(params.snapshotId(), inputs, frozenAt);
-        snapshots.insertFrozen(params, frozenAt, inputs.size(), InputChecksum.of(inputs));
-        contribution.incrementWriteCount(inputs.size());
-        log.info("입력 고정. snapshotId={} inputCount={}", params.snapshotId(), inputs.size());
+        // 한 주 입력을 통째로 들면 50만 행에서 힙 512MB 를 넘었다. 같은 TX 안에서 페이지마다 쓰고 checksum 에 흘려 넣는다
+        InputChecksum checksum = new InputChecksum();
+        int[] count = {0};
+        source.readConfirmedBetween(params.periodStart(), params.periodEnd(), pageSize, page -> {
+            snapshots.insertInputs(params.snapshotId(), page, frozenAt);
+            page.forEach(checksum::add);
+            count[0] += page.size();
+        });
+        snapshots.insertFrozen(params, frozenAt, count[0], checksum.hex());
+        contribution.incrementWriteCount(count[0]);
+        log.info("입력 고정. snapshotId={} inputCount={}", params.snapshotId(), count[0]);
         return RepeatStatus.FINISHED;
     }
 }
