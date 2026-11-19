@@ -1,18 +1,27 @@
 package com.loopers.batch.job.weeklyranking;
 
+import com.loopers.domain.ranking.ProductScore;
+import jakarta.persistence.EntityManagerFactory;
 import lombok.RequiredArgsConstructor;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
+import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.core.job.DefaultJobParametersValidator;
 import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
+import org.springframework.batch.item.database.JpaCursorItemReader;
+import org.springframework.batch.item.database.builder.JpaCursorItemReaderBuilder;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.interceptor.DefaultTransactionAttribute;
+
+import java.time.LocalDate;
+import java.util.Map;
 
 /**
  * 입력 고정 → 점수 계산 → 완성본 공개. 식별 parameter 는 periodStart·revision 이고 incrementer 를 두지 않는다.
@@ -25,10 +34,19 @@ public class WeeklyRankingJobConfig {
 
     public static final String JOB_NAME = "weeklyRanking";
     public static final String FREEZE_STEP = "freezeWeeklyInput";
+    public static final String CALCULATE_STEP = "calculateWeeklyScores";
+    // 재시작 위치가 이 이름으로 ExecutionContext 에 저장된다(<name>.read.count). 바꾸면 기존 실행을 이어 가지 못한다.
+    public static final String PRODUCT_READER = "weeklyRankingProductReader";
 
     private final JobRepository jobRepository;
     private final PlatformTransactionManager transactionManager;
+    private final EntityManagerFactory entityManagerFactory;
     private final FreezeInputTasklet freezeInputTasklet;
+    private final WeeklyScoreProcessor weeklyScoreProcessor;
+    private final WeeklyScoreWriter weeklyScoreWriter;
+
+    @Value("${ranking.weekly.chunk-size}")
+    private int chunkSize;
 
     @Bean(JOB_NAME)
     public Job weeklyRankingJob() {
@@ -37,6 +55,7 @@ public class WeeklyRankingJobConfig {
                 new String[] {WeeklyRankingJobParameters.PERIOD_START, WeeklyRankingJobParameters.REVISION},
                 new String[] {}))
             .start(freezeInputStep())
+            .next(calculateScoresStep())
             .build();
     }
 
@@ -48,6 +67,33 @@ public class WeeklyRankingJobConfig {
         return new StepBuilder(FREEZE_STEP, jobRepository)
             .tasklet(freezeInputTasklet, transactionManager)
             .transactionAttribute(readCommitted)
+            .build();
+    }
+
+    @Bean(CALCULATE_STEP)
+    public Step calculateScoresStep() {
+        // 상품 하나가 item 하나다. chunk 결과와 reader 위치가 같은 transactionManager 로 함께 commit 된다.
+        return new StepBuilder(CALCULATE_STEP, jobRepository)
+            .<Long, ProductScore>chunk(chunkSize, transactionManager)
+            .reader(productReader(null, null))
+            .processor(weeklyScoreProcessor)
+            .writer(weeklyScoreWriter)
+            .build();
+    }
+
+    @StepScope
+    @Bean
+    public JpaCursorItemReader<Long> productReader(
+        @Value("#{jobParameters['" + WeeklyRankingJobParameters.PERIOD_START + "']}") LocalDate periodStart,
+        @Value("#{jobParameters['" + WeeklyRankingJobParameters.REVISION + "']}") Long revision
+    ) {
+        return new JpaCursorItemReaderBuilder<Long>()
+            .name(PRODUCT_READER)
+            .saveState(true)
+            .entityManagerFactory(entityManagerFactory)
+            .queryString("select distinct i.productId from WeeklyRankingSnapshotInput i "
+                + "where i.snapshotId = :snapshotId order by i.productId")
+            .parameterValues(Map.of("snapshotId", WeeklyRankingSnapshotIds.of(periodStart, revision)))
             .build();
     }
 }
