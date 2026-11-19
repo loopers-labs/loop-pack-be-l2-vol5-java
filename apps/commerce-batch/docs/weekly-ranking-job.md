@@ -1,6 +1,6 @@
 # 주간 랭킹 Job 설계
 
-> 상태: 설계를 마쳤고 구현 전이다. 계약과 규칙은 [주간 구매 랭킹](../../../docs/system-design/use-cases/weekly-ranking.md)을 따르고, 이 문서는 그 규칙을 `commerce-batch`의 Spring Batch로 구현하는 방법을 다룬다. 결정 배경은 [결정 기록](../../../docs/system-design/use-cases/weekly-ranking-decisions.md), 검증은 [검증 기록](../../../docs/system-design/use-cases/weekly-ranking-verification.md)을 따른다.
+> 상태: 구현했다. 계약과 규칙은 [주간 구매 랭킹](../../../docs/system-design/use-cases/weekly-ranking.md)을 따르고, 이 문서는 그 규칙을 `commerce-batch`의 Spring Batch로 구현하는 방법을 다룬다. 결정 배경은 [결정 기록](../../../docs/system-design/use-cases/weekly-ranking-decisions.md), 검증은 [검증 기록](../../../docs/system-design/use-cases/weekly-ranking-verification.md)을 따른다.
 
 `commerce-batch`의 `weeklyRanking` Job은 한 기간의 한 회차를 세 Step으로 계산한다. 점수를 한 문장으로 고정하고, 고정한 점수를 chunk로 읽어 순위를 쓰고, 순위를 확인해 공개한다. 실행 기록은 Spring Batch의 JobRepository가 남기고, 업무 결과는 랭킹 테이블 두 개에 남는다.
 
@@ -29,7 +29,9 @@ java -jar commerce-batch.jar --job.name=weeklyRanking periodStart=2026-08-17 rev
 | 3 | `publishWeeklyRanking` | Tasklet | 한 번의 `execute()`, 한 트랜잭션 |
 
 - 세 Step 모두 실제 DB 트랜잭션 관리자를 쓴다.
-- 격리 수준은 Step 설정으로 줘야 적용된다. Tasklet 안에 `@Transactional(isolation = ...)`을 붙이면 이미 열린 Step 트랜잭션에 합류해 무시된다. `READ_COMMITTED`의 `INSERT ... SELECT`는 MySQL binlog 형식이 `ROW`여야 한다. MySQL 8.0의 기본값이다.
+- 격리 수준은 Step 설정으로 줘야 적용된다. Tasklet 안에 `@Transactional(isolation = ...)`을 붙이면 이미 열린 Step 트랜잭션에 합류해 무시된다.
+- 점수 고정 Step의 트랜잭션 속성은 격리 수준만 바꾸고, 롤백 규칙은 Tasklet Step 기본값처럼 모든 예외로 둔다. 일반 `DefaultTransactionAttribute`를 그대로 쓰면 RuntimeException에서만 롤백한다. 그러면 checked 예외가 났을 때 점수만 커밋되고 Tasklet이 다시 불려 Job이 완료로 끝난다.
+- Step의 쓰기 건수는 점수 고정이 넣은 점수 행 수, 순위 Step이 쓴 순위 수, 공개가 완성한 회차 1이다. 이미 한 일이라 건너뛰면 0이다. `READ_COMMITTED`의 `INSERT ... SELECT`는 MySQL binlog 형식이 `ROW`여야 한다. MySQL 8.0의 기본값이다.
 - 2·3번은 원본 구매 활동을 읽지 않으므로 기본 격리 수준으로 둔다.
 
 ## 저장소와 트랜잭션
@@ -99,10 +101,10 @@ WHERE s.period_start = ? AND s.revision = ? AND s.product_id = ? AND r.status = 
 | 구성 | 내용 |
 |---|---|
 | 시작 전 비우기 | Step listener의 `beforeStep`이 위 비우기 SQL을 실행한다. 처음 실행할 때는 비울 순위가 없고, 다시 실행할 때는 앞 실행이 커밋한 순위를 비운다. 회차가 `CALCULATING`이 아니면 바뀌는 행이 없다. |
-| Reader | `JdbcPagingItemReader`, 이름 `frozenScoreReader`. sort key는 `score DESC, product_id ASC`이고, 둘을 합치면 회차 안에서 유일하다. 페이지 크기는 chunk 크기와 같은 설정 값을 쓴다. 위치를 저장하지 않는다(`saveState(false)`). 잡 파라미터를 받는 `@StepScope` 빈이고, Step이 `ItemStream`으로 열고 닫도록 반환 타입을 `JdbcPagingItemReader`로 둔다. |
+| Reader | `JdbcPagingItemReader`, 이름 `frozenScoreReader`. `step/FrozenScoreReader`가 만든다. 빌더의 `build()`는 초기화하지 않으므로 만든 뒤 `afterPropertiesSet()`을 부른다. sort key는 `score DESC, product_id ASC`이고, 둘을 합치면 회차 안에서 유일하다. 페이지 크기는 chunk 크기와 같은 설정 값을 쓴다. 위치를 저장하지 않는다(`saveState(false)`). 잡 파라미터를 받는 `@StepScope` 빈이고, Step이 `ItemStream`으로 열고 닫도록 반환 타입을 `JdbcPagingItemReader`로 둔다. |
 | 아이템 | `FrozenScore`는 상품 ID와 점수를 담고 `ItemCountAware`를 구현한다. Reader가 읽을 때 몇 번째로 읽힌 아이템인지 넣어 준다. 위치를 저장하지 않으므로 실행마다 1부터 센다. |
 | Processor | 읽은 순번을 계산 순위로 정해 `(상품 ID, 순위)`를 넘긴다. |
-| Writer | 위 UPDATE를 `JdbcTemplate`의 batch update로 실행한다. 절대값이라 다시 매겨도 같은 값이 된다. 바뀐 행 수의 합이 묶음의 아이템 수와 다르면 예외를 던진다. 순위를 매기는 사이 운영자가 회차를 닫은 경우다. 그 묶음은 롤백되고, 닫힌 회차의 행은 더 바뀌지 않는다. |
+| Writer | 위 UPDATE를 `JdbcTemplate`의 batch update로 실행한다. 절대값이라 다시 매겨도 같은 값이 된다. 바뀐 행 수의 합이 묶음의 아이템 수와 다르면 예외를 던진다. 묶음을 읽은 뒤 쓰기 전에 운영자가 회차를 닫은 경우다. 그 묶음은 롤백되고, 닫힌 회차의 행은 더 바뀌지 않는다. 묶음 사이에 닫히면 Writer까지 오지 않는다. 다음 페이지 쿼리가 계산 중인 회차만 읽어 0행을 받고, 순위 Step은 그대로 끝난다. |
 | 다시 실행 | 이어 가지 않는다. 앞 실행이 커밋한 1·2위가 있어도 시작 전에 비우고 첫 행부터 다시 읽는다. 비우지 않고 덮어쓰면 순위 규칙이 바뀐 경우 남아 있던 순위와 유일 제약이 부딪힌다. |
 
 규칙은 [규칙 문서의 순위 매기기](../../../docs/system-design/use-cases/weekly-ranking.md#2-순위-매기기)를 따른다. 회차가 `CALCULATING`이 아니면 비울 순위도 읽을 행도 없어 아무것도 쓰지 않고 끝난다.
@@ -142,7 +144,7 @@ Step 안에서는 재시도하지도 건너뛰지도 않는다(결정 기록 R-3
 |---|---|---|
 | 점수 고정 (잘못된 원본, 회차 번호, 계산 중 회차, 제약 위반, 연결 끊김) | 업무 테이블에 아무것도 없음 | 원인을 고친 뒤 그 순간의 구매 활동으로 처음부터 계산한다 |
 | 순위 매기기 | `CALCULATING` 회차, 점수 전부, 커밋한 묶음까지의 순위 | 점수 고정은 건너뛴다. 순위는 비운 뒤 처음부터 다시 매기고, 그다음 공개한다 |
-| 순위를 매기는 중 회차가 닫힘 | `CANCELLED` 회차, 닫기 전에 커밋한 묶음까지의 순위 | 순위 Step은 비울 순위도 읽을 행도 없어 그대로 끝나고, 공개에서 실패한다. 새로 계산하려면 다음 회차로 실행한다 |
+| 순위를 매기는 중 회차가 닫힘 | `CANCELLED` 회차, 닫기 전에 커밋한 묶음까지의 순위. 묶음 사이에 닫혔으면 순위 Step은 완료로 끝나고 공개에서 실패하며, 쓰기 직전에 닫혔으면 순위 Step에서 실패한다 | 순위 Step이 완료됐으면 건너뛰고, 실패했으면 비울 순위도 읽을 행도 없어 그대로 끝난다. 어느 쪽이든 공개에서 실패한다. 새로 계산하려면 다음 회차로 실행한다 |
 | 공개 (순위 확인 실패 포함) | `CALCULATING` 회차, 점수와 순위 | 점수 고정과 순위 매기기는 건너뛰고 공개만 다시 한다. 순위 확인이 계속 실패하면 회차를 닫는다 |
 | 어느 Step이든 커밋 뒤, 성공 기록 전 | 그 Step의 결과는 커밋됨. 실행 기록은 대개 `UNKNOWN`이나 `STARTED`로 남는다 | 아래 정리 절차 뒤 다시 실행하면 그 Step이 다시 돈다. 각 Step이 회차 상태를 보고 이미 한 일은 다시 하지 않으므로 같은 결과로 끝난다 |
 | 실행 기록이 `STARTED`나 `UNKNOWN`으로 남음 (프로세스 강제 종료, 기록 저장 실패) | 커밋한 데까지 남음 | 같은 파라미터의 실행을 Spring Batch가 거절한다. 정리 절차를 거친 뒤 다시 실행한다 |
@@ -188,9 +190,12 @@ WHERE period_start = ? AND revision = ? AND status IN ('CALCULATING', 'COMPLETED
 | `WeeklyRankingJobConfig` | Job, 세 Step, 순위 Step의 reader·processor·writer, 파라미터 검증 등록 |
 | `WeeklyRankingParametersValidator` | 식별 파라미터의 모양 검사 |
 | `step/FreezeWeeklyScoresTasklet` | 점수 고정 |
-| `step/ClearRanksListener`, `step/FrozenScore`, `step/ScoreRankProcessor`, `step/ScoreRankWriter` | 순위 매기기의 시작 전 비우기, 아이템, Processor, Writer |
+| `step/ClearRanksListener`, `step/FrozenScoreReader`, `step/FrozenScore`, `step/ScoreRankProcessor`, `step/ScoreRankWriter` | 순위 매기기의 시작 전 비우기, Reader 만들기, 아이템, Processor, Writer |
 | `step/PublishWeeklyRankingTasklet` | 순위 확인, checksum, 완성 |
+| `ProductRank` | 상품 하나에 매긴 계산 순위. Processor가 만들고 Writer가 쓴다 |
+| `RankStats` | 공개 전 순위 확인 값(행 수, 순위가 있는 행 수, 최솟값, 최댓값)과 빠짐없는지 판단 |
 | `WeeklyRankingKey` | 잡 파라미터의 기간과 회차 |
+| `WeeklyRankingRevisionStatus` | 회차 상태 `CALCULATING`, `COMPLETED`, `CANCELLED` |
 | `RankingPeriod` | 월요일 검증과 UTC 기간 범위 |
 | `RankingChecksum` | 결과 checksum 직렬화와 SHA-256 |
 | `RankingTime` | 주입한 시계의 UTC `LocalDateTime` |
@@ -201,23 +206,23 @@ WHERE period_start = ? AND revision = ? AND status IN ('CALCULATING', 'COMPLETED
 
 ## 구현 체크리스트
 
-- [ ] `RunIdIncrementer`와 실행 시각 파라미터를 쓰지 않는다.
-- [ ] 랭킹 Step에 `ResourcelessTransactionManager`를 쓰지 않는다.
-- [ ] 메모리 JobRepository나 `@EnableBatchProcessing`을 추가하지 않는다.
-- [ ] 업무 SQL과 JobRepository가 같은 DataSource와 트랜잭션 관리자를 쓴다.
-- [ ] 점수 고정 Step의 격리 수준은 Step의 `transactionAttribute`로 준다.
-- [ ] 완료한 Step을 다시 돌리도록(`allowStartIfComplete`) 설정하지 않는다.
-- [ ] Step에 `faultTolerant()`의 retry와 skip을 두지 않는다.
-- [ ] 순위 Step의 reader는 `@StepScope` 빈이고 반환 타입은 `JdbcPagingItemReader`다.
-- [ ] 순위 Step은 시작할 때 계산 중인 회차의 순위를 비운다.
-- [ ] reader는 위치를 저장하지 않는다(`saveState(false)`).
-- [ ] 순위 Writer는 계산 중인 회차에만 쓰고, 바뀐 행 수가 묶음의 아이템 수와 다르면 실패한다.
-- [ ] 순위는 읽은 순번으로 정하고 절대값으로 쓴다.
-- [ ] 테스트는 `spring.batch.job.enabled=false`로 자동 실행을 끄고 직접 launch한다.
-- [ ] 테스트 시작 때 업무 테이블과 Batch 실행 기록을 함께 비운다. `DatabaseCleanUp`은 엔티티 테이블만 비우므로 실행 기록은 `JobRepositoryTestUtils`로 지운다.
-- [ ] 실패와 다시 실행 테스트에서 두 실행 사이에 DB와 메타 테이블을 비우지 않는다.
-- [ ] 실패 스위치는 테스트 설정으로 두고 식별 파라미터로 만들지 않는다.
-- [ ] 잡 파라미터는 타입 없이 문자열로 넘기고, 검증기가 모양을 확인한다.
-- [ ] JDBC SQL의 시각은 UTC `LocalDateTime`으로 넣고 읽는다.
-- [ ] 계산 시각은 점수를 넣은 뒤에 읽는다.
-- [ ] 실행 전에 `./gradlew :apps:commerce-batch:dependencyInsight --dependency spring-batch-core --configuration runtimeClasspath`로 Spring Batch 버전을 확인한다.
+- [x] `RunIdIncrementer`와 실행 시각 파라미터를 쓰지 않는다.
+- [x] 랭킹 Step에 `ResourcelessTransactionManager`를 쓰지 않는다.
+- [x] 메모리 JobRepository나 `@EnableBatchProcessing`을 추가하지 않는다.
+- [x] 업무 SQL과 JobRepository가 같은 DataSource와 트랜잭션 관리자를 쓴다.
+- [x] 점수 고정 Step의 격리 수준은 Step의 `transactionAttribute`로 주고, 롤백 규칙은 모든 예외로 둔다.
+- [x] 완료한 Step을 다시 돌리도록(`allowStartIfComplete`) 설정하지 않는다.
+- [x] Step에 `faultTolerant()`의 retry와 skip을 두지 않는다.
+- [x] 순위 Step의 reader는 `@StepScope` 빈이고 반환 타입은 `JdbcPagingItemReader`다.
+- [x] 순위 Step은 시작할 때 계산 중인 회차의 순위를 비운다.
+- [x] reader는 위치를 저장하지 않는다(`saveState(false)`).
+- [x] 순위 Writer는 계산 중인 회차에만 쓰고, 바뀐 행 수가 묶음의 아이템 수와 다르면 실패한다.
+- [x] 순위는 읽은 순번으로 정하고 절대값으로 쓴다.
+- [x] 테스트는 `spring.batch.job.enabled=false`로 자동 실행을 끄고 직접 launch한다.
+- [x] 테스트 시작 때 업무 테이블과 Batch 실행 기록을 함께 비운다. `DatabaseCleanUp`은 엔티티 테이블만 비우므로 실행 기록은 `JobRepositoryTestUtils`로 지운다.
+- [x] 실패와 다시 실행 테스트에서 두 실행 사이에 DB와 메타 테이블을 비우지 않는다.
+- [x] 실패 스위치는 테스트 설정으로 두고 식별 파라미터로 만들지 않는다.
+- [x] 잡 파라미터는 타입 없이 문자열로 넘기고, 검증기가 모양을 확인한다.
+- [x] JDBC SQL의 시각은 UTC `LocalDateTime`으로 넣고 읽는다.
+- [x] 계산 시각은 점수를 넣은 뒤에 읽는다.
+- [x] 실행 전에 `./gradlew :apps:commerce-batch:dependencyInsight --dependency spring-batch-core --configuration runtimeClasspath`로 Spring Batch 버전을 확인한다.

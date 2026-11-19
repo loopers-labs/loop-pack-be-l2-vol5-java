@@ -1,6 +1,6 @@
 # 주간 랭킹 조회 설계
 
-> 상태: 설계를 마쳤고 구현 전이다. 응답 계약과 규칙은 [주간 구매 랭킹](../../../docs/system-design/use-cases/weekly-ranking.md#조회-계약)을 따르고, 이 문서는 그 계약을 `commerce-api`에서 구현하는 방법을 다룬다. 검증은 [검증 기록](../../../docs/system-design/use-cases/weekly-ranking-verification.md#commerce-api-테스트)을 따른다.
+> 상태: 구현했다. 응답 계약과 규칙은 [주간 구매 랭킹](../../../docs/system-design/use-cases/weekly-ranking.md#조회-계약)을 따르고, 이 문서는 그 계약을 `commerce-api`에서 구현하는 방법을 다룬다. 검증은 [검증 기록](../../../docs/system-design/use-cases/weekly-ranking-verification.md#commerce-api-테스트)을 따른다.
 
 `commerce-api`는 `commerce-batch`가 완성한 주간 랭킹을 읽기만 한다. 랭킹 테이블에 쓰지 않는다.
 
@@ -47,6 +47,7 @@ LIMIT ?;
 ```
 
 - 2번은 1번에서 찾은 `(기간, 회차)`로만 읽는다. 완성된 회차의 점수와 순위 행은 바뀌지도 지워지지도 않으므로, 두 조회 사이에 새 회차가 완성돼도 이 요청은 처음 찾은 회차를 끝까지 온전하게 보여 준다.
+- 두 조회 사이에 운영자가 그 회차를 닫아도 이 요청은 처음 찾은 회차를 보여 준다. 닫힌 회차는 다음 요청부터 빠진다.
 - 삭제된 상품을 거른 뒤 `limit`을 적용한다. 상품의 공개 조건(`deleted_at IS NULL`)과 표시 정보는 기존 고객 상품 조회와 같다.
 - 계산 중(`CALCULATING`)이거나 닫힌(`CANCELLED`) 회차, 다른 기간의 결과를 읽지 않는다. 계산 중 회차의 순위는 비어 있거나 일부만 있다.
 - 두 조회를 한 트랜잭션으로 묶지 않으므로 각 조회는 결과를 목록으로 다 받아 온다. 트랜잭션 밖의 공유 EntityManager는 쿼리 호출이 끝나면 닫혀, 스트림으로 받으면 나중에 읽을 수 없다.
