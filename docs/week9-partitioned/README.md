@@ -1,14 +1,11 @@
 # 주문 파티션별 주간 구매 랭킹
 
-기준 구현은 C05 `7cd9f0b`다. C07 `5e27dcb`의 단일 Job과 주문 이벤트 기반 실행 요청은 원본 브랜치 `volume-9/weekly-ranking`에서 비교할 수 있다. 이 구현에서는 Kafka 소비자가 구매 활동을 적재하고 Batch 인스턴스들의 스케줄러가 주간 계산을 시작한다.
+Kafka 소비자가 주문의 구매 활동을 적재한다. 각 Batch 인스턴스의 스케줄러는 지난주의 입력을 함께 사용할 계획을 찾거나 만든다. 주차·revision당 한 번 고정한 입력을 주문번호 구간으로 나누고, 각 JVM은 자기 구간의 상품을 Spring Batch Local Partitioning으로 병렬 집계한다. 모든 구간의 부분 점수가 고정 입력과 일치하면 새 랭킹을 공개한다.
 
-두 브랜치 구현의 차이는 다음 명령으로 확인한다.
+고객 조회는 `GET /api/v1/rankings/weekly?periodStart=2026-08-17&limit=10`이다. limit은 기본 10, 범위 1~100이다. 미공개는 `NOT_PUBLISHED`, 구매 0건 완성본은 snapshot ID가 있는 `PUBLISHED`다. 비공개 상품·브랜드를 제외한 뒤 limit을 적용하며, 표시되는 상품은 저장된 순위를 유지한다.
 
-```powershell
-git diff --stat volume-9/weekly-ranking volume-9/partitioned-weekly-ranking
-```
-
-기존 DB와 Spring Batch 재시작 이력을 전환할 때는 [명칭 변경과 기존 데이터 이관](cutover.md)을 따른다.
+- [재시작·늦은 구매·덮어쓰기의 MySQL 검증 기록](verification.md)
+- [기술 글 · worker가 네 개일 때 한 JVM과 두 JVM의 성능이 달랐던 이유](benchmark.md)
 
 ## 입력과 점수
 
@@ -52,8 +49,6 @@ java -jar $batchJar.FullName $profiles --ranking.scheduler.local-grid=2 --rankin
 java -jar $batchJar.FullName $profiles --ranking.scheduler.mode=request --ranking.scheduler.request-period=2026-08-17 --ranking.scheduler.request-revision=2
 ```
 
-고객 조회는 `GET /api/v1/rankings/weekly?periodStart=2026-08-17&limit=10`이다. limit은 기본 10, 범위 1~100이다. 미공개는 `NOT_PUBLISHED`, 구매 0건 완성본은 snapshot ID가 있는 `PUBLISHED`다. 상품·브랜드가 비공개인 경우 저장 순위의 간격을 유지한다.
-
 ## 중단된 주문 파티션 인수
 
 먼저 `weekly_ranking_plans.state`와 `weekly_ranking_order_partitions.last_error`를 함께 확인한다.
@@ -89,14 +84,29 @@ SELECT snapshot_id, order_partition_id, product_id, stored_score, attempted_scor
 FROM weekly_ranking_score_conflicts WHERE snapshot_id = @snapshot_id;
 ```
 
-## 검증
+## 기존 DB에서 전환
 
-[점수·재시작·공개 검증 기록](verification.md)과 [세 가지 JVM·worker 구성의 성능 측정](benchmark.md)에서 실측값과 재현 방법을 확인할 수 있다.
+C05와 C07의 고정 입력·최종 점수·순위·공개 포인터(DDL 014~016)와 단일 Job `weeklyRanking`의 실행 이력은 보존한다. 이전 바이너리로 진행 중인 Job을 마치고, 이미 공개한 주의 재계산에는 다음 revision을 사용한다. C05(`7cd9f0b`)에서 분기한 새 구현은 원본 브랜치 `volume-9/weekly-ranking`의 C07(`5e27dcb`)과 비교할 수 있다.
+
+주문 구간별 독립 고정 버전(입력 계약 2)은 새 공통 고정 버전(계약 3)의 작업도 가져갈 수 있다. 배포 전에 구버전의 신규 계획 생성을 중단하고 열린 계획을 마친 뒤 구버전 JVM을 모두 종료한다. 계약 3은 기존 014~018 DDL을 사용한다. `weeklyRankingOrderPartition` Job이 `verifyWeeklyRankingOrderPartitionInputs` Step에서 시작하며, 인수 시에는 `snapshotId`와 `orderPartitionId`를 유지하고 `ownerId`와 `generation`을 갱신한다.
+
+<details>
+<summary>중간 개발 버전의 weekly_ranking_shards 테이블이 남아 있는 경우</summary>
+
+Job·Step 이름과 reader 상태 키가 달라진 실험 DB에서는 완료된 결과와 Batch 실행 이력을 함께 옮긴다. 기존 실행 ID·체크포인트를 보존하는 절차다.
+
+1. 기존 바이너리에서 진행 중인 계획과 복구 대기를 먼저 해결한다. 계획의 최종 상태와 공개 포인터를 확인한 뒤 기존 스케줄러와 쓰기 프로세스를 멈추고 일관된 DB 백업을 만든다.
+2. 별도 MySQL에 백업을 `loopers_pre_order_partition`으로 복원한다. 같은 MySQL의 빈 대상 DB `loopers`에는 같은 시점의 공통 테이블과 데이터를 복원한다. 여기에는 `BATCH_*` 전체, 구매 활동, 고정 입력, 최종 점수, 완성 기록, 순위, 공개 포인터가 포함된다. 대상 복원에서 제외할 중간 버전 조율 테이블은 `weekly_ranking_members`, `weekly_ranking_schedule_cursor`, `weekly_ranking_plans`, `weekly_ranking_shards`, `weekly_ranking_partial_scores`, `weekly_ranking_score_conflicts` 여섯 개다.
+3. 대상 DB에 새 017·018을 적용한다. 스케줄러를 정지한 상태에서 MySQL 클라이언트로 [완료 데이터 이관 SQL](../../docker/week9/compat/import-completed-order-partitions.sql)을 실행한다. 명령 예시는 MySQL 클라이언트 안에서 `SOURCE docker/week9/compat/import-completed-order-partitions.sql`이다.
+4. 이관 SQL은 미완료 계획·실행과 이미 사용 중인 대상을 거절한다. 완료된 계획·주문 파티션·부분 점수·충돌 증거와 주차 커서를 한 트랜잭션에서 복사한다. 새 JVM이 기동할 때 자신의 생존 신호를 등록한다. 종료한 프로세스의 생존 신호는 옮기지 않는다.
+5. 원본·대상의 주차별 공개 snapshot ID와 revision, 상품별 부분 점수, 공개 순위를 대조한다. `BATCH_*`의 기존 Job·Step 이름과 실행 ID는 역사적 기록으로 유지된다. 새 바이너리에서 **다음 revision**을 시작해 새 이름의 JobInstance가 생성되는지 확인한다.
+
+이 절차를 MySQL 8.0.46에서 검증했다. 열린 계획의 이관은 오류 1644로 거절됐고, 완료 후에는 부분 점수 두 행(2·3), 공개 점수 5점·1위, 기존 JobInstance 80과 JobExecution 85가 보존됐다.
+
+</details>
+
+## 전체 검사
 
 ```powershell
 .\gradlew.bat :apps:commerce-batch:check :apps:commerce-api:check :apps:commerce-streamer:check --continue
 ```
-
-두 JVM의 같은 상품 2점·3점과 B의 동일값 재전달은 `WeeklyRankingEqualScoreReplayProcessTest`에서 재현한다. [실행 ID와 MySQL 쓰기 기록](verification.md)을 확인할 수 있다.
-
-`OrderPartitionScoreConsistencyTest`는 서로 다른 MySQL 트랜잭션에서 같은 상품의 2점·3점을 쓰고, 같은 값과 다른 값의 재시도 후 저장된 두 행과 충돌 원장을 검사한다. `OrderPartitionedPublicationTest`는 동시 공개·검산 실패·기존 포인터 보존을 검사한다. `WeeklyRankingOrderPartitionJobTest`는 로컬 worker의 청크와 영속 재시작을 검사한다.
