@@ -15,7 +15,7 @@
 
 | 구분 | 이번 범위 | 범위 밖 |
 |---|---|---|
-| 추가 | 주간 랭킹 job(입력 고정 → 점수 계산 → 공개), 주간 랭킹 조회 API | Redis 실시간 랭킹, 운영 스케줄러, 처리량 측정 |
+| 추가 | 주간 랭킹 job(입력 고정 → 점수 계산 → 공개), 주간 랭킹 조회 API, 처리량 실험(8장) | Redis 실시간 랭킹, 운영 스케줄러 |
 | 유지 | 7주차까지의 구매 활동 · 8주차 쿠폰. 쿠폰은 점수에 섞지 않는다 | |
 
 ### 큰 흐름
@@ -87,7 +87,7 @@ stateDiagram-v2
 - 일관성은 TX 의 첫 읽기 시점(read view)이 보장한다. 그 뒤 streamer 가 commit 한 활동은 이 TX 에 보이지 않는다.
 - 배치가 쓰는 곳은 snapshot 테이블뿐이라 streamer 의 저장과 부딪히지 않는다.
 - 격리 수준은 기본값(REPEATABLE READ)을 유지한다. READ COMMITTED 로 낮추면 TX 안의 읽기마다 시점이 달라진다.
-- 데이터가 커지면 같은 TX 안에서 `order_id, product_id` 순으로 나눠 읽는다. 같은 TX 라 읽기 시점은 유지된다.
+- 한 번에 읽지 않고 같은 TX 안에서 페이지로 나눠 읽는다(D-196). 같은 TX 라 읽기 시점은 유지된다.
 
 | 검토한 안 | 포기한 이유 |
 |---|---|
@@ -95,6 +95,26 @@ stateDiagram-v2
 | `INSERT … SELECT` + READ COMMITTED | 잠금은 사라지지만 TX 안의 여러 읽기가 같은 시점이라는 보장이 약해진다 |
 
 포기하는 것: 데이터가 DB → 앱 → DB 로 이동한다. TX 가 길어지면 InnoDB 가 그동안의 undo 기록을 정리하지 못한다.
+
+### 입력은 같은 TX 안에서 인덱스 순서를 강제한 keyset 페이지로 읽고, 페이지마다 쓴다 (D-196)
+
+**입력 고정 TX 안에서 원본을 `(order_id, product_id)` keyset 으로 5,000행씩 읽어 바로 insert 하고, 입력 checksum 은 행 단위로 누적한다.** 원본 조회에는 `straight_join` 과 activity 유일 인덱스 `force index` 를 붙인다.
+
+- 처리량 실험(`experiment-throughput.md`)에서 그 주 입력을 통째로 들던 방식이 활동 50만 행 · 힙 512MB 에서 `OutOfMemoryError` 로 실패했다. 재시작해도 같은 곳에서 실패해 이어 가기로 풀리지 않는다.
+- 옵티마이저 기본 계획은 페이지마다 조건에 맞는 나머지 행을 모두 조인 · 정렬한 뒤 limit 해, 페이지 5,000 에서 50만 행 읽기가 65초였다(한 번에 읽기 1.9초). 인덱스 순서를 강제하면 2.7초였다.
+- checksum 은 `(orderId, productId)` 오름차순으로만 받고, 어긋나면 실패한다. 값은 이전 정의(D-178)와 같다.
+- 페이지 크기는 `weekly-ranking.freeze-page-size`(기본 5,000). 읽기만 잰 시간이 1,000 · 5,000 · 20,000 에서 1초 안으로 차이 나 중간값을 골랐다.
+- 개선 뒤 같은 데이터가 512MB 에서 통과했고, 입력 고정 시간은 평균 21.9초 → 24.5초로 흔들림 범위 안에서 조금 늘었다.
+
+| 검토한 안 | 포기한 이유 |
+|---|---|
+| 힙을 키워 한 번에 읽기 유지 | 메모리가 그 주 구매 수에 비례해 구매가 몰린 주에 처음 실패한다 |
+| 서버 cursor(`useCursorFetch` + fetchSize) | 공용 jpa 데이터소스 설정을 바꾸거나 batch 전용 설정을 둬야 하고, 서버가 결과 전체를 임시 테이블로 만든다. 재지 않았다 |
+| 드라이버 스트리밍(`fetchSize = Integer.MIN_VALUE`) | 결과를 다 읽기 전에는 같은 커넥션으로 insert 할 수 없어 한 TX(D-178)를 지킬 수 없다 |
+| 읽기 · 쓰기 커넥션 분리 | 한 TX 가 깨져 반쪽 snapshot 이 남을 수 있다 |
+| 힌트 없는 keyset | 위 측정처럼 계획이 페이지마다 끝까지 읽는다 |
+
+포기하는 것: SQL 이 인덱스 이름과 조인 순서에 묶인다. streamer 엔티티의 인덱스 이름이 바뀌면 입력 고정이 실패한다. order_id 0 부터 훑어 대상 주 앞의 과거 주문도 지나간다.
 
 ### 입력과 manifest 는 한 TX 로 commit 한다 (D-178)
 
@@ -250,7 +270,7 @@ java -jar commerce-batch.jar --job.name=weeklyRanking --spring.batch.job.enabled
 - **점수 계산(chunk)**: reader 는 고정 입력의 서로 다른 `product_id` 를 오름차순으로 읽는 cursor reader 이고, 위치를 `saveState` 로 step 의 ExecutionContext 에 남긴다. processor 는 같은 snapshot 입력에서 상품의 수량 합을 구하고, writer 는 `(snapshot_id, product_id)` 에 절대 점수를 upsert 한다. 결과와 reader 위치는 같은 chunk TX 로 commit 된다.
 - **계산 완료(tasklet)**: 입력의 상품 수와 점수 행 수가 같은지 확인하고 `FROZEN → COMPLETED` 로 바꾼다. 이미 `COMPLETED` 면 그대로 끝낸다. step 이 끝난 뒤의 listener 는 chunk TX 밖이라 상태 전이를 두지 않는다.
 - 점수 계산 · 계산 완료 step 은 시작할 때 manifest 가 없거나 `ABANDONED` 면 실패한다(D-185).
-- chunk 크기는 설정값이다. 재시작 실험(실습 §6)은 2 를 쓰고, 기본값 100 은 측정한 최적값이 아니다.
+- chunk 크기는 설정값이다. 재시작 실험(실습 §6)은 2 를 쓴다. 처리량 실험에서 100 · 500 · 1000 · 5000 의 차이가 같은 값의 실행 간 흔들림보다 작아 기본값 100 을 유지한다.
 
 | 검토한 안 | 포기한 이유 |
 |---|---|
@@ -353,13 +373,21 @@ java -jar commerce-batch.jar --job.name=weeklyRanking --spring.batch.job.enabled
 
 포기하는 것: 테스트 하나가 무겁고 느리다. batch bootJar 빌드가 api 테스트의 선행 작업이 된다.
 
+### 처리량은 실험으로 따로 잰다
+
+**`WeeklyRankingThroughputExperiment` 가 주문 25만 · 활동 50만 · 상품 5만에서 step 별 소요 시간을 잰다.** `RUN_EXPERIMENT=true` 일 때만 돌고, 그때만 테스트 힙을 키운다(`EXPERIMENT_HEAP`, 기본 2g). 결과와 해석은 `experiment-throughput.md`.
+
+- job 전체 약 52 ~ 63초(로컬). 점수 계산 26 ~ 35초, 입력 고정 19 ~ 28초, 공개 2초, 계산 완료 0.2초.
+- 로컬 Testcontainers 한 대의 값이라 운영 수치로 쓰지 않는다.
+
 ## 9. 남은 한계
 
 | 한계 | 지금 상태 | 나중에 할 일 |
 |---|---|---|
 | 공개 TX commit 뒤 batch metadata 저장만 실패 | 공개를 다시 실행하면 같은 결과로 수렴함(`ALREADY_PUBLISHED`)만 확인했다. metadata 갱신 실패를 직접 재현하지 않았고, Spring Batch 가 이때 step 을 `UNKNOWN` 으로 남겨 재시작을 막는지는 확인하지 않았다 | 실패를 주입해 재시작 가능 여부와 운영 복구 절차를 확인 |
-| 원본 조회 인덱스 | `processed_order_confirmation.confirmed_at` 에 인덱스가 없어 입력 고정 · 늦은 구매 확인이 전체를 훑는다. streamer 엔티티의 테이블이라 손대지 않았다 | 데이터가 커지면 streamer 쪽에 인덱스 추가 |
-| 입력을 한 번에 메모리로 읽음 | 입력 고정이 그 주의 활동을 한 번에 읽는다(D-177). 같은 TX 안 페이지 읽기로 바꿀 수 있다 | 측정 뒤 판단 |
+| 원본 조회 인덱스 | `processed_order_confirmation.confirmed_at` 에 인덱스가 없어 늦은 구매 확인이 전체를 훑고, 입력 고정은 order_id 0 부터 과거 주문까지 지나간다(D-196). 실험 seed 는 과거 주문이 뒤에 있어 이 비용을 보지 못했다. streamer 엔티티의 테이블이라 손대지 않았다 | 이력이 쌓이면 streamer 쪽에 인덱스를 두거나 시작 키를 그 주의 최소 order_id 로 |
+| 입력 고정 SQL 힌트 | 인덱스 이름(`uk_product_purchase_activity_order_product`)과 조인 순서를 고정했다(D-196) | streamer 인덱스를 바꿀 때 함께 고침 |
+| 점수 계산의 상품별 쿼리 | processor 가 상품마다 `sum` 쿼리를 보내 5만 상품에서 26 ~ 35초로 job 에서 가장 길다 | chunk 의 상품을 `group by` 한 번으로 모으는 방식 검토 |
 | batch 모듈 검사 | commerce-batch 에는 checkstyle · ArchitectureTest 설정이 없다 | api · streamer 와 맞출지 판단 |
 | 결과 checksum | 테스트에서만 계산하고 manifest 에 저장하지 않는다(D-195) | 운영 검사 필요 여부를 멘토링에서 확인 |
-| 처리량 | 측정하지 않았다. chunk 기본값 100 은 측정값이 아니다(D-194) | |
+| 처리량 수치 | 로컬 Testcontainers 한 대 · 실행마다 20% 안팎 흔들림. 힙 사용량은 재지 않았다 | 운영과 비슷한 환경에서 다시 잼 |
