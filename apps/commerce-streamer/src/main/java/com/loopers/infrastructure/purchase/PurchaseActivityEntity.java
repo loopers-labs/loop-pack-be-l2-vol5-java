@@ -3,6 +3,7 @@ package com.loopers.infrastructure.purchase;
 import com.loopers.domain.AuditEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
@@ -13,7 +14,8 @@ import java.time.Instant;
     name = "purchase_activity",
     uniqueConstraints = @UniqueConstraint(
         name = "uk_activity_order_product", columnNames = {"order_id", "product_id"}
-    )
+    ),
+    indexes = @Index(name = "idx_activity_confirmed_at", columnList = "confirmed_at")
 )
 class PurchaseActivityEntity extends AuditEntity {
 

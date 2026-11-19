@@ -7,5 +7,6 @@ create table if not exists purchase_activity (
   quantity     integer     not null,
   confirmed_at datetime(6) not null,
   primary key (id),
-  constraint uk_activity_order_product unique (order_id, product_id)
+  constraint uk_activity_order_product unique (order_id, product_id),
+  key idx_activity_confirmed_at (confirmed_at)
 ) engine=InnoDB;

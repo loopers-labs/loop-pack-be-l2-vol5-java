@@ -115,8 +115,8 @@ SELECT 한 문장은 하나의 읽기 시점이다. 재시작에 걸쳐 같은 �
 
 | 부담 | 이 저장소에서 |
 |---|---|
-| 원본 잠금 | 로컬(`docker/infra-compose.yml`)과 테스트 MySQL 은 READ COMMITTED 다. 이 격리 수준에서 INSERT…SELECT 는 원본을 잠그지 않고 읽는다. REPEATABLE READ 에서는 원본 행에 공유 잠금을 건다 |
-| 원본 스캔 | `confirmed_at` 인덱스가 없어 고정마다 쌓인 활동 전체를 훑는다(Q-7) |
+| 원본 잠금 | 로컬(`docker/infra-compose.yml`)과 테스트 MySQL 은 READ COMMITTED 다. 이 격리 수준에서 INSERT…SELECT 는 원본을 잠그지 않고 읽는다. REPEATABLE READ 에서는 읽은 원본 행과 `confirmed_at` 인덱스 범위에 공유 next-key 잠금을 걸어, 고정하는 동안 같은 주에 늦게 도착한 구매의 저장이 기다린다 |
+| 원본 스캔 | streamer 의 `idx_activity_confirmed_at` 로 그 주의 범위만 읽는다(Q-7). 행마다 `order_id`, `product_id`, `quantity` 를 읽으러 기본 키로 한 번 더 간다. streamer 는 활동을 쓸 때마다 이 인덱스를 함께 갱신한다 |
 | TX 길이 | 복사가 끝날 때까지 TX 가 열린다. 측정 전 |
 
 지금 고르지 않은 선택지:
@@ -126,7 +126,7 @@ SELECT 한 문장은 하나의 읽기 시점이다. 재시작에 걸쳐 같은 �
 | 한 번 읽고 나눠 쓰기. SELECT cursor 하나로 읽고 chunk 로 쓴 뒤 마지막에 `FROZEN` | TX 는 작아지지만 실패하면 이어 할 수 없다. 재시작하면 SELECT 가 새 시점이 되어 앞서 복사한 행과 섞이므로, 고정 중인 행을 지우고 처음부터 다시 복사해야 한다 |
 | 상품별 합계만 고정 | 주문·상품별 입력과 입력 checksum(`SNP-007`)이 사라진다 |
 
-**뒤집을 조건**: 고정 TX 시간이나 undo 증가가 측정으로 문제가 될 때 "한 번 읽고 나눠 쓰기" 로 바꾼다. 서버 격리 수준이 REPEATABLE READ 인 환경에서 실행할 때 고정 TX 의 격리 수준을 READ COMMITTED 로 명시한다.
+**뒤집을 조건**: 고정 TX 시간이나 undo 증가가 측정으로 문제가 될 때 "한 번 읽고 나눠 쓰기" 로 바꾼다. 서버 격리 수준이 REPEATABLE READ 인 환경에서 실행할 때 고정 TX 의 격리 수준을 READ COMMITTED 로 명시한다. 고정 시간이 측정으로 문제가 되면 인덱스를 `(confirmed_at, order_id, product_id, quantity)` 로 넓혀 기본 키를 다시 찾지 않게 한다. 운영 DB 는 `ddl-auto` 를 쓰지 않으므로 이 인덱스를 `create index` 로 따로 적용한다.
 
 ### 이미 고정한 snapshot (`SNP-006`)
 
