@@ -81,10 +81,14 @@ class WeeklyRankingRestartTest {
         // act
         JobExecution first = jobLauncher.run(job, restarted.toJobParameters());
 
-        // assert: 첫 chunk(7, 8)와 reader 위치 2 만 commit 되고, 고정 입력은 남는다
+        // assert: 첫 chunk(7, 8)와 reader 위치 2 만 commit 되고, 고정 입력과 기존 공개본(정상 실행)은 남는다
         StepExecution firstScoreStep = reloadStep(first, WeeklyRankingJobConfig.SCORE_STEP);
         assertAll(
             () -> assertThat(first.getStatus()).isEqualTo(BatchStatus.FAILED),
+            () -> assertThat(tables.manifestOf(normal.snapshotId())).containsEntry("status", "PUBLISHED"),
+            () -> assertThat(tables.scoresOf(normal.snapshotId()))
+                .extracting(row -> row.get("product_id"), row -> row.get("score"), row -> row.get("ranking"))
+                .containsExactly(tuple(7L, 5L, 1), tuple(8L, 1L, 3), tuple(9L, 5L, 2)),
             () -> assertThat(firstScoreStep.getExecutionContext().getInt(WeeklyRankingJobConfig.PRODUCT_READER + ".read.count")).isEqualTo(2),
             () -> assertThat(firstScoreStep.getCommitCount()).isEqualTo(1),
             () -> assertThat(tables.scoresOf(restarted.snapshotId()))
