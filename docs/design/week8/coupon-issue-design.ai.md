@@ -29,7 +29,7 @@
 - token은 userId·couponId·요청 키와 무관한 UUID. 한 HTTP 실행에서만 쓴다. 같은 실행의 자리 재시도는 같은 token을 쓴다.
 - 자리 대기: `coupon.issue.wait-timeout`(기본 2s), 재시도 간격 10~50ms + jitter. 서버 설정이며 HTTP 입력으로 받지 않는다.
   - C와 대기 시간은 사람용 문서의 공식으로 정한다: `X = min(C/T_tx, 1/T_lock)`, `C = min(⌈T_tx/T_lock⌉, ⌊P×B⌋, W)`, `대기 = clamp(k×(min(W,Th)−C)/X, T_tx_p99, 클라이언트 timeout − 여유)`.
-  - T_tx는 `CouponIssueWriter`의 Timer `coupon.issue.write`(actuator prometheus 히스토그램)로 잰다. T_lock은 따로 재지 않고, C를 키워도 늘지 않는 포화 처리량의 역수로 추정한다(같은 캠페인 행 UPDATE→commit이 직렬).
+  - T_tx는 `CouponIssueWriter.write()`의 `@Timed`(`coupon.issue.write`, `TimedAspect`)(actuator prometheus 히스토그램)로 잰다. T_lock은 따로 재지 않고, C를 키워도 늘지 않는 포화 처리량의 역수로 추정한다(같은 캠페인 행 UPDATE→commit이 직렬).
   - 실측(k6 `k6/run-coupon-rush.sh`, 한도 100·1,000명): C=3·5·10에서 처리량 약 170·160·97/s, T_lock ≈ 6ms → C=3 유지, 계산 대기 ≈ 1.1s(설정 2s는 여유).
 
 ## 3. Lua 계약

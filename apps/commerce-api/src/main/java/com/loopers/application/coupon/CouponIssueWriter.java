@@ -5,8 +5,7 @@ import com.loopers.domain.coupon.Coupon;
 import com.loopers.domain.coupon.CouponService;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
-import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.annotation.Timed;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
@@ -29,34 +28,21 @@ public class CouponIssueWriter {
     private final Clock clock;
     private final TransactionTemplate writeTransaction;
     private final TransactionTemplate readOnlyTransaction;
-    // 발급 TX 한 건의 시간(T_tx). 수용량 C 와 대기 시간을 정하는 공식의 입력이다.
-    private final Timer writeTimer;
 
-    public CouponIssueWriter(
-        CouponService couponService, Clock clock, PlatformTransactionManager transactionManager, MeterRegistry meterRegistry
-    ) {
+    public CouponIssueWriter(CouponService couponService, Clock clock, PlatformTransactionManager transactionManager) {
         this.couponService = couponService;
         this.clock = clock;
-        this.writeTimer = Timer.builder("coupon.issue.write")
-            .description("당첨자 쿠폰 저장 TX 시간")
-            .publishPercentiles(0.5, 0.95, 0.99)
-            .publishPercentileHistogram()
-            .register(meterRegistry);
         this.writeTransaction = new TransactionTemplate(transactionManager);
         this.readOnlyTransaction = new TransactionTemplate(transactionManager);
         this.readOnlyTransaction.setReadOnly(true);
     }
 
+    // 발급 TX 한 건의 시간(T_tx). 수용량 C 와 대기 시간을 정하는 공식의 입력이다.
+    @Timed(value = "coupon.issue.write", description = "당첨자 쿠폰 저장 TX 시간", percentiles = {0.5, 0.95, 0.99}, histogram = true)
     public CouponWriteResult write(Long campaignId, Long userId) {
         try {
-            Timer.Sample sample = Timer.start();
-            Coupon coupon;
-            try {
-                coupon = writeTransaction.execute(status ->
-                    couponService.issue(campaignId, userId, ZonedDateTime.now(clock)));
-            } finally {
-                sample.stop(writeTimer);
-            }
+            Coupon coupon = writeTransaction.execute(status ->
+                couponService.issue(campaignId, userId, ZonedDateTime.now(clock)));
             return CouponWriteResult.issued(coupon.getId());
         } catch (CoreException e) {
             if (e.getErrorType() == ErrorType.COUPON_SOLD_OUT) {
