@@ -24,6 +24,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -72,6 +73,21 @@ public class WeeklyRankingJobConfig {
                 .next(calculate)
                 .next(publish)
                 .build();
+    }
+
+    @Bean
+    public WeeklyRankingRecovery weeklyRankingRecovery(JobExplorer jobExplorer) {
+        return new WeeklyRankingRecovery(jobExplorer, jobRepository, transactionManager);
+    }
+
+    @Bean
+    @Conditional(WeeklyRankingRecoveryRequested.class)
+    public WeeklyRankingRecoveryRunner weeklyRankingRecoveryRunner(
+            WeeklyRankingRecovery recovery,
+            @Value("${weekly-ranking.recovery.execution-id}") long executionId,
+            @Value("${weekly-ranking.recovery.termination-confirmed:false}") boolean terminationConfirmed,
+            @Value("${spring.batch.job.enabled:true}") boolean automaticJobEnabled) {
+        return new WeeklyRankingRecoveryRunner(recovery, executionId, terminationConfirmed, automaticJobEnabled);
     }
 
     // REPEATABLE READ의 INSERT ... SELECT는 원본 전체에 공유 잠금을 걸어 consumer 저장을 막는다.
