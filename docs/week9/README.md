@@ -51,7 +51,7 @@ product_purchase_activity (W6·W7)
 
 ## 6. 범위 밖
 
-프로세스 kill 뒤 `STARTED` 잔류 수동 복구 · 배치 다중 인스턴스 · 실패 알림 · `confirmed_at` 인덱스(측정 없이 추가하지 않음) · 마이그레이션 도구 · batch ArchUnit.
+프로세스 kill 뒤 `STARTED` 잔류 수동 복구 · 배치 다중 인스턴스 · 실패 알림 · `confirmed_at` 인덱스(측정 없이 추가하지 않음) · 마이그레이션 도구 · batch ArchUnit. 결정별 대가까지 포함한 한계 전체(25건, 한 것/남은 것 구분)는 [상세 7-2 한계 모음](weekly-ranking-design.md#7-2).
 
 ## 7. 더 읽기
 

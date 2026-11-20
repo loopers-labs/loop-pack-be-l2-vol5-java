@@ -37,7 +37,7 @@
 
 입력 원본: `apps/commerce-streamer/src/main/java/com/loopers/domain/purchase/ProductPurchaseActivity.java` (W6 consumer 가 저장, orderId·productId 당 1행).
 
-**범위 밖 (한계로만 기록, 7-2절)**: 프로세스 kill 로 `STARTED` 에 남는 JobExecution 의 수동 복구, 배치 다중 인스턴스, 실패 알림·자동 재시작, `confirmed_at` 인덱스(측정 없이 추가하지 않음), 마이그레이션 도구, commerce-batch 의 ArchUnit.
+**범위 밖·한계**: 결정별 대가, 운영 장애, 처음부터 범위 밖으로 둔 것(kill 복구·다중 인스턴스·알림·인덱스·마이그레이션 도구·batch ArchUnit)을 모두 [7-2 한계 모음](#7-2)에 한 표로 모았다. 각 결정(D-n)의 `한계` 줄은 그 표의 행 번호를 가리킨다.
 
 ---
 
@@ -85,7 +85,7 @@
   - `snapshotId` 는 API 응답·로그·하위 테이블(D2~D5)의 공통 식별자다. 파라미터에 그대로 두면 "이 실행이 어느 snapshot 을 만들었나"를 metadata(`BATCH_JOB_EXECUTION_PARAMS`)만 보고 알 수 있다. (b) 는 revision 숫자에서 snapshotId 를 다시 조립해야 한다.
   - (d) 를 쓰지 않는 이유: `run.id` 나 현재 시각을 식별 파라미터에 넣으면 실패마다 새 JobInstance 가 되어, 성공해도 이전 checkpoint 에서 이어 갔다는 증거가 못 된다. 기존 `DemoJobConfig` 의 `RunIdIncrementer`(`apps/commerce-batch/src/main/java/com/loopers/batch/job/demo/DemoJobConfig.java:34`)는 "새 작업" 예시이므로 복사하지 않는다.
 - **늦은 구매 재계산**은 새 `snapshotId`(rN+1) = 새 JobInstance 로 구분한다 (D15).
-- **한계**: 두 파라미터가 중복 정보(날짜)를 가진다. 어긋나면 Step 1 에서만 잡히므로 Job 기동 자체는 된다. `periodStart` 를 빼고 (c) 로 가면 중복은 없지만 과제 예시·"업무 기간" 파라미터의 가독성을 잃는다.
+- **한계**: [7-2 #1](#l1)
 
 ---
 
@@ -127,7 +127,7 @@ CREATE TABLE weekly_ranking_inputs (
 ) ENGINE=InnoDB;
 ```
 - 같은 주문의 여러 품목은 모두 포함한다 (orderId·productId 가 업무 단위).
-- **한계**: 처음 구현한 엔티티에는 `nullable=false` 가 없어 Hibernate DDL 이 위 DDL 과 어긋났다(NULL 허용). 2026-11-20 에 `@Column(nullable=false)` 를 추가해 맞췼고 probe 테스트(`PurchaseInputProbeRestartTest`) 재실행으로 통과를 확인했다. 이 설계에서 허용한 유일한 코드 변경이다. UNIQUE 외 인덱스가 없다. Step 2 reader(`where snapshot_id = ? order by product_id`)와 processor(`where snapshot_id=? and product_id=?`)는 UNIQUE 의 선두 컬럼 `snapshot_id` 를 탈 수 있지만 `order by product_id` 는 정렬이 필요하다. 실습 데이터 규모에선 문제 없고, 측정 없이 인덱스를 늘리지 않는다.
+- **한계**: [7-2 #2](#l2), [7-2 #3](#l3)
 
 <a id="d3"></a>
 ### D3. `weekly_ranking_revisions` (회차 = snapshot 정보) → PK `snapshot_id`(문자열 업무 식별자), status 는 CALCULATING / COMPLETED 두 값, BaseEntity 미상속
@@ -157,7 +157,7 @@ CREATE TABLE weekly_ranking_revisions (
 - **이유 (FAILED 없음)**: 실행 실패는 Batch metadata(`BATCH_JOB_EXECUTION.STATUS`)가 이미 기록한다. 업무 테이블에 FAILED 를 중복 기록하면 "공개 commit 뒤 metadata 저장 실패" 같은 상황에서 둘이 어긋난다. 그래서 역할을 나눈다: **회차 status = 업무 사실(계산 중 / 완성)**, **JobExecution status = 실행 사실**. 둘을 함께 읽어 판단한다.
 - **규칙**: 행이 존재한다 ⇔ Step 1 이 입력 복사와 **같은 TX** 로 commit 했다 (D9). 반쪽 snapshot 은 행이 없다.
 - `expected_product_count` 는 Step 1 이 저장한다(고정 시점의 사실). Step 3 의 완성 검증(행 수 == 이 값)에 쓴다. 대안 "Step 3 에서 입력을 다시 세기"는 결과는 같지만 "입력을 고정했다"는 뜻과 덜 맞고, 검증 기준이 검증 대상과 같은 시점에 계산되는 꼴이 된다.
-- **한계**: 회차 상태만 보면 "실패해서 멈춘 CALCULATING" 과 "지금 계산 중인 CALCULATING" 을 구분할 수 없다. 구분은 JobExecution 을 봐야 한다(의도한 역할 분리).
+- **한계**: [7-2 #4](#l4)
 
 <a id="d4"></a>
 ### D4. `weekly_ranking_scores` (점수 stage + 완성 ranking 합침) → BaseEntity 상속, UNIQUE (snapshot_id, product_id), `ranking` NULL 허용, 불변 규칙 R1~R7
@@ -194,7 +194,7 @@ CREATE TABLE weekly_ranking_scores (
 | R7 | 행은 지우지 않는다. 새 revision 은 새 snapshot_id 로 새 행 | D15 |
 
 - **이유 (합친 것)**: API 가 stage 행을 읽을 경로가 구조적으로 없다(R5: pointer 가 가리키는 COMPLETED 회차의 snapshot_id 만 읽음). 중간 결과 노출을 막는 핵심은 테이블 분리가 아니라 "순위 + COMPLETED + pointer 가 한 TX"(R3)다. 분리하면 Step 3 가 stage → 완성 테이블로 행을 복사해야 하고(쓰기 2배), 두 테이블의 (snapshot_id, product_id) 정합을 또 검증해야 한다.
-- **한계**: `ranking NULL` 인 행이 "계산 중" 과 "완성" 테이블에 섞여 있다. R4 가 깨지는 버그(예: Step 3 가 일부 행만 갱신)를 테이블 구조가 막아 주지 않으므로 R4 테스트가 필수다 (8절). API 의 읽기 시점 R4 검증(D14)이 2차 방어다 — 깨진 완성본은 500 으로 드러나고 숨겨지지 않는다.
+- **한계**: [7-2 #5](#l5)
 
 <a id="d5"></a>
 ### D5. `weekly_ranking_publications` (공개 pointer) → 별도 테이블, PK `period_start`, `revision <= 새 revision` 조건부 갱신
@@ -224,7 +224,7 @@ CREATE TABLE weekly_ranking_publications (
   - `<=` 로 **같은 revision 의 재실행을 통과**시킨다. Step 3 가 두 번 실행돼도 같은 pointer 로 수렴(R6).
   - 같은 revision 재실행에서는 `published_at` 을 유지한다(`CASE WHEN revision = 새 revision THEN published_at ELSE now END`). 공개 시각은 처음 공개된 때를 뜻해야 하므로 수렴 재실행이 바꾸지 않는다.
   - 한 문장 `INSERT ... ON DUPLICATE KEY UPDATE` 로 쓰지 않는 이유: MySQL 은 그 UPDATE 절에 WHERE 조건을 둘 수 없어 `IF(revision <= VALUES(revision), ...)` 꼴이 되고, 거절 여부를 affected rows 로 읽기 어렵다.
-- **한계**: pointer 와 회차 두 곳에 `revision` 이 있다. 어긋남은 테스트(R4·D8)로만 잡는다. 또 같은 기간의 **첫 공개가 동시에** 두 실행에서 일어나면 둘 다 UPDATE 0건 → SELECT 없음 → INSERT 로 가고, PK(`period_start`) 위반으로 한쪽이 실패한다. 과제가 같은 기간의 계산을 직렬 실행으로 전제하므로 이 실패는 그대로 수용한다(7-2절 "배치 다중 인스턴스").
+- **한계**: [7-2 #6](#l6), [7-2 #22](#l22)
 
 <a id="d6"></a>
 ### D6. 충돌 규칙 → Step 1 시작 시 같은 `snapshot_id` 또는 같은 `(period_start, revision)` 행이 이미 있으면 무조건 실패 (Job FAILED)
@@ -240,7 +240,7 @@ CREATE TABLE weekly_ranking_publications (
 
 - 코드 확인 결과: `@JoinColumn`·`@OneToMany` 는 `apps/commerce-api/src/main/java/com/loopers/domain/order/Order.java:49-51` (`Order` → `OrderItem`, 같은 집합 안)에만 있다. 집합 밖 참조는 모두 평문 ID 다: `Product.brandId`(`apps/commerce-api/src/main/java/com/loopers/domain/product/Product.java:27`), `ProductPurchaseActivity.orderId/productId`(`...ProductPurchaseActivity.java:23-25`), `OrderConfirmedOutbox.orderId`. `FOREIGN KEY` DDL 문자열은 저장소에 없음(찾아본 위치: `grep -rn "JoinColumn\|ManyToOne\|OneToMany\|OneToOne\|foreignKey\|FOREIGN KEY" apps/*/src/main modules/*/src/main`).
 - 9주차 테이블은 모두 다른 집합(상품은 commerce-api 소유, 입력 원본은 streamer 소유)을 참조하므로 관례대로 FK 없이 평문 ID 만 둔다. `scores.snapshot_id → revisions.snapshot_id` 도 FK 없이 둔다(네 테이블은 같은 집합이지만 Step 2 의 chunk 쓰기가 회차 행에 락을 걸지 않도록).
-- **한계**: 고아 행(회차 없는 점수 행)을 DB 가 막지 않는다. Step 1 이 회차 행을 먼저 commit 한 뒤에만 Step 2 가 돌므로 정상 흐름에선 생기지 않는다.
+- **한계**: [7-2 #7](#l7)
 
 <a id="d8"></a>
 ### D8. 오래된 실행이 뒤늦게 공개를 시도할 때 → 회차는 COMPLETED, pointer 는 그대로, WARN 로그, Job 은 COMPLETED
@@ -249,7 +249,7 @@ CREATE TABLE weekly_ranking_publications (
 - **선택**: (b). ExitStatus 는 기본 `COMPLETED` 그대로 두고, `exitDescription` 에 `NOT_PUBLISHED: newer revision rN already published` 형식으로 남긴다(N = 현재 공개된 revision). 같은 내용을 WARN 로그로도 남긴다. 커스텀 ExitStatus 는 만들지 않는다.
 - **이유**: 계산은 정상이고 pointer 경쟁에서 밀린 것뿐이다. FAILED 는 "고쳐서 재시작하라"는 신호인데 재시작할 이유가 없다(재시작해도 같은 거절). D5-(c) 덕분에 "COMPLETED but not published" 상태가 데이터로 남아 사후 확인이 된다.
 - 순서: Step 3 TX 안에서 (4) 회차 COMPLETED 는 수행하고, (5) 갱신이 거절되면 WARN 로그 후 정상 commit. 회차 status 와 pointer 가 한 TX 인 것은 변하지 않는다(R3).
-- **한계**: 운영자가 로그를 보지 않으면 "r1 이 COMPLETED 인데 공개는 r2" 를 알아채기 어렵다. 알림은 범위 밖.
+- **한계**: [7-2 #8](#l8)
 
 ---
 
@@ -259,7 +259,7 @@ CREATE TABLE weekly_ranking_publications (
 - Job 설정 클래스 위치는 기존 관례(`com.loopers.batch.job.demo.DemoJobConfig`)를 따라 `com.loopers.batch.job.ranking.WeeklyRankingJobConfig` 1개 + Tasklet 2개 + Step 2 의 reader·processor·writer 빈을 모은 `WeeklyScoreStepComponents` 1개(`batch/job/ranking/step/`) 로 둔다(현황 2026-11-20). 구현 직전에 파일 목록을 먼저 제시한다(로컬 전용 구현 계획 메모). `@ConditionalOnProperty(name="spring.batch.job.name", havingValue="weeklyRanking")` 로 Demo 와 공존한다 (`DemoJobConfig.java:19`, `application.yml:16` `${job.name:NONE}`).
 - TX 매니저는 컨텍스트의 `PlatformTransactionManager` 빈(런타임 클래스 `JpaTransactionManager`, `02-probe-result.md` 3절)을 세 Step 모두에 지정한다. `ResourcelessTransactionManager`(`DemoJobConfig.java:44`)는 쓰지 않는다.
 - JobRepository 는 Boot 자동 구성 그대로. 같은 DataSource(`mySqlMainDataSource`)임을 probe 로 확인했다 (`02-probe-result.md` 4절).
-- 순수 계산(기간 경계, snapshotId 파싱, checksum 직렬화)은 `com.loopers.domain.ranking` 에 두어 단위 테스트한다. 현황(2026-11-20): 순수 계산 `WeeklySnapshotId`·`RankingChecksum` 2개 + chunk item record `ProductScore` + 테스트 seam `ScoreProcessingHook`(8절). `ProductScore` 는 Step 2 내부 전달 타입이라 Components 안 중첩 record 로 옮길 후보다(한계로 기록, 리뷰 지적 시 이동).
+- 순수 계산(기간 경계, snapshotId 파싱, checksum 직렬화)은 `com.loopers.domain.ranking` 에 두어 단위 테스트한다. 현황(2026-11-20): 순수 계산 `WeeklySnapshotId`·`RankingChecksum` 2개 + chunk item record `ProductScore`. (처음 두었던 테스트 seam `ScoreProcessingHook` 은 Spring Batch 표준 확장점 `ItemProcessListener` 로 교체해 삭제했다 — 8절.) `ProductScore` 는 Step 2 내부 전달 타입이라 Components 안 중첩 record 로 옮길 후보다(한계로 기록, 리뷰 지적 시 이동).
 
 <a id="d9"></a>
 ### D9. Step 1 입력 고정 → `freezeWeeklyInputStep` (Tasklet, 한 TX, READ COMMITTED, `INSERT ... SELECT` 한 문장)
@@ -275,7 +275,7 @@ CREATE TABLE weekly_ranking_publications (
 - **격리 수준 READ COMMITTED (이 Step 만)**: Step 의 `transactionAttribute` 로 지정한다. MySQL 기본 REPEATABLE READ 에서 `INSERT ... SELECT` 는 원본 행에 공유(next-key) 락을 걸어 그 사이 consumer 의 구매 활동 INSERT 를 막을 수 있다. READ COMMITTED 면 SELECT 부분이 일관된 읽기(락 없음)로 동작한다 (한계 참고). 한 문장 SELECT 라 "읽기 시점" 은 그 문장 하나의 snapshot 으로 고정된다.
 - **(e) `max(id)` 를 쓰지 않는 이유**: 번호를 먼저 할당받은 TX 가 늦게 commit 할 수 있어, `max(id)` 를 저장해도 "그 시점까지 commit 된 행" 이 고정되지 않는다.
 - **(b) 를 쓰지 않는 이유**: streamer 의 엔티티는 batch classpath 에 없다(`01-survey` 6-4). 테이블 이름으로 직접 읽는 SQL 이 모듈 의존을 늘리지 않는다. 그 대신 batch 단독 테스트에서는 `product_purchase_activity` 테이블이 생성되지 않으므로 테스트가 DDL 을 직접 실행해야 한다 (8절).
-- **한계**: READ COMMITTED 에서 `INSERT ... SELECT` 가 원본에 락을 걸지 않는 것은 `binlog_format=ROW` 일 때다. Testcontainers `mysql:8.0` 기본값은 ROW 이지만 운영 MySQL 설정은 모른다 [확인 필요]. 데이터가 커지면 한 문장 복사의 TX 가 길어진다. 페이지 복사(c) 로 바꾸려면 "같은 일관된 읽기 시점" 을 따로 보장해야 하는데 이번 범위에서는 하지 않는다. `confirmed_at` 에 인덱스가 없어 원본 테이블을 풀스캔한다 — 측정 없이 주장하지 않고 인덱스도 추가하지 않는다.
+- **한계**: [7-2 #9](#l9), [7-2 #10](#l10), [7-2 #11](#l11)
 
 <a id="d10"></a>
 ### D10. Step 2 점수 계산 → `calculateWeeklyScoresStep` (Chunk 2, `JdbcCursorItemReader<Long>`, 합계 Processor, 절대값 upsert Writer)
@@ -293,7 +293,7 @@ CREATE TABLE weekly_ranking_publications (
 - **(b) paging reader 를 쓰지 않는 이유**: 데이터가 작아 메모리 이점이 없고, paging 은 정렬·query·checkpoint 검증 비용이 따로 든다. cursor 는 `order by product_id` 하나로 유일·안정 순서가 보장된다.
 - **(e) 증분을 쓰지 않는 이유**: `score += delta` 는 같은 항목을 재처리하면 두 번 증가하지만, 고정 입력의 합을 `score = total` 로 저장하면 같은 값으로 수렴한다. chunk commit 직전 실패로 같은 상품이 재처리돼도 (d) 는 `5 → 5` 다.
 - 잘못된 수량(합계 ≤ 0 등)은 skip 하지 않고 예외로 Step 을 실패시킨다.
-- **한계**: Step 이름 `calculateWeeklyScoresStep` 의 접미사 `Step` 은 과제 예시(`calculateWeeklyScores`)·기존 Demo(Step 이름 `demoSimpleTask`, `DemoJobConfig.java:24`) 어느 쪽과도 같지 않다. 결정값을 따르되 관례 근거는 약하다. processor 가 상품마다 `SUM` SQL 1회를 실행한다(쿼리 수가 상품 수에 비례). 상품 수가 수천이면 느리지만 측정 전이라 바꾸지 않는다. 대안은 reader 가 `group by product_id` 로 합계까지 읽는 것인데, 그러면 "상품 1개 = item 1개" 는 유지되지만 processor 가 비어 과제의 역할 분리 설명과 멀어진다. 측정 뒤 재검토한다.
+- **한계**: [7-2 #12](#l12), [7-2 #13](#l13)
 
 <a id="d11"></a>
 ### D11. Step 3 공개 → `openWeeklyRankingStep` (Tasklet, 한 TX, 순서 (1)~(5))
@@ -307,7 +307,7 @@ CREATE TABLE weekly_ranking_publications (
   5. pointer 조건부 갱신(D5). 거절이면 D8. 현재 pointer 의 revision 은 `SELECT ... FOR SHARE` 로 읽는다 — 이 TX 는 (1) 의 COUNT 에서 REPEATABLE READ 스냅샷이 잡히므로, 그 뒤 다른 TX 가 새 revision 을 공개하면 6a UPDATE(잠금 읽기)는 0행인데 평범한 SELECT 는 옛 스냅샷을 볼 수 있다. 잠금 읽기는 최신 commit 값을 읽어 거절 로그·exitDescription 의 "현재 공개 revision" 이 정확하다.
 - **공개 commit 뒤 Batch metadata 저장 실패** → 재시작하면 Step 3 가 다시 실행된다. (2) 는 같은 값, (4) 는 이미 COMPLETED, (5) 는 `<=` 로 통과 → 결과 불변 (R6). 이 시나리오를 테스트로 고정한다 (8절).
 - 기존 공개본을 먼저 지우고 나중에 넣는 두 TX 방식은 쓰지 않는다. 공개는 pointer 한 행의 UPDATE/INSERT 뿐이다.
-- **한계**: (2) 의 "바뀐 행 수 == expected" 와 D5 6a 의 "affected rows 1" 검증은 Connector/J 기본값(`useAffectedRows=false`, 매치된 행 수 반환)에 의존한다. `jpa.yml`·테스트 fixture 의 jdbc-url 에 이 파라미터는 없다(확인 2026-11-20). 누군가 `useAffectedRows=true` 를 켜면 같은 값을 다시 쓰는 재실행에서 0 이 돌아와 3단계·6a 검증이 깨진다. (2) 의 `UPDATE ... JOIN (SELECT ... ROW_NUMBER())` 는 MySQL 8.0 윈도 함수에 의존한다(Testcontainers `mysql:8.0`, `modules/jpa/src/testFixtures/java/com/loopers/testcontainers/MySqlTestContainersConfig.java:13`). 상품 수가 많으면 한 UPDATE 가 길어진다.
+- **한계**: [7-2 #14](#l14), [7-2 #15](#l15)
 
 ---
 
@@ -322,7 +322,7 @@ CREATE TABLE weekly_ranking_publications (
 - **Clock 빈**: commerce-batch 에는 `Clock` 빈이 없다 (`01-survey` 1-4). streamer 의 `apps/commerce-streamer/src/main/java/com/loopers/config/ClockConfig.java:11-17`(`@Configuration` + `@Bean Clock clock() { return Clock.systemDefaultZone(); }`) 와 **같은 패턴으로, 이름만 다른 `com.loopers.config.BatchClockConfig` 를 batch 에 추가**한다. `frozen_at`·`published_at`·점수 행의 `created_at` 은 `LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC)` 로 UTC 벽시계를 만들어 바인딩하고, 테스트는 고정 Clock 으로 교체(`@MockitoBean` 또는 `@Primary` 빈, api 테스트 관례 `01-survey` 7-5).
   - 이름을 `ClockConfig` 로 두지 않는 이유: §7 연결 테스트(crossAppTest)는 streamer jar 와 batch jar 를 한 classpath 에 올린다. 같은 FQCN `com.loopers.config.ClockConfig` 가 둘이면 하나만 로드되어 어느 쪽이 쓰이는지 classpath 순서에 좌우된다. 이름을 달리 두면 두 빈이 모두 보이므로 `CrossAppTestConfig.java:43-49` 의 REGEX 제외 목록에 `com\.loopers\.config\.BatchClockConfig` 를 **추가해야** 한다 (8절 §7 연결 테스트의 build·설정 변경 목록에 포함).
 - API 응답: `periodStart`·`periodEnd` 는 `YYYY-MM-DD`, `frozenAt` 은 ISO-8601 UTC(`Z`) (D14).
-- **한계**: `created_at`·`updated_at` 은 `BaseEntity` 가 `ZonedDateTime.now()`(`BaseEntity.java:44,53`)로 찍어 Clock 을 쓰지 않는다. 기존 관례이므로 바꾸지 않는다.
+- **한계**: [7-2 #16](#l16), [7-2 #24](#l24)
 
 <a id="d13"></a>
 ### D13. checksum → SHA-256 소문자 hex 64자, 입력은 `orderId TAB productId TAB quantity TAB confirmedAt` + LF, 결과는 `productId TAB score TAB ranking` + LF
@@ -334,7 +334,7 @@ CREATE TABLE weekly_ranking_publications (
 
 - 실행 ID·실행 시각·`snapshotId` 는 checksum 에 넣지 않는다. 같은 입력을 다른 revision 으로 다시 계산하면 입력·결과 checksum 이 같아야 "같은 결과" 를 증명할 수 있다.
 - `confirmedAt` 직렬화 형식은 **UTC 고정 6자리** `yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'` 다. 이유: DB `DATETIME(6)` 과 정밀도가 1:1 이라 정보 손실이 없고, 길이가 고정이라 손으로 기대값을 계산하기 쉽다. §6 fixture 의 첫 행 직렬화 예: `42\t7\t2\t2026-08-17T01:00:00.000000Z\n`.
-  - **한계(비교)**: `DateTimeFormatter.ISO_INSTANT` 는 소수부를 값마다 다른 길이(없음/3/6/9자리)로 붙여 같은 시각도 표현이 흔들릴 수 있어 채택하지 않았다. 고정 6자리는 나노초 정밀도 입력이 오면 절단하지만 DB 가 이미 마이크로초까지만 저장하므로 실제 손실은 없다.
+  - **한계**: [7-2 #17](#l17)
 - 테스트는 checksum 비교 **와** 기대 점수·순위 직접 assert 를 둘 다 한다.
 - **§6 fixture 기대값**: 입력 4행 `(42,7,2)`, `(42,8,1)`, `(43,7,3)`, `(44,9,5)` → reader item 3개(7, 8, 9) → 상품 7 = 5점 1위, 상품 9 = 5점 2위, 상품 8 = 1점 3위. 결과 직렬화: `7\t5\t1\n9\t5\t2\n8\t1\t3\n`.
 
@@ -408,7 +408,7 @@ CREATE TABLE weekly_ranking_publications (
 - **삭제 상품**: 점수 행의 productId 목록을 **기존 공개 조건**으로 거른 **뒤** limit 을 적용한다. 상품명 등 표시 정보는 `ProductService.findActiveProducts(Collection<Long>)`(`apps/commerce-api/src/main/java/com/loopers/domain/product/ProductService.java:103-107`: `findAllByIdIn` 후 `deletedAt == null` 필터) 를 재사용한다. 포트 `ProductRepository.findAllByIdIn`(`.../domain/product/ProductRepository.java:13`), JPA `ProductJpaRepository.findAllByIdIn`(`.../infrastructure/product/ProductJpaRepository.java:11`). 저장된 `ranking` 은 유지하므로 1·3위처럼 간격이 생길 수 있다.
   - 구현 순서: 점수 행을 `ranking ASC` 로 **전부** 읽고 → 활성 상품으로 거르고 → 앞에서 `limit` 개. 읽는 행 수에 상한을 두지 않는다. 삭제 상품을 제외한 **뒤** limit 을 적용해야 하므로 전부 읽어야 정확하다(상한을 두면 삭제가 많은 주에 limit 보다 적게 돌려줄 수 있다). 상품 수가 많을 때의 비용은 한계로 두고 측정 뒤 재검토한다.
 - **계층** (brand 단건 GET 과 같게, `01-survey` 7-4. 2026-11-20 구현 이름): `interfaces/api/ranking/RankingV1Controller` + `RankingV1Dto` → `application/ranking/WeeklyRankingFacade`(`@Transactional(readOnly=true)`, limit 검증·삭제 제외·limit 적용) + `WeeklyRankingInfo` → `domain/ranking/WeeklyRankingReader`(포트, `findPublished`·`findRankedScores`) + `WeeklyPeriod`(월요일 규칙, batch 의 `WeeklySnapshotId` 와 같은 규칙을 작게 다시 쓴 것) + record `PublishedSnapshot`·`RankedScore` → `infrastructure/ranking/WeeklyRankingJdbcReader`(JdbcTemplate 구현). 도메인 서비스는 brand 처럼 두지 않는다. 클래스 수는 "없으면 무엇이 깨지는가" 기준으로 줄인다(ArchUnit 상 interfaces → domain 직접 의존은 허용되므로 Info 클래스는 두지 않음).
-- **한계**: api 는 엔티티 정의를 공유하지만 읽기는 SQL 문자열이라 컬럼 이름 변경 시 `WeeklyRankingJdbcReader` 의 SQL 도 함께 고쳐야 한다. 이번엔 테이블 4개·컬럼 수가 적어 감수한다. 운영 DDL 은 여전히 외부 실행(`docs/week9/sql/weekly-ranking-ddl.sql`)이며 마이그레이션 도구(Flyway 등)는 후속 과제다.
+- **한계**: [7-2 #18](#l18), [7-2 #19](#l19)
 
 <a id="d15"></a>
 ### D15. 늦은 구매와 revision → 고정 뒤 도착한 구매는 현재 snapshot 에 넣지 않고, 새 `snapshotId`(rN+1) 로 명시 재계산
@@ -426,7 +426,7 @@ CREATE TABLE weekly_ranking_publications (
 - 늦은 구매도 **원래 주**(confirmed_at 기준)에 속한다. 이번 주 점수에 더하지 않는다.
 - revision 은 운영자가 명시적으로 올린다(자동 감지·자동 재계산 없음).
 - W7 이벤트 재발행 시 구매 활동은 W6 UNIQUE(`uk_ppa_order_product`, `ProductPurchaseActivity.java:19`)로 늘지 않고, 따라서 점수도 늘지 않는다 — §7 테스트로 확인 (8절).
-- **한계**: "지난주 모든 사건이 도착했다"는 증명은 없다. 공개된 결과의 기준 시점은 `frozenAt` 으로 응답에 드러낸다.
+- **한계**: [7-2 #20](#l20)
 
 ---
 
@@ -447,11 +447,38 @@ CREATE TABLE weekly_ranking_publications (
 | 9 | 삭제 상품 | API 읽기 시 `deleted_at IS NULL` 필터 (D14) | 제외 뒤 limit. 저장 순위 유지(간격) | `WeeklyRankingV1ApiTest.excludesDeletedProductKeepingRanking`·`appliesLimitAfterExclusion`, `WeeklyRankingFlowE2ETest` (7) |
 | 10 | 공개본이 R4 를 어김(ranking NULL·행 수 불일치) | API 읽기 시 R4 재검증 (D14 2차 방어) | 500 INTERNAL_ERROR, 숨기지 않음 | `WeeklyRankingV1ApiTest.InvariantViolation` 2건 |
 
-### 7-2. 막지 못하는 장애 (한계)
+<a id="7-2"></a>
+### 7-2. 한계 모음
 
-| 장애 | 왜 못 막나 | 지금 할 수 있는 것 |
-|---|---|---|
-| 프로세스 kill (OOM·강제 종료) | JobExecution 이 `STARTED` 로 남아 재시작하면 `JobExecutionAlreadyRunningException` | 아래 수동 절차 (가)~(라). 자동화하지 않는다 |
+이 설계의 한계를 한 표에 모았다. **종류**: `대가` = 결정을 택한 대신 감수한 것, `운영` = 운영 중 실제로 만날 수 있는 장애, `범위 밖` = 처음부터 하지 않기로 한 것. **이번에 한 것**과 **남은 것**을 나눠 적어 "했다 / 안 하기로 했다 / 할 예정" 이 섞이지 않게 한다. 각 결정(D-n)의 `한계` 줄은 이 표의 행 번호(#n)를 가리킨다.
+
+| # | 한계 | 종류 | 출처 | 이번에 한 것 | 남은 것 |
+|---|---|---|---|---|---|
+| <a id="l1"></a>1 | `periodStart` 와 `snapshotId` 가 날짜를 중복으로 가진다. 어긋남은 Validator·Step 1 에서 잡히지만 두 값을 함께 넘겨야 한다 | 대가 | [D1](#d1) | Validator 로 시작 전 거절, Step 1 2차 검증 | 없음. `snapshotId` 하나로 줄이면 과제 예시·가독성을 잃어 유지 |
+| <a id="l2"></a>2 | 처음 구현한 `WeeklyRankingInput` 에 `nullable=false` 가 없어 Hibernate DDL 이 설계 DDL(NOT NULL)과 어긋났다 | 대가 | [D2](#d2) | `@Column(nullable=false)` 추가, probe 재실행으로 확인 (2026-11-20). 이 설계에서 허용한 유일한 사후 코드 수정 | 없음 (해소) |
+| <a id="l3"></a>3 | `weekly_ranking_inputs` 에 UNIQUE 외 인덱스가 없어 Step 2 의 `ORDER BY product_id` 는 정렬이 필요하다 | 대가 | [D2](#d2) | UNIQUE 선두 `snapshot_id` 로 범위는 좁힘 | 측정 뒤 재검토 |
+| <a id="l4"></a>4 | 회차 status 만으로는 "실패해서 멈춘 CALCULATING" 과 "계산 중인 CALCULATING" 을 구분할 수 없다 | 대가 | [D3](#d3) | 의도한 역할 분리 — 실행 상태는 `BATCH_JOB_EXECUTION` 이 맡음. 수동 절차 (나) 에 조회 방법 | 없음 |
+| <a id="l5"></a>5 | `ranking NULL` 행이 "계산 중" 과 "완성" 테이블에 섞여 있어 R4 위반을 테이블 구조가 막지 않는다 | 대가 | [D4](#d4) | R4 테스트 + API 읽기 시점 R4 재검증 → 위반 시 500 (D14) | 없음 |
+| <a id="l6"></a>6 | `revision` 이 pointer 와 회차 두 곳에 있어 어긋날 수 있다 | 대가 | [D5](#d5) | R4·D8 테스트로만 검출 | 없음 |
+| <a id="l7"></a>7 | FK 가 없어 고아 행(회차 없는 점수 행)을 DB 가 막지 않는다 | 대가 | [D7](#d7) | Step 1 이 회차를 먼저 commit 한 뒤에만 Step 2 가 돌아 정상 흐름에선 생기지 않음 | 없음 |
+| <a id="l8"></a>8 | D8 거절("COMPLETED 인데 공개되지 않음")과 실패를 알리는 수단이 로그·exitDescription 뿐이다 | 운영 | [D8](#d8), 7절 | WARN 로그 + `NOT_PUBLISHED: newer revision rN …` exitDescription. 테이블에서는 "회차 COMPLETED 인데 pointer 가 다른 snapshot" 으로 식별 가능 | 알림(Slack 등)은 범위 밖 |
+| <a id="l9"></a>9 | Step 1 의 READ_COMMITTED 가 원본에 락을 걸지 않는 것은 `binlog_format=ROW` 일 때다 | 대가 | [D9](#d9) | Testcontainers `mysql:8.0` 기본값 ROW 에서 동작 확인 | 운영 MySQL 의 binlog 설정 [확인 필요] |
+| <a id="l10"></a>10 | 데이터가 커지면 한 문장 `INSERT…SELECT` 의 TX 가 길어진다. 페이지 복사로 바꾸려면 같은 읽기 시점을 따로 보장해야 한다 | 대가 | [D9](#d9) | 한 문장 복사로 읽기 시점을 문장 하나에 고정 | 페이지 복사는 범위 밖 |
+| <a id="l11"></a>11 | `product_purchase_activity.confirmed_at` 에 인덱스가 없어 Step 1 이 원본을 풀스캔한다 | 운영 | [D9](#d9), 0절 | 측정 없이 추가하지 않기로 결정 (입력 원본은 streamer 소유) | 측정 뒤 재검토 |
+| <a id="l12"></a>12 | Step 이름 `calculateWeeklyScoresStep` 의 접미사 `Step` 은 과제 예시·기존 Demo 어느 쪽 관례와도 같지 않다 | 대가 | [D10](#d10) | 결정값 유지 | 없음 |
+| <a id="l13"></a>13 | processor 가 상품마다 `SUM` SQL 1회를 실행한다(쿼리 수가 상품 수에 비례) | 대가 | [D10](#d10) | 과제의 reader/processor/writer 역할 분리를 우선 | 측정 뒤 `GROUP BY` reader 로 바꿀지 재검토 |
+| <a id="l14"></a>14 | Step 3 의 "바뀐 행 수 == expected" 와 pointer "affected rows 1" 검증이 Connector/J 기본값(`useAffectedRows=false`)에 의존한다 | 대가 | [D11](#d11) | jdbc-url 어디에도 해당 파라미터가 없음을 확인 (2026-11-20) | 누군가 `useAffectedRows=true` 를 켜면 재실행 검증이 깨진다 — 설정 변경 시 주의 |
+| <a id="l15"></a>15 | 순위 부여 `UPDATE … JOIN (ROW_NUMBER())` 는 MySQL 8.0 윈도 함수에 의존하고 상품 수가 많으면 한 UPDATE 가 길어진다 | 대가 | [D11](#d11) | MySQL 8.0 전제 | 없음 |
+| <a id="l16"></a>16 | `created_at`·`updated_at` 은 `BaseEntity` 가 시스템 시계로 찍어 Clock 을 쓰지 않는다 | 대가 | [D12](#d12) | 기존 관례 유지 | 없음 |
+| <a id="l17"></a>17 | checksum 의 `confirmedAt` 고정 6자리는 나노초 입력을 절단한다. `ISO_INSTANT` 는 소수부 길이가 흔들려 채택하지 않았다 | 대가 | [D13](#d13) | DB 가 마이크로초까지만 저장하므로 실제 손실 없음 | 없음 |
+| <a id="l18"></a>18 | api 는 엔티티 정의를 공유하지만 읽기는 SQL 문자열이라 컬럼 이름 변경 시 `WeeklyRankingJdbcReader` 도 함께 고쳐야 한다 | 대가 | [D14](#d14) | 테이블 4개·컬럼 수가 적어 감수 | 없음 |
+| <a id="l19"></a>19 | 운영(dev/qa/prd)은 `ddl-auto=none` 이라 `weekly-ranking-ddl.sql` 을 외부에서 먼저 실행해야 한다 | 범위 밖 | [D14](#d14), 3절, 0절 | DDL 파일 추출 (`docs/week9/sql/weekly-ranking-ddl.sql`) | 마이그레이션 도구(Flyway 등) 도입 |
+| <a id="l20"></a>20 | 입력 고정은 "지난주 모든 사건이 도착했다" 는 증명이 아니다 | 대가 | [D15](#d15) | 기준 시점을 `frozenAt` 으로 응답에 드러내고, 반영은 새 revision 을 명시적으로 돌리게 함 | 자동 재계산은 두지 않음 |
+| <a id="l21"></a>21 | 프로세스 kill(OOM·강제 종료) 뒤 JobExecution 이 `STARTED` 로 남아 재시작하면 `JobExecutionAlreadyRunningException` | 운영 | 7절, 0절 | 수동 복구 절차 (가)~(라) 문서화. 자동화하지 않기로 결정(죽은 실행과 느린 실행을 metadata 로 구분 불가) | 실제 kill → 수동 복구 → 재시작 실험 |
+| <a id="l22"></a>22 | 배치 다중 인스턴스: 서로 다른 revision 을 동시에 돌리면 pointer `UPDATE→INSERT` 두 문장 사이 경쟁, 첫 공개 동시 INSERT 는 PK 위반으로 한쪽 실패 | 운영 | [D5](#d5), 7절, 0절 | 단일 인스턴스 전제(과제 기본 범위는 직렬 실행). 같은 JobInstance 동시 실행 거절은 테스트로 확인 | 없음 (범위 밖) |
+| <a id="l23"></a>23 | Step 1 commit 직후 Batch metadata 저장이 실패하면 회차 행은 있는데 Step 1 이 미완료로 남아 재시작 시 D6 충돌 | 운영 | [D6](#d6), 7절 | 충돌 시 실패하도록 구현·테스트. 운영 대응(새 revision)은 문서화 | 재현 실험 없음 |
+| <a id="l24"></a>24 | 서버 시간대: JVM 기본 Asia/Seoul 과 UTC 저장이 섞여 있고 `BATCH_*` 의 시각은 KST 벽시계다 | 운영 | [D12](#d12), 7절 | UTC `LocalDateTime` 바인딩 규칙 적용, 테스트·로컬 수동 실행에서 `frozenAt` UTC 정합 확인 | 없음 (두 시각 비교 시 9시간 차이 감안) |
+| <a id="l25"></a>25 | commerce-batch 에는 ArchUnit 계층 규칙이 없다 | 범위 밖 | 0절, 01-survey 8-1 | api 쪽 ArchUnit 만 통과 확인 | batch 에 규칙을 둘지는 과제 요구 확인 뒤 |
 
 **프로세스 kill 뒤 수동 복구 절차**
 
@@ -485,7 +512,7 @@ UPDATE BATCH_JOB_EXECUTION  SET STATUS = 'FAILED', EXIT_CODE = 'FAILED', END_TIM
   - 시각 바인딩은 UTC `LocalDateTime` (D12). Clock 은 고정값.
   - `PurchaseInputProbeRestartTest` 의 `batch_restart_probe`·`probe-1` 데이터와 BATCH_ 이력이 같은 JVM 에 남는다. Job 이름이 다르므로(`purchaseInputProbe` vs `weeklyRanking`) 충돌은 없지만 JobInstance ID 가 1 부터 시작하지 않을 수 있다 — 9절 기록에 ID 절대값을 기대값으로 쓰지 않는다.
 
-- **§6 재시작 테스트** (`WeeklyRankingJobRestartTest`, commerce-batch, 2026-11-20 보강 순서): fixture 4행(`confirmed_at` 2026-08-17~19) → ① **비교용 정상 1회 `weekly-20260817-r2` 를 먼저 실행**(늦은 행이 섞이지 않게) → COMPLETED, 두 checksum·점수 기록 → ② `weekly-20260817-r1` 을 Step 2 상품 9 처리 직전에 실패(테스트용 hook. 파라미터 아님. main 에 `domain/ranking/ScoreProcessingHook` seam 1개를 두고 processor 가 SUM 직전에 부른다. 제품은 no-op 빈, 테스트는 지정한 (snapshotId, productId) 에서 한 번만 예외를 던지는 `@Primary` 빈을 등록한다 — W6·W7 hook 예외 방식과 같음) → 확인: Job FAILED, `weekly_ranking_scores` 2행(7=5, 8=1, `ranking` NULL), 회차 CALCULATING, pointer 는 r2 그대로, reader ExecutionContext 위치 2 → ③ **재시작 전에 같은 주의 늦은 구매 1행**(order 45, 상품 8 × 4, 2026-08-19T02:00Z)을 `product_purchase_activity` 에 넣는다 → ④ 같은 파라미터 재실행 → COMPLETED, 같은 JobInstance·다른 JobExecution, Step 1 StepExecution 없음, read 1 / write 1, r1 입력 **4행 그대로(order 45 없음)**, input·result checksum 이 첫 실행·r2 와 동일, `ranking` [7→1, 9→2, 8→3](상품 8 은 여전히 1점), pointer 는 r2 유지(D8 거절) → ⑤ 대조군 `weekly-20260817-r3` 실행 → 입력 5행, 상품 8 = 5점, 동점 셋이 productId 순 [7, 8, 9], 두 checksum 모두 r1 과 다름, pointer → r3. r1·r2 행은 그대로(R7).
+- **§6 재시작 테스트** (`WeeklyRankingJobRestartTest`, commerce-batch, 2026-11-20 보강 순서): fixture 4행(`confirmed_at` 2026-08-17~19) → ① **비교용 정상 1회 `weekly-20260817-r2` 를 먼저 실행**(늦은 행이 섞이지 않게) → COMPLETED, 두 checksum·점수 기록 → ② `weekly-20260817-r1` 을 Step 2 상품 9 처리 직전에 실패(테스트용 hook. 파라미터 아님. Spring Batch 표준 확장점 `ItemProcessListener.beforeProcess` 를 쓴다. main 의 `WeeklyRankingJobConfig` 가 `ObjectProvider<ItemProcessListener<Long, ProductScore>>` 로 선택 주입받아 있으면 Step 2 에 `.listener()` 로 등록하고, 제품에는 그 빈이 없다. 테스트는 지정한 productId 에서 한 번만 예외를 던지는 `FailOnceProcessListener` 빈을 등록한다. 리스너 예외는 `StepListenerFailedException` 으로 감싸져 올라오며 chunk rollback 효과는 processor 예외와 같다 — W6·W7 hook 예외 방식과 같음. 처음 만들었던 커스텀 seam `ScoreProcessingHook` 은 삭제) → 확인: Job FAILED, `weekly_ranking_scores` 2행(7=5, 8=1, `ranking` NULL), 회차 CALCULATING, pointer 는 r2 그대로, reader ExecutionContext 위치 2 → ③ **재시작 전에 같은 주의 늦은 구매 1행**(order 45, 상품 8 × 4, 2026-08-19T02:00Z)을 `product_purchase_activity` 에 넣는다 → ④ 같은 파라미터 재실행 → COMPLETED, 같은 JobInstance·다른 JobExecution, Step 1 StepExecution 없음, read 1 / write 1, r1 입력 **4행 그대로(order 45 없음)**, input·result checksum 이 첫 실행·r2 와 동일, `ranking` [7→1, 9→2, 8→3](상품 8 은 여전히 1점), pointer 는 r2 유지(D8 거절) → ⑤ 대조군 `weekly-20260817-r3` 실행 → 입력 5행, 상품 8 = 5점, 동점 셋이 productId 순 [7, 8, 9], 두 checksum 모두 r1 과 다름, pointer → r3. r1·r2 행은 그대로(R7).
 
 - **R1~R7 매핑** (계획은 규칙당 테스트 1개였으나 구현(2026-11-20)에서는 아래 테스트에 흡수했다):
 
