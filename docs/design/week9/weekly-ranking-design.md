@@ -35,22 +35,64 @@ W6·W7이 쌓은 `product_purchase_activity`(orderId·productId별 구매 활동
 
 ## 흐름
 
-```
-[streamer] OrderConfirmed → product_purchase_activity (orderId, productId 유일)
+### 전체 흐름
 
-[batch] weeklyRanking(periodStart=2026-08-17, revision=1)  snapshotId=weekly-20260817-r1
-  ① freezeInput (tasklet, READ COMMITTED, 기간별 공개 행 잠금)
-       INSERT INTO snapshot_input SELECT … WHERE confirmed_at ∈ [월 00:00Z, 다음 월 00:00Z)
-       manifest(건수·상품 수·입력 checksum, FROZEN) ─ 같은 commit
-  ② calculateWeeklyScores (chunk=2)
-       reader: 7, 8 | 9          processor: SUM(quantity)     writer: stage.score = total
-       commit: 결과 + read.count ─ 같은 commit
-  ③ publish (tasklet, 기간별 공개 행 잠금)
-       stage 수 = 상품 수? → score DESC, productId ASC 순위 → weekly_ranking insert
-       → snapshot PUBLISHED + 결과 checksum + pointer 갱신 ─ 같은 commit
+`weeklyRanking(periodStart=2026-08-17, revision=1)` → snapshotId=`weekly-20260817-r1`
 
-[api] GET /api/v1/rankings/weekly → pointer → snapshot → ranking ⋈ 공개 상품
+```mermaid
+flowchart TD
+    S[streamer<br/>OrderConfirmed] -->|insert, orderId·productId 유일| A[(product_purchase_activity<br/>계속 쌓임)]
+    A -->|"① freezeWeeklyInput<br/>Tasklet · READ COMMITTED · TX 1개<br/>INSERT … SELECT 한 문장"| I[(snapshot_input<br/>+ manifest 건수·checksum<br/>이후 불변)]
+    I -->|"② calculateWeeklyScores<br/>Chunk: reader → processor → writer<br/>chunk마다 commit"| G[(score_stage<br/>snapshotId·productId별 절대 점수)]
+    G -->|"③ publishWeeklyRanking<br/>Tasklet · 공개 행 잠금 · TX 1개"| R[(weekly_ranking<br/>+ publication pointer)]
+    R -->|pointer join| API[api<br/>GET /api/v1/rankings/weekly]
 ```
+
+| Step | 하는 일 | 다시 실행될 때 |
+|---|---|---|
+| ① 입력 고정 | 기간 `[월 00:00Z, 다음 월 00:00Z)`의 활동을 복사하고 manifest(건수·상품 수·입력 checksum, FROZEN)를 같은 commit으로 저장 | COMPLETED면 Batch가 건너뛴다. snapshot이 이미 있으면 복사하지 않고 checksum만 확인한다 |
+| ② 점수 계산 | reader: snapshot의 `distinct productId` 오름차순<br>processor: 상품별 `SUM(quantity)`<br>writer: stage에 `score = total` upsert | 마지막 commit된 `read.count` 다음 상품부터 |
+| ③ 공개 | 공개 행 잠금 → stage 수 = 상품 수 검증 → `score DESC, productId ASC` 순위 → ranking insert → snapshot PUBLISHED·결과 checksum·pointer 갱신 | 이미 PUBLISHED면 no-op, 더 새 revision이 공개돼 있으면 `SUPERSEDED` |
+
+### chunk 단위 동작
+
+chunk 크기(`ranking.weekly.chunk-size`, 기본 100)는 **몇 개 상품마다 commit하는가**다. 합산 횟수가 아니다. 합산은 상품마다 한 번이다.
+
+```mermaid
+sequenceDiagram
+    participant Step as Chunk Step
+    participant R as Reader<br/>(cursor)
+    participant P as Processor
+    participant W as Writer
+    participant DB as MySQL<br/>(업무 테이블 + Batch metadata)
+
+    Note over Step,DB: chunk 1 TX 시작
+    loop 상품 1~100
+        Step->>R: read()
+        R-->>Step: productId
+        Step->>P: process(productId)
+        P->>DB: SUM(quantity) where snapshotId, productId
+        P-->>Step: ProductScore
+    end
+    Step->>W: write(ProductScore 100개)
+    W->>DB: stage upsert (score = total)
+    Step->>DB: ExecutionContext read.count=100
+    Note over Step,DB: commit (점수 + reader 위치 함께)
+    Note over Step,DB: chunk 2: 상품 101~200 같은 방식 … 마지막 chunk는 남은 수만큼
+```
+
+상품 250개일 때:
+
+| chunk | 상품 | SUM 쿼리 | commit 뒤 `read.count` |
+|---|---|---|---|
+| 1 | 1~100 | 100번 | 100 |
+| 2 | 101~200 | 100번 | 200 |
+| 3 | 201~250 | 50번 | 250 |
+
+- SUM은 모두 250번이고 commit은 3번이다. writer도 상품마다 조회 후 insert 또는 update를 하므로 상품 하나에 쿼리 2~3개가 나간다.
+- chunk 2 도중 실패하면 chunk 2 전체가 rollback된다. 재시작 때는 cursor를 다시 열고 200이 아니라 100개를 건너뛴 뒤 상품 101부터 이어 간다.
+- 점수와 `read.count`가 같은 TX라서 "점수는 저장됐는데 위치는 안 저장된" 상태가 생기지 않는다. 그런 상태가 생겨도 절대값 upsert라 다시 써도 같은 값이 된다.
+- 재시작 실험(§6)은 chunk=2로 실행한다. 상품 7·8이 chunk 1, 상품 9가 chunk 2다.
 
 ### 실패와 재시작 (§6 입력)
 
@@ -101,3 +143,4 @@ W6·W7이 쌓은 `product_purchase_activity`(orderId·productId별 구매 활동
 - manifest의 입력 고정 시점은 TX 시작 시각(Clock)이다. 실제 경계는 그 TX의 read view다.
 - 입력 고정은 "그 주의 모든 구매가 도착했다"는 증명이 아니다. 늦은 구매는 새 revision으로만 반영한다.
 - chunk 크기는 설정값이며 최적값·처리량은 측정하지 않았다.
+- 점수 계산은 상품마다 SUM 쿼리를 따로 보낸다. 상품 수가 커서 비용이 측정되면 reader에서 `GROUP BY`로 합계까지 읽도록 바꾸는 것을 검토한다.
