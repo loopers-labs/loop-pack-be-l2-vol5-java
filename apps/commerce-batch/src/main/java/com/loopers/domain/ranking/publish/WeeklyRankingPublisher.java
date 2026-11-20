@@ -42,7 +42,7 @@ public class WeeklyRankingPublisher {
         // 공개 commit 뒤 Batch metadata 저장만 실패했던 재실행은 같은 결과로 수렴한다.
         switch (snapshot.getStatus()) {
             case PUBLISHED -> {
-                return PublishOutcome.ALREADY_PUBLISHED;
+                return PublishOutcome.PUBLISHED;
             }
             case SUPERSEDED -> {
                 return PublishOutcome.SUPERSEDED;

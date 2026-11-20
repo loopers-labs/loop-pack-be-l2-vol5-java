@@ -41,7 +41,7 @@ public class WeeklyRankingPublication extends BaseEntity {
 
     public void assignRevision(int revision) {
         if (revision != lastRevision + 1) {
-            throw new RevisionConflictException(
+            throw new IllegalStateException(
                 periodStart + " 의 새 revision 은 " + (lastRevision + 1) + " 이어야 합니다: " + revision);
         }
         this.lastRevision = revision;

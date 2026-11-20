@@ -27,7 +27,7 @@ class WeeklyRankingPublicationTest {
 
         // act & assert
         assertThatThrownBy(() -> publication.assignRevision(skippedOrRepeated))
-            .isInstanceOf(RevisionConflictException.class);
+            .isInstanceOf(IllegalStateException.class);
         assertThat(publication.getLastRevision()).isEqualTo(2);
     }
 

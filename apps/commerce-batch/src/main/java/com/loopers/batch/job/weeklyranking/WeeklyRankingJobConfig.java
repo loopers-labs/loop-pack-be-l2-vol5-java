@@ -4,6 +4,7 @@ import com.loopers.batch.job.weeklyranking.freeze.FreezeInputTasklet;
 import com.loopers.batch.job.weeklyranking.publish.PublishTasklet;
 import com.loopers.batch.job.weeklyranking.score.WeeklyScoreProcessor;
 import com.loopers.batch.job.weeklyranking.score.WeeklyScoreWriter;
+import com.loopers.domain.ranking.WeeklyPeriod;
 import com.loopers.domain.ranking.score.ProductScore;
 import jakarta.persistence.EntityManagerFactory;
 import lombok.RequiredArgsConstructor;
@@ -40,8 +41,6 @@ public class WeeklyRankingJobConfig {
     public static final String FREEZE_STEP = "freezeWeeklyInput";
     public static final String CALCULATE_STEP = "calculateWeeklyScores";
     public static final String PUBLISH_STEP = "publishWeeklyRanking";
-    // 재시작 위치가 이 이름으로 ExecutionContext 에 저장된다(<name>.read.count). 바꾸면 기존 실행을 이어 가지 못한다.
-    public static final String PRODUCT_READER = "weeklyRankingProductReader";
 
     private final JobRepository jobRepository;
     private final PlatformTransactionManager transactionManager;
@@ -103,12 +102,13 @@ public class WeeklyRankingJobConfig {
         @Value("#{jobParameters['" + WeeklyRankingJobParameters.REVISION + "']}") Long revision
     ) {
         return new JpaCursorItemReaderBuilder<Long>()
-            .name(PRODUCT_READER)
+            // 재시작 위치가 이 이름으로 ExecutionContext 에 저장된다(<name>.read.count). 바꾸면 기존 실행을 이어 가지 못한다.
+            .name("weeklyRankingProductReader")
             .saveState(true)
             .entityManagerFactory(entityManagerFactory)
             .queryString("select distinct i.productId from WeeklyRankingSnapshotInput i "
                 + "where i.snapshotId = :snapshotId order by i.productId")
-            .parameterValues(Map.of("snapshotId", WeeklyRankingSnapshotIds.of(periodStart, revision)))
+            .parameterValues(Map.of("snapshotId", new WeeklyPeriod(periodStart).snapshotId(Math.toIntExact(revision))))
             .build();
     }
 }

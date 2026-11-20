@@ -55,11 +55,12 @@
 
 ### 남은 위험·하지 않은 것
 
-- **공개 commit 뒤 metadata 저장 실패**는 자동으로 재현하지 않았다. 대응 코드는 `WeeklyRankingPublisher`의 `PUBLISHED → ALREADY_PUBLISHED` 분기뿐이고, 이 분기 전용 테스트는 없다.
+- **공개 commit 뒤 metadata 저장 실패**는 자동으로 재현하지 않았다. 대응 코드는 `WeeklyRankingPublisher`의 "이미 PUBLISHED면 아무것도 바꾸지 않고 PUBLISHED로 끝내는" 분기뿐이고, 이 분기 전용 테스트는 없다.
 - 입력 고정의 건수·checksum 계산이 복사본 전체를 앱 메모리로 읽는다(`findLines`). 큰 주간 데이터에서는 비용이 크다.
 - reader는 MySQL 드라이버 기본 동작대로 상품 ID 목록 전체를 클라이언트에 버퍼링한다.
 - batch의 `PurchaseActivity` 매핑이 streamer와 어긋나면 local `ddl-auto=update`가 원본 테이블에 컬럼을 추가할 수 있다.
 - 기존 `DemoJob`은 그대로 두었다.
+- 쓰이지 않거나 한 줄을 감싸기만 하던 것을 지웠다: `WeeklyRankingSnapshotIds`(→ `WeeklyPeriod.snapshotId` 직접 호출), `RevisionConflictException`(→ `IllegalStateException`, 따로 잡는 곳이 없었다), `PublishOutcome.ALREADY_PUBLISHED`(호출하는 쪽이 PUBLISHED와 구분하지 않았다), `WeeklyRankingSnapshot.isFrozen`(사용처 없음), reader 이름 상수(한 곳에서만 사용).
 - 기간별 공개 행의 이름을 `WeeklyRankingPublication`(테이블 `weekly_ranking_publication`)으로 바꿨다. local DB를 이미 띄웠다면 예전 `weekly_ranking_period` 테이블이 남는다(`ddl-auto=update`는 지우지 않음). 아직 local 실행 전이라 영향은 없다.
 - 태스크 7(api), 8(로컬 인수·PR)은 하지 않았다.
 
@@ -71,7 +72,7 @@
 | 1 | 기존 `DemoJobE2ETest`의 미사용 import(`lombok.RequiredArgsConstructor`)를 지웠다 | Checkstyle을 batch에 적용하자 `checkstyleTest`가 실패했다. 동작 변경 없음 |
 | 1 | ArchitectureTest와 §3 probe 테스트는 태스크 3(엔티티 생성 뒤)으로 옮긴다 | ArchUnit은 대상 클래스가 없으면 실패(failOnEmptyShould). probe는 snapshot 입력 테이블이 있어야 한다 |
 | 2 | 기간·revision·공개 분기·manifest 검증 규칙을 엔티티(`WeeklyRankingPublication`, `WeeklyRankingSnapshot`) 메서드로 두고 태스크 2에서 함께 만들었다. repository·나머지 엔티티는 태스크 3 | 규칙이 엔티티 상태에 붙어 있어 단위 테스트가 엔티티를 직접 만든다 |
-| 2 | batch에는 `CoreException`이 없어 `IllegalArgumentException`(입력 형식)·`IllegalStateException`(불변식 위반)·`RevisionConflictException`(revision 충돌)을 쓴다 | 배치 실패 원인은 예외 메시지와 Step 실패로 드러나면 충분하다. HTTP 매핑이 없다 |
+| 2 | batch에는 `CoreException`이 없어 `IllegalArgumentException`(입력 형식)·`IllegalStateException`(불변식 위반·revision 충돌)을 쓴다 | 배치 실패 원인은 예외 메시지와 Step 실패로 드러나면 충분하다. HTTP 매핑이 없다 |
 | 2 | `ProductScore`가 합계 1 미만을 거절한다(전용 테스트 없음) | 설계 `.ai.md` 4-②의 "0 이하는 계약 위반" 규칙. 생성자 한 줄 검증이라 테스트를 따로 두지 않았다 |
 | 2 | 구간 경계(시작 포함·끝 제외)는 단위 테스트에서 `startInclusive`/`endExclusive` 값만 확인한다. 실제 포함 여부는 태스크 6 흐름 테스트에서 고정 결과로 확인 | 경계를 적용하는 곳이 고정 쿼리라, 단위 테스트용 `contains` 메서드를 따로 만들지 않았다 |
 | 3 | HQL `insert … select`가 `BaseEntity`의 `created_at`·`updated_at`(NOT NULL)을 select의 파라미터(`:copiedAt`)로 채운다 | 원본 생성 시각이 아니라 "복사한 시각"이 이 행의 생성 시각이다 |
@@ -86,6 +87,6 @@
 | 5 | 재시작 테스트에 "첫 chunk commit 전 실패"(상품 8에서 실패 → 위치 0·stage 없음 → 재시작 시 3개 모두 계산)를 추가했다 | 과제 §8의 "chunk commit 전 실패" 검증 범위 |
 | 5 | `WeeklyRankingScoreStage.overwrite` 단위 테스트를 추가했다 | writer가 같은 상품을 다시 써도 두 배가 되지 않는 규칙. 통합 테스트로는 덮어쓰기 경로가 생기지 않는다(commit 전 실패는 rollback으로 insert부터 다시 함) |
 | 6 | 공개 로직은 domain 서비스 `WeeklyRankingPublisher`에 두고, `PublishTasklet`은 `SUPERSEDED`일 때 Step ExitStatus만 바꾼다. Job exit code도 `SUPERSEDED`가 된다(테스트로 확인) | 공개 분기는 domain, 실행 기록은 batch 진입점 |
-| 6 | snapshot이 이미 PUBLISHED면 `ALREADY_PUBLISHED`로 아무것도 바꾸지 않는다. 이미 SUPERSEDED면 그대로 SUPERSEDED | 공개 commit 뒤 metadata 저장만 실패했던 재실행이 같은 결과로 수렴한다 |
+| 6 | snapshot이 이미 PUBLISHED면 아무것도 바꾸지 않고 PUBLISHED로 끝낸다. 이미 SUPERSEDED면 그대로 SUPERSEDED | 공개 commit 뒤 metadata 저장만 실패했던 재실행이 같은 결과로 수렴한다 |
 | 6 | "정상 실행과 비교"는 같은 주의 r2(같은 원본, 새 snapshot)를 실패 없이 돌려 만든다. 재시작한 r1과 r2의 ranking·입력 checksum·결과 checksum이 같고, 둘 다 손으로 계산한 상수와 같다 | 과제의 "별도 snapshot으로 격리한 정상 실행". 재시작 대상의 stage·metadata는 지우지 않는다 |
 | 6 | 늦은 구매 시나리오는 계산 실패를 spy로 만든다. 그래서 `WeeklyRankingFlowTest`도 spy 두 개(합계 조회, 완성 ranking 저장)를 쓴다 | 재시작이어야 "고정 뒤 늦은 구매가 재시작 결과를 바꾸지 않음"을 확인할 수 있다 |

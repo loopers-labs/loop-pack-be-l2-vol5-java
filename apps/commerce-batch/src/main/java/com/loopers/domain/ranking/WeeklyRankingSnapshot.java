@@ -92,10 +92,6 @@ public class WeeklyRankingSnapshot extends BaseEntity {
         }
     }
 
-    public boolean isFrozen() {
-        return status == SnapshotStatus.FROZEN;
-    }
-
     void publish(String resultChecksum, ZonedDateTime publishedAt) {
         requireFrozen();
         this.status = SnapshotStatus.PUBLISHED;

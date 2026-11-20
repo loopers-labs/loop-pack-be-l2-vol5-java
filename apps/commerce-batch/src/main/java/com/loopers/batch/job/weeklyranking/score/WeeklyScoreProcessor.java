@@ -2,7 +2,7 @@ package com.loopers.batch.job.weeklyranking.score;
 
 import com.loopers.batch.job.weeklyranking.WeeklyRankingJobConfig;
 import com.loopers.batch.job.weeklyranking.WeeklyRankingJobParameters;
-import com.loopers.batch.job.weeklyranking.WeeklyRankingSnapshotIds;
+import com.loopers.domain.ranking.WeeklyPeriod;
 import com.loopers.domain.ranking.score.ProductScore;
 import com.loopers.domain.ranking.score.WeeklyScoreCalculator;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +30,6 @@ public class WeeklyScoreProcessor implements ItemProcessor<Long, ProductScore> {
 
     @Override
     public ProductScore process(Long productId) {
-        return calculator.calculate(WeeklyRankingSnapshotIds.of(periodStart, revision), productId);
+        return calculator.calculate(new WeeklyPeriod(periodStart).snapshotId(Math.toIntExact(revision)), productId);
     }
 }
