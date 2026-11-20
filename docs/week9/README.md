@@ -44,8 +44,8 @@ product_purchase_activity (W6·W7)
 
 ## 5. 검증 증거 (상세 9절)
 
-- 재시작: 첫 실행 JobInstance 12 / JobExecution 14 FAILED(read 3·write 2·commit 1·rollback 1, `read.count=2`) → 같은 파라미터 재실행 JobInstance **12** / JobExecution 15 COMPLETED(read 1·write 1).
-- 재시작 vs 정상 1회(r2): input checksum `3e90276e…`, result checksum `745d50bb…` 모두 일치, 점수·순위 집합 동일.
+- 재시작: 첫 실행 JobInstance 13 / JobExecution 15 FAILED(read 3·write 2·commit 1·rollback 1, `read.count=2`) → 늦은 구매 1행 도착 → 같은 파라미터 재실행 JobInstance **13** / JobExecution 16 COMPLETED(read 1·write 1), 입력 4행·checksum 불변. 늦은 행은 새 revision r3 에서만 반영(입력 5행).
+- 재시작 vs 정상 1회(r2, 먼저 실행): input checksum `3e90276e…`, result checksum `745d50bb…` 모두 일치, 점수·순위 집합 동일. r3 은 두 checksum 모두 다름.
 - §7 흐름: 주문 5건 → consumer → Job 6회(r1~r4, 다음 주 r1, 실패 1회) → API. 재발행 뒤 활동 4행 유지, 늦은 구매는 r3 에서만 반영, 경계 행은 다음 주로.
 - 회귀(`:apps:commerce-batch:check :apps:commerce-api:check`, 최종): batch 24건, api 591건, crossAppTest 3건, 실패·skip 0. ArchUnit·Checkstyle 포함.
 

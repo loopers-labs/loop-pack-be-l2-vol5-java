@@ -525,27 +525,29 @@ UPDATE BATCH_JOB_EXECUTION  SET STATUS = 'FAILED', EXIT_CODE = 'FAILED', END_TIM
 
 ## 9. 실험 기록 (구현 후 채움)
 
-### 9-1. §6 재시작 실행 (2026-11-20, `WeeklyRankingJobRestartTest`)
+### 9-1. §6 재시작 실행 (2026-11-20 재측정, `WeeklyRankingJobRestartTest`)
 
-Testcontainers MySQL 8.0, period 2026-08-17, fixture orderId 42·43·44. 같은 JVM 의 다른 테스트가 먼저 돌아 ID 절대값은 1 부터 시작하지 않는다(의미는 상대 비교).
+Testcontainers MySQL 8.0, period 2026-08-17, fixture orderId 42·43·44. 순서: **정상 1회 r2 먼저** → r1 실패 → (늦은 구매 1행 도착) → r1 재시작 → 대조군 r3. 같은 JVM 의 다른 테스트가 먼저 돌아 ID 절대값은 1 부터 시작하지 않는다(의미는 상대 비교).
 
-| 항목 | 첫 실행 (r1, 실패) | 재실행 (r1) | 정상 1회 실행 (r2, 비교용) |
-|---|---|---|---|
-| periodStart / snapshotId | 2026-08-17 / weekly-20260817-r1 | 같음 | 2026-08-17 / weekly-20260817-r2 |
-| JobInstance ID / JobExecution ID | 12 / 14 | **12** / 15 | 13 / 16 |
-| 실행된 Step (StepExecution ID) | freeze #22, calculate #23 | calculate #24, open #25 (**freeze 없음**) | freeze #26, calculate #27, open #28 |
-| Step 2 status | FAILED | COMPLETED | COMPLETED |
-| Step 2 read / write / commit / rollback | 3 / 2 / 1 / 1 | 1 / 1 / 1 / 0 | 3 / 3 / 2 / 0 |
-| reader ExecutionContext 키 = 값 | `weeklyProductIdReader.read.count = 2` | `= 4` | `= 4` |
-| 그 외 ExecutionContext 키 | `batch.version=5.2.2`, `batch.taskletType=ChunkOrientedTasklet`, `batch.stepType=TaskletStep` | 같음 | 같음 |
-| `weekly_ranking_scores` 행 (product=score, ranking) | 7=5·8=1, ranking 모두 NULL | 7=5(1)·9=5(2)·8=1(3) | 같음 |
-| 회차 status / input_count / expected_product_count | CALCULATING / 4 / 3 | COMPLETED / 4 / 3 | COMPLETED / 4 / 3 |
-| input_checksum | `3e90276ec1f9…c357a298` | 같음 | 같음 (r1 과 동일) |
-| result_checksum | NULL | `745d50bbd2f0…3b0a67d2` | 같음 (r1 과 동일) |
-| pointer (period_start → snapshot_id, revision) | 없음 | 2026-08-17 → r1, 1 | 2026-08-17 → r2, 2 |
+| 항목 | 정상 1회 r2 (비교용) | r1 첫 실행 (실패) | r1 재시작 (늦은 행 도착 뒤) | 대조군 r3 |
+|---|---|---|---|---|
+| snapshotId | weekly-20260817-r2 | weekly-20260817-r1 | 같음 | weekly-20260817-r3 |
+| JobInstance ID / JobExecution ID | 12 / 14 | 13 / 15 | **13** / 16 | 14 / 17 |
+| 실행된 Step (StepExecution ID) | freeze #22, calculate #23, open #24 | freeze #25, calculate #26 | calculate #27, open #28 (**freeze 없음**) | #29, #30, #31 |
+| Step 2 status | COMPLETED | FAILED | COMPLETED | COMPLETED |
+| Step 2 read / write / commit / rollback | 3 / 3 / 2 / 0 | 3 / 2 / 1 / 1 | 1 / 1 / 1 / 0 | 3 / 3 / 2 / 0 |
+| reader ExecutionContext `weeklyProductIdReader.read.count` | 4 | **2** | 4 | 4 |
+| `weekly_ranking_inputs` 행 수 | 4 | 4 | **4 (order 45 없음)** | **5** |
+| `weekly_ranking_scores` (product=score, ranking) | 7=5(1)·9=5(2)·8=1(3) | 7=5·8=1, ranking NULL | 7=5(1)·9=5(2)·**8=1**(3) | 7=5(1)·**8=5**(2)·9=5(3) |
+| 회차 status / input_count / expected | COMPLETED / 4 / 3 | CALCULATING / 4 / 3 | COMPLETED / 4 / 3 | COMPLETED / 5 / 3 |
+| input_checksum | `3e90276ec1f9…` | `3e90276ec1f9…` | `3e90276ec1f9…` (불변) | `0caab2eee31e…` |
+| result_checksum | `745d50bbd2f0…` | NULL | `745d50bbd2f0…` (= r2) | `94681a946cdf…` |
+| pointer (2026-08-17 →) | r2 | r2 유지 | r2 유지 (r1 은 D8 거절) | r3 |
 
-- 전체 값: input `3e90276ec1f9123f308cd18d155e1dde6bf811ef3aa741105ff5c766c357a298`, result `745d50bbd2f04a2e8c937f9ebf5f2cddbf75b958540e964934a424903b0a67d2`, 빈 목록 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
-- 재실행에서 Step 1 의 StepExecution 이 만들어지지 않았고(`allowStartIfComplete=false`), 입력 행은 4 그대로였다. r2 뒤에도 r1 의 입력 4행·점수 3행·회차 COMPLETED 는 그대로다(R7).
+- **실패~재시작 사이 늦은 구매 1행 도착 → r1 입력 4행·checksum 불변, r3 에서만 반영.** 재시작 전에 `product_purchase_activity` 에 order 45(상품 8 × 4, 2026-08-19T02:00Z)를 넣었지만 r1 의 입력은 4행 그대로, input/result checksum 은 첫 실행·r2 와 같고 상품 8 은 1점이다(보장 1). 같은 기간 r3 을 새로 돌리면 입력 5행, 상품 8 = 5점, 동점 셋이 productId 순 [7, 8, 9] 로 서고 두 checksum 모두 바뀐다(D15).
+- 재실행에서 Step 1 의 StepExecution 이 만들어지지 않았고(`allowStartIfComplete=false`), 상품 9 만 처리됐다(read 1·write 1). r1 의 pointer 갱신은 r2 가 먼저 공개돼 D8 로 거절됐고, Job 은 COMPLETED 다.
+- r3 뒤에도 r1 의 입력 4행·점수 3행, r2 의 점수 집합은 그대로다(R7).
+- 전체 값: r1·r2 input `3e90276ec1f9123f308cd18d155e1dde6bf811ef3aa741105ff5c766c357a298`, result `745d50bbd2f04a2e8c937f9ebf5f2cddbf75b958540e964934a424903b0a67d2`; r3 input `0caab2eee31e4a96da935c14ff7805e8bd71fab69a594fc716d2cccc6ba74792`, result `94681a946cdfd8e01dbb182d19f846f286386d233e7c1747f30d225fa0a3c9f6`; 빈 목록 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
 - Step 1 DB 동작(`FreezeWeeklyInputStepTest`, period 2026-07-27): `2026-07-27T00:00:00Z`(포함)·`2026-08-02T23:59:59.999999Z`(포함) 2행만 복사, `2026-08-03T00:00:00Z`·`2026-07-26T23:59:59Z`·삭제 행 제외. 같은 (기간, r2) 회차 행이 미리 있으면 Step 1 FAILED(`conflict`), 입력 0행. 활동 0건 주(period 2026-07-06): COMPLETED, input 0·expected 0·두 checksum 모두 빈 문자열 값, 점수 0행, pointer → r1.
 
 ### 9-2. 공개 단계 (R6 수렴 · R3 rollback · D8 거절, 2026-11-20)
@@ -581,7 +583,7 @@ crossAppTest 컨텍스트(실제 MySQL·Kafka·streamer consumer·batch Job·api
 
 | 명령 | 건수 / 실패 / skip | 비고 |
 |---|---|---|
-| `:apps:commerce-batch:check` (2026-11-20, 최종, `--rerun-tasks`) | 11 클래스 24건 / 0 / 0 | checkstyleMain·checkstyleTest·test 모두 실제 실행. `WeeklyScoreWriterTest` 1건 포함 |
+| `:apps:commerce-batch:test` (2026-11-20, 재시작 테스트 보강 뒤) | 11 클래스 24건 / 0 / 0 | checkstyleTest 포함. `WeeklyRankingJobRestartTest` 는 r2 선행·늦은 구매·r3 대조군까지 한 메서드에서 확인 |
 | `:apps:commerce-api:check` (2026-11-20, 최종, `--rerun-tasks`) | test 591건 / 0 / 0 + crossAppTest 3건 / 0 / 0 | checkstyleMain·checkstyleTest·checkstyleCrossAppTest·ArchUnit 포함. 두 모듈 합쳐 5분 54초. `WeeklyRankingV1ApiTest` 15건(R4 2차 방어 2건 포함) |
 | `:apps:commerce-api:crossAppTest` (2026-11-20, ⑧) | 3건 / 0 / 0 | 기존 2 + `WeeklyRankingFlowE2ETest` 1 |
 
