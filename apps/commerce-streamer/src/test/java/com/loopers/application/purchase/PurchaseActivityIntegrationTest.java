@@ -421,4 +421,22 @@ class PurchaseActivityIntegrationTest {
                 .isEqualTo("EVENT_CONFLICT");
         }
     }
+
+    @Nested
+    @DisplayName("SNP-003, Q-7: 주간 랭킹 입력 고정이 기간으로 활동을 찾는다")
+    class WeeklyRangeIndex {
+
+        @DisplayName("purchase_activity 는 confirmed_at 으로 시작하는 인덱스를 가져, 기간 조회가 쌓인 활동 전체를 훑지 않는다")
+        @Test
+        void hasIndexLeadingWithConfirmedAt() {
+            Integer indexes = jdbcTemplate.queryForObject(
+                "select count(*) from information_schema.statistics "
+                    + "where table_schema = database() and table_name = 'purchase_activity' "
+                    + "and column_name = 'confirmed_at' and seq_in_index = 1",
+                Integer.class
+            );
+
+            assertThat(indexes).isPositive();
+        }
+    }
 }

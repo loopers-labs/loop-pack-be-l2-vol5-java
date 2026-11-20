@@ -17,6 +17,9 @@ spring:
     jdbc:
       initialize-schema: never
 
+ranking:
+  chunk-size: 100
+
 management:
   health:
     defaults:
@@ -30,6 +33,10 @@ spring:
   batch:
     jdbc:
       initialize-schema: always
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema/ranking.sql
 
 ---
 spring:
