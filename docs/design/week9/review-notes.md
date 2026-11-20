@@ -4,7 +4,7 @@
 
 ## 검토 가이드 (먼저 읽기)
 
-태스크 1~7을 마쳤다. 태스크 8(로컬 인수·PR)은 하지 않았다. push 하지 않았다.
+태스크 1~7과 태스크 8의 로컬 인수를 마쳤다(`acceptance-run.md`). PR 설명은 아직이다. push 하지 않았다.
 
 ### 커밋과 볼 곳
 
@@ -62,7 +62,7 @@
 - 템플릿의 `DemoJob`(설정·tasklet·E2E 테스트)과 그것만 쓰던 리스너 3개(`JobListener`, `StepMonitorListener`, `ChunkListener`)를 지웠다. 랭킹 job은 리스너를 쓰지 않는다.
 - 쓰이지 않거나 한 줄을 감싸기만 하던 것을 지웠다: `WeeklyRankingSnapshotIds`(→ `WeeklyPeriod.snapshotId` 직접 호출), `RevisionConflictException`(→ `IllegalStateException`, 따로 잡는 곳이 없었다), `PublishOutcome.ALREADY_PUBLISHED`(호출하는 쪽이 PUBLISHED와 구분하지 않았다), `WeeklyRankingSnapshot.isFrozen`(사용처 없음), reader 이름 상수(한 곳에서만 사용).
 - 기간별 공개 행의 이름을 `WeeklyRankingPublication`(테이블 `weekly_ranking_publication`)으로 바꿨다. local DB를 이미 띄웠다면 예전 `weekly_ranking_period` 테이블이 남는다(`ddl-auto=update`는 지우지 않음). 아직 local 실행 전이라 영향은 없다.
-- 태스크 8(로컬 인수·PR)은 하지 않았다. 태스크 7(api)은 `WeeklyRankingApiE2ETest` 7건(파라미터 4건 포함)과 `:apps:commerce-api:check`(1026건, skip 7은 기존 벤치마크) 통과.
+- 태스크 8의 로컬 인수 시나리오는 `acceptance-run.md`에 기록했다(PR 설명은 아직). 태스크 7(api)은 `WeeklyRankingApiE2ETest` 7건(파라미터 4건 포함)과 `:apps:commerce-api:check`(1026건, skip 7은 기존 벤치마크) 통과.
 
 ## 결정 로그
 
