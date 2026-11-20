@@ -101,7 +101,7 @@
 | 공개 pointer | `weekly_ranking_publications` | D5 |
 
 공통 사항
-- 네 테이블의 `@Entity` 는 **commerce-batch 에만** 둔다 (`com.loopers.domain.ranking`). test·local 의 `ddl-auto: create`(`modules/jpa/src/main/resources/jpa.yml:40,56`)가 `@EntityScan("com.loopers")`(`modules/jpa/src/main/java/com/loopers/config/jpa/JpaConfig.java:10`) 범위의 엔티티로 테이블을 만든다는 것은 probe 로 확인했다 (`02-probe-result.md` 6절). commerce-api 는 `@Entity` 를 두지 않고 JDBC 로 읽기만 한다 (D14).
+- 네 테이블의 `@Entity` 는 **공유 모듈 `modules/ranking-schema` 한 벌**(`com.loopers.domain.ranking`)에 두고 commerce-batch·commerce-api 가 함께 의존한다(2026-11-20 이동. 처음엔 batch 에만 있었다). test·local 의 `ddl-auto: create`(`modules/jpa/src/main/resources/jpa.yml:40,56`)가 `@EntityScan("com.loopers")`(`modules/jpa/src/main/java/com/loopers/config/jpa/JpaConfig.java:10`) 범위의 엔티티로 테이블을 만들므로 **api 단독 기동에서도 네 테이블이 생긴다**. 쓰기는 batch 만 하고, api 는 이 엔티티에 Repository 를 두지 않고 JDBC 로 읽기만 한다 (D14, R5).
 - 운영(dev/qa/prd)은 `ddl-auto: none`·`initialize-schema: never` 라 DDL 을 외부에서 실행해야 한다 (`jpa.yml:7`, `apps/commerce-batch/src/main/resources/application.yml:17-18`). 아래 DDL 이 그 원본이다. 마이그레이션 도구는 범위 밖.
 - `BaseEntity`(`modules/jpa/src/main/java/com/loopers/domain/BaseEntity.java:21-32`)의 컬럼: `id BIGINT` IDENTITY, `created_at` NOT NULL, `updated_at` NOT NULL, `deleted_at` NULL, 셋 다 `ZonedDateTime`. Hibernate 가 MySQL 에 만드는 실제 타입은 `DATETIME(6)` 으로 적는다 — §6 테스트에서 `information_schema.COLUMNS` 로 확인한다 (probe 에서 값은 확인했고 컬럼 타입은 조회하지 않음, `02-probe-result.md` 5절).
 
@@ -364,12 +364,13 @@ CREATE TABLE weekly_ranking_publications (
 | `frozenAt` | `yyyy-MM-dd'T'HH:mm:ss'Z'` (UTC, 초 단위) \| null | 그 회차의 `frozen_at`. NOT_PUBLISHED 면 null. D13 의 6자리 형식은 checksum 전용이고 API 표시는 초 단위다 |
 | `items[]` | 배열 | 공개 조건을 통과한 상품, `ranking ASC`, 최대 `limit` 개 |
 | `items[].productId` / `productName` / `score` | Long / String / Long | 상품·현재 이름·주간 수량 합 |
+| (공통) | — | 값이 null 인 필드(`snapshotId`·`frozenAt` 등)는 공통 JSON 설정(`supports/jackson` `JacksonConfig`, `NON_NULL`)에 따라 응답에서 **생략**된다. 미공개 예시에 두 키가 없는 이유다 |
 | `items[].rank` | Integer | **표시 순위**. 삭제 상품을 제외하고 limit 을 적용한 뒤 1부터 연속으로 다시 매긴다 |
 | `items[].calcRank` | Integer | **계산 순위**. 배치가 저장한 `ranking` 그대로. 삭제 상품이 빠지면 1·3 처럼 간격이 생긴다. 발제대로 두 순위를 모두 계약에 둔다 |
 
 성공 예시 (3위 상품 8 이 삭제된 경우. 2위 상품 9 가 삭제됐다면 8 이 `rank 2, calcRank 3` 으로 나온다):
 ```json
-{ "meta": { "result": "SUCCESS", "errorCode": null, "message": null },
+{ "meta": { "result": "SUCCESS" },
   "data": { "status": "PUBLISHED", "periodStart": "2026-08-17", "periodEnd": "2026-08-24",
             "snapshotId": "weekly-20260817-r1", "frozenAt": "2026-08-24T00:10:00Z",
             "items": [ { "productId": 7, "productName": "상품 7", "score": 5, "rank": 1, "calcRank": 1 },
@@ -377,9 +378,8 @@ CREATE TABLE weekly_ranking_publications (
 ```
 미공개 예시:
 ```json
-{ "meta": { "result": "SUCCESS", "errorCode": null, "message": null },
-  "data": { "status": "NOT_PUBLISHED", "periodStart": "2026-08-10", "periodEnd": "2026-08-17",
-            "snapshotId": null, "frozenAt": null, "items": [] } }
+{ "meta": { "result": "SUCCESS" },
+  "data": { "status": "NOT_PUBLISHED", "periodStart": "2026-08-10", "periodEnd": "2026-08-17", "items": [] } }
 ```
 - `NOT_PUBLISHED`: 해당 `period_start` 에 pointer 행이 없을 때. HTTP 200 (404 가 아님 — "아직 없음" 은 정상 상태).
 - `PUBLISHED` + 빈 `items`: 구매 0건 완성본. 두 상태를 구분한다.
@@ -404,11 +404,11 @@ CREATE TABLE weekly_ranking_publications (
   - ② `SELECT product_id, score, ranking FROM weekly_ranking_scores WHERE snapshot_id = ? ORDER BY ranking` — ①에서 얻은 `snapshotId` 로 읽는다. ①은 `expected_product_count` 도 함께 가져온다. ②는 `ranking IS NOT NULL` 같은 필터를 두지 않는다.
   - **R4 읽기 시점 재검증(2차 방어)**: Facade 는 삭제 상품을 제외하기 **전** 읽은 행 전체에 대해 (1) 행 수 == `expected_product_count` (2) `ranking` 전부 NOT NULL (3) 오름차순에서 1..N 연속을 확인한다(0행이면 (1)만). 위반이면 ERROR 로그와 `CoreException(INTERNAL_ERROR, "weekly ranking snapshot {id} violates R4: …")` → 500. 이유: API 가 "COMPLETED 회차 = 완성본"(R4)을 믿는 쪽이어야 R4 가 깨졌을 때 행이 조용히 빠지는 대신 드러난다. 조건으로 걸러내면 불변식 위반을 숨긴다. NOT_PUBLISHED 나 빈 목록으로 바꾸지도 않는다 — 그 둘은 정상 상태의 뜻이 따로 있다.
   - ②가 ①의 `snapshotId` 를 조건으로 쓰므로, ①과 ② 사이에 pointer 가 다른 revision 으로 바뀌어도 서로 다른 snapshot 의 행이 섞이지 않는다(그 응답은 ①시점의 공개본을 일관되게 보여 준다). 구매 0건 완성본은 ①이 1행·②가 0행이라 `PUBLISHED` + 빈 `items` 로 자연히 구분된다.
-- **commerce-api 는 이 테이블들에 `@Entity` 를 두지 않는다.** 읽기는 `JdbcTemplate`(또는 네이티브 쿼리)만. 이유: api 의 test/local `ddl-auto: create` 가 batch 와 다른 정의로 테이블을 다시 만드는 사고를 막는다 — 테이블 정의는 batch 가 소유하고 api 는 읽기 전용. 비용: api 테스트가 이 테이블의 DDL 을 직접 실행해야 한다 (8절).
+- **엔티티는 공유 모듈 `ranking-schema` 한 벌, api 는 Repository 없이 JDBC 읽기만.** 처음 설계는 "api 에 `@Entity` 를 두지 않는다(정의는 batch 소유)" 였으나, 로컬 수동 실행에서 첫 batch 실행 전 api 가 `Table … doesn't exist` 로 500 을 돌려주는 문제가 드러나(04-manual-run 8절) 엔티티를 모듈로 옮겨 두 앱이 같은 정의를 보게 했다(2026-11-20). 그래도 api 가 이 엔티티로 Repository 를 만들지는 않는다 — 읽기 경로를 pointer 하나로 제한하는 R5 와, 쓰기 주체가 batch 하나라는 역할 분리를 지키기 위해서다. 비용: 모듈 1개 추가. 이점: api 테스트가 DDL 상수를 들고 다닐 필요가 없고, 두 앱의 테이블 정의가 어긋날 수 없다.
 - **삭제 상품**: 점수 행의 productId 목록을 **기존 공개 조건**으로 거른 **뒤** limit 을 적용한다. 상품명 등 표시 정보는 `ProductService.findActiveProducts(Collection<Long>)`(`apps/commerce-api/src/main/java/com/loopers/domain/product/ProductService.java:103-107`: `findAllByIdIn` 후 `deletedAt == null` 필터) 를 재사용한다. 포트 `ProductRepository.findAllByIdIn`(`.../domain/product/ProductRepository.java:13`), JPA `ProductJpaRepository.findAllByIdIn`(`.../infrastructure/product/ProductJpaRepository.java:11`). 저장된 `ranking` 은 유지하므로 1·3위처럼 간격이 생길 수 있다.
   - 구현 순서: 점수 행을 `ranking ASC` 로 **전부** 읽고 → 활성 상품으로 거르고 → 앞에서 `limit` 개. 읽는 행 수에 상한을 두지 않는다. 삭제 상품을 제외한 **뒤** limit 을 적용해야 하므로 전부 읽어야 정확하다(상한을 두면 삭제가 많은 주에 limit 보다 적게 돌려줄 수 있다). 상품 수가 많을 때의 비용은 한계로 두고 측정 뒤 재검토한다.
 - **계층** (brand 단건 GET 과 같게, `01-survey` 7-4. 2026-11-20 구현 이름): `interfaces/api/ranking/RankingV1Controller` + `RankingV1Dto` → `application/ranking/WeeklyRankingFacade`(`@Transactional(readOnly=true)`, limit 검증·삭제 제외·limit 적용) + `WeeklyRankingInfo` → `domain/ranking/WeeklyRankingReader`(포트, `findPublished`·`findRankedScores`) + `WeeklyPeriod`(월요일 규칙, batch 의 `WeeklySnapshotId` 와 같은 규칙을 작게 다시 쓴 것) + record `PublishedSnapshot`·`RankedScore` → `infrastructure/ranking/WeeklyRankingJdbcReader`(JdbcTemplate 구현). 도메인 서비스는 brand 처럼 두지 않는다. 클래스 수는 "없으면 무엇이 깨지는가" 기준으로 줄인다(ArchUnit 상 interfaces → domain 직접 의존은 허용되므로 Info 클래스는 두지 않음).
-- **한계**: api 와 batch 가 같은 테이블을 서로 다른 코드(엔티티 vs SQL 문자열)로 알고 있어 컬럼 변경 시 두 곳을 고쳐야 한다. 이번엔 테이블 4개·컬럼 수가 적어 감수한다.
+- **한계**: api 는 엔티티 정의를 공유하지만 읽기는 SQL 문자열이라 컬럼 이름 변경 시 `WeeklyRankingJdbcReader` 의 SQL 도 함께 고쳐야 한다. 이번엔 테이블 4개·컬럼 수가 적어 감수한다. 운영 DDL 은 여전히 외부 실행(`docs/week9/sql/weekly-ranking-ddl.sql`)이며 마이그레이션 도구(Flyway 등)는 후속 과제다.
 
 <a id="d15"></a>
 ### D15. 늦은 구매와 revision → 고정 뒤 도착한 구매는 현재 snapshot 에 넣지 않고, 새 `snapshotId`(rN+1) 로 명시 재계산

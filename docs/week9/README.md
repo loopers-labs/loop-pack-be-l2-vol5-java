@@ -24,7 +24,7 @@ product_purchase_activity (W6·W7)
 | Step 1 | batch `step/FreezeWeeklyInputTasklet` | 입력 복사·건수·checksum·회차 생성 (READ_COMMITTED) |
 | Step 2 | batch `step/WeeklyScoreStepComponents` | reader·processor·writer 빈, frozen 입력에서만 계산 |
 | Step 3 | batch `step/OpenWeeklyRankingTasklet` | 순위·완성·pointer 갱신, 거절 시 exitDescription |
-| 테이블 4개 | batch `domain/ranking/WeeklyRanking{Input,Revision,Score,Publication}` | 입력 / 회차 / 점수+순위 / 공개 pointer |
+| 테이블 4개 | 공유 모듈 `modules/ranking-schema` `domain/ranking/WeeklyRanking{Input,Revision,Score,Publication}` (batch·api 공통 의존, 쓰기는 batch 만) | 입력 / 회차 / 점수+순위 / 공개 pointer |
 | 순수 계산 | batch `domain/ranking/{WeeklySnapshotId,RankingChecksum}` | 기간·snapshotId 규칙, SHA-256 직렬화 |
 | API | api `interfaces/api/ranking/RankingV1Controller` → `WeeklyRankingFacade` → `WeeklyRankingJdbcReader` | 공개본 조회(PUBLISHED / NOT_PUBLISHED 구분), 삭제 상품 제외 뒤 limit, 표시 순위 `rank` 와 계산 순위 `calcRank` 함께 반환 |
 | batch 테스트 | `WeeklyRankingJobRestartTest`·`FreezeWeeklyInputStepTest`·`WeeklyScoreWriterTest`·`OpenWeeklyRankingConvergenceTest`·`WeeklyRankingRevisionRejectTest`·`WeeklyRankingConcurrentLaunchTest` | §6 재시작, 경계·충돌·0행, writer 멱등, 수렴·rollback, D8, 동시 실행 |
