@@ -1,6 +1,9 @@
-// Outbox E2E·복구 시험이 실제 앱을 별도 프로세스로 띄울 때만 쓴다. 제품 코드의 의존성이 아니다.
+// Outbox E2E·복구 시험·주간 랭킹 흐름 시험이 실제 앱을 별도 프로세스로 띄울 때만 쓴다. 제품 코드의 의존성이 아니다.
 evaluationDependsOn(":apps:commerce-streamer")
+evaluationDependsOn(":apps:commerce-batch")
 val streamerRuntimeClasspath = project(":apps:commerce-streamer")
+    .extensions.getByType<SourceSetContainer>()["main"].runtimeClasspath
+val batchRuntimeClasspath = project(":apps:commerce-batch")
     .extensions.getByType<SourceSetContainer>()["main"].runtimeClasspath
 
 dependencies {
@@ -40,10 +43,14 @@ dependencies {
 // 설정·장애 조건을 바꿔 결과를 비교하는 실험 테스트(@Tag("experiment"))는 기능 검증과 목적이 달라 평소 test·check에서 뺀다.
 // 연결 풀 실험처럼 수백 ms 차이에 결과가 걸린 것도 있어, 필요할 때 experimentTest로 따로 돌린다.
 tasks.test {
-    dependsOn(streamerRuntimeClasspath)
+    dependsOn(streamerRuntimeClasspath, batchRuntimeClasspath)
     inputs.files(streamerRuntimeClasspath).withPropertyName("streamerRuntimeClasspath")
+    inputs.files(batchRuntimeClasspath).withPropertyName("batchRuntimeClasspath")
     jvmArgumentProviders.add(CommandLineArgumentProvider {
-        listOf("-De2e.streamerClasspath=${streamerRuntimeClasspath.asPath}")
+        listOf(
+            "-De2e.streamerClasspath=${streamerRuntimeClasspath.asPath}",
+            "-De2e.batchClasspath=${batchRuntimeClasspath.asPath}"
+        )
     })
     useJUnitPlatform {
         excludeTags("experiment")

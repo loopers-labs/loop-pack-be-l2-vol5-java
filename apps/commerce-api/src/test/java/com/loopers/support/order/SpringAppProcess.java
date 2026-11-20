@@ -45,6 +45,30 @@ public final class SpringAppProcess implements AutoCloseable {
         return start("commerce-streamer", command);
     }
 
+    /**
+     * commerce-batch로 job 하나를 실행한다. job이 끝나면 프로세스가 종료 코드로 끝난다({@link #waitForExit}).
+     * Batch metadata와 랭킹 테이블은 같은 DB에 남아, 같은 parameter로 다시 부르면 같은 JobInstance의 재시작이다.
+     */
+    public static SpringAppProcess batch(Database database, String jobName, List<String> jobParameters) throws IOException {
+        List<String> command = new ArrayList<>(List.of(java(), "-Duser.timezone=Asia/Seoul",
+            "-cp", required("e2e.batchClasspath"), "com.loopers.CommerceBatchApplication",
+            "--spring.profiles.active=test", "--spring.batch.job.name=" + jobName,
+            "--spring.jpa.show-sql=false", "--spring.jpa.hibernate.ddl-auto=none",
+            "--datasource.mysql-jpa.main.jdbc-url=" + database.jdbcUrl(),
+            "--datasource.mysql-jpa.main.username=" + database.username(),
+            "--datasource.mysql-jpa.main.password=" + database.password()));
+        command.addAll(jobParameters);
+        return start("commerce-batch-" + jobName, command);
+    }
+
+    /** 프로세스가 끝날 때까지 기다려 종료 코드를 돌려준다. 기한 안에 끝나지 않으면 실패한다. */
+    public int waitForExit(Duration limit) throws InterruptedException {
+        if (!process.waitFor(limit.toSeconds(), TimeUnit.SECONDS)) {
+            throw new AssertionError("프로세스가 " + limit + " 안에 끝나지 않았습니다:\n" + logTail());
+        }
+        return process.exitValue();
+    }
+
     /** W6 revision으로 빌드한 실행 jar를 띄운다. */
     public static SpringAppProcess w6Api(Database database, String bootstrapServers, String topic, int port, String pgUrl)
         throws IOException {
