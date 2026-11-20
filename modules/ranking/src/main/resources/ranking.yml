@@ -1,0 +1,10 @@
+# 주간 랭킹 테이블은 JPA 엔티티가 아니라 SQL로 정의한다 (docs/week9/design.md D1).
+# local·test에서만 시작 시 CREATE TABLE IF NOT EXISTS를 실행한다. 그 밖의 환경은 같은 SQL을 별도 마이그레이션으로 적용한다.
+---
+spring.config.activate.on-profile: local, test
+
+spring:
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:ranking-schema.sql
