@@ -113,6 +113,8 @@ where confirmed_at >= :periodStart and confirmed_at < :periodEnd
 
 SELECT 한 문장은 하나의 읽기 시점이다. 재시작에 걸쳐 같은 입력을 읽으려면 그 결과를 테이블에 남겨야 한다. 한 TX 의 일관된 읽기는 실행이 바뀌면 이어지지 않고, `max(id)` 는 먼저 번호를 받은 TX 가 나중에 commit 하면 경계가 틀린다.
 
+복사로 고정하는 또 다른 이유는 W7 의 지연에 상한이 없다는 것이다. relay 는 실패한 outbox 를 24 시간까지 재시도한 뒤 `BLOCKED` 로 두고, `BLOCKED` 재개와 확정 이벤트 복구 API 는 지난 주의 확정을 언제든 다시 보낸다. 그래서 "주가 끝나고 유예 시간이 지나면 더 늦은 구매는 없다" 는 경계를 정할 수 없다. 고정 시점까지 도착한 것을 그 revision 의 입력으로 명시적으로 고정하고, 늦게 도착한 구매는 새 revision 으로 반영한다(`REV-002`). 언제 고정하고 언제 새 revision 을 만들지는 운영자가 정한다(Q-3). 고정 시점에 아직 발행되지 않은 outbox 의 수를 함께 남기는 방법은 batch 가 api 의 테이블을 읽게 되고(Q-6 의 계약 경계와 어긋난다), 발행된 뒤 streamer 가 아직 처리하지 않은 것은 세지 못해 완전성을 보장하지도 않아 두지 않는다.
+
 | 부담 | 이 저장소에서 |
 |---|---|
 | 원본 잠금 | 로컬(`docker/infra-compose.yml`)과 테스트 MySQL 은 READ COMMITTED 다. 이 격리 수준에서 INSERT…SELECT 는 원본을 잠그지 않고 읽는다. REPEATABLE READ 에서는 읽은 원본 행과 `confirmed_at` 인덱스 범위에 공유 next-key 잠금을 걸어, 고정하는 동안 같은 주에 늦게 도착한 구매의 저장이 기다린다 |
@@ -125,8 +127,9 @@ SELECT 한 문장은 하나의 읽기 시점이다. 재시작에 걸쳐 같은 �
 |---|---|
 | 한 번 읽고 나눠 쓰기. SELECT cursor 하나로 읽고 chunk 로 쓴 뒤 마지막에 `FROZEN` | TX 는 작아지지만 실패하면 이어 할 수 없다. 재시작하면 SELECT 가 새 시점이 되어 앞서 복사한 행과 섞이므로, 고정 중인 행을 지우고 처음부터 다시 복사해야 한다 |
 | 상품별 합계만 고정 | 주문·상품별 입력과 입력 checksum(`SNP-007`)이 사라진다 |
+| 복사하지 않고 `(기간, cutoff)` 경계와 checksum 만 고정 | W7 의 재시도·재개·복구 때문에 cutoff 뒤에도 cutoff 전에 확정된 구매가 도착한다. 원본이 수정·삭제되지 않는다는 보장과 DB 가 찍는 기록 시각도 없다 |
 
-**뒤집을 조건**: 고정 TX 시간이나 undo 증가가 측정으로 문제가 될 때 "한 번 읽고 나눠 쓰기" 로 바꾼다. 서버 격리 수준이 REPEATABLE READ 인 환경에서 실행할 때 고정 TX 의 격리 수준을 READ COMMITTED 로 명시한다. 고정 시간이 측정으로 문제가 되면 인덱스를 `(confirmed_at, order_id, product_id, quantity)` 로 넓혀 기본 키를 다시 찾지 않게 한다. 운영 DB 는 `ddl-auto` 를 쓰지 않으므로 이 인덱스를 `create index` 로 따로 적용한다.
+**뒤집을 조건**: 고정 TX 시간이나 undo 증가가 측정으로 문제가 될 때 "한 번 읽고 나눠 쓰기" 로 바꾼다. 격리 수준은 DB 서버 설정(READ COMMITTED)이 전제다. api 와 streamer 의 잠금 검증도 같은 전제 위에 있으므로, 이 전제를 보장할 수 없는 DB 에 배포할 때는 고정 step 만이 아니라 모든 앱의 연결 설정에서 READ COMMITTED 를 명시한다. 고정 시간이 측정으로 문제가 되면 인덱스를 `(confirmed_at, order_id, product_id, quantity)` 로 넓혀 기본 키를 다시 찾지 않게 한다. 운영 DB 는 `ddl-auto` 를 쓰지 않으므로 이 인덱스를 `create index` 로 따로 적용한다. W7 의 재시도와 복구에 기한이 생겨 지연의 상한이 정해지고, 원본이 append-only 로 보장되며 DB 가 기록 시각을 찍게 되면, 입력을 복사하지 않고 `(기간, cutoff)` 경계와 checksum 만 고정한다.
 
 ### 이미 고정한 snapshot (`SNP-006`)
 
@@ -241,11 +244,11 @@ batch 는 템플릿의 demo job 과 같은 관례를 따른다(Q-8). job 하나�
 | `ranking/` | `WeeklyRankingParameters` | job parameter 를 한 번 읽어 타입 있는 값으로 |
 | `ranking/` | `WeeklyRankingParametersValidator` | launch 할 때 parameter 의 이름·타입·식별 여부와 `SNP-008` 을 확인한다(`JOB-002`) |
 | `ranking/` | `WeeklySnapshot` | 판단(`SNP-006`, `SNP-008`, `REV-002`). DB 없이 테스트 |
-| `ranking/` | `SnapshotStore`, `PublishedRankingStore`, `SortedRowsChecksum` | 테이블 묶음마다 이름 있는 메서드로 SQL |
+| `ranking/store/` | `SnapshotStore`, `PublishedRankingStore`, `SortedRowsChecksum` | 테이블 묶음마다 이름 있는 메서드로 SQL |
 | `ranking/step/` | `FreezeSnapshotTasklet`, `PublishRankingTasklet` | 판단과 store 를 부르는 순서 |
 | `ranking/step/` | `ScoreStageWriter` | chunk 의 점수를 쓴다(`CAL-002`, `CAL-003`) |
 
-`step/` 이 루트의 store 와 `WeeklySnapshot` 을 쓰므로 그것들은 public 이다. demo 의 `DemoTasklet` 도 public 이다. batch 에는 ArchUnit 이 없고 job 이 하나라, 다른 코드가 store 를 우회해 쓰는 것은 리뷰로 막는다. 테스트는 `ranking/` 에 둔다. 연결 테스트도 여기에 남긴다. 설정만 보는 테스트라 깨지면 원인이 랭킹 로직이 아니라 TX·저장소 설정이라는 것이 바로 드러난다.
+루트는 job 단위(조립, parameter, 판단)이고 `step/` 은 step 부품, `store/` 는 SQL 이다. validator 는 step 이 아니라 job 에 붙으므로 루트에 둔다. reader 는 Spring Batch 의 `JdbcPagingItemReader` 를 builder 로 설정할 뿐이고, `@StepScope` bean 정의와 반환 타입(`ItemStreamReader`)이 config 에 있어야 하므로 따로 클래스를 두지 않는다. `step/` 이 `store/` 와 루트의 `WeeklySnapshot` 을 쓰므로 store 와 `WeeklySnapshot` 은 public 이고, store 둘만 쓰는 `SortedRowsChecksum` 은 `store/` 안에서 package-private 이다. demo 의 `DemoTasklet` 도 public 이다. batch 에는 ArchUnit 이 없고 job 이 하나라, 다른 코드가 store 를 우회해 쓰는 것은 리뷰로 막는다. 테스트는 `ranking/` 에 둔다. 연결 테스트도 여기에 남긴다. 설정만 보는 테스트라 깨지면 원인이 랭킹 로직이 아니라 TX·저장소 설정이라는 것이 바로 드러난다.
 
 parameter 검사는 step 이 아니라 job 의 validator 가 한다. launcher 는 JobInstance 를 만들기 전에 validator 를 부르므로, 잘못된 parameter 는 실패한 실행으로 metadata 에 남지 않는다. step 안에서 검사하면 그 parameter 로 instance 가 생기고, `run.id` 가 붙거나 `revision` 이 식별용이 아니면 아예 다른 instance 로 성공해 버린다(`JOB-002`). 받은 식별 parameter 의 이름·타입 표가 정해 둔 표와 같은지를 한 번에 비교하고, 형식은 `WeeklySnapshot` 에 맡긴다. 고정 step 은 snapshotId 를 다시 확인하지 않는다.
 
