@@ -82,7 +82,8 @@ job `weeklyRanking`의 Step 3 `publishWeeklyRanking`(tasklet)은 step 트랜잭�
 3. pointer: 그 주의 pointer가 없으면 INSERT한다. 있으면 **조건부 UPDATE**(지금 공개된 snapshot의 revision < 이 snapshot의 revision일 때만)다. 영향 0행이면 덮지 않는다(D159 오래된 실행 보호).
 4. 결과 checksum: 그 snapshot의 전체 계산 순위(stage를 같은 정렬로)를 `productId\tscore\tcalcRank\n`으로 이어 붙인 UTF-8 바이트의 SHA-256 소문자 hex다. 새 칸 없이 계산 함수로 두고 로그·테스트에서 쓴다.
 
-- 1~3이 같은 TX라 랭킹 INSERT 뒤 pointer 전에 실패하면 새 랭킹 행도 남지 않는다. 공개 TX commit 뒤 Batch 기록이 실패해 같은 Step이 다시 돌아도 2(최대 순위 다음부터)·3(같은 snapshot이면 변화 없음)이 같은 결과로 수렴한다.
+- 1~3이 같은 TX라 랭킹 INSERT 뒤 pointer 전에 실패하면 새 랭킹 행도 남지 않는다. 같은 Step이 다시 돌면 2(최대 순위 다음부터)·3(같은 snapshot이면 변화 없음)이 같은 결과로 수렴한다.
+- 공개 TX commit 뒤 Spring Batch가 공개 Step 실행 기록을 마지막으로 저장하다 실패하면(w9t 테스트): pointer·완성 랭킹은 그 snapshot으로 남고 고객 쿼리도 그 snapshot을 읽는다. Batch 기록은 job UNKNOWN, 공개 Step STARTED로 남고, 같은 parameter로 다시 실행하면 Spring Batch가 `JobExecutionAlreadyRunningException`으로 거절한다. 공개 상태는 pointer가 기준이며 Batch 기록과 다를 수 있다.
 - **[구현 판단]** 더 새 revision이 이미 공개돼 있으면 덮지 않고 Step은 COMPLETED로 끝나며 종료 코드 `NEWER_PUBLISHED`와 로그로 구분한다. 실패로 만들지 않는 이유: 이 snapshot의 계산·순위 저장은 끝났고 공개하지 않는 것이 의도한 결과다. 실패로 두면 재시작해도 같은 결과라 운영자가 끝없이 재시작하게 된다.
 - **[구현 판단]** K 기본값은 설정 `commerce.ranking.size`(150)이고, Job parameter `rankingSize`(식별값)로 바꿀 수 있다.
 - **[구현 판단]** "더 새 공개본 있음"은 조건부 UPDATE·INSERT가 실제로 pointer를 바꿨는지(영향 행 수)로 가른다. 바꾸지 않았을 때만 지금 commit된 pointer를 잠금 읽기(`FOR SHARE`)로 확인해 종료 코드·로그를 정한다. 평범한 SELECT는 REPEATABLE READ에서 TX 앞부분의 옛 값을 보므로, 공개 TX 도중 다른 TX가 더 새 revision을 공개해도 알아채지 못한다.
