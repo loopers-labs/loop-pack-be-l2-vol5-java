@@ -30,3 +30,5 @@ Reader에는 페이지 크기가 달라졌을 때 고정 입력을 `OFFSET`으�
 ## 검증
 
 `RankingJobRestartTest.rejectsRestartWithDifferentChunkSize`: chunk 2로 상품 7·8을 커밋하고 실패한 뒤 chunk 3 Reader로 재실행하자 읽기 전에 FAILED였고 stage는 7·8 그대로였다. 원래 Job으로 재실행하자 상품 9만 읽고 순위 7:5:1, 9:5:2, 8:1:3으로 끝났다.
+
+`SnapshotProductPagingReaderTest`: 상품 1~6에서 크기 2로 4개를 읽고 위치를 저장한 뒤, 검사가 없는 기본 `JdbcPagingItemReader`를 크기 3으로 다시 열자 남은 상품으로 6만 읽고 5를 건너뛰었다. 같은 위치에서 점수 Reader는 크기 3이면 읽기 전에 거부했고, 크기 2로 열면 5·6을 읽었다.

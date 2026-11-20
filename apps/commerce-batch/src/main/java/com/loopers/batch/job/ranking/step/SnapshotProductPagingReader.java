@@ -11,7 +11,7 @@ import java.util.Map;
 /**
  * 고정 입력의 서로 다른 상품 ID를 읽고, 재시작에 필요한 페이지 키와 페이지 크기를 저장한다.
  * 재시작할 때 페이지 크기가 저장값과 다르면 실패한다. 저장된 읽은 수가 새 페이지 크기의 배수가 아니면
- * 페이지 안에서 건너뛸 위치가 틀려 상품을 빠뜨리거나 두 번 읽을 수 있기 때문이다.
+ * 페이지 안에서 건너뛸 위치가 틀려 상품을 빠뜨린다(SnapshotProductPagingReaderTest: 크기 2로 4개를 읽은 뒤 크기 3이면 상품 5를 건너뜀).
  */
 public class SnapshotProductPagingReader extends JdbcPagingItemReader<Long> {
 

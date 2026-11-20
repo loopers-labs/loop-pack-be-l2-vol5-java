@@ -16,7 +16,7 @@
 | 멈춘 실행과 chunk 크기 | `STARTED`로 남은 실행을 정리 SQL로 표시한 뒤 이어서 끝냈고, 정리했지만 살아 있던 실행의 다음 chunk는 version 불일치로 rollback됐다. chunk 크기를 바꾼 재시작은 읽기 전에 실패했다 | `StuckExecutionRecoveryTest`, `RankingJobRestartTest` |
 | API 계약 | 미공개, 비어 있는 공개본, 삭제 상품 제외와 계산 순위를 확인했다 | `WeeklyRankingApiTest` |
 
-- 제출 전 회귀로 `:apps:commerce-api:check :apps:commerce-batch:check :apps:commerce-streamer:check --continue`를 실행했다. API 684건, 배치 33건, streamer 91건이 실패·오류·건너뜀 없이 통과했다. 이 실행에서 API 테스트는 새로 돌았고, 배치·streamer 테스트와 세 모듈의 Checkstyle은 마지막 실행 뒤 입력이 바뀌지 않아 Gradle이 최신 상태(`UP-TO-DATE`)로 확인했다. 별도 실험(`experiment` 태그)은 이 회귀에 포함되지 않는다.
+- 제출 전 회귀로 `:apps:commerce-api:check :apps:commerce-batch:check :apps:commerce-streamer:check --continue`를 실행했다. API 684건, 배치 33건, streamer 91건이 실패·오류·건너뜀 없이 통과했다. 이 실행에서 API 테스트는 새로 돌았고, 배치·streamer 테스트와 세 모듈의 Checkstyle은 마지막 실행 뒤 입력이 바뀌지 않아 Gradle이 최신 상태(`UP-TO-DATE`)로 확인했다. 이후 점수 Reader 테스트 2개를 추가하고 commerce-batch `check`를 다시 실행해 배치 35건이 통과했다. 별도 실험(`experiment` 태그)은 이 회귀에 포함되지 않는다.
 - 외부 스케줄러 배포는 과제 구현 범위 밖이다. 늦은 구매 감지의 판단과 감지기가 선택한 revision의 실행·공개는 테스트로 확인했다.
 
 ## 1단계: 기존 Batch 기반 확인
@@ -305,4 +305,5 @@ Docker Desktop에서 세 가지 10만 행 분포를 두 방식으로 두 번씩 
 - `SnapshotProductPagingReader`에서 이전 Cursor checkpoint를 페이지 키로 복원하던 코드와 `OFFSET` 조회를 지웠다. 저장된 페이지 크기와 chunk 크기가 다르면 읽기 전에 실패한다([ADR 0095](../adr/0095-reject-restart-with-different-chunk-size.md)).
 - `RankingJobRestartTest.pagingResumesAJobThatFailedWithCursor`(2개)를 지우고 `rejectsRestartWithDifferentChunkSize`를 추가했다. chunk 2로 상품 7·8을 커밋하고 실패 → chunk 3 Reader로 재실행하면 "원래 chunk 크기로" 메시지로 FAILED, stage 7·8 그대로 → 원래 Job으로 재실행하면 상품 9만 읽고(readCount 1) 순위 7:5:1, 9:5:2, 8:1:3.
 - 검증: commerce-batch `check` 33개 통과(skip 0).
+- `SnapshotProductPagingReaderTest`(2개)로 검사의 근거를 확인했다. 상품 1~6에서 크기 2로 4개를 읽고 위치를 저장한 뒤, 검사가 없는 기본 `JdbcPagingItemReader`를 크기 3으로 다시 열자 6만 읽고 상품 5를 건너뛰었다. 점수 Reader는 같은 위치에서 크기 3이면 읽기 전에 거부했고, 크기 2로 열면 5·6을 읽었다.
 

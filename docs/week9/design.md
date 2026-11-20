@@ -126,7 +126,7 @@ weeklyRanking (periodStart, snapshotId)
 - 첫 페이지는 지정한 snapshot의 고유 상품 ID를 읽는다. 다음 페이지는 `WHERE snapshot_id = ? AND product_id > ?`를 적용하고, 기존 `(snapshot_id, product_id, quantity)` 인덱스를 지정한다. 페이지 SELECT와 별개로 상품당 합계 SELECT가 한 번 실행된다.
 - 페이지 조회와 합계 계산, 점수 쓰기는 같은 Chunk의 DB 연결을 사용한다. 점수 INSERT와 `snapshotProductReader.read.count`, `start.after`, `page.size`는 같은 쓰기 TX에서 저장한다. 실패한 Chunk의 점수와 위치는 함께 되돌아간다.
 - 같은 스냅샷에 이미 커밋한 상품 점수가 다시 INSERT되면 기본 키로 거부한다. 원인을 확인할 수 있도록 오류로 남긴다. 다른 revision은 별도 snapshotId에 쓴다.
-- 같은 JobInstance를 재시작하면 저장한 키로 다음 페이지를 읽는다. 저장된 페이지 크기와 지금 chunk 크기가 다르면 읽기 전에 실패한다. 읽은 수가 새 페이지 크기의 배수가 아니면 페이지 안에서 건너뛸 위치가 틀어지기 때문이다. 원래 chunk 크기로 다시 실행한다([ADR 0095](../adr/0095-reject-restart-with-different-chunk-size.md)).
+- 같은 JobInstance를 재시작하면 저장한 키로 다음 페이지를 읽는다. 저장된 페이지 크기와 지금 chunk 크기가 다르면 읽기 전에 실패한다. 읽은 수가 새 페이지 크기의 배수가 아니면 페이지 안에서 건너뛸 위치가 틀어져 상품을 빠뜨린다(검사가 없는 기본 Reader로 확인: 크기 2로 4개를 읽은 뒤 크기 3으로 열면 상품 5를 건너뜀). 원래 chunk 크기로 다시 실행한다([ADR 0095](../adr/0095-reject-restart-with-different-chunk-size.md)).
 
 ### 공개 (`PublishRankingTasklet`)
 
