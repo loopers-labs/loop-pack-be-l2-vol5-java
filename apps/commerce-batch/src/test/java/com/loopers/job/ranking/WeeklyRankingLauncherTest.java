@@ -2,6 +2,7 @@ package com.loopers.job.ranking;
 
 import com.loopers.batch.job.ranking.WeeklyRankingJobConfig;
 import com.loopers.batch.job.ranking.WeeklyRankingLauncher;
+import com.loopers.job.ranking.WeeklyRankingPublishMetadataFailureTest.FailingStepUpdate;
 import com.loopers.job.ranking.WeeklyRankingTestConfig.HookedWeeklyRankingRepository;
 import com.loopers.job.reconcile.ReconcileTestConfig.MutableClock;
 import java.time.Instant;
@@ -12,12 +13,18 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.batch.core.BatchStatus;
+import org.springframework.batch.core.Job;
 import org.springframework.batch.core.JobExecution;
+import org.springframework.batch.core.JobParameters;
+import org.springframework.batch.core.JobParametersBuilder;
+import org.springframework.batch.core.explore.JobExplorer;
+import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.batch.core.repository.JobExecutionAlreadyRunningException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -26,11 +33,14 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 // 9주차 3단계 런처: 그 주에 실패·중단된 실행이 있으면 같은 parameter로 재시작하고, 없으면 최대 revision + 1을 만든다.
+// w9d: 실패·중단된 실행이라도 pointer revision이 그 실행 revision 이상이면 끝난 것으로 보고 건너뛴다.
 // 실제 MySQL·JobRepository로 런처 메서드를 직접 부른다. 테스트마다 무작위 주라 그 주의 이력은 이 테스트가 만든 것뿐이다.
+// 공개 commit 뒤 기록 실패는 w9t 테스트의 JobRepository 대역(무장하지 않으면 그대로 위임)을 가져와 만든다.
 @SpringBootTest
-@Import(WeeklyRankingTestConfig.class)
+@Import({WeeklyRankingTestConfig.class, WeeklyRankingPublishMetadataFailureTest.FailingRepositoryConfig.class})
 @TestPropertySource(properties = {
     "spring.batch.job.name=" + WeeklyRankingJobConfig.JOB_NAME,
     "spring.batch.job.enabled=false",
@@ -41,6 +51,10 @@ class WeeklyRankingLauncherTest {
     @Autowired private JdbcTemplate jdbc;
     @Autowired private MutableClock clock;
     @Autowired private HookedWeeklyRankingRepository repository;
+    @Autowired private FailingStepUpdate failingStepUpdate;
+    @Autowired private JobLauncher jobLauncher;
+    @Autowired private JobExplorer jobExplorer;
+    @Autowired private Job weeklyRanking;
 
     private RankingRows rows;
     private LocalDate period;
@@ -51,11 +65,13 @@ class WeeklyRankingLauncherTest {
         rows.clearSource();
         clock.set(Instant.parse("2026-08-24T00:10:00Z"));
         repository.disarm();
+        failingStepUpdate.disarm();
         period = RankingRows.randomMonday();
     }
 
     @AfterEach
     void clean() {
+        failingStepUpdate.disarm();
         repository.disarm();
         rows.clearSource();
     }
@@ -130,6 +146,62 @@ class WeeklyRankingLauncherTest {
         assertThat(List.of(success, rejected, technicalError)).containsExactly(1, 1, 0);
         assertThat(rows.revisions(period)).containsExactly(1);
         assertThat(rows.pointer(period)).contains(RankingRows.snapshotId(period, 1));
+    }
+
+    @Test
+    @DisplayName("D1: r2 공개 commit 뒤 Batch 기록 저장이 실패해 job UNKNOWN·pointer r2인 주에 런처를 부르면 r2를 재시작하지 않고 r3가 COMPLETED, pointer r3이며 r2 기록은 UNKNOWN 그대로다")
+    void skipsUnknownExecutionAlreadyPublished() throws Exception {
+        rows.insertFixture(period);
+        assertThat(launcher.launch(period, null).getStatus()).isEqualTo(BatchStatus.COMPLETED);
+        failingStepUpdate.armFor(period);
+        JobExecution unknown = launcher.launch(period, null);
+        assertThat(failingStepUpdate.injected()).isTrue();
+        assertThat(unknown.getStatus()).isEqualTo(BatchStatus.UNKNOWN);
+        assertThat(rows.pointer(period)).contains(RankingRows.snapshotId(period, 2));
+
+        JobExecution next = launchWithoutRejection();
+
+        assertThat(snapshotIdOf(next)).isEqualTo(RankingRows.snapshotId(period, 3));
+        assertThat(next.getStatus()).isEqualTo(BatchStatus.COMPLETED);
+        assertThat(rows.revisions(period)).containsExactly(1, 2, 3);
+        assertThat(rows.pointer(period)).contains(RankingRows.snapshotId(period, 3));
+        assertThat(jobExplorer.getJobExecution(unknown.getId()).getStatus()).isEqualTo(BatchStatus.UNKNOWN);
+        assertThat(jobExplorer.getJobExecutions(unknown.getJobInstance())).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("D2: r1 공개가 실패한 사이 r2가 공개돼 pointer r2·r1 FAILED인 주에 런처를 부르면 r1을 재시작하지 않고 r3가 COMPLETED, pointer r3이며 r1 기록은 FAILED 그대로다")
+    void skipsFailedExecutionOlderThanPointer() throws Exception {
+        rows.insertFixture(period);
+        repository.failNextPublish();
+        JobExecution failed = launcher.launch(period, null);
+        assertThat(snapshotIdOf(failed)).isEqualTo(RankingRows.snapshotId(period, 1));
+        assertThat(failed.getStatus()).isEqualTo(BatchStatus.FAILED);
+        assertThat(run(RankingRows.snapshotId(period, 2)).getStatus()).isEqualTo(BatchStatus.COMPLETED);
+        assertThat(rows.pointer(period)).contains(RankingRows.snapshotId(period, 2));
+
+        JobExecution next = launchWithoutRejection();
+
+        assertThat(snapshotIdOf(next)).isEqualTo(RankingRows.snapshotId(period, 3));
+        assertThat(next.getStatus()).isEqualTo(BatchStatus.COMPLETED);
+        assertThat(rows.revisions(period)).containsExactly(1, 2, 3);
+        assertThat(rows.pointer(period)).contains(RankingRows.snapshotId(period, 3));
+        assertThat(jobExplorer.getJobExecution(failed.getId()).getStatus()).isEqualTo(BatchStatus.FAILED);
+        assertThat(jobExplorer.getJobExecutions(failed.getJobInstance())).hasSize(1);
+    }
+
+    private JobExecution launchWithoutRejection() {
+        AtomicReference<JobExecution> launched = new AtomicReference<JobExecution>();
+        assertThatCode(() -> launched.set(launcher.launch(period, null))).as("런처가 거절·실패 없이 실행함").doesNotThrowAnyException();
+        return launched.get();
+    }
+
+    private JobExecution run(String snapshotId) throws Exception {
+        JobParameters parameters = new JobParametersBuilder()
+            .addString("periodStart", period.toString())
+            .addString("snapshotId", snapshotId)
+            .toJobParameters();
+        return jobLauncher.run(weeklyRanking, parameters);
     }
 
     private static String snapshotIdOf(JobExecution execution) {
