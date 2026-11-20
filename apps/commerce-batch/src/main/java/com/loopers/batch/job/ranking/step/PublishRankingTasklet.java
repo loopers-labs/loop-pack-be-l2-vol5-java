@@ -1,6 +1,6 @@
 package com.loopers.batch.job.ranking.step;
 
-import com.loopers.batch.job.ranking.PublishedRankingStore;
+import com.loopers.batch.job.ranking.store.PublishedRankingStore;
 import com.loopers.batch.job.ranking.WeeklyRankingParameters;
 import com.loopers.batch.job.ranking.WeeklySnapshot;
 
@@ -38,7 +38,7 @@ public class PublishRankingTasklet implements Tasklet {
         long scores = ranking.scoreCount(snapshotId);
         if (scores != products) {
             throw new IllegalStateException(
-                "snapshot " + snapshotId + " has " + scores + " scores for " + products + " products"
+                "snapshot " + snapshotId + " 의 점수 " + scores + " 개가 상품 " + products + " 개와 다르다"
             );
         }
     }

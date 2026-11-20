@@ -24,7 +24,7 @@ class WeeklyRankingParametersValidator implements JobParametersValidator {
             .collect(toMap(Map.Entry::getKey, entry -> entry.getValue().getType()));
         if (given.getParameters().size() != identifying.size() || !identifying.equals(SIGNATURE)) {
             throw new JobParametersInvalidException(
-                "weeklyRanking takes exactly the identifying parameters " + SIGNATURE + ": " + given
+                "weeklyRanking 은 식별 parameter " + SIGNATURE + " 만 받는다: " + given
             );
         }
         try {

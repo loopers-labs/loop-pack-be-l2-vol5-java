@@ -26,6 +26,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 import com.loopers.batch.job.ranking.step.FreezeSnapshotTasklet;
 import com.loopers.batch.job.ranking.step.PublishRankingTasklet;
 import com.loopers.batch.job.ranking.step.ScoreStageWriter;
+import com.loopers.batch.job.ranking.store.PublishedRankingStore;
+import com.loopers.batch.job.ranking.store.SnapshotStore;
 
 @ConditionalOnProperty(name = "spring.batch.job.name", havingValue = WeeklyRankingJobConfig.JOB_NAME)
 @Configuration

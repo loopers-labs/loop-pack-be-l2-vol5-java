@@ -1,7 +1,7 @@
 package com.loopers.batch.job.ranking.step;
 
 import com.loopers.batch.job.ranking.WeeklyRankingParameters;
-import com.loopers.batch.job.ranking.SnapshotStore;
+import com.loopers.batch.job.ranking.store.SnapshotStore;
 import com.loopers.batch.job.ranking.WeeklySnapshot;
 
 import java.util.Optional;

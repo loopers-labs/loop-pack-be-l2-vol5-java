@@ -1,4 +1,6 @@
-package com.loopers.batch.job.ranking;
+package com.loopers.batch.job.ranking.store;
+
+import com.loopers.batch.job.ranking.WeeklySnapshot;
 
 import java.time.Instant;
 import java.time.LocalDate;
