@@ -58,7 +58,7 @@ Loopers 에서 제공하는 Spring Boot(Java 21) 멀티 모듈 커머스 템플�
 
 - **`modules:jpa`** — 완성. `MySqlTestContainersConfig`(MySQL Testcontainers 기동), `DatabaseCleanUp`(모든 테이블 truncate)이 구현되어 있음.
 - **`modules:redis`** — 완성. `RedisTestContainersConfig`, `RedisCleanUp`이 구현되어 있음.
-- **`modules:kafka`** — 미완성. `build.gradle.kts`에 `java-test-fixtures` 플러그인과 `testFixturesImplementation("org.testcontainers:kafka")`가 선언되어 있지만, `src/testFixtures` 디렉토리 자체가 아직 없어 실제 Kafka Testcontainers 설정 클래스는 구현되어 있지 않습니다. `commerce-streamer`에서 Kafka 기반 통합 테스트가 필요하면 이 부분을 직접 구현해야 합니다.
+- **`modules:kafka`** — 완성. `KafkaTestContainersConfig`가 단일 broker(KRaft, `apache/kafka:3.8.0`)를 띄우고 `spring.kafka.bootstrap-servers`를 주입하며, 정적 `bootstrapServers()`로 실제 주소를 돌려줌. `commerce-api`·`commerce-streamer`가 `testFixtures(project(":modules:kafka"))`로 가져다 씀.
 
 ## 애플리케이션 내부 레이어드 아키텍처
 
@@ -96,7 +96,7 @@ Loopers 에서 제공하는 Spring Boot(Java 21) 멀티 모듈 커머스 템플�
 - 아래 통합/E2E 컨벤션의 실제 예시는 `UserRepositoryTest`(저장), `PointFacadeTest`(Facade 통합), `PointApiE2ETest`(API E2E)입니다. 새 도메인도 이 컨벤션대로 작성하세요.
 - 도메인/서비스 통합 테스트는 `@SpringBootTest` + `DatabaseCleanUp`(testFixtures)을 `@AfterEach`에서 호출해 모든 테이블을 truncate합니다.
 - API E2E 테스트는 `@SpringBootTest(webEnvironment = RANDOM_PORT)` + `TestRestTemplate`로 실제 HTTP 요청을 보내고, 응답을 공통 `ApiResponse<T>`로 역직렬화해 검증합니다.
-- MySQL/Redis가 필요한 테스트는 각 모듈의 testFixtures에 있는 Testcontainers 설정(`MySqlTestContainersConfig`, `RedisTestContainersConfig`)을 사용합니다(Docker 필요). Kafka는 위에서 설명한 대로 testFixtures가 아직 구현되어 있지 않으므로 필요 시 직접 구성해야 합니다.
+- MySQL/Redis/Kafka가 필요한 테스트는 각 모듈의 testFixtures에 있는 Testcontainers 설정(`MySqlTestContainersConfig`, `RedisTestContainersConfig`, `KafkaTestContainersConfig`)을 사용합니다(Docker 필요).
 - `*Test.java` 파일은 `.editorconfig`에서 `max_line_length` 제한이 해제되어 있습니다.
 - api(발행)와 streamer(소비)는 독립 앱이라 "발행 → 소비"를 한 테스트로 잇지 않습니다. 메시지 계약은 공유 스키마(IDL)로 보장한다고 보고, 각자 쪼개 검증합니다.
   - producer: 이벤트가 계약한 모양으로 만들어지는지(단위)
