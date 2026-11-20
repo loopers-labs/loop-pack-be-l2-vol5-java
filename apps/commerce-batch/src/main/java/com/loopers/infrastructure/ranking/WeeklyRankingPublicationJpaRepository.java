@@ -1,6 +1,6 @@
 package com.loopers.infrastructure.ranking;
 
-import com.loopers.domain.ranking.WeeklyRankingPeriod;
+import com.loopers.domain.ranking.WeeklyRankingPublication;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -10,9 +10,9 @@ import org.springframework.data.repository.query.Param;
 import java.time.LocalDate;
 import java.util.Optional;
 
-public interface WeeklyRankingPeriodJpaRepository extends JpaRepository<WeeklyRankingPeriod, Long> {
+public interface WeeklyRankingPublicationJpaRepository extends JpaRepository<WeeklyRankingPublication, Long> {
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select p from WeeklyRankingPeriod p where p.periodStart = :periodStart")
-    Optional<WeeklyRankingPeriod> findForUpdate(@Param("periodStart") LocalDate periodStart);
+    @Query("select p from WeeklyRankingPublication p where p.periodStart = :periodStart")
+    Optional<WeeklyRankingPublication> findForUpdate(@Param("periodStart") LocalDate periodStart);
 }

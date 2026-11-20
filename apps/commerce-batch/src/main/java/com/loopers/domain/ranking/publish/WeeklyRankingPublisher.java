@@ -4,8 +4,8 @@ import com.loopers.domain.ranking.PublishOutcome;
 import com.loopers.domain.ranking.RankedProduct;
 import com.loopers.domain.ranking.SnapshotChecksum;
 import com.loopers.domain.ranking.WeeklyPeriod;
-import com.loopers.domain.ranking.WeeklyRankingPeriod;
-import com.loopers.domain.ranking.WeeklyRankingPeriodRepository;
+import com.loopers.domain.ranking.WeeklyRankingPublication;
+import com.loopers.domain.ranking.WeeklyRankingPublicationRepository;
 import com.loopers.domain.ranking.WeeklyRankingSnapshot;
 import com.loopers.domain.ranking.WeeklyRankingSnapshotRepository;
 import com.loopers.domain.ranking.score.ProductScore;
@@ -26,14 +26,14 @@ import java.util.List;
 @Component
 public class WeeklyRankingPublisher {
 
-    private final WeeklyRankingPeriodRepository periodRepository;
+    private final WeeklyRankingPublicationRepository publicationRepository;
     private final WeeklyRankingSnapshotRepository snapshotRepository;
     private final WeeklyRankingScoreStageRepository stageRepository;
     private final WeeklyRankingRepository rankingRepository;
     private final Clock clock;
 
     public PublishOutcome publish(WeeklyPeriod period, int revision) {
-        WeeklyRankingPeriod lockedPeriod = periodRepository.findForUpdate(period.periodStart())
+        WeeklyRankingPublication publication = publicationRepository.findForUpdate(period.periodStart())
             .orElseThrow(() -> new IllegalStateException(period.periodStart() + " 의 입력이 고정되지 않았습니다."));
         String snapshotId = period.snapshotId(revision);
         WeeklyRankingSnapshot snapshot = snapshotRepository.findBySnapshotId(snapshotId)
@@ -56,7 +56,7 @@ public class WeeklyRankingPublisher {
         snapshot.verifyScoredProducts(scores.size());
         List<RankedProduct> ranked = RankingOrder.rank(scores);
 
-        PublishOutcome outcome = lockedPeriod.publish(snapshot, SnapshotChecksum.ofResult(ranked), ZonedDateTime.now(clock));
+        PublishOutcome outcome = publication.publish(snapshot, SnapshotChecksum.ofResult(ranked), ZonedDateTime.now(clock));
         if (outcome == PublishOutcome.PUBLISHED) {
             rankingRepository.saveAll(ranked.stream().map(product -> new WeeklyRanking(snapshotId, product)).toList());
         }

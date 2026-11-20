@@ -30,7 +30,7 @@ W6·W7이 쌓은 `product_purchase_activity`(orderId·productId별 구매 활동
 | 입력 고정은 READ COMMITTED TX에서 `INSERT … SELECT` 한 문장으로 복사하고, 같은 TX에서 복사본으로 건수·checksum을 manifest에 남긴다 | 한 문장이 곧 하나의 일관된 읽기 시점이다. RR의 `INSERT … SELECT`는 원본에 공유 잠금을 걸어 W6 consumer를 막는다. `max(id)`는 commit 순서를 고정하지 못한다 |
 | 식별 parameter는 `periodStart`(LocalDate)·`revision`(Long)이고 snapshotId는 `weekly-{yyyyMMdd}-r{n}`으로 만든다. 새 revision은 기존 최대+1만 허용한다 | snapshotId와 기간·revision이 어긋날 수 없다. `run.id`·현재 시각은 넣지 않는다 |
 | item 하나는 상품 하나다. reader는 서로 다른 productId를 오름차순으로 읽고, processor가 snapshot 안에서 수량을 합산하고, writer가 절대값으로 upsert한다 | writer 스스로 멱등이라 TX 설정·reader 상태·운영 재실행 조건이 하나 깨져도 점수가 두 배가 되지 않는다. 합산은 DB가 커버링 인덱스로 한다 |
-| 공개는 기간 행을 잠근 TX 하나에서 stage 검증 → 순위 → 완성 ranking insert → pointer 갱신을 한다. 더 새 revision이 공개돼 있으면 pointer를 바꾸지 않고 `SUPERSEDED`로 끝낸다 | 부분 결과와 이전 revision으로의 역행을 막는다. 같은 snapshot의 재공개는 no-op이다 |
+| 공개는 기간별 공개 행을 잠근 TX 하나에서 stage 검증 → 순위 → 완성 ranking insert → pointer 갱신을 한다. 더 새 revision이 공개돼 있으면 pointer를 바꾸지 않고 `SUPERSEDED`로 끝낸다 | 부분 결과와 이전 revision으로의 역행을 막는다. 같은 snapshot의 재공개는 no-op이다 |
 | 테이블은 JPA 엔티티로 둔다. batch는 원본을 `@Immutable`로 읽고, local은 `ddl-auto=update`다. api는 ranking·pointer를 읽기 전용으로 매핑한다 | 저장소 관례. batch는 실행마다 뜨는 프로세스라 `create`면 재시작 사이에 고정 입력이 지워진다 |
 
 ## 흐름
@@ -39,13 +39,13 @@ W6·W7이 쌓은 `product_purchase_activity`(orderId·productId별 구매 활동
 [streamer] OrderConfirmed → product_purchase_activity (orderId, productId 유일)
 
 [batch] weeklyRanking(periodStart=2026-08-17, revision=1)  snapshotId=weekly-20260817-r1
-  ① freezeInput (tasklet, READ COMMITTED, 기간 행 잠금)
+  ① freezeInput (tasklet, READ COMMITTED, 기간별 공개 행 잠금)
        INSERT INTO snapshot_input SELECT … WHERE confirmed_at ∈ [월 00:00Z, 다음 월 00:00Z)
        manifest(건수·상품 수·입력 checksum, FROZEN) ─ 같은 commit
   ② calculateWeeklyScores (chunk=2)
        reader: 7, 8 | 9          processor: SUM(quantity)     writer: stage.score = total
        commit: 결과 + read.count ─ 같은 commit
-  ③ publish (tasklet, 기간 행 잠금)
+  ③ publish (tasklet, 기간별 공개 행 잠금)
        stage 수 = 상품 수? → score DESC, productId ASC 순위 → weekly_ranking insert
        → snapshot PUBLISHED + 결과 checksum + pointer 갱신 ─ 같은 commit
 

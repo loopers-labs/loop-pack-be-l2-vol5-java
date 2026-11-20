@@ -3,8 +3,8 @@ package com.loopers.domain.ranking.freeze;
 import com.loopers.domain.ranking.SnapshotChecksum;
 import com.loopers.domain.ranking.SnapshotInputLine;
 import com.loopers.domain.ranking.WeeklyPeriod;
-import com.loopers.domain.ranking.WeeklyRankingPeriod;
-import com.loopers.domain.ranking.WeeklyRankingPeriodRepository;
+import com.loopers.domain.ranking.WeeklyRankingPublication;
+import com.loopers.domain.ranking.WeeklyRankingPublicationRepository;
 import com.loopers.domain.ranking.WeeklyRankingSnapshot;
 import com.loopers.domain.ranking.WeeklyRankingSnapshotRepository;
 import lombok.RequiredArgsConstructor;
@@ -23,14 +23,14 @@ import java.util.Optional;
 @Component
 public class WeeklyRankingInputFreezer {
 
-    private final WeeklyRankingPeriodRepository periodRepository;
+    private final WeeklyRankingPublicationRepository publicationRepository;
     private final WeeklyRankingSnapshotRepository snapshotRepository;
     private final WeeklyRankingSnapshotInputRepository inputRepository;
     private final Clock clock;
 
     public WeeklyRankingSnapshot freeze(WeeklyPeriod period, int revision, Long jobExecutionId) {
-        WeeklyRankingPeriod lockedPeriod = periodRepository.findForUpdate(period.periodStart())
-            .orElseGet(() -> periodRepository.saveAndFlush(new WeeklyRankingPeriod(period.periodStart())));
+        WeeklyRankingPublication publication = publicationRepository.findForUpdate(period.periodStart())
+            .orElseGet(() -> publicationRepository.saveAndFlush(new WeeklyRankingPublication(period.periodStart())));
 
         String snapshotId = period.snapshotId(revision);
         Optional<WeeklyRankingSnapshot> existing = snapshotRepository.findBySnapshotId(snapshotId);
@@ -41,7 +41,7 @@ public class WeeklyRankingInputFreezer {
             return existing.get();
         }
 
-        lockedPeriod.assignRevision(revision);
+        publication.assignRevision(revision);
         ZonedDateTime frozenAt = ZonedDateTime.now(clock);
         inputRepository.copyPurchases(snapshotId, period, frozenAt);
 

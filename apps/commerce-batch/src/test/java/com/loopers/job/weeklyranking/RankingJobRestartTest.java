@@ -87,7 +87,7 @@ class RankingJobRestartTest {
         assertThat(failedStep.getExecutionContext().getInt("weeklyRankingProductReader.read.count")).isEqualTo(2);
         assertThat(stageScores(jdbc, "weekly-20260817-r1")).isEqualTo(Map.of(7L, 5L, 8L, 1L));
         assertThat(jdbc.queryForObject(
-            "SELECT published_snapshot_id FROM weekly_ranking_period WHERE period_start = '2026-08-17'", String.class))
+            "SELECT published_snapshot_id FROM weekly_ranking_publication WHERE period_start = '2026-08-17'", String.class))
             .isNull();
 
         // act: 같은 식별 parameter·같은 metadata 로 다시 실행

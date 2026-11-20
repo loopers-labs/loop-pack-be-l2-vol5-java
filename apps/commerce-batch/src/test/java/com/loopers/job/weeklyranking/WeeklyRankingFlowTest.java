@@ -203,7 +203,7 @@ class WeeklyRankingFlowTest {
 
     private static String publishedSnapshotId(JdbcTemplate jdbc, String periodStart) {
         return jdbc.queryForObject(
-            "SELECT published_snapshot_id FROM weekly_ranking_period WHERE period_start = ?", String.class, periodStart);
+            "SELECT published_snapshot_id FROM weekly_ranking_publication WHERE period_start = ?", String.class, periodStart);
     }
 
     private static String snapshotStatus(JdbcTemplate jdbc, String snapshotId) {

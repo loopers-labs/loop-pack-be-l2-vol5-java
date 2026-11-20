@@ -14,10 +14,10 @@ import java.time.ZonedDateTime;
 @Getter
 @Entity
 @Table(
-    name = "weekly_ranking_period",
-    uniqueConstraints = @UniqueConstraint(name = "uk_weekly_ranking_period_start", columnNames = "period_start")
+    name = "weekly_ranking_publication",
+    uniqueConstraints = @UniqueConstraint(name = "uk_weekly_ranking_publication_period_start", columnNames = "period_start")
 )
-public class WeeklyRankingPeriod extends BaseEntity {
+public class WeeklyRankingPublication extends BaseEntity {
 
     @Column(name = "period_start", nullable = false)
     private LocalDate periodStart;
@@ -32,9 +32,9 @@ public class WeeklyRankingPeriod extends BaseEntity {
     private Integer publishedRevision;
 
     // JPA 가 사용하는 기본 생성자.
-    protected WeeklyRankingPeriod() {}
+    protected WeeklyRankingPublication() {}
 
-    public WeeklyRankingPeriod(LocalDate periodStart) {
+    public WeeklyRankingPublication(LocalDate periodStart) {
         this.periodStart = new WeeklyPeriod(periodStart).periodStart();
         this.lastRevision = 0;
     }

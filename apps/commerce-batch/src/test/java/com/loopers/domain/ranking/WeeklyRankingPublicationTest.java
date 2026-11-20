@@ -11,7 +11,7 @@ import java.time.ZonedDateTime;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-class WeeklyRankingPeriodTest {
+class WeeklyRankingPublicationTest {
 
     private static final LocalDate MONDAY = LocalDate.parse("2026-08-17");
     private static final ZonedDateTime NOW = ZonedDateTime.parse("2026-08-24T01:00:00Z");
@@ -21,31 +21,31 @@ class WeeklyRankingPeriodTest {
     @ValueSource(ints = {1, 2, 4})
     void acceptsOnlyNextRevision(int skippedOrRepeated) {
         // arrange
-        WeeklyRankingPeriod period = new WeeklyRankingPeriod(MONDAY);
-        period.assignRevision(1);
-        period.assignRevision(2);
+        WeeklyRankingPublication publication = new WeeklyRankingPublication(MONDAY);
+        publication.assignRevision(1);
+        publication.assignRevision(2);
 
         // act & assert
-        assertThatThrownBy(() -> period.assignRevision(skippedOrRepeated))
+        assertThatThrownBy(() -> publication.assignRevision(skippedOrRepeated))
             .isInstanceOf(RevisionConflictException.class);
-        assertThat(period.getLastRevision()).isEqualTo(2);
+        assertThat(publication.getLastRevision()).isEqualTo(2);
     }
 
     @DisplayName("더 새 revision 이 공개돼 있으면 pointer 를 되돌리지 않고 snapshot 을 SUPERSEDED 로 남긴다.")
     @Test
     void doesNotRollBackPointer_whenNewerRevisionPublished() {
         // arrange
-        WeeklyRankingPeriod period = new WeeklyRankingPeriod(MONDAY);
-        WeeklyRankingSnapshot r1 = frozen(period, 1);
-        WeeklyRankingSnapshot r2 = frozen(period, 2);
-        period.publish(r2, "r2-result", NOW);
+        WeeklyRankingPublication publication = new WeeklyRankingPublication(MONDAY);
+        WeeklyRankingSnapshot r1 = frozen(publication, 1);
+        WeeklyRankingSnapshot r2 = frozen(publication, 2);
+        publication.publish(r2, "r2-result", NOW);
 
         // act
-        PublishOutcome outcome = period.publish(r1, "r1-result", NOW);
+        PublishOutcome outcome = publication.publish(r1, "r1-result", NOW);
 
         // assert
         assertThat(outcome).isEqualTo(PublishOutcome.SUPERSEDED);
-        assertThat(period.getPublishedSnapshotId()).isEqualTo("weekly-20260817-r2");
+        assertThat(publication.getPublishedSnapshotId()).isEqualTo("weekly-20260817-r2");
         assertThat(r1.getStatus()).isEqualTo(SnapshotStatus.SUPERSEDED);
     }
 
@@ -53,24 +53,24 @@ class WeeklyRankingPeriodTest {
     @Test
     void movesPointer_whenSnapshotIsNewer() {
         // arrange
-        WeeklyRankingPeriod period = new WeeklyRankingPeriod(MONDAY);
-        WeeklyRankingSnapshot r1 = frozen(period, 1);
-        WeeklyRankingSnapshot r2 = frozen(period, 2);
-        period.publish(r1, "r1-result", NOW);
+        WeeklyRankingPublication publication = new WeeklyRankingPublication(MONDAY);
+        WeeklyRankingSnapshot r1 = frozen(publication, 1);
+        WeeklyRankingSnapshot r2 = frozen(publication, 2);
+        publication.publish(r1, "r1-result", NOW);
 
         // act
-        PublishOutcome outcome = period.publish(r2, "r2-result", NOW);
+        PublishOutcome outcome = publication.publish(r2, "r2-result", NOW);
 
         // assert
         assertThat(outcome).isEqualTo(PublishOutcome.PUBLISHED);
-        assertThat(period.getPublishedSnapshotId()).isEqualTo("weekly-20260817-r2");
-        assertThat(period.getPublishedRevision()).isEqualTo(2);
+        assertThat(publication.getPublishedSnapshotId()).isEqualTo("weekly-20260817-r2");
+        assertThat(publication.getPublishedRevision()).isEqualTo(2);
         assertThat(r2.getStatus()).isEqualTo(SnapshotStatus.PUBLISHED);
         assertThat(r2.getResultChecksum()).isEqualTo("r2-result");
     }
 
-    private static WeeklyRankingSnapshot frozen(WeeklyRankingPeriod period, int revision) {
-        period.assignRevision(revision);
+    private static WeeklyRankingSnapshot frozen(WeeklyRankingPublication publication, int revision) {
+        publication.assignRevision(revision);
         return WeeklyRankingSnapshot.freeze(new WeeklyPeriod(MONDAY), revision, NOW, 4, 3, "input", 1L);
     }
 }

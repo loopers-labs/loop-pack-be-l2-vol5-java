@@ -9,14 +9,14 @@
 | 테이블 | 소유 | 컬럼 (NOT NULL 기본) | 제약 |
 |---|---|---|---|
 | `product_purchase_activity` | streamer | order_id, product_id, quantity int, confirmed_at datetime(6) | UK (order_id, product_id). batch는 `@Immutable` 읽기 엔티티로 같은 정의를 매핑 |
-| `weekly_ranking_period` | batch | period_start date, last_revision int, published_snapshot_id varchar(64) NULL, published_revision int NULL | UK period_start |
+| `weekly_ranking_publication` | batch | period_start date, last_revision int, published_snapshot_id varchar(64) NULL, published_revision int NULL | UK period_start |
 | `weekly_ranking_snapshot` | batch | snapshot_id varchar(64), period_start date, revision int, status varchar(20), frozen_at datetime(6), input_count int, product_count int, input_checksum char(64), result_checksum char(64) NULL, published_at datetime(6) NULL, job_execution_id bigint | UK snapshot_id, UK (period_start, revision) |
 | `weekly_ranking_snapshot_input` | batch | snapshot_id, order_id, product_id, quantity int, confirmed_at datetime(6) | UK (snapshot_id, order_id, product_id), IDX (snapshot_id, product_id, quantity) |
 | `weekly_ranking_score_stage` | batch | snapshot_id, product_id, score bigint | UK (snapshot_id, product_id) |
 | `weekly_ranking` | batch (api는 읽기 매핑) | snapshot_id, product_id, score bigint, ranking int | UK (snapshot_id, product_id), IDX (snapshot_id, ranking) |
 
 - `rank`는 MySQL 예약어라 컬럼명은 `ranking`으로 쓴다.
-- api는 `weekly_ranking_period`, `weekly_ranking_snapshot`, `weekly_ranking`을 읽기 전용 엔티티로 매핑한다. 컬럼 정의는 batch와 같게 맞춘다.
+- api는 `weekly_ranking_publication`, `weekly_ranking_snapshot`, `weekly_ranking`을 읽기 전용 엔티티로 매핑한다. 컬럼 정의는 batch와 같게 맞춘다.
 - `job_execution_id`는 소속 증거다. 결과 checksum에는 넣지 않는다.
 
 ## 2. 실행 식별과 설정
@@ -38,7 +38,7 @@
                      └──publish(더 새 revision 공개됨)──▶ SUPERSEDED
 ```
 
-| Step 결과 | snapshot | period | Job ExitStatus |
+| Step 결과 | snapshot | publication | Job ExitStatus |
 |---|---|---|---|
 | freeze 성공 | FROZEN 생성 | last_revision = revision | — |
 | publish 성공 | PUBLISHED, result_checksum, published_at | published_snapshot_id·published_revision 갱신 | COMPLETED |
@@ -52,7 +52,7 @@
 TX 속성: isolation READ_COMMITTED. 순서:
 
 1. periodStart가 월요일인지 검증. 아니면 실패.
-2. `weekly_ranking_period`를 `PESSIMISTIC_WRITE`로 조회. 없으면 `last_revision=0`으로 insert 후 다시 잠금(동시 insert는 UK 위반 → 실패로 드러냄, 재실행으로 해소).
+2. `weekly_ranking_publication`를 `PESSIMISTIC_WRITE`로 조회. 없으면 `last_revision=0`으로 insert 후 다시 잠금(동시 insert는 UK 위반 → 실패로 드러냄, 재실행으로 해소).
 3. 분기
    | 조건 | 처리 |
    |---|---|
@@ -60,7 +60,7 @@ TX 속성: isolation READ_COMMITTED. 순서:
    | revision == last_revision + 1 | 4로 |
    | 그 외 | 충돌 예외(`revision은 {last+1}이어야 함`) |
 4. HQL `insert into SnapshotInput(snapshotId, orderId, productId, quantity, confirmedAt) select :sid, a.orderId, a.productId, a.quantity, a.confirmedAt from PurchaseActivity a where a.confirmedAt >= :start and a.confirmedAt < :end` (BaseEntity 컬럼 created_at 등 NOT NULL이면 select에 상수로 채운다. 안 되면 네이티브 SQL).
-5. 복사본을 (orderId, productId) 순으로 읽어 input_count·product_count(서로 다른 productId 수)·input_checksum 계산 → snapshot FROZEN insert, period.last_revision = revision.
+5. 복사본을 (orderId, productId) 순으로 읽어 input_count·product_count(서로 다른 productId 수)·input_checksum 계산 → snapshot FROZEN insert, publication.last_revision = revision.
 
 ### ② calculateWeeklyScores (chunk)
 
@@ -74,16 +74,16 @@ TX 속성: isolation READ_COMMITTED. 순서:
 
 ### ③ publish (tasklet)
 
-1. period `PESSIMISTIC_WRITE`, snapshot 조회.
+1. publication `PESSIMISTIC_WRITE`, snapshot 조회.
 2. 분기 (위에서부터 첫 일치)
    | 조건 | 처리 |
    |---|---|
    | snapshot PUBLISHED | no-op, COMPLETED (metadata만 실패했던 재실행이 수렴) |
    | snapshot SUPERSEDED | no-op, exit `SUPERSEDED` |
    | stage 행 수 ≠ product_count | 예외 (기존 pointer 유지) |
-   | period.published_revision > revision | snapshot SUPERSEDED, exit `SUPERSEDED` |
+   | publication.published_revision > revision | snapshot SUPERSEDED, exit `SUPERSEDED` |
    | 그 외 | 3으로 |
-3. stage를 `score DESC, productId ASC`로 정렬해 1부터 순번 → `weekly_ranking` insert → result_checksum → snapshot PUBLISHED·published_at → period pointer = (sid, revision). 모두 같은 TX.
+3. stage를 `score DESC, productId ASC`로 정렬해 1부터 순번 → `weekly_ranking` insert → result_checksum → snapshot PUBLISHED·published_at → publication pointer = (sid, revision). 모두 같은 TX.
 - 공개 TX 실패 시 ranking·snapshot·pointer 모두 rollback. 기존 공개본을 먼저 지우는 단계는 없다.
 
 ## 5. Checksum
@@ -98,7 +98,7 @@ TX 속성: isolation READ_COMMITTED. 순서:
 - `GET /api/v1/rankings/weekly?periodStart&limit` → `WeeklyRankingController` → `WeeklyRankingFacade`(readOnly).
 - 검증: periodStart 파싱 실패·월요일 아님 → `INVALID_INPUT`. limit 기본 10, 1~100 밖이면 `INVALID_INPUT`.
 - 조회 순서(한 readOnly TX):
-  1. period 조회. 없거나 published_snapshot_id null → NOT_PUBLISHED.
+  1. publication 조회. 없거나 published_snapshot_id null → NOT_PUBLISHED.
   2. 한 JPQL: `weekly_ranking r join weekly_ranking_snapshot s on s.snapshotId = r.snapshotId join Product p on p.id = r.productId and p.deletedAt is null where r.snapshotId = :publishedSid order by r.ranking` + limit. snapshot 메타(frozen_at·revision)는 같은 sid로 조회.
   3. 상품 이름·가격은 2의 결과, 브랜드는 `BrandService.getAllByIds`로 일괄 조회.
 - 응답: status, periodStart, periodEnd, snapshotId, revision, frozenAt, items[rank, productId, name, price, brand{id,name}, score]. 미공개는 status·periodStart·periodEnd·items만.
