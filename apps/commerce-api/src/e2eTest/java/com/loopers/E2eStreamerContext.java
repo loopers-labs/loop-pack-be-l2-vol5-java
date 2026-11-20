@@ -12,6 +12,7 @@ import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.boot.autoconfigure.batch.BatchAutoConfiguration;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
@@ -22,7 +23,8 @@ import org.springframework.context.annotation.Import;
 // E2E의 streamer 컨텍스트. 실제 구매 활동 consumer(listener·parser·handler·저장 어댑터)와 공통 모듈 설정만 스캔한다.
 // @Configuration을 붙이지 않아 api 컨텍스트의 컴포넌트 스캔에 잡히지 않는다. 스키마는 api 컨텍스트가 만들므로 ddl-auto는 none이다.
 // 두 모듈의 application.yml 중 api 쪽이 먼저 읽히므로 이 컨텍스트에 필요한 topic·연결 정보는 명령행 인자(설정 파일보다 우선)로 준다.
-@EnableAutoConfiguration
+// 같은 classpath의 Spring Batch(9주차 4단계 batch 컨텍스트용)는 이 컨텍스트에서 쓰지 않으므로 Batch 자동 설정을 끈다.
+@EnableAutoConfiguration(exclude = BatchAutoConfiguration.class)
 @ComponentScan(
     basePackages = {
         "com.loopers.interfaces.consumer",
