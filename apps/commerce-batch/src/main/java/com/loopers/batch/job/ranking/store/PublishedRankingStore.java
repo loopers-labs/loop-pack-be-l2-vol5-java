@@ -2,8 +2,10 @@ package com.loopers.batch.job.ranking.store;
 
 import com.loopers.batch.job.ranking.WeeklySnapshot;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.Optional;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -13,6 +15,14 @@ public class PublishedRankingStore {
 
     public PublishedRankingStore(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
+    }
+
+    public Optional<WeeklySnapshot> published(LocalDate periodStart) {
+        return jdbc.query(
+            "select period_start, revision from weekly_ranking_publication where period_start = ?",
+            (rs, rowNum) -> new WeeklySnapshot(rs.getObject("period_start", LocalDate.class), rs.getInt("revision")),
+            periodStart
+        ).stream().findFirst();
     }
 
     public long productCount(String snapshotId) {

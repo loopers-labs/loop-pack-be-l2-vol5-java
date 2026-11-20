@@ -240,12 +240,13 @@ batch 는 템플릿의 demo job 과 같은 관례를 따른다(Q-8). job 하나�
 
 | 위치 | 클래스 | 하는 일 |
 |---|---|---|
-| `ranking/` | `WeeklyRankingJobConfig` | job·step·reader 조립 |
+| `ranking/` | `WeeklyRankingJobConfig`, `WeeklyRankingLateArrivalsJobConfig` | job·step·reader 조립. 늦은 구매 확인 job 은 18 장 |
 | `ranking/` | `WeeklyRankingParameters` | job parameter 를 한 번 읽어 타입 있는 값으로 |
-| `ranking/` | `WeeklyRankingParametersValidator` | launch 할 때 parameter 의 이름·타입·식별 여부와 `SNP-008` 을 확인한다(`JOB-002`) |
+| `ranking/` | `IdentifyingParametersValidator` | 식별 parameter 의 이름·타입 표가 정해 둔 표와 정확히 같은지 확인한다. 두 job 이 함께 쓴다(`JOB-002`, `LAT-005`) |
+| `ranking/` | `WeeklyRankingParametersValidator` | 위 확인에 더해 `SNP-008` 을 확인한다 |
 | `ranking/` | `WeeklySnapshot` | 판단(`SNP-006`, `SNP-008`, `REV-002`). DB 없이 테스트 |
 | `ranking/store/` | `SnapshotStore`, `PublishedRankingStore`, `SortedRowsChecksum` | 테이블 묶음마다 이름 있는 메서드로 SQL |
-| `ranking/step/` | `FreezeSnapshotTasklet`, `PublishRankingTasklet` | 판단과 store 를 부르는 순서 |
+| `ranking/step/` | `FreezeSnapshotTasklet`, `PublishRankingTasklet`, `CountLateArrivalsTasklet` | 판단과 store 를 부르는 순서 |
 | `ranking/step/` | `ScoreStageWriter` | chunk 의 점수를 쓴다(`CAL-002`, `CAL-003`) |
 
 루트는 job 단위(조립, parameter, 판단)이고 `step/` 은 step 부품, `store/` 는 SQL 이다. validator 는 step 이 아니라 job 에 붙으므로 루트에 둔다. reader 는 Spring Batch 의 `JdbcPagingItemReader` 를 builder 로 설정할 뿐이고, `@StepScope` bean 정의와 반환 타입(`ItemStreamReader`)이 config 에 있어야 하므로 따로 클래스를 두지 않는다. `step/` 이 `store/` 와 루트의 `WeeklySnapshot` 을 쓰므로 store 와 `WeeklySnapshot` 은 public 이고, store 둘만 쓰는 `SortedRowsChecksum` 은 `store/` 안에서 package-private 이다. demo 의 `DemoTasklet` 도 public 이다. batch 에는 ArchUnit 이 없고 job 이 하나라, 다른 코드가 store 를 우회해 쓰는 것은 리뷰로 막는다. 테스트는 `ranking/` 에 둔다. 연결 테스트도 여기에 남긴다. 설정만 보는 테스트라 깨지면 원인이 랭킹 로직이 아니라 TX·저장소 설정이라는 것이 바로 드러난다.
@@ -359,3 +360,55 @@ batch 는 그 주에 구매된 상품 전부의 순위를 쓰고, API 가 limit 
 한 실행으로 묶으면 앱 테스트가 다른 앱의 실행물과 테이블을 알게 되어, 그 테스트의 주인이 모호해진다. 원문과 다르게 한 것이므로 PR 에 밝힌다.
 
 **뒤집을 조건**: 구간 테스트가 모두 통과했는데 실제 연결에서 실패하는 일이 생길 때. 그 장면을 재현 스크립트(compose 위에 세 앱을 프로세스로)로 남긴다. `purchase_activity` 사본이 실제로 어긋날 때 batch 테스트가 streamer 엔티티로 만든 스키마를 쓰는 방법을 따진다.
+
+## 18. 늦은 구매 확인 (`LAT-001` ~ `LAT-005`)
+
+6 장에서 입력을 복사해 고정하는 이유로 W7 의 지연에 상한이 없다는 것을 들었다. 그러면 고정한 뒤에도 그 주의 구매가 도착하고, 새 revision 이 필요한지 판단할 근거가 있어야 한다. `weeklyRankingLateArrivals` job 이 그 근거를 센다.
+
+```sql
+select count(*) from purchase_activity activity
+where activity.confirmed_at >= :start and activity.confirmed_at < :end
+  and not exists (select 1 from ranking_snapshot_input frozen
+                  where frozen.snapshot_id = :publishedSnapshotId
+                    and frozen.product_id = activity.product_id and frozen.order_id = activity.order_id)
+```
+
+- **시각이 아니라 행으로 견준다.** 기록 시각(`created_at`)이 고정 시각보다 늦은지로 세면, 고정 TX 가 시작한 뒤 commit 되기 전에 기록된 행을 잘못 센다. 공개본 입력에 같은 `(orderId, productId)` 가 있는지로 세면 그런 경계가 없다. W6 이 구매 활동을 `(orderId, productId)` 마다 한 행으로 남기므로(`ACT-002`) 이 둘이 행을 가린다.
+- **기준은 공개본이다.** 사용자가 보는 것이 공개본이므로, 새 revision 이 필요한지는 공개본과 견준다. r2 를 공개한 뒤에는 r2 와 견준다(`LAT-003`).
+- **batch 에 둔다.** 견주는 두 테이블(streamer 의 구매 활동, batch 의 snapshot 입력)을 이미 읽는 곳이 batch 다. api 의 admin API 로 두면 api 가 쓰기 모델을 읽게 되어 16 장의 읽기 모델 경계가 깨진다.
+- **job 으로 둔다.** `spring.batch.job.name` 으로 고르는 실행 방식을 그대로 쓰고, 확인한 시각과 결과가 Batch metadata 에 남는다.
+
+### FAILED 는 "조치 필요" 다
+
+늦은 구매가 있으면 FAILED 로 끝낸다. 실행 도구(Jenkins 등)는 종료 코드로 성공과 실패를 가르고, `CommerceBatchApplication` 은 job 이 FAILED 면 0 이 아닌 코드로 끝난다. 그래서 매일 이 job 을 돌리면 늦은 구매가 생긴 날 실패와 알림이 나고, 운영자가 새 revision 을 launch 한다. 이 FAILED 는 고장이 아니므로 재시작하지 않는다. 다음 확인은 새 `checkedAt` 으로 한다. 건수는 step 이 실패해도 실행 기록에 남는다. `AbstractStep` 이 실패한 step 의 ExecutionContext 도 저장하는 것을 `LAT-001` 이 확인한다.
+
+공개본이 없을 때도 FAILED 다(`LAT-004`). 견줄 기준이 없는데 0 건으로 성공하면 공개가 안 된 사실을 놓친다.
+
+### 확인마다 새 instance: `checkedAt`
+
+`periodStart` 만 식별 parameter 로 두면 첫 확인이 COMPLETED 로 끝난 뒤 같은 주를 다시 확인할 수 없다(이미 완료한 instance). 확인 시각 `checkedAt` 을 식별 parameter 로 둔다. `run.id` 를 붙이는 방법은 랭킹 job 에서 쓰지 않기로 한 방식(`JOB-002`)이고, 확인 시각은 metadata 에서 읽을 때 뜻이 있다. 두 job 은 같은 방식(`IdentifyingParametersValidator`)으로 이름·타입·식별 여부가 정확히 맞는 parameter 만 받는다.
+
+### 넣지 않은 것
+
+| 선택지 | 넣지 않은 이유 |
+|---|---|
+| 다음 revision 번호를 자동으로 정해 실행 | Q-2 의 근거와 충돌한다. 같은 실행을 두 번 누르면 의도하지 않은 revision 이 둘 생긴다. revision 을 명시적으로 받는 것이 그것을 막는다 |
+| snapshot 을 버리는 상태(abandon) | 공개되지 않은 snapshot 은 pointer 가 가리키지 않아 영향이 없다. 실패한 옛 revision 을 실수로 재시작해도 pointer 는 더 새 revision 을 덮지 않는다(`PBL-005`) |
+| 늦은 구매가 있으면 새 revision 을 자동으로 계산 | 자동 launch 가 생기면 13 장의 직렬 실행을 운영이 아니라 코드가 지켜야 한다 |
+
+### 운영
+
+스케줄러는 범위 밖이다. 실행 도구로 Jenkins 를 쓴다면 이렇게 둔다.
+
+- 랭킹 job 과 늦은 구매 확인 job 을 각각 Jenkins job 으로 두고, 랭킹 job 은 동시 빌드를 막는다(13 장).
+- 재시작은 같은 parameter 로 다시 빌드한다. 같은 JobInstance 의 새 실행이 된다(`JOB-004`).
+- parameter 는 타입을 붙여 넘긴다. 붙이지 않으면 문자열이 되어 validator 가 거절한다.
+
+```bash
+java -jar commerce-batch.jar --spring.batch.job.name=weeklyRanking \
+  periodStart=2026-08-17,java.time.LocalDate revision=1,java.lang.Long snapshotId=weekly-20260817-r1
+java -jar commerce-batch.jar --spring.batch.job.name=weeklyRankingLateArrivals \
+  periodStart=2026-08-17,java.time.LocalDate checkedAt=2026-08-25T09:00:00,java.time.LocalDateTime
+```
+
+**뒤집을 조건**: 늦은 구매가 잦아 운영자의 판단이 병목이 될 때 새 revision 의 자동 launch 를 검토한다. 그때는 13 장의 실행권 행을 함께 둔다.

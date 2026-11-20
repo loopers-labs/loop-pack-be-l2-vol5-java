@@ -16,6 +16,7 @@
 | `CAL` | 점수 계산 step: reader, writer |
 | `PBL` | 완성본 공개 |
 | `REV` | 늦은 구매와 새 revision |
+| `LAT` | 늦은 구매 확인 job |
 | `EXP` | 실험. W8 번호를 이어 쓴다 |
 
 ## 같은 작업과 새 작업
@@ -107,6 +108,18 @@
 | `REV-003` | 새 revision 을 공개하기 전에는 이전 revision 이, 공개한 뒤에는 새 revision 이 일관되게 보인다 | 원문 | |
 | `REV-004` | W7 의 같은 이벤트를 다시 발행해도 구매 활동과 점수가 늘지 않는다. 중복은 W6 의 DB 경계(`ACT-002`)가 막는다 | 원문 | |
 
+## LAT: 늦은 구매 확인
+
+새 revision 이 필요한지 운영자가 판단할 근거를 남긴다. job 이름은 `weeklyRankingLateArrivals` 다. 근거는 설계 18 장.
+
+| ID | 규칙 | 출처 | 관찰값 |
+|---|---|---|---|
+| `LAT-001` | 늦은 구매는 `confirmed_at` 이 그 주 안이면서 공개본 snapshot 의 입력에 같은 `(orderId, productId)` 가 없는 구매 활동이다. 1 건 이상이면 조치가 필요하므로 FAILED 로 끝내고 건수를 step 의 실행 기록(`lateArrivals`)에 남긴다 | 정함 | r1 공개 뒤 그 주 구매 1 건, 다음 주 구매 1 건이 도착하면 FAILED, `lateArrivals=1` |
+| `LAT-002` | 늦은 구매가 없으면 0 건으로 COMPLETED 다 | 정함 | `lateArrivals=0` |
+| `LAT-003` | 견주는 기준은 그 주의 공개 pointer 가 가리키는 snapshot 이다 | 정함 | 늦은 구매를 넣은 r2 가 공개되면 COMPLETED, `lateArrivals=0` |
+| `LAT-004` | 그 주의 공개본이 없으면 세지 않고 FAILED 다 | 정함 | `lateArrivals` 를 남기지 않는다 |
+| `LAT-005` | 식별 parameter 는 `periodStart`(LocalDate)와 `checkedAt`(LocalDateTime)이다. 같은 주를 다시 확인하면 확인 시각이 달라 새 JobInstance 다. 다른 parameter 는 launch 를 거절한다 | 정함 | `checkedAt` 만 다른 두 확인이 서로 다른 instance 로 COMPLETED |
+
 ## EXP: 실험
 
 | ID | 재는 것 | 출처 | 결과 |
@@ -130,4 +143,4 @@
 
 ## 범위 밖
 
-Redis 실시간 랭킹, 새 분석 이벤트(원문: 먼저 만들어야 하는 과제가 아니다. 쓰지 않는 근거는 설계 12 장). 조회·좋아요를 섞은 점수(원문). 운영 스케줄러와 job 자동 launch(정함. 이번에는 launch parameter 를 받아 실행하는 데까지).
+Redis 실시간 랭킹, 새 분석 이벤트(원문: 먼저 만들어야 하는 과제가 아니다. 쓰지 않는 근거는 설계 12 장). 조회·좋아요를 섞은 점수(원문). 운영 스케줄러와 job 자동 launch(정함. 이번에는 launch parameter 를 받아 실행하는 데까지. 늦은 구매 확인은 범위 안이고 `LAT`). 다음 revision 번호를 자동으로 정하는 실행, snapshot 을 버리는 상태(정함. 근거는 설계 18 장).

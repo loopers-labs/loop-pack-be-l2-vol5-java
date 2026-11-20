@@ -47,6 +47,20 @@ public class SnapshotStore {
             """, snapshot.id(), utc(snapshot.start()), utc(snapshot.end()));
     }
 
+    public long countArrivedAfterFreezing(WeeklySnapshot snapshot) {
+        return jdbc.queryForObject("""
+            select count(*)
+            from purchase_activity activity
+            where activity.confirmed_at >= ? and activity.confirmed_at < ?
+              and not exists (
+                select 1 from ranking_snapshot_input frozen
+                where frozen.snapshot_id = ?
+                  and frozen.product_id = activity.product_id
+                  and frozen.order_id = activity.order_id
+              )
+            """, Long.class, utc(snapshot.start()), utc(snapshot.end()), snapshot.id());
+    }
+
     public String inputChecksum(String snapshotId) {
         return new SortedRowsChecksum(jdbc).of("""
             select order_id, product_id, quantity, confirmed_at
