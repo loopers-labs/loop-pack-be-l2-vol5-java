@@ -107,9 +107,8 @@ classDiagram
         class WeeklyScoreStepComponents {
             <<Configuration>>
             +weeklyProductIdReader(snapshotId) JdbcCursorItemReader~Long~
-            +weeklyScoreProcessor(snapshotId, hook) ItemProcessor
+            +weeklyScoreProcessor(snapshotId) ItemProcessor
             +weeklyScoreWriter(snapshotId) ItemWriter
-            +noOpScoreProcessingHook()
         }
         class OpenWeeklyRankingTasklet {
             <<StepScope>>
@@ -135,10 +134,6 @@ classDiagram
         class ProductScore {
             <<record>>
             productId, score
-        }
-        class ScoreProcessingHook {
-            <<interface>>
-            +beforeProcess(snapshotId, productId)
         }
         class BatchClockConfig {
             +clock() Clock
@@ -212,7 +207,6 @@ classDiagram
     FreezeWeeklyInputTasklet ..> WeeklySnapshotId
     FreezeWeeklyInputTasklet ..> RankingChecksum
     WeeklyScoreStepComponents ..> ProductScore
-    WeeklyScoreStepComponents ..> ScoreProcessingHook
     OpenWeeklyRankingTasklet ..> RankingChecksum
     FreezeWeeklyInputTasklet ..> BatchClockConfig : Clock
     WeeklyScoreStepComponents ..> BatchClockConfig : Clock
@@ -239,5 +233,5 @@ classDiagram
 ```
 
 - 엔티티 4개는 공유 모듈 `modules/ranking-schema` 에 있고 테이블 정의(DDL)의 원본이다. batch·api 가 함께 의존해 어느 쪽 `ddl-auto` 로도 테이블이 생기지만, 쓰기는 batch 의 Tasklet·writer 만 JdbcTemplate 으로 하고 api 는 Repository 없이 JDBC 로 읽기만 한다(R5).
-- `ScoreProcessingHook` 은 테스트가 Step 2 중간 실패를 만들기 위한 seam 이며 제품 기본 구현은 no-op 이다.
+- Step 2 중간 실패는 테스트가 Spring Batch 표준 `ItemProcessListener` 빈을 등록해 만든다. `WeeklyRankingJobConfig` 가 `ObjectProvider` 로 선택 주입받아 있을 때만 Step 2 에 등록하고, 제품에는 그 빈이 없다(커스텀 seam `ScoreProcessingHook` 은 삭제).
 - 점선은 "SQL 로 접근" 또는 "값 객체 사용", 실선은 빈 주입이다.

@@ -6,16 +6,19 @@ import com.loopers.batch.job.ranking.step.WeeklyScoreStepComponents;
 import com.loopers.domain.ranking.ProductScore;
 import com.loopers.domain.ranking.WeeklySnapshotId;
 import lombok.RequiredArgsConstructor;
+import org.springframework.batch.core.ItemProcessListener;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.JobParametersInvalidException;
 import org.springframework.batch.core.JobParametersValidator;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.repository.JobRepository;
+import org.springframework.batch.core.step.builder.SimpleStepBuilder;
 import org.springframework.batch.core.step.builder.StepBuilder;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.database.JdbcCursorItemReader;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -56,6 +59,8 @@ public class WeeklyRankingJobConfig {
     private final ItemProcessor<Long, ProductScore> weeklyScoreProcessor;
     @Qualifier("weeklyScoreWriter")
     private final ItemWriter<ProductScore> weeklyScoreWriter;
+    /** 선택 주입. 제품에는 없고, 테스트가 Step 2 중간 실패 지점을 만들 때 등록한다 (Spring Batch 표준 확장점). */
+    private final ObjectProvider<ItemProcessListener<Long, ProductScore>> processListeners;
 
     @Bean(JOB_NAME)
     public Job weeklyRankingJob() {
@@ -98,12 +103,13 @@ public class WeeklyRankingJobConfig {
     /** Step 2. chunk 단위 commit, faultTolerant·skip·retry 없음 — 잘못된 입력은 실패를 드러낸다 (D6 원칙). */
     @Bean(WeeklyScoreStepComponents.STEP_NAME)
     public Step calculateWeeklyScoresStep() {
-        return new StepBuilder(WeeklyScoreStepComponents.STEP_NAME, jobRepository)
+        SimpleStepBuilder<Long, ProductScore> builder = new StepBuilder(WeeklyScoreStepComponents.STEP_NAME, jobRepository)
             .<Long, ProductScore>chunk(CHUNK_SIZE, transactionManager)
             .reader(weeklyProductIdReader)
             .processor(weeklyScoreProcessor)
-            .writer(weeklyScoreWriter)
-            .build();
+            .writer(weeklyScoreWriter);
+        processListeners.orderedStream().forEach(builder::listener);
+        return builder.build();
     }
 
     /** Step 3. 한 TX, 기본 isolation (D11). */

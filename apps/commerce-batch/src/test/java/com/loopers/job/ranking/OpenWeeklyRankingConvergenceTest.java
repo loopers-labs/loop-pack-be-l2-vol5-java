@@ -40,7 +40,7 @@ class OpenWeeklyRankingConvergenceTest {
     private final JobRepository jobRepository;
     private final JobLauncher jobLauncher;
     private final JdbcTemplate jdbcTemplate;
-    private final RankingTestConfig.FailOnceScoreHook hook;
+    private final RankingTestConfig.FailOnceProcessListener hook;
     private final RankingTestSupport support;
 
     @Autowired
@@ -50,7 +50,7 @@ class OpenWeeklyRankingConvergenceTest {
         JobRepository jobRepository,
         JobLauncher jobLauncher,
         JdbcTemplate jdbcTemplate,
-        RankingTestConfig.FailOnceScoreHook hook
+        RankingTestConfig.FailOnceProcessListener hook
     ) {
         this.job = job;
         this.openStep = openStep;
@@ -94,7 +94,7 @@ class OpenWeeklyRankingConvergenceTest {
 
         // arrange — R3: r2 를 Step 2 상품 9 직전에 멈추고, 저장된 result_checksum 을 잘못된 값으로 심어 Step 3 의 5단계가 실패하게 만든다
         String r2 = RankingTestSupport.snapshotId(PERIOD, 2);
-        hook.armFailOnce(r2, 9L);
+        hook.armFailOnce(9L);
         JobExecution r2First = jobLauncher.run(job, RankingTestSupport.params(PERIOD, 2));
         assertThat(r2First.getStatus()).isEqualTo(BatchStatus.FAILED);
         jdbcTemplate.update("UPDATE weekly_ranking_revisions SET result_checksum = ? WHERE snapshot_id = ?", WRONG_CHECKSUM, r2);

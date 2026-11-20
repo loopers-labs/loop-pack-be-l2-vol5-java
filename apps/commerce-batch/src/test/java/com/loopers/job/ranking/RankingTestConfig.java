@@ -1,43 +1,49 @@
 package com.loopers.job.ranking;
 
-import com.loopers.domain.ranking.ScoreProcessingHook;
+import com.loopers.domain.ranking.ProductScore;
+import org.springframework.batch.core.ItemProcessListener;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Primary;
 
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicLong;
 
-/** 모든 주간 랭킹 batch 테스트가 같은 컨텍스트를 공유하도록 함께 import 하는 설정. 실패 hook 하나를 둔다. */
+/** 모든 주간 랭킹 batch 테스트가 같은 컨텍스트를 공유하도록 함께 import 하는 설정. 실패 리스너 하나를 둔다. */
 @TestConfiguration
 public class RankingTestConfig {
 
     /**
-     * 지정한 (snapshotId, productId) 의 처리 직전에 한 번만 IllegalStateException 을 던진다 (W6·W7 hook 예외 방식).
-     * JobParameters 에 실패 스위치를 넣지 않기 위한 장치다. 제품 no-op 빈보다 우선하도록 @Primary.
+     * 지정한 productId 의 processor 직전({@link ItemProcessListener#beforeProcess})에 한 번만 IllegalStateException 을 던진다
+     * (W6·W7 hook 예외 방식). JobParameters 에 실패 스위치를 넣지 않기 위한 장치다. 제품에는 이 타입의 빈이 없고
+     * WeeklyRankingJobConfig 가 ObjectProvider 로 선택 주입받아 Step 2 에 등록한다.
      */
-    public static final class FailOnceScoreHook implements ScoreProcessingHook {
+    public static final class FailOnceProcessListener implements ItemProcessListener<Long, ProductScore> {
 
-        private record Target(String snapshotId, long productId) {}
+        private static final long DISARMED = Long.MIN_VALUE;
 
-        private final AtomicReference<Target> armed = new AtomicReference<>();
+        private final AtomicLong armed = new AtomicLong(DISARMED);
 
-        public void armFailOnce(String snapshotId, long productId) {
-            armed.set(new Target(snapshotId, productId));
+        public void armFailOnce(long productId) {
+            armed.set(productId);
         }
 
         @Override
-        public void beforeProcess(String snapshotId, long productId) {
-            Target target = armed.get();
-            if (target != null && target.snapshotId().equals(snapshotId) && target.productId() == productId
-                && armed.compareAndSet(target, null)) {
+        public void beforeProcess(Long productId) {
+            if (armed.compareAndSet(productId, DISARMED)) {
                 throw new IllegalStateException("before third product");
             }
         }
+
+        @Override
+        public void afterProcess(Long item, ProductScore result) {
+        }
+
+        @Override
+        public void onProcessError(Long item, Exception e) {
+        }
     }
 
-    @Primary
     @Bean
-    public FailOnceScoreHook failOnceScoreHook() {
-        return new FailOnceScoreHook();
+    public FailOnceProcessListener failOnceProcessListener() {
+        return new FailOnceProcessListener();
     }
 }

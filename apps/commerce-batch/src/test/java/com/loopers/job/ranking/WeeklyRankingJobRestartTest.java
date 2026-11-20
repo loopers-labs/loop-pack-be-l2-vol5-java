@@ -34,7 +34,7 @@ import static org.assertj.core.api.Assertions.tuple;
 
 /**
  * weeklyRanking Job 의 재시작 검증 (과제 §6 7단계). period 2026-08-17, fixture orderId 42·43·44 그대로라 기대 checksum 과 비교한다.
- * 실패 지점은 JobParameters 가 아니라 {@link RankingTestConfig.FailOnceScoreHook} 으로 만든다.
+ * 실패 지점은 JobParameters 가 아니라 {@link RankingTestConfig.FailOnceProcessListener} 으로 만든다.
  */
 @Import(RankingTestConfig.class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -47,7 +47,7 @@ class WeeklyRankingJobRestartTest {
     private final Job job;
     private final JobLauncher jobLauncher;
     private final JobExplorer jobExplorer;
-    private final RankingTestConfig.FailOnceScoreHook hook;
+    private final RankingTestConfig.FailOnceProcessListener hook;
     private final JdbcTemplate jdbcTemplate;
     private final RankingTestSupport support;
 
@@ -56,7 +56,7 @@ class WeeklyRankingJobRestartTest {
         @Qualifier(WeeklyRankingJobConfig.JOB_NAME) Job job,
         JobLauncher jobLauncher,
         JobExplorer jobExplorer,
-        RankingTestConfig.FailOnceScoreHook hook,
+        RankingTestConfig.FailOnceProcessListener hook,
         JdbcTemplate jdbcTemplate
     ) {
         this.job = job;
@@ -117,7 +117,7 @@ class WeeklyRankingJobRestartTest {
         // act (1) r1 첫 실행 — 상품 9 직전 실패
         String r1 = RankingTestSupport.snapshotId(PERIOD, 1);
         JobParameters r1Params = RankingTestSupport.params(PERIOD, 1);
-        hook.armFailOnce(r1, 9L);
+        hook.armFailOnce(9L);
         JobExecution first = jobLauncher.run(job, r1Params);
 
         // assert (2)~(4): Step 1 commit, Step 2 첫 chunk 만 commit, pointer 는 r2 그대로

@@ -16,7 +16,7 @@ import com.loopers.domain.payment.PaymentAttempt;
 import com.loopers.domain.point.Point;
 import com.loopers.domain.product.Price;
 import com.loopers.domain.product.Product;
-import com.loopers.domain.ranking.ScoreProcessingHook;
+import com.loopers.domain.ranking.ProductScore;
 import com.loopers.domain.user.User;
 import com.loopers.infrastructure.payment.FakePaymentGateway;
 import com.loopers.infrastructure.payment.PaymentAttemptJpaRepository;
@@ -33,6 +33,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.batch.core.BatchStatus;
+import org.springframework.batch.core.ItemProcessListener;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.JobExecution;
 import org.springframework.batch.core.JobParameters;
@@ -44,7 +45,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -56,7 +56,7 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -102,31 +102,36 @@ class WeeklyRankingFlowE2ETest {
         KafkaTestContainersConfig.createTopic(TOPIC, 1);
     }
 
-    /** batch 테스트의 FailOnceScoreHook 과 같은 모양. crossAppTest classpath 에 batch 테스트 소스가 없어 다시 쓴다. */
-    static final class FailOnceScoreHook implements ScoreProcessingHook {
-        private record Target(String snapshotId, long productId) {}
-        private final AtomicReference<Target> armed = new AtomicReference<>();
+    /** batch 테스트의 FailOnceProcessListener 와 같은 모양. crossAppTest classpath 에 batch 테스트 소스가 없어 다시 쓴다. */
+    static final class FailOnceProcessListener implements ItemProcessListener<Long, ProductScore> {
+        private static final long DISARMED = Long.MIN_VALUE;
+        private final AtomicLong armed = new AtomicLong(DISARMED);
 
-        void armFailOnce(String snapshotId, long productId) {
-            armed.set(new Target(snapshotId, productId));
+        void armFailOnce(long productId) {
+            armed.set(productId);
         }
 
         @Override
-        public void beforeProcess(String snapshotId, long productId) {
-            Target target = armed.get();
-            if (target != null && target.snapshotId().equals(snapshotId) && target.productId() == productId
-                && armed.compareAndSet(target, null)) {
+        public void beforeProcess(Long productId) {
+            if (armed.compareAndSet(productId, DISARMED)) {
                 throw new IllegalStateException("before product " + productId);
             }
+        }
+
+        @Override
+        public void afterProcess(Long item, ProductScore result) {
+        }
+
+        @Override
+        public void onProcessError(Long item, Exception e) {
         }
     }
 
     @TestConfiguration
     static class HookConfig {
-        @Primary
         @Bean
-        FailOnceScoreHook failOnceScoreHook() {
-            return new FailOnceScoreHook();
+        FailOnceProcessListener failOnceProcessListener() {
+            return new FailOnceProcessListener();
         }
     }
 
@@ -167,7 +172,7 @@ class WeeklyRankingFlowE2ETest {
     @Qualifier(WeeklyRankingJobConfig.JOB_NAME)
     private Job weeklyRankingJob;
     @Autowired
-    private FailOnceScoreHook hook;
+    private FailOnceProcessListener hook;
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
 
@@ -241,7 +246,7 @@ class WeeklyRankingFlowE2ETest {
 
         // (5) r3: Step 2 상품 Z 직전 실패 → 공개본 여전히 r2 → 재시작 → r3 공개 (X=Y=Z=5, productId 순)
         setClock("2026-08-24T02:00:00Z");
-        hook.armFailOnce("weekly-20260817-r3", z);
+        hook.armFailOnce(z);
         JobExecution r3Failed = run(params("2026-08-17", 3));
         assertThat(r3Failed.getStatus()).isEqualTo(BatchStatus.FAILED);
         Map<String, Object> rev3 = revision("weekly-20260817-r3");
