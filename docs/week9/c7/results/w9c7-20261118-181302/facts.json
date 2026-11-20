@@ -1,0 +1,32 @@
+{
+  "periodStart" : "2026-11-16",
+  "userId" : 1,
+  "orders" : {
+    "B" : 2,
+    "C" : 3,
+    "A" : 1
+  },
+  "eventIdA" : "fd4c5d26-ace5-447d-9507-d40279389717",
+  "activity" : [ {
+    "orderId" : 1,
+    "productId" : 7,
+    "quantity" : 2,
+    "confirmedAt" : "2026-11-18 09:13:47.746761"
+  }, {
+    "orderId" : 1,
+    "productId" : 8,
+    "quantity" : 1,
+    "confirmedAt" : "2026-11-18 09:13:47.746761"
+  }, {
+    "orderId" : 2,
+    "productId" : 7,
+    "quantity" : 3,
+    "confirmedAt" : "2026-11-18 09:13:48.881685"
+  }, {
+    "orderId" : 3,
+    "productId" : 9,
+    "quantity" : 5,
+    "confirmedAt" : "2026-11-18 09:13:50.003140"
+  } ],
+  "orderD" : 4
+}
