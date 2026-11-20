@@ -19,3 +19,8 @@ dependencies {
     testImplementation(testFixtures(project(":modules:jpa")))
     testImplementation(testFixtures(project(":modules:redis")))
 }
+
+tasks.test {
+    // W9 랭킹 테이블은 엔티티가 없어 ddl-auto 로 만들어지지 않는다. 테스트도 배포 SQL 을 그대로 실행한다
+    systemProperty("ranking.weekly-sql", rootProject.file("docs/week9/weekly-ranking.sql").absolutePath)
+}

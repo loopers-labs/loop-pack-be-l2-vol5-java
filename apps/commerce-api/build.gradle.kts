@@ -41,3 +41,8 @@ dependencies {
     testImplementation("com.tngtech.archunit:archunit:1.5.0")
     testImplementation("org.springframework.security:spring-security-test")
 }
+
+tasks.test {
+    // W9 랭킹 테이블은 commerce-batch 가 쓰고 엔티티가 없다. 조회 테스트도 배포 SQL 을 그대로 실행한다
+    systemProperty("ranking.weekly-sql", rootProject.file("docs/week9/weekly-ranking.sql").absolutePath)
+}
