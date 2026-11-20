@@ -44,8 +44,8 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 
 // w9t: 공개 TX가 commit된 뒤 Spring Batch가 공개 Step 실행 기록을 저장하다 실패하는 장면.
 // 실패 주입은 테스트 대역 JobRepository(@Primary, 실제 저장소에 위임)로만 한다. 공개 Step(publishWeeklyRanking)의 update 가운데
-// TX가 없고 종료 시각이 정해진 것(AbstractStep 마무리의 마지막 저장)만 한 번 실패시킨다. tasklet TX 안의 update는 건드리지 않는다.
-// 실패 직전에 TX가 없었는지와 다른 연결로 읽은 pointer를 기록해 "commit 뒤"임을 보인다.
+// 종료 시각이 정해진 것(AbstractStep 마무리 finally에서만 정해짐)만 한 번 실패시킨다. 주입 조건에는 TX 여부를 넣지 않는다.
+// "commit 뒤"의 증거는 실패 직전에 기록한 두 관찰값이다: (1) 그 마무리 update에서 실제 TX가 없었다 (2) 다른 연결로 읽은 pointer가 r2였다.
 // 고객 API 쿼리는 api JdbcWeeklyRankingReader의 문장을 그대로 옮겨 실행한다. products·brands는 api 엔티티 테이블이라 이 테스트가 만들고 지운다.
 @SpringBootTest
 @Import({WeeklyRankingTestConfig.class, WeeklyRankingPublishMetadataFailureTest.FailingRepositoryConfig.class})
@@ -119,7 +119,7 @@ class WeeklyRankingPublishMetadataFailureTest {
 
         JobExecution failed = run(id(2));
 
-        // 실패 주입 시점: TX가 없었고, 다른 연결로 읽은 pointer는 이미 r2였다(공개 TX commit 뒤).
+        // 실패 주입 시점의 관찰값: 실제 TX가 없었고, 다른 연결로 읽은 pointer는 이미 r2였다(공개 TX commit 뒤).
         assertThat(failingStepUpdate.injected()).isTrue();
         assertThat(failingStepUpdate.transactionActiveAtFailure()).isFalse();
         assertThat(failingStepUpdate.pointerAtFailure()).isEqualTo(id(2));
@@ -164,7 +164,7 @@ class WeeklyRankingPublishMetadataFailureTest {
             .filter(step -> step.getStepName().equals(WeeklyRankingJobConfig.PUBLISH_STEP)).findFirst().orElseThrow();
     }
 
-    // 공개 Step의 update(StepExecution) 가운데 TX가 없고 종료 시각이 정해진 것(마무리 저장)만 한 번 실패시킨다.
+    // 공개 Step의 update(StepExecution) 가운데 종료 시각이 정해진 것(마무리 저장)만 한 번 실패시키고, 그 직전 TX 상태와 pointer를 기록한다.
     static class FailingStepUpdate {
         static final String FAILURE = "주입된 공개 Step 기록 저장 실패";
 
@@ -203,7 +203,7 @@ class WeeklyRankingPublishMetadataFailureTest {
 
         void beforeUpdate(StepExecution stepExecution) {
             if (!WeeklyRankingJobConfig.PUBLISH_STEP.equals(stepExecution.getStepName()) || stepExecution.getEndTime() == null
-                || TransactionSynchronizationManager.isActualTransactionActive() || !armed.compareAndSet(true, false)) {
+                || !armed.compareAndSet(true, false)) {
                 return;
             }
             injected = true;
