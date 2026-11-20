@@ -48,6 +48,7 @@ class WeeklyRankingJobRestartTest {
     private final JobLauncher jobLauncher;
     private final JobExplorer jobExplorer;
     private final RankingTestConfig.FailOnceScoreHook hook;
+    private final JdbcTemplate jdbcTemplate;
     private final RankingTestSupport support;
 
     @Autowired
@@ -62,6 +63,7 @@ class WeeklyRankingJobRestartTest {
         this.jobLauncher = jobLauncher;
         this.jobExplorer = jobExplorer;
         this.hook = hook;
+        this.jdbcTemplate = jdbcTemplate;
         this.support = new RankingTestSupport(jdbcTemplate);
     }
 
@@ -96,19 +98,29 @@ class WeeklyRankingJobRestartTest {
         assertThat(jobExplorer.getJobInstanceCount(WeeklyRankingJobConfig.JOB_NAME)).isEqualTo(instancesBefore);
     }
 
-    @DisplayName("상품 9 직전에 실패한 r1 을 같은 파라미터로 재시작하면 상품 9 만 처리해 완성·공개하고, 정상 1회 실행 r2 와 같은 결과를 낸다.")
+    @DisplayName("정상 1회 실행 r2 를 기준으로, 상품 9 직전에 실패한 r1 을 늦은 구매가 도착한 뒤 같은 파라미터로 재시작해도 입력·checksum·결과가 불변이고(늦은 행 미반영), 새 revision r3 에서만 반영된다.")
     @Test
     void restartsFromCheckpointAndMatchesCleanRun() throws Exception {
         // arrange
         support.insertFixture(PERIOD, 0);
+
+        // act (0) 비교용 정상 1회 실행 r2 — 늦은 행이 섞이지 않게 먼저 돌린다
+        String r2 = RankingTestSupport.snapshotId(PERIOD, 2);
+        JobExecution clean = jobLauncher.run(job, RankingTestSupport.params(PERIOD, 2));
+        print("clean-r2", clean, stepFromDb(clean, WeeklyScoreStepComponents.STEP_NAME));
+        assertThat(clean.getStatus()).isEqualTo(BatchStatus.COMPLETED);
+        Map<String, Object> rev2 = support.revision(r2);
+        List<Map<String, Object>> scores2 = support.scores(r2);
+        assertThat(rev2.get("input_checksum")).isEqualTo(RankingTestSupport.FIXTURE_INPUT_CHECKSUM);
+        assertThat(rev2.get("result_checksum")).isEqualTo(RankingTestSupport.FIXTURE_RESULT_CHECKSUM);
+
+        // act (1) r1 첫 실행 — 상품 9 직전 실패
         String r1 = RankingTestSupport.snapshotId(PERIOD, 1);
         JobParameters r1Params = RankingTestSupport.params(PERIOD, 1);
         hook.armFailOnce(r1, 9L);
-
-        // act (1) 첫 실행 — 상품 9 직전 실패
         JobExecution first = jobLauncher.run(job, r1Params);
 
-        // assert (2)~(4): Step 1 commit, Step 2 첫 chunk 만 commit, 공개 없음
+        // assert (2)~(4): Step 1 commit, Step 2 첫 chunk 만 commit, pointer 는 r2 그대로
         assertThat(first.getStatus()).isEqualTo(BatchStatus.FAILED);
         assertThat(support.countInputs(r1)).isEqualTo(4);
         Map<String, Object> rev1 = support.revision(r1);
@@ -125,12 +137,15 @@ class WeeklyRankingJobRestartTest {
         assertThat(firstScoreStep.getWriteCount()).isEqualTo(2);
         assertThat(firstScoreStep.getCommitCount()).isEqualTo(1);
         assertThat(firstScoreStep.getRollbackCount()).isEqualTo(1);
-        assertThat(support.publication(PERIOD)).isEmpty();
+        assertThat(support.publication(PERIOD)).singleElement().satisfies(p -> assertThat(p.get("snapshot_id")).isEqualTo(r2));
+
+        // arrange — 실패와 재시작 사이에 같은 주의 늦은 구매 1행이 도착한다 (상품 8 × 4)
+        support.insertActivity(45, 8, 4, RankingTestSupport.utc("2026-08-19T02:00:00Z"), null);
 
         // act (5) 같은 파라미터로 재시작
         JobExecution second = jobLauncher.run(job, r1Params);
 
-        // assert (5)(6): 같은 instance·다른 execution, Step 1 재실행 없음, 상품 9 만
+        // assert (5)(6): 같은 instance·다른 execution, Step 1 재실행 없음, 상품 9 만 처리
         assertThat(second.getStatus()).isEqualTo(BatchStatus.COMPLETED);
         assertThat(second.getJobInstance().getId()).isEqualTo(first.getJobInstance().getId());
         assertThat(second.getId()).isNotEqualTo(first.getId());
@@ -140,39 +155,44 @@ class WeeklyRankingJobRestartTest {
         print("second", second, secondScoreStep);
         assertThat(secondScoreStep.getReadCount()).isEqualTo(1);
         assertThat(secondScoreStep.getWriteCount()).isEqualTo(1);
-        assertThat(support.countInputs(r1)).isEqualTo(4);
 
-        // assert (7) 완성·공개
-        assertThat(support.scores(r1)).extracting(m -> m.get("product_id"), m -> m.get("score"), m -> m.get("ranking"))
-            .containsExactly(tuple(7L, 5L, 1), tuple(8L, 1L, 3), tuple(9L, 5L, 2));
+        // assert (보강 1) 입력 불변: r1 은 여전히 4행, 늦은 주문 45 는 없다
+        assertThat(support.countInputs(r1)).isEqualTo(4);
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM weekly_ranking_inputs WHERE snapshot_id = ? AND order_id = 45", Integer.class, r1)).isZero();
+
+        // assert (보강 2)(3) checksum·결과 불변, r2 와 동일. 상품 8 은 여전히 1점
         Map<String, Object> rev1Done = support.revision(r1);
         assertThat(rev1Done.get("status")).isEqualTo("COMPLETED");
-        assertThat(rev1Done.get("result_checksum")).isEqualTo(RankingTestSupport.FIXTURE_RESULT_CHECKSUM);
-        assertThat(support.publication(PERIOD)).singleElement().satisfies(p -> {
-            assertThat(p.get("snapshot_id")).isEqualTo(r1);
-            assertThat(p.get("revision")).isEqualTo(1);
-        });
-
-        // act (8) 정상 1회 비교 — r2
-        String r2 = RankingTestSupport.snapshotId(PERIOD, 2);
-        JobExecution clean = jobLauncher.run(job, RankingTestSupport.params(PERIOD, 2));
-        print("clean-r2", clean, stepFromDb(clean, WeeklyScoreStepComponents.STEP_NAME));
-
-        // assert (8)
-        assertThat(clean.getStatus()).isEqualTo(BatchStatus.COMPLETED);
-        assertThat(clean.getJobInstance().getId()).isNotEqualTo(first.getJobInstance().getId());
-        Map<String, Object> rev2 = support.revision(r2);
-        assertThat(rev2.get("input_checksum")).isEqualTo(rev1Done.get("input_checksum"));
-        assertThat(rev2.get("result_checksum")).isEqualTo(rev1Done.get("result_checksum"));
-        assertThat(support.scores(r2)).usingRecursiveComparison().isEqualTo(support.scores(r1));
+        assertThat(rev1Done.get("input_checksum")).isEqualTo(RankingTestSupport.FIXTURE_INPUT_CHECKSUM).isEqualTo(rev1.get("input_checksum"));
+        assertThat(rev1Done.get("result_checksum")).isEqualTo(RankingTestSupport.FIXTURE_RESULT_CHECKSUM).isEqualTo(rev2.get("result_checksum"));
+        assertThat(support.scores(r1)).extracting(m -> m.get("product_id"), m -> m.get("score"), m -> m.get("ranking"))
+            .containsExactly(tuple(7L, 5L, 1), tuple(8L, 1L, 3), tuple(9L, 5L, 2));
+        assertThat(support.scores(r1)).usingRecursiveComparison().isEqualTo(scores2);
+        // pointer: r2(revision 2) 가 이미 공개돼 r1 은 거절(D8). r2 그대로
         assertThat(support.publication(PERIOD)).singleElement().satisfies(p -> {
             assertThat(p.get("snapshot_id")).isEqualTo(r2);
             assertThat(p.get("revision")).isEqualTo(2);
         });
-        // R7: r1 행은 그대로
+
+        // act/assert (보강 4) 대조군 r3: 늦은 행이 반영된다
+        String r3 = RankingTestSupport.snapshotId(PERIOD, 3);
+        JobExecution late = jobLauncher.run(job, RankingTestSupport.params(PERIOD, 3));
+        print("late-r3", late, stepFromDb(late, WeeklyScoreStepComponents.STEP_NAME));
+        assertThat(late.getStatus()).isEqualTo(BatchStatus.COMPLETED);
+        Map<String, Object> rev3 = support.revision(r3);
+        assertThat(rev3.get("input_count")).isEqualTo(5);
+        assertThat(rev3.get("input_checksum")).isNotEqualTo(rev1Done.get("input_checksum"));
+        assertThat(rev3.get("result_checksum")).isNotEqualTo(rev1Done.get("result_checksum"));
+        assertThat(support.scores(r3)).extracting(m -> m.get("product_id"), m -> m.get("score"), m -> m.get("ranking"))
+            .containsExactly(tuple(7L, 5L, 1), tuple(8L, 5L, 2), tuple(9L, 5L, 3));
+        assertThat(support.publication(PERIOD)).singleElement().satisfies(p -> assertThat(p.get("snapshot_id")).isEqualTo(r3));
+        System.out.println("[restart] r1 input=" + rev1Done.get("input_checksum") + " result=" + rev1Done.get("result_checksum")
+            + " | r3 input=" + rev3.get("input_checksum") + " result=" + rev3.get("result_checksum"));
+        // R7: r1·r2 행은 그대로
         assertThat(support.countInputs(r1)).isEqualTo(4);
         assertThat(support.scores(r1)).hasSize(3);
-        assertThat(support.revision(r1).get("status")).isEqualTo("COMPLETED");
+        assertThat(support.scores(r2)).usingRecursiveComparison().isEqualTo(scores2);
     }
 
     private StepExecution stepFromDb(JobExecution execution, String stepName) {
