@@ -8,12 +8,10 @@ import com.loopers.infrastructure.product.ProductJpaRepository;
 import com.loopers.interfaces.api.ApiResponse;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,7 +31,6 @@ import static org.assertj.core.api.Assertions.tuple;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
 /** GET /api/v1/rankings/weekly (설계 D14, R5). 랭킹 행은 JDBC 로 직접 넣고, 상품은 기존 리포지터리로 만들어 실제 id 를 쓴다. */
-@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class WeeklyRankingV1ApiTest {
 
@@ -66,11 +63,6 @@ class WeeklyRankingV1ApiTest {
         this.productJpaRepository = productJpaRepository;
         this.databaseCleanUp = databaseCleanUp;
         this.tables = new WeeklyRankingTableSupport(jdbcTemplate);
-    }
-
-    @BeforeAll
-    void createRankingTables() {
-        tables.createTables();
     }
 
     @BeforeEach

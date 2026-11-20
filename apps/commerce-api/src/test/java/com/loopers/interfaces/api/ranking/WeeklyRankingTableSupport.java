@@ -6,46 +6,10 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
- * api 컨텍스트에는 weekly_ranking_* 엔티티가 없으므로(설계 D14: 테이블 정의는 batch 소유) 테스트가 DDL 을 직접 실행한다.
- * 네 DDL 은 batch 엔티티가 ddl-auto 로 만드는 것과 1:1 (설계 3절). batch 엔티티가 바뀌면 여기도 따라 고쳐야 한다.
+ * weekly_ranking_* 네 테이블은 공유 모듈 ranking-schema 의 엔티티를 api 의 ddl-auto 가 만든다(설계 D14). 이 헬퍼는 행 삽입·기간별 삭제만 맡는다.
+ * api 는 이 테이블에 Repository 를 두지 않고 JDBC 로 읽기만 하므로(R5) 테스트도 JDBC 로 넣는다.
  */
 final class WeeklyRankingTableSupport {
-
-    static final String[] DDL = {
-        """
-        CREATE TABLE IF NOT EXISTS weekly_ranking_inputs (
-            id BIGINT NOT NULL AUTO_INCREMENT, snapshot_id VARCHAR(64) NOT NULL, order_id BIGINT NOT NULL,
-            product_id BIGINT NOT NULL, quantity INT NOT NULL, confirmed_at DATETIME(6) NOT NULL,
-            created_at DATETIME(6) NOT NULL, updated_at DATETIME(6) NOT NULL, deleted_at DATETIME(6) NULL,
-            PRIMARY KEY (id), UNIQUE KEY uk_wri_snapshot_order_product (snapshot_id, order_id, product_id)
-        ) ENGINE=InnoDB
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS weekly_ranking_revisions (
-            snapshot_id VARCHAR(64) NOT NULL, period_start DATE NOT NULL, revision INT NOT NULL, status VARCHAR(20) NOT NULL,
-            frozen_at DATETIME(6) NOT NULL, input_count INT NOT NULL, expected_product_count INT NOT NULL,
-            input_checksum CHAR(64) NOT NULL, result_checksum CHAR(64) NULL,
-            created_at DATETIME(6) NOT NULL, updated_at DATETIME(6) NOT NULL,
-            PRIMARY KEY (snapshot_id), UNIQUE KEY uk_wrr_period_revision (period_start, revision)
-        ) ENGINE=InnoDB
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS weekly_ranking_scores (
-            id BIGINT NOT NULL AUTO_INCREMENT, snapshot_id VARCHAR(64) NOT NULL, product_id BIGINT NOT NULL,
-            score BIGINT NOT NULL, ranking INT NULL,
-            created_at DATETIME(6) NOT NULL, updated_at DATETIME(6) NOT NULL, deleted_at DATETIME(6) NULL,
-            PRIMARY KEY (id), UNIQUE KEY uk_wrs_snapshot_product (snapshot_id, product_id),
-            KEY idx_wrs_snapshot_ranking (snapshot_id, ranking)
-        ) ENGINE=InnoDB
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS weekly_ranking_publications (
-            period_start DATE NOT NULL, snapshot_id VARCHAR(64) NOT NULL, revision INT NOT NULL,
-            published_at DATETIME(6) NOT NULL, updated_at DATETIME(6) NOT NULL,
-            PRIMARY KEY (period_start)
-        ) ENGINE=InnoDB
-        """
-    };
 
     private static final String EMPTY_CHECKSUM = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
@@ -53,12 +17,6 @@ final class WeeklyRankingTableSupport {
 
     WeeklyRankingTableSupport(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
-    }
-
-    void createTables() {
-        for (String ddl : DDL) {
-            jdbcTemplate.execute(ddl);
-        }
     }
 
     /** DatabaseCleanUp 은 이 네 테이블을 모르므로 테스트 기간의 행만 직접 지운다. */
