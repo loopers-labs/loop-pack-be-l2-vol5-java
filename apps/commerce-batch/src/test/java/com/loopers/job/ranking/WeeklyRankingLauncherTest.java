@@ -190,6 +190,31 @@ class WeeklyRankingLauncherTest {
         assertThat(jobExplorer.getJobExecutions(failed.getJobInstance())).hasSize(1);
     }
 
+    @Test
+    @DisplayName("D4: 건너뛸 r1 FAILED(pointer r2보다 작음)와 재시작할 r3 FAILED가 섞인 주에 런처를 부르면 r3를 같은 parameter로 재시작해 COMPLETED, pointer r3이며 r1 기록은 FAILED 그대로다")
+    void restartsRemainingExecutionWhenOthersAreSkipped() throws Exception {
+        rows.insertFixture(period);
+        repository.failNextPublish();
+        JobExecution skipped = launcher.launch(period, null);
+        assertThat(skipped.getStatus()).isEqualTo(BatchStatus.FAILED);
+        assertThat(run(RankingRows.snapshotId(period, 2)).getStatus()).isEqualTo(BatchStatus.COMPLETED);
+        repository.failScoreOnce(9L);
+        JobExecution failed = launcher.launch(period, null);
+        assertThat(snapshotIdOf(failed)).isEqualTo(RankingRows.snapshotId(period, 3));
+        assertThat(failed.getStatus()).isEqualTo(BatchStatus.FAILED);
+        assertThat(rows.pointer(period)).contains(RankingRows.snapshotId(period, 2));
+
+        JobExecution restarted = launchWithoutRejection();
+
+        assertThat(snapshotIdOf(restarted)).isEqualTo(RankingRows.snapshotId(period, 3));
+        assertThat(restarted.getStatus()).isEqualTo(BatchStatus.COMPLETED);
+        assertThat(restarted.getJobInstance().getInstanceId()).isEqualTo(failed.getJobInstance().getInstanceId());
+        assertThat(rows.revisions(period)).containsExactly(1, 2, 3);
+        assertThat(rows.pointer(period)).contains(RankingRows.snapshotId(period, 3));
+        assertThat(jobExplorer.getJobExecution(skipped.getId()).getStatus()).isEqualTo(BatchStatus.FAILED);
+        assertThat(jobExplorer.getJobExecutions(skipped.getJobInstance())).hasSize(1);
+    }
+
     private JobExecution launchWithoutRejection() {
         AtomicReference<JobExecution> launched = new AtomicReference<JobExecution>();
         assertThatCode(() -> launched.set(launcher.launch(period, null))).as("런처가 거절·실패 없이 실행함").doesNotThrowAnyException();
