@@ -35,7 +35,7 @@
 
 ### 테스트·검사 결과
 
-`./gradlew :apps:commerce-batch:check` 통과(Checkstyle main·test 포함). 테스트 28건, skip 0, 실패 0(패키지 정리 뒤 기준).
+`./gradlew :apps:commerce-batch:check` 통과(Checkstyle main·test 포함). 테스트 26건, skip 0, 실패 0(패키지 정리·DemoJob 삭제 뒤 기준).
 
 | 테스트 클래스 | 건수 |
 |---|---|
@@ -44,7 +44,7 @@
 | `BatchRestartProbeTest` | 1 |
 | `RankingJobRestartTest` | 2 |
 | `WeeklyRankingFlowTest` | 5 |
-| 기존 `CommerceBatchApplicationTest` 1, `DemoJobE2ETest` 2 | 3 |
+| 기존 `CommerceBatchApplicationTest` | 1 |
 
 ### 설계 문서와 달라진 점
 
@@ -59,7 +59,7 @@
 - 입력 고정의 건수·checksum 계산이 복사본 전체를 앱 메모리로 읽는다(`findLines`). 큰 주간 데이터에서는 비용이 크다.
 - reader는 MySQL 드라이버 기본 동작대로 상품 ID 목록 전체를 클라이언트에 버퍼링한다.
 - batch의 `PurchaseActivity` 매핑이 streamer와 어긋나면 local `ddl-auto=update`가 원본 테이블에 컬럼을 추가할 수 있다.
-- 기존 `DemoJob`은 그대로 두었다.
+- 템플릿의 `DemoJob`(설정·tasklet·E2E 테스트)과 그것만 쓰던 리스너 3개(`JobListener`, `StepMonitorListener`, `ChunkListener`)를 지웠다. 랭킹 job은 리스너를 쓰지 않는다.
 - 쓰이지 않거나 한 줄을 감싸기만 하던 것을 지웠다: `WeeklyRankingSnapshotIds`(→ `WeeklyPeriod.snapshotId` 직접 호출), `RevisionConflictException`(→ `IllegalStateException`, 따로 잡는 곳이 없었다), `PublishOutcome.ALREADY_PUBLISHED`(호출하는 쪽이 PUBLISHED와 구분하지 않았다), `WeeklyRankingSnapshot.isFrozen`(사용처 없음), reader 이름 상수(한 곳에서만 사용).
 - 기간별 공개 행의 이름을 `WeeklyRankingPublication`(테이블 `weekly_ranking_publication`)으로 바꿨다. local DB를 이미 띄웠다면 예전 `weekly_ranking_period` 테이블이 남는다(`ddl-auto=update`는 지우지 않음). 아직 local 실행 전이라 영향은 없다.
 - 태스크 7(api), 8(로컬 인수·PR)은 하지 않았다.
