@@ -1,16 +1,11 @@
 package com.loopers.batch.job.ranking;
 
+import static com.loopers.batch.job.ranking.WeeklyRankingJobFixture.params;
+import static com.loopers.batch.job.ranking.WeeklyRankingJobFixture.snapshotId;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
-import java.sql.Connection;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
-
-import javax.sql.DataSource;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,17 +14,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.batch.core.BatchStatus;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.JobExecution;
-import org.springframework.batch.core.JobParameters;
-import org.springframework.batch.core.JobParametersBuilder;
 import org.springframework.batch.core.StepExecution;
-import org.springframework.batch.core.explore.JobExplorer;
-import org.springframework.batch.core.launch.JobLauncher;
-import org.springframework.batch.core.repository.JobRepository;
-import org.springframework.batch.test.JobRepositoryTestUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.jdbc.Sql;
 
 @SpringBootTest(properties = {
@@ -37,74 +26,49 @@ import org.springframework.test.context.jdbc.Sql;
     "spring.batch.job.name=" + WeeklyRankingJobConfig.JOB_NAME,
     "ranking.chunk-size=2"
 })
+@Import(WeeklyRankingJobFixture.class)
 @Sql("/sql/purchase-activity.sql")
 class WeeklyRankingRestartTest {
 
-    private static final String SNAPSHOT_ID = "weekly-20260817-r1";
-    private static final String R2 = "weekly-20260817-r2";
+    private static final String R1 = snapshotId(1);
+    private static final String R2 = snapshotId(2);
+    private static final String HOLD_PRODUCT_NINE =
+        "insert into ranking_score_stage (snapshot_id, product_id, score) values (?, 9, 0)";
 
     @Autowired
-    private DataSource dataSource;
-
-    @Autowired
-    private JobLauncher jobLauncher;
-
-    @Autowired
-    private JobExplorer jobExplorer;
-
-    @Autowired
-    private JobRepository jobRepository;
+    private WeeklyRankingJobFixture fixture;
 
     @Autowired
     @Qualifier(WeeklyRankingJobConfig.JOB_NAME)
     private Job job;
 
-    private JdbcTemplate jdbc;
-
-    private final List<Long> executionIds = new ArrayList<>();
-
     @BeforeEach
     void setUp() {
-        jdbc = new JdbcTemplate(dataSource);
-        jdbc.execute("truncate table purchase_activity");
-        jdbc.execute("truncate table ranking_snapshot");
-        jdbc.execute("truncate table ranking_snapshot_input");
-        jdbc.execute("truncate table ranking_score_stage");
-        jdbc.execute("truncate table weekly_ranking");
-        jdbc.execute("truncate table weekly_ranking_publication");
-
-        insertActivity(42L, 7L, 2, LocalDateTime.parse("2026-08-17T01:00:00"));
-        insertActivity(42L, 8L, 1, LocalDateTime.parse("2026-08-17T01:00:00"));
-        insertActivity(43L, 7L, 3, LocalDateTime.parse("2026-08-18T01:00:00"));
-        insertActivity(44L, 9L, 5, LocalDateTime.parse("2026-08-19T01:00:00"));
+        fixture.emptyTables();
+        fixture.insertWeekWithProductsSevenEightNine();
     }
 
     @AfterEach
     void tearDown() {
-        new JobRepositoryTestUtils(jobRepository).removeJobExecutions(
-            executionIds.stream().map(jobExplorer::getJobExecution).toList()
-        );
+        fixture.removeExecutions();
     }
 
     @DisplayName("JOB-004, EXP-026: 계산이 상품 9 에서 실패하면, 같은 parameter 의 재실행이 같은 instance 에서 고정 step 을 다시 돌지 않고 저장된 위치 다음 상품부터 이어 간다.")
     @Test
     void resumesCalculationFromLastCommittedProduct() throws Exception {
-        JobParameters params = params(1);
+        long firstId = fixture.launchWhileHolding(HOLD_PRODUCT_NINE, R1, job, params(1));
 
-        long firstId = launchWhileProductNineIsLocked(params, SNAPSHOT_ID);
-
-        JobExecution first = jobExplorer.getJobExecution(firstId);
-        StepExecution failedCalculation = stepNamed(first, "calculateScore");
+        JobExecution first = fixture.execution(firstId);
         assertAll(
             () -> assertThat(first.getStatus()).isEqualTo(BatchStatus.FAILED),
-            () -> assertThat(failedCalculation.getExecutionContext().get("snapshotProductReader.start.after"))
-                .hasToString("{product_id=8}"),
-            () -> assertThat(stagedScores()).containsExactly("7:5", "8:1")
+            () -> assertThat(fixture.stepNamed(firstId, "calculateScore").getExecutionContext()
+                .get("snapshotProductReader.start.after")).hasToString("{product_id=8}"),
+            () -> assertThat(fixture.stagedScores(R1)).containsExactly("7:5", "8:1")
         );
 
-        long secondId = launch(params);
+        long secondId = fixture.launch(job, 1);
 
-        JobExecution second = jobExplorer.getJobExecution(secondId);
+        JobExecution second = fixture.execution(secondId);
         assertAll(
             () -> assertThat(second.getStatus()).isEqualTo(BatchStatus.COMPLETED),
             () -> assertThat(second.getJobInstance().getInstanceId())
@@ -112,136 +76,58 @@ class WeeklyRankingRestartTest {
             () -> assertThat(secondId).isNotEqualTo(firstId),
             () -> assertThat(second.getStepExecutions()).extracting(StepExecution::getStepName)
                 .containsExactly("calculateScore", "publishRanking"),
-            () -> assertThat(stepNamed(second, "calculateScore").getWriteCount()).isEqualTo(1),
-            () -> assertThat(stagedScores()).containsExactly("7:5", "8:1", "9:5")
+            () -> assertThat(fixture.stepNamed(secondId, "calculateScore").getWriteCount()).isEqualTo(1),
+            () -> assertThat(fixture.stagedScores(R1)).containsExactly("7:5", "8:1", "9:5")
         );
     }
 
     @DisplayName("EXP-026, PBL-003, REV-003: 새 revision 의 계산이 실패한 동안 기존 공개본이 그대로 보이고, 재실행이 끝나면 새 revision 이 공개된다.")
     @Test
     void keepsPublishedRevisionWhileNewRevisionFails() throws Exception {
-        launch(params(1));
-        Map<String, Object> publishedBefore = publication();
+        fixture.launch(job, 1);
+        Map<String, Object> publishedBefore = fixture.publication();
 
-        long failedId = launchWhileProductNineIsLocked(params(2), R2);
+        long failedId = fixture.launchWhileHolding(HOLD_PRODUCT_NINE, R2, job, params(2));
 
         assertAll(
-            () -> assertThat(jobExplorer.getJobExecution(failedId).getStatus()).isEqualTo(BatchStatus.FAILED),
-            () -> assertThat(publishedBefore.get("snapshot_id")).isEqualTo(SNAPSHOT_ID),
-            () -> assertThat(publication()).isEqualTo(publishedBefore),
-            () -> assertThat(rankedRows(R2)).isZero()
+            () -> assertThat(fixture.statusOf(failedId)).isEqualTo(BatchStatus.FAILED),
+            () -> assertThat(publishedBefore.get("snapshot_id")).isEqualTo(R1),
+            () -> assertThat(fixture.publication()).isEqualTo(publishedBefore),
+            () -> assertThat(fixture.ranking(R2)).isEmpty()
         );
 
-        long rerunId = launch(params(2));
+        long rerunId = fixture.launch(job, 2);
 
         assertAll(
-            () -> assertThat(jobExplorer.getJobExecution(rerunId).getStatus()).isEqualTo(BatchStatus.COMPLETED),
-            () -> assertThat(publication().get("snapshot_id")).isEqualTo(R2),
-            () -> assertThat(rankedRows(R2)).isEqualTo(3L)
+            () -> assertThat(fixture.statusOf(rerunId)).isEqualTo(BatchStatus.COMPLETED),
+            () -> assertThat(fixture.publication().get("snapshot_id")).isEqualTo(R2),
+            () -> assertThat(fixture.ranking(R2)).hasSize(3)
         );
     }
 
     @DisplayName("EXP-027: 한 번에 끝난 실행과 실패 뒤 재시작으로 끝난 실행의 입력 checksum, 결과 checksum, 순위가 같다.")
     @Test
     void restartedRunMatchesUninterruptedRun() throws Exception {
-        long normalId = launch(params(1));
+        long normalId = fixture.launch(job, 1);
 
-        long failedId = launchWhileProductNineIsLocked(params(2), R2);
-        long restartedId = launch(params(2));
+        long failedId = fixture.launchWhileHolding(HOLD_PRODUCT_NINE, R2, job, params(2));
+        long restartedId = fixture.launch(job, 2);
 
         assertAll(
-            () -> assertThat(jobExplorer.getJobExecution(normalId).getStatus()).isEqualTo(BatchStatus.COMPLETED),
-            () -> assertThat(jobExplorer.getJobExecution(failedId).getStatus()).isEqualTo(BatchStatus.FAILED),
-            () -> assertThat(jobExplorer.getJobExecution(restartedId).getJobInstance().getInstanceId())
-                .isEqualTo(jobExplorer.getJobExecution(failedId).getJobInstance().getInstanceId()),
-            () -> assertThat(jobExplorer.getJobExecution(restartedId).getStatus()).isEqualTo(BatchStatus.COMPLETED),
-            () -> assertThat(inputChecksum(R2)).isEqualTo(inputChecksum(SNAPSHOT_ID)),
+            () -> assertThat(fixture.statusOf(normalId)).isEqualTo(BatchStatus.COMPLETED),
+            () -> assertThat(fixture.statusOf(failedId)).isEqualTo(BatchStatus.FAILED),
+            () -> assertThat(fixture.execution(restartedId).getJobInstance().getInstanceId())
+                .isEqualTo(fixture.execution(failedId).getJobInstance().getInstanceId()),
+            () -> assertThat(fixture.statusOf(restartedId)).isEqualTo(BatchStatus.COMPLETED),
+            () -> assertThat(fixture.snapshotInfo(R2).get("input_checksum"))
+                .isEqualTo(fixture.snapshotInfo(R1).get("input_checksum")),
             () -> assertThat(resultChecksum(restartedId)).isEqualTo(resultChecksum(normalId)),
-            () -> assertThat(ranking(R2)).isEqualTo(ranking(SNAPSHOT_ID)).containsExactly("1:7:5", "2:9:5", "3:8:1")
-        );
-    }
-
-    private String inputChecksum(String snapshotId) {
-        return jdbc.queryForObject(
-            "select input_checksum from ranking_snapshot where snapshot_id = ?", String.class, snapshotId
+            () -> assertThat(fixture.ranking(R2)).isEqualTo(fixture.ranking(R1))
+                .containsExactly("1:7:5", "2:9:5", "3:8:1")
         );
     }
 
     private Object resultChecksum(long executionId) {
-        return stepNamed(jobExplorer.getJobExecution(executionId), "publishRanking")
-            .getExecutionContext().get("resultChecksum");
-    }
-
-    private List<String> ranking(String snapshotId) {
-        return jdbc.query(
-            "select rank_no, product_id, score from weekly_ranking where snapshot_id = ? order by rank_no",
-            (rs, rowNum) -> rs.getInt("rank_no") + ":" + rs.getLong("product_id") + ":" + rs.getLong("score"),
-            snapshotId
-        );
-    }
-
-    private JobParameters params(int revision) {
-        return new JobParametersBuilder()
-            .addLocalDate("periodStart", LocalDate.of(2026, 8, 17))
-            .addLong("revision", (long) revision)
-            .addString("snapshotId", "weekly-20260817-r" + revision)
-            .toJobParameters();
-    }
-
-    private long launchWhileProductNineIsLocked(JobParameters params, String snapshotId) throws Exception {
-        try (Connection blocker = dataSource.getConnection()) {
-            blocker.setAutoCommit(false);
-            try (var hold = blocker.prepareStatement(
-                "insert into ranking_score_stage (snapshot_id, product_id, score) values (?, 9, 0)"
-            )) {
-                hold.setString(1, snapshotId);
-                hold.executeUpdate();
-            }
-            long executionId = launch(params);
-            blocker.rollback();
-            return executionId;
-        }
-    }
-
-    private Map<String, Object> publication() {
-        return jdbc.queryForMap(
-            "select snapshot_id, revision, published_at, frozen_at from weekly_ranking_publication "
-                + "where period_start = '2026-08-17'"
-        );
-    }
-
-    private long rankedRows(String snapshotId) {
-        return jdbc.queryForObject("select count(*) from weekly_ranking where snapshot_id = ?", Long.class, snapshotId);
-    }
-
-    private long launch(JobParameters params) throws Exception {
-        JobExecution execution = jobLauncher.run(job, params);
-        executionIds.add(execution.getId());
-        return execution.getId();
-    }
-
-    private StepExecution stepNamed(JobExecution execution, String stepName) {
-        StepExecution step = execution.getStepExecutions().stream()
-            .filter(candidate -> candidate.getStepName().equals(stepName))
-            .findFirst()
-            .orElseThrow();
-        return jobExplorer.getStepExecution(execution.getId(), step.getId());
-    }
-
-    private List<String> stagedScores() {
-        return jdbc.query(
-            "select product_id, score from ranking_score_stage where snapshot_id = ? order by product_id",
-            (rs, rowNum) -> rs.getLong("product_id") + ":" + rs.getLong("score"),
-            SNAPSHOT_ID
-        );
-    }
-
-    private void insertActivity(long orderId, long productId, int quantity, LocalDateTime confirmedAtUtc) {
-        jdbc.update(
-            "insert into purchase_activity "
-                + "(created_at, updated_at, order_id, product_id, quantity, confirmed_at) "
-                + "values (now(6), now(6), ?, ?, ?, ?)",
-            orderId, productId, quantity, confirmedAtUtc
-        );
+        return fixture.stepNamed(executionId, "publishRanking").getExecutionContext().get("resultChecksum");
     }
 }

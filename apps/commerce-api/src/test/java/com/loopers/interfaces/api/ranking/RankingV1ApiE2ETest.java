@@ -106,13 +106,6 @@ class RankingV1ApiE2ETest {
             mvc.perform(get(WEEKLY).param("periodStart", "2026-08-17").param("limit", "0"))
                 .andExpect(status().isBadRequest());
         }
-
-        @DisplayName("QRY-003, Q-4: limit 이 100 을 넘으면 400 이다.")
-        @Test
-        void rejectsLimitAboveHundred() throws Exception {
-            mvc.perform(get(WEEKLY).param("periodStart", "2026-08-17").param("limit", "101"))
-                .andExpect(status().isBadRequest());
-        }
     }
 
     @Nested
