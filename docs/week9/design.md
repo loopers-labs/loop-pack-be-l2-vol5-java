@@ -239,12 +239,15 @@ batch 는 템플릿의 demo job 과 같은 관례를 따른다(Q-8). job 하나�
 |---|---|---|
 | `ranking/` | `WeeklyRankingJobConfig` | job·step·reader 조립 |
 | `ranking/` | `WeeklyRankingParameters` | job parameter 를 한 번 읽어 타입 있는 값으로 |
+| `ranking/` | `WeeklyRankingParametersValidator` | launch 할 때 parameter 의 이름·타입·식별 여부와 `SNP-008` 을 확인한다(`JOB-002`) |
 | `ranking/` | `WeeklySnapshot` | 판단(`SNP-006`, `SNP-008`, `REV-002`). DB 없이 테스트 |
 | `ranking/` | `SnapshotStore`, `PublishedRankingStore`, `SortedRowsChecksum` | 테이블 묶음마다 이름 있는 메서드로 SQL |
 | `ranking/step/` | `FreezeSnapshotTasklet`, `PublishRankingTasklet` | 판단과 store 를 부르는 순서 |
 | `ranking/step/` | `ScoreStageWriter` | chunk 의 점수를 쓴다(`CAL-002`, `CAL-003`) |
 
 `step/` 이 루트의 store 와 `WeeklySnapshot` 을 쓰므로 그것들은 public 이다. demo 의 `DemoTasklet` 도 public 이다. batch 에는 ArchUnit 이 없고 job 이 하나라, 다른 코드가 store 를 우회해 쓰는 것은 리뷰로 막는다. 테스트는 `ranking/` 에 둔다. 연결 테스트도 여기에 남긴다. 설정만 보는 테스트라 깨지면 원인이 랭킹 로직이 아니라 TX·저장소 설정이라는 것이 바로 드러난다.
+
+parameter 검사는 step 이 아니라 job 의 validator 가 한다. launcher 는 JobInstance 를 만들기 전에 validator 를 부르므로, 잘못된 parameter 는 실패한 실행으로 metadata 에 남지 않는다. step 안에서 검사하면 그 parameter 로 instance 가 생기고, `run.id` 가 붙거나 `revision` 이 식별용이 아니면 아예 다른 instance 로 성공해 버린다(`JOB-002`). 받은 식별 parameter 의 이름·타입 표가 정해 둔 표와 같은지를 한 번에 비교하고, 형식은 `WeeklySnapshot` 에 맡긴다. 고정 step 은 snapshotId 를 다시 확인하지 않는다.
 
 **뒤집을 조건**: 두 번째 job 이 생겨 store 를 함께 쓰게 될 때. 공유하는 것을 job 밖으로 꺼내고, batch 에도 ArchUnit 으로 job 사이 의존을 막는다. 반품 차감, 가중치처럼 DB 없이 테스트할 판단이 생기면 그 판단을 `WeeklySnapshot` 옆의 객체로 꺼낸다.
 

@@ -115,18 +115,6 @@ class FreezeSnapshotStepTest {
         );
     }
 
-    @DisplayName("SNP-008: snapshotId 가 기간과 revision 으로 만든 값과 다르면 고정하지 않고 실패한다.")
-    @Test
-    void failsWhenSnapshotIdDoesNotMatchPeriodAndRevision() throws Exception {
-        long executionId = launch(PERIOD_START, 1, "weekly-20260817-r2");
-
-        assertAll(
-            () -> assertThat(statusOf(executionId)).isEqualTo(BatchStatus.FAILED),
-            () -> assertThat(countRows("ranking_snapshot_input")).isZero(),
-            () -> assertThat(countRows("ranking_snapshot")).isZero()
-        );
-    }
-
     @DisplayName("SNP-004: snapshot 정보를 쓰다 실패하면 이미 복사한 입력도 함께 rollback 되어 계산 대상이 남지 않는다.")
     @Test
     void rollsBackCopiedInputWhenSnapshotInfoFails() throws Exception {

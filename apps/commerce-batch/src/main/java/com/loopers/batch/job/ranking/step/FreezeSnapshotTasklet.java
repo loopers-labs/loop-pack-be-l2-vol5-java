@@ -25,7 +25,6 @@ public class FreezeSnapshotTasklet implements Tasklet {
             chunkContext.getStepContext().getStepExecution().getJobParameters()
         );
         WeeklySnapshot snapshot = params.snapshot();
-        snapshot.requireId(params.snapshotId());
 
         Optional<WeeklySnapshot> existing = snapshots.find(snapshot.id());
         if (existing.isPresent()) {

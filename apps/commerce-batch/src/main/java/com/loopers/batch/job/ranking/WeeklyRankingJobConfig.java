@@ -38,6 +38,7 @@ class WeeklyRankingJobConfig {
         JobRepository jobRepository, Step freezeSnapshotStep, Step calculateScoreStep, Step publishRankingStep
     ) {
         return new JobBuilder(JOB_NAME, jobRepository)
+            .validator(new WeeklyRankingParametersValidator())
             .start(freezeSnapshotStep)
             .next(calculateScoreStep)
             .next(publishRankingStep)

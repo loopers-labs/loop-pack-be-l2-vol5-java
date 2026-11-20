@@ -60,14 +60,14 @@
 | `SNP-005` | 고정을 마친 입력은 재시작 때 다시 복사하거나 더하지 않는다 | 원문 | 재시작 전후 입력 행 수와 checksum 이 같다 |
 | `SNP-006` | 이미 있는 `snapshotId` 의 기간이나 revision 이 다르면 덮지 않고 충돌로 실패한다. 같으면 원본을 다시 읽지 않고 아무것도 바꾸지 않은 채 step 을 완료한다. 입력은 비교하지 않는다. 고정 뒤 도착한 구매가 있어도 이미 고정한 입력이 그 snapshot 의 입력이다(`SNP-005`, `REV-001`) | 원문, 정함(같음의 기준: 기간과 revision) | 고정 뒤 늦은 구매가 들어와도 다시 고정하면 COMPLETED, 입력 3 행, checksum 그대로 |
 | `SNP-007` | 입력 checksum 은 `(orderId, productId)` 순으로 정렬한 행마다 `orderId`, `productId`, `quantity`, `confirmedAt` 을 TAB 으로 잇고 LF 로 끝낸 바이트의 SHA-256 hex 다. 마지막 행도 LF 로 끝난다. `confirmedAt` 은 UTC ISO-8601, 소수 6 자리(`EVT-003` 과 같은 형식)다. 실행 ID·실행 시각은 넣지 않는다 | 원문, 정함(형식) | |
-| `SNP-008` | `snapshotId` 는 `weekly-{yyyyMMdd}-r{revision}`(예: `weekly-20260817-r1`)이고 launch parameter 로 받는다. 기간과 revision 으로 만든 값과 다르면 고정하지 않는다 | 정함(Q-1) | `weekly-20260817-r2` 에 revision 1 이면 FAILED, 입력 0 행 |
+| `SNP-008` | `snapshotId` 는 `weekly-{yyyyMMdd}-r{revision}`(예: `weekly-20260817-r1`)이고 launch parameter 로 받는다. 기간과 revision 으로 만든 값과 다르면 launch 를 거절한다. 기간이 월요일이 아니거나 revision 이 1 보다 작아도 같다. JobInstance 를 만들지 않는다 | 정함(Q-1, 거절 시점) | `weekly-20260817-r2` 에 revision 1 이면 `JobParametersInvalidException`, JobInstance 0 개, 입력 0 행 |
 
 ## JOB: job 과 재시작
 
 | ID | 규칙 | 출처 | 관찰값 |
 |---|---|---|---|
 | `JOB-001` | `weeklyRanking` job 은 입력 고정(Tasklet) → 점수 계산(Chunk) → 완성본 공개(Tasklet) 세 step 이다 | 원문, 정함(Tasklet/Chunk) | |
-| `JOB-002` | 식별 parameter 는 `periodStart`, `revision`, `snapshotId` 다. `run.id`, 현재 시각, 실패 스위치를 식별 parameter 로 넣지 않는다 | 원문 | |
+| `JOB-002` | 식별 parameter 는 `periodStart`, `revision`, `snapshotId` 다. `run.id`, 현재 시각, 실패 스위치를 식별 parameter 로 넣지 않는다. 이 셋이 아닌 parameter, 빠진 parameter, 식별용이 아닌 parameter 는 launch 를 거절한다 | 원문, 정함(거절) | `run.id` 가 붙거나 `revision` 이 식별용이 아니면 `JobParametersInvalidException`, JobInstance 0 개 |
 | `JOB-003` | step 은 실제 DB transaction manager 를 쓴다. JobRepository 는 업무 테이블과 같은 DataSource 의 JDBC 저장소이고 결과 writer 와 같은 TX 에 참여한다. `ResourcelessTransactionManager`, 메모리 저장소를 쓰지 않는다 | 원문 | |
 | `JOB-004` | 계산 step 이 실패하면 같은 식별 parameter 로 같은 JobInstance 의 새 JobExecution 을 시작한다. 완료한 step 은 다시 실행하지 않고, 계산은 마지막 commit 다음 상품부터 이어 간다 | 원문 | 상품 9 에서 잠금 대기 초과로 FAILED, 점수 7·8. 재실행은 같은 instance, 실행된 step 은 계산과 공개(완료한 고정 step 은 다시 실행하지 않는다), write 1, 점수 7·8·9 |
 | `JOB-005` | step 은 단일 스레드로 실행한다 | 정함 | |
