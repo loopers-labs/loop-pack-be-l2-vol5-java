@@ -1,4 +1,4 @@
--- 9주차 주간 구매 랭킹 테이블 4개 (설계 weekly-ranking-design.md 3절 D2~D5 의 DDL 그대로). 정의는 commerce-batch 엔티티가 소유하고 commerce-api 는 JDBC 로 읽기만 한다.
+-- 9주차 주간 구매 랭킹 테이블 4개 (설계 weekly-ranking-design.md 3절 D2~D5 의 DDL 그대로). 정의는 공유 모듈 modules/ranking-schema 의 엔티티가 소유하고(batch·api 공통 의존), 쓰기는 commerce-batch 만, commerce-api 는 JDBC 로 읽기만 한다.
 -- local/test 는 ddl-auto=create 가 같은 DDL 을 만들고, dev/qa/prd 는 ddl-auto=none·initialize-schema=never 라 이 파일을 외부에서 실행해야 한다. FK 는 저장소 관례대로 두지 않는다 (D7).
 
 CREATE TABLE weekly_ranking_inputs (

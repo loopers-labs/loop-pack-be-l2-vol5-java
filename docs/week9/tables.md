@@ -1,7 +1,7 @@
 # 9주차 · 주간 구매 랭킹 테이블 구성 (표로 보기)
 
 테이블은 모두 6개다. 입력 원본 1개(W6에서 만든 것), 이번에 새로 만든 4개, 상품 이름을 가져오는 기존 1개.
-새 테이블 4개는 **commerce-batch 가 만들고 쓰며**, commerce-api 는 **읽기만** 한다. 테이블 사이에 FK(외래 키)는 두지 않고 값(`snapshot_id` 등)으로만 연결한다.
+새 테이블 4개의 정의(엔티티)는 공유 모듈 `modules/ranking-schema` 에 있어 batch·api 어느 쪽을 띄워도 생기고, **쓰기는 commerce-batch 만**, commerce-api 는 **읽기만** 한다. 테이블 사이에 FK(외래 키)는 두지 않고 값(`snapshot_id` 등)으로만 연결한다.
 자세한 DDL·결정 이유는 [weekly-ranking-design.md](weekly-ranking-design.md) 3절.
 
 ## 먼저 알아야 할 것 — 배치 Job 의 Step 3개

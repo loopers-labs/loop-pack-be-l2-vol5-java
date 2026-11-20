@@ -18,7 +18,7 @@ flowchart LR
         S1 --> S2 --> S3
     end
 
-    subgraph DB["weekly_ranking_* (batch 소유)"]
+    subgraph DB["weekly_ranking_* (정의: 공유 모듈 ranking-schema · 쓰기: batch 만)"]
         IN[(inputs)]
         REV[(revisions)]
         SC[(scores)]
@@ -143,6 +143,9 @@ classDiagram
         class BatchClockConfig {
             +clock() Clock
         }
+    }
+
+    namespace ranking_schema {
         class WeeklyRankingInput {
             <<Entity>>
             snapshot_id, order_id, product_id, quantity, confirmed_at
@@ -230,11 +233,11 @@ classDiagram
     WeeklyRankingReader ..> PublishedSnapshot
     WeeklyRankingReader ..> RankedScore
     WeeklyRankingJdbcReader ..|> WeeklyRankingReader
-    WeeklyRankingJdbcReader ..> WeeklyRankingPublication : SELECT (JDBC, 엔티티 없음)
+    WeeklyRankingJdbcReader ..> WeeklyRankingPublication : SELECT (JDBC, Repository 없음)
     WeeklyRankingJdbcReader ..> WeeklyRankingRevision : SELECT
     WeeklyRankingJdbcReader ..> WeeklyRankingScore : SELECT
 ```
 
-- 엔티티 4개는 batch 에만 있고 테이블 정의(DDL)의 원본이다. 쓰기는 Tasklet·writer 가 JdbcTemplate 으로, api 는 같은 테이블을 JDBC 로 읽기만 한다.
+- 엔티티 4개는 공유 모듈 `modules/ranking-schema` 에 있고 테이블 정의(DDL)의 원본이다. batch·api 가 함께 의존해 어느 쪽 `ddl-auto` 로도 테이블이 생기지만, 쓰기는 batch 의 Tasklet·writer 만 JdbcTemplate 으로 하고 api 는 Repository 없이 JDBC 로 읽기만 한다(R5).
 - `ScoreProcessingHook` 은 테스트가 Step 2 중간 실패를 만들기 위한 seam 이며 제품 기본 구현은 no-op 이다.
 - 점선은 "SQL 로 접근" 또는 "값 객체 사용", 실선은 빈 주입이다.
