@@ -1,0 +1,14 @@
+# Explicit profile for restartable weekly jobs; provision the activity and Batch schemas once before launching.
+# Combine with the intended DB environment, and keep it last if several profiles are active.
+spring:
+  batch:
+    job:
+      name: weeklyRanking
+    jdbc:
+      initialize-schema: never
+  jpa:
+    hibernate:
+      ddl-auto: none
+  sql:
+    init:
+      mode: never
