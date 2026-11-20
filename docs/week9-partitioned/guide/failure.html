@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>한 서버가 응답을 멈추면 다른 서버는 언제 이어받을까요? · 주간 구매 랭킹</title>
+  <link rel="stylesheet" href="guide.css">
+  <script defer src="lesson.js"></script>
+</head>
+<body>
+<header class="mast"><div class="shell">
+  <a class="brand" href="index.html"><svg aria-hidden="true" viewBox="0 0 24 18"><rect x="1" y="11" width="5" height="7"/><rect x="9" y="6" width="5" height="12"/><rect x="17" y="1" width="5" height="17"/></svg>주간 구매 랭킹</a>
+  <nav aria-label="학습 자료"><a href="index.html#contents">주제 목차</a><a href="../weekly-ranking-flow.html">전체 애니메이션 ↗</a></nav>
+</div></header>
+<main class="shell">
+  <header class="intro"><p class="letter">시간과 실행이 어긋날 때 / 실패와 장애 인수</p>
+    <h1>한 서버가 응답을 멈추면 다른 서버는 언제 이어받을까요?</h1><p class="lead">작업 중인 서버의 생존 신호가 끊겨도, 다른 서버가 곧바로 같은 구간을 계산하면 두 서버가 겹쳐 쓸 수 있습니다. 이전 서버의 종료를 확인하고 저장 기록을 대조해야 새 서버가 남은 상품을 안전하게 처리할 수 있습니다.</p>
+  </header>
+  <div class="reader">
+    <figure id="lab" class="lab" aria-labelledby="lab-title">
+      <div class="lab-head"><h2 id="lab-title">실패와 장애 인수 단계별로 보기</h2>
+        <div class="controls" hidden>
+          <button type="button" data-play>흐름 재생</button><button type="button" data-prev>이전</button><button type="button" data-next>다음</button>
+          <button type="button" data-repeat hidden>같은 3점 다시 보내기</button><span data-count></span>
+        </div>
+      </div>
+      <div class="step-tabs" role="group" aria-label="장면 선택" hidden>
+        <button type="button" data-pick="0">첫 묶음 저장</button>
+        <button type="button" data-pick="1">복구 대기</button>
+        <button type="button" data-pick="2">종료와 기록 확인</button>
+        <button type="button" data-pick="3">남은 상품 처리</button>
+      </div>
+      <svg id="diagram" role="img" hidden></svg>
+      <ol class="stages">
+      <li class="stage">
+        <h3>원래 서버가 상품 33개 중 16개의 점수를 저장합니다</h3>
+        <dl class="nodes">
+          <div><dt>원래 서버</dt><dd>33개 중 16개 완료</dd></div>
+          <div><dt>DB 기록</dt><dd>16행 · 위치 16</dd></div>
+          <div><dt>다른 서버</dt><dd>인수 전</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="0" data-to="1">함께 커밋</li>
+        </ul>
+        <p class="stage-note">실제 프로세스 종료 시험에서는 다음 상품을 저장하기 전에 첫 서버를 종료했습니다. 이미 커밋한 점수 16행과 읽기 위치 16은 DB에 남았습니다.</p>
+      </li>
+      <li class="stage">
+        <h3>DB에 실행 중으로 남은 구간을 격리합니다</h3>
+        <dl class="nodes">
+          <div><dt>원래 서버</dt><dd>생존 신호 만료</dd></div>
+          <div><dt>DB 기록</dt><dd>복구 확인 대기</dd></div>
+          <div><dt>다른 서버</dt><dd>실행 대기</dd></div>
+        </dl>
+        <ul class="edges">
+
+        </ul>
+        <p class="stage-note">서버가 갑자기 종료되면 배치 기록이 실행 중(STARTED)에 머물 수 있습니다. 남은 서버는 같은 구간을 바로 실행하지 않고, 종료 여부를 확인할 때까지 기다립니다.</p>
+      </li>
+      <li class="stage">
+        <h3>이전 서버의 종료 여부와 마지막 실행 기록을 확인합니다</h3>
+        <dl class="nodes">
+          <div><dt>원래 서버</dt><dd>종료 확인</dd></div>
+          <div><dt>DB 기록</dt><dd>실행 ID·위치 대조</dd></div>
+          <div><dt>다른 서버</dt><dd>확인 뒤 인수</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="0" data-to="1">종료 근거 대조</li>
+        </ul>
+        <p class="stage-note">운영자가 이전 프로세스의 종료를 확인합니다. 복구 절차는 DB의 담당자·세대·최신 실행 ID와 저장된 위치·점수를 검사하며, 시험에서는 실행 ID를 틀리게 입력하자 추가 실행이 0건이었습니다.</p>
+      </li>
+      <li class="stage">
+        <h3>다른 서버가 새 세대로 17개를 이어서 처리합니다</h3>
+        <dl class="nodes">
+          <div><dt>원래 서버</dt><dd>이전 세대 만료</dd></div>
+          <div><dt>DB 기록</dt><dd>33개 검산·공개</dd></div>
+          <div><dt>다른 서버</dt><dd>남은 17개 처리</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="2" data-to="1">남은 점수 저장</li>
+        </ul>
+        <p class="stage-note">검사에 통과하면 새 담당자의 세대로 실행권이 바뀌고, 이전 세대의 쓰기 요청은 거절됩니다. 시험에서는 같은 작업의 새 실행이 남은 17개를 읽었고, 최종 순위에는 상품 33개가 모두 있었습니다.</p>
+      </li>
+      </ol>
+      <p class="sr-only" data-live role="status" aria-live="polite"></p>
+      <figcaption><a href="../verification.md#실행-중인-jvm-종료와-인수">실제 JVM을 종료한 시험</a> · 함께 읽기 &ndash; <a href="retry.html">배치 재시도</a></figcaption>
+    </figure>
+    <aside class="terms" aria-labelledby="terms-title"><h2 id="terms-title">이 장의 용어</h2>
+      <dl><dt>생존 신호(heartbeat)</dt><dd>배치 서버가 주기적으로 DB에 남기는 활동 기록입니다. 신호가 늦어지는 원인에는 네트워크 지연도 있습니다.</dd>
+        <dt>실행 ID</dt><dd>배치를 실행한 한 번의 시도에 붙이는 번호입니다. 같은 작업을 재시작하면 새 번호가 생깁니다.</dd>
+        <dt>세대 번호</dt><dd>구간의 실행권을 새로 받을 때 올라가는 번호입니다. 점수를 쓸 때 현재 담당자와 세대가 일치하는지 검사합니다.</dd></dl>
+    </aside>
+  </div>
+  <div class="followup">
+    <section><h2>배치 기록에 실패(FAILED)가 찍히면 서버도 종료됐다는 뜻일까요?</h2><p>FAILED는 그 실행이 실패로 끝났다는 기록입니다. 별도의 두 서버 시험에서는 점수를 쓰는 작업자(worker)가 3점을 커밋한 뒤 전체 작업을 관리하는 단계(manager)가 실패했고, 같은 서버가 재시도했습니다. 반대로 서버 자체가 종료돼 마지막 상태가 STARTED에 머물면 위의 인수 절차를 따릅니다.</p></section>
+    <section class="sources"><h2>구현과 검증 근거</h2><ul>
+      <li><a href="../README.md#중단된-주문-파티션-인수">중단된 주문 구간을 인수하는 운영 절차</a></li>
+      <li><a href="../../../apps/commerce-streamer/src/test/java/com/loopers/application/ranking/WeeklyRankingProcessRecoveryTest.java">이전 서버를 종료하고 다른 서버가 17개를 처리한 테스트</a></li>
+      <li><a href="../verification.md#서로-다른-두-jvm의-2점3점과-b의-재전달">완료된 worker의 3점을 재전달한 별도 시험</a></li>
+    </ul></section>
+  </div>
+  <nav class="footer" aria-label="이어 읽기"><a href="retry.html">← 배치 재시도</a>
+    <a href="index.html#contents">전체 목차</a> <a href="performance.html">성능 측정 →</a>
+  </nav>
+</main>
+</body></html>

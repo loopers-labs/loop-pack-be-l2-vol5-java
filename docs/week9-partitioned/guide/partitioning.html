@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>두 서버는 왜 주문을 나누고, 서버 안에서는 왜 상품을 나눌까요? · 주간 구매 랭킹</title>
+  <link rel="stylesheet" href="guide.css">
+  <script defer src="lesson.js"></script>
+  <script defer src="order-boundaries.js"></script>
+</head>
+<body>
+<header class="mast"><div class="shell">
+  <a class="brand" href="index.html"><svg aria-hidden="true" viewBox="0 0 24 18"><rect x="1" y="11" width="5" height="7"/><rect x="9" y="6" width="5" height="12"/><rect x="17" y="1" width="5" height="17"/></svg>주간 구매 랭킹</a>
+  <nav aria-label="학습 자료"><a href="index.html#contents">주제 목차</a><a href="../weekly-ranking-flow.html">전체 애니메이션 ↗</a></nav>
+</div></header>
+<main class="shell">
+  <header class="intro"><p class="letter">실행 준비와 분할 / 배치 파티셔닝</p>
+    <h1>두 서버는 왜 주문을 나누고, 서버 안에서는 왜 상품을 나눌까요?</h1><p class="lead">먼저 주문번호로 서버의 담당 범위를 나눠 한 주문의 모든 품목을 같은 서버에 둡니다. 그 안에서는 상품번호로 일을 나눠 같은 상품의 수량을 한 작업이 합산하게 합니다.</p>
+    <a href="#order-boundaries">주문 4건의 경계 직접 계산하기 ↓</a>
+  </header>
+  <div class="reader">
+    <figure id="lab" class="lab" aria-labelledby="lab-title">
+      <div class="lab-head"><h2 id="lab-title">배치 파티셔닝 단계별로 보기</h2>
+        <div class="controls" hidden>
+          <button type="button" data-play>흐름 재생</button><button type="button" data-prev>이전</button><button type="button" data-next>다음</button>
+          <button type="button" data-repeat hidden>같은 3점 다시 보내기</button><span data-count></span>
+        </div>
+      </div>
+      <div class="step-tabs" role="group" aria-label="장면 선택" hidden>
+        <button type="button" data-pick="0">주문 나누기</button>
+        <button type="button" data-pick="1">A 안에서 나누기</button>
+        <button type="button" data-pick="2">B 안에서 나누기</button>
+        <button type="button" data-pick="3">두 구간 모으기</button>
+      </div>
+      <svg id="diagram" role="img" hidden></svg>
+      <ol class="stages">
+      <li class="stage">
+        <h3>주문번호 20을 경계로 두 서버에 배정합니다</h3>
+        <dl class="nodes">
+          <div><dt>공통 입력</dt><dd>주문 10·20</dd></div>
+          <div><dt>서버 A · 구간 0</dt><dd>주문 10의 전 품목</dd></div>
+          <div><dt>서버 B · 구간 1</dt><dd>주문 20의 전 품목</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="0" data-to="1">20 미만</li>
+          <li data-from="0" data-to="2">20 이상</li>
+        </ul>
+        <p class="stage-note">설명용 예시로 주문 10에는 상품 7 두 개와 상품 8 한 개, 주문 20에는 상품 7 세 개를 넣었습니다. 실제 계획은 주문별 품목 행 수를 고려해 주문번호 경계를 정합니다.</p>
+      </li>
+      <li class="stage">
+        <h3>A의 두 worker가 서로 다른 상품을 계산합니다</h3>
+        <dl class="nodes">
+          <div><dt>A의 주문 10</dt><dd>상품 7·8</dd></div>
+          <div><dt>A의 작업 1</dt><dd>상품 7 → 2점</dd></div>
+          <div><dt>A의 작업 2</dt><dd>상품 8 → 1점</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="0" data-to="1">상품 7 배정</li>
+          <li data-from="0" data-to="2">상품 8 배정</li>
+        </ul>
+        <p class="stage-note">이 예시에서 A는 두 작업을 동시에 실행합니다. 프로젝트의 분할기가 고정 입력의 상품번호를 정렬해 두 범위로 나누면, Spring Batch가 각 범위를 계산할 작업자(worker)를 실행합니다.</p>
+      </li>
+      <li class="stage">
+        <h3>B도 자기 주문에서 만난 상품 7을 맡습니다</h3>
+        <dl class="nodes">
+          <div><dt>B의 주문 20</dt><dd>상품 7 세 개</dd></div>
+          <div><dt>B의 작업 1</dt><dd>상품 7 합산</dd></div>
+          <div><dt>B의 부분 점수</dt><dd>구간 1 · 3점</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="0" data-to="1">상품 7 배정</li>
+          <li data-from="1" data-to="2">3점 저장</li>
+        </ul>
+        <p class="stage-note">B의 고정 입력에는 서로 다른 상품이 한 종류뿐이므로 로컬 상품 구간도 하나입니다. A와 B는 같은 상품을 맡아도 각자의 주문에서 수량을 더해 서로 다른 행에 씁니다.</p>
+      </li>
+      <li class="stage">
+        <h3>상품 7은 두 서버에서 계산해도 총 5점입니다</h3>
+        <dl class="nodes">
+          <div><dt>구간 0 · 상품 7</dt><dd>2점</dd></div>
+          <div><dt>구간 1 · 상품 7</dt><dd>3점</dd></div>
+          <div><dt>상품 7 최종 점수</dt><dd>2 + 3 = 5점</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="0" data-to="2">부분합 합산</li>
+          <li data-from="1" data-to="2">부분합 합산</li>
+        </ul>
+        <p class="stage-note">이 그림에서 A와 B의 화면을 차례로 열어봤지만 두 서버는 독립적으로 실행할 수 있습니다. 두 주문 구간이 모두 완료되면 부분합을 모으고, 고정 입력과 대조한 뒤 공개합니다.</p>
+      </li>
+      </ol>
+      <p class="sr-only" data-live role="status" aria-live="polite"></p>
+      <figcaption><a href="../weekly-ranking-flow.html?case=replay&amp;step=1#flow-figure">두 JVM에 배정된 주문 구간</a> · 함께 읽기 &ndash; <a href="performance.html">성능 측정</a></figcaption>
+    </figure>
+    <aside class="terms" aria-labelledby="terms-title"><h2 id="terms-title">이 장의 용어</h2>
+      <dl><dt>파티션</dt><dd>한 작업이 책임지고 처리할 데이터 범위입니다. 여기서는 주문번호 범위와 상품번호 범위 두 종류가 있습니다.</dd>
+        <dt>로컬 파티셔닝</dt><dd>하나의 자바 프로세스(JVM) 안에서 일감을 여러 작업으로 나눠 처리하는 방식입니다. 여기서 한 작업자(worker)는 배정받은 상품 범위를 계산합니다.</dd>
+        <dt>JobInstance</dt><dd>Spring Batch가 같은 논리 작업임을 알아보는 단위입니다. 이 프로젝트에서는 스냅샷 ID와 주문 구간 번호로 한 구간의 작업을 식별합니다.</dd></dl>
+    </aside>
+  </div>
+  <section id="order-boundaries" class="boundary-study" aria-labelledby="bounds-title">
+    <h2 id="bounds-title">두 서버가 주문 4건을 맡으면 왜 경계가 90일까요?</h2>
+    <p>이번에는 별도의 설명용 주문 10·20·30·90을 봅니다. 구매 품목 한 행을 한 칸으로 놓고 주문번호 순으로 이어 붙입니다. 한 주문이 차지한 칸의 가운데가 어느 구간에 있는지로 담당을 정합니다. 여기서 무게는 품목 <strong>행 수</strong>입니다. 한 행에 구매 수량이 10개여도 무게는 1입니다.</p>
+    <figure class="boundary-figure">
+      <div class="bounds-controls" hidden>
+        <label>계획 확정 시 활성 서버 <select id="planning-members"><option value="1">1대</option><option value="2" selected>2대</option><option value="3">3대</option></select></label>
+        <label>고정 입력 <select id="planning-orders"><option value="balanced">주문 4건 · 1, 1, 2, 4행</option><option value="heavy">주문 4건 · 1, 1, 2, 12행</option><option value="single">주문 1건 · 4행</option></select></label>
+      </div>
+      <p class="bounds-key">막대의 너비는 품목 행 수, 점은 주문 묶음의 가운데입니다. 점선은 전체를 같은 너비로 나눈 위치입니다.</p>
+      <div id="weight-strip" aria-hidden="true"></div>
+      <table class="bounds-table"><caption>주문번호 순서로 펼친 고정 입력</caption>
+        <thead><tr><th scope="col">주문</th><th scope="col">품목 행</th><th scope="col">누적 행</th><th scope="col">가운데 위치</th><th scope="col">담당</th></tr></thead>
+        <tbody id="weight-rows"><tr><td>10</td><td>1</td><td>1</td><td>0.5</td><td>A</td></tr><tr><td>20</td><td>1</td><td>2</td><td>1.5</td><td>A</td></tr><tr><td>30</td><td>2</td><td>4</td><td>3</td><td>A</td></tr><tr><td>90</td><td>4</td><td>8</td><td>6</td><td>B</td></tr></tbody>
+      </table>
+      <p id="boundary-summary" aria-live="polite">저장된 주문번호 경계는 90입니다.</p>
+      <ul id="boundary-ranges"><li>A · 주문번호 90 미만 · 주문 3건 · 품목 4행</li><li>B · 주문번호 90 이상 · 주문 1건 · 품목 4행</li></ul>
+      <figcaption id="boundary-explanation">총 8행을 N=2로 나누면 기준선은 4입니다. 가운데가 6인 주문 90부터 두 번째 구간이므로 저장되는 주문번호 경계는 90입니다.</figcaption>
+    </figure>
+    <details class="primer"><summary>가운데를 계산하는 식과 빈 구간 읽기</summary>
+      <p>가운데 위치는 <code>누적 행 − 현재 주문의 행 수 ÷ 2</code>입니다. 여기에 활성 서버 수 N을 곱하고 전체 행 수로 나눈 뒤 소수점 아래를 버리면 임시 구간 번호가 나옵니다. 각 임시 구간의 첫 주문번호 중 두 번째부터가 실제 경계입니다. 경계 번호 자체는 오른쪽 구간에 포함됩니다.</p>
+      <p>실제 계획은 주문이 있는 구간부터 앞쪽에 붙여 저장한 뒤, 총 N개가 될 때까지 빈 구간을 둡니다. 서버 3대에 주문이 한 건이면 첫 구간이 주문 전체를 맡고 두 구간은 비어 있습니다. 큰 주문 하나를 둘로 쪼개지 않으므로 품목 행 수도 항상 같지는 않습니다.</p>
+    </details>
+    <p>위의 선택은 각각 <strong>새 계획을 만드는 시점</strong>을 보여 줍니다. N은 서버 간 주문 구간 수입니다. 각 JVM 안에서 상품을 나누는 로컬 worker 수는 별도 설정이므로, 서버가 2대여도 각자 다른 수의 worker로 자기 구간을 처리할 수 있습니다.</p>
+  </section>
+  <div class="followup">
+    <section><h2>계산 도중 세 번째 서버가 들어오면 경계를 새로 나눌까요?</h2><p>이번 판본에 저장한 주문 경계와 로컬 분할 기준은 유지합니다. 정상적인 인수 절차를 거쳐 담당 서버가 바뀌어도 스냅샷 ID와 구간 번호가 같으면 같은 JobInstance로 이어집니다. 다음 판본의 계획을 만들 때 가동 중인 서버 수를 다시 셉니다.</p></section>
+    <section class="sources"><h2>구현과 검증 근거</h2><ul>
+      <li><a href="../../../apps/commerce-batch/src/main/java/com/loopers/batch/job/ranking/coordination/WeeklyPlanStore.java">ensurePlan의 활성 서버 조회, weights·totals·buckets 계산과 N개 구간 저장</a></li>
+      <li><a href="../../../apps/commerce-batch/src/main/java/com/loopers/infrastructure/persistence/ranking/JdbcWeeklyRankingOrderPartitionInputs.java">주문 구간별 상품번호를 나누는 구현</a></li>
+      <li><a href="../../../apps/commerce-batch/src/main/java/com/loopers/batch/job/ranking/orderpartition/WeeklyRankingOrderPartitionJobConfig.java">로컬 worker를 실행하는 Spring Batch 설정</a></li>
+      <li><a href="../../../apps/commerce-batch/src/test/java/com/loopers/ranking/WeeklyRankingOrderPartitionJobTest.java">새 담당자가 같은 JobInstance를 재개한 시험</a></li>
+    </ul></section>
+  </div>
+  <nav class="footer" aria-label="이어 읽기"><a href="snapshot.html">← 스냅샷</a>
+    <a href="index.html#contents">전체 목차</a> <a href="consistency.html">배치 정합성 →</a>
+  </nav>
+</main>
+</body></html>

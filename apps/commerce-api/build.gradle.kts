@@ -4,6 +4,13 @@ sourceSets.test {
     resources.srcDir(rootProject.file("docs/week6-7/r01-order-events-inbox/fixtures"))
 }
 
+tasks.processTestResources {
+    from(rootProject.file("docker/payment-lab")) {
+        include("014-weekly-ranking-snapshots.sql", "015-weekly-ranking-scores.sql", "016-weekly-ranking-publication.sql")
+        into("preservation/ranking")
+    }
+}
+
 dependencyManagement {
     imports {
         mavenBom("io.github.resilience4j:resilience4j-bom:2.3.0")
@@ -30,6 +37,7 @@ dependencies {
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:${project.properties["springDocOpenApiVersion"]}")
 
     // querydsl
+    implementation("io.github.openfeign.querydsl:querydsl-sql:${project.properties["queryDslVersion"]}")
     annotationProcessor("io.github.openfeign.querydsl:querydsl-apt:${project.properties["queryDslVersion"]}:jpa")
     annotationProcessor("jakarta.persistence:jakarta.persistence-api")
     annotationProcessor("jakarta.annotation:jakarta.annotation-api")

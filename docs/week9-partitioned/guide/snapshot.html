@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>B가 늦게 시작해도 A와 같은 시점의 구매를 읽으려면 어떻게 할까요? · 주간 구매 랭킹</title>
+  <link rel="stylesheet" href="guide.css">
+  <script defer src="lesson.js"></script>
+</head>
+<body>
+<header class="mast"><div class="shell">
+  <a class="brand" href="index.html"><svg aria-hidden="true" viewBox="0 0 24 18"><rect x="1" y="11" width="5" height="7"/><rect x="9" y="6" width="5" height="12"/><rect x="17" y="1" width="5" height="17"/></svg>주간 구매 랭킹</a>
+  <nav aria-label="학습 자료"><a href="index.html#contents">주제 목차</a><a href="../weekly-ranking-flow.html">전체 애니메이션 ↗</a></nav>
+</div></header>
+<main class="shell">
+  <header class="intro"><p class="letter">실행 준비와 분할 / 스냅샷</p>
+    <h1>B가 늦게 시작해도 A와 같은 시점의 구매를 읽으려면 어떻게 할까요?</h1><p class="lead">계획을 만드는 순간 주간 구매를 한 번 복사해 둡니다. A와 B는 그 사본에서 각자 맡은 주문을 읽고, 중간에 멈췄다가 다시 시작해도 같은 사본을 사용합니다.</p>
+  </header>
+  <div class="reader">
+    <figure id="lab" class="lab" aria-labelledby="lab-title">
+      <div class="lab-head"><h2 id="lab-title">스냅샷 단계별로 보기</h2>
+        <div class="controls" hidden>
+          <button type="button" data-play>흐름 재생</button><button type="button" data-prev>이전</button><button type="button" data-next>다음</button>
+          <button type="button" data-repeat hidden>같은 3점 다시 보내기</button><span data-count></span>
+        </div>
+      </div>
+      <div class="step-tabs" role="group" aria-label="장면 선택" hidden>
+        <button type="button" data-pick="0">주간 선택</button>
+        <button type="button" data-pick="1">한 번 복사</button>
+        <button type="button" data-pick="2">주문 11 도착</button>
+        <button type="button" data-pick="3">사본 확정</button>
+      </div>
+      <svg id="diagram" role="img" hidden></svg>
+      <ol class="stages">
+      <li class="stage">
+        <h3>주문 확정 시각으로 어느 주에 속하는지 정합니다</h3>
+        <dl class="nodes">
+          <div><dt>구매 원본</dt><dd>주문 10·20</dd></div>
+          <div><dt>복사 작업</dt><dd>지난주 선택</dd></div>
+          <div><dt>주간 사본</dt><dd>아직 없음</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="0" data-to="1">주차 확인</li>
+        </ul>
+        <p class="stage-note">이 그림은 실제 MySQL 시험의 주문번호를 따릅니다. 해당 주의 범위는 UTC 월요일 00시부터 다음 월요일 00시 직전까지입니다.</p>
+      </li>
+      <li class="stage">
+        <h3>한 번의 읽기에서 확정돼 있던 구매만 복사합니다</h3>
+        <dl class="nodes">
+          <div><dt>구매 원본</dt><dd>주문 10·20</dd></div>
+          <div><dt>복사 작업</dt><dd>한 시점 읽기</dd></div>
+          <div><dt>주간 사본</dt><dd>10·20 복사 중</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="0" data-to="1">읽기</li>
+          <li data-from="1" data-to="2">복사</li>
+        </ul>
+        <p class="stage-note">MySQL은 명령 하나(INSERT … SELECT)로 이미 저장이 확정된 구매를 읽어 복사합니다. 기록된 고정 시각(frozenAt)은 명령 직전에 찍은 시각이고, 어떤 구매를 담을지는 실제로 원본을 읽는 시점에 정해집니다.</p>
+      </li>
+      <li class="stage">
+        <h3>복사 도중에 주문 11이 커밋됩니다</h3>
+        <dl class="nodes">
+          <div><dt>구매 원본</dt><dd>10·11·20</dd></div>
+          <div><dt>복사 작업</dt><dd>기존 읽기 유지</dd></div>
+          <div><dt>주간 사본</dt><dd>10·20 복사 중</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="1" data-to="2">같은 읽기 유지</li>
+        </ul>
+        <p class="stage-note">시험에서는 복사 도중 다른 DB 연결이 같은 주의 주문 11을 저장했습니다. 이 행은 이미 시작한 복사 문장의 읽기 시점 이후에 커밋됐습니다.</p>
+      </li>
+      <li class="stage">
+        <h3>A와 B는 완성된 같은 사본을 나눠 읽습니다</h3>
+        <dl class="nodes">
+          <div><dt>공통 사본</dt><dd>10·20 총 2행</dd></div>
+          <div><dt>서버 A</dt><dd>주문 10 한 행</dd></div>
+          <div><dt>서버 B</dt><dd>주문 20 한 행</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="0" data-to="1">범위 읽기</li>
+          <li data-from="0" data-to="2">범위 읽기</li>
+        </ul>
+        <p class="stage-note">계획·사본·주문 경계·전체 및 구간별 건수와 체크섬이 한 번에 확정됩니다. B가 나중에 시작해도 같은 판본의 사본에서 주문 20을 읽습니다.</p>
+      </li>
+      </ol>
+      <p class="sr-only" data-live role="status" aria-live="polite"></p>
+      <figcaption><a href="../weekly-ranking-flow.html?case=late&amp;step=1#flow-figure">입력을 한 번 고정하는 장면</a> · 함께 읽기 &ndash; <a href="late-events.html">늦은 이벤트 도착</a></figcaption>
+    </figure>
+    <aside class="terms" aria-labelledby="terms-title"><h2 id="terms-title">이 장의 용어</h2>
+      <dl><dt>스냅샷</dt><dd>한 판본의 계산에 사용할 구매 품목을 따로 저장한 사본입니다.</dd>
+        <dt>커밋</dt><dd>여러 변경을 데이터베이스에 한꺼번에 확정하는 일입니다. 확정된 구매는 이후에 시작하는 다른 작업도 읽을 수 있습니다.</dd>
+        <dt>체크섬</dt><dd>입력값과 순서로 계산한 지문입니다. 행 수가 같아도 내용이 바뀌면 검산에서 찾아낼 수 있습니다.</dd></dl>
+    </aside>
+  </div>
+  <div class="followup">
+    <section><h2>계획을 만드는 도중 실패하면 절반만 복사된 사본을 읽게 될까요?</h2><p>MySQL 시험에서 두 번째 주문 구간을 저장할 때 강제로 실패시키자 계획·복사 행·경계가 함께 취소됐습니다. 두 서버 모두 부분 사본을 읽지 않았고, 같은 판본 번호로 다시 요청해 완성된 사본을 만들 수 있었습니다.</p></section>
+    <section class="sources"><h2>구현과 검증 근거</h2><ul>
+      <li><a href="../../../apps/commerce-batch/src/main/java/com/loopers/infrastructure/persistence/ranking/JdbcRankingSnapshotRepository.java">입력을 하나의 읽기 시점에 복사하는 쿼리</a></li>
+      <li><a href="../../../apps/commerce-batch/src/test/java/com/loopers/batch/job/ranking/coordination/WeeklyPlanGlobalFreezeTest.java">복사 도중 주문 11을 넣는 실제 MySQL 시험</a></li>
+      <li><a href="../adr-0001-weekly-ranking.md#모든-주문-구간이-한-시점의-구매를-읽는다">공통 사본을 선택한 이유</a></li>
+    </ul></section>
+  </div>
+  <nav class="footer" aria-label="이어 읽기"><a href="scheduler.html">← 스케줄러</a>
+    <a href="index.html#contents">전체 목차</a> <a href="partitioning.html">배치 파티셔닝 →</a>
+  </nav>
+</main>
+</body></html>

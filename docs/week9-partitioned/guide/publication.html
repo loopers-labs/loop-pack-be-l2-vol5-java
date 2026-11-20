@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>계산 중에 고객이 조회하면 어느 랭킹을 볼까요? · 주간 구매 랭킹</title>
+  <link rel="stylesheet" href="guide.css">
+  <script defer src="lesson.js"></script>
+</head>
+<body>
+<header class="mast"><div class="shell">
+  <a class="brand" href="index.html"><svg aria-hidden="true" viewBox="0 0 24 18"><rect x="1" y="11" width="5" height="7"/><rect x="9" y="6" width="5" height="12"/><rect x="17" y="1" width="5" height="17"/></svg>주간 구매 랭킹</a>
+  <nav aria-label="학습 자료"><a href="index.html#contents">주제 목차</a><a href="../weekly-ranking-flow.html">전체 애니메이션 ↗</a></nav>
+</div></header>
+<main class="shell">
+  <header class="intro"><p class="letter">점수 계산과 고객 공개 / 검산과 고객 공개</p>
+    <h1>계산 중에 고객이 조회하면 어느 랭킹을 볼까요?</h1><p class="lead">고객은 요청한 주에 마지막으로 공개한 완성본을 봅니다. 새 판본의 검산이 끝나면 순위, 완성 기록, 조회할 판본을 가리키는 값이 한꺼번에 저장됩니다.</p>
+  </header>
+  <div class="reader">
+    <figure id="lab" class="lab" aria-labelledby="lab-title">
+      <div class="lab-head"><h2 id="lab-title">검산과 고객 공개 단계별로 보기</h2>
+        <div class="controls" hidden>
+          <button type="button" data-play>흐름 재생</button><button type="button" data-prev>이전</button><button type="button" data-next>다음</button>
+          <button type="button" data-repeat hidden>같은 3점 다시 보내기</button><span data-count></span>
+        </div>
+      </div>
+      <div class="step-tabs" role="group" aria-label="장면 선택" hidden>
+        <button type="button" data-pick="0">계산 중 조회</button>
+        <button type="button" data-pick="1">공개 직전 조회</button>
+        <button type="button" data-pick="2">정상 공개</button>
+        <button type="button" data-pick="3">저장 실패 사례</button>
+        <button type="button" data-pick="4">역순 완료 사례</button>
+      </div>
+      <svg id="diagram" role="img" hidden></svg>
+      <ol class="stages">
+      <li class="stage">
+        <h3>새 판본 R2를 계산하는 동안 고객은 R1을 읽습니다</h3>
+        <dl class="nodes">
+          <div><dt>새 랭킹</dt><dd>R2 계산 중</dd></div>
+          <div><dt>공개 포인터</dt><dd>R1 가리킴</dd></div>
+          <div><dt>고객 조회</dt><dd>R1 순위</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="1" data-to="2">R1 읽기</li>
+        </ul>
+        <p class="stage-note">같은 주의 R1이 이미 공개된 예시입니다. 어떤 구간이 먼저 점수를 저장해도 고객 조회는 포인터가 가리키는 완성본에서 순위를 읽습니다.</p>
+      </li>
+      <li class="stage">
+        <h3>검산이 끝나도 저장을 확정하기 전에는 R1이 보입니다</h3>
+        <dl class="nodes">
+          <div><dt>새 랭킹</dt><dd>R2 검산 통과</dd></div>
+          <div><dt>공개 포인터</dt><dd>R1 가리킴</dd></div>
+          <div><dt>고객 조회</dt><dd>R1 순위</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="1" data-to="2">R1 읽기</li>
+        </ul>
+        <p class="stage-note">배치는 모든 구간이 끝났고 충돌이 없는지 확인합니다. 고정 입력과 점수도 맞으면 점수가 높은 순으로 줄을 세우고, 동점에서는 상품 번호가 작은 쪽을 앞에 둡니다.</p>
+      </li>
+      <li class="stage">
+        <h3>순위와 공개 포인터를 함께 확정하면 R2가 보입니다</h3>
+        <dl class="nodes">
+          <div><dt>새 랭킹</dt><dd>R2 완성</dd></div>
+          <div><dt>공개 포인터</dt><dd>R2 가리킴</dd></div>
+          <div><dt>고객 조회</dt><dd>R2 순위</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="0" data-to="1">함께 확정</li>
+          <li data-from="1" data-to="2">R2 읽기</li>
+        </ul>
+        <p class="stage-note">검증용 구매에서 상품 7과 9는 각각 5점이므로 7이 1위, 9가 2위입니다. 1점인 상품 8이 3위로 뒤따릅니다.</p>
+      </li>
+      <li class="stage">
+        <h3>별도 실패 사례에서는 공개 도중 오류가 나도 R1이 보입니다</h3>
+        <dl class="nodes">
+          <div><dt>새 랭킹</dt><dd>R2 저장 실패</dd></div>
+          <div><dt>공개 포인터</dt><dd>R1 유지</dd></div>
+          <div><dt>고객 조회</dt><dd>R1 순위</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="0" data-to="1">변경 되돌림</li>
+          <li data-from="1" data-to="2">R1 읽기</li>
+        </ul>
+        <p class="stage-note">이번에는 R1이 공개된 시점으로 돌아가 R2를 저장하는 과정에 오류를 넣습니다. 새 순위·완성 기록·포인터 변경을 함께 되돌리므로 고객에게 R2의 일부 순위가 노출될 틈이 없습니다.</p>
+      </li>
+      <li class="stage">
+        <h3>별도 경쟁 사례에서도 포인터는 최신 판본을 유지합니다</h3>
+        <dl class="nodes">
+          <div><dt>늦게 끝난 작업</dt><dd>이전 판본</dd></div>
+          <div><dt>공개 포인터</dt><dd>최신 판본 유지</dd></div>
+          <div><dt>고객 조회</dt><dd>최신 판본 순위</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="0" data-to="1">판본 비교</li>
+          <li data-from="1" data-to="2">최신본 읽기</li>
+        </ul>
+        <p class="stage-note">같은 주의 새 판본을 먼저 공개한 뒤 이전 판본의 계산이 뒤늦게 끝나는 경우입니다. 배치는 그 주의 포인터 행을 잠그고 판본 번호를 비교해 이미 공개된 최신 순위를 유지합니다.</p>
+      </li>
+      </ol>
+      <p class="sr-only" data-live role="status" aria-live="polite"></p>
+      <figcaption><a href="../weekly-ranking-flow.html?case=replay&amp;step=4#flow-figure">검산에서 공개로 넘어가는 장면</a> · 함께 읽기 &ndash; <a href="consistency.html">배치 정합성</a></figcaption>
+    </figure>
+    <aside class="terms" aria-labelledby="terms-title"><h2 id="terms-title">이 장의 용어</h2>
+      <dl><dt>판본</dt><dd>같은 주의 랭킹을 새로 계산할 때 붙이는 번호입니다. 여기서 R1은 첫 판본, R2는 두 번째 판본입니다.</dd>
+        <dt>공개 포인터</dt><dd>고객 조회가 어떤 완성본을 읽을지 가리키는 DB 기록입니다.</dd>
+        <dt>트랜잭션</dt><dd>여러 DB 변경을 함께 확정하거나 함께 되돌리는 작업 단위입니다.</dd></dl>
+    </aside>
+  </div>
+  <div class="followup">
+    <section><h2>고객 응답이 빈 목록이면 아직 공개 전인가요?</h2><p>주간 랭킹 API에서 첫 공개 전에는 상태가 NOT_PUBLISHED이고 스냅샷 ID가 비어 있습니다. 구매가 0건인 주도 계산을 마치면 상태가 PUBLISHED이고 스냅샷 ID가 있습니다. 두 응답 모두 목록은 비어 있습니다. 그림의 R1·R2는 내부 판본 표기이며, 고객 응답에는 스냅샷 ID가 제공됩니다.</p></section>
+    <section class="sources"><h2>구현과 검증 근거</h2><ul>
+      <li><a href="../../../apps/commerce-batch/src/test/java/com/loopers/ranking/OrderPartitionedPublicationTest.java">공개와 역순 완료를 검증한 주문 파티션 시험</a></li>
+      <li><a href="../../../apps/commerce-batch/src/test/java/com/loopers/ranking/WeeklyRankingPublicationTest.java">공개 중 저장 오류를 주입한 MySQL 시험</a></li>
+      <li><a href="../../../apps/commerce-api/src/test/java/com/loopers/interfaces/api/ranking/controller/WeeklyRankingApiTest.java">빈 목록·공개 상태·스냅샷 ID를 비교한 고객 API 시험</a></li>
+    </ul></section>
+  </div>
+  <nav class="footer" aria-label="이어 읽기"><a href="idempotency.html">← 배치 멱등성</a>
+    <a href="index.html#contents">전체 목차</a> <a href="late-events.html">늦은 이벤트 도착 →</a>
+  </nav>
+</main>
+</body></html>

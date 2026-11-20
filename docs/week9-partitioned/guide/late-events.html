@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>지난주 주문이 늦게 도착하면 언제 순위에 들어갈까요? · 주간 구매 랭킹</title>
+  <link rel="stylesheet" href="guide.css">
+  <script defer src="lesson.js"></script>
+</head>
+<body>
+<header class="mast"><div class="shell">
+  <a class="brand" href="index.html"><svg aria-hidden="true" viewBox="0 0 24 18"><rect x="1" y="11" width="5" height="7"/><rect x="9" y="6" width="5" height="12"/><rect x="17" y="1" width="5" height="17"/></svg>주간 구매 랭킹</a>
+  <nav aria-label="학습 자료"><a href="index.html#contents">주제 목차</a><a href="../weekly-ranking-flow.html">전체 애니메이션 ↗</a></nav>
+</div></header>
+<main class="shell">
+  <header class="intro"><p class="letter">시간과 실행이 어긋날 때 / 늦은 이벤트 도착</p>
+    <h1>지난주 주문이 늦게 도착하면 언제 순위에 들어갈까요?</h1><p class="lead">주문을 확정한 시각이 어느 주의 구매인지를 정합니다. 그 주의 계산용 사본을 만든 뒤 도착한 구매는 같은 주를 새 판본으로 계산할 때 포함됩니다.</p>
+  </header>
+  <div class="reader">
+    <figure id="lab" class="lab" aria-labelledby="lab-title">
+      <div class="lab-head"><h2 id="lab-title">늦은 이벤트 도착 단계별로 보기</h2>
+        <div class="controls" hidden>
+          <button type="button" data-play>흐름 재생</button><button type="button" data-prev>이전</button><button type="button" data-next>다음</button>
+          <button type="button" data-repeat hidden>같은 3점 다시 보내기</button><span data-count></span>
+        </div>
+      </div>
+      <div class="step-tabs" role="group" aria-label="장면 선택" hidden>
+        <button type="button" data-pick="0">R2 고정</button>
+        <button type="button" data-pick="1">늦은 구매 도착</button>
+        <button type="button" data-pick="2">R2 공개</button>
+        <button type="button" data-pick="3">R3 새로 고정</button>
+        <button type="button" data-pick="4">R3 공개</button>
+      </div>
+      <svg id="diagram" role="img" hidden></svg>
+      <ol class="stages">
+      <li class="stage">
+        <h3>구매 5행을 복사해 R2의 입력을 닫습니다</h3>
+        <dl class="nodes">
+          <div><dt>구매 원본</dt><dd>구매 품목 5행</dd></div>
+          <div><dt>계산용 사본</dt><dd>R2 · 5행</dd></div>
+          <div><dt>고객 랭킹</dt><dd>R1 공개 중</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="0" data-to="1">5행 복사</li>
+        </ul>
+        <p class="stage-note">실제 두 서버 시험에서 주문번호 3 미만은 A, 3 이상은 B가 맡았습니다. 두 서버 모두 이 5행에서 자기 구간을 읽습니다.</p>
+      </li>
+      <li class="stage">
+        <h3>A와 B 양쪽 구간에 상품 8의 구매가 들어옵니다</h3>
+        <dl class="nodes">
+          <div><dt>구매 원본</dt><dd>5행 → 7행</dd></div>
+          <div><dt>계산용 사본</dt><dd>R2 · 5행 유지</dd></div>
+          <div><dt>고객 랭킹</dt><dd>R1 공개 중</dd></div>
+        </dl>
+        <ul class="edges">
+
+        </ul>
+        <p class="stage-note">주문 2의 상품 8 세 개와 주문 6의 상품 8 네 개가 원본에 들어옵니다. 구매 수량은 7개 늘고, 구매 품목은 두 줄 늘어납니다.</p>
+      </li>
+      <li class="stage">
+        <h3>B가 재시작해도 상품 8은 R2에서 1점입니다</h3>
+        <dl class="nodes">
+          <div><dt>구매 원본</dt><dd>구매 품목 7행</dd></div>
+          <div><dt>계산용 사본</dt><dd>R2 · 5행 유지</dd></div>
+          <div><dt>고객 랭킹</dt><dd>R2 · 상품 8은 1점</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="1" data-to="2">검산 후 공개</li>
+        </ul>
+        <p class="stage-note">시험에서는 B의 첫 점수 저장이 실패해서 B를 재시작했습니다. 다시 읽은 사본에도 늦은 두 주문은 없으므로 R2에는 상품 7이 5점으로 1위, 상품 8이 1점으로 2위가 됩니다.</p>
+      </li>
+      <li class="stage">
+        <h3>운영자가 같은 주의 R3를 요청합니다</h3>
+        <dl class="nodes">
+          <div><dt>구매 원본</dt><dd>구매 품목 7행</dd></div>
+          <div><dt>계산용 사본</dt><dd>R3 · 7행</dd></div>
+          <div><dt>고객 랭킹</dt><dd>R2 공개 중</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="0" data-to="1">7행 다시 복사</li>
+        </ul>
+        <p class="stage-note">이번에는 원본 7행 전체를 새로 고정합니다. 늦었던 두 주문은 R3 사본에 각각 한 줄씩 들어가고, 계산하는 동안 고객은 R2를 봅니다.</p>
+      </li>
+      <li class="stage">
+        <h3>상품 8이 8점으로 1위가 됩니다</h3>
+        <dl class="nodes">
+          <div><dt>구매 원본</dt><dd>구매 품목 7행</dd></div>
+          <div><dt>계산용 사본</dt><dd>R3 · 7행</dd></div>
+          <div><dt>고객 랭킹</dt><dd>R3 · 상품 8은 8점</dd></div>
+        </dl>
+        <ul class="edges">
+          <li data-from="1" data-to="2">검산 후 공개</li>
+        </ul>
+        <p class="stage-note">상품 8의 수량은 1 + 3 + 4 = 8입니다. R3의 입력과 결과가 일치하면 고객 순위가 바뀌고, 상품 7은 5점으로 2위가 됩니다.</p>
+      </li>
+      </ol>
+      <p class="sr-only" data-live role="status" aria-live="polite"></p>
+      <figcaption><a href="../weekly-ranking-flow.html?case=late&amp;step=2#flow-figure">고정 뒤 도착한 주문 두 건</a> · 함께 읽기 &ndash; <a href="snapshot.html">스냅샷</a></figcaption>
+    </figure>
+    <aside class="terms" aria-labelledby="terms-title"><h2 id="terms-title">이 장의 용어</h2>
+      <dl><dt>구매 이벤트</dt><dd>주문 확정 사실을 전달하는 메시지입니다. 메시지를 받은 쪽이 상품과 수량을 구매 원본에 기록합니다.</dd>
+        <dt>스냅샷</dt><dd>한 번의 랭킹 계산에 쓸 구매 행을 한 시점에 복사한 사본입니다.</dd>
+        <dt>판본(revision)</dt><dd>같은 주를 다시 계산할 때 붙이는 번호입니다. R2는 두 번째 판본, R3는 세 번째 판본입니다.</dd></dl>
+    </aside>
+  </div>
+  <div class="followup">
+    <section><h2>B의 시작을 늦추면 더 최신 순위가 나올까요?</h2><p>두 서버가 같은 사본을 읽으므로 B의 시작 시각은 이번 판본의 결과를 바꾸지 않습니다. 늦은 구매까지 반영하려면 운영자가 같은 주의 새 판본을 요청해야 합니다.</p></section>
+    <section class="sources"><h2>구현과 검증 근거</h2><ul>
+      <li><a href="../verification.md#두-jvm에서-고정-후-도착한-실제-구매">늦은 주문 2·6과 고객 응답을 대조한 MySQL 기록</a></li>
+      <li><a href="../../../apps/commerce-streamer/src/test/java/com/loopers/application/ranking/WeeklyRankingFlowTest.java">실제 결제부터 R3 공개까지 확인한 테스트</a></li>
+    </ul></section>
+  </div>
+  <nav class="footer" aria-label="이어 읽기"><a href="publication.html">← 검산과 고객 공개</a>
+    <a href="index.html#contents">전체 목차</a> <a href="retry.html">배치 재시도 →</a>
+  </nav>
+</main>
+</body></html>
