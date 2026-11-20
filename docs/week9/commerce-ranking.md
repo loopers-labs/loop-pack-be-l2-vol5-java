@@ -105,7 +105,7 @@ job `weeklyRanking`의 Step 3 `publishWeeklyRanking`(tasklet)은 step 트랜잭�
 - **[사용자 결정(w9t-1)] 끝남은 pointer로 판단한다(w9d).** 실패·중단된 실행이라도 그 주 pointer의 revision이 그 실행의 revision 이상이면 끝난 것으로 보고 건너뛴다. 남은 실행 중 최대 revision을 재시작하고, 없으면 최대 revision + 1로 새로 실행한다. 건너뛴 실행의 revision도 최대 계산에 들어간다. Batch 기록은 고치지 않는다(UNKNOWN·STARTED·FAILED 그대로 남는다).
   - 이유: 공개는 마지막 Step이고 한 TX라(7절 전제) pointer가 r이면 r의 랭킹은 모두 들어가 있다. pointer가 r보다 새 revision이면 r을 다시 공개해도 덮지 않는다(7절 3). 어느 쪽이든 r을 다시 돌릴 일이 없다. Batch 기록은 "다시 돌려야 하나"를 보는 작업 일지이고, 공개 여부의 기준은 pointer다.
   - **[구현 판단]** pointer revision은 `WeeklyRankingRepository`가 pointer → snapshot 정보 조인으로 읽는다(새 칸 없음, 평범한 SELECT, pointer가 없으면 0으로 본다). 런처는 Job 밖에서 한 번 읽는다.
-  - 감수한 위험 1: 공개 commit 뒤 기록만 남은 실행(또는 런처가 pointer를 읽은 직후 commit된 공개)과 새 revision 실행이 잠깐 겹칠 수 있다. pointer는 조건부 교체(지금 revision < 새 revision, 7절 3)라 순서가 뒤집히지 않는다. 이 경쟁은 테스트로 재현하지 않았다.
+  - 감수한 위험 1: 런처는 실행 목록을 먼저 읽고 pointer를 나중에 읽는다. 어떤 실행이 pointer를 읽기 전에 공개를 commit했는데 아직 STARTED로 마무리 기록 중이면, 런처는 그 실행을 건너뛰고 새 revision을 시작하므로 두 실행이 잠깐 겹친다. pointer는 조건부 교체(지금 revision < 새 revision, 7절 3)라 순서가 뒤집히지 않는다. pointer를 읽은 뒤에 commit된 공개는 옛 pointer로 판단되므로 겹치지 않고, 그 실행의 재시작 시도나 같은 r+1 JobInstance 실행이 Spring Batch에서 거절된다. 이 경쟁은 테스트로 재현하지 않았다.
   - 감수한 위험 2: Batch 기록은 틀린 채 남는다(공개까지 끝났는데 UNKNOWN·STARTED로 보인다). 모니터링에는 실패로 보이므로 공개 판단은 pointer로 한다.
 - 같은 기간을 동시에 실행하면 같은 이름(같은 JobInstance)이 되어 하나만 진행하고 나머지는 거절된다.
 - **[사용자 결정] D159** 늦은 구매(고정 뒤 들어온 같은 주 구매)는 사람이 런처로 다시 실행해 다음 revision(마지막 + 1)을 만든다. 자동 감지·정기 재실행·자동 확장은 이번 범위가 아니며 기록만 한다.
@@ -117,8 +117,8 @@ job `weeklyRanking`의 Step 3 `publishWeeklyRanking`(tasklet)은 step 트랜잭�
 - **런처의 남은 우려(이번 범위에서 고치지 않음):**
   - `weeklyRanking`의 모든 JobInstance를 500개씩 훑는다. 이력이 쌓이면 실행 전 조회가 길어진다(C 측정에서 확인).
   - 공개까지 끝난 STARTED·UNKNOWN 실행(pointer revision ≥ 그 실행 revision)은 w9d에서 풀렸다. 런처가 건너뛰고 새 revision으로 진행한다.
-  - 공개 전 단계에서 프로세스가 죽어 STARTED로 남은 실행(pointer revision < 그 실행 revision)은 여전히 같은 parameter 재시작을 시도하고, Spring Batch가 실행 중으로 보고 거절한다. 사람이 그 실행을 FAILED(또는 ABANDONED)로 바꾼 뒤 다시 실행해야 한다.
-  - 공개 전 단계의 ABANDONED·UNKNOWN도 재시작 대상으로 잡힌다. ABANDONED는 재시작할 수 없어 거절되고 그 주는 더 진행하지 않는다(새 revision을 만들지 않는다). 사람이 판단한다.
+  - 공개 전 단계에서 프로세스가 죽어 STARTED로 남은 실행(pointer revision < 그 실행 revision)은 여전히 같은 parameter 재시작을 시도하고, Spring Batch가 실행 중으로 보고 거절한다. 사람이 그 실행을 FAILED로 바꾼 뒤 다시 실행해야 한다.
+  - ABANDONED·UNKNOWN도 pointer revision ≥ 그 실행 revision이면 건너뛴다(w9d). 공개 전 단계의 ABANDONED·UNKNOWN만 재시작 대상으로 잡힌다. ABANDONED는 재시작할 수 없어 거절되고 그 주는 더 진행하지 않는다(새 revision을 만들지 않는다). 사람이 판단한다.
   - 재시작할 때는 실패한 실행의 parameter를 그대로 쓰므로 이번 `--ranking.size`는 무시된다. K를 늘리려면 완료 뒤 확장 job을 쓴다.
 
 ## 10. 고객 API [사용자 결정 D157·D158]
