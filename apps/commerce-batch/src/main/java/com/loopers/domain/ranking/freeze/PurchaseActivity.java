@@ -1,4 +1,4 @@
-package com.loopers.domain.ranking;
+package com.loopers.domain.ranking.freeze;
 
 import com.loopers.domain.BaseEntity;
 import jakarta.persistence.Column;

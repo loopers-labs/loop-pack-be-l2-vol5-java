@@ -1,6 +1,6 @@
-package com.loopers.infrastructure.ranking;
+package com.loopers.infrastructure.ranking.score;
 
-import com.loopers.domain.ranking.WeeklyRankingScoreStage;
+import com.loopers.domain.ranking.score.WeeklyRankingScoreStage;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;

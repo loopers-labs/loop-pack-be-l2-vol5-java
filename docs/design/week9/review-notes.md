@@ -11,13 +11,13 @@
 | 태스크 | 커밋 | 먼저 볼 파일 |
 |---|---|---|
 | 1 기반 | `caa308b` | `apps/commerce-batch/build.gradle.kts`, `src/main/resources/application.yml`(local ddl update, chunk-size) |
-| 2 domain 규칙 | `261426b` | `domain/ranking/WeeklyRankingPeriod.java`(revision·공개 분기), `WeeklyRankingSnapshot.java`, `SnapshotChecksum.java`, `RankingOrder.java` |
-| 3 엔티티·저장소·probe | `34dfc78` | `infrastructure/ranking/WeeklyRankingSnapshotInputRepositoryImpl.java`(HQL insert-select), `PurchaseActivity.java`(@Immutable 원본), `test/.../job/probe/BatchRestartProbeTest.java` |
-| 4 입력 고정 Step | `1e0f422` | `domain/ranking/WeeklyRankingInputFreezer.java`, `batch/job/weeklyranking/WeeklyRankingJobConfig.java`(READ_COMMITTED) |
-| 5 계산 Step | `e45f721` | `WeeklyRankingJobConfig.java`(reader·chunk), `domain/ranking/WeeklyScoreCalculator.java`, `test/.../RankingJobRestartTest.java` |
-| 6 공개 Step | `14c3561` | `domain/ranking/WeeklyRankingPublisher.java`, `PublishTasklet.java`, `test/.../WeeklyRankingFlowTest.java` |
+| 2 domain 규칙 | `261426b` | `domain/ranking/WeeklyRankingPeriod.java`(revision·공개 분기), `WeeklyRankingSnapshot.java`, `SnapshotChecksum.java`, `domain/ranking/publish/RankingOrder.java` |
+| 3 엔티티·저장소·probe | `34dfc78` | `infrastructure/ranking/freeze/WeeklyRankingSnapshotInputRepositoryImpl.java`(HQL insert-select), `domain/ranking/freeze/PurchaseActivity.java`(@Immutable 원본), `test/.../job/probe/BatchRestartProbeTest.java` |
+| 4 입력 고정 Step | `1e0f422` | `domain/ranking/freeze/WeeklyRankingInputFreezer.java`, `batch/job/weeklyranking/WeeklyRankingJobConfig.java`(READ_COMMITTED) |
+| 5 계산 Step | `e45f721` | `WeeklyRankingJobConfig.java`(reader·chunk), `domain/ranking/score/WeeklyScoreCalculator.java`, `test/.../RankingJobRestartTest.java` |
+| 6 공개 Step | `14c3561` | `domain/ranking/publish/WeeklyRankingPublisher.java`, `batch/job/weeklyranking/publish/PublishTasklet.java`, `test/.../WeeklyRankingFlowTest.java` |
 
-경로 앞부분 `apps/commerce-batch/src/main/java/com/loopers/`(테스트는 `src/test/java/com/loopers/`)는 생략했다.
+경로 앞부분 `apps/commerce-batch/src/main/java/com/loopers/`(테스트는 `src/test/java/com/loopers/`)는 생략했다. 경로는 단계별 패키지 정리(freeze·score·publish) 뒤 위치다.
 
 ### 관찰한 실제 값
 
@@ -35,12 +35,12 @@
 
 ### 테스트·검사 결과
 
-`./gradlew :apps:commerce-batch:check` 통과(Checkstyle main·test 포함). 테스트 27건, skip 0, 실패 0.
+`./gradlew :apps:commerce-batch:check` 통과(Checkstyle main·test 포함). 테스트 28건, skip 0, 실패 0(패키지 정리 뒤 기준).
 
 | 테스트 클래스 | 건수 |
 |---|---|
 | domain 단위 (`WeeklyPeriodTest` 3, `RankingOrderTest` 1, `SnapshotChecksumTest` 2, `WeeklyRankingPeriodTest` 5, `WeeklyRankingSnapshotTest` 2, `WeeklyRankingScoreStageTest` 1) | 14 |
-| `ArchitectureTest` | 2 |
+| `ArchitectureTest` (레이어 방향 2, 단계 패키지 순환 1) | 3 |
 | `BatchRestartProbeTest` | 1 |
 | `RankingJobRestartTest` | 2 |
 | `WeeklyRankingFlowTest` | 5 |

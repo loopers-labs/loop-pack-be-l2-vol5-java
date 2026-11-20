@@ -1,6 +1,7 @@
-package com.loopers.domain.ranking;
+package com.loopers.domain.ranking.freeze;
 
 import com.loopers.domain.BaseEntity;
+import com.loopers.domain.ranking.SnapshotInputLine;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Index;

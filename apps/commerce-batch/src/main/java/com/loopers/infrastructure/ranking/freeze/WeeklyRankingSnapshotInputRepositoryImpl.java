@@ -1,9 +1,9 @@
-package com.loopers.infrastructure.ranking;
+package com.loopers.infrastructure.ranking.freeze;
 
 import com.loopers.domain.ranking.SnapshotInputLine;
 import com.loopers.domain.ranking.WeeklyPeriod;
-import com.loopers.domain.ranking.WeeklyRankingSnapshotInput;
-import com.loopers.domain.ranking.WeeklyRankingSnapshotInputRepository;
+import com.loopers.domain.ranking.freeze.WeeklyRankingSnapshotInput;
+import com.loopers.domain.ranking.freeze.WeeklyRankingSnapshotInputRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;

@@ -7,6 +7,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
 
 class ArchitectureTest {
     private static final JavaClasses CLASSES = new ClassFileImporter()
@@ -27,6 +28,14 @@ class ArchitectureTest {
     void batchDoesNotDependOnInfrastructure() {
         noClasses().that().resideInAPackage("com.loopers.batch..")
             .should().dependOnClassesThat().resideInAPackage("com.loopers.infrastructure..")
+            .check(CLASSES);
+    }
+
+    @DisplayName("주간 랭킹 단계 패키지(freeze·score·publish) 사이에 순환 의존이 없다.")
+    @Test
+    void rankingStagePackagesAreFreeOfCycles() {
+        slices().matching("com.loopers.(domain|infrastructure).ranking.(*)..")
+            .should().beFreeOfCycles()
             .check(CLASSES);
     }
 }

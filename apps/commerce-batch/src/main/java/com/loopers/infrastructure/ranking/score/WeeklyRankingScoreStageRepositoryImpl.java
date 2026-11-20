@@ -1,7 +1,7 @@
-package com.loopers.infrastructure.ranking;
+package com.loopers.infrastructure.ranking.score;
 
-import com.loopers.domain.ranking.WeeklyRankingScoreStage;
-import com.loopers.domain.ranking.WeeklyRankingScoreStageRepository;
+import com.loopers.domain.ranking.score.WeeklyRankingScoreStage;
+import com.loopers.domain.ranking.score.WeeklyRankingScoreStageRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 

@@ -1,5 +1,6 @@
-package com.loopers.domain.ranking;
+package com.loopers.domain.ranking.score;
 
+import com.loopers.domain.ranking.freeze.WeeklyRankingSnapshotInputRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 

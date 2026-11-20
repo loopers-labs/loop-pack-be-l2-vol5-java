@@ -1,5 +1,7 @@
-package com.loopers.domain.ranking;
+package com.loopers.domain.ranking.publish;
 
+import com.loopers.domain.ranking.RankedProduct;
+import com.loopers.domain.ranking.score.ProductScore;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

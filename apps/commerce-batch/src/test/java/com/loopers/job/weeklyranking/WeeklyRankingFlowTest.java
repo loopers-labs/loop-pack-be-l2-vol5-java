@@ -1,8 +1,8 @@
 package com.loopers.job.weeklyranking;
 
 import com.loopers.batch.job.weeklyranking.WeeklyRankingJobConfig;
-import com.loopers.domain.ranking.WeeklyRankingRepository;
-import com.loopers.domain.ranking.WeeklyRankingSnapshotInputRepository;
+import com.loopers.domain.ranking.freeze.WeeklyRankingSnapshotInputRepository;
+import com.loopers.domain.ranking.publish.WeeklyRankingRepository;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;

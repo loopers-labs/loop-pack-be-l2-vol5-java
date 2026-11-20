@@ -1,4 +1,4 @@
-package com.loopers.domain.ranking;
+package com.loopers.domain.ranking.score;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

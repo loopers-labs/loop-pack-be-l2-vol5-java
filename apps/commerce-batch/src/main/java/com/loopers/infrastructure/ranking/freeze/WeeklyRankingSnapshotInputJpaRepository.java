@@ -1,6 +1,6 @@
-package com.loopers.infrastructure.ranking;
+package com.loopers.infrastructure.ranking.freeze;
 
-import com.loopers.domain.ranking.WeeklyRankingSnapshotInput;
+import com.loopers.domain.ranking.freeze.WeeklyRankingSnapshotInput;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;

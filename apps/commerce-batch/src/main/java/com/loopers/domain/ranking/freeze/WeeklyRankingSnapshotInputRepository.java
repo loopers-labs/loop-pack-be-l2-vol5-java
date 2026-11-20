@@ -1,4 +1,7 @@
-package com.loopers.domain.ranking;
+package com.loopers.domain.ranking.freeze;
+
+import com.loopers.domain.ranking.SnapshotInputLine;
+import com.loopers.domain.ranking.WeeklyPeriod;
 
 import java.time.ZonedDateTime;
 import java.util.List;

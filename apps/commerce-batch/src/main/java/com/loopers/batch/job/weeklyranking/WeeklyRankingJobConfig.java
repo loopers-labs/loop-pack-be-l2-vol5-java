@@ -1,6 +1,10 @@
 package com.loopers.batch.job.weeklyranking;
 
-import com.loopers.domain.ranking.ProductScore;
+import com.loopers.batch.job.weeklyranking.freeze.FreezeInputTasklet;
+import com.loopers.batch.job.weeklyranking.publish.PublishTasklet;
+import com.loopers.batch.job.weeklyranking.score.WeeklyScoreProcessor;
+import com.loopers.batch.job.weeklyranking.score.WeeklyScoreWriter;
+import com.loopers.domain.ranking.score.ProductScore;
 import jakarta.persistence.EntityManagerFactory;
 import lombok.RequiredArgsConstructor;
 import org.springframework.batch.core.Job;

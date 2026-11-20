@@ -1,4 +1,4 @@
-package com.loopers.domain.ranking;
+package com.loopers.domain.ranking.score;
 
 /** 한 snapshot 에서 상품 하나의 구매 수량 합. */
 public record ProductScore(Long productId, long score) {

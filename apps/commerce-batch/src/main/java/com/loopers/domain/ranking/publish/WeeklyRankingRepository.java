@@ -1,4 +1,4 @@
-package com.loopers.domain.ranking;
+package com.loopers.domain.ranking.publish;
 
 import java.util.List;
 

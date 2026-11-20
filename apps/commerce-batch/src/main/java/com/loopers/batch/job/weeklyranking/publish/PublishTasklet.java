@@ -1,8 +1,12 @@
-package com.loopers.batch.job.weeklyranking;
+package com.loopers.batch.job.weeklyranking.publish;
 
+import com.loopers.batch.job.weeklyranking.WeeklyRankingJobConfig;
+import com.loopers.batch.job.weeklyranking.WeeklyRankingJobParameters;
+import com.loopers.domain.ranking.PublishOutcome;
 import com.loopers.domain.ranking.WeeklyPeriod;
-import com.loopers.domain.ranking.WeeklyRankingInputFreezer;
+import com.loopers.domain.ranking.publish.WeeklyRankingPublisher;
 import lombok.RequiredArgsConstructor;
+import org.springframework.batch.core.ExitStatus;
 import org.springframework.batch.core.StepContribution;
 import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.core.scope.context.ChunkContext;
@@ -18,9 +22,12 @@ import java.time.LocalDate;
 @ConditionalOnProperty(name = "spring.batch.job.name", havingValue = WeeklyRankingJobConfig.JOB_NAME)
 @RequiredArgsConstructor
 @Component
-public class FreezeInputTasklet implements Tasklet {
+public class PublishTasklet implements Tasklet {
 
-    private final WeeklyRankingInputFreezer freezer;
+    /** 계산은 끝났지만 더 새 revision 이 이미 공개돼 있어 pointer 를 바꾸지 않았다. 재시작 대상이 아니다. */
+    public static final ExitStatus SUPERSEDED = new ExitStatus("SUPERSEDED");
+
+    private final WeeklyRankingPublisher publisher;
 
     @Value("#{jobParameters['" + WeeklyRankingJobParameters.PERIOD_START + "']}")
     private LocalDate periodStart;
@@ -30,8 +37,10 @@ public class FreezeInputTasklet implements Tasklet {
 
     @Override
     public RepeatStatus execute(StepContribution contribution, ChunkContext chunkContext) {
-        Long jobExecutionId = chunkContext.getStepContext().getStepExecution().getJobExecutionId();
-        freezer.freeze(new WeeklyPeriod(periodStart), Math.toIntExact(revision), jobExecutionId);
+        PublishOutcome outcome = publisher.publish(new WeeklyPeriod(periodStart), Math.toIntExact(revision));
+        if (outcome == PublishOutcome.SUPERSEDED) {
+            contribution.setExitStatus(SUPERSEDED);
+        }
         return RepeatStatus.FINISHED;
     }
 }

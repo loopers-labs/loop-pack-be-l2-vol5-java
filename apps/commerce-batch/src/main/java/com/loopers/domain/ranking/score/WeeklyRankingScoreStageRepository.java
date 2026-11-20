@@ -1,4 +1,4 @@
-package com.loopers.domain.ranking;
+package com.loopers.domain.ranking.score;
 
 import java.util.List;
 import java.util.Optional;
