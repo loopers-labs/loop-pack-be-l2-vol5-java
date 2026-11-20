@@ -3,7 +3,7 @@
 > - 표기: ✅ 합의 · 🔧 AI 기본값 · 🤔 결정 필요
 > - 과제 원문: Notion 9주차 발제·실습 (비공개). 아래 "과제 요약"이 원문 정리본 (2026-11-17 읽음)
 > - 진행: D-1부터 D-9까지 하나씩 정했다.
-> - 브랜치: `volume-9-claude` (기준 `4e7fefa5` = volume-8, upstream PR #127 머지됨). push하지 않는다.
+> - 브랜치: `volume-9` (기준 `4e7fefa5` = volume-8, upstream PR #127 머지됨).
 
 ## 한눈에 보기
 
@@ -194,6 +194,7 @@ UTC 구간 [2026-08-17T00:00:00Z, 2026-08-24T00:00:00Z)
 | D-9 | 테스트·체크리스트 매핑 — 특히 §7 "한 연결 테스트" 범위 | ✅ 11-18 |
 
 - ✅ 테스트 코드는 `// given` · `// when` · `// then` 세 부분으로 나눈다. 🔧 when이 둘로 나뉘면 테스트도 둘로 나눈다.
+- ✅ 테스트 메서드 이름은 한국어 문장으로 쓰고 `@DisplayName`은 붙이지 않는다 (이름이 곧 설명).
 
 **코드 구조 ✅: commerce-batch는 settlement 예제(`자료/9주차batch/settlement`, Batch 6) 구조를 따른다**
 
@@ -499,7 +500,7 @@ GET /api/v1/rankings/weekly?periodStart=2026-08-17&limit=3
 
 - ✅ `periodStart`는 필수다. 없으면 400. 기본값(지난주)을 두지 않는다 — UTC 기준이라 한국 시간 월요일 오전 9시 전에는 2주 전 주가 되고, 아직 공개 전이면 `NOT_PUBLISHED`가 나와 헷갈린다.
 - ✅ 항목마다 순위·상품 ID·점수 + 이름·가격·브랜드(id, name)를 담는다. 기존 고객 상품 응답(`ProductDto.ProductResponse`)의 표시 정보와 같은 규칙. 좋아요 수는 넣지 않는다 (집계가 하나 더 필요하고 랭킹과 관계없다).
-- 🔧 (구현 ④에서 바꿈) 조회는 두 번: ① `ranking_publication` + `ranking_snapshot`(frozen_at)으로 그 주 공개 snapshot을 찾고 ② **그 snapshotId의** `weekly_ranking` → `product`(`deleted_at IS NULL`, PRD-06) → `brand`를 순위 순으로 limit만큼 읽는다. 삭제 상품을 먼저 빼고 `ORDER BY rank_no LIMIT`를 적용한다.
+- ✅ (구현 ④에서 바꿈) 조회는 두 번: ① `ranking_publication` + `ranking_snapshot`(frozen_at)으로 그 주 공개 snapshot을 찾고 ② **그 snapshotId의** `weekly_ranking` → `product`(`deleted_at IS NULL`, PRD-06) → `brand`를 순위 순으로 limit만큼 읽는다. 삭제 상품을 먼저 빼고 `ORDER BY rank_no LIMIT`를 적용한다.
   - 한 query로 하지 않은 이유: 상품이 모두 삭제된 공개 주를 한 query(LEFT JOIN + 삭제 조건)로 읽으면 행이 0개가 되어 NOT_PUBLISHED로 잘못 보인다.
   - 섞이지 않는 이유: ②는 ①이 돌려준 snapshotId로 읽고, 공개된 snapshot의 행은 바뀌지 않는다. 그사이 pointer가 r2로 바뀌어도 응답은 r1의 snapshotId와 r1의 행으로 일관된다 (`@Transactional(readOnly = true)` 한 TX 안이기도 하다).
 - 응답에서 null 필드는 빠진다 (JacksonConfig `NON_NULL`). NOT_PUBLISHED면 `snapshotId`·`frozenAt`이 없다.
@@ -709,7 +710,7 @@ revision을 정하는 규칙. "가장 큰 revision"은 그 주의 Batch 기록�
 | 사람이 실수하면 | 결과 |
 |---|---|
 | 재시작하려다 `--recompute=true`를 붙임 (r1 작업이 입력 고정 뒤 FAILED) | r2 작업이 새로 시작된다. r1 작업은 FAILED로 남고 다시 돌지 않는다. r2가 최신 원본으로 계산하므로 결과는 틀리지 않는다 |
-| 재시작하려다 `--recompute=true`를 붙임 (r1 작업이 입력 고정 **전에** FAILED, snapshot 없음) | 🔧 거절하고 "재계산이 아니라 --recompute 없이 재시작하세요"라고 안내한다 (영속성 리뷰 11-18: r2로 가면 입력 고정 step이 "가장 큰 revision + 1"로 계속 거절해 그 주가 막힌다) |
+| 재시작하려다 `--recompute=true`를 붙임 (r1 작업이 입력 고정 **전에** FAILED, snapshot 없음) | ✅ 거절하고 "재계산이 아니라 --recompute 없이 재시작하세요"라고 안내한다 (영속성 리뷰 11-18: r2로 가면 입력 고정 step이 "가장 큰 revision + 1"로 계속 거절해 그 주가 막힌다) |
 | 재계산하려다 `--recompute=true`를 빠뜨림 (r1 작업이 COMPLETED) | "이미 끝난 작업"으로 거절 → 붙여서 다시 실행 |
 | revision 번호를 틀림 (r2 없이 r3 등) | 번호를 넣지 않으므로 생기지 않는다 |
 
@@ -821,3 +822,4 @@ run.sh (격리 자원의 수명주기를 소유: MySQL 1 · Kafka 3대 · PG 시
 | 2026-11-18 | 구현 ① 결정 ✅ InputSummary 기대값 a·b·c 확정, 원본 테이블 매핑은 batch 테스트 소스에만, 격리 수준은 step ExecutionContext에 기록 |
 | 2026-11-18 | D-2·D-4 수정 ✅ 고정 입력·점수 테이블을 일반 id PK + 상품 순 UNIQUE index로 (Hibernate가 복합 PK 순서를 이름순으로 바꿈). 1M 실측: GROUP BY 0.8초 → 6.1초 |
 | 2026-11-18 | 구현 ①~⑤. 리뷰 반영(테스트: 주석 정정·checksum만 다른 불일치·r2 정상·validator 연결·given/when/then / 영속성: checked 예외도 rollback, enum length 제거, `--recompute` 출처 불일치 → 🔧 snapshot 없으면 거절). 관찰: MySQL 흘려 읽기는 `verifyCursorPosition(false)` 필요, read.count 2 → 4, VERSION + 1이 옛 실행의 chunk를 rollback. D-6 조회를 두 번으로 바꿈(전부 삭제된 주를 NOT_PUBLISHED로 오인하지 않게) |
+| 2026-11-19 | 구현 뒤 기본값 3개 ✅: `--recompute`인데 snapshot이 없으면 거절(D-8), API 조회 두 번(D-6), 테스트 메서드 이름은 한국어·`@DisplayName` 없음. 브랜치 이름을 `volume-9`로 |
