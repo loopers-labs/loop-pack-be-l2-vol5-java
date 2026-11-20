@@ -2,6 +2,91 @@
 
 [전체 설계](commerce-erd-draft.md) · [API 계약](commerce-api-contract.md) · [TDD 계획](commerce-tdd-plan.md)
 
+## W9 주간 랭킹의 선택
+
+2026-11-19의 입력 고정·점수 Job·재시작에 이어 4단계 완성본 공개와 고객 API를 연결했다. [W9 원문](../week9/assignment-original.md)의 업무 조건과 사용자의 **A 저장 배치·기간/revision 지정 실행·미공개 404** 선택을 유지한다. 아래 표는 전체 기술 선택이며 `weeklyRanking`은 입력 고정·점수 계산·공개의 세 Step이다. [입력 기록](../week9/snapshot-freeze-tdd-log.md)·[점수/checkpoint 기록](../week9/score-checkpoint-tdd-log.md)은 당시 증거로 보존하고 공개/API 증분의 구현·실행 범위는 [4단계 기록](../week9/publication-api-tdd-log.md)을 따른다. 5단계에서는 실제 PG부터의 전체 흐름을 [별도 TDD 기록](../week9/full-chain-ranking-tdd-log.md)으로 연결했다. 기존 정책을 유지하며 전체 회귀·채점 대조의 현재 결과와 남은 범위는 [6단계 최종 검증 기록](../week9/final-verification.md)을 따른다. 검사 결과와 제출 완료는 구분한다. [전체 설계](commerce-erd-draft.md#w9-주간-구매-랭킹-설계) · [API 계약](commerce-api-contract.md#w9-주간-랭킹-계약) · [TDD 계획](commerce-tdd-plan.md#w9-주간-랭킹-테스트-계획)
+
+| ID·근거 | 선택·설계 | 검토한 대안 | 이유·받아들이는 비용 |
+| --- | --- | --- | --- |
+| W9-D01 · 사용자 선택 A | 구매 활동 DB에 snapshot·stage·완성 결과·pointer·Batch metadata를 별도 테이블로 함께 둠 | 별도 랭킹 DB에 입력을 복사하고 결과/metadata를 모음 | 일관된 입력 고정과 chunk 공동 TX를 검증하기 단순함. source 저장·배치·API 조회의 DB 자원 공유 비용은 남음. 별도 DB도 source 읽기/target 쓰기 구조로 가능하며 분산 쓰기 TX가 필수인 것은 아님 |
+| W9-D02 · 사용자 선택 | 운영자가 기간·revision을 지정하는 초기 명시 실행. 같은 주의 작업은 순차 실행 | 주간 자동 스케줄과 늦은 구매 자동 재계산 | 같은 작업 재시작과 새 입력 재계산을 직접 구분해 검증. 실행 시점·늦은 자료 반영은 운영자가 맡으며 자동 반영 기한을 약속하지 않음 |
+| W9-D03 · 기술 설계 | periodStart/revision에서 안정된 snapshotId 생성, 같은 식별 parameter 유지 | 매번 현재 시각/run.id 추가, 입력마다 새 UUID만 발급 | 동일 작업의 영속 checkpoint를 찾기 쉽고 기간·revision과 연결 가능. ID만으로 데이터 일치를 보장하지 않으므로 manifest·유일 제약 검증 필요 |
+| W9-D04 · 기술 설계 | 실제 DB RR TX의 일반 SELECT로 입력 읽기, 입력·manifest 공동 저장 | max(id)만 저장하고 원본 재조회, 페이지마다 다른 TX, 무조건 INSERT…SELECT | 지연 commit/늦은 활동에 따라 입력이 달라지는 일을 막음. 원본 읽기 view와 실제 복사 내용을 근거로 삼음. 작은 입력에서도 전체 freeze TX의 IO·undo 비용은 존재 |
+| W9-D05 · 기술 설계 | 상품 ID 하나를 item으로 읽고 고정 입력의 합을 절대값 upsert | 활동별 score 증가 + 적용 중복 원장 | 같은 점수 재쓰기의 결과가 같고 consumer의 중복 제거와 책임을 구분하기 쉬움. 합산 query/인덱스 비용은 실제 구현에서 확인. 증분 방식도 원문상 허용되지만 이번 설계에서는 사용하지 않음 |
+| W9-D06 · 원문 요구·기술 설계 | 별도 stage·완성 결과와 주별 pointer. 완료 확인·결과 저장·pointer 갱신을 같은 TX로 보호 | 같은 TX에서 공개 결과 전체 교체, COMPLETE 중 최대 revision 선택 | 기간별 공개 대상을 한 행에 명시하고 이전 완성본을 보존. 결과/입력 검증·추가 저장 비용을 받아들이며 자동 삭제는 추가하지 않음 |
+| W9-D07 · 사용자 선택 | 미공개 404, 공개된 빈 결과 200. 기본 limit 10·최대 100. 잘못된 입력 400·DB 연결 장애 503 | 미공개도 200 NOT_PUBLISHED | 고객이 아직 결과가 없는 상태를 HTTP로 구분하도록 선택. 클라이언트는 404 미공개와 503 장애를 구분해야 함. 원문의 NOT_PUBLISHED 상태명/최대100은 예시이며 이 프로젝트의 구체 계약은 API 문서에 정의 |
+| W9-D08 · 기술 설계 | snapshotId를 고정한 읽기 + 현재 상품 공개 정보 일괄 조회·필터 후 limit | 상위 limit 먼저 읽고 삭제 상품만 제거, 표시 상품을 랭킹에 영구 복사 | 현재 삭제·브랜드 비노출 규칙을 지키면서 요청 수를 채움. 두 DB 연결 및 후보 추가 조회 비용이 있고 전역 단일 시점 읽기를 제공하지 않음 |
+| W9-D09 · 기술 설계 | SHA-256 내용 checksum v1, long/BIGINT 점수·건수·순위 | 실행 ID 포함 checksum, int 합계 또는 조용한 skip | 정상/재시작 결과를 비교하고 overflow를 드러냄. checksum 일치만 믿지 않고 손 계산 점수·순위를 함께 assert |
+
+2단계에서는 안정된 입력 ID·RR 원본 복사·공동 저장·입력 checksum을 구현했고, 3단계에서는 고정 parameter·영속 reader·long 점수와 절대값 writer를 연결했다. [입력 DDL](../../apps/commerce-batch/src/main/resources/db/schema/001-weekly-ranking-input.sql)의 `input_state=FROZEN`은 **입력 완성**만 뜻한다. [점수 DDL](../../apps/commerce-batch/src/main/resources/db/schema/002-weekly-ranking-score.sql)은 `calculation_state=CALCULATING/COMPLETE`와 stage를 추가한다. [공개 DDL](../../apps/commerce-batch/src/main/resources/db/schema/003-weekly-ranking-publication.sql)과 세 번째 Step은 결과·checksum·COMPLETE·pointer를 함께 저장한다. COMPLETE는 해당 snapshot의 결과 완성을 뜻하며 현재 고객 공개 여부는 기간별 pointer로 판단한다.
+
+source는 읽기 전용이고 원본 인덱스는 변경하지 않았다. source 조회는 기본 500행씩 나누지만 전체 입력을 List에 보관하므로 메모리는 입력 건수에 비례한다. chunk=2는 재시작 경계를 관찰할 초기 실험값이다. writer는 manifest 잠금과 함께 고정 합계를 다시 확인하므로 상품마다 SUM 조회가 추가된다. 이 비용을 새로운 업무 건수 제한이나 성능 보장으로 바꾸지 않는다.
+
+입력 adapter는 첫 manifest 조회부터 활성 TX·자기 DataSource의 bound connection·auto-commit 비활성·실제 RR을 확인한다. 서비스 내부 annotation이 이미 시작한 바깥 TX를 바꾸지 못하므로 실제 freeze Step부터 RR로 시작한다. 점수 writer는 같은 manifest를 잠그고 FROZEN/CALCULATING일 때만 고정 합과 일치하는 절대값을 쓴다. Boot의 `JpaTransactionManager`와 JDBC JobRepository·writer의 실제 공동 연결/rollback 테스트는 이번 3단계의 별도 증거이며, 2단계의 명시적 JDBC manager 테스트만으로 이를 추정하지 않는다.
+
+### 공개 방식 비교와 현재 선택
+
+| 방식 | 성립 조건과 비용 | 이번 선택 |
+| --- | --- | --- |
+| 공개 pointer | 결과와 완료 조건을 먼저 검증하고 같은 TX에서 기간별 snapshotId·revision을 선택. 이전 결과 보관과 pointer 무결성 관리가 필요 | 사용. 어떤 완성본이 공개 중인지 명시하고 오래된 실행의 후퇴를 막기 쉬움 |
+| COMPLETE 중 최대 revision | 완성이 곧 공개라는 정책이면 가능. 조회가 선택한 snapshotId를 고정하면 응답 일관성도 유지 가능 | 계산 완료와 공개 선택을 명시적으로 나누기 위해 사용하지 않음 |
+| 공개 결과 전체 교체 | 삭제·새 결과 저장을 같은 TX로 묶으면 원자적 공개 가능. 큰 결과의 변경 비용과 이전 revision 보존을 별도 고려 | 이전 snapshot을 보존하며 한 행으로 공개 대상을 바꾸는 방식을 선택 |
+
+pointer는 메모리 주소가 아니라 `weekly_ranking_publication`의 DB 행이다. publisher는 자기 manifest를 잠그고 완성 입력·stage를 대조한 뒤 결과·완료 metadata·pointer를 같은 TX에 쓴다. pointer의 revision 조건부 upsert는 더 큰 값만 반영하며, 기간·snapshotId·revision의 composite FK가 다른 주/차수의 잘못된 연결을 막는다. 같은 완료본 재실행은 기존 결과와 checksum을 대조한다. 이 보호는 단일 실행 운영 범위를 대체하는 전체 Job 분산 락이 아니다.
+
+### API의 별도 랭킹 읽기 연결
+
+`RankingReadResource`가 Hikari pool과 JdbcTemplate을 내부 소유한다. 이를 별도 DataSource·JdbcTemplate·transaction manager bean으로 노출하지 않아 기존 main JPA 자동구성과 상품·주문 TX/락을 유지한다. 종료 때 전용 pool도 닫는다. `commerce.ranking.query.enabled`는 기본 false이며 `WEEKLY_RANKING_QUERY_ENABLED`로 켠다. `jdbc-url`·`username`·`password`는 각각 `WEEKLY_RANKING_QUERY_JDBC_URL`·`WEEKLY_RANKING_QUERY_USERNAME`·`WEEKLY_RANKING_QUERY_PASSWORD`로 공급한다. 구매 활동 DB의 랭킹 조회용 계정을 명시하며 계정의 실제 읽기 권한은 DB에서 설정해야 한다. 비활성일 때 정상 형식의 랭킹 요청은 503이고 기존 상품 DB로 fallback하지 않는다.
+
+전용 pool 최대 3, 연결 대기 1초, query timeout 2초, driver connect 1초/socket 2초는 무한 대기를 피하는 초기 기술값이다. 쿼리별·연결별 제한이며 API 전체 응답 시간 상한이나 측정한 최적값은 아니다. 현재 상품 표시에는 기존 main DB의 RR 읽기 TX를 사용한다. 두 DB를 하나의 전역 snapshot으로 보장하지 않는다.
+
+### 실행 식별과 수동 운영 범위
+
+| 항목 | 설계 |
+| --- | --- |
+| 실행 입력 | `periodStart=2026-08-17`, `revision=1`처럼 날짜·양의 revision을 명시. 날짜는 UTC 월요일 기준이며 다음 주 시작은 서버 계산 |
+| snapshotId | `WeeklyRankingKey`가 `weekly-20260817-r1`처럼 생성하며 입력 DDL은 VARCHAR(64) PK와 기간/revision 유일 제약을 둠. `WeeklyRankingJobParameters`가 Job의 기간·revision·파생 ID 일치를 검증 |
+| 작업 식별 | `weeklyRanking` + identifying `periodStart(String)`·`revision(Long)`·`snapshotId(String)` 세 개만 허용. 추가 parameter·run.id·현재 시각·실패 스위치·non-identifying 값은 거절. 동일 값의 실패 재시작은 같은 instance의 새 execution |
+| revision | 최초 1, 새 입력은 같은 주의 더 큰 revision. 같은 revision 재사용은 기존 입력의 재시작/조회이며 재복사 금지. `(periodStart, revision)` DB 유일성으로 다른 snapshot 중복 등록 거절 |
+| 실행 담당 | 한 전용 실행 주체에서 동기 JobLauncher로 한 job씩 끝내고 다음 작업을 실행하는 초기 운영 범위. 같은 주의 여러 Batch JVM을 동시에 실행하지 않음. 짧은 freeze/publication 잠금을 전체 job의 직렬화로 주장하지 않음 |
+| 실패 재개 | FAILED의 같은 parameter·같은 metadata로 새 execution. STARTED/UNKNOWN이면 이전 프로세스와 DB 작업이 끝났는지 확인한 뒤 상태 복구 절차를 따름. 단순 timeout·경과 시간만으로 살아 있는 실행을 끝났다고 판정하지 않음 |
+| 완료 후 | 완료된 JobInstance를 무조건 재실행하지 않음. 정상 job은 세 번째 공개 Step까지 마침. 공개 서비스 자체의 동일 snapshot 재호출은 결과 보존과 pointer 후퇴 방지 테스트로 별도 검증 |
+| 범위·한계 | 스케줄러·다중 실행 주체 자동 조율·자동 revision 생성/복구는 이번 초기 설계에 없음. 동일 기간의 다중 프로세스까지 허용하려면 전체 실행 소유권/복구 설계와 경합 테스트를 먼저 추가해야 함 |
+
+재시작용 [weekly-ranking profile](../../apps/commerce-batch/src/main/resources/application-weekly-ranking.yml)은 Batch schema 초기화 never·JPA DDL none·SQL 초기화 never를 명시한다. 지정한 DB 환경과 조합할 때 마지막 profile로 적용하고 최초 schema 준비를 한 번 수동 수행한다. 실행 사이에 metadata·입력·stage를 초기화하지 않는다. 기존 local/demo 동작은 유지하며 사용자 DB에 새 DDL을 자동 적용하지 않는다.
+
+공개 commit 뒤 최종 Batch 완료 기록 전의 실패는 테스트 전용 `afterChunk` 예외로 검증한다. 실제 공개 결과를 독립 조회한 뒤 FAILED의 같은 instance를 재시작해 같은 결과로 수렴시킨다. 이는 metadata SQL 오류와 다른 주입 위치다. 실제 metadata 저장 실패로 UNKNOWN이 되거나 JVM 중단으로 STARTED가 남으면 무조건 재실행하지 않고 실행 종료·공개 사실·metadata를 대조한다. 이 범위를 임의 상태 변경이나 새 run.id로 우회하지 않는다.
+
+### checksum v1과 시각·수치
+
+다음은 입력과 완성 결과에 사용하는 checksum 규격이다. 사용자 카드 등 비밀값의 HMAC과 관계없는 **내용 비교용 checksum**이며 새로운 보안·인증 기능이 아니다.
+
+| 대상 | 정렬·직렬화 규칙 |
+| --- | --- |
+| 입력 | `(orderId ASC, productId ASC)`. 각 행의 필드는 `orderId`, `productId`, `quantity`, `confirmedAt` 순 |
+| 결과 | 저장된 `rank ASC`. 각 행은 `productId`, `score`, `rank` 순 |
+| 공통 바이트 | UTF-8, BOM 없음, 필드 사이 TAB(`\t`), 행 사이 LF(`\n`), **비어 있지 않은 마지막 행에도 LF**. 헤더·공백·로케일 천 단위 구분 없음 |
+| 수·시간 | 정수는 10진수, confirmedAt은 UTC·소수 9자리(예: `2026-08-17T01:00:00.000000001Z`). 원본 초/나노초를 읽어 보존하며 `appendInstant(9)`와 같은 고정 formatter 사용 |
+| 알고리즘·저장 | SHA-256, 소문자 16진수 64자와 `checksumVersion=v1` 보관. 빈 입력/빈 결과는 0바이트의 digest. snapshotId·revision·JobExecution ID·frozenAt·실행 시각·현재 상품 이름은 내용 digest에서 제외 |
+| 검증 | 원문 정답 7:5점/1위, 9:5점/2위, 8:1점/3위와 digest를 함께 비교. 불일치 시 실제 입력·결과 차이를 조사하며 기대값 변경·입력 skip으로 통과시키지 않음 |
+
+현재 score는 long/BIGINT 범위의 양수 수량 합이며 SQL SUM을 `BigDecimal.longValueExact()`로 변환한다. int 범위를 넘는 정상 합은 보존하고 long 범위를 벗어나면 실패시킨다. 입력 0건도 manifest와 빈 완성 결과의 checksum을 저장하고 공개하며, HTTP는 실제 snapshotId와 빈 items를 반환한다. 결과 checksum과 손 계산 순위를 함께 검증한다. `frozenAt`은 입력 고정 작업의 관측 시각이며 commit watermark가 아니다. manifest 선조회 전에 이 시각을 확보한다.
+
+### 실제 사건과 재시작 증거의 연결
+
+5단계는 기존 서비스를 새 구현으로 대체하지 않고 주문 HTTP에서 생성한 PG 성공·Outbox·Kafka record·streamer 구매 활동을 입력으로 사용한다. 단위/DB fixture의 기대값과 같은 5/5/1을 실제 주문 3건·활동 4행으로 대조한다. 중복은 같은 offset을 다시 읽었다고 대신하지 않고 같은 eventId의 새 Kafka record가 실제 DUPLICATE로 소비된 뒤 활동·점수가 유지되는지 확인한다.
+
+늦은 구매는 현재 시각으로 과거 활동을 직접 INSERT하는 방식으로 만들지 않는다. 같은 원래 주에 확정한 네 번째 실제 주문의 relay 전달을 보류했다가 r2 입력 고정·계산 실패 뒤 전달한다. 이 지연은 테스트 준비 방식이며 생산 relay에 새로운 운영용 보류 정책을 추가하지 않는다. source가 5행으로 늘어난 뒤에도 r2는 4행·같은 입력 checksum으로 재개하고 새 r3에만 추가 구매를 반영한다.
+
+Batch 실패와 재개는 서로 다른 JVM이며 DB·JobRepository·업무 식별 parameter는 같다. 앱 간 Java 클래스 직접 의존이나 중간 DB 초기화로 재시작을 흉내 내지 않는다. 정상 네 번째 주문으로 발생한 결제·재고 효과와 배치/재발행/복구의 추가 효과를 분리해, 후자의 PG 생성·주문 재확정·재고 소비가 0인지 확인한다. 증분 실행 결과는 [5단계 기록](../week9/full-chain-ranking-tdd-log.md)을 따르며 처리량·성능 보장으로 확대하지 않는다. 전체 회귀·채점 대조의 현재 결과는 [최종 검증 기록](../week9/final-verification.md)에서 구분한다.
+
+### 설계 근거와 확인할 한계
+
+- [과제 원문](../week9/assignment-original.md)의 실제 활동·snapshot·chunk probe·공개·늦은 구매 조건을 기준으로 한다. [기존 DemoJobConfig](../../apps/commerce-batch/src/main/java/com/loopers/batch/job/demo/DemoJobConfig.java)의 새 run.id와 resourceless TX는 이번 재시작 근거로 재사용하지 않는다.
+- [Spring Batch 5.2 Step 문서](https://docs.spring.io/spring-batch/reference/5.2/step/chunk-oriented-processing/configuring.html)는 chunk의 transaction manager와 commit 전 ExecutionContext 기록을 설명한다. 실제 writer·metadata의 connection 참여와 rollback은 [3단계 실행 기록](../week9/score-checkpoint-tdd-log.md)의 Boot/MySQL 실험에서 별도 관찰한다.
+- [MySQL 8.0 consistent read](https://dev.mysql.com/doc/refman/8.0/en/innodb-consistent-read.html)의 RR 읽기 view를 사용한다. [SQL별 잠금 문서](https://dev.mysql.com/doc/refman/8.0/en/innodb-locks-set.html)에 따라 `INSERT ... SELECT`의 원본 읽기를 일반 SELECT와 같은 비잠금 view라고 가정하지 않는다.
+- 입력 고정·점수 adapter 테스트는 소유 MySQL의 명시적 JDBC manager, 실제 Job 테스트는 Boot가 구성한 JPA manager·영속 metadata를 사용한다. 사용자 DB·공유 Redis·기존 topic/group은 사용하지 않는다. 선행 [입력 고정 기록](../week9/snapshot-freeze-tdd-log.md)과 이번 [점수·재시작 기록](../week9/score-checkpoint-tdd-log.md)을 구분하며 성능 수치는 주장하지 않는다.
+
 ## W8 쿠폰 발급 선택
 
 11월 12일 반영한 [멘토 공지와 전체 설계](commerce-erd-draft.md#w8-쿠폰-예약과-발급)를 기준으로 한다. 고객에게 약속하는 대상은 특정 사용자의 캠페인 쿠폰 한 장이다. 클릭 시각에 따른 순위나 발급 완료 시각을 약속하지 않는다.

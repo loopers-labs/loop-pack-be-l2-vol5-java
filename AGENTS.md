@@ -14,6 +14,15 @@
 
 | 문서 | 역할 |
 | --- | --- |
+| [W9 채점 기준](docs/week9/grading-criteria.md) | 11월 17일 제공된 주간 구매 랭킹·고정 입력·동일 instance 재시작·완성본 공개의 원문 9항목과 확인 증거 |
+| [W9 과제 원문](docs/week9/assignment-original.md) | 실제 구매 활동 snapshot·weeklyRanking·공개 API, chunk/checkpoint·늦은 구매 revision·검증·제출 요구 원문 보존 |
+| [W9 학습 자료 원문](docs/week9/learning-original.md) | Job/Step·영속 실행 식별·입력 고정·멱등 writer·공개 pointer와 복구 판단의 개념 근거 |
+| [W9 구현 체크리스트](docs/week9/implementation-checklist.md) | 현재 Batch·구매 활동·API 기반, 선택 A·기간/revision 지정 실행·미공개 404 계약, 6단계 작업과 설계/실제 구현·검사 상태 |
+| [W9 입력 snapshot 고정 TDD 기록](docs/week9/snapshot-freeze-tdd-log.md) | 2단계 RR 원본 복사·manifest 공동 TX·입력 재사용·나노 정밀도·지연 commit·실제 SQL rollback과 Batch 검사. 점수 job·checkpoint·공개·API는 후속이며 사용자 DB 미접근 |
+| [W9 점수·checkpoint 재시작 TDD 기록](docs/week9/score-checkpoint-tdd-log.md) | 3단계 당시 실제 Boot JobRepository·JpaTransactionManager, 두 Step·절대 점수·새 context 동일 instance 재시작·점수/checkpoint 공동 rollback. 당시 COMPLETED는 stage 완료였으며 후속 공개·API는 다음 기록 참조 |
+| [W9 완성본 공개·고객 API TDD 기록](docs/week9/publication-api-tdd-log.md) | 4단계 세 번째 공개 Step·결과 checksum·COMPLETE/pointer 공동 TX·revision 후퇴 방지와 고객 HTTP 조회의 구현·실제 검사 범위. 공개 commit 뒤 최종 상태 저장 전 실패와 metadata UNKNOWN을 구분하며 실제 주문부터의 후속 연결은 다음 기록 참조 |
+| [W9 실제 주문부터 주간 랭킹 전체 흐름 TDD 기록](docs/week9/full-chain-ranking-tdd-log.md) | 5단계 실제 주문 HTTP·PG·Outbox·Kafka·별도 streamer/Batch JVM·랭킹 HTTP 연결. 실제 중복 record 소비, r2 입력 고정 뒤 늦은 구매·같은 instance 새 JVM 재개·새 r3를 같은 DB/metadata로 대조. 실행 결과와 최종 6단계 회귀·제출은 구분 |
+| [W9 최종 회귀·채점 대조 기록](docs/week9/final-verification.md) | 6단계 전체 회귀·정적 검사·원문 9항목 대조의 현재 결과와 남은 범위. 단계별 선행 증거·실제 실행 결과·제출 상태를 구분 |
 | [W8 채점 기준](docs/week8/grading-criteria.md) | 11월 8일 BASIC 원문 9항목과 멘토 추가 공지의 적용 범위 |
 | [W8 과제 원문](docs/week8/assignment-original.md) | 2026-11-08 제공된 구현·검증·제출 요구 원문 보존. 동기 발급·초과 거절, Set/Lua·master 수용, 기본 닫힘·명시적 재개 |
 | [W8 학습 자료 원문](docs/week8/learning-original.md) | 요청률·처리량·동시성, admission/backpressure, 실행 token·총량, fail-closed·TTL 회수 한계의 개념 근거 |
@@ -87,6 +96,24 @@
 
 기능 작업 시 전체 설계와 해당 기능의 API 계약·정책 선택·TDD 기대값을 함께 확인한다. 제안이나 미정 정책은 문서 분리만으로 확정되지 않는다.
 
+## W9 작업 기준
+
+[W9 과제 원문](docs/week9/assignment-original.md)의 Checklist 9항목을 W9-C01~09로 추적한다. 현재 주간 랭킹은 새 구현 범위이며 W8까지의 완료 기록을 W9 통과 근거로 승계하지 않는다. 2026-11-19 [구현 체크리스트](docs/week9/implementation-checklist.md)의 설계와 2~5단계 구현·검증을 전체 설계·API 계약·정책·TDD 문서에 연결했다. 사용자 선택은 구매 활동 DB에 계산/실행 저장을 모으는 A, 기간·revision 직접 지정 실행, 미공개 404·공개 빈 결과 200·기본 limit10/최대100이다. 원문 업무 규칙·사용자 선택·기술 설계와 실제 구현/검증 상태를 구분한다. 자세한 설계와 단계별 증거는 연결 문서에 두며 전체 회귀·채점 대조의 현재 결과와 남은 범위는 [6단계 최종 검증 기록](docs/week9/final-verification.md)을 따른다. 검사 결과와 커밋·푸시·제출 완료는 구분한다.
+
+W6·W7 consumer의 orderId·productId별 실제 구매 활동을 사용한다. UTC 월요일 00:00 이상 다음 월요일 00:00 미만을 최초 confirmedAt으로 판정하며, 상품별 quantity 합과 score 내림차순·productId 오름차순으로 순위를 만든다. 기존 활동의 초·나노초 정밀도와 모든 품목을 보존한다. W8 쿠폰 발급·W4 좋아요를 점수에 섞지 않는다.
+
+일관된 DB 읽기에서 입력을 복사하고 snapshot 입력·manifest를 함께 commit한다. 완성된 입력은 불변이며 재시작 때 새 활동을 추가하거나 재생성하지 않는다. max(id)만으로 commit 순서가 고정됐다고 판단하지 않는다. 늦은 구매는 원래 주의 새 snapshot·증가한 revision에서 재계산한다. 같은 기간의 계산은 기본 범위에서 직렬로 실행한다.
+
+commerce-batch에 입력 고정 → 상품별 점수 계산 → 완성본 공개 job을 만든다. 고정 업무 parameter로 같은 JobInstance·새 JobExecution을 실행하고 영속 JobRepository·ExecutionContext를 유지한다. reader는 snapshot의 서로 다른 productId를 안정된 오름차순으로 읽고 실제 reader key와 위치를 확인한다. 원문 demo의 RunIdIncrementer·ResourcelessTransactionManager를 재시작과 DB 원자성의 근거로 사용하지 않는다. 실제 writer와 metadata의 동일 DB·transaction manager·connection 참여를 확인한다. 첫 실행과 재시작 사이의 초기화로 입력·stage·metadata를 지우지 않는다.
+
+고정 입력의 절대 점수 쓰기는 같은 상품을 다시 써도 같은 값으로 수렴해야 한다. 증분 방식을 선택하면 활동별 중복 보호와 점수 변경을 같은 TX로 묶는다. 잘못된 입력을 조용히 skip하거나 checksum 기대값을 바꿔 실패를 숨기지 않는다. 손 계산 점수·순위와 checksum을 함께 확인한다.
+
+완성 조건과 공개 pointer 변경을 같은 DB TX로 보호하고, API는 같은 공개 snapshot의 결과만 읽는다. 계산 실패·공개 rollback에서 이전 공개본을 유지한다. 같은 공개 재실행은 안전해야 하며 이미 공개된 새 revision을 오래된 실행으로 덮지 않는다. 공개 commit과 최종 Batch 상태 저장의 간격을 검증하고 실제 공개 상태를 근거로 복구한다.
+
+새 GET /api/v1/rankings/weekly에서 UTC 기간·snapshot·입력 고정 시점·점수·저장 순위를 제공한다. 미공개와 구매 0건의 완성본을 구분하고, 현재 상품·브랜드의 공개 조건을 적용한 뒤 limit을 적용한다. 제외된 상품에 따른 순위 간격과 과거 점수는 유지한다. 현재 품절만으로 상품을 추가 제외하는 새 정책은 만들지 않는다.
+
+작은 chunk=2 실험과 실제 PG → Outbox → Kafka → streamer 활동 → batch → 고객 HTTP 연결을 모두 확인한다. 정상 실행·동일 instance 재시작, commit 전 rollback, 늦은 구매의 새 revision, 반복·오래된 공개를 실제 DB로 검증한다. 기존 W5~W8 TX·락·소비·쿠폰 경계와 사용자 DB·공유 Redis·기존 topic/group 보호를 유지한다. 실행 방식과 물리 테이블/클래스 이름·성능 수치를 원문의 유일한 정답으로 강제하지 않는다.
+
 ## W8 작업 기준
 
 멘토 추가 공지에 따라 BASIC 세마포어는 처리량 제한 실험으로 다룰 수 있다. 이 프로젝트의 고객 발급은 [전체 설계](docs/week2/commerce-erd-draft.md#w8-쿠폰-예약과-발급)와 [테스트 기대값](docs/week2/commerce-tdd-plan.md#w8-쿠폰-예약과-복구-테스트)을 따른다. 원문 W8-C01~09의 번호와 문구는 보존하고, 선택 설계의 구현·실행 근거는 따로 기록한다. W7까지의 상품·주문·PG·Outbox·구매 활동을 유지한다.
@@ -121,7 +148,7 @@ Outbox는 W6의 stable eventId·orderId key·최초 confirmedAt·품목과 불�
 
 W6 두 사례는 보존한 W6 테스트 구성 또는 revision 실행물로 실제 직접 발행 경로를 새 격리 실행에서 준비한다. 구현 revision `dd86f49`는 그 근거이며 특정 준비 방식만 강제하지 않는다. 실제 원본 DB를 보존했다면 보존 근거·사건 사실을 확인하고 준비 재현을 생략할 수 있다. 준비부터 복구 완료까지 같은 DB·broker·PG 상태를 유지하고 원본 사실의 eventId·confirmedAt·품목으로 없는 Outbox만 추가한다. 기존 행은 일치를 확인하고 부족한 사실·충돌을 추측하지 않는다. 준비와 복구의 PG 호출 기준을 분리하고 복구 중 create·조회·callback 추가 호출, 주문 재확정·예약 추가 소비는 모두 없어야 한다. SUCCESS 직접 insert·W7 Outbox 삭제·중간 정리·제품 운영용 우회 스위치로 누락을 꾸미지 않는다. W6 revision 연결은 완료된 기반이며 W7 복구 완료로 승계하지 않는다.
 
-W7에서 구현한 Outbox·단일 polling relay와 W5의 포인트 결제 분리·PG 복구·TX/락·과거 POINT·소유권·삭제 비노출, W6 소비 중복 방지·실패 정책은 유지한다. 다중 relay·CDC 플랫폼·범용 saga·새 결제수단·랭킹 API·공개 복구 관리자 API로 확대하지 않는다. 미발행·격리 행은 자동 삭제하지 않고 기존 재개·보존·단일 실행의 한계를 유지한다. W7 과거 실행 기록을 다시 쓸 필요 없이 영향받은 범위의 실제 회귀 결과를 별도로 남긴다.
+W7에서 구현한 Outbox·단일 polling relay와 W5의 포인트 결제 분리·PG 복구·TX/락·과거 POINT·소유권·삭제 비노출, W6 소비 중복 방지·실패 정책은 유지한다. W7 작업 당시 다중 relay·CDC 플랫폼·범용 saga·새 결제수단·랭킹 API·공개 복구 관리자 API는 범위에서 제외했다. W9에서 명시한 주간 랭킹 job·API는 위 W9 기준에 따라 추가한다. 미발행·격리 행은 자동 삭제하지 않고 기존 재개·보존·단일 실행의 한계를 유지한다. W7 과거 실행 기록을 다시 쓸 필요 없이 영향받은 범위의 실제 회귀 결과를 별도로 남긴다.
 
 ## 설계 문서 작성 지침
 
@@ -140,5 +167,6 @@ W7에서 구현한 Outbox·단일 polling relay와 W5의 포인트 결제 분리
 - 포인트 충전 흐름만을 근거로 외부 결제 연동이나 이력 테이블을 추가하지 않는다. W5에서 명시한 로컬 테스트 PG 교체는 해당 과제 범위로 다루며, 실제 PG·환불·정산 등으로 확대하지 않는다. 미정 사항은 먼저 질문한다.
 - W7 계약·Outbox/relay/소비 DB 경계는 기존 전체 설계에 확장하고 API·정책·TDD 문서와 연결한다. 주문·Outbox의 로컬 원자성과 Kafka 발행, broker 확인과 PUBLISHED 저장 및 소비 완료, 재발행과 동일 offset 재전달을 구분한다. 원문의 테이블·테스트 이름과 재시도 수치·선택적 BLOCKED를 유일한 정답으로 강제하지 않는다. 전체 설계 확장은 후속 구현 선택과 실제 변경에 맞춰 수행한다.
 - W8 상세 설계는 예약 확보와 실제 발급의 커밋 시점, 총량·동시 실행 수·중복 처리, 정상 마감·장애 중 결과 불확실·반환 실패를 다룬다. BASIC 실험의 네 번째 429와 제품의 네 번째 예약 후 재신청 없는 발급은 별도 기대값으로 남긴다. 운영 수치·미정 응답은 임의 확정하지 않는다.
+- W9 설계는 기존 버드뷰에 구매 활동 → 입력 snapshot → chunk 점수/checkpoint → 완성본·공개 pointer → 고객 조회를 확장한다. 구조와 의존에는 Batch·API·streamer의 DB 접근과 transaction manager를, 도메인 관계에는 기간·revision·입력·점수·순위·pointer를, 대표 흐름에는 동일 작업 재시작과 늦은 구매의 새 계산을 함께 표현한다. 물리 DB 배치와 API 세부 계약은 선택한 뒤 반영한다.
 - 설계한 내용과 실제 구현된 내용을 구분한다. 문서 작성 요청만으로 코드를 구현하지 않는다.
 - 관계와 흐름은 표·다이어그램으로 읽기 쉽게 표현하고, 같은 내용을 불필요하게 반복하지 않는다.
