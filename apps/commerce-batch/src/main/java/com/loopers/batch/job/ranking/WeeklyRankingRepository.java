@@ -123,6 +123,13 @@ public class WeeklyRankingRepository {
             String.class, periodStart).stream().findFirst();
     }
 
+    // 그 주 pointer가 가리키는 snapshot의 revision. 평범한 SELECT이고 pointer가 없으면 비어 있다(런처가 "끝남" 판단에 쓴다, w9d).
+    public Optional<Integer> publishedRevision(LocalDate periodStart) {
+        return jdbcTemplate.queryForList("select snapshot.revision from ranking_publication publication"
+            + " join ranking_snapshot snapshot on snapshot.snapshot_id = publication.snapshot_id"
+            + " where publication.period_start = ?", Integer.class, periodStart).stream().findFirst();
+    }
+
     private static Instant instant(ResultSet resultSet, int column) throws SQLException {
         return resultSet.getObject(column, LocalDateTime.class).toInstant(ZoneOffset.UTC);
     }

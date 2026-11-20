@@ -76,8 +76,9 @@ public class WeeklyRankingJobConfig {
     }
 
     @Bean
-    public WeeklyRankingLauncher weeklyRankingLauncher(JobLauncher jobLauncher, JobExplorer jobExplorer, Job weeklyRanking) {
-        return new WeeklyRankingLauncher(jobLauncher, jobExplorer, weeklyRanking);
+    public WeeklyRankingLauncher weeklyRankingLauncher(JobLauncher jobLauncher, JobExplorer jobExplorer, Job weeklyRanking,
+        WeeklyRankingRepository weeklyRankingRepository) {
+        return new WeeklyRankingLauncher(jobLauncher, jobExplorer, weeklyRanking, weeklyRankingRepository);
     }
 
     @Bean
