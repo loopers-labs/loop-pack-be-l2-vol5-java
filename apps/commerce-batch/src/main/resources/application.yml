@@ -16,6 +16,16 @@ spring:
       name: ${job.name:NONE}
     jdbc:
       initialize-schema: never
+  # 주간 랭킹 테이블(CREATE TABLE IF NOT EXISTS). 운영 DB에는 미리 만들어 두고 여기서는 실행하지 않는다.
+  sql:
+    init:
+      mode: never
+      schema-locations: classpath:schema/weekly-ranking.sql
+
+commerce:
+  ranking:
+    weekly:
+      chunk-size: 100
 
 management:
   health:
@@ -30,6 +40,9 @@ spring:
   batch:
     jdbc:
       initialize-schema: always
+  sql:
+    init:
+      mode: always
 
 ---
 spring:
