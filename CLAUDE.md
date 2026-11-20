@@ -32,7 +32,7 @@ Loopers 에서 제공하는 Spring Boot(Java 21) 멀티 모듈 커머스 템플�
 
 ## 멀티 모듈 구조
 
-`apps`(commerce-api/batch/streamer, 서로 독립), `modules`(jpa/redis/kafka), `supports`(jackson/logging/monitoring) 구조입니다. 현재 `commerce-batch`·`commerce-streamer`는 데모 코드만 있고 도메인 레이어가 비어 있습니다.
+`apps`(commerce-api/batch/streamer, 서로 독립), `modules`(jpa/redis/kafka), `supports`(jackson/logging/monitoring) 구조입니다. `commerce-streamer`는 주문 확정 이벤트를 구매 활동으로 저장하고(W6), `commerce-batch`는 그 활동으로 주간 구매 랭킹을 만듭니다(W9, `weeklyRanking` job).
 
 - `apps` 하위 모듈만 `BootJar`가 활성화되고(실행 가능한 jar), `modules`/`supports`는 일반 `Jar`로 라이브러리처럼 소비됩니다.
 - 각 `apps` 모듈은 필요한 `modules`/`supports`를 `build.gradle.kts`의 `dependencies`에서 명시적으로 `implementation(project(":modules:..."))`로 선언합니다. 새 앱이나 도메인 기능을 추가할 때 어떤 모듈이 필요한지는 이 패턴을 따라 판단하면 됩니다.
@@ -48,7 +48,7 @@ Loopers 에서 제공하는 Spring Boot(Java 21) 멀티 모듈 커머스 템플�
 
 - **`commerce-api`**: 웹 서버 기본 포트 `8080`, Actuator(관리) 포트는 `8081`(`supports/monitoring`의 `monitoring.yml`에서 고정).
 - **`commerce-streamer`**: 웹 서버 기본 포트도 `8080`, Actuator도 동일하게 `8081`(같은 `monitoring.yml`을 가져다 씀) — `commerce-api`와 동시에 띄우면 포트가 충돌하므로, 둘을 같이 실행해야 한다면 한쪽에 `--server.port`/`--management.server.port`를 오버라이드해야 합니다.
-- **`commerce-batch`**: `spring.main.web-application-type: none`으로 설정되어 있어 웹 서버 자체가 없습니다. 계속 떠 있는 서버가 아니라 배치 Job 하나를 실행하고 종료되는 프로세스입니다.
+- **`commerce-batch`**: `spring.main.web-application-type: none`으로 설정되어 있어 웹 서버 자체가 없습니다. 계속 떠 있는 서버가 아니라 배치 Job 하나를 실행하고 종료되는 프로세스입니다. `--job.name=weeklyRanking`처럼 실행할 job을 고르고, 실패한 job은 같은 식별 parameter로 다시 실행해 이어 갑니다. 실행마다 새로 뜨므로 local `ddl-auto`는 `update`입니다(`create`면 재시작 사이에 고정 입력이 지워짐).
 
 ### `java-test-fixtures`를 통한 테스트 환경 재사용
 
@@ -62,7 +62,7 @@ Loopers 에서 제공하는 Spring Boot(Java 21) 멀티 모듈 커머스 템플�
 
 ## 애플리케이션 내부 레이어드 아키텍처
 
-**아래 4계층 패턴은 현재 `commerce-api`에만 실제로 구현되어 있습니다(`user`·`point`·`brand`·`product`·`like`·`order` 기능이 예시).** `commerce-batch`, `commerce-streamer`는 아직 데모 코드(배치 Job, Kafka Consumer)만 있을 뿐 이 레이어 구조를 따르는 도메인 코드가 없으므로, 새로 도메인을 추가할 때 이 패턴을 따르면 됩니다. 각 `apps` 모듈은 독립적이므로 동일 도메인이라도 앱마다 각자 이 4계층을 따로 구현해야 합니다(위 "멀티 모듈 구조" 참고).
+**아래 4계층 패턴은 `commerce-api`에 가장 완전하게 구현되어 있습니다(`user`·`point`·`brand`·`product`·`like`·`order` 기능이 예시).** `commerce-streamer`는 `interfaces`(Kafka consumer)·`application`·`domain`·`infrastructure`를, `commerce-batch`는 `batch.job`(Job·Step 진입점)·`domain`·`infrastructure`를 둡니다. batch의 랭킹 코드는 job 단계별 하위 패키지(`freeze`·`score`·`publish`)로 나눕니다. 각 `apps` 모듈은 독립적이므로 동일 도메인이라도 앱마다 각자 이 4계층을 따로 구현해야 합니다(위 "멀티 모듈 구조" 참고).
 
 각 `apps` 모듈은 도메인별로 다음 4개 레이어를 따릅니다 (`apps/commerce-api/src/main/java/com/loopers/{layer}/{domain}` 참고):
 
@@ -107,8 +107,8 @@ Loopers 에서 제공하는 Spring Boot(Java 21) 멀티 모듈 커머스 템플�
 
 ## 개발 규칙 (lint · ArchUnit)
 
-- `commerce-api`는 Checkstyle(`config/checkstyle/checkstyle.xml`, `AvoidStarImport`·`UnusedImports`)을 `check`에 연결해 사용합니다. 경고도 허용하지 않습니다(`maxWarnings = 0`).
-- `ArchitectureTest`가 레이어 의존 방향(`interfaces → application → domain`, `infrastructure → domain`)을 검사합니다. domain은 다른 레이어에, application은 interfaces·infrastructure에, interfaces는 infrastructure에 의존할 수 없습니다. 포트는 그것을 쓰는 레이어가 소유하므로 `infrastructure → application`은 application 포트 구현에 한해 허용합니다(검사 규칙은 없음, `docs/design/week2/commerce-design.ai.md` 2-3).
+- `commerce-api`·`commerce-batch`는 Checkstyle(`config/checkstyle/checkstyle.xml`, `AvoidStarImport`·`UnusedImports`)을 `check`에 연결해 사용합니다. 경고도 허용하지 않습니다(`maxWarnings = 0`).
+- `ArchitectureTest`가 레이어 의존 방향(`interfaces → application → domain`, `infrastructure → domain`)을 검사합니다. domain은 다른 레이어에, application은 interfaces·infrastructure에, interfaces는 infrastructure에 의존할 수 없습니다. 포트는 그것을 쓰는 레이어가 소유하므로 `infrastructure → application`은 application 포트 구현에 한해 허용합니다(검사 규칙은 없음, `docs/design/week2/commerce-design.ai.md` 2-3). `commerce-batch`의 `ArchitectureTest`는 `domain`이 `batch`·`infrastructure`에, `batch`가 `infrastructure`에 의존하지 않는지와 랭킹 단계 패키지 사이의 순환이 없는지를 검사합니다.
 
 ## AI 작업 규칙
 
