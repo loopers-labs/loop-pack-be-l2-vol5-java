@@ -83,7 +83,8 @@ job `weeklyRanking`의 Step 3 `publishWeeklyRanking`(tasklet)은 step 트랜잭�
 4. 결과 checksum: 그 snapshot의 전체 계산 순위(stage를 같은 정렬로)를 `productId\tscore\tcalcRank\n`으로 이어 붙인 UTF-8 바이트의 SHA-256 소문자 hex다. 새 칸 없이 계산 함수로 두고 로그·테스트에서 쓴다.
 
 - 1~3이 같은 TX라 랭킹 INSERT 뒤 pointer 전에 실패하면 새 랭킹 행도 남지 않는다. 같은 Step이 다시 돌면 2(최대 순위 다음부터)·3(같은 snapshot이면 변화 없음)이 같은 결과로 수렴한다.
-- 공개 TX commit 뒤 Spring Batch가 공개 Step 실행 기록을 마지막으로 저장하다 실패하면(w9t 테스트): pointer·완성 랭킹은 그 snapshot으로 남고 고객 쿼리도 그 snapshot을 읽는다. Batch 기록은 job UNKNOWN, 공개 Step STARTED로 남고, 같은 parameter로 다시 실행하면 Spring Batch가 `JobExecutionAlreadyRunningException`으로 거절한다. 공개 상태는 pointer가 기준이며 Batch 기록과 다를 수 있다.
+- 공개 TX commit 뒤 Spring Batch가 공개 Step 실행 기록을 마지막으로 저장하다 실패하면(w9t 테스트): pointer·완성 랭킹은 그 snapshot으로 남고 고객 쿼리도 그 snapshot을 읽는다. Batch 기록은 job UNKNOWN, 공개 Step STARTED로 남고, 같은 parameter로 다시 실행하면 Spring Batch가 `JobExecutionAlreadyRunningException`으로 거절한다. 공개 상태는 pointer가 기준이며 Batch 기록과 다를 수 있다. 런처는 pointer로 끝남을 판단해 새 revision으로 진행한다(9절, w9d).
+- **[사용자 결정(w9t-1)] 전제:** 공개 Step은 한 TX이고 두 번 해도 결과가 같다(위 1~3). 그래서 pointer가 r(또는 그보다 새 revision)이면 r의 완성 랭킹은 모두 들어가 있다. 런처의 "끝남" 판단(9절)은 이 전제에 기댄다. 공개 Step에 외부 부수효과(알림 등)가 붙으면 pointer만으로 끝남을 판단할 수 없으므로 이 판단을 다시 본다.
 - **[구현 판단]** 더 새 revision이 이미 공개돼 있으면 덮지 않고 Step은 COMPLETED로 끝나며 종료 코드 `NEWER_PUBLISHED`와 로그로 구분한다. 실패로 만들지 않는 이유: 이 snapshot의 계산·순위 저장은 끝났고 공개하지 않는 것이 의도한 결과다. 실패로 두면 재시작해도 같은 결과라 운영자가 끝없이 재시작하게 된다.
 - **[구현 판단]** K 기본값은 설정 `commerce.ranking.size`(150)이고, Job parameter `rankingSize`(식별값)로 바꿀 수 있다.
 - **[구현 판단]** "더 새 공개본 있음"은 조건부 UPDATE·INSERT가 실제로 pointer를 바꿨는지(영향 행 수)로 가른다. 바꾸지 않았을 때만 지금 commit된 pointer를 잠금 읽기(`FOR SHARE`)로 확인해 종료 코드·로그를 정한다. 평범한 SELECT는 REPEATABLE READ에서 TX 앞부분의 옛 값을 보므로, 공개 TX 도중 다른 TX가 더 새 revision을 공개해도 알아채지 못한다.
@@ -101,6 +102,11 @@ job `weeklyRanking`의 Step 3 `publishWeeklyRanking`(tasklet)은 step 트랜잭�
 
 - 실행: `--job.name=weeklyRanking --spring.batch.job.enabled=false --ranking.period=2026-08-17 [--ranking.size=150]`. 공개 API는 없다.
 - 그 기간에 실패·중단된 실행(마지막 실행이 COMPLETED가 아닌 JobInstance)이 있으면 그 parameter 그대로 재시작한다(번호를 새로 계산하지 않는다). 없으면 그 기간의 최대 revision + 1로 `weekly-YYYYMMDD-rN`을 만들어 실행한다.
+- **[사용자 결정(w9t-1)] 끝남은 pointer로 판단한다(w9d).** 실패·중단된 실행이라도 그 주 pointer의 revision이 그 실행의 revision 이상이면 끝난 것으로 보고 건너뛴다. 남은 실행 중 최대 revision을 재시작하고, 없으면 최대 revision + 1로 새로 실행한다. 건너뛴 실행의 revision도 최대 계산에 들어간다. Batch 기록은 고치지 않는다(UNKNOWN·STARTED·FAILED 그대로 남는다).
+  - 이유: 공개는 마지막 Step이고 한 TX라(7절 전제) pointer가 r이면 r의 랭킹은 모두 들어가 있다. pointer가 r보다 새 revision이면 r을 다시 공개해도 덮지 않는다(7절 3). 어느 쪽이든 r을 다시 돌릴 일이 없다. Batch 기록은 "다시 돌려야 하나"를 보는 작업 일지이고, 공개 여부의 기준은 pointer다.
+  - **[구현 판단]** pointer revision은 `WeeklyRankingRepository`가 pointer → snapshot 정보 조인으로 읽는다(새 칸 없음, 평범한 SELECT, pointer가 없으면 0으로 본다). 런처는 Job 밖에서 한 번 읽는다.
+  - 감수한 위험 1: 공개 commit 뒤 기록만 남은 실행(또는 런처가 pointer를 읽은 직후 commit된 공개)과 새 revision 실행이 잠깐 겹칠 수 있다. pointer는 조건부 교체(지금 revision < 새 revision, 7절 3)라 순서가 뒤집히지 않는다. 이 경쟁은 테스트로 재현하지 않았다.
+  - 감수한 위험 2: Batch 기록은 틀린 채 남는다(공개까지 끝났는데 UNKNOWN·STARTED로 보인다). 모니터링에는 실패로 보이므로 공개 판단은 pointer로 한다.
 - 같은 기간을 동시에 실행하면 같은 이름(같은 JobInstance)이 되어 하나만 진행하고 나머지는 거절된다.
 - **[사용자 결정] D159** 늦은 구매(고정 뒤 들어온 같은 주 구매)는 사람이 런처로 다시 실행해 다음 revision(마지막 + 1)을 만든다. 자동 감지·정기 재실행·자동 확장은 이번 범위가 아니며 기록만 한다.
 - **[사용자 결정] D159** 주 끝 뒤 고정 전에 기다릴 시간(주 끝 + 1h, [임시])은 바깥 실행기의 실행 시각으로 둔다(앱 설정 키는 두지 않는다). 주 경계가 UTC 월요일 00:00이므로 매주 월요일 01:00 UTC(= 10:00 KST)에 런처를 실행한다. 대사 job의 "실행 주기는 바깥 스케줄러 몫"(8주차 문서 27절)과 같은 원칙이다. 값의 근거는 평소 파이프라인(주문 확정 → Outbox → Kafka → 구매 활동) 지연이다.
@@ -110,8 +116,9 @@ job `weeklyRanking`의 Step 3 `publishWeeklyRanking`(tasklet)은 step 트랜잭�
 - **[구현 판단]** 최대 revision과 실패한 실행은 Batch metadata(그 기간의 `weeklyRanking` JobInstance)에서 찾는다. Step 1에서 실패해 snapshot 정보 행이 없는 실행도 찾아야 하기 때문이다.
 - **런처의 남은 우려(이번 범위에서 고치지 않음):**
   - `weeklyRanking`의 모든 JobInstance를 500개씩 훑는다. 이력이 쌓이면 실행 전 조회가 길어진다(C 측정에서 확인).
-  - 프로세스가 죽어 STARTED로 남은 실행은 "COMPLETED가 아님"으로 잡혀 같은 parameter 재시작을 시도하지만, Spring Batch가 실행 중으로 보고 거절한다. 사람이 그 실행을 FAILED(또는 ABANDONED)로 바꾼 뒤 다시 실행해야 한다.
-  - ABANDONED·UNKNOWN도 "COMPLETED가 아님"으로 잡힌다. ABANDONED는 재시작할 수 없어 거절되고 그 주는 더 진행하지 않는다(새 revision을 만들지 않는다). 사람이 판단한다.
+  - 공개까지 끝난 STARTED·UNKNOWN 실행(pointer revision ≥ 그 실행 revision)은 w9d에서 풀렸다. 런처가 건너뛰고 새 revision으로 진행한다.
+  - 공개 전 단계에서 프로세스가 죽어 STARTED로 남은 실행(pointer revision < 그 실행 revision)은 여전히 같은 parameter 재시작을 시도하고, Spring Batch가 실행 중으로 보고 거절한다. 사람이 그 실행을 FAILED(또는 ABANDONED)로 바꾼 뒤 다시 실행해야 한다.
+  - 공개 전 단계의 ABANDONED·UNKNOWN도 재시작 대상으로 잡힌다. ABANDONED는 재시작할 수 없어 거절되고 그 주는 더 진행하지 않는다(새 revision을 만들지 않는다). 사람이 판단한다.
   - 재시작할 때는 실패한 실행의 parameter를 그대로 쓰므로 이번 `--ranking.size`는 무시된다. K를 늘리려면 완료 뒤 확장 job을 쓴다.
 
 ## 10. 고객 API [사용자 결정 D157·D158]
