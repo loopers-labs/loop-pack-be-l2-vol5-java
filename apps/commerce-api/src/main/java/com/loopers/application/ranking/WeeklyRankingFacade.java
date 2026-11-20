@@ -13,6 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -21,7 +22,8 @@ import java.util.stream.Collectors;
 
 /**
  * 공개된 주간 랭킹 조회 (설계 D14). 읽은 점수 행 전체에 R4(행 수 == expected, ranking 전부 NOT NULL, 1..N 연속)를 다시 검증한 뒤(2차 방어),
- * 삭제 상품은 기존 공개 조건(ProductService.findActiveProducts)으로 제외하고 limit 을 적용한다. ranking 은 DB 값 그대로(재계산 금지, 간격 허용).
+ * 삭제 상품은 기존 공개 조건(ProductService.findActiveProducts)으로 제외하고 limit 을 적용한다. calcRank 는 DB 값 그대로(재계산 금지, 간격 허용),
+ * rank 는 남은 목록에 1부터 다시 붙인 표시 순위다.
  * R4 위반은 NOT_PUBLISHED 나 빈 목록으로 숨기지 않고 500 으로 드러낸다.
  */
 @Slf4j
@@ -55,12 +57,16 @@ public class WeeklyRankingFacade {
             .findActiveProducts(scores.stream().map(RankedScore::productId).toList())
             .stream().collect(Collectors.toMap(Product::getId, Function.identity()));
 
-        List<WeeklyRankingInfo.Item> items = scores.stream()
+        List<RankedScore> visible = scores.stream()
             .filter(score -> activeProducts.containsKey(score.productId()))
             .limit(limit)
-            .map(score -> new WeeklyRankingInfo.Item(
-                score.productId(), activeProducts.get(score.productId()).getName(), score.score(), score.ranking()))
             .toList();
+        List<WeeklyRankingInfo.Item> items = new ArrayList<>(visible.size());
+        for (int i = 0; i < visible.size(); i++) {
+            RankedScore score = visible.get(i);
+            items.add(new WeeklyRankingInfo.Item(
+                score.productId(), activeProducts.get(score.productId()).getName(), score.score(), i + 1, score.ranking()));
+        }
 
         return new WeeklyRankingInfo(WeeklyRankingInfo.Status.PUBLISHED,
             period.periodStart(), period.periodEnd(), snapshot.snapshotId(), snapshot.frozenAt(), items);

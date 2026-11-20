@@ -15,6 +15,6 @@ public record WeeklyRankingInfo(
 ) {
     public enum Status { PUBLISHED, NOT_PUBLISHED }
 
-    /** ranking 은 배치가 저장한 계산 순위 그대로. 삭제 상품이 빠져 간격이 생길 수 있다. */
-    public record Item(long productId, String productName, long score, int ranking) {}
+    /** rank = 표시 순위(삭제 상품 제외·limit 뒤 1부터 연속). calcRank = 배치가 저장한 계산 순위 그대로(간격 가능). */
+    public record Item(long productId, String productName, long score, int rank, int calcRank) {}
 }

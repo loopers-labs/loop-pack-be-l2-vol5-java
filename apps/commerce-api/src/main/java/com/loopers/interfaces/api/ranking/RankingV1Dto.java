@@ -35,10 +35,10 @@ public class RankingV1Dto {
         }
     }
 
-    public record Item(long productId, String productName, long score, int ranking) {
-        /** Facade 가 R4 를 검증한 뒤라 ranking 은 NULL 이 아니다. */
+    /** rank = 표시 순위(1..n 연속), calcRank = 계산 순위(DB ranking, 간격 가능). Facade 가 R4 를 검증한 뒤라 calcRank 는 NULL 이 아니다. */
+    public record Item(long productId, String productName, long score, int rank, int calcRank) {
         public static Item from(WeeklyRankingInfo.Item item) {
-            return new Item(item.productId(), item.productName(), item.score(), item.ranking());
+            return new Item(item.productId(), item.productName(), item.score(), item.rank(), item.calcRank());
         }
     }
 }

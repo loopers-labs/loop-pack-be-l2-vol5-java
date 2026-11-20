@@ -111,7 +111,7 @@ class WeeklyRankingV1ApiTest {
     @Nested
     class Published {
 
-        @DisplayName("공개된 완성본을 ranking 순으로 돌려주고 기간·snapshotId·frozenAt 을 함께 준다.")
+        @DisplayName("공개된 완성본을 순위 순으로 돌려주고 기간·snapshotId·frozenAt 을 함께 준다. 삭제가 없으면 rank == calcRank.")
         @Test
         void returnsPublishedRanking() {
             publishFixture();
@@ -127,13 +127,14 @@ class WeeklyRankingV1ApiTest {
                 () -> assertThat(body.snapshotId()).isEqualTo(R1),
                 () -> assertThat(body.frozenAt()).isEqualTo("2026-08-24T00:10:00Z"),
                 () -> assertThat(body.items()).extracting(RankingV1Dto.Item::productId).containsExactly(product7, product9, product8),
-                () -> assertThat(body.items()).extracting(RankingV1Dto.Item::ranking).containsExactly(1, 2, 3),
+                () -> assertThat(body.items()).extracting(RankingV1Dto.Item::rank).containsExactly(1, 2, 3),
+                () -> assertThat(body.items()).extracting(RankingV1Dto.Item::calcRank).containsExactly(1, 2, 3),
                 () -> assertThat(body.items()).extracting(RankingV1Dto.Item::score).containsExactly(5L, 5L, 1L),
                 () -> assertThat(body.items()).extracting(RankingV1Dto.Item::productName).containsExactly("상품 7", "상품 9", "상품 8")
             );
         }
 
-        @DisplayName("응답 JSON 은 ranking 필드명과 초 단위 UTC frozenAt 을 그대로 쓴다.")
+        @DisplayName("응답 JSON 은 rank·calcRank 필드명과 초 단위 UTC frozenAt 을 그대로 쓴다.")
         @Test
         void rawJsonShape() {
             publishFixture();
@@ -143,11 +144,11 @@ class WeeklyRankingV1ApiTest {
             System.out.println("[ranking-api] " + json);
             assertThat(json).contains("\"frozenAt\":\"2026-08-24T00:10:00Z\"")
                 .contains("\"snapshotId\":\"weekly-20260817-r1\"")
-                .contains("\"ranking\":1")
+                .contains("\"rank\":1").contains("\"calcRank\":1")
                 .contains("\"status\":\"PUBLISHED\"");
         }
 
-        @DisplayName("삭제 상품은 제외하되 저장된 순위는 유지해 1·3위처럼 간격이 생긴다.")
+        @DisplayName("삭제 상품은 제외하고 표시 순위 rank 는 1부터 다시 매기되, 계산 순위 calcRank 는 1·3 처럼 간격을 유지한다.")
         @Test
         void excludesDeletedProductKeepingRanking() {
             publishFixture();
@@ -155,8 +156,8 @@ class WeeklyRankingV1ApiTest {
 
             RankingV1Dto.WeeklyRankingResponse body = get("periodStart=2026-08-17").getBody().data();
 
-            assertThat(body.items()).extracting(RankingV1Dto.Item::productId, RankingV1Dto.Item::ranking)
-                .containsExactly(tuple(product7, 1), tuple(product8, 3));
+            assertThat(body.items()).extracting(RankingV1Dto.Item::productId, RankingV1Dto.Item::rank, RankingV1Dto.Item::calcRank)
+                .containsExactly(tuple(product7, 1, 1), tuple(product8, 2, 3));
         }
 
         @DisplayName("limit 은 삭제 상품을 제외한 뒤 적용한다.")
@@ -168,7 +169,8 @@ class WeeklyRankingV1ApiTest {
             assertThat(get("periodStart=2026-08-17&limit=1").getBody().data().items())
                 .extracting(RankingV1Dto.Item::productId).containsExactly(product7);
             assertThat(get("periodStart=2026-08-17&limit=2").getBody().data().items())
-                .extracting(RankingV1Dto.Item::productId).containsExactly(product7, product8);
+                .extracting(RankingV1Dto.Item::productId, RankingV1Dto.Item::rank, RankingV1Dto.Item::calcRank)
+                .containsExactly(tuple(product7, 1, 1), tuple(product8, 2, 3));
         }
 
         @DisplayName("pointer 가 없으면 NOT_PUBLISHED 와 빈 items 를 200 으로 돌려준다.")

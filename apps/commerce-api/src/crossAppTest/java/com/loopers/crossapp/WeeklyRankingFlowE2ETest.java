@@ -276,7 +276,7 @@ class WeeklyRankingFlowE2ETest {
         log("r4", r4, rev4, getRanking("2026-08-17"));
         log("next-r1", next, nextRev, apiNext);
 
-        // (7) 삭제 상품 Y → 순위 간격 유지
+        // (7) 삭제 상품 Y → 표시 순위 rank 는 1·2, 계산 순위 calcRank 는 1·3 유지
         Product productY = productJpaRepository.findById(y).orElseThrow();
         productY.delete();
         productJpaRepository.save(productY);
@@ -327,13 +327,15 @@ class WeeklyRankingFlowE2ETest {
         return objectMapper.readTree(body).get("data");
     }
 
-    private static void assertItems(JsonNode api, List<Long> productIds, List<Long> scores, List<Integer> rankings) {
+    /** calcRanks 는 DB 계산 순위(간격 가능), 표시 순위 rank 는 항상 1..n 연속이어야 한다. */
+    private static void assertItems(JsonNode api, List<Long> productIds, List<Long> scores, List<Integer> calcRanks) {
         JsonNode items = api.get("items");
         assertThat(items).hasSize(productIds.size());
         for (int i = 0; i < productIds.size(); i++) {
             assertThat(items.get(i).get("productId").asLong()).isEqualTo(productIds.get(i));
             assertThat(items.get(i).get("score").asLong()).isEqualTo(scores.get(i));
-            assertThat(items.get(i).get("ranking").asInt()).isEqualTo(rankings.get(i));
+            assertThat(items.get(i).get("rank").asInt()).isEqualTo(i + 1);
+            assertThat(items.get(i).get("calcRank").asInt()).isEqualTo(calcRanks.get(i));
         }
     }
 
