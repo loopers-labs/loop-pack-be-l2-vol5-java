@@ -19,3 +19,19 @@ dependencies {
     testImplementation(testFixtures(project(":modules:jpa")))
     testImplementation(testFixtures(project(":modules:redis")))
 }
+
+val weeklyRankingJobJar by tasks.registering(Jar::class) {
+    enabled = true
+    archiveClassifier.set("weekly-ranking-job")
+    dependsOn(tasks.named("classes"))
+    from(sourceSets.main.get().output.classesDirs) {
+        include("com/loopers/batch/job/ranking/**")
+    }
+}
+
+configurations.create("weeklyRankingJob") {
+    isCanBeConsumed = true
+    isCanBeResolved = false
+    extendsFrom(configurations.runtimeClasspath.get())
+    outgoing.artifact(weeklyRankingJobJar)
+}

@@ -41,5 +41,6 @@ dependencies {
     testImplementation(testFixtures(project(":modules:redis")))
     testImplementation(testFixtures(project(":modules:kafka")))
     testImplementation(project(path = ":apps:commerce-api", configuration = "week6IntegrationSupport"))
+    testImplementation(project(path = ":apps:commerce-batch", configuration = "weeklyRankingJob"))
     testImplementation("com.tngtech.archunit:archunit:1.5.0")
 }
