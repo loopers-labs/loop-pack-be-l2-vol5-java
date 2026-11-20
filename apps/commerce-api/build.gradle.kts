@@ -3,6 +3,7 @@ dependencies {
     implementation(project(":modules:jpa"))
     implementation(project(":modules:redis"))
     implementation(project(":modules:kafka"))
+    implementation(project(":modules:ranking-schema"))
     implementation(project(":supports:jackson"))
     implementation(project(":supports:logging"))
     implementation(project(":supports:monitoring"))
@@ -47,6 +48,10 @@ configurations["crossAppTestRuntimeOnly"].extendsFrom(configurations.testRuntime
 
 dependencies {
     "crossAppTestImplementation"(project(":apps:commerce-streamer"))
+    "crossAppTestImplementation"(project(":apps:commerce-batch"))
+    // batch 의 Job·JobLauncher 타입을 테스트가 직접 쓰기 위한 컴파일 의존. batch 의 implementation 의존은 소비 측 컴파일 classpath 에 노출되지 않는다.
+    // 런타임 버전은 batch jar 가 끌어오는 것과 같다 (Boot BOM, Spring Batch 5.2.2)
+    "crossAppTestImplementation"("org.springframework.boot:spring-boot-starter-batch")
 }
 
 val crossAppTest by tasks.registering(Test::class) {
