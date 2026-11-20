@@ -4,7 +4,7 @@
 
 ## 검토 가이드 (먼저 읽기)
 
-태스크 1~6을 마쳤다. 태스크 7(api)·8(인수·PR)은 하지 않았다. push 하지 않았다.
+태스크 1~7을 마쳤다. 태스크 8(로컬 인수·PR)은 하지 않았다. push 하지 않았다.
 
 ### 커밋과 볼 곳
 
@@ -62,7 +62,7 @@
 - 템플릿의 `DemoJob`(설정·tasklet·E2E 테스트)과 그것만 쓰던 리스너 3개(`JobListener`, `StepMonitorListener`, `ChunkListener`)를 지웠다. 랭킹 job은 리스너를 쓰지 않는다.
 - 쓰이지 않거나 한 줄을 감싸기만 하던 것을 지웠다: `WeeklyRankingSnapshotIds`(→ `WeeklyPeriod.snapshotId` 직접 호출), `RevisionConflictException`(→ `IllegalStateException`, 따로 잡는 곳이 없었다), `PublishOutcome.ALREADY_PUBLISHED`(호출하는 쪽이 PUBLISHED와 구분하지 않았다), `WeeklyRankingSnapshot.isFrozen`(사용처 없음), reader 이름 상수(한 곳에서만 사용).
 - 기간별 공개 행의 이름을 `WeeklyRankingPublication`(테이블 `weekly_ranking_publication`)으로 바꿨다. local DB를 이미 띄웠다면 예전 `weekly_ranking_period` 테이블이 남는다(`ddl-auto=update`는 지우지 않음). 아직 local 실행 전이라 영향은 없다.
-- 태스크 7(api), 8(로컬 인수·PR)은 하지 않았다.
+- 태스크 8(로컬 인수·PR)은 하지 않았다. 태스크 7(api)은 `WeeklyRankingApiE2ETest` 7건(파라미터 4건 포함)과 `:apps:commerce-api:check`(1026건, skip 7은 기존 벤치마크) 통과.
 
 ## 결정 로그
 
@@ -90,3 +90,7 @@
 | 6 | snapshot이 이미 PUBLISHED면 아무것도 바꾸지 않고 PUBLISHED로 끝낸다. 이미 SUPERSEDED면 그대로 SUPERSEDED | 공개 commit 뒤 metadata 저장만 실패했던 재실행이 같은 결과로 수렴한다 |
 | 6 | "정상 실행과 비교"는 같은 주의 r2(같은 원본, 새 snapshot)를 실패 없이 돌려 만든다. 재시작한 r1과 r2의 ranking·입력 checksum·결과 checksum이 같고, 둘 다 손으로 계산한 상수와 같다 | 과제의 "별도 snapshot으로 격리한 정상 실행". 재시작 대상의 stage·metadata는 지우지 않는다 |
 | 6 | 늦은 구매 시나리오는 계산 실패를 spy로 만든다. 그래서 `WeeklyRankingFlowTest`도 spy 두 개(합계 조회, 완성 ranking 저장)를 쓴다 | 재시작이어야 "고정 뒤 늦은 구매가 재시작 결과를 바꾸지 않음"을 확인할 수 있다 |
+| 7 | api 조회는 쿼리 두 개다: ① 공개 pointer ⋈ snapshot, ② 완성 ranking ⋈ 삭제되지 않은 상품(+ limit). 둘을 한 readOnly TX에서 읽는다 | MySQL REPEATABLE READ에서는 한 TX의 일관된 읽기가 같은 시점을 보므로 pointer와 ranking이 서로 다른 snapshot으로 섞이지 않는다. 설계 문서의 "한 JPQL"을 두 쿼리로 나눈 이유는 미공개(pointer 없음)와 빈 완성본(ranking 0행)을 구분하기 위해서다 |
+| 7 | api의 ranking·snapshot·publication은 `@Immutable` 읽기 엔티티이고 컬럼·제약 이름을 batch와 같게 맞췄다. snapshot 상태는 enum 대신 문자열로 매핑한다 | api는 상태를 쓰지 않는다. batch와 DDL이 같아야 local에서 어느 앱이 먼저 떠도 테이블이 같다 |
+| 7 | limit 검증(1~100, 기본 10)은 Facade에, periodStart 검증(형식·월요일)은 domain 값 `RankingWeek`에 둔다. 둘 다 `INVALID_INPUT`(400) | `PageRequests`와 같은 방식. 기간 규칙은 업무 규칙이라 domain에 둔다 |
+| 7 | 항목 표시 정보는 랭킹 쿼리가 함께 읽은 `Product`(이름·가격)와 `BrandService.getAllByIds`(브랜드)로 만든다. 좋아요 수는 넣지 않는다 | 사용자 결정(이름·가격·브랜드). 브랜드가 없으면 상품 목록과 같이 `INTERNAL_ERROR`로 드러낸다 |
