@@ -190,7 +190,8 @@ class IncidentEvidenceWriterTest {
             () -> assertThat(code.trackedDiffBytes()).isPositive(),
             () -> assertThat(code.untracked()).extracting(IncidentCodeReference.FileHash::path)
                 .containsExactly("apps/commerce-api/build.gradle.kts", "apps/commerce-api/src/test/java/New.java"),
-            () -> assertThatThrownBy(() -> IncidentCodeReference.capture(root)).isInstanceOf(IllegalStateException.class)
+            () -> assertThatThrownBy(() -> IncidentCodeReference.capture(root)).isInstanceOf(IllegalStateException.class),
+            () -> assertThat(IncidentCodeReference.capture(Path.of("")).head()).as("상대 경로 작업 디렉터리").hasSize(40)
         );
     }
 

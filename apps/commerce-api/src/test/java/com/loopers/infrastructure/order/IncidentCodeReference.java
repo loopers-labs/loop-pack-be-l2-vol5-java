@@ -31,7 +31,7 @@ record IncidentCodeReference(String head, String trackedDiffSha256, long tracked
     }
 
     static IncidentCodeReference capture(Path workingDirectory) {
-        Path repo = Path.of(text(git(workingDirectory, "rev-parse", "--show-toplevel")));
+        Path repo = Path.of(text(git(workingDirectory.toAbsolutePath(), "rev-parse", "--show-toplevel")));
         String head = text(git(repo, "rev-parse", "HEAD"));
         byte[] diff = git(repo, "diff", "HEAD", "--binary");
         List<FileHash> untracked = new ArrayList<>();
