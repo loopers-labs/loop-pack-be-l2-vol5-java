@@ -395,6 +395,8 @@ RECOVERY:
 
 `IncidentEvidenceWriter.openRun(root,codeReference,mode)`는root밑에충돌하지않는새runDir를생성하고metadata를CREATE_NEW로쓴다. 기본 root는API build/checkout-incident-runs이다. runId,HEAD/작업diff기준과hash,실제시작UTC시각,합성Clock,mode,operator(실행입력),소유DB/PG/프로세스/topic/group/collectorID·이미지·실제 port를허용필드로기록한다. 비밀번호/헤더/카드/전체환경·실행명령전체는저장하지않는다. 코드 기준은 HEAD와 tracked diff hash뿐 아니라 실행에 영향을 주는 미추적 소스/빌드설정 파일의 repo-relative 경로·SHA-256 manifest도 포함한다. 새 구현 파일이 아직 untracked일 수 있으므로 git diff만으로 같은 코드라고 판정하지 않는다. 로컬 주차 운영 문서·인증/실행 비밀은 이 코드 manifest 대상에서 제외한다.
 
+**2026-11-23 구현 세부 사용자 결정:** `metadata.json`은 openRun 시점에 아는 값만 CREATE_NEW로 한 번 쓴다. baseline 전 고정하는 예상 파일의 hash는 `metadata-expectations.json`, 준비 중에 알게 되는 소유 자원(실제 port·topic/group·자식·collector)은 `resources/<순번>-<종류>.json`으로 각각 CREATE_NEW 추가하며 어느 파일도 덮어쓰지 않는다. tracked diff는 `git diff HEAD --binary`(staged+unstaged) 전체의 hash이고, untracked manifest는 `git ls-files --others --exclude-standard` 중 `apps|modules|supports/*/src/` 아래와 `*.gradle.kts`·`gradle.properties`·`gradle/` 아래 파일이며 `docs/`는 제외한다. git 실행 실패는 준비 실패다. 단계 원문은 `baseline|fault|recovery/` 아래 이름별 파일로 두고, 구조 데이터는 JSON(비유한 값은 원문 문자열과 `finite=false`), HTTP 본문 원문은 바이트 그대로 저장한다.
+
 `writeStage(stage,AllowedSnapshot)`는다음 필수 항목을write-once로남긴다.
 
 - 실제주문/cohort/attempt/providerOrder/검증한합성계정참조/금액/거래/상태/확인시각 대응표.
