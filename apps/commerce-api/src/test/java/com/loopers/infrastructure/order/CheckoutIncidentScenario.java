@@ -838,11 +838,14 @@ final class CheckoutIncidentScenario {
             port = socket.getLocalPort();
         }
         String callback = "http://127.0.0.1:" + port + "/api/v1/payments/callback";
+        // 기본은 임의 port. 공유 Prometheus 로 보고 싶을 때만 opt-in 으로 고정 port(8081)를 준다.
+        String observe = System.getProperty("w10.observe-management-port", "");
+        int requestedManagement = observe.isBlank() ? 0 : Integer.parseInt(observe);
         ConfigurableApplicationContext context = new SpringApplicationBuilder(CommerceApiApplication.class).profiles("test")
             .initializers(ctx -> ((BeanDefinitionRegistry) ctx.getBeanFactory()).registerBeanDefinition(
                 "checkoutIncidentClockReplacer", new RootBeanDefinition(ClockReplacer.class, () -> new ClockReplacer(confirmationClock))))
             .run("--server.port=" + port, "--server.address=127.0.0.1",
-                "--management.server.port=0", "--management.server.address=127.0.0.1",
+                "--management.server.port=" + requestedManagement, "--management.server.address=127.0.0.1",
                 "--management.endpoint.health.show-details=never",
                 "--spring.jpa.hibernate.ddl-auto=create",
                 "--commerce.pg.base-url=" + pg.baseUrl(),
@@ -855,11 +858,15 @@ final class CheckoutIncidentScenario {
         int actualPort = ((ServletWebServerApplicationContext) context).getWebServer().getPort();
         managementPort = Integer.parseInt(context.getEnvironment().getProperty("local.management.port", "-1"));
         assertThat(actualPort).as("실제 API port 와 callback port 일치").isEqualTo(port);
-        assertThat(managementPort).as("실제 management port").isPositive().isNotEqualTo(8081);
+        if (requestedManagement == 0) {
+            assertThat(managementPort).as("실제 임의 management port").isPositive().isNotEqualTo(8081);
+        } else {
+            assertThat(managementPort).as("요청한 관찰 management port").isEqualTo(requestedManagement);
+        }
         assertThat(context.getBean(OrderConfirmationClockConfig.ORDER_CONFIRMATION_CLOCK, Clock.class)).isSameAs(confirmationClock);
         assertThat(context.getBean(OrderOutboxRelayProperties.class).enabled()).as("자동 relay OFF").isFalse();
-        writer.recordResource("api", Map.of("port", actualPort, "managementPort", managementPort, "callbackUrl", callback,
-            "relayEnabled", false));
+        writer.recordResource("api", Map.of("port", actualPort, "managementPort", managementPort,
+            "managementPortRequested", requestedManagement, "callbackUrl", callback, "relayEnabled", false));
         return context;
     }
 

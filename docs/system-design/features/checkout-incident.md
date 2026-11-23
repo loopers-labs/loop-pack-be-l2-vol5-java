@@ -16,6 +16,8 @@
 
 추가 범위는 UNKNOWN 업무 지표 하나, 생성/조회/적용/TX 진단 로그, SUCCESS 뒤 응답 유실 fixture 조합, 동일 lifecycle의 20주문 연결 검증, 명시 관찰 진행과 실행별 증거다. PG·주문·쿠폰·Outbox·랭킹의 외부 API/판정/회로를 바꾸지 않는다. 새 자동 reconcile scheduler·분산 추적 backend·Loki·운영 부하/실계정/운영 장애 검증·fault 시점 추가 랭킹 공개는 포함하지 않는다. 기존 W9 재시작/revision 회귀는 유지한다.
 
+**2026-11-23 범위 변경(사용자 결정):** 원문 필수 요구가 아닌 OBSERVED 직접 관찰 실행(`CheckoutIncidentLabTest`·`checkoutIncidentLab` 작업·`IncidentMonitoringSupport`의 실행별 collector·운영자 명령/판단 파일 진행·I9)을 범위에서 제외한다. 로컬 관측은 기존 앱과 이미 떠 있는 공유 Prometheus·Grafana(`docker/monitoring-compose.yml`, 수집 대상 `host.docker.internal:8081`)로 하며 공유 스택은 수정·재시작·중지하지 않는다. 원문의 health·Prometheus 원문·경계 로그·업무 지표 검증은 AUTO가 실제 직접 GET·로그 capture로 증거를 남긴다. AUTO는 기본으로 임의 management port를 쓰고, opt-in Gradle 속성 `-Pw10ObservePort=<port>`를 주면 그 포트(공유 수집과 맞추려면 8081)로 management를 띄워 공유 Prometheus가 실행 중 지표를 수집할 수 있게 한다. 이 관찰은 보조 화면이며 신선도 판정·통과 근거가 아니다. 아래 OBSERVED·collector·Lab·I9 관련 절은 승인 당시 기록으로 남기고 구현 대상이 아니다. `IncidentCheckpoint`의 OBSERVED 분기는 이미 구현·단위 검증된 코드로 남지만 실행 경로에서 쓰지 않는다.
+
 ## 2. 입력·식별·시간·불변 조건
 
 ### 2.1 고정 입력
@@ -201,10 +203,10 @@ recordConstraintConflict:
 |---|---|
 |CheckoutIncidentScenario|`run(Mode, ScenarioInputs, EvidenceWriter, Checkpoint, Deadline)`. 유일한 시나리오/주장 구현. 단계 간 DB/PG초기화 없음|
 |CheckoutIncidentTest|자동 wrapper1건, @Timeout420초. 동일 시나리오 AUTO 모드, 사람 대기/모니터링컨테이너 없음. 실제 health/Prometheus직접 GET과 실제 Kafka/배치 검증은 동일|
-|CheckoutIncidentLabTest|실습 wrapper1건, @Timeout30분. OBSERVED모드, 직접 GET+실제Prometheus/Grafana+명시진행. AUTO와 업무 assertion 동일|
+|CheckoutIncidentLabTest|**(2026-11-23 제외)** 실습 wrapper1건, @Timeout30분. OBSERVED모드, 직접 GET+실제Prometheus/Grafana+명시진행. AUTO와 업무 assertion 동일|
 |IncidentEvidenceWriter|§9의 새 실행/write-once/실패/봉인 계약|
 |IncidentCheckpoint|§8의 단계/nonce/advance/cancel/한도 계약. AUTO는 업무·증거 assertion 뒤에만 자동통과|
-|IncidentMonitoringSupport|OBSERVED의 실행별 collector 생성/준비/샘플확인/종료, §7|
+|IncidentMonitoringSupport|**(2026-11-23 제외)** OBSERVED의 실행별 collector 생성/준비/샘플확인/종료, §7|
 
 각 wrapper는 새 worker JVM의 별도 Test 작업에서만 실행한다. 일반 `test`에서는 이 **신규 두 클래스만** 정확히 제외하고 `checkoutIncidentTest`는 check에 연결한다. 기존 테스트 제외/기대값/검증 강도는 바꾸지 않는다. 수동 `checkoutIncidentLab`는 check에 연결하지 않는다. skip으로 수동 실행을 통과한 것처럼 표시하지 않는다.
 
@@ -239,9 +241,11 @@ LocalKafkaTestSupport는 공유broker를 종료하지 않으며 system property�
 
 ## 7. 실제 수집·Grafana·로그 연결 계약
 
+> **2026-11-23 범위 변경:** 실행별 collector·Grafana·fresh sample 판정(§7.1의 OBSERVED 부분, §7.2, §7.3)은 제외됐다(§1). AUTO의 port·health 상세·직접 GET 규칙과 opt-in 관찰 port만 유효하다.
+
 ### 7.1 포트와 실행 소유
 
-API 업무 port는 기존 FlowTest처럼 loopback ServerSocket으로 임의 port를 예약·확인한 뒤 닫고 그 값을 기동 인자로 전달한다. callback도 동일한 API port를 기동 전에 주입한다. release와 bind 사이의 경쟁은 남으므로 실제 bind 실패는 실패로 기록하며 다른 서비스에 요청하지 않는다. `management.server.port=0`, 두 주소는 모두127.0.0.1로 두고 실제 management port를 Boot의 management context/LocalManagementPort에서 얻는다. 설정 문자열0·가정8081을 실제 port로 쓰지 않는다. 테스트의 `management.endpoint.health.show-details=never`를 명시해 실제 health 상태 원문에 연결 비밀/상세 예외가 섞이지 않게 한다. 상태/기본 component 이름은 조작하지 않는다. 기동 후 실제 API port와 callback/manifest가 일치하는지도 검증한다. callback 주소를 기동 후 변경하는 새 제품 기능은 추가하지 않는다.
+API 업무 port는 기존 FlowTest처럼 loopback ServerSocket으로 임의 port를 예약·확인한 뒤 닫고 그 값을 기동 인자로 전달한다. callback도 동일한 API port를 기동 전에 주입한다. release와 bind 사이의 경쟁은 남으므로 실제 bind 실패는 실패로 기록하며 다른 서비스에 요청하지 않는다. `management.server.port=0`, 두 주소는 모두127.0.0.1로 두고 실제 management port를 Boot의 management context/LocalManagementPort에서 얻는다. 설정 문자열0·가정8081을 실제 port로 쓰지 않는다. 테스트의 `management.endpoint.health.show-details=never`를 명시해 실제 health 상태 원문에 연결 비밀/상세 예외가 섞이지 않게 한다. 상태/기본 component 이름은 조작하지 않는다. 기동 후 실제 API port와 callback/manifest가 일치하는지도 검증한다. callback 주소를 기동 후 변경하는 새 제품 기능은 추가하지 않는다. **2026-11-23 결정:** Gradle 속성 `w10ObservePort`가 있으면 AUTO는 그 값을 management port로 쓰고 실제 bind된 port가 요청값과 같은지 확인한다. 주소는 127.0.0.1을 유지하며 외부 노출 fallback은 없다. 포트 충돌·공유 수집 미도달은 테스트 통과·실패와 별개로 화면에서만 드러난다.
 
 기존 공유 `docker/monitoring-compose.yml`·prometheus.yml·datasource를 덮어쓰거나 공유stack을 restart하지 않는다. OBSERVED전용으로 runDir 아래 config를 생성하고 `w10-<runId>` 프로젝트에 Prometheus/Grafana2개만 띄운다. container_name은고정하지않고Dockerlabels/project/실제containerID를소유목록에기록한다. 호스트공개port는127.0.0.1에동적할당해9090/3000충돌을피하고 `docker compose port` 결과를검증해실제browser/API주소로저장한다.
 
@@ -457,12 +461,12 @@ baseline→fault→recovery사이에cleanup/truncate/PGreset을호출하지않�
 |I6|본인복구10·0·10/create증가0/소유권/반복callback|실제controller/adapter/DB/PG/예약/Outbox|
 |I7|point/coupon불변과비어있지않은대조군|잔액/기록·쿠폰목록/필드/campaign전후값|
 |I8|실제relay/Kafka/consumer중복/활동40·A40/B20/배치/API|receipt/offset/commit·DB·snapshot/JobExplorer/API|
-|I9|OBSERVEDtarget실제 port/보정OFF·동일시각up대응/fresh0→3→0/그래프+명시진행|유효flags·time()기준·raw S/up·진행중scrape제외·helper의시각/누락/targets갱신경쟁대조·원문·ready/accepted/화면/진단|
+|I9|**(2026-11-23 제외, §1)** OBSERVEDtarget실제 port/보정OFF·동일시각up대응/fresh0→3→0/그래프+명시진행|유효flags·time()기준·raw S/up·진행중scrape제외·helper의시각/누락/targets갱신경쟁대조·원문·ready/accepted/화면/진단|
 |I10|잘못된nonce/단계/runId/operator/경로·판단/hash/손상명령/중복/timeout/cancel|진행helper의파일/유한가짜시계단위검증,자동복구없음|
 |I11|중간실패/증거쓰기실패/fault불변/정리소유/자식생존|수집helper·기존정리회귀·실제종료기록,강제미실행분기는명시|
 |I12|누적기능·lint·ArchUnit·W9restart/revision|현재코드의새검사결과,0건/skip/중단/접속실패별도|
 
-I9는AUTO의통과로대체하지않는다. I10/I11의제어된단위실패를실제외부장애/종료불명재현으로확대하지않는다. 신규UI스크린샷이나marker만으로통과시키지않는다. 기존유효회귀·기대값은삭제/완화하지않는다. 과거실행결과는이 변경의실행결과가아니다.
+I9는 제외됐으며 AUTO 통과를 I9 완료로 쓰지 않는다. I10/I11의제어된단위실패를실제외부장애/종료불명재현으로확대하지않는다. 신규UI스크린샷이나marker만으로통과시키지않는다. 기존유효회귀·기대값은삭제/완화하지않는다. 과거실행결과는이 변경의실행결과가아니다.
 
 누적 회귀는상품/브랜드/좋아요/관리자·캐시·과거주문보존,Point/PG단일시도/예약/조회조정,Outbox발행gap/소비중복,쿠폰총량/중복/수용/본인목록,랭킹실제입력/동일instance재시작/revision/공개API를기능별로보고한다. API의기존check가O11을포함하는것을보존하고streamer/batch/PG변경모듈의check·관련회귀도포함한다. 기존W8opt-in8건은명시실행여부를구분하며skip을통과나이번새필수장애실험으로기록하지않는다.
 

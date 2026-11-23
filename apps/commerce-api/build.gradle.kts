@@ -140,6 +140,11 @@ val checkoutIncidentTest = tasks.register<Test>("checkoutIncidentTest") {
     jvmArgumentProviders.add(CommandLineArgumentProvider {
         listOf("-Dweekly-ranking.batch-child.classpath=" + weeklyRankingBatchChildClasspath.asPath)
     })
+    // opt-in: -Pw10ObservePort=8081 이면 management 를 그 포트로 띄워 공유 Prometheus 가 실행 중 지표를 수집할 수 있게 한다.
+    val observePort = providers.gradleProperty("w10ObservePort")
+    jvmArgumentProviders.add(CommandLineArgumentProvider {
+        observePort.orNull?.let { listOf("-Dw10.observe-management-port=$it") } ?: emptyList()
+    })
     useJUnitPlatform()
     systemProperty("user.timezone", "Asia/Seoul")
     systemProperty("spring.profiles.active", "test")
