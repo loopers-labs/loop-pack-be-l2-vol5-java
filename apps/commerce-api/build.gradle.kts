@@ -50,16 +50,25 @@ dependencies {
 // 두 앱 모두 application.yml이 있어 api 쪽이 먼저 읽히도록 streamer 출력을 classpath 맨 뒤에 둔다.
 evaluationDependsOn(":apps:commerce-streamer")
 val streamerMain = project(":apps:commerce-streamer").extensions.getByType<SourceSetContainer>()["main"]
+// 9주차 4단계: 주문부터 주간 랭킹 API까지 E2E. 실제 batch job·런처를 같은 JVM의 별도 컨텍스트로 띄우려고 batch main 출력도
+// 이 source set에만 넣는다(streamer와 같은 방식, 맨 뒤). 제품 runtime과 기존 test에는 들어가지 않는다.
+evaluationDependsOn(":apps:commerce-batch")
+val batchMain = project(":apps:commerce-batch").extensions.getByType<SourceSetContainer>()["main"]
 
 val e2eTest by sourceSets.creating {
     compileClasspath = sourceSets.main.get().output + sourceSets.test.get().output +
-        configurations["e2eTestCompileClasspath"] + streamerMain.output
+        configurations["e2eTestCompileClasspath"] + streamerMain.output + batchMain.output
     runtimeClasspath = output + sourceSets.main.get().output + sourceSets.test.get().output +
-        configurations["e2eTestRuntimeClasspath"] + streamerMain.output
+        configurations["e2eTestRuntimeClasspath"] + streamerMain.output + batchMain.output
 }
 
 configurations["e2eTestImplementation"].extendsFrom(configurations.testImplementation.get())
 configurations["e2eTestRuntimeOnly"].extendsFrom(configurations.testRuntimeOnly.get())
+
+dependencies {
+    // batch 컨텍스트(E2eBatchContext)가 쓰는 Spring Batch. e2eTest source set에만 둔다.
+    "e2eTestImplementation"("org.springframework.boot:spring-boot-starter-batch")
+}
 
 val e2eTestTask = tasks.register<Test>("e2eTest") {
     description = "주문 API부터 streamer 구매 활동 consumer까지 한 JVM에서 확인한다."
@@ -77,4 +86,15 @@ val e2eTestTask = tasks.register<Test>("e2eTest") {
 
 tasks.check {
     dependsOn(e2eTestTask)
+}
+
+// 주간 랭킹 완성 랭킹·공개 pointer의 정의는 batch SQL 한 벌이다(D155). api 운영 코드는 SQL로 읽기만 하고, api 테스트는 그 파일을
+// 빌드 때 복사해 그대로 실행한다(내용을 다시 정의하지 않는다). 운영 classpath에는 들어가지 않는다.
+val rankingTablesSql = tasks.register<Sync>("rankingTablesSql") {
+    from(rootProject.file("apps/commerce-batch/src/main/resources/sql/create-ranking-tables.sql"))
+    into(layout.buildDirectory.dir("ranking-tables-sql/sql/ranking"))
+}
+
+dependencies {
+    testRuntimeOnly(files(layout.buildDirectory.dir("ranking-tables-sql")).builtBy(rankingTablesSql))
 }
