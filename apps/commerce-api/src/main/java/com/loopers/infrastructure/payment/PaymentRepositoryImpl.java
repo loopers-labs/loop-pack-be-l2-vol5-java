@@ -2,6 +2,7 @@ package com.loopers.infrastructure.payment;
 
 import com.loopers.domain.payment.PaymentModel;
 import com.loopers.domain.payment.PaymentRepository;
+import com.loopers.domain.payment.PaymentStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -38,5 +39,13 @@ public class PaymentRepositoryImpl implements PaymentRepository {
     @Override
     public PaymentModel save(PaymentModel payment) {
         return paymentJpaRepository.save(payment);
+    }
+
+    @Override
+    public long countByStatus(PaymentStatus status) {
+        if (status == null) {
+            throw new IllegalArgumentException("결제 상태 필수");
+        }
+        return paymentJpaRepository.countByStatus(status);
     }
 }

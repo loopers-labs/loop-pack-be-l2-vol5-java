@@ -21,4 +21,7 @@ public interface PaymentRepository {
     List<PaymentModel> findAllByOrderIds(Collection<Long> orderIds);
 
     PaymentModel save(PaymentModel payment);
+
+    /** 현재 저장된 해당 상태의 결제 행 수(COUNT). status 는 필수이며 null 을 전체 집계로 바꾸지 않는다. */
+    long countByStatus(PaymentStatus status);
 }
