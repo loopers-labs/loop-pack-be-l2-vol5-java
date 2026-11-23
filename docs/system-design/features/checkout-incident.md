@@ -357,6 +357,7 @@ OBSERVED의 코드 판정/실제 증거는 FAULT_READY 전에 봉인한다. 운�
 - FAULT ADVANCE는 현재U목록과 §4.4·§8.1.1 대조를 담은 봉인 diagnosis 및 ready 이후 별도 사람 판단 PROCEED 파일을 참조하고, 원문 hash/nonce/operator/목록/진행 조건 일치를 모두 검증해야 한다. fixture정답/그래프3만으로복구허가를대체하지않는다. 코드가사람의판단진실성을증명하지는못하며누가무슨근거로진행했는지기록한다.
 - 소비결과는 `accepted/<stage>.json`에CREATE_NEW로남기며소비한명령을다른단계/실행에재사용하지않는다. 실행 시작 metadata에 고정한 단일 operator만 명령/사람 판단 파일을 발행하며 두 파일의 operator가 metadata와 일치해야 한다. 로컬 HANDOFF를 구현 계약이나 런타임 입력으로 읽지 않는다. 이 문자열 일치 검사는 인증/동시 writer 잠금이 아니며 실행 담당을 한 명으로 제한하는 운영 전제를 기록한다. accepted에는 소비한 명령/판단 파일 hash를 남긴다. 중복명령은새조치를만들지않고기존소비기록과대조해오류로남긴다.
 - 각checkpoint 최대5분, 전체 실습30분. 남은전체시간이더짧으면그 한도가우선. poll간격200ms,monotonicdeadline,interrupt는flag복원후취소처리. timeout/CANCEL은ADVANCE나자동복구가아니다. STOP 판단은 복구를 허용하지 않고 CANCEL 또는 남은 한도 내 timeout으로 종료한다. STOP/CANCEL/timeout/interrupt는 wrapper에서 중단 예외를 정상 반환·JUnit assumption/aborted/skip으로 변환하지 않으며, 실습 미완료 실패로 기록하고 finally 정리를 수행한다. AUTO/OBSERVED 모두 완료 assertion 전 중단은 통과가 아니다. AUTO는사람명령파일을발행하지않으며같은assertion뒤진행한다.
+- **2026-11-23 구현 세부 사용자 결정:** AUTO는 ready·command를 만들지 않고 `accepted/<stage>.json`에 action=AUTO_ADVANCE와 입력 사실 hash만 남긴다. OBSERVED에서 commands/에 현재 기대 파일 외의 파일이 있거나 소비한 명령·판단 파일의 bytes가 accepted hash와 달라지면 내용을 읽지 않고 파일명만 실패로 기록한 뒤 취소한다. control 파일은 `runDir/control/` 아래 `ready/`·`commands/`·`accepted/`·`operator-review.json`이며 운영자 임시 파일은 `control/tmp/`에서 완성해 atomic move한다.
 
 ### 8.3 복구와 반복 적용
 
