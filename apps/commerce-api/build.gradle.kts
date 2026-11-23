@@ -83,6 +83,9 @@ tasks.test {
     }
     // 08-3: 한 worker 의 캐시된 Spring context(최대 32)가 기본 512m 를 넘겨 OutOfMemoryError 가 났다. 기대·시간 한도는 그대로다.
     maxHeapSize = "1g"
+    // W10 단위E: 한 worker 에서 회수되지 않은 context 가 캐시 상한을 넘어 142개까지 쌓여 1g 도 다 썼다.
+    // 원인 제거(테스트 경량화)는 후속이며, 여기서는 30개 클래스마다 새 JVM 으로 교체해 누적 상한만 둔다.
+    forkEvery = 30
 }
 
 val w6OutboxRecoveryTest = tasks.register<Test>("w6OutboxRecoveryTest") {
