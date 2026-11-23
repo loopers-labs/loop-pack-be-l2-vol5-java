@@ -265,6 +265,7 @@ final class CheckoutIncidentScenario {
         relayAndAwait(roster.baseline());
 
         Map<String, Object> summary = assertDatabase(roster.baseline(), 10, 0, 10, 10, 80, 90, 10, 20, 20, 10);
+        assertOrderRows(summary, roster.baseline(), roster.baseline());
         assertThat(preserved()).as("포인트·쿠폰 불변").isEqualTo(preservedBefore);
         String prometheus = assertDirectObservation(0);
         writeStageEvidence(IncidentStage.BASELINE, summary, prometheus);
@@ -311,6 +312,7 @@ final class CheckoutIncidentScenario {
             .as("U 활동 0").isZero();
 
         Map<String, Object> summary = assertDatabase(roster.fault(), 7, 3, 10, 20, 60, 80, 17, 34, 34, 17);
+        assertOrderRows(summary, concat(roster.baseline(), normal), concat(roster.baseline(), roster.fault()));
         assertThat(preserved()).as("포인트·쿠폰 불변").isEqualTo(preservedBefore);
         String direct = assertDirectObservation(UNKNOWN_COUNT);
         writeStageEvidence(IncidentStage.FAULT, summary, direct);
@@ -514,6 +516,8 @@ final class CheckoutIncidentScenario {
         awaitHandled("order-confirmed:" + firstUnknown, republished.partition(), republished.offset(), "ALREADY_PROCESSED");
 
         Map<String, Object> summary = assertDatabase(roster.fault(), 10, 0, 10, 20, 60, 80, 20, 40, 40, 20);
+        List<Long> all = concat(roster.baseline(), roster.fault());
+        assertOrderRows(summary, all, all);
         assertThat(pg.state().counts().createReceived()).as("복구 후 create 추가 0").isEqualTo(createStart);
         assertThat(successfulRegistrations()).as("복구 중 새 plan 등록 0").isEqualTo(registered);
         assertThat(count("SELECT COUNT(*) FROM order_confirmed_outbox WHERE order_id IN (" + in(unknowns) + ")"))
@@ -680,6 +684,53 @@ final class CheckoutIncidentScenario {
         assertThat(confirmedAt).as("최초 확정 시각 고정")
             .containsOnly(CONFIRMED_AT.toString().replace("T", " ").replace("Z", ".000000"));
         return summary;
+    }
+
+    /**
+     * 합계만으로는 주문 사이의 과다·부족이 상쇄될 수 있어, roster 로 만든 기대 행과 새 DB 조회 행을 정확히 대조한다.
+     * 같은 조회 결과를 summary 에 넣어 단계 증거와 assertion 이 같은 값을 보게 한다.
+     */
+    private void assertOrderRows(Map<String, Object> summary, List<Long> activityOrders, List<Long> reservedOrders) {
+        List<String> activity = fresh.query("SELECT order_id, product_id, quantity FROM product_purchase_activity",
+            (rs, n) -> rs.getLong(1) + ":" + rs.getLong(2) + ":" + rs.getLong(3));
+        // changed_quantity 는 변경량의 크기다(StockChange). 감소 방향은 before - after 로 따로 확인한다.
+        List<String> reservations = fresh.query("SELECT order_id, product_id, changed_quantity, "
+                + "before_quantity - after_quantity FROM stock_history WHERE cause = 'ORDER_RESERVATION'",
+            (rs, n) -> rs.getLong(1) + ":" + rs.getLong(2) + ":" + rs.getLong(3) + ":" + rs.getLong(4));
+        summary.put("activityRowsByOrder", sorted(activity));
+        summary.put("reservationRowsByOrder", sorted(reservations));
+        assertExactRows("구매 활동", activity, expectedRows(activityOrders, roster.productA(), roster.productB(), 2, 1));
+        assertExactRows("재고 예약", reservations, expectedRows(reservedOrders, roster.productA(), roster.productB(), "2:2", "1:1"));
+    }
+
+    /** 주문마다 상품 A·B 한 행씩의 "orderId:productId:quantity" 기대값. */
+    static List<String> expectedRows(List<Long> orders, long productA, long productB, long quantityA, long quantityB) {
+        return expectedRows(orders, productA, productB, String.valueOf(quantityA), String.valueOf(quantityB));
+    }
+
+    /** 상품별 값이 여러 열이면 "changed:decrease"처럼 이어 붙인 값을 준다. */
+    static List<String> expectedRows(List<Long> orders, long productA, long productB, String valueA, String valueB) {
+        List<String> rows = new ArrayList<>();
+        for (long orderId : orders) {
+            rows.add(orderId + ":" + productA + ":" + valueA);
+            rows.add(orderId + ":" + productB + ":" + valueB);
+        }
+        return sorted(rows);
+    }
+
+    /** 중복·누락·예상 밖 행을 모두 드러내도록 정렬한 목록 전체를 비교한다. */
+    static void assertExactRows(String label, List<String> actual, List<String> expected) {
+        assertThat(sorted(actual)).as(label + " 주문별 행").containsExactlyElementsOf(sorted(expected));
+    }
+
+    private static List<String> sorted(List<String> rows) {
+        return rows.stream().sorted().toList();
+    }
+
+    private static List<Long> concat(List<Long> first, List<Long> second) {
+        List<Long> joined = new ArrayList<>(first);
+        joined.addAll(second);
+        return joined;
     }
 
     /** 실제 management port 의 health·Prometheus 를 직접 GET 하고 gauge 가 기대값인지 본다. 없는 표본을 0 으로 채우지 않는다. */

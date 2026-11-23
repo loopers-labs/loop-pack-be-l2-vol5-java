@@ -44,7 +44,7 @@
 
 UNKNOWN은 payment 상태이고 주문 상태는 PAYMENT_PENDING이다. DRAFT 명단을 만들었다고 payment UNKNOWN이 생성되지는 않는다. baseline/복구의 안정 시점 지표는0, fault의 안정 시점 지표는3이다. 정상17개도 TX A에서 UNKNOWN을 commit한 뒤 TX B에서 PENDING/최종 상태로 바뀌므로 confirm 처리 중 그래프에는 일시적인 UNKNOWN이 보일 수 있다. 단계 기대값은 모든 해당 업무 TX와 전달이 안정화된 뒤에만 판정한다. 지표의 범위는 DB 전체이므로 이 수치가 성립하려면 배경 UNKNOWN이 없는 전용 DB임을 확인해야 한다.
 
-주문별 ORDER_RESERVATION은 A/B 각각1행·변경량 -2/-1이며 전체40행이다. ORDER_RELEASE와 PG에 의한 ORDER_DEDUCTION은0이다. UNKNOWN3개의 예약은 유지되고 최종 SUCCESS 적용은 재고를 다시 차감하지 않는다. 포인트 잔액/충전 이력, 쿠폰 ID/사용자/캠페인/혜택/발급시각과 campaign issuedCount는 전 단계에서 준비 직후와 같다. 단순 행수뿐 아니라 저장된 값을 대조한다.
+주문별 ORDER_RESERVATION은 A/B 각각1행이며 전체40행이다. `changed_quantity`는 기존 `StockChange` 계약대로 변경량의 크기 2/1이고 감소 방향은 `before_quantity−after_quantity`=2/1로 확인한다(2026-11-23 사용자 결정: 기존 표기 -2/-1은 감소 방향 표기였다). ORDER_RELEASE와 PG에 의한 ORDER_DEDUCTION은0이다. UNKNOWN3개의 예약은 유지되고 최종 SUCCESS 적용은 재고를 다시 차감하지 않는다. 포인트 잔액/충전 이력, 쿠폰 ID/사용자/캠페인/혜택/발급시각과 campaign issuedCount는 전 단계에서 준비 직후와 같다. 단순 행수뿐 아니라 저장된 값을 대조한다.
 
 한 주문은 Outbox 사실1개·구매 활동2행이다. broker 발행 record 수/시도 수와 DB의 업무 효과 수를 혼동하지 않는다. 최종 새 snapshot의 입력40행, 상품2개, 수량합계60, API 결과는 A40점1위·B20점2위다. 다른 주·sentinel·별도 구매 입력을 이 사고 시나리오에 삽입하지 않는다.
 
