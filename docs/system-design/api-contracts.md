@@ -164,6 +164,19 @@ confirm·reconcile은 이 객체를 응답 본문으로 반환하고, 고객 주
 | 쿠폰 발급 대기열 접수 | `POST` | `/coupon-campaigns/{campaignId}/issue-requests` | Path: `campaignId` | `202 Accepted`<br/>작업 ID와 현재 상태. 작업 저장만 뜻하며 처리 시점을 약속하지 않음<br/>`200 OK`<br/>끝난 기존 작업 또는 이미 받은 쿠폰 | `404 Not Found`·`409 Conflict`<br/>새 발급이 필요한 요청의 캠페인 거절<br/>`429 Too Many Requests`<br/>미완료 작업 한도 도달<br/>`503 Service Unavailable`<br/>대기열 확인 불가 또는 신규 수용 닫힘 |
 | 쿠폰 발급 작업 조회 | `GET` | `/coupon-issue-requests/{requestId}` | Path: `requestId` | `200 OK`<br/>작업의 현재 상태와 결과 | `404 Not Found`<br/>없거나 다른 사용자의 작업<br/>`503 Service Unavailable`<br/>대기열 확인 불가 |
 
+### 주간 랭킹
+
+랭킹 API는 요청자 식별이 없다. 계산·공개 규칙과 응답 예시는 [주간 구매 랭킹](use-cases/weekly-ranking.md#조회-계약)을 따른다.
+
+| 기능 | Method | Path | 입력 | 성공 | 대표 오류 |
+|---|---|---|---|---|---|
+| 주간 구매 랭킹 조회 | `GET` | `/rankings/weekly` | Query: `periodStart`(필수, `yyyy-MM-dd`, 월요일), `limit`(미지정 시 `10`, 1~100) | `200 OK`<br/>`PUBLISHED`: 요청한 기간의 공개본(가장 최근에 완성된 회차)과 상품별 점수·계산 순위<br/>`NOT_PUBLISHED`: 공개본 없음, 빈 목록 | `400 Bad Request`<br/>기간·limit 입력 오류 |
+
+- 기간은 UTC 월요일 00:00부터 다음 월요일 00:00 전까지다. 한국 시간 월요일 00:00~09:00의 구매는 지난주에 들어간다.
+- `rank`는 저장된 계산 순위다. 삭제된 상품을 제외하므로 1위, 3위처럼 간격이 생길 수 있다. 제외한 뒤 `limit`을 적용한다.
+- `revision`은 공개본인 회차 번호, `calculatedAt`은 그 회차의 계산 시각이다. 그 뒤에 도착한 같은 기간의 구매는 결과에 들어 있지 않다.
+- 공개본이 없으면 다른 기간의 결과로 대신하지 않는다.
+
 ## 포인트 충전 기대값
 
 | 규칙 | 주어진 상태와 입력 | 기대값 |
