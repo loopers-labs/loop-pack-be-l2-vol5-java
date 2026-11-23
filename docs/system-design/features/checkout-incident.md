@@ -205,7 +205,7 @@ recordConstraintConflict:
 |CheckoutIncidentTest|자동 wrapper1건, @Timeout420초. 동일 시나리오 AUTO 모드, 사람 대기/모니터링컨테이너 없음. 실제 health/Prometheus직접 GET과 실제 Kafka/배치 검증은 동일|
 |CheckoutIncidentLabTest|**(2026-11-23 제외)** 실습 wrapper1건, @Timeout30분. OBSERVED모드, 직접 GET+실제Prometheus/Grafana+명시진행. AUTO와 업무 assertion 동일|
 |IncidentEvidenceWriter|§9의 새 실행/write-once/실패/봉인 계약|
-|IncidentCheckpoint|§8의 단계/nonce/advance/cancel/한도 계약. AUTO는 업무·증거 assertion 뒤에만 자동통과|
+|IncidentCheckpoint|§8의 단계/nonce/advance/cancel/한도 계약. AUTO는 업무·증거 assertion 뒤에만 자동통과. **(2026-11-23 단위D 정리)** OBSERVED 경로 코드는 삭제했고 현재 구현은 `await(stage, facts)`의 AUTO accepted 기록과 자동 판정 불허 시 중단뿐이다|
 |IncidentMonitoringSupport|**(2026-11-23 제외)** OBSERVED의 실행별 collector 생성/준비/샘플확인/종료, §7|
 
 각 wrapper는 새 worker JVM의 별도 Test 작업에서만 실행한다. 일반 `test`에서는 이 **신규 두 클래스만** 정확히 제외하고 `checkoutIncidentTest`는 check에 연결한다. 기존 테스트 제외/기대값/검증 강도는 바꾸지 않는다. 수동 `checkoutIncidentLab`는 check에 연결하지 않는다. skip으로 수동 실행을 통과한 것처럼 표시하지 않는다.
@@ -216,7 +216,7 @@ recordConstraintConflict:
 
 - `IncidentMonitoringSupport.start(runDir, actualManagementPort, localImageIds, deadline)`은 새 프로젝트와 실제 published port를 반환한다. 시작 전후 자원을 즉시 소유 목록에 추가해 부분 기동 실패도 정리할 수 있어야 한다.
 - `awaitFreshSamples(expectedUnknown, phaseStableAt, deadline)`은 §7.3을 충족한 두 sample과 원문 위치를 반환한다. 호스트 phaseStableAt은 기록용이고 함수 내부에서 안정화 후 collector 기준 시각을 얻는다. 다른 instance/없는 값/NaN을 허용하지 않는다.
-- `IncidentCheckpoint.await(stage, immutableFacts, deadline)`은 ADVANCE 또는 취소 예외만 반환한다. 단순 시간 경과를 ADVANCE로 바꾸지 않는다.
+- **(2026-11-23 단위D: OBSERVED 제외로 deadline 인자·명령 대기 삭제, 아래는 승인 당시 계약)** `IncidentCheckpoint.await(stage, immutableFacts, deadline)`은 ADVANCE 또는 취소 예외만 반환한다. 단순 시간 경과를 ADVANCE로 바꾸지 않는다.
 - `IncidentEvidenceWriter.writeStage(stage, immutableAllowedSnapshot)`, `sealFault()`, `verifyFaultUnchanged()`, `recordFailure(stage, failureClass, allowedContext)`는 §9의 원문·실패 의미를 따른다. JSON에서 비유한 gauge 값은 숫자0이나 비표준 숫자로 바꾸지 않고 원문의 `NaN` 문자열과 `finite=false`를 보존한다.
 - `CheckoutIncidentScenario.relayAndAwait(orderIds, deadline)`는 §8.4의 실제 eventId별 전달·receipt·consumer commit·행/수량 대조를 모두 완료해야 반환한다.
 
@@ -347,11 +347,13 @@ AUTO는수집된경계결과/거래/DB/실제 TX종료가일치하는지명시as
 
 공통: ID/금액/거래·호출 대응, START→RESULT/ERROR와 실제 TX 종료의 완결성부터 검사한다. **2026-11-23 사용자 결정:** callId와 observationId는 서로 다른 UUID이므로, U별로 providerOrderId가 같은 CREATE START/RESULT 쌍과 orderId가 같은 `APPLY_OBSERVATION`(source=CREATE)을 찾고, fault 구간에서 각각 정확히 1개이며 로그 순서가 RESULT→APPLY일 때만 같은 생성 호출로 연결한다. 0개·복수·순서 역전은 미확정이다. 누락/UNKNOWN/진단 실패/예상 밖 추가 적용은 자동 판정 미확정 및 진단 실패이며 복구 전 중단한다. 각 판정은 이 실행의 포착 범위에만 적용한다. §4.4의 모든 U 조합이 성립하고 유실 가설 지지·나머지 두 가설의 해당 범위 배제가 확인돼야 AUTO가 기존 reconcile로 진행한다. 세 가지 모든 장애를 새로 주입하는 범위는 추가하지 않는다.
 
-OBSERVED의 코드 판정/실제 증거는 FAULT_READY 전에 봉인한다. 운영자는 ready 뒤 이를 읽고 별도 `control/operator-review.json`을 완성해 atomic move로 공개한다. schemaVersion1/runId/stage=FAULT/ready nonce/operator/createdAt, 봉인 diagnosis의 상대경로·SHA-256, 현재 U 목록, 가설별 판단(지지/배제/미확정)·근거 상대경로·비어 있지 않은 이유, decision=PROCEED 또는STOP을 포함한다. 사람 판단이 자동 판정을 덮어쓰지 않는다. PROCEED는 모든 U에 대해 위 진행 조건과 일치할 때만 가능하며 이견/미확정이면 STOP/CANCEL로 남긴다. CANCEL을 소비할 때 제출된 STOP 판단 파일이 있으면 검증해 hash를 함께 보존하되, 파일이 없다는 이유로 취소 자체를 막지 않는다. 자동 실패를 사람 판단으로 우회하지 않는다. 자동 판정의 한계와 이견을 보존하고 후속 설계 토론으로 넘긴다.
+**(2026-11-23 제외, §1 — 아래 OBSERVED 사람 판단 파일 계약은 구현하지 않으며 단위D에서 관련 코드를 삭제했다)** OBSERVED의 코드 판정/실제 증거는 FAULT_READY 전에 봉인한다. 운영자는 ready 뒤 이를 읽고 별도 `control/operator-review.json`을 완성해 atomic move로 공개한다. schemaVersion1/runId/stage=FAULT/ready nonce/operator/createdAt, 봉인 diagnosis의 상대경로·SHA-256, 현재 U 목록, 가설별 판단(지지/배제/미확정)·근거 상대경로·비어 있지 않은 이유, decision=PROCEED 또는STOP을 포함한다. 사람 판단이 자동 판정을 덮어쓰지 않는다. PROCEED는 모든 U에 대해 위 진행 조건과 일치할 때만 가능하며 이견/미확정이면 STOP/CANCEL로 남긴다. CANCEL을 소비할 때 제출된 STOP 판단 파일이 있으면 검증해 hash를 함께 보존하되, 파일이 없다는 이유로 취소 자체를 막지 않는다. 자동 실패를 사람 판단으로 우회하지 않는다. 자동 판정의 한계와 이견을 보존하고 후속 설계 토론으로 넘긴다.
 
 사람 파일은 §8.2의 runDir 내부/비 symlink/32KiB/형식·시각·nonce/operator 검사와 같은 정책을 적용한다. accepted 기록 전에 읽은 bytes의 hash를 저장해 소비 후 수정도 확인한다. 이 기록은 사람이 어떤 근거로 판단했는지를 남기며 판단의 진실성·운영자 인증을 자동 증명하지 않는다. AUTO는 사람 판단 파일을 합성하지 않는다.
 
 ### 8.2 명령파일 계약
+
+> **2026-11-23 범위 변경:** ready·명령·판단 파일·nonce·poll·5분/30분 한도는 OBSERVED 전용이라 제외됐고 단위D에서 코드도 삭제했다. 현재 유효한 것은 아래 마지막 항목의 AUTO accepted 기록과 중단 예외를 skip/정상으로 바꾸지 않는 규칙이다.
 
 `IncidentCheckpoint.await(stage, facts, deadline)`은업무/증거assertion이끝난뒤에만호출한다. runDir/control은실행 전용이고외부서버/제품제어API를추가하지않는다.
 

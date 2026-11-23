@@ -25,7 +25,7 @@ class CheckoutIncidentTest {
         IncidentEvidenceWriter writer = IncidentEvidenceWriter.openRun(IncidentEvidenceWriter.DEFAULT_ROOT,
             IncidentCodeReference.capture(Path.of("")), IncidentMode.AUTO, OPERATOR, CheckoutIncidentScenario.CONFIRMED_AT);
         System.out.println("W10_AUTO runId=" + writer.runId() + " runDir=" + writer.runDir());
-        IncidentCheckpoint checkpoint = IncidentCheckpoint.create(IncidentMode.AUTO, writer, OPERATOR);
+        IncidentCheckpoint checkpoint = IncidentCheckpoint.create(writer);
         new CheckoutIncidentScenario().run(IncidentMode.AUTO, new CheckoutIncidentScenario.ScenarioInputs(OPERATOR),
             writer, checkpoint, deadline);
     }

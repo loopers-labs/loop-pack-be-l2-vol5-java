@@ -31,8 +31,4 @@ final class IncidentDeadline {
     boolean expired() {
         return remaining().isZero();
     }
-
-    long nowNanos() {
-        return nanoTime.getAsLong();
-    }
 }

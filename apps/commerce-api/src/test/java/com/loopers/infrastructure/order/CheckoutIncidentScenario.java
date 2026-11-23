@@ -91,7 +91,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
 /**
- * W10 공통 20주문 사고 시나리오(checkout-incident §2·§5·§6·§8). AUTO·OBSERVED 가 같은 업무 assertion 을 공유한다.
+ * W10 공통 20주문 사고 시나리오(checkout-incident §2·§5·§6·§8). AUTO wrapper 가 실행한다.
  * baseline→fault→recovery 사이에 DB·PG 초기화를 하지 않는다.
  */
 final class CheckoutIncidentScenario {
@@ -304,7 +304,7 @@ final class CheckoutIncidentScenario {
         assertThat(preserved()).as("포인트·쿠폰 불변").isEqualTo(preservedBefore);
         String prometheus = assertDirectObservation(0);
         writeStageEvidence(IncidentStage.BASELINE, summary, prometheus);
-        checkpoint.await(IncidentStage.BASELINE, new IncidentCheckpoint.Facts("baseline", summary, null), deadline);
+        checkpoint.await(IncidentStage.BASELINE, new IncidentCheckpoint.Facts("baseline", summary, null));
     }
 
     /** 기본 PENDING 생성 → PG 거래 SUCCESS 변경(fixture 제어) → 본인 reconcile 로 확정한다. commerce DB 를 직접 바꾸지 않는다. */
@@ -358,7 +358,7 @@ final class CheckoutIncidentScenario {
         writer.sealFault();
         String diagnosisSha256 = IncidentCodeReference.sha256(readEvidence("fault/diagnosis.json"));
         checkpoint.await(IncidentStage.FAULT, new IncidentCheckpoint.Facts("fault", summary,
-            new IncidentCheckpoint.FaultFacts("fault/diagnosis.json", diagnosisSha256, unknowns, diagnosis.proceed())), deadline);
+            new IncidentCheckpoint.FaultFacts("fault/diagnosis.json", diagnosisSha256, unknowns, diagnosis.proceed())));
     }
 
     /** 등록 helper 로 한 요청짜리 plan 을 건 뒤 실제 confirm 한다. 응답 유실이라 결제는 UNKNOWN·주문은 PAYMENT_PENDING 이다. */
@@ -563,7 +563,7 @@ final class CheckoutIncidentScenario {
         writeStageEvidence(IncidentStage.RECOVERY, summary, direct);
         writer.writeStage(IncidentStage.RECOVERY, StageSnapshot.of(new StageSnapshot.Json("ranking", ranking)));
         writer.verifyFaultUnchanged();
-        checkpoint.await(IncidentStage.RECOVERY, new IncidentCheckpoint.Facts("recovery", summary, null), deadline);
+        checkpoint.await(IncidentStage.RECOVERY, new IncidentCheckpoint.Facts("recovery", summary, null));
     }
 
     private void reconcileOwn(long orderId) {
