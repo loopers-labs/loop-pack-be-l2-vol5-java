@@ -56,12 +56,9 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 
 /**
- * 실제 Testcontainers MySQL·Spring 프록시·애플리케이션 registry·loopback management 포트의 {@code /actuator/prometheus} 로
- * UNKNOWN gauge 를 검증한다(checkout-incident §3, §10 I2).
- * <p>
- * 대역 범위: {@code PaymentRepository} 는 실제 Bean 을 감싼 spy 다. 기본은 실제 메서드를 그대로 호출하고,
- * {@code boundaryFailure*} 사례만 저장소 경계에서 예외·음수를 주입한다(TX 프록시·registry·HTTP 는 실제).
- * 이 대역은 실제 DB 장애·쿼리 취소 검증이 아니다.
+ * 실제 MySQL·Spring TX·Actuator HTTP 로 UNKNOWN gauge 를 검증한다(checkout-incident §3, §10 I2).
+ * 저장소 spy 는 기본적으로 실제 호출을 위임하며, boundaryFailure* 사례에서만 예외·음수를 주입한다.
+ * 이 주입은 실제 DB 장애·쿼리 취소 검증이 아니다.
  */
 @AutoConfigureObservability(tracing = false) // Boot 테스트는 기본으로 metrics export 를 끄므로 실제 Prometheus registry 를 켠다.
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
@@ -71,7 +68,7 @@ import static org.mockito.Mockito.doThrow;
     "management.server.address=127.0.0.1",
     "management.endpoint.health.show-details=never"
 })
-@DisplayName("UNKNOWN 결제 gauge 는 실제 DB 의 현재 UNKNOWN 수를 수집마다 읽어 Prometheus 로 노출한다.")
+@DisplayName("UNKNOWN 결제 gauge DB·HTTP 통합 검증")
 class PaymentMetricsIntegrationTest {
 
     private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(3);
@@ -140,7 +137,7 @@ class PaymentMetricsIntegrationTest {
         }
     }
 
-    @DisplayName("실제 DB 의 UNKNOWN 만 세고, 정상 0·commit 뒤 변화를 새 수집마다 DB 조회로 반영한다.")
+    @DisplayName("수집마다 UNKNOWN 을 조회하고 commit 뒤 변화를 반영한다.")
     @Test
     void countsUnknownRowsOnEveryScrape() {
         Sample empty = scrapeSample();
@@ -177,7 +174,7 @@ class PaymentMetricsIntegrationTest {
         );
     }
 
-    @DisplayName("Prometheus 원문에 이름·HELP·TYPE gauge 와 기존 application 태그의 표본 하나만 있다.")
+    @DisplayName("Prometheus 원문의 이름·설명·타입·태그를 확인한다.")
     @Test
     void exposesGaugeInPrometheusFormat() {
         insertPayment(10L, "UNKNOWN");
@@ -197,7 +194,7 @@ class PaymentMetricsIntegrationTest {
         );
     }
 
-    @DisplayName("gauge 는 애플리케이션 registry 에 하나이고, 대상은 singleton bean 이며 조회는 Spring 프록시를 거친다.")
+    @DisplayName("단일 gauge·singleton 대상·TX 프록시와 쿼리 hint 를 확인한다.")
     @Test
     void registersOnceWithSingletonTargetAndProxy() throws NoSuchMethodException {
         PaymentUnknownGauge binder = context.getBean(PaymentUnknownGauge.class);
@@ -218,7 +215,7 @@ class PaymentMetricsIntegrationTest {
         );
     }
 
-    @DisplayName("HTTP 수집 스레드의 조회는 읽기 전용·1초 timeout TX 안에서 실제 저장소를 호출한다.")
+    @DisplayName("HTTP 수집 조회에 readOnly·timeout TX 가 적용된다.")
     @Test
     void scrapeRunsInReadOnlyTimedTransaction() {
         List<String> observed = new ArrayList<>();
@@ -244,7 +241,7 @@ class PaymentMetricsIntegrationTest {
         );
     }
 
-    @DisplayName("[대역] 저장소 경계 RuntimeException 이면 HTTP 200 에 NaN 표본, 정적 코드·예외 클래스만 기록하고 민감 표식은 새 로그에 없다.")
+    @DisplayName("[대역] 조회 예외는 HTTP 200·NaN 으로 노출하고 민감정보를 기록하지 않는다.")
     @Test
     void boundaryFailureExposesNaNWithoutSensitiveLog() {
         insertPayment(30L, "UNKNOWN");
@@ -268,7 +265,7 @@ class PaymentMetricsIntegrationTest {
         );
     }
 
-    @DisplayName("[대역] 저장소 경계가 음수를 주면 정상 값으로 내보내지 않고 NaN 과 내부 오류 클래스를 기록한다.")
+    @DisplayName("[대역] 음수 건수는 NaN 과 내부 오류 로그로 처리한다.")
     @Test
     void boundaryFailureNegativeCountExposesNaN() {
         doReturn(-1L).when(paymentRepository).countByStatus(any());

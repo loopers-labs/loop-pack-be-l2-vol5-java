@@ -26,15 +26,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
 /**
- * Spring·DB 없이 gauge 관측 함수와 조회 서비스의 분기를 확인한다. 저장소는 테스트 대역이며 실제 DB·HTTP·Spring 프록시 검증은
- * {@link PaymentMetricsIntegrationTest} 가 맡는다.
+ * 저장소 대역으로 gauge 와 조회 서비스의 분기를 검증한다. 실제 경로는 {@link PaymentMetricsIntegrationTest} 가 맡는다.
  */
-@DisplayName("UNKNOWN 결제 gauge 는 수집마다 현재 건수를 읽고, 조회 실패를 0 이 아닌 NaN 으로 내보낸다.")
+@DisplayName("UNKNOWN 결제 gauge 단위 검증")
 class PaymentMetricsConfigTest {
 
     private static final String SENSITIVE = "jdbc:mysql://secret-host:3306/loopers?password=hunter2 card=4111-1111";
 
-    @DisplayName("조회 서비스는 UNKNOWN 만 묻고 결과를 그대로 돌려주며, 음수는 내부 오류다.")
+    @DisplayName("UNKNOWN 만 조회하고 음수는 거절한다.")
     @Test
     void queryAsksUnknownOnlyAndRejectsNegative() {
         StubRepository repository = new StubRepository(() -> 3L);
@@ -50,7 +49,7 @@ class PaymentMetricsConfigTest {
         );
     }
 
-    @DisplayName("이름·설명·태그·단위가 계약대로 등록되고, 관측마다 저장소를 다시 읽어 바뀐 값과 정상 0 을 그대로 낸다.")
+    @DisplayName("지표 등록 계약과 관측마다 재조회·정상 0 을 확인한다.")
     @Test
     void readsCurrentValueOnEveryObservation() {
         StubRepository repository = new StubRepository(() -> 3L);
@@ -73,7 +72,7 @@ class PaymentMetricsConfigTest {
         );
     }
 
-    @DisplayName("같은 registry 에 다시 bind 해도 gauge 는 하나이고, 호출 측 참조가 없어져도 강한 참조로 값을 읽는다.")
+    @DisplayName("중복 등록을 막고 대상의 강한 참조를 유지한다.")
     @Test
     void registersOncePerRegistryAndKeepsStrongReference() {
         StubRepository repository = new StubRepository(() -> 2L);
@@ -92,7 +91,7 @@ class PaymentMetricsConfigTest {
         );
     }
 
-    @DisplayName("조회가 RuntimeException 이면 NaN 을 내고 정적 코드·예외 클래스만 남기며 메시지·stack 은 남기지 않는다.")
+    @DisplayName("조회 예외는 NaN 으로 반환하고 안전한 로그만 남긴다.")
     @Test
     void runtimeFailureBecomesNaNWithoutSensitiveLog() {
         StubRepository repository = new StubRepository(() -> {
@@ -115,7 +114,7 @@ class PaymentMetricsConfigTest {
         );
     }
 
-    @DisplayName("음수 건수는 정상 값으로 내보내지 않고 NaN 과 내부 오류 클래스를 기록한다.")
+    @DisplayName("음수는 NaN 과 내부 오류 로그로 처리한다.")
     @Test
     void negativeCountBecomesNaN() {
         PaymentUnknownGauge gauge = new PaymentUnknownGauge(new PaymentStatusQuery(new StubRepository(() -> -1L)));

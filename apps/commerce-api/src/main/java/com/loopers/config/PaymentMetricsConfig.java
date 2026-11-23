@@ -9,8 +9,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * 현재 UNKNOWN 결제 수 gauge(checkout-incident §3). 수집할 때마다 DB 를 읽고 값·초기 0·직전 값을 보관하지 않는다.
- * 조회 실패는 0 이 아니라 NaN(모름)이며, 정적 오류 코드와 예외 클래스만 기록한다.
+ * 수집마다 현재 UNKNOWN 건수를 조회하며, 조회 실패 시 NaN 을 반환한다(checkout-incident §3).
  */
 @Configuration
 public class PaymentMetricsConfig {
@@ -19,7 +18,7 @@ public class PaymentMetricsConfig {
     static final String UNKNOWN_GAUGE_DESCRIPTION = "Current payment rows in UNKNOWN state; excludes PENDING";
     static final String QUERY_FAILED_CODE = "PAYMENT_UNKNOWN_QUERY_FAILED";
 
-    /** Boot 가 애플리케이션 registry 마다 한 번 bindTo 한다. singleton bean 이 gauge 대상의 강한 참조를 유지한다. */
+    /** singleton bean 으로 gauge 대상의 수명을 유지한다. */
     @Bean
     public PaymentUnknownGauge paymentUnknownGauge(PaymentStatusQuery paymentStatusQuery) {
         return new PaymentUnknownGauge(paymentStatusQuery);
@@ -42,7 +41,7 @@ public class PaymentMetricsConfig {
                 .register(registry);
         }
 
-        /** 수집 스레드에서 Spring 프록시를 통해 조회한다. Error 는 잡지 않는다. */
+        /** 수집 스레드에서 조회 서비스의 TX 프록시를 호출한다. */
         double measure() {
             try {
                 return query.countUnknown();
