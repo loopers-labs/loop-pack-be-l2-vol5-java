@@ -19,3 +19,10 @@ dependencies {
     testImplementation(testFixtures(project(":modules:jpa")))
     testImplementation(testFixtures(project(":modules:redis")))
 }
+
+// 처리량 실험만 힙을 키운다. 평소 테스트는 Gradle 기본값(512MB) 그대로
+tasks.test {
+    if (System.getenv("RUN_EXPERIMENT") == "true") {
+        maxHeapSize = System.getenv("EXPERIMENT_HEAP") ?: "2g"
+    }
+}
