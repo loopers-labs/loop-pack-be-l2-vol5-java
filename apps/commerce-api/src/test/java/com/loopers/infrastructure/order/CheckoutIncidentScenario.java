@@ -84,6 +84,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -102,6 +103,8 @@ final class CheckoutIncidentScenario {
     private static final Duration CHILD = Duration.ofSeconds(60);
     private static final Duration BATCH = Duration.ofSeconds(120);
     private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(3);
+    /** 업무 API 는 PG 조회·TX 를 포함해 응답이 길 수 있어 읽기 대기를 넉넉히 둔다. */
+    private static final Duration BUSINESS_READ_TIMEOUT = Duration.ofSeconds(30);
     private static final Path LOG_DIR = Path.of("build", "checkout-incident-children");
     private static final int COHORT = 10;
     private static final int UNKNOWN_COUNT = 3;
@@ -119,7 +122,9 @@ final class CheckoutIncidentScenario {
     private final List<PlanRegistration> planLedger = new ArrayList<>();
     private final List<String> deliveries = new ArrayList<>();
     private final ListAppender<ILoggingEvent> diagnostics = new ListAppender<>();
-    private final RestTemplate http = client();
+    private final RestTemplate http = client(BUSINESS_READ_TIMEOUT);
+    /** health·Prometheus 직접 GET 전용. connect/read 각각 3초이며 호출 전체의 엄밀한 상한은 아니다. */
+    private final RestTemplate observer = client(HTTP_TIMEOUT);
 
     private IncidentEvidenceWriter writer;
     private IncidentDeadline deadline;
@@ -171,7 +176,7 @@ final class CheckoutIncidentScenario {
              IncidentDeadline runDeadline) throws Exception {
         this.writer = evidence;
         this.deadline = runDeadline;
-        try {
+        runThenRelease(() -> {
             stage = null;
             prepare();
             stage = IncidentStage.BASELINE;
@@ -180,7 +185,7 @@ final class CheckoutIncidentScenario {
             fault(checkpoint);
             stage = IncidentStage.RECOVERY;
             recovery(checkpoint);
-        } catch (Throwable failure) {
+        }, failure -> {
             Map<String, Object> context = new LinkedHashMap<>();
             context.put("mode", mode.name());
             context.put("operator", inputs.operator());
@@ -188,9 +193,39 @@ final class CheckoutIncidentScenario {
                 context.put("message", failure.getMessage());
             }
             writer.recordFailureKeeping(failure, stage, context);
+        }, this::release);
+    }
+
+    @FunctionalInterface
+    interface Body {
+        void run() throws Exception;
+    }
+
+    /**
+     * 업무 실패를 주 예외로 두고 정리 실패는 suppressed 로 붙인다. 업무가 성공했으면 정리 실패를 그대로 던져 통과로 삼키지 않는다.
+     * 실패 기록이 실패해도 원래 오류를 잃지 않는다.
+     */
+    static void runThenRelease(Body body, Consumer<Throwable> recordFailure, Runnable release) throws Exception {
+        Throwable primary = null;
+        try {
+            body.run();
+        } catch (Throwable failure) {
+            primary = failure;
+            try {
+                recordFailure.accept(failure);
+            } catch (RuntimeException recordError) {
+                failure.addSuppressed(recordError);
+            }
             throw failure;
         } finally {
-            release();
+            try {
+                release.run();
+            } catch (RuntimeException | Error cleanupFailure) {
+                if (primary == null) {
+                    throw cleanupFailure;
+                }
+                primary.addSuppressed(cleanupFailure);
+            }
         }
     }
 
@@ -209,7 +244,7 @@ final class CheckoutIncidentScenario {
         fresh = new JdbcTemplate(new DriverManagerDataSource(jdbcUrl,
             System.getProperty("datasource.mysql-jpa.main.username"), System.getProperty("datasource.mysql-jpa.main.password")));
         writer.recordResource("db", Map.of("jdbcUrl", jdbcUrl, "owner", "testcontainers-mysql"));
-        api = bootApi();
+        bootApi();
         attachDiagnostics();
         startStreamer();
         long instancesBefore = weeklyRankingInstances();
@@ -883,7 +918,8 @@ final class CheckoutIncidentScenario {
 
     // ---------------------------------------------------------------- 자원
 
-    private ConfigurableApplicationContext bootApi() throws Exception {
+    /** 기동 직후 필드에 넣어, 이후 준비 assertion·증거 기록이 실패해도 정리 경로가 context 를 닫게 한다. */
+    private void bootApi() throws Exception {
         int port;
         try (ServerSocket socket = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
             port = socket.getLocalPort();
@@ -906,6 +942,7 @@ final class CheckoutIncidentScenario {
                 "--commerce.order-events.topic=" + topic,
                 "--commerce.order-events.relay.enabled=false",
                 "--commerce.order-events.producer-properties[client.id]=checkout-incident-" + kafka.runId());
+        api = context;
         int actualPort = ((ServletWebServerApplicationContext) context).getWebServer().getPort();
         managementPort = Integer.parseInt(context.getEnvironment().getProperty("local.management.port", "-1"));
         assertThat(actualPort).as("실제 API port 와 callback port 일치").isEqualTo(port);
@@ -918,7 +955,6 @@ final class CheckoutIncidentScenario {
         assertThat(context.getBean(OrderOutboxRelayProperties.class).enabled()).as("자동 relay OFF").isFalse();
         writer.recordResource("api", Map.of("port", actualPort, "managementPort", managementPort,
             "managementPortRequested", requestedManagement, "callbackUrl", callback, "relayEnabled", false));
-        return context;
     }
 
     private void startStreamer() throws Exception {
@@ -939,9 +975,13 @@ final class CheckoutIncidentScenario {
         writer.recordResource("streamer", Map.of("topic", topic, "group", group, "logDir", "build/" + LABEL.toLowerCase()));
     }
 
-    /** §9.2 순서: 진입 중단 → 자식 종료 → 데이터(자식 종료 확인 시만) → API·PG → 구매 테이블 → Kafka. 실패는 기록하고 던진다. */
+    /**
+     * §9.2 순서: 진입 중단 → 자식 종료 → 데이터(자식 종료 확인 시만) → API·PG → 구매 테이블 → Kafka. 실패는 기록하고 던진다.
+     * helper 가 예외로 끝나면 남긴 자원 목록을 받지 못하므로 kept 를 빈 목록이 아닌 UNKNOWN 으로 남긴다.
+     */
     private void release() {
-        List<String> kept = new ArrayList<>();
+        List<String> kept = null;
+        RuntimeException failure = null;
         try {
             kept = OrderOutboxE2eLifecycleSupport.release(ownership, new CleanupSteps() {
                 @Override
@@ -1015,16 +1055,30 @@ final class CheckoutIncidentScenario {
                     }
                 }
             });
-        } catch (RuntimeException failure) {
-            writer.recordFailureKeeping(failure, stage, Map.of("cleanup", "FAILED"));
-            throw failure;
-        } finally {
-            Map<String, Object> cleanup = new LinkedHashMap<>();
-            cleanup.put("kept", kept);
-            cleanup.put("streamerExited", streamer == null || !streamer.isAlive());
-            cleanup.put("batchChildrenExited", WeeklyRankingBatchChild.allExited());
-            cleanup.put("pgTerminated", pg == null || pg.isTerminated());
+        } catch (RuntimeException e) {
+            failure = e;
+            Map<String, Object> context = new LinkedHashMap<>();
+            context.put("cleanup", "FAILED");
+            context.put("message", e.getMessage());
+            writer.recordFailureKeeping(e, stage, context);
+        }
+        Map<String, Object> cleanup = new LinkedHashMap<>();
+        cleanup.put("releaseCompleted", failure == null);
+        cleanup.put("kept", kept == null ? "UNKNOWN" : kept);
+        cleanup.put("streamerExited", streamer == null || !streamer.isAlive());
+        cleanup.put("batchChildrenExited", WeeklyRankingBatchChild.allExited());
+        cleanup.put("pgTerminated", pg == null || pg.isTerminated());
+        try {
             writer.recordResource("cleanup", cleanup);
+        } catch (RuntimeException e) {
+            if (failure == null) {
+                failure = e;
+            } else {
+                failure.addSuppressed(e);
+            }
+        }
+        if (failure != null) {
+            throw failure;
         }
     }
 
@@ -1048,7 +1102,7 @@ final class CheckoutIncidentScenario {
     }
 
     private ResponseEntity<String> get(String managementPath) {
-        return http.exchange(URI.create("http://127.0.0.1:" + managementPort + managementPath), HttpMethod.GET, null,
+        return observer.exchange(URI.create("http://127.0.0.1:" + managementPort + managementPath), HttpMethod.GET, null,
             String.class);
     }
 
@@ -1089,11 +1143,11 @@ final class CheckoutIncidentScenario {
         return remaining.compareTo(stageLimit) < 0 ? remaining : stageLimit;
     }
 
-    /** 업무 API 는 비정상 상태도 응답으로 받아 assertion 이 원문을 보게 한다. 직접 관찰 GET 은 connect/read 3초다. */
-    private static RestTemplate client() {
+    /** 비정상 상태도 응답으로 받아 assertion 이 원문을 보게 한다. connect 는 3초, read 는 호출 종류별 값이다. */
+    static RestTemplate client(Duration readTimeout) {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(HTTP_TIMEOUT);
-        factory.setReadTimeout(Duration.ofSeconds(30));
+        factory.setReadTimeout(readTimeout);
         RestTemplate template = new RestTemplate(factory);
         template.setErrorHandler(new DefaultResponseErrorHandler() {
             @Override
