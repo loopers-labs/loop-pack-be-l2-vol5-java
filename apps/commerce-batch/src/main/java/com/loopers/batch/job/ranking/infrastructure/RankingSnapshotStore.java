@@ -91,6 +91,14 @@ public class RankingSnapshotStore {
                 """, id.value(), id.period().startInclusiveUtc(), id.period().endExclusiveUtc());
     }
 
+    public int copyFrozenInput(SnapshotId source, SnapshotId target) {
+        return jdbc.update("""
+                INSERT INTO ranking_snapshot_input (snapshot_id, order_id, product_id, quantity, confirmed_at)
+                SELECT ?, order_id, product_id, quantity, confirmed_at
+                FROM ranking_snapshot_input WHERE snapshot_id = ?
+                """, target.value(), source.value());
+    }
+
     public InputSummary summarizeInput(SnapshotId snapshotId) {
         var summarizer = new FrozenInputSummarizer();
         streamingJdbc.query("""

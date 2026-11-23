@@ -67,7 +67,7 @@ public class WeeklyRankingJobConfig {
             @Qualifier(PUBLISH_STEP) Step publish,
             JobExplorer jobExplorer) {
         return new JobBuilder(JOB_NAME, jobRepository)
-                .validator(new WeeklyRankingParametersValidator())
+                .validator(new WeeklyRankingParametersValidator(jobExplorer))
                 .listener(new SerialPeriodGuard(jobExplorer))
                 .start(freeze)
                 .next(calculate)
@@ -127,8 +127,10 @@ public class WeeklyRankingJobConfig {
     @StepScope
     public FreezeSnapshotTasklet freezeSnapshotTasklet(
             @Value(PERIOD_START) String periodStart, @Value(SNAPSHOT_ID) String snapshotId,
+            @Value("#{jobParameters['sourceSnapshotId']}") String sourceSnapshotId,
             RankingSnapshotStore snapshots, @Qualifier(CLOCK) Clock clock) {
-        return new FreezeSnapshotTasklet(snapshots, clock, snapshotId(periodStart, snapshotId));
+        var parameters = WeeklyRankingParameters.of(periodStart, snapshotId, sourceSnapshotId);
+        return new FreezeSnapshotTasklet(snapshots, clock, parameters);
     }
 
     // 반환 타입이 ItemStream 구현체여야 step scope proxy가 stream으로 등록되어 위치가 저장된다.
