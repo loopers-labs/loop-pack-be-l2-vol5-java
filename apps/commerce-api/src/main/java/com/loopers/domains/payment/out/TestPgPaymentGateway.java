@@ -85,7 +85,7 @@ public class TestPgPaymentGateway implements PaymentGateway {
                 .exchange((request, response) -> classifyCreate(response.getStatusCode().value(),
                     response.getBody().readAllBytes(), command));
             if (result instanceof PaymentCreateResult.Unknown unknown) {
-                log.warn("테스트 PG 결제 생성 결과를 알 수 없습니다. orderId={}, reason={}", command.providerOrderId(), unknown.reason());
+                log.warn("테스트 PG 결제 생성 결과를 알 수 없습니다. providerOrderId={}, reason={}", command.providerOrderId(), unknown.reason());
             }
             return result;
         } catch (RestClientException e) {
@@ -93,12 +93,12 @@ public class TestPgPaymentGateway implements PaymentGateway {
             if (failedBeforeSending(e)) {
                 return notSent(reason, command);
             }
-            log.warn("테스트 PG 결제 생성 결과를 알 수 없습니다. orderId={}, reason={}", command.providerOrderId(), reason);
+            log.warn("테스트 PG 결제 생성 결과를 알 수 없습니다. providerOrderId={}, reason={}", command.providerOrderId(), reason);
             return new PaymentCreateResult.Unknown(reason);
         } catch (RuntimeException e) {
             // 요청이 나갔는지 판단할 수 없으므로 결과 모름이다.
             String reason = e.getClass().getSimpleName();
-            log.warn("테스트 PG 결제 생성 결과를 알 수 없습니다. orderId={}, reason={}", command.providerOrderId(), reason);
+            log.warn("테스트 PG 결제 생성 결과를 알 수 없습니다. providerOrderId={}, reason={}", command.providerOrderId(), reason);
             return new PaymentCreateResult.Unknown(reason);
         }
     }
@@ -263,7 +263,7 @@ public class TestPgPaymentGateway implements PaymentGateway {
     }
 
     private static PaymentCreateResult notSent(String reason, PaymentCreateCommand command) {
-        log.warn("테스트 PG에 결제 생성 요청을 보내지 못했습니다. orderId={}, reason={}", command.providerOrderId(), reason);
+        log.warn("테스트 PG에 결제 생성 요청을 보내지 못했습니다. providerOrderId={}, reason={}", command.providerOrderId(), reason);
         return new PaymentCreateResult.NotSent(reason);
     }
 
