@@ -2,6 +2,7 @@ package com.loopers.outbox.application;
 
 import com.loopers.outbox.application.port.in.OutboxAppendUseCase;
 import com.loopers.outbox.application.port.out.OrderOutboxPort;
+import com.loopers.outbox.application.port.out.TraceContextPort;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -23,11 +24,13 @@ public class OutboxAppendService implements OutboxAppendUseCase {
 
     private final OrderOutboxPort orderOutboxPort;
     private final Clock clock;
+    private final TraceContextPort traceContextPort;
 
     @Transactional(propagation = Propagation.MANDATORY)
     @Override
     public void append(OrderOutboxEntry entry) {
+        // 결과를 반영한 요청의 trace 문맥을 함께 남긴다 — relay가 이 문맥을 부모로 발행한다 (W10 D-12 (나))
         orderOutboxPort.append(entry.eventId(), entry.orderId(), entry.eventType(), entry.schemaVersion(), entry.payload(),
-            ZonedDateTime.now(clock));
+            traceContextPort.currentTraceParent(), ZonedDateTime.now(clock));
     }
 }

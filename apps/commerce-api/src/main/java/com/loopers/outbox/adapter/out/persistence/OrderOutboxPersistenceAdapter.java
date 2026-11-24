@@ -25,8 +25,10 @@ public class OrderOutboxPersistenceAdapter implements OrderOutboxPort {
     private final ObjectMapper objectMapper;
 
     @Override
-    public OrderOutbox append(String eventId, Long orderId, String eventType, int schemaVersion, Object payload, ZonedDateTime now) {
-        return orderOutboxJpaRepository.save(OrderOutbox.pending(eventId, orderId, eventType, schemaVersion, toJson(payload), now));
+    public OrderOutbox append(
+        String eventId, Long orderId, String eventType, int schemaVersion, Object payload, String traceParent, ZonedDateTime now
+    ) {
+        return orderOutboxJpaRepository.save(OrderOutbox.pending(eventId, orderId, eventType, schemaVersion, toJson(payload), traceParent, now));
     }
 
     @Override
