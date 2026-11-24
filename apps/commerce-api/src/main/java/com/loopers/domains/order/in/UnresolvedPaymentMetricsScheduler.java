@@ -15,5 +15,6 @@ public class UnresolvedPaymentMetricsScheduler {
 
     @Scheduled(fixedDelayString = "${commerce.payment.unresolved-metric.refresh-interval}")
     public void refresh() {
+        unresolvedPaymentMetrics.refresh();
     }
 }
