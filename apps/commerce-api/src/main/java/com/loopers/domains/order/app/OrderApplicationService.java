@@ -471,7 +471,7 @@ public class OrderApplicationService {
         }
     }
 
-    // 종결 집계와 종결 INFO는 rollback된 종결을 세거나 알리지 않도록 commit 뒤에만 실행한다. 종결은 항상 잠금 트랜잭션 안이다.
+    // 종결 집계와 확정·실패 종결 INFO는 rollback된 종결을 세거나 알리지 않도록 commit 뒤에만 실행한다. 종결은 항상 잠금 트랜잭션 안이다.
     private static void afterCommit(Runnable action) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
             throw new IllegalStateException("결제 종결은 트랜잭션 안에서만 기록할 수 있습니다.");
