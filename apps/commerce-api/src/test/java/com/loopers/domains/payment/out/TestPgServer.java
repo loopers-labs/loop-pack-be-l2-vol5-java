@@ -23,6 +23,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 public final class TestPgServer implements AutoCloseable {
     static final String PAYMENTS_PATH = "/api/v1/payments";
@@ -51,6 +52,10 @@ public final class TestPgServer implements AutoCloseable {
         ERROR_500_ECHO_REQUEST,
         DELAY_AFTER_CREATE,
         DROP_CONNECTION_AFTER_CREATE
+    }
+
+    private enum OrderBehavior {
+        LOSE_RESPONSE_AFTER_SUCCESS
     }
 
     public enum LookupBehavior {
@@ -82,6 +87,8 @@ public final class TestPgServer implements AutoCloseable {
     private final List<RecordedRequest> requests = new CopyOnWriteArrayList<>();
     private final Map<String, StoredTransaction> transactions = new ConcurrentHashMap<>();
     private final AtomicInteger keySequence = new AtomicInteger();
+    private final Map<String, OrderBehavior> orderBehaviors = new ConcurrentHashMap<>();
+    private final Map<String, AtomicInteger> createCallsByOrder = new ConcurrentHashMap<>();
     private volatile CreateBehavior createBehavior = CreateBehavior.ACCEPT_PENDING;
     private volatile LookupBehavior lookupBehavior = LookupBehavior.NORMAL;
 
@@ -140,17 +147,26 @@ public final class TestPgServer implements AutoCloseable {
     }
 
     public void loseResponseAfterSuccess(String providerOrderId) {
+        orderBehaviors.put(providerOrderId, OrderBehavior.LOSE_RESPONSE_AFTER_SUCCESS);
     }
 
     public void clearOrderBehavior(String providerOrderId) {
+        orderBehaviors.remove(providerOrderId);
     }
 
     public int createCalls(String providerOrderId) {
-        return 0;
+        AtomicInteger calls = createCallsByOrder.get(providerOrderId);
+        if (calls == null) {
+            return 0;
+        }
+        return calls.get();
     }
 
     public Set<String> duplicateCreateOrderIds() {
-        return Set.of();
+        return createCallsByOrder.entrySet().stream()
+            .filter(entry -> entry.getValue().get() >= 2)
+            .map(Map.Entry::getKey)
+            .collect(Collectors.toUnmodifiableSet());
     }
 
     @Override
@@ -185,6 +201,15 @@ public final class TestPgServer implements AutoCloseable {
     private void handleCreate(HttpExchange exchange, JsonNode request) throws IOException, InterruptedException {
         String orderId = request.path("orderId").asText();
         long amount = request.path("amount").asLong();
+        // 응답 종류와 상관없이 요청을 받은 순간 센다. 오류를 돌려준 중복 create도 감지해야 한다.
+        createCallsByOrder.computeIfAbsent(orderId, key -> new AtomicInteger()).incrementAndGet();
+        if (orderBehaviors.get(orderId) == OrderBehavior.LOSE_RESPONSE_AFTER_SUCCESS) {
+            // 거래를 SUCCESS로 확정한 뒤 read timeout보다 늦게 응답해, 클라이언트는 결과를 모르게 한다.
+            StoredTransaction stored = store(orderId, amount, "SUCCESS");
+            Thread.sleep(delay.toMillis());
+            send(exchange, 202, transactionJson(stored));
+            return;
+        }
         switch (createBehavior) {
             case ACCEPT_PENDING -> send(exchange, 202, transactionJson(store(orderId, amount, "PENDING")));
             case ACCEPT_SUCCESS -> send(exchange, 202, transactionJson(store(orderId, amount, "SUCCESS")));
