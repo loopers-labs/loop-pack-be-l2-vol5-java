@@ -26,6 +26,8 @@ public interface PaymentJpaRepository extends JpaRepository<Payment, Long> {
 
     Optional<Payment> findByProviderOrderId(String providerOrderId);
 
+    long countByStatus(PaymentStatus status);
+
     @Query("SELECT p FROM Payment p WHERE p.status IN :statuses "
         + "AND p.nextCheckAt <= :now ORDER BY p.nextCheckAt, p.id")
     List<Payment> findDueForCheck(
