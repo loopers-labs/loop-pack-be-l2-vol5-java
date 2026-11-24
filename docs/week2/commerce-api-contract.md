@@ -2,6 +2,103 @@
 
 [전체 설계](commerce-erd-draft.md) · [정책 선택과 설계 검토](commerce-policy-decisions.md) · [TDD 계획](commerce-tdd-plan.md)
 
+## W9 주간 랭킹 계약
+
+2026-11-19 선택한 **미공개 404·공개된 빈 결과 200**, 기본 limit 10·최대 100을 고객 API에 연결했다. 공개 SQL·HTTP의 실제 검사 범위와 결과는 [4단계 기록](../week9/publication-api-tdd-log.md)을 따른다. 실제 PG부터 랭킹 HTTP까지 이어지는 5단계 검증은 [전체 흐름 기록](../week9/full-chain-ranking-tdd-log.md)에 보존한다. HTTP 계약을 유지하며 전체 회귀·채점 대조의 현재 결과는 [6단계 최종 검증 기록](../week9/final-verification.md)을 따른다. UTC 주간·구매 수량 합·동점 productId 오름차순·저장 순위 유지·공개 필터 후 limit은 [과제의 확정 조건](../week9/grading-criteria.md#원문이-정한-업무조회-계약)이다. 원문은 `NOT_PUBLISHED`와 빈 items를 예시로 제시하며 미공개 HTTP 상태는 명시하지 않는다. 이번 선택은 **404 오류 코드로 미공개를 표현**한다. [전체 설계](commerce-erd-draft.md#w9-주간-구매-랭킹-설계) · [선택 이유](commerce-policy-decisions.md#w9-주간-랭킹의-선택) · [TDD](commerce-tdd-plan.md#w9-주간-랭킹-테스트-계획)
+
+### 기본 요청
+
+| 항목 | 계약 |
+| --- | --- |
+| method·path | `GET /api/v1/rankings/weekly` |
+| 사용자 식별 | 기존 고객 공개 상품 조회와 같은 공개 읽기 경로. `X-USER-ID`를 새 필수 조건으로 추가하지 않음 |
+| `periodStart` | 필수, 실제 존재하는 `YYYY-MM-DD` 날짜이며 UTC 월요일. 시작 포함·7일 뒤 다음 월요일 시작 제외. 없는 값·잘못된 날짜·월요일 아님은 400 |
+| `limit` | 생략 시 10, 정수 1~100. 0·음수·100 초과·문자·정수 범위 초과는 400. 초과값을 조용히 잘라 적용하지 않음 |
+| 예시 | `/api/v1/rankings/weekly?periodStart=2026-08-17&limit=10` |
+| 읽을 대상 | 요청한 주의 공개 pointer가 선택한 완성 snapshot. 내부 stage·다른 주의 결과로 대체하지 않음 |
+
+### 응답 상태와 실패 의미
+
+| 상황 | HTTP | `meta.result` | `meta.errorCode` | `data` |
+| --- | --- | --- | --- | --- |
+| 공개본 존재 | 200 | SUCCESS | 생략 | `status=PUBLISHED`, 기간·snapshot 정보·items |
+| 구매 0건인 완성본 | 200 | SUCCESS | 생략 | 동일 구조·실제 snapshotId와 `items=[]` |
+| 공개본은 있지만 현재 공개 가능한 상품이 0개 | 200 | SUCCESS | 생략 | 동일 snapshot의 `PUBLISHED`, `items=[]`. 공개 실패나 원본 구매 0건이라고 해석하지 않음 |
+| 요청한 주에 공개본 없음 | 404 | FAIL | `RANKING_NOT_PUBLISHED` | 생략. message: `해당 주의 랭킹이 아직 공개되지 않았습니다.` |
+| 날짜·limit 입력 오류 | 400 | FAIL | `INVALID_REQUEST` | 생략. 기존 메시지: `요청 값이 올바르지 않습니다.` |
+| 랭킹/상품 조회 DB의 연결·접근 timeout으로 조회 불가 | 503 | FAIL | `RANKING_QUERY_UNAVAILABLE` | 생략. message: `현재 주간 랭킹을 조회할 수 없습니다.` |
+| pointer가 가리키는 완료 결과 손상 등 내부 불변식 위반 | 500 | FAIL | `INTERNAL_ERROR` | 생략. 기존 내부 오류 형식. 미공개·빈 성공으로 숨기지 않음 |
+
+기존 `ApiResponse`와 null 생략 설정을 따른다. 미공개 응답에는 `data.status=NOT_PUBLISHED`를 함께 넣지 않고 오류 코드로 의미를 구분한다. DB 장애를 404로 바꾸거나 직전 요청·다른 주를 대신 반환하지 않는다. 새로운 코드명은 이번 설계의 오류 매핑이며 기존 PG·쿠폰 오류를 바꾸지 않는다.
+
+### 공개본의 data
+
+| 필드 | 값·의미 |
+| --- | --- |
+| `status` | `PUBLISHED` |
+| `periodStart`, `periodEnd` | UTC 기준 날짜 문자열. periodEnd는 제외 경계인 다음 월요일 |
+| `snapshotId` | 이번 응답 전체가 참조한 공개 snapshot 식별자 |
+| `revision` | 해당 주 입력의 계산 차수. 새 입력에서 증가 |
+| `frozenAt` | 저장한 입력 고정 작업의 관측 시각, UTC ISO-8601. 해당 시각 이전 모든 거래의 도착을 보장하는 watermark가 아님 |
+| `items[].productId`, `productName` | 상품 ID와 현재 상품 조회 규칙으로 얻은 이름 |
+| `items[].score` | 해당 snapshot의 상품 구매 수량 합, 정수 |
+| `items[].rank` | 계산 때 저장한 순위. 필터 후 재번호 부여하지 않음 |
+
+아래 값은 설명용이며 실제 실행 결과가 아니다.
+
+```json
+{
+  "meta": { "result": "SUCCESS" },
+  "data": {
+    "status": "PUBLISHED",
+    "periodStart": "2026-08-17",
+    "periodEnd": "2026-08-24",
+    "snapshotId": "weekly-20260817-r1",
+    "revision": 1,
+    "frozenAt": "2026-08-24T00:05:00Z",
+    "items": [
+      { "productId": 7, "productName": "블록", "score": 5, "rank": 1 },
+      { "productId": 9, "productName": "기차", "score": 5, "rank": 2 },
+      { "productId": 8, "productName": "공", "score": 1, "rank": 3 }
+    ]
+  }
+}
+```
+
+공개된 빈 결과는 위 구조에서 `items`만 빈 배열이다. 미공개는 다음 오류 형식이다.
+
+```json
+{
+  "meta": {
+    "result": "FAIL",
+    "errorCode": "RANKING_NOT_PUBLISHED",
+    "message": "해당 주의 랭킹이 아직 공개되지 않았습니다."
+  }
+}
+```
+
+### 현재 상품 공개 조건과 조회 일관성
+
+- 현재 상품과 브랜드가 모두 미삭제인 항목을 대상으로 한다. 재고 0만으로 제외하지 않는다. 표시 이름은 현재 조회값이며 점수·rank는 고정된 과거 계산 결과다.
+- rank 순으로 후보를 읽고 상품 DB에서 공개 가능한 상품을 일괄 확인한다. 제외한 후보가 있으면 **같은 snapshot의 다음 rank**를 읽어 limit 또는 결과 끝까지 채운다. `LIMIT 10`으로 먼저 끊고 삭제된 3개를 빼서 7개만 반환하는 방식으로 구현하지 않는다.
+- 예를 들어 위 2위 상품 9가 삭제되면 limit=2 응답은 상품 7(1위), 상품 8(3위)다. 원본 활동·저장 점수·순위를 삭제하거나 재계산하지 않는다.
+- 요청에서 snapshotId를 한 번 선택한 뒤 추가 후보 조회에도 그대로 쓴다. 중간에 새 revision이 공개돼도 응답에 두 snapshot을 섞지 않는다.
+- 현재 상품 표시의 여러 조회는 상품 DB의 같은 RR 읽기 view를 사용하는 설계다. 삭제 완료 후 시작한 상품 조회에서는 제외하고, 이미 읽기 view를 확보한 진행 중 요청은 그 view를 사용할 수 있다. 랭킹 DB와 상품 DB를 하나의 원자적 전역 읽기로 설명하지 않는다.
+
+### 실제 주문 경로에서 확인할 공개 응답
+
+5단계 전체 흐름은 실제 주문 3건의 구매 활동으로 r1을 공개해 5/5/1을 조회한다. 같은 사건을 다른 Kafka offset으로 다시 소비해도 활동과 공개 점수는 늘지 않아야 한다. 다음 r2가 입력 4행을 고정한 뒤 실패하면 API는 r1을 유지한다. 원래 주의 늦은 구매가 source에 추가된 뒤에도 같은 r2 재시작의 응답은 5/5/1이고, 새 입력을 고정한 r3만 9/5/1을 반환한다.
+
+각 응답의 snapshotId·revision·입력 고정 시점·저장 순위를 실제 DB와 대조한다. r2/r3 공개 전에는 이전 공개본, 공개 후에는 새 공개본을 반환한다. 이 검증은 같은 DB/metadata를 보존한 별도 Batch JVM과 실제 고객 HTTP를 사용하며 GET에서 배치 실행·PG 호출·재고 처리를 추가하지 않는다. 증분 실행 결과는 [5단계 기록](../week9/full-chain-ranking-tdd-log.md), 전체 회귀·채점 대조의 현재 결과는 [최종 검증 기록](../week9/final-verification.md)에서 구분한다.
+
+### 읽기 연결의 실행 설정
+
+기본 설정은 `commerce.ranking.query.enabled=false`다. 활성화하려면 `WEEKLY_RANKING_QUERY_ENABLED=true`와 별도 구매 활동 DB의 `WEEKLY_RANKING_QUERY_JDBC_URL`·`WEEKLY_RANKING_QUERY_USERNAME`·`WEEKLY_RANKING_QUERY_PASSWORD`를 공급한다. 랭킹 조회용 계정과 필요한 읽기 권한을 사용하며 상품·주문 DB에 랭킹 테이블이 있다고 가정하지 않는다. 비활성이면 정상 입력의 랭킹 조회는 `503 RANKING_QUERY_UNAVAILABLE`이고 기존 상품·주문 API는 기존 연결을 유지한다.
+
+`RankingReadResource` 내부 pool은 기존 main DataSource/JPA transaction manager와 구분된다. 전용 pool 최대 3·연결 대기 1초·query 2초·driver connect 1초/socket 2초는 초기 제한값이며 API 전체 응답 시간을 보장하는 수치가 아니다. 설정·키·비밀번호를 고객 응답에 포함하지 않는다. 현재 구현의 상세 선택과 대안은 [정책 문서](commerce-policy-decisions.md#api의-별도-랭킹-읽기-연결)를 따른다.
+
+아래 W6·W7의 랭킹 제외는 당시 범위이며 W9의 신규 요구를 제한하지 않는다.
+
 ## W8 쿠폰 예약 응답
 
 신청은 본문 없는 POST다. 성공 응답의 `data`에는 `campaignId`, `reservationId`, `status`가 들어간다. 발급이 끝났을 때만 `couponId`를 추가한다. 신청 주체는 기존 `X-USER-ID`로 식별한다. 사용자는 한 번 신청하며 서버가 후속 발급을 맡는다. BASIC의 동기 발급 `201`·자리 부족 `429`는 원문 실험의 기대값이다. 아래 표는 예약 방식을 선택한 고객 API의 계약이다. [예약·발급 흐름](commerce-erd-draft.md#w8-쿠폰-예약과-발급) · [테스트 기대값](commerce-tdd-plan.md#w8-쿠폰-예약과-복구-테스트)

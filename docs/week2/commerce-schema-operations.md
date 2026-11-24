@@ -25,6 +25,22 @@ W2의 `001`~`006`은 커머스의 6개 업무 테이블을 빈 MySQL 8 데이터
 
 SQL 파일은 애플리케이션 시작 시 자동 실행되지 않는다. 새 마이그레이션 프레임워크나 자동 스키마 적용 프로파일을 추가하지 않았다. 파일의 번호는 수동 적용 순서다. 기존 예시 API의 ExampleModel 테이블은 이 12개 테이블 범위에 포함하지 않는다.
 
+## W9 구매 활동 DB의 랭킹 스키마
+
+선택 A에 따라 Batch의 랭킹 테이블과 영속 `BATCH_*`는 기존 구매 활동 DB에 둔다. API 상품·주문 DB의 001~014와 번호가 겹치더라도 서로 다른 앱/대상의 SQL이다. 아래는 수동 준비 안내이며 사용자 DB에 적용한 기록이 아니다. 공개 스키마의 증분 증거는 [4단계 구현·검증 기록](../week9/publication-api-tdd-log.md), 동일 DB·metadata를 유지한 별도 Batch JVM의 전체 흐름은 [5단계 기록](../week9/full-chain-ranking-tdd-log.md)에 보존한다. 전체 회귀·채점 대조의 현재 결과는 [6단계 최종 검증 기록](../week9/final-verification.md)을 따른다.
+
+| 준비 순서 | 대상·역할 |
+| --- | --- |
+| 기존 streamer 구매 활동 schema | W6 소비 기록·상품별 활동 원본. 기존 행을 삭제하거나 다시 생성하지 않음 |
+| Batch [001-weekly-ranking-input.sql](../../apps/commerce-batch/src/main/resources/db/schema/001-weekly-ranking-input.sql) | 불변 manifest와 입력 snapshot |
+| Batch [002-weekly-ranking-score.sql](../../apps/commerce-batch/src/main/resources/db/schema/002-weekly-ranking-score.sql) | manifest 계산 상태와 절대 점수 stage |
+| Batch [003-weekly-ranking-publication.sql](../../apps/commerce-batch/src/main/resources/db/schema/003-weekly-ranking-publication.sql) | 결과 건수·checksum metadata, 완성 순위, 기간별 공개 pointer와 기간/snapshot/revision composite FK |
+| Spring Batch 5.2.2의 MySQL schema | 같은 DB에 영속 JobRepository·ExecutionContext. 이미 존재하면 초기화하지 않음 |
+
+최초 준비 뒤 [weekly-ranking profile](../../apps/commerce-batch/src/main/resources/application-weekly-ranking.yml)을 마지막에 적용해 Batch schema 초기화 `never`·JPA DDL `none`·SQL 초기화 `never`를 유지한다. 실패 실행과 재시작 사이에 source·입력·stage·결과·pointer·metadata를 보존한다. 003은 기존 입력과 stage를 완료 결과로 자동 승격하지 않으며 공개 Step이 완성 조건을 검증한다.
+
+API의 랭킹 조회는 기본 OFF다. 별도의 `WEEKLY_RANKING_QUERY_JDBC_URL`·`WEEKLY_RANKING_QUERY_USERNAME`·`WEEKLY_RANKING_QUERY_PASSWORD`와 `WEEKLY_RANKING_QUERY_ENABLED=true`로 이 DB를 읽는다. 필요한 랭킹 테이블의 조회 권한은 별도 읽기 계정에 부여한다. 코드의 readOnly 설정은 DB 권한 설정을 대신하지 않으며 기존 main DataSource로 fallback하지 않는다. schema 준비나 조회 설정을 이유로 사용자 DB를 자동 초기화하지 않는다.
+
 ## W8 쿠폰 예약·발급 스키마
 
 4단계 작업자는 지정 캠페인에서 `WAITING` 예약을 ID 오름차순으로 찾는다. 013이 적용된 DB에는 014가 `(campaign_id, status, id)` 인덱스를 추가한다. 쿠폰·예약 데이터 변경은 없다. 적용 여부는 `SHOW INDEX FROM coupon_reservation`로 확인한다.

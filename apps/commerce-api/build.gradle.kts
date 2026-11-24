@@ -36,6 +36,14 @@ plugins {
     checkstyle
 }
 
+// Use Batch's authoritative ranking DDL in isolated API tests without importing its Java classes.
+tasks.processTestResources {
+    from(project(":apps:commerce-batch").file("src/main/resources/db/schema")) {
+        include("*-weekly-ranking-*.sql")
+        into("fixtures/ranking")
+    }
+}
+
 checkstyle {
     toolVersion = "10.26.1"
     configFile = rootProject.file("config/checkstyle/checkstyle.xml")
@@ -55,6 +63,7 @@ tasks.test {
 
 // Test-only process orchestration: keep the two apps off each other's runtime classpath.
 val streamerMain = project(":apps:commerce-streamer").extensions.getByType<SourceSetContainer>().named("main")
+val rankingBatchSources = project(":apps:commerce-batch").extensions.getByType<SourceSetContainer>()
 tasks.test {
     dependsOn(streamerMain.map { it.runtimeClasspath })
     inputs.files(streamerMain.map { it.runtimeClasspath })
@@ -65,6 +74,17 @@ tasks.test {
         systemProperty("w6.streamer.main-classpath", streamerMain.get().runtimeClasspath.asPath)
         systemProperty("w6.streamer.schema", rootProject.file(
             "apps/commerce-streamer/src/main/resources/db/schema/001-purchase-activity.sql").absolutePath)
+    }
+    // Separate child JVM: do not put Batch application beans onto the API test runtime classpath.
+    dependsOn(":apps:commerce-batch:testClasses")
+    dependsOn(rankingBatchSources.named("main").map { it.runtimeClasspath })
+    inputs.files(rankingBatchSources.named("main").map { it.runtimeClasspath })
+        .withPropertyName("w9BatchRuntimeClasspath").withNormalizer(ClasspathNormalizer::class.java)
+    inputs.files(rankingBatchSources.named("test").map { it.output.classesDirs })
+        .withPropertyName("w9BatchProbeClasses").withNormalizer(ClasspathNormalizer::class.java)
+    doFirst {
+        systemProperty("w9.batch.main-classpath", rankingBatchSources.named("main").get().runtimeClasspath.asPath)
+        systemProperty("w9.batch.test-classes", rankingBatchSources.named("test").get().output.classesDirs.asPath)
     }
 }
 

@@ -3,6 +3,7 @@ package com.loopers.interfaces.api.commerce;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.application.brand.BrandQueryException;
 import com.loopers.application.product.ProductQueryException;
+import com.loopers.application.ranking.WeeklyRankingQueryException;
 import com.loopers.application.user.UserResolutionException;
 import com.loopers.domain.brand.BrandDeletionException;
 import com.loopers.domain.brand.BrandNameException;
@@ -43,6 +44,13 @@ public class CommerceErrors {
     }
 
     public Failure translate(Exception exception) {
+        if (exception instanceof WeeklyRankingQueryException ranking) {
+            return switch (ranking.reason()) {
+                case NOT_PUBLISHED -> new Failure(404, "RANKING_NOT_PUBLISHED", "해당 주의 랭킹이 아직 공개되지 않았습니다.");
+                case UNAVAILABLE -> new Failure(503, "RANKING_QUERY_UNAVAILABLE", "현재 주간 랭킹을 조회할 수 없습니다.");
+                case CORRUPT -> new Failure(500, "INTERNAL_ERROR", "일시적인 오류가 발생했습니다.");
+            };
+        }
         if (exception instanceof CouponException coupon) {
             return switch (coupon.reason()) {
                 case SOLD_OUT -> new Failure(409, "COUPON_CAMPAIGN_SOLD_OUT", "쿠폰 신청이 마감됐습니다.");
